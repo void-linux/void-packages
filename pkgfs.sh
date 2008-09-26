@@ -341,7 +341,7 @@ build_pkg_from_source()
 	fetch_source_distfiles
 	build_pkg
 
-	export PATH="${_save_path}"
+	export PATH="$save_path"
 }
 
 #
