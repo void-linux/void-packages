@@ -187,7 +187,7 @@ fetch_source_distfiles()
 check_build_dirs()
 {
 	if [ ! -d "$PKGFS_DESTDIR" ]; then
-		${MKDIR_CMD} "$PKGFS_DESTDIR"
+		${_MKDIR_CMD} "$PKGFS_DESTDIR"
 		if [ "$?" -ne 0 ]; then
 			echo -n "*** ERROR: couldn't create PKGFS_DESTDIR "
 			echo "directory, aborting ***"
@@ -196,7 +196,7 @@ check_build_dirs()
 	fi
 
 	if [ ! -d "$PKGFS_BUILDDIR" ]; then
-		${MKDIR_CMD} "$PKGFS_BUILDDIR"
+		${_MKDIR_CMD} "$PKGFS_BUILDDIR"
 		if [ "$?" -ne 0 ]; then
 			echo -n "*** ERROR: couldn't create PKFS_BUILDDIR "
 			echo "directory, aborting ***"
@@ -209,7 +209,7 @@ check_build_dirs()
 		exit 1
 	fi
 
-	${MKDIR_CMD} "$PKGFS_SRC_DISTDIR"
+	${_MKDIR_CMD} "$PKGFS_SRC_DISTDIR"
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR couldn't create PKGFS_SRC_DISTDIR, aborting ***"
 		exit 1
@@ -244,7 +244,7 @@ build_pkg()
 	#
 	if [ "$build_style" = "gnu_configure" ]; then
 		for i in "${configure_env}"; do
-			export "$i"
+			[ -n "$i" ] && export "$i"
 		done
 
 		./configure --prefix="${PKGFS_DESTDIR}" "${configure_args}"
@@ -259,7 +259,8 @@ build_pkg()
 			MAKE_CMD="$make_cmd"
 		fi
 
-		$MAKE_CMD ${make_build_args}
+		/usr/bin/env CFLAGS="$PKGFS_CFLAGS" CXXFLAGS="$PKGFS_CXXFLAGS" \
+			$MAKE_CMD ${make_build_args}
 		if [ "$?" -ne 0 ]; then
 			echo "*** ERROR building (make stage) $pkgname ***"
 			exit 1
@@ -273,10 +274,6 @@ build_pkg()
 		fi
 
 		echo "*** SUCCESSFUL build for $pkgname ***"
-
-		for i in "${configure_env}"; do
-			unset "$i"
-		done
 	fi
 }
 
