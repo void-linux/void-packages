@@ -1,5 +1,10 @@
 #!/bin/sh
 #
+# pkgfs - Packages from source distribution files.
+#
+#	A GNU's Stow alike approach, with some ideas from Gobolinux'
+#	Compile and maybe others.
+#
 #-
 # Copyright (c) 2008 Juan Romero Pardines.
 # All rights reserved.
@@ -27,8 +32,10 @@
 #
 # TODO
 # 	Multiple distfiles in a package.
+#	Multiple URLs to download source distribution files.
 #	Support GNU/BSD-makefile style source distribution files.
 # 	Actually do the symlink dance (stow/unstow).
+#	Fix PKGFS_{C,CXX}FLAGS, aren't passed to the make environment.
 #
 #
 # Default path to configuration file, can be overriden
@@ -306,7 +313,7 @@ build_pkg()
 		fi
 
 		/usr/bin/env CFLAGS="$PKGFS_CFLAGS" CXXFLAGS="$PKGFS_CXXFLAGS" \
-			$MAKE_CMD ${make_build_args}
+			${MAKE_CMD} ${make_build_args}
 		if [ "$?" -ne 0 ]; then
 			echo "*** ERROR building (make stage) $pkgname ***"
 			exit 1
@@ -325,10 +332,16 @@ build_pkg()
 
 build_pkg_from_source()
 {
+	save_path="$PATH"
+
+	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin"
+
 	check_build_dirs
 	check_build_vars
 	fetch_source_distfiles
 	build_pkg
+
+	export PATH="${_save_path}"
 }
 
 #
