@@ -43,6 +43,8 @@
 : ${_CKSUM_CMD:=/usr/bin/cksum -a rmd160}
 : ${_AWK_CMD:=/usr/bin/awk}
 : ${_MKDIR_CMD:=/bin/mkdir -p}
+: ${_TAR_CMD:=/usr/bin/tar}
+: ${_UNZIP_CMD:=/usr/pkg/bin/unzip}
 
 _SFILE=
 _EXTRACT_CMD=
@@ -83,7 +85,7 @@ check_path()
 	_SFILE="$orig"
 }
 
-show_info_from_buildfile()
+show_info_from_local_tmpl()
 {
 	echo "Template build file definitions:"
 	echo
@@ -122,24 +124,24 @@ check_build_vars()
 		eval i=\""$$i\""
 		if [ -z "$i" ]; then
 			echo -n "*** ERROR: $i not set (incomplete build"
-			echo " file), aborting ***"
+			echo	" file), aborting ***"
 			exit 1
 		fi
 	done
 
 	case "$extract_sufx" in
 	.tar.bz2|.tar.gz|.tgz|.tbz)
-		_EXTRACT_CMD="tar xvfz $dfile -C $PKGFS_BUILDDIR"
+		_EXTRACT_CMD="${_TAR_CMD} xvfz $dfile -C $PKGFS_BUILDDIR"
 		;;
 	.tar)
-		_EXTRACT_CMD="tar xvf $dfile -C $PKGFS_BUILDDIR"
+		_EXTRACT_CMD="${_TAR_CMD} xvf $dfile -C $PKGFS_BUILDDIR"
 		;;
 	.zip)
-		_EXTRACT_CMD="unzip -x $dfile -C $PKGFS_BUILDDIR"
+		_EXTRACT_CMD="${_UNZIP_CMD} -x $dfile -C $PKGFS_BUILDDIR"
 		;;
 	*)
 		echo -n "*** ERROR: unknown 'extract_sufx' argument in build "
-		echo "file ***"
+		echo	"file ***"
 		exit 1
 		;;
 	esac
@@ -210,6 +212,27 @@ fetch_source_distfiles()
 
 check_build_dirs()
 {
+	check_path "${PKGFS_CONFIG_FILE}"
+	. ${_SFILE}
+
+	if [ ! -f "${PKGFS_CONFIG_FILE}" ]; then
+		echo -n "*** ERROR: cannot find global config file: "
+		echo	"'${PKGFS_CONFIG_FILE}' ***"
+		exit 1
+	fi
+
+	if [ -z "${PKGFS_DESTDIR}" ]; then
+		echo -n	"*** ERROR: PKGFS_DESTDIR not set in configuration"
+		echo	" file ***"
+		exit 1
+	fi
+
+	if [ -z "${PKGFS_BUILDDIR}" ]; then
+		echo -n	"*** ERROR PKGFS_BUILDDIR not set in configuration"
+		echo	" file ***"
+		exit 1;
+	fi
+
 	if [ ! -d "$PKGFS_DESTDIR" ]; then
 		${_MKDIR_CMD} "$PKGFS_DESTDIR"
 		if [ "$?" -ne 0 ]; then
@@ -242,7 +265,6 @@ check_build_dirs()
 
 build_pkg()
 {
-
 	echo "*** Extracting package: $pkgname ***"
 	${_EXTRACT_CMD}
 	if [ "$?" -ne 0 ]; then
@@ -303,8 +325,8 @@ build_pkg()
 
 build_pkg_from_source()
 {
-	check_build_vars
 	check_build_dirs
+	check_build_vars
 	fetch_source_distfiles
 	build_pkg
 }
@@ -353,24 +375,6 @@ fi
 check_path "${_buildfile}"
 . ${_SFILE}
 
-if [ ! -f "${PKGFS_CONFIG_FILE}" ]; then
-	echo -n "*** ERROR: cannot find global config file: "
-	echo "'${PKGFS_CONFIG_FILE}' ***"
-	exit 1
-fi
-
-check_path "${PKGFS_CONFIG_FILE}"
-. ${_SFILE}
-
-if [ -z "${PKGFS_DESTDIR}" ]; then
-	echo "*** ERROR: PKGFS_DESTDIR not set in configuration file ***"
-	exit 1
-fi
-
-if [ -z "${PKGFS_BUILDDIR}" ]; then
-	echo "*** ERROR PKGFS_BUILDDIR not set in configuration file ***"
-	exit 1;
-fi
 
 # Main switch
 case "${_target}" in
@@ -378,7 +382,7 @@ build)
 	build_pkg_from_source
 	;;
 info)
-	show_info_from_buildfile
+	show_info_from_local_tmpl
 	;;
 *)
 	echo "*** ERROR invalid target '${_target}' ***"
