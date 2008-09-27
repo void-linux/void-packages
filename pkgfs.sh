@@ -2,9 +2,6 @@
 #
 # pkgfs - Builds source distribution files.
 #
-#	A GNU's Stow alike approach, with some ideas from Gobolinux'
-#	Compile and maybe others.
-#
 #-
 # Copyright (c) 2008 Juan Romero Pardines.
 # All rights reserved.
@@ -111,60 +108,39 @@ info_tmpl()
 	echo "$long_desc"
 }
 
-check_build_dirs()
+check_build_vars()
 {
-	check_path "$PKGFS_CONFIG_FILE"
-	. $path_fixed
-
 	if [ ! -f "$PKGFS_CONFIG_FILE" ]; then
-		echo -n "*** ERROR: cannot find global config file: "
+		echo -n "*** ERROR: cannot find configuration file: "
 		echo	"'$PKGFS_CONFIG_FILE' ***"
 		exit 1
 	fi
 
-	if [ -z "$PKGFS_DESTDIR" ]; then
-		echo -n	"*** ERROR: PKGFS_DESTDIR not set in configuration"
-		echo	" file ***"
-		exit 1
-	fi
+	check_path "$PKGFS_CONFIG_FILE"
+	. $path_fixed
 
-	if [ -z "$PKGFS_BUILDDIR" ]; then
-		echo -n	"*** ERROR PKGFS_BUILDDIR not set in configuration"
-		echo	" file ***"
-		exit 1;
-	fi
+	local PKGFS_VARS="PKGFS_MASTERDIR PKGFS_DESTDIR PKGFS_BUILDDIR \
+			  PKGFS_SRC_DISTDIR"
 
-	if [ ! -d "$PKGFS_DESTDIR" ]; then
-		$mkdir_cmd "$PKGFS_DESTDIR"
-		if [ "$?" -ne 0 ]; then
-			echo -n "*** ERROR: couldn't create PKGFS_DESTDIR "
-			echo "directory, aborting ***"
+	for f in ${PKGFS_VARS}; do
+		eval val="\$$f"
+		if [ -z "$val" ]; then
+			echo "**** ERROR: '$f' not set in configuration "
+			echo "file, aborting ***"
 			exit 1
 		fi
-	fi
-
-	if [ ! -d "$PKGFS_BUILDDIR" ]; then
-		$mkdir_cmd "$PKGFS_BUILDDIR"
-		if [ "$?" -ne 0 ]; then
-			echo -n "*** ERROR: couldn't create PKFS_BUILDDIR "
-			echo "directory, aborting ***"
-			exit 1
+		if [ ! -d "$f" ]; then
+			$mkdir_cmd "$val"
+			if [ "$?" -ne 0 ]; then
+				echo -n "*** ERROR: couldn't create '$f'"
+				echo "directory, aborting ***"
+				exit 1
+			fi
 		fi
-	fi
-
-	if [ -z "$PKGFS_SRC_DISTDIR" ]; then
-		echo "*** ERROR: PKGFS_SRC_DISTDIR is not set, aborting ***"
-		exit 1
-	fi
-
-	$mkdir_cmd "$PKGFS_SRC_DISTDIR"
-	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR couldn't create PKGFS_SRC_DISTDIR, aborting ***"
-		exit 1
-	fi
+	done
 }
 
-check_build_vars()
+check_tmpl_vars()
 {
 	local dfile=""
 
@@ -368,8 +344,8 @@ build_tmpl()
 
 	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$PKGFS_DESTDIR/bin:$PKGFS_DESTDIR/sbin"
 
-	check_build_dirs
 	check_build_vars
+	check_tmpl_vars
 
 	if [ "$only_build" ]; then
 		build_tmpl_sources
