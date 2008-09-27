@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# pkgfs - Packages from source distribution files.
+# pkgfs - Builds source distribution files.
 #
 #	A GNU's Stow alike approach, with some ideas from Gobolinux'
 #	Compile and maybe others.
@@ -35,7 +35,7 @@
 #	Multiple URLs to download source distribution files.
 #	Support GNU/BSD-makefile style source distribution files.
 # 	Actually do the symlink dance (stow/unstow).
-#	Fix PKGFS_{C,CXX}FLAGS, aren't passed to the make environment.
+#	Fix PKGFS_{C,CXX}FLAGS, aren't passed to the environment yet.
 #
 #
 # Default path to configuration file, can be overriden
@@ -44,27 +44,30 @@
 : ${PKGFS_CONFIG_FILE:=/usr/local/etc/pkgfs.conf}
 
 # Global private stuff
-: ${_progname:=$(basename $0)}
-: ${_TOP:=$(/bin/pwd -P 2>/dev/null)}
-: ${_FETCH_CMD:=/usr/bin/ftp -a}
-: ${_CKSUM_CMD:=/usr/bin/cksum -a rmd160}
-: ${_AWK_CMD:=/usr/bin/awk}
-: ${_MKDIR_CMD:=/bin/mkdir -p}
-: ${_TAR_CMD:=/usr/bin/tar}
-: ${_UNZIP_CMD:=/usr/pkg/bin/unzip}
+: ${progname:=$(basename $0)}
+: ${topdir:=$(/bin/pwd -P 2>/dev/null)}
+: ${fetch_cmd:=/usr/bin/ftp -a}
+: ${cksum_cmd:=/usr/bin/cksum -a rmd160}
+: ${awk_cmd:=/usr/bin/awk}
+: ${mkdir_cmd:=/bin/mkdir -p}
+: ${tar_cmd:=/usr/bin/tar}
+: ${unzip_cmd:=/usr/pkg/bin/unzip}
+: ${rm_cmd:=/bin/rm}
 
-_SFILE=
-_EXTRACT_CMD=
-
-usage() {
+usage()
+{
 	cat << _EOF
-$_progname: [-cef] <target> <file>
+$progname: [-bCef] [-c <config_file>] <target> <tmpl>
 
 Targets
-	build	Build package from <file>.
-	info	Show information about <file>.
+	build	Build source distribution from <tmpl>.
+	info	Show information about <tmpl>.
+	stow	Create symlinks from <tmpl> in master directory.
+	unstow	Remove symlinks from <tmpl> in master directory.
 
 Options
+	-b	Only build the source distribution file(s).
+	-C	Clean build directory after successful build.
 	-c	Path to global configuration file.
 		If not specified /usr/local/etc/pkgfs.conf is used.
 	-e	Only extract the source distribution file(s).
@@ -76,7 +79,7 @@ _EOF
 
 check_path()
 {
-	eval orig="$1"
+	eval local orig="$1"
 
 	case "$orig" in
 	/)
@@ -85,16 +88,16 @@ check_path()
 		orig="${orig%/}"
 		;;
 	*)
-		orig="${_TOP}/${orig%/}"
+		orig="$topdir/${orig%/}"
 		;;
 	esac
 
-	_SFILE="$orig"
+	path_fixed="$orig"
 }
 
-show_info_from_local_tmpl()
+info_tmpl()
 {
-	echo "Template build file definitions:"
+	echo "pkgfs template source distribution:"
 	echo
 	echo "	pkgname:	$pkgname"
 	for i in "${distfiles}"; do
@@ -102,16 +105,68 @@ show_info_from_local_tmpl()
 	done
 	echo "	URL:		$url"
 	echo "	maintainer:	$maintainer"
-	[ -n "${checksum}" ] && echo "	checksum:	$checksum"
+	[ -n $checksum ] && echo "	checksum:	$checksum"
 	echo "	build_style:	$build_style"
 	echo "	short_desc:	$short_desc"
 	echo "$long_desc"
-	echo
+}
+
+check_build_dirs()
+{
+	check_path "$PKGFS_CONFIG_FILE"
+	. $path_fixed
+
+	if [ ! -f "$PKGFS_CONFIG_FILE" ]; then
+		echo -n "*** ERROR: cannot find global config file: "
+		echo	"'$PKGFS_CONFIG_FILE' ***"
+		exit 1
+	fi
+
+	if [ -z "$PKGFS_DESTDIR" ]; then
+		echo -n	"*** ERROR: PKGFS_DESTDIR not set in configuration"
+		echo	" file ***"
+		exit 1
+	fi
+
+	if [ -z "$PKGFS_BUILDDIR" ]; then
+		echo -n	"*** ERROR PKGFS_BUILDDIR not set in configuration"
+		echo	" file ***"
+		exit 1;
+	fi
+
+	if [ ! -d "$PKGFS_DESTDIR" ]; then
+		$mkdir_cmd "$PKGFS_DESTDIR"
+		if [ "$?" -ne 0 ]; then
+			echo -n "*** ERROR: couldn't create PKGFS_DESTDIR "
+			echo "directory, aborting ***"
+			exit 1
+		fi
+	fi
+
+	if [ ! -d "$PKGFS_BUILDDIR" ]; then
+		$mkdir_cmd "$PKGFS_BUILDDIR"
+		if [ "$?" -ne 0 ]; then
+			echo -n "*** ERROR: couldn't create PKFS_BUILDDIR "
+			echo "directory, aborting ***"
+			exit 1
+		fi
+	fi
+
+	if [ -z "$PKGFS_SRC_DISTDIR" ]; then
+		echo "*** ERROR: PKGFS_SRC_DISTDIR is not set, aborting ***"
+		exit 1
+	fi
+
+	$mkdir_cmd "$PKGFS_SRC_DISTDIR"
+	if [ "$?" -ne 0 ]; then
+		echo "*** ERROR couldn't create PKGFS_SRC_DISTDIR, aborting ***"
+		exit 1
+	fi
 }
 
 check_build_vars()
 {
-	local dfile=
+	local dfile=""
 
 	if [ -z "$distfiles" ]; then
 		dfile="$pkgname$extract_sufx"
@@ -124,27 +179,27 @@ check_build_vars()
 
 	dfile="$PKGFS_SRC_DISTDIR/$dfile"
 
-	REQ_VARS="pkgname extract_sufx url build_style checksum"
+	REQ_VARS="pkgname extract_sufx url build_style"
 
 	# Check if required vars weren't set.
-	for i in "${REQ_VARS}"; do
-		eval i=\""$$i\""
-		if [ -z "$i" ]; then
-			echo -n "*** ERROR: $i not set (incomplete build"
-			echo	" file), aborting ***"
+	for i in ${REQ_VARS}; do
+		eval val="\$$i"
+		if [ -z "$val" -o -z "$i" ]; then
+			echo -n "*** ERROR: $i not set (incomplete template"
+			echo	" build file), aborting ***"
 			exit 1
 		fi
 	done
 
 	case "$extract_sufx" in
 	.tar.bz2|.tar.gz|.tgz|.tbz)
-		_EXTRACT_CMD="${_TAR_CMD} xvfz $dfile -C $PKGFS_BUILDDIR"
+		extract_cmd="$tar_cmd xvfz $dfile -C $PKGFS_BUILDDIR"
 		;;
 	.tar)
-		_EXTRACT_CMD="${_TAR_CMD} xvf $dfile -C $PKGFS_BUILDDIR"
+		extract_cmd="$tar_cmd xvf $dfile -C $PKGFS_BUILDDIR"
 		;;
 	.zip)
-		_EXTRACT_CMD="${_UNZIP_CMD} -x $dfile -C $PKGFS_BUILDDIR"
+		extract_cmd="$unzip_cmd -x $dfile -C $PKGFS_BUILDDIR"
 		;;
 	*)
 		echo -n "*** ERROR: unknown 'extract_sufx' argument in build "
@@ -168,7 +223,7 @@ check_rmd160_cksum()
 
 	origsum="$checksum"
 	dfile="$PKGFS_SRC_DISTDIR/$dfile"
-	filesum="$(${_CKSUM_CMD} $dfile | ${_AWK_CMD} '{print $4}')"
+	filesum="$($cksum_cmd $dfile | $awk_cmd '{print $4}')"
 	if [ "$origsum" != "$filesum" ]; then
 		echo "*** WARNING: checksum doesn't match (rmd160) ***"
 		return 1
@@ -177,9 +232,10 @@ check_rmd160_cksum()
 	return 0
 }
 
-fetch_source_distfiles()
+fetch_tmpl_sources()
 {
-	local file=
+	local file=""
+	local file2=""
 
 	if [ -z "$distfiles" ]; then
 		file="$pkgname"
@@ -188,110 +244,79 @@ fetch_source_distfiles()
 	fi
 
 	for f in "$file"; do
-		if [ -f "$PKGFS_SRC_DISTDIR/$f$extract_sufx" ]; then
+		file2="$f$extract_sufx"
+		if [ -f "$PKGFS_SRC_DISTDIR/$file2" ]; then
 			check_rmd160_cksum $f
 			if [ "$?" -eq 0 ]; then
-				if [ -n "${only_fetch}" ]; then
-					echo
-					echo -n "=> checksum ok"
-					echo 	" (only_fetch set)"
+				if [ -n "$only_fetch" ]; then
+					echo "=> checksum ok"
 					exit 0
 				fi
 				return 0
 			fi
 		fi
-		echo "*** Fetching $f ***"
-		cd "$PKGFS_SRC_DISTDIR" && \
-			${_FETCH_CMD} $url/$f$extract_sufx
+
+		echo "*** Fetching source distribution file '$file2' ***"
+
+		cd $PKGFS_SRC_DISTDIR && $fetch_cmd $url/$file2
 		if [ "$?" -ne 0 ]; then
-			echo -n "*** ERROR: there was an error fetching "
-			echo	"'$f', aborting ***"
+			if [ ! -f $PKGFS_SRC_DISTDIR/$file2 ]; then
+				echo -n "*** ERROR: couldn't fetch '$file2', "
+				echo	"aborting ***"
+			else
+				echo -n "*** ERROR: there was an error "
+				echo	"fetching '$file2', aborting ***"
+			fi
 			exit 1
 		else
-			if [ -n "${only_fetch}" ]; then
-				echo
-				echo "=> checksum ok (only_fetch set)"
+			if [ -n "$only_fetch" ]; then
+				echo "=> checksum ok"
 				exit 0
 			fi
 		fi
 	done
 }
 
-check_build_dirs()
+extract_tmpl_sources()
 {
-	check_path "${PKGFS_CONFIG_FILE}"
-	. ${_SFILE}
+	echo "***"
+	echo "*** Extracting source distribution from $pkgname ***"
+	echo "***"
 
-	if [ ! -f "${PKGFS_CONFIG_FILE}" ]; then
-		echo -n "*** ERROR: cannot find global config file: "
-		echo	"'${PKGFS_CONFIG_FILE}' ***"
-		exit 1
-	fi
-
-	if [ -z "${PKGFS_DESTDIR}" ]; then
-		echo -n	"*** ERROR: PKGFS_DESTDIR not set in configuration"
-		echo	" file ***"
-		exit 1
-	fi
-
-	if [ -z "${PKGFS_BUILDDIR}" ]; then
-		echo -n	"*** ERROR PKGFS_BUILDDIR not set in configuration"
-		echo	" file ***"
-		exit 1;
-	fi
-
-	if [ ! -d "$PKGFS_DESTDIR" ]; then
-		${_MKDIR_CMD} "$PKGFS_DESTDIR"
-		if [ "$?" -ne 0 ]; then
-			echo -n "*** ERROR: couldn't create PKGFS_DESTDIR "
-			echo "directory, aborting ***"
-			exit 1
-		fi
-	fi
-
-	if [ ! -d "$PKGFS_BUILDDIR" ]; then
-		${_MKDIR_CMD} "$PKGFS_BUILDDIR"
-		if [ "$?" -ne 0 ]; then
-			echo -n "*** ERROR: couldn't create PKFS_BUILDDIR "
-			echo "directory, aborting ***"
-			exit 1
-		fi
-	fi
-
-	if [ -z "$PKGFS_SRC_DISTDIR" ]; then
-		echo "*** ERROR: PKGFS_SRC_DISTDIR is not set, aborting ***"
-		exit 1
-	fi
-
-	${_MKDIR_CMD} "$PKGFS_SRC_DISTDIR"
-	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR couldn't create PKGFS_SRC_DISTDIR, aborting ***"
-		exit 1
-	fi
-}
-
-build_pkg()
-{
-	echo "*** Extracting package: $pkgname ***"
-	${_EXTRACT_CMD}
+	$extract_cmd
 	if [ "$?" -ne 0 ]; then
 		echo -n "*** ERROR: there was an error extracting the "
 		echo "distfile, aborting *** "
 		exit 1
 	fi
 
-	[ -n "${only_extract}" ] && exit 0
+	[ -n "$only_extract" ] && exit 0
+}
 
-	echo "*** Building package: $pkgname ***"
+build_tmpl_sources()
+{
+	local pkg_builddir=""
+
 	if [ -z "$wrksrc" ]; then
 		if [ -z "$distfiles" ]; then
-			cd $PKGFS_BUILDDIR/$pkgname
+			pkg_builddir=$PKGFS_BUILDDIR/$pkgname
 		else
-			cd $PKGFS_BUILDDIR/$distfiles
+			pkg_builddir=$PKGFS_BUILDDIR/$distfiles
 		fi
 	else
-		cd $PKGFS_BUILDDIR/$wrksrc
+		pkg_builddir=$PKGFS_BUILDDIR/$wrksrc
 	fi
+
+	if [ ! -d "$pkg_builddir" ]; then
+		echo "*** ERROR: build directory does not exist, aborting ***"
+		exit 1
+	fi
+
+	echo "***"
+	echo "*** Building binary distribution from $pkgname ***"
+	echo "***"
+
+	cd $pkg_builddir
 	#
 	# Packages using GNU autoconf
 	#
@@ -300,7 +325,7 @@ build_pkg()
 			[ -n "$i" ] && export "$i"
 		done
 
-		./configure --prefix="${PKGFS_DESTDIR}" "${configure_args}"
+		./configure --prefix="$PKGFS_DESTDIR" "$configure_args"
 		if [ "$?" -ne 0 ]; then
 			echo -n "*** ERROR building (configure state)"
 			echo " $pkgname ***"
@@ -312,8 +337,7 @@ build_pkg()
 			MAKE_CMD="$make_cmd"
 		fi
 
-		/usr/bin/env CFLAGS="$PKGFS_CFLAGS" CXXFLAGS="$PKGFS_CXXFLAGS" \
-			${MAKE_CMD} ${make_build_args}
+		${MAKE_CMD} ${make_build_args}
 		if [ "$?" -ne 0 ]; then
 			echo "*** ERROR building (make stage) $pkgname ***"
 			exit 1
@@ -326,20 +350,36 @@ build_pkg()
 			exit 1
 		fi
 
-		echo "*** SUCCESSFUL build for $pkgname ***"
+		echo "***"
+		echo "*** binary distribution built for $pkgname ***"
+
+		if [ -d "$pkg_builddir" -a -n "$clean_builddir" ]; then
+			$rm_cmd -rf $pkg_builddir
+			[ "$?" -eq 0 ] && echo "***  removed build directory"
+		fi
+
+		echo "***"
 	fi
 }
 
-build_pkg_from_source()
+build_tmpl()
 {
-	save_path="$PATH"
+	local save_path="$PATH"
 
-	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin"
+	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$PKGFS_DESTDIR/bin:$PKGFS_DESTDIR/sbin"
 
 	check_build_dirs
 	check_build_vars
-	fetch_source_distfiles
-	build_pkg
+
+	if [ "$only_build" ]; then
+		build_tmpl_sources
+		exit 0
+	fi
+
+	fetch_tmpl_sources
+	extract_tmpl_sources
+	build_tmpl_sources
+	build_tmp_symlinks
 
 	export PATH="$save_path"
 }
@@ -347,12 +387,18 @@ build_pkg_from_source()
 #
 # main()
 #
-args=$(getopt c:ef $*)
+args=$(getopt bCc:ef $*)
 [ "$?" -ne 0 ] && usage
 
 set -- $args
 while [ "$#" -gt 0 ]; do
 	case "$1" in
+	-b)
+		only_build=yes
+		;;
+	-C)
+		clean_builddir=yes
+		;;
 	-c)
 		PKGFS_CONFIG_FILE="$2"
 		shift
@@ -373,32 +419,32 @@ done
 
 [ "$#" -gt 2 ] && usage
 
-_target="$1"
-if [ -z "${_target}" ]; then
+target="$1"
+if [ -z "$target" ]; then
 	echo "*** ERROR missing target ***"
 	usage
 fi
 
-_buildfile="$2"
-if [ -z "${_buildfile}" -o ! -f "${_buildfile}" ]; then
-	echo "*** ERROR: invalid template file '${_buildfile}', aborting ***"
+tmplfile="$2"
+if [ -z "$tmplfile" -o ! -f "$tmplfile" ]; then
+	echo "*** ERROR: invalid template file '$tmplfile', aborting ***"
 	exit 1
 fi
 
-check_path "${_buildfile}"
-. ${_SFILE}
+check_path "$tmplfile"
+. $path_fixed
 
 
 # Main switch
-case "${_target}" in
+case "$target" in
 build)
-	build_pkg_from_source
+	build_tmpl
 	;;
 info)
-	show_info_from_local_tmpl
+	info_tmpl
 	;;
 *)
-	echo "*** ERROR invalid target '${_target}' ***"
+	echo "*** ERROR invalid target '$target' ***"
 	usage
 esac
 
