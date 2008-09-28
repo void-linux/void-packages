@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # pkgfs - Builds source distribution files and stows/unstows them into
-#	  a master directory.
+#	  a master directory, thanks to Xstow.
 #
 #-
 # Copyright (c) 2008 Juan Romero Pardines.
@@ -33,6 +33,7 @@
 #	Multiple URLs to download source distribution files.
 #	Support GNU/BSD-makefile style source distribution files.
 #	Fix PKGFS_{C,CXX}FLAGS, aren't passed to the environment yet.
+#	Support adding filters to templates to avoid creating useless links.
 #
 #
 # Default path to configuration file, can be overriden
@@ -116,7 +117,7 @@ run_file()
 
 info_tmpl()
 {
-	tmplfile="$1"
+	local tmplfile="$1"
 	if [ -z "$tmplfile" -o ! -f "$tmplfile" ]; then
 		echo -n "*** ERROR: invalid template file '$tmplfile',"
 		echo ", aborting ***"
@@ -413,6 +414,10 @@ build_tmpl_sources()
 	echo "*** Building binary distribution from $pkgname ***"
 
 	#
+	# For now, just set LDFLAGS.
+	#
+	export LDFLAGS="-L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib"
+	#
 	# Packages using GNU autoconf
 	#
 	if [ "$build_style" = "gnu_configure" ]; then
@@ -424,6 +429,9 @@ build_tmpl_sources()
 		./configure	--prefix="$PKGFS_MASTERDIR" ${configure_args} \
 				--mandir="$PKGFS_DESTDIR/$pkgname/man"
 
+	#
+	# Packages using propietary configure scripts.
+	#
 	elif [ "$build_style" = "configure" ]; then
 
 		cd $pkg_builddir
@@ -461,6 +469,8 @@ build_tmpl_sources()
 		echo "*** ERROR instaling $pkgname ***"
 		exit 1
 	fi
+
+	unset LDFLAGS
 
 	echo "*** binary distribution built for $pkgname ***"
 
