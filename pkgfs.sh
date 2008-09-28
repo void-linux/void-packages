@@ -40,7 +40,6 @@
 #
 : ${PKGFS_CONFIG_FILE:=/usr/local/etc/pkgfs.conf}
 
-# Global private stuff
 : ${progname:=$(basename $0)}
 : ${topdir:=$(/bin/pwd -P 2>/dev/null)}
 : ${fetch_cmd:=/usr/bin/ftp -a}
@@ -50,6 +49,20 @@
 : ${tar_cmd:=/usr/bin/tar}
 : ${unzip_cmd:=/usr/pkg/bin/unzip}
 : ${rm_cmd:=/bin/rm}
+: ${mv_cmd:=/bin/mv}
+: ${cp_cmd:=/bin/cp}
+: ${sed_cmd=/usr/bin/sed}
+: ${grep_cmd=/usr/bin/grep}
+: ${gunzip_cmd:=/usr/bin/gunzip}
+: ${bunzip2_cmd:=/usr/bin/bunzip2}
+: ${patch_cmd:=/usr/bin/patch}
+: ${find_cmd:=/usr/bin/find}
+: ${file_cmd:=/usr/bin/file}
+: ${ln_cmd:=/bin/ln}
+: ${chmod_cmd:=/bin/chmod}
+
+: ${xstow_version:=xstow-0.6.1-unstable}
+: ${xstow_args:=-ap}
 
 usage()
 {
@@ -64,7 +77,7 @@ Targets
 
 Options
 	-b	Only build the source distribution file(s).
-	-C	Clean build directory after successful build.
+	-C	Do not remove build directory after successful build.
 	-c	Path to global configuration file.
 		If not specified /usr/local/etc/pkgfs.conf is used.
 	-e	Only extract the source distribution file(s).
@@ -92,8 +105,25 @@ check_path()
 	path_fixed="$orig"
 }
 
+run_file()
+{
+	local file="$1"
+
+	check_path "$file"
+	. $path_fixed
+}
+
 info_tmpl()
 {
+	tmplfile="$1"
+	if [ -z "$tmplfile" -o ! -f "$tmplfile" ]; then
+		echo -n "*** ERROR: invalid template file '$tmplfile',"
+		echo ", aborting ***"
+		exit 1
+	fi
+
+	run_file ${tmplfile}
+
 	echo "pkgfs template source distribution:"
 	echo
 	echo "	pkgname:	$pkgname"
@@ -108,16 +138,61 @@ info_tmpl()
 	echo "$long_desc"
 }
 
+apply_tmpl_patches()
+{
+	if [ -z "$PKGFS_TEMPLATESDIR" ]; then
+		echo -n "*** WARNING: PKGFS_TEMPLATESDIR is not set, "
+		echo "won't apply patches ***"
+		return 1
+	fi
+
+	#
+	# If package needs some patches applied before building,
+	# apply them now.
+	#
+	if [ -n "$patch_files" ]; then
+		for i in ${patch_files}; do
+			patch="$PKGFS_TEMPLATESDIR/$i"
+			if [ ! -f "$patch" ]; then
+				echo "*** WARNING: unexistent patch '$i' ***"
+				continue
+			fi
+
+			# Try to guess if its a compressed patch.
+			if $(echo $patch|$grep_cmd -q .gz); then
+				$gunzip_cmd $patch
+				patch=${patch%%.gz}
+			elif $(echo $patch|$grep_cmd -q .bz2); then
+				$bunzip2_cmd $patch
+				patch=${patch%%.bz2}
+			elif $(echo $patch|$grep_cmd -q .diff); then
+				# nada
+			else
+				echo "*** WARNING: unknown patch type '$i' ***"
+				continue
+			fi
+
+			cd $pkg_builddir && $patch_cmd < $patch 2>/dev/null
+			if [ "$?" -eq 0 ]; then
+				echo "*** patch applied: '$i' ***"
+			else
+				echo -n "*** ERROR: couldn't apply patch '$i'"
+				echo ", aborting ***"
+				exit 1
+			fi
+		done
+	fi
+}
+
 check_build_vars()
 {
-	if [ ! -f "$PKGFS_CONFIG_FILE" ]; then
+	run_file ${PKGFS_CONFIG_FILE}
+
+	if [ ! -f "$path_fixed" ]; then
 		echo -n "*** ERROR: cannot find configuration file: "
 		echo	"'$PKGFS_CONFIG_FILE' ***"
 		exit 1
 	fi
-
-	check_path "$PKGFS_CONFIG_FILE"
-	. $path_fixed
 
 	local PKGFS_VARS="PKGFS_MASTERDIR PKGFS_DESTDIR PKGFS_BUILDDIR \
 			  PKGFS_SRC_DISTDIR"
@@ -140,20 +215,32 @@ check_build_vars()
 	done
 }
 
+reset_tmpl_vars()
+{
+	local TMPL_VARS="pkgname extract_sufx distfiles url configure_args \
+			make_build_args make_install_args build_style \
+			short_desc maintainer long_desc checksum wrksrc \
+			patch_files"
+
+	for i in ${TMPL_VARS}; do
+		unset $i
+	done
+}
+
 check_tmpl_vars()
 {
 	local dfile=""
 
-	if [ -z "$distfiles" ]; then
-		dfile="$pkgname$extract_sufx"
-	elif [ -n "${distfiles}" ]; then
-		dfile="$distfiles$extract_sufx"
+	if [ -z "$build_xstow" ]; then
+		run_file ${tmplfile}
 	else
-		echo "*** ERROR unsupported fetch state ***"
-		exit 1
+		reset_tmpl_vars
+		pkgname="$xstow_version"
+		extract_sufx=".tar.bz2"
+		url="http://kent.dl.sourceforge.net/sourceforge/xstow"
+		checksum="9b99bd9affe9a841503970e903555ce340fcf296"
+		build_style="gnu_configure"
 	fi
-
-	dfile="$PKGFS_SRC_DISTDIR/$dfile"
 
 	REQ_VARS="pkgname extract_sufx url build_style"
 
@@ -167,12 +254,23 @@ check_tmpl_vars()
 		fi
 	done
 
+	if [ -z "$distfiles" ]; then
+		dfile="$pkgname$extract_sufx"
+	elif [ -n "${distfiles}" ]; then
+		dfile="$distfiles$extract_sufx"
+	else
+		echo "*** ERROR unsupported fetch state ***"
+		exit 1
+	fi
+
+	dfile="$PKGFS_SRC_DISTDIR/$dfile"
+
 	case "$extract_sufx" in
 	.tar.bz2|.tar.gz|.tgz|.tbz)
-		extract_cmd="$tar_cmd xvfz $dfile -C $PKGFS_BUILDDIR"
+		extract_cmd="$tar_cmd xfz $dfile -C $PKGFS_BUILDDIR"
 		;;
 	.tar)
-		extract_cmd="$tar_cmd xvf $dfile -C $PKGFS_BUILDDIR"
+		extract_cmd="$tar_cmd xf $dfile -C $PKGFS_BUILDDIR"
 		;;
 	.zip)
 		extract_cmd="$unzip_cmd -x $dfile -C $PKGFS_BUILDDIR"
@@ -204,8 +302,6 @@ check_rmd160_cksum()
 		echo "*** WARNING: checksum doesn't match (rmd160) ***"
 		return 1
 	fi
-
-	return 0
 }
 
 fetch_tmpl_sources()
@@ -255,9 +351,7 @@ fetch_tmpl_sources()
 
 extract_tmpl_sources()
 {
-	echo "***"
 	echo "*** Extracting source distribution from $pkgname ***"
-	echo "***"
 
 	$extract_cmd
 	if [ "$?" -ne 0 ]; then
@@ -267,6 +361,24 @@ extract_tmpl_sources()
 	fi
 
 	[ -n "$only_extract" ] && exit 0
+}
+
+fixup_tmpl_libtool()
+{
+	local lt_file="$pkg_builddir/libtool"
+
+	#
+	# If package has a libtool file replace it with ours, so that
+	# we use the master directory while relinking, all will be fine
+	# once the package is stowned.
+	#
+	if [ -f "$lt_file" -a -f "$PKGFS_MASTERDIR/bin/libtool" ]; then
+		$rm_cmd -f $pkg_builddir/libtool
+		$rm_cmd -f $pkg_builddir/ltmain.sh
+		$ln_cmd -s $PKGFS_MASTERDIR/bin/libtool $lt_file
+		$ln_cmd -s $PKGFS_MASTERDIR/share/libtool/config/ltmain.sh \
+			 $pkg_builddir/ltmain.sh
+	fi
 }
 
 build_tmpl_sources()
@@ -288,66 +400,139 @@ build_tmpl_sources()
 		exit 1
 	fi
 
-	echo "***"
-	echo "*** Building binary distribution from $pkgname ***"
-	echo "***"
+	# Apply patches if requested by template file
+	apply_tmpl_patches
 
-	cd $pkg_builddir
+	echo "*** Building binary distribution from $pkgname ***"
+
 	#
 	# Packages using GNU autoconf
 	#
 	if [ "$build_style" = "gnu_configure" ]; then
-		for i in "${configure_env}"; do
-			[ -n "$i" ] && export "$i"
+		for i in ${configure_env}; do
+			[ -n "$i" ] && export $i
 		done
 
-		./configure --prefix="$PKGFS_DESTDIR" "$configure_args"
-		if [ "$?" -ne 0 ]; then
-			echo -n "*** ERROR building (configure state)"
-			echo " $pkgname ***"
-			exit 1
-		fi
-		if [ -z "$make_cmd" ]; then
-			MAKE_CMD="/usr/bin/make"
+		cd $pkg_builddir
+		./configure	--prefix="$PKGFS_MASTERDIR" ${configure_args} \
+				--mandir="$PKGFS_DESTDIR/$pkgname/man"
+
+	elif [ "$build_style" = "configure" ]; then
+
+		cd $pkg_builddir
+
+		if [ -n "$configure_script" ]; then
+			./$configure_script ${configure_args}
 		else
-			MAKE_CMD="$make_cmd"
+			./configure ${configure_args}
 		fi
+	fi
 
-		${MAKE_CMD} ${make_build_args}
-		if [ "$?" -ne 0 ]; then
-			echo "*** ERROR building (make stage) $pkgname ***"
-			exit 1
-		fi
+	if [ "$?" -ne 0 ]; then
+		echo "*** ERROR building (configure state) $pkgname ***"
+		exit 1
+	fi
 
-		${MAKE_CMD} ${make_install_args} \
-			install prefix="$PKGFS_DESTDIR/$pkgname"
-		if [ "$?" -ne 0 ]; then
-			echo "*** ERROR instaling $pkgname ***"
-			exit 1
-		fi
+	if [ -z "$make_cmd" ]; then
+		MAKE_CMD="/usr/bin/make"
+	else
+		MAKE_CMD="$make_cmd"
+	fi
 
-		echo "***"
-		echo "*** binary distribution built for $pkgname ***"
+	# Fixup libtool script if necessary
+	fixup_tmpl_libtool
 
-		if [ -d "$pkg_builddir" -a -n "$clean_builddir" ]; then
-			$rm_cmd -rf $pkg_builddir
-			[ "$?" -eq 0 ] && echo "***  removed build directory"
-		fi
+	${MAKE_CMD} ${make_build_args}
+	if [ "$?" -ne 0 ]; then
+		echo "*** ERROR building (make stage) $pkgname ***"
+		exit 1
+	fi
 
-		echo "***"
+	${MAKE_CMD} ${make_install_args} \
+		install prefix="$PKGFS_DESTDIR/$pkgname"
+	if [ "$?" -ne 0 ]; then
+		echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
+		echo "*** ERROR instaling $pkgname ***"
+		exit 1
+	fi
+
+	echo "*** binary distribution built for $pkgname ***"
+
+	if [ -d "$pkg_builddir" -a -z "$dontrm_builddir" ]; then
+		$rm_cmd -rf $pkg_builddir
+		[ "$?" -eq 0 ] && echo "***  removed build directory"
+	fi
+
+	cd $PKGFS_BUILDDIR
+}
+
+check_stow_cmd()
+{
+	# If we have the xstow binary it's done
+	[ -x "$PKGFS_XSTOW_CMD" ] && return 0
+
+	#
+	# Looks like we don't, build our own and re-adjust config file.
+	# For now we use the latest available, because 0.5.1 doesn't
+	# build with gcc4.
+	#
+	build_xstow=yes
+
+	#
+	# That's enough, build xstow and stow it!
+	#
+	build_tmpl
+}
+
+stow_tmpl()
+{
+	local pkg="$1"
+
+	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
+		${xstow_args} $PKGFS_DESTDIR/$pkg
+	if [ "$?" -ne 0 ]; then
+		echo "*** ERROR: couldn't create symlinks for '$pkg' ***"
+		exit 1
+	else
+		echo "*** Created symlinks into $PKGFS_MASTERDIR for '$pkg' ***"
+	fi
+
+	if [ -n "$build_xstow" ]; then
+		check_path "$PKGFS_CONFIG_FILE"
+		$sed_cmd -e "s|PKGFS_XSTOW_.*|PKGFS_XSTOW_CMD=$PKGFS_MASTERDIR/bin/xstow|" \
+			$path_fixed > $path_fixed.in && \
+			$mv_cmd $path_fixed.in $path_fixed
+	fi
+
+}
+
+unstow_tmpl()
+{
+	local pkg="$1"
+
+	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
+		-D $PKGFS_DESTDIR/$pkg
+	if [ "$?" -ne 0 ]; then
+		exit 1
+	else
+		echo "*** Removed symlinks from $PKGFS_MASTERDIR for '$pkg' ***"
 	fi
 }
 
 build_tmpl()
 {
-	local save_path="$PATH"
+	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$PKGFS_MASTERDIR/bin:$PKGFS_MASTERDIR/sbin"
 
-	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$PKGFS_DESTDIR/bin:$PKGFS_DESTDIR/sbin"
+	tmplfile="$1"
+	if [ -z "$tmplfile" -o ! -f "$tmplfile" ]; then
+		echo "*** ERROR: invalid template file '$tmplfile', aborting ***"
+		exit 1
+	fi
 
 	check_build_vars
 	check_tmpl_vars
 
-	if [ "$only_build" ]; then
+	if [ -n "$only_build" ]; then
 		build_tmpl_sources
 		exit 0
 	fi
@@ -355,9 +540,24 @@ build_tmpl()
 	fetch_tmpl_sources
 	extract_tmpl_sources
 	build_tmpl_sources
-	build_tmp_symlinks
 
-	export PATH="$save_path"
+	if [ -n "$build_xstow" ]; then
+		#
+		# We must use the temporary path until xstow is stowned.
+		#
+		PKGFS_XSTOW_CMD="$PKGFS_DESTDIR/$xstow_version/bin/xstow"
+		stow_tmpl $xstow_version
+		#
+		# xstow has been stowned, now stown the origin package.
+		#
+		unset build_xstow
+		reset_tmpl_vars
+		run_file ${tmplfile}
+	else
+		check_stow_cmd
+	fi
+
+	stow_tmpl $pkgname
 }
 
 #
@@ -373,7 +573,7 @@ while [ "$#" -gt 0 ]; do
 		only_build=yes
 		;;
 	-C)
-		clean_builddir=yes
+		dontrm_builddir=yes
 		;;
 	-c)
 		PKGFS_CONFIG_FILE="$2"
@@ -401,23 +601,21 @@ if [ -z "$target" ]; then
 	usage
 fi
 
-tmplfile="$2"
-if [ -z "$tmplfile" -o ! -f "$tmplfile" ]; then
-	echo "*** ERROR: invalid template file '$tmplfile', aborting ***"
-	exit 1
-fi
-
-check_path "$tmplfile"
-. $path_fixed
-
-
 # Main switch
 case "$target" in
 build)
-	build_tmpl
+	build_tmpl "$2"
 	;;
 info)
-	info_tmpl
+	info_tmpl "$2"
+	;;
+stow)
+	run_file ${PKGFS_CONFIG_FILE}
+	stow_tmpl "$2"
+	;;
+unstow)
+	run_file ${PKGFS_CONFIG_FILE}
+	unstow_tmpl "$2"
 	;;
 *)
 	echo "*** ERROR invalid target '$target' ***"
