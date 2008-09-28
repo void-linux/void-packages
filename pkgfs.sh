@@ -29,12 +29,12 @@
 #-
 #
 # TODO
-# 	Multiple distfiles in a package.
-#	Multiple URLs to download source distribution files.
-#	Support GNU/BSD-makefile style source distribution files.
-#	Fix PKGFS_{C,CXX}FLAGS, aren't passed to the environment yet.
-#	Support adding filters to templates to avoid creating useless links.
-#
+# 	- Multiple distfiles in a package.
+#	- Multiple URLs to download source distribution files.
+#	- Support GNU/BSD-makefile style source distribution files.
+#	- Fix PKGFS_{C,CXX}FLAGS, aren't passed to the environment yet.
+#	- Support adding filters to templates to avoid creating useless links.
+#	- Save somewhere which package was stowned and use it to process deps.
 #
 # Default path to configuration file, can be overriden
 # via the environment or command line.
@@ -71,8 +71,9 @@ usage()
 $progname: [-bCef] [-c <config_file>] <target> <tmpl>
 
 Targets
-	build	Build source distribution from <tmpl>.
 	info	Show information about <tmpl>.
+	install	Build and install package from <tmpl>.
+	remove	Remove package completely (unstow and remove from destdir)
 	stow	Create symlinks from <tmpl> in master directory.
 	unstow	Remove symlinks from <tmpl> in master directory.
 
@@ -126,7 +127,7 @@ info_tmpl()
 
 	run_file ${tmplfile}
 
-	echo "pkgfs template source distribution:"
+	echo " pkgfs template definitions:"
 	echo
 	echo "	pkgname:	$pkgname"
 	for i in "${distfiles}"; do
@@ -176,7 +177,7 @@ apply_tmpl_patches()
 
 			cd $pkg_builddir && $patch_cmd < $patch 2>/dev/null
 			if [ "$?" -eq 0 ]; then
-				echo "*** patch applied: '$i' ***"
+				echo ">> Patch applied: \`$i'."
 			else
 				echo -n "*** ERROR: couldn't apply patch '$i'"
 				echo ", aborting ***"
@@ -221,9 +222,9 @@ check_build_vars()
 reset_tmpl_vars()
 {
 	local TMPL_VARS="pkgname extract_sufx distfiles url configure_args \
-			make_build_args make_install_args build_style \
-			short_desc maintainer long_desc checksum wrksrc \
-			patch_files"
+			make_build_args make_install_args build_style	\
+			short_desc maintainer long_desc checksum wrksrc	\
+			patch_files configure_env"
 
 	for i in ${TMPL_VARS}; do
 		unset $i
@@ -334,7 +335,7 @@ fetch_tmpl_sources()
 			fi
 		fi
 
-		echo "*** Fetching source distribution file '$file2' ***"
+		echo ">>> Fetching \'$file2' source tarball"
 
 		cd $PKGFS_SRC_DISTDIR && $fetch_cmd $url/$file2
 		if [ "$?" -ne 0 ]; then
@@ -357,7 +358,7 @@ fetch_tmpl_sources()
 
 extract_tmpl_sources()
 {
-	echo "*** Extracting source distribution from $pkgname ***"
+	echo ">>> Extracting \`$pkgname' into $PKGFS_BUILDDIR."
 
 	$extract_cmd
 	if [ "$?" -ne 0 ]; then
@@ -404,14 +405,14 @@ build_tmpl_sources()
 	fi
 
 	if [ ! -d "$pkg_builddir" ]; then
-		echo "*** ERROR: build directory does not exist, aborting ***"
+		echo "*** ERROR: unexistent build directory, aborting ***"
 		exit 1
 	fi
 
 	# Apply patches if requested by template file
 	apply_tmpl_patches
 
-	echo "*** Building binary distribution from $pkgname ***"
+	echo ">>> Building \`$pkgname' (be patient, may take a while)"
 
 	#
 	# For now, just set LDFLAGS.
@@ -472,11 +473,12 @@ build_tmpl_sources()
 
 	unset LDFLAGS
 
-	echo "*** binary distribution built for $pkgname ***"
+	echo ">>> Installed \`$pkgname' into the master directory."
 
 	if [ -d "$pkg_builddir" -a -z "$dontrm_builddir" ]; then
 		$rm_cmd -rf $pkg_builddir
-		[ "$?" -eq 0 ] && echo "***  removed build directory"
+		[ "$?" -eq 0 ] && \
+			echo ">> Removed \`$pkgname' build directory."
 	fi
 
 	cd $PKGFS_BUILDDIR
@@ -502,9 +504,9 @@ check_stow_cmd()
 	build_xstow=yes
 
 	#
-	# That's enough, build xstow and stow it!
+	# That's enough, build/install xstow and stow it!
 	#
-	build_tmpl "$pkg"
+	install_tmpl "$pkg"
 }
 
 stow_tmpl()
@@ -516,10 +518,10 @@ stow_tmpl()
 	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
 		${xstow_args} $PKGFS_DESTDIR/$pkg
 	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR: couldn't create symlinks for '$pkg' ***"
+		echo "*** ERROR: couldn't create symlinks for \`$pkg' ***"
 		exit 1
 	else
-		echo "*** Created symlinks into $PKGFS_MASTERDIR for '$pkg' ***"
+		echo ">>> Created \`$pkg' symlinks into master directory."
 	fi
 
 	if [ -n "$build_xstow" ]; then
@@ -542,7 +544,7 @@ unstow_tmpl()
 
 	local tmppkg="${pkg%-[0-9]*}"
 	if [ "$tmppkg" = "xstow" ]; then
-		echo "*** INFO: You aren't allowed to unstow '$xstow_version'!"
+		echo "*** INFO: You aren't allowed to unstow \`$xstow_version'."
 		exit 1
 	fi
 
@@ -551,11 +553,11 @@ unstow_tmpl()
 	if [ "$?" -ne 0 ]; then
 		exit 1
 	else
-		echo "*** Removed symlinks from $PKGFS_MASTERDIR for '$pkg' ***"
+		echo ">>> Removed \`$pkg' symlinks from master directory."
 	fi
 }
 
-build_tmpl()
+install_tmpl()
 {
 	tmplfile="$1"
 	if [ -z "$build_xstow" ]; then
@@ -602,6 +604,27 @@ build_tmpl()
 	reset_tmpl_vars
 }
 
+remove_tmpl()
+{
+	local pkg="$1"
+
+	if [ -z "$pkg" ]; then
+		echo "*** ERROR: unexistent package, aborting ***"
+		exit 1
+	fi
+
+	run_file ${PKGFS_CONFIG_FILE}
+
+	if [ ! -d "$PKGFS_DESTDIR/$pkg" ]; then
+		echo "*** ERROR: cannot find package on $PKGFS_DESTDIR ***"
+		exit 1
+	fi
+
+	unstow_tmpl ${pkg}
+	$rm_cmd -rf $PKGFS_DESTDIR/$pkg
+	return $?
+}
+
 #
 # main()
 #
@@ -645,11 +668,14 @@ fi
 
 # Main switch
 case "$target" in
-build)
-	build_tmpl "$2"
-	;;
 info)
 	info_tmpl "$2"
+	;;
+install)
+	install_tmpl "$2"
+	;;
+remove)
+	remove_tmpl "$2"
 	;;
 stow)
 	run_file ${PKGFS_CONFIG_FILE}
