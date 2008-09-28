@@ -1,6 +1,7 @@
 #!/bin/sh
 #
-# pkgfs - Builds source distribution files.
+# pkgfs - Builds source distribution files and stows/unstows them into
+#	  a master directory.
 #
 #-
 # Copyright (c) 2008 Juan Romero Pardines.
@@ -31,7 +32,6 @@
 # 	Multiple distfiles in a package.
 #	Multiple URLs to download source distribution files.
 #	Support GNU/BSD-makefile style source distribution files.
-# 	Actually do the symlink dance (stow/unstow).
 #	Fix PKGFS_{C,CXX}FLAGS, aren't passed to the environment yet.
 #
 #
@@ -111,6 +111,7 @@ run_file()
 
 	check_path "$file"
 	. $path_fixed
+
 }
 
 info_tmpl()
@@ -187,8 +188,9 @@ apply_tmpl_patches()
 check_build_vars()
 {
 	run_file ${PKGFS_CONFIG_FILE}
+	PKGFS_CONFIG_FILE=$path_fixed
 
-	if [ ! -f "$path_fixed" ]; then
+	if [ ! -f "$PKGFS_CONFIG_FILE" ]; then
 		echo -n "*** ERROR: cannot find configuration file: "
 		echo	"'$PKGFS_CONFIG_FILE' ***"
 		exit 1
@@ -229,17 +231,18 @@ reset_tmpl_vars()
 
 check_tmpl_vars()
 {
+	local pkg="$1"
 	local dfile=""
 
-	if [ -z "$build_xstow" ]; then
-		run_file ${tmplfile}
-	else
+	[ -z "$pkg" ] && return 1
+
+	if [ -n "$build_xstow" ]; then
+		#
+		# Looks like xstow is not available and we have to install it.
+		#
 		reset_tmpl_vars
-		pkgname="$xstow_version"
-		extract_sufx=".tar.bz2"
-		url="http://kent.dl.sourceforge.net/sourceforge/xstow"
-		checksum="9b99bd9affe9a841503970e903555ce340fcf296"
-		build_style="gnu_configure"
+		pkg="$PKGFS_TEMPLATESDIR/$xstow_version.tmpl"
+		run_file ${pkg}
 	fi
 
 	REQ_VARS="pkgname extract_sufx url build_style"
@@ -285,14 +288,16 @@ check_tmpl_vars()
 
 check_rmd160_cksum()
 {
-	local passed_var="$1"
+	local file="$1"
+
+	[ -z "$file" ] && return 1
 
 	if [ -z "${distfiles}" ]; then
 		dfile="$pkgname$extract_sufx"
 	elif [ -n "${distfiles}" ]; then
 		dfile="$distfiles$extract_sufx"
 	else
-		dfile="$passed_var$extract_sufx"
+		dfile="$file$extract_sufx"
 	fi
 
 	origsum="$checksum"
@@ -385,6 +390,8 @@ build_tmpl_sources()
 {
 	local pkg_builddir=""
 
+	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$PKGFS_MASTERDIR/bin:$PKGFS_MASTERDIR/sbin"
+
 	if [ -z "$wrksrc" ]; then
 		if [ -z "$distfiles" ]; then
 			pkg_builddir=$PKGFS_BUILDDIR/$pkgname
@@ -451,7 +458,6 @@ build_tmpl_sources()
 	${MAKE_CMD} ${make_install_args} \
 		install prefix="$PKGFS_DESTDIR/$pkgname"
 	if [ "$?" -ne 0 ]; then
-		echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
 		echo "*** ERROR instaling $pkgname ***"
 		exit 1
 	fi
@@ -468,8 +474,15 @@ build_tmpl_sources()
 
 check_stow_cmd()
 {
+	local pkg="$1"
+
+	[ -z "$pkg" ] && return 1
+
 	# If we have the xstow binary it's done
-	[ -x "$PKGFS_XSTOW_CMD" ] && return 0
+	if [ -x "$PKGFS_XSTOW_CMD" ]; then
+		unset build_xstow
+		return 0
+	fi
 
 	#
 	# Looks like we don't, build our own and re-adjust config file.
@@ -481,12 +494,14 @@ check_stow_cmd()
 	#
 	# That's enough, build xstow and stow it!
 	#
-	build_tmpl
+	build_tmpl "$pkg"
 }
 
 stow_tmpl()
 {
 	local pkg="$1"
+
+	[ -z "$pkg" ] && return 2
 
 	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
 		${xstow_args} $PKGFS_DESTDIR/$pkg
@@ -510,6 +525,17 @@ unstow_tmpl()
 {
 	local pkg="$1"
 
+	if [ -z "$pkg" ]; then
+		echo "*** ERROR: template wasn't specified? ***"
+		exit 1
+	fi
+
+	local tmppkg="${pkg%-[0-9]*}"
+	if [ "$tmppkg" = "xstow" ]; then
+		echo "*** INFO: You aren't allowed to unstow '$xstow_version'!"
+		exit 1
+	fi
+
 	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
 		-D $PKGFS_DESTDIR/$pkg
 	if [ "$?" -ne 0 ]; then
@@ -521,16 +547,21 @@ unstow_tmpl()
 
 build_tmpl()
 {
-	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$PKGFS_MASTERDIR/bin:$PKGFS_MASTERDIR/sbin"
-
 	tmplfile="$1"
-	if [ -z "$tmplfile" -o ! -f "$tmplfile" ]; then
-		echo "*** ERROR: invalid template file '$tmplfile', aborting ***"
-		exit 1
+	if [ -z "$build_xstow" ]; then
+		if [ -z "$tmplfile" -o ! -f "$tmplfile" ]; then
+			echo -n "*** ERROR: invalid template file '$tmplfile',"
+			echo " aborting ***"
+			exit 1
+		fi
+		check_build_vars
 	fi
 
-	check_build_vars
-	check_tmpl_vars
+	run_file ${tmplfile}
+	tmplfile=$path_fixed
+	prev_tmpl=$path_fixed
+
+	check_tmpl_vars ${pkgname}
 
 	if [ -n "$only_build" ]; then
 		build_tmpl_sources
@@ -550,14 +581,15 @@ build_tmpl()
 		#
 		# xstow has been stowned, now stown the origin package.
 		#
-		unset build_xstow
-		reset_tmpl_vars
-		run_file ${tmplfile}
-	else
-		check_stow_cmd
+		run_file ${prev_tmpl}
+		tmplfile=${prev_tmpl}
 	fi
 
+	check_stow_cmd ${tmplfile}
+	[ "$?" -eq 1 ] && return 0
+
 	stow_tmpl $pkgname
+	reset_tmpl_vars
 }
 
 #
