@@ -362,7 +362,7 @@ extract_tmpl_sources()
 {
 	[ -z "$pkgname" ] && return 1
 
-	echo ">>> Extracting \`$pkgname' into $PKGFS_BUILDDIR."
+	echo ">>> Extracting $pkgname into $PKGFS_BUILDDIR."
 
 	$extract_cmd
 	if [ "$?" -ne 0 ]; then
@@ -425,6 +425,7 @@ build_tmpl_sources()
 	# For now, just set LDFLAGS.
 	#
 	export LDFLAGS="-L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib"
+
 	#
 	# Packages using GNU autoconf
 	#
@@ -592,9 +593,14 @@ install_dependency_tmpl()
 	add_dependency_tolist $pkgdepf
 
 	for i in ${deps_list}; do
+		# skip dup deps
+		check_installed_tmpl $i
+		[ "$?" -eq 0 ] && continue
 		echo ">>> Installing dependency: $i"
 		install_tmpl "${PKGFS_TEMPLATESDIR}/${i%%-deps.db}.tmpl"
 	done
+
+	deps_list=
 }
 
 install_xstow_tmpl()
