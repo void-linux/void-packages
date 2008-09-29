@@ -35,7 +35,6 @@
 #	- Support GNU/BSD-makefile style source distribution files.
 #	- Fix PKGFS_{C,CXX}FLAGS, aren't passed to the environment yet.
 #	- Support adding filters to templates to avoid creating useless links.
-#	- Save somewhere which package was stowned and use it to process deps.
 #
 # Default path to configuration file, can be overriden
 # via the environment or command line.
@@ -697,16 +696,20 @@ install_tmpl()
 	check_tmpl_vars ${pkgname}
 
 	#
-	# Handle required dependency for this template only iff it
+	# Handle required dependency for this template iff it
 	# is not installed and if we are being invoked by a dependency.
 	#
 	local pkgdepf="$PKGFS_DEPSDIR/$pkgname-deps.db"
 	if [ -r "$pkgdepf" -a -z "$doing_deps" ]; then
 		install_dependency_tmpl ${pkgdepf}
+		#
+		# At this point all required deps are installed, and
+		# only remaining is the origin template; install it.
+		#
 		doing_deps=
-		echo "Origin template: $origin_tmpl"
 		reset_tmpl_vars
 		run_file ${origin_tmpl}
+		check_tmpl_vars ${pkgname}
 	fi
 
 	if [ -n "$only_build" ]; then
