@@ -486,7 +486,7 @@ build_tmpl_sources()
 
 	unset LDFLAGS
 
-	echo ">>> Installed \`$pkgname' into the master directory."
+	echo ">>> Installed \`$pkgname' into $PKGFS_DESTDIR/$pkgname."
 
 	if [ -d "$pkg_builddir" -a -z "$dontrm_builddir" ]; then
 		$rm_cmd -rf $pkg_builddir
