@@ -75,6 +75,7 @@ $progname: [-bCef] [-c <config_file>] <target> <tmpl>
 Targets
 	info	Show information about <tmpl>.
 	install	Build and install package from <tmpl>.
+	list	Lists and prints short description about installed packages.
 	remove	Remove package completely (unstow and remove from destdir)
 	stow	Create symlinks from <tmpl> in master directory.
 	unstow	Remove symlinks from <tmpl> in master directory.
@@ -737,6 +738,25 @@ install_tmpl()
 	stow_tmpl ${pkgname}
 }
 
+list_tmpls()
+{
+	local reg_pkgdb="$PKGFS_DESTDIR/$PKGFS_REGISTERED_PKG_DB"
+
+	if [ ! -r "$reg_pkgdb" ]; then
+		echo "*** ERROR: couldn't find the $reg_pkgdb, aborting ***"
+		exit 1
+	fi
+
+	for i in $($db_cmd btree $reg_pkgdb); do
+		# Skip stowned value
+		[ "$i" = "stowned" ] && continue
+		# Run file to get short_desc and print something useful
+		run_file ${PKGFS_TEMPLATESDIR}/$i.tmpl
+		echo "$i		$short_desc"
+		reset_tmpl_vars
+	done
+}
+
 remove_tmpl()
 {
 	local pkg="$1"
@@ -807,6 +827,9 @@ info)
 	;;
 install)
 	install_tmpl "$2"
+	;;
+list)
+	list_tmpls
 	;;
 remove)
 	remove_tmpl "$2"
