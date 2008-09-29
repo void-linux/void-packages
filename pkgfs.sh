@@ -29,7 +29,6 @@
 #-
 #
 # TODO
-#	- milosn says: "pkgfs.sh -c pkgfs.conf build glib" work
 # 	- Multiple distfiles in a package.
 #	- Multiple URLs to download source distribution files.
 #	- Support GNU/BSD-makefile style source distribution files.
@@ -97,6 +96,9 @@ check_path()
 	eval local orig="$1"
 
 	case "$orig" in
+	$PKGFS_TEMPLATESDIR)
+		orig="$PKGFS_TEMPLATESDIR/$orig"
+		;;
 	/)
 		;;
 	/*)
@@ -122,13 +124,13 @@ run_file()
 info_tmpl()
 {
 	local tmpl="$1"
-	if [ -z "$tmpl" -o ! -f "$tmpl" ]; then
-		echo -n "*** ERROR: invalid template file '$tmpl',"
+	if [ -z "$tmpl" -o ! -f "$PKGFS_TEMPLATESDIR/$tmpl.tmpl" ]; then
+		echo -n "*** ERROR: invalid template file '$tmpl'"
 		echo ", aborting ***"
 		exit 1
 	fi
 
-	run_file ${tmpl}
+	run_file ${PKGFS_TEMPLATESDIR}/${tmpl}.tmpl
 
 	echo " pkgfs template definitions:"
 	echo
@@ -201,9 +203,15 @@ check_config_vars()
 		exit 1
 	fi
 
-	if [ -z "$PKGFS_DEPSDIR" ]; then
+	if [ ! -d "$PKGFS_DEPSDIR" ]; then
 		echo -n "**** ERROR: PKGFS_DEPSDIR not set in configuration "
 		echo "file, aborting ***"
+		exit 1
+	fi
+
+	if [ ! -d "$PKGFS_TEMPLATESDIR" ]; then
+		echo -n "*** ERROR: PKGFS_TEMPLATESDIR cannot be read"
+		echo ", aborting ***"
 		exit 1
 	fi
 
@@ -603,7 +611,7 @@ install_dependency_tmpl()
 		check_installed_tmpl $i
 		[ "$?" -eq 0 ] && continue
 		echo ">>> Installing dependency: $i"
-		install_tmpl "${PKGFS_TEMPLATESDIR}/${i%%-deps.db}.tmpl"
+		install_tmpl "${i%-deps.db}"
 	done
 
 	deps_list=
@@ -678,7 +686,7 @@ check_installed_tmpl()
 
 install_tmpl()
 {
-	cur_tmpl="$1"
+	cur_tmpl="$PKGFS_TEMPLATESDIR/$1.tmpl"
 	if [ -z "$cur_tmpl" -o ! -f "$cur_tmpl" ]; then
 		echo -n "*** ERROR: invalid template file '$cur_tmpl',"
 		echo " aborting ***"
