@@ -302,6 +302,11 @@ check_rmd160_cksum()
 		dfile="$file$extract_sufx"
 	fi
 
+	if [ -z "$checksum" ]; then
+		echo "*** ERROR: checksum unset in template file for $pkgname ***"
+		exit 1
+	fi
+
 	origsum="$checksum"
 	dfile="$PKGFS_SRC_DISTDIR/$dfile"
 	filesum="$($cksum_cmd $dfile | $awk_cmd '{print $4}')"
