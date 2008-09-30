@@ -473,9 +473,8 @@ build_tmpl_sources()
 	#
 	# For now, just set LDFLAGS.
 	#
-	LDFLAGS="$LDFLAGS -L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib"
-	PKG_CONFIG="$PKGFS_MASTERDIR/bin/pkg-config"
-	export LDFLAGS PKG_CONFIG PKG_CONFIG_LIBDIR
+	export LDFLAGS="-L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib $LDFLAGS"
+	export PKG_CONFIG="$PKGFS_MASTERDIR/bin/pkg-config"
 
 	#
 	# Packages using GNU autoconf
