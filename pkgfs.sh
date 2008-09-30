@@ -121,6 +121,32 @@ run_file()
 
 }
 
+#
+# This function merges two GNU info dirs into one and puts the result
+# into PKGFS_MASTERDIR/share/info/dir.
+#
+merge_infodir_tmpl()
+{
+	local pkgname="$1"
+	local merge_info_cmd="$PKGFS_MASTERDIR/bin/merge-info"
+
+	[ -z "$pkgname" ] && return 1
+	[ ! -r "$PKGFS_MASTERDIR/share/info/dir" ] && return 1
+	[ ! -r "$PKGFS_DESTDIR/$pkgname/share/info/dir" ] && return 1
+
+	$merge_info_cmd -d $PKGFS_MASTERDIR/share/info/dir 	\
+		$PKGFS_DESTDIR/$pkgname/share/info/dir -o 	\
+		$PKGFS_MASTERDIR/share/info/dir.new
+	if [ "$?" -ne 0 ]; then
+		echo -n "*** WARNING: there was an error merging info dir from"
+		echo " $pkgname, aborting ***"
+		return 1
+	fi
+
+	$mv_cmd -f $PKGFS_MASTERDIR/share/info/dir.new \
+		$PKGFS_MASTERDIR/share/info/dir
+}
+
 info_tmpl()
 {
 	local tmpl="$1"
@@ -448,7 +474,8 @@ build_tmpl_sources()
 	# For now, just set LDFLAGS.
 	#
 	LDFLAGS="$LDFLAGS -L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib"
-	export LDFLAGS
+	PKG_CONFIG="$PKGFS_MASTERDIR/bin/pkg-config"
+	export LDFLAGS PKG_CONFIG PKG_CONFIG_LIBDIR
 
 	#
 	# Packages using GNU autoconf
@@ -459,8 +486,15 @@ build_tmpl_sources()
 		done
 
 		cd $pkg_builddir
-		./configure	--prefix="$PKGFS_MASTERDIR" ${configure_args} \
-				--mandir="$PKGFS_DESTDIR/$pkgname/man"
+		#
+		# Pass consistent arguments to not have unexpected
+		# surprises later.
+		#
+		./configure	--prefix="$PKGFS_MASTERDIR" \
+				--exec-prefix="$PKGFS_DESTDIR/$pkgname" \
+				--mandir="$PKGFS_DESTDIR/$pkgname/man" \
+				--infodir="$PKGFS_DESTDIR/$pkgname/share/info" \
+				${configure_args}
 
 	#
 	# Packages using propietary configure scripts.
@@ -503,7 +537,7 @@ build_tmpl_sources()
 		exit 1
 	fi
 
-	unset LDFLAGS
+	unset LDFLAGS PKG_CONFIG
 
 	echo ">>> Installed \`$pkgname' into $PKGFS_DESTDIR/$pkgname."
 
@@ -519,11 +553,22 @@ build_tmpl_sources()
 stow_tmpl()
 {
 	local pkg="$1"
+	local infodir_pkg="share/info/dir"
+	local infodir_master="$PKGFS_MASTERDIR/share/info/dir"
 
 	[ -z "$pkg" ] && return 2
 
+	if [ -r "$PKGFS_DESTDIR/$pkg/$infodir_pkg" ]; then
+		merge_infodir_tmpl ${pkg}
+	fi
+
+	if [ -r "$PKGFS_DESTDIR/$pkg/$infodir_pkg" -a -r "$infodir_master" ]; then
+		xstow_args="$xstow_args -i-file-in-dir $infodir_pkg"
+	fi
+
 	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
-		${xstow_args} $PKGFS_DESTDIR/$pkg
+		${xstow_args} -pd-targets $PKGFS_MASTERDIR \
+		$PKGFS_DESTDIR/$pkg
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR: couldn't create symlinks for \`$pkg' ***"
 		exit 1
@@ -550,7 +595,7 @@ unstow_tmpl()
 	fi
 
 	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
-		-D $PKGFS_DESTDIR/$pkg
+		-D -ignore $PKGFS_DESTDIR/$pkg/share/info/dir $PKGFS_DESTDIR/$pkg
 	if [ "$?" -ne 0 ]; then
 		exit 1
 	else
