@@ -365,7 +365,6 @@ fetch_tmpl_sources()
 			exit 1
 		else
 			if [ -n "$only_fetch" ]; then
-				echo "=> checksum ok"
 				exit 0
 			fi
 		fi
@@ -438,7 +437,8 @@ build_tmpl_sources()
 	#
 	# For now, just set LDFLAGS.
 	#
-	export LDFLAGS="-L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib"
+	LDFLAGS="$LDFLAGS -L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib"
+	export LDFLAGS
 
 	#
 	# Packages using GNU autoconf
