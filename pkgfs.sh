@@ -66,6 +66,22 @@
 : ${xstow_version:=xstow-0.6.1-unstable}
 : ${xstow_args:=-ap}
 
+set_defvars()
+{
+	# Directories
+	: ${PKGFS_TEMPLATESDIR:=$PKGFS_DISTRIBUTIONDIR/templates}
+	: ${PKGFS_DEPSDIR:=$PKGFS_DISTRIBUTIONDIR/dependencies}
+	: ${PKGFS_TMPLHELPDIR:=$PKGFS_DISTRIBUTIONDIR/helper-templates}
+
+	local DDIRS="PKGFS_DEPSDIR PKGFS_TEMPLATESDIR PKGFS_TMPLHELPDIR"
+	for i in ${DDIRS}; do
+		if [ ! -d "$PKGFS_DEPSDIR" ]; then
+			echo "**** ERROR: cannot find $i, aborting ***"
+			exit 1
+		fi
+	done
+}
+
 usage()
 {
 	cat << _EOF
@@ -96,9 +112,6 @@ check_path()
 	eval local orig="$1"
 
 	case "$orig" in
-	$PKGFS_TEMPLATESDIR)
-		orig="$PKGFS_TEMPLATESDIR/$orig"
-		;;
 	/)
 		;;
 	/*)
@@ -118,7 +131,6 @@ run_file()
 
 	check_path "$file"
 	. $path_fixed
-
 }
 
 #
@@ -218,7 +230,7 @@ apply_tmpl_patches()
 
 			cd $pkg_builddir && $patch_cmd < $patch 2>/dev/null
 			if [ "$?" -eq 0 ]; then
-				echo ">> Patch applied: \`$i'."
+				echo "=> Patch applied: \`$i'."
 			else
 				echo -n "*** ERROR: couldn't apply patch '$i'"
 				echo ", aborting ***"
@@ -239,20 +251,8 @@ check_config_vars()
 		exit 1
 	fi
 
-	if [ ! -d "$PKGFS_DEPSDIR" ]; then
-		echo -n "**** ERROR: PKGFS_DEPSDIR not set in configuration "
-		echo "file, aborting ***"
-		exit 1
-	fi
-
-	if [ ! -d "$PKGFS_TEMPLATESDIR" ]; then
-		echo -n "*** ERROR: PKGFS_TEMPLATESDIR cannot be read"
-		echo ", aborting ***"
-		exit 1
-	fi
-
 	local PKGFS_VARS="PKGFS_MASTERDIR PKGFS_DESTDIR PKGFS_BUILDDIR \
-			  PKGFS_SRC_DISTDIR"
+			  PKGFS_SRCDISTDIR"
 
 	for f in ${PKGFS_VARS}; do
 		eval val="\$$f"
@@ -313,7 +313,7 @@ check_tmpl_vars()
 		exit 1
 	fi
 
-	dfile="$PKGFS_SRC_DISTDIR/$dfile"
+	dfile="$PKGFS_SRCDISTDIR/$dfile"
 
 	case "$extract_sufx" in
 	.tar.bz2|.tar.gz|.tgz|.tbz)
@@ -353,7 +353,7 @@ check_rmd160_cksum()
 	fi
 
 	origsum="$checksum"
-	dfile="$PKGFS_SRC_DISTDIR/$dfile"
+	dfile="$PKGFS_SRCDISTDIR/$dfile"
 	filesum="$($cksum_cmd $dfile | $awk_cmd '{print $4}')"
 	if [ "$origsum" != "$filesum" ]; then
 		echo "*** WARNING: checksum doesn't match (rmd160) ***"
@@ -376,7 +376,7 @@ fetch_tmpl_sources()
 
 	for f in "$file"; do
 		file2="$f$extract_sufx"
-		if [ -f "$PKGFS_SRC_DISTDIR/$file2" ]; then
+		if [ -f "$PKGFS_SRCDISTDIR/$file2" ]; then
 			check_rmd160_cksum $f
 			if [ "$?" -eq 0 ]; then
 				if [ -n "$only_fetch" ]; then
@@ -387,11 +387,11 @@ fetch_tmpl_sources()
 			fi
 		fi
 
-		echo ">>> Fetching \`$file2' source tarball"
+		echo "==> Fetching \`$file2' source tarball"
 
-		cd $PKGFS_SRC_DISTDIR && $fetch_cmd $url/$file2
+		cd $PKGFS_SRCDISTDIR && $fetch_cmd $url/$file2
 		if [ "$?" -ne 0 ]; then
-			if [ ! -f $PKGFS_SRC_DISTDIR/$file2 ]; then
+			if [ ! -f $PKGFS_SRCDISTDIR/$file2 ]; then
 				echo -n "*** ERROR: couldn't fetch '$file2', "
 				echo	"aborting ***"
 			else
@@ -411,7 +411,7 @@ extract_tmpl_sources()
 {
 	[ -z "$pkgname" ] && return 1
 
-	echo ">>> Extracting \`$pkgname' into $PKGFS_BUILDDIR."
+	echo "==> Extracting \`$pkgname' into $PKGFS_BUILDDIR."
 
 	$extract_cmd
 	if [ "$?" -ne 0 ]; then
@@ -468,7 +468,7 @@ build_tmpl_sources()
 	# Apply patches if requested by template file
 	apply_tmpl_patches
 
-	echo ">>> Building \`$pkgname' (be patient, may take a while)"
+	echo "==> Building \`$pkgname' (be patient, may take a while)"
 
 	#
 	# For now, just set LDFLAGS.
@@ -489,12 +489,9 @@ build_tmpl_sources()
 		# Pass consistent arguments to not have unexpected
 		# surprises later.
 		#
-		./configure	--prefix="$PKGFS_MASTERDIR" \
-				--exec-prefix="$PKGFS_DESTDIR/$pkgname" \
-				--mandir="$PKGFS_DESTDIR/$pkgname/man" \
+		./configure	--prefix="$PKGFS_MASTERDIR"		\
+				--mandir="$PKGFS_DESTDIR/$pkgname/man"	\
 				--infodir="$PKGFS_DESTDIR/$pkgname/share/info" \
-				--libdir="$PKGFS_MASTERDIR/lib" \
-				--includedir="$PKGFS_MASTERDIR/include" \
 				${configure_args}
 
 	#
@@ -538,14 +535,20 @@ build_tmpl_sources()
 		exit 1
 	fi
 
+	# Transform pkg-config files if requested by template.
+	for i in ${pkgconfig_override}; do
+		local tmpf="$PKGFS_DESTDIR/$pkgname/lib/pkgconfig/$i"
+		[ -f "$tmpf" ] && $PKGFS_TMPLHELPDIR/pkg-config-transform.sh ${tmpf}
+	done
+
 	unset LDFLAGS PKG_CONFIG
 
-	echo ">>> Installed \`$pkgname' into $PKGFS_DESTDIR/$pkgname."
+	echo "==> Installed \`$pkgname' into $PKGFS_DESTDIR/$pkgname."
 
 	if [ -d "$pkg_builddir" -a -z "$dontrm_builddir" ]; then
 		$rm_cmd -rf $pkg_builddir
 		[ "$?" -eq 0 ] && \
-			echo ">> Removed \`$pkgname' build directory."
+			echo "=> Removed \`$pkgname' build directory."
 	fi
 
 	cd $PKGFS_BUILDDIR
@@ -576,7 +579,7 @@ stow_tmpl()
 		echo "*** ERROR: couldn't create symlinks for \`$pkg' ***"
 		exit 1
 	else
-		echo ">>> Created \`$pkg' symlinks into master directory."
+		echo "==> Created \`$pkg' symlinks into master directory."
 	fi
 
 	xstow_args="$real_xstowargs"
@@ -605,7 +608,7 @@ unstow_tmpl()
 		exit 1
 	else
 		$rm_cmd -f $PKGFS_DESTDIR/$pkg/share/info/dir
-		echo ">>> Removed \`$pkg' symlinks from master directory."
+		echo "==> Removed \`$pkg' symlinks from master directory."
 	fi
 
 	installed_tmpl_handler unregister $pkg
@@ -663,7 +666,7 @@ install_dependency_tmpl()
 	doing_deps=true
 
 	tmp_pkgn=${pkgdepf%%-deps.db}
-	echo ">>> Required dependencies for $(basename $tmp_pkgn):"
+	echo "==> Required dependencies for $(basename $tmp_pkgn):"
 
 	add_dependency_tolist $pkgdepf
 
@@ -671,7 +674,7 @@ install_dependency_tmpl()
 		# skip dup deps
 		check_installed_tmpl $i
 		[ "$?" -eq 0 ] && continue
-		echo ">>> Installing dependency: $i"
+		echo "=> Installing dependency: $i"
 		install_tmpl "${i%-deps.db}"
 	done
 
@@ -886,8 +889,11 @@ if [ -z "$target" ]; then
 	usage
 fi
 
-# Check configuration vars before anyting else.
+#
+# Check configuration vars before anyting else, and set defaults vars.
+#
 check_config_vars
+set_defvars
 
 # Main switch
 case "$target" in
