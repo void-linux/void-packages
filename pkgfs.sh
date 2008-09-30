@@ -493,6 +493,8 @@ build_tmpl_sources()
 				--exec-prefix="$PKGFS_DESTDIR/$pkgname" \
 				--mandir="$PKGFS_DESTDIR/$pkgname/man" \
 				--infodir="$PKGFS_DESTDIR/$pkgname/share/info" \
+				--libdir="$PKGFS_MASTERDIR/lib" \
+				--includedir="$PKGFS_MASTERDIR/include" \
 				${configure_args}
 
 	#
