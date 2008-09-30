@@ -554,6 +554,8 @@ stow_tmpl()
 	local pkg="$1"
 	local infodir_pkg="share/info/dir"
 	local infodir_master="$PKGFS_MASTERDIR/share/info/dir"
+	local my_xstowargs=
+	local real_xstowargs="$xstow_args"
 
 	[ -z "$pkg" ] && return 2
 
@@ -565,8 +567,8 @@ stow_tmpl()
 		xstow_args="$xstow_args -i-file-in-dir $infodir_pkg"
 	fi
 
-	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
-		${xstow_args} -pd-targets $PKGFS_MASTERDIR \
+	$PKGFS_XSTOW_CMD ${xstow_args} -pd-targets $PKGFS_MASTERDIR \
+		-dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
 		$PKGFS_DESTDIR/$pkg
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR: couldn't create symlinks for \`$pkg' ***"
@@ -574,6 +576,8 @@ stow_tmpl()
 	else
 		echo ">>> Created \`$pkg' symlinks into master directory."
 	fi
+
+	xstow_args="$real_xstowargs"
 
 	installed_tmpl_handler register $pkg
 }
