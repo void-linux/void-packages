@@ -125,7 +125,7 @@ info_tmpl()
 {
 	local tmpl="$1"
 	if [ -z "$tmpl" -o ! -f "$PKGFS_TEMPLATESDIR/$tmpl.tmpl" ]; then
-		echo -n "*** ERROR: invalid template file '$tmpl'"
+		echo -n "*** ERROR: invalid template file \`$tmpl' ***"
 		echo ", aborting ***"
 		exit 1
 	fi
@@ -322,7 +322,7 @@ check_rmd160_cksum()
 	fi
 
 	if [ -z "$checksum" ]; then
-		echo "*** ERROR: checksum unset in template file for $pkgname ***"
+		echo "*** ERROR: checksum unset in template file for \`$pkgname' ***"
 		exit 1
 	fi
 
@@ -361,7 +361,7 @@ fetch_tmpl_sources()
 			fi
 		fi
 
-		echo ">>> Fetching \'$file2' source tarball"
+		echo ">>> Fetching \`$file2' source tarball"
 
 		cd $PKGFS_SRC_DISTDIR && $fetch_cmd $url/$file2
 		if [ "$?" -ne 0 ]; then
@@ -385,7 +385,7 @@ extract_tmpl_sources()
 {
 	[ -z "$pkgname" ] && return 1
 
-	echo ">>> Extracting $pkgname into $PKGFS_BUILDDIR."
+	echo ">>> Extracting \`$pkgname' into $PKGFS_BUILDDIR."
 
 	$extract_cmd
 	if [ "$?" -ne 0 ]; then
@@ -477,7 +477,7 @@ build_tmpl_sources()
 	fi
 
 	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR building (configure state) $pkgname ***"
+		echo "*** ERROR building (configure state) \`$pkgname' ***"
 		exit 1
 	fi
 
@@ -492,14 +492,14 @@ build_tmpl_sources()
 
 	${MAKE_CMD} ${make_build_args}
 	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR building (make stage) $pkgname ***"
+		echo "*** ERROR building (make stage) \`$pkgname' ***"
 		exit 1
 	fi
 
 	${MAKE_CMD} ${make_install_args} \
 		install prefix="$PKGFS_DESTDIR/$pkgname"
 	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR instaling $pkgname ***"
+		echo "*** ERROR instaling \`$pkgname' ***"
 		exit 1
 	fi
 
@@ -584,7 +584,7 @@ add_dependency_tolist()
 				echo "already installed."
 				continue
 			fi
-			echo "not installed"
+			echo "not installed."
 			# Added dep into list
 			deps_list="$i $deps_list"
 			[ -n "$prev_depf" ] && unset prev_depf
