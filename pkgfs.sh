@@ -598,10 +598,11 @@ unstow_tmpl()
 	fi
 
 	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
-		-D -ignore $PKGFS_DESTDIR/$pkg/share/info/dir $PKGFS_DESTDIR/$pkg
+		-D -i-file-in-dir share/info/dir $PKGFS_DESTDIR/$pkg
 	if [ "$?" -ne 0 ]; then
 		exit 1
 	else
+		$rm_cmd -f $PKGFS_DESTDIR/$pkg/share/info/dir
 		echo ">>> Removed \`$pkg' symlinks from master directory."
 	fi
 
