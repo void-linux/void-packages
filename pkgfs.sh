@@ -144,6 +144,16 @@ info_tmpl()
 	echo "	build_style:	$build_style"
 	echo "	short_desc:	$short_desc"
 	echo "$long_desc"
+	echo
+	if [ -r "$PKGFS_DEPSDIR/$pkgname-deps.db" ]; then
+		pkgdepf="$PKGFS_DEPSDIR/$pkgname-deps.db"
+		list="$($db_cmd btree $pkgdepf deps)"
+		echo " This package requires the following dependencies to be built:"
+		for i in ${list}; do
+			[ "$i" = "deps" ] && continue
+			echo "	$i"
+		done
+	fi
 }
 
 apply_tmpl_patches()
