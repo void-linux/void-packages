@@ -445,14 +445,14 @@ fixup_tmpl_libtool()
 
 build_tmpl_sources()
 {
-	local wrksrc=""
-
 	[ -z "$pkgname" ] && return 1
 
 	if [ -n "$distfiles" ]; then
 		wrksrc=$PKGFS_BUILDDIR/$distfiles
-	else
+	elif [ -z "$wrksrc" ]; then
 		wrksrc=$PKGFS_BUILDDIR/$pkgname
+	else
+		wrksrc=$PKGFS_BUILDDIR/$wrksrc
 	fi
 
 	if [ ! -d "$wrksrc" ]; then
