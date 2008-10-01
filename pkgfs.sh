@@ -62,6 +62,7 @@
 : ${ln_cmd:=/bin/ln}
 : ${chmod_cmd:=/bin/chmod}
 : ${db_cmd:=/usr/bin/db -q}
+: ${chmod_cmd:=/bin/chmod}
 
 : ${xstow_version:=xstow-0.6.1-unstable}
 : ${xstow_args:=-ap}
@@ -228,7 +229,7 @@ apply_tmpl_patches()
 				continue
 			fi
 
-			cd $pkg_builddir && $patch_cmd < $patch 2>/dev/null
+			cd $wrksrc && $patch_cmd < $patch 2>/dev/null
 			if [ "$?" -eq 0 ]; then
 				echo "=> Patch applied: \`$i'."
 			else
@@ -426,7 +427,7 @@ extract_tmpl_sources()
 
 fixup_tmpl_libtool()
 {
-	local lt_file="$pkg_builddir/libtool"
+	local lt_file="$wrksrc/libtool"
 
 	#
 	# If package has a libtool file replace it with ours, so that
@@ -434,36 +435,32 @@ fixup_tmpl_libtool()
 	# once the package is stowned.
 	#
 	if [ -f "$lt_file" -a -f "$PKGFS_MASTERDIR/bin/libtool" ]; then
-		$rm_cmd -f $pkg_builddir/libtool
-		$rm_cmd -f $pkg_builddir/ltmain.sh
+		$rm_cmd -f $wrksrc/libtool
+		$rm_cmd -f $wrksrc/ltmain.sh
 		$ln_cmd -s $PKGFS_MASTERDIR/bin/libtool $lt_file
 		$ln_cmd -s $PKGFS_MASTERDIR/share/libtool/config/ltmain.sh \
-			 $pkg_builddir/ltmain.sh
+			 $wrksrc/ltmain.sh
 	fi
 }
 
 build_tmpl_sources()
 {
-	local pkg_builddir=""
+	local wrksrc=""
 
 	[ -z "$pkgname" ] && return 1
 
-	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$PKGFS_MASTERDIR/bin:$PKGFS_MASTERDIR/sbin"
-
-	if [ -z "$wrksrc" ]; then
-		if [ -z "$distfiles" ]; then
-			pkg_builddir=$PKGFS_BUILDDIR/$pkgname
-		else
-			pkg_builddir=$PKGFS_BUILDDIR/$distfiles
-		fi
+	if [ -n "$distfiles" ]; then
+		wrksrc=$PKGFS_BUILDDIR/$distfiles
 	else
-		pkg_builddir=$PKGFS_BUILDDIR/$wrksrc
+		wrksrc=$PKGFS_BUILDDIR/$pkgname
 	fi
 
-	if [ ! -d "$pkg_builddir" ]; then
+	if [ ! -d "$wrksrc" ]; then
 		echo "*** ERROR: unexistent build directory, aborting ***"
 		exit 1
 	fi
+
+	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$PKGFS_MASTERDIR/bin:$PKGFS_MASTERDIR/sbin"
 
 	# Apply patches if requested by template file
 	apply_tmpl_patches
@@ -476,6 +473,12 @@ build_tmpl_sources()
 	export LDFLAGS="-L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib $LDFLAGS"
 	export PKG_CONFIG="$PKGFS_MASTERDIR/bin/pkg-config"
 
+	# Run stuff before configure.
+	if [ "$run_stuff_before" = "configure" ]; then
+		[ -f $PKGFS_TEMPLATESDIR/$run_stuff_before_configure_file ] && \
+			. $PKGFS_TEMPLATESDIR/$run_stuff_before_configure_file
+	fi
+
 	#
 	# Packages using GNU autoconf
 	#
@@ -483,8 +486,7 @@ build_tmpl_sources()
 		for i in ${configure_env}; do
 			[ -n "$i" ] && export $i
 		done
-
-		cd $pkg_builddir
+		cd $wrksrc
 		#
 		# Pass consistent arguments to not have unexpected
 		# surprises later.
@@ -498,17 +500,28 @@ build_tmpl_sources()
 	# Packages using propietary configure scripts.
 	#
 	elif [ "$build_style" = "configure" ]; then
-
-		cd $pkg_builddir
-
+		cd $wrksrc
 		if [ -n "$configure_script" ]; then
 			./$configure_script ${configure_args}
 		else
 			./configure ${configure_args}
 		fi
+	#
+	# Packages that are perl modules and use Makefile.PL files.
+	# They are all handled by the helper perl-module.sh.
+	#
+	elif [ "$build_style" = "perl_module" ]; then
+		. $PKGFS_TMPLHELPDIR/perl-module.sh
+		perl_module_build $pkgname
+	#
+	# Unknown build_style type won't work :-)
+	#
+	else
+		echo "*** ERROR unknown build_style $build_style, aborting ***"
+		exit 1
 	fi
 
-	if [ "$?" -ne 0 ]; then
+	if [ "$build_style" != "perl_module" -a "$?" -ne 0 ]; then
 		echo "*** ERROR building (configure state) \`$pkgname' ***"
 		exit 1
 	fi
@@ -522,12 +535,34 @@ build_tmpl_sources()
 	# Fixup libtool script if necessary
 	fixup_tmpl_libtool
 
+	#
+	# Run template stuff before building.
+	#
+	if [ "$run_stuff_before" = "build" ]; then
+		[ -f $PKGFS_TEMPLATESDIR/$run_stuff_before_build_file ] && \
+			. $PKGFS_TEMPLATESDIR/$run_stuff_before_build_file
+	fi
+
+	#
+	# Build package via make.
+	#
 	${MAKE_CMD} ${make_build_args}
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR building (make stage) \`$pkgname' ***"
 		exit 1
 	fi
 
+	#
+	# Run template stuff before installing.
+	#
+	if [ "$run_stuff_before" = "install" ]; then
+		[ -f $PKGFS_TEMPLATESDIR/$run_stuff_before_install_file ] && \
+			. $PKGFS_TEMPLATESDIR/$run_stuff_before_install_file
+	fi
+
+	#
+	# Install package via make.
+	#
 	${MAKE_CMD} ${make_install_args} \
 		install prefix="$PKGFS_DESTDIR/$pkgname"
 	if [ "$?" -ne 0 ]; then
@@ -535,18 +570,34 @@ build_tmpl_sources()
 		exit 1
 	fi
 
+	#
+	# Run template stuff after installing.
+	#
+	if [ "$run_stuff_after" = "install" ]; then
+		[ -f $PKGFS_TEMPLATESDIR/$run_stuff_after_install_file ] && \
+			. $PKGFS_TEMPLATESDIR/$run_stuff_after_install_file
+	fi
+
+	#
 	# Transform pkg-config files if requested by template.
+	#
 	for i in ${pkgconfig_override}; do
 		local tmpf="$PKGFS_DESTDIR/$pkgname/lib/pkgconfig/$i"
-		[ -f "$tmpf" ] && $PKGFS_TMPLHELPDIR/pkg-config-transform.sh ${tmpf}
+		[ -f "$tmpf" ] && \
+			[ -f $PKGFS_TMPLHELPDIR/pkg-config-transform.sh ] && \
+			. $PKGFS_TMPLHELPDIR/pkg-config-transform.sh
+		pkgconfig_transform_file $tmpf
 	done
 
 	unset LDFLAGS PKG_CONFIG
 
 	echo "==> Installed \`$pkgname' into $PKGFS_DESTDIR/$pkgname."
 
-	if [ -d "$pkg_builddir" -a -z "$dontrm_builddir" ]; then
-		$rm_cmd -rf $pkg_builddir
+	#
+	# Remove $wrksrc if -C not specified.
+	#
+	if [ -d "$wrksrc" -a -z "$dontrm_builddir" ]; then
+		$rm_cmd -rf $wrksrc
 		[ "$?" -eq 0 ] && \
 			echo "=> Removed \`$pkgname' build directory."
 	fi

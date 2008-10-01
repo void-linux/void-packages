@@ -32,7 +32,8 @@
 # At least it will fetch the distfile and compute the checksum, plus
 # other stuff for free... so it's not that bad, heh.
 #
-
+# Supports GNU configure, configure and perl module templates for now.
+#
 : ${ftp_cmd:=/usr/bin/ftp -a}
 : ${awk_cmd:=/usr/bin/awk}
 : ${cksum_cmd:=/usr/bin/cksum -a rmd160}
@@ -48,6 +49,7 @@ write_new_template()
 	local distdir="$PKGFS_SRCDISTDIR"
 	local checksum=
 	local dfile=
+	local tmplname=
 
 	[ ! -d $distdir -o ! -d $tmpldir -o ! -d $depsdir ] && exit 1
 
@@ -67,6 +69,9 @@ write_new_template()
 
 	if [ "$build_style" = "g" ]; then
 		build_style=gnu_configure
+	elif [ "$build_style" = "p" ]; then
+		build_style=perl_module
+		tmplname="perl-"
 	else
 		build_style=configure
 	fi
@@ -84,8 +89,11 @@ write_new_template()
 	fi
 
 	(								\
-		echo "# Template build file for '$pkg'.";		\
-		echo "pkgname=$pkg";					\
+		echo "# Template build file for '$tmplname$pkg'.";	\
+		echo "pkgname=$tmplname$pkg";				\
+		if [ -n "$perl_module" ]; then				\
+			echo "distfiles=\"$pkg\"";			\
+		fi;							\
 		echo "extract_sufx=\"$pkg_sufx\"";			\
 		echo "url=${url%%/$dfile}";				\
 		echo "build_style=$build_style";			\
@@ -99,9 +107,9 @@ write_new_template()
 		echo "maintainer=\"$maintainer\"";			\
 		echo "checksum=$checksum";				\
 		echo "long_desc=\"...\"";				\
-	) > $tmpldir/$pkg.tmpl
+	) > $tmpldir/$tmplname$pkg.tmpl
 
-	if [ ! -r "$tmpldir/$pkg.tmpl" ]; then
+	if [ ! -r "$tmpldir/$tmplname$pkg.tmpl" ]; then
 		echo "Couldn't write template, aborting."
 		exit 1
 	fi
@@ -111,15 +119,16 @@ write_new_template()
 			deps="$i $deps"
 		done
 		[ -n "$pcfiles" ] && deps="pkg-config-0.23 $deps"
+		[ -n "$perl_module" ] && deps="perl-5.10.0 $deps"
 
-		$db_cmd -C -P 512 -w btree $depsdir/$pkg-deps.db deps \
+		$db_cmd -C -P 512 -w btree $depsdir/$tmplname$pkg-deps.db deps \
 			"$deps" 2>&1 >/dev/null
 		[ "$?" -ne 0 ] && \
 			echo "Errong writing dependencies db file." && exit 1
 	fi
 
 	echo
-	echo "=> Template created at: $tmpldir/$pkg.tmpl"
+	echo "=> Template created at: $tmpldir/$tmplname$pkg.tmpl"
 	echo
 	echo "If you need more changes, do them manually. You can also look"
 	echo "at $tmpldir/example.tmpl to know what variables can be used and"
@@ -148,7 +157,7 @@ read_parameters()
 	[ -z "$version" ] && echo "-- Empty value --" && exit 1
 
 	echo "What's the build style for this template?"
-	echo -n "(g)nu_configure, (c)onfigure: "
+	echo -n "(g)nu_configure, (c)onfigure, (p)erl_module: "
 	read build_style
 	echo
 
@@ -159,6 +168,8 @@ read_parameters()
 		gnu_configure=yes
 	elif [ "$build_style" = "c" ]; then
 		configure=yes
+	elif [ "$build_style" = "p" ]; then
+		perl_module=yes
 	else
 		echo " -- Invalid answer --"
 		exit 1
@@ -179,8 +190,8 @@ read_parameters()
 	echo "Please enter exact dependencies required for this template."
 	echo "They must be separated by whitespaces, e.g: foo-1.0 blah-2.0."
 	echo
-	echo "There's no need to add gmake or pkg-config if you answered"
-	echo "yes before..."
+	echo "If it's a perl module or uses libtool/gmake, the dependency"
+	echo "will be added automatically so don't add them here again!"
 	echo -n "> "
 	read deps
 	echo

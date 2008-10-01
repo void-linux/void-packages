@@ -1,13 +1,7 @@
-#! /bin/sh
-#
 # This script will transform the pkg-config files with correct
 # directories pointing at PKGFS_MASTERDIR specified in the config file.
 #
-
-: ${sed_cmd:=/usr/bin/sed}
-: ${mv_cmd:=/bin/mv}
-
-transform_pkgconfig_file()
+pkgconfig_transform_file()
 {
 	local file="$1"
 
@@ -21,6 +15,3 @@ transform_pkgconfig_file()
 	[ "$?" -eq 0 ] && \
 		echo "=> Transformed pkg-config file: $(basename $file)."
 }
-
-transform_pkgconfig_file "$1"
-exit 0
