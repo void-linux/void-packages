@@ -110,6 +110,8 @@ write_new_template()
 		for i in $required_deps; do
 			deps="$i $deps"
 		done
+		[ -n "$pcfiles" ] && deps="pkg-config-0.23 $deps"
+
 		$db_cmd -C -P 512 -w btree $depsdir/$pkg-deps.db deps \
 			"$deps" 2>&1 >/dev/null
 		[ "$?" -ne 0 ] && \
@@ -148,6 +150,7 @@ read_parameters()
 	echo "What's the build style for this template?"
 	echo -n "(g)nu_configure, (c)onfigure: "
 	read build_style
+	echo
 
 	if [ -z "$build_style" ]; then
 		echo " -- Empty value --"
@@ -168,6 +171,7 @@ read_parameters()
 
 	echo -n "Requires GNU make this package? (y) or (n): "
 	read dep_gmake
+	echo
 	[ "$dep_gmake" = "y" ] && \
 		required_deps="gmake-3.81 $required_deps"
 	[ "$dep_gmake" = "n" ] && dep_gmake=
@@ -179,6 +183,7 @@ read_parameters()
 	echo "yes before..."
 	echo -n "> "
 	read deps
+	echo
 	[ -z "$deps" ] && echo "No dependencies, continuing..."
 
 	echo "Will this package install pkg-config files?"
@@ -188,20 +193,24 @@ read_parameters()
 	echo "Alternatively press the enter key to ignore this question."
 	echo -n "> "
 	read pcfiles
+	echo
 
 	echo "Enter full URL to download the distfile: "
 	echo -n "> "
 	read url
+	echo
 	[ -z "$url" ] && echo " -- Empty value --" && exit 1
 
 	echo "Enter short description (max 72 characters):"
 	echo -n "> "
 	read short_desc
+	echo
 
 	echo "Enter maintainer for this package, e.g: Anon <ymous.org>:"
 	echo "Alternatively press enter to ignore this question."
 	echo -n "> "
 	read maintainer
+	echo
 
 	write_new_template
 }
