@@ -39,6 +39,8 @@
 : ${sed_cmd:=/usr/bin/sed}
 : ${db_cmd:=/usr/bin/db -q}
 
+required_deps=
+
 write_new_template()
 {
 	local tmpldir="$PKGFS_DISTRIBUTIONDIR/templates"
@@ -87,12 +89,16 @@ write_new_template()
 		echo "extract_sufx=\"$pkg_sufx\"";			\
 		echo "url=${url%%/$dfile}";				\
 		echo "build_style=$build_style";			\
+		if [ -n "$dep_gmake" ]; then				\
+			echo "make_cmd=\"\$PKGFS_MASTERDIR/bin/gmake\"";	\
+		fi;							\
 		if [ -n "$pcfiles" ]; then				\
 			echo "pkgconfig_override=\"$pcfiles\"";		\
 		fi;							\
 		echo "short_desc=\"$short_desc\"";			\
+		echo "maintainer=\"$maintainer\"";			\
 		echo "checksum=$checksum";				\
-		echo "longdesc=\"...\"";				\
+		echo "long_desc=\"...\"";				\
 	) > $tmpldir/$pkg.tmpl
 
 	if [ ! -r "$tmpldir/$pkg.tmpl" ]; then
@@ -101,8 +107,9 @@ write_new_template()
 	fi
 
 	if [ -n "$deps" ]; then
-		[ -n "$pcfiles" ] && deps="pkg-config-0.23 $deps"
-
+		for i in $required_deps; do
+			deps="$i $deps"
+		done
 		$db_cmd -C -P 512 -w btree $depsdir/$pkg-deps.db deps \
 			"$deps" 2>&1 >/dev/null
 		[ "$?" -ne 0 ] && \
@@ -154,8 +161,22 @@ read_parameters()
 		exit 1
 	fi
 
+	echo -n "Requires GNU libtool this package? (y) or (n): "
+	read dep_libtool
+	[ "$dep_libtool" = "y" ] && \
+		required_deps="libtool-2.2.6a $required_deps"
+
+	echo -n "Requires GNU make this package? (y) or (n): "
+	read dep_gmake
+	[ "$dep_gmake" = "y" ] && \
+		required_deps="gmake-3.81 $required_deps"
+	[ "$dep_gmake" = "n" ] && dep_gmake=
+
 	echo "Please enter exact dependencies required for this template."
-	echo "They must be separated by whitespaces, e.g: foo-1.0 blah-2.0"
+	echo "They must be separated by whitespaces, e.g: foo-1.0 blah-2.0."
+	echo
+	echo "There's no need to add gmake or pkg-config if you answered"
+	echo "yes before..."
 	echo -n "> "
 	read deps
 	[ -z "$deps" ] && echo "No dependencies, continuing..."
@@ -176,6 +197,11 @@ read_parameters()
 	echo "Enter short description (max 72 characters):"
 	echo -n "> "
 	read short_desc
+
+	echo "Enter maintainer for this package, e.g: Anon <ymous.org>:"
+	echo "Alternatively press enter to ignore this question."
+	echo -n "> "
+	read maintainer
 
 	write_new_template
 }
