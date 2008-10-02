@@ -66,6 +66,7 @@
 
 : ${xstow_version:=xstow-0.6.1-unstable}
 : ${xstow_args:=-ap}
+: ${xstow_ignore_files:=perllocal.pod}	# XXX For now ignore them.
 
 set_defvars()
 {
@@ -623,7 +624,8 @@ stow_tmpl()
 		xstow_args="$xstow_args -i-file-in-dir $infodir_pkg"
 	fi
 
-	$PKGFS_XSTOW_CMD ${xstow_args} -pd-targets $PKGFS_MASTERDIR \
+	$PKGFS_XSTOW_CMD -ignore ${xstow_ignore_files} ${xstow_args} \
+		-pd-targets $PKGFS_MASTERDIR \
 		-dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
 		$PKGFS_DESTDIR/$pkg
 	if [ "$?" -ne 0 ]; then
@@ -654,7 +656,8 @@ unstow_tmpl()
 	fi
 
 	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
-		-D -i-file-in-dir share/info/dir $PKGFS_DESTDIR/$pkg
+		-D -i-file-in-dir share/info/dir -ignore ${xstow_ignore_files} \
+		$PKGFS_DESTDIR/$pkg
 	if [ "$?" -ne 0 ]; then
 		exit 1
 	else
