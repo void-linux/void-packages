@@ -446,6 +446,8 @@ fixup_tmpl_libtool()
 		$ln_cmd -s $PKGFS_MASTERDIR/bin/libtool $lt_file
 		$ln_cmd -s $PKGFS_MASTERDIR/share/libtool/config/ltmain.sh \
 			 $wrksrc/ltmain.sh
+	elif [ -f "$PKGFS_MASTERDIR/bin/libtool" ]; then
+		$ln_cmd -s $PKGFS_MASTERDIR/bin/libtool $lt_file
 	fi
 }
 
@@ -453,7 +455,7 @@ build_tmpl_sources()
 {
 	[ -z "$pkgname" ] && return 1
 
-	if [ -n "$distfiles" ]; then
+	if [ -n "$distfiles" -a -z "$wrksrc" ]; then
 		wrksrc=$PKGFS_BUILDDIR/$distfiles
 	elif [ -z "$wrksrc" ]; then
 		wrksrc=$PKGFS_BUILDDIR/$pkgname
@@ -553,10 +555,12 @@ build_tmpl_sources()
 		fi
 	done
 
+	[ -z "$make_build_target" ] && make_build_target=
+
 	#
 	# Build package via make.
 	#
-	${MAKE_CMD} ${make_build_args}
+	${MAKE_CMD} ${make_build_args} ${make_build_target}
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR building (make stage) \`$pkgname' ***"
 		exit 1
@@ -572,11 +576,13 @@ build_tmpl_sources()
 		fi
 	done
 
+	[ -z "$make_install_target" ] && make_install_target=install
+
 	#
 	# Install package via make.
 	#
-	${MAKE_CMD} ${make_install_args} \
-		install prefix="$PKGFS_DESTDIR/$pkgname"
+	${MAKE_CMD} ${make_install_args} ${make_install_target} \
+		prefix="$PKGFS_DESTDIR/$pkgname"
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR instaling \`$pkgname' ***"
 		exit 1
