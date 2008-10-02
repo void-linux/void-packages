@@ -280,7 +280,10 @@ reset_tmpl_vars()
 	local TMPL_VARS="pkgname extract_sufx distfiles url configure_args \
 			make_build_args make_install_args build_style	\
 			short_desc maintainer long_desc checksum wrksrc	\
-			patch_files configure_env make_cmd"
+			patch_files configure_env make_cmd pkgconfig_override \
+			run_stuff_before run_stuff_after \
+			run_stuff_before_configure_file run_stuff_before_build_file \
+			run_stuff_before_install_file run_stuff_after_install"
 
 	for i in ${TMPL_VARS}; do
 		eval unset "$i"
