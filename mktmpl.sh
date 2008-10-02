@@ -40,6 +40,7 @@
 : ${sed_cmd:=/usr/bin/sed}
 : ${db_cmd:=/usr/bin/db -q}
 : ${config_file:=/usr/local/etc/pkgfs.conf}
+: ${chmod_cmd:=/bin/chmod}
 
 required_deps=
 
@@ -114,6 +115,8 @@ write_new_template()
 		echo "Couldn't write template, aborting."
 		exit 1
 	fi
+
+	$chmod_cmd 755 $tmpldir/$tmplname$pkg.tmpl
 
 	if [ -n "$deps" ]; then
 		for i in $required_deps; do
