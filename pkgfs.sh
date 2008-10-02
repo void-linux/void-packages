@@ -478,10 +478,12 @@ build_tmpl_sources()
 	export PKG_CONFIG="$PKGFS_MASTERDIR/bin/pkg-config"
 
 	# Run stuff before configure.
-	if [ "$run_stuff_before" = "configure" ]; then
-		[ -f $PKGFS_TEMPLATESDIR/$run_stuff_before_configure_file ] && \
-			. $PKGFS_TEMPLATESDIR/$run_stuff_before_configure_file
-	fi
+	for i in "$run_stuff_before"; do
+		if [ "$i" = "configure" ]; then
+			local bcf="$PKGFS_TEMPLATESDIR/$run_stuff_before_configure_file"
+			[ -f $bcf ] && . $bcf
+		fi
+	done
 
 	#
 	# Packages using GNU autoconf
@@ -542,10 +544,12 @@ build_tmpl_sources()
 	#
 	# Run template stuff before building.
 	#
-	if [ "$run_stuff_before" = "build" ]; then
-		[ -f $PKGFS_TEMPLATESDIR/$run_stuff_before_build_file ] && \
-			. $PKGFS_TEMPLATESDIR/$run_stuff_before_build_file
-	fi
+	for i in ${run_stuff_before}; do
+		if [ "$i" = "build" ]; then
+			local bbf="$PKGFS_TEMPLATESDIR/$run_stuff_before_build_file"
+			[ -f $bbf ] && . $bbf
+		fi
+	done
 
 	#
 	# Build package via make.
@@ -559,10 +563,12 @@ build_tmpl_sources()
 	#
 	# Run template stuff before installing.
 	#
-	if [ "$run_stuff_before" = "install" ]; then
-		[ -f $PKGFS_TEMPLATESDIR/$run_stuff_before_install_file ] && \
-			. $PKGFS_TEMPLATESDIR/$run_stuff_before_install_file
-	fi
+	for i in ${run_stuff_before}; do
+		if [ "$i" = "install" ]; then
+			local bif="$PKGFS_TEMPLATESDIR/$run_stuff_before_install_file"
+			[ -f $bif ] && . $bif
+		fi
+	done
 
 	#
 	# Install package via make.
@@ -577,10 +583,12 @@ build_tmpl_sources()
 	#
 	# Run template stuff after installing.
 	#
-	if [ "$run_stuff_after" = "install" ]; then
-		[ -f $PKGFS_TEMPLATESDIR/$run_stuff_after_install_file ] && \
-			. $PKGFS_TEMPLATESDIR/$run_stuff_after_install_file
-	fi
+	for i in ${run_stuff_after}; do
+		if [ "$i" = "install" ]; then
+			local aif="$PKGFS_TEMPLATESDIR/$run_stuff_after_install_file"
+			[ -f $aif ] && . $aif
+		fi
+	done
 
 	#
 	# Transform pkg-config files if requested by template.
