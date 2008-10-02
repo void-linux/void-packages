@@ -39,6 +39,7 @@
 : ${cksum_cmd:=/usr/bin/cksum -a rmd160}
 : ${sed_cmd:=/usr/bin/sed}
 : ${db_cmd:=/usr/bin/db -q}
+: ${config_file:=/usr/local/etc/pkgfs.conf}
 
 required_deps=
 
@@ -226,9 +227,22 @@ read_parameters()
 	write_new_template
 }
 
-config_file="$1"
-[ -z "$config_file" ] && \
-	echo "usage: $(basename $0) /path/to/pkgfs.conf" && exit 1
+#
+# If user specified a full path to pkgfs.conf, use it. Otherwise look
+# at default location, and as last resort current dir.
+#
+if [ -n "$1" ]; then
+	config_file="$1"
+fi
+
+if [ ! -f "$config_file" ]; then
+	config_file="$(pwd -P 2>/dev/null)/pkgfs.conf"
+	if [ -f "$config_file" ]; then
+		echo "$(basename $0): cannot find configuration file"
+		echo "Please speficify it, e.g: $(basename $0) /path/to/pkgfs.conf"
+		exit 1
+	fi
+fi
 
 read_parameters
 exit $?
