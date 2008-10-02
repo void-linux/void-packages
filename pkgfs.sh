@@ -87,24 +87,26 @@ set_defvars()
 usage()
 {
 	cat << _EOF
-$progname: [-bCef] [-c <config_file>] <target> <tmpl>
+$progname: [-bCefi] [-c <config_file>] <target> <tmplname>
 
 Targets
-	info	Show information about <tmpl>.
-	install	Build and install package from <tmpl>.
+	info	Show information about <tmplname>.
+	install	Build and install package from <tmplname>.
 	list	Lists and prints short description about installed packages.
 	remove	Remove package completely (unstow and remove from destdir)
-	stow	Create symlinks from <tmpl> in master directory.
-	unstow	Remove symlinks from <tmpl> in master directory.
+	stow	Create symlinks from <tmplname> in master directory.
+	unstow	Remove symlinks from <tmplname> in master directory.
 
 Options
-	-b	Only build the source distribution file(s).
+	-b	Only build the source distribution file(s), without
+		extracting or fetching before.
 	-C	Do not remove build directory after successful build.
 	-c	Path to global configuration file.
 		If not specified /usr/local/etc/pkgfs.conf is used.
 	-e	Only extract the source distribution file(s).
 	-f	Only fetch the source distribution file(s).
-
+	-i	Only build and install the binary distribution file(s)
+		into the destdir directory, without stowning.
 _EOF
 	exit 1
 }
@@ -872,7 +874,11 @@ install_tmpl()
 	fetch_tmpl_sources
 	extract_tmpl_sources
 	build_tmpl_sources
-	stow_tmpl ${pkgname}
+
+	#
+	# Do not stow the pkg if requested.
+	#
+	[ -z "$only_install" ] && stow_tmpl ${pkgname}
 }
 
 list_tmpls()
@@ -916,7 +922,7 @@ remove_tmpl()
 #
 # main()
 #
-args=$(getopt bCc:ef $*)
+args=$(getopt bCc:efi $*)
 [ "$?" -ne 0 ] && usage
 
 set -- $args
@@ -937,6 +943,9 @@ while [ "$#" -gt 0 ]; do
 		;;
 	-f)
 		only_fetch=yes
+		;;
+	-i)
+		only_install=yes
 		;;
 	--)
 		shift
