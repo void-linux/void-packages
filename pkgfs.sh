@@ -285,7 +285,8 @@ reset_tmpl_vars()
 			patch_files configure_env make_cmd pkgconfig_override \
 			run_stuff_before run_stuff_after \
 			run_stuff_before_configure_file run_stuff_before_build_file \
-			run_stuff_before_install_file run_stuff_after_install"
+			run_stuff_before_install_file run_stuff_after_install \
+			make_build_target make_install_target"
 
 	for i in ${TMPL_VARS}; do
 		eval unset "$i"
