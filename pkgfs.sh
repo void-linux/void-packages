@@ -31,7 +31,6 @@
 # TODO
 # 	- Multiple distfiles in a package.
 #	- Multiple URLs to download source distribution files.
-#	- Support GNU/BSD-makefile style source distribution files.
 #	- Fix PKGFS_{C,CXX}FLAGS, aren't passed to the environment yet.
 #	- Support adding filters to templates to avoid creating useless links.
 #
@@ -48,7 +47,6 @@
 : ${awk_cmd:=/usr/bin/awk}
 : ${mkdir_cmd:=/bin/mkdir -p}
 : ${tar_cmd:=/usr/bin/tar}
-: ${unzip_cmd:=/usr/pkg/bin/unzip}
 : ${rm_cmd:=/bin/rm}
 : ${mv_cmd:=/bin/mv}
 : ${cp_cmd:=/bin/cp}
@@ -331,7 +329,11 @@ check_tmpl_vars()
 		extract_cmd="$tar_cmd xf $dfile -C $PKGFS_BUILDDIR"
 		;;
 	.zip)
-		extract_cmd="$unzip_cmd -x $dfile -C $PKGFS_BUILDDIR"
+		if [ -f "$PKGFS_TMPLHELPDIR/unzip-extraction.sh" ]; then
+			. $PKGFS_TMPLHELPDIR/unzip-extraction.sh
+		fi
+		# $unzip_cmd set by the helper.
+		extract_cmd="$unzip_cmd -x $dfile -d $PKGFS_BUILDDIR"
 		;;
 	*)
 		echo -n "*** ERROR: unknown 'extract_sufx' argument in build "
@@ -524,6 +526,15 @@ build_tmpl_sources()
 	elif [ "$build_style" = "perl_module" ]; then
 		. $PKGFS_TMPLHELPDIR/perl-module.sh
 		perl_module_build $pkgname
+
+	#
+	# Packages with BSD or GNU Makefiles are easy, just skip
+	# the configure stage and proceed.
+	#
+	elif [ "$build_style" = "bsd_makefile" -o \
+	       "$build_style" = "gnu_makefile" ]; then
+
+	       cd $wrksrc
 	#
 	# Unknown build_style type won't work :-)
 	#
@@ -537,10 +548,11 @@ build_tmpl_sources()
 		exit 1
 	fi
 
+	#
+	# Assume BSD make if make_cmd not set in template.
+	#
 	if [ -z "$make_cmd" ]; then
-		MAKE_CMD="/usr/bin/make"
-	else
-		MAKE_CMD="$make_cmd"
+		make_cmd="/usr/bin/make"
 	fi
 
 	# Fixup libtool script if necessary
@@ -561,7 +573,7 @@ build_tmpl_sources()
 	#
 	# Build package via make.
 	#
-	${MAKE_CMD} ${make_build_args} ${make_build_target}
+	${make_cmd} ${make_build_args} ${make_build_target}
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR building (make stage) \`$pkgname' ***"
 		exit 1
@@ -582,7 +594,7 @@ build_tmpl_sources()
 	#
 	# Install package via make.
 	#
-	${MAKE_CMD} ${make_install_args} ${make_install_target} \
+	${make_cmd} ${make_install_args} ${make_install_target} \
 		prefix="$PKGFS_DESTDIR/$pkgname"
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR instaling \`$pkgname' ***"
