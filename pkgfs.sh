@@ -283,7 +283,8 @@ reset_tmpl_vars()
 			run_stuff_before run_stuff_after \
 			run_stuff_before_configure_file run_stuff_before_build_file \
 			run_stuff_before_install_file run_stuff_after_install \
-			make_build_target make_install_target"
+			make_build_target make_install_target \
+			postinstall_helpers"
 
 	for i in ${TMPL_VARS}; do
 		eval unset "$i"
@@ -331,8 +332,7 @@ check_tmpl_vars()
 		if [ -f "$PKGFS_TMPLHELPDIR/unzip-extraction.sh" ]; then
 			. $PKGFS_TMPLHELPDIR/unzip-extraction.sh
 		fi
-		# $unzip_cmd set by the helper.
-		extract_cmd="$unzip_cmd -x $dfile -d $PKGFS_BUILDDIR"
+		# $extract_cmd set by the helper
 		;;
 	*)
 		echo -n "*** ERROR: unknown 'extract_sufx' argument in build "
@@ -627,9 +627,13 @@ build_tmpl_sources()
 		pkgconfig_transform_file $tmpf
 	done
 
-	unset LDFLAGS CFLAGS CXXFLAGS CPPFLAGS PKG_CONFIG
 
 	echo "==> Installed \`$pkgname' into $PKGFS_DESTDIR/$pkgname."
+
+	#
+	# Once all work has been done, unset compilation vars.
+	#
+	unset LDFLAGS CFLAGS CXXFLAGS CPPFLAGS PKG_CONFIG
 
 	#
 	# Remove $wrksrc if -C not specified.
@@ -648,7 +652,6 @@ stow_tmpl()
 	local pkg="$1"
 	local infodir_pkg="share/info/dir"
 	local infodir_master="$PKGFS_MASTERDIR/share/info/dir"
-	local my_xstowargs=
 	local real_xstowargs="$xstow_args"
 
 	[ -z "$pkg" ] && return 2
@@ -675,6 +678,18 @@ stow_tmpl()
 	xstow_args="$real_xstowargs"
 
 	installed_tmpl_handler register $pkg
+
+	#
+	# Run template postinstall helpers if requested.
+	#
+	if [ "$pkgname" != "$pkg" ]; then
+		run_file $PKGFS_TEMPLATESDIR/$pkg.tmpl
+	fi
+
+	for i in ${postinstall_helpers}; do
+		local pihf="$PKGFS_TMPLHELPDIR/$i"
+		[ -f "$pihf" ] && . $pihf
+	done
 }
 
 unstow_tmpl()
@@ -911,6 +926,7 @@ install_tmpl()
 	# Do not stow the pkg if requested.
 	#
 	[ -z "$only_install" ] && stow_tmpl ${pkgname}
+
 }
 
 list_tmpls()

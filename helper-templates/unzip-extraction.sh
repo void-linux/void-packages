@@ -1,7 +1,7 @@
 #
 # This helper is used in templates using extract_sufx=".zip".
 # This checks if unzip is installed and installs it if it's not
-# and sets the unzip_cmd variable appropiately.
+# and sets the unzip_cmd/extract_cmd variables appropiately.
 #
 unzip_version="5.52"
 
@@ -23,4 +23,6 @@ fi
 
 unset save_pkgname
 unset unzip_version
+
 unzip_cmd=$PKGFS_MASTERDIR/bin/unzip
+extract_cmd="$unzip_cmd -x $dfile -d $PKGFS_BUILDDIR"
