@@ -243,6 +243,20 @@ apply_tmpl_patches()
 
 check_config_vars()
 {
+	local cffound=
+
+	if [ -z "$config_file_specified" ]; then
+		config_file_paths="$PKGFS_CONFIG_FILE ./pkgfs.conf"
+		for f in $config_file_paths; do
+			[ -f $f ] && PKGFS_CONFIG_FILE=$f && cffound=yes
+		done
+		if [ -z "$cffound" ]; then
+			echo -n "*** ERROR: config file not specified "
+			echo "and not in default location or current dir ***"
+			exit 1
+		fi
+	fi
+
 	run_file ${PKGFS_CONFIG_FILE}
 	PKGFS_CONFIG_FILE=$path_fixed
 
@@ -934,8 +948,8 @@ list_tmpls()
 	local reg_pkgdb="$PKGFS_DESTDIR/$PKGFS_REGISTERED_PKG_DB"
 
 	if [ ! -r "$reg_pkgdb" ]; then
-		echo "*** ERROR: couldn't find the $reg_pkgdb, aborting ***"
-		exit 1
+		echo "=> No packages registered or missing register db file."
+		exit 0
 	fi
 
 	for i in $($db_cmd btree $reg_pkgdb); do
@@ -983,6 +997,7 @@ while [ "$#" -gt 0 ]; do
 		dontrm_builddir=yes
 		;;
 	-c)
+		config_file_specified=yes
 		PKGFS_CONFIG_FILE="$2"
 		shift
 		;;
