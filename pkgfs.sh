@@ -253,12 +253,12 @@ check_config_vars()
 	fi
 
 	local PKGFS_VARS="PKGFS_MASTERDIR PKGFS_DESTDIR PKGFS_BUILDDIR \
-			  PKGFS_SRCDISTDIR"
+			  PKGFS_SRCDISTDIR PKGFS_SYSCONFDIR"
 
 	for f in ${PKGFS_VARS}; do
 		eval val="\$$f"
 		if [ -z "$val" ]; then
-			echo "**** ERROR: '$f' not set in configuration "
+			echo -n "**** ERROR: '$f' not set in configuration "
 			echo "file, aborting ***"
 			exit 1
 		fi
@@ -511,6 +511,7 @@ build_tmpl_sources()
 		./configure	--prefix="$PKGFS_MASTERDIR"		\
 				--mandir="$PKGFS_DESTDIR/$pkgname/man"	\
 				--infodir="$PKGFS_DESTDIR/$pkgname/share/info" \
+				--sysconfdir="$PKGFS_SYSCONFDIR" \
 				${configure_args}
 
 	#
@@ -888,7 +889,7 @@ install_tmpl()
 		# At this point all required deps are installed, and
 		# only remaining is the origin template; install it.
 		#
-		doing_deps=
+		unset doing_deps
 		reset_tmpl_vars
 		run_file ${origin_tmpl}
 		check_tmpl_vars ${pkgname}
