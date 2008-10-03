@@ -1,3 +1,4 @@
+#
 # This helper does the required steps to be able to build and install
 # perl modules into the correct location.
 #

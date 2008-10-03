@@ -1,4 +1,5 @@
-# This script will transform the pkg-config files with correct
+#
+# This helper will transform the pkg-config files with correct
 # directories pointing at PKGFS_MASTERDIR specified in the config file.
 #
 pkgconfig_transform_file()

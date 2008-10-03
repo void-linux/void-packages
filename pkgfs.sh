@@ -31,7 +31,6 @@
 # TODO
 # 	- Multiple distfiles in a package.
 #	- Multiple URLs to download source distribution files.
-#	- Fix PKGFS_{C,CXX}FLAGS, aren't passed to the environment yet.
 #	- Support adding filters to templates to avoid creating useless links.
 #
 # Default path to configuration file, can be overriden
@@ -346,6 +345,7 @@ check_tmpl_vars()
 check_rmd160_cksum()
 {
 	local file="$1"
+	local dfile=
 
 	[ -z "$file" ] && return 1
 
@@ -479,9 +479,13 @@ build_tmpl_sources()
 	echo "==> Building \`$pkgname' (be patient, may take a while)"
 
 	#
-	# For now, just set LDFLAGS.
+	# For now, just set them through the environment.
 	#
-	export LDFLAGS="-L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib $LDFLAGS"
+	LDFLAGS="-L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib $LDFLAGS"
+	export LDFLAGS="-L$PKGFS_DESTDIR/$pkgname/lib $LDFLAGS"
+	export CFLAGS="$CFLAGS $PKGFS_CFLAGS"
+	export CXXFLAGS="$CXXFLAGS $PKGFS_CXXFLAGS"
+	export CPPFLAGS="-I$PKGFS_MASTERDIR/include $CPPFLAGS"
 	export PKG_CONFIG="$PKGFS_MASTERDIR/bin/pkg-config"
 
 	# Run stuff before configure.
@@ -622,7 +626,7 @@ build_tmpl_sources()
 		pkgconfig_transform_file $tmpf
 	done
 
-	unset LDFLAGS PKG_CONFIG
+	unset LDFLAGS CFLAGS CXXFLAGS CPPFLAGS PKG_CONFIG
 
 	echo "==> Installed \`$pkgname' into $PKGFS_DESTDIR/$pkgname."
 
@@ -714,18 +718,26 @@ add_dependency_tolist()
 		#
 		[ "$i" = "deps" ] && continue
 
-		echo -n "	$i: "
+		#
+		# origin_deps is used to only show the list of
+		# dependencies for the origin template once.
+		#
+		[ -n "$origin_deps" ] && \
+			echo -n "	$i: "
 		#
 		# Check if dep already installed.
 		#
 		if [ -r "$reg_pkgdb" ]; then
 			check_installed_tmpl $i
 			if [ "$?" -eq 0 ]; then
-				echo "already installed."
+				[ -n "$origin_deps" ] && \
+					echo "already installed."
 				continue
 			fi
-			echo "not installed."
-			# Added dep into list
+
+			[ -n "$origin_deps" ] &&
+				echo "not installed."
+
 			deps_list="$i $deps_list"
 			[ -n "$prev_depf" ] && unset prev_depf
 			#
@@ -733,6 +745,7 @@ add_dependency_tolist()
 			#
 			depdbf="$PKGFS_DEPSDIR/$i-deps.db"
 			if [ -r "$PKGFS_DEPSDIR/$i-deps.db" ]; then
+				unset origin_deps
 				add_dependency_tolist ${depdbf}
 				prev_depf="$depdbf"
 			fi
@@ -746,6 +759,7 @@ install_dependency_tmpl()
 	local tmpdepf="$pkgdepf"
 	local tmppkgname=
 	deps_list=
+	origin_deps=yes
 
 	[ -z "$pkgdepf" ] && return 1
 
@@ -761,10 +775,11 @@ install_dependency_tmpl()
 		check_installed_tmpl $i
 		[ "$?" -eq 0 ] && continue
 		echo "=> Installing dependency: $i"
-		install_tmpl "${i%-deps.db}"
+		install_tmpl $i
 	done
 
-	deps_list=
+	unset deps_list
+	unset origin_deps
 }
 
 install_xstow_tmpl()
@@ -773,7 +788,6 @@ install_xstow_tmpl()
 
 	reset_tmpl_vars
 	run_file "$PKGFS_TEMPLATESDIR/$xstow_version.tmpl"
-	cur_tmpl=$path_fixed
 	check_tmpl_vars ${xstow_version}
 	fetch_tmpl_sources
 	extract_tmpl_sources
@@ -787,7 +801,6 @@ install_xstow_tmpl()
 	# Continue with origin package that called us.
 	#
 	run_file ${origin_tmpl}
-	cur_tmpl=${path_fixed}
 }
 
 installed_tmpl_handler()
@@ -845,7 +858,6 @@ install_tmpl()
 
 	reset_tmpl_vars
 	run_file ${cur_tmpl}
-	cur_tmpl=${path_fixed}
 
 	#
 	# If we are the originator package save the path this template in
