@@ -126,8 +126,8 @@ write_new_template()
 		[ -n "$pcfiles" ] && deps="pkg-config-0.23 $deps"
 		[ -n "$perl_module" ] && deps="perl-5.10.0 $deps"
 
-		$db_cmd -R -P 512 -w btree $depsdir/build-depends.db $pkgname
-			${deps} 2>&1 >/dev/null
+		$db_cmd -R -P 512 -w btree $depsdir/build-depends.db $pkgname \
+			"$deps" 2>&1 >/dev/null
 		[ "$?" -ne 0 ] && \
 			echo "Errong writing dependencies db file." && exit 1
 	fi
