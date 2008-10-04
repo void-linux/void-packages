@@ -794,24 +794,18 @@ add_dependency_tolist()
 
 	for i in $($db_cmd -V btree $PKGFS_BUILD_DEPS_DB ${curpkg%-[0-9]*}); do
 		#
-		# origin_deps is used to only show the list of
-		# dependencies for the origin template once.
-		#
-		[ -n "$origin_deps" ] && \
-			echo -n "	$i: "
-		#
 		# Check if dep already installed.
 		#
 		if [ -r "$reg_pkgdb" ]; then
 			check_installed_tmpl $i
+			#
+			# If dep is already installed, put it on the
+			# installed deps list and continue.
+			#
 			if [ "$?" -eq 0 ]; then
-				[ -n "$origin_deps" ] && \
-					echo "already installed."
+				installed_deps_list="$i $installed_deps_list"
 				continue
 			fi
-
-			[ -n "$origin_deps" ] &&
-				echo "not installed."
 
 			deps_list="$i $deps_list"
 			[ -n "$prev_pkg" ] && unset prev_pkg
@@ -820,12 +814,60 @@ add_dependency_tolist()
 			#
 			check_build_depends_tmpl $i
 			if [ "$?" -eq 0 ]; then
-				unset origin_deps
 				add_dependency_tolist $i
 				prev_pkg="$i"
 			fi
 		fi
 	done
+}
+
+#
+# Removes duplicate deps in the installed or not installed list.
+#
+find_dupdeps_inlist()
+{
+	local action="$1"
+	local tmp_list=
+	local dup=
+
+	[ -z "$action" ] && return 1
+
+	case "$action" in
+	installed)
+		list=$installed_deps_list
+		;;
+	notinstalled)
+		list=$deps_list
+		;;
+	*)
+		return 1
+		;;
+	esac
+
+	for f in $list; do
+		if [ -z "$tmp_list" ]; then
+			tmp_list="$f"
+		else
+			for i in $tmp_list; do
+				[ "$f" = "$i" ] && dup=yes
+			done
+
+			[ -z "$dup" ] && tmp_list="$tmp_list $f"
+			unset dup
+		fi
+	done
+
+	case "$action" in
+	installed)
+		installed_deps_list="$tmp_list"
+		;;
+	notinstalled)
+		deps_list="$tmp_list"
+		;;
+	*)
+		return 1
+		;;
+	esac
 }
 
 #
@@ -835,26 +877,33 @@ install_dependency_tmpl()
 {
 	local pkg="$1"
 	deps_list=
-	origin_deps=yes
+	installed_deps_list=
 
 	[ -z "$pkg" ] && return 1
 
 	doing_deps=true
 
-	echo "==> Required dependencies for $(basename $pkg):"
-
 	add_dependency_tolist $pkg
+	find_dupdeps_inlist installed
+	find_dupdeps_inlist notinstalled
+
+	echo "==> Required dependencies for $(basename $pkg):"
+	for i in ${installed_deps_list}; do
+		echo "	$i: already installed."
+	done
+
+	for i in ${deps_list}; do
+		echo "	$i: not installed."
+	done
 
 	for i in ${deps_list}; do
 		# skip dup deps
-		check_installed_tmpl $i
-		[ "$?" -eq 0 ] && continue
 		echo "=> Installing dependency: $i"
 		install_tmpl ${i%-[0-9]*}
 	done
 
+	unset installed_deps_list
 	unset deps_list
-	unset origin_deps
 }
 
 #
