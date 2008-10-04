@@ -667,8 +667,8 @@ build_tmpl_sources()
 		local tmpf="$PKGFS_DESTDIR/$pkg/lib/pkgconfig/$i"
 		[ -f "$tmpf" ] && \
 			[ -f $PKGFS_TMPLHELPDIR/pkg-config-transform.sh ] && \
-			. $PKGFS_TMPLHELPDIR/pkg-config-transform.sh
-		pkgconfig_transform_file $tmpf
+			. $PKGFS_TMPLHELPDIR/pkg-config-transform.sh && \
+			pkgconfig_transform_file $tmpf
 	done
 
 
