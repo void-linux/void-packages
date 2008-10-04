@@ -78,7 +78,7 @@ write_new_template()
 		build_style=configure
 	fi
 
-	if [ -f "$tmpldir/$pkg.tmpl" ]; then
+	if [ -f "$tmpldir/$pkgname.tmpl" ]; then
 		echo "There's an existing template with the same name, do you"
 		echo -n "want to overwrite it? (y)es or (n)o: "
 		read overwrite
@@ -91,8 +91,9 @@ write_new_template()
 	fi
 
 	(								\
-		echo "# Template build file for '$tmplname$pkg'.";	\
-		echo "pkgname=$tmplname$pkg";				\
+		echo "# Template build file for '$tmplname$pkgname'.";	\
+		echo "pkgname=$tmplname$pkgname";			\
+		echo "version=$version";				\
 		if [ -n "$perl_module" ]; then				\
 			echo "distfiles=\"$pkg\"";			\
 		fi;							\
@@ -109,14 +110,14 @@ write_new_template()
 		echo "maintainer=\"$maintainer\"";			\
 		echo "checksum=$checksum";				\
 		echo "long_desc=\"...\"";				\
-	) > $tmpldir/$tmplname$pkg.tmpl
+	) > $tmpldir/$tmplname$pkgname.tmpl
 
-	if [ ! -r "$tmpldir/$tmplname$pkg.tmpl" ]; then
+	if [ ! -r "$tmpldir/$tmplname$pkgname.tmpl" ]; then
 		echo "Couldn't write template, aborting."
 		exit 1
 	fi
 
-	$chmod_cmd 755 $tmpldir/$tmplname$pkg.tmpl
+	$chmod_cmd 755 $tmpldir/$tmplname$pkgname.tmpl
 
 	if [ -n "$deps" ]; then
 		for i in $required_deps; do
@@ -125,14 +126,14 @@ write_new_template()
 		[ -n "$pcfiles" ] && deps="pkg-config-0.23 $deps"
 		[ -n "$perl_module" ] && deps="perl-5.10.0 $deps"
 
-		$db_cmd -C -P 512 -w btree $depsdir/$tmplname$pkg-deps.db deps \
-			"$deps" 2>&1 >/dev/null
+		$db_cmd -R -P 512 -w btree $depsdir/build-depends.db $pkgname
+			${deps} 2>&1 >/dev/null
 		[ "$?" -ne 0 ] && \
 			echo "Errong writing dependencies db file." && exit 1
 	fi
 
 	echo
-	echo "=> Template created at: $tmpldir/$tmplname$pkg.tmpl"
+	echo "=> Template created at: $tmpldir/$tmplname$pkgname.tmpl"
 	echo
 	echo "If you need more changes, do them manually. You can also look"
 	echo "at $tmpldir/example.tmpl to know what variables can be used and"
@@ -240,7 +241,7 @@ fi
 
 if [ ! -f "$config_file" ]; then
 	config_file="$(pwd -P 2>/dev/null)/pkgfs.conf"
-	if [ -f "$config_file" ]; then
+	if [ ! -f "$config_file" ]; then
 		echo "$(basename $0): cannot find configuration file"
 		echo "Please speficify it, e.g: $(basename $0) /path/to/pkgfs.conf"
 		exit 1
