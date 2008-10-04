@@ -174,25 +174,24 @@ info_tmpl()
 
 	run_file $PKGFS_TEMPLATESDIR/$tmpl.tmpl
 
-	echo " pkgfs template definitions:"
-	echo
-	echo "	pkgname:	$pkgname"
+	echo "pkgname:	$pkgname"
+	echo "version:	$version"
 	for i in "${distfiles}"; do
-		[ -n "$i" ] && echo "	distfile:	$i"
+		[ -n "$i" ] && echo "distfile:	$i"
 	done
-	echo "	URL:		$url"
-	echo "	maintainer:	$maintainer"
-	[ -n $checksum ] && echo "	checksum:	$checksum"
-	echo "	build_style:	$build_style"
-	echo "	short_desc:	$short_desc"
+	echo "URL:		$url"
+	echo "maintainer:	$maintainer"
+	[ -n $checksum ] && echo "checksum:	$checksum"
+	echo "build_style:	$build_style"
+	echo "short_desc:	$short_desc"
 	echo "$long_desc"
 	echo
 	check_build_depends_tmpl $pkgname
 	if [ "$?" -eq 0 ]; then
 		local list="$($db_cmd -V btree $PKGFS_BUILD_DEPS_DB $pkgname)"
-		echo " This package requires the following dependencies to be built:"
+		echo "This package requires the following dependencies to be built:"
 		for i in ${list}; do
-			echo "	$i"
+			echo " $i"
 		done
 	fi
 }
@@ -1053,7 +1052,7 @@ remove_tmpl()
 		exit 1
 	fi
 
-	unstow_tmpl $pkg-$version
+	unstow_tmpl $pkg
 	$rm_cmd -rf $PKGFS_DESTDIR/$pkg-$version
 	return "$?"
 }
