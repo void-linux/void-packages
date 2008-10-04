@@ -61,7 +61,6 @@
 : ${db_cmd:=/usr/bin/db -q}
 : ${chmod_cmd:=/bin/chmod}
 
-: ${xstow_version:=xstow-0.6.1-unstable}
 : ${xstow_args:=-ap}
 : ${xstow_ignore_files:=perllocal.pod}	# XXX For now ignore them.
 
@@ -70,6 +69,7 @@ set_defvars()
 	# Directories
 	: ${PKGFS_TEMPLATESDIR:=$PKGFS_DISTRIBUTIONDIR/templates}
 	: ${PKGFS_DEPSDIR:=$PKGFS_DISTRIBUTIONDIR/dependencies}
+	: ${PKGFS_BUILD_DEPS_DB:=$PKGFS_DEPSDIR/build-depends.db}
 	: ${PKGFS_TMPLHELPDIR:=$PKGFS_DISTRIBUTIONDIR/helper-templates}
 
 	local DDIRS="PKGFS_DEPSDIR PKGFS_TEMPLATESDIR PKGFS_TMPLHELPDIR"
@@ -160,6 +160,9 @@ merge_infodir_tmpl()
 		$PKGFS_MASTERDIR/share/info/dir
 }
 
+#
+# Shows info about a template.
+#
 info_tmpl()
 {
 	local tmpl="$1"
@@ -169,7 +172,7 @@ info_tmpl()
 		exit 1
 	fi
 
-	run_file ${PKGFS_TEMPLATESDIR}/${tmpl}.tmpl
+	run_file $PKGFS_TEMPLATESDIR/$tmpl.tmpl
 
 	echo " pkgfs template definitions:"
 	echo
@@ -184,17 +187,19 @@ info_tmpl()
 	echo "	short_desc:	$short_desc"
 	echo "$long_desc"
 	echo
-	if [ -r "$PKGFS_DEPSDIR/$pkgname-deps.db" ]; then
-		pkgdepf="$PKGFS_DEPSDIR/$pkgname-deps.db"
-		list="$($db_cmd btree $pkgdepf deps)"
+	check_build_depends_tmpl $pkgname
+	if [ "$?" -eq 0 ]; then
+		local list="$($db_cmd -V btree $PKGFS_BUILD_DEPS_DB $pkgname)"
 		echo " This package requires the following dependencies to be built:"
 		for i in ${list}; do
-			[ "$i" = "deps" ] && continue
 			echo "	$i"
 		done
 	fi
 }
 
+#
+# Applies to the build directory the patches specified by a template.
+#
 apply_tmpl_patches()
 {
 	if [ -z "$PKGFS_TEMPLATESDIR" ]; then
@@ -241,6 +246,10 @@ apply_tmpl_patches()
 	fi
 }
 
+#
+# Checks that all required variables specified in the configuration
+# file are properly working.
+#
 check_config_vars()
 {
 	local cffound=
@@ -288,6 +297,9 @@ check_config_vars()
 	done
 }
 
+#
+# Resets all vars used by a template.
+#
 reset_tmpl_vars()
 {
 	local TMPL_VARS="pkgname extract_sufx distfiles url configure_args \
@@ -298,13 +310,16 @@ reset_tmpl_vars()
 			run_stuff_before_configure_file run_stuff_before_build_file \
 			run_stuff_before_install_file run_stuff_after_install \
 			make_build_target make_install_target \
-			postinstall_helpers"
+			postinstall_helpers version"
 
 	for i in ${TMPL_VARS}; do
 		eval unset "$i"
 	done
 }
 
+#
+# Checks some vars used in templates and sets $extract_cmd.
+#
 check_tmpl_vars()
 {
 	local pkg="$1"
@@ -312,7 +327,7 @@ check_tmpl_vars()
 
 	[ -z "$pkg" ] && return 1
 
-	REQ_VARS="pkgname extract_sufx url build_style"
+	REQ_VARS="pkgname version extract_sufx url build_style"
 
 	# Check if required vars weren't set.
 	for i in ${REQ_VARS}; do
@@ -325,7 +340,7 @@ check_tmpl_vars()
 	done
 
 	if [ -z "$distfiles" ]; then
-		dfile="$pkgname$extract_sufx"
+		dfile="$pkgname-$version$extract_sufx"
 	elif [ -n "${distfiles}" ]; then
 		dfile="$distfiles$extract_sufx"
 	else
@@ -356,6 +371,9 @@ check_tmpl_vars()
 	esac
 }
 
+#
+# Verifies that a checksum of a distfile is correct.
+#
 check_rmd160_cksum()
 {
 	local file="$1"
@@ -364,7 +382,7 @@ check_rmd160_cksum()
 	[ -z "$file" ] && return 1
 
 	if [ -z "${distfiles}" ]; then
-		dfile="$pkgname$extract_sufx"
+		dfile="$pkgname-$version$extract_sufx"
 	elif [ -n "${distfiles}" ]; then
 		dfile="$distfiles$extract_sufx"
 	else
@@ -385,6 +403,9 @@ check_rmd160_cksum()
 	fi
 }
 
+#
+# Downloads the distfiles for a template from $url.
+#
 fetch_tmpl_sources()
 {
 	local file=""
@@ -393,7 +414,7 @@ fetch_tmpl_sources()
 	[ -z "$pkgname" ] && return 1
 
 	if [ -z "$distfiles" ]; then
-		file="$pkgname"
+		file="$pkgname-$version"
 	else
 		file="$distfiles"
 	fi
@@ -431,11 +452,15 @@ fetch_tmpl_sources()
 	done
 }
 
+#
+# Extracts contents of a distfile specified in a template into
+# the build directory.
+#
 extract_tmpl_sources()
 {
 	[ -z "$pkgname" ] && return 1
 
-	echo "==> Extracting \`$pkgname' into $PKGFS_BUILDDIR."
+	echo "==> Extracting \`$pkgname-$version' into $PKGFS_BUILDDIR."
 
 	$extract_cmd
 	if [ "$?" -ne 0 ]; then
@@ -468,14 +493,20 @@ fixup_tmpl_libtool()
 	fi
 }
 
+#
+# Configures, builds and installs a package into the destination
+# directory.
+#
 build_tmpl_sources()
 {
-	[ -z "$pkgname" ] && return 1
+	local pkg="$pkgname-$version"
+
+	[ -z "$pkgname" -o -z "$version" ] && return 1
 
 	if [ -n "$distfiles" -a -z "$wrksrc" ]; then
 		wrksrc=$PKGFS_BUILDDIR/$distfiles
 	elif [ -z "$wrksrc" ]; then
-		wrksrc=$PKGFS_BUILDDIR/$pkgname
+		wrksrc=$PKGFS_BUILDDIR/$pkg
 	else
 		wrksrc=$PKGFS_BUILDDIR/$wrksrc
 	fi
@@ -490,13 +521,13 @@ build_tmpl_sources()
 	# Apply patches if requested by template file
 	apply_tmpl_patches
 
-	echo "==> Building \`$pkgname' (be patient, may take a while)"
+	echo "==> Building \`$pkg' (be patient, may take a while)"
 
 	#
 	# For now, just set them through the environment.
 	#
 	LDFLAGS="-L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib $LDFLAGS"
-	export LDFLAGS="-L$PKGFS_DESTDIR/$pkgname/lib $LDFLAGS"
+	export LDFLAGS="-L$PKGFS_DESTDIR/$pkg/lib $LDFLAGS"
 	export CFLAGS="$CFLAGS $PKGFS_CFLAGS"
 	export CXXFLAGS="$CXXFLAGS $PKGFS_CXXFLAGS"
 	export CPPFLAGS="-I$PKGFS_MASTERDIR/include $CPPFLAGS"
@@ -523,8 +554,8 @@ build_tmpl_sources()
 		# surprises later.
 		#
 		./configure	--prefix="$PKGFS_MASTERDIR"		\
-				--mandir="$PKGFS_DESTDIR/$pkgname/man"	\
-				--infodir="$PKGFS_DESTDIR/$pkgname/share/info" \
+				--mandir="$PKGFS_DESTDIR/$pkg/man"	\
+				--infodir="$PKGFS_DESTDIR/$pkg/share/info" \
 				--sysconfdir="$PKGFS_SYSCONFDIR" \
 				${configure_args}
 
@@ -563,7 +594,7 @@ build_tmpl_sources()
 	fi
 
 	if [ "$build_style" != "perl_module" -a "$?" -ne 0 ]; then
-		echo "*** ERROR building (configure state) \`$pkgname' ***"
+		echo "*** ERROR building (configure state) \`$pkg' ***"
 		exit 1
 	fi
 
@@ -594,7 +625,7 @@ build_tmpl_sources()
 	#
 	${make_cmd} ${make_build_args} ${make_build_target}
 	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR building (make stage) \`$pkgname' ***"
+		echo "*** ERROR building (make stage) \`$pkg' ***"
 		exit 1
 	fi
 
@@ -614,9 +645,9 @@ build_tmpl_sources()
 	# Install package via make.
 	#
 	${make_cmd} ${make_install_args} ${make_install_target} \
-		prefix="$PKGFS_DESTDIR/$pkgname"
+		prefix="$PKGFS_DESTDIR/$pkg"
 	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR instaling \`$pkgname' ***"
+		echo "*** ERROR instaling \`$pkg' ***"
 		exit 1
 	fi
 
@@ -634,7 +665,7 @@ build_tmpl_sources()
 	# Transform pkg-config files if requested by template.
 	#
 	for i in ${pkgconfig_override}; do
-		local tmpf="$PKGFS_DESTDIR/$pkgname/lib/pkgconfig/$i"
+		local tmpf="$PKGFS_DESTDIR/$pkg/lib/pkgconfig/$i"
 		[ -f "$tmpf" ] && \
 			[ -f $PKGFS_TMPLHELPDIR/pkg-config-transform.sh ] && \
 			. $PKGFS_TMPLHELPDIR/pkg-config-transform.sh
@@ -642,7 +673,7 @@ build_tmpl_sources()
 	done
 
 
-	echo "==> Installed \`$pkgname' into $PKGFS_DESTDIR/$pkgname."
+	echo "==> Installed \`$pkg' into $PKGFS_DESTDIR/$pkg."
 
 	#
 	# Once all work has been done, unset compilation vars.
@@ -655,12 +686,16 @@ build_tmpl_sources()
 	if [ -d "$wrksrc" -a -z "$dontrm_builddir" ]; then
 		$rm_cmd -rf $wrksrc
 		[ "$?" -eq 0 ] && \
-			echo "=> Removed \`$pkgname' build directory."
+			echo "=> Removed \`$pkg' build directory."
 	fi
 
 	cd $PKGFS_BUILDDIR
 }
 
+#
+# Stows a currently installed package, i.e creates the links
+# on the master directory.
+#
 stow_tmpl()
 {
 	local pkg="$1"
@@ -670,11 +705,18 @@ stow_tmpl()
 
 	[ -z "$pkg" ] && return 2
 
-	if [ -r "$PKGFS_DESTDIR/$pkg/$infodir_pkg" ]; then
-		merge_infodir_tmpl ${pkg}
+	if [ -n "$stow_flag" ]; then
+		pkg=$PKGFS_TEMPLATESDIR/$pkg.tmpl
+		run_file $pkg
+		pkg=$pkgname-$version
 	fi
 
-	if [ -r "$PKGFS_DESTDIR/$pkg/$infodir_pkg" -a -r "$infodir_master" ]; then
+	if [ -r "$PKGFS_DESTDIR/$pkg/$infodir_pkg" ]; then
+		merge_infodir_tmpl $pkg
+	fi
+
+	if [ -r "$PKGFS_DESTDIR/$pkg/$infodir_pkg" \
+	     -a -r "$infodir_master" ]; then
 		xstow_args="$xstow_args -i-file-in-dir $infodir_pkg"
 	fi
 
@@ -696,8 +738,8 @@ stow_tmpl()
 	#
 	# Run template postinstall helpers if requested.
 	#
-	if [ "$pkgname" != "$pkg" ]; then
-		run_file $PKGFS_TEMPLATESDIR/$pkg.tmpl
+	if [ "$pkgname" != "${pkg%%-$version}" ]; then
+		run_file $PKGFS_TEMPLATESDIR/${pkg%%-$version}.tmpl
 	fi
 
 	for i in ${postinstall_helpers}; do
@@ -706,6 +748,10 @@ stow_tmpl()
 	done
 }
 
+#
+# Unstows a currently stowned package, i.e removes its links
+# from the master directory.
+#
 unstow_tmpl()
 {
 	local pkg="$1"
@@ -715,39 +761,39 @@ unstow_tmpl()
 		exit 1
 	fi
 
-	local tmppkg="${pkg%-[0-9]*}"
-	if [ "$tmppkg" = "xstow" ]; then
-		echo "*** INFO: You aren't allowed to unstow \`$xstow_version'."
+	if [ "$pkg" = "xstow" ]; then
+		echo "*** INFO: You aren't allowed to unstow \`$pkg'."
 		exit 1
 	fi
+
+	run_file $PKGFS_TEMPLATESDIR/$pkg.tmpl
 
 	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
 		-D -i-file-in-dir share/info/dir -ignore ${xstow_ignore_files} \
-		$PKGFS_DESTDIR/$pkg
+		$PKGFS_DESTDIR/$pkgname-$version
 	if [ "$?" -ne 0 ]; then
 		exit 1
 	else
-		$rm_cmd -f $PKGFS_DESTDIR/$pkg/share/info/dir
+		$rm_cmd -f $PKGFS_DESTDIR/$pkgname-$version/share/info/dir
 		echo "==> Removed \`$pkg' symlinks from master directory."
 	fi
 
-	installed_tmpl_handler unregister $pkg
+	installed_tmpl_handler unregister $pkgname-$version
 }
 
+#
+# Recursive function that founds dependencies in all required
+# packages.
+#
 add_dependency_tolist()
 {
-	local pkgdepf="$1"
-	local reg_pkgdb="${PKGFS_DESTDIR}/${PKGFS_REGISTERED_PKG_DB}"
+	local curpkg="$1"
+	local reg_pkgdb="$PKGFS_DESTDIR/$PKGFS_REGISTERED_PKG_DB"
 
-	[ -z "$pkgdepf" ] && return 1
-	[ -n "$prev_depf" ] && pkgdepf=${prev_depf}
+	[ -z "$curpkg" ] && return 1
+	[ -n "$prev_pkg" ] && curpkg=$prev_pkg
 
-	for i in $($db_cmd btree $pkgdepf deps); do
-		#
-		# Skip key
-		#
-		[ "$i" = "deps" ] && continue
-
+	for i in $($db_cmd -V btree $PKGFS_BUILD_DEPS_DB ${curpkg%-[0-9]*}); do
 		#
 		# origin_deps is used to only show the list of
 		# dependencies for the origin template once.
@@ -769,85 +815,81 @@ add_dependency_tolist()
 				echo "not installed."
 
 			deps_list="$i $deps_list"
-			[ -n "$prev_depf" ] && unset prev_depf
+			[ -n "$prev_pkg" ] && unset prev_pkg
 			#
 			# Check if dependency needs more deps.
 			#
-			depdbf="$PKGFS_DEPSDIR/$i-deps.db"
-			if [ -r "$PKGFS_DEPSDIR/$i-deps.db" ]; then
+			check_build_depends_tmpl $i
+			if [ "$?" -eq 0 ]; then
 				unset origin_deps
-				add_dependency_tolist ${depdbf}
-				prev_depf="$depdbf"
+				add_dependency_tolist $i
+				prev_pkg="$i"
 			fi
 		fi
 	done
 }
 
+#
+# Installs all dependencies required by a package.
+#
 install_dependency_tmpl()
 {
-	local pkgdepf="$1"
-	local tmpdepf="$pkgdepf"
-	local tmppkgname=
+	local pkg="$1"
 	deps_list=
 	origin_deps=yes
 
-	[ -z "$pkgdepf" ] && return 1
+	[ -z "$pkg" ] && return 1
 
 	doing_deps=true
 
-	tmp_pkgn=${pkgdepf%%-deps.db}
-	echo "==> Required dependencies for $(basename $tmp_pkgn):"
+	echo "==> Required dependencies for $(basename $pkg):"
 
-	add_dependency_tolist $pkgdepf
+	add_dependency_tolist $pkg
 
 	for i in ${deps_list}; do
 		# skip dup deps
 		check_installed_tmpl $i
 		[ "$?" -eq 0 ] && continue
 		echo "=> Installing dependency: $i"
-		install_tmpl $i
+		install_tmpl ${i%-[0-9]*}
 	done
 
 	unset deps_list
 	unset origin_deps
 }
 
+#
+# Installs and stows the "xstow" package.
+#
 install_xstow_tmpl()
 {
 	[ -x "$PKGFS_XSTOW_CMD" ] && return 0
 
 	reset_tmpl_vars
-	run_file "$PKGFS_TEMPLATESDIR/$xstow_version.tmpl"
-	check_tmpl_vars ${xstow_version}
+	run_file "$PKGFS_TEMPLATESDIR/xstow.tmpl"
+	check_tmpl_vars $pkgname-$version
 	fetch_tmpl_sources
 	extract_tmpl_sources
 	build_tmpl_sources
-	PKGFS_XSTOW_CMD="$PKGFS_DESTDIR/$xstow_version/bin/xstow"
-	stow_tmpl $xstow_version
-	$sed_cmd -e "s|PKGFS_XSTOW_.*|PKGFS_XSTOW_CMD=$PKGFS_MASTERDIR/bin/xstow|" \
-		$path_fixed > $path_fixed.in && \
-		$mv_cmd $path_fixed.in $path_fixed
+	PKGFS_XSTOW_CMD="$PKGFS_DESTDIR/$pkgname-$version/bin/xstow"
+	stow_tmpl $pkgname-$version
 	#
 	# Continue with origin package that called us.
 	#
-	run_file ${origin_tmpl}
+	run_file $origin_tmpl
 }
 
+#
+# Registers or unregisters a package from the db file.
+#
 installed_tmpl_handler()
 {
 	local action="$1"
 	local pkg="$2"
 
 	[ -z "$action" -o -z "$pkg" ] && return 1
-	#
-	# This function is called every time a package has been stowned
-	# or unstowned.
-	# There's a db(3) btree database file in
-	# PKGFS_DESTDIR/PKGFS_REGISTER_PKG_DB that stores which package
-	# is installed and stowned.
-	#
 	if [ "$action" = "register" ]; then
-		$db_cmd -w btree ${PKGFS_DESTDIR}/${PKGFS_REGISTERED_PKG_DB} \
+		$db_cmd -w btree $PKGFS_DESTDIR/$PKGFS_REGISTERED_PKG_DB \
 			$pkg stowned
 		if [ "$?" -ne  0 ]; then
 			echo -n "*** ERROR: couldn't register stowned \`$pkg'"
@@ -855,7 +897,7 @@ installed_tmpl_handler()
 			exit 1
 		fi
 	elif [ "$action" = "unregister" ]; then
-		$db_cmd -d btree ${PKGFS_DESTDIR}/${PKGFS_REGISTERED_PKG_DB} $pkg
+		$db_cmd -d btree $PKGFS_DESTDIR/$PKGFS_REGISTERED_PKG_DB $pkg
 		if [ "$?" -ne 0 ]; then
 			echo -n "*** ERROR: \`$pkg' stowned not registered "
 			echo "in db file? ***"
@@ -866,10 +908,14 @@ installed_tmpl_handler()
 	fi
 }
 
+#
+# Checks the registered pkgs db file and returns 0 if pkg is installed,
+# otherwise returns 1.
+#
 check_installed_tmpl()
 {
 	local pkg="$1"
-	local db_file="${PKGFS_DESTDIR}/${PKGFS_REGISTERED_PKG_DB}"
+	local db_file="$PKGFS_DESTDIR/$PKGFS_REGISTERED_PKG_DB"
 
 	[ -z "$pkg" ] && return 1
 
@@ -877,8 +923,27 @@ check_installed_tmpl()
 	return $?
 }
 
+#
+# Checks the build depends db file and returns 0 if pkg has dependencies,
+# otherwise returns 1.
+#
+check_build_depends_tmpl()
+{
+	local pkg="$1"
+
+	[ -z $pkg ] && return 1
+	[ ! -r $PKGFS_BUILD_DEPS_DB ] && return 1
+
+	$db_cmd -V btree $PKGFS_BUILD_DEPS_DB ${pkg%-[0-9]*} 2>&1 >/dev/null
+	return $?
+}
+
+#
+# Installs a pkg by reading its build template file.
+#
 install_tmpl()
 {
+	local pkg=
 	cur_tmpl="$PKGFS_TEMPLATESDIR/$1.tmpl"
 	if [ -z "$cur_tmpl" -o ! -f "$cur_tmpl" ]; then
 		echo -n "*** ERROR: invalid template file '$cur_tmpl',"
@@ -887,14 +952,15 @@ install_tmpl()
 	fi
 
 	reset_tmpl_vars
-	run_file ${cur_tmpl}
+	run_file $cur_tmpl
+	pkg="$1-$version"
 
 	#
 	# If we are the originator package save the path this template in
 	# other var for future use.
 	#
 	if [ -z "$origin_tmpl" ]; then
-		origin_tmpl=${path_fixed}
+		origin_tmpl=$path_fixed
 	fi
 
 	#
@@ -905,23 +971,22 @@ install_tmpl()
 	#
 	# Check vars for current template.
 	#
-	check_tmpl_vars ${pkgname}
+	check_tmpl_vars $pkg
 
 	#
-	# Handle required dependency for this template iff it
-	# is not installed and if we are being invoked by a dependency.
+	# Install dependencies required by this package.
 	#
-	local pkgdepf="$PKGFS_DEPSDIR/$pkgname-deps.db"
-	if [ -r "$pkgdepf" -a -z "$doing_deps" ]; then
-		install_dependency_tmpl ${pkgdepf}
+	check_build_depends_tmpl $pkg
+	if [ "$?" -eq 0 -a -z "$doing_deps" ]; then
+		install_dependency_tmpl $pkg
 		#
 		# At this point all required deps are installed, and
 		# only remaining is the origin template; install it.
 		#
 		unset doing_deps
 		reset_tmpl_vars
-		run_file ${origin_tmpl}
-		check_tmpl_vars ${pkgname}
+		run_file $origin_tmpl
+		check_tmpl_vars $pkgname-$version
 	fi
 
 	if [ -n "$only_build" ]; then
@@ -939,10 +1004,12 @@ install_tmpl()
 	#
 	# Do not stow the pkg if requested.
 	#
-	[ -z "$only_install" ] && stow_tmpl ${pkgname}
-
+	[ -z "$only_install" ] && stow_tmpl $pkg
 }
 
+#
+# Lists all currently installed packages.
+#
 list_tmpls()
 {
 	local reg_pkgdb="$PKGFS_DESTDIR/$PKGFS_REGISTERED_PKG_DB"
@@ -956,12 +1023,15 @@ list_tmpls()
 		# Skip stowned value
 		[ "$i" = "stowned" ] && continue
 		# Run file to get short_desc and print something useful
-		run_file ${PKGFS_TEMPLATESDIR}/$i.tmpl
+		run_file ${PKGFS_TEMPLATESDIR}/${i%-[0-9]*}.tmpl
 		echo "$i		$short_desc"
 		reset_tmpl_vars
 	done
 }
 
+#
+# Removes a currently installed package (unstow + removed from destdir).
+#
 remove_tmpl()
 {
 	local pkg="$1"
@@ -971,13 +1041,20 @@ remove_tmpl()
 		exit 1
 	fi
 
-	if [ ! -d "$PKGFS_DESTDIR/$pkg" ]; then
+	if [ ! -f "$PKGFS_TEMPLATESDIR/$pkg.tmpl" ]; then
+		echo "*** ERROR: cannot find template file ***"
+		exit 1
+	fi
+
+	run_file $PKGFS_TEMPLATESDIR/$pkg.tmpl
+
+	if [ ! -d "$PKGFS_DESTDIR/$pkg-$version" ]; then
 		echo "*** ERROR: cannot find package on $PKGFS_DESTDIR ***"
 		exit 1
 	fi
 
-	unstow_tmpl ${pkg}
-	$rm_cmd -rf $PKGFS_DESTDIR/$pkg
+	unstow_tmpl $pkg-$version
+	$rm_cmd -rf $PKGFS_DESTDIR/$pkg-$version
 	return "$?"
 }
 
@@ -1047,6 +1124,7 @@ remove)
 	remove_tmpl "$2"
 	;;
 stow)
+	stow_flag=yes
 	stow_tmpl "$2"
 	;;
 unstow)

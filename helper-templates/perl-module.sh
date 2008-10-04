@@ -18,7 +18,7 @@
 : ${perl_cmd:=$PKGFS_MASTERDIR/bin/perl}
 : ${PERL_DESTDIR:=$PKGFS_MASTERDIR}
 : ${PERL_PREFIX:=$PERL_DESTDIR}
-: ${PERL_DPREFIX:=$PKGFS_DESTDIR/$pkgname}
+: ${PERL_DPREFIX:=$PKGFS_DESTDIR/$pkgname-$version}
 : ${PERL_VERSION:=5.10.0}
 : ${PERL_LDDLFLAGS:=--whole-archive -shared -L$PKGFS_MASTERDIR/lib}
 : ${PERL_SITELIBEXP:=$PERL_DPREFIX/lib/perl5/site_perl/$PERL_VERSION}

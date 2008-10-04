@@ -12,7 +12,7 @@ save_pkgname=$pkgname
 check_installed_tmpl unzip-$unzip_version
 if [ "$?" -ne 0 ]; then
 	echo "=> unzip not installed, will install it."
-	install_tmpl unzip-$unzip_version
+	install_tmpl unzip
 	#
 	# Continue with previous template that called us.
 	#
