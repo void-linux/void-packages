@@ -29,6 +29,9 @@
 #-
 #
 # TODO
+#	- Implement a routine that checks if installed version is sufficient
+#	  to satisfy the required dependency... right now it's very prone
+#	  to errors and slow.
 # 	- Multiple distfiles in a package.
 #	- Multiple URLs to download source distribution files.
 #	- Support adding filters to templates to avoid creating useless links.
@@ -37,7 +40,6 @@
 # via the environment or command line.
 #
 : ${PKGFS_CONFIG_FILE:=/usr/local/etc/pkgfs.conf}
-: ${PKGFS_REGISTERED_PKG_DB:=.pkgfs-registered-pkgfs.db}
 
 : ${progname:=$(basename $0)}
 : ${topdir:=$(/bin/pwd -P 2>/dev/null)}
@@ -71,6 +73,7 @@ set_defvars()
 	: ${PKGFS_DEPSDIR:=$PKGFS_DISTRIBUTIONDIR/dependencies}
 	: ${PKGFS_BUILD_DEPS_DB:=$PKGFS_DEPSDIR/build-depends.db}
 	: ${PKGFS_TMPLHELPDIR:=$PKGFS_DISTRIBUTIONDIR/helper-templates}
+	: ${PKGFS_REGPKG_DB:=$PKGFS_DESTDIR/.pkgfs-registered-pkgs.db}
 
 	local DDIRS="PKGFS_DEPSDIR PKGFS_TEMPLATESDIR PKGFS_TMPLHELPDIR"
 	for i in ${DDIRS}; do
@@ -732,7 +735,7 @@ stow_tmpl()
 
 	xstow_args="$real_xstowargs"
 
-	installed_tmpl_handler register $pkg
+	installed_tmpl_handler register $pkgname $version
 
 	#
 	# Run template postinstall helpers if requested.
@@ -777,7 +780,7 @@ unstow_tmpl()
 		echo "==> Removed \`$pkg' symlinks from master directory."
 	fi
 
-	installed_tmpl_handler unregister $pkgname-$version
+	installed_tmpl_handler unregister $pkgname $version
 }
 
 #
@@ -787,7 +790,6 @@ unstow_tmpl()
 add_dependency_tolist()
 {
 	local curpkg="$1"
-	local reg_pkgdb="$PKGFS_DESTDIR/$PKGFS_REGISTERED_PKG_DB"
 
 	[ -z "$curpkg" ] && return 1
 	[ -n "$prev_pkg" ] && curpkg=$prev_pkg
@@ -796,8 +798,8 @@ add_dependency_tolist()
 		#
 		# Check if dep already installed.
 		#
-		if [ -r "$reg_pkgdb" ]; then
-			check_installed_tmpl $i
+		if [ -r "$PKGFS_REGPKG_DB" ]; then
+			check_installed_tmpl $i ${i##[aA-zZ]*-}
 			#
 			# If dep is already installed, put it on the
 			# installed deps list and continue.
@@ -889,7 +891,8 @@ install_dependency_tmpl()
 
 	echo "==> Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
-		echo "	$i: already installed."
+		fpkg="$($db_cmd -O '-' btree $PKGFS_REGPKG_DB ${i%-[0-9]*})"
+		echo "	$i: found $fpkg."
 	done
 
 	for i in ${deps_list}; do
@@ -934,18 +937,18 @@ installed_tmpl_handler()
 {
 	local action="$1"
 	local pkg="$2"
+	local version="$3"
 
-	[ -z "$action" -o -z "$pkg" ] && return 1
+	[ -z "$action" -o -z "$pkg" -o -z "$version" ] && return 1
 	if [ "$action" = "register" ]; then
-		$db_cmd -w btree $PKGFS_DESTDIR/$PKGFS_REGISTERED_PKG_DB \
-			$pkg stowned
+		$db_cmd -w btree $PKGFS_REGPKG_DB $pkg $version
 		if [ "$?" -ne  0 ]; then
 			echo -n "*** ERROR: couldn't register stowned \`$pkg'"
 			echo " in db file ***"
 			exit 1
 		fi
 	elif [ "$action" = "unregister" ]; then
-		$db_cmd -d btree $PKGFS_DESTDIR/$PKGFS_REGISTERED_PKG_DB $pkg
+		$db_cmd -d btree $PKGFS_REGPKG_DB $pkg
 		if [ "$?" -ne 0 ]; then
 			echo -n "*** ERROR: \`$pkg' stowned not registered "
 			echo "in db file? ***"
@@ -957,18 +960,43 @@ installed_tmpl_handler()
 }
 
 #
-# Checks the registered pkgs db file and returns 0 if pkg is installed,
-# otherwise returns 1.
+# Checks the registered pkgs db file and returns 0 if a pkg that satisfies
+# the minimal required version if there, or 1 otherwise.
 #
 check_installed_tmpl()
 {
 	local pkg="$1"
-	local db_file="$PKGFS_DESTDIR/$PKGFS_REGISTERED_PKG_DB"
+	local reqver="$2"
+	local iver=
 
-	[ -z "$pkg" ] && return 1
+	[ -z "$pkg" -o -z "$reqver" ] && return 1
 
-	$db_cmd btree $db_file $pkg 2>&1 >/dev/null
-	return $?
+	run_file $PKGFS_TEMPLATESDIR/${pkg%-[0-9]*}.tmpl
+
+	reqver="$(echo $reqver | $sed_cmd 's|\.||g;s|[aA-zZ]||g')"
+
+	$db_cmd -K btree $PKGFS_REGPKG_DB $pkgname 2>&1 >/dev/null
+	if [ "$?" -eq 0 ]; then
+		#
+		# Package is installed, let's check the version.
+		#
+		iver="$($db_cmd -V btree $PKGFS_REGPKG_DB $pkgname)"
+		if [ -n "$iver" ]; then
+			#
+			# As shell only supports decimal arith expressions,
+			# we simply remove anything except the numbers.
+			# It's not optimal and may fail, but it is enough
+			# for now.
+			#
+			iver="$(echo $iver | $sed_cmd 's|\.||g;s|[aA-zZ]||g')"
+			if [ "$iver" -eq "$reqver" \
+			     -o "$iver" -gt "$reqver" ]; then
+			     return 0
+			fi
+		fi
+	fi
+
+	return 1
 }
 
 #
@@ -1060,19 +1088,15 @@ install_tmpl()
 #
 list_tmpls()
 {
-	local reg_pkgdb="$PKGFS_DESTDIR/$PKGFS_REGISTERED_PKG_DB"
-
-	if [ ! -r "$reg_pkgdb" ]; then
+	if [ ! -r "$PKGFS_REGPKG_DB" ]; then
 		echo "=> No packages registered or missing register db file."
 		exit 0
 	fi
 
-	for i in $($db_cmd btree $reg_pkgdb); do
-		# Skip stowned value
-		[ "$i" = "stowned" ] && continue
+	for i in $($db_cmd -K btree $PKGFS_REGPKG_DB); do
 		# Run file to get short_desc and print something useful
-		run_file ${PKGFS_TEMPLATESDIR}/${i%-[0-9]*}.tmpl
-		echo "$i		$short_desc"
+		run_file ${PKGFS_TEMPLATESDIR}/$i.tmpl
+		echo "$i-$version	$short_desc"
 		reset_tmpl_vars
 	done
 }
