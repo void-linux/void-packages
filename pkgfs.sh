@@ -627,11 +627,11 @@ build_tmpl_sources()
 	done
 
 	[ -z "$make_build_target" ] && make_build_target=
-
+	[ -n "$PKGFS_MAKEJOBS" ] && PKGFS_MAKEJOBS="-j$PKGFS_MAKEJOBS"
 	#
 	# Build package via make.
 	#
-	${make_cmd} ${make_build_args} ${make_build_target}
+	${make_cmd} ${PKGFS_MAKEJOBS} ${make_build_args} ${make_build_target}
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR building (make stage) \`$pkg' ***"
 		exit 1
