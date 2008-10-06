@@ -34,7 +34,6 @@
 #	  to errors and slow.
 # 	- Multiple distfiles in a package.
 #	- Multiple URLs to download source distribution files.
-#	- Support adding filters to templates to avoid creating useless links.
 #
 # Default path to configuration file, can be overriden
 # via the environment or command line.
@@ -311,8 +310,11 @@ reset_tmpl_vars()
 			run_stuff_before run_stuff_after \
 			run_stuff_before_configure_file run_stuff_before_build_file \
 			run_stuff_before_install_file run_stuff_after_install \
-			make_build_target make_install_target \
-			postinstall_helpers version"
+			run_stuff_after_install_file make_build_target \
+			run_stuff_before_configure_cmd run_stuff_before_build_cmd \
+			run_stuff_before_install_cmd run_stuff_after_install_cmd \
+			make_install_target postinstall_helpers version \
+			ignore_files"
 
 	for i in ${TMPL_VARS}; do
 		eval unset "$i"
@@ -538,8 +540,10 @@ build_tmpl_sources()
 	# Run stuff before configure.
 	for i in "$run_stuff_before"; do
 		if [ "$i" = "configure" ]; then
-			local bcf="$PKGFS_TEMPLATESDIR/$run_stuff_before_configure_file"
-			[ -f $bcf ] && . $bcf
+			[ -f $run_stuff_before_configure_file ] && \
+				. $run_stuff_before_configure_file
+			[ -n "$run_stuff_before_configure_cmd" ] && \
+				${run_stuff_before_configure_cmd}
 		fi
 	done
 
@@ -615,8 +619,10 @@ build_tmpl_sources()
 	#
 	for i in ${run_stuff_before}; do
 		if [ "$i" = "build" ]; then
-			local bbf="$PKGFS_TEMPLATESDIR/$run_stuff_before_build_file"
-			[ -f $bbf ] && . $bbf
+			[ -f $run_stuff_before_build_file ] && \
+				. $run_stuff_before_build_file
+			[ -n "$run_stuff_before_build_cmd" ] && \
+				${run_stuff_before_build_cmd}
 		fi
 	done
 
@@ -636,8 +642,10 @@ build_tmpl_sources()
 	#
 	for i in ${run_stuff_before}; do
 		if [ "$i" = "install" ]; then
-			local bif="$PKGFS_TEMPLATESDIR/$run_stuff_before_install_file"
-			[ -f $bif ] && . $bif
+			[ -f $run_stuff_before_install_file ] && \
+				. $run_stuff_before_install_file
+			[ -n "$run_stuff_before_install_cmd" ] && \
+				${run_stuff_before_install_cmd}
 		fi
 	done
 
@@ -658,8 +666,10 @@ build_tmpl_sources()
 	#
 	for i in ${run_stuff_after}; do
 		if [ "$i" = "install" ]; then
-			local aif="$PKGFS_TEMPLATESDIR/$run_stuff_after_install_file"
-			[ -f $aif ] && . $aif
+			[ -f $run_stuff_after_install_file ] && \
+				. $run_stuff_after_install_file
+			[ -n "$run_stuff_after_install_cmd" ] && \
+				${run_stuff_after_install_cmd}
 		fi
 	done
 
@@ -704,6 +714,7 @@ stow_tmpl()
 	local infodir_pkg="share/info/dir"
 	local infodir_master="$PKGFS_MASTERDIR/share/info/dir"
 	local real_xstowargs="$xstow_args"
+	local real_xstow_ignore="$xstow_ignore_files"
 
 	[ -z "$pkg" ] && return 2
 
@@ -722,7 +733,11 @@ stow_tmpl()
 		xstow_args="$xstow_args -i-file-in-dir $infodir_pkg"
 	fi
 
-	$PKGFS_XSTOW_CMD -ignore ${xstow_ignore_files} ${xstow_args} \
+	if [ -n "$ignore_files" ]; then
+		xstow_ignore_files="$xstow_ignore_files $ignore_files"
+	fi
+
+	$PKGFS_XSTOW_CMD -ignore "${xstow_ignore_files}" ${xstow_args} \
 		-pd-targets $PKGFS_MASTERDIR \
 		-dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
 		$PKGFS_DESTDIR/$pkg
@@ -732,8 +747,6 @@ stow_tmpl()
 	else
 		echo "==> Created \`$pkg' symlinks into master directory."
 	fi
-
-	xstow_args="$real_xstowargs"
 
 	installed_tmpl_handler register $pkgname $version
 
@@ -748,6 +761,9 @@ stow_tmpl()
 		local pihf="$PKGFS_TMPLHELPDIR/$i"
 		[ -f "$pihf" ] && . $pihf
 	done
+
+	xstow_ignore_files="$real_xstow_ignore"
+	xstow_args="$real_xstowargs"
 }
 
 #
@@ -757,6 +773,7 @@ stow_tmpl()
 unstow_tmpl()
 {
 	local pkg="$1"
+	local real_xstow_ignore="$xstow_ignore_files"
 
 	if [ -z "$pkg" ]; then
 		echo "*** ERROR: template wasn't specified? ***"
@@ -770,9 +787,13 @@ unstow_tmpl()
 
 	run_file $PKGFS_TEMPLATESDIR/$pkg.tmpl
 
+	if [ -n "$ignore_files" ]; then
+		xstow_ignore_files="$xstow_ignore_files $ignore_files"
+	fi
+
 	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
-		-D -i-file-in-dir share/info/dir -ignore ${xstow_ignore_files} \
-		$PKGFS_DESTDIR/$pkgname-$version
+		-D -i-file-in-dir share/info/dir -ignore \
+		"${xstow_ignore_files}" $PKGFS_DESTDIR/$pkgname-$version
 	if [ "$?" -ne 0 ]; then
 		exit 1
 	else
@@ -781,6 +802,8 @@ unstow_tmpl()
 	fi
 
 	installed_tmpl_handler unregister $pkgname $version
+
+	xstow_ignore_files="$real_xstow_ignore"
 }
 
 #
