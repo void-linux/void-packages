@@ -188,7 +188,7 @@ info_tmpl()
 	echo "short_desc:	$short_desc"
 	echo "$long_desc"
 	echo
-	check_build_depends_tmpl $pkgname
+	check_build_depends_tmpl $pkg-$version
 	if [ "$?" -eq 0 ]; then
 		local list="$($db_cmd -V btree $PKGFS_BUILD_DEPS_DB $pkgname)"
 		echo "This package requires the following dependencies to be built:"
@@ -817,7 +817,7 @@ add_dependency_tolist()
 	[ -z "$curpkg" ] && return 1
 	[ -n "$prev_pkg" ] && curpkg=$prev_pkg
 
-	for i in $($db_cmd -V btree $PKGFS_BUILD_DEPS_DB ${curpkg%-[0-9]*}); do
+	for i in $($db_cmd -V btree $PKGFS_BUILD_DEPS_DB ${curpkg%-[0-9].*}); do
 		#
 		# Check if dep already installed.
 		#
@@ -914,7 +914,7 @@ install_dependency_tmpl()
 
 	echo "==> Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
-		fpkg="$($db_cmd -O '-' btree $PKGFS_REGPKG_DB ${i%-[0-9]*})"
+		fpkg="$($db_cmd -O '-' btree $PKGFS_REGPKG_DB ${i%-[0-9].*})"
 		echo "	$i: found $fpkg."
 	done
 
@@ -925,7 +925,7 @@ install_dependency_tmpl()
 	for i in ${deps_list}; do
 		# skip dup deps
 		echo "=> Installing dependency: $i"
-		install_tmpl ${i%-[0-9]*}
+		install_tmpl ${i%-[0-9].*}
 	done
 
 	unset installed_deps_list
@@ -994,7 +994,7 @@ check_installed_tmpl()
 
 	[ -z "$pkg" -o -z "$reqver" ] && return 1
 
-	run_file $PKGFS_TEMPLATESDIR/${pkg%-[0-9]*}.tmpl
+	run_file $PKGFS_TEMPLATESDIR/${pkg%-[0-9].*}.tmpl
 
 	reqver="$(echo $reqver | $sed_cmd 's|\.||g;s|[aA-zZ]||g')"
 
@@ -1033,7 +1033,7 @@ check_build_depends_tmpl()
 	[ -z $pkg ] && return 1
 	[ ! -r $PKGFS_BUILD_DEPS_DB ] && return 1
 
-	$db_cmd -V btree $PKGFS_BUILD_DEPS_DB ${pkg%-[0-9]*} 2>&1 >/dev/null
+	$db_cmd -V btree $PKGFS_BUILD_DEPS_DB ${pkg%-[0-9].*} 2>&1 >/dev/null
 	return $?
 }
 
