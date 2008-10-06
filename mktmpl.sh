@@ -41,6 +41,7 @@
 : ${db_cmd:=/usr/bin/db -q}
 : ${config_file:=/usr/local/etc/pkgfs.conf}
 : ${chmod_cmd:=/bin/chmod}
+: ${mkdir_cmd:=/bin/mkdir}
 
 required_deps=
 
@@ -53,7 +54,8 @@ write_new_template()
 	local dfile=
 	local tmplname=
 
-	[ ! -d $distdir -o ! -d $tmpldir -o ! -d $depsdir ] && exit 1
+	[ ! -d $distdir ] && $mkdir_cmd -p $distdir
+	[ ! -d $tmpldir -o ! -d $depsdir ] && exit 1
 
 	save_pwd=$(pwd -P 2>/dev/null)
 	echo "=> Fetching distfile from $url"
