@@ -330,6 +330,10 @@ check_tmpl_vars()
 	local dfile=""
 
 	[ -z "$pkg" ] && return 1
+	#
+	# There's nothing of interest if we are a meta template.
+	#
+	[ "$build_style" = "meta-template" ] && return 0
 
 	REQ_VARS="pkgname version extract_sufx url build_style"
 
@@ -416,6 +420,10 @@ fetch_tmpl_sources()
 	local file2=""
 
 	[ -z "$pkgname" ] && return 1
+	#
+	# There's nothing of interest if we are a meta template.
+	#
+	[ "$build_style" = "meta-template" ] && return 0
 
 	if [ -z "$distfiles" ]; then
 		file="$pkgname-$version"
@@ -464,6 +472,11 @@ extract_tmpl_sources()
 {
 	[ -z "$pkgname" ] && return 1
 
+	#
+	# There's nothing of interest if we are a meta template.
+	#
+	[ "$build_style" = "meta-template" ] && return 0
+
 	echo "==> Extracting \`$pkgname-$version' into $PKGFS_BUILDDIR."
 
 	$extract_cmd
@@ -506,6 +519,10 @@ build_tmpl_sources()
 	local pkg="$pkgname-$version"
 
 	[ -z "$pkgname" -o -z "$version" ] && return 1
+        #
+	# There's nothing of interest if we are a meta template.
+	#
+	[ "$build_style" = "meta-template" ] && return 0
 
 	if [ -n "$distfiles" -a -z "$wrksrc" ]; then
 		wrksrc=$PKGFS_BUILDDIR/$distfiles
@@ -722,6 +739,10 @@ stow_tmpl()
 		pkg=$PKGFS_TEMPLATESDIR/$pkg.tmpl
 		run_file $pkg
 		pkg=$pkgname-$version
+		#
+		# You cannot stow a meta-template.
+		#
+		[ "$build_style" = "meta-template" ] && return 0
 	fi
 
 	if [ -r "$PKGFS_DESTDIR/$pkg/$infodir_pkg" ]; then
@@ -786,6 +807,11 @@ unstow_tmpl()
 	fi
 
 	run_file $PKGFS_TEMPLATESDIR/$pkg.tmpl
+
+	#
+	# You cannot unstow a meta-template.
+	#
+	[ "$build_style" = "meta-template" ] && return 0
 
 	if [ -n "$ignore_files" ]; then
 		xstow_ignore_files="$xstow_ignore_files $ignore_files"
@@ -964,16 +990,16 @@ installed_tmpl_handler()
 
 	[ -z "$action" -o -z "$pkg" -o -z "$version" ] && return 1
 	if [ "$action" = "register" ]; then
-		$db_cmd -w btree $PKGFS_REGPKG_DB $pkg $version
+		$db_cmd -w btree $PKGFS_REGPKG_DB $pkg $version 2>&1 >/dev/null
 		if [ "$?" -ne  0 ]; then
-			echo -n "*** ERROR: couldn't register stowned \`$pkg'"
+			echo -n "*** ERROR: couldn't register \`$pkg'"
 			echo " in db file ***"
 			exit 1
 		fi
 	elif [ "$action" = "unregister" ]; then
-		$db_cmd -d btree $PKGFS_REGPKG_DB $pkg
+		$db_cmd -d btree $PKGFS_REGPKG_DB $pkg 2>&1 >/dev/null
 		if [ "$?" -ne 0 ]; then
-			echo -n "*** ERROR: \`$pkg' stowned not registered "
+			echo -n "*** ERROR: \`$pkg' not registered "
 			echo "in db file? ***"
 			exit 1
 		fi
@@ -1101,6 +1127,15 @@ install_tmpl()
 	build_tmpl_sources
 
 	#
+	# Just announce that meta-template is installed and exit.
+	#
+	if [ "$build_style" = "meta-template" ]; then
+		installed_tmpl_handler register $pkgname $version
+		echo "==> Installed meta-template \`$pkg'."
+		return 0
+	fi
+
+	#
 	# Do not stow the pkg if requested.
 	#
 	[ -z "$only_install" ] && stow_tmpl $pkg
@@ -1142,6 +1177,16 @@ remove_tmpl()
 	fi
 
 	run_file $PKGFS_TEMPLATESDIR/$pkg.tmpl
+
+	#
+	# If it's a meta-template, just unregister it from the db.
+	#
+	if [ "$build_style" = "meta-template" ]; then
+		installed_tmpl_handler unregister $pkgname $version
+		[ "$?" -eq 0 ] && \
+			echo "=> Removed meta-template \`$pkg'."
+		return $?
+	fi
 
 	if [ ! -d "$PKGFS_DESTDIR/$pkg-$version" ]; then
 		echo "*** ERROR: cannot find package on $PKGFS_DESTDIR ***"
