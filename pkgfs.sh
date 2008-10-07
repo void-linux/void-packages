@@ -188,7 +188,7 @@ info_tmpl()
 	echo "short_desc:	$short_desc"
 	echo "$long_desc"
 	echo
-	check_build_depends_tmpl $pkg-$version
+	check_build_depends_tmpl $pkgname-$version
 	if [ "$?" -eq 0 ]; then
 		local list="$($db_cmd -V btree $PKGFS_BUILD_DEPS_DB $pkgname)"
 		echo "This package requires the following dependencies to be built:"
