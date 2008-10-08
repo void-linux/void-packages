@@ -258,7 +258,8 @@ check_config_vars()
 	if [ -z "$config_file_specified" ]; then
 		config_file_paths="$PKGFS_CONFIG_FILE ./pkgfs.conf"
 		for f in $config_file_paths; do
-			[ -f $f ] && PKGFS_CONFIG_FILE=$f && cffound=yes
+			[ -f $f ] && PKGFS_CONFIG_FILE=$f && \
+				cffound=yes && break
 		done
 		if [ -z "$cffound" ]; then
 			echo -n "*** ERROR: config file not specified "
