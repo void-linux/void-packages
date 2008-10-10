@@ -308,7 +308,7 @@ reset_tmpl_vars()
 			make_build_args make_install_args build_style	\
 			short_desc maintainer long_desc checksum wrksrc	\
 			patch_files configure_env make_cmd pkgconfig_override \
-			run_stuff_before run_stuff_after \
+			configure_env make_env run_stuff_before run_stuff_after \
 			run_stuff_before_configure_file run_stuff_before_build_file \
 			run_stuff_before_install_file run_stuff_after_install \
 			run_stuff_after_install_file make_build_target \
@@ -511,6 +511,24 @@ fixup_tmpl_libtool()
 	fi
 }
 
+set_build_vars()
+{
+	LDFLAGS="-L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib $LDFLAGS"
+	LDFLAGS="-L$PKGFS_DESTDIR/$pkg/lib $LDFLAGS"
+	CFLAGS="$CFLAGS $PKGFS_CFLAGS"
+	CXXFLAGS="$CXXFLAGS $PKGFS_CXXFLAGS"
+	CPPFLAGS="-I$PKGFS_MASTERDIR/include $CPPFLAGS"
+	PKG_CONFIG="$PKGFS_MASTERDIR/bin/pkg-config"
+
+	export LDFLAGS="$LDFLAGS" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"
+	export CPPFLAGS="$CPPFLAGS" PKG_CONFIG="$PKG_CONFIG"
+}
+
+unset_build_vars()
+{
+	unset LDFLAGS CFLAGS CXXFLAGS CPPFLAGS PKG_CONFIG
+}
+
 #
 # Configures, builds and installs a package into the destination
 # directory.
@@ -545,16 +563,6 @@ build_tmpl_sources()
 
 	echo "==> Building \`$pkg' (be patient, may take a while)"
 
-	#
-	# For now, just set them through the environment.
-	#
-	LDFLAGS="-L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib $LDFLAGS"
-	export LDFLAGS="-L$PKGFS_DESTDIR/$pkg/lib $LDFLAGS"
-	export CFLAGS="$CFLAGS $PKGFS_CFLAGS"
-	export CXXFLAGS="$CXXFLAGS $PKGFS_CXXFLAGS"
-	export CPPFLAGS="-I$PKGFS_MASTERDIR/include $CPPFLAGS"
-	export PKG_CONFIG="$PKGFS_MASTERDIR/bin/pkg-config"
-
 	# Run stuff before configure.
 	for i in "$run_stuff_before"; do
 		if [ "$i" = "configure" ]; then
@@ -565,23 +573,27 @@ build_tmpl_sources()
 		fi
 	done
 
+	# Export configure_env vars.
+	for f in ${configure_env}; do
+		export "$f"
+	done
+
 	#
 	# Packages using GNU autoconf
 	#
 	if [ "$build_style" = "gnu_configure" ]; then
-		for i in ${configure_env}; do
-			[ -n "$i" ] && export $i
-		done
 		cd $wrksrc
+		set_build_vars
 		#
 		# Pass consistent arguments to not have unexpected
 		# surprises later.
 		#
-		./configure	--prefix="$PKGFS_MASTERDIR"		\
-				--mandir="$PKGFS_DESTDIR/$pkg/man"	\
-				--infodir="$PKGFS_DESTDIR/$pkg/share/info" \
-				--sysconfdir="$PKGFS_SYSCONFDIR" \
-				${configure_args}
+		./configure						\
+			--prefix="$PKGFS_MASTERDIR"			\
+			--mandir="$PKGFS_DESTDIR/$pkg/man"		\
+			--infodir="$PKGFS_DESTDIR/$pkg/share/info"	\
+			--sysconfdir="$PKGFS_SYSCONFDIR"		\
+			${configure_args}
 
 	#
 	# Packages using propietary configure scripts.
@@ -622,6 +634,11 @@ build_tmpl_sources()
 		exit 1
 	fi
 
+	# unset configure_env vars.
+	for f in ${configure_env}; do
+		unset eval ${f%=*}
+	done
+
 	#
 	# Assume BSD make if make_cmd not set in template.
 	#
@@ -646,6 +663,12 @@ build_tmpl_sources()
 
 	[ -z "$make_build_target" ] && make_build_target=
 	[ -n "$PKGFS_MAKEJOBS" ] && PKGFS_MAKEJOBS="-j$PKGFS_MAKEJOBS"
+
+	# Export make_env vars.
+	for f in ${make_env}; do
+		export "$f"
+	done
+
 	#
 	# Build package via make.
 	#
@@ -679,6 +702,11 @@ build_tmpl_sources()
 		exit 1
 	fi
 
+	# Unset make_env vars.
+	for f in ${make_env}; do
+		unset eval ${f%=*}
+	done
+
 	#
 	# Run template stuff after installing.
 	#
@@ -702,13 +730,10 @@ build_tmpl_sources()
 			pkgconfig_transform_file $tmpf
 	done
 
+	# Unset build vars.
+	unset_build_vars
 
 	echo "==> Installed \`$pkg' into $PKGFS_DESTDIR/$pkg."
-
-	#
-	# Once all work has been done, unset compilation vars.
-	#
-	unset LDFLAGS CFLAGS CXXFLAGS CPPFLAGS PKG_CONFIG
 
 	#
 	# Remove $wrksrc if -C not specified.
