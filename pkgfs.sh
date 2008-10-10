@@ -221,15 +221,17 @@ apply_tmpl_patches()
 				continue
 			fi
 
+			$cp_cmd -f $patch $wrksrc
+
 			# Try to guess if its a compressed patch.
 			if $(echo $patch|$grep_cmd -q .gz); then
-				$gunzip_cmd $patch
-				patch=${patch%%.gz}
+				$gunzip_cmd $wrksrc/$i
+				patch=${i%%.gz}
 			elif $(echo $patch|$grep_cmd -q .bz2); then
-				$bunzip2_cmd $patch
-				patch=${patch%%.bz2}
+				$bunzip2_cmd $wrksrc/$i
+				patch=${i%%.bz2}
 			elif $(echo $patch|$grep_cmd -q .diff); then
-				# nada
+				patch=$i
 			else
 				echo "*** WARNING: unknown patch type '$i' ***"
 				continue
