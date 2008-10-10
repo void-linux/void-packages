@@ -76,7 +76,8 @@ set_defvars()
 
 	local DDIRS="PKGFS_DEPSDIR PKGFS_TEMPLATESDIR PKGFS_TMPLHELPDIR"
 	for i in ${DDIRS}; do
-		if [ ! -d "$PKGFS_DEPSDIR" ]; then
+		eval val="\$$i"
+		if [ ! -d "$val" ]; then
 			echo "**** ERROR: cannot find $i, aborting ***"
 			exit 1
 		fi
@@ -203,11 +204,7 @@ info_tmpl()
 #
 apply_tmpl_patches()
 {
-	if [ -z "$PKGFS_TEMPLATESDIR" ]; then
-		echo -n "*** WARNING: PKGFS_TEMPLATESDIR is not set, "
-		echo "won't apply patches ***"
-		return 1
-	fi
+	local patch=
 
 	#
 	# If package needs some patches applied before building,
@@ -290,7 +287,7 @@ check_config_vars()
 			exit 1
 		fi
 
-		if [ ! -d "$f" ]; then
+		if [ ! -d "$val" ]; then
 			$mkdir_cmd "$val"
 			if [ "$?" -ne 0 ]; then
 				echo -n "*** ERROR: couldn't create '$f'"
@@ -412,6 +409,8 @@ check_rmd160_cksum()
 		echo "*** WARNING: checksum doesn't match (rmd160) ***"
 		return 1
 	fi
+
+	echo "==> RMD160 checksum ok for \`$pkgname-$version'."
 }
 
 #
@@ -447,7 +446,7 @@ fetch_tmpl_sources()
 			fi
 		fi
 
-		echo "==> Fetching \`$file2' source tarball"
+		echo "==> Fetching \`$file2' source tarball."
 
 		cd $PKGFS_SRCDISTDIR && $fetch_cmd $url/$file2
 		if [ "$?" -ne 0 ]; then
