@@ -146,9 +146,8 @@ merge_infodir_tmpl()
 	local pkgname="$1"
 	local merge_info_cmd="$PKGFS_MASTERDIR/bin/merge-info"
 
-	[ -z "$pkgname" ] && return 1
-	[ ! -r "$PKGFS_MASTERDIR/share/info/dir" ] && return 1
-	[ ! -r "$PKGFS_DESTDIR/$pkgname/share/info/dir" ] && return 1
+	[ -z "$pkgname" -o ! -r "$PKGFS_MASTERDIR/share/info/dir" \
+	     -o ! -r "$PKGFS_DESTDIR/$pkgname/share/info/dir" ] && return 1
 
 	$merge_info_cmd -d $PKGFS_MASTERDIR/share/info/dir 	\
 		$PKGFS_DESTDIR/$pkgname/share/info/dir -o 	\
@@ -555,7 +554,7 @@ build_tmpl_sources()
 	fi
 
 	if [ ! -d "$wrksrc" ]; then
-		echo "*** ERROR: unexistent build directory, aborting ***"
+		echo "*** ERROR: unexistent build directory: \`$wrksrc' ***"
 		exit 1
 	fi
 
@@ -628,7 +627,7 @@ build_tmpl_sources()
 	# Unknown build_style type won't work :-)
 	#
 	else
-		echo "*** ERROR unknown build_style $build_style, aborting ***"
+		echo "*** ERROR unknown build_style \`$build_style' ***"
 		exit 1
 	fi
 
@@ -736,7 +735,7 @@ build_tmpl_sources()
 	# Unset build vars.
 	unset_build_vars
 
-	echo "==> Installed \`$pkg' into $PKGFS_DESTDIR/$pkg."
+	echo "==> Installed \`$pkg' into $PKGFS_DESTDIR."
 
 	#
 	# Remove $wrksrc if -C not specified.
@@ -980,7 +979,7 @@ install_dependency_tmpl()
 	for i in ${deps_list}; do
 		# skip dup deps
 		echo "=> Installing dependency: $i"
-		install_tmpl ${i%-[0-9].*}
+		install_tmpl ${i%-[0-9]*.*}
 	done
 
 	unset installed_deps_list
@@ -1018,6 +1017,7 @@ installed_tmpl_handler()
 	local version="$3"
 
 	[ -z "$action" -o -z "$pkg" -o -z "$version" ] && return 1
+
 	if [ "$action" = "register" ]; then
 		$db_cmd -w btree $PKGFS_REGPKG_DB $pkg $version 2>&1 >/dev/null
 		if [ "$?" -ne  0 ]; then
@@ -1039,7 +1039,7 @@ installed_tmpl_handler()
 
 #
 # Checks the registered pkgs db file and returns 0 if a pkg that satisfies
-# the minimal required version if there, or 1 otherwise.
+# the minimal required version is there, or 1 otherwise.
 #
 check_installed_tmpl()
 {
@@ -1085,8 +1085,7 @@ check_build_depends_tmpl()
 {
 	local pkg="$1"
 
-	[ -z $pkg ] && return 1
-	[ ! -r $PKGFS_BUILD_DEPS_DB ] && return 1
+	[ -z $pkg -o ! -r $PKGFS_BUILD_DEPS_DB ] && return 1
 
 	$db_cmd -V btree $PKGFS_BUILD_DEPS_DB ${pkg%-[0-9]*.*} 2>&1 >/dev/null
 	return $?
@@ -1300,7 +1299,7 @@ unstow)
 	unstow_tmpl "$2"
 	;;
 *)
-	echo "*** ERROR invalid target '$target' ***"
+	echo "*** ERROR invalid target \`$target' ***"
 	usage
 esac
 
