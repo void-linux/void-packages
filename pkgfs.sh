@@ -1049,7 +1049,7 @@ check_installed_tmpl()
 
 	run_file $PKGFS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
 
-	reqver="$(echo $reqver | $sed_cmd 's|\.||g;s|[aA-zZ]||g')"
+	reqver="$(echo $reqver | $sed_cmd 's|[[:punct:]]||g;s|[[:alpha:]]||g')"
 
 	$db_cmd -K btree $PKGFS_REGPKG_DB $pkgname 2>&1 >/dev/null
 	if [ "$?" -eq 0 ]; then
@@ -1064,7 +1064,7 @@ check_installed_tmpl()
 			# It's not optimal and may fail, but it is enough
 			# for now.
 			#
-			iver="$(echo $iver | $sed_cmd 's|\.||g;s|[aA-zZ]||g')"
+			iver="$(echo $iver | $sed_cmd 's|[[:punct:]]||g;s|[[:alpha:]]||g')"
 			if [ "$iver" -eq "$reqver" \
 			     -o "$iver" -gt "$reqver" ]; then
 			     return 0
