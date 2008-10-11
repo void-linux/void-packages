@@ -43,7 +43,8 @@
 : ${chmod_cmd:=/bin/chmod}
 : ${mkdir_cmd:=/bin/mkdir}
 
-required_deps=
+deps=
+user_deps=
 
 write_new_template()
 {
@@ -122,11 +123,12 @@ write_new_template()
 	$chmod_cmd 755 $tmpldir/$tmplname$pkgname.tmpl
 
 	if [ -n "$deps" ]; then
-		for i in $required_deps; do
-			deps="$i $deps"
-		done
 		[ -n "$pcfiles" ] && deps="pkg-config-0.23 $deps"
 		[ -n "$perl_module" ] && deps="perl-5.10.0 $deps"
+
+		for i in ${user_deps}; do
+			deps="$i $deps"
+		done
 
 		$db_cmd -R -P 512 -w btree $depsdir/build-depends.db $pkgname \
 			"$deps" 2>&1 >/dev/null
@@ -184,15 +186,12 @@ read_parameters()
 
 	echo -n "Requires GNU libtool this package? (y) or (n): "
 	read dep_libtool
-	[ "$dep_libtool" = "y" ] && \
-		required_deps="libtool-2.2.6a $required_deps"
+	[ "$dep_libtool" = "y" ] && deps="libtool-2.2.6a $deps"
 
 	echo -n "Requires GNU make this package? (y) or (n): "
 	read dep_gmake
 	echo
-	[ "$dep_gmake" = "y" ] && \
-		required_deps="gmake-3.81 $required_deps"
-	[ "$dep_gmake" = "n" ] && dep_gmake=
+	[ "$dep_gmake" = "y" ] && deps="gmake-3.81 $deps"
 
 	echo "Please enter exact dependencies required for this template."
 	echo "They must be separated by whitespaces, e.g: foo-1.0 blah-2.0."
@@ -200,9 +199,8 @@ read_parameters()
 	echo "If it's a perl module or uses libtool/gmake, the dependency"
 	echo "will be added automatically so don't add them here again!"
 	echo -n "> "
-	read deps
+	read user_deps
 	echo
-	[ -z "$deps" ] && echo "No dependencies, continuing..."
 
 	echo "Will this package install pkg-config files?"
 	echo "If true, enter the names of the files with the .pc extension"
