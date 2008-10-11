@@ -319,6 +319,8 @@ reset_tmpl_vars()
 	for i in ${TMPL_VARS}; do
 		eval unset "$i"
 	done
+
+	unset_build_vars
 }
 
 #
