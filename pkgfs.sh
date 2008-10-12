@@ -619,8 +619,8 @@ configure_src_phase()
 		#
 		./configure						\
 			--prefix="$PKGFS_MASTERDIR"			\
-			--mandir="$PKGFS_DESTDIR/$pkg/man"		\
-			--infodir="$PKGFS_DESTDIR/$pkg/share/info"	\
+			--mandir="$PKGFS_DESTDIR/$pkgname-$version/man"	\
+			--infodir="$PKGFS_DESTDIR/$pkgname-$version/share/info"	\
 			--sysconfdir="$PKGFS_SYSCONFDIR"		\
 			${configure_args}
 
