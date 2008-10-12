@@ -4,22 +4,29 @@
 # and sets the unzip_cmd/extract_cmd variables appropiately.
 #
 # If unzip is already installed just return immediately.
-if [ ! -x $PKGFS_MASTERDIR/bin/unzip ]; then
+
+if [ ! -x "$PKGFS_MASTERDIR/bin/unzip" ]; then
 	unzip_version="5.52"
 
 	# Save pkgname before installing unzip.
 	save_pkgname=$pkgname
 
-	check_installed_tmpl unzip $unzip_version
-	if [ "$?" -ne 0 ]; then
-		echo "=> unzip not installed, will install it."
-		install_tmpl unzip
+	check_installed_pkg unzip $unzip_version
+	if [ $? -ne 0 ]; then
+		echo "=> \`\`$pkg´´ package requires unzip for extraction."
+		#
+		# Install dependencies required by unzip.
+		#
+		install_builddeps_required_pkg unzip-$unzip_version
+		#
+		# Install the unzip package now.
+		#
+		install_pkg unzip
 		#
 		# Continue with previous template that called us.
 		#
 		reset_tmpl_vars
-		run_file $PKGFS_TEMPLATESDIR/$save_pkgname.tmpl
-		check_tmpl_vars $save_pkgname
+		setup_tmpl $save_pkgname
 	fi
 
 	unset save_pkgname

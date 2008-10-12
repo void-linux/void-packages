@@ -1,7 +1,6 @@
 #!/bin/sh
 #
-# pkgfs - Builds source distribution files and stows/unstows them into
-#	  a master directory, thanks to Xstow.
+# pkgfs - A simple, minimal, fast and uncomplete build package system.
 #
 #-
 # Copyright (c) 2008 Juan Romero Pardines.
@@ -61,6 +60,7 @@
 : ${chmod_cmd:=/bin/chmod}
 : ${db_cmd:=/usr/bin/db -q}
 : ${chmod_cmd:=/bin/chmod}
+: ${touch_cmd:=/usr/bin/touch}
 
 : ${xstow_args:=-ap}
 : ${xstow_ignore_files:=perllocal.pod}	# XXX For now ignore them.
@@ -87,26 +87,24 @@ set_defvars()
 usage()
 {
 	cat << _EOF
-$progname: [-bCefi] [-c <config_file>] <target> <tmplname>
+$progname: [-C] [-c <config_file>] <target> [package_name]
 
 Targets
-	info	Show information about <tmplname>.
-	install	Build and install package from <tmplname>.
-	list	Lists and prints short description about installed packages.
-	remove	Remove package completely (unstow and remove from destdir)
-	stow	Create symlinks from <tmplname> in master directory.
-	unstow	Remove symlinks from <tmplname> in master directory.
+	build		Builds a package, only build phase is done.
+	configure	Configure a package, only configure phase is done.
+	extract		Extract distribution file(s) into build directory.
+	fetch		Download distribution file(s).
+	info		Show information about <package_name>.
+	install		build + configure + install into destdir + stow.
+	list		Lists all currently ``stowned´´ packages.
+	remove		Remove package completely (unstow + remove data)
+	stow		Create links in master directory.
+	unstow		Remove links in master directory.
 
 Options
-	-b	Only build the source distribution file(s), without
-		extracting or fetching before.
-	-C	Do not remove build directory after successful build.
-	-c	Path to global configuration file.
-		If not specified /usr/local/etc/pkgfs.conf is used.
-	-e	Only extract the source distribution file(s).
-	-f	Only fetch the source distribution file(s).
-	-i	Only build and install the binary distribution file(s)
-		into the destdir directory, without stowning.
+	-C	Do not remove build directory after successful installation.
+	-c	Path to global configuration file:
+		if not specified /usr/local/etc/pkgfs.conf is used.
 _EOF
 	exit 1
 }
@@ -152,7 +150,7 @@ merge_infodir_tmpl()
 	$merge_info_cmd -d $PKGFS_MASTERDIR/share/info/dir 	\
 		$PKGFS_DESTDIR/$pkgname/share/info/dir -o 	\
 		$PKGFS_MASTERDIR/share/info/dir.new
-	if [ "$?" -ne 0 ]; then
+	if [ $? -ne 0 ]; then
 		echo -n "*** WARNING: there was an error merging info dir from"
 		echo " $pkgname, aborting ***"
 		return 1
@@ -167,15 +165,6 @@ merge_infodir_tmpl()
 #
 info_tmpl()
 {
-	local tmpl="$1"
-	if [ -z "$tmpl" -o ! -f "$PKGFS_TEMPLATESDIR/$tmpl.tmpl" ]; then
-		echo -n "*** ERROR: invalid template file \`$tmpl' ***"
-		echo ", aborting ***"
-		exit 1
-	fi
-
-	run_file $PKGFS_TEMPLATESDIR/$tmpl.tmpl
-
 	echo "pkgname:	$pkgname"
 	echo "version:	$version"
 	for i in "${distfiles}"; do
@@ -188,59 +177,12 @@ info_tmpl()
 	echo "short_desc:	$short_desc"
 	echo "$long_desc"
 	echo
-	check_build_depends_tmpl $pkgname-$version
-	if [ "$?" -eq 0 ]; then
+	check_build_depends_pkg $pkgname-$version
+	if [ $? -eq 0 ]; then
 		local list="$($db_cmd -V btree $PKGFS_BUILD_DEPS_DB $pkgname)"
 		echo "This package requires the following dependencies to be built:"
 		for i in ${list}; do
 			echo " $i"
-		done
-	fi
-}
-
-#
-# Applies to the build directory the patches specified by a template.
-#
-apply_tmpl_patches()
-{
-	local patch=
-
-	#
-	# If package needs some patches applied before building,
-	# apply them now.
-	#
-	if [ -n "$patch_files" ]; then
-		for i in ${patch_files}; do
-			patch="$PKGFS_TEMPLATESDIR/$i"
-			if [ ! -f "$patch" ]; then
-				echo "*** WARNING: unexistent patch '$i' ***"
-				continue
-			fi
-
-			$cp_cmd -f $patch $wrksrc
-
-			# Try to guess if its a compressed patch.
-			if $(echo $patch|$grep_cmd -q .gz); then
-				$gunzip_cmd $wrksrc/$i
-				patch=${i%%.gz}
-			elif $(echo $patch|$grep_cmd -q .bz2); then
-				$bunzip2_cmd $wrksrc/$i
-				patch=${i%%.bz2}
-			elif $(echo $patch|$grep_cmd -q .diff); then
-				patch=$i
-			else
-				echo "*** WARNING: unknown patch type '$i' ***"
-				continue
-			fi
-
-			cd $wrksrc && $patch_cmd < $patch 2>/dev/null
-			if [ "$?" -eq 0 ]; then
-				echo "=> Patch applied: \`$i'."
-			else
-				echo -n "*** ERROR: couldn't apply patch '$i'"
-				echo ", aborting ***"
-				exit 1
-			fi
 		done
 	fi
 }
@@ -313,7 +255,9 @@ reset_tmpl_vars()
 			run_stuff_before_configure_cmd run_stuff_before_build_cmd \
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
 			make_install_target postinstall_helpers version \
-			ignore_files"
+			ignore_files \
+			PKGFS_EXTRACT_DONE PKGFS_CONFIGURE_DONE \
+			PKGFS_BUILD_DONE PKGFS_INSTALL_DONE"
 
 	for i in ${TMPL_VARS}; do
 		eval unset "$i"
@@ -323,14 +267,28 @@ reset_tmpl_vars()
 }
 
 #
-# Checks some vars used in templates and sets $extract_cmd.
+# Reads a template file and setups required variables for operations.
 #
-check_tmpl_vars()
+setup_tmpl()
 {
 	local pkg="$1"
+
+	if [ -f "$PKGFS_TEMPLATESDIR/$pkg.tmpl" ]; then
+		run_file $PKGFS_TEMPLATESDIR/$pkg.tmpl
+		prepare_tmpl
+	else
+		echo "*** ERROR: cannot find \`$pkg´ template file ***"
+		exit 1
+	fi
+}
+
+#
+# Checks some vars used in templates and sets some of them required.
+#
+prepare_tmpl()
+{
 	local dfile=""
 
-	[ -z "$pkg" ] && return 1
 	#
 	# There's nothing of interest if we are a meta template.
 	#
@@ -369,6 +327,7 @@ check_tmpl_vars()
 	.zip)
 		if [ -f "$PKGFS_TMPLHELPDIR/unzip-extraction.sh" ]; then
 			. $PKGFS_TMPLHELPDIR/unzip-extraction.sh
+			unset wrksrc
 		fi
 		# $extract_cmd set by the helper
 		;;
@@ -378,6 +337,59 @@ check_tmpl_vars()
 		exit 1
 		;;
 	esac
+
+	unset PKGFS_EXTRACT_DONE PKGFS_APPLYPATCHES_DONE
+	unset PKGFS_CONFIGURE_DONE PKGFS_BUILD_DONE PKGFS_INSTALL_DONE
+
+	if [ -n "$wrksrc" ]; then
+		wrksrc=$PKGFS_BUILDDIR/$wrksrc
+	elif [ -z "$wrksrc" -a -z "$distfiles" ]; then
+		wrksrc=$PKGFS_BUILDDIR/$pkgname-$version
+	elif [ -z "$wrksrc" -a -n "$distfiles" ]; then
+		wrksrc=$PKGFS_BUILDDIR/$distfiles
+	else
+		echo "*** ERROR: can't guess what's the correct \$wrksrc! ***"
+		exit 1
+	fi
+
+	PKGFS_EXTRACT_DONE="$wrksrc/.pkgfs_extract_done"
+	PKGFS_APPLYPATCHES_DONE="$wrksrc/.pkgfs_applypatches_done"
+	PKGFS_CONFIGURE_DONE="$wrksrc/.pkgfs_configure_done"
+	PKGFS_BUILD_DONE="$wrksrc/.pkgfs_build_done"
+	PKGFS_INSTALL_DONE="$wrksrc/.pkgfs_install_done"
+
+	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$PKGFS_MASTERDIR/bin:$PKGFS_MASTERDIR/sbin"
+}
+
+#
+# Extracts contents of distfiles specified in a template into
+# the build directory.
+#
+extract_distfiles()
+{
+	local pkg="$1"
+
+	#
+	# If we are being called via the target, just extract and return.
+	#
+	[ -n "$pkg" -a -z "$pkgname" ] && return 1
+
+	#
+	# There's nothing of interest if we are a meta template.
+	#
+	[ "$build_style" = "meta-template" ] && return 0
+
+	echo "==> Extracting \`$pkgname-$version' into $PKGFS_BUILDDIR."
+
+	$extract_cmd
+	if [ "$?" -ne 0 ]; then
+		echo -n "*** ERROR: there was an error extracting the "
+		echo "distfile(s), aborting *** "
+		exit 1
+	fi
+
+	unset extract_cmd
+	$touch_cmd -f $PKGFS_EXTRACT_DONE
 }
 
 #
@@ -407,22 +419,30 @@ check_rmd160_cksum()
 	dfile="$PKGFS_SRCDISTDIR/$dfile"
 	filesum="$($cksum_cmd $dfile | $awk_cmd '{print $4}')"
 	if [ "$origsum" != "$filesum" ]; then
-		echo "*** WARNING: checksum doesn't match (rmd160) ***"
-		return 1
+		echo "*** WARNING: RMD160 checksum doesn't match for \`$dfile' ***"
+		exit 1
 	fi
 
-	echo "==> RMD160 checksum ok for \`$pkgname-$version'."
+	echo "=> checksum (RMD160) OK for \`$pkgname-$version'."
 }
 
 #
 # Downloads the distfiles for a template from $url.
 #
-fetch_tmpl_sources()
+fetch_distfiles()
 {
+	local pkg="$1"
 	local file=""
 	local file2=""
+	local only_fetch=
 
-	[ -z "$pkgname" ] && return 1
+	#
+	# If we are being called by the target, just fetch distfiles
+	# and return.
+	#
+	[ -n $pkg ] && only_fetch=yes
+	[ -z $pkgname ] && exit 1
+
 	#
 	# There's nothing of interest if we are a meta template.
 	#
@@ -438,19 +458,13 @@ fetch_tmpl_sources()
 		file2="$f$extract_sufx"
 		if [ -f "$PKGFS_SRCDISTDIR/$file2" ]; then
 			check_rmd160_cksum $f
-			if [ "$?" -eq 0 ]; then
-				if [ -n "$only_fetch" ]; then
-					echo "=> checksum ok"
-					exit 0
-				fi
-				return 0
-			fi
+			[ $? -eq 0 ] && continue
 		fi
 
-		echo "==> Fetching \`$file2' source tarball."
+		echo "==> Fetching distfile: \`$file2'."
 
 		cd $PKGFS_SRCDISTDIR && $fetch_cmd $url/$file2
-		if [ "$?" -ne 0 ]; then
+		if [ $? -ne 0 ]; then
 			if [ ! -f $PKGFS_SRCDISTDIR/$file2 ]; then
 				echo -n "*** ERROR: couldn't fetch '$file2', "
 				echo	"aborting ***"
@@ -460,37 +474,9 @@ fetch_tmpl_sources()
 			fi
 			exit 1
 		else
-			if [ -n "$only_fetch" ]; then
-				exit 0
-			fi
+			check_rmd160_cksum $f
 		fi
 	done
-}
-
-#
-# Extracts contents of a distfile specified in a template into
-# the build directory.
-#
-extract_tmpl_sources()
-{
-	[ -z "$pkgname" ] && return 1
-
-	#
-	# There's nothing of interest if we are a meta template.
-	#
-	[ "$build_style" = "meta-template" ] && return 0
-
-	echo "==> Extracting \`$pkgname-$version' into $PKGFS_BUILDDIR."
-
-	$extract_cmd
-	if [ "$?" -ne 0 ]; then
-		echo -n "*** ERROR: there was an error extracting the "
-		echo "distfile, aborting *** "
-		exit 1
-	fi
-
-	unset extract_cmd
-	[ -n "$only_extract" ] && exit 0
 }
 
 fixup_tmpl_libtool()
@@ -516,7 +502,7 @@ fixup_tmpl_libtool()
 set_build_vars()
 {
 	LDFLAGS="-L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib $LDFLAGS"
-	LDFLAGS="-L$PKGFS_DESTDIR/$pkg/lib $LDFLAGS"
+	LDFLAGS="-L$PKGFS_DESTDIR/$pkgname-$version/lib $LDFLAGS"
 	CFLAGS="$CFLAGS $PKGFS_CFLAGS"
 	CXXFLAGS="$CXXFLAGS $PKGFS_CXXFLAGS"
 	CPPFLAGS="-I$PKGFS_MASTERDIR/include $CPPFLAGS"
@@ -532,38 +518,78 @@ unset_build_vars()
 }
 
 #
-# Configures, builds and installs a package into the destination
-# directory.
+# Applies to the build directory the patches specified by a template.
 #
-build_tmpl_sources()
+apply_tmpl_patches()
 {
-	local pkg="$pkgname-$version"
+	local patch=
 
-	[ -z "$pkgname" -o -z "$version" ] && return 1
-        #
-	# There's nothing of interest if we are a meta template.
+	#
+	# If package needs some patches applied before building,
+	# apply them now.
+	#
+	if [ -n "$patch_files" ]; then
+		for i in ${patch_files}; do
+			patch="$PKGFS_TEMPLATESDIR/$i"
+			if [ ! -f "$patch" ]; then
+				echo "*** WARNING: unexistent patch '$i' ***"
+				continue
+			fi
+
+			$cp_cmd -f $patch $wrksrc
+
+			# Try to guess if its a compressed patch.
+			if $(echo $patch|$grep_cmd -q .gz); then
+				$gunzip_cmd $wrksrc/$i
+				patch=${i%%.gz}
+			elif $(echo $patch|$grep_cmd -q .bz2); then
+				$bunzip2_cmd $wrksrc/$i
+				patch=${i%%.bz2}
+			elif $(echo $patch|$grep_cmd -q .diff); then
+				patch=$i
+			else
+				echo "*** WARNING: unknown patch type '$i' ***"
+				continue
+			fi
+
+			cd $wrksrc && $patch_cmd < $patch 2>/dev/null
+			if [ "$?" -eq 0 ]; then
+				echo "=> Patch applied: \`$i'."
+			else
+				echo -n "*** ERROR: couldn't apply patch '$i'"
+				echo ", aborting ***"
+				exit 1
+			fi
+		done
+	fi
+
+	$touch_cmd -f $PKGFS_APPLYPATCHES_DONE
+}
+
+#
+# Runs the "configure" phase for a pkg. This setups the Makefiles or any
+# other stuff required to be able to build binaries or such.
+#
+configure_src_phase()
+{
+	local pkg="$1"
+
+	[ -z $pkg ] && [ -z $pkgname ] && return 1
+
+	#
+	# There's nothing we can do if we are a meta template.
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	if [ -n "$distfiles" -a -z "$wrksrc" ]; then
-		wrksrc=$PKGFS_BUILDDIR/$distfiles
-	elif [ -z "$wrksrc" ]; then
-		wrksrc=$PKGFS_BUILDDIR/$pkg
-	else
-		wrksrc=$PKGFS_BUILDDIR/$wrksrc
-	fi
-
-	if [ ! -d "$wrksrc" ]; then
-		echo "*** ERROR: unexistent build directory: \`$wrksrc' ***"
+	if [ ! -d $wrksrc ]; then
+		echo "*** ERROR: unexistent build directory \`$wrksrc' ***"
 		exit 1
 	fi
 
-	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$PKGFS_MASTERDIR/bin:$PKGFS_MASTERDIR/sbin"
+	echo "=> Running \`\`configure´´ phase for \`$pkgname-$version'."
 
 	# Apply patches if requested by template file
-	apply_tmpl_patches
-
-	echo "==> Building \`$pkg' (be patient, may take a while)"
+	[ ! -f $PKGFS_APPLYPATCHES_DONE ] && apply_tmpl_patches
 
 	# Run stuff before configure.
 	for i in "$run_stuff_before"; do
@@ -580,12 +606,13 @@ build_tmpl_sources()
 		export "$f"
 	done
 
+	set_build_vars
+
 	#
 	# Packages using GNU autoconf
 	#
 	if [ "$build_style" = "gnu_configure" ]; then
 		cd $wrksrc
-		set_build_vars
 		#
 		# Pass consistent arguments to not have unexpected
 		# surprises later.
@@ -641,6 +668,34 @@ build_tmpl_sources()
 		unset eval ${f%=*}
 	done
 
+	$touch_cmd -f $PKGFS_CONFIGURE_DONE
+}
+
+#
+# Runs the "build" phase for a pkg. This builds the binaries and other
+# related stuff.
+#
+build_src_phase()
+{
+	local pkgparam="$1"
+	local pkg="$pkgname-$version"
+
+	[ -z $pkgparam ] && [ -z $pkgname -o -z $version ] && return 1
+
+        #
+	# There's nothing of interest if we are a meta template.
+	#
+	[ "$build_style" = "meta-template" ] && return 0
+
+	if [ ! -d $wrksrc ]; then
+		echo "*** ERROR: unexistent build directory \`$wrksrc' ***"
+		exit 1
+	fi
+
+	cd $wrksrc || exit 1
+
+	echo "=> Running \`\`build´´ phase for \`$pkg'."
+
 	#
 	# Assume BSD make if make_cmd not set in template.
 	#
@@ -692,15 +747,40 @@ build_tmpl_sources()
 		fi
 	done
 
+	$touch_cmd -f $PKGFS_BUILD_DONE
+}
+
+#
+# Runs the "install" phase for a pkg. This consists in installing package
+# into the destination directory.
+#
+install_src_phase()
+{
+	local pkg="$1"
+
+	[ -z $pkg ] && [ -z $pkgname ] && return 1
+
 	[ -z "$make_install_target" ] && make_install_target=install
+
+	#
+	# There's nothing we can do if we are a meta template.
+	#
+	[ "$build_style" = "meta-template" ] && return 0
+
+	if [ ! -d $wrksrc ]; then
+		echo "*** ERROR: unexistent build directory \`$wrksrc' ***"
+		exit 1
+	fi
+
+	echo "=> Running \`\`install´´ phase for: \`$pkgname-$version´."
 
 	#
 	# Install package via make.
 	#
 	${make_cmd} ${make_install_args} ${make_install_target} \
-		prefix="$PKGFS_DESTDIR/$pkg"
+		prefix="$PKGFS_DESTDIR/$pkgname-$version"
 	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR instaling \`$pkg' ***"
+		echo "*** ERROR instaling \`$pkgname-$version' ***"
 		exit 1
 	fi
 
@@ -725,7 +805,7 @@ build_tmpl_sources()
 	# Transform pkg-config files if requested by template.
 	#
 	for i in ${pkgconfig_override}; do
-		local tmpf="$PKGFS_DESTDIR/$pkg/lib/pkgconfig/$i"
+		local tmpf="$PKGFS_DESTDIR/$pkgname-$version/lib/pkgconfig/$i"
 		[ -f "$tmpf" ] && \
 			[ -f $PKGFS_TMPLHELPDIR/pkg-config-transform.sh ] && \
 			. $PKGFS_TMPLHELPDIR/pkg-config-transform.sh && \
@@ -735,7 +815,9 @@ build_tmpl_sources()
 	# Unset build vars.
 	unset_build_vars
 
-	echo "==> Installed \`$pkg' into $PKGFS_DESTDIR."
+	echo "==> Installed \`$pkgname-$version' into $PKGFS_DESTDIR."
+
+	$touch_cmd -f $PKGFS_INSTALL_DONE
 
 	#
 	# Remove $wrksrc if -C not specified.
@@ -743,121 +825,40 @@ build_tmpl_sources()
 	if [ -d "$wrksrc" -a -z "$dontrm_builddir" ]; then
 		$rm_cmd -rf $wrksrc
 		[ "$?" -eq 0 ] && \
-			echo "=> Removed \`$pkg' build directory."
+			echo "=> Removed \`$pkgname-$version' build directory."
 	fi
 
 	cd $PKGFS_BUILDDIR
 }
 
 #
-# Stows a currently installed package, i.e creates the links
-# on the master directory.
+# Registers or unregisters a package from the db file.
 #
-stow_tmpl()
+register_pkg_handler()
 {
-	local pkg="$1"
-	local infodir_pkg="share/info/dir"
-	local infodir_master="$PKGFS_MASTERDIR/share/info/dir"
-	local real_xstowargs="$xstow_args"
-	local real_xstow_ignore="$xstow_ignore_files"
+	local action="$1"
+	local pkg="$2"
+	local version="$3"
 
-	[ -z "$pkg" ] && return 2
+	[ -z "$action" -o -z "$pkg" -o -z "$version" ] && return 1
 
-	if [ -n "$stow_flag" ]; then
-		pkg=$PKGFS_TEMPLATESDIR/$pkg.tmpl
-		run_file $pkg
-		pkg=$pkgname-$version
-		#
-		# You cannot stow a meta-template.
-		#
-		[ "$build_style" = "meta-template" ] && return 0
-	fi
-
-	if [ -r "$PKGFS_DESTDIR/$pkg/$infodir_pkg" ]; then
-		merge_infodir_tmpl $pkg
-	fi
-
-	if [ -r "$PKGFS_DESTDIR/$pkg/$infodir_pkg" \
-	     -a -r "$infodir_master" ]; then
-		xstow_args="$xstow_args -i-file-in-dir $infodir_pkg"
-	fi
-
-	if [ -n "$ignore_files" ]; then
-		xstow_ignore_files="$xstow_ignore_files $ignore_files"
-	fi
-
-	$PKGFS_XSTOW_CMD -ignore "${xstow_ignore_files}" ${xstow_args} \
-		-pd-targets $PKGFS_MASTERDIR \
-		-dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
-		$PKGFS_DESTDIR/$pkg
-	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR: couldn't create symlinks for \`$pkg' ***"
-		exit 1
+	if [ "$action" = "register" ]; then
+		$db_cmd -w btree $PKGFS_REGPKG_DB $pkg $version 2>&1 >/dev/null
+		if [ "$?" -ne  0 ]; then
+			echo -n "*** ERROR: couldn't register \`$pkg'"
+			echo " in db file ***"
+			exit 1
+		fi
+	elif [ "$action" = "unregister" ]; then
+		$db_cmd -d btree $PKGFS_REGPKG_DB $pkg 2>&1 >/dev/null
+		if [ "$?" -ne 0 ]; then
+			echo -n "*** ERROR: \`$pkg' not registered "
+			echo "in db file? ***"
+			exit 1
+		fi
 	else
-		echo "==> Created \`$pkg' symlinks into master directory."
+		return 1
 	fi
-
-	installed_tmpl_handler register $pkgname $version
-
-	#
-	# Run template postinstall helpers if requested.
-	#
-	if [ "$pkgname" != "${pkg%%-$version}" ]; then
-		run_file $PKGFS_TEMPLATESDIR/${pkg%%-$version}.tmpl
-	fi
-
-	for i in ${postinstall_helpers}; do
-		local pihf="$PKGFS_TMPLHELPDIR/$i"
-		[ -f "$pihf" ] && . $pihf
-	done
-
-	xstow_ignore_files="$real_xstow_ignore"
-	xstow_args="$real_xstowargs"
-}
-
-#
-# Unstows a currently stowned package, i.e removes its links
-# from the master directory.
-#
-unstow_tmpl()
-{
-	local pkg="$1"
-	local real_xstow_ignore="$xstow_ignore_files"
-
-	if [ -z "$pkg" ]; then
-		echo "*** ERROR: template wasn't specified? ***"
-		exit 1
-	fi
-
-	if [ "$pkg" = "xstow" ]; then
-		echo "*** INFO: You aren't allowed to unstow \`$pkg'."
-		exit 1
-	fi
-
-	run_file $PKGFS_TEMPLATESDIR/$pkg.tmpl
-
-	#
-	# You cannot unstow a meta-template.
-	#
-	[ "$build_style" = "meta-template" ] && return 0
-
-	if [ -n "$ignore_files" ]; then
-		xstow_ignore_files="$xstow_ignore_files $ignore_files"
-	fi
-
-	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
-		-D -i-file-in-dir share/info/dir -ignore \
-		"${xstow_ignore_files}" $PKGFS_DESTDIR/$pkgname-$version
-	if [ "$?" -ne 0 ]; then
-		exit 1
-	else
-		$rm_cmd -f $PKGFS_DESTDIR/$pkgname-$version/share/info/dir
-		echo "==> Removed \`$pkg' symlinks from master directory."
-	fi
-
-	installed_tmpl_handler unregister $pkgname $version
-
-	xstow_ignore_files="$real_xstow_ignore"
 }
 
 #
@@ -876,12 +877,12 @@ add_dependency_tolist()
 		# Check if dep already installed.
 		#
 		if [ -r "$PKGFS_REGPKG_DB" ]; then
-			check_installed_tmpl $i ${i##[aA-zZ]*-}
+			check_installed_pkg $i ${i##[aA-zZ]*-}
 			#
 			# If dep is already installed, put it on the
 			# installed deps list and continue.
 			#
-			if [ "$?" -eq 0 ]; then
+			if [ $? -eq 0 ]; then
 				installed_deps_list="$i $installed_deps_list"
 				continue
 			fi
@@ -891,8 +892,8 @@ add_dependency_tolist()
 			#
 			# Check if dependency needs more deps.
 			#
-			check_build_depends_tmpl ${i%-[0-9]*.*}
-			if [ "$?" -eq 0 ]; then
+			check_build_depends_pkg ${i%-[0-9]*.*}
+			if [ $? -eq 0 ]; then
 				add_dependency_tolist $i
 				prev_pkg="$i"
 			fi
@@ -952,7 +953,7 @@ find_dupdeps_inlist()
 #
 # Installs all dependencies required by a package.
 #
-install_dependency_tmpl()
+install_dependencies_pkg()
 {
 	local pkg="$1"
 	deps_list=
@@ -966,6 +967,8 @@ install_dependency_tmpl()
 	find_dupdeps_inlist installed
 	find_dupdeps_inlist notinstalled
 
+	[ -z "$deps_list" -a -z "$installed_deps_list" ] && return 0
+
 	echo "==> Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
 		fpkg="$($db_cmd -O '-' btree $PKGFS_REGPKG_DB ${i%-[0-9]*.*})"
@@ -978,83 +981,50 @@ install_dependency_tmpl()
 
 	for i in ${deps_list}; do
 		# skip dup deps
-		echo "=> Installing dependency: $i"
-		install_tmpl ${i%-[0-9]*.*}
+		check_installed_pkg $i ${i##[aA-zZ]*-}
+		[ $? -eq 0 ] && continue
+		# continue installing deps
+		echo "==> Installing \`$pkg´ dependency: \`$i´."
+		install_pkg ${i%-[0-9]*.*}
 	done
 
 	unset installed_deps_list
 	unset deps_list
 }
 
-#
-# Installs and stows the "xstow" package.
-#
-install_xstow_tmpl()
+install_builddeps_required_pkg()
 {
-	[ -x "$PKGFS_XSTOW_CMD" ] && return 0
+	local pkg="$1"
 
-	reset_tmpl_vars
-	run_file "$PKGFS_TEMPLATESDIR/xstow.tmpl"
-	check_tmpl_vars $pkgname-$version
-	fetch_tmpl_sources
-	extract_tmpl_sources
-	build_tmpl_sources
-	PKGFS_XSTOW_CMD="$PKGFS_DESTDIR/$pkgname-$version/bin/xstow"
-	stow_tmpl $pkgname-$version
-	#
-	# Continue with origin package that called us.
-	#
-	run_file $origin_tmpl
-}
+	[ -z "$pkg" ] && return 1
 
-#
-# Registers or unregisters a package from the db file.
-#
-installed_tmpl_handler()
-{
-	local action="$1"
-	local pkg="$2"
-	local version="$3"
-
-	[ -z "$action" -o -z "$pkg" -o -z "$version" ] && return 1
-
-	if [ "$action" = "register" ]; then
-		$db_cmd -w btree $PKGFS_REGPKG_DB $pkg $version 2>&1 >/dev/null
-		if [ "$?" -ne  0 ]; then
-			echo -n "*** ERROR: couldn't register \`$pkg'"
-			echo " in db file ***"
-			exit 1
+	for dep in $($db_cmd -V btree $PKGFS_BUILD_DEPS_DB ${pkg%-[0-9]*.*}); do
+		check_installed_pkg $dep ${dep##[aA-zZ]*-}
+		if [ $? -ne 0 ]; then
+			echo "==> Installing \`$pkg´ dependency: $dep."
+			install_pkg ${dep%-[0-9]*.*}
 		fi
-	elif [ "$action" = "unregister" ]; then
-		$db_cmd -d btree $PKGFS_REGPKG_DB $pkg 2>&1 >/dev/null
-		if [ "$?" -ne 0 ]; then
-			echo -n "*** ERROR: \`$pkg' not registered "
-			echo "in db file? ***"
-			exit 1
-		fi
-	else
-		return 1
-	fi
+	done
 }
 
 #
 # Checks the registered pkgs db file and returns 0 if a pkg that satisfies
 # the minimal required version is there, or 1 otherwise.
 #
-check_installed_tmpl()
+check_installed_pkg()
 {
 	local pkg="$1"
 	local reqver="$2"
 	local iver=
 
-	[ -z "$pkg" -o -z "$reqver" ] && return 1
+	[ -z "$pkg" -o -z "$reqver" -o ! -r $PKGFS_REGPKG_DB ] && return 1
 
 	run_file $PKGFS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
 
 	reqver="$(echo $reqver | $sed_cmd 's|[[:punct:]]||g;s|[[:alpha:]]||g')"
 
 	$db_cmd -K btree $PKGFS_REGPKG_DB $pkgname 2>&1 >/dev/null
-	if [ "$?" -eq 0 ]; then
+	if [ $? -eq 0 ]; then
 		#
 		# Package is installed, let's check the version.
 		#
@@ -1081,7 +1051,7 @@ check_installed_tmpl()
 # Checks the build depends db file and returns 0 if pkg has dependencies,
 # otherwise returns 1.
 #
-check_build_depends_tmpl()
+check_build_depends_pkg()
 {
 	local pkg="$1"
 
@@ -1094,85 +1064,122 @@ check_build_depends_tmpl()
 #
 # Installs a pkg by reading its build template file.
 #
-install_tmpl()
+install_pkg()
 {
 	local pkg=
-	cur_tmpl="$PKGFS_TEMPLATESDIR/$1.tmpl"
-	if [ -z "$cur_tmpl" -o ! -f "$cur_tmpl" ]; then
-		echo -n "*** ERROR: invalid template file '$cur_tmpl',"
-		echo " aborting ***"
+	local curpkgn="$1"
+
+	local cur_tmpl="$PKGFS_TEMPLATESDIR/$curpkgn.tmpl"
+	if [ -z $cur_tmpl -o ! -f $cur_tmpl ]; then
+		echo "*** ERROR: cannot find \`$cur_tmpl´ template file ***"
 		exit 1
 	fi
 
 	reset_tmpl_vars
 	run_file $cur_tmpl
-	pkg="$1-$version"
+	pkg="$curpkgn-$version"
 
 	#
 	# If we are the originator package save the path this template in
 	# other var for future use.
 	#
-	if [ -z "$origin_tmpl" ]; then
-		origin_tmpl=$path_fixed
-	fi
+	[ -z "$origin_tmpl" ] && origin_tmpl=$pkgname
 
 	#
 	# Install xstow if it's not there.
 	#
-	install_xstow_tmpl
+	install_xstow_pkg
 
 	#
-	# Check vars for current template.
+	# We are going to install a new package.
 	#
-	check_tmpl_vars $pkg
+	prepare_tmpl
 
 	#
 	# Install dependencies required by this package.
 	#
-	check_build_depends_tmpl $pkg
-	if [ "$?" -eq 0 -a -z "$doing_deps" ]; then
-		install_dependency_tmpl $pkg
+	if [ -z "$doing_deps" ]; then
+		install_dependencies_pkg $pkg
 		#
 		# At this point all required deps are installed, and
 		# only remaining is the origin template; install it.
 		#
 		unset doing_deps
 		reset_tmpl_vars
-		run_file $origin_tmpl
-		check_tmpl_vars $pkgname-$version
-	fi
-
-	if [ -n "$only_build" ]; then
-		build_tmpl_sources
-		exit 0
+		setup_tmpl $curpkgn
 	fi
 
 	#
-	# Fetch, extract, stow and reset vars for a template.
+	# Fetch, extract, build and install into the destination directory.
 	#
-	fetch_tmpl_sources
-	extract_tmpl_sources
-	build_tmpl_sources
+	fetch_distfiles
+
+	if [ ! -f "$PKGFS_EXTRACT_DONE" ]; then
+		extract_distfiles
+	fi
+
+	if [ ! -f "$PKGFS_CONFIGURE_DONE" ]; then
+		configure_src_phase
+	fi
+
+	if [ ! -f "$PKGFS_BUILD_DONE" ]; then
+		build_src_phase
+	fi
+
+	install_src_phase
 
 	#
 	# Just announce that meta-template is installed and exit.
 	#
 	if [ "$build_style" = "meta-template" ]; then
-		installed_tmpl_handler register $pkgname $version
+		register_pkg_handler register $pkgname $version
 		echo "==> Installed meta-template \`$pkg'."
 		return 0
 	fi
 
+	stow_pkg $pkg
+}
+
+#
+# Installs and stows the "xstow" package.
+#
+install_xstow_pkg()
+{
+	[ -x "$PKGFS_XSTOW_CMD" ] && return 0
+
+	echo "=> xstow application not found, will install it now."
+
+	reset_tmpl_vars
+	setup_tmpl xstow
+	fetch_distfiles
+
+	if [ ! -f "$PKGFS_EXTRACT_DONE" ]; then
+		extract_distfiles
+	fi
+
+	if [ ! -f "$PKGFS_CONFIGURE_DONE" ]; then
+		configure_src_phase
+	fi
+
+	if [ ! -f "$PKGFS_BUILD_DONE" ]; then
+		build_src_phase
+	fi
+
+	install_src_phase
+
+	PKGFS_XSTOW_CMD="$PKGFS_DESTDIR/$pkgname-$version/bin/xstow"
+	stow_pkg $pkgname-$version
+
 	#
-	# Do not stow the pkg if requested.
+	# Continue with package that called us.
 	#
-	[ -z "$only_install" ] && stow_tmpl $pkg
+	run_file $PKGFS_TEMPLATESDIR/$origin_tmpl.tmpl
 }
 
 #
 # Lists all currently installed packages.
 #
-list_tmpls()
+list_pkgs()
 {
 	if [ ! -r "$PKGFS_REGPKG_DB" ]; then
 		echo "=> No packages registered or missing register db file."
@@ -1181,8 +1188,8 @@ list_tmpls()
 
 	for i in $($db_cmd -K btree $PKGFS_REGPKG_DB); do
 		# Run file to get short_desc and print something useful
-		run_file ${PKGFS_TEMPLATESDIR}/$i.tmpl
-		echo "$i-$version        $short_desc"
+		run_file $PKGFS_TEMPLATESDIR/$i.tmpl
+		echo "$i-$version	$short_desc"
 		reset_tmpl_vars
 	done
 }
@@ -1190,7 +1197,7 @@ list_tmpls()
 #
 # Removes a currently installed package (unstow + removed from destdir).
 #
-remove_tmpl()
+remove_pkg()
 {
 	local pkg="$1"
 
@@ -1210,8 +1217,8 @@ remove_tmpl()
 	# If it's a meta-template, just unregister it from the db.
 	#
 	if [ "$build_style" = "meta-template" ]; then
-		installed_tmpl_handler unregister $pkgname $version
-		[ "$?" -eq 0 ] && \
+		register_pkg_handler unregister $pkgname $version
+		[ $? -eq 0 ] && \
 			echo "=> Removed meta-template \`$pkg'."
 		return $?
 	fi
@@ -1221,23 +1228,131 @@ remove_tmpl()
 		exit 1
 	fi
 
-	unstow_tmpl $pkg
+	unstow_pkg $pkg
 	$rm_cmd -rf $PKGFS_DESTDIR/$pkg-$version
-	return "$?"
+	return $?
+}
+
+#
+# Stows a currently installed package, i.e creates the links
+# on the master directory.
+#
+stow_pkg()
+{
+	local pkg="$1"
+	local infodir_pkg="share/info/dir"
+	local infodir_master="$PKGFS_MASTERDIR/share/info/dir"
+	local real_xstowargs="$xstow_args"
+	local real_xstow_ignore="$xstow_ignore_files"
+
+	[ -z "$pkg" ] && return 2
+
+	if [ -n "$stow_flag" ]; then
+		pkg=$PKGFS_TEMPLATESDIR/$pkg.tmpl
+		run_file $pkg
+		pkg=$pkgname-$version
+		#
+		# You cannot stow a meta-template.
+		#
+		[ "$build_style" = "meta-template" ] && return 0
+	fi
+
+	if [ -r "$PKGFS_DESTDIR/$pkg/$infodir_pkg" ]; then
+		merge_infodir_tmpl $pkg
+	fi
+
+	if [ -r "$PKGFS_DESTDIR/$pkg/$infodir_pkg" \
+	     -a -r "$infodir_master" ]; then
+		xstow_args="$xstow_args -i-file-in-dir $infodir_pkg"
+	fi
+
+	if [ -n "$ignore_files" ]; then
+		xstow_ignore_files="$xstow_ignore_files $ignore_files"
+	fi
+
+	$PKGFS_XSTOW_CMD -ignore "${xstow_ignore_files}" ${xstow_args} \
+		-pd-targets $PKGFS_MASTERDIR \
+		-dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
+		$PKGFS_DESTDIR/$pkg
+	if [ "$?" -ne 0 ]; then
+		echo "*** ERROR: couldn't create symlinks for \`$pkg' ***"
+		exit 1
+	else
+		echo "==> Created \`$pkg' symlinks into master directory."
+	fi
+
+	register_pkg_handler register $pkgname $version
+
+	#
+	# Run template postinstall helpers if requested.
+	#
+	if [ "$pkgname" != "${pkg%%-$version}" ]; then
+		run_file $PKGFS_TEMPLATESDIR/${pkg%%-$version}.tmpl
+	fi
+
+	for i in ${postinstall_helpers}; do
+		local pihf="$PKGFS_TMPLHELPDIR/$i"
+		[ -f "$pihf" ] && . $pihf
+	done
+
+	xstow_ignore_files="$real_xstow_ignore"
+	xstow_args="$real_xstowargs"
+}
+
+#
+# Unstows a currently stowned package, i.e removes its links
+# from the master directory.
+#
+unstow_pkg()
+{
+	local pkg="$1"
+	local real_xstow_ignore="$xstow_ignore_files"
+
+	if [ -z "$pkg" ]; then
+		echo "*** ERROR: template wasn't specified? ***"
+		exit 1
+	fi
+
+	if [ "$pkg" = "xstow" ]; then
+		echo "*** INFO: You aren't allowed to unstow \`$pkg'."
+		exit 1
+	fi
+
+	run_file $PKGFS_TEMPLATESDIR/$pkg.tmpl
+
+	#
+	# You cannot unstow a meta-template.
+	#
+	[ "$build_style" = "meta-template" ] && return 0
+
+	if [ -n "$ignore_files" ]; then
+		xstow_ignore_files="$xstow_ignore_files $ignore_files"
+	fi
+
+	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
+		-D -i-file-in-dir share/info/dir -ignore \
+		"${xstow_ignore_files}" $PKGFS_DESTDIR/$pkgname-$version
+	if [ $? -ne 0 ]; then
+		exit 1
+	else
+		$rm_cmd -f $PKGFS_DESTDIR/$pkgname-$version/share/info/dir
+		echo "==> Removed \`$pkg' symlinks from master directory."
+	fi
+
+	register_pkg_handler unregister $pkgname $version
+
+	xstow_ignore_files="$real_xstow_ignore"
 }
 
 #
 # main()
 #
-args=$(getopt bCc:efi $*)
+args=$(getopt Cc $*)
 [ "$?" -ne 0 ] && usage
 
 set -- $args
 while [ "$#" -gt 0 ]; do
 	case "$1" in
-	-b)
-		only_build=yes
-		;;
 	-C)
 		dontrm_builddir=yes
 		;;
@@ -1245,15 +1360,6 @@ while [ "$#" -gt 0 ]; do
 		config_file_specified=yes
 		PKGFS_CONFIG_FILE="$2"
 		shift
-		;;
-	-e)
-		only_extract=yes
-		;;
-	-f)
-		only_fetch=yes
-		;;
-	-i)
-		only_install=yes
 		;;
 	--)
 		shift
@@ -1267,7 +1373,7 @@ done
 
 target="$1"
 if [ -z "$target" ]; then
-	echo "*** ERROR missing target ***"
+	echo "*** ERROR: missing target ***"
 	usage
 fi
 
@@ -1279,27 +1385,59 @@ set_defvars
 
 # Main switch
 case "$target" in
+build)
+	setup_tmpl $2
+	fetch_distfiles $2
+	if [ ! -f "$PKGFS_EXTRACT_DONE" ]; then
+		extract_distfiles $2
+	fi
+
+	if [ ! -f "$PKGFS_CONFIGURE_DONE" ]; then
+		configure_src_phase $2
+	fi
+	build_src_phase $2
+	;;
+configure)
+	setup_tmpl $2
+	fetch_distfiles $2
+	if [ ! -f "$PKGFS_EXTRACT_DONE" ]; then
+		extract_distfiles $2
+	fi
+	configure_src_phase $2
+	;;
+extract)
+	setup_tmpl $2
+	fetch_distfiles $2
+	extract_distfiles $2
+	;;
+fetch)
+	setup_tmpl $2
+	fetch_distfiles $2
+	;;
 info)
-	info_tmpl "$2"
+	setup_tmpl $2
+	info_tmpl $2
 	;;
 install)
-	install_tmpl "$2"
+	install_pkg $2
 	;;
 list)
-	list_tmpls
+	list_pkgs
 	;;
 remove)
-	remove_tmpl "$2"
+	remove_pkg $2
 	;;
 stow)
 	stow_flag=yes
-	stow_tmpl "$2"
+	setup_tmpl $2
+	stow_pkg $2
 	;;
 unstow)
-	unstow_tmpl "$2"
+	setup_tmpl $2
+	unstow_pkg $2
 	;;
 *)
-	echo "*** ERROR invalid target \`$target' ***"
+	echo "*** ERROR: invalid target \`$target' ***"
 	usage
 esac
 
