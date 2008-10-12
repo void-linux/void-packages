@@ -89,19 +89,20 @@ usage()
 	cat << _EOF
 $progname: [-C] [-c <config_file>] <target> [package_name]
 
-Targets
+Targets:
 	build		Builds a package, only build phase is done.
 	configure	Configure a package, only configure phase is done.
 	extract		Extract distribution file(s) into build directory.
 	fetch		Download distribution file(s).
 	info		Show information about <package_name>.
-	install		build + configure + install into destdir + stow.
-	list		Lists all currently ``stowned´´ packages.
+	install-destdir	build + configure + install into destdir.
+	install		Same than \`install-destdir´ but also stows package.
+	list		Lists all currently \`stowned´ packages.
 	remove		Remove package completely (unstow + remove data)
 	stow		Create links in master directory.
 	unstow		Remove links in master directory.
 
-Options
+Options:
 	-C	Do not remove build directory after successful installation.
 	-c	Path to global configuration file:
 		if not specified /usr/local/etc/pkgfs.conf is used.
@@ -1129,7 +1130,7 @@ install_pkg()
 	install_src_phase
 
 	#
-	# Just announce that meta-template is installed and exit.
+	# Just register meta-template and exit.
 	#
 	if [ "$build_style" = "meta-template" ]; then
 		register_pkg_handler register $pkgname $version
@@ -1137,7 +1138,10 @@ install_pkg()
 		return 0
 	fi
 
-	stow_pkg $pkg
+	#
+	# Do not stow package if it wasn't requested.
+	#
+	[ -z "$install_destdir_target" ] && stow_pkg $pkg
 }
 
 #
@@ -1417,6 +1421,10 @@ fetch)
 info)
 	setup_tmpl $2
 	info_tmpl $2
+	;;
+install-destdir)
+	install_destdir_target=yes
+	install_pkg $2
 	;;
 install)
 	install_pkg $2
