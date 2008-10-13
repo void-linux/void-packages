@@ -28,11 +28,12 @@
 #-
 #
 # TODO
-#	- Implement a routine that checks if installed version is sufficient
-#	  to satisfy the required dependency... right now it's very prone
-#	  to errors and slow.
-# 	- Multiple distfiles in a package.
-#	- Multiple URLs to download source distribution files.
+#	- Implement support for packages that need personalized installation.
+#	- Implement a chroot target that builds packages as root on it, for
+#	  packages that need it (setuid, setgid).
+#	- More robust and fast dependency checking.
+# 	- Multiple distfiles in a package, personalized stuff to unpack them.
+#	- Multiple URLs to download source distribution files, aliases, etc.
 #
 # Default path to configuration file, can be overriden
 # via the environment or command line.
