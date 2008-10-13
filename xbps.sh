@@ -593,9 +593,10 @@ configure_src_phase()
 
 	# Run stuff before configure.
 	local rbcf="$XBPS_TEMPLATESDIR/$pkgname-runstuff-before-configure.sh"
-	[ -f $rbcf ] && . $rbcf
+	[ -f "$rbcf" ] && . $rbcf
 	[ -n "$run_stuff_before_configure_cmd" ] && \
 		${run_stuff_before_configure_cmd}
+	unset rbcf
 
 	# Export configure_env vars.
 	for f in ${configure_env}; do
@@ -705,10 +706,10 @@ build_src_phase()
 	#
 	# Run template stuff before building.
 	#
-	local rbbf="$XBPS_TEMPLATESDIR/$pkgname-runstuff-before-build.sh"a
+	local rbbf="$XBPS_TEMPLATESDIR/$pkgname-runstuff-before-build.sh"
 	[ -f $rbbf ] && . $rbbf
 	[ -n "$run_stuff_before_build_cmd" ] && ${run_stuff_before_build_cmd}
-
+	unset rbbf
 
 	[ -z "$make_build_target" ] && make_build_target=
 	[ -n "$XBPS_MAKEJOBS" ] && XBPS_MAKEJOBS="-j$XBPS_MAKEJOBS"
@@ -733,6 +734,7 @@ build_src_phase()
 	local rbif="$XBPS_TEMPLATESDIR/$pkgname-runstuff-before-install.sh"
 	[ -f $rbif ] && . $rbif
 	[ -n "$run_stuff_before_install_cmd" ] && ${run_stuff_before_install_cmd}
+	unset rbif
 
 	$touch_cmd -f $XBPS_BUILD_DONE
 }
@@ -784,6 +786,7 @@ install_src_phase()
 	local raif="$XBPS_TEMPLATESDIR/$pkgname-runstuff-after-install.sh"
 	[ -f $raif ] && . $raif
 	[ -n "$run_stuff_after_install_cmd" ] && ${run_stuff_after_install_cmd}
+	unset raif
 
 	#
 	# Transform pkg-config files if requested by template.
