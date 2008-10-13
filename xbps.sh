@@ -274,7 +274,9 @@ setup_tmpl()
 	local pkg="$1"
 
 	if [ -f "$XBPS_TEMPLATESDIR/$pkg.tmpl" ]; then
-		run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
+		if [ "$pkgname" != "$pkg" ]; then
+			run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
+		fi
 		prepare_tmpl
 	else
 		echo "*** ERROR: cannot find \`$pkg´ template file ***"
@@ -712,7 +714,7 @@ build_src_phase()
 	unset rbbf
 
 	[ -z "$make_build_target" ] && make_build_target=
-	[ -n "$XBPS_MAKEJOBS" ] && XBPS_MAKEJOBS="-j$XBPS_MAKEJOBS"
+	[ -n "$XBPS_MAKEJOBS" ] && makejobs="-j$XBPS_MAKEJOBS"
 
 	# Export make_env vars.
 	for f in ${make_env}; do
@@ -722,18 +724,21 @@ build_src_phase()
 	#
 	# Build package via make.
 	#
-	${make_cmd} ${XBPS_MAKEJOBS} ${make_build_args} ${make_build_target}
+	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR building (make stage) \`$pkg' ***"
 		exit 1
 	fi
+
+	unset makejobs
 
 	#
 	# Run template stuff before installing.
 	#
 	local rbif="$XBPS_TEMPLATESDIR/$pkgname-runstuff-before-install.sh"
 	[ -f $rbif ] && . $rbif
-	[ -n "$run_stuff_before_install_cmd" ] && ${run_stuff_before_install_cmd}
+	[ -n "$run_stuff_before_install_cmd" ] && \
+		${run_stuff_before_install_cmd}
 	unset rbif
 
 	$touch_cmd -f $XBPS_BUILD_DONE
@@ -866,10 +871,11 @@ add_dependency_tolist()
 		if [ -r "$XBPS_REGPKG_DB" ]; then
 			check_installed_pkg $i ${i##[aA-zZ]*-}
 			#
-			# If dep is already installed, put it on the
-			# installed deps list and continue.
+			# If dep is already installed, check one more time
+			# if all its deps are there and continue.
 			#
 			if [ $? -eq 0 ]; then
+				install_builddeps_required_pkg $i
 				installed_deps_list="$i $installed_deps_list"
 				continue
 			fi
@@ -1006,7 +1012,9 @@ check_installed_pkg()
 
 	[ -z "$pkg" -o -z "$reqver" -o ! -r $XBPS_REGPKG_DB ] && return 1
 
-	run_file $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
+	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
+		run_file $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
+	fi
 
 	reqver="$(echo $reqver | $sed_cmd 's|[[:punct:]]||g;s|[[:alpha:]]||g')"
 
@@ -1261,7 +1269,9 @@ stow_pkg()
 
 	if [ -n "$stow_flag" ]; then
 		pkg=$XBPS_TEMPLATESDIR/$pkg.tmpl
-		run_file $pkg
+		if [ "$pkgname" != "$pkg" ]; then
+			run_file $pkg
+		fi
 		pkg=$pkgname-$version
 		#
 		# You cannot stow a meta-template.
@@ -1330,7 +1340,9 @@ unstow_pkg()
 		exit 1
 	fi
 
-	run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
+	if [ "$pkgname" != "$pkg" ]; then
+		run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
+	fi
 
 	#
 	# You cannot unstow a meta-template.
