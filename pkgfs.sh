@@ -250,10 +250,7 @@ reset_tmpl_vars()
 			make_build_args make_install_args build_style	\
 			short_desc maintainer long_desc checksum wrksrc	\
 			patch_files configure_env make_cmd pkgconfig_override \
-			configure_env make_env run_stuff_before run_stuff_after \
-			run_stuff_before_configure_file run_stuff_before_build_file \
-			run_stuff_before_install_file run_stuff_after_install \
-			run_stuff_after_install_file make_build_target \
+			configure_env make_env make_build_target \
 			run_stuff_before_configure_cmd run_stuff_before_build_cmd \
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
 			make_install_target postinstall_helpers version \
@@ -594,14 +591,10 @@ configure_src_phase()
 	[ ! -f $PKGFS_APPLYPATCHES_DONE ] && apply_tmpl_patches
 
 	# Run stuff before configure.
-	for i in "$run_stuff_before"; do
-		if [ "$i" = "configure" ]; then
-			[ -f $run_stuff_before_configure_file ] && \
-				. $run_stuff_before_configure_file
-			[ -n "$run_stuff_before_configure_cmd" ] && \
-				${run_stuff_before_configure_cmd}
-		fi
-	done
+	local rbcf="$PKGFS_TEMPLATESDIR/$pkgname-runstuff-before-configure.sh"
+	[ -f $rbcf ] && . $rbcf
+	[ -n "$run_stuff_before_configure_cmd" ] && \
+		${run_stuff_before_configure_cmd}
 
 	# Export configure_env vars.
 	for f in ${configure_env}; do
@@ -711,14 +704,10 @@ build_src_phase()
 	#
 	# Run template stuff before building.
 	#
-	for i in ${run_stuff_before}; do
-		if [ "$i" = "build" ]; then
-			[ -f $run_stuff_before_build_file ] && \
-				. $run_stuff_before_build_file
-			[ -n "$run_stuff_before_build_cmd" ] && \
-				${run_stuff_before_build_cmd}
-		fi
-	done
+	local rbbf="$PKGFS_TEMPLATESDIR/$pkgname-runstuff-before-build.sh"a
+	[ -f $rbbf ] && . $rbbf
+	[ -n "$run_stuff_before_build_cmd" ] && ${run_stuff_before_build_cmd}
+
 
 	[ -z "$make_build_target" ] && make_build_target=
 	[ -n "$PKGFS_MAKEJOBS" ] && PKGFS_MAKEJOBS="-j$PKGFS_MAKEJOBS"
@@ -740,14 +729,9 @@ build_src_phase()
 	#
 	# Run template stuff before installing.
 	#
-	for i in ${run_stuff_before}; do
-		if [ "$i" = "install" ]; then
-			[ -f $run_stuff_before_install_file ] && \
-				. $run_stuff_before_install_file
-			[ -n "$run_stuff_before_install_cmd" ] && \
-				${run_stuff_before_install_cmd}
-		fi
-	done
+	local rbif="$PKGFS_TEMPLATESDIR/$pkgname-runstuff-before-install.sh"
+	[ -f $rbif ] && . $rbif
+	[ -n "$run_stuff_before_install_cmd" ] && ${run_stuff_before_install_cmd}
 
 	$touch_cmd -f $PKGFS_BUILD_DONE
 }
@@ -794,14 +778,9 @@ install_src_phase()
 	#
 	# Run template stuff after installing.
 	#
-	for i in ${run_stuff_after}; do
-		if [ "$i" = "install" ]; then
-			[ -f $run_stuff_after_install_file ] && \
-				. $run_stuff_after_install_file
-			[ -n "$run_stuff_after_install_cmd" ] && \
-				${run_stuff_after_install_cmd}
-		fi
-	done
+	local raif="$PKGFS_TEMPLATESDIR/$pkgname-runstuff-after-install.sh"
+	[ -f $raif ] && . $raif
+	[ -n "$run_stuff_after_install_cmd" ] && ${run_stuff_after_install_cmd}
 
 	#
 	# Transform pkg-config files if requested by template.
