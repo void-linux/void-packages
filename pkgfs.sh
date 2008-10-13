@@ -100,6 +100,7 @@ Targets:
 	install		Same than \`install-destdir´ but also stows package.
 	list		Lists all currently \`stowned´ packages.
 	remove		Remove package completely (unstow + remove data)
+	listfiles	Lists files installed from <package_name>.
 	stow		Create links in master directory.
 	unstow		Remove links in master directory.
 
@@ -1181,6 +1182,28 @@ list_pkgs()
 }
 
 #
+# Lists files installed by a package.
+#
+list_pkg_files()
+{
+	local pkg="$1"
+
+	if [ -z $pkg ]; then
+		echo "*** ERROR: unexistent package, aborting ***"
+		exit 1
+	fi
+
+	if [ ! -d "$PKGFS_DESTDIR/$pkg" ]; then
+		echo "*** ERROR: cannot find \`$pkg' in $PKGFS_DESTDIR ***"
+		exit 1
+	fi
+
+	for f in $($find_cmd $PKGFS_DESTDIR/$pkg -type f -print | sort -u); do
+		echo "${f##$PKGFS_DESTDIR/$pkg/}"
+	done
+}
+
+#
 # Removes a currently installed package (unstow + removed from destdir).
 #
 remove_pkg()
@@ -1413,6 +1436,9 @@ install)
 	;;
 list)
 	list_pkgs
+	;;
+listfiles)
+	list_pkg_files $2
 	;;
 remove)
 	remove_pkg $2
