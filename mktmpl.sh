@@ -25,7 +25,7 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 #
-# Shell script to automate the creation of new templates for pkgfs.
+# Shell script to automate the creation of new templates for xbps.
 # Only writes basic stuff into the template, if you need advanced stuff
 # you'll have to do that manually.
 #
@@ -39,7 +39,7 @@
 : ${cksum_cmd:=/usr/bin/cksum -a rmd160}
 : ${sed_cmd:=/usr/bin/sed}
 : ${db_cmd:=/usr/bin/db -q}
-: ${config_file:=/usr/local/etc/pkgfs.conf}
+: ${config_file:=/usr/local/etc/xbps.conf}
 : ${chmod_cmd:=/bin/chmod}
 : ${mkdir_cmd:=/bin/mkdir}
 
@@ -48,9 +48,9 @@ user_deps=
 
 write_new_template()
 {
-	local tmpldir="$PKGFS_DISTRIBUTIONDIR/templates"
-	local depsdir="$PKGFS_DISTRIBUTIONDIR/dependencies"
-	local distdir="$PKGFS_SRCDISTDIR"
+	local tmpldir="$XBPS_DISTRIBUTIONDIR/templates"
+	local depsdir="$XBPS_DISTRIBUTIONDIR/dependencies"
+	local distdir="$XBPS_SRCDISTDIR"
 	local checksum=
 	local dfile=
 	local tmplname=
@@ -104,7 +104,7 @@ write_new_template()
 		echo "url=${url%%/$dfile}";				\
 		echo "build_style=$build_style";			\
 		if [ -n "$dep_gmake" ]; then				\
-			echo "make_cmd=\"\$PKGFS_MASTERDIR/bin/gmake\"";	\
+			echo "make_cmd=\"\$XBPS_MASTERDIR/bin/gmake\"";	\
 		fi;							\
 		if [ -n "$pcfiles" ]; then				\
 			echo "pkgconfig_override=\"$pcfiles\"";		\
@@ -232,7 +232,7 @@ read_parameters()
 }
 
 #
-# If user specified a full path to pkgfs.conf, use it. Otherwise look
+# If user specified a full path to xbps.conf, use it. Otherwise look
 # at default location, and as last resort current dir.
 #
 if [ -n "$1" ]; then
@@ -240,10 +240,10 @@ if [ -n "$1" ]; then
 fi
 
 if [ ! -f "$config_file" ]; then
-	config_file="$(pwd -P 2>/dev/null)/pkgfs.conf"
+	config_file="$(pwd -P 2>/dev/null)/xbps.conf"
 	if [ ! -f "$config_file" ]; then
 		echo "$(basename $0): cannot find configuration file"
-		echo "Please speficify it, e.g: $(basename $0) /path/to/pkgfs.conf"
+		echo "Please speficify it, e.g: $(basename $0) /path/to/xbps.conf"
 		exit 1
 	fi
 fi

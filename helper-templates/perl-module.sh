@@ -7,7 +7,7 @@
 # 	build_style=perl_module
 #
 # Optionally if the module needs more directories to be configured other
-# than $PKGFS_BUILDDIR/$wrksrc, one can use (relative to $wrksrc):
+# than $XBPS_BUILDDIR/$wrksrc, one can use (relative to $wrksrc):
 #
 #	perl_configure_dirs=blob/bob foo/blah
 #
@@ -15,12 +15,12 @@
 # Override the paths to get desired results.
 : ${_arch:=$(uname -m)}
 : ${perl_thrmulti:=${_arch}-netbsd-thread-multi}
-: ${perl_cmd:=$PKGFS_MASTERDIR/bin/perl}
-: ${PERL_DESTDIR:=$PKGFS_MASTERDIR}
+: ${perl_cmd:=$XBPS_MASTERDIR/bin/perl}
+: ${PERL_DESTDIR:=$XBPS_MASTERDIR}
 : ${PERL_PREFIX:=$PERL_DESTDIR}
-: ${PERL_DPREFIX:=$PKGFS_DESTDIR/$pkgname-$version}
+: ${PERL_DPREFIX:=$XBPS_DESTDIR/$pkgname-$version}
 : ${PERL_VERSION:=5.10.0}
-: ${PERL_LDDLFLAGS:=--whole-archive -shared -L$PKGFS_MASTERDIR/lib}
+: ${PERL_LDDLFLAGS:=--whole-archive -shared -L$XBPS_MASTERDIR/lib}
 : ${PERL_SITELIBEXP:=$PERL_DPREFIX/lib/perl5/site_perl/$PERL_VERSION}
 : ${PERL_SITEARCHEXP:=$PERL_SITELIBEXP/$perl_thrmulti}
 : ${PERL_SITEPREFIX:=$PERL_PREFIX}

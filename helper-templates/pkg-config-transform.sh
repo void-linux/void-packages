@@ -1,6 +1,6 @@
 #
 # This helper will transform the pkg-config files with correct
-# directories pointing at PKGFS_MASTERDIR specified in the config file.
+# directories pointing at XBPS_MASTERDIR specified in the config file.
 #
 pkgconfig_transform_file()
 {
@@ -10,7 +10,7 @@ pkgconfig_transform_file()
 	[ -z "$file" ] && return 1
 
 	$sed_cmd	\
-		-e "s|^exec_prefix=$PKGFS_DESTDIR/$pkg.*$|exec_prefix=\${prefix}|" \
+		-e "s|^exec_prefix=$XBPS_DESTDIR/$pkg.*$|exec_prefix=\${prefix}|" \
 		-e "s|-L\${libdir}|-L\${libdir} -Wl,-R\${libdir}|" \
 		$file > $file.in && \
 	$mv_cmd $file.in $file

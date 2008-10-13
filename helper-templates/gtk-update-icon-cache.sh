@@ -3,8 +3,8 @@
 # any template.
 #
 
-gtkupdate_iconcache_cmd=$PKGFS_MASTERDIR/bin/gtk-update-icon-cache
-iconcache_theme_dir=$PKGFS_MASTERDIR/share/icons/hicolor
+gtkupdate_iconcache_cmd=$XBPS_MASTERDIR/bin/gtk-update-icon-cache
+iconcache_theme_dir=$XBPS_MASTERDIR/share/icons/hicolor
 
 if [ -x $gtkupdate_iconcache_cmd -a -d $iconcache_theme_dir ]; then
 	$gtkupdate_iconcache_cmd -f -t $iconcache_theme_dir && \

@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# pkgfs - A simple, minimal, fast and uncomplete build package system.
+# xbps - A simple, minimal, fast and uncomplete build package system.
 #
 #-
 # Copyright (c) 2008 Juan Romero Pardines.
@@ -38,7 +38,7 @@
 # Default path to configuration file, can be overriden
 # via the environment or command line.
 #
-: ${PKGFS_CONFIG_FILE:=/usr/local/etc/pkgfs.conf}
+: ${XBPS_CONFIG_FILE:=/usr/local/etc/xbps.conf}
 
 : ${progname:=$(basename $0)}
 : ${topdir:=$(/bin/pwd -P 2>/dev/null)}
@@ -69,13 +69,13 @@
 set_defvars()
 {
 	# Directories
-	: ${PKGFS_TEMPLATESDIR:=$PKGFS_DISTRIBUTIONDIR/templates}
-	: ${PKGFS_DEPSDIR:=$PKGFS_DISTRIBUTIONDIR/dependencies}
-	: ${PKGFS_BUILD_DEPS_DB:=$PKGFS_DEPSDIR/build-depends.db}
-	: ${PKGFS_TMPLHELPDIR:=$PKGFS_DISTRIBUTIONDIR/helper-templates}
-	: ${PKGFS_REGPKG_DB:=$PKGFS_DESTDIR/.pkgfs-registered-pkgs.db}
+	: ${XBPS_TEMPLATESDIR:=$XBPS_DISTRIBUTIONDIR/templates}
+	: ${XBPS_DEPSDIR:=$XBPS_DISTRIBUTIONDIR/dependencies}
+	: ${XBPS_BUILD_DEPS_DB:=$XBPS_DEPSDIR/build-depends.db}
+	: ${XBPS_TMPLHELPDIR:=$XBPS_DISTRIBUTIONDIR/helper-templates}
+	: ${XBPS_REGPKG_DB:=$XBPS_DESTDIR/.xbps-registered-pkgs.db}
 
-	local DDIRS="PKGFS_DEPSDIR PKGFS_TEMPLATESDIR PKGFS_TMPLHELPDIR"
+	local DDIRS="XBPS_DEPSDIR XBPS_TEMPLATESDIR XBPS_TMPLHELPDIR"
 	for i in ${DDIRS}; do
 		eval val="\$$i"
 		if [ ! -d "$val" ]; then
@@ -107,7 +107,7 @@ Targets:
 Options:
 	-C	Do not remove build directory after successful installation.
 	-c	Path to global configuration file:
-		if not specified /usr/local/etc/pkgfs.conf is used.
+		if not specified /usr/local/etc/xbps.conf is used.
 _EOF
 	exit 1
 }
@@ -140,27 +140,27 @@ run_file()
 
 #
 # This function merges two GNU info dirs into one and puts the result
-# into PKGFS_MASTERDIR/share/info/dir.
+# into XBPS_MASTERDIR/share/info/dir.
 #
 merge_infodir_tmpl()
 {
 	local pkgname="$1"
-	local merge_info_cmd="$PKGFS_MASTERDIR/bin/merge-info"
+	local merge_info_cmd="$XBPS_MASTERDIR/bin/merge-info"
 
-	[ -z "$pkgname" -o ! -r "$PKGFS_MASTERDIR/share/info/dir" \
-	     -o ! -r "$PKGFS_DESTDIR/$pkgname/share/info/dir" ] && return 1
+	[ -z "$pkgname" -o ! -r "$XBPS_MASTERDIR/share/info/dir" \
+	     -o ! -r "$XBPS_DESTDIR/$pkgname/share/info/dir" ] && return 1
 
-	$merge_info_cmd -d $PKGFS_MASTERDIR/share/info/dir 	\
-		$PKGFS_DESTDIR/$pkgname/share/info/dir -o 	\
-		$PKGFS_MASTERDIR/share/info/dir.new
+	$merge_info_cmd -d $XBPS_MASTERDIR/share/info/dir 	\
+		$XBPS_DESTDIR/$pkgname/share/info/dir -o 	\
+		$XBPS_MASTERDIR/share/info/dir.new
 	if [ $? -ne 0 ]; then
 		echo -n "*** WARNING: there was an error merging info dir from"
 		echo " $pkgname, aborting ***"
 		return 1
 	fi
 
-	$mv_cmd -f $PKGFS_MASTERDIR/share/info/dir.new \
-		$PKGFS_MASTERDIR/share/info/dir
+	$mv_cmd -f $XBPS_MASTERDIR/share/info/dir.new \
+		$XBPS_MASTERDIR/share/info/dir
 }
 
 #
@@ -182,7 +182,7 @@ info_tmpl()
 	echo
 	check_build_depends_pkg $pkgname-$version
 	if [ $? -eq 0 ]; then
-		local list="$($db_cmd -V btree $PKGFS_BUILD_DEPS_DB $pkgname)"
+		local list="$($db_cmd -V btree $XBPS_BUILD_DEPS_DB $pkgname)"
 		echo "This package requires the following dependencies to be built:"
 		for i in ${list}; do
 			echo " $i"
@@ -199,9 +199,9 @@ check_config_vars()
 	local cffound=
 
 	if [ -z "$config_file_specified" ]; then
-		config_file_paths="$PKGFS_CONFIG_FILE ./pkgfs.conf"
+		config_file_paths="$XBPS_CONFIG_FILE ./xbps.conf"
 		for f in $config_file_paths; do
-			[ -f $f ] && PKGFS_CONFIG_FILE=$f && \
+			[ -f $f ] && XBPS_CONFIG_FILE=$f && \
 				cffound=yes && break
 		done
 		if [ -z "$cffound" ]; then
@@ -211,19 +211,19 @@ check_config_vars()
 		fi
 	fi
 
-	run_file ${PKGFS_CONFIG_FILE}
-	PKGFS_CONFIG_FILE=$path_fixed
+	run_file ${XBPS_CONFIG_FILE}
+	XBPS_CONFIG_FILE=$path_fixed
 
-	if [ ! -f "$PKGFS_CONFIG_FILE" ]; then
+	if [ ! -f "$XBPS_CONFIG_FILE" ]; then
 		echo -n "*** ERROR: cannot find configuration file: "
-		echo	"'$PKGFS_CONFIG_FILE' ***"
+		echo	"'$XBPS_CONFIG_FILE' ***"
 		exit 1
 	fi
 
-	local PKGFS_VARS="PKGFS_MASTERDIR PKGFS_DESTDIR PKGFS_BUILDDIR \
-			  PKGFS_SRCDISTDIR PKGFS_SYSCONFDIR"
+	local XBPS_VARS="XBPS_MASTERDIR XBPS_DESTDIR XBPS_BUILDDIR \
+			  XBPS_SRCDISTDIR XBPS_SYSCONFDIR"
 
-	for f in ${PKGFS_VARS}; do
+	for f in ${XBPS_VARS}; do
 		eval val="\$$f"
 		if [ -z "$val" ]; then
 			echo -n "**** ERROR: '$f' not set in configuration "
@@ -256,8 +256,8 @@ reset_tmpl_vars()
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
 			make_install_target postinstall_helpers version \
 			ignore_files \
-			PKGFS_EXTRACT_DONE PKGFS_CONFIGURE_DONE \
-			PKGFS_BUILD_DONE PKGFS_INSTALL_DONE"
+			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
+			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
 	for i in ${TMPL_VARS}; do
 		eval unset "$i"
@@ -273,8 +273,8 @@ setup_tmpl()
 {
 	local pkg="$1"
 
-	if [ -f "$PKGFS_TEMPLATESDIR/$pkg.tmpl" ]; then
-		run_file $PKGFS_TEMPLATESDIR/$pkg.tmpl
+	if [ -f "$XBPS_TEMPLATESDIR/$pkg.tmpl" ]; then
+		run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
 		prepare_tmpl
 	else
 		echo "*** ERROR: cannot find \`$pkg´ template file ***"
@@ -315,18 +315,18 @@ prepare_tmpl()
 		exit 1
 	fi
 
-	dfile="$PKGFS_SRCDISTDIR/$dfile"
+	dfile="$XBPS_SRCDISTDIR/$dfile"
 
 	case "$extract_sufx" in
 	.tar.bz2|.tar.gz|.tgz|.tbz)
-		extract_cmd="$tar_cmd xfz $dfile -C $PKGFS_BUILDDIR"
+		extract_cmd="$tar_cmd xfz $dfile -C $XBPS_BUILDDIR"
 		;;
 	.tar)
-		extract_cmd="$tar_cmd xf $dfile -C $PKGFS_BUILDDIR"
+		extract_cmd="$tar_cmd xf $dfile -C $XBPS_BUILDDIR"
 		;;
 	.zip)
-		if [ -f "$PKGFS_TMPLHELPDIR/unzip-extraction.sh" ]; then
-			. $PKGFS_TMPLHELPDIR/unzip-extraction.sh
+		if [ -f "$XBPS_TMPLHELPDIR/unzip-extraction.sh" ]; then
+			. $XBPS_TMPLHELPDIR/unzip-extraction.sh
 			unset wrksrc
 		fi
 		# $extract_cmd set by the helper
@@ -338,27 +338,27 @@ prepare_tmpl()
 		;;
 	esac
 
-	unset PKGFS_EXTRACT_DONE PKGFS_APPLYPATCHES_DONE
-	unset PKGFS_CONFIGURE_DONE PKGFS_BUILD_DONE PKGFS_INSTALL_DONE
+	unset XBPS_EXTRACT_DONE XBPS_APPLYPATCHES_DONE
+	unset XBPS_CONFIGURE_DONE XBPS_BUILD_DONE XBPS_INSTALL_DONE
 
 	if [ -n "$wrksrc" ]; then
-		wrksrc=$PKGFS_BUILDDIR/$wrksrc
+		wrksrc=$XBPS_BUILDDIR/$wrksrc
 	elif [ -z "$wrksrc" -a -z "$distfiles" ]; then
-		wrksrc=$PKGFS_BUILDDIR/$pkgname-$version
+		wrksrc=$XBPS_BUILDDIR/$pkgname-$version
 	elif [ -z "$wrksrc" -a -n "$distfiles" ]; then
-		wrksrc=$PKGFS_BUILDDIR/$distfiles
+		wrksrc=$XBPS_BUILDDIR/$distfiles
 	else
 		echo "*** ERROR: can't guess what's the correct \$wrksrc! ***"
 		exit 1
 	fi
 
-	PKGFS_EXTRACT_DONE="$wrksrc/.pkgfs_extract_done"
-	PKGFS_APPLYPATCHES_DONE="$wrksrc/.pkgfs_applypatches_done"
-	PKGFS_CONFIGURE_DONE="$wrksrc/.pkgfs_configure_done"
-	PKGFS_BUILD_DONE="$wrksrc/.pkgfs_build_done"
-	PKGFS_INSTALL_DONE="$wrksrc/.pkgfs_install_done"
+	XBPS_EXTRACT_DONE="$wrksrc/.xbps_extract_done"
+	XBPS_APPLYPATCHES_DONE="$wrksrc/.xbps_applypatches_done"
+	XBPS_CONFIGURE_DONE="$wrksrc/.xbps_configure_done"
+	XBPS_BUILD_DONE="$wrksrc/.xbps_build_done"
+	XBPS_INSTALL_DONE="$wrksrc/.xbps_install_done"
 
-	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$PKGFS_MASTERDIR/bin:$PKGFS_MASTERDIR/sbin"
+	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin"
 }
 
 #
@@ -379,7 +379,7 @@ extract_distfiles()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	echo "==> Extracting \`$pkgname-$version' into $PKGFS_BUILDDIR."
+	echo "==> Extracting \`$pkgname-$version' into $XBPS_BUILDDIR."
 
 	$extract_cmd
 	if [ "$?" -ne 0 ]; then
@@ -389,7 +389,7 @@ extract_distfiles()
 	fi
 
 	unset extract_cmd
-	$touch_cmd -f $PKGFS_EXTRACT_DONE
+	$touch_cmd -f $XBPS_EXTRACT_DONE
 }
 
 #
@@ -416,7 +416,7 @@ check_rmd160_cksum()
 	fi
 
 	origsum="$checksum"
-	dfile="$PKGFS_SRCDISTDIR/$dfile"
+	dfile="$XBPS_SRCDISTDIR/$dfile"
 	filesum="$($cksum_cmd $dfile | $awk_cmd '{print $4}')"
 	if [ "$origsum" != "$filesum" ]; then
 		echo "*** WARNING: RMD160 checksum doesn't match for \`$dfile' ***"
@@ -456,16 +456,16 @@ fetch_distfiles()
 
 	for f in "$file"; do
 		file2="$f$extract_sufx"
-		if [ -f "$PKGFS_SRCDISTDIR/$file2" ]; then
+		if [ -f "$XBPS_SRCDISTDIR/$file2" ]; then
 			check_rmd160_cksum $f
 			[ $? -eq 0 ] && continue
 		fi
 
 		echo "==> Fetching distfile: \`$file2'."
 
-		cd $PKGFS_SRCDISTDIR && $fetch_cmd $url/$file2
+		cd $XBPS_SRCDISTDIR && $fetch_cmd $url/$file2
 		if [ $? -ne 0 ]; then
-			if [ ! -f $PKGFS_SRCDISTDIR/$file2 ]; then
+			if [ ! -f $XBPS_SRCDISTDIR/$file2 ]; then
 				echo -n "*** ERROR: couldn't fetch '$file2', "
 				echo	"aborting ***"
 			else
@@ -488,25 +488,25 @@ fixup_tmpl_libtool()
 	# we use the master directory while relinking, all will be fine
 	# once the package is stowned.
 	#
-	if [ -f "$lt_file" -a -f "$PKGFS_MASTERDIR/bin/libtool" ]; then
+	if [ -f "$lt_file" -a -f "$XBPS_MASTERDIR/bin/libtool" ]; then
 		$rm_cmd -f $wrksrc/libtool
 		$rm_cmd -f $wrksrc/ltmain.sh
-		$ln_cmd -s $PKGFS_MASTERDIR/bin/libtool $lt_file
-		$ln_cmd -s $PKGFS_MASTERDIR/share/libtool/config/ltmain.sh \
+		$ln_cmd -s $XBPS_MASTERDIR/bin/libtool $lt_file
+		$ln_cmd -s $XBPS_MASTERDIR/share/libtool/config/ltmain.sh \
 			 $wrksrc/ltmain.sh
-	elif [ -f "$PKGFS_MASTERDIR/bin/libtool" ]; then
-		$ln_cmd -s $PKGFS_MASTERDIR/bin/libtool $lt_file
+	elif [ -f "$XBPS_MASTERDIR/bin/libtool" ]; then
+		$ln_cmd -s $XBPS_MASTERDIR/bin/libtool $lt_file
 	fi
 }
 
 set_build_vars()
 {
-	LDFLAGS="-L$PKGFS_MASTERDIR/lib -Wl,-R$PKGFS_MASTERDIR/lib $LDFLAGS"
-	LDFLAGS="-L$PKGFS_DESTDIR/$pkgname-$version/lib $LDFLAGS"
-	CFLAGS="$CFLAGS $PKGFS_CFLAGS"
-	CXXFLAGS="$CXXFLAGS $PKGFS_CXXFLAGS"
-	CPPFLAGS="-I$PKGFS_MASTERDIR/include $CPPFLAGS"
-	PKG_CONFIG="$PKGFS_MASTERDIR/bin/pkg-config"
+	LDFLAGS="-L$XBPS_MASTERDIR/lib -Wl,-R$XBPS_MASTERDIR/lib $LDFLAGS"
+	LDFLAGS="-L$XBPS_DESTDIR/$pkgname-$version/lib $LDFLAGS"
+	CFLAGS="$CFLAGS $XBPS_CFLAGS"
+	CXXFLAGS="$CXXFLAGS $XBPS_CXXFLAGS"
+	CPPFLAGS="-I$XBPS_MASTERDIR/include $CPPFLAGS"
+	PKG_CONFIG="$XBPS_MASTERDIR/bin/pkg-config"
 
 	export LDFLAGS="$LDFLAGS" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"
 	export CPPFLAGS="$CPPFLAGS" PKG_CONFIG="$PKG_CONFIG"
@@ -530,7 +530,7 @@ apply_tmpl_patches()
 	#
 	if [ -n "$patch_files" ]; then
 		for i in ${patch_files}; do
-			patch="$PKGFS_TEMPLATESDIR/$i"
+			patch="$XBPS_TEMPLATESDIR/$i"
 			if [ ! -f "$patch" ]; then
 				echo "*** WARNING: unexistent patch '$i' ***"
 				continue
@@ -563,7 +563,7 @@ apply_tmpl_patches()
 		done
 	fi
 
-	$touch_cmd -f $PKGFS_APPLYPATCHES_DONE
+	$touch_cmd -f $XBPS_APPLYPATCHES_DONE
 }
 
 #
@@ -589,10 +589,10 @@ configure_src_phase()
 	echo "=> Running \`\`configure´´ phase for \`$pkgname-$version'."
 
 	# Apply patches if requested by template file
-	[ ! -f $PKGFS_APPLYPATCHES_DONE ] && apply_tmpl_patches
+	[ ! -f $XBPS_APPLYPATCHES_DONE ] && apply_tmpl_patches
 
 	# Run stuff before configure.
-	local rbcf="$PKGFS_TEMPLATESDIR/$pkgname-runstuff-before-configure.sh"
+	local rbcf="$XBPS_TEMPLATESDIR/$pkgname-runstuff-before-configure.sh"
 	[ -f $rbcf ] && . $rbcf
 	[ -n "$run_stuff_before_configure_cmd" ] && \
 		${run_stuff_before_configure_cmd}
@@ -614,10 +614,10 @@ configure_src_phase()
 		# surprises later.
 		#
 		./configure						\
-			--prefix="$PKGFS_MASTERDIR"			\
-			--mandir="$PKGFS_DESTDIR/$pkgname-$version/man"	\
-			--infodir="$PKGFS_DESTDIR/$pkgname-$version/share/info"	\
-			--sysconfdir="$PKGFS_SYSCONFDIR"		\
+			--prefix="$XBPS_MASTERDIR"			\
+			--mandir="$XBPS_DESTDIR/$pkgname-$version/man"	\
+			--infodir="$XBPS_DESTDIR/$pkgname-$version/share/info"	\
+			--sysconfdir="$XBPS_SYSCONFDIR"		\
 			${configure_args}
 
 	#
@@ -635,7 +635,7 @@ configure_src_phase()
 	# They are all handled by the helper perl-module.sh.
 	#
 	elif [ "$build_style" = "perl_module" ]; then
-		. $PKGFS_TMPLHELPDIR/perl-module.sh
+		. $XBPS_TMPLHELPDIR/perl-module.sh
 		perl_module_build $pkgname
 
 	#
@@ -664,7 +664,7 @@ configure_src_phase()
 		unset eval ${f%=*}
 	done
 
-	$touch_cmd -f $PKGFS_CONFIGURE_DONE
+	$touch_cmd -f $XBPS_CONFIGURE_DONE
 }
 
 #
@@ -705,13 +705,13 @@ build_src_phase()
 	#
 	# Run template stuff before building.
 	#
-	local rbbf="$PKGFS_TEMPLATESDIR/$pkgname-runstuff-before-build.sh"a
+	local rbbf="$XBPS_TEMPLATESDIR/$pkgname-runstuff-before-build.sh"a
 	[ -f $rbbf ] && . $rbbf
 	[ -n "$run_stuff_before_build_cmd" ] && ${run_stuff_before_build_cmd}
 
 
 	[ -z "$make_build_target" ] && make_build_target=
-	[ -n "$PKGFS_MAKEJOBS" ] && PKGFS_MAKEJOBS="-j$PKGFS_MAKEJOBS"
+	[ -n "$XBPS_MAKEJOBS" ] && XBPS_MAKEJOBS="-j$XBPS_MAKEJOBS"
 
 	# Export make_env vars.
 	for f in ${make_env}; do
@@ -721,7 +721,7 @@ build_src_phase()
 	#
 	# Build package via make.
 	#
-	${make_cmd} ${PKGFS_MAKEJOBS} ${make_build_args} ${make_build_target}
+	${make_cmd} ${XBPS_MAKEJOBS} ${make_build_args} ${make_build_target}
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR building (make stage) \`$pkg' ***"
 		exit 1
@@ -730,11 +730,11 @@ build_src_phase()
 	#
 	# Run template stuff before installing.
 	#
-	local rbif="$PKGFS_TEMPLATESDIR/$pkgname-runstuff-before-install.sh"
+	local rbif="$XBPS_TEMPLATESDIR/$pkgname-runstuff-before-install.sh"
 	[ -f $rbif ] && . $rbif
 	[ -n "$run_stuff_before_install_cmd" ] && ${run_stuff_before_install_cmd}
 
-	$touch_cmd -f $PKGFS_BUILD_DONE
+	$touch_cmd -f $XBPS_BUILD_DONE
 }
 
 #
@@ -767,7 +767,7 @@ install_src_phase()
 	# Install package via make.
 	#
 	${make_cmd} ${make_install_args} ${make_install_target} \
-		prefix="$PKGFS_DESTDIR/$pkgname-$version"
+		prefix="$XBPS_DESTDIR/$pkgname-$version"
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR instaling \`$pkgname-$version' ***"
 		exit 1
@@ -781,7 +781,7 @@ install_src_phase()
 	#
 	# Run template stuff after installing.
 	#
-	local raif="$PKGFS_TEMPLATESDIR/$pkgname-runstuff-after-install.sh"
+	local raif="$XBPS_TEMPLATESDIR/$pkgname-runstuff-after-install.sh"
 	[ -f $raif ] && . $raif
 	[ -n "$run_stuff_after_install_cmd" ] && ${run_stuff_after_install_cmd}
 
@@ -789,19 +789,19 @@ install_src_phase()
 	# Transform pkg-config files if requested by template.
 	#
 	for i in ${pkgconfig_override}; do
-		local tmpf="$PKGFS_DESTDIR/$pkgname-$version/lib/pkgconfig/$i"
+		local tmpf="$XBPS_DESTDIR/$pkgname-$version/lib/pkgconfig/$i"
 		[ -f "$tmpf" ] && \
-			[ -f $PKGFS_TMPLHELPDIR/pkg-config-transform.sh ] && \
-			. $PKGFS_TMPLHELPDIR/pkg-config-transform.sh && \
+			[ -f $XBPS_TMPLHELPDIR/pkg-config-transform.sh ] && \
+			. $XBPS_TMPLHELPDIR/pkg-config-transform.sh && \
 			pkgconfig_transform_file $tmpf
 	done
 
 	# Unset build vars.
 	unset_build_vars
 
-	echo "==> Installed \`$pkgname-$version' into $PKGFS_DESTDIR."
+	echo "==> Installed \`$pkgname-$version' into $XBPS_DESTDIR."
 
-	$touch_cmd -f $PKGFS_INSTALL_DONE
+	$touch_cmd -f $XBPS_INSTALL_DONE
 
 	#
 	# Remove $wrksrc if -C not specified.
@@ -812,7 +812,7 @@ install_src_phase()
 			echo "=> Removed \`$pkgname-$version' build directory."
 	fi
 
-	cd $PKGFS_BUILDDIR
+	cd $XBPS_BUILDDIR
 }
 
 #
@@ -827,14 +827,14 @@ register_pkg_handler()
 	[ -z "$action" -o -z "$pkg" -o -z "$version" ] && return 1
 
 	if [ "$action" = "register" ]; then
-		$db_cmd -w btree $PKGFS_REGPKG_DB $pkg $version 2>&1 >/dev/null
+		$db_cmd -w btree $XBPS_REGPKG_DB $pkg $version 2>&1 >/dev/null
 		if [ "$?" -ne  0 ]; then
 			echo -n "*** ERROR: couldn't register \`$pkg'"
 			echo " in db file ***"
 			exit 1
 		fi
 	elif [ "$action" = "unregister" ]; then
-		$db_cmd -d btree $PKGFS_REGPKG_DB $pkg 2>&1 >/dev/null
+		$db_cmd -d btree $XBPS_REGPKG_DB $pkg 2>&1 >/dev/null
 		if [ "$?" -ne 0 ]; then
 			echo -n "*** ERROR: \`$pkg' not registered "
 			echo "in db file? ***"
@@ -856,11 +856,11 @@ add_dependency_tolist()
 	[ -z "$curpkg" ] && return 1
 	[ -n "$prev_pkg" ] && curpkg=$prev_pkg
 
-	for i in $($db_cmd -V btree $PKGFS_BUILD_DEPS_DB ${curpkg%-[0-9]*.*}); do
+	for i in $($db_cmd -V btree $XBPS_BUILD_DEPS_DB ${curpkg%-[0-9]*.*}); do
 		#
 		# Check if dep already installed.
 		#
-		if [ -r "$PKGFS_REGPKG_DB" ]; then
+		if [ -r "$XBPS_REGPKG_DB" ]; then
 			check_installed_pkg $i ${i##[aA-zZ]*-}
 			#
 			# If dep is already installed, put it on the
@@ -955,7 +955,7 @@ install_dependencies_pkg()
 
 	echo "==> Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
-		fpkg="$($db_cmd -O '-' btree $PKGFS_REGPKG_DB ${i%-[0-9]*.*})"
+		fpkg="$($db_cmd -O '-' btree $XBPS_REGPKG_DB ${i%-[0-9]*.*})"
 		echo "	$i: found $fpkg."
 	done
 
@@ -982,7 +982,7 @@ install_builddeps_required_pkg()
 
 	[ -z "$pkg" ] && return 1
 
-	for dep in $($db_cmd -V btree $PKGFS_BUILD_DEPS_DB ${pkg%-[0-9]*.*}); do
+	for dep in $($db_cmd -V btree $XBPS_BUILD_DEPS_DB ${pkg%-[0-9]*.*}); do
 		check_installed_pkg $dep ${dep##[aA-zZ]*-}
 		if [ $? -ne 0 ]; then
 			echo "==> Installing \`$pkg´ dependency: $dep."
@@ -1001,18 +1001,18 @@ check_installed_pkg()
 	local reqver="$2"
 	local iver=
 
-	[ -z "$pkg" -o -z "$reqver" -o ! -r $PKGFS_REGPKG_DB ] && return 1
+	[ -z "$pkg" -o -z "$reqver" -o ! -r $XBPS_REGPKG_DB ] && return 1
 
-	run_file $PKGFS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
+	run_file $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
 
 	reqver="$(echo $reqver | $sed_cmd 's|[[:punct:]]||g;s|[[:alpha:]]||g')"
 
-	$db_cmd -K btree $PKGFS_REGPKG_DB $pkgname 2>&1 >/dev/null
+	$db_cmd -K btree $XBPS_REGPKG_DB $pkgname 2>&1 >/dev/null
 	if [ $? -eq 0 ]; then
 		#
 		# Package is installed, let's check the version.
 		#
-		iver="$($db_cmd -V btree $PKGFS_REGPKG_DB $pkgname)"
+		iver="$($db_cmd -V btree $XBPS_REGPKG_DB $pkgname)"
 		if [ -n "$iver" ]; then
 			#
 			# As shell only supports decimal arith expressions,
@@ -1039,9 +1039,9 @@ check_build_depends_pkg()
 {
 	local pkg="$1"
 
-	[ -z $pkg -o ! -r $PKGFS_BUILD_DEPS_DB ] && return 1
+	[ -z $pkg -o ! -r $XBPS_BUILD_DEPS_DB ] && return 1
 
-	$db_cmd -V btree $PKGFS_BUILD_DEPS_DB ${pkg%-[0-9]*.*} 2>&1 >/dev/null
+	$db_cmd -V btree $XBPS_BUILD_DEPS_DB ${pkg%-[0-9]*.*} 2>&1 >/dev/null
 	return $?
 }
 
@@ -1053,7 +1053,7 @@ install_pkg()
 	local pkg=
 	local curpkgn="$1"
 
-	local cur_tmpl="$PKGFS_TEMPLATESDIR/$curpkgn.tmpl"
+	local cur_tmpl="$XBPS_TEMPLATESDIR/$curpkgn.tmpl"
 	if [ -z $cur_tmpl -o ! -f $cur_tmpl ]; then
 		echo "*** ERROR: cannot find \`$cur_tmpl´ template file ***"
 		exit 1
@@ -1098,15 +1098,15 @@ install_pkg()
 	#
 	fetch_distfiles
 
-	if [ ! -f "$PKGFS_EXTRACT_DONE" ]; then
+	if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
 		extract_distfiles
 	fi
 
-	if [ ! -f "$PKGFS_CONFIGURE_DONE" ]; then
+	if [ ! -f "$XBPS_CONFIGURE_DONE" ]; then
 		configure_src_phase
 	fi
 
-	if [ ! -f "$PKGFS_BUILD_DONE" ]; then
+	if [ ! -f "$XBPS_BUILD_DONE" ]; then
 		build_src_phase
 	fi
 
@@ -1132,7 +1132,7 @@ install_pkg()
 #
 install_xstow_pkg()
 {
-	[ -x "$PKGFS_XSTOW_CMD" ] && return 0
+	[ -x "$XBPS_XSTOW_CMD" ] && return 0
 
 	echo "=> xstow application not found, will install it now."
 
@@ -1140,27 +1140,27 @@ install_xstow_pkg()
 	setup_tmpl xstow
 	fetch_distfiles
 
-	if [ ! -f "$PKGFS_EXTRACT_DONE" ]; then
+	if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
 		extract_distfiles
 	fi
 
-	if [ ! -f "$PKGFS_CONFIGURE_DONE" ]; then
+	if [ ! -f "$XBPS_CONFIGURE_DONE" ]; then
 		configure_src_phase
 	fi
 
-	if [ ! -f "$PKGFS_BUILD_DONE" ]; then
+	if [ ! -f "$XBPS_BUILD_DONE" ]; then
 		build_src_phase
 	fi
 
 	install_src_phase
 
-	PKGFS_XSTOW_CMD="$PKGFS_DESTDIR/$pkgname-$version/bin/xstow"
+	XBPS_XSTOW_CMD="$XBPS_DESTDIR/$pkgname-$version/bin/xstow"
 	stow_pkg $pkgname-$version
 
 	#
 	# Continue with package that called us.
 	#
-	run_file $PKGFS_TEMPLATESDIR/$origin_tmpl.tmpl
+	run_file $XBPS_TEMPLATESDIR/$origin_tmpl.tmpl
 }
 
 #
@@ -1168,14 +1168,14 @@ install_xstow_pkg()
 #
 list_pkgs()
 {
-	if [ ! -r "$PKGFS_REGPKG_DB" ]; then
+	if [ ! -r "$XBPS_REGPKG_DB" ]; then
 		echo "=> No packages registered or missing register db file."
 		exit 0
 	fi
 
-	for i in $($db_cmd -K btree $PKGFS_REGPKG_DB); do
+	for i in $($db_cmd -K btree $XBPS_REGPKG_DB); do
 		# Run file to get short_desc and print something useful
-		run_file $PKGFS_TEMPLATESDIR/$i.tmpl
+		run_file $XBPS_TEMPLATESDIR/$i.tmpl
 		echo "$i-$version	$short_desc"
 		reset_tmpl_vars
 	done
@@ -1193,13 +1193,13 @@ list_pkg_files()
 		exit 1
 	fi
 
-	if [ ! -d "$PKGFS_DESTDIR/$pkg" ]; then
-		echo "*** ERROR: cannot find \`$pkg' in $PKGFS_DESTDIR ***"
+	if [ ! -d "$XBPS_DESTDIR/$pkg" ]; then
+		echo "*** ERROR: cannot find \`$pkg' in $XBPS_DESTDIR ***"
 		exit 1
 	fi
 
-	for f in $($find_cmd $PKGFS_DESTDIR/$pkg -type f -print | sort -u); do
-		echo "${f##$PKGFS_DESTDIR/$pkg/}"
+	for f in $($find_cmd $XBPS_DESTDIR/$pkg -type f -print | sort -u); do
+		echo "${f##$XBPS_DESTDIR/$pkg/}"
 	done
 }
 
@@ -1215,12 +1215,12 @@ remove_pkg()
 		exit 1
 	fi
 
-	if [ ! -f "$PKGFS_TEMPLATESDIR/$pkg.tmpl" ]; then
+	if [ ! -f "$XBPS_TEMPLATESDIR/$pkg.tmpl" ]; then
 		echo "*** ERROR: cannot find template file ***"
 		exit 1
 	fi
 
-	run_file $PKGFS_TEMPLATESDIR/$pkg.tmpl
+	run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
 
 	#
 	# If it's a meta-template, just unregister it from the db.
@@ -1232,13 +1232,13 @@ remove_pkg()
 		return $?
 	fi
 
-	if [ ! -d "$PKGFS_DESTDIR/$pkg-$version" ]; then
-		echo "*** ERROR: cannot find package on $PKGFS_DESTDIR ***"
+	if [ ! -d "$XBPS_DESTDIR/$pkg-$version" ]; then
+		echo "*** ERROR: cannot find package on $XBPS_DESTDIR ***"
 		exit 1
 	fi
 
 	unstow_pkg $pkg
-	$rm_cmd -rf $PKGFS_DESTDIR/$pkg-$version
+	$rm_cmd -rf $XBPS_DESTDIR/$pkg-$version
 	return $?
 }
 
@@ -1250,14 +1250,14 @@ stow_pkg()
 {
 	local pkg="$1"
 	local infodir_pkg="share/info/dir"
-	local infodir_master="$PKGFS_MASTERDIR/share/info/dir"
+	local infodir_master="$XBPS_MASTERDIR/share/info/dir"
 	local real_xstowargs="$xstow_args"
 	local real_xstow_ignore="$xstow_ignore_files"
 
 	[ -z "$pkg" ] && return 2
 
 	if [ -n "$stow_flag" ]; then
-		pkg=$PKGFS_TEMPLATESDIR/$pkg.tmpl
+		pkg=$XBPS_TEMPLATESDIR/$pkg.tmpl
 		run_file $pkg
 		pkg=$pkgname-$version
 		#
@@ -1266,11 +1266,11 @@ stow_pkg()
 		[ "$build_style" = "meta-template" ] && return 0
 	fi
 
-	if [ -r "$PKGFS_DESTDIR/$pkg/$infodir_pkg" ]; then
+	if [ -r "$XBPS_DESTDIR/$pkg/$infodir_pkg" ]; then
 		merge_infodir_tmpl $pkg
 	fi
 
-	if [ -r "$PKGFS_DESTDIR/$pkg/$infodir_pkg" \
+	if [ -r "$XBPS_DESTDIR/$pkg/$infodir_pkg" \
 	     -a -r "$infodir_master" ]; then
 		xstow_args="$xstow_args -i-file-in-dir $infodir_pkg"
 	fi
@@ -1279,10 +1279,10 @@ stow_pkg()
 		xstow_ignore_files="$xstow_ignore_files $ignore_files"
 	fi
 
-	$PKGFS_XSTOW_CMD -ignore "${xstow_ignore_files}" ${xstow_args} \
-		-pd-targets $PKGFS_MASTERDIR \
-		-dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
-		$PKGFS_DESTDIR/$pkg
+	$XBPS_XSTOW_CMD -ignore "${xstow_ignore_files}" ${xstow_args} \
+		-pd-targets $XBPS_MASTERDIR \
+		-dir $XBPS_DESTDIR -target $XBPS_MASTERDIR \
+		$XBPS_DESTDIR/$pkg
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR: couldn't create symlinks for \`$pkg' ***"
 		exit 1
@@ -1296,11 +1296,11 @@ stow_pkg()
 	# Run template postinstall helpers if requested.
 	#
 	if [ "$pkgname" != "${pkg%%-$version}" ]; then
-		run_file $PKGFS_TEMPLATESDIR/${pkg%%-$version}.tmpl
+		run_file $XBPS_TEMPLATESDIR/${pkg%%-$version}.tmpl
 	fi
 
 	for i in ${postinstall_helpers}; do
-		local pihf="$PKGFS_TMPLHELPDIR/$i"
+		local pihf="$XBPS_TMPLHELPDIR/$i"
 		[ -f "$pihf" ] && . $pihf
 	done
 
@@ -1327,7 +1327,7 @@ unstow_pkg()
 		exit 1
 	fi
 
-	run_file $PKGFS_TEMPLATESDIR/$pkg.tmpl
+	run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
 
 	#
 	# You cannot unstow a meta-template.
@@ -1338,13 +1338,13 @@ unstow_pkg()
 		xstow_ignore_files="$xstow_ignore_files $ignore_files"
 	fi
 
-	$PKGFS_XSTOW_CMD -dir $PKGFS_DESTDIR -target $PKGFS_MASTERDIR \
+	$XBPS_XSTOW_CMD -dir $XBPS_DESTDIR -target $XBPS_MASTERDIR \
 		-D -i-file-in-dir share/info/dir -ignore \
-		"${xstow_ignore_files}" $PKGFS_DESTDIR/$pkgname-$version
+		"${xstow_ignore_files}" $XBPS_DESTDIR/$pkgname-$version
 	if [ $? -ne 0 ]; then
 		exit 1
 	else
-		$rm_cmd -f $PKGFS_DESTDIR/$pkgname-$version/share/info/dir
+		$rm_cmd -f $XBPS_DESTDIR/$pkgname-$version/share/info/dir
 		echo "==> Removed \`$pkg' symlinks from master directory."
 	fi
 
@@ -1367,7 +1367,7 @@ while [ "$#" -gt 0 ]; do
 		;;
 	-c)
 		config_file_specified=yes
-		PKGFS_CONFIG_FILE="$2"
+		XBPS_CONFIG_FILE="$2"
 		shift
 		;;
 	--)
@@ -1397,11 +1397,11 @@ case "$target" in
 build)
 	setup_tmpl $2
 	fetch_distfiles $2
-	if [ ! -f "$PKGFS_EXTRACT_DONE" ]; then
+	if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
 		extract_distfiles $2
 	fi
 
-	if [ ! -f "$PKGFS_CONFIGURE_DONE" ]; then
+	if [ ! -f "$XBPS_CONFIGURE_DONE" ]; then
 		configure_src_phase $2
 	fi
 	build_src_phase $2
@@ -1409,7 +1409,7 @@ build)
 configure)
 	setup_tmpl $2
 	fetch_distfiles $2
-	if [ ! -f "$PKGFS_EXTRACT_DONE" ]; then
+	if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
 		extract_distfiles $2
 	fi
 	configure_src_phase $2

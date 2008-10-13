@@ -5,7 +5,7 @@
 #
 # If unzip is already installed just return immediately.
 
-if [ ! -x "$PKGFS_MASTERDIR/bin/unzip" ]; then
+if [ ! -x "$XBPS_MASTERDIR/bin/unzip" ]; then
 	unzip_version="5.52"
 
 	# Save pkgname before installing unzip.
@@ -33,5 +33,5 @@ if [ ! -x "$PKGFS_MASTERDIR/bin/unzip" ]; then
 	unset unzip_version
 fi
 
-unzip_cmd=$PKGFS_MASTERDIR/bin/unzip
-extract_cmd="$unzip_cmd -x $dfile -d $PKGFS_BUILDDIR"
+unzip_cmd=$XBPS_MASTERDIR/bin/unzip
+extract_cmd="$unzip_cmd -x $dfile -d $XBPS_BUILDDIR"

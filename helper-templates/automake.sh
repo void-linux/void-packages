@@ -5,10 +5,10 @@
 
 run_automake()
 {
-	$PKGFS_MASTERDIR/bin/aclocal
-	$PKGFS_MASTERDIR/bin/libtoolize --automake
-	$PKGFS_MASTERDIR/bin/automake -a --foreign -i
-	$PKGFS_MASTERDIR/bin/autoconf
+	$XBPS_MASTERDIR/bin/aclocal
+	$XBPS_MASTERDIR/bin/libtoolize --automake
+	$XBPS_MASTERDIR/bin/automake -a --foreign -i
+	$XBPS_MASTERDIR/bin/autoconf
 }
 
 if [ -z "$automake_dir" ]; then

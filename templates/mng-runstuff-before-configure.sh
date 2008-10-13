@@ -6,4 +6,4 @@ cd $wrksrc &&	\
 	$ln_cmd -sf makefiles/configure.in . && \
 	$ln_cmd -sf makefiles/Makefile.am .
 
-. $PKGFS_TMPLHELPDIR/automake.sh
+. $XBPS_TMPLHELPDIR/automake.sh

@@ -3,8 +3,8 @@
 # has been properly installed and stowned.
 #
 
-pango_query_modules_cmd=$PKGFS_MASTERDIR/bin/pango-querymodules
-pango_query_modules_db=$PKGFS_SYSCONFDIR/pango/pango.modules
+pango_query_modules_cmd=$XBPS_MASTERDIR/bin/pango-querymodules
+pango_query_modules_db=$XBPS_SYSCONFDIR/pango/pango.modules
 
 if [ -x $pango_query_modules_cmd -a -w $pango_query_modules_db ]; then
 	$pango_query_modules_cmd > $pango_query_modules_db

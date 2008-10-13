@@ -3,8 +3,8 @@
 # a template requests this process.
 #
 gtk_version="2.0"
-gtk_query_immodules_cmd=$PKGFS_MASTERDIR/bin/gtk-query-immodules-$gtk_version
-gtk_immodules_db=$PKGFS_SYSCONFDIR/gtk-$gtk_version/gtk.immodules
+gtk_query_immodules_cmd=$XBPS_MASTERDIR/bin/gtk-query-immodules-$gtk_version
+gtk_immodules_db=$XBPS_SYSCONFDIR/gtk-$gtk_version/gtk.immodules
 
 if [ -x $gtk_query_immodules_cmd -a -w $gtk_immodules_db ]; then
 	$gtk_query_immodules_cmd > $gtk_immodules_db

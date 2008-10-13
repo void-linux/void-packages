@@ -6,8 +6,8 @@
 [ -z "$fonts_dir" ] && return 1
 [ ! -d "$fonts_dir" ] && $mkdir_cmd -p $fonts_dir
 
-mkfontdir_cmd=$PKGFS_MASTERDIR/bin/mkfontdir
-mkfontscale_cmd=$PKGFS_MASTERDIR/bin/mkfontscale
+mkfontdir_cmd=$XBPS_MASTERDIR/bin/mkfontdir
+mkfontscale_cmd=$XBPS_MASTERDIR/bin/mkfontscale
 
 if [ -x $mkfontdir_cmd -a -x $mkfontscale_cmd ]; then
 	save_path=$(pwd -P 2>/dev/null)
