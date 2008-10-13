@@ -758,6 +758,8 @@ install_src_phase()
 		exit 1
 	fi
 
+	cd $wrksrc || exit 1
+
 	echo "=> Running \`\`install´´ phase for: \`$pkgname-$version´."
 
 	#
