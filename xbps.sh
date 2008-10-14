@@ -552,21 +552,21 @@ fetch_distfiles()
 
 fixup_tmpl_libtool()
 {
-	local lt_file="$wrksrc/libtool"
-
 	#
 	# If package has a libtool file replace it with ours, so that
 	# we use the master directory while relinking, all will be fine
 	# once the package is stowned.
 	#
-	if [ -f "$lt_file" -a -f "$XBPS_MASTERDIR/bin/libtool" ]; then
-		$rm_cmd -f $wrksrc/libtool
-		$rm_cmd -f $wrksrc/ltmain.sh
-		$ln_cmd -s $XBPS_MASTERDIR/bin/libtool $lt_file
+	for f in $($find_cmd $wrksrc -type f -name libtool\*); do
+		if [ -f $f ]; then
+			$rm_cmd -f $f
+			$ln_cmd -s $XBPS_MASTERDIR/bin/libtool $f
+		fi
+	done
+
+	if [ -f $wrksrc/ltmain.sh ]; then
 		$ln_cmd -s $XBPS_MASTERDIR/share/libtool/config/ltmain.sh \
-			 $wrksrc/ltmain.sh
-	elif [ -f "$XBPS_MASTERDIR/bin/libtool" ]; then
-		$ln_cmd -s $XBPS_MASTERDIR/bin/libtool $lt_file
+			$wrksrc/ltmain.sh
 	fi
 }
 
@@ -676,9 +676,6 @@ configure_src_phase()
 
 	set_build_vars
 
-	# Fixup libtool script if necessary
-	fixup_tmpl_libtool
-
 	#
 	# Packages using GNU autoconf
 	#
@@ -738,6 +735,9 @@ configure_src_phase()
 	for f in ${configure_env}; do
 		unset eval ${f%=*}
 	done
+
+	# Override libtool scripts if necessary
+	fixup_tmpl_libtool
 
 	$touch_cmd -f $XBPS_CONFIGURE_DONE
 }
