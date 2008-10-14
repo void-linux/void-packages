@@ -255,7 +255,7 @@ reset_tmpl_vars()
 			run_stuff_before_configure_cmd run_stuff_before_build_cmd \
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
 			make_install_target postinstall_helpers version \
-			ignore_files \
+			ignore_files tar_override_cmd \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
@@ -332,6 +332,7 @@ extract_distfiles()
 	local curfile=
 	local cursufx=
 	local lwrksrc=
+	local ltar_cmd=
 
 	#
 	# If we are being called via the target, just extract and return.
@@ -358,6 +359,12 @@ extract_distfiles()
 
 	echo "==> Extracting '$pkgname-$version' distfiles."
 
+	if [ -n "$tar_override_cmd" ]; then
+		ltar_cmd="$tar_override_cmd"
+	else
+		ltar_cmd="$tar_cmd"
+	fi
+
 	for f in ${distfiles}; do
 		curfile=$(basename $f)
 		cursufx=${curfile##*@}
@@ -371,7 +378,7 @@ extract_distfiles()
 
 		case ${cursufx} in
 		.tar.bz2|.tar.gz|.tgz|.tbz)
-			$tar_cmd xfz $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
+			$ltar_cmd xfz $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
 				echo -n "*** ERROR extracting \`$curfile' into "
 				echo	"$lwrksrc ***"
@@ -379,7 +386,7 @@ extract_distfiles()
 			fi
 			;;
 		.tar)
-			$tar_cmd xf $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
+			$ltar_cmd xf $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
 				echo -n "*** ERROR extracting \`$curfile' into "
 				echo	"$lwrksrc ***"
