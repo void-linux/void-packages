@@ -31,9 +31,9 @@
 #	- Implement support for packages that need personalized installation.
 #	- Implement a chroot target that builds packages as root on it, for
 #	  packages that need it (setuid, setgid).
-#	- More robust and fast dependency checking.
-# 	- Multiple distfiles in a package, personalized stuff to unpack them.
+#	- Personalized scripts per template to unpack distfiles.
 #	- Multiple URLs to download source distribution files, aliases, etc.
+#	- More robust and fast dependency checking.
 #
 # Default path to configuration file, can be overriden
 # via the environment or command line.
@@ -247,11 +247,11 @@ check_config_vars()
 #
 reset_tmpl_vars()
 {
-	local TMPL_VARS="pkgname extract_sufx distfiles url configure_args \
+	local TMPL_VARS="pkgname distfiles configure_args configure_env \
 			make_build_args make_install_args build_style	\
 			short_desc maintainer long_desc checksum wrksrc	\
-			patch_files configure_env make_cmd pkgconfig_override \
-			configure_env make_env make_build_target \
+			patch_files make_cmd pkgconfig_override \
+			make_env make_build_target configure_script \
 			run_stuff_before_configure_cmd run_stuff_before_build_cmd \
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
 			make_install_target postinstall_helpers version \
@@ -289,70 +289,28 @@ setup_tmpl()
 #
 prepare_tmpl()
 {
-	local dfile=""
-
 	#
 	# There's nothing of interest if we are a meta template.
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	REQ_VARS="pkgname version extract_sufx url build_style"
+	REQ_VARS="pkgname distfiles version build_style"
 
 	# Check if required vars weren't set.
 	for i in ${REQ_VARS}; do
 		eval val="\$$i"
 		if [ -z "$val" -o -z "$i" ]; then
-			echo -n "*** ERROR: $i not set (incomplete template"
-			echo	" build file), aborting ***"
+			echo -n	"*** ERROR: \"$i\" not set on \`$pkgname' "
+			echo	"template ***"
 			exit 1
 		fi
 	done
 
-	if [ -z "$distfiles" ]; then
-		dfile="$pkgname-$version$extract_sufx"
-	elif [ -n "${distfiles}" ]; then
-		dfile="$distfiles$extract_sufx"
-	else
-		echo "*** ERROR unsupported fetch state ***"
-		exit 1
-	fi
-
-	dfile="$XBPS_SRCDISTDIR/$dfile"
-
-	case "$extract_sufx" in
-	.tar.bz2|.tar.gz|.tgz|.tbz)
-		extract_cmd="$tar_cmd xfz $dfile -C $XBPS_BUILDDIR"
-		;;
-	.tar)
-		extract_cmd="$tar_cmd xf $dfile -C $XBPS_BUILDDIR"
-		;;
-	.zip)
-		if [ -f "$XBPS_TMPLHELPDIR/unzip-extraction.sh" ]; then
-			. $XBPS_TMPLHELPDIR/unzip-extraction.sh
-			unset wrksrc
-		fi
-		# $extract_cmd set by the helper
-		;;
-	*)
-		echo -n "*** ERROR: unknown 'extract_sufx' argument in build "
-		echo	"file ***"
-		exit 1
-		;;
-	esac
-
 	unset XBPS_EXTRACT_DONE XBPS_APPLYPATCHES_DONE
 	unset XBPS_CONFIGURE_DONE XBPS_BUILD_DONE XBPS_INSTALL_DONE
 
-	if [ -n "$wrksrc" ]; then
-		wrksrc=$XBPS_BUILDDIR/$wrksrc
-	elif [ -z "$wrksrc" -a -z "$distfiles" ]; then
-		wrksrc=$XBPS_BUILDDIR/$pkgname-$version
-	elif [ -z "$wrksrc" -a -n "$distfiles" ]; then
-		wrksrc=$XBPS_BUILDDIR/$distfiles
-	else
-		echo "*** ERROR: can't guess what's the correct \$wrksrc! ***"
-		exit 1
-	fi
+	[ -z "$wrksrc" ] && wrksrc="$pkgname-$version"
+	wrksrc="$XBPS_BUILDDIR/$wrksrc"
 
 	XBPS_EXTRACT_DONE="$wrksrc/.xbps_extract_done"
 	XBPS_APPLYPATCHES_DONE="$wrksrc/.xbps_applypatches_done"
@@ -365,11 +323,15 @@ prepare_tmpl()
 
 #
 # Extracts contents of distfiles specified in a template into
-# the build directory.
+# the $wrksrc directory.
 #
 extract_distfiles()
 {
 	local pkg="$1"
+	local count=
+	local curfile=
+	local cursufx=
+	local lwrksrc=
 
 	#
 	# If we are being called via the target, just extract and return.
@@ -381,68 +343,115 @@ extract_distfiles()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	echo "==> Extracting \`$pkgname-$version' into $XBPS_BUILDDIR."
+	for f in ${distfiles}; do
+		count=$(($count + 1))
+	done
 
-	$extract_cmd
-	if [ "$?" -ne 0 ]; then
-		echo -n "*** ERROR: there was an error extracting the "
-		echo "distfile(s), aborting *** "
-		exit 1
+	if [ $count -gt 1 ]; then
+		if [ -z "$wrksrc" ]; then
+			echo -n "*** ERROR: \$wrksrc must be defined with "
+			echo "multiple distfiles ***"
+			exit 1
+		fi
+		$mkdir_cmd $wrksrc
 	fi
 
-	unset extract_cmd
+	echo "==> Extracting '$pkgname-$version' distfiles."
+
+	for f in ${distfiles}; do
+		curfile=$(basename $f)
+		cursufx=${curfile##*@}
+		curfile=$(basename $curfile|$sed_cmd 's|@||g')
+
+		if [ $count -gt 1 ]; then
+			lwrksrc="$wrksrc/${curfile%$cursufx}"
+		else
+			lwrksrc="$XBPS_BUILDDIR"
+		fi
+
+		case ${cursufx} in
+		.tar.bz2|.tar.gz|.tgz|.tbz)
+			$tar_cmd xfz $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
+			if [ $? -ne 0 ]; then
+				echo -n "*** ERROR extracting \`$curfile' into "
+				echo	"$lwrksrc ***"
+				exit 1
+			fi
+			;;
+		.tar)
+			$tar_cmd xf $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
+			if [ $? -ne 0 ]; then
+				echo -n "*** ERROR extracting \`$curfile' into "
+				echo	"$lwrksrc ***"
+				exit 1
+			fi
+			;;
+		.zip)
+			if [ -f "$XBPS_TMPLHELPDIR/unzip-extraction.sh" ]; then
+				# Save vars!
+				tmpf=$curfile
+				tmpsufx=$cursufx
+				tmpwrksrc=$lwrksrc
+				. $XBPS_TMPLHELPDIR/unzip-extraction.sh
+				# Restore vars!
+				curfile=$tmpf
+				cursufx=$tmpsufx
+				lwrksrc=$tmpwrksrc
+				unset tmpf tmpsufx tmpwrksrc
+			else
+				echo "*** ERROR: cannot find unzip helper ***"
+				exit 1
+			fi
+
+			extract_unzip $XBPS_SRCDISTDIR/$curfile $lwrksrc
+			if [ $? -ne 0 ]; then
+				echo -n "*** ERROR extracting \`$curfile' into "
+				echo	"$lwrksrc ***"
+				exit 1
+			fi
+			;;
+		*)
+			echo -n "*** ERROR: cannot guess \`$curfile' extract "
+			echo	"suffix ***"
+			exit 1
+			;;
+		esac
+	done
+
 	$touch_cmd -f $XBPS_EXTRACT_DONE
 }
 
 #
-# Verifies that a checksum of a distfile is correct.
+# Verifies that file's checksum downloaded matches what it's specified
+# in template file.
 #
-check_rmd160_cksum()
+verify_rmd160_cksum()
 {
 	local file="$1"
-	local dfile=
+	local origsum="$2"
 
-	[ -z "$file" ] && return 1
+	[ -z "$file" -o -z "$cksum" ] && return 1
 
-	if [ -z "${distfiles}" ]; then
-		dfile="$pkgname-$version$extract_sufx"
-	elif [ -n "${distfiles}" ]; then
-		dfile="$distfiles$extract_sufx"
-	else
-		dfile="$file$extract_sufx"
-	fi
-
-	if [ -z "$checksum" ]; then
-		echo "*** ERROR: checksum unset in template file for \`$pkgname' ***"
-		exit 1
-	fi
-
-	origsum="$checksum"
-	dfile="$XBPS_SRCDISTDIR/$dfile"
-	filesum="$($cksum_cmd $dfile | $awk_cmd '{print $4}')"
+	filesum="$($cksum_cmd $XBPS_SRCDISTDIR/$file | $awk_cmd '{print $4}')"
 	if [ "$origsum" != "$filesum" ]; then
-		echo "*** WARNING: RMD160 checksum doesn't match for \`$dfile' ***"
+		echo "*** ERROR: RMD160 checksum doesn't match for \`$file' ***"
 		exit 1
 	fi
 
-	echo "=> checksum (RMD160) OK for \`$pkgname-$version'."
+	echo "=> checksum (RMD160) OK for \`$file'."
 }
 
 #
-# Downloads the distfiles for a template from $url.
+# Downloads the distfiles and verifies checksum for all them.
 #
 fetch_distfiles()
 {
 	local pkg="$1"
-	local file=""
-	local file2=""
-	local only_fetch=
+	local dfiles=
+	local localurl=
+	local dfcount=0
+	local ckcount=0
 
-	#
-	# If we are being called by the target, just fetch distfiles
-	# and return.
-	#
-	[ -n $pkg ] && only_fetch=yes
 	[ -z $pkgname ] && exit 1
 
 	#
@@ -450,35 +459,88 @@ fetch_distfiles()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	if [ -z "$distfiles" ]; then
-		file="$pkgname-$version"
-	else
-		file="$distfiles"
-	fi
+	dfiles=$(echo $distfiles | $sed_cmd 's|@||g')
 
-	for f in "$file"; do
-		file2="$f$extract_sufx"
-		if [ -f "$XBPS_SRCDISTDIR/$file2" ]; then
-			check_rmd160_cksum $f
-			[ $? -eq 0 ] && continue
+	for f in ${dfiles}; do
+		curfile=$(basename $f)
+		if [ -f "$XBPS_SRCDISTDIR/$curfile" ]; then
+			for i in ${checksum}; do
+				if [ $dfcount -eq $ckcount -a -n $i ]; then
+					cksum=$i
+					found=yes
+					break
+				fi
+
+				ckcount=$(($ckcount + 1))
+			done
+
+			if [ -z $found ]; then
+				echo -n "*** ERROR: cannot find checksum for "
+				echo	"$curfile ***"
+				exit 1
+			fi
+
+			verify_rmd160_cksum $curfile $cksum
+			if [ $? -eq 0 ]; then
+				unset cksum found
+				ckcount=0
+				dfcount=$(($dfcount + 1))
+				continue
+			fi
 		fi
 
-		echo "==> Fetching distfile: \`$file2'."
+		echo "==> Fetching distfile: \`$curfile'."
 
-		cd $XBPS_SRCDISTDIR && $fetch_cmd $url/$file2
+		if [ -n "$distfiles" ]; then
+			localurl="$f"
+		else
+			localurl="$url/$curfile"
+		fi
+
+
+		cd $XBPS_SRCDISTDIR && $fetch_cmd $localurl
 		if [ $? -ne 0 ]; then
-			if [ ! -f $XBPS_SRCDISTDIR/$file2 ]; then
-				echo -n "*** ERROR: couldn't fetch '$file2', "
+			unset localurl
+			if [ ! -f $XBPS_SRCDISTDIR/$curfile ]; then
+				echo -n "*** ERROR: couldn't fetch '$curfile', "
 				echo	"aborting ***"
 			else
 				echo -n "*** ERROR: there was an error "
-				echo	"fetching '$file2', aborting ***"
+				echo	"fetching '$curfile', aborting ***"
 			fi
 			exit 1
 		else
-			check_rmd160_cksum $f
+			unset localurl
+			#
+			# XXX duplicate code.
+			#
+			for i in ${checksum}; do
+				if [ $dfcount -eq $ckcount -a -n $i ]; then
+					cksum=$i
+					found=yes
+					break
+				fi
+
+				ckcount=$(($ckcount + 1))
+			done
+
+			if [ -z $found ]; then
+				echo -n "*** ERROR: cannot find checksum for "
+				echo "$curfile ***"
+				exit 1
+			fi
+
+			verify_rmd160_cksum $curfile $cksum
+			if [ $? -eq 0 ]; then
+				unset cksum found
+				ckcount=0
+			fi
 		fi
+
+		dfcount=$(($dfcount + 1))
 	done
+
+	unset cksum found
 }
 
 fixup_tmpl_libtool()
@@ -558,8 +620,8 @@ apply_tmpl_patches()
 			if [ "$?" -eq 0 ]; then
 				echo "=> Patch applied: \`$i'."
 			else
-				echo -n "*** ERROR: couldn't apply patch '$i'"
-				echo ", aborting ***"
+				echo -n "*** ERROR: couldn't apply patch '$i',"
+				echo	" aborting ***"
 				exit 1
 			fi
 		done
@@ -588,10 +650,10 @@ configure_src_phase()
 		exit 1
 	fi
 
-	echo "=> Running \`\`configure´´ phase for \`$pkgname-$version'."
-
 	# Apply patches if requested by template file
 	[ ! -f $XBPS_APPLYPATCHES_DONE ] && apply_tmpl_patches
+
+	echo "=> Running \`\`configure´´ phase for \`$pkgname-$version'."
 
 	# Run stuff before configure.
 	local rbcf="$XBPS_TEMPLATESDIR/$pkgname-runstuff-before-configure.sh"
@@ -838,14 +900,14 @@ register_pkg_handler()
 		$db_cmd -w btree $XBPS_REGPKG_DB $pkg $version 2>&1 >/dev/null
 		if [ "$?" -ne  0 ]; then
 			echo -n "*** ERROR: couldn't register \`$pkg'"
-			echo " in db file ***"
+			echo	" in db file ***"
 			exit 1
 		fi
 	elif [ "$action" = "unregister" ]; then
 		$db_cmd -d btree $XBPS_REGPKG_DB $pkg 2>&1 >/dev/null
 		if [ "$?" -ne 0 ]; then
 			echo -n "*** ERROR: \`$pkg' not registered "
-			echo "in db file? ***"
+			echo	"in db file? ***"
 			exit 1
 		fi
 	else
@@ -956,9 +1018,11 @@ install_dependencies_pkg()
 
 	doing_deps=true
 
+	echo -n "=> Calculating dependency list for '$pkgname-$version'... "
 	add_dependency_tolist $pkg
 	find_dupdeps_inlist installed
 	find_dupdeps_inlist notinstalled
+	echo "done."
 
 	[ -z "$deps_list" -a -z "$installed_deps_list" ] && return 0
 

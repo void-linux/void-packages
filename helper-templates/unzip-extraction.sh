@@ -1,9 +1,19 @@
 #
 # This helper is used in templates using extract_sufx=".zip".
-# This checks if unzip is installed and installs it if it's not
-# and sets the unzip_cmd/extract_cmd variables appropiately.
+# This checks if unzip is installed and installs it if it's not.
 #
 # If unzip is already installed just return immediately.
+
+extract_unzip()
+{
+	local file="$1"
+	local dest="$2"
+
+	[ ! -f $file ] && exit 1
+
+	$XBPS_MASTERDIR/bin/unzip -q -x $file -d $dest
+	return $?
+}
 
 if [ ! -x "$XBPS_MASTERDIR/bin/unzip" ]; then
 	unzip_version="5.52"
@@ -13,7 +23,7 @@ if [ ! -x "$XBPS_MASTERDIR/bin/unzip" ]; then
 
 	check_installed_pkg unzip $unzip_version
 	if [ $? -ne 0 ]; then
-		echo "=> \`\`$pkg´´ package requires unzip for extraction."
+		echo "=> \`\`$save_pkgname´´ package requires unzip for extraction."
 		#
 		# Install dependencies required by unzip.
 		#
@@ -32,6 +42,3 @@ if [ ! -x "$XBPS_MASTERDIR/bin/unzip" ]; then
 	unset save_pkgname
 	unset unzip_version
 fi
-
-unzip_cmd=$XBPS_MASTERDIR/bin/unzip
-extract_cmd="$unzip_cmd -x $dfile -d $XBPS_BUILDDIR"
