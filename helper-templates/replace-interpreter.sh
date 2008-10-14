@@ -37,11 +37,12 @@ replace_interpreter()
 		;;
 	esac
 
-	if [ -f $file ]; then
-		$sed_cmd -e '1s|^#![[:space:]]*\$orsb|#!\$trpath|'	\
-			$file > $file.in && $mv_cmd $file.in $file &&	\
-			echo "=> Transformed $lang script: $file."
+	if [ -f $wrksrc/$file ]; then
+		$sed_cmd -e "1s|^#![[:space:]]*${orsb}|#!${trpath}|"	\
+			$wrksrc/$file > $wrksrc/$file.in && 		\
+			$mv_cmd $wrksrc/$file.in $wrksrc/$file &&	\
+			echo "=> Transformed $lang script: ${file##$wrksrc}."
 	else
-		echo "=> Ignoring unexistent $lang script: $file."
+		echo "=> Ignoring unexistent $lang script: ${file##$wrksrc}."
 	fi
 }
