@@ -676,6 +676,9 @@ configure_src_phase()
 
 	set_build_vars
 
+	# Fixup libtool script if necessary
+	fixup_tmpl_libtool
+
 	#
 	# Packages using GNU autoconf
 	#
@@ -770,9 +773,6 @@ build_src_phase()
 	if [ -z "$make_cmd" ]; then
 		make_cmd="/usr/bin/make"
 	fi
-
-	# Fixup libtool script if necessary
-	fixup_tmpl_libtool
 
 	#
 	# Run template stuff before building.
