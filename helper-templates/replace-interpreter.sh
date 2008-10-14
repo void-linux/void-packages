@@ -42,6 +42,6 @@ replace_interpreter()
 			$file > $file.in && $mv_cmd $file.in $file &&	\
 			echo "=> Transformed $lang script: $file."
 	else
-		echo "=> Ignoring unexisten $lang script: $file."
+		echo "=> Ignoring unexistent $lang script: $file."
 	fi
 }
