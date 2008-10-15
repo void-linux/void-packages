@@ -677,16 +677,18 @@ configure_src_phase()
 
 	set_build_vars
 
+	[ -z "$configure_script" ] && configure_script="./configure"
+
 	#
 	# Packages using GNU autoconf
 	#
 	if [ "$build_style" = "gnu_configure" ]; then
-		cd $wrksrc
+		cd $wrksrc || exit 1
 		#
 		# Pass consistent arguments to not have unexpected
 		# surprises later.
 		#
-		./configure						\
+		${configure_script}					\
 			--prefix="$XBPS_MASTERDIR"			\
 			--mandir="$XBPS_DESTDIR/$pkgname-$version/man"	\
 			--infodir="$XBPS_DESTDIR/$pkgname-$version/share/info"	\
@@ -697,12 +699,8 @@ configure_src_phase()
 	# Packages using propietary configure scripts.
 	#
 	elif [ "$build_style" = "configure" ]; then
-		cd $wrksrc
-		if [ -n "$configure_script" ]; then
-			./$configure_script ${configure_args}
-		else
-			./configure ${configure_args}
-		fi
+		cd $wrksrc || exit 1
+		${configure_script} ${configure_args}
 	#
 	# Packages that are perl modules and use Makefile.PL files.
 	# They are all handled by the helper perl-module.sh.
@@ -718,7 +716,7 @@ configure_src_phase()
 	elif [ "$build_style" = "bsd_makefile" -o \
 	       "$build_style" = "gnu_makefile" ]; then
 
-	       cd $wrksrc
+	       cd $wrksrc || exit 1
 	#
 	# Unknown build_style type won't work :-)
 	#
