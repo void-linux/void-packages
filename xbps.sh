@@ -255,7 +255,7 @@ reset_tmpl_vars()
 			run_stuff_before_configure_cmd run_stuff_before_build_cmd \
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
 			make_install_target postinstall_helpers version \
-			ignore_files tar_override_cmd \
+			ignore_files tar_override_cmd xml_entries sgml_entries \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
