@@ -256,6 +256,7 @@ reset_tmpl_vars()
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
 			make_install_target postinstall_helpers version \
 			ignore_files tar_override_cmd xml_entries sgml_entries \
+			make_install_prefix \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
@@ -835,11 +836,14 @@ install_src_phase()
 
 	echo "=> Running \`\`install´´ phase for: \`$pkgname-$version´."
 
+	[ -z "$make_install_prefix" ] && \
+		make_install_prefix="prefix=\"$XBPS_DESTDIR/$pkgname-$version\""
+
 	#
 	# Install package via make.
 	#
 	${make_cmd} ${make_install_args} ${make_install_target} \
-		prefix="$XBPS_DESTDIR/$pkgname-$version"
+		${make_install_prefix}
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR instaling \`$pkgname-$version' ***"
 		exit 1
