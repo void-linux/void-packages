@@ -171,9 +171,8 @@ info_tmpl()
 	echo "pkgname:	$pkgname"
 	echo "version:	$version"
 	for i in "${distfiles}"; do
-		[ -n "$i" ] && echo "distfile:	$i"
+		[ -n "$i" ] && i=$(echo $i|$sed_cmd s'|@||g') && echo "distfile:	$i"
 	done
-	echo "URL:		$url"
 	echo "maintainer:	$maintainer"
 	[ -n $checksum ] && echo "checksum:	$checksum"
 	echo "build_style:	$build_style"
