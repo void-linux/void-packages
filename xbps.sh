@@ -561,6 +561,11 @@ fixup_tmpl_libtool()
 	# we use the master directory while relinking, all will be fine
 	# once the package is stowned.
 	#
+	if [ -f $wrksrc/ltmain.sh ]; then
+		$rm_cmd -f $wrksrc/libtool
+		$ln_cmd -s $XBPS_MASTERDIR/bin/libtool $wrksrc/libtool
+	fi
+
 	for f in $($find_cmd $wrksrc -type f -name libtool\*); do
 		if [ -f $f ]; then
 			$rm_cmd -f $f
