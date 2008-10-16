@@ -552,6 +552,9 @@ fetch_distfiles()
 
 fixup_tmpl_libtool()
 {
+	# Ignore libtool itself
+	[ "$pkgname" = "libtool" ] && return 0
+
 	#
 	# If package has a libtool file replace it with ours, so that
 	# we use the master directory while relinking, all will be fine
