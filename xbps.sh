@@ -566,12 +566,6 @@ fixup_tmpl_libtool()
 			$ln_cmd -s $XBPS_MASTERDIR/bin/libtool $f
 		fi
 	done
-
-	if [ -f $wrksrc/ltmain.sh ]; then
-		$rm_cmd -f $wrksrc/ltmain.sh
-		$ln_cmd -s $XBPS_MASTERDIR/share/libtool/config/ltmain.sh \
-			$wrksrc/ltmain.sh
-	fi
 }
 
 set_build_vars()
