@@ -41,27 +41,26 @@
 : ${XBPS_CONFIG_FILE:=/usr/local/etc/xbps.conf}
 
 : ${progname:=$(basename $0)}
-: ${topdir:=$(/bin/pwd -P 2>/dev/null)}
-: ${fetch_cmd:=/usr/bin/ftp -a}
-: ${cksum_cmd:=/usr/bin/cksum -a rmd160}
+: ${topdir:=$(/bin/pwd 2>/dev/null)}
+: ${fetch_cmd:=/usr/bin/wget}
 : ${awk_cmd:=/usr/bin/awk}
-: ${mkdir_cmd:=/bin/mkdir -p}
-: ${tar_cmd:=/usr/bin/tar}
+: ${mkdir_cmd:=/bin/mkdir}
+: ${tar_cmd:=/bin/tar}
 : ${rm_cmd:=/bin/rm}
 : ${mv_cmd:=/bin/mv}
 : ${cp_cmd:=/bin/cp}
-: ${sed_cmd=/usr/bin/sed}
-: ${grep_cmd=/usr/bin/grep}
-: ${gunzip_cmd:=/usr/bin/gunzip}
-: ${bunzip2_cmd:=/usr/bin/bunzip2}
+: ${sed_cmd=/bin/sed}
+: ${grep_cmd=/bin/grep}
+: ${gunzip_cmd:=/bin/gunzip}
+: ${bunzip2_cmd:=/bin/bunzip2}
 : ${patch_cmd:=/usr/bin/patch}
 : ${find_cmd:=/usr/bin/find}
 : ${file_cmd:=/usr/bin/file}
 : ${ln_cmd:=/bin/ln}
 : ${chmod_cmd:=/bin/chmod}
-: ${db_cmd:=/usr/bin/db -q}
 : ${chmod_cmd:=/bin/chmod}
 : ${touch_cmd:=/usr/bin/touch}
+: ${env_cmd:=/usr/bin/env}
 
 : ${xstow_args:=-ap}
 : ${xstow_ignore_files:=perllocal.pod}	# XXX For now ignore them.
@@ -70,12 +69,13 @@ set_defvars()
 {
 	# Directories
 	: ${XBPS_TEMPLATESDIR:=$XBPS_DISTRIBUTIONDIR/templates}
-	: ${XBPS_DEPSDIR:=$XBPS_DISTRIBUTIONDIR/dependencies}
-	: ${XBPS_BUILD_DEPS_DB:=$XBPS_DEPSDIR/build-depends.db}
 	: ${XBPS_TMPLHELPDIR:=$XBPS_DISTRIBUTIONDIR/helper-templates}
-	: ${XBPS_REGPKG_DB:=$XBPS_DESTDIR/.xbps-registered-pkgs.db}
+	: ${XBPS_PKGDB_FPATH:=$XBPS_DESTDIR/.xbps-pkgdb.plist}
+	: ${XBPS_UTILSDIR:=$XBPS_DISTRIBUTIONDIR/utils}
+	: ${XBPS_DIGEST_CMD:=$XBPS_UTILSDIR/xbps-digest}
+	: ${XBPS_PKGDB_CMD:=$XBPS_UTILSDIR/xbps-pkgdb}
 
-	local DDIRS="XBPS_DEPSDIR XBPS_TEMPLATESDIR XBPS_TMPLHELPDIR"
+	local DDIRS="XBPS_TEMPLATESDIR XBPS_TMPLHELPDIR XBPS_UTILSDIR"
 	for i in ${DDIRS}; do
 		eval val="\$$i"
 		if [ ! -d "$val" ]; then
@@ -83,6 +83,20 @@ set_defvars()
 			exit 1
 		fi
 	done
+
+	local CMDS="fetch_cmd awk_cmd mkdir_cmd tar_cmd rm_cmd mv_cmd \
+		cp_cmd sed_cmd grep_cmd gunzip_cmd bunzip2_cmd patch_cmd find_cmd \
+		file_cmd ln_cmd chmod_cmd chmod_cmd touch_cmd XBPS_DIGEST_CMD \
+		XBPS_PKGDB_CMD"
+	for f in ${CMDS}; do
+		eval val="\$$f"
+		if [ ! -x "$val" ]; then
+			echo "*** ERROR: cannot find $f command, aborting ***"
+			exit 1
+		fi
+	done
+
+	XBPS_PKGDB_CMD="$env_cmd XBPS_PKGDB_FPATH=$XBPS_PKGDB_FPATH $XBPS_PKGDB_CMD"
 }
 
 usage()
@@ -97,8 +111,8 @@ Targets:
 	fetch		Download distribution file(s).
 	info		Show information about <package_name>.
 	install-destdir	build + configure + install into destdir.
-	install		Same than \`install-destdir´ but also stows package.
-	list		Lists all currently \`stowned´ packages.
+	install		Same than 'install-destdir' but also stows package.
+	list		Lists all currently 'stowned' packages.
 	remove		Remove package completely (unstow + remove data)
 	listfiles	Lists files installed from <package_name>.
 	stow		Create links in master directory.
@@ -171,19 +185,19 @@ info_tmpl()
 	echo "pkgname:	$pkgname"
 	echo "version:	$version"
 	for i in "${distfiles}"; do
-		[ -n "$i" ] && i=$(echo $i|$sed_cmd s'|@||g') && echo "distfile:	$i"
+		[ -n "$i" ] && i=$(echo $i|$sed_cmd s'|@||g') && \
+			echo "distfile:	$i"
 	done
-	echo "maintainer:	$maintainer"
 	[ -n $checksum ] && echo "checksum:	$checksum"
+	echo "maintainer:	$maintainer"
 	echo "build_style:	$build_style"
 	echo "short_desc:	$short_desc"
 	echo "$long_desc"
 	echo
 	check_build_depends_pkg $pkgname-$version
 	if [ $? -eq 0 ]; then
-		local list="$($db_cmd -V btree $XBPS_BUILD_DEPS_DB $pkgname)"
 		echo "This package requires the following dependencies to be built:"
-		for i in ${list}; do
+		for i in ${build_depends}; do
 			echo " $i"
 		done
 	fi
@@ -220,7 +234,7 @@ check_config_vars()
 	fi
 
 	local XBPS_VARS="XBPS_MASTERDIR XBPS_DESTDIR XBPS_BUILDDIR \
-			  XBPS_SRCDISTDIR XBPS_SYSCONFDIR"
+			 XBPS_SRCDISTDIR XBPS_SYSCONFDIR"
 
 	for f in ${XBPS_VARS}; do
 		eval val="\$$f"
@@ -255,7 +269,7 @@ reset_tmpl_vars()
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
 			make_install_target postinstall_helpers version \
 			ignore_files tar_override_cmd xml_entries sgml_entries \
-			make_install_prefix \
+			make_install_prefix build_depends \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
@@ -279,7 +293,7 @@ setup_tmpl()
 		fi
 		prepare_tmpl
 	else
-		echo "*** ERROR: cannot find \`$pkg´ template file ***"
+		echo "*** ERROR: cannot find $pkg template file ***"
 		exit 1
 	fi
 }
@@ -300,7 +314,7 @@ prepare_tmpl()
 	for i in ${REQ_VARS}; do
 		eval val="\$$i"
 		if [ -z "$val" -o -z "$i" ]; then
-			echo -n	"*** ERROR: \"$i\" not set on \`$pkgname' "
+			echo -n	"*** ERROR: \"$i\" not set on $pkgname "
 			echo	"template ***"
 			exit 1
 		fi
@@ -318,7 +332,7 @@ prepare_tmpl()
 	XBPS_BUILD_DONE="$wrksrc/.xbps_build_done"
 	XBPS_INSTALL_DONE="$wrksrc/.xbps_install_done"
 
-	export PATH="/bin:/sbin:/usr/bin:/usr/sbin:$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin"
+	export PATH="$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin:/bin:/sbin:/usr/bin:/usr/sbin"
 }
 
 #
@@ -377,18 +391,26 @@ extract_distfiles()
 		fi
 
 		case ${cursufx} in
-		.tar.bz2|.tar.gz|.tgz|.tbz)
+		.tar.bz2|.tbz)
+			$ltar_cmd xfj $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
+			if [ $? -ne 0 ]; then
+				echo -n "*** ERROR extracting $curfile into "
+				echo	"$lwrksrc ***"
+				exit 1
+			fi
+			;;
+		.tar.gz|.tgz)
 			$ltar_cmd xfz $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
-				echo -n "*** ERROR extracting \`$curfile' into "
-				echo	"$lwrksrc ***"
+				echo -n "*** ERROR extracting $curfile into "
+				echo    "$lwrksrc ***"
 				exit 1
 			fi
 			;;
 		.tar)
 			$ltar_cmd xf $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
-				echo -n "*** ERROR extracting \`$curfile' into "
+				echo -n "*** ERROR extracting $curfile into "
 				echo	"$lwrksrc ***"
 				exit 1
 			fi
@@ -412,13 +434,13 @@ extract_distfiles()
 
 			extract_unzip $XBPS_SRCDISTDIR/$curfile $lwrksrc
 			if [ $? -ne 0 ]; then
-				echo -n "*** ERROR extracting \`$curfile' into "
+				echo -n "*** ERROR extracting $curfile into "
 				echo	"$lwrksrc ***"
 				exit 1
 			fi
 			;;
 		*)
-			echo -n "*** ERROR: cannot guess \`$curfile' extract "
+			echo -n "*** ERROR: cannot guess $curfile extract "
 			echo	"suffix ***"
 			exit 1
 			;;
@@ -432,20 +454,20 @@ extract_distfiles()
 # Verifies that file's checksum downloaded matches what it's specified
 # in template file.
 #
-verify_rmd160_cksum()
+verify_sha256_cksum()
 {
 	local file="$1"
 	local origsum="$2"
 
 	[ -z "$file" -o -z "$cksum" ] && return 1
 
-	filesum="$($cksum_cmd $XBPS_SRCDISTDIR/$file | $awk_cmd '{print $4}')"
+	filesum=$($XBPS_DIGEST_CMD $XBPS_SRCDISTDIR/$file)
 	if [ "$origsum" != "$filesum" ]; then
-		echo "*** ERROR: RMD160 checksum doesn't match for \`$file' ***"
+		echo "*** ERROR: SHA256 checksum doesn't match for $file ***"
 		exit 1
 	fi
 
-	echo "=> checksum (RMD160) OK for \`$file'."
+	echo "=> SHA256 checksum OK for $file."
 }
 
 #
@@ -487,7 +509,7 @@ fetch_distfiles()
 				exit 1
 			fi
 
-			verify_rmd160_cksum $curfile $cksum
+			verify_sha256_cksum $curfile $cksum
 			if [ $? -eq 0 ]; then
 				unset cksum found
 				ckcount=0
@@ -537,7 +559,7 @@ fetch_distfiles()
 				exit 1
 			fi
 
-			verify_rmd160_cksum $curfile $cksum
+			verify_sha256_cksum $curfile $cksum
 			if [ $? -eq 0 ]; then
 				unset cksum found
 				ckcount=0
@@ -565,7 +587,7 @@ fixup_tmpl_libtool()
 		$ln_cmd -s $XBPS_MASTERDIR/bin/libtool $wrksrc/libtool
 	fi
 
-	for f in $($find_cmd $wrksrc -type f -name libtool\*); do
+	for f in $($find_cmd $wrksrc -type f -name libtool); do
 		if [ -f $f ]; then
 			$rm_cmd -f $f
 			$ln_cmd -s $XBPS_MASTERDIR/bin/libtool $f
@@ -606,7 +628,7 @@ apply_tmpl_patches()
 		for i in ${patch_files}; do
 			patch="$XBPS_TEMPLATESDIR/$i"
 			if [ ! -f "$patch" ]; then
-				echo "*** WARNING: unexistent patch '$i' ***"
+				echo "*** WARNING: unexistent patch: $i ***"
 				continue
 			fi
 
@@ -622,16 +644,15 @@ apply_tmpl_patches()
 			elif $(echo $patch|$grep_cmd -q .diff); then
 				patch=$i
 			else
-				echo "*** WARNING: unknown patch type '$i' ***"
+				echo "*** WARNING: unknown patch type: $i ***"
 				continue
 			fi
 
-			cd $wrksrc && $patch_cmd < $patch 2>/dev/null
+			cd $wrksrc && $patch_cmd -p0 < $patch 2>/dev/null
 			if [ "$?" -eq 0 ]; then
-				echo "=> Patch applied: \`$i'."
+				echo "=> Patch applied: $i."
 			else
-				echo -n "*** ERROR: couldn't apply patch '$i',"
-				echo	" aborting ***"
+				echo "*** ERROR: couldn't apply patch: $i."
 				exit 1
 			fi
 		done
@@ -656,14 +677,14 @@ configure_src_phase()
 	[ "$build_style" = "meta-template" ] && return 0
 
 	if [ ! -d $wrksrc ]; then
-		echo "*** ERROR: unexistent build directory \`$wrksrc' ***"
+		echo "*** ERROR: unexistent build directory $wrksrc ***"
 		exit 1
 	fi
 
 	# Apply patches if requested by template file
 	[ ! -f $XBPS_APPLYPATCHES_DONE ] && apply_tmpl_patches
 
-	echo "=> Running \`\`configure´´ phase for \`$pkgname-$version'."
+	echo "=> Running configure phase for $pkgname-$version."
 
 	# Run stuff before configure.
 	local rbcf="$XBPS_TEMPLATESDIR/$pkgname-runstuff-before-configure.sh"
@@ -723,12 +744,12 @@ configure_src_phase()
 	# Unknown build_style type won't work :-)
 	#
 	else
-		echo "*** ERROR unknown build_style \`$build_style' ***"
+		echo "*** ERROR unknown build_style: $build_style ***"
 		exit 1
 	fi
 
 	if [ "$build_style" != "perl_module" -a "$?" -ne 0 ]; then
-		echo "*** ERROR building (configure state) \`$pkg' ***"
+		echo "*** ERROR building (configure state) $pkg ***"
 		exit 1
 	fi
 
@@ -760,13 +781,13 @@ build_src_phase()
 	[ "$build_style" = "meta-template" ] && return 0
 
 	if [ ! -d $wrksrc ]; then
-		echo "*** ERROR: unexistent build directory \`$wrksrc' ***"
+		echo "*** ERROR: unexistent build directory:  $wrksrc ***"
 		exit 1
 	fi
 
 	cd $wrksrc || exit 1
 
-	echo "=> Running \`\`build´´ phase for \`$pkg'."
+	echo "=> Running build phase for $pkg."
 
 	#
 	# Assume BSD make if make_cmd not set in template.
@@ -796,7 +817,7 @@ build_src_phase()
 	#
 	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
 	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR building (make stage) \`$pkg' ***"
+		echo "*** ERROR building (make stage) $pkg ***"
 		exit 1
 	fi
 
@@ -832,16 +853,16 @@ install_src_phase()
 	[ "$build_style" = "meta-template" ] && return 0
 
 	if [ ! -d $wrksrc ]; then
-		echo "*** ERROR: unexistent build directory \`$wrksrc' ***"
+		echo "*** ERROR: unexistent build directory: $wrksrc ***"
 		exit 1
 	fi
 
 	cd $wrksrc || exit 1
 
-	echo "=> Running \`\`install´´ phase for: \`$pkgname-$version´."
+	echo "=> Running install phase for: $pkgname-$version."
 
 	[ -z "$make_install_prefix" ] && \
-		make_install_prefix="prefix=\"$XBPS_DESTDIR/$pkgname-$version\""
+		make_install_prefix="prefix=$XBPS_DESTDIR/$pkgname-$version"
 
 	#
 	# Install package via make.
@@ -849,7 +870,7 @@ install_src_phase()
 	${make_cmd} ${make_install_args} ${make_install_target} \
 		${make_install_prefix}
 	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR instaling \`$pkgname-$version' ***"
+		echo "*** ERROR installing $pkgname-$version ***"
 		exit 1
 	fi
 
@@ -880,7 +901,7 @@ install_src_phase()
 	# Unset build vars.
 	unset_build_vars
 
-	echo "==> Installed \`$pkgname-$version' into $XBPS_DESTDIR."
+	echo "==> Installed $pkgname-$version into $XBPS_DESTDIR."
 
 	$touch_cmd -f $XBPS_INSTALL_DONE
 
@@ -890,7 +911,7 @@ install_src_phase()
 	if [ -d "$wrksrc" -a -z "$dontrm_builddir" ]; then
 		$rm_cmd -rf $wrksrc
 		[ "$?" -eq 0 ] && \
-			echo "=> Removed \`$pkgname-$version' build directory."
+			echo "=> Removed $pkgname-$version build directory."
 	fi
 
 	cd $XBPS_BUILDDIR
@@ -908,19 +929,11 @@ register_pkg_handler()
 	[ -z "$action" -o -z "$pkg" -o -z "$version" ] && return 1
 
 	if [ "$action" = "register" ]; then
-		$db_cmd -w btree $XBPS_REGPKG_DB $pkg $version 2>&1 >/dev/null
-		if [ "$?" -ne  0 ]; then
-			echo -n "*** ERROR: couldn't register \`$pkg'"
-			echo	" in db file ***"
-			exit 1
-		fi
+		$XBPS_PKGDB_CMD register $pkg $version
+		[ $? -ne 0 ] && exit 1
 	elif [ "$action" = "unregister" ]; then
-		$db_cmd -d btree $XBPS_REGPKG_DB $pkg 2>&1 >/dev/null
-		if [ "$?" -ne 0 ]; then
-			echo -n "*** ERROR: \`$pkg' not registered "
-			echo	"in db file? ***"
-			exit 1
-		fi
+		$XBPS_PKGDB_CMD unregister $pkg $version
+		[ $? -ne 0 ] && exit 1
 	else
 		return 1
 	fi
@@ -937,32 +950,32 @@ add_dependency_tolist()
 	[ -z "$curpkg" ] && return 1
 	[ -n "$prev_pkg" ] && curpkg=$prev_pkg
 
-	for i in $($db_cmd -V btree $XBPS_BUILD_DEPS_DB ${curpkg%-[0-9]*.*}); do
+	reset_tmpl_vars
+	run_file $XBPS_TEMPLATESDIR/${curpkg%-[0-9]*.*}.tmpl
+	for i in ${build_depends}; do
 		#
 		# Check if dep already installed.
 		#
-		if [ -r "$XBPS_REGPKG_DB" ]; then
-			check_installed_pkg $i ${i##[aA-zZ]*-}
-			#
-			# If dep is already installed, check one more time
-			# if all its deps are there and continue.
-			#
-			if [ $? -eq 0 ]; then
-				install_builddeps_required_pkg $i
-				installed_deps_list="$i $installed_deps_list"
-				continue
-			fi
+		check_installed_pkg $i ${i##[aA-zZ]*-}
+		#
+		# If dep is already installed, check one more time
+		# if all its deps are there and continue.
+		#
+		if [ $? -eq 0 ]; then
+			install_builddeps_required_pkg $i
+			installed_deps_list="$i $installed_deps_list"
+			continue
+		fi
 
-			deps_list="$i $deps_list"
-			[ -n "$prev_pkg" ] && unset prev_pkg
-			#
-			# Check if dependency needs more deps.
-			#
-			check_build_depends_pkg ${i%-[0-9]*.*}
-			if [ $? -eq 0 ]; then
-				add_dependency_tolist $i
-				prev_pkg="$i"
-			fi
+		deps_list="$i $deps_list"
+		[ -n "$prev_pkg" ] && unset prev_pkg
+		#
+		# Check if dependency needs more deps.
+		#
+		check_build_depends_pkg ${i%-[0-9]*.*}
+		if [ $? -eq 0 ]; then
+			add_dependency_tolist $i
+			prev_pkg="$i"
 		fi
 	done
 }
@@ -1029,7 +1042,7 @@ install_dependencies_pkg()
 
 	doing_deps=true
 
-	echo -n "=> Calculating dependency list for '$pkgname-$version'... "
+	echo -n "=> Calculating dependency list for $pkgname-$version... "
 	add_dependency_tolist $pkg
 	find_dupdeps_inlist installed
 	find_dupdeps_inlist notinstalled
@@ -1039,7 +1052,7 @@ install_dependencies_pkg()
 
 	echo "==> Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
-		fpkg="$($db_cmd -O '-' btree $XBPS_REGPKG_DB ${i%-[0-9]*.*})"
+		fpkg="$($XBPS_PKGDB_CMD list|$grep_cmd ${i%-[0-9]*.*})"
 		echo "	$i: found $fpkg."
 	done
 
@@ -1052,7 +1065,7 @@ install_dependencies_pkg()
 		check_installed_pkg $i ${i##[aA-zZ]*-}
 		[ $? -eq 0 ] && continue
 		# continue installing deps
-		echo "==> Installing \`$pkg´ dependency: \`$i´."
+		echo "==> Installing $pkg dependency: $i."
 		install_pkg ${i%-[0-9]*.*}
 	done
 
@@ -1066,10 +1079,14 @@ install_builddeps_required_pkg()
 
 	[ -z "$pkg" ] && return 1
 
-	for dep in $($db_cmd -V btree $XBPS_BUILD_DEPS_DB ${pkg%-[0-9]*.*}); do
+	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
+		run_file $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
+	fi
+
+	for dep in ${build_depends}; do
 		check_installed_pkg $dep ${dep##[aA-zZ]*-}
 		if [ $? -ne 0 ]; then
-			echo "==> Installing \`$pkg´ dependency: $dep."
+			echo "==> Installing $pkg dependency: $dep."
 			install_pkg ${dep%-[0-9]*.*}
 		fi
 	done
@@ -1085,7 +1102,7 @@ check_installed_pkg()
 	local reqver="$2"
 	local iver=
 
-	[ -z "$pkg" -o -z "$reqver" -o ! -r $XBPS_REGPKG_DB ] && return 1
+	[ -z "$pkg" -o -z "$reqver" -o ! -r $XBPS_PKGDB_FPATH ] && return 1
 
 	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
 		run_file $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
@@ -1093,12 +1110,12 @@ check_installed_pkg()
 
 	reqver="$(echo $reqver | $sed_cmd 's|[[:punct:]]||g;s|[[:alpha:]]||g')"
 
-	$db_cmd -K btree $XBPS_REGPKG_DB $pkgname 2>&1 >/dev/null
+	$XBPS_PKGDB_CMD installed $pkgname
 	if [ $? -eq 0 ]; then
 		#
 		# Package is installed, let's check the version.
 		#
-		iver="$($db_cmd -V btree $XBPS_REGPKG_DB $pkgname)"
+		iver="$($XBPS_PKGDB_CMD version $pkgname)"
 		if [ -n "$iver" ]; then
 			#
 			# As shell only supports decimal arith expressions,
@@ -1125,10 +1142,18 @@ check_build_depends_pkg()
 {
 	local pkg="$1"
 
-	[ -z $pkg -o ! -r $XBPS_BUILD_DEPS_DB ] && return 1
+	[ -z $pkg ] && return 1
 
-	$db_cmd -V btree $XBPS_BUILD_DEPS_DB ${pkg%-[0-9]*.*} 2>&1 >/dev/null
-	return $?
+	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
+		reset_tmpl_vars
+		run_file $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
+	fi
+
+	if [ -n "$build_depends" ]; then
+		return 0
+	fi
+
+	return 1
 }
 
 #
@@ -1141,7 +1166,7 @@ install_pkg()
 
 	local cur_tmpl="$XBPS_TEMPLATESDIR/$curpkgn.tmpl"
 	if [ -z $cur_tmpl -o ! -f $cur_tmpl ]; then
-		echo "*** ERROR: cannot find \`$cur_tmpl´ template file ***"
+		echo "*** ERROR: cannot find $cur_tmpl template file ***"
 		exit 1
 	fi
 
@@ -1203,7 +1228,7 @@ install_pkg()
 	#
 	if [ "$build_style" = "meta-template" ]; then
 		register_pkg_handler register $pkgname $version
-		echo "==> Installed meta-template \`$pkg'."
+		echo "==> Installed meta-template: $pkg."
 		return 0
 	fi
 
@@ -1254,15 +1279,15 @@ install_xstow_pkg()
 #
 list_pkgs()
 {
-	if [ ! -r "$XBPS_REGPKG_DB" ]; then
+	if [ ! -r "$XBPS_PKGDB_FPATH" ]; then
 		echo "=> No packages registered or missing register db file."
 		exit 0
 	fi
 
-	for i in $($db_cmd -K btree $XBPS_REGPKG_DB); do
+	for i in $($XBPS_PKGDB_CMD list); do
 		# Run file to get short_desc and print something useful
-		run_file $XBPS_TEMPLATESDIR/$i.tmpl
-		echo "$i-$version	$short_desc"
+		run_file $XBPS_TEMPLATESDIR/${i%-[0-9]*.*}.tmpl
+		echo "$i	$short_desc"
 		reset_tmpl_vars
 	done
 }
@@ -1280,7 +1305,7 @@ list_pkg_files()
 	fi
 
 	if [ ! -d "$XBPS_DESTDIR/$pkg" ]; then
-		echo "*** ERROR: cannot find \`$pkg' in $XBPS_DESTDIR ***"
+		echo "*** ERROR: cannot find $pkg in $XBPS_DESTDIR ***"
 		exit 1
 	fi
 
@@ -1314,7 +1339,7 @@ remove_pkg()
 	if [ "$build_style" = "meta-template" ]; then
 		register_pkg_handler unregister $pkgname $version
 		[ $? -eq 0 ] && \
-			echo "=> Removed meta-template \`$pkg'."
+			echo "=> Removed meta-template: $pkg."
 		return $?
 	fi
 
@@ -1372,10 +1397,10 @@ stow_pkg()
 		-dir $XBPS_DESTDIR -target $XBPS_MASTERDIR \
 		$XBPS_DESTDIR/$pkg
 	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR: couldn't create symlinks for \`$pkg' ***"
+		echo "*** ERROR: couldn't create symlinks for $pkg ***"
 		exit 1
 	else
-		echo "==> Created \`$pkg' symlinks into master directory."
+		echo "==> Created $pkg symlinks into master directory."
 	fi
 
 	register_pkg_handler register $pkgname $version
@@ -1411,7 +1436,7 @@ unstow_pkg()
 	fi
 
 	if [ "$pkg" = "xstow" ]; then
-		echo "*** INFO: You aren't allowed to unstow \`$pkg'."
+		echo "*** INFO: You aren't allowed to unstow $pkg."
 		exit 1
 	fi
 
@@ -1446,7 +1471,7 @@ unstow_pkg()
 #
 # main()
 #
-args=$(getopt Cc $*)
+args=$(getopt Cc: $*)
 [ "$?" -ne 0 ] && usage
 
 set -- $args
@@ -1543,7 +1568,7 @@ unstow)
 	unstow_pkg $2
 	;;
 *)
-	echo "*** ERROR: invalid target \`$target' ***"
+	echo "*** ERROR: invalid target: $target ***"
 	usage
 esac
 
