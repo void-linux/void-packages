@@ -269,7 +269,7 @@ reset_tmpl_vars()
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
 			make_install_target postinstall_helpers version \
 			ignore_files tar_override_cmd xml_entries sgml_entries \
-			make_install_prefix build_depends disable_ldflags \
+			build_depends \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
@@ -332,7 +332,9 @@ prepare_tmpl()
 	XBPS_BUILD_DONE="$wrksrc/.xbps_build_done"
 	XBPS_INSTALL_DONE="$wrksrc/.xbps_install_done"
 
-	export PATH="$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin:/bin:/sbin:/usr/bin:/usr/sbin"
+	export PATH="$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin"
+	export PATH="$PATH:$XBPS_MASTERDIR/usr/bin:$XBPS_MASTERDIR/usr/sbin"
+	export PATH="$PATH:/bin:/sbin:/usr/bin:/usr/sbin"
 }
 
 #
@@ -582,42 +584,38 @@ fixup_tmpl_libtool()
 	# we use the master directory while relinking, all will be fine
 	# once the package is stowned.
 	#
-	if [ -f $wrksrc/ltmain.sh ]; then
+	if [ -f $wrksrc/ltmain.sh -a -f $wrksrc/libtool ]; then
 		$rm_cmd -f $wrksrc/libtool
-		$ln_cmd -s $XBPS_MASTERDIR/bin/libtool $wrksrc/libtool
+		$ln_cmd -s $XBPS_MASTERDIR/usr/bin/libtool $wrksrc/libtool
 	fi
 
 	for f in $($find_cmd $wrksrc -type f -name libtool); do
 		if [ -f $f ]; then
 			$rm_cmd -f $f
-			$ln_cmd -s $XBPS_MASTERDIR/bin/libtool $f
+			$ln_cmd -s $XBPS_MASTERDIR/usr/bin/libtool $f
 		fi
 	done
 }
 
 set_build_vars()
 {
-	if [ -z "$disable_ldflags" ]; then
-		LDFLAGS="-L$XBPS_MASTERDIR/lib -Wl,-R$XBPS_MASTERDIR/lib $LDFLAGS"
-		LDFLAGS="-L$XBPS_DESTDIR/$pkgname-$version/lib $LDFLAGS"
-	fi
-
+	SAVE_LDLIBPATH=$LD_LIBRARY_PATH
+	LD_LIBRARY_PATH="$XBPS_MASTERDIR/usr/lib"
+	LDFLAGS="-L$XBPS_MASTERDIR/usr/lib"
 	CFLAGS="$CFLAGS $XBPS_CFLAGS"
 	CXXFLAGS="$CXXFLAGS $XBPS_CXXFLAGS"
-	CPPFLAGS="-I$XBPS_MASTERDIR/include $CPPFLAGS"
-	PKG_CONFIG="$XBPS_MASTERDIR/bin/pkg-config"
+	CPPFLAGS="-I$XBPS_MASTERDIR/usr/include $CPPFLAGS"
+	PKG_CONFIG="$XBPS_MASTERDIR/usr/bin/pkg-config"
 
-	if [ -z "$disable_ldflags" ]; then
-		export LDFLAGS="$LDFLAGS"
-	fi
-
-	export CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"
+	export LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+	export LDFLAGS="$LDFLAGS" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"
 	export CPPFLAGS="$CPPFLAGS" PKG_CONFIG="$PKG_CONFIG"
 }
 
 unset_build_vars()
 {
-	unset LDFLAGS CFLAGS CXXFLAGS CPPFLAGS PKG_CONFIG
+	unset LDFLAGS CFLAGS CXXFLAGS CPPFLAGS PKG_CONFIG LD_LIBRARY_PATH
+	export LD_LIBRARY_PATH=$SAVE_LDLIBPATH
 }
 
 #
@@ -709,20 +707,23 @@ configure_src_phase()
 
 	[ -z "$configure_script" ] && configure_script="./configure"
 
+	local _prefix=
+	if [ -z "$base_package" ]; then
+		_prefix=/usr
+	else
+		_prefix=/
+	fi
+
 	#
 	# Packages using GNU autoconf
 	#
 	if [ "$build_style" = "gnu_configure" ]; then
 		cd $wrksrc || exit 1
-		#
-		# Pass consistent arguments to not have unexpected
-		# surprises later.
-		#
-		${configure_script}					\
-			--prefix="$XBPS_MASTERDIR"			\
-			--mandir="$XBPS_DESTDIR/$pkgname-$version/man"	\
-			--infodir="$XBPS_DESTDIR/$pkgname-$version/share/info"	\
-			--sysconfdir="$XBPS_SYSCONFDIR"		\
+		${configure_script}				\
+			--prefix=${_prefix}			\
+			--infodir=$XBPS_DESTDIR/$pkgname-$version/share/info \
+			--mandir=$XBPS_DESTDIR/$pkgname-$version/share/man \
+			--sysconfdir="$XBPS_SYSCONFDIR" 	\
 			${configure_args}
 
 	#
@@ -852,7 +853,10 @@ install_src_phase()
 
 	[ -z $pkg ] && [ -z $pkgname ] && return 1
 
-	[ -z "$make_install_target" ] && make_install_target=install
+	if [ -z "$make_install_target" ]; then
+		make_install_target="install prefix=$XBPS_DESTDIR/$pkgname-$version"
+	fi
+
 	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
 
 	#
@@ -869,14 +873,10 @@ install_src_phase()
 
 	echo "=> Running install phase for: $pkgname-$version."
 
-	[ -z "$make_install_prefix" ] && \
-		make_install_prefix="prefix=$XBPS_DESTDIR/$pkgname-$version"
-
 	#
 	# Install package via make.
 	#
-	${make_cmd} ${make_install_target} ${make_install_args} \
-		${make_install_prefix}
+	${make_cmd} ${make_install_target} ${make_install_args}
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR installing $pkgname-$version ***"
 		exit 1
@@ -1400,10 +1400,15 @@ stow_pkg()
 		xstow_ignore_files="$xstow_ignore_files $ignore_files"
 	fi
 
-	$XBPS_XSTOW_CMD -ignore "${xstow_ignore_files}" ${xstow_args} \
-		-pd-targets $XBPS_MASTERDIR \
-		-dir $XBPS_DESTDIR -target $XBPS_MASTERDIR \
-		$XBPS_DESTDIR/$pkg
+	if [ -z "$base_package" ]; then
+	       	local pkg_masterdir=$XBPS_MASTERDIR/usr
+		[ ! -d $pkg_masterdir ] && $mkdir_cmd -p $pkg_masterdir
+	else
+		local pkg_masterdir=$XBPS_MASTERDIR
+	fi
+
+	$XBPS_XSTOW_CMD -ignore "${xstow_ignore_files}" ${xstow_args}	\
+		-dir $XBPS_DESTDIR -target $pkg_masterdir $XBPS_DESTDIR/$pkg
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR: couldn't create symlinks for $pkg ***"
 		exit 1
@@ -1461,8 +1466,15 @@ unstow_pkg()
 		xstow_ignore_files="$xstow_ignore_files $ignore_files"
 	fi
 
-	$XBPS_XSTOW_CMD -dir $XBPS_DESTDIR -target $XBPS_MASTERDIR \
-		-D -i-file-in-dir share/info/dir -ignore \
+	if [ -z "$base_package" ]; then
+		local pkg_masterdir=$XBPS_MASTERDIR/usr
+		[ ! -d $pkg_masterdir ] && $mkdir_cmd -p $pkg_masterdir
+	else
+		local pkg_masterdir=$XBPS_MASTERDIR
+	fi
+
+	$XBPS_XSTOW_CMD -dir $XBPS_DESTDIR -target $pkg_masterdir	\
+		-D -i-file-in-dir share/info/dir -ignore		\
 		"${xstow_ignore_files}" $XBPS_DESTDIR/$pkgname-$version
 	if [ $? -ne 0 ]; then
 		exit 1
