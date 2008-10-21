@@ -853,6 +853,7 @@ install_src_phase()
 	[ -z $pkg ] && [ -z $pkgname ] && return 1
 
 	[ -z "$make_install_target" ] && make_install_target=install
+	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
 
 	#
 	# There's nothing we can do if we are a meta template.
@@ -874,7 +875,7 @@ install_src_phase()
 	#
 	# Install package via make.
 	#
-	${make_cmd} ${make_install_args} ${make_install_target} \
+	${make_cmd} ${make_install_target} ${make_install_args} \
 		${make_install_prefix}
 	if [ "$?" -ne 0 ]; then
 		echo "*** ERROR installing $pkgname-$version ***"
