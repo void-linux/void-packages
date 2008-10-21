@@ -269,7 +269,7 @@ reset_tmpl_vars()
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
 			make_install_target postinstall_helpers version \
 			ignore_files tar_override_cmd xml_entries sgml_entries \
-			make_install_prefix build_depends \
+			make_install_prefix build_depends disable_ldflags \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
@@ -597,14 +597,21 @@ fixup_tmpl_libtool()
 
 set_build_vars()
 {
-	LDFLAGS="-L$XBPS_MASTERDIR/lib -Wl,-R$XBPS_MASTERDIR/lib $LDFLAGS"
-	LDFLAGS="-L$XBPS_DESTDIR/$pkgname-$version/lib $LDFLAGS"
+	if [ -z "$disable_ldflags" ]; then
+		LDFLAGS="-L$XBPS_MASTERDIR/lib -Wl,-R$XBPS_MASTERDIR/lib $LDFLAGS"
+		LDFLAGS="-L$XBPS_DESTDIR/$pkgname-$version/lib $LDFLAGS"
+	fi
+
 	CFLAGS="$CFLAGS $XBPS_CFLAGS"
 	CXXFLAGS="$CXXFLAGS $XBPS_CXXFLAGS"
 	CPPFLAGS="-I$XBPS_MASTERDIR/include $CPPFLAGS"
 	PKG_CONFIG="$XBPS_MASTERDIR/bin/pkg-config"
 
-	export LDFLAGS="$LDFLAGS" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"
+	if [ -z "$disable_ldflags" ]; then
+		export LDFLAGS="$LDFLAGS"
+	fi
+
+	export CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"
 	export CPPFLAGS="$CPPFLAGS" PKG_CONFIG="$PKG_CONFIG"
 }
 
