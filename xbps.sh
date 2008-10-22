@@ -769,6 +769,8 @@ configure_src_phase()
 	# Override libtool scripts if necessary
 	fixup_tmpl_libtool
 
+	unset_build_vars
+
 	$touch_cmd -f $XBPS_CONFIGURE_DONE
 }
 
@@ -820,6 +822,7 @@ build_src_phase()
 		export "$f"
 	done
 
+	set_build_vars
 	#
 	# Build package via make.
 	#
@@ -840,6 +843,8 @@ build_src_phase()
 		${run_stuff_before_install_cmd}
 	unset rbif
 
+	unset_build_vars
+
 	$touch_cmd -f $XBPS_BUILD_DONE
 }
 
@@ -855,6 +860,7 @@ install_src_phase()
 
 	if [ -z "$make_install_target" ]; then
 		make_install_target="install prefix=$XBPS_DESTDIR/$pkgname-$version"
+		make_install_target="$make_install_target sysconfdir=$XBPS_DESTDIR/$pkgname-$version/etc"
 	fi
 
 	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
@@ -873,6 +879,7 @@ install_src_phase()
 
 	echo "=> Running install phase for: $pkgname-$version."
 
+	set_build_vars
 	#
 	# Install package via make.
 	#
