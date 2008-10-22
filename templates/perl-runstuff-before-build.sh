@@ -1,6 +1,7 @@
 # This fixes the definitions that the perl binary uses to look at
-# XBPS_MASTERDIR and not XBPS_DESTDIR!
+# prefix and not XBPS_DESTDIR/MASTERDIR.
 
-$sed_cmd -e "s|$XBPS_DESTDIR\/$pkgname-$version|$XBPS_MASTERDIR|g" \
-	$wrksrc/config.h > $wrksrc/config.h.in && \
-$mv_cmd -f $wrksrc/config.h.in $wrksrc/config.h
+$sed_cmd -i								\
+	-e "s|$XBPS_DESTDIR\/$pkgname-$version|/usr|g"			\
+	-e "s|$XBPS_MASTERDIR||g"					\
+	$wrksrc/config.h
