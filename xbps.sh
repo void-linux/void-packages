@@ -209,7 +209,7 @@ reset_tmpl_vars()
 	local TMPL_VARS="pkgname distfiles configure_args configure_env \
 			make_build_args make_install_args build_style	\
 			short_desc maintainer long_desc checksum wrksrc	\
-			patch_files make_cmd \
+			patch_files make_cmd base_package \
 			make_env make_build_target configure_script \
 			run_stuff_before_configure_cmd run_stuff_before_build_cmd \
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
@@ -547,8 +547,8 @@ fixup_la_files()
 	for f in $(find $wrksrc -type f -name \*.la*); do
 		if [ -f $f ]; then
 			echo "Replacing libtool archive: $f"
-			sed -i	-e "s|\/..\/lib||g"			\
-				-e "s|$XBPS_MASTERDIR||g;"		\
+			sed -i	-e "s|\/..\/lib||g;s|\/\/lib|/usr/lib|g" \
+				-e "s|$XBPS_MASTERDIR||g;"	\
 				-e "s|$XBPS_DESTDIR/$pkgname-$version||g" $f
 			awk '{ if (/^ dependency_libs/) {gsub("/usr[^]*lib","lib");}print}' \
 				$f > $f.in && mv $f.in $f
