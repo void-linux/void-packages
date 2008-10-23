@@ -209,7 +209,7 @@ reset_tmpl_vars()
 	local TMPL_VARS="pkgname distfiles configure_args configure_env \
 			make_build_args make_install_args build_style	\
 			short_desc maintainer long_desc checksum wrksrc	\
-			patch_files make_cmd pkgconfig_override \
+			patch_files make_cmd \
 			make_env make_build_target configure_script \
 			run_stuff_before_configure_cmd run_stuff_before_build_cmd \
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
@@ -870,17 +870,6 @@ install_src_phase()
 	[ -f $raif ] && . $raif
 	[ -n "$run_stuff_after_install_cmd" ] && ${run_stuff_after_install_cmd}
 	unset raif
-
-	#
-	# Transform pkg-config files if requested by template.
-	#
-	for i in ${pkgconfig_override}; do
-		local tmpf="$XBPS_DESTDIR/$pkgname-$version/lib/pkgconfig/$i"
-		[ -f "$tmpf" ] && \
-			[ -f $XBPS_TMPLHELPDIR/pkg-config-transform.sh ] && \
-			. $XBPS_TMPLHELPDIR/pkg-config-transform.sh && \
-			pkgconfig_transform_file $tmpf
-	done
 
 	# Unset build vars.
 	unset_build_vars
