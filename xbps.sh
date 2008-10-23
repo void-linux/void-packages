@@ -215,7 +215,7 @@ reset_tmpl_vars()
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
 			make_install_target postinstall_helpers version \
 			ignore_files tar_override_cmd xml_entries sgml_entries \
-			build_depends \
+			build_depends no_fixup_libtool \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
@@ -527,6 +527,7 @@ fetch_distfiles()
 fixup_libtool_file()
 {
 	[ "$pkgname" = "libtool" -o ! -f $wrksrc/libtool ] && return 0
+	[ -n "$no_libtool_fixup" ] && return 0
 
 	sed -i -e \
 		's|^hardcode_libdir_flag_spec=.*|hardcode_libdir_flag_spec="-Wl,-rpath /usr/lib"|g' \
