@@ -2,7 +2,7 @@
 #
 PREFIX	?= /usr/local
 CFLAGS	+= -Wall -Werror -I$(PREFIX)/include
-LDFLAGS	+= -L$(PREFIX)/lib -Wl,-R$(PREFIX)/lib -lprop
+LDFLAGS	+= -lprop
 
 all: xbps-pkgdb
 
