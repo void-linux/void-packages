@@ -30,6 +30,10 @@ if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
 	touch $XBPS_MASTERDIR/.xbps_perms_done
 fi
 
+if [ ! -h $XBPS_MASTERDIR/usr/bin/cc ]; then
+	cd $XBPS_MASTERDIR/usr/bin && ln -s gcc cc
+fi
+
 for f in bin sbin tmp var sys proc dev xbps; do
 	[ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
 done
