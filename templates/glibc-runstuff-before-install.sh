@@ -1,3 +1,4 @@
-# Create $XBPS_SYSCONFDIR/ld.conf
-#
-$touch_cmd $XBPS_SYSCONFDIR/ld.so.conf
+# Create destdir/etc/ld.conf
+
+mkdir -p $XBPS_DESTDIR/$pkgname-$version/etc
+touch $XBPS_DESTDIR/$pkgname-$version/etc/ld.so.conf

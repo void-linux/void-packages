@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # xbps - A simple, minimal, fast and uncomplete build package system.
 #
@@ -29,8 +29,6 @@
 #
 # TODO
 #	- Implement support for packages that need personalized installation.
-#	- Implement a chroot target that builds packages as root on it, for
-#	  packages that need it (setuid, setgid).
 #	- Personalized scripts per template to unpack distfiles.
 #	- Multiple URLs to download source distribution files, aliases, etc.
 #	- More robust and fast dependency checking.
@@ -38,35 +36,43 @@
 # Default path to configuration file, can be overriden
 # via the environment or command line.
 #
-: ${XBPS_CONFIG_FILE:=/usr/local/etc/xbps.conf}
+: ${XBPS_CONFIG_FILE:=/etc/xbps.conf}
 
 : ${progname:=$(basename $0)}
-: ${topdir:=$(/bin/pwd 2>/dev/null)}
-: ${fetch_cmd:=/usr/bin/wget}
-: ${awk_cmd:=/usr/bin/awk}
-: ${mkdir_cmd:=/bin/mkdir}
-: ${tar_cmd:=/bin/tar}
-: ${rm_cmd:=/bin/rm}
-: ${mv_cmd:=/bin/mv}
-: ${cp_cmd:=/bin/cp}
-: ${sed_cmd=/bin/sed}
-: ${grep_cmd=/bin/grep}
-: ${gunzip_cmd:=/bin/gunzip}
-: ${bunzip2_cmd:=/bin/bunzip2}
-: ${patch_cmd:=/usr/bin/patch}
-: ${find_cmd:=/usr/bin/find}
-: ${file_cmd:=/usr/bin/file}
-: ${ln_cmd:=/bin/ln}
-: ${chmod_cmd:=/bin/chmod}
-: ${chmod_cmd:=/bin/chmod}
-: ${touch_cmd:=/usr/bin/touch}
-: ${env_cmd:=/usr/bin/env}
+: ${fetch_cmd:=wget}
 
-: ${xstow_args:=-ap}
-: ${xstow_ignore_files:=perllocal.pod}	# XXX For now ignore them.
+usage()
+{
+	cat << _EOF
+$progname: [-C] [-c <config_file>] <target> [package_name]
+
+Targets:
+	build		Builds a package, only build phase is done.
+	configure	Configure a package, only configure phase is done.
+	extract		Extract distribution file(s) into build directory.
+	fetch		Download distribution file(s).
+	info		Show information about <package_name>.
+	install-chroot	Installs a package inside a chroot.
+	install-destdir	build + configure + install into destdir.
+	install		install-destdir + stow.
+	list		Lists all currently installed packages.
+	listfiles	Lists files installed from <package_name>.
+	remove		Remove package completely (destdir + masterdir).
+	stow		Copy files from destdir/<pkgname> into masterdir.
+	unstow		Remove <pkgname> files from masterdir.
+
+Options:
+	-C	Do not remove build directory after successful installation.
+	-c	Path to global configuration file:
+		if not specified /usr/local/etc/xbps.conf is used.
+_EOF
+	exit 1
+}
 
 set_defvars()
 {
+	local i=
+
 	# Directories
 	: ${XBPS_TEMPLATESDIR:=$XBPS_DISTRIBUTIONDIR/templates}
 	: ${XBPS_TMPLHELPDIR:=$XBPS_DISTRIBUTIONDIR/helper-templates}
@@ -84,46 +90,7 @@ set_defvars()
 		fi
 	done
 
-	local CMDS="fetch_cmd awk_cmd mkdir_cmd tar_cmd rm_cmd mv_cmd \
-		cp_cmd sed_cmd grep_cmd gunzip_cmd bunzip2_cmd patch_cmd find_cmd \
-		file_cmd ln_cmd chmod_cmd chmod_cmd touch_cmd XBPS_DIGEST_CMD \
-		XBPS_PKGDB_CMD"
-	for f in ${CMDS}; do
-		eval val="\$$f"
-		if [ ! -x "$val" ]; then
-			echo "*** ERROR: cannot find $f command, aborting ***"
-			exit 1
-		fi
-	done
-
-	XBPS_PKGDB_CMD="$env_cmd XBPS_PKGDB_FPATH=$XBPS_PKGDB_FPATH $XBPS_PKGDB_CMD"
-}
-
-usage()
-{
-	cat << _EOF
-$progname: [-C] [-c <config_file>] <target> [package_name]
-
-Targets:
-	build		Builds a package, only build phase is done.
-	configure	Configure a package, only configure phase is done.
-	extract		Extract distribution file(s) into build directory.
-	fetch		Download distribution file(s).
-	info		Show information about <package_name>.
-	install-destdir	build + configure + install into destdir.
-	install		Same than 'install-destdir' but also stows package.
-	list		Lists all currently 'stowned' packages.
-	remove		Remove package completely (unstow + remove data)
-	listfiles	Lists files installed from <package_name>.
-	stow		Create links in master directory.
-	unstow		Remove links in master directory.
-
-Options:
-	-C	Do not remove build directory after successful installation.
-	-c	Path to global configuration file:
-		if not specified /usr/local/etc/xbps.conf is used.
-_EOF
-	exit 1
+	XBPS_PKGDB_CMD="env XBPS_PKGDB_FPATH=$XBPS_PKGDB_FPATH $XBPS_PKGDB_CMD"
 }
 
 check_path()
@@ -137,7 +104,7 @@ check_path()
 		orig="${orig%/}"
 		;;
 	*)
-		orig="$topdir/${orig%/}"
+		orig="$(pwd)/${orig%/}"
 		;;
 	esac
 
@@ -153,39 +120,16 @@ run_file()
 }
 
 #
-# This function merges two GNU info dirs into one and puts the result
-# into XBPS_MASTERDIR/share/info/dir.
-#
-merge_infodir_tmpl()
-{
-	local pkgname="$1"
-	local merge_info_cmd="$XBPS_MASTERDIR/bin/merge-info"
-
-	[ -z "$pkgname" -o ! -r "$XBPS_MASTERDIR/share/info/dir" \
-	     -o ! -r "$XBPS_DESTDIR/$pkgname/share/info/dir" ] && return 1
-
-	$merge_info_cmd -d $XBPS_MASTERDIR/share/info/dir 	\
-		$XBPS_DESTDIR/$pkgname/share/info/dir -o 	\
-		$XBPS_MASTERDIR/share/info/dir.new
-	if [ $? -ne 0 ]; then
-		echo -n "*** WARNING: there was an error merging info dir from"
-		echo " $pkgname, aborting ***"
-		return 1
-	fi
-
-	$mv_cmd -f $XBPS_MASTERDIR/share/info/dir.new \
-		$XBPS_MASTERDIR/share/info/dir
-}
-
-#
 # Shows info about a template.
 #
 info_tmpl()
 {
+	local i=
+
 	echo "pkgname:	$pkgname"
 	echo "version:	$version"
 	for i in "${distfiles}"; do
-		[ -n "$i" ] && i=$(echo $i|$sed_cmd s'|@||g') && \
+		[ -n "$i" ] && i=$(echo $i|sed s'|@||g') && \
 			echo "distfile:	$i"
 	done
 	[ -n $checksum ] && echo "checksum:	$checksum"
@@ -210,6 +154,7 @@ info_tmpl()
 check_config_vars()
 {
 	local cffound=
+	local f=
 
 	if [ -z "$config_file_specified" ]; then
 		config_file_paths="$XBPS_CONFIG_FILE ./xbps.conf"
@@ -234,7 +179,7 @@ check_config_vars()
 	fi
 
 	local XBPS_VARS="XBPS_MASTERDIR XBPS_DESTDIR XBPS_BUILDDIR \
-			 XBPS_SRCDISTDIR XBPS_SYSCONFDIR"
+			 XBPS_SRCDISTDIR"
 
 	for f in ${XBPS_VARS}; do
 		eval val="\$$f"
@@ -245,7 +190,7 @@ check_config_vars()
 		fi
 
 		if [ ! -d "$val" ]; then
-			$mkdir_cmd "$val"
+			mkdir "$val"
 			if [ "$?" -ne 0 ]; then
 				echo -n "*** ERROR: couldn't create '$f'"
 				echo "directory, aborting ***"
@@ -260,6 +205,7 @@ check_config_vars()
 #
 reset_tmpl_vars()
 {
+	local v=
 	local TMPL_VARS="pkgname distfiles configure_args configure_env \
 			make_build_args make_install_args build_style	\
 			short_desc maintainer long_desc checksum wrksrc	\
@@ -273,8 +219,8 @@ reset_tmpl_vars()
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
-	for i in ${TMPL_VARS}; do
-		eval unset "$i"
+	for v in ${TMPL_VARS}; do
+		eval unset "$v"
 	done
 
 	unset_build_vars
@@ -303,6 +249,8 @@ setup_tmpl()
 #
 prepare_tmpl()
 {
+	local i=
+
 	#
 	# There's nothing of interest if we are a meta template.
 	#
@@ -333,8 +281,8 @@ prepare_tmpl()
 	XBPS_INSTALL_DONE="$wrksrc/.xbps_install_done"
 
 	export PATH="$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin"
-	export PATH="$PATH:$XBPS_MASTERDIR/usr/bin:$XBPS_MASTERDIR/usr/sbin"
 	export PATH="$PATH:/bin:/sbin:/usr/bin:/usr/sbin"
+	export PATH="$PATH:$XBPS_MASTERDIR/usr/bin:$XBPS_MASTERDIR/usr/sbin"
 }
 
 #
@@ -349,6 +297,7 @@ extract_distfiles()
 	local cursufx=
 	local lwrksrc=
 	local ltar_cmd=
+	local f=
 
 	#
 	# If we are being called via the target, just extract and return.
@@ -370,7 +319,7 @@ extract_distfiles()
 			echo "multiple distfiles ***"
 			exit 1
 		fi
-		$mkdir_cmd $wrksrc
+		mkdir $wrksrc
 	fi
 
 	echo "==> Extracting '$pkgname-$version' distfiles."
@@ -378,13 +327,13 @@ extract_distfiles()
 	if [ -n "$tar_override_cmd" ]; then
 		ltar_cmd="$tar_override_cmd"
 	else
-		ltar_cmd="$tar_cmd"
+		ltar_cmd="tar"
 	fi
 
 	for f in ${distfiles}; do
 		curfile=$(basename $f)
 		cursufx=${curfile##*@}
-		curfile=$(basename $curfile|$sed_cmd 's|@||g')
+		curfile=$(basename $curfile|sed 's|@||g')
 
 		if [ $count -gt 1 ]; then
 			lwrksrc="$wrksrc/${curfile%$cursufx}"
@@ -449,7 +398,7 @@ extract_distfiles()
 		esac
 	done
 
-	$touch_cmd -f $XBPS_EXTRACT_DONE
+	touch -f $XBPS_EXTRACT_DONE
 }
 
 #
@@ -482,6 +431,7 @@ fetch_distfiles()
 	local localurl=
 	local dfcount=0
 	local ckcount=0
+	local f=
 
 	[ -z $pkgname ] && exit 1
 
@@ -490,7 +440,7 @@ fetch_distfiles()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	dfiles=$(echo $distfiles | $sed_cmd 's|@||g')
+	dfiles=$(echo $distfiles | sed 's|@||g')
 
 	for f in ${dfiles}; do
 		curfile=$(basename $f)
@@ -574,25 +524,33 @@ fetch_distfiles()
 	unset cksum found
 }
 
-fixup_tmpl_libtool()
+fixup_libtool_file()
 {
+	[ "$pkgname" = "libtool" -o ! -f $wrksrc/libtool ] && return 0
+
+	sed -i -e \
+		's|^hardcode_libdir_flag_spec=.*|hardcode_libdir_flag_spec="-Wl,-rpath /usr/lib"|g' \
+		$wrksrc/libtool
+}
+
+fixup_la_files()
+{
+	local f=
+
 	# Ignore libtool itself
 	[ "$pkgname" = "libtool" ] && return 0
 
 	#
-	# If package has a libtool file replace it with ours, so that
-	# we use the master directory while relinking, all will be fine
-	# once the package is stowned.
+	# Replace hardcoded or incorrect paths with correct ones.
 	#
-	if [ -f $wrksrc/ltmain.sh -a -f $wrksrc/libtool ]; then
-		$rm_cmd -f $wrksrc/libtool
-		$ln_cmd -s $XBPS_MASTERDIR/usr/bin/libtool $wrksrc/libtool
-	fi
-
-	for f in $($find_cmd $wrksrc -type f -name libtool); do
+	for f in $(find $wrksrc -type f -name \*.la*); do
 		if [ -f $f ]; then
-			$rm_cmd -f $f
-			$ln_cmd -s $XBPS_MASTERDIR/usr/bin/libtool $f
+			echo "Replacing libtool archive: $f"
+			sed -i	-e "s|\/..\/lib||g"			\
+				-e "s|$XBPS_MASTERDIR||g;"		\
+				-e "s|$XBPS_DESTDIR/$pkgname-$version||g" $f
+			awk '{ if (/^ dependency_libs/) {gsub("/usr[^]*lib","lib");}print}' \
+				$f > $f.in && mv $f.in $f
 		fi
 	done
 }
@@ -601,20 +559,21 @@ set_build_vars()
 {
 	SAVE_LDLIBPATH=$LD_LIBRARY_PATH
 	LD_LIBRARY_PATH="$XBPS_MASTERDIR/usr/lib"
-	LDFLAGS="-L$XBPS_MASTERDIR/usr/lib"
 	CFLAGS="$CFLAGS $XBPS_CFLAGS"
 	CXXFLAGS="$CXXFLAGS $XBPS_CXXFLAGS"
 	CPPFLAGS="-I$XBPS_MASTERDIR/usr/include $CPPFLAGS"
 	PKG_CONFIG="$XBPS_MASTERDIR/usr/bin/pkg-config"
+	PKG_CONFIG_LIBDIR="$XBPS_MASTERDIR/usr/lib/pkgconfig"
 
 	export LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
-	export LDFLAGS="$LDFLAGS" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"
+	export CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"
 	export CPPFLAGS="$CPPFLAGS" PKG_CONFIG="$PKG_CONFIG"
+	export PKG_CONFIG_LIBDIR="$PKG_CONFIG_LIBDIR"
 }
 
 unset_build_vars()
 {
-	unset LDFLAGS CFLAGS CXXFLAGS CPPFLAGS PKG_CONFIG LD_LIBRARY_PATH
+	unset CFLAGS CXXFLAGS CPPFLAGS PKG_CONFIG LD_LIBRARY_PATH
 	export LD_LIBRARY_PATH=$SAVE_LDLIBPATH
 }
 
@@ -624,6 +583,7 @@ unset_build_vars()
 apply_tmpl_patches()
 {
 	local patch=
+	local i=
 
 	#
 	# If package needs some patches applied before building,
@@ -637,23 +597,23 @@ apply_tmpl_patches()
 				continue
 			fi
 
-			$cp_cmd -f $patch $wrksrc
+			cp -f $patch $wrksrc
 
 			# Try to guess if its a compressed patch.
-			if $(echo $patch|$grep_cmd -q .gz); then
-				$gunzip_cmd $wrksrc/$i
+			if $(echo $patch|grep -q .gz); then
+				gunzip $wrksrc/$i
 				patch=${i%%.gz}
-			elif $(echo $patch|$grep_cmd -q .bz2); then
-				$bunzip2_cmd $wrksrc/$i
+			elif $(echo $patch|grep -q .bz2); then
+				bunzip2 $wrksrc/$i
 				patch=${i%%.bz2}
-			elif $(echo $patch|$grep_cmd -q .diff); then
+			elif $(echo $patch|grep -q .diff); then
 				patch=$i
 			else
 				echo "*** WARNING: unknown patch type: $i ***"
 				continue
 			fi
 
-			cd $wrksrc && $patch_cmd -p0 < $patch 2>/dev/null
+			cd $wrksrc && patch -p0 < $patch 2>/dev/null
 			if [ "$?" -eq 0 ]; then
 				echo "=> Patch applied: $i."
 			else
@@ -663,7 +623,7 @@ apply_tmpl_patches()
 		done
 	fi
 
-	$touch_cmd -f $XBPS_APPLYPATCHES_DONE
+	touch -f $XBPS_APPLYPATCHES_DONE
 }
 
 #
@@ -673,13 +633,16 @@ apply_tmpl_patches()
 configure_src_phase()
 {
 	local pkg="$1"
+	local f=
 
 	[ -z $pkg ] && [ -z $pkgname ] && return 1
 
 	#
-	# There's nothing we can do if we are a meta template.
+	# There's nothing we can do if we are a meta template or an
+	# only-install template.
 	#
-	[ "$build_style" = "meta-template" ] && return 0
+	[ "$build_style" = "meta-template" -o \
+	  "$build_style" = "only-install" ] && return 0
 
 	if [ ! -d $wrksrc ]; then
 		echo "*** ERROR: unexistent build directory $wrksrc ***"
@@ -720,10 +683,9 @@ configure_src_phase()
 	if [ "$build_style" = "gnu_configure" ]; then
 		cd $wrksrc || exit 1
 		${configure_script}				\
-			--prefix=${_prefix}			\
-			--infodir=$XBPS_DESTDIR/$pkgname-$version/share/info \
-			--mandir=$XBPS_DESTDIR/$pkgname-$version/share/man \
-			--sysconfdir="$XBPS_SYSCONFDIR" 	\
+			--prefix=${_prefix} --sysconfdir=/etc	\
+			--infodir=$XBPS_DESTDIR/$pkgname-$version/usr/share/info \
+			--mandir=$XBPS_DESTDIR/$pkgname-$version/usr/share/man \
 			${configure_args}
 
 	#
@@ -766,12 +728,9 @@ configure_src_phase()
 		unset eval ${f%=*}
 	done
 
-	# Override libtool scripts if necessary
-	fixup_tmpl_libtool
-
 	unset_build_vars
 
-	$touch_cmd -f $XBPS_CONFIGURE_DONE
+	touch -f $XBPS_CONFIGURE_DONE
 }
 
 #
@@ -782,13 +741,16 @@ build_src_phase()
 {
 	local pkgparam="$1"
 	local pkg="$pkgname-$version"
+	local f=
 
 	[ -z $pkgparam ] && [ -z $pkgname -o -z $version ] && return 1
 
         #
-	# There's nothing of interest if we are a meta template.
+	# There's nothing of interest if we are a meta template or an
+	# only-install template.
 	#
-	[ "$build_style" = "meta-template" ] && return 0
+	[ "$build_style" = "meta-template" -o \
+	  "$build_style" = "only-install" ] && return 0
 
 	if [ ! -d $wrksrc ]; then
 		echo "*** ERROR: unexistent build directory:  $wrksrc ***"
@@ -822,6 +784,7 @@ build_src_phase()
 		export "$f"
 	done
 
+	fixup_libtool_file
 	set_build_vars
 	#
 	# Build package via make.
@@ -843,9 +806,10 @@ build_src_phase()
 		${run_stuff_before_install_cmd}
 	unset rbif
 
+	fixup_la_files
 	unset_build_vars
 
-	$touch_cmd -f $XBPS_BUILD_DONE
+	touch -f $XBPS_BUILD_DONE
 }
 
 #
@@ -855,11 +819,13 @@ build_src_phase()
 install_src_phase()
 {
 	local pkg="$1"
+	local f=
+	local i=
 
 	[ -z $pkg ] && [ -z $pkgname ] && return 1
 
 	if [ -z "$make_install_target" ]; then
-		make_install_target="install prefix=$XBPS_DESTDIR/$pkgname-$version"
+		make_install_target="install prefix=$XBPS_DESTDIR/$pkgname-$version/usr"
 		make_install_target="$make_install_target sysconfdir=$XBPS_DESTDIR/$pkgname-$version/etc"
 	fi
 
@@ -918,13 +884,13 @@ install_src_phase()
 
 	echo "==> Installed $pkgname-$version into $XBPS_DESTDIR."
 
-	$touch_cmd -f $XBPS_INSTALL_DONE
+	touch -f $XBPS_INSTALL_DONE
 
 	#
 	# Remove $wrksrc if -C not specified.
 	#
 	if [ -d "$wrksrc" -a -z "$dontrm_builddir" ]; then
-		$rm_cmd -rf $wrksrc
+		rm -rf $wrksrc
 		[ "$?" -eq 0 ] && \
 			echo "=> Removed $pkgname-$version build directory."
 	fi
@@ -961,36 +927,40 @@ register_pkg_handler()
 add_dependency_tolist()
 {
 	local curpkg="$1"
+	local j=
 
 	[ -z "$curpkg" ] && return 1
 	[ -n "$prev_pkg" ] && curpkg=$prev_pkg
 
-	reset_tmpl_vars
-	run_file $XBPS_TEMPLATESDIR/${curpkg%-[0-9]*.*}.tmpl
-	for i in ${build_depends}; do
+	if [ "$pkgname" != "${curpkg%-[0-9]*.*}" ]; then
+		reset_tmpl_vars
+		run_file $XBPS_TEMPLATESDIR/${curpkg%-[0-9]*.*}.tmpl
+	fi
+
+	for j in ${build_depends}; do
 		#
 		# Check if dep already installed.
 		#
-		check_installed_pkg $i ${i##[aA-zZ]*-}
+		check_installed_pkg $j ${j##[aA-zZ]*-}
 		#
 		# If dep is already installed, check one more time
 		# if all its deps are there and continue.
 		#
 		if [ $? -eq 0 ]; then
-			install_builddeps_required_pkg $i
-			installed_deps_list="$i $installed_deps_list"
+			install_builddeps_required_pkg $j
+			installed_deps_list="$j $installed_deps_list"
 			continue
 		fi
 
-		deps_list="$i $deps_list"
+		deps_list="$j $deps_list"
 		[ -n "$prev_pkg" ] && unset prev_pkg
 		#
 		# Check if dependency needs more deps.
 		#
-		check_build_depends_pkg ${i%-[0-9]*.*}
+		check_build_depends_pkg ${j%-[0-9]*.*}
 		if [ $? -eq 0 ]; then
-			add_dependency_tolist $i
-			prev_pkg="$i"
+			add_dependency_tolist $j
+			prev_pkg="$j"
 		fi
 	done
 }
@@ -1003,6 +973,7 @@ find_dupdeps_inlist()
 	local action="$1"
 	local tmp_list=
 	local dup=
+	local f=
 
 	[ -z "$action" ] && return 1
 
@@ -1050,6 +1021,7 @@ find_dupdeps_inlist()
 install_dependencies_pkg()
 {
 	local pkg="$1"
+	local i=
 	deps_list=
 	installed_deps_list=
 
@@ -1067,7 +1039,7 @@ install_dependencies_pkg()
 
 	echo "==> Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
-		fpkg="$($XBPS_PKGDB_CMD list|$grep_cmd ${i%-[0-9]*.*})"
+		fpkg="$($XBPS_PKGDB_CMD list|grep ${i%-[0-9]*.*})"
 		echo "	$i: found $fpkg."
 	done
 
@@ -1091,6 +1063,7 @@ install_dependencies_pkg()
 install_builddeps_required_pkg()
 {
 	local pkg="$1"
+	local dep=
 
 	[ -z "$pkg" ] && return 1
 
@@ -1120,10 +1093,11 @@ check_installed_pkg()
 	[ -z "$pkg" -o -z "$reqver" -o ! -r $XBPS_PKGDB_FPATH ] && return 1
 
 	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
+		reset_tmpl_vars
 		run_file $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
 	fi
 
-	reqver="$(echo $reqver | $sed_cmd 's|[[:punct:]]||g;s|[[:alpha:]]||g')"
+	reqver="$(echo $reqver | sed 's|[[:punct:]]||g;s|[[:alpha:]]||g')"
 
 	$XBPS_PKGDB_CMD installed $pkgname
 	if [ $? -eq 0 ]; then
@@ -1138,7 +1112,7 @@ check_installed_pkg()
 			# It's not optimal and may fail, but it is enough
 			# for now.
 			#
-			iver="$(echo $iver | $sed_cmd 's|[[:punct:]]||g;s|[[:alpha:]]||g')"
+			iver="$(echo $iver | sed 's|[[:punct:]]||g;s|[[:alpha:]]||g')"
 			if [ "$iver" -eq "$reqver" \
 			     -o "$iver" -gt "$reqver" ]; then
 			     return 0
@@ -1196,11 +1170,6 @@ install_pkg()
 	[ -z "$origin_tmpl" ] && origin_tmpl=$pkgname
 
 	#
-	# Install xstow if it's not there.
-	#
-	install_xstow_pkg
-
-	#
 	# We are going to install a new package.
 	#
 	prepare_tmpl
@@ -1243,8 +1212,10 @@ install_pkg()
 	#
 	if [ "$build_style" = "meta-template" ]; then
 		register_pkg_handler register $pkgname $version
-		echo "==> Installed meta-template: $pkg."
-		return 0
+		[ $? -eq 0 ] && \
+			echo "==> Installed meta-template: $pkg." && \
+			return 0
+		return 1
 	fi
 
 	#
@@ -1254,46 +1225,12 @@ install_pkg()
 }
 
 #
-# Installs and stows the "xstow" package.
-#
-install_xstow_pkg()
-{
-	[ -x "$XBPS_XSTOW_CMD" ] && return 0
-
-	echo "=> xstow application not found, will install it now."
-
-	reset_tmpl_vars
-	setup_tmpl xstow
-	fetch_distfiles
-
-	if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
-		extract_distfiles
-	fi
-
-	if [ ! -f "$XBPS_CONFIGURE_DONE" ]; then
-		configure_src_phase
-	fi
-
-	if [ ! -f "$XBPS_BUILD_DONE" ]; then
-		build_src_phase
-	fi
-
-	install_src_phase
-
-	XBPS_XSTOW_CMD="$XBPS_DESTDIR/$pkgname-$version/bin/xstow"
-	stow_pkg $pkgname-$version
-
-	#
-	# Continue with package that called us.
-	#
-	run_file $XBPS_TEMPLATESDIR/$origin_tmpl.tmpl
-}
-
-#
 # Lists all currently installed packages.
 #
 list_pkgs()
 {
+	local i=
+
 	if [ ! -r "$XBPS_PKGDB_FPATH" ]; then
 		echo "=> No packages registered or missing register db file."
 		exit 0
@@ -1313,6 +1250,7 @@ list_pkgs()
 list_pkg_files()
 {
 	local pkg="$1"
+	local f=
 
 	if [ -z $pkg ]; then
 		echo "*** ERROR: unexistent package, aborting ***"
@@ -1324,7 +1262,7 @@ list_pkg_files()
 		exit 1
 	fi
 
-	for f in $($find_cmd $XBPS_DESTDIR/$pkg -type f -print | sort -u); do
+	for f in $(find $XBPS_DESTDIR/$pkg -type f -print | sort -u); do
 		echo "${f##$XBPS_DESTDIR/$pkg/}"
 	done
 }
@@ -1364,21 +1302,17 @@ remove_pkg()
 	fi
 
 	unstow_pkg $pkg
-	$rm_cmd -rf $XBPS_DESTDIR/$pkg-$version
+	rm -rf $XBPS_DESTDIR/$pkg-$version
 	return $?
 }
 
 #
-# Stows a currently installed package, i.e creates the links
-# on the master directory.
+# Stows a package, i.e copy files from destdir into masterdir.
 #
 stow_pkg()
 {
 	local pkg="$1"
-	local infodir_pkg="share/info/dir"
-	local infodir_master="$XBPS_MASTERDIR/share/info/dir"
-	local real_xstowargs="$xstow_args"
-	local real_xstow_ignore="$xstow_ignore_files"
+	local i=
 
 	[ -z "$pkg" ] && return 2
 
@@ -1394,34 +1328,13 @@ stow_pkg()
 		[ "$build_style" = "meta-template" ] && return 0
 	fi
 
-	if [ -r "$XBPS_DESTDIR/$pkg/$infodir_pkg" ]; then
-		merge_infodir_tmpl $pkg
-	fi
-
-	if [ -r "$XBPS_DESTDIR/$pkg/$infodir_pkg" \
-	     -a -r "$infodir_master" ]; then
-		xstow_args="$xstow_args -i-file-in-dir $infodir_pkg"
-	fi
-
-	if [ -n "$ignore_files" ]; then
-		xstow_ignore_files="$xstow_ignore_files $ignore_files"
-	fi
-
-	if [ -z "$base_package" ]; then
-	       	local pkg_masterdir=$XBPS_MASTERDIR/usr
-		[ ! -d $pkg_masterdir ] && $mkdir_cmd -p $pkg_masterdir
-	else
-		local pkg_masterdir=$XBPS_MASTERDIR
-	fi
-
-	$XBPS_XSTOW_CMD -ignore "${xstow_ignore_files}" ${xstow_args}	\
-		-dir $XBPS_DESTDIR -target $pkg_masterdir $XBPS_DESTDIR/$pkg
-	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR: couldn't create symlinks for $pkg ***"
-		exit 1
-	else
-		echo "==> Created $pkg symlinks into master directory."
-	fi
+	cd $XBPS_DESTDIR/$pkgname-$version || exit 1
+	find . > $XBPS_MASTERDIR/.xbps-filelist-$pkgname-$version
+	sed -i -e "s|^.$||g;s|^./||g" \
+		$XBPS_MASTERDIR/.xbps-filelist-$pkgname-$version
+	cp -far . $XBPS_MASTERDIR
+	mv -f $XBPS_MASTERDIR/.xbps-filelist-$pkgname-$version \
+		$XBPS_DESTDIR/$pkgname-$version/.xbps-filelist
 
 	register_pkg_handler register $pkgname $version
 
@@ -1436,27 +1349,19 @@ stow_pkg()
 		local pihf="$XBPS_TMPLHELPDIR/$i"
 		[ -f "$pihf" ] && . $pihf
 	done
-
-	xstow_ignore_files="$real_xstow_ignore"
-	xstow_args="$real_xstowargs"
 }
 
 #
-# Unstows a currently stowned package, i.e removes its links
-# from the master directory.
+# Unstow a package, i.e removes its files from masterdir.
 #
 unstow_pkg()
 {
 	local pkg="$1"
 	local real_xstow_ignore="$xstow_ignore_files"
+	local f=
 
 	if [ -z "$pkg" ]; then
 		echo "*** ERROR: template wasn't specified? ***"
-		exit 1
-	fi
-
-	if [ "$pkg" = "xstow" ]; then
-		echo "*** INFO: You aren't allowed to unstow $pkg."
 		exit 1
 	fi
 
@@ -1469,47 +1374,35 @@ unstow_pkg()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	if [ -n "$ignore_files" ]; then
-		xstow_ignore_files="$xstow_ignore_files $ignore_files"
-	fi
+	cd $XBPS_DESTDIR/$pkgname-$version || exit 1
+	[ ! -f .xbps-filelist ] && exit 1
 
-	if [ -z "$base_package" ]; then
-		local pkg_masterdir=$XBPS_MASTERDIR/usr
-		[ ! -d $pkg_masterdir ] && $mkdir_cmd -p $pkg_masterdir
-	else
-		local pkg_masterdir=$XBPS_MASTERDIR
-	fi
+	for f in $(cat .xbps-filelist|sort -ur); do
+		[ -f $XBPS_MASTERDIR/$f -o -h $XBPS_MASTERDIR/$f ] && \
+			rm $XBPS_MASTERDIR/$f && \
+			echo "Removing file: $f"
+	done
 
-	$XBPS_XSTOW_CMD -dir $XBPS_DESTDIR -target $pkg_masterdir	\
-		-D -i-file-in-dir share/info/dir -ignore		\
-		"${xstow_ignore_files}" $XBPS_DESTDIR/$pkgname-$version
-	if [ $? -ne 0 ]; then
-		exit 1
-	else
-		$rm_cmd -f $XBPS_DESTDIR/$pkgname-$version/share/info/dir
-		echo "==> Removed \`$pkg' symlinks from master directory."
-	fi
+	for f in $(cat .xbps-filelist|sort -ur); do
+		[ -d $XBPS_MASTERDIR/$f ] && \
+			rmdir $XBPS_MASTERDIR/$f && \
+			echo "Removing directory: $f"
+	done
 
 	register_pkg_handler unregister $pkgname $version
-
-	xstow_ignore_files="$real_xstow_ignore"
 }
 
 #
 # main()
 #
-args=$(getopt Cc: $*)
-[ "$?" -ne 0 ] && usage
-
-set -- $args
-while [ "$#" -gt 0 ]; do
-	case "$1" in
-	-C)
+while getopts "Cc:" opt; do
+	case $opt in
+	C)
 		dontrm_builddir=yes
 		;;
-	-c)
+	c)
 		config_file_specified=yes
-		XBPS_CONFIG_FILE="$2"
+		XBPS_CONFIG_FILE="$OPTARG"
 		shift
 		;;
 	--)
@@ -1517,10 +1410,10 @@ while [ "$#" -gt 0 ]; do
 		break
 		;;
 	esac
-	shift
 done
+shift $(($OPTIND - 1))
 
-[ "$#" -gt 2 ] && usage
+[ $# -eq 0 -o $# -gt 4 ] && usage
 
 target="$1"
 if [ -z "$target" ]; then
@@ -1568,6 +1461,11 @@ fetch)
 info)
 	setup_tmpl $2
 	info_tmpl $2
+	;;
+install-chroot)
+	setup_tmpl $2
+	run_file $XBPS_TMPLHELPDIR/install-chroot.sh
+	install_chroot_pkg $2
 	;;
 install-destdir)
 	install_destdir_target=yes
