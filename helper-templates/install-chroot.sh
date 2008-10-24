@@ -60,6 +60,9 @@ echo "XBPS_BUILDDIR=/xbps_builddir" >> $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_SRCDISTDIR=/xbps/srcdistdir" >> $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_CFLAGS=\"$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_CXXFLAGS=\"\$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/etc/xbps.conf
+if [ -n "$XBPS_MAKEJOBS" ]; then
+	echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPS_MASTERDIR/etc/xbps.conf
+fi
 
 install_chroot_pkg()
 {
