@@ -17,27 +17,32 @@ if [ "$(id -u)" -ne 0 ]; then
 	exit 1
 fi
 
-echo "==> Preparing chroot on $XBPS_MASTERDIR... "
-
 if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
+	echo "==> Preparing chroot on $XBPS_MASTERDIR... "
 	chown -R root:root $XBPS_MASTERDIR/*
 	chmod +s $XBPS_MASTERDIR/usr/libexec/pt_chown
 	cp -af /etc/passwd /etc/shadow /etc/group /etc/hosts $XBPS_MASTERDIR/etc
 	touch $XBPS_MASTERDIR/.xbps_perms_done
+else
+	echo "==> Entering into the chroot on $XBPS_MASTERDIR..."
 fi
 
-for f in bin sbin tmp var sys proc dev xbps; do
+for f in bin sbin tmp var sys proc dev xbps xbps_builddir xbps_destdir; do
 	[ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
 done
+unset f
 
-for f in sys proc dev xbps; do
+for f in sys proc dev xbps xbps_builddir xbps_destdir; do
 	if [ ! -f $XBPS_MASTERDIR/.${f}_mount_bind_done ]; then
 		echo -n "=> Mounting $f in chroot... "
-		if [ "$f" = "xbps" ]; then
-			mount -o bind $XBPS_DISTRIBUTIONDIR $XBPS_MASTERDIR/$f
-		else
-			mount -o bind /$f $XBPS_MASTERDIR/$f
-		fi
+		local blah=
+		case $f in
+			xbps) blah=$XBPS_DISTRIBUTIONDIR;;
+			xbps_builddir) blah=$XBPS_BUILDDIR;;
+			xbps_destdir) blah=$XBPS_DESTDIR;;
+			*) blah=/$f;;
+		esac
+		mount --bind $blah $XBPS_MASTERDIR/$f
 		if [ $? -eq 0 ]; then
 			touch $XBPS_MASTERDIR/.${f}_mount_bind_done
 			echo "done."
@@ -46,32 +51,7 @@ for f in sys proc dev xbps; do
 		fi
 	fi
 done
-
-if [ ! -f $XBPS_MASTERDIR/.xbps_builddir_mount_bind_done ]; then
-	[ ! -d $XBPS_MASTERDIR/xbps_builddir ] && mkdir -p \
-		$XBPS_MASTERDIR/xbps_builddir
-	echo -n "=> Mounting builddir in chroot... "
-	mount -o bind $XBPS_BUILDDIR $XBPS_MASTERDIR/xbps_builddir
-	if [ $? -eq 0 ]; then
-		touch $XBPS_MASTERDIR/.xbps_builddir_mount_bind_done
-		echo "done."
-	else
-		echo "failed."
-	fi
-fi
-
-if [ ! -f $XBPS_MASTERDIR/.xbps_destdir_mount_bind_done ]; then
-	[ ! -d $XBPS_MASTERDIR/xbps_destdir ] && mkdir -p \
-		$XBPS_MASTERDIR/xbps_destdir
-	echo -n "=> Mounting destdir in chroot... "
-	mount -o bind $XBPS_DESTDIR $XBPS_MASTERDIR/xbps_destdir
-	if [ $? -eq 0 ]; then
-		touch $XPS_MASTERDIR/.xbps_destdir_mount_bind_done
-		echo "done."
-	else
-		echo "failed."
-	fi
-fi
+unset f
 
 echo "XBPS_DISTRIBUTIONDIR=/xbps" > $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_MASTERDIR=/" >> $XBPS_MASTERDIR/etc/xbps.conf
@@ -94,19 +74,23 @@ install_chroot_pkg()
 
 	chroot $XBPS_MASTERDIR /xbps/xbps.sh install $pkg
 	umount_chroot_fs
+	echo "==> Exiting from the chroot on $XBPS_MASTERDIR..."
 }
 
 umount_chroot_fs()
 {
-	for f in sys proc dev xbps xbps_builddir xbps_destdir; do
-		[ ! -f $XBPS_MASTERDIR/.${f}_mount_bind_done ] && continue
-		echo -n "=> Unmounting $f from chroot... "
-		umount -f $XBPS_MASTERDIR/$f
+	local fs=
+
+	for fs in sys proc dev xbps xbps_builddir xbps_destdir; do
+		[ ! -f $XBPS_MASTERDIR/.${fs}_mount_bind_done ] && continue
+		echo -n "=> Unmounting $fs from chroot... "
+		umount -f $XBPS_MASTERDIR/$fs
 		if [ $? -eq 0 ]; then
-			rm -f $XBPS_MASTERDIR/.${f}_mount_bind_done
+			rm -f $XBPS_MASTERDIR/.${fs}_mount_bind_done
 			echo "done."
 		else
 			echo "failed."
 		fi
+		unset fs
 	done
 }
