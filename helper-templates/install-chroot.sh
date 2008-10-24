@@ -48,10 +48,10 @@ for f in sys proc dev xbps; do
 done
 
 if [ ! -f $XBPS_MASTERDIR/.xbps_builddir_mount_bind_done ]; then
-	[ ! -d $XBPS_MASTERDIR/xbps-builddir ] && mkdir -p \
-		$XBPS_MASTERDIR/xbps-builddir
-	echo -n "=> Mounting xbps-builddir in chroot... "
-	mount -o bind $XBPS_BUILDDIR $XBPS_MASTERDIR/xbps-builddir
+	[ ! -d $XBPS_MASTERDIR/xbps_builddir ] && mkdir -p \
+		$XBPS_MASTERDIR/xbps_builddir
+	echo -n "=> Mounting builddir in chroot... "
+	mount -o bind $XBPS_BUILDDIR $XBPS_MASTERDIR/xbps_builddir
 	if [ $? -eq 0 ]; then
 		touch $XBPS_MASTERDIR/.xbps_builddir_mount_bind_done
 		echo "done."
@@ -60,10 +60,23 @@ if [ ! -f $XBPS_MASTERDIR/.xbps_builddir_mount_bind_done ]; then
 	fi
 fi
 
+if [ ! -f $XBPS_MASTERDIR/.xbps_destdir_mount_bind_done ]; then
+	[ ! -d $XBPS_MASTERDIR/xbps_destdir ] && mkdir -p \
+		$XBPS_MASTERDIR/xbps_destdir
+	echo -n "=> Mounting destdir in chroot... "
+	mount -o bind $XBPS_DESTDIR $XBPS_MASTERDIR/xbps_destdir
+	if [ $? -eq 0 ]; then
+		touch $XPS_MASTERDIR/.xbps_destdir_mount_bind_done
+		echo "done."
+	else
+		echo "failed."
+	fi
+fi
+
 echo "XBPS_DISTRIBUTIONDIR=/xbps" > $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_MASTERDIR=/" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_DESTDIR=/xbps/packages" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_BUILDDIR=/xbps-builddir" >> $XBPS_MASTERDIR/etc/xbps.conf
+echo "XBPS_DESTDIR=/xbps_destdir" >> $XBPS_MASTERDIR/etc/xbps.conf
+echo "XBPS_BUILDDIR=/xbps_builddir" >> $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_SRCDISTDIR=/xbps/srcdistdir" >> $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_CFLAGS=\"$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_CXXFLAGS=\"\$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/etc/xbps.conf
@@ -85,7 +98,7 @@ install_chroot_pkg()
 
 umount_chroot_fs()
 {
-	for f in sys proc dev xbps; do
+	for f in sys proc dev xbps xbps_builddir xbps_destdir; do
 		[ ! -f $XBPS_MASTERDIR/.${f}_mount_bind_done ] && continue
 		echo -n "=> Unmounting $f from chroot... "
 		umount -f $XBPS_MASTERDIR/$f
@@ -96,15 +109,4 @@ umount_chroot_fs()
 			echo "failed."
 		fi
 	done
-
-	if [ -f $XBPS_MASTERDIR/.xbps_builddir_mount_bind_done ]; then
-		echo -n "=> Unmounting xbps-builddir from chroot... "
-		umount -f $XBPS_MASTERDIR/xbps-builddir
-		if [ $? -eq 0 ]; then
-			rm -f $XBPS_MASTERDIR/.xbps_builddir_mount_bind_done
-			echo "done."
-		else
-			echo "failed."
-		fi
-	fi
 }
