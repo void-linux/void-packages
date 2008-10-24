@@ -40,6 +40,8 @@
 
 : ${progname:=$(basename $0)}
 : ${fetch_cmd:=wget}
+: ${xbps_machine:=$(uname -m)}
+: ${grep_cmd:=/bin/grep}
 
 usage()
 {
@@ -193,7 +195,7 @@ check_config_vars()
 			mkdir "$val"
 			if [ "$?" -ne 0 ]; then
 				echo -n "*** ERROR: couldn't create '$f'"
-				echo "directory, aborting ***"
+				echo " directory, aborting ***"
 				exit 1
 			fi
 		fi
@@ -281,8 +283,8 @@ prepare_tmpl()
 	XBPS_INSTALL_DONE="$wrksrc/.xbps_install_done"
 
 	export PATH="$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin"
-	export PATH="$PATH:/bin:/sbin:/usr/bin:/usr/sbin"
 	export PATH="$PATH:$XBPS_MASTERDIR/usr/bin:$XBPS_MASTERDIR/usr/sbin"
+	export PATH="$PATH:/bin:/sbin:/usr/bin:/usr/sbin"
 }
 
 #
@@ -603,13 +605,13 @@ apply_tmpl_patches()
 			cp -f $patch $wrksrc
 
 			# Try to guess if its a compressed patch.
-			if $(echo $patch|grep -q .gz); then
+			if $(echo $patch|$grep_cmd -q .gz); then
 				gunzip $wrksrc/$i
 				patch=${i%%.gz}
-			elif $(echo $patch|grep -q .bz2); then
+			elif $(echo $patch|$grep_cmd -q .bz2); then
 				bunzip2 $wrksrc/$i
 				patch=${i%%.bz2}
-			elif $(echo $patch|grep -q .diff); then
+			elif $(echo $patch|$grep_cmd -q .diff); then
 				patch=$i
 			else
 				echo "*** WARNING: unknown patch type: $i ***"
@@ -686,6 +688,8 @@ configure_src_phase()
 	if [ "$build_style" = "gnu_configure" ]; then
 		cd $wrksrc || exit 1
 		${configure_script}				\
+			--host=${xbps_machine}-linux-gnu	\
+			--build=${xbps_machine}-linux-gnu	\
 			--prefix=${_prefix} --sysconfdir=/etc	\
 			--infodir=$XBPS_DESTDIR/$pkgname-$version/usr/share/info \
 			--mandir=$XBPS_DESTDIR/$pkgname-$version/usr/share/man \
@@ -1031,7 +1035,7 @@ install_dependencies_pkg()
 
 	echo "==> Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
-		fpkg="$($XBPS_PKGDB_CMD list|grep ${i%-[0-9]*.*})"
+		fpkg="$($XBPS_PKGDB_CMD list|$grep_cmd ${i%-[0-9]*.*})"
 		echo "	$i: found $fpkg."
 	done
 
