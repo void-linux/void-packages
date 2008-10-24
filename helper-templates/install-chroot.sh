@@ -80,6 +80,7 @@ install_chroot_pkg()
 umount_chroot_fs()
 {
 	local fs=
+	local dir=
 
 	for fs in sys proc dev xbps xbps_builddir xbps_destdir; do
 		[ ! -f $XBPS_MASTERDIR/.${fs}_mount_bind_done ] && continue
@@ -92,5 +93,9 @@ umount_chroot_fs()
 			echo "failed."
 		fi
 		unset fs
+	done
+
+	for dir in xbps xbps_builddir xbps_destdir; do
+		[ -d $XBPS_MASTERDIR/$dir ] && rmdir $XBPS_MASTERDIR/$dir
 	done
 }
