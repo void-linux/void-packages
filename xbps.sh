@@ -1334,7 +1334,7 @@ stow_pkg()
 	find . > $XBPS_MASTERDIR/.xbps-filelist-$pkgname-$version
 	sed -i -e "s|^.$||g;s|^./||g" \
 		$XBPS_MASTERDIR/.xbps-filelist-$pkgname-$version
-	cp -far . $XBPS_MASTERDIR
+	cp -ar . $XBPS_MASTERDIR
 	mv -f $XBPS_MASTERDIR/.xbps-filelist-$pkgname-$version \
 		$XBPS_DESTDIR/$pkgname-$version/.xbps-filelist
 
