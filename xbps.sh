@@ -531,6 +531,9 @@ fixup_libtool_file()
 	[ "$pkgname" = "libtool" -o ! -f $wrksrc/libtool ] && return 0
 	[ -n "$no_libtool_fixup" ] && return 0
 
+	# If we are being invoked by a chroot, don't transform stuff.
+	[ "$XBPS_MASTERDIR" = "/" ] && return 0
+
 	sed -i -e \
 		's|^hardcode_libdir_flag_spec=.*|hardcode_libdir_flag_spec="-Wl,-rpath /usr/lib"|g' \
 		$wrksrc/libtool
@@ -542,6 +545,9 @@ fixup_la_files()
 
 	# Ignore libtool itself
 	[ "$pkgname" = "libtool" ] && return 0
+
+	# If we are being invoked by a chroot, don't transform stuff.
+	[ "$XBPS_MASTERDIR" = "/" ] && return 0
 
 	#
 	# Replace hardcoded or incorrect paths with correct ones.
