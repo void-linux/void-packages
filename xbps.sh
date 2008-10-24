@@ -1162,6 +1162,15 @@ install_pkg()
 		exit 1
 	fi
 
+	#
+	# If we are being invoked via install-chroot, reread config file
+	# to get correct stuff.
+	#
+	if [ "$XBPS_MASTERDIR" = "/" ]; then
+		check_config_vars
+		set_defvars
+	fi
+
 	reset_tmpl_vars
 	run_file $cur_tmpl
 	pkg="$curpkgn-$version"
