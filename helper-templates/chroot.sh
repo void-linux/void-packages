@@ -80,6 +80,13 @@ install_chroot_pkg()
 	echo "==> Exiting from the chroot on $XBPS_MASTERDIR..."
 }
 
+enter_chroot()
+{
+	chroot $XBPS_MASTERDIR /bin/bash
+	umount_chroot_fs
+	echo "==> Exiting from the chroot on $XBPS_MASTERDIR..."
+}
+
 umount_chroot_fs()
 {
 	local fs=

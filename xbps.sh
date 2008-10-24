@@ -50,6 +50,7 @@ $progname: [-C] [-c <config_file>] <target> [package_name]
 
 Targets:
 	build		Builds a package, only build phase is done.
+	chroot		Enters to the chroot in masterdir.
 	configure	Configure a package, only configure phase is done.
 	extract		Extract distribution file(s) into build directory.
 	fetch		Download distribution file(s).
@@ -66,7 +67,7 @@ Targets:
 Options:
 	-C	Do not remove build directory after successful installation.
 	-c	Path to global configuration file:
-		if not specified /usr/local/etc/xbps.conf is used.
+		if not specified /etc/xbps.conf is used.
 _EOF
 	exit 1
 }
@@ -1443,6 +1444,10 @@ build)
 	fi
 	build_src_phase $2
 	;;
+chroot)
+	run_file $XBPS_TMPLHELPDIR/chroot.sh
+	enter_chroot
+	;;
 configure)
 	setup_tmpl $2
 	fetch_distfiles $2
@@ -1466,7 +1471,7 @@ info)
 	;;
 install-chroot)
 	setup_tmpl $2
-	run_file $XBPS_TMPLHELPDIR/install-chroot.sh
+	run_file $XBPS_TMPLHELPDIR/chroot.sh
 	install_chroot_pkg $2
 	;;
 install-destdir)
