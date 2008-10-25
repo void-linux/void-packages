@@ -1044,7 +1044,7 @@ install_dependencies_pkg()
 
 	echo "==> Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
-		fpkg="$($XBPS_PKGDB_CMD list|$grep_cmd ${i%-[0-9]*.*})"
+		fpkg="$($XBPS_PKGDB_CMD list|$grep_cmd -w ${i%-[0-9]*.*})"
 		echo "	$i: found $fpkg."
 	done
 
