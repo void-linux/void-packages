@@ -569,6 +569,8 @@ fixup_la_files()
 
 set_build_vars()
 {
+	[ "$XBPS_MASTERDIR" = "/" ] && return 0
+
 	LDFLAGS="-L$XBPS_MASTERDIR/usr/lib"
 	SAVE_LDLIBPATH=$LD_LIBRARY_PATH
 	LD_LIBRARY_PATH="$XBPS_MASTERDIR/usr/lib"
@@ -587,6 +589,8 @@ set_build_vars()
 
 unset_build_vars()
 {
+	[ "$XBPS_MASTERDIR" = "/" ] && return 0
+
 	unset LDFLAGS CFLAGS CXXFLAGS CPPFLAGS PKG_CONFIG LD_LIBRARY_PATH
 	export LD_LIBRARY_PATH=$SAVE_LDLIBPATH
 }
