@@ -692,7 +692,7 @@ configure_src_phase()
 	if [ -z "$base_package" ]; then
 		_prefix=/usr
 	else
-		_prefix=/
+		_prefix=
 	fi
 
 	#
