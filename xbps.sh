@@ -550,6 +550,8 @@ fixup_la_files()
 	# If we are being invoked by a chroot, don't transform stuff.
 	[ "$XBPS_MASTERDIR" = "/" ] && return 0
 
+	[ ! -f "$wrksrc/libtool" -o ! -f "$wrksrc/ltmain.sh" ] && return 0
+
 	#
 	# Replace hardcoded or incorrect paths with correct ones.
 	#
