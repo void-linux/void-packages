@@ -834,7 +834,7 @@ build_src_phase()
 		${run_stuff_before_install_cmd}
 	unset rbif
 
-	if [ -z "$libtool_fixup_la_stage"
+	if [ -z "$libtool_fixup_la_stage" \
 		-o "$libtool_fixup_la_stage" = "postbuild" ]; then
 		libtool_fixup_la_files
 	fi
