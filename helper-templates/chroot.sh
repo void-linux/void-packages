@@ -64,17 +64,21 @@ if [ -n "$XBPS_MAKEJOBS" ]; then
 	echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPS_MASTERDIR/etc/xbps.conf
 fi
 
+rebuild_ldso_cache()
+{
+	echo -n "==> Rebuilding chroot's dynamic linker cache..."
+	chroot $XBPS_MASTERDIR /sbin/ldconfig -c /etc/ld.so.conf
+	chroot $XBPS_MASTERDIR /sbin/ldconfig -C /etc/ld.so.cache
+	echo " done."
+}
+
 install_chroot_pkg()
 {
 	local pkg="$1"
 
 	[ -z "$pkg" ] && return 1
 
-	echo -n "==> Rebuilding chroot's dynamic linker cache..."
-	chroot $XBPS_MASTERDIR /sbin/ldconfig -c /etc/ld.so.conf
-	chroot $XBPS_MASTERDIR /sbin/ldconfig -C /etc/ld.so.cache
-	echo " done."
-
+	rebuild_ldso_cache
 	chroot $XBPS_MASTERDIR /xbps/xbps.sh install $pkg
 	umount_chroot_fs
 	echo "==> Exiting from the chroot on $XBPS_MASTERDIR..."
@@ -82,6 +86,7 @@ install_chroot_pkg()
 
 enter_chroot()
 {
+	rebuild_ldso_cache
 	chroot $XBPS_MASTERDIR /bin/bash
 	umount_chroot_fs
 	echo "==> Exiting from the chroot on $XBPS_MASTERDIR..."
