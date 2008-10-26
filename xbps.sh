@@ -218,7 +218,7 @@ reset_tmpl_vars()
 			run_stuff_before_install_cmd run_stuff_after_install_cmd \
 			make_install_target postinstall_helpers version \
 			ignore_files tar_override_cmd xml_entries sgml_entries \
-			build_depends no_fixup_libtool \
+			build_depends libtool_fixup_la_stage no_fixup_libtool \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
@@ -527,7 +527,7 @@ fetch_distfiles()
 	unset cksum found
 }
 
-fixup_libtool_file()
+libtool_fixup_file()
 {
 	[ "$pkgname" = "libtool" -o ! -f $wrksrc/libtool ] && return 0
 	[ -n "$no_libtool_fixup" ] && return 0
@@ -540,9 +540,11 @@ fixup_libtool_file()
 		$wrksrc/libtool
 }
 
-fixup_la_files()
+libtool_fixup_la_files()
 {
 	local f=
+	local postinstall="$1"
+	local where=
 
 	# Ignore libtool itself
 	[ "$pkgname" = "libtool" ] && return 0
@@ -555,11 +557,17 @@ fixup_la_files()
 	#
 	# Replace hardcoded or incorrect paths with correct ones.
 	#
-	for f in $(find $wrksrc -type f -name \*.la*); do
+	if [ -z "$postinstall" ]; then
+		where="$wrksrc"
+	else
+		where="$XBPS_DESTDIR/$pkgname-$version"
+	fi
+
+	for f in $(find $where -type f -name \*.la*); do
 		if [ -f $f ]; then
-			echo "Replacing libtool archive: $f"
+			echo "=> Fixing up libtool archive: ${f##$where/}"
 			sed -i	-e "s|\/..\/lib||g;s|\/\/lib|/usr/lib|g" \
-				-e "s|$XBPS_MASTERDIR||g;"	\
+				-e "s|$XBPS_MASTERDIR||g;s|$wrksrc||g" \
 				-e "s|$XBPS_DESTDIR/$pkgname-$version||g" $f
 			awk '{ if (/^ dependency_libs/) {gsub("/usr[^]*lib","lib");}print}' \
 				$f > $f.in && mv $f.in $f
@@ -804,7 +812,7 @@ build_src_phase()
 		export "$f"
 	done
 
-	fixup_libtool_file
+	libtool_fixup_file
 	set_build_vars
 	#
 	# Build package via make.
@@ -826,7 +834,10 @@ build_src_phase()
 		${run_stuff_before_install_cmd}
 	unset rbif
 
-	fixup_la_files
+	if [ -z "$libtool_fixup_la_stage"
+		-o "$libtool_fixup_la_stage" = "postbuild" ]; then
+		libtool_fixup_la_files
+	fi
 	unset_build_vars
 
 	touch -f $XBPS_BUILD_DONE
@@ -874,6 +885,10 @@ install_src_phase()
 		echo "*** ERROR installing $pkgname-$version ***"
 		exit 1
 	fi
+
+	# Replace libtool archives if requested.
+	[ "$libtool_fixup_la_stage" = "postinstall" ] && \
+		libtool_fixup_la_files "postinstall"
 
 	# Unset make_env vars.
 	for f in ${make_env}; do
@@ -1280,7 +1295,9 @@ list_pkg_files()
 		exit 1
 	fi
 
-	for f in $(find $XBPS_DESTDIR/$pkg -type f -print | sort -u); do
+	for f in $(find $XBPS_DESTDIR/$pkg -print | sort -u); do
+		[ $f = $XBPS_DESTDIR/$pkg ] && continue
+		f=$(echo $f|sed 's/.xbps-filelist//g')
 		echo "${f##$XBPS_DESTDIR/$pkg/}"
 	done
 }
