@@ -214,9 +214,9 @@ reset_tmpl_vars()
 			short_desc maintainer long_desc checksum wrksrc	\
 			patch_files make_cmd base_package \
 			make_env make_build_target configure_script \
-			run_stuff_before_configure_cmd run_stuff_before_build_cmd \
-			run_stuff_before_install_cmd run_stuff_after_install_cmd \
-			make_install_target postinstall_helpers version \
+			pre_configure_cmd pre_build_cmd pre_install_cmd \
+			post_install_cmd postinstall_helpers \
+			make_install_target version \
 			ignore_files tar_override_cmd xml_entries sgml_entries \
 			build_depends libtool_fixup_la_stage no_fixup_libtool \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
@@ -680,11 +680,10 @@ configure_src_phase()
 
 	echo "=> Running configure phase for $pkgname-$version."
 
-	# Run stuff before configure.
-	local rbcf="$XBPS_TEMPLATESDIR/$pkgname-runstuff-before-configure.sh"
+	# Run pre_configure helpers.
+	local rbcf="$XBPS_TEMPLATESDIR/$pkgname.pre_configure"
 	[ -f "$rbcf" ] && . $rbcf
-	[ -n "$run_stuff_before_configure_cmd" ] && \
-		${run_stuff_before_configure_cmd}
+	[ -n "$pre_configure_cmd" ] && ${pre_configure_cmd}
 	unset rbcf
 
 	# Export configure_env vars.
@@ -797,11 +796,11 @@ build_src_phase()
 	fi
 
 	#
-	# Run template stuff before building.
+	# Run pre_build helpers.
 	#
-	local rbbf="$XBPS_TEMPLATESDIR/$pkgname-runstuff-before-build.sh"
+	local rbbf="$XBPS_TEMPLATESDIR/$pkgname.pre_build"
 	[ -f $rbbf ] && . $rbbf
-	[ -n "$run_stuff_before_build_cmd" ] && ${run_stuff_before_build_cmd}
+	[ -n "$pre_build_cmd" ] && ${pre_build_cmd}
 	unset rbbf
 
 	[ -z "$make_build_target" ] && make_build_target=
@@ -826,12 +825,11 @@ build_src_phase()
 	unset makejobs
 
 	#
-	# Run template stuff before installing.
+	# Run pre_install helpers.
 	#
-	local rbif="$XBPS_TEMPLATESDIR/$pkgname-runstuff-before-install.sh"
+	local rbif="$XBPS_TEMPLATESDIR/$pkgname.pre_install"
 	[ -f $rbif ] && . $rbif
-	[ -n "$run_stuff_before_install_cmd" ] && \
-		${run_stuff_before_install_cmd}
+	[ -n "$pre_install_cmd" ] && ${pre_install_cmd}
 	unset rbif
 
 	if [ -z "$libtool_fixup_la_stage" \
@@ -896,11 +894,11 @@ install_src_phase()
 	done
 
 	#
-	# Run template stuff after installing.
+	# Run post_install helpers.
 	#
-	local raif="$XBPS_TEMPLATESDIR/$pkgname-runstuff-after-install.sh"
+	local raif="$XBPS_TEMPLATESDIR/$pkgname.post_install"
 	[ -f $raif ] && . $raif
-	[ -n "$run_stuff_after_install_cmd" ] && ${run_stuff_after_install_cmd}
+	[ -n "$post_install_cmd" ] && ${post_install_cmd}
 	unset raif
 
 	# Unset build vars.
