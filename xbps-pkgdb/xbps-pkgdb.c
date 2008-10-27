@@ -53,7 +53,8 @@ main(int argc, char **argv)
 	prop_object_iterator_t dbditer;
 	prop_object_t obj, obj2;
 	prop_string_t pkg;
-	char dbfile[PATH_MAX], *dbfileenv, *tmppath;
+	char dbfile[PATH_MAX], *dbfileenv, *tmppath, *in_chroot_env;
+	bool in_chroot = false;
 
 	if (argc < 2)
 		usage();
@@ -72,6 +73,10 @@ main(int argc, char **argv)
 	}
 	/* nul terminate string */
 	dbfile[sizeof(dbfile) - 1] = '\0';
+
+	in_chroot_env = getenv("in_chroot");
+	if (in_chroot_env != NULL)
+		in_chroot = true;
 
 	if (strcmp(argv[1], "installed") == 0) {
 		/* Returns 0 if pkg is installed, 1 otherwise */
@@ -121,7 +126,9 @@ main(int argc, char **argv)
 				exit(1);
 			}
 		}
-		printf("==> %s-%s registered successfully.\n", argv[2], argv[3]);
+
+		printf("%s==> %s-%s registered successfully.\n",
+		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
 
 	} else if (strcmp(argv[1], "unregister") == 0) {
 		/* Unregisters a package from the database */
@@ -145,7 +152,8 @@ main(int argc, char **argv)
 			exit(1);
 		}
 
-		printf("==> %s-%s unregistered successfully.\n", argv[2], argv[3]);
+		printf("%s==> %s-%s unregistered successfully.\n",
+		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
 
 	} else if (strcmp(argv[1], "list") == 0) {
 		/* Lists packages currently registered in database */

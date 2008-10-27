@@ -128,8 +128,41 @@ run_func()
 
 	[ -z "$func" ] && return 1
 
-	type $func | grep -q 'shell function'
+	type -t $func | grep -q 'shell function'
 	[ $? -eq 0 ] && $func
+}
+
+msg_error()
+{
+	[ -z "$1" ] && return 1
+
+	if [ -n "$in_chroot" ]; then
+		echo "[chroot] *** ERROR: $1 ***"
+	else
+		echo "*** ERROR: $1 ***"
+	fi
+}
+
+msg_warn()
+{
+	[ -z "$1" ] && return 1
+
+	if [ -n "$in_chroot" ]; then
+		echo "[chroot] *** WARNING: $1 ***"
+	else
+		echo "*** WARNING: $1 ***"
+	fi
+}
+
+msg_normal()
+{
+	[ -z "$1" ] && return 1
+
+	if [ -n "$in_chroot" ]; then
+		echo "[chroot] ==> $1"
+	else
+		echo "==> $1"
+	fi
 }
 
 #
@@ -176,8 +209,7 @@ check_config_vars()
 				cffound=yes && break
 		done
 		if [ -z "$cffound" ]; then
-			echo -n "*** ERROR: config file not specified "
-			echo "and not in default location or current dir ***"
+			msg_error "cannot find a config file"
 			exit 1
 		fi
 	fi
@@ -186,8 +218,7 @@ check_config_vars()
 	XBPS_CONFIG_FILE=$path_fixed
 
 	if [ ! -f "$XBPS_CONFIG_FILE" ]; then
-		echo -n "*** ERROR: cannot find configuration file: "
-		echo	"'$XBPS_CONFIG_FILE' ***"
+		msg_error "cannot find configuration file: $XBPS_CONFIG_FILE"
 		exit 1
 	fi
 
@@ -197,16 +228,14 @@ check_config_vars()
 	for f in ${XBPS_VARS}; do
 		eval val="\$$f"
 		if [ -z "$val" ]; then
-			echo -n "**** ERROR: '$f' not set in configuration "
-			echo "file, aborting ***"
+			msg_error "'$f' not set in configuration file"
 			exit 1
 		fi
 
 		if [ ! -d "$val" ]; then
 			mkdir "$val"
 			if [ "$?" -ne 0 ]; then
-				echo -n "*** ERROR: couldn't create '$f'"
-				echo " directory, aborting ***"
+				msg_error "couldn't create '$f' directory"
 				exit 1
 			fi
 		fi
@@ -251,7 +280,7 @@ setup_tmpl()
 		fi
 		prepare_tmpl
 	else
-		echo "*** ERROR: cannot find $pkg template file ***"
+		msg_error "cannot find $pkg template file"
 		exit 1
 	fi
 }
@@ -274,8 +303,7 @@ prepare_tmpl()
 	for i in ${REQ_VARS}; do
 		eval val="\$$i"
 		if [ -z "$val" -o -z "$i" ]; then
-			echo -n	"*** ERROR: \"$i\" not set on $pkgname "
-			echo	"template ***"
+			msg_error "\"$i\" not set on $pkgname template"
 			exit 1
 		fi
 	done
@@ -292,8 +320,10 @@ prepare_tmpl()
 	XBPS_BUILD_DONE="$wrksrc/.xbps_build_done"
 	XBPS_INSTALL_DONE="$wrksrc/.xbps_install_done"
 
-	export PATH="$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin"
-	export PATH="$PATH:$XBPS_MASTERDIR/usr/bin:$XBPS_MASTERDIR/usr/sbin"
+	if [ -z "$in_chroot" ]; then
+		export PATH="$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin"
+		export PATH="$PATH:$XBPS_MASTERDIR/usr/bin:$XBPS_MASTERDIR/usr/sbin"
+	fi
 	export PATH="$PATH:/bin:/sbin:/usr/bin:/usr/sbin"
 }
 
@@ -327,14 +357,13 @@ extract_distfiles()
 
 	if [ $count -gt 1 ]; then
 		if [ -z "$wrksrc" ]; then
-			echo -n "*** ERROR: \$wrksrc must be defined with "
-			echo "multiple distfiles ***"
+			msg_error "\$wrksrc must be defined with multiple distfiles"
 			exit 1
 		fi
 		mkdir $wrksrc
 	fi
 
-	echo "==> Extracting '$pkgname-$version' distfiles."
+	msg_normal "Extracting '$pkgname-$version' distfile(s)."
 
 	if [ -n "$tar_override_cmd" ]; then
 		ltar_cmd="$tar_override_cmd"
@@ -357,24 +386,21 @@ extract_distfiles()
 		.tar.bz2|.tbz)
 			$ltar_cmd xfj $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
-				echo -n "*** ERROR extracting $curfile into "
-				echo	"$lwrksrc ***"
+				msg_error "extracting $curfile into $lwrksrc"
 				exit 1
 			fi
 			;;
 		.tar.gz|.tgz)
 			$ltar_cmd xfz $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
-				echo -n "*** ERROR extracting $curfile into "
-				echo    "$lwrksrc ***"
+				msg_error "extracting $curfile into $lwrksrc"
 				exit 1
 			fi
 			;;
 		.tar)
 			$ltar_cmd xf $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
-				echo -n "*** ERROR extracting $curfile into "
-				echo	"$lwrksrc ***"
+				msg_error "extracting $curfile into $lwrksrc"
 				exit 1
 			fi
 			;;
@@ -391,20 +417,18 @@ extract_distfiles()
 				lwrksrc=$tmpwrksrc
 				unset tmpf tmpsufx tmpwrksrc
 			else
-				echo "*** ERROR: cannot find unzip helper ***"
+				msg_error "cannot find unzip helper"
 				exit 1
 			fi
 
 			extract_unzip $XBPS_SRCDISTDIR/$curfile $lwrksrc
 			if [ $? -ne 0 ]; then
-				echo -n "*** ERROR extracting $curfile into "
-				echo	"$lwrksrc ***"
+				msg_error "extracting $curfile into $lwrksrc"
 				exit 1
 			fi
 			;;
 		*)
-			echo -n "*** ERROR: cannot guess $curfile extract "
-			echo	"suffix ***"
+			msg_error "cannot guess $curfile extract suffix"
 			exit 1
 			;;
 		esac
@@ -426,11 +450,11 @@ verify_sha256_cksum()
 
 	filesum=$($XBPS_DIGEST_CMD $XBPS_SRCDISTDIR/$file)
 	if [ "$origsum" != "$filesum" ]; then
-		echo "*** ERROR: SHA256 checksum doesn't match for $file ***"
+		msg_error "SHA256 checksum doesn't match for $file"
 		exit 1
 	fi
 
-	echo "=> SHA256 checksum OK for $file."
+	msg_normal "SHA256 checksum OK for $file."
 }
 
 #
@@ -468,8 +492,7 @@ fetch_distfiles()
 			done
 
 			if [ -z $found ]; then
-				echo -n "*** ERROR: cannot find checksum for "
-				echo	"$curfile ***"
+				msg_error "cannot find checksum for $curfile"
 				exit 1
 			fi
 
@@ -482,7 +505,7 @@ fetch_distfiles()
 			fi
 		fi
 
-		echo "==> Fetching distfile: \`$curfile'."
+		msg_normal "Fetching distfile: \`$curfile'."
 
 		if [ -n "$distfiles" ]; then
 			localurl="$f"
@@ -495,11 +518,9 @@ fetch_distfiles()
 		if [ $? -ne 0 ]; then
 			unset localurl
 			if [ ! -f $XBPS_SRCDISTDIR/$curfile ]; then
-				echo -n "*** ERROR: couldn't fetch '$curfile', "
-				echo	"aborting ***"
+				msg_error "couldn't fetch '$curfile'"
 			else
-				echo -n "*** ERROR: there was an error "
-				echo	"fetching '$curfile', aborting ***"
+				msg_error "there was an error fetching '$curfile'"
 			fi
 			exit 1
 		else
@@ -518,8 +539,7 @@ fetch_distfiles()
 			done
 
 			if [ -z $found ]; then
-				echo -n "*** ERROR: cannot find checksum for "
-				echo "$curfile ***"
+				msg_error "cannot find checksum for $curfile"
 				exit 1
 			fi
 
@@ -542,7 +562,7 @@ libtool_fixup_file()
 	[ -n "$no_libtool_fixup" ] && return 0
 
 	# If we are being invoked by a chroot, don't transform stuff.
-	[ "$XBPS_MASTERDIR" = "/" ] && return 0
+	[ -n "$in_chroot" ] && return 0
 
 	sed -i -e \
 		's|^hardcode_libdir_flag_spec=.*|hardcode_libdir_flag_spec="-Wl,-rpath /usr/lib"|g' \
@@ -559,7 +579,7 @@ libtool_fixup_la_files()
 	[ "$pkgname" = "libtool" ] && return 0
 
 	# If we are being invoked by a chroot, don't transform stuff.
-	[ "$XBPS_MASTERDIR" = "/" ] && return 0
+	[ -n "$in_chroot" ] && return 0
 
 	[ ! -f "$wrksrc/libtool" -o ! -f "$wrksrc/ltmain.sh" ] && return 0
 
@@ -574,7 +594,7 @@ libtool_fixup_la_files()
 
 	for f in $(find $where -type f -name \*.la*); do
 		if [ -f $f ]; then
-			echo "=> Fixing up libtool archive: ${f##$where/}"
+			msg_normal "Fixing up libtool archive: ${f##$where/}"
 			sed -i	-e "s|\/..\/lib||g;s|\/\/lib|/usr/lib|g" \
 				-e "s|$XBPS_MASTERDIR||g;s|$wrksrc||g" \
 				-e "s|$XBPS_DESTDIR/$pkgname-$version||g" $f
@@ -586,7 +606,7 @@ libtool_fixup_la_files()
 
 set_build_vars()
 {
-	[ "$XBPS_MASTERDIR" = "/" ] && return 0
+	[ -n "$in_chroot" ] && return 0
 
 	LDFLAGS="-L$XBPS_MASTERDIR/usr/lib"
 	SAVE_LDLIBPATH=$LD_LIBRARY_PATH
@@ -606,7 +626,7 @@ set_build_vars()
 
 unset_build_vars()
 {
-	[ "$XBPS_MASTERDIR" = "/" ] && return 0
+	[ -n "$in_chroot" ] && return 0
 
 	unset LDFLAGS CFLAGS CXXFLAGS CPPFLAGS PKG_CONFIG LD_LIBRARY_PATH
 	export LD_LIBRARY_PATH=$SAVE_LDLIBPATH
@@ -636,7 +656,7 @@ apply_tmpl_patches()
 		for i in ${patch_files}; do
 			patch="$XBPS_TEMPLATESDIR/$i"
 			if [ ! -f "$patch" ]; then
-				echo "*** WARNING: unexistent patch: $i ***"
+				msg_warn "unexistent patch: $i"
 				continue
 			fi
 
@@ -652,15 +672,15 @@ apply_tmpl_patches()
 			elif $(echo $patch|$grep_cmd -q .diff); then
 				patch=$i
 			else
-				echo "*** WARNING: unknown patch type: $i ***"
+				msg_warn "unknown patch type: $i"
 				continue
 			fi
 
 			cd $wrksrc && patch -p0 < $patch 2>/dev/null
 			if [ "$?" -eq 0 ]; then
-				echo "=> Patch applied: $i."
+				msg_normal "Patch applied: $i."
 			else
-				echo "*** ERROR: couldn't apply patch: $i."
+				msg_error "couldn't apply patch: $i."
 				exit 1
 			fi
 		done
@@ -688,7 +708,7 @@ configure_src_phase()
 	  "$build_style" = "only-install" ] && return 0
 
 	if [ ! -d $wrksrc ]; then
-		echo "*** ERROR: unexistent build directory $wrksrc ***"
+		msg_error "unexistent build directory $wrksrc"
 		exit 1
 	fi
 
@@ -703,7 +723,7 @@ configure_src_phase()
 		export "$f"
 	done
 
-	echo "=> Running configure phase for $pkgname-$version."
+	msg_normal "Running configure phase for $pkgname-$version."
 
 	set_build_vars
 
@@ -755,12 +775,12 @@ configure_src_phase()
 	# Unknown build_style type won't work :-)
 	#
 	else
-		echo "*** ERROR unknown build_style: $build_style ***"
+		msg_error "unknown build_style: $build_style"
 		exit 1
 	fi
 
 	if [ "$build_style" != "perl_module" -a "$?" -ne 0 ]; then
-		echo "*** ERROR building (configure state) $pkg ***"
+		msg_error "building (configure state) $pkg"
 		exit 1
 	fi
 
@@ -794,7 +814,7 @@ build_src_phase()
 	  "$build_style" = "only-install" ] && return 0
 
 	if [ ! -d $wrksrc ]; then
-		echo "*** ERROR: unexistent build directory:  $wrksrc ***"
+		msg_error "unexistent build directory: $wrksrc"
 		exit 1
 	fi
 
@@ -823,14 +843,14 @@ build_src_phase()
 	libtool_fixup_file
 	set_build_vars
 
-	echo "=> Running build phase for $pkg."
+	msg_normal "Running build phase for $pkg."
 
 	#
 	# Build package via make.
 	#
 	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
 	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR building (make stage) $pkg ***"
+		msg_error "building (make stage) $pkg"
 		exit 1
 	fi
 
@@ -875,13 +895,13 @@ install_src_phase()
 	[ "$build_style" = "meta-template" ] && return 0
 
 	if [ ! -d $wrksrc ]; then
-		echo "*** ERROR: unexistent build directory: $wrksrc ***"
+		msg_error "unexistent build directory: $wrksrc"
 		exit 1
 	fi
 
 	cd $wrksrc || exit 1
 
-	echo "=> Running install phase for: $pkgname-$version."
+	msg_normal "Running install phase for: $pkgname-$version."
 
 	set_build_vars
 	#
@@ -889,7 +909,7 @@ install_src_phase()
 	#
 	${make_cmd} ${make_install_target} ${make_install_args}
 	if [ "$?" -ne 0 ]; then
-		echo "*** ERROR installing $pkgname-$version ***"
+		msg_error "installing $pkgname-$version"
 		exit 1
 	fi
 
@@ -910,7 +930,7 @@ install_src_phase()
 	# Unset build vars.
 	unset_build_vars
 
-	echo "==> Installed $pkgname-$version into $XBPS_DESTDIR."
+	msg_normal "Installed $pkgname-$version into $XBPS_DESTDIR."
 
 	touch -f $XBPS_INSTALL_DONE
 
@@ -920,7 +940,7 @@ install_src_phase()
 	if [ -d "$wrksrc" -a -z "$dontrm_builddir" ]; then
 		rm -rf $wrksrc
 		[ "$?" -eq 0 ] && \
-			echo "=> Removed $pkgname-$version build directory."
+			msg_normal "Removed $pkgname-$version build directory."
 	fi
 
 	cd $XBPS_BUILDDIR
@@ -1183,7 +1203,7 @@ install_pkg()
 
 	local cur_tmpl="$XBPS_TEMPLATESDIR/$curpkgn.tmpl"
 	if [ -z $cur_tmpl -o ! -f $cur_tmpl ]; then
-		echo "*** ERROR: cannot find $cur_tmpl template file ***"
+		msg_error "cannot find $cur_tmpl template file"
 		exit 1
 	fi
 
@@ -1250,7 +1270,7 @@ install_pkg()
 	if [ "$build_style" = "meta-template" ]; then
 		register_pkg_handler register $pkgname $version
 		[ $? -eq 0 ] && \
-			echo "==> Installed meta-template: $pkg." && \
+			msg_normal "Installed meta-template: $pkg." && \
 			return 0
 		return 1
 	fi
@@ -1476,9 +1496,19 @@ build)
 	fi
 
 	if [ ! -f "$XBPS_CONFIGURE_DONE" ]; then
-		configure_src_phase $2
+		if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
+			run_file $XBPS_TMPLHELPDIR/chroot.sh
+			configure_chroot_pkg $2
+		else
+			configure_src_phase $2
+		fi
 	fi
-	build_src_phase $2
+	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
+		run_file $XBPS_TMPLHELPDIR/chroot.sh
+		build_chroot_pkg $2
+	else
+		build_src_phase $2
+	fi
 	;;
 chroot)
 	run_file $XBPS_TMPLHELPDIR/chroot.sh
@@ -1490,7 +1520,12 @@ configure)
 	if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
 		extract_distfiles $2
 	fi
-	configure_src_phase $2
+	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
+		run_file $XBPS_TMPLHELPDIR/chroot.sh
+		configure_chroot_pkg $2
+	else
+		configure_src_phase $2
+	fi
 	;;
 extract)
 	setup_tmpl $2
@@ -1505,17 +1540,22 @@ info)
 	setup_tmpl $2
 	info_tmpl $2
 	;;
-install-chroot)
-	setup_tmpl $2
-	run_file $XBPS_TMPLHELPDIR/chroot.sh
-	install_chroot_pkg $2
-	;;
 install-destdir)
 	install_destdir_target=yes
-	install_pkg $2
+	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
+		run_file $XBPS_TMPLHELPDIR/chroot.sh
+		install_chroot_pkg $2
+	else
+		install_pkg $2
+	fi
 	;;
 install)
-	install_pkg $2
+	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
+		run_file $XBPS_TMPLHELPDIR/chroot.sh
+		install_chroot_pkg $2
+	else
+		install_pkg $2
+	fi
 	;;
 list)
 	list_pkgs

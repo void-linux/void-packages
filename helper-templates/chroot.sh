@@ -18,13 +18,14 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
-	echo "==> Preparing chroot on $XBPS_MASTERDIR... "
+	echo -n "==> Preparing chroot on $XBPS_MASTERDIR... "
 	chown -R root:root $XBPS_MASTERDIR/*
 	chmod +s $XBPS_MASTERDIR/usr/libexec/pt_chown
 	cp -af /etc/passwd /etc/shadow /etc/group /etc/hosts $XBPS_MASTERDIR/etc
 	touch $XBPS_MASTERDIR/.xbps_perms_done
+	echo "done."
 else
-	echo "==> Entering into the chroot on $XBPS_MASTERDIR..."
+	echo "==> Entering into the chroot on $XBPS_MASTERDIR."
 fi
 
 for f in bin sbin tmp var sys proc dev xbps xbps_builddir xbps_destdir; do
@@ -72,6 +73,30 @@ rebuild_ldso_cache()
 	echo " done."
 }
 
+configure_chroot_pkg()
+{
+	local pkg="$1"
+
+	[ -z "$pkg" ] && return 1
+
+	rebuild_ldso_cache
+	env in_chroot=yes chroot $XBPS_MASTERDIR /xbps/xbps.sh configure $pkg
+	echo "==> Exiting from the chroot on $XBPS_MASTERDIR."
+	umount_chroot_fs
+}
+
+build_chroot_pkg()
+{
+	local pkg="$1"
+
+	[ -z "$pkg" ] && return 1
+
+	rebuild_ldso_cache
+	env in_chroot=yes chroot $XBPS_MASTERDIR /xbps/xbps.sh build $pkg
+	echo "==> Exiting from the chroot on $XBPS_MASTERDIR."
+	umount_chroot_fs
+}
+
 install_chroot_pkg()
 {
 	local pkg="$1"
@@ -79,17 +104,17 @@ install_chroot_pkg()
 	[ -z "$pkg" ] && return 1
 
 	rebuild_ldso_cache
-	chroot $XBPS_MASTERDIR /xbps/xbps.sh install $pkg
+	env in_chroot=yes chroot $XBPS_MASTERDIR /xbps/xbps.sh install $pkg
+	echo "==> Exiting from the chroot on $XBPS_MASTERDIR."
 	umount_chroot_fs
-	echo "==> Exiting from the chroot on $XBPS_MASTERDIR..."
 }
 
 enter_chroot()
 {
 	rebuild_ldso_cache
-	chroot $XBPS_MASTERDIR /bin/bash
+	env in_chroot=yes chroot $XBPS_MASTERDIR /bin/bash
+	echo "==> Exiting from the chroot on $XBPS_MASTERDIR."
 	umount_chroot_fs
-	echo "==> Exiting from the chroot on $XBPS_MASTERDIR..."
 }
 
 umount_chroot_fs()
