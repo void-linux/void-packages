@@ -1224,7 +1224,7 @@ install_pkg()
 	pkg="$curpkgn-$version"
 
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
-		. $XBPS_TMPLHELPDIR/chroot.sh
+		run_file $XBPS_TMPLHELPDIR/chroot.sh
 		install_chroot_pkg $curpkgn
 		return $?
 	fi
@@ -1501,24 +1501,18 @@ set_defvars
 case "$target" in
 build)
 	setup_tmpl $2
-	fetch_distfiles $2
-	if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
-		extract_distfiles $2
-	fi
-
-	if [ ! -f "$XBPS_CONFIGURE_DONE" ]; then
-		if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
-			run_file $XBPS_TMPLHELPDIR/chroot.sh
-			configure_chroot_pkg $2
-		else
-			configure_src_phase $2
-		fi
-	fi
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		run_file $XBPS_TMPLHELPDIR/chroot.sh
 		build_chroot_pkg $2
 		umount_chroot_fs
 	else
+		fetch_distfiles $2
+		if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
+			extract_distfiles $2
+		fi
+		if [ ! -f "$XBPS_CONFIGURE_DONE" ]; then
+			configure_src_phase $2
+		fi
 		build_src_phase $2
 	fi
 	;;
@@ -1528,15 +1522,15 @@ chroot)
 	;;
 configure)
 	setup_tmpl $2
-	fetch_distfiles $2
-	if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
-		extract_distfiles $2
-	fi
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		run_file $XBPS_TMPLHELPDIR/chroot.sh
 		configure_chroot_pkg $2
 		umount_chroot_fs
 	else
+		fetch_distfiles $2
+		if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
+			extract_distfiles $2
+		fi
 		configure_src_phase $2
 	fi
 	;;
