@@ -13,6 +13,10 @@ if [ $? -ne 0 ]; then
 fi
 
 if [ "$(id -u)" -ne 0 ]; then
+	if [ -z "$base_chroot" ]; then
+		echo "*** ERROR: this package must be built inside of the chroot ***"
+		exit 1
+	fi
 	echo "*** ERROR: you must be root to use this target ***"
 	exit 1
 fi
@@ -82,7 +86,6 @@ configure_chroot_pkg()
 	rebuild_ldso_cache
 	env in_chroot=yes chroot $XBPS_MASTERDIR /xbps/xbps.sh configure $pkg
 	echo "==> Exiting from the chroot on $XBPS_MASTERDIR."
-	umount_chroot_fs
 }
 
 build_chroot_pkg()
@@ -94,7 +97,6 @@ build_chroot_pkg()
 	rebuild_ldso_cache
 	env in_chroot=yes chroot $XBPS_MASTERDIR /xbps/xbps.sh build $pkg
 	echo "==> Exiting from the chroot on $XBPS_MASTERDIR."
-	umount_chroot_fs
 }
 
 install_chroot_pkg()

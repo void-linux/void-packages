@@ -55,7 +55,6 @@ Targets:
 	extract		Extract distribution file(s) into build directory.
 	fetch		Download distribution file(s).
 	info		Show information about <package_name>.
-	install-chroot	Installs a package inside a chroot.
 	install-destdir	build + configure + install into destdir.
 	install		install-destdir + stow.
 	list		Lists all currently installed packages.
@@ -128,7 +127,7 @@ run_func()
 
 	[ -z "$func" ] && return 1
 
-	type -t $func | grep -q 'shell function'
+	type -t $func | grep -q 'function'
 	[ $? -eq 0 ] && $func
 }
 
@@ -340,6 +339,8 @@ extract_distfiles()
 	local lwrksrc=
 	local ltar_cmd=
 	local f=
+
+	[ -f $XBPS_EXTRACT_DONE ] && return 0
 
 	#
 	# If we are being called via the target, just extract and return.
@@ -1506,6 +1507,7 @@ build)
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		run_file $XBPS_TMPLHELPDIR/chroot.sh
 		build_chroot_pkg $2
+		umount_chroot_fs
 	else
 		build_src_phase $2
 	fi
@@ -1523,6 +1525,7 @@ configure)
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		run_file $XBPS_TMPLHELPDIR/chroot.sh
 		configure_chroot_pkg $2
+		umount_chroot_fs
 	else
 		configure_src_phase $2
 	fi
