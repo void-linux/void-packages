@@ -1438,15 +1438,17 @@ unstow_pkg()
 	[ ! -f .xbps-filelist ] && exit 1
 
 	for f in $(cat .xbps-filelist|sort -ur); do
-		[ -f $XBPS_MASTERDIR/$f -o -h $XBPS_MASTERDIR/$f ] && \
-			rm $XBPS_MASTERDIR/$f && \
-			echo "Removing file: $f"
+		if [ -f $XBPS_MASTERDIR/$f -o -h $XBPS_MASTERDIR/$f ]; then
+			rm $XBPS_MASTERDIR/$f  >/dev/null 2>&1
+			[ $? -eq 0 ] && echo "Removing file: $f"
+		fi
 	done
 
 	for f in $(cat .xbps-filelist|sort -ur); do
-		[ -d $XBPS_MASTERDIR/$f ] && \
-			rmdir $XBPS_MASTERDIR/$f && \
-			echo "Removing directory: $f"
+		if [ -d $XBPS_MASTERDIR/$f ]; then
+			rmdir $XBPS_MASTERDIR/$f >/dev/null 2>&1
+			[ $? -eq 0 ] && echo "Removing directory: $f"
+		fi
 	done
 
 	register_pkg_handler unregister $pkgname $version
