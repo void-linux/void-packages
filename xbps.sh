@@ -122,6 +122,16 @@ run_file()
 	. $path_fixed
 }
 
+run_func()
+{
+	func="$1"
+
+	[ -z "$func" ] && return 1
+
+	type $func | grep -q 'shell function'
+	[ $? -eq 0 ] && $func
+}
+
 #
 # Shows info about a template.
 #
@@ -212,11 +222,10 @@ reset_tmpl_vars()
 	local TMPL_VARS="pkgname distfiles configure_args configure_env \
 			make_build_args make_install_args build_style	\
 			short_desc maintainer long_desc checksum wrksrc	\
-			patch_files make_cmd base_package \
+			patch_files make_cmd base_package base_chroot \
 			make_env make_build_target configure_script \
-			pre_configure_cmd pre_build_cmd pre_install_cmd \
-			post_install_cmd postinstall_helpers \
-			make_install_target version \
+			pre_configure pre_build pre_install post_install \
+			postinstall_helpers make_install_target version \
 			ignore_files tar_override_cmd xml_entries sgml_entries \
 			build_depends libtool_fixup_la_stage no_fixup_libtool \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
@@ -686,18 +695,15 @@ configure_src_phase()
 	# Apply patches if requested by template file
 	[ ! -f $XBPS_APPLYPATCHES_DONE ] && apply_tmpl_patches
 
-	echo "=> Running configure phase for $pkgname-$version."
-
 	# Run pre_configure helpers.
-	local rbcf="$XBPS_TEMPLATESDIR/$pkgname.pre_configure"
-	[ -f "$rbcf" ] && . $rbcf
-	[ -n "$pre_configure_cmd" ] && ${pre_configure_cmd}
-	unset rbcf
+	run_func pre_configure
 
 	# Export configure_env vars.
 	for f in ${configure_env}; do
 		export "$f"
 	done
+
+	echo "=> Running configure phase for $pkgname-$version."
 
 	set_build_vars
 
@@ -794,8 +800,6 @@ build_src_phase()
 
 	cd $wrksrc || exit 1
 
-	echo "=> Running build phase for $pkg."
-
 	#
 	# Assume BSD make if make_cmd not set in template.
 	#
@@ -806,10 +810,7 @@ build_src_phase()
 	#
 	# Run pre_build helpers.
 	#
-	local rbbf="$XBPS_TEMPLATESDIR/$pkgname.pre_build"
-	[ -f $rbbf ] && . $rbbf
-	[ -n "$pre_build_cmd" ] && ${pre_build_cmd}
-	unset rbbf
+	run_func pre_build
 
 	[ -z "$make_build_target" ] && make_build_target=
 	[ -n "$XBPS_MAKEJOBS" ] && makejobs="-j$XBPS_MAKEJOBS"
@@ -821,6 +822,9 @@ build_src_phase()
 
 	libtool_fixup_file
 	set_build_vars
+
+	echo "=> Running build phase for $pkg."
+
 	#
 	# Build package via make.
 	#
@@ -835,10 +839,7 @@ build_src_phase()
 	#
 	# Run pre_install helpers.
 	#
-	local rbif="$XBPS_TEMPLATESDIR/$pkgname.pre_install"
-	[ -f $rbif ] && . $rbif
-	[ -n "$pre_install_cmd" ] && ${pre_install_cmd}
-	unset rbif
+	run_func pre_install
 
 	if [ -z "$libtool_fixup_la_stage" \
 		-o "$libtool_fixup_la_stage" = "postbuild" ]; then
@@ -904,10 +905,7 @@ install_src_phase()
 	#
 	# Run post_install helpers.
 	#
-	local raif="$XBPS_TEMPLATESDIR/$pkgname.post_install"
-	[ -f $raif ] && . $raif
-	[ -n "$post_install_cmd" ] && ${post_install_cmd}
-	unset raif
+	run_func post_install
 
 	# Unset build vars.
 	unset_build_vars
