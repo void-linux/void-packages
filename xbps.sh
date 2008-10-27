@@ -1086,7 +1086,7 @@ install_dependencies_pkg()
 
 	[ -z "$deps_list" -a -z "$installed_deps_list" ] && return 0
 
-	echo "==> Required dependencies for $(basename $pkg):"
+	msg_normal "Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
 		fpkg="$($XBPS_PKGDB_CMD list|$grep_cmd -w ${i%-[0-9]*.*})"
 		echo "	$i: found $fpkg."
@@ -1101,7 +1101,7 @@ install_dependencies_pkg()
 		check_installed_pkg $i ${i##[aA-zZ]*-}
 		[ $? -eq 0 ] && continue
 		# continue installing deps
-		echo "==> Installing $pkg dependency: $i."
+		msg_normal "Installing $pkg dependency: $i."
 		install_pkg ${i%-[0-9]*.*}
 	done
 
@@ -1123,7 +1123,7 @@ install_builddeps_required_pkg()
 	for dep in ${build_depends}; do
 		check_installed_pkg $dep ${dep##[aA-zZ]*-}
 		if [ $? -ne 0 ]; then
-			echo "==> Installing $pkg dependency: $dep."
+			msg_normal "Installing $pkg dependency: $dep."
 			install_pkg ${dep%-[0-9]*.*}
 		fi
 	done
