@@ -611,6 +611,14 @@ apply_tmpl_patches()
 	local patch=
 	local i=
 
+	# Apply some build/install patches automatically.
+	if [ -f $XBPS_TEMPLATESDIR/$pkgname-fix-build.diff ]; then
+		patch_files="$pkgname-fix-build.diff $patch_files"
+	fi
+	if [ -f $XBPS_TEMPLATESDIR/$pkgname-fix-install.diff ]; then
+		patch_files="$pkgname-fix-install.diff $patch_files"
+	fi
+
 	#
 	# If package needs some patches applied before building,
 	# apply them now.
