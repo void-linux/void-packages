@@ -1212,7 +1212,7 @@ install_pkg()
 	# If we are being invoked via install-chroot, reread config file
 	# to get correct stuff.
 	#
-	if [ "$XBPS_MASTERDIR" = "/" ]; then
+	if [ -n "$in_chroot" ]; then
 		check_config_vars
 		set_defvars
 	fi
@@ -1220,6 +1220,12 @@ install_pkg()
 	reset_tmpl_vars
 	run_file $cur_tmpl
 	pkg="$curpkgn-$version"
+
+	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
+		. $XBPS_TMPLHELPDIR/chroot.sh
+		install_chroot_pkg $curpkgn
+		return $?
+	fi
 
 	#
 	# If we are the originator package save the path this template in
@@ -1547,20 +1553,10 @@ info)
 	;;
 install-destdir)
 	install_destdir_target=yes
-	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
-		run_file $XBPS_TMPLHELPDIR/chroot.sh
-		install_chroot_pkg $2
-	else
-		install_pkg $2
-	fi
+	install_pkg $2
 	;;
 install)
-	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
-		run_file $XBPS_TMPLHELPDIR/chroot.sh
-		install_chroot_pkg $2
-	else
-		install_pkg $2
-	fi
+	install_pkg $2
 	;;
 list)
 	list_pkgs

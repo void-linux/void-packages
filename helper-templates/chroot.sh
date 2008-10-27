@@ -6,6 +6,8 @@
 # Umount stuff if SIGINT or SIGQUIT was caught
 trap umount_chroot_fs INT QUIT
 
+[ -n "$base_chroot" ] && return 0
+
 check_installed_pkg xbps-base-chroot 0.1
 if [ $? -ne 0 ]; then
 	echo "*** ERROR: xbps-base-chroot pkg not installed ***"
