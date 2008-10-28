@@ -159,7 +159,7 @@ msg_normal()
 	if [ -n "$in_chroot" ]; then
 		echo "[chroot] $1"
 	else
-		echo "$1"
+		echo "=> $1"
 	fi
 }
 
