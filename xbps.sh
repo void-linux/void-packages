@@ -248,9 +248,9 @@ reset_tmpl_vars()
 			make_env make_build_target configure_script \
 			pre_configure pre_build pre_install post_install \
 			postinstall_helpers make_install_target version \
-			ignore_files tar_override_cmd xml_entries sgml_entries \
+			tar_override_cmd xml_entries sgml_entries \
 			build_depends libtool_fixup_la_stage no_fixup_libtool \
-			disable_parallel_build \
+			disable_parallel_build run_depends \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
@@ -1423,7 +1423,6 @@ stow_pkg()
 unstow_pkg()
 {
 	local pkg="$1"
-	local real_xstow_ignore="$xstow_ignore_files"
 	local f=
 
 	if [ -z "$pkg" ]; then
