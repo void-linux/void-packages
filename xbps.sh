@@ -1507,7 +1507,6 @@ build)
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		run_file $XBPS_TMPLHELPDIR/chroot.sh
 		chroot_pkg_handler build $2
-		umount_chroot_fs
 	else
 		fetch_distfiles $2
 		if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
@@ -1528,7 +1527,6 @@ configure)
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		run_file $XBPS_TMPLHELPDIR/chroot.sh
 		chroot_pkg_handler configure $2
-		umount_chroot_fs
 	else
 		fetch_distfiles $2
 		if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
