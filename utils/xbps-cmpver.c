@@ -1,12 +1,12 @@
 /* 
  * Compare package and version strings
- *
+ * @ 2008
  * Author: pancake <youterm.com>
  */
 #include <stdio.h>
 #include <string.h>
 
-static int chkchr(char *ch)
+static int chkchr(const char *ch)
 {
 	if (*ch>='0' && *ch<='9')
 		return *ch-'0';
@@ -54,26 +54,28 @@ int chkpkg(const char *a0, const char *b0)
 	char *b = strchr(b0, '-');
 
 	if (a == NULL || b== NULL) {
-		eprintf("Invalid package names\n");
+		fprintf(stderr, "Invalid package names\n");
 		return 0;
 	}
 	return chkver(a+1, b+1);
 }
 
 #if UNIT_TEST
+	printf("1.2 2.2 = %d\n", chkver("1.2", "2.2"));
+	printf("1.0 10.3 = %d\n", chkver("1.0", "10.3"));
+	printf("1.0 1.0  = %d\n", chkver("1.0", "1.0"));
+	printf("1.0 1.2  = %d\n", chkver("1.0", "1.2"));
+	printf("1.0.1 1.0.2 = %d\n", chkver("1.0.1", "1.0.2"));
+	printf("1.0beta 1.0rc1 = %d\n", chkver("1.0beta", "1.0rc1"));
+#endif
+
 int main(int argc, char **argv)
 {
-	if (argc>2) {
-		printf("%s %s = %d\n",
-			argv[1], argv[2],
-			chkver(argv[1], argv[2]));
-	} else {
-		printf("1.2 2.2 = %d\n", chkver("1.2", "2.2"));
-		printf("1.0 10.3 = %d\n", chkver("1.0", "10.3"));
-		printf("1.0 1.0  = %d\n", chkver("1.0", "1.0"));
-		printf("1.0 1.2  = %d\n", chkver("1.0", "1.2"));
-		printf("1.0.1 1.0.2 = %d\n", chkver("1.0.1", "1.0.2"));
-		printf("1.0beta 1.0rc1 = %d\n", chkver("1.0beta", "1.0rc1"));
+	if (argc<3) {
+		printf("Usage: ./xbps-cmpver [old] [new]\n");
+		printf(" ./xbpks-cmpver foo-1.2 foo-2.2   # $? = 1\n");
+		printf(" ./xbpks-cmpver foo-1.2 foo-1.2   # $? = 0\n");
+		return 1;
 	}
+	return (chkpkg(argv[1], argv[2]) > 0)?1:0;
 }
-#endif
