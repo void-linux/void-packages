@@ -28,7 +28,6 @@
 #-
 #
 # TODO
-#	- Implement support for packages that need personalized installation.
 #	- Personalized scripts per template to unpack distfiles.
 #	- Multiple URLs to download source distribution files, aliases, etc.
 #	- More robust and fast dependency checking.
