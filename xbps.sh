@@ -168,7 +168,7 @@ info_tmpl()
 	echo "pkgname:	$pkgname"
 	echo "version:	$version"
 	for i in "${distfiles}"; do
-		echo "distfile:	$i"
+		[ -n "$i" ] && echo "distfile:	$i"
 	done
 	[ -n "$checksum" ] && echo "checksum:	$checksum"
 	echo "maintainer:	$maintainer"
