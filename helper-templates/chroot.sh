@@ -27,7 +27,7 @@ if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
 	echo -n "==> Preparing chroot on $XBPS_MASTERDIR... "
 	chown -R root:root $XBPS_MASTERDIR/*
 	chmod +s $XBPS_MASTERDIR/usr/libexec/pt_chown
-	cp -af /etc/passwd /etc/shadow /etc/group /etc/hosts $XBPS_MASTERDIR/etc
+	cp -af /etc/passwd /etc/shadow /etc/group /etc/hosts /etc/resolv.conf $XBPS_MASTERDIR/etc
 	touch $XBPS_MASTERDIR/.xbps_perms_done
 	echo "done."
 else

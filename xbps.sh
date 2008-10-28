@@ -429,7 +429,7 @@ extract_distfiles()
 			fi
 			;;
 		*)
-			msg_error "cannot guess $curfile extract suffix."
+			msg_error "cannot guess $curfile extract suffix. ($cursufx)"
 			exit 1
 			;;
 		esac
