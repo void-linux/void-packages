@@ -86,7 +86,7 @@ set_defvars()
 	for i in ${DDIRS}; do
 		eval val="\$$i"
 		if [ ! -d "$val" ]; then
-			echo "**** ERROR: cannot find $i, aborting ***"
+			echo "ERROR: cannot find $i, aborting."
 			exit 1
 		fi
 	done
@@ -135,9 +135,9 @@ msg_error()
 	[ -z "$1" ] && return 1
 
 	if [ -n "$in_chroot" ]; then
-		echo "[chroot] *** ERROR: $1 ***"
+		echo "[chroot] ERROR: $1"
 	else
-		echo "*** ERROR: $1 ***"
+		echo "ERROR: $1"
 	fi
 }
 
@@ -146,9 +146,9 @@ msg_warn()
 	[ -z "$1" ] && return 1
 
 	if [ -n "$in_chroot" ]; then
-		echo "[chroot] *** WARNING: $1 ***"
+		echo "[chroot] WARNING: $1"
 	else
-		echo "*** WARNING: $1 ***"
+		echo "WARNING: $1"
 	fi
 }
 
@@ -157,9 +157,9 @@ msg_normal()
 	[ -z "$1" ] && return 1
 
 	if [ -n "$in_chroot" ]; then
-		echo "[chroot] ==> $1"
+		echo "[chroot] $1"
 	else
-		echo "==> $1"
+		echo "$1"
 	fi
 }
 
@@ -279,7 +279,7 @@ setup_tmpl()
 		fi
 		prepare_tmpl
 	else
-		msg_error "cannot find $pkg template file"
+		msg_error "cannot find '$pkg' template build file."
 		exit 1
 	fi
 }
@@ -302,7 +302,7 @@ prepare_tmpl()
 	for i in ${REQ_VARS}; do
 		eval val="\$$i"
 		if [ -z "$val" -o -z "$i" ]; then
-			msg_error "\"$i\" not set on $pkgname template"
+			msg_error "\"$i\" not set on $pkgname template."
 			exit 1
 		fi
 	done
@@ -358,13 +358,13 @@ extract_distfiles()
 
 	if [ $count -gt 1 ]; then
 		if [ -z "$wrksrc" ]; then
-			msg_error "\$wrksrc must be defined with multiple distfiles"
+			msg_error "\$wrksrc must be defined with multiple distfiles."
 			exit 1
 		fi
 		mkdir $wrksrc
 	fi
 
-	msg_normal "Extracting '$pkgname-$version' distfile(s)."
+	msg_normal "Extracting $pkgname-$version distfile(s)."
 
 	if [ -n "$tar_override_cmd" ]; then
 		ltar_cmd="$tar_override_cmd"
@@ -387,21 +387,21 @@ extract_distfiles()
 		.tar.bz2|.tbz)
 			$ltar_cmd xfj $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
-				msg_error "extracting $curfile into $lwrksrc"
+				msg_error "extracting $curfile into $lwrksrc."
 				exit 1
 			fi
 			;;
 		.tar.gz|.tgz)
 			$ltar_cmd xfz $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
-				msg_error "extracting $curfile into $lwrksrc"
+				msg_error "extracting $curfile into $lwrksrc."
 				exit 1
 			fi
 			;;
 		.tar)
 			$ltar_cmd xf $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
-				msg_error "extracting $curfile into $lwrksrc"
+				msg_error "extracting $curfile into $lwrksrc."
 				exit 1
 			fi
 			;;
@@ -418,18 +418,18 @@ extract_distfiles()
 				lwrksrc=$tmpwrksrc
 				unset tmpf tmpsufx tmpwrksrc
 			else
-				msg_error "cannot find unzip helper"
+				msg_error "cannot find unzip helper."
 				exit 1
 			fi
 
 			extract_unzip $XBPS_SRCDISTDIR/$curfile $lwrksrc
 			if [ $? -ne 0 ]; then
-				msg_error "extracting $curfile into $lwrksrc"
+				msg_error "extracting $curfile into $lwrksrc."
 				exit 1
 			fi
 			;;
 		*)
-			msg_error "cannot guess $curfile extract suffix"
+			msg_error "cannot guess $curfile extract suffix."
 			exit 1
 			;;
 		esac
@@ -451,7 +451,7 @@ verify_sha256_cksum()
 
 	filesum=$($XBPS_DIGEST_CMD $XBPS_SRCDISTDIR/$file)
 	if [ "$origsum" != "$filesum" ]; then
-		msg_error "SHA256 checksum doesn't match for $file"
+		msg_error "SHA256 checksum doesn't match for $file."
 		exit 1
 	fi
 
@@ -493,7 +493,7 @@ fetch_distfiles()
 			done
 
 			if [ -z $found ]; then
-				msg_error "cannot find checksum for $curfile"
+				msg_error "cannot find checksum for $curfile."
 				exit 1
 			fi
 
@@ -506,7 +506,7 @@ fetch_distfiles()
 			fi
 		fi
 
-		msg_normal "Fetching distfile: \`$curfile'."
+		msg_normal "Fetching distfile: $curfile."
 
 		if [ -n "$distfiles" ]; then
 			localurl="$f"
@@ -519,9 +519,9 @@ fetch_distfiles()
 		if [ $? -ne 0 ]; then
 			unset localurl
 			if [ ! -f $XBPS_SRCDISTDIR/$curfile ]; then
-				msg_error "couldn't fetch '$curfile'"
+				msg_error "couldn't fetch $curfile."
 			else
-				msg_error "there was an error fetching '$curfile'"
+				msg_error "there was an error fetching $curfile."
 			fi
 			exit 1
 		else
@@ -540,7 +540,7 @@ fetch_distfiles()
 			done
 
 			if [ -z $found ]; then
-				msg_error "cannot find checksum for $curfile"
+				msg_error "cannot find checksum for $curfile."
 				exit 1
 			fi
 
@@ -595,7 +595,7 @@ libtool_fixup_la_files()
 
 	for f in $(find $where -type f -name \*.la*); do
 		if [ -f $f ]; then
-			msg_normal "Fixing up libtool archive: ${f##$where/}"
+			msg_normal "Fixing up libtool archive: ${f##$where/}."
 			sed -i	-e "s|\/..\/lib||g;s|\/\/lib|/usr/lib|g" \
 				-e "s|$XBPS_MASTERDIR||g;s|$wrksrc||g" \
 				-e "s|$XBPS_DESTDIR/$pkgname-$version||g" $f
@@ -657,7 +657,7 @@ apply_tmpl_patches()
 		for i in ${patch_files}; do
 			patch="$XBPS_TEMPLATESDIR/$i"
 			if [ ! -f "$patch" ]; then
-				msg_warn "unexistent patch: $i"
+				msg_warn "unexistent patch: $i."
 				continue
 			fi
 
@@ -673,7 +673,7 @@ apply_tmpl_patches()
 			elif $(echo $patch|$grep_cmd -q .diff); then
 				patch=$i
 			else
-				msg_warn "unknown patch type: $i"
+				msg_warn "unknown patch type: $i."
 				continue
 			fi
 
@@ -710,7 +710,7 @@ configure_src_phase()
 	  "$build_style" = "custom-install" ] && return 0
 
 	if [ ! -d $wrksrc ]; then
-		msg_error "unexistent build directory $wrksrc"
+		msg_error "unexistent build directory [$wrksrc]."
 		exit 1
 	fi
 
@@ -775,12 +775,12 @@ configure_src_phase()
 	# Unknown build_style type won't work :-)
 	#
 	else
-		msg_error "unknown build_style: $build_style"
+		msg_error "unknown build_style [$build_style]"
 		exit 1
 	fi
 
 	if [ "$build_style" != "perl_module" -a "$?" -ne 0 ]; then
-		msg_error "building (configure state) $pkg"
+		msg_error "building $pkg (configure phase)."
 		exit 1
 	fi
 
@@ -815,7 +815,7 @@ build_src_phase()
 	  "$build_style" = "custom-install" ] && return 0
 
 	if [ ! -d $wrksrc ]; then
-		msg_error "unexistent build directory: $wrksrc"
+		msg_error "unexistent build directory [$wrksrc]"
 		exit 1
 	fi
 
@@ -852,7 +852,7 @@ build_src_phase()
 	#
 	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
 	if [ "$?" -ne 0 ]; then
-		msg_error "building (make stage) $pkg"
+		msg_error "building $pkg (build phase)."
 		exit 1
 	fi
 
@@ -889,7 +889,7 @@ install_src_phase()
 	[ "$build_style" = "meta-template" ] && return 0
 
 	if [ ! -d $wrksrc ]; then
-		msg_error "unexistent build directory: $wrksrc"
+		msg_error "unexistent build directory [$wrksrc]"
 		exit 1
 	fi
 
@@ -940,7 +940,7 @@ make_install()
 	#
 	${make_cmd} ${make_install_target} ${make_install_args}
 	if [ "$?" -ne 0 ]; then
-		msg_error "installing $pkgname-$version"
+		msg_error "installing $pkgname-$version."
 		exit 1
 	fi
 
@@ -1214,7 +1214,7 @@ install_pkg()
 
 	local cur_tmpl="$XBPS_TEMPLATESDIR/$curpkgn.tmpl"
 	if [ -z $cur_tmpl -o ! -f $cur_tmpl ]; then
-		msg_error "cannot find $cur_tmpl template file"
+		msg_error "cannot find $cur_tmpl template build file."
 		exit 1
 	fi
 
@@ -1327,12 +1327,12 @@ list_pkg_files()
 	local f="$XBPS_DESTDIR/$pkg/.xbps-filelist"
 	
 	if [ -z $pkg ]; then
-		echo "*** ERROR: unexistent package, aborting ***"
+		echo "ERROR: unexistent package, aborting."
 		exit 1
 	fi
 
 	if [ ! -d "$XBPS_DESTDIR/$pkg" ]; then
-		echo "*** ERROR: cannot find $pkg in $XBPS_DESTDIR ***"
+		echo "ERROR: cannot find $pkg in $XBPS_DESTDIR."
 		exit 1
 	fi
 
@@ -1347,12 +1347,12 @@ remove_pkg()
 	local pkg="$1"
 
 	if [ -z "$pkg" ]; then
-		echo "*** ERROR: unexistent package, aborting ***"
+		echo "ERROR: unexistent package, aborting."
 		exit 1
 	fi
 
 	if [ ! -f "$XBPS_TEMPLATESDIR/$pkg.tmpl" ]; then
-		echo "*** ERROR: cannot find template file ***"
+		echo "ERROR: cannot find template build file."
 		exit 1
 	fi
 
@@ -1369,7 +1369,7 @@ remove_pkg()
 	fi
 
 	if [ ! -d "$XBPS_DESTDIR/$pkg-$version" ]; then
-		echo "*** ERROR: cannot find package on $XBPS_DESTDIR ***"
+		echo "ERROR: cannot find package on $XBPS_DESTDIR."
 		exit 1
 	fi
 
@@ -1432,7 +1432,7 @@ unstow_pkg()
 	local f=
 
 	if [ -z "$pkg" ]; then
-		echo "*** ERROR: template wasn't specified? ***"
+		echo "ERROR: template wasn't specified?"
 		exit 1
 	fi
 
@@ -1490,7 +1490,7 @@ shift $(($OPTIND - 1))
 
 target="$1"
 if [ -z "$target" ]; then
-	echo "*** ERROR: missing target ***"
+	echo "ERROR: missing target."
 	usage
 fi
 
@@ -1574,7 +1574,7 @@ unstow)
 	unstow_pkg $2
 	;;
 *)
-	echo "*** ERROR: invalid target: $target ***"
+	echo "ERROR: invalid target: $target."
 	usage
 esac
 
