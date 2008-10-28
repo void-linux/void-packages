@@ -704,10 +704,11 @@ configure_src_phase()
 
 	#
 	# There's nothing we can do if we are a meta template or an
-	# only-install template.
+	# {custom,only}_install template.
 	#
-	[ "$build_style" = "meta-template" -o \
-	  "$build_style" = "only-install" ] && return 0
+	[ "$build_style" = "meta-template" -o	\
+	  "$build_style" = "only-install" -o	\
+	  "$build_style" = "custom-install" ] && return 0
 
 	if [ ! -d $wrksrc ]; then
 		msg_error "unexistent build directory $wrksrc"
@@ -810,10 +811,11 @@ build_src_phase()
 
         #
 	# There's nothing of interest if we are a meta template or an
-	# only-install template.
+	# {custom,only}-install template.
 	#
-	[ "$build_style" = "meta-template" -o \
-	  "$build_style" = "only-install" ] && return 0
+	[ "$build_style" = "meta-template" -o	\
+	  "$build_style" = "only-install" -o	\
+	  "$build_style" = "custom-install" ] && return 0
 
 	if [ ! -d $wrksrc ]; then
 		msg_error "unexistent build directory: $wrksrc"
@@ -884,14 +886,6 @@ install_src_phase()
 	local i=
 
 	[ -z $pkg ] && [ -z $pkgname ] && return 1
-
-	if [ -z "$make_install_target" ]; then
-		make_install_target="install prefix=$XBPS_DESTDIR/$pkgname-$version/usr"
-		make_install_target="$make_install_target sysconfdir=$XBPS_DESTDIR/$pkgname-$version/etc"
-	fi
-
-	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
-
 	#
 	# There's nothing we can do if we are a meta template.
 	#
@@ -905,6 +899,43 @@ install_src_phase()
 	cd $wrksrc || exit 1
 
 	msg_normal "Running install phase for: $pkgname-$version."
+
+	if [ "$build_style" = "custom-install" ]; then
+		run_func do_install
+	else
+		make_install
+	fi
+
+	#
+	# Run post_install helpers.
+	#
+	run_func post_install
+
+	msg_normal "Installed $pkgname-$version into $XBPS_DESTDIR."
+
+	touch -f $XBPS_INSTALL_DONE
+
+	#
+	# Remove $wrksrc if -C not specified.
+	#
+	if [ -d "$wrksrc" -a -z "$dontrm_builddir" ]; then
+		rm -rf $wrksrc
+		[ $? -eq 0 ] && \
+			msg_normal "Removed $pkgname-$version build directory."
+	fi
+}
+
+#
+# Installs a package via 'make install ...'.
+#
+make_install()
+{
+	if [ -z "$make_install_target" ]; then
+		make_install_target="install prefix=$XBPS_DESTDIR/$pkgname-$version/usr"
+		make_install_target="$make_install_target sysconfdir=$XBPS_DESTDIR/$pkgname-$version/etc"
+	fi
+
+	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
 
 	set_build_vars
 	#
@@ -925,28 +956,8 @@ install_src_phase()
 		unset eval ${f%=*}
 	done
 
-	#
-	# Run post_install helpers.
-	#
-	run_func post_install
-
 	# Unset build vars.
 	unset_build_vars
-
-	msg_normal "Installed $pkgname-$version into $XBPS_DESTDIR."
-
-	touch -f $XBPS_INSTALL_DONE
-
-	#
-	# Remove $wrksrc if -C not specified.
-	#
-	if [ -d "$wrksrc" -a -z "$dontrm_builddir" ]; then
-		rm -rf $wrksrc
-		[ "$?" -eq 0 ] && \
-			msg_normal "Removed $pkgname-$version build directory."
-	fi
-
-	cd $XBPS_BUILDDIR
 }
 
 #
