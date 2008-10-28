@@ -738,11 +738,12 @@ configure_src_phase()
 		_prefix=
 	fi
 
+	cd $wrksrc || exit 1
+
 	#
 	# Packages using GNU autoconf
 	#
 	if [ "$build_style" = "gnu_configure" ]; then
-		cd $wrksrc || exit 1
 		${configure_script}				\
 			--host=${xbps_machine}-linux-gnu	\
 			--build=${xbps_machine}-linux-gnu	\
@@ -750,12 +751,10 @@ configure_src_phase()
 			--infodir=$XBPS_DESTDIR/$pkgname-$version/usr/share/info \
 			--mandir=$XBPS_DESTDIR/$pkgname-$version/usr/share/man \
 			${configure_args}
-
 	#
 	# Packages using propietary configure scripts.
 	#
 	elif [ "$build_style" = "configure" ]; then
-		cd $wrksrc || exit 1
 		${configure_script} ${configure_args}
 	#
 	# Packages that are perl modules and use Makefile.PL files.
@@ -771,8 +770,7 @@ configure_src_phase()
 	#
 	elif [ "$build_style" = "bsd_makefile" -o \
 	       "$build_style" = "gnu_makefile" ]; then
-
-	       cd $wrksrc || exit 1
+	       :
 	#
 	# Unknown build_style type won't work :-)
 	#
@@ -1221,7 +1219,7 @@ install_pkg()
 	fi
 
 	#
-	# If we are being invoked via install-chroot, reread config file
+	# If we are being invoked through the chroot, re-read config file
 	# to get correct stuff.
 	#
 	if [ -n "$in_chroot" ]; then
@@ -1326,8 +1324,8 @@ list_pkgs()
 list_pkg_files()
 {
 	local pkg="$1"
-	local f=
-
+	local f="$XBPS_DESTDIR/$pkg/.xbps-filelist"
+	
 	if [ -z $pkg ]; then
 		echo "*** ERROR: unexistent package, aborting ***"
 		exit 1
@@ -1338,11 +1336,7 @@ list_pkg_files()
 		exit 1
 	fi
 
-	for f in $(find $XBPS_DESTDIR/$pkg -print | sort -u); do
-		[ $f = $XBPS_DESTDIR/$pkg ] && continue
-		f=$(echo $f|sed 's/.xbps-filelist//g')
-		echo "${f##$XBPS_DESTDIR/$pkg/}"
-	done
+	cat $f|sort -u
 }
 
 #
@@ -1391,6 +1385,7 @@ stow_pkg()
 {
 	local pkg="$1"
 	local i=
+	local flist="$XBPS_BUILDDIR/.xbps-filelist-$pkgname-$version"
 
 	[ -z "$pkg" ] && return 2
 
@@ -1407,12 +1402,10 @@ stow_pkg()
 	fi
 
 	cd $XBPS_DESTDIR/$pkgname-$version || exit 1
-	find . > $XBPS_MASTERDIR/.xbps-filelist-$pkgname-$version
-	sed -i -e "s|^.$||g;s|^./||g" \
-		$XBPS_MASTERDIR/.xbps-filelist-$pkgname-$version
+	find . > $flist
+	sed -i -e "s|^.$||g;s|^./||g" $flist
 	cp -ar . $XBPS_MASTERDIR
-	mv -f $XBPS_MASTERDIR/.xbps-filelist-$pkgname-$version \
-		$XBPS_DESTDIR/$pkgname-$version/.xbps-filelist
+	mv -f $flist $XBPS_DESTDIR/$pkgname-$version/.xbps-filelist
 
 	register_pkg_handler register $pkgname $version
 
