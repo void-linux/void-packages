@@ -3,7 +3,7 @@ PREFIX  ?= /usr/local
 PKGDB_CFLAGS  += -Wall -Werror -I$(PREFIX)/include
 PKGDB_LDFLAGS += -lprop
 
-all: xbps-digest xbps-pkgdb
+all: xbps-digest xbps-pkgdb clean_objs
  
 xbps-digest: xbps-digest.o
 	$(CC) $(CFLAGS) $< -o $@
@@ -11,6 +11,9 @@ xbps-digest: xbps-digest.o
 xbps-pkgdb: xbps-pkgdb.o
 	$(CC) $(PKGDB_CFLAGS) $(CFLAGS) $(PKGDB_LDFLAGS) $< -o $@
 
-clean:
-	-rm -rf *.o xbps-digest xbps-pkgdb
+clean_objs:
+	-rm -f *.o
+
+clean: clean_objs
+	-rm -f xbps-digest xbps-pkgdb
 
