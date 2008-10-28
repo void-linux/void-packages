@@ -368,9 +368,23 @@ extract_distfiles()
 	fi
 
 	for f in ${distfiles}; do
+		if [[ "$f" == *.tar.bz2 ]]; then
+			cursufx=".tar.bz2"
+		elif [[ "$f" == *.tbz ]]; then
+			cursufx=".tbz"
+		elif [[ "$f" == *.tar.gz ]]; then
+			cursufx=".tar.gz"
+		elif [[ "$f" == *.tgz ]]; then
+			cursufx=".tgz"
+		elif [[ "$f" == *.tar ]]; then
+			cursufx=".tar"
+		elif [[ "$f" == *.zip ]]; then
+			cursufx=".zip"
+		else
+			msg_error "unknown distfile suffix"
+		fi
+
 		curfile=$(basename $f)
-		cursufx=${curfile##*@}
-		curfile=$(basename $curfile|sed 's|@||g')
 
 		if [ $count -gt 1 ]; then
 			lwrksrc="$wrksrc/${curfile%$cursufx}"
