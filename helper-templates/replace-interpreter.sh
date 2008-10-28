@@ -23,25 +23,22 @@ replace_interpreter()
 	case $lang in
 	bash)
 		orsb=$bash_regexp
-		trpath="$XBPS_MASTERDIR/bin/bash"
+		trpath="/bin/bash"
 		;;
 	perl)
 		orsb=$perl_regexp
-		trpath="$XBPS_MASTERDIR/bin/perl"
+		trpath="/usr/bin/perl"
 		;;
 	python)
 		orsb=$python_regexp
-		trpath="$XBPS_MASTERDIR/bin/python"
+		trpath="/usr/bin/python"
 		;;
 	*)
 		;;
 	esac
 
 	if [ -f $wrksrc/$file ]; then
-		$sed_cmd -e "1s|^#![[:space:]]*${orsb}|#!${trpath}|"	\
-			$wrksrc/$file > $wrksrc/$file.in && 		\
-			$mv_cmd $wrksrc/$file.in $wrksrc/$file &&	\
-			$chmod_cmd a+x $wrksrc/$file &&			\
+		sed -i -e "1s|^#![[:space:]]*${orsb}|#!${trpath}|" $file && \
 			echo "=> Transformed $lang script: ${file##$wrksrc}."
 	else
 		echo "=> Ignoring unexistent $lang script: ${file##$wrksrc}."
