@@ -122,13 +122,13 @@ main(int argc, char **argv)
 			}
 			prop_dictionary_set_cstring_nocopy(dbdict, argv[2], argv[3]);
 			if (!prop_dictionary_externalize_to_file(dbdict, dbfile)) {
-				perror(" ERROR: couldn't write database file");
+				perror("ERROR: couldn't write database file");
 				exit(1);
 			}
 		}
 
-		printf("%s==> %s-%s registered successfully.\n",
-		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
+		printf("%s%s-%s registered successfully.\n",
+		    in_chroot ? "[chroot] " : "==> ", argv[2], argv[3]);
 
 	} else if (strcmp(argv[1], "unregister") == 0) {
 		/* Unregisters a package from the database */
@@ -152,8 +152,8 @@ main(int argc, char **argv)
 			exit(1);
 		}
 
-		printf("%s==> %s-%s unregistered successfully.\n",
-		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
+		printf("%s%s-%s unregistered successfully.\n",
+		    in_chroot ? "[chroot] " : "==> ", argv[2], argv[3]);
 
 	} else if (strcmp(argv[1], "list") == 0) {
 		/* Lists packages currently registered in database */
