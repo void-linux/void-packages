@@ -27,11 +27,6 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 #
-# TODO
-#	- Personalized scripts per template to unpack distfiles.
-#	- Multiple URLs to download source distribution files, aliases, etc.
-#	- More robust and fast dependency checking.
-#
 # Default path to configuration file, can be overriden
 # via the environment or command line.
 #
