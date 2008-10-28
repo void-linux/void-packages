@@ -176,7 +176,7 @@ info_tmpl()
 		[ -n "$i" ] && i=$(echo $i|sed s'|@||g') && \
 			echo "distfile:	$i"
 	done
-	[ -n $checksum ] && echo "checksum:	$checksum"
+	[ -n "$checksum" ] && echo "checksum:	$checksum"
 	echo "maintainer:	$maintainer"
 	echo "build_style:	$build_style"
 	echo "short_desc:	$short_desc"
