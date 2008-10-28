@@ -1233,7 +1233,7 @@ install_pkg()
 
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		run_file $XBPS_TMPLHELPDIR/chroot.sh
-		install_chroot_pkg $curpkgn
+		chroot_pkg_handler install $curpkgn
 		return $?
 	fi
 
@@ -1403,7 +1403,7 @@ stow_pkg()
 
 	cd $XBPS_DESTDIR/$pkgname-$version || exit 1
 	find . > $flist
-	sed -i -e "s|^.$||g;s|^./||g" $flist
+	sed -i -e "s|^.$||g;s|^./||g;s|.xbps-filelist||g" $flist
 	cp -ar . $XBPS_MASTERDIR
 	mv -f $flist $XBPS_DESTDIR/$pkgname-$version/.xbps-filelist
 
@@ -1506,7 +1506,7 @@ build)
 	setup_tmpl $2
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		run_file $XBPS_TMPLHELPDIR/chroot.sh
-		build_chroot_pkg $2
+		chroot_pkg_handler build $2
 		umount_chroot_fs
 	else
 		fetch_distfiles $2
@@ -1521,13 +1521,13 @@ build)
 	;;
 chroot)
 	run_file $XBPS_TMPLHELPDIR/chroot.sh
-	enter_chroot
+	chroot_pkg_handler chroot dummy
 	;;
 configure)
 	setup_tmpl $2
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		run_file $XBPS_TMPLHELPDIR/chroot.sh
-		configure_chroot_pkg $2
+		chroot_pkg_handler configure $2
 		umount_chroot_fs
 	else
 		fetch_distfiles $2
