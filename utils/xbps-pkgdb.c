@@ -110,14 +110,17 @@ main(int argc, char **argv)
 				perror("ERROR: couldn't write database file");
 				exit(1);
 			}
-			printf("==> Package database file not found, "
-			    "creating it.\n");
+			printf("%s\e[0m==> \e[37m\e[1mPackage database file "
+			    "not found, creating it.\n",
+			    in_chroot ? "[chroot] " : "");
 			prop_object_release(dbdict);
 		} else {
 			/* register pkg if it's not registered already */
 			pkg = prop_dictionary_get(dbdict, argv[2]);
 			if (pkg && prop_object_type(pkg) == PROP_TYPE_STRING) {
-				printf("==> Package `%s' already registered.\n", argv[2]);
+				printf("%s\e[0m=> \e[37m\e[1mPackage `%s' "
+				    "already registered.\n",
+				    in_chroot ? "[chroot] " : "", argv[2]);
 				exit(0);
 			}
 			prop_dictionary_set_cstring_nocopy(dbdict, argv[2], argv[3]);
@@ -127,8 +130,8 @@ main(int argc, char **argv)
 			}
 		}
 
-		printf("%s%s-%s registered successfully.\n",
-		    in_chroot ? "[chroot] " : "==> ", argv[2], argv[3]);
+		printf("%s\e[0m=> \e[37m\e[1m%s-%s registered successfully.\n",
+		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
 
 	} else if (strcmp(argv[1], "unregister") == 0) {
 		/* Unregisters a package from the database */
@@ -152,8 +155,8 @@ main(int argc, char **argv)
 			exit(1);
 		}
 
-		printf("%s%s-%s unregistered successfully.\n",
-		    in_chroot ? "[chroot] " : "==> ", argv[2], argv[3]);
+		printf("%s\e[0m==> \e[37m\e[1m%s-%s unregistered successfully.\n",
+		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
 
 	} else if (strcmp(argv[1], "list") == 0) {
 		/* Lists packages currently registered in database */

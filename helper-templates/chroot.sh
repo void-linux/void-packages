@@ -10,16 +10,16 @@ trap umount_chroot_fs INT QUIT
 
 check_installed_pkg xbps-base-chroot 0.1
 if [ $? -ne 0 ]; then
-	echo "*** ERROR: xbps-base-chroot pkg not installed ***"
+	msg_error "xbps-base-chroot pkg not installed."
 	exit 1
 fi
 
 if [ "$(id -u)" -ne 0 ]; then
 	if [ -z "$base_chroot" ]; then
-		echo "*** ERROR: this package must be built inside of the chroot ***"
+		msg_error "this package must be built inside of the chroot."
 		exit 1
 	fi
-	echo "*** ERROR: you must be root to use this target ***"
+	msg_error "you must be root to use this target."
 	exit 1
 fi
 
@@ -29,9 +29,11 @@ if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
 	chmod +s $XBPS_MASTERDIR/usr/libexec/pt_chown
 	cp -af /etc/passwd /etc/shadow /etc/group /etc/hosts /etc/resolv.conf $XBPS_MASTERDIR/etc
 	touch $XBPS_MASTERDIR/.xbps_perms_done
+	set_color bold
 	echo "done."
+	restore_color
 else
-	echo "==> Entering into the chroot on $XBPS_MASTERDIR."
+	msg_normal "Entering into the chroot on $XBPS_MASTERDIR."
 fi
 
 REQDIRS="bin sbin tmp var sys proc dev xbps xbps_builddir \
@@ -56,9 +58,14 @@ for f in ${REQFS}; do
 		mount --bind $blah $XBPS_MASTERDIR/$f
 		if [ $? -eq 0 ]; then
 			touch $XBPS_MASTERDIR/.${f}_mount_bind_done
+			set_color bold
 			echo "done."
+			restore_color
 		else
+			set_color red
+			set_color bold
 			echo "failed."
+			restore_color
 		fi
 	fi
 done
@@ -80,7 +87,9 @@ rebuild_ldso_cache()
 	echo -n "==> Rebuilding chroot's dynamic linker cache..."
 	chroot $XBPS_MASTERDIR /sbin/ldconfig -c /etc/ld.so.conf
 	chroot $XBPS_MASTERDIR /sbin/ldconfig -C /etc/ld.so.cache
+	set_color bold
 	echo " done."
+	restore_color
 }
 
 chroot_pkg_handler()
@@ -100,7 +109,7 @@ chroot_pkg_handler()
 		env in_chroot=yes chroot $XBPS_MASTERDIR /xbps/xbps.sh \
 			$action $pkg
 	fi
-	echo "==> Exiting from the chroot on $XBPS_MASTERDIR."
+	msg_normal "Exiting from the chroot on $XBPS_MASTERDIR."
 	umount_chroot_fs
 }
 
@@ -115,9 +124,14 @@ umount_chroot_fs()
 		umount -f $XBPS_MASTERDIR/$fs
 		if [ $? -eq 0 ]; then
 			rm -f $XBPS_MASTERDIR/.${fs}_mount_bind_done
+			set_color bold
 			echo "done."
+			restore_color
 		else
+			set_color red
+			set_color bold
 			echo "failed."
+			restore_color
 		fi
 		unset fs
 	done
