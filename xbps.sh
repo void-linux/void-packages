@@ -795,6 +795,7 @@ configure_src_phase()
 	fi
 
 	cd $wrksrc || bye 1
+	set_build_vars
 
 	#
 	# Packages using GNU autoconf
