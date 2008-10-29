@@ -37,7 +37,6 @@ trap "exit 1" INT QUIT
 : ${progname:=$(basename $0)}
 : ${fetch_cmd:=wget}
 : ${xbps_machine:=$(uname -m)}
-: ${grep_cmd:=/bin/grep}
 
 usage()
 {
@@ -1107,7 +1106,7 @@ install_dependencies_pkg()
 
 	msg_normal "Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
-		fpkg="$($XBPS_PKGDB_CMD list|$grep_cmd -w ${i%-[0-9]*.*})"
+		fpkg="$($XBPS_PKGDB_CMD list|grep -w ${i%-[0-9]*.*})"
 		echo "	$i: found $fpkg."
 	done
 
