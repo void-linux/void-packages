@@ -107,7 +107,7 @@ main(int argc, char **argv)
 			}
 			prop_dictionary_set_cstring_nocopy(dbdict, argv[2], argv[3]);
 			if (!prop_dictionary_externalize_to_file(dbdict, dbfile)) {
-				perror("ERROR: couldn't write database file");
+				perror("=> ERROR: couldn't write database file");
 				exit(1);
 			}
 			printf("%s==> Package database file "
@@ -125,7 +125,7 @@ main(int argc, char **argv)
 			}
 			prop_dictionary_set_cstring_nocopy(dbdict, argv[2], argv[3]);
 			if (!prop_dictionary_externalize_to_file(dbdict, dbfile)) {
-				perror("ERROR: couldn't write database file");
+				perror("=> ERROR: couldn't write database file");
 				exit(1);
 			}
 		}
@@ -140,18 +140,18 @@ main(int argc, char **argv)
 
 		dbdict = prop_dictionary_internalize_from_file(dbfile);
 		if (dbdict == NULL) {
-			perror("ERROR: couldn't read database file");
+			perror("=> ERROR: couldn't read database file");
 			exit(1);
 		}
 		obj = prop_dictionary_get(dbdict, argv[2]);
 		if (obj == NULL) {
-			printf("ERROR: package `%s' not registered in database.\n",
+			printf("=> ERROR: package `%s' not registered in database.\n",
 			    argv[2]);
 			exit(1);
 		}
 		prop_dictionary_remove(dbdict, argv[2]);
 		if (!prop_dictionary_externalize_to_file(dbdict, dbfile)) {
-			perror("ERROR: couldn't write database file");
+			perror("=> ERROR: couldn't write database file");
 			exit(1);
 		}
 
@@ -165,12 +165,12 @@ main(int argc, char **argv)
 
 		dbdict = prop_dictionary_internalize_from_file(dbfile);
 		if (dbdict == NULL) {
-			perror("ERROR: couldn't read database file");
+			perror("=> ERROR: couldn't read database file");
 			exit(1);
 		}
 		dbditer = prop_dictionary_iterator(dbdict);
 		if (dbditer == NULL) {
-			perror("ERROR");
+			perror("=> ERROR");
 			exit(1);
 		}
 		while ((obj = prop_object_iterator_next(dbditer)) != NULL) {
@@ -189,12 +189,12 @@ main(int argc, char **argv)
 
 		dbdict = prop_dictionary_internalize_from_file(dbfile);
 		if (dbdict == NULL) {
-			perror("ERROR: couldn't read database file");
+			perror("=> ERROR: couldn't read database file");
 			exit(1);
 		}
 		obj = prop_dictionary_get(dbdict, argv[2]);
 		if (obj == NULL) {
-			printf("ERROR: package `%s' not registered in database.\n",
+			printf("=> ERROR: package `%s' not registered in database.\n",
 			    argv[2]);
 			exit(1);
 		}
