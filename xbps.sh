@@ -78,6 +78,7 @@ set_defvars()
 	: ${XBPS_UTILSDIR:=$XBPS_DISTRIBUTIONDIR/utils}
 	: ${XBPS_DIGEST_CMD:=$XBPS_UTILSDIR/xbps-digest}
 	: ${XBPS_PKGDB_CMD:=$XBPS_UTILSDIR/xbps-pkgdb}
+	: ${XBPS_CMPVER_CMD:=$XBPS_UTILSDIR/xbps-cmpver}
 
 	local DDIRS="XBPS_TEMPLATESDIR XBPS_TMPLHELPDIR XBPS_UTILSDIR"
 	for i in ${DDIRS}; do
@@ -1107,7 +1108,7 @@ install_dependencies_pkg()
 	msg_normal "Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
 		fpkg="$($XBPS_PKGDB_CMD list|$grep_cmd -w ${i%-[0-9]*.*})"
-		echo "	$i: $found $fpkg"
+		echo "	$i: found $fpkg."
 	done
 
 	for i in ${deps_list}; do
@@ -1164,8 +1165,6 @@ check_installed_pkg()
 		run_file $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
 	fi
 
-	reqver="$(echo $reqver | sed 's|[[:punct:]]||g;s|[[:alpha:]]||g')"
-
 	$XBPS_PKGDB_CMD installed $pkgname
 	if [ $? -eq 0 ]; then
 		#
@@ -1173,17 +1172,8 @@ check_installed_pkg()
 		#
 		iver="$($XBPS_PKGDB_CMD version $pkgname)"
 		if [ -n "$iver" ]; then
-			#
-			# As shell only supports decimal arith expressions,
-			# we simply remove anything except the numbers.
-			# It's not optimal and may fail, but it is enough
-			# for now.
-			#
-			iver="$(echo $iver | sed 's|[[:punct:]]||g;s|[[:alpha:]]||g')"
-			if [ "$iver" -eq "$reqver" \
-			     -o "$iver" -gt "$reqver" ]; then
-			     return 0
-			fi
+			$XBPS_CMPVER_CMD $pkgname-$iver $pkgname-$reqver
+			[ $? -eq 0 ] && return 0
 		fi
 	fi
 
