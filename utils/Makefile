@@ -3,7 +3,7 @@ PREFIX  ?= /usr/local
 PKGDB_CFLAGS  += -Wall -Werror -I$(PREFIX)/include
 PKGDB_LDFLAGS += -lprop
 
-all: xbps-digest xbps-pkgdb xbps-cmpver
+all: xbps-digest xbps-pkgdb xbps-cmpver clean_objs
  
 xbps-cmpver: xbps-cmpver.o
 	$(CC) $(CFLAGS) $< -o $@
