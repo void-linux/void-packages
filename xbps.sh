@@ -537,7 +537,7 @@ fetch_distfiles()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	for f in ${dfiles}; do
+	for f in ${distfiles}; do
 		curfile=$(basename $f)
 		if [ -f "$XBPS_SRCDISTDIR/$curfile" ]; then
 			for i in ${checksum}; do
