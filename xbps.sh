@@ -115,15 +115,15 @@ set_color()
 	[ -n "$disable_colors" ] && return 0
 
 	case "$1" in
-		black) echo -n -e "\[e30m";;
-		red) echo -n -e "\e[31m";;
-		green) echo -n -e "\e[32m";;
-		brown) echo -n -e "\e[33m";;
-		blue) echo -n -e "\e[34m";;
-		magenta) echo -n -e "\e[35m";;
-		cyan) echo -n -e "\e[36m";;
-		white) echo -n -e "\e[37m";;
-		bold) echo -n -e "\e[1m";;
+		black) echo -n -e "\[e30m" 1>&2;;
+		red) echo -n -e "\e[31m" 1>&2;;
+		green) echo -n -e "\e[32m" 1>&2;;
+		brown) echo -n -e "\e[33m" 1>&2;;
+		blue) echo -n -e "\e[34m" 1>&2;;
+		magenta) echo -n -e "\e[35m" 1>&2;;
+		cyan) echo -n -e "\e[36m" 1>&2;;
+		white) echo -n -e "\e[37m" 1>&2;;
+		bold) echo -n -e "\e[1m" 1>&2;;
 		*) return 1 ;;
 	esac
 }
@@ -138,7 +138,7 @@ restore_color()
 {
 	[ -n "$disable_colors" ] && return 0
 
-	echo -n -e "\e[0m"
+	echo -n -e "\e[0m" 1>&2
 }
 
 run_file()
