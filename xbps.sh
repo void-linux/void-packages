@@ -537,8 +537,6 @@ fetch_distfiles()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	dfiles=$(echo $distfiles | sed 's|@||g')
-
 	for f in ${dfiles}; do
 		curfile=$(basename $f)
 		if [ -f "$XBPS_SRCDISTDIR/$curfile" ]; then
