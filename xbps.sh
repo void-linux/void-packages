@@ -379,9 +379,9 @@ extract_distfiles()
 			cursufx=".tar.gz"
 		elif $(echo $f|grep -q '.tgz'); then
 			cursufx=".tgz"
-		elif $(echo $f|grep -q '.tar)'); then
+		elif $(echo $f|grep -q '.tar'); then
 			cursufx=".tar"
-		elif $(echo $f|grep -q '.zip)'); then
+		elif $(echo $f|grep -q '.zip'); then
 			cursufx=".zip"
 		else
 			msg_error "unknown distfile suffix"
