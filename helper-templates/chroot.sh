@@ -9,25 +9,25 @@ trap umount_chroot_fs INT QUIT
 [ -n "$base_chroot" ] && return 0
 
 check_installed_pkg xbps-base-chroot 0.1
-if [ $? -ne 0 ]; then
-	msg_error "xbps-base-chroot pkg not installed."
-	exit 1
+[ $? -ne 0 ] && msg_error "xbps-base-chroot pkg not installed."
+if [ "$pkgname" != "$origin_tmpl" ]; then
+	setup_tmpl $origin_tmpl
 fi
 
 if [ "$(id -u)" -ne 0 ]; then
 	if [ -z "$base_chroot" ]; then
 		msg_error "this package must be built inside of the chroot."
-		exit 1
+	else
+		msg_error "you must be root to use this target."
 	fi
-	msg_error "you must be root to use this target."
-	exit 1
 fi
 
 if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
 	echo -n "==> Preparing chroot on $XBPS_MASTERDIR... "
 	chown -R root:root $XBPS_MASTERDIR/*
 	chmod +s $XBPS_MASTERDIR/usr/libexec/pt_chown
-	cp -af /etc/passwd /etc/shadow /etc/group /etc/hosts /etc/resolv.conf $XBPS_MASTERDIR/etc
+	cp -af /etc/passwd /etc/shadow /etc/group /etc/hosts \
+		/etc/resolv.conf $XBPS_MASTERDIR/etc
 	touch $XBPS_MASTERDIR/.xbps_perms_done
 	echo "done."
 else

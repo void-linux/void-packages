@@ -1,7 +1,6 @@
 #!/bin/sh
 #
 # xbps - A simple, minimal, fast and uncomplete build package system.
-#
 #-
 # Copyright (c) 2008 Juan Romero Pardines.
 # All rights reserved.
@@ -26,10 +25,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
-#
-# Default path to configuration file, can be overriden
-# via the environment or command line.
-#
 trap "exit 1" INT QUIT
 
 : ${XBPS_CONFIG_FILE:=/etc/xbps.conf}
@@ -82,10 +77,7 @@ set_defvars()
 	local DDIRS="XBPS_TEMPLATESDIR XBPS_TMPLHELPDIR XBPS_UTILSDIR"
 	for i in ${DDIRS}; do
 		eval val="\$$i"
-		if [ ! -d "$val" ]; then
-			echo "ERROR: cannot find $i, aborting."
-			exit 1
-		fi
+		[ ! -d "$val" ] &&  msg_error "cannot find $i, aborting."
 	done
 
 	XBPS_PKGDB_CMD="env XBPS_PKGDB_FPATH=$XBPS_PKGDB_FPATH $XBPS_PKGDB_CMD"
@@ -136,6 +128,8 @@ msg_error()
 	else
 		echo "=> ERROR: $1"
 	fi
+
+	exit 1
 }
 
 msg_warn()
@@ -202,10 +196,7 @@ check_config_vars()
 			[ -f $f ] && XBPS_CONFIG_FILE=$f && \
 				cffound=yes && break
 		done
-		if [ -z "$cffound" ]; then
-			msg_error "cannot find a config file"
-			exit 1
-		fi
+		[ -z "$cffound" ] && msg_error "cannot find a config file"
 	fi
 
 	run_file ${XBPS_CONFIG_FILE}
@@ -213,7 +204,6 @@ check_config_vars()
 
 	if [ ! -f "$XBPS_CONFIG_FILE" ]; then
 		msg_error "cannot find configuration file: $XBPS_CONFIG_FILE"
-		exit 1
 	fi
 
 	local XBPS_VARS="XBPS_MASTERDIR XBPS_DESTDIR XBPS_BUILDDIR \
@@ -221,17 +211,11 @@ check_config_vars()
 
 	for f in ${XBPS_VARS}; do
 		eval val="\$$f"
-		if [ -z "$val" ]; then
-			msg_error "'$f' not set in configuration file"
-			exit 1
-		fi
+		[ -z "$val" ] && msg_error "'$f' not set in configuration file"
 
 		if [ ! -d "$val" ]; then
 			mkdir "$val"
-			if [ "$?" -ne 0 ]; then
-				msg_error "couldn't create '$f' directory"
-				exit 1
-			fi
+			[ $? -ne 0 ] && msg_error "couldn't create '$f' directory"
 		fi
 	done
 }
@@ -269,7 +253,7 @@ setup_tmpl()
 {
 	local pkg="$1"
 
-	[ -z "$pkg" ] && msg_error "missing package name." && usage
+	[ -z "$pkg" ] && msg_error "missing package name after target." && usage
 
 	if [ -f "$XBPS_TEMPLATESDIR/$pkg.tmpl" ]; then
 		if [ "$pkgname" != "$pkg" ]; then
@@ -278,7 +262,6 @@ setup_tmpl()
 		prepare_tmpl
 	else
 		msg_error "cannot find '$pkg' template build file."
-		exit 1
 	fi
 }
 
@@ -301,7 +284,6 @@ prepare_tmpl()
 		eval val="\$$i"
 		if [ -z "$val" -o -z "$i" ]; then
 			msg_error "\"$i\" not set on $pkgname template."
-			exit 1
 		fi
 	done
 
@@ -384,7 +366,7 @@ extract_distfiles()
 		elif $(echo $f|grep -q '.zip'); then
 			cursufx=".zip"
 		else
-			msg_error "unknown distfile suffix"
+			msg_error "unknown distfile suffix for $f."
 		fi
 
 		curfile=$(basename $f)
@@ -400,21 +382,18 @@ extract_distfiles()
 			$ltar_cmd xfj $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $lwrksrc."
-				exit 1
 			fi
 			;;
 		.tar.gz|.tgz)
 			$ltar_cmd xfz $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $lwrksrc."
-				exit 1
 			fi
 			;;
 		.tar)
 			$ltar_cmd xf $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $lwrksrc."
-				exit 1
 			fi
 			;;
 		.zip)
@@ -431,18 +410,15 @@ extract_distfiles()
 				unset tmpf tmpsufx tmpwrksrc
 			else
 				msg_error "cannot find unzip helper."
-				exit 1
 			fi
 
 			extract_unzip $XBPS_SRCDISTDIR/$curfile $lwrksrc
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $lwrksrc."
-				exit 1
 			fi
 			;;
 		*)
 			msg_error "cannot guess $curfile extract suffix. ($cursufx)"
-			exit 1
 			;;
 		esac
 	done
@@ -464,7 +440,6 @@ verify_sha256_cksum()
 	filesum=$($XBPS_DIGEST_CMD $XBPS_SRCDISTDIR/$file)
 	if [ "$origsum" != "$filesum" ]; then
 		msg_error "SHA256 checksum doesn't match for $file."
-		exit 1
 	fi
 
 	msg_normal "SHA256 checksum OK for $file."
@@ -504,7 +479,6 @@ fetch_distfiles()
 
 			if [ -z $found ]; then
 				msg_error "cannot find checksum for $curfile."
-				exit 1
 			fi
 
 			verify_sha256_cksum $curfile $cksum
@@ -533,7 +507,6 @@ fetch_distfiles()
 			else
 				msg_error "there was an error fetching $curfile."
 			fi
-			exit 1
 		else
 			unset localurl
 			#
@@ -551,7 +524,6 @@ fetch_distfiles()
 
 			if [ -z $found ]; then
 				msg_error "cannot find checksum for $curfile."
-				exit 1
 			fi
 
 			verify_sha256_cksum $curfile $cksum
@@ -692,7 +664,6 @@ apply_tmpl_patches()
 				msg_normal "Patch applied: $i."
 			else
 				msg_error "couldn't apply patch: $i."
-				exit 1
 			fi
 		done
 	fi
@@ -719,10 +690,7 @@ configure_src_phase()
 	  "$build_style" = "only-install" -o	\
 	  "$build_style" = "custom-install" ] && return 0
 
-	if [ ! -d $wrksrc ]; then
-		msg_error "unexistent build directory [$wrksrc]."
-		exit 1
-	fi
+	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]."
 
 	# Apply patches if requested by template file
 	[ ! -f $XBPS_APPLYPATCHES_DONE ] && apply_tmpl_patches
@@ -790,7 +758,6 @@ configure_src_phase()
 
 	if [ "$build_style" != "perl_module" -a "$?" -ne 0 ]; then
 		msg_error "building $pkg (configure phase)."
-		exit 1
 	fi
 
 	# unset configure_env vars.
@@ -823,10 +790,7 @@ build_src_phase()
 	  "$build_style" = "only-install" -o	\
 	  "$build_style" = "custom-install" ] && return 0
 
-	if [ ! -d $wrksrc ]; then
-		msg_error "unexistent build directory [$wrksrc]"
-		exit 1
-	fi
+	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]"
 
 	cd $wrksrc || exit 1
 
@@ -854,10 +818,7 @@ build_src_phase()
 	# Build package via make.
 	#
 	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
-	if [ "$?" -ne 0 ]; then
-		msg_error "building $pkg (build phase)."
-		exit 1
-	fi
+	[ $? -ne 0 ] && msg_error "building $pkg (build phase)."
 
 	unset makejobs
 
@@ -891,10 +852,7 @@ install_src_phase()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	if [ ! -d $wrksrc ]; then
-		msg_error "unexistent build directory [$wrksrc]"
-		exit 1
-	fi
+	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]"
 
 	cd $wrksrc || exit 1
 
@@ -1179,7 +1137,6 @@ install_pkg()
 	local cur_tmpl="$XBPS_TEMPLATESDIR/$curpkgn.tmpl"
 	if [ -z $cur_tmpl -o ! -f $cur_tmpl ]; then
 		msg_error "cannot find $cur_tmpl template build file."
-		exit 1
 	fi
 
 	#
@@ -1195,17 +1152,17 @@ install_pkg()
 	run_file $cur_tmpl
 	pkg="$curpkgn-$version"
 
-	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
-		run_file $XBPS_TMPLHELPDIR/chroot.sh
-		chroot_pkg_handler install $curpkgn
-		return $?
-	fi
-
 	#
 	# If we are the originator package save the path this template in
 	# other var for future use.
 	#
 	[ -z "$origin_tmpl" ] && origin_tmpl=$pkgname
+
+	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
+		run_file $XBPS_TMPLHELPDIR/chroot.sh
+		chroot_pkg_handler install $curpkgn
+		return $?
+	fi
 
 	#
 	# We are going to install a new package.
@@ -1290,14 +1247,10 @@ list_pkg_files()
 	local pkg="$1"
 	local f="$XBPS_DESTDIR/$pkg/.xbps-filelist"
 	
-	if [ -z $pkg ]; then
-		msg_error "unexistent package, aborting."
-		exit 1
-	fi
+	[ -z $pkg ] && msg_error "unexistent package, aborting."
 
 	if [ ! -d "$XBPS_DESTDIR/$pkg" ]; then
 		msg_error "cannot find $pkg in $XBPS_DESTDIR."
-		exit 1
 	fi
 
 	cat $f|sort -u
@@ -1310,14 +1263,10 @@ remove_pkg()
 {
 	local pkg="$1"
 
-	if [ -z "$pkg" ]; then
-		msg_error "unexistent package, aborting."
-		exit 1
-	fi
+	[ -z $pkg ] && msg_error "unexistent package, aborting."
 
 	if [ ! -f "$XBPS_TEMPLATESDIR/$pkg.tmpl" ]; then
 		msg_error "cannot find template build file."
-		exit 1
 	fi
 
 	run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
@@ -1334,7 +1283,6 @@ remove_pkg()
 
 	if [ ! -d "$XBPS_DESTDIR/$pkg-$version" ]; then
 		msg_error "cannot find package on $XBPS_DESTDIR."
-		exit 1
 	fi
 
 	unstow_pkg $pkg
@@ -1395,10 +1343,7 @@ unstow_pkg()
 	local pkg="$1"
 	local f=
 
-	if [ -z "$pkg" ]; then
-		msg_error "template wasn't specified?"
-		exit 1
-	fi
+	[ -z $pkg ] && msg_error "template wasn't specified?"
 
 	if [ "$pkgname" != "$pkg" ]; then
 		run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
@@ -1459,7 +1404,7 @@ shift $(($OPTIND - 1))
 
 target="$1"
 if [ -z "$target" ]; then
-	msg_error "missing target."
+	echo "=> ERROR: missing target."
 	usage
 fi
 
@@ -1518,23 +1463,23 @@ info)
 	info_tmpl $2
 	;;
 install-destdir)
-	[ -z "$2" ] && msg_error "missing package name." && usage
+	[ -z "$2" ] && msg_error "missing package name after target."
 	install_destdir_target=yes
 	install_pkg $2
 	;;
 install)
-	[ -z "$2" ] && msg_error "missing package name." && usage
+	[ -z "$2" ] && msg_error "missing package name after target."
 	install_pkg $2
 	;;
 list)
 	list_pkgs
 	;;
 listfiles)
-	[ -z "$2" ] && msg_error "missing package." && usage
+	[ -z "$2" ] && msg_error "missing package after target."
 	list_pkg_files $2
 	;;
 remove)
-	[ -z "$2" ] && msg_error "missing package name." && usage
+	[ -z "$2" ] && msg_error "missing package name after target."
 	remove_pkg $2
 	;;
 stow)
@@ -1547,7 +1492,7 @@ unstow)
 	unstow_pkg $2
 	;;
 *)
-	msg_error "invalid target: $target."
+	echo "=> ERROR: invalid target: $target."
 	usage
 esac
 
