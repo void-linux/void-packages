@@ -39,6 +39,7 @@
 #include <string.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <libgen.h>
 
 typedef uint8_t  sha2_byte;    /* Exactly 1 byte */
 typedef uint32_t sha2_word32;  /* Exactly 4 bytes */
@@ -414,7 +415,7 @@ SHA256_End(SHA256_CTX *ctx, uint8_t *buffer)
 static void
 usage(void)
 {
-	fprintf(stderr, "usage: xbps-digest <file>\n");
+	fprintf(stderr, "usage: xbps-digest <file> <file1+N> ...\n");
 	exit(1);
 }
 
@@ -424,30 +425,32 @@ main(int argc, char **argv)
 	SHA256_CTX ctx;
 	uint8_t buffer[BUFSIZ * 20], *digest;
 	ssize_t bytes;
-	int fd;
-	
-	if (argc != 2)
+	int i, fd;
+
+	if (argc < 2)
 		usage();
 
-	if ((fd = open(argv[1], O_RDONLY)) == -1) {
-		printf("xbps-digest: cannot open %s (%s)\n", argv[1],
-		    strerror(errno));
-		exit(1);
-	}
+	for (i = 1; i < argc; i++) {
+		if ((fd = open(argv[i], O_RDONLY)) == -1) {
+			printf("xbps-digest: cannot open %s (%s)\n", argv[i],
+		    	    strerror(errno));
+			exit(1);
+		}
 
-	digest = malloc(SHA256_DIGEST_LENGTH * 2 + 1);
-	if (digest == NULL) {
-		printf("xbps-digest: malloc failed (%s)\n", strerror(errno));
-		exit(1);
-	}
+		digest = malloc(SHA256_DIGEST_LENGTH * 2 + 1);
+		if (digest == NULL) {
+			printf("xbps-digest: malloc failed (%s)\n", strerror(errno));
+			exit(1);
+		}
 
-	SHA256_Init(&ctx);
-	while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)
-		SHA256_Update(&ctx, buffer, (size_t)bytes);
-	
-	printf("%s\n", SHA256_End(&ctx, digest));
-	free(digest);
-	close(fd);
+		SHA256_Init(&ctx);
+		while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)
+			SHA256_Update(&ctx, buffer, (size_t)bytes);
+
+		printf("%s\n", SHA256_End(&ctx, digest));
+		free(digest);
+		close(fd);
+	}
 
 	exit(0);
 }
