@@ -166,9 +166,9 @@ msg_error()
 	set_color red
 	set_color bold
 	if [ -n "$in_chroot" ]; then
-		echo -n "[chroot] ERROR: "
+		echo -n "[chroot] => ERROR: "
 	else
-		echo -n "ERROR: "
+		echo -n "=> ERROR: "
 	fi
 	restore_color
 	set_color bold
@@ -183,9 +183,9 @@ msg_warn()
 	set_color cyan
 	set_color bold
 	if [ -n "$in_chroot" ]; then
-		echo -n "[chroot] WARNING: "
+		echo -n "[chroot] => WARNING: "
 	else
-		echo -n "WARNING: "
+		echo -n "=> WARNING: "
 	fi
 	restore_color
 	set_color bold
