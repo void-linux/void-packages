@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # xbps - A simple, minimal, fast and uncomplete build package system.
 #
@@ -30,7 +30,7 @@
 # Default path to configuration file, can be overriden
 # via the environment or command line.
 #
-trap "bye 1" INT QUIT
+trap "exit 1" INT QUIT
 
 : ${XBPS_CONFIG_FILE:=/etc/xbps.conf}
 
@@ -42,7 +42,7 @@ trap "bye 1" INT QUIT
 usage()
 {
 	cat << _EOF
-$progname: [-Ce] [-c <config_file>] <target> [package_name]
+$progname: [-C] [-c <config_file>] <target> [package_name]
 
 Targets:
 	build		Builds a package, only build phase is done.
@@ -63,7 +63,6 @@ Options:
 	-C	Do not remove build directory after successful installation.
 	-c	Path to global configuration file:
 		if not specified /etc/xbps.conf is used.
-	-e	Disable ANSI colors in messages.
 _EOF
 	exit 1
 }
@@ -110,37 +109,6 @@ check_path()
 	path_fixed="$orig"
 }
 
-set_color()
-{
-	[ -n "$disable_colors" ] && return 0
-
-	case "$1" in
-		black) echo -n -e "\[e30m" 1>&2;;
-		red) echo -n -e "\e[31m" 1>&2;;
-		green) echo -n -e "\e[32m" 1>&2;;
-		brown) echo -n -e "\e[33m" 1>&2;;
-		blue) echo -n -e "\e[34m" 1>&2;;
-		magenta) echo -n -e "\e[35m" 1>&2;;
-		cyan) echo -n -e "\e[36m" 1>&2;;
-		white) echo -n -e "\e[37m" 1>&2;;
-		bold) echo -n -e "\e[1m" 1>&2;;
-		*) return 1 ;;
-	esac
-}
-
-bye()
-{
-	restore_color
-	exit "$1"
-}
-
-restore_color()
-{
-	[ -n "$disable_colors" ] && return 0
-
-	echo -n -e "\e[0m" 1>&2
-}
-
 run_file()
 {
 	local file="$1"
@@ -163,47 +131,33 @@ msg_error()
 {
 	[ -z "$1" ] && return 1
 
-	set_color red
-	set_color bold
 	if [ -n "$in_chroot" ]; then
-		echo -n "[chroot] => ERROR: "
+		echo "[chroot] => ERROR: $1"
 	else
-		echo -n "=> ERROR: "
+		echo "=> ERROR: $1"
 	fi
-	restore_color
-	set_color bold
-	echo "$1"
-	restore_color
 }
 
 msg_warn()
 {
 	[ -z "$1" ] && return 1
 
-	set_color cyan
-	set_color bold
 	if [ -n "$in_chroot" ]; then
-		echo -n "[chroot] => WARNING: "
+		echo "[chroot] => WARNING: $1"
 	else
-		echo -n "=> WARNING: "
+		echo "=> WARNING: $1"
 	fi
-	restore_color
-	set_color bold
-	echo "$1"
-	restore_color
 }
 
 msg_normal()
 {
 	[ -z "$1" ] && return 1
 
-	set_color green
-	[ -n "$in_chroot" ] && echo -n "[chroot] "
-	restore_color
-	echo -n "=> "
-	set_color bold
-	echo "$1"
-	restore_color
+	if [ -n "$in_chroot" ]; then
+		echo "[chroot] => $1"
+	else
+		echo "=> $1"
+	fi
 }
 
 #
@@ -213,7 +167,6 @@ info_tmpl()
 {
 	local i=
 
-	set_color bold
 	echo "pkgname:	$pkgname"
 	echo "version:	$version"
 	for i in "${distfiles}"; do
@@ -232,7 +185,6 @@ info_tmpl()
 			echo " $i"
 		done
 	fi
-	restore_color
 }
 
 #
@@ -252,7 +204,7 @@ check_config_vars()
 		done
 		if [ -z "$cffound" ]; then
 			msg_error "cannot find a config file"
-			bye 1
+			exit 1
 		fi
 	fi
 
@@ -261,7 +213,7 @@ check_config_vars()
 
 	if [ ! -f "$XBPS_CONFIG_FILE" ]; then
 		msg_error "cannot find configuration file: $XBPS_CONFIG_FILE"
-		bye 1
+		exit 1
 	fi
 
 	local XBPS_VARS="XBPS_MASTERDIR XBPS_DESTDIR XBPS_BUILDDIR \
@@ -271,14 +223,14 @@ check_config_vars()
 		eval val="\$$f"
 		if [ -z "$val" ]; then
 			msg_error "'$f' not set in configuration file"
-			bye 1
+			exit 1
 		fi
 
 		if [ ! -d "$val" ]; then
 			mkdir "$val"
 			if [ "$?" -ne 0 ]; then
 				msg_error "couldn't create '$f' directory"
-				bye 1
+				exit 1
 			fi
 		fi
 	done
@@ -326,7 +278,7 @@ setup_tmpl()
 		prepare_tmpl
 	else
 		msg_error "cannot find '$pkg' template build file."
-		bye 1
+		exit 1
 	fi
 }
 
@@ -349,7 +301,7 @@ prepare_tmpl()
 		eval val="\$$i"
 		if [ -z "$val" -o -z "$i" ]; then
 			msg_error "\"$i\" not set on $pkgname template."
-			bye 1
+			exit 1
 		fi
 	done
 
@@ -405,7 +357,7 @@ extract_distfiles()
 	if [ $count -gt 1 ]; then
 		if [ -z "$wrksrc" ]; then
 			msg_error "\$wrksrc must be defined with multiple distfiles."
-			bye 1
+			exit 1
 		fi
 		mkdir $wrksrc
 	fi
@@ -419,17 +371,17 @@ extract_distfiles()
 	fi
 
 	for f in ${distfiles}; do
-		if [[ "$f" == *.tar.bz2 ]]; then
+		if $(echo $f|grep -q '.tar.bz2'); then
 			cursufx=".tar.bz2"
-		elif [[ "$f" == *.tbz ]]; then
+		elif $(echo $f|grep -q '.tbz'); then
 			cursufx=".tbz"
-		elif [[ "$f" == *.tar.gz ]]; then
+		elif $(echo $f|grep -q '.tar.gz'); then
 			cursufx=".tar.gz"
-		elif [[ "$f" == *.tgz ]]; then
+		elif $(echo $f|grep -q '.tgz'); then
 			cursufx=".tgz"
-		elif [[ "$f" == *.tar ]]; then
+		elif $(echo $f|grep -q '.tar)'); then
 			cursufx=".tar"
-		elif [[ "$f" == *.zip ]]; then
+		elif $(echo $f|grep -q '.zip)'); then
 			cursufx=".zip"
 		else
 			msg_error "unknown distfile suffix"
@@ -448,21 +400,21 @@ extract_distfiles()
 			$ltar_cmd xfj $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $lwrksrc."
-				bye 1
+				exit 1
 			fi
 			;;
 		.tar.gz|.tgz)
 			$ltar_cmd xfz $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $lwrksrc."
-				bye 1
+				exit 1
 			fi
 			;;
 		.tar)
 			$ltar_cmd xf $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $lwrksrc."
-				bye 1
+				exit 1
 			fi
 			;;
 		.zip)
@@ -479,18 +431,18 @@ extract_distfiles()
 				unset tmpf tmpsufx tmpwrksrc
 			else
 				msg_error "cannot find unzip helper."
-				bye 1
+				exit 1
 			fi
 
 			extract_unzip $XBPS_SRCDISTDIR/$curfile $lwrksrc
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $lwrksrc."
-				bye 1
+				exit 1
 			fi
 			;;
 		*)
 			msg_error "cannot guess $curfile extract suffix. ($cursufx)"
-			bye 1
+			exit 1
 			;;
 		esac
 	done
@@ -512,7 +464,7 @@ verify_sha256_cksum()
 	filesum=$($XBPS_DIGEST_CMD $XBPS_SRCDISTDIR/$file)
 	if [ "$origsum" != "$filesum" ]; then
 		msg_error "SHA256 checksum doesn't match for $file."
-		bye 1
+		exit 1
 	fi
 
 	msg_normal "SHA256 checksum OK for $file."
@@ -530,7 +482,7 @@ fetch_distfiles()
 	local ckcount=0
 	local f=
 
-	[ -z $pkgname ] && bye 1
+	[ -z $pkgname ] && exit 1
 
 	#
 	# There's nothing of interest if we are a meta template.
@@ -552,7 +504,7 @@ fetch_distfiles()
 
 			if [ -z $found ]; then
 				msg_error "cannot find checksum for $curfile."
-				bye 1
+				exit 1
 			fi
 
 			verify_sha256_cksum $curfile $cksum
@@ -581,7 +533,7 @@ fetch_distfiles()
 			else
 				msg_error "there was an error fetching $curfile."
 			fi
-			bye 1
+			exit 1
 		else
 			unset localurl
 			#
@@ -599,7 +551,7 @@ fetch_distfiles()
 
 			if [ -z $found ]; then
 				msg_error "cannot find checksum for $curfile."
-				bye 1
+				exit 1
 			fi
 
 			verify_sha256_cksum $curfile $cksum
@@ -722,13 +674,13 @@ apply_tmpl_patches()
 			cp -f $patch $wrksrc
 
 			# Try to guess if its a compressed patch.
-			if [[ "$patch" == *.diff.gz ]]; then
+			if $(echo $patch|grep -q '.diff.gz'); then
 				gunzip $wrksrc/$i
 				patch=${i%%.gz}
-			elif [[ "$patch" == *.diff.bz2 ]]; then
+			elif $(echo $patch|grep -q '.diff.bz2'); then
 				bunzip2 $wrksrc/$i
 				patch=${i%%.bz2}
-			elif [[ "$patch" == *.diff ]]; then
+			elif $(echo $patch|grep -q '.diff'); then
 				patch=$i
 			else
 				msg_warn "unknown patch type: $i."
@@ -740,7 +692,7 @@ apply_tmpl_patches()
 				msg_normal "Patch applied: $i."
 			else
 				msg_error "couldn't apply patch: $i."
-				bye 1
+				exit 1
 			fi
 		done
 	fi
@@ -769,7 +721,7 @@ configure_src_phase()
 
 	if [ ! -d $wrksrc ]; then
 		msg_error "unexistent build directory [$wrksrc]."
-		bye 1
+		exit 1
 	fi
 
 	# Apply patches if requested by template file
@@ -794,7 +746,7 @@ configure_src_phase()
 		_prefix=
 	fi
 
-	cd $wrksrc || bye 1
+	cd $wrksrc || exit 1
 	set_build_vars
 
 	#
@@ -833,12 +785,12 @@ configure_src_phase()
 	#
 	else
 		msg_error "unknown build_style [$build_style]"
-		bye 1
+		exit 1
 	fi
 
 	if [ "$build_style" != "perl_module" -a "$?" -ne 0 ]; then
 		msg_error "building $pkg (configure phase)."
-		bye 1
+		exit 1
 	fi
 
 	# unset configure_env vars.
@@ -873,10 +825,10 @@ build_src_phase()
 
 	if [ ! -d $wrksrc ]; then
 		msg_error "unexistent build directory [$wrksrc]"
-		bye 1
+		exit 1
 	fi
 
-	cd $wrksrc || bye 1
+	cd $wrksrc || exit 1
 
 	#
 	# Assume BSD make if make_cmd not set in template.
@@ -909,7 +861,7 @@ build_src_phase()
 	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
 	if [ "$?" -ne 0 ]; then
 		msg_error "building $pkg (build phase)."
-		bye 1
+		exit 1
 	fi
 
 	unset makejobs
@@ -946,10 +898,10 @@ install_src_phase()
 
 	if [ ! -d $wrksrc ]; then
 		msg_error "unexistent build directory [$wrksrc]"
-		bye 1
+		exit 1
 	fi
 
-	cd $wrksrc || bye 1
+	cd $wrksrc || exit 1
 
 	msg_normal "Running install phase for: $pkgname-$version."
 
@@ -997,7 +949,7 @@ make_install()
 	${make_cmd} ${make_install_target} ${make_install_args}
 	if [ "$?" -ne 0 ]; then
 		msg_error "installing $pkgname-$version."
-		bye 1
+		exit 1
 	fi
 
 	# Replace libtool archives if requested.
@@ -1024,15 +976,13 @@ register_pkg_handler()
 
 	[ -z "$action" -o -z "$pkg" -o -z "$version" ] && return 1
 
-	set_color green
 	if [ "$action" = "register" ]; then
 		$XBPS_PKGDB_CMD register $pkg $version
-		[ $? -ne 0 ] && bye 1
+		[ $? -ne 0 ] && exit 1
 	elif [ "$action" = "unregister" ]; then
 		$XBPS_PKGDB_CMD unregister $pkg $version
-		[ $? -ne 0 ] && bye 1
+		[ $? -ne 0 ] && exit 1
 	else
-		restore_color
 		return 1
 	fi
 }
@@ -1150,28 +1100,18 @@ install_dependencies_pkg()
 	add_dependency_tolist $pkg
 	find_dupdeps_inlist installed
 	find_dupdeps_inlist notinstalled
-	set_color bold
 	echo "done."
-	restore_color
 
 	[ -z "$deps_list" -a -z "$installed_deps_list" ] && return 0
 
 	msg_normal "Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
 		fpkg="$($XBPS_PKGDB_CMD list|$grep_cmd -w ${i%-[0-9]*.*})"
-		echo -n "	$i: "
-		set_color green
-		set_color bold
-		echo "found $fpkg."
-		restore_color
+		echo "	$i: $found $fpkg"
 	done
 
 	for i in ${deps_list}; do
-		echo -n "	$i: "
-		set_color red
-		set_color bold
-		echo "not installed."
-		restore_color
+		echo "	$i: not found."
 	done
 
 	for i in ${deps_list}; do
@@ -1283,7 +1223,7 @@ install_pkg()
 	local cur_tmpl="$XBPS_TEMPLATESDIR/$curpkgn.tmpl"
 	if [ -z $cur_tmpl -o ! -f $cur_tmpl ]; then
 		msg_error "cannot find $cur_tmpl template build file."
-		bye 1
+		exit 1
 	fi
 
 	#
@@ -1375,16 +1315,13 @@ list_pkgs()
 
 	if [ ! -r "$XBPS_PKGDB_FPATH" ]; then
 		msg_warn "No packages registered or missing register db file."
-		bye 0
+		exit 0
 	fi
 
 	for i in $($XBPS_PKGDB_CMD list); do
 		# Run file to get short_desc and print something useful
 		run_file $XBPS_TEMPLATESDIR/${i%-[0-9]*.*}.tmpl
-		set_color bold
-		echo -n "$i"
-		restore_color
-		echo "	$short_desc"
+		echo "$i	$short_desc"
 		reset_tmpl_vars
 	done
 }
@@ -1399,17 +1336,15 @@ list_pkg_files()
 	
 	if [ -z $pkg ]; then
 		msg_error "unexistent package, aborting."
-		bye 1
+		exit 1
 	fi
 
 	if [ ! -d "$XBPS_DESTDIR/$pkg" ]; then
 		msg_error "cannot find $pkg in $XBPS_DESTDIR."
-		bye 1
+		exit 1
 	fi
 
-	set_color bold
 	cat $f|sort -u
-	restore_color
 }
 
 #
@@ -1421,12 +1356,12 @@ remove_pkg()
 
 	if [ -z "$pkg" ]; then
 		msg_error "unexistent package, aborting."
-		bye 1
+		exit 1
 	fi
 
 	if [ ! -f "$XBPS_TEMPLATESDIR/$pkg.tmpl" ]; then
 		msg_error "cannot find template build file."
-		bye 1
+		exit 1
 	fi
 
 	run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
@@ -1436,15 +1371,14 @@ remove_pkg()
 	#
 	if [ "$build_style" = "meta-template" ]; then
 		register_pkg_handler unregister $pkgname $version
-		[ $? -eq 0 ] && set_color green && \
-			echo "=> Removed meta-template: $pkg." && \
-			restore_color
+		[ $? -eq 0 ] && \
+			echo "=> Removed meta-template: $pkg."
 		return $?
 	fi
 
 	if [ ! -d "$XBPS_DESTDIR/$pkg-$version" ]; then
 		msg_error "cannot find package on $XBPS_DESTDIR."
-		bye 1
+		exit 1
 	fi
 
 	unstow_pkg $pkg
@@ -1475,7 +1409,7 @@ stow_pkg()
 		[ "$build_style" = "meta-template" ] && return 0
 	fi
 
-	cd $XBPS_DESTDIR/$pkgname-$version || bye 1
+	cd $XBPS_DESTDIR/$pkgname-$version || exit 1
 	find . > $flist
 	sed -i -e "s|^.$||g;s|^./||g;s|.xbps-filelist||g;/^$/d" $flist
 	cp -ar . $XBPS_MASTERDIR
@@ -1506,7 +1440,7 @@ unstow_pkg()
 
 	if [ -z "$pkg" ]; then
 		msg_error "template wasn't specified?"
-		bye 1
+		exit 1
 	fi
 
 	if [ "$pkgname" != "$pkg" ]; then
@@ -1518,17 +1452,14 @@ unstow_pkg()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	cd $XBPS_DESTDIR/$pkgname-$version || bye 1
-	[ ! -f .xbps-filelist ] && bye 1
+	cd $XBPS_DESTDIR/$pkgname-$version || exit 1
+	[ ! -f .xbps-filelist ] && exit 1
 
 	for f in $(cat .xbps-filelist|sort -ur); do
 		if [ -f $XBPS_MASTERDIR/$f -o -h $XBPS_MASTERDIR/$f ]; then
 			rm $XBPS_MASTERDIR/$f  >/dev/null 2>&1
 			if [ $? -eq 0 ]; then
-				echo -n "Removing file: "
-				set_color bold
-				echo "$f"
-				restore_color
+				echo "Removing file: $f"
 			fi
 		fi
 	done
@@ -1537,14 +1468,10 @@ unstow_pkg()
 		if [ -d $XBPS_MASTERDIR/$f ]; then
 			rmdir $XBPS_MASTERDIR/$f >/dev/null 2>&1
 			if [ $? -eq 0 ]; then
-				echo -n "Removing directory: "
-				set_color bold
-				echo "$f"
-				restore_color
+				echo "Removing directory: $f"
 			fi
 		fi
 	done
-	restore_color
 
 	register_pkg_handler unregister $pkgname $version
 }
@@ -1552,7 +1479,7 @@ unstow_pkg()
 #
 # main()
 #
-while getopts "Cc:e" opt; do
+while getopts "Cc:" opt; do
 	case $opt in
 	C)
 		dontrm_builddir=yes
@@ -1561,9 +1488,6 @@ while getopts "Cc:e" opt; do
 		config_file_specified=yes
 		XBPS_CONFIG_FILE="$OPTARG"
 		shift
-		;;
-	e)
-		disable_colors=yes
 		;;
 	--)
 		shift
@@ -1670,4 +1594,4 @@ unstow)
 esac
 
 # Agur
-bye 0
+exit 0
