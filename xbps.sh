@@ -830,12 +830,7 @@ build_src_phase()
 
 	cd $wrksrc || exit 1
 
-	#
-	# Assume BSD make if make_cmd not set in template.
-	#
-	if [ -z "$make_cmd" ]; then
-		make_cmd="/usr/bin/make"
-	fi
+	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
 
 	#
 	# Run pre_build helpers.
@@ -963,28 +958,6 @@ make_install()
 
 	# Unset build vars.
 	unset_build_vars
-}
-
-#
-# Registers or unregisters a package from the db file.
-#
-register_pkg_handler()
-{
-	local action="$1"
-	local pkg="$2"
-	local version="$3"
-
-	[ -z "$action" -o -z "$pkg" -o -z "$version" ] && return 1
-
-	if [ "$action" = "register" ]; then
-		$XBPS_PKGDB_CMD register $pkg $version
-		[ $? -ne 0 ] && exit 1
-	elif [ "$action" = "unregister" ]; then
-		$XBPS_PKGDB_CMD unregister $pkg $version
-		[ $? -ne 0 ] && exit 1
-	else
-		return 1
-	fi
 }
 
 #
@@ -1276,7 +1249,7 @@ install_pkg()
 	# Just register meta-template and exit.
 	#
 	if [ "$build_style" = "meta-template" ]; then
-		register_pkg_handler register $pkgname $version
+		$XBPS_PKGDB_CMD register $pkgname $version
 		[ $? -eq 0 ] && \
 			msg_normal "Installed meta-template: $pkg." && \
 			return 0
@@ -1353,7 +1326,7 @@ remove_pkg()
 	# If it's a meta-template, just unregister it from the db.
 	#
 	if [ "$build_style" = "meta-template" ]; then
-		register_pkg_handler unregister $pkgname $version
+		$XBPS_PKGDB_CMD unregister $pkgname $version
 		[ $? -eq 0 ] && \
 			echo "=> Removed meta-template: $pkg."
 		return $?
@@ -1398,7 +1371,8 @@ stow_pkg()
 	cp -ar . $XBPS_MASTERDIR
 	mv -f $flist $XBPS_DESTDIR/$pkgname-$version/.xbps-filelist
 
-	register_pkg_handler register $pkgname $version
+	$XBPS_PKGDB_CMD register $pkgname $version
+	[ $? -ne 0 ] && exit 1
 
 	#
 	# Run template postinstall helpers if requested.
@@ -1456,7 +1430,8 @@ unstow_pkg()
 		fi
 	done
 
-	register_pkg_handler unregister $pkgname $version
+	$XBPS_PKGDB_CMD unregister $pkgname $version
+	return $?
 }
 
 #
