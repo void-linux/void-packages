@@ -29,9 +29,7 @@ if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
 	chmod +s $XBPS_MASTERDIR/usr/libexec/pt_chown
 	cp -af /etc/passwd /etc/shadow /etc/group /etc/hosts /etc/resolv.conf $XBPS_MASTERDIR/etc
 	touch $XBPS_MASTERDIR/.xbps_perms_done
-	set_color bold
 	echo "done."
-	restore_color
 else
 	msg_normal "Entering into the chroot on $XBPS_MASTERDIR."
 fi
@@ -58,14 +56,9 @@ for f in ${REQFS}; do
 		mount --bind $blah $XBPS_MASTERDIR/$f
 		if [ $? -eq 0 ]; then
 			touch $XBPS_MASTERDIR/.${f}_mount_bind_done
-			set_color bold
 			echo "done."
-			restore_color
 		else
-			set_color red
-			set_color bold
 			echo "failed."
-			restore_color
 		fi
 	fi
 done
@@ -87,9 +80,7 @@ rebuild_ldso_cache()
 	echo -n "==> Rebuilding chroot's dynamic linker cache..."
 	chroot $XBPS_MASTERDIR /sbin/ldconfig -c /etc/ld.so.conf
 	chroot $XBPS_MASTERDIR /sbin/ldconfig -C /etc/ld.so.cache
-	set_color bold
 	echo " done."
-	restore_color
 }
 
 chroot_pkg_handler()
@@ -124,14 +115,9 @@ umount_chroot_fs()
 		umount -f $XBPS_MASTERDIR/$fs
 		if [ $? -eq 0 ]; then
 			rm -f $XBPS_MASTERDIR/.${fs}_mount_bind_done
-			set_color bold
 			echo "done."
-			restore_color
 		else
-			set_color red
-			set_color bold
 			echo "failed."
-			restore_color
 		fi
 		unset fs
 	done
