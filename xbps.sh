@@ -30,7 +30,7 @@
 # Default path to configuration file, can be overriden
 # via the environment or command line.
 #
-trap restore_color INT QUIT
+trap "bye 1" INT QUIT
 
 : ${XBPS_CONFIG_FILE:=/etc/xbps.conf}
 
