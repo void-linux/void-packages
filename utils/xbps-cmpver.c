@@ -10,6 +10,11 @@ static int chkchr(const char *ch)
 {
 	if (*ch>='0' && *ch<='9')
 		return *ch-'0';
+	if (ch[1]=='\0') {
+		if (*ch>='a'&&*ch<='z'){
+			return *ch-'a';
+		}
+	}
 	switch(*ch) {
 	case 'a': if (ch[1]=='l')
 			return 0xa;
@@ -18,7 +23,6 @@ static int chkchr(const char *ch)
 	case 'r': return 0xc;
 	}
 	return -1;
-		
 }
 
 static int ver2int(const char *a0, int *pow, int mpow)
@@ -50,8 +54,8 @@ int chkver(const char *a0, const char *a1)
 
 int chkpkg(const char *a0, const char *b0)
 {
-	char *a = strchr(a0, '-');
-	char *b = strchr(b0, '-');
+	char *a = strrchr(a0, '-');
+	char *b = strrchr(b0, '-');
 
 	if (a == NULL || b== NULL) {
 		fprintf(stderr, "Invalid package names\n");
