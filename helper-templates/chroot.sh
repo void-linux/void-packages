@@ -10,11 +10,12 @@ trap umount_chroot_fs INT QUIT
 
 check_installed_pkg xbps-base-chroot 0.1
 [ $? -ne 0 ] && msg_error "xbps-base-chroot pkg not installed."
-if [ "$pkgname" != "$origin_tmpl" ]; then
-	setup_tmpl $origin_tmpl
-fi
 
 if [ "$(id -u)" -ne 0 ]; then
+	if [ -n "$origin_tmpl" ]; then
+		reset_tmpl_vars
+		run_file $XBPS_TEMPLATESDIR/$origin_tmpl.tmpl
+	fi
 	if [ -z "$base_chroot" ]; then
 		msg_error "this package must be built inside of the chroot."
 	else
@@ -40,29 +41,6 @@ for f in ${REQDIRS}; do
 	[ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
 done
 unset f REQDIRS
-
-REQFS="sys proc dev xbps xbps_builddir xbps_destdir xbps_srcdistdir"
-for f in ${REQFS}; do
-	if [ ! -f $XBPS_MASTERDIR/.${f}_mount_bind_done ]; then
-		echo -n "=> Mounting $f in chroot... "
-		local blah=
-		case $f in
-			xbps) blah=$XBPS_DISTRIBUTIONDIR;;
-			xbps_builddir) blah=$XBPS_BUILDDIR;;
-			xbps_destdir) blah=$XBPS_DESTDIR;;
-			xbps_srcdistdir) blah=$XBPS_SRCDISTDIR;;
-			*) blah=/$f;;
-		esac
-		mount --bind $blah $XBPS_MASTERDIR/$f
-		if [ $? -eq 0 ]; then
-			touch $XBPS_MASTERDIR/.${f}_mount_bind_done
-			echo "done."
-		else
-			echo "failed."
-		fi
-	fi
-done
-unset f
 
 echo "XBPS_DISTRIBUTIONDIR=/xbps" > $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_MASTERDIR=/" >> $XBPS_MASTERDIR/etc/xbps.conf
@@ -94,6 +72,7 @@ chroot_pkg_handler()
 	  "$action" != "install" -a "$action" != "chroot" ] && return 1
 
 	rebuild_ldso_cache
+	mount_chroot_fs
 	if [ "$action" = "chroot" ]; then
 		env in_chroot=yes chroot $XBPS_MASTERDIR /bin/bash
 	else
@@ -104,25 +83,65 @@ chroot_pkg_handler()
 	umount_chroot_fs
 }
 
+mount_chroot_fs()
+{
+	local cnt=
+
+	REQFS="sys proc dev xbps xbps_builddir xbps_destdir xbps_srcdistdir"
+	for f in ${REQFS}; do
+		if [ ! -f $XBPS_MASTERDIR/.${f}_mount_bind_done ]; then
+			echo -n "=> Mounting $f in chroot... "
+			local blah=
+			case $f in
+				xbps) blah=$XBPS_DISTRIBUTIONDIR;;
+				xbps_builddir) blah=$XBPS_BUILDDIR;;
+				xbps_destdir) blah=$XBPS_DESTDIR;;
+				xbps_srcdistdir) blah=$XBPS_SRCDISTDIR;;
+				*) blah=/$f;;
+			esac
+			mount --bind $blah $XBPS_MASTERDIR/$f
+			if [ $? -eq 0 ]; then
+				echo 1 > $XBPS_MASTERDIR/.${f}_mount_bind_done
+				echo "done."
+			else
+				echo "failed."
+			fi
+		else
+			cnt=$(cat $XBPS_MASTERDIR/.${f}_mount_bind_done)
+			cnt=$(($cnt + 1))
+			echo $cnt > $XBPS_MASTERDIR/.${f}_mount_bind_done
+		fi
+	done
+	unset f
+}
+
 umount_chroot_fs()
 {
 	local fs=
 	local dir=
+	local cnt=
 
 	for fs in ${REQFS}; do
 		[ ! -f $XBPS_MASTERDIR/.${fs}_mount_bind_done ] && continue
-		echo -n "=> Unmounting $fs from chroot... "
-		umount -f $XBPS_MASTERDIR/$fs
-		if [ $? -eq 0 ]; then
-			rm -f $XBPS_MASTERDIR/.${fs}_mount_bind_done
-			echo "done."
+		cnt=$(cat $XBPS_MASTERDIR/.${fs}_mount_bind_done)
+		if [ $cnt -gt 1 ]; then
+			cnt=$(($cnt - 1))
+			echo $cnt > $XBPS_MASTERDIR/.${fs}_mount_bind_done
 		else
-			echo "failed."
+			echo -n "=> Unmounting $fs from chroot... "
+			umount -f $XBPS_MASTERDIR/$fs
+			if [ $? -eq 0 ]; then
+				rm -f $XBPS_MASTERDIR/.${fs}_mount_bind_done
+				echo "done."
+			else
+				echo "failed."
+			fi
 		fi
 		unset fs
 	done
 
 	for dir in xbps xbps_builddir xbps_destdir xbps_srcdistdir; do
+		[ -f $XBPS_MASTERDIR/.${dir}_mount_bind_done ] && continue
 		[ -d $XBPS_MASTERDIR/$dir ] && rmdir $XBPS_MASTERDIR/$dir
 	done
 }
