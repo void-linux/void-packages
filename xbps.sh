@@ -1164,16 +1164,10 @@ check_installed_pkg()
 		run_file $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
 	fi
 
-	$XBPS_PKGDB_CMD installed $pkgname
-	if [ $? -eq 0 ]; then
-		#
-		# Package is installed, let's check the version.
-		#
-		iver="$($XBPS_PKGDB_CMD version $pkgname)"
-		if [ -n "$iver" ]; then
-			$XBPS_CMPVER_CMD $pkgname-$iver $pkgname-$reqver
-			[ $? -eq 0 ] && return 0
-		fi
+	iver="$($XBPS_PKGDB_CMD version $pkgname)"
+	if [ -n "$iver" ]; then
+		$XBPS_CMPVER_CMD $pkgname-$iver $pkgname-$reqver
+		[ $? -eq 0 ] && return 0
 	fi
 
 	return 1

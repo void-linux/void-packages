@@ -193,11 +193,8 @@ main(int argc, char **argv)
 			exit(1);
 		}
 		obj = prop_dictionary_get(dbdict, argv[2]);
-		if (obj == NULL) {
-			printf("=> ERROR: package `%s' not registered in database.\n",
-			    argv[2]);
+		if (obj == NULL)
 			exit(1);
-		}
 		printf("%s\n", prop_string_cstring_nocopy(obj));
 
 	} else {
