@@ -1255,7 +1255,7 @@ remove_pkg()
 	# If it's a meta-template, just unregister it from the db.
 	#
 	if [ "$build_style" = "meta-template" ]; then
-		$XBPS_PKGDB_CMD unregister $pkgname $version "$short_desc"
+		$XBPS_PKGDB_CMD unregister $pkgname $version
 		[ $? -eq 0 ] && \
 			echo "=> Removed meta-template: $pkg."
 		return $?
