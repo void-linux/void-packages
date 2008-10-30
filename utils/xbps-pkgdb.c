@@ -49,6 +49,7 @@ static void register_pkg(prop_dictionary_t, pkg_data_t *, const char *);
 static void unregister_pkg(prop_dictionary_t, const char *, const char *);
 static void write_plist_file(prop_dictionary_t, const char *);
 static void list_pkgs_in_dict(prop_dictionary_t);
+static prop_dictionary_t get_dict_from_dbfile(const char *);
 
 static void
 usage(void)
@@ -277,6 +278,19 @@ list_pkgs_in_dict(prop_dictionary_t dict)
 	prop_object_iterator_release(iter);
 }
 
+static prop_dictionary_t
+get_dict_from_dbfile(const char *file)
+{
+	prop_dictionary_t dict;
+
+	dict =  prop_dictionary_internalize_from_file(file);
+	if (dict == NULL) {
+		perror("=> ERROR: couldn't find database file");
+		exit(1);
+	}
+	return dict;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -364,13 +378,7 @@ main(int argc, char **argv)
 		if (argc != 4)
 			usage();
 
-		dbdict = prop_dictionary_internalize_from_file(dbfile);
-		if (dbdict == NULL) {
-			perror("=> ERROR: couldn't read database file");
-			exit(1);
-		}
-
-		unregister_pkg(dbdict, argv[2], dbfile);
+		unregister_pkg(get_dict_from_dbfile(dbfile), argv[2], dbfile);
 
 		printf("%s=> %s-%s unregistered successfully.\n",
 		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
@@ -380,25 +388,14 @@ main(int argc, char **argv)
 		if (argc != 2)
 			usage();
 
-		dbdict = prop_dictionary_internalize_from_file(dbfile);
-		if (dbdict == NULL) {
-			perror("=> ERROR: couldn't read database file");
-			exit(1);
-		}
-
-		list_pkgs_in_dict(dbdict);
+		list_pkgs_in_dict(get_dict_from_dbfile(dbfile));
 
 	} else if (strcmp(argv[1], "version") == 0) {
 		/* Prints version of an installed package */
 		if (argc != 3)
 			usage();
 
-		dbdict = prop_dictionary_internalize_from_file(dbfile);
-		if (dbdict == NULL) {
-			perror("=> ERROR: couldn't read database file");
-			exit(1);
-		}
-		pkgdict = find_pkg_in_dict(dbdict, argv[2]);
+		pkgdict = find_pkg_in_dict(get_dict_from_dbfile(dbfile), argv[2]);
 		if (pkgdict == NULL)
 			exit(1);
 		if (!prop_dictionary_get_cstring_nocopy(pkgdict, "version", &version))
