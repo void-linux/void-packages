@@ -1206,7 +1206,7 @@ install_pkg()
 	# Just register meta-template and exit.
 	#
 	if [ "$build_style" = "meta-template" ]; then
-		$XBPS_PKGDB_CMD register $pkgname $version
+		$XBPS_PKGDB_CMD register $pkgname $version "$short_desc"
 		[ $? -eq 0 ] && \
 			msg_normal "Installed meta-template: $pkg." && \
 			return 0
