@@ -397,24 +397,14 @@ extract_distfiles()
 			fi
 			;;
 		.zip)
-			if [ -f "$XBPS_TMPLHELPDIR/unzip-extraction.sh" ]; then
-				# Save vars!
-				tmpf=$curfile
-				tmpsufx=$cursufx
-				tmpwrksrc=$lwrksrc
-				. $XBPS_TMPLHELPDIR/unzip-extraction.sh
-				# Restore vars!
-				curfile=$tmpf
-				cursufx=$tmpsufx
-				lwrksrc=$tmpwrksrc
-				unset tmpf tmpsufx tmpwrksrc
+			if [ -x $XBPS_MASTERDIR/usr/bin/unzip ]; then
+				$XBPS_MASTERDIR/usr/bin/unzip \
+					-q -x $XBPS_SRCDISTDIR/$curfile -d $lwrksrc
+				if [ $? -ne 0 ]; then
+					msg_error "extracting $curfile into $lwrksrc."
+				fi
 			else
-				msg_error "cannot find unzip helper."
-			fi
-
-			extract_unzip $XBPS_SRCDISTDIR/$curfile $lwrksrc
-			if [ $? -ne 0 ]; then
-				msg_error "extracting $curfile into $lwrksrc."
+				msg_error "cannot find unzip bin for extraction"
 			fi
 			;;
 		*)
