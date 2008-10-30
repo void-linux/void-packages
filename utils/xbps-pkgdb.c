@@ -32,27 +32,258 @@
 
 #include <prop/proplib.h>
 
-#define _XBPS_PKGDB_DEFPATH	"/usr/local/packages/.xbps-pkgdb.plist"
+#define _XBPS_PKGDB_DEFPATH	"/var/xbps/.xbps-pkgdb.plist"
+
+typedef struct pkg_data {
+	const char *pkgname;
+	const char *version;
+	const char *short_desc;
+} pkg_data_t;
 
 static void usage(void);
+static void add_array_to_dict(prop_dictionary_t, prop_array_t, const char *);
+static void add_obj_to_array(prop_array_t, prop_object_t);
+static prop_dictionary_t make_dict_from_pkg(pkg_data_t *);
+static prop_dictionary_t find_pkg_in_dict(prop_dictionary_t, const char *);
+static void register_pkg(prop_dictionary_t, pkg_data_t *, const char *);
+static void unregister_pkg(prop_dictionary_t, const char *, const char *);
+static void write_plist_file(prop_dictionary_t, const char *);
+static void list_pkgs_in_dict(prop_dictionary_t);
 
 static void
 usage(void)
 {
-	printf("usage: xbps-pkgdb <action> [<pkgname> <version>]\n");
+	printf("usage: xbps-pkgdb <action> [args]\n");
 	printf("\n");
 	printf("  Available actions:\n");
-	printf("    installed, list, register, unregister, version\n");
+	printf("    list, register, unregister, version\n");
+	printf("  Action arguments:\n");
+	printf("    list\t[none]\n");
+	printf("    register\t[<pkgname> <version> <shortdesc>]\n");
+	printf("    unregister\t[<pkgname> <version>]\n");
+	printf("    version\t[<pkgname>]\n");
+	printf("  Environment:\n");
+	printf("    XBPS_PKGDB_FPATH\tPath to xbps pkgdb plist file\n");
+	printf("\n");
+	printf("  Examples:\n");
+	printf("    $ xbps-pkgdb list\n");
+	printf("    $ xbps-pkgdb register pkgname 2.0 \"A short description\"\n");
+	printf("    $ xbps-pkgdb unregister pkgname 2.0\n");
+	printf("    $ xbps-pkgdb version pkgname\n");
 	exit(1);
+}
+
+static prop_dictionary_t
+find_pkg_in_dict(prop_dictionary_t dict, const char *pkgname)
+{
+	prop_array_t array;
+	prop_object_iterator_t iter;
+	prop_object_t obj;
+	const char *dpkgn;
+
+	if (dict == NULL || pkgname == NULL)
+		return NULL;
+
+	array = prop_dictionary_get(dict, "packages_installed");
+	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
+		return NULL;
+
+	iter = prop_array_iterator(array);
+	if (iter == NULL)
+		return NULL;
+
+	while ((obj = prop_object_iterator_next(iter))) {
+		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &dpkgn);
+		if (strcmp(dpkgn, pkgname) == 0)
+			break;
+	}
+	prop_object_iterator_release(iter);
+
+	return obj;
+}
+
+static void
+add_obj_to_array(prop_array_t array, prop_object_t obj)
+{
+	if (array == NULL || obj == NULL) {
+		printf("%s: NULL array/obj\n", __func__);
+		exit(1);
+	}
+
+	if (!prop_array_add(array, obj)) {
+		prop_object_release(array);
+		printf("%s: couldn't add obj into array: %s\n", __func__,
+		    strerror(errno));
+		exit(1);
+	}
+	prop_object_release(obj);
+}
+
+static void
+add_array_to_dict(prop_dictionary_t dict, prop_array_t array, const char *key)
+{
+	if (dict == NULL || array == NULL || key == NULL) {
+		printf("%s: NULL dict/array/key\n", __func__);
+		exit(1);
+	}
+
+	if (!prop_dictionary_set(dict, key, array)) {
+		printf("%s: couldn't add array (%s): %s\n",
+		    __func__, key, strerror(errno));
+		exit(1);
+	}
+	prop_object_release(array);
+}
+
+static prop_dictionary_t
+make_dict_from_pkg(pkg_data_t *pkg)
+{
+	prop_dictionary_t dict;
+
+	if (pkg == NULL || pkg->pkgname == NULL || pkg->version == NULL ||
+	    pkg->short_desc == NULL)
+		return NULL;
+
+	dict = prop_dictionary_create();
+	if (dict == NULL)
+		return NULL;
+
+	prop_dictionary_set_cstring_nocopy(dict, "pkgname", pkg->pkgname);
+	prop_dictionary_set_cstring_nocopy(dict, "version", pkg->version);
+	prop_dictionary_set_cstring_nocopy(dict, "short_desc", pkg->short_desc);
+
+	return dict;
+}
+
+static void
+register_pkg(prop_dictionary_t dict, pkg_data_t *pkg, const char *dbfile)
+{
+	prop_dictionary_t pkgdict;
+	prop_array_t array;
+
+	if (dict == NULL || pkg == NULL || dbfile == NULL) {
+		printf("%s: NULL dict/pkg/dbfile\n", __func__);
+		exit(1);
+	}
+
+	pkgdict = make_dict_from_pkg(pkg);
+	if (pkgdict == NULL) {
+		printf("%s: NULL pkgdict\n", __func__);
+		exit(1);
+	}
+
+	array = prop_dictionary_get(dict, "packages_installed");
+	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY) {
+		printf("%s: NULL or incorrect array type\n", __func__);
+		exit(1);
+	}
+
+	add_obj_to_array(array, pkgdict);
+	write_plist_file(dict, dbfile);
+}
+
+static void
+unregister_pkg(prop_dictionary_t dict, const char *pkgname, const char *dbfile)
+{
+	prop_array_t array;
+	prop_object_t obj;
+	prop_object_iterator_t iter;
+	const char *curpkgn;
+	int i = 0;
+	bool found = false;
+
+	if (dict == NULL || pkgname == NULL) {
+		printf("%s: NULL dict/pkgname\n", __func__);
+		exit(1);
+	}
+
+	array = prop_dictionary_get(dict, "packages_installed");
+	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY) {
+		printf("%s: NULL or incorrect array type\n", __func__);
+		exit(1);
+	}
+
+	iter = prop_array_iterator(array);
+	if (iter == NULL) {
+		printf("%s: NULL iter\n", __func__);
+		exit(1);
+	}
+
+	/* Iterate over the array of dictionaries to find its index. */
+	while ((obj = prop_object_iterator_next(iter))) {
+		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &curpkgn);
+		if (strcmp(curpkgn, pkgname) == 0) {
+			found = true;
+			break;
+		}
+		i++;
+	}
+
+	if (found == false) {
+		printf("=> ERROR: %s not registered in database.\n", pkgname);
+		exit(1);
+	}
+
+	prop_array_remove(array, i);
+	add_array_to_dict(dict, array, "packages_installed");
+	write_plist_file(dict, dbfile);
+}
+
+static void
+write_plist_file(prop_dictionary_t dict, const char *file)
+{
+	if (dict == NULL || file == NULL) {
+		printf("=> ERROR: couldn't write to database file.\n");
+		exit(1);
+	}
+
+	if (!prop_dictionary_externalize_to_file(dict, file)) {
+		prop_object_release(dict);
+		perror("=> ERROR: couldn't write to database file");
+		exit(1);
+	}
+}
+
+static void
+list_pkgs_in_dict(prop_dictionary_t dict)
+{
+	prop_array_t array;
+	prop_object_t obj;
+	prop_object_iterator_t iter;
+	const char *pkgname, *version, *short_desc;
+
+	if (dict == NULL)
+		exit(1);
+
+	array = prop_dictionary_get(dict, "packages_installed");
+	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY) {
+		printf("%s: NULL or incorrect array type\n", __func__);
+		exit(1);
+	}
+
+	iter = prop_array_iterator(array);
+	if (iter == NULL) {
+		printf("%s: NULL iter\n", __func__);
+		exit(1);
+	}
+
+	while ((obj = prop_object_iterator_next(iter))) {
+		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
+		prop_dictionary_get_cstring_nocopy(obj, "version", &version);
+		prop_dictionary_get_cstring_nocopy(obj, "short_desc", &short_desc);
+		if (pkgname && version && short_desc)
+			printf("%s-%s\t%s\n", pkgname, version, short_desc);
+	}
+	prop_object_iterator_release(iter);
 }
 
 int
 main(int argc, char **argv)
 {
-	prop_dictionary_t dbdict;
-	prop_object_iterator_t dbditer;
-	prop_object_t obj, obj2;
-	prop_string_t pkg;
+	prop_dictionary_t dbdict = NULL, pkgdict;
+	prop_array_t dbarray = NULL;
+	pkg_data_t pkg;
+	const char *version;
 	char dbfile[PATH_MAX], *dbfileenv, *tmppath, *in_chroot_env;
 	bool in_chroot = false;
 
@@ -78,56 +309,51 @@ main(int argc, char **argv)
 	if (in_chroot_env != NULL)
 		in_chroot = true;
 
-	if (strcmp(argv[1], "installed") == 0) {
-		/* Returns 0 if pkg is installed, 1 otherwise */
-		if (argc != 3)
-			usage();
-
-		dbdict = prop_dictionary_internalize_from_file(dbfile);
-		if (dbdict == NULL) {
-			perror("ERROR: couldn't read database file");
-			exit(1);
-		}
-		obj = prop_dictionary_get(dbdict, argv[2]);
-		if (obj == NULL)
-			exit(1);
-
-	} else if (strcmp(argv[1], "register") == 0) {
+	if (strcmp(argv[1], "register") == 0) {
 		/* Registers a package into the database */
-		if (argc != 4)
+		if (argc != 5)
 			usage();
 
 		dbdict = prop_dictionary_internalize_from_file(dbfile);
 		if (dbdict == NULL) {
-			/* create db file and register pkg */
+			/* Create package dictionary and add its objects. */
+			pkg.pkgname = argv[2];
+			pkg.version = argv[3];
+			pkg.short_desc = argv[4];
+			pkgdict = make_dict_from_pkg(&pkg);
+			if (pkgdict == NULL) {
+				printf("=> ERROR: couldn't register pkg\n");
+				exit(1);
+			}
+
+			/* Add pkg dictionary into array. */
+			dbarray = prop_array_create();
+			add_obj_to_array(dbarray, pkgdict);
+
+			/* Add array into main dictionary. */
 			dbdict = prop_dictionary_create();
-			if (dbdict == NULL) {
-				perror("ERROR");
-				exit(1);
-			}
-			prop_dictionary_set_cstring_nocopy(dbdict, argv[2], argv[3]);
-			if (!prop_dictionary_externalize_to_file(dbdict, dbfile)) {
-				perror("=> ERROR: couldn't write database file");
-				exit(1);
-			}
-			printf("%s==> Package database file "
-			    "not found, creating it.\n",
-			    in_chroot ? "[chroot] " : "");
+			add_array_to_dict(dbdict, dbarray, "packages_installed");
+
+			/* Write main dictionary to file. */
+			write_plist_file(dbdict, dbfile);
+
+			printf("%s==> Package database file not found, "
+			    "creating it.\n", in_chroot ? "[chroot] " : "");
+
 			prop_object_release(dbdict);
 		} else {
-			/* register pkg if it's not registered already */
-			pkg = prop_dictionary_get(dbdict, argv[2]);
-			if (pkg && prop_object_type(pkg) == PROP_TYPE_STRING) {
-				printf("%s=> Package `%s' "
-				    "already registered.\n",
-				    in_chroot ? "[chroot] " : "", argv[2]);
+			/* Check if pkg is already registered. */
+			pkgdict = find_pkg_in_dict(dbdict, argv[2]);
+			if (pkgdict != NULL) {
+				printf("=> Package %s-%s already registered.\n",
+				    argv[2], argv[3]);
 				exit(0);
 			}
-			prop_dictionary_set_cstring_nocopy(dbdict, argv[2], argv[3]);
-			if (!prop_dictionary_externalize_to_file(dbdict, dbfile)) {
-				perror("=> ERROR: couldn't write database file");
-				exit(1);
-			}
+			pkg.pkgname = argv[2];
+			pkg.version = argv[3];
+			pkg.short_desc = argv[4];
+
+			register_pkg(dbdict, &pkg, dbfile);
 		}
 
 		printf("%s=> %s-%s registered successfully.\n",
@@ -143,19 +369,10 @@ main(int argc, char **argv)
 			perror("=> ERROR: couldn't read database file");
 			exit(1);
 		}
-		obj = prop_dictionary_get(dbdict, argv[2]);
-		if (obj == NULL) {
-			printf("=> ERROR: package `%s' not registered in database.\n",
-			    argv[2]);
-			exit(1);
-		}
-		prop_dictionary_remove(dbdict, argv[2]);
-		if (!prop_dictionary_externalize_to_file(dbdict, dbfile)) {
-			perror("=> ERROR: couldn't write database file");
-			exit(1);
-		}
 
-		printf("%s==> %s-%s unregistered successfully.\n",
+		unregister_pkg(dbdict, argv[2], dbfile);
+
+		printf("%s=> %s-%s unregistered successfully.\n",
 		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
 
 	} else if (strcmp(argv[1], "list") == 0) {
@@ -168,19 +385,8 @@ main(int argc, char **argv)
 			perror("=> ERROR: couldn't read database file");
 			exit(1);
 		}
-		dbditer = prop_dictionary_iterator(dbdict);
-		if (dbditer == NULL) {
-			perror("=> ERROR");
-			exit(1);
-		}
-		while ((obj = prop_object_iterator_next(dbditer)) != NULL) {
-			obj2 = prop_dictionary_get_keysym(dbdict, obj);
-			if (obj2 != NULL) {
-				printf("%s", prop_dictionary_keysym_cstring_nocopy(obj));
-				printf("-%s\n", prop_string_cstring_nocopy(obj2));
-			}
-		}
-		prop_object_iterator_release(dbditer);
+
+		list_pkgs_in_dict(dbdict);
 
 	} else if (strcmp(argv[1], "version") == 0) {
 		/* Prints version of an installed package */
@@ -192,10 +398,12 @@ main(int argc, char **argv)
 			perror("=> ERROR: couldn't read database file");
 			exit(1);
 		}
-		obj = prop_dictionary_get(dbdict, argv[2]);
-		if (obj == NULL)
+		pkgdict = find_pkg_in_dict(dbdict, argv[2]);
+		if (pkgdict == NULL)
 			exit(1);
-		printf("%s\n", prop_string_cstring_nocopy(obj));
+		if (!prop_dictionary_get_cstring_nocopy(pkgdict, "version", &version))
+			exit(1);
+		printf("%s\n", version);
 
 	} else {
 		usage();

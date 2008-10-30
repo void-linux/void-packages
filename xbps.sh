@@ -25,7 +25,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
-trap "exit 1" INT QUIT
+trap "echo && exit 1" INT QUIT
 
 : ${XBPS_CONFIG_FILE:=/etc/xbps.conf}
 
@@ -1037,7 +1037,7 @@ install_dependencies_pkg()
 
 	msg_normal "Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
-		fpkg="$($XBPS_PKGDB_CMD list|grep -w ${i%-[0-9]*.*})"
+		fpkg="$($XBPS_PKGDB_CMD list|awk '{print $1}'|grep -w ${i%-[0-9]*.*})"
 		echo "	$i: found $fpkg."
 	done
 
@@ -1224,19 +1224,12 @@ install_pkg()
 #
 list_pkgs()
 {
-	local i=
-
 	if [ ! -r "$XBPS_PKGDB_FPATH" ]; then
 		msg_warn "No packages registered or missing register db file."
 		exit 0
 	fi
 
-	for i in $($XBPS_PKGDB_CMD list); do
-		# Run file to get short_desc and print something useful
-		run_file $XBPS_TEMPLATESDIR/${i%-[0-9]*.*}.tmpl
-		echo "$i	$short_desc"
-		reset_tmpl_vars
-	done
+	$XBPS_PKGDB_CMD list
 }
 
 #
@@ -1275,7 +1268,7 @@ remove_pkg()
 	# If it's a meta-template, just unregister it from the db.
 	#
 	if [ "$build_style" = "meta-template" ]; then
-		$XBPS_PKGDB_CMD unregister $pkgname $version
+		$XBPS_PKGDB_CMD unregister $pkgname $version "$short_desc"
 		[ $? -eq 0 ] && \
 			echo "=> Removed meta-template: $pkg."
 		return $?
@@ -1319,7 +1312,7 @@ stow_pkg()
 	cp -ar . $XBPS_MASTERDIR
 	mv -f $flist $XBPS_DESTDIR/$pkgname-$version/.xbps-filelist
 
-	$XBPS_PKGDB_CMD register $pkgname $version
+	$XBPS_PKGDB_CMD register $pkgname $version "$short_desc"
 	[ $? -ne 0 ] && exit 1
 
 	#
