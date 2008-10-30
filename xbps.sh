@@ -67,14 +67,14 @@ set_defvars()
 
 	# Directories
 	: ${XBPS_TEMPLATESDIR:=$XBPS_DISTRIBUTIONDIR/templates}
-	: ${XBPS_TMPLHELPDIR:=$XBPS_DISTRIBUTIONDIR/helper-templates}
+	: ${XBPS_HELPERSDIR:=$XBPS_DISTRIBUTIONDIR/helpers}
 	: ${XBPS_PKGDB_FPATH:=$XBPS_DESTDIR/.xbps-pkgdb.plist}
 	: ${XBPS_UTILSDIR:=$XBPS_DISTRIBUTIONDIR/utils}
 	: ${XBPS_DIGEST_CMD:=$XBPS_UTILSDIR/xbps-digest}
 	: ${XBPS_PKGDB_CMD:=$XBPS_UTILSDIR/xbps-pkgdb}
 	: ${XBPS_CMPVER_CMD:=$XBPS_UTILSDIR/xbps-cmpver}
 
-	local DDIRS="XBPS_TEMPLATESDIR XBPS_TMPLHELPDIR XBPS_UTILSDIR"
+	local DDIRS="XBPS_TEMPLATESDIR XBPS_HELPERSDIR XBPS_UTILSDIR"
 	for i in ${DDIRS}; do
 		eval val="\$$i"
 		[ ! -d "$val" ] &&  msg_error "cannot find $i, aborting."
@@ -728,7 +728,7 @@ configure_src_phase()
 	# They are all handled by the helper perl-module.sh.
 	#
 	elif [ "$build_style" = "perl_module" ]; then
-		. $XBPS_TMPLHELPDIR/perl-module.sh
+		. $XBPS_HELPERSDIR/perl-module.sh
 		perl_module_build $pkgname
 
 	#
@@ -1149,7 +1149,7 @@ install_pkg()
 	[ -z "$origin_tmpl" ] && origin_tmpl=$pkgname
 
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
-		run_file $XBPS_TMPLHELPDIR/chroot.sh
+		run_file $XBPS_HELPERSDIR/chroot.sh
 		chroot_pkg_handler install $curpkgn
 		return $?
 	fi
@@ -1300,7 +1300,7 @@ stow_pkg()
 	fi
 
 	for i in ${postinstall_helpers}; do
-		local pihf="$XBPS_TMPLHELPDIR/$i"
+		local pihf="$XBPS_HELPERSDIR/$i"
 		[ -f "$pihf" ] && . $pihf
 	done
 }
@@ -1389,7 +1389,7 @@ case "$target" in
 build)
 	setup_tmpl $2
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
-		run_file $XBPS_TMPLHELPDIR/chroot.sh
+		run_file $XBPS_HELPERSDIR/chroot.sh
 		chroot_pkg_handler build $2
 	else
 		fetch_distfiles $2
@@ -1403,13 +1403,13 @@ build)
 	fi
 	;;
 chroot)
-	run_file $XBPS_TMPLHELPDIR/chroot.sh
+	run_file $XBPS_HELPERSDIR/chroot.sh
 	chroot_pkg_handler chroot dummy
 	;;
 configure)
 	setup_tmpl $2
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
-		run_file $XBPS_TMPLHELPDIR/chroot.sh
+		run_file $XBPS_HELPERSDIR/chroot.sh
 		chroot_pkg_handler configure $2
 	else
 		fetch_distfiles $2
