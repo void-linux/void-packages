@@ -11,11 +11,11 @@ extract_unzip()
 
 	[ ! -f $file ] && exit 1
 
-	$XBPS_MASTERDIR/bin/unzip -q -x $file -d $dest
+	$XBPS_MASTERDIR/usr/bin/unzip -q -x $file -d $dest
 	return $?
 }
 
-if [ ! -x "$XBPS_MASTERDIR/bin/unzip" ]; then
+if [ ! -x "$XBPS_MASTERDIR/usr/bin/unzip" ]; then
 	unzip_version="5.52"
 
 	# Save pkgname before installing unzip.
@@ -23,7 +23,7 @@ if [ ! -x "$XBPS_MASTERDIR/bin/unzip" ]; then
 
 	check_installed_pkg unzip $unzip_version
 	if [ $? -ne 0 ]; then
-		echo "=> \`\`$save_pkgname´´ package requires unzip for extraction."
+		echo "=> $save_pkgname package requires unzip for extraction."
 		#
 		# Install dependencies required by unzip.
 		#
