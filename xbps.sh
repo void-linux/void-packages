@@ -1220,19 +1220,6 @@ install_pkg()
 }
 
 #
-# Lists all currently installed packages.
-#
-list_pkgs()
-{
-	if [ ! -r "$XBPS_PKGDB_FPATH" ]; then
-		msg_warn "No packages registered or missing register db file."
-		exit 0
-	fi
-
-	$XBPS_PKGDB_CMD list
-}
-
-#
 # Lists files installed by a package.
 #
 list_pkg_files()
@@ -1465,7 +1452,7 @@ install)
 	install_pkg $2
 	;;
 list)
-	list_pkgs
+	$XBPS_PKGDB_CMD list
 	;;
 listfiles)
 	[ -z "$2" ] && msg_error "missing package after target."
