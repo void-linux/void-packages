@@ -12,14 +12,21 @@
 : ${BINUTILS_VER:=2.19}
 : ${GLIBC_VER:=2.7}
 : ${KERNEL_VER:=2.6.27.3}
-: ${SOURCEDISTDIR:=/xbps_srcdistdir}
-: ${CROSSDIR:=/cross-tools}
+
+: ${CROSSDIR:=$HOME/mktoolchain}
+: ${BUILDDIR:=$CROSSDIR/build}
+: ${SOURCEDISTDIR:=$BUILDDIR/sources}
 
 : ${FETCH_CMD:=wget}
 
 usage()
 {
-	echo "usage: $0 <build directory> <target triplet>"
+	echo "usage: $0 [-b dir] [-c dir] [-s dir] <target triplet>"
+	echo
+	echo "Optional flags:"
+	echo "	-b	Directory to be used for temporary building."
+	echo "	-c	Directory to be used for final cross tools."
+	echo "	-s	Directory where the sources are available."
 	exit 1
 }
 
@@ -81,7 +88,7 @@ kernel_headers()
 	cd $SYSROOT/usr/include && ln -s asm asm-$KERNEL_ARCH
 	cd $BUILDDIR && rm -rf $pkg || exit 1
 
-	touch -f $CROSSDIR/.kernel_headers_done
+	touch -f $BUILDDIR/.kernel_headers_done
 }
 
 binutils()
@@ -114,7 +121,7 @@ binutils()
 
 	cd $BUILDDIR && rm -rf $pkg || exit 1
 
-	touch -f $CROSSDIR/.binutils_done
+	touch -f $BUILDDIR/.binutils_done
 }
 
 glibc_patches()
@@ -164,13 +171,12 @@ gcc()
 		configure_args="$configure_args --enable-languages=c,c++"
 		configure_args="$configure_args --enable-__cxa_atexit"
 		configure_args="$configure_args --enable-tls"
-		configure_args="$configure_args --prefix=$SYSROOT/usr"
 		;;
 	libgcc)
 		# Enough to be able to build full glibc.
 		make all-target-libgcc && make install-target-libgcc || exit 1
 		rm -rf $SYSROOT/lib/crt* || exit 1
-		touch -f $CROSSDIR/.gcc_libgcc_done
+		touch -f $BUILDDIR/.gcc_libgcc_done
 		cd $BUILDDIR/$pkg && rm -rf build
 		return 0
 		;;
@@ -183,12 +189,12 @@ gcc()
 		configure_args="$configure_args --disable-threads"
 		configure_args="$configure_args --disable-libssp"
 		configure_args="$configure_args --enable-languages=c"
-		configure_args="$configure_args --prefix=$CROSSDIR"
 		;;
 	*)	;;
 	esac
 
-	../configure --build=$CROSS_HOST --host=$CROSS_HOST	\
+	../configure --prefix=$CROSSDIR				\
+		--build=$CROSS_HOST --host=$CROSS_HOST		\
 		--target=$CROSS_TARGET				\
 		--with-sysroot=$SYSROOT				\
 		--with-build-sysroot=$SYSROOT			\
@@ -210,7 +216,7 @@ gcc()
 		cd $BUILDDIR/$pkg && rm -rf build || exit 1
 	fi
 
-	touch -f $CROSSDIR/$touch_f
+	touch -f $BUILDDIR/$touch_f
 }
 
 glibc()
@@ -304,34 +310,41 @@ glibc()
 		cd $BUILDDIR/$pkg && rm -rf build || exit 1
 	fi
 
-	touch -f $CROSSDIR/$touch_f
+	touch -f $BUILDDIR/$touch_f
 }
 
-[ $# -ne 2 ] && usage
+while getopts "b:c:s:" opt; do
+	case $opt in
+	b)	BUILDDIR=$OPTARG
+		check_path $BUILDDIR
+		BUILDDIR=$SANITIZED_DESTDIR
+		;;
+	c)	CROSSDIR=$OPTARG
+		check_path $CROSSDIR
+		CROSSDIR=$SANITIZED_DESTDIR
+		;;
+	s)	SOURCEDISTDIR=$OPTARG
+		check_path $SOURCEDISTDIR
+		SOURCEDISTDIR=$SANITIZED_DESTDIR
+		;;
+	--)	shift; break;;
+	esac
+done
+shift $(($OPTIND - 1))
+
+[ $# -ne 1 ] && usage
 
 if [ -z "$1" ]; then
-	echo "ERROR: missing cross compiler directory."
-	exit 1
-else
-	check_path $1
-	BUILDDIR=$SANITIZED_DESTDIR
-	SYSROOT=$CROSSDIR/sysroot
-	unset SANITIZED_DESTDIR
-	[ ! -d $SYSROOT/usr ] && mkdir -p $SYSROOT/usr
-	[ ! -d $BUILDDIR ] && mkdir -p $BUILDDIR
-fi
-
-if [ -z "$2" ]; then
 	echo "ERROR: missing target triplet."
 	exit 1
 else
-	CROSS_TARGET=$2
+	CROSS_TARGET=$1
 	case $CROSS_TARGET in
 		i686-pc-linux-gnu)
 			KERNEL_ARCH=i386
 			CROSS_HOST=x86_64-unknown-linux-gnu
 			;;
-		x86-64-linux-gnu)
+		x86-64-unknown-linux-gnu)
 			KERNEL_ARCH=x86_64
 			CROSS_HOST=i686-pc-linux-gnu
 			;;
@@ -342,51 +355,59 @@ else
 	esac
 fi
 
+CROSSDIR=$CROSSDIR/$CROSS_TARGET
+SYSROOT=$CROSSDIR/sysroot
+[ ! -d $SYSROOT/usr ] && mkdir -p $SYSROOT/usr
+[ ! -d $BUILDDIR ] && mkdir -p $BUILDDIR
+[ ! -d $SOURCEDISTDIR ] && mkdir -p $SOURCEDISTDIR
+
 unset CFLAGS CXXFLAGS CC CXX AR AS RANLIB LD_STRIP
 unset LD_LIBRARY_PATH LD_RUN_PATH
 export PATH="$CROSSDIR/bin:/bin:/usr/bin"
 
 fetch_sources
 
-if [ ! -f $CROSSDIR/.kernel_headers_done ]; then
+if [ ! -f $BUILDDIR/.kernel_headers_done ]; then
 	echo "Installing kernel headers..."
 	kernel_headers
 fi
 
-if [ ! -f $CROSSDIR/.binutils_done ]; then
+if [ ! -f $BUILDDIR/.binutils_done ]; then
 	echo "Installing binutils..."
 	binutils
 fi
 
-if [ ! -f $CROSSDIR/.glibc_headers_done ]; then
+if [ ! -f $BUILDDIR/.glibc_headers_done ]; then
 	echo "Installing glibc headers..."
 	glibc headers
 fi
 
-if [ ! -f $CROSSDIR/.gcc_bootstrap_done ]; then
+if [ ! -f $BUILDDIR/.gcc_bootstrap_done ]; then
 	echo "Installing gcc (bootstrap)..."
 	gcc bootstrap
 fi
 
-if [ ! -f $CROSSDIR/.glibc_startup_done ]; then
+if [ ! -f $BUILDDIR/.glibc_startup_done ]; then
 	echo "Installing glibc (startup)..."
 	glibc startup
 fi
 
-if [ ! -f $CROSSDIR/.gcc_libgcc_done ]; then
+if [ ! -f $BUILDDIR/.gcc_libgcc_done ]; then
 	echo "Installing gcc (libgcc)..."
 	gcc libgcc
 fi
 
-if [ ! -f $CROSSDIR/.glibc_full_done ]; then
+if [ ! -f $BUILDDIR/.glibc_full_done ]; then
 	echo "Installing glibc (full)..."
 	glibc full
 fi
 
-if [ ! -f $CROSSDIR/.gcc_full_done ]; then
+if [ ! -f $BUILDDIR/.gcc_full_done ]; then
 	echo "Installing gcc (full)..."
 	gcc full
 fi
+
+[ -d $BUILDDIR ] && rm -rf $BUILDDIR
 
 echo "Finished. Toolchain for $CROSS_TARGET at $CROSSDIR."
 
