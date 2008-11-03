@@ -1402,7 +1402,7 @@ while getopts "Cc:" opt; do
 done
 shift $(($OPTIND - 1))
 
-[ $# -eq 0 -o $# -gt 4 ] && usage
+[ $# -eq 0 -o $# -gt 2 ] && usage
 
 target="$1"
 if [ -z "$target" ]; then
