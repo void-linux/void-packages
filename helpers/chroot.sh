@@ -35,8 +35,8 @@ else
 	msg_normal "Entering into the chroot on $XBPS_MASTERDIR."
 fi
 
-REQDIRS="bin sbin tmp var sys proc dev xbps xbps_builddir \
-	 xbps_destdir xbps_srcdistdir xbps_crossdir"
+EXTDIRS="xbps xbps_builddir xbps_destdir xbps_srcdistdir xbps_crossdir"
+REQDIRS="bin sbin tmp var sys proc dev ${EXTDIRS}"
 for f in ${REQDIRS}; do
 	[ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
 done
@@ -153,7 +153,7 @@ umount_chroot_fs()
 		unset fs
 	done
 
-	for dir in xbps xbps_builddir xbps_destdir xbps_srcdistdir; do
+	for dir in ${EXTDIRS}; do
 		[ -f $XBPS_MASTERDIR/.${dir}_mount_bind_done ] && continue
 		[ -d $XBPS_MASTERDIR/$dir ] && rmdir $XBPS_MASTERDIR/$dir
 	done
