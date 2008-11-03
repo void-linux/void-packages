@@ -692,8 +692,8 @@ configure_src_phase()
 		cross_compile_setvars
 	else
 		if [ "$build_style" = "gnu_configure" ]; then
-			configure_args="$configure_args --host=${xbps_machine}-pc-linux-gnu"
-			configure_args="$configure_args --build=${xbps_machine}-pc-linux-gnu"
+			configure_args="$configure_args --host=$XBPS_CROSS_HOST"
+			configure_args="$configure_args --build=$XBPS_CROSS_HOST"
 		fi
 	fi
 
