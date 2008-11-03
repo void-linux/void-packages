@@ -36,7 +36,7 @@ else
 fi
 
 REQDIRS="bin sbin tmp var sys proc dev xbps xbps_builddir \
-	 xbps_destdir xbps_srcdistdir"
+	 xbps_destdir xbps_srcdistdir xbps_crossdir"
 for f in ${REQDIRS}; do
 	[ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
 done
@@ -51,6 +51,11 @@ echo "XBPS_CFLAGS=\"$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_CXXFLAGS=\"\$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/etc/xbps.conf
 if [ -n "$XBPS_MAKEJOBS" ]; then
 	echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPS_MASTERDIR/etc/xbps.conf
+fi
+if [ -n "$XBPS_CROSS_TARGET" -a -d "$XBPS_CROSS_DIR" ]; then
+	echo "XBPS_CROSS_TARGET=$XBPS_CROSS_TARGET" >> \
+		$XBPS_MASTERDIR/etc/xbps.conf
+	echo "XBPS_CROSS_DIR=/xbps_crossdir" >> $XBPS_MASTERDIR/etc/xbps.conf
 fi
 
 rebuild_ldso_cache()
@@ -88,6 +93,11 @@ mount_chroot_fs()
 	local cnt=
 
 	REQFS="sys proc dev xbps xbps_builddir xbps_destdir xbps_srcdistdir"
+	if [ -d "$XBPS_CROSS_DIR" ]; then
+		local cross=yes
+		REQFS="$REQFS xbps_crossdir"
+	fi
+
 	for f in ${REQFS}; do
 		if [ ! -f $XBPS_MASTERDIR/.${f}_mount_bind_done ]; then
 			echo -n "=> Mounting $f in chroot... "
@@ -97,6 +107,9 @@ mount_chroot_fs()
 				xbps_builddir) blah=$XBPS_BUILDDIR;;
 				xbps_destdir) blah=$XBPS_DESTDIR;;
 				xbps_srcdistdir) blah=$XBPS_SRCDISTDIR;;
+				xbps_crossdir)
+					[ -n $cross ] && blah=$XBPS_CROSS_DIR
+					;;
 				*) blah=/$f;;
 			esac
 			mount --bind $blah $XBPS_MASTERDIR/$f

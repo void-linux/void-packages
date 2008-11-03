@@ -32,6 +32,7 @@ trap "echo && exit 1" INT QUIT
 : ${progname:=$(basename $0)}
 : ${fetch_cmd:=wget}
 : ${xbps_machine:=$(uname -m)}
+: ${XBPS_CROSS_HOST:=$xbps_machine-pc-linux-gnu}
 
 usage()
 {
@@ -235,7 +236,7 @@ reset_tmpl_vars()
 			postinstall_helpers make_install_target version \
 			tar_override_cmd xml_entries sgml_entries \
 			build_depends libtool_fixup_la_stage no_fixup_libtool \
-			disable_parallel_build run_depends \
+			disable_parallel_build run_depends cross_compiler \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
@@ -685,6 +686,17 @@ configure_src_phase()
 	# Apply patches if requested by template file
 	[ ! -f $XBPS_APPLYPATCHES_DONE ] && apply_tmpl_patches
 
+	# cross compilation vars.
+	if [ -n "$cross_compiler" ]; then
+		. $XBPS_HELPERSDIR/cross-compilation.sh
+		cross_compile_setvars
+	else
+		if [ "$build_style" = "gnu_configure" ]; then
+			configure_args="$configure_args --host=${xbps_machine}-pc-linux-gnu"
+			configure_args="$configure_args --build=${xbps_machine}-pc-linux-gnu"
+		fi
+	fi
+
 	# Run pre_configure helpers.
 	run_func pre_configure
 
@@ -712,8 +724,6 @@ configure_src_phase()
 	#
 	if [ "$build_style" = "gnu_configure" ]; then
 		${configure_script}				\
-			--host=${xbps_machine}-linux-gnu	\
-			--build=${xbps_machine}-linux-gnu	\
 			--prefix=${_prefix} --sysconfdir=/etc	\
 			--infodir=$XBPS_DESTDIR/$pkgname-$version/usr/share/info \
 			--mandir=$XBPS_DESTDIR/$pkgname-$version/usr/share/man \
@@ -755,6 +765,9 @@ configure_src_phase()
 		unset eval ${f%=*}
 	done
 
+	# unset cross compiler vars.
+	[ -n "$cross_compiler" ] && cross_compile_unsetvars
+
 	unset_build_vars
 
 	touch -f $XBPS_CONFIGURE_DONE
@@ -783,6 +796,12 @@ build_src_phase()
 	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]"
 
 	cd $wrksrc || exit 1
+
+	# cross compilation vars.
+	if [ -n "$cross_compiler" ]; then
+		. $XBPS_HELPERSDIR/cross-compilation.sh
+		cross_compile_setvars
+	fi
 
 	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
 
@@ -821,6 +840,10 @@ build_src_phase()
 		-o "$libtool_fixup_la_stage" = "postbuild" ]; then
 		libtool_fixup_la_files
 	fi
+
+	# unset cross compiler vars.
+	[ -n "$cross_compiler" ] && cross_compile_unsetvars
+
 	unset_build_vars
 
 	touch -f $XBPS_BUILD_DONE
@@ -848,6 +871,12 @@ install_src_phase()
 
 	msg_normal "Running install phase for: $pkgname-$version."
 
+	# cross compilation vars.
+	if [ -n "$cross_compiler" ]; then
+		. $XBPS_HELPERSDIR/cross-compilation.sh
+		cross_compile_setvars
+	fi
+
 	if [ "$build_style" = "custom-install" ]; then
 		run_func do_install
 	else
@@ -858,6 +887,9 @@ install_src_phase()
 	# Run post_install helpers.
 	#
 	run_func post_install
+
+	# unset cross compiler vars.
+	[ -n "$cross_compiler" ] && cross_compile_unsetvars
 
 	msg_normal "Installed $pkgname-$version into $XBPS_DESTDIR."
 
