@@ -37,7 +37,7 @@ replace_interpreter()
 		;;
 	esac
 
-	if [ -f $wrksrc/$file ]; then
+	if [ -f $file ]; then
 		sed -i -e "1s|^#![[:space:]]*${orsb}|#!${trpath}|" $file && \
 			msg_normal "Transformed $lang script: ${file##$wrksrc}."
 	else
