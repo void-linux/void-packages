@@ -293,7 +293,7 @@ prepare_tmpl()
 	for i in ${only_for_archs}; do
 		[ "$i" = "$xbps_machine" ] && found=si && break
 	done
-	if [ -n ${only_for_archs} -a -z $found ]; then
+	if [ -n "${only_for_archs}" -a -z "$found" ]; then
 		msg_error "this package is only for: ${only_for_archs}."
 	fi
 
