@@ -57,7 +57,7 @@ fetch_sources()
 	pkg=gcc
 	if [ ! -f $pkg-$GCC_VER.tar.bz2 ]; then
 		echo "Fetching $pkg-$GCC_VER..."
-		$FETCH_CMD $GNU_URL_BASE/$pkg/$pkg-$GCC_VER.tar.bz2 || exit 1
+		$FETCH_CMD $GNU_URL_BASE/$pkg/$pkg-$GCC_VER/$pkg-$GCC_VER.tar.bz2 || exit 1
 	fi
 
 	pkg=binutils
