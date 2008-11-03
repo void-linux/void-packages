@@ -237,6 +237,7 @@ reset_tmpl_vars()
 			tar_override_cmd xml_entries sgml_entries \
 			build_depends libtool_fixup_la_stage no_fixup_libtool \
 			disable_parallel_build run_depends cross_compiler \
+			only_for_archs \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
@@ -272,6 +273,7 @@ setup_tmpl()
 prepare_tmpl()
 {
 	local i=
+	local found=
 
 	#
 	# There's nothing of interest if we are a meta template.
@@ -287,6 +289,13 @@ prepare_tmpl()
 			msg_error "\"$i\" not set on $pkgname template."
 		fi
 	done
+
+	for i in ${only_for_archs}; do
+		[ "$i" = "$xbps_machine" ] && found=si && break
+	done
+	if [ -n ${only_for_archs} -a -z $found ]; then
+		msg_error "this package is only for: ${only_for_archs}."
+	fi
 
 	unset XBPS_EXTRACT_DONE XBPS_APPLYPATCHES_DONE
 	unset XBPS_CONFIGURE_DONE XBPS_BUILD_DONE XBPS_INSTALL_DONE
@@ -1386,18 +1395,9 @@ unstow_pkg()
 #
 while getopts "Cc:" opt; do
 	case $opt in
-	C)
-		dontrm_builddir=yes
-		;;
-	c)
-		config_file_specified=yes
-		XBPS_CONFIG_FILE="$OPTARG"
-		shift
-		;;
-	--)
-		shift
-		break
-		;;
+		C) dontrm_builddir=yes;;
+		c) config_file_specified=yes; XBPS_CONFIG_FILE="$OPTARG";;
+		--) shift; break;;
 	esac
 done
 shift $(($OPTIND - 1))
