@@ -89,14 +89,9 @@ check_path()
 	eval local orig="$1"
 
 	case "$orig" in
-	/)
-		;;
-	/*)
-		orig="${orig%/}"
-		;;
-	*)
-		orig="$(pwd)/${orig%/}"
-		;;
+		/) ;;
+		/*) orig="${orig%/}" ;;
+		*) orig="$(pwd)/${orig%/}" ;;
 	esac
 
 	path_fixed="$orig"
@@ -541,14 +536,15 @@ fetch_distfiles()
 
 libtool_fixup_file()
 {
+	local hldirf="hardcode_libdir_flag_spec"
+
 	[ "$pkgname" = "libtool" -o ! -f $wrksrc/libtool ] && return 0
 	[ -n "$no_libtool_fixup" ] && return 0
 
 	# If we are being invoked by a chroot, don't transform stuff.
 	[ -n "$in_chroot" ] && return 0
 
-	sed -i -e \
-		's|^hardcode_libdir_flag_spec=.*|hardcode_libdir_flag_spec="-Wl,-rpath /usr/lib"|g' \
+	sed -i -e "s|^$hldirf=.*|$hldirf=\"-Wl,-rpath /usr/lib\"|g" \
 		$wrksrc/libtool
 }
 
@@ -580,7 +576,7 @@ libtool_fixup_la_files()
 			msg_normal "Fixing up libtool archive: ${f##$where/}."
 			sed -i	-e "s|\/..\/lib||g;s|\/\/lib|/usr/lib|g" \
 				-e "s|$XBPS_MASTERDIR||g;s|$wrksrc||g" \
-				-e "s|$XBPS_DESTDIR/$pkgname-$version||g" $f
+				-e "s|$where||g" $f
 			awk '{ if (/^ dependency_libs/) {gsub("/usr[^]*lib","lib");}print}' \
 				$f > $f.in && mv $f.in $f
 		fi
@@ -635,38 +631,36 @@ apply_tmpl_patches()
 	# If package needs some patches applied before building,
 	# apply them now.
 	#
-	if [ -n "$patch_files" ]; then
-		for i in ${patch_files}; do
-			patch="$XBPS_TEMPLATESDIR/$i"
-			if [ ! -f "$patch" ]; then
-				msg_warn "unexistent patch: $i."
-				continue
-			fi
+	for i in ${patch_files}; do
+		patch="$XBPS_TEMPLATESDIR/$i"
+		if [ ! -f "$patch" ]; then
+			msg_warn "unexistent patch: $i."
+			continue
+		fi
 
-			cp -f $patch $wrksrc
+		cp -f $patch $wrksrc
 
-			# Try to guess if its a compressed patch.
-			if $(echo $patch|grep -q '.diff.gz'); then
-				gunzip $wrksrc/$i
-				patch=${i%%.gz}
-			elif $(echo $patch|grep -q '.diff.bz2'); then
-				bunzip2 $wrksrc/$i
-				patch=${i%%.bz2}
-			elif $(echo $patch|grep -q '.diff'); then
-				patch=$i
-			else
-				msg_warn "unknown patch type: $i."
-				continue
-			fi
+		# Try to guess if its a compressed patch.
+		if $(echo $patch|grep -q '.diff.gz'); then
+			gunzip $wrksrc/$i
+			patch=${i%%.gz}
+		elif $(echo $patch|grep -q '.diff.bz2'); then
+			bunzip2 $wrksrc/$i
+			patch=${i%%.bz2}
+		elif $(echo $patch|grep -q '.diff'); then
+			patch=$i
+		else
+			msg_warn "unknown patch type: $i."
+			continue
+		fi
 
-			cd $wrksrc && patch -s -p0 < $patch 2>/dev/null
-			if [ "$?" -eq 0 ]; then
-				msg_normal "Patch applied: $i."
-			else
-				msg_error "couldn't apply patch: $i."
-			fi
-		done
-	fi
+		cd $wrksrc && patch -s -p0 < $patch 2>/dev/null
+		if [ "$?" -eq 0 ]; then
+			msg_normal "Patch applied: $i."
+		else
+			msg_error "couldn't apply patch: $i."
+		fi
+	done
 
 	touch -f $XBPS_APPLYPATCHES_DONE
 }
@@ -679,6 +673,7 @@ configure_src_phase()
 {
 	local pkg="$1"
 	local f=
+	local destdir=$XBPS_DESTDIR/$pkgname-$version
 
 	[ -z $pkg ] && [ -z $pkgname ] && return 1
 
@@ -734,8 +729,8 @@ configure_src_phase()
 	if [ "$build_style" = "gnu_configure" ]; then
 		${configure_script}				\
 			--prefix=${_prefix} --sysconfdir=/etc	\
-			--infodir=$XBPS_DESTDIR/$pkgname-$version/usr/share/info \
-			--mandir=$XBPS_DESTDIR/$pkgname-$version/usr/share/man \
+			--infodir=$destdir/usr/share/info	\
+			--mandir=$destdir/usr/share/man		\
 			${configure_args}
 	#
 	# Packages using propietary configure scripts.
@@ -919,9 +914,11 @@ install_src_phase()
 #
 make_install()
 {
+	local destdir=$XBPS_DESTDIR/$pkgname-$version
+
 	if [ -z "$make_install_target" ]; then
-		make_install_target="install prefix=$XBPS_DESTDIR/$pkgname-$version/usr"
-		make_install_target="$make_install_target sysconfdir=$XBPS_DESTDIR/$pkgname-$version/etc"
+		make_install_target="install prefix=$destdir/usr"
+		make_install_target="$make_install_target sysconfdir=$destdir/etc"
 	fi
 
 	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
