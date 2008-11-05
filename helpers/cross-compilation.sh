@@ -16,6 +16,7 @@ SAVE_PATH="$PATH"
 
 cross_compile_setvars()
 {
+	export GCC=$XBPS_CROSS_TARGET-gcc
 	export CC=$XBPS_CROSS_TARGET-gcc
 	export CXX=$XBPS_CROSS_TARGET-g++
 	export CPP=$XBPS_CROSS_TARGET-cpp
@@ -29,7 +30,7 @@ cross_compile_setvars()
 
 cross_compile_unsetvars()
 {
-	unset CC CXX CPP AR AS RANLIB LD STRIP PATH
+	unset GCC CC CXX CPP AR AS RANLIB LD STRIP PATH
 	export PATH="$SAVE_PATH"
 }
 
