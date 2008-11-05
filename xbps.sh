@@ -32,7 +32,6 @@ trap "echo && exit 1" INT QUIT
 : ${progname:=$(basename $0)}
 : ${fetch_cmd:=wget}
 : ${xbps_machine:=$(uname -m)}
-: ${XBPS_CROSS_HOST:=$xbps_machine-pc-linux-gnu}
 
 usage()
 {
@@ -694,11 +693,6 @@ configure_src_phase()
 	if [ -n "$cross_compiler" ]; then
 		. $XBPS_HELPERSDIR/cross-compilation.sh
 		cross_compile_setvars
-	else
-		if [ "$build_style" = "gnu_configure" ]; then
-			configure_args="$configure_args --host=$XBPS_CROSS_HOST"
-			configure_args="$configure_args --build=$XBPS_CROSS_HOST"
-		fi
 	fi
 
 	# Run pre_configure helpers.

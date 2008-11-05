@@ -13,6 +13,11 @@ for bin in gcc g++ cpp ar as ranlib ld strip; do
 done
 
 SAVE_PATH="$PATH"
+if [ "$xbps_machine" = "x86_64" ]; then
+	XBPS_CROSS_HOST="x86_64-unknown-linux-gnu"
+else
+	XBPS_CROSS_HOST="$xbps_machine-pc-linux-gnu"
+fi
 
 cross_compile_setvars()
 {
