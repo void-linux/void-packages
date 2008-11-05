@@ -167,7 +167,7 @@ gcc()
 		make_args="AS_FOR_TARGET=$CROSS_TARGET-as"
 		make_args="$make_args LD_FOR_TARGET=$CROSS_TARGET-ld"
 		make_install_args="install"
-		configure_args="--enable-threads=posix"
+		configure_args="--enable-shared --enable-threads=posix"
 		configure_args="$configure_args --enable-languages=c,c++"
 		configure_args="$configure_args --enable-__cxa_atexit"
 		configure_args="$configure_args --enable-tls"
@@ -342,11 +342,11 @@ else
 	case $CROSS_TARGET in
 		i686-pc-linux-gnu)
 			KERNEL_ARCH=i386
-			CROSS_HOST=x86_64-unknown-linux-gnu
+			CROSS_HOST="$(uname -m)-unknown-linux-gnu"
 			;;
 		x86-64-unknown-linux-gnu)
 			KERNEL_ARCH=x86_64
-			CROSS_HOST=i686-pc-linux-gnu
+			CROSS_HOST="$(uname -m)-pc-linux-gnu"
 			;;
 		*)
 			echo "ERROR: unknown target triplet $CROSS_TARGET."
