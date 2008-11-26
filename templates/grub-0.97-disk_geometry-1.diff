@@ -1,0 +1,892 @@
+Submitted By: Jim Gifford <jim@linuxfromscratch.org>
+Date: 05-28-2006
+Initial Package Version: 0.97
+Upstream Status: Unknown
+Origin: Fedora and Mandriva
+Description: This patch fixes issues with disk geometry not being 
+	     detected properly. Part of this patch also fixes
+	     gcc 4 compile errors, which are a part of the issue.
+
+diff -Naur grub-0.97.orig/configure grub-0.97/configure
+--- grub-0.97.orig/configure	2005-05-07 19:48:12.000000000 -0700
++++ grub-0.97/configure	2006-05-28 20:29:36.025466751 -0700
+@@ -3485,9 +3485,9 @@
+ echo "$as_me:$LINENO: result: $size_flag" >&5
+ echo "${ECHO_T}$size_flag" >&6
+     if test "x$size_flag" = xyes; then
+-      STAGE2_CFLAGS="-Os"
++      STAGE2_CFLAGS="-Os -fno-strict-aliasing"
+     else
+-      STAGE2_CFLAGS="-O2 -fno-strength-reduce -fno-unroll-loops"
++      STAGE2_CFLAGS="-O2 -fno-strict-aliasing -fno-strength-reduce -fno-unroll-loops"
+     fi
+     # OpenBSD has a GCC extension for protecting applications from
+     # stack smashing attacks, but GRUB doesn't want this feature.
+diff -Naur grub-0.97.orig/configure.ac grub-0.97/configure.ac
+--- grub-0.97.orig/configure.ac	2005-05-07 19:36:03.000000000 -0700
++++ grub-0.97/configure.ac	2006-05-28 20:28:41.538819726 -0700
+@@ -93,9 +93,9 @@
+       CFLAGS=$saved_CFLAGS
+     ])
+     if test "x$size_flag" = xyes; then
+-      STAGE2_CFLAGS="-Os"
++      STAGE2_CFLAGS="-Os -fno-strict-aliasing"
+     else
+-      STAGE2_CFLAGS="-O2 -fno-strength-reduce -fno-unroll-loops"
++      STAGE2_CFLAGS="-O2 -fno-strict-aliasing -fno-strength-reduce -fno-unroll-loops"
+     fi
+     # OpenBSD has a GCC extension for protecting applications from
+     # stack smashing attacks, but GRUB doesn't want this feature.
+diff -Naur grub-0.97.orig/lib/device.c grub-0.97/lib/device.c
+--- grub-0.97.orig/lib/device.c	2005-03-27 15:14:25.000000000 -0800
++++ grub-0.97/lib/device.c	2006-05-28 20:34:03.546804777 -0700
+@@ -131,6 +131,152 @@
+ #include <shared.h>
+ #include <device.h>
+ 
++#if defined(__linux__)
++/* The 2.6 kernel has removed all of the geometry handling for IDE drives
++ * that did fixups for LBA, etc.  This means that the geometry we get
++ * with the ioctl has a good chance of being wrong.  So, we get to 
++ * also know about partition tables and try to read what the geometry
++ * is there. *grumble*   Very closely based on code from cfdisk
++ */
++static void get_kernel_geometry(int fd, long long *cyl, int *heads, int *sectors) {
++    struct hd_geometry hdg;
++    
++    if (ioctl (fd, HDIO_GETGEO, &hdg))
++        return;
++
++    *cyl = hdg.cylinders;
++    *heads = hdg.heads;
++    *sectors = hdg.sectors;
++}
++
++struct partition {
++        unsigned char boot_ind;         /* 0x80 - active */
++        unsigned char head;             /* starting head */
++        unsigned char sector;           /* starting sector */
++        unsigned char cyl;              /* starting cylinder */
++        unsigned char sys_ind;          /* What partition type */
++        unsigned char end_head;         /* end head */
++        unsigned char end_sector;       /* end sector */
++        unsigned char end_cyl;          /* end cylinder */
++        unsigned char start4[4];        /* starting sector counting from 0 */
++        unsigned char size4[4];         /* nr of sectors in partition */
++};
++
++#define ALIGNMENT 2
++typedef union {
++    struct {
++	unsigned char align[ALIGNMENT];
++	unsigned char b[SECTOR_SIZE];
++    } c;
++    struct {
++	unsigned char align[ALIGNMENT];
++	unsigned char buffer[0x1BE];
++	struct partition part[4];
++	unsigned char magicflag[2];
++    } p;
++} partition_table;
++
++#define PART_TABLE_FLAG0 0x55
++#define PART_TABLE_FLAG1 0xAA
++
++static void
++get_partition_table_geometry(partition_table *bufp, long long *cyl, int *heads, 
++                             int *sectors) {
++    struct partition *p;
++    int i,h,s,hh,ss;
++    int first = 1;
++    int bad = 0;
++
++    if (bufp->p.magicflag[0] != PART_TABLE_FLAG0 ||
++	bufp->p.magicflag[1] != PART_TABLE_FLAG1) {
++	    /* Matthew Wilcox: slightly friendlier version of
++	       fatal(_("Bad signature on partition table"), 3);
++	    */
++            fprintf(stderr, "Unknown partition table signature\n");
++	    return;
++    }
++
++    hh = ss = 0;
++    for (i=0; i<4; i++) {
++	p = &(bufp->p.part[i]);
++	if (p->sys_ind != 0) {
++	    h = p->end_head + 1;
++	    s = (p->end_sector & 077);
++	    if (first) {
++		hh = h;
++		ss = s;
++		first = 0;
++	    } else if (hh != h || ss != s)
++		bad = 1;
++	}
++    }
++
++    if (!first && !bad) {
++	*heads = hh;
++	*sectors = ss;
++    }
++}
++
++static long long my_lseek (unsigned int fd, long long offset, 
++                           unsigned int origin)
++{
++#if defined(__linux__) && (!defined(__GLIBC__) || \
++        ((__GLIBC__ < 2) || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ < 1))))
++  /* Maybe libc doesn't have large file support.  */
++  loff_t offset, result;
++  static int _llseek (uint filedes, ulong hi, ulong lo,
++                      loff_t *res, uint wh);
++  _syscall5 (int, _llseek, uint, filedes, ulong, hi, ulong, lo,
++             loff_t *, res, uint, wh);
++  
++  if (_llseek (fd, offset >> 32, offset & 0xffffffff, &result, SEEK_SET) < 0)
++    return (long long) -1;
++  return result;
++#else
++  return lseek(fd, offset, SEEK_SET);
++#endif
++}
++
++static void get_linux_geometry (int fd, struct geometry *geom) {
++    long long kern_cyl = 0; int kern_head = 0, kern_sectors = 0;
++    long long pt_cyl = 0; int pt_head = 0, pt_sectors = 0;
++    partition_table bufp;
++    char *buff, *buf_unaligned;
++
++    buf_unaligned = malloc(sizeof(partition_table) + 4095);
++    buff = (char *) (((unsigned long)buf_unaligned + 4096 - 1) &
++                     (~(4096-1)));
++
++    get_kernel_geometry(fd, &kern_cyl, &kern_head, &kern_sectors);
++
++    if (my_lseek (fd, 0*SECTOR_SIZE, SEEK_SET) < 0) {
++        fprintf(stderr, "Unable to seek");
++    }
++
++    if (read(fd, buff, SECTOR_SIZE) == SECTOR_SIZE) {
++        memcpy(bufp.c.b, buff, SECTOR_SIZE);
++        get_partition_table_geometry(&bufp, &pt_cyl, &pt_head, &pt_sectors);
++    } else {
++        fprintf(stderr, "Unable to read partition table: %s\n", strerror(errno));
++    }
++
++    if (pt_head && pt_sectors) {
++        int cyl_size;
++
++        geom->heads = pt_head;
++        geom->sectors = pt_sectors;
++        cyl_size = pt_head * pt_sectors;
++        geom->cylinders = geom->total_sectors/cyl_size;
++    } else {
++        geom->heads = kern_head;
++        geom->sectors = kern_sectors;
++        geom->cylinders = kern_cyl;
++    }
++
++    return;
++}
++#endif
++
+ /* Get the geometry of a drive DRIVE.  */
+ void
+ get_drive_geometry (struct geometry *geom, char **map, int drive)
+@@ -151,21 +297,16 @@
+ #if defined(__linux__)
+   /* Linux */
+   {
+-    struct hd_geometry hdg;
+     unsigned long nr;
+-    
+-    if (ioctl (fd, HDIO_GETGEO, &hdg))
+-      goto fail;
+ 
+     if (ioctl (fd, BLKGETSIZE, &nr))
+       goto fail;
+     
+     /* Got the geometry, so save it. */
+-    geom->cylinders = hdg.cylinders;
+-    geom->heads = hdg.heads;
+-    geom->sectors = hdg.sectors;
+     geom->total_sectors = nr;
+-    
++    get_linux_geometry(fd, geom);
++    if (!geom->heads && !geom->cylinders && !geom->sectors)
++        goto fail;
+     goto success;
+   }
+ 
+@@ -844,6 +985,7 @@
+ {
+   char dev[PATH_MAX];	/* XXX */
+   int fd;
++  off_t offset = (off_t) sector * (off_t) SECTOR_SIZE;
+   
+   if ((partition & 0x00FF00) != 0x00FF00)
+     {
+@@ -870,35 +1012,13 @@
+       errnum = ERR_NO_PART;
+       return 0;
+     }
+-  
+-#if defined(__linux__) && (!defined(__GLIBC__) || \
+-        ((__GLIBC__ < 2) || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ < 1))))
+-  /* Maybe libc doesn't have large file support.  */
+-  {
+-    loff_t offset, result;
+-    static int _llseek (uint filedes, ulong hi, ulong lo,
+-                        loff_t *res, uint wh);
+-    _syscall5 (int, _llseek, uint, filedes, ulong, hi, ulong, lo,
+-               loff_t *, res, uint, wh);
+ 
+-    offset = (loff_t) sector * (loff_t) SECTOR_SIZE;
+-    if (_llseek (fd, offset >> 32, offset & 0xffffffff, &result, SEEK_SET))
+-      {
+-	errnum = ERR_DEV_VALUES;
+-	return 0;
+-      }
+-  }
+-#else
+-  {
+-    off_t offset = (off_t) sector * (off_t) SECTOR_SIZE;
+ 
+-    if (lseek (fd, offset, SEEK_SET) != offset)
+-      {
+-	errnum = ERR_DEV_VALUES;
+-	return 0;
+-      }
+-  }
+-#endif
++  if (my_lseek(fd, offset, SEEK_SET) != offset)
++    {
++      errnum = ERR_DEV_VALUES;
++      return 0;
++    }
+   
+   if (write (fd, buf, size * SECTOR_SIZE) != (size * SECTOR_SIZE))
+     {
+diff -Naur grub-0.97.orig/stage2/Makefile.am grub-0.97/stage2/Makefile.am
+--- grub-0.97.orig/stage2/Makefile.am	2005-02-02 12:37:35.000000000 -0800
++++ grub-0.97/stage2/Makefile.am	2006-05-28 20:28:41.590818435 -0700
+@@ -24,7 +24,8 @@
+ 	-DGRUB_UTIL=1 -DFSYS_EXT2FS=1 -DFSYS_FAT=1 -DFSYS_FFS=1 \
+ 	-DFSYS_ISO9660=1 -DFSYS_JFS=1 -DFSYS_MINIX=1 -DFSYS_REISERFS=1 \
+ 	-DFSYS_UFS2=1 -DFSYS_VSTAFS=1 -DFSYS_XFS=1 \
+-	-DUSE_MD5_PASSWORDS=1 -DSUPPORT_SERIAL=1 -DSUPPORT_HERCULES=1
++	-DUSE_MD5_PASSWORDS=1 -DSUPPORT_SERIAL=1 -DSUPPORT_HERCULES=1 \
++	-fno-strict-aliasing
+ 
+ # Stage 2 and Stage 1.5's.
+ pkglibdir = $(libdir)/$(PACKAGE)/$(host_cpu)-$(host_vendor)
+diff -Naur grub-0.97.orig/stage2/boot.c grub-0.97/stage2/boot.c
+--- grub-0.97.orig/stage2/boot.c	2004-03-30 03:44:08.000000000 -0800
++++ grub-0.97/stage2/boot.c	2006-05-28 20:33:30.123638792 -0700
+@@ -55,7 +55,7 @@
+   pu;
+   /* presuming that MULTIBOOT_SEARCH is large enough to encompass an
+      executable header */
+-  unsigned char buffer[MULTIBOOT_SEARCH];
++  char buffer[MULTIBOOT_SEARCH];
+ 
+   /* sets the header pointer to point to the beginning of the
+      buffer by default */
+@@ -98,7 +98,7 @@
+   /* ELF loading supported if multiboot, FreeBSD and NetBSD.  */
+   if ((type == KERNEL_TYPE_MULTIBOOT
+        || pu.elf->e_ident[EI_OSABI] == ELFOSABI_FREEBSD
+-       || grub_strcmp (pu.elf->e_ident + EI_BRAND, "FreeBSD") == 0
++       || grub_strcmp ((char *) pu.elf->e_ident + EI_BRAND, "FreeBSD") == 0
+        || suggested_type == KERNEL_TYPE_NETBSD)
+       && len > sizeof (Elf32_Ehdr)
+       && BOOTABLE_I386_ELF ((*((Elf32_Ehdr *) buffer))))
+@@ -824,8 +824,12 @@
+     moveto = (mbi.mem_upper + 0x400) << 10;
+   
+   moveto = (moveto - len) & 0xfffff000;
++#if 0
+   max_addr = (lh->header == LINUX_MAGIC_SIGNATURE && lh->version >= 0x0203
+ 	      ? lh->initrd_addr_max : LINUX_INITRD_MAX_ADDRESS);
++#else
++  max_addr = LINUX_INITRD_MAX_ADDRESS;
++#endif
+   if (moveto + len >= max_addr)
+     moveto = (max_addr - len) & 0xfffff000;
+   
+diff -Naur grub-0.97.orig/stage2/disk_io.c grub-0.97/stage2/disk_io.c
+--- grub-0.97.orig/stage2/disk_io.c	2004-05-23 09:35:24.000000000 -0700
++++ grub-0.97/stage2/disk_io.c	2006-05-28 20:28:41.582818634 -0700
+@@ -127,12 +127,19 @@
+ int filepos;
+ int filemax;
+ 
+-static inline unsigned long
+-log2 (unsigned long word)
++#define log2(n) ffz(~(n))
++
++/* include/asm-i386/bitops.h */
++/*
++ * ffz = Find First Zero in word. Undefined if no zero exists,
++ * so code should check against ~0UL first..
++ */
++static __inline__ unsigned long
++ffz (unsigned long word)
+ {
+-  asm volatile ("bsfl %1,%0"
+-		: "=r" (word)
+-		: "r" (word));
++  __asm__ ("bsfl %1,%0"
++:	   "=r" (word)
++:	   "r" (~word));
+   return word;
+ }
+ 
+diff -Naur grub-0.97.orig/stage2/freebsd.h grub-0.97/stage2/freebsd.h
+--- grub-0.97.orig/stage2/freebsd.h	2003-07-09 04:45:52.000000000 -0700
++++ grub-0.97/stage2/freebsd.h	2006-05-28 20:28:41.582818634 -0700
+@@ -78,7 +78,7 @@
+ struct bootinfo
+   {
+     unsigned int bi_version;
+-    unsigned char *bi_kernelname;
++    char *bi_kernelname;
+     struct nfs_diskless *bi_nfs_diskless;
+     /* End of fields that are always present. */
+ #define bi_endcommon            bi_n_bios_used
+diff -Naur grub-0.97.orig/stage2/fsys_fat.c grub-0.97/stage2/fsys_fat.c
+--- grub-0.97.orig/stage2/fsys_fat.c	2005-03-15 08:52:00.000000000 -0800
++++ grub-0.97/stage2/fsys_fat.c	2006-05-28 20:28:41.582818634 -0700
+@@ -54,12 +54,19 @@
+ 
+ #define FAT_CACHE_SIZE 2048
+ 
++#define log2(n) ffz(~(n))
++
++/* include/asm-i386/bitops.h */
++/*
++ * ffz = Find First Zero in word. Undefined if no zero exists,
++ * so code should check against ~0UL first..
++ */
+ static __inline__ unsigned long
+-log2 (unsigned long word)
++ffz (unsigned long word)
+ {
+   __asm__ ("bsfl %1,%0"
+-	   : "=r" (word)
+-	   : "r" (word));
++:	   "=r" (word)
++:	   "r" (~word));
+   return word;
+ }
+ 
+diff -Naur grub-0.97.orig/stage2/fsys_iso9660.c grub-0.97/stage2/fsys_iso9660.c
+--- grub-0.97.orig/stage2/fsys_iso9660.c	2004-05-11 05:11:19.000000000 -0700
++++ grub-0.97/stage2/fsys_iso9660.c	2006-05-28 20:28:41.582818634 -0700
+@@ -55,13 +55,19 @@
+ #define RRCONT_BUF      ((unsigned char *)(FSYS_BUF + 6144))
+ #define NAME_BUF        ((unsigned char *)(FSYS_BUF + 8192))
+ 
++#define log2(n) ffz(~(n))
+ 
+-static inline unsigned long
+-log2 (unsigned long word)
++/* include/asm-i386/bitops.h */
++/*
++ * ffz = Find First Zero in word. Undefined if no zero exists,
++ * so code should check against ~0UL first..
++ */
++static __inline__ unsigned long
++ffz (unsigned long word)
+ {
+-  asm volatile ("bsfl %1,%0"
+-		:          "=r" (word)
+-		:          "r" (word));
++  __asm__ ("bsfl %1,%0"
++:	   "=r" (word)
++:	   "r" (~word));
+   return word;
+ }
+ 
+@@ -120,7 +126,7 @@
+ 	break;
+       /* check ISO_VD_PRIMARY and ISO_STANDARD_ID */
+       if (PRIMDESC->type.l == ISO_VD_PRIMARY
+-	  && !memcmp(PRIMDESC->id, ISO_STANDARD_ID, sizeof(PRIMDESC->id)))
++	  && !memcmp((char *) PRIMDESC->id, ISO_STANDARD_ID, sizeof(PRIMDESC->id)))
+ 	{
+ 	  ISO_SUPER->vol_sector = sector;
+ 	  INODE->file_start = 0;
+@@ -175,7 +181,7 @@
+ 	  for (; idr->length.l > 0;
+ 	       idr = (struct iso_directory_record *)((char *)idr + idr->length.l) )
+ 	    {
+-	      const char *name = idr->name;
++	      const u_int8_t *name = idr->name;
+ 	      unsigned int name_len = idr->name_len.l;
+ 
+ 	      file_type = (idr->flags.l & 2) ? ISO_DIRECTORY : ISO_REGULAR;
+@@ -198,7 +204,7 @@
+ 	      rr_len = (idr->length.l - idr->name_len.l
+ 			- sizeof(struct iso_directory_record)
+ 			+ sizeof(idr->name));
+-	      rr_ptr.ptr = ((unsigned char *)idr + idr->name_len.l
++	      rr_ptr.ptr = ((char *)idr + idr->name_len.l
+ 			    + sizeof(struct iso_directory_record)
+ 			    - sizeof(idr->name));
+ 	      if (rr_ptr.i & 1)
+@@ -331,9 +337,9 @@
+ 			  memcpy(NAME_BUF, name, name_len);
+ 			  name = NAME_BUF;
+ 			}
+-		      rr_ptr.ptr = RRCONT_BUF + ce_ptr->u.ce.offset.l;
++		      rr_ptr.ptr = (char *) RRCONT_BUF + ce_ptr->u.ce.offset.l;
+ 		      rr_len = ce_ptr->u.ce.size.l;
+-		      if (!iso9660_devread(ce_ptr->u.ce.extent.l, 0, ISO_SECTOR_SIZE, RRCONT_BUF))
++		      if (!iso9660_devread(ce_ptr->u.ce.extent.l, 0, ISO_SECTOR_SIZE, (char *) RRCONT_BUF))
+ 			{
+ 			  errnum = 0;	/* this is not fatal. */
+ 			  break;
+@@ -344,7 +350,7 @@
+ 
+ 	      filemax = MAXINT;
+ 	      if (name_len >= pathlen
+-		  && !memcmp(name, dirname, pathlen))
++		  && !memcmp((char *) name, dirname, pathlen))
+ 		{
+ 		  if (dirname[pathlen] == '/' || !print_possibilities)
+ 		    {
+@@ -381,7 +387,7 @@
+ 			print_possibilities = -print_possibilities;
+ 		      memcpy(NAME_BUF, name, name_len);
+ 		      NAME_BUF[name_len] = '\0';
+-		      print_a_completion (NAME_BUF);
++		      print_a_completion ((char *) NAME_BUF);
+ #endif
+ 		    }
+ 		}
+diff -Naur grub-0.97.orig/stage2/fsys_reiserfs.c grub-0.97/stage2/fsys_reiserfs.c
+--- grub-0.97.orig/stage2/fsys_reiserfs.c	2004-02-18 14:09:10.000000000 -0800
++++ grub-0.97/stage2/fsys_reiserfs.c	2006-05-28 20:28:41.586818535 -0700
+@@ -365,13 +365,19 @@
+ #define JOURNAL_START    ((__u32 *) (INFO + 1))
+ #define JOURNAL_END      ((__u32 *) (FSYS_BUF + FSYS_BUFLEN))
+ 
++#define log2(n) ffz(~(n))
+ 
++/* include/asm-i386/bitops.h */
++/*
++ * ffz = Find First Zero in word. Undefined if no zero exists,
++ * so code should check against ~0UL first..
++ */
+ static __inline__ unsigned long
+-log2 (unsigned long word)
++ffz (unsigned long word)
+ {
+   __asm__ ("bsfl %1,%0"
+-	   : "=r" (word)
+-	   : "r" (word));
++:	   "=r" (word)
++:	   "r" (~word));
+   return word;
+ }
+ 
+diff -Naur grub-0.97.orig/stage2/fsys_vstafs.c grub-0.97/stage2/fsys_vstafs.c
+--- grub-0.97.orig/stage2/fsys_vstafs.c	2003-07-09 04:45:53.000000000 -0700
++++ grub-0.97/stage2/fsys_vstafs.c	2006-05-28 20:28:41.586818535 -0700
+@@ -186,35 +186,35 @@
+ int 
+ vstafs_read (char *addr, int len)
+ {
+-  struct alloc *a;
++  struct alloc *b;
+   int size, ret = 0, offset, curr_len = 0;
+-  int curr_ext;
++  int curr_exten;
+   char extent;
+   int ext_size;
+   char *curr_pos;
+   
+   get_file_info (f_sector);
+   size = FILE_INFO->len-VSTAFS_START_DATA;
+-  a = FILE_INFO->blocks;
++  b = FILE_INFO->blocks;
+   
+   if (filepos > 0)
+     {
+-      if (filepos < a[0].a_len * 512 - VSTAFS_START_DATA)
++      if (filepos < b[0].a_len * 512 - VSTAFS_START_DATA)
+ 	{
+ 	  offset = filepos + VSTAFS_START_DATA;
+ 	  extent = 0;
+-	  curr_len = a[0].a_len * 512 - offset - filepos; 
++	  curr_len = b[0].a_len * 512 - offset - filepos; 
+ 	}
+       else
+ 	{
+-	  ext_size = a[0].a_len * 512 - VSTAFS_START_DATA;
++	  ext_size = b[0].a_len * 512 - VSTAFS_START_DATA;
+ 	  offset = filepos - ext_size;
+ 	  extent = 1;
+ 	  do
+ 	    {
+ 	      curr_len -= ext_size;
+ 	      offset -= ext_size;
+-	      ext_size = a[extent+1].a_len * 512;
++	      ext_size = b[extent+1].a_len * 512;
+ 	    }
+ 	  while (extent < FILE_INFO->extents && offset>ext_size);
+ 	}
+@@ -223,16 +223,16 @@
+     {
+       offset = VSTAFS_START_DATA;
+       extent = 0;
+-      curr_len = a[0].a_len * 512 - offset;
++      curr_len = b[0].a_len * 512 - offset;
+     }
+   
+   curr_pos = addr;
+   if (curr_len > len)
+     curr_len = len;
+   
+-  for (curr_ext=extent;
+-       curr_ext < FILE_INFO->extents; 
+-       curr_len = a[curr_ext].a_len * 512, curr_pos += curr_len, curr_ext++)
++  for (curr_exten = extent;
++       curr_exten < FILE_INFO->extents; 
++       curr_len = b[curr_exten].a_len * 512, curr_pos += curr_len, curr_exten++)
+     {
+       ret += curr_len;
+       size -= curr_len;
+@@ -242,7 +242,7 @@
+ 	  curr_len += size;
+ 	}
+       
+-      devread (a[curr_ext].a_start,offset, curr_len, curr_pos);
++      devread (b[curr_exten].a_start, offset, curr_len, curr_pos);
+       offset = 0;
+     }
+   
+diff -Naur grub-0.97.orig/stage2/fsys_xfs.c grub-0.97/stage2/fsys_xfs.c
+--- grub-0.97.orig/stage2/fsys_xfs.c	2005-05-07 19:15:55.000000000 -0700
++++ grub-0.97/stage2/fsys_xfs.c	2006-05-28 20:28:41.586818535 -0700
+@@ -97,7 +97,7 @@
+ 	return ino & XFS_INO_MASK(XFS_INO_OFFSET_BITS);
+ }
+ 
+-static inline __const__ xfs_uint16_t
++static inline __attribute__((const)) xfs_uint16_t
+ le16 (xfs_uint16_t x)
+ {
+ 	__asm__("xchgb %b0,%h0"	\
+@@ -106,7 +106,7 @@
+ 		return x;
+ }
+ 
+-static inline __const__ xfs_uint32_t
++static inline __attribute__((const)) xfs_uint32_t
+ le32 (xfs_uint32_t x)
+ {
+ #if 0
+@@ -122,7 +122,7 @@
+ 	return x;
+ }
+ 
+-static inline __const__ xfs_uint64_t
++static inline __attribute__((const)) xfs_uint64_t
+ le64 (xfs_uint64_t x)
+ {
+ 	xfs_uint32_t h = x >> 32;
+@@ -368,7 +368,7 @@
+ 		default:
+ 			namelen = sfe->namelen;
+ 			*ino = sf_ino ((char *)sfe, namelen);
+-			name = sfe->name;
++			name = (char *) sfe->name;
+ 			sfe = (xfs_dir2_sf_entry_t *)
+ 				  ((char *)sfe + namelen + 11 - xfs.i8param);
+ 		}
+diff -Naur grub-0.97.orig/stage2/gunzip.c grub-0.97/stage2/gunzip.c
+--- grub-0.97.orig/stage2/gunzip.c	2003-07-09 04:45:53.000000000 -0700
++++ grub-0.97/stage2/gunzip.c	2006-05-28 20:28:41.586818535 -0700
+@@ -277,7 +277,7 @@
+    *  is a compressed file, and simply mark it as such.
+    */
+   if (no_decompression
+-      || grub_read (buf, 10) != 10
++      || grub_read ((char *) buf, 10) != 10
+       || ((*((unsigned short *) buf) != GZIP_HDR_LE)
+ 	  && (*((unsigned short *) buf) != OLD_GZIP_HDR_LE)))
+     {
+@@ -293,7 +293,7 @@
+   if (buf[2] != DEFLATED
+       || (buf[3] & UNSUPP_FLAGS)
+       || ((buf[3] & EXTRA_FIELD)
+-	  && (grub_read (buf, 2) != 2
++	  && (grub_read ((char *) buf, 2) != 2
+ 	      || bad_field (*((unsigned short *) buf))))
+       || ((buf[3] & ORIG_NAME) && bad_field (-1))
+       || ((buf[3] & COMMENT) && bad_field (-1)))
+@@ -308,7 +308,7 @@
+   
+   filepos = filemax - 8;
+   
+-  if (grub_read (buf, 8) != 8)
++  if (grub_read ((char *) buf, 8) != 8)
+     {
+       if (! errnum)
+ 	errnum = ERR_BAD_GZIP_HEADER;
+@@ -485,8 +485,8 @@
+ 
+ #define INBUFSIZ  0x2000
+ 
+-static uch inbuf[INBUFSIZ];
+-static int bufloc;
++static unsigned char inbuf[INBUFSIZ];
++static int  bufloc;
+ 
+ static int
+ get_byte (void)
+@@ -494,7 +494,7 @@
+   if (filepos == gzip_data_offset || bufloc == INBUFSIZ)
+     {
+       bufloc = 0;
+-      grub_read (inbuf, INBUFSIZ);
++      grub_read ((char *) inbuf, INBUFSIZ);
+     }
+ 
+   return inbuf[bufloc++];
+@@ -925,7 +925,7 @@
+   unsigned m;			/* mask for bit lengths table */
+   unsigned n;			/* number of lengths to get */
+   unsigned nb;			/* number of bit length codes */
+-  unsigned nl;			/* number of literal/length codes */
++  unsigned nc;			/* number of literal/length codes */
+   unsigned nd;			/* number of distance codes */
+   unsigned ll[286 + 30];	/* literal/length and distance code lengths */
+   register ulg b;		/* bit buffer */
+@@ -937,7 +937,7 @@
+ 
+   /* read in table lengths */
+   NEEDBITS (5);
+-  nl = 257 + ((unsigned) b & 0x1f);	/* number of literal/length codes */
++  nc = 257 + ((unsigned) b & 0x1f);	/* number of literal/length codes */
+   DUMPBITS (5);
+   NEEDBITS (5);
+   nd = 1 + ((unsigned) b & 0x1f);	/* number of distance codes */
+@@ -945,7 +945,7 @@
+   NEEDBITS (4);
+   nb = 4 + ((unsigned) b & 0xf);	/* number of bit length codes */
+   DUMPBITS (4);
+-  if (nl > 286 || nd > 30)
++  if (nc > 286 || nd > 30)
+     {
+       errnum = ERR_BAD_GZIP_DATA;
+       return;
+@@ -970,7 +970,7 @@
+     }
+ 
+   /* read in literal and distance code lengths */
+-  n = nl + nd;
++  n = nc + nd;
+   m = mask_bits[bl];
+   i = l = 0;
+   while ((unsigned) i < n)
+@@ -1034,7 +1034,7 @@
+ 
+   /* build the decoding tables for literal/length and distance codes */
+   bl = lbits;
+-  if ((i = huft_build (ll, nl, 257, cplens, cplext, &tl, &bl)) != 0)
++  if ((i = huft_build (ll, nc, 257, cplens, cplext, &tl, &bl)) != 0)
+     {
+ #if 0
+       if (i == 1)
+@@ -1045,7 +1045,7 @@
+       return;
+     }
+   bd = dbits;
+-  if ((i = huft_build (ll + nl, nd, 0, cpdist, cpdext, &td, &bd)) != 0)
++  if ((i = huft_build (ll + nc, nd, 0, cpdist, cpdext, &td, &bd)) != 0)
+     {
+ #if 0
+       if (i == 1)
+diff -Naur grub-0.97.orig/stage2/md5.c grub-0.97/stage2/md5.c
+--- grub-0.97.orig/stage2/md5.c	2003-07-09 04:45:53.000000000 -0700
++++ grub-0.97/stage2/md5.c	2006-05-28 20:28:41.590818435 -0700
+@@ -166,7 +166,7 @@
+   inputlen -= 64 - buflen;
+   while (inputlen >= 64)
+     {
+-      md5_transform (input);
++      md5_transform ((unsigned char *) input);
+       input += 64;
+       inputlen -= 64;
+     }
+@@ -211,7 +211,7 @@
+   char *p; 
+   int saltlen;
+   int i, n;
+-  unsigned char alt_result[16];
++  char alt_result[16];
+   unsigned char *digest;
+ 
+   if (check)
+diff -Naur grub-0.97.orig/stage2/start_eltorito.S grub-0.97/stage2/start_eltorito.S
+--- grub-0.97.orig/stage2/start_eltorito.S	2004-03-27 08:14:20.000000000 -0800
++++ grub-0.97/stage2/start_eltorito.S	2006-05-28 20:31:17.770936712 -0700
+@@ -40,9 +40,9 @@
+ #define ABS(x)			(x-_start+BOOTSEC_LOCATION)
+ 
+ #ifdef STAGE1_5
+-# define STAGE_ADDR		0x2000
++# define STAGE_ADDR		0x2200
+ #else
+-# define STAGE_ADDR		0x8000
++# define STAGE_ADDR		0x8200
+ #endif /* STAGE1_5 */
+ 
+ 	/* Print message string */
+@@ -71,12 +71,14 @@
+ 	. = _start + 8			    /* Pad to file offset 8 */
+ 
+ 		/* This table gets filled in by mkisofs using the
+-		   -boot-info-table option */
+-bi_pvd:		.long 0xDEADBEEF	    /* LBA of primary volume descript */
+-bi_file:	.long 0xDEADBEEF	    /* LBA of boot file */
+-bi_length:	.long 0xDEADBEEF	    /* Length of boot file */
+-bi_csum:	.long 0xDEADBEEF	    /* Checksum of boot file */
+-bi_reserved:	.space (10*4)		    /* Reserved */
++		   -boot-info-table option If not, the values in this
++		   table are default values that we can use to get us
++		   what we need, at least under a certain set of assumptions. */
++bi_pvd:     	.long 16               	/* LBA of primary volume descript */
++bi_file:    	.long 0	               	/* LBA of boot file */
++bi_length:	.long 0xDEADBEEF        /* Length of boot file */
++bi_csum:    	.long 0xDEADBEEF       	/* Checksum of boot file */
++bi_reserved:	.space (10*4)           /* Reserved */
+ 
+ real_start:
+ 	xor	%ax, %ax
+@@ -92,10 +94,28 @@
+ 	/* save drive reference first thing! */
+ 	mov	%dl, ABS(BootDrive)
+ 
+-	/* print a notification message on the screen */
+-	MSG(notification_string)
++	/* check if machine support IBM/MS int 13h extensions */
++	mov	$0x41, %ah
++	mov	$0x55AA, %bx
++	int	$0x13
++	jnc	load_image
++
++	/* bios doesn't support int 13h extensions, print error messages */
++	MSG(int13_error_string1)
++	MSG(notification_done)
++	MSG(int13_error_string2)
++	MSG(notification_done)
++	MSG(int13_error_string3)
++	MSG(notification_done)
++	/* even when bios says that it doesn't support int 13h
++           extensions, do not stop here and try to load image anyway,
++           because some bioses says that there isn't support for
++           extended functions but have the needed extended read function
++           (int 13h, function AH=42h) */
+ 
+ load_image:
++	/* print a notification message on the screen */
++	MSG(notification_string)
+ 	/* Set up boot file sector, size, load address */
+ 	mov	ABS(bi_length), %eax
+ 	add	$(ISO_SECTOR_SIZE-1), %eax
+@@ -105,6 +125,8 @@
+ 	mov	%bx, %es
+ 	xor	%bx, %bx
+ 	mov	ABS(bi_file), %eax
++	inc	%eax		    /* do not reload the first sector (this code) */
++	dec	%bp 		    /* this way we have more room for code in stage1 */
+ 	call	getlinsec
+ 	mov	%ds, %ax
+ 	mov	%ax, %es
+@@ -115,7 +137,7 @@
+ 	mov	$ABS(firstlist - BOOTSEC_LISTSIZE), %si
+ 	mov	(%si), %ebp
+ 	mov	ABS(BootDrive), %dl	    /* this makes sure %dl is our "boot" drive */
+-	ljmp	$0, $(STAGE_ADDR+SECTOR_SIZE)  /* jump to main() in asm.S */
++	ljmp	$0, $(STAGE_ADDR)	    /* jump to main() in asm.S */
+ 
+ /* go here when you need to stop the machine hard after an error condition */
+ stop:	jmp	stop
+@@ -171,11 +193,11 @@
+  */
+ xint13:
+ 	movb	$6, ABS(RetryCount)
+-	pushal
+ .try:
++	pushal
+ 	int	$0x13
+ 	jc	1f
+-	add	$(8*4), %sp		    /* Clean up stack */
++	popal				    /* Clean up stack */
+ 	ret
+ 1:
+ 	mov	%ah, %dl		    /* Save error code */
+@@ -276,6 +298,10 @@
+ 
+ read_error_string:	.string "Read error 0x"
+ 
++int13_error_string1:	.string "Support for IBM/MS INT 13h extensions not found"
++int13_error_string2:	.string "GRUB cannot be loaded if int 13h/function AH=42h isn't present"
++int13_error_string3:	.string "Trying to load stage 2 anyway..."
++
+ /*
+  * EBIOS disk address packet
+  */
+@@ -306,7 +332,8 @@
+ 	.word 0
+ 	.word 0
+ 
+-	. = _start + SECTOR_SIZE - BOOTSEC_LISTSIZE
++	/* size of the code we can place between main body and fixed top location */
++	. = _start + 1536 - BOOTSEC_LISTSIZE
+ 
+ 	/* fill the first data listing with the default */
+ blocklist_default_start:/* this is the sector start parameter, in logical
+@@ -321,6 +348,12 @@
+ #endif
+ blocklist_default_seg:	/* this is the segment of the starting address
+ 			   to load the data into */
+-	.word (STAGE_ADDR + SECTOR_SIZE) >> 4
++	.word (STAGE_ADDR) >> 4
+ 
+ firstlist:	/* this label has to be after the list data!!! */
++
++	/* this is a workaround to allow more code to be added in stage1,
++	   it allows more code to be added for this stage, but for this
++	   we can't reload the first sector. So we have to align the code
++	   to ISO_SECTOR_SIZE. */
++	. = _start + ISO_SECTOR_SIZE
+diff -Naur grub-0.97.orig/util/grub-install.in grub-0.97/util/grub-install.in
+--- grub-0.97.orig/util/grub-install.in	2004-07-24 11:57:31.000000000 -0700
++++ grub-0.97/util/grub-install.in	2006-05-28 20:30:31.484088268 -0700
+@@ -336,6 +336,10 @@
+     # Create a safe temporary file.
+     test -n "$mklog" && log_file=`$mklog`
+ 
++    # Before all invocations of the grub shell, call sync to make sure
++    # the raw device is in sync with any bufferring in filesystems.
++    sync
++ 
+     $grub_shell --batch $no_floppy --device-map=$device_map <<EOF >$log_file
+ quit
+ EOF
+@@ -450,6 +454,10 @@
+ # Create a safe temporary file.
+ test -n "$mklog" && log_file=`$mklog`
+ 
++# Before all invocations of the grub shell, call sync to make sure
++# the raw device is in sync with any bufferring in filesystems.
++sync
++
+ # Now perform the installation.
+ $grub_shell --batch $no_floppy --device-map=$device_map <<EOF >$log_file
+ root $root_drive
