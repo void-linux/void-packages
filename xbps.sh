@@ -241,7 +241,7 @@ reset_tmpl_vars()
 			tar_override_cmd xml_entries sgml_entries \
 			build_depends libtool_fixup_la_stage no_fixup_libtool \
 			disable_parallel_build run_depends cross_compiler \
-			only_for_archs \
+			only_for_archs patch_args \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
@@ -636,6 +636,8 @@ apply_tmpl_patches()
 		patch_files="$pkgname-fix-install.diff $patch_files"
 	fi
 
+	[ -z "$patch_args" ] && patch_args="-p0"
+
 	#
 	# If package needs some patches applied before building,
 	# apply them now.
@@ -663,7 +665,8 @@ apply_tmpl_patches()
 			continue
 		fi
 
-		cd $wrksrc && patch -s -p0 < $patch 2>/dev/null
+		cd $wrksrc && patch -s ${patch_args} < \
+			$patch 2>/dev/null
 		if [ "$?" -eq 0 ]; then
 			msg_normal "Patch applied: $i."
 		else
