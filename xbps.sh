@@ -1277,6 +1277,7 @@ list_pkg_files()
 remove_pkg()
 {
 	local pkg="$1"
+	local ver=
 
 	[ -z $pkg ] && msg_error "unexistent package, aborting."
 
@@ -1296,12 +1297,13 @@ remove_pkg()
 		return $?
 	fi
 
-	if [ ! -d "$XBPS_DESTDIR/$pkg-$version" ]; then
+	ver=$($XBPS_PKGDB_CMD version $pkg)
+	if [ ! -d "$XBPS_DESTDIR/$pkg-$ver" ]; then
 		msg_error "cannot find package on $XBPS_DESTDIR."
 	fi
 
 	unstow_pkg $pkg
-	rm -rf $XBPS_DESTDIR/$pkg-$version
+	rm -rf $XBPS_DESTDIR/$pkg-$ver
 	return $?
 }
 
@@ -1357,6 +1359,7 @@ unstow_pkg()
 {
 	local pkg="$1"
 	local f=
+	local ver=
 
 	[ -z $pkg ] && msg_error "template wasn't specified?"
 
@@ -1364,12 +1367,17 @@ unstow_pkg()
 		run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
 	fi
 
+	ver=$($XBPS_PKGDB_CMD version $pkg)
+	if [ -z "$ver" ]; then
+		msg_error "$pkg is not installed."
+	fi
+
 	#
 	# You cannot unstow a meta-template.
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	cd $XBPS_DESTDIR/$pkgname-$version || exit 1
+	cd $XBPS_DESTDIR/$pkgname-$ver || exit 1
 	[ ! -f .xbps-filelist ] && exit 1
 
 	for f in $(cat .xbps-filelist|sort -ur); do
@@ -1390,7 +1398,7 @@ unstow_pkg()
 		fi
 	done
 
-	$XBPS_PKGDB_CMD unregister $pkgname $version
+	$XBPS_PKGDB_CMD unregister $pkgname $ver
 	return $?
 }
 
