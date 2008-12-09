@@ -1383,7 +1383,11 @@ unstow_pkg()
 	[ "$build_style" = "meta-template" ] && return 0
 
 	cd $XBPS_DESTDIR/$pkgname-$ver || exit 1
-	[ ! -f .xbps-filelist ] && exit 1
+	if [ ! -f .xbps-filelist ]; then
+		msg_error "$pkg is incomplete, missing .xbps-filelist file."
+	elif [ ! -O .xbps-filelist ]; then
+		msg_error "$pkg cannot be removed (permission denied)."
+	fi
 
 	for f in $(cat .xbps-filelist|sort -ur); do
 		if [ -f $XBPS_MASTERDIR/$f -o -h $XBPS_MASTERDIR/$f ]; then
