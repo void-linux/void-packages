@@ -1260,15 +1260,18 @@ install_pkg()
 list_pkg_files()
 {
 	local pkg="$1"
-	local f="$XBPS_DESTDIR/$pkg/.xbps-filelist"
+	local ver=
 	
 	[ -z $pkg ] && msg_error "unexistent package, aborting."
 
-	if [ ! -d "$XBPS_DESTDIR/$pkg" ]; then
+	ver=$($XBPS_PKGDB_CMD version $pkg)
+	[ -z "$ver" ] && msg_error "$pkg is not installed."
+
+	if [ ! -d "$XBPS_DESTDIR/$pkg-$ver" ]; then
 		msg_error "cannot find $pkg in $XBPS_DESTDIR."
 	fi
 
-	cat $f|sort -u
+	cat $XBPS_DESTDIR/$pkg-$ver/.xbps-filelist|sort -u
 }
 
 #
@@ -1298,6 +1301,8 @@ remove_pkg()
 	fi
 
 	ver=$($XBPS_PKGDB_CMD version $pkg)
+	[ -z "$ver" ] && msg_error "$pkg is not installed."
+
 	if [ ! -d "$XBPS_DESTDIR/$pkg-$ver" ]; then
 		msg_error "cannot find package on $XBPS_DESTDIR."
 	fi
