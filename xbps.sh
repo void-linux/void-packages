@@ -1271,7 +1271,7 @@ list_pkg_files()
 		msg_error "cannot find $pkg in $XBPS_DESTDIR."
 	fi
 
-	cat $XBPS_DESTDIR/$pkg-$ver/.xbps-filelist|sort -u
+	cat $XBPS_DESTDIR/$pkg-$ver/xbps-metadata/flist
 }
 
 #
@@ -1319,7 +1319,6 @@ stow_pkg()
 {
 	local pkg="$1"
 	local i=
-	local flist="$XBPS_BUILDDIR/.xbps-filelist-$pkgname-$version"
 
 	[ -z "$pkg" ] && return 2
 
@@ -1335,11 +1334,14 @@ stow_pkg()
 		[ "$build_style" = "meta-template" ] && return 0
 	fi
 
+	# Copy files into masterdir.
 	cd $XBPS_DESTDIR/$pkgname-$version || exit 1
-	find . > $flist
-	sed -i -e "s|^.$||g;s|^./||g;s|.xbps-filelist||g;/^$/d" $flist
 	cp -ar . $XBPS_MASTERDIR
-	mv -f $flist $XBPS_DESTDIR/$pkgname-$version/.xbps-filelist
+
+	# Build a binary package.
+	env XBPS_DESTDIR=$XBPS_DESTDIR			\
+	    XBPS_DISTRIBUTIONDIR=$XBPS_DISTRIBUTIONDIR	\
+	    $XBPS_DISTRIBUTIONDIR/binpkg/create.sh $pkgname
 
 	$XBPS_PKGDB_CMD register $pkgname $version "$short_desc"
 	[ $? -ne 0 ] && exit 1
@@ -1382,14 +1384,14 @@ unstow_pkg()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	cd $XBPS_DESTDIR/$pkgname-$ver || exit 1
-	if [ ! -f .xbps-filelist ]; then
-		msg_error "$pkg is incomplete, missing .xbps-filelist file."
-	elif [ ! -O .xbps-filelist ]; then
+	cd $XBPS_DESTDIR/$pkgname-$ver/xbps-metadata || exit 1
+	if [ ! -f flist ]; then
+		msg_error "$pkg is incomplete, missing flist."
+	elif [ ! -O flist ]; then
 		msg_error "$pkg cannot be removed (permission denied)."
 	fi
 
-	for f in $(cat .xbps-filelist|sort -ur); do
+	for f in $(cat flist); do
 		if [ -f $XBPS_MASTERDIR/$f -o -h $XBPS_MASTERDIR/$f ]; then
 			rm $XBPS_MASTERDIR/$f  >/dev/null 2>&1
 			if [ $? -eq 0 ]; then
@@ -1398,7 +1400,7 @@ unstow_pkg()
 		fi
 	done
 
-	for f in $(cat .xbps-filelist|sort -ur); do
+	for f in $(cat flist); do
 		if [ -d $XBPS_MASTERDIR/$f ]; then
 			rmdir $XBPS_MASTERDIR/$f >/dev/null 2>&1
 			if [ $? -eq 0 ]; then
