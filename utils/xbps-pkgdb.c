@@ -32,7 +32,7 @@
 
 #include <prop/proplib.h>
 
-#define _XBPS_PKGDB_DEFPATH	"/var/xbps/.xbps-pkgdb.plist"
+#define _XBPS_PKGDB_DEFPATH	"/var/cache/xbps/pkgdb.plist"
 
 typedef struct pkg_data {
 	const char *pkgname;
@@ -359,7 +359,8 @@ main(int argc, char **argv)
 			/* Check if pkg is already registered. */
 			pkgdict = find_pkg_in_dict(dbdict, argv[2]);
 			if (pkgdict != NULL) {
-				printf("=> Package %s-%s already registered.\n",
+				printf("%s=> Package %s-%s already registered.\n",
+				    in_chroot ? "[chroot] " : "",
 				    argv[2], argv[3]);
 				exit(0);
 			}

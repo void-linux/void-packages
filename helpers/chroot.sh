@@ -25,8 +25,6 @@ fi
 
 if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
 	echo -n "==> Preparing chroot on $XBPS_MASTERDIR... "
-	chown -R root:root $XBPS_MASTERDIR/*
-	chmod +s $XBPS_MASTERDIR/usr/libexec/pt_chown
 	cp -af /etc/passwd /etc/shadow /etc/group /etc/hosts \
 		/etc/resolv.conf $XBPS_MASTERDIR/etc
 	touch $XBPS_MASTERDIR/.xbps_perms_done
@@ -81,8 +79,8 @@ chroot_pkg_handler()
 	if [ "$action" = "chroot" ]; then
 		env in_chroot=yes chroot $XBPS_MASTERDIR /bin/bash
 	else
-		env in_chroot=yes chroot $XBPS_MASTERDIR /xbps/xbps.sh \
-			$action $pkg
+		env in_chroot=yes chroot $XBPS_MASTERDIR \
+			/xbps/xbps.sh $action $pkg
 	fi
 	msg_normal "Exiting from the chroot on $XBPS_MASTERDIR."
 	umount_chroot_fs

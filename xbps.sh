@@ -30,33 +30,39 @@ trap "echo && exit 1" INT QUIT
 : ${XBPS_CONFIG_FILE:=/etc/xbps.conf}
 
 : ${progname:=$(basename $0)}
+: ${fakeroot_cmd:=fakeroot}
 : ${fetch_cmd:=wget}
 : ${xbps_machine:=$(uname -m)}
 
 usage()
 {
 	cat << _EOF
-$progname: [-C] [-c <config_file>] <target> [package_name]
+$progname: [-C] [-c <config_file>] <target> <pkg>
 
 Targets:
-	build		Builds a package, only build phase is done.
-	chroot		Enters to the chroot in masterdir.
-	configure	Configure a package, only configure phase is done.
-	extract		Extract distribution file(s) into build directory.
-	fetch		Download distribution file(s).
-	info		Show information about <package_name>.
-	install-destdir	build + configure + install into destdir.
-	install		install-destdir + stow.
-	list		Lists all currently installed packages.
-	listfiles	Lists files installed from <package_name>.
-	remove		Remove package completely (destdir + masterdir).
-	stow		Copy files from destdir/<pkgname> into masterdir.
-	unstow		Remove <pkgname> files from masterdir.
+ build <pkg>		Build a package (fetch + extract + configure + build).
+ build-chroot		Build binary packages required for chroot.
+ build-pkg <pkg>	Build a binary package from <pkg>.
+			Package must be installed into destdir before it.
+ chroot			Enter to the chroot in masterdir.
+ configure <pkg>	Configure a package (fetch + extract + configure).
+ extract <pkg>		Extract distribution file(s) into build directory.
+ fetch <pkg>		Download distribution file(s).
+ info <pkg>		Show information about <pkg>.
+ install-destdir <pkg>	build + install into destdir.
+ install <pkg>		install-destdir + stow + build-pkg.
+ list			List installed packages in masterdir.
+ listfiles <pkg>	List installed files from <pkg>.
+ remove	<pkg>		Remove package completely (destdir + masterdir).
+ stow <pkg>		Copy <pkg> files from destdir into masterdir and
+			register package in database.
+ unstow	<pkg>		Remove <pkg> files from masterdir and unregister
+			package from database.
 
 Options:
-	-C	Do not remove build directory after successful installation.
-	-c	Path to global configuration file:
-		if not specified /etc/xbps.conf is used.
+ -C	Do not remove build directory after successful installation.
+ -c	Path to global configuration file:
+	if not specified /etc/xbps.conf is used.
 _EOF
 	exit 1
 }
@@ -65,10 +71,11 @@ set_defvars()
 {
 	local i=
 
-	# Directories
 	: ${XBPS_TEMPLATESDIR:=$XBPS_DISTRIBUTIONDIR/templates}
 	: ${XBPS_HELPERSDIR:=$XBPS_DISTRIBUTIONDIR/helpers}
-	: ${XBPS_PKGDB_FPATH:=$XBPS_DESTDIR/.xbps-pkgdb.plist}
+	: ${XBPS_CACHEDIR:=$XBPS_MASTERDIR/var/cache/xbps}
+	: ${XBPS_PKGDB_FPATH:=$XBPS_CACHEDIR/pkgdb.plist}
+	: ${XBPS_PKGMETADIR:=$XBPS_CACHEDIR/metadata}
 	: ${XBPS_UTILSDIR:=$XBPS_DISTRIBUTIONDIR/utils}
 	: ${XBPS_DIGEST_CMD:=$XBPS_UTILSDIR/xbps-digest}
 	: ${XBPS_PKGDB_CMD:=$XBPS_UTILSDIR/xbps-pkgdb}
@@ -112,6 +119,17 @@ run_func()
 
 	type -t $func | grep -q 'function'
 	[ $? -eq 0 ] && $func
+}
+
+rootcmd_run()
+{
+	local lenv=
+
+	[ -n "$in_chroot" ] && unset fakeroot_cmd
+
+	lenv="XBPS_DESTDIR=$XBPS_DESTDIR"
+	lenv="XBPS_DISTRIBUTIONDIR=$XBPS_DISTRIBUTIONDIR $lenv"
+	env ${lenv} ${fakeroot_cmd} $@
 }
 
 msg_error()
@@ -259,11 +277,11 @@ setup_tmpl()
 {
 	local pkg="$1"
 
-	[ -z "$pkg" ] && msg_error "missing package name after target." && usage
+	[ -z "$pkg" ] && msg_error "missing package name after target."
 
 	if [ -f "$XBPS_TEMPLATESDIR/$pkg.tmpl" ]; then
 		if [ "$pkgname" != "$pkg" ]; then
-			run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
+			. $XBPS_TEMPLATESDIR/$pkg.tmpl
 		fi
 		prepare_tmpl
 	else
@@ -934,7 +952,7 @@ make_install()
 	#
 	# Install package via make.
 	#
-	${make_cmd} ${make_install_target} ${make_install_args}
+	rootcmd_run ${make_cmd} ${make_install_target} ${make_install_args}
 	if [ "$?" -ne 0 ]; then
 		msg_error "installing $pkgname-$version."
 		exit 1
@@ -967,7 +985,7 @@ add_dependency_tolist()
 
 	if [ "$pkgname" != "${curpkg%-[0-9]*.*}" ]; then
 		reset_tmpl_vars
-		run_file $XBPS_TEMPLATESDIR/${curpkg%-[0-9]*.*}.tmpl
+		. $XBPS_TEMPLATESDIR/${curpkg%-[0-9]*.*}.tmpl
 	fi
 
 	for j in ${build_depends}; do
@@ -1062,7 +1080,7 @@ install_dependencies_pkg()
 
 	doing_deps=true
 
-	echo -n "=> Calculating dependency list for $pkgname-$version... "
+	echo -n "==> Calculating dependency list for $pkgname-$version... "
 	add_dependency_tolist $pkg
 	find_dupdeps_inlist installed
 	find_dupdeps_inlist notinstalled
@@ -1073,11 +1091,11 @@ install_dependencies_pkg()
 	msg_normal "Required dependencies for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
 		fpkg="$($XBPS_PKGDB_CMD list|awk '{print $1}'|grep -w ${i%-[0-9]*.*})"
-		echo "	$i: found $fpkg."
+		echo "	$i >= found $fpkg."
 	done
 
 	for i in ${deps_list}; do
-		echo "	$i: not found."
+		echo "	$i >= not found."
 	done
 
 	for i in ${deps_list}; do
@@ -1101,7 +1119,7 @@ install_builddeps_required_pkg()
 	[ -z "$pkg" ] && return 1
 
 	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
-		run_file $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
+		. $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
 	fi
 
 	for dep in ${build_depends}; do
@@ -1127,7 +1145,7 @@ check_installed_pkg()
 
 	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
 		reset_tmpl_vars
-		run_file $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
+		. $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
 	fi
 
 	iver="$($XBPS_PKGDB_CMD version $pkgname)"
@@ -1151,14 +1169,30 @@ check_build_depends_pkg()
 
 	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
 		reset_tmpl_vars
-		run_file $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
+		. $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
 	fi
 
 	if [ -n "$build_depends" ]; then
 		return 0
+	else
+		return 1
 	fi
+}
 
-	return 1
+#
+# Builds a binary package.
+#
+build_binpkg()
+{
+	local pkg="$1"
+
+	[ -z $pkg ] && return 1
+
+	cd $XBPS_BUILDDIR || exit 1
+	if [ "$(whoami)" != "root" ]; then
+		echo "==> Building binary package via fakeroot."
+	fi
+	rootcmd_run $XBPS_DISTRIBUTIONDIR/binpkg/create.sh $pkg
 }
 
 #
@@ -1184,7 +1218,7 @@ install_pkg()
 	fi
 
 	reset_tmpl_vars
-	run_file $cur_tmpl
+	. $cur_tmpl
 	pkg="$curpkgn-$version"
 
 	#
@@ -1194,8 +1228,9 @@ install_pkg()
 	[ -z "$origin_tmpl" ] && origin_tmpl=$pkgname
 
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
-		run_file $XBPS_HELPERSDIR/chroot.sh
+		. $XBPS_HELPERSDIR/chroot.sh
 		chroot_pkg_handler install $curpkgn
+		build_binpkg $curpkgn
 		return $?
 	fi
 
@@ -1242,11 +1277,15 @@ install_pkg()
 	#
 	if [ "$build_style" = "meta-template" ]; then
 		$XBPS_PKGDB_CMD register $pkgname $version "$short_desc"
-		[ $? -eq 0 ] && \
-			msg_normal "Installed meta-template: $pkg." && \
+		if [ $? -eq 0 ]; then
+			msg_normal "Installed meta-template: $pkg."
 			return 0
-		return 1
+		else
+			return 1
+		fi
 	fi
+
+	[ -z "$in_chroot" ] && build_binpkg $curpkgn
 
 	#
 	# Do not stow package if it wasn't requested.
@@ -1261,17 +1300,13 @@ list_pkg_files()
 {
 	local pkg="$1"
 	local ver=
-	
+
 	[ -z $pkg ] && msg_error "unexistent package, aborting."
 
 	ver=$($XBPS_PKGDB_CMD version $pkg)
 	[ -z "$ver" ] && msg_error "$pkg is not installed."
 
-	if [ ! -d "$XBPS_DESTDIR/$pkg-$ver" ]; then
-		msg_error "cannot find $pkg in $XBPS_DESTDIR."
-	fi
-
-	cat $XBPS_DESTDIR/$pkg-$ver/xbps-metadata/flist
+	cat $XBPS_PKGMETADIR/$pkg-$ver/flist
 }
 
 #
@@ -1288,15 +1323,14 @@ remove_pkg()
 		msg_error "cannot find template build file."
 	fi
 
-	run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
+	. $XBPS_TEMPLATESDIR/$pkg.tmpl
 
 	#
 	# If it's a meta-template, just unregister it from the db.
 	#
 	if [ "$build_style" = "meta-template" ]; then
 		$XBPS_PKGDB_CMD unregister $pkgname $version
-		[ $? -eq 0 ] && \
-			echo "=> Removed meta-template: $pkg."
+		[ $? -eq 0 ] && msg_normal "Removed meta-template: $pkg."
 		return $?
 	fi
 
@@ -1325,7 +1359,7 @@ stow_pkg()
 	if [ -n "$stow_flag" ]; then
 		pkg=$XBPS_TEMPLATESDIR/$pkg.tmpl
 		if [ "$pkgname" != "$pkg" ]; then
-			run_file $pkg
+			. $pkg
 		fi
 		pkg=$pkgname-$version
 		#
@@ -1334,14 +1368,21 @@ stow_pkg()
 		[ "$build_style" = "meta-template" ] && return 0
 	fi
 
-	# Copy files into masterdir.
 	cd $XBPS_DESTDIR/$pkgname-$version || exit 1
-	cp -ar . $XBPS_MASTERDIR
 
-	# Build a binary package.
-	env XBPS_DESTDIR=$XBPS_DESTDIR			\
-	    XBPS_DISTRIBUTIONDIR=$XBPS_DISTRIBUTIONDIR	\
-	    $XBPS_DISTRIBUTIONDIR/binpkg/create.sh $pkgname
+	# Copy metadata files.
+	if [ -f xbps-metadata/flist -a -f xbps-metadata/props.plist ]; then
+		local metadir=$XBPS_PKGMETADIR/$pkgname-$version
+		mkdir -p $metadir
+		cp -f xbps-metadata/flist $metadir
+		cp -f xbps-metadata/props.plist $metadir
+	fi
+
+	# Copy files into masterdir.
+	for i in $(echo *); do
+		[ "$i" = "xbps-metadata" ] && continue
+		cp -ar ${i} $XBPS_MASTERDIR
+	done
 
 	$XBPS_PKGDB_CMD register $pkgname $version "$short_desc"
 	[ $? -ne 0 ] && exit 1
@@ -1350,7 +1391,7 @@ stow_pkg()
 	# Run template postinstall helpers if requested.
 	#
 	if [ "$pkgname" != "${pkg%%-$version}" ]; then
-		run_file $XBPS_TEMPLATESDIR/${pkg%%-$version}.tmpl
+		. $XBPS_TEMPLATESDIR/${pkg%%-$version}.tmpl
 	fi
 
 	for i in ${postinstall_helpers}; do
@@ -1371,7 +1412,7 @@ unstow_pkg()
 	[ -z $pkg ] && msg_error "template wasn't specified?"
 
 	if [ "$pkgname" != "$pkg" ]; then
-		run_file $XBPS_TEMPLATESDIR/$pkg.tmpl
+		. $XBPS_TEMPLATESDIR/$pkg.tmpl
 	fi
 
 	ver=$($XBPS_PKGDB_CMD version $pkg)
@@ -1384,13 +1425,14 @@ unstow_pkg()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	cd $XBPS_DESTDIR/$pkgname-$ver/xbps-metadata || exit 1
+	cd $XBPS_PKGMETADIR/$pkgname-$version || exit 1
 	if [ ! -f flist ]; then
 		msg_error "$pkg is incomplete, missing flist."
 	elif [ ! -O flist ]; then
 		msg_error "$pkg cannot be removed (permission denied)."
 	fi
 
+	# Remove installed files.
 	for f in $(cat flist); do
 		if [ -f $XBPS_MASTERDIR/$f -o -h $XBPS_MASTERDIR/$f ]; then
 			rm $XBPS_MASTERDIR/$f  >/dev/null 2>&1
@@ -1408,6 +1450,9 @@ unstow_pkg()
 			fi
 		fi
 	done
+
+	# Remove metadata dir.
+	rm -rf $XBPS_PKGMETADIR/$pkgname-$version
 
 	$XBPS_PKGDB_CMD unregister $pkgname $ver
 	return $?
@@ -1441,66 +1486,52 @@ set_defvars
 
 # Main switch
 case "$target" in
-build)
+build|configure)
 	setup_tmpl $2
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
-		run_file $XBPS_HELPERSDIR/chroot.sh
-		chroot_pkg_handler build $2
+		. $XBPS_HELPERSDIR/chroot.sh
+		if [ "$target" = "build" ]; then
+			chroot_pkg_handler build $2
+		else
+			chroot_pkg_handler configure $2
+		fi
 	else
 		fetch_distfiles $2
 		if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
 			extract_distfiles $2
 		fi
-		if [ ! -f "$XBPS_CONFIGURE_DONE" ]; then
+		if [ "$target" = "configure" ]; then
 			configure_src_phase $2
+		else
+			if [ ! -f "$XBPS_CONFIGURE_DONE" ]; then
+				configure_src_phase $2
+			fi
+			build_src_phase $2
 		fi
-		build_src_phase $2
 	fi
+	;;
+build-chroot)
+	. $XBPS_HELPERSDIR/build-chroot-binpkgs.sh
+	build_chroot_binpkgs
 	;;
 chroot)
-	run_file $XBPS_HELPERSDIR/chroot.sh
+	. $XBPS_HELPERSDIR/chroot.sh
 	chroot_pkg_handler chroot dummy
 	;;
-configure)
+extract|fetch|info)
 	setup_tmpl $2
-	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
-		run_file $XBPS_HELPERSDIR/chroot.sh
-		chroot_pkg_handler configure $2
-	else
-		fetch_distfiles $2
-		if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
-			extract_distfiles $2
-		fi
-		configure_src_phase $2
-	fi
-	;;
-extract)
-	setup_tmpl $2
+	[ "$target" = "info" ] && info_tmpl $2 && return $?
 	fetch_distfiles $2
+	[ "$target" = "fetch" ] && return $?
 	extract_distfiles $2
 	;;
-fetch)
-	setup_tmpl $2
-	fetch_distfiles $2
-	;;
-info)
-	setup_tmpl $2
-	info_tmpl $2
-	;;
-install-destdir)
+install|install-destdir)
 	[ -z "$2" ] && msg_error "missing package name after target."
-	install_destdir_target=yes
+	[ "$target" = "install-destdir" ] && install_destdir_target=yes
 	install_pkg $2
 	;;
-install)
-	[ -z "$2" ] && msg_error "missing package name after target."
-	install_pkg $2
-	;;
-list)
-	$XBPS_PKGDB_CMD list
-	;;
-listfiles)
-	[ -z "$2" ] && msg_error "missing package after target."
+list|listfiles)
+	[ "$target" = "list" ] && $XBPS_PKGDB_CMD list && return $?
 	list_pkg_files $2
 	;;
 remove)

@@ -16,8 +16,6 @@ write_metadata()
 		exit 1
 	fi
 
-	echo -n "=> Writing package metadata ... "
-
 	# Write the files list.
 	local TMPFLIST=$(mktemp -t flist.XXXXXXXXXX) || exit 1
 	find $destdir | sort -ur | \
@@ -68,8 +66,6 @@ _EOF
 	cp -f $TMPFPROPS $destdir/xbps-metadata/props.plist
 	chmod 644 $destdir/xbps-metadata/*
 	rm -f $TMPFLIST $TMPFPROPS
-
-	echo "done."
 }
 
 make_archive()
@@ -79,14 +75,11 @@ make_archive()
 
 	cd $destdir || exit 1
 
-	echo -n "=> Building package ... "
-	tar cfjp $XBPS_DESTDIR/$pkgname-$version-xbps.tbz2 .
-	[ $? -eq 0 ] && echo "done."
-
+	tar cfjp $destdir-xbps.tbz2 .
 	[ ! -d $pkgsdir ] && mkdir -p $pkgsdir
-	mv -f $XBPS_DESTDIR/$pkgname-$version-xbps.tbz2 $pkgsdir
+	mv -f $destdir-xbps.tbz2 $pkgsdir
 
-	echo "=> Built package: ${destdir}-xbps.tbz2"
+	echo "=> Built package: $pkgname-$version-xbps.tbz2."
 }
 
 pkg=$1
