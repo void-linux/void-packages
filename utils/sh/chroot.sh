@@ -1,5 +1,5 @@
 #
-# Helper to install packages into a sandbox in masterdir.
+# Script to install packages into a sandbox in masterdir.
 # Actually this needs the xbps-base-chroot package installed.
 #
 
@@ -25,6 +25,7 @@ fi
 
 if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
 	echo -n "==> Preparing chroot on $XBPS_MASTERDIR... "
+	chown -R root:root $XBPS_MASTERDIR
 	cp -af /etc/passwd /etc/shadow /etc/group /etc/hosts \
 		/etc/resolv.conf $XBPS_MASTERDIR/etc
 	touch $XBPS_MASTERDIR/.xbps_perms_done
@@ -64,10 +65,11 @@ rebuild_ldso_cache()
 	echo " done."
 }
 
-chroot_pkg_handler()
+xbps_chroot_handler()
 {
 	local action="$1"
 	local pkg="$2"
+	local only_destdir="$3"
 
 	[ -z "$action" -o -z "$pkg" ] && return 1
 
@@ -79,7 +81,9 @@ chroot_pkg_handler()
 	if [ "$action" = "chroot" ]; then
 		env in_chroot=yes chroot $XBPS_MASTERDIR /bin/bash
 	else
-		env in_chroot=yes chroot $XBPS_MASTERDIR \
+		[ -n "$only_destdir" ] && \
+			local lenv="install_destdir_target=yes"
+		env in_chroot=yes ${lenv} chroot $XBPS_MASTERDIR \
 			/xbps/xbps.sh $action $pkg
 	fi
 	msg_normal "Exiting from the chroot on $XBPS_MASTERDIR."

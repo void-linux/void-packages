@@ -41,7 +41,6 @@ $progname: [-C] [-c <config_file>] <target> <pkg>
 
 Targets:
  build <pkg>		Build a package (fetch + extract + configure + build).
- build-chroot		Build binary packages required for chroot.
  build-pkg <pkg>	Build a binary package from <pkg>.
 			Package must be installed into destdir before it.
  chroot			Enter to the chroot in masterdir.
@@ -50,7 +49,7 @@ Targets:
  fetch <pkg>		Download distribution file(s).
  info <pkg>		Show information about <pkg>.
  install-destdir <pkg>	build + install into destdir.
- install <pkg>		install-destdir + stow + build-pkg.
+ install <pkg>		install-destdir + stow.
  list			List installed packages in masterdir.
  listfiles <pkg>	List installed files from <pkg>.
  remove	<pkg>		Remove package completely (destdir + masterdir).
@@ -72,16 +71,18 @@ set_defvars()
 	local i=
 
 	: ${XBPS_TEMPLATESDIR:=$XBPS_DISTRIBUTIONDIR/templates}
-	: ${XBPS_HELPERSDIR:=$XBPS_DISTRIBUTIONDIR/helpers}
+	: ${XBPS_HELPERSDIR:=$XBPS_TEMPLATESDIR/helpers}
 	: ${XBPS_CACHEDIR:=$XBPS_MASTERDIR/var/cache/xbps}
 	: ${XBPS_PKGDB_FPATH:=$XBPS_CACHEDIR/pkgdb.plist}
 	: ${XBPS_PKGMETADIR:=$XBPS_CACHEDIR/metadata}
 	: ${XBPS_UTILSDIR:=$XBPS_DISTRIBUTIONDIR/utils}
+	: ${XBPS_SHUTILSDIR:=$XBPS_UTILSDIR/sh}
 	: ${XBPS_DIGEST_CMD:=$XBPS_UTILSDIR/xbps-digest}
 	: ${XBPS_PKGDB_CMD:=$XBPS_UTILSDIR/xbps-pkgdb}
 	: ${XBPS_CMPVER_CMD:=$XBPS_UTILSDIR/xbps-cmpver}
 
-	local DDIRS="XBPS_TEMPLATESDIR XBPS_HELPERSDIR XBPS_UTILSDIR"
+	local DDIRS="XBPS_TEMPLATESDIR XBPS_HELPERSDIR XBPS_UTILSDIR \
+		     XBPS_SHUTILSDIR"
 	for i in ${DDIRS}; do
 		eval val="\$$i"
 		[ ! -d "$val" ] &&  msg_error "cannot find $i, aborting."
@@ -898,7 +899,7 @@ install_src_phase()
 
 	cd $wrksrc || exit 1
 
-	msg_normal "Running install phase for: $pkgname-$version."
+	msg_normal "Running install phase for $pkgname-$version."
 
 	# cross compilation vars.
 	if [ -n "$cross_compiler" ]; then
@@ -1188,10 +1189,6 @@ build_binpkg()
 
 	[ -z $pkg ] && return 1
 
-	cd $XBPS_BUILDDIR || exit 1
-	if [ "$(whoami)" != "root" ]; then
-		echo "==> Building binary package via fakeroot."
-	fi
 	rootcmd_run $XBPS_DISTRIBUTIONDIR/binpkg/create.sh $pkg
 }
 
@@ -1202,8 +1199,9 @@ install_pkg()
 {
 	local pkg=
 	local curpkgn="$1"
-
+	local cdestdir=
 	local cur_tmpl="$XBPS_TEMPLATESDIR/$curpkgn.tmpl"
+
 	if [ -z $cur_tmpl -o ! -f $cur_tmpl ]; then
 		msg_error "cannot find $cur_tmpl template build file."
 	fi
@@ -1228,9 +1226,9 @@ install_pkg()
 	[ -z "$origin_tmpl" ] && origin_tmpl=$pkgname
 
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
-		. $XBPS_HELPERSDIR/chroot.sh
-		chroot_pkg_handler install $curpkgn
-		build_binpkg $curpkgn
+		. $XBPS_SHUTILSDIR/chroot.sh
+		[ -n "$install_destdir_target" ] && cdestdir=yes
+		xbps_chroot_handler install $curpkgn $cdestdir
 		return $?
 	fi
 
@@ -1284,8 +1282,6 @@ install_pkg()
 			return 1
 		fi
 	fi
-
-	[ -z "$in_chroot" ] && build_binpkg $curpkgn
 
 	#
 	# Do not stow package if it wasn't requested.
@@ -1342,7 +1338,9 @@ remove_pkg()
 	fi
 
 	unstow_pkg $pkg
-	rm -rf $XBPS_DESTDIR/$pkg-$ver
+	if [ $? -eq 0 ]; then
+		rm -rf $XBPS_DESTDIR/$pkg-$ver
+	fi
 	return $?
 }
 
@@ -1370,7 +1368,11 @@ stow_pkg()
 
 	cd $XBPS_DESTDIR/$pkgname-$version || exit 1
 
-	# Copy metadata files.
+	# Write pkg metadata.
+	. $XBPS_SHUTILSDIR/binpkg.sh
+	xbps_write_metadata_pkg
+
+	# Copy metadata files into masterdir.
 	if [ -f xbps-metadata/flist -a -f xbps-metadata/props.plist ]; then
 		local metadir=$XBPS_PKGMETADIR/$pkgname-$version
 		mkdir -p $metadir
@@ -1489,11 +1491,11 @@ case "$target" in
 build|configure)
 	setup_tmpl $2
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
-		. $XBPS_HELPERSDIR/chroot.sh
+		. $XBPS_SHUTILSDIR/chroot.sh
 		if [ "$target" = "build" ]; then
-			chroot_pkg_handler build $2
+			xbps_chroot_handler build $2
 		else
-			chroot_pkg_handler configure $2
+			xbps_chroot_handler configure $2
 		fi
 	else
 		fetch_distfiles $2
@@ -1510,13 +1512,14 @@ build|configure)
 		fi
 	fi
 	;;
-build-chroot)
-	. $XBPS_HELPERSDIR/build-chroot-binpkgs.sh
-	build_chroot_binpkgs
+build-pkg)
+	. $XBPS_SHUTILSDIR/binpkg.sh
+	setup_tmpl $2
+	xbps_make_binpkg
 	;;
 chroot)
-	. $XBPS_HELPERSDIR/chroot.sh
-	chroot_pkg_handler chroot dummy
+	. $XBPS_SHUTILSDIR/chroot.sh
+	xbps_chroot_handler chroot dummy
 	;;
 extract|fetch|info)
 	setup_tmpl $2
@@ -1553,4 +1556,4 @@ unstow)
 esac
 
 # Agur
-exit 0
+exit $?

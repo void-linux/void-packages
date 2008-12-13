@@ -1,13 +1,9 @@
-#!/bin/sh
 #
-# Builds a binary package from an installed xbps package in the
-# destination directory. This binary package is just a simple tar(1)
-# archive with gzip, bzip2 or lzma compression (all compression
-# modes that libarchive supports).
+# This function writes the metadata files into package's destdir,
+# these will be used for binary packages.
 #
-# Passed argument: pkgname.
 
-write_metadata()
+xbps_write_metadata_pkg()
 {
 	local destdir=$XBPS_DESTDIR/$pkgname-$version
 
@@ -16,10 +12,19 @@ write_metadata()
 		exit 1
 	fi
 
+	if [ ! -d $destdir/xbps-metadata ]; then
+		mkdir -p $destdir/xbps-metadata >/dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR: you don't have enough perms for this."
+			exit 1
+		fi
+	fi
+
 	# Write the files list.
 	local TMPFLIST=$(mktemp -t flist.XXXXXXXXXX) || exit 1
 	find $destdir | sort -ur | \
-		sed -e "s|$destdir||g;s|^\/$||g;/^$/d" > $TMPFLIST
+		sed -e "s|$destdir||g;s|^\/$||g;s|/xbps-metadata||g;/^$/d" \
+		> $TMPFLIST
 
 	# Write the property list file.
 	local TMPFPROPS=$(mktemp -t fprops.XXXXXXXXXX) || exit 1
@@ -58,17 +63,18 @@ _EOF
 	printf "</dict>\n</plist>\n" >> $TMPFPROPS
 
 	# Write metadata files into destdir and cleanup.
-	if [ ! -d $destdir/xbps-metadata ]; then
-		mkdir -p $destdir/xbps-metadata
-	fi
-
 	cp -f $TMPFLIST $destdir/xbps-metadata/flist
 	cp -f $TMPFPROPS $destdir/xbps-metadata/props.plist
 	chmod 644 $destdir/xbps-metadata/*
 	rm -f $TMPFLIST $TMPFPROPS
 }
 
-make_archive()
+#
+# This functions builds a binary package from an installed xbps
+# package in destdir.
+#
+
+xbps_make_binpkg()
 {
 	local destdir=$XBPS_DESTDIR/$pkgname-$version
 	local pkgsdir=$XBPS_DISTRIBUTIONDIR/packages
@@ -81,31 +87,3 @@ make_archive()
 
 	echo "=> Built package: $pkgname-$version-xbps.tbz2."
 }
-
-pkg=$1
-if [ -z "$pkg" ]; then
-	echo "ERROR: missing package name as argument."
-	exit 1
-fi
-
-if [ -z "$XBPS_DISTRIBUTIONDIR" ]; then
-	echo "ERROR: XBPS_DISTRIBUTIONDIR not set."
-	exit 1
-fi
-
-if [ -z "$XBPS_DESTDIR" ]; then
-	echo "ERROR: XBPS_DESTDIR not set."
-	exit 1
-fi
-
-if [ ! -f $XBPS_DISTRIBUTIONDIR/templates/$pkg.tmpl ]; then
-	echo "ERROR: missing package template file."
-	exit 1
-fi
-
-. $XBPS_DISTRIBUTIONDIR/templates/$pkg.tmpl
-
-write_metadata
-make_archive
-
-return 0
