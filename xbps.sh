@@ -41,8 +41,10 @@ $progname: [-C] [-c <config_file>] <target> <pkg>
 
 Targets:
  build <pkg>		Build a package (fetch + extract + configure + build).
- build-pkg <pkg>	Build a binary package from <pkg>.
-			Package must be installed into destdir before it.
+ build-pkg [<pkg>|all]	Build a binary package from <pkg>.
+			Package must be installed into destdir. If the <all>
+			keyword is used instead of <pkg>, all packages
+			currently installed will be used.
  chroot			Enter to the chroot in masterdir.
  configure <pkg>	Configure a package (fetch + extract + configure).
  extract <pkg>		Extract distribution file(s) into build directory.
@@ -273,8 +275,17 @@ build|configure)
 build-pkg)
 	. $XBPS_SHUTILSDIR/binpkg.sh
 	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
-	setup_tmpl $2
-	xbps_make_binpkg
+	if [ "$2" = "all" ]; then
+		for f in $($XBPS_PKGDB_CMD list|awk '{print $1}'); do
+			setup_tmpl $f
+			[ "$build_style" = "meta-template" ] && continue
+			xbps_make_binpkg
+			reset_tmpl_vars
+		done
+	else
+		setup_tmpl $2
+		xbps_make_binpkg
+	fi
 	;;
 chroot)
 	. $XBPS_SHUTILSDIR/chroot.sh
