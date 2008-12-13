@@ -127,6 +127,8 @@ install_dependencies_pkg()
 {
 	local pkg="$1"
 	local i=
+	local ipkg=
+	local iversion=
 	deps_list=
 	installed_deps_list=
 
@@ -144,12 +146,13 @@ install_dependencies_pkg()
 
 	msg_normal "Required minimal deps for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
-		fpkg="$($XBPS_PKGDB_CMD list|awk '{print $1}'|grep -w ${i%-[0-9]*.*})"
-		echo "	$i: found $fpkg."
+		ipkg="$($XBPS_PKGDB_CMD list|awk '{print $1}'|grep -w ${i%-[0-9]*.*})"
+		iversion="$($XBPS_PKGDB_CMD version $ipkg)"
+		echo "	${i%-[0-9]*.*} >= ${i##[aA-zZ]*-}: found $ipkg-$iversion."
 	done
 
 	for i in ${deps_list}; do
-		echo "	$i: not found."
+		echo "	${i%-[0-9]*.*} >= ${i##[aA-zZ]*-}: not found."
 	done
 
 	for i in ${deps_list}; do
