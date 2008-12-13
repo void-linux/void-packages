@@ -61,7 +61,8 @@ else
 	msg_normal "Entering into the chroot on $XBPS_MASTERDIR."
 fi
 
-EXTDIRS="xbps xbps_builddir xbps_destdir xbps_srcdistdir xbps_crossdir"
+EXTDIRS="xbps xbps_builddir xbps_destdir xbps_packagesdir \
+	 xbps_srcdistdir xbps_crossdir"
 REQDIRS="bin sbin tmp var sys proc dev ${EXTDIRS}"
 for f in ${REQDIRS}; do
 	[ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
@@ -71,6 +72,7 @@ unset f REQDIRS
 echo "XBPS_DISTRIBUTIONDIR=/xbps" > $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_MASTERDIR=/" >> $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_DESTDIR=/xbps_destdir" >> $XBPS_MASTERDIR/etc/xbps.conf
+echo "XBPS_PACKAGESDIR=/xbps_packagesdir" >> $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_BUILDDIR=/xbps_builddir" >> $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_SRCDISTDIR=/xbps_srcdistdir" >> $XBPS_MASTERDIR/etc/xbps.conf
 echo "XBPS_CFLAGS=\"$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/etc/xbps.conf
@@ -121,7 +123,8 @@ mount_chroot_fs()
 {
 	local cnt=
 
-	REQFS="sys proc dev xbps xbps_builddir xbps_destdir xbps_srcdistdir"
+	REQFS="sys proc dev xbps xbps_builddir xbps_destdir \
+	       xbps_packagesdir xbps_srcdistdir"
 	if [ -d "$XBPS_CROSS_DIR" ]; then
 		local cross=yes
 		REQFS="$REQFS xbps_crossdir"
@@ -136,6 +139,7 @@ mount_chroot_fs()
 				xbps_builddir) blah=$XBPS_BUILDDIR;;
 				xbps_destdir) blah=$XBPS_DESTDIR;;
 				xbps_srcdistdir) blah=$XBPS_SRCDISTDIR;;
+				xbps_packagesdir) blah=$XBPS_PACKAGESDIR;;
 				xbps_crossdir)
 					[ -n $cross ] && blah=$XBPS_CROSS_DIR
 					;;

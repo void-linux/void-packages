@@ -100,13 +100,12 @@ _EOF
 xbps_make_binpkg()
 {
 	local destdir=$XBPS_DESTDIR/$pkgname-$version
-	local pkgsdir=$XBPS_DISTRIBUTIONDIR/packages
 
 	cd $destdir || exit 1
 
 	run_rootcmd tar cfjp $destdir-xbps.tbz2 .
-	[ ! -d $pkgsdir ] && mkdir -p $pkgsdir
-	mv -f $destdir-xbps.tbz2 $pkgsdir
+	[ ! -d $XBPS_PACKAGESDIR ] && mkdir -p $XBPS_PACKAGESDIR
+	mv -f $destdir-xbps.tbz2 $XBPS_PACKAGESDIR
 
 	echo "=> Built package: $pkgname-$version-xbps.tbz2."
 }

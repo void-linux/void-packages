@@ -273,7 +273,7 @@ list_pkgs_in_dict(prop_dictionary_t dict)
 		prop_dictionary_get_cstring_nocopy(obj, "version", &version);
 		prop_dictionary_get_cstring_nocopy(obj, "short_desc", &short_desc);
 		if (pkgname && version && short_desc)
-			printf("%s-%s\t%s\n", pkgname, version, short_desc);
+			printf("%s (%s)\t%s\n", pkgname, version, short_desc);
 	}
 	prop_object_iterator_release(iter);
 }
