@@ -34,16 +34,17 @@ stow_pkg()
 
 	[ -z "$pkg" ] && return 2
 
+	if [ "$build_style" = "meta-template" ]; then
+		[ ! -d $XBPS_DESTDIR/$pkgname-$version ] && \
+			mkdir -p $XBPS_DESTDIR/$pkgname-$version
+	fi
+
 	if [ -n "$stow_flag" ]; then
 		pkg=$XBPS_TEMPLATESDIR/$pkg.tmpl
 		if [ "$pkgname" != "$pkg" ]; then
 			. $pkg
 		fi
 		pkg=$pkgname-$version
-		#
-		# You cannot stow a meta-template.
-		#
-		[ "$build_style" = "meta-template" ] && return 0
 	fi
 
 	cd $XBPS_DESTDIR/$pkgname-$version || exit 1
@@ -102,11 +103,6 @@ unstow_pkg()
 	if [ -z "$ver" ]; then
 		msg_error "$pkg is not installed."
 	fi
-
-	#
-	# You cannot unstow a meta-template.
-	#
-	[ "$build_style" = "meta-template" ] && return 0
 
 	cd $XBPS_PKGMETADIR/$pkgname-$version || exit 1
 	if [ ! -f flist ]; then

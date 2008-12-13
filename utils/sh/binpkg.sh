@@ -62,6 +62,12 @@ xbps_write_metadata_pkg()
 	<string>$(uname -m)</string>
 	<key>installed_size</key>
 	<integer>$(du -sb $destdir|awk '{print $1}')</integer>
+	<key>maintainer</key>
+	<string>$maintainer</string>
+	<key>short_desc</key>
+	<string>$short_desc</key>
+	<key>long_desc</key>
+	<string>$long_desc</string>
 _EOF
 	# Dependencies
 	if [ -n "$run_depends" ]; then

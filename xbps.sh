@@ -278,7 +278,6 @@ build-pkg)
 	if [ "$2" = "all" ]; then
 		for f in $($XBPS_PKGDB_CMD list|awk '{print $1}'); do
 			setup_tmpl $f
-			[ "$build_style" = "meta-template" ] && continue
 			xbps_make_binpkg
 			reset_tmpl_vars
 		done

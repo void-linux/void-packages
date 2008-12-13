@@ -109,19 +109,6 @@ install_pkg()
 	install_src_phase
 
 	#
-	# Just register meta-template and exit.
-	#
-	if [ "$build_style" = "meta-template" ]; then
-		$XBPS_PKGDB_CMD register $pkgname $version "$short_desc"
-		if [ $? -eq 0 ]; then
-			msg_normal "Installed meta-template: $pkg."
-			return 0
-		else
-			return 1
-		fi
-	fi
-
-	#
 	# Do not stow package if it wasn't requested.
 	#
 	if [ -z "$install_destdir_target" ]; then
@@ -161,15 +148,6 @@ remove_pkg()
 	fi
 
 	. $XBPS_TEMPLATESDIR/$pkg.tmpl
-
-	#
-	# If it's a meta-template, just unregister it from the db.
-	#
-	if [ "$build_style" = "meta-template" ]; then
-		$XBPS_PKGDB_CMD unregister $pkgname $version
-		[ $? -eq 0 ] && msg_normal "Removed meta-template: $pkg."
-		return $?
-	fi
 
 	ver=$($XBPS_PKGDB_CMD version $pkg)
 	[ -z "$ver" ] && msg_error "$pkg is not installed."
