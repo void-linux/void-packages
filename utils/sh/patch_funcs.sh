@@ -24,47 +24,58 @@
 #-
 
 #
-# This helper sets some required vars to be able to cross build
-# packages on xbps. The target is specified in the configuration file
-# and will be read any time the cross compilation flag is used.
+# Applies to the build directory the patches specified by a template.
 #
-[ -z "$XBPS_CROSS_TARGET" -o ! -d $XBPS_CROSS_DIR/bin ] && return 1
+apply_tmpl_patches()
+{
+	local patch=
+	local i=
 
-# Check if all required bins are there.
-for bin in gcc g++ cpp ar as ranlib ld strip; do
-	if [ ! -x $XBPS_CROSS_DIR/bin/$XBPS_CROSS_TARGET-${bin} ]; then
-		msg_error "cross-compilation: cannot find ${bin}, aborting."
+	# Apply some build/install patches automatically.
+	if [ -f $XBPS_TEMPLATESDIR/$pkgname-fix-build.diff ]; then
+		patch_files="$pkgname-fix-build.diff $patch_files"
 	fi
-done
+	if [ -f $XBPS_TEMPLATESDIR/$pkgname-fix-install.diff ]; then
+		patch_files="$pkgname-fix-install.diff $patch_files"
+	fi
 
-SAVE_PATH="$PATH"
-if [ "$xbps_machine" = "x86_64" ]; then
-	XBPS_CROSS_HOST="x86_64-unknown-linux-gnu"
-else
-	XBPS_CROSS_HOST="$xbps_machine-pc-linux-gnu"
-fi
+	[ -z "$patch_args" ] && patch_args="-p0"
 
-cross_compile_setvars()
-{
-	export GCC=$XBPS_CROSS_TARGET-gcc
-	export CC=$XBPS_CROSS_TARGET-gcc
-	export CXX=$XBPS_CROSS_TARGET-g++
-	export CPP=$XBPS_CROSS_TARGET-cpp
-	export AR=$XBPS_CROSS_TARGET-ar
-	export AS=$XBPS_CROSS_TARGET-as
-	export RANLIB=$XBPS_CROSS_TARGET-ranlib
-	export LD=$XBPS_CROSS_TARGET-ld
-	export STRIP=$XBPS_CROSS_TARGET-strip
-	export PATH="$XBPS_CROSS_DIR/bin:$PATH"
+	#
+	# If package needs some patches applied before building,
+	# apply them now.
+	#
+	for i in ${patch_files}; do
+		patch="$XBPS_TEMPLATESDIR/$i"
+		if [ ! -f "$patch" ]; then
+			msg_warn "unexistent patch: $i."
+			continue
+		fi
+
+		cp -f $patch $wrksrc
+
+		# Try to guess if its a compressed patch.
+		if $(echo $patch|grep -q '.diff.gz'); then
+			gunzip $wrksrc/$i
+			patch=${i%%.gz}
+		elif $(echo $patch|grep -q '.diff.bz2'); then
+			bunzip2 $wrksrc/$i
+			patch=${i%%.bz2}
+		elif $(echo $patch|grep -q '.diff'); then
+			patch=$i
+		else
+			msg_warn "unknown patch type: $i."
+			continue
+		fi
+
+		cd $wrksrc && patch -s ${patch_args} < \
+			$patch 2>/dev/null
+		if [ "$?" -eq 0 ]; then
+			msg_normal "Patch applied: $i."
+		else
+			msg_error "couldn't apply patch: $i."
+		fi
+	done
+
+	touch -f $XBPS_APPLYPATCHES_DONE
 }
-
-cross_compile_unsetvars()
-{
-	unset GCC CC CXX CPP AR AS RANLIB LD STRIP PATH
-	export PATH="$SAVE_PATH"
-}
-
-if [ "$build_style" = "gnu_configure" ]; then
-	configure_args="--build=$XBPS_CROSS_HOST --host=$XBPS_CROSS_TARGET"
-	configure_args="$configure_args --target=$XBPS_CROSS_TARGET"
-fi

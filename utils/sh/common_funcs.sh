@@ -24,47 +24,60 @@
 #-
 
 #
-# This helper sets some required vars to be able to cross build
-# packages on xbps. The target is specified in the configuration file
-# and will be read any time the cross compilation flag is used.
+# Common functions for xbps.
 #
-[ -z "$XBPS_CROSS_TARGET" -o ! -d $XBPS_CROSS_DIR/bin ] && return 1
+run_func()
+{
+	func="$1"
 
-# Check if all required bins are there.
-for bin in gcc g++ cpp ar as ranlib ld strip; do
-	if [ ! -x $XBPS_CROSS_DIR/bin/$XBPS_CROSS_TARGET-${bin} ]; then
-		msg_error "cross-compilation: cannot find ${bin}, aborting."
+	[ -z "$func" ] && return 1
+
+	type -t $func | grep -q 'function'
+	[ $? -eq 0 ] && $func
+}
+
+run_rootcmd()
+{
+	local lenv=
+
+	[ -n "$in_chroot" ] && unset fakeroot_cmd
+
+	lenv="XBPS_DESTDIR=$XBPS_DESTDIR"
+	lenv="XBPS_DISTRIBUTIONDIR=$XBPS_DISTRIBUTIONDIR $lenv"
+	env ${lenv} ${fakeroot_cmd} $@
+}
+
+msg_error()
+{
+	[ -z "$1" ] && return 1
+
+	if [ -n "$in_chroot" ]; then
+		echo "[chroot] => ERROR: $1"
+	else
+		echo "=> ERROR: $1"
 	fi
-done
 
-SAVE_PATH="$PATH"
-if [ "$xbps_machine" = "x86_64" ]; then
-	XBPS_CROSS_HOST="x86_64-unknown-linux-gnu"
-else
-	XBPS_CROSS_HOST="$xbps_machine-pc-linux-gnu"
-fi
-
-cross_compile_setvars()
-{
-	export GCC=$XBPS_CROSS_TARGET-gcc
-	export CC=$XBPS_CROSS_TARGET-gcc
-	export CXX=$XBPS_CROSS_TARGET-g++
-	export CPP=$XBPS_CROSS_TARGET-cpp
-	export AR=$XBPS_CROSS_TARGET-ar
-	export AS=$XBPS_CROSS_TARGET-as
-	export RANLIB=$XBPS_CROSS_TARGET-ranlib
-	export LD=$XBPS_CROSS_TARGET-ld
-	export STRIP=$XBPS_CROSS_TARGET-strip
-	export PATH="$XBPS_CROSS_DIR/bin:$PATH"
+	exit 1
 }
 
-cross_compile_unsetvars()
+msg_warn()
 {
-	unset GCC CC CXX CPP AR AS RANLIB LD STRIP PATH
-	export PATH="$SAVE_PATH"
+	[ -z "$1" ] && return 1
+
+	if [ -n "$in_chroot" ]; then
+		echo "[chroot] => WARNING: $1"
+	else
+		echo "=> WARNING: $1"
+	fi
 }
 
-if [ "$build_style" = "gnu_configure" ]; then
-	configure_args="--build=$XBPS_CROSS_HOST --host=$XBPS_CROSS_TARGET"
-	configure_args="$configure_args --target=$XBPS_CROSS_TARGET"
-fi
+msg_normal()
+{
+	[ -z "$1" ] && return 1
+
+	if [ -n "$in_chroot" ]; then
+		echo "[chroot] => $1"
+	else
+		echo "=> $1"
+	fi
+}

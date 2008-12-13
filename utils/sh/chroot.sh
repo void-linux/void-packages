@@ -1,3 +1,28 @@
+#-
+# Copyright (c) 2008 Juan Romero Pardines.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+# IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+# OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+# IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+# INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+# NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+# THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#-
+
 #
 # Script to install packages into a sandbox in masterdir.
 # Actually this needs the xbps-base-chroot package installed.
@@ -8,11 +33,13 @@ trap umount_chroot_fs INT QUIT
 
 [ -n "$base_chroot" ] && return 0
 
+. $XBPS_SHUTILSDIR/builddep_funcs.sh
 check_installed_pkg xbps-base-chroot 0.1
 [ $? -ne 0 ] && msg_error "xbps-base-chroot pkg not installed."
 
 if [ "$(id -u)" -ne 0 ]; then
 	if [ -n "$origin_tmpl" ]; then
+		. $XBPS_SHUTILSDIR/tmpl_funcs.sh
 		reset_tmpl_vars
 		run_file $XBPS_TEMPLATESDIR/$origin_tmpl.tmpl
 	fi

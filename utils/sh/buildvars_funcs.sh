@@ -24,47 +24,30 @@
 #-
 
 #
-# This helper sets some required vars to be able to cross build
-# packages on xbps. The target is specified in the configuration file
-# and will be read any time the cross compilation flag is used.
+# Functions to set some env vars required to build the packages
+# required by the xbps-base-chroot package.
 #
-[ -z "$XBPS_CROSS_TARGET" -o ! -d $XBPS_CROSS_DIR/bin ] && return 1
 
-# Check if all required bins are there.
-for bin in gcc g++ cpp ar as ranlib ld strip; do
-	if [ ! -x $XBPS_CROSS_DIR/bin/$XBPS_CROSS_TARGET-${bin} ]; then
-		msg_error "cross-compilation: cannot find ${bin}, aborting."
-	fi
-done
-
-SAVE_PATH="$PATH"
-if [ "$xbps_machine" = "x86_64" ]; then
-	XBPS_CROSS_HOST="x86_64-unknown-linux-gnu"
-else
-	XBPS_CROSS_HOST="$xbps_machine-pc-linux-gnu"
-fi
-
-cross_compile_setvars()
+set_build_vars()
 {
-	export GCC=$XBPS_CROSS_TARGET-gcc
-	export CC=$XBPS_CROSS_TARGET-gcc
-	export CXX=$XBPS_CROSS_TARGET-g++
-	export CPP=$XBPS_CROSS_TARGET-cpp
-	export AR=$XBPS_CROSS_TARGET-ar
-	export AS=$XBPS_CROSS_TARGET-as
-	export RANLIB=$XBPS_CROSS_TARGET-ranlib
-	export LD=$XBPS_CROSS_TARGET-ld
-	export STRIP=$XBPS_CROSS_TARGET-strip
-	export PATH="$XBPS_CROSS_DIR/bin:$PATH"
+	LDFLAGS="-L$XBPS_MASTERDIR/usr/lib"
+	SAVE_LDLIBPATH=$LD_LIBRARY_PATH
+	LD_LIBRARY_PATH="$XBPS_MASTERDIR/usr/lib"
+	CFLAGS="$CFLAGS $XBPS_CFLAGS"
+	CXXFLAGS="$CXXFLAGS $XBPS_CXXFLAGS"
+	CPPFLAGS="-I$XBPS_MASTERDIR/usr/include $CPPFLAGS"
+	PKG_CONFIG="$XBPS_MASTERDIR/usr/bin/pkg-config"
+	PKG_CONFIG_LIBDIR="$XBPS_MASTERDIR/usr/lib/pkgconfig"
+
+	export LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+	export CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"
+	export CPPFLAGS="$CPPFLAGS" PKG_CONFIG="$PKG_CONFIG"
+	export PKG_CONFIG_LIBDIR="$PKG_CONFIG_LIBDIR"
+	export LDFLAGS="$LDFLAGS"
 }
 
-cross_compile_unsetvars()
+unset_build_vars()
 {
-	unset GCC CC CXX CPP AR AS RANLIB LD STRIP PATH
-	export PATH="$SAVE_PATH"
+	unset LDFLAGS CFLAGS CXXFLAGS CPPFLAGS PKG_CONFIG LD_LIBRARY_PATH
+	export LD_LIBRARY_PATH=$SAVE_LDLIBPATH
 }
-
-if [ "$build_style" = "gnu_configure" ]; then
-	configure_args="--build=$XBPS_CROSS_HOST --host=$XBPS_CROSS_TARGET"
-	configure_args="$configure_args --target=$XBPS_CROSS_TARGET"
-fi
