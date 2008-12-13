@@ -296,12 +296,12 @@ extract|fetch|info)
 	if [ "$target" = "info" ]; then
 		. $XBPS_SHUTILSDIR/tmpl_funcs.sh
 		info_tmpl $2
-		return $?
+		exit $?
 	fi
 	if [ "$target" = "fetch" ]; then
 		. $XBPS_SHUTILSDIR/fetch_funcs.sh
 		fetch_distfiles $2
-		return $?
+		exit $?
 	fi
 	. $XBPS_SHUTILSDIR/extract_funcs.sh
 	extract_distfiles $2
@@ -315,7 +315,7 @@ install|install-destdir)
 list|listfiles)
 	if [ "$target" = "list" ]; then
 		$XBPS_PKGDB_CMD list
-		return $?
+		exit $?
 	fi
 	. $XBPS_SHUTILSDIR/pkgtarget_funcs.sh
 	list_pkg_files $2
