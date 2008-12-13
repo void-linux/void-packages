@@ -15,10 +15,10 @@
 # Override the paths to get desired results.
 : ${_arch:=$(uname -m)}
 : ${perl_thrmulti:=${_arch}-netbsd-thread-multi}
-: ${perl_cmd:=$XBPS_MASTERDIR/bin/perl}
-: ${PERL_DESTDIR:=$XBPS_MASTERDIR}
-: ${PERL_PREFIX:=$PERL_DESTDIR}
-: ${PERL_DPREFIX:=$XBPS_DESTDIR/$pkgname-$version}
+: ${perl_cmd:=$XBPS_MASTERDIR/usr/bin/perl}
+: ${PERL_DESTDIR:=$XBPS_MASTERDIR/usr}
+: ${PERL_PREFIX:=$PERL_DESTDIR/usr}
+: ${PERL_DPREFIX:=$XBPS_DESTDIR/$pkgname-$version/usr}
 : ${PERL_VERSION:=5.10.0}
 : ${PERL_LDDLFLAGS:=--whole-archive -shared -L$XBPS_MASTERDIR/lib}
 : ${PERL_SITELIBEXP:=$PERL_DPREFIX/lib/perl5/site_perl/$PERL_VERSION}
