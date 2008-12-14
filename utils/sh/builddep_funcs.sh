@@ -146,9 +146,9 @@ install_dependencies_pkg()
 
 	msg_normal "Required minimal deps for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
-		ipkg="$($XBPS_PKGDB_CMD list|awk '{print $1}'|grep -w ${i%-[0-9]*.*})"
+		ipkg=${i%-[0-9]*.*}
 		iversion="$($XBPS_PKGDB_CMD version $ipkg)"
-		echo "	${i%-[0-9]*.*} >= ${i##[aA-zZ]*-}: found $ipkg-$iversion."
+		echo "	$ipkg >= ${i##[aA-zZ]*-}: found $ipkg-$iversion."
 	done
 
 	for i in ${deps_list}; do
