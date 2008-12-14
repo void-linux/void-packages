@@ -80,10 +80,10 @@ _EOF
 	fi
 
 	# Configuration files
-	if [ -n "$config_files" ]; then
-		printf "\t<key>config_files</key>\n" >> $TMPFPROPS
+	if [ -n "$conf_files" ]; then
+		printf "\t<key>conf_files</key>\n" >> $TMPFPROPS
 		printf "\t<array>\n" >> $TMPFPROPS
-		for f in ${config_files}; do
+		for f in ${conf_files}; do
 			printf "\t\t<string>$f</string>\n" >> $TMPFPROPS
 		done
 		printf "\t</array>\n" >> $TMPFPROPS
