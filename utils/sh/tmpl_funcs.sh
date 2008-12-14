@@ -67,7 +67,7 @@ reset_tmpl_vars()
 			tar_override_cmd xml_entries sgml_entries \
 			build_depends libtool_fixup_la_stage no_fixup_libtool \
 			disable_parallel_build run_depends cross_compiler \
-			only_for_archs patch_args \
+			only_for_archs patch_args conf_files keep_dirs \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 

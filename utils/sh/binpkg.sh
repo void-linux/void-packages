@@ -88,6 +88,15 @@ _EOF
 		done
 		printf "\t</array>\n" >> $TMPFPROPS
 	fi
+	# Keep directories while removing.
+	if [ -n "$keep_dirs" ]; then
+		printf "\t<key>keep_dirs</key>\n" >> $TMPFPROPS
+		printf "\t<array>\n" >> $TMPFPROPS
+		for f in ${keep_dirs}; do
+			printf "\t\t<string>$f</string>\n" >> $TMPFPROPS
+		done
+		printf "\t</array>\n" >> $TMPFPROPS
+	fi
 
 	# Terminate the property list file.
 	printf "</dict>\n</plist>\n" >> $TMPFPROPS
