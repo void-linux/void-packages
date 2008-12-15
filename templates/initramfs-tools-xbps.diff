@@ -1,0 +1,85 @@
+--- mkinitramfs.orig	2008-12-15 01:06:46.000000000 +0100
++++ mkinitramfs	2008-12-15 01:08:08.000000000 +0100
+@@ -70,7 +70,7 @@ if [ -n "$supported_host_version" ] || [
+ 	fi
+ 	if [ -n "$supported_target_version" ]; then
+ 		target_upstream_version="${supported_target_version%%-*}"
+-		if dpkg --compare-versions "$target_upstream_version" lt "2.6.12"; then
++		if ! compare_versions "$target_upstream_version" "2.6.12"; then
+ 			exit 2
+ 		fi
+ 	fi
+@@ -164,7 +164,7 @@ fi
+ DESTDIR="$(mktemp -t -d mkinitramfs_XXXXXX)" || exit 1
+ __TMPCPIOGZ="$(mktemp -t mkinitramfs-OL_XXXXXX)" || exit 1
+ 
+-DPKG_ARCH=`dpkg --print-installation-architecture`
++DPKG_ARCH=`uname -m`
+ 
+ # Export environment for hook scripts.
+ #
+@@ -272,8 +272,10 @@ fi
+ copy_exec /sbin/modprobe /sbin
+ copy_exec /sbin/depmod /sbin
+ copy_exec /sbin/rmmod /sbin
+-mkdir -p "${DESTDIR}/etc/modprobe.d"
+-cp -a /etc/modprobe.d/* "${DESTDIR}/etc/modprobe.d/"
++if [ -d /etc/modprobe.d ]; then
++	mkdir -p "${DESTDIR}/etc/modprobe.d"
++	cp -a /etc/modprobe.d/* "${DESTDIR}/etc/modprobe.d/"
++fi
+ 
+ # workaround: libgcc always needed on old-abi arm
+ if [ "$DPKG_ARCH" = arm ] || [ "$DPKG_ARCH" = armeb ]; then
+--- hook-functions.orig	2008-12-15 01:24:05.000000000 +0100
++++ hook-functions	2008-12-15 01:30:55.000000000 +0100
+@@ -414,16 +414,28 @@ EOF
+ 
+ }
+ 
++compare_versions()
++{
++	local curv minv
++
++	curv="$(echo $1|sed 's|.||g')"
++	minv="$(echo $2|sed 's|.||g')"
++
++	if [ "$curv" -lt "$minv" ]; then
++		return 1
++	fi
++}
++
+ # minimal supported kernel version
+ check_minkver()
+ {
+-	local curversion initdir DPKG_ARCH minversion cm_x tmp
++	local curversion initdir ARCH minversion cm_x tmp
+ 
+ 	curversion="${1}"
+ 	initdir="${2}"
+ 	if [ -z "${initdir}" ]; then
+-		DPKG_ARCH=$(dpkg --print-installation-architecture)
+-		case ${DPKG_ARCH} in
++		ARCH=$(uname -m)
++		case ${ARCH} in
+ 			ia64|hppa)
+ 				minversion="2.6.15"
+ 			;;
+@@ -431,7 +443,7 @@ check_minkver()
+ 				minversion="2.6.12"
+ 			;;
+ 		esac
+-		if dpkg --compare-versions "${curversion}" lt "${minversion}"; then
++		if ! compare_versions "${curversion}" "${minversion}"; then
+ 			echo "W: kernel ${curversion} too old for initramfs on ${DPKG_ARCH}" >&2
+ 			echo "W: not generating requested initramfs for kernel ${curversion}" >&2
+ 			exit 2
+@@ -445,7 +457,7 @@ check_minkver()
+ 		minver=$(sed '/^MINKVER=/!d;$!d;s/^MINKVER=//;s/[[:space:]]*$//' "${initdir}/${cm_x}")
+ 		if [ -z "${tmp}" ]; then
+ 			continue
+-		elif dpkg --compare-versions "${curversion}" lt "${minver}"; then
++		elif ! compare_versions "${curversion}" "${minver}"; then
+ 			echo "W: ${cm_x} hook script requires at least kernel version ${minver}" >&2
+ 			echo "W: not generating requested initramfs for kernel ${curversion}" >&2
+ 			exit 2
