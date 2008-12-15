@@ -40,30 +40,30 @@ usage()
 $progname: [-C] [-c <config_file>] <target> <pkg>
 
 Targets:
- build <pkg>		Build a package (fetch + extract + configure + build).
- build-pkg [<pkg>|all]	Build a binary package from <pkg>.
-			Package must be installed into destdir. If the <all>
-			keyword is used instead of <pkg>, all packages
-			currently installed will be used.
- chroot			Enter to the chroot in masterdir.
- configure <pkg>	Configure a package (fetch + extract + configure).
- extract <pkg>		Extract distribution file(s) into build directory.
- fetch <pkg>		Download distribution file(s).
- info <pkg>		Show information about <pkg>.
- install-destdir <pkg>	build + install into destdir.
- install <pkg>		install-destdir + stow.
- list			List installed packages in masterdir.
- listfiles <pkg>	List installed files from <pkg>.
- remove	<pkg>		Remove package completely (destdir + masterdir).
- stow <pkg>		Copy <pkg> files from destdir into masterdir and
-			register package in database.
- unstow	<pkg>		Remove <pkg> files from masterdir and unregister
-			package from database.
+ build <pkg>            Build a package (fetch + extract + configure + build).
+ build-pkg [<pkg>|all]  Build a binary package from <pkg>.
+                        Package must be installed into destdir. If the <all>
+                        keyword is used instead of <pkg>, all packages
+                        currently installed will be used.
+ chroot                 Enter to the chroot in masterdir.
+ configure <pkg>        Configure a package (fetch + extract + configure).
+ extract <pkg>          Extract distribution file(s) into build directory.
+ fetch <pkg>            Download distribution file(s).
+ info <pkg>             Show information about <pkg>.
+ install-destdir <pkg>  build + install into destdir.
+ install <pkg>          install-destdir + stow.
+ list                   List installed packages in masterdir.
+ listfiles <pkg>        List installed files from <pkg>.
+ remove	<pkg>           Remove package completely (destdir + masterdir).
+ stow <pkg>             Copy <pkg> files from destdir into masterdir and
+                        register package in database.
+ unstow	<pkg>           Remove <pkg> files from masterdir and unregister
+                        package from database.
 
 Options:
- -C	Do not remove build directory after successful installation.
- -c	Path to global configuration file:
-	if not specified /etc/xbps.conf is used.
+ -C     Do not remove build directory after successful installation.
+ -c     Path to global configuration file:
+        if not specified /etc/xbps.conf is used.
 _EOF
 	exit 1
 }
