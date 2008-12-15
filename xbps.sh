@@ -164,55 +164,6 @@ check_config_vars()
 }
 
 #
-# Checks that all required variables specified in the configuration
-# file are properly working.
-#
-check_config_vars()
-{
-	local cffound=
-	local f=
-
-	if [ -z "$config_file_specified" ]; then
-		config_file_paths="$XBPS_CONFIG_FILE ./xbps.conf"
-		for f in $config_file_paths; do
-			[ -f $f ] && XBPS_CONFIG_FILE=$f && \
-				cffound=yes && break
-		done
-		[ -z "$cffound" ] && msg_error "cannot find a config file"
-	fi
-
-	run_file ${XBPS_CONFIG_FILE}
-	XBPS_CONFIG_FILE=$path_fixed
-
-	if [ ! -f "$XBPS_CONFIG_FILE" ]; then
-		msg_error "cannot find configuration file: $XBPS_CONFIG_FILE"
-	fi
-
-	local XBPS_VARS="XBPS_MASTERDIR XBPS_DESTDIR XBPS_BUILDDIR \
-			 XBPS_SRCDISTDIR"
-
-	for f in ${XBPS_VARS}; do
-		eval val="\$$f"
-		[ -z "$val" ] && msg_error "'$f' not set in configuration file"
-
-		if [ ! -d "$val" ]; then
-			mkdir "$val"
-			[ $? -ne 0 ] && msg_error "couldn't create '$f' directory"
-		fi
-	done
-
-	if [ "$xbps_machine" = "x86_64" ]; then
-		[ ! -d $XBPS_MASTERDIR/lib ] && mkdir -p $XBPS_MASTERDIR/lib
-		[ ! -h $XBPS_MASTERDIR/lib64 ] && \
-			cd $XBPS_MASTERDIR && ln -s lib lib64
-		[ ! -d $XBPS_MASTERDIR/usr/lib ] && \
-			mkdir -p $XBPS_MASTERDIR/usr/lib
-		[ ! -h $XBPS_MASTERDIR/usr/lib64 ] && \
-			cd $XBPS_MASTERDIR/usr && ln -s lib lib64
-	fi
-}
-
-#
 # main()
 #
 while getopts "Cc:" opt; do
