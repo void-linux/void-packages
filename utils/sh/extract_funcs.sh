@@ -70,12 +70,18 @@ extract_distfiles()
 	fi
 
 	for f in ${distfiles}; do
+		curfile=$(basename $f)
+
 		if $(echo $f|grep -q '.tar.bz2'); then
 			cursufx=".tar.bz2"
 		elif $(echo $f|grep -q '.tbz'); then
 			cursufx=".tbz"
 		elif $(echo $f|grep -q '.tar.gz'); then
 			cursufx=".tar.gz"
+		elif $(echo $f|grep -q '.gz'); then
+			cursufx=".gz"
+		elif $(echo $f|grep -q '.bz2'); then
+			cursufx=".bz2"
 		elif $(echo $f|grep -q '.tgz'); then
 			cursufx=".tgz"
 		elif $(echo $f|grep -q '.tar'); then
@@ -83,10 +89,9 @@ extract_distfiles()
 		elif $(echo $f|grep -q '.zip'); then
 			cursufx=".zip"
 		else
-			msg_error "unknown distfile suffix for $f."
+			msg_error "unknown distfile suffix for $curfile."
 		fi
 
-		curfile=$(basename $f)
 
 		if [ $count -gt 1 ]; then
 			lwrksrc="$wrksrc/${curfile%$cursufx}"
@@ -105,6 +110,16 @@ extract_distfiles()
 			$ltar_cmd xfz $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $lwrksrc."
+			fi
+			;;
+		.gz|.bz2)
+			mkdir -p $lwrksrc/$pkgname
+			cp -f $XBPS_SRCDISTDIR/$curfile $lwrksrc/$pkgname
+			cd $lwrksrc/$pkgname
+			if [ "$cursufx" = ".gz" ]; then
+				gunzip $curfile
+			else
+				bunzip2 $curfile
 			fi
 			;;
 		.tar)
