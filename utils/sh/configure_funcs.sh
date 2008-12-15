@@ -35,6 +35,14 @@ configure_src_phase()
 
 	[ -z $pkg ] && [ -z $pkgname ] && return 1
 
+	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]."
+
+	# Apply patches if requested by template file
+	if [ ! -f $XBPS_APPLYPATCHES_DONE ]; then
+		. $XBPS_SHUTILSDIR/patch_funcs.sh
+		apply_tmpl_patches
+	fi
+
 	#
 	# There's nothing we can do if we are a meta template or an
 	# {custom,only}_install template.
@@ -43,13 +51,6 @@ configure_src_phase()
 	  "$build_style" = "only-install" -o	\
 	  "$build_style" = "custom-install" ] && return 0
 
-	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]."
-
-	# Apply patches if requested by template file
-	if [ ! -f $XBPS_APPLYPATCHES_DONE ]; then
-		. $XBPS_SHUTILSDIR/patch_funcs.sh
-		apply_tmpl_patches
-	fi
 
 	# cross compilation vars.
 	if [ -n "$cross_compiler" ]; then
