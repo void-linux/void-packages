@@ -72,9 +72,6 @@ build_src_phase()
 	if [ -z "$in_chroot" ]; then
 		. $XBPS_SHUTILSDIR/libtool_funcs.sh
 		libtool_fixup_file
-	fi
-
-	if [ -z "$in_chroot" ]; then
 		. $XBPS_SHUTILSDIR/buildvars_funcs.sh
 		set_build_vars
 	fi
