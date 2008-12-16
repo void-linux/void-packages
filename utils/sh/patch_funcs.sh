@@ -40,6 +40,7 @@ apply_tmpl_patches()
 	fi
 
 	[ -z "$patch_args" ] && patch_args="-p0"
+	[ -z "$patch_files" ] && return 0
 
 	#
 	# If package needs some patches applied before building,

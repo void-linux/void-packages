@@ -51,7 +51,6 @@ configure_src_phase()
 	  "$build_style" = "only-install" -o	\
 	  "$build_style" = "custom-install" ] && return 0
 
-
 	# cross compilation vars.
 	if [ -n "$cross_compiler" ]; then
 		. $XBPS_HELPERSDIR/cross-compilation.sh
