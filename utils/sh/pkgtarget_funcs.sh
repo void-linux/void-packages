@@ -130,7 +130,7 @@ list_pkg_files()
 	ver=$($XBPS_PKGDB_CMD version $pkg)
 	[ -z "$ver" ] && msg_error "$pkg is not installed."
 
-	cat $XBPS_PKGMETADIR/$pkg-$ver/flist
+	cat $XBPS_PKGMETADIR/$pkg/flist
 }
 
 #

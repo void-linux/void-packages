@@ -55,7 +55,7 @@ stow_pkg()
 
 	# Copy metadata files into masterdir.
 	if [ -f xbps-metadata/flist -a -f xbps-metadata/props.plist ]; then
-		local metadir=$XBPS_PKGMETADIR/$pkgname-$version
+		local metadir=$XBPS_PKGMETADIR/$pkgname
 		mkdir -p $metadir
 		cp -f xbps-metadata/flist $metadir
 		cp -f xbps-metadata/props.plist $metadir
@@ -104,7 +104,7 @@ unstow_pkg()
 		msg_error "$pkg is not installed."
 	fi
 
-	cd $XBPS_PKGMETADIR/$pkgname-$version || exit 1
+	cd $XBPS_PKGMETADIR/$pkgname || exit 1
 	if [ ! -f flist ]; then
 		msg_error "$pkg is incomplete, missing flist."
 	elif [ ! -O flist ]; then
@@ -131,7 +131,7 @@ unstow_pkg()
 	done
 
 	# Remove metadata dir.
-	rm -rf $XBPS_PKGMETADIR/$pkgname-$version
+	rm -rf $XBPS_PKGMETADIR/$pkgname
 
 	$XBPS_PKGDB_CMD unregister $pkgname $ver
 	return $?
