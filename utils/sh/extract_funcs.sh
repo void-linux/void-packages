@@ -94,7 +94,7 @@ extract_distfiles()
 
 
 		if [ $count -gt 1 ]; then
-			lwrksrc="$wrksrc/${curfile%$cursufx}"
+			lwrksrc="$wrksrc"
 		else
 			lwrksrc="$XBPS_BUILDDIR"
 		fi
@@ -113,13 +113,11 @@ extract_distfiles()
 			fi
 			;;
 		.gz|.bz2)
-			mkdir -p $lwrksrc/$pkgname
-			cp -f $XBPS_SRCDISTDIR/$curfile $lwrksrc/$pkgname
-			cd $lwrksrc/$pkgname
+			cp -f $XBPS_SRCDISTDIR/$curfile $lwrksrc
 			if [ "$cursufx" = ".gz" ]; then
-				gunzip $curfile
+				cd $lwrksrc && gunzip $curfile
 			else
-				bunzip2 $curfile
+				cd $lwrksrc && bunzip2 $curfile
 			fi
 			;;
 		.tar)
