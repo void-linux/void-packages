@@ -54,9 +54,18 @@ prepare_chroot()
 	for f in lock log mail run spool opt cache lib; do
 		mkdir -p $XBPS_MASTERDIR/var/$f
 	done
+
 	chown -R root:root $XBPS_MASTERDIR
 
 	# Create some required files.
+	touch $XBPS_MASTERDIR/etc/mtab
+	for f in run/utmp log/btmp log/lastlog log/wtmp; do
+		touch -f $XBPS_MASTERDIR/var/$f
+	done
+	for f in run/utmp log/lastlog; do
+		chmod 644 $XBPS_MASTERDIR/var/$f
+	done
+
 	cat > $XBPS_MASTERDIR/etc/passwd <<_EOF
 root:x:0:0:root:/root:/bin/bash
 nobody:x:99:99:Unprivileged User:/dev/null:/bin/false
