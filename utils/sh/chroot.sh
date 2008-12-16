@@ -43,9 +43,13 @@ prepare_chroot()
 	for f in local bin include lib sbin src; do
 		mkdir -p $XBPS_MASTERDIR/usr/$f
 	done
-	for f in share doc info locale man misc terminfo zoneinfo; do
+	for f in share doc info; do
 		mkdir -p $XBPS_MASTERDIR/usr/$f
 		mkdir -p $XBPS_MASTERDIR/usr/local/$f
+	done
+	for f in locale man misc terminfo zoneinfo; do
+		mkdir -p $XBPS_MASTERDIR/usr/share/$f
+		mkdir -p $XBPS_MASTERDIR/usr/local/share/$f
 	done
 	for f in 1 2 3 4 5 6 7 8; do
 		mkdir -p $XBPS_MASTERDIR/usr/share/man/man$f
