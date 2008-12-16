@@ -38,6 +38,8 @@ extract_distfiles()
 	local f=
 
 	[ -f $XBPS_EXTRACT_DONE ] && return 0
+	[ ! -O $XBPS_BUILDDIR ] && \
+		msg_error "can't extract distfile(s) (permission denied)"
 
 	#
 	# If we are being called via the target, just extract and return.
