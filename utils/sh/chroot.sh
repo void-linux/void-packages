@@ -55,8 +55,52 @@ prepare_chroot()
 		mkdir -p $XBPS_MASTERDIR/var/$f
 	done
 	chown -R root:root $XBPS_MASTERDIR
-	cp -af /etc/passwd /etc/shadow /etc/group /etc/hosts \
-		/etc/resolv.conf $XBPS_MASTERDIR/etc
+
+	# Create some required files.
+	cat > $XBPS_MASTERDIR/etc/passwd <<_EOF
+root:x:0:0:root:/root:/bin/bash
+nobody:x:99:99:Unprivileged User:/dev/null:/bin/false
+_EOF
+	# Default group list as specified by LFS.
+	cat > $XBPS_MASTERDIR/etc/group <<_EOF
+root:x:0:
+bin:x:1:
+sys:x:2:
+kmem:x:3:
+tty:x:4:
+tape:x:5:
+daemon:x:6:
+floppy:x:7:
+disk:x:8:
+lp:x:9:
+uucp:x:10:
+audio:x:11:
+video:x:12:
+utmp:x:13:
+usb:x:14:
+cdrom:x:15:
+mail:x:34:
+nogroup:x:99:
+_EOF
+	# Default file as in Ubuntu.
+	cat > $XBPS_MASTERDIR/etc/hosts <<_EOF
+127.0.0.1	xbps	localhost.localdomain	localhost
+127.0.1.1	xbps
+
+# The following lines are desirable for IPv6 capable hosts
+::1     ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+ff02::3 ip6-allhosts
+_EOF
+	# Use OpenDNS servers.
+	cat > $XBPS_MASTERDIR/etc/resolv.conf <<_EOF
+nameserver 208.67.222.222
+nameserver 208.67.220.220
+_EOF
+
 	touch $XBPS_MASTERDIR/.xbps_perms_done
 }
 
