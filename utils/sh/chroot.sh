@@ -90,6 +90,7 @@ usb:x:14:
 cdrom:x:15:
 mail:x:34:
 nogroup:x:99:
+users:x:1000:
 _EOF
 	# Default file as in Ubuntu.
 	cat > $XBPS_MASTERDIR/etc/hosts <<_EOF
