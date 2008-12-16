@@ -31,60 +31,34 @@
 # Umount stuff if SIGINT or SIGQUIT was caught
 trap umount_chroot_fs INT QUIT
 
-[ -n "$base_chroot" ] && return 0
+prepare_chroot()
+{
+	local f=
 
-. $XBPS_SHUTILSDIR/builddep_funcs.sh
-check_installed_pkg xbps-base-chroot 0.1
-[ $? -ne 0 ] && msg_error "xbps-base-chroot pkg not installed."
-
-if [ "$(id -u)" -ne 0 ]; then
-	if [ -n "$origin_tmpl" ]; then
-		. $XBPS_SHUTILSDIR/tmpl_funcs.sh
-		reset_tmpl_vars
-		run_file $XBPS_TEMPLATESDIR/$origin_tmpl.tmpl
-	fi
-	if [ -z "$base_chroot" ]; then
-		msg_error "this package must be built inside of the chroot."
-	else
-		msg_error "you must be root to use this target."
-	fi
-fi
-
-if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
-	echo -n "==> Preparing chroot on $XBPS_MASTERDIR... "
+	for f in bin boot etc home lib mnt opt media/cdrom sbin usr var; do
+		mkdir -p $XBPS_MASTERDIR/$f
+	done
+	mkdir -p -m 0750 $XBPS_MASTERDIR/root
+	mkdir -p -m 1777 $XBPS_MASTERDIR/tmp $XBPS_MASTERDIR/var/tmp
+	for f in local bin include lib sbin src; do
+		mkdir -p $XBPS_MASTERDIR/usr/$f
+	done
+	for f in share doc info locale man misc terminfo zoneinfo; do
+		mkdir -p $XBPS_MASTERDIR/usr/$f
+		mkdir -p $XBPS_MASTERDIR/usr/local/$f
+	done
+	for f in 1 2 3 4 5 6 7 8; do
+		mkdir -p $XBPS_MASTERDIR/usr/share/man/man$f
+		mkdir -p $XBPS_MASTERDIR/usr/local/share/man/man$f
+	done
+	for f in lock log mail run spool opt cache lib; do
+		mkdir -p $XBPS_MASTERDIR/var/$f
+	done
 	chown -R root:root $XBPS_MASTERDIR
 	cp -af /etc/passwd /etc/shadow /etc/group /etc/hosts \
 		/etc/resolv.conf $XBPS_MASTERDIR/etc
 	touch $XBPS_MASTERDIR/.xbps_perms_done
-	echo "done."
-else
-	msg_normal "Entering into the chroot on $XBPS_MASTERDIR."
-fi
-
-EXTDIRS="xbps xbps_builddir xbps_destdir xbps_packagesdir \
-	 xbps_srcdistdir xbps_crossdir"
-REQDIRS="bin sbin tmp var sys proc dev ${EXTDIRS}"
-for f in ${REQDIRS}; do
-	[ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
-done
-unset f REQDIRS
-
-echo "XBPS_DISTRIBUTIONDIR=/xbps" > $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_MASTERDIR=/" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_DESTDIR=/xbps_destdir" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_PACKAGESDIR=/xbps_packagesdir" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_BUILDDIR=/xbps_builddir" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_SRCDISTDIR=/xbps_srcdistdir" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_CFLAGS=\"$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_CXXFLAGS=\"\$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/etc/xbps.conf
-if [ -n "$XBPS_MAKEJOBS" ]; then
-	echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPS_MASTERDIR/etc/xbps.conf
-fi
-if [ -n "$XBPS_CROSS_TARGET" -a -d "$XBPS_CROSS_DIR" ]; then
-	echo "XBPS_CROSS_TARGET=$XBPS_CROSS_TARGET" >> \
-		$XBPS_MASTERDIR/etc/xbps.conf
-	echo "XBPS_CROSS_DIR=/xbps_crossdir" >> $XBPS_MASTERDIR/etc/xbps.conf
-fi
+}
 
 rebuild_ldso_cache()
 {
@@ -191,3 +165,56 @@ umount_chroot_fs()
 		[ -d $XBPS_MASTERDIR/$dir ] && rmdir $XBPS_MASTERDIR/$dir
 	done
 }
+
+[ -n "$base_chroot" ] && return 0
+
+. $XBPS_SHUTILSDIR/builddep_funcs.sh
+check_installed_pkg xbps-base-chroot 0.1
+[ $? -ne 0 ] && msg_error "xbps-base-chroot pkg not installed."
+
+if [ "$(id -u)" -ne 0 ]; then
+	if [ -n "$origin_tmpl" ]; then
+		. $XBPS_SHUTILSDIR/tmpl_funcs.sh
+		reset_tmpl_vars
+		run_file $XBPS_TEMPLATESDIR/$origin_tmpl.tmpl
+	fi
+	if [ -z "$base_chroot" ]; then
+		msg_error "this package must be built inside of the chroot."
+	else
+		msg_error "you must be root to use this target."
+	fi
+fi
+
+if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
+	echo -n "==> Preparing chroot on $XBPS_MASTERDIR... "
+	prepare_chroot
+	echo "done."
+else
+	msg_normal "Entering into the chroot on $XBPS_MASTERDIR."
+fi
+
+EXTDIRS="xbps xbps_builddir xbps_destdir xbps_packagesdir \
+	 xbps_srcdistdir xbps_crossdir"
+REQDIRS="bin sbin tmp var sys proc dev ${EXTDIRS}"
+for f in ${REQDIRS}; do
+	[ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
+done
+unset f REQDIRS
+
+echo "XBPS_DISTRIBUTIONDIR=/xbps" > $XBPS_MASTERDIR/etc/xbps.conf
+echo "XBPS_MASTERDIR=/" >> $XBPS_MASTERDIR/etc/xbps.conf
+echo "XBPS_DESTDIR=/xbps_destdir" >> $XBPS_MASTERDIR/etc/xbps.conf
+echo "XBPS_PACKAGESDIR=/xbps_packagesdir" >> $XBPS_MASTERDIR/etc/xbps.conf
+echo "XBPS_BUILDDIR=/xbps_builddir" >> $XBPS_MASTERDIR/etc/xbps.conf
+echo "XBPS_SRCDISTDIR=/xbps_srcdistdir" >> $XBPS_MASTERDIR/etc/xbps.conf
+echo "XBPS_CFLAGS=\"$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/etc/xbps.conf
+echo "XBPS_CXXFLAGS=\"\$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/etc/xbps.conf
+if [ -n "$XBPS_MAKEJOBS" ]; then
+	echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPS_MASTERDIR/etc/xbps.conf
+fi
+if [ -n "$XBPS_CROSS_TARGET" -a -d "$XBPS_CROSS_DIR" ]; then
+	echo "XBPS_CROSS_TARGET=$XBPS_CROSS_TARGET" >> \
+		$XBPS_MASTERDIR/etc/xbps.conf
+	echo "XBPS_CROSS_DIR=/xbps_crossdir" >> $XBPS_MASTERDIR/etc/xbps.conf
+fi
+
