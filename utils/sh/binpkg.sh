@@ -30,25 +30,17 @@
 xbps_write_metadata_pkg()
 {
 	local destdir=$XBPS_DESTDIR/$pkgname-$version
+	local metadir=$destdir/var/cache/xbps/metadata/$pkgname
 
 	if [ ! -d "$destdir" ]; then
 		echo "ERROR: $pkgname not installed into destdir."
 		exit 1
 	fi
 
-	if [ ! -d $destdir/xbps-metadata ]; then
-		mkdir -p $destdir/xbps-metadata >/dev/null 2>&1
-		if [ $? -ne 0 ]; then
-			echo "ERROR: you don't have enough perms for this."
-			exit 1
-		fi
-	fi
-
 	# Write the files list.
 	local TMPFLIST=$(mktemp -t flist.XXXXXXXXXX) || exit 1
 	find $destdir | sort -ur | \
-		sed -e "s|$destdir||g;s|^\/$||g;s|/xbps-metadata||g;/^$/d" \
-		> $TMPFLIST
+		sed -e "s|$destdir||g;s|^\/$||g;/^$/d" > $TMPFLIST
 
 	# Write the property list file.
 	local TMPFPROPS=$(mktemp -t fprops.XXXXXXXXXX) || exit 1
@@ -101,10 +93,19 @@ _EOF
 	# Terminate the property list file.
 	printf "</dict>\n</plist>\n" >> $TMPFPROPS
 
-	# Write metadata files into destdir and cleanup.
-	cp -f $TMPFLIST $destdir/xbps-metadata/flist
-	cp -f $TMPFPROPS $destdir/xbps-metadata/props.plist
-	chmod 644 $destdir/xbps-metadata/*
+	if [ ! -d $metadir ]; then
+		mkdir -p $metadir >/dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR: you don't have enough perms for this."
+			rm -f $TMPFLIST $TMPFPROPS
+			exit 1
+		fi
+	fi
+
+	# Write metadata files and cleanup.
+	cp -f $TMPFLIST $metadir/flist
+	cp -f $TMPFPROPS $metadir/props.plist
+	chmod 644 $metadir/*
 	rm -f $TMPFLIST $TMPFPROPS
 }
 

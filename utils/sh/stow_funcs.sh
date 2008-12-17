@@ -31,12 +31,12 @@ stow_pkg()
 {
 	local pkg="$1"
 	local i=
+	local destdir=$XBPS_DESTDIR/$pkgname-$version
 
 	[ -z "$pkg" ] && return 2
 
 	if [ "$build_style" = "meta-template" ]; then
-		[ ! -d $XBPS_DESTDIR/$pkgname-$version ] && \
-			mkdir -p $XBPS_DESTDIR/$pkgname-$version
+		[ ! -d $destdir ] && mkdir -p $destdir
 	fi
 
 	if [ -n "$stow_flag" ]; then
@@ -47,23 +47,14 @@ stow_pkg()
 		pkg=$pkgname-$version
 	fi
 
-	cd $XBPS_DESTDIR/$pkgname-$version || exit 1
+	cd $destdir || exit 1
 
 	# Write pkg metadata.
 	. $XBPS_SHUTILSDIR/binpkg.sh
 	xbps_write_metadata_pkg
 
-	# Copy metadata files into masterdir.
-	if [ -f xbps-metadata/flist -a -f xbps-metadata/props.plist ]; then
-		local metadir=$XBPS_PKGMETADIR/$pkgname
-		mkdir -p $metadir
-		cp -f xbps-metadata/flist $metadir
-		cp -f xbps-metadata/props.plist $metadir
-	fi
-
 	# Copy files into masterdir.
 	for i in $(echo *); do
-		[ "$i" = "xbps-metadata" ] && continue
 		cp -ar ${i} $XBPS_MASTERDIR
 	done
 
