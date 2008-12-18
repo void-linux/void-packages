@@ -38,7 +38,7 @@ extract_distfiles()
 	local f=
 
 	[ -f $XBPS_EXTRACT_DONE ] && return 0
-	[ -z "$in_chroot" -a ! -O $XBPS_BUILDDIR ] && \
+	[ -z "$in_chroot" -a ! -w $XBPS_BUILDDIR ] && \
 		msg_error "can't extract distfile(s) (permission denied)"
 
 	#

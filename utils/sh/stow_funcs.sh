@@ -98,7 +98,7 @@ unstow_pkg()
 	cd $XBPS_PKGMETADIR/$pkgname || exit 1
 	if [ ! -f flist ]; then
 		msg_error "$pkg is incomplete, missing flist."
-	elif [ ! -O flist ]; then
+	elif [ ! -w flist ]; then
 		msg_error "$pkg cannot be removed (permission denied)."
 	fi
 
