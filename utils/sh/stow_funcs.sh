@@ -100,26 +100,26 @@ unstow_pkg()
 		msg_error "$pkg is incomplete, missing flist."
 	elif [ ! -w flist ]; then
 		msg_error "$pkg cannot be removed (permission denied)."
+	elif [ -s flist ]; then
+		# Remove installed files.
+		for f in $(cat flist); do
+			if [ -f $XBPS_MASTERDIR/$f -o -h $XBPS_MASTERDIR/$f ]; then
+				rm $XBPS_MASTERDIR/$f  >/dev/null 2>&1
+				if [ $? -eq 0 ]; then
+					echo "Removing file: $f"
+				fi
+			fi
+		done
+
+		for f in $(cat flist); do
+			if [ -d $XBPS_MASTERDIR/$f ]; then
+				rmdir $XBPS_MASTERDIR/$f >/dev/null 2>&1
+				if [ $? -eq 0 ]; then
+					echo "Removing directory: $f"
+				fi
+			fi
+		done
 	fi
-
-	# Remove installed files.
-	for f in $(cat flist); do
-		if [ -f $XBPS_MASTERDIR/$f -o -h $XBPS_MASTERDIR/$f ]; then
-			rm $XBPS_MASTERDIR/$f  >/dev/null 2>&1
-			if [ $? -eq 0 ]; then
-				echo "Removing file: $f"
-			fi
-		fi
-	done
-
-	for f in $(cat flist); do
-		if [ -d $XBPS_MASTERDIR/$f ]; then
-			rmdir $XBPS_MASTERDIR/$f >/dev/null 2>&1
-			if [ $? -eq 0 ]; then
-				echo "Removing directory: $f"
-			fi
-		fi
-	done
 
 	# Remove metadata dir.
 	rm -rf $XBPS_PKGMETADIR/$pkgname
