@@ -50,6 +50,10 @@ xbps_write_metadata_pkg()
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>pkgname</key>
+	<string>$pkgname</string>
+	<key>version</key>
+	<string>$version</key>
 	<key>architecture</key>
 	<string>$xbps_machine</string>
 	<key>installed_size</key>
