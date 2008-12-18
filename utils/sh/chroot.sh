@@ -224,7 +224,11 @@ umount_chroot_fs()
 
 . $XBPS_SHUTILSDIR/builddep_funcs.sh
 check_installed_pkg xbps-base-chroot 0.1
-[ $? -ne 0 ] && msg_error "xbps-base-chroot pkg not installed."
+if [ $? -ne 0 ]; then
+	echo "The '$pkgname' package requires to be installed in a chroot."
+	echo "Please install the 'xbps-base-chroot' package and try again."
+	exit 1
+fi
 
 if [ "$(id -u)" -ne 0 ]; then
 	if [ -n "$origin_tmpl" ]; then
@@ -232,11 +236,9 @@ if [ "$(id -u)" -ne 0 ]; then
 		reset_tmpl_vars
 		run_file $XBPS_TEMPLATESDIR/$origin_tmpl.tmpl
 	fi
-	if [ -z "$base_chroot" ]; then
-		msg_error "this package must be built inside of the chroot."
-	else
-		msg_error "you must be root to use this target."
-	fi
+	echo "The '$pkgname' package requires to be installed in a chroot."
+	echo "You cannot do this as normal user, try again being root."
+	exit 1
 fi
 
 if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
