@@ -35,8 +35,14 @@ write_repo_pkgindex()
 	local pkgindexf=
 	local tmppkgdir=
 	local i=
+	local found=
 
 	[ ! -d $XBPS_PACKAGESDIR ] && exit 1
+
+	found="$(echo $XBPS_PACKAGESDIR/*)"
+	if $(echo $found|grep -vq .xbps); then
+		msg_error "couldn't find binary packages on $XBPS_PACKAGESDIR."
+	fi
 
 	pkgindexf=$(mktemp -t pkgidx.XXXXXXXXXX) || exit 1
 	tmppkgdir=$(mktemp -d -t pkgdir.XXXXXXXX) || exit 1
