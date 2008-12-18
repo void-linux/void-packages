@@ -51,7 +51,7 @@ xbps_write_metadata_pkg()
 <plist version="1.0">
 <dict>
 	<key>architecture</key>
-	<string>$(uname -m)</string>
+	<string>$xbps_machine</string>
 	<key>installed_size</key>
 	<integer>$(du -sb $destdir|awk '{print $1}')</integer>
 	<key>maintainer</key>
@@ -116,12 +116,13 @@ _EOF
 xbps_make_binpkg()
 {
 	local destdir=$XBPS_DESTDIR/$pkgname-$version
+	local binpkg=$pkgname-$version.$xbps_machine.xbps
 
 	cd $destdir || exit 1
 
-	run_rootcmd tar cfjp $destdir-xbps.tbz2 .
+	run_rootcmd tar cfjp $XBPS_DESTDIR/$binpkg .
 	[ ! -d $XBPS_PACKAGESDIR ] && mkdir -p $XBPS_PACKAGESDIR
-	mv -f $destdir-xbps.tbz2 $XBPS_PACKAGESDIR
+	mv -f $XBPS_DESTDIR/$binpkg $XBPS_PACKAGESDIR
 
-	echo "=> Built package: $pkgname-$version-xbps.tbz2."
+	echo "=> Built package: $binpkg"
 }
