@@ -141,7 +141,7 @@ xbps_chroot_handler()
 		[ -n "$only_destdir" ] && \
 			local lenv="install_destdir_target=yes"
 		env in_chroot=yes ${lenv} chroot $XBPS_MASTERDIR \
-			/xbps/xbps.sh $action $pkg
+			/xbps/xbps-src.sh $action $pkg
 	fi
 	msg_normal "Exiting from the chroot on $XBPS_MASTERDIR."
 	umount_chroot_fs
