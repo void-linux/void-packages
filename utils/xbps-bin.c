@@ -45,12 +45,19 @@ static void usage(void);
 static void
 usage(void)
 {
-	printf("Usage: xbps-bin [action] [pkg|url]\n\n"
-	" Available actions: add-repo, show\n\n"
+	printf("Usage: xbps-bin [action] [arguments]\n\n"
+	" Available actions:\n"
+        "    repo-add, repo-list, show\n"
+	" Action arguments:\n"
+	"    repo-add\t[<URI>]\n"
+	"    repo-list\t[none]\n"
+	"    show\t[<pkgname>]\n"
+	"\n"
 	" Examples:\n"
-	"   $ xbps-bin add-repo /path/to/directory\n"
-	"   $ xbps-bin add-repo http://www.location.org/xbps-repo\n"
-	"   $ xbps-bin show klibc\n");
+	"    $ xbps-bin repo-list\n"
+	"    $ xbps-bin repo-add /path/to/directory\n"
+	"    $ xbps-bin repo-add http://www.location.org/xbps-repo\n"
+	"    $ xbps-bin show klibc\n");
 	exit(1);
 }
 
@@ -87,14 +94,18 @@ int
 main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
+	prop_array_t array;
 	repo_info_t *rinfo = NULL;
 	char pkgindex[PATH_MAX], *tmp;
 
-	if (argc != 3)
+	if (argc < 2)
 		usage();
 
-	/* Adds a new repository to the pool. */
-	if (strcmp(argv[1], "add-repo") == 0) {
+	if (strcmp(argv[1], "repo-add") == 0) {
+		/* Adds a new repository to the pool. */
+		if (argc != 3)
+			usage();
+
 		tmp = strncpy(pkgindex, argv[2], sizeof(pkgindex));
 		if (sizeof(*tmp) >= sizeof(pkgindex))
 			exit(ENAMETOOLONG);
@@ -133,6 +144,31 @@ main(int argc, char **argv)
 		       rinfo->location_local, rinfo->index_version,
 		       rinfo->total_pkgs);
 		free(rinfo);
+
+	} else if (strcmp(argv[1], "repo-list") == 0) {
+		/* Lists all repositories registered in pool. */
+		if (argc != 2)
+			usage();
+
+		dict =
+		    prop_dictionary_internalize_from_file(XBPS_REPOLIST_PATH);
+		if (dict == NULL) {
+			printf("cannot find repository list file: %s\n",
+			    strerror(errno));
+			exit(EINVAL);
+		}
+
+		array = prop_dictionary_get(dict, "repository-list");
+		if (array)
+			xbps_list_strings_in_array(array);
+
+	} else if (strcmp(argv[1], "show") == 0) {
+		/* Shows info about a binary package. */
+		if (argc != 3)
+			usage();
+
+	} else {
+		usage();
 	}
 
 	exit(0);

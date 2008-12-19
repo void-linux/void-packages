@@ -88,6 +88,15 @@ void
 xbps_list_pkgs_in_dict(prop_dictionary_t, const char *);
 
 /*
+ * Lists all string values in an array.
+ *
+ * Arguments:
+ * 	- prop_array_t: array where to search on.
+ */
+void
+xbps_list_strings_in_array(prop_array_t);
+
+/*
  * Registers a repository specified by an URI into the pool.
  *
  * Arguments:

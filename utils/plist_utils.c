@@ -230,3 +230,24 @@ xbps_list_pkgs_in_dict(prop_dictionary_t dict, const char *key)
 
 	prop_object_iterator_release(iter);
 }
+
+void
+xbps_list_strings_in_array(prop_array_t array)
+{
+	prop_object_iterator_t iter;
+	prop_object_t obj;
+
+	if (array == NULL)
+		return;
+
+	iter = prop_array_iterator(array);
+	if (iter == NULL)
+		return;
+
+	while ((obj = prop_object_iterator_next(iter))) {
+		if (prop_object_type(obj) == PROP_TYPE_STRING)
+			printf("%s\n", prop_string_cstring_nocopy(obj));
+	}
+
+	prop_object_iterator_release(iter);
+}
