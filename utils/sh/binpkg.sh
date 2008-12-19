@@ -53,7 +53,7 @@ xbps_write_metadata_pkg()
 	<key>pkgname</key>
 	<string>$pkgname</string>
 	<key>version</key>
-	<string>$version</key>
+	<string>$version</string>
 	<key>architecture</key>
 	<string>$xbps_machine</string>
 	<key>installed_size</key>
@@ -61,7 +61,7 @@ xbps_write_metadata_pkg()
 	<key>maintainer</key>
 	<string>$maintainer</string>
 	<key>short_desc</key>
-	<string>$short_desc</key>
+	<string>$short_desc</string>
 	<key>long_desc</key>
 	<string>$long_desc</string>
 _EOF
