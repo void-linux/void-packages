@@ -139,6 +139,7 @@ write_repo_pkgindex_dict()
 	local binpkgf="$3"
 	local first_dict=
 	local tmpdictf=
+	local binpkg="$XBPS_PACKAGESDIR/$binpkgf"
 
 	[ -z "$pkgf" -o -z "$indexf" -o -z "$binpkgf" ] && return 1
 
@@ -149,9 +150,12 @@ write_repo_pkgindex_dict()
 		if $(echo $line|grep -q "<dict>"); then
 			first_dict=yes
 			echo "$line" >> $tmpdictf
-			# Write the binary pkg filename before.
+			# Write binpkg props.
 			echo "<key>filename</key>" >> $tmpdictf
 			echo "<string>$binpkgf</string>" >> $tmpdictf
+			echo "<key>filename-sha256</key>" >> $tmpdictf
+			echo "<string>$($XBPS_DIGEST_CMD $binpkg)</string>" \
+			    >> $tmpdictf
 			continue
 		# Continue until found.
 		elif [ -z "$first_dict" ]; then
