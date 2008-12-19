@@ -23,60 +23,24 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdlib.h>
+#ifndef _XBPS_API_H_
+#define _XBPS_API_H_
+
 #include <stdio.h>
-#include <string.h>
-#include <assert.h>
 #include <inttypes.h>
-#include <libgen.h>
 
-#include "xbps_api.h"
+#include <prop/proplib.h>
 
-static void
-usage(void)
-{
-	fprintf(stderr, "usage: xbps-digest <file> <file1+N> ...\n");
-	exit(1);
-}
+/* Filename of the package index plist for a repository. */
+#define XBPS_PKGINDEX		"pkg-index.plist"
 
-int
-main(int argc, char **argv)
-{
-	SHA256_CTX ctx;
-	uint8_t buffer[BUFSIZ * 20], *digest;
-	ssize_t bytes;
-	int i, fd;
+/* Default PATH for the plist file to register installed packages. */
+#define XBPS_REGPKGDB_DEFPATH	"/var/cache/xbps/regpkgdb.plist"
 
-	if (argc < 2)
-		usage();
+/* API to handle plist files */
+#include "plist_utils.h"
 
-	for (i = 1; i < argc; i++) {
-		if ((fd = open(argv[i], O_RDONLY)) == -1) {
-			printf("xbps-digest: cannot open %s (%s)\n", argv[i],
-		    	    strerror(errno));
-			exit(1);
-		}
+/* SHA256 implementation */
+#include "sha256_digest.h"
 
-		digest = malloc(SHA256_DIGEST_LENGTH * 2 + 1);
-		if (digest == NULL) {
-			printf("xbps-digest: malloc failed (%s)\n",
-			    strerror(errno));
-			exit(1);
-		}
-
-		SHA256_Init(&ctx);
-		while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)
-			SHA256_Update(&ctx, buffer, (size_t)bytes);
-
-		printf("%s\n", SHA256_End(&ctx, digest));
-		free(digest);
-		close(fd);
-	}
-
-	exit(0);
-}
+#endif /* !_XBPS_API_H_ */

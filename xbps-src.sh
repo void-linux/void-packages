@@ -99,12 +99,12 @@ set_defvars()
 	: ${XBPS_TEMPLATESDIR:=$XBPS_DISTRIBUTIONDIR/templates}
 	: ${XBPS_HELPERSDIR:=$XBPS_TEMPLATESDIR/helpers}
 	: ${XBPS_CACHEDIR:=$XBPS_MASTERDIR/var/cache/xbps}
-	: ${XBPS_PKGDB_FPATH:=$XBPS_CACHEDIR/pkgdb.plist}
+	: ${XBPS_REGPKGDB_PATH:=$XBPS_CACHEDIR/regpkgdb.plist}
 	: ${XBPS_PKGMETADIR:=$XBPS_CACHEDIR/metadata}
 	: ${XBPS_UTILSDIR:=$XBPS_DISTRIBUTIONDIR/utils}
 	: ${XBPS_SHUTILSDIR:=$XBPS_UTILSDIR/sh}
 	: ${XBPS_DIGEST_CMD:=$XBPS_UTILSDIR/xbps-digest}
-	: ${XBPS_PKGDB_CMD:=$XBPS_UTILSDIR/xbps-pkgdb}
+	: ${XBPS_REGPKGDB_CMD:=$XBPS_UTILSDIR/xbps-pkgdb}
 	: ${XBPS_CMPVER_CMD:=$XBPS_UTILSDIR/xbps-cmpver}
 
 	local DDIRS="XBPS_TEMPLATESDIR XBPS_HELPERSDIR XBPS_UTILSDIR \
@@ -114,7 +114,8 @@ set_defvars()
 		[ ! -d "$val" ] &&  msg_error "cannot find $i, aborting."
 	done
 
-	XBPS_PKGDB_CMD="env XBPS_PKGDB_FPATH=$XBPS_PKGDB_FPATH $XBPS_PKGDB_CMD"
+	XBPS_REGPKGDB_CMD="env XBPS_REGPKGDB_PATH=$XBPS_REGPKGDB_PATH \
+		$XBPS_REGPKGDB_CMD"
 }
 
 #
@@ -230,7 +231,7 @@ build-pkg)
 	. $XBPS_SHUTILSDIR/binpkg.sh
 	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
 	if [ "$2" = "all" ]; then
-		for f in $($XBPS_PKGDB_CMD list|awk '{print $1}'); do
+		for f in $($XBPS_REGPKGDB_CMD list|awk '{print $1}'); do
 			setup_tmpl $f
 			xbps_make_binpkg
 			reset_tmpl_vars
@@ -272,7 +273,7 @@ install|install-destdir)
 	;;
 list|listfiles)
 	if [ "$target" = "list" ]; then
-		$XBPS_PKGDB_CMD list
+		$XBPS_REGPKGDB_CMD list
 		exit $?
 	fi
 	. $XBPS_SHUTILSDIR/pkgtarget_funcs.sh

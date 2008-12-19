@@ -147,7 +147,7 @@ install_dependencies_pkg()
 	msg_normal "Required minimal deps for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
 		ipkg=${i%-[0-9]*.*}
-		iversion="$($XBPS_PKGDB_CMD version $ipkg)"
+		iversion="$($XBPS_REGPKGDB_CMD version $ipkg)"
 		echo "	$ipkg >= ${i##[aA-zZ]*-}: found $ipkg-$iversion."
 	done
 
@@ -198,14 +198,14 @@ check_installed_pkg()
 	local reqver="$2"
 	local iver=
 
-	[ -z "$pkg" -o -z "$reqver" -o ! -r $XBPS_PKGDB_FPATH ] && return 1
+	[ -z "$pkg" -o -z "$reqver" -o ! -r $XBPS_REGPKGDB_PATH ] && return 1
 
 	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
 		reset_tmpl_vars
 		. $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
 	fi
 
-	iver="$($XBPS_PKGDB_CMD version $pkgname)"
+	iver="$($XBPS_REGPKGDB_CMD version $pkgname)"
 	if [ -n "$iver" ]; then
 		$XBPS_CMPVER_CMD $pkgname-$iver $pkgname-$reqver
 		[ $? -eq 0 ] && return 0

@@ -58,7 +58,7 @@ stow_pkg()
 		cp -ar ${i} $XBPS_MASTERDIR
 	done
 
-	$XBPS_PKGDB_CMD register $pkgname $version "$short_desc"
+	$XBPS_REGPKGDB_CMD register $pkgname $version "$short_desc"
 	[ $? -ne 0 ] && exit 1
 
 	#
@@ -90,7 +90,7 @@ unstow_pkg()
 		. $XBPS_TEMPLATESDIR/$pkg.tmpl
 	fi
 
-	ver=$($XBPS_PKGDB_CMD version $pkg)
+	ver=$($XBPS_REGPKGDB_CMD version $pkg)
 	if [ -z "$ver" ]; then
 		msg_error "$pkg is not installed."
 	fi
@@ -124,6 +124,6 @@ unstow_pkg()
 	# Remove metadata dir.
 	rm -rf $XBPS_PKGMETADIR/$pkgname
 
-	$XBPS_PKGDB_CMD unregister $pkgname $ver
+	$XBPS_REGPKGDB_CMD unregister $pkgname $ver
 	return $?
 }

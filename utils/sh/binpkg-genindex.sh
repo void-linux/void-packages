@@ -74,6 +74,8 @@ write_repo_pkgindex()
 
 	write_repo_pkgindex_footer $pkgindexf
 	if [ $? -eq 0 ]; then
+		$XBPS_REGPKGDB_CMD sanitize-plist $pkgindexf
+		[ $? -ne 0 ] && rm -f $pkgindexf && rm -rf $tmppkgdir && exit 1
 		msg_normal "Package index created (total pkgs: $pkgsum)."
 		cp -f $pkgindexf $XBPS_PACKAGESDIR/pkg-index.plist
 	fi
@@ -92,8 +94,8 @@ write_repo_pkgindex_header()
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>xbps_available_packages</key>
-	<array>
+<key>xbps_available_packages</key>
+<array>
 _EOF
 }
 
@@ -104,7 +106,7 @@ write_repo_pkgindex_footer()
 	[ -z "$file" ] && return 1
 
 	cat >> $file <<_EOF
-	</array>
+</array>
 </dict>
 </plist>
 _EOF
@@ -121,7 +123,6 @@ write_repo_pkgindex_dict()
 	local indexf="$2"
 	local binpkgf="$3"
 	local first_dict=
-	local array_found=
 	local tmpdictf=
 
 	[ -z "$pkgf" -o -z "$indexf" -o -z "$binpkgf" ] && return 1
@@ -132,10 +133,10 @@ write_repo_pkgindex_dict()
 		# Find the first dictionary.
 		if $(echo $line|grep -q "<dict>"); then
 			first_dict=yes
-			printf "\t\t$line\n" >> $tmpdictf
+			echo "$line" >> $tmpdictf
 			# Write the binary pkg filename before.
-			printf "\t\t\t<key>filename</key>\n" >> $tmpdictf
-			printf "\t\t\t<string>$binpkgf</string>\n" >> $tmpdictf
+			echo "<key>filename</key>" >> $tmpdictf
+			echo "<string>$binpkgf</string>" >> $tmpdictf
 			continue
 		# Continue until found.
 		elif [ -z "$first_dict" ]; then
@@ -143,29 +144,10 @@ write_repo_pkgindex_dict()
 		# Is this line the end of dictionary?
 		elif $(echo $line|grep -q "</dict>"); then
 			# It is.
-			printf "\t\t$line\n" >> $tmpdictf
+			echo "$line" >> $tmpdictf
 			break
-		# Is this line the start of an array?
-		elif $(echo $line|grep -q "<array>"); then
-			# It is.
-			array_found=yes
-			printf "\t\t\t$line\n" >> $tmpdictf
-			continue
-		# Is this line the end of array?
-		elif $(echo $line|grep -q "</array>"); then
-			# It is.
-			printf "\t\t\t$line\n" >> $tmpdictf
-			unset array_found
-			continue
-		# Print objects inside the dictionary.
-		elif [ -n "$array_found" ]; then
-			# Objects in arrays need an additional tab.
-			printf "\t\t\t\t$line\n" >> $tmpdictf
-			continue
 		else
-			# Normal indentation.
-			printf "\t\t\t$line\n" >> $tmpdictf
-			continue
+			echo "$line" >> $tmpdictf
 		fi
 	done
 
