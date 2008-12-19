@@ -31,7 +31,36 @@
 #include <limits.h>
 #include <prop/proplib.h>
 
-#include "plist_utils.h"
+#include "xbps_api.h"
+
+bool
+xbps_add_array_to_dict(prop_dictionary_t dict, prop_array_t array,
+		       const char *key)
+{
+	if (dict == NULL || array == NULL || key == NULL)
+		return false;
+
+	if (!prop_dictionary_set(dict, key, array))
+		return false;
+
+	prop_object_release(array);
+	return true;
+}
+
+bool
+xbps_add_obj_to_array(prop_array_t array, prop_object_t obj)
+{
+	if (array == NULL || obj == NULL)
+		return false;
+
+	if (!prop_array_add(array, obj)) {
+		prop_object_release(array);
+		return false;
+	}
+
+	prop_object_release(obj);
+	return true;
+}
 
 prop_dictionary_t
 xbps_find_pkg_in_dict(prop_dictionary_t dict, const char *key,
@@ -64,32 +93,105 @@ xbps_find_pkg_in_dict(prop_dictionary_t dict, const char *key,
 }
 
 bool
-xbps_add_obj_to_array(prop_array_t array, prop_object_t obj)
+xbps_find_string_in_array(prop_array_t array, const char *val)
 {
-	if (array == NULL || obj == NULL)
+	prop_object_iterator_t iter;
+	prop_object_t obj;
+
+	if (array == NULL || val == NULL)
 		return false;
 
-	if (!prop_array_add(array, obj)) {
-		prop_object_release(array);
+	iter = prop_array_iterator(array);
+	if (iter == NULL)
 		return false;
+
+	while ((obj = prop_object_iterator_next(iter)) != NULL) {
+		if (prop_object_type(obj) != PROP_TYPE_STRING)
+			continue;
+		if (prop_string_equals_cstring(obj, val)) {
+			prop_object_iterator_release(iter);
+			return true;
+		}
 	}
 
-	prop_object_release(obj);
-	return true;
+	prop_object_iterator_release(iter);
+	return false;
 }
 
 bool
-xbps_add_array_to_dict(prop_dictionary_t dict, prop_array_t array,
-		       const char *key)
+xbps_register_repository(const char *uri)
 {
-	if (dict == NULL || array == NULL || key == NULL)
+	prop_dictionary_t dict;
+	prop_array_t array = NULL;
+	prop_object_t obj;
+
+	if (uri == NULL)
 		return false;
 
-	if (!prop_dictionary_set(dict, key, array))
-		return false;
+	/* First check if we have the repository plist file. */
+	dict = prop_dictionary_internalize_from_file(XBPS_REPOLIST_PATH);
+	if (dict == NULL) {
+		/* Looks like not, create it. */
+		dict = prop_dictionary_create();
+		if (dict == NULL)
+			return false;
 
-	prop_object_release(array);
+		/* Create the array and add the repository URI on it. */
+		array = prop_array_create();
+		if (array == NULL) {
+			prop_object_release(dict);
+			return false;
+		}
+
+		if (!prop_array_set_cstring_nocopy(array, 0, uri))
+			goto fail;
+
+		/* Add the array obj into the main dictionary. */
+		if (!xbps_add_array_to_dict(dict, array, "repository-list"))
+			goto fail;
+
+		/* Write dictionary into plist file. */
+		if (!prop_dictionary_externalize_to_file(dict,
+		    XBPS_REPOLIST_PATH))
+			goto fail;
+
+		prop_object_release(array);
+	} else {
+		/* Append into the array, the plist file exists. */
+		array = prop_dictionary_get(dict, "repository-list");
+		if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
+			return false;
+
+		/* It seems that this object is already there */
+		if (xbps_find_string_in_array(array, uri)) {
+			errno = EEXIST;
+			return false;
+		}
+
+		obj = prop_string_create_cstring(uri);
+		if (!xbps_add_obj_to_array(array, obj)) {
+			prop_object_release(obj);
+			return false;
+		}
+
+		/* Write dictionary into plist file. */
+		if (!prop_dictionary_externalize_to_file(dict,
+		    XBPS_REPOLIST_PATH)) {
+			prop_object_release(obj);
+			return false;
+		}
+
+		prop_object_release(obj);
+	}
+
 	return true;
+
+fail:
+	if (array)
+		prop_object_release(array);
+	if (dict)
+		prop_object_release(dict);
+	return false;
 }
 
 void

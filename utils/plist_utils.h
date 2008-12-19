@@ -65,6 +65,18 @@ prop_dictionary_t
 xbps_find_pkg_in_dict(prop_dictionary_t, const char *, const char *);
 
 /*
+ * Finds a string object in an array.
+ *
+ * Arguments:
+ * 	- prop_array_t: array to search for the string.
+ * 	- const char *: string value of the object to be found.
+ *
+ * Returns true on success, false on failure.
+ */
+bool
+xbps_find_string_in_array(prop_array_t, const char *);
+
+/*
  * Lists information about all packages found in a dictionary, by
  * using a triplet: pkgname, version and short_desc.
  *
@@ -74,5 +86,16 @@ xbps_find_pkg_in_dict(prop_dictionary_t, const char *, const char *);
  */
 void
 xbps_list_pkgs_in_dict(prop_dictionary_t, const char *);
+
+/*
+ * Registers a repository specified by an URI into the pool.
+ *
+ * Arguments:
+ * 	- const char *: URI to register.
+ *
+ * Returns true on success, false on failure.
+ */
+bool
+xbps_register_repository(const char *);
 
 #endif /* !_XBPS_PLIST_UTILS_H_ */

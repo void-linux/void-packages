@@ -31,6 +31,9 @@
 
 #include <prop/proplib.h>
 
+/* Default PATH for the repositories plist file. */
+#define XBPS_REPOLIST_PATH	"/var/cache/xbps/repositories.plist"
+
 /* Filename of the package index plist for a repository. */
 #define XBPS_PKGINDEX		"pkg-index.plist"
 

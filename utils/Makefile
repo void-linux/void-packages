@@ -3,7 +3,7 @@ CFLAGS += -Wall -Werror -O3 -I$(PREFIX)/include
 CFLAGS += -funroll-all-loops -ftree-loop-linear
 LDFLAGS += -lprop
 
-all: xbps_digest xbps_pkgdb xbps-cmpver clean_objs
+all: xbps_digest xbps_pkgdb xbps_bin xbps-cmpver clean_objs
  
 xbps-cmpver: xbps-cmpver.o
 	$(CC) $(CFLAGS) $< -o $@
@@ -25,6 +25,12 @@ plist_utils:
 
 xbps_pkgdb: xbps-pkgdb.o plist_utils.o
 	$(CC) $(LDFLAGS) -o xbps-pkgdb xbps-pkgdb.o plist_utils.o
+
+xbps-bin:
+	$(CC) $(CFLAGS) -c $@
+
+xbps_bin: xbps-bin.o plist_utils.o
+	$(CC) $(LDFLAGS) -o xbps-bin xbps-bin.o plist_utils.o
 
 clean_objs:
 	-rm -f *.o
