@@ -81,19 +81,14 @@ prop_dictionary_t
 xbps_find_pkg_in_dict(prop_dictionary_t dict, const char *key,
 		      const char *pkgname)
 {
-	prop_array_t array;
 	prop_object_iterator_t iter;
 	prop_object_t obj;
 	const char *dpkgn;
 
-	if (dict == NULL || pkgname == NULL || key == NULL)
+	if (pkgname == NULL)
 		return NULL;
 
-	array = prop_dictionary_get(dict, key);
-	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
-		return NULL;
-
-	iter = prop_array_iterator(array);
+	iter = xbps_get_array_iter_from_dict(dict, key);
 	if (iter == NULL)
 		return NULL;
 
