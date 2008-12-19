@@ -83,6 +83,9 @@ write_repo_pkgindex()
 	rm -rf $tmppkgdir
 }
 
+#
+# No indentation is done here, because xbps-pkgdb does it for us.
+#
 write_repo_pkgindex_header()
 {
 	local file="$1"
@@ -114,8 +117,7 @@ _EOF
 
 #
 # Function that writes the package's metadata dictionary into the
-# package index file for a repository. Proper indentation is done
-# as well, thanks to the shell scripting magic :-)
+# package index file for a repository.
 #
 write_repo_pkgindex_dict()
 {
