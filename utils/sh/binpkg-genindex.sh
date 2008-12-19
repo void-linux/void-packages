@@ -23,6 +23,8 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 
+XBPS_PKGINDEX_VERSION="1.0" # Current version for pkgindex plist
+
 #
 # These functions write a package index for a repository, with details about
 # all available binary packages.
@@ -72,7 +74,7 @@ write_repo_pkgindex()
 		pkgsum=$(($pkgsum + 1))
 	done
 
-	write_repo_pkgindex_footer $pkgindexf
+	write_repo_pkgindex_footer $pkgindexf $pkgsum
 	if [ $? -eq 0 ]; then
 		$XBPS_REGPKGDB_CMD sanitize-plist $pkgindexf
 		[ $? -ne 0 ] && rm -f $pkgindexf && rm -rf $tmppkgdir && exit 1
@@ -97,7 +99,11 @@ write_repo_pkgindex_header()
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-<key>xbps_available_packages</key>
+<key>pkgindex-version</key>
+<string>$XBPS_PKGINDEX_VERSION</string>
+<key>location-local</key>
+<string>$XBPS_PACKAGESDIR</string>
+<key>available-packages</key>
 <array>
 _EOF
 }
@@ -105,11 +111,14 @@ _EOF
 write_repo_pkgindex_footer()
 {
 	local file="$1"
+	local totalpkgs="$2"
 
-	[ -z "$file" ] && return 1
+	[ -z "$file" -o -z "$totalpkgs" ] && return 1
 
 	cat >> $file <<_EOF
 </array>
+<key>total-pkgs</key>
+<integer>$totalpkgs</integer>
 </dict>
 </plist>
 _EOF
