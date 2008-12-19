@@ -49,9 +49,10 @@ Targets:
  configure <pkg>        Configure a package (fetch + extract + configure).
  extract <pkg>          Extract distribution file(s) into build directory.
  fetch <pkg>            Download distribution file(s).
- genindex               Generate a package index for a directory containing
-                        binary packages. This uses the XBPS_PACKAGESDIR option
-                        in the configuration file.
+ genindex [/path/dir]   Generate a package index for a directory containing
+                        binary packages. If no path is specified, the
+			XBPS_PACKAGESDIR in the configuration file will be
+                        used by default.
  info <pkg>             Show information about <pkg>.
  install-destdir <pkg>  build + install into destdir.
  install <pkg>          install-destdir + stow.
@@ -263,7 +264,7 @@ extract|fetch|info)
 	;;
 genindex)
 	. $XBPS_SHUTILSDIR/binpkg-genindex.sh
-	write_repo_pkgindex
+	write_repo_pkgindex $2
 	;;
 install|install-destdir)
 	[ -z "$2" ] && msg_error "missing package name after target."

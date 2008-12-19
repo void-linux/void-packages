@@ -31,6 +31,7 @@ XBPS_PKGINDEX_VERSION="1.0" # Current version for pkgindex plist
 #
 write_repo_pkgindex()
 {
+	local repodir="$1"
 	local propsf=
 	local pkgname=
 	local pkgsum=
@@ -39,25 +40,26 @@ write_repo_pkgindex()
 	local i=
 	local found=
 
-	[ ! -d $XBPS_PACKAGESDIR ] && exit 1
+	[ -z "$repodir" ] && repodir=$XBPS_PACKAGESDIR
+	[ ! -d $repodir ] && exit 1
 
-	found="$(echo $XBPS_PACKAGESDIR/*)"
+	found="$(echo $repodir/*)"
 	if $(echo $found|grep -vq .xbps); then
-		msg_error "couldn't find binary packages on $XBPS_PACKAGESDIR."
+		msg_error "couldn't find binary packages on $repodir."
 	fi
 
 	pkgindexf=$(mktemp -t pkgidx.XXXXXXXXXX) || exit 1
 	tmppkgdir=$(mktemp -d -t pkgdir.XXXXXXXX) || exit 1
 
 	# Write the header.
-	msg_normal "Creating package index for $XBPS_PACKAGESDIR..."
-	write_repo_pkgindex_header $pkgindexf
+	msg_normal "Creating package index for $repodir..."
+	write_repo_pkgindex_header $pkgindexf $repodir
 
 	#
 	# Write pkg dictionaries from all packages currently available at
 	# XBPS_PACKAGESDIR.
 	#
-	for i in $(echo $XBPS_PACKAGESDIR/*.xbps); do
+	for i in $(echo $repodir/*.xbps); do
 		pkgname="$(basename ${i%%-[0-9]*.*.$xbps_machine.xbps})"
 		propsf="./var/cache/xbps/metadata/$pkgname/props.plist"
 		cd $tmppkgdir && tar xfjp $i $propsf
@@ -83,7 +85,7 @@ write_repo_pkgindex()
 			exit 1
 		fi
 		msg_normal "Package index created (total pkgs: $pkgsum)."
-		cp -f $pkgindexf $XBPS_PACKAGESDIR/pkg-index.plist
+		cp -f $pkgindexf $repodir/pkg-index.plist
 	fi
 	rm -f $pkgindexf
 	rm -rf $tmppkgdir
@@ -95,8 +97,9 @@ write_repo_pkgindex()
 write_repo_pkgindex_header()
 {
 	local file="$1"
+	local repo="$2"
 
-	[ -z "$file" ] && return 1
+	[ -z "$file" -o -z "$repo" ] && return 1
 
 	cat > $file <<_EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -106,7 +109,7 @@ write_repo_pkgindex_header()
 <key>pkgindex-version</key>
 <string>$XBPS_PKGINDEX_VERSION</string>
 <key>location-local</key>
-<string>$XBPS_PACKAGESDIR</string>
+<string>$repodir</string>
 <key>available-packages</key>
 <array>
 _EOF
