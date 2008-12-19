@@ -15,7 +15,7 @@ xbps-digest: xbps-digest.o
 	$(CC) $(CFLAGS) -c $@
 
 xbps_digest: xbps-digest.o sha256_digest.o
-	$(CC) $(LDFLAGS) -o xbps-digest xbps-digest.o sha256_digest.o
+	$(CC) -o xbps-digest xbps-digest.o sha256_digest.o
 
 xbps-pkgdb:
 	$(CC) $(CFLAGS) -c $@
