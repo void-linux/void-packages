@@ -77,6 +77,18 @@ bool
 xbps_find_string_in_array(prop_array_t, const char *);
 
 /*
+ * Gets an array iterator from a dictionary with a specified key.
+ *
+ * Arguments:
+ * 	- prop_dictionary_t: dictionary to search the array.
+ * 	- const char *: key of the array.
+ *
+ * Returns the object iterator, NULL otherwise.
+ */
+prop_object_iterator_t
+xbps_get_array_iter_from_dict(prop_dictionary_t, const char *);
+
+/*
  * Lists information about all packages found in a dictionary, by
  * using a triplet: pkgname, version and short_desc.
  *
@@ -88,13 +100,14 @@ void
 xbps_list_pkgs_in_dict(prop_dictionary_t, const char *);
 
 /*
- * Lists all string values in an array.
+ * Lists all string values in an array object in a dictionary.
  *
  * Arguments:
- * 	- prop_array_t: array where to search on.
+ * 	- prop_dictionary_t: dictionary that has the array.
+ * 	- const char *: key of the array.
  */
 void
-xbps_list_strings_in_array(prop_array_t);
+xbps_list_strings_in_array(prop_dictionary_t, const char *);
 
 /*
  * Registers a repository specified by an URI into the pool.

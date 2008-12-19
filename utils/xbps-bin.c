@@ -94,7 +94,6 @@ int
 main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
-	prop_array_t array;
 	repo_info_t *rinfo = NULL;
 	char pkgindex[PATH_MAX], *tmp;
 
@@ -158,9 +157,7 @@ main(int argc, char **argv)
 			exit(EINVAL);
 		}
 
-		array = prop_dictionary_get(dict, "repository-list");
-		if (array)
-			xbps_list_strings_in_array(array);
+		xbps_list_strings_in_array(dict, "repository-list");
 
 	} else if (strcmp(argv[1], "show") == 0) {
 		/* Shows info about a binary package. */
