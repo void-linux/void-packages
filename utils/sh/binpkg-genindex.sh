@@ -77,7 +77,11 @@ write_repo_pkgindex()
 	write_repo_pkgindex_footer $pkgindexf $pkgsum
 	if [ $? -eq 0 ]; then
 		$XBPS_REGPKGDB_CMD sanitize-plist $pkgindexf
-		[ $? -ne 0 ] && rm -f $pkgindexf && rm -rf $tmppkgdir && exit 1
+		if [ $? -ne 0 ]; then
+			rm -f $pkgindexf
+			rm -rf $tmppkgdir
+			exit 1
+		fi
 		msg_normal "Package index created (total pkgs: $pkgsum)."
 		cp -f $pkgindexf $XBPS_PACKAGESDIR/pkg-index.plist
 	fi
