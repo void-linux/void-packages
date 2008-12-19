@@ -59,7 +59,7 @@ xbps_write_metadata_pkg()
 	<key>installed_size</key>
 	<integer>$(du -sb $destdir|awk '{print $1}')</integer>
 	<key>maintainer</key>
-	<string>$maintainer</string>
+	<string>$(echo $maintainer|sed -e 's|<|[|g;s|>|]|g')</string>
 	<key>short_desc</key>
 	<string>$short_desc</string>
 	<key>long_desc</key>
