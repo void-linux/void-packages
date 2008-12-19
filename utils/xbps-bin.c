@@ -157,7 +157,8 @@ main(int argc, char **argv)
 			exit(EINVAL);
 		}
 
-		xbps_list_strings_in_array(dict, "repository-list");
+		xbps_callback_array_iter_in_dict(dict, "repository-list",
+		    xbps_list_strings_in_array);
 
 	} else if (strcmp(argv[1], "show") == 0) {
 		/* Shows info about a binary package. */

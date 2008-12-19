@@ -62,19 +62,24 @@ xbps_add_obj_to_array(prop_array_t array, prop_object_t obj)
 	return true;
 }
 
-prop_object_iterator_t
-xbps_get_array_iter_from_dict(prop_dictionary_t dict, const char *key)
+void
+xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
+				 void (*func)(prop_object_t))
 {
-	prop_array_t array;
+	prop_object_iterator_t iter;
+	prop_object_t obj;
 
-	if (dict == NULL || key == NULL)
-		return NULL;
+	if (func == NULL)
+		return;
 
-	array = prop_dictionary_get(dict, key);
-	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
-		return NULL;
+	iter = xbps_get_array_iter_from_dict(dict, key);
+	if (iter == NULL)
+		return;
 
-	return prop_array_iterator(array);
+	while ((obj = prop_object_iterator_next(iter)))
+		(*func)(obj);
+
+	prop_object_iterator_release(iter);
 }
 
 prop_dictionary_t
@@ -126,6 +131,21 @@ xbps_find_string_in_array(prop_array_t array, const char *val)
 
 	prop_object_iterator_release(iter);
 	return false;
+}
+
+prop_object_iterator_t
+xbps_get_array_iter_from_dict(prop_dictionary_t dict, const char *key)
+{
+	prop_array_t array;
+
+	if (dict == NULL || key == NULL)
+		return NULL;
+
+	array = prop_dictionary_get(dict, key);
+	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
+		return NULL;
+
+	return prop_array_iterator(array);
 }
 
 bool
@@ -205,42 +225,25 @@ fail:
 }
 
 void
-xbps_list_pkgs_in_dict(prop_dictionary_t dict, const char *key)
+xbps_list_pkgs_in_dict(prop_object_t obj)
 {
-	prop_object_iterator_t iter;
-	prop_object_t obj;
 	const char *pkgname, *version, *short_desc;
 
-	iter = xbps_get_array_iter_from_dict(dict, key);
-	if (iter == NULL)
+	if (prop_object_type(obj) != PROP_TYPE_DICTIONARY)
 		return;
 
-	while ((obj = prop_object_iterator_next(iter))) {
-		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
-		prop_dictionary_get_cstring_nocopy(obj, "version", &version);
-		prop_dictionary_get_cstring_nocopy(obj, "short_desc",
-		    &short_desc);
-		if (pkgname && version && short_desc)
-			printf("%s (%s)\t%s\n", pkgname, version, short_desc);
-	}
-
-	prop_object_iterator_release(iter);
+	prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
+	prop_dictionary_get_cstring_nocopy(obj, "version", &version);
+	prop_dictionary_get_cstring_nocopy(obj, "short_desc", &short_desc);
+	if (pkgname && version && short_desc)
+		printf("%s (%s)\t%s\n", pkgname, version, short_desc);
 }
 
 void
-xbps_list_strings_in_array(prop_dictionary_t dict, const char *key)
+xbps_list_strings_in_array(prop_object_t obj)
 {
-	prop_object_iterator_t iter;
-	prop_object_t obj;
-
-	iter = xbps_get_array_iter_from_dict(dict, key);
-	if (iter == NULL)
+	if (prop_object_type(obj) != PROP_TYPE_STRING)
 		return;
 
-	while ((obj = prop_object_iterator_next(iter))) {
-		if (prop_object_type(obj) == PROP_TYPE_STRING)
-			printf("%s\n", prop_string_cstring_nocopy(obj));
-	}
-
-	prop_object_iterator_release(iter);
+	printf("%s\n", prop_string_cstring_nocopy(obj));
 }

@@ -52,6 +52,19 @@ bool
 xbps_add_obj_to_array(prop_array_t, prop_object_t);
 
 /*
+ * Executes a function callback to process all objects that are
+ * found in array with specified key inside of a dictionary.
+ *
+ * Arguments:
+ * 	- prop_dictionary_t: dictionary to search on.
+ *	- const char *: key of the array.
+ *	- (*func)(prop_object_t): callback associated.
+ */
+void
+xbps_callback_array_iter_in_dict(prop_dictionary_t, const char *,
+				 void (*func)(prop_object_t));
+
+/*
  * Finds a package's dictionary into the main dictionary.
  *
  * Arguments:
@@ -93,21 +106,19 @@ xbps_get_array_iter_from_dict(prop_dictionary_t, const char *);
  * using a triplet: pkgname, version and short_desc.
  *
  * Arguments:
- * 	- prop_dictionary_t: dictionary where to search on.
- * 	- const char *: the key associated with the dictionary.
+ * 	- prop_object_t: the object to be processed.
  */
 void
-xbps_list_pkgs_in_dict(prop_dictionary_t, const char *);
+xbps_list_pkgs_in_dict(prop_object_t);
 
 /*
  * Lists all string values in an array object in a dictionary.
  *
  * Arguments:
- * 	- prop_dictionary_t: dictionary that has the array.
- * 	- const char *: key of the array.
+ * 	- prop_object_t: the object to be processed.
  */
 void
-xbps_list_strings_in_array(prop_dictionary_t, const char *);
+xbps_list_strings_in_array(prop_object_t);
 
 /*
  * Registers a repository specified by an URI into the pool.

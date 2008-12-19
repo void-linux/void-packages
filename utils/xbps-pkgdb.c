@@ -292,7 +292,8 @@ main(int argc, char **argv)
 			usage();
 
 		dbdict = prop_dictionary_internalize_from_file(dbfile);
-		xbps_list_pkgs_in_dict(dbdict, "packages_installed");
+		xbps_callback_array_iter_in_dict(dbdict,
+		    "packages_installed", xbps_list_pkgs_in_dict);
 
 	} else if (strcmp(argv[1], "version") == 0) {
 		/* Prints version of an installed package */
