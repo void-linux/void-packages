@@ -51,7 +51,7 @@ Targets:
  fetch <pkg>            Download distribution file(s).
  genindex [/path/dir]   Generate a package index for a directory containing
                         binary packages. If no path is specified, the
-			XBPS_PACKAGESDIR in the configuration file will be
+                        XBPS_PACKAGESDIR in the configuration file will be
                         used by default.
  info <pkg>             Show information about <pkg>.
  install-destdir <pkg>  build + install into destdir.
