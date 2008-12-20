@@ -58,14 +58,14 @@ xbps_add_obj_to_array(prop_array_t, prop_object_t);
  * Arguments:
  * 	- prop_dictionary_t: dictionary to search on.
  *	- const char *: key of the array.
- *	- (*func)(prop_object_t, void *): callback associated.
- *	- void *: argument passed to the callback.
+ *	- func(prop_object_t, void *, bool *): callback associated.
+ *	- void *: argument for the callback.
  *
  * Returns true on success, false otherwise and the loop is terminated.
  */
 bool
 xbps_callback_array_iter_in_dict(prop_dictionary_t, const char *,
-				 bool (*func)(prop_object_t, void *),
+				 bool (*func)(prop_object_t, void *, bool *),
 				 void *);
 
 /*
@@ -105,15 +105,15 @@ prop_object_iterator_t
 xbps_get_array_iter_from_dict(prop_dictionary_t, const char *);
 
 /*
- * Registers a repository specified by an URI into the pool.
+ * (Un)registers a repository specified by an URI from/into the pool.
  *
  * Arguments:
- * 	- const char *: URI to register.
+ * 	- const char *: URI to (un)register.
  *
- * Returns true on success, false otherwise.
+ * Returns true on success, or false and an appropiate errno value otherwise.
  */
-bool
-xbps_register_repository(const char *);
+bool xbps_register_repository(const char *);
+bool xbps_unregister_repository(const char *);
 
 /*
  * Shows information of a package by looking at its dictionary.
@@ -122,12 +122,15 @@ xbps_register_repository(const char *);
  * Arguments:
  * 	- prop_dictionary_t: the package dictionary.
  */
-void
-xbps_show_pkg_info(prop_dictionary_t);
+void xbps_show_pkg_info(prop_dictionary_t);
 
-/* Internal functions. */
-bool xbps_list_pkgs_in_dict(prop_object_t, void *);
-bool xbps_list_strings_in_array(prop_object_t, void *);
-bool xbps_show_pkg_info_from_repolist(prop_object_t obj, void *);
+/*
+ * Internal functions.
+ */
+bool xbps_list_pkgs_in_dict(prop_object_t, void *, bool *);
+bool xbps_list_strings_in_array(prop_object_t, void *, bool *);
+bool xbps_list_strings_in_array2(prop_object_t, void *, bool *);
+bool xbps_remove_obj_from_array(prop_object_t, void *, bool *);
+bool xbps_show_pkg_info_from_repolist(prop_object_t obj, void *, bool *);
 
 #endif /* !_XBPS_PLIST_H_ */

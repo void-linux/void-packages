@@ -29,6 +29,7 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#include <libgen.h>
 
 #include "xbps_api.h"
 
@@ -39,6 +40,7 @@ typedef struct repository_info {
 	size_t total_pkgs;
 } repo_info_t;
 
+static const char *sanitize_localpath(const char *);
 static prop_dictionary_t getrepolist_dict(void);
 static bool pkgindex_getinfo(prop_dictionary_t, repo_info_t *);
 static void usage(void);
@@ -48,16 +50,18 @@ usage(void)
 {
 	printf("Usage: xbps-bin [action] [arguments]\n\n"
 	" Available actions:\n"
-        "    repo-add, repo-list, show\n"
+        "    repo-add, repo-list, repo-rm, show\n"
 	" Action arguments:\n"
 	"    repo-add\t[<URI>]\n"
 	"    repo-list\t[none]\n"
+	"    repo-rm\t[<URI>]\n"
 	"    show\t[<pkgname>]\n"
 	"\n"
 	" Examples:\n"
-	"    $ xbps-bin repo-list\n"
 	"    $ xbps-bin repo-add /path/to/directory\n"
 	"    $ xbps-bin repo-add http://www.location.org/xbps-repo\n"
+	"    $ xbps-bin repo-list\n"
+	"    $ xbps-bin repo-rm /path/to/directory\n"
 	"    $ xbps-bin show klibc\n");
 	exit(1);
 }
@@ -106,12 +110,53 @@ getrepolist_dict(void)
 	return dict;
 }
 
+static const char *
+sanitize_localpath(const char *path)
+{
+	const char *res;
+	char strtmp[PATH_MAX];
+	char *dirnp, *basenp, *dir, *base;
+
+	dir = strdup(path);
+	if (dir == NULL)
+		return NULL;
+
+	base = strdup(path);
+	if (base == NULL)
+		goto fail;
+
+	dirnp = dirname(dir);
+	if (strcmp(dirnp, ".") == 0)
+		goto fail2;
+
+	basenp = basename(base);
+	if (strcmp(basenp, base) == 0)
+		goto fail2;
+
+	/* Sanitize path into a temporary path. */
+	strncpy(strtmp, dirnp, sizeof(strtmp) - 1);
+	strtmp[sizeof(strtmp) - 1] = '\0';
+	strncat(strtmp, "/", sizeof(strtmp) - strlen(strtmp) - 1);
+	strncat(strtmp, basenp, sizeof(strtmp) - strlen(strtmp) -1);
+
+	free(dir);
+	free(base);
+	res = strtmp;
+	return res;
+fail:
+	free(dir);
+fail2:
+	free(base);
+	return NULL;
+}
+
 int
 main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
 	repo_info_t *rinfo = NULL;
-	char pkgindex[PATH_MAX], *tmp;
+	const char *dpkgidx;
+	char plist[PATH_MAX];
 
 	if (argc < 2)
 		usage();
@@ -121,22 +166,21 @@ main(int argc, char **argv)
 		if (argc != 3)
 			usage();
 
-		tmp = strncpy(pkgindex, argv[2], sizeof(pkgindex));
-		if (sizeof(*tmp) >= sizeof(pkgindex))
-			exit(ENAMETOOLONG);
+		dpkgidx = sanitize_localpath(argv[2]);
+		if (dpkgidx == NULL)
+			exit(EINVAL);
 
-		/* Append trailing slash if needed */
-		if (pkgindex[strlen(pkgindex) - 1] != '/')
-			strncat(pkgindex, "/", sizeof(pkgindex));
+		/* Temp buffer to verify pkgindex file. */
+		strncpy(plist, dpkgidx, sizeof(plist) - 1);
+		plist[sizeof(plist) - 1] = '\0';
+		strncat(plist, "/", sizeof(plist) - strlen(plist) - 1);
+		strncat(plist, XBPS_PKGINDEX,
+		    sizeof(plist) - strlen(plist) - 1);
 
-		tmp = strncat(pkgindex, XBPS_PKGINDEX, sizeof(pkgindex));
-		if (sizeof(*tmp) >= sizeof(pkgindex))
-			exit(ENAMETOOLONG);
-
-		dict = prop_dictionary_internalize_from_file(pkgindex);
+		dict = prop_dictionary_internalize_from_file(plist);
 		if (dict == NULL) {
 			printf("Directory %s does not contain any "
-			    "xbps pkgindex file.\n", argv[2]);
+			    "xbps pkgindex file.\n", dpkgidx);
 			exit(EINVAL);
 		}
 
@@ -145,13 +189,15 @@ main(int argc, char **argv)
 			exit(ENOMEM);
 
 		if (!pkgindex_getinfo(dict, rinfo)) {
-			printf("'%s' is incomplete.\n", pkgindex);
+			printf("'%s' is incomplete.\n", plist);
+			free(rinfo);
 			exit(EINVAL);
 		}
 
-		if (!xbps_register_repository((const char *)&pkgindex)) {
+		if (!xbps_register_repository(dpkgidx)) {
 			printf("ERROR: couldn't register repository (%s)\n",
 			    strerror(errno));
+			free(rinfo);
 			exit(EINVAL);
 		}
 
@@ -168,17 +214,38 @@ main(int argc, char **argv)
 		xbps_callback_array_iter_in_dict(getrepolist_dict(),
 		    "repository-list", xbps_list_strings_in_array, NULL);
 
+	} else if (strcmp(argv[1], "repo-rm") == 0) {
+		/* Remove a repository from the pool. */
+		if (argc != 3)
+			usage();
+
+		dpkgidx = sanitize_localpath(argv[2]);
+		if (dpkgidx == NULL)
+			exit(EINVAL);
+
+		if (!xbps_unregister_repository(dpkgidx)) {
+			if (errno == ENODEV)
+				printf("Repository '%s' not actually "
+				    "registered.\n", dpkgidx);
+			else
+				printf("ERROR: couldn't unregister "
+				    "repository (%s)\n", strerror(errno));
+			exit(EINVAL);
+		}
+
 	} else if (strcmp(argv[1], "show") == 0) {
 		/* Shows info about a binary package. */
 		if (argc != 3)
 			usage();
 
 		if (!xbps_callback_array_iter_in_dict(getrepolist_dict(),
-		    "repository-list", xbps_show_pkg_info_from_repolist,
-		    argv[2])) {
-			printf("Package %s doesn't exist on any repository.\n",
+		    "repository-list",
+		    xbps_show_pkg_info_from_repolist, argv[2])) {
+			printf("ERROR: unable to locate package '%s'.\n",
 			    argv[2]);
+			exit(EINVAL);
 		}
+
 	} else {
 		usage();
 	}

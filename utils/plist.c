@@ -33,8 +33,10 @@
 
 #include "xbps_api.h"
 
-static bool xbps_list_strings_in_array2(prop_object_t, void *);
-static bool repo_haspkg;
+struct callback_args {
+	const char *string;
+	int number;
+};
 
 bool
 xbps_add_obj_to_dict(prop_dictionary_t dict, prop_object_t obj,
@@ -67,25 +69,27 @@ xbps_add_obj_to_array(prop_array_t array, prop_object_t obj)
 
 bool
 xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
-				 bool (*func)(prop_object_t, void *),
+				 bool (*func)(prop_object_t, void *, bool *),
 				 void *arg)
 {
 	prop_object_iterator_t iter;
 	prop_object_t obj;
-	bool run = false, ret = false;
+	bool run, ret, cbloop_done;
+
+	run = ret = cbloop_done = false;
 
 	if (func == NULL)
 		return false;
 
-	repo_haspkg = false;
+	cbloop_done = false;
 
 	iter = xbps_get_array_iter_from_dict(dict, key);
 	if (iter == NULL)
 		return false;
 
 	while ((obj = prop_object_iterator_next(iter))) {
-		run = (*func)(obj, arg);
-		if (run && repo_haspkg) {
+		run = (*func)(obj, arg, &cbloop_done);
+		if (run && cbloop_done) {
 			ret = true;
 			break;
 		}
@@ -158,6 +162,26 @@ xbps_get_array_iter_from_dict(prop_dictionary_t dict, const char *key)
 		return NULL;
 
 	return prop_array_iterator(array);
+}
+
+
+bool
+xbps_remove_obj_from_array(prop_object_t obj, void *arg, bool *loop_done)
+{
+	static int idx;
+	struct callback_args *cb = arg;
+
+	if (prop_object_type(obj) != PROP_TYPE_STRING)
+		return false;
+
+	if (prop_string_equals_cstring(obj, cb->string)) {
+		cb->number = idx;
+		*loop_done = true;
+		return true;
+	}
+	idx++;
+
+	return false;
 }
 
 bool
@@ -233,6 +257,55 @@ fail:
 	return false;
 }
 
+bool
+xbps_unregister_repository(const char *uri)
+{
+	prop_dictionary_t dict;
+	prop_array_t array;
+	struct callback_args *cb;
+	bool done = false;
+
+	if (uri == NULL)
+		return false;
+
+	dict = prop_dictionary_internalize_from_file(XBPS_REPOLIST_PATH);
+	if (dict == NULL)
+		return false;
+
+	array = prop_dictionary_get(dict, "repository-list");
+	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
+		return false;
+
+	cb = malloc(sizeof(*cb));
+	if (cb == NULL) {
+		errno = ENOMEM;
+		return false;
+	}
+
+	cb->string = uri;
+	cb->number = -1;
+
+	done = xbps_callback_array_iter_in_dict(dict, "repository-list",
+		    xbps_remove_obj_from_array, cb);
+	if (done && cb->number >= 0) {
+		/* Found, remove it. */
+		prop_array_remove(array, cb->number);
+
+		/* Update plist file. */
+		if (prop_dictionary_externalize_to_file(dict,
+		    XBPS_REPOLIST_PATH)) {
+			free(cb);
+			return true;
+		}
+	} else {
+		/* Not found. */
+		errno = ENODEV;
+	}
+
+	free(cb);
+	return false;
+}
+
 void
 xbps_show_pkg_info(prop_dictionary_t dict)
 {
@@ -285,17 +358,26 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 }
 
 bool
-xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg)
+xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 {
 	prop_dictionary_t dict, pkgdict;
 	prop_string_t oloc;
 	const char *repofile, *repoloc;
+	char plist[PATH_MAX];
 
 	if (prop_object_type(obj) != PROP_TYPE_STRING)
 		return false;
 
+	/* Get the location */
 	repofile = prop_string_cstring_nocopy(obj);
-	dict = prop_dictionary_internalize_from_file(repofile);
+
+	/* Add full path to pkg-index.plist file */
+	strncpy(plist, repofile, sizeof(plist) - 1);
+	plist[sizeof(plist) - 1] = '\0';
+	strncat(plist, "/", sizeof(plist) - strlen(plist) - 1);
+	strncat(plist, XBPS_PKGINDEX, sizeof(plist) - strlen(plist) - 1);
+
+	dict = prop_dictionary_internalize_from_file(plist);
 	pkgdict = xbps_find_pkg_in_dict(dict, arg);
 	if (pkgdict == NULL)
 		return false;
@@ -311,13 +393,13 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg)
 
 	printf("Repository: %s\n", repoloc);
 	xbps_show_pkg_info(pkgdict);
-	repo_haspkg = true;
+	*loop_done = true;
 
 	return true;
 }
 
 bool
-xbps_list_pkgs_in_dict(prop_object_t obj, void *arg)
+xbps_list_pkgs_in_dict(prop_object_t obj, void *arg, bool *loop_done)
 {
 	const char *pkgname, *version, *short_desc;
 
@@ -335,8 +417,8 @@ xbps_list_pkgs_in_dict(prop_object_t obj, void *arg)
 	return false;
 }
 
-static bool
-xbps_list_strings_in_array2(prop_object_t obj, void *arg)
+bool
+xbps_list_strings_in_array2(prop_object_t obj, void *arg, bool *loop_done)
 {
 	static uint16_t count;
 	const char *sep;
@@ -361,7 +443,7 @@ xbps_list_strings_in_array2(prop_object_t obj, void *arg)
 }
 
 bool
-xbps_list_strings_in_array(prop_object_t obj, void *arg)
+xbps_list_strings_in_array(prop_object_t obj, void *arg, bool *loop_done)
 {
 	if (prop_object_type(obj) != PROP_TYPE_STRING)
 		return false;
