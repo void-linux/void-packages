@@ -4,7 +4,7 @@ CFLAGS += -funroll-all-loops -ftree-loop-linear
 LDFLAGS += -lprop
 BINS ?= xbps-bin xbps-cmpver xbps-digest xbps-pkgdb
 
-all: xbps_digest xbps_pkgdb xbps_bin xbps-cmpver clean_objs
+all: xbps_digest xbps_pkgdb xbps_bin xbps-cmpver strip_bins clean_objs
  
 xbps-cmpver: xbps-cmpver.o
 	$(CC) $(CFLAGS) $< -o $@
@@ -33,8 +33,10 @@ xbps-bin:
 xbps_bin: xbps-bin.o plist.o
 	$(CC) $(LDFLAGS) -o xbps-bin xbps-bin.o plist.o
 
-clean_objs:
+strip_bins:
 	strip -s $(BINS)
+
+clean_objs:
 	-rm -f *.o
 
 clean: clean_objs
