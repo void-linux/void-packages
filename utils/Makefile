@@ -41,7 +41,7 @@ clean_objs:
 	-rm -f *.o
 
 clean: clean_objs
-	-rm -f xbps-digest xbps-pkgdb xbps-cmpver
+	-rm -f $(BINS)
 
 install: all
 	install -D $(BINS) $(BINDIR)
