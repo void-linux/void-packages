@@ -186,7 +186,7 @@ xbps_register_repository(const char *uri)
 		    XBPS_REPOLIST_PATH))
 			goto fail;
 
-		prop_object_release(array);
+		prop_object_release(dict);
 	} else {
 		/* Append into the array, the plist file exists. */
 		array = prop_dictionary_get(dict, "repository-list");
@@ -218,10 +218,7 @@ xbps_register_repository(const char *uri)
 	return true;
 
 fail:
-	if (array)
-		prop_object_release(array);
-	if (dict)
-		prop_object_release(dict);
+	prop_object_release(dict);
 	return false;
 }
 
