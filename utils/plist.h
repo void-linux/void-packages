@@ -105,31 +105,6 @@ prop_object_iterator_t
 xbps_get_array_iter_from_dict(prop_dictionary_t, const char *);
 
 /*
- * Lists information about all packages found in a dictionary, by
- * using a triplet: pkgname, version and short_desc.
- *
- * Arguments:
- * 	- prop_object_t: the object to be processed.
- * 	- void *: argument passed.
- *
- * Returns true on success, false otherwise.
- */
-bool
-xbps_list_pkgs_in_dict(prop_object_t, void *);
-
-/*
- * Lists all string values in an array object in a dictionary.
- *
- * Arguments:
- * 	- prop_object_t: the object to be processed.
- * 	- void *: argument passed.
- *
- * Returns true on success, false otherwise.
- */
-bool
-xbps_list_strings_in_array(prop_object_t, void *);
-
-/*
  * Registers a repository specified by an URI into the pool.
  *
  * Arguments:
@@ -150,18 +125,9 @@ xbps_register_repository(const char *);
 void
 xbps_show_pkg_info(prop_dictionary_t);
 
-/*
- * Shows information of a package by searching in all repositories
- * registered in the pool. It will show information from the
- * first repository that has the package.
- *
- * Arguments:
- * 	- prop_object_t: the object to be processed.
- * 	- const char *: passed argument (pkgname string).
- *
- * Returns true on success, false otherwise.
- */
-bool
-xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg);
+/* Internal functions. */
+bool xbps_list_pkgs_in_dict(prop_object_t, void *);
+bool xbps_list_strings_in_array(prop_object_t, void *);
+bool xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg);
 
 #endif /* !_XBPS_PLIST_H_ */

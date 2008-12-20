@@ -233,6 +233,8 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 {
 	prop_object_iterator_t iter;
 	prop_object_t obj, obj2;
+	const char *sep = NULL;
+	bool rundeps = false;
 
 	if (dict == NULL || prop_dictionary_count(dict) == 0)
 		return;
@@ -255,12 +257,23 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 			    prop_number_unsigned_integer_value(obj2));
 
 		} else if (prop_object_type(obj2) == PROP_TYPE_ARRAY) {
+			/*
+			 * Apply some indentation for array objs other than
+			 * "run_depends".
+			 */
+			if (strcmp(prop_dictionary_keysym_cstring_nocopy(obj),
+			    "run_depends") == 0) {
+				rundeps = true;
+				sep = " ";
+			}
 			printf("\n\t");
 			if (!xbps_callback_array_iter_in_dict(dict,
 			    prop_dictionary_keysym_cstring_nocopy(obj),
-			    xbps_list_strings_in_array2, NULL))
+			    xbps_list_strings_in_array2, (void *)sep))
 				return;
 			printf("\n");
+			if (rundeps)
+				printf("\n");
 		}
 	}
 
@@ -321,16 +334,23 @@ static bool
 xbps_list_strings_in_array2(prop_object_t obj, void *arg)
 {
 	static uint16_t count;
+	const char *sep;
 
 	if (prop_object_type(obj) != PROP_TYPE_STRING)
 		return false;
+
+	if (arg == NULL) {
+		sep = "\n\t";
+		count = 0;
+	} else
+		sep = (const char *)arg;
 
 	if (count == 4) {
 		printf("\n\t");
 		count = 0;
 	}
 
-	printf("%s ", prop_string_cstring_nocopy(obj));
+	printf("%s%s", prop_string_cstring_nocopy(obj), sep);
 	count++;
 	return true;
 }
