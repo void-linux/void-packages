@@ -33,7 +33,7 @@
 
 #include "xbps_api.h"
 
-static void xbps_list_strings_in_array2(prop_object_t);
+static bool xbps_list_strings_in_array2(prop_object_t);
 
 bool
 xbps_add_obj_to_dict(prop_dictionary_t dict, prop_object_t obj,
@@ -64,24 +64,29 @@ xbps_add_obj_to_array(prop_array_t array, prop_object_t obj)
 	return true;
 }
 
-void
+bool
 xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
-				 void (*func)(prop_object_t))
+				 bool (*func)(prop_object_t))
 {
 	prop_object_iterator_t iter;
 	prop_object_t obj;
 
 	if (func == NULL)
-		return;
+		return false;
 
 	iter = xbps_get_array_iter_from_dict(dict, key);
 	if (iter == NULL)
-		return;
+		return false;
 
-	while ((obj = prop_object_iterator_next(iter)))
-		(*func)(obj);
+	while ((obj = prop_object_iterator_next(iter))) {
+		if (!(*func)(obj)) {
+			prop_object_iterator_release(iter);
+			return false;
+		}
+	}
 
 	prop_object_iterator_release(iter);
+	return true;
 }
 
 prop_dictionary_t
@@ -250,9 +255,10 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 
 		} else if (prop_object_type(obj2) == PROP_TYPE_ARRAY) {
 			printf("\n\t");
-			xbps_callback_array_iter_in_dict(dict,
+			if (!xbps_callback_array_iter_in_dict(dict,
 			    prop_dictionary_keysym_cstring_nocopy(obj),
-			    xbps_list_strings_in_array2);
+			    xbps_list_strings_in_array2))
+				return;
 			printf("\n");
 		}
 	}
@@ -260,28 +266,32 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 	prop_object_iterator_release(iter);
 }
 
-void
+bool
 xbps_list_pkgs_in_dict(prop_object_t obj)
 {
 	const char *pkgname, *version, *short_desc;
 
 	if (prop_object_type(obj) != PROP_TYPE_DICTIONARY)
-		return;
+		return false;
 
 	prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
 	prop_dictionary_get_cstring_nocopy(obj, "version", &version);
 	prop_dictionary_get_cstring_nocopy(obj, "short_desc", &short_desc);
-	if (pkgname && version && short_desc)
+	if (pkgname && version && short_desc) {
 		printf("%s (%s)\t%s\n", pkgname, version, short_desc);
+		return true;
+	}
+
+	return false;
 }
 
-static void
+static bool
 xbps_list_strings_in_array2(prop_object_t obj)
 {
 	static uint16_t count;
 
 	if (prop_object_type(obj) != PROP_TYPE_STRING)
-		return;
+		return false;
 
 	if (count == 4) {
 		printf("\n\t");
@@ -290,13 +300,15 @@ xbps_list_strings_in_array2(prop_object_t obj)
 
 	printf("%s ", prop_string_cstring_nocopy(obj));
 	count++;
+	return true;
 }
 
-void
+bool
 xbps_list_strings_in_array(prop_object_t obj)
 {
 	if (prop_object_type(obj) != PROP_TYPE_STRING)
-		return;
+		return false;
 
 	printf("%s\n", prop_string_cstring_nocopy(obj));
+	return true;
 }

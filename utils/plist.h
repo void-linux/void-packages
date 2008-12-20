@@ -59,10 +59,12 @@ xbps_add_obj_to_array(prop_array_t, prop_object_t);
  * 	- prop_dictionary_t: dictionary to search on.
  *	- const char *: key of the array.
  *	- (*func)(prop_object_t): callback associated.
+ *
+ * Returns true on success, false otherwise and the loop is terminated.
  */
-void
+bool
 xbps_callback_array_iter_in_dict(prop_dictionary_t, const char *,
-				 void (*func)(prop_object_t));
+				 bool (*func)(prop_object_t));
 
 /*
  * Finds a package's dictionary into the main dictionary.
@@ -83,7 +85,7 @@ xbps_find_pkg_in_dict(prop_dictionary_t, const char *);
  * 	- prop_array_t: array to search for the string.
  * 	- const char *: string value of the object to be found.
  *
- * Returns true on success, false on failure.
+ * Returns true on success, false otherwise.
  */
 bool
 xbps_find_string_in_array(prop_array_t, const char *);
@@ -106,8 +108,10 @@ xbps_get_array_iter_from_dict(prop_dictionary_t, const char *);
  *
  * Arguments:
  * 	- prop_object_t: the object to be processed.
+ *
+ * Returns true on success, false otherwise.
  */
-void
+bool
 xbps_list_pkgs_in_dict(prop_object_t);
 
 /*
@@ -115,8 +119,10 @@ xbps_list_pkgs_in_dict(prop_object_t);
  *
  * Arguments:
  * 	- prop_object_t: the object to be processed.
+ *
+ * Returns true on success, false otherwise.
  */
-void
+bool
 xbps_list_strings_in_array(prop_object_t);
 
 /*
@@ -125,7 +131,7 @@ xbps_list_strings_in_array(prop_object_t);
  * Arguments:
  * 	- const char *: URI to register.
  *
- * Returns true on success, false on failure.
+ * Returns true on success, false otherwise.
  */
 bool
 xbps_register_repository(const char *);
