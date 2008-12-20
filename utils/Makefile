@@ -2,6 +2,7 @@ PREFIX  ?= /usr/local
 CFLAGS += -Wall -Werror -O3 -I$(PREFIX)/include
 CFLAGS += -funroll-all-loops -ftree-loop-linear
 LDFLAGS += -lprop
+BINS ?= xbps-bin xbps-cmpver xbps-digest xbps-pkgdb
 
 all: xbps_digest xbps_pkgdb xbps_bin xbps-cmpver clean_objs
  
@@ -33,6 +34,7 @@ xbps_bin: xbps-bin.o plist.o
 	$(CC) $(LDFLAGS) -o xbps-bin xbps-bin.o plist.o
 
 clean_objs:
+	strip -s $(BINS)
 	-rm -f *.o
 
 clean: clean_objs
