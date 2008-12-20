@@ -292,7 +292,7 @@ main(int argc, char **argv)
 
 		dbdict = prop_dictionary_internalize_from_file(dbfile);
 		if (!xbps_callback_array_iter_in_dict(dbdict,
-		    "packages", xbps_list_pkgs_in_dict))
+		    "packages", xbps_list_pkgs_in_dict, NULL))
 			exit(EINVAL);
 
 	} else if (strcmp(argv[1], "version") == 0) {

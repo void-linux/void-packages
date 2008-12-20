@@ -33,7 +33,7 @@
 
 #include "xbps_api.h"
 
-static bool xbps_list_strings_in_array2(prop_object_t);
+static bool xbps_list_strings_in_array2(prop_object_t, void *);
 
 bool
 xbps_add_obj_to_dict(prop_dictionary_t dict, prop_object_t obj,
@@ -66,7 +66,8 @@ xbps_add_obj_to_array(prop_array_t array, prop_object_t obj)
 
 bool
 xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
-				 bool (*func)(prop_object_t))
+				 bool (*func)(prop_object_t, void *),
+				 void *arg)
 {
 	prop_object_iterator_t iter;
 	prop_object_t obj;
@@ -79,7 +80,7 @@ xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
 		return false;
 
 	while ((obj = prop_object_iterator_next(iter))) {
-		if (!(*func)(obj)) {
+		if (!(*func)(obj, arg)) {
 			prop_object_iterator_release(iter);
 			return false;
 		}
@@ -257,7 +258,7 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 			printf("\n\t");
 			if (!xbps_callback_array_iter_in_dict(dict,
 			    prop_dictionary_keysym_cstring_nocopy(obj),
-			    xbps_list_strings_in_array2))
+			    xbps_list_strings_in_array2, NULL))
 				return;
 			printf("\n");
 		}
@@ -267,7 +268,38 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 }
 
 bool
-xbps_list_pkgs_in_dict(prop_object_t obj)
+xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg)
+{
+	prop_dictionary_t dict, pkgdict;
+	prop_string_t oloc;
+	const char *repofile, *repoloc;
+
+	if (prop_object_type(obj) != PROP_TYPE_STRING)
+		return false;
+
+	repofile = prop_string_cstring_nocopy(obj);
+	dict = prop_dictionary_internalize_from_file(repofile);
+	pkgdict = xbps_find_pkg_in_dict(dict, arg);
+	if (pkgdict == NULL)
+		return false;
+
+	oloc = prop_dictionary_get(dict, "location-remote");
+	if (oloc == NULL)
+		oloc = prop_dictionary_get(dict, "location-local");
+
+	if (oloc && prop_object_type(oloc) == PROP_TYPE_STRING)
+		repoloc = prop_string_cstring_nocopy(oloc);
+	else
+		return false;
+
+	printf("Repository: %s\n", repoloc);
+	xbps_show_pkg_info(pkgdict);
+
+	return true;
+}
+
+bool
+xbps_list_pkgs_in_dict(prop_object_t obj, void *arg)
 {
 	const char *pkgname, *version, *short_desc;
 
@@ -286,7 +318,7 @@ xbps_list_pkgs_in_dict(prop_object_t obj)
 }
 
 static bool
-xbps_list_strings_in_array2(prop_object_t obj)
+xbps_list_strings_in_array2(prop_object_t obj, void *arg)
 {
 	static uint16_t count;
 
@@ -304,7 +336,7 @@ xbps_list_strings_in_array2(prop_object_t obj)
 }
 
 bool
-xbps_list_strings_in_array(prop_object_t obj)
+xbps_list_strings_in_array(prop_object_t obj, void *arg)
 {
 	if (prop_object_type(obj) != PROP_TYPE_STRING)
 		return false;

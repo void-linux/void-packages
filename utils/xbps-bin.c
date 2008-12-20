@@ -39,6 +39,7 @@ typedef struct repository_info {
 	size_t total_pkgs;
 } repo_info_t;
 
+static prop_dictionary_t getrepolist_dict(void);
 static bool pkgindex_getinfo(prop_dictionary_t, repo_info_t *);
 static void usage(void);
 
@@ -88,6 +89,21 @@ pkgindex_getinfo(prop_dictionary_t dict, repo_info_t *ri)
 		return false;
 
 	return true;
+}
+
+static prop_dictionary_t
+getrepolist_dict(void)
+{
+	prop_dictionary_t dict;
+
+	dict = prop_dictionary_internalize_from_file(XBPS_REPOLIST_PATH);
+	if (dict == NULL) {
+		printf("cannot find repository list file: %s\n",
+		    strerror(errno));
+		exit(EINVAL);
+	}
+
+	return dict;
 }
 
 int
@@ -149,22 +165,20 @@ main(int argc, char **argv)
 		if (argc != 2)
 			usage();
 
-		dict =
-		    prop_dictionary_internalize_from_file(XBPS_REPOLIST_PATH);
-		if (dict == NULL) {
-			printf("cannot find repository list file: %s\n",
-			    strerror(errno));
-			exit(EINVAL);
-		}
-
-		xbps_callback_array_iter_in_dict(dict, "repository-list",
-		    xbps_list_strings_in_array);
+		xbps_callback_array_iter_in_dict(getrepolist_dict(),
+		    "repository-list", xbps_list_strings_in_array, NULL);
 
 	} else if (strcmp(argv[1], "show") == 0) {
 		/* Shows info about a binary package. */
 		if (argc != 3)
 			usage();
 
+		if (!xbps_callback_array_iter_in_dict(getrepolist_dict(),
+		    "repository-list", xbps_show_pkg_info_from_repolist,
+		    argv[2])) {
+			printf("Package %s doesn't exist on any repository.\n",
+			    argv[2]);
+		}
 	} else {
 		usage();
 	}
