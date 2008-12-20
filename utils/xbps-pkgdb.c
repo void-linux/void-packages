@@ -243,7 +243,7 @@ main(int argc, char **argv)
 			/* Add array into main dictionary. */
 			dbdict = prop_dictionary_create();
 			if (!xbps_add_obj_to_dict(dbdict, dbarray,
-			    "packages_installed")) {
+			    "packages")) {
 				printf("=> ERROR: couldn't register pkg\n");
 				exit(1);
 			}
