@@ -1,8 +1,9 @@
 PREFIX  ?= /usr/local
-CFLAGS += -Wall -Werror -O3 -I$(PREFIX)/include
-CFLAGS += -funroll-all-loops -ftree-loop-linear
-LDFLAGS += -lprop
-BINS ?= xbps-bin xbps-cmpver xbps-digest xbps-pkgdb
+BINDIR	?= $(PREFIX)/bin
+CFLAGS	+= -Wall -Werror -O3 -I$(PREFIX)/include
+CFLAGS	+= -funroll-all-loops -ftree-loop-linear
+LDFLAGS	+= -lprop
+BINS	?= xbps-bin xbps-cmpver xbps-digest xbps-pkgdb
 
 all: xbps_digest xbps_pkgdb xbps_bin xbps-cmpver strip_bins clean_objs
  
@@ -41,3 +42,6 @@ clean_objs:
 
 clean: clean_objs
 	-rm -f xbps-digest xbps-pkgdb xbps-cmpver
+
+install: all
+	install -D $(BINS) $(BINDIR)
