@@ -128,6 +128,6 @@ xbps_show_pkg_info(prop_dictionary_t);
 /* Internal functions. */
 bool xbps_list_pkgs_in_dict(prop_object_t, void *);
 bool xbps_list_strings_in_array(prop_object_t, void *);
-bool xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg);
+bool xbps_show_pkg_info_from_repolist(prop_object_t obj, void *);
 
 #endif /* !_XBPS_PLIST_H_ */
