@@ -34,6 +34,7 @@
 #include "xbps_api.h"
 
 static bool xbps_list_strings_in_array2(prop_object_t, void *);
+static bool repo_haspkg;
 
 bool
 xbps_add_obj_to_dict(prop_dictionary_t dict, prop_object_t obj,
@@ -71,23 +72,27 @@ xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
 {
 	prop_object_iterator_t iter;
 	prop_object_t obj;
+	bool run = false, ret = false;
 
 	if (func == NULL)
 		return false;
+
+	repo_haspkg = false;
 
 	iter = xbps_get_array_iter_from_dict(dict, key);
 	if (iter == NULL)
 		return false;
 
 	while ((obj = prop_object_iterator_next(iter))) {
-		if (!(*func)(obj, arg)) {
-			prop_object_iterator_release(iter);
-			return false;
+		run = (*func)(obj, arg);
+		if (run && repo_haspkg) {
+			ret = true;
+			break;
 		}
 	}
 
 	prop_object_iterator_release(iter);
-	return true;
+	return ret;
 }
 
 prop_dictionary_t
@@ -267,10 +272,9 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 				sep = " ";
 			}
 			printf("\n\t");
-			if (!xbps_callback_array_iter_in_dict(dict,
+			xbps_callback_array_iter_in_dict(dict,
 			    prop_dictionary_keysym_cstring_nocopy(obj),
-			    xbps_list_strings_in_array2, (void *)sep))
-				return;
+			    xbps_list_strings_in_array2, (void *)sep);
 			printf("\n");
 			if (rundeps)
 				printf("\n");
@@ -307,6 +311,7 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg)
 
 	printf("Repository: %s\n", repoloc);
 	xbps_show_pkg_info(pkgdict);
+	repo_haspkg = true;
 
 	return true;
 }
