@@ -36,16 +36,16 @@
 static void xbps_list_strings_in_array2(prop_object_t);
 
 bool
-xbps_add_array_to_dict(prop_dictionary_t dict, prop_array_t array,
+xbps_add_obj_to_dict(prop_dictionary_t dict, prop_object_t obj,
 		       const char *key)
 {
-	if (dict == NULL || array == NULL || key == NULL)
+	if (dict == NULL || obj == NULL || key == NULL)
 		return false;
 
-	if (!prop_dictionary_set(dict, key, array))
+	if (!prop_dictionary_set(dict, key, obj))
 		return false;
 
-	prop_object_release(array);
+	prop_object_release(obj);
 	return true;
 }
 
@@ -178,7 +178,7 @@ xbps_register_repository(const char *uri)
 			goto fail;
 
 		/* Add the array obj into the main dictionary. */
-		if (!xbps_add_array_to_dict(dict, array, "repository-list"))
+		if (!xbps_add_obj_to_dict(dict, array, "repository-list"))
 			goto fail;
 
 		/* Write dictionary into plist file. */

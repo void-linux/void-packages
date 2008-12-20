@@ -27,17 +27,17 @@
 #define _XBPS_PLIST_UTILS_H_
 
 /* 
- * Adds an array object with specified key into a dictionary.
+ * Adds an opaque object with specified key into a dictionary.
  *
  * Arguments:
  * 	- prop_dictionary_t: dictionary to store the array.
- *	- prop_array_t: the array to be stored.
- *	- const char *: the key associated with the array.
+ *	- prop_object_t: the object to be stored.
+ *	- const char *: the key associated with the object.
  *
  * Returns true on success, false on failure.
  */
 bool
-xbps_add_array_to_dict(prop_dictionary_t, prop_array_t, const char *);
+xbps_add_obj_to_dict(prop_dictionary_t, prop_object_t, const char *);
 
 /*
  * Adds an opaque object into an array.

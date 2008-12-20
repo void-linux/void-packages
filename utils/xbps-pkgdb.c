@@ -137,7 +137,7 @@ unregister_pkg(prop_dictionary_t dict, const char *pkgname, const char *dbfile)
 	}
 
 	prop_array_remove(array, i);
-	if (!xbps_add_array_to_dict(dict, array, "packages")) {
+	if (!xbps_add_obj_to_dict(dict, array, "packages")) {
 		printf("=> ERROR: couldn't unregister %s from database\n",
 		    pkgname);
 		exit(1);
@@ -242,7 +242,7 @@ main(int argc, char **argv)
 
 			/* Add array into main dictionary. */
 			dbdict = prop_dictionary_create();
-			if (!xbps_add_array_to_dict(dbdict, dbarray,
+			if (!xbps_add_obj_to_dict(dbdict, dbarray,
 			    "packages_installed")) {
 				printf("=> ERROR: couldn't register pkg\n");
 				exit(1);
