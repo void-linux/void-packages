@@ -131,4 +131,14 @@ xbps_list_strings_in_array(prop_object_t);
 bool
 xbps_register_repository(const char *);
 
+/*
+ * Shows information of a package by looking at its dictionary.
+ * All known objects on it will be showed up.
+ *
+ * Arguments:
+ * 	- prop_dictionary_t: the package dictionary.
+ */
+void
+xbps_show_pkg_info(prop_dictionary_t);
+
 #endif /* !_XBPS_PLIST_UTILS_H_ */

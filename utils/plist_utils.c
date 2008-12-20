@@ -33,6 +33,8 @@
 
 #include "xbps_api.h"
 
+static void xbps_list_strings_in_array2(prop_object_t);
+
 bool
 xbps_add_array_to_dict(prop_dictionary_t dict, prop_array_t array,
 		       const char *key)
@@ -225,6 +227,44 @@ fail:
 }
 
 void
+xbps_show_pkg_info(prop_dictionary_t dict)
+{
+	prop_object_iterator_t iter;
+	prop_object_t obj, obj2;
+
+	if (dict == NULL || prop_dictionary_count(dict) == 0)
+		return;
+
+	iter = prop_dictionary_iterator(dict);
+	if (iter == NULL)
+		return;
+
+	while ((obj = prop_object_iterator_next(iter))) {
+		/* Print the key */
+		printf("%s: ", prop_dictionary_keysym_cstring_nocopy(obj));
+		/* Get the obj for current keysym */
+		obj2 = prop_dictionary_get_keysym(dict, obj);
+
+		if (prop_object_type(obj2) == PROP_TYPE_STRING) {
+			printf("%s\n", prop_string_cstring_nocopy(obj2));
+
+		} else if (prop_object_type(obj2) == PROP_TYPE_NUMBER) {
+			printf("%zu\n",
+			    prop_number_unsigned_integer_value(obj2));
+
+		} else if (prop_object_type(obj2) == PROP_TYPE_ARRAY) {
+			printf("\n\t");
+			xbps_callback_array_iter_in_dict(dict,
+			    prop_dictionary_keysym_cstring_nocopy(obj),
+			    xbps_list_strings_in_array2);
+			printf("\n");
+		}
+	}
+
+	prop_object_iterator_release(iter);
+}
+
+void
 xbps_list_pkgs_in_dict(prop_object_t obj)
 {
 	const char *pkgname, *version, *short_desc;
@@ -237,6 +277,23 @@ xbps_list_pkgs_in_dict(prop_object_t obj)
 	prop_dictionary_get_cstring_nocopy(obj, "short_desc", &short_desc);
 	if (pkgname && version && short_desc)
 		printf("%s (%s)\t%s\n", pkgname, version, short_desc);
+}
+
+static void
+xbps_list_strings_in_array2(prop_object_t obj)
+{
+	static uint16_t count;
+
+	if (prop_object_type(obj) != PROP_TYPE_STRING)
+		return;
+
+	if (count == 4) {
+		printf("\n\t");
+		count = 0;
+	}
+
+	printf("%s ", prop_string_cstring_nocopy(obj));
+	count++;
 }
 
 void
