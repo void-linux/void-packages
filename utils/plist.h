@@ -69,13 +69,12 @@ xbps_callback_array_iter_in_dict(prop_dictionary_t, const char *,
  *
  * Arguments:
  * 	- prop_dictionary_t: main dictionary to search the object.
- * 	- 1st const char *key: use a dictionary with that key.
- * 	- 2nd const char *pkgname: string of package name.
+ * 	- const char *: string of package name.
  *
  * Returns the package's dictionary object, otherwise NULL.
  */
 prop_dictionary_t
-xbps_find_pkg_in_dict(prop_dictionary_t, const char *, const char *);
+xbps_find_pkg_in_dict(prop_dictionary_t, const char *);
 
 /*
  * Finds a string object in an array.

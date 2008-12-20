@@ -80,7 +80,7 @@ register_pkg(prop_dictionary_t dict, pkg_data_t *pkg, const char *dbfile)
 		exit(1);
 	}
 
-	array = prop_dictionary_get(dict, "packages_installed");
+	array = prop_dictionary_get(dict, "packages");
 	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY) {
 		printf("%s: NULL or incorrect array type\n", __func__);
 		exit(1);
@@ -109,7 +109,7 @@ unregister_pkg(prop_dictionary_t dict, const char *pkgname, const char *dbfile)
 		exit(1);
 	}
 
-	array = prop_dictionary_get(dict, "packages_installed");
+	array = prop_dictionary_get(dict, "packages");
 	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY) {
 		printf("%s: NULL or incorrect array type\n", __func__);
 		exit(1);
@@ -137,7 +137,7 @@ unregister_pkg(prop_dictionary_t dict, const char *pkgname, const char *dbfile)
 	}
 
 	prop_array_remove(array, i);
-	if (!xbps_add_array_to_dict(dict, array, "packages_installed")) {
+	if (!xbps_add_array_to_dict(dict, array, "packages")) {
 		printf("=> ERROR: couldn't unregister %s from database\n",
 		    pkgname);
 		exit(1);
@@ -257,8 +257,7 @@ main(int argc, char **argv)
 			prop_object_release(dbdict);
 		} else {
 			/* Check if pkg is already registered. */
-			pkgdict = xbps_find_pkg_in_dict(dbdict,
-			    "packages_installed", argv[2]);
+			pkgdict = xbps_find_pkg_in_dict(dbdict, argv[2]);
 			if (pkgdict != NULL) {
 				printf("%s=> Package %s-%s already registered.\n",
 				    in_chroot ? "[chroot] " : "",
@@ -293,7 +292,7 @@ main(int argc, char **argv)
 
 		dbdict = prop_dictionary_internalize_from_file(dbfile);
 		xbps_callback_array_iter_in_dict(dbdict,
-		    "packages_installed", xbps_list_pkgs_in_dict);
+		    "packages", xbps_list_pkgs_in_dict);
 
 	} else if (strcmp(argv[1], "version") == 0) {
 		/* Prints version of an installed package */
@@ -301,8 +300,7 @@ main(int argc, char **argv)
 			usage();
 
 		pkgdict = xbps_find_pkg_in_dict(
-			prop_dictionary_internalize_from_file(dbfile),
-			"packages_installed", argv[2]);
+			prop_dictionary_internalize_from_file(dbfile), argv[2]);
 		if (pkgdict == NULL)
 			exit(1);
 		if (!prop_dictionary_get_cstring_nocopy(pkgdict, "version",

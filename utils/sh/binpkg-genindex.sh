@@ -110,7 +110,7 @@ write_repo_pkgindex_header()
 <string>$XBPS_PKGINDEX_VERSION</string>
 <key>location-local</key>
 <string>$repodir</string>
-<key>available-packages</key>
+<key>packages</key>
 <array>
 _EOF
 }

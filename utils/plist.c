@@ -85,8 +85,7 @@ xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
 }
 
 prop_dictionary_t
-xbps_find_pkg_in_dict(prop_dictionary_t dict, const char *key,
-		      const char *pkgname)
+xbps_find_pkg_in_dict(prop_dictionary_t dict, const char *pkgname)
 {
 	prop_object_iterator_t iter;
 	prop_object_t obj;
@@ -95,7 +94,7 @@ xbps_find_pkg_in_dict(prop_dictionary_t dict, const char *key,
 	if (pkgname == NULL)
 		return NULL;
 
-	iter = xbps_get_array_iter_from_dict(dict, key);
+	iter = xbps_get_array_iter_from_dict(dict, "packages");
 	if (iter == NULL)
 		return NULL;
 
