@@ -23,14 +23,14 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _XBPS_PLIST_UTILS_H_
-#define _XBPS_PLIST_UTILS_H_
+#ifndef _XBPS_PLIST_H_
+#define _XBPS_PLIST_H_
 
 /* 
  * Adds an opaque object with specified key into a dictionary.
  *
  * Arguments:
- * 	- prop_dictionary_t: dictionary to store the array.
+ * 	- prop_dictionary_t: dictionary to store the object.
  *	- prop_object_t: the object to be stored.
  *	- const char *: the key associated with the object.
  *
@@ -140,4 +140,4 @@ xbps_register_repository(const char *);
 void
 xbps_show_pkg_info(prop_dictionary_t);
 
-#endif /* !_XBPS_PLIST_UTILS_H_ */
+#endif /* !_XBPS_PLIST_H_ */
