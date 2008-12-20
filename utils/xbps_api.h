@@ -41,9 +41,9 @@
 #define XBPS_REGPKGDB_DEFPATH	"/var/cache/xbps/regpkgdb.plist"
 
 /* API to handle plist files */
-#include "plist_utils.h"
+#include "plist.h"
 
 /* SHA256 implementation */
-#include "sha256_digest.h"
+#include "sha256.h"
 
 #endif /* !_XBPS_API_H_ */

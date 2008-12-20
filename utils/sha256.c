@@ -41,7 +41,7 @@
 #include <inttypes.h>
 #include <libgen.h>
 
-#include "sha256_digest.h"
+#include "xbps_api.h"
 
 /*** SHA-256 Machine Architecture Definitions *****************/
 

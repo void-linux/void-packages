@@ -8,29 +8,29 @@ all: xbps_digest xbps_pkgdb xbps_bin xbps-cmpver clean_objs
 xbps-cmpver: xbps-cmpver.o
 	$(CC) $(CFLAGS) $< -o $@
 
-sha256_digest: sha256_digest.o
+sha256: sha256.o
 	$(CC) $(CFLAGS) -c $@
 
 xbps-digest: xbps-digest.o
 	$(CC) $(CFLAGS) -c $@
 
-xbps_digest: xbps-digest.o sha256_digest.o
-	$(CC) -o xbps-digest xbps-digest.o sha256_digest.o
+xbps_digest: xbps-digest.o sha256.o
+	$(CC) -o xbps-digest xbps-digest.o sha256.o
 
 xbps-pkgdb:
 	$(CC) $(CFLAGS) -c $@
 
-plist_utils:
+plist:
 	$(CC) $(CFLAGS) -c $@
 
-xbps_pkgdb: xbps-pkgdb.o plist_utils.o
-	$(CC) $(LDFLAGS) -o xbps-pkgdb xbps-pkgdb.o plist_utils.o
+xbps_pkgdb: xbps-pkgdb.o plist.o
+	$(CC) $(LDFLAGS) -o xbps-pkgdb xbps-pkgdb.o plist.o
 
 xbps-bin:
 	$(CC) $(CFLAGS) -c $@
 
-xbps_bin: xbps-bin.o plist_utils.o
-	$(CC) $(LDFLAGS) -o xbps-bin xbps-bin.o plist_utils.o
+xbps_bin: xbps-bin.o plist.o
+	$(CC) $(LDFLAGS) -o xbps-bin xbps-bin.o plist.o
 
 clean_objs:
 	-rm -f *.o
