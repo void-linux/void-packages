@@ -28,7 +28,7 @@
 
 #include <stdio.h>
 #include <inttypes.h>
-// #define NDEBUG
+#define NDEBUG
 #include <assert.h>
 
 #include <prop/proplib.h>
