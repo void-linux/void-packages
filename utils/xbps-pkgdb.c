@@ -40,7 +40,6 @@ typedef struct pkg_data {
 
 static prop_dictionary_t make_dict_from_pkg(pkg_data_t *);
 static void register_pkg(prop_dictionary_t, pkg_data_t *, const char *);
-static void unregister_pkg(prop_dictionary_t, const char *, const char *);
 static void write_plist_file(prop_dictionary_t, const char *);
 
 static prop_dictionary_t
@@ -80,42 +79,6 @@ register_pkg(prop_dictionary_t dict, pkg_data_t *pkg, const char *dbfile)
 		exit(1);
 	}
 
-	write_plist_file(dict, dbfile);
-}
-
-static void
-unregister_pkg(prop_dictionary_t dict, const char *pkgname, const char *dbfile)
-{
-	prop_array_t array;
-	prop_object_t obj;
-	prop_object_iterator_t iter;
-	const char *curpkgn;
-	int i = 0;
-	bool found = false;
-
-	assert(dict != NULL || pkgname != NULL);
-	array = prop_dictionary_get(dict, "packages");
-	assert(array != NULL);
-	assert(prop_object_type(array) == PROP_TYPE_ARRAY);
-	iter = prop_array_iterator(array);
-	assert(iter != NULL);
-
-	/* Iterate over the array of dictionaries to find its index. */
-	while ((obj = prop_object_iterator_next(iter))) {
-		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &curpkgn);
-		if (strcmp(curpkgn, pkgname) == 0) {
-			found = true;
-			break;
-		}
-		i++;
-	}
-
-	if (found == false) {
-		printf("=> ERROR: %s not registered in database.\n", pkgname);
-		exit(1);
-	}
-
-	prop_array_remove(array, i);
 	write_plist_file(dict, dbfile);
 }
 
@@ -248,8 +211,16 @@ main(int argc, char **argv)
 		if (argc != 4)
 			usage();
 
-		unregister_pkg(prop_dictionary_internalize_from_file(dbfile),
-		    argv[2], dbfile);
+		if (!xbps_remove_pkg_dict_from_file(argv[2], dbfile)) {
+			if (errno == ENODEV)
+				printf("=> ERROR: %s not registered "
+				    "in database.\n", argv[2]);
+			else
+				printf("=> ERROR: couldn't unregister %s "
+				    "from database (%s)\n", argv[2],
+				    strerror(errno));
+			exit(EINVAL);
+		}
 
 		printf("%s=> %s-%s unregistered successfully.\n",
 		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);

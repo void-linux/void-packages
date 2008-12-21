@@ -35,7 +35,7 @@
 
 struct callback_args {
 	const char *string;
-	int number;
+	int64_t number;
 };
 
 bool
@@ -174,6 +174,51 @@ xbps_get_pkgidx_string(const char *repofile)
 	res = plist;
 
 	return res;
+}
+
+bool
+xbps_remove_pkg_dict_from_file(const char *pkg, const char *plist)
+{
+	prop_dictionary_t pdict;
+	prop_array_t array;
+	prop_object_t obj;
+	prop_object_iterator_t iter;
+	const char *curpkg;
+	int i = 0;
+
+	pdict = prop_dictionary_internalize_from_file(plist);
+	if (pdict == NULL)
+		return false;
+
+	array = prop_dictionary_get(pdict, "packages");
+	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
+		return false;
+
+	iter = prop_array_iterator(array);
+	if (iter == NULL)
+		return false;
+
+	/* Iterate over the array of dictionaries to find its index. */
+	while ((obj = prop_object_iterator_next(iter))) {
+		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &curpkg);
+		if ((curpkg && (strcmp(curpkg, pkg) == 0))) {
+			/* Found, remove it and write plist file. */
+			prop_array_remove(array, i);
+			prop_object_iterator_release(iter);
+			goto wr_plist;
+		}
+		i++;
+	}
+
+	prop_object_iterator_release(iter);
+	errno = ENODEV;
+	return false;
+
+wr_plist:
+	if (!prop_dictionary_externalize_to_file(pdict, plist))
+		return false;
+
+	return true;
 }
 
 bool

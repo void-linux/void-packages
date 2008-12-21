@@ -116,6 +116,19 @@ bool xbps_register_repository(const char *);
 bool xbps_unregister_repository(const char *);
 
 /*
+ * Remove package's dictionary from the "packages" array in
+ * the specified plist file.
+ *
+ * Arguments:
+ * 	- 1st const char *: package name.
+ * 	- 2nd const char *: full path to plist file.
+ *
+ * Returns true on success, or false and an appropiate errno value otherwise.
+ */
+bool
+xbps_remove_pkg_dict_from_file(const char *, const char *);
+
+/*
  * Shows information of a package by looking at its dictionary.
  * All known objects on it will be showed up.
  *
