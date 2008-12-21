@@ -167,8 +167,9 @@ main(int argc, char **argv)
 			/* Add pkg dictionary into array. */
 			dbarray = prop_array_create();
 			if (!xbps_add_obj_to_array(dbarray, pkgdict)) {
-				printf("=> ERROR: couldn't register %s-%s\n",
-				    pkg.pkgname, pkg.version);
+				printf("=> ERROR: couldn't register "
+				    "%s-%s (%s)\n", pkg.pkgname, pkg.version,
+				    strerror(errno));
 				exit(1);
 			}
 
@@ -176,8 +177,9 @@ main(int argc, char **argv)
 			dbdict = prop_dictionary_create();
 			if (!xbps_add_obj_to_dict(dbdict, dbarray,
 			    "packages")) {
-				printf("=> ERROR: couldn't register %s-%s\n",
-				    pkg.pkgname, pkg.version);
+				printf("=> ERROR: couldn't register "
+				    "%s-%s (%s)\n", pkg.pkgname, pkg.version,
+				    strerror(errno));
 				exit(1);
 			}
 
@@ -257,8 +259,8 @@ main(int argc, char **argv)
 
 		dbdict = prop_dictionary_internalize_from_file(argv[2]);
 		if (dbdict == NULL) {
-			printf("=> ERROR: couldn't sanitize %s plist file\n",
-			    argv[2]);
+			printf("=> ERROR: couldn't sanitize %s plist file "
+			    "(%s)\n", argv[2], strerror(errno));
 			exit(1);
 		}
 		write_plist_file(dbdict, argv[2]);
