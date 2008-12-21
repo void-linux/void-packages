@@ -192,7 +192,7 @@ main(int argc, char **argv)
 	if (in_chroot_env != NULL)
 		in_chroot = true;
 
-	if (strcmp(argv[1], "register") == 0) {
+	if (strcasecmp(argv[1], "register") == 0) {
 		/* Registers a package into the database */
 		if (argc != 5)
 			usage();
@@ -249,7 +249,7 @@ main(int argc, char **argv)
 		printf("%s=> %s-%s registered successfully.\n",
 		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
 
-	} else if (strcmp(argv[1], "unregister") == 0) {
+	} else if (strcasecmp(argv[1], "unregister") == 0) {
 		/* Unregisters a package from the database */
 		if (argc != 4)
 			usage();
@@ -260,7 +260,7 @@ main(int argc, char **argv)
 		printf("%s=> %s-%s unregistered successfully.\n",
 		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
 
-	} else if (strcmp(argv[1], "list") == 0) {
+	} else if (strcasecmp(argv[1], "list") == 0) {
 		/* Lists packages currently registered in database */
 		if (argc != 2)
 			usage();
@@ -270,7 +270,7 @@ main(int argc, char **argv)
 		    "packages", xbps_list_pkgs_in_dict, NULL))
 			exit(EINVAL);
 
-	} else if (strcmp(argv[1], "version") == 0) {
+	} else if (strcasecmp(argv[1], "version") == 0) {
 		/* Prints version of an installed package */
 		if (argc != 3)
 			usage();
@@ -284,7 +284,7 @@ main(int argc, char **argv)
 			exit(1);
 		printf("%s\n", version);
 
-	} else if (strcmp(argv[1], "sanitize-plist") == 0) {
+	} else if (strcasecmp(argv[1], "sanitize-plist") == 0) {
 		/* Sanitize a plist file (indent the file properly) */
 		if (argc != 3)
 			usage();

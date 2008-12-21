@@ -160,7 +160,7 @@ main(int argc, char **argv)
 	if (argc < 2)
 		usage();
 
-	if (strcmp(argv[1], "repo-add") == 0) {
+	if (strcasecmp(argv[1], "repo-add") == 0) {
 		/* Adds a new repository to the pool. */
 		if (argc != 3)
 			usage();
@@ -205,7 +205,7 @@ main(int argc, char **argv)
 		       rinfo->total_pkgs);
 		free(rinfo);
 
-	} else if (strcmp(argv[1], "repo-list") == 0) {
+	} else if (strcasecmp(argv[1], "repo-list") == 0) {
 		/* Lists all repositories registered in pool. */
 		if (argc != 2)
 			usage();
@@ -213,7 +213,7 @@ main(int argc, char **argv)
 		xbps_callback_array_iter_in_dict(getrepolist_dict(),
 		    "repository-list", xbps_list_strings_in_array, NULL);
 
-	} else if (strcmp(argv[1], "repo-rm") == 0) {
+	} else if (strcasecmp(argv[1], "repo-rm") == 0) {
 		/* Remove a repository from the pool. */
 		if (argc != 3)
 			usage();
@@ -232,7 +232,7 @@ main(int argc, char **argv)
 			exit(EINVAL);
 		}
 
-	} else if (strcmp(argv[1], "show") == 0) {
+	} else if (strcasecmp(argv[1], "show") == 0) {
 		/* Shows info about a binary package. */
 		if (argc != 3)
 			usage();
