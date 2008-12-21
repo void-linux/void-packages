@@ -116,12 +116,6 @@ unregister_pkg(prop_dictionary_t dict, const char *pkgname, const char *dbfile)
 	}
 
 	prop_array_remove(array, i);
-	if (!xbps_add_obj_to_dict(dict, array, "packages")) {
-		printf("=> ERROR: couldn't unregister %s from database\n",
-		    pkgname);
-		exit(1);
-	}
-
 	write_plist_file(dict, dbfile);
 }
 
