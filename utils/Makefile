@@ -13,7 +13,7 @@ LIBXBPS_SO	= $(LIBXBPS).$(MAJOR).$(MINOR).$(MICRO)
 LIBXBPS		= libxbps.so
 LIBXBPS_LDFLAGS	= -lprop -shared -Wl,-soname,$(LIBXBPS).$(MAJOR)
 
-all: $(LIBXBPS_NAME) $(BINS)
+all: $(LIBXBPS) $(BINS)
 .PHONY: all
 
 $(LIBXBPS): sha256.o plist.o
@@ -21,16 +21,16 @@ $(LIBXBPS): sha256.o plist.o
 	-ln -sf $(LIBXBPS_SO) $(LIBXBPS).$(MAJOR)
 	-ln -sf $(LIBXBPS_SO) $(LIBXBPS)
 
-xbps-bin: xbps-bin.o $(LIBXBPS)
+xbps-bin: xbps-bin.o
 	$(CC) $(LDFLAGS) $^ -o $@
 
 xbps-cmpver: xbps-cmpver.o
 	$(CC) $^ -o $@
 
-xbps-digest: xbps-digest.o $(LIBXBPS)
+xbps-digest: xbps-digest.o
 	$(CC) $(LDFLAGS) $^ -o $@
 
-xbps-pkgdb: xbps-pkgdb.o $(LIBXBPS)
+xbps-pkgdb: xbps-pkgdb.o
 	$(CC) $(LDFLAGS) $^ -o $@
 
 .PHONY: clean
