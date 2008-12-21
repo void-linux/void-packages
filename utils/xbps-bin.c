@@ -101,7 +101,7 @@ getrepolist_dict(void)
 
 	dict = prop_dictionary_internalize_from_file(XBPS_REPOLIST_PATH);
 	if (dict == NULL) {
-		printf("cannot find repository list file: %s\n",
+		printf("ERROR: cannot find repository plist file (%s).\n",
 		    strerror(errno));
 		exit(EINVAL);
 	}
