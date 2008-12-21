@@ -459,7 +459,7 @@ bool
 xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 {
 	prop_dictionary_t dict;
-	const char *repofile, *plist, *pkgstring = arg;
+	const char *repofile, *plist;
 
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 	assert(pkgstring != NULL);
@@ -479,7 +479,7 @@ xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 
 	printf("From %s repository ...\n", repofile);
 	xbps_callback_array_iter_in_dict(dict, "packages",
-	    xbps_show_pkg_namedesc, (void *)pkgstring);
+	    xbps_show_pkg_namedesc, arg);
 
 	return true;
 }
