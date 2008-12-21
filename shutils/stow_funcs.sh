@@ -106,7 +106,10 @@ unstow_pkg()
 	fi
 
 	cd $XBPS_PKGMETADIR/$pkgname || exit 1
-	if [ ! -f flist ]; then
+	if [ "$build_style" = "meta-template" ]; then
+		# If it's a metapkg, do nothing.
+		:
+	elif [ ! -f flist ]; then
 		msg_error "$pkg is incomplete, missing flist."
 	elif [ ! -w flist ]; then
 		msg_error "$pkg cannot be removed (permission denied)."
@@ -133,7 +136,7 @@ unstow_pkg()
 
 	# Remove metadata dir.
 	rm -rf $XBPS_PKGMETADIR/$pkgname
-
 	$XBPS_REGPKGDB_CMD unregister $pkgname $ver
+
 	return $?
 }
