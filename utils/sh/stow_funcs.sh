@@ -35,7 +35,8 @@ stow_pkg()
 
 	[ -z "$pkg" ] && return 2
 
-	if [ ! -w $destdir -o ! -w $XBPS_MASTERDIR ]; then
+	if [ $(id -u) -ne 0 ] && \
+	   [ ! -w $destdir -o ! -w $XBPS_MASTERDIR ]; then
 		msg_error "cannot stow $pkg! (permission denied)"
 	fi
 
@@ -90,7 +91,8 @@ unstow_pkg()
 
 	[ -z $pkg ] && msg_error "template wasn't specified?"
 
-	if [ ! -w $XBPS_MASTERDIR ]; then
+	if [ $(id -u) -ne 0 ] && \
+	   [ ! -w $XBPS_MASTERDIR ]; then
 		msg_error "cannot unstow $pkg! (permission denied)"
 	fi
 
