@@ -462,7 +462,6 @@ xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 	const char *repofile, *plist;
 
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
-	assert(pkgstring != NULL);
 
 	/* Get the location of pkgindex file. */
 	repofile = prop_string_cstring_nocopy(obj);
