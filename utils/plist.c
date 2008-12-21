@@ -184,7 +184,7 @@ xbps_remove_pkg_dict_from_file(const char *pkg, const char *plist)
 	prop_object_t obj;
 	prop_object_iterator_t iter;
 	const char *curpkg;
-	int i = 0;
+	size_t i = 0;
 
 	pdict = prop_dictionary_internalize_from_file(plist);
 	if (pdict == NULL)
@@ -224,7 +224,7 @@ wr_plist:
 bool
 xbps_remove_string_from_array(prop_object_t obj, void *arg, bool *loop_done)
 {
-	static int idx;
+	static int64_t idx;
 	struct callback_args *cb = arg;
 
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
