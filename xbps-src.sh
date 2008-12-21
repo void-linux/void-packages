@@ -127,7 +127,7 @@ check_config_vars()
 	local f=
 
 	if [ -z "$config_file_specified" ]; then
-		config_file_paths="$XBPS_CONFIG_FILE ./xbps.conf"
+		config_file_paths="$XBPS_CONFIG_FILE ./etc/xbps.conf"
 		for f in $config_file_paths; do
 			[ -f $f ] && XBPS_CONFIG_FILE=$f && \
 				cffound=yes && break
