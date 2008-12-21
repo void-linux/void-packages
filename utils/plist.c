@@ -384,7 +384,7 @@ xbps_show_pkg_namedesc(prop_object_t obj, void *arg, bool *loop_done)
 	assert(ver != NULL);
 
 	if ((strstr(pkgname, string) || strstr(desc, string)))
-		printf("\t%s-%s - %s\n", pkgname, ver, desc);
+		printf("  %s-%s - %s\n", pkgname, ver, desc);
 
 	return true;
 }
