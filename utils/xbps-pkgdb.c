@@ -175,13 +175,13 @@ main(int argc, char **argv)
 
 	if ((dbfileenv = getenv("XBPS_REGPKGDB_PATH")) != NULL) {
 		/* Use path as defined by XBPS_REGPKGDB_PATH env var */
-		tmppath = strncpy(dbfile, dbfileenv, sizeof(dbfile));
+		tmppath = strncpy(dbfile, dbfileenv, sizeof(dbfile) - 1);
 		if (sizeof(*tmppath) >= sizeof(dbfile))
 			exit(1);
 	} else {
 		/* Use default path */
 		tmppath =
-		    strncpy(dbfile, XBPS_REGPKGDB_DEFPATH, sizeof(dbfile));
+		    strncpy(dbfile, XBPS_REGPKGDB_DEFPATH, sizeof(dbfile) - 1);
 		if (sizeof(*tmppath) >= sizeof(dbfile))
 			exit(1);
 	}
