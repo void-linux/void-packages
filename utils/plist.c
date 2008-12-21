@@ -321,53 +321,74 @@ xbps_unregister_repository(const char *uri)
 void
 xbps_show_pkg_info(prop_dictionary_t dict)
 {
-	prop_object_iterator_t iter;
-	prop_object_t obj, obj2;
+	prop_object_t obj;
 	const char *sep = NULL;
-	bool rundeps = false;
 
 	assert(dict != NULL);
 	if (prop_dictionary_count(dict) == 0)
 		return;
 
-	iter = prop_dictionary_iterator(dict);
-	if (iter == NULL)
-		return;
+	obj = prop_dictionary_get(dict, "pkgname");
+	if (obj && prop_object_type(obj) == PROP_TYPE_STRING)
+		printf("Package: %s\n", prop_string_cstring_nocopy(obj));
 
-	while ((obj = prop_object_iterator_next(iter))) {
-		/* Print the key */
-		printf("%s: ", prop_dictionary_keysym_cstring_nocopy(obj));
-		/* Get the obj for current keysym */
-		obj2 = prop_dictionary_get_keysym(dict, obj);
+	obj = prop_dictionary_get(dict, "installed_size");
+	if (obj && prop_object_type(obj) == PROP_TYPE_NUMBER)
+		printf("Installed size: %zu bytes\n",
+		    prop_number_unsigned_integer_value(obj));
 
-		if (prop_object_type(obj2) == PROP_TYPE_STRING) {
-			printf("%s\n", prop_string_cstring_nocopy(obj2));
+	obj = prop_dictionary_get(dict, "maintainer");
+	if (obj && prop_object_type(obj) == PROP_TYPE_STRING)
+		printf("Maintainer: %s\n", prop_string_cstring_nocopy(obj));
 
-		} else if (prop_object_type(obj2) == PROP_TYPE_NUMBER) {
-			printf("%zu\n",
-			    prop_number_unsigned_integer_value(obj2));
+	obj = prop_dictionary_get(dict, "architecture");
+	if (obj && prop_object_type(obj) == PROP_TYPE_STRING)
+		printf("Architecture: %s\n", prop_string_cstring_nocopy(obj));
 
-		} else if (prop_object_type(obj2) == PROP_TYPE_ARRAY) {
-			/*
-			 * Apply some indentation for array objs other than
-			 * "run_depends".
-			 */
-			if (strcmp(prop_dictionary_keysym_cstring_nocopy(obj),
-			    "run_depends") == 0) {
-				rundeps = true;
-				sep = " ";
-			}
-			printf("\n\t");
-			xbps_callback_array_iter_in_dict(dict,
-			    prop_dictionary_keysym_cstring_nocopy(obj),
-			    xbps_list_strings_in_array2, (void *)sep);
-			printf("\n");
-			if (rundeps)
-				printf("\n");
-		}
+	obj = prop_dictionary_get(dict, "version");
+	if (obj && prop_object_type(obj) == PROP_TYPE_STRING)
+		printf("Version: %s\n", prop_string_cstring_nocopy(obj));
+
+	obj = prop_dictionary_get(dict, "filename");
+	if (obj && prop_object_type(obj) == PROP_TYPE_STRING)
+		printf("Filename: %s\n", prop_string_cstring_nocopy(obj));
+
+	obj = prop_dictionary_get(dict, "filename-sha256");
+	if (obj && prop_object_type(obj) == PROP_TYPE_STRING)
+		printf("SHA256: %s\n", prop_string_cstring_nocopy(obj));
+
+	obj = prop_dictionary_get(dict, "run_depends");
+	if (obj && prop_object_type(obj) == PROP_TYPE_ARRAY) {
+		printf("Dependencies:\n\t");
+		sep = " ";
+		xbps_callback_array_iter_in_dict(dict, "run_depends",
+		    xbps_list_strings_in_array2, (void *)sep);
+		printf("\n\n");
 	}
 
-	prop_object_iterator_release(iter);
+	obj = prop_dictionary_get(dict, "conf_files");
+	if (obj && prop_object_type(obj) == PROP_TYPE_ARRAY) {
+		printf("Configuration files:\n\t");
+		xbps_callback_array_iter_in_dict(dict, "conf_files",
+		    xbps_list_strings_in_array2, NULL);
+		printf("\n");
+	}
+
+	obj = prop_dictionary_get(dict, "keep_dirs");
+	if (obj && prop_object_type(obj) == PROP_TYPE_ARRAY) {
+		printf("Permanent directories:\n\t");
+		xbps_callback_array_iter_in_dict(dict, "keep_dirs",
+		    xbps_list_strings_in_array2, NULL);
+		printf("\n");
+	}
+
+	obj = prop_dictionary_get(dict, "short_desc");
+	if (obj && prop_object_type(obj) == PROP_TYPE_STRING)
+		printf("Description: %s", prop_string_cstring_nocopy(obj));
+
+	obj = prop_dictionary_get(dict, "long_desc");
+	if (obj && prop_object_type(obj) == PROP_TYPE_STRING)
+		printf(" %s\n", prop_string_cstring_nocopy(obj));
 }
 
 bool
