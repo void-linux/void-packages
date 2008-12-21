@@ -5,43 +5,36 @@ CFLAGS	+= -funroll-all-loops -ftree-loop-linear
 LDFLAGS	+= -lprop
 BINS	?= xbps-bin xbps-cmpver xbps-digest xbps-pkgdb
 
-all: xbps_digest xbps_pkgdb xbps_bin xbps-cmpver strip_bins clean_objs
- 
-xbps-cmpver: xbps-cmpver.o
-	$(CC) $(CFLAGS) $< -o $@
+all: $(BINS) clean-objs
+.PHONY: all
 
-sha256: sha256.o
-	$(CC) $(CFLAGS) -c $@
+xbps-cmpver.o: xbps_api.h
+sha256.o: xbps_api.h sha256.h
+xbps-digest.o: xbps_api.h sha256.h
+xbps-pkgdb.o: xbps_api.h plist.h
+plist.o: xbps_api.h plist.h
+xbps-bin.o: xbps_api.h plist.h
 
-xbps-digest: xbps-digest.o
-	$(CC) $(CFLAGS) -c $@
-
-xbps_digest: xbps-digest.o sha256.o
-	$(CC) -o xbps-digest xbps-digest.o sha256.o
-
-xbps-pkgdb:
-	$(CC) $(CFLAGS) -c $@
-
-plist:
-	$(CC) $(CFLAGS) -c $@
-
-xbps_pkgdb: xbps-pkgdb.o plist.o
-	$(CC) $(LDFLAGS) -o xbps-pkgdb xbps-pkgdb.o plist.o
-
-xbps-bin:
-	$(CC) $(CFLAGS) -c $@
-
-xbps_bin: xbps-bin.o plist.o
+xbps-bin: xbps-bin.o plist.o
 	$(CC) $(LDFLAGS) -o xbps-bin xbps-bin.o plist.o
 
-strip_bins:
-	strip -s $(BINS)
+xbps-cmpver: xbps-cmpver.o
+	$(CC) -o xbps-cmpver xbps-cmpver.o
 
-clean_objs:
-	-rm -f *.o
+xbps-digest: xbps-digest.o sha256.o
+	$(CC) -o xbps-digest xbps-digest.o sha256.o
 
-clean: clean_objs
+xbps-pkgdb: xbps-pkgdb.o plist.o
+	$(CC) $(LDFLAGS) -o xbps-pkgdb xbps-pkgdb.o plist.o
+
+.PHONY: clean
+clean: clean-bins clean-objs
+
+clean-bins:
 	-rm -f $(BINS)
 
-install: all
+clean-objs:
+	-rm -f *.o
+
+install: $(BINS)
 	install -D $(BINS) $(BINDIR)
