@@ -5,7 +5,7 @@
  */
 #include <stdio.h>
 #include <string.h>
-#include "xbps_api.h"
+#include <xbps_api.h>
 
 static int chkchr(const char *ch)
 {

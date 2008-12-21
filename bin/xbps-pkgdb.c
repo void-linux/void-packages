@@ -30,7 +30,7 @@
 #include <errno.h>
 #include <limits.h>
 
-#include "xbps_api.h"
+#include <xbps_api.h>
 
 typedef struct pkg_data {
 	const char *pkgname;

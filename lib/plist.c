@@ -31,7 +31,7 @@
 #include <limits.h>
 #include <prop/proplib.h>
 
-#include "xbps_api.h"
+#include <xbps_api.h>
 
 struct callback_args {
 	const char *string;

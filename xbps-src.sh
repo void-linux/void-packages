@@ -102,14 +102,12 @@ set_defvars()
 	: ${XBPS_CACHEDIR:=$XBPS_MASTERDIR/var/cache/xbps}
 	: ${XBPS_REGPKGDB_PATH:=$XBPS_CACHEDIR/regpkgdb.plist}
 	: ${XBPS_PKGMETADIR:=$XBPS_CACHEDIR/metadata}
-	: ${XBPS_UTILSDIR:=$XBPS_DISTRIBUTIONDIR/utils}
-	: ${XBPS_SHUTILSDIR:=$XBPS_UTILSDIR/sh}
-	: ${XBPS_DIGEST_CMD:=$XBPS_UTILSDIR/xbps-digest}
-	: ${XBPS_REGPKGDB_CMD:=$XBPS_UTILSDIR/xbps-pkgdb}
-	: ${XBPS_CMPVER_CMD:=$XBPS_UTILSDIR/xbps-cmpver}
+	: ${XBPS_SHUTILSDIR:=$XBPS_DISTRIBUTIONDIR/shutils}
+	: ${XBPS_DIGEST_CMD:=$XBPS_DISTRIBUTIONDIR/bin/xbps-digest}
+	: ${XBPS_REGPKGDB_CMD:=$XBPS_DISTRIBUTIONDIR/bin/xbps-pkgdb}
+	: ${XBPS_CMPVER_CMD:=$XBPS_DISTRIBUTIONDIR/bin/xbps-cmpver}
 
-	local DDIRS="XBPS_TEMPLATESDIR XBPS_HELPERSDIR XBPS_UTILSDIR \
-		     XBPS_SHUTILSDIR"
+	local DDIRS="XBPS_TEMPLATESDIR XBPS_HELPERSDIR XBPS_SHUTILSDIR"
 	for i in ${DDIRS}; do
 		eval val="\$$i"
 		[ ! -d "$val" ] &&  msg_error "cannot find $i, aborting."

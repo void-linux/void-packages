@@ -1,15 +1,25 @@
-PREFIX	?= /usr/local
-BINDIR	?= $(PREFIX)/bin
+include vars.mk
 
+SUBDIRS	= lib bin
+
+.PHONY: all
 all:
-	cd utils && make
+	for dir in $(SUBDIRS); do		\
+		$(MAKE) -C $$dir;		\
+	done
 
+.PHONY: install
 install:
 	install -D xbps-src.sh $(BINDIR)/xbps-src
-	cd utils && make install
+	for dir in $(SUBDIRS); do		\
+		$(MAKE) -C $$dir install;	\
+	done
 
 uninstall:
 	-rm -f $(BINDIR)/xbps-*
 
+.PHONY: clean
 clean:
-	cd utils && make clean
+	for dir in $(SUBDIRS); do		\
+		$(MAKE) -C $$dir clean;		\
+	done

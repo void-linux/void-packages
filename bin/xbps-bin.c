@@ -31,7 +31,7 @@
 #include <limits.h>
 #include <libgen.h>
 
-#include "xbps_api.h"
+#include <xbps_api.h>
 
 typedef struct repository_info {
 	const char *index_version;

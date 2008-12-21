@@ -35,7 +35,7 @@
 #include <inttypes.h>
 #include <libgen.h>
 
-#include "xbps_api.h"
+#include <xbps_api.h>
 
 static void
 usage(void)
