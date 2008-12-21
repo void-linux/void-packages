@@ -89,7 +89,8 @@ write_plist_file(prop_dictionary_t dict, const char *file)
 
 	if (!prop_dictionary_externalize_to_file(dict, file)) {
 		prop_object_release(dict);
-		perror("=> ERROR: couldn't write to database file");
+		printf("=> ERROR: couldn't write to %s (%s)",
+		    file, strerror(errno));
 		exit(1);
 	}
 }
@@ -260,11 +261,7 @@ main(int argc, char **argv)
 			    argv[2]);
 			exit(1);
 		}
-		if (!prop_dictionary_externalize_to_file(dbdict, argv[2])) {
-			printf("=> ERROR: couldn't write new plist file "
-			    "(%s)\n", strerror(errno));
-			exit(1);
-		}
+		write_plist_file(dbdict, argv[2]);
 
 	} else {
 		usage();
