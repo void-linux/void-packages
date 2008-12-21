@@ -35,6 +35,10 @@ stow_pkg()
 
 	[ -z "$pkg" ] && return 2
 
+	if [ ! -w $destdir -o ! -w $XBPS_MASTERDIR ]; then
+		msg_error "cannot stow $pkg! (permission denied)"
+	fi
+
 	if [ "$build_style" = "meta-template" ]; then
 		[ ! -d $destdir ] && mkdir -p $destdir
 	fi
@@ -85,6 +89,10 @@ unstow_pkg()
 	local ver=
 
 	[ -z $pkg ] && msg_error "template wasn't specified?"
+
+	if [ ! -w $XBPS_MASTERDIR ]; then
+		msg_error "cannot unstow $pkg! (permission denied)"
+	fi
 
 	if [ "$pkgname" != "$pkg" ]; then
 		. $XBPS_TEMPLATESDIR/$pkg.tmpl
