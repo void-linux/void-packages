@@ -5,6 +5,7 @@
  */
 #include <stdio.h>
 #include <string.h>
+#include "xbps_api.h"
 
 static int chkchr(const char *ch)
 {
@@ -57,10 +58,8 @@ int chkpkg(const char *a0, const char *b0)
 	char *a = strrchr(a0, '-');
 	char *b = strrchr(b0, '-');
 
-	if (a == NULL || b== NULL) {
-		fprintf(stderr, "Invalid package names\n");
-		return 0;
-	}
+	assert(a != NULL || b != NULL);
+
 	return chkver(a+1, b+1);
 }
 

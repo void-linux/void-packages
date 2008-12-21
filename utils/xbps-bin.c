@@ -69,8 +69,7 @@ usage(void)
 static bool
 pkgindex_getinfo(prop_dictionary_t dict, repo_info_t *ri)
 {
-	if (dict == NULL || ri == NULL)
-		return false;
+	assert(dict != NULL || ri != NULL);
 
 	if (!prop_dictionary_get_cstring_nocopy(dict,
 	    "pkgindex-version", &ri->index_version))

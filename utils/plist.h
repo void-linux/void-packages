@@ -130,7 +130,7 @@ void xbps_show_pkg_info(prop_dictionary_t);
 bool xbps_list_pkgs_in_dict(prop_object_t, void *, bool *);
 bool xbps_list_strings_in_array(prop_object_t, void *, bool *);
 bool xbps_list_strings_in_array2(prop_object_t, void *, bool *);
-bool xbps_remove_obj_from_array(prop_object_t, void *, bool *);
+bool xbps_remove_string_from_array(prop_object_t, void *, bool *);
 bool xbps_show_pkg_info_from_repolist(prop_object_t obj, void *, bool *);
 
 #endif /* !_XBPS_PLIST_H_ */

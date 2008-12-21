@@ -48,13 +48,11 @@ make_dict_from_pkg(pkg_data_t *pkg)
 {
 	prop_dictionary_t dict;
 
-	if (pkg == NULL || pkg->pkgname == NULL || pkg->version == NULL ||
-	    pkg->short_desc == NULL)
-		return NULL;
+	assert(pkg != NULL || pkg->pkgname != NULL);
+	assert(pkg->version != NULL || pkg->short_desc != NULL);
 
 	dict = prop_dictionary_create();
-	if (dict == NULL)
-		return NULL;
+	assert(dict != NULL);
 
 	prop_dictionary_set_cstring_nocopy(dict, "pkgname", pkg->pkgname);
 	prop_dictionary_set_cstring_nocopy(dict, "version", pkg->version);
@@ -69,25 +67,16 @@ register_pkg(prop_dictionary_t dict, pkg_data_t *pkg, const char *dbfile)
 	prop_dictionary_t pkgdict;
 	prop_array_t array;
 
-	if (dict == NULL || pkg == NULL || dbfile == NULL) {
-		printf("%s: NULL dict/pkg/dbfile\n", __func__);
-		exit(1);
-	}
-
+	assert(dict != NULL || pkg != NULL || dbfile != NULL);
 	pkgdict = make_dict_from_pkg(pkg);
-	if (pkgdict == NULL) {
-		printf("%s: NULL pkgdict\n", __func__);
-		exit(1);
-	}
-
+	assert(pkgdict != NULL);
 	array = prop_dictionary_get(dict, "packages");
-	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY) {
-		printf("%s: NULL or incorrect array type\n", __func__);
-		exit(1);
-	}
+	assert(array != NULL);
+	assert(prop_object_type(array) == PROP_TYPE_ARRAY);
 
 	if (!xbps_add_obj_to_array(array, pkgdict)) {
-		printf("ERROR: couldn't register package in database!\n");
+		printf("ERROR: couldn't register '%s-%s' in database!\n",
+		    pkg->pkgname, pkg->version);
 		exit(1);
 	}
 
@@ -104,22 +93,12 @@ unregister_pkg(prop_dictionary_t dict, const char *pkgname, const char *dbfile)
 	int i = 0;
 	bool found = false;
 
-	if (dict == NULL || pkgname == NULL) {
-		printf("%s: NULL dict/pkgname\n", __func__);
-		exit(1);
-	}
-
+	assert(dict != NULL || pkgname != NULL);
 	array = prop_dictionary_get(dict, "packages");
-	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY) {
-		printf("%s: NULL or incorrect array type\n", __func__);
-		exit(1);
-	}
-
+	assert(array != NULL);
+	assert(prop_object_type(array) == PROP_TYPE_ARRAY);
 	iter = prop_array_iterator(array);
-	if (iter == NULL) {
-		printf("%s: NULL iter\n", __func__);
-		exit(1);
-	}
+	assert(iter != NULL);
 
 	/* Iterate over the array of dictionaries to find its index. */
 	while ((obj = prop_object_iterator_next(iter))) {
@@ -149,10 +128,7 @@ unregister_pkg(prop_dictionary_t dict, const char *pkgname, const char *dbfile)
 static void
 write_plist_file(prop_dictionary_t dict, const char *file)
 {
-	if (dict == NULL || file == NULL) {
-		printf("=> ERROR: couldn't write to database file.\n");
-		exit(1);
-	}
+	assert(dict != NULL || file != NULL);
 
 	if (!prop_dictionary_externalize_to_file(dict, file)) {
 		prop_object_release(dict);
@@ -228,15 +204,13 @@ main(int argc, char **argv)
 			pkg.version = argv[3];
 			pkg.short_desc = argv[4];
 			pkgdict = make_dict_from_pkg(&pkg);
-			if (pkgdict == NULL) {
-				printf("=> ERROR: couldn't register pkg\n");
-				exit(1);
-			}
+			assert(pkgdict != NULL);
 
 			/* Add pkg dictionary into array. */
 			dbarray = prop_array_create();
 			if (!xbps_add_obj_to_array(dbarray, pkgdict)) {
-				printf("=> ERROR: couldn't register pkg\n");
+				printf("=> ERROR: couldn't register %s-%s\n",
+				    pkg.pkgname, pkg.version);
 				exit(1);
 			}
 
@@ -244,7 +218,8 @@ main(int argc, char **argv)
 			dbdict = prop_dictionary_create();
 			if (!xbps_add_obj_to_dict(dbdict, dbarray,
 			    "packages")) {
-				printf("=> ERROR: couldn't register pkg\n");
+				printf("=> ERROR: couldn't register %s-%s\n",
+				    pkg.pkgname, pkg.version);
 				exit(1);
 			}
 
@@ -321,7 +296,8 @@ main(int argc, char **argv)
 			exit(1);
 		}
 		if (!prop_dictionary_externalize_to_file(dbdict, argv[2])) {
-			printf("=> ERROR: couldn't write new plist file\n");
+			printf("=> ERROR: couldn't write new plist file "
+			    "(%s)\n", strerror(errno));
 			exit(1);
 		}
 

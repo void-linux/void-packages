@@ -42,8 +42,7 @@ bool
 xbps_add_obj_to_dict(prop_dictionary_t dict, prop_object_t obj,
 		       const char *key)
 {
-	if (dict == NULL || obj == NULL || key == NULL)
-		return false;
+	assert(dict != NULL || obj != NULL || key != NULL);
 
 	if (!prop_dictionary_set(dict, key, obj))
 		return false;
@@ -55,8 +54,7 @@ xbps_add_obj_to_dict(prop_dictionary_t dict, prop_object_t obj,
 bool
 xbps_add_obj_to_array(prop_array_t array, prop_object_t obj)
 {
-	if (array == NULL || obj == NULL)
-		return false;
+	assert(array != NULL || obj != NULL);
 
 	if (!prop_array_add(array, obj)) {
 		prop_object_release(array);
@@ -77,11 +75,7 @@ xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
 	bool run, ret, cbloop_done;
 
 	run = ret = cbloop_done = false;
-
-	if (func == NULL)
-		return false;
-
-	cbloop_done = false;
+	assert(func != NULL);
 
 	iter = xbps_get_array_iter_from_dict(dict, key);
 	if (iter == NULL)
@@ -106,8 +100,7 @@ xbps_find_pkg_in_dict(prop_dictionary_t dict, const char *pkgname)
 	prop_object_t obj;
 	const char *dpkgn;
 
-	if (pkgname == NULL)
-		return NULL;
+	assert(pkgname != NULL);
 
 	iter = xbps_get_array_iter_from_dict(dict, "packages");
 	if (iter == NULL)
@@ -129,8 +122,7 @@ xbps_find_string_in_array(prop_array_t array, const char *val)
 	prop_object_iterator_t iter;
 	prop_object_t obj;
 
-	if (array == NULL || val == NULL)
-		return false;
+	assert(array != NULL || val != NULL);
 
 	iter = prop_array_iterator(array);
 	if (iter == NULL)
@@ -154,8 +146,7 @@ xbps_get_array_iter_from_dict(prop_dictionary_t dict, const char *key)
 {
 	prop_array_t array;
 
-	if (dict == NULL || key == NULL)
-		return NULL;
+	assert(dict != NULL || key != NULL);
 
 	array = prop_dictionary_get(dict, key);
 	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
@@ -166,13 +157,12 @@ xbps_get_array_iter_from_dict(prop_dictionary_t dict, const char *key)
 
 
 bool
-xbps_remove_obj_from_array(prop_object_t obj, void *arg, bool *loop_done)
+xbps_remove_string_from_array(prop_object_t obj, void *arg, bool *loop_done)
 {
 	static int idx;
 	struct callback_args *cb = arg;
 
-	if (prop_object_type(obj) != PROP_TYPE_STRING)
-		return false;
+	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
 	if (prop_string_equals_cstring(obj, cb->string)) {
 		cb->number = idx;
@@ -191,8 +181,7 @@ xbps_register_repository(const char *uri)
 	prop_array_t array = NULL;
 	prop_object_t obj;
 
-	if (uri == NULL)
-		return false;
+	assert(uri != NULL);
 
 	/* First check if we have the repository plist file. */
 	dict = prop_dictionary_internalize_from_file(XBPS_REPOLIST_PATH);
@@ -225,8 +214,10 @@ xbps_register_repository(const char *uri)
 	} else {
 		/* Append into the array, the plist file exists. */
 		array = prop_dictionary_get(dict, "repository-list");
-		if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
+		if (array == NULL)
 			return false;
+
+		assert(prop_object_type(array) == PROP_TYPE_ARRAY);
 
 		/* It seems that this object is already there */
 		if (xbps_find_string_in_array(array, uri)) {
@@ -265,16 +256,17 @@ xbps_unregister_repository(const char *uri)
 	struct callback_args *cb;
 	bool done = false;
 
-	if (uri == NULL)
-		return false;
+	assert(uri != NULL);
 
 	dict = prop_dictionary_internalize_from_file(XBPS_REPOLIST_PATH);
 	if (dict == NULL)
 		return false;
 
 	array = prop_dictionary_get(dict, "repository-list");
-	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
+	if (array == NULL)
 		return false;
+
+	assert(prop_object_type(array) == PROP_TYPE_ARRAY);
 
 	cb = malloc(sizeof(*cb));
 	if (cb == NULL) {
@@ -286,7 +278,7 @@ xbps_unregister_repository(const char *uri)
 	cb->number = -1;
 
 	done = xbps_callback_array_iter_in_dict(dict, "repository-list",
-		    xbps_remove_obj_from_array, cb);
+		    xbps_remove_string_from_array, cb);
 	if (done && cb->number >= 0) {
 		/* Found, remove it. */
 		prop_array_remove(array, cb->number);
@@ -314,7 +306,8 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 	const char *sep = NULL;
 	bool rundeps = false;
 
-	if (dict == NULL || prop_dictionary_count(dict) == 0)
+	assert(dict != NULL);
+	if (prop_dictionary_count(dict) == 0)
 		return;
 
 	iter = prop_dictionary_iterator(dict);
@@ -365,8 +358,7 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 	const char *repofile, *repoloc;
 	char plist[PATH_MAX];
 
-	if (prop_object_type(obj) != PROP_TYPE_STRING)
-		return false;
+	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
 	/* Get the location */
 	repofile = prop_string_cstring_nocopy(obj);
@@ -403,8 +395,7 @@ xbps_list_pkgs_in_dict(prop_object_t obj, void *arg, bool *loop_done)
 {
 	const char *pkgname, *version, *short_desc;
 
-	if (prop_object_type(obj) != PROP_TYPE_DICTIONARY)
-		return false;
+	assert(prop_object_type(obj) == PROP_TYPE_DICTIONARY);
 
 	prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
 	prop_dictionary_get_cstring_nocopy(obj, "version", &version);
@@ -423,8 +414,7 @@ xbps_list_strings_in_array2(prop_object_t obj, void *arg, bool *loop_done)
 	static uint16_t count;
 	const char *sep;
 
-	if (prop_object_type(obj) != PROP_TYPE_STRING)
-		return false;
+	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
 	if (arg == NULL) {
 		sep = "\n\t";
@@ -439,15 +429,16 @@ xbps_list_strings_in_array2(prop_object_t obj, void *arg, bool *loop_done)
 
 	printf("%s%s", prop_string_cstring_nocopy(obj), sep);
 	count++;
+
 	return true;
 }
 
 bool
 xbps_list_strings_in_array(prop_object_t obj, void *arg, bool *loop_done)
 {
-	if (prop_object_type(obj) != PROP_TYPE_STRING)
-		return false;
+	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
 	printf("%s\n", prop_string_cstring_nocopy(obj));
+
 	return true;
 }
