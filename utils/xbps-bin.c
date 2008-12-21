@@ -132,10 +132,10 @@ sanitize_localpath(const char *path)
 	if (strcmp(basenp, base) == 0)
 		goto fail2;
 
-	/* Sanitize path into a temporary path. */
 	strncpy(strtmp, dirnp, sizeof(strtmp) - 1);
 	strtmp[sizeof(strtmp) - 1] = '\0';
-	strncat(strtmp, "/", sizeof(strtmp) - strlen(strtmp) - 1);
+	if (strcmp(dirnp, "/"))
+		strncat(strtmp, "/", sizeof(strtmp) - strlen(strtmp) - 1);
 	strncat(strtmp, basenp, sizeof(strtmp) - strlen(strtmp) -1);
 
 	free(dir);
