@@ -50,11 +50,12 @@ usage(void)
 {
 	printf("Usage: xbps-bin [action] [arguments]\n\n"
 	" Available actions:\n"
-        "    repo-add, repo-list, repo-rm, show\n"
+        "    repo-add, repo-list, repo-rm, search, show\n"
 	" Action arguments:\n"
 	"    repo-add\t[<URI>]\n"
 	"    repo-list\t[none]\n"
 	"    repo-rm\t[<URI>]\n"
+	"    search\t[<string>]\n"
 	"    show\t[<pkgname>]\n"
 	"\n"
 	" Examples:\n"
@@ -62,6 +63,7 @@ usage(void)
 	"    $ xbps-bin repo-add http://www.location.org/xbps-repo\n"
 	"    $ xbps-bin repo-list\n"
 	"    $ xbps-bin repo-rm /path/to/directory\n"
+	"    $ xbps-bin search klibc\n"
 	"    $ xbps-bin show klibc\n");
 	exit(1);
 }
@@ -154,8 +156,7 @@ main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
 	repo_info_t *rinfo = NULL;
-	const char *dpkgidx;
-	char plist[PATH_MAX];
+	const char *dpkgidx, *repolist;
 
 	if (argc < 2)
 		usage();
@@ -170,13 +171,11 @@ main(int argc, char **argv)
 			exit(EINVAL);
 
 		/* Temp buffer to verify pkgindex file. */
-		strncpy(plist, dpkgidx, sizeof(plist) - 1);
-		plist[sizeof(plist) - 1] = '\0';
-		strncat(plist, "/", sizeof(plist) - strlen(plist) - 1);
-		strncat(plist, XBPS_PKGINDEX,
-		    sizeof(plist) - strlen(plist) - 1);
+		repolist = xbps_get_pkgidx_string(dpkgidx);
+		if (repolist == NULL)
+			exit(EINVAL);
 
-		dict = prop_dictionary_internalize_from_file(plist);
+		dict = prop_dictionary_internalize_from_file(repolist);
 		if (dict == NULL) {
 			printf("Directory %s does not contain any "
 			    "xbps pkgindex file.\n", dpkgidx);
@@ -188,7 +187,7 @@ main(int argc, char **argv)
 			exit(ENOMEM);
 
 		if (!pkgindex_getinfo(dict, rinfo)) {
-			printf("'%s' is incomplete.\n", plist);
+			printf("'%s' is incomplete.\n", repolist);
 			free(rinfo);
 			exit(EINVAL);
 		}
@@ -232,6 +231,14 @@ main(int argc, char **argv)
 			exit(EINVAL);
 		}
 
+	} else if (strcasecmp(argv[1], "search") == 0) {
+		/* Search for a package by looking at short_desc. */
+		if (argc != 3)
+			usage();
+
+		xbps_callback_array_iter_in_dict(getrepolist_dict(),
+		    "repository-list", xbps_search_string_in_pkgs, argv[2]);
+
 	} else if (strcasecmp(argv[1], "show") == 0) {
 		/* Shows info about a binary package. */
 		if (argc != 3)
@@ -244,6 +251,11 @@ main(int argc, char **argv)
 			    argv[2]);
 			exit(EINVAL);
 		}
+
+	} else if (strcasecmp(argv[1], "install") == 0) {
+		/* Installs a binary package and required deps. */
+		if (argc != 3)
+			usage();
 
 	} else {
 		usage();

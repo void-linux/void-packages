@@ -132,5 +132,8 @@ bool xbps_list_strings_in_array(prop_object_t, void *, bool *);
 bool xbps_list_strings_in_array2(prop_object_t, void *, bool *);
 bool xbps_remove_string_from_array(prop_object_t, void *, bool *);
 bool xbps_show_pkg_info_from_repolist(prop_object_t obj, void *, bool *);
+bool xbps_show_pkg_namedesc(prop_object_t, void *, bool *);
+bool xbps_search_string_in_pkgs(prop_object_t, void *, bool *);
+const char *xbps_get_pkgidx_string(const char *);
 
 #endif /* !_XBPS_PLIST_H_ */
