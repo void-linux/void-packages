@@ -53,10 +53,6 @@ stow_pkg()
 
 	cd $destdir || exit 1
 
-	# Write pkg metadata.
-	. $XBPS_SHUTILSDIR/binpkg.sh
-	xbps_write_metadata_pkg
-
 	# Copy files into masterdir.
 	for i in $(echo *); do
 		cp -ar ${i} $XBPS_MASTERDIR

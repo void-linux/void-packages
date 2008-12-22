@@ -108,6 +108,10 @@ install_pkg()
 	. $XBPS_SHUTILSDIR/install_funcs.sh
 	install_src_phase
 
+	# Always write metadata to package's destdir.
+	. $XBPS_SHUTILSDIR/binpkg.sh
+	xbps_write_metadata_pkg
+
 	#
 	# Do not stow package if it wasn't requested.
 	#
