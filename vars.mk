@@ -1,7 +1,7 @@
 # Common variables.
 
 PREFIX	?= /usr/local
-BINDIR	?= $(PREFIX)/bin
+SBINDIR	?= $(PREFIX)/sbin
 LIBDIR	?= $(PREFIX)/lib
 
 CPPFLAGS += -I../include

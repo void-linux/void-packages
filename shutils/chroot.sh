@@ -122,6 +122,28 @@ rebuild_ldso_cache()
 	echo " done."
 }
 
+install_xbps_utils()
+{
+	local needed=
+	local xbps_prefix=$XBPS_MASTERDIR/usr/local
+
+	for f in bin cmpver digest pkgdb; do
+		if [ ! -x $xbps_prefix/sbin/xbps-${f} ]; then
+			needed=yes
+		fi
+	done
+
+	if [ -n "$needed" ]; then
+		echo "=> Building and installing xbps utils."
+		chroot $XBPS_MASTERDIR sh -c \
+			"echo /usr/local/lib > /etc/ld.so.conf"
+		chroot $XBPS_MASTERDIR make -C /xbps
+		chroot $XBPS_MASTERDIR make -C /xbps install
+		chroot $XBPS_MASTERDIR make -C /xbps clean
+		rebuild_ldso_cache
+	fi
+}
+
 xbps_chroot_handler()
 {
 	local action="$1"
@@ -135,6 +157,8 @@ xbps_chroot_handler()
 
 	rebuild_ldso_cache
 	mount_chroot_fs
+	install_xbps_utils
+
 	if [ "$action" = "chroot" ]; then
 		env in_chroot=yes chroot $XBPS_MASTERDIR /bin/bash
 	else

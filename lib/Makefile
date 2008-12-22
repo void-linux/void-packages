@@ -16,6 +16,10 @@ $(LIBXBPS): sha256.o plist.o
 	-ln -sf $(LIBXBPS_SO) $(LIBXBPS).$(MAJOR)
 	-ln -sf $(LIBXBPS_SO) $(LIBXBPS)
 
+install: $(LIBXBPS)
+	install -d $(LIBDIR)
+	install -m 644 $(LIBXBPS_SO) $(LIBDIR)
+
 .PHONY: clean
 clean: clean-lib clean-objs
 

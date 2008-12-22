@@ -1,7 +1,7 @@
 include ../vars.mk
 
 EXTRA_CFLAGS = -funroll-all-loops -ftree-loop-linear
-LDFLAGS	+= -L../lib -Wl,-rpath $$(pwd)/../lib -lxbps
+LDFLAGS	+= -L../lib -lxbps
 
 BINS = xbps-bin xbps-cmpver xbps-digest xbps-pkgdb
 
@@ -30,4 +30,5 @@ clean-objs:
 	-rm -f *.o
 
 install: $(BINS)
-	install -D $(BINS)
+	install -d $(SBINDIR)
+	install -m 755 $(BINS) $(SBINDIR)

@@ -34,7 +34,7 @@ verify_sha256_cksum()
 
 	[ -z "$file" -o -z "$cksum" ] && return 1
 
-	filesum=$($XBPS_DIGEST_CMD $XBPS_SRCDISTDIR/$file)
+	filesum=$(xbps-digest $XBPS_SRCDISTDIR/$file)
 	if [ "$origsum" != "$filesum" ]; then
 		msg_error "SHA256 checksum doesn't match for $file."
 	fi

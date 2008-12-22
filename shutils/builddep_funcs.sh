@@ -207,7 +207,7 @@ check_installed_pkg()
 
 	iver="$($XBPS_REGPKGDB_CMD version $pkgname)"
 	if [ -n "$iver" ]; then
-		$XBPS_CMPVER_CMD $pkgname-$iver $pkgname-$reqver
+		xbps-cmpver $pkgname-$iver $pkgname-$reqver
 		[ $? -eq 0 ] && return 0
 	fi
 
