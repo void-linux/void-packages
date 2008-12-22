@@ -11,7 +11,7 @@ LIBXBPS_LDFLAGS	= -lprop -shared -Wl,-soname,$(LIBXBPS).$(MAJOR)
 all: $(LIBXBPS)
 .PHONY: all
 
-$(LIBXBPS): sha256.o plist.o
+$(LIBXBPS): sha256.o plist.o humanize_number.o
 	$(CC) $(LIBXBPS_LDFLAGS) $^ -o $(LIBXBPS_SO)
 	-ln -sf $(LIBXBPS_SO) $(LIBXBPS).$(MAJOR)
 	-ln -sf $(LIBXBPS_SO) $(LIBXBPS)

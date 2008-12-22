@@ -30,18 +30,19 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/cdefs.h>
-#if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: humanize_number.c,v 1.14 2008/04/28 20:22:59 martin Exp $");
-#endif /* LIBC_SCCS and not lint */
-
-#include "namespace.h"
 #include <assert.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <locale.h>
+
+#define	HN_DECIMAL		0x01
+#define	HN_NOSPACE		0x02
+#define	HN_B			0x04
+#define	HN_DIVISOR_1000		0x08
+#define	HN_GETSCALE		0x10
+#define	HN_AUTOSCALE		0x20
 
 int
 humanize_number(char *buf, size_t len, int64_t bytes,
@@ -52,9 +53,9 @@ humanize_number(char *buf, size_t len, int64_t bytes,
 	int64_t	divisor, max;
 	size_t	baselen;
 
-	_DIAGASSERT(buf != NULL);
-	_DIAGASSERT(suffix != NULL);
-	_DIAGASSERT(scale >= 0);
+	assert(buf != NULL);
+	assert(suffix != NULL);
+	assert(scale >= 0);
 
 	if (flags & HN_DIVISOR_1000) {
 		/* SI for decimal multiplies */
