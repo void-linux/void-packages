@@ -36,8 +36,12 @@ install_src_phase()
 	[ -z $pkg ] && [ -z $pkgname ] && return 1
 	#
 	# There's nothing we can do if we are a meta template.
+	# Just creating the dir is enough to write the package metadata.
 	#
-	[ "$build_style" = "meta-template" ] && return 0
+	if [ "$build_style" = "meta-template" ]; then
+		mkdir -p $XBPS_DESTDIR/$pkgname-$version
+		return 0
+	fi
 
 	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]"
 
