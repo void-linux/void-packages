@@ -387,7 +387,7 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 	obj = prop_dictionary_get(dict, "installed_size");
 	if (obj && prop_object_type(obj) == PROP_TYPE_NUMBER) {
 		printf("Installed size: ");
-		rv = humanize_number(size, 5,
+		rv = xbps_humanize_number(size, 5,
 		    (int64_t)prop_number_unsigned_integer_value(obj),
 		    "", HN_AUTOSCALE, HN_NOSPACE);
 		if (rv == -1)

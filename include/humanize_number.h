@@ -38,6 +38,6 @@
 #define HN_GETSCALE		0x10
 #define HN_AUTOSCALE		0x20
 
-int humanize_number(char *, size_t, int64_t, const char *, int, int);
+int xbps_humanize_number(char *, size_t, int64_t, const char *, int, int);
 
 #endif
