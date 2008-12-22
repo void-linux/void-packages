@@ -64,7 +64,7 @@ write_repo_pkgindex()
 		propsf="./var/cache/xbps/metadata/$pkgname/props.plist"
 		cd $tmppkgdir && tar xfjp $i $propsf
 		if [ $? -ne 0 ]; then
-			msg_warn "Couldn't extract $i metadata file!"
+			msg_warn "Couldn't extract $(basename $i) metadata!"
 			continue
 		fi
 		write_repo_pkgindex_dict $propsf $pkgindexf $(basename $i)
@@ -157,7 +157,7 @@ write_repo_pkgindex_dict()
 			echo "<key>filename</key>" >> $tmpdictf
 			echo "<string>$binpkgf</string>" >> $tmpdictf
 			echo "<key>filename-sha256</key>" >> $tmpdictf
-			echo "<string>$($XBPS_DIGEST_CMD $binpkg)</string>" \
+			echo "<string>$(xbps-digest $binpkg)</string>" \
 			    >> $tmpdictf
 			continue
 		# Continue until found.
