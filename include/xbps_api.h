@@ -48,4 +48,7 @@
 /* SHA256 implementation */
 #include "sha256.h"
 
+/* NetBSD humanize_number() */
+#include "humanize_number.h"
+
 #endif /* !_XBPS_API_H_ */

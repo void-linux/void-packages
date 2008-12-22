@@ -373,6 +373,7 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 {
 	prop_object_t obj;
 	const char *sep = NULL;
+	char size[64];
 
 	assert(dict != NULL);
 	if (prop_dictionary_count(dict) == 0)
@@ -383,9 +384,12 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 		printf("Package: %s\n", prop_string_cstring_nocopy(obj));
 
 	obj = prop_dictionary_get(dict, "installed_size");
-	if (obj && prop_object_type(obj) == PROP_TYPE_NUMBER)
-		printf("Installed size: %zu bytes\n",
-		    prop_number_unsigned_integer_value(obj));
+	if (obj && prop_object_type(obj) == PROP_TYPE_NUMBER) {
+		humanize_number(size, 5,
+		    (int64_t)prop_number_unsigned_integer_value(obj),
+		    "", HN_AUTOSCALE, HN_B | HN_NOSPACE | HN_DECIMAL);
+		printf("Installed size: %s\n", size);
+	}
 
 	obj = prop_dictionary_get(dict, "maintainer");
 	if (obj && prop_object_type(obj) == PROP_TYPE_STRING)
