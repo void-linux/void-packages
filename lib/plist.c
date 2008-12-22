@@ -155,11 +155,10 @@ xbps_get_array_iter_from_dict(prop_dictionary_t dict, const char *key)
 	return prop_array_iterator(array);
 }
 
-const char *
+char *
 xbps_get_pkgidx_string(const char *repofile)
 {
-	const char *res;
-	char plist[PATH_MAX], *len;
+	char plist[PATH_MAX], *len, *result;
 
 	assert(repofile != NULL);
 
@@ -171,9 +170,13 @@ xbps_get_pkgidx_string(const char *repofile)
 	plist[sizeof(plist) - 1] = '\0';
 	strncat(plist, "/", sizeof(plist) - strlen(plist) - 1);
 	strncat(plist, XBPS_PKGINDEX, sizeof(plist) - strlen(plist) - 1);
-	res = plist;
 
-	return res;
+	result = malloc(strlen(plist));
+	if (result == NULL)
+		return NULL;
+
+	strncpy(result, plist, strlen(plist));
+	return result;
 }
 
 bool
@@ -459,7 +462,8 @@ bool
 xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 {
 	prop_dictionary_t dict;
-	const char *repofile, *plist;
+	const char *repofile;
+	char *plist;
 
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
@@ -473,12 +477,16 @@ xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 		return false;
 
 	dict = prop_dictionary_internalize_from_file(plist);
-	if (dict == NULL || prop_dictionary_count(dict) == 0)
+	if (dict == NULL || prop_dictionary_count(dict) == 0) {
+		free(plist);
 		return false;
+	}
 
 	printf("From %s repository ...\n", repofile);
 	xbps_callback_array_iter_in_dict(dict, "packages",
 	    xbps_show_pkg_namedesc, arg);
+
+	free(plist);
 
 	return true;
 }
@@ -488,7 +496,8 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 {
 	prop_dictionary_t dict, pkgdict;
 	prop_string_t oloc;
-	const char *repofile, *repoloc, *plist;
+	const char *repofile, *repoloc;
+	char *plist;
 
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
@@ -501,8 +510,12 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 		return false;
 
 	dict = prop_dictionary_internalize_from_file(plist);
-	if (dict == NULL || prop_dictionary_count(dict) == 0)
+	if (dict == NULL || prop_dictionary_count(dict) == 0) {
+		free(plist);
 		return false;
+	}
+
+	free(plist);
 	pkgdict = xbps_find_pkg_in_dict(dict, arg);
 	if (pkgdict == NULL)
 		return false;

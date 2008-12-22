@@ -114,9 +114,9 @@ getrepolist_dict(void)
 static const char *
 sanitize_localpath(const char *path)
 {
-	const char *res;
-	char strtmp[PATH_MAX];
+	static char strtmp[PATH_MAX];
 	char *dirnp, *basenp, *dir, *base;
+	const char *res;
 
 	dir = strdup(path);
 	if (dir == NULL)
@@ -124,15 +124,15 @@ sanitize_localpath(const char *path)
 
 	base = strdup(path);
 	if (base == NULL)
-		goto fail;
+		goto fail2;
 
 	dirnp = dirname(dir);
 	if (strcmp(dirnp, ".") == 0)
-		goto fail2;
+		goto fail;
 
 	basenp = basename(base);
 	if (strcmp(basenp, base) == 0)
-		goto fail2;
+		goto fail;
 
 	strncpy(strtmp, dirnp, sizeof(strtmp) - 1);
 	strtmp[sizeof(strtmp) - 1] = '\0';
@@ -143,11 +143,12 @@ sanitize_localpath(const char *path)
 	free(dir);
 	free(base);
 	res = strtmp;
+
 	return res;
 fail:
-	free(dir);
-fail2:
 	free(base);
+fail2:
+	free(dir);
 	return NULL;
 }
 
@@ -156,7 +157,8 @@ main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
 	repo_info_t *rinfo = NULL;
-	const char *dpkgidx, *repolist;
+	const char *dpkgidx;
+	char *repolist;
 
 	if (argc < 2)
 		usage();
@@ -179,18 +181,24 @@ main(int argc, char **argv)
 		if (dict == NULL) {
 			printf("Directory %s does not contain any "
 			    "xbps pkgindex file.\n", dpkgidx);
+			free(repolist);
 			exit(EINVAL);
 		}
 
 		rinfo = malloc(sizeof(*rinfo));
-		if (rinfo == NULL)
+		if (rinfo == NULL) {
+			free(repolist);
 			exit(ENOMEM);
+		}
 
 		if (!pkgindex_getinfo(dict, rinfo)) {
 			printf("'%s' is incomplete.\n", repolist);
 			free(rinfo);
+			free(repolist);
 			exit(EINVAL);
 		}
+
+		free(repolist);
 
 		if (!xbps_register_repository(dpkgidx)) {
 			printf("ERROR: couldn't register repository (%s)\n",
