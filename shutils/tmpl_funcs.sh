@@ -147,5 +147,6 @@ prepare_tmpl()
 		export PATH="$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin"
 		export PATH="$PATH:$XBPS_MASTERDIR/usr/bin:$XBPS_MASTERDIR/usr/sbin"
 		export PATH="$PATH:/bin:/sbin:/usr/bin:/usr/sbin"
+		export PATH="$PATH:/usr/local/sbin"
 	fi
 }
