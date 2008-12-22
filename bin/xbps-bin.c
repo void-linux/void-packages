@@ -37,7 +37,7 @@ typedef struct repository_info {
 	const char *index_version;
 	const char *location_local;
 	const char *location_remote;
-	size_t total_pkgs;
+	uint64_t total_pkgs;
 } repo_info_t;
 
 static const char *sanitize_localpath(const char *);
@@ -207,7 +207,7 @@ main(int argc, char **argv)
 			exit(EINVAL);
 		}
 
-		printf("Added repository at %s (%s) with %zu packages.\n",
+		printf("Added repository at %s (%s) with %ju packages.\n",
 		       rinfo->location_local, rinfo->index_version,
 		       rinfo->total_pkgs);
 		free(rinfo);

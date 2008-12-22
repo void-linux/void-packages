@@ -391,7 +391,7 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 		    (int64_t)prop_number_unsigned_integer_value(obj),
 		    "", HN_AUTOSCALE, HN_NOSPACE);
 		if (rv == -1)
-			printf("%zu\n",
+			printf("%ju\n",
 			    prop_number_unsigned_integer_value(obj));
 		else
 			printf("%s\n", size);
