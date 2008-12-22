@@ -125,8 +125,11 @@ xbps_make_binpkg()
 	cd $destdir || exit 1
 
 	run_rootcmd tar cfjp $XBPS_DESTDIR/$binpkg .
-	[ ! -d $XBPS_PACKAGESDIR ] && mkdir -p $XBPS_PACKAGESDIR
-	mv -f $XBPS_DESTDIR/$binpkg $XBPS_PACKAGESDIR
+	if [ $? -eq 0 ]; then
+		[ ! -d $XBPS_PACKAGESDIR ] && mkdir -p $XBPS_PACKAGESDIR
+		mv -f $XBPS_DESTDIR/$binpkg $XBPS_PACKAGESDIR
+		echo "=> Built package: $binpkg"
+	fi
 
-	echo "=> Built package: $binpkg"
+	return $?
 }
