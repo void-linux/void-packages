@@ -42,13 +42,9 @@
 /* Default PATH for the plist file to register installed packages. */
 #define XBPS_REGPKGDB_DEFPATH	"/var/cache/xbps/regpkgdb.plist"
 
-/* API to handle plist files */
-#include "plist.h"
-
-/* SHA256 implementation */
-#include "sha256.h"
-
-/* NetBSD humanize_number() */
 #include "humanize_number.h"
+#include "plist.h"
+#include "sha256.h"
+#include "queue.h"
 
 #endif /* !_XBPS_API_H_ */
