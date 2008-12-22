@@ -35,8 +35,7 @@ stow_pkg()
 
 	[ -z "$pkg" ] && return 2
 
-	if [ $(id -u) -ne 0 ] && \
-	   [ ! -w $destdir -o ! -w $XBPS_MASTERDIR ]; then
+	if [ $(id -u) -ne 0 ] && [ ! -w $XBPS_MASTERDIR ]; then
 		msg_error "cannot stow $pkg! (permission denied)"
 	fi
 
