@@ -197,6 +197,7 @@ mount_chroot_fs()
 					;;
 				*) blah=/$f;;
 			esac
+			[ ! -d $blah ] && continue
 			mount --bind $blah $XBPS_MASTERDIR/$f
 			if [ $? -eq 0 ]; then
 				echo 1 > $XBPS_MASTERDIR/.${f}_mount_bind_done
