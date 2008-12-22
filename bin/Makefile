@@ -32,3 +32,4 @@ clean-objs:
 install: $(BINS)
 	install -d $(SBINDIR)
 	install -m 755 $(BINS) $(SBINDIR)
+	install -m 755 xbps-src.sh $(SBINDIR)/xbps-src

@@ -10,7 +10,6 @@ all:
 
 .PHONY: install
 install:
-	install -D xbps-src.sh $(SBINDIR)/xbps-src
 	for dir in $(SUBDIRS); do		\
 		$(MAKE) -C $$dir install;	\
 	done
