@@ -75,9 +75,9 @@ int chkpkg(const char *a0, const char *b0)
 int main(int argc, char **argv)
 {
 	if (argc<3) {
-		printf("Usage: ./xbps-cmpver [old] [new]\n");
-		printf(" ./xbpks-cmpver foo-1.2 foo-2.2   # $? = 1\n");
-		printf(" ./xbpks-cmpver foo-1.2 foo-1.2   # $? = 0\n");
+		printf("Usage: xbps-cmpver [old] [new]\n");
+		printf(" xbpks-cmpver foo-1.2 foo-2.2   # $? = 1\n");
+		printf(" xbpks-cmpver foo-1.2 foo-1.2   # $? = 0\n");
 		return 1;
 	}
 	return (chkpkg(argv[1], argv[2]) > 0)?1:0;
