@@ -158,24 +158,26 @@ xbps_get_array_iter_from_dict(prop_dictionary_t dict, const char *key)
 char *
 xbps_get_pkgidx_string(const char *repofile)
 {
-	char plist[PATH_MAX], *len, *result;
+	char plist[PATH_MAX], *dest, *result;
+	size_t len = 0;
 
 	assert(repofile != NULL);
 
 	/* Add full path to pkg-index.plist file */
-	len = strncpy(plist, repofile, sizeof(plist) - 1);
-	if (sizeof(*len) >= sizeof(plist))
+	dest = strncpy(plist, repofile, sizeof(plist) - 1);
+	if (sizeof(*dest) >= sizeof(plist))
 		return NULL;
 
 	plist[sizeof(plist) - 1] = '\0';
 	strncat(plist, "/", sizeof(plist) - strlen(plist) - 1);
 	strncat(plist, XBPS_PKGINDEX, sizeof(plist) - strlen(plist) - 1);
 
-	result = malloc(strlen(plist));
+	len = strlen(plist);
+	result = malloc(len + 1);
 	if (result == NULL)
 		return NULL;
 
-	strncpy(result, plist, strlen(plist));
+	strncpy(result, plist, len);
 	return result;
 }
 
