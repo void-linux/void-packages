@@ -44,8 +44,10 @@ xbps_add_obj_to_dict(prop_dictionary_t dict, prop_object_t obj,
 {
 	assert(dict != NULL || obj != NULL || key != NULL);
 
-	if (!prop_dictionary_set(dict, key, obj))
+	if (!prop_dictionary_set(dict, key, obj)) {
+		prop_object_release(dict);
 		return false;
+	}
 
 	prop_object_release(obj);
 	return true;
@@ -264,29 +266,30 @@ xbps_register_repository(const char *uri)
 		/* Append into the array, the plist file exists. */
 		array = prop_dictionary_get(dict, "repository-list");
 		if (array == NULL)
-			return false;
+			goto fail;
 
 		assert(prop_object_type(array) == PROP_TYPE_ARRAY);
 
 		/* It seems that this object is already there */
 		if (xbps_find_string_in_array(array, uri)) {
 			errno = EEXIST;
-			return false;
+			goto fail;
 		}
 
 		obj = prop_string_create_cstring(uri);
 		if (!xbps_add_obj_to_array(array, obj)) {
 			prop_object_release(obj);
-			return false;
+			goto fail;
 		}
 
 		/* Write dictionary into plist file. */
 		if (!prop_dictionary_externalize_to_file(dict, plist)) {
 			prop_object_release(obj);
-			return false;
+			goto fail;
 		}
 
 		prop_object_release(obj);
+		prop_object_release(dict);
 	}
 
 	return true;
@@ -317,13 +320,16 @@ xbps_unregister_repository(const char *uri)
 		return false;
 
 	array = prop_dictionary_get(dict, "repository-list");
-	if (array == NULL)
+	if (array == NULL) {
+		prop_object_release(dict);
 		return false;
+	}
 
 	assert(prop_object_type(array) == PROP_TYPE_ARRAY);
 
 	cb = malloc(sizeof(*cb));
 	if (cb == NULL) {
+		prop_object_release(dict);
 		errno = ENOMEM;
 		return false;
 	}
@@ -340,6 +346,7 @@ xbps_unregister_repository(const char *uri)
 		/* Update plist file. */
 		if (prop_dictionary_externalize_to_file(dict, plist)) {
 			free(cb);
+			prop_object_release(dict);
 			return true;
 		}
 	} else {
@@ -347,6 +354,7 @@ xbps_unregister_repository(const char *uri)
 		errno = ENODEV;
 	}
 
+	prop_object_release(dict);
 	free(cb);
 	return false;
 }
@@ -476,6 +484,7 @@ xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 	printf("From %s repository ...\n", repofile);
 	xbps_callback_array_iter_in_dict(dict, "packages",
 	    xbps_show_pkg_namedesc, arg);
+	prop_object_release(dict);
 
 	return true;
 }
@@ -502,8 +511,10 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 		return false;
 
 	pkgdict = xbps_find_pkg_in_dict(dict, arg);
-	if (pkgdict == NULL)
+	if (pkgdict == NULL) {
+		prop_object_release(dict);
 		return false;
+	}
 
 	oloc = prop_dictionary_get(dict, "location-remote");
 	if (oloc == NULL)
@@ -511,12 +522,15 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 
 	if (oloc && prop_object_type(oloc) == PROP_TYPE_STRING)
 		repoloc = prop_string_cstring_nocopy(oloc);
-	else
+	else {
+		prop_object_release(dict);
 		return false;
+	}
 
 	printf("Repository: %s\n", repoloc);
 	xbps_show_pkg_info(pkgdict);
 	*loop_done = true;
+	prop_object_release(dict);
 
 	return true;
 }

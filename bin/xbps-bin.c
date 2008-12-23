@@ -211,6 +211,7 @@ main(int argc, char **argv)
 		printf("Added repository at %s (%s) with %ju packages.\n",
 		       rinfo->location_local, rinfo->index_version,
 		       rinfo->total_pkgs);
+
 		prop_object_release(dict);
 		free(rinfo);
 
@@ -260,6 +261,7 @@ main(int argc, char **argv)
 		dict = getrepolist_dict();
 		if (!xbps_callback_array_iter_in_dict(dict, "repository-list",
 		    xbps_show_pkg_info_from_repolist, argv[2])) {
+			prop_object_release(dict);
 			printf("ERROR: unable to locate package '%s'.\n",
 			    argv[2]);
 			exit(EINVAL);

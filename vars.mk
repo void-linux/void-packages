@@ -6,4 +6,4 @@ LIBDIR	?= $(PREFIX)/lib
 
 CPPFLAGS += -I../include
 CFLAGS += -Wstack-protector -fstack-protector-all
-CFLAGS += -O2 -Wall -Werror -fPIC -DPIC
+CFLAGS += -ggdb -O2 -Wall -Werror -fPIC -DPIC
