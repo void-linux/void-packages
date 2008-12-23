@@ -279,17 +279,16 @@ xbps_register_repository(const char *uri)
 		obj = prop_string_create_cstring(uri);
 		if (!xbps_add_obj_to_array(array, obj)) {
 			prop_object_release(obj);
-			goto fail;
+			return false;
 		}
 
 		/* Write dictionary into plist file. */
 		if (!prop_dictionary_externalize_to_file(dict, plist)) {
 			prop_object_release(obj);
-			goto fail;
+			return false;
 		}
 
 		prop_object_release(obj);
-		prop_object_release(dict);
 	}
 
 	return true;
