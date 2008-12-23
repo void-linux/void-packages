@@ -1,7 +1,7 @@
 include ../vars.mk
 
 EXTRA_CFLAGS = -funroll-all-loops -ftree-loop-linear
-LDFLAGS	+= -L../lib -lxbps
+LDFLAGS	+= -L../lib -L$(PREFIX)/lib -lxbps
 
 BINS = xbps-bin xbps-cmpver xbps-digest xbps-pkgdb
 
@@ -12,7 +12,7 @@ xbps-bin: xbps-bin.o
 	$(CC) $(LDFLAGS) $^ -o $@
 
 xbps-cmpver: xbps-cmpver.o
-	$(CC) $^ -o $@
+	$(CC) $(LDFLAGS) $^ -o $@
 
 xbps-digest: xbps-digest.o
 	$(CC) $(EXTRA_CFLAGS) $(LDFLAGS) $^ -o $@

@@ -100,7 +100,7 @@ set_defvars()
 	: ${XBPS_TEMPLATESDIR:=$XBPS_DISTRIBUTIONDIR/templates}
 	: ${XBPS_HELPERSDIR:=$XBPS_TEMPLATESDIR/helpers}
 	: ${XBPS_CACHEDIR:=$XBPS_MASTERDIR/var/cache/xbps}
-	: ${XBPS_REGPKGDB_PATH:=$XBPS_CACHEDIR/regpkgdb.plist}
+	: ${XBPS_META_PATH:=$XBPS_CACHEDIR/}
 	: ${XBPS_PKGMETADIR:=$XBPS_CACHEDIR/metadata}
 	: ${XBPS_SHUTILSDIR:=$XBPS_DISTRIBUTIONDIR/shutils}
 
@@ -110,8 +110,7 @@ set_defvars()
 		[ ! -d "$val" ] &&  msg_error "cannot find $i, aborting."
 	done
 
-	XBPS_REGPKGDB_CMD="env XBPS_REGPKGDB_PATH=$XBPS_REGPKGDB_PATH \
-		xbps-pkgdb"
+	XBPS_REGPKGDB_CMD="env XBPS_META_PATH=$XBPS_META_PATH xbps-pkgdb"
 }
 
 #

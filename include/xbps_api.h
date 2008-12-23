@@ -28,19 +28,30 @@
 
 #include <stdio.h>
 #include <inttypes.h>
-#define NDEBUG
 #include <assert.h>
 
 #include <prop/proplib.h>
+#include <archive.h>
+#include <archive_entry.h>
 
-/* Default PATH for the repositories plist file. */
-#define XBPS_REPOLIST_PATH	"/var/cache/xbps/repositories.plist"
+/* Default root PATH for xbps to store metadata info. */
+#define XBPS_META_PATH		"/var/cache/xbps/"
+
+/* Filename for the repositories plist file. */
+#define XBPS_REPOLIST		"repositories.plist"
 
 /* Filename of the package index plist for a repository. */
 #define XBPS_PKGINDEX		"pkg-index.plist"
 
-/* Default PATH for the plist file to register installed packages. */
-#define XBPS_REGPKGDB_DEFPATH	"/var/cache/xbps/regpkgdb.plist"
+/* Filename of the packages register. */
+#define XBPS_REGPKGDB		"regpkgdb.plist"
+
+/* Return values for xbps_install_binary_pkg() */
+#define XBPS_PKG_ENOTINREPO	1	/* Not found in repos */
+#define XBPS_PKG_EEXIST		2	/* Already installed */
+#define XBPS_PKG_EINDEPS	3	/* Check deps failed */
+#define XBPS_PKG_ECHDIRDEST	4	/* chdir() to dest failed */
+#define XBPS_PKG_EEMPTY		5	/* empty pkg list */
 
 #include "humanize_number.h"
 #include "plist.h"

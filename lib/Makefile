@@ -6,12 +6,14 @@ MINOR		= 0
 MICRO		= 0
 LIBXBPS_SO	= $(LIBXBPS).$(MAJOR).$(MINOR).$(MICRO)
 LIBXBPS		= libxbps.so
-LIBXBPS_LDFLAGS	= -lprop -shared -Wl,-soname,$(LIBXBPS).$(MAJOR)
+LIBXBPS_LDFLAGS	= -larchive -lprop -shared -Wl,-soname,$(LIBXBPS).$(MAJOR)
+
+OBJECTS	= cmpver.o depends.o humanize_number.o install.o plist.o sha256.o
 
 all: $(LIBXBPS)
 .PHONY: all
 
-$(LIBXBPS): sha256.o plist.o humanize_number.o
+$(LIBXBPS): $(OBJECTS)
 	$(CC) $(LIBXBPS_LDFLAGS) $^ -o $(LIBXBPS_SO)
 	-ln -sf $(LIBXBPS_SO) $(LIBXBPS).$(MAJOR)
 	-ln -sf $(LIBXBPS_SO) $(LIBXBPS)

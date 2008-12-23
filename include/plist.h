@@ -140,13 +140,22 @@ void xbps_show_pkg_info(prop_dictionary_t);
 /*
  * Internal functions.
  */
-bool xbps_list_pkgs_in_dict(prop_object_t, void *, bool *);
-bool xbps_list_strings_in_array(prop_object_t, void *, bool *);
-bool xbps_list_strings_in_array2(prop_object_t, void *, bool *);
-bool xbps_remove_string_from_array(prop_object_t, void *, bool *);
-bool xbps_show_pkg_info_from_repolist(prop_object_t obj, void *, bool *);
-bool xbps_show_pkg_namedesc(prop_object_t, void *, bool *);
-bool xbps_search_string_in_pkgs(prop_object_t, void *, bool *);
-char *xbps_get_pkgidx_string(const char *);
+bool	xbps_list_pkgs_in_dict(prop_object_t, void *, bool *);
+bool	xbps_list_strings_in_array(prop_object_t, void *, bool *);
+bool	xbps_list_strings_in_array2(prop_object_t, void *, bool *);
+bool	xbps_remove_string_from_array(prop_object_t, void *, bool *);
+bool	xbps_show_pkg_info_from_repolist(prop_object_t obj, void *, bool *);
+bool	xbps_show_pkg_namedesc(prop_object_t, void *, bool *);
+bool	xbps_search_string_in_pkgs(prop_object_t, void *, bool *);
+int	xbps_install_binary_pkg(const char *, const char *);
+int	xbps_unpack_binary_pkg(const char *, int (*cb)(struct archive *));
+int	xbps_cmpver_packages(const char *, const char *);
+int	xbps_cmpver_versions(const char *, const char *);
+int	xbps_check_reqdeps_in_pkg(const char *, prop_dictionary_t);
+
+/* Utils */
+const char *	xbps_get_pkg_version(const char *);
+char *		xbps_get_pkg_name(const char *);
+bool		xbps_append_full_path(char *, const char *, const char *);
 
 #endif /* !_XBPS_PLIST_H_ */

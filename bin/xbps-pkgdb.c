@@ -125,26 +125,17 @@ main(int argc, char **argv)
 	prop_array_t dbarray = NULL;
 	pkg_data_t pkg;
 	const char *version;
-	char dbfile[PATH_MAX], *dbfileenv, *tmppath, *in_chroot_env;
+	char dbfile[PATH_MAX], *in_chroot_env;
 	bool in_chroot = false;
 
 	if (argc < 2)
 		usage();
 
-	if ((dbfileenv = getenv("XBPS_REGPKGDB_PATH")) != NULL) {
-		/* Use path as defined by XBPS_REGPKGDB_PATH env var */
-		tmppath = strncpy(dbfile, dbfileenv, sizeof(dbfile) - 1);
-		if (sizeof(*tmppath) >= sizeof(dbfile))
-			exit(1);
-	} else {
-		/* Use default path */
-		tmppath =
-		    strncpy(dbfile, XBPS_REGPKGDB_DEFPATH, sizeof(dbfile) - 1);
-		if (sizeof(*tmppath) >= sizeof(dbfile))
-			exit(1);
+	if (!xbps_append_full_path(dbfile, NULL, XBPS_REGPKGDB)) {
+		printf("=> ERROR: couldn't find regpkdb file (%s)\n",
+		    strerror(errno));
+		exit(EINVAL);
 	}
-	/* nul terminate string */
-	dbfile[sizeof(dbfile) - 1] = '\0';
 
 	in_chroot_env = getenv("in_chroot");
 	if (in_chroot_env != NULL)

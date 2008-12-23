@@ -155,32 +155,6 @@ xbps_get_array_iter_from_dict(prop_dictionary_t dict, const char *key)
 	return prop_array_iterator(array);
 }
 
-char *
-xbps_get_pkgidx_string(const char *repofile)
-{
-	char plist[PATH_MAX], *dest, *result;
-	size_t len = 0;
-
-	assert(repofile != NULL);
-
-	/* Add full path to pkg-index.plist file */
-	dest = strncpy(plist, repofile, sizeof(plist) - 1);
-	if (sizeof(*dest) >= sizeof(plist))
-		return NULL;
-
-	plist[sizeof(plist) - 1] = '\0';
-	strncat(plist, "/", sizeof(plist) - strlen(plist) - 1);
-	strncat(plist, XBPS_PKGINDEX, sizeof(plist) - strlen(plist) - 1);
-
-	len = strlen(plist);
-	result = malloc(len + 1);
-	if (result == NULL)
-		return NULL;
-
-	strncpy(result, plist, len);
-	return result;
-}
-
 bool
 xbps_remove_pkg_dict_from_file(const char *pkg, const char *plist)
 {
@@ -250,11 +224,17 @@ xbps_register_repository(const char *uri)
 	prop_dictionary_t dict;
 	prop_array_t array = NULL;
 	prop_object_t obj;
+	char plist[PATH_MAX];
 
 	assert(uri != NULL);
 
+	if (!xbps_append_full_path(plist, NULL, XBPS_REPOLIST)) {
+		errno = EINVAL;
+		return false;
+	}
+
 	/* First check if we have the repository plist file. */
-	dict = prop_dictionary_internalize_from_file(XBPS_REPOLIST_PATH);
+	dict = prop_dictionary_internalize_from_file(plist);
 	if (dict == NULL) {
 		/* Looks like not, create it. */
 		dict = prop_dictionary_create();
@@ -276,8 +256,7 @@ xbps_register_repository(const char *uri)
 			goto fail;
 
 		/* Write dictionary into plist file. */
-		if (!prop_dictionary_externalize_to_file(dict,
-		    XBPS_REPOLIST_PATH))
+		if (!prop_dictionary_externalize_to_file(dict, plist))
 			goto fail;
 
 		prop_object_release(dict);
@@ -302,8 +281,7 @@ xbps_register_repository(const char *uri)
 		}
 
 		/* Write dictionary into plist file. */
-		if (!prop_dictionary_externalize_to_file(dict,
-		    XBPS_REPOLIST_PATH)) {
+		if (!prop_dictionary_externalize_to_file(dict, plist)) {
 			prop_object_release(obj);
 			return false;
 		}
@@ -324,11 +302,17 @@ xbps_unregister_repository(const char *uri)
 	prop_dictionary_t dict;
 	prop_array_t array;
 	struct callback_args *cb;
+	char plist[PATH_MAX];
 	bool done = false;
 
 	assert(uri != NULL);
 
-	dict = prop_dictionary_internalize_from_file(XBPS_REPOLIST_PATH);
+	if (!xbps_append_full_path(plist, NULL, XBPS_REPOLIST)) {
+		errno = EINVAL;
+		return false;
+	}
+
+	dict = prop_dictionary_internalize_from_file(plist);
 	if (dict == NULL)
 		return false;
 
@@ -354,8 +338,7 @@ xbps_unregister_repository(const char *uri)
 		prop_array_remove(array, cb->number);
 
 		/* Update plist file. */
-		if (prop_dictionary_externalize_to_file(dict,
-		    XBPS_REPOLIST_PATH)) {
+		if (prop_dictionary_externalize_to_file(dict, plist)) {
 			free(cb);
 			return true;
 		}
@@ -475,7 +458,7 @@ xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 {
 	prop_dictionary_t dict;
 	const char *repofile;
-	char *plist;
+	char plist[PATH_MAX];
 
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
@@ -483,22 +466,16 @@ xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 	repofile = prop_string_cstring_nocopy(obj);
 	assert(repofile != NULL);
 
-	/* Get string for pkg-index.plist with full path. */
-	plist = xbps_get_pkgidx_string(repofile);
-	if (plist == NULL)
+	if (!xbps_append_full_path(plist, repofile, XBPS_PKGINDEX))
 		return false;
 
 	dict = prop_dictionary_internalize_from_file(plist);
-	if (dict == NULL || prop_dictionary_count(dict) == 0) {
-		free(plist);
+	if (dict == NULL)
 		return false;
-	}
 
 	printf("From %s repository ...\n", repofile);
 	xbps_callback_array_iter_in_dict(dict, "packages",
 	    xbps_show_pkg_namedesc, arg);
-
-	free(plist);
 
 	return true;
 }
@@ -509,7 +486,7 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 	prop_dictionary_t dict, pkgdict;
 	prop_string_t oloc;
 	const char *repofile, *repoloc;
-	char *plist;
+	char plist[PATH_MAX];
 
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
@@ -517,17 +494,13 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 	repofile = prop_string_cstring_nocopy(obj);
 
 	/* Get string for pkg-index.plist with full path. */
-	plist = xbps_get_pkgidx_string(repofile);
-	if (plist == NULL)
+	if (!xbps_append_full_path(plist, repofile, XBPS_PKGINDEX))
 		return false;
 
 	dict = prop_dictionary_internalize_from_file(plist);
-	if (dict == NULL || prop_dictionary_count(dict) == 0) {
-		free(plist);
+	if (dict == NULL || prop_dictionary_count(dict) == 0)
 		return false;
-	}
 
-	free(plist);
 	pkgdict = xbps_find_pkg_in_dict(dict, arg);
 	if (pkgdict == NULL)
 		return false;
