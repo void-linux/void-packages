@@ -163,7 +163,6 @@ main(int argc, char **argv)
 	prop_dictionary_t dict;
 	repo_info_t *rinfo = NULL;
 	char dpkgidx[PATH_MAX], repolist[PATH_MAX];
-	int rv = 0;
 
 	if (argc < 2)
 		usage();
@@ -273,7 +272,6 @@ main(int argc, char **argv)
 		if (argc != 3)
 			usage();
 
-#if 0
 		dict = getrepolist_dict();
 		if (!xbps_callback_array_iter_in_dict(dict, "repository-list",
 		    xbps_install_binary_pkg_from_repolist, argv[2])) {
@@ -282,16 +280,6 @@ main(int argc, char **argv)
 			    "for %s.\n", argv[2]);
 			exit(EINVAL);
 		}
-#endif
-
-		dict = prop_dictionary_internalize_from_file("/storage/xbps/binpkgs/pkg-index.plist");
-		if (dict == NULL)
-			exit(EINVAL);
-
-		rv = xbps_install_binary_pkg(dict, argv[2],
-		    "/home/juan/root_xbps");
-		if (rv)
-			exit(rv);
 		prop_object_release(dict);
 
 	} else {

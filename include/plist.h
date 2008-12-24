@@ -161,6 +161,7 @@ char *		xbps_get_pkg_name(const char *);
 int	xbps_install_pkg_deps(prop_dictionary_t, prop_dictionary_t);
 int	xbps_install_binary_pkg(prop_dictionary_t, const char *,
 				const char *);
+bool	xbps_install_binary_pkg_from_repolist(prop_object_t, void *, bool *);
 int	xbps_unpack_binary_pkg(prop_dictionary_t, int (*cb)(struct archive *));
 int	xbps_unpack_archive_cb(struct archive *);
 

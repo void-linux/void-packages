@@ -32,6 +32,50 @@
 
 #include <xbps_api.h>
 
+bool
+xbps_install_binary_pkg_from_repolist(prop_object_t obj, void *arg, bool *done)
+{
+	prop_dictionary_t dict;
+	prop_string_t oloc;
+	const char *repofile, *repoloc;
+	char plist[PATH_MAX];
+	int rv = 0;
+
+	assert(prop_object_type(obj) == PROP_TYPE_STRING);
+
+	/* Get the location */
+	repofile = prop_string_cstring_nocopy(obj);
+
+	/* Get string for pkg-index.plist with full path. */
+	if (!xbps_append_full_path(plist, repofile, XBPS_PKGINDEX))
+		return false;
+
+	dict = prop_dictionary_internalize_from_file(plist);
+	if (dict == NULL || prop_dictionary_count(dict) == 0)
+		return false;
+
+	oloc = prop_dictionary_get(dict, "location-remote");
+	if (oloc == NULL)
+		oloc = prop_dictionary_get(dict, "location-local");
+
+	if (oloc && prop_object_type(oloc) == PROP_TYPE_STRING)
+		repoloc = prop_string_cstring_nocopy(oloc);
+	else {
+		prop_object_release(dict);
+		return false;
+	}
+
+	printf("Searching in repository: %s\n", repoloc);
+	rv = xbps_install_binary_pkg(dict, arg, "/home/juan/root_xbps");
+	*done = true;
+	prop_object_release(dict);
+
+	if (rv != 0)
+		return false;
+
+	return true;
+}
+
 int
 xbps_install_binary_pkg(prop_dictionary_t repo, const char *pkgname,
 			const char *dest)
