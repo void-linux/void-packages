@@ -97,11 +97,13 @@ xbps_add_pkg_dependency(const char *pkgname, prop_dictionary_t dict)
 
 	len = strlen(pkgname) + 1;
 	dep->name = malloc(len);
-	if (dep->name == NULL)
+	if (dep->name == NULL) {
+		free(dep);
 		return;
+	}
 
-	memcpy(dep->name, pkgname, len);
-	dep->name[len + 1] = '\0';
+	memcpy(dep->name, pkgname, len - 1);
+	dep->name[len - 1] = '\0';
 	dep->dict = prop_dictionary_copy(dict);
 
 	LIST_INSERT_HEAD(&pkg_deps_list, dep, deps);
@@ -122,12 +124,13 @@ pkg_has_rundeps(prop_dictionary_t pkg)
 }
 
 static int
-find_deps_in_pkg(const char *plist, prop_dictionary_t pkg)
+find_deps_in_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
 {
 	prop_dictionary_t pkgdict;
 	prop_array_t array;
+	prop_string_t name;
 	prop_object_t obj;
-	prop_object_iterator_t iter;
+	prop_object_iterator_t iter = NULL;
 	const char *reqpkg;
 	char *pkgname;
 
@@ -139,24 +142,23 @@ find_deps_in_pkg(const char *plist, prop_dictionary_t pkg)
 	if (iter == NULL)
 		return -1;
 
+	name = prop_dictionary_get(pkg, "pkgname");
+	xbps_add_pkg_dependency(prop_string_cstring_nocopy(name), pkg);
+
 	/* Iterate over the list of required run dependencies for a pkg */
 	while ((obj = prop_object_iterator_next(iter))) {
 		reqpkg = prop_string_cstring_nocopy(obj);
 		pkgname = xbps_get_pkg_name(reqpkg);
-		pkgdict = xbps_find_pkg_from_plist(plist, pkgname);
+		pkgdict = xbps_find_pkg_in_dict(repo, pkgname);
 		xbps_add_pkg_dependency(pkgname, pkgdict);
 		free(pkgname);
 
 		/* Iterate on required pkg to find more deps */
 		if (pkg_has_rundeps(pkgdict)) {
 			/* more deps? */
-			prop_object_iterator_release(iter);
-			if (!find_deps_in_pkg(plist, pkgdict)) {
-				prop_object_release(pkgdict);
-				return 0;
-			}
+			if (!find_deps_in_pkg(repo, pkgdict))
+				continue;
 		}
-		prop_object_release(pkgdict);
 	}
 
 	prop_object_iterator_release(iter);
@@ -165,29 +167,46 @@ find_deps_in_pkg(const char *plist, prop_dictionary_t pkg)
 }
 
 int
-xbps_check_reqdeps_in_pkg(const char *plist, prop_dictionary_t pkg)
+xbps_install_pkg_deps(prop_dictionary_t repo, prop_dictionary_t pkg)
 {
-	char repolist[PATH_MAX];
+	pkg_dep_t *dep;
+	prop_string_t pkgname, version;
+	int rv = 0;
 
 	assert(pkg != NULL);
+	assert(repo != NULL);
 	assert(prop_object_type(pkg) == PROP_TYPE_DICTIONARY);
-	assert(prop_dictionary_count(pkg) != 0);
-	assert(plist != NULL);
+	assert(prop_object_type(repo) == PROP_TYPE_DICTIONARY);
 
 	if (!pkg_has_rundeps(pkg)) {
-		/* Package has no required rundeps */
+		/* Package has no required dependencies. */
 		return 0;
 	}
 
-	if (!xbps_append_full_path(repolist,
-	    "/storage/xbps/binpkgs", XBPS_PKGINDEX)) {
-		errno = ENOENT;
+	/* Check what dependencies are required. */
+	if (find_deps_in_pkg(repo, pkg) == -1) {
+		errno = XBPS_PKG_EINDEPS;
 		return -1;
 	}
 
-	if (find_deps_in_pkg(repolist, pkg) == -1) {
-		errno = XBPS_PKG_EINDEPS;
-		return -1;
+	/*
+	 * Iterate over the list of dependencies and install them.
+	 */
+	LIST_FOREACH(dep, &pkg_deps_list, deps) {
+		pkgname = prop_dictionary_get(dep->dict, "pkgname");
+		version = prop_dictionary_get(dep->dict, "version");
+		printf("Required package: %s >= %s\n",
+		    prop_string_cstring_nocopy(pkgname),
+		    prop_string_cstring_nocopy(version));
+		(void)fflush(stdout);
+
+		rv = xbps_unpack_binary_pkg(dep->dict, xbps_unpack_archive_cb);
+		if (rv != 0)
+			break;
+
+		LIST_REMOVE(dep, deps);
+		free(dep->name);
+		prop_object_release(dep->dict);
 	}
 
 	return 1;

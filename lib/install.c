@@ -32,15 +32,13 @@
 
 #include <xbps_api.h>
 
-static int unpack_archive_cb(struct archive *);
-
 int
-xbps_install_binary_pkg(const char *pkgname, const char *dest)
+xbps_install_binary_pkg(prop_dictionary_t repo, const char *pkgname,
+			const char *dest)
 {
-	prop_dictionary_t repo_dict, pkg_rdict, dict;
+	prop_dictionary_t pkg_rdict, dict;
 	prop_object_t obj;
-	const char *repo = "/storage/xbps/binpkgs/pkg-index.plist";
-	char dbfile[PATH_MAX], binfile[PATH_MAX];
+	char dbfile[PATH_MAX];
 	int rv = 0;
 
 	assert(pkgname != NULL);
@@ -50,70 +48,50 @@ xbps_install_binary_pkg(const char *pkgname, const char *dest)
 	}
 
 	/* Get pkg metadata from a repository */
-	repo_dict = prop_dictionary_internalize_from_file(repo);
-	if (repo_dict == NULL)
-		return -1;
-
-	pkg_rdict = xbps_find_pkg_in_dict(repo_dict, pkgname);
-	if (pkg_rdict == NULL) {
-		prop_object_release(repo_dict);
+	pkg_rdict = xbps_find_pkg_in_dict(repo, pkgname);
+	if (pkg_rdict == NULL)
 		return XBPS_PKG_ENOTINREPO;
-	}
-
-	if (!xbps_append_full_path(dbfile, NULL, XBPS_REGPKGDB)) {
-		prop_object_release(repo_dict);
-		return EINVAL;
-	}
 
 	/* Check if package is already installed. */
+	if (!xbps_append_full_path(dbfile, NULL, XBPS_REGPKGDB))
+		return EINVAL;
+
 	dict = prop_dictionary_internalize_from_file(dbfile);
 	if (dict && xbps_find_pkg_in_dict(dict, pkgname)) {
-		prop_object_release(repo_dict);
 		prop_object_release(dict);
 		return XBPS_PKG_EEXIST;
 	}
 
-	/* Append filename to the full path for binary pkg */
-	obj = prop_dictionary_get(pkg_rdict, "filename");
-	if (!xbps_append_full_path(binfile, "/storage/xbps/binpkgs",
-	    prop_string_cstring_nocopy(obj))) {
-		prop_object_release(repo_dict);
-		return EINVAL;
-	}
-
 	obj = prop_dictionary_get(pkg_rdict, "version");
-	printf("=> Found package: %s-%s.",
+	printf("Available package: %s-%s.\n",
 	    pkgname, prop_string_cstring_nocopy(obj));
-	printf("\n");
-	(void)fflush(stdout);
-	printf("==> Checking dependencies... ");
 	(void)fflush(stdout);
 
-	/* Looks like it's not, check dependencies and install */
-	switch (xbps_check_reqdeps_in_pkg(dbfile, pkg_rdict)) {
+	/*
+	 * Install the package, and its dependencies if there are.
+	 */
+	switch (xbps_install_pkg_deps(repo, pkg_rdict)) {
 	case -1:
-		/* There was an error checking pkg deps */
-		prop_object_release(repo_dict);
-		printf("error, exiting!\n");
-		fflush(stdout);
 		return XBPS_PKG_EINDEPS;
 	case 0:
-		/* Package has no deps, just install it */
-		printf("none, unpacking... ");
-		(void)fflush(stdout);
-		rv = xbps_unpack_binary_pkg(binfile, unpack_archive_cb);
+		/*
+		 * Package has no dependencies, just install it.
+		 */
+		rv = xbps_unpack_binary_pkg(pkg_rdict, xbps_unpack_archive_cb);
 		break;
 	case 1:
-		/* Package needs deps */
+		/*
+		 * 1 means that package has dependencies, but
+		 * xbps_install_pkg_deps() takes care of it.
+		 */
 		break;
 	}
 
-	prop_object_release(repo_dict);
 	return rv;
 }
 
-static int
-unpack_archive_cb(struct archive *ar)
+int
+xbps_unpack_archive_cb(struct archive *ar)
 {
 	struct archive_entry *entry;
 	int rv = 0;
@@ -125,18 +103,35 @@ unpack_archive_cb(struct archive *ar)
 		}
 	}
 
-	printf("done.\n");
 	archive_read_finish(ar);
 	return rv;
 }
 
 int
-xbps_unpack_binary_pkg(const char *filename, int (*cb)(struct archive *))
+xbps_unpack_binary_pkg(prop_dictionary_t pkg, int (*cb)(struct archive *))
 {
+	prop_string_t pkgname, version, filename;
 	struct archive *ar;
+	char binfile[PATH_MAX];
 	int rv;
 
-	assert(filename != NULL);
+	assert(pkg != NULL);
+
+	/* Append filename to the full path for binary pkg */
+	filename = prop_dictionary_get(pkg, "filename");
+	if (!xbps_append_full_path(binfile, "/storage/xbps/binpkgs",
+	    prop_string_cstring_nocopy(filename)))
+		return EINVAL;
+
+	pkgname = prop_dictionary_get(pkg, "pkgname");
+	version = prop_dictionary_get(pkg, "version");
+
+	printf("Unpacking %s-%s (from %s)... ",
+	    prop_string_cstring_nocopy(pkgname),
+	    prop_string_cstring_nocopy(version),
+	    prop_string_cstring_nocopy(filename));
+
+	(void)fflush(stdout);
 
 	ar = archive_read_new();
 	if (ar == NULL)
@@ -146,10 +141,13 @@ xbps_unpack_binary_pkg(const char *filename, int (*cb)(struct archive *))
 	archive_read_support_compression_all(ar);
 	archive_read_support_format_all(ar);
 
-	if ((rv = archive_read_open_filename(ar, filename, 2048)) != 0) {
+	if ((rv = archive_read_open_filename(ar, binfile, 2048)) != 0) {
 		archive_read_finish(ar);
 		return rv;
 	}
 
-	return (*cb)(ar);
+	if ((rv = (*cb)(ar)) == 0)
+		printf("done.\n");
+
+	return rv;
 }

@@ -99,7 +99,7 @@ prop_dictionary_t
 xbps_find_pkg_from_plist(const char *plist, const char *pkgname)
 {
 	prop_dictionary_t dict;
-	prop_dictionary_t obj;
+	prop_dictionary_t obj, res;
 
 	assert(plist != NULL);
 	assert(pkgname != NULL);
@@ -117,7 +117,10 @@ xbps_find_pkg_from_plist(const char *plist, const char *pkgname)
 		return NULL;
 	}
 
-	return obj;
+	res = prop_dictionary_copy(obj);
+	prop_object_release(dict);
+
+	return res;
 }
 
 prop_dictionary_t

@@ -273,9 +273,27 @@ main(int argc, char **argv)
 		if (argc != 3)
 			usage();
 
-		rv = xbps_install_binary_pkg(argv[2], "/home/juan/root_xbps");
+#if 0
+		dict = getrepolist_dict();
+		if (!xbps_callback_array_iter_in_dict(dict, "repository-list",
+		    xbps_install_binary_pkg_from_repolist, argv[2])) {
+			prop_object_release(dict);
+			printf("ERROR: unable to find a binary package "
+			    "for %s.\n", argv[2]);
+			exit(EINVAL);
+		}
+#endif
+
+		dict = prop_dictionary_internalize_from_file("/storage/xbps/binpkgs/pkg-index.plist");
+		if (dict == NULL)
+			exit(EINVAL);
+
+		rv = xbps_install_binary_pkg(dict, argv[2],
+		    "/home/juan/root_xbps");
 		if (rv)
 			exit(rv);
+		prop_object_release(dict);
+
 	} else {
 		usage();
 	}
