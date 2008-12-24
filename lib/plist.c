@@ -96,6 +96,31 @@ xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
 }
 
 prop_dictionary_t
+xbps_find_pkg_from_plist(const char *plist, const char *pkgname)
+{
+	prop_dictionary_t dict;
+	prop_dictionary_t obj;
+
+	assert(plist != NULL);
+	assert(pkgname != NULL);
+
+	dict = prop_dictionary_internalize_from_file(plist);
+	if (dict == NULL) {
+		errno = ENOENT;
+		return NULL;
+	}
+
+	obj = xbps_find_pkg_in_dict(dict, pkgname);
+	if (obj == NULL) {
+		prop_object_release(dict);
+		errno = ENOENT;
+		return NULL;
+	}
+
+	return obj;
+}
+
+prop_dictionary_t
 xbps_find_pkg_in_dict(prop_dictionary_t dict, const char *pkgname)
 {
 	prop_object_iterator_t iter;

@@ -32,70 +32,16 @@
 
 #include <xbps_api.h>
 
-const char *
-xbps_get_pkg_version(const char *pkg)
-{
-	const char *tmp;
+typedef struct pkg_dependency {
+	LIST_ENTRY(pkg_dependency) deps;
+	prop_dictionary_t dict;
+	char *name;
+} pkg_dep_t;
 
-	/* Get the required version */
-	tmp = strrchr(pkg, '-');
-	assert(tmp != NULL);
-	return tmp + 1; /* skip first '-' */
-}
+static LIST_HEAD(, pkg_dependency) pkg_deps_list =
+    LIST_HEAD_INITIALIZER(pkg_deps_list);
 
-char *
-xbps_get_pkg_name(const char *pkg)
-{
-	const char *tmp;
-	char *pkgname;
-	size_t len;
-
-	/* Get the required version */
-	tmp = strrchr(pkg, '-');
-	assert(tmp != NULL);
-	len = strlen(pkg) - strlen(tmp);
-
-	/* Get package name */
-	pkgname = malloc(len + 1);
-	memcpy(pkgname, pkg, len);
-	pkgname[len + 1] = '\0';
-
-	return pkgname;
-}
-
-bool
-xbps_append_full_path(char *buf, const char *root, const char *plistf)
-{
-	const char *env, *tmp;
-	size_t len = 0;
-
-	assert(buf != NULL);
-	assert(plistf != NULL);
-
-	if (root)
-		env = root;
-	else {
-		env = getenv("XBPS_META_PATH");
-		if (env == NULL)
-			env = XBPS_META_PATH;
-	}
-
-	tmp = strncpy(buf, env, PATH_MAX - 1);
-	if (sizeof(*tmp) >= PATH_MAX) {
-		errno = ENOSPC;
-		return false;
-	}
-
-	len = strlen(buf);
-	buf[len + 1] = '\0';
-	if (buf[len - 2] != '/')
-		strncat(buf, "/", 1);
-	strncat(buf, plistf, sizeof(buf) - strlen(buf) - 1);
-
-	return true;
-}
-
-static int
+int
 xbps_check_is_installed_pkg(const char *plist, const char *pkg)
 {
 	prop_dictionary_t dict, pkgdict;
@@ -132,58 +78,117 @@ xbps_check_is_installed_pkg(const char *plist, const char *pkg)
 	return (xbps_cmpver_versions(instver, reqver) > 0) ? 1 : 0;
 }
 
-int
-xbps_check_reqdeps_in_pkg(const char *plist, prop_dictionary_t pkg)
+void
+xbps_add_pkg_dependency(const char *pkgname, prop_dictionary_t dict)
 {
+	pkg_dep_t *dep;
+	size_t len = 0;
+
+	assert(pkgname != NULL);
+	assert(dict != NULL);
+
+	LIST_FOREACH(dep, &pkg_deps_list, deps)
+		if (strcmp(dep->name, pkgname) == 0)
+			return;
+
+	dep = NULL;
+	dep = malloc(sizeof(*dep));
+	assert(dep != NULL);
+
+	len = strlen(pkgname) + 1;
+	dep->name = malloc(len);
+	if (dep->name == NULL)
+		return;
+
+	memcpy(dep->name, pkgname, len);
+	dep->name[len + 1] = '\0';
+	dep->dict = prop_dictionary_copy(dict);
+
+	LIST_INSERT_HEAD(&pkg_deps_list, dep, deps);
+}
+
+static bool
+pkg_has_rundeps(prop_dictionary_t pkg)
+{
+	prop_array_t array;
+
+	assert(pkg != NULL);
+
+	array = prop_dictionary_get(pkg, "run_depends");
+	if (array && prop_array_count(array) > 0)
+		return true;
+
+	return false;
+}
+
+static int
+find_deps_in_pkg(const char *plist, prop_dictionary_t pkg)
+{
+	prop_dictionary_t pkgdict;
 	prop_array_t array;
 	prop_object_t obj;
 	prop_object_iterator_t iter;
 	const char *reqpkg;
-	int rv = 0;
-	bool need_deps = false;
+	char *pkgname;
+
+	array = prop_dictionary_get(pkg, "run_depends");
+	if (array == NULL || prop_array_count(array) == 0)
+		return 0;
+
+	iter = prop_array_iterator(array);
+	if (iter == NULL)
+		return -1;
+
+	/* Iterate over the list of required run dependencies for a pkg */
+	while ((obj = prop_object_iterator_next(iter))) {
+		reqpkg = prop_string_cstring_nocopy(obj);
+		pkgname = xbps_get_pkg_name(reqpkg);
+		pkgdict = xbps_find_pkg_from_plist(plist, pkgname);
+		xbps_add_pkg_dependency(pkgname, pkgdict);
+		free(pkgname);
+
+		/* Iterate on required pkg to find more deps */
+		if (pkg_has_rundeps(pkgdict)) {
+			/* more deps? */
+			prop_object_iterator_release(iter);
+			if (!find_deps_in_pkg(plist, pkgdict)) {
+				prop_object_release(pkgdict);
+				return 0;
+			}
+		}
+		prop_object_release(pkgdict);
+	}
+
+	prop_object_iterator_release(iter);
+
+	return 0;
+}
+
+int
+xbps_check_reqdeps_in_pkg(const char *plist, prop_dictionary_t pkg)
+{
+	char repolist[PATH_MAX];
 
 	assert(pkg != NULL);
 	assert(prop_object_type(pkg) == PROP_TYPE_DICTIONARY);
 	assert(prop_dictionary_count(pkg) != 0);
 	assert(plist != NULL);
 
-	array = prop_dictionary_get(pkg, "run_depends");
-	if (array == NULL) {
+	if (!pkg_has_rundeps(pkg)) {
 		/* Package has no required rundeps */
 		return 0;
 	}
 
-	assert(prop_object_type(array) == PROP_TYPE_ARRAY);
-	assert(prop_array_count(array) != 0);
-
-	iter = prop_array_iterator(array);
-	if (iter == NULL) {
-		errno = ENOMEM;
+	if (!xbps_append_full_path(repolist,
+	    "/storage/xbps/binpkgs", XBPS_PKGINDEX)) {
+		errno = ENOENT;
 		return -1;
 	}
 
-	while ((obj = prop_object_iterator_next(iter))) {
-		assert(prop_object_type(obj) == PROP_TYPE_STRING);
-		reqpkg = prop_string_cstring_nocopy(obj);
-
-		rv = xbps_check_is_installed_pkg(plist, reqpkg);
-		if (rv == XBPS_PKG_EEMPTY) {
-			/* No packages registered yet. */
-			need_deps = true;
-			printf("Package '%s' not installed\n", reqpkg);
-			//xbps_add_pkg_dependency(reqpkg);
-
-		} else if (rv == 1) {
-			need_deps = true;
-			printf("Package '%s' required.\n", reqpkg);
-
-		} else if (rv == 0) {
-			printf("Package '%s' already installed.\n", reqpkg);
-
-		}
+	if (find_deps_in_pkg(repolist, pkg) == -1) {
+		errno = XBPS_PKG_EINDEPS;
+		return -1;
 	}
 
-	prop_object_iterator_release(iter);
-
-	return need_deps;
+	return 1;
 }

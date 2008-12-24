@@ -80,6 +80,9 @@ xbps_callback_array_iter_in_dict(prop_dictionary_t, const char *,
 prop_dictionary_t
 xbps_find_pkg_in_dict(prop_dictionary_t, const char *);
 
+prop_dictionary_t
+xbps_find_pkg_from_plist(const char *, const char *);
+
 /*
  * Finds a string object in an array.
  *
@@ -153,6 +156,7 @@ int	xbps_check_reqdeps_in_pkg(const char *, prop_dictionary_t);
 
 /* Utils */
 bool		xbps_append_full_path(char *, const char *, const char *);
+int		xbps_check_is_installed_pkg(const char *, const char *);
 int		xbps_cmpver_packages(const char *, const char *);
 int		xbps_cmpver_versions(const char *, const char *);
 const char *	xbps_get_pkg_version(const char *);

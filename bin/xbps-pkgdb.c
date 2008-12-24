@@ -108,7 +108,7 @@ usage(void)
 	"    unregister\t[<pkgname> <version>]\n"
 	"    version\t[<pkgname>]\n"
 	"  Environment:\n"
-	"    XBPS_REGPKGDB_PATH\tPath to xbps pkgdb plist file\n\n"
+	"    XBPS_META_PATH\tPath to xbps metadata root directory\n\n"
 	"  Examples:\n"
 	"    $ xbps-pkgdb list\n"
 	"    $ xbps-pkgdb register pkgname 2.0 \"A short description\"\n"

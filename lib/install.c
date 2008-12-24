@@ -51,33 +51,56 @@ xbps_install_binary_pkg(const char *pkgname, const char *dest)
 
 	/* Get pkg metadata from a repository */
 	repo_dict = prop_dictionary_internalize_from_file(repo);
-	pkg_rdict = xbps_find_pkg_in_dict(repo_dict, pkgname);
-	if (pkg_rdict == NULL)
-		return XBPS_PKG_ENOTINREPO;
+	if (repo_dict == NULL)
+		return -1;
 
-	if (!xbps_append_full_path(dbfile, NULL, XBPS_REGPKGDB))
+	pkg_rdict = xbps_find_pkg_in_dict(repo_dict, pkgname);
+	if (pkg_rdict == NULL) {
+		prop_object_release(repo_dict);
+		return XBPS_PKG_ENOTINREPO;
+	}
+
+	if (!xbps_append_full_path(dbfile, NULL, XBPS_REGPKGDB)) {
+		prop_object_release(repo_dict);
 		return EINVAL;
+	}
 
 	/* Check if package is already installed. */
 	dict = prop_dictionary_internalize_from_file(dbfile);
-	if (dict && xbps_find_pkg_in_dict(dict, pkgname))
+	if (dict && xbps_find_pkg_in_dict(dict, pkgname)) {
+		prop_object_release(repo_dict);
+		prop_object_release(dict);
 		return XBPS_PKG_EEXIST;
+	}
+
+	/* Append filename to the full path for binary pkg */
+	obj = prop_dictionary_get(pkg_rdict, "filename");
+	if (!xbps_append_full_path(binfile, "/storage/xbps/binpkgs",
+	    prop_string_cstring_nocopy(obj))) {
+		prop_object_release(repo_dict);
+		return EINVAL;
+	}
+
+	obj = prop_dictionary_get(pkg_rdict, "version");
+	printf("=> Found package: %s-%s.",
+	    pkgname, prop_string_cstring_nocopy(obj));
+	printf("\n");
+	(void)fflush(stdout);
+	printf("==> Checking dependencies... ");
+	(void)fflush(stdout);
 
 	/* Looks like it's not, check dependencies and install */
 	switch (xbps_check_reqdeps_in_pkg(dbfile, pkg_rdict)) {
 	case -1:
 		/* There was an error checking pkg deps */
+		prop_object_release(repo_dict);
+		printf("error, exiting!\n");
+		fflush(stdout);
 		return XBPS_PKG_EINDEPS;
 	case 0:
 		/* Package has no deps, just install it */
-		obj = prop_dictionary_get(pkg_rdict, "filename");
-		strncpy(binfile, "/storage/xbps/binpkgs/", PATH_MAX - 1);
-		strncat(binfile, prop_string_cstring_nocopy(obj), PATH_MAX - 1);
-		obj = prop_dictionary_get(pkg_rdict, "version");
-
-		printf("=> Installing %s-%s ... ", pkgname,
-		    prop_string_cstring_nocopy(obj));
-
+		printf("none, unpacking... ");
+		(void)fflush(stdout);
 		rv = xbps_unpack_binary_pkg(binfile, unpack_archive_cb);
 		break;
 	case 1:
@@ -85,6 +108,7 @@ xbps_install_binary_pkg(const char *pkgname, const char *dest)
 		break;
 	}
 
+	prop_object_release(repo_dict);
 	return rv;
 }
 
