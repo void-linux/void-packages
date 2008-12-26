@@ -32,56 +32,6 @@
 
 #include <xbps_api.h>
 
-typedef struct pkg_data {
-	const char *pkgname;
-	const char *version;
-	const char *short_desc;
-} pkg_data_t;
-
-static prop_dictionary_t make_dict_from_pkg(pkg_data_t *);
-static void register_pkg(prop_dictionary_t, pkg_data_t *, const char *);
-static void write_plist_file(prop_dictionary_t, const char *);
-
-static prop_dictionary_t
-make_dict_from_pkg(pkg_data_t *pkg)
-{
-	prop_dictionary_t dict;
-
-	assert(pkg != NULL || pkg->pkgname != NULL);
-	assert(pkg->version != NULL || pkg->short_desc != NULL);
-
-	dict = prop_dictionary_create();
-	assert(dict != NULL);
-
-	prop_dictionary_set_cstring_nocopy(dict, "pkgname", pkg->pkgname);
-	prop_dictionary_set_cstring_nocopy(dict, "version", pkg->version);
-	prop_dictionary_set_cstring_nocopy(dict, "short_desc", pkg->short_desc);
-
-	return dict;
-}
-
-static void
-register_pkg(prop_dictionary_t dict, pkg_data_t *pkg, const char *dbfile)
-{
-	prop_dictionary_t pkgdict;
-	prop_array_t array;
-
-	assert(dict != NULL || pkg != NULL || dbfile != NULL);
-	pkgdict = make_dict_from_pkg(pkg);
-	assert(pkgdict != NULL);
-	array = prop_dictionary_get(dict, "packages");
-	assert(array != NULL);
-	assert(prop_object_type(array) == PROP_TYPE_ARRAY);
-
-	if (!xbps_add_obj_to_array(array, pkgdict)) {
-		printf("ERROR: couldn't register '%s-%s' in database!\n",
-		    pkg->pkgname, pkg->version);
-		exit(1);
-	}
-
-	write_plist_file(dict, dbfile);
-}
-
 static void
 write_plist_file(prop_dictionary_t dict, const char *file)
 {
@@ -100,9 +50,8 @@ usage(void)
 {
 	printf("usage: xbps-pkgdb <action> [args]\n\n"
 	"  Available actions:\n"
-	"    list, register, sanitize-plist, unregister, version\n"
+	"    register, sanitize-plist, unregister, version\n"
 	"  Action arguments:\n"
-	"    list\t[none]\n"
 	"    register\t[<pkgname> <version> <shortdesc>]\n"
 	"    sanitize-plist\t[<plist>]\n"
 	"    unregister\t[<pkgname> <version>]\n"
@@ -110,7 +59,6 @@ usage(void)
 	"  Environment:\n"
 	"    XBPS_META_PATH\tPath to xbps metadata root directory\n\n"
 	"  Examples:\n"
-	"    $ xbps-pkgdb list\n"
 	"    $ xbps-pkgdb register pkgname 2.0 \"A short description\"\n"
 	"    $ xbps-pkgdb sanitize-plist /blah/foo.plist\n"
 	"    $ xbps-pkgdb unregister pkgname 2.0\n"
@@ -122,11 +70,10 @@ int
 main(int argc, char **argv)
 {
 	prop_dictionary_t dbdict = NULL, pkgdict;
-	prop_array_t dbarray = NULL;
-	pkg_data_t pkg;
 	const char *version;
 	char dbfile[PATH_MAX], *in_chroot_env;
 	bool in_chroot = false;
+	int rv = 0;
 
 	if (argc < 2)
 		usage();
@@ -146,59 +93,18 @@ main(int argc, char **argv)
 		if (argc != 5)
 			usage();
 
-		dbdict = prop_dictionary_internalize_from_file(dbfile);
-		if (dbdict == NULL) {
-			/* Create package dictionary and add its objects. */
-			pkg.pkgname = argv[2];
-			pkg.version = argv[3];
-			pkg.short_desc = argv[4];
-			pkgdict = make_dict_from_pkg(&pkg);
-			assert(pkgdict != NULL);
-
-			/* Add pkg dictionary into array. */
-			dbarray = prop_array_create();
-			if (!xbps_add_obj_to_array(dbarray, pkgdict)) {
-				printf("=> ERROR: couldn't register "
-				    "%s-%s (%s)\n", pkg.pkgname, pkg.version,
-				    strerror(errno));
-				exit(1);
-			}
-
-			/* Add array into main dictionary. */
-			dbdict = prop_dictionary_create();
-			if (!xbps_add_obj_to_dict(dbdict, dbarray,
-			    "packages")) {
-				printf("=> ERROR: couldn't register "
-				    "%s-%s (%s)\n", pkg.pkgname, pkg.version,
-				    strerror(errno));
-				exit(1);
-			}
-
-			/* Write main dictionary to file. */
-			write_plist_file(dbdict, dbfile);
-
-			printf("%s==> Package database file not found, "
-			    "creating it.\n", in_chroot ? "[chroot] " : "");
-
-			prop_object_release(dbdict);
+		rv = xbps_register_pkg(argv[2], argv[3], argv[4]);
+		if (rv == EEXIST) {
+			printf("%s=> %s-%s already registered.\n",
+			    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
+		} else if (rv != 0) {
+			printf("%s=> couldn't register %s-%s (%s).\n",
+			    in_chroot ? "[chroot] " : "" , argv[2], argv[3],
+			    strerror(rv));
 		} else {
-			/* Check if pkg is already registered. */
-			pkgdict = xbps_find_pkg_in_dict(dbdict, argv[2]);
-			if (pkgdict != NULL) {
-				printf("%s=> Package %s-%s already registered.\n",
-				    in_chroot ? "[chroot] " : "",
-				    argv[2], argv[3]);
-				exit(0);
-			}
-			pkg.pkgname = argv[2];
-			pkg.version = argv[3];
-			pkg.short_desc = argv[4];
-
-			register_pkg(dbdict, &pkg, dbfile);
+			printf("%s=> %s-%s registered successfully.\n",
+			    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
 		}
-
-		printf("%s=> %s-%s registered successfully.\n",
-		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
 
 	} else if (strcasecmp(argv[1], "unregister") == 0) {
 		/* Unregisters a package from the database */
@@ -218,22 +124,6 @@ main(int argc, char **argv)
 
 		printf("%s=> %s-%s unregistered successfully.\n",
 		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
-
-	} else if (strcasecmp(argv[1], "list") == 0) {
-		/* Lists packages currently registered in database */
-		if (argc != 2)
-			usage();
-
-		dbdict = prop_dictionary_internalize_from_file(dbfile);
-		if (dbdict == NULL) {
-			printf("=> ERROR: cannot read database file (%s)\n",
-			    strerror(errno));
-			exit(EINVAL);
-		}
-
-		if (!xbps_callback_array_iter_in_dict(dbdict,
-		    "packages", xbps_list_pkgs_in_dict, NULL))
-			exit(EINVAL);
 
 	} else if (strcasecmp(argv[1], "version") == 0) {
 		/* Prints version of an installed package */

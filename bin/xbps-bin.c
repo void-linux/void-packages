@@ -50,18 +50,22 @@ usage(void)
 {
 	printf("Usage: xbps-bin [action] [arguments]\n\n"
 	" Available actions:\n"
-        "    install, repo-add, repo-list, repo-rm, search, show\n"
+        "    install, list, repo-add, repo-list, repo-rm, search, show\n"
 	" Action arguments:\n"
 	"    install\t[<pkgname>] [<rootdir>]\n"
+	"    list\n"
 	"    repo-add\t[<URI>]\n"
 	"    repo-list\t[none]\n"
 	"    repo-rm\t[<URI>]\n"
 	"    search\t[<string>]\n"
 	"    show\t[<pkgname>]\n"
+	" Environment:\n"
+	"    XBPS_META_PATH\tPath to the xbps metadata directory\n"
 	"\n"
 	" Examples:\n"
 	"    $ xbps-bin install klibc\n"
 	"    $ xbps-bin install klibc /path/to/directory\n"
+	"    $ xbps-bin list\n"
 	"    $ xbps-bin repo-add /path/to/directory\n"
 	"    $ xbps-bin repo-add http://www.location.org/xbps-repo\n"
 	"    $ xbps-bin repo-list\n"
@@ -267,6 +271,27 @@ main(int argc, char **argv)
 			prop_object_release(dict);
 			printf("ERROR: unable to locate package '%s'.\n",
 			    argv[2]);
+			exit(EINVAL);
+		}
+		prop_object_release(dict);
+
+	} else if (strcasecmp(argv[1], "list") == 0) {
+		/* Lists packages currently registered in database. */
+		if (argc != 2)
+			usage();
+
+		if (!xbps_append_full_path(dpkgidx, NULL, XBPS_REGPKGDB))
+			exit(EINVAL);
+
+		dict = prop_dictionary_internalize_from_file(dpkgidx);
+		if (dict == NULL) {
+			printf("No packages currently registered.\n");
+			exit(0);
+		}
+
+		if (!xbps_callback_array_iter_in_dict(dict, "packages",
+		    xbps_list_pkgs_in_dict, NULL)) {
+			prop_object_release(dict);
 			exit(EINVAL);
 		}
 		prop_object_release(dict);

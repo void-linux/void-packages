@@ -111,6 +111,7 @@ set_defvars()
 	done
 
 	XBPS_REGPKGDB_CMD="env XBPS_META_PATH=$XBPS_META_PATH xbps-pkgdb"
+	XBPS_BIN_CMD="env XBPS_META_PATH=$XBPS_META_PATH xbps-bin"
 }
 
 #
@@ -226,7 +227,7 @@ build-pkg)
 	. $XBPS_SHUTILSDIR/binpkg.sh
 	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
 	if [ "$2" = "all" ]; then
-		for f in $($XBPS_REGPKGDB_CMD list|awk '{print $1}'); do
+		for f in $($XBPS_BIN_CMD list|awk '{print $1}'); do
 			setup_tmpl $f
 			xbps_make_binpkg
 			reset_tmpl_vars
@@ -268,7 +269,7 @@ install|install-destdir)
 	;;
 list|listfiles)
 	if [ "$target" = "list" ]; then
-		$XBPS_REGPKGDB_CMD list
+		$XBPS_BIN_CMD list
 		exit $?
 	fi
 	. $XBPS_SHUTILSDIR/pkgtarget_funcs.sh
