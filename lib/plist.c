@@ -219,12 +219,17 @@ xbps_remove_pkg_dict_from_file(const char *pkg, const char *plist)
 	}
 
 	prop_object_iterator_release(iter);
+	prop_object_release(pdict);
 	errno = ENODEV;
 	return false;
 
 wr_plist:
-	if (!prop_dictionary_externalize_to_file(pdict, plist))
+	if (!prop_dictionary_externalize_to_file(pdict, plist)) {
+		prop_object_release(pdict);
 		return false;
+	}
+
+	prop_object_release(pdict);
 
 	return true;
 }
