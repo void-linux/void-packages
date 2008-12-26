@@ -50,8 +50,9 @@ usage(void)
 {
 	printf("Usage: xbps-bin [action] [arguments]\n\n"
 	" Available actions:\n"
-        "    repo-add, repo-list, repo-rm, search, show\n"
+        "    install, repo-add, repo-list, repo-rm, search, show\n"
 	" Action arguments:\n"
+	"    install\t[<pkgname>] [<rootdir>]\n"
 	"    repo-add\t[<URI>]\n"
 	"    repo-list\t[none]\n"
 	"    repo-rm\t[<URI>]\n"
@@ -59,6 +60,7 @@ usage(void)
 	"    show\t[<pkgname>]\n"
 	"\n"
 	" Examples:\n"
+	"    $ xbps-bin install klibc\n"
 	"    $ xbps-bin repo-add /path/to/directory\n"
 	"    $ xbps-bin repo-add http://www.location.org/xbps-repo\n"
 	"    $ xbps-bin repo-list\n"
@@ -163,6 +165,7 @@ main(int argc, char **argv)
 	prop_dictionary_t dict;
 	repo_info_t *rinfo = NULL;
 	char dpkgidx[PATH_MAX], repolist[PATH_MAX];
+	int rv = 0;
 
 	if (argc < 2)
 		usage();
@@ -269,19 +272,19 @@ main(int argc, char **argv)
 
 	} else if (strcasecmp(argv[1], "install") == 0) {
 		/* Installs a binary package and required deps. */
-		if (argc != 3)
+		if (argc < 3 || argc > 4)
 			usage();
 
-		dict = getrepolist_dict();
-		if (!xbps_callback_array_iter_in_dict(dict, "repository-list",
-		    xbps_install_binary_pkg_from_repolist, argv[2])) {
-			prop_object_release(dict);
-			printf("ERROR: unable to find a binary package "
-			    "for %s.\n", argv[2]);
-			exit(EINVAL);
+		if (argc == 3) {
+			/* Install into root directory by default. */
+			rv = xbps_install_binary_pkg(argv[2], "/");
+		} else {
+			/* install into specified directory. */
+			rv = xbps_install_binary_pkg(argv[2], argv[3]);
 		}
-		prop_object_release(dict);
 
+		if (rv)
+			exit(rv);
 	} else {
 		usage();
 	}

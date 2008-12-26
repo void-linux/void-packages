@@ -64,6 +64,19 @@ xbps_get_pkg_name(const char *pkg)
 }
 
 bool
+xbps_pkg_has_rundeps(prop_dictionary_t pkg)
+{
+	prop_array_t array;
+
+	assert(pkg != NULL);
+	array = prop_dictionary_get(pkg, "run_depends");
+	if (array && prop_array_count(array) > 0)
+		return true;
+
+	return false;
+}
+
+bool
 xbps_append_full_path(char *buf, const char *root, const char *plistf)
 {
 	const char *env, *tmp;
