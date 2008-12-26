@@ -136,11 +136,10 @@ install_dependencies_pkg()
 
 	doing_deps=true
 
-	echo -n "==> Calculating dependency list for $pkgname-$version... "
+	echo "==> Calculating dependency list for $pkgname-$version... "
 	add_dependency_tolist $pkg
 	find_dupdeps_inlist installed
 	find_dupdeps_inlist notinstalled
-	echo "done."
 
 	[ -z "$deps_list" -a -z "$installed_deps_list" ] && return 0
 
