@@ -67,32 +67,31 @@ xbps_add_obj_to_array(prop_array_t array, prop_object_t obj)
 	return true;
 }
 
-bool
+int
 xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
-				 bool (*func)(prop_object_t, void *, bool *),
+				 int (*func)(prop_object_t, void *, bool *),
 				 void *arg)
 {
 	prop_object_iterator_t iter;
 	prop_object_t obj;
-	bool run, ret, cbloop_done;
+	int rv = 0;
+	bool run, cbloop_done;
 
-	run = ret = cbloop_done = false;
+	run = cbloop_done = false;
 	assert(func != NULL);
 
 	iter = xbps_get_array_iter_from_dict(dict, key);
 	if (iter == NULL)
-		return false;
+		return EINVAL;
 
 	while ((obj = prop_object_iterator_next(iter))) {
-		run = (*func)(obj, arg, &cbloop_done);
-		if (run && cbloop_done) {
-			ret = true;
+		rv = (*func)(obj, arg, &cbloop_done);
+		if (rv == 0 && cbloop_done)
 			break;
-		}
 	}
 
 	prop_object_iterator_release(iter);
-	return ret;
+	return rv;
 }
 
 prop_dictionary_t
@@ -230,7 +229,7 @@ wr_plist:
 	return true;
 }
 
-bool
+int
 xbps_remove_string_from_array(prop_object_t obj, void *arg, bool *loop_done)
 {
 	static int64_t idx;
@@ -241,11 +240,11 @@ xbps_remove_string_from_array(prop_object_t obj, void *arg, bool *loop_done)
 	if (prop_string_equals_cstring(obj, cb->string)) {
 		cb->number = idx;
 		*loop_done = true;
-		return true;
+		return 0;
 	}
 	idx++;
 
-	return false;
+	return EINVAL;
 }
 
 bool
@@ -366,7 +365,7 @@ xbps_unregister_repository(const char *uri)
 
 	done = xbps_callback_array_iter_in_dict(dict, "repository-list",
 		    xbps_remove_string_from_array, cb);
-	if (done && cb->number >= 0) {
+	if (done == 0 && cb->number >= 0) {
 		/* Found, remove it. */
 		prop_array_remove(array, cb->number);
 
@@ -469,7 +468,7 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 		printf(" %s\n", prop_string_cstring_nocopy(obj));
 }
 
-bool
+int
 xbps_show_pkg_namedesc(prop_object_t obj, void *arg, bool *loop_done)
 {
 	const char *pkgname, *desc, *ver, *string = arg;
@@ -485,10 +484,10 @@ xbps_show_pkg_namedesc(prop_object_t obj, void *arg, bool *loop_done)
 	if ((strstr(pkgname, string) || strstr(desc, string)))
 		printf("  %s-%s - %s\n", pkgname, ver, desc);
 
-	return true;
+	return 0;
 }
 
-bool
+int
 xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 {
 	prop_dictionary_t dict;
@@ -502,21 +501,21 @@ xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 	assert(repofile != NULL);
 
 	if (!xbps_append_full_path(plist, repofile, XBPS_PKGINDEX))
-		return false;
+		return EINVAL;
 
 	dict = prop_dictionary_internalize_from_file(plist);
 	if (dict == NULL)
-		return false;
+		return EINVAL;
 
 	printf("From %s repository ...\n", repofile);
 	xbps_callback_array_iter_in_dict(dict, "packages",
 	    xbps_show_pkg_namedesc, arg);
 	prop_object_release(dict);
 
-	return true;
+	return 0;
 }
 
-bool
+int
 xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 {
 	prop_dictionary_t dict, pkgdict;
@@ -531,16 +530,16 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 
 	/* Get string for pkg-index.plist with full path. */
 	if (!xbps_append_full_path(plist, repofile, XBPS_PKGINDEX))
-		return false;
+		return EINVAL;
 
 	dict = prop_dictionary_internalize_from_file(plist);
 	if (dict == NULL || prop_dictionary_count(dict) == 0)
-		return false;
+		return EINVAL;
 
 	pkgdict = xbps_find_pkg_in_dict(dict, arg);
 	if (pkgdict == NULL) {
 		prop_object_release(dict);
-		return false;
+		return XBPS_PKG_ENOTINREPO;
 	}
 
 	oloc = prop_dictionary_get(dict, "location-remote");
@@ -551,7 +550,7 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 		repoloc = prop_string_cstring_nocopy(oloc);
 	else {
 		prop_object_release(dict);
-		return false;
+		return EINVAL;
 	}
 
 	printf("Repository: %s\n", repoloc);
@@ -559,10 +558,10 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 	*loop_done = true;
 	prop_object_release(dict);
 
-	return true;
+	return 0;
 }
 
-bool
+int
 xbps_list_pkgs_in_dict(prop_object_t obj, void *arg, bool *loop_done)
 {
 	const char *pkgname, *version, *short_desc;
@@ -574,13 +573,13 @@ xbps_list_pkgs_in_dict(prop_object_t obj, void *arg, bool *loop_done)
 	prop_dictionary_get_cstring_nocopy(obj, "short_desc", &short_desc);
 	if (pkgname && version && short_desc) {
 		printf("%s (%s)\t%s\n", pkgname, version, short_desc);
-		return true;
+		return 0;
 	}
 
-	return false;
+	return EINVAL;
 }
 
-bool
+int
 xbps_list_strings_in_array2(prop_object_t obj, void *arg, bool *loop_done)
 {
 	static uint16_t count;
@@ -602,15 +601,15 @@ xbps_list_strings_in_array2(prop_object_t obj, void *arg, bool *loop_done)
 	printf("%s%s", prop_string_cstring_nocopy(obj), sep);
 	count++;
 
-	return true;
+	return 0;
 }
 
-bool
+int
 xbps_list_strings_in_array(prop_object_t obj, void *arg, bool *loop_done)
 {
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
 	printf("%s\n", prop_string_cstring_nocopy(obj));
 
-	return true;
+	return 0;
 }

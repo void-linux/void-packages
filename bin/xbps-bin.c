@@ -61,6 +61,7 @@ usage(void)
 	"\n"
 	" Examples:\n"
 	"    $ xbps-bin install klibc\n"
+	"    $ xbps-bin install klibc /path/to/directory\n"
 	"    $ xbps-bin repo-add /path/to/directory\n"
 	"    $ xbps-bin repo-add http://www.location.org/xbps-repo\n"
 	"    $ xbps-bin repo-list\n"
@@ -223,7 +224,7 @@ main(int argc, char **argv)
 			usage();
 
 		dict = getrepolist_dict();
-		xbps_callback_array_iter_in_dict(dict,
+		(void)xbps_callback_array_iter_in_dict(dict,
 		    "repository-list", xbps_list_strings_in_array, NULL);
 		prop_object_release(dict);
 
@@ -251,7 +252,7 @@ main(int argc, char **argv)
 			usage();
 
 		dict = getrepolist_dict();
-		xbps_callback_array_iter_in_dict(dict,
+		(void)xbps_callback_array_iter_in_dict(dict,
 		    "repository-list", xbps_search_string_in_pkgs, argv[2]);
 		prop_object_release(dict);
 
@@ -261,8 +262,8 @@ main(int argc, char **argv)
 			usage();
 
 		dict = getrepolist_dict();
-		if (!xbps_callback_array_iter_in_dict(dict, "repository-list",
-		    xbps_show_pkg_info_from_repolist, argv[2])) {
+		if (xbps_callback_array_iter_in_dict(dict, "repository-list",
+		    xbps_show_pkg_info_from_repolist, argv[2]) != 0) {
 			prop_object_release(dict);
 			printf("ERROR: unable to locate package '%s'.\n",
 			    argv[2]);
@@ -283,8 +284,10 @@ main(int argc, char **argv)
 			rv = xbps_install_binary_pkg(argv[2], argv[3]);
 		}
 
-		if (rv)
+		if (rv) {
+			printf("ERROR: unable to install %s.\n", argv[2]);
 			exit(rv);
+		}
 	} else {
 		usage();
 	}

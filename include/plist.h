@@ -63,9 +63,9 @@ xbps_add_obj_to_array(prop_array_t, prop_object_t);
  *
  * Returns true on success, false otherwise and the loop is terminated.
  */
-bool
+int
 xbps_callback_array_iter_in_dict(prop_dictionary_t, const char *,
-				 bool (*func)(prop_object_t, void *, bool *),
+				 int (*func)(prop_object_t, void *, bool *),
 				 void *);
 
 /*
@@ -143,24 +143,25 @@ void xbps_show_pkg_info(prop_dictionary_t);
 /*
  * Internal functions.
  */
-bool	xbps_list_pkgs_in_dict(prop_object_t, void *, bool *);
-bool	xbps_list_strings_in_array(prop_object_t, void *, bool *);
-bool	xbps_list_strings_in_array2(prop_object_t, void *, bool *);
-bool	xbps_remove_string_from_array(prop_object_t, void *, bool *);
-bool	xbps_show_pkg_info_from_repolist(prop_object_t obj, void *, bool *);
-bool	xbps_show_pkg_namedesc(prop_object_t, void *, bool *);
-bool	xbps_search_string_in_pkgs(prop_object_t, void *, bool *);
+int	xbps_list_pkgs_in_dict(prop_object_t, void *, bool *);
+int	xbps_list_strings_in_array(prop_object_t, void *, bool *);
+int	xbps_list_strings_in_array2(prop_object_t, void *, bool *);
+int	xbps_remove_string_from_array(prop_object_t, void *, bool *);
+int	xbps_show_pkg_info_from_repolist(prop_object_t obj, void *, bool *);
+int	xbps_show_pkg_namedesc(prop_object_t, void *, bool *);
+int	xbps_search_string_in_pkgs(prop_object_t, void *, bool *);
 
 /* Utils */
 bool	xbps_append_full_path(char *, const char *, const char *);
-int	xbps_check_is_installed_pkg(const char *, const char *);
+int	xbps_check_is_installed_pkg(const char *);
 int	xbps_cmpver_packages(const char *, const char *);
 int	xbps_cmpver_versions(const char *, const char *);
 const char *	xbps_get_pkg_version(const char *);
 char *		xbps_get_pkg_name(const char *);
-int	xbps_install_pkg_deps(prop_array_t, prop_dictionary_t);
+int	xbps_install_pkg_deps(prop_dictionary_t);
 int	xbps_install_binary_pkg(const char *, const char *);
-bool	xbps_install_binary_pkg_from_repolist(prop_object_t, void *, bool *);
+int	xbps_install_binary_pkg_from_repolist(prop_object_t, void *, bool *);
+int	xbps_register_pkg(const char *, const char *, const char *);
 int	xbps_unpack_binary_pkg(prop_dictionary_t, prop_dictionary_t,
 			       int (*cb)(struct archive *));
 int	xbps_unpack_archive_cb(struct archive *);
