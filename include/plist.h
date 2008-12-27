@@ -152,7 +152,8 @@ int	xbps_show_pkg_namedesc(prop_object_t, void *, bool *);
 int	xbps_search_string_in_pkgs(prop_object_t, void *, bool *);
 
 /* Utils */
-bool	xbps_append_full_path(char *, const char *, const char *);
+void	xbps_set_rootdir(const char *);
+bool	xbps_append_full_path(bool, char *, const char *, const char *);
 int	xbps_check_is_installed_pkg(const char *);
 int	xbps_cmpver_packages(const char *, const char *);
 int	xbps_cmpver_versions(const char *, const char *);

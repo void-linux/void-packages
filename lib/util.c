@@ -32,6 +32,8 @@
 
 #include <xbps_api.h>
 
+static const char *rootdir;
+
 const char *
 xbps_get_pkg_version(const char *pkg)
 {
@@ -80,34 +82,40 @@ xbps_pkg_has_rundeps(prop_dictionary_t pkg)
 	return false;
 }
 
-bool
-xbps_append_full_path(char *buf, const char *root, const char *plistf)
+void
+xbps_set_rootdir(const char *dir)
 {
-	const char *env, *tmp;
-	size_t len = 0;
+	assert(dir != NULL);
+	rootdir = dir;
+}
+
+bool
+xbps_append_full_path(bool use_rootdir, char *buf, const char *basedir,
+		      const char *plistf)
+{
+	const char *env;
 
 	assert(buf != NULL);
 	assert(plistf != NULL);
 
-	if (root)
-		env = root;
-	else {
-		env = getenv("XBPS_META_PATH");
-		if (env == NULL)
-			env = XBPS_META_PATH;
-	}
+	if (basedir)
+		env = basedir;
+	else
+		env = XBPS_META_PATH;
 
-	tmp = strncpy(buf, env, PATH_MAX - 1);
-	if (sizeof(*tmp) >= PATH_MAX) {
-		errno = ENOSPC;
-		return false;
+	if (rootdir && use_rootdir) {
+		if (snprintf(buf, PATH_MAX - 1, "%s/%s/%s",
+		    rootdir, env, plistf) < 0) {
+			errno = ENOSPC;
+			return false;
+		}
+	} else {
+		if (snprintf(buf, PATH_MAX - 1, "%s/%s",
+		    env, plistf) < 0) {
+			errno = ENOSPC;
+			return false;
+		}
 	}
-
-	len = strlen(buf);
-	buf[len + 1] = '\0';
-	if (buf[len - 2] != '/')
-		strncat(buf, "/", 1);
-	strncat(buf, plistf, sizeof(buf) - strlen(buf) - 1);
 
 	return true;
 }

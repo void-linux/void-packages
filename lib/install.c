@@ -45,7 +45,7 @@ xbps_install_binary_pkg_from_repolist(prop_object_t obj, void *arg,
 	 * Get the dictionary from a repository's index file.
 	 */
 	memset(plist, 0, sizeof(&plist));
-	if (!xbps_append_full_path(plist,
+	if (!xbps_append_full_path(false, plist,
 	    prop_string_cstring_nocopy(obj), XBPS_PKGINDEX))
 		return EINVAL;
 
@@ -125,7 +125,7 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 	 * Get the dictionary with the list of registered
 	 * repositories.
 	 */
-	if (!xbps_append_full_path(plist, NULL, XBPS_REPOLIST))
+	if (!xbps_append_full_path(true, plist, NULL, XBPS_REPOLIST))
 		return EINVAL;
 
 	repolistd = prop_dictionary_internalize_from_file(plist);
@@ -170,7 +170,7 @@ xbps_register_pkg(const char *pkgname, const char *version, const char *desc)
 	assert(version != NULL);
 	assert(desc != NULL);
 
-	if (!xbps_append_full_path(plist, NULL, XBPS_REGPKGDB))
+	if (!xbps_append_full_path(true, plist, NULL, XBPS_REGPKGDB))
 		return EINVAL;
 
 	dict = prop_dictionary_internalize_from_file(plist);
@@ -278,7 +278,7 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	filename = prop_dictionary_get(pkg, "filename");
 	repoloc = prop_dictionary_get(repo, "location-local");
 
-	if (!xbps_append_full_path(binfile,
+	if (!xbps_append_full_path(false, binfile,
 	    prop_string_cstring_nocopy(repoloc),
 	    prop_string_cstring_nocopy(filename)))
 		return EINVAL;

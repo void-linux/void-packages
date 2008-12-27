@@ -53,7 +53,7 @@ xbps_check_is_installed_pkg(const char *pkg)
 
 	assert(pkg != NULL);
 
-	if (!xbps_append_full_path(plist, NULL, XBPS_REGPKGDB))
+	if (!xbps_append_full_path(true, plist, NULL, XBPS_REGPKGDB))
 		return EINVAL;
 
 	pkgname = xbps_get_pkg_name(pkg);
@@ -207,7 +207,7 @@ xbps_install_pkg_deps(prop_dictionary_t pkg)
 
 	assert(pkg != NULL);
 
-	if (!xbps_append_full_path(plist, NULL, XBPS_REPOLIST))
+	if (!xbps_append_full_path(true, plist, NULL, XBPS_REPOLIST))
 		return EINVAL;
 
 	repolistd = prop_dictionary_internalize_from_file(plist);
@@ -229,7 +229,7 @@ xbps_install_pkg_deps(prop_dictionary_t pkg)
 	 */
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		memset(plist, 0, sizeof(&plist));
-		if (!xbps_append_full_path(plist,
+		if (!xbps_append_full_path(false, plist,
 		    prop_string_cstring_nocopy(obj), XBPS_PKGINDEX)) {
 			xbps_clean_pkg_depslist();
 			prop_object_iterator_release(iter);

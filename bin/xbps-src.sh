@@ -110,8 +110,8 @@ set_defvars()
 		[ ! -d "$val" ] &&  msg_error "cannot find $i, aborting."
 	done
 
-	XBPS_REGPKGDB_CMD="env XBPS_META_PATH=$XBPS_META_PATH xbps-pkgdb"
-	XBPS_BIN_CMD="env XBPS_META_PATH=$XBPS_META_PATH xbps-bin"
+	XBPS_REGPKGDB_CMD="xbps-pkgdb -r $XBPS_MASTERDIR"
+	XBPS_BIN_CMD="xbps-bin -r $XBPS_MASTERDIR"
 }
 
 #

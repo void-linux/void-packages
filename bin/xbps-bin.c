@@ -30,6 +30,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <libgen.h>
+#include <unistd.h>
 
 #include <xbps_api.h>
 
@@ -41,30 +42,28 @@ typedef struct repository_info {
 } repo_info_t;
 
 static bool sanitize_localpath(char *, const char *);
-static prop_dictionary_t getrepolist_dict(void);
+static prop_dictionary_t getrepolist_dict(const char *);
 static bool pkgindex_getinfo(prop_dictionary_t, repo_info_t *);
 static void usage(void);
 
 static void
 usage(void)
 {
-	printf("Usage: xbps-bin [action] [arguments]\n\n"
+	printf("Usage: xbps-bin [options] [action] [arguments]\n\n"
 	" Available actions:\n"
         "    install, list, repo-add, repo-list, repo-rm, search, show\n"
-	" Action arguments:\n"
-	"    install\t[<pkgname>] [<rootdir>]\n"
-	"    list\n"
-	"    repo-add\t[<URI>]\n"
-	"    repo-list\t[none]\n"
-	"    repo-rm\t[<URI>]\n"
-	"    search\t[<string>]\n"
-	"    show\t[<pkgname>]\n"
-	" Environment:\n"
-	"    XBPS_META_PATH\tPath to the xbps metadata directory\n"
+	" Actions with arguments:\n"
+	"    install\t<pkgname>\n"
+	"    repo-add\t<URI>\n"
+	"    repo-rm\t<URI>\n"
+	"    search\t<string>\n"
+	"    show\t<pkgname>\n"
+	" Options shared by all actions:\n"
+	"    -r\t\t<rootdir>\n"
 	"\n"
 	" Examples:\n"
 	"    $ xbps-bin install klibc\n"
-	"    $ xbps-bin install klibc /path/to/directory\n"
+	"    $ xbps-bin -r /path/to/root install klibc\n"
 	"    $ xbps-bin list\n"
 	"    $ xbps-bin repo-add /path/to/directory\n"
 	"    $ xbps-bin repo-add http://www.location.org/xbps-repo\n"
@@ -104,12 +103,14 @@ pkgindex_getinfo(prop_dictionary_t dict, repo_info_t *ri)
 }
 
 static prop_dictionary_t
-getrepolist_dict(void)
+getrepolist_dict(const char *root)
 {
 	prop_dictionary_t dict;
 	char plist[PATH_MAX];
 
-	if (!xbps_append_full_path(plist, NULL, XBPS_REPOLIST))
+	xbps_set_rootdir(root);
+
+	if (!xbps_append_full_path(true, plist, NULL, XBPS_REPOLIST))
 		exit(1);
 
 	dict = prop_dictionary_internalize_from_file(plist);
@@ -169,22 +170,41 @@ main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
 	repo_info_t *rinfo = NULL;
-	char dpkgidx[PATH_MAX], repolist[PATH_MAX];
-	int rv = 0;
+	char dpkgidx[PATH_MAX], repolist[PATH_MAX], *root = NULL;
+	int c, rv = 0;
 
-	if (argc < 2)
+	while ((c = getopt(argc, argv, "r:")) != -1) {
+		switch (c) {
+		case 'r':
+			/* To specify the root directory */
+			root = strdup(optarg);
+			if (root == NULL)
+				exit(ENOMEM);
+			xbps_set_rootdir(root);
+			break;
+		case '?':
+		default:
+			usage();
+		}
+	}
+
+	argc -= optind;
+	argv += optind;
+
+	if (argc < 1)
 		usage();
 
-	if (strcasecmp(argv[1], "repo-add") == 0) {
+	if (strcasecmp(argv[0], "repo-add") == 0) {
 		/* Adds a new repository to the pool. */
-		if (argc != 3)
+		if (argc != 2)
 			usage();
 
-		if (!sanitize_localpath(dpkgidx, argv[2]))
+		if (!sanitize_localpath(dpkgidx, argv[1]))
 			exit(EINVAL);
 
 		/* Temp buffer to verify pkgindex file. */
-		if (!xbps_append_full_path(repolist, dpkgidx, XBPS_PKGINDEX))
+		if (!xbps_append_full_path(false, repolist, dpkgidx,
+		    XBPS_PKGINDEX))
 			exit(EINVAL);
 
 		dict = prop_dictionary_internalize_from_file(repolist);
@@ -222,22 +242,22 @@ main(int argc, char **argv)
 		prop_object_release(dict);
 		free(rinfo);
 
-	} else if (strcasecmp(argv[1], "repo-list") == 0) {
+	} else if (strcasecmp(argv[0], "repo-list") == 0) {
 		/* Lists all repositories registered in pool. */
-		if (argc != 2)
+		if (argc != 1)
 			usage();
 
-		dict = getrepolist_dict();
+		dict = getrepolist_dict(root);
 		(void)xbps_callback_array_iter_in_dict(dict,
 		    "repository-list", xbps_list_strings_in_array, NULL);
 		prop_object_release(dict);
 
-	} else if (strcasecmp(argv[1], "repo-rm") == 0) {
+	} else if (strcasecmp(argv[0], "repo-rm") == 0) {
 		/* Remove a repository from the pool. */
-		if (argc != 3)
+		if (argc != 2)
 			usage();
 
-		if (!sanitize_localpath(dpkgidx, argv[2]))
+		if (!sanitize_localpath(dpkgidx, argv[1]))
 			exit(EINVAL);
 
 		if (!xbps_unregister_repository(dpkgidx)) {
@@ -250,37 +270,37 @@ main(int argc, char **argv)
 			exit(EINVAL);
 		}
 
-	} else if (strcasecmp(argv[1], "search") == 0) {
+	} else if (strcasecmp(argv[0], "search") == 0) {
 		/* Search for a package by looking at short_desc. */
-		if (argc != 3)
+		if (argc != 2)
 			usage();
 
-		dict = getrepolist_dict();
+		dict = getrepolist_dict(root);
 		(void)xbps_callback_array_iter_in_dict(dict,
-		    "repository-list", xbps_search_string_in_pkgs, argv[2]);
+		    "repository-list", xbps_search_string_in_pkgs, argv[1]);
 		prop_object_release(dict);
 
-	} else if (strcasecmp(argv[1], "show") == 0) {
+	} else if (strcasecmp(argv[0], "show") == 0) {
 		/* Shows info about a binary package. */
-		if (argc != 3)
+		if (argc != 2)
 			usage();
 
-		dict = getrepolist_dict();
+		dict = getrepolist_dict(root);
 		if (xbps_callback_array_iter_in_dict(dict, "repository-list",
-		    xbps_show_pkg_info_from_repolist, argv[2]) != 0) {
+		    xbps_show_pkg_info_from_repolist, argv[1]) != 0) {
 			prop_object_release(dict);
 			printf("ERROR: unable to locate package '%s'.\n",
-			    argv[2]);
+			    argv[1]);
 			exit(EINVAL);
 		}
 		prop_object_release(dict);
 
-	} else if (strcasecmp(argv[1], "list") == 0) {
+	} else if (strcasecmp(argv[0], "list") == 0) {
 		/* Lists packages currently registered in database. */
-		if (argc != 2)
+		if (argc != 1)
 			usage();
 
-		if (!xbps_append_full_path(dpkgidx, NULL, XBPS_REGPKGDB))
+		if (!xbps_append_full_path(true, dpkgidx, NULL, XBPS_REGPKGDB))
 			exit(EINVAL);
 
 		dict = prop_dictionary_internalize_from_file(dpkgidx);
@@ -296,21 +316,15 @@ main(int argc, char **argv)
 		}
 		prop_object_release(dict);
 
-	} else if (strcasecmp(argv[1], "install") == 0) {
+	} else if (strcasecmp(argv[0], "install") == 0) {
 		/* Installs a binary package and required deps. */
-		if (argc < 3 || argc > 4)
+		if (argc != 2)
 			usage();
 
-		if (argc == 3) {
-			/* Install into root directory by default. */
-			rv = xbps_install_binary_pkg(argv[2], "/");
-		} else {
-			/* install into specified directory. */
-			rv = xbps_install_binary_pkg(argv[2], argv[3]);
-		}
-
+		/* Install into root directory by default. */
+		rv = xbps_install_binary_pkg(argv[1], root);
 		if (rv) {
-			printf("ERROR: unable to install %s.\n", argv[2]);
+			printf("ERROR: unable to install %s.\n", argv[1]);
 			exit(rv);
 		}
 	} else {

@@ -36,7 +36,7 @@
 #include <archive_entry.h>
 
 /* Default root PATH for xbps to store metadata info. */
-#define XBPS_META_PATH		"/var/cache/xbps/"
+#define XBPS_META_PATH		"/var/cache/xbps"
 
 /* Filename for the repositories plist file. */
 #define XBPS_REPOLIST		"repositories.plist"

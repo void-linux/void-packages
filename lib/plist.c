@@ -275,7 +275,7 @@ xbps_register_repository(const char *uri)
 
 	assert(uri != NULL);
 
-	if (!xbps_append_full_path(plist, NULL, XBPS_REPOLIST)) {
+	if (!xbps_append_full_path(true, plist, NULL, XBPS_REPOLIST)) {
 		errno = EINVAL;
 		return false;
 	}
@@ -354,7 +354,7 @@ xbps_unregister_repository(const char *uri)
 
 	assert(uri != NULL);
 
-	if (!xbps_append_full_path(plist, NULL, XBPS_REPOLIST)) {
+	if (!xbps_append_full_path(true, plist, NULL, XBPS_REPOLIST)) {
 		errno = EINVAL;
 		return false;
 	}
@@ -517,7 +517,7 @@ xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 	repofile = prop_string_cstring_nocopy(obj);
 	assert(repofile != NULL);
 
-	if (!xbps_append_full_path(plist, repofile, XBPS_PKGINDEX))
+	if (!xbps_append_full_path(false, plist, repofile, XBPS_PKGINDEX))
 		return EINVAL;
 
 	dict = prop_dictionary_internalize_from_file(plist);
@@ -546,7 +546,7 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 	repofile = prop_string_cstring_nocopy(obj);
 
 	/* Get string for pkg-index.plist with full path. */
-	if (!xbps_append_full_path(plist, repofile, XBPS_PKGINDEX))
+	if (!xbps_append_full_path(false, plist, repofile, XBPS_PKGINDEX))
 		return EINVAL;
 
 	dict = prop_dictionary_internalize_from_file(plist);

@@ -48,16 +48,17 @@ write_plist_file(prop_dictionary_t dict, const char *file)
 static void
 usage(void)
 {
-	printf("usage: xbps-pkgdb <action> [args]\n\n"
+	printf("usage: xbps-pkgdb [options] [action] [args]\n\n"
 	"  Available actions:\n"
 	"    register, sanitize-plist, unregister, version\n"
 	"  Action arguments:\n"
-	"    register\t[<pkgname> <version> <shortdesc>]\n"
-	"    sanitize-plist\t[<plist>]\n"
-	"    unregister\t[<pkgname> <version>]\n"
-	"    version\t[<pkgname>]\n"
-	"  Environment:\n"
-	"    XBPS_META_PATH\tPath to xbps metadata root directory\n\n"
+	"    register\t\t<pkgname> <version> <shortdesc>\n"
+	"    sanitize-plist\t<plist>\n"
+	"    unregister\t\t<pkgname> <version>\n"
+	"    version\t\t<pkgname>\n"
+	"  Options shared by all actions:\n"
+	"    -r\t\t\t<rootdir>\n"
+	"\n"
 	"  Examples:\n"
 	"    $ xbps-pkgdb register pkgname 2.0 \"A short description\"\n"
 	"    $ xbps-pkgdb sanitize-plist /blah/foo.plist\n"
@@ -71,14 +72,32 @@ main(int argc, char **argv)
 {
 	prop_dictionary_t dbdict = NULL, pkgdict;
 	const char *version;
-	char dbfile[PATH_MAX], *in_chroot_env;
+	char dbfile[PATH_MAX], *in_chroot_env, *root = NULL;
 	bool in_chroot = false;
-	int rv = 0;
+	int c, rv = 0;
 
-	if (argc < 2)
+	while ((c = getopt(argc, argv, "r:")) != -1) {
+		switch (c) {
+		case 'r':
+			/* To specify the root directory */
+			root = strdup(optarg);
+			if (root == NULL)
+				exit(ENOMEM);
+			xbps_set_rootdir(root);
+			break;
+		case '?':
+		default:
+			usage();
+		}
+	}
+
+	argc -= optind;
+	argv += optind;
+
+	if (argc < 1)
 		usage();
 
-	if (!xbps_append_full_path(dbfile, NULL, XBPS_REGPKGDB)) {
+	if (!xbps_append_full_path(true, dbfile, NULL, XBPS_REGPKGDB)) {
 		printf("=> ERROR: couldn't find regpkdb file (%s)\n",
 		    strerror(errno));
 		exit(EINVAL);
@@ -88,53 +107,53 @@ main(int argc, char **argv)
 	if (in_chroot_env != NULL)
 		in_chroot = true;
 
-	if (strcasecmp(argv[1], "register") == 0) {
+	if (strcasecmp(argv[0], "register") == 0) {
 		/* Registers a package into the database */
-		if (argc != 5)
-			usage();
-
-		rv = xbps_register_pkg(argv[2], argv[3], argv[4]);
-		if (rv == EEXIST) {
-			printf("%s=> %s-%s already registered.\n",
-			    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
-		} else if (rv != 0) {
-			printf("%s=> couldn't register %s-%s (%s).\n",
-			    in_chroot ? "[chroot] " : "" , argv[2], argv[3],
-			    strerror(rv));
-		} else {
-			printf("%s=> %s-%s registered successfully.\n",
-			    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
-		}
-
-	} else if (strcasecmp(argv[1], "unregister") == 0) {
-		/* Unregisters a package from the database */
 		if (argc != 4)
 			usage();
 
-		if (!xbps_remove_pkg_dict_from_file(argv[2], dbfile)) {
+		rv = xbps_register_pkg(argv[1], argv[2], argv[3]);
+		if (rv == EEXIST) {
+			printf("%s=> %s-%s already registered.\n",
+			    in_chroot ? "[chroot] " : "", argv[1], argv[2]);
+		} else if (rv != 0) {
+			printf("%s=> couldn't register %s-%s (%s).\n",
+			    in_chroot ? "[chroot] " : "" , argv[1], argv[2],
+			    strerror(rv));
+		} else {
+			printf("%s=> %s-%s registered successfully.\n",
+			    in_chroot ? "[chroot] " : "", argv[1], argv[2]);
+		}
+
+	} else if (strcasecmp(argv[0], "unregister") == 0) {
+		/* Unregisters a package from the database */
+		if (argc != 3)
+			usage();
+
+		if (!xbps_remove_pkg_dict_from_file(argv[1], dbfile)) {
 			if (errno == ENODEV)
 				printf("=> ERROR: %s not registered "
-				    "in database.\n", argv[2]);
+				    "in database.\n", argv[1]);
 			else
 				printf("=> ERROR: couldn't unregister %s "
-				    "from database (%s)\n", argv[2],
+				    "from database (%s)\n", argv[1],
 				    strerror(errno));
 			exit(EINVAL);
 		}
 
 		printf("%s=> %s-%s unregistered successfully.\n",
-		    in_chroot ? "[chroot] " : "", argv[2], argv[3]);
+		    in_chroot ? "[chroot] " : "", argv[1], argv[2]);
 
-	} else if (strcasecmp(argv[1], "version") == 0) {
+	} else if (strcasecmp(argv[0], "version") == 0) {
 		/* Prints version of an installed package */
-		if (argc != 3)
+		if (argc != 2)
 			usage();
 
 		dbdict = prop_dictionary_internalize_from_file(dbfile);
 		if (dbdict == NULL)
 			exit(1);
 
-		pkgdict = xbps_find_pkg_in_dict(dbdict, argv[2]);
+		pkgdict = xbps_find_pkg_in_dict(dbdict, argv[1]);
 		if (pkgdict == NULL)
 			exit(1);
 
@@ -144,18 +163,18 @@ main(int argc, char **argv)
 
 		printf("%s\n", version);
 
-	} else if (strcasecmp(argv[1], "sanitize-plist") == 0) {
+	} else if (strcasecmp(argv[0], "sanitize-plist") == 0) {
 		/* Sanitize a plist file (indent the file properly) */
-		if (argc != 3)
+		if (argc != 1)
 			usage();
 
-		dbdict = prop_dictionary_internalize_from_file(argv[2]);
+		dbdict = prop_dictionary_internalize_from_file(argv[1]);
 		if (dbdict == NULL) {
 			printf("=> ERROR: couldn't sanitize %s plist file "
-			    "(%s)\n", argv[2], strerror(errno));
+			    "(%s)\n", argv[1], strerror(errno));
 			exit(1);
 		}
-		write_plist_file(dbdict, argv[2]);
+		write_plist_file(dbdict, argv[1]);
 
 	} else {
 		usage();
