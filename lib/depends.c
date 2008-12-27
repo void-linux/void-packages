@@ -94,10 +94,12 @@ xbps_clean_pkg_depslist(void)
 {
 	struct pkg_dependency *dep;
 
-	SIMPLEQ_FOREACH(dep, &pkg_deps_queue, deps) {
-		SIMPLEQ_REMOVE(&pkg_deps_queue, dep, pkg_dependency, deps);
+	while (!SIMPLEQ_EMPTY(&pkg_deps_queue)) {
+		dep = SIMPLEQ_FIRST(&pkg_deps_queue);
+		SIMPLEQ_REMOVE_HEAD(&pkg_deps_queue, deps);
 		free(dep->name);
 		prop_object_release(dep->repo);
+		free(dep);
 	}
 }
 
