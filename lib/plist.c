@@ -85,7 +85,6 @@ xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
 	assert(func != NULL);
 
 	run = cbloop_done = false;
-	assert(func != NULL);
 
 	iter = xbps_get_array_iter_from_dict(dict, key);
 	if (iter == NULL)
