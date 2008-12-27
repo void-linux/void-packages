@@ -151,16 +151,6 @@ check_config_vars()
 			[ $? -ne 0 ] && msg_error "couldn't create '$f' directory"
 		fi
 	done
-
-	if [ "$xbps_machine" = "x86_64" ]; then
-		[ ! -d $XBPS_MASTERDIR/lib ] && mkdir -p $XBPS_MASTERDIR/lib
-		[ ! -h $XBPS_MASTERDIR/lib64 ] && \
-			cd $XBPS_MASTERDIR && ln -s lib lib64
-		[ ! -d $XBPS_MASTERDIR/usr/lib ] && \
-			mkdir -p $XBPS_MASTERDIR/usr/lib
-		[ ! -h $XBPS_MASTERDIR/usr/lib64 ] && \
-			cd $XBPS_MASTERDIR/usr && ln -s lib lib64
-	fi
 }
 
 #
