@@ -271,6 +271,8 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	int rv;
 
 	assert(pkg != NULL);
+	assert(repo != NULL);
+	assert(cb != NULL);
 
 	/* Append filename to the full path for binary pkg */
 	filename = prop_dictionary_get(pkg, "filename");

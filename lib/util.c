@@ -37,6 +37,8 @@ xbps_get_pkg_version(const char *pkg)
 {
 	const char *tmp;
 
+	assert(pkg != NULL);
+
 	/* Get the required version */
 	tmp = strrchr(pkg, '-');
 	assert(tmp != NULL);
@@ -49,6 +51,8 @@ xbps_get_pkg_name(const char *pkg)
 	const char *tmp;
 	char *pkgname;
 	size_t len = 0;
+
+	assert(pkg != NULL);
 
 	/* Get the required version */
 	tmp = strrchr(pkg, '-');

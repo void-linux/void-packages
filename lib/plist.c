@@ -42,7 +42,9 @@ bool
 xbps_add_obj_to_dict(prop_dictionary_t dict, prop_object_t obj,
 		       const char *key)
 {
-	assert(dict != NULL || obj != NULL || key != NULL);
+	assert(dict != NULL);
+	assert(obj != NULL);
+	assert(key != NULL);
 
 	if (!prop_dictionary_set(dict, key, obj)) {
 		prop_object_release(dict);
@@ -56,7 +58,8 @@ xbps_add_obj_to_dict(prop_dictionary_t dict, prop_object_t obj,
 bool
 xbps_add_obj_to_array(prop_array_t array, prop_object_t obj)
 {
-	assert(array != NULL || obj != NULL);
+	assert(array != NULL);
+	assert(obj != NULL);
 
 	if (!prop_array_add(array, obj)) {
 		prop_object_release(array);
@@ -76,6 +79,10 @@ xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
 	prop_object_t obj;
 	int rv = 0;
 	bool run, cbloop_done;
+
+	assert(dict != NULL);
+	assert(key != NULL);
+	assert(func != NULL);
 
 	run = cbloop_done = false;
 	assert(func != NULL);
@@ -129,6 +136,7 @@ xbps_find_pkg_in_dict(prop_dictionary_t dict, const char *pkgname)
 	prop_object_t obj;
 	const char *dpkgn;
 
+	assert(dict != NULL);
 	assert(pkgname != NULL);
 
 	iter = xbps_get_array_iter_from_dict(dict, "packages");
@@ -151,7 +159,8 @@ xbps_find_string_in_array(prop_array_t array, const char *val)
 	prop_object_iterator_t iter;
 	prop_object_t obj;
 
-	assert(array != NULL || val != NULL);
+	assert(array != NULL);
+	assert(val != NULL);
 
 	iter = prop_array_iterator(array);
 	if (iter == NULL)
@@ -175,7 +184,8 @@ xbps_get_array_iter_from_dict(prop_dictionary_t dict, const char *key)
 {
 	prop_array_t array;
 
-	assert(dict != NULL || key != NULL);
+	assert(dict != NULL);
+	assert(key != NULL);
 
 	array = prop_dictionary_get(dict, key);
 	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
@@ -193,6 +203,9 @@ xbps_remove_pkg_dict_from_file(const char *pkg, const char *plist)
 	prop_object_iterator_t iter;
 	const char *curpkg;
 	size_t i = 0;
+
+	assert(pkg != NULL);
+	assert(plist != NULL);
 
 	pdict = prop_dictionary_internalize_from_file(plist);
 	if (pdict == NULL)
@@ -399,8 +412,7 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 	int rv = 0;
 
 	assert(dict != NULL);
-	if (prop_dictionary_count(dict) == 0)
-		return;
+	assert(prop_dictionary_count(dict) != 0);
 
 	obj = prop_dictionary_get(dict, "pkgname");
 	if (obj && prop_object_type(obj) == PROP_TYPE_STRING)
