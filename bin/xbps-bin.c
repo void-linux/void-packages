@@ -130,6 +130,7 @@ static bool
 sanitize_localpath(char *buf, const char *path)
 {
 	char *dirnp, *basenp, *dir, *base, *tmp;
+	bool rv = false;
 
 	dir = strdup(path);
 	if (dir == NULL)
@@ -143,29 +144,27 @@ sanitize_localpath(char *buf, const char *path)
 
 	dirnp = dirname(dir);
 	if (strcmp(dirnp, ".") == 0)
-		goto error;
+		goto out;
 
 	basenp = basename(base);
 	if (strcmp(basenp, base) == 0)
-		goto error;
+		goto out;
 
 	tmp = strncpy(buf, dirnp, PATH_MAX - 1);
 	if (sizeof(*tmp) >= PATH_MAX)
-		goto error;
+		goto out;
 
 	buf[strlen(buf) + 1] = '\0';
 	if (strcmp(dirnp, "/"))
 		strncat(buf, "/", 1);
 	strncat(buf, basenp, PATH_MAX - strlen(buf) - 1);
+	rv = true;
+
+out:
 	free(dir);
 	free(base);
 
-	return true;
-
-error:
-	free(base);
-	free(dir);
-	return false;
+	return rv;
 }
 
 int
