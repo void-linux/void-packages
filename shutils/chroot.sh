@@ -35,26 +35,6 @@ prepare_chroot()
 {
 	local f=
 
-	for f in bin boot etc home lib mnt opt media/cdrom sbin usr var; do
-		mkdir -p $XBPS_MASTERDIR/$f
-	done
-	mkdir -p -m 0750 $XBPS_MASTERDIR/root
-	mkdir -p -m 1777 $XBPS_MASTERDIR/tmp $XBPS_MASTERDIR/var/tmp
-	for f in local bin include lib sbin src; do
-		mkdir -p $XBPS_MASTERDIR/usr/$f
-	done
-	for f in locale man misc terminfo zoneinfo doc info; do
-		mkdir -p $XBPS_MASTERDIR/usr/share/$f
-		mkdir -p $XBPS_MASTERDIR/usr/local/share/$f
-	done
-	for f in 1 2 3 4 5 6 7 8; do
-		mkdir -p $XBPS_MASTERDIR/usr/share/man/man$f
-		mkdir -p $XBPS_MASTERDIR/usr/local/share/man/man$f
-	done
-	for f in lock log mail run spool opt cache lib; do
-		mkdir -p $XBPS_MASTERDIR/var/$f
-	done
-
 	chown -R root:root $XBPS_MASTERDIR
 
 	# Create some required files.
