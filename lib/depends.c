@@ -33,14 +33,14 @@
 #include <xbps_api.h>
 
 struct pkg_dependency {
-	LIST_ENTRY(pkg_dependency) deps;
+	SIMPLEQ_ENTRY(pkg_dependency) deps;
 	prop_dictionary_t repo;
 	const char *namever;
 	char *name;
 };
 
-static LIST_HEAD(, pkg_dependency) pkg_deps_list =
-    LIST_HEAD_INITIALIZER(pkg_deps_list);
+static SIMPLEQ_HEAD(, pkg_dependency) pkg_deps_queue =
+    SIMPLEQ_HEAD_INITIALIZER(pkg_deps_queue);
 
 int
 xbps_check_is_installed_pkg(const char *pkg)
@@ -94,8 +94,8 @@ xbps_clean_pkg_depslist(void)
 {
 	struct pkg_dependency *dep;
 
-	LIST_FOREACH(dep, &pkg_deps_list, deps) {
-		LIST_REMOVE(dep, deps);
+	SIMPLEQ_FOREACH(dep, &pkg_deps_queue, deps) {
+		SIMPLEQ_REMOVE(&pkg_deps_queue, dep, pkg_dependency, deps);
 		free(dep->name);
 		prop_object_release(dep->repo);
 	}
@@ -113,7 +113,7 @@ xbps_add_pkg_dependency(const char *pkg, prop_dictionary_t repo)
 
 	pkgname = xbps_get_pkg_name(pkg);
 
-	LIST_FOREACH(dep, &pkg_deps_list, deps) {
+	SIMPLEQ_FOREACH(dep, &pkg_deps_queue, deps) {
 		if (strcmp(dep->name, pkgname) == 0) {
 			free(pkgname);
 			return;
@@ -126,7 +126,7 @@ xbps_add_pkg_dependency(const char *pkg, prop_dictionary_t repo)
 
 	len = strlen(pkgname) + 1;
 	dep->name = malloc(len);
-	assert(dep != NULL);
+	assert(dep->name != NULL);
 
 	memcpy(dep->name, pkgname, len - 1);
 	dep->name[len - 1] = '\0';
@@ -134,7 +134,7 @@ xbps_add_pkg_dependency(const char *pkg, prop_dictionary_t repo)
 	dep->repo = prop_dictionary_copy(repo);
 	dep->namever = pkg;
 
-	LIST_INSERT_HEAD(&pkg_deps_list, dep, deps);
+	SIMPLEQ_INSERT_TAIL(&pkg_deps_queue, dep, deps);
 }
 
 static int
@@ -273,7 +273,7 @@ xbps_install_pkg_deps(prop_dictionary_t pkg)
 		namestr = xbps_get_pkg_name(reqpkg);
 		version = xbps_get_pkg_version(reqpkg);
 
-		LIST_FOREACH(dep, &pkg_deps_list, deps) {
+		SIMPLEQ_FOREACH(dep, &pkg_deps_queue, deps) {
 			if (strcmp(dep->name, namestr) == 0) {
 				deps_found++;
 				dep_found = true;
@@ -297,7 +297,7 @@ xbps_install_pkg_deps(prop_dictionary_t pkg)
 	/*
 	 * Iterate over the list of dependencies and install them.
 	 */
-	LIST_FOREACH(dep, &pkg_deps_list, deps) {
+	SIMPLEQ_FOREACH(dep, &pkg_deps_queue, deps) {
 		pkgd = xbps_find_pkg_in_dict(dep->repo, dep->name);
 		if (pkgd == NULL) {
 			rv = EINVAL;
