@@ -31,10 +31,17 @@ xbps_write_metadata_pkg()
 {
 	local destdir=$XBPS_DESTDIR/$pkgname-$version
 	local metadir=$destdir/var/cache/xbps/metadata/$pkgname
+	local prioinst=
 
 	if [ ! -d "$destdir" ]; then
 		echo "ERROR: $pkgname not installed into destdir."
 		exit 1
+	fi
+
+	if [ -n "$priority" ]; then
+		prioinst=$install_priority
+	else
+		prioinst=0
 	fi
 
 	# Write the files list.
@@ -56,6 +63,8 @@ xbps_write_metadata_pkg()
 	<string>$version</string>
 	<key>architecture</key>
 	<string>$xbps_machine</string>
+	<key>priority</key>
+	<integer>$prioinst</integer>
 	<key>installed_size</key>
 	<integer>$(du -sb $destdir|awk '{print $1}')</integer>
 	<key>maintainer</key>
