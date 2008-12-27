@@ -130,13 +130,18 @@ main(int argc, char **argv)
 		if (argc != 3)
 			usage();
 
-		pkgdict = xbps_find_pkg_in_dict(
-			prop_dictionary_internalize_from_file(dbfile), argv[2]);
+		dbdict = prop_dictionary_internalize_from_file(dbfile);
+		if (dbdict == NULL)
+			exit(1);
+
+		pkgdict = xbps_find_pkg_in_dict(dbdict, argv[2]);
 		if (pkgdict == NULL)
 			exit(1);
+
 		if (!prop_dictionary_get_cstring_nocopy(pkgdict, "version",
 		    &version))
 			exit(1);
+
 		printf("%s\n", version);
 
 	} else if (strcasecmp(argv[1], "sanitize-plist") == 0) {
