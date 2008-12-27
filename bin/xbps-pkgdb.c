@@ -165,7 +165,7 @@ main(int argc, char **argv)
 
 	} else if (strcasecmp(argv[0], "sanitize-plist") == 0) {
 		/* Sanitize a plist file (indent the file properly) */
-		if (argc != 1)
+		if (argc != 2)
 			usage();
 
 		dbdict = prop_dictionary_internalize_from_file(argv[1]);
