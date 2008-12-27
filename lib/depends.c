@@ -35,6 +35,7 @@
 struct pkg_dependency {
 	SIMPLEQ_ENTRY(pkg_dependency) deps;
 	prop_dictionary_t repo;
+	uint64_t priority;
 	const char *namever;
 	char *name;
 };
@@ -104,14 +105,15 @@ xbps_clean_pkg_depslist(void)
 }
 
 void
-xbps_add_pkg_dependency(const char *pkg, prop_dictionary_t repo)
+xbps_add_pkg_dependency(const char *pkg, uint64_t prio, prop_dictionary_t repo)
 {
-	struct pkg_dependency *dep;
+	struct pkg_dependency *dep, *dep_prev;
 	size_t len = 0;
 	char *pkgname;
 
 	assert(repo != NULL);
 	assert(pkg != NULL);
+	assert(pkgd != NULL);
 
 	pkgname = xbps_get_pkg_name(pkg);
 
@@ -136,7 +138,20 @@ xbps_add_pkg_dependency(const char *pkg, prop_dictionary_t repo)
 	dep->repo = prop_dictionary_copy(repo);
 	dep->namever = pkg;
 
-	SIMPLEQ_INSERT_TAIL(&pkg_deps_queue, dep, deps);
+	if (SIMPLEQ_EMPTY(&pkg_deps_queue)) {
+		SIMPLEQ_INSERT_HEAD(&pkg_deps_queue, dep, deps);
+		return;
+	}
+
+	/*
+	 * If package has a higher priority, it must be installed
+	 * before other ones with lower priority.
+	 */
+	dep_prev = SIMPLEQ_FIRST(&pkg_deps_queue);
+	if (prio > dep_prev->priority)
+		SIMPLEQ_INSERT_TAIL(&pkg_deps_queue, dep, deps);
+	else
+		SIMPLEQ_INSERT_HEAD(&pkg_deps_queue, dep, deps);
 }
 
 static int
@@ -144,8 +159,10 @@ find_deps_in_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
 {
 	prop_dictionary_t pkgdict;
 	prop_array_t array;
+	prop_number_t prio_num;
 	prop_object_t obj;
 	prop_object_iterator_t iter = NULL;
+	uint64_t prio;
 	const char *reqpkg;
 	char *pkgname;
 
@@ -177,7 +194,13 @@ find_deps_in_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
 		/*
 		 * Package is on repo, add it into the list.
 		 */
-		xbps_add_pkg_dependency(reqpkg, repo);
+		prio_num = prop_dictionary_get(pkgdict, "priority");
+		if (prio_num == NULL)
+			prio = 0;
+		else
+			prio = prop_number_unsigned_integer_value(prio_num);
+
+		xbps_add_pkg_dependency(reqpkg, prio, repo);
 		free(pkgname);
 
 		/* Iterate on required pkg to find more deps */
