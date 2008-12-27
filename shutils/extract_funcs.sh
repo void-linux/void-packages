@@ -55,7 +55,7 @@ extract_distfiles()
 		count=$(($count + 1))
 	done
 
-	if [ $count -gt 1 ]; then
+	if [ "$count" -gt 1 ]; then
 		if [ -z "$wrksrc" ]; then
 			msg_error "\$wrksrc must be defined with multiple distfiles."
 			exit 1

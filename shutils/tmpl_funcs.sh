@@ -106,6 +106,7 @@ setup_tmpl()
 #
 prepare_tmpl()
 {
+	local REQ_VARS=
 	local i=
 	local found=
 
@@ -114,7 +115,11 @@ prepare_tmpl()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	REQ_VARS="pkgname distfiles version build_style"
+	if [ "$build_style" = "custom-install" -a -z "$distfiles" ]; then
+		mkdir -p $XBPS_BUILDDIR/$pkgname-$version
+	fi
+
+	REQ_VARS="pkgname version build_style short_desc long_desc"
 
 	# Check if required vars weren't set.
 	for i in ${REQ_VARS}; do
