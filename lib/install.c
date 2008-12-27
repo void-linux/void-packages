@@ -38,26 +38,29 @@ xbps_install_binary_pkg_from_repolist(prop_object_t obj, void *arg,
 {
 	prop_dictionary_t repod, pkgrd;
 	const char *pkgname = arg, *version, *desc;
-	char plist[PATH_MAX];
+	char *plist;
 	int rv = 0;
 
 	/*
 	 * Get the dictionary from a repository's index file.
 	 */
-	memset(plist, 0, sizeof(&plist));
-	if (!xbps_append_full_path(false, plist,
-	    prop_string_cstring_nocopy(obj), XBPS_PKGINDEX))
+	plist = xbps_append_full_path(false,
+	    prop_string_cstring_nocopy(obj), XBPS_PKGINDEX);
+	if (plist == NULL)
 		return EINVAL;
 
 	repod = prop_dictionary_internalize_from_file(plist);
-	if (repod == NULL)
+	if (repod == NULL) {
+		free(plist);
 		return EINVAL;
+	}
 
 	/*
 	 * Get the package dictionary from current repository.
 	 */
 	pkgrd = xbps_find_pkg_in_dict(repod, pkgname);
 	if (pkgrd == NULL) {
+		free(plist);
 		prop_object_release(repod);
 		return XBPS_PKG_ENOTINREPO;
 	}
@@ -79,6 +82,7 @@ xbps_install_binary_pkg_from_repolist(prop_object_t obj, void *arg,
 			if (rv == EEXIST)
 				rv = 0;
 		}
+		free(plist);
 		prop_object_release(repod);
 		*loop_done = true;
 		return rv;
@@ -89,6 +93,7 @@ xbps_install_binary_pkg_from_repolist(prop_object_t obj, void *arg,
 	 */
 	rv = xbps_install_pkg_deps(pkgrd);
 	if (rv != 0) {
+		free(plist);
 		prop_object_release(repod);
 		return rv;
 	}
@@ -102,6 +107,7 @@ xbps_install_binary_pkg_from_repolist(prop_object_t obj, void *arg,
 		if (rv == EEXIST)
 			rv = 0;
 	}
+	free(plist);
 	prop_object_release(repod);
 	*loop_done = true;
 
@@ -112,7 +118,7 @@ int
 xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 {
 	prop_dictionary_t repolistd;
-	char plist[PATH_MAX];
+	char *plist;
 	int rv = 0;
 
 	assert(pkgname != NULL);
@@ -125,12 +131,15 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 	 * Get the dictionary with the list of registered
 	 * repositories.
 	 */
-	if (!xbps_append_full_path(true, plist, NULL, XBPS_REPOLIST))
+	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
+	if (plist == NULL)
 		return EINVAL;
 
 	repolistd = prop_dictionary_internalize_from_file(plist);
-	if (repolistd == NULL)
+	if (repolistd == NULL) {
+		free(plist);
 		return EINVAL;
+	}
 
 	/*
 	 * Iterate over the repositories to find the binary packages
@@ -138,6 +147,8 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 	 */
 	rv = xbps_callback_array_iter_in_dict(repolistd, "repository-list",
 	    xbps_install_binary_pkg_from_repolist, (void *)pkgname);
+
+	free(plist);
 	prop_object_release(repolistd);
 
 	return rv;
@@ -163,25 +174,29 @@ xbps_register_pkg(const char *pkgname, const char *version, const char *desc)
 {
 	prop_dictionary_t dict, pkgd;
 	prop_array_t array;
-	char plist[PATH_MAX];
+	char *plist;
 	int rv = 0;
 
 	assert(pkgname != NULL);
 	assert(version != NULL);
 	assert(desc != NULL);
 
-	if (!xbps_append_full_path(true, plist, NULL, XBPS_REGPKGDB))
+	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+	if (plist == NULL)
 		return EINVAL;
 
 	dict = prop_dictionary_internalize_from_file(plist);
 	if (dict == NULL) {
 		/* No packages registered yet. */
 		dict = prop_dictionary_create();
-		if (dict == NULL)
+		if (dict == NULL) {
+			free(plist);
 			return ENOMEM;
+		}
 
 		array = prop_array_create();
 		if (array == NULL) {
+			free(plist);
 			prop_object_release(dict);
 			return ENOMEM;
 		}
@@ -192,12 +207,14 @@ xbps_register_pkg(const char *pkgname, const char *version, const char *desc)
 			prop_object_release(array);
 			prop_object_release(dict);
 			prop_object_release(pkgd);
+			free(plist);
 			return EINVAL;
 		}
 
 		if (!xbps_add_obj_to_dict(dict, array, "packages")) {
 			prop_object_release(array);
 			prop_object_release(dict);
+			free(plist);
 			return EINVAL;
 		}
 
@@ -206,6 +223,7 @@ xbps_register_pkg(const char *pkgname, const char *version, const char *desc)
 		pkgd = xbps_find_pkg_in_dict(dict, pkgname);
 		if (pkgd != NULL) {
 			prop_object_release(dict);
+			free(plist);
 			return EEXIST;
 		}
 
@@ -216,6 +234,7 @@ xbps_register_pkg(const char *pkgname, const char *version, const char *desc)
 		if (!xbps_add_obj_to_array(array, pkgd)) {
 			prop_object_release(pkgd);
 			prop_object_release(dict);
+			free(plist);
 			return EINVAL;
 		}
 	}
@@ -225,6 +244,7 @@ xbps_register_pkg(const char *pkgname, const char *version, const char *desc)
 		rv = errno;
 
 	prop_object_release(dict);
+	free(plist);
 
 	return rv;
 }
@@ -253,6 +273,7 @@ xbps_unpack_archive_cb(struct archive *ar)
 		if ((rv = archive_read_extract(ar, entry, flags)) != 0) {
 			printf("\ncouldn't unpack %s (%s), exiting!\n",
 			    archive_entry_pathname(entry), strerror(errno));
+			archive_entry_free(entry);
 			break;
 		}
 	}
@@ -267,7 +288,7 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 {
 	prop_string_t pkgname, version, filename, repoloc;
 	struct archive *ar;
-	char binfile[PATH_MAX];
+	char *binfile;
 	int rv;
 
 	assert(pkg != NULL);
@@ -278,9 +299,10 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	filename = prop_dictionary_get(pkg, "filename");
 	repoloc = prop_dictionary_get(repo, "location-local");
 
-	if (!xbps_append_full_path(false, binfile,
+	binfile= xbps_append_full_path(false,
 	    prop_string_cstring_nocopy(repoloc),
-	    prop_string_cstring_nocopy(filename)))
+	    prop_string_cstring_nocopy(filename));
+	if (binfile == NULL)
 		return EINVAL;
 
 	pkgname = prop_dictionary_get(pkg, "pkgname");
@@ -296,8 +318,10 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	(void)fflush(stdout);
 
 	ar = archive_read_new();
-	if (ar == NULL)
+	if (ar == NULL) {
+		free(binfile);
 		return ENOMEM;
+	}
 
 	/* Enable support for all format and compression methods */
 	archive_read_support_compression_all(ar);
@@ -305,6 +329,7 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 
 	if ((rv = archive_read_open_filename(ar, binfile, 2048)) != 0) {
 		archive_read_finish(ar);
+		free(binfile);
 		return rv;
 	}
 
@@ -312,6 +337,8 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 		printf("done.\n");
 		(void)fflush(stdout);
 	}
+
+	free(binfile);
 
 	return rv;
 }

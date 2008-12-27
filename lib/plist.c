@@ -270,11 +270,12 @@ xbps_register_repository(const char *uri)
 	prop_dictionary_t dict;
 	prop_array_t array = NULL;
 	prop_object_t obj;
-	char plist[PATH_MAX];
+	char *plist;
 
 	assert(uri != NULL);
 
-	if (!xbps_append_full_path(true, plist, NULL, XBPS_REPOLIST)) {
+	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
+	if (plist == NULL) {
 		errno = EINVAL;
 		return false;
 	}
@@ -284,13 +285,16 @@ xbps_register_repository(const char *uri)
 	if (dict == NULL) {
 		/* Looks like not, create it. */
 		dict = prop_dictionary_create();
-		if (dict == NULL)
+		if (dict == NULL) {
+			free(plist);
 			return false;
+		}
 
 		/* Create the array and add the repository URI on it. */
 		array = prop_array_create();
 		if (array == NULL) {
 			prop_object_release(dict);
+			free(plist);
 			return false;
 		}
 
@@ -306,6 +310,7 @@ xbps_register_repository(const char *uri)
 			goto fail;
 
 		prop_object_release(dict);
+
 	} else {
 		/* Append into the array, the plist file exists. */
 		array = prop_dictionary_get(dict, "repository-list");
@@ -332,13 +337,17 @@ xbps_register_repository(const char *uri)
 			return false;
 		}
 
-		prop_object_release(obj);
+		prop_object_release(dict);
 	}
+
+	free(plist);
 
 	return true;
 
 fail:
 	prop_object_release(dict);
+	free(plist);
+
 	return false;
 }
 
@@ -348,23 +357,27 @@ xbps_unregister_repository(const char *uri)
 	prop_dictionary_t dict;
 	prop_array_t array;
 	struct callback_args *cb;
-	char plist[PATH_MAX];
+	char *plist;
 	bool done = false;
 
 	assert(uri != NULL);
 
-	if (!xbps_append_full_path(true, plist, NULL, XBPS_REPOLIST)) {
+	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
+	if (plist == NULL) {
 		errno = EINVAL;
 		return false;
 	}
 
 	dict = prop_dictionary_internalize_from_file(plist);
-	if (dict == NULL)
+	if (dict == NULL) {
+		free(plist);
 		return false;
+	}
 
 	array = prop_dictionary_get(dict, "repository-list");
 	if (array == NULL) {
 		prop_object_release(dict);
+		free(plist);
 		return false;
 	}
 
@@ -373,6 +386,7 @@ xbps_unregister_repository(const char *uri)
 	cb = malloc(sizeof(*cb));
 	if (cb == NULL) {
 		prop_object_release(dict);
+		free(plist);
 		errno = ENOMEM;
 		return false;
 	}
@@ -390,6 +404,7 @@ xbps_unregister_repository(const char *uri)
 		if (prop_dictionary_externalize_to_file(dict, plist)) {
 			free(cb);
 			prop_object_release(dict);
+			free(plist);
 			return true;
 		}
 	} else {
@@ -399,6 +414,8 @@ xbps_unregister_repository(const char *uri)
 
 	prop_object_release(dict);
 	free(cb);
+	free(plist);
+
 	return false;
 }
 
@@ -508,7 +525,7 @@ xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 {
 	prop_dictionary_t dict;
 	const char *repofile;
-	char plist[PATH_MAX];
+	char *plist;
 
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
@@ -516,17 +533,21 @@ xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 	repofile = prop_string_cstring_nocopy(obj);
 	assert(repofile != NULL);
 
-	if (!xbps_append_full_path(false, plist, repofile, XBPS_PKGINDEX))
+	plist = xbps_append_full_path(false, repofile, XBPS_PKGINDEX);
+	if (plist == NULL)
 		return EINVAL;
 
 	dict = prop_dictionary_internalize_from_file(plist);
-	if (dict == NULL)
+	if (dict == NULL) {
+		free(plist);
 		return EINVAL;
+	}
 
 	printf("From %s repository ...\n", repofile);
 	xbps_callback_array_iter_in_dict(dict, "packages",
 	    xbps_show_pkg_namedesc, arg);
 	prop_object_release(dict);
+	free(plist);
 
 	return 0;
 }
@@ -537,7 +558,7 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 	prop_dictionary_t dict, pkgdict;
 	prop_string_t oloc;
 	const char *repofile, *repoloc;
-	char plist[PATH_MAX];
+	char *plist;
 
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
@@ -545,16 +566,20 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 	repofile = prop_string_cstring_nocopy(obj);
 
 	/* Get string for pkg-index.plist with full path. */
-	if (!xbps_append_full_path(false, plist, repofile, XBPS_PKGINDEX))
+	plist = xbps_append_full_path(false, repofile, XBPS_PKGINDEX);
+	if (plist == NULL)
 		return EINVAL;
 
 	dict = prop_dictionary_internalize_from_file(plist);
-	if (dict == NULL || prop_dictionary_count(dict) == 0)
+	if (dict == NULL || prop_dictionary_count(dict) == 0) {
+		free(plist);
 		return EINVAL;
+	}
 
 	pkgdict = xbps_find_pkg_in_dict(dict, arg);
 	if (pkgdict == NULL) {
 		prop_object_release(dict);
+		free(plist);
 		return XBPS_PKG_ENOTINREPO;
 	}
 
@@ -566,6 +591,7 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 		repoloc = prop_string_cstring_nocopy(oloc);
 	else {
 		prop_object_release(dict);
+		free(plist);
 		return EINVAL;
 	}
 
@@ -573,6 +599,7 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 	xbps_show_pkg_info(pkgdict);
 	*loop_done = true;
 	prop_object_release(dict);
+	free(plist);
 
 	return 0;
 }

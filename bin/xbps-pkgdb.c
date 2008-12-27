@@ -72,7 +72,7 @@ main(int argc, char **argv)
 {
 	prop_dictionary_t dbdict = NULL, pkgdict;
 	const char *version;
-	char dbfile[PATH_MAX], *in_chroot_env, *root = NULL;
+	char *dbfile, *in_chroot_env, *root = NULL;
 	bool in_chroot = false;
 	int c, rv = 0;
 
@@ -97,7 +97,8 @@ main(int argc, char **argv)
 	if (argc < 1)
 		usage();
 
-	if (!xbps_append_full_path(true, dbfile, NULL, XBPS_REGPKGDB)) {
+	dbfile = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+	if (dbfile == NULL) {
 		printf("=> ERROR: couldn't find regpkdb file (%s)\n",
 		    strerror(errno));
 		exit(EINVAL);

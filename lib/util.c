@@ -88,14 +88,15 @@ xbps_set_rootdir(const char *dir)
 	rootdir = dir;
 }
 
-bool
-xbps_append_full_path(bool use_rootdir, char *buf, const char *basedir,
-		      const char *plistf)
+char *
+xbps_append_full_path(bool use_rootdir, const char *basedir, const char *plist)
 {
 	const char *env;
+	char *buf;
+	size_t len = 0;
 
 	assert(buf != NULL);
-	assert(plistf != NULL);
+	assert(plist != NULL);
 
 	if (basedir)
 		env = basedir;
@@ -103,18 +104,31 @@ xbps_append_full_path(bool use_rootdir, char *buf, const char *basedir,
 		env = XBPS_META_PATH;
 
 	if (rootdir && use_rootdir) {
-		if (snprintf(buf, PATH_MAX - 1, "%s/%s/%s",
-		    rootdir, env, plistf) < 0) {
+		len = strlen(rootdir) + strlen(env) + strlen(plist) + 2;
+		buf = malloc(len + 1);
+		if (buf == NULL) {
+			errno = ENOMEM;
+			return NULL;
+		}
+
+		if (snprintf(buf, len + 1, "%s/%s/%s",
+		    rootdir, env, plist) < 0) {
 			errno = ENOSPC;
-			return false;
+			return NULL;
 		}
 	} else {
-		if (snprintf(buf, PATH_MAX - 1, "%s/%s",
-		    env, plistf) < 0) {
+		len = strlen(env) + strlen(plist) + 1;
+		buf = malloc(len + 1);
+		if (buf == NULL) {
+			errno = ENOMEM;
+			return NULL;
+		}
+
+		if (snprintf(buf, len + 1, "%s/%s", env, plist) < 0) {
 			errno = ENOSPC;
-			return false;
+			return NULL;
 		}
 	}
 
-	return true;
+	return buf;
 }

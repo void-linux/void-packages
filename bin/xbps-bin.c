@@ -46,6 +46,8 @@ static prop_dictionary_t getrepolist_dict(const char *);
 static bool pkgindex_getinfo(prop_dictionary_t, repo_info_t *);
 static void usage(void);
 
+static char *plist;
+
 static void
 usage(void)
 {
@@ -106,17 +108,18 @@ static prop_dictionary_t
 getrepolist_dict(const char *root)
 {
 	prop_dictionary_t dict;
-	char plist[PATH_MAX];
 
 	xbps_set_rootdir(root);
 
-	if (!xbps_append_full_path(true, plist, NULL, XBPS_REPOLIST))
+	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
+	if (plist == NULL)
 		exit(1);
 
 	dict = prop_dictionary_internalize_from_file(plist);
 	if (dict == NULL) {
 		printf("ERROR: cannot find repository plist file (%s).\n",
 		    strerror(errno));
+		free(plist);
 		exit(EINVAL);
 	}
 
@@ -170,16 +173,14 @@ main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
 	repo_info_t *rinfo = NULL;
-	char dpkgidx[PATH_MAX], repolist[PATH_MAX], *root = NULL;
+	char dpkgidx[PATH_MAX], *root = NULL;
 	int c, rv = 0;
 
 	while ((c = getopt(argc, argv, "r:")) != -1) {
 		switch (c) {
 		case 'r':
 			/* To specify the root directory */
-			root = strdup(optarg);
-			if (root == NULL)
-				exit(ENOMEM);
+			root = optarg;
 			xbps_set_rootdir(root);
 			break;
 		case '?':
@@ -203,27 +204,30 @@ main(int argc, char **argv)
 			exit(EINVAL);
 
 		/* Temp buffer to verify pkgindex file. */
-		if (!xbps_append_full_path(false, repolist, dpkgidx,
-		    XBPS_PKGINDEX))
+		plist = xbps_append_full_path(false, dpkgidx, XBPS_PKGINDEX);
+		if (plist == NULL)
 			exit(EINVAL);
 
-		dict = prop_dictionary_internalize_from_file(repolist);
+		dict = prop_dictionary_internalize_from_file(plist);
 		if (dict == NULL) {
 			printf("Directory %s does not contain any "
 			    "xbps pkgindex file.\n", dpkgidx);
+			free(plist);
 			exit(EINVAL);
 		}
 
 		rinfo = malloc(sizeof(*rinfo));
 		if (rinfo == NULL) {
 			prop_object_release(dict);
+			free(plist);
 			exit(ENOMEM);
 		}
 
 		if (!pkgindex_getinfo(dict, rinfo)) {
-			printf("'%s' is incomplete.\n", repolist);
+			printf("'%s' is incomplete.\n", plist);
 			prop_object_release(dict);
 			free(rinfo);
+			free(plist);
 			exit(EINVAL);
 		}
 
@@ -232,6 +236,7 @@ main(int argc, char **argv)
 			    strerror(errno));
 			prop_object_release(dict);
 			free(rinfo);
+			free(plist);
 			exit(EINVAL);
 		}
 
@@ -241,6 +246,7 @@ main(int argc, char **argv)
 
 		prop_object_release(dict);
 		free(rinfo);
+		free(plist);
 
 	} else if (strcasecmp(argv[0], "repo-list") == 0) {
 		/* Lists all repositories registered in pool. */
@@ -251,6 +257,7 @@ main(int argc, char **argv)
 		(void)xbps_callback_array_iter_in_dict(dict,
 		    "repository-list", xbps_list_strings_in_array, NULL);
 		prop_object_release(dict);
+		free(plist);
 
 	} else if (strcasecmp(argv[0], "repo-rm") == 0) {
 		/* Remove a repository from the pool. */
@@ -279,6 +286,7 @@ main(int argc, char **argv)
 		(void)xbps_callback_array_iter_in_dict(dict,
 		    "repository-list", xbps_search_string_in_pkgs, argv[1]);
 		prop_object_release(dict);
+		free(plist);
 
 	} else if (strcasecmp(argv[0], "show") == 0) {
 		/* Shows info about a binary package. */
@@ -289,32 +297,38 @@ main(int argc, char **argv)
 		if (xbps_callback_array_iter_in_dict(dict, "repository-list",
 		    xbps_show_pkg_info_from_repolist, argv[1]) != 0) {
 			prop_object_release(dict);
+			free(plist);
 			printf("ERROR: unable to locate package '%s'.\n",
 			    argv[1]);
 			exit(EINVAL);
 		}
 		prop_object_release(dict);
+		free(plist);
 
 	} else if (strcasecmp(argv[0], "list") == 0) {
 		/* Lists packages currently registered in database. */
 		if (argc != 1)
 			usage();
 
-		if (!xbps_append_full_path(true, dpkgidx, NULL, XBPS_REGPKGDB))
+		plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+		if (plist == NULL)
 			exit(EINVAL);
 
-		dict = prop_dictionary_internalize_from_file(dpkgidx);
+		dict = prop_dictionary_internalize_from_file(plist);
 		if (dict == NULL) {
 			printf("No packages currently registered.\n");
+			free(plist);
 			exit(0);
 		}
 
 		if (!xbps_callback_array_iter_in_dict(dict, "packages",
 		    xbps_list_pkgs_in_dict, NULL)) {
 			prop_object_release(dict);
+			free(plist);
 			exit(EINVAL);
 		}
 		prop_object_release(dict);
+		free(plist);
 
 	} else if (strcasecmp(argv[0], "install") == 0) {
 		/* Installs a binary package and required deps. */

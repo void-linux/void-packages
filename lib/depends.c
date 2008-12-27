@@ -49,12 +49,13 @@ xbps_check_is_installed_pkg(const char *pkg)
 	prop_dictionary_t dict, pkgdict;
 	prop_object_t obj;
 	const char *reqver, *instver;
-	char plist[PATH_MAX], *pkgname;
+	char *plist, *pkgname;
 	int rv = 0;
 
 	assert(pkg != NULL);
 
-	if (!xbps_append_full_path(true, plist, NULL, XBPS_REGPKGDB))
+	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+	if (plist == NULL)
 		return EINVAL;
 
 	pkgname = xbps_get_pkg_name(pkg);
@@ -64,6 +65,7 @@ xbps_check_is_installed_pkg(const char *pkg)
 	dict = prop_dictionary_internalize_from_file(plist);
 	if (dict == NULL) {
 		free(pkgname);
+		free(plist);
 		return 1; /* not installed */
 	}
 
@@ -71,6 +73,7 @@ xbps_check_is_installed_pkg(const char *pkg)
 	if (pkgdict == NULL) {
 		prop_object_release(dict);
 		free(pkgname);
+		free(plist);
 		return 1; /* not installed */
 	}
 
@@ -85,6 +88,7 @@ xbps_check_is_installed_pkg(const char *pkg)
 	rv = xbps_cmpver_versions(instver, reqver) > 0 ? 1 : 0;
 
 	free(pkgname);
+	free(plist);
 	prop_object_release(dict);
 
 	return rv;
@@ -137,9 +141,10 @@ xbps_add_pkg_dependency(const char *pkg, uint64_t prio, prop_dictionary_t repo)
 	free(pkgname);
 	dep->repo = prop_dictionary_copy(repo);
 	dep->namever = pkg;
+	dep->priority = 0;
 
 	if (SIMPLEQ_EMPTY(&pkg_deps_queue)) {
-		SIMPLEQ_INSERT_HEAD(&pkg_deps_queue, dep, deps);
+		SIMPLEQ_INSERT_TAIL(&pkg_deps_queue, dep, deps);
 		return;
 	}
 
@@ -149,9 +154,9 @@ xbps_add_pkg_dependency(const char *pkg, uint64_t prio, prop_dictionary_t repo)
 	 */
 	dep_prev = SIMPLEQ_FIRST(&pkg_deps_queue);
 	if (prio > dep_prev->priority)
-		SIMPLEQ_INSERT_TAIL(&pkg_deps_queue, dep, deps);
-	else
 		SIMPLEQ_INSERT_HEAD(&pkg_deps_queue, dep, deps);
+	else
+		SIMPLEQ_INSERT_TAIL(&pkg_deps_queue, dep, deps);
 }
 
 static int
@@ -195,9 +200,13 @@ find_deps_in_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
 		 * Package is on repo, add it into the list.
 		 */
 		prio_num = prop_dictionary_get(pkgdict, "priority");
-		if (prio_num == NULL)
-			prio = 0;
-		else
+		if (prio_num == NULL ||
+		    prop_number_unsigned_integer_value(prio_num) == 0) {
+			if (xbps_pkg_has_rundeps(pkgdict))
+				prio = 10;
+			else
+				prio = 20;
+		} else
 			prio = prop_number_unsigned_integer_value(prio_num);
 
 		xbps_add_pkg_dependency(reqpkg, prio, repo);
@@ -226,24 +235,29 @@ xbps_install_pkg_deps(prop_dictionary_t pkg)
 	struct pkg_dependency *dep;
 	size_t required_deps = 0, deps_found = 0;
 	const char *reqpkg, *version, *pkgname, *desc;
-	char plist[PATH_MAX], *namestr;
+	char *plist, *namestr;
 	int rv = 0;
 	bool dep_found = false;
 
 	assert(pkg != NULL);
 
-	if (!xbps_append_full_path(true, plist, NULL, XBPS_REPOLIST))
+	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
+	if (plist == NULL)
 		return EINVAL;
 
 	repolistd = prop_dictionary_internalize_from_file(plist);
-	if (repolistd == NULL)
+	if (repolistd == NULL) {
+		free(plist);
 		return EINVAL;
+	}
 
+	free(plist);
 	array = prop_dictionary_get(repolistd, "repository-list");
 	assert(array != NULL);
 
 	iter = prop_array_iterator(array);
 	if (iter == NULL) {
+		free(plist);
 		prop_object_release(repolistd);
 		return ENOMEM;
 	}
@@ -253,9 +267,9 @@ xbps_install_pkg_deps(prop_dictionary_t pkg)
 	 * all required dependencies.
 	 */
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
-		memset(plist, 0, sizeof(&plist));
-		if (!xbps_append_full_path(false, plist,
-		    prop_string_cstring_nocopy(obj), XBPS_PKGINDEX)) {
+		plist = xbps_append_full_path(false,
+		    prop_string_cstring_nocopy(obj), XBPS_PKGINDEX);
+		if (plist == NULL) {
 			xbps_clean_pkg_depslist();
 			prop_object_iterator_release(iter);
 			rv = EINVAL;
@@ -264,11 +278,13 @@ xbps_install_pkg_deps(prop_dictionary_t pkg)
 
 		repod = prop_dictionary_internalize_from_file(plist);
 		if (repod == NULL) {
+			free(plist);
 			prop_object_iterator_release(iter);
 			rv = errno;
 			goto out;
 		}
 
+		free(plist);
 		rv = find_deps_in_pkg(repod, pkg);
 		if (rv == -1) {
 			prop_object_release(repod);
