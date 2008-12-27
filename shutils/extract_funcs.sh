@@ -30,7 +30,7 @@
 extract_distfiles()
 {
 	local pkg="$1"
-	local count=
+	local count=0
 	local curfile=
 	local cursufx=
 	local lwrksrc=
