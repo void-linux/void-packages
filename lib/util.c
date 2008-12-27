@@ -56,12 +56,11 @@ xbps_get_pkg_name(const char *pkg)
 
 	assert(pkg != NULL);
 
-	/* Get the required version */
+	/* Get package name */
 	tmp = strrchr(pkg, '-');
 	assert(tmp != NULL);
 	len = strlen(pkg) - strlen(tmp) + 1;
 
-	/* Get package name */
 	pkgname = malloc(len);
 	memcpy(pkgname, pkg, len - 1);
 	pkgname[len - 1] = '\0';
