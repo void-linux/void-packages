@@ -133,7 +133,11 @@ xbps_make_binpkg()
 
 	cd $destdir || exit 1
 
-	run_rootcmd tar cfjp $XBPS_DESTDIR/$binpkg .
+	#
+	# Sort the tar archive to have a chance that metadata is at
+	# the beginning.
+	#
+	run_rootcmd tar cfjp $XBPS_DESTDIR/$binpkg . | sort -r
 	if [ $? -eq 0 ]; then
 		[ ! -d $XBPS_PACKAGESDIR ] && mkdir -p $XBPS_PACKAGESDIR
 		mv -f $XBPS_DESTDIR/$binpkg $XBPS_PACKAGESDIR

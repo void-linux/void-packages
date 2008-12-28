@@ -259,32 +259,75 @@ xbps_register_pkg(const char *pkgname, const char *version, const char *desc)
 			ARCHIVE_EXTRACT_UNLINK
 
 int
-xbps_unpack_archive_cb(struct archive *ar)
+xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
 {
 	struct archive_entry *entry;
+	char buf[PATH_MAX];
 	int rv = 0, flags;
+	bool actgt = false;
 
 	if (geteuid() == 0)
 		flags = EXTRACT_FLAGS;
 	else
 		flags = 0;
 
+	if (snprintf(buf, sizeof(buf) - 1, ".%s/metadata/%s/prepost-action.sh",
+	    XBPS_META_PATH, pkgname) < 0)
+		return -1;
+
 	while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
+		/*
+		 * Run the pre installation action target if there's a script
+		 * before writing data to disk.
+		 */
+		if (strcmp(buf, archive_entry_pathname(entry)) == 0) {
+			actgt = true;
+
+			if ((rv = archive_read_extract(ar, entry, flags)) != 0)
+				break;
+
+			if ((rv = xbps_file_exec(buf, "preinst")) != 0) {
+				printf("%s: preinst action target error %s\n",
+				    pkgname, strerror(errno));
+				(void)fflush(stdout);
+				break;
+			}
+
+			/* pass to the next entry if successful */
+			continue;
+		}
+		/*
+		 * Extract all data from the archive now.
+		 */
 		if ((rv = archive_read_extract(ar, entry, flags)) != 0) {
 			printf("\ncouldn't unpack %s (%s), exiting!\n",
 			    archive_entry_pathname(entry), strerror(errno));
+			(void)fflush(stdout);
 			archive_entry_free(entry);
 			break;
 		}
 	}
 
+	if (rv == 0 && actgt) {
+		/*
+		 * Run the post installaction action target, if package
+		 * contains the script.
+		 */
+		if ((rv = xbps_file_exec(buf, "postinst")) != 0) {
+			printf("%s: postinst action target error %s\n",
+			    pkgname, strerror(errno));
+			(void)fflush(stdout);
+		}
+	}
+
 	archive_read_finish(ar);
+
 	return rv;
 }
 
 int
 xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
-		       int (*cb)(struct archive *))
+		       int (*cb)(struct archive *, const char *))
 {
 	prop_string_t pkgname, version, filename, repoloc;
 	struct archive *ar;
@@ -333,11 +376,7 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 		return rv;
 	}
 
-	if ((rv = (*cb)(ar)) == 0) {
-		printf("done.\n");
-		(void)fflush(stdout);
-	}
-
+	rv = (*cb)(ar, prop_string_cstring_nocopy(pkgname));
 	free(binfile);
 
 	return rv;
