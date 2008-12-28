@@ -264,7 +264,8 @@ int
 xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
 {
 	struct archive_entry *entry;
-	char buf[PATH_MAX];
+	size_t len;
+	char *buf;
 	int rv = 0, flags;
 	bool actgt = false;
 
@@ -273,9 +274,20 @@ xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
 	else
 		flags = 0;
 
-	if (snprintf(buf, sizeof(buf) - 1, ".%s/metadata/%s/prepost-action.sh",
-	    XBPS_META_PATH, pkgname) < 0)
+	/*
+	 * This length is '.%s/metadata/%s/prepost-action.sh' not
+	 * including nul.
+	 */
+	len = strlen(XBPS_META_PATH) + strlen(pkgname) + 29;
+	buf = malloc(len + 1);
+	if (buf == NULL)
+		return ENOMEM;
+
+	if (snprintf(buf, len + 1, ".%s/metadata/%s/prepost-action.sh",
+	    XBPS_META_PATH, pkgname) < 0) {
+		free(buf);
 		return -1;
+	}
 
 	while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
 		/*
@@ -321,6 +333,8 @@ xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
 			(void)fflush(stdout);
 		}
 	}
+
+	free(buf);
 
 	return rv;
 }
