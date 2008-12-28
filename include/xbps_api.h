@@ -58,5 +58,6 @@
 #include "plist.h"
 #include "sha256.h"
 #include "queue.h"
+#include "fexec.h"
 
 #endif /* !_XBPS_API_H_ */
