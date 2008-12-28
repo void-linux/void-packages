@@ -29,6 +29,8 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 #include <xbps_api.h>
 
@@ -124,7 +126,7 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 	assert(pkgname != NULL);
 	if (destdir) {
 		if ((rv = chdir(destdir)) != 0)
-			return XBPS_PKG_ECHDIRDEST;
+			return errno;
 	}
 
 	/*
@@ -320,8 +322,6 @@ xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
 		}
 	}
 
-	archive_read_finish(ar);
-
 	return rv;
 }
 
@@ -332,7 +332,7 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	prop_string_t pkgname, version, filename, repoloc;
 	struct archive *ar;
 	char *binfile;
-	int rv;
+	int pkg_fd, rv;
 
 	assert(pkg != NULL);
 	assert(repo != NULL);
@@ -348,12 +348,15 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	if (binfile == NULL)
 		return EINVAL;
 
+	if ((pkg_fd = open(binfile, O_RDONLY)) == -1) {
+		free(binfile);
+		return errno;
+	}
+
 	pkgname = prop_dictionary_get(pkg, "pkgname");
 	version = prop_dictionary_get(pkg, "version");
 
-	printf("From repository %s ...\n",
-	    prop_string_cstring_nocopy(repoloc));
-	printf(" Unpacking %s-%s (%s) ... ",
+	printf("Installing %s-%s (%s) ...\n",
 	    prop_string_cstring_nocopy(pkgname),
 	    prop_string_cstring_nocopy(version),
 	    prop_string_cstring_nocopy(filename));
@@ -363,6 +366,7 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	ar = archive_read_new();
 	if (ar == NULL) {
 		free(binfile);
+		close(pkg_fd);
 		return ENOMEM;
 	}
 
@@ -370,13 +374,24 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	archive_read_support_compression_all(ar);
 	archive_read_support_format_all(ar);
 
-	if ((rv = archive_read_open_filename(ar, binfile, 2048)) != 0) {
+	if ((rv = archive_read_open_fd(ar, pkg_fd, 2048)) != 0) {
 		archive_read_finish(ar);
 		free(binfile);
+		close(pkg_fd);
 		return rv;
 	}
 
 	rv = (*cb)(ar, prop_string_cstring_nocopy(pkgname));
+	/*
+	 * If installation of package was successful, make sure the package
+	 * is really on storage (if possible).
+	 */
+	if (rv == 0)
+		if ((rv = fdatasync(pkg_fd)) == -1)
+			rv = errno;
+
+	archive_read_finish(ar);
+	close(pkg_fd);
 	free(binfile);
 
 	return rv;
