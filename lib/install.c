@@ -34,6 +34,8 @@
 
 #include <xbps_api.h>
 
+static const char *chroot_dir;
+
 int
 xbps_install_binary_pkg_from_repolist(prop_object_t obj, void *arg,
 				      bool *loop_done)
@@ -127,7 +129,9 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 	if (destdir) {
 		if ((rv = chdir(destdir)) != 0)
 			return errno;
-	}
+		chroot_dir = destdir;
+	} else
+		chroot_dir = "NOTSET";
 
 	/*
 	 * Get the dictionary with the list of registered
@@ -261,19 +265,21 @@ xbps_register_pkg(const char *pkgname, const char *version, const char *desc)
 			ARCHIVE_EXTRACT_UNLINK
 
 int
-xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
+xbps_unpack_archive_cb(struct archive *ar, prop_dictionary_t pkg)
 {
 	struct archive_entry *entry;
 	size_t len;
 	const char *prepost = "./XBPS_PREPOST_ACTION";
+	const char *pkgname, *version;
 	char *buf;
-	int rv = 0, flags;
+	int rv = 0;
 	bool actgt = false;
 
-	if (geteuid() == 0)
-		flags = EXTRACT_FLAGS;
-	else
-		flags = 0;
+	assert(ar != NULL);
+	assert(pkg != NULL);
+
+	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
+	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
 
 	/*
 	 * This length is '.%s/metadata/%s/prepost-action.sh' not
@@ -300,11 +306,12 @@ xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
 
 			archive_entry_set_pathname(entry, buf);
 
-			if ((rv = archive_read_extract(ar, entry, flags)) != 0)
+			if ((rv = archive_read_extract(ar, entry,
+			     EXTRACT_FLAGS)) != 0)
 				break;
 
-			if ((rv = xbps_file_exec(buf, pkgname,
-			     "preinst", NULL)) != 0) {
+			if ((rv = xbps_file_exec(buf, chroot_dir, "preinst",
+			     pkgname, version, NULL)) != 0) {
 				printf("%s: preinst action target error %s\n",
 				    pkgname, strerror(errno));
 				(void)fflush(stdout);
@@ -317,11 +324,11 @@ xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
 		/*
 		 * Extract all data from the archive now.
 		 */
-		if ((rv = archive_read_extract(ar, entry, flags)) != 0) {
+		if ((rv = archive_read_extract(ar, entry,
+		     EXTRACT_FLAGS)) != 0) {
 			printf("\ncouldn't unpack %s (%s), exiting!\n",
 			    archive_entry_pathname(entry), strerror(errno));
 			(void)fflush(stdout);
-			archive_entry_free(entry);
 			break;
 		}
 	}
@@ -331,8 +338,8 @@ xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
 		 * Run the post installaction action target, if package
 		 * contains the script.
 		 */
-		if ((rv = xbps_file_exec(buf, pkgname,
-		     "postinst", NULL)) != 0) {
+		if ((rv = xbps_file_exec(buf, chroot_dir, "postinst",
+		     pkgname, version, NULL)) != 0) {
 			printf("%s: postinst action target error %s\n",
 			    pkgname, strerror(errno));
 			(void)fflush(stdout);
@@ -346,7 +353,7 @@ xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
 
 int
 xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
-		       int (*cb)(struct archive *, const char *))
+		       int (*cb)(struct archive *, prop_dictionary_t))
 {
 	prop_string_t pkgname, version, filename, repoloc;
 	struct archive *ar;
@@ -400,7 +407,7 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 		return rv;
 	}
 
-	rv = (*cb)(ar, prop_string_cstring_nocopy(pkgname));
+	rv = (*cb)(ar, pkg);
 	/*
 	 * If installation of package was successful, make sure the package
 	 * is really on storage (if possible).
