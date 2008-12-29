@@ -114,7 +114,6 @@ xbps_get_dependency(void)
 {
 	struct pkg_dependency *dep = NULL;
 	uint64_t reqcount = 0 , priority = 0;
-	bool depfound = false;
 
 	/* Set max reqcount and priority found */
 	SIMPLEQ_FOREACH(dep, &pkg_deps, deps) {
@@ -125,35 +124,25 @@ xbps_get_dependency(void)
 	}
 
 	/* Pass 1: return pkgs with highest reqcount and priority */
-	SIMPLEQ_FOREACH(dep, &pkg_deps, deps) {
-		if (dep->reqcount == reqcount && dep->priority == priority) {
-			depfound = true;
+	SIMPLEQ_FOREACH(dep, &pkg_deps, deps)
+		if (dep->reqcount == reqcount && dep->priority == priority)
 			goto out;
-		}
-	}
 
 	/* Pass 2: return pkgs with highest priority */
-	SIMPLEQ_FOREACH(dep, &pkg_deps, deps) {
-		if (dep->priority == priority) {
-			depfound = true;
+	SIMPLEQ_FOREACH(dep, &pkg_deps, deps)
+		if (dep->priority == priority)
 			goto out;
-		}
-	}
 
 	/* Pass 3: return pkgs with highest reqcount */
-	SIMPLEQ_FOREACH(dep, &pkg_deps, deps) {
-		if (dep->reqcount == reqcount) {
-			depfound = true;
+	SIMPLEQ_FOREACH(dep, &pkg_deps, deps)
+		if (dep->reqcount == reqcount)
 			goto out;
-		}
-	}
 
 	/* Last pass: return pkgs with default reqcount/priority */
 	dep = SIMPLEQ_FIRST(&pkg_deps);
-	depfound = true;
 
 out:
-	if (depfound && dep != NULL) {
+	if (dep != NULL) {
 		/*
 		 * Remove dep from queue, it will be freed later with
 		 * xbps_destroy_dependency().
