@@ -36,12 +36,15 @@ struct pkg_dependency {
 	SIMPLEQ_ENTRY(pkg_dependency) deps;
 	prop_dictionary_t repo;
 	uint64_t priority;
+	uint64_t reqcount;
 	const char *namever;
 	char *name;
 };
 
-static SIMPLEQ_HEAD(, pkg_dependency) pkg_deps_queue =
-    SIMPLEQ_HEAD_INITIALIZER(pkg_deps_queue);
+static SIMPLEQ_HEAD(, pkg_dependency) pkg_deps =
+    SIMPLEQ_HEAD_INITIALIZER(pkg_deps);
+
+static void xbps_destroy_dependency(struct pkg_dependency *);
 
 int
 xbps_check_is_installed_pkg(const char *pkg)
@@ -99,13 +102,76 @@ xbps_clean_pkg_depslist(void)
 {
 	struct pkg_dependency *dep;
 
-	while (!SIMPLEQ_EMPTY(&pkg_deps_queue)) {
-		dep = SIMPLEQ_FIRST(&pkg_deps_queue);
-		SIMPLEQ_REMOVE_HEAD(&pkg_deps_queue, deps);
-		free(dep->name);
-		prop_object_release(dep->repo);
-		free(dep);
+	while (!SIMPLEQ_EMPTY(&pkg_deps)) {
+		dep = SIMPLEQ_FIRST(&pkg_deps);
+		SIMPLEQ_REMOVE_HEAD(&pkg_deps, deps);
+		xbps_destroy_dependency(dep);
 	}
+}
+
+static struct pkg_dependency *
+xbps_get_dependency(void)
+{
+	struct pkg_dependency *dep = NULL;
+	uint64_t reqcount = 0 , priority = 0;
+	bool depfound = false;
+
+	/* Set max reqcount and priority found */
+	SIMPLEQ_FOREACH(dep, &pkg_deps, deps) {
+		if (dep->reqcount > reqcount)
+			reqcount = dep->reqcount;
+		if (dep->priority > priority)
+			priority = dep->priority;
+	}
+
+	/* Pass 1: return pkgs with highest reqcount and priority */
+	SIMPLEQ_FOREACH(dep, &pkg_deps, deps) {
+		if (dep->reqcount == reqcount && dep->priority == priority) {
+			depfound = true;
+			goto out;
+		}
+	}
+
+	/* Pass 2: return pkgs with highest priority */
+	SIMPLEQ_FOREACH(dep, &pkg_deps, deps) {
+		if (dep->priority == priority) {
+			depfound = true;
+			goto out;
+		}
+	}
+
+	/* Pass 3: return pkgs with highest reqcount */
+	SIMPLEQ_FOREACH(dep, &pkg_deps, deps) {
+		if (dep->reqcount == reqcount) {
+			depfound = true;
+			goto out;
+		}
+	}
+
+	/* Last pass: return pkgs with default reqcount/priority */
+	dep = SIMPLEQ_FIRST(&pkg_deps);
+	depfound = true;
+
+out:
+	if (depfound && dep != NULL) {
+		/*
+		 * Remove dep from queue, it will be freed later with
+		 * xbps_destroy_dependency().
+		 */
+		SIMPLEQ_REMOVE(&pkg_deps, dep, pkg_dependency, deps);
+	}
+
+	return dep;
+}
+
+static void
+xbps_destroy_dependency(struct pkg_dependency *dep)
+{
+	assert(dep != NULL);
+
+	free(dep->name);
+	prop_object_release(dep->repo);
+	free(dep);
 }
 
 void
@@ -121,8 +187,9 @@ xbps_add_pkg_dependency(const char *pkg, uint64_t prio, prop_dictionary_t repo)
 
 	pkgname = xbps_get_pkg_name(pkg);
 
-	SIMPLEQ_FOREACH(dep, &pkg_deps_queue, deps) {
+	SIMPLEQ_FOREACH(dep, &pkg_deps, deps) {
 		if (strcmp(dep->name, pkgname) == 0) {
+			dep->reqcount++;
 			free(pkgname);
 			return;
 		}
@@ -141,10 +208,11 @@ xbps_add_pkg_dependency(const char *pkg, uint64_t prio, prop_dictionary_t repo)
 	free(pkgname);
 	dep->repo = prop_dictionary_copy(repo);
 	dep->namever = pkg;
-	dep->priority = 0;
+	dep->priority = prio;
+	dep->reqcount = 0;
 
-	if (SIMPLEQ_EMPTY(&pkg_deps_queue)) {
-		SIMPLEQ_INSERT_TAIL(&pkg_deps_queue, dep, deps);
+	if (SIMPLEQ_EMPTY(&pkg_deps)) {
+		SIMPLEQ_INSERT_TAIL(&pkg_deps, dep, deps);
 		return;
 	}
 
@@ -152,11 +220,11 @@ xbps_add_pkg_dependency(const char *pkg, uint64_t prio, prop_dictionary_t repo)
 	 * If package has a higher priority, it must be installed
 	 * before other ones with lower priority.
 	 */
-	dep_prev = SIMPLEQ_FIRST(&pkg_deps_queue);
+	dep_prev = SIMPLEQ_FIRST(&pkg_deps);
 	if (prio > dep_prev->priority)
-		SIMPLEQ_INSERT_HEAD(&pkg_deps_queue, dep, deps);
+		SIMPLEQ_INSERT_HEAD(&pkg_deps, dep, deps);
 	else
-		SIMPLEQ_INSERT_TAIL(&pkg_deps_queue, dep, deps);
+		SIMPLEQ_INSERT_TAIL(&pkg_deps, dep, deps);
 }
 
 static int
@@ -167,7 +235,7 @@ find_deps_in_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
 	prop_number_t prio_num;
 	prop_object_t obj;
 	prop_object_iterator_t iter = NULL;
-	uint64_t prio;
+	uint64_t prio = 0;
 	const char *reqpkg;
 	char *pkgname;
 
@@ -200,15 +268,7 @@ find_deps_in_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
 		 * Package is on repo, add it into the list.
 		 */
 		prio_num = prop_dictionary_get(pkgdict, "priority");
-		if (prio_num == NULL ||
-		    prop_number_unsigned_integer_value(prio_num) == 0) {
-			if (xbps_pkg_has_rundeps(pkgdict))
-				prio = 10;
-			else
-				prio = 20;
-		} else
-			prio = prop_number_unsigned_integer_value(prio_num);
-
+		prio = prop_number_unsigned_integer_value(prio_num);
 		xbps_add_pkg_dependency(reqpkg, prio, repo);
 		free(pkgname);
 
@@ -314,7 +374,7 @@ xbps_install_pkg_deps(prop_dictionary_t pkg)
 		namestr = xbps_get_pkg_name(reqpkg);
 		version = xbps_get_pkg_version(reqpkg);
 
-		SIMPLEQ_FOREACH(dep, &pkg_deps_queue, deps) {
+		SIMPLEQ_FOREACH(dep, &pkg_deps, deps) {
 			if (strcmp(dep->name, namestr) == 0) {
 				deps_found++;
 				dep_found = true;
@@ -335,10 +395,20 @@ xbps_install_pkg_deps(prop_dictionary_t pkg)
 		goto out;
 	}
 
+#ifdef XBPS_DEBUG_DEPS
+	while ((dep = xbps_get_dependency()) != NULL) {
+		printf("%s reqcount %ju priority %ju\n", dep->name,
+		    dep->reqcount, dep->priority);
+		xbps_destroy_dependency(dep);
+	}
+	exit(0);
+#endif
+
 	/*
 	 * Iterate over the list of dependencies and install them.
+	 * The list is sorted by three rules, see xbps_get_dependency().
 	 */
-	SIMPLEQ_FOREACH(dep, &pkg_deps_queue, deps) {
+	while ((dep = xbps_get_dependency()) != NULL) {
 		pkgd = xbps_find_pkg_in_dict(dep->repo, dep->name);
 		if (pkgd == NULL) {
 			rv = EINVAL;
@@ -368,6 +438,8 @@ xbps_install_pkg_deps(prop_dictionary_t pkg)
 		rv = xbps_register_pkg(pkgname, version, desc);
 		if (rv != 0)
 			break;
+
+		xbps_destroy_dependency(dep);
 	}
 
 out:
