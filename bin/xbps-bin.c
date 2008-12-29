@@ -73,7 +73,7 @@ usage(void)
 	"    $ xbps-bin repo-rm /path/to/directory\n"
 	"    $ xbps-bin search klibc\n"
 	"    $ xbps-bin show klibc\n");
-	exit(1);
+	exit(EXIT_FAILURE);
 }
 
 static bool
@@ -113,14 +113,14 @@ getrepolist_dict(const char *root)
 
 	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
 	if (plist == NULL)
-		exit(1);
+		exit(EXIT_FAILURE);
 
 	dict = prop_dictionary_internalize_from_file(plist);
 	if (dict == NULL) {
 		printf("ERROR: cannot find repository plist file (%s).\n",
 		    strerror(errno));
 		free(plist);
-		exit(EINVAL);
+		exit(EXIT_FAILURE);
 	}
 
 	return dict;
@@ -200,26 +200,26 @@ main(int argc, char **argv)
 			usage();
 
 		if (!sanitize_localpath(dpkgidx, argv[1]))
-			exit(EINVAL);
+			exit(EXIT_FAILURE);
 
 		/* Temp buffer to verify pkgindex file. */
 		plist = xbps_append_full_path(false, dpkgidx, XBPS_PKGINDEX);
 		if (plist == NULL)
-			exit(EINVAL);
+			exit(EXIT_FAILURE);
 
 		dict = prop_dictionary_internalize_from_file(plist);
 		if (dict == NULL) {
 			printf("Directory %s does not contain any "
 			    "xbps pkgindex file.\n", dpkgidx);
 			free(plist);
-			exit(EINVAL);
+			exit(EXIT_FAILURE);
 		}
 
 		rinfo = malloc(sizeof(*rinfo));
 		if (rinfo == NULL) {
 			prop_object_release(dict);
 			free(plist);
-			exit(ENOMEM);
+			exit(EXIT_FAILURE);
 		}
 
 		if (!pkgindex_getinfo(dict, rinfo)) {
@@ -227,7 +227,7 @@ main(int argc, char **argv)
 			prop_object_release(dict);
 			free(rinfo);
 			free(plist);
-			exit(EINVAL);
+			exit(EXIT_FAILURE);
 		}
 
 		if (!xbps_register_repository(dpkgidx)) {
@@ -236,7 +236,7 @@ main(int argc, char **argv)
 			prop_object_release(dict);
 			free(rinfo);
 			free(plist);
-			exit(EINVAL);
+			exit(EXIT_FAILURE);
 		}
 
 		printf("Added repository at %s (%s) with %ju packages.\n",
@@ -264,7 +264,7 @@ main(int argc, char **argv)
 			usage();
 
 		if (!sanitize_localpath(dpkgidx, argv[1]))
-			exit(EINVAL);
+			exit(EXIT_FAILURE);
 
 		if (!xbps_unregister_repository(dpkgidx)) {
 			if (errno == ENODEV)
@@ -273,7 +273,7 @@ main(int argc, char **argv)
 			else
 				printf("ERROR: couldn't unregister "
 				    "repository (%s)\n", strerror(errno));
-			exit(EINVAL);
+			exit(EXIT_FAILURE);
 		}
 
 	} else if (strcasecmp(argv[0], "search") == 0) {
@@ -299,7 +299,7 @@ main(int argc, char **argv)
 			free(plist);
 			printf("ERROR: unable to locate package '%s'.\n",
 			    argv[1]);
-			exit(EINVAL);
+			exit(EXIT_FAILURE);
 		}
 		prop_object_release(dict);
 		free(plist);
@@ -311,20 +311,20 @@ main(int argc, char **argv)
 
 		plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
 		if (plist == NULL)
-			exit(EINVAL);
+			exit(EXIT_FAILURE);
 
 		dict = prop_dictionary_internalize_from_file(plist);
 		if (dict == NULL) {
 			printf("No packages currently registered.\n");
 			free(plist);
-			exit(0);
+			exit(EXIT_SUCCESS);
 		}
 
 		if (!xbps_callback_array_iter_in_dict(dict, "packages",
 		    xbps_list_pkgs_in_dict, NULL)) {
 			prop_object_release(dict);
 			free(plist);
-			exit(EINVAL);
+			exit(EXIT_FAILURE);
 		}
 		prop_object_release(dict);
 		free(plist);
@@ -333,6 +333,12 @@ main(int argc, char **argv)
 		/* Installs a binary package and required deps. */
 		if (argc != 2)
 			usage();
+
+		if (geteuid() != 0) {
+			printf("ERROR: root permissions are needed to install "
+			    "binary packages.");
+			exit(EXIT_FAILURE);
+		}
 
 		/* Install into root directory by default. */
 		rv = xbps_install_binary_pkg(argv[1], root);
@@ -344,5 +350,5 @@ main(int argc, char **argv)
 		usage();
 	}
 
-	exit(0);
+	exit(EXIT_SUCCESS);
 }

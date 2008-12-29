@@ -41,7 +41,7 @@ write_plist_file(prop_dictionary_t dict, const char *file)
 		prop_object_release(dict);
 		printf("=> ERROR: couldn't write to %s (%s)",
 		    file, strerror(errno));
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 }
 
@@ -82,7 +82,7 @@ main(int argc, char **argv)
 			/* To specify the root directory */
 			root = strdup(optarg);
 			if (root == NULL)
-				exit(ENOMEM);
+				exit(EXIT_FAILURE);
 			xbps_set_rootdir(root);
 			break;
 		case '?':
@@ -101,7 +101,7 @@ main(int argc, char **argv)
 	if (dbfile == NULL) {
 		printf("=> ERROR: couldn't find regpkdb file (%s)\n",
 		    strerror(errno));
-		exit(EINVAL);
+		exit(EXIT_FAILURE);
 	}
 
 	in_chroot_env = getenv("in_chroot");
@@ -139,7 +139,7 @@ main(int argc, char **argv)
 				printf("=> ERROR: couldn't unregister %s "
 				    "from database (%s)\n", argv[1],
 				    strerror(errno));
-			exit(EINVAL);
+			exit(EXIT_FAILURE);
 		}
 
 		printf("%s=> %s-%s unregistered successfully.\n",
@@ -152,15 +152,15 @@ main(int argc, char **argv)
 
 		dbdict = prop_dictionary_internalize_from_file(dbfile);
 		if (dbdict == NULL)
-			exit(1);
+			exit(EXIT_FAILURE);
 
 		pkgdict = xbps_find_pkg_in_dict(dbdict, argv[1]);
 		if (pkgdict == NULL)
-			exit(1);
+			exit(EXIT_FAILURE);
 
 		if (!prop_dictionary_get_cstring_nocopy(pkgdict, "version",
 		    &version))
-			exit(1);
+			exit(EXIT_FAILURE);
 
 		printf("%s\n", version);
 
@@ -173,7 +173,7 @@ main(int argc, char **argv)
 		if (dbdict == NULL) {
 			printf("=> ERROR: couldn't sanitize %s plist file "
 			    "(%s)\n", argv[1], strerror(errno));
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 		write_plist_file(dbdict, argv[1]);
 
@@ -181,5 +181,5 @@ main(int argc, char **argv)
 		usage();
 	}
 
-	exit(0);
+	exit(EXIT_SUCCESS);
 }

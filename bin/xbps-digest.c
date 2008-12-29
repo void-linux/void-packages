@@ -41,7 +41,7 @@ static void
 usage(void)
 {
 	fprintf(stderr, "usage: xbps-digest <file> <file1+N> ...\n");
-	exit(1);
+	exit(EXIT_FAILURE);
 }
 
 int
@@ -59,14 +59,14 @@ main(int argc, char **argv)
 		if ((fd = open(argv[i], O_RDONLY)) == -1) {
 			printf("xbps-digest: cannot open %s (%s)\n", argv[i],
 		    	    strerror(errno));
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 
 		digest = malloc(SHA256_DIGEST_LENGTH * 2 + 1);
 		if (digest == NULL) {
 			printf("xbps-digest: malloc failed (%s)\n",
 			    strerror(errno));
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 
 		SHA256_Init(&ctx);
@@ -78,5 +78,5 @@ main(int argc, char **argv)
 		close(fd);
 	}
 
-	exit(0);
+	exit(EXIT_SUCCESS);
 }
