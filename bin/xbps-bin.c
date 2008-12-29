@@ -336,7 +336,7 @@ main(int argc, char **argv)
 
 		if (geteuid() != 0) {
 			printf("ERROR: root permissions are needed to install "
-			    "binary packages.");
+			    "binary packages.\n");
 			exit(EXIT_FAILURE);
 		}
 
