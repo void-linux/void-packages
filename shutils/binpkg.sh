@@ -38,7 +38,7 @@ xbps_write_metadata_pkg()
 		exit 1
 	fi
 
-	if [ -n "$priority" ]; then
+	if [ -n "$install_priority" ]; then
 		prioinst=$install_priority
 	else
 		prioinst=0
