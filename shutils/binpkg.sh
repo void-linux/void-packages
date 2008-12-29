@@ -120,6 +120,12 @@ _EOF
 	cp -f $TMPFPROPS $metadir/props.plist
 	chmod 644 $metadir/*
 	rm -f $TMPFLIST $TMPFPROPS
+
+	if [ -f "$XBPS_TEMPLATESDIR/$pkgname.prepost-action" ]; then
+		cp -f $XBPS_TEMPLATESDIR/$pkgname.prepost-action \
+			$destdir/XBPS_PREPOST_ACTION
+		chmod +x $destdir/XBPS_PREPOST_ACTION
+	fi
 }
 
 #
@@ -133,11 +139,7 @@ xbps_make_binpkg()
 
 	cd $destdir || exit 1
 
-	#
-	# Sort the tar archive to have a chance that metadata is at
-	# the beginning.
-	#
-	run_rootcmd tar cfjp $XBPS_DESTDIR/$binpkg . | sort -r
+	run_rootcmd tar cfjp $XBPS_DESTDIR/$binpkg .
 	if [ $? -eq 0 ]; then
 		[ ! -d $XBPS_PACKAGESDIR ] && mkdir -p $XBPS_PACKAGESDIR
 		mv -f $XBPS_DESTDIR/$binpkg $XBPS_PACKAGESDIR

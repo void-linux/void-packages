@@ -265,6 +265,7 @@ xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
 {
 	struct archive_entry *entry;
 	size_t len;
+	const char *prepost = "./XBPS_PREPOST_ACTION";
 	char *buf;
 	int rv = 0, flags;
 	bool actgt = false;
@@ -294,13 +295,16 @@ xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
 		 * Run the pre installation action target if there's a script
 		 * before writing data to disk.
 		 */
-		if (strcmp(buf, archive_entry_pathname(entry)) == 0) {
+		if (strcmp(prepost, archive_entry_pathname(entry)) == 0) {
 			actgt = true;
+
+			archive_entry_set_pathname(entry, buf);
 
 			if ((rv = archive_read_extract(ar, entry, flags)) != 0)
 				break;
 
-			if ((rv = xbps_file_exec(buf, "preinst")) != 0) {
+			if ((rv = xbps_file_exec(buf, pkgname,
+			     "preinst", NULL)) != 0) {
 				printf("%s: preinst action target error %s\n",
 				    pkgname, strerror(errno));
 				(void)fflush(stdout);
@@ -327,7 +331,8 @@ xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
 		 * Run the post installaction action target, if package
 		 * contains the script.
 		 */
-		if ((rv = xbps_file_exec(buf, "postinst")) != 0) {
+		if ((rv = xbps_file_exec(buf, pkgname,
+		     "postinst", NULL)) != 0) {
 			printf("%s: postinst action target error %s\n",
 			    pkgname, strerror(errno));
 			(void)fflush(stdout);
