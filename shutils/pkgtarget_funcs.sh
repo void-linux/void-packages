@@ -156,13 +156,9 @@ remove_pkg()
 	ver=$($XBPS_REGPKGDB_CMD version $pkg)
 	[ -z "$ver" ] && msg_error "$pkg is not installed."
 
-	if [ ! -d "$XBPS_DESTDIR/$pkg-$ver" ]; then
-		msg_error "cannot find package on $XBPS_DESTDIR."
-	fi
-
 	. $XBPS_SHUTILSDIR/stow_funcs.sh
 	unstow_pkg $pkg
-	if [ $? -eq 0 ]; then
+	if [ $? -eq 0 -a -d $XBPS_DESTDIR/$pkg-$ver ]; then
 		rm -rf $XBPS_DESTDIR/$pkg-$ver
 	fi
 	return $?
