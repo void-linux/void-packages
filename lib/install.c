@@ -278,12 +278,12 @@ xbps_unpack_archive_cb(struct archive *ar, const char *pkgname)
 	 * This length is '.%s/metadata/%s/prepost-action.sh' not
 	 * including nul.
 	 */
-	len = strlen(XBPS_META_PATH) + strlen(pkgname) + 29;
+	len = strlen(XBPS_META_PATH) + strlen(pkgname) + 26;
 	buf = malloc(len + 1);
 	if (buf == NULL)
 		return ENOMEM;
 
-	if (snprintf(buf, len + 1, ".%s/metadata/%s/prepost-action.sh",
+	if (snprintf(buf, len + 1, ".%s/metadata/%s/prepost-action",
 	    XBPS_META_PATH, pkgname) < 0) {
 		free(buf);
 		return -1;
