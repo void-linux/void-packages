@@ -282,7 +282,7 @@ xbps_unpack_archive_cb(struct archive *ar, prop_dictionary_t pkg)
 	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
 
 	/*
-	 * This length is '.%s/metadata/%s/prepost-action.sh' not
+	 * This length is '.%s/metadata/%s/prepost-action' not
 	 * including nul.
 	 */
 	len = strlen(XBPS_META_PATH) + strlen(pkgname) + 26;
