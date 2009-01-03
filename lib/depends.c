@@ -166,7 +166,7 @@ xbps_destroy_dependency(struct pkg_dependency *dep)
 void
 xbps_add_pkg_dependency(const char *pkg, uint64_t prio, prop_dictionary_t repo)
 {
-	struct pkg_dependency *dep, *dep_prev;
+	struct pkg_dependency *dep;
 	size_t len = 0;
 	char *pkgname;
 
@@ -200,20 +200,7 @@ xbps_add_pkg_dependency(const char *pkg, uint64_t prio, prop_dictionary_t repo)
 	dep->priority = prio;
 	dep->reqcount = 0;
 
-	if (SIMPLEQ_EMPTY(&pkg_deps)) {
-		SIMPLEQ_INSERT_TAIL(&pkg_deps, dep, deps);
-		return;
-	}
-
-	/*
-	 * If package has a higher priority, it must be installed
-	 * before other ones with lower priority.
-	 */
-	dep_prev = SIMPLEQ_FIRST(&pkg_deps);
-	if (prio > dep_prev->priority)
-		SIMPLEQ_INSERT_HEAD(&pkg_deps, dep, deps);
-	else
-		SIMPLEQ_INSERT_TAIL(&pkg_deps, dep, deps);
+	SIMPLEQ_INSERT_TAIL(&pkg_deps, dep, deps);
 }
 
 static int
