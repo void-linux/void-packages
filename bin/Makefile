@@ -33,3 +33,5 @@ install: $(BINS)
 	install -d $(SBINDIR)
 	install -m 755 $(BINS) $(SBINDIR)
 	install -m 755 xbps-src.sh $(SBINDIR)/xbps-src
+	sed -i -e "s|@@XBPS_INSTALL_PREFIX@@|$(PREFIX)|g" $(SBINDIR)/xbps-src
+

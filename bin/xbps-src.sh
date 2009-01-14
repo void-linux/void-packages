@@ -151,6 +151,8 @@ check_config_vars()
 			[ $? -ne 0 ] && msg_error "couldn't create '$f' directory"
 		fi
 	done
+
+	export PATH="$PATH:@@XBPS_INSTALL_PREFIX@@/sbin"
 }
 
 #
