@@ -197,7 +197,7 @@ check_installed_pkg()
 	local reqver="$2"
 	local iver=
 
-	[ -z "$pkg" -o -z "$reqver" -o ! -r $XBPS_REGPKGDB_PATH ] && return 1
+	[ -z "$pkg" -o -z "$reqver" ] && return 1
 
 	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
 		reset_tmpl_vars
