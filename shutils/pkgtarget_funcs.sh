@@ -67,7 +67,7 @@ install_pkg()
 	#
 	# We are going to install a new package.
 	#
-	prepare_tmpl
+	setup_tmpl $curpkgn
 
 	#
 	# Install dependencies required by this package.
