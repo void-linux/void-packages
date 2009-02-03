@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include <dirent.h>
 
 #include <xbps_api.h>
 
@@ -73,6 +74,49 @@ xbps_unregister_pkg(const char *pkgname)
 		rv = errno;
 	
 	free(plist);
+
+	return rv;
+}
+
+static int
+xbps_remove_binary_pkg_meta(const char *pkgname, const char *destdir)
+{
+	struct dirent *dp;
+	DIR *dirp;
+	char metadir[PATH_MAX - 1], path[PATH_MAX - 1];
+	int rv = 0;
+
+	assert(pkgname != NULL);
+
+	if (destdir == NULL)
+		destdir = "";
+
+	(void)snprintf(metadir, sizeof(metadir), "%s%s/metadata/%s",
+	    destdir, XBPS_META_PATH, pkgname);
+
+	dirp = opendir(metadir);
+	if (dirp == NULL)
+		return errno;
+
+	while ((dp = readdir(dirp)) != NULL) {
+		if ((strcmp(dp->d_name, ".") == 0) ||
+		    (strcmp(dp->d_name, "..") == 0))
+			continue;
+
+		if (snprintf(path, sizeof(path), "%s%s/metadata/%s/%s",
+		    destdir, XBPS_META_PATH, pkgname, dp->d_name) < 0) {
+			(void)closedir(dirp);
+			return -1;
+		}
+
+		if ((rv = unlink(path)) == -1) {
+			printf("WARNING: can't remove %s (%s)\n",
+			    pkgname, strerror(errno));
+		}
+		(void)memset(&path, 0, sizeof(path));
+	}
+	(void)closedir(dirp);
+	rv = rmdir(metadir);
 
 	return rv;
 }
@@ -204,6 +248,7 @@ next:
 
 out:
 	free(buf);
+	rv = xbps_remove_binary_pkg_meta(pkgname, destdir);
 
 	return rv;
 }
