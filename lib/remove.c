@@ -35,6 +35,28 @@
 
 #include <xbps_api.h>
 
+static bool
+check_installed_pkgname(const char *pkgname)
+{
+	prop_dictionary_t pkgd;
+	char *plist;
+
+	assert(pkgname != NULL);
+
+	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+	if (plist == NULL)
+		return EINVAL;
+
+	pkgd = xbps_find_pkg_from_plist(plist, pkgname);
+	free(plist);
+	if (pkgd) {
+		prop_object_release(pkgd);
+		return true;
+	}
+
+	return false;
+}
+
 int
 xbps_unregister_pkg(const char *pkgname)
 {
@@ -68,6 +90,10 @@ xbps_remove_binary_pkg(const char *pkgname, const char *destdir)
 
 	if (destdir == NULL)
 		destdir = "";
+
+	/* Check if pkg is installed */
+	if (check_installed_pkgname(pkgname) == false)
+		return ENOENT;
 
 	/*
 	 * This length is '%s%s/metadata/%s/prepost-action' not

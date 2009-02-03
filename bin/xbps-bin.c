@@ -354,7 +354,12 @@ main(int argc, char **argv)
 		} else {
 			rv = xbps_remove_binary_pkg(argv[1], root);
 			if (rv) {
-				printf("ERROR: unable to remove %s.\n", argv[1]);
+				if (rv == ENOENT)
+					printf("Package %s is not installed.\n",
+					    argv[1]);
+				else
+					printf("ERROR: unable to remove %s.\n",
+					    argv[1]);
 				exit(rv);
 			}
 			printf("Package %s removed successfully.\n", argv[1]);
