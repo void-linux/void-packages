@@ -49,6 +49,8 @@ xbps_unregister_pkg(const char *pkgname)
 
 	if (!xbps_remove_pkg_dict_from_file(pkgname, plist))
 		rv = errno;
+	
+	free(plist);
 
 	return rv;
 }
@@ -57,23 +59,56 @@ int
 xbps_remove_binary_pkg(const char *pkgname, const char *destdir)
 {
 	FILE *flist;
-	char path[PATH_MAX - 1], line[LINE_MAX - 1], *p;
-	int rv = 0;
+	char path[PATH_MAX - 1], line[LINE_MAX - 1], *p, *buf;
+	int fd, rv = 0;
 	size_t len = 0;
+	bool prepostf = false;
 
 	assert(pkgname != NULL);
 
-	if (destdir) {
-		if ((rv = chdir(destdir)) != 0)
-			return errno;
-	} else
+	if (destdir == NULL)
 		destdir = "";
+
+	/*
+	 * This length is '%s%s/metadata/%s/prepost-action' not
+	 * including nul.
+	 */
+	len = strlen(XBPS_META_PATH) + strlen(destdir) + strlen(pkgname) + 26;
+	buf = malloc(len + 1);
+	if (buf == NULL)
+		return errno;
+
+	if (snprintf(buf, len + 1, "%s%s/metadata/%s/prepost-action",
+	    destdir, XBPS_META_PATH, pkgname) < 0) {
+		free(buf);
+		return -1;
+	}
+
+	/* Find out if the prepost-action file exists */
+	if ((fd = open(buf, O_RDONLY)) == -1) {
+		if (errno != ENOENT) {
+			rv = errno;
+			goto out;
+		}
+	} else {
+		/* Run the preremove action */
+		(void)close(fd);
+		prepostf = true;
+		if ((rv = xbps_file_exec(buf, destdir, "prerm", pkgname,
+		     NULL)) != 0) {
+			printf("%s: prerm action target error (%s)\n", pkgname,
+			    strerror(errno));
+			goto out;
+		}
+	}
 
 	(void)snprintf(path, sizeof(path), "%s%s/metadata/%s/flist",
 	    destdir, XBPS_META_PATH, pkgname);
 
-	if ((flist = fopen(path, "r")) == NULL)
-		return errno;
+	if ((flist = fopen(path, "r")) == NULL) {
+		rv = errno;
+		goto out;
+	}
 
 	while (!feof(flist)) {
 		p = fgets(line, sizeof(line), flist);
@@ -127,9 +162,22 @@ next:
 		free(p);
 		p = NULL;
 	}
-
 	(void)fclose(flist);
 
 	/* If successful, unregister pkg from db */
-	return rv ? rv : xbps_unregister_pkg(pkgname);
+	if (rv == 0) {
+		if (((rv = xbps_unregister_pkg(pkgname)) == 0) && prepostf) {
+			/* Run the postremove action target */
+			if ((rv = xbps_file_exec(buf, destdir, "postrm",
+			     pkgname, NULL)) != 0) {
+				printf("%s: postrm action target error (%s)\n",
+				    pkgname, strerror(errno));
+			}
+		}
+	}
+
+out:
+	free(buf);
+
+	return rv;
 }
