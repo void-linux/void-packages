@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2008 Juan Romero Pardines.
+ * Copyright (c) 2008-2009 Juan Romero Pardines.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -53,9 +53,10 @@ usage(void)
 {
 	printf("Usage: xbps-bin [options] [action] [arguments]\n\n"
 	" Available actions:\n"
-        "    install, list, repo-add, repo-list, repo-rm, search, show\n"
+        "    install, list, remove, repo-add, repo-list, repo-rm, search, show\n"
 	" Actions with arguments:\n"
 	"    install\t<pkgname>\n"
+	"    remove\t<pkgname>\n"
 	"    repo-add\t<URI>\n"
 	"    repo-rm\t<URI>\n"
 	"    search\t<string>\n"
@@ -67,6 +68,7 @@ usage(void)
 	"    $ xbps-bin install klibc\n"
 	"    $ xbps-bin -r /path/to/root install klibc\n"
 	"    $ xbps-bin list\n"
+	"    $ xbps-bin remove klibc\n"
 	"    $ xbps-bin repo-add /path/to/directory\n"
 	"    $ xbps-bin repo-add http://www.location.org/xbps-repo\n"
 	"    $ xbps-bin repo-list\n"
@@ -329,23 +331,35 @@ main(int argc, char **argv)
 		prop_object_release(dict);
 		free(plist);
 
-	} else if (strcasecmp(argv[0], "install") == 0) {
+	} else if ((strcasecmp(argv[0], "install") == 0) ||
+		   (strcasecmp(argv[0], "remove") == 0))  {
 		/* Installs a binary package and required deps. */
 		if (argc != 2)
 			usage();
 
 		if (geteuid() != 0) {
-			printf("ERROR: root permissions are needed to install "
-			    "binary packages.\n");
+			printf("ERROR: root permissions are needed to install"
+			    "and remove binary packages.\n");
 			exit(EXIT_FAILURE);
 		}
 
 		/* Install into root directory by default. */
-		rv = xbps_install_binary_pkg(argv[1], root);
-		if (rv) {
-			printf("ERROR: unable to install %s.\n", argv[1]);
-			exit(rv);
+		if (strcasecmp(argv[0], "install") == 0) {
+			rv = xbps_install_binary_pkg(argv[1], root);
+			if (rv) {
+				printf("ERROR: unable to install %s.\n", argv[1]);
+				exit(rv);
+			}
+			printf("Package %s installed successfully.\n", argv[1]);
+		} else {
+			rv = xbps_remove_binary_pkg(argv[1], root);
+			if (rv) {
+				printf("ERROR: unable to remove %s.\n", argv[1]);
+				exit(rv);
+			}
+			printf("Package %s removed successfully.\n", argv[1]);
 		}
+
 	} else {
 		usage();
 	}
