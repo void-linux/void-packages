@@ -45,7 +45,7 @@ check_installed_pkgname(const char *pkgname)
 
 	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
 	if (plist == NULL)
-		return EINVAL;
+		return false;
 
 	pkgd = xbps_find_pkg_from_plist(plist, pkgname);
 	free(plist);
