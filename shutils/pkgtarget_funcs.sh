@@ -31,7 +31,7 @@ install_pkg()
 	local pkg=
 	local curpkgn="$1"
 	local cdestdir=
-	local cur_tmpl="$XBPS_TEMPLATESDIR/$curpkgn.tmpl"
+	local cur_tmpl="$XBPS_TEMPLATESDIR/$curpkgn/template"
 
 	if [ -z $cur_tmpl -o ! -f $cur_tmpl ]; then
 		msg_error "cannot find $cur_tmpl template build file."
@@ -147,11 +147,11 @@ remove_pkg()
 
 	[ -z $pkg ] && msg_error "unexistent package, aborting."
 
-	if [ ! -f "$XBPS_TEMPLATESDIR/$pkg.tmpl" ]; then
+	if [ ! -f "$XBPS_TEMPLATESDIR/$pkg/template" ]; then
 		msg_error "cannot find template build file."
 	fi
 
-	. $XBPS_TEMPLATESDIR/$pkg.tmpl
+	. $XBPS_TEMPLATESDIR/$pkg/template
 
 	ver=$($XBPS_REGPKGDB_CMD version $pkg)
 	[ -z "$ver" ] && msg_error "$pkg is not installed."

@@ -93,9 +93,9 @@ setup_tmpl()
 
 	. $XBPS_SHUTILSDIR/tmpl_vars.sh
 
-	if [ -f "$XBPS_TEMPLATESDIR/$pkg.tmpl" ]; then
+	if [ -f "$XBPS_TEMPLATESDIR/$pkg/template" ]; then
 		if [ "$pkgname" != "$pkg" ]; then
-			. $XBPS_TEMPLATESDIR/$pkg.tmpl
+			. $XBPS_TEMPLATESDIR/$pkg/template
 		fi
 		prepare_tmpl
 	else

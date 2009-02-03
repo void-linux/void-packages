@@ -239,7 +239,7 @@ if [ "$(id -u)" -ne 0 ]; then
 	if [ -n "$origin_tmpl" ]; then
 		. $XBPS_SHUTILSDIR/tmpl_funcs.sh
 		reset_tmpl_vars
-		run_file $XBPS_TEMPLATESDIR/$origin_tmpl.tmpl
+		run_file $XBPS_TEMPLATESDIR/$origin_tmpl/template
 	fi
 	echo "The '$pkgname' package requires to be installed in a chroot."
 	echo "You cannot do this as normal user, try again being root."

@@ -44,7 +44,7 @@ stow_pkg()
 	fi
 
 	if [ -n "$stow_flag" ]; then
-		pkg=$XBPS_TEMPLATESDIR/$pkg.tmpl
+		pkg=$XBPS_TEMPLATESDIR/$pkg/template
 		if [ "$pkgname" != "$pkg" ]; then
 			. $pkg
 		fi
@@ -65,7 +65,7 @@ stow_pkg()
 	# Run template postinstall helpers if requested.
 	#
 	if [ "$pkgname" != "${pkg%%-$version}" ]; then
-		. $XBPS_TEMPLATESDIR/${pkg%%-$version}.tmpl
+		. $XBPS_TEMPLATESDIR/${pkg%%-$version}/template
 	fi
 
 	for i in ${postinstall_helpers}; do
@@ -92,7 +92,7 @@ unstow_pkg()
 	fi
 
 	if [ "$pkgname" != "$pkg" ]; then
-		. $XBPS_TEMPLATESDIR/$pkg.tmpl
+		. $XBPS_TEMPLATESDIR/$pkg/template
 	fi
 
 	ver=$($XBPS_REGPKGDB_CMD version $pkg)

@@ -125,13 +125,13 @@ _EOF
 	chmod 644 $metadir/*
 	rm -f $TMPFLIST $TMPFPROPS
 
-	if [ -f "$XBPS_TEMPLATESDIR/$pkgname.prepost-inst" ]; then
-		cp -f $XBPS_TEMPLATESDIR/$pkgname.prepost-inst \
+	if [ -f "$XBPS_TEMPLATESDIR/$pkgname/prepost-inst" ]; then
+		cp -f $XBPS_TEMPLATESDIR/$pkgname/prepost-inst \
 			$destdir/XBPS_PREPOST_INSTALL
 		chmod +x $destdir/XBPS_PREPOST_INSTALL
 	fi
-	if [ -f "$XBPS_TEMPLATESDIR/$pkgname.prepost-rm" ]; then
-		cp -f $XBPS_TEMPLATESDIR/$pkgname.prepost-rm \
+	if [ -f "$XBPS_TEMPLATESDIR/$pkgname/prepost-rm" ]; then
+		cp -f $XBPS_TEMPLATESDIR/$pkgname/prepost-rm \
 			$metadir/prepost-rm
 		chmod +x $metadir/prepost-rm
 	fi

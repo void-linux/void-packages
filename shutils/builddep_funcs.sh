@@ -39,7 +39,7 @@ add_dependency_tolist()
 
 	if [ "$pkgname" != "${curpkg%-[0-9]*.*}" ]; then
 		reset_tmpl_vars
-		. $XBPS_TEMPLATESDIR/${curpkg%-[0-9]*.*}.tmpl
+		. $XBPS_TEMPLATESDIR/${curpkg%-[0-9]*.*}/template
 	fi
 
 	for j in ${build_depends}; do
@@ -175,7 +175,7 @@ install_builddeps_required_pkg()
 	[ -z "$pkg" ] && return 1
 
 	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
-		. $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
+		. $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}/template
 	fi
 
 	for dep in ${build_depends}; do
@@ -201,7 +201,7 @@ check_installed_pkg()
 
 	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
 		reset_tmpl_vars
-		. $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
+		. $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}/template
 	fi
 
 	iver="$($XBPS_REGPKGDB_CMD version $pkgname)"
@@ -225,7 +225,7 @@ check_build_depends_pkg()
 
 	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
 		reset_tmpl_vars
-		. $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}.tmpl
+		. $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}/template
 	fi
 
 	if [ -n "$build_depends" ]; then
