@@ -46,12 +46,16 @@ prepare_chroot()
 		chmod 644 $XBPS_MASTERDIR/var/$f
 	done
 
-	cat > $XBPS_MASTERDIR/etc/passwd <<_EOF
+	if [ ! -f $XBPS_MASTERDIR/etc/passwd ]; then
+		cat > $XBPS_MASTERDIR/etc/passwd <<_EOF
 root:x:0:0:root:/root:/bin/bash
 nobody:x:99:99:Unprivileged User:/dev/null:/bin/false
 _EOF
+	fi
+
 	# Default group list as specified by LFS.
-	cat > $XBPS_MASTERDIR/etc/group <<_EOF
+	if [ ! -f $XBPS_MASTERDIR/etc/group ]; then
+		cat > $XBPS_MASTERDIR/etc/group <<_EOF
 root:x:0:
 bin:x:1:
 sys:x:2:
@@ -72,8 +76,11 @@ mail:x:34:
 nogroup:x:99:
 users:x:1000:
 _EOF
+	fi
+
 	# Default file as in Ubuntu.
-	cat > $XBPS_MASTERDIR/etc/hosts <<_EOF
+	if [ ! -f $XBPS_MASTERDIR/etc/hosts ]; then
+		cat > $XBPS_MASTERDIR/etc/hosts <<_EOF
 127.0.0.1	xbps	localhost.localdomain	localhost
 127.0.1.1	xbps
 
@@ -85,11 +92,15 @@ ff02::1 ip6-allnodes
 ff02::2 ip6-allrouters
 ff02::3 ip6-allhosts
 _EOF
+	fi
+
 	# Use OpenDNS servers.
-	cat > $XBPS_MASTERDIR/etc/resolv.conf <<_EOF
+	if [ ! -f $XBPS_MASTERDIR/etc/resolv.conf ]; then
+		cat > $XBPS_MASTERDIR/etc/resolv.conf <<_EOF
 nameserver 208.67.222.222
 nameserver 208.67.220.220
 _EOF
+	fi
 
 	touch $XBPS_MASTERDIR/.xbps_perms_done
 }
