@@ -96,21 +96,21 @@ xbps_remove_binary_pkg(const char *pkgname, const char *destdir)
 		return ENOENT;
 
 	/*
-	 * This length is '%s%s/metadata/%s/prepost-action' not
+	 * This length is '%s%s/metadata/%s/prepost-rm' not
 	 * including nul.
 	 */
-	len = strlen(XBPS_META_PATH) + strlen(destdir) + strlen(pkgname) + 26;
+	len = strlen(XBPS_META_PATH) + strlen(destdir) + strlen(pkgname) + 22;
 	buf = malloc(len + 1);
 	if (buf == NULL)
 		return errno;
 
-	if (snprintf(buf, len + 1, "%s%s/metadata/%s/prepost-action",
+	if (snprintf(buf, len + 1, "%s%s/metadata/%s/prepost-rm",
 	    destdir, XBPS_META_PATH, pkgname) < 0) {
 		free(buf);
 		return -1;
 	}
 
-	/* Find out if the prepost-action file exists */
+	/* Find out if the prepost-rm file exists */
 	if ((fd = open(buf, O_RDONLY)) == -1) {
 		if (errno != ENOENT) {
 			rv = errno;
@@ -120,7 +120,7 @@ xbps_remove_binary_pkg(const char *pkgname, const char *destdir)
 		/* Run the preremove action */
 		(void)close(fd);
 		prepostf = true;
-		if ((rv = xbps_file_exec(buf, destdir, "prerm", pkgname,
+		if ((rv = xbps_file_exec(buf, destdir, "pre", pkgname,
 		     NULL)) != 0) {
 			printf("%s: prerm action target error (%s)\n", pkgname,
 			    strerror(errno));
@@ -194,7 +194,7 @@ next:
 	if (rv == 0) {
 		if (((rv = xbps_unregister_pkg(pkgname)) == 0) && prepostf) {
 			/* Run the postremove action target */
-			if ((rv = xbps_file_exec(buf, destdir, "postrm",
+			if ((rv = xbps_file_exec(buf, destdir, "post",
 			     pkgname, NULL)) != 0) {
 				printf("%s: postrm action target error (%s)\n",
 				    pkgname, strerror(errno));

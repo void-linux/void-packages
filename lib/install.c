@@ -269,7 +269,7 @@ xbps_unpack_archive_cb(struct archive *ar, prop_dictionary_t pkg)
 {
 	struct archive_entry *entry;
 	size_t len;
-	const char *prepost = "./XBPS_PREPOST_ACTION";
+	const char *prepost = "./XBPS_PREPOST_INSTALL";
 	const char *pkgname, *version;
 	char *buf;
 	int rv = 0;
@@ -282,15 +282,15 @@ xbps_unpack_archive_cb(struct archive *ar, prop_dictionary_t pkg)
 	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
 
 	/*
-	 * This length is '.%s/metadata/%s/prepost-action' not
+	 * This length is '.%s/metadata/%s/prepost-inst' not
 	 * including nul.
 	 */
-	len = strlen(XBPS_META_PATH) + strlen(pkgname) + 26;
+	len = strlen(XBPS_META_PATH) + strlen(pkgname) + 24;
 	buf = malloc(len + 1);
 	if (buf == NULL)
 		return ENOMEM;
 
-	if (snprintf(buf, len + 1, ".%s/metadata/%s/prepost-action",
+	if (snprintf(buf, len + 1, ".%s/metadata/%s/prepost-inst",
 	    XBPS_META_PATH, pkgname) < 0) {
 		free(buf);
 		return -1;
@@ -310,7 +310,7 @@ xbps_unpack_archive_cb(struct archive *ar, prop_dictionary_t pkg)
 			     EXTRACT_FLAGS)) != 0)
 				break;
 
-			if ((rv = xbps_file_exec(buf, chroot_dir, "preinst",
+			if ((rv = xbps_file_exec(buf, chroot_dir, "pre",
 			     pkgname, version, NULL)) != 0) {
 				printf("%s: preinst action target error %s\n",
 				    pkgname, strerror(errno));
@@ -338,7 +338,7 @@ xbps_unpack_archive_cb(struct archive *ar, prop_dictionary_t pkg)
 		 * Run the post installaction action target, if package
 		 * contains the script.
 		 */
-		if ((rv = xbps_file_exec(buf, chroot_dir, "postinst",
+		if ((rv = xbps_file_exec(buf, chroot_dir, "post",
 		     pkgname, version, NULL)) != 0) {
 			printf("%s: postinst action target error %s\n",
 			    pkgname, strerror(errno));
