@@ -404,8 +404,6 @@ xbps_install_pkg_deps(prop_dictionary_t pkg)
 		prop_dictionary_get_cstring_nocopy(pkgd, "version", &version);
 		prop_dictionary_get_cstring_nocopy(pkgd, "short_desc", &desc);
 
-		printf(" Required package: %s >= %s\n", pkgname, version);
-
 		rv = xbps_unpack_binary_pkg(dep->repo, pkgd,
 		    xbps_unpack_archive_cb);
 		if (rv != 0)
