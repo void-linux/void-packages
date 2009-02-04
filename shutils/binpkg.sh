@@ -47,10 +47,10 @@ xbps_write_metadata_pkg()
 	# Write the files list.
 	local TMPFLIST=$(mktemp -t flist.XXXXXXXXXX) || exit 1
 	# First add the regular files.
-	find $destdir -type f | \
+	find -L $destdir -type f | \
 		sed -e "s|$destdir||g;s|^\/$||g;/^$/d" > $TMPFLIST
 	# and add the directories at the end.
-	find $destdir -type d | sort -ur | \
+	find -L $destdir -type d | sort -ur | \
 		sed -e "s|$destdir||g;s|^/$||g;/^$/d" >> $TMPFLIST
 
 	# Write the property list file.
