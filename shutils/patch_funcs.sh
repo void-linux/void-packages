@@ -32,11 +32,11 @@ apply_tmpl_patches()
 	local i=
 
 	# Apply some build/install patches automatically.
-	if [ -f $XBPS_TEMPLATESDIR/$pkgname/$pkgname-fix-build.diff ]; then
-		patch_files="$pkgname-fix-build.diff $patch_files"
+	if [ -f $XBPS_TEMPLATESDIR/$pkgname/build.diff ]; then
+		patch_files="build.diff $patch_files"
 	fi
-	if [ -f $XBPS_TEMPLATESDIR/$pkgname/$pkgname-fix-install.diff ]; then
-		patch_files="$pkgname-fix-install.diff $patch_files"
+	if [ -f $XBPS_TEMPLATESDIR/$pkgname/install.diff ]; then
+		patch_files="install.diff $patch_files"
 	fi
 
 	[ -z "$patch_args" ] && patch_args="-p0"
