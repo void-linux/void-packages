@@ -35,8 +35,6 @@ prepare_chroot()
 {
 	local f=
 
-	chown -R root:root $XBPS_MASTERDIR
-
 	# Create some required files.
 	touch $XBPS_MASTERDIR/etc/mtab
 	for f in run/utmp log/btmp log/lastlog log/wtmp; do
