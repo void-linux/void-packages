@@ -23,46 +23,16 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _XBPS_API_H_
-#define _XBPS_API_H_
+#ifndef _XBPS_INSTALL_H_
+#define _XBPS_INSTALL_H_
 
-#include <stdio.h>
-#include <inttypes.h>
-#define NDEBUG
-#include <assert.h>
+/* From lib/install.c and lib/depends.c */
+int	xbps_install_pkg_deps(prop_dictionary_t);
+int	xbps_install_binary_pkg(const char *, const char *);
+int	xbps_install_binary_pkg_from_repolist(prop_object_t, void *, bool *);
+int	xbps_register_pkg(const char *, const char *, const char *);
+int	xbps_unpack_binary_pkg(prop_dictionary_t, prop_dictionary_t,
+			       int (*cb)(struct archive *, prop_dictionary_t));
+int	xbps_unpack_archive_cb(struct archive *, prop_dictionary_t);
 
-#include <prop/proplib.h>
-#include <archive.h>
-#include <archive_entry.h>
-
-/* Default root PATH for xbps to store metadata info. */
-#define XBPS_META_PATH		"/var/cache/xbps"
-
-/* Filename for the repositories plist file. */
-#define XBPS_REPOLIST		"repositories.plist"
-
-/* Filename of the package index plist for a repository. */
-#define XBPS_PKGINDEX		"pkg-index.plist"
-
-/* Filename of the packages register. */
-#define XBPS_REGPKGDB		"regpkgdb.plist"
-
-/* Return values for xbps_install_binary_pkg() */
-#define XBPS_PKG_ENOTINREPO	1	/* Not found in repo */
-#define XBPS_PKG_EEXIST		2	/* Already installed */
-#define XBPS_PKG_EINDEPS	3	/* Check deps failed */
-#define XBPS_PKG_ECHDIRDEST	4	/* chdir() to dest failed */
-#define XBPS_PKG_EEMPTY		5	/* empty pkg list */
-
-#include "cmpver.h"
-#include "fexec.h"
-#include "humanize_number.h"
-#include "install.h"
-#include "plist.h"
-#include "remove.h"
-#include "repository.h"
-#include "sha256.h"
-#include "util.h"
-#include "queue.h"
-
-#endif /* !_XBPS_API_H_ */
+#endif /* !_XBPS_INSTALL_H_ */

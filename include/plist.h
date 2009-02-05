@@ -86,17 +86,6 @@ prop_object_iterator_t
 xbps_get_array_iter_from_dict(prop_dictionary_t, const char *);
 
 /*
- * (Un)registers a repository specified by an URI from/into the pool.
- *
- * Arguments:
- * 	- const char *: URI to (un)register.
- *
- * Returns true on success, or false and an appropiate errno value otherwise.
- */
-bool xbps_register_repository(const char *);
-bool xbps_unregister_repository(const char *);
-
-/*
  * Remove package's dictionary from the "packages" array in
  * the specified plist file.
  *
@@ -110,23 +99,12 @@ bool
 xbps_remove_pkg_dict_from_file(const char *, const char *);
 
 /* Utils */
-int	xbps_remove_string_from_array(prop_object_t, void *, bool *);
-void	xbps_set_rootdir(const char *);
-char *	xbps_append_full_path(bool, const char *, const char *);
-int	xbps_check_is_installed_pkg(const char *);
-int	xbps_cmpver_packages(const char *, const char *);
-int	xbps_cmpver_versions(const char *, const char *);
-const char *	xbps_get_pkg_version(const char *);
-char *		xbps_get_pkg_name(const char *);
 int	xbps_install_pkg_deps(prop_dictionary_t);
 int	xbps_install_binary_pkg(const char *, const char *);
 int	xbps_install_binary_pkg_from_repolist(prop_object_t, void *, bool *);
-int	xbps_remove_binary_pkg(const char *, const char *);
 int	xbps_register_pkg(const char *, const char *, const char *);
-int	xbps_unregister_pkg(const char *);
 int	xbps_unpack_binary_pkg(prop_dictionary_t, prop_dictionary_t,
 			       int (*cb)(struct archive *, prop_dictionary_t));
 int	xbps_unpack_archive_cb(struct archive *, prop_dictionary_t);
-bool	xbps_pkg_has_rundeps(prop_dictionary_t);
 
 #endif /* !_XBPS_PLIST_H_ */

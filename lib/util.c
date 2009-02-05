@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2008 Juan Romero Pardines.
+ * Copyright (c) 2008-2009 Juan Romero Pardines.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,79 @@
 #include <xbps_api.h>
 
 static const char *rootdir;
+
+int
+xbps_check_is_installed_pkg(const char *pkg)
+{
+	prop_dictionary_t dict, pkgdict;
+	prop_object_t obj;
+	const char *reqver, *instver;
+	char *plist, *pkgname;
+	int rv = 0;
+
+	assert(pkg != NULL);
+
+	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+	if (plist == NULL)
+		return EINVAL;
+
+	pkgname = xbps_get_pkg_name(pkg);
+	reqver = xbps_get_pkg_version(pkg);
+
+	/* Get package dictionary from plist */
+	dict = prop_dictionary_internalize_from_file(plist);
+	if (dict == NULL) {
+		free(pkgname);
+		free(plist);
+		return 1; /* not installed */
+	}
+
+	pkgdict = xbps_find_pkg_in_dict(dict, pkgname);
+	if (pkgdict == NULL) {
+		prop_object_release(dict);
+		free(pkgname);
+		free(plist);
+		return 1; /* not installed */
+	}
+
+	/* Get version from installed package */
+	obj = prop_dictionary_get(pkgdict, "version");
+	assert(obj != NULL);
+	assert(prop_object_type(obj) == PROP_TYPE_STRING);
+	instver = prop_string_cstring_nocopy(obj);
+	assert(instver != NULL);
+
+	/* Compare installed and required version. */
+	rv = xbps_cmpver_versions(instver, reqver) > 0 ? 1 : 0;
+
+	free(pkgname);
+	free(plist);
+	prop_object_release(dict);
+
+	return rv;
+}
+
+bool
+xbps_check_is_installed_pkgname(const char *pkgname)
+{
+	prop_dictionary_t pkgd;
+	char *plist;
+
+	assert(pkgname != NULL);
+
+	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+	if (plist == NULL)
+		return false;
+
+	pkgd = xbps_find_pkg_from_plist(plist, pkgname);
+	free(plist);
+	if (pkgd) {
+		prop_object_release(pkgd);
+		return true;
+	}
+
+	return false;
+}
 
 const char *
 xbps_get_pkg_version(const char *pkg)
