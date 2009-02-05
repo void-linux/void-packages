@@ -23,6 +23,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-int xbps_search_string_in_pkgs(prop_object_t, void *, bool *);
-int xbps_show_pkg_info_from_repolist(prop_object_t, void *, bool *);
-int xbps_list_strings_in_array(prop_object_t, void *, bool *);
+int search_string_in_pkgs(prop_object_t, void *, bool *);
+int show_pkg_info_from_repolist(prop_object_t, void *, bool *);
+int list_strings_in_array(prop_object_t, void *, bool *);

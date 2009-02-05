@@ -56,7 +56,7 @@ usage(void)
 	" Available actions:\n"
         "    add, list, remove, search, show\n"
 	" Actions with arguments:\n"
-	"    add\t<URI>\n"
+	"    add\t\t<URI>\n"
 	"    remove\t<URI>\n"
 	"    search\t<string>\n"
 	"    show\t<pkgname>\n"
@@ -251,7 +251,7 @@ main(int argc, char **argv)
 
 		dict = getrepolist_dict(root);
 		(void)xbps_callback_array_iter_in_dict(dict,
-		    "repository-list", xbps_list_strings_in_array, NULL);
+		    "repository-list", list_strings_in_array, NULL);
 		prop_object_release(dict);
 		free(plist);
 
@@ -281,7 +281,7 @@ main(int argc, char **argv)
 
 		dict = getrepolist_dict(root);
 		(void)xbps_callback_array_iter_in_dict(dict,
-		    "repository-list", xbps_search_string_in_pkgs, argv[1]);
+		    "repository-list", search_string_in_pkgs, argv[1]);
 		prop_object_release(dict);
 		free(plist);
 
@@ -292,7 +292,7 @@ main(int argc, char **argv)
 
 		dict = getrepolist_dict(root);
 		if (xbps_callback_array_iter_in_dict(dict, "repository-list",
-		    xbps_show_pkg_info_from_repolist, argv[1]) != 0) {
+		    show_pkg_info_from_repolist, argv[1]) != 0) {
 			prop_object_release(dict);
 			free(plist);
 			printf("ERROR: unable to locate package '%s'.\n",

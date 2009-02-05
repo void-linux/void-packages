@@ -121,7 +121,7 @@ show_pkg_info(prop_dictionary_t dict)
 }
 
 int
-xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
+search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 {
 	prop_dictionary_t dict;
 	const char *repofile;
@@ -153,7 +153,7 @@ xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 }
 
 int
-xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
+show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 {
 	prop_dictionary_t dict, pkgdict;
 	prop_string_t oloc;
@@ -249,7 +249,7 @@ list_strings_in_array2(prop_object_t obj, void *arg, bool *loop_done)
 }
 
 int
-xbps_list_strings_in_array(prop_object_t obj, void *arg, bool *loop_done)
+list_strings_in_array(prop_object_t obj, void *arg, bool *loop_done)
 {
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
