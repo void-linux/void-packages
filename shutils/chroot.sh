@@ -265,26 +265,26 @@ fi
 
 EXTDIRS="xbps xbps_builddir xbps_destdir xbps_packagesdir \
 	 xbps_srcdistdir xbps_crossdir"
-REQDIRS="bin sbin tmp var sys proc dev ${EXTDIRS}"
+REQDIRS="bin sbin tmp var sys proc dev usr/local/etc ${EXTDIRS}"
 for f in ${REQDIRS}; do
 	[ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
 done
 unset f REQDIRS
 
-echo "XBPS_DISTRIBUTIONDIR=/xbps" > $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_MASTERDIR=/" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_DESTDIR=/xbps_destdir" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_PACKAGESDIR=/xbps_packagesdir" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_BUILDDIR=/xbps_builddir" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_SRCDISTDIR=/xbps_srcdistdir" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_CFLAGS=\"$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/etc/xbps.conf
-echo "XBPS_CXXFLAGS=\"\$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/etc/xbps.conf
+echo "XBPS_DISTRIBUTIONDIR=/xbps" > $XBPS_MASTERDIR/usr/local/etc/xbps.conf
+echo "XBPS_MASTERDIR=/" >> $XBPS_MASTERDIR/usr/local/etc/xbps.conf
+echo "XBPS_DESTDIR=/xbps_destdir" >> $XBPS_MASTERDIR/usr/local/etc/xbps.conf
+echo "XBPS_PACKAGESDIR=/xbps_packagesdir" >> $XBPS_MASTERDIR/usr/local/etc/xbps.conf
+echo "XBPS_BUILDDIR=/xbps_builddir" >> $XBPS_MASTERDIR/usr/local/etc/xbps.conf
+echo "XBPS_SRCDISTDIR=/xbps_srcdistdir" >> $XBPS_MASTERDIR/usr/local/etc/xbps.conf
+echo "XBPS_CFLAGS=\"$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/usr/local/etc/xbps.conf
+echo "XBPS_CXXFLAGS=\"\$XBPS_CFLAGS\"" >> $XBPS_MASTERDIR/usr/local/etc/xbps.conf
 if [ -n "$XBPS_MAKEJOBS" ]; then
-	echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPS_MASTERDIR/etc/xbps.conf
+	echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPS_MASTERDIR/usr/local/etc/xbps.conf
 fi
 if [ -n "$XBPS_CROSS_TARGET" -a -d "$XBPS_CROSS_DIR" ]; then
 	echo "XBPS_CROSS_TARGET=$XBPS_CROSS_TARGET" >> \
-		$XBPS_MASTERDIR/etc/xbps.conf
-	echo "XBPS_CROSS_DIR=/xbps_crossdir" >> $XBPS_MASTERDIR/etc/xbps.conf
+		$XBPS_MASTERDIR/usr/local/etc/xbps.conf
+	echo "XBPS_CROSS_DIR=/xbps_crossdir" >> $XBPS_MASTERDIR/usr/local/etc/xbps.conf
 fi
 
