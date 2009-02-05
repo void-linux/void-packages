@@ -79,17 +79,7 @@ xbps_install_binary_pkg_from_repolist(prop_object_t obj, void *arg,
 	 */
 	if (!xbps_pkg_has_rundeps(pkgrd)) {
 		/* pkg has no deps, just install it. */
-		rv = xbps_unpack_binary_pkg(repod, pkgrd,
-		    xbps_unpack_archive_cb);
-		if (rv == 0) {
-			rv = xbps_register_pkg(pkgname, version, desc);
-			if (rv == EEXIST)
-				rv = 0;
-		}
-		free(plist);
-		prop_object_release(repod);
-		*loop_done = true;
-		return rv;
+		goto install;
 	}
 
 	/*
@@ -101,6 +91,8 @@ xbps_install_binary_pkg_from_repolist(prop_object_t obj, void *arg,
 		prop_object_release(repod);
 		return rv;
 	}
+
+install:
 	/*
 	 * Finally install the package, now that all
 	 * required dependencies were installed.
