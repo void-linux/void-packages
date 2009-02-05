@@ -28,8 +28,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _HUMANIZE_NUMBER_H_
-#define _HUMANIZE_NUMBER_H_
+#ifndef _XBPS_HUMANIZE_NUMBER_H_
+#define _XBPS_HUMANIZE_NUMBER_H_
 
 #define HN_DECIMAL		0x01
 #define HN_NOSPACE		0x02
@@ -38,6 +38,7 @@
 #define HN_GETSCALE		0x10
 #define HN_AUTOSCALE		0x20
 
+/* From lib/humanize_number.c */
 int xbps_humanize_number(char *, size_t, int64_t, const char *, int, int);
 
-#endif
+#endif /* !_XBPS_HUMANIZE_NUMBER_H_ */

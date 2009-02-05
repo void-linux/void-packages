@@ -26,6 +26,8 @@
 #ifndef _XBPS_REPOSITORY_H_
 #define _XBPS_REPOSITORY_H_
 
+/* From lib/remove.c */
+
 /*
  * (Un)registers a repository specified by an URI from/into the pool.
  *

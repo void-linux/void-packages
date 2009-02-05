@@ -30,8 +30,9 @@
 #ifndef _XBPS_FEXEC_H_
 #define _XBPS_FEXEC_H_
 
+/* From lib/fexec.c */
 int	xbps_file_exec(const char *, ...);
 int	xbps_file_exec_skipempty(const char *, ...);
 int	xbps_file_chdir_exec(const char *, const char *, ...);
 
-#endif
+#endif /* !_XBPS_FEXEC_H_ */
