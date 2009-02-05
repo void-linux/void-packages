@@ -32,9 +32,14 @@
 #include <prop/proplib.h>
 
 #include <xbps_api.h>
+#include "util.h"
 
-void
-xbps_show_pkg_info(prop_dictionary_t dict)
+static void	show_pkg_info(prop_dictionary_t);
+static int	show_pkg_namedesc(prop_object_t, void *, bool *);
+static int	list_strings_in_array2(prop_object_t, void *, bool *);
+
+static void
+show_pkg_info(prop_dictionary_t dict)
 {
 	prop_object_t obj;
 	const char *sep = NULL;
@@ -86,7 +91,7 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 		printf("Dependencies:\n\t");
 		sep = " ";
 		xbps_callback_array_iter_in_dict(dict, "run_depends",
-		    xbps_list_strings_in_array2, (void *)sep);
+		    list_strings_in_array2, (void *)sep);
 		printf("\n\n");
 	}
 
@@ -94,7 +99,7 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 	if (obj && prop_object_type(obj) == PROP_TYPE_ARRAY) {
 		printf("Configuration files:\n\t");
 		xbps_callback_array_iter_in_dict(dict, "conf_files",
-		    xbps_list_strings_in_array2, NULL);
+		    list_strings_in_array2, NULL);
 		printf("\n");
 	}
 
@@ -102,7 +107,7 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 	if (obj && prop_object_type(obj) == PROP_TYPE_ARRAY) {
 		printf("Permanent directories:\n\t");
 		xbps_callback_array_iter_in_dict(dict, "keep_dirs",
-		    xbps_list_strings_in_array2, NULL);
+		    list_strings_in_array2, NULL);
 		printf("\n");
 	}
 
@@ -113,25 +118,6 @@ xbps_show_pkg_info(prop_dictionary_t dict)
 	obj = prop_dictionary_get(dict, "long_desc");
 	if (obj && prop_object_type(obj) == PROP_TYPE_STRING)
 		printf(" %s\n", prop_string_cstring_nocopy(obj));
-}
-
-int
-xbps_show_pkg_namedesc(prop_object_t obj, void *arg, bool *loop_done)
-{
-	const char *pkgname, *desc, *ver, *string = arg;
-
-	assert(prop_object_type(obj) == PROP_TYPE_DICTIONARY);
-	assert(string != NULL);
-
-	prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
-	prop_dictionary_get_cstring_nocopy(obj, "short_desc", &desc);
-	prop_dictionary_get_cstring_nocopy(obj, "version", &ver);
-	assert(ver != NULL);
-
-	if ((strstr(pkgname, string) || strstr(desc, string)))
-		printf("  %s-%s - %s\n", pkgname, ver, desc);
-
-	return 0;
 }
 
 int
@@ -159,7 +145,7 @@ xbps_search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 
 	printf("From %s repository ...\n", repofile);
 	xbps_callback_array_iter_in_dict(dict, "packages",
-	    xbps_show_pkg_namedesc, arg);
+	    show_pkg_namedesc, arg);
 	prop_object_release(dict);
 	free(plist);
 
@@ -210,7 +196,7 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 	}
 
 	printf("Repository: %s\n", repoloc);
-	xbps_show_pkg_info(pkgdict);
+	show_pkg_info(pkgdict);
 	*loop_done = true;
 	prop_object_release(dict);
 	free(plist);
@@ -218,26 +204,27 @@ xbps_show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 	return 0;
 }
 
-int
-xbps_list_pkgs_in_dict(prop_object_t obj, void *arg, bool *loop_done)
+static int
+show_pkg_namedesc(prop_object_t obj, void *arg, bool *loop_done)
 {
-	const char *pkgname, *version, *short_desc;
+	const char *pkgname, *desc, *ver, *string = arg;
 
 	assert(prop_object_type(obj) == PROP_TYPE_DICTIONARY);
+	assert(string != NULL);
 
 	prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
-	prop_dictionary_get_cstring_nocopy(obj, "version", &version);
-	prop_dictionary_get_cstring_nocopy(obj, "short_desc", &short_desc);
-	if (pkgname && version && short_desc) {
-		printf("%s (%s)\t%s\n", pkgname, version, short_desc);
-		return 0;
-	}
+	prop_dictionary_get_cstring_nocopy(obj, "short_desc", &desc);
+	prop_dictionary_get_cstring_nocopy(obj, "version", &ver);
+	assert(ver != NULL);
 
-	return EINVAL;
+	if ((strstr(pkgname, string) || strstr(desc, string)))
+		printf("  %s-%s - %s\n", pkgname, ver, desc);
+
+	return 0;
 }
 
-int
-xbps_list_strings_in_array2(prop_object_t obj, void *arg, bool *loop_done)
+static int
+list_strings_in_array2(prop_object_t obj, void *arg, bool *loop_done)
 {
 	static uint16_t count;
 	const char *sep;

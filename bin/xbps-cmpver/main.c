@@ -1,4 +1,4 @@
-/* 
+/*
  * Compare package and version strings
  * @ 2008
  * Author: pancake <youterm.com>

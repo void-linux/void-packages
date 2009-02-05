@@ -33,6 +33,7 @@
 #include <unistd.h>
 
 #include <xbps_api.h>
+#include "util.h"
 
 typedef struct repository_info {
 	const char *index_version;
@@ -51,30 +52,24 @@ static char *plist;
 static void
 usage(void)
 {
-	printf("Usage: xbps-bin [options] [action] [arguments]\n\n"
+	printf("Usage: xbps-repo [options] [action] [arguments]\n\n"
 	" Available actions:\n"
-        "    install, list, remove, repo-add, repo-list, repo-rm, search, show\n"
+        "    add, list, remove, search, show\n"
 	" Actions with arguments:\n"
-	"    install\t<pkgname>\n"
-	"    remove\t<pkgname>\n"
-	"    repo-add\t<URI>\n"
-	"    repo-rm\t<URI>\n"
+	"    add\t<URI>\n"
+	"    remove\t<URI>\n"
 	"    search\t<string>\n"
 	"    show\t<pkgname>\n"
 	" Options shared by all actions:\n"
 	"    -r\t\t<rootdir>\n"
 	"\n"
 	" Examples:\n"
-	"    $ xbps-bin install klibc\n"
-	"    $ xbps-bin -r /path/to/root install klibc\n"
-	"    $ xbps-bin list\n"
-	"    $ xbps-bin remove klibc\n"
-	"    $ xbps-bin repo-add /path/to/directory\n"
-	"    $ xbps-bin repo-add http://www.location.org/xbps-repo\n"
-	"    $ xbps-bin repo-list\n"
-	"    $ xbps-bin repo-rm /path/to/directory\n"
-	"    $ xbps-bin search klibc\n"
-	"    $ xbps-bin show klibc\n");
+	"    $ xbps-repo add /path/to/directory\n"
+	"    $ xbps-repo add http://www.location.org/xbps-repo\n"
+	"    $ xbps-repo list\n"
+	"    $ xbps-repo remove /path/to/directory\n"
+	"    $ xbps-repo search klibc\n"
+	"    $ xbps-repo show klibc\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -175,7 +170,7 @@ main(int argc, char **argv)
 	prop_dictionary_t dict;
 	repo_info_t *rinfo = NULL;
 	char dpkgidx[PATH_MAX], *root = NULL;
-	int c, rv = 0;
+	int c;
 
 	while ((c = getopt(argc, argv, "r:")) != -1) {
 		switch (c) {
@@ -196,7 +191,7 @@ main(int argc, char **argv)
 	if (argc < 1)
 		usage();
 
-	if (strcasecmp(argv[0], "repo-add") == 0) {
+	if (strcasecmp(argv[0], "add") == 0) {
 		/* Adds a new repository to the pool. */
 		if (argc != 2)
 			usage();
@@ -249,7 +244,7 @@ main(int argc, char **argv)
 		free(rinfo);
 		free(plist);
 
-	} else if (strcasecmp(argv[0], "repo-list") == 0) {
+	} else if (strcasecmp(argv[0], "list") == 0) {
 		/* Lists all repositories registered in pool. */
 		if (argc != 1)
 			usage();
@@ -260,7 +255,8 @@ main(int argc, char **argv)
 		prop_object_release(dict);
 		free(plist);
 
-	} else if (strcasecmp(argv[0], "repo-rm") == 0) {
+	} else if ((strcasecmp(argv[0], "rm") == 0) ||
+		   (strcasecmp(argv[0], "remove") == 0)) {
 		/* Remove a repository from the pool. */
 		if (argc != 2)
 			usage();
@@ -305,65 +301,6 @@ main(int argc, char **argv)
 		}
 		prop_object_release(dict);
 		free(plist);
-
-	} else if (strcasecmp(argv[0], "list") == 0) {
-		/* Lists packages currently registered in database. */
-		if (argc != 1)
-			usage();
-
-		plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
-		if (plist == NULL)
-			exit(EXIT_FAILURE);
-
-		dict = prop_dictionary_internalize_from_file(plist);
-		if (dict == NULL) {
-			printf("No packages currently registered.\n");
-			free(plist);
-			exit(EXIT_SUCCESS);
-		}
-
-		if (!xbps_callback_array_iter_in_dict(dict, "packages",
-		    xbps_list_pkgs_in_dict, NULL)) {
-			prop_object_release(dict);
-			free(plist);
-			exit(EXIT_FAILURE);
-		}
-		prop_object_release(dict);
-		free(plist);
-
-	} else if ((strcasecmp(argv[0], "install") == 0) ||
-		   (strcasecmp(argv[0], "remove") == 0))  {
-		/* Installs a binary package and required deps. */
-		if (argc != 2)
-			usage();
-
-		if (geteuid() != 0) {
-			printf("ERROR: root permissions are needed to install"
-			    "and remove binary packages.\n");
-			exit(EXIT_FAILURE);
-		}
-
-		/* Install into root directory by default. */
-		if (strcasecmp(argv[0], "install") == 0) {
-			rv = xbps_install_binary_pkg(argv[1], root);
-			if (rv) {
-				printf("ERROR: unable to install %s.\n", argv[1]);
-				exit(rv);
-			}
-			printf("Package %s installed successfully.\n", argv[1]);
-		} else {
-			rv = xbps_remove_binary_pkg(argv[1], root);
-			if (rv) {
-				if (rv == ENOENT)
-					printf("Package %s is not installed.\n",
-					    argv[1]);
-				else
-					printf("ERROR: unable to remove %s.\n",
-					    argv[1]);
-				exit(rv);
-			}
-			printf("Package %s removed successfully.\n", argv[1]);
-		}
 
 	} else {
 		usage();

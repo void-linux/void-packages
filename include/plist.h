@@ -26,30 +26,8 @@
 #ifndef _XBPS_PLIST_H_
 #define _XBPS_PLIST_H_
 
-/* 
- * Adds an opaque object with specified key into a dictionary.
- *
- * Arguments:
- * 	- prop_dictionary_t: dictionary to store the object.
- *	- prop_object_t: the object to be stored.
- *	- const char *: the key associated with the object.
- *
- * Returns true on success, false on failure.
- */
-bool
-xbps_add_obj_to_dict(prop_dictionary_t, prop_object_t, const char *);
-
-/*
- * Adds an opaque object into an array.
- *
- * Arguments:
- * 	- prop_array_t: the array storing the object.
- * 	- prop_object_t: the opaque object to be stored.
- *
- * Returns true on success, false on failure.
- */
-bool
-xbps_add_obj_to_array(prop_array_t, prop_object_t);
+bool xbps_add_obj_to_dict(prop_dictionary_t, prop_object_t, const char *);
+bool xbps_add_obj_to_array(prop_array_t, prop_object_t);
 
 /*
  * Executes a function callback to process all objects that are
@@ -131,27 +109,8 @@ bool xbps_unregister_repository(const char *);
 bool
 xbps_remove_pkg_dict_from_file(const char *, const char *);
 
-/*
- * Shows information of a package by looking at its dictionary.
- * All known objects on it will be showed up.
- *
- * Arguments:
- * 	- prop_dictionary_t: the package dictionary.
- */
-void xbps_show_pkg_info(prop_dictionary_t);
-
-/*
- * Internal functions.
- */
-int	xbps_list_pkgs_in_dict(prop_object_t, void *, bool *);
-int	xbps_list_strings_in_array(prop_object_t, void *, bool *);
-int	xbps_list_strings_in_array2(prop_object_t, void *, bool *);
-int	xbps_remove_string_from_array(prop_object_t, void *, bool *);
-int	xbps_show_pkg_info_from_repolist(prop_object_t obj, void *, bool *);
-int	xbps_show_pkg_namedesc(prop_object_t, void *, bool *);
-int	xbps_search_string_in_pkgs(prop_object_t, void *, bool *);
-
 /* Utils */
+int	xbps_remove_string_from_array(prop_object_t, void *, bool *);
 void	xbps_set_rootdir(const char *);
 char *	xbps_append_full_path(bool, const char *, const char *);
 int	xbps_check_is_installed_pkg(const char *);

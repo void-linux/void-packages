@@ -1,37 +1,26 @@
 include ../vars.mk
 
-EXTRA_CFLAGS = -funroll-all-loops -ftree-loop-linear
-LDFLAGS	+= -L../lib -L$(PREFIX)/lib -lxbps
+SUBDIRS =	xbps-bin
+SUBDIRS +=	xbps-cmpver
+SUBDIRS +=	xbps-digest
+SUBDIRS +=	xbps-pkgdb
+SUBDIRS +=	xbps-repo
+SUBDIRS +=	xbps-src
 
-BINS = xbps-bin xbps-cmpver xbps-digest xbps-pkgdb
-
-all: $(BINS)
 .PHONY: all
+all:
+	for dir in $(SUBDIRS); do		\
+		$(MAKE) -C $$dir;		\
+	done
 
-xbps-bin: xbps-bin.o
-	$(CC) $(LDFLAGS) $^ -o $@
-
-xbps-cmpver: xbps-cmpver.o
-	$(CC) $(LDFLAGS) $^ -o $@
-
-xbps-digest: xbps-digest.o
-	$(CC) $(EXTRA_CFLAGS) $(LDFLAGS) $^ -o $@
-
-xbps-pkgdb: xbps-pkgdb.o
-	$(CC) $(LDFLAGS) $^ -o $@
+.PHONY: install
+install:
+	for dir in $(SUBDIRS); do		\
+		$(MAKE) -C $$dir install;	\
+	done
 
 .PHONY: clean
-clean: clean-bins clean-objs
-
-clean-bins:
-	-rm -f $(BINS)
-
-clean-objs:
-	-rm -f *.o
-
-install: $(BINS)
-	install -d $(SBINDIR)
-	install -m 755 $(BINS) $(SBINDIR)
-	install -m 755 xbps-src.sh $(SBINDIR)/xbps-src
-	sed -i -e "s|@@XBPS_INSTALL_PREFIX@@|$(PREFIX)|g" $(SBINDIR)/xbps-src
-
+clean:
+	for dir in $(SUBDIRS); do		\
+		$(MAKE) -C $$dir clean;		\
+	done
