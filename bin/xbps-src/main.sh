@@ -27,7 +27,7 @@
 #-
 trap "echo && exit 1" INT QUIT
 
-: ${XBPS_CONFIG_FILE:=/etc/xbps.conf}
+: ${XBPS_CONFIG_FILE:=@@XBPS_INSTALL_ETCDIR@@/xbps.conf}
 
 : ${progname:=$(basename $0)}
 : ${fakeroot_cmd:=fakeroot}
@@ -67,7 +67,7 @@ Targets:
 Options:
  -C     Do not remove build directory after successful installation.
  -c     Path to global configuration file:
-        if not specified /etc/xbps.conf is used.
+        if not specified @@XBPS_INSTALL_ETCDIR@@/xbps.conf is used.
 _EOF
 	exit 1
 }

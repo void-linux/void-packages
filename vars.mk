@@ -3,6 +3,7 @@
 PREFIX	?= /usr/local
 SBINDIR	?= $(PREFIX)/sbin
 LIBDIR	?= $(PREFIX)/lib
+ETCDIR	?= $(PREFIX)/etc
 TOPDIR	?= ..
 
 LDFLAGS += -L$(TOPDIR)/lib -L$(PREFIX)/lib -lxbps

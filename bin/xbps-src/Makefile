@@ -5,14 +5,14 @@ BIN = xbps-src
 
 .PHONY: all
 all:
-	sed -e "s|@@XBPS_INSTALL_PREFIX@@|$(PREFIX)|g" main.sh > xbps-src
+	sed -e	"s|@@XBPS_INSTALL_PREFIX@@|$(PREFIX)|g"	\
+	    -e	"s|@@XBPS_INSTALL_ETCDIR@@|$(ETCDIR)|g"	\
+		main.sh > xbps-src
 
 .PHONY: clean
-clean: clean-bins
-
-clean-bins:
+clean:
 	-rm -f $(BIN)
 
-install: $(BIN)
+install: all
 	install -d $(SBINDIR)
 	install -m 755 $(BIN) $(SBINDIR)
