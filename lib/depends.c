@@ -198,11 +198,8 @@ find_deps_in_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
 		free(pkgname);
 
 		/* Iterate on required pkg to find more deps */
-		if (xbps_pkg_has_rundeps(pkgdict)) {
-			/* more deps? */
-			if (!find_deps_in_pkg(repo, pkgdict))
-				continue;
-		}
+		if (!find_deps_in_pkg(repo, pkgdict))
+			continue;
 	}
 
 	prop_object_iterator_release(iter);
