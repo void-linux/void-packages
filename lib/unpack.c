@@ -117,13 +117,12 @@ unpack_archive_init(prop_dictionary_t pkg, const char *destdir,
 }
 /*
  * Flags for extracting files in binary packages.
- * TODO: change this for non root users.
  */
-#define EXTRACT_FLAGS	ARCHIVE_EXTRACT_OWNER | ARCHIVE_EXTRACT_PERM | \
-			ARCHIVE_EXTRACT_TIME | \
-			ARCHIVE_EXTRACT_SECURE_NODOTDOT | \
+#define EXTRACT_FLAGS	ARCHIVE_EXTRACT_SECURE_NODOTDOT | \
 			ARCHIVE_EXTRACT_SECURE_SYMLINKS | \
 			ARCHIVE_EXTRACT_UNLINK
+#define FEXTRACT_FLAGS	ARCHIVE_EXTRACT_OWNER | ARCHIVE_EXTRACT_PERM | \
+			ARCHIVE_EXTRACT_TIME | EXTRACT_FLAGS
 
 /*
  * TODO: remove printfs and return appropiate errors to be interpreted by
@@ -138,7 +137,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 	const char *prepost = "./XBPS_PREPOST_INSTALL";
 	const char *pkgname, *version;
 	char *buf;
-	int rv = 0;
+	int rv = 0, flags = 0;
 	bool actgt = false;
 
 	assert(ar != NULL);
@@ -146,6 +145,11 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 
 	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
 	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
+
+	if (getuid() == 0)
+		flags = FEXTRACT_FLAGS;
+	else
+		flags = EXTRACT_FLAGS;
 
 	/*
 	 * This length is '.%s/metadata/%s/prepost-inst' not
@@ -172,8 +176,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 
 			archive_entry_set_pathname(entry, buf);
 
-			if ((rv = archive_read_extract(ar, entry,
-			     EXTRACT_FLAGS)) != 0)
+			if ((rv = archive_read_extract(ar, entry, flags)) != 0)
 				break;
 
 			if ((rv = xbps_file_exec(buf, destdir, "pre",
@@ -190,8 +193,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 		/*
 		 * Extract all data from the archive now.
 		 */
-		if ((rv = archive_read_extract(ar, entry,
-		     EXTRACT_FLAGS)) != 0) {
+		if ((rv = archive_read_extract(ar, entry, flags)) != 0) {
 			printf("\ncouldn't unpack %s (%s), exiting!\n",
 			    archive_entry_pathname(entry), strerror(errno));
 			(void)fflush(stdout);

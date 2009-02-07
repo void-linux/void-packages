@@ -134,12 +134,6 @@ main(int argc, char **argv)
 		if (argc != 2)
 			usage();
 
-		if (geteuid() != 0) {
-			printf("ERROR: root permissions are needed to install"
-			    "and remove binary packages.\n");
-			exit(EXIT_FAILURE);
-		}
-
 		/* Install into root directory by default. */
 		if (strcasecmp(argv[0], "install") == 0) {
 			rv = xbps_install_binary_pkg(argv[1], root);
