@@ -57,7 +57,7 @@ xbps_callback_array_iter_in_dict(prop_dictionary_t, const char *,
  * Returns the package's dictionary object, otherwise NULL.
  */
 prop_dictionary_t
-xbps_find_pkg_in_dict(prop_dictionary_t, const char *);
+xbps_find_pkg_in_dict(prop_dictionary_t, const char *, const char *);
 
 prop_dictionary_t
 xbps_find_pkg_from_plist(const char *, const char *);

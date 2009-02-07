@@ -154,7 +154,7 @@ main(int argc, char **argv)
 		if (dbdict == NULL)
 			exit(EXIT_FAILURE);
 
-		pkgdict = xbps_find_pkg_in_dict(dbdict, argv[1]);
+		pkgdict = xbps_find_pkg_in_dict(dbdict, "packages", argv[1]);
 		if (pkgdict == NULL)
 			exit(EXIT_FAILURE);
 

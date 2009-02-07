@@ -176,7 +176,7 @@ show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 		return EINVAL;
 	}
 
-	pkgdict = xbps_find_pkg_in_dict(dict, arg);
+	pkgdict = xbps_find_pkg_in_dict(dict, "packages", arg);
 	if (pkgdict == NULL) {
 		prop_object_release(dict);
 		free(plist);

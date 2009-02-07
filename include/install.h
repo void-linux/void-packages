@@ -26,13 +26,15 @@
 #ifndef _XBPS_INSTALL_H_
 #define _XBPS_INSTALL_H_
 
-/* From lib/install.c and lib/depends.c */
-int	xbps_install_pkg_deps(prop_dictionary_t);
-int	xbps_install_binary_pkg(const char *, const char *);
-int	xbps_install_binary_pkg_from_repolist(prop_object_t, void *, bool *);
-int	xbps_register_pkg(const char *, const char *, const char *);
-int	xbps_unpack_binary_pkg(prop_dictionary_t, prop_dictionary_t,
-			       int (*cb)(struct archive *, prop_dictionary_t));
-int	xbps_unpack_archive_cb(struct archive *, prop_dictionary_t);
+/* From lib/install.c, lib/depends.c and lib/unpack.c */
+int xbps_install_pkg_deps(prop_dictionary_t);
+int xbps_install_binary_pkg(const char *, const char *);
+int xbps_install_binary_pkg_fini(prop_dictionary_t, prop_dictionary_t,
+				 const char *);
+int xbps_register_pkg(const char *, const char *, const char *);
+int xbps_unpack_binary_pkg(prop_dictionary_t, prop_dictionary_t,
+			   const char *,
+			   void (*cb_print)(prop_dictionary_t));
+int xbps_find_deps_in_pkg(prop_dictionary_t, prop_dictionary_t);
 
 #endif /* !_XBPS_INSTALL_H_ */

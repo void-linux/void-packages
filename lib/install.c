@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2008 Juan Romero Pardines.
+ * Copyright (c) 2008-2009 Juan Romero Pardines.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -34,78 +34,27 @@
 
 #include <xbps_api.h>
 
-static const char *chroot_dir;
-
 int
-xbps_install_binary_pkg_from_repolist(prop_object_t obj, void *arg,
-				      bool *loop_done)
+xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
+			     const char *destdir)
 {
-	prop_dictionary_t repod, pkgrd;
-	const char *pkgname = arg, *version, *desc;
-	char *plist;
+	const char *pkgname, *version, *desc;
 	int rv = 0;
 
-	/*
-	 * Get the dictionary from a repository's index file.
-	 */
-	plist = xbps_append_full_path(false,
-	    prop_string_cstring_nocopy(obj), XBPS_PKGINDEX);
-	if (plist == NULL)
-		return EINVAL;
-
-	repod = prop_dictionary_internalize_from_file(plist);
-	if (repod == NULL) {
-		free(plist);
-		return EINVAL;
-	}
-
-	/*
-	 * Get the package dictionary from current repository.
-	 */
-	pkgrd = xbps_find_pkg_in_dict(repod, pkgname);
-	if (pkgrd == NULL) {
-		free(plist);
-		prop_object_release(repod);
-		return XBPS_PKG_ENOTINREPO;
-	}
-
-	prop_dictionary_get_cstring_nocopy(pkgrd, "version", &version);
-	prop_dictionary_get_cstring_nocopy(pkgrd, "short_desc", &desc);
+	assert(pkg != NULL);
+	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
+	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
+	prop_dictionary_get_cstring_nocopy(pkg, "short_desc", &desc);
+	assert(pkgname != NULL);
 	assert(version != NULL);
 	assert(desc != NULL);
 
-	/*
-	 * Check if this package needs dependencies.
-	 */
-	if (!xbps_pkg_has_rundeps(pkgrd)) {
-		/* pkg has no deps, just install it. */
-		goto install;
-	}
-
-	/*
-	 * Install all required dependencies.
-	 */
-	rv = xbps_install_pkg_deps(pkgrd);
-	if (rv != 0) {
-		free(plist);
-		prop_object_release(repod);
-		return rv;
-	}
-
-install:
-	/*
-	 * Finally install the package, now that all
-	 * required dependencies were installed.
-	 */
-	rv = xbps_unpack_binary_pkg(repod, pkgrd, xbps_unpack_archive_cb);
+	rv = xbps_unpack_binary_pkg(repo, pkg, destdir, NULL);
 	if (rv == 0) {
 		rv = xbps_register_pkg(pkgname, version, desc);
 		if (rv == EEXIST)
 			rv = 0;
 	}
-	free(plist);
-	prop_object_release(repod);
-	*loop_done = true;
 
 	return rv;
 }
@@ -113,7 +62,10 @@ install:
 int
 xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 {
-	prop_dictionary_t repolistd;
+	prop_array_t array;
+	prop_dictionary_t repolistd, repod, pkgrd = NULL;
+	prop_object_t obj;
+	prop_object_iterator_t iter;
 	char *plist;
 	int rv = 0;
 
@@ -121,13 +73,11 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 	if (destdir) {
 		if ((rv = chdir(destdir)) != 0)
 			return errno;
-		chroot_dir = destdir;
 	} else
-		chroot_dir = "NOTSET";
+		destdir = "NOTSET";
 
 	/*
-	 * Get the dictionary with the list of registered
-	 * repositories.
+	 * Get the dictionary with the list of registered repositories.
 	 */
 	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
 	if (plist == NULL)
@@ -138,16 +88,87 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 		free(plist);
 		return EINVAL;
 	}
+	free(plist);
 
 	/*
-	 * Iterate over the repositories to find the binary packages
-	 * required by this package.
+	 * Iterate over the repository pool and find out if we have
+	 * all available binary packages.
 	 */
-	rv = xbps_callback_array_iter_in_dict(repolistd, "repository-list",
-	    xbps_install_binary_pkg_from_repolist, (void *)pkgname);
+        array = prop_dictionary_get(repolistd, "repository-list");
+        assert(array != NULL);
 
-	free(plist);
+        iter = prop_array_iterator(array);
+        if (iter == NULL) {
+                prop_object_release(repolistd);
+                return ENOMEM;
+        }
+
+	while ((obj = prop_object_iterator_next(iter)) != NULL) {
+		plist = xbps_append_full_path(false,
+		    prop_string_cstring_nocopy(obj), XBPS_PKGINDEX);
+		if (plist == NULL) {
+			rv = EINVAL;
+			goto out;
+		}
+
+		repod = prop_dictionary_internalize_from_file(plist);
+		if (repod == NULL) {
+			free(plist);
+			rv = errno;
+			goto out;
+		}
+		free(plist);
+
+		/*
+		 * Get the package dictionary from current repository.
+		 * If it's not there, pass to the next repository.
+		 */
+		pkgrd = xbps_find_pkg_in_dict(repod, "packages", pkgname);
+		if (pkgrd == NULL) {
+			prop_object_release(repod);
+			rv = XBPS_PKG_ENOTINREPO;
+			continue;
+		}
+
+		/*
+		 * Check if this package needs dependencies.
+		 */
+		if (!xbps_pkg_has_rundeps(pkgrd)) {
+			/* pkg has no deps, just install it. */
+			rv = xbps_install_binary_pkg_fini(repod, pkgrd,
+			    destdir);
+			prop_object_release(repod);
+			goto out;
+		}
+
+		/*
+ 		 * Construct the dependency chain for this package. If any
+ 		 * dependency is not available, pass to the next repository.
+ 		 */
+		rv = xbps_find_deps_in_pkg(repod, pkgrd);
+		if (rv != 0) {
+			prop_object_release(repod);
+			if (rv == XBPS_PKG_ENOTINREPO)
+				continue;
+
+			goto out;
+                }
+
+		/*
+		 * Install all required dependencies and the package itself.
+		 */
+		rv = xbps_install_pkg_deps(pkgrd);
+		if (rv == 0) {
+			rv = xbps_install_binary_pkg_fini(repod, pkgrd,
+			    destdir);
+		}
+                prop_object_release(repod);
+		break;
+        }
+
+out:
 	prop_object_release(repolistd);
+        prop_object_iterator_release(iter);
 
 	return rv;
 }
@@ -218,7 +239,7 @@ xbps_register_pkg(const char *pkgname, const char *version, const char *desc)
 
 	} else {
 		/* Check if package is already registered. */
-		pkgd = xbps_find_pkg_in_dict(dict, pkgname);
+		pkgd = xbps_find_pkg_in_dict(dict, "packages", pkgname);
 		if (pkgd != NULL) {
 			prop_object_release(dict);
 			free(plist);
@@ -237,180 +258,11 @@ xbps_register_pkg(const char *pkgname, const char *version, const char *desc)
 		}
 	}
 
-
 	if (!prop_dictionary_externalize_to_file(dict, plist))
 		rv = errno;
 
 	prop_object_release(dict);
 	free(plist);
-
-	return rv;
-}
-
-/*
- * Flags for extracting files in binary packages.
- */
-#define EXTRACT_FLAGS	ARCHIVE_EXTRACT_OWNER | ARCHIVE_EXTRACT_PERM | \
-			ARCHIVE_EXTRACT_TIME | \
-			ARCHIVE_EXTRACT_SECURE_NODOTDOT | \
-			ARCHIVE_EXTRACT_SECURE_SYMLINKS | \
-			ARCHIVE_EXTRACT_UNLINK
-
-int
-xbps_unpack_archive_cb(struct archive *ar, prop_dictionary_t pkg)
-{
-	struct archive_entry *entry;
-	size_t len;
-	const char *prepost = "./XBPS_PREPOST_INSTALL";
-	const char *pkgname, *version;
-	char *buf;
-	int rv = 0;
-	bool actgt = false;
-
-	assert(ar != NULL);
-	assert(pkg != NULL);
-
-	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
-	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
-
-	/*
-	 * This length is '.%s/metadata/%s/prepost-inst' not
-	 * including nul.
-	 */
-	len = strlen(XBPS_META_PATH) + strlen(pkgname) + 24;
-	buf = malloc(len + 1);
-	if (buf == NULL)
-		return ENOMEM;
-
-	if (snprintf(buf, len + 1, ".%s/metadata/%s/prepost-inst",
-	    XBPS_META_PATH, pkgname) < 0) {
-		free(buf);
-		return -1;
-	}
-
-	while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
-		/*
-		 * Run the pre installation action target if there's a script
-		 * before writing data to disk.
-		 */
-		if (strcmp(prepost, archive_entry_pathname(entry)) == 0) {
-			actgt = true;
-
-			archive_entry_set_pathname(entry, buf);
-
-			if ((rv = archive_read_extract(ar, entry,
-			     EXTRACT_FLAGS)) != 0)
-				break;
-
-			if ((rv = xbps_file_exec(buf, chroot_dir, "pre",
-			     pkgname, version, NULL)) != 0) {
-				printf("%s: preinst action target error %s\n",
-				    pkgname, strerror(errno));
-				(void)fflush(stdout);
-				break;
-			}
-
-			/* pass to the next entry if successful */
-			continue;
-		}
-		/*
-		 * Extract all data from the archive now.
-		 */
-		if ((rv = archive_read_extract(ar, entry,
-		     EXTRACT_FLAGS)) != 0) {
-			printf("\ncouldn't unpack %s (%s), exiting!\n",
-			    archive_entry_pathname(entry), strerror(errno));
-			(void)fflush(stdout);
-			break;
-		}
-	}
-
-	if (rv == 0 && actgt) {
-		/*
-		 * Run the post installaction action target, if package
-		 * contains the script.
-		 */
-		if ((rv = xbps_file_exec(buf, chroot_dir, "post",
-		     pkgname, version, NULL)) != 0) {
-			printf("%s: postinst action target error %s\n",
-			    pkgname, strerror(errno));
-			(void)fflush(stdout);
-		}
-	}
-
-	free(buf);
-
-	return rv;
-}
-
-int
-xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
-		       int (*cb)(struct archive *, prop_dictionary_t))
-{
-	prop_string_t pkgname, version, filename, repoloc;
-	struct archive *ar;
-	char *binfile;
-	int pkg_fd, rv;
-
-	assert(pkg != NULL);
-	assert(repo != NULL);
-	assert(cb != NULL);
-
-	/* Append filename to the full path for binary pkg */
-	filename = prop_dictionary_get(pkg, "filename");
-	repoloc = prop_dictionary_get(repo, "location-local");
-
-	binfile= xbps_append_full_path(false,
-	    prop_string_cstring_nocopy(repoloc),
-	    prop_string_cstring_nocopy(filename));
-	if (binfile == NULL)
-		return EINVAL;
-
-	if ((pkg_fd = open(binfile, O_RDONLY)) == -1) {
-		free(binfile);
-		return errno;
-	}
-
-	pkgname = prop_dictionary_get(pkg, "pkgname");
-	version = prop_dictionary_get(pkg, "version");
-
-	printf("Installing %s-%s (%s) ...\n",
-	    prop_string_cstring_nocopy(pkgname),
-	    prop_string_cstring_nocopy(version),
-	    prop_string_cstring_nocopy(filename));
-
-	(void)fflush(stdout);
-
-	ar = archive_read_new();
-	if (ar == NULL) {
-		free(binfile);
-		close(pkg_fd);
-		return ENOMEM;
-	}
-
-	/* Enable support for all format and compression methods */
-	archive_read_support_compression_all(ar);
-	archive_read_support_format_all(ar);
-
-	if ((rv = archive_read_open_fd(ar, pkg_fd, 2048)) != 0) {
-		archive_read_finish(ar);
-		free(binfile);
-		close(pkg_fd);
-		return rv;
-	}
-
-	rv = (*cb)(ar, pkg);
-	/*
-	 * If installation of package was successful, make sure the package
-	 * is really on storage (if possible).
-	 */
-	if (rv == 0)
-		if ((rv = fdatasync(pkg_fd)) == -1)
-			rv = errno;
-
-	archive_read_finish(ar);
-	close(pkg_fd);
-	free(binfile);
 
 	return rv;
 }

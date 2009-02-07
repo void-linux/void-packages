@@ -60,7 +60,7 @@ xbps_check_is_installed_pkg(const char *pkg)
 		return 1; /* not installed */
 	}
 
-	pkgdict = xbps_find_pkg_in_dict(dict, pkgname);
+	pkgdict = xbps_find_pkg_in_dict(dict, "packages", pkgname);
 	if (pkgdict == NULL) {
 		prop_object_release(dict);
 		free(pkgname);
@@ -165,10 +165,9 @@ char *
 xbps_append_full_path(bool use_rootdir, const char *basedir, const char *plist)
 {
 	const char *env;
-	char *buf;
+	char *buf = NULL;
 	size_t len = 0;
 
-	assert(buf != NULL);
 	assert(plist != NULL);
 
 	if (basedir)

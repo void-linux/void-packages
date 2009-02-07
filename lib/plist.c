@@ -110,7 +110,7 @@ xbps_find_pkg_from_plist(const char *plist, const char *pkgname)
 		return NULL;
 	}
 
-	obj = xbps_find_pkg_in_dict(dict, pkgname);
+	obj = xbps_find_pkg_in_dict(dict, "packages", pkgname);
 	if (obj == NULL) {
 		prop_object_release(dict);
 		errno = ENOENT;
@@ -124,7 +124,8 @@ xbps_find_pkg_from_plist(const char *plist, const char *pkgname)
 }
 
 prop_dictionary_t
-xbps_find_pkg_in_dict(prop_dictionary_t dict, const char *pkgname)
+xbps_find_pkg_in_dict(prop_dictionary_t dict, const char *key,
+		      const char *pkgname)
 {
 	prop_object_iterator_t iter;
 	prop_object_t obj;
@@ -132,8 +133,9 @@ xbps_find_pkg_in_dict(prop_dictionary_t dict, const char *pkgname)
 
 	assert(dict != NULL);
 	assert(pkgname != NULL);
+	assert(key != NULL);
 
-	iter = xbps_get_array_iter_from_dict(dict, "packages");
+	iter = xbps_get_array_iter_from_dict(dict, key);
 	if (iter == NULL)
 		return NULL;
 
