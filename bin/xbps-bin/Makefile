@@ -8,7 +8,7 @@ all: $(BIN)
 .PHONY: all
 
 $(BIN): $(OBJS)
-	$(CC) -g $(LDFLAGS) $^ -o $@
+	$(CC) $(LDFLAGS) $^ -o $@
 
 .PHONY: clean
 clean: clean-bins clean-objs
