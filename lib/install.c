@@ -142,9 +142,9 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 		}
 
 		/*
- 		 * Construct the dependency chain for this package. If any
- 		 * dependency is not available, pass to the next repository.
- 		 */
+		 * Construct the dependency chain for this package. If any
+		 * dependency is not available, pass to the next repository.
+		 */
 		rv = xbps_find_deps_in_pkg(repod, pkgrd);
 		if (rv != 0) {
 			prop_object_release(repod);

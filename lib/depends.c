@@ -380,13 +380,13 @@ xbps_find_deps_in_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
 		free(pkgname);
 		if (rv == 0) {
 			/* 
- 			 * Found in current repository, remove it.
- 			 */
+			 * Found in current repository, remove it.
+			 */
 			remove_missing_reqdep(&idx);
 
 		} else if (rv != 0 && rv != ENOENT)
 			break;
-		
+
 		/*
 		 * Package is on repo, add it into the dictionary.
 		 */

@@ -125,7 +125,7 @@ unpack_archive_init(prop_dictionary_t pkg, const char *destdir,
 			ARCHIVE_EXTRACT_SECURE_SYMLINKS | \
 			ARCHIVE_EXTRACT_UNLINK
 
-/* 
+/*
  * TODO: remove printfs and return appropiate errors to be interpreted by
  * the consumer.
  */
