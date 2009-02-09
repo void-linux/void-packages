@@ -222,6 +222,12 @@ build-pkg)
 	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
 	if [ "$2" = "all" ]; then
 		for f in $($XBPS_BIN_CMD list|awk '{print $1}'); do
+			version=$($XBPS_REGPKGDB_CMD version $f)
+			if [ ! -d $XBPS_DESTDIR/$f-$version ]; then
+				echo -n "Ignoring $f-$version, no destination "
+				echo "directory!"
+				continue
+			fi
 			setup_tmpl $f
 			xbps_make_binpkg
 			reset_tmpl_vars
