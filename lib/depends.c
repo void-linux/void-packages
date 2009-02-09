@@ -476,9 +476,6 @@ again:
 
 	prop_dictionary_get_cstring_nocopy(dict, "pkgname", &curname);
 	prop_dictionary_get_cstring_nocopy(dict, "requiredby", &reqby);
-	printf("[%s] %s requiredby %s prio %u\n",
-	    strcmp(array_key, "indirect_deps") == 0 ? "INDIRECT" : "DIRECT",
-	    curname, reqby, maxprio);
 
 	prop_array_remove(array, curidx);
 	if (prop_array_count(array) > 0) {

@@ -42,12 +42,22 @@ verify_sha256_cksum()
 	msg_normal "SHA256 checksum OK for $file."
 }
 
+fetch_update_cksum()
+{
+	local tmpl="$XBPS_TEMPLATESDIR/$pkgname/template"
+	local upcmd=$(basename $XBPS_SRCDISTDIR/$1)
+
+	sed -i -e "s|checksum.*|checksum=$(xbps-digest ${upcmd})|" $tmpl
+	return $?
+}
+
 #
 # Downloads the distfiles and verifies checksum for all them.
 #
 fetch_distfiles()
 {
 	local pkg="$1"
+	local upcksum="$2"
 	local dfiles=
 	local localurl=
 	local dfcount=0
@@ -106,6 +116,12 @@ fetch_distfiles()
 			fi
 		else
 			unset localurl
+
+			if [ -n "$upcksum" ]; then
+				fetch_update_cksum $f
+				break
+			fi
+
 			#
 			# XXX duplicate code.
 			#

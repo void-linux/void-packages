@@ -37,7 +37,7 @@ trap "echo && exit 1" INT QUIT
 usage()
 {
 	cat << _EOF
-$progname: [-C] [-c <config_file>] <target> <pkg>
+$progname: [-C] [-c <config_file>] [-u] <target> <pkg>
 
 Targets:
  build <pkg>            Build a package (fetch + extract + configure + build).
@@ -68,6 +68,7 @@ Options:
  -C     Do not remove build directory after successful installation.
  -c     Path to global configuration file:
         if not specified @@XBPS_INSTALL_ETCDIR@@/xbps.conf is used.
+ -u	Update the checksum in template file if used in 'fetch' target.
 _EOF
 	exit 1
 }
@@ -158,10 +159,11 @@ check_config_vars()
 #
 # main()
 #
-while getopts "Cc:" opt; do
+while getopts "Cc:u" opt; do
 	case $opt in
 		C) dontrm_builddir=yes;;
 		c) config_file_specified=yes; XBPS_CONFIG_FILE="$OPTARG";;
+		u) update_checksum=yes;;
 		--) shift; break;;
 	esac
 done
@@ -220,6 +222,12 @@ build-pkg)
 	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
 	if [ "$2" = "all" ]; then
 		for f in $($XBPS_BIN_CMD list|awk '{print $1}'); do
+			version=$($XBPS_REGPKGDB_CMD version $f)
+			if [ ! -d $XBPS_DESTDIR/$f-$version ]; then
+				echo -n "Ignoring $f-$version, no destination "
+				echo "directory!"
+				continue
+			fi
 			setup_tmpl $f
 			xbps_make_binpkg
 			reset_tmpl_vars
@@ -243,7 +251,7 @@ extract|fetch|info)
 	fi
 	if [ "$target" = "fetch" ]; then
 		. $XBPS_SHUTILSDIR/fetch_funcs.sh
-		fetch_distfiles $2
+		fetch_distfiles $2 $update_checksum
 		exit $?
 	fi
 	. $XBPS_SHUTILSDIR/extract_funcs.sh
