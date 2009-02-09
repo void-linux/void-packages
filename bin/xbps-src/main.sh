@@ -37,7 +37,7 @@ trap "echo && exit 1" INT QUIT
 usage()
 {
 	cat << _EOF
-$progname: [-C] [-c <config_file>] <target> <pkg>
+$progname: [-C] [-c <config_file>] [-u] <target> <pkg>
 
 Targets:
  build <pkg>            Build a package (fetch + extract + configure + build).
@@ -68,6 +68,7 @@ Options:
  -C     Do not remove build directory after successful installation.
  -c     Path to global configuration file:
         if not specified @@XBPS_INSTALL_ETCDIR@@/xbps.conf is used.
+ -u	Update the checksum in template file if used in 'fetch' target.
 _EOF
 	exit 1
 }
@@ -158,10 +159,11 @@ check_config_vars()
 #
 # main()
 #
-while getopts "Cc:" opt; do
+while getopts "Cc:u" opt; do
 	case $opt in
 		C) dontrm_builddir=yes;;
 		c) config_file_specified=yes; XBPS_CONFIG_FILE="$OPTARG";;
+		u) update_checksum=yes;;
 		--) shift; break;;
 	esac
 done
@@ -243,7 +245,7 @@ extract|fetch|info)
 	fi
 	if [ "$target" = "fetch" ]; then
 		. $XBPS_SHUTILSDIR/fetch_funcs.sh
-		fetch_distfiles $2
+		fetch_distfiles $2 $update_checksum
 		exit $?
 	fi
 	. $XBPS_SHUTILSDIR/extract_funcs.sh
