@@ -3,7 +3,7 @@
 # and update its list of fonts.
 #
 
-if [ -x $XBPS_MASTERDIR/bin/fc-cache ]; then
-	$XBPS_MASTERDIR/bin/fc-cache -f
+if [ -x /usr/bin/fc-cache ]; then
+	/usr/bin/fc-cache -f
 	[ "$?" -eq 0 ] && echo "=> Updated fontconfig fonts cache."
 fi
