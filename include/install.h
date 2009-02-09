@@ -27,7 +27,7 @@
 #define _XBPS_INSTALL_H_
 
 /* From lib/install.c, lib/depends.c and lib/unpack.c */
-int xbps_install_pkg_deps(prop_dictionary_t);
+int xbps_install_pkg_deps(prop_dictionary_t, const char *);
 int xbps_install_binary_pkg(const char *, const char *);
 int xbps_install_binary_pkg_fini(prop_dictionary_t, prop_dictionary_t,
 				 const char *);

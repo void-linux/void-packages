@@ -157,7 +157,7 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 		/*
 		 * Install all required dependencies and the package itself.
 		 */
-		rv = xbps_install_pkg_deps(pkgrd);
+		rv = xbps_install_pkg_deps(pkgrd, destdir);
 		if (rv == 0) {
 			rv = xbps_install_binary_pkg_fini(repod, pkgrd,
 			    destdir);

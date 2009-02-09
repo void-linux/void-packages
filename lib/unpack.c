@@ -37,6 +37,19 @@
 static int unpack_archive_init(prop_dictionary_t, const char *, const char *);
 static int unpack_archive_fini(struct archive *, const char *,
 			       prop_dictionary_t);
+static void unpack_defcb_print(prop_dictionary_t);
+
+static void
+unpack_defcb_print(prop_dictionary_t pkg)
+{
+	const char *pkgname, *version;
+	assert(pkg != NULL);
+
+	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
+	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
+
+	printf("  Unpacking %s-%s...\n", pkgname, version);
+}
 
 int
 xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
@@ -54,7 +67,7 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	if (repo)
 		repoloc = prop_dictionary_get(repo, "location-local");
 	else
-		repoloc = prop_dictionary_get(pkg, "location-local");
+		repoloc = prop_dictionary_get(pkg, "repository");
 
 	binfile = xbps_append_full_path(false,
 	    prop_string_cstring_nocopy(repoloc),
@@ -62,7 +75,9 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	if (binfile == NULL)
 		return EINVAL;
 
-	if (cb_print)
+	if (!cb_print)
+		unpack_defcb_print(pkg);
+	else
 		(*cb_print)(pkg);
 
 	rv = unpack_archive_init(pkg, destdir, binfile);

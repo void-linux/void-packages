@@ -116,7 +116,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	uint32_t prio = 0;
 	size_t len = 0;
 	const char *pkgname, *version, *reqbyname, *reqbyver;
-	const char  *repoloc, *binfile, *array_key = NULL, *originpkg;
+	const char  *repoloc, *binfile, *array_key, *originpkg, *short_desc;
 	char *reqby;
 	int rv = 0;
 
@@ -130,6 +130,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	prop_dictionary_get_cstring_nocopy(depd, "pkgname", &pkgname);
 	prop_dictionary_get_cstring_nocopy(depd, "version", &version);
 	prop_dictionary_get_cstring_nocopy(depd, "filename", &binfile);
+	prop_dictionary_get_cstring_nocopy(depd, "short_desc", &short_desc);
 	prop_dictionary_get_uint32(depd, "priority", &prio);
 	prop_dictionary_get_cstring_nocopy(origind, "pkgname", &reqbyname);
 	prop_dictionary_get_cstring_nocopy(origind, "version", &reqbyver);
@@ -221,6 +222,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 		prop_dictionary_set_cstring(dict, "repository", repoloc);
 		prop_dictionary_set_cstring(dict, "filename", binfile);
 		prop_dictionary_set_uint32(dict, "priority", prio);
+		prop_dictionary_set_cstring(dict, "short_desc", short_desc);
 	}
 	/*
 	 * Add the dictionary into the array.
@@ -406,7 +408,7 @@ out:
 }
 
 int
-xbps_install_pkg_deps(prop_dictionary_t pkg)
+xbps_install_pkg_deps(prop_dictionary_t pkg, const char *destdir)
 {
 	prop_array_t array, installed, direct, indirect;
 	prop_dictionary_t dict;
@@ -414,7 +416,7 @@ xbps_install_pkg_deps(prop_dictionary_t pkg)
 	prop_object_iterator_t iter;
 	uint32_t maxprio = 0, prio = 0;
 	size_t curidx = 0, idx = 0;
-	const char *array_key, *reqby, *curname;
+	const char *array_key, *reqby, *curname, *curver;
 	int rv = 0;
 
 	assert(pkg != NULL);
@@ -447,7 +449,10 @@ xbps_install_pkg_deps(prop_dictionary_t pkg)
 
 again:
 	array = prop_dictionary_get(chaindeps, array_key);
-	if (array == NULL || prop_array_count(array) == 0) {
+	if (array && prop_array_count(array) == 0) {
+		rv = 0;
+		goto out;
+	} else if (array == NULL || prop_array_count(array) == 0) {
 		rv = EINVAL;
 		goto out;
 	}
@@ -475,7 +480,16 @@ again:
 	}
 
 	prop_dictionary_get_cstring_nocopy(dict, "pkgname", &curname);
+	prop_dictionary_get_cstring_nocopy(dict, "version", &curver);
 	prop_dictionary_get_cstring_nocopy(dict, "requiredby", &reqby);
+
+	printf("Installing %s-%s required by %s...\n", curname, curver, reqby);
+	rv = xbps_install_binary_pkg_fini(NULL, dict, destdir);
+	if (rv != 0) {
+		printf("Error while installing %s-%s (%s)\n", curname, curver,
+		    strerror(rv));
+		goto out;
+	}
 
 	prop_array_remove(array, curidx);
 	if (prop_array_count(array) > 0) {
@@ -491,7 +505,6 @@ again:
 
 out:
 	prop_object_release(chaindeps);
-	exit(0);
 
 	return rv;
 }
