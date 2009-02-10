@@ -31,10 +31,12 @@ int xbps_install_pkg_deps(prop_dictionary_t, const char *);
 int xbps_install_binary_pkg(const char *, const char *);
 int xbps_install_binary_pkg_fini(prop_dictionary_t, prop_dictionary_t,
 				 const char *);
-int xbps_register_pkg(const char *, const char *, const char *);
+int xbps_register_pkg(prop_dictionary_t, const char *, const char *,
+		      const char *);
 int xbps_unpack_binary_pkg(prop_dictionary_t, prop_dictionary_t,
 			   const char *,
 			   void (*cb_print)(prop_dictionary_t));
+int xbps_update_pkg_requiredby(prop_array_t, prop_dictionary_t);
 int xbps_find_deps_in_pkg(prop_dictionary_t, prop_dictionary_t);
 
 #endif /* !_XBPS_INSTALL_H_ */

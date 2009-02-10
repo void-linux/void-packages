@@ -112,7 +112,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 		 prop_dictionary_t repod)
 {
 	prop_dictionary_t dict, curpkgdir, curpkgindir;
-	prop_array_t array;
+	prop_array_t array, rundeps_array;
 	uint32_t prio = 0;
 	size_t len = 0;
 	const char *pkgname, *version, *reqbyname, *reqbyver;
@@ -216,6 +216,9 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	prop_dictionary_set_cstring(dict, "pkgname", pkgname);
 	prop_dictionary_set_cstring(dict, "version", version);
 	prop_dictionary_set_cstring(dict, "requiredby", reqby);
+	rundeps_array = prop_dictionary_get(depd, "run_depends");
+	if (rundeps_array && prop_array_count(rundeps_array) > 0)
+		prop_dictionary_set(dict, "run_depends", rundeps_array);
 
 	if ((strcmp(array_key, "direct_deps") == 0) ||
 	    (strcmp(array_key, "indirect_deps") == 0)) {

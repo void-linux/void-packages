@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2008 Juan Romero Pardines.
+ * Copyright (c) 2008-2009 Juan Romero Pardines.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -113,7 +113,7 @@ main(int argc, char **argv)
 		if (argc != 4)
 			usage();
 
-		rv = xbps_register_pkg(argv[1], argv[2], argv[3]);
+		rv = xbps_register_pkg(NULL, argv[1], argv[2], argv[3]);
 		if (rv == EEXIST) {
 			printf("%s=> %s-%s already registered.\n",
 			    in_chroot ? "[chroot] " : "", argv[1], argv[2]);

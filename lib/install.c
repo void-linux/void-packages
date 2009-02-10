@@ -51,7 +51,7 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
 
 	rv = xbps_unpack_binary_pkg(repo, pkg, destdir, NULL);
 	if (rv == 0) {
-		rv = xbps_register_pkg(pkgname, version, desc);
+		rv = xbps_register_pkg(pkg, pkgname, version, desc);
 		if (rv == EEXIST)
 			rv = 0;
 	}
@@ -189,7 +189,8 @@ make_dict_from_pkg(const char *name, const char *ver, const char *desc)
 }
 
 int
-xbps_register_pkg(const char *pkgname, const char *version, const char *desc)
+xbps_register_pkg(prop_dictionary_t pkgrd, const char *pkgname,
+		  const char *version, const char *desc)
 {
 	prop_dictionary_t dict, pkgd;
 	prop_array_t array;
@@ -215,52 +216,58 @@ xbps_register_pkg(const char *pkgname, const char *version, const char *desc)
 
 		array = prop_array_create();
 		if (array == NULL) {
-			free(plist);
-			prop_object_release(dict);
-			return ENOMEM;
+			rv = ENOMEM;
+			goto out;
 		}
 
 		pkgd = make_dict_from_pkg(pkgname, version, desc);
-
 		if (!xbps_add_obj_to_array(array, pkgd)) {
 			prop_object_release(array);
-			prop_object_release(dict);
-			prop_object_release(pkgd);
-			free(plist);
-			return EINVAL;
+			rv = EINVAL;
+			goto out;
 		}
 
 		if (!xbps_add_obj_to_dict(dict, array, "packages")) {
 			prop_object_release(array);
-			prop_object_release(dict);
-			free(plist);
-			return EINVAL;
+			rv = EINVAL;
+			goto out;
 		}
 
 	} else {
 		/* Check if package is already registered. */
 		pkgd = xbps_find_pkg_in_dict(dict, "packages", pkgname);
 		if (pkgd != NULL) {
-			prop_object_release(dict);
-			free(plist);
-			return EEXIST;
+			rv = EEXIST;
+			goto out;
 		}
 
 		pkgd = make_dict_from_pkg(pkgname, version, desc);
 		array = prop_dictionary_get(dict, "packages");
-		assert(array != NULL);
+		if (array == NULL) {
+			prop_object_release(pkgd);
+			rv = ENOENT;
+			goto out;
+		}
+
+		if (xbps_pkg_has_rundeps(pkgrd)) {
+			rv = xbps_update_pkg_requiredby(array, pkgrd);
+			if (rv != 0) {
+				prop_object_release(pkgd);
+				goto out;
+			}
+		}
 
 		if (!xbps_add_obj_to_array(array, pkgd)) {
 			prop_object_release(pkgd);
-			prop_object_release(dict);
-			free(plist);
-			return EINVAL;
+			rv = EINVAL;
+			goto out;
 		}
 	}
 
 	if (!prop_dictionary_externalize_to_file(dict, plist))
 		rv = errno;
 
+out:
 	prop_object_release(dict);
 	free(plist);
 
