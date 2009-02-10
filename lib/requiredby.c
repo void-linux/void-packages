@@ -130,7 +130,6 @@ xbps_update_pkg_requiredby(prop_array_t regar, prop_dictionary_t pkg)
 			if (strcmp(rdepname, reqname) == 0) {
 				rv = add_pkg_into_requiredby(obj2, fpkgn);
 				if (rv != 0) {
-					free(fpkgn);
 					free(rdepname);
 					prop_object_iterator_release(iter2);
 					goto out;
