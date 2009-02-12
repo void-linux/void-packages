@@ -265,7 +265,7 @@ main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 
 		if (!xbps_unregister_repository(dpkgidx)) {
-			if (errno == ENODEV)
+			if (errno == ENOENT)
 				printf("Repository '%s' not actually "
 				    "registered.\n", dpkgidx);
 			else

@@ -201,7 +201,7 @@ xbps_unregister_repository(const char *uri)
 		}
 	} else {
 		/* Not found. */
-		errno = ENODEV;
+		errno = ENOENT;
 	}
 
 	prop_object_release(dict);
