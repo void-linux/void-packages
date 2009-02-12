@@ -64,7 +64,7 @@ usage(void)
 	"    $ xbps-pkgdb sanitize-plist /blah/foo.plist\n"
 	"    $ xbps-pkgdb unregister pkgname 2.0\n"
 	"    $ xbps-pkgdb version pkgname\n");
-	exit(1);
+	exit(EXIT_FAILURE);
 }
 
 int
