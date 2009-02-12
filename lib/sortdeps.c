@@ -132,8 +132,11 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 	 */
 	installed = prop_dictionary_get(chaindeps, "installed_deps");
 	unsorted = prop_dictionary_get(chaindeps, "unsorted_deps");
-	if (prop_array_count(unsorted) == 0 && prop_array_count(installed) > 0)
+	if (prop_array_count(unsorted) == 0 &&
+	    prop_array_count(installed) > 0) {
+		prop_object_release(sorted);
 		return 0;
+	}
 
 	prop_dictionary_get_uint32(chaindeps, "indirectdeps_count",
 	    &indirdepscnt);
