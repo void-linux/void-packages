@@ -106,7 +106,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	size_t len = 0, dirdepscnt = 0, indirdepscnt = 0;
 	const char *pkgname, *version, *reqbyname, *reqbyver;
 	const char  *repoloc, *binfile, *array_key, *originpkg, *short_desc;
-	char *reqby;
+	char *reqby, *pkgnver;
 	int rv = 0;
 	bool indirectdep = false;
 
@@ -134,11 +134,19 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	(void)snprintf(reqby, len, "%s-%s", reqbyname, reqbyver);
 	reqbystr = prop_string_create_cstring(reqby);
 
+	len = strlen(pkgname) + strlen(version) + 2;
+	pkgnver = malloc(len + 1);
+	if (pkgnver == NULL) {
+		free(reqby);
+		return ENOMEM;
+	}
+	(void)snprintf(pkgnver, len, "%s-%s", pkgname, version);
+
 	/*
 	 * Check if dependency is already installed to select the
 	 * correct array object.
 	 */
-	if (xbps_check_is_installed_pkgname(pkgname)) {
+	if (xbps_check_is_installed_pkg(pkgnver) == 0) {
 		/*
 		 * Dependency is already installed.
 		 */
@@ -234,6 +242,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 
 out:
 	free(reqby);
+	free(pkgnver);
 	prop_object_release(reqbystr);
 
 	return rv;
