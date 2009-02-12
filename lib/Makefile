@@ -10,7 +10,7 @@ LIBXBPS_LDFLAGS	= -larchive -lprop -shared -Wl,-soname,$(LIBXBPS).$(MAJOR)
 
 OBJECTS	=	cmpver.o depends.o fexec.o humanize_number.o install.o
 OBJECTS	+=	plist.o remove.o repository.o requiredby.o sha256.o
-OBJECTS	+=	unpack.o util.o
+OBJECTS	+=	sortdeps.o unpack.o util.o
 
 all: $(LIBXBPS)
 .PHONY: all

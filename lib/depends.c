@@ -44,7 +44,7 @@ static prop_dictionary_t chaindeps;
 static int
 create_deps_dictionary(void)
 {
-	prop_array_t installed, direct, indirect, missing;
+	prop_array_t installed, unsorted, missing;
 	int rv = 0;
 
 	chaindeps = prop_dictionary_create();
@@ -63,40 +63,28 @@ create_deps_dictionary(void)
 		goto fail2;
 	}
 
-	direct = prop_array_create();
-	if (direct == NULL) {
+	unsorted = prop_array_create();
+	if (unsorted == NULL) {
 		rv = ENOMEM;
 		goto fail3;
 	}
 
-	indirect = prop_array_create();
-	if (indirect == NULL) {
-		rv = ENOMEM;
-		goto fail4;
-	}
-
 	if (!xbps_add_obj_to_dict(chaindeps, missing, "missing_deps")) {
 		rv = EINVAL;
-		goto fail5;
+		goto fail4;
 	}
 	if (!xbps_add_obj_to_dict(chaindeps, installed, "installed_deps")) {
 		rv = EINVAL;
-		goto fail5;
+		goto fail4;
 	}
-	if (!xbps_add_obj_to_dict(chaindeps, direct, "direct_deps")) {
+	if (!xbps_add_obj_to_dict(chaindeps, unsorted, "unsorted_deps")) {
 		rv = EINVAL;
-		goto fail5;
-	}
-	if (!xbps_add_obj_to_dict(chaindeps, indirect, "indirect_deps")) {
-		rv = EINVAL;
-		goto fail5;
+		goto fail4;
 	}
 	return rv;
 
-fail5:
-	prop_object_release(indirect);
 fail4:
-	prop_object_release(direct);
+	prop_object_release(unsorted);
 fail3:
 	prop_object_release(installed);
 fail2:
@@ -111,14 +99,16 @@ static int
 store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 		 prop_dictionary_t repod)
 {
-	prop_dictionary_t dict, curpkgdir, curpkgindir;
-	prop_array_t array, rundeps_array;
+	prop_dictionary_t dict, curdict;
+	prop_array_t array, rundeps_array, reqby_array;
+	prop_string_t reqbystr;
 	uint32_t prio = 0;
-	size_t len = 0;
+	size_t len = 0, dirdepscnt = 0, indirdepscnt = 0;
 	const char *pkgname, *version, *reqbyname, *reqbyver;
 	const char  *repoloc, *binfile, *array_key, *originpkg, *short_desc;
 	char *reqby;
 	int rv = 0;
+	bool indirectdep = false;
 
 	assert(origind != NULL);
 	assert(depd != NULL);
@@ -142,6 +132,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 		return ENOMEM;
 
 	(void)snprintf(reqby, len, "%s-%s", reqbyname, reqbyver);
+	reqbystr = prop_string_create_cstring(reqby);
 
 	/*
 	 * Check if dependency is already installed to select the
@@ -158,39 +149,36 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	} else {
 		/*
 		 * Required dependency is not installed. Check if it's
-		 * already registered in the chain, and update priority
+		 * already registered in the chain, and update some objects
 		 * or add the object into array otherwise.
 		 */
-		prop_dictionary_get_cstring_nocopy(chaindeps, "origin",
-		    &originpkg);
-		curpkgdir = xbps_find_pkg_in_dict(chaindeps,
-		    "direct_deps", pkgname);
-		curpkgindir = xbps_find_pkg_in_dict(chaindeps,
-		    "indirect_deps", pkgname);
-
-		if (strcmp(originpkg, reqbyname) == 0)
-			array_key = "direct_deps";
-		else
-			array_key = "indirect_deps";
-
-		if (curpkgdir && curpkgindir) {
+		array_key = "unsorted_deps";
+		prop_dictionary_get_cstring_nocopy(chaindeps,
+		    "origin", &originpkg);
+		curdict = xbps_find_pkg_in_dict(chaindeps, array_key, pkgname);
+		/*
+		 * Update priority and required_by objects.
+		 */
+		if (curdict) {
+			prop_dictionary_get_uint32(curdict, "priority", &prio);
+			prop_dictionary_set_uint32(curdict, "priority", ++prio);
+			reqby_array = prop_dictionary_get(curdict,
+			    "required_by");
+			if (!xbps_find_string_in_array(reqby_array, reqby))
+				prop_array_add(reqby_array, reqbystr);
 			goto out;
-
-		} else if (curpkgdir) {
-			/*
-			 * Update the priority.
-			 */
-			prop_dictionary_get_uint32(curpkgdir,
-			    "priority", &prio);
-			prop_dictionary_set_uint32(curpkgdir,
-			    "priority", ++prio);
-			goto out;
-		} else if (curpkgindir) {
-			prop_dictionary_get_uint32(curpkgindir,
-			    "priority", &prio);
-			prop_dictionary_set_uint32(curpkgindir,
-			    "priority", ++prio);
-			goto out;
+		}
+		if (strcmp(originpkg, reqbyname)) {
+			indirectdep = true;
+			prop_dictionary_get_uint32(chaindeps,
+			    "indirectdeps_count", &indirdepscnt);
+			prop_dictionary_set_uint32(chaindeps,
+			    "indirectdeps_count", ++indirdepscnt);
+		} else {
+			prop_dictionary_get_uint32(chaindeps,
+			    "directdeps_count", &dirdepscnt);
+			prop_dictionary_set_uint32(chaindeps,
+			    "directdeps_count", ++dirdepscnt);
 		}
 	}
 
@@ -215,17 +203,25 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	 */
 	prop_dictionary_set_cstring(dict, "pkgname", pkgname);
 	prop_dictionary_set_cstring(dict, "version", version);
-	prop_dictionary_set_cstring(dict, "requiredby", reqby);
 	rundeps_array = prop_dictionary_get(depd, "run_depends");
 	if (rundeps_array && prop_array_count(rundeps_array) > 0)
 		prop_dictionary_set(dict, "run_depends", rundeps_array);
 
-	if ((strcmp(array_key, "direct_deps") == 0) ||
-	    (strcmp(array_key, "indirect_deps") == 0)) {
+	reqby_array = prop_array_create();
+	if (reqby_array == NULL) {
+		prop_object_release(dict);
+		rv = ENOMEM;
+		goto out;
+	}
+	prop_array_add(reqby_array, reqbystr);
+	prop_dictionary_set(dict, "required_by", reqby_array);
+
+	if (strcmp(array_key, "unsorted_deps") == 0)  {
 		prop_dictionary_set_cstring(dict, "repository", repoloc);
 		prop_dictionary_set_cstring(dict, "filename", binfile);
 		prop_dictionary_set_uint32(dict, "priority", prio);
 		prop_dictionary_set_cstring(dict, "short_desc", short_desc);
+		prop_dictionary_set_bool(dict, "indirect_dep", indirectdep);
 	}
 	/*
 	 * Add the dictionary into the array.
@@ -238,6 +234,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 
 out:
 	free(reqby);
+	prop_object_release(reqbystr);
 
 	return rv;
 }
@@ -252,6 +249,9 @@ add_missing_reqdep(const char *pkgname, const char *version)
 	assert(pkgname != NULL);
 	assert(version != NULL);
 
+	/*
+	 * Adds a package into the missing deps array.
+	 */
 	if (check_missing_reqdep(pkgname, version, &idx) == 0)
 		return EEXIST;
 
@@ -292,6 +292,9 @@ check_missing_reqdep(const char *pkgname, const char *version,
 	if (iter == NULL)
 		return ENOMEM;
 
+	/*
+	 * Finds the index of a package in the missing deps array.
+	 */
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &missname);
 		prop_dictionary_get_cstring_nocopy(obj, "version", &missver);
@@ -413,101 +416,39 @@ out:
 int
 xbps_install_pkg_deps(prop_dictionary_t pkg, const char *destdir)
 {
-	prop_array_t array, installed, direct, indirect;
-	prop_dictionary_t dict;
+	prop_array_t required;
 	prop_object_t obj;
 	prop_object_iterator_t iter;
-	uint32_t maxprio = 0, prio = 0;
-	size_t curidx = 0, idx = 0;
-	const char *array_key, *reqby, *curname, *curver;
 	int rv = 0;
 
 	assert(pkg != NULL);
 
 	/*
-	 * Install required dependencies of a package.
-	 * The order for installation will be:
-	 *
-	 * 	- Indirect deps with high->low prio.
-	 * 	- Direct deps with high->low prio.
+	 * Sort the dependency chain into an array.
 	 */
+	if ((rv = xbps_sort_pkg_deps(chaindeps)) != 0)
+		goto out;
 
-	/*
-	 * First case: all deps are satisfied.
-	 */
-	installed = prop_dictionary_get(chaindeps, "installed_deps");
-	direct = prop_dictionary_get(chaindeps, "direct_deps");
-	indirect = prop_dictionary_get(chaindeps, "indirect_deps");
-	if (prop_array_count(direct) == 0 && prop_array_count(indirect) == 0 &&
-	    prop_array_count(installed) > 0)
+	required = prop_dictionary_get(chaindeps, "required_deps");
+	if (required == NULL)
 		return 0;
 
-	/*
-	 * Second case: only direct deps are required.
-	 */
-	if (prop_array_count(indirect) == 0 && prop_array_count(direct) > 0)
-		array_key = "direct_deps";
-	else
-		array_key = "indirect_deps";
-
-again:
-	array = prop_dictionary_get(chaindeps, array_key);
-	if (array && prop_array_count(array) == 0) {
-		rv = 0;
-		goto out;
-	} else if (array == NULL || prop_array_count(array) == 0) {
-		rv = EINVAL;
-		goto out;
-	}
-
-	iter = prop_array_iterator(array);
+	iter = prop_array_iterator(required);
 	if (iter == NULL) {
 		rv = ENOMEM;
 		goto out;
 	}
 
+	/*
+	 * Install all required dependencies, previously sorted.
+	 */
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
-		prop_dictionary_get_uint32(obj, "priority", &prio);
-		if (maxprio < prio) {
-			curidx = idx;
-			maxprio = prio;
-		}
-		idx++;
+		rv = xbps_install_binary_pkg_fini(NULL, obj, destdir);
+		if (rv != 0)
+			goto out;
 	}
 	prop_object_iterator_release(iter);
 
-	dict = prop_array_get(array, curidx);
-	if (dict == NULL) {
-		rv = ENOENT;
-		goto out;
-	}
-
-	prop_dictionary_get_cstring_nocopy(dict, "pkgname", &curname);
-	prop_dictionary_get_cstring_nocopy(dict, "version", &curver);
-	prop_dictionary_get_cstring_nocopy(dict, "requiredby", &reqby);
-
-	printf("Installing %s-%s required by %s...\n", curname, curver, reqby);
-	rv = xbps_install_binary_pkg_fini(NULL, dict, destdir);
-	if (rv != 0) {
-		printf("Error while installing %s-%s (%s)\n", curname, curver,
-		    strerror(rv));
-		goto out;
-	}
-
-	prop_array_remove(array, curidx);
-	if (prop_array_count(array) > 0) {
-		prio = maxprio = 0;
-		curidx = idx = 0;
-		goto again;
-	} else {
-		prio = maxprio = 0;
-		curidx = idx = 0;
-		array_key = "direct_deps";
-		goto again;
-	}
-
 out:
-	prop_object_release(chaindeps);
-
 	return rv;
 }
