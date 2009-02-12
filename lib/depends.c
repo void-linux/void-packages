@@ -445,7 +445,7 @@ xbps_install_pkg_deps(prop_dictionary_t pkg, const char *destdir)
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		rv = xbps_install_binary_pkg_fini(NULL, obj, destdir);
 		if (rv != 0)
-			goto out;
+			break;
 	}
 	prop_object_iterator_release(iter);
 
