@@ -249,7 +249,7 @@ xbps_register_pkg(prop_dictionary_t pkgrd, const char *pkgname,
 			goto out;
 		}
 
-		if (xbps_pkg_has_rundeps(pkgrd)) {
+		if (pkgrd && xbps_pkg_has_rundeps(pkgrd)) {
 			rv = xbps_update_pkg_requiredby(array, pkgrd);
 			if (rv != 0) {
 				prop_object_release(pkgd);
