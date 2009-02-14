@@ -44,15 +44,13 @@ static SIMPLEQ_HEAD(sdep_head, sorted_dependency) sdep_list =
     SIMPLEQ_HEAD_INITIALIZER(sdep_list);
 
 static ssize_t
-find_pkgdict_with_highest_prio(prop_array_t array, uint32_t *maxprio,
-			       bool do_indirect)
+find_pkgdict_with_highest_prio(prop_array_t array, uint32_t *maxprio)
 {
 	prop_object_t obj;
 	prop_object_iterator_t iter;
 	uint32_t prio = 0;
 	size_t idx = 0;
 	ssize_t curidx = -1;
-	bool indirect;
 
 	assert(array != NULL);
 
@@ -61,24 +59,14 @@ find_pkgdict_with_highest_prio(prop_array_t array, uint32_t *maxprio,
 		errno = ENOMEM;
 		return -1;
 	}
-
 	/*
 	 * Finds the index of a package with the highest priority.
 	 */
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		prop_dictionary_get_uint32(obj, "priority", &prio);
-		prop_dictionary_get_bool(obj, "indirect_dep", &indirect);
-
-		if (do_indirect) {
-			if ((*maxprio <= prio) && indirect) {
-				curidx = idx;
-				*maxprio = prio;
-			}
-		} else {
-			if ((*maxprio <= prio) && !indirect) {
-				curidx = idx;
-				*maxprio = prio;
-			}
+		if (*maxprio <= prio) {
+			curidx = idx;
+			*maxprio = prio;
 		}
 		idx++;
 	}
@@ -166,11 +154,10 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 	    &dirdepscnt);
 	unsorted = prop_dictionary_get(chaindeps, "unsorted_deps");
 	/*
-	 * Pass 1: order indirect deps by priority.
+	 * Pass 1: order all deps (direct/indirect) by priority.
 	 */
-	while (cnt < indirdepscnt) {
-		curidx = find_pkgdict_with_highest_prio(unsorted,
-		    &maxprio, true);
+	while (cnt < dirdepscnt + indirdepscnt) {
+		curidx = find_pkgdict_with_highest_prio(unsorted, &maxprio);
 		if (curidx == -1) {
 			rv = errno;
 			goto out;
@@ -197,41 +184,8 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 		cnt++;
 	}
 
-	cnt = 0;
 	/*
-	 * Pass 2: order direct deps by priority.
-	 */
-	while (cnt < dirdepscnt) {
-		curidx = find_pkgdict_with_highest_prio(unsorted,
-		    &maxprio, false);
-		if (curidx == -1) {
-			rv = errno;
-			goto out;
-		}
-		dict = prop_array_get(unsorted, curidx);
-		if (dict == NULL) {
-			rv = errno;
-			goto out;
-		}
-		sdep = calloc(1, sizeof(*sdep));
-		if (sdep == NULL) {
-			rv = ENOMEM;
-			goto out;
-		}
-		sdep->dict = prop_dictionary_copy(dict);
-		sdep->idx = cnt + indirdepscnt;
-		prop_dictionary_get_uint32(dict, "priority", &sdep->prio);
-		reqby = prop_dictionary_get(dict, "required_by");
-		if (reqby && prop_array_count(reqby) > 0)
-			sdep->reqby = prop_array_copy(reqby);
-		SIMPLEQ_INSERT_TAIL(&sdep_list, sdep, chain);
-		prop_array_remove(unsorted, curidx);
-		maxprio = 0;
-		cnt++;
-	}
-
-	/*
-	 * Pass 3: increase priority of dependencies any time
+	 * Pass 2: increase priority of dependencies any time
 	 * a package requires them.
 	 */
 	SIMPLEQ_FOREACH(sdep, &sdep_list, chain) {
@@ -272,7 +226,7 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 	prop_dictionary_remove(chaindeps, "unsorted_deps");
 
 	/*
-	 * Pass 4: increase priority of a package, by looking at
+	 * Pass 3: increase priority of a package, by looking at
 	 * its required_by array member's priority.
 	 */
 	SIMPLEQ_FOREACH(sdep, &sdep_list, chain) {
@@ -295,7 +249,7 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 	}
 
 	/*
-	 * Pass 5: copy dictionaries into the final array with the
+	 * Pass 4: copy dictionaries into the final array with the
 	 * correct index position for all dependencies and release
 	 * resources used by the sorting passes.
 	 */
