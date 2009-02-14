@@ -35,13 +35,13 @@
 
 struct callback_args {
 	const char *string;
-	int64_t number;
+	ssize_t number;
 };
 
 int
 xbps_remove_string_from_array(prop_object_t obj, void *arg, bool *loop_done)
 {
-	static int64_t idx;
+	static ssize_t idx;
 	struct callback_args *cb = arg;
 
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
@@ -53,7 +53,7 @@ xbps_remove_string_from_array(prop_object_t obj, void *arg, bool *loop_done)
 	}
 	idx++;
 
-	return EINVAL;
+	return 0;
 }
 
 bool
@@ -194,8 +194,8 @@ xbps_unregister_repository(const char *uri)
 
 		/* Update plist file. */
 		if (prop_dictionary_externalize_to_file(dict, plist)) {
-			free(cb);
 			prop_object_release(dict);
+			free(cb);
 			free(plist);
 			return true;
 		}
