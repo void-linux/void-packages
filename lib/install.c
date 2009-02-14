@@ -87,6 +87,8 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 	 */
 	rv = xbps_callback_array_iter_in_repolist(install_binpkg_repo_cb,
 	    (void *)&cb);
+	if (errno == ENOENT)
+		rv = ENOENT;
 
 	return rv;
 }
@@ -120,6 +122,7 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	pkgrd = xbps_find_pkg_in_dict(repod, "packages", pkgname);
 	if (pkgrd == NULL) {
 		prop_object_release(repod);
+		errno = ENOENT;
 		return 0;
 	}
 
