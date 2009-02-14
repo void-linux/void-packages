@@ -87,8 +87,6 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 	 */
 	rv = xbps_callback_array_iter_in_repolist(install_binpkg_repo_cb,
 	    (void *)&cb);
-	if (errno == ENOENT)
-		rv = ENOENT;
 
 	return rv;
 }
@@ -139,8 +137,7 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	/*
 	 * Construct the dependency chain for this package.
 	 */
-	rv = xbps_find_deps_in_pkg(pkgrd);
-	if (rv != 0) {
+	if ((rv = xbps_find_deps_in_pkg(pkgrd)) != 0) {
 		prop_object_release(repod);
 		if (rv == ENOENT)
 			return 0;
@@ -151,8 +148,7 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	/*
 	 * Install all required dependencies and the package itself.
 	 */
-	rv = xbps_install_pkg_deps(pkgrd, destdir);
-	if (rv == 0) {
+	if ((rv = xbps_install_pkg_deps(pkgrd, destdir)) == 0) {
 		rv = xbps_install_binary_pkg_fini(repod, pkgrd, destdir);
                 prop_object_release(repod);
 		if (rv == 0)

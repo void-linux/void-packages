@@ -138,24 +138,24 @@ main(int argc, char **argv)
 		if (strcasecmp(argv[0], "install") == 0) {
 			rv = xbps_install_binary_pkg(argv[1], root);
 			if (rv) {
-				if (rv == ENOENT)
+				if (errno == ENOENT)
 					printf("Unable to locate %s in "
 					    "repository pool.\n", argv[1]);
 				else
 					printf("Unable to install %s (%s).\n",
-					    argv[1], strerror(rv));
+					    argv[1], strerror(errno));
 				exit(EXIT_FAILURE);
 			}
 			printf("Package %s installed successfully.\n", argv[1]);
 		} else {
 			rv = xbps_remove_binary_pkg(argv[1], root);
 			if (rv) {
-				if (rv == ENOENT)
+				if (errno == ENOENT)
 					printf("Package %s is not installed.\n",
 					    argv[1]);
 				else
 					printf("Unable to remove %s (%s).\n",
-					    argv[1], strerror(rv));
+					    argv[1], strerror(errno));
 				exit(EXIT_FAILURE);
 			}
 			printf("Package %s removed successfully.\n", argv[1]);
