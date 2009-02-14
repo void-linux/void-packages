@@ -143,6 +143,7 @@ write_repo_pkgindex_dict()
 	local first_dict=
 	local tmpdictf=
 	local binpkg="$XBPS_PACKAGESDIR/$binpkgf"
+	local getsize=$(du $binpkg|awk '{print $1}')
 
 	[ -z "$pkgf" -o -z "$indexf" -o -z "$binpkgf" ] && return 1
 
@@ -159,6 +160,8 @@ write_repo_pkgindex_dict()
 			echo "<key>filename-sha256</key>" >> $tmpdictf
 			echo "<string>$(xbps-digest $binpkg)</string>" \
 			    >> $tmpdictf
+			echo "<key>filename-size</key>" >> $tmpdictf
+			echo "<integer>$getsize</integer>" >> $tmpdictf
 			continue
 		# Continue until found.
 		elif [ -z "$first_dict" ]; then
