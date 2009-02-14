@@ -66,15 +66,18 @@ xbps_add_obj_to_array(prop_array_t array, prop_object_t obj)
 }
 
 int
-xbps_callback_array_iter_in_repolist(const char *plist,
-				     int (*fn)(prop_object_t, void *, bool *),
+xbps_callback_array_iter_in_repolist(int (*fn)(prop_object_t, void *, bool *),
 				     void *arg)
 {
 	prop_dictionary_t repolistd;
+	char *plist;
 	int rv = 0;
 
-	assert(plist != NULL);
 	assert(fn != NULL);
+
+	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
+	if (plist == NULL)
+		return EINVAL;
 
 	/*
 	 * Get the dictionary with the list of registered repositories.
@@ -91,6 +94,7 @@ xbps_callback_array_iter_in_repolist(const char *plist,
 	rv = xbps_callback_array_iter_in_dict(repolistd, "repository-list",
 		fn, arg);
 	prop_object_release(repolistd);
+	free(plist);
 
 	return rv;
 }

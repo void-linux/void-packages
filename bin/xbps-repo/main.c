@@ -43,11 +43,8 @@ typedef struct repository_info {
 } repo_info_t;
 
 static bool sanitize_localpath(char *, const char *);
-static prop_dictionary_t getrepolist_dict(const char *);
 static bool pkgindex_getinfo(prop_dictionary_t, repo_info_t *);
 static void usage(void);
-
-static char *plist;
 
 static void
 usage(void)
@@ -101,28 +98,6 @@ pkgindex_getinfo(prop_dictionary_t dict, repo_info_t *ri)
 	return true;
 }
 
-static prop_dictionary_t
-getrepolist_dict(const char *root)
-{
-	prop_dictionary_t dict;
-
-	xbps_set_rootdir(root);
-
-	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
-	if (plist == NULL)
-		exit(EXIT_FAILURE);
-
-	dict = prop_dictionary_internalize_from_file(plist);
-	if (dict == NULL) {
-		printf("ERROR: cannot find repository plist file (%s).\n",
-		    strerror(errno));
-		free(plist);
-		exit(EXIT_FAILURE);
-	}
-
-	return dict;
-}
-
 static bool
 sanitize_localpath(char *buf, const char *path)
 {
@@ -169,7 +144,7 @@ main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
 	repo_info_t *rinfo = NULL;
-	char dpkgidx[PATH_MAX], *root = NULL;
+	char dpkgidx[PATH_MAX], *plist, *root = NULL;
 	int c, rv = 0;
 
 	while ((c = getopt(argc, argv, "r:")) != -1) {
@@ -249,11 +224,8 @@ main(int argc, char **argv)
 		if (argc != 1)
 			usage();
 
-		dict = getrepolist_dict(root);
-		(void)xbps_callback_array_iter_in_dict(dict,
-		    "repository-list", list_strings_in_array, NULL);
-		prop_object_release(dict);
-		free(plist);
+		(void)xbps_callback_array_iter_in_repolist(
+		    list_strings_in_array, NULL);
 
 	} else if ((strcasecmp(argv[0], "rm") == 0) ||
 		   (strcasecmp(argv[0], "remove") == 0)) {
@@ -279,23 +251,16 @@ main(int argc, char **argv)
 		if (argc != 2)
 			usage();
 
-		dict = getrepolist_dict(root);
-		(void)xbps_callback_array_iter_in_dict(dict,
-		    "repository-list", search_string_in_pkgs, argv[1]);
-		prop_object_release(dict);
-		free(plist);
+		(void)xbps_callback_array_iter_in_repolist(
+		    search_string_in_pkgs, argv[1]);
 
 	} else if (strcasecmp(argv[0], "show") == 0) {
 		/* Shows info about a binary package. */
 		if (argc != 2)
 			usage();
 
-		dict = getrepolist_dict(root);
-		rv = xbps_callback_array_iter_in_dict(dict, "repository-list",
+		rv = xbps_callback_array_iter_in_repolist(
 			show_pkg_info_from_repolist, argv[1]);
-		prop_object_release(dict);
-		free(plist);
-
 		if (rv == 0 && errno == ENOENT) {
 			printf("Unable to locate package '%s' from "
 			    "repository pool.\n", argv[1]);

@@ -70,7 +70,6 @@ int
 xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 {
 	struct cbargs cb;
-	char *plist;
 	int rv = 0;
 
 	assert(pkgname != NULL);
@@ -80,22 +79,14 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 	} else
 		destdir = "NOTSET";
 
-	/*
-	 * Get the dictionary with the list of registered repositories.
-	 */
-	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
-	if (plist == NULL)
-		return EINVAL;
-
 	cb.pkgname = pkgname;
 	cb.destdir = destdir;
 	/*
 	 * Iterate over the repository pool and find out if we have
 	 * all available binary packages.
 	 */
-	rv = xbps_callback_array_iter_in_repolist(plist,
-	    install_binpkg_repo_cb, (void *)&cb);
-	free(plist);
+	rv = xbps_callback_array_iter_in_repolist(install_binpkg_repo_cb,
+	    (void *)&cb);
 
 	return rv;
 }
