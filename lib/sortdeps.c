@@ -33,15 +33,15 @@
 #include <xbps_api.h>
 
 struct sorted_dependency {
-	TAILQ_ENTRY(sorted_dependency) chain;
+	SIMPLEQ_ENTRY(sorted_dependency) chain;
 	prop_dictionary_t dict;
 	prop_array_t reqby;
 	size_t idx;
 	size_t prio;
 };
 
-static TAILQ_HEAD(sdep_head, sorted_dependency) sdep_list =
-    TAILQ_HEAD_INITIALIZER(sdep_list);
+static SIMPLEQ_HEAD(sdep_head, sorted_dependency) sdep_list =
+    SIMPLEQ_HEAD_INITIALIZER(sdep_list);
 
 static ssize_t
 find_pkgdict_with_highest_prio(prop_array_t array, uint32_t *maxprio,
@@ -97,7 +97,7 @@ find_sorteddep_with_highest_prio(void)
 	size_t maxprio = 0;
 	size_t curidx = 0, idx = 0;
 
-	TAILQ_FOREACH(sdep, &sdep_list, chain) {
+	SIMPLEQ_FOREACH(sdep, &sdep_list, chain) {
 		if (maxprio <= sdep->prio) {
 			curidx = idx;
 			maxprio = sdep->prio;
@@ -106,7 +106,7 @@ find_sorteddep_with_highest_prio(void)
 	}
 
 	idx = 0;
-	TAILQ_FOREACH(sdep, &sdep_list, chain) {
+	SIMPLEQ_FOREACH(sdep, &sdep_list, chain) {
 		if (idx == curidx)
 			break;
 		idx++;
@@ -121,7 +121,7 @@ find_sorteddep_by_name(const char *pkgname)
 	struct sorted_dependency *sdep;
 	const char *curname;
 
-	TAILQ_FOREACH(sdep, &sdep_list, chain) {
+	SIMPLEQ_FOREACH(sdep, &sdep_list, chain) {
 		prop_dictionary_get_cstring_nocopy(sdep->dict,
 		    "pkgname", &curname);
 		if (strcmp(pkgname, curname) == 0)
@@ -191,7 +191,7 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 		reqby = prop_dictionary_get(dict, "required_by");
 		if (reqby && prop_array_count(reqby) > 0)
 			sdep->reqby = prop_array_copy(reqby);
-		TAILQ_INSERT_TAIL(&sdep_list, sdep, chain);
+		SIMPLEQ_INSERT_TAIL(&sdep_list, sdep, chain);
 		prop_array_remove(unsorted, curidx);
 		maxprio = 0;
 		cnt++;
@@ -224,7 +224,7 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 		reqby = prop_dictionary_get(dict, "required_by");
 		if (reqby && prop_array_count(reqby) > 0)
 			sdep->reqby = prop_array_copy(reqby);
-		TAILQ_INSERT_TAIL(&sdep_list, sdep, chain);
+		SIMPLEQ_INSERT_TAIL(&sdep_list, sdep, chain);
 		prop_array_remove(unsorted, curidx);
 		maxprio = 0;
 		cnt++;
@@ -234,7 +234,7 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 	 * Pass 3: increase priority of dependencies any time
 	 * a package requires them.
 	 */
-	TAILQ_FOREACH(sdep, &sdep_list, chain) {
+	SIMPLEQ_FOREACH(sdep, &sdep_list, chain) {
 		prop_dictionary_get_cstring_nocopy(sdep->dict,
 		    "pkgname", &curpkg);
 		rundeps_array = prop_dictionary_get(sdep->dict, "run_depends");
@@ -275,7 +275,7 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 	 * Pass 4: increase priority of a package, by looking at
 	 * its required_by array member's priority.
 	 */
-	TAILQ_FOREACH(sdep, &sdep_list, chain) {
+	SIMPLEQ_FOREACH(sdep, &sdep_list, chain) {
 		iter = prop_array_iterator(sdep->reqby);
 		if (iter == NULL)
 			continue;
@@ -301,7 +301,7 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 	 */
 	while ((sdep = find_sorteddep_with_highest_prio()) != NULL) {
 		prop_array_add(sorted, sdep->dict);
-		TAILQ_REMOVE(&sdep_list, sdep, chain);
+		SIMPLEQ_REMOVE(&sdep_list, sdep, sorted_dependency, chain);
 		prop_object_release(sdep->dict);
 		prop_object_release(sdep->reqby);
 		free(sdep);
@@ -324,8 +324,8 @@ out:
 	 * Release resources used by temporary sorting.
 	 */
 	prop_object_release(sorted);
-	while ((sdep = TAILQ_FIRST(&sdep_list)) != NULL) {
-		TAILQ_REMOVE(&sdep_list, sdep, chain);
+	while ((sdep = SIMPLEQ_FIRST(&sdep_list)) != NULL) {
+		SIMPLEQ_REMOVE(&sdep_list, sdep, sorted_dependency, chain);
 		prop_object_release(sdep->dict);
 		prop_object_release(sdep->reqby);
 		free(sdep);
