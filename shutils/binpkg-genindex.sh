@@ -61,7 +61,7 @@ write_repo_pkgindex()
 	#
 	for i in $(echo $repodir/*.xbps); do
 		pkgname="$(basename ${i%%-[0-9]*.*.$xbps_machine.xbps})"
-		propsf="./var/cache/xbps/metadata/$pkgname/props.plist"
+		propsf="./var/db/xbps/metadata/$pkgname/props.plist"
 		cd $tmppkgdir && tar xfjp $i $propsf
 		if [ $? -ne 0 ]; then
 			msg_warn "Couldn't extract $(basename $i) metadata!"

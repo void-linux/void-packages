@@ -30,7 +30,7 @@
 xbps_write_metadata_pkg()
 {
 	local destdir=$XBPS_DESTDIR/$pkgname-$version
-	local metadir=$destdir/var/cache/xbps/metadata/$pkgname
+	local metadir=$destdir/var/db/xbps/metadata/$pkgname
 	local prioinst=
 
 	if [ ! -d "$destdir" ]; then

@@ -36,7 +36,7 @@
 #include <archive_entry.h>
 
 /* Default root PATH for xbps to store metadata info. */
-#define XBPS_META_PATH		"/var/cache/xbps"
+#define XBPS_META_PATH		"/var/db/xbps"
 
 /* Filename for the repositories plist file. */
 #define XBPS_REPOLIST		"repositories.plist"
@@ -46,12 +46,6 @@
 
 /* Filename of the packages register. */
 #define XBPS_REGPKGDB		"regpkgdb.plist"
-
-#define XBPS_PKG_ENOTINREPO	-1	/* Not found in repo */
-#define XBPS_PKG_EEXIST		-2	/* Already installed */
-#define XBPS_PKG_EINDEPS	-3	/* Check deps failed */
-#define XBPS_PKG_ECHDIRDEST	-4	/* chdir() to dest failed */
-#define XBPS_PKG_EEMPTY		-5	/* empty pkg list */
 
 #include "cmpver.h"
 #include "fexec.h"
