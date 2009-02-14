@@ -35,10 +35,9 @@
 struct sorted_dependency {
 	TAILQ_ENTRY(sorted_dependency) chain;
 	prop_dictionary_t dict;
+	prop_array_t reqby;
 	size_t idx;
-	ssize_t newidx;
-	bool unsorted;
-	bool reorg;
+	size_t prio;
 };
 
 static TAILQ_HEAD(sdep_head, sorted_dependency) sdep_list =
@@ -92,6 +91,31 @@ find_pkgdict_with_highest_prio(prop_array_t array, uint32_t *maxprio,
 }
 
 static struct sorted_dependency *
+find_sorteddep_with_highest_prio(void)
+{
+	struct sorted_dependency *sdep;
+	size_t maxprio = 0;
+	size_t curidx = 0, idx = 0;
+
+	TAILQ_FOREACH(sdep, &sdep_list, chain) {
+		if (maxprio <= sdep->prio) {
+			curidx = idx;
+			maxprio = sdep->prio;
+		}
+		idx++;
+	}
+
+	idx = 0;
+	TAILQ_FOREACH(sdep, &sdep_list, chain) {
+		if (idx == curidx)
+			break;
+		idx++;
+	}
+
+	return sdep;
+}
+
+static struct sorted_dependency *
 find_sorteddep_by_name(const char *pkgname)
 {
 	struct sorted_dependency *sdep;
@@ -110,7 +134,7 @@ find_sorteddep_by_name(const char *pkgname)
 int
 xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 {
-	prop_array_t installed, sorted, unsorted, rundeps_array;
+	prop_array_t sorted, unsorted, rundeps_array, reqby;
 	prop_dictionary_t dict;
 	prop_object_t obj;
 	prop_object_iterator_t iter;
@@ -130,10 +154,8 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 	/*
 	 * All required deps are satisfied (already installed).
 	 */
-	installed = prop_dictionary_get(chaindeps, "installed_deps");
 	unsorted = prop_dictionary_get(chaindeps, "unsorted_deps");
-	if (prop_array_count(unsorted) == 0 &&
-	    prop_array_count(installed) > 0) {
+	if (prop_array_count(unsorted) == 0) {
 		prop_object_release(sorted);
 		return 0;
 	}
@@ -165,7 +187,10 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 		}
 		sdep->dict = prop_dictionary_copy(dict);
 		sdep->idx = cnt;
-		sdep->newidx = -1;
+		prop_dictionary_get_uint32(dict, "priority", &sdep->prio);
+		reqby = prop_dictionary_get(dict, "required_by");
+		if (reqby && prop_array_count(reqby) > 0)
+			sdep->reqby = prop_array_copy(reqby);
 		TAILQ_INSERT_TAIL(&sdep_list, sdep, chain);
 		prop_array_remove(unsorted, curidx);
 		maxprio = 0;
@@ -195,7 +220,10 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 		}
 		sdep->dict = prop_dictionary_copy(dict);
 		sdep->idx = cnt + indirdepscnt;
-		sdep->newidx = -1;
+		prop_dictionary_get_uint32(dict, "priority", &sdep->prio);
+		reqby = prop_dictionary_get(dict, "required_by");
+		if (reqby && prop_array_count(reqby) > 0)
+			sdep->reqby = prop_array_copy(reqby);
 		TAILQ_INSERT_TAIL(&sdep_list, sdep, chain);
 		prop_array_remove(unsorted, curidx);
 		maxprio = 0;
@@ -203,8 +231,8 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 	}
 
 	/*
-	 * Pass 3: update new index position by looking at run_depends and
-	 * its current index position.
+	 * Pass 3: increase priority of dependencies any time
+	 * a package requires them.
 	 */
 	TAILQ_FOREACH(sdep, &sdep_list, chain) {
 		prop_dictionary_get_cstring_nocopy(sdep->dict,
@@ -218,7 +246,6 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 			rv = ENOMEM;
 			goto out;
 		}
-		curidx = sdep->idx;
 
 		while ((obj = prop_object_iterator_next(iter)) != NULL) {
 			rundep = prop_string_cstring_nocopy(obj);
@@ -238,58 +265,46 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 
 			sdep2 = find_sorteddep_by_name(pkgname);
 			free(pkgname);
-			/*
-			 * If required dependency is before current package,
-			 * pass to the next one.
-			 */
-			if (curidx > sdep2->idx)
-				continue;
-			/*
-			 * Update index position for the two objects.
-			 */
-			if (!sdep2->unsorted) {
-				sdep2->unsorted = true;
-				sdep2->newidx = curidx;
-				sdep->newidx = curidx + 1;
-			}
+			sdep2->prio++;
 		}
 		prop_object_iterator_release(iter);
 	}
 	prop_dictionary_remove(chaindeps, "unsorted_deps");
 
 	/*
-	 * Pass 4: copy dictionaries into the final array with the
-	 * correct index position for all dependencies.
+	 * Pass 4: increase priority of a package, by looking at
+	 * its required_by array member's priority.
 	 */
 	TAILQ_FOREACH(sdep, &sdep_list, chain) {
-		if (sdep->reorg)
+		iter = prop_array_iterator(sdep->reqby);
+		if (iter == NULL)
 			continue;
 
-		if (sdep->newidx != -1) {
-			TAILQ_FOREACH(sdep2, &sdep_list, chain) {
-				if (sdep2->unsorted) {
-					if (!prop_array_set(sorted,
-					    sdep2->newidx, sdep2->dict)) {
-						rv = errno;
-						goto out;
-					}
-					sdep2->newidx = -1;
-					sdep2->unsorted = false;
-					sdep2->reorg = true;
-					break;
-				}
+		while ((obj = prop_object_iterator_next(iter))) {
+			rundep = prop_string_cstring_nocopy(obj);
+			pkgname = xbps_get_pkg_name(rundep);
+			sdep2 = find_sorteddep_by_name(pkgname);
+			if (sdep2 == NULL) {
+				free(pkgname);
+				continue;
 			}
-			if (!prop_array_set(sorted, sdep->newidx, sdep->dict)) {
-				rv = errno;
-				goto out;
-			}
-			sdep->newidx = -1;
-		} else {
-			if (!prop_array_add(sorted, sdep->dict)) {
-				rv = errno;
-				goto out;
-			}
+			free(pkgname);
+			sdep->prio += sdep2->prio + 1;
 		}
+		prop_object_iterator_release(iter);
+	}
+
+	/*
+	 * Pass 5: copy dictionaries into the final array with the
+	 * correct index position for all dependencies and release
+	 * resources used by the sorting passes.
+	 */
+	while ((sdep = find_sorteddep_with_highest_prio()) != NULL) {
+		prop_array_add(sorted, sdep->dict);
+		TAILQ_REMOVE(&sdep_list, sdep, chain);
+		prop_object_release(sdep->dict);
+		prop_object_release(sdep->reqby);
+		free(sdep);
 	}
 
 	/*
@@ -312,6 +327,7 @@ out:
 	while ((sdep = TAILQ_FIRST(&sdep_list)) != NULL) {
 		TAILQ_REMOVE(&sdep_list, sdep, chain);
 		prop_object_release(sdep->dict);
+		prop_object_release(sdep->reqby);
 		free(sdep);
 	}
 

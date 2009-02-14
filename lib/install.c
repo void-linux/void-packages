@@ -34,6 +34,13 @@
 
 #include <xbps_api.h>
 
+struct cbargs {
+	const char *destdir;
+	const char *pkgname;
+};
+
+static int	install_binpkg_repo_cb(prop_object_t, void *, bool *);
+
 int
 xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
 			     const char *destdir)
@@ -62,10 +69,7 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
 int
 xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 {
-	prop_array_t array;
-	prop_dictionary_t repolistd, repod, pkgrd = NULL;
-	prop_object_t obj;
-	prop_object_iterator_t iter;
+	struct cbargs cb;
 	char *plist;
 	int rv = 0;
 
@@ -83,92 +87,83 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 	if (plist == NULL)
 		return EINVAL;
 
-	repolistd = prop_dictionary_internalize_from_file(plist);
-	if (repolistd == NULL) {
-		free(plist);
-		return EINVAL;
-	}
-	free(plist);
-
+	cb.pkgname = pkgname;
+	cb.destdir = destdir;
 	/*
 	 * Iterate over the repository pool and find out if we have
 	 * all available binary packages.
 	 */
-        array = prop_dictionary_get(repolistd, "repository-list");
-        assert(array != NULL);
+	rv = xbps_callback_array_iter_in_repolist(plist,
+	    install_binpkg_repo_cb, (void *)&cb);
+	free(plist);
 
-        iter = prop_array_iterator(array);
-        if (iter == NULL) {
-                prop_object_release(repolistd);
-                return ENOMEM;
-        }
+	return rv;
+}
 
-	while ((obj = prop_object_iterator_next(iter)) != NULL) {
-		plist = xbps_append_full_path(false,
-		    prop_string_cstring_nocopy(obj), XBPS_PKGINDEX);
-		if (plist == NULL) {
-			rv = EINVAL;
-			goto out;
-		}
+static int
+install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
+{
+	prop_dictionary_t repod, pkgrd;
+	struct cbargs *cb = arg;
+	const char *pkgname = cb->pkgname;
+	const char *destdir = cb->destdir;
+	char *plist;
+	int rv = 0;
 
-		repod = prop_dictionary_internalize_from_file(plist);
-		if (repod == NULL) {
-			free(plist);
-			rv = errno;
-			goto out;
-		}
+	plist = xbps_append_full_path(false,
+	    prop_string_cstring_nocopy(obj), XBPS_PKGINDEX);
+	if (plist == NULL)
+		return EINVAL;
+
+	repod = prop_dictionary_internalize_from_file(plist);
+	if (repod == NULL) {
 		free(plist);
+		return errno;
+	}
+	free(plist);
 
-		/*
-		 * Get the package dictionary from current repository.
-		 * If it's not there, pass to the next repository.
-		 */
-		pkgrd = xbps_find_pkg_in_dict(repod, "packages", pkgname);
-		if (pkgrd == NULL) {
-			prop_object_release(repod);
-			rv = XBPS_PKG_ENOTINREPO;
-			continue;
-		}
+	/*
+	 * Get the package dictionary from current repository.
+	 * If it's not there, pass to the next repository.
+	 */
+	pkgrd = xbps_find_pkg_in_dict(repod, "packages", pkgname);
+	if (pkgrd == NULL) {
+		prop_object_release(repod);
+		return 0;
+	}
 
-		/*
-		 * Check if this package needs dependencies.
-		 */
-		if (!xbps_pkg_has_rundeps(pkgrd)) {
-			/* pkg has no deps, just install it. */
-			rv = xbps_install_binary_pkg_fini(repod, pkgrd,
-			    destdir);
-			prop_object_release(repod);
-			goto out;
-		}
+	/*
+	 * Check if this package needs dependencies.
+	 */
+	if (!xbps_pkg_has_rundeps(pkgrd)) {
+		/* pkg has no deps, just install it. */
+		rv = xbps_install_binary_pkg_fini(repod, pkgrd, destdir);
+		prop_object_release(repod);
+		return rv;
+	}
 
-		/*
-		 * Construct the dependency chain for this package. If any
-		 * dependency is not available, pass to the next repository.
-		 */
-		rv = xbps_find_deps_in_pkg(repod, pkgrd);
-		if (rv != 0) {
-			prop_object_release(repod);
-			if (rv == XBPS_PKG_ENOTINREPO)
-				continue;
+	/*
+	 * Construct the dependency chain for this package.
+	 */
+	rv = xbps_find_deps_in_pkg(pkgrd);
+	if (rv != 0) {
+		prop_object_release(repod);
+		if (rv == ENOENT)
+			return 0;
 
-			goto out;
-                }
+		return rv;
+	}
 
-		/*
-		 * Install all required dependencies and the package itself.
-		 */
-		rv = xbps_install_pkg_deps(pkgrd, destdir);
-		if (rv == 0) {
-			rv = xbps_install_binary_pkg_fini(repod, pkgrd,
-			    destdir);
-		}
+	/*
+	 * Install all required dependencies and the package itself.
+	 */
+	rv = xbps_install_pkg_deps(pkgrd, destdir);
+	if (rv == 0) {
+		rv = xbps_install_binary_pkg_fini(repod, pkgrd, destdir);
                 prop_object_release(repod);
-		break;
+		if (rv == 0)
+			*cbloop_done = true;
         }
-
-out:
-	prop_object_release(repolistd);
-        prop_object_iterator_release(iter);
 
 	return rv;
 }

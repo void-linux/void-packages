@@ -180,7 +180,8 @@ show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 	if (pkgdict == NULL) {
 		prop_object_release(dict);
 		free(plist);
-		return XBPS_PKG_ENOTINREPO;
+		errno = ENOENT;
+		return 0;
 	}
 
 	oloc = prop_dictionary_get(dict, "location-remote");

@@ -44,9 +44,12 @@ bool xbps_add_obj_to_array(prop_array_t, prop_object_t);
  */
 int
 xbps_callback_array_iter_in_dict(prop_dictionary_t, const char *,
-				 int (*func)(prop_object_t, void *, bool *),
+				 int (*fn)(prop_object_t, void *, bool *),
 				 void *);
-
+int
+xbps_callback_array_iter_in_repolist(const char *,
+				     int (*fn)(prop_object_t, void *, bool *),
+				     void *);
 /*
  * Finds a package's dictionary into the main dictionary.
  *

@@ -37,7 +37,7 @@ int	xbps_unpack_binary_pkg(prop_dictionary_t, prop_dictionary_t,
 			       const char *,
 			       void (*cb_print)(prop_dictionary_t));
 int	xbps_update_pkg_requiredby(prop_array_t, prop_dictionary_t);
-int	xbps_find_deps_in_pkg(prop_dictionary_t, prop_dictionary_t);
+int	xbps_find_deps_in_pkg(prop_dictionary_t);
 
 /* From lib/sortdeps.c */
 int	xbps_sort_pkg_deps(prop_dictionary_t);

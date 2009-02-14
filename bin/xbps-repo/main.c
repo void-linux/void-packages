@@ -170,7 +170,7 @@ main(int argc, char **argv)
 	prop_dictionary_t dict;
 	repo_info_t *rinfo = NULL;
 	char dpkgidx[PATH_MAX], *root = NULL;
-	int c;
+	int c, rv = 0;
 
 	while ((c = getopt(argc, argv, "r:")) != -1) {
 		switch (c) {
@@ -291,16 +291,16 @@ main(int argc, char **argv)
 			usage();
 
 		dict = getrepolist_dict(root);
-		if (xbps_callback_array_iter_in_dict(dict, "repository-list",
-		    show_pkg_info_from_repolist, argv[1]) != 0) {
-			prop_object_release(dict);
-			free(plist);
-			printf("ERROR: unable to locate package '%s'.\n",
-			    argv[1]);
-			exit(EXIT_FAILURE);
-		}
+		rv = xbps_callback_array_iter_in_dict(dict, "repository-list",
+			show_pkg_info_from_repolist, argv[1]);
 		prop_object_release(dict);
 		free(plist);
+
+		if (rv == 0 && errno == ENOENT) {
+			printf("Unable to locate package '%s' from "
+			    "repository pool.\n", argv[1]);
+			exit(EXIT_FAILURE);
+		}
 
 	} else {
 		usage();

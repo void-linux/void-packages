@@ -47,12 +47,11 @@
 /* Filename of the packages register. */
 #define XBPS_REGPKGDB		"regpkgdb.plist"
 
-/* Return values for xbps_install_binary_pkg() */
-#define XBPS_PKG_ENOTINREPO	1	/* Not found in repo */
-#define XBPS_PKG_EEXIST		2	/* Already installed */
-#define XBPS_PKG_EINDEPS	3	/* Check deps failed */
-#define XBPS_PKG_ECHDIRDEST	4	/* chdir() to dest failed */
-#define XBPS_PKG_EEMPTY		5	/* empty pkg list */
+#define XBPS_PKG_ENOTINREPO	-1	/* Not found in repo */
+#define XBPS_PKG_EEXIST		-2	/* Already installed */
+#define XBPS_PKG_EINDEPS	-3	/* Check deps failed */
+#define XBPS_PKG_ECHDIRDEST	-4	/* chdir() to dest failed */
+#define XBPS_PKG_EEMPTY		-5	/* empty pkg list */
 
 #include "cmpver.h"
 #include "fexec.h"

@@ -66,28 +66,56 @@ xbps_add_obj_to_array(prop_array_t array, prop_object_t obj)
 }
 
 int
+xbps_callback_array_iter_in_repolist(const char *plist,
+				     int (*fn)(prop_object_t, void *, bool *),
+				     void *arg)
+{
+	prop_dictionary_t repolistd;
+	int rv = 0;
+
+	assert(plist != NULL);
+	assert(fn != NULL);
+
+	/*
+	 * Get the dictionary with the list of registered repositories.
+	 */
+	repolistd = prop_dictionary_internalize_from_file(plist);
+	if (repolistd == NULL)
+                return EINVAL;
+
+	/*
+	 * Iterate over the repository pool and run the associated
+	 * callback function. The loop is stopped when the bool
+	 * argument is true or the cb returns non 0.
+	 */
+	rv = xbps_callback_array_iter_in_dict(repolistd, "repository-list",
+		fn, arg);
+	prop_object_release(repolistd);
+
+	return rv;
+}
+
+int
 xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
-				 int (*func)(prop_object_t, void *, bool *),
+				 int (*fn)(prop_object_t, void *, bool *),
 				 void *arg)
 {
 	prop_object_iterator_t iter;
 	prop_object_t obj;
 	int rv = 0;
-	bool run, cbloop_done;
+	bool cbloop_done = false;
 
 	assert(dict != NULL);
 	assert(key != NULL);
-	assert(func != NULL);
-
-	run = cbloop_done = false;
+	assert(fn != NULL);
 
 	iter = xbps_get_array_iter_from_dict(dict, key);
 	if (iter == NULL)
 		return EINVAL;
 
 	while ((obj = prop_object_iterator_next(iter))) {
-		rv = (*func)(obj, arg, &cbloop_done);
-		if (rv == 0 && cbloop_done)
+		rv = (*fn)(obj, arg, &cbloop_done);
+		if (rv != 0 || cbloop_done)
 			break;
 	}
 
