@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2008 Juan Romero Pardines.
+ * Copyright (c) 2008-2009 Juan Romero Pardines.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
