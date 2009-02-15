@@ -56,24 +56,33 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 		       const char *destdir,
 		       void (*cb_print)(prop_dictionary_t))
 {
-	prop_string_t filename, repoloc;
-	char *binfile;
+	prop_string_t filename, repoloc, arch;
+	char *binfile, *path;
 	int rv = 0;
 
 	assert(pkg != NULL);
 
 	/* Append filename to the full path for binary pkg */
 	filename = prop_dictionary_get(pkg, "filename");
+	arch = prop_dictionary_get(pkg, "architecture");
 	if (repo)
 		repoloc = prop_dictionary_get(repo, "location-local");
 	else
 		repoloc = prop_dictionary_get(pkg, "repository");
 
-	binfile = xbps_append_full_path(false,
+	path = xbps_append_full_path(false,
 	    prop_string_cstring_nocopy(repoloc),
-	    prop_string_cstring_nocopy(filename));
-	if (binfile == NULL)
+	    prop_string_cstring_nocopy(arch));
+	if (path == NULL)
 		return EINVAL;
+
+	binfile = xbps_append_full_path(false, path,
+	    prop_string_cstring_nocopy(filename));
+	if (binfile == NULL) {
+		free(path);
+		return EINVAL;
+	}
+	free(path);
 
 	if (!cb_print)
 		unpack_defcb_print(pkg);

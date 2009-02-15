@@ -107,8 +107,7 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	char *plist;
 	int rv = 0;
 
-	plist = xbps_append_full_path(false,
-	    prop_string_cstring_nocopy(obj), XBPS_PKGINDEX);
+	plist = xbps_get_pkg_index_plist(prop_string_cstring_nocopy(obj));
 	if (plist == NULL)
 		return EINVAL;
 

@@ -29,6 +29,7 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#include <sys/utsname.h>
 
 #include <xbps_api.h>
 
@@ -139,6 +140,31 @@ xbps_get_pkg_name(const char *pkg)
 	pkgname[len - 1] = '\0';
 
 	return pkgname;
+}
+
+char *
+xbps_get_pkg_index_plist(const char *path)
+{
+	struct utsname un;
+	char *plist, *p;
+
+	assert(path != NULL);
+
+	if (uname(&un) == -1)
+		return NULL;
+
+	p = xbps_append_full_path(false, path, un.machine);
+	if (p == NULL)
+		return NULL;
+
+	plist = xbps_append_full_path(false, p, XBPS_PKGINDEX);
+	if (plist == NULL) {
+		free(p);
+		return NULL;
+	}
+	free(p);
+
+	return plist;
 }
 
 bool

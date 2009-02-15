@@ -175,7 +175,7 @@ main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 
 		/* Temp buffer to verify pkgindex file. */
-		plist = xbps_append_full_path(false, dpkgidx, XBPS_PKGINDEX);
+		plist = xbps_get_pkg_index_plist(dpkgidx);
 		if (plist == NULL)
 			exit(EXIT_FAILURE);
 

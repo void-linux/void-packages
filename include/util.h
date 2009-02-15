@@ -30,8 +30,9 @@
 char *		xbps_append_full_path(bool, const char *, const char *);
 int		xbps_check_is_installed_pkg(const char *);
 bool		xbps_check_is_installed_pkgname(const char *);
-const char *	xbps_get_pkg_version(const char *);
+char *		xbps_get_pkg_index_plist(const char *);
 char *		xbps_get_pkg_name(const char *);
+const char *	xbps_get_pkg_version(const char *);
 bool		xbps_pkg_has_rundeps(prop_dictionary_t);
 void		xbps_set_rootdir(const char *);
 

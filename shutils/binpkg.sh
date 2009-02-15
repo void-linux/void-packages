@@ -32,6 +32,7 @@ xbps_write_metadata_pkg()
 	local destdir=$XBPS_DESTDIR/$pkgname-$version
 	local metadir=$destdir/var/db/xbps/metadata/$pkgname
 	local prioinst=
+	local arch=
 
 	if [ ! -d "$destdir" ]; then
 		echo "ERROR: $pkgname not installed into destdir."
@@ -42,6 +43,12 @@ xbps_write_metadata_pkg()
 		prioinst=$install_priority
 	else
 		prioinst=0
+	fi
+
+	if [ -n "$noarch" ]; then
+		arch=noarch
+	else
+		arch=$xbps_machine
 	fi
 
 	# Write the files list.
@@ -66,7 +73,7 @@ xbps_write_metadata_pkg()
 	<key>version</key>
 	<string>$version</string>
 	<key>architecture</key>
-	<string>$xbps_machine</string>
+	<string>$arch</string>
 	<key>priority</key>
 	<integer>$prioinst</integer>
 	<key>installed_size</key>
@@ -144,14 +151,24 @@ _EOF
 xbps_make_binpkg()
 {
 	local destdir=$XBPS_DESTDIR/$pkgname-$version
-	local binpkg=$pkgname-$version.$xbps_machine.xbps
-
+	local binpkg=
+	local pkgdir=
+	local arch=
 	cd $destdir || exit 1
+
+	if [ -n "$noarch" ]; then
+		arch=noarch
+	else
+		arch=$xbps_machine
+	fi
+
+	binpkg=$pkgname-$version.$arch.xbps
+	pkgdir=$XBPS_PACKAGESDIR/$arch
 
 	run_rootcmd tar cfjp $XBPS_DESTDIR/$binpkg .
 	if [ $? -eq 0 ]; then
-		[ ! -d $XBPS_PACKAGESDIR ] && mkdir -p $XBPS_PACKAGESDIR
-		mv -f $XBPS_DESTDIR/$binpkg $XBPS_PACKAGESDIR
+		[ ! -d $pkgdir ] && mkdir -p $pkgdir
+		mv -f $XBPS_DESTDIR/$binpkg $pkgdir
 		echo "=> Built package: $binpkg"
 	fi
 

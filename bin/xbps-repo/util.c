@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2008 Juan Romero Pardines.
+ * Copyright (c) 2008-2009 Juan Romero Pardines.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -133,7 +133,7 @@ search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 	repofile = prop_string_cstring_nocopy(obj);
 	assert(repofile != NULL);
 
-	plist = xbps_append_full_path(false, repofile, XBPS_PKGINDEX);
+	plist = xbps_get_pkg_index_plist(repofile);
 	if (plist == NULL)
 		return EINVAL;
 
@@ -165,8 +165,7 @@ show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 	/* Get the location */
 	repofile = prop_string_cstring_nocopy(obj);
 
-	/* Get string for pkg-index.plist with full path. */
-	plist = xbps_append_full_path(false, repofile, XBPS_PKGINDEX);
+	plist = xbps_get_pkg_index_plist(repofile);
 	if (plist == NULL)
 		return EINVAL;
 

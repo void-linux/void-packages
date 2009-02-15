@@ -96,7 +96,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	prop_string_t reqbystr;
 	uint32_t prio = 0;
 	size_t len = 0, dirdepscnt = 0, indirdepscnt = 0;
-	const char *pkgname, *version, *reqbyname, *reqbyver;
+	const char *pkgname, *version, *reqbyname, *reqbyver, *arch;
 	const char  *repoloc, *binfile, *originpkg, *short_desc;
 	char *reqby, *pkgnver;
 	int rv = 0;
@@ -113,6 +113,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	prop_dictionary_get_cstring_nocopy(depd, "version", &version);
 	prop_dictionary_get_cstring_nocopy(depd, "filename", &binfile);
 	prop_dictionary_get_cstring_nocopy(depd, "short_desc", &short_desc);
+	prop_dictionary_get_cstring_nocopy(depd, "architecture", &arch);
 	prop_dictionary_get_uint32(depd, "priority", &prio);
 	prop_dictionary_get_cstring_nocopy(origind, "pkgname", &reqbyname);
 	prop_dictionary_get_cstring_nocopy(origind, "version", &reqbyver);
@@ -203,6 +204,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	prop_dictionary_set_uint32(dict, "priority", prio);
 	prop_dictionary_set_cstring(dict, "short_desc", short_desc);
 	prop_dictionary_set_bool(dict, "indirect_dep", indirectdep);
+	prop_dictionary_set_cstring(dict, "architecture", arch);
 
 	/*
 	 * Add the dictionary into the array.
@@ -335,8 +337,8 @@ xbps_find_deps_in_pkg(prop_dictionary_t pkg)
 	 * all available binary packages.
 	 */
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
-		plist = xbps_append_full_path(false,
-		    prop_string_cstring_nocopy(obj), XBPS_PKGINDEX);
+		plist =
+		    xbps_get_pkg_index_plist(prop_string_cstring_nocopy(obj));
 		if (plist == NULL) {
 			rv = EINVAL;
 			goto out;
@@ -377,8 +379,8 @@ xbps_find_deps_in_pkg(prop_dictionary_t pkg)
 	 */
 	prop_object_iterator_reset(iter);
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
-		plist = xbps_append_full_path(false,
-		    prop_string_cstring_nocopy(obj), XBPS_PKGINDEX);
+		plist =
+		    xbps_get_pkg_index_plist(prop_string_cstring_nocopy(obj));
 		if (plist == NULL) {
 			rv = EINVAL;
 			goto out;

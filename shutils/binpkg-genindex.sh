@@ -43,23 +43,23 @@ write_repo_pkgindex()
 	[ -z "$repodir" ] && repodir=$XBPS_PACKAGESDIR
 	[ ! -d $repodir ] && exit 1
 
-	found="$(echo $repodir/*)"
+	found="$(echo $repodir/$xbps_machine/*)"
 	if $(echo $found|grep -vq .xbps); then
 		msg_error "couldn't find binary packages on $repodir."
 	fi
 
-	pkgindexf=$(mktemp -t pkgidx.XXXXXXXXXX) || exit 1
-	tmppkgdir=$(mktemp -d -t pkgdir.XXXXXXXX) || exit 1
+	pkgindexf=$(mktemp -t xbps-pkgidx.XXXXXXXXXX) || exit 1
+	tmppkgdir=$(mktemp -d -t xbps-pkgdir.XXXXXXXX) || exit 1
 
 	# Write the header.
 	msg_normal "Creating package index for $repodir..."
 	write_repo_pkgindex_header $pkgindexf $repodir
 
 	#
-	# Write pkg dictionaries from all packages currently available at
-	# XBPS_PACKAGESDIR.
+	# Write pkg dictionaries for all packages currently available at
+	# XBPS_PACKAGESDIR, both for your cpu arch and non arch dependent.
 	#
-	for i in $(echo $repodir/*.xbps); do
+	for i in $(find $repodir/$xbps_machine -type f -name \*.xbps); do
 		pkgname="$(basename ${i%%-[0-9]*.*.$xbps_machine.xbps})"
 		propsf="./var/db/xbps/metadata/$pkgname/props.plist"
 		cd $tmppkgdir && tar xfjp $i $propsf
@@ -67,7 +67,26 @@ write_repo_pkgindex()
 			msg_warn "Couldn't extract $(basename $i) metadata!"
 			continue
 		fi
-		write_repo_pkgindex_dict $propsf $pkgindexf $(basename $i)
+		write_repo_pkgindex_dict $propsf $pkgindexf $(basename $i) \
+			$xbps_machine
+		if [ $? -ne 0 ]; then
+			msg_warn "Couldn't write $i metadata to index file!"
+			continue
+		fi
+		echo "$(basename $i) added."
+		pkgsum=$(($pkgsum + 1))
+	done
+
+	for i in $(find $repodir/noarch -type f -name \*.xbps); do
+		pkgname="$(basename ${i%%-[0-9]*.*.noarch.xbps})"
+		propsf="./var/db/xbps/metadata/$pkgname/props.plist"
+		cd $tmppkgdir && tar xfjp $i $propsf
+		if [ $? -ne 0 ]; then
+			msg_warn "Couldn't extract $(basename $i) metadata!"
+			continue
+		fi
+		write_repo_pkgindex_dict $propsf $pkgindexf $(basename $i) \
+			noarch
 		if [ $? -ne 0 ]; then
 			msg_warn "Couldn't write $i metadata to index file!"
 			continue
@@ -85,7 +104,7 @@ write_repo_pkgindex()
 			exit 1
 		fi
 		msg_normal "Package index created (total pkgs: $pkgsum)."
-		cp -f $pkgindexf $repodir/pkg-index.plist
+		cp -f $pkgindexf $repodir/$xbps_machine/pkg-index.plist
 	fi
 	rm -f $pkgindexf
 	rm -rf $tmppkgdir
@@ -140,14 +159,15 @@ write_repo_pkgindex_dict()
 	local pkgf="$1"
 	local indexf="$2"
 	local binpkgf="$3"
+	local arch="$4"
 	local first_dict=
 	local tmpdictf=
-	local binpkg="$XBPS_PACKAGESDIR/$binpkgf"
-	local getsize=$(du $binpkg|awk '{print $1}')
+	local binpkg="$XBPS_PACKAGESDIR/$arch/$binpkgf"
+	local getsize=$(du -b $binpkg|awk '{print $1}')
 
 	[ -z "$pkgf" -o -z "$indexf" -o -z "$binpkgf" ] && return 1
 
-	tmpdictf=$(mktemp -t pkgdict.XXXXXXXXXX) || exit 1
+	tmpdictf=$(mktemp -t xbps-pkgdict.XXXXXXXXXX) || exit 1
 
 	cat $pkgf | while read line; do
 		# Find the first dictionary.
