@@ -113,7 +113,8 @@ main(int argc, char **argv)
 		if (argc != 4)
 			usage();
 
-		rv = xbps_register_pkg(NULL, argv[1], argv[2], argv[3]);
+		rv = xbps_register_pkg(NULL, argv[1], argv[2],
+			argv[3], false);
 		if (rv == EEXIST) {
 			printf("%s=> %s-%s already registered.\n",
 			    in_chroot ? "[chroot] " : "", argv[1], argv[2]);

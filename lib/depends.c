@@ -40,6 +40,7 @@ static int 	find_pkg_missing_deps_from_repo(prop_dictionary_t,
 						prop_dictionary_t);
 
 static prop_dictionary_t chaindeps;
+static bool deps_dict;
 
 /*
  * Creates the dictionary to store the dependency chain.
@@ -369,6 +370,7 @@ xbps_find_deps_in_pkg(prop_dictionary_t pkg)
 	missing_rdeps = prop_dictionary_get(chaindeps, "missing_deps");
 	if (prop_array_count(missing_rdeps) == 0)
 		goto out;
+
 	/*
 	 * If there are missing deps, iterate one more time
 	 * just in case that indirect deps weren't found.
@@ -403,6 +405,15 @@ out:
 	prop_object_release(repolistd);
 
         return rv;
+}
+
+prop_dictionary_t
+xbps_get_pkg_deps_dictionary(void)
+{
+	if (!deps_dict)
+		return NULL;
+
+	return prop_dictionary_copy(chaindeps);
 }
 
 static int
@@ -473,7 +484,6 @@ find_pkg_deps_from_repo(prop_dictionary_t repo, prop_dictionary_t pkg,
 	const char *reqpkg, *reqvers;
 	char *pkgname;
 	int rv = 0;
-	static bool deps_dict;
 
 	/*
 	 * Package doesn't have deps, check to be sure.
@@ -601,6 +611,7 @@ xbps_install_pkg_deps(prop_dictionary_t pkg, const char *destdir)
 	required = prop_dictionary_get(chaindeps, "required_deps");
 	if (required == NULL)
 		return 0;
+
 
 	iter = prop_array_iterator(required);
 	if (iter == NULL)

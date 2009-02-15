@@ -35,6 +35,8 @@
 #include <xbps_api.h>
 
 static void	usage(void);
+static void	show_missing_deps(prop_dictionary_t, const char *);
+static int	show_missing_dep_cb(prop_object_t, void *, bool *);
 static int	list_pkgs_in_dict(prop_object_t, void *, bool *);
 
 static void
@@ -71,6 +73,31 @@ list_pkgs_in_dict(prop_object_t obj, void *arg, bool *loop_done)
 	prop_dictionary_get_cstring_nocopy(obj, "short_desc", &short_desc);
 	if (pkgname && version && short_desc) {
 		printf("%s (%s)\t%s\n", pkgname, version, short_desc);
+		return 0;
+	}
+
+	return EINVAL;
+}
+
+static void
+show_missing_deps(prop_dictionary_t d, const char *pkgname)
+{
+	printf("Unable to locate some required packages for %s:\n",
+	    pkgname);
+	(void)xbps_callback_array_iter_in_dict(d, "missing_deps",
+	    show_missing_dep_cb, NULL);
+}
+
+static int
+show_missing_dep_cb(prop_object_t obj, void *arg, bool *loop_done)
+{
+	const char *pkgname, *version;
+
+	prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
+	prop_dictionary_get_cstring_nocopy(obj, "version", &version);
+	if (pkgname && version) {
+		printf("\tmissing binary package for: %s >= %s\n",
+		    pkgname, version);
 		return 0;
 	}
 
@@ -138,12 +165,12 @@ main(int argc, char **argv)
 		if (strcasecmp(argv[0], "install") == 0) {
 			rv = xbps_install_binary_pkg(argv[1], root);
 			if (rv) {
-				if (errno == ENOENT)
+				dict = xbps_get_pkg_deps_dictionary();
+				if (dict == NULL && errno == ENOENT)
 					printf("Unable to locate %s in "
 					    "repository pool.\n", argv[1]);
 				else
-					printf("Unable to install %s (%s).\n",
-					    argv[1], strerror(errno));
+					show_missing_deps(dict, argv[1]);
 				exit(EXIT_FAILURE);
 			}
 			printf("Package %s installed successfully.\n", argv[1]);

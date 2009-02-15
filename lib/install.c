@@ -47,6 +47,7 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
 {
 	const char *pkgname, *version, *desc;
 	int rv = 0;
+	bool automatic = false;
 
 	assert(pkg != NULL);
 	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
@@ -56,9 +57,12 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
 	assert(version != NULL);
 	assert(desc != NULL);
 
+	if (repo == false)
+		automatic = true;
+
 	rv = xbps_unpack_binary_pkg(repo, pkg, destdir, NULL);
 	if (rv == 0) {
-		rv = xbps_register_pkg(pkg, pkgname, version, desc);
+		rv = xbps_register_pkg(pkg, pkgname, version, desc, automatic);
 		if (rv == EEXIST)
 			rv = 0;
 	}
@@ -87,6 +91,8 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 	 */
 	rv = xbps_callback_array_iter_in_repolist(install_binpkg_repo_cb,
 	    (void *)&cb);
+	if (rv == 0 && errno == ENOENT)
+		rv = errno;
 
 	return rv;
 }
@@ -139,9 +145,10 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	 */
 	if ((rv = xbps_find_deps_in_pkg(pkgrd)) != 0) {
 		prop_object_release(repod);
-		if (rv == ENOENT)
+		if (rv == ENOENT) {
+			errno = ENOENT;
 			return 0;
-
+		}
 		return rv;
 	}
 
@@ -154,6 +161,10 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 		if (rv == 0)
 			*cbloop_done = true;
         }
+
+	/* Cleanup errno, just in case */
+	if (rv == 0)
+		errno = 0;
 
 	return rv;
 }
@@ -175,7 +186,8 @@ make_dict_from_pkg(const char *name, const char *ver, const char *desc)
 
 int
 xbps_register_pkg(prop_dictionary_t pkgrd, const char *pkgname,
-		  const char *version, const char *desc)
+		  const char *version, const char *desc,
+		  bool automatic)
 {
 	prop_dictionary_t dict, pkgd;
 	prop_array_t array;
@@ -212,6 +224,9 @@ xbps_register_pkg(prop_dictionary_t pkgrd, const char *pkgname,
 			goto out;
 		}
 
+		prop_dictionary_set_bool(pkgd, "automatic-install",
+			automatic);
+
 		if (!xbps_add_obj_to_dict(dict, array, "packages")) {
 			prop_object_release(array);
 			rv = EINVAL;
@@ -233,6 +248,9 @@ xbps_register_pkg(prop_dictionary_t pkgrd, const char *pkgname,
 			rv = ENOENT;
 			goto out;
 		}
+
+		prop_dictionary_set_bool(pkgd, "automatic-install",
+			automatic);
 
 		if (pkgrd && xbps_pkg_has_rundeps(pkgrd)) {
 			rv = xbps_update_pkg_requiredby(array, pkgrd);
