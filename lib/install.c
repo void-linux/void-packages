@@ -57,8 +57,14 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
 	assert(version != NULL);
 	assert(desc != NULL);
 
-	if (repo == false)
+	if (repo == false) {
 		automatic = true;
+		printf("Installing dependency %s: found %s-%s ... ",
+		     pkgname, pkgname, version);
+	} else {
+		printf("Installing %s-%s ... ", pkgname, version);
+	}
+	(void)fflush(stdout);
 
 	rv = xbps_unpack_binary_pkg(repo, pkg, destdir, NULL);
 	if (rv == 0) {
@@ -66,6 +72,11 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
 		if (rv == EEXIST)
 			rv = 0;
 	}
+
+	if (rv == 0)
+		printf("done.\n");
+	else
+		printf("failed!\n");
 
 	return rv;
 }

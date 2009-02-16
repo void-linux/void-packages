@@ -38,19 +38,6 @@
 static int unpack_archive_init(prop_dictionary_t, const char *, const char *);
 static int unpack_archive_fini(struct archive *, const char *,
 			       prop_dictionary_t);
-static void unpack_defcb_print(prop_dictionary_t);
-
-static void
-unpack_defcb_print(prop_dictionary_t pkg)
-{
-	const char *pkgname, *version;
-	assert(pkg != NULL);
-
-	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
-	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
-
-	printf("  Unpacking %s-%s...\n", pkgname, version);
-}
 
 int
 xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
@@ -85,9 +72,7 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	}
 	free(path);
 
-	if (!cb_print)
-		unpack_defcb_print(pkg);
-	else
+	if (cb_print)
 		(*cb_print)(pkg);
 
 	rv = unpack_archive_init(pkg, destdir, binfile);
@@ -205,9 +190,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 
 		rv = stat(path, &st);
 		if (rv == 0) {
-			rv = EEXIST;
 			free(path);
-			printf("  Not overwriting %s\n", archive_entry_pathname(entry));
 			continue;
 		}
 		free(path);
