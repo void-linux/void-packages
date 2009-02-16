@@ -47,7 +47,7 @@ run_rootcmd()
 	lenv="XBPS_DISTRIBUTIONDIR=$XBPS_DISTRIBUTIONDIR $lenv"
 
 	shift
-	if [ -n "$usesudo" -a -z "$in_chroot" ]; then
+	if [ "$usesudo" = "yes" -a -z "$in_chroot" ]; then
 		sudo env ${lenv} $@
 	else
 		env ${lenv} ${fakeroot_cmd} $@
