@@ -106,7 +106,7 @@ make_install()
 	#
 	# Install package via make.
 	#
-	run_rootcmd ${make_cmd} ${make_install_target} ${make_install_args}
+	run_rootcmd no ${make_cmd} ${make_install_target} ${make_install_args}
 	if [ "$?" -ne 0 ]; then
 		msg_error "installing $pkgname-$version."
 		exit 1

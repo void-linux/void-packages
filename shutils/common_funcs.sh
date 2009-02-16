@@ -39,12 +39,19 @@ run_func()
 run_rootcmd()
 {
 	local lenv=
+	local usesudo="$1"
 
 	[ -n "$in_chroot" ] && unset fakeroot_cmd
 
 	lenv="XBPS_DESTDIR=$XBPS_DESTDIR"
 	lenv="XBPS_DISTRIBUTIONDIR=$XBPS_DISTRIBUTIONDIR $lenv"
-	env ${lenv} ${fakeroot_cmd} $@
+
+	shift
+	if [ -n "$usesudo" -a -z "$in_chroot" ]; then
+		sudo env ${lenv} $@
+	else
+		env ${lenv} ${fakeroot_cmd} $@
+	fi
 }
 
 msg_error()

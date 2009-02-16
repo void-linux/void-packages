@@ -165,7 +165,7 @@ xbps_make_binpkg()
 	binpkg=$pkgname-$version.$arch.xbps
 	pkgdir=$XBPS_PACKAGESDIR/$arch
 
-	run_rootcmd tar cfjp $XBPS_DESTDIR/$binpkg .
+	run_rootcmd yes tar cfjp $XBPS_DESTDIR/$binpkg .
 	if [ $? -eq 0 ]; then
 		[ ! -d $pkgdir ] && mkdir -p $pkgdir
 		mv -f $XBPS_DESTDIR/$binpkg $pkgdir
