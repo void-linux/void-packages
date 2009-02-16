@@ -31,6 +31,7 @@
 #include <limits.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #include <xbps_api.h>
 
@@ -157,10 +158,11 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 		    prop_dictionary_t pkg)
 {
 	struct archive_entry *entry;
+	struct stat st;
 	size_t len;
 	const char *prepost = "./XBPS_PREPOST_INSTALL";
 	const char *pkgname, *version;
-	char *buf;
+	char *buf, *path;
 	int rv = 0, flags = 0;
 	bool actgt = false;
 
@@ -192,6 +194,25 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 
 	while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
 		/*
+		 * Check that entry doesn't already exist.
+		 */ 
+		path = xbps_append_full_path(false, destdir,
+		    archive_entry_pathname(entry));
+		if (path == NULL) {
+			rv = ENOMEM;
+			break;
+		}
+
+		rv = stat(path, &st);
+		if (rv == 0) {
+			rv = EEXIST;
+			free(path);
+			printf("  Not overwriting %s\n", archive_entry_pathname(entry));
+			continue;
+		}
+		free(path);
+
+		/*
 		 * Run the pre installation action target if there's a script
 		 * before writing data to disk.
 		 */
@@ -200,7 +221,8 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 
 			archive_entry_set_pathname(entry, buf);
 
-			if ((rv = archive_read_extract(ar, entry, flags)) != 0)
+			rv = archive_read_extract(ar, entry, flags);
+			if (rv != 0 && rv != EEXIST)
 				break;
 
 			if ((rv = xbps_file_exec(buf, destdir, "pre",
@@ -217,11 +239,17 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 		/*
 		 * Extract all data from the archive now.
 		 */
-		if ((rv = archive_read_extract(ar, entry, flags)) != 0) {
+		rv = archive_read_extract(ar, entry, flags);
+		if (rv != 0 && rv != EEXIST) {
 			printf("\ncouldn't unpack %s (%s), exiting!\n",
 			    archive_entry_pathname(entry), strerror(errno));
 			(void)fflush(stdout);
 			break;
+		} else if (rv == EEXIST) {
+			printf("\nignoring existent component %s.\n",
+			    archive_entry_pathname(entry));
+			(void)fflush(stdout);
+			continue;
 		}
 	}
 
