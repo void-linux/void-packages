@@ -170,8 +170,9 @@ main(int argc, char **argv)
 				if (dict == NULL && errno == ENOENT)
 					printf("Unable to locate %s in "
 					    "repository pool.\n", argv[1]);
-				else
+				else if (dict && errno == ENOENT)
 					show_missing_deps(dict, argv[1]);
+
 				exit(EXIT_FAILURE);
 			}
 			printf("Package %s installed successfully.\n", argv[1]);
