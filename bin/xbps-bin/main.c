@@ -33,6 +33,7 @@
 #include <unistd.h>
 
 #include <xbps_api.h>
+#include "../xbps-repo/util.h"
 
 static void	usage(void);
 static void	show_missing_deps(prop_dictionary_t, const char *);
@@ -188,6 +189,16 @@ main(int argc, char **argv)
 			printf("Package %s removed successfully.\n", argv[1]);
 		}
 
+	} else if (strcasecmp(argv[0], "show") == 0) {
+		/* Shows info about an installed binary package. */
+		if (argc != 2)
+			usage();
+
+		rv = show_pkg_info_from_metadir(argv[1]);
+		if (rv != 0) {
+			printf("Package %s not installed\n", argv[1]);
+			exit(EXIT_FAILURE);
+		}
 	} else {
 		usage();
 	}

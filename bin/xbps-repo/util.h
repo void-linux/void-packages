@@ -23,6 +23,12 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-int search_string_in_pkgs(prop_object_t, void *, bool *);
-int show_pkg_info_from_repolist(prop_object_t, void *, bool *);
-int list_strings_in_array(prop_object_t, void *, bool *);
+#ifndef _XBPS_REPO_UTIL_H_
+#define _XBPS_REPO_UTIL_H_
+
+int	search_string_in_pkgs(prop_object_t, void *, bool *);
+int	show_pkg_info_from_metadir(const char *);
+int	show_pkg_info_from_repolist(prop_object_t, void *, bool *);
+int	list_strings_in_array(prop_object_t, void *, bool *);
+
+#endif /* !_XBPS_REPO_UTIL_H_ */

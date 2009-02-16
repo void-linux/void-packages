@@ -47,6 +47,9 @@
 /* Filename of the packages register. */
 #define XBPS_REGPKGDB		"regpkgdb.plist"
 
+/* Filename of the package properties plist file. */
+#define XBPS_PKGPROPS		"props.plist"
+
 #include "cmpver.h"
 #include "fexec.h"
 #include "humanize_number.h"

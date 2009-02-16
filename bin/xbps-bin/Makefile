@@ -1,7 +1,7 @@
 TOPDIR = ../..
 include $(TOPDIR)/vars.mk
 
-OBJS = main.o
+OBJS = main.o ../xbps-repo/util.o
 BIN = xbps-bin
 
 all: $(BIN)
@@ -18,6 +18,7 @@ clean-bins:
 
 clean-objs:
 	-rm -f *.o
+	-rm -f ../xbps-repo/util.o
 
 install: $(BIN)
 	install -d $(SBINDIR)

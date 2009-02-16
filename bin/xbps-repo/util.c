@@ -153,6 +153,41 @@ search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 }
 
 int
+show_pkg_info_from_metadir(const char *pkgname)
+{
+	prop_dictionary_t pkgd;
+	size_t len = 0;
+	char *plist, *path;
+
+	/* XBPS_META_PATH/metadata/<pkgname> + NULL */
+	len = strlen(XBPS_META_PATH) + strlen(pkgname) + 12;
+	path = malloc(len);
+	if (path == NULL)
+		return EINVAL;
+
+	(void)snprintf(path, len, "%s/metadata/%s", XBPS_META_PATH, pkgname);
+
+	plist = xbps_append_full_path(true, path, XBPS_PKGPROPS);
+	if (plist == NULL) {
+		free(path);
+		return EINVAL;
+	}
+	free(path);
+
+	pkgd = prop_dictionary_internalize_from_file(plist);
+	if (pkgd == NULL) {
+		free(plist);
+		return errno;
+	}
+
+	show_pkg_info(pkgd);
+	prop_object_release(pkgd);
+	free(plist);
+
+	return 0;
+}
+
+int
 show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 {
 	prop_dictionary_t dict, pkgdict;
