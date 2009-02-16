@@ -52,6 +52,7 @@ usage(void)
 	"    show\t<pkgname>\n"
 	" Options shared by all actions:\n"
 	"    -r\t\t<rootdir>\n"
+	"    -v\t\t<verbose>\n"
 	"\n"
 	" Examples:\n"
 	"    $ xbps-bin install klibc\n"
@@ -110,14 +111,17 @@ main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
 	char *plist, *root = NULL;
-	int c, rv = 0;
+	int c, flags = 0, rv = 0;
 
-	while ((c = getopt(argc, argv, "r:")) != -1) {
+	while ((c = getopt(argc, argv, "r:v")) != -1) {
 		switch (c) {
 		case 'r':
 			/* To specify the root directory */
 			root = optarg;
 			xbps_set_rootdir(root);
+			break;
+		case 'v':
+			flags |= XBPS_UNPACK_VERBOSE;
 			break;
 		case '?':
 		default:
@@ -164,8 +168,8 @@ main(int argc, char **argv)
 
 		/* Install into root directory by default. */
 		if (strcasecmp(argv[0], "install") == 0) {
-			rv = xbps_install_binary_pkg(argv[1], root);
-			if (rv) {
+			rv = xbps_install_binary_pkg(argv[1], root, flags);
+			if (rv != 0 && rv != EEXIST) {
 				dict = xbps_get_pkg_deps_dictionary();
 				if (dict == NULL && errno == ENOENT)
 					printf("Unable to locate %s in "
@@ -177,8 +181,8 @@ main(int argc, char **argv)
 			}
 			printf("Package %s installed successfully.\n", argv[1]);
 		} else {
-			rv = xbps_remove_binary_pkg(argv[1], root);
-			if (rv) {
+			rv = xbps_remove_binary_pkg(argv[1], root, flags);
+			if (rv != 0) {
 				if (errno == ENOENT)
 					printf("Package %s is not installed.\n",
 					    argv[1]);

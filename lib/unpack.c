@@ -35,14 +35,14 @@
 
 #include <xbps_api.h>
 
-static int unpack_archive_init(prop_dictionary_t, const char *, const char *);
-static int unpack_archive_fini(struct archive *, const char *,
+static int unpack_archive_init(prop_dictionary_t, const char *,
+			       const char *, int);
+static int unpack_archive_fini(struct archive *, const char *, int,
 			       prop_dictionary_t);
 
 int
 xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
-		       const char *destdir,
-		       void (*cb_print)(prop_dictionary_t))
+		       const char *destdir, int flags)
 {
 	prop_string_t filename, repoloc, arch;
 	char *binfile, *path;
@@ -72,10 +72,7 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	}
 	free(path);
 
-	if (cb_print)
-		(*cb_print)(pkg);
-
-	rv = unpack_archive_init(pkg, destdir, binfile);
+	rv = unpack_archive_init(pkg, destdir, binfile, flags);
 	free(binfile);
 	return rv;
 }
@@ -83,7 +80,7 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 
 static int
 unpack_archive_init(prop_dictionary_t pkg, const char *destdir,
-		    const char *binfile)
+		    const char *binfile, int flags)
 {
 	struct archive *ar;
 	int pkg_fd, rv;
@@ -111,7 +108,7 @@ unpack_archive_init(prop_dictionary_t pkg, const char *destdir,
 		return rv;
 	}
 
-	rv = unpack_archive_fini(ar, destdir, pkg);
+	rv = unpack_archive_fini(ar, destdir, flags, pkg);
 	/*
 	 * If installation of package was successful, make sure the package
 	 * is really on storage (if possible).
@@ -139,7 +136,7 @@ unpack_archive_init(prop_dictionary_t pkg, const char *destdir,
  * the consumer.
  */
 static int
-unpack_archive_fini(struct archive *ar, const char *destdir,
+unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 		    prop_dictionary_t pkg)
 {
 	struct archive_entry *entry;
@@ -148,7 +145,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 	const char *prepost = "./XBPS_PREPOST_INSTALL";
 	const char *pkgname, *version;
 	char *buf, *path;
-	int rv = 0, flags = 0;
+	int rv = 0, lflags = 0;
 	bool actgt = false;
 
 	assert(ar != NULL);
@@ -158,9 +155,9 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
 
 	if (getuid() == 0)
-		flags = FEXTRACT_FLAGS;
+		lflags = FEXTRACT_FLAGS;
 	else
-		flags = EXTRACT_FLAGS;
+		lflags = EXTRACT_FLAGS;
 
 	/*
 	 * This length is '.%s/metadata/%s/prepost-inst' not
@@ -205,7 +202,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 
 			archive_entry_set_pathname(entry, buf);
 
-			rv = archive_read_extract(ar, entry, flags);
+			rv = archive_read_extract(ar, entry, lflags);
 			if (rv != 0 && rv != EEXIST)
 				break;
 
@@ -223,17 +220,24 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 		/*
 		 * Extract all data from the archive now.
 		 */
-		rv = archive_read_extract(ar, entry, flags);
+		rv = archive_read_extract(ar, entry, lflags);
 		if (rv != 0 && rv != EEXIST) {
 			printf("\ncouldn't unpack %s (%s), exiting!\n",
 			    archive_entry_pathname(entry), strerror(errno));
 			(void)fflush(stdout);
 			break;
 		} else if (rv == EEXIST) {
-			printf("\nignoring existent component %s.\n",
-			    archive_entry_pathname(entry));
-			(void)fflush(stdout);
+			if (flags & XBPS_UNPACK_VERBOSE) {
+				printf("\nignoring existent component %s.\n",
+				    archive_entry_pathname(entry));
+				(void)fflush(stdout);
+			}
 			continue;
+		}
+
+		if (flags & XBPS_UNPACK_VERBOSE) {
+			printf(" %s\n", archive_entry_pathname(entry));
+			(void)fflush(stdout);
 		}
 	}
 

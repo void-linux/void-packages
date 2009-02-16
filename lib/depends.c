@@ -301,6 +301,10 @@ xbps_find_deps_in_pkg(prop_dictionary_t pkg)
 
 	assert(pkg != NULL);
 
+	pkg_rdeps = prop_dictionary_get(pkg, "run_depends");
+	if (pkg_rdeps == NULL)
+		return 0;
+
 	/*
 	 * Get the dictionary with the list of registered repositories.
 	 */
@@ -329,8 +333,6 @@ xbps_find_deps_in_pkg(prop_dictionary_t pkg)
 		prop_object_release(repolistd);
 		return ENOMEM;
 	}
-
-	pkg_rdeps = prop_dictionary_get(pkg, "run_depends");
 
 	/*
 	 * Iterate over the repository pool and find out if we have
@@ -589,7 +591,7 @@ find_pkg_deps_from_repo(prop_dictionary_t repo, prop_dictionary_t pkg,
 }
 
 int
-xbps_install_pkg_deps(prop_dictionary_t pkg, const char *destdir)
+xbps_install_pkg_deps(prop_dictionary_t pkg, const char *destdir, int flags)
 {
 	prop_array_t required, missing;
 	prop_object_t obj;
@@ -623,7 +625,7 @@ xbps_install_pkg_deps(prop_dictionary_t pkg, const char *destdir)
 	 * Install all required dependencies, previously sorted.
 	 */
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
-		rv = xbps_install_binary_pkg_fini(NULL, obj, destdir);
+		rv = xbps_install_binary_pkg_fini(NULL, obj, destdir, flags);
 		if (rv != 0)
 			break;
 	}

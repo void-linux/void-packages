@@ -37,13 +37,14 @@
 struct cbargs {
 	const char *destdir;
 	const char *pkgname;
+	int flags;
 };
 
 static int	install_binpkg_repo_cb(prop_object_t, void *, bool *);
 
 int
 xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
-			     const char *destdir)
+			     const char *destdir, int flags)
 {
 	const char *pkgname, *version, *desc;
 	int rv = 0;
@@ -65,23 +66,22 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
 
 	(void)fflush(stdout);
 
-	rv = xbps_unpack_binary_pkg(repo, pkg, destdir, NULL);
+	rv = xbps_unpack_binary_pkg(repo, pkg, destdir, flags);
 	if (rv == 0) {
 		rv = xbps_register_pkg(pkg, pkgname, version, desc, automatic);
-		if (rv == EEXIST)
-			rv = 0;
+		if (rv != 0) {
+			printf("failed!\n");
+			return rv;
+		}
 	}
 
-	if (rv == 0)
-		printf("done.\n");
-	else
-		printf("failed!\n");
+	printf("done.\n");
 
-	return rv;
+	return 0;
 }
 
 int
-xbps_install_binary_pkg(const char *pkgname, const char *destdir)
+xbps_install_binary_pkg(const char *pkgname, const char *destdir, int flags)
 {
 	struct cbargs cb;
 	int rv = 0;
@@ -95,14 +95,15 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir)
 
 	cb.pkgname = pkgname;
 	cb.destdir = destdir;
+	cb.flags = flags;
 	/*
 	 * Iterate over the repository pool and find out if we have
 	 * all available binary packages.
 	 */
 	rv = xbps_callback_array_iter_in_repolist(install_binpkg_repo_cb,
 	    (void *)&cb);
-	if (rv == 0 && errno == ENOENT)
-		rv = errno;
+	if (rv == 0 && errno == EAGAIN)
+		return ENOENT;
 
 	return rv;
 }
@@ -135,7 +136,7 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	pkgrd = xbps_find_pkg_in_dict(repod, "packages", pkgname);
 	if (pkgrd == NULL) {
 		prop_object_release(repod);
-		errno = ENOENT;
+		errno = EAGAIN;
 		return 0;
 	}
 
@@ -144,7 +145,8 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	 */
 	if (!xbps_pkg_has_rundeps(pkgrd)) {
 		/* pkg has no deps, just install it. */
-		rv = xbps_install_binary_pkg_fini(repod, pkgrd, destdir);
+		rv = xbps_install_binary_pkg_fini(repod, pkgrd, destdir,
+		    cb->flags);
 		prop_object_release(repod);
 		return rv;
 	}
@@ -164,8 +166,9 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	/*
 	 * Install all required dependencies and the package itself.
 	 */
-	if ((rv = xbps_install_pkg_deps(pkgrd, destdir)) == 0) {
-		rv = xbps_install_binary_pkg_fini(repod, pkgrd, destdir);
+	if ((rv = xbps_install_pkg_deps(pkgrd, destdir, cb->flags)) == 0) {
+		rv = xbps_install_binary_pkg_fini(repod, pkgrd, destdir,
+		    cb->flags);
                 prop_object_release(repod);
 		if (rv == 0)
 			*cbloop_done = true;

@@ -57,7 +57,7 @@ xbps_unregister_pkg(const char *pkgname)
 }
 
 static int
-xbps_remove_binary_pkg_meta(const char *pkgname, const char *destdir)
+xbps_remove_binary_pkg_meta(const char *pkgname, const char *destdir, int flags)
 {
 	struct dirent *dp;
 	DIR *dirp;
@@ -88,8 +88,9 @@ xbps_remove_binary_pkg_meta(const char *pkgname, const char *destdir)
 		}
 
 		if ((rv = unlink(path)) == -1) {
-			printf("WARNING: can't remove %s (%s)\n",
-			    pkgname, strerror(errno));
+			if (flags & XBPS_UNPACK_VERBOSE)
+				printf("WARNING: can't remove %s (%s)\n",
+				    pkgname, strerror(errno));
 		}
 		(void)memset(&path, 0, sizeof(path));
 	}
@@ -100,7 +101,7 @@ xbps_remove_binary_pkg_meta(const char *pkgname, const char *destdir)
 }
 
 int
-xbps_remove_binary_pkg(const char *pkgname, const char *destdir)
+xbps_remove_binary_pkg(const char *pkgname, const char *destdir, int flags)
 {
 	FILE *flist;
 	char path[PATH_MAX - 1], line[LINE_MAX - 1], *p, *buf;
@@ -193,19 +194,23 @@ xbps_remove_binary_pkg(const char *pkgname, const char *destdir)
 						rv = 0;
 						goto next;
 					}
-					printf("WARNING: can't remove directory"
-					    " %s (%s)\n", path, strerror(errno));
+					if (flags & XBPS_UNPACK_VERBOSE)
+						printf("WARNING: can't remove "
+						    "directory %s (%s)\n",
+						    path, strerror(errno));
 					goto next;
 				}
-				printf("Removed directory: %s\n", path);
+				if (flags & XBPS_UNPACK_VERBOSE)
+					printf("Removed directory: %s\n", path);
 				goto next;
 			}
-			printf("WARNING: can't remove file %s (%s)\n", path,
-			    strerror(errno));
+			if (flags & XBPS_UNPACK_VERBOSE)
+				printf("WARNING: can't remove file %s (%s)\n", path,
+				    strerror(errno));
 			goto next;
 		}
-
-		printf("Removed file: %s\n", path);
+		if (flags & XBPS_UNPACK_VERBOSE)
+			printf("Removed file: %s\n", path);
 next:
 		free(p);
 		p = NULL;
@@ -226,7 +231,7 @@ next:
 
 out:
 	free(buf);
-	rv = xbps_remove_binary_pkg_meta(pkgname, destdir);
+	rv = xbps_remove_binary_pkg_meta(pkgname, destdir, flags);
 
 	return rv;
 }

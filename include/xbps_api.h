@@ -50,6 +50,9 @@
 /* Filename of the package properties plist file. */
 #define XBPS_PKGPROPS		"props.plist"
 
+/* Unpack flags */
+#define XBPS_UNPACK_VERBOSE	0x00000001
+
 #include "cmpver.h"
 #include "fexec.h"
 #include "humanize_number.h"
