@@ -23,7 +23,8 @@ $(LIBXBPS): $(OBJECTS)
 install: $(LIBXBPS)
 	install -d $(LIBDIR)
 	install -m 644 $(LIBXBPS_SO) $(LIBDIR)
-	install -m 644 $(LIBXBPS).$(MAJOR) $(LIBDIR)
+	cp -a $(LIBXBPS) $(LIBDIR)
+	cp -a $(LIBXBPS).$(MAJOR) $(LIBDIR)
 
 .PHONY: clean
 clean: clean-lib clean-objs
