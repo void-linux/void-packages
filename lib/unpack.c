@@ -201,6 +201,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir,
 		 */
 		if (strcmp(prepost, archive_entry_pathname(entry)) == 0) {
 			actgt = true;
+			printf("\n");
 
 			archive_entry_set_pathname(entry, buf);
 
