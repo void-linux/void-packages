@@ -55,6 +55,7 @@ stow_pkg()
 
 	# Copy files into masterdir.
 	for i in $(echo *); do
+		[ "$i" = "XBPS_PREPOST_INSTALL" ] && continue
 		cp -ar ${i} $XBPS_MASTERDIR
 	done
 
