@@ -34,6 +34,7 @@ write_repo_pkgindex()
 	local repodir="$1"
 	local propsf=
 	local pkgname=
+	local pkgnbase=
 	local pkgsum=
 	local pkgindexf=
 	local tmppkgdir=
@@ -60,7 +61,8 @@ write_repo_pkgindex()
 	# XBPS_PACKAGESDIR, both for your cpu arch and non arch dependent.
 	#
 	for i in $(find $repodir/$xbps_machine -type f -name \*.xbps); do
-		pkgname="$(basename ${i%%-[0-9]*.*.$xbps_machine.xbps})"
+		pkgnbase="$(basename ${i})"
+		pkgname=$(xbps-pkgdb getpkgname ${pkgnbase})
 		propsf="./var/db/xbps/metadata/$pkgname/props.plist"
 		cd $tmppkgdir && tar xfjp $i $propsf
 		if [ $? -ne 0 ]; then
@@ -78,7 +80,8 @@ write_repo_pkgindex()
 	done
 
 	for i in $(find $repodir/noarch -type f -name \*.xbps); do
-		pkgname="$(basename ${i%%-[0-9]*.*.noarch.xbps})"
+		pkgnbase="$(basename ${i})"
+		pkgname=$(xbps-pkgdb getpkgname ${pkgnbase})
 		propsf="./var/db/xbps/metadata/$pkgname/props.plist"
 		cd $tmppkgdir && tar xfjp $i $propsf
 		if [ $? -ne 0 ]; then
