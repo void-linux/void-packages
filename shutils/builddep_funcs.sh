@@ -34,100 +34,66 @@ run_template()
 		. $XBPS_TEMPLATESDIR/$pkg/template
 	fi
 }
+
 #
-# Recursive function that founds dependencies in all required
-# packages.
+# Recursive function that installs all direct and indirect
+# dependencies of a package.
 #
-add_dependency_tolist()
+install_pkg_deps()
 {
 	local curpkg="$1"
-	local curpkgname=
+	local saved_prevpkg=$(xbps-pkgdb getpkgname ${2})
+	local curpkgname=$(xbps-pkgdb getpkgname ${curpkg})
 	local j=
 	local jver=
 	local jname=
+	local reqver=
 
-	[ -z "$curpkg" ] && return 1
-	[ -n "$prev_pkg" ] && curpkg=$prev_pkg
+        [ -z "$curpkg" ] && return 1
+        [ -n "$prev_pkg" ] && curpkg=$prev_pkg
 
-	curpkgname=$(xbps-pkgdb getpkgname ${curpkg})
-	run_template $curpkgname
+        run_template $curpkgname
 
-	for j in ${build_depends}; do
-		#
-		# Check if dep already installed.
-		#
-		check_installed_pkg $j
-		#
-		# If dep is already installed, check one more time
-		# if all its deps are there and continue.
-		#
-		if [ $? -eq 0 ]; then
-			#install_builddeps_required_pkg $j
-			installed_deps_list="$j $installed_deps_list"
-			continue
-		fi
+	check_build_depends_pkg $curpkg
+	if [ $? -eq 0 ]; then
+		echo "==> Dependency $curpkgname requires:"
+		for j in ${build_depends}; do
+			jname=$(xbps-pkgdb getpkgname ${j})
+			jver=$($XBPS_REGPKGDB_CMD version ${jname})
+                	reqver=$(xbps-pkgdb getpkgversion ${j})
+                	check_installed_pkg $j
+                	if [ $? -eq 0 ]; then
+                        	echo "  $jname >= $reqver: found $jname-$jver."
+                	else
+                        	echo "  $jname >= $reqver: not found."
+                	fi
+		done
+	fi
 
-		deps_list="$j $deps_list"
-		[ -n "$prev_pkg" ] && unset prev_pkg
-		#
-		# Check if dependency needs more deps.
-		#
-		check_build_depends_pkg $j
-		if [ $? -eq 0 ]; then
-			add_dependency_tolist $j
-			prev_pkg="$j"
-		fi
-	done
-}
+        for j in ${build_depends}; do
+                #
+                # Check if dep already installed.
+                #
+                check_installed_pkg $j
+                [ $? -eq 0 ] && continue
 
-#
-# Removes duplicate deps in the installed or not installed list.
-#
-find_dupdeps_inlist()
-{
-	local action="$1"
-	local tmp_list=
-	local dup=
-	local f=
-
-	[ -z "$action" ] && return 1
-
-	case "$action" in
-	installed)
-		list=$installed_deps_list
-		;;
-	notinstalled)
-		list=$deps_list
-		;;
-	*)
-		return 1
-		;;
-	esac
-
-	for f in $list; do
-		if [ -z "$tmp_list" ]; then
-			tmp_list="$f"
+                [ -n "$prev_pkg" ] && unset prev_pkg
+                #
+                # Check if dependency needs more deps.
+                #
+                check_build_depends_pkg $j
+                if [ $? -eq 0 ]; then
+                        install_pkg_deps $j $curpkg
+                        prev_pkg="$j"
 		else
-			for i in $tmp_list; do
-				[ "$f" = "$i" ] && dup=yes
-			done
-
-			[ -z "$dup" ] && tmp_list="$tmp_list $f"
-			unset dup
+			echo "==> Installing $curpkgname dependency: $j"
+			jname=$(xbps-pkgdb getpkgname ${j})
+			install_pkg $jname
 		fi
-	done
+        done
 
-	case "$action" in
-	installed)
-		installed_deps_list="$tmp_list"
-		;;
-	notinstalled)
-		deps_list="$tmp_list"
-		;;
-	*)
-		return 1
-		;;
-	esac
+	echo "==> Installing $saved_prevpkg dependency: $curpkg"
+	install_pkg $curpkgname
 }
 
 #
@@ -136,51 +102,50 @@ find_dupdeps_inlist()
 install_dependencies_pkg()
 {
 	local pkg="$1"
+	local lpkgname=$(xbps-pkgdb getpkgname ${pkg})
 	local i=
 	local ipkgname=
 	local iversion=
-	local reqname=
 	local reqvers=
-	deps_list=
-	installed_deps_list=
+	local notinstalled_deps=
 
 	[ -z "$pkg" ] && return 1
 
 	doing_deps=true
 
-	echo "==> Calculating dependency list for $pkgname-$version... "
-	add_dependency_tolist $pkg
-	find_dupdeps_inlist installed
-	find_dupdeps_inlist notinstalled
+	echo "==> Required build dependencies for $pkgname-$version... "
+	for i in ${build_depends}; do
+                ipkgname=$(xbps-pkgdb getpkgname ${i})
+                iversion=$($XBPS_REGPKGDB_CMD version $ipkgname)
+                reqvers=$(xbps-pkgdb getpkgversion ${i})
+		check_installed_pkg $i
+		if [ $? -eq 0 ]; then
+			echo "  $ipkgname >= $reqvers: found $ipkgname-$iversion."
+			continue
+		else
+			echo "  $ipkgname >= $reqvers: not found."
+			notinstalled_deps="$notinstalled_deps $i"
+		fi
+	done
 
-	[ -z "$deps_list" -a -z "$installed_deps_list" ] && return 0
+	if [ -z "$notinstalled_deps" ]; then
+		return 0
+	fi
 
-	msg_normal "Required minimal deps for $(basename $pkg):"
-	for i in ${installed_deps_list}; do
+	for i in ${notinstalled_deps}; do
 		ipkgname=$(xbps-pkgdb getpkgname ${i})
-		iversion=$($XBPS_REGPKGDB_CMD version $ipkgname)
-		reqvers=$(xbps-pkgdb getpkgversion ${i})
-		echo "	$ipkgname >= $reqvers: found $ipkgname-$iversion."
-	done
-
-	for i in ${deps_list}; do
-		reqname=$(xbps-pkgdb getpkgname ${i})
-		reqvers=$(xbps-pkgdb getpkgversion ${i})
-		echo "	$reqname >= $reqvers: not found."
-	done
-
-	for i in ${deps_list}; do
-		# skip dup deps
+		run_template $ipkgname
 		check_installed_pkg $i
 		[ $? -eq 0 ] && continue
-		# continue installing deps
-		msg_normal "Installing $pkg dependency: $i."
-		ipkgname=$(xbps-pkgdb getpkgname ${i})
-		install_pkg $ipkgname
-	done
 
-	unset installed_deps_list
-	unset deps_list
+		check_build_depends_pkg $i
+		if [ $? -eq 1 ]; then
+			echo "==> Installing $lpkgname dependency: $ipkgname"
+			install_pkg $ipkgname
+		else
+			install_pkg_deps $i $pkg
+		fi
+	done
 }
 
 install_builddeps_required_pkg()
@@ -197,7 +162,7 @@ install_builddeps_required_pkg()
 	for dep in ${build_depends}; do
 		check_installed_pkg $dep
 		if [ $? -ne 0 ]; then
-			msg_normal "Installing $pkg dependency: $dep."
+			msg_normal "Installing $pkgname dependency: $dep."
 			depname=$(xbps-pkgdb getpkgname ${dep})
 			install_pkg $depname
 		fi
