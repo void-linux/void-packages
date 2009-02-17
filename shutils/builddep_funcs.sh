@@ -90,11 +90,11 @@ install_pkg_deps()
 		else
 			echo "=> Installing $curpkgname dependency: $j"
 			jname=$(xbps-pkgdb getpkgname ${j})
-			install_pkg $jname
+			install_pkg $jname auto
 		fi
         done
 
-	install_pkg $curpkgname
+	install_pkg $curpkgname auto
 }
 
 #
@@ -142,7 +142,7 @@ install_dependencies_pkg()
 		check_build_depends_pkg $i
 		if [ $? -eq 1 ]; then
 			msg_normal "Installing $lpkgname dependency: $ipkgname"
-			install_pkg $ipkgname
+			install_pkg $ipkgname auto
 		else
 			install_pkg_deps $i $pkg
 		fi
@@ -165,7 +165,7 @@ install_builddeps_required_pkg()
 		if [ $? -ne 0 ]; then
 			msg_normal "Installing $pkgname dependency: $dep."
 			depname=$(xbps-pkgdb getpkgname ${dep})
-			install_pkg $depname
+			install_pkg $depname auto
 		fi
 	done
 }

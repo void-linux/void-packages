@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008 Juan Romero Pardines.
+# Copyright (c) 2008-2009 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,7 @@
 stow_pkg()
 {
 	local pkg="$1"
+	local automatic="$2"
 	local i=
 	local destdir=$XBPS_DESTDIR/$pkgname-$version
 
@@ -59,8 +60,16 @@ stow_pkg()
 		cp -ar ${i} $XBPS_MASTERDIR
 	done
 
-	$XBPS_REGPKGDB_CMD register $pkgname $version "$short_desc"
-	[ $? -ne 0 ] && exit 1
+	#
+	# Register pkg in plist file and add automatic installation
+	# object if requested.
+	#
+	local regpkgdb_flags=
+	if [ -n "$automatic" ]; then
+		regpkgdb_flags="-a"
+	fi
+	$XBPS_REGPKGDB_CMD $regpkgdb_flags register \
+		$pkgname $version "$short_desc" || exit 1
 
 	#
 	# Run template postinstall helpers if requested.
@@ -129,6 +138,8 @@ unstow_pkg()
 
 	# Remove metadata dir.
 	rm -rf $XBPS_PKGMETADIR/$pkgname
+
+	# Unregister pkg from plist file.
 	$XBPS_REGPKGDB_CMD unregister $pkgname $ver
 
 	return $?

@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008 Juan Romero Pardines.
+# Copyright (c) 2008-2009 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,7 @@ install_pkg()
 {
 	local pkg=
 	local curpkgn="$1"
+	local automatic="$2"
 	local cdestdir=
 	local cur_tmpl="$XBPS_TEMPLATESDIR/$curpkgn/template"
 
@@ -117,7 +118,7 @@ install_pkg()
 	#
 	if [ -z "$install_destdir_target" ]; then
 		. $XBPS_SHUTILSDIR/stow_funcs.sh
-		stow_pkg $pkg
+		stow_pkg $pkg $automatic
 	fi
 }
 
