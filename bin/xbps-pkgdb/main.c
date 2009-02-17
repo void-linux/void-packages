@@ -56,6 +56,8 @@ usage(void)
 	"    sanitize-plist\t<plist>\n"
 	"    unregister\t\t<pkgname> <version>\n"
 	"    version\t\t<pkgname>\n"
+	"    getpkgversion\t<string>\n"
+	"    getpkgname\t\t<string>\n"
 	"  Options shared by all actions:\n"
 	"    -r\t\t\t<rootdir>\n"
 	"\n"
@@ -63,7 +65,9 @@ usage(void)
 	"    $ xbps-pkgdb register pkgname 2.0 \"A short description\"\n"
 	"    $ xbps-pkgdb sanitize-plist /blah/foo.plist\n"
 	"    $ xbps-pkgdb unregister pkgname 2.0\n"
-	"    $ xbps-pkgdb version pkgname\n");
+	"    $ xbps-pkgdb version pkgname\n"
+	"    $ xbps-pkgdb getpkgversion foo-2.0\n"
+	"    $ xbps-pkgdb getpkgname foo-2.0\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -72,7 +76,7 @@ main(int argc, char **argv)
 {
 	prop_dictionary_t dbdict = NULL, pkgdict;
 	const char *version;
-	char *dbfile, *in_chroot_env, *root = NULL;
+	char *dbfile, *pkgname, *in_chroot_env, *root = NULL;
 	bool in_chroot = false;
 	int c, rv = 0;
 
@@ -177,6 +181,22 @@ main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 		}
 		write_plist_file(dbdict, argv[1]);
+
+	} else if (strcasecmp(argv[0], "getpkgversion") == 0) {
+		/* Returns the version of a pkg string */
+		if (argc != 2)
+			usage();
+
+		printf("%s\n", xbps_get_pkg_version(argv[1]));
+
+	} else if (strcasecmp(argv[0], "getpkgname") == 0) {
+		/* Returns the name of a pkg string */
+		if (argc != 2)
+			usage();
+
+		pkgname = xbps_get_pkg_name(argv[1]);
+		printf("%s\n", pkgname);
+		free(pkgname);
 
 	} else {
 		usage();
