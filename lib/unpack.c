@@ -199,6 +199,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 		if (strcmp(prepost, archive_entry_pathname(entry)) == 0) {
 			actgt = true;
 			printf("\n");
+			(void)fflush(stdout);
 
 			archive_entry_set_pathname(entry, buf);
 
@@ -222,13 +223,13 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 		 */
 		rv = archive_read_extract(ar, entry, lflags);
 		if (rv != 0 && rv != EEXIST) {
-			printf("\ncouldn't unpack %s (%s), exiting!\n",
+			printf("ERROR: couldn't unpack %s (%s), exiting!\n",
 			    archive_entry_pathname(entry), strerror(errno));
 			(void)fflush(stdout);
 			break;
 		} else if (rv == EEXIST) {
 			if (flags & XBPS_UNPACK_VERBOSE) {
-				printf("\nignoring existent component %s.\n",
+				printf("WARNING: ignoring existent path: %s.\n",
 				    archive_entry_pathname(entry));
 				(void)fflush(stdout);
 			}
