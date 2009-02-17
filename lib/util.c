@@ -48,7 +48,7 @@ xbps_check_is_installed_pkg(const char *pkg)
 
 	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
 	if (plist == NULL)
-		return EINVAL;
+		return -1;
 
 	pkgname = xbps_get_pkg_name(pkg);
 	reqver = xbps_get_pkg_version(pkg);
@@ -77,7 +77,7 @@ xbps_check_is_installed_pkg(const char *pkg)
 	assert(instver != NULL);
 
 	/* Compare installed and required version. */
-	rv = xbps_cmpver_versions(instver, reqver) > 0 ? 1 : 0;
+	rv = xbps_cmpver_versions(instver, reqver);
 
 	free(pkgname);
 	free(plist);
