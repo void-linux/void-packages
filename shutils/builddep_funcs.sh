@@ -54,6 +54,8 @@ install_pkg_deps()
 
         run_template $curpkgname
 
+	echo "==> Installing $saved_prevpkg dependency: $curpkg"
+
 	check_build_depends_pkg $curpkg
 	if [ $? -eq 0 ]; then
 		echo "==> Dependency $curpkgname requires:"
@@ -86,13 +88,12 @@ install_pkg_deps()
                         install_pkg_deps $j $curpkg
                         prev_pkg="$j"
 		else
-			echo "==> Installing $curpkgname dependency: $j"
+			echo "=> Installing $curpkgname dependency: $j"
 			jname=$(xbps-pkgdb getpkgname ${j})
 			install_pkg $jname
 		fi
         done
 
-	echo "==> Installing $saved_prevpkg dependency: $curpkg"
 	install_pkg $curpkgname
 }
 
@@ -140,7 +141,7 @@ install_dependencies_pkg()
 
 		check_build_depends_pkg $i
 		if [ $? -eq 1 ]; then
-			echo "==> Installing $lpkgname dependency: $ipkgname"
+			msg_normal "Installing $lpkgname dependency: $ipkgname"
 			install_pkg $ipkgname
 		else
 			install_pkg_deps $i $pkg
