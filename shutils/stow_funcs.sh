@@ -65,10 +65,7 @@ stow_pkg()
 	#
 	# Run template postinstall helpers if requested.
 	#
-	if [ "$pkgname" != "${pkg%%-$version}" ]; then
-		. $XBPS_TEMPLATESDIR/${pkg%%-$version}/template
-	fi
-
+	run_template $pkgname
 	for i in ${postinstall_helpers}; do
 		local pihf="$XBPS_HELPERSDIR/$i"
 		[ -f "$pihf" ] && . $pihf

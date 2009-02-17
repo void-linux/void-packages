@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008 Juan Romero Pardines.
+# Copyright (c) 2008-2009 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -25,6 +25,15 @@
 
 . $XBPS_SHUTILSDIR/tmpl_funcs.sh
 
+run_template()
+{
+	local pkg="$1"
+
+	if [ "$pkgname" != "$pkg" ]; then
+		reset_tmpl_vars
+		. $XBPS_TEMPLATESDIR/$pkg/template
+	fi
+}
 #
 # Recursive function that founds dependencies in all required
 # packages.
@@ -32,27 +41,28 @@
 add_dependency_tolist()
 {
 	local curpkg="$1"
+	local curpkgname=
 	local j=
+	local jver=
+	local jname=
 
 	[ -z "$curpkg" ] && return 1
 	[ -n "$prev_pkg" ] && curpkg=$prev_pkg
 
-	if [ "$pkgname" != "${curpkg%-[0-9]*.*}" ]; then
-		reset_tmpl_vars
-		. $XBPS_TEMPLATESDIR/${curpkg%-[0-9]*.*}/template
-	fi
+	curpkgname=$(xbps-pkgdb getpkgname ${curpkg})
+	run_template $curpkgname
 
 	for j in ${build_depends}; do
 		#
 		# Check if dep already installed.
 		#
-		check_installed_pkg $j ${j##[aA-zZ]*-}
+		check_installed_pkg $j
 		#
 		# If dep is already installed, check one more time
 		# if all its deps are there and continue.
 		#
 		if [ $? -eq 0 ]; then
-			install_builddeps_required_pkg $j
+			#install_builddeps_required_pkg $j
 			installed_deps_list="$j $installed_deps_list"
 			continue
 		fi
@@ -62,7 +72,7 @@ add_dependency_tolist()
 		#
 		# Check if dependency needs more deps.
 		#
-		check_build_depends_pkg ${j%-[0-9]*.*}
+		check_build_depends_pkg $j
 		if [ $? -eq 0 ]; then
 			add_dependency_tolist $j
 			prev_pkg="$j"
@@ -127,8 +137,10 @@ install_dependencies_pkg()
 {
 	local pkg="$1"
 	local i=
-	local ipkg=
+	local ipkgname=
 	local iversion=
+	local reqname=
+	local reqvers=
 	deps_list=
 	installed_deps_list=
 
@@ -145,22 +157,26 @@ install_dependencies_pkg()
 
 	msg_normal "Required minimal deps for $(basename $pkg):"
 	for i in ${installed_deps_list}; do
-		ipkg=${i%-[0-9]*.*}
-		iversion="$($XBPS_REGPKGDB_CMD version $ipkg)"
-		echo "	$ipkg >= ${i##[aA-zZ]*-}: found $ipkg-$iversion."
+		ipkgname=$(xbps-pkgdb getpkgname ${i})
+		iversion=$($XBPS_REGPKGDB_CMD version $ipkgname)
+		reqvers=$(xbps-pkgdb getpkgversion ${i})
+		echo "	$ipkgname >= $reqvers: found $ipkgname-$iversion."
 	done
 
 	for i in ${deps_list}; do
-		echo "	${i%-[0-9]*.*} >= ${i##[aA-zZ]*-}: not found."
+		reqname=$(xbps-pkgdb getpkgname ${i})
+		reqvers=$(xbps-pkgdb getpkgversion ${i})
+		echo "	$reqname >= $reqvers: not found."
 	done
 
 	for i in ${deps_list}; do
 		# skip dup deps
-		check_installed_pkg $i ${i##[aA-zZ]*-}
+		check_installed_pkg $i
 		[ $? -eq 0 ] && continue
 		# continue installing deps
 		msg_normal "Installing $pkg dependency: $i."
-		install_pkg ${i%-[0-9]*.*}
+		ipkgname=$(xbps-pkgdb getpkgname ${i})
+		install_pkg $ipkgname
 	done
 
 	unset installed_deps_list
@@ -170,19 +186,20 @@ install_dependencies_pkg()
 install_builddeps_required_pkg()
 {
 	local pkg="$1"
+	local pkgname=$(xbps-pkgdb getpkgname ${pkg})
 	local dep=
+	local depname=
 
 	[ -z "$pkg" ] && return 1
 
-	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
-		. $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}/template
-	fi
+	run_template $pkgname
 
 	for dep in ${build_depends}; do
-		check_installed_pkg $dep ${dep##[aA-zZ]*-}
+		check_installed_pkg $dep
 		if [ $? -ne 0 ]; then
 			msg_normal "Installing $pkg dependency: $dep."
-			install_pkg ${dep%-[0-9]*.*}
+			depname=$(xbps-pkgdb getpkgname ${dep})
+			install_pkg $depname
 		fi
 	done
 }
@@ -194,15 +211,15 @@ install_builddeps_required_pkg()
 check_installed_pkg()
 {
 	local pkg="$1"
-	local reqver="$2"
+	local pkgname=
+	local reqver=
 	local iver=
 
-	[ -z "$pkg" -o -z "$reqver" ] && return 1
+	[ -z "$pkg" ] && return 1
 
-	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
-		reset_tmpl_vars
-		. $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}/template
-	fi
+	pkgname=$(xbps-pkgdb getpkgname $pkg)
+	reqver=$(xbps-pkgdb getpkgversion $pkg)
+	run_template $pkgname
 
 	iver="$($XBPS_REGPKGDB_CMD version $pkgname)"
 	if [ -n "$iver" ]; then
@@ -220,13 +237,11 @@ check_installed_pkg()
 check_build_depends_pkg()
 {
 	local pkg="$1"
+	local pkgname=$(xbps-pkgdb getpkgname ${pkg})
 
 	[ -z $pkg ] && return 1
 
-	if [ "$pkgname" != "${pkg%-[0-9]*.*}" ]; then
-		reset_tmpl_vars
-		. $XBPS_TEMPLATESDIR/${pkg%-[0-9]*.*}/template
-	fi
+	run_template $pkgname
 
 	if [ -n "$build_depends" ]; then
 		return 0

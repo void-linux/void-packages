@@ -237,7 +237,7 @@ umount_chroot_fs()
 [ -n "$base_chroot" ] && return 0
 
 . $XBPS_SHUTILSDIR/builddep_funcs.sh
-check_installed_pkg xbps-base-chroot 0.1
+check_installed_pkg xbps-base-chroot-0.1
 if [ $? -ne 0 ]; then
 	echo "The '$pkgname' package requires to be installed in a chroot."
 	echo "Please install the 'xbps-base-chroot' package and try again."
