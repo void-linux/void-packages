@@ -117,7 +117,9 @@ xbps_get_pkg_version(const char *pkg)
 
 	/* Get the required version */
 	tmp = strrchr(pkg, '-');
-	assert(tmp != NULL);
+	if (tmp == NULL)
+		return NULL;
+
 	return tmp + 1; /* skip first '-' */
 }
 
@@ -132,7 +134,9 @@ xbps_get_pkg_name(const char *pkg)
 
 	/* Get package name */
 	tmp = strrchr(pkg, '-');
-	assert(tmp != NULL);
+	if (tmp == NULL)
+		return NULL;
+
 	len = strlen(pkg) - strlen(tmp) + 1;
 
 	pkgname = malloc(len);
