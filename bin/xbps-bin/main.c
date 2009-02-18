@@ -68,7 +68,7 @@ list_pkgs_in_dict(prop_object_t obj, void *arg, bool *loop_done)
 {
 	const char *pkgname, *version, *short_desc;
 	(void)arg;
-	(void)*loop_done;
+	(void)loop_done;
 
 	assert(prop_object_type(obj) == PROP_TYPE_DICTIONARY);
 
