@@ -128,7 +128,8 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 	prop_object_iterator_t iter;
 	struct sorted_dependency *sdep, *sdep2;
 	uint32_t maxprio = 0;
-	size_t curidx = 0, indirdepscnt = 0, dirdepscnt = 0, cnt = 0;
+	size_t indirdepscnt = 0, dirdepscnt = 0, cnt = 0;
+	ssize_t curidx = 0;
 	const char *curpkg, *rundep;
 	char *pkgname;
 	int rv = 0;

@@ -67,6 +67,8 @@ static int
 list_pkgs_in_dict(prop_object_t obj, void *arg, bool *loop_done)
 {
 	const char *pkgname, *version, *short_desc;
+	(void)arg;
+	(void)*loop_done;
 
 	assert(prop_object_type(obj) == PROP_TYPE_DICTIONARY);
 
@@ -94,6 +96,8 @@ static int
 show_missing_dep_cb(prop_object_t obj, void *arg, bool *loop_done)
 {
 	const char *pkgname, *version;
+	(void)arg;
+	(void)loop_done;
 
 	prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
 	prop_dictionary_get_cstring_nocopy(obj, "version", &version);
@@ -170,11 +174,14 @@ main(int argc, char **argv)
 		if (strcasecmp(argv[0], "install") == 0) {
 			rv = xbps_install_binary_pkg(argv[1], root, flags);
 			if (rv != 0 && rv != EEXIST) {
-				dict = xbps_get_pkg_deps_dictionary();
-				if (dict == NULL && errno == ENOENT)
+				if (rv == ENOENT) {
 					printf("Unable to locate %s in "
 					    "repository pool.\n", argv[1]);
-				else if (dict && errno == ENOENT)
+					exit(EXIT_FAILURE);
+				}
+
+				dict = xbps_get_pkg_deps_dictionary();
+				if (dict && errno == ENOENT)
 					show_missing_deps(dict, argv[1]);
 
 				exit(EXIT_FAILURE);

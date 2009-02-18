@@ -591,15 +591,19 @@ find_pkg_deps_from_repo(prop_dictionary_t repo, prop_dictionary_t pkg,
 }
 
 int
-xbps_install_pkg_deps(prop_dictionary_t pkg, const char *destdir, int flags)
+xbps_install_pkg_deps(const char *pkgname, const char *destdir, int flags)
 {
 	prop_array_t required, missing;
 	prop_object_t obj;
 	prop_object_iterator_t iter;
 	int rv = 0;
 
-	assert(pkg != NULL);
-
+	/*
+	 * If origin object in chaindeps is not the same, bail out.
+	 */
+	obj = prop_dictionary_get(chaindeps, "origin");
+	if (obj == NULL || !prop_string_equals_cstring(obj, pkgname))
+		return EINVAL;
 	/*
 	 * If there are missing deps, bail out.
 	 */

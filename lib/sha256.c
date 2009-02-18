@@ -104,7 +104,7 @@
 
 /*** SHA-XYZ INITIAL HASH VALUES AND CONSTANTS ************************/
 /* Hash constant words K for SHA-256: */
-const static sha2_word32 K256[64] = {
+static const sha2_word32 K256[64] = {
 	0x428a2f98UL, 0x71374491UL, 0xb5c0fbcfUL, 0xe9b5dba5UL,
 	0x3956c25bUL, 0x59f111f1UL, 0x923f82a4UL, 0xab1c5ed5UL,
 	0xd807aa98UL, 0x12835b01UL, 0x243185beUL, 0x550c7dc3UL,
@@ -124,7 +124,7 @@ const static sha2_word32 K256[64] = {
 };
 
 /* Initial hash value H for SHA-256: */
-const static sha2_word32 sha256_initial_hash_value[8] = {
+static const sha2_word32 sha256_initial_hash_value[8] = {
 	0x6a09e667UL,
 	0xbb67ae85UL,
 	0x3c6ef372UL,

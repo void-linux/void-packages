@@ -166,7 +166,7 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	/*
 	 * Install all required dependencies and the package itself.
 	 */
-	if ((rv = xbps_install_pkg_deps(pkgrd, destdir, cb->flags)) == 0) {
+	if ((rv = xbps_install_pkg_deps(pkgname, destdir, cb->flags)) == 0) {
 		rv = xbps_install_binary_pkg_fini(repod, pkgrd, destdir,
 		    cb->flags);
                 prop_object_release(repod);

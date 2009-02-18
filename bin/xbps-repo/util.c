@@ -127,6 +127,9 @@ search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 	const char *repofile;
 	char *plist;
 
+	(void)arg;
+	(void)loop_done;
+
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
 	/* Get the location of pkgindex file. */
@@ -244,6 +247,9 @@ show_pkg_namedesc(prop_object_t obj, void *arg, bool *loop_done)
 {
 	const char *pkgname, *desc, *ver, *string = arg;
 
+	(void)arg;
+	(void)loop_done;
+
 	assert(prop_object_type(obj) == PROP_TYPE_DICTIONARY);
 	assert(string != NULL);
 
@@ -263,6 +269,8 @@ list_strings_in_array2(prop_object_t obj, void *arg, bool *loop_done)
 {
 	static uint16_t count;
 	const char *sep;
+
+	(void)loop_done;
 
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
@@ -286,6 +294,8 @@ list_strings_in_array2(prop_object_t obj, void *arg, bool *loop_done)
 int
 list_strings_in_array(prop_object_t obj, void *arg, bool *loop_done)
 {
+	(void)arg;
+	(void)loop_done;
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
 	printf("%s\n", prop_string_cstring_nocopy(obj));
