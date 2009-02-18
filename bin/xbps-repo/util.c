@@ -137,13 +137,15 @@ search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 	assert(repofile != NULL);
 
 	plist = xbps_get_pkg_index_plist(repofile);
-	if (plist == NULL)
-		return EINVAL;
+	if (plist == NULL) {
+		errno = ENOENT;
+		return 0;
+	}
 
 	dict = prop_dictionary_internalize_from_file(plist);
 	if (dict == NULL) {
 		free(plist);
-		return EINVAL;
+		return 0;
 	}
 
 	printf("From %s repository ...\n", repofile);
@@ -210,7 +212,8 @@ show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 	dict = prop_dictionary_internalize_from_file(plist);
 	if (dict == NULL || prop_dictionary_count(dict) == 0) {
 		free(plist);
-		return EINVAL;
+		errno = ENOENT;
+		return 0;
 	}
 
 	pkgdict = xbps_find_pkg_in_dict(dict, "packages", arg);
