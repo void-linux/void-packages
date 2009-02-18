@@ -158,3 +158,13 @@ prepare_tmpl()
 		export PATH="$PATH:/usr/local/sbin"
 	fi
 }
+
+run_template()
+{
+	local pkg="$1"
+
+	if [ "$pkgname" != "$pkg" ]; then
+		reset_tmpl_vars
+		. $XBPS_TEMPLATESDIR/$pkg/template
+	fi
+}

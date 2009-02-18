@@ -25,16 +25,6 @@
 
 . $XBPS_SHUTILSDIR/tmpl_funcs.sh
 
-run_template()
-{
-	local pkg="$1"
-
-	if [ "$pkgname" != "$pkg" ]; then
-		reset_tmpl_vars
-		. $XBPS_TEMPLATESDIR/$pkg/template
-	fi
-}
-
 #
 # Recursive function that installs all direct and indirect
 # dependencies of a package.
