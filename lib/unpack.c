@@ -204,7 +204,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 			archive_entry_set_pathname(entry, buf);
 
 			rv = archive_read_extract(ar, entry, lflags);
-			if (rv != 0 && rv != EEXIST)
+			if (rv != 0 && errno != EEXIST)
 				break;
 
 			if ((rv = xbps_file_exec(buf, destdir, "pre",
@@ -222,12 +222,12 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 		 * Extract all data from the archive now.
 		 */
 		rv = archive_read_extract(ar, entry, lflags);
-		if (rv != 0 && rv != EEXIST) {
+		if (rv != 0 && errno != EEXIST) {
 			printf("ERROR: couldn't unpack %s (%s), exiting!\n",
 			    archive_entry_pathname(entry), strerror(errno));
 			(void)fflush(stdout);
 			break;
-		} else if (rv == EEXIST) {
+		} else if (rv != 0 && errno == EEXIST) {
 			if (flags & XBPS_UNPACK_VERBOSE) {
 				printf("WARNING: ignoring existent path: %s.\n",
 				    archive_entry_pathname(entry));
