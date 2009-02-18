@@ -71,17 +71,11 @@ install_pkg_deps()
 
                 [ -n "$prev_pkg" ] && unset prev_pkg
                 #
-                # Check if dependency needs more deps.
+		# Iterate again, this will check if there are more
+		# required deps for current pkg.
                 #
-                check_build_depends_pkg $j
-                if [ $? -eq 0 ]; then
-                        install_pkg_deps $j $curpkg
-                        prev_pkg="$j"
-		else
-			echo "=> Installing $curpkgname dependency: $j"
-			jname=$(xbps-pkgdb getpkgname ${j})
-			install_pkg $jname auto
-		fi
+                install_pkg_deps $j $curpkg
+                prev_pkg="$j"
         done
 
 	install_pkg $curpkgname auto
