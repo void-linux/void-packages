@@ -90,8 +90,11 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir, int flags)
 	if (destdir) {
 		if ((rv = chdir(destdir)) != 0)
 			return errno;
-	} else
+	} else {
+		if ((rv = chdir("/")) != 0)
+			return errno;
 		destdir = "NOTSET";
+	}
 
 	cb.pkgname = pkgname;
 	cb.destdir = destdir;
