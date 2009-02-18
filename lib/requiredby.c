@@ -49,6 +49,9 @@ add_pkg_into_requiredby(prop_dictionary_t pkgd, const char *reqname)
 			return ENOMEM;
 	}
 
+	if (xbps_find_string_in_array(array, reqname))
+		return EEXIST;
+
 	reqstr = prop_string_create_cstring(reqname);
 	if (reqstr == NULL) {
 		if (alloc)
