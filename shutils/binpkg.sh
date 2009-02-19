@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008 Juan Romero Pardines.
+# Copyright (c) 2008-2009 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -23,6 +23,23 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 
+write_metadata_flist_header()
+{
+	local file="$1"
+
+	[ -z "$file" ] && return 1
+
+	cat > $file <<_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+<key>filelist</key>
+<array>
+_EOF
+
+}
+
 #
 # This function writes the metadata files into package's destdir,
 # these will be used for binary packages.
@@ -31,8 +48,8 @@ xbps_write_metadata_pkg()
 {
 	local destdir=$XBPS_DESTDIR/$pkgname-$version
 	local metadir=$destdir/var/db/xbps/metadata/$pkgname
-	local prioinst=
-	local arch=
+	local f i j arch prioinst TMPFLIST TMPFPLIST
+	local fpattern="s|$destdir||g;s|^\./$||g;/^$/d"
 
 	if [ ! -d "$destdir" ]; then
 		echo "ERROR: $pkgname not installed into destdir."
@@ -51,16 +68,55 @@ xbps_write_metadata_pkg()
 		arch=$xbps_machine
 	fi
 
-	# Write the files list.
-	local TMPFLIST=$(mktemp -t flist.XXXXXXXXXX) || exit 1
-	# First add the regular files.
-	find -L $destdir -type f | \
-		sed -e "s|$destdir||g;s|^\/$||g;/^$/d" > $TMPFLIST
-	# and add the directories at the end.
-	find -L $destdir -type d | sort -ur | \
-		sed -e "s|$destdir||g;s|^/$||g;/^$/d" >> $TMPFLIST
+	# Write the files.plist file.
+	TMPFLIST=$(mktemp -t flist.XXXXXXXXXX) || exit 1
+	TMPFPLIST=$(mktemp -t fplist.XXXXXXXXXX) || exit 1
 
-	# Write the property list file.
+	msg_normal "Writing package metadata for $pkgname-$version..."
+
+	write_metadata_flist_header $TMPFPLIST
+
+	# First add the regular files.
+	for f in $(find -L $destdir -type f); do
+		j=$(echo $f|sed -e "$fpattern")
+		[ "$j" = "" ] && continue
+		printf "$j\n" >> $TMPFLIST
+		printf "<dict>\n" >> $TMPFPLIST
+		printf "<key>file</key>\n" >> $TMPFPLIST
+		printf "<string>$j</string>\n" >> $TMPFPLIST
+		printf "<key>sha256</key>\n" >> $TMPFPLIST
+		printf "<string>$(xbps-digest $f)</string>\n"  >> $TMPFPLIST
+		for i in ${conf_files}; do
+			if [ "$j" = "$i" ]; then
+				printf "<key>conf_file</key>\n"  >> $TMPFPLIST
+				printf "<true/>\n" >> $TMPFPLIST
+				break
+			fi
+		done
+		printf "</dict>\n" >> $TMPFPLIST
+	done
+
+	# Add directories at the end.
+	for f in $(find -L $destdir -type d|sort -ur); do
+		j=$(echo $f|sed -e "$fpattern")
+		[ "$j" = "" ] && continue
+		printf "$j\n" >> $TMPFLIST
+		printf "<dict>\n" >> $TMPFPLIST
+		printf "<key>dir</key>\n" >> $TMPFPLIST
+		printf "<string>$j</string>\n" >> $TMPFPLIST
+		for i in ${keep_dirs}; do
+			if [ "$j" = "$i" ]; then
+				printf "<key>keep</key>\n" >> $TMPFPLIST
+				printf "<true/>\n" >> $TMPFPLIST
+				break
+			fi
+		done
+		printf "</dict>\n" >> $TMPFPLIST
+	done
+	printf "</array>\n</dict>\n</plist>\n" >> $TMPFPLIST
+	sed -i -e /^$/d $TMPFLIST
+
+	# Write the props.plist file.
 	local TMPFPROPS=$(mktemp -t fprops.XXXXXXXXXX) || exit 1
 
 	cat > $TMPFPROPS <<_EOF
@@ -68,50 +124,50 @@ xbps_write_metadata_pkg()
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>pkgname</key>
-	<string>$pkgname</string>
-	<key>version</key>
-	<string>$version</string>
-	<key>architecture</key>
-	<string>$arch</string>
-	<key>priority</key>
-	<integer>$prioinst</integer>
-	<key>installed_size</key>
-	<integer>$(du -sb $destdir|awk '{print $1}')</integer>
-	<key>maintainer</key>
-	<string>$(echo $maintainer|sed -e 's|<|[|g;s|>|]|g')</string>
-	<key>short_desc</key>
-	<string>$short_desc</string>
-	<key>long_desc</key>
-	<string>$long_desc</string>
+<key>pkgname</key>
+<string>$pkgname</string>
+<key>version</key>
+<string>$version</string>
+<key>architecture</key>
+<string>$arch</string>
+<key>priority</key>
+<integer>$prioinst</integer>
+<key>installed_size</key>
+<integer>$(du -sb $destdir|awk '{print $1}')</integer>
+<key>maintainer</key>
+<string>$(echo $maintainer|sed -e 's|<|[|g;s|>|]|g')</string>
+<key>short_desc</key>
+<string>$short_desc</string>
+<key>long_desc</key>
+<string>$long_desc</string>
 _EOF
 	# Dependencies
 	if [ -n "$run_depends" ]; then
-		printf "\t<key>run_depends</key>\n" >> $TMPFPROPS
-		printf "\t<array>\n" >> $TMPFPROPS
+		printf "<key>run_depends</key>\n" >> $TMPFPROPS
+		printf "<array>\n" >> $TMPFPROPS
 		for f in ${run_depends}; do
-			printf "\t\t<string>$f</string>\n" >> $TMPFPROPS
+			printf "<string>$f</string>\n" >> $TMPFPROPS
 		done
-		printf "\t</array>\n" >> $TMPFPROPS
+		printf "</array>\n" >> $TMPFPROPS
 	fi
 
 	# Configuration files
 	if [ -n "$conf_files" ]; then
-		printf "\t<key>conf_files</key>\n" >> $TMPFPROPS
-		printf "\t<array>\n" >> $TMPFPROPS
+		printf "<key>conf_files</key>\n" >> $TMPFPROPS
+		printf "<array>\n" >> $TMPFPROPS
 		for f in ${conf_files}; do
-			printf "\t\t<string>$f</string>\n" >> $TMPFPROPS
+			printf "<string>$f</string>\n" >> $TMPFPROPS
 		done
-		printf "\t</array>\n" >> $TMPFPROPS
+		printf "</array>\n" >> $TMPFPROPS
 	fi
 	# Keep directories while removing.
 	if [ -n "$keep_dirs" ]; then
-		printf "\t<key>keep_dirs</key>\n" >> $TMPFPROPS
-		printf "\t<array>\n" >> $TMPFPROPS
+		printf "<key>keep_dirs</key>\n" >> $TMPFPROPS
+		printf "<array>\n" >> $TMPFPROPS
 		for f in ${keep_dirs}; do
-			printf "\t\t<string>$f</string>\n" >> $TMPFPROPS
+			printf "<string>$f</string>\n" >> $TMPFPROPS
 		done
-		printf "\t</array>\n" >> $TMPFPROPS
+		printf "</array>\n" >> $TMPFPROPS
 	fi
 
 	# Terminate the property list file.
@@ -128,9 +184,12 @@ _EOF
 
 	# Write metadata files and cleanup.
 	cp -f $TMPFLIST $metadir/flist
+	cp -f $TMPFPLIST $metadir/files.plist
 	cp -f $TMPFPROPS $metadir/props.plist
+	$XBPS_REGPKGDB_CMD sanitize-plist $metadir/files.plist
+	$XBPS_REGPKGDB_CMD sanitize-plist $metadir/props.plist
 	chmod 644 $metadir/*
-	rm -f $TMPFLIST $TMPFPROPS
+	rm -f $TMPFLIST $TMPFPLIST $TMPFPROPS
 
 	if [ -f "$XBPS_TEMPLATESDIR/$pkgname/prepost-inst" ]; then
 		cp -f $XBPS_TEMPLATESDIR/$pkgname/prepost-inst \
@@ -154,6 +213,8 @@ xbps_make_binpkg()
 	local binpkg=
 	local pkgdir=
 	local arch=
+	local use_sudo=
+
 	cd $destdir || exit 1
 
 	if [ -n "$noarch" ]; then
@@ -162,10 +223,19 @@ xbps_make_binpkg()
 		arch=$xbps_machine
 	fi
 
+	if [ -n "$base_chroot" ]; then
+		use_sudo=no
+	else
+		use_sudo=yes
+	fi
+
 	binpkg=$pkgname-$version.$arch.xbps
 	pkgdir=$XBPS_PACKAGESDIR/$arch
 
-	run_rootcmd yes tar cfjp $XBPS_DESTDIR/$binpkg .
+	run_rootcmd $use_sudo tar cfjp $XBPS_DESTDIR/$binpkg .
+	# Disabled for now.
+	#		--exclude "./var/db/xbps/metadata/*/flist" .
+	#
 	if [ $? -eq 0 ]; then
 		[ ! -d $pkgdir ] && mkdir -p $pkgdir
 		mv -f $XBPS_DESTDIR/$binpkg $pkgdir
