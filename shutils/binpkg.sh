@@ -67,7 +67,6 @@ xbps_write_metadata_pkg()
 
 	if [ -n "${subpackages}" ]; then
 		run_template ${sourcepkg}
-		rm -rf $XBPS_DESTDIR/${sourcepkg}-${version}/*
 		unset run_depends
 	fi
 	for subpkg in ${subpackages}; do
