@@ -229,12 +229,12 @@ build-pkg)
 				continue
 			fi
 			setup_tmpl $f
-			xbps_make_binpkg
+			xbps_make_binpkg $f
 			reset_tmpl_vars
 		done
 	else
 		setup_tmpl $2
-		xbps_make_binpkg
+		xbps_make_binpkg $2
 	fi
 	;;
 chroot)

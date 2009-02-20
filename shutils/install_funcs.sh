@@ -74,6 +74,18 @@ install_src_phase()
 	touch -f $XBPS_INSTALL_DONE
 
 	#
+	# Build subpackages if found.
+	#
+	for subpkg in ${subpackages}; do
+		msg_normal "Preparing $pkgname subpackage: $pkgname-$subpkg"
+		. $XBPS_TEMPLATESDIR/$pkgname/$subpkg.template
+		pkgname=${sourcepkg}-${subpkg}
+		run_func do_install
+		run_template ${sourcepkg}
+	done
+	[ -n "$subpackages" ] && setup_tmpl ${sourcepkg}
+
+	#
 	# Remove $wrksrc if -C not specified.
 	#
 	if [ -d "$wrksrc" -a -z "$dontrm_builddir" ]; then

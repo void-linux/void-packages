@@ -40,11 +40,33 @@ _EOF
 
 }
 
+xbps_write_metadata_pkg()
+{
+	local subpkg=
+
+	for subpkg in ${subpackages}; do
+		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
+		pkgname=${sourcepkg}-${subpkg}
+		xbps_write_metadata_pkg_real
+		run_template ${sourcepkg}
+	done
+
+	if [ -n "${subpackages}" ]; then
+		run_template ${sourcepkg}
+		rm -rf $XBPS_DESTDIR/${sourcepkg}-${version}/*
+		unset run_depends
+	fi
+	for subpkg in ${subpackages}; do
+		run_depends="$run_depends ${sourcepkg}-${subpkg}-${version}"
+	done
+	xbps_write_metadata_pkg_real
+}
+
 #
 # This function writes the metadata files into package's destdir,
 # these will be used for binary packages.
 #
-xbps_write_metadata_pkg()
+xbps_write_metadata_pkg_real()
 {
 	local destdir=$XBPS_DESTDIR/$pkgname-$version
 	local metadir=$destdir/var/db/xbps/metadata/$pkgname
@@ -203,11 +225,30 @@ _EOF
 	fi
 }
 
+xbps_make_binpkg()
+{
+	local pkg="$1"
+	local subpkg=
+
+	for subpkg in ${subpackages}; do
+		if [ "$pkg" = "$pkgname-$subpkg" ]; then
+			. $XBPS_TEMPLATESDIR/$pkgname/$subpkg.template
+			pkgname=${sourcepkg}-${subpkg}
+			xbps_make_binpkg_real
+			return $?
+		fi
+		run_template ${sourcepkg}
+	done
+
+	xbps_make_binpkg_real
+	return $?
+}
+
 #
 # This function builds a binary package from an installed xbps
 # package in destdir.
 #
-xbps_make_binpkg()
+xbps_make_binpkg_real()
 {
 	local destdir=$XBPS_DESTDIR/$pkgname-$version
 	local binpkg=

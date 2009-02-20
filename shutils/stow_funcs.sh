@@ -23,11 +23,29 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 
+stow_pkg()
+{
+	local pkg="$1"
+	local automatic="$2"
+	local subpkg=
+
+	for subpkg in ${subpackages}; do
+		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
+		pkgname=${sourcepkg}-${subpkg}
+		stow_pkg_real ${pkg} ${automatic}
+		run_template ${sourcepkg}
+	done
+
+	stow_pkg_real ${pkg} ${automatic}
+
+	return $?
+}
+
 #
 # Stow a package, i.e copy files from destdir into masterdir
 # and register pkg into the package database.
 #
-stow_pkg()
+stow_pkg_real()
 {
 	local pkg="$1"
 	local automatic="$2"
@@ -74,7 +92,6 @@ stow_pkg()
 	#
 	# Run template postinstall helpers if requested.
 	#
-	run_template $pkgname
 	for i in ${postinstall_helpers}; do
 		local pihf="$XBPS_HELPERSDIR/$i"
 		[ -f "$pihf" ] && . $pihf
