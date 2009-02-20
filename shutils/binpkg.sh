@@ -42,14 +42,28 @@ _EOF
 
 xbps_write_metadata_pkg()
 {
+	local pkg="$1"
 	local subpkg=
 
 	for subpkg in ${subpackages}; do
+		if [ "${pkg}" != "${sourcepkg}" ] && \
+		   [ "${pkg}" != "${sourcepkg}-${subpkg}" ]; then
+			continue
+		fi
+		check_installed_pkg ${sourcepkg}-${subpkg}-${version}
+		[ $? -eq 0 ] && continue
+
+		if [ ! -f $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template ]; then
+			msg_error "Cannot find subpackage template!"
+		fi
 		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${sourcepkg}-${subpkg}
 		xbps_write_metadata_pkg_real
 		run_template ${sourcepkg}
+		[ "${pkg}" = "${sourcepkg}-${subpkg}" ] && break
 	done
+
+	[ -n "${subpackages}" ] && [ "$pkg" != "${sourcepkg}" ] && return $?
 
 	if [ -n "${subpackages}" ]; then
 		run_template ${sourcepkg}

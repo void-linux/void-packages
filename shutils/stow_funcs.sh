@@ -30,10 +30,28 @@ stow_pkg()
 	local subpkg=
 
 	for subpkg in ${subpackages}; do
+		if [ "${pkg}" != "${sourcepkg}" ] && \
+		   [ "${pkg}" != "${sourcepkg}-${subpkg}" ]; then
+			continue
+		fi
+		check_installed_pkg ${sourcepkg}-${subpkg}-${version}
+		[ $? -eq 0 ] && continue
+
+		if [ ! -f $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template ]; then
+			msg_error "Cannot find subpackage template!"
+		fi
 		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${sourcepkg}-${subpkg}
-		stow_pkg_real ${pkg} ${automatic}
+		stow_pkg_real ${pkgname} ${automatic}
 		run_template ${sourcepkg}
+		if [ "${pkg}" = "${sourcepkg}-${subpkg}" ]; then
+			#
+			# If it's a subpackage, just remove sourcepkg from
+			# destdir and return, we are done.
+			#
+			rm -rf $XBPS_DESTDIR/${sourcepkg}-${version}
+			return $?
+		fi
 	done
 
 	stow_pkg_real ${pkg} ${automatic}
@@ -50,7 +68,7 @@ stow_pkg_real()
 	local pkg="$1"
 	local automatic="$2"
 	local i=
-	local destdir=$XBPS_DESTDIR/$pkgname-$version
+	local destdir=$XBPS_DESTDIR/$pkg-$version
 
 	[ -z "$pkg" ] && return 2
 
@@ -63,11 +81,9 @@ stow_pkg_real()
 	fi
 
 	if [ -n "$stow_flag" ]; then
-		pkg=$XBPS_TEMPLATESDIR/$pkg/template
 		if [ "$pkgname" != "$pkg" ]; then
-			. $pkg
+			. $XBPS_TEMPLATESDIR/$pkg/template
 		fi
-		pkg=$pkgname-$version
 	fi
 
 	cd $destdir || exit 1
@@ -87,7 +103,7 @@ stow_pkg_real()
 		regpkgdb_flags="-a"
 	fi
 	$XBPS_REGPKGDB_CMD $regpkgdb_flags register \
-		$pkgname $version "$short_desc" || exit 1
+		$pkg $version "$short_desc" || exit 1
 
 	#
 	# Run template postinstall helpers if requested.
@@ -124,7 +140,7 @@ unstow_pkg()
 		msg_error "$pkg is not installed."
 	fi
 
-	cd $XBPS_PKGMETADIR/$pkgname || exit 1
+	cd $XBPS_PKGMETADIR/$pkg || exit 1
 	if [ "$build_style" = "meta-template" ]; then
 		# If it's a metapkg, do nothing.
 		:
@@ -154,10 +170,10 @@ unstow_pkg()
 	fi
 
 	# Remove metadata dir.
-	rm -rf $XBPS_PKGMETADIR/$pkgname
+	rm -rf $XBPS_PKGMETADIR/$pkg
 
 	# Unregister pkg from plist file.
-	$XBPS_REGPKGDB_CMD unregister $pkgname $ver
+	$XBPS_REGPKGDB_CMD unregister $pkg $ver
 
 	return $?
 }

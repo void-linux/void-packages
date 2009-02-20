@@ -32,6 +32,7 @@ install_src_phase()
 	local pkg="$1"
 	local f=
 	local i=
+	local subpkg=
 
 	[ -z $pkg ] && [ -z $pkgname ] && return 1
 	#
@@ -77,11 +78,22 @@ install_src_phase()
 	# Build subpackages if found.
 	#
 	for subpkg in ${subpackages}; do
-		msg_normal "Preparing $pkgname subpackage: $pkgname-$subpkg"
+		if [ "${pkg}" != "${sourcepkg}" ] && \
+		   [ "${pkg}" != "${sourcepkg}-${subpkg}" ]; then
+			continue
+		fi
+		check_installed_pkg ${sourcepkg}-${subpkg}-${version}
+		[ $? -eq 0 ] && continue
+
+		msg_normal "Preparing ${sourcepkg} subpackage: $sourcepkg-$subpkg"
+		if [ ! -f $XBPS_TEMPLATESDIR/$pkgname/$subpkg.template ]; then
+			msg_error "Cannot find subpackage template!"
+		fi
 		. $XBPS_TEMPLATESDIR/$pkgname/$subpkg.template
 		pkgname=${sourcepkg}-${subpkg}
 		run_func do_install
 		run_template ${sourcepkg}
+		[ "$pkg" = "${sourcepkg}-${subpkg}" ] && break
 	done
 	[ -n "$subpackages" ] && setup_tmpl ${sourcepkg}
 

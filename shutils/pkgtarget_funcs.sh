@@ -107,18 +107,18 @@ install_pkg()
 	fi
 
 	. $XBPS_SHUTILSDIR/install_funcs.sh
-	install_src_phase
+	install_src_phase $curpkgn
 
 	# Always write metadata to package's destdir.
 	. $XBPS_SHUTILSDIR/binpkg.sh
-	xbps_write_metadata_pkg
+	xbps_write_metadata_pkg $curpkgn
 
 	#
 	# Do not stow package if it wasn't requested.
 	#
 	if [ -z "$install_destdir_target" ]; then
 		. $XBPS_SHUTILSDIR/stow_funcs.sh
-		stow_pkg $pkg $automatic
+		stow_pkg $curpkgn $automatic
 	fi
 }
 
@@ -144,6 +144,7 @@ list_pkg_files()
 remove_pkg()
 {
 	local pkg="$1"
+	local subpkg=
 	local ver=
 
 	[ -z $pkg ] && msg_error "unexistent package, aborting."
@@ -153,6 +154,12 @@ remove_pkg()
 	fi
 
 	. $XBPS_TEMPLATESDIR/$pkg/template
+	for f in ${subpackages}; do
+		if [ "$pkg" = "${pkgname}-${f}" ]; then
+			pkgname=${pkg}
+			break;
+		fi
+	done
 
 	ver=$($XBPS_REGPKGDB_CMD version $pkg)
 	[ -z "$ver" ] && msg_error "$pkg is not installed."
