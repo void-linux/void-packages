@@ -173,16 +173,15 @@ main(int argc, char **argv)
 		/* Install into root directory by default. */
 		if (strcasecmp(argv[0], "install") == 0) {
 			rv = xbps_install_binary_pkg(argv[1], root, flags);
-			if (rv != 0 && rv != EEXIST) {
-				if (rv == ENOENT) {
+			if (rv != 0) {
+				if (rv == EAGAIN) {
 					printf("Unable to locate %s in "
 					    "repository pool.\n", argv[1]);
-					exit(EXIT_FAILURE);
+				} else if (rv == ENOENT) {
+					dict = xbps_get_pkg_deps_dictionary();
+					if (dict)
+						show_missing_deps(dict, argv[1]);
 				}
-
-				dict = xbps_get_pkg_deps_dictionary();
-				if (dict && errno == ENOENT)
-					show_missing_deps(dict, argv[1]);
 
 				exit(EXIT_FAILURE);
 			}

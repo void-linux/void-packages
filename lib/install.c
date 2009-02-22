@@ -105,8 +105,8 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir, int flags)
 	 */
 	rv = xbps_callback_array_iter_in_repolist(install_binpkg_repo_cb,
 	    (void *)&cb);
-	if (rv == 0 && errno == EAGAIN)
-		return ENOENT;
+	if (rv == 0 && errno != 0)
+		return errno;
 
 	return rv;
 }
