@@ -23,6 +23,8 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 
+. ${XBPS_SHUTILSDIR}/tmpl_funcs.sh
+
 #
 # Installs a pkg by reading its build template file.
 #

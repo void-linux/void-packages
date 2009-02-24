@@ -56,6 +56,7 @@ xbps_write_metadata_pkg()
 		if [ ! -f $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template ]; then
 			msg_error "Cannot find subpackage template!"
 		fi
+		unset run_depends
 		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${sourcepkg}-${subpkg}
 		xbps_write_metadata_pkg_real
@@ -65,13 +66,11 @@ xbps_write_metadata_pkg()
 
 	[ -n "${subpackages}" ] && [ "$pkg" != "${sourcepkg}" ] && return $?
 
-	if [ -n "${subpackages}" ]; then
-		run_template ${sourcepkg}
-		unset run_depends
+	if [ -z "${run_depends}" ]; then
+		for subpkg in ${subpackages}; do
+			run_depends="$run_depends ${sourcepkg}-${subpkg}-${version}"
+		done
 	fi
-	for subpkg in ${subpackages}; do
-		run_depends="$run_depends ${sourcepkg}-${subpkg}-${version}"
-	done
 	xbps_write_metadata_pkg_real
 }
 
