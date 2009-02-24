@@ -69,6 +69,7 @@ reset_tmpl_vars()
 			disable_parallel_build run_depends cross_compiler \
 			only_for_archs patch_args conf_files keep_dirs \
 			install_priority noarch subpackages sourcepkg \
+			abi_depends api_depends \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
 
@@ -102,6 +103,46 @@ setup_tmpl()
 		msg_error "cannot find '$pkg' template build file."
 	fi
 
+}
+
+Add_dependency()
+{
+	local type="$1"
+	local pkgname="$2"
+	local minver="$3"
+
+	case "$type" in
+		build|full|run) ;;
+		*) msg_error "Unknown dependency type for $pkgname." ;;
+	esac
+
+	if [ -f $XBPS_TEMPLATESDIR/$pkgname/$pkgname.depends ]; then
+		. $XBPS_TEMPLATESDIR/$pkgname/$pkgname.depends
+	elif [ -f $XBPS_TEMPLATESDIR/$pkgname/depends ]; then
+		. $XBPS_TEMPLATESDIR/$pkgname/depends
+	fi
+
+	if [ "$type" = "full" -o "$type" = "build" ]; then
+		if [ -z "$minver" -a -z "$api_depends" ]; then
+			build_depends="${build_depends} $pkgname-0"
+		elif [ -z "$minver" -a -n "$api_depends" ]; then
+			build_depends="${build_depends} $pkgname-$api_depends"
+		else
+			build_depends="${build_depends} $pkgname-$minver"
+		fi
+	fi
+
+	if [ "$type" = "full" -o "$type" = "run" ]; then
+		if [ -z "$minver" -a -z "$abi_depends" ]; then
+			run_depends="${run_depends} $pkgname-0"
+		elif [ -z "$minver" -a -n "$abi_depends" ]; then
+			run_depends="${run_depends} $pkgname-$abi_depends"
+		else
+			run_depends="${run_depends} $pkgname-$minver"
+		fi
+	fi
+
+	unset abi_depends api_depends
 }
 
 #
