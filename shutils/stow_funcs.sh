@@ -23,6 +23,8 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 
+. ${XBPS_SHUTILSDIR}/builddep_funcs.sh
+
 stow_pkg()
 {
 	local pkg="$1"

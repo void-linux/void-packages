@@ -66,7 +66,7 @@ xbps_write_metadata_pkg()
 
 	[ -n "${subpackages}" ] && [ "$pkg" != "${sourcepkg}" ] && return $?
 
-	if [ -z "${run_depends}" ]; then
+	if [ "$build_style" = "meta-template" -a -z "${run_depends}" ]; then
 		for subpkg in ${subpackages}; do
 			run_depends="$run_depends ${sourcepkg}-${subpkg}-${version}"
 		done
