@@ -149,11 +149,11 @@ xbps_chroot_handler()
 	install_xbps_utils
 
 	if [ "$action" = "chroot" ]; then
-		env in_chroot=yes chroot $XBPS_MASTERDIR /bin/bash
+		env in_chroot=yes LANG=C chroot $XBPS_MASTERDIR /bin/bash
 	else
 		[ -n "$only_destdir" ] && \
 			local lenv="install_destdir_target=yes"
-		env in_chroot=yes ${lenv} chroot $XBPS_MASTERDIR \
+		env in_chroot=yes LANG=C ${lenv} chroot $XBPS_MASTERDIR \
 			xbps-src $action $pkg
 	fi
 	msg_normal "Exiting from the chroot on $XBPS_MASTERDIR."
