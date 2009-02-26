@@ -56,7 +56,7 @@ xbps_write_metadata_pkg()
 		if [ ! -f $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template ]; then
 			msg_error "Cannot find subpackage template!"
 		fi
-		unset run_depends conf_files keep_dirs noarch
+		unset run_depends conf_files keep_dirs noarch install_priority
 		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${sourcepkg}-${subpkg}
 		xbps_write_metadata_pkg_real
