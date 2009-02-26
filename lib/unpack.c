@@ -75,7 +75,7 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	free(path);
 
 	if ((rv = xbps_check_file_hash(binfile, sha256)) == ERANGE) {
-		printf("ERROR: SHA256 doesn't match for %s!",
+		printf("ERROR: SHA256 doesn't match for %s!\n",
 		    prop_string_cstring_nocopy(filename));
 		free(binfile);
 		return rv;
