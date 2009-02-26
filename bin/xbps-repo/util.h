@@ -28,6 +28,7 @@
 
 int	search_string_in_pkgs(prop_object_t, void *, bool *);
 int	show_pkg_info_from_metadir(const char *);
+int	show_pkg_files_from_metadir(const char *);
 int	show_pkg_info_from_repolist(prop_object_t, void *, bool *);
 int	list_strings_in_array(prop_object_t, void *, bool *);
 

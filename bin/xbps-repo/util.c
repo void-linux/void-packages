@@ -35,6 +35,7 @@
 #include "util.h"
 
 static void	show_pkg_info(prop_dictionary_t);
+static int	show_pkg_files(prop_object_t, void *, bool *);
 static int	show_pkg_namedesc(prop_object_t, void *, bool *);
 static int	list_strings_in_array2(prop_object_t, void *, bool *);
 
@@ -188,6 +189,59 @@ show_pkg_info_from_metadir(const char *pkgname)
 	show_pkg_info(pkgd);
 	prop_object_release(pkgd);
 	free(plist);
+
+	return 0;
+}
+
+int
+show_pkg_files_from_metadir(const char *pkgname)
+{
+	prop_dictionary_t pkgd;
+	size_t len = 0;
+	char *plist, *path;
+	int rv = 0;
+
+	/* XBPS_META_PATH/metadata/<pkgname>/XBPS_PKGFILES + NULL */
+	len = strlen(XBPS_META_PATH) + strlen(pkgname) +
+	    strlen(XBPS_PKGFILES) + 12;
+	path = malloc(len);
+	if (path == NULL)
+		return EINVAL;
+
+	(void)snprintf(path, len, "%s/metadata/%s", XBPS_META_PATH, pkgname);
+
+	plist = xbps_append_full_path(true, path, XBPS_PKGFILES);
+	if (plist == NULL) {
+		free(path);
+		return EINVAL;
+	}
+	free(path);
+
+	pkgd = prop_dictionary_internalize_from_file(plist);
+	if (pkgd == NULL) {
+		free(plist);
+		return errno;
+	}
+
+	rv = xbps_callback_array_iter_in_dict(pkgd, "filelist",
+	    show_pkg_files, NULL);
+	prop_object_release(pkgd);
+	free(plist);
+
+	return rv;
+}
+
+static int
+show_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
+{
+	const char *file = NULL;
+
+	(void)arg;
+	(void)loop_done;
+
+	prop_dictionary_get_cstring_nocopy(obj, "file", &file);
+	if (file != NULL)
+		printf("%s\n", file);
 
 	return 0;
 }

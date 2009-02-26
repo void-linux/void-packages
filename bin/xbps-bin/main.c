@@ -45,9 +45,10 @@ usage(void)
 {
 	printf("Usage: xbps-bin [options] [action] [arguments]\n\n"
 	" Available actions:\n"
-        "    install, list, remove, show\n"
+        "    install, list, remove, show, files\n"
 	" Actions with arguments:\n"
 	"    install\t<pkgname>\n"
+	"    files\t<pkgname>\n"
 	"    remove\t<pkgname>\n"
 	"    show\t<pkgname>\n"
 	" Options shared by all actions:\n"
@@ -57,6 +58,7 @@ usage(void)
 	" Examples:\n"
 	"    $ xbps-bin install klibc\n"
 	"    $ xbps-bin -r /path/to/root install klibc\n"
+	"    $ xbps-bin files klibc\n"
 	"    $ xbps-bin list\n"
 	"    $ xbps-bin remove klibc\n"
 	"    $ xbps-bin show klibc\n");
@@ -207,7 +209,17 @@ main(int argc, char **argv)
 
 		rv = show_pkg_info_from_metadir(argv[1]);
 		if (rv != 0) {
-			printf("Package %s not installed\n", argv[1]);
+			printf("Package %s not installed.\n", argv[1]);
+			exit(EXIT_FAILURE);
+		}
+	} else if (strcasecmp(argv[0], "files") == 0) {
+		/* Shows files installed by a binary package. */
+		if (argc != 2)
+			usage();
+
+		rv = show_pkg_files_from_metadir(argv[1]);
+		if (rv != 0) {
+			printf("Package %s not installed.\n", argv[1]);
 			exit(EXIT_FAILURE);
 		}
 	} else {
