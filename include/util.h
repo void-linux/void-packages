@@ -28,6 +28,7 @@
 
 /* from lib/util.c */
 char *		xbps_append_full_path(bool, const char *, const char *);
+int		xbps_check_file_hash(const char *, const char *);
 int		xbps_check_is_installed_pkg(const char *);
 bool		xbps_check_is_installed_pkgname(const char *);
 char *		xbps_get_pkg_index_plist(const char *);

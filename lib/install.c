@@ -54,28 +54,23 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
 	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
 	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
 	prop_dictionary_get_cstring_nocopy(pkg, "short_desc", &desc);
-	assert(pkgname != NULL);
-	assert(version != NULL);
-	assert(desc != NULL);
 
 	if (repo == false)
 		automatic = true;
 
-	printf("Installing %s%s: found version %s ... ",
+	printf("Installing %s%s: found version %s ...\n",
 	    automatic ? "dependency " : "", pkgname, version);
-
 	(void)fflush(stdout);
 
 	rv = xbps_unpack_binary_pkg(repo, pkg, destdir, flags);
 	if (rv == 0) {
 		rv = xbps_register_pkg(pkg, pkgname, version, desc, automatic);
 		if (rv != 0) {
-			printf("failed!\n");
+			printf("ERROR: couldn't register %s-%s! (%s)\n",
+			    pkgname, version, strerror(rv));
 			return rv;
 		}
 	}
-
-	printf("done.\n");
 
 	return 0;
 }

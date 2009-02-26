@@ -36,6 +36,13 @@
 
 #include <xbps_api.h>
 
+struct rm_cbarg {
+	const char *destdir;
+	int flags;
+};
+
+static int	remove_pkg_files(prop_object_t, void *, bool *);
+
 int
 xbps_unregister_pkg(const char *pkgname)
 {
@@ -100,11 +107,74 @@ xbps_remove_binary_pkg_meta(const char *pkgname, const char *destdir, int flags)
 	return rv;
 }
 
+static int
+remove_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
+{
+	struct rm_cbarg *rmcb = arg;
+	const char *file = NULL, *sha256;
+	char *path = NULL;
+	int rv = 0;
+
+	(void)loop_done;
+
+	prop_dictionary_get_cstring_nocopy(obj, "file", &file);
+	if (file != NULL) {
+		path = xbps_append_full_path(false, rmcb->destdir, file);
+		if (path == NULL)
+			return EINVAL;
+
+		prop_dictionary_get_cstring_nocopy(obj, "sha256", &sha256);
+		if ((rv = xbps_check_file_hash(path, sha256)) == ERANGE) {
+			if (rmcb->flags & XBPS_UNPACK_VERBOSE)
+				printf("WARNING: SHA256 doesn't match for "
+				    "file %s, ignoring...\n", file);
+			goto out;
+		}
+
+		if ((rv = unlink(path)) == -1) {
+			if (rmcb->flags & XBPS_UNPACK_VERBOSE)
+				printf("WARNING: can't remove file %s (%s)\n",
+				    file, strerror(errno));
+			goto out;
+		}
+		if (rmcb->flags & XBPS_UNPACK_VERBOSE)
+			printf("Removed file: %s\n", file);
+
+		goto out;
+	}
+
+	prop_dictionary_get_cstring_nocopy(obj, "dir", &file);
+	if (file != NULL) {
+		path = xbps_append_full_path(false, rmcb->destdir, file);
+		if (path == NULL)
+			return EINVAL;
+
+		if ((rv = rmdir(path)) == -1) {
+			if (errno == ENOTEMPTY)
+				goto out;
+
+			if (rmcb->flags & XBPS_UNPACK_VERBOSE) {
+				printf("WARNING: can't remove "
+				    "directory %s (%s)\n", file,
+				    strerror(errno));
+				goto out;
+			}
+			if (rmcb->flags & XBPS_UNPACK_VERBOSE)
+				printf("Removed directory: %s\n", file);
+		}
+	}
+out:
+	free(path);
+
+	return 0;
+}
+
 int
 xbps_remove_binary_pkg(const char *pkgname, const char *destdir, int flags)
 {
-	FILE *flist;
-	char path[PATH_MAX - 1], line[LINE_MAX - 1], *p, *buf;
+	prop_dictionary_t fdict;
+	struct rm_cbarg rmcbarg;
+	char path[PATH_MAX - 1], *buf;
 	int fd, rv = 0;
 	size_t len = 0;
 	bool prepostf = false;
@@ -136,8 +206,8 @@ xbps_remove_binary_pkg(const char *pkgname, const char *destdir, int flags)
 	/* Find out if the prepost-rm file exists */
 	if ((fd = open(buf, O_RDONLY)) == -1) {
 		if (errno != ENOENT) {
-			rv = errno;
-			goto out;
+			free(buf);
+			return errno;
 		}
 	} else {
 		/* Run the preremove action */
@@ -147,89 +217,48 @@ xbps_remove_binary_pkg(const char *pkgname, const char *destdir, int flags)
 		     NULL)) != 0) {
 			printf("%s: prerm action target error (%s)\n", pkgname,
 			    strerror(errno));
-			goto out;
+			free(buf);
+			return rv;
 		}
 	}
 
-	(void)snprintf(path, sizeof(path), "%s%s/metadata/%s/flist",
+	/*
+	 * Iterate over the pkg file list dictionary and remove all
+	 * files/dirs associated.
+	 */
+	(void)snprintf(path, sizeof(path), "%s%s/metadata/%s/files.plist",
 	    destdir, XBPS_META_PATH, pkgname);
 
-	if ((flist = fopen(path, "r")) == NULL) {
-		rv = errno;
-		goto out;
+	fdict = prop_dictionary_internalize_from_file(path);
+	if (fdict == NULL) {
+		free(buf);
+		return errno;
 	}
 
-	while (!feof(flist)) {
-		p = fgets(line, sizeof(line), flist);
-		if (p == NULL) {
-			if (feof(flist))
-				break;
-			if (ferror(flist)) {
-				rv = errno;
-				break;
-			}
-		}
-		if (strlen(line) == 0 || line[0] == '#' ||
-		    isspace((unsigned char)line[0]) != 0)
-			continue;
+	rmcbarg.destdir = destdir;
+	rmcbarg.flags = flags;
 
-		len = strlen(line) + 1;
-		p = calloc(1, len);
-		if (p == NULL) {
-			rv = errno;
-			break;
-		}
-
-		(void)strncpy(p, line, len - 2);
-		(void)snprintf(path, sizeof(path), "%s%s",
-		    destdir, p);
-
-		/*
-		 * Remove the file or the directory if it's empty.
-		 */
-		if ((rv = unlink(path)) == -1) {
-			if (errno == EISDIR) {
-				if ((rv = rmdir(path)) == -1) {
-					if (errno == ENOTEMPTY)  {
-						rv = 0;
-						goto next;
-					}
-					if (flags & XBPS_UNPACK_VERBOSE)
-						printf("WARNING: can't remove "
-						    "directory %s (%s)\n",
-						    path, strerror(errno));
-					goto next;
-				}
-				if (flags & XBPS_UNPACK_VERBOSE)
-					printf("Removed directory: %s\n", path);
-				goto next;
-			}
-			if (flags & XBPS_UNPACK_VERBOSE)
-				printf("WARNING: can't remove file %s (%s)\n", path,
-				    strerror(errno));
-			goto next;
-		}
-		if (flags & XBPS_UNPACK_VERBOSE)
-			printf("Removed file: %s\n", path);
-next:
-		free(p);
-		p = NULL;
+	rv = xbps_callback_array_iter_in_dict(fdict, "filelist",
+	    remove_pkg_files, (void *)&rmcbarg);
+	if (rv != 0) {
+		free(buf);
+		prop_object_release(fdict);
+		return rv;
 	}
-	(void)fclose(flist);
+	prop_object_release(fdict);
 
 	/* If successful, unregister pkg from db */
-	if (rv == 0) {
-		if (((rv = xbps_unregister_pkg(pkgname)) == 0) && prepostf) {
-			/* Run the postremove action target */
-			if ((rv = xbps_file_exec(buf, destdir, "post",
-			     pkgname, NULL)) != 0) {
-				printf("%s: postrm action target error (%s)\n",
-				    pkgname, strerror(errno));
-			}
+	if (((rv = xbps_unregister_pkg(pkgname)) == 0) && prepostf) {
+		/* Run the postremove action target */
+		if ((rv = xbps_file_exec(buf, destdir, "post",
+		     pkgname, NULL)) != 0) {
+			printf("%s: postrm action target error (%s)\n",
+			    pkgname, strerror(errno));
+			free(buf);
+			return rv;
 		}
 	}
 
-out:
 	free(buf);
 	rv = xbps_remove_binary_pkg_meta(pkgname, destdir, flags);
 

@@ -28,12 +28,38 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <sys/utsname.h>
 
 #include <xbps_api.h>
 
 static const char *rootdir;
+
+int
+xbps_check_file_hash(const char *path, const char *sha256)
+{
+	SHA256_CTX ctx;
+	const char *res;
+	uint8_t buf[BUFSIZ * 20], digest[SHA256_DIGEST_LENGTH * 2 + 1];
+	ssize_t bytes;
+	int fd, rv = 0;
+
+	if ((fd = open(path, O_RDONLY)) == -1)
+		return errno;
+
+	SHA256_Init(&ctx);
+	while ((bytes = read(fd, buf, sizeof(buf))) > 0)
+		SHA256_Update(&ctx, buf, (size_t)bytes);
+	res = SHA256_End(&ctx, digest);
+
+	if (strcmp(sha256, res))
+		rv = ERANGE;
+
+	(void)close(fd);
+
+	return rv;
+}
 
 int
 xbps_check_is_installed_pkg(const char *pkg)

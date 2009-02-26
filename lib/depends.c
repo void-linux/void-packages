@@ -98,6 +98,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	size_t len = 0, dirdepscnt = 0, indirdepscnt = 0;
 	const char *pkgname, *version, *reqbyname, *reqbyver, *arch;
 	const char  *repoloc, *binfile, *originpkg, *short_desc;
+	const char *sha256;
 	char *reqby, *pkgnver;
 	int rv = 0;
 	bool indirectdep = false;
@@ -114,6 +115,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	prop_dictionary_get_cstring_nocopy(depd, "filename", &binfile);
 	prop_dictionary_get_cstring_nocopy(depd, "short_desc", &short_desc);
 	prop_dictionary_get_cstring_nocopy(depd, "architecture", &arch);
+	prop_dictionary_get_cstring_nocopy(depd, "filename-sha256", &sha256);
 	prop_dictionary_get_uint32(depd, "priority", &prio);
 	prop_dictionary_get_cstring_nocopy(origind, "pkgname", &reqbyname);
 	prop_dictionary_get_cstring_nocopy(origind, "version", &reqbyver);
@@ -205,6 +207,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	prop_dictionary_set_cstring(dict, "short_desc", short_desc);
 	prop_dictionary_set_bool(dict, "indirect_dep", indirectdep);
 	prop_dictionary_set_cstring(dict, "architecture", arch);
+	prop_dictionary_set_cstring(dict, "filename-sha256", sha256);
 
 	/*
 	 * Add the dictionary into the array.
