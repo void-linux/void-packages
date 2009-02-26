@@ -151,7 +151,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 	struct archive_entry *entry;
 	struct stat st;
 	size_t len;
-	const char *prepost = "./XBPS_PREPOST_INSTALL";
+	const char *prepost = "./INSTALL";
 	const char *pkgname, *version;
 	char *buf, *path;
 	int rv = 0, lflags = 0;
@@ -169,15 +169,14 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 		lflags = EXTRACT_FLAGS;
 
 	/*
-	 * This length is '.%s/metadata/%s/prepost-inst' not
-	 * including nul.
+	 * This length is '.%s/metadata/%s/INSTALL' + NULL.
 	 */
-	len = strlen(XBPS_META_PATH) + strlen(pkgname) + 24;
-	buf = malloc(len + 1);
+	len = strlen(XBPS_META_PATH) + strlen(pkgname) + 20;
+	buf = malloc(len);
 	if (buf == NULL)
 		return ENOMEM;
 
-	if (snprintf(buf, len + 1, ".%s/metadata/%s/prepost-inst",
+	if (snprintf(buf, len, ".%s/metadata/%s/INSTALL",
 	    XBPS_META_PATH, pkgname) < 0) {
 		free(buf);
 		return -1;

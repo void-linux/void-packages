@@ -225,15 +225,13 @@ _EOF
 	chmod 644 $metadir/*
 	rm -f $TMPFLIST $TMPFPLIST $TMPFPROPS
 
-	if [ -f "$XBPS_TEMPLATESDIR/$pkgname/prepost-inst" ]; then
-		cp -f $XBPS_TEMPLATESDIR/$pkgname/prepost-inst \
-			$destdir/XBPS_PREPOST_INSTALL
-		chmod +x $destdir/XBPS_PREPOST_INSTALL
+	if [ -f "$XBPS_TEMPLATESDIR/$pkgname/INSTALL" ]; then
+		cp -f $XBPS_TEMPLATESDIR/$pkgname/INSTALL $destdir
+		chmod +x $destdir/INSTALL
 	fi
-	if [ -f "$XBPS_TEMPLATESDIR/$pkgname/prepost-rm" ]; then
-		cp -f $XBPS_TEMPLATESDIR/$pkgname/prepost-rm \
-			$metadir/prepost-rm
-		chmod +x $metadir/prepost-rm
+	if [ -f "$XBPS_TEMPLATESDIR/$pkgname/REMOVE" ]; then
+		cp -f $XBPS_TEMPLATESDIR/$pkgname/REMOVE $metadir
+		chmod +x $metadir/REMOVE
 	fi
 }
 
@@ -285,7 +283,22 @@ xbps_make_binpkg_real()
 	binpkg=$pkgname-$version.$arch.xbps
 	pkgdir=$XBPS_PACKAGESDIR/$arch
 
-	run_rootcmd $use_sudo tar cfjp $XBPS_DESTDIR/$binpkg .
+	if [ -x ./INSTALL ]; then
+		#
+		# Make sure that INSTALL is the first file on the archive,
+		# this is to ensure that it's run before any other file is
+		# unpacked.
+		#
+		run_rootcmd $use_sudo tar cfp $XBPS_DESTDIR/$binpkg ./INSTALL && \
+		run_rootcmd $use_sudo tar rfp $XBPS_DESTDIR/$binpkg . \
+			--exclude "./INSTALL" && \
+		run_rootcmd $use_sudo bzip2 -9 $XBPS_DESTDIR/$binpkg && \
+			mv $XBPS_DESTDIR/$binpkg.bz2 $XBPS_DESTDIR/$binpkg
+	else
+		run_rootcmd $use_sudo tar cfp $XBPS_DESTDIR/$binpkg . && \
+			bzip2 -9 $XBPS_DESTDIR/$binpkg && \
+			mv $XBPS_DESTDIR/$binpkg.bz2 $XBPS_DESTDIR/$binpkg
+	fi
 	# Disabled for now.
 	#		--exclude "./var/db/xbps/metadata/*/flist" .
 	#

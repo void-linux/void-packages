@@ -189,21 +189,20 @@ xbps_remove_binary_pkg(const char *pkgname, const char *destdir, int flags)
 		return ENOENT;
 
 	/*
-	 * This length is '%s%s/metadata/%s/prepost-rm' not
-	 * including nul.
+	 * This length is '%s%s/metadata/%s/REMOVE' + NULL.
 	 */
-	len = strlen(XBPS_META_PATH) + strlen(destdir) + strlen(pkgname) + 22;
-	buf = malloc(len + 1);
+	len = strlen(XBPS_META_PATH) + strlen(destdir) + strlen(pkgname) + 19;
+	buf = malloc(len);
 	if (buf == NULL)
 		return errno;
 
-	if (snprintf(buf, len + 1, "%s%s/metadata/%s/prepost-rm",
+	if (snprintf(buf, len, "%s%s/metadata/%s/REMOVE",
 	    destdir, XBPS_META_PATH, pkgname) < 0) {
 		free(buf);
 		return -1;
 	}
 
-	/* Find out if the prepost-rm file exists */
+	/* Find out if the REMOVE file exists */
 	if ((fd = open(buf, O_RDONLY)) == -1) {
 		if (errno != ENOENT) {
 			free(buf);
