@@ -292,7 +292,7 @@ xbps_make_binpkg_real()
 		run_rootcmd $use_sudo tar cfp $XBPS_DESTDIR/$binpkg ./INSTALL && \
 		run_rootcmd $use_sudo tar rfp $XBPS_DESTDIR/$binpkg . \
 			--exclude "./INSTALL" && \
-		run_rootcmd $use_sudo bzip2 -9 $XBPS_DESTDIR/$binpkg && \
+			bzip2 -9 $XBPS_DESTDIR/$binpkg && \
 			mv $XBPS_DESTDIR/$binpkg.bz2 $XBPS_DESTDIR/$binpkg
 	else
 		run_rootcmd $use_sudo tar cfp $XBPS_DESTDIR/$binpkg . && \
