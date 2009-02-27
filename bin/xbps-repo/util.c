@@ -34,6 +34,11 @@
 #include <xbps_api.h>
 #include "util.h"
 
+struct show_files_cb {
+	const char *destdir;
+	bool check_hash;
+};
+
 static void	show_pkg_info(prop_dictionary_t);
 static int	show_pkg_files(prop_object_t, void *, bool *);
 static int	show_pkg_namedesc(prop_object_t, void *, bool *);
@@ -194,9 +199,10 @@ show_pkg_info_from_metadir(const char *pkgname)
 }
 
 int
-show_pkg_files_from_metadir(const char *pkgname)
+show_pkg_files_from_metadir(const char *pkgname, const char *destdir, bool hash)
 {
 	prop_dictionary_t pkgd;
+	struct show_files_cb sf_cb;
 	size_t len = 0;
 	char *plist, *path;
 	int rv = 0;
@@ -223,8 +229,10 @@ show_pkg_files_from_metadir(const char *pkgname)
 		return errno;
 	}
 
+	sf_cb.destdir = destdir;
+	sf_cb.check_hash = hash;
 	rv = xbps_callback_array_iter_in_dict(pkgd, "filelist",
-	    show_pkg_files, NULL);
+	    show_pkg_files, (void *)&sf_cb);
 	prop_object_release(pkgd);
 	free(plist);
 
@@ -234,14 +242,37 @@ show_pkg_files_from_metadir(const char *pkgname)
 static int
 show_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 {
-	const char *file = NULL;
+	struct show_files_cb *sfc = arg;
+	const char *file = NULL, *sha256;
+	char *path;
+	int rv = 0;
 
-	(void)arg;
 	(void)loop_done;
 
 	prop_dictionary_get_cstring_nocopy(obj, "file", &file);
-	if (file != NULL)
+	if (sfc->check_hash == false && file != NULL) {
 		printf("%s\n", file);
+		return 0;
+	}
+
+	if (sfc->check_hash && file != NULL) {
+		path = xbps_append_full_path(false, sfc->destdir, file);
+		if (path == NULL)
+			return EINVAL;
+
+		printf("%s", file);
+		prop_dictionary_get_cstring_nocopy(obj, "sha256", &sha256);
+		rv = xbps_check_file_hash(path, sha256);
+		if (rv != 0 && rv != ERANGE) {
+			free(path);
+			return rv;
+		}
+		if (rv == ERANGE)
+			printf("  WARNING! SHA256 HASH MISMATCH!");
+
+		printf("\n");
+		free(path);
+	}
 
 	return 0;
 }

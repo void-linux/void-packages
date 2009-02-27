@@ -43,22 +43,24 @@ static int	list_pkgs_in_dict(prop_object_t, void *, bool *);
 static void
 usage(void)
 {
-	printf("Usage: xbps-bin [options] [action] [arguments]\n\n"
-	" Available actions:\n"
-        "    install, list, remove, show, files\n"
-	" Actions with arguments:\n"
+	printf("Usage: xbps-bin [options] [target] [arguments]\n\n"
+	" Available targets:\n"
+        "    autoremove, install, list, remove, show, files\n"
+	" Targets with arguments:\n"
 	"    install\t<pkgname>\n"
 	"    files\t<pkgname>\n"
 	"    remove\t<pkgname>\n"
 	"    show\t<pkgname>\n"
-	" Options shared by all actions:\n"
+	" Options shared by all targets:\n"
 	"    -r\t\t<rootdir>\n"
 	"    -v\t\t<verbose>\n"
+	" Option used by the files target:\n"
+	"    -C\t\tTo check the SHA256 hash for any listed file.\n"
 	"\n"
 	" Examples:\n"
 	"    $ xbps-bin install klibc\n"
 	"    $ xbps-bin -r /path/to/root install klibc\n"
-	"    $ xbps-bin files klibc\n"
+	"    $ xbps-bin -C files klibc\n"
 	"    $ xbps-bin list\n"
 	"    $ xbps-bin remove klibc\n"
 	"    $ xbps-bin show klibc\n");
@@ -118,9 +120,13 @@ main(int argc, char **argv)
 	prop_dictionary_t dict;
 	char *plist, *root = NULL;
 	int c, flags = 0, rv = 0;
+	bool chkhash = false;
 
-	while ((c = getopt(argc, argv, "r:v")) != -1) {
+	while ((c = getopt(argc, argv, "Cr:v")) != -1) {
 		switch (c) {
+		case 'C':
+			chkhash = true;
+			break;
 		case 'r':
 			/* To specify the root directory */
 			root = optarg;
@@ -212,16 +218,35 @@ main(int argc, char **argv)
 			printf("Package %s not installed.\n", argv[1]);
 			exit(EXIT_FAILURE);
 		}
+
 	} else if (strcasecmp(argv[0], "files") == 0) {
 		/* Shows files installed by a binary package. */
 		if (argc != 2)
 			usage();
 
-		rv = show_pkg_files_from_metadir(argv[1]);
+		rv = show_pkg_files_from_metadir(argv[1], root, chkhash);
 		if (rv != 0) {
 			printf("Package %s not installed.\n", argv[1]);
 			exit(EXIT_FAILURE);
 		}
+
+	} else if (strcasecmp(argv[0], "autoremove") == 0) {
+		/*
+		 * Removes orphaned pkgs. These packages were installed
+		 * as dependency and any installed package does not depend
+		 * on it.
+		 */
+		if (argc != 1)
+			usage();
+
+#if 0
+		rv = xbps_auto_remove_packages();
+		if (rv != 0) {
+			printf("There was an error! (%s)\n", strerror(rv));
+			exit(EXIT_FAILURE);
+		}
+#endif
+
 	} else {
 		usage();
 	}
