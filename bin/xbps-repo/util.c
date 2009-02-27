@@ -202,7 +202,7 @@ int
 show_pkg_files_from_metadir(const char *pkgname, const char *destdir, bool hash)
 {
 	prop_dictionary_t pkgd;
-	struct show_files_cb sf_cb;
+	struct show_files_cb sfc;
 	size_t len = 0;
 	char *plist, *path;
 	int rv = 0;
@@ -229,10 +229,10 @@ show_pkg_files_from_metadir(const char *pkgname, const char *destdir, bool hash)
 		return errno;
 	}
 
-	sf_cb.destdir = destdir;
-	sf_cb.check_hash = hash;
+	sfc.destdir = destdir;
+	sfc.check_hash = hash;
 	rv = xbps_callback_array_iter_in_dict(pkgd, "filelist",
-	    show_pkg_files, (void *)&sf_cb);
+	    show_pkg_files, (void *)&sfc);
 	prop_object_release(pkgd);
 	free(plist);
 
@@ -244,7 +244,7 @@ show_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 {
 	struct show_files_cb *sfc = arg;
 	const char *file = NULL, *sha256;
-	char *path;
+	char *path = NULL;
 	int rv = 0;
 
 	(void)loop_done;
@@ -256,22 +256,30 @@ show_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 	}
 
 	if (sfc->check_hash && file != NULL) {
-		path = xbps_append_full_path(false, sfc->destdir, file);
-		if (path == NULL)
-			return EINVAL;
-
 		printf("%s", file);
+		if (sfc->destdir) {
+			path = xbps_append_full_path(false, sfc->destdir, file);
+			if (path == NULL)
+				return EINVAL;
+		}
+
 		prop_dictionary_get_cstring_nocopy(obj, "sha256", &sha256);
-		rv = xbps_check_file_hash(path, sha256);
+		if (sfc->destdir)
+			rv = xbps_check_file_hash(path, sha256);
+		else
+			rv = xbps_check_file_hash(file, sha256);
+
 		if (rv != 0 && rv != ERANGE) {
-			free(path);
+			if (sfc->destdir)
+				free(path);
 			return rv;
 		}
 		if (rv == ERANGE)
 			printf("  WARNING! SHA256 HASH MISMATCH!");
 
 		printf("\n");
-		free(path);
+		if (sfc->destdir)
+			free(path);
 	}
 
 	return 0;
