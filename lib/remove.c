@@ -110,6 +110,7 @@ xbps_remove_binary_pkg_meta(const char *pkgname, const char *destdir, int flags)
 static int
 remove_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 {
+	prop_bool_t bobj;
 	struct rm_cbarg *rmcb = arg;
 	const char *file = NULL, *sha256;
 	char *path = NULL;
@@ -124,7 +125,24 @@ remove_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 			return EINVAL;
 
 		prop_dictionary_get_cstring_nocopy(obj, "sha256", &sha256);
-		if ((rv = xbps_check_file_hash(path, sha256)) == ERANGE) {
+		rv = xbps_check_file_hash(path, sha256);
+		if (rv != 0 && rv != ERANGE) {
+			free(path);
+			return rv;
+		}
+
+		bobj = prop_dictionary_get(obj, "conf_file");
+		if (bobj != NULL) {
+			/*
+			 * If hash is the same than the one provided by
+			 * package, that means the file hasn't been changed
+			 * and therefore can be removed. Otherwise keep it.
+			 */
+			if (rv == ERANGE)
+				goto out;
+		}
+
+		if (rv == ERANGE) {
 			if (rmcb->flags & XBPS_UNPACK_VERBOSE)
 				printf("WARNING: SHA256 doesn't match for "
 				    "file %s, ignoring...\n", file);
@@ -145,6 +163,11 @@ remove_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 
 	prop_dictionary_get_cstring_nocopy(obj, "dir", &file);
 	if (file != NULL) {
+		if ((bobj = prop_dictionary_get(obj, "keep")) != NULL) {
+			/* Skip permanent directory. */
+			return 0;
+		}
+
 		path = xbps_append_full_path(false, rmcb->destdir, file);
 		if (path == NULL)
 			return EINVAL;
