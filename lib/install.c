@@ -83,10 +83,10 @@ xbps_install_binary_pkg(const char *pkgname, const char *destdir, int flags)
 
 	assert(pkgname != NULL);
 	if (destdir) {
-		if ((rv = chdir(destdir)) != 0)
+		if (chdir(destdir) == -1)
 			return errno;
 	} else {
-		if ((rv = chdir("/")) != 0)
+		if (chdir("/") == -1)
 			return errno;
 		destdir = "NOTSET";
 	}
@@ -139,6 +139,10 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	}
 
 	/*
+	 * Check SHA256 hash for binary package before anything else.
+	 */
+
+	/*
 	 * Check if this package needs dependencies.
 	 */
 	if (!xbps_pkg_has_rundeps(pkgrd)) {
@@ -167,7 +171,6 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	if ((rv = xbps_install_pkg_deps(pkgname, destdir, cb->flags)) == 0) {
 		rv = xbps_install_binary_pkg_fini(repod, pkgrd, destdir,
 		    cb->flags);
-                prop_object_release(repod);
 		if (rv == 0)
 			*cbloop_done = true;
         }
@@ -175,6 +178,8 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	/* Cleanup errno, just in case */
 	if (rv == 0)
 		errno = 0;
+
+	prop_object_release(repod);
 
 	return rv;
 }
@@ -263,7 +268,7 @@ xbps_register_pkg(prop_dictionary_t pkgrd, const char *pkgname,
 			automatic);
 
 		if (pkgrd && xbps_pkg_has_rundeps(pkgrd)) {
-			rv = xbps_update_pkg_requiredby(array, pkgrd);
+			rv = xbps_requiredby_pkg_add(array, pkgrd);
 			if (rv != 0) {
 				prop_object_release(pkgd);
 				goto out;

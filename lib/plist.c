@@ -130,8 +130,7 @@ xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
 prop_dictionary_t
 xbps_find_pkg_from_plist(const char *plist, const char *pkgname)
 {
-	prop_dictionary_t dict;
-	prop_dictionary_t obj, res;
+	prop_dictionary_t dict, obj, res;
 
 	assert(plist != NULL);
 	assert(pkgname != NULL);
@@ -153,6 +152,22 @@ xbps_find_pkg_from_plist(const char *plist, const char *pkgname)
 	prop_object_release(dict);
 
 	return res;
+}
+
+prop_dictionary_t
+xbps_find_pkg_installed_from_plist(const char *pkgname)
+{
+	prop_dictionary_t pkgd;
+	char *plist;
+
+	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+	if (plist == NULL)
+		return NULL;
+
+	pkgd = xbps_find_pkg_from_plist(plist, pkgname);
+	free(plist);
+
+	return prop_dictionary_copy(pkgd);
 }
 
 prop_dictionary_t

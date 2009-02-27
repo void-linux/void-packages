@@ -64,49 +64,29 @@ xbps_check_file_hash(const char *path, const char *sha256)
 int
 xbps_check_is_installed_pkg(const char *pkg)
 {
-	prop_dictionary_t dict, pkgdict;
-	prop_object_t obj;
+	prop_dictionary_t dict;
 	const char *reqver, *instver;
-	char *plist, *pkgname;
+	char *pkgname;
 	int rv = 0;
 
 	assert(pkg != NULL);
 
-	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
-	if (plist == NULL)
-		return -1;
-
 	pkgname = xbps_get_pkg_name(pkg);
 	reqver = xbps_get_pkg_version(pkg);
 
-	/* Get package dictionary from plist */
-	dict = prop_dictionary_internalize_from_file(plist);
+	dict = xbps_find_pkg_installed_from_plist(pkgname);
 	if (dict == NULL) {
 		free(pkgname);
-		free(plist);
-		return 1; /* not installed */
-	}
-
-	pkgdict = xbps_find_pkg_in_dict(dict, "packages", pkgname);
-	if (pkgdict == NULL) {
-		prop_object_release(dict);
-		free(pkgname);
-		free(plist);
 		return 1; /* not installed */
 	}
 
 	/* Get version from installed package */
-	obj = prop_dictionary_get(pkgdict, "version");
-	assert(obj != NULL);
-	assert(prop_object_type(obj) == PROP_TYPE_STRING);
-	instver = prop_string_cstring_nocopy(obj);
-	assert(instver != NULL);
+	prop_dictionary_get_cstring_nocopy(dict, "version", &instver);
 
 	/* Compare installed and required version. */
 	rv = xbps_cmpver_versions(instver, reqver);
 
 	free(pkgname);
-	free(plist);
 	prop_object_release(dict);
 
 	return rv;
@@ -116,16 +96,10 @@ bool
 xbps_check_is_installed_pkgname(const char *pkgname)
 {
 	prop_dictionary_t pkgd;
-	char *plist;
 
 	assert(pkgname != NULL);
 
-	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
-	if (plist == NULL)
-		return false;
-
-	pkgd = xbps_find_pkg_from_plist(plist, pkgname);
-	free(plist);
+	pkgd = xbps_find_pkg_installed_from_plist(pkgname);
 	if (pkgd) {
 		prop_object_release(pkgd);
 		return true;

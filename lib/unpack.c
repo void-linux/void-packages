@@ -123,7 +123,7 @@ unpack_archive_init(prop_dictionary_t pkg, const char *destdir,
 	 * is really on storage (if possible).
 	 */
 	if (rv == 0)
-		if ((rv = fdatasync(pkg_fd)) == -1)
+		if (fdatasync(pkg_fd) == -1)
 			rv = errno;
 
 	archive_read_finish(ar);
@@ -149,11 +149,10 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 		    prop_dictionary_t pkg)
 {
 	struct archive_entry *entry;
-	struct stat st;
 	size_t len;
 	const char *prepost = "./INSTALL";
 	const char *pkgname, *version;
-	char *buf, *path;
+	char *buf;
 	int rv = 0, lflags = 0;
 	bool actgt = false;
 
@@ -184,23 +183,6 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 
 	while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
 		/*
-		 * Check that entry doesn't already exist.
-		 */ 
-		path = xbps_append_full_path(false, destdir,
-		    archive_entry_pathname(entry));
-		if (path == NULL) {
-			rv = ENOMEM;
-			break;
-		}
-
-		rv = stat(path, &st);
-		if (rv == 0) {
-			free(path);
-			continue;
-		}
-		free(path);
-
-		/*
 		 * Run the pre installation action target if there's a script
 		 * before writing data to disk.
 		 */
@@ -211,9 +193,10 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 
 			archive_entry_set_pathname(entry, buf);
 
-			rv = archive_read_extract(ar, entry, lflags);
-			if (rv != 0 && errno != EEXIST)
-				break;
+			if (archive_read_extract(ar, entry, lflags) != 0) {
+				if ((rv = archive_errno(ar)) != EEXIST)
+					break;
+			}
 
 			if ((rv = xbps_file_exec(buf, destdir, "pre",
 			     pkgname, version, NULL)) != 0) {
@@ -229,19 +212,24 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 		/*
 		 * Extract all data from the archive now.
 		 */
-		rv = archive_read_extract(ar, entry, lflags);
-		if (rv != 0 && errno != EEXIST) {
-			printf("ERROR: couldn't unpack %s (%s), exiting!\n",
-			    archive_entry_pathname(entry), strerror(errno));
-			(void)fflush(stdout);
-			break;
-		} else if (rv != 0 && errno == EEXIST) {
-			if (flags & XBPS_UNPACK_VERBOSE) {
-				printf("WARNING: ignoring existent path: %s.\n",
-				    archive_entry_pathname(entry));
+		if (archive_read_extract(ar, entry, lflags) != 0) {
+			rv = archive_errno(ar);
+			if (rv != EEXIST) {
+				printf("ERROR: couldn't unpack %s (%s), "
+				    "exiting!\n", archive_entry_pathname(entry),
+				    archive_error_string(ar));
 				(void)fflush(stdout);
+				break;
+			} else if (rv == EEXIST) {
+				if (flags & XBPS_UNPACK_VERBOSE) {
+					printf("WARNING: ignoring existent "
+					    "path: %s\n",
+					    archive_entry_pathname(entry));
+					(void)fflush(stdout);
+				}
+				rv = 0;
+				continue;
 			}
-			continue;
 		}
 
 		if (flags & XBPS_UNPACK_VERBOSE) {

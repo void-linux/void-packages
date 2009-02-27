@@ -64,6 +64,9 @@ xbps_find_pkg_in_dict(prop_dictionary_t, const char *, const char *);
 prop_dictionary_t
 xbps_find_pkg_from_plist(const char *, const char *);
 
+prop_dictionary_t
+xbps_find_pkg_installed_from_plist(const char *);
+
 /*
  * Finds a string object in an array.
  *

@@ -172,7 +172,7 @@ out:
 int
 xbps_remove_binary_pkg(const char *pkgname, const char *destdir, int flags)
 {
-	prop_dictionary_t fdict;
+	prop_dictionary_t dict;
 	struct rm_cbarg rmcbarg;
 	char path[PATH_MAX - 1], *buf;
 	int fd, rv = 0;
@@ -202,18 +202,22 @@ xbps_remove_binary_pkg(const char *pkgname, const char *destdir, int flags)
 		return -1;
 	}
 
-	/* Find out if the REMOVE file exists */
+	/*
+	 * Find out if the REMOVE file exists.
+	 */
 	if ((fd = open(buf, O_RDONLY)) == -1) {
 		if (errno != ENOENT) {
 			free(buf);
 			return errno;
 		}
 	} else {
-		/* Run the preremove action */
+		/*
+		 * Run the pre remove action.
+		 */
 		(void)close(fd);
 		prepostf = true;
-		if ((rv = xbps_file_exec(buf, destdir, "pre", pkgname,
-		     NULL)) != 0) {
+		rv = xbps_file_exec(buf, destdir, "pre", pkgname, NULL);
+		if (rv != 0) {
 			printf("%s: prerm action target error (%s)\n", pkgname,
 			    strerror(errno));
 			free(buf);
@@ -228,8 +232,8 @@ xbps_remove_binary_pkg(const char *pkgname, const char *destdir, int flags)
 	(void)snprintf(path, sizeof(path), "%s%s/metadata/%s/files.plist",
 	    destdir, XBPS_META_PATH, pkgname);
 
-	fdict = prop_dictionary_internalize_from_file(path);
-	if (fdict == NULL) {
+	dict = prop_dictionary_internalize_from_file(path);
+	if (dict == NULL) {
 		free(buf);
 		return errno;
 	}
@@ -237,18 +241,19 @@ xbps_remove_binary_pkg(const char *pkgname, const char *destdir, int flags)
 	rmcbarg.destdir = destdir;
 	rmcbarg.flags = flags;
 
-	rv = xbps_callback_array_iter_in_dict(fdict, "filelist",
+	rv = xbps_callback_array_iter_in_dict(dict, "filelist",
 	    remove_pkg_files, (void *)&rmcbarg);
 	if (rv != 0) {
 		free(buf);
-		prop_object_release(fdict);
+		prop_object_release(dict);
 		return rv;
 	}
-	prop_object_release(fdict);
+	prop_object_release(dict);
 
-	/* If successful, unregister pkg from db */
-	if (((rv = xbps_unregister_pkg(pkgname)) == 0) && prepostf) {
-		/* Run the postremove action target */
+	/*
+	 * Run the post remove action if REMOVE file is there.
+	 */
+	if (prepostf) {
 		if ((rv = xbps_file_exec(buf, destdir, "post",
 		     pkgname, NULL)) != 0) {
 			printf("%s: postrm action target error (%s)\n",
@@ -257,9 +262,24 @@ xbps_remove_binary_pkg(const char *pkgname, const char *destdir, int flags)
 			return rv;
 		}
 	}
-
 	free(buf);
-	rv = xbps_remove_binary_pkg_meta(pkgname, destdir, flags);
 
-	return rv;
+	/*
+	 * Update the required_by array of all required dependencies.
+	 */
+	rv = xbps_requiredby_pkg_remove(pkgname);
+	if (rv != 0)
+		return rv;
+
+	/*
+	 * Unregister pkg from database.
+	 */
+	rv = xbps_unregister_pkg(pkgname);
+	if (rv != 0)
+		return rv;
+
+	/*
+	 * Remove pkg metadata directory.
+	 */
+	return xbps_remove_binary_pkg_meta(pkgname, destdir, flags);
 }
