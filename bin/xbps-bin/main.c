@@ -172,41 +172,43 @@ main(int argc, char **argv)
 		prop_object_release(dict);
 		free(plist);
 
-	} else if ((strcasecmp(argv[0], "install") == 0) ||
-		   (strcasecmp(argv[0], "remove") == 0))  {
+	} else if (strcasecmp(argv[0], "install") == 0) {
 		/* Installs a binary package and required deps. */
 		if (argc != 2)
 			usage();
 
 		/* Install into root directory by default. */
-		if (strcasecmp(argv[0], "install") == 0) {
-			rv = xbps_install_binary_pkg(argv[1], root, flags);
-			if (rv != 0) {
-				if (rv == EAGAIN) {
-					printf("Unable to locate %s in "
-					    "repository pool.\n", argv[1]);
-				} else if (rv == ENOENT) {
-					dict = xbps_get_pkg_deps_dictionary();
-					if (dict)
-						show_missing_deps(dict, argv[1]);
-				}
+		rv = xbps_install_binary_pkg(argv[1], root, flags);
+		if (rv != 0) {
+			if (rv == EAGAIN) {
+				printf("Unable to locate %s in "
+				    "repository pool.\n", argv[1]);
+			} else if (rv == ENOENT) {
+				dict = xbps_get_pkg_deps_dictionary();
+				if (dict)
+					show_missing_deps(dict, argv[1]);
+			}
 
-				exit(EXIT_FAILURE);
-			}
-			printf("Package %s installed successfully.\n", argv[1]);
-		} else {
-			rv = xbps_remove_binary_pkg(argv[1], root, flags);
-			if (rv != 0) {
-				if (errno == ENOENT)
-					printf("Package %s is not installed.\n",
-					    argv[1]);
-				else
-					printf("Unable to remove %s (%s).\n",
-					    argv[1], strerror(errno));
-				exit(EXIT_FAILURE);
-			}
-			printf("Package %s removed successfully.\n", argv[1]);
+			exit(EXIT_FAILURE);
 		}
+		printf("Package %s installed successfully.\n", argv[1]);
+
+	} else if (strcasecmp(argv[0], "remove") == 0) {
+		/* Removes a binary package. */
+		if (argc != 2)
+			usage();
+
+		rv = xbps_remove_binary_pkg(argv[1], root, flags);
+		if (rv != 0) {
+			if (errno == ENOENT)
+				printf("Package %s is not installed.\n",
+				    argv[1]);
+			else
+				printf("Unable to remove %s (%s).\n",
+				    argv[1], strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+		printf("Package %s removed successfully.\n", argv[1]);
 
 	} else if (strcasecmp(argv[0], "show") == 0) {
 		/* Shows info about an installed binary package. */
