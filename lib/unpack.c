@@ -137,7 +137,8 @@ unpack_archive_init(prop_dictionary_t pkg, const char *destdir,
 #define EXTRACT_FLAGS	ARCHIVE_EXTRACT_SECURE_NODOTDOT | \
 			ARCHIVE_EXTRACT_SECURE_SYMLINKS | \
 			ARCHIVE_EXTRACT_NO_OVERWRITE | \
-			ARCHIVE_EXTRACT_NO_OVERWRITE_NEWER
+			ARCHIVE_EXTRACT_NO_OVERWRITE_NEWER | \
+			ARCHIVE_EXTRACT_SPARSE
 #define FEXTRACT_FLAGS	ARCHIVE_EXTRACT_OWNER | ARCHIVE_EXTRACT_PERM | \
 			ARCHIVE_EXTRACT_TIME | EXTRACT_FLAGS
 
@@ -181,7 +182,6 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 		free(buf);
 		return -1;
 	}
-
 	while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
 		/*
 		 * Run the pre installation action target if there's a script
@@ -232,7 +232,6 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 				continue;
 			}
 		}
-
 		if (flags & XBPS_UNPACK_VERBOSE) {
 			printf(" %s\n", archive_entry_pathname(entry));
 			(void)fflush(stdout);

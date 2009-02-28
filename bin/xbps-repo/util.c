@@ -243,13 +243,17 @@ static int
 show_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 {
 	struct show_files_cb *sfc = arg;
-	const char *file = NULL, *sha256;
+	const char *file = NULL, *sha256, *type;
 	char *path = NULL;
 	int rv = 0;
 
 	(void)loop_done;
 
 	prop_dictionary_get_cstring_nocopy(obj, "file", &file);
+	prop_dictionary_get_cstring_nocopy(obj, "type", &type);
+	if (strcmp(type, "file") != 0)
+		return 0;
+
 	if (sfc->check_hash == false && file != NULL) {
 		printf("%s\n", file);
 		return 0;

@@ -112,18 +112,22 @@ remove_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 {
 	prop_bool_t bobj;
 	struct rm_cbarg *rmcb = arg;
-	const char *file = NULL, *sha256;
+	const char *file = NULL, *sha256, *type;
 	char *path = NULL;
 	int rv = 0;
 
 	(void)loop_done;
 
 	prop_dictionary_get_cstring_nocopy(obj, "file", &file);
-	if (file != NULL) {
-		path = xbps_append_full_path(false, rmcb->destdir, file);
-		if (path == NULL)
-			return EINVAL;
+	if (file == NULL)
+		return EINVAL;
 
+	path = xbps_append_full_path(false, rmcb->destdir, file);
+	if (path == NULL)
+		return EINVAL;
+
+	prop_dictionary_get_cstring_nocopy(obj, "type", &type);
+	if (strcmp(type, "file") == 0) {
 		prop_dictionary_get_cstring_nocopy(obj, "sha256", &sha256);
 		rv = xbps_check_file_hash(path, sha256);
 		if (rv != 0 && rv != ERANGE) {
@@ -149,7 +153,7 @@ remove_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 			goto out;
 		}
 
-		if ((rv = unlink(path)) == -1) {
+		if ((rv = remove(path)) == -1) {
 			if (rmcb->flags & XBPS_UNPACK_VERBOSE)
 				printf("WARNING: can't remove file %s (%s)\n",
 				    file, strerror(errno));
@@ -159,18 +163,11 @@ remove_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 			printf("Removed file: %s\n", file);
 
 		goto out;
-	}
-
-	prop_dictionary_get_cstring_nocopy(obj, "dir", &file);
-	if (file != NULL) {
+	} else if (strcmp(type, "dir") == 0) {
 		if ((bobj = prop_dictionary_get(obj, "keep")) != NULL) {
 			/* Skip permanent directory. */
 			return 0;
 		}
-
-		path = xbps_append_full_path(false, rmcb->destdir, file);
-		if (path == NULL)
-			return EINVAL;
 
 		if ((rv = rmdir(path)) == -1) {
 			if (errno == ENOTEMPTY)
@@ -185,7 +182,17 @@ remove_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 			if (rmcb->flags & XBPS_UNPACK_VERBOSE)
 				printf("Removed directory: %s\n", file);
 		}
+	} else if (strcmp(type, "link") == 0) {
+		if ((rv = remove(path)) == -1) {
+			if (rmcb->flags & XBPS_UNPACK_VERBOSE)
+				printf("WARNING: can't remove link %s (%s)\n",
+				    file, strerror(errno));
+			goto out;
+		}
+		if (rmcb->flags & XBPS_UNPACK_VERBOSE)
+			printf("Removed link: %s\n", file);
 	}
+
 out:
 	free(path);
 
