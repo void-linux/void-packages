@@ -110,14 +110,29 @@ xbps_write_metadata_pkg_real()
 
 	write_metadata_flist_header $TMPFPLIST
 
-	# First add the regular files.
-	for f in $(find -L $destdir -type f); do
+	# Pass 1: add links.
+	for f in $(find $destdir -type l); do
 		j=$(echo $f|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
 		printf "$j\n" >> $TMPFLIST
 		printf "<dict>\n" >> $TMPFPLIST
 		printf "<key>file</key>\n" >> $TMPFPLIST
 		printf "<string>$j</string>\n" >> $TMPFPLIST
+		printf "<key>type</key>\n" >> $TMPFPLIST
+		printf "<string>link</string>\n" >> $TMPFPLIST
+		printf "</dict>\n" >> $TMPFPLIST
+	done
+
+	# Pass 2: add regular files.
+	for f in $(find $destdir -type f); do
+		j=$(echo $f|sed -e "$fpattern")
+		[ "$j" = "" ] && continue
+		printf "$j\n" >> $TMPFLIST
+		printf "<dict>\n" >> $TMPFPLIST
+		printf "<key>file</key>\n" >> $TMPFPLIST
+		printf "<string>$j</string>\n" >> $TMPFPLIST
+		printf "<key>type</key>\n" >> $TMPFPLIST
+		printf "<string>file</string>\n" >> $TMPFPLIST
 		printf "<key>sha256</key>\n" >> $TMPFPLIST
 		printf "<string>$(xbps-digest $f)</string>\n"  >> $TMPFPLIST
 		for i in ${conf_files}; do
@@ -130,14 +145,16 @@ xbps_write_metadata_pkg_real()
 		printf "</dict>\n" >> $TMPFPLIST
 	done
 
-	# Add directories at the end.
-	for f in $(find -L $destdir -type d|sort -ur); do
+	# Pass 3: add directories.
+	for f in $(find $destdir -type d|sort -ur); do
 		j=$(echo $f|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
 		printf "$j\n" >> $TMPFLIST
 		printf "<dict>\n" >> $TMPFPLIST
-		printf "<key>dir</key>\n" >> $TMPFPLIST
+		printf "<key>file</key>\n" >> $TMPFPLIST
 		printf "<string>$j</string>\n" >> $TMPFPLIST
+		printf "<key>type</key>\n" >> $TMPFPLIST
+		printf "<string>dir</string>\n" >> $TMPFPLIST
 		for i in ${keep_dirs}; do
 			if [ "$j" = "$i" ]; then
 				printf "<key>keep</key>\n" >> $TMPFPLIST
