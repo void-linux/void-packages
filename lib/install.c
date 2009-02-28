@@ -111,8 +111,6 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 {
 	prop_dictionary_t repod, pkgrd;
 	struct cbargs *cb = arg;
-	const char *pkgname = cb->pkgname;
-	const char *destdir = cb->destdir;
 	char *plist;
 	int rv = 0;
 
@@ -131,7 +129,7 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	 * Get the package dictionary from current repository.
 	 * If it's not there, pass to the next repository.
 	 */
-	pkgrd = xbps_find_pkg_in_dict(repod, "packages", pkgname);
+	pkgrd = xbps_find_pkg_in_dict(repod, "packages", cb->pkgname);
 	if (pkgrd == NULL) {
 		prop_object_release(repod);
 		errno = EAGAIN;
@@ -147,8 +145,8 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	 */
 	if (!xbps_pkg_has_rundeps(pkgrd)) {
 		/* pkg has no deps, just install it. */
-		rv = xbps_install_binary_pkg_fini(repod, pkgrd, destdir,
-		    cb->flags);
+		rv = xbps_install_binary_pkg_fini(repod, pkgrd,
+		    cb->destdir, cb->flags);
 		prop_object_release(repod);
 		return rv;
 	}
@@ -168,9 +166,10 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	/*
 	 * Install all required dependencies and the package itself.
 	 */
-	if ((rv = xbps_install_pkg_deps(pkgname, destdir, cb->flags)) == 0) {
-		rv = xbps_install_binary_pkg_fini(repod, pkgrd, destdir,
-		    cb->flags);
+	rv = xbps_install_pkg_deps(cb->pkgname, cb->destdir, cb->flags);
+	if (rv == 0) {
+		rv = xbps_install_binary_pkg_fini(repod, pkgrd,
+		    cb->destdir, cb->flags);
 		if (rv == 0)
 			*cbloop_done = true;
         }
