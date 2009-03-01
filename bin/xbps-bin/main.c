@@ -38,6 +38,7 @@
 static void	usage(void);
 static void	show_missing_deps(prop_dictionary_t, const char *);
 static int	show_missing_dep_cb(prop_object_t, void *, bool *);
+static int	show_reqby_pkgs(prop_object_t, void *, bool *);
 static int	list_pkgs_in_dict(prop_object_t, void *, bool *);
 
 static void
@@ -54,15 +55,18 @@ usage(void)
 	" Options shared by all targets:\n"
 	"    -r\t\t<rootdir>\n"
 	"    -v\t\t<verbose>\n"
-	" Option used by the files target:\n"
+	" Options used by the files target:\n"
 	"    -C\t\tTo check the SHA256 hash for any listed file.\n"
+	" Options used by the remove target:\n"
+	"    -f\t\tForce removal, even if package is required by other\n"
+	"      \t\tpackages that are currently installed.\n"
 	"\n"
 	" Examples:\n"
 	"    $ xbps-bin install klibc\n"
 	"    $ xbps-bin -r /path/to/root install klibc\n"
 	"    $ xbps-bin -C files klibc\n"
 	"    $ xbps-bin list\n"
-	"    $ xbps-bin remove klibc\n"
+	"    $ xbps-bin -f remove klibc\n"
 	"    $ xbps-bin show klibc\n");
 	exit(EXIT_FAILURE);
 }
@@ -114,18 +118,42 @@ show_missing_dep_cb(prop_object_t obj, void *arg, bool *loop_done)
 	return EINVAL;
 }
 
+static int
+show_reqby_pkgs(prop_object_t obj, void *arg, bool *loop_done)
+{
+	static size_t count;
+	(void)arg;
+	(void)loop_done;
+
+	if (count == 0)
+		printf("\n\t");
+        else if (count == 4) {
+                printf("\n\t");
+                count = 0;
+        }
+
+        printf("%s ", prop_string_cstring_nocopy(obj));
+        count++;
+
+        return 0;
+}
+
 int
 main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
+	prop_array_t reqby;
 	char *plist, *root = NULL;
 	int c, flags = 0, rv = 0;
-	bool chkhash = false;
+	bool chkhash = false, forcerm = false;
 
-	while ((c = getopt(argc, argv, "Cr:v")) != -1) {
+	while ((c = getopt(argc, argv, "Cfr:v")) != -1) {
 		switch (c) {
 		case 'C':
 			chkhash = true;
+			break;
+		case 'f':
+			forcerm = true;
 			break;
 		case 'r':
 			/* To specify the root directory */
@@ -197,6 +225,31 @@ main(int argc, char **argv)
 		/* Removes a binary package. */
 		if (argc != 2)
 			usage();
+
+		/*
+		 * First check if package is required by other packages.
+		 */
+		dict = xbps_find_pkg_installed_from_plist(argv[1]);
+		if (dict == NULL) {
+			printf("Package %s is not installed.\n", argv[1]);
+			exit(EXIT_FAILURE);
+		}
+
+		reqby = prop_dictionary_get(dict, "requiredby");
+		if (reqby != NULL && prop_array_count(reqby) > 0) {
+			printf("WARNING! %s is required by the following "
+			    "packages:\n", argv[1]);
+			(void)xbps_callback_array_iter_in_dict(dict,
+			    "requiredby", show_reqby_pkgs, NULL);
+			prop_object_release(dict);
+			if (!forcerm) {
+				printf("\n\nIf you are sure about this, use "
+				    "-f to force deletion for this package.\n");
+				exit(EXIT_FAILURE);
+			} else
+				printf("\n\nForcing %s for deletion!\n",
+				    argv[1]);
+		}
 
 		rv = xbps_remove_binary_pkg(argv[1], root, flags);
 		if (rv != 0) {
