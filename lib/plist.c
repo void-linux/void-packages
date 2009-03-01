@@ -167,7 +167,7 @@ xbps_find_pkg_installed_from_plist(const char *pkgname)
 	pkgd = xbps_find_pkg_from_plist(plist, pkgname);
 	free(plist);
 
-	return prop_dictionary_copy(pkgd);
+	return pkgd;
 }
 
 prop_dictionary_t
