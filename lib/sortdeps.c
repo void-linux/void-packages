@@ -193,8 +193,10 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 		prop_dictionary_get_cstring_nocopy(sdep->dict,
 		    "pkgname", &curpkg);
 		rundeps_array = prop_dictionary_get(sdep->dict, "run_depends");
-		if (rundeps_array == NULL)
+		if (rundeps_array == NULL) {
+			sdep->prio += 4;
 			continue;
+		}
 
 		iter = prop_array_iterator(rundeps_array);
 		if (iter == NULL) {
