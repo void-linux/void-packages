@@ -85,8 +85,21 @@ show_pkg_info(prop_dictionary_t dict)
 		printf("Version: %s\n", prop_string_cstring_nocopy(obj));
 
 	obj = prop_dictionary_get(dict, "filename");
-	if (obj && prop_object_type(obj) == PROP_TYPE_STRING)
-		printf("Filename: %s\n", prop_string_cstring_nocopy(obj));
+	if (obj && prop_object_type(obj) == PROP_TYPE_STRING) {
+		printf("Filename: %s", prop_string_cstring_nocopy(obj));
+		obj = prop_dictionary_get(dict, "filename-size");
+		if (obj && prop_object_type(obj) == PROP_TYPE_NUMBER) {
+			rv = xbps_humanize_number(size, 5,
+			    (int64_t)prop_number_unsigned_integer_value(obj),
+			    "", HN_AUTOSCALE, HN_NOSPACE);
+			if (rv == -1)
+				printf(" (size: %ju)\n",
+				    prop_number_unsigned_integer_value(obj));
+			else
+				printf(" (size: %s)\n", size);
+		} else
+			printf("\n");
+	}
 
 	obj = prop_dictionary_get(dict, "filename-sha256");
 	if (obj && prop_object_type(obj) == PROP_TYPE_STRING)
