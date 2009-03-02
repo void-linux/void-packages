@@ -111,6 +111,7 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 {
 	prop_dictionary_t repod, pkgrd;
 	struct cbargs *cb = arg;
+	const char *repoloc;
 	char *plist;
 	int rv = 0;
 
@@ -139,6 +140,16 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	/*
 	 * Check SHA256 hash for binary package before anything else.
 	 */
+	if (!prop_dictionary_get_cstring_nocopy(repod, "location-local",
+	    &repoloc)) {
+		prop_object_release(repod);
+		return EINVAL;
+	}
+
+	if ((rv = xbps_check_pkg_file_hash(pkgrd, repoloc)) != 0) {
+		prop_object_release(repod);
+		return rv;
+	}
 
 	/*
 	 * Check if this package needs dependencies.

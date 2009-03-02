@@ -45,7 +45,6 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 		       const char *destdir, int flags)
 {
 	prop_string_t filename, repoloc, arch;
-	const char *sha256;
 	char *binfile, *path;
 	int rv = 0;
 
@@ -54,7 +53,6 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	/* Append filename to the full path for binary pkg */
 	filename = prop_dictionary_get(pkg, "filename");
 	arch = prop_dictionary_get(pkg, "architecture");
-	prop_dictionary_get_cstring_nocopy(pkg, "filename-sha256", &sha256);
 	if (repo)
 		repoloc = prop_dictionary_get(repo, "location-local");
 	else
@@ -73,13 +71,6 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 		return EINVAL;
 	}
 	free(path);
-
-	if ((rv = xbps_check_file_hash(binfile, sha256)) == ERANGE) {
-		printf("ERROR: SHA256 doesn't match for %s!\n",
-		    prop_string_cstring_nocopy(filename));
-		free(binfile);
-		return rv;
-	}
 
 	rv = unpack_archive_init(pkg, destdir, binfile, flags);
 	free(binfile);

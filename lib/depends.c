@@ -599,6 +599,7 @@ xbps_install_pkg_deps(const char *pkgname, const char *destdir, int flags)
 	prop_array_t required, missing;
 	prop_object_t obj;
 	prop_object_iterator_t iter;
+	const char *repoloc;
 	int rv = 0;
 
 	/*
@@ -623,10 +624,21 @@ xbps_install_pkg_deps(const char *pkgname, const char *destdir, int flags)
 	if (required == NULL)
 		return 0;
 
-
 	iter = prop_array_iterator(required);
 	if (iter == NULL)
 		return ENOMEM;
+
+	/*
+	 * Check the SHA256 hash for any binary package that's going
+	 * to be installed.
+	 */
+	while ((obj = prop_object_iterator_next(iter)) != NULL) {
+		prop_dictionary_get_cstring_nocopy(obj, "repository", &repoloc);
+		rv = xbps_check_pkg_file_hash(obj, repoloc);
+		if (rv != 0)
+			goto out;
+	}
+	prop_object_iterator_reset(iter);
 
 	/*
 	 * Install all required dependencies, previously sorted.
@@ -636,6 +648,8 @@ xbps_install_pkg_deps(const char *pkgname, const char *destdir, int flags)
 		if (rv != 0)
 			break;
 	}
+
+out:
 	prop_object_iterator_release(iter);
 
 	return rv;

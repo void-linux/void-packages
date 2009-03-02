@@ -62,6 +62,53 @@ xbps_check_file_hash(const char *path, const char *sha256)
 }
 
 int
+xbps_check_pkg_file_hash(prop_dictionary_t pkgd, const char *repoloc)
+{
+	const char *sha256, *arch, *filename;
+	char *binfile, *path;
+	int rv = 0;
+
+	assert(repoloc != NULL);
+
+	if (!prop_dictionary_get_cstring_nocopy(pkgd, "filename", &filename))
+		return EINVAL;
+
+	if (!prop_dictionary_get_cstring_nocopy(pkgd, "filename-sha256",
+	    &sha256))
+		return EINVAL;
+
+	if (!prop_dictionary_get_cstring_nocopy(pkgd, "architecture", &arch))
+		return EINVAL;
+
+	path = xbps_append_full_path(false, repoloc, arch);
+	if (path == NULL)
+		return EINVAL;
+
+	binfile = xbps_append_full_path(false, path, filename);
+	if (binfile == NULL) {
+		free(path);
+		return EINVAL;
+	}
+	free(path);
+
+	printf("Checking SHA256 for %s ... ", filename);
+	(void)fflush(stdout);
+
+	rv = xbps_check_file_hash(binfile, sha256);
+	if (rv != 0 && rv != ERANGE)
+		printf("failed (%s)\n", strerror(rv));
+	else if (rv == ERANGE)
+		printf("failed! aborting installation.\n");
+	else if (rv == 0)
+		printf("ok.\n");
+
+	(void)fflush(stdout);
+
+	free(binfile);
+	return rv;
+}
+
+int
 xbps_check_is_installed_pkg(const char *pkg)
 {
 	prop_dictionary_t dict;
