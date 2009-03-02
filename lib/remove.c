@@ -118,15 +118,18 @@ remove_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 
 	(void)loop_done;
 
-	prop_dictionary_get_cstring_nocopy(obj, "file", &file);
-	if (file == NULL)
+	if (!prop_dictionary_get_cstring_nocopy(obj, "file", &file))
 		return EINVAL;
 
 	path = xbps_append_full_path(false, rmcb->destdir, file);
 	if (path == NULL)
 		return EINVAL;
 
-	prop_dictionary_get_cstring_nocopy(obj, "type", &type);
+	if (!prop_dictionary_get_cstring_nocopy(obj, "type", &type)) {
+		free(path);
+		return EINVAL;
+	}
+
 	if (strcmp(type, "file") == 0) {
 		prop_dictionary_get_cstring_nocopy(obj, "sha256", &sha256);
 		rv = xbps_check_file_hash(path, sha256);
