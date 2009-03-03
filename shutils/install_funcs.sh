@@ -122,10 +122,8 @@ make_install()
 
 	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
 
-	if [ -z "$in_chroot" ]; then
-		. $XBPS_SHUTILSDIR/buildvars_funcs.sh
-		set_build_vars
-	fi
+	. $XBPS_SHUTILSDIR/buildvars_funcs.sh
+	set_build_vars
 
 	#
 	# Install package via make.
@@ -150,7 +148,5 @@ make_install()
 	done
 
 	# Unset build vars.
-	if [ -z "$in_chroot" ]; then
-		unset_build_vars
-	fi
+	unset_build_vars
 }

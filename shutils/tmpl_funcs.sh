@@ -77,10 +77,8 @@ reset_tmpl_vars()
 		eval unset "$v"
 	done
 
-	if [ -z "$in_chroot" ]; then
-		. $XBPS_SHUTILSDIR/buildvars_funcs.sh
-		unset_build_vars
-	fi
+	. $XBPS_SHUTILSDIR/buildvars_funcs.sh
+	unset_build_vars
 }
 
 #

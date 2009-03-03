@@ -78,10 +78,8 @@ configure_src_phase()
 
 	cd $wrksrc || exit 1
 
-	if [ -z "$in_chroot" ]; then
-		. $XBPS_SHUTILSDIR/buildvars_funcs.sh
-		set_build_vars
-	fi
+	. $XBPS_SHUTILSDIR/buildvars_funcs.sh
+	set_build_vars
 
 	#
 	# Packages using GNU autoconf
@@ -131,10 +129,6 @@ configure_src_phase()
 
 	# unset cross compiler vars.
 	[ -n "$cross_compiler" ] && cross_compile_unsetvars
-
-	if [ -z "$in_chroot" ]; then
-		unset_build_vars
-	fi
-
+	unset_build_vars
 	touch -f $XBPS_CONFIGURE_DONE
 }

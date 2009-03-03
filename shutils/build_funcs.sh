@@ -72,9 +72,10 @@ build_src_phase()
 	if [ -z "$in_chroot" ]; then
 		. $XBPS_SHUTILSDIR/libtool_funcs.sh
 		libtool_fixup_file
-		. $XBPS_SHUTILSDIR/buildvars_funcs.sh
-		set_build_vars
 	fi
+
+	. $XBPS_SHUTILSDIR/buildvars_funcs.sh
+	set_build_vars
 
 	msg_normal "Running build phase for $pkg."
 
@@ -100,10 +101,6 @@ build_src_phase()
 
 	# unset cross compiler vars.
 	[ -n "$cross_compiler" ] && cross_compile_unsetvars
-
-	if [ -z "$in_chroot" ]; then
-		unset_build_vars
-	fi
-
+	unset_build_vars
 	touch -f $XBPS_BUILD_DONE
 }
