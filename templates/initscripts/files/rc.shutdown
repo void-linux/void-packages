@@ -1,0 +1,99 @@
+#!/bin/sh
+#
+# /etc/rc.shutdown
+#
+
+export HOME=/
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
+. /etc/rc.subr
+. /etc/rc.conf
+
+# avoid staircase effect
+stty onlcr
+
+echo " "
+echo "*** Initiating shutdown ***"
+echo " "
+
+[ -x /etc/rc.local.shutdown ] && /etc/rc.local.shutdown
+
+if [ "$PREVLEVEL" = "3" -o "$PREVLEVEL" = "5" ]; then
+	# Shutdown daemons
+	files=$(rcorder -k shutdown ${rcshutdown_rcorder_flags} /etc/rc.d/*)
+
+	for _rc_elem in $(reverse_list $files); do
+		run_rc_script $_rc_elem stop
+	done
+fi
+
+# Terminate all processes
+echo -n "=> Sending SIGTERM to processes... "
+killall5 -15 &> /dev/null
+sleep 5
+show_rval
+
+echo -n "=> Sending SIGKILL to processes... "
+killall5 -9 &> /dev/null
+sleep 1
+show_rval
+
+echo -n "=> Saving random seed... "
+dd if=/dev/urandom of=/var/run/random-seed count=1 bs=512 2> /dev/null
+show_rval
+
+echo -n "=> Saving system clock... "
+if [ "$TIMEZONE" != "" -a -e "/usr/share/zoneinfo/$TIMEZONE" ]; then
+	rm -f /etc/localtime
+	cp "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
+fi
+
+HWCLOCK_PARAMS="--systohc"
+if [ "$HARDWARECLOCK" = "UTC" ]; then
+	HWCLOCK_PARAMS="$HWCLOCK_PARAMS --utc"
+else
+	HWCLOCK_PARAMS="$HWCLOCK_PARAMS --localtime"
+fi
+hwclock $HWCLOCK_PARAMS
+show_rval
+
+# removing psmouse module to fix some reboot issues on newer laptops
+modprobe -r psmouse >/dev/null 2>&1
+
+# Write to wtmp file before unmounting
+halt -w
+
+echo -n "=> Deactivating swap... "
+swapoff -a
+show_rval
+
+echo -n "=> Unmounting filesystems... "
+umount -a -r -t noramfs,notmpfs,nosysfs,noproc
+show_rval
+
+if [ "$USELVM" = "yes" -o "$USELVM" = "YES" ]; then
+	if [ -x /sbin/lvm -a -d /sys/block ]; then
+		echo -n "=> Deactivating LVM2 groups... "
+		lvm vgchange --ignorelockingfailure -an >/dev/null 2>&1
+		show_rval
+	fi
+fi
+
+echo -n "=> Remounting root filesystem read-only... "
+mount -n -o remount,ro /
+show_rval
+
+# Power off or reboot
+if [ "$RUNLEVEL" = "0" ]; then
+	echo	
+	echo "*** POWER OFF ***"
+	echo
+	poweroff -d -f -h -i
+else
+	echo
+	echo "*** REBOOTING ***"
+	echo
+	# if kexec is installed and a kernel is loaded, use it
+	[ -x /sbin/kexec ] && /sbin/kexec -e > /dev/null 2>&1
+	reboot -d -f -i
+fi

@@ -1,0 +1,66 @@
+#!/bin/sh
+#
+# PROVIDE: checkfs
+# REQUIRE: SERVERS
+# BEFORE: NETWORKING
+
+$_rc_subr_loaded . /etc/rc.subr
+
+name="checkfs"
+start_cmd="checkfs_start"
+stop_cmd=":"
+
+NETFS="nonfs,nonfs4,nosmbfs,nocifs,nocodafs,noncpfs,nosysfs,noshfs,nofuse,nofuseblk"
+
+checkfs_start()
+{
+	echo -n "=> Mounting root read-only... "
+	mount -n -o remount,ro /
+	show_rval
+
+	FORCEFSCK=
+	[ -f /forcefsck ] && FORCEFSCK="-- -f"
+
+	echo -n "=> Checking filesystems... "
+	if grep -qw quiet /proc/cmdline; then
+		fsck -A -T -C -a -t $NETFS $FORCEFSCK >/dev/null 2>&1
+	else
+		fsck -A -T -C -a -t $NETFS $FORCEFSCK 2>/dev/null
+	fi
+	fsckret=$?
+	if [ ${fsckret} -gt 1 ]; then
+		echo "failed!"
+		if [ $((${fsckret}&2)) -eq 2 ]; then
+			echo
+			echo "********************** REBOOT REQUIRED *********************"
+			echo "*                                                          *"
+			echo "* The system will be rebooted automatically in 15 seconds. *"
+			echo "*                                                          *"
+			echo "************************************************************"
+			echo
+			sleep 15
+		else
+			echo
+			echo "*****************  FILESYSTEM CHECK FAILED  ****************"
+			echo "*                                                          *"
+			echo "*  Please repair manually and reboot. Note that the root   *"
+			echo "*  file system is currently mounted read-only. To remount  *"
+			echo "*  it read-write type: mount -n -o remount,rw /            *"
+			echo "*  When you exit the maintenance shell the system will     *"
+			echo "*  reboot automatically.                                   *"
+			echo "*                                                          *"
+			echo "************************************************************"
+			echo
+			sulogin -p
+		fi
+		echo "Automatic reboot in progress..."
+		umount -a
+		mount -n -o remount,ro /
+		reboot -f
+		exit 0
+	fi
+	show_rval
+}
+
+load_rc_config $name
+run_rc_command "$1"
