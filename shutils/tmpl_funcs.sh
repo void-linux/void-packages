@@ -71,7 +71,7 @@ reset_tmpl_vars()
 			install_priority noarch subpackages sourcepkg \
 			abi_depends api_depends \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
-			XBPS_BUILD_DONE XBPS_INSTALL_DONE"
+			XBPS_BUILD_DONE XBPS_INSTALL_DONE FILESDIR"
 
 	for v in ${TMPL_VARS}; do
 		eval unset "$v"
@@ -189,6 +189,8 @@ prepare_tmpl()
 	XBPS_CONFIGURE_DONE="$wrksrc/.xbps_configure_done"
 	XBPS_BUILD_DONE="$wrksrc/.xbps_build_done"
 	XBPS_INSTALL_DONE="$wrksrc/.xbps_install_done"
+
+	FILESDIR=${XBPS_TEMPLATESDIR}/${pkgname}/files
 
 	if [ -z "$in_chroot" ]; then
 		export PATH="$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin"
