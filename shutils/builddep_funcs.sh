@@ -33,16 +33,13 @@ install_pkg_deps()
 {
 	local curpkg="$1"
 	local saved_prevpkg=$(xbps-pkgdb getpkgname ${2})
-	local curpkgname=$(xbps-pkgdb getpkgname ${curpkg})
-	local j=
-	local jver=
-	local jname=
-	local reqver=
+	local curpkgname j jver jname reqver
 
-        [ -z "$curpkg" ] && return 1
-        [ -n "$prev_pkg" ] && curpkg=$prev_pkg
+	[ -z "$curpkg" ] && return 1
+	[ -n "$prev_pkg" ] && curpkg=$prev_pkg
+	curpkgname=$(xbps-pkgdb getpkgname ${curpkg})
 
-        run_template $curpkgname
+	run_template $curpkgname
 
 	echo "==> Installing $saved_prevpkg dependency: $curpkg"
 
