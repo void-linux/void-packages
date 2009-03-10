@@ -40,6 +40,8 @@ install_pkg_deps()
 	curpkgname=$(xbps-pkgdb getpkgname ${curpkg})
 
 	run_template $curpkgname
+	check_installed_pkg $curpkg
+	[ $? -eq 0 ] && continue
 
 	echo "==> Installing $saved_prevpkg dependency: $curpkg"
 
