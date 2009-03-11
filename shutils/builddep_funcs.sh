@@ -32,20 +32,21 @@
 install_pkg_deps()
 {
 	local curpkg="$1"
-	local saved_prevpkg=$(xbps-pkgdb getpkgname ${2})
-	local curpkgname j jver jname reqver
+	local curpkgname=$(xbps-pkgdb getpkgname $1)
+	local saved_prevpkg=$(xbps-pkgdb getpkgname $2)
+	local j jver jname reqver
 
 	[ -z "$curpkg" ] && return 1
-	[ -n "$prev_pkg" ] && curpkg=$prev_pkg
-	curpkgname=$(xbps-pkgdb getpkgname ${curpkg})
+
+	if [ -n "$prev_pkg" ]; then
+		curpkg=$prev_pkg
+		curpkgname=$(xbps-pkgdb getpkgname ${curpkg})
+	fi
+
+	echo "==> Installing $saved_prevpkg dependency: $curpkgname."
 
 	run_template $curpkgname
-	check_installed_pkg $curpkg
-	[ $? -eq 0 ] && continue
-
-	echo "==> Installing $saved_prevpkg dependency: $curpkg"
-
-	check_build_depends_pkg $curpkg
+	check_build_depends_pkg
 	if [ $? -eq 0 ]; then
 		echo "==> Dependency $curpkgname requires:"
 		for j in ${build_depends}; do
@@ -78,6 +79,7 @@ install_pkg_deps()
         done
 
 	install_pkg $curpkgname auto
+	[ -n "$prev_pkg" ] && unset prev_pkg
 }
 
 #
@@ -87,11 +89,7 @@ install_dependencies_pkg()
 {
 	local pkg="$1"
 	local lpkgname=$(xbps-pkgdb getpkgname ${pkg})
-	local i=
-	local ipkgname=
-	local iversion=
-	local reqvers=
-	local notinstalled_deps=
+	local i ipkgname iversion reqvers notinstalled_deps
 
 	[ -z "$pkg" ] && return 1
 
@@ -112,19 +110,17 @@ install_dependencies_pkg()
 		fi
 	done
 
-	if [ -z "$notinstalled_deps" ]; then
-		return 0
-	fi
+	[ -z "$notinstalled_deps" ] && return 0
 
 	for i in ${notinstalled_deps}; do
-		ipkgname=$(xbps-pkgdb getpkgname ${i})
-		run_template $ipkgname
 		check_installed_pkg $i
 		[ $? -eq 0 ] && continue
 
-		check_build_depends_pkg $i
+		ipkgname=$(xbps-pkgdb getpkgname ${i})
+		run_template $ipkgname
+		check_build_depends_pkg
 		if [ $? -eq 1 ]; then
-			msg_normal "Installing $lpkgname dependency: $ipkgname"
+			msg_normal "Installing $lpkgname dependency: $ipkgname."
 			install_pkg $ipkgname auto
 		else
 			install_pkg_deps $i $pkg
@@ -136,8 +132,7 @@ install_builddeps_required_pkg()
 {
 	local pkg="$1"
 	local pkgname=$(xbps-pkgdb getpkgname ${pkg})
-	local dep=
-	local depname=
+	local dep depname
 
 	[ -z "$pkg" ] && return 1
 
@@ -160,11 +155,9 @@ install_builddeps_required_pkg()
 check_installed_pkg()
 {
 	local pkg="$1"
-	local pkgname=
-	local reqver=
-	local iver=
+	local pkgname reqver iver
 
-	[ -z "$pkg" ] && return 1
+	[ -z "$pkg" ] && return 2
 
 	pkgname=$(xbps-pkgdb getpkgname $pkg)
 	reqver=$(xbps-pkgdb getpkgversion $pkg)
@@ -185,12 +178,7 @@ check_installed_pkg()
 #
 check_build_depends_pkg()
 {
-	local pkg="$1"
-	local pkgname=$(xbps-pkgdb getpkgname ${pkg})
-
-	[ -z $pkg ] && return 1
-
-	run_template $pkgname
+	[ -z "$pkgname" ] && return 2
 
 	if [ -n "$build_depends" ]; then
 		return 0

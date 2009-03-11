@@ -31,7 +31,6 @@ configure_src_phase()
 {
 	local pkg="$1"
 	local f=
-	local destdir=$XBPS_DESTDIR/$pkgname-$version
 
 	[ -z $pkg ] && [ -z $pkgname ] && return 1
 
@@ -87,8 +86,8 @@ configure_src_phase()
 	if [ "$build_style" = "gnu_configure" ]; then
 		${configure_script}				\
 			--prefix=${_prefix} --sysconfdir=/etc	\
-			--infodir=$destdir/usr/share/info	\
-			--mandir=$destdir/usr/share/man		\
+			--infodir=${DESTDIR}/usr/share/info	\
+			--mandir=${DESTDIR}/usr/share/man	\
 			${configure_args}
 	#
 	# Packages using propietary configure scripts.

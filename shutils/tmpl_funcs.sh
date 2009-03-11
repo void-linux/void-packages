@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008 Juan Romero Pardines.
+# Copyright (c) 2008-2009 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -42,7 +42,8 @@ info_tmpl()
 	echo "$long_desc"
 	echo
 	. $XBPS_SHUTILSDIR/builddep_funcs.sh
-	check_build_depends_pkg $pkgname-$version
+	run_template $pkgname
+	check_build_depends_pkg
 	if [ $? -eq 0 ]; then
 		echo "This package requires the following dependencies to be built:"
 		for i in ${build_depends}; do
@@ -71,7 +72,8 @@ reset_tmpl_vars()
 			install_priority noarch subpackages sourcepkg \
 			abi_depends api_depends \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
-			XBPS_BUILD_DONE XBPS_INSTALL_DONE FILESDIR"
+			XBPS_BUILD_DONE XBPS_INSTALL_DONE FILESDIR DESTDIR \
+			SRCPKGDESTDIR"
 
 	for v in ${TMPL_VARS}; do
 		eval unset "$v"
@@ -94,6 +96,7 @@ setup_tmpl()
 
 	if [ -f "$XBPS_TEMPLATESDIR/$pkg/template" ]; then
 		if [ "$pkgname" != "$pkg" ]; then
+			reset_tmpl_vars
 			. $XBPS_TEMPLATESDIR/$pkg/template
 		fi
 		prepare_tmpl
@@ -190,7 +193,7 @@ prepare_tmpl()
 	XBPS_BUILD_DONE="$wrksrc/.xbps_build_done"
 	XBPS_INSTALL_DONE="$wrksrc/.xbps_install_done"
 
-	FILESDIR=${XBPS_TEMPLATESDIR}/${pkgname}/files
+	set_tmpl_common_vars
 
 	if [ -z "$in_chroot" ]; then
 		export PATH="$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin"
@@ -200,6 +203,15 @@ prepare_tmpl()
 	fi
 }
 
+set_tmpl_common_vars()
+{
+	[ -z "$pkgname" ] && return 1
+
+	FILESDIR=${XBPS_TEMPLATESDIR}/${pkgname}/files
+	DESTDIR=${XBPS_DESTDIR}/${pkgname}-${version}
+	SRCPKGDESTDIR=${XBPS_DESTDIR}/${sourcepkg}-${version}
+}
+
 run_template()
 {
 	local pkg="$1"
@@ -207,5 +219,6 @@ run_template()
 	if [ "$pkgname" != "$pkg" ]; then
 		reset_tmpl_vars
 		. $XBPS_TEMPLATESDIR/$pkg/template
+		set_tmpl_common_vars
 	fi
 }

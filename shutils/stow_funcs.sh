@@ -44,6 +44,7 @@ stow_pkg()
 		fi
 		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${sourcepkg}-${subpkg}
+		set_tmpl_common_vars
 		stow_pkg_real ${pkgname} ${automatic}
 		run_template ${sourcepkg}
 		if [ "${pkg}" = "${sourcepkg}-${subpkg}" ]; then
@@ -70,7 +71,6 @@ stow_pkg_real()
 	local pkg="$1"
 	local automatic="$2"
 	local i=
-	local destdir=$XBPS_DESTDIR/$pkg-$version
 
 	[ -z "$pkg" ] && return 2
 
@@ -79,16 +79,12 @@ stow_pkg_real()
 	fi
 
 	if [ "$build_style" = "meta-template" ]; then
-		[ ! -d $destdir ] && mkdir -p $destdir
+		[ ! -d ${DESTDIR} ] && mkdir -p ${DESTDIR}
 	fi
 
-	if [ -n "$stow_flag" ]; then
-		if [ "$pkgname" != "$pkg" ]; then
-			. $XBPS_TEMPLATESDIR/$pkg/template
-		fi
-	fi
+	[ -n "$stow_flag" ] && run_template $pkg
 
-	cd $destdir || exit 1
+	cd ${DESTDIR} || exit 1
 
 	# Copy files into masterdir.
 	for i in $(echo *); do
@@ -133,9 +129,7 @@ unstow_pkg()
 		msg_error "cannot unstow $pkg! (permission denied)"
 	fi
 
-	if [ "$pkgname" != "$pkg" ]; then
-		. $XBPS_TEMPLATESDIR/$pkg/template
-	fi
+	run_template $pkg
 
 	ver=$($XBPS_REGPKGDB_CMD version $pkg)
 	if [ -z "$ver" ]; then

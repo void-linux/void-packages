@@ -91,6 +91,7 @@ install_src_phase()
 		fi
 		. $XBPS_TEMPLATESDIR/$pkgname/$subpkg.template
 		pkgname=${sourcepkg}-${subpkg}
+		set_tmpl_common_vars
 		run_func do_install
 		run_template ${sourcepkg}
 		[ "$pkg" = "${sourcepkg}-${subpkg}" ] && break
@@ -113,11 +114,9 @@ install_src_phase()
 
 make_install()
 {
-	local destdir=$XBPS_DESTDIR/$pkgname-$version
-
 	if [ -z "$make_install_target" ]; then
-		make_install_target="install prefix=$destdir/usr"
-		make_install_target="$make_install_target sysconfdir=$destdir/etc"
+		make_install_target="install prefix=${DESTDIR}/usr"
+		make_install_target="$make_install_target sysconfdir=${DESTDIR}/etc"
 	fi
 
 	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make

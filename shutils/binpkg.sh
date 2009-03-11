@@ -59,6 +59,7 @@ xbps_write_metadata_pkg()
 		unset run_depends conf_files keep_dirs noarch install_priority
 		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${sourcepkg}-${subpkg}
+		set_tmpl_common_vars
 		xbps_write_metadata_pkg_real
 		run_template ${sourcepkg}
 		[ "${pkg}" = "${sourcepkg}-${subpkg}" ] && break
@@ -71,6 +72,7 @@ xbps_write_metadata_pkg()
 			run_depends="$run_depends ${sourcepkg}-${subpkg}-${version}"
 		done
 	fi
+	set_tmpl_common_vars
 	xbps_write_metadata_pkg_real
 }
 
@@ -80,12 +82,11 @@ xbps_write_metadata_pkg()
 #
 xbps_write_metadata_pkg_real()
 {
-	local destdir=$XBPS_DESTDIR/$pkgname-$version
-	local metadir=$destdir/var/db/xbps/metadata/$pkgname
+	local metadir=${DESTDIR}/var/db/xbps/metadata/$pkgname
 	local f i j arch prioinst TMPFLIST TMPFPLIST
-	local fpattern="s|$destdir||g;s|^\./$||g;/^$/d"
+	local fpattern="s|${DESTDIR}||g;s|^\./$||g;/^$/d"
 
-	if [ ! -d "$destdir" ]; then
+	if [ ! -d "${DESTDIR}" ]; then
 		echo "ERROR: $pkgname not installed into destdir."
 		exit 1
 	fi
@@ -111,7 +112,7 @@ xbps_write_metadata_pkg_real()
 	write_metadata_flist_header $TMPFPLIST
 
 	# Pass 1: add links.
-	for f in $(find $destdir -type l); do
+	for f in $(find ${DESTDIR} -type l); do
 		j=$(echo $f|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
 		printf "$j\n" >> $TMPFLIST
@@ -124,7 +125,7 @@ xbps_write_metadata_pkg_real()
 	done
 
 	# Pass 2: add regular files.
-	for f in $(find $destdir -type f); do
+	for f in $(find ${DESTDIR} -type f); do
 		j=$(echo $f|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
 		printf "$j\n" >> $TMPFLIST
@@ -146,7 +147,7 @@ xbps_write_metadata_pkg_real()
 	done
 
 	# Pass 3: add directories.
-	for f in $(find $destdir -type d|sort -ur); do
+	for f in $(find ${DESTDIR} -type d|sort -ur); do
 		j=$(echo $f|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
 		printf "$j\n" >> $TMPFLIST
@@ -184,7 +185,7 @@ xbps_write_metadata_pkg_real()
 <key>priority</key>
 <integer>$prioinst</integer>
 <key>installed_size</key>
-<integer>$(du -sb $destdir|awk '{print $1}')</integer>
+<integer>$(du -sb ${DESTDIR}|awk '{print $1}')</integer>
 <key>maintainer</key>
 <string>$(echo $maintainer|sed -e 's|<|[|g;s|>|]|g')</string>
 <key>short_desc</key>
@@ -243,8 +244,8 @@ _EOF
 	rm -f $TMPFLIST $TMPFPLIST $TMPFPROPS
 
 	if [ -f "$XBPS_TEMPLATESDIR/$pkgname/INSTALL" ]; then
-		cp -f $XBPS_TEMPLATESDIR/$pkgname/INSTALL $destdir
-		chmod +x $destdir/INSTALL
+		cp -f $XBPS_TEMPLATESDIR/$pkgname/INSTALL ${DESTDIR}
+		chmod +x ${DESTDIR}/INSTALL
 	fi
 	if [ -f "$XBPS_TEMPLATESDIR/$pkgname/REMOVE" ]; then
 		cp -f $XBPS_TEMPLATESDIR/$pkgname/REMOVE $metadir
@@ -261,12 +262,14 @@ xbps_make_binpkg()
 		if [ "$pkg" = "$pkgname-$subpkg" ]; then
 			. $XBPS_TEMPLATESDIR/$pkgname/$subpkg.template
 			pkgname=${sourcepkg}-${subpkg}
+			set_tmpl_common_vars
 			xbps_make_binpkg_real
 			return $?
 		fi
 		run_template ${sourcepkg}
 	done
 
+	set_tmpl_common_vars
 	xbps_make_binpkg_real
 	return $?
 }
@@ -277,13 +280,12 @@ xbps_make_binpkg()
 #
 xbps_make_binpkg_real()
 {
-	local destdir=$XBPS_DESTDIR/$pkgname-$version
 	local binpkg=
 	local pkgdir=
 	local arch=
 	local use_sudo=
 
-	cd $destdir || exit 1
+	cd ${DESTDIR} || exit 1
 
 	if [ -n "$noarch" ]; then
 		arch=noarch
