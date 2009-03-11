@@ -141,11 +141,6 @@ make_install()
 		fi
 	fi
 
-	# Unset make_env vars.
-	for f in ${make_env}; do
-		unset eval ${f%=*}
-	done
-
 	# Unset build vars.
 	unset_build_vars
 }

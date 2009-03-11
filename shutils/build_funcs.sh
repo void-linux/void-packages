@@ -64,11 +64,6 @@ build_src_phase()
 	[ -n "$XBPS_MAKEJOBS" -a -z "$disable_parallel_build" ] && \
 		makejobs="-j$XBPS_MAKEJOBS"
 
-	# Export make_env vars.
-	for f in ${make_env}; do
-		export "$f"
-	done
-
 	if [ -z "$in_chroot" ]; then
 		. $XBPS_SHUTILSDIR/libtool_funcs.sh
 		libtool_fixup_file
