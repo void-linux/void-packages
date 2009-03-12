@@ -214,8 +214,14 @@ xbps_remove_binary_pkg(const char *pkgname, const char *destdir, int flags)
 
 	assert(pkgname != NULL);
 
-	if (destdir == NULL)
+	if (destdir) {
+		if (chdir(destdir) == -1)
+			return errno;
+	} else {
+		if (chdir("/") == -1)
+			return errno;
 		destdir = "";
+        }
 
 	/* Check if pkg is installed */
 	if (xbps_check_is_installed_pkgname(pkgname) == false)
@@ -249,6 +255,8 @@ xbps_remove_binary_pkg(const char *pkgname, const char *destdir, int flags)
 		 */
 		(void)close(fd);
 		prepostf = true;
+		(void)printf("\n");
+		(void)fflush(stdout);
 		rv = xbps_file_exec(buf, destdir, "pre", pkgname, NULL);
 		if (rv != 0) {
 			printf("%s: prerm action target error (%s)\n", pkgname,
