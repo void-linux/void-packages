@@ -220,7 +220,7 @@ build|configure)
 	fi
 	;;
 build-pkg)
-	. $XBPS_SHUTILSDIR/binpkg.sh
+	. $XBPS_SHUTILSDIR/make-binpkg.sh
 	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
 	if [ "$2" = "all" ]; then
 		for f in $($XBPS_BIN_CMD list|awk '{print $1}'); do
