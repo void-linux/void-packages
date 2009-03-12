@@ -88,8 +88,8 @@ stow_pkg_real()
 
 	# Copy files into masterdir.
 	for i in $(echo *); do
-		[ "$i" = "XBPS_PREPOST_INSTALL" ] && continue
-		cp -ar ${i} $XBPS_MASTERDIR
+		[ "$i" = "INSTALL" ] && continue
+		cp -a ${i} $XBPS_MASTERDIR
 	done
 
 	#
@@ -102,14 +102,6 @@ stow_pkg_real()
 	fi
 	$XBPS_REGPKGDB_CMD $regpkgdb_flags register \
 		$pkg $version "$short_desc" || exit 1
-
-	#
-	# Run template postinstall helpers if requested.
-	#
-	for i in ${postinstall_helpers}; do
-		local pihf="$XBPS_HELPERSDIR/$i"
-		[ -f "$pihf" ] && . $pihf
-	done
 }
 
 #

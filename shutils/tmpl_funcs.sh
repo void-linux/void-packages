@@ -64,13 +64,13 @@ reset_tmpl_vars()
 			patch_files make_cmd base_package base_chroot \
 			make_build_target configure_script \
 			pre_configure pre_build pre_install post_install \
-			postinstall_helpers make_install_target version \
-			tar_override_cmd xml_entries sgml_entries \
+			make_install_target version \
+			xml_entries sgml_entries \
 			build_depends libtool_fixup_la_stage no_fixup_libtool \
 			disable_parallel_build run_depends cross_compiler \
 			only_for_archs patch_args conf_files keep_dirs \
 			install_priority noarch subpackages sourcepkg \
-			abi_depends api_depends \
+			abi_depends api_depends triggers \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE FILESDIR DESTDIR \
 			SRCPKGDESTDIR"
