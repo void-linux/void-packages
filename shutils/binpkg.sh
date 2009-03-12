@@ -111,7 +111,7 @@ xbps_write_metadata_pkg_real()
         # Find out if this package contains info files and compress
         # all them with gzip.
         #
-	if [ -f "${DESTDIR}/usr/share/info/dir" ]; then
+	if [ -d "${DESTDIR}/usr/share/info" ]; then
 		if [ -f ${XBPS_MASTERDIR}/usr/share/info/dir ]; then
 			rm -f ${DESTDIR}/usr/share/info/dir
 		fi
