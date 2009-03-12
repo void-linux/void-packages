@@ -285,7 +285,12 @@ xbps_make_binpkg_real()
 	local arch=
 	local use_sudo=
 
-	cd ${DESTDIR} || exit 1
+	if [ ! -d ${DESTDIR} ]; then
+		echo "$pkgname: unexistent destdir... skipping!"
+		return 0
+	fi
+
+	cd ${DESTDIR}
 
 	if [ -n "$noarch" ]; then
 		arch=noarch
@@ -310,17 +315,16 @@ xbps_make_binpkg_real()
 		#
 		run_rootcmd $use_sudo tar cfp $XBPS_DESTDIR/$binpkg ./INSTALL && \
 		run_rootcmd $use_sudo tar rfp $XBPS_DESTDIR/$binpkg . \
-			--exclude "./INSTALL" && \
+			--exclude "./INSTALL" \
+			--exclude "./var/db/xbps/metadata/*/flist" && \
 			bzip2 -9 $XBPS_DESTDIR/$binpkg && \
 			mv $XBPS_DESTDIR/$binpkg.bz2 $XBPS_DESTDIR/$binpkg
 	else
-		run_rootcmd $use_sudo tar cfp $XBPS_DESTDIR/$binpkg . && \
+		run_rootcmd $use_sudo tar cfp $XBPS_DESTDIR/$binpkg . \
+			--exclude "./var/db/xbps/metadata/*/flist" && \
 			bzip2 -9 $XBPS_DESTDIR/$binpkg && \
 			mv $XBPS_DESTDIR/$binpkg.bz2 $XBPS_DESTDIR/$binpkg
 	fi
-	# Disabled for now.
-	#		--exclude "./var/db/xbps/metadata/*/flist" .
-	#
 	if [ $? -eq 0 ]; then
 		[ ! -d $pkgdir ] && mkdir -p $pkgdir
 		mv -f $XBPS_DESTDIR/$binpkg $pkgdir
