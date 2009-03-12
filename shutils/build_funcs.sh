@@ -60,7 +60,6 @@ build_src_phase()
 	#
 	run_func pre_build
 
-	[ -z "$make_build_target" ] && make_build_target=
 	[ -n "$XBPS_MAKEJOBS" -a -z "$disable_parallel_build" ] && \
 		makejobs="-j$XBPS_MAKEJOBS"
 
