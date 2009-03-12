@@ -35,6 +35,8 @@
 #include <unistd.h>
 #include <string.h>
 
+#include <xbps_api.h>
+
 static int	vfcexec(const char *, int, const char *, va_list);
 static int	pfcexec(const char *, const char *, const char **);
 
