@@ -96,16 +96,18 @@ run_file()
 
 set_defvars()
 {
-	local i=
+	local DDIRS i
 
 	: ${XBPS_TEMPLATESDIR:=$XBPS_DISTRIBUTIONDIR/templates}
+	: ${XBPS_TRIGGERSDIR:=$XBPS_DISTRIBUTIONDIR/triggers}
 	: ${XBPS_HELPERSDIR:=$XBPS_TEMPLATESDIR/helpers}
 	: ${XBPS_DBDIR:=$XBPS_MASTERDIR/var/db/xbps}
 	: ${XBPS_META_PATH:=$XBPS_DBDIR/}
 	: ${XBPS_PKGMETADIR:=$XBPS_DBDIR/metadata}
 	: ${XBPS_SHUTILSDIR:=$XBPS_DISTRIBUTIONDIR/shutils}
 
-	local DDIRS="XBPS_TEMPLATESDIR XBPS_HELPERSDIR XBPS_SHUTILSDIR"
+	DDIRS="XBPS_TEMPLATESDIR XBPS_TRIGGERSDIR"
+	DDIRS="$DDIRS XBPS_HELPERSDIR XBPS_SHUTILSDIR"
 	for i in ${DDIRS}; do
 		eval val="\$$i"
 		[ ! -d "$val" ] &&  msg_error "cannot find $i, aborting."

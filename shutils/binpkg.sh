@@ -25,11 +25,9 @@
 
 write_metadata_flist_header()
 {
-	local file="$1"
+	[ ! -f "$1" ] && return 1
 
-	[ -z "$file" ] && return 1
-
-	cat > $file <<_EOF
+	cat > $1 <<_EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -43,7 +41,7 @@ _EOF
 xbps_write_metadata_pkg()
 {
 	local pkg="$1"
-	local subpkg=
+	local subpkg
 
 	for subpkg in ${subpackages}; do
 		if [ "${pkg}" != "${sourcepkg}" ] && \
@@ -56,7 +54,8 @@ xbps_write_metadata_pkg()
 		if [ ! -f $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template ]; then
 			msg_error "Cannot find subpackage template!"
 		fi
-		unset run_depends conf_files keep_dirs noarch install_priority
+		unset run_depends conf_files keep_dirs noarch install_priority \
+			triggers
 		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${sourcepkg}-${subpkg}
 		set_tmpl_common_vars
@@ -83,7 +82,7 @@ xbps_write_metadata_pkg()
 xbps_write_metadata_pkg_real()
 {
 	local metadir=${DESTDIR}/var/db/xbps/metadata/$pkgname
-	local f i j arch prioinst TMPFLIST TMPFPLIST
+	local f i j arch dirat lnkat newlnk prioinst TMPFLIST TMPFPLIST
 	local fpattern="s|${DESTDIR}||g;s|^\./$||g;/^$/d"
 
 	if [ ! -d "${DESTDIR}" ]; then
@@ -106,7 +105,66 @@ xbps_write_metadata_pkg_real()
 	# Write the files.plist file.
 	TMPFLIST=$(mktemp -t flist.XXXXXXXXXX) || exit 1
 	TMPFPLIST=$(mktemp -t fplist.XXXXXXXXXX) || exit 1
+	TMPINFOLIST=$(mktemp -t infolist.XXXXXXXXXX) || exit 1
 
+        #
+        # Find out if this package contains info files and compress
+        # all them with gzip.
+        #
+	if [ -f "${DESTDIR}/usr/share/info/dir" ]; then
+		if [ -f ${XBPS_MASTERDIR}/usr/share/info/dir ]; then
+			rm -f ${DESTDIR}/usr/share/info/dir
+		fi
+		# Add info-files trigger.
+		triggers="info-files $triggers"
+
+		for f in $(find -L ${DESTDIR}/usr/share/info -type f); do
+			j=$(echo $f|sed -e "$fpattern")
+			[ "$j" = "" ] && continue
+			[ "$j" = "/usr/share/info/dir" ] && continue
+			if $(echo $j|grep -q '.gz'); then
+				continue
+			fi
+			if [ -h ${DESTDIR}/$j ]; then
+				dirat=$(dirname $j)
+				lnkat=$(readlink ${DESTDIR}/$j)
+				newlnk=$(basename $j)
+				rm -f ${DESTDIR}/$j
+				cd ${DESTDIR}/$dirat
+				ln -s ${lnkat}.gz ${newlnk}.gz
+				continue
+			fi
+			echo "=> Compressing info file: $j..."
+			gzip -q9 ${DESTDIR}/$j
+		done
+	fi
+
+	#
+	# Find out if this package contains manual pages and
+	# compress all them with gzip.
+	#
+	if [ -d "${DESTDIR}/usr/share/man" ]; then
+		for f in $(find -L ${DESTDIR}/usr/share/man -type f); do
+			j=$(echo $f|sed -e "$fpattern")
+			[ "$j" = "" ] && continue
+			if $(echo $j|grep -q '.gz'); then
+				continue
+			fi
+			if [ -h ${DESTDIR}/$j ]; then
+				dirat=$(dirname $j)
+				lnkat=$(readlink ${DESTDIR}/$j)
+				newlnk=$(basename $j)
+				rm -f ${DESTDIR}/$j
+				cd ${DESTDIR}/$dirat
+				ln -s ${lnkat}.gz ${newlnk}.gz
+				continue
+			fi
+			echo "=> Compressing manpage: $j..."
+			gzip -q9 ${DESTDIR}/$j
+		done
+	fi
+
+	cd ${DESTDIR}
 	msg_normal "Writing package metadata for $pkgname-$version..."
 
 	write_metadata_flist_header $TMPFPLIST
@@ -115,58 +173,72 @@ xbps_write_metadata_pkg_real()
 	for f in $(find ${DESTDIR} -type l); do
 		j=$(echo $f|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
-		printf "$j\n" >> $TMPFLIST
-		printf "<dict>\n" >> $TMPFPLIST
-		printf "<key>file</key>\n" >> $TMPFPLIST
-		printf "<string>$j</string>\n" >> $TMPFPLIST
-		printf "<key>type</key>\n" >> $TMPFPLIST
-		printf "<string>link</string>\n" >> $TMPFPLIST
-		printf "</dict>\n" >> $TMPFPLIST
+		echo "$j" >> $TMPFLIST
+		echo "<dict>" >> $TMPFPLIST
+		echo "<key>file</key>" >> $TMPFPLIST
+		echo "<string>$j</string>" >> $TMPFPLIST
+		echo "<key>type</key>" >> $TMPFPLIST
+		echo "<string>link</string>" >> $TMPFPLIST
+		echo "</dict>" >> $TMPFPLIST
 	done
 
 	# Pass 2: add regular files.
 	for f in $(find ${DESTDIR} -type f); do
 		j=$(echo $f|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
-		printf "$j\n" >> $TMPFLIST
-		printf "<dict>\n" >> $TMPFPLIST
-		printf "<key>file</key>\n" >> $TMPFPLIST
-		printf "<string>$j</string>\n" >> $TMPFPLIST
-		printf "<key>type</key>\n" >> $TMPFPLIST
-		printf "<string>file</string>\n" >> $TMPFPLIST
-		printf "<key>sha256</key>\n" >> $TMPFPLIST
-		printf "<string>$(xbps-digest $f)</string>\n"  >> $TMPFPLIST
+		echo "$j" >> $TMPFLIST
+		echo "<dict>" >> $TMPFPLIST
+		echo "<key>file</key>" >> $TMPFPLIST
+		echo "<string>$j</string>" >> $TMPFPLIST
+		echo "<key>type</key>" >> $TMPFPLIST
+		echo "<string>file</string>" >> $TMPFPLIST
+		echo "<key>sha256</key>" >> $TMPFPLIST
+		echo "<string>$(xbps-digest $f)</string>"  >> $TMPFPLIST
 		for i in ${conf_files}; do
 			if [ "$j" = "$i" ]; then
-				printf "<key>conf_file</key>\n"  >> $TMPFPLIST
-				printf "<true/>\n" >> $TMPFPLIST
+				echo "<key>conf_file</key>"  >> $TMPFPLIST
+				echo "<true/>" >> $TMPFPLIST
 				break
 			fi
 		done
-		printf "</dict>\n" >> $TMPFPLIST
+		echo "</dict>" >> $TMPFPLIST
 	done
 
 	# Pass 3: add directories.
 	for f in $(find ${DESTDIR} -type d|sort -ur); do
 		j=$(echo $f|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
-		printf "$j\n" >> $TMPFLIST
-		printf "<dict>\n" >> $TMPFPLIST
-		printf "<key>file</key>\n" >> $TMPFPLIST
-		printf "<string>$j</string>\n" >> $TMPFPLIST
-		printf "<key>type</key>\n" >> $TMPFPLIST
-		printf "<string>dir</string>\n" >> $TMPFPLIST
+		echo "$j" >> $TMPFLIST
+		echo "<dict>" >> $TMPFPLIST
+		echo "<key>file</key>" >> $TMPFPLIST
+		echo "<string>$j</string>" >> $TMPFPLIST
+		echo "<key>type</key>" >> $TMPFPLIST
+		echo "<string>dir</string>" >> $TMPFPLIST
 		for i in ${keep_dirs}; do
 			if [ "$j" = "$i" ]; then
-				printf "<key>keep</key>\n" >> $TMPFPLIST
-				printf "<true/>\n" >> $TMPFPLIST
+				echo "<key>keep</key>" >> $TMPFPLIST
+				echo "<true/>" >> $TMPFPLIST
 				break
 			fi
 		done
-		printf "</dict>\n" >> $TMPFPLIST
+		echo "</dict>" >> $TMPFPLIST
 	done
-	printf "</array>\n</dict>\n</plist>\n" >> $TMPFPLIST
+	echo "</array>" >> $TMPFPLIST
+	echo "</dict>" >> $TMPFPLIST
+	echo "</plist>" >> $TMPFPLIST
 	sed -i -e /^$/d $TMPFLIST
+
+	#
+	# Find out if this package contains info files and write
+	# a list will all them in a file.
+	#
+	if [ -d "${DESTDIR}/usr/share/info" ]; then
+		for f in $(find ${DESTDIR}/usr/share/info -type f); do
+			j=$(echo $f|sed -e "$fpattern")
+			[ "$j" = "" ] && continue
+			echo "$j" >> $TMPINFOLIST
+		done
+	fi
 
 	# Write the props.plist file.
 	local TMPFPROPS=$(mktemp -t fprops.XXXXXXXXXX) || exit 1
@@ -195,35 +267,36 @@ xbps_write_metadata_pkg_real()
 _EOF
 	# Dependencies
 	if [ -n "$run_depends" ]; then
-		printf "<key>run_depends</key>\n" >> $TMPFPROPS
-		printf "<array>\n" >> $TMPFPROPS
+		echo "<key>run_depends</key>" >> $TMPFPROPS
+		echo "<array>" >> $TMPFPROPS
 		for f in ${run_depends}; do
-			printf "<string>$f</string>\n" >> $TMPFPROPS
+			echo "<string>$f</string>" >> $TMPFPROPS
 		done
-		printf "</array>\n" >> $TMPFPROPS
+		echo "</array>" >> $TMPFPROPS
 	fi
 
 	# Configuration files
 	if [ -n "$conf_files" ]; then
-		printf "<key>conf_files</key>\n" >> $TMPFPROPS
-		printf "<array>\n" >> $TMPFPROPS
+		echo "<key>conf_files</key>" >> $TMPFPROPS
+		echo "<array>" >> $TMPFPROPS
 		for f in ${conf_files}; do
-			printf "<string>$f</string>\n" >> $TMPFPROPS
+			echo "<string>$f</string>" >> $TMPFPROPS
 		done
-		printf "</array>\n" >> $TMPFPROPS
+		echo "</array>" >> $TMPFPROPS
 	fi
 	# Keep directories while removing.
 	if [ -n "$keep_dirs" ]; then
-		printf "<key>keep_dirs</key>\n" >> $TMPFPROPS
-		printf "<array>\n" >> $TMPFPROPS
+		echo "<key>keep_dirs</key>" >> $TMPFPROPS
+		echo "<array>" >> $TMPFPROPS
 		for f in ${keep_dirs}; do
-			printf "<string>$f</string>\n" >> $TMPFPROPS
+			echo "<string>$f</string>" >> $TMPFPROPS
 		done
-		printf "</array>\n" >> $TMPFPROPS
+		echo "</array>" >> $TMPFPROPS
 	fi
 
 	# Terminate the property list file.
-	printf "</dict>\n</plist>\n" >> $TMPFPROPS
+	echo "</dict>" >> $TMPFPROPS
+	echo "</plist>" >> $TMPFPROPS
 
 	if [ ! -d $metadir ]; then
 		mkdir -p $metadir >/dev/null 2>&1
@@ -235,28 +308,131 @@ _EOF
 	fi
 
 	# Write metadata files and cleanup.
-	cp -f $TMPFLIST $metadir/flist
-	cp -f $TMPFPLIST $metadir/files.plist
-	cp -f $TMPFPROPS $metadir/props.plist
+	if [ -s $TMPFLIST ]; then
+		mv -f $TMPFLIST $metadir/flist
+	else
+		rm -f $TMPFLIST
+	fi
+	mv -f $TMPFPLIST $metadir/files.plist
+	mv -f $TMPFPROPS $metadir/props.plist
+	if [ -s $TMPINFOLIST ]; then
+		mv -f $TMPINFOLIST $metadir/info-files
+	else
+		rm -f $TMPINFOLIST
+	fi
 	$XBPS_REGPKGDB_CMD sanitize-plist $metadir/files.plist
 	$XBPS_REGPKGDB_CMD sanitize-plist $metadir/props.plist
 	chmod 644 $metadir/*
-	rm -f $TMPFLIST $TMPFPLIST $TMPFPROPS
 
-	if [ -f "$XBPS_TEMPLATESDIR/$pkgname/INSTALL" ]; then
-		cp -f $XBPS_TEMPLATESDIR/$pkgname/INSTALL ${DESTDIR}
-		chmod +x ${DESTDIR}/INSTALL
+	#
+	# Create the INSTALL/REMOVE scripts if package uses them
+	# or uses any available trigger.
+	#
+	xbps_make_script install
+	xbps_make_script remove
+}
+
+xbps_make_script()
+{
+	local action="$1"
+	local metadir="${DESTDIR}/var/db/xbps/metadata/$pkgname"
+	local tmpf=$(mktemp -t xbps-install.XXXXXXXXXX) || exit 1
+	local triggerdir="./var/db/xbps/triggers"
+	local targets found
+
+	case "$action" in
+		install) ;;
+		remove) ;;
+		*) return 1;;
+	esac
+
+	cd ${DESTDIR}
+	cat >> $tmpf <<_EOF
+#!/bin/sh -e
+#
+# Generic INSTALL/REMOVE script.
+#
+# $1 = cwd
+# $2 = action
+# $3 = pkgname
+# $4 = version
+#
+# Note that paths must be relative to CWD, to avoid calling
+# host commands.
+#
+
+export PATH="./bin:./sbin:./usr/bin:./usr/sbin"
+_EOF
+
+	if [ -n "$triggers" ]; then
+		found=1
+		echo "case \"\$2\" in" >> $tmpf
+		echo "pre)" >> $tmpf
+		for f in ${triggers}; do
+			if [ ! -f $XBPS_TRIGGERSDIR/$f ]; then
+				rm -f $tmpf
+				msg_error "$pkgname: unknown trigger $f, aborting!"
+			fi
+		done
+		for f in ${triggers}; do
+			targets=$($XBPS_TRIGGERSDIR/$f targets)
+			for j in ${targets}; do
+				if ! $(echo $j|grep -q pre-${action}); then
+					continue
+				fi
+				printf "\t$triggerdir/$f run $j $pkgname $version\n" >> $tmpf
+				printf "\t[ \$? -ne 0 ] && exit \$?\n" >> $tmpf
+			done
+		done
+		printf "\t;;\n" >> $tmpf
+		echo "post)" >> $tmpf
+		for f in ${triggers}; do
+			targets=$($XBPS_TRIGGERSDIR/$f targets)
+			for j in ${targets}; do
+				if ! $(echo $j|grep -q post-${action}); then
+					continue
+				fi
+				printf "\t$triggerdir/$f run $j $pkgname $version\n" >> $tmpf
+				printf "\t[ \$? -ne 0 ] && exit \$?\n" >> $tmpf
+			done
+		done
+		printf "\t;;\n" >> $tmpf
+		echo "esac" >> $tmpf
+		echo >> $tmpf
 	fi
-	if [ -f "$XBPS_TEMPLATESDIR/$pkgname/REMOVE" ]; then
-		cp -f $XBPS_TEMPLATESDIR/$pkgname/REMOVE $metadir
-		chmod +x $metadir/REMOVE
-	fi
+
+	case "$action" in
+	install)
+		if [ -f "$XBPS_TEMPLATESDIR/$pkgname/INSTALL" ]; then
+			found=1
+			cat $XBPS_TEMPLATESDIR/$pkgname/INSTALL >> $tmpf
+		fi
+		echo "exit 0" >> $tmpf
+		if [ -z "$found" ]; then
+			rm -f $tmpf
+			return 0
+		fi
+		mv $tmpf ${DESTDIR}/INSTALL && chmod 755 ${DESTDIR}/INSTALL
+		;;
+	remove)
+		if [ -f "$XBPS_TEMPLATESDIR/$pkgname/REMOVE" ]; then
+			found=1
+			cat $XBPS_TEMPLATESDIR/$pkgname/REMOVE >> $tmpf
+		fi
+		echo "exit 0" >> $tmpf
+		if [ -z "$found" ]; then
+			rm -f $tmpf
+			return 0
+		fi
+		mv $tmpf ${metadir}/REMOVE && chmod 755 ${metadir}/REMOVE
+		;;
+	esac
 }
 
 xbps_make_binpkg()
 {
 	local pkg="$1"
-	local subpkg=
+	local subpkg
 
 	for subpkg in ${subpackages}; do
 		if [ "$pkg" = "$pkgname-$subpkg" ]; then
@@ -280,10 +456,7 @@ xbps_make_binpkg()
 #
 xbps_make_binpkg_real()
 {
-	local binpkg=
-	local pkgdir=
-	local arch=
-	local use_sudo=
+	local binpkg pkgdir arch use_sudo
 
 	if [ ! -d ${DESTDIR} ]; then
 		echo "$pkgname: unexistent destdir... skipping!"
