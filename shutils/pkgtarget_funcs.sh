@@ -112,7 +112,7 @@ install_pkg()
 	install_src_phase $curpkgn
 
 	# Always write metadata to package's destdir.
-	. $XBPS_SHUTILSDIR/binpkg.sh
+	. $XBPS_SHUTILSDIR/metadata.sh
 	xbps_write_metadata_pkg $curpkgn
 
 	#
