@@ -66,18 +66,6 @@
 }
 #endif /* WORDS_BIGENDIAN */
 
-/*
- * Macro for incrementally adding the unsigned 64-bit integer n to the
- * unsigned 128-bit integer (represented using a two-element array of
- * 64-bit words):
- */
-#define ADDINC128(w,n)	{ \
-	(w)[0] += (sha2_word64)(n); \
-	if ((w)[0] < (n)) { \
-		(w)[1]++; \
-	} \
-}
-
 /*** THE SIX LOGICAL FUNCTIONS ****************************************/
 /*
  * Bit shifting and rotation (used by the six SHA-XYZ logical functions:
