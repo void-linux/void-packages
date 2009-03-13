@@ -84,10 +84,16 @@ configure_src_phase()
 	# Packages using GNU autoconf
 	#
 	if [ "$build_style" = "gnu_configure" ]; then
+		if [ -z "$in_chroot" ]; then
+			infodir=${DESTDIR}/usr/share/info
+			mandir=${DESTDIR}/usr/share/man
+		else
+			infodir=/usr/share/info
+			mandir=/usr/share/man
+		fi
 		${configure_script}				\
 			--prefix=${_prefix} --sysconfdir=/etc	\
-			--infodir=${DESTDIR}/usr/share/info	\
-			--mandir=${DESTDIR}/usr/share/man	\
+			--infodir=${infodir} --mandir=${mandir} \
 			${configure_args}
 	#
 	# Packages using propietary configure scripts.
