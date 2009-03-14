@@ -320,6 +320,15 @@ _EOF
 	else
 		rm -f $TMPINFOLIST
 	fi
+
+	# Register the shells into /etc/shells if requested.
+	if [ -n "${register_shell}" ]; then
+		triggers="$triggers register-shell"
+		for f in ${register_shell}; do
+			echo $f >> $metadir/shells
+		done
+	fi
+
 	$XBPS_REGPKGDB_CMD sanitize-plist $metadir/files.plist
 	$XBPS_REGPKGDB_CMD sanitize-plist $metadir/props.plist
 	chmod 644 $metadir/*
