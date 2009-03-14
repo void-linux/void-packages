@@ -61,7 +61,7 @@ reset_tmpl_vars()
 	local TMPL_VARS="pkgname distfiles configure_args configure_env \
 			make_build_args make_install_args build_style	\
 			short_desc maintainer long_desc checksum wrksrc	\
-			patch_files make_cmd base_package base_chroot \
+			patch_files make_cmd base_chroot \
 			make_build_target configure_script \
 			pre_configure pre_build pre_install post_install \
 			make_install_target version \

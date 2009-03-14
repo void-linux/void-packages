@@ -68,13 +68,6 @@ configure_src_phase()
 
 	[ -z "$configure_script" ] && configure_script="./configure"
 
-	local _prefix=
-	if [ -z "$base_package" ]; then
-		_prefix=/usr
-	else
-		_prefix=
-	fi
-
 	cd $wrksrc || exit 1
 
 	. $XBPS_SHUTILSDIR/buildvars_funcs.sh
@@ -92,7 +85,7 @@ configure_src_phase()
 			mandir=/usr/share/man
 		fi
 		${configure_script}				\
-			--prefix=${_prefix} --sysconfdir=/etc	\
+			--prefix=/usr --sysconfdir=/etc		\
 			--infodir=${infodir} --mandir=${mandir} \
 			${configure_args}
 	#
