@@ -80,12 +80,12 @@ extract_distfiles()
 			cursufx=".tbz"
 		elif $(echo $f|grep -q '.tar.gz'); then
 			cursufx=".tar.gz"
+		elif $(echo $f|grep -q '.tgz'); then
+			cursufx=".tgz"
 		elif $(echo $f|grep -q '.gz'); then
 			cursufx=".gz"
 		elif $(echo $f|grep -q '.bz2'); then
 			cursufx=".bz2"
-		elif $(echo $f|grep -q '.tgz'); then
-			cursufx=".tgz"
 		elif $(echo $f|grep -q '.tar'); then
 			cursufx=".tar"
 		elif $(echo $f|grep -q '.zip'); then
