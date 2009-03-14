@@ -43,10 +43,10 @@ xbps_write_metadata_scripts_pkg()
 #
 # Generic INSTALL/REMOVE script.
 #
-# $1 = cwd
-# $2 = action
-# $3 = pkgname
-# $4 = version
+# \$1 = cwd
+# \$2 = action
+# \$3 = pkgname
+# \$4 = version
 #
 # Note that paths must be relative to CWD, to avoid calling
 # host commands.
