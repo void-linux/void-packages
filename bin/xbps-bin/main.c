@@ -149,7 +149,7 @@ main(int argc, char **argv)
 	prop_object_iterator_t iter;
 	static size_t count;
 	const char *pkgname, *version;
-	char *plist, *root = NULL;
+	char *plist;
 	int c, flags = 0, rv = 0;
 	bool chkhash = false, forcerm = false, verbose = false;
 
@@ -163,12 +163,11 @@ main(int argc, char **argv)
 			break;
 		case 'r':
 			/* To specify the root directory */
-			root = optarg;
-			xbps_set_rootdir(root);
+			xbps_set_rootdir(optarg);
 			break;
 		case 'v':
 			verbose = true;
-			flags |= XBPS_UNPACK_VERBOSE;
+			flags |= XBPS_VERBOSE;
 			break;
 		case '?':
 		default:
@@ -181,6 +180,9 @@ main(int argc, char **argv)
 
 	if (argc < 1)
 		usage();
+
+	if (flags != 0)
+		xbps_set_flags(flags);
 
 	if (strcasecmp(argv[0], "list") == 0) {
 		/* Lists packages currently registered in database. */
@@ -213,7 +215,7 @@ main(int argc, char **argv)
 			usage();
 
 		/* Install into root directory by default. */
-		rv = xbps_install_binary_pkg(argv[1], root, flags);
+		rv = xbps_install_binary_pkg(argv[1]);
 		if (rv != 0) {
 			if (rv == EAGAIN) {
 				printf("Unable to locate %s in "
@@ -265,7 +267,7 @@ main(int argc, char **argv)
 
 		(void)fflush(stdout);
 
-		rv = xbps_remove_binary_pkg(argv[1], root, flags);
+		rv = xbps_remove_binary_pkg(argv[1]);
 		if (rv != 0) {
 			if (!verbose)
 				printf("failed! (%s)\n", strerror(rv));
@@ -300,7 +302,7 @@ main(int argc, char **argv)
 		if (argc != 2)
 			usage();
 
-		rv = show_pkg_files_from_metadir(argv[1], root, chkhash);
+		rv = show_pkg_files_from_metadir(argv[1], chkhash);
 		if (rv != 0) {
 			printf("Package %s not installed.\n", argv[1]);
 			exit(EXIT_FAILURE);
@@ -364,7 +366,7 @@ main(int argc, char **argv)
 
 			(void)fflush(stdout);
 
-			rv = xbps_remove_binary_pkg(pkgname, root, flags);
+			rv = xbps_remove_binary_pkg(pkgname);
 			if (rv != 0) {
 				if (!verbose)
 					printf("failed! (%s)\n", strerror(rv));

@@ -212,11 +212,12 @@ show_pkg_info_from_metadir(const char *pkgname)
 }
 
 int
-show_pkg_files_from_metadir(const char *pkgname, const char *destdir, bool hash)
+show_pkg_files_from_metadir(const char *pkgname, bool hash)
 {
 	prop_dictionary_t pkgd;
 	struct show_files_cb sfc;
 	size_t len = 0;
+	const char *destdir = xbps_get_rootdir();
 	char *plist, *path;
 	int rv = 0;
 

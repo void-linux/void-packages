@@ -35,6 +35,7 @@
 #include <xbps_api.h>
 
 static const char *rootdir;
+static int flags;
 
 int
 xbps_check_file_hash(const char *path, const char *sha256)
@@ -236,6 +237,24 @@ xbps_set_rootdir(const char *dir)
 {
 	assert(dir != NULL);
 	rootdir = dir;
+}
+
+const char *
+xbps_get_rootdir(void)
+{
+	return rootdir;
+}
+
+void
+xbps_set_flags(int lflags)
+{
+	flags = lflags;
+}
+
+int
+xbps_get_flags(void)
+{
+	return flags;
 }
 
 char *

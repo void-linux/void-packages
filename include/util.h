@@ -37,6 +37,9 @@ char *		xbps_get_pkg_name(const char *);
 const char *	xbps_get_pkg_version(const char *);
 bool		xbps_pkg_has_rundeps(prop_dictionary_t);
 void		xbps_set_rootdir(const char *);
+const char *	xbps_get_rootdir(void);
+void		xbps_set_flags(int);
+int		xbps_get_flags(void);
 
 /* From lib/orphans.c */
 prop_array_t	xbps_find_orphan_packages(void);

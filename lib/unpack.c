@@ -35,14 +35,11 @@
 
 #include <xbps_api.h>
 
-static int unpack_archive_init(prop_dictionary_t, const char *,
-			       const char *, int);
-static int unpack_archive_fini(struct archive *, const char *, int,
-			       prop_dictionary_t);
+static int unpack_archive_init(prop_dictionary_t, const char *);
+static int unpack_archive_fini(struct archive *, prop_dictionary_t);
 
 int
-xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
-		       const char *destdir, int flags)
+xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
 {
 	prop_string_t filename, repoloc, arch;
 	char *binfile, *path;
@@ -72,15 +69,14 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	}
 	free(path);
 
-	rv = unpack_archive_init(pkg, destdir, binfile, flags);
+	rv = unpack_archive_init(pkg, binfile);
 	free(binfile);
 	return rv;
 }
 
 
 static int
-unpack_archive_init(prop_dictionary_t pkg, const char *destdir,
-		    const char *binfile, int flags)
+unpack_archive_init(prop_dictionary_t pkg, const char *binfile)
 {
 	struct archive *ar;
 	int pkg_fd, rv;
@@ -108,7 +104,7 @@ unpack_archive_init(prop_dictionary_t pkg, const char *destdir,
 		return rv;
 	}
 
-	rv = unpack_archive_fini(ar, destdir, flags, pkg);
+	rv = unpack_archive_fini(ar, pkg);
 	/*
 	 * If installation of package was successful, make sure the package
 	 * is really on storage (if possible).
@@ -137,19 +133,29 @@ unpack_archive_init(prop_dictionary_t pkg, const char *destdir,
  * the consumer.
  */
 static int
-unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
-		    prop_dictionary_t pkg)
+unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 {
 	struct archive_entry *entry;
 	size_t len;
 	const char *prepost = "./INSTALL";
-	const char *pkgname, *version;
+	const char *pkgname, *version, *rootdir;
 	char *buf;
-	int rv = 0, lflags = 0;
+	int rv = 0, flags = 0, lflags = 0;
 	bool actgt = false;
 
 	assert(ar != NULL);
 	assert(pkg != NULL);
+	rootdir = xbps_get_rootdir();
+	flags = xbps_get_flags();
+
+	if (rootdir) {
+		if (chdir(rootdir) == -1)
+			return errno;
+	} else {
+		if (chdir("/") == -1)
+			return errno;
+		rootdir = "";
+	}
 
 	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
 	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
@@ -189,7 +195,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 					break;
 			}
 
-			if ((rv = xbps_file_exec(buf, destdir, "pre",
+			if ((rv = xbps_file_exec(buf, rootdir, "pre",
 			     pkgname, version, NULL)) != 0) {
 				printf("%s: preinst action target error %s\n",
 				    pkgname, strerror(errno));
@@ -212,7 +218,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 				(void)fflush(stdout);
 				break;
 			} else if (rv == EEXIST) {
-				if (flags & XBPS_UNPACK_VERBOSE) {
+				if (flags & XBPS_VERBOSE) {
 					printf("WARNING: ignoring existent "
 					    "path: %s\n",
 					    archive_entry_pathname(entry));
@@ -222,7 +228,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 				continue;
 			}
 		}
-		if (flags & XBPS_UNPACK_VERBOSE) {
+		if (flags & XBPS_VERBOSE) {
 			printf(" %s\n", archive_entry_pathname(entry));
 			(void)fflush(stdout);
 		}
@@ -233,7 +239,7 @@ unpack_archive_fini(struct archive *ar, const char *destdir, int flags,
 		 * Run the post installaction action target, if package
 		 * contains the script.
 		 */
-		if ((rv = xbps_file_exec(buf, destdir, "post",
+		if ((rv = xbps_file_exec(buf, rootdir, "post",
 		     pkgname, version, NULL)) != 0) {
 			printf("%s: postinst action target error %s\n",
 			    pkgname, strerror(errno));

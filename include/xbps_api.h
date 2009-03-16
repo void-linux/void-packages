@@ -51,8 +51,8 @@
 #define XBPS_PKGPROPS		"props.plist"
 #define XBPS_PKGFILES		"files.plist"
 
-/* Unpack flags */
-#define XBPS_UNPACK_VERBOSE	0x00000001
+/* Verbose messages */
+#define XBPS_VERBOSE		0x00000001
 
 #include "cmpver.h"
 #include "fexec.h"

@@ -34,17 +34,10 @@
 
 #include <xbps_api.h>
 
-struct cbargs {
-	const char *destdir;
-	const char *pkgname;
-	int flags;
-};
-
 static int	install_binpkg_repo_cb(prop_object_t, void *, bool *);
 
 int
-xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
-			     const char *destdir, int flags)
+xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg)
 {
 	const char *pkgname, *version, *desc;
 	int rv = 0;
@@ -62,7 +55,7 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
 	    automatic ? "dependency " : "", pkgname, version);
 	(void)fflush(stdout);
 
-	rv = xbps_unpack_binary_pkg(repo, pkg, destdir, flags);
+	rv = xbps_unpack_binary_pkg(repo, pkg);
 	if (rv == 0) {
 		rv = xbps_register_pkg(pkg, pkgname, version, desc, automatic);
 		if (rv != 0) {
@@ -76,30 +69,17 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg,
 }
 
 int
-xbps_install_binary_pkg(const char *pkgname, const char *destdir, int flags)
+xbps_install_binary_pkg(const char *pkgname)
 {
-	struct cbargs cb;
 	int rv = 0;
 
 	assert(pkgname != NULL);
-	if (destdir) {
-		if (chdir(destdir) == -1)
-			return errno;
-	} else {
-		if (chdir("/") == -1)
-			return errno;
-		destdir = "NOTSET";
-	}
-
-	cb.pkgname = pkgname;
-	cb.destdir = destdir;
-	cb.flags = flags;
 	/*
 	 * Iterate over the repository pool and find out if we have
 	 * all available binary packages.
 	 */
 	rv = xbps_callback_array_iter_in_repolist(install_binpkg_repo_cb,
-	    (void *)&cb);
+	    (void *)pkgname);
 	if (rv == 0 && errno != 0)
 		return errno;
 
@@ -110,8 +90,7 @@ static int
 install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 {
 	prop_dictionary_t repod, pkgrd;
-	struct cbargs *cb = arg;
-	const char *repoloc;
+	const char *repoloc, *pkgname = arg;
 	char *plist;
 	int rv = 0;
 
@@ -130,7 +109,7 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	 * Get the package dictionary from current repository.
 	 * If it's not there, pass to the next repository.
 	 */
-	pkgrd = xbps_find_pkg_in_dict(repod, "packages", cb->pkgname);
+	pkgrd = xbps_find_pkg_in_dict(repod, "packages", pkgname);
 	if (pkgrd == NULL) {
 		prop_object_release(repod);
 		errno = EAGAIN;
@@ -172,13 +151,12 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	/*
 	 * Install all required dependencies and the package itself.
 	 */
-	rv = xbps_install_pkg_deps(cb->pkgname, cb->destdir, cb->flags);
+	rv = xbps_install_pkg_deps(pkgname);
 	if (rv != 0)
 		goto out;
 
 install:
-	rv = xbps_install_binary_pkg_fini(repod, pkgrd,
-	    cb->destdir, cb->flags);
+	rv = xbps_install_binary_pkg_fini(repod, pkgrd);
 	if (rv == 0) {
 		*cbloop_done = true;
 		/* Cleanup errno, just in case */
