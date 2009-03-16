@@ -146,20 +146,15 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 		return EINVAL;
 	}
 
-	if ((rv = xbps_check_pkg_file_hash(pkgrd, repoloc)) != 0) {
-		prop_object_release(repod);
-		return rv;
-	}
+	if ((rv = xbps_check_pkg_file_hash(pkgrd, repoloc)) != 0)
+		goto out;
 
 	/*
 	 * Check if this package needs dependencies.
 	 */
 	if (!xbps_pkg_has_rundeps(pkgrd)) {
 		/* pkg has no deps, just install it. */
-		rv = xbps_install_binary_pkg_fini(repod, pkgrd,
-		    cb->destdir, cb->flags);
-		prop_object_release(repod);
-		return rv;
+		goto install;
 	}
 
 	/*
@@ -178,17 +173,19 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	 * Install all required dependencies and the package itself.
 	 */
 	rv = xbps_install_pkg_deps(cb->pkgname, cb->destdir, cb->flags);
+	if (rv != 0)
+		goto out;
+
+install:
+	rv = xbps_install_binary_pkg_fini(repod, pkgrd,
+	    cb->destdir, cb->flags);
 	if (rv == 0) {
-		rv = xbps_install_binary_pkg_fini(repod, pkgrd,
-		    cb->destdir, cb->flags);
-		if (rv == 0)
-			*cbloop_done = true;
-        }
-
-	/* Cleanup errno, just in case */
-	if (rv == 0)
+		*cbloop_done = true;
+		/* Cleanup errno, just in case */
 		errno = 0;
+	}
 
+out:
 	prop_object_release(repod);
 
 	return rv;
