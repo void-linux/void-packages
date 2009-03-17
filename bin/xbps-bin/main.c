@@ -214,7 +214,6 @@ main(int argc, char **argv)
 		if (argc != 2)
 			usage();
 
-		/* Install into root directory by default. */
 		rv = xbps_install_binary_pkg(argv[1]);
 		if (rv != 0) {
 			if (rv == EAGAIN) {
@@ -224,6 +223,10 @@ main(int argc, char **argv)
 				dict = xbps_get_pkg_deps_dictionary();
 				if (dict)
 					show_missing_deps(dict, argv[1]);
+			} else if (rv == EEXIST) {
+				printf("Package '%s' is already up to date.\n",
+				    argv[1]);
+				exit(EXIT_SUCCESS);
 			}
 
 			exit(EXIT_FAILURE);

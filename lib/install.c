@@ -90,8 +90,9 @@ static int
 install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 {
 	prop_dictionary_t repod, pkgrd;
-	const char *repoloc, *pkgname = arg;
-	char *plist;
+	size_t len = 0;
+	const char *repoloc, *instver, *pkgname = arg;
+	char *plist, *pkg;
 	int rv = 0;
 
 	plist = xbps_get_pkg_index_plist(prop_string_cstring_nocopy(obj));
@@ -115,6 +116,25 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 		errno = EAGAIN;
 		return 0;
 	}
+
+	/*
+	 * Check if available version in repository is already installed,
+	 * and return immediately in that case.
+	 */
+	prop_dictionary_get_cstring_nocopy(pkgrd, "version", &instver);
+	len = strlen(pkgname) + strlen(instver) + 2;
+	pkg = malloc(len);
+	if (pkg == NULL) {
+		rv = EINVAL;
+		goto out;
+	}
+	(void)snprintf(pkg, len, "%s-%s", pkgname, instver);
+	if (xbps_check_is_installed_pkg(pkg) == 0) {
+		free(pkg);
+		rv = EEXIST;
+		goto out;
+	}
+	free(pkg);
 
 	/*
 	 * Check SHA256 hash for binary package before anything else.
