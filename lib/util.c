@@ -125,7 +125,7 @@ xbps_check_is_installed_pkg(const char *pkg)
 	dict = xbps_find_pkg_installed_from_plist(pkgname);
 	if (dict == NULL) {
 		free(pkgname);
-		return 1; /* not installed */
+		return -1; /* not installed */
 	}
 
 	/* Get version from installed package */

@@ -292,7 +292,7 @@ xbps_cmpver_packages(const char *pkg1, const char *pkg2)
 	result = (r1 < r2 ? -1 : 1);
     }
 
-    return result == -1 ? 1 : 0;
+    return result;
 }
 
 int
@@ -300,5 +300,5 @@ xbps_cmpver_versions(const char *inst, const char *req)
 {
 	int res = xbps_cmpver_packages(inst, req);
 
-	return res == -1 ? 1 : 0;
+	return res;
 }

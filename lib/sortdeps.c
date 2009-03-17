@@ -210,7 +210,7 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 			/*
 			 * If package is installed, pass to the next one.
 			 */
-			if (xbps_check_is_installed_pkg(rundep) == 0) {
+			if (xbps_check_is_installed_pkg(rundep) >= 0) {
 				free(pkgname);
 				continue;
 			}

@@ -527,7 +527,7 @@ find_pkg_deps_from_repo(prop_dictionary_t repo, prop_dictionary_t pkg,
 		/*
 		 * Check if required dep is satisfied and installed.
 		 */
-		if (xbps_check_is_installed_pkg(reqpkg) == 0) {
+		if (xbps_check_is_installed_pkg(reqpkg) >= 0) {
 			free(pkgname);
 			continue;
 		}
