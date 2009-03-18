@@ -14,6 +14,9 @@
  * Maxim Sobolev
  * 31 July 2001
  *
+ * Written by Oliver Eikemeier
+ * Based on work of Jeremy D. Lea.
+ *
  */
 
 #include <stdio.h>
@@ -27,10 +30,8 @@
  * split_version(pkgname, endname, epoch, revision) returns a pointer to
  * the version portion of a package name and the two special components.
  *
- * Syntax is:  ${PORTNAME}-${PORTVERSION}[_${PORTREVISION}][,${PORTEPOCH}]
+ * Syntax is: ${PKGNAME}-${VERSION}[_${PKGREVISION}][-${EPOCH}]
  *
- * Written by Oliver Eikemeier
- * Based on work of Jeremy D. Lea.
  */
 static const char *
 split_version(const char *pkgname, const char **endname, unsigned long *epoch,
@@ -54,8 +55,8 @@ split_version(const char *pkgname, const char **endname, unsigned long *epoch,
     }
     endversionstr = ch;
 
-    /* Look for the last ',' in the remaining version string */
-    ch = strrchr(endversionstr ? endversionstr + 1 : versionstr, ',');
+    /* Look for the last '-' in the remaining version string */
+    ch = strrchr(endversionstr ? endversionstr + 1 : versionstr, '-');
     if (epoch != NULL) {
 	*epoch = ch ? strtoul(ch + 1, NULL, 10) : 0;
     }
@@ -73,12 +74,8 @@ split_version(const char *pkgname, const char **endname, unsigned long *epoch,
 }
 
 /*
- * PORTVERSIONs are composed of components separated by dots. A component
- * consists of a version number, a letter and a patchlevel number. This does
- * not conform to the porter's handbook, but let us formulate rules that
- * fit the current practice and are far simpler than to make decisions
- * based on the order of netters and lumbers. Besides, people use versions
- * like 10b2 in the ports...
+ * VERSIONs are composed of components separated by dots. A component
+ * consists of a version number, a letter and a patchlevel number.
  */
 
 typedef struct {
@@ -114,8 +111,6 @@ typedef struct {
  * - The special component `*' is guaranteed to be the smallest possible
  *   component (2.* < 2pl1 < 2alpha3 < 2.9f7 < 3.*)
  * - components separated by `+' are handled by version_cmp below
- *
- * Oliver Eikemeier
  */
 
 static const struct {
@@ -222,21 +217,12 @@ get_component(const char *position, version_component *component)
  * comparison of the basenames is done.
  *
  * The port version is defined by:
- * ${PORTVERSION}[_${PORTREVISION}][,${PORTEPOCH}]
- * ${PORTEPOCH} supersedes ${PORTVERSION} supersedes ${PORTREVISION}.
- * See the commit log for revision 1.349 of ports/Mk/bsd.port.mk
- * for more information.
+ * ${VERSION}[_${PKGREVISION}][-${EPOCH}]
+ * ${EPOCH} supersedes ${VERSION} supersedes ${PKGREVISION}.
  *
  * The epoch and revision are defined to be a single number, while the rest
  * of the version should conform to the porting guidelines. It can contain
  * multiple components, separated by a period, including letters.
- *
- * The tests allow for significantly more latitude in the version numbers
- * than is allowed in the guidelines. No point in enforcing them here.
- * That's what portlint is for.
- *
- * Jeremy D. Lea.
- * reimplemented by Oliver Eikemeier
  */
 int
 xbps_cmpver_packages(const char *pkg1, const char *pkg2)
@@ -248,13 +234,14 @@ xbps_cmpver_packages(const char *pkg1, const char *pkg2)
     v1 = split_version(pkg1, &ve1, &e1, &r1);
     v2 = split_version(pkg2, &ve2, &e2, &r2);
 
-    /* Check epoch, port version, and port revision, in that order. */
+    /* Check epoch, version, and pkgrevision, in that order. */
     if (e1 != e2) {
 	result = (e1 < e2 ? -1 : 1);
     }
 
     /* Shortcut check for equality before invoking the parsing routines. */
-    if (result == 0 && (ve1 - v1 != ve2 - v2 || strncasecmp(v1, v2, ve1 - v1) != 0)) {
+    if (result == 0 && (ve1 - v1 != ve2 - v2 ||
+        strncasecmp(v1, v2, ve1 - v1) != 0)) {
 	/* Loop over different components (the parts separated by dots).
 	 * If any component differs, we have the basis for an inequality. */
 	while(result == 0 && (v1 < ve1 || v2 < ve2)) {
@@ -287,7 +274,7 @@ xbps_cmpver_packages(const char *pkg1, const char *pkg2)
 	}
     }
 
-    /* Compare FreeBSD revision numbers. */
+    /* Compare revision numbers. */
     if (result == 0 && r1 != r2) {
 	result = (r1 < r2 ? -1 : 1);
     }
