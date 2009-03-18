@@ -123,7 +123,7 @@ xbps_write_metadata_pkg_real()
 			j=$(echo $f|sed -e "$fpattern")
 			[ "$j" = "" ] && continue
 			[ "$j" = "/usr/share/info/dir" ] && continue
-			if $(echo $j|grep -q '.gz'); then
+			if $(echo $j|grep -q '.*.gz$'); then
 				continue
 			fi
 			if [ -h ${DESTDIR}/$j ]; then
@@ -148,7 +148,7 @@ xbps_write_metadata_pkg_real()
 		for f in $(find -L ${DESTDIR}/usr/share/man -type f); do
 			j=$(echo $f|sed -e "$fpattern")
 			[ "$j" = "" ] && continue
-			if $(echo $j|grep -q '.gz'); then
+			if $(echo $j|grep -q '.*.gz$'); then
 				continue
 			fi
 			if [ -h ${DESTDIR}/$j ]; then
