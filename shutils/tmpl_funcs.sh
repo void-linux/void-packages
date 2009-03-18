@@ -63,7 +63,8 @@ reset_tmpl_vars()
 			short_desc maintainer long_desc checksum wrksrc	\
 			patch_files make_cmd base_chroot register_shell \
 			make_build_target configure_script \
-			pre_configure pre_build pre_install post_install \
+			pre_configure pre_build pre_install \
+			post_configure post_build post_install \
 			make_install_target version \
 			xml_entries sgml_entries \
 			build_depends libtool_fixup_la_stage no_fixup_libtool \

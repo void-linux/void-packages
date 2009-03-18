@@ -55,9 +55,7 @@ build_src_phase()
 
 	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
 
-	#
-	# Run pre_build helpers.
-	#
+	# Run pre_build func.
 	run_func pre_build
 
 	[ -n "$XBPS_MAKEJOBS" -a -z "$disable_parallel_build" ] && \
@@ -79,12 +77,10 @@ build_src_phase()
 	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
 	[ $? -ne 0 ] && msg_error "building $pkg (build phase)."
 
-	unset makejobs
+	# Run post_build func.
+	run_func post_build
 
-	#
-	# Run pre_install helpers.
-	#
-	run_func pre_install
+	unset makejobs
 
 	if [ -z "$in_chroot" ]; then
 		if [ -z "$libtool_fixup_la_stage" \

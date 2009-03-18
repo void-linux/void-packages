@@ -56,7 +56,7 @@ configure_src_phase()
 		cross_compile_setvars
 	fi
 
-	# Run pre_configure helpers.
+	# Run pre_configure func.
 	run_func pre_configure
 
 	# Export configure_env vars.
@@ -77,16 +77,10 @@ configure_src_phase()
 	# Packages using GNU autoconf
 	#
 	if [ "$build_style" = "gnu_configure" ]; then
-		if [ -z "$in_chroot" ]; then
-			infodir=${DESTDIR}/usr/share/info
-			mandir=${DESTDIR}/usr/share/man
-		else
-			infodir=/usr/share/info
-			mandir=/usr/share/man
-		fi
 		${configure_script}				\
 			--prefix=/usr --sysconfdir=/etc		\
-			--infodir=${infodir} --mandir=${mandir} \
+			--infodir=/usr/share/info		\
+			--mandir=/usr/share/man			\
 			${configure_args}
 	#
 	# Packages using propietary configure scripts.
@@ -119,6 +113,9 @@ configure_src_phase()
 	if [ "$build_style" != "perl_module" -a "$?" -ne 0 ]; then
 		msg_error "building $pkg (configure phase)."
 	fi
+
+	# Run post_configure func.
+	run_func post_configure
 
 	# unset configure_env vars.
 	for f in ${configure_env}; do

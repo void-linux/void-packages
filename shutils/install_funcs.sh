@@ -48,6 +48,9 @@ install_src_phase()
 
 	cd $wrksrc || exit 1
 
+	# Run pre_install func.
+	run_func pre_install
+
 	msg_normal "Running install phase for $pkgname-$version."
 
 	# cross compilation vars.
@@ -62,9 +65,7 @@ install_src_phase()
 		make_install
 	fi
 
-	#
-	# Run post_install helpers.
-	#
+	# Run post_install func.
 	run_func post_install
 
 	# unset cross compiler vars.
@@ -115,8 +116,7 @@ install_src_phase()
 make_install()
 {
 	if [ -z "$make_install_target" ]; then
-		make_install_target="install prefix=${DESTDIR}/usr"
-		make_install_target="$make_install_target sysconfdir=${DESTDIR}/etc"
+		make_install_target="DESTDIR=${DESTDIR} install"
 	fi
 
 	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
