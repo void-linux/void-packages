@@ -115,7 +115,9 @@ install_src_phase()
 
 make_install()
 {
-	if [ -z "$make_install_target" ]; then
+	if [ "$build_style" = "perl_module" ]; then
+		make_install_target="install"
+	elif [ -z "$make_install_target" ]; then
 		make_install_target="DESTDIR=${DESTDIR} install"
 	fi
 
@@ -139,6 +141,13 @@ make_install()
 			. $XBPS_SHUTILSDIR/libtool_funcs.sh
 			libtool_fixup_la_files postinstall
 		fi
+	fi
+
+	# Always remove perllocal.pod and .packlist files for
+	# perl modules.
+	if [ "$build_style" = "perl_module" -a "$pkgname" != "perl" ]; then
+		find ${DESTDIR} -name perllocal.pod -delete
+		find ${DESTDIR} -name .packlist -delete
 	fi
 
 	# Unset build vars.
