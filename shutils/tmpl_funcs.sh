@@ -62,11 +62,11 @@ reset_tmpl_vars()
 			make_build_args make_install_args build_style	\
 			short_desc maintainer long_desc checksum wrksrc	\
 			patch_files make_cmd base_chroot register_shell \
-			make_build_target configure_script \
+			make_build_target configure_script noextract \
 			pre_configure pre_build pre_install \
 			post_configure post_build post_install \
 			make_install_target version \
-			xml_entries sgml_entries \
+			sgml_catalogs xml_catalogs xml_entries sgml_entries \
 			build_depends libtool_fixup_la_stage no_fixup_libtool \
 			disable_parallel_build run_depends cross_compiler \
 			only_for_archs patch_args conf_files keep_dirs \

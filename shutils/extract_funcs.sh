@@ -51,6 +51,16 @@ extract_distfiles()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
+	#
+	# If noextract is set, do a "fake extraction".
+	#
+	if [ -n "$noextract" ]; then
+		msg_normal "Manual extraction for $pkgname-$version."
+		mkdir $wrksrc
+		touch -f $XBPS_EXTRACT_DONE
+		return 0
+	fi
+
 	for f in ${distfiles}; do
 		count=$(($count + 1))
 	done
