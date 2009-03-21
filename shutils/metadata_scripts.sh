@@ -53,7 +53,29 @@ xbps_write_metadata_scripts_pkg()
 #
 
 export PATH="./bin:./sbin:./usr/bin:./usr/sbin"
+
 _EOF
+
+	#
+	# Handle SGML/XML catalog entries via xmlcatmgr.
+	#
+	if [ -n "${sgml_catalogs}" ]; then
+		for catalog in ${sgml_catalogs}; do
+			sgml_entries="${sgml_entries} CATALOG ${catalog} --"
+		done
+	fi
+	if [ -n "${sgml_entries}" ]; then
+		echo "export sgml_entries=\"${sgml_entries}\"" >> $tmpf
+	fi
+	if [ -n "${xml_catalogs}" ]; then
+		for catalog in ${xml_catalogs}; do
+			xml_entries="${xml_entries} nextCatalog ${catalog} --"
+		done
+	fi
+	if [ -n "${xml_entries}" ]; then
+		echo "export xml_entries=\"${xml_entries}\"" >> $tmpf
+	fi
+	echo >> $tmpf
 
 	if [ -n "$triggers" ]; then
 		found=1
