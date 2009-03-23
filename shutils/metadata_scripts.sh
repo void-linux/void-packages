@@ -77,6 +77,13 @@ _EOF
 	fi
 	echo >> $tmpf
 
+	#
+	# Handle X11 font updates via mkfontdir/mkfontscale.
+	#
+	if [ -n "${font_dirs}" ]; then
+		echo "font_dirs=\"${font_dirs}\"" >> $tmpf
+	fi
+
 	if [ -n "$triggers" ]; then
 		found=1
 		echo "case \"\$2\" in" >> $tmpf
