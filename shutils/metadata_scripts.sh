@@ -28,7 +28,6 @@ xbps_write_metadata_scripts_pkg()
 	local action="$1"
 	local metadir="${DESTDIR}/var/db/xbps/metadata/$pkgname"
 	local tmpf=$(mktemp -t xbps-install.XXXXXXXXXX) || exit 1
-	local triggerdir="./var/db/xbps/triggers"
 	local targets found
 
 	case "$action" in
@@ -54,6 +53,11 @@ xbps_write_metadata_scripts_pkg()
 
 export PATH="./bin:./sbin:./usr/bin:./usr/sbin"
 
+TRIGGERSDIR="./var/db/xbps/triggers"
+ACTION="\$2"
+PKGNAME="\$3"
+VERSION="\$4"
+
 _EOF
 
 	#
@@ -66,6 +70,7 @@ _EOF
 	fi
 	if [ -n "${sgml_entries}" ]; then
 		echo "export sgml_entries=\"${sgml_entries}\"" >> $tmpf
+		echo >> $tmpf
 	fi
 	if [ -n "${xml_catalogs}" ]; then
 		for catalog in ${xml_catalogs}; do
@@ -74,19 +79,20 @@ _EOF
 	fi
 	if [ -n "${xml_entries}" ]; then
 		echo "export xml_entries=\"${xml_entries}\"" >> $tmpf
+		echo >> $tmpf
 	fi
-	echo >> $tmpf
 
 	#
 	# Handle X11 font updates via mkfontdir/mkfontscale.
 	#
 	if [ -n "${font_dirs}" ]; then
-		echo "font_dirs=\"${font_dirs}\"" >> $tmpf
+		echo "export font_dirs=\"${font_dirs}\"" >> $tmpf
+		echo >> $tmpf
 	fi
 
 	if [ -n "$triggers" ]; then
 		found=1
-		echo "case \"\$2\" in" >> $tmpf
+		echo "case \"\${ACTION}\" in" >> $tmpf
 		echo "pre)" >> $tmpf
 		for f in ${triggers}; do
 			if [ ! -f $XBPS_TRIGGERSDIR/$f ]; then
@@ -100,7 +106,7 @@ _EOF
 				if ! $(echo $j|grep -q pre-${action}); then
 					continue
 				fi
-				printf "\t$triggerdir/$f run $j $pkgname $version\n" >> $tmpf
+				printf "\t\${TRIGGERSDIR}/$f run $j \${PKGNAME} \${VERSION}\n" >> $tmpf
 				printf "\t[ \$? -ne 0 ] && exit \$?\n" >> $tmpf
 			done
 		done
@@ -112,7 +118,7 @@ _EOF
 				if ! $(echo $j|grep -q post-${action}); then
 					continue
 				fi
-				printf "\t$triggerdir/$f run $j $pkgname $version\n" >> $tmpf
+				printf "\t\${TRIGGERSDIR}/$f run $j \${PKGNAME} \${VERSION}\n" >> $tmpf
 				printf "\t[ \$? -ne 0 ] && exit \$?\n" >> $tmpf
 			done
 		done
