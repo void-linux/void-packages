@@ -54,8 +54,7 @@ xbps_write_metadata_pkg()
 		if [ ! -f $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template ]; then
 			msg_error "Cannot find subpackage template!"
 		fi
-		unset run_depends conf_files keep_dirs noarch install_priority \
-			triggers
+		unset run_depends conf_files keep_dirs noarch triggers
 		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${sourcepkg}-${subpkg}
 		set_tmpl_common_vars
@@ -82,18 +81,12 @@ xbps_write_metadata_pkg()
 xbps_write_metadata_pkg_real()
 {
 	local metadir=${DESTDIR}/var/db/xbps/metadata/$pkgname
-	local f i j arch dirat lnkat newlnk prioinst TMPFLIST TMPFPLIST
+	local f i j arch dirat lnkat newlnk TMPFLIST TMPFPLIST
 	local fpattern="s|${DESTDIR}||g;s|^\./$||g;/^$/d"
 
 	if [ ! -d "${DESTDIR}" ]; then
 		echo "ERROR: $pkgname not installed into destdir."
 		exit 1
-	fi
-
-	if [ -n "$install_priority" ]; then
-		prioinst=$install_priority
-	else
-		prioinst=0
 	fi
 
 	if [ -n "$noarch" ]; then
@@ -255,8 +248,6 @@ xbps_write_metadata_pkg_real()
 <string>$version</string>
 <key>architecture</key>
 <string>$arch</string>
-<key>priority</key>
-<integer>$prioinst</integer>
 <key>installed_size</key>
 <integer>$(du -sb ${DESTDIR}|awk '{print $1}')</integer>
 <key>maintainer</key>
