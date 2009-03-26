@@ -91,14 +91,12 @@ static int
 store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 		 prop_dictionary_t repod)
 {
-	prop_dictionary_t dict, curdict;
-	prop_array_t array, rundeps_array, reqby_array;
-	prop_string_t reqbystr;
-	size_t len = 0, dirdepscnt = 0, indirdepscnt = 0;
-	const char *pkgname, *version, *reqbyname, *reqbyver, *arch;
+	prop_dictionary_t dict;
+	prop_array_t array, rundeps_array;
+	size_t dirdepscnt = 0, indirdepscnt = 0;
+	const char *pkgname, *version, *reqbyname, *arch;
 	const char  *repoloc, *binfile, *originpkg, *short_desc;
 	const char *sha256;
-	char *reqby, *pkgnver;
 	int rv = 0;
 	bool indirectdep = false;
 
@@ -116,24 +114,7 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	prop_dictionary_get_cstring_nocopy(depd, "architecture", &arch);
 	prop_dictionary_get_cstring_nocopy(depd, "filename-sha256", &sha256);
 	prop_dictionary_get_cstring_nocopy(origind, "pkgname", &reqbyname);
-	prop_dictionary_get_cstring_nocopy(origind, "version", &reqbyver);
 	prop_dictionary_get_cstring_nocopy(repod, "location-local", &repoloc);
-
-	len = strlen(reqbyname) + strlen(reqbyver) + 2;
-	reqby = malloc(len + 1);
-	if (reqby == NULL)
-		return ENOMEM;
-
-	(void)snprintf(reqby, len, "%s-%s", reqbyname, reqbyver);
-	reqbystr = prop_string_create_cstring(reqby);
-
-	len = strlen(pkgname) + strlen(version) + 2;
-	pkgnver = malloc(len + 1);
-	if (pkgnver == NULL) {
-		free(reqby);
-		return ENOMEM;
-	}
-	(void)snprintf(pkgnver, len, "%s-%s", pkgname, version);
 
 	/*
 	 * Required dependency is not installed. Check if it's
@@ -141,16 +122,6 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	 * or add the object into array otherwise.
 	 */
 	prop_dictionary_get_cstring_nocopy(chaindeps, "origin", &originpkg);
-	curdict = xbps_find_pkg_in_dict(chaindeps, "unsorted_deps", pkgname);
-	/*
-	 * Update equired_by objects.
-	 */
-	if (curdict) {
-		reqby_array = prop_dictionary_get(curdict, "required_by");
-		if (!xbps_find_string_in_array(reqby_array, reqby))
-			prop_array_add(reqby_array, reqbystr);
-		goto out;
-	}
 	if (strcmp(originpkg, reqbyname)) {
 		indirectdep = true;
 		prop_dictionary_get_uint32(chaindeps, "indirectdeps_count",
@@ -172,7 +143,6 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 		rv = ENOMEM;
 		goto out;
 	}
-
 	array = prop_dictionary_get(chaindeps, "unsorted_deps");
 	if (array == NULL) {
 		prop_object_release(dict);
@@ -189,14 +159,6 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	if (rundeps_array && prop_array_count(rundeps_array) > 0)
 		prop_dictionary_set(dict, "run_depends", rundeps_array);
 
-	reqby_array = prop_array_create();
-	if (reqby_array == NULL) {
-		prop_object_release(dict);
-		rv = ENOMEM;
-		goto out;
-	}
-	prop_array_add(reqby_array, reqbystr);
-	prop_dictionary_set(dict, "required_by", reqby_array);
 	prop_dictionary_set_cstring(dict, "repository", repoloc);
 	prop_dictionary_set_cstring(dict, "filename", binfile);
 	prop_dictionary_set_cstring(dict, "short_desc", short_desc);
@@ -213,10 +175,6 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	}
 
 out:
-	free(reqby);
-	free(pkgnver);
-	prop_object_release(reqbystr);
-
 	return rv;
 }
 
