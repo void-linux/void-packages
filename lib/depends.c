@@ -94,7 +94,6 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	prop_dictionary_t dict, curdict;
 	prop_array_t array, rundeps_array, reqby_array;
 	prop_string_t reqbystr;
-	uint32_t prio = 0;
 	size_t len = 0, dirdepscnt = 0, indirdepscnt = 0;
 	const char *pkgname, *version, *reqbyname, *reqbyver, *arch;
 	const char  *repoloc, *binfile, *originpkg, *short_desc;
@@ -116,7 +115,6 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	prop_dictionary_get_cstring_nocopy(depd, "short_desc", &short_desc);
 	prop_dictionary_get_cstring_nocopy(depd, "architecture", &arch);
 	prop_dictionary_get_cstring_nocopy(depd, "filename-sha256", &sha256);
-	prop_dictionary_get_uint32(depd, "priority", &prio);
 	prop_dictionary_get_cstring_nocopy(origind, "pkgname", &reqbyname);
 	prop_dictionary_get_cstring_nocopy(origind, "version", &reqbyver);
 	prop_dictionary_get_cstring_nocopy(repod, "location-local", &repoloc);
@@ -145,11 +143,9 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	prop_dictionary_get_cstring_nocopy(chaindeps, "origin", &originpkg);
 	curdict = xbps_find_pkg_in_dict(chaindeps, "unsorted_deps", pkgname);
 	/*
-	 * Update priority and required_by objects.
+	 * Update equired_by objects.
 	 */
 	if (curdict) {
-		prop_dictionary_get_uint32(curdict, "priority", &prio);
-		prop_dictionary_set_uint32(curdict, "priority", ++prio);
 		reqby_array = prop_dictionary_get(curdict, "required_by");
 		if (!xbps_find_string_in_array(reqby_array, reqby))
 			prop_array_add(reqby_array, reqbystr);
@@ -203,7 +199,6 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	prop_dictionary_set(dict, "required_by", reqby_array);
 	prop_dictionary_set_cstring(dict, "repository", repoloc);
 	prop_dictionary_set_cstring(dict, "filename", binfile);
-	prop_dictionary_set_uint32(dict, "priority", prio);
 	prop_dictionary_set_cstring(dict, "short_desc", short_desc);
 	prop_dictionary_set_bool(dict, "indirect_dep", indirectdep);
 	prop_dictionary_set_cstring(dict, "architecture", arch);
