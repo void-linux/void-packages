@@ -65,7 +65,7 @@ reset_tmpl_vars()
 			make_build_target configure_script noextract \
 			pre_configure pre_build pre_install \
 			post_configure post_build post_install \
-			make_install_target version \
+			make_install_target version revision _revset \
 			sgml_catalogs xml_catalogs xml_entries sgml_entries \
 			build_depends libtool_fixup_la_stage no_fixup_libtool \
 			disable_parallel_build run_depends cross_compiler \
@@ -207,6 +207,11 @@ prepare_tmpl()
 set_tmpl_common_vars()
 {
 	[ -z "$pkgname" ] && return 1
+
+	if [ -z "${_revset}" -a -n "$revision" ]; then
+		_revset=1
+		version="${version}_${revision}"
+	fi
 
 	FILESDIR=${XBPS_TEMPLATESDIR}/${pkgname}/files
 	DESTDIR=${XBPS_DESTDIR}/${pkgname}-${version}
