@@ -2,17 +2,68 @@
 #
 # PROVIDE: nfsd
 # REQUIRE: mountd
+# KEYWORD: shutdown
 
 $_rc_subr_loaded . /etc/rc.subr
 
 name="nfsd"
 rcvar=$name
 command="/usr/sbin/rpc.nfsd"
-start_postcmd="nfsd_postcmd"
+start_cmd="nfsd_start_cmd"
+stop_cmd="nfsd_stop_cmd"
+status_cmd="nfsd_status_cmd"
+pidfile="/var/run/${name}.pid"
 
-nfsd_postcmd()
+nfsd_start_cmd()
 {
+	#
+	# Load the nfsd module to make the mount call
+	# succeed.
+	#
+	modprobe -q nfsd
+
+	#
+	# By default start up 8 threads.
+	#
+	[ -z "${nfsd_flags}" ] && nfsd_flags="8"
+
+	# Check for /proc/fs/nfsd
+	if grep -qs nfsd /proc/filesystems ; then
+		if ! grep -qs "nfsd /proc/fs/nfsd" /proc/mounts ; then
+			mount -t nfsd -o nodev,noexec,nosuid nfsd /proc/fs/nfsd
+		fi
+	fi
+	${command} ${nfsd_flags}
+	echo $(pidof -o %PPID ${name}) > ${pidfile}
+	echo "Starting ${name}."
+
 	/usr/sbin/sm-notify ${smnotify_args}
+}
+
+nfsd_stop_cmd()
+{
+	#
+	# Unexport all directories before.
+	#
+	exportfs -au
+
+	if [ -f ${pidfile} ]; then
+		PID=$(cat ${pidfile})
+		kill ${PID}
+		rm -f ${pidfile}
+	fi
+	echo "Stopped ${name}."
+}
+
+nfsd_status_cmd()
+{
+	if [ ! -f ${pidfile} ]; then
+		echo "${name} is not running."
+		return 0
+	fi
+
+	PID=$(cat ${pidfile})
+	echo "${name} is running with PIDs: ${PID}"
 }
 
 load_rc_config $name
