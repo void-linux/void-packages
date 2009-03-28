@@ -32,6 +32,7 @@ info_tmpl()
 
 	echo "pkgname:	$pkgname"
 	echo "version:	$version"
+	[ -n "$revision" ] && echo "revision:   $revision"
 	for i in "${distfiles}"; do
 		[ -n "$i" ] && echo "distfile:	$i"
 	done
@@ -65,7 +66,7 @@ reset_tmpl_vars()
 			make_build_target configure_script noextract \
 			pre_configure pre_build pre_install \
 			post_configure post_build post_install \
-			make_install_target version revision _revset \
+			make_install_target version revision \
 			sgml_catalogs xml_catalogs xml_entries sgml_entries \
 			build_depends libtool_fixup_la_stage no_fixup_libtool \
 			disable_parallel_build run_depends cross_compiler \
@@ -152,9 +153,7 @@ Add_dependency()
 #
 prepare_tmpl()
 {
-	local REQ_VARS=
-	local i=
-	local found=
+	local REQ_VARS i found
 
 	#
 	# There's nothing of interest if we are a meta template.
@@ -162,7 +161,7 @@ prepare_tmpl()
 	[ "$build_style" = "meta-template" ] && return 0
 
 	if [ "$build_style" = "custom-install" -a -z "$distfiles" ]; then
-		mkdir -p $XBPS_BUILDDIR/$pkgname-$version
+		return 0
 	fi
 
 	REQ_VARS="pkgname version build_style short_desc long_desc"
@@ -207,11 +206,6 @@ prepare_tmpl()
 set_tmpl_common_vars()
 {
 	[ -z "$pkgname" ] && return 1
-
-	if [ -z "${_revset}" -a -n "$revision" ]; then
-		_revset=1
-		version="${version}_${revision}"
-	fi
 
 	FILESDIR=${XBPS_TEMPLATESDIR}/${pkgname}/files
 	DESTDIR=${XBPS_DESTDIR}/${pkgname}-${version}

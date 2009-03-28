@@ -50,7 +50,7 @@ xbps_make_binpkg()
 #
 xbps_make_binpkg_real()
 {
-	local binpkg pkgdir arch use_sudo
+	local binpkg pkgdir arch use_sudo lver
 
 	if [ ! -d ${DESTDIR} ]; then
 		echo "$pkgname: unexistent destdir... skipping!"
@@ -71,7 +71,12 @@ xbps_make_binpkg_real()
 		use_sudo=yes
 	fi
 
-	binpkg=$pkgname-$version.$arch.xbps
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
+	fi
+	binpkg=$pkgname-$lver.$arch.xbps
 	pkgdir=$XBPS_PACKAGESDIR/$arch
 
 	if [ -x ./INSTALL ]; then

@@ -29,13 +29,8 @@
 #
 extract_distfiles()
 {
-	local pkg="$1"
-	local count=0
-	local curfile=
-	local cursufx=
-	local lwrksrc=
-	local ltar_cmd=
-	local f=
+	local count=0 pkg="$1"
+	local curfile cursufx lwrksrc ltar_cmd f lver
 
 	[ -f $XBPS_EXTRACT_DONE ] && return 0
 	[ -z "$in_chroot" -a ! -w $XBPS_BUILDDIR ] && \
@@ -51,11 +46,16 @@ extract_distfiles()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
+	fi
 	#
 	# If noextract is set, do a "fake extraction".
 	#
 	if [ -n "$noextract" ]; then
-		msg_normal "Manual extraction for $pkgname-$version."
+		msg_normal "Manual extraction for $pkgname-$lver."
 		mkdir $wrksrc
 		touch -f $XBPS_EXTRACT_DONE
 		return 0
@@ -73,7 +73,7 @@ extract_distfiles()
 		mkdir $wrksrc
 	fi
 
-	msg_normal "Extracting $pkgname-$version distfile(s)."
+	msg_normal "Extracting $pkgname-$lver distfile(s)."
 
 	if [ -n "$tar_override_cmd" ]; then
 		ltar_cmd="$tar_override_cmd"

@@ -31,7 +31,7 @@ build_src_phase()
 {
 	local pkgparam="$1"
 	local pkg="$pkgname-$version"
-	local f=
+	local f
 
 	[ -z $pkgparam ] && [ -z $pkgname -o -z $version ] && return 1
 
@@ -46,6 +46,8 @@ build_src_phase()
 	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]"
 
 	cd $wrksrc || exit 1
+
+	[ -n "$revision" ] && pkg="${pkg}_${revision}"
 
 	# cross compilation vars.
 	if [ -n "$cross_compiler" ]; then

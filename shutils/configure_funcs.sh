@@ -29,8 +29,7 @@
 #
 configure_src_phase()
 {
-	local pkg="$1"
-	local f=
+	local f lver pkg="$1"
 
 	[ -z $pkg ] && [ -z $pkgname ] && return 1
 
@@ -50,6 +49,12 @@ configure_src_phase()
 	  "$build_style" = "only-install" -o	\
 	  "$build_style" = "custom-install" ] && return 0
 
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
+	fi
+
 	# cross compilation vars.
 	if [ -n "$cross_compiler" ]; then
 		. $XBPS_HELPERSDIR/cross-compilation.sh
@@ -64,7 +69,7 @@ configure_src_phase()
 		export "$f"
 	done
 
-	msg_normal "Running configure phase for $pkgname-$version."
+	msg_normal "Running configure phase for $pkgname-$lver."
 
 	[ -z "$configure_script" ] && configure_script="./configure"
 

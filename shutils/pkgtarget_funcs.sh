@@ -145,9 +145,7 @@ list_pkg_files()
 #
 remove_pkg()
 {
-	local pkg="$1"
-	local subpkg=
-	local ver=
+	local pkg="$1" subpkg ver
 
 	[ -z $pkg ] && msg_error "unexistent package, aborting."
 
@@ -168,8 +166,8 @@ remove_pkg()
 
 	. $XBPS_SHUTILSDIR/stow_funcs.sh
 	unstow_pkg $pkg
-	if [ $? -eq 0 -a -d $XBPS_DESTDIR/$pkg-$ver ]; then
-		rm -rf $XBPS_DESTDIR/$pkg-$ver
+	if [ $? -eq 0 -a -d $XBPS_DESTDIR/$pkg-${ver%_${revision}} ]; then
+		rm -rf $XBPS_DESTDIR/$pkg-${ver%_${revision}}
 	fi
 	return $?
 }

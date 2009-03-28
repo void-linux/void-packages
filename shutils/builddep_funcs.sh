@@ -89,13 +89,19 @@ install_dependencies_pkg()
 {
 	local pkg="$1"
 	local lpkgname=$(xbps-pkgdb getpkgname ${pkg})
-	local i ipkgname iversion reqvers notinstalled_deps
+	local i ipkgname iversion reqvers notinstalled_deps lver
 
 	[ -z "$pkg" ] && return 1
 
 	doing_deps=true
 
-	echo "==> Required build dependencies for $pkgname-$version... "
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
+	fi
+
+	echo "==> Required build dependencies for $pkgname-$lver... "
 	for i in ${build_depends}; do
                 ipkgname=$(xbps-pkgdb getpkgname ${i})
                 iversion=$($XBPS_REGPKGDB_CMD version $ipkgname)

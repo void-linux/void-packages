@@ -29,19 +29,25 @@ stow_pkg()
 {
 	local pkg="$1"
 	local automatic="$2"
-	local subpkg=
+	local subpkg spkgrev
 
 	for subpkg in ${subpackages}; do
 		if [ "${pkg}" != "${sourcepkg}" ] && \
 		   [ "${pkg}" != "${sourcepkg}-${subpkg}" ]; then
 			continue
 		fi
-		check_installed_pkg ${sourcepkg}-${subpkg}-${version}
+		if [ -n "$revision" ]; then
+			spkgrev="${sourcepkg}-${subpkg}-${version}_${revision}"
+		else
+			spkgrev="${sourcepkg}-${subpkg}-${version}"
+		fi
+		check_installed_pkg ${spkgrev}
 		[ $? -eq 0 ] && continue
 
 		if [ ! -f $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template ]; then
 			msg_error "Cannot find subpackage template!"
 		fi
+		unset revision
 		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${sourcepkg}-${subpkg}
 		set_tmpl_common_vars
@@ -52,7 +58,7 @@ stow_pkg()
 			# If it's a subpackage, just remove sourcepkg from
 			# destdir and return, we are done.
 			#
-			rm -rf $XBPS_DESTDIR/${sourcepkg}-${version}
+			rm -rf $XBPS_DESTDIR/${spkgrev}
 			return $?
 		fi
 	done
@@ -70,7 +76,7 @@ stow_pkg_real()
 {
 	local pkg="$1"
 	local automatic="$2"
-	local i=
+	local i lver regpkgdb_flags
 
 	[ -z "$pkg" ] && return 2
 
@@ -96,12 +102,15 @@ stow_pkg_real()
 	# Register pkg in plist file and add automatic installation
 	# object if requested.
 	#
-	local regpkgdb_flags=
-	if [ -n "$automatic" ]; then
-		regpkgdb_flags="-a"
+	[ -n "$automatic" ] && regpkgdb_flags="-a"
+
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
 	fi
 	$XBPS_REGPKGDB_CMD $regpkgdb_flags register \
-		$pkg $version "$short_desc" || exit 1
+		$pkg $lver "$short_desc" || exit 1
 }
 
 #
@@ -110,9 +119,7 @@ stow_pkg_real()
 #
 unstow_pkg()
 {
-	local pkg="$1"
-	local f=
-	local ver=
+	local f ver pkg="$1"
 
 	[ -z $pkg ] && msg_error "template wasn't specified?"
 

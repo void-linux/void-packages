@@ -41,20 +41,26 @@ _EOF
 xbps_write_metadata_pkg()
 {
 	local pkg="$1"
-	local subpkg
+	local subpkg spkgrev
 
 	for subpkg in ${subpackages}; do
 		if [ "${pkg}" != "${sourcepkg}" ] && \
 		   [ "${pkg}" != "${sourcepkg}-${subpkg}" ]; then
 			continue
 		fi
-		check_installed_pkg ${sourcepkg}-${subpkg}-${version}
+		if [ -n "${revision}" ]; then
+			spkgrev="${sourcepkg}-${subpkg}-${version}_${revision}"
+		else
+			spkgrev="${sourcepkg}-${subpkg}-${version}"
+		fi
+		check_installed_pkg ${spkgrev}
 		[ $? -eq 0 ] && continue
 
 		if [ ! -f $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template ]; then
 			msg_error "Cannot find subpackage template!"
 		fi
-		unset run_depends conf_files keep_dirs noarch triggers
+		unset run_depends conf_files keep_dirs noarch triggers \
+			revision
 		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${sourcepkg}-${subpkg}
 		set_tmpl_common_vars
@@ -67,7 +73,12 @@ xbps_write_metadata_pkg()
 
 	if [ "$build_style" = "meta-template" -a -z "${run_depends}" ]; then
 		for subpkg in ${subpackages}; do
-			run_depends="$run_depends ${sourcepkg}-${subpkg}-${version}"
+			if [ -n "${revision}" ]; then
+				spkgrev="${sourcepkg}-${subpkg}-${version}_${revision}"
+			else
+				spkgrev="${sourcepkg}-${subpkg}-${version}"
+			fi
+			run_depends="${run_depends} ${spkgrev}"
 		done
 	fi
 	set_tmpl_common_vars
@@ -81,7 +92,7 @@ xbps_write_metadata_pkg()
 xbps_write_metadata_pkg_real()
 {
 	local metadir=${DESTDIR}/var/db/xbps/metadata/$pkgname
-	local f i j arch dirat lnkat newlnk TMPFLIST TMPFPLIST
+	local f i j arch dirat lnkat newlnk lver TMPFLIST TMPFPLIST
 	local fpattern="s|${DESTDIR}||g;s|^\./$||g;/^$/d"
 
 	if [ ! -d "${DESTDIR}" ]; then
@@ -93,6 +104,12 @@ xbps_write_metadata_pkg_real()
 		arch=noarch
 	else
 		arch=$xbps_machine
+	fi
+
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
 	fi
 
 	# Write the files.plist file.
@@ -159,7 +176,7 @@ xbps_write_metadata_pkg_real()
 	fi
 
 	cd ${DESTDIR}
-	msg_normal "Writing package metadata for $pkgname-$version..."
+	msg_normal "Writing package metadata for $pkgname-$lver..."
 
 	write_metadata_flist_header $TMPFPLIST
 
@@ -245,7 +262,7 @@ xbps_write_metadata_pkg_real()
 <key>pkgname</key>
 <string>$pkgname</string>
 <key>version</key>
-<string>$version</string>
+<string>$lver</string>
 <key>architecture</key>
 <string>$arch</string>
 <key>installed_size</key>

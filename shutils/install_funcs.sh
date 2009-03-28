@@ -30,17 +30,22 @@
 install_src_phase()
 {
 	local pkg="$1"
-	local f=
-	local i=
-	local subpkg=
+	local f i subpkg lver spkgrev
 
 	[ -z $pkg ] && [ -z $pkgname ] && return 1
+
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
+	fi
+
 	#
 	# There's nothing we can do if we are a meta template.
 	# Just creating the dir is enough to write the package metadata.
 	#
 	if [ "$build_style" = "meta-template" ]; then
-		mkdir -p $XBPS_DESTDIR/$pkgname-$version
+		mkdir -p $XBPS_DESTDIR/$pkgname-$lver
 		return 0
 	fi
 
@@ -51,7 +56,7 @@ install_src_phase()
 	# Run pre_install func.
 	run_func pre_install
 
-	msg_normal "Running install phase for $pkgname-$version."
+	msg_normal "Running install phase for $pkgname-$lver."
 
 	# cross compilation vars.
 	if [ -n "$cross_compiler" ]; then
@@ -62,7 +67,7 @@ install_src_phase()
 	if [ "$build_style" = "custom-install" ]; then
 		run_func do_install
 	else
-		make_install
+		make_install $lver
 	fi
 
 	# Run post_install func.
@@ -71,7 +76,7 @@ install_src_phase()
 	# unset cross compiler vars.
 	[ -n "$cross_compiler" ] && cross_compile_unsetvars
 
-	msg_normal "Installed $pkgname-$version into $XBPS_DESTDIR."
+	msg_normal "Installed $pkgname-$lver into $XBPS_DESTDIR."
 
 	touch -f $XBPS_INSTALL_DONE
 
@@ -83,7 +88,12 @@ install_src_phase()
 		   [ "${pkg}" != "${sourcepkg}-${subpkg}" ]; then
 			continue
 		fi
-		check_installed_pkg ${sourcepkg}-${subpkg}-${version}
+		if [ -n "$revision" ]; then
+			spkgrev="${sourcepkg}-${subpkg}-${version}_${revision}"
+		else
+			spkgrev="${sourcepkg}-${subpkg}-${version}"
+		fi
+		check_installed_pkg ${spkgrev}
 		[ $? -eq 0 ] && continue
 
 		msg_normal "Preparing ${sourcepkg} subpackage: $sourcepkg-$subpkg"
@@ -105,7 +115,7 @@ install_src_phase()
 	if [ -d "$wrksrc" -a -z "$dontrm_builddir" ]; then
 		rm -rf $wrksrc
 		[ $? -eq 0 ] && \
-			msg_normal "Removed $pkgname-$version build directory."
+			msg_normal "Removed $pkgname-$lver build directory."
 	fi
 }
 
@@ -115,6 +125,8 @@ install_src_phase()
 
 make_install()
 {
+	local lver="$1"
+
 	if [ "$build_style" = "perl_module" ]; then
 		make_install_target="install"
 	elif [ -z "$make_install_target" ]; then
@@ -131,7 +143,7 @@ make_install()
 	#
 	run_rootcmd no ${make_cmd} ${make_install_target} ${make_install_args}
 	if [ "$?" -ne 0 ]; then
-		msg_error "installing $pkgname-$version."
+		msg_error "installing $pkgname-$lver."
 		exit 1
 	fi
 
