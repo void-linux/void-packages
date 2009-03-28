@@ -161,6 +161,7 @@ prepare_tmpl()
 	[ "$build_style" = "meta-template" ] && return 0
 
 	if [ "$build_style" = "custom-install" -a -z "$distfiles" ]; then
+		set_tmpl_common_vars
 		return 0
 	fi
 

@@ -78,7 +78,9 @@ install_src_phase()
 
 	msg_normal "Installed $pkgname-$lver into $XBPS_DESTDIR."
 
-	touch -f $XBPS_INSTALL_DONE
+	if [ "$build_style" != "custom-install" -a -z "$distfiles" ]; then
+		touch -f $XBPS_INSTALL_DONE
+	fi
 
 	#
 	# Build subpackages if found.
