@@ -83,7 +83,9 @@ extract_distfiles()
 	for f in ${distfiles}; do
 		curfile=$(basename $f)
 
-		if $(echo $f|grep -q '.tar.bz2'); then
+		if $(echo $f|grep -q '.tar.lzma'); then
+			cursufx=".tar.lzma"
+		elif $(echo $f|grep -q '.tar.bz2'); then
 			cursufx=".tar.bz2"
 		elif $(echo $f|grep -q '.tbz'); then
 			cursufx=".tbz"
@@ -111,6 +113,22 @@ extract_distfiles()
 		fi
 
 		case ${cursufx} in
+		.tar.lzma)
+			if [ -x $XBPS_MASTERDIR/usr/bin/lzma ]; then
+				cp -f $XBPS_SRCDISTDIR/$curfile $lwrksrc
+				cd $lwrksrc && \
+					$XBPS_MASTERDIR/usr/bin/lzma \
+						-d $curfile && \
+					$ltar_cmd xf ${curfile%.lzma} \
+						-C $lwrksrc && \
+					rm -f ${curfile%.lzma}
+				if [ $? -ne 0 ]; then
+					msg_error "extracting $curfile into $lwrksrc."
+				fi
+			else
+				msg_error "cannot find lzma bin for extraction."
+			fi
+			;;
 		.tar.bz2|.tbz)
 			$ltar_cmd xfj $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
