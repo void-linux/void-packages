@@ -54,8 +54,7 @@ extract_distfiles()
 	#
 	# If noextract is set, do a "fake extraction".
 	#
-	if [ -n "$noextract" ]; then
-		msg_normal "Manual extraction for $pkgname-$lver."
+	if [ -z "$distfiles" -o -n "$noextract" ]; then
 		mkdir $wrksrc
 		touch -f $XBPS_EXTRACT_DONE
 		return 0

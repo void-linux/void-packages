@@ -160,11 +160,6 @@ prepare_tmpl()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
-	if [ "$build_style" = "custom-install" -a -z "$distfiles" ]; then
-		set_tmpl_common_vars
-		return 0
-	fi
-
 	REQ_VARS="pkgname version build_style short_desc long_desc"
 
 	# Check if required vars weren't set.
