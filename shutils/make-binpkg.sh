@@ -85,21 +85,22 @@ xbps_make_binpkg_real()
 		# this is to ensure that it's run before any other file is
 		# unpacked.
 		#
-		run_rootcmd $use_sudo tar cfp $XBPS_DESTDIR/$binpkg ./INSTALL && \
-		run_rootcmd $use_sudo tar rfp $XBPS_DESTDIR/$binpkg . \
+		run_rootcmd $use_sudo tar cfp \
+			$XBPS_BUILDDIR/$binpkg ./INSTALL && \
+		run_rootcmd $use_sudo tar rfp $XBPS_BUILDDIR/$binpkg . \
 			--exclude "./INSTALL" \
 			--exclude "./var/db/xbps/metadata/*/flist" && \
-			bzip2 -9 $XBPS_DESTDIR/$binpkg && \
-			mv $XBPS_DESTDIR/$binpkg.bz2 $XBPS_DESTDIR/$binpkg
+			bzip2 -9 $XBPS_BUILDDIR/$binpkg && \
+			mv $XBPS_BUILDDIR/$binpkg.bz2 $XBPS_BUILDDIR/$binpkg
 	else
-		run_rootcmd $use_sudo tar cfp $XBPS_DESTDIR/$binpkg . \
+		run_rootcmd $use_sudo tar cfp $XBPS_BUILDDIR/$binpkg . \
 			--exclude "./var/db/xbps/metadata/*/flist" && \
-			bzip2 -9 $XBPS_DESTDIR/$binpkg && \
-			mv $XBPS_DESTDIR/$binpkg.bz2 $XBPS_DESTDIR/$binpkg
+			bzip2 -9 $XBPS_BUILDDIR/$binpkg && \
+			mv $XBPS_BUILDDIR/$binpkg.bz2 $XBPS_BUILDDIR/$binpkg
 	fi
 	if [ $? -eq 0 ]; then
 		[ ! -d $pkgdir ] && mkdir -p $pkgdir
-		mv -f $XBPS_DESTDIR/$binpkg $pkgdir
+		mv -f $XBPS_BUILDDIR/$binpkg $pkgdir
 		echo "=> Built package: $binpkg"
 	fi
 
