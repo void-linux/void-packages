@@ -42,7 +42,6 @@ struct show_files_cb {
 static void	show_pkg_info(prop_dictionary_t);
 static int	show_pkg_files(prop_object_t, void *, bool *);
 static int	show_pkg_namedesc(prop_object_t, void *, bool *);
-static int	list_strings_in_array2(prop_object_t, void *, bool *);
 
 static void
 show_pkg_info(prop_dictionary_t dict)
@@ -107,26 +106,28 @@ show_pkg_info(prop_dictionary_t dict)
 
 	obj = prop_dictionary_get(dict, "run_depends");
 	if (obj && prop_object_type(obj) == PROP_TYPE_ARRAY) {
-		printf("Dependencies:\n\t");
-		sep = " ";
+		printf("Dependencies:\n");
+		sep = "\t";
 		xbps_callback_array_iter_in_dict(dict, "run_depends",
-		    list_strings_in_array2, (void *)sep);
-		printf("\n\n");
+		    list_strings_in_array, (void *)sep);
+		printf("\n");
 	}
 
 	obj = prop_dictionary_get(dict, "conf_files");
 	if (obj && prop_object_type(obj) == PROP_TYPE_ARRAY) {
-		printf("Configuration files:\n\t");
+		printf("Configuration files:\n");
+		sep = "\t";
 		xbps_callback_array_iter_in_dict(dict, "conf_files",
-		    list_strings_in_array2, NULL);
+		    list_strings_in_array, (void *)sep);
 		printf("\n");
 	}
 
 	obj = prop_dictionary_get(dict, "keep_dirs");
 	if (obj && prop_object_type(obj) == PROP_TYPE_ARRAY) {
-		printf("Permanent directories:\n\t");
+		printf("Permanent directories:\n");
+		sep = "\t";
 		xbps_callback_array_iter_in_dict(dict, "keep_dirs",
-		    list_strings_in_array2, NULL);
+		    list_strings_in_array, (void *)sep);
 		printf("\n");
 	}
 
@@ -378,41 +379,15 @@ show_pkg_namedesc(prop_object_t obj, void *arg, bool *loop_done)
 	return 0;
 }
 
-static int
-list_strings_in_array2(prop_object_t obj, void *arg, bool *loop_done)
-{
-	static uint16_t count;
-	const char *sep;
-
-	(void)loop_done;
-
-	assert(prop_object_type(obj) == PROP_TYPE_STRING);
-
-	if (arg == NULL) {
-		sep = "\n\t";
-		count = 0;
-	} else
-		sep = (const char *)arg;
-
-	if (count == 4) {
-		printf("\n\t");
-		count = 0;
-	}
-
-	printf("%s%s", prop_string_cstring_nocopy(obj), sep);
-	count++;
-
-	return 0;
-}
-
 int
 list_strings_in_array(prop_object_t obj, void *arg, bool *loop_done)
 {
+	const char *sep = arg;
 	(void)arg;
 	(void)loop_done;
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
-	printf("%s\n", prop_string_cstring_nocopy(obj));
+	printf("%s%s\n", sep ? sep : "", prop_string_cstring_nocopy(obj));
 
 	return 0;
 }
