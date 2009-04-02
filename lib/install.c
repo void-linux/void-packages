@@ -58,15 +58,22 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkgrd,
 		automatic = true;
 
 	if (update == true) {
+		/*
+		 * Update a package, firstly removing current package.
+		 */
 		instpkg = xbps_find_pkg_installed_from_plist(pkgname);
 		if (instpkg == NULL)
 			return EINVAL;
 
 		prop_dictionary_get_cstring_nocopy(instpkg, "version",
 		    &instver);
-		printf("Updating %s-%s to %s ...\n", pkgname,
-		    instver, version);
+		printf("Removing current package %s-%s ...\n", pkgname,
+		    instver);
 		prop_object_release(instpkg);
+		rv = xbps_remove_binary_pkg(pkgname, update);
+		if (rv != 0)
+			return rv;
+		printf("Installing new package %s-%s ...\n", pkgname, version);
 	} else {
 		printf("Installing %s%s: found version %s ...\n",
 		    automatic ? "dependency " : "", pkgname, version);

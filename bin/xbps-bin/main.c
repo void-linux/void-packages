@@ -281,7 +281,7 @@ main(int argc, char **argv)
 
 		(void)fflush(stdout);
 
-		rv = xbps_remove_binary_pkg(argv[1]);
+		rv = xbps_remove_binary_pkg(argv[1], false);
 		if (rv != 0) {
 			if (!verbose)
 				printf("failed! (%s)\n", strerror(rv));
@@ -380,7 +380,7 @@ main(int argc, char **argv)
 
 			(void)fflush(stdout);
 
-			rv = xbps_remove_binary_pkg(pkgname);
+			rv = xbps_remove_binary_pkg(pkgname, false);
 			if (rv != 0) {
 				if (!verbose)
 					printf("failed! (%s)\n", strerror(rv));

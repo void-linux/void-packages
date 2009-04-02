@@ -205,7 +205,7 @@ out:
 }
 
 int
-xbps_remove_binary_pkg(const char *pkgname)
+xbps_remove_binary_pkg(const char *pkgname, bool update)
 {
 	prop_dictionary_t dict;
 	const char *rootdir = xbps_get_rootdir();
@@ -305,18 +305,21 @@ xbps_remove_binary_pkg(const char *pkgname)
 	free(buf);
 
 	/*
-	 * Update the required_by array of all required dependencies.
+	 * Update the required_by array of all required dependencies
+	 * and unregister package if this is really a removal and
+	 * not an update.
 	 */
-	rv = xbps_requiredby_pkg_remove(pkgname);
-	if (rv != 0)
-		return rv;
-
-	/*
-	 * Unregister pkg from database.
-	 */
-	rv = xbps_unregister_pkg(pkgname);
-	if (rv != 0)
-		return rv;
+	if (update == false) {
+		rv = xbps_requiredby_pkg_remove(pkgname);
+		if (rv != 0)
+			return rv;
+		/*
+		 * Unregister pkg from database.
+		 */
+		rv = xbps_unregister_pkg(pkgname);
+		if (rv != 0)
+			return rv;
+	}
 
 	/*
 	 * Remove pkg metadata directory.

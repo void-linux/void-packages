@@ -27,7 +27,7 @@
 #define _XBPS_REMOVE_H_
 
 /* From lib/remove.c */
-int	xbps_remove_binary_pkg(const char *);
+int	xbps_remove_binary_pkg(const char *, bool);
 int	xbps_unregister_pkg(const char *);
 
 #endif /* !_XBPS_REMOVE_H_ */
