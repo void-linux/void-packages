@@ -47,12 +47,13 @@ usage(void)
 {
 	printf("Usage: xbps-bin [options] [target] [arguments]\n\n"
 	" Available targets:\n"
-        "    autoremove, install, list, remove, show, files\n"
+        "    autoremove, files, install, list, remove, show, update\n"
 	" Targets with arguments:\n"
-	"    install\t<pkgname>\n"
 	"    files\t<pkgname>\n"
+	"    install\t<pkgname>\n"
 	"    remove\t<pkgname>\n"
 	"    show\t<pkgname>\n"
+	"    update\t<pkgname>\n"
 	" Options shared by all targets:\n"
 	"    -r\t\t<rootdir>\n"
 	"    -v\t\t<verbose>\n"
@@ -64,12 +65,13 @@ usage(void)
 	"\n"
 	" Examples:\n"
 	"    $ xbps-bin autoremove\n"
+	"    $ xbps-bin -C files klibc\n"
 	"    $ xbps-bin install klibc\n"
 	"    $ xbps-bin -r /path/to/root install klibc\n"
-	"    $ xbps-bin -C files klibc\n"
 	"    $ xbps-bin list\n"
 	"    $ xbps-bin -f remove klibc\n"
-	"    $ xbps-bin show klibc\n");
+	"    $ xbps-bin show klibc\n"
+	"    $ xbps-bin update klibc\n");
 	exit(EXIT_FAILURE);
 }
 
