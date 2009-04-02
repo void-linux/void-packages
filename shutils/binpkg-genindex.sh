@@ -69,8 +69,8 @@ write_repo_pkgindex()
 			msg_warn "Couldn't extract $(basename $i) metadata!"
 			continue
 		fi
-		write_repo_pkgindex_dict $propsf $pkgindexf $(basename $i) \
-			$xbps_machine
+		write_repo_pkgindex_dict $propsf $pkgindexf $repodir \
+			$(basename $i) $xbps_machine
 		if [ $? -ne 0 ]; then
 			msg_warn "Couldn't write $i metadata to index file!"
 			continue
@@ -88,8 +88,8 @@ write_repo_pkgindex()
 			msg_warn "Couldn't extract $(basename $i) metadata!"
 			continue
 		fi
-		write_repo_pkgindex_dict $propsf $pkgindexf $(basename $i) \
-			noarch
+		write_repo_pkgindex_dict $propsf $pkgindexf $repodir \
+			$(basename $i) noarch
 		if [ $? -ne 0 ]; then
 			msg_warn "Couldn't write $i metadata to index file!"
 			continue
@@ -161,11 +161,12 @@ write_repo_pkgindex_dict()
 {
 	local pkgf="$1"
 	local indexf="$2"
-	local binpkgf="$3"
-	local arch="$4"
+	local repodir="$3"
+	local binpkgf="$4"
+	local arch="$5"
 	local first_dict=
 	local tmpdictf=
-	local binpkg="$XBPS_PACKAGESDIR/$arch/$binpkgf"
+	local binpkg="$repodir/$arch/$binpkgf"
 	local getsize=$(du -b $binpkg|awk '{print $1}')
 
 	[ -z "$pkgf" -o -z "$indexf" -o -z "$binpkgf" ] && return 1
