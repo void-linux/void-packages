@@ -214,7 +214,7 @@ main(int argc, char **argv)
 		if (argc != 2)
 			usage();
 
-		rv = xbps_install_binary_pkg(argv[1]);
+		rv = xbps_install_binary_pkg(argv[1], false);
 		if (rv != 0) {
 			if (rv == EAGAIN) {
 				printf("Unable to locate %s in "
@@ -232,6 +232,17 @@ main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 		}
 		printf("Package %s installed successfully.\n", argv[1]);
+
+	} else if (strcasecmp(argv[0], "update") == 0) {
+		/* Update an installed package. */
+		if (argc != 2)
+			usage();
+
+		rv = xbps_install_binary_pkg(argv[1], true);
+		if (rv != 0)
+			exit(EXIT_FAILURE);
+
+		printf("Package %s updated successfully.\n", argv[1]);
 
 	} else if (strcasecmp(argv[0], "remove") == 0) {
 		/* Removes a binary package. */

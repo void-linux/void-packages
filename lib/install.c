@@ -34,30 +34,48 @@
 
 #include <xbps_api.h>
 
+struct binpkg_instargs {
+	const char *pkgname;
+	bool update;
+};
+
 static int	install_binpkg_repo_cb(prop_object_t, void *, bool *);
 
 int
-xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg)
+xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkgrd,
+			     bool update)
 {
-	const char *pkgname, *version, *desc;
+	prop_dictionary_t instpkg;
+	const char *pkgname, *version, *instver;
 	int rv = 0;
 	bool automatic = false;
 
 	assert(pkg != NULL);
-	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
-	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
-	prop_dictionary_get_cstring_nocopy(pkg, "short_desc", &desc);
+	prop_dictionary_get_cstring_nocopy(pkgrd, "pkgname", &pkgname);
+	prop_dictionary_get_cstring_nocopy(pkgrd, "version", &version);
 
 	if (repo == false)
 		automatic = true;
 
-	printf("Installing %s%s: found version %s ...\n",
-	    automatic ? "dependency " : "", pkgname, version);
+	if (update == true) {
+		instpkg = xbps_find_pkg_installed_from_plist(pkgname);
+		if (instpkg == NULL)
+			return EINVAL;
+
+		prop_dictionary_get_cstring_nocopy(instpkg, "version",
+		    &instver);
+		printf("Updating %s-%s to %s ...\n", pkgname,
+		    instver, version);
+		prop_object_release(instpkg);
+	} else {
+		printf("Installing %s%s: found version %s ...\n",
+		    automatic ? "dependency " : "", pkgname, version);
+	}
 	(void)fflush(stdout);
 
-	rv = xbps_unpack_binary_pkg(repo, pkg);
+	rv = xbps_unpack_binary_pkg(repo, pkgrd, update);
 	if (rv == 0) {
-		rv = xbps_register_pkg(pkg, pkgname, version, desc, automatic);
+		rv = xbps_register_pkg(pkgrd, update, automatic);
 		if (rv != 0) {
 			printf("ERROR: couldn't register %s-%s! (%s)\n",
 			    pkgname, version, strerror(rv));
@@ -69,17 +87,21 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkg)
 }
 
 int
-xbps_install_binary_pkg(const char *pkgname)
+xbps_install_binary_pkg(const char *pkgname, bool update)
 {
+	struct binpkg_instargs bi;
 	int rv = 0;
 
 	assert(pkgname != NULL);
+
+	bi.pkgname = pkgname;
+	bi.update = update;
 	/*
 	 * Iterate over the repository pool and find out if we have
 	 * all available binary packages.
 	 */
 	rv = xbps_callback_array_iter_in_repolist(install_binpkg_repo_cb,
-	    (void *)pkgname);
+	    (void *)&bi);
 	if (rv == 0 && errno != 0)
 		return errno;
 
@@ -90,8 +112,9 @@ static int
 install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 {
 	prop_dictionary_t repod, pkgrd;
+	struct binpkg_instargs *bi = arg;
 	size_t len = 0;
-	const char *repoloc, *instver, *pkgname = arg;
+	const char *repoloc, *instver;
 	char *plist, *pkg;
 	int rv = 0;
 
@@ -110,7 +133,7 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	 * Get the package dictionary from current repository.
 	 * If it's not there, pass to the next repository.
 	 */
-	pkgrd = xbps_find_pkg_in_dict(repod, "packages", pkgname);
+	pkgrd = xbps_find_pkg_in_dict(repod, "packages", bi->pkgname);
 	if (pkgrd == NULL) {
 		prop_object_release(repod);
 		errno = EAGAIN;
@@ -122,13 +145,13 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	 * and return immediately in that case.
 	 */
 	prop_dictionary_get_cstring_nocopy(pkgrd, "version", &instver);
-	len = strlen(pkgname) + strlen(instver) + 2;
+	len = strlen(bi->pkgname) + strlen(instver) + 2;
 	pkg = malloc(len);
 	if (pkg == NULL) {
 		rv = EINVAL;
 		goto out;
 	}
-	(void)snprintf(pkg, len, "%s-%s", pkgname, instver);
+	(void)snprintf(pkg, len, "%s-%s", bi->pkgname, instver);
 	if (xbps_check_is_installed_pkg(pkg) == 0) {
 		free(pkg);
 		rv = EEXIST;
@@ -171,12 +194,12 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	/*
 	 * Install all required dependencies and the package itself.
 	 */
-	rv = xbps_install_pkg_deps(pkgname);
+	rv = xbps_install_pkg_deps(bi->pkgname, bi->update);
 	if (rv != 0)
 		goto out;
 
 install:
-	rv = xbps_install_binary_pkg_fini(repod, pkgrd);
+	rv = xbps_install_binary_pkg_fini(repod, pkgrd, bi->update);
 	if (rv == 0) {
 		*cbloop_done = true;
 		/* Cleanup errno, just in case */
@@ -205,26 +228,28 @@ make_dict_from_pkg(const char *name, const char *ver, const char *desc)
 }
 
 int
-xbps_register_pkg(prop_dictionary_t pkgrd, const char *pkgname,
-		  const char *version, const char *desc,
-		  bool automatic)
+xbps_register_pkg(prop_dictionary_t pkgrd, bool update, bool automatic)
 {
-	prop_dictionary_t dict, pkgd;
+	prop_dictionary_t dict, pkgd, newpkgd;
 	prop_array_t array;
+	const char *pkgname, *version, *desc;
 	char *plist;
 	int rv = 0;
-
-	assert(pkgname != NULL);
-	assert(version != NULL);
-	assert(desc != NULL);
 
 	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
 	if (plist == NULL)
 		return EINVAL;
 
+	prop_dictionary_get_cstring_nocopy(pkgrd, "pkgname", &pkgname);
+	prop_dictionary_get_cstring_nocopy(pkgrd, "version", &version);
+	prop_dictionary_get_cstring_nocopy(pkgrd, "short_desc", &desc);
+
 	dict = prop_dictionary_internalize_from_file(plist);
 	if (dict == NULL) {
-		/* No packages registered yet. */
+		/*
+		 * No packages registered yet. Register package into
+		 * the dictionary.
+		 */
 		dict = prop_dictionary_create();
 		if (dict == NULL) {
 			free(plist);
@@ -254,36 +279,57 @@ xbps_register_pkg(prop_dictionary_t pkgrd, const char *pkgname,
 		}
 
 	} else {
-		/* Check if package is already registered. */
+		/*
+		 * Check if package is already registered and return
+		 * an error if not updating.
+		 */
 		pkgd = xbps_find_pkg_in_dict(dict, "packages", pkgname);
-		if (pkgd != NULL) {
+		if (pkgd != NULL && update == false) {
 			rv = EEXIST;
 			goto out;
 		}
-
-		pkgd = make_dict_from_pkg(pkgname, version, desc);
 		array = prop_dictionary_get(dict, "packages");
 		if (array == NULL) {
-			prop_object_release(pkgd);
 			rv = ENOENT;
 			goto out;
 		}
 
-		prop_dictionary_set_bool(pkgd, "automatic-install",
-			automatic);
+		newpkgd = make_dict_from_pkg(pkgname, version, desc);
+		prop_dictionary_set_bool(newpkgd, "automatic-install",
+		    automatic);
 
-		if (pkgrd && xbps_pkg_has_rundeps(pkgrd)) {
-			rv = xbps_requiredby_pkg_add(array, pkgrd);
+		if (update && pkgrd && xbps_pkg_has_rundeps(pkgrd)) {
+			/*
+			 * If updating a package, update the requiredby
+			 * objects and set new version in pkg dictionary.
+			 */
+			rv = xbps_requiredby_pkg_add(array, pkgrd, true);
 			if (rv != 0) {
-				prop_object_release(pkgd);
+				prop_object_release(newpkgd);
 				goto out;
 			}
-		}
+			prop_dictionary_set_cstring_nocopy(pkgd,
+			    "version", version);
 
-		if (!xbps_add_obj_to_array(array, pkgd)) {
-			prop_object_release(pkgd);
-			rv = EINVAL;
-			goto out;
+		} else {
+			/*
+			 * If installing a package, update the requiredby
+			 * objects and add new pkg dictionary into the
+			 * packages array.
+			 */
+			if (pkgrd && xbps_pkg_has_rundeps(pkgrd)) {
+				rv = xbps_requiredby_pkg_add(array, pkgrd,
+				     false);
+				if (rv != 0) {
+					prop_object_release(newpkgd);
+					goto out;
+				}
+			}
+			if (!xbps_add_obj_to_array(array, newpkgd)) {
+				prop_object_release(newpkgd);
+				rv = EINVAL;
+				goto out;
+			}
 		}
 	}
 

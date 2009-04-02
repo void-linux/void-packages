@@ -547,7 +547,7 @@ find_pkg_deps_from_repo(prop_dictionary_t repo, prop_dictionary_t pkg,
 }
 
 int
-xbps_install_pkg_deps(const char *pkgname)
+xbps_install_pkg_deps(const char *pkgname, bool update)
 {
 	prop_array_t required, missing;
 	prop_object_t obj;
@@ -597,7 +597,7 @@ xbps_install_pkg_deps(const char *pkgname)
 	 * Install all required dependencies, previously sorted.
 	 */
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
-		rv = xbps_install_binary_pkg_fini(NULL, obj);
+		rv = xbps_install_binary_pkg_fini(NULL, obj, update);
 		if (rv != 0)
 			break;
 	}

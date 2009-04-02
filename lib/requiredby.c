@@ -119,6 +119,44 @@ remove_pkg_from_reqby(prop_object_t obj, void *arg, bool *loop_done)
 	return 0;
 }
 
+static int
+update_pkg_from_reqby(prop_dictionary_t pkgd, const char *reqname,
+		      const char *reqpkg)
+{
+	prop_array_t reqby;
+	prop_object_iterator_t iter;
+	prop_object_t obj;
+	size_t idx = 0;
+	char *pkgname;
+	bool found = false;
+
+	reqby = prop_dictionary_get(pkgd, "requiredby");
+	if (reqby == NULL || prop_array_count(reqby) == 0)
+		return EINVAL;
+
+	iter = prop_array_iterator(reqby);
+	if (iter == NULL)
+		return ENOMEM;
+
+	while ((obj = prop_object_iterator_next(iter)) != NULL) {
+		pkgname = xbps_get_pkg_name(prop_string_cstring_nocopy(obj));
+		if (strcmp(reqname, pkgname) == 0) {
+			found = true;
+			break;
+		}
+		idx++;
+	}
+	prop_object_iterator_release(iter);
+	if (found == false)
+		return ENOENT;
+
+	obj = prop_string_create_cstring(reqpkg);
+	if (!prop_array_set(reqby, idx, obj))
+		return EINVAL;
+
+	return 0;
+}
+
 int
 xbps_requiredby_pkg_remove(const char *pkgname)
 {
@@ -150,7 +188,7 @@ xbps_requiredby_pkg_remove(const char *pkgname)
 }
 
 int
-xbps_requiredby_pkg_add(prop_array_t regar, prop_dictionary_t pkg)
+xbps_requiredby_pkg_add(prop_array_t regar, prop_dictionary_t pkg, bool update)
 {
 	prop_array_t rdeps;
 	prop_object_t obj, obj2;
@@ -198,7 +236,11 @@ xbps_requiredby_pkg_add(prop_array_t regar, prop_dictionary_t pkg)
 			prop_dictionary_get_cstring_nocopy(obj2, "pkgname",
 			    &reqname);
 			if (strcmp(rdepname, reqname) == 0) {
-				rv = add_pkg_into_reqby(obj2, fpkgn);
+				if (update)
+					rv = update_pkg_from_reqby(obj2,
+					    pkgname, fpkgn);
+				else
+					rv = add_pkg_into_reqby(obj2, fpkgn);
 				if (rv != 0) {
 					free(rdepname);
 					prop_object_iterator_release(iter2);
