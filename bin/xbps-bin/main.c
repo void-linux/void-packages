@@ -241,8 +241,14 @@ main(int argc, char **argv)
 			usage();
 
 		rv = xbps_install_binary_pkg(argv[1], true);
-		if (rv != 0)
+		if (rv != 0) {
+			if (rv == EEXIST) {
+				printf("Package %s is already up to date.\n",
+				    argv[1]);
+				exit(EXIT_SUCCESS);
+			}
 			exit(EXIT_FAILURE);
+		}
 
 		printf("Package %s updated successfully.\n", argv[1]);
 
