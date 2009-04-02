@@ -80,7 +80,7 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkgrd,
 	}
 	(void)fflush(stdout);
 
-	rv = xbps_unpack_binary_pkg(repo, pkgrd, update);
+	rv = xbps_unpack_binary_pkg(repo, pkgrd);
 	if (rv == 0) {
 		rv = xbps_register_pkg(pkgrd, update, automatic);
 		if (rv != 0) {

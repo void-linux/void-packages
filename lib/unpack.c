@@ -35,12 +35,11 @@
 
 #include <xbps_api.h>
 
-static int unpack_archive_init(prop_dictionary_t, const char *, bool);
-static int unpack_archive_fini(struct archive *, prop_dictionary_t, bool);
+static int unpack_archive_init(prop_dictionary_t, const char *);
+static int unpack_archive_fini(struct archive *, prop_dictionary_t);
 
 int
-xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
-		       bool update)
+xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
 {
 	prop_string_t filename, repoloc, arch;
 	char *binfile, *path;
@@ -70,14 +69,14 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg,
 	}
 	free(path);
 
-	rv = unpack_archive_init(pkg, binfile, update);
+	rv = unpack_archive_init(pkg, binfile);
 	free(binfile);
 	return rv;
 }
 
 
 static int
-unpack_archive_init(prop_dictionary_t pkg, const char *binfile, bool update)
+unpack_archive_init(prop_dictionary_t pkg, const char *binfile)
 {
 	struct archive *ar;
 	int pkg_fd, rv;
@@ -105,7 +104,7 @@ unpack_archive_init(prop_dictionary_t pkg, const char *binfile, bool update)
 		return rv;
 	}
 
-	rv = unpack_archive_fini(ar, pkg, update);
+	rv = unpack_archive_fini(ar, pkg);
 	/*
 	 * If installation of package was successful, make sure the package
 	 * is really on storage (if possible).
@@ -122,10 +121,10 @@ unpack_archive_init(prop_dictionary_t pkg, const char *binfile, bool update)
 /*
  * Flags for extracting files in binary packages.
  */
-#define INSTALL_EFLAGS	ARCHIVE_EXTRACT_NO_OVERWRITE | \
-			ARCHIVE_EXTRACT_NO_OVERWRITE_NEWER
 #define EXTRACT_FLAGS	ARCHIVE_EXTRACT_SECURE_NODOTDOT | \
-			ARCHIVE_EXTRACT_SECURE_SYMLINKS
+			ARCHIVE_EXTRACT_SECURE_SYMLINKS | \
+			ARCHIVE_EXTRACT_NO_OVERWRITE | \
+			ARCHIVE_EXTRACT_NO_OVERWRITE_NEWER
 #define FEXTRACT_FLAGS	ARCHIVE_EXTRACT_OWNER | ARCHIVE_EXTRACT_PERM | \
 			ARCHIVE_EXTRACT_TIME | EXTRACT_FLAGS
 
@@ -134,7 +133,7 @@ unpack_archive_init(prop_dictionary_t pkg, const char *binfile, bool update)
  * the consumer.
  */
 static int
-unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg, bool update)
+unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 {
 	struct archive_entry *entry;
 	size_t len;
@@ -165,9 +164,6 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg, bool update)
 		lflags = FEXTRACT_FLAGS;
 	else
 		lflags = EXTRACT_FLAGS;
-
-	if (update == false)
-		lflags |= INSTALL_EFLAGS;
 
 	/*
 	 * This length is '.%s/metadata/%s/INSTALL' + NULL.

@@ -32,7 +32,7 @@ int	xbps_install_binary_pkg(const char *, bool);
 int	xbps_install_binary_pkg_fini(prop_dictionary_t, prop_dictionary_t,
 				     bool);
 int	xbps_register_pkg(prop_dictionary_t, bool, bool);
-int	xbps_unpack_binary_pkg(prop_dictionary_t, prop_dictionary_t, bool);
+int	xbps_unpack_binary_pkg(prop_dictionary_t, prop_dictionary_t);
 int	xbps_requiredby_pkg_add(prop_array_t, prop_dictionary_t, bool);
 int	xbps_requiredby_pkg_remove(const char *);
 int	xbps_find_deps_in_pkg(prop_dictionary_t);
