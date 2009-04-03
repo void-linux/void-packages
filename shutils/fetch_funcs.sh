@@ -71,9 +71,15 @@ fetch_distfiles()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
+	cd $XBPS_SRCDISTDIR
 	for f in ${distfiles}; do
 		curfile=$(basename $f)
 		if [ -f "$XBPS_SRCDISTDIR/$curfile" ]; then
+			if [ -n "$upcksum" ]; then
+				fetch_update_cksum $curfile
+				run_template $pkgname
+			fi
+
 			for i in ${checksum}; do
 				if [ $dfcount -eq $ckcount -a -n $i ]; then
 					cksum=$i
@@ -105,8 +111,7 @@ fetch_distfiles()
 			localurl="$url/$curfile"
 		fi
 
-
-		cd $XBPS_SRCDISTDIR && $fetch_cmd $localurl
+		$fetch_cmd $localurl
 		if [ $? -ne 0 ]; then
 			unset localurl
 			if [ ! -f $XBPS_SRCDISTDIR/$curfile ]; then
@@ -118,8 +123,8 @@ fetch_distfiles()
 			unset localurl
 
 			if [ -n "$upcksum" ]; then
-				fetch_update_cksum $f
-				break
+				fetch_update_cksum $curfile
+				run_template $pkgname
 			fi
 
 			#
