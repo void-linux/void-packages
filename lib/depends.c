@@ -570,6 +570,7 @@ xbps_install_pkg_deps(const char *pkgname, bool update)
 	/*
 	 * Sort the dependency chain into an array.
 	 */
+	printf("Sorting dependency list...\n");
 	if ((rv = xbps_sort_pkg_deps(chaindeps)) != 0)
 		return rv;
 
@@ -596,6 +597,7 @@ xbps_install_pkg_deps(const char *pkgname, bool update)
 	/*
 	 * Install all required dependencies, previously sorted.
 	 */
+	printf("Installing required dependencies...\n");
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		rv = xbps_install_binary_pkg_fini(NULL, obj, update);
 		if (rv != 0)

@@ -189,6 +189,7 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	/*
 	 * Construct the dependency chain for this package.
 	 */
+	printf("Finding required dependencies...\n");
 	if ((rv = xbps_find_deps_in_pkg(pkgrd)) != 0) {
 		prop_object_release(repod);
 		if (rv == ENOENT) {
