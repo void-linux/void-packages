@@ -34,6 +34,7 @@
 #include <unistd.h>
 
 #include <xbps_api.h>
+#include "index.h"
 #include "util.h"
 
 typedef struct repository_info {
@@ -52,9 +53,10 @@ usage(void)
 {
 	printf("Usage: xbps-repo [options] [action] [arguments]\n\n"
 	" Available actions:\n"
-        "    add, list, remove, search, show\n"
+        "    add, genindex, list, remove, search, show\n"
 	" Actions with arguments:\n"
 	"    add\t\t<URI>\n"
+	"    genindex\t<path>\n"
 	"    remove\t<URI>\n"
 	"    search\t<string>\n"
 	"    show\t<pkgname>\n"
@@ -67,7 +69,8 @@ usage(void)
 	"    $ xbps-repo list\n"
 	"    $ xbps-repo remove /path/to/directory\n"
 	"    $ xbps-repo search klibc\n"
-	"    $ xbps-repo show klibc\n");
+	"    $ xbps-repo show klibc\n"
+	"    $ xbps-repo genindex /path/to/packages/dir\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -267,6 +270,14 @@ main(int argc, char **argv)
 			    "repository pool.\n", argv[1]);
 			exit(EXIT_FAILURE);
 		}
+
+	} else if (strcasecmp(argv[0], "genindex") == 0) {
+		/* Generates a package repository index plist file. */
+		if (argc != 2)
+			usage();
+
+		rv = xbps_repo_genindex(argv[1]);
+		exit(rv);
 
 	} else {
 		usage();
