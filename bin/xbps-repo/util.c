@@ -288,12 +288,9 @@ show_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 		else
 			rv = xbps_check_file_hash(file, sha256);
 
-		if (rv != 0 && rv != ERANGE) {
-			if (sfc->destdir)
-				free(path);
-			return rv;
-		}
-		if (rv == ERANGE)
+		if (rv != 0 && rv != ERANGE)
+			printf(" (can't check: %s)", strerror(rv));
+		else if (rv == ERANGE)
 			printf("  WARNING! SHA256 HASH MISMATCH!");
 
 		printf("\n");
