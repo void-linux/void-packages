@@ -69,7 +69,7 @@ repoidx_getdict(const char *pkgdir)
 		prop_dictionary_set_cstring_nocopy(dict,
 		    "location-local", pkgdir);
 		prop_dictionary_set_cstring_nocopy(dict,
-		    "pkgindex-version", "1.0");
+		    "pkgindex-version", XBPS_PKGINDEX_VERSION);
 	}
 	free(plist);
 

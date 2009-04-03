@@ -51,6 +51,9 @@
 #define XBPS_PKGPROPS		"props.plist"
 #define XBPS_PKGFILES		"files.plist"
 
+/* Current version of the package index format. */
+#define XBPS_PKGINDEX_VERSION	"1.0"
+
 /* Verbose messages */
 #define XBPS_VERBOSE		0x00000001
 
