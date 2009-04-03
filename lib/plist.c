@@ -238,23 +238,20 @@ xbps_get_array_iter_from_dict(prop_dictionary_t dict, const char *key)
 }
 
 bool
-xbps_remove_pkg_dict_from_file(const char *pkg, const char *plist)
+xbps_remove_pkg_from_dict(prop_dictionary_t dict, const char *pkgname)
 {
-	prop_dictionary_t pdict;
 	prop_array_t array;
 	prop_object_t obj;
 	prop_object_iterator_t iter;
-	const char *curpkg;
+	const char *curpkgname;
 	size_t i = 0;
+	bool found = false;
 
-	assert(pkg != NULL);
-	assert(plist != NULL);
+	assert(dict != NULL);
+	assert(key != NULL);
+	assert(pkgname != NULL);
 
-	pdict = prop_dictionary_internalize_from_file(plist);
-	if (pdict == NULL)
-		return false;
-
-	array = prop_dictionary_get(pdict, "packages");
+	array = prop_dictionary_get(dict, "packages");
 	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
 		return false;
 
@@ -264,22 +261,39 @@ xbps_remove_pkg_dict_from_file(const char *pkg, const char *plist)
 
 	/* Iterate over the array of dictionaries to find its index. */
 	while ((obj = prop_object_iterator_next(iter))) {
-		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &curpkg);
-		if ((curpkg && (strcmp(curpkg, pkg) == 0))) {
-			/* Found, remove it and write plist file. */
-			prop_array_remove(array, i);
-			prop_object_iterator_release(iter);
-			goto wr_plist;
+		prop_dictionary_get_cstring_nocopy(obj, "pkgname",
+		    &curpkgname);
+		if ((curpkgname && (strcmp(curpkgname, pkgname) == 0))) {
+			found = true;
+			break;
 		}
 		i++;
 	}
-
 	prop_object_iterator_release(iter);
-	prop_object_release(pdict);
-	errno = ENODEV;
-	return false;
+	if (found == true)
+		prop_array_remove(array, i);
 
-wr_plist:
+	return found;
+}
+
+bool
+xbps_remove_pkg_dict_from_file(const char *pkg, const char *plist)
+{
+	prop_dictionary_t pdict;
+
+	assert(pkg != NULL);
+	assert(plist != NULL);
+
+	pdict = prop_dictionary_internalize_from_file(plist);
+	if (pdict == NULL)
+		return false;
+
+	if (!xbps_remove_pkg_from_dict(pdict, pkg)) {
+		prop_object_release(pdict);
+		errno = ENODEV;
+		return false;
+	}
+
 	if (!prop_dictionary_externalize_to_file(pdict, plist)) {
 		prop_object_release(pdict);
 		return false;
