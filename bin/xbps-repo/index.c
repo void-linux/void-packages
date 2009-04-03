@@ -169,7 +169,7 @@ repoidx_addpkg(const char *file, const char *filename, const char *pkgdir)
 				    "registered.\n", filename, regver);
 				prop_object_release(newpkgd);
 				archive_read_data_skip(ar);
-				continue;
+				break;
 			}
 			/*
 			 * Current package is newer than the one that is
