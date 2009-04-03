@@ -37,29 +37,43 @@
 static const char *rootdir;
 static int flags;
 
-int
-xbps_check_file_hash(const char *path, const char *sha256)
+char *
+xbps_get_file_hash(const char *file)
 {
 	SHA256_CTX ctx;
-	const char *res;
+	char *hash;
 	uint8_t buf[BUFSIZ * 20], digest[SHA256_DIGEST_LENGTH * 2 + 1];
 	ssize_t bytes;
-	int fd, rv = 0;
+	int fd;
 
-	if ((fd = open(path, O_RDONLY)) == -1)
-		return errno;
+	if ((fd = open(file, O_RDONLY)) == -1)
+		return NULL;
 
 	SHA256_Init(&ctx);
 	while ((bytes = read(fd, buf, sizeof(buf))) > 0)
 		SHA256_Update(&ctx, buf, (size_t)bytes);
-	res = SHA256_End(&ctx, digest);
-
-	if (strcmp(sha256, res))
-		rv = ERANGE;
-
+	hash = strdup(SHA256_End(&ctx, digest));
 	(void)close(fd);
 
-	return rv;
+	return hash;
+}
+
+int
+xbps_check_file_hash(const char *path, const char *sha256)
+{
+	char *res;
+
+	res = xbps_get_file_hash(path);
+	if (res == NULL)
+		return errno;
+
+	if (strcmp(sha256, res)) {
+		free(res);
+		return ERANGE;
+	}
+	free(res);
+
+	return 0;
 }
 
 int
