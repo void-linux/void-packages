@@ -39,7 +39,6 @@
 static void	usage(void);
 static void	show_missing_deps(prop_dictionary_t, const char *);
 static int	show_missing_dep_cb(prop_object_t, void *, bool *);
-static int	show_reqby_pkgs(prop_object_t, void *, bool *);
 static int	list_pkgs_in_dict(prop_object_t, void *, bool *);
 
 static void
@@ -122,26 +121,6 @@ show_missing_dep_cb(prop_object_t obj, void *arg, bool *loop_done)
 	return EINVAL;
 }
 
-static int
-show_reqby_pkgs(prop_object_t obj, void *arg, bool *loop_done)
-{
-	static size_t count;
-	(void)arg;
-	(void)loop_done;
-
-	if (count == 0)
-		printf("\n\t");
-        else if (count == 4) {
-                printf("\n\t");
-                count = 0;
-        }
-
-        printf("%s ", prop_string_cstring_nocopy(obj));
-        count++;
-
-        return 0;
-}
-
 int
 main(int argc, char **argv)
 {
@@ -149,8 +128,7 @@ main(int argc, char **argv)
 	prop_array_t reqby, orphans;
 	prop_object_t obj;
 	prop_object_iterator_t iter;
-	static size_t count;
-	const char *pkgname, *version;
+	const char *pkgname, *version, *sep;
 	char *plist;
 	int c, flags = 0, rv = 0;
 	bool chkhash = false, forcerm = false, verbose = false;
@@ -271,15 +249,16 @@ main(int argc, char **argv)
 		if (reqby != NULL && prop_array_count(reqby) > 0) {
 			printf("WARNING! %s-%s is required by the following "
 			    "packages:\n", argv[1], version);
+			sep = "\t";
 			(void)xbps_callback_array_iter_in_dict(dict,
-			    "requiredby", show_reqby_pkgs, NULL);
+			    "requiredby", list_strings_in_array, (void *)sep);
 			if (!forcerm) {
 				prop_object_release(dict);
-				printf("\n\nIf you are sure about this, use "
+				printf("If you are sure about this, use "
 				    "-f to force deletion for this package.\n");
 				exit(EXIT_FAILURE);
 			} else
-				printf("\n\nForcing %s-%s for deletion!\n",
+				printf("Forcing %s-%s for deletion!\n",
 				    argv[1], version);
 		}
 
@@ -358,16 +337,8 @@ main(int argc, char **argv)
 			    &pkgname);
 			prop_dictionary_get_cstring_nocopy(obj, "version",
 			    &version);
-			if (count == 0)
-				printf("\n\t");
-			else if (count == 4) {
-				printf("\n\t");
-				count = 0;
-			}
-			printf("%s-%s ", pkgname, version);
-			count++;
+			printf("\t%s-%s\n", pkgname, version);
 		}
-		printf("\n\n");
 		if (!forcerm) {
 			printf("If you are really sure you don't need them, "
 			    "use -f to confirm.\n");
