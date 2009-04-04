@@ -33,7 +33,6 @@
 #include <xbps_api.h>
 
 static int	add_missing_reqdep(const char *, const char *);
-static int	remove_missing_reqdep(const char *);
 static int	find_pkg_deps_from_repo(prop_dictionary_t, prop_dictionary_t,
 					prop_array_t);
 static int 	find_pkg_missing_deps_from_repo(prop_dictionary_t,
@@ -208,87 +207,21 @@ add_missing_reqdep(const char *pkgname, const char *version)
 	return 0;
 }
 
-static int
-remove_missing_reqdep(const char *pkgname)
-{
-	prop_array_t array;
-	prop_object_t obj;
-	prop_object_iterator_t iter;
-	size_t idx = 0;
-	const char *curname;
-	bool found = false;
-
-	array = prop_dictionary_get(chaindeps, "missing_deps");
-	assert(pkgname != NULL);
-	assert(version != NULL);
-	assert(array != NULL);
-	iter = prop_array_iterator(array);
-	if (iter == NULL)
-		return ENOMEM;
-	/*
-	 * Finds the index of a package in the missing deps array.
-	 */
-	while ((obj = prop_object_iterator_next(iter)) != NULL) {
-		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &curname);
-		if (strcmp(pkgname, curname) == 0) {
-			found = true;
-			break;
-		}
-		idx++;
-	}
-	prop_object_iterator_release(iter);
-	if (found) {
-		prop_array_remove(array, idx);
-		return 0;
-	}
-
-	return ENOENT;
-}
-
 int
-xbps_find_deps_in_pkg(prop_dictionary_t pkg)
+xbps_find_deps_in_pkg(prop_dictionary_t pkg, prop_object_iterator_t iter)
 {
-	prop_array_t array, pkg_rdeps, missing_rdeps;
-	prop_dictionary_t repolistd, repod;
+	prop_array_t pkg_rdeps, missing_rdeps;
+	prop_dictionary_t repod;
 	prop_object_t obj;
-	prop_object_iterator_t iter;
 	char *plist;
 	int rv = 0;
 
 	assert(pkg != NULL);
+	assert(iter != NULL);
 
 	pkg_rdeps = prop_dictionary_get(pkg, "run_depends");
 	if (pkg_rdeps == NULL)
 		return 0;
-
-	/*
-	 * Get the dictionary with the list of registered repositories.
-	 */
-	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
-	if (plist == NULL)
-		return EINVAL;
-	/*
-	 * Get the dictionary with the list of registered repositories.
-	 */
-	repolistd = prop_dictionary_internalize_from_file(plist);
-	if (repolistd == NULL) {
-		free(plist);
-		return EINVAL;
-	}
-	free(plist);
-	plist = NULL;
-
-	array = prop_dictionary_get(repolistd, "repository-list");
-	if (array == NULL) {
-		prop_object_release(repolistd);
-		return EINVAL;
-	}
-
-	iter = prop_array_iterator(array);
-	if (iter == NULL) {
-		prop_object_release(repolistd);
-		return ENOMEM;
-	}
 
 	/*
 	 * Iterate over the repository pool and find out if we have
@@ -297,15 +230,13 @@ xbps_find_deps_in_pkg(prop_dictionary_t pkg)
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		plist =
 		    xbps_get_pkg_index_plist(prop_string_cstring_nocopy(obj));
-		if (plist == NULL) {
-			rv = EINVAL;
-			goto out;
-		}
+		if (plist == NULL)
+			return EINVAL;
+
 		repod = prop_dictionary_internalize_from_file(plist);
 		if (repod == NULL) {
 			free(plist);
-			rv = errno;
-			goto out;
+			return errno;
 		}
 		free(plist);
 
@@ -329,7 +260,7 @@ xbps_find_deps_in_pkg(prop_dictionary_t pkg)
 
 	missing_rdeps = prop_dictionary_get(chaindeps, "missing_deps");
 	if (prop_array_count(missing_rdeps) == 0)
-		goto out;
+		return 0;
 
 	/*
 	 * If there are missing deps, iterate one more time
@@ -339,32 +270,26 @@ xbps_find_deps_in_pkg(prop_dictionary_t pkg)
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		plist =
 		    xbps_get_pkg_index_plist(prop_string_cstring_nocopy(obj));
-		if (plist == NULL) {
-			rv = EINVAL;
-			goto out;
-		}
+		if (plist == NULL)
+			return EINVAL;
+
 		repod = prop_dictionary_internalize_from_file(plist);
 		if (repod == NULL) {
 			free(plist);
-			rv = errno;
-			goto out;
+			return errno;
 		}
 		free(plist);
 
 		rv = find_pkg_missing_deps_from_repo(repod, pkg);
 		if (rv != 0 && rv != ENOENT) {
 			prop_object_release(repod);
-			break;
+			return rv;
 		}
 
 		prop_object_release(repod);
 	}
 
-out:
-	prop_object_iterator_release(iter);
-	prop_object_release(repolistd);
-
-        return rv;
+        return 0;
 }
 
 prop_dictionary_t
@@ -422,9 +347,11 @@ find_pkg_missing_deps_from_repo(prop_dictionary_t repo, prop_dictionary_t pkg)
 		/*
 		 * Remove package from missing now.
 		 */
-		rv = remove_missing_reqdep(pkgname);
-		if (rv != 0 && rv != ENOENT)
-			break;
+		if (!xbps_remove_pkg_from_dict(chaindeps,
+		    "missing_deps", pkgname)) {
+			if (errno != 0 && errno != ENOENT)
+				break;
+		}
 
 		prop_object_iterator_reset(iter);
 	}
@@ -521,10 +448,12 @@ find_pkg_deps_from_repo(prop_dictionary_t repo, prop_dictionary_t pkg,
 		/*
 		 * Remove package from missing_deps now it's been found.
 		 */
-		rv = remove_missing_reqdep(pkgname);
-		if (rv != 0 && rv != ENOENT) {
-			free(pkgname);
-			break;
+		if (!xbps_remove_pkg_from_dict(chaindeps,
+		    "missing_deps", pkgname)) {
+			if (errno != 0 && errno != ENOENT) {
+				free(pkgname);
+				break;
+			}
 		}
 		free(pkgname);
 

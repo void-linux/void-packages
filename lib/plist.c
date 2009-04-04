@@ -238,7 +238,8 @@ xbps_get_array_iter_from_dict(prop_dictionary_t dict, const char *key)
 }
 
 bool
-xbps_remove_pkg_from_dict(prop_dictionary_t dict, const char *pkgname)
+xbps_remove_pkg_from_dict(prop_dictionary_t dict, const char *key,
+			  const char *pkgname)
 {
 	prop_array_t array;
 	prop_object_t obj;
@@ -251,7 +252,7 @@ xbps_remove_pkg_from_dict(prop_dictionary_t dict, const char *pkgname)
 	assert(key != NULL);
 	assert(pkgname != NULL);
 
-	array = prop_dictionary_get(dict, "packages");
+	array = prop_dictionary_get(dict, key);
 	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
 		return false;
 
@@ -272,6 +273,8 @@ xbps_remove_pkg_from_dict(prop_dictionary_t dict, const char *pkgname)
 	prop_object_iterator_release(iter);
 	if (found == true)
 		prop_array_remove(array, i);
+	else
+		errno = ENOENT;
 
 	return found;
 }
@@ -288,7 +291,7 @@ xbps_remove_pkg_dict_from_file(const char *pkg, const char *plist)
 	if (pdict == NULL)
 		return false;
 
-	if (!xbps_remove_pkg_from_dict(pdict, pkg)) {
+	if (!xbps_remove_pkg_from_dict(pdict, "packages", pkg)) {
 		prop_object_release(pdict);
 		errno = ENODEV;
 		return false;

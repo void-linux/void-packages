@@ -103,7 +103,7 @@ again:
 		if (find_sorteddep_by_name(pkgname) != NULL)
 			continue;
 
-		sdep = calloc(1, sizeof(*sdep));
+		sdep = malloc(sizeof(*sdep));
 		if (sdep == NULL) {
 			rv = ENOMEM;
 			goto out;

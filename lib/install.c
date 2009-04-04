@@ -34,13 +34,6 @@
 
 #include <xbps_api.h>
 
-struct binpkg_instargs {
-	const char *pkgname;
-	bool update;
-};
-
-static int	install_binpkg_repo_cb(prop_object_t, void *, bool *);
-
 int
 xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkgrd,
 			     bool update)
@@ -96,69 +89,88 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkgrd,
 int
 xbps_install_binary_pkg(const char *pkgname, bool update)
 {
-	struct binpkg_instargs bi;
-	int rv = 0;
-
-	assert(pkgname != NULL);
-
-	bi.pkgname = pkgname;
-	bi.update = update;
-	/*
-	 * Iterate over the repository pool and find out if we have
-	 * all available binary packages.
-	 */
-	rv = xbps_callback_array_iter_in_repolist(install_binpkg_repo_cb,
-	    (void *)&bi);
-	if (rv == 0 && errno != 0)
-		return errno;
-
-	return rv;
-}
-
-static int
-install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
-{
-	prop_dictionary_t repod, pkgrd;
-	struct binpkg_instargs *bi = arg;
+	prop_dictionary_t repod = NULL, repolistd, pkgrd = NULL;
+	prop_array_t array;
+	prop_object_t obj;
+	prop_object_iterator_t repolist_iter;
 	size_t len = 0;
 	const char *repoloc, *instver;
 	char *plist, *pkg;
 	int rv = 0;
 
-	plist = xbps_get_pkg_index_plist(prop_string_cstring_nocopy(obj));
+	assert(pkgname != NULL);
+
+	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
 	if (plist == NULL)
 		return EINVAL;
 
-	repod = prop_dictionary_internalize_from_file(plist);
-	if (repod == NULL) {
-		free(plist);
-		return errno;
+	repolistd = prop_dictionary_internalize_from_file(plist);
+	if (repolistd == NULL) {
+                free(plist);
+		return EINVAL;
 	}
 	free(plist);
+	plist = NULL;
 
-	/*
-	 * Get the package dictionary from current repository.
-	 * If it's not there, pass to the next repository.
-	 */
-	pkgrd = xbps_find_pkg_in_dict(repod, "packages", bi->pkgname);
+	array = prop_dictionary_get(repolistd, "repository-list");
+	if (array == NULL) {
+		prop_object_release(repolistd);
+		return EINVAL;
+	}
+
+	repolist_iter = prop_array_iterator(array);
+	if (repolist_iter == NULL) {
+		prop_object_release(repolistd);
+		return ENOMEM;
+	}
+
+        while ((obj = prop_object_iterator_next(repolist_iter)) != NULL) {
+		/*
+		 * Iterate over the repository pool and find out if we have
+		 * the binary package.
+		 */
+		plist =
+		    xbps_get_pkg_index_plist(prop_string_cstring_nocopy(obj));
+		if (plist == NULL)
+			return EINVAL;
+
+		repod = prop_dictionary_internalize_from_file(plist);
+		if (repod == NULL) {
+			free(plist);
+			return errno;
+		}
+		free(plist);
+
+		/*
+		 * Get the package dictionary from current repository.
+		 * If it's not there, pass to the next repository.
+		 */
+		pkgrd = xbps_find_pkg_in_dict(repod, "packages", pkgname);
+		if (pkgrd == NULL) {
+			prop_object_release(repod);
+			continue;
+		}
+		break;
+	}
+	prop_object_iterator_reset(repolist_iter);
+
 	if (pkgrd == NULL) {
-		prop_object_release(repod);
-		errno = EAGAIN;
-		return 0;
+		rv = EAGAIN;
+		goto out2;
 	}
 
 	/*
-	 * Check if available version in repository is already installed,
-	 * and return immediately in that case.
+	 * Check if available version in repository is already
+	 * installed, and return immediately in that case.
 	 */
 	prop_dictionary_get_cstring_nocopy(pkgrd, "version", &instver);
-	len = strlen(bi->pkgname) + strlen(instver) + 2;
+	len = strlen(pkgname) + strlen(instver) + 2;
 	pkg = malloc(len);
 	if (pkg == NULL) {
-		rv = EINVAL;
+		rv = errno;
 		goto out;
 	}
-	(void)snprintf(pkg, len, "%s-%s", bi->pkgname, instver);
+	(void)snprintf(pkg, len, "%s-%s", pkgname, instver);
 	if (xbps_check_is_installed_pkg(pkg) == 0) {
 		free(pkg);
 		rv = EEXIST;
@@ -169,10 +181,10 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	/*
 	 * Check SHA256 hash for binary package before anything else.
 	 */
-	if (!prop_dictionary_get_cstring_nocopy(repod, "location-local",
-	    &repoloc)) {
-		prop_object_release(repod);
-		return EINVAL;
+	if (!prop_dictionary_get_cstring_nocopy(repod,
+	    "location-local", &repoloc)) {
+		rv = EINVAL;
+		goto out;
 	}
 
 	if ((rv = xbps_check_pkg_file_hash(pkgrd, repoloc)) != 0)
@@ -181,41 +193,32 @@ install_binpkg_repo_cb(prop_object_t obj, void *arg, bool *cbloop_done)
 	/*
 	 * Check if this package needs dependencies.
 	 */
-	if (!xbps_pkg_has_rundeps(pkgrd)) {
-		/* pkg has no deps, just install it. */
-		goto install;
+	if (xbps_pkg_has_rundeps(pkgrd)) {
+		/*
+		 * Construct the dependency chain for this package.
+		 */
+		printf("Finding required dependencies...\n");
+		if ((rv = xbps_find_deps_in_pkg(pkgrd, repolist_iter)) != 0)
+			goto out;
+
+		/*
+		 * Install all required dependencies and the package itself.
+		 */
+		rv = xbps_install_pkg_deps(pkgname, update);
+		if (rv != 0)
+			goto out;
 	}
 
 	/*
-	 * Construct the dependency chain for this package.
+	 * Finally install the binary package that was requested by
+	 * the client.
 	 */
-	printf("Finding required dependencies...\n");
-	if ((rv = xbps_find_deps_in_pkg(pkgrd)) != 0) {
-		prop_object_release(repod);
-		if (rv == ENOENT) {
-			errno = ENOENT;
-			return 0;
-		}
-		return rv;
-	}
-
-	/*
-	 * Install all required dependencies and the package itself.
-	 */
-	rv = xbps_install_pkg_deps(bi->pkgname, bi->update);
-	if (rv != 0)
-		goto out;
-
-install:
-	rv = xbps_install_binary_pkg_fini(repod, pkgrd, bi->update);
-	if (rv == 0) {
-		*cbloop_done = true;
-		/* Cleanup errno, just in case */
-		errno = 0;
-	}
-
+	rv = xbps_install_binary_pkg_fini(repod, pkgrd, update);
 out:
 	prop_object_release(repod);
+out2:
+	prop_object_iterator_release(repolist_iter);
+	prop_object_release(repolistd);
 
 	return rv;
 }

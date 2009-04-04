@@ -212,8 +212,7 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 		if (archive_read_extract(ar, entry, lflags) != 0) {
 			rv = archive_errno(ar);
 			if (rv != EEXIST) {
-				printf("ERROR: couldn't unpack %s (%s), "
-				    "exiting!\n", archive_entry_pathname(entry),
+				printf("ERROR: %s...exiting!\n",
 				    archive_error_string(ar));
 				(void)fflush(stdout);
 				break;
