@@ -206,9 +206,9 @@ main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 		}
 
-		if (!xbps_register_repository(dpkgidx)) {
+		if ((rv = xbps_register_repository(dpkgidx)) != 0) {
 			printf("ERROR: couldn't register repository (%s)\n",
-			    strerror(errno));
+			    strerror(rv));
 			prop_object_release(dict);
 			free(rinfo);
 			free(plist);
@@ -240,13 +240,13 @@ main(int argc, char **argv)
 		if (!sanitize_localpath(dpkgidx, argv[1]))
 			exit(EXIT_FAILURE);
 
-		if (!xbps_unregister_repository(dpkgidx)) {
-			if (errno == ENOENT)
+		if ((rv = xbps_unregister_repository(dpkgidx)) != 0) {
+			if (rv == ENOENT)
 				printf("Repository '%s' not actually "
 				    "registered.\n", dpkgidx);
 			else
 				printf("ERROR: couldn't unregister "
-				    "repository (%s)\n", strerror(errno));
+				    "repository (%s)\n", strerror(rv));
 			exit(EXIT_FAILURE);
 		}
 

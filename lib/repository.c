@@ -33,44 +33,20 @@
 
 #include <xbps_api.h>
 
-struct callback_args {
-	const char *string;
-	ssize_t number;
-};
-
 int
-xbps_remove_string_from_array(prop_object_t obj, void *arg, bool *loop_done)
-{
-	static ssize_t idx;
-	struct callback_args *cb = arg;
-
-	assert(prop_object_type(obj) == PROP_TYPE_STRING);
-
-	if (prop_string_equals_cstring(obj, cb->string)) {
-		cb->number = idx;
-		*loop_done = true;
-		return 0;
-	}
-	idx++;
-
-	return 0;
-}
-
-bool
 xbps_register_repository(const char *uri)
 {
 	prop_dictionary_t dict;
-	prop_array_t array = NULL;
-	prop_object_t obj;
+	prop_array_t array;
+	prop_object_t obj = NULL;
 	char *plist;
+	int rv = 0;
 
 	assert(uri != NULL);
 
 	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
-	if (plist == NULL) {
-		errno = EINVAL;
-		return false;
-	}
+	if (plist == NULL)
+		return errno;
 
 	/* First check if we have the repository plist file. */
 	dict = prop_dictionary_internalize_from_file(plist);
@@ -78,135 +54,95 @@ xbps_register_repository(const char *uri)
 		/* Looks like not, create it. */
 		dict = prop_dictionary_create();
 		if (dict == NULL) {
-			free(plist);
-			return false;
+			rv = errno;
+			goto out2;
 		}
-
 		/* Create the array and add the repository URI on it. */
 		array = prop_array_create();
 		if (array == NULL) {
-			prop_object_release(dict);
-			free(plist);
-			return false;
+			rv = errno;
+			goto out;
 		}
-
-		if (!prop_array_set_cstring_nocopy(array, 0, uri))
-			goto fail;
-
+		if (!prop_array_set_cstring_nocopy(array, 0, uri)) {
+			rv = errno;
+			goto out;
+		}
 		/* Add the array obj into the main dictionary. */
-		if (!xbps_add_obj_to_dict(dict, array, "repository-list"))
-			goto fail;
-
-		/* Write dictionary into plist file. */
-		if (!prop_dictionary_externalize_to_file(dict, plist))
-			goto fail;
-
-		prop_object_release(dict);
-
+		if (!xbps_add_obj_to_dict(dict, array, "repository-list")) {
+			rv = errno;
+			goto out;
+		}
 	} else {
 		/* Append into the array, the plist file exists. */
 		array = prop_dictionary_get(dict, "repository-list");
-		if (array == NULL)
-			goto fail;
-
-		assert(prop_object_type(array) == PROP_TYPE_ARRAY);
-
+		if (array == NULL) {
+			rv = errno;
+			goto out;
+		}
 		/* It seems that this object is already there */
 		if (xbps_find_string_in_array(array, uri)) {
 			errno = EEXIST;
-			goto fail;
+			goto out;
 		}
 
 		obj = prop_string_create_cstring(uri);
 		if (!xbps_add_obj_to_array(array, obj)) {
 			prop_object_release(obj);
-			return false;
+			rv = errno;
+			goto out;
 		}
-
-		/* Write dictionary into plist file. */
-		if (!prop_dictionary_externalize_to_file(dict, plist)) {
-			prop_object_release(obj);
-			return false;
-		}
-
-		prop_object_release(dict);
 	}
 
-	free(plist);
-
-	return true;
-
-fail:
+	/* Write dictionary into plist file. */
+	if (!prop_dictionary_externalize_to_file(dict, plist)) {
+		if (obj)
+			prop_object_release(obj);
+		rv = errno;
+	}
+out:
 	prop_object_release(dict);
+out2:
 	free(plist);
 
-	return false;
+	return rv;
 }
 
-bool
+int
 xbps_unregister_repository(const char *uri)
 {
 	prop_dictionary_t dict;
 	prop_array_t array;
-	struct callback_args *cb;
 	char *plist;
-	bool done = false;
+	int rv = 0;
 
 	assert(uri != NULL);
 
 	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
-	if (plist == NULL) {
-		errno = EINVAL;
-		return false;
-	}
+	if (plist == NULL)
+		return errno;
 
 	dict = prop_dictionary_internalize_from_file(plist);
 	if (dict == NULL) {
 		free(plist);
-		return false;
+		return errno;
 	}
 
 	array = prop_dictionary_get(dict, "repository-list");
 	if (array == NULL) {
-		prop_object_release(dict);
-		free(plist);
-		return false;
+		rv = errno;
+		goto out;
 	}
 
-	assert(prop_object_type(array) == PROP_TYPE_ARRAY);
-
-	cb = malloc(sizeof(*cb));
-	if (cb == NULL) {
-		prop_object_release(dict);
-		free(plist);
-		errno = ENOMEM;
-		return false;
-	}
-
-	cb->string = uri;
-	cb->number = -1;
-
-	done = xbps_callback_array_iter_in_dict(dict, "repository-list",
-		    xbps_remove_string_from_array, cb);
-	if (done == 0 && cb->number >= 0) {
-		/* Found, remove it. */
-		prop_array_remove(array, cb->number);
-
+	rv = xbps_remove_string_from_array(array, uri);
+	if (rv == 0) {
 		/* Update plist file. */
-		if (prop_dictionary_externalize_to_file(dict, plist)) {
-			prop_object_release(dict);
-			free(cb);
-			free(plist);
-			return true;
-		}
-	} else {
-		/* Not found. */
-		errno = ENOENT;
+		if (!prop_dictionary_externalize_to_file(dict, plist))
+			rv = errno;
 	}
 
+out:
 	prop_object_release(dict);
-	free(cb);
 	free(plist);
 
-	return false;
+	return rv;
 }

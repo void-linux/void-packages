@@ -34,11 +34,9 @@
  * Arguments:
  * 	- const char *: URI to (un)register.
  *
- * Returns true on success, or false and an appropiate errno value otherwise.
+ * Returns 0 on success, or an appropiate value otherwise.
  */
-bool	xbps_register_repository(const char *);
-bool	xbps_unregister_repository(const char *);
-
-int	xbps_remove_string_from_array(prop_object_t, void *, bool *);
+int	xbps_register_repository(const char *);
+int	xbps_unregister_repository(const char *);
 
 #endif /* !_XBPS_REPOSITORY_H_ */
