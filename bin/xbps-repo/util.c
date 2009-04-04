@@ -181,23 +181,14 @@ int
 show_pkg_info_from_metadir(const char *pkgname)
 {
 	prop_dictionary_t pkgd;
-	size_t len = 0;
-	char *plist, *path;
+	const char *rootdir;
+	char *plist;
 
-	/* XBPS_META_PATH/metadata/<pkgname> + NULL */
-	len = strlen(XBPS_META_PATH) + strlen(pkgname) + 12;
-	path = malloc(len);
-	if (path == NULL)
+	rootdir = xbps_get_rootdir();
+	plist = xbps_xasprintf("%s/%s/metadata/%s/%s", rootdir,
+	    XBPS_META_PATH, pkgname, XBPS_PKGPROPS);
+	if (plist == NULL)
 		return EINVAL;
-
-	(void)snprintf(path, len, "%s/metadata/%s", XBPS_META_PATH, pkgname);
-
-	plist = xbps_append_full_path(true, path, XBPS_PKGPROPS);
-	if (plist == NULL) {
-		free(path);
-		return EINVAL;
-	}
-	free(path);
 
 	pkgd = prop_dictionary_internalize_from_file(plist);
 	if (pkgd == NULL) {
@@ -217,26 +208,14 @@ show_pkg_files_from_metadir(const char *pkgname, bool hash)
 {
 	prop_dictionary_t pkgd;
 	struct show_files_cb sfc;
-	size_t len = 0;
 	const char *destdir = xbps_get_rootdir();
-	char *plist, *path;
+	char *plist;
 	int rv = 0;
 
-	/* XBPS_META_PATH/metadata/<pkgname>/XBPS_PKGFILES + NULL */
-	len = strlen(XBPS_META_PATH) + strlen(pkgname) +
-	    strlen(XBPS_PKGFILES) + 12;
-	path = malloc(len);
-	if (path == NULL)
+	plist = xbps_xasprintf("%s/%s/metadata/%s/%s", destdir,
+	    XBPS_META_PATH, pkgname, XBPS_PKGFILES);
+	if (plist == NULL)
 		return EINVAL;
-
-	(void)snprintf(path, len, "%s/metadata/%s", XBPS_META_PATH, pkgname);
-
-	plist = xbps_append_full_path(true, path, XBPS_PKGFILES);
-	if (plist == NULL) {
-		free(path);
-		return EINVAL;
-	}
-	free(path);
 
 	pkgd = prop_dictionary_internalize_from_file(plist);
 	if (pkgd == NULL) {
@@ -277,7 +256,7 @@ show_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 	if (sfc->check_hash && file != NULL) {
 		printf("%s", file);
 		if (sfc->destdir) {
-			path = xbps_append_full_path(false, sfc->destdir, file);
+			path = xbps_xasprintf("%s/%s", sfc->destdir, file);
 			if (path == NULL)
 				return EINVAL;
 		}

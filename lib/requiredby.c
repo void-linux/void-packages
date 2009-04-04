@@ -161,10 +161,13 @@ int
 xbps_requiredby_pkg_remove(const char *pkgname)
 {
 	prop_dictionary_t dict;
+	const char *rootdir;
 	char *plist;
 	int rv = 0;
 
-	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+	rootdir = xbps_get_rootdir();
+	plist = xbps_xasprintf("%s/%s/%s", rootdir,
+	    XBPS_META_PATH, XBPS_REGPKGDB);
 	if (plist == NULL)
 		return EINVAL;
 
@@ -193,19 +196,15 @@ xbps_requiredby_pkg_add(prop_array_t regar, prop_dictionary_t pkg, bool update)
 	prop_array_t rdeps;
 	prop_object_t obj, obj2;
 	prop_object_iterator_t iter, iter2;
-	size_t len = 0;
 	const char *reqname, *pkgname, *version;
 	char *rdepname, *fpkgn;
 	int rv = 0;
 
 	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
 	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
-	len = strlen(pkgname) + strlen(version) + 2;
-	fpkgn = malloc(len);
+	fpkgn = xbps_xasprintf("%s-%s", pkgname, version);
 	if (fpkgn == NULL)
 		return ENOMEM;
-
-	(void)snprintf(fpkgn, len, "%s-%s", pkgname, version);
 
 	rdeps = prop_dictionary_get(pkg, "run_depends");
 	if (rdeps == NULL || prop_array_count(rdeps) == 0) {

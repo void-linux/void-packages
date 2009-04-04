@@ -70,12 +70,15 @@ xbps_callback_array_iter_in_repolist(int (*fn)(prop_object_t, void *, bool *),
 				     void *arg)
 {
 	prop_dictionary_t repolistd;
+	const char *rootdir;
 	char *plist;
 	int rv = 0;
 
 	assert(fn != NULL);
 
-	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
+	rootdir = xbps_get_rootdir();
+	plist = xbps_xasprintf("%s/%s/%s", rootdir,
+	    XBPS_META_PATH, XBPS_REPOLIST);
 	if (plist == NULL)
 		return EINVAL;
 
@@ -158,9 +161,12 @@ prop_dictionary_t
 xbps_find_pkg_installed_from_plist(const char *pkgname)
 {
 	prop_dictionary_t pkgd;
+	const char *rootdir;
 	char *plist;
 
-	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+	rootdir = xbps_get_rootdir();
+	plist = xbps_xasprintf("%s/%s/%s", rootdir,
+	    XBPS_META_PATH, XBPS_REGPKGDB);
 	if (plist == NULL)
 		return NULL;
 

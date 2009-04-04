@@ -66,7 +66,6 @@ find_indirect_orphan_pkg(prop_object_t obj, void *arg, bool *loop_done)
 {
 	struct orphan *orphan = arg;
 	prop_array_t reqby;
-	size_t len = 0;
 	char *pkg;
 	bool automatic = false;
 
@@ -82,12 +81,9 @@ find_indirect_orphan_pkg(prop_object_t obj, void *arg, bool *loop_done)
 	if (reqby == NULL || prop_array_count(reqby) != 1)
 		return 0;
 
-	len = strlen(orphan->pkgname) + strlen(orphan->version) + 2;
-	pkg = malloc(len);
+	pkg = xbps_xasprintf("%s-%s", orphan->pkgname, orphan->version);
 	if (pkg == NULL)
 		return ENOMEM;
-
-	(void)snprintf(pkg, len, "%s-%s", orphan->pkgname, orphan->version);
 
 	if (xbps_find_string_in_array(reqby, pkg)) {
 		if (!prop_array_add(orphan->array, obj)) {
@@ -107,10 +103,13 @@ xbps_find_orphan_packages(void)
 	prop_object_t obj;
 	prop_object_iterator_t iter;
 	struct orphan orphan;
+	const char *rootdir;
 	char *plist;
 	int rv = 0;
 
-	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+	rootdir = xbps_get_rootdir();
+	plist = xbps_xasprintf("%s/%s/%s", rootdir,
+	    XBPS_META_PATH, XBPS_REGPKGDB);
 	if (plist == NULL)
 		return NULL;
 

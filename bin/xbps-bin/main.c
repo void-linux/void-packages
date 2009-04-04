@@ -128,7 +128,7 @@ main(int argc, char **argv)
 	prop_array_t reqby, orphans;
 	prop_object_t obj;
 	prop_object_iterator_t iter;
-	const char *pkgname, *version, *sep;
+	const char *pkgname, *version, *sep, *rootdir;
 	char *plist;
 	int c, flags = 0, rv = 0;
 	bool chkhash = false, forcerm = false, verbose = false;
@@ -169,7 +169,9 @@ main(int argc, char **argv)
 		if (argc != 1)
 			usage();
 
-		plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+		rootdir = xbps_get_rootdir();
+		plist = xbps_xasprintf("%s/%s/%s", rootdir,
+		    XBPS_META_PATH, XBPS_REGPKGDB);
 		if (plist == NULL)
 			exit(EXIT_FAILURE);
 

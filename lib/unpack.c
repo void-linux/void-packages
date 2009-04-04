@@ -42,7 +42,7 @@ int
 xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
 {
 	prop_string_t filename, repoloc, arch;
-	char *binfile, *path;
+	char *binfile;
 	int rv = 0;
 
 	assert(pkg != NULL);
@@ -55,19 +55,12 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
 	else
 		repoloc = prop_dictionary_get(pkg, "repository");
 
-	path = xbps_append_full_path(false,
+	binfile = xbps_xasprintf("%s/%s/%s",
 	    prop_string_cstring_nocopy(repoloc),
-	    prop_string_cstring_nocopy(arch));
-	if (path == NULL)
-		return EINVAL;
-
-	binfile = xbps_append_full_path(false, path,
+	    prop_string_cstring_nocopy(arch),
 	    prop_string_cstring_nocopy(filename));
-	if (binfile == NULL) {
-		free(path);
+	if (binfile == NULL)
 		return EINVAL;
-	}
-	free(path);
 
 	rv = unpack_archive_init(pkg, binfile);
 	free(binfile);
@@ -136,7 +129,6 @@ static int
 unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 {
 	struct archive_entry *entry;
-	size_t len;
 	const char *prepost = "./INSTALL";
 	const char *pkgname, *version, *rootdir;
 	char *buf;
@@ -154,7 +146,6 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 	} else {
 		if (chdir("/") == -1)
 			return errno;
-		rootdir = "";
 	}
 
 	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
@@ -165,19 +156,11 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 	else
 		lflags = EXTRACT_FLAGS;
 
-	/*
-	 * This length is '.%s/metadata/%s/INSTALL' + NULL.
-	 */
-	len = strlen(XBPS_META_PATH) + strlen(pkgname) + 20;
-	buf = malloc(len);
+	buf = xbps_xasprintf(".%s/metadata/%s/INSTALL",
+	    XBPS_META_PATH, pkgname);
 	if (buf == NULL)
-		return ENOMEM;
+		return errno;
 
-	if (snprintf(buf, len, ".%s/metadata/%s/INSTALL",
-	    XBPS_META_PATH, pkgname) < 0) {
-		free(buf);
-		return -1;
-	}
 	while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
 		/*
 		 * Run the pre installation action target if there's a script

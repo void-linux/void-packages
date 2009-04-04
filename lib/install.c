@@ -93,14 +93,18 @@ xbps_install_binary_pkg(const char *pkgname, bool update)
 	prop_array_t array;
 	prop_object_t obj;
 	prop_object_iterator_t repolist_iter;
-	size_t len = 0;
-	const char *repoloc, *instver;
+	const char *repoloc, *instver, *rootdir;
 	char *plist, *pkg;
 	int rv = 0;
 
 	assert(pkgname != NULL);
 
-	plist = xbps_append_full_path(true, NULL, XBPS_REPOLIST);
+	rootdir = xbps_get_rootdir();
+	if (rootdir == NULL)
+		rootdir = "";
+
+	plist = xbps_xasprintf("%s/%s/%s", rootdir,
+	    XBPS_META_PATH, XBPS_REPOLIST);
 	if (plist == NULL)
 		return EINVAL;
 
@@ -164,13 +168,11 @@ xbps_install_binary_pkg(const char *pkgname, bool update)
 	 * installed, and return immediately in that case.
 	 */
 	prop_dictionary_get_cstring_nocopy(pkgrd, "version", &instver);
-	len = strlen(pkgname) + strlen(instver) + 2;
-	pkg = malloc(len);
+	pkg = xbps_xasprintf("%s-%s", pkgname, instver);
 	if (pkg == NULL) {
 		rv = errno;
 		goto out;
 	}
-	(void)snprintf(pkg, len, "%s-%s", pkgname, instver);
 	if (xbps_check_is_installed_pkg(pkg) == 0) {
 		free(pkg);
 		rv = EEXIST;
@@ -243,11 +245,13 @@ xbps_register_pkg(prop_dictionary_t pkgrd, bool update, bool automatic)
 {
 	prop_dictionary_t dict, pkgd, newpkgd;
 	prop_array_t array;
-	const char *pkgname, *version, *desc;
+	const char *pkgname, *version, *desc, *rootdir;
 	char *plist;
 	int rv = 0;
 
-	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+	rootdir = xbps_get_rootdir();
+	plist = xbps_xasprintf("%s/%s/%s", rootdir,
+	    XBPS_META_PATH, XBPS_REGPKGDB);
 	if (plist == NULL)
 		return EINVAL;
 

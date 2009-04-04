@@ -262,7 +262,7 @@ xbps_repo_genindex(const char *pkgdir)
 		    (strcmp(archdirs[i], "noarch")))
 			continue;
 
-		path = xbps_append_full_path(false, pkgdir, archdirs[i]);
+		path = xbps_xasprintf("%s/%s", pkgdir, archdirs[i]);
 		if (path == NULL)
 			return errno;
 
@@ -282,8 +282,7 @@ xbps_repo_genindex(const char *pkgdir)
 				continue;
 
 			foundpkg = true;
-			binfile = xbps_append_full_path(false, path,
-			    dp->d_name);
+			binfile = xbps_xasprintf("%s/%s", path, dp->d_name);
 			if (binfile == NULL) {
 				(void)closedir(dirp);
 				free(path);

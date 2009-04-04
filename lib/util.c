@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -80,7 +81,7 @@ int
 xbps_check_pkg_file_hash(prop_dictionary_t pkgd, const char *repoloc)
 {
 	const char *sha256, *arch, *filename;
-	char *binfile, *path;
+	char *binfile;
 	int rv = 0;
 
 	assert(repoloc != NULL);
@@ -95,16 +96,9 @@ xbps_check_pkg_file_hash(prop_dictionary_t pkgd, const char *repoloc)
 	if (!prop_dictionary_get_cstring_nocopy(pkgd, "architecture", &arch))
 		return EINVAL;
 
-	path = xbps_append_full_path(false, repoloc, arch);
-	if (path == NULL)
+	binfile = xbps_xasprintf("%s/%s/%s", repoloc, arch, filename);
+	if (binfile == NULL)
 		return EINVAL;
-
-	binfile = xbps_append_full_path(false, path, filename);
-	if (binfile == NULL) {
-		free(path);
-		return EINVAL;
-	}
-	free(path);
 
 	printf("Checking SHA256 for %s ... ", filename);
 	(void)fflush(stdout);
@@ -212,25 +206,13 @@ char *
 xbps_get_pkg_index_plist(const char *path)
 {
 	struct utsname un;
-	char *plist, *p;
 
 	assert(path != NULL);
 
 	if (uname(&un) == -1)
 		return NULL;
 
-	p = xbps_append_full_path(false, path, un.machine);
-	if (p == NULL)
-		return NULL;
-
-	plist = xbps_append_full_path(false, p, XBPS_PKGINDEX);
-	if (plist == NULL) {
-		free(p);
-		return NULL;
-	}
-	free(p);
-
-	return plist;
+	return xbps_xasprintf("%s/%s/%s", path, un.machine, XBPS_PKGINDEX);
 }
 
 bool
@@ -256,6 +238,9 @@ xbps_set_rootdir(const char *dir)
 const char *
 xbps_get_rootdir(void)
 {
+	if (rootdir == NULL)
+		rootdir = "";
+
 	return rootdir;
 }
 
@@ -272,45 +257,15 @@ xbps_get_flags(void)
 }
 
 char *
-xbps_append_full_path(bool use_rootdir, const char *basedir, const char *plist)
+xbps_xasprintf(const char *fmt, ...)
 {
-	const char *env;
-	char *buf = NULL;
-	size_t len = 0;
+	va_list ap;
+	char *buf;
 
-	assert(plist != NULL);
-
-	if (basedir)
-		env = basedir;
-	else
-		env = XBPS_META_PATH;
-
-	if (rootdir && use_rootdir) {
-		len = strlen(rootdir) + strlen(env) + strlen(plist) + 2;
-		buf = malloc(len + 1);
-		if (buf == NULL) {
-			errno = ENOMEM;
-			return NULL;
-		}
-
-		if (snprintf(buf, len + 1, "%s/%s/%s",
-		    rootdir, env, plist) < 0) {
-			errno = ENOSPC;
-			return NULL;
-		}
-	} else {
-		len = strlen(env) + strlen(plist) + 1;
-		buf = malloc(len + 1);
-		if (buf == NULL) {
-			errno = ENOMEM;
-			return NULL;
-		}
-
-		if (snprintf(buf, len + 1, "%s/%s", env, plist) < 0) {
-			errno = ENOSPC;
-			return NULL;
-		}
-	}
+	va_start(ap, fmt);
+	if (vasprintf(&buf, fmt, ap) == -1)
+		return NULL;
+	va_end(ap);
 
 	return buf;
 }

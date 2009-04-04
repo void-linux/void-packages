@@ -114,7 +114,7 @@ main(int argc, char **argv)
 	if (argc < 1)
 		usage();
 
-	plist = xbps_append_full_path(true, NULL, XBPS_REGPKGDB);
+	plist = xbps_xasprintf("%s/%s/%s", root, XBPS_META_PATH, XBPS_REGPKGDB);
 	if (plist == NULL) {
 		printf("=> ERROR: couldn't find regpkdb file (%s)\n",
 		    strerror(errno));
