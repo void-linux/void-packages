@@ -107,4 +107,7 @@ xbps_remove_pkg_dict_from_file(const char *, const char *);
 bool
 xbps_remove_pkg_from_dict(prop_dictionary_t, const char *, const char *);
 
+int
+xbps_remove_string_from_array(prop_array_t, const char *);
+
 #endif /* !_XBPS_PLIST_H_ */

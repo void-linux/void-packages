@@ -237,6 +237,39 @@ xbps_get_array_iter_from_dict(prop_dictionary_t dict, const char *key)
 	return prop_array_iterator(array);
 }
 
+int
+xbps_remove_string_from_array(prop_array_t array, const char *str)
+{
+	prop_object_t obj;
+	prop_object_iterator_t iter;
+	size_t idx = 0;
+	bool found = false;
+
+	assert(array != NULL);
+	assert(str != NULL);
+
+	iter = prop_array_iterator(array);
+	if (iter == NULL)
+		return ENOMEM;
+
+	while ((obj = prop_object_iterator_next(iter)) != NULL) {
+		if (prop_object_type(obj) != PROP_TYPE_STRING)
+			continue;
+		if (prop_string_equals_cstring(obj, str)) {
+			found = true;
+			break;
+		}
+		idx++;
+	}
+	prop_object_iterator_release(iter);
+	if (found == false)
+		return ENOENT;
+
+	prop_array_remove(array, idx);
+
+	return 0;
+}
+
 bool
 xbps_remove_pkg_from_dict(prop_dictionary_t dict, const char *key,
 			  const char *pkgname)
