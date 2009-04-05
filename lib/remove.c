@@ -222,14 +222,8 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 	if (strcmp(rootdir, "") == 0)
 		rootdir = "/";
 
-	if (rootdir) {
-		if (chdir(rootdir) == -1)
-			return errno;
-	} else {
-		if (chdir("/") == -1)
-			return errno;
-		rootdir = "";
-        }
+	if (chdir(rootdir) == -1)
+		return errno;
 
 	/* Check if pkg is installed */
 	if (xbps_check_is_installed_pkgname(pkgname) == false)

@@ -143,13 +143,8 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 	if (strcmp(rootdir, "") == 0)
 		rootdir = "/";
 
-	if (rootdir) {
-		if (chdir(rootdir) == -1)
-			return errno;
-	} else {
-		if (chdir("/") == -1)
-			return errno;
-	}
+	if (chdir(rootdir) == -1)
+		return errno;
 
 	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
 	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
