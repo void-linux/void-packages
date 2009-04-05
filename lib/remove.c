@@ -221,15 +221,17 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 
 	assert(pkgname != NULL);
 
+	/*
+	 * Check if pkg is installed before anything else.
+	 */
+	if (xbps_check_is_installed_pkgname(pkgname) == false)
+		return ENOENT;
+
 	if (strcmp(rootdir, "") == 0)
 		rootdir = "/";
 
 	if (chdir(rootdir) == -1)
 		return errno;
-
-	/* Check if pkg is installed */
-	if (xbps_check_is_installed_pkgname(pkgname) == false)
-		return ENOENT;
 
 	buf = xbps_xasprintf("%s/%s/metadata/%s/REMOVE", rootdir,
 	    XBPS_META_PATH, pkgname);
