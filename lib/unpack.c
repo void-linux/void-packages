@@ -140,6 +140,9 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 	rootdir = xbps_get_rootdir();
 	flags = xbps_get_flags();
 
+	if (strcmp(rootdir, "") == 0)
+		rootdir = "/";
+
 	if (rootdir) {
 		if (chdir(rootdir) == -1)
 			return errno;

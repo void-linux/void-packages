@@ -219,6 +219,9 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 
 	assert(pkgname != NULL);
 
+	if (strcmp(rootdir, "") == 0)
+		rootdir = "/";
+
 	if (rootdir) {
 		if (chdir(rootdir) == -1)
 			return errno;
