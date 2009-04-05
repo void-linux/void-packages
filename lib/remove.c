@@ -81,8 +81,10 @@ xbps_remove_binary_pkg_meta(const char *pkgname)
 		return errno;
 
 	dirp = opendir(metadir);
-	if (dirp == NULL)
+	if (dirp == NULL) {
+		free(metadir);
 		return errno;
+	}
 
 	while ((dp = readdir(dirp)) != NULL) {
 		if ((strcmp(dp->d_name, ".") == 0) ||
