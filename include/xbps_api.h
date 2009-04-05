@@ -35,6 +35,9 @@
 #include <archive.h>
 #include <archive_entry.h>
 
+#include "sha256.h"
+#include "queue.h"
+
 /* Default root PATH for xbps to store metadata info. */
 #define XBPS_META_PATH		"/var/db/xbps"
 
@@ -57,15 +60,93 @@
 /* Verbose messages */
 #define XBPS_VERBOSE		0x00000001
 
-#include "cmpver.h"
-#include "fexec.h"
-#include "humanize_number.h"
-#include "install.h"
-#include "plist.h"
-#include "remove.h"
-#include "repository.h"
-#include "sha256.h"
-#include "util.h"
-#include "queue.h"
+/* from lib/cmpver.c */
+int		xbps_cmpver_packages(const char *, const char *);
+int		xbps_cmpver_versions(const char *, const char *);
+
+/* From lib/fexec.c */
+int		xbps_file_exec(const char *, ...);
+int		xbps_file_exec_skipempty(const char *, ...);
+int		xbps_file_chdir_exec(const char *, const char *, ...);
+
+/* From lib/humanize_number.c */
+#define HN_DECIMAL		0x01
+#define HN_NOSPACE		0x02
+#define HN_B			0x04
+#define HN_DIVISOR_1000		0x08
+#define HN_GETSCALE		0x10
+#define HN_AUTOSCALE		0x20
+
+int		xbps_humanize_number(char *, size_t, int64_t, const char *,
+				     int, int);
+
+/* From lib/install.c, lib/depends.c and lib/unpack.c */
+int		xbps_install_pkg_deps(const char *, bool);
+int		xbps_install_binary_pkg(const char *, bool);
+int		xbps_install_binary_pkg_fini(prop_dictionary_t,
+					     prop_dictionary_t, bool);
+int		xbps_register_pkg(prop_dictionary_t, bool, bool);
+int		xbps_unpack_binary_pkg(prop_dictionary_t, prop_dictionary_t);
+int		xbps_requiredby_pkg_add(prop_array_t, prop_dictionary_t, bool);
+int		xbps_requiredby_pkg_remove(const char *);
+int		xbps_find_deps_in_pkg(prop_dictionary_t,
+				      prop_object_iterator_t);
+
+prop_dictionary_t	xbps_get_pkg_deps_dictionary(void);
+
+/* From lib/plist.c */
+bool		xbps_add_obj_to_dict(prop_dictionary_t, prop_object_t,
+				     const char *);
+bool		xbps_add_obj_to_array(prop_array_t, prop_object_t);
+
+int 		xbps_callback_array_iter_in_dict(prop_dictionary_t,
+			const char *, int (*fn)(prop_object_t, void *, bool *),
+			void *);
+int 		xbps_callback_array_iter_in_repolist(int (*fn)(prop_object_t,
+			void *, bool *), void *);
+
+prop_dictionary_t	xbps_find_pkg_in_dict(prop_dictionary_t,
+					      const char *, const char *);
+prop_dictionary_t	xbps_find_pkg_from_plist(const char *, const char *);
+prop_dictionary_t 	xbps_find_pkg_installed_from_plist(const char *);
+bool 		xbps_find_string_in_array(prop_array_t, const char *);
+
+prop_object_iterator_t	xbps_get_array_iter_from_dict(prop_dictionary_t,
+						      const char *);
+
+bool 		xbps_remove_pkg_dict_from_file(const char *, const char *);
+bool		xbps_remove_pkg_from_dict(prop_dictionary_t, const char *,
+					  const char *);
+int		xbps_remove_string_from_array(prop_array_t, const char *);
+
+/* From lib/remove.c */
+int		xbps_remove_binary_pkg(const char *, bool);
+int		xbps_unregister_pkg(const char *);
+
+/* From lib/repository.c */
+int		xbps_register_repository(const char *);
+int		xbps_unregister_repository(const char *);
+
+/* From lib/sortdeps.c */
+int		xbps_sort_pkg_deps(prop_dictionary_t);
+
+/* From lib/util.c */
+char *		xbps_xasprintf(const char *, ...);
+char *		xbps_get_file_hash(const char *);
+int		xbps_check_file_hash(const char *, const char *);
+int		xbps_check_pkg_file_hash(prop_dictionary_t, const char *);
+int		xbps_check_is_installed_pkg(const char *);
+bool		xbps_check_is_installed_pkgname(const char *);
+char *		xbps_get_pkg_index_plist(const char *);
+char *		xbps_get_pkg_name(const char *);
+const char *	xbps_get_pkg_version(const char *);
+bool		xbps_pkg_has_rundeps(prop_dictionary_t);
+void		xbps_set_rootdir(const char *);
+const char *	xbps_get_rootdir(void);
+void		xbps_set_flags(int);
+int		xbps_get_flags(void);
+
+/* From lib/orphans.c */
+prop_array_t	xbps_find_orphan_packages(void);
 
 #endif /* !_XBPS_API_H_ */
