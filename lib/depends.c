@@ -94,9 +94,8 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	prop_array_t array, rundeps_array;
 	size_t dirdepscnt = 0, indirdepscnt = 0;
 	const char *pkgname, *version, *reqbyname, *arch;
-	const char  *repoloc, *binfile, *originpkg, *short_desc;
-	const char *sha256;
-	int rv = 0;
+	const char *repoloc, *binfile, *originpkg;
+	const char *short_desc, *sha256;
 	bool indirectdep = false;
 
 	assert(origind != NULL);
@@ -138,15 +137,13 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	 * Create package dep's dictionary and array.
 	 */
 	dict = prop_dictionary_create();
-	if (dict == NULL) {
-		rv = ENOMEM;
-		goto out;
-	}
+	if (dict == NULL)
+		return errno;
+
 	array = prop_dictionary_get(chaindeps, "unsorted_deps");
 	if (array == NULL) {
 		prop_object_release(dict);
-		rv = ENOENT;
-		goto out;
+		return errno;
 	}
 
 	/*
@@ -170,11 +167,10 @@ store_dependency(prop_dictionary_t origind, prop_dictionary_t depd,
 	 */
 	if (!xbps_add_obj_to_array(array, dict)) {
 		prop_object_release(dict);
-		rv = EINVAL;
+		return EINVAL;
 	}
 
-out:
-	return rv;
+	return 0;
 }
 
 static int
