@@ -159,7 +159,7 @@ main(int argc, char **argv)
 		if (rv == ENOENT) {
 			printf("=> ERROR: %s not registered in database.\n",
 			     argv[1]);
-		} else {
+		} else if (rv != 0) {
 			printf("=> ERROR: couldn't unregister %s "
 			    "from database (%s)\n", argv[1], strerror(rv));
 			exit(EXIT_FAILURE);
