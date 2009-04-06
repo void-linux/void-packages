@@ -276,7 +276,7 @@ xbps_remove_string_from_array(prop_array_t array, const char *str)
 	return 0;
 }
 
-bool
+int
 xbps_remove_pkg_from_dict(prop_dictionary_t dict, const char *key,
 			  const char *pkgname)
 {
@@ -293,11 +293,11 @@ xbps_remove_pkg_from_dict(prop_dictionary_t dict, const char *key,
 
 	array = prop_dictionary_get(dict, key);
 	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
-		return false;
+		return EINVAL;
 
 	iter = prop_array_iterator(array);
 	if (iter == NULL)
-		return false;
+		return errno;
 
 	/* Iterate over the array of dictionaries to find its index. */
 	while ((obj = prop_object_iterator_next(iter))) {
@@ -313,35 +313,36 @@ xbps_remove_pkg_from_dict(prop_dictionary_t dict, const char *key,
 	if (found == true)
 		prop_array_remove(array, i);
 	else
-		errno = ENOENT;
+		return ENOENT;
 
-	return found;
+	return 0;
 }
 
-bool
+int
 xbps_remove_pkg_dict_from_file(const char *pkg, const char *plist)
 {
 	prop_dictionary_t pdict;
+	int rv = 0;
 
 	assert(pkg != NULL);
 	assert(plist != NULL);
 
 	pdict = prop_dictionary_internalize_from_file(plist);
 	if (pdict == NULL)
-		return false;
+		return errno;
 
-	if (!xbps_remove_pkg_from_dict(pdict, "packages", pkg)) {
+	rv = xbps_remove_pkg_from_dict(pdict, "packages", pkg);
+	if (rv != 0) {
 		prop_object_release(pdict);
-		errno = ENODEV;
-		return false;
+		return rv;
 	}
 
 	if (!prop_dictionary_externalize_to_file(pdict, plist)) {
 		prop_object_release(pdict);
-		return false;
+		return errno;
 	}
 
 	prop_object_release(pdict);
 
-	return true;
+	return 0;
 }

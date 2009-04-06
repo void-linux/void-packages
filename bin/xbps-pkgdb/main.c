@@ -155,14 +155,13 @@ main(int argc, char **argv)
 		if (argc != 3)
 			usage();
 
-		if (!xbps_remove_pkg_dict_from_file(argv[1], plist)) {
-			if (errno == ENODEV)
-				printf("=> ERROR: %s not registered "
-				    "in database.\n", argv[1]);
-			else
-				printf("=> ERROR: couldn't unregister %s "
-				    "from database (%s)\n", argv[1],
-				    strerror(errno));
+		rv = xbps_remove_pkg_dict_from_file(argv[1], plist);
+		if (rv == ENOENT) {
+			printf("=> ERROR: %s not registered in database.\n",
+			     argv[1]);
+		} else {
+			printf("=> ERROR: couldn't unregister %s "
+			    "from database (%s)\n", argv[1], strerror(rv));
 			exit(EXIT_FAILURE);
 		}
 

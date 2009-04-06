@@ -114,8 +114,8 @@ bool 		xbps_find_string_in_array(prop_array_t, const char *);
 prop_object_iterator_t	xbps_get_array_iter_from_dict(prop_dictionary_t,
 						      const char *);
 
-bool 		xbps_remove_pkg_dict_from_file(const char *, const char *);
-bool		xbps_remove_pkg_from_dict(prop_dictionary_t, const char *,
+int 		xbps_remove_pkg_dict_from_file(const char *, const char *);
+int		xbps_remove_pkg_from_dict(prop_dictionary_t, const char *,
 					  const char *);
 int		xbps_remove_string_from_array(prop_array_t, const char *);
 

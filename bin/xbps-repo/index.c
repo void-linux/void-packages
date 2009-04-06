@@ -176,10 +176,10 @@ repoidx_addpkg(const char *file, const char *filename, const char *pkgdir)
 			 * registered actually, remove old package from
 			 * the index.
 			 */
-			if (!xbps_remove_pkg_from_dict(idxdict,
-			    "packages", pkgname)) {
+			rv = xbps_remove_pkg_from_dict(idxdict,
+			    "packages", pkgname);
+			if (rv != 0) {
 				prop_object_release(newpkgd);
-				rv = EINVAL;
 				break;
 			}
 		}

@@ -53,9 +53,7 @@ xbps_unregister_pkg(const char *pkgname)
 	if (plist == NULL)
 		return EINVAL;
 
-	if (!xbps_remove_pkg_dict_from_file(pkgname, plist))
-		rv = errno;
-	
+	rv = xbps_remove_pkg_dict_from_file(pkgname, plist);
 	free(plist);
 
 	return rv;

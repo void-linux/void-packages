@@ -341,13 +341,12 @@ find_pkg_missing_deps_from_repo(prop_dictionary_t repo, prop_dictionary_t pkg)
 		if ((rv = store_dependency(pkg, curpkgd, repo)) != 0)
 			break;
 		/*
-		 * Remove package from missing now.
+		 * Remove package from missing_deps array now.
 		 */
-		if (!xbps_remove_pkg_from_dict(chaindeps,
-		    "missing_deps", pkgname)) {
-			if (errno != 0 && errno != ENOENT)
-				break;
-		}
+		rv = xbps_remove_pkg_from_dict(chaindeps,
+		    "missing_deps", pkgname);
+		if (rv != 0 && rv != ENOENT)
+			break;
 
 		prop_object_iterator_reset(iter);
 	}
@@ -444,12 +443,11 @@ find_pkg_deps_from_repo(prop_dictionary_t repo, prop_dictionary_t pkg,
 		/*
 		 * Remove package from missing_deps now it's been found.
 		 */
-		if (!xbps_remove_pkg_from_dict(chaindeps,
-		    "missing_deps", pkgname)) {
-			if (errno != 0 && errno != ENOENT) {
-				free(pkgname);
-				break;
-			}
+		rv = xbps_remove_pkg_from_dict(chaindeps,
+		    "missing_deps", pkgname);
+		if (rv != 0 && rv != ENOENT) {
+			free(pkgname);
+			break;
 		}
 		free(pkgname);
 
