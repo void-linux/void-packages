@@ -304,16 +304,16 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 	free(buf);
 
 	/*
-	 * Update the required_by array of all required dependencies
-	 * and unregister package if this is really a removal and
-	 * not an update.
+	 * Update the requiredby array of all required dependencies.
 	 */
+	rv = xbps_requiredby_pkg_remove(pkgname);
+	if (rv != 0)
+		return rv;
+
 	if (update == false) {
-		rv = xbps_requiredby_pkg_remove(pkgname);
-		if (rv != 0)
-			return rv;
 		/*
-		 * Unregister pkg from database.
+		 * Unregister pkg from database only if it's a removal
+		 * and not an update.
 		 */
 		rv = xbps_unregister_pkg(pkgname);
 		if (rv != 0)

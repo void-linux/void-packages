@@ -313,33 +313,29 @@ xbps_register_pkg(prop_dictionary_t pkgrd, bool update, bool automatic)
 		prop_dictionary_set_bool(newpkgd, "automatic-install",
 		    automatic);
 
-		if (update && pkgrd && xbps_pkg_has_rundeps(pkgrd)) {
-			/*
-			 * If updating a package, update the requiredby
-			 * objects and set new version in pkg dictionary.
-			 */
-			rv = xbps_requiredby_pkg_add(array, pkgrd, true);
+		/*
+		 * Add the requiredby objects for dependent packages.
+		 */
+		if (pkgrd && xbps_pkg_has_rundeps(pkgrd)) {
+			rv = xbps_requiredby_pkg_add(array, pkgrd);
 			if (rv != 0) {
 				prop_object_release(newpkgd);
 				goto out;
 			}
+		}
+
+		if (update) {
+			/*
+			 * If updating a package, set new version in
+			 * pkg dictionary.
+			 */
 			prop_dictionary_set_cstring_nocopy(pkgd,
 			    "version", version);
-
 		} else {
 			/*
-			 * If installing a package, update the requiredby
-			 * objects and add new pkg dictionary into the
-			 * packages array.
+			 * If installing a package, add new pkg
+			 * dictionary into the packages array.
 			 */
-			if (pkgrd && xbps_pkg_has_rundeps(pkgrd)) {
-				rv = xbps_requiredby_pkg_add(array, pkgrd,
-				     false);
-				if (rv != 0) {
-					prop_object_release(newpkgd);
-					goto out;
-				}
-			}
 			if (!xbps_add_obj_to_array(array, newpkgd)) {
 				prop_object_release(newpkgd);
 				rv = EINVAL;
