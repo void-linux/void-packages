@@ -41,8 +41,9 @@ static int	vfcexec(const char *, int, const char *, va_list);
 static int	pfcexec(const char *, const char *, const char **);
 
 /*
- * fork, then change current working directory to path and
- * execute the command and arguments in the argv array.
+ * Fork, then if /bin/sh exists change root directory to
+ * path; otherwise just change current working directory.
+ * Execute the command and arguments in the argv array.
  * wait for the command to finish, then return the exit status.
  */
 static int
@@ -54,9 +55,21 @@ pfcexec(const char *path, const char *file, const char **argv)
 	child = vfork();
 	switch (child) {
 	case 0:
-		if ((path != NULL) && (chdir(path) < 0))
-			_exit(127);
-
+		if (path != NULL) {
+			/*
+			 * If /bin/sh exists, chroot to destdir.
+			 * Otherwise chdir to destdir.
+			 */
+			if (access("./bin/sh", R_OK) == 0) {
+				if (chroot(path) == -1)
+					_exit(127);
+				if (chdir("/") == -1)
+					_exit(127);
+			} else {
+				if (chdir(path) == -1)
+					_exit(127);
+			}
+		}
 		(void)execvp(file, (char ** const)argv);
 		_exit(127);
 		/* NOTREACHED */
