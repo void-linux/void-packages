@@ -44,16 +44,13 @@ prepare_chroot()
 		chmod 644 $XBPS_MASTERDIR/var/$f
 	done
 
-	if [ ! -f $XBPS_MASTERDIR/etc/passwd ]; then
-		cat > $XBPS_MASTERDIR/etc/passwd <<_EOF
+	cat > $XBPS_MASTERDIR/etc/passwd <<_EOF
 root:x:0:0:root:/root:/bin/bash
 nobody:x:99:99:Unprivileged User:/dev/null:/bin/false
 _EOF
-	fi
 
 	# Default group list as specified by LFS.
-	if [ ! -f $XBPS_MASTERDIR/etc/group ]; then
-		cat > $XBPS_MASTERDIR/etc/group <<_EOF
+	cat > $XBPS_MASTERDIR/etc/group <<_EOF
 root:x:0:
 bin:x:1:
 sys:x:2:
@@ -74,11 +71,9 @@ mail:x:34:
 nogroup:x:99:
 users:x:1000:
 _EOF
-	fi
 
 	# Default file as in Ubuntu.
-	if [ ! -f $XBPS_MASTERDIR/etc/hosts ]; then
-		cat > $XBPS_MASTERDIR/etc/hosts <<_EOF
+	cat > $XBPS_MASTERDIR/etc/hosts <<_EOF
 127.0.0.1	xbps	localhost.localdomain	localhost
 127.0.1.1	xbps
 
@@ -90,15 +85,12 @@ ff02::1 ip6-allnodes
 ff02::2 ip6-allrouters
 ff02::3 ip6-allhosts
 _EOF
-	fi
 
 	# Use OpenDNS servers.
-	if [ ! -f $XBPS_MASTERDIR/etc/resolv.conf ]; then
-		cat > $XBPS_MASTERDIR/etc/resolv.conf <<_EOF
+	cat > $XBPS_MASTERDIR/etc/resolv.conf <<_EOF
 nameserver 208.67.222.222
 nameserver 208.67.220.220
 _EOF
-	fi
 
 	touch $XBPS_MASTERDIR/.xbps_perms_done
 }
@@ -147,6 +139,12 @@ xbps_chroot_handler()
 	rebuild_ldso_cache
 	mount_chroot_fs
 	install_xbps_utils
+
+	if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
+		echo -n "==> Preparing chroot on $XBPS_MASTERDIR... "
+		prepare_chroot
+		echo "done."
+	fi
 
 	if [ "$action" = "chroot" ]; then
 		env in_chroot=yes LANG=C chroot $XBPS_MASTERDIR /bin/bash
@@ -255,13 +253,7 @@ if [ "$(id -u)" -ne 0 ]; then
 	exit 1
 fi
 
-if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
-	echo -n "==> Preparing chroot on $XBPS_MASTERDIR... "
-	prepare_chroot
-	echo "done."
-else
-	msg_normal "Entering into the chroot on $XBPS_MASTERDIR."
-fi
+msg_normal "Entering into the chroot on $XBPS_MASTERDIR."
 
 EXTDIRS="xbps xbps_builddir xbps_destdir xbps_packagesdir \
 	 xbps_srcdistdir xbps_crossdir"
@@ -287,4 +279,5 @@ if [ -n "$XBPS_CROSS_TARGET" -a -d "$XBPS_CROSS_DIR" ]; then
 		$XBPS_MASTERDIR/usr/local/etc/xbps.conf
 	echo "XBPS_CROSS_DIR=/xbps_crossdir" >> $XBPS_MASTERDIR/usr/local/etc/xbps.conf
 fi
+
 
