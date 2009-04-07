@@ -83,7 +83,7 @@ xbps_install_binary_pkg_fini(prop_dictionary_t repo, prop_dictionary_t pkgrd,
 		}
 	}
 
-	return 0;
+	return rv;
 }
 
 int
