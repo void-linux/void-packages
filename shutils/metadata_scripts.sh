@@ -42,21 +42,21 @@ xbps_write_metadata_scripts_pkg()
 #
 # Generic INSTALL/REMOVE script.
 #
-# \$1 = cwd
-# \$2 = action
-# \$3 = pkgname
-# \$4 = version
+# \$1 = action
+# \$2 = pkgname
+# \$3 = version
 #
 # Note that paths must be relative to CWD, to avoid calling
-# host commands.
+# host commands if /bin/sh (dash) is not installed and it's
+# not possible to chroot(3).
 #
 
 export PATH="./bin:./sbin:./usr/bin:./usr/sbin"
 
 TRIGGERSDIR="./var/db/xbps/triggers"
-ACTION="\$2"
-PKGNAME="\$3"
-VERSION="\$4"
+ACTION="\$1"
+PKGNAME="\$2"
+VERSION="\$3"
 
 _EOF
 
