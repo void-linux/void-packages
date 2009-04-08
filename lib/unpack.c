@@ -176,7 +176,7 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 					break;
 			}
 
-			if ((rv = xbps_file_exec(buf, rootdir, "pre",
+			if ((rv = xbps_file_chdir_exec(rootdir, buf, "pre",
 			     pkgname, version, NULL)) != 0) {
 				printf("%s: preinst action target error %s\n",
 				    pkgname, strerror(errno));
@@ -219,7 +219,7 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 		 * Run the post installaction action target, if package
 		 * contains the script.
 		 */
-		if ((rv = xbps_file_exec(buf, rootdir, "post",
+		if ((rv = xbps_file_chdir_exec(rootdir, buf, "post",
 		     pkgname, version, NULL)) != 0) {
 			printf("%s: postinst action target error %s\n",
 			    pkgname, strerror(errno));

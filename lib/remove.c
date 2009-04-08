@@ -214,7 +214,7 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 	prop_dictionary_t dict;
 	const char *rootdir = xbps_get_rootdir();
 	char *path, *buf;
-	int fd, rv = 0;
+	int rv = 0;
 	bool prepostf = false;
 
 	assert(pkgname != NULL);
@@ -231,7 +231,7 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 	if (chdir(rootdir) == -1)
 		return errno;
 
-	buf = xbps_xasprintf("%s/%s/metadata/%s/REMOVE", rootdir,
+	buf = xbps_xasprintf(".%s/metadata/%s/REMOVE",
 	    XBPS_META_PATH, pkgname);
 	if (buf == NULL)
 		return errno;
@@ -239,20 +239,14 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 	/*
 	 * Find out if the REMOVE file exists.
 	 */
-	if ((fd = open(buf, O_RDONLY)) == -1) {
-		if (errno != ENOENT) {
-			free(buf);
-			return errno;
-		}
-	} else {
+	if (access(buf, R_OK) == 0) {
 		/*
 		 * Run the pre remove action.
 		 */
-		(void)close(fd);
 		prepostf = true;
 		(void)printf("\n");
 		(void)fflush(stdout);
-		rv = xbps_file_exec(buf, rootdir, "pre", pkgname, NULL);
+		rv = xbps_file_chdir_exec(rootdir, buf, "pre", pkgname, NULL);
 		if (rv != 0) {
 			printf("%s: prerm action target error (%s)\n", pkgname,
 			    strerror(errno));
@@ -293,7 +287,7 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 	 * Run the post remove action if REMOVE file is there.
 	 */
 	if (prepostf) {
-		if ((rv = xbps_file_exec(buf, rootdir, "post",
+		if ((rv = xbps_file_chdir_exec(rootdir, buf, "post",
 		     pkgname, NULL)) != 0) {
 			printf("%s: postrm action target error (%s)\n",
 			    pkgname, strerror(errno));
