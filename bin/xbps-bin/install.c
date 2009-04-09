@@ -132,34 +132,13 @@ xbps_install_pkg(const char *pkg, bool update)
 		exit(EXIT_FAILURE);
 	}
 
-	printf("Checking binary package file(s) integrity...\n");
-
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
-		/*
-		 * Use this loop to calculate total and installed
-		 * size for all binary packages that are going to be
-		 * downloaded/installed.
-		 */
 		prop_dictionary_get_uint64(obj, "filename-size", &tsize);
 		dlsize += tsize;
 		tsize = 0;
 		prop_dictionary_get_uint64(obj, "installed_size", &tsize);
 		instsize += tsize;
 		tsize = 0;
-
-		prop_dictionary_get_cstring_nocopy(obj, "repository", &repoloc);
-		prop_dictionary_get_cstring_nocopy(obj, "filename", &filename);
-		rv = xbps_check_pkg_file_hash(obj, repoloc);
-		if (rv != 0 && rv != ERANGE) {
-			printf("error: checking hash for %s (%s)\n",
-			    filename, strerror(rv));
-			prop_object_release(props);
-			exit(EXIT_FAILURE);
-		} else if (rv != 0 && rv == ERANGE) {
-			printf("Hash doesn't match for %s!\n", filename);
-			prop_object_release(props);
-			exit(EXIT_FAILURE);
-		}
 	}
 	prop_object_iterator_reset(iter);
 
@@ -209,6 +188,25 @@ xbps_install_pkg(const char *pkg, bool update)
 		prop_object_release(props);
 		exit(EXIT_SUCCESS);
 	}
+
+	printf("Checking binary package file(s) integrity...\n");
+	while ((obj = prop_object_iterator_next(iter)) != NULL) {
+		prop_dictionary_get_cstring_nocopy(obj, "repository", &repoloc);
+		prop_dictionary_get_cstring_nocopy(obj, "filename", &filename);
+		rv = xbps_check_pkg_file_hash(obj, repoloc);
+		if (rv != 0 && rv != ERANGE) {
+			printf("error: checking hash for %s (%s)\n",
+			    filename, strerror(rv));
+			prop_object_release(props);
+			exit(EXIT_FAILURE);
+		} else if (rv != 0 && rv == ERANGE) {
+			printf("Hash doesn't match for %s!\n", filename);
+			prop_object_release(props);
+			exit(EXIT_FAILURE);
+		}
+	}
+	prop_object_iterator_reset(iter);
+	printf("\n");
 
 	/*
 	 * Install all packages, the list is already sorted.
