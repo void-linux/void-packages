@@ -59,6 +59,8 @@
 /* Verbose messages */
 #define XBPS_VERBOSE		0x00000001
 
+#define ARCHIVE_READ_BLOCKSIZE	2048
+
 /* from lib/cmpver.c */
 int		xbps_cmpver_packages(const char *, const char *);
 int		xbps_cmpver_versions(const char *, const char *);

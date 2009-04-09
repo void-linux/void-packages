@@ -92,7 +92,8 @@ unpack_archive_init(prop_dictionary_t pkg, const char *binfile)
 	archive_read_support_format_all(ar);
 
 	/* 2048 is arbitrary... dunno what value is better. */
-	if ((rv = archive_read_open_fd(ar, pkg_fd, 2048)) != 0) {
+	if ((rv = archive_read_open_fd(ar, pkg_fd,
+	     ARCHIVE_READ_BLOCKSIZE)) != 0) {
 		archive_read_finish(ar);
 		(void)close(pkg_fd);
 		return rv;
