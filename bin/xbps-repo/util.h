@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2008 Juan Romero Pardines.
+ * Copyright (c) 2008-2009 Juan Romero Pardines.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,5 +31,6 @@ int	show_pkg_info_from_metadir(const char *);
 int	show_pkg_files_from_metadir(const char *, bool);
 int	show_pkg_info_from_repolist(prop_object_t, void *, bool *);
 int	list_strings_in_array(prop_object_t, void *, bool *);
+int	list_strings_sep_in_array(prop_object_t, void *, bool *);
 
 #endif /* !_XBPS_REPO_UTIL_H_ */

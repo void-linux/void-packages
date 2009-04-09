@@ -229,7 +229,7 @@ main(int argc, char **argv)
 			usage();
 
 		(void)xbps_callback_array_iter_in_repolist(
-		    list_strings_in_array, NULL);
+		    list_strings_sep_in_array, NULL);
 
 	} else if ((strcasecmp(argv[0], "rm") == 0) ||
 		   (strcasecmp(argv[0], "remove") == 0)) {

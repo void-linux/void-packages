@@ -42,7 +42,6 @@ struct show_files_cb {
 static void	show_pkg_info(prop_dictionary_t);
 static int	show_pkg_files(prop_object_t, void *, bool *);
 static int	show_pkg_namedesc(prop_object_t, void *, bool *);
-static int	list_strings_sep_in_array(prop_object_t, void *, bool *);
 
 static void
 show_pkg_info(prop_dictionary_t dict)
