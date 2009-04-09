@@ -100,20 +100,9 @@ xbps_check_pkg_file_hash(prop_dictionary_t pkgd, const char *repoloc)
 	if (binfile == NULL)
 		return EINVAL;
 
-	printf("Checking SHA256 for %s ... ", filename);
-	(void)fflush(stdout);
-
 	rv = xbps_check_file_hash(binfile, sha256);
-	if (rv != 0 && rv != ERANGE)
-		printf("failed (%s)\n", strerror(rv));
-	else if (rv == ERANGE)
-		printf("failed! aborting installation.\n");
-	else if (rv == 0)
-		printf("ok.\n");
-
-	(void)fflush(stdout);
-
 	free(binfile);
+
 	return rv;
 }
 

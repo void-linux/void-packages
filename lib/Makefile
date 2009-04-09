@@ -8,8 +8,8 @@ LIBXBPS_SO	= $(LIBXBPS).$(MAJOR).$(MINOR).$(MICRO)
 LIBXBPS		= libxbps.so
 LIBXBPS_LDFLAGS	= -larchive -lprop -shared -Wl,-soname,$(LIBXBPS).$(MAJOR)
 
-OBJECTS	=	cmpver.o depends.o fexec.o humanize_number.o install.o
-OBJECTS	+=	orphans.o plist.o remove.o repository.o requiredby.o
+OBJECTS	=	cmpver.o depends.o fexec.o findpkg.o humanize_number.o
+OBJECTS	+=	orphans.o plist.o register.o remove.o repository.o requiredby.o
 OBJECTS	+=	sha256.o sortdeps.o unpack.o util.o
 
 all: $(LIBXBPS)

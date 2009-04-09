@@ -39,7 +39,7 @@ static int unpack_archive_init(prop_dictionary_t, const char *);
 static int unpack_archive_fini(struct archive *, prop_dictionary_t);
 
 int
-xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
+xbps_unpack_binary_pkg(prop_dictionary_t pkg)
 {
 	prop_string_t filename, repoloc, arch;
 	char *binfile;
@@ -47,13 +47,14 @@ xbps_unpack_binary_pkg(prop_dictionary_t repo, prop_dictionary_t pkg)
 
 	assert(pkg != NULL);
 
-	/* Append filename to the full path for binary pkg */
+	/*
+	 * Append filename to the full path for binary pkg.
+	 */
 	filename = prop_dictionary_get(pkg, "filename");
 	arch = prop_dictionary_get(pkg, "architecture");
-	if (repo)
-		repoloc = prop_dictionary_get(repo, "location-local");
-	else
-		repoloc = prop_dictionary_get(pkg, "repository");
+	repoloc = prop_dictionary_get(pkg, "repository");
+	if (filename == NULL || arch == NULL || repoloc == NULL)
+		return ENOTSUP;
 
 	binfile = xbps_xasprintf("%s/%s/%s",
 	    prop_string_cstring_nocopy(repoloc),

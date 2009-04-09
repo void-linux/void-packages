@@ -34,11 +34,10 @@
 #include <unistd.h>
 
 #include <xbps_api.h>
+#include "defs.h"
 #include "../xbps-repo/util.h"
 
 static void	usage(void);
-static void	show_missing_deps(prop_dictionary_t, const char *);
-static int	show_missing_dep_cb(prop_object_t, void *, bool *);
 static int	list_pkgs_in_dict(prop_object_t, void *, bool *);
 
 static void
@@ -87,34 +86,7 @@ list_pkgs_in_dict(prop_object_t obj, void *arg, bool *loop_done)
 	prop_dictionary_get_cstring_nocopy(obj, "version", &version);
 	prop_dictionary_get_cstring_nocopy(obj, "short_desc", &short_desc);
 	if (pkgname && version && short_desc) {
-		printf("%s (%s)\t%s\n", pkgname, version, short_desc);
-		return 0;
-	}
-
-	return EINVAL;
-}
-
-static void
-show_missing_deps(prop_dictionary_t d, const char *pkgname)
-{
-	printf("Unable to locate some required packages for %s:\n",
-	    pkgname);
-	(void)xbps_callback_array_iter_in_dict(d, "missing_deps",
-	    show_missing_dep_cb, NULL);
-}
-
-static int
-show_missing_dep_cb(prop_object_t obj, void *arg, bool *loop_done)
-{
-	const char *pkgname, *version;
-	(void)arg;
-	(void)loop_done;
-
-	prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
-	prop_dictionary_get_cstring_nocopy(obj, "version", &version);
-	if (pkgname && version) {
-		printf("\tmissing binary package for: %s >= %s\n",
-		    pkgname, version);
+		printf("%s-%s\t%s\n", pkgname, version, short_desc);
 		return 0;
 	}
 
@@ -196,41 +168,14 @@ main(int argc, char **argv)
 		if (argc != 2)
 			usage();
 
-		rv = xbps_install_binary_pkg(argv[1], false);
-		if (rv != 0) {
-			if (rv == EAGAIN) {
-				printf("Unable to locate %s in "
-				    "repository pool.\n", argv[1]);
-			} else if (rv == ENOENT) {
-				dict = xbps_get_pkg_deps_dictionary();
-				if (dict)
-					show_missing_deps(dict, argv[1]);
-			} else if (rv == EEXIST) {
-				printf("Package '%s' is already up to date.\n",
-				    argv[1]);
-				exit(EXIT_SUCCESS);
-			}
-
-			exit(EXIT_FAILURE);
-		}
-		printf("Package %s installed successfully.\n", argv[1]);
+		xbps_install_pkg(argv[1], false);
 
 	} else if (strcasecmp(argv[0], "update") == 0) {
 		/* Update an installed package. */
 		if (argc != 2)
 			usage();
 
-		rv = xbps_install_binary_pkg(argv[1], true);
-		if (rv != 0) {
-			if (rv == EEXIST) {
-				printf("Package %s is already up to date.\n",
-				    argv[1]);
-				exit(EXIT_SUCCESS);
-			}
-			exit(EXIT_FAILURE);
-		}
-
-		printf("Package %s updated successfully.\n", argv[1]);
+		xbps_install_pkg(argv[1], true);
 
 	} else if (strcasecmp(argv[0], "remove") == 0) {
 		/* Removes a binary package. */

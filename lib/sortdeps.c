@@ -79,7 +79,7 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 	 */
 	unsorted = prop_dictionary_get(chaindeps, "unsorted_deps");
 	if (prop_array_count(unsorted) == 0) {
-		prop_object_release(sorted);
+		prop_dictionary_set(chaindeps, "packages", sorted);
 		return 0;
 	}
 
@@ -185,7 +185,7 @@ again:
 		goto out;
 	}
 
-	if (!prop_dictionary_set(chaindeps, "required_deps", sorted))
+	if (!prop_dictionary_set(chaindeps, "packages", sorted))
 		rv = EINVAL;
 out:
 	/*

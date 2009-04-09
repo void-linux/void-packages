@@ -80,19 +80,23 @@ int		xbps_file_chdir_exec(const char *, const char *, ...);
 int		xbps_humanize_number(char *, size_t, int64_t, const char *,
 				     int, int);
 
-/* From lib/install.c, lib/depends.c and lib/unpack.c */
-int		xbps_install_pkg_deps(const char *, bool);
-int		xbps_install_binary_pkg(const char *, bool);
-int		xbps_install_binary_pkg_fini(prop_dictionary_t,
-					     prop_dictionary_t, bool);
+/* From lib/findpkg.c */
+int		xbps_prepare_pkg(const char *);
+prop_dictionary_t	xbps_get_pkg_props(const char *);
+
+/* From lib/register.c */
 int		xbps_register_pkg(prop_dictionary_t, bool, bool);
-int		xbps_unpack_binary_pkg(prop_dictionary_t, prop_dictionary_t);
+
+/* From lib/requiredby.c */
 int		xbps_requiredby_pkg_add(prop_array_t, prop_dictionary_t);
 int		xbps_requiredby_pkg_remove(const char *);
-int		xbps_find_deps_in_pkg(prop_dictionary_t,
-				      prop_object_iterator_t);
 
-prop_dictionary_t	xbps_get_pkg_deps_dictionary(void);
+/* From lib/unpack.c */
+int		xbps_unpack_binary_pkg(prop_dictionary_t);
+
+/* From lib/depends.c */
+int		xbps_find_deps_in_pkg(prop_dictionary_t, prop_dictionary_t,
+				      prop_object_iterator_t);
 
 /* From lib/plist.c */
 bool		xbps_add_obj_to_dict(prop_dictionary_t, prop_object_t,
