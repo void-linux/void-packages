@@ -97,13 +97,10 @@ int
 main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
-	prop_array_t reqby, orphans;
-	prop_object_t obj;
-	prop_object_iterator_t iter;
-	const char *pkgname, *version, *sep, *rootdir;
+	const char *rootdir;
 	char *plist;
 	int c, flags = 0, rv = 0;
-	bool chkhash = false, forcerm = false, verbose = false;
+	bool chkhash = false, force = false, verbose = false;
 
 	while ((c = getopt(argc, argv, "Cfr:v")) != -1) {
 		switch (c) {
@@ -111,7 +108,7 @@ main(int argc, char **argv)
 			chkhash = true;
 			break;
 		case 'f':
-			forcerm = true;
+			force = true;
 			break;
 		case 'r':
 			/* To specify the root directory */
@@ -182,57 +179,7 @@ main(int argc, char **argv)
 		if (argc != 2)
 			usage();
 
-		/*
-		 * First check if package is required by other packages.
-		 */
-		dict = xbps_find_pkg_installed_from_plist(argv[1]);
-		if (dict == NULL) {
-			printf("Package %s is not installed.\n", argv[1]);
-			exit(EXIT_FAILURE);
-		}
-		prop_dictionary_get_cstring_nocopy(dict, "version", &version);
-
-		reqby = prop_dictionary_get(dict, "requiredby");
-		if (reqby != NULL && prop_array_count(reqby) > 0) {
-			printf("WARNING! %s-%s is required by the following "
-			    "packages:\n", argv[1], version);
-			sep = "\t";
-			(void)xbps_callback_array_iter_in_dict(dict,
-			    "requiredby", list_strings_in_array, (void *)sep);
-			if (!forcerm) {
-				prop_object_release(dict);
-				printf("If you are sure about this, use "
-				    "-f to force deletion for this package.\n");
-				exit(EXIT_FAILURE);
-			} else
-				printf("Forcing %s-%s for deletion!\n",
-				    argv[1], version);
-		}
-
-		printf("Removing package %s-%s ... ", argv[1], version);
-		if (verbose)
-			printf("\n");
-
-		(void)fflush(stdout);
-
-		rv = xbps_remove_binary_pkg(argv[1], false);
-		if (rv != 0) {
-			if (!verbose)
-				printf("failed! (%s)\n", strerror(rv));
-			else
-				printf("Unable to remove %s-%s (%s).\n",
-				    argv[1], version, strerror(errno));
-
-			prop_object_release(dict);
-			exit(EXIT_FAILURE);
-		}
-		if (!verbose)
-			printf("done.\n");
-		else
-			printf("Package %s-%s removed successfully.\n",
-			    argv[1], version);
-
-		prop_object_release(dict);
+		xbps_remove_pkg(argv[1]);
 
 	} else if (strcasecmp(argv[0], "show") == 0) {
 		/* Shows info about an installed binary package. */
@@ -265,61 +212,7 @@ main(int argc, char **argv)
 		if (argc != 1)
 			usage();
 
-		orphans = xbps_find_orphan_packages();
-		if (orphans == NULL)
-			exit(EXIT_FAILURE);
-		if (orphans != NULL && prop_array_count(orphans) == 0) {
-			printf("There are not orphaned packages currently.\n");
-			exit(EXIT_SUCCESS);
-		}
-
-		iter = prop_array_iterator(orphans);
-		if (iter == NULL)
-			exit(EXIT_FAILURE);
-
-		printf("The following packages were installed automatically\n"
-		    "(as dependencies) and aren't needed anymore:\n");
-		while ((obj = prop_object_iterator_next(iter)) != NULL) {
-			prop_dictionary_get_cstring_nocopy(obj, "pkgname",
-			    &pkgname);
-			prop_dictionary_get_cstring_nocopy(obj, "version",
-			    &version);
-			printf("\t%s-%s\n", pkgname, version);
-		}
-		if (!forcerm) {
-			printf("If you are really sure you don't need them, "
-			    "use -f to confirm.\n");
-			goto out;
-		}
-
-		prop_object_iterator_reset(iter);
-
-		while ((obj = prop_object_iterator_next(iter)) != NULL) {
-			prop_dictionary_get_cstring_nocopy(obj, "pkgname",
-			    &pkgname);
-			prop_dictionary_get_cstring_nocopy(obj, "version",
-			    &version);
-			printf("Removing package %s-%s ... ",
-			    pkgname, version);
-			if (verbose)
-				printf("\n");
-
-			(void)fflush(stdout);
-
-			rv = xbps_remove_binary_pkg(pkgname, false);
-			if (rv != 0) {
-				if (!verbose)
-					printf("failed! (%s)\n", strerror(rv));
-				prop_object_iterator_release(iter);
-				prop_object_release(orphans);
-				exit(EXIT_FAILURE);
-			}
-			if (!verbose)
-				printf("done.\n");
-		}
-out:
-		prop_object_iterator_release(iter);
-		prop_object_release(orphans);
+		xbps_autoremove_pkgs();
 
 	} else {
 		usage();

@@ -172,12 +172,11 @@ xbps_install_pkg(const char *pkg, bool update)
 				printf("  ");
 				first = true;
 			}
-			printf("%s-%s ", pkgname, version);
 		} else {
 			printf("\n  ");
 			cols = strlen(pkgname) + strlen(version) + 4;
-			printf("%s-%s ", pkgname, version);
 		}
+		printf("%s-%s ", pkgname, version);
 	}
 	prop_object_iterator_reset(iter);
 	printf("\n\n");
