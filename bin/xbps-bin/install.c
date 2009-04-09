@@ -66,7 +66,7 @@ show_missing_dep_cb(prop_object_t obj, void *arg, bool *loop_done)
 }
 
 void
-xbps_install_pkg(const char *pkg, bool update)
+xbps_install_pkg(const char *pkg, bool force, bool update)
 {
 	prop_dictionary_t props, instpkg;
 	prop_array_t array;
@@ -183,10 +183,12 @@ xbps_install_pkg(const char *pkg, bool update)
 	}
 	printf("Total installed size: %s\n\n", size);
 
-	if (xbps_noyes("Do you want to continue?") == false) {
-		printf("Aborting!\n");
-		prop_object_release(props);
-		exit(EXIT_SUCCESS);
+	if (force == false) {
+		if (xbps_noyes("Do you want to continue?") == false) {
+			printf("Aborting!\n");
+			prop_object_release(props);
+			exit(EXIT_SUCCESS);
+		}
 	}
 
 	printf("Checking binary package file(s) integrity...\n");

@@ -58,8 +58,8 @@ usage(void)
 	" Options used by the files target:\n"
 	"    -C\t\tTo check the SHA256 hash for any listed file.\n"
 	" Options used by the (auto)remove target:\n"
-	"    -f\t\tForce removal, even if package is required by other\n"
-	"      \t\tpackages that are currently installed.\n"
+	"    -f\t\tForce installation or removal of packages.\n"
+	"      \t\tBeware with this option if you use autoremove!\n"
 	"\n"
 	" Examples:\n"
 	"    $ xbps-bin autoremove\n"
@@ -77,6 +77,7 @@ static int
 list_pkgs_in_dict(prop_object_t obj, void *arg, bool *loop_done)
 {
 	const char *pkgname, *version, *short_desc;
+
 	(void)arg;
 	(void)loop_done;
 
@@ -165,21 +166,21 @@ main(int argc, char **argv)
 		if (argc != 2)
 			usage();
 
-		xbps_install_pkg(argv[1], false);
+		xbps_install_pkg(argv[1], force, false);
 
 	} else if (strcasecmp(argv[0], "update") == 0) {
 		/* Update an installed package. */
 		if (argc != 2)
 			usage();
 
-		xbps_install_pkg(argv[1], true);
+		xbps_install_pkg(argv[1], force, true);
 
 	} else if (strcasecmp(argv[0], "remove") == 0) {
 		/* Removes a binary package. */
 		if (argc != 2)
 			usage();
 
-		xbps_remove_pkg(argv[1]);
+		xbps_remove_pkg(argv[1], force);
 
 	} else if (strcasecmp(argv[0], "show") == 0) {
 		/* Shows info about an installed binary package. */

@@ -109,7 +109,7 @@ xbps_autoremove_pkgs(void)
 }
 
 void
-xbps_remove_pkg(const char *pkgname)
+xbps_remove_pkg(const char *pkgname, bool force)
 {
 	prop_array_t reqby;
 	prop_dictionary_t dict;
@@ -133,15 +133,19 @@ xbps_remove_pkg(const char *pkgname)
 		(void)xbps_callback_array_iter_in_dict(dict,
 			"requiredby", list_strings_in_array, NULL);
 		printf("\n\n");
-		if (xbps_noyes("Do you want to remove %s?", pkgname) == false) {
-			printf("Cancelling!\n");
-			exit(EXIT_SUCCESS);
+		if (!force) {
+			if (!xbps_noyes("Do you want to remove %s?", pkgname)) {
+				printf("Cancelling!\n");
+				exit(EXIT_SUCCESS);
+			}
 		}
 		printf("Forcing %s-%s for deletion!\n", pkgname, version);
 	} else {
-		if (xbps_noyes("Do you want to remove %s?", pkgname) == false) {
-			printf("Cancelling!\n");
-			exit(EXIT_SUCCESS);
+		if (!force) {
+			if (!xbps_noyes("Do you want to remove %s?", pkgname)) {
+				printf("Cancelling!\n");
+				exit(EXIT_SUCCESS);
+			}
 		}
 	}
 
