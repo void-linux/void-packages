@@ -42,12 +42,13 @@ struct show_files_cb {
 static void	show_pkg_info(prop_dictionary_t);
 static int	show_pkg_files(prop_object_t, void *, bool *);
 static int	show_pkg_namedesc(prop_object_t, void *, bool *);
+static int	list_strings_sep_in_array(prop_object_t, void *, bool *);
 
 static void
 show_pkg_info(prop_dictionary_t dict)
 {
 	prop_object_t obj;
-	const char *sep = NULL;
+	const char *sep;
 	char size[64];
 	int rv = 0;
 
@@ -107,27 +108,26 @@ show_pkg_info(prop_dictionary_t dict)
 	obj = prop_dictionary_get(dict, "run_depends");
 	if (obj && prop_object_type(obj) == PROP_TYPE_ARRAY) {
 		printf("Dependencies:\n");
-		sep = "\t";
-		xbps_callback_array_iter_in_dict(dict, "run_depends",
-		    list_strings_in_array, (void *)sep);
-		printf("\n");
+		(void)xbps_callback_array_iter_in_dict(dict, "run_depends",
+		    list_strings_in_array, NULL);
+		printf("\n\n");
 	}
 
 	obj = prop_dictionary_get(dict, "conf_files");
 	if (obj && prop_object_type(obj) == PROP_TYPE_ARRAY) {
 		printf("Configuration files:\n");
-		sep = "\t";
-		xbps_callback_array_iter_in_dict(dict, "conf_files",
-		    list_strings_in_array, (void *)sep);
+		sep = "  ";
+		(void)xbps_callback_array_iter_in_dict(dict, "conf_files",
+		    list_strings_sep_in_array, (void *)sep);
 		printf("\n");
 	}
 
 	obj = prop_dictionary_get(dict, "keep_dirs");
 	if (obj && prop_object_type(obj) == PROP_TYPE_ARRAY) {
 		printf("Permanent directories:\n");
-		sep = "\t";
-		xbps_callback_array_iter_in_dict(dict, "keep_dirs",
-		    list_strings_in_array, (void *)sep);
+		sep = "  ";
+		(void)xbps_callback_array_iter_in_dict(dict, "keep_dirs",
+		    list_strings_sep_in_array, (void *)sep);
 		printf("\n");
 	}
 
@@ -358,9 +358,36 @@ show_pkg_namedesc(prop_object_t obj, void *arg, bool *loop_done)
 int
 list_strings_in_array(prop_object_t obj, void *arg, bool *loop_done)
 {
-	const char *sep = arg;
+	static size_t cols;
+	static bool first;
+
 	(void)arg;
 	(void)loop_done;
+
+	assert(prop_object_type(obj) == PROP_TYPE_STRING);
+
+	cols += strlen(prop_string_cstring_nocopy(obj)) + 4;
+	if (cols <= 80) {
+		if (first == false) {
+			printf("  ");
+			first = true;
+		}
+	} else {
+		printf("\n  ");
+		cols = strlen(prop_string_cstring_nocopy(obj)) + 4;
+	}
+	printf("%s ", prop_string_cstring_nocopy(obj));
+
+	return 0;
+}
+
+int
+list_strings_sep_in_array(prop_object_t obj, void *arg, bool *loop_done)
+{
+	const char *sep = arg;
+
+	(void)loop_done;
+
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
 
 	printf("%s%s\n", sep ? sep : "", prop_string_cstring_nocopy(obj));

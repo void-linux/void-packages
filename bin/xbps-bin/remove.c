@@ -129,9 +129,10 @@ xbps_remove_pkg(const char *pkgname)
 	reqby = prop_dictionary_get(dict, "requiredby");
 	if (reqby != NULL && prop_array_count(reqby) > 0) {
 		printf("WARNING! %s-%s is required by the following "
-		    "packages:\n", pkgname, version);
+		    "packages:\n\n", pkgname, version);
 		(void)xbps_callback_array_iter_in_dict(dict,
 			"requiredby", list_strings_in_array, NULL);
+		printf("\n\n");
 		if (xbps_noyes("Do you want to remove %s?", pkgname) == false) {
 			printf("Cancelling!\n");
 			exit(EXIT_SUCCESS);
