@@ -73,11 +73,12 @@ xbps_install_pkg(const char *pkg, bool update)
 	prop_object_t obj;
 	prop_object_iterator_t iter;
 	uint64_t tsize = 0, dlsize = 0, instsize = 0;
+	size_t cols = 0;
 	const char *repoloc, *filename, *instver, *origin;
 	const char *pkgname, *version;
 	char size[64];
 	int rv = 0;
-	bool pkg_is_dep;
+	bool pkg_is_dep, first = false;
 
 	assert(props != NULL);
 
@@ -158,6 +159,30 @@ xbps_install_pkg(const char *pkg, bool update)
 	prop_object_iterator_reset(iter);
 
 	/*
+	 * Show the list of packages that will be installed.
+	 */
+	printf("\nThe following new packages will be installed:\n\n");
+
+	while ((obj = prop_object_iterator_next(iter)) != NULL) {
+		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
+		prop_dictionary_get_cstring_nocopy(obj, "version", &version);
+		cols += strlen(pkgname) + strlen(version) + 4;
+		if (cols <= 80) {
+			if (first == false) {
+				printf("  ");
+				first = true;
+			}
+			printf("%s-%s ", pkgname, version);
+		} else {
+			printf("\n  ");
+			cols = strlen(pkgname) + strlen(version) + 4;
+			printf("%s-%s ", pkgname, version);
+		}
+	}
+	prop_object_iterator_reset(iter);
+	printf("\n\n");
+
+	/*
 	 * Show total download/installed size for all required packages.
 	 */
 	if (xbps_humanize_number(size, 5, (int64_t)dlsize,
@@ -171,7 +196,12 @@ xbps_install_pkg(const char *pkg, bool update)
 		printf("error: humanize_number2 %s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
-	printf("Total installed size: %s\n", size);
+	printf("Total installed size: %s\n\n", size);
+
+	if (xbps_noyes("Do you want to continue?") == false) {
+		printf("Aborting!\n");
+		exit(EXIT_SUCCESS);
+	}
 
 	/*
 	 * Install all packages, the list is already sorted.
@@ -189,7 +219,7 @@ xbps_install_pkg(const char *pkg, bool update)
 			instpkg = xbps_find_pkg_installed_from_plist(pkgname);
 			if (instpkg == NULL) {
 				printf("error: unable to find %s installed "
-				    "dict!\n", pkgname, version);
+				    "dict!\n", pkgname);
 				exit(EXIT_FAILURE);
 			}
 
