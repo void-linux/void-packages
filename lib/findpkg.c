@@ -208,6 +208,20 @@ xbps_prepare_pkg(const char *pkgname)
 		 */
 		if ((rv = xbps_sort_pkg_deps(pkg_props)) != 0)
 			goto out;
+	} else {
+		/*
+		 * Package has no deps, so we have to create the
+		 * "packages" array.
+		 */
+		pkgs_array = prop_array_create();
+		if (pkgs_array == NULL) {
+			rv = errno;
+			goto out;
+		}
+		if (!prop_dictionary_set(pkg_props, "packages", pkgs_array)) {
+			rv = errno;
+			goto out;
+		}
 	}
 
 	/*
