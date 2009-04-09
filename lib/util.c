@@ -30,10 +30,13 @@
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ctype.h>
 #include <limits.h>
 #include <sys/utsname.h>
 
 #include <xbps_api.h>
+
+static bool	question(bool, const char *, va_list);
 
 static const char *rootdir;
 static int flags;
@@ -257,4 +260,86 @@ xbps_xasprintf(const char *fmt, ...)
 	va_end(ap);
 
 	return buf;
+}
+
+/*
+ * The following functions were taken from pacman (src/pacman/util.c)
+ * Copyright (c) 2002-2007 by Judd Vinet <jvinet@zeroflux.org>
+ */
+bool
+xbps_yesno(const char *fmt, ...)
+{
+	va_list ap;
+	bool res;
+
+	va_start(ap, fmt);
+	res = question(1, fmt, ap);
+	va_end(ap);
+
+	return res;
+}
+
+bool
+xbps_noyes(const char *fmt, ...)
+{
+	va_list ap;
+	bool res;
+
+	va_start(ap, fmt);
+	res = question(0, fmt, ap);
+	va_end(ap);
+
+	return res;
+}
+
+static char *
+strtrim(char *str)
+{
+	char *pch = str;
+
+	if (str == NULL || *str == '\0')
+		return str;
+
+	while (isspace((unsigned char)*pch))
+		pch++;
+
+	if (pch != str)
+		memmove(str, pch, (strlen(pch) + 1));
+
+	if (*str == '\0')
+		return str;
+
+	pch = (str + (strlen(str) - 1));
+	while (isspace((unsigned char)*pch))
+		pch--;
+
+	*++pch = '\0';
+
+	return str;
+}
+
+static bool
+question(bool preset, const char *fmt, va_list ap)
+{
+	char response[32];
+
+	vfprintf(stderr, fmt, ap);
+	if (preset)
+		fprintf(stderr, " %s ", "[Y/n]");
+	else
+		fprintf(stderr, " %s ", "[y/N]");
+
+	if (fgets(response, 32, stdin)) {
+		(void)strtrim(response);
+		if (strlen(response) == 0)
+			return preset;
+
+		if ((strcasecmp(response, "y") == 0) ||
+		    (strcasecmp(response, "yes") == 0))
+			return true;
+		else if ((strcasecmp(response, "n") == 0) ||
+			 (strcasecmp(response, "no") == 0))
+			return false;
+	}
+	return false;
 }

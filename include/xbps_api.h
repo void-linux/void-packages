@@ -149,6 +149,8 @@ void		xbps_set_rootdir(const char *);
 const char *	xbps_get_rootdir(void);
 void		xbps_set_flags(int);
 int		xbps_get_flags(void);
+bool		xbps_yesno(const char *, ...);
+bool		xbps_noyes(const char *, ...);
 
 /* From lib/orphans.c */
 prop_array_t	xbps_find_orphan_packages(void);
