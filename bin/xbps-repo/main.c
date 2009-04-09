@@ -251,7 +251,10 @@ main(int argc, char **argv)
 		}
 
 	} else if (strcasecmp(argv[0], "search") == 0) {
-		/* Search for a package by looking at short_desc. */
+		/*
+		 * Search for a package by looking at pkgname/short_desc
+		 * by using shell style match patterns (fnmatch(3)).
+		 */
 		if (argc != 2)
 			usage();
 

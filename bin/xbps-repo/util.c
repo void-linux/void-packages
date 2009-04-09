@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <fnmatch.h>
 #include <limits.h>
 #include <prop/proplib.h>
 
@@ -146,7 +147,6 @@ search_string_in_pkgs(prop_object_t obj, void *arg, bool *loop_done)
 	const char *repofile;
 	char *plist;
 
-	(void)arg;
 	(void)loop_done;
 
 	assert(prop_object_type(obj) == PROP_TYPE_STRING);
@@ -335,21 +335,21 @@ show_pkg_info_from_repolist(prop_object_t obj, void *arg, bool *loop_done)
 static int
 show_pkg_namedesc(prop_object_t obj, void *arg, bool *loop_done)
 {
-	const char *pkgname, *desc, *ver, *string = arg;
+	const char *pkgname, *desc, *ver, *pattern = arg;
 
-	(void)arg;
 	(void)loop_done;
 
 	assert(prop_object_type(obj) == PROP_TYPE_DICTIONARY);
-	assert(string != NULL);
+	assert(pattern != NULL);
 
 	prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
 	prop_dictionary_get_cstring_nocopy(obj, "short_desc", &desc);
 	prop_dictionary_get_cstring_nocopy(obj, "version", &ver);
 	assert(ver != NULL);
 
-	if ((strstr(pkgname, string) || strstr(desc, string)))
-		printf("  %s-%s - %s\n", pkgname, ver, desc);
+	if ((fnmatch(pattern, pkgname, 0) == 0) ||
+	    (fnmatch(pattern, desc, 0) == 0))
+		printf(" %s-%s - %s\n", pkgname, ver, desc);
 
 	return 0;
 }
