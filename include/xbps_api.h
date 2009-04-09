@@ -36,7 +36,6 @@
 #include <archive_entry.h>
 
 #include "sha256.h"
-#include "queue.h"
 
 /* Default root PATH for xbps to store metadata info. */
 #define XBPS_META_PATH		"/var/db/xbps"

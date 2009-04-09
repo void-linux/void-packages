@@ -29,6 +29,7 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#include <sys/queue.h>
 
 #include <xbps_api.h>
 
