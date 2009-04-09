@@ -301,12 +301,6 @@ find_repo_deps(prop_dictionary_t master, prop_dictionary_t repo,
 	char *pkgname;
 	int rv = 0;
 
-	/*
-	 * Package doesn't have deps, check to be sure.
-	 */
-	if (pkg_rdeps == NULL || prop_array_count(pkg_rdeps) == 0)
-		return 0;
-
 	iter = prop_array_iterator(pkg_rdeps);
 	if (iter == NULL)
 		return ENOMEM;
