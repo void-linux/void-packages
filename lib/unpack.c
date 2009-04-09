@@ -105,7 +105,7 @@ unpack_archive_init(prop_dictionary_t pkg, const char *binfile)
 	 * is really on storage (if possible).
 	 */
 	if (rv == 0)
-		if (fdatasync(pkg_fd) == -1)
+		if (fsync(pkg_fd) == -1)
 			rv = errno;
 
 	archive_read_finish(ar);
