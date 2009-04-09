@@ -108,6 +108,7 @@ xbps_install_pkg(const char *pkg, bool update)
 	array = prop_dictionary_get(props, "missing_deps");
 	if (prop_array_count(array) > 0) {
 		show_missing_deps(props, pkg);
+		prop_object_release(props);
 		exit(EXIT_FAILURE);
 	}
 
@@ -120,12 +121,14 @@ xbps_install_pkg(const char *pkg, bool update)
 	array = prop_dictionary_get(props, "packages");
 	if (array == NULL || prop_array_count(array) == 0) {
 		printf("error: empty packages array!\n");
+		prop_object_release(props);
 		exit(EXIT_FAILURE);
 	}
 
 	iter = prop_array_iterator(array);
 	if (iter == NULL) {
 		printf("error: allocating array mem! (%s)\n", strerror(errno));
+		prop_object_release(props);
 		exit(EXIT_FAILURE);
 	}
 
@@ -150,9 +153,11 @@ xbps_install_pkg(const char *pkg, bool update)
 		if (rv != 0 && rv != ERANGE) {
 			printf("error: checking hash for %s (%s)\n",
 			    filename, strerror(rv));
+			prop_object_release(props);
 			exit(EXIT_FAILURE);
 		} else if (rv != 0 && rv == ERANGE) {
 			printf("Hash doesn't match for %s!\n", filename);
+			prop_object_release(props);
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -187,18 +192,21 @@ xbps_install_pkg(const char *pkg, bool update)
 	if (xbps_humanize_number(size, 5, (int64_t)dlsize,
 	    "", HN_AUTOSCALE, HN_NOSPACE) == -1) {
 		printf("error: humanize_number %s\n", strerror(errno));
+		prop_object_release(props);
 		exit(EXIT_FAILURE);
 	}
 	printf("Total download size: %s\n", size);
 	if (xbps_humanize_number(size, 5, (int64_t)instsize,
 	    "", HN_AUTOSCALE, HN_NOSPACE) == -1) {
 		printf("error: humanize_number2 %s\n", strerror(errno));
+		prop_object_release(props);
 		exit(EXIT_FAILURE);
 	}
 	printf("Total installed size: %s\n\n", size);
 
 	if (xbps_noyes("Do you want to continue?") == false) {
 		printf("Aborting!\n");
+		prop_object_release(props);
 		exit(EXIT_SUCCESS);
 	}
 
@@ -219,6 +227,7 @@ xbps_install_pkg(const char *pkg, bool update)
 			if (instpkg == NULL) {
 				printf("error: unable to find %s installed "
 				    "dict!\n", pkgname);
+				prop_object_release(props);
 				exit(EXIT_FAILURE);
 			}
 
@@ -231,6 +240,7 @@ xbps_install_pkg(const char *pkg, bool update)
 			if (rv != 0) {
 				printf("error: removing %s-%s (%s)\n",
 				    pkgname, instver, strerror(rv));
+				prop_object_release(props);
 				exit(EXIT_FAILURE);
 			}
 
@@ -244,6 +254,7 @@ xbps_install_pkg(const char *pkg, bool update)
 		if ((rv = xbps_unpack_binary_pkg(obj)) != 0) {
 			printf("error: unpacking %s-%s (%s)\n", pkgname,
 			    version, strerror(rv));
+			prop_object_release(props);
 			exit(EXIT_FAILURE);
 		}
 		/*
@@ -252,11 +263,13 @@ xbps_install_pkg(const char *pkg, bool update)
 		if ((rv = xbps_register_pkg(obj, update, pkg_is_dep)) != 0) {
 			printf("error: registering %s-%s! (%s)\n",
 			    pkgname, version, strerror(rv));
+			prop_object_release(props);
 			exit(EXIT_FAILURE);
 		}
 		pkg_is_dep = false;
 	}
 	prop_object_iterator_release(iter);
+	prop_object_release(props);
 
 	exit(EXIT_SUCCESS);
 }
