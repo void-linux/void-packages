@@ -147,8 +147,7 @@ again:
 		prop_object_iterator_release(iter2);
 
 		/* Add dependency if all its required deps are already added */
-		if (rundepscnt != 0 &&
-		   (prop_array_count(rundeps) == rundepscnt)) {
+		if (prop_array_count(rundeps) == rundepscnt) {
 			sdep->dict = prop_dictionary_copy(obj);
 			SIMPLEQ_INSERT_TAIL(&sdep_list, sdep, chain);
 			rundepscnt = 0;
