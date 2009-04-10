@@ -23,6 +23,7 @@ $(LIBXBPS): $(OBJECTS)
 
 $(LIBXBPS_STATIC): $(OBJECTS)
 	$(AR) rcs $@ $^
+	ranlib $@
 
 install: $(LIBXBPS) $(LIBXBPS_STATIC)
 	install -d $(LIBDIR)
