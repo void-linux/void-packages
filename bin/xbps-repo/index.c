@@ -207,7 +207,7 @@ repoidx_addpkg(const char *file, const char *filename, const char *pkgdir)
 			break;
 		}
 		prop_dictionary_set_uint64(newpkgd, "filename-size",
-		    st.st_size);
+		    (uint64_t)st.st_size);
 		/*
 		 * Add dictionary into the index and update package count.
 		 */

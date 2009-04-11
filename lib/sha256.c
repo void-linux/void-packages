@@ -371,8 +371,8 @@ SHA256_End(SHA256_CTX *ctx, uint8_t *buffer)
 		SHA256_Final(digest, ctx);
 
 		for (i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-			*buffer++ = sha2_hex_digits[(*d & 0xf0) >> 4];
-			*buffer++ = sha2_hex_digits[*d & 0x0f];
+			*buffer++ = (uint8_t)sha2_hex_digits[(*d & 0xf0) >> 4];
+			*buffer++ = (uint8_t)sha2_hex_digits[*d & 0x0f];
 			d++;
 		}
 		*buffer = (char) 0;

@@ -61,6 +61,10 @@
 
 #define ARCHIVE_READ_BLOCKSIZE	2048
 
+#ifndef __UNCONST
+#define __UNCONST(a)	((void *)(unsigned long)(const void *)(a))
+#endif
+
 /* from lib/cmpver.c */
 int		xbps_cmpver_packages(const char *, const char *);
 int		xbps_cmpver_versions(const char *, const char *);
@@ -105,7 +109,8 @@ bool		xbps_add_obj_to_dict(prop_dictionary_t, prop_object_t,
 bool		xbps_add_obj_to_array(prop_array_t, prop_object_t);
 
 int 		xbps_callback_array_iter_in_dict(prop_dictionary_t,
-			const char *, int (*fn)(prop_object_t, void *, bool *),
+			const char *,
+			int (*fn)(prop_object_t, void *, bool *),
 			void *);
 int 		xbps_callback_array_iter_in_repolist(int (*fn)(prop_object_t,
 			void *, bool *), void *);

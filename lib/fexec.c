@@ -70,7 +70,7 @@ pfcexec(const char *path, const char *file, const char **argv)
 					_exit(127);
 			}
 		}
-		(void)execvp(file, (char ** const)argv);
+		(void)execvp(file, (char ** const)__UNCONST(argv));
 		_exit(127);
 		/* NOTREACHED */
 	case -1:

@@ -118,7 +118,7 @@ show_pkg_info(prop_dictionary_t dict)
 		printf("Configuration files:\n");
 		sep = "  ";
 		(void)xbps_callback_array_iter_in_dict(dict, "conf_files",
-		    list_strings_sep_in_array, (void *)sep);
+		    list_strings_sep_in_array, __UNCONST(sep));
 		printf("\n");
 	}
 
@@ -127,7 +127,7 @@ show_pkg_info(prop_dictionary_t dict)
 		printf("Permanent directories:\n");
 		sep = "  ";
 		(void)xbps_callback_array_iter_in_dict(dict, "keep_dirs",
-		    list_strings_sep_in_array, (void *)sep);
+		    list_strings_sep_in_array, __UNCONST(sep));
 		printf("\n");
 	}
 

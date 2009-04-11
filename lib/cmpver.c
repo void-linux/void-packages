@@ -241,7 +241,7 @@ xbps_cmpver_packages(const char *pkg1, const char *pkg2)
 
     /* Shortcut check for equality before invoking the parsing routines. */
     if (result == 0 && (ve1 - v1 != ve2 - v2 ||
-        strncasecmp(v1, v2, ve1 - v1) != 0)) {
+        strncasecmp(v1, v2, (size_t)ve1 - (size_t)v1) != 0)) {
 	/* Loop over different components (the parts separated by dots).
 	 * If any component differs, we have the basis for an inequality. */
 	while(result == 0 && (v1 < ve1 || v2 < ve2)) {

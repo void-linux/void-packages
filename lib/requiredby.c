@@ -140,7 +140,7 @@ xbps_requiredby_pkg_remove(const char *pkgname)
 	}
 
 	rv = xbps_callback_array_iter_in_dict(dict, "packages",
-	    remove_pkg_from_reqby, (void *)pkgname);
+	    remove_pkg_from_reqby, __UNCONST(pkgname));
 	if (rv == 0) {
 		if (!prop_dictionary_externalize_to_file(dict, plist))
 			rv = errno;

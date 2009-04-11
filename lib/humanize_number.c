@@ -106,7 +106,7 @@ xbps_humanize_number(char *buf, size_t len, int64_t bytes,
 
 	if (scale & (HN_AUTOSCALE | HN_GETSCALE)) {
 		/* See if there is additional columns can be used. */
-		for (max = 100, i = len - baselen; i-- > 0;)
+		for (max = 100, i = (int)(len - baselen); i-- > 0;)
 			max *= 10;
 
 		/*
