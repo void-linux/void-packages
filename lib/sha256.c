@@ -243,7 +243,8 @@ SHA256_Update(SHA256_CTX* context, const uint8_t *data, size_t len)
 	/* Sanity check: */
 	assert(context != NULL && data != NULL);
 
-	usedspace = (context->bitcount >> 3) % SHA256_BLOCK_LENGTH;
+	usedspace =
+	    (unsigned int)(context->bitcount >> 3) % SHA256_BLOCK_LENGTH;
 	if (usedspace > 0) {
 		/* Calculate how much free space is available in the buffer */
 		freespace = SHA256_BLOCK_LENGTH - usedspace;
@@ -292,7 +293,8 @@ SHA256_Final(sha2_byte digest[], SHA256_CTX* context)
 
 	/* If no digest buffer is passed, we don't bother doing this: */
 	if (digest != (sha2_byte*)0) {
-		usedspace = (context->bitcount >> 3) % SHA256_BLOCK_LENGTH;
+		usedspace =
+		   (unsigned int)(context->bitcount >> 3) % SHA256_BLOCK_LENGTH;
 #ifndef WORDS_BIGENDIAN
 		/* Convert FROM host byte order */
 		REVERSE64(context->bitcount,context->bitcount);

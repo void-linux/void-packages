@@ -128,7 +128,7 @@ repoidx_addpkg(const char *file, const char *filename, const char *pkgdir)
 			continue;
 		}
 
-		propslen = archive_entry_size(entry);
+		propslen = (size_t)archive_entry_size(entry);
 		props = malloc(propslen);
 		if (props == NULL) {
 			rv = errno;
