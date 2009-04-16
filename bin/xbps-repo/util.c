@@ -64,7 +64,7 @@ show_pkg_info(prop_dictionary_t dict)
 		printf("Installed size: ");
 		rv = xbps_humanize_number(size, 5,
 		    (int64_t)prop_number_unsigned_integer_value(obj),
-		    "", HN_AUTOSCALE, HN_NOSPACE);
+		    "", HN_AUTOSCALE, HN_B|HN_DECIMAL|HN_NOSPACE);
 		if (rv == -1)
 			printf("%ju\n",
 			    prop_number_unsigned_integer_value(obj));
@@ -91,7 +91,7 @@ show_pkg_info(prop_dictionary_t dict)
 		if (obj && prop_object_type(obj) == PROP_TYPE_NUMBER) {
 			rv = xbps_humanize_number(size, 5,
 			    (int64_t)prop_number_unsigned_integer_value(obj),
-			    "", HN_AUTOSCALE, HN_NOSPACE);
+			    "", HN_AUTOSCALE, HN_B|HN_DECIMAL|HN_NOSPACE);
 			if (rv == -1)
 				printf(" (size: %ju)\n",
 				    prop_number_unsigned_integer_value(obj));
