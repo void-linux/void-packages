@@ -82,7 +82,7 @@ configure_src_phase()
 	# Packages using GNU autoconf
 	#
 	if [ "$build_style" = "gnu_configure" ]; then
-		${configure_script}				\
+		env CONFIG_SHELL=/bin/sh ${configure_script}	\
 			--prefix=/usr --sysconfdir=/etc		\
 			--infodir=/usr/share/info		\
 			--mandir=/usr/share/man			\
