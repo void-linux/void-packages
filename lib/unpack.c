@@ -87,9 +87,9 @@ unpack_archive_init(prop_dictionary_t pkg, const char *binfile)
 		return ENOMEM;
 	}
 
-	/* Enable support for all format and compression methods */
+	/* Enable support for tar format and all compression methods */
 	archive_read_support_compression_all(ar);
-	archive_read_support_format_all(ar);
+	archive_read_support_format_tar(ar);
 
 	/* 2048 is arbitrary... dunno what value is better. */
 	if ((rv = archive_read_open_fd(ar, pkg_fd,

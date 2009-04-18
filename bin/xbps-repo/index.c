@@ -94,9 +94,9 @@ repoidx_addpkg(const char *file, const char *filename, const char *pkgdir)
 	if (ar == NULL)
 		return errno;
 
-	/* Enable support for all format and compression methods */
+	/* Enable support for tar format and all compression methods */
 	archive_read_support_compression_all(ar);
-	archive_read_support_format_all(ar);
+	archive_read_support_format_tar(ar);
 
 	if ((rv = archive_read_open_filename(ar, file,
 	     ARCHIVE_READ_BLOCKSIZE)) == -1) {
