@@ -94,10 +94,9 @@ repoidx_addpkg(const char *file, const char *filename, const char *pkgdir)
 	if (ar == NULL)
 		return errno;
 
-	/* Enable support for tar format archives with bzip2/lzma compression */
-	archive_read_support_compression_bzip2(ar);
-	archive_read_support_compression_lzma(ar);
-	archive_read_support_format_tar(ar);
+	/* Enable support for all format and compression methods */
+	archive_read_support_compression_all(ar);
+	archive_read_support_format_all(ar);
 
 	if ((rv = archive_read_open_filename(ar, file,
 	     ARCHIVE_READ_BLOCKSIZE)) == -1) {
