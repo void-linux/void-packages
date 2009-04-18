@@ -52,11 +52,12 @@ usage(void)
 	printf("usage: xbps-pkgdb [options] [action] [args]\n"
 	"\n"
 	"  Available actions:\n"
-	"    getpkgname, getpkgversion, register, sanitize-plist\n"
-	"    unregister, version\n"
+	"    getpkgname, getpkgrevision, getpkgversion, register\n"
+	"    sanitize-plist, unregister, version\n"
 	"\n"
 	"  Action arguments:\n"
 	"    getpkgname\t\t<string>\n"
+	"    getpkgrevision\t<string>\n"
 	"    getpkgversion\t<string>\n"
 	"    register\t\t<pkgname> <version> <shortdesc>\n"
 	"    sanitize-plist\t<plist>\n"
@@ -71,6 +72,7 @@ usage(void)
 	"\n"
 	"  Examples:\n"
 	"    $ xbps-pkgdb getpkgname foo-2.0\n"
+	"    $ xbps-pkgdb getpkgrevision foo-2.0_1\n"
 	"    $ xbps-pkgdb getpkgversion foo-2.0\n"
 	"    $ xbps-pkgdb register pkgname 2.0 \"A short description\"\n"
 	"    $ xbps-pkgdb sanitize-plist /blah/foo.plist\n"
@@ -221,6 +223,17 @@ main(int argc, char **argv)
 		}
 		printf("%s\n", pkgname);
 		free(pkgname);
+
+	} else if (strcasecmp(argv[0], "getpkgrevision") == 0) {
+		/* Returns the revision of a pkg string */
+		if (argc != 2)
+			usage();
+
+		version = xbps_get_pkg_revision(argv[1]);
+		if (version == NULL)
+			exit(EXIT_SUCCESS);
+
+		printf("%s\n", version);
 
 	} else {
 		usage();
