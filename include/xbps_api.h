@@ -59,7 +59,7 @@
 /* Verbose messages */
 #define XBPS_VERBOSE		0x00000001
 
-#define ARCHIVE_READ_BLOCKSIZE	2048
+#define ARCHIVE_READ_BLOCKSIZE	10240
 
 #ifndef __UNCONST
 #define __UNCONST(a)	((void *)(unsigned long)(const void *)(a))
