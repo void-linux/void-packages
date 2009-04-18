@@ -171,6 +171,21 @@ xbps_get_pkg_version(const char *pkg)
 	return tmp + 1; /* skip first '-' */
 }
 
+const char *
+xbps_get_pkg_revision(const char *pkg)
+{
+	const char *tmp;
+
+	assert(pkg != NULL);
+
+	/* Get the required revision */
+	tmp = strrchr(pkg, '_');
+	if (tmp == NULL)
+		return NULL;
+
+	return tmp + 1; /* skip first '_' */
+}
+
 char *
 xbps_get_pkg_name(const char *pkg)
 {
