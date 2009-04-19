@@ -90,6 +90,15 @@ _EOF
 		echo >> $tmpf
 	fi
 
+	#
+	# Handle GTK+ Icon cache directories.
+	#
+	if [ -n "${gtk_iconcache_dirs}" ]; then
+		echo "export gtk_iconcache_dirs=\"${gtk_iconcache_dirs}\"" \
+			>> $tmpf
+		echo >> $tmpf
+	fi
+
 	if [ -n "$triggers" ]; then
 		found=1
 		echo "case \"\${ACTION}\" in" >> $tmpf

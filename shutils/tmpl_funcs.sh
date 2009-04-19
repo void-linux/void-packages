@@ -71,7 +71,7 @@ reset_tmpl_vars()
 			build_depends libtool_fixup_la_stage no_fixup_libtool \
 			disable_parallel_build run_depends cross_compiler \
 			only_for_archs patch_args conf_files keep_dirs \
-			noarch subpackages sourcepkg \
+			noarch subpackages sourcepkg gtk_iconcache_dirs \
 			abi_depends api_depends triggers \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE FILESDIR DESTDIR \
