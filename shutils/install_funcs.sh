@@ -129,9 +129,7 @@ make_install()
 {
 	local lver="$1"
 
-	if [ "$build_style" = "perl_module" ]; then
-		make_install_target="install"
-	elif [ -z "$make_install_target" ]; then
+	if [ -z "$make_install_target" ]; then
 		make_install_target="DESTDIR=${DESTDIR} install"
 	fi
 
