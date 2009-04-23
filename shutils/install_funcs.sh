@@ -45,7 +45,7 @@ install_src_phase()
 	# Just creating the dir is enough to write the package metadata.
 	#
 	if [ "$build_style" = "meta-template" ]; then
-		mkdir -p $XBPS_DESTDIR/$pkgname-$lver
+		mkdir -p $XBPS_DESTDIR/$pkgname-$version
 		return 0
 	fi
 
