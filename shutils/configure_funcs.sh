@@ -78,15 +78,15 @@ configure_src_phase()
 	. $XBPS_SHUTILSDIR/buildvars_funcs.sh
 	set_build_vars
 
-	if [ -z "${config_shell}" ]; then
-		config_shell=/bin/sh
+	if [ -z "${configure_shell}" ]; then
+		configure_shell=/bin/sh
 	fi
 
 	#
 	# Packages using GNU autoconf
 	#
 	if [ "$build_style" = "gnu_configure" ]; then
-		env CONFIG_SHELL=${config_shell} ${configure_script}	\
+		env CONFIG_SHELL=${configure_shell} ${configure_script}	\
 			--prefix=/usr --sysconfdir=/etc		\
 			--infodir=/usr/share/info		\
 			--mandir=/usr/share/man			\
