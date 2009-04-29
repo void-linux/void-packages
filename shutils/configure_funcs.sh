@@ -79,7 +79,7 @@ configure_src_phase()
 	set_build_vars
 
 	if [ -z "${configure_shell}" ]; then
-		configure_shell=/bin/sh
+		configure_shell=/bin/bash
 	fi
 
 	#
