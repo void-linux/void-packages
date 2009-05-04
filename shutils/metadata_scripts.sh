@@ -146,9 +146,14 @@ _EOF
 
 	case "$action" in
 	install)
-		if [ -f "$XBPS_TEMPLATESDIR/$pkgname/INSTALL" ]; then
+		if [ -n "${sourcepkg}" -a "${sourcepkg}" != "${pkgname}" ]; then
+			install_file=${XBPS_TEMPLATESDIR}/${pkgname}/${pkgname}.INSTALL
+		else
+			install_file=${XBPS_TEMPLATESDIR}/${pkgname}/INSTALL
+		fi
+		if [ -f ${install_file} ]; then
 			found=1
-			cat $XBPS_TEMPLATESDIR/$pkgname/INSTALL >> $tmpf
+			cat ${install_file} >> $tmpf
 		fi
 		echo "exit 0" >> $tmpf
 		if [ -z "$found" ]; then
@@ -158,9 +163,14 @@ _EOF
 		mv $tmpf ${DESTDIR}/INSTALL && chmod 755 ${DESTDIR}/INSTALL
 		;;
 	remove)
-		if [ -f "$XBPS_TEMPLATESDIR/$pkgname/REMOVE" ]; then
+		if [ -n "${sourcepkg}" -a "${sourcepkg}" != "${pkgname}" ]; then
+			remove_file=${XBPS_TEMPLATESDIR}/${pkgname}/${pkgname}.REMOVE
+		else
+			remove_file=${XBPS_TEMPLATESDIR}/${pkgname}/REMOVE
+		fi
+		if [ -f ${remove_file} ]; then
 			found=1
-			cat $XBPS_TEMPLATESDIR/$pkgname/REMOVE >> $tmpf
+			cat ${remove_file} >> $tmpf
 		fi
 		echo "exit 0" >> $tmpf
 		if [ -z "$found" ]; then

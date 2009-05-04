@@ -60,7 +60,7 @@ xbps_write_metadata_pkg()
 			msg_error "Cannot find subpackage template!"
 		fi
 		unset run_depends conf_files keep_dirs noarch triggers \
-			revision
+			revision openrc_services
 		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${sourcepkg}-${subpkg}
 		set_tmpl_common_vars
