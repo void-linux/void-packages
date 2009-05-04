@@ -342,10 +342,6 @@ _EOF
 	$XBPS_REGPKGDB_CMD sanitize-plist $metadir/props.plist
 	chmod 644 $metadir/*
 
-	# Do not create INSTALL/REMOVE scripts for subpkgs.
-	if [ -n "$sourcepkg" -a "$pkgname" != "$sourcepkg" ]; then
-		return 0
-	fi
 	#
 	# Create the INSTALL/REMOVE scripts if package uses them
 	# or uses any available trigger.
