@@ -61,6 +61,14 @@ VERSION="\$3"
 _EOF
 
 	#
+	# Handle OpenRC services.
+	#
+	if [ -n "${openrc_services}" ]; then
+		echo "export openrc_services=\"${openrc_services}\"" >> $tmpf
+		echo >> $tmpf
+	fi
+
+	#
 	# Handle SGML/XML catalog entries via xmlcatmgr.
 	#
 	if [ -n "${sgml_catalogs}" ]; then

@@ -72,7 +72,7 @@ reset_tmpl_vars()
 			disable_parallel_build run_depends cross_compiler \
 			only_for_archs patch_args conf_files keep_dirs \
 			noarch subpackages sourcepkg gtk_iconcache_dirs \
-			abi_depends api_depends triggers \
+			abi_depends api_depends triggers openrc_services \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE FILESDIR DESTDIR \
 			SRCPKGDESTDIR"
