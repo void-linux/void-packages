@@ -93,6 +93,7 @@ nameserver 208.67.220.220
 _EOF
 
 	touch $XBPS_MASTERDIR/.xbps_perms_done
+
 }
 
 rebuild_ldso_cache()
@@ -115,6 +116,7 @@ install_xbps_utils()
 	done
 
 	if [ -n "$needed" ]; then
+		cd ${XBPS_MASTERDIR}/bin && ln -s dash sh
 		echo "=> Building and installing xbps utils."
 		chroot $XBPS_MASTERDIR sh -c \
 			"echo /usr/local/lib > /etc/ld.so.conf"
