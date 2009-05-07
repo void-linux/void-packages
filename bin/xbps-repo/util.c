@@ -252,6 +252,9 @@ show_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
 		return 0;
 	}
 
+	if (strcmp(type, "link") == 0)
+		return 0;
+
 	if (sfc->check_hash && file != NULL) {
 		printf("%s", file);
 		if (sfc->destdir) {
