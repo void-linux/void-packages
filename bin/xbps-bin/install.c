@@ -78,7 +78,7 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 	const char *pkgname, *version;
 	char size[64];
 	int rv = 0;
-	bool pkg_is_dep, first = false;
+	bool pkg_is_dep, doup = false, first = false;
 
 	assert(props != NULL);
 
@@ -260,7 +260,10 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 		/*
 		 * Register binary package.
 		 */
-		if ((rv = xbps_register_pkg(obj, update, pkg_is_dep)) != 0) {
+		if (update && !pkg_is_dep)
+			doup = true;
+
+		if ((rv = xbps_register_pkg(obj, doup, pkg_is_dep)) != 0) {
 			printf("error: registering %s-%s! (%s)\n",
 			    pkgname, version, strerror(rv));
 			prop_object_release(props);
