@@ -219,7 +219,7 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 		if (strcmp(origin, pkgname))
 			pkg_is_dep = true;
 
-		if (update) {
+		if (update && strcmp(pkg, pkgname) == 0) {
 			/*
 			* Update a package, firstly removing current package.
 			 */
