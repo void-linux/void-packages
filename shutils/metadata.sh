@@ -274,6 +274,15 @@ xbps_write_metadata_pkg_real()
 <key>long_desc</key>
 <string>$long_desc</string>
 _EOF
+	#
+	# If package sets $openrc_services, add the openrc-service
+	# trigger and OpenRC run dependency.
+	#
+	if [ -n "$openrc_services" ]; then
+		triggers="$triggers openrc-service"
+		Add_dependency run OpenRC
+	fi
+
 	# Dependencies
 	if [ -n "$run_depends" ]; then
 		echo "<key>run_depends</key>" >> $TMPFPROPS
