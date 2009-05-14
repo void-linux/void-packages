@@ -342,6 +342,14 @@ _EOF
 	$XBPS_REGPKGDB_CMD sanitize-plist $metadir/props.plist
 	chmod 644 $metadir/*
 
+	# Update shared-mime-info database if package contains
+	# any desktop file in /usr/share/applications.
+	if [ -d ${DESTDIR}/usr/share/applications ]; then
+		if find . -type f -name \*.desktop 2>&1 >/dev/null; then
+			triggers="$triggers update-desktopdb"
+		fi
+	fi
+
 	#
 	# Create the INSTALL/REMOVE scripts if package uses them
 	# or uses any available trigger.
