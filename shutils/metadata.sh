@@ -133,7 +133,13 @@ xbps_write_metadata_pkg_real()
 			j=$(echo $f|sed -e "$fpattern")
 			[ "$j" = "" ] && continue
 			[ "$j" = "/usr/share/info/dir" ] && continue
+			# Ignore compressed files.
 			if $(echo $j|grep -q '.*.gz$'); then
+				continue
+			fi
+			# Ignore non info files.
+			if ! $(echo $j|grep -q '.*.info$') && \
+			   ! $(echo $j|grep -q '.*.info-[0-9]*$'); then
 				continue
 			fi
 			if [ -h ${DESTDIR}/$j ]; then
