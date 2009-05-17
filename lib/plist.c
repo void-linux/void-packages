@@ -214,11 +214,14 @@ xbps_get_regpkgdb_dict(void)
 			return NULL;
 
 		regpkgdb_dict = prop_dictionary_internalize_from_file(plist);
-		if (regpkgdb_dict == NULL)
+		if (regpkgdb_dict == NULL) {
+			free(plist);
 			return NULL;
+		}
+		free(plist);
 	}
 
-	return prop_dictionary_copy(regpkgdb_dict);
+	return regpkgdb_dict;
 }
 
 void
