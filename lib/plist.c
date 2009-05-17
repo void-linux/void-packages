@@ -221,7 +221,7 @@ xbps_get_regpkgdb_dict(void)
 		free(plist);
 	}
 
-	return regpkgdb_dict;
+	return prop_dictionary_copy(regpkgdb_dict);
 }
 
 void
