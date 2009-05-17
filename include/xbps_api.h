@@ -28,6 +28,7 @@
 
 #include <stdio.h>
 #include <inttypes.h>
+#include <sys/queue.h>
 #define NDEBUG
 #include <assert.h>
 
@@ -86,8 +87,17 @@ int		xbps_humanize_number(char *, size_t, int64_t, const char *,
 				     int, int);
 
 /* From lib/findpkg.c */
+struct repository_data {
+	SIMPLEQ_ENTRY(repository_data) chain;
+	prop_dictionary_t rd_repod;
+};
+SIMPLEQ_HEAD(, repository_data) repodata_queue;
+
 int		xbps_prepare_pkg(const char *);
-prop_dictionary_t	xbps_get_pkg_props(const char *);
+int		xbps_find_new_pkg(const char *, prop_dictionary_t);
+int		xbps_prepare_repolist_data(void);
+void		xbps_release_repolist_data(void);
+prop_dictionary_t	xbps_get_pkg_props(void);
 
 /* From lib/register.c */
 int		xbps_register_pkg(prop_dictionary_t, bool, bool);
@@ -100,8 +110,7 @@ int		xbps_requiredby_pkg_remove(const char *);
 int		xbps_unpack_binary_pkg(prop_dictionary_t);
 
 /* From lib/depends.c */
-int		xbps_find_deps_in_pkg(prop_dictionary_t, prop_dictionary_t,
-				      prop_object_iterator_t);
+int		xbps_find_deps_in_pkg(prop_dictionary_t, prop_dictionary_t);
 
 /* From lib/plist.c */
 bool		xbps_add_obj_to_dict(prop_dictionary_t, prop_object_t,
@@ -121,6 +130,8 @@ prop_dictionary_t	xbps_find_pkg_from_plist(const char *, const char *);
 prop_dictionary_t 	xbps_find_pkg_installed_from_plist(const char *);
 bool 		xbps_find_string_in_array(prop_array_t, const char *);
 
+prop_dictionary_t	xbps_get_regpkgdb_dict(void);
+void			xbps_release_regpkgdb_dict(void);
 prop_object_iterator_t	xbps_get_array_iter_from_dict(prop_dictionary_t,
 						      const char *);
 

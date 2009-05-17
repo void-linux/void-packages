@@ -29,5 +29,6 @@
 void	xbps_install_pkg(const char *, bool, bool);
 void	xbps_autoremove_pkgs(void);
 void	xbps_remove_pkg(const char *, bool);
+void	xbps_autoupdate_pkgs(bool);
 
 #endif /* !_XBPS_BIN_DEFS_H_ */

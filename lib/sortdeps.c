@@ -64,7 +64,7 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 	prop_object_t obj, obj2;
 	prop_object_iterator_t iter, iter2;
 	struct sorted_dependency *sdep;
-	size_t indirdepscnt = 0, dirdepscnt = 0, rundepscnt = 0, cnt = 0;
+	size_t ndeps = 0, rundepscnt = 0, cnt = 0;
 	const char *pkgname;
 	char *curpkgnamedep;
 	int rv = 0;
@@ -84,10 +84,7 @@ xbps_sort_pkg_deps(prop_dictionary_t chaindeps)
 		return 0;
 	}
 
-	prop_dictionary_get_uint32(chaindeps, "indirectdeps_count",
-	    &indirdepscnt);
-	prop_dictionary_get_uint32(chaindeps, "directdeps_count",
-	    &dirdepscnt);
+	ndeps = prop_array_count(unsorted);
 	unsorted = prop_dictionary_get(chaindeps, "unsorted_deps");
 
 	iter = prop_array_iterator(unsorted);
@@ -159,7 +156,7 @@ again:
 	}
 
 	/* Iterate until all deps are processed. */
-	if (cnt < dirdepscnt + indirdepscnt) {
+	if (cnt < ndeps) {
 		prop_object_iterator_reset(iter);
 		goto again;
 	}
@@ -179,14 +176,16 @@ again:
 	 * Sanity check that the array contains the same number of
 	 * objects than the total number of required dependencies.
 	 */
-	cnt = dirdepscnt + indirdepscnt;
-	if (cnt != prop_array_count(sorted)) {
+	if (ndeps != prop_array_count(sorted)) {
 		rv = EINVAL;
 		goto out;
 	}
 
 	if (!prop_dictionary_set(chaindeps, "packages", sorted))
 		rv = EINVAL;
+
+	prop_dictionary_remove(chaindeps, "unsorted_deps");
+
 out:
 	/*
 	 * Release resources used by temporary sorting.

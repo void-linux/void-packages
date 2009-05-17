@@ -33,6 +33,8 @@
 
 #include <xbps_api.h>
 
+static prop_dictionary_t regpkgdb_dict;
+
 bool
 xbps_add_obj_to_dict(prop_dictionary_t dict, prop_object_t obj,
 		       const char *key)
@@ -160,18 +162,14 @@ xbps_find_pkg_from_plist(const char *plist, const char *pkgname)
 prop_dictionary_t
 xbps_find_pkg_installed_from_plist(const char *pkgname)
 {
-	prop_dictionary_t pkgd;
-	const char *rootdir;
-	char *plist;
+	prop_dictionary_t instd, pkgd;
 
-	rootdir = xbps_get_rootdir();
-	plist = xbps_xasprintf("%s/%s/%s", rootdir,
-	    XBPS_META_PATH, XBPS_REGPKGDB);
-	if (plist == NULL)
+	instd = xbps_get_regpkgdb_dict();
+	if (instd == NULL)
 		return NULL;
 
-	pkgd = xbps_find_pkg_from_plist(plist, pkgname);
-	free(plist);
+	pkgd = xbps_find_pkg_in_dict(instd, "packages", pkgname);
+	xbps_release_regpkgdb_dict();
 
 	return pkgd;
 }
@@ -200,6 +198,37 @@ xbps_find_pkg_in_dict(prop_dictionary_t dict, const char *key,
 	prop_object_iterator_release(iter);
 
 	return obj;
+}
+
+prop_dictionary_t
+xbps_get_regpkgdb_dict(void)
+{
+	const char *rootdir;
+	char *plist;
+
+	if (regpkgdb_dict == NULL) {
+		rootdir = xbps_get_rootdir();
+		plist = xbps_xasprintf("%s/%s/%s", rootdir,
+		    XBPS_META_PATH, XBPS_REGPKGDB);
+		if (plist == NULL)
+			return NULL;
+
+		regpkgdb_dict = prop_dictionary_internalize_from_file(plist);
+		if (regpkgdb_dict == NULL)
+			return NULL;
+	}
+
+	return prop_dictionary_copy(regpkgdb_dict);
+}
+
+void
+xbps_release_regpkgdb_dict(void)
+{
+	if (regpkgdb_dict == NULL)
+		return;
+
+	prop_object_release(regpkgdb_dict);
+	regpkgdb_dict = NULL;
 }
 
 bool

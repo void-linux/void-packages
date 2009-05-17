@@ -34,17 +34,19 @@
 
 #include <xbps_api.h>
 
-static int	create_pkg_props_dictionary(const char *);
-
 static prop_dictionary_t pkg_props;
 
 static int
-create_pkg_props_dictionary(const char *pkgname)
+create_pkg_props_dictionary(void)
 {
 	prop_array_t unsorted, missing;
 	int rv = 0;
+	static bool pkg_props_avail;
 
 	assert(pkgname != NULL);
+
+	if (pkg_props_avail)
+		return 0;
 
 	pkg_props = prop_dictionary_create();
 	if (pkg_props == NULL)
@@ -71,7 +73,7 @@ create_pkg_props_dictionary(const char *pkgname)
                 goto fail3;
         }
 
-	prop_dictionary_set_cstring_nocopy(pkg_props, "origin", pkgname);
+	pkg_props_avail = true;
 
         return rv;
 
@@ -86,32 +88,37 @@ fail:
 }
 
 prop_dictionary_t
-xbps_get_pkg_props(const char *pkgname)
+xbps_get_pkg_props(void)
 {
-	prop_string_t origin;
-
 	if (pkg_props == NULL || prop_dictionary_count(pkg_props) == 0)
-		return NULL;
-
-	origin = prop_dictionary_get(pkg_props, "origin");
-	if (!prop_string_equals_cstring(origin, pkgname))
 		return NULL;
 
 	return prop_dictionary_copy(pkg_props);
 }
 
 int
-xbps_prepare_pkg(const char *pkgname)
+xbps_prepare_repolist_data(void)
 {
-	prop_dictionary_t repod = NULL, repolistd, pkgrd = NULL;
-	prop_array_t array, pkgs_array;
+	prop_dictionary_t dict = NULL;
+	prop_array_t array;
 	prop_object_t obj;
-	prop_object_iterator_t repolist_iter;
-	const char *repoloc, *rootdir;
+	prop_object_iterator_t iter;
+	struct repository_data *rdata;
+	const char *rootdir;
 	char *plist;
 	int rv = 0;
+	static bool repodata_init;
 
-	assert(pkgname != NULL);
+	if (repodata_init == false) {
+		SIMPLEQ_INIT(&repodata_queue);
+		repodata_init = true;
+	}
+
+	rdata = malloc(sizeof(struct repository_data));
+	if (rdata == NULL) {
+		rv = errno;
+		goto out;
+	}
 
 	rootdir = xbps_get_rootdir();
 	if (rootdir == NULL)
@@ -119,78 +126,200 @@ xbps_prepare_pkg(const char *pkgname)
 
 	plist = xbps_xasprintf("%s/%s/%s", rootdir,
 	    XBPS_META_PATH, XBPS_REPOLIST);
-	if (plist == NULL)
-		return EINVAL;
+	if (plist == NULL) {
+		rv = EINVAL;
+		goto out;
+	}
 
-	repolistd = prop_dictionary_internalize_from_file(plist);
-	if (repolistd == NULL) {
+	dict = prop_dictionary_internalize_from_file(plist);
+	if (dict == NULL) {
                 free(plist);
-		return EINVAL;
+		rv = errno;
+		goto out;
 	}
 	free(plist);
 
-	array = prop_dictionary_get(repolistd, "repository-list");
+	array = prop_dictionary_get(dict, "repository-list");
 	if (array == NULL) {
-		prop_object_release(repolistd);
-		return EINVAL;
+		rv = EINVAL;
+		goto out;
 	}
 
-	repolist_iter = prop_array_iterator(array);
-	if (repolist_iter == NULL) {
-		prop_object_release(repolistd);
-		return ENOMEM;
+	iter = prop_array_iterator(array);
+	if (iter == NULL) {
+		rv = ENOMEM;
+		goto out;
 	}
 
-        while ((obj = prop_object_iterator_next(repolist_iter)) != NULL) {
+	while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		/*
-		 * Iterate over the repository pool and find out if we have
-		 * the binary package.
+		 * Iterate over the repository pool and add the dictionary
+		 * for current repository into the queue.
 		 */
 		plist =
 		    xbps_get_pkg_index_plist(prop_string_cstring_nocopy(obj));
-		if (plist == NULL)
-			return EINVAL;
+		if (plist == NULL) {
+			rv = EINVAL;
+			goto out2;
+		}
 
-		repod = prop_dictionary_internalize_from_file(plist);
-		if (repod == NULL) {
+		rdata->rd_repod = prop_dictionary_internalize_from_file(plist);
+		if (rdata->rd_repod == NULL) {
 			free(plist);
-			return errno;
+			rv = errno;
+			goto out2;
 		}
 		free(plist);
+		SIMPLEQ_INSERT_TAIL(&repodata_queue, rdata, chain);
+	}
 
+out2:
+	prop_object_iterator_release(iter);
+out:
+	prop_object_release(dict);
+	if (rv != 0)
+		xbps_release_repolist_data();
+
+	return rv;
+
+}
+
+void
+xbps_release_repolist_data(void)
+{
+	struct repository_data *rdata;
+
+	while ((rdata = SIMPLEQ_FIRST(&repodata_queue)) != NULL) {
+		SIMPLEQ_REMOVE(&repodata_queue, rdata, repository_data, chain);
+		prop_object_release(rdata->rd_repod);
+		free(rdata);
+	}
+}
+
+int
+xbps_find_new_pkg(const char *pkgname, prop_dictionary_t instpkg)
+{
+	prop_dictionary_t pkgrd = NULL;
+	prop_array_t unsorted;
+	struct repository_data *rdata;
+	const char *repoloc, *repover, *instver;
+	int rv = 0;
+
+	assert(pkgname != NULL);
+	assert(instpkg != NULL);
+
+	SIMPLEQ_FOREACH(rdata, &repodata_queue, chain) {
 		/*
 		 * Get the package dictionary from current repository.
 		 * If it's not there, pass to the next repository.
 		 */
-		pkgrd = xbps_find_pkg_in_dict(repod, "packages", pkgname);
-		if (pkgrd == NULL) {
-			prop_object_release(repod);
-			continue;
-		}
-		break;
-	}
-	prop_object_iterator_reset(repolist_iter);
+		pkgrd = xbps_find_pkg_in_dict(rdata->rd_repod,
+		    "packages", pkgname);
+		if (pkgrd != NULL) {
+			/*
+			 * Check if installed version is >= than the
+			 * one available in current repository.
+			 */
+			prop_dictionary_get_cstring_nocopy(instpkg,
+			    "version", &instver);
+			prop_dictionary_get_cstring_nocopy(pkgrd,
+			    "version", &repover);
+			if (xbps_cmpver_versions(instver, repover) >= 0)
+				goto out;
 
-	if (pkgrd == NULL) {
-		rv = EAGAIN;
-		goto out2;
+			break;
+		}
 	}
+	if (pkgrd == NULL)
+		return 0;
 
 	/*
 	 * Create master pkg dictionary.
 	 */
-	if ((rv = create_pkg_props_dictionary(pkgname)) != 0)
+	if ((rv = create_pkg_props_dictionary()) != 0)
 		goto out;
 
 	/*
 	 * Set repository in pkg dictionary.
 	 */
-	if (!prop_dictionary_get_cstring_nocopy(repod,
+	if (!prop_dictionary_get_cstring_nocopy(rdata->rd_repod,
 	    "location-local", &repoloc)) {
 		rv = EINVAL;
 		goto out;
 	}
 	prop_dictionary_set_cstring(pkgrd, "repository", repoloc);
+
+	/*
+	 * Construct the dependency chain for this package.
+	 */
+	if ((rv = xbps_find_deps_in_pkg(pkg_props, pkgrd)) != 0)
+		goto out;
+
+	/*
+	 * Add required package dictionary into the packages
+	 * dictionary.
+	 */
+	unsorted = prop_dictionary_get(pkg_props, "unsorted_deps");
+	if (unsorted == NULL) {
+		rv = EINVAL;
+		goto out;
+	}
+
+	if (!prop_array_add(unsorted, pkgrd))
+		rv = errno;
+
+out:
+	if (rv != 0)
+		xbps_release_repolist_data();
+
+	return rv;
+}
+
+int
+xbps_prepare_pkg(const char *pkgname)
+{
+	prop_dictionary_t pkgrd = NULL;
+	prop_array_t pkgs_array;
+	struct repository_data *rdata;
+	const char *repoloc;
+	int rv = 0;
+
+	assert(pkgname != NULL);
+
+	if ((rv = xbps_prepare_repolist_data()) != 0)
+		return rv;
+
+	SIMPLEQ_FOREACH(rdata, &repodata_queue, chain) {
+		/*
+		 * Get the package dictionary from current repository.
+		 * If it's not there, pass to the next repository.
+		 */
+		pkgrd = xbps_find_pkg_in_dict(rdata->rd_repod,
+		    "packages", pkgname);
+		if (pkgrd != NULL)
+			break;
+	}
+	if (pkgrd == NULL) {
+		rv = EAGAIN;
+		goto out;
+	}
+
+	/*
+	 * Create master pkg dictionary.
+	 */
+	if ((rv = create_pkg_props_dictionary()) != 0)
+		goto out;
+
+	/*
+	 * Set repository in pkg dictionary.
+	 */
+	if (!prop_dictionary_get_cstring_nocopy(rdata->rd_repod,
+	    "location-local", &repoloc)) {
+		rv = EINVAL;
+		goto out;
+	}
+	prop_dictionary_set_cstring(pkgrd, "repository", repoloc);
+	prop_dictionary_set_cstring(pkgrd, "origin", pkgname);
 
 	/*
 	 * Check if this package needs dependencies.
@@ -199,8 +328,7 @@ xbps_prepare_pkg(const char *pkgname)
 		/*
 		 * Construct the dependency chain for this package.
 		 */
-		if ((rv = xbps_find_deps_in_pkg(pkg_props, pkgrd,
-		     repolist_iter)) != 0)
+		if ((rv = xbps_find_deps_in_pkg(pkg_props, pkgrd)) != 0)
 			goto out;
 
 		/*
@@ -218,7 +346,8 @@ xbps_prepare_pkg(const char *pkgname)
 			rv = errno;
 			goto out;
 		}
-		if (!prop_dictionary_set(pkg_props, "packages", pkgs_array)) {
+		if (!prop_dictionary_set(pkg_props, "packages",
+		    pkgs_array)) {
 			rv = errno;
 			goto out;
 		}
@@ -235,18 +364,11 @@ xbps_prepare_pkg(const char *pkgname)
 		goto out;
 	}
 
-	if (!prop_array_add(pkgs_array, pkgrd)) {
+	if (!prop_array_add(pkgs_array, pkgrd))
 		rv = errno;
-		goto out;
-	}
-
-	prop_dictionary_remove(pkg_props, "unsorted_deps");
 
 out:
-	prop_object_release(repod);
-out2:
-	prop_object_iterator_release(repolist_iter);
-	prop_object_release(repolistd);
+	xbps_release_repolist_data();
 
 	return rv;
 }

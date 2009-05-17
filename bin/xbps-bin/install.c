@@ -65,73 +65,48 @@ show_missing_dep_cb(prop_object_t obj, void *arg, bool *loop_done)
 	return EINVAL;
 }
 
-void
-xbps_install_pkg(const char *pkg, bool force, bool update)
+static void
+check_pkg_hashes(prop_dictionary_t props, prop_object_iterator_t iter)
 {
-	prop_dictionary_t props, instpkg;
-	prop_array_t array;
 	prop_object_t obj;
-	prop_object_iterator_t iter;
+	const char *repoloc, *filename;
+	int rv = 0;
+
+	printf("Checking binary package file(s) integrity...\n");
+	while ((obj = prop_object_iterator_next(iter)) != NULL) {
+		prop_dictionary_get_cstring_nocopy(obj, "repository", &repoloc);
+		prop_dictionary_get_cstring_nocopy(obj, "filename", &filename);
+		rv = xbps_check_pkg_file_hash(obj, repoloc);
+		if (rv != 0 && rv != ERANGE) {
+			printf("error: checking hash for %s (%s)\n",
+			    filename, strerror(rv));
+			prop_object_release(props);
+			exit(EXIT_FAILURE);
+		} else if (rv != 0 && rv == ERANGE) {
+			printf("Hash doesn't match for %s!\n", filename);
+			prop_object_release(props);
+			exit(EXIT_FAILURE);
+		}
+	}
+	prop_object_iterator_reset(iter);
+	printf("\n");
+}
+
+static void
+show_transaction_sizes(prop_dictionary_t props, prop_object_iterator_t iter,
+		       const char *descr)
+{
+	prop_object_t obj;
 	uint64_t tsize = 0, dlsize = 0, instsize = 0;
 	size_t cols = 0;
-	const char *repoloc, *filename, *instver, *origin;
 	const char *pkgname, *version;
 	char size[64];
-	int rv = 0;
-	bool pkg_is_dep, doup = false, first = false;
-
-	assert(props != NULL);
-
-	/*
-	 * Find and sort all required package dictionaries.
-	 */
-	printf("Finding/sorting required binary packages...\n");
-
-	rv = xbps_prepare_pkg(pkg);
-	if (rv != 0 && rv == EAGAIN) {
-		printf("Unable to locate %s in repository pool.\n", pkg);
-		exit(EXIT_FAILURE);
-	} else if (rv != 0 && rv != ENOENT) {
-		printf("Unexpected error: %s\n", strerror(rv));
-		exit(EXIT_FAILURE);
-	}
-
-	props = xbps_get_pkg_props(pkg);
-	if (props == NULL) {
-		printf("error: unexistent props dictionary!\n");
-		exit(EXIT_FAILURE);
-	}
-
-	/*
-	 * Bail out if there are unresolved deps.
-	 */
-	array = prop_dictionary_get(props, "missing_deps");
-	if (prop_array_count(array) > 0) {
-		show_missing_deps(props, pkg);
-		prop_object_release(props);
-		exit(EXIT_FAILURE);
-	}
-
-	prop_dictionary_get_cstring_nocopy(props, "origin", &origin);
+	bool first = false;
 
 	/*
 	 * Iterate over the list of packages that are going to be
 	 * installed and check the file hash.
 	 */
-	array = prop_dictionary_get(props, "packages");
-	if (array == NULL || prop_array_count(array) == 0) {
-		printf("error: empty packages array!\n");
-		prop_object_release(props);
-		exit(EXIT_FAILURE);
-	}
-
-	iter = prop_array_iterator(array);
-	if (iter == NULL) {
-		printf("error: allocating array mem! (%s)\n", strerror(errno));
-		prop_object_release(props);
-		exit(EXIT_FAILURE);
-	}
-
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		prop_dictionary_get_uint64(obj, "filename-size", &tsize);
 		dlsize += tsize;
@@ -145,7 +120,7 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 	/*
 	 * Show the list of packages that will be installed.
 	 */
-	printf("\nThe following new packages will be installed:\n\n");
+	printf("\nThe following new packages will be %s:\n\n", descr);
 
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
@@ -182,7 +157,71 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 		exit(EXIT_FAILURE);
 	}
 	printf("Total installed size: %s\n\n", size);
+}
 
+void
+xbps_install_pkg(const char *pkg, bool force, bool update)
+{
+	prop_dictionary_t props, instpkg;
+	prop_array_t array;
+	prop_object_t obj;
+	prop_object_iterator_t iter;
+	const char *instver, *origin, *pkgname, *version;
+	int rv = 0;
+	bool pkg_is_dep, doup = false;
+
+	/*
+	 * Find and sort all required package dictionaries.
+	 */
+	printf("Finding/sorting required binary packages...\n");
+
+	rv = xbps_prepare_pkg(pkg);
+	if (rv != 0 && rv == EAGAIN) {
+		printf("Unable to locate %s in repository pool.\n", pkg);
+		exit(EXIT_FAILURE);
+	} else if (rv != 0 && rv != ENOENT) {
+		printf("Unexpected error: %s\n", strerror(rv));
+		exit(EXIT_FAILURE);
+	}
+
+	props = xbps_get_pkg_props();
+	if (props == NULL) {
+		printf("error: unexistent props dictionary!\n");
+		exit(EXIT_FAILURE);
+	}
+
+	/*
+	 * Bail out if there are unresolved deps.
+	 */
+	array = prop_dictionary_get(props, "missing_deps");
+	if (prop_array_count(array) > 0) {
+		show_missing_deps(props, pkg);
+		prop_object_release(props);
+		exit(EXIT_FAILURE);
+	}
+
+	prop_dictionary_get_cstring_nocopy(props, "origin", &origin);
+
+	array = prop_dictionary_get(props, "packages");
+	if (array == NULL || prop_array_count(array) == 0) {
+		printf("error: empty packages array!\n");
+		prop_object_release(props);
+		exit(EXIT_FAILURE);
+	}
+	iter = prop_array_iterator(array);
+	if (iter == NULL) {
+		printf("error: allocating array mem! (%s)\n", strerror(errno));
+		prop_object_release(props);
+		exit(EXIT_FAILURE);
+	}
+	/*
+	 * Show download/installed size for the transaction.
+	 */
+	show_transaction_sizes(props, iter, "installed");
+
+	/*
+	 * Ask interactively (if -f not set).
+	 */
 	if (force == false) {
 		if (xbps_noyes("Do you want to continue?") == false) {
 			printf("Aborting!\n");
@@ -191,24 +230,10 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 		}
 	}
 
-	printf("Checking binary package file(s) integrity...\n");
-	while ((obj = prop_object_iterator_next(iter)) != NULL) {
-		prop_dictionary_get_cstring_nocopy(obj, "repository", &repoloc);
-		prop_dictionary_get_cstring_nocopy(obj, "filename", &filename);
-		rv = xbps_check_pkg_file_hash(obj, repoloc);
-		if (rv != 0 && rv != ERANGE) {
-			printf("error: checking hash for %s (%s)\n",
-			    filename, strerror(rv));
-			prop_object_release(props);
-			exit(EXIT_FAILURE);
-		} else if (rv != 0 && rv == ERANGE) {
-			printf("Hash doesn't match for %s!\n", filename);
-			prop_object_release(props);
-			exit(EXIT_FAILURE);
-		}
-	}
-	prop_object_iterator_reset(iter);
-	printf("\n");
+	/*
+	 * Check the SHA256 hash for all required packages.
+	 */
+	check_pkg_hashes(props, iter);
 
 	/*
 	 * Install all packages, the list is already sorted.
@@ -274,5 +299,146 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 	prop_object_iterator_release(iter);
 	prop_object_release(props);
 
+	exit(EXIT_SUCCESS);
+}
+
+void
+xbps_autoupdate_pkgs(bool force)
+{
+	prop_dictionary_t dict, props, instpkg;
+	prop_array_t array;
+	prop_object_t obj;
+	prop_object_iterator_t iter;
+	const char *pkgname, *version, *instver;
+	int rv = 0;
+
+	dict = xbps_get_regpkgdb_dict();
+	if (dict == NULL) {
+		printf("No packages currently installed (%s).\n",
+		    strerror(errno));
+		exit(EXIT_SUCCESS);
+	}
+
+	iter = xbps_get_array_iter_from_dict(dict, "packages");
+	if (iter == NULL) {
+		xbps_release_regpkgdb_dict();
+		exit(EXIT_FAILURE);
+	}
+
+	if (xbps_prepare_repolist_data() != 0) {
+		prop_object_iterator_release(iter);
+		xbps_release_regpkgdb_dict();
+		exit(EXIT_FAILURE);
+	}
+
+	while ((obj = prop_object_iterator_next(iter)) != NULL) {
+		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
+		rv = xbps_find_new_pkg(pkgname, obj);
+		if (rv != 0)
+			break;
+	}
+	prop_object_iterator_release(iter);
+	xbps_release_regpkgdb_dict();
+
+	/* Sort the list of packages */
+	props = xbps_get_pkg_props();
+	if (props == NULL) {
+		if (errno == 0) {
+			printf("All packages are up-to-date.\n");
+			exit(EXIT_SUCCESS);
+		}
+		printf("Error while checking for new pkgs: %s\n",
+		    strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+	if ((rv = xbps_sort_pkg_deps(props)) != 0) {
+		printf("Error while sorting packages: %s\n",
+		    strerror(rv));
+		exit(EXIT_FAILURE);
+	}
+	/* Update all packages now */
+	array = prop_dictionary_get(props, "packages");
+	if (array == NULL || prop_array_count(array) == 0) {
+		printf("error: empty packages array!\n");
+		prop_object_release(props);
+		exit(EXIT_FAILURE);
+	}
+	iter = prop_array_iterator(array);
+	if (iter == NULL) {
+		printf("error: allocating array mem! (%s)\n", strerror(errno));
+		prop_object_release(props);
+		exit(EXIT_FAILURE);
+	}
+
+	/*
+	 * Show download/installed size for the transaction.
+	 */
+	show_transaction_sizes(props, iter, "upgraded");
+
+	/*
+	 * Ask interactively (if -f not set).
+	 */
+	if (force == false) {
+		if (xbps_noyes("Do you want to continue?") == false) {
+			printf("Aborting!\n");
+			prop_object_release(props);
+			exit(EXIT_SUCCESS);
+		}
+	}
+
+	/*
+	 * Check the SHA256 hash for all required packages.
+	 */
+	check_pkg_hashes(props, iter);
+
+	while ((obj = prop_object_iterator_next(iter)) != NULL) {
+		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
+		prop_dictionary_get_cstring_nocopy(obj, "version", &version);
+
+		/*
+		 * Update a package, firstly removing current package.
+		 */
+		instpkg = xbps_find_pkg_installed_from_plist(pkgname);
+		if (instpkg == NULL) {
+			printf("error: unable to find %s installed "
+			    "dict!\n", pkgname);
+			prop_object_release(props);
+			exit(EXIT_FAILURE);
+		}
+
+		prop_dictionary_get_cstring_nocopy(instpkg,
+		    "version", &instver);
+		printf("Updating package %s-%s to %s...\n", pkgname,
+		    instver, version);
+		prop_object_release(instpkg);
+		rv = xbps_remove_binary_pkg(pkgname, true);
+		if (rv != 0) {
+			printf("error: removing %s-%s (%s)\n",
+			    pkgname, instver, strerror(rv));
+			prop_object_release(props);
+			exit(EXIT_FAILURE);
+		}
+
+		/*
+		 * Unpack binary package.
+		 */
+		if ((rv = xbps_unpack_binary_pkg(obj)) != 0) {
+			printf("error: unpacking %s-%s (%s)\n", pkgname,
+			    version, strerror(rv));
+			prop_object_release(props);
+			exit(EXIT_FAILURE);
+		}
+		/*
+		 * Register binary package.
+		 */
+		if ((rv = xbps_register_pkg(obj, true, false)) != 0) {
+			printf("error: registering %s-%s! (%s)\n",
+			    pkgname, version, strerror(rv));
+			prop_object_release(props);
+			exit(EXIT_FAILURE);
+		}
+	}
+	prop_object_iterator_release(iter);
+	xbps_release_repolist_data();
 	exit(EXIT_SUCCESS);
 }

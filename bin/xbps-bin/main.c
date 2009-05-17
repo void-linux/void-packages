@@ -45,7 +45,8 @@ usage(void)
 {
 	printf("Usage: xbps-bin [options] [target] [arguments]\n\n"
 	" Available targets:\n"
-        "    autoremove, files, install, list, remove, show, update\n"
+        "    autoremove, autoupdate, files, install, list, remove\n"
+	"    show, update\n"
 	" Targets with arguments:\n"
 	"    files\t<pkgname>\n"
 	"    install\t<pkgname>\n"
@@ -63,6 +64,7 @@ usage(void)
 	"\n"
 	" Examples:\n"
 	"    $ xbps-bin autoremove\n"
+	"    $ xbps-bin autoupdate\n"
 	"    $ xbps-bin -C files klibc\n"
 	"    $ xbps-bin install klibc\n"
 	"    $ xbps-bin -r /path/to/root install klibc\n"
@@ -203,6 +205,15 @@ main(int argc, char **argv)
 			printf("Package %s not installed.\n", argv[1]);
 			exit(EXIT_FAILURE);
 		}
+
+	} else if (strcasecmp(argv[0], "autoupdate") == 0) {
+		/*
+		 * To update all packages currently installed.
+		 */
+		if (argc != 1)
+			usage();
+
+		xbps_autoupdate_pkgs(force);
 
 	} else if (strcasecmp(argv[0], "autoremove") == 0) {
 		/*

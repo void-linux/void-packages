@@ -45,9 +45,7 @@ store_dependency(prop_dictionary_t master, prop_dictionary_t origind,
 {
 	prop_dictionary_t dict;
 	prop_array_t array;
-	size_t dirdepscnt = 0, indirdepscnt = 0;
-	const char *reqbyname, *repoloc, *originpkg;
-	bool indirectdep = false;
+	const char *reqbyname, *repoloc;
 
 	assert(origind != NULL);
 	assert(depd != NULL);
@@ -58,25 +56,6 @@ store_dependency(prop_dictionary_t master, prop_dictionary_t origind,
 	 */
 	prop_dictionary_get_cstring_nocopy(origind, "pkgname", &reqbyname);
 	prop_dictionary_get_cstring_nocopy(repod, "location-local", &repoloc);
-
-	/*
-	 * Required dependency is not installed. Check if it's
-	 * already registered in the chain, and update some objects
-	 * or add the object into array otherwise.
-	 */
-	prop_dictionary_get_cstring_nocopy(master, "origin", &originpkg);
-	if (strcmp(originpkg, reqbyname)) {
-		indirectdep = true;
-		prop_dictionary_get_uint32(master, "indirectdeps_count",
-		    &indirdepscnt);
-		prop_dictionary_set_uint32(master, "indirectdeps_count",
-		    ++indirdepscnt);
-	} else {
-		prop_dictionary_get_uint32(master, "directdeps_count",
-		    &dirdepscnt);
-		prop_dictionary_set_uint32(master, "directdeps_count",
-		    ++dirdepscnt);
-	}
 
 	dict = prop_dictionary_copy(depd);
 	if (dict == NULL)
@@ -91,7 +70,6 @@ store_dependency(prop_dictionary_t master, prop_dictionary_t origind,
 	 * Add required objects into package dep's dictionary.
 	 */
 	prop_dictionary_set_cstring(dict, "repository", repoloc);
-	prop_dictionary_set_bool(dict, "indirect_dep", indirectdep);
 	/*
 	 * Remove some unneeded objects.
 	 */
@@ -144,16 +122,12 @@ add_missing_reqdep(prop_dictionary_t master, const char *pkgname,
 }
 
 int
-xbps_find_deps_in_pkg(prop_dictionary_t master, prop_dictionary_t pkg,
-		      prop_object_iterator_t iter)
+xbps_find_deps_in_pkg(prop_dictionary_t master, prop_dictionary_t pkg)
 {
 	prop_array_t pkg_rdeps, missing_rdeps;
-	prop_dictionary_t repod;
-	prop_object_t obj;
-	char *plist;
+	struct repository_data *rdata;
 	int rv = 0;
 
-	assert(pkg_props != NULL);
 	assert(pkg != NULL);
 	assert(iter != NULL);
 
@@ -165,35 +139,20 @@ xbps_find_deps_in_pkg(prop_dictionary_t master, prop_dictionary_t pkg,
 	 * Iterate over the repository pool and find out if we have
 	 * all available binary packages.
 	 */
-	while ((obj = prop_object_iterator_next(iter)) != NULL) {
-		plist =
-		    xbps_get_pkg_index_plist(prop_string_cstring_nocopy(obj));
-		if (plist == NULL)
-			return EINVAL;
-
-		repod = prop_dictionary_internalize_from_file(plist);
-		if (repod == NULL) {
-			free(plist);
-			return errno;
-		}
-		free(plist);
-
+	SIMPLEQ_FOREACH(rdata, &repodata_queue, chain) {
 		/*
 		 * This will find direct and indirect deps,
 		 * if any of them is not there it will be added
 		 * into the missing_deps array.
 		 */
-		rv = find_repo_deps(master, repod, pkg, pkg_rdeps);
+		rv = find_repo_deps(master, rdata->rd_repod, pkg, pkg_rdeps);
 		if (rv != 0) {
 			if (rv == ENOENT) {
 				rv = 0;
-				prop_object_release(repod);
 				continue;
 			}
-			prop_object_release(repod);
 			break;
 		}
-		prop_object_release(repod);
 	}
 
 	missing_rdeps = prop_dictionary_get(master, "missing_deps");
@@ -204,27 +163,10 @@ xbps_find_deps_in_pkg(prop_dictionary_t master, prop_dictionary_t pkg,
 	 * If there are missing deps, iterate one more time
 	 * just in case that indirect deps weren't found.
 	 */
-	prop_object_iterator_reset(iter);
-	while ((obj = prop_object_iterator_next(iter)) != NULL) {
-		plist =
-		    xbps_get_pkg_index_plist(prop_string_cstring_nocopy(obj));
-		if (plist == NULL)
-			return EINVAL;
-
-		repod = prop_dictionary_internalize_from_file(plist);
-		if (repod == NULL) {
-			free(plist);
-			return errno;
-		}
-		free(plist);
-
-		rv = find_repo_missing_deps(master, repod, pkg);
-		if (rv != 0 && rv != ENOENT) {
-			prop_object_release(repod);
+	SIMPLEQ_FOREACH(rdata, &repodata_queue, chain) {
+		rv = find_repo_missing_deps(master, rdata->rd_repod, pkg);
+		if (rv != 0 && rv != ENOENT)
 			return rv;
-		}
-
-		prop_object_release(repod);
 	}
 
         return 0;
