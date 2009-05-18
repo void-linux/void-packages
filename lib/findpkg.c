@@ -35,17 +35,15 @@
 #include <xbps_api.h>
 
 static prop_dictionary_t pkg_props;
+static bool pkg_props_initialized;
 
 static int
 create_pkg_props_dictionary(void)
 {
 	prop_array_t unsorted, missing;
 	int rv = 0;
-	static bool pkg_props_avail;
 
-	assert(pkgname != NULL);
-
-	if (pkg_props_avail)
+	if (pkg_props_initialized)
 		return 0;
 
 	pkg_props = prop_dictionary_create();
@@ -73,7 +71,7 @@ create_pkg_props_dictionary(void)
                 goto fail3;
         }
 
-	pkg_props_avail = true;
+	pkg_props_initialized = true;
 
         return rv;
 
@@ -90,7 +88,7 @@ fail:
 prop_dictionary_t
 xbps_get_pkg_props(void)
 {
-	if (pkg_props == NULL || prop_dictionary_count(pkg_props) == 0)
+	if (pkg_props_initialized == false)
 		return NULL;
 
 	return prop_dictionary_copy(pkg_props);
@@ -107,18 +105,12 @@ xbps_prepare_repolist_data(void)
 	const char *rootdir;
 	char *plist;
 	int rv = 0;
-	static bool repodata_init;
+	static bool repodata_initialized;
 
-	if (repodata_init == false) {
-		SIMPLEQ_INIT(&repodata_queue);
-		repodata_init = true;
-	}
+	if (repodata_initialized)
+		return 0;
 
-	rdata = malloc(sizeof(struct repository_data));
-	if (rdata == NULL) {
-		rv = errno;
-		goto out;
-	}
+	SIMPLEQ_INIT(&repodata_queue);
 
 	rootdir = xbps_get_rootdir();
 	if (rootdir == NULL)
@@ -163,6 +155,12 @@ xbps_prepare_repolist_data(void)
 			goto out2;
 		}
 
+		rdata = malloc(sizeof(struct repository_data));
+		if (rdata == NULL) {
+			rv = errno;
+			goto out2;
+		}
+
 		rdata->rd_repod = prop_dictionary_internalize_from_file(plist);
 		if (rdata->rd_repod == NULL) {
 			free(plist);
@@ -172,6 +170,8 @@ xbps_prepare_repolist_data(void)
 		free(plist);
 		SIMPLEQ_INSERT_TAIL(&repodata_queue, rdata, chain);
 	}
+
+	repodata_initialized = true;
 
 out2:
 	prop_object_iterator_release(iter);

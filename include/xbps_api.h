@@ -130,7 +130,7 @@ prop_dictionary_t	xbps_find_pkg_from_plist(const char *, const char *);
 prop_dictionary_t 	xbps_find_pkg_installed_from_plist(const char *);
 bool 		xbps_find_string_in_array(prop_array_t, const char *);
 
-prop_dictionary_t	xbps_get_regpkgdb_dict(void);
+prop_dictionary_t	xbps_prepare_regpkgdb_dict(void);
 void			xbps_release_regpkgdb_dict(void);
 prop_object_iterator_t	xbps_get_array_iter_from_dict(prop_dictionary_t,
 						      const char *);

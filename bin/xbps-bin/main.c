@@ -100,8 +100,6 @@ int
 main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
-	const char *rootdir;
-	char *plist;
 	int c, flags = 0, rv = 0;
 	bool chkhash = false, force = false, verbose = false;
 
@@ -136,32 +134,30 @@ main(int argc, char **argv)
 	if (flags != 0)
 		xbps_set_flags(flags);
 
+	if ((dict = xbps_prepare_regpkgdb_dict()) == NULL) {
+		if (errno != ENOENT) {
+			rv = errno;
+			printf("Couldn't initialized regpkgdb dict: %s\n",
+			    strerror(errno));
+			goto out;
+		}
+	}
+
 	if (strcasecmp(argv[0], "list") == 0) {
 		/* Lists packages currently registered in database. */
 		if (argc != 1)
 			usage();
 
-		rootdir = xbps_get_rootdir();
-		plist = xbps_xasprintf("%s/%s/%s", rootdir,
-		    XBPS_META_PATH, XBPS_REGPKGDB);
-		if (plist == NULL)
-			exit(EXIT_FAILURE);
-
-		dict = prop_dictionary_internalize_from_file(plist);
 		if (dict == NULL) {
-			printf("No packages currently registered.\n");
-			free(plist);
-			exit(EXIT_SUCCESS);
+			printf("No packages currently installed.\n");
+			goto out;
 		}
 
 		if (!xbps_callback_array_iter_in_dict(dict, "packages",
 		    list_pkgs_in_dict, NULL)) {
-			prop_object_release(dict);
-			free(plist);
-			exit(EXIT_FAILURE);
+			rv = errno;
+			goto out;
 		}
-		prop_object_release(dict);
-		free(plist);
 
 	} else if (strcasecmp(argv[0], "install") == 0) {
 		/* Installs a binary package and required deps. */
@@ -229,6 +225,11 @@ main(int argc, char **argv)
 	} else {
 		usage();
 	}
+
+out:
+	xbps_release_regpkgdb_dict();
+	if (rv != 0)
+		exit(EXIT_FAILURE);
 
 	exit(EXIT_SUCCESS);
 }

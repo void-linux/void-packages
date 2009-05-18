@@ -168,7 +168,7 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 	prop_object_iterator_t iter;
 	const char *instver, *origin, *pkgname, *version;
 	int rv = 0;
-	bool pkg_is_dep, doup = false;
+	bool pkg_is_dep = false, doup = false;
 
 	/*
 	 * Find and sort all required package dictionaries.
@@ -196,8 +196,7 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 	array = prop_dictionary_get(props, "missing_deps");
 	if (prop_array_count(array) > 0) {
 		show_missing_deps(props, pkg);
-		prop_object_release(props);
-		exit(EXIT_FAILURE);
+		goto out;
 	}
 
 	prop_dictionary_get_cstring_nocopy(props, "origin", &origin);
@@ -205,14 +204,12 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 	array = prop_dictionary_get(props, "packages");
 	if (array == NULL || prop_array_count(array) == 0) {
 		printf("error: empty packages array!\n");
-		prop_object_release(props);
-		exit(EXIT_FAILURE);
+		goto out;
 	}
 	iter = prop_array_iterator(array);
 	if (iter == NULL) {
 		printf("error: allocating array mem! (%s)\n", strerror(errno));
-		prop_object_release(props);
-		exit(EXIT_FAILURE);
+		goto out;
 	}
 	/*
 	 * Show download/installed size for the transaction.
@@ -225,8 +222,7 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 	if (force == false) {
 		if (xbps_noyes("Do you want to continue?") == false) {
 			printf("Aborting!\n");
-			prop_object_release(props);
-			exit(EXIT_SUCCESS);
+			goto out2;
 		}
 	}
 
@@ -252,8 +248,7 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 			if (instpkg == NULL) {
 				printf("error: unable to find %s installed "
 				    "dict!\n", pkgname);
-				prop_object_release(props);
-				exit(EXIT_FAILURE);
+				goto out2;
 			}
 
 			prop_dictionary_get_cstring_nocopy(instpkg,
@@ -265,8 +260,7 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 			if (rv != 0) {
 				printf("error: removing %s-%s (%s)\n",
 				    pkgname, instver, strerror(rv));
-				prop_object_release(props);
-				exit(EXIT_FAILURE);
+				goto out2;
 			}
 
 		} else {
@@ -279,8 +273,7 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 		if ((rv = xbps_unpack_binary_pkg(obj)) != 0) {
 			printf("error: unpacking %s-%s (%s)\n", pkgname,
 			    version, strerror(rv));
-			prop_object_release(props);
-			exit(EXIT_FAILURE);
+			goto out2;
 		}
 		/*
 		 * Register binary package.
@@ -291,13 +284,18 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 		if ((rv = xbps_register_pkg(obj, doup, pkg_is_dep)) != 0) {
 			printf("error: registering %s-%s! (%s)\n",
 			    pkgname, version, strerror(rv));
-			prop_object_release(props);
-			exit(EXIT_FAILURE);
+			goto out2;
 		}
 		pkg_is_dep = false;
 	}
+out2:
 	prop_object_iterator_release(iter);
+out:
 	prop_object_release(props);
+	xbps_release_repolist_data();
+	xbps_release_regpkgdb_dict();
+	if (rv != 0)
+		exit(EXIT_FAILURE);
 
 	exit(EXIT_SUCCESS);
 }
@@ -312,7 +310,7 @@ xbps_autoupdate_pkgs(bool force)
 	const char *pkgname, *version, *instver;
 	int rv = 0;
 
-	dict = xbps_get_regpkgdb_dict();
+	dict = xbps_prepare_regpkgdb_dict();
 	if (dict == NULL) {
 		printf("No packages currently installed (%s).\n",
 		    strerror(errno));
@@ -321,15 +319,12 @@ xbps_autoupdate_pkgs(bool force)
 
 	iter = xbps_get_array_iter_from_dict(dict, "packages");
 	if (iter == NULL) {
-		xbps_release_regpkgdb_dict();
-		exit(EXIT_FAILURE);
+		rv = EINVAL;
+		goto out;
 	}
 
-	if (xbps_prepare_repolist_data() != 0) {
-		prop_object_iterator_release(iter);
-		xbps_release_regpkgdb_dict();
-		exit(EXIT_FAILURE);
-	}
+	if ((rv = xbps_prepare_repolist_data()) != 0)
+		goto out;
 
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
@@ -338,7 +333,6 @@ xbps_autoupdate_pkgs(bool force)
 			break;
 	}
 	prop_object_iterator_release(iter);
-	xbps_release_regpkgdb_dict();
 
 	/* Sort the list of packages */
 	props = xbps_get_pkg_props();
@@ -349,25 +343,25 @@ xbps_autoupdate_pkgs(bool force)
 		}
 		printf("Error while checking for new pkgs: %s\n",
 		    strerror(errno));
-		exit(EXIT_FAILURE);
+		goto out;
 	}
 	if ((rv = xbps_sort_pkg_deps(props)) != 0) {
 		printf("Error while sorting packages: %s\n",
 		    strerror(rv));
-		exit(EXIT_FAILURE);
+		goto out;
 	}
 	/* Update all packages now */
 	array = prop_dictionary_get(props, "packages");
 	if (array == NULL || prop_array_count(array) == 0) {
 		printf("error: empty packages array!\n");
 		prop_object_release(props);
-		exit(EXIT_FAILURE);
+		goto out;
 	}
 	iter = prop_array_iterator(array);
 	if (iter == NULL) {
 		printf("error: allocating array mem! (%s)\n", strerror(errno));
 		prop_object_release(props);
-		exit(EXIT_FAILURE);
+		goto out;
 	}
 
 	/*
@@ -382,7 +376,7 @@ xbps_autoupdate_pkgs(bool force)
 		if (xbps_noyes("Do you want to continue?") == false) {
 			printf("Aborting!\n");
 			prop_object_release(props);
-			exit(EXIT_SUCCESS);
+			goto out2;
 		}
 	}
 
@@ -403,7 +397,7 @@ xbps_autoupdate_pkgs(bool force)
 			printf("error: unable to find %s installed "
 			    "dict!\n", pkgname);
 			prop_object_release(props);
-			exit(EXIT_FAILURE);
+			goto out2;
 		}
 
 		prop_dictionary_get_cstring_nocopy(instpkg,
@@ -416,7 +410,7 @@ xbps_autoupdate_pkgs(bool force)
 			printf("error: removing %s-%s (%s)\n",
 			    pkgname, instver, strerror(rv));
 			prop_object_release(props);
-			exit(EXIT_FAILURE);
+			goto out2;
 		}
 
 		/*
@@ -426,7 +420,7 @@ xbps_autoupdate_pkgs(bool force)
 			printf("error: unpacking %s-%s (%s)\n", pkgname,
 			    version, strerror(rv));
 			prop_object_release(props);
-			exit(EXIT_FAILURE);
+			goto out2;
 		}
 		/*
 		 * Register binary package.
@@ -435,10 +429,17 @@ xbps_autoupdate_pkgs(bool force)
 			printf("error: registering %s-%s! (%s)\n",
 			    pkgname, version, strerror(rv));
 			prop_object_release(props);
-			exit(EXIT_FAILURE);
+			goto out2;
 		}
 	}
+
+out2:
 	prop_object_iterator_release(iter);
+out:
 	xbps_release_repolist_data();
+	xbps_release_regpkgdb_dict();
+	if (rv != 0)
+		exit(EXIT_FAILURE);
+
 	exit(EXIT_SUCCESS);
 }

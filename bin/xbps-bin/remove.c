@@ -64,7 +64,7 @@ xbps_autoremove_pkgs(void)
 
 	iter = prop_array_iterator(orphans);
 	if (iter == NULL)
-		exit(EXIT_FAILURE);
+		goto out;
 
 	printf("The following packages were installed automatically\n"
 	    "(as dependencies) and aren't needed anymore:\n\n");
@@ -88,7 +88,7 @@ xbps_autoremove_pkgs(void)
 
 	if (xbps_noyes("Do you want to remove them?") == false) {
 		printf("Cancelled!\n");
-		exit(EXIT_SUCCESS);
+		goto out2;
 	}
 
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
@@ -96,14 +96,15 @@ xbps_autoremove_pkgs(void)
 		prop_dictionary_get_cstring_nocopy(obj, "version", &version);
 
 		printf("Removing package %s-%s ...\n", pkgname, version);
-		if ((rv = xbps_remove_binary_pkg(pkgname, false)) != 0) {
-			prop_object_iterator_release(iter);
-			prop_object_release(orphans);
-			exit(EXIT_FAILURE);
-		}
+		if ((rv = xbps_remove_binary_pkg(pkgname, false)) != 0)
+			goto out2;
 	}
+out2:
 	prop_object_iterator_release(iter);
+out:
 	prop_object_release(orphans);
+	if (rv != 0)
+		exit(EXIT_FAILURE);
 
 	exit(EXIT_SUCCESS);
 }
@@ -122,7 +123,7 @@ xbps_remove_pkg(const char *pkgname, bool force)
 	dict = xbps_find_pkg_installed_from_plist(pkgname);
 	if (dict == NULL) {
 		printf("Package %s is not installed.\n", pkgname);
-		exit(EXIT_FAILURE);
+		goto out;
 	}
 	prop_dictionary_get_cstring_nocopy(dict, "version", &version);
 
@@ -136,7 +137,7 @@ xbps_remove_pkg(const char *pkgname, bool force)
 		if (!force) {
 			if (!xbps_noyes("Do you want to remove %s?", pkgname)) {
 				printf("Cancelling!\n");
-				exit(EXIT_SUCCESS);
+				goto out;
 			}
 		}
 		printf("Forcing %s-%s for deletion!\n", pkgname, version);
@@ -144,7 +145,7 @@ xbps_remove_pkg(const char *pkgname, bool force)
 		if (!force) {
 			if (!xbps_noyes("Do you want to remove %s?", pkgname)) {
 				printf("Cancelling!\n");
-				exit(EXIT_SUCCESS);
+				goto out;
 			}
 		}
 	}
@@ -153,11 +154,14 @@ xbps_remove_pkg(const char *pkgname, bool force)
 	if ((rv = xbps_remove_binary_pkg(pkgname, false)) != 0) {
 		printf("Unable to remove %s-%s (%s).\n",
 		    pkgname, version, strerror(errno));
-		prop_object_release(dict);
-		exit(EXIT_FAILURE);
+		goto out;
 	}
 	printf("Package %s-%s removed successfully.\n", pkgname, version);
-	prop_object_release(dict);
+
+out:
+	xbps_release_regpkgdb_dict();
+	if (rv != 0)
+		exit(EXIT_FAILURE);
 
 	exit(EXIT_SUCCESS);
 }
