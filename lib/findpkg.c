@@ -319,7 +319,7 @@ xbps_prepare_pkg(const char *pkgname)
 		goto out;
 	}
 	prop_dictionary_set_cstring(pkgrd, "repository", repoloc);
-	prop_dictionary_set_cstring(pkgrd, "origin", pkgname);
+	prop_dictionary_set_cstring(pkg_props, "origin", pkgname);
 
 	/*
 	 * Check if this package needs dependencies.
