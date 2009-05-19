@@ -35,15 +35,15 @@
 
 #include <xbps_api.h>
 
-static int unpack_archive_init(prop_dictionary_t, const char *);
 static int unpack_archive_fini(struct archive *, prop_dictionary_t);
 
 int
 xbps_unpack_binary_pkg(prop_dictionary_t pkg)
 {
 	prop_string_t filename, repoloc, arch;
+	struct archive *ar;
 	char *binfile;
-	int rv = 0;
+	int pkg_fd, rv = 0;
 
 	assert(pkg != NULL);
 
@@ -63,41 +63,24 @@ xbps_unpack_binary_pkg(prop_dictionary_t pkg)
 	if (binfile == NULL)
 		return EINVAL;
 
-	rv = unpack_archive_init(pkg, binfile);
-	free(binfile);
-	return rv;
-}
-
-
-static int
-unpack_archive_init(prop_dictionary_t pkg, const char *binfile)
-{
-	struct archive *ar;
-	int pkg_fd, rv;
-
-	assert(pkg != NULL);
-	assert(binfile != NULL);
-
-	if ((pkg_fd = open(binfile, O_RDONLY)) == -1)
-		return errno;
+	if ((pkg_fd = open(binfile, O_RDONLY)) == -1) {
+		rv = errno;
+		goto out;
+	}
 
 	ar = archive_read_new();
 	if (ar == NULL) {
-		(void)close(pkg_fd);
-		return ENOMEM;
+		rv = ENOMEM;
+		goto out2;
 	}
 
 	/* Enable support for tar format and all compression methods */
 	archive_read_support_compression_all(ar);
 	archive_read_support_format_tar(ar);
 
-	/* 2048 is arbitrary... dunno what value is better. */
 	if ((rv = archive_read_open_fd(ar, pkg_fd,
-	     ARCHIVE_READ_BLOCKSIZE)) != 0) {
-		archive_read_finish(ar);
-		(void)close(pkg_fd);
-		return rv;
-	}
+	     ARCHIVE_READ_BLOCKSIZE)) != 0)
+		goto out3;
 
 	rv = unpack_archive_fini(ar, pkg);
 	/*
@@ -108,11 +91,16 @@ unpack_archive_init(prop_dictionary_t pkg, const char *binfile)
 		if (fsync(pkg_fd) == -1)
 			rv = errno;
 
+out3:
 	archive_read_finish(ar);
+out2:
 	(void)close(pkg_fd);
+out:
+	free(binfile);
 
 	return rv;
 }
+
 /*
  * Flags for extracting files in binary packages.
  */
