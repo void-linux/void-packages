@@ -60,7 +60,7 @@ xbps_write_metadata_pkg()
 			msg_error "Cannot find subpackage template!"
 		fi
 		unset run_depends conf_files keep_dirs noarch triggers \
-			revision openrc_services
+			revision openrc_services essential
 		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${sourcepkg}-${subpkg}
 		set_tmpl_common_vars
@@ -287,6 +287,12 @@ _EOF
 	if [ -n "$openrc_services" ]; then
 		triggers="$triggers openrc-service"
 		Add_dependency run OpenRC
+	fi
+
+	# Is this an essential pkg?
+	if [ -n "$essential" ]; then
+		echo "<key>essential</key>" >> $TMPFPROPS
+		echo "<true/>" >> $TMPFPROPS
 	fi
 
 	# Dependencies

@@ -66,7 +66,7 @@ reset_tmpl_vars()
 			make_build_target configure_script noextract \
 			pre_configure pre_build pre_install configure_shell \
 			post_configure post_build post_install \
-			make_install_target version revision \
+			make_install_target version revision essential \
 			sgml_catalogs xml_catalogs xml_entries sgml_entries \
 			build_depends libtool_fixup_la_stage no_fixup_libtool \
 			disable_parallel_build run_depends cross_compiler \
