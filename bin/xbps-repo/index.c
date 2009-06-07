@@ -165,7 +165,7 @@ repoidx_addpkg(const char *file, const char *filename, const char *pkgdir)
 		if (curpkgd) {
 			prop_dictionary_get_cstring_nocopy(curpkgd,
 			    "version", &regver);
-			if (xbps_cmpver_versions(version, regver) <= 0) {
+			if (xbps_cmpver(version, regver) <= 0) {
 				printf("Skipping %s. Version %s already "
 				    "registered.\n", filename, regver);
 				prop_object_release(newpkgd);

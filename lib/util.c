@@ -132,7 +132,7 @@ xbps_check_is_installed_pkg(const char *pkg)
 	prop_dictionary_get_cstring_nocopy(dict, "version", &instver);
 
 	/* Compare installed and required version. */
-	rv = xbps_cmpver_versions(instver, reqver);
+	rv = xbps_cmpver(instver, reqver);
 
 	free(pkgname);
 	prop_object_release(dict);

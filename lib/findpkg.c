@@ -224,7 +224,7 @@ xbps_find_new_pkg(const char *pkgname, prop_dictionary_t instpkg)
 			    "version", &instver);
 			prop_dictionary_get_cstring_nocopy(pkgrd,
 			    "version", &repover);
-			if (xbps_cmpver_versions(instver, repover) >= 0)
+			if (xbps_cmpver(instver, repover) >= 0)
 				goto out;
 
 			break;

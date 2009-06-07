@@ -225,7 +225,7 @@ get_component(const char *position, version_component *component)
  * multiple components, separated by a period, including letters.
  */
 int
-xbps_cmpver_packages(const char *pkg1, const char *pkg2)
+xbps_cmpver(const char *pkg1, const char *pkg2)
 {
     const char *v1, *v2, *ve1, *ve2;
     unsigned long e1, e2, r1, r2;
@@ -280,12 +280,4 @@ xbps_cmpver_packages(const char *pkg1, const char *pkg2)
     }
 
     return result;
-}
-
-int
-xbps_cmpver_versions(const char *inst, const char *req)
-{
-	int res = xbps_cmpver_packages(inst, req);
-
-	return res;
 }

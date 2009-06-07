@@ -67,8 +67,7 @@
 #endif
 
 /* from lib/cmpver.c */
-int		xbps_cmpver_packages(const char *, const char *);
-int		xbps_cmpver_versions(const char *, const char *);
+int		xbps_cmpver(const char *, const char *);
 
 /* From lib/fexec.c */
 int		xbps_file_exec(const char *, ...);

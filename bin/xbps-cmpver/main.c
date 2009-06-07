@@ -17,5 +17,5 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	return xbps_cmpver_packages(argv[1], argv[2]);
+	return xbps_cmpver(argv[1], argv[2]);
 }
