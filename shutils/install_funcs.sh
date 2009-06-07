@@ -73,6 +73,9 @@ install_src_phase()
 	# Run post_install func.
 	run_func post_install
 
+	# Remove libtool archives from pkg destdir.
+	find ${DESTDIR} -type f -name \*.la -delete
+
 	# unset cross compiler vars.
 	[ -n "$cross_compiler" ] && cross_compile_unsetvars
 
