@@ -39,59 +39,6 @@
  				worklist="${worklist} ${gsv_x} ${gsv_i}"
  				gsv_x=""
  			else
---- mkinitramfs.orig	2009-02-17 15:56:33.000000000 +0100
-+++ mkinitramfs	2009-03-08 04:05:23.555799879 +0100
-@@ -8,8 +8,7 @@ keep="n"
- CONFDIR="/etc/initramfs-tools"
- verbose="n"
- errors_to="2>/dev/null"
--# BUSYBOXDIR="/usr/lib/initramfs-tools/bin/"
--BUSYBOXDIR="/bin"
-+BUSYBOXDIR="/usr/lib/initramfs-tools/bin/"
- 
- OPTIONS=`getopt -o d:ko:r:v -n "$0" -- "$@"`
- 
-@@ -141,7 +140,7 @@ fi
- DESTDIR="$(mktemp -t -d mkinitramfs_XXXXXX)" || exit 1
- __TMPCPIOGZ="$(mktemp -t mkinitramfs-OL_XXXXXX)" || exit 1
- 
--DPKG_ARCH=`dpkg --print-installation-architecture`
-+DPKG_ARCH=`uname -m`
- 
- # Export environment for hook scripts.
- #
-@@ -232,7 +231,6 @@ fi
- 
- # Busybox
- if [ "${BUSYBOX}" = "n" ] || [ ! -e ${BUSYBOXDIR}/busybox ]; then
--	mv ${DESTDIR}/bin/sh.shared ${DESTDIR}/bin/sh
- 	# those root need busybox
- 	eval "$(mount | awk '/ \/ / {print "r_dev=" $1; exit}')"
- 	if [ "${r_dev#/dev/mapper/}" != "${r_dev}" ]; then
-@@ -246,15 +244,14 @@ else
- fi
- 
- # Modutils
--copy_exec /sbin/modprobe /sbin
--copy_exec /sbin/depmod /sbin
--copy_exec /sbin/rmmod /sbin
--mkdir -p "${DESTDIR}/etc/modprobe.d"
--cp -a /etc/modprobe.d/* "${DESTDIR}/etc/modprobe.d/"
--
--# workaround: libgcc always needed on old-abi arm
--if [ "$DPKG_ARCH" = arm ] || [ "$DPKG_ARCH" = armeb ]; then
--	cp -a /lib/libgcc_s.so.1 "${DESTDIR}/lib/"
-+copy_exec /usr/lib/klibc/sbin/modprobe /sbin
-+copy_exec /usr/lib/klibc/sbin/depmod /sbin
-+copy_exec /usr/lib/klibc/sbin/lsmod /sbin
-+copy_exec /usr/lib/klibc/sbin/rmmod /sbin
-+copy_exec /usr/lib/klibc/sbin/insmod /sbin
-+if [ -d /etc/modprobe.d ]; then
-+	mkdir -p "${DESTDIR}/etc/modprobe.d"
-+	cp -a /etc/modprobe.d/* "${DESTDIR}/etc/modprobe.d/"
- fi
- 
- run_scripts /usr/share/initramfs-tools/hooks
 --- init.orig	2009-05-02 02:17:42.338577448 +0200
 +++ init	2009-05-02 02:18:01.671572443 +0200
 @@ -8,8 +8,8 @@ echo "Loading, please wait..."
@@ -106,7 +53,16 @@
  # Note that this only becomes /dev on the real filesystem if udev's scripts
  # are used; which they will be, but it's worth pointing out
 --- hook-functions.orig	2009-03-30 11:48:21.000000000 +0200
-+++ hook-functions	2009-05-02 02:21:28.126581591 +0200
++++ hook-functions	2009-06-19 15:35:52.907111168 +0200
+@@ -231,7 +231,7 @@ dep_add_modules()
+ 	# findout root block device + fstype
+ 	eval "$(mount | awk '/\/dev\// {if ($3 == "/") {print "root=" $1 "\nFSTYPE=" $5; exit}}')"
+ 	if [ "${root}" = "/dev/root" ] ; then
+-		root="/dev/disk/by-uuid/"$(/lib/udev/vol_id --uuid ${root}) 2>/dev/null
++		root="/dev/disk/by-uuid/"$(/sbin/blkid -s UUID -o value ${root}) 2>/dev/null
+ 	fi
+ 	root="$(readlink -f ${root})"
+ 
 @@ -465,16 +465,28 @@ EOF
  
  }
@@ -157,3 +113,78 @@
  			echo "W: ${cm_x} hook script requires at least kernel version ${minver}" >&2
  			echo "W: not generating requested initramfs for kernel ${curversion}" >&2
  			exit 2
+--- mkinitramfs.orig	2009-04-02 12:25:45.000000000 +0200
++++ mkinitramfs	2009-06-19 15:36:48.635447999 +0200
+@@ -8,8 +8,7 @@ keep="n"
+ CONFDIR="/etc/initramfs-tools"
+ verbose="n"
+ errors_to="2>/dev/null"
+-# BUSYBOXDIR="/usr/lib/initramfs-tools/bin/"
+-BUSYBOXDIR="/bin"
++BUSYBOXDIR="/usr/lib/initramfs-tools/bin/"
+ 
+ OPTIONS=`getopt -o d:ko:r:v -n "$0" -- "$@"`
+ 
+@@ -141,7 +140,7 @@ fi
+ DESTDIR="$(mktemp -t -d mkinitramfs_XXXXXX)" || exit 1
+ __TMPCPIOGZ="$(mktemp -t mkinitramfs-OL_XXXXXX)" || exit 1
+ 
+-DPKG_ARCH=`dpkg --print-installation-architecture`
++DPKG_ARCH=`uname -m`
+ 
+ # Export environment for hook scripts.
+ #
+@@ -238,7 +237,6 @@ fi
+ 
+ # Busybox
+ if [ "${BUSYBOX}" = "n" ] || [ ! -e ${BUSYBOXDIR}/busybox ]; then
+-	mv ${DESTDIR}/bin/sh.shared ${DESTDIR}/bin/sh
+ 	# those root need busybox
+ 	eval "$(mount | awk '/ \/ / {print "r_dev=" $1; exit}')"
+ 	if [ "${r_dev#/dev/mapper/}" != "${r_dev}" ]; then
+@@ -252,17 +250,19 @@ else
+ fi
+ 
+ # Modutils
+-copy_exec /sbin/modprobe /sbin
+-copy_exec /sbin/depmod /sbin
+-copy_exec /sbin/rmmod /sbin
+-mkdir -p "${DESTDIR}/etc/modprobe.d"
+-cp -a /etc/modprobe.d/* "${DESTDIR}/etc/modprobe.d/"
+-
+-# workaround: libgcc always needed on old-abi arm
+-if [ "$DPKG_ARCH" = arm ] || [ "$DPKG_ARCH" = armeb ]; then
+-	cp -a /lib/libgcc_s.so.1 "${DESTDIR}/lib/"
++copy_exec /usr/lib/klibc/sbin/modprobe /sbin
++copy_exec /usr/lib/klibc/sbin/depmod /sbin
++copy_exec /usr/lib/klibc/sbin/lsmod /sbin
++copy_exec /usr/lib/klibc/sbin/rmmod /sbin
++copy_exec /usr/lib/klibc/sbin/insmod /sbin
++if [ -d /etc/modprobe.d ]; then
++	mkdir -p "${DESTDIR}/etc/modprobe.d"
++	cp -a /etc/modprobe.d/* "${DESTDIR}/etc/modprobe.d/"
+ fi
+ 
++# libblkid
++copy_exec /sbin/blkid /sbin
++
+ run_scripts /usr/share/initramfs-tools/hooks
+ run_scripts "${CONFDIR}"/hooks
+ 
+--- scripts/local.orig	2009-06-19 15:37:17.337740970 +0200
++++ scripts/local	2009-06-19 15:38:22.157057084 +0200
+@@ -8,11 +8,11 @@ get_fstype ()
+ 	local FS FSTYPE FSSIZE RET
+ 	FS="${1}"
+ 
+-	# vol_id has a more complete list of file systems,
++	# blkid has a more complete list of file systems,
+ 	# but fstype is more robust
+ 	eval $(fstype "${FS}" 2> /dev/null)
+-	if [ "$FSTYPE" = "unknown" ] && [ -x /lib/udev/vol_id ]; then
+-		FSTYPE=$(/lib/udev/vol_id -t "${FS}" 2> /dev/null)
++	if [ "$FSTYPE" = "unknown" ] && [ -x /sbin/blkid ]; then
++		FSTYPE=$(/sbin/blkid -s TYPE -o value "${FS}" 2> /dev/null)
+ 	fi
+ 	RET=$?
+ 
