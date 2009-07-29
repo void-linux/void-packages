@@ -32,10 +32,6 @@
 #ifndef _SHA2_DIGEST_H_
 #define _SHA2_DIGEST_H_
 
-typedef uint8_t  sha2_byte;    /* Exactly 1 byte */
-typedef uint32_t sha2_word32;  /* Exactly 4 bytes */
-typedef uint64_t sha2_word64;  /* Exactly 8 bytes */
-
 /*** SHA-256 Various Length Definitions ***********************/
 #define SHA256_BLOCK_LENGTH		64
 #define SHA256_DIGEST_LENGTH		32
@@ -48,8 +44,8 @@ typedef struct _SHA256_CTX {
 	uint8_t		buffer[SHA256_BLOCK_LENGTH];
 } SHA256_CTX;
 
-void	SHA256_Init(SHA256_CTX *);
-void	SHA256_Update(SHA256_CTX*, const uint8_t*, size_t);
-char	*SHA256_End(SHA256_CTX*, uint8_t[SHA256_DIGEST_STRING_LENGTH]);
+int	SHA256_Init(SHA256_CTX *);
+int	SHA256_Update(SHA256_CTX *, const uint8_t *, size_t);
+char	*SHA256_End(SHA256_CTX *, uint8_t *);
 
 #endif /* !_SHA2_DIGEST_H_ */

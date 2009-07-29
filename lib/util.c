@@ -46,7 +46,7 @@ xbps_get_file_hash(const char *file)
 {
 	SHA256_CTX ctx;
 	char *hash;
-	uint8_t buf[BUFSIZ * 20], digest[SHA256_DIGEST_LENGTH * 2 + 1];
+	uint8_t buf[BUFSIZ * 20], digest[SHA256_DIGEST_STRING_LENGTH];
 	ssize_t bytes;
 	int fd;
 
