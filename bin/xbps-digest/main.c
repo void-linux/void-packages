@@ -62,7 +62,7 @@ main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 		}
 
-		digest = malloc(SHA256_DIGEST_LENGTH * 2 + 1);
+		digest = malloc(SHA256_DIGEST_STRING_LENGTH);
 		if (digest == NULL) {
 			printf("xbps-digest: malloc failed (%s)\n",
 			    strerror(errno));
