@@ -205,6 +205,9 @@ set_tmpl_common_vars()
 
 	FILESDIR=${XBPS_TEMPLATESDIR}/${pkgname}/files
 	DESTDIR=${XBPS_DESTDIR}/${pkgname}-${version}
+	if [ -z "${sourcepkg}" ]; then
+		sourcepkg=${pkgname}
+	fi
 	SRCPKGDESTDIR=${XBPS_DESTDIR}/${sourcepkg}-${version}
 }
 
