@@ -115,7 +115,6 @@ xbps_write_metadata_pkg_real()
 	# Write the files.plist file.
 	TMPFLIST=$(mktemp -t flist.XXXXXXXXXX) || exit 1
 	TMPFPLIST=$(mktemp -t fplist.XXXXXXXXXX) || exit 1
-	TMPINFOLIST=$(mktemp -t infolist.XXXXXXXXXX) || exit 1
 
         #
         # Find out if this package contains info files and compress
@@ -245,18 +244,6 @@ xbps_write_metadata_pkg_real()
 	echo "</plist>" >> $TMPFPLIST
 	sed -i -e /^$/d $TMPFLIST
 
-	#
-	# Find out if this package contains info files and write
-	# a list will all them in a file.
-	#
-	if [ -d "${DESTDIR}/usr/share/info" ]; then
-		for f in $(find ${DESTDIR}/usr/share/info -type f); do
-			j=$(echo $f|sed -e "$fpattern")
-			[ "$j" = "" ] && continue
-			echo "$j" >> $TMPINFOLIST
-		done
-	fi
-
 	# Write the props.plist file.
 	local TMPFPROPS=$(mktemp -t fprops.XXXXXXXXXX) || exit 1
 
@@ -345,19 +332,6 @@ _EOF
 	fi
 	mv -f $TMPFPLIST $metadir/files.plist
 	mv -f $TMPFPROPS $metadir/props.plist
-	if [ -s $TMPINFOLIST ]; then
-		mv -f $TMPINFOLIST $metadir/info-files
-	else
-		rm -f $TMPINFOLIST
-	fi
-
-	# Register the shells into /etc/shells if requested.
-	if [ -n "${register_shell}" ]; then
-		triggers="$triggers register-shell"
-		for f in ${register_shell}; do
-			echo $f >> $metadir/shells
-		done
-	fi
 
 	$XBPS_REGPKGDB_CMD sanitize-plist $metadir/files.plist
 	$XBPS_REGPKGDB_CMD sanitize-plist $metadir/props.plist

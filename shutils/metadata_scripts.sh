@@ -28,7 +28,8 @@ xbps_write_metadata_scripts_pkg()
 	local action="$1"
 	local metadir="${DESTDIR}/var/db/xbps/metadata/$pkgname"
 	local tmpf=$(mktemp -t xbps-install.XXXXXXXXXX) || exit 1
-	local targets found
+	local fpattern="s|${DESTDIR}||g;s|^\./$||g;/^$/d"
+	local targets found info_files
 
 	case "$action" in
 		install) ;;
@@ -61,10 +62,49 @@ VERSION="\$3"
 _EOF
 
 	#
+	# Handle GNU Info files.
+	#
+	if [ -d "${DESTDIR}/usr/share/info" ]; then
+		unset info_files
+		for f in $(find ${DESTDIR}/usr/share/info -type f); do
+			j=$(echo $f|sed -e "$fpattern")
+                        [ "$j" = "" ] && continue
+			[ "$j" = "/usr/share/info/dir" ] && continue
+			if [ -z "$info_files" ]; then
+				info_files="$j"
+			else
+				info_files="$info_files $j"
+			fi
+		done
+		if [ -n "${info_files}" ]; then
+			for f in ${triggers}; do
+				[ "$f" = "info-files" ] && found=1
+			done
+			[ -z "$found" ] && triggers="$triggers info-files"
+			unset found
+			echo "export info_files=\"${info_files}\"" >> $tmpf
+			echo >> $tmpf
+		fi
+        fi
+
+	#
 	# Handle OpenRC services.
 	#
 	if [ -n "${openrc_services}" ]; then
 		echo "export openrc_services=\"${openrc_services}\"" >> $tmpf
+		echo >> $tmpf
+	fi
+
+	#
+	# (Un)Register a shell in /etc/shells.
+	#
+	if [ -n "${register_shell}" ]; then
+		for f in ${triggers}; do
+			[ "$f" = "register-shell" ] && found=1
+		done
+		[ -z "$found" ] && triggers="$triggers register-shell"
+		unset found
+		echo "export register_shell=\"${register_shell}\"" >> $tmpf
 		echo >> $tmpf
 	fi
 
