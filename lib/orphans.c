@@ -166,5 +166,5 @@ xbps_find_orphan_packages(void)
 	prop_object_iterator_release(iter);
 	prop_object_release(dict);
 
-	return prop_array_copy(orphan.array);
+	return orphan.array;
 }
