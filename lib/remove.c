@@ -36,7 +36,7 @@
 
 #include <xbps_api.h>
 
-static int	remove_pkg_files(prop_object_t, void *, bool *);
+static int	remove_pkg_files(prop_dictionary_t);
 
 int
 xbps_unregister_pkg(const char *pkgname)
@@ -111,99 +111,161 @@ xbps_remove_binary_pkg_meta(const char *pkgname)
 }
 
 static int
-remove_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
+remove_pkg_files(prop_dictionary_t dict)
 {
+	prop_array_t array;
+	prop_object_iterator_t iter;
+	prop_object_t obj;
 	prop_bool_t bobj;
-	const char *file, *rootdir, *sha256, *type;
+	const char *file, *rootdir, *sha256, *array_str, *curftype;
 	char *path = NULL;
-	int flags = 0, rv = 0;
-
-	(void)arg;
-	(void)loop_done;
+	int i, flags = 0, rv = 0;
 
 	rootdir = xbps_get_rootdir();
 	flags = xbps_get_flags();
 
-	if (!prop_dictionary_get_cstring_nocopy(obj, "file", &file))
+	/* Links */
+	array = prop_dictionary_get(dict, "links");
+	if (array == NULL || prop_array_count(array) == 0)
+		goto files;
+
+	iter = xbps_get_array_iter_from_dict(dict, "links");
+	if (iter == NULL)
 		return EINVAL;
 
-	path = xbps_xasprintf("%s/%s", rootdir, file);
-	if (path == NULL)
-		return EINVAL;
-
-	if (!prop_dictionary_get_cstring_nocopy(obj, "type", &type)) {
-		free(path);
-		return EINVAL;
-	}
-
-	if (strcmp(type, "file") == 0) {
-		prop_dictionary_get_cstring_nocopy(obj, "sha256", &sha256);
-		rv = xbps_check_file_hash(path, sha256);
-		if (rv != 0 && rv != ERANGE) {
-			free(path);
-			return rv;
+	while ((obj = prop_object_iterator_next(iter))) {
+		if (!prop_dictionary_get_cstring_nocopy(obj, "file", &file)) {
+			prop_object_iterator_release(iter);
+			return EINVAL;
 		}
-
-		bobj = prop_dictionary_get(obj, "conf_file");
-		if (bobj != NULL) {
-			/*
-			 * If hash is the same than the one provided by
-			 * package, that means the file hasn't been changed
-			 * and therefore can be removed. Otherwise keep it.
-			 */
-			if (rv == ERANGE)
-				goto out;
+		path = xbps_xasprintf("%s/%s", rootdir, file);
+		if (path == NULL) {
+			prop_object_iterator_release(iter);
+			return EINVAL;
 		}
-
-		if (rv == ERANGE) {
-			if (flags & XBPS_VERBOSE)
-				printf("WARNING: SHA256 doesn't match for "
-				    "file %s, ignoring...\n", file);
-			goto out;
-		}
-
-		if ((rv = remove(path)) == -1) {
-			if (flags & XBPS_VERBOSE)
-				printf("WARNING: can't remove file %s (%s)\n",
-				    file, strerror(errno));
-			goto out;
-		}
-		if (flags & XBPS_VERBOSE)
-			printf("Removed file: %s\n", file);
-
-		goto out;
-	} else if (strcmp(type, "dir") == 0) {
-		if ((bobj = prop_dictionary_get(obj, "keep")) != NULL) {
-			/* Skip permanent directory. */
-			return 0;
-		}
-
-		if ((rv = rmdir(path)) == -1) {
-			if (errno == ENOTEMPTY)
-				goto out;
-
-			if (flags & XBPS_VERBOSE) {
-				printf("WARNING: can't remove "
-				    "directory %s (%s)\n", file,
-				    strerror(errno));
-				goto out;
-			}
-			if (flags & XBPS_VERBOSE)
-				printf("Removed directory: %s\n", file);
-		}
-	} else if (strcmp(type, "link") == 0) {
 		if ((rv = remove(path)) == -1) {
 			if (flags & XBPS_VERBOSE)
 				printf("WARNING: can't remove link %s (%s)\n",
 				    file, strerror(errno));
-			goto out;
+			free(path);
+			continue;
 		}
 		if (flags & XBPS_VERBOSE)
 			printf("Removed link: %s\n", file);
+
+		free(path);
+	}
+	prop_object_iterator_release(iter);
+	path = NULL;
+
+files:
+	/* Regular files and configuration files */
+	for (i = 0; i < 2; i++) {
+		if (i == 0) {
+			array_str = "conf_files";
+			curftype = "config file";
+		} else {
+			array_str = "files";
+			curftype = "file";
+		}
+		array = prop_dictionary_get(dict, array_str);
+		if (array == NULL || prop_array_count(array) == 0) {
+			if (i == 0)
+				continue;
+			else
+				goto dirs;
+		}
+		iter = xbps_get_array_iter_from_dict(dict, array_str);
+		if (iter == NULL)
+			return EINVAL;
+
+		while ((obj = prop_object_iterator_next(iter))) {
+			if (!prop_dictionary_get_cstring_nocopy(obj,
+			    "file", &file)) {
+				prop_object_iterator_release(iter);
+				return EINVAL;
+			}
+			path = xbps_xasprintf("%s/%s", rootdir, file);
+			if (path == NULL) {
+				prop_object_iterator_release(iter);
+				return EINVAL;
+			}
+			prop_dictionary_get_cstring_nocopy(obj,
+			    "sha256", &sha256);
+			rv = xbps_check_file_hash(path, sha256);
+			if (rv != 0 && rv != ERANGE) {
+				free(path);
+				prop_object_iterator_release(iter);
+				return rv;
+			}
+			if (rv == ERANGE) {
+				if (flags & XBPS_VERBOSE)
+					printf("WARNING: SHA256 doesn't match "
+					    "for %s %s, ignoring...\n",
+					    curftype, file);
+				free(path);
+				continue;
+			}
+			if ((rv = remove(path)) == -1) {
+				if (flags & XBPS_VERBOSE)
+					printf("WARNING: can't remove "
+					    "%s %s (%s)\n", curftype, file,
+					    strerror(errno));
+				free(path);
+				continue;
+			}
+			if (flags & XBPS_VERBOSE)
+				printf("Removed %s: %s\n", curftype, file);
+
+			free(path);
+		}
+		prop_object_iterator_release(iter);
+		path = NULL;
 	}
 
-out:
-	free(path);
+dirs:
+	/* Directories */
+	array = prop_dictionary_get(dict, "dirs");
+	if (array == NULL || prop_array_count(array) == 0)
+		return 0;
+
+	iter = xbps_get_array_iter_from_dict(dict, "dirs");
+	if (iter == NULL)
+		return EINVAL;
+
+	while ((obj = prop_object_iterator_next(iter))) {
+		if ((bobj = prop_dictionary_get(obj, "keep")) != NULL) {
+			/* Skip permanent directory. */
+			continue;
+		}
+		if (!prop_dictionary_get_cstring_nocopy(obj, "file", &file)) {
+			prop_object_iterator_release(iter);
+			return EINVAL;
+		}
+		path = xbps_xasprintf("%s/%s", rootdir, file);
+		if (path == NULL) {
+			prop_object_iterator_release(iter);
+			return EINVAL;
+		}
+		if ((rv = rmdir(path)) == -1) {
+			if (errno == ENOTEMPTY) {
+				free(path);
+				continue;
+			}
+			if (flags & XBPS_VERBOSE) {
+				printf("WARNING: can't remove "
+				    "directory %s (%s)\n", file,
+				    strerror(errno));
+				free(path);
+				continue;
+			}
+		}
+		if (flags & XBPS_VERBOSE)
+			printf("Removed directory: %s\n", file);
+
+		free(path);
+	}
+	prop_object_iterator_release(iter);
 
 	return 0;
 }
@@ -244,8 +306,6 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 		 * Run the pre remove action.
 		 */
 		prepostf = true;
-		(void)printf("\n");
-		(void)fflush(stdout);
 		rv = xbps_file_chdir_exec(rootdir, buf, "pre", pkgname, NULL);
 		if (rv != 0) {
 			printf("%s: prerm action target error (%s)\n", pkgname,
@@ -274,8 +334,7 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 	}
 	free(path);
 
-	rv = xbps_callback_array_iter_in_dict(dict, "filelist",
-	    remove_pkg_files, NULL);
+	rv = remove_pkg_files(dict);
 	if (rv != 0) {
 		free(buf);
 		prop_object_release(dict);

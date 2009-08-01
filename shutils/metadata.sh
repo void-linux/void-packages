@@ -32,8 +32,6 @@ write_metadata_flist_header()
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-<key>filelist</key>
-<array>
 _EOF
 
 }
@@ -92,7 +90,7 @@ xbps_write_metadata_pkg()
 xbps_write_metadata_pkg_real()
 {
 	local metadir=${DESTDIR}/var/db/xbps/metadata/$pkgname
-	local f i j arch dirat lnkat newlnk lver TMPFLIST TMPFPLIST
+	local f i j found arch dirat lnkat newlnk lver TMPFLIST TMPFPLIST
 	local fpattern="s|${DESTDIR}||g;s|^\./$||g;/^$/d"
 
 	if [ ! -d "${DESTDIR}" ]; then
@@ -186,6 +184,8 @@ xbps_write_metadata_pkg_real()
 	write_metadata_flist_header $TMPFPLIST
 
 	# Pass 1: add links.
+	echo "<key>links</key>" >> $TMPFPLIST
+	echo "<array>" >> $TMPFPLIST
 	for f in $(find ${DESTDIR} -type l); do
 		j=$(echo $f|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
@@ -193,34 +193,34 @@ xbps_write_metadata_pkg_real()
 		echo "<dict>" >> $TMPFPLIST
 		echo "<key>file</key>" >> $TMPFPLIST
 		echo "<string>$j</string>" >> $TMPFPLIST
-		echo "<key>type</key>" >> $TMPFPLIST
-		echo "<string>link</string>" >> $TMPFPLIST
 		echo "</dict>" >> $TMPFPLIST
 	done
+	echo "</array>" >> $TMPFPLIST
 
 	# Pass 2: add regular files.
+	echo "<key>files</key>" >> $TMPFPLIST
+	echo "<array>" >> $TMPFPLIST
 	for f in $(find ${DESTDIR} -type f); do
 		j=$(echo $f|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
 		echo "$j" >> $TMPFLIST
+		# Skip configuration files.
+		for i in ${conf_files}; do
+			[ "$j" = "$i" ] && found=1 && break
+		done
+		[ -n "$found" ] && unset found && continue
 		echo "<dict>" >> $TMPFPLIST
 		echo "<key>file</key>" >> $TMPFPLIST
 		echo "<string>$j</string>" >> $TMPFPLIST
-		echo "<key>type</key>" >> $TMPFPLIST
-		echo "<string>file</string>" >> $TMPFPLIST
 		echo "<key>sha256</key>" >> $TMPFPLIST
 		echo "<string>$(xbps-digest $f)</string>"  >> $TMPFPLIST
-		for i in ${conf_files}; do
-			if [ "$j" = "$i" ]; then
-				echo "<key>conf_file</key>"  >> $TMPFPLIST
-				echo "<true/>" >> $TMPFPLIST
-				break
-			fi
-		done
 		echo "</dict>" >> $TMPFPLIST
 	done
+	echo "</array>" >> $TMPFPLIST
 
 	# Pass 3: add directories.
+	echo "<key>dirs</key>" >> $TMPFPLIST
+	echo "<array>" >> $TMPFPLIST
 	for f in $(find ${DESTDIR} -type d|sort -ur); do
 		j=$(echo $f|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
@@ -228,8 +228,6 @@ xbps_write_metadata_pkg_real()
 		echo "<dict>" >> $TMPFPLIST
 		echo "<key>file</key>" >> $TMPFPLIST
 		echo "<string>$j</string>" >> $TMPFPLIST
-		echo "<key>type</key>" >> $TMPFPLIST
-		echo "<string>dir</string>" >> $TMPFPLIST
 		for i in ${keep_dirs}; do
 			if [ "$j" = "$i" ]; then
 				echo "<key>keep</key>" >> $TMPFPLIST
@@ -240,6 +238,24 @@ xbps_write_metadata_pkg_real()
 		echo "</dict>" >> $TMPFPLIST
 	done
 	echo "</array>" >> $TMPFPLIST
+
+	# Add configuration files into its own array.
+	if [ -n "${conf_files}" ]; then
+		echo "<key>conf_files</key>" >> $TMPFPLIST
+		echo "<array>" >> $TMPFPLIST
+		for f in ${conf_files}; do
+			i=${DESTDIR}/${f}
+			[ ! -f ${i} ] && continue
+			echo "<dict>" >> $TMPFPLIST
+			echo "<key>file</key>" >> $TMPFPLIST
+			echo "<string>$f</string>" >> $TMPFPLIST
+			echo "<key>sha256</key>" >> $TMPFPLIST
+			echo "<string>$(xbps-digest ${i})</string>" >> $TMPFPLIST
+			echo "</dict>" >> $TMPFPLIST
+		done
+		echo "</array>" >> $TMPFPLIST
+	fi
+
 	echo "</dict>" >> $TMPFPLIST
 	echo "</plist>" >> $TMPFPLIST
 	sed -i -e /^$/d $TMPFLIST

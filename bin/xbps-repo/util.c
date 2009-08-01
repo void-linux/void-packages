@@ -35,13 +35,7 @@
 #include <xbps_api.h>
 #include "util.h"
 
-struct show_files_cb {
-	const char *destdir;
-	bool check_hash;
-};
-
 static void	show_pkg_info(prop_dictionary_t);
-static int	show_pkg_files(prop_object_t, void *, bool *);
 static int	show_pkg_namedesc(prop_object_t, void *, bool *);
 
 static void
@@ -206,11 +200,14 @@ int
 show_pkg_files_from_metadir(const char *pkgname, bool hash)
 {
 	prop_dictionary_t pkgd;
-	struct show_files_cb sfc;
-	const char *destdir = xbps_get_rootdir();
-	char *plist;
-	int rv = 0;
+	prop_array_t array;
+	prop_object_iterator_t iter = NULL;
+	prop_object_t obj;
+	const char *destdir, *file, *sha256;
+	char *plist, *path = NULL, *array_str = "files";
+	int i, rv = 0;
 
+	destdir = xbps_get_rootdir();
 	plist = xbps_xasprintf("%s/%s/metadata/%s/%s", destdir,
 	    XBPS_META_PATH, pkgname, XBPS_PKGFILES);
 	if (plist == NULL)
@@ -221,65 +218,81 @@ show_pkg_files_from_metadir(const char *pkgname, bool hash)
 		free(plist);
 		return errno;
 	}
-
-	sfc.destdir = destdir;
-	sfc.check_hash = hash;
-	rv = xbps_callback_array_iter_in_dict(pkgd, "filelist",
-	    show_pkg_files, (void *)&sfc);
-	prop_object_release(pkgd);
 	free(plist);
 
-	return rv;
-}
-
-static int
-show_pkg_files(prop_object_t obj, void *arg, bool *loop_done)
-{
-	struct show_files_cb *sfc = arg;
-	const char *file = NULL, *sha256, *type;
-	char *path = NULL;
-	int rv = 0;
-
-	(void)loop_done;
-
-	prop_dictionary_get_cstring_nocopy(obj, "file", &file);
-	prop_dictionary_get_cstring_nocopy(obj, "type", &type);
-	if (strcmp(type, "dir") == 0)
-		return 0;
-
-	if (sfc->check_hash == false && file != NULL) {
-		printf("%s\n", file);
-		return 0;
-	}
-
-	if (strcmp(type, "link") == 0)
-		return 0;
-
-	if (sfc->check_hash && file != NULL) {
-		printf("%s", file);
-		if (sfc->destdir) {
-			path = xbps_xasprintf("%s/%s", sfc->destdir, file);
-			if (path == NULL)
-				return EINVAL;
+	/* Links. */
+	array = prop_dictionary_get(pkgd, "links");
+	if (array && prop_array_count(array) > 0) {
+		iter = xbps_get_array_iter_from_dict(pkgd, "links");
+		if (iter == NULL) {
+			rv = EINVAL;
+			goto out;
 		}
-
-		prop_dictionary_get_cstring_nocopy(obj, "sha256", &sha256);
-		if (sfc->destdir)
-			rv = xbps_check_file_hash(path, sha256);
-		else
-			rv = xbps_check_file_hash(file, sha256);
-
-		if (rv != 0 && rv != ERANGE)
-			printf(" (can't check: %s)", strerror(rv));
-		else if (rv == ERANGE)
-			printf("  WARNING! SHA256 HASH MISMATCH!");
-
-		printf("\n");
-		if (sfc->destdir)
-			free(path);
+		while ((obj = prop_object_iterator_next(iter))) {
+			prop_dictionary_get_cstring_nocopy(obj, "file", &file);
+			printf("%s\n", file);
+		}
+		prop_object_iterator_release(iter);
+		iter = NULL;
 	}
 
-	return 0;
+	/* Files and configuration files. */
+	for (i = 0; i < 2; i++) {
+		if (i == 0)
+			array_str = "conf_files";
+		else
+			array_str = "files";
+
+		array = prop_dictionary_get(pkgd, array_str);
+		if (array == NULL || prop_array_count(array) == 0)
+			continue;
+
+		iter = xbps_get_array_iter_from_dict(pkgd, array_str);
+		if (iter == NULL) {
+			rv = EINVAL;
+			goto out;
+		}
+		while ((obj = prop_object_iterator_next(iter))) {
+			prop_dictionary_get_cstring_nocopy(obj, "file", &file);
+			if (hash == false) {
+				printf("%s\n", file);
+				continue;
+			}
+
+			printf("%s", file);
+			if (destdir) {
+				path = xbps_xasprintf("%s/%s", destdir, file);
+				if (path == NULL) {
+					rv = EINVAL;
+					goto out2;
+				}
+			}
+			prop_dictionary_get_cstring_nocopy(obj,
+			    "sha256", &sha256);
+			if (destdir)
+				rv = xbps_check_file_hash(path, sha256);
+			else
+				rv = xbps_check_file_hash(file, sha256);
+
+			if (rv != 0 && rv != ERANGE)
+				printf(" (can't check: %s)", strerror(rv));
+			else if (rv == ERANGE)
+				printf("  WARNING! SHA256 HASH MISMATCH!");
+
+			printf("\n");
+			if (destdir)
+				free(path);
+		}
+		prop_object_iterator_release(iter);
+		iter = NULL;
+	}
+out2:
+	if (iter != NULL)
+		prop_object_iterator_release(iter);
+out:
+	prop_object_release(pkgd);
+
+	return rv;
 }
 
 int
