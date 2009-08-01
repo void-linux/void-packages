@@ -223,7 +223,7 @@ xbps_prepare_regpkgdb_dict(void)
 		regpkgdb_initialized = true;
 	}
 
-	return prop_dictionary_copy(regpkgdb_dict);
+	return regpkgdb_dict;
 }
 
 void
