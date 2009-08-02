@@ -57,10 +57,11 @@ pfcexec(const char *path, const char *file, const char **argv)
 	case 0:
 		if (path != NULL) {
 			/*
-			 * If /bin/sh exists, chroot to destdir.
-			 * Otherwise chdir to destdir.
+			 * If root and /bin/sh exists chroot to
+			 * destdir and exec the command. Otherwise
+			 * just change CWD to destdir.
 			 */
-			if (access("./bin/sh", R_OK) == 0) {
+			if (getuid() == 0 && access("./bin/sh", R_OK) == 0) {
 				if (chroot(path) == -1)
 					_exit(127);
 				if (chdir("/") == -1)
