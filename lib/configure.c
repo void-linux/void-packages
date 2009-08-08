@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2008-2009 Juan Romero Pardines.
+ * Copyright (c) 2009 Juan Romero Pardines.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,67 +31,62 @@
 #include <limits.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #include <xbps_api.h>
 
+/*
+ * Configure a package that is currently unpacked. This
+ * runs the post INSTALL action if required and updates the
+ * package state to installed.
+ */
 int
-xbps_register_pkg(prop_dictionary_t pkgrd, bool automatic)
+xbps_configure_pkg(const char *pkgname, const char *version)
 {
-	prop_dictionary_t dict, pkgd;
-	prop_array_t array;
-	const char *pkgname, *version, *desc, *rootdir;
-	char *plist;
+	const char *rootdir;
+	char *buf;
 	int rv = 0;
+	pkg_state_t state = 0;
 
+	assert(pkgname != NULL);
+	assert(version != NULL);
 	rootdir = xbps_get_rootdir();
-	plist = xbps_xasprintf("%s/%s/%s", rootdir,
-	    XBPS_META_PATH, XBPS_REGPKGDB);
-	if (plist == NULL)
+
+	if ((rv = xbps_get_pkg_state_installed(pkgname, &state)) != 0)
+		return rv;
+
+	/*
+	 * If package is already installed do nothing, and only
+	 * continue if it's unpacked.
+	 */
+	if (state == XBPS_PKG_STATE_INSTALLED)
+		return 0;
+	else if (state != XBPS_PKG_STATE_UNPACKED)
 		return EINVAL;
 
-	prop_dictionary_get_cstring_nocopy(pkgrd, "pkgname", &pkgname);
-	prop_dictionary_get_cstring_nocopy(pkgrd, "version", &version);
-	prop_dictionary_get_cstring_nocopy(pkgrd, "short_desc", &desc);
+	buf = xbps_xasprintf(".%s/metadata/%s/INSTALL",
+	    XBPS_META_PATH, pkgname);
+	if (buf == NULL)
+		return errno;
 
-	dict = prop_dictionary_internalize_from_file(plist);
-	if (dict != NULL) {
-		pkgd = xbps_find_pkg_in_dict(dict, "packages", pkgname);
-		if (pkgd == NULL) {
-			rv = ENOENT;
-			goto out;
-		}
-		prop_dictionary_set_cstring_nocopy(pkgd, "version", version);
-		prop_dictionary_set_cstring_nocopy(pkgd, "short_desc", desc);
-		prop_dictionary_set_bool(pkgd, "automatic-install", automatic);
+	if (access(buf, R_OK) == 0) {
+		if (chdir(rootdir) == -1)
+			return errno;
 
-		/*
-		 * Add the requiredby objects for dependent packages.
-		 */
-		if (pkgrd && xbps_pkg_has_rundeps(pkgrd)) {
-			array = prop_dictionary_get(dict, "packages");
-			if (array == NULL) {
-				prop_object_release(pkgd);
-				rv = ENOENT;
-				goto out;
-			}
-			rv = xbps_requiredby_pkg_add(array, pkgrd);
-			if (rv != 0) {
-				prop_object_release(pkgd);
-				goto out;
-			}
+		if ((rv = xbps_file_chdir_exec(rootdir, buf, "post",
+		     pkgname, version, NULL)) != 0) {
+			free(buf);
+			printf("%s: post INSTALL action returned: %s\n",
+			    pkgname, strerror(errno));
+			return rv;
 		}
-		/*
-		 * Write plist file to storage.
-		 */
-		if (!prop_dictionary_externalize_to_file(dict, plist))
-			rv = errno;
 	} else {
-		free(plist);
-		return ENOENT;
+		if (errno != ENOENT) {
+			free(buf);
+			return errno;
+		}
 	}
-out:
-	prop_object_release(dict);
-	free(plist);
+	free(buf);
 
-	return rv;
+	return xbps_set_pkg_state_installed(pkgname, XBPS_PKG_STATE_INSTALLED);
 }

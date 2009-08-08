@@ -45,9 +45,10 @@ usage(void)
 {
 	printf("Usage: xbps-bin [options] [target] [arguments]\n\n"
 	" Available targets:\n"
-        "    autoremove, autoupdate, files, install, list, remove\n"
-	"    show, update\n"
+        "    autoremove, autoupdate, check, files, install, list\n"
+	"    remove, show, update\n"
 	" Targets with arguments:\n"
+	"    check\t<pkgname>\n"
 	"    files\t<pkgname>\n"
 	"    install\t<pkgname>\n"
 	"    remove\t<pkgname>\n"
@@ -56,8 +57,6 @@ usage(void)
 	" Options shared by all targets:\n"
 	"    -r\t\t<rootdir>\n"
 	"    -v\t\t<verbose>\n"
-	" Options used by the files target:\n"
-	"    -C\t\tTo check the SHA256 hash for any listed file.\n"
 	" Options used by the (auto)remove target:\n"
 	"    -f\t\tForce installation or removal of packages.\n"
 	"      \t\tBeware with this option if you use autoremove!\n"
@@ -65,7 +64,7 @@ usage(void)
 	" Examples:\n"
 	"    $ xbps-bin autoremove\n"
 	"    $ xbps-bin autoupdate\n"
-	"    $ xbps-bin -C files klibc\n"
+	"    $ xbps-bin files klibc\n"
 	"    $ xbps-bin install klibc\n"
 	"    $ xbps-bin -r /path/to/root install klibc\n"
 	"    $ xbps-bin list\n"
@@ -101,13 +100,10 @@ main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
 	int c, flags = 0, rv = 0;
-	bool chkhash = false, force = false, verbose = false;
+	bool force = false, verbose = false;
 
 	while ((c = getopt(argc, argv, "Cfr:v")) != -1) {
 		switch (c) {
-		case 'C':
-			chkhash = true;
-			break;
 		case 'f':
 			force = true;
 			break;
@@ -178,7 +174,7 @@ main(int argc, char **argv)
 		if (argc != 2)
 			usage();
 
-		xbps_remove_pkg(argv[1], force);
+		xbps_remove_installed_pkg(argv[1], force);
 
 	} else if (strcasecmp(argv[0], "show") == 0) {
 		/* Shows info about an installed binary package. */
@@ -196,11 +192,18 @@ main(int argc, char **argv)
 		if (argc != 2)
 			usage();
 
-		rv = show_pkg_files_from_metadir(argv[1], chkhash);
+		rv = show_pkg_files_from_metadir(argv[1]);
 		if (rv != 0) {
 			printf("Package %s not installed.\n", argv[1]);
 			exit(EXIT_FAILURE);
 		}
+
+	} else if (strcasecmp(argv[0], "check") == 0) {
+		/* Checks the integrity of an installed package. */
+		if (argc != 2)
+			usage();
+
+		rv = xbps_check_pkg_integrity(argv[1]);
 
 	} else if (strcasecmp(argv[0], "autoupdate") == 0) {
 		/*

@@ -116,6 +116,7 @@ xbps_check_is_installed_pkg(const char *pkg)
 	const char *reqver, *instver;
 	char *pkgname;
 	int rv = 0;
+	pkg_state_t state = 0;
 
 	assert(pkg != NULL);
 
@@ -125,8 +126,21 @@ xbps_check_is_installed_pkg(const char *pkg)
 	dict = xbps_find_pkg_installed_from_plist(pkgname);
 	if (dict == NULL) {
 		free(pkgname);
-		return -2; /* not installed */
+		return -1; /* not installed */
 	}
+
+	/*
+	 * Check that package state is fully installed, not
+	 * unpacked or something else.
+	 */
+	if (xbps_get_pkg_state_installed(pkgname, &state) != 0) {
+		free(pkgname);
+		return -1;
+	}
+	free(pkgname);
+
+	if (state != XBPS_PKG_STATE_INSTALLED)
+		return -1;
 
 	/* Get version from installed package */
 	prop_dictionary_get_cstring_nocopy(dict, "version", &instver);
@@ -134,7 +148,6 @@ xbps_check_is_installed_pkg(const char *pkg)
 	/* Compare installed and required version. */
 	rv = xbps_cmpver(instver, reqver);
 
-	free(pkgname);
 	prop_object_release(dict);
 
 	return rv;

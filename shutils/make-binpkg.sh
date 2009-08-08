@@ -51,6 +51,7 @@ xbps_make_binpkg()
 xbps_make_binpkg_real()
 {
 	local binpkg pkgdir arch use_sudo lver
+	local tar_flags="cfp"
 
 	if [ ! -d ${DESTDIR} ]; then
 		echo "$pkgname: unexistent destdir... skipping!"
@@ -79,25 +80,39 @@ xbps_make_binpkg_real()
 	binpkg=$pkgname-$lver.$arch.xbps
 	pkgdir=$XBPS_PACKAGESDIR/$arch
 
+	#
+	# Make sure that INSTALL is the first file on the archive,
+	# this is to ensure that it's run before any other file is
+	# unpacked.
+	#
 	if [ -x ./INSTALL ]; then
-		#
-		# Make sure that INSTALL is the first file on the archive,
-		# this is to ensure that it's run before any other file is
-		# unpacked.
-		#
-		run_rootcmd $use_sudo tar cfp \
-			$XBPS_BUILDDIR/$binpkg ./INSTALL && \
-		run_rootcmd $use_sudo tar rfp $XBPS_BUILDDIR/$binpkg . \
-			--exclude "./INSTALL" \
-			--exclude "./var/db/xbps/metadata/*/flist" && \
-			bzip2 -9 $XBPS_BUILDDIR/$binpkg && \
-			mv $XBPS_BUILDDIR/$binpkg.bz2 $XBPS_BUILDDIR/$binpkg
-	else
-		run_rootcmd $use_sudo tar cfp $XBPS_BUILDDIR/$binpkg . \
-			--exclude "./var/db/xbps/metadata/*/flist" && \
-			bzip2 -9 $XBPS_BUILDDIR/$binpkg && \
-			mv $XBPS_BUILDDIR/$binpkg.bz2 $XBPS_BUILDDIR/$binpkg
+		run_rootcmd $use_sudo tar $tar_flags \
+			$XBPS_BUILDDIR/$binpkg ./INSTALL
+		[ $? -ne 0 ] && msg_error "Failed to add INSTALL script."
 	fi
+	if [ -x ./REMOVE ]; then
+		if [ -x ./INSTALL ]; then
+			tar_flags="rfp"
+		fi
+		run_rootcmd $use_sudo tar $tar_flags \
+			$XBPS_BUILDDIR/$binpkg ./REMOVE
+		[ $? -ne 0 ] && msg_error "Failed to add REMOVE script."
+	fi
+	if [ -x ./INSTALL -o -x ./REMOVE ]; then
+		tar_flags="rfp"
+	elif [ ! -x ./INSTALL -o ! -x ./REMOVE ]; then
+		tar_flags="cfp"
+	fi
+	run_rootcmd $use_sudo tar $tar_flags $XBPS_BUILDDIR/$binpkg \
+		./files.plist ./props.plist
+	[ $? -ne 0 ] && msg_error "Failed to add metadata files."
+
+	run_rootcmd $use_sudo tar rfp $XBPS_BUILDDIR/$binpkg . \
+		--exclude "./INSTALL" --exclude "./REMOVE" \
+		--exclude "./files.plist" --exclude "./props.plist" \
+		--exclude "./var/db/xbps/metadata/*/flist" && \
+		bzip2 -9 $XBPS_BUILDDIR/$binpkg && \
+		mv $XBPS_BUILDDIR/$binpkg.bz2 $XBPS_BUILDDIR/$binpkg
 	if [ $? -eq 0 ]; then
 		[ ! -d $pkgdir ] && mkdir -p $pkgdir
 		mv -f $XBPS_BUILDDIR/$binpkg $pkgdir

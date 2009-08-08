@@ -91,7 +91,7 @@ xbps_get_pkg_props(void)
 	if (pkg_props_initialized == false)
 		return NULL;
 
-	return prop_dictionary_copy(pkg_props);
+	return pkg_props;
 }
 
 int
@@ -134,13 +134,13 @@ xbps_prepare_repolist_data(void)
 	array = prop_dictionary_get(dict, "repository-list");
 	if (array == NULL) {
 		rv = EINVAL;
-		goto out;
+		goto out1;
 	}
 
 	iter = prop_array_iterator(array);
 	if (iter == NULL) {
 		rv = ENOMEM;
-		goto out;
+		goto out1;
 	}
 
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
@@ -175,8 +175,9 @@ xbps_prepare_repolist_data(void)
 
 out2:
 	prop_object_iterator_release(iter);
-out:
+out1:
 	prop_object_release(dict);
+out:
 	if (rv != 0)
 		xbps_release_repolist_data();
 
@@ -283,6 +284,7 @@ xbps_prepare_pkg(const char *pkgname)
 	struct repository_data *rdata;
 	const char *repoloc;
 	int rv = 0;
+	pkg_state_t state = 0;
 
 	assert(pkgname != NULL);
 
@@ -363,6 +365,24 @@ xbps_prepare_pkg(const char *pkgname)
 		rv = EINVAL;
 		goto out;
 	}
+
+	/*
+	 * Always set "not-installed" package state. Will be overwritten
+	 * to its correct state later.
+	 */
+	rv = xbps_set_pkg_state_dictionary(pkgrd, XBPS_PKG_STATE_NOT_INSTALLED);
+	if (rv != 0)
+		goto out;
+
+	/*
+	 * Overwrite package state in dictionary if it was unpacked
+	 * previously.
+	 */
+	rv = xbps_get_pkg_state_installed(pkgname, &state);
+	if (rv == 0) {
+		if ((rv = xbps_set_pkg_state_dictionary(pkgrd, state)) != 0)
+			goto out;
+        }
 
 	if (!prop_array_add(pkgs_array, pkgrd))
 		rv = errno;

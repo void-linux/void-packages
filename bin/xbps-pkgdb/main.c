@@ -139,7 +139,12 @@ main(int argc, char **argv)
 		prop_dictionary_set_cstring_nocopy(dict, "version", argv[2]);
 		prop_dictionary_set_cstring_nocopy(dict, "short_desc", argv[3]);
 
-		rv = xbps_register_pkg(dict, false, automatic);
+		rv = xbps_set_pkg_state_installed(argv[1],
+		    XBPS_PKG_STATE_INSTALLED);
+		if (rv != 0)
+			exit(EXIT_FAILURE);
+
+		rv = xbps_register_pkg(dict, automatic);
 		if (rv == EEXIST) {
 			printf("%s=> %s-%s already registered.\n",
 			    in_chroot ? "[chroot] " : "", argv[1], argv[2]);

@@ -36,7 +36,7 @@
 #include "index.h"
 
 /* Array of valid architectures */
-const char *archdirs[] = { "i686", "x86_64", "noarch", NULL };
+static const char *archdirs[] = { "i686", "x86_64", "noarch", NULL };
 
 static prop_dictionary_t
 repoidx_getdict(const char *pkgdir)
@@ -52,16 +52,13 @@ repoidx_getdict(const char *pkgdir)
 	dict = prop_dictionary_internalize_from_file(plist);
 	if (dict == NULL) {
 		dict = prop_dictionary_create();
-		if (dict == NULL) {
-			free(plist);
-			return NULL;
-		}
+		if (dict == NULL)
+			goto out;
 
 		array = prop_array_create();
 		if (array == NULL) {
-			free(plist);
 			prop_object_release(dict);
-			return NULL;
+			goto out;
 		}
 
 		prop_dictionary_set(dict, "packages", array);
@@ -71,6 +68,7 @@ repoidx_getdict(const char *pkgdir)
 		prop_dictionary_set_cstring_nocopy(dict,
 		    "pkgindex-version", XBPS_PKGINDEX_VERSION);
 	}
+out:
 	free(plist);
 
 	return dict;
@@ -84,38 +82,36 @@ repoidx_addpkg(const char *file, const char *filename, const char *pkgdir)
 	struct archive *ar;
 	struct archive_entry *entry;
 	struct stat st;
-	ssize_t nbytes = -1;
 	const char *pkgname, *version, *regver;
-	char *props, *sha256, *plist;
-	size_t propslen = 0;
+	char *sha256, *plist;
 	int rv = 0;
 
 	ar = archive_read_new();
-	if (ar == NULL)
-		return errno;
-
+	if (ar == NULL) {
+		rv = errno;
+		goto out;
+	}
 	/* Enable support for tar format and all compression methods */
 	archive_read_support_compression_all(ar);
 	archive_read_support_format_tar(ar);
 
 	if ((rv = archive_read_open_filename(ar, file,
 	     ARCHIVE_READ_BLOCKSIZE)) == -1) {
-		archive_read_finish(ar);
-		return errno;
+		rv = errno;
+		goto out1;
 	}
 
 	/* Get existing or create repo index dictionary */
 	idxdict = repoidx_getdict(pkgdir);
 	if (idxdict == NULL) {
-		archive_read_finish(ar);
-		return errno;
+		rv = errno;
+		goto out1;
 	}
 	plist = xbps_get_pkg_index_plist(pkgdir);
 	if (plist == NULL) {
 		prop_dictionary_remove(idxdict, "packages");
-		prop_object_release(idxdict);
-		archive_read_finish(ar);
-		return ENOMEM;
+		rv = ENOMEM;
+		goto out2;
 	}
 
 	/*
@@ -123,32 +119,15 @@ repoidx_addpkg(const char *file, const char *filename, const char *pkgdir)
 	 * into a buffer.
 	 */
 	while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
-		if (strstr(archive_entry_pathname(entry), "props.plist") == 0) {
+		if (strstr(archive_entry_pathname(entry), XBPS_PKGPROPS) == 0) {
 			archive_read_data_skip(ar);
 			continue;
 		}
-
-		propslen = (size_t)archive_entry_size(entry);
-		props = malloc(propslen);
-		if (props == NULL) {
-			rv = errno;
-			break;
-		}
-		nbytes = archive_read_data(ar, props, propslen);
-		if ((size_t)nbytes != propslen) {
-			rv = EINVAL;
-			break;
-		}
-		newpkgd = prop_dictionary_internalize(props);
-		free(props);
-		propslen = 0;
+		newpkgd = xbps_read_dict_from_archive_entry(ar, entry);
 		if (newpkgd == NULL) {
-			archive_read_data_skip(ar);
-			continue;
-		} else if (prop_object_type(newpkgd) != PROP_TYPE_DICTIONARY) {
-			prop_object_release(newpkgd);
-			archive_read_data_skip(ar);
-			continue;
+			printf("%s: can't read %s metadata file, skipping!\n",
+			    file, XBPS_PKGPROPS);
+			break;
 		}
 
 		prop_dictionary_get_cstring_nocopy(newpkgd, "pkgname",
@@ -233,10 +212,13 @@ repoidx_addpkg(const char *file, const char *filename, const char *pkgdir)
 		    pkgname, version);
 		break;
 	}
-	archive_read_finish(ar);
-	free(plist);
-	prop_object_release(idxdict);
 
+	free(plist);
+out2:
+	prop_object_release(idxdict);
+out1:
+	archive_read_finish(ar);
+out:
 	return rv;
 }
 
@@ -253,7 +235,6 @@ xbps_repo_genindex(const char *pkgdir)
 
 	if (uname(&un) == -1)
 		return errno;
-
 	/*
 	 * Iterate over the known architecture directories to find
 	 * binary packages.
@@ -296,7 +277,6 @@ xbps_repo_genindex(const char *pkgdir)
 				free(path);
 				return rv;
 			}
-
 		}
 		(void)closedir(dirp);
 		free(path);

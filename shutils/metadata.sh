@@ -346,12 +346,12 @@ _EOF
 	else
 		rm -f $TMPFLIST
 	fi
-	mv -f $TMPFPLIST $metadir/files.plist
-	mv -f $TMPFPROPS $metadir/props.plist
+	mv -f $TMPFPLIST ${DESTDIR}/files.plist
+	mv -f $TMPFPROPS ${DESTDIR}/props.plist
 
-	$XBPS_REGPKGDB_CMD sanitize-plist $metadir/files.plist
-	$XBPS_REGPKGDB_CMD sanitize-plist $metadir/props.plist
-	chmod 644 $metadir/*
+	$XBPS_REGPKGDB_CMD sanitize-plist ${DESTDIR}/files.plist
+	$XBPS_REGPKGDB_CMD sanitize-plist ${DESTDIR}/props.plist
+	chmod 644 ${DESTDIR}/files.plist ${DESTDIR}/props.plist
 
 	#
 	# Update desktop-file-utils database if package contains

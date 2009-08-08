@@ -60,7 +60,7 @@ xbps_unregister_pkg(const char *pkgname)
 }
 
 static int
-xbps_remove_binary_pkg_meta(const char *pkgname)
+remove_pkg_metadir(const char *pkgname)
 {
 	struct dirent *dp;
 	DIR *dirp;
@@ -271,7 +271,7 @@ dirs:
 }
 
 int
-xbps_remove_binary_pkg(const char *pkgname, bool update)
+xbps_remove_pkg(const char *pkgname, const char *version, bool update)
 {
 	prop_dictionary_t dict;
 	const char *rootdir = xbps_get_rootdir();
@@ -280,15 +280,13 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 	bool prepostf = false;
 
 	assert(pkgname != NULL);
+	assert(version != NULL);
 
 	/*
 	 * Check if pkg is installed before anything else.
 	 */
 	if (xbps_check_is_installed_pkgname(pkgname) == false)
 		return ENOENT;
-
-	if (strcmp(rootdir, "") == 0)
-		rootdir = "/";
 
 	if (chdir(rootdir) == -1)
 		return errno;
@@ -306,7 +304,8 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 		 * Run the pre remove action.
 		 */
 		prepostf = true;
-		rv = xbps_file_chdir_exec(rootdir, buf, "pre", pkgname, NULL);
+		rv = xbps_file_chdir_exec(rootdir, buf, "pre", pkgname,
+		    version, NULL);
 		if (rv != 0) {
 			printf("%s: prerm action target error (%s)\n", pkgname,
 			    strerror(errno));
@@ -317,10 +316,10 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 
 	/*
 	 * Iterate over the pkg file list dictionary and remove all
-	 * files/dirs associated.
+	 * files, configuration files, links and dirs.
 	 */
-	path = xbps_xasprintf("%s/%s/metadata/%s/files.plist",
-	    rootdir, XBPS_META_PATH, pkgname);
+	path = xbps_xasprintf("%s/%s/metadata/%s/%s",
+	    rootdir, XBPS_META_PATH, pkgname, XBPS_PKGFILES);
 	if (path == NULL) {
 		free(buf);
 		return errno;
@@ -343,11 +342,12 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 	prop_object_release(dict);
 
 	/*
-	 * Run the post remove action if REMOVE file is there.
+	 * Run the post remove action if REMOVE file is there
+	 * and we aren't updating a package.
 	 */
-	if (prepostf) {
+	if (update == false && prepostf) {
 		if ((rv = xbps_file_chdir_exec(rootdir, buf, "post",
-		     pkgname, NULL)) != 0) {
+		     pkgname, version, NULL)) != 0) {
 			printf("%s: postrm action target error (%s)\n",
 			    pkgname, strerror(errno));
 			free(buf);
@@ -365,16 +365,17 @@ xbps_remove_binary_pkg(const char *pkgname, bool update)
 
 	if (update == false) {
 		/*
-		 * Unregister pkg from database only if it's a removal
-		 * and not an update.
+		 * Unregister pkg from database.
 		 */
 		rv = xbps_unregister_pkg(pkgname);
 		if (rv != 0)
 			return rv;
+
+		/*
+		 * Remove pkg metadata directory.
+		 */
+		return remove_pkg_metadir(pkgname);
 	}
 
-	/*
-	 * Remove pkg metadata directory.
-	 */
-	return xbps_remove_binary_pkg_meta(pkgname);
+	return 0;
 }

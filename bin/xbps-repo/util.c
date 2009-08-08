@@ -197,14 +197,14 @@ show_pkg_info_from_metadir(const char *pkgname)
 }
 
 int
-show_pkg_files_from_metadir(const char *pkgname, bool hash)
+show_pkg_files_from_metadir(const char *pkgname)
 {
 	prop_dictionary_t pkgd;
 	prop_array_t array;
 	prop_object_iterator_t iter = NULL;
 	prop_object_t obj;
-	const char *destdir, *file, *sha256;
-	char *plist, *path = NULL, *array_str = "files";
+	const char *destdir, *file;
+	char *plist, *array_str = "files";
 	int i, rv = 0;
 
 	destdir = xbps_get_rootdir();
@@ -233,7 +233,6 @@ show_pkg_files_from_metadir(const char *pkgname, bool hash)
 			printf("%s\n", file);
 		}
 		prop_object_iterator_release(iter);
-		iter = NULL;
 	}
 
 	/* Files and configuration files. */
@@ -254,41 +253,10 @@ show_pkg_files_from_metadir(const char *pkgname, bool hash)
 		}
 		while ((obj = prop_object_iterator_next(iter))) {
 			prop_dictionary_get_cstring_nocopy(obj, "file", &file);
-			if (hash == false) {
-				printf("%s\n", file);
-				continue;
-			}
-
-			printf("%s", file);
-			if (destdir) {
-				path = xbps_xasprintf("%s/%s", destdir, file);
-				if (path == NULL) {
-					rv = EINVAL;
-					goto out2;
-				}
-			}
-			prop_dictionary_get_cstring_nocopy(obj,
-			    "sha256", &sha256);
-			if (destdir)
-				rv = xbps_check_file_hash(path, sha256);
-			else
-				rv = xbps_check_file_hash(file, sha256);
-
-			if (rv != 0 && rv != ERANGE)
-				printf(" (can't check: %s)", strerror(rv));
-			else if (rv == ERANGE)
-				printf("  WARNING! SHA256 HASH MISMATCH!");
-
-			printf("\n");
-			if (destdir)
-				free(path);
+			printf("%s\n", file);
 		}
 		prop_object_iterator_release(iter);
-		iter = NULL;
 	}
-out2:
-	if (iter != NULL)
-		prop_object_iterator_release(iter);
 out:
 	prop_object_release(pkgd);
 

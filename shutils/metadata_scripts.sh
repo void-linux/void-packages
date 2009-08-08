@@ -26,7 +26,6 @@
 xbps_write_metadata_scripts_pkg()
 {
 	local action="$1"
-	local metadir="${DESTDIR}/var/db/xbps/metadata/$pkgname"
 	local tmpf=$(mktemp -t xbps-install.XXXXXXXXXX) || exit 1
 	local fpattern="s|${DESTDIR}||g;s|^\./$||g;/^$/d"
 	local targets found info_files
@@ -217,7 +216,7 @@ _EOF
 			rm -f $tmpf
 			return 0
 		fi
-		mv $tmpf ${metadir}/REMOVE && chmod 755 ${metadir}/REMOVE
+		mv $tmpf ${DESTDIR}/REMOVE && chmod 755 ${DESTDIR}/REMOVE
 		;;
 	esac
 }

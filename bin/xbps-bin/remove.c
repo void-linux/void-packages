@@ -96,7 +96,7 @@ xbps_autoremove_pkgs(void)
 		prop_dictionary_get_cstring_nocopy(obj, "version", &version);
 
 		printf("Removing package %s-%s ...\n", pkgname, version);
-		if ((rv = xbps_remove_binary_pkg(pkgname, false)) != 0)
+		if ((rv = xbps_remove_pkg(pkgname, version, false)) != 0)
 			goto out2;
 	}
 out2:
@@ -110,7 +110,7 @@ out:
 }
 
 void
-xbps_remove_pkg(const char *pkgname, bool force)
+xbps_remove_installed_pkg(const char *pkgname, bool force)
 {
 	prop_array_t reqby;
 	prop_dictionary_t dict;
@@ -151,7 +151,7 @@ xbps_remove_pkg(const char *pkgname, bool force)
 	}
 
 	printf("Removing package %s-%s ...\n", pkgname, version);
-	if ((rv = xbps_remove_binary_pkg(pkgname, false)) != 0) {
+	if ((rv = xbps_remove_pkg(pkgname, version, false)) != 0) {
 		printf("Unable to remove %s-%s (%s).\n",
 		    pkgname, version, strerror(errno));
 		goto out;

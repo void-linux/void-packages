@@ -35,13 +35,14 @@
 
 #include <xbps_api.h>
 
-static int unpack_archive_fini(struct archive *, prop_dictionary_t);
+static int unpack_archive_fini(struct archive *, prop_dictionary_t, bool);
 
 int
-xbps_unpack_binary_pkg(prop_dictionary_t pkg)
+xbps_unpack_binary_pkg(prop_dictionary_t pkg, bool essential)
 {
 	prop_string_t filename, repoloc, arch;
 	struct archive *ar;
+	const char *pkgname;
 	char *binfile;
 	int pkg_fd, rv = 0;
 
@@ -50,6 +51,7 @@ xbps_unpack_binary_pkg(prop_dictionary_t pkg)
 	/*
 	 * Append filename to the full path for binary pkg.
 	 */
+	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
 	filename = prop_dictionary_get(pkg, "filename");
 	arch = prop_dictionary_get(pkg, "architecture");
 	repoloc = prop_dictionary_get(pkg, "repository");
@@ -74,7 +76,9 @@ xbps_unpack_binary_pkg(prop_dictionary_t pkg)
 		goto out2;
 	}
 
-	/* Enable support for tar format and all compression methods */
+	/*
+	 * Enable support for tar format and all compression methods.
+	 */
 	archive_read_support_compression_all(ar);
 	archive_read_support_format_tar(ar);
 
@@ -82,15 +86,14 @@ xbps_unpack_binary_pkg(prop_dictionary_t pkg)
 	     ARCHIVE_READ_BLOCKSIZE)) != 0)
 		goto out3;
 
-	rv = unpack_archive_fini(ar, pkg);
+	rv = unpack_archive_fini(ar, pkg, essential);
 	/*
 	 * If installation of package was successful, make sure the package
 	 * is really on storage (if possible).
 	 */
 	if (rv == 0)
-		if (fsync(pkg_fd) == -1)
+		if (fdatasync(pkg_fd) == -1)
 			rv = errno;
-
 out3:
 	archive_read_finish(ar);
 out2:
@@ -98,31 +101,39 @@ out2:
 out:
 	free(binfile);
 
+	if (rv == 0) {
+		/*
+		 * Set package state to unpacked.
+		 */
+		rv = xbps_set_pkg_state_installed(pkgname,
+		    XBPS_PKG_STATE_UNPACKED);
+	}
+
 	return rv;
 }
 
 /*
- * Flags for extracting files in binary packages.
+ * Flags for extracting files in binary packages. If a package
+ * is marked as "essential", its files will be overwritten and then
+ * the old and new dictionaries are compared to find out if there
+ * are some files that were in the old package that should be removed.
  */
 #define EXTRACT_FLAGS	ARCHIVE_EXTRACT_SECURE_NODOTDOT | \
-			ARCHIVE_EXTRACT_SECURE_SYMLINKS | \
-			ARCHIVE_EXTRACT_NO_OVERWRITE | \
-			ARCHIVE_EXTRACT_NO_OVERWRITE_NEWER
+			ARCHIVE_EXTRACT_SECURE_SYMLINKS
 #define FEXTRACT_FLAGS	ARCHIVE_EXTRACT_OWNER | ARCHIVE_EXTRACT_PERM | \
 			ARCHIVE_EXTRACT_TIME | EXTRACT_FLAGS
-
 /*
  * TODO: remove printfs and return appropiate errors to be interpreted by
  * the consumer.
  */
 static int
-unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
+unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
+		    bool essential)
 {
 	struct archive_entry *entry;
-	const char *prepost = "./INSTALL";
 	const char *pkgname, *version, *rootdir;
-	char *buf;
-	int rv = 0, flags = 0, lflags = 0;
+	char *buf, *buf2;
+	int rv = 0, flags, lflags;
 	bool actgt = false;
 
 	assert(ar != NULL);
@@ -130,6 +141,10 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 	rootdir = xbps_get_rootdir();
 	flags = xbps_get_flags();
 
+	/*
+	 * First we change to the destination directory or / if
+	 * not specified.
+	 */
 	if (strcmp(rootdir, "") == 0)
 		rootdir = "/";
 
@@ -144,38 +159,72 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 	else
 		lflags = EXTRACT_FLAGS;
 
-	buf = xbps_xasprintf(".%s/metadata/%s/INSTALL",
-	    XBPS_META_PATH, pkgname);
-	if (buf == NULL)
-		return errno;
+	if (essential == false) {
+		lflags |= ARCHIVE_EXTRACT_NO_OVERWRITE;
+		lflags |= ARCHIVE_EXTRACT_NO_OVERWRITE_NEWER;
+	}
 
 	while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
 		/*
-		 * Run the pre installation action target if there's a script
-		 * before writing data to disk.
+		 * Run the pre INSTALL action if the file is there.
 		 */
-		if (strcmp(prepost, archive_entry_pathname(entry)) == 0) {
-			actgt = true;
-			printf("\n");
-			(void)fflush(stdout);
+		if (strcmp("./INSTALL", archive_entry_pathname(entry)) == 0) {
+			buf = xbps_xasprintf(".%s/metadata/%s/INSTALL",
+			    XBPS_META_PATH, pkgname);
+			if (buf == NULL)
+				return errno;
 
+			actgt = true;
 			archive_entry_set_pathname(entry, buf);
 
 			if (archive_read_extract(ar, entry, lflags) != 0) {
-				if ((rv = archive_errno(ar)) != EEXIST)
-					break;
+				if ((rv = archive_errno(ar)) != EEXIST) {
+					free(buf);
+					return rv;
+				}
 			}
 
 			if ((rv = xbps_file_chdir_exec(rootdir, buf, "pre",
 			     pkgname, version, NULL)) != 0) {
+				free(buf);
 				printf("%s: preinst action target error %s\n",
 				    pkgname, strerror(errno));
-				(void)fflush(stdout);
-				break;
+				return rv;
 			}
-
 			/* pass to the next entry if successful */
+			free(buf);
 			continue;
+
+		/*
+		 * Unpack metadata files (REMOVE, files.plist and props.plist)
+		 * into the proper path.
+		 */
+		} else if (strcmp("./REMOVE",
+		    archive_entry_pathname(entry)) == 0) {
+			buf2 = xbps_xasprintf(".%s/metadata/%s/REMOVE",
+			    XBPS_META_PATH, pkgname);
+			if (buf2 == NULL)
+				return errno;
+			archive_entry_set_pathname(entry, buf2);
+			free(buf2);
+			buf2 = NULL;
+		} else if (strcmp("./files.plist",
+		    archive_entry_pathname(entry)) == 0) {
+			buf2 = xbps_xasprintf(".%s/metadata/%s/files.plist",
+			    XBPS_META_PATH, pkgname);
+			if (buf2 == NULL)
+				return errno;
+			archive_entry_set_pathname(entry, buf2);
+			free(buf2);
+			buf2 = NULL;
+		} else if (strcmp("./props.plist",
+		    archive_entry_pathname(entry)) == 0) {
+			buf2 = xbps_xasprintf(".%s/metadata/%s/props.plist",
+			    XBPS_META_PATH, pkgname);
+			if (buf2 == NULL)
+				return errno;
+			archive_entry_set_pathname(entry, buf2);
+			free(buf2);
 		}
 		/*
 		 * Extract all data from the archive now.
@@ -185,14 +234,12 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 			if (rv != EEXIST) {
 				printf("ERROR: %s...exiting!\n",
 				    archive_error_string(ar));
-				(void)fflush(stdout);
-				break;
+				return rv;;
 			} else if (rv == EEXIST) {
 				if (flags & XBPS_VERBOSE) {
 					printf("WARNING: ignoring existent "
 					    "path: %s\n",
 					    archive_entry_pathname(entry));
-					(void)fflush(stdout);
 				}
 				rv = 0;
 				continue;
@@ -203,21 +250,6 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg)
 			(void)fflush(stdout);
 		}
 	}
-
-	if (rv == 0 && actgt) {
-		/*
-		 * Run the post installaction action target, if package
-		 * contains the script.
-		 */
-		if ((rv = xbps_file_chdir_exec(rootdir, buf, "post",
-		     pkgname, version, NULL)) != 0) {
-			printf("%s: postinst action target error %s\n",
-			    pkgname, strerror(errno));
-			(void)fflush(stdout);
-		}
-	}
-
-	free(buf);
 
 	return rv;
 }
