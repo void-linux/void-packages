@@ -133,6 +133,37 @@ xbps_callback_array_iter_in_dict(prop_dictionary_t dict, const char *key,
 	return rv;
 }
 
+int
+xbps_callback_array_iter_reverse_in_dict(prop_dictionary_t dict,
+    const char *key, int (*fn)(prop_object_t, void *, bool *), void *arg)
+{
+	prop_array_t array;
+	prop_object_t obj;
+	int rv = 0;
+	bool cbloop_done = false;
+	unsigned int cnt = 0;
+
+	assert(dict != NULL);
+	assert(key != NULL);
+	assert(fn != NULL);
+
+	array = prop_dictionary_get(dict, key);
+	if (array == NULL || prop_object_type(array) != PROP_TYPE_ARRAY)
+		return EINVAL;
+
+	if ((cnt = prop_array_count(array)) == 0)
+		return 0;
+
+	while (cnt--) {
+		obj = prop_array_get(array, cnt);
+		rv = (*fn)(obj, arg, &cbloop_done);
+		if (rv != 0 || cbloop_done)
+			break;
+	}
+
+	return rv;
+}
+
 prop_dictionary_t
 xbps_find_pkg_from_plist(const char *plist, const char *pkgname)
 {
@@ -380,4 +411,39 @@ xbps_remove_pkg_dict_from_file(const char *pkg, const char *plist)
 	prop_object_release(pdict);
 
 	return 0;
+}
+
+prop_dictionary_t
+xbps_read_dict_from_archive_entry(struct archive *ar,
+				  struct archive_entry *entry)
+{
+	prop_dictionary_t d;
+	size_t buflen = 0;
+	ssize_t nbytes = -1;
+	char *buf;
+
+	assert(ar != NULL);
+	assert(entry != NULL);
+
+	buflen = (size_t)archive_entry_size(entry);
+	buf = malloc(buflen);
+	if (buf == NULL)
+		return NULL;
+
+	nbytes = archive_read_data(ar, buf, buflen);
+	if ((size_t)nbytes != buflen) {
+		free(buf);
+		return NULL;
+	}
+
+	d = prop_dictionary_internalize(buf);
+	free(buf);
+	if (d == NULL)
+		return NULL;
+	else if (prop_object_type(d) != PROP_TYPE_DICTIONARY) {
+		prop_object_release(d);
+		return NULL;
+	}
+
+	return d;
 }
