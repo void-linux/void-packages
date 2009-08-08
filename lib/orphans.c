@@ -103,28 +103,14 @@ xbps_find_orphan_packages(void)
 	prop_object_t obj;
 	prop_object_iterator_t iter;
 	struct orphan orphan;
-	const char *rootdir;
-	char *plist;
 	int rv = 0;
 
-	rootdir = xbps_get_rootdir();
-	plist = xbps_xasprintf("%s/%s/%s", rootdir,
-	    XBPS_META_PATH, XBPS_REGPKGDB);
-	if (plist == NULL)
+	if ((dict = xbps_prepare_regpkgdb_dict()) == NULL)
 		return NULL;
-
-	dict = prop_dictionary_internalize_from_file(plist);
-	if (dict == NULL) {
-		free(plist);
-		return NULL;
-	}
-	free(plist);
 
 	orphan.array = prop_array_create();
-	if (orphan.array == NULL) {
-		prop_object_release(dict);
+	if (orphan.array == NULL)
 		return NULL;
-	}
 
 	/*
 	 * First look for direct orphan packages, i.e the ones
@@ -133,7 +119,6 @@ xbps_find_orphan_packages(void)
 	rv = xbps_callback_array_iter_in_dict(dict, "packages",
 	    find_orphan_pkg, (void *)&orphan);
 	if (rv != 0) {
-		prop_object_release(dict);
 		prop_object_release(orphan.array);
 		return NULL;
 	}
@@ -144,7 +129,6 @@ xbps_find_orphan_packages(void)
 	 */
 	iter = prop_array_iterator(orphan.array);
 	if (iter == NULL) {
-		prop_object_release(dict);
 		prop_object_release(orphan.array);
 		return NULL;
 	}
@@ -158,13 +142,11 @@ xbps_find_orphan_packages(void)
 		    find_indirect_orphan_pkg, (void *)&orphan);
 		if (rv != 0) {
 			prop_object_iterator_release(iter);
-			prop_object_release(dict);
 			prop_object_release(orphan.array);
 			return NULL;
 		}
 	}
 	prop_object_iterator_release(iter);
-	prop_object_release(dict);
 
 	return orphan.array;
 }
