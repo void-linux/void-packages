@@ -194,6 +194,8 @@ files:
 			    "sha256", &sha256);
 			rv = xbps_check_file_hash(path, sha256);
 			if (rv == ENOENT) {
+				printf("WARNING: '%s' doesn't exist!\n",
+				    file);
 				free(path);
 				continue;
 			} else if (rv == ERANGE) {
