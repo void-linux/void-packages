@@ -193,18 +193,20 @@ files:
 			prop_dictionary_get_cstring_nocopy(obj,
 			    "sha256", &sha256);
 			rv = xbps_check_file_hash(path, sha256);
-			if (rv != 0 && rv != ERANGE) {
+			if (rv == ENOENT) {
 				free(path);
-				prop_object_iterator_release(iter);
-				return rv;
-			}
-			if (rv == ERANGE) {
+				continue;
+			} else if (rv == ERANGE) {
 				if (flags & XBPS_VERBOSE)
 					printf("WARNING: SHA256 doesn't match "
 					    "for %s %s, ignoring...\n",
 					    curftype, file);
 				free(path);
 				continue;
+			} else if (rv != 0 && rv != ERANGE) {
+				free(path);
+				prop_object_iterator_release(iter);
+				return rv;
 			}
 			if ((rv = remove(path)) == -1) {
 				if (flags & XBPS_VERBOSE)
