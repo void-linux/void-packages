@@ -367,11 +367,13 @@ xbps_remove_pkg(const char *pkgname, const char *version, bool update)
 	if (rv != 0)
 		return rv;
 
-	/*
-	 * Unregister pkg from database.
-	 */
-	if ((rv = xbps_unregister_pkg(pkgname)) != 0)
-		return rv;
+	if (update == false) {
+		/*
+		 * Unregister pkg from database.
+		 */
+		if ((rv = xbps_unregister_pkg(pkgname)) != 0)
+			return rv;
+	}
 
 	/*
 	 * Remove pkg metadata directory.
