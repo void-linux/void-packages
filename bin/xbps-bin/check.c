@@ -145,8 +145,6 @@ xbps_check_pkg_integrity(const char *pkgname)
 			goto out2;
 	}
 
-	printf("%s: metadata check PASSED.\n", pkgname);
-
 	/*
 	 * Check for missing files and its hash.
 	 */
@@ -194,8 +192,6 @@ xbps_check_pkg_integrity(const char *pkgname)
                 prop_object_iterator_release(iter);
 		if (files_broken)
 			printf("%s: files check FAILED.\n", pkgname);
-		else
-			printf("%s: files check PASSED.\n", pkgname);
 	}
 
 	/*
@@ -230,10 +226,7 @@ xbps_check_pkg_integrity(const char *pkgname)
 			free(path);
 		}
 		prop_object_iterator_release(iter);
-		if (rv == 0)
-			printf("%s: configuration files check PASSED.\n",
-			    pkgname);
-		else
+		if (rv != 0)
 			printf("%s: configuration files check FAILED.\n",
 			    pkgname);
 	}
@@ -259,9 +252,6 @@ xbps_check_pkg_integrity(const char *pkgname)
 		prop_object_iterator_release(iter);
 		if (rv == ENOENT)
 			printf("%s: run-time dependency check FAILED.\n",
-			    pkgname);
-		else
-			printf("%s: run-time dependency check PASSED.\n",
 			    pkgname);
 	}
 
