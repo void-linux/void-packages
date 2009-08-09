@@ -70,6 +70,9 @@ xbps_configure_pkg(const char *pkgname, const char *version)
 		return errno;
 
 	if (access(buf, R_OK) == 0) {
+		if (strcmp(rootdir, "") == 0)
+			rootdir = "/";
+
 		if (chdir(rootdir) == -1)
 			return errno;
 
