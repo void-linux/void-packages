@@ -141,13 +141,6 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 	rootdir = xbps_get_rootdir();
 	flags = xbps_get_flags();
 
-	/*
-	 * First we change to the destination directory or / if
-	 * not specified.
-	 */
-	if (strcmp(rootdir, "") == 0)
-		rootdir = "/";
-
 	if (chdir(rootdir) == -1)
 		return errno;
 
