@@ -205,6 +205,7 @@ xbps_find_new_pkg(const char *pkgname, prop_dictionary_t instpkg)
 	struct repository_data *rdata;
 	const char *repoloc, *repover, *instver;
 	int rv = 0;
+	pkg_state_t state = 0;
 
 	assert(pkgname != NULL);
 	assert(instpkg != NULL);
@@ -263,6 +264,24 @@ xbps_find_new_pkg(const char *pkgname, prop_dictionary_t instpkg)
 	unsorted = prop_dictionary_get(pkg_props, "unsorted_deps");
 	if (unsorted == NULL) {
 		rv = EINVAL;
+		goto out;
+	}
+
+	/*
+	 * Always set "not-installed" package state. Will be overwritten
+	 * to its correct state later.
+	 */
+	rv = xbps_set_pkg_state_dictionary(pkgrd, XBPS_PKG_STATE_NOT_INSTALLED);
+	if (rv != 0)
+		goto out;
+
+	/*
+	 * Overwrite package state in dictionary if it was unpacked
+	 * previously.
+	 */
+	rv = xbps_get_pkg_state_installed(pkgname, &state);
+	if (rv == 0) {
+		if ((rv = xbps_set_pkg_state_dictionary(pkgrd, state)) != 0)
 		goto out;
 	}
 
