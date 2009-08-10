@@ -292,6 +292,9 @@ xbps_remove_pkg(const char *pkgname, const char *version, bool update)
 	if (xbps_check_is_installed_pkgname(pkgname) == false)
 		return ENOENT;
 
+	if (strcmp(rootdir, "") == 0)
+		rootdir = "/";
+
 	if (chdir(rootdir) == -1)
 		return errno;
 
