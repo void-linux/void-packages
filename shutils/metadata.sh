@@ -351,7 +351,9 @@ _EOF
 
 	$XBPS_REGPKGDB_CMD sanitize-plist ${DESTDIR}/files.plist
 	$XBPS_REGPKGDB_CMD sanitize-plist ${DESTDIR}/props.plist
-	chmod 644 ${metadir}/flist ${DESTDIR}/files.plist ${DESTDIR}/props.plist
+	chmod 644 ${DESTDIR}/files.plist ${DESTDIR}/props.plist
+	[ -f $metadir/flist ] && chmod 644 $metadir/flist
+
 	#
 	# Update desktop-file-utils database if package contains
 	# any desktop file in /usr/share/applications.
