@@ -113,7 +113,7 @@ main(int argc, char **argv)
 			break;
 		case 'v':
 			verbose = true;
-			flags |= XBPS_VERBOSE;
+			flags |= XBPS_FLAG_VERBOSE;
 			break;
 		case '?':
 		default:

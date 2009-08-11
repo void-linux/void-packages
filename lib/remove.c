@@ -97,7 +97,7 @@ remove_pkg_metadir(const char *pkgname)
 		}
 
 		if ((rv = unlink(path)) == -1) {
-			if (flags & XBPS_VERBOSE)
+			if (flags & XBPS_FLAG_VERBOSE)
 				printf("WARNING: can't remove %s (%s)\n",
 				    pkgname, strerror(errno));
 		}
@@ -144,13 +144,13 @@ remove_pkg_files(prop_dictionary_t dict)
 			return EINVAL;
 		}
 		if ((rv = remove(path)) == -1) {
-			if (flags & XBPS_VERBOSE)
+			if (flags & XBPS_FLAG_VERBOSE)
 				printf("WARNING: can't remove link %s (%s)\n",
 				    file, strerror(errno));
 			free(path);
 			continue;
 		}
-		if (flags & XBPS_VERBOSE)
+		if (flags & XBPS_FLAG_VERBOSE)
 			printf("Removed link: %s\n", file);
 
 		free(path);
@@ -199,7 +199,7 @@ files:
 				free(path);
 				continue;
 			} else if (rv == ERANGE) {
-				if (flags & XBPS_VERBOSE)
+				if (flags & XBPS_FLAG_VERBOSE)
 					printf("WARNING: SHA256 doesn't match "
 					    "for %s %s, ignoring...\n",
 					    curftype, file);
@@ -211,14 +211,14 @@ files:
 				return rv;
 			}
 			if ((rv = remove(path)) == -1) {
-				if (flags & XBPS_VERBOSE)
+				if (flags & XBPS_FLAG_VERBOSE)
 					printf("WARNING: can't remove "
 					    "%s %s (%s)\n", curftype, file,
 					    strerror(errno));
 				free(path);
 				continue;
 			}
-			if (flags & XBPS_VERBOSE)
+			if (flags & XBPS_FLAG_VERBOSE)
 				printf("Removed %s: %s\n", curftype, file);
 
 			free(path);
@@ -256,7 +256,7 @@ dirs:
 				free(path);
 				continue;
 			}
-			if (flags & XBPS_VERBOSE) {
+			if (flags & XBPS_FLAG_VERBOSE) {
 				printf("WARNING: can't remove "
 				    "directory %s (%s)\n", file,
 				    strerror(errno));
@@ -264,7 +264,7 @@ dirs:
 				continue;
 			}
 		}
-		if (flags & XBPS_VERBOSE)
+		if (flags & XBPS_FLAG_VERBOSE)
 			printf("Removed directory: %s\n", file);
 
 		free(path);

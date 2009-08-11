@@ -232,7 +232,7 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 				    archive_error_string(ar));
 				return rv;;
 			} else if (rv == EEXIST) {
-				if (flags & XBPS_VERBOSE) {
+				if (flags & XBPS_FLAG_VERBOSE) {
 					printf("WARNING: ignoring existent "
 					    "path: %s\n",
 					    archive_entry_pathname(entry));
@@ -241,7 +241,7 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 				continue;
 			}
 		}
-		if (flags & XBPS_VERBOSE) {
+		if (flags & XBPS_FLAG_VERBOSE) {
 			printf(" %s\n", archive_entry_pathname(entry));
 			(void)fflush(stdout);
 		}
