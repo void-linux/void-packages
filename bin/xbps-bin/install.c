@@ -44,7 +44,6 @@ struct transaction {
 	prop_dictionary_t dict;
 	prop_object_iterator_t iter;
 	const char *originpkgname;
-	const char *curpkgname;
 	int type;
 	bool force;
 	bool update;
@@ -308,7 +307,7 @@ exec_transaction(struct transaction *trans)
 {
 	prop_dictionary_t instpkgd;
 	prop_object_t obj;
-	const char *pkgname, *version, *instver, *filename;
+	const char *pkgname, *version, *instver, *filename, *tract;
 	int rv = 0;
 	bool essential, isdep, autoinst;
 	pkg_state_t state = 0;
@@ -349,6 +348,7 @@ exec_transaction(struct transaction *trans)
 		prop_dictionary_get_cstring_nocopy(obj, "version", &version);
 		prop_dictionary_get_bool(obj, "essential", &essential);
 		prop_dictionary_get_cstring_nocopy(obj, "filename", &filename);
+		prop_dictionary_get_cstring_nocopy(obj, "trans-action", &tract);
 
 		if ((trans->type == TRANS_ONE) &&
 		    strcmp(trans->originpkgname, pkgname))
@@ -364,9 +364,7 @@ exec_transaction(struct transaction *trans)
 		if (state == XBPS_PKG_STATE_UNPACKED)
 			continue;
 
-		if ((trans->type == TRANS_ALL) ||
-		    (trans->update &&
-		     strcmp(trans->curpkgname, pkgname) == 0)) {
+		if (strcmp(tract, "update") == 0) {
 			instpkgd = xbps_find_pkg_installed_from_plist(pkgname);
 			if (instpkgd == NULL) {
 				printf("error: unable to find %s installed "
