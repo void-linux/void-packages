@@ -150,7 +150,8 @@ xbps_find_deps_in_pkg(prop_dictionary_t master, prop_dictionary_t pkg)
 	assert(iter != NULL);
 
 	pkg_rdeps = prop_dictionary_get(pkg, "run_depends");
-	assert(pkg_rdeps != NULL);
+	if (pkg_rdeps == NULL)
+		return 0;
 
 	/*
 	 * Iterate over the repository pool and find out if we have
