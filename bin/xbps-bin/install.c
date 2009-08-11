@@ -50,10 +50,11 @@ struct transaction {
 	bool update;
 };
 
+static void	cleanup(int);
+static int	exec_transaction(struct transaction *);
 static void	show_missing_deps(prop_dictionary_t, const char *);
 static int	show_missing_dep_cb(prop_object_t, void *, bool *);
-static int	exec_transaction(struct transaction *);
-static void	cleanup(int);
+static void	show_package_list(prop_object_iterator_t, const char *);
 
 static void
 show_missing_deps(prop_dictionary_t d, const char *pkgname)
@@ -119,15 +120,44 @@ check_pkg_hashes(prop_object_iterator_t iter)
 	return 0;
 }
 
+static void
+show_package_list(prop_object_iterator_t iter, const char *match)
+{
+	prop_object_t obj;
+	size_t cols = 0;
+	const char *pkgname, *version, *tract;
+	bool first = false;
+
+	while ((obj = prop_object_iterator_next(iter)) != NULL) {
+		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
+		prop_dictionary_get_cstring_nocopy(obj, "version", &version);
+		prop_dictionary_get_cstring_nocopy(obj, "trans-action", &tract);
+		if (strcmp(match, tract))
+			continue;
+
+		cols += strlen(pkgname) + strlen(version) + 4;
+		if (cols <= 80) {
+			if (first == false) {
+				printf("  ");
+				first = true;
+			}
+		} else {
+			printf("\n  ");
+			cols = strlen(pkgname) + strlen(version) + 4;
+		}
+		printf("%s-%s ", pkgname, version);
+	}
+	prop_object_iterator_reset(iter);
+}
+
 static int
-show_transaction_sizes(prop_object_iterator_t iter, const char *descr)
+show_transaction_sizes(prop_object_iterator_t iter)
 {
 	prop_object_t obj;
 	uint64_t tsize = 0, dlsize = 0, instsize = 0;
-	size_t cols = 0;
-	const char *pkgname, *version;
+	const char *tract;
 	char size[64];
-	bool first = false;
+	bool trans_inst = false, trans_up = false;
 
 	/*
 	 * Iterate over the list of packages that are going to be
@@ -143,28 +173,28 @@ show_transaction_sizes(prop_object_iterator_t iter, const char *descr)
 	}
 	prop_object_iterator_reset(iter);
 
+	while ((obj = prop_object_iterator_next(iter))) {
+		prop_dictionary_get_cstring_nocopy(obj, "trans-action", &tract);
+		if (strcmp(tract, "install") == 0)
+			trans_inst = true;
+		else if (strcmp(tract, "update") == 0)
+			trans_up = true;
+	}
+	prop_object_iterator_reset(iter);
+
 	/*
 	 * Show the list of packages that will be installed.
 	 */
-	printf("\nThe following new packages will be %s:\n\n", descr);
-
-	while ((obj = prop_object_iterator_next(iter)) != NULL) {
-		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
-		prop_dictionary_get_cstring_nocopy(obj, "version", &version);
-		cols += strlen(pkgname) + strlen(version) + 4;
-		if (cols <= 80) {
-			if (first == false) {
-				printf("  ");
-				first = true;
-			}
-		} else {
-			printf("\n  ");
-			cols = strlen(pkgname) + strlen(version) + 4;
-		}
-		printf("%s-%s ", pkgname, version);
+	if (trans_inst) {
+		printf("The following packages will be installed:\n\n");
+		show_package_list(iter, "install");
+		printf("\n\n");
 	}
-	prop_object_iterator_reset(iter);
-	printf("\n\n");
+	if (trans_up) {
+		printf("The following packages will be updated:\n\n");
+		show_package_list(iter, "update");
+		printf("\n\n");
+	}
 
 	/*
 	 * Show total download/installed size for all required packages.
@@ -291,8 +321,7 @@ exec_transaction(struct transaction *trans)
 	/*
 	 * Show download/installed size for the transaction.
 	 */
-	rv = show_transaction_sizes(trans->iter,
-	    trans->type == TRANS_ALL ? "updated" : "installed");
+	rv = show_transaction_sizes(trans->iter);
 	if (rv != 0)
 		return rv;
 

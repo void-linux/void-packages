@@ -285,6 +285,8 @@ xbps_find_new_pkg(const char *pkgname, prop_dictionary_t instpkg)
 		goto out;
 	}
 
+	prop_dictionary_set_cstring_nocopy(pkgrd, "trans-action", "update");
+
 	if (!prop_array_add(unsorted, pkgrd))
 		rv = errno;
 
