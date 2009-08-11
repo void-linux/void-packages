@@ -160,12 +160,9 @@ make_install()
 		fi
 	fi
 
-	# Always remove perllocal.pod and .packlist files for
-	# perl modules.
-	if [ "$build_style" = "perl_module" -a "$pkgname" != "perl" ]; then
-		find ${DESTDIR} -name perllocal.pod -delete
-		find ${DESTDIR} -name .packlist -delete
-	fi
+	# Always remove perllocal.pod and .packlist files.
+	find ${DESTDIR} -name perllocal.pod -delete
+	find ${DESTDIR} -name .packlist -delete
 
 	# Unset build vars.
 	unset_build_vars
