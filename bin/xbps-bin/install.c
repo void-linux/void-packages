@@ -347,6 +347,10 @@ exec_transaction(struct transaction *trans)
 
 			prop_dictionary_get_cstring_nocopy(instpkgd,
 			    "version", &instver);
+			autoinst = false;
+			prop_dictionary_get_bool(instpkgd, "automatic-install",
+			    &autoinst);
+			isdep = autoinst;
 			prop_object_release(instpkgd);
 
 			/*
@@ -376,12 +380,6 @@ exec_transaction(struct transaction *trans)
 		/*
 		 * Register binary package.
 		 */
-		if (trans->type == TRANS_ALL) {
-			prop_dictionary_get_bool(obj, "automatic-install",
-			    &autoinst);
-			isdep = autoinst;
-		}
-
 		if ((rv = xbps_register_pkg(obj, isdep)) != 0) {
 			printf("error: registering %s-%s! (%s)\n",
 			    pkgname, version, strerror(rv));
