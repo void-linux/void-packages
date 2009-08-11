@@ -405,6 +405,8 @@ xbps_prepare_pkg(const char *pkgname)
 			goto out;
         }
 
+	prop_dictionary_set_cstring_nocopy(pkgrd, "trans-action", "install");
+
 	if (!prop_array_add(pkgs_array, pkgrd))
 		rv = errno;
 
