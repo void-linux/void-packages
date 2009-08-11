@@ -35,18 +35,11 @@
 #include <xbps_api.h>
 #include "defs.h"
 
-enum {
-	TRANS_ONE,
-	TRANS_ALL
-};
-
 struct transaction {
 	prop_dictionary_t dict;
 	prop_object_iterator_t iter;
 	const char *originpkgname;
-	int type;
 	bool force;
-	bool update;
 };
 
 static void	cleanup(int);
@@ -289,8 +282,6 @@ xbps_install_pkg(const char *pkg, bool force, bool update)
 	}
 
 	trans->force = force;
-	trans->update = update;
-	trans->type = TRANS_ONE;
 	rv = exec_transaction(trans);
 
 	prop_object_iterator_release(trans->iter);
@@ -350,7 +341,7 @@ exec_transaction(struct transaction *trans)
 		prop_dictionary_get_cstring_nocopy(obj, "filename", &filename);
 		prop_dictionary_get_cstring_nocopy(obj, "trans-action", &tract);
 
-		if ((trans->type == TRANS_ONE) &&
+		if (trans->originpkgname &&
 		    strcmp(trans->originpkgname, pkgname))
 			isdep = true;
 
@@ -523,8 +514,6 @@ xbps_autoupdate_pkgs(bool force)
 	}
 
 	trans->force = force;
-	trans->update = true;
-	trans->type = TRANS_ALL;
 	rv = exec_transaction(trans);
 
 	prop_object_iterator_release(trans->iter);
