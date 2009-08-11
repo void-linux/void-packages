@@ -280,14 +280,14 @@ exec_transaction(struct transaction *trans)
 	prop_object_t obj;
 	const char *pkgname, *version, *instver, *filename;
 	int rv = 0;
-	bool essential, isdep;
+	bool essential, isdep, autoinst;
 	pkg_state_t state = 0;
 
 	assert(trans != NULL);
 	assert(trans->dict != NULL);
 	assert(trans->iter != NULL);
 
-	essential = isdep = false;
+	essential = isdep = autoinst = false;
 	/*
 	 * Show download/installed size for the transaction.
 	 */
@@ -376,6 +376,12 @@ exec_transaction(struct transaction *trans)
 		/*
 		 * Register binary package.
 		 */
+		if (trans->type == TRANS_ALL) {
+			prop_dictionary_get_bool(obj, "automatic-install",
+			    &autoinst);
+			isdep = autoinst;
+		}
+
 		if ((rv = xbps_register_pkg(obj, isdep)) != 0) {
 			printf("error: registering %s-%s! (%s)\n",
 			    pkgname, version, strerror(rv));
