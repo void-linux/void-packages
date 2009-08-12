@@ -234,7 +234,7 @@ xbps_find_new_packages(void)
 			return rv;
 		}
 	}
-	prop_object_iterator_reset(iter);
+	prop_object_iterator_release(iter);
 
 	return rv;
 }
