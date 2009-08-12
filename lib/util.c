@@ -31,7 +31,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <ctype.h>
-#include <limits.h>
 #include <sys/utsname.h>
 
 #include <xbps_api.h>

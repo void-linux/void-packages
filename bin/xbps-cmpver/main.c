@@ -3,8 +3,6 @@
  * @ 2008
  * Author: pancake <youterm.com>
  */
-#include <stdio.h>
-#include <string.h>
 #include <xbps_api.h>
 
 int main(int argc, char **argv)

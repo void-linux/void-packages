@@ -29,8 +29,6 @@
 #include <string.h>
 #include <errno.h>
 #include <fnmatch.h>
-#include <limits.h>
-#include <prop/proplib.h>
 
 #include <xbps_api.h>
 #include "util.h"

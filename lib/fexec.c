@@ -32,7 +32,6 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
 
 #include <xbps_api.h>

@@ -27,11 +27,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <errno.h>
-#include <limits.h>
-#include <libgen.h>
-#include <unistd.h>
 
 #include <xbps_api.h>
 #include "defs.h"
