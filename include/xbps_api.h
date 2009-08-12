@@ -98,6 +98,7 @@ SIMPLEQ_HEAD(, repository_data) repodata_queue;
 
 int		xbps_prepare_pkg(const char *);
 int		xbps_find_new_pkg(const char *, prop_dictionary_t);
+int		xbps_find_new_packages(void);
 int		xbps_prepare_repolist_data(void);
 void		xbps_release_repolist_data(void);
 prop_dictionary_t	xbps_get_pkg_props(void);

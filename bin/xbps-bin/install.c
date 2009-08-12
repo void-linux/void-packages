@@ -435,25 +435,18 @@ void
 xbps_autoupdate_pkgs(bool force)
 {
 	struct transaction *trans;
-	prop_dictionary_t dict;
-	prop_object_t obj;
-	const char *pkgname;
 	int rv = 0;
 
 	/*
-	 * Prepare dictionary with all registered packages.
+	 * Find new package versions.
 	 */
-	dict = xbps_prepare_regpkgdb_dict();
-	if (dict == NULL) {
-		printf("No packages currently installed (%s).\n",
-		    strerror(errno));
-		cleanup(rv);
-	}
-	/*
-	 * Prepare dictionary with all registered repositories.
-	 */
-	if ((rv = xbps_prepare_repolist_data()) != 0)
+	if ((rv = xbps_find_new_packages()) != 0) {
+		if (rv == ENOENT) {
+			printf("No packages currently registered.\n");
+			cleanup(0);
+		}
 		goto out;
+	}
 
 	/*
 	 * Prepare transaction data.
@@ -461,26 +454,6 @@ xbps_autoupdate_pkgs(bool force)
 	trans = calloc(1, sizeof(struct transaction));
 	if (trans == NULL)
 		goto out;
-
-	trans->iter = xbps_get_array_iter_from_dict(dict, "packages");
-	if (trans->iter == NULL) {
-		rv = EINVAL;
-		goto out1;
-	}
-
-	/*
-	 * Find out if there is a newer version for all currently
-	 * installed packages.
-	 */
-	while ((obj = prop_object_iterator_next(trans->iter)) != NULL) {
-		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
-		rv = xbps_find_new_pkg(pkgname, obj);
-		if (rv != 0) {
-			prop_object_iterator_release(trans->iter);
-			goto out1;
-		}
-	}
-	prop_object_iterator_release(trans->iter);
 
 	/*
 	 * Get package transaction dictionary.

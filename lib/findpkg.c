@@ -198,6 +198,48 @@ xbps_release_repolist_data(void)
 }
 
 int
+xbps_find_new_packages(void)
+{
+	prop_dictionary_t dict;
+	prop_object_t obj;
+	prop_object_iterator_t iter;
+	const char *pkgname;
+	int rv = 0;
+
+	/*
+	 * Prepare dictionary with all registered packages.
+	 */
+	dict = xbps_prepare_regpkgdb_dict();
+	if (dict == NULL)
+		return ENOENT;
+
+	/*
+	 * Prepare dictionary with all registered repositories.
+	 */
+	if ((rv = xbps_prepare_repolist_data()) != 0)
+		return rv;
+
+	iter = xbps_get_array_iter_from_dict(dict, "packages");
+	if (iter == NULL)
+		return EINVAL;
+
+	/*
+	 * Find out if there is a newer version for all currently
+	 * installed packages.
+	 */
+	while ((obj = prop_object_iterator_next(iter)) != NULL) {
+		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
+		if ((rv = xbps_find_new_pkg(pkgname, obj)) != 0) {
+			prop_object_iterator_release(iter);
+			return rv;
+		}
+	}
+	prop_object_iterator_reset(iter);
+
+	return rv;
+}
+
+int
 xbps_find_new_pkg(const char *pkgname, prop_dictionary_t instpkg)
 {
 	prop_dictionary_t pkgrd = NULL;
