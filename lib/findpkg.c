@@ -34,6 +34,8 @@
 static prop_dictionary_t pkg_props;
 static bool pkg_props_initialized;
 
+static int set_pkg_state(prop_dictionary_t, const char *);
+
 static int
 create_pkg_props_dictionary(void)
 {
@@ -244,7 +246,6 @@ xbps_find_new_pkg(const char *pkgname, prop_dictionary_t instpkg)
 	struct repository_data *rdata;
 	const char *repoloc, *repover, *instver;
 	int rv = 0;
-	pkg_state_t state = 0;
 
 	assert(pkgname != NULL);
 	assert(instpkg != NULL);
@@ -310,19 +311,8 @@ xbps_find_new_pkg(const char *pkgname, prop_dictionary_t instpkg)
 	 * Always set "not-installed" package state. Will be overwritten
 	 * to its correct state later.
 	 */
-	rv = xbps_set_pkg_state_dictionary(pkgrd, XBPS_PKG_STATE_NOT_INSTALLED);
-	if (rv != 0)
+	if ((rv = set_pkg_state(pkgrd, pkgname)) != 0)
 		goto out;
-
-	/*
-	 * Overwrite package state in dictionary if it was unpacked
-	 * previously.
-	 */
-	rv = xbps_get_pkg_state_installed(pkgname, &state);
-	if (rv == 0) {
-		if ((rv = xbps_set_pkg_state_dictionary(pkgrd, state)) != 0)
-		goto out;
-	}
 
 	prop_dictionary_set_cstring_nocopy(pkgrd, "trans-action", "update");
 
@@ -336,6 +326,29 @@ out:
 	return rv;
 }
 
+static int
+set_pkg_state(prop_dictionary_t pkgd, const char *pkgname)
+{
+	pkg_state_t state = 0;
+	int rv = 0;
+
+	rv = xbps_set_pkg_state_dictionary(pkgd, XBPS_PKG_STATE_NOT_INSTALLED);
+	if (rv != 0)
+		return rv;
+
+	/*
+	 * Overwrite package state in dictionary if it was unpacked
+	 * previously.
+	 */
+	rv = xbps_get_pkg_state_installed(pkgname, &state);
+	if (rv == 0) {
+		if ((rv = xbps_set_pkg_state_dictionary(pkgd, state)) != 0)
+			return rv;
+        }
+
+	return rv;
+}
+
 int
 xbps_prepare_pkg(const char *pkgname)
 {
@@ -344,7 +357,6 @@ xbps_prepare_pkg(const char *pkgname)
 	struct repository_data *rdata;
 	const char *repoloc;
 	int rv = 0;
-	pkg_state_t state = 0;
 
 	assert(pkgname != NULL);
 
@@ -430,19 +442,8 @@ xbps_prepare_pkg(const char *pkgname)
 	 * Always set "not-installed" package state. Will be overwritten
 	 * to its correct state later.
 	 */
-	rv = xbps_set_pkg_state_dictionary(pkgrd, XBPS_PKG_STATE_NOT_INSTALLED);
-	if (rv != 0)
+	if ((rv = set_pkg_state(pkgrd, pkgname)) != 0)
 		goto out;
-
-	/*
-	 * Overwrite package state in dictionary if it was unpacked
-	 * previously.
-	 */
-	rv = xbps_get_pkg_state_installed(pkgname, &state);
-	if (rv == 0) {
-		if ((rv = xbps_set_pkg_state_dictionary(pkgrd, state)) != 0)
-			goto out;
-        }
 
 	prop_dictionary_set_cstring_nocopy(pkgrd, "trans-action", "install");
 
