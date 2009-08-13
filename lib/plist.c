@@ -192,13 +192,14 @@ xbps_find_pkg_from_plist(const char *plist, const char *pkgname)
 prop_dictionary_t
 xbps_find_pkg_installed_from_plist(const char *pkgname)
 {
+	prop_dictionary_t d, pkgd;
 	pkg_state_t state = 0;
-	prop_dictionary_t pkgd;
 
-	if (regpkgdb_initialized == false)
+	d = xbps_prepare_regpkgdb_dict();
+	if (d == NULL)
 		return NULL;
 
-	pkgd = xbps_find_pkg_in_dict(regpkgdb_dict, "packages", pkgname);
+	pkgd = xbps_find_pkg_in_dict(d, "packages", pkgname);
 	if (pkgd == NULL)
 		return NULL;
 
