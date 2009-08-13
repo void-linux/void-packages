@@ -344,7 +344,8 @@ set_pkg_state(prop_dictionary_t pkgd, const char *pkgname)
 	if (rv == 0) {
 		if ((rv = xbps_set_pkg_state_dictionary(pkgd, state)) != 0)
 			return rv;
-        }
+        } else if (rv == ENOENT)
+		rv = 0;
 
 	return rv;
 }
