@@ -68,7 +68,7 @@
 #endif
 
 /* From lib/configure.c */
-int		xbps_configure_pkg(const char *, const char *);
+int		xbps_configure_pkg(const char *);
 
 /* from lib/cmpver.c */
 int		xbps_cmpver(const char *, const char *);
@@ -103,18 +103,11 @@ int		xbps_prepare_repolist_data(void);
 void		xbps_release_repolist_data(void);
 prop_dictionary_t	xbps_get_pkg_props(void);
 
-/* From lib/register.c */
-int		xbps_register_pkg(prop_dictionary_t, bool);
-
-/* From lib/requiredby.c */
-int		xbps_requiredby_pkg_add(prop_array_t, prop_dictionary_t);
-int		xbps_requiredby_pkg_remove(const char *);
-
-/* From lib/unpack.c */
-int		xbps_unpack_binary_pkg(prop_dictionary_t, bool);
-
 /* From lib/depends.c */
 int		xbps_find_deps_in_pkg(prop_dictionary_t, prop_dictionary_t);
+
+/* From lib/orphans.c */
+prop_array_t	xbps_find_orphan_packages(void);
 
 /* From lib/plist.c */
 bool		xbps_add_obj_to_dict(prop_dictionary_t, prop_object_t,
@@ -151,13 +144,23 @@ int		xbps_remove_pkg_from_dict(prop_dictionary_t, const char *,
 					  const char *);
 int		xbps_remove_string_from_array(prop_array_t, const char *);
 
+/* From lib/purge.c */
+int		xbps_purge_pkg(const char *);
+
+/* From lib/register.c */
+int		xbps_register_pkg(prop_dictionary_t, bool);
+int		xbps_unregister_pkg(const char *);
+
 /* From lib/remove.c */
 int		xbps_remove_pkg(const char *, const char *, bool);
-int		xbps_unregister_pkg(const char *);
 
 /* From lib/repository.c */
 int		xbps_register_repository(const char *);
 int		xbps_unregister_repository(const char *);
+
+/* From lib/requiredby.c */
+int		xbps_requiredby_pkg_add(prop_array_t, prop_dictionary_t);
+int		xbps_requiredby_pkg_remove(const char *);
 
 /* From lib/sortdeps.c */
 int		xbps_sort_pkg_deps(prop_dictionary_t);
@@ -174,6 +177,9 @@ int		xbps_get_pkg_state_installed(const char *, pkg_state_t *);
 int		xbps_get_pkg_state_dictionary(prop_dictionary_t, pkg_state_t *);
 int		xbps_set_pkg_state_installed(const char *, pkg_state_t);
 int		xbps_set_pkg_state_dictionary(prop_dictionary_t, pkg_state_t);
+
+/* From lib/unpack.c */
+int		xbps_unpack_binary_pkg(prop_dictionary_t, bool);
 
 /* From lib/util.c */
 char *		xbps_xasprintf(const char *, ...);
@@ -193,8 +199,5 @@ void		xbps_set_flags(int);
 int		xbps_get_flags(void);
 bool		xbps_yesno(const char *, ...);
 bool		xbps_noyes(const char *, ...);
-
-/* From lib/orphans.c */
-prop_array_t	xbps_find_orphan_packages(void);
 
 #endif /* !_XBPS_API_H_ */

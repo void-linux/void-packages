@@ -42,31 +42,23 @@ usage(void)
 	printf("Usage: xbps-bin [options] [target] [arguments]\n\n"
 	" Available targets:\n"
         "    autoremove, autoupdate, check, files, install, list\n"
-	"    remove, show, update\n"
+	"    purge, remove, show, update\n"
 	" Targets with arguments:\n"
 	"    check\t<pkgname>\n"
 	"    files\t<pkgname>\n"
 	"    install\t<pkgname>\n"
+	"    purge\t[<pkgname>|<all>]\n"
+	"    reconfigure\t[<pkgname>|<all>]\n"
 	"    remove\t<pkgname>\n"
 	"    show\t<pkgname>\n"
 	"    update\t<pkgname>\n"
 	" Options shared by all targets:\n"
 	"    -r\t\t<rootdir>\n"
 	"    -v\t\t<verbose>\n"
-	" Options used by the (auto)remove target:\n"
+	" Options used by the (auto)remove and install target:\n"
 	"    -f\t\tForce installation or removal of packages.\n"
 	"      \t\tBeware with this option if you use autoremove!\n"
-	"\n"
-	" Examples:\n"
-	"    $ xbps-bin autoremove\n"
-	"    $ xbps-bin autoupdate\n"
-	"    $ xbps-bin files klibc\n"
-	"    $ xbps-bin install klibc\n"
-	"    $ xbps-bin -r /path/to/root install klibc\n"
-	"    $ xbps-bin list\n"
-	"    $ xbps-bin -f remove klibc\n"
-	"    $ xbps-bin show klibc\n"
-	"    $ xbps-bin update klibc\n");
+	"\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -95,12 +87,16 @@ int
 main(int argc, char **argv)
 {
 	prop_dictionary_t dict;
+	prop_object_t obj;
+	prop_object_iterator_t iter;
+	const char *curpkgname;
 	int c, flags = 0, rv = 0;
 	bool force = false, verbose = false;
 
 	while ((c = getopt(argc, argv, "Cfr:v")) != -1) {
 		switch (c) {
 		case 'f':
+			flags |= XBPS_FLAG_FORCE;
 			force = true;
 			break;
 		case 'r':
@@ -220,6 +216,52 @@ main(int argc, char **argv)
 			usage();
 
 		xbps_autoremove_pkgs();
+
+	} else if (strcasecmp(argv[0], "purge") == 0) {
+		/*
+		 * Purge a package completely.
+		 */
+		if (argc != 2)
+			usage();
+
+		if (strcasecmp(argv[1], "all") == 0) {
+			iter = xbps_get_array_iter_from_dict(dict, "packages");
+			if (iter == NULL)
+				goto out;
+
+			while ((obj = prop_object_iterator_next(iter))) {
+				prop_dictionary_get_cstring_nocopy(obj,
+				    "pkgname", &curpkgname);
+				if ((rv = xbps_purge_pkg(curpkgname)) != 0)
+					break;
+			}
+			prop_object_iterator_release(iter);
+		} else {
+			rv = xbps_purge_pkg(argv[1]);
+		}
+
+	} else if (strcasecmp(argv[0], "reconfigure") == 0) {
+		/*
+		 * Reconfigure a package.
+		 */
+		if (argc != 2)
+			usage();
+
+		if (strcasecmp(argv[1], "all") == 0) {
+			iter = xbps_get_array_iter_from_dict(dict, "packages");
+			if (iter == NULL)
+				goto out;
+
+			while ((obj = prop_object_iterator_next(iter))) {
+				prop_dictionary_get_cstring_nocopy(obj,
+				    "pkgname", &curpkgname);
+				if ((rv = xbps_configure_pkg(curpkgname)) != 0)
+					break;
+			}
+			prop_object_iterator_release(iter);
+		} else {
+			rv = xbps_configure_pkg(argv[1]);
+		}
 
 	} else {
 		usage();

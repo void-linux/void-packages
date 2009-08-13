@@ -192,6 +192,7 @@ xbps_find_pkg_from_plist(const char *plist, const char *pkgname)
 prop_dictionary_t
 xbps_find_pkg_installed_from_plist(const char *pkgname)
 {
+	pkg_state_t state = 0;
 	prop_dictionary_t pkgd;
 
 	if (regpkgdb_initialized == false)
@@ -201,7 +202,16 @@ xbps_find_pkg_installed_from_plist(const char *pkgname)
 	if (pkgd == NULL)
 		return NULL;
 
-	return prop_dictionary_copy(pkgd);
+	if (xbps_get_pkg_state_installed(pkgname, &state) != 0)
+		return NULL;
+
+	switch (state) {
+	case XBPS_PKG_STATE_INSTALLED:
+	case XBPS_PKG_STATE_UNPACKED:
+		return prop_dictionary_copy(pkgd);
+	default:
+		return NULL;
+	}
 }
 
 prop_dictionary_t

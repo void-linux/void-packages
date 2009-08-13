@@ -152,7 +152,6 @@ xbps_remove_installed_pkg(const char *pkgname, bool force)
 		    pkgname, version, strerror(errno));
 		goto out;
 	}
-	printf("Package %s-%s removed successfully.\n", pkgname, version);
 
 out:
 	xbps_release_regpkgdb_dict();

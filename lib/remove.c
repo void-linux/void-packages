@@ -34,78 +34,6 @@
 
 static int	remove_pkg_files(prop_dictionary_t);
 
-int
-xbps_unregister_pkg(const char *pkgname)
-{
-	const char *rootdir;
-	char *plist;
-	int rv = 0;
-
-	assert(pkgname != NULL);
-
-	rootdir = xbps_get_rootdir();
-	plist = xbps_xasprintf("%s/%s/%s", rootdir,
-	     XBPS_META_PATH, XBPS_REGPKGDB);
-	if (plist == NULL)
-		return EINVAL;
-
-	rv = xbps_remove_pkg_dict_from_file(pkgname, plist);
-	free(plist);
-
-	return rv;
-}
-
-static int
-remove_pkg_metadir(const char *pkgname)
-{
-	struct dirent *dp;
-	DIR *dirp;
-	const char *rootdir;
-	char *metadir, *path;
-	int flags = 0, rv = 0;
-
-	assert(pkgname != NULL);
-
-	rootdir = xbps_get_rootdir();
-	flags = xbps_get_flags();
-
-	metadir = xbps_xasprintf("%s/%s/metadata/%s", rootdir,
-	     XBPS_META_PATH, pkgname);
-	if (metadir == NULL)
-		return errno;
-
-	dirp = opendir(metadir);
-	if (dirp == NULL) {
-		free(metadir);
-		return errno;
-	}
-
-	while ((dp = readdir(dirp)) != NULL) {
-		if ((strcmp(dp->d_name, ".") == 0) ||
-		    (strcmp(dp->d_name, "..") == 0))
-			continue;
-
-		path = xbps_xasprintf("%s/%s", metadir, dp->d_name);
-		if (path == NULL) {
-			(void)closedir(dirp);
-			free(metadir);
-			return -1;
-		}
-
-		if ((rv = unlink(path)) == -1) {
-			if (flags & XBPS_FLAG_VERBOSE)
-				printf("WARNING: can't remove %s (%s)\n",
-				    pkgname, strerror(errno));
-		}
-		free(path);
-	}
-	(void)closedir(dirp);
-	rv = rmdir(metadir);
-	free(metadir);
-
-	return rv;
-}
-
 static int
 remove_pkg_files(prop_dictionary_t dict)
 {
@@ -113,9 +41,9 @@ remove_pkg_files(prop_dictionary_t dict)
 	prop_object_iterator_t iter;
 	prop_object_t obj;
 	prop_bool_t bobj;
-	const char *file, *rootdir, *sha256, *array_str, *curftype;
+	const char *file, *rootdir, *sha256;
 	char *path = NULL;
-	int i, flags = 0, rv = 0;
+	int flags = 0, rv = 0;
 
 	rootdir = xbps_get_rootdir();
 	flags = xbps_get_flags();
@@ -155,73 +83,58 @@ remove_pkg_files(prop_dictionary_t dict)
 	path = NULL;
 
 files:
-	/* Regular files and configuration files */
-	for (i = 0; i < 2; i++) {
-		if (i == 0) {
-			array_str = "conf_files";
-			curftype = "config file";
-		} else {
-			array_str = "files";
-			curftype = "file";
-		}
-		array = prop_dictionary_get(dict, array_str);
-		if (array == NULL || prop_array_count(array) == 0) {
-			if (i == 0)
-				continue;
-			else
-				goto dirs;
-		}
-		iter = xbps_get_array_iter_from_dict(dict, array_str);
-		if (iter == NULL)
-			return EINVAL;
+	/* Regular files */
+	array = prop_dictionary_get(dict, "files");
+	if (array == NULL || prop_array_count(array) == 0)
+		goto dirs;
 
-		while ((obj = prop_object_iterator_next(iter))) {
-			if (!prop_dictionary_get_cstring_nocopy(obj,
-			    "file", &file)) {
-				prop_object_iterator_release(iter);
-				return EINVAL;
-			}
-			path = xbps_xasprintf("%s/%s", rootdir, file);
-			if (path == NULL) {
-				prop_object_iterator_release(iter);
-				return EINVAL;
-			}
-			prop_dictionary_get_cstring_nocopy(obj,
-			    "sha256", &sha256);
-			rv = xbps_check_file_hash(path, sha256);
-			if (rv == ENOENT) {
-				printf("WARNING: '%s' doesn't exist!\n",
-				    file);
-				free(path);
-				continue;
-			} else if (rv == ERANGE) {
-				if (flags & XBPS_FLAG_VERBOSE)
-					printf("WARNING: SHA256 doesn't match "
-					    "for %s %s, ignoring...\n",
-					    curftype, file);
-				free(path);
-				continue;
-			} else if (rv != 0 && rv != ERANGE) {
-				free(path);
-				prop_object_iterator_release(iter);
-				return rv;
-			}
-			if ((rv = remove(path)) == -1) {
-				if (flags & XBPS_FLAG_VERBOSE)
-					printf("WARNING: can't remove "
-					    "%s %s (%s)\n", curftype, file,
-					    strerror(errno));
-				free(path);
-				continue;
-			}
+	iter = xbps_get_array_iter_from_dict(dict, "files");
+	if (iter == NULL)
+		return EINVAL;
+
+	while ((obj = prop_object_iterator_next(iter))) {
+		if (!prop_dictionary_get_cstring_nocopy(obj, "file", &file)) {
+			prop_object_iterator_release(iter);
+			return EINVAL;
+		}
+		path = xbps_xasprintf("%s/%s", rootdir, file);
+		if (path == NULL) {
+			prop_object_iterator_release(iter);
+			return EINVAL;
+		}
+		prop_dictionary_get_cstring_nocopy(obj, "sha256", &sha256);
+		rv = xbps_check_file_hash(path, sha256);
+		if (rv == ENOENT) {
+			printf("WARNING: '%s' doesn't exist!\n", file);
+			free(path);
+			continue;
+		} else if (rv == ERANGE) {
 			if (flags & XBPS_FLAG_VERBOSE)
-				printf("Removed %s: %s\n", curftype, file);
+				printf("WARNING: SHA256 doesn't match "
+				    "for file %s, ignoring...\n", file);
 
 			free(path);
+			continue;
+		} else if (rv != 0 && rv != ERANGE) {
+			free(path);
+			prop_object_iterator_release(iter);
+			return rv;
 		}
-		prop_object_iterator_release(iter);
-		path = NULL;
+		if ((rv = remove(path)) == -1) {
+			if (flags & XBPS_FLAG_VERBOSE)
+				printf("WARNING: can't remove file %s (%s)\n",
+				    file, strerror(errno));
+
+			free(path);
+			continue;
+		}
+		if (flags & XBPS_FLAG_VERBOSE)
+			printf("Removed file: %s\n", file);
+
+		free(path);
 	}
+	prop_object_iterator_release(iter);
+	path = NULL;
 
 dirs:
 	/* Directories */
@@ -362,20 +275,14 @@ xbps_remove_pkg(const char *pkgname, const char *version, bool update)
 	/*
 	 * Update the requiredby array of all required dependencies.
 	 */
-	rv = xbps_requiredby_pkg_remove(pkgname);
-	if (rv != 0)
+	if ((rv = xbps_requiredby_pkg_remove(pkgname)) != 0)
 		return rv;
 
-	if (update == false) {
-		/*
-		 * Unregister pkg from database.
-		 */
-		if ((rv = xbps_unregister_pkg(pkgname)) != 0)
-			return rv;
-	}
-
 	/*
-	 * Remove pkg metadata directory.
+	 * Set package state to "config-files".
 	 */
-	return remove_pkg_metadir(pkgname);
+	rv = xbps_set_pkg_state_installed(pkgname,
+	     XBPS_PKG_STATE_CONFIG_FILES);
+
+	return rv;
 }

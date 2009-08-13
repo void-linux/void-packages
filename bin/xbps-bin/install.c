@@ -415,10 +415,7 @@ exec_transaction(struct transaction *trans)
 	 */
 	while ((obj = prop_object_iterator_next(trans->iter)) != NULL) {
 		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
-		prop_dictionary_get_cstring_nocopy(obj, "version", &version);
-		printf("Configuring package %s-%s ...\n", pkgname, version);
-
-		if ((rv = xbps_configure_pkg(pkgname, version)) != 0) {
+		if ((rv = xbps_configure_pkg(pkgname)) != 0) {
 			printf("Error configuring package %s-%s\n",
 			    pkgname, version);
 			return rv;

@@ -10,9 +10,9 @@ LIBXBPS_STATIC 	= libxbps.a
 LIBXBPS_LDFLAGS	= -larchive -lprop -shared -Wl,-soname,$(LIBXBPS).$(MAJOR)
 
 OBJECTS	=	configure.o cmpver.o depends.o fexec.o findpkg.o
-OBJECTS	+=	humanize_number.o orphans.o plist.o register.o remove.o
-OBJECTS	+=	repository.o requiredby.o sha256.o sortdeps.o state.o
-OBJECTS	+=	unpack.o util.o
+OBJECTS	+=	humanize_number.o orphans.o plist.o purge.o register.o remove.o
+OBJECTS	+=	repository.o requiredby.o sha256.o sortdeps.o state.o unpack.o
+OBJECTS	+=	util.o
 
 all: $(LIBXBPS) $(LIBXBPS_STATIC)
 .PHONY: all

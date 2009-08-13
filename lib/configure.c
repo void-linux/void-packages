@@ -36,28 +36,40 @@
  * package state to installed.
  */
 int
-xbps_configure_pkg(const char *pkgname, const char *version)
+xbps_configure_pkg(const char *pkgname)
 {
-	const char *rootdir;
+	prop_dictionary_t pkgd;
+	const char *rootdir, *version;
 	char *buf;
-	int rv = 0;
+	int rv = 0, flags = 0;
 	pkg_state_t state = 0;
 
 	assert(pkgname != NULL);
-	assert(version != NULL);
+
 	rootdir = xbps_get_rootdir();
+	flags = xbps_get_flags();
 
 	if ((rv = xbps_get_pkg_state_installed(pkgname, &state)) != 0)
 		return rv;
 
-	/*
-	 * If package is already installed do nothing, and only
-	 * continue if it's unpacked.
-	 */
-	if (state == XBPS_PKG_STATE_INSTALLED)
-		return 0;
-	else if (state != XBPS_PKG_STATE_UNPACKED)
+	if (state == XBPS_PKG_STATE_INSTALLED) {
+		if ((flags & XBPS_FLAG_FORCE) == 0)
+			return 0;
+	} else if (state != XBPS_PKG_STATE_UNPACKED)
 		return EINVAL;
+
+	pkgd = xbps_find_pkg_installed_from_plist(pkgname);
+	prop_dictionary_get_cstring_nocopy(pkgd, "version", &version);
+	prop_object_release(pkgd);
+
+	printf("%sonfiguring package %s-%s...\n",
+	    flags & XBPS_FLAG_FORCE ? "Rec" : "C", pkgname, version);
+
+	if (strcmp(rootdir, "") == 0)
+		rootdir = "/";
+
+	if (chdir(rootdir) == -1)
+		return errno;
 
 	buf = xbps_xasprintf(".%s/metadata/%s/INSTALL",
 	    XBPS_META_PATH, pkgname);

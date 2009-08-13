@@ -91,3 +91,24 @@ out:
 
 	return rv;
 }
+
+int
+xbps_unregister_pkg(const char *pkgname)
+{
+	const char *rootdir;
+	char *plist;
+	int rv = 0;
+
+	assert(pkgname != NULL);
+
+	rootdir = xbps_get_rootdir();
+	plist = xbps_xasprintf("%s/%s/%s", rootdir,
+	    XBPS_META_PATH, XBPS_REGPKGDB);
+	if (plist == NULL)
+		return EINVAL;
+
+	rv = xbps_remove_pkg_dict_from_file(pkgname, plist);
+	free(plist);
+
+	return rv;
+}
