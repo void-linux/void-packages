@@ -59,6 +59,9 @@ xbps_configure_pkg(const char *pkgname)
 		return EINVAL;
 
 	pkgd = xbps_find_pkg_installed_from_plist(pkgname);
+	if (pkgd == NULL)
+		return ENOENT;
+
 	prop_dictionary_get_cstring_nocopy(pkgd, "version", &version);
 	prop_object_release(pkgd);
 
