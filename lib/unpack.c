@@ -176,7 +176,7 @@ install_config_file(prop_dictionary_t d, struct archive_entry *entry, int flags)
 				return errno;
 			}
 			printf("Installing new configuration "
-			    "file %s to %s.new\n", cffile, cffile);
+			    "file %s to %s\n", cffile, buf);
 
 			set_extract_flags(flags);
 			archive_entry_set_pathname(entry, buf);
