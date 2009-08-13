@@ -30,6 +30,7 @@
 #include <errno.h>
 #include <dirent.h>
 #include <sys/utsname.h>
+#include <sys/stat.h>
 
 #include <xbps_api.h>
 #include "index.h"
