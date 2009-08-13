@@ -33,6 +33,7 @@
 #include <xbps_api.h>
 
 static int unpack_archive_fini(struct archive *, prop_dictionary_t, bool);
+static void set_extract_flags(int);
 
 int
 xbps_unpack_binary_pkg(prop_dictionary_t pkg, bool essential)
@@ -119,6 +120,79 @@ out:
 			ARCHIVE_EXTRACT_SECURE_SYMLINKS
 #define FEXTRACT_FLAGS	ARCHIVE_EXTRACT_OWNER | ARCHIVE_EXTRACT_PERM | \
 			ARCHIVE_EXTRACT_TIME | EXTRACT_FLAGS
+
+static void
+set_extract_flags(int flags)
+{
+	if (getuid() == 0)
+		flags = FEXTRACT_FLAGS;
+	else
+		flags = EXTRACT_FLAGS;
+}
+
+static int
+install_config_file(prop_dictionary_t d, struct archive_entry *entry, int flags)
+{
+	prop_object_t obj;
+	prop_object_iterator_t iter;
+	const char *cffile, *sha256;
+	char *buf;
+	int rv = 0;
+
+	if (d == NULL)
+		return 0;
+
+	iter = xbps_get_array_iter_from_dict(d, "conf_files");
+	if (iter == NULL)
+		return 0;
+
+	while ((obj = prop_object_iterator_next(iter))) {
+		prop_dictionary_get_cstring_nocopy(obj, "file", &cffile);
+		if (strstr(archive_entry_pathname(entry), cffile) == 0)
+			continue;
+		buf = xbps_xasprintf(".%s", cffile);
+		if (buf == NULL) {
+			prop_object_iterator_release(iter);
+			return errno;
+		}
+		prop_dictionary_get_cstring_nocopy(obj, "sha256", &sha256);
+		rv = xbps_check_file_hash(buf, sha256);
+		free(buf);
+		if (rv == 0 || rv == ENOENT) {
+			/*
+			 * Identical files or file not installed,
+			 * install new file.
+			 */
+			rv = 0;
+			break;
+		} else if (rv == ERANGE) {
+			/*
+			 * Save new file with a .new extension,
+			 * preserving current installed file.
+			 */
+			buf = xbps_xasprintf(".%s.new", cffile);
+			if (buf == NULL) {
+				prop_object_iterator_release(iter);
+				return errno;
+			}
+			printf("Installing new configuration "
+			    "file %s to %s.new\n", cffile, cffile);
+
+			set_extract_flags(flags);
+			archive_entry_set_pathname(entry, buf);
+			free(buf);
+			rv = 0;
+			break;
+		} else {
+			prop_object_iterator_release(iter);
+			return rv;
+		}
+	}
+	prop_object_iterator_release(iter);
+
+	return rv;
+}
+
 /*
  * TODO: remove printfs and return appropiate errors to be interpreted by
  * the consumer.
@@ -127,10 +201,11 @@ static int
 unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 		    bool essential)
 {
+	prop_dictionary_t filesd;
 	struct archive_entry *entry;
 	const char *pkgname, *version, *rootdir;
 	char *buf, *buf2;
-	int rv = 0, flags, lflags;
+	int rv = 0, flags, lflags, eflags;
 	bool actgt = false;
 
 	assert(ar != NULL);
@@ -147,17 +222,26 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 	prop_dictionary_get_cstring_nocopy(pkg, "pkgname", &pkgname);
 	prop_dictionary_get_cstring_nocopy(pkg, "version", &version);
 
-	if (getuid() == 0)
-		lflags = FEXTRACT_FLAGS;
-	else
-		lflags = EXTRACT_FLAGS;
-
-	if (essential == false) {
-		lflags |= ARCHIVE_EXTRACT_NO_OVERWRITE;
-		lflags |= ARCHIVE_EXTRACT_NO_OVERWRITE_NEWER;
-	}
+	set_extract_flags(lflags);
 
 	while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
+		/*
+		 * Always overwrite pkg metadata files. Other files
+		 * in the archive aren't overwritten unless a package
+		 * defines the "essential" boolean obj.
+		 */
+		eflags = 0;
+		eflags = lflags;
+		if (strcmp("./INSTALL", archive_entry_pathname(entry)) &&
+		    strcmp("./REMOVE", archive_entry_pathname(entry)) &&
+		    strcmp("./files.plist", archive_entry_pathname(entry)) &&
+		    strcmp("./props.plist", archive_entry_pathname(entry))) {
+			if (essential == false) {
+				eflags |= ARCHIVE_EXTRACT_NO_OVERWRITE;
+				eflags |= ARCHIVE_EXTRACT_NO_OVERWRITE_NEWER;
+			}
+		}
+
 		/*
 		 * Run the pre INSTALL action if the file is there.
 		 */
@@ -170,7 +254,7 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 			actgt = true;
 			archive_entry_set_pathname(entry, buf);
 
-			if (archive_read_extract(ar, entry, lflags) != 0) {
+			if (archive_read_extract(ar, entry, eflags) != 0) {
 				if ((rv = archive_errno(ar)) != EEXIST) {
 					free(buf);
 					return rv;
@@ -189,8 +273,7 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 			continue;
 
 		/*
-		 * Unpack metadata files (REMOVE, files.plist and props.plist)
-		 * into the proper path.
+		 * Unpack metadata files in final directory.
 		 */
 		} else if (strcmp("./REMOVE",
 		    archive_entry_pathname(entry)) == 0) {
@@ -203,13 +286,17 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 			buf2 = NULL;
 		} else if (strcmp("./files.plist",
 		    archive_entry_pathname(entry)) == 0) {
-			buf2 = xbps_xasprintf(".%s/metadata/%s/files.plist",
-			    XBPS_META_PATH, pkgname);
-			if (buf2 == NULL)
+			/*
+			 * Now we have a dictionary from the entry
+			 * in memory. Will be written to disk later, when
+			 * all files are extracted.
+			 */
+			filesd = xbps_read_dict_from_archive_entry(ar, entry);
+			if (filesd == NULL)
 				return errno;
-			archive_entry_set_pathname(entry, buf2);
-			free(buf2);
-			buf2 = NULL;
+
+			/* Pass to next entry */
+			continue;
 		} else if (strcmp("./props.plist",
 		    archive_entry_pathname(entry)) == 0) {
 			buf2 = xbps_xasprintf(".%s/metadata/%s/props.plist",
@@ -220,9 +307,25 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 			free(buf2);
 		}
 		/*
-		 * Extract all data from the archive now.
+		 * Check if a configuration file is currently installed
+		 * and take action. The following actions are executed:
+		 *
+		 * - if file doesn't exist or new/current are identical:
+		 *   install new one.
+		 *
+		 * - if file exists and new/current do have differences,
+		 *   install new file with extension ".new" and preserve
+		 *   current file.
 		 */
-		if (archive_read_extract(ar, entry, lflags) != 0) {
+		if ((rv = install_config_file(filesd, entry, eflags)) != 0) {
+			prop_object_release(filesd);
+			return rv;
+		}
+
+		/*
+		 * Extract entry from archive.
+		 */
+		if (archive_read_extract(ar, entry, eflags) != 0) {
 			rv = archive_errno(ar);
 			if (rv != EEXIST) {
 				printf("ERROR: %s...exiting!\n",
@@ -238,11 +341,26 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 				continue;
 			}
 		}
-		if (flags & XBPS_FLAG_VERBOSE) {
+		if (flags & XBPS_FLAG_VERBOSE)
 			printf(" %s\n", archive_entry_pathname(entry));
-			(void)fflush(stdout);
-		}
 	}
+
+	if ((rv = archive_errno(ar)) == 0) {
+		/*
+		 * Now that all files were successfully unpacked, we
+		 * can safely externalize files.plist because the path
+		 * is reachable.
+		 */
+		buf2 = xbps_xasprintf(".%s/metadata/%s/files.plist",
+		    XBPS_META_PATH, pkgname);
+		if (!prop_dictionary_externalize_to_file(filesd, buf2)) {
+			prop_object_release(filesd);
+			free(buf2);
+			return errno;
+		}
+		free(buf2);
+	}
+	prop_object_release(filesd);
 
 	return rv;
 }
