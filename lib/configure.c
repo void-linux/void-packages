@@ -43,6 +43,7 @@ xbps_configure_pkg(const char *pkgname)
 	char *buf;
 	int rv = 0, flags = 0;
 	pkg_state_t state = 0;
+	bool reconfigure = false;
 
 	assert(pkgname != NULL);
 
@@ -55,6 +56,8 @@ xbps_configure_pkg(const char *pkgname)
 	if (state == XBPS_PKG_STATE_INSTALLED) {
 		if ((flags & XBPS_FLAG_FORCE) == 0)
 			return 0;
+
+		reconfigure = true;
 	} else if (state != XBPS_PKG_STATE_UNPACKED)
 		return EINVAL;
 
@@ -66,7 +69,7 @@ xbps_configure_pkg(const char *pkgname)
 	prop_object_release(pkgd);
 
 	printf("%sonfiguring package %s-%s...\n",
-	    flags & XBPS_FLAG_FORCE ? "Rec" : "C", pkgname, version);
+	    reconfigure ? "Rec" : "C", pkgname, version);
 
 	if (strcmp(rootdir, "") == 0)
 		rootdir = "/";
