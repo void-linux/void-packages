@@ -416,8 +416,8 @@ exec_transaction(struct transaction *trans)
 	while ((obj = prop_object_iterator_next(trans->iter)) != NULL) {
 		prop_dictionary_get_cstring_nocopy(obj, "pkgname", &pkgname);
 		if ((rv = xbps_configure_pkg(pkgname)) != 0) {
-			printf("Error configuring package %s-%s\n",
-			    pkgname, version);
+			printf("Error configuring package %s-%s (%s)\n",
+			    pkgname, version, strerror(rv));
 			return rv;
 		}
 	}
