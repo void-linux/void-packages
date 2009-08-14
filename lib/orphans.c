@@ -123,8 +123,9 @@ xbps_find_orphan_packages(void)
 	if ((dict = xbps_prepare_regpkgdb_dict()) == NULL)
 		return NULL;
 	/*
-	 * Find out all orphan packages by looking at the
-	 * regpkgdb dictionary and we must do that in reverse order.
+	 * Find out all orphans by looking at the
+	 * regpkgdb dictionary and iterate in reverse order
+	 * in which packages were installed.
 	 */
 	rv = xbps_callback_array_iter_reverse_in_dict(dict, "packages",
 	    find_orphan_pkg, NULL);
@@ -133,9 +134,7 @@ xbps_find_orphan_packages(void)
 		return NULL;
 	}
 	/*
-	 * Prepare an array with all packages previously found. We
-	 * do this in that way to do a reverse order in which the
-	 * packages were installed.
+	 * Prepare an array with all packages previously found.
 	 */
 	array = prop_array_create();
 	if (array == NULL) {
