@@ -131,13 +131,16 @@ set_extract_flags(int flags)
 }
 
 static int
-install_config_file(prop_dictionary_t d, struct archive_entry *entry, int flags)
+install_config_file(prop_dictionary_t d, struct archive_entry *entry,
+		    const char *pkgname, int flags, bool skip)
 {
-	prop_object_t obj;
-	prop_object_iterator_t iter;
-	const char *cffile, *sha256;
-	char *buf;
+	prop_dictionary_t forigd;
+	prop_object_t obj, obj2;
+	prop_object_iterator_t iter, iter2;
+	const char *cffile, *sha256_new;
+	char *buf, *sha256_cur = NULL, *sha256_orig = NULL;
 	int rv = 0;
+	bool install_new = false;
 
 	if (d == NULL)
 		return 0;
@@ -146,6 +149,38 @@ install_config_file(prop_dictionary_t d, struct archive_entry *entry, int flags)
 	if (iter == NULL)
 		return 0;
 
+	/*
+	 * Get original hash for the file from current
+	 * installed package.
+	 */
+	buf = xbps_xasprintf(".%s/metadata/%s/%s", XBPS_META_PATH,
+	    pkgname, XBPS_PKGFILES);
+	if (buf == NULL)
+		return errno;
+
+	forigd = prop_dictionary_internalize_from_file(buf);
+	free(buf);
+	if (forigd != NULL) {
+		iter2 = xbps_get_array_iter_from_dict(forigd, "conf_files");
+		if (iter2 != NULL) {
+			while ((obj2 = prop_object_iterator_next(iter2))) {
+				prop_dictionary_get_cstring_nocopy(obj2,
+				    "file", &cffile);
+				if (strstr(archive_entry_pathname(entry),
+				    cffile)) {
+					prop_dictionary_get_cstring(obj2,
+					    "sha256", &sha256_orig);
+					break;
+				}
+			}
+			prop_object_iterator_release(iter2);
+		}
+		prop_object_release(forigd);
+	}
+
+	/*
+	 * Compare original, installed and new hash for current file.
+	 */
 	while ((obj = prop_object_iterator_next(iter))) {
 		prop_dictionary_get_cstring_nocopy(obj, "file", &cffile);
 		if (strstr(archive_entry_pathname(entry), cffile) == 0)
@@ -155,39 +190,91 @@ install_config_file(prop_dictionary_t d, struct archive_entry *entry, int flags)
 			prop_object_iterator_release(iter);
 			return errno;
 		}
-		prop_dictionary_get_cstring_nocopy(obj, "sha256", &sha256);
-		rv = xbps_check_file_hash(buf, sha256);
+		prop_dictionary_get_cstring_nocopy(obj, "sha256", &sha256_new);
+		sha256_cur = xbps_get_file_hash(buf);
 		free(buf);
-		if (rv == 0 || rv == ENOENT) {
-			/*
-			 * Identical files or file not installed,
-			 * install new file.
-			 */
-			rv = 0;
+		if (sha256_cur == NULL) {
+			if (errno == ENOENT) {
+				/*
+				 * File not installed, install new one.
+				 */
+				install_new = true;
+				break;
+			} else {
+				rv = errno;
+				break;
+			}
+		}
+
+		/*
+		 * Orig = X, Curr = X, new = X
+		 *
+		 * Install new file.
+		 */
+		if ((strcmp(sha256_orig, sha256_cur) == 0) &&
+		    (strcmp(sha256_cur, sha256_new) == 0) &&
+		    (strcmp(sha256_orig, sha256_new) == 0)) {
+			install_new = true;
 			break;
-		} else if (rv == ERANGE) {
-			/*
-			 * Save new file with a .new extension,
-			 * preserving current installed file.
-			 */
+		/*
+		 * Orig = X, Curr = X, new = Y
+		 *
+		 * Install new file.
+		 */
+		} else if ((strcmp(sha256_orig, sha256_cur) == 0) &&
+			   (strcmp(sha256_cur, sha256_new)) &&
+			   (strcmp(sha256_orig, sha256_new))) {
+			install_new = true;
+			break;
+		/*
+		 * Orig = X, Curr = Y, new = X
+		 *
+		 * Keep current file as is.
+		 */
+		} else if ((strcmp(sha256_orig, sha256_cur)) &&
+			   (strcmp(sha256_orig, sha256_new) == 0) &&
+			   (strcmp(sha256_cur, sha256_new))) {
+			skip = true;
+			break;
+		/*
+		 * Orig = X, Curr = Y, New = Y
+		 *
+		 * Install new file.
+		 */
+		} else if ((strcmp(sha256_orig, sha256_cur)) &&
+			   (strcmp(sha256_cur, sha256_new) == 0) &&
+			   (strcmp(sha256_orig, sha256_new))) {
+			install_new = true;
+			break;
+		/*
+		 * Orig = X, Curr = Y, New = Z
+		 *
+		 * Install new file as file.new.
+		 */
+		} else  if ((strcmp(sha256_orig, sha256_cur)) &&
+			    (strcmp(sha256_cur, sha256_new)) &&
+			    (strcmp(sha256_orig, sha256_new))) {
 			buf = xbps_xasprintf(".%s.new", cffile);
 			if (buf == NULL) {
-				prop_object_iterator_release(iter);
-				return errno;
+				rv = errno;
+				break;
 			}
 			printf("Installing new configuration "
-			    "file %s to %s\n", cffile, buf);
-
-			set_extract_flags(flags);
+			    "file %s.new\n", cffile);
+			install_new = true;
 			archive_entry_set_pathname(entry, buf);
 			free(buf);
-			rv = 0;
 			break;
-		} else {
-			prop_object_iterator_release(iter);
-			return rv;
 		}
 	}
+
+	if (install_new)
+		set_extract_flags(flags);
+	if (sha256_orig)
+		free(sha256_orig);
+	if (sha256_cur)
+		free(sha256_cur);
+
 	prop_object_iterator_release(iter);
 
 	return rv;
@@ -206,7 +293,7 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 	const char *pkgname, *version, *rootdir;
 	char *buf, *buf2;
 	int rv = 0, flags, lflags, eflags;
-	bool actgt = false;
+	bool actgt = false, skip_entry = false;
 
 	assert(ar != NULL);
 	assert(pkg != NULL);
@@ -284,6 +371,7 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 			archive_entry_set_pathname(entry, buf2);
 			free(buf2);
 			buf2 = NULL;
+
 		} else if (strcmp("./files.plist",
 		    archive_entry_pathname(entry)) == 0) {
 			/*
@@ -297,6 +385,7 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 
 			/* Pass to next entry */
 			continue;
+
 		} else if (strcmp("./props.plist",
 		    archive_entry_pathname(entry)) == 0) {
 			buf2 = xbps_xasprintf(".%s/metadata/%s/props.plist",
@@ -307,21 +396,18 @@ unpack_archive_fini(struct archive *ar, prop_dictionary_t pkg,
 			free(buf2);
 		}
 		/*
-		 * Check if a configuration file is currently installed
-		 * and take action. The following actions are executed:
-		 *
-		 * - if file doesn't exist or new/current are identical:
-		 *   install new one.
-		 *
-		 * - if file exists and new/current do have differences,
-		 *   install new file with extension ".new" and preserve
-		 *   current file.
+		 * Handle configuration files.
 		 */
-		if ((rv = install_config_file(filesd, entry, eflags)) != 0) {
+		if ((rv = install_config_file(filesd, entry, pkgname,
+		     eflags, skip_entry)) != 0) {
 			prop_object_release(filesd);
 			return rv;
 		}
-
+		if (skip_entry) {
+			archive_read_data_skip(ar);
+			skip_entry = false;
+			continue;
+		}
 		/*
 		 * Extract entry from archive.
 		 */
