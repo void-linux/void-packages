@@ -207,7 +207,7 @@ install_config_file(prop_dictionary_t d, struct archive_entry *entry,
 		}
 
 		/*
-		 * Orig = X, Curr = X, new = X
+		 * Orig = X, Curr = X, New = X
 		 *
 		 * Install new file.
 		 */
@@ -217,7 +217,7 @@ install_config_file(prop_dictionary_t d, struct archive_entry *entry,
 			install_new = true;
 			break;
 		/*
-		 * Orig = X, Curr = X, new = Y
+		 * Orig = X, Curr = X, New = Y
 		 *
 		 * Install new file.
 		 */
@@ -227,7 +227,7 @@ install_config_file(prop_dictionary_t d, struct archive_entry *entry,
 			install_new = true;
 			break;
 		/*
-		 * Orig = X, Curr = Y, new = X
+		 * Orig = X, Curr = Y, New = X
 		 *
 		 * Keep current file as is.
 		 */
