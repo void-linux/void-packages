@@ -71,12 +71,6 @@ xbps_configure_pkg(const char *pkgname)
 	printf("%sonfiguring package %s-%s...\n",
 	    reconfigure ? "Rec" : "C", pkgname, version);
 
-	if (strcmp(rootdir, "") == 0)
-		rootdir = "/";
-
-	if (chdir(rootdir) == -1)
-		return errno;
-
 	buf = xbps_xasprintf(".%s/metadata/%s/INSTALL",
 	    XBPS_META_PATH, pkgname);
 	if (buf == NULL)
