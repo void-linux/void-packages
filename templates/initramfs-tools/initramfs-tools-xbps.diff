@@ -1,44 +1,3 @@
---- update-initramfs.orig	2009-03-07 06:30:03.039700454 +0100
-+++ update-initramfs	2009-03-07 06:32:05.679694852 +0100
-@@ -1,4 +1,4 @@
--#!/bin/sh
-+#!/bin/sh -e
- 
- STATEDIR=/var/lib/initramfs-tools
- BOOTDIR=/boot
-@@ -8,22 +8,8 @@ USETRIGGERS=true
- mode=""
- version=""
- 
--set -e
--
- [ -r ${CONF} ] && . ${CONF}
- 
--if	   $USETRIGGERS						\
--	&& [ x"$DPKG_MAINTSCRIPT_PACKAGE" != x ]		\
--	&& [ $# = 1 ]	 					\
--	&& [ x"$1" = x-u ]					\
--	&& dpkg-trigger --check-supported 2>/dev/null
--then
--	if dpkg-trigger --no-await update-initramfs; then
--		echo "update-initramfs: deferring update (trigger activated)"
--		exit 0
--	fi
--fi
--
- usage()
- {
- 	if [ -n "${1}" ]; then
-@@ -313,7 +299,8 @@ get_sorted_versions()
- 		fi
- 		worklist=""
- 		for gsv_i in $version_list; do
--			if dpkg --compare-versions "${gsv_x}" '>' "${gsv_i}"; then
-+			rv=$(xbps-cmpver "${gsv_x}" "${gsv_i}")
-+			if [ "$rv" -eq 0 ]; then
- 				worklist="${worklist} ${gsv_x} ${gsv_i}"
- 				gsv_x=""
- 			else
 --- init.orig	2009-05-02 02:17:42.338577448 +0200
 +++ init	2009-05-02 02:18:01.671572443 +0200
 @@ -8,8 +8,8 @@ echo "Loading, please wait..."
@@ -52,67 +11,6 @@
  
  # Note that this only becomes /dev on the real filesystem if udev's scripts
  # are used; which they will be, but it's worth pointing out
---- hook-functions.orig	2009-03-30 11:48:21.000000000 +0200
-+++ hook-functions	2009-06-19 15:35:52.907111168 +0200
-@@ -231,7 +231,7 @@ dep_add_modules()
- 	# findout root block device + fstype
- 	eval "$(mount | awk '/\/dev\// {if ($3 == "/") {print "root=" $1 "\nFSTYPE=" $5; exit}}')"
- 	if [ "${root}" = "/dev/root" ] ; then
--		root="/dev/disk/by-uuid/"$(/lib/udev/vol_id --uuid ${root}) 2>/dev/null
-+		root="/dev/disk/by-uuid/"$(/sbin/blkid -s UUID -o value ${root}) 2>/dev/null
- 	fi
- 	root="$(readlink -f ${root})"
- 
-@@ -465,16 +465,28 @@ EOF
- 
- }
- 
-+compare_versions()
-+{
-+	local curv="$1" minv="$2"
-+
-+	xbps-cmpver $curv $minv
-+	if [ $? -eq 0 -o $? -eq 1 ]; then
-+		return 0
-+	else
-+		return 1
-+	fi
-+}
-+
- # minimal supported kernel version
- check_minkver()
- {
--	local curversion initdir DPKG_ARCH minversion cm_x tmp
-+	local curversion initdir ARCH minversion cm_x tmp
- 
- 	curversion="${1}"
- 	initdir="${2}"
- 	if [ -z "${initdir}" ]; then
--		DPKG_ARCH=$(dpkg --print-installation-architecture)
--		case ${DPKG_ARCH} in
-+		ARCH=$(uname -m)
-+		case ${ARCH} in
- 			ia64|hppa)
- 				minversion="2.6.15"
- 			;;
-@@ -482,7 +494,7 @@ check_minkver()
- 				minversion="2.6.12"
- 			;;
- 		esac
--		if dpkg --compare-versions "${curversion}" lt "${minversion}"; then
-+		if ! compare_versions "${curversion}" "${minversion}"; then
- 			echo "W: kernel ${curversion} too old for initramfs on ${DPKG_ARCH}" >&2
- 			echo "W: not generating requested initramfs for kernel ${curversion}" >&2
- 			exit 2
-@@ -496,7 +508,7 @@ check_minkver()
- 		minver=$(sed '/^MINKVER=/!d;$!d;s/^MINKVER=//;s/[[:space:]]*$//' "${initdir}/${cm_x}")
- 		if [ -z "${tmp}" ]; then
- 			continue
--		elif dpkg --compare-versions "${curversion}" lt "${minver}"; then
-+		elif ! compare_versions "${curversion}" "${minver}"; then
- 			echo "W: ${cm_x} hook script requires at least kernel version ${minver}" >&2
- 			echo "W: not generating requested initramfs for kernel ${curversion}" >&2
- 			exit 2
 --- mkinitramfs.orig	2009-04-02 12:25:45.000000000 +0200
 +++ mkinitramfs	2009-06-19 15:36:48.635447999 +0200
 @@ -8,8 +8,7 @@ keep="n"
@@ -188,3 +86,149 @@
  	fi
  	RET=$?
  
+--- scripts/init-top/keymap.orig	2009-08-27 07:25:39.071099923 +0200
++++ scripts/init-top/keymap	2009-08-27 07:25:57.336100046 +0200
+@@ -16,12 +16,12 @@ esac
+ OPTS="-q"
+ 
+ # Should terminal be in UTF8 mode?
+-if [ -x /bin/kbd_mode ]; then
+-	/bin/kbd_mode -u
++if [ -x /sbin/kbd_mode ]; then
++	/sbin/kbd_mode -u
+ 	OPTS="${OPTS} -u"
+ fi
+ 
+ # Load custom keymap
+-if [ -x /bin/loadkeys -a -r /etc/boottime.kmap.gz ]; then
++if [ -x /sbin/loadkeys -a -r /etc/boottime.kmap.gz ]; then
+ 	loadkeys ${OPTS} /etc/boottime.kmap.gz
+ fi
+--- hook-functions.orig	2009-03-30 11:48:21.000000000 +0200
++++ hook-functions	2009-08-27 08:17:31.726915318 +0200
+@@ -231,7 +231,7 @@ dep_add_modules()
+ 	# findout root block device + fstype
+ 	eval "$(mount | awk '/\/dev\// {if ($3 == "/") {print "root=" $1 "\nFSTYPE=" $5; exit}}')"
+ 	if [ "${root}" = "/dev/root" ] ; then
+-		root="/dev/disk/by-uuid/"$(/lib/udev/vol_id --uuid ${root}) 2>/dev/null
++		root="/dev/disk/by-uuid/"$(/sbin/blkid -s UUID -o value ${root}) 2>/dev/null
+ 	fi
+ 	root="$(readlink -f ${root})"
+ 
+@@ -363,11 +363,7 @@ auto_add_modules()
+ {
+ 	case "$1" in
+ 	base)
+-		for x in ehci-hcd ohci-hcd uhci-hcd usbhid hid_a4tech \
+-		hid_apple hid_belkin hid_bright hid_cherry hid_chicony \
+-		hid_cypress hid_dell hid_ezkey hid_gyration hid_logitech \
+-		hid_microsoft hid_monterey hid_petalynx hid_pl 	hid_samsung \
+-		hid_sony hid_sunplus hid_tmff hid_zpff usb-storage ext2 \
++		for x in ehci-hcd ohci-hcd uhci-hcd usbhid usb-storage ext2 \
+ 		ext3 ext4 ext4dev isofs jfs nfs reiserfs udf xfs af_packet \
+ 		atkbd i8042 virtio_pci; do
+ 			manual_add_modules "${x}"
+@@ -388,10 +384,6 @@ auto_add_modules()
+ 			manual_add_modules "${x}"
+ 		done
+ 	;;
+-	fb)
+-		copy_modules_dir kernel/drivers/video
+-		copy_modules_dir kernel/drivers/char/agp
+-	;;
+ 	ide)
+ 		copy_modules_dir kernel/drivers/ide
+ 	;;
+@@ -433,7 +425,6 @@ auto_add_modules()
+ 	*)
+ 		auto_add_modules base
+ 		auto_add_modules net
+-		auto_add_modules fb
+ 		auto_add_modules ide
+ 		auto_add_modules scsi
+ 		auto_add_modules block
+@@ -465,16 +456,28 @@ EOF
+ 
+ }
+ 
++compare_versions()
++{
++	local curv="$1" minv="$2"
++
++	xbps-cmpver $curv $minv
++	if [ $? -eq 0 ] || [ $? -eq 1 ]; then
++		return 0
++	else
++		return 1
++	fi
++}
++
+ # minimal supported kernel version
+ check_minkver()
+ {
+-	local curversion initdir DPKG_ARCH minversion cm_x tmp
++	local curversion initdir ARCH minversion cm_x tmp
+ 
+ 	curversion="${1}"
+ 	initdir="${2}"
+ 	if [ -z "${initdir}" ]; then
+-		DPKG_ARCH=$(dpkg --print-installation-architecture)
+-		case ${DPKG_ARCH} in
++		ARCH=$(uname -m)
++		case ${ARCH} in
+ 			ia64|hppa)
+ 				minversion="2.6.15"
+ 			;;
+@@ -482,7 +485,7 @@ check_minkver()
+ 				minversion="2.6.12"
+ 			;;
+ 		esac
+-		if dpkg --compare-versions "${curversion}" lt "${minversion}"; then
++		if ! compare_versions "${curversion}" "${minversion}"; then
+ 			echo "W: kernel ${curversion} too old for initramfs on ${DPKG_ARCH}" >&2
+ 			echo "W: not generating requested initramfs for kernel ${curversion}" >&2
+ 			exit 2
+@@ -496,7 +499,7 @@ check_minkver()
+ 		minver=$(sed '/^MINKVER=/!d;$!d;s/^MINKVER=//;s/[[:space:]]*$//' "${initdir}/${cm_x}")
+ 		if [ -z "${tmp}" ]; then
+ 			continue
+-		elif dpkg --compare-versions "${curversion}" lt "${minver}"; then
++		elif ! compare_versions "${curversion}" "${minver}"; then
+ 			echo "W: ${cm_x} hook script requires at least kernel version ${minver}" >&2
+ 			echo "W: not generating requested initramfs for kernel ${curversion}" >&2
+ 			exit 2
+--- update-initramfs.orig	2009-03-30 18:31:44.000000000 +0200
++++ update-initramfs	2009-08-27 08:40:12.227893271 +0200
+@@ -8,22 +8,8 @@ USETRIGGERS=true
+ mode=""
+ version=""
+ 
+-set -e
+-
+ [ -r ${CONF} ] && . ${CONF}
+ 
+-if	   $USETRIGGERS						\
+-	&& [ x"$DPKG_MAINTSCRIPT_PACKAGE" != x ]		\
+-	&& [ $# = 1 ]	 					\
+-	&& [ x"$1" = x-u ]					\
+-	&& dpkg-trigger --check-supported 2>/dev/null
+-then
+-	if dpkg-trigger --no-await update-initramfs; then
+-		echo "update-initramfs: deferring update (trigger activated)"
+-		exit 0
+-	fi
+-fi
+-
+ usage()
+ {
+ 	if [ -n "${1}" ]; then
+@@ -314,7 +300,8 @@ get_sorted_versions()
+ 		fi
+ 		worklist=""
+ 		for gsv_i in $version_list; do
+-			if dpkg --compare-versions "${gsv_x}" '>' "${gsv_i}"; then
++			xbps-cmpver "${gsv_x}" "${gsv_i}"
++			if [ $? -eq 0 ] || [ $? -eq 1 ]; then
+ 				worklist="${worklist} ${gsv_x} ${gsv_i}"
+ 				gsv_x=""
+ 			else
