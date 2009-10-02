@@ -3,13 +3,22 @@
 # Registers or unregisters OpenRC services into the specified
 # runlevel.
 #
-# Arguments:	$1 = action [run/targets]
-#		$2 = target [post-install/pre-remove]
+# Arguments:	$1 = action	[run/targets]
+#		$2 = target	[post-install/pre-remove]
 #		$3 = pkgname
+#		$4 = version
+#		$5 = update	[yes/no]
 #
-initdir=etc/init.d
+ACTION="$1"
+TARGET="$2"
+PKGNAME="$3"
+VERSION="$4"
+UPDATE="$5"
 
-case "$1" in
+initdir=etc/init.d
+metadatadir=var/db/xbps/metadata/${PKGNAME}
+
+case "$ACTION" in
 targets)
 	echo "post-install pre-remove"
 	;;
@@ -18,12 +27,9 @@ run)
 	[ ! -x sbin/rc-service ] && exit 0
 	[ -z "$openrc_services" ] && exit 1
 
-	target=$2
-	if [ "$target" = "pre-remove" ]; then
-		text="Unr"
+	if [ "$TARGET" = "pre-remove" ]; then
 		rcupdate_args="del"
-	elif [ "$target" = "post-install" ]; then
-		text="R"
+	elif [ "$TARGET" = "post-install" ]; then
 		rcupdate_args="add"
 	else
 		exit 1
@@ -33,22 +39,37 @@ run)
 
 	set -- ${openrc_services}
 	while [ $# -gt 0 ]; do
-		if sbin/rc-service -e ${1}; then
-			# Stop the service if it's running.
-			if [ "$target" = "pre-remove" -a -f $initdir/$1 ]; then
-				$initdir/$1 -q status
-				if [ $? -eq 0 ]; then
-					$initdir/$1 stop
+		srv_restart=$metadatadir/.$1_srv_restart
+		if [ "$TARGET" = "post-install" ]; then
+			if [ -f $srv_restart ]; then
+				# Restart service if it was running previously.
+				$initdir/$1 start
+				rm -f $srv_restart
+			else
+				# Register service.
+				if sbin/rc-service -e ${1}; then
+					sbin/rc-update add ${1} ${2}
 				fi
 			fi
-			# (Un)register the service.
-			echo "${text}egistering ${1} OpenRC service..."
-			sbin/rc-update ${rcupdate_args} ${1} ${2}
+		else
+			# While removing always stop the service if running.
+			$initdir/$1 -q status
+			if [ $? -eq 0 ]; then
+				$initdir/$1 stop
+			fi
+			#
+			# While upgrading a package, don't remove the service.
+			#
+			if [ "$UPDATE" = "yes" ]; then
+				touch -f $srv_restart
+			else
+				# Unregister the service.
+				sbin/rc-update del ${1} ${2}
+			fi
 		fi
+		unset srv_restart
 		shift; shift;
 	done
-	sbin/rc-update -u
-
 	;;
 *)
 	exit 1
