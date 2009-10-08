@@ -1,0 +1,655 @@
+#!/bin/sh
+
+# set -e
+
+export PATH=/usr/bin:/usr/sbin:/bin:/sbin
+
+mountpoint=/cdrom
+LIVE_MEDIA_PATH=casper
+
+root_persistence="casper-rw"
+home_persistence="home-rw"
+root_snapshot_label="casper-sn"
+home_snapshot_label="home-sn"
+
+USERNAME=casper
+USERFULLNAME="Live session user"
+HOST=live
+BUILD_SYSTEM=Custom
+
+mkdir -p $mountpoint
+
+[ -f /etc/casper.conf ] && . /etc/casper.conf
+export USERNAME USERFULLNAME HOST BUILD_SYSTEM
+
+. /scripts/casper-helpers
+
+if [ ! -f /casper.vars ]; then
+    touch /casper.vars
+fi
+
+parse_cmdline() {
+    for x in $(cat /proc/cmdline); do
+        case $x in
+            showmounts|show-cow)
+                export SHOWMOUNTS='Yes' ;;
+            persistent)
+                export PERSISTENT="Yes" ;;
+            nopersistent)
+                export PERSISTENT="" ;;
+            union=*)
+                export UNIONFS="${x#union=}";;
+            ip*)
+                STATICIP=${x#ip=}
+                if [ "${STATICIP}" = "" ]; then
+                    STATICIP="frommedia"
+                fi
+                export STATICIP ;;
+            ignore_uuid)
+                IGNORE_UUID="Yes" ;;
+            live-media-path=*)
+                LIVE_MEDIA_PATH="${x#live-media-path=}"
+                export LIVE_MEDIA_PATH
+                echo "export LIVE_MEDIA_PATH=\"$LIVE_MEDIA_PATH\"" >> /etc/casper.conf ;;
+        esac
+    done
+    if [ "${UNIONFS}" = "" ]; then
+        export UNIONFS="aufs"
+    fi
+}
+
+is_casper_path() {
+    path=$1
+    if [ -d "$path/$LIVE_MEDIA_PATH" ]; then
+        if [ "$(echo $path/$LIVE_MEDIA_PATH/*.squashfs)" != "$path/$LIVE_MEDIA_PATH/*.squashfs" ] ||
+            [ "$(echo $path/$LIVE_MEDIA_PATH/*.ext2)" != "$path/$LIVE_MEDIA_PATH/*.ext2" ] ||
+            [ "$(echo $path/$LIVE_MEDIA_PATH/*.dir)" != "$path/$LIVE_MEDIA_PATH/*.dir" ]; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+matches_uuid() {
+    if [ "$IGNORE_UUID" ] || [ ! -e /conf/uuid.conf ]; then
+        return 0
+    fi
+    path="$1"
+    uuid="$(cat /conf/uuid.conf)"
+    for try_uuid_file in "$path/.disk/casper-uuid"*; do
+        [ -e "$try_uuid_file" ] || continue
+        try_uuid="$(cat "$try_uuid_file")"
+        if [ "$uuid" = "$try_uuid" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+get_backing_device() {
+    case "$1" in
+        *.squashfs|*.ext2)
+            echo $(setup_loop "$1" "loop" "/sys/block/loop*")
+            ;;
+        *.dir)
+            echo "directory"
+            ;;
+        *)
+            panic "Unrecognized casper filesystem: $1"
+            ;;
+    esac
+}
+
+match_files_in_dir() {
+    # Does any files match pattern $1 ?
+
+    local pattern="$1"
+    if [ "$(echo $pattern)" != "$pattern" ]; then
+        return 0
+    fi
+    return 1
+}
+
+mount_images_in_directory() {
+    directory="$1"
+    rootmnt="$2"
+    if match_files_in_dir "$directory/$LIVE_MEDIA_PATH/*.squashfs" ||
+        match_files_in_dir "$directory/$LIVE_MEDIA_PATH/*.ext2" ||
+        match_files_in_dir "$directory/$LIVE_MEDIA_PATH/*.dir"; then
+        setup_unionfs "$directory/$LIVE_MEDIA_PATH" "$rootmnt"
+    else
+        :
+    fi
+}
+
+is_nice_device() {
+    sysfs_path="${1#/sys}"
+    if /lib/udev/path_id "${sysfs_path}" | grep -E -q "ID_PATH=(usb|pci-[^-]*-(ide|scsi|usb)|platform-mmc|platform-mxsdhci)"; then
+        return 0
+    fi
+    return 1
+}
+
+copy_live_to() {
+    copyfrom="${1}"
+    copytodev="${2}"
+    copyto="${copyfrom}_swap"
+
+    size=$(fs_size "" ${copyfrom} "used")
+
+    if [ "${copytodev}" = "ram" ]; then
+        # copying to ram:
+        freespace=$( expr $(awk '/MemFree/{print $2}' /proc/meminfo) + $( cat /proc/meminfo | grep Cached | head -n 1 | awk '/Cached/{print $2}' - ) )
+        mount_options="-o size=${size}k"
+        free_string="memory"
+        fstype="tmpfs"
+        dev="/dev/shm"
+    else
+        # it should be a writable block device
+        if [ -b "${copytodev}" ]; then
+            dev="${copytodev}"
+            free_string="space"
+            fstype=$(get_fstype "${dev}")
+            freespace=$(fs_size "${dev}")
+        else
+            [ "$quiet" != "y" ] && log_warning_msg "${copytodev} is not a block device."
+            return 1
+        fi
+    fi
+    if [ "${freespace}" -lt "${size}" ] ; then
+        [ "$quiet" != "y" ] && log_warning_msg "Not enough free ${free_string} (${freespace}k > ${size}k) to copy live media in ${copytodev}."
+        return 1
+    fi
+
+    # begin copying..
+    mkdir "${copyto}"
+    echo "mount -t ${fstype} ${mount_options} ${dev} ${copyto}"
+    mount -t "${fstype}" ${mount_options} "${dev}" "${copyto}"
+    cp -a ${copyfrom}/* ${copyto} # "cp -a" from busybox also copies hidden files
+    umount ${copyfrom}
+    mount -r -o move ${copyto} ${copyfrom}
+    rmdir ${copyto}
+    return 0
+}
+
+do_netmount() {
+    rc=1
+
+    modprobe "${MP_QUIET}" af_packet # For DHCP
+
+    /sbin/udevadm trigger
+    /sbin/udevadm settle
+
+    ipconfig ${DEVICE} /tmp/net-${DEVICE}.conf | tee /netboot.config
+
+    if [ "${NFSROOT}" = "auto" ]; then
+        NFSROOT=${ROOTSERVER}:${ROOTPATH}
+    fi
+
+    [ "$quiet" != "y" ] && log_begin_msg "Trying netboot from ${NFSROOT}"
+
+    if [ "${NETBOOT}" != "nfs" ] && do_cifsmount ; then
+        rc=0
+    elif do_nfsmount ; then
+        NETBOOT="nfs"
+        export NETBOOT
+        rc=0
+    fi
+
+    [ "$quiet" != "y" ] && log_end_msg
+    return ${rc}
+}
+
+do_nfsmount() {
+    rc=1
+    modprobe "${MP_QUIET}" nfs
+    if [ -z "${NFSOPTS}" ]; then
+        NFSOPTS=""
+    fi
+
+    [ "$quiet" != "y" ] && log_begin_msg "Trying nfsmount -o nolock -o ro ${NFSOPTS} ${NFSROOT} ${mountpoint}"
+    # FIXME: This while loop is an ugly HACK round an nfs bug
+    i=0
+    while [ "$i" -lt 60 ]; do
+        nfsmount -o nolock -o ro ${NFSOPTS} "${NFSROOT}" "${mountpoint}" && rc=0 && break
+        sleep 1
+        i="$(($i + 1))"
+    done
+    return ${rc}
+}
+
+do_cifsmount() {
+    rc=1
+    if [ -x "/sbin/mount.cifs" ]; then
+        if [ -z "${NFSOPTS}" ]; then
+            CIFSOPTS="-ouser=root,password="
+        else
+            CIFSOPTS="${NFSOPTS}"
+        fi
+
+        [ "$quiet" != "y" ] && log_begin_msg "Trying mount.cifs ${NFSROOT} ${mountpoint} ${CIFSOPTS}"
+        modprobe "${MP_QUIET}" cifs
+
+        if mount.cifs "${NFSROOT}" "${mountpoint}" "${CIFSOPTS}" ; then
+            rc=0
+        fi
+    fi
+    return ${rc}
+}
+
+do_snap_copy ()
+{
+    fromdev="${1}"
+    todir="${2}"
+    snap_type="${3}"
+
+    size=$(fs_size "${fromdev}" "" "used")
+
+    if [ -b "${fromdev}" ]; then
+        # look for free mem
+        if [ -n "${HOMEMOUNTED}" -a "${snap_type}" = "HOME" ]; then
+            todev=$(cat /proc/mounts | grep -s " $(base_path ${todir}) " | awk '{print $1}' )
+            freespace=$(df -k  | grep -s ${todev} | awk '{print $4}')
+        else
+            freespace=$( expr $(awk '/MemFree/{print $2}' /proc/meminfo) + $( cat /proc/meminfo | grep Cached | head -n 1 | awk '/Cached/{print $2}' - ))
+        fi
+
+        tomount="/mnt/tmpsnap"
+        if [ ! -d "${tomount}" ] ; then
+            mkdir -p "${tomount}"
+        fi
+
+        fstype=$(get_fstype "${fromdev}")
+        if [ -n "${fstype}" ]; then
+            # Copying stuff...
+            mount -t "${fstype}" -o ro,noatime "${fromdev}" "${tomount}"
+            cp -a "${tomount}"/* ${todir}
+            umount "${tomount}"
+        else
+            log_warning_msg "Unrecognized fstype: ${fstype} on ${fromdev}:${snap_type}"
+        fi
+
+        rmdir "${tomount}"
+        if echo ${fromdev} | grep -qs loop; then
+           losetup -d "${fromdev}"
+        fi
+        return 0
+    else
+        return 1
+        [ "$quiet" != "y" ] && log_warning_msg "Unable to find the snapshot ${snap_type} medium"
+    fi
+}
+
+try_snap ()
+{
+    # Look for $snap_label.* in block devices and copy the contents to $snap_mount
+    #   and remember the device and filename for resync on exit in casper.init
+
+    snap_label="${1}"
+    snap_mount="${2}"
+    snap_type="${3}"
+
+    snapdata=$(find_files "${snap_label}.squashfs ${snap_label}.cpio.gz ${snap_label}.ext2")
+    if [ ! -z "${snapdata}" ]; then
+        snapdev="$(echo ${snapdata} | cut -f1 -d ' ')"
+        snapback="$(echo ${snapdata} | cut -f2 -d ' ')"
+        snapfile="$(echo ${snapdata} | cut -f3 -d ' ')"
+        if echo "${snapfile}" | grep -qs '\(squashfs\|ext2\)'; then
+            # squashfs or ext2 snapshot
+            dev=$(get_backing_device "${snapback}/${snapfile}")
+            if ! do_snap_copy "${dev}" "${snap_mount}" "${snap_type}"; then
+                 log_warning_msg "Impossible to include the ${snapfile} Snapshot"
+                 return 1
+            fi
+        else
+            # cpio.gz snapshot
+            # Unfortunately klibc's cpio is incompatible with the rest of
+            # the world; everything else requires -u -d, while klibc doesn't
+            # implement them. Try to detect whether it's in use.
+            cpiopath="$(which cpio)" || true
+            if [ "$cpiopath" ] && grep -aq /lib/klibc "$cpiopath"; then
+                cpioargs=
+            else
+                cpioargs='-u -d'
+            fi
+            if ! (cd "${snap_mount}" && zcat "${snapback}/${snapfile}" | cpio -i $cpioargs 2>/dev/null) ; then
+                log_warning_msg "Impossible to include the ${snapfile} Snapshot"
+                return 1
+            fi
+        fi
+        umount "${snapback}"
+    else
+        dev=$(find_cow_device "${snap_label}")
+        if [ -b ${dev} ]; then
+            if echo "${dev}" | grep -qs loop; then
+                # strange things happens, user confused?
+                snaploop=$( losetup ${dev} | awk '{print $3}' | tr -d '()' )
+                snapfile=$(basename ${snaploop})
+                snapdev=$(cat /proc/mounts | awk '{print $2,$1}' | grep -es "^$( dirname ${snaploop} )" | cut -f2 -d ' ')
+            else
+                snapdev="${dev}"
+            fi
+            if ! do_snap_copy "${dev}" "${snap_mount}" "${snap_type}" ; then
+                log_warning_msg "Impossible to include the ${snap_label} Snapshot"
+                return 1
+            else
+                if [ -n "${snapfile}" ]; then
+                     # it was a loop device, user confused
+                     umount ${snapdev}
+                fi
+            fi
+        else
+            log_warning_msg "Impossible to include the ${snap_label} Snapshot"
+            return 1
+        fi
+    fi
+    echo "export ${snap_type}SNAP="/cow${snap_mount#$rootmnt}":${snapdev}:${snapfile}" >> /etc/casper.conf # for resync on reboot/halt
+    return 0
+}
+
+setup_unionfs() {
+    image_directory="$1"
+    rootmnt="$2"
+
+    case ${UNIONFS} in
+        aufs|unionfs)
+            modprobe "${MP_QUIET}" -b ${UNIONFS} || true
+            if ! cut -f2 /proc/filesystems | grep -q "^${UNIONFS}\$" && \
+               [ -x /bin/unionfs-fuse ]; then
+                UNIONFS="unionfs-fuse"
+            fi
+            ;;
+    esac
+
+    # run-init can't deal with images in a subdir, but we're going to
+    # move all of these away before it runs anyway.  No, we're not,
+    # put them in / since move-mounting them into / breaks mono and
+    # some other apps.
+
+    croot="/"
+
+    # Let's just mount the read-only file systems first
+    rofsstring=""
+    rofslist=""
+    if [ "${NETBOOT}" = "nfs" ] ; then
+        roopt="nfsro" # work around a bug in nfs-unionfs locking
+    elif [ "${UNIONFS}" = "aufs" ]; then
+        roopt="rr"
+    elif [ "${UNIONFS}" = "unionfs-fuse" ]; then
+        roopt="RO"
+    else
+        roopt="ro"
+    fi
+
+    mkdir -p "${croot}"
+    for image_type in "ext2" "squashfs" "dir" ; do
+        for image in "${image_directory}"/*."${image_type}"; do
+            imagename=$(basename "${image}")
+            if [ -d "${image}" ]; then
+                # it is a plain directory: do nothing
+                rofsstring="${image}=${roopt}:${rofsstring}"
+                rofslist="${image} ${rofslist}"
+            elif [ -f "${image}" ]; then
+                backdev=$(get_backing_device "$image")
+                fstype=$(get_fstype "${backdev}")
+                if [ "${fstype}" = "unknown" ]; then
+                    panic "Unknown file system type on ${backdev} (${image})"
+                fi
+                mkdir -p "${croot}/${imagename}"
+                mount -t "${fstype}" -o ro,noatime "${backdev}" "${croot}/${imagename}" || panic "Can not mount $backdev ($image) on ${croot}/${imagename}" && rofsstring="${croot}/${imagename}=${roopt}:${rofsstring}" && rofslist="${croot}/${imagename} ${rofslist}"
+            fi
+        done
+    done
+    rofsstring=${rofsstring%:}
+
+    mkdir -p /cow
+    cowdevice="tmpfs"
+    cow_fstype="tmpfs"
+    cow_mountopt="rw,noatime,mode=755"
+
+    # Looking for "${root_persistence}" device or file
+    if [ -n "${PERSISTENT}" ]; then
+        cowprobe=$(find_cow_device "${root_persistence}")
+        if [ -b "${cowprobe}" ]; then
+            cowdevice=${cowprobe}
+            cow_fstype=$(get_fstype "${cowprobe}")
+	    cow_mountopt="rw,noatime"
+        else
+            [ "$quiet" != "y" ] && log_warning_msg "Unable to find the persistent medium"
+        fi
+    fi
+
+    mount -t ${cow_fstype} -o ${cow_mountopt} ${cowdevice} /cow || panic "Can not mount $cowdevice on /cow"
+
+    case ${UNIONFS} in
+        unionfs-fuse)
+            (ulimit -n 16384; unionfs-fuse -o cow -o noinitgroups -o default_permissions -o allow_other -o use_ino -o suid /cow=RW:$rofsstring "$rootmnt" || panic "${UNIONFS} mount failed")
+            mkdir -p /dev/.initramfs/varrun
+            pidof unionfs-fuse >> /dev/.initramfs/varrun/sendsigs.omit || true
+            ;;
+        *)
+            mount -t ${UNIONFS} -o noatime,dirs=/cow=rw:$rofsstring ${UNIONFS} "$rootmnt" || panic "${UNIONFS} mount failed"
+            ;;
+    esac
+
+    # Adding other custom mounts
+    if [ -n "${PERSISTENT}" ]; then
+        # directly mount /home
+        # FIXME: add a custom mounts configurable system
+        homecow=$(find_cow_device "${home_persistence}" )
+        if [ -b "${homecow}" ]; then
+            mount -t $(get_fstype "${homecow}") -o rw,noatime "${homecow}" "${rootmnt}/home"
+            export HOMEMOUNTED=1 # used to proper calculate free space in do_snap_copy()
+        else
+            [ "$quiet" != "y" ] && log_warning_msg "Unable to find the persistent home medium"
+        fi
+        # Look for other snapshots to copy in
+        try_snap "${root_snapshot_label}" "${rootmnt}" "ROOT"
+        try_snap "${home_snapshot_label}" "${rootmnt}/home" "HOME"
+    fi
+
+    if [ -n "${SHOWMOUNTS}" ]; then
+        for d in ${rofslist}; do
+            mkdir -p "${rootmnt}/${LIVE_MEDIA_PATH}/${d##*/}"
+            case d in
+                *.dir) # do nothing # mount -o bind "${d}" "${rootmnt}/${LIVE_MEDIA_PATH}/${d##*/}"
+                    ;;
+                *)
+                    if [ "${UNIONFS}" = unionfs-fuse ]; then
+                        mount -o bind "${d}" "${rootmnt}/${LIVE_MEDIA_PATH}/${d##*/}"
+                    else
+                        mount -o move "${d}" "${rootmnt}/${LIVE_MEDIA_PATH}/${d##*/}"
+                    fi
+                    ;;
+            esac
+        done
+        # shows cow fs on /cow for use by casper-snapshot
+        mkdir -p "${rootmnt}/cow"
+        mount -o bind /cow "${rootmnt}/cow"
+    fi
+
+    # XXX: hardcode the image name for now (xtraeme).
+    # move the first mount.
+    mkdir -p "${rootmnt}/rofs"
+    if [ "${UNIONFS}" = unionfs-fuse ]; then
+	mount -o bind /filesystem.squashfs "${rootmnt}/rofs"
+    else
+	mount -o move /filesystem.squashfs "${rootmnt}/rofs"
+    fi
+}
+
+check_dev ()
+{
+    sysdev="${1}"
+    devname="${2}"
+    skip_uuid_check="${3}"
+    if [ -z "${devname}" ]; then
+        devname=$(sys2dev "${sysdev}")
+    fi
+
+    if [ -d "${devname}" ]; then
+        mount -o bind "${devname}" $mountpoint || continue
+        if is_casper_path $mountpoint; then
+            echo $mountpoint
+            return 0
+        else
+            umount $mountpoint
+        fi
+    fi
+
+    if [ -n "${LIVEMEDIA_OFFSET}" ]; then
+        loopdevname=$(setup_loop "${devname}" "loop" "/sys/block/loop*" "${LIVEMEDIA_OFFSET}")
+        devname="${loopdevname}" 
+    fi
+
+    fstype=$(get_fstype "${devname}")
+    if is_supported_fs ${fstype}; then
+        mount -t ${fstype} -o ro,noatime "${devname}" $mountpoint || continue
+        if is_casper_path $mountpoint && \
+           ([ "$skip_uuid_check" ] || matches_uuid $mountpoint); then
+            echo $mountpoint
+            return 0
+        else
+            umount $mountpoint
+        fi
+    fi
+
+    if [ -n "${LIVEMEDIA_OFFSET}" ]; then
+        losetup -d "${loopdevname}"
+    fi
+    return 1
+}
+
+find_livefs() {
+    timeout="${1}"
+    # first look at the one specified in the command line
+    if [ ! -z "${LIVEMEDIA}" ]; then
+        if check_dev "null" "${LIVEMEDIA}" "skip_uuid_check"; then
+            return 0
+        fi
+    fi
+    # don't start autodetection before timeout has expired
+    if [ -n "${LIVEMEDIA_TIMEOUT}" ]; then
+        if [ "${timeout}" -lt "${LIVEMEDIA_TIMEOUT}" ]; then
+            return 1
+        fi
+    fi
+    # or do the scan of block devices
+    for sysblock in $(echo /sys/block/* | tr ' ' '\n' | grep -vE "/(loop|ram|fd)"); do
+        devname=$(sys2dev "${sysblock}")
+        fstype=$(get_fstype "${devname}")
+        if /lib/udev/cdrom_id ${devname} > /dev/null; then
+            if check_dev "null" "${devname}" ; then
+                return 0
+            fi
+        elif is_nice_device "${sysblock}" ; then
+            for dev in $(subdevices "${sysblock}"); do
+                if check_dev "${dev}" ; then
+                    return 0
+                fi
+            done
+        elif [ "${fstype}" = "squashfs" -o \
+                "${fstype}" = "ext4" -o \
+                "${fstype}" = "ext3" -o \
+                "${fstype}" = "ext2" ]; then
+            # This is an ugly hack situation, the block device has
+            # an image directly on it.  It's hopefully
+            # casper, so take it and run with it.
+            ln -s "${devname}" "${devname}.${fstype}"
+            echo "${devname}.${fstype}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+set_usplash_timeout() {
+    if [ -x /sbin/usplash_write ]; then
+        /sbin/usplash_write "TIMEOUT 120"
+    fi
+}
+
+mountroot() {
+    exec 6>&1
+    exec 7>&2
+    exec > casper.log
+    exec 2>&1
+    tail -f casper.log >&7 &
+    tailpid="$!"
+
+    parse_cmdline
+
+    wait_for_udev 10
+
+    set_usplash_timeout
+    [ "$quiet" != "y" ] && log_begin_msg "Running /scripts/casper-premount"
+    run_scripts /scripts/casper-premount
+    [ "$quiet" != "y" ] && log_end_msg
+
+    # Needed here too because some things (*cough* udev *cough*)
+    # changes the timeout
+
+    set_usplash_timeout
+
+    if [ ! -z "${NETBOOT}" ]; then
+        if do_netmount ; then
+            livefs_root="${mountpoint}"
+        else
+            panic "Unable to find a live file system on the network"
+        fi
+    else
+        # Scan local devices for the image
+        i=0
+        while [ "$i" -lt 60 ]; do
+            livefs_root=$(find_livefs $i)
+            if [ "${livefs_root}" ]; then
+                break
+            fi
+            sleep 1
+            i="$(($i + 1))"
+        done
+    fi
+
+    if [ -z "${livefs_root}" ]; then
+        panic "Unable to find a medium containing a live file system"
+    fi
+
+    if [ "${TORAM}" ]; then
+        live_dest="ram"
+    elif [ "${TODISK}" ]; then
+        live_dest="${TODISK}"
+    fi
+    if [ "${live_dest}" ]; then
+        log_begin_msg "Copying live_media to ${live_dest}"
+        copy_live_to "${livefs_root}" "${live_dest}"
+        log_end_msg
+    fi
+
+    mount_images_in_directory "${livefs_root}" "${rootmnt}"
+
+    log_end_msg
+
+    # unionfs-fuse needs /dev to be bind-mounted for the duration of
+    # casper-bottom; udev's init script will take care of things after that
+    if [ "${UNIONFS}" = unionfs-fuse ]; then
+        mount -n -o bind /dev "${rootmnt}/dev"
+    fi
+
+    maybe_break casper-bottom
+    [ "$quiet" != "y" ] && log_begin_msg "Running /scripts/casper-bottom"
+
+    run_scripts /scripts/casper-bottom
+    [ "$quiet" != "y" ] && log_end_msg
+
+    if [ "${UNIONFS}" = unionfs-fuse ]; then
+        umount "${rootmnt}/dev"
+    fi
+
+    exec 1>&6 6>&-
+    exec 2>&7 7>&-
+    kill "$tailpid"
+    cp casper.log "${rootmnt}/var/log/"
+    if [ -f /etc/casper.conf ]; then
+        cp /etc/casper.conf "${rootmnt}/etc/"
+    fi
+}

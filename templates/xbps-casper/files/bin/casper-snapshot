@@ -1,0 +1,309 @@
+#! /bin/bash
+
+# casper-snapshot - utility to manage Debian Live systems snapshots
+#
+#   This program mount a device (fallback to /tmpfs under /mnt/snapshot
+#   and save the /cow (or a different dir) filesystem in it for reusing
+#   in another casper session. Look at manpage for more info.
+#
+# Copyright (C) 2006 Marco Amadori <marco.amadori@gmail.com>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+#
+# On Debian systems, the complete text of the GNU General Public License
+# can be found in /usr/share/common-licenses/GPL file.
+
+PROGRAM="`basename $0`"
+VERSION=0.0.1
+
+
+# Source casper conf
+if [ -e /etc/casper.conf ]; then
+	. /etc/casper.conf
+else
+	USERNAME=$(cat /etc/passwd | grep "999" | cut -f1 -d ':')
+	HOSTNAME=$(hostname)
+	BUILD_SYSTEM="Debian"
+fi
+
+export USERNAME USERFULLNAME HOSTNAME BUILD_SYSTEM
+
+# Source helper functions
+helpers="/usr/share/initramfs-tools/scripts/casper-helpers"
+if [ -e "${helpers}" ]; then
+	. "${helpers}"
+else
+	echo "Error: I cannot found helper functions \"${helpers}\"."
+	exit 1
+fi
+
+# Define LSB log_* functions.
+# Depend on lsb-base (>= 3.0-6) to ensure that this file is present.
+. /lib/lsb/init-functions
+
+MOUNTP=""
+COW=""
+DEV=""
+DEST=""
+TYPE=""
+DESKTOP_LINK=""
+
+Header ()
+{
+	echo "${PROGRAM} - utility to do Debian Live snapshots"
+	echo
+	echo "Usage: ${PROGRAM} [-c|--cow DIRECTORY] [-d|--device DEVICE] [-o|--output FILE] [-t|--type TYPE]"
+	echo "Usage: ${PROGRAM} [-r|--resync-string STRING]"
+	echo "Usage: ${PROGRAM} [-h|--help]"
+	echo "Usage: ${PROGRAM} [-u|--usage]"
+	echo "Usage: ${PROGRAM} [-v|--version]"
+}
+
+Usage ()
+{
+	MESSAGE=${1}
+	Header
+	echo
+	echo "Try \"${PROGRAM} --help\" for more information."
+	if [ ! -z "${MESSAGE}" ]; then
+		echo -e "${MESSAGE}"
+		exit 1
+	else
+		exit 0
+	fi
+}
+
+Help ()
+{
+	Header
+	echo
+	echo "Options:"
+	echo "  -c, --cow: specifies the copy on write directory (default: /cow)."
+	echo "  -d, --device: specifies the output snapshot device (default: none)."
+	echo "  -o, --output: specifies the output image file (default: $type dependent)."
+    echo "  -r, --resync-string: internally used to resync previous made snapshots."
+	echo "  -t, --type: specifies the snapshot type between \"squashfs\", \"ext2\" or \"cpio\".gz archive (default: cpio)"
+    echo -e "\nLook at casper-snapshot(1) man page for more information."
+	exit 0
+}
+
+Version ()
+{
+	echo "${PROGRAM}, version ${VERSION}"
+	echo
+	echo "Copyright (C) 2006 Marco Amadori <marco.amadori@gmail.com>"
+	echo
+	echo "This program is free software; you can redistribute it and/or modify"
+	echo "it under the terms of the GNU General Public License as published by"
+	echo "the Free Software Foundation; either version 2 of the License, or"
+	echo "(at your option) any later version."
+	echo
+	echo "This program is distributed in the hope that it will be useful,"
+	echo "but WITHOUT ANY WARRANTY; without even the implied warranty of"
+	echo "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the"
+	echo "GNU General Public License for more details."
+	echo
+	echo "You should have received a copy of the GNU General Public License"
+	echo "along with this program; if not, write to the Free Software"
+	echo "Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA"
+	echo
+	echo "On Debian systems, the complete text of the GNU General Public License"
+	echo "can be found in /usr/share/common-licenses/GPL file."
+	echo
+	echo "Homepage: <http://live.debian.net/>"
+	exit 0
+}
+
+Do_snapshot ()
+{
+	case "${TYPE}" in
+		squashfs)
+			echo "./tmp/exclude_list" > /tmp/exclude_list
+			( cd "${COW}" && find . -name '*.wh.*' >> /tmp/exclude_list )
+			mksquashfs "${COW}" "${DEST}" -ef /tmp/exclude_list || exit 1
+			rm /tmp/exclude_list
+			;;
+		cpio)
+			( cd "${COW}" && find . -path '*.wh.*' -prune -o -print0 | cpio --quiet -o0 -H newc | gzip -9c > "${DEST}" ) || exit 1
+			;;
+		ext2)
+			DU_DIM="`du -ks ${COW} | cut -f1`"
+			REAL_DIM="`expr ${DU_DIM} + ${DU_DIM} / 20`" # Just 5% more to be sure, need something more sophistcated here...
+			genext2fs --size-in-blocks=${REAL_DIM} --reserved-percentage=0 --root="${COW}" "${DEST}" || exit 1
+			;;
+		*)
+			echo "Internal error."
+			exit 1
+			;;
+	esac
+}
+
+Is_same_mount ()
+{
+	dir1="`Base_path $1`"
+	dir2="`Base_path $2`"
+	if [ "${dir1}" == "${dir2}" ]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+Parse_args ()
+{
+	# Parse command line
+	ARGUMENTS="`getopt --longoptions cow:,device:,output,resync-string:,type:,help,usage,version --name=${PROGRAM} --options c:d:o:t:r:,h,u,v --shell sh -- "$@"`"
+
+	if [ "$?" != "0" ]; then
+		echo "Terminating." >&2
+		exit 1
+	fi
+
+	eval set -- "${ARGUMENTS}"
+
+	while true; do
+		case "$1" in
+			-c|--cow)
+				SNAP_COW="$2"; shift 2 ;;
+			-d|--device)
+				SNAP_DEV="$2"; shift 2 ;;
+			-o|--output)
+				SNAP_OUTPUT="$2"; shift 2 ;;
+			-t|--type)
+				SNAP_TYPE="$2"; shift 2 ;;
+			-r|--resync-string)
+				SNAP_RSTRING="$2"; break ;;
+			-h|--help)
+				Help; shift ;;
+			-u|--usage)
+				Usage ; shift ;;
+			-v|--version)
+				Version; shift ;;
+			--)
+				shift; break ;;
+			*)
+				echo "Internal error."; exit 1 ;;
+		esac
+	done
+}
+
+Mount_device ()
+{
+	dev="$1"
+
+	if [ ! -d "${MOUNTP}" ]; then
+		mkdir -p "${MOUNTP}"
+	fi
+
+	if [ -z "${dev}" ]; then
+		# create a temp
+		mount -t tmpfs -o rw tmpfs "${MOUNTP}"
+		if [ ! -L /home/$USERNAME/Desktop/casper-snapshot ]; then
+			ln -s "${MOUNTP}" /home/$USERNAME/Desktop/casper-snapshot
+		fi
+	else
+		if [ -b "${dev}" ] ; then
+			try_mount "${dev}" "${MOUNTP}" rw
+		fi
+	fi
+}
+
+Defaults ()
+{
+	MOUNTP="/mnt/casper-snapshot"
+	COW="/cow"
+	DEV=""
+	TYPE="cpio"
+	DESKTOP_LINK=/home/$USERNAME/Desktop/casper-snapshot
+
+	if [ -n "${SNAP_RSTRING}" ]; then
+		COW=$(echo "${SNAP_RSTRING}" | cut -f1 -d ':')
+		DEV=$(echo "${SNAP_RSTRING}" | cut -f2 -d ':')
+		DEST="${MOUNTP}/$(echo "${SNAP_RSTRING}" | cut -f3 -d ':')"
+		
+		case "${DEST}" in
+			*.cpio.gz)
+				TYPE="cpio" ;;
+			*.squashfs)
+				TYPE="squashfs" ;;
+			"")
+				TYPE="ext2" ;;
+			*.ext2)
+				TYPE="ext2" ;;
+			*)
+				Usage "Unrecognized String" ;;
+		esac
+	else
+		DEF_COW="/cow"
+		# Bad options handling
+		if [ -z "${SNAP_COW}" ]; then
+			COW="${DEF_COW}"
+		else
+			COW="${SNAP_COW}"
+		fi
+	
+		case "${SNAP_TYPE}" in
+			"cpio"|"squashfs"|"ext2")
+				TYPE="${SNAP_TYPE}"
+				;;
+			"")
+				TYPE="cpio" ;;
+			*)
+				Usage "Error: unrecognized snapshot type"
+				;;
+		esac
+		case "${TYPE}" in
+			cpio)
+				DEST="${MOUNTP}/casper-sn.cpio.gz" ;;
+			squashfs)
+				DEST="${MOUNTP}/casper-sn.squashfs" ;;
+			ext2)
+				DEST="${MOUNTP}/casper-sn.ext2" ;;
+			*)
+				echo "Internal error."
+				exit 1
+				;;
+		esac
+		#if [ -d 
+		#if Is_same_mount 
+	fi
+
+	# check vars
+	if [ ! -d "${COW}" ]; then
+		Usage "Error: ${COW} is not a directory"
+	fi
+
+	Mount_device $DEV
+
+}
+
+Clean ()
+{
+	if [ -n "$DEV" ]; then
+		umount "${MOUNTP}"
+		rmdir "${MOUNTP}"
+		rm 
+	fi
+}
+
+Main ()
+{
+	Parse_args "$@"
+	Defaults
+	Do_snapshot
+	Clean
+}
+
+Main "$@"

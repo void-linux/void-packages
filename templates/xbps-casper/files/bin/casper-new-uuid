@@ -1,0 +1,85 @@
+#!/bin/sh
+# -*- coding: utf-8 -*-
+#
+# «casper-new-uuid» - Creates and injects new UUIDs for casper disks
+#
+# Create new UUIDs for disks to prevent conflicts and booting the wrong casper
+# directory.  Particularly useful in creating recovery disks that need to be
+# able to also work with recovery partitioning schemes.
+#
+# Copyright (C) 2008, Dell Inc.
+#
+# Author:
+#  - Mario Limonciello <Mario_Limonciello@Dell.com>
+#
+# This script is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or at your option)
+# any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this application; if not, write to the Free Software Foundation, Inc., 51
+# Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+##################################################################################
+
+set -e
+
+help() {
+ echo
+ echo "USAGE: $0 initrd.{l,g}z <path-to-new-initrd> <path-to-new-casper-uuid> "
+ echo
+ echo "initrd.{l,g}z is the absolute path to the original gzipped or lzmaed initramfs"
+ echo "<path-to-new-initrd> is the destination directory for the new compressed initramfs"
+ echo "<path-to-new-casper-uuid> is the destination directory for the new casper-uuid-TYPE "
+ echo
+ echo "if either path is absent, they will end up in the current directory "
+ echo "TYPE is determined by an already existing casper-uuid-* or by 'uname -s'"
+}
+
+if [ "$#" = "0" ] || [ "x$1" = x-h ] || [ "x$1" = x--help ]; then
+	help
+	exit 3
+fi
+
+CWD=`pwd`
+TEMPDIR=`mktemp -d /tmp/uuid-XXXXXX`
+TYPE=`uname -r | cut -d '-' -f 3`
+
+if echo "$1" | grep ".lz$" >/dev/null; then
+	COMPRESSOR="lzma"
+	SUFFIX=".lz"
+elif echo "$1" | grep ".gz$" >/dev/null; then
+	COMPRESSOR="gzip"
+	SUFFIX=".gz"
+else
+	echo "Unsupported archive type."
+	exit 2
+fi
+if [ -z "$2" ] || [ ! -d "$2" ] || [ "$2" = "." ]; then
+	COMPRESS_DIR="$CWD"
+else
+	COMPRESS_DIR="$2"
+fi
+
+if [ -z "$3" ] || [ ! -d "$3" ] || [ "$3" = "." ]; then
+	CASPERDIR="$CWD"
+else
+	CASPERDIR="$3"
+fi
+
+cd "$TEMPDIR"
+$COMPRESSOR -cd "$1" -S "$SUFFIX" | cpio -id
+uuidgen -r > conf/uuid.conf
+find . | cpio --quiet --dereference -o -H newc | $COMPRESSOR -9c > "$COMPRESS_DIR/initrd$SUFFIX"
+if [ "$(ls "$CASPERDIR/casper-uuid"-* >/dev/null 2>&1 | wc -l)" = 1 ]; then
+    cp conf/uuid.conf "$CASPERDIR/casper-uuid"-*
+else
+	cp conf/uuid.conf "$CASPERDIR/casper-uuid-$TYPE"
+fi
+cd "$CWD"
+rm -rf "$TEMPDIR"

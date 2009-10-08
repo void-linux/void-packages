@@ -1,0 +1,231 @@
+## Casper helper functions, used by casper on boot and by casper-snapshot
+
+MP_QUIET="-q"
+
+if [ ! -x "/bin/fstype" ]; then
+    # klibc not in path -> not in initramfs
+    export PATH="${PATH}:/usr/lib/klibc/bin"
+fi
+
+sys2dev() {
+    sysdev=${1#/sys}
+    echo "/dev/$(/sbin/udevadm info -q name -p ${sysdev} 2>/dev/null|| echo ${sysdev##*/})"
+}
+
+subdevices() {
+    sysblock=$1
+    r=""
+    for dev in "${sysblock}" "${sysblock}"/*; do
+        if [ -e "${dev}/dev" ]; then
+            r="${r} ${dev}"
+        fi
+    done
+    echo ${r}
+}
+
+is_supported_fs () {
+    # FIXME: do something better like the scan of supported filesystems
+    fstype="${1}"
+    case ${fstype} in
+        vfat|iso9660|udf|ext2|ext3|ext4|ntfs)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+get_fstype() {
+    local FSTYPE
+    local FSSIZE
+    eval $(fstype < $1)
+    if [ "$FSTYPE" != "unknown" ]; then
+        echo $FSTYPE
+        return 0
+    fi
+    /sbin/blkid -s TYPE -o value $1 2>/dev/null
+}
+
+where_is_mounted() {
+    device=$1
+    if grep -q "^$device " /proc/mounts; then
+        mountpoint="$(grep "^$device " /proc/mounts | awk '{print $2; exit}')"
+        grep "^$device " /proc/mounts | read d mountpoint rest
+        echo $mountpoint
+        return 0
+    fi
+    return 1
+}
+
+lastline() {
+    while read lines ; do
+        line=${lines}
+    done
+    echo "${line}"
+}
+
+base_path ()
+{
+    testpath="${1}"
+    mounts="$(awk '{print $2}' /proc/mounts)"
+    testpath="$(busybox realpath ${testpath})"
+
+    while true ; do
+        if echo "${mounts}" | grep -qs "^${testpath}" ; then
+            set -- `echo "${mounts}" | grep "^${testpath}" | lastline`
+            echo ${1}
+            break
+        else
+            testpath=`dirname $testpath`
+        fi
+    done
+}
+
+fs_size ()
+{
+    # Returns used/free fs kbytes + 5% more
+    # You could pass a block device as $1 or the mount point as $2
+
+    dev="${1}"
+    mountp="${2}"
+    used="${3}"
+
+    if [ -z "${mountp}" ]; then
+        mountp=$(where_is_mounted "${dev}")
+        if [ "$?" -gt 0 ]; then
+            mountp="/mnt/tmp_fs_size"
+            mkdir -p "${mountp}"
+            mount -t $(get_fstype "${dev}") -o ro "${dev}" "${mountp}"
+            doumount=1
+        fi
+    fi
+
+    if [ "${used}" = "used" ]; then
+        size=$(du -ks ${mountp} | cut -f1)
+        size=$(expr ${size} + ${size} / 20 ) # FIXME: 5% more to be sure
+    else
+        # free space
+        size="$(df -k | grep -s ${mountp} | awk '{print $4}')"
+    fi
+
+    if [ -n "${doumount}" ]; then
+        umount "${mountp}"
+        rmdir "${mountp}"
+    fi
+    echo "${size}"
+}
+
+setup_loop() {
+    local fspath=$1
+    local module=$2
+    local pattern=$3
+    local offset=$4
+
+    modprobe ${MP_QUIET} -b "$module"
+    /sbin/udevadm settle
+
+    if [ "$module" = loop ]; then
+        if [ ! -e /dev/loop0 ]; then
+            # temporary workaround for kernel bug
+            for i in 0 1 2 3 4 5 6 7; do
+                mknod "/dev/loop$i" b 7 "$i" || true
+            done
+        fi
+
+        dev="$(losetup -f)"
+        if [ "$dev" ]; then
+            if [ -n "$offset" ]; then
+                losetup -o "$offset" "$dev" "$fspath"
+            else
+                losetup "$dev" "$fspath"
+            fi
+            echo "$dev"
+            return 0
+        else
+            panic "No loop devices available"
+        fi
+    else
+        for loopdev in $pattern; do
+            if [ "$(cat $loopdev/size)" -eq 0 ]; then
+                dev=$(sys2dev "${loopdev}")
+                if [ -n "$offset" ]; then
+                    losetup -o "$offset" "$dev" "$fspath"
+                else
+                    losetup "$dev" "$fspath"
+                fi
+                echo "$dev"
+                return 0
+            fi
+        done
+        panic "No loop devices available"
+    fi
+}
+
+try_mount ()
+{
+    dev="${1}"
+    mountp="${2}"
+    opts="${3}"
+
+    if where_is_mounted ${dev} > /dev/null; then
+    if [ "${opts}" != "ro" ]; then
+        mount -o remount,"${opts}" ${dev} $(where_is_mounted ${dev}) || panic "Remounting failed"
+    fi
+        mount -o bind $(where_is_mounted ${dev}) ${mountp} || panic "Cannot bind-mount"
+    else
+        mount -t $(get_fstype "${dev}") -o "${opts}" "${dev}" "${mountp}" || panic "Cannot mount ${dev} on ${mountp}"
+    fi
+}
+
+find_cow_device() {
+    pers_label="${1}"
+    cow_backing="/${pers_label}-backing"
+    for sysblock in $(echo /sys/block/* | tr ' ' '\n' | grep -v loop); do
+        for dev in $(subdevices "${sysblock}"); do
+            devname=$(sys2dev "${dev}")
+            if [ "$(/sbin/blkid -s LABEL -o value $devname 2>/dev/null)" = "${pers_label}" ]; then
+                echo "$devname"
+                return
+            # Do not add any filesystem types here that might be able to
+            # mount a journalled filesystem and replay the journal. Doing so
+            # will cause data loss when a live CD is booted on a system
+            # where filesystems are in use by hibernated operating systems.
+            elif [ "$(get_fstype ${devname})" = "vfat" ]; then
+                mkdir -p "${cow_backing}"
+                try_mount "${devname}" "${cow_backing}" "rw"
+                if [ -e "${cow_backing}/${pers_label}" ]; then
+                    echo $(setup_loop "${cow_backing}/${pers_label}" "loop" "/sys/block/loop*")
+                    return 0
+                else
+                    umount ${cow_backing}
+                fi
+            fi
+        done
+    done
+}
+
+find_files()
+# return the first of $filenames found on vfat and ext2 devices
+# FIXME: merge with above function
+{
+    filenames="${1}"
+    snap_backing="/snap-backing"
+    for sysblock in $(echo /sys/block/* | tr ' ' '\n' | grep -v loop); do
+        for dev in $(subdevices "${sysblock}"); do
+            devname=$(sys2dev "${dev}")
+            devfstype="$(get_fstype ${devname})"
+            if [ "${devfstype}" = "vfat" ] ||  [ "${devfstype}" = "ext2" ] ; then # FIXME: all supported block devices should be scanned
+                mkdir -p "${snap_backing}"
+                try_mount "${devname}" "${snap_backing}" "ro"
+                for filename in ${filenames}; do
+                    if [ -e "${snap_backing}/${filename}" ]; then
+                        echo "${devname} ${snap_backing} ${filename}"
+                        return 0
+                    fi
+                done
+                umount ${snap_backing}
+            fi
+        done
+    done
+}
+
+
