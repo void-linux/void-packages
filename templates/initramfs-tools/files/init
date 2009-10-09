@@ -1,0 +1,267 @@
+#!/bin/sh
+
+echo "Loading, please wait..."
+
+# Create some required busybox symlinks.
+if [ -x /bin/busybox ]; then
+	for f in cut touch tr grep awk tail basename ls cp rm \
+		 head expr du; do
+		busybox ln -s /bin/busybox /bin/${f}
+	done
+	busybox ln -s /bin/busybox /sbin/pkill
+fi
+
+[ -d /dev ] || mkdir -m 0755 /dev
+[ -d /root ] || mkdir -m 0700 /root
+[ -d /sys ] || mkdir /sys
+[ -d /proc ] || mkdir /proc
+[ -d /tmp ] || mkdir /tmp
+mkdir -p /var/lock
+mount -t sysfs -o nodev,noexec,nosuid sysfs /sys 
+mount -t proc -o nodev,noexec,nosuid proc /proc 
+
+# Note that this only becomes /dev on the real filesystem if udev's scripts
+# are used; which they will be, but it's worth pointing out
+tmpfs_size="10M"
+if [ -e /etc/udev/udev.conf ]; then
+	. /etc/udev/udev.conf
+fi
+mount -t tmpfs -o size=$tmpfs_size,mode=0755 udev /dev
+[ -e /dev/console ] || mknod -m 0600 /dev/console c 5 1
+[ -e /dev/null ] || mknod /dev/null c 1 3
+> /dev/.initramfs-tools
+mkdir /dev/.initramfs
+
+# Export the dpkg architecture
+export DPKG_ARCH=
+. /conf/arch.conf
+
+# Set modprobe env
+export MODPROBE_OPTIONS="-qb"
+
+# Export relevant variables
+export ROOT=
+export ROOTDELAY=
+export ROOTFLAGS=
+export ROOTFSTYPE=
+export IP=
+export break=
+export init=/sbin/init
+export quiet=n
+export readonly=y
+export rootmnt=/root
+export debug=
+export panic=
+export blacklist=
+export resume_offset=
+
+# Bring in the main config
+. /conf/initramfs.conf
+for conf in conf/conf.d/*; do
+	[ -f ${conf} ] && . ${conf}
+done
+. /scripts/functions
+
+# Parse command line options
+for x in $(cat /proc/cmdline); do
+	case $x in
+	init=*)
+		init=${x#init=}
+		;;
+	root=*)
+		ROOT=${x#root=}
+		case $ROOT in
+		LABEL=*)
+			ROOT="${ROOT#LABEL=}"
+
+			# support any / in LABEL= path (escape to \x2f)
+			case "${ROOT}" in
+			*[/]*)
+			if [ -x "$(command -v sed)" ]; then
+				ROOT="$(echo ${ROOT} | sed 's,/,\\x2f,g')"
+			else
+				if [ "${ROOT}" != "${ROOT#/}" ]; then
+					ROOT="\x2f${ROOT#/}"
+				fi
+				if [ "${ROOT}" != "${ROOT%/}" ]; then
+					ROOT="${ROOT%/}\x2f"
+				fi
+				IFS='/'
+				newroot=
+				for s in $ROOT; do
+					if [ -z "${newroot}" ]; then
+						newroot="${s}"
+					else
+						newroot="${newroot}\\x2f${s}"
+					fi
+				done
+				unset IFS
+				ROOT="${newroot}"
+			fi
+			esac
+			ROOT="/dev/disk/by-label/${ROOT}"
+			;;
+		UUID=*)
+			ROOT="/dev/disk/by-uuid/${ROOT#UUID=}"
+			;;
+		/dev/nfs)
+			[ -z "${BOOT}" ] && BOOT=nfs
+			;;
+		esac
+		;;
+	rootflags=*)
+		ROOTFLAGS="-o ${x#rootflags=}"
+		;;
+	rootfstype=*)
+		ROOTFSTYPE="${x#rootfstype=}"
+		;;
+	rootdelay=*)
+		ROOTDELAY="${x#rootdelay=}"
+		case ${ROOTDELAY} in
+		*[![:digit:].]*)
+			ROOTDELAY=
+			;;
+		esac
+		;;
+	nfsroot=*)
+		NFSROOT="${x#nfsroot=}"
+		;;
+	ip=*)
+		IP="${x#ip=}"
+		;;
+	boot=*)
+		BOOT=${x#boot=}
+		;;
+	resume=*)
+		RESUME="${x#resume=}"
+		;;
+	resume_offset=*)
+		resume_offset="${x#resume_offset=}"
+		;;
+	noresume)
+		noresume=y
+		;;
+	panic=*)
+		panic="${x#panic=}"
+		case ${panic} in
+		*[![:digit:].]*)
+			panic=
+			;;
+		esac
+		;;
+	quiet)
+		quiet=y
+		;;
+	ro)
+		readonly=y
+		;;
+	rw)
+		readonly=n
+		;;
+	debug)
+		debug=y
+		quiet=n
+		exec >/dev/.initramfs/initramfs.debug 2>&1
+		set -x
+		;;
+	debug=*)
+		debug=y
+		quiet=n
+		set -x
+		;;
+	break=*)
+		break=${x#break=}
+		;;
+	break)
+		break=premount
+		;;
+	blacklist=*)
+		blacklist=${x#blacklist=}
+		;;
+	esac
+done
+
+if [ -z "${noresume}" ]; then
+	export resume=${RESUME}
+else
+	export noresume
+fi
+
+depmod -a
+maybe_break top
+
+# Don't do log messages here to avoid confusing usplash
+run_scripts /scripts/init-top
+
+maybe_break modules
+log_begin_msg "Loading essential drivers"
+load_modules
+log_end_msg
+
+maybe_break premount
+[ "$quiet" != "y" ] && log_begin_msg "Running /scripts/init-premount"
+run_scripts /scripts/init-premount
+[ "$quiet" != "y" ] && log_end_msg
+
+maybe_break mount
+log_begin_msg "Mounting root file system"
+. /scripts/${BOOT}
+parse_numeric ${ROOT}
+maybe_break mountroot
+mountroot
+log_end_msg
+
+maybe_break bottom
+[ "$quiet" != "y" ] && log_begin_msg "Running /scripts/init-bottom"
+run_scripts /scripts/init-bottom
+[ "$quiet" != "y" ] && log_end_msg
+
+# Move virtual filesystems over to the real filesystem
+mount -n -o move /sys ${rootmnt}/sys
+mount -n -o move /proc ${rootmnt}/proc
+
+# Check init bootarg
+if [ -n "${init}" ] && [ ! -x "${rootmnt}${init}" ]; then
+	echo "Target filesystem doesn't have ${init}."
+	init=
+fi
+
+# Search for valid init
+if [ -z "${init}" ] ; then
+	for init in /sbin/init /etc/init /bin/init /bin/sh; do
+		if [ ! -x "${rootmnt}${init}" ]; then
+			continue
+		fi
+		break
+	done
+fi
+
+# No init on rootmount
+if [ ! -x "${rootmnt}${init}" ]; then
+	panic "No init found. Try passing init= bootarg."
+fi
+
+maybe_break init
+
+# don't leak too much of env - some init(8) don't clear it
+# (keep init, rootmnt)
+unset debug
+unset MODPROBE_OPTIONS
+unset DPKG_ARCH
+unset ROOTFLAGS
+unset ROOTFSTYPE
+unset ROOTDELAY
+unset ROOT
+unset IP
+unset blacklist
+unset break
+unset noresume
+unset panic
+unset quiet
+unset readonly
+unset resume
+unset resume_offset
+
+# Chain to real filesystem
+exec run-init ${rootmnt} ${init} "$@" <${rootmnt}/dev/console >${rootmnt}/dev/console
+panic "Could not execute run-init."

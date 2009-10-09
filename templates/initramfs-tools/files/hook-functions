@@ -1,0 +1,508 @@
+# -*- shell-script -*-
+
+catenate_cpiogz() {
+	# Sanity check
+	if [ ! -e "${1}" ]; then
+		echo "W:catenate_cpiogz: arg1='${1}' does not exist." >&2
+		return
+	fi
+
+	cat "${1}" >>"${__TMPCPIOGZ}"
+}
+
+force_load()
+{
+		manual_add_modules ${@}
+		echo "${@}" >>"${DESTDIR}/conf/modules"
+}
+
+# Takes a file containing a list of modules to be added as an
+# argument, figures out dependancies, and adds them.
+#
+# Input file syntax:
+#
+#   # comment
+#   modprobe_module_name [args ...]
+#   [...]
+#
+add_modules_from_file()
+{
+	# Sanity check
+	if [ ! -e "${1}" ]; then
+		echo "W:add_modules_from_file: arg1='${1}' does not exist." >&2
+		return
+	fi
+
+	sed -e '/^#/d' ${1} | while read module rest; do
+		force_load "${module}" "${rest}"
+	done
+}
+
+# Add dependent modules + eventual firmware
+manual_add_modules()
+{
+	local mam_x firmwares firmware
+
+	for mam_x in $(modprobe --set-version="${version}" --ignore-install \
+	--show-depends "${1}" 2>/dev/null | awk '/^insmod/ { print $2 }'); do
+		# Prune duplicates
+		if [ -e "${DESTDIR}/${mam_x}" ]; then
+			continue
+		fi
+
+		mkdir -p "${DESTDIR}/$(dirname "${mam_x}")"
+		ln -s "${mam_x}" "${DESTDIR}/$(dirname "${mam_x}")"
+		if [ "${verbose}" = "y" ]; then
+			echo "Adding module ${mam_x}"
+		fi
+
+		# Add firmware files if necessary
+		firmwares=$(modinfo -F firmware "${mam_x}")
+		if [ -z "${firmwares}" ]; then
+			continue
+		fi
+		for firmware in $firmwares; do
+			if [ -e "${DESTDIR}/lib/firmware/${firmware}" ] \
+			|| [ -e "${DESTDIR}/lib/firmware/${version}/${firmware}" ]; then
+				continue
+			fi
+
+			# Only print warning for missing fw of loaded module
+			# or forced loaded module
+			if [ ! -e "/lib/firmware/${firmware}" ] \
+			&& [ ! -e "/lib/firmware/${version}/${firmware}" ]; then
+				if grep -q "^$(basename "${mam_x}" .ko)[[:space:]]" \
+				/proc/modules \
+				|| grep -q "^$(basename "${mam_x}" .ko)" \
+				"${CONFDIR}/modules"; then
+					echo "W: Possible missing firmware /lib/firmware/${firmware} for module $(basename ${mam_x} .ko)" >&2
+				fi
+				continue
+			fi
+
+			if [ ! -e "${DESTDIR}/lib/udev/firmware.agent" ] \
+			&& [ -e "/lib/udev/firmware.agent" ]; then
+				copy_exec /lib/udev/firmware.agent
+			fi
+
+			if [ -e "/lib/firmware/${version}/${firmware}" ]; then
+				copy_exec "/lib/firmware/${version}/${firmware}"
+			else
+				copy_exec "/lib/firmware/${firmware}"
+			fi
+			if [ "${verbose}" = "y" ]; then
+				echo "Adding firmware ${firmware}"
+			fi
+		done
+	done
+}
+
+# $1 is the source path (e.g. /usr/bin/time)
+# $2 is the relative destination (e.g. /usr or /usr/time)
+#
+# The destination is interpreted in the same way "cp" would, meaning
+# (assuming /bin is a directory):
+#
+#   "copy_exec /usr/bin/time /bin"        -> /bin/time
+#   "copy_exec /usr/bin/time /bin/mytime" -> /bin/mytime
+# 
+# If $2 is left out, the same destination path as for the source arg will
+# be used and directories will be created as needed, so:
+#
+#   "copy_exec /usr/bin/time"             -> /usr/bin/time
+#
+copy_exec() {
+	local source target destination final_destination x nonoptlib
+	local libname dirname
+
+	source="${1}"
+	if [ -n "${2}" ]; then
+		target="${2}"
+	else
+		if [ ! -e "${DESTDIR}/$(dirname "${1}")" ]; then
+			mkdir -p "${DESTDIR}/$(dirname "${1}")"
+		fi
+		target="${1}"
+	fi
+
+	if [ -d "${DESTDIR}/${target}" ]; then
+		destination="${target}/$(basename "${source}")"
+	else
+		destination="${target}"
+	fi
+	final_destination="${DESTDIR}/${destination}"
+
+	if [ -L "$final_destination" ]; then
+		if [ $(readlink "${final_destination}") != "${source}" ]; then
+			echo "W:copy_exec: Not copying ${source} to \$DESTDIR${destination}, which is already a copy of $(readlink ${final_destination})" >&2
+			return
+		fi
+	else
+		ln -s ${source} ${DESTDIR}/${destination}
+		if [ "${verbose}" = "y" ]; then
+			echo "Adding binary ${source}"
+		fi
+	fi
+
+	# Copy the dependant libraries
+	for x in $(ldd ${source} 2>/dev/null | sed -e '
+	    /\//!d;
+	    /linux-gate/d;
+	    /=>/ {s/.*=>[[:blank:]]*\([^[:blank:]]*\).*/\1/};
+	    s/[[:blank:]]*\([^[:blank:]]*\) (.*)/\1/' 2>/dev/null); do
+
+		# Try to use non-optimised libraries where possible.
+		# We assume that all HWCAP libraries will be in tls.
+		nonoptlib=$(echo "${x}" | sed -e 's#/lib/\(tls\|i686\).*/\(lib.*\)#/lib/\2#')
+
+		if [ -e "${nonoptlib}" ]; then
+			x="${nonoptlib}"
+		fi
+
+		libname=$(basename "${x}")
+		dirname=$(dirname "${x}")
+
+		mkdir -p "${DESTDIR}/${dirname}"
+		if [ ! -e "${DESTDIR}/${dirname}/${libname}" ]; then
+			ln -s "${x}" "${DESTDIR}/${dirname}"
+			if [ "${verbose}" = "y" ]; then
+				echo "Adding library ${x}"
+			fi
+		fi
+	done
+}
+
+# Copy entire subtrees to the initramfs
+copy_modules_dir()
+{
+	local x_mod
+
+	if ! [ -d "${MODULESDIR}/${1}" ]; then
+		return;
+	fi
+	if [ "${verbose}" = "y" ]; then
+		echo "Copying module directory ${1}"
+	fi
+	for x_mod in $(find "${MODULESDIR}/${1}" -name '*.ko' -print); do
+		manual_add_modules $(basename ${x_mod} .ko)
+	done
+}
+
+# walk /sys for relevant modules
+sys_walk_mod_add()
+{
+	local driver_path module
+	device_path="$1"
+	
+	while [ "${device_path}" != "/sys" ]; do
+		sys_walk_modalias ${device_path}
+		driver_path="$(readlink -f ${device_path}/driver)"
+		if [ -e "$driver_path" ]; then
+			module="$(basename $(readlink -f $driver_path))"
+			if [ -n "${module}" ]; then
+				force_load "${module}"
+			fi
+		fi
+		device_path="$(dirname ${device_path})"
+	done
+}
+
+# walk /sys for relevant modalias
+sys_walk_modalias()
+{
+	local device_path modalias
+
+	device_path="$(dirname "${1}")"
+	device_path="$(dirname "${device_path}")"
+	if [ -e "${device_path}/modalias" ]; then
+		modalias=$(cat "${device_path}/modalias")
+	fi
+
+	if [ -n "${modalias}" ]; then
+		force_load "${modalias}"
+	fi
+}
+
+# find and only copy root relevant modules
+dep_add_modules()
+{
+	local block minor root FSTYPE root_dev_path x
+
+	# findout root block device + fstype
+	eval "$(mount | awk '/\/dev\// {if ($3 == "/") {print "root=" $1 "\nFSTYPE=" $5; exit}}')"
+	if [ "${root}" = "/dev/root" ] ; then
+		root="/dev/disk/by-uuid/"$(/sbin/blkid -s UUID -o value ${root}) 2>/dev/null
+	fi
+	root="$(readlink -f ${root})"
+
+	# find out real rootfs on auto type
+	if [ "${FSTYPE}" = "auto" ]; then
+		eval "$(/usr/lib/klibc/bin/fstype ${root})"
+	fi
+
+	# check that fstype rootfs recognition
+	if [ "${FSTYPE}" = "unknown" ]; then
+		echo "mkinitramfs: unknown fstype on root ${root}"
+		echo "mkinitramfs: workaround is MODULES=most" 
+		echo "mkinitramfs: Error please report bug on initramfs-tools" 
+		exit 1
+	fi
+
+	# Add rootfs
+	manual_add_modules "${FSTYPE}"
+
+	# lvm or luks root
+	if [ "${root#/dev/mapper/}" != "${root}" ] \
+		|| [ "${root#/dev/dm-}" != "${root}" ]; then
+		minor=$((0x$(stat --format "%T" ${root}) % 256))
+		block=$(ls -1 /sys/block/dm-${minor}/slaves | head -n 1)
+		# lvm on luks or luks on lvm
+		if [ "${block#dm-}" != "${block}" ]; then
+			block=$(ls -1 /sys/block/${block}/slaves | head -n 1)
+		fi
+		# lvm on md or luks on md
+		if [ "${block#md}" != "${block}" ]; then
+			block=$(awk "/^${block}/{print substr(\$5, 1, 4); exit}" \
+				/proc/mdstat)
+		fi
+		# luks or lvm on cciss or ida
+		if [ "${block#cciss}" != "${block}" ] \
+		|| [ "${block#ida}" != "${block}" ]; then
+			block="${block%p*}"
+		else
+			block=${block%%[0-9]*}
+		fi
+	# md root new naming scheme /dev/md/X
+	elif [ "${root#/dev/md/}" != "${root}" ]; then
+		root=${root#/dev/md/}
+		block=$(awk "/^md${root}/{print substr(\$5, 1, 3); exit}" \
+			/proc/mdstat)
+	# md root /dev/mdX
+	elif [ "${root#/dev/md}" != "${root}" ]; then
+		root=${root#/dev/}
+		block=$(awk "/^${root}/{print substr(\$5, 1, 3); exit}" \
+			/proc/mdstat)
+	# cciss device
+	elif [ "${root#/dev/cciss/}" != "${root}" ]; then
+		block=${root#/dev/cciss/*}
+		block="cciss!${block%p*}"
+	# ida device
+	elif [ "${root#/dev/ida/}" != "${root}" ]; then
+		block=${root#/dev/ida/*}
+		block="ida!${block%p*}"
+	# loop root /dev/loopX
+	elif [ "${root#/dev/loop}" != "${root}" ]; then
+		root=${root#/dev/}
+		block=$(losetup -a \
+			| awk "/${root}/{print substr(\$3, 7, 3); exit}")
+	# Xen virtual device /dev/xvdX
+	elif [ "${root#/dev/xvd}" != "${root}" ]; then
+		block=${root#/dev/}
+		# Xen has a mode where only the individual partitions are
+		# registered with the kernel as well as the usual full disk
+		# with partition table scheme.
+		if [ ! -e /sys/block/${block} ] ; then
+			block=${block%%[0-9]*}
+		fi
+	# mmc root /dev/mmcblkXpX
+	elif [ "${root#/dev/mmcblk}" != "${root}" ]; then
+		block=${root#/dev/}
+		block=${block%%p[0-9]*}
+	# classical root device
+	else
+		block=${root#/dev/}
+		block=${block%%[0-9]*}
+	fi
+
+	# Error out if /sys lack block dev
+	if [ -z "${block}" ] || [ ! -e /sys/block/${block} ]; then
+		echo "mkinitramfs: for root ${root} missing ${block} /sys/block/ entry"
+		echo "mkinitramfs: workaround is MODULES=most" 
+		echo "mkinitramfs: Error please report the bug" 
+		exit 1
+	fi
+
+	# sys walk ATA
+	root_dev_path=$(readlink -f /sys/block/${block}/device)
+	sys_walk_mod_add ${root_dev_path}
+
+	# catch old-style IDE
+	if [ -e /sys/bus/ide/devices/ ]; then
+		sys_walk_modalias ${root_dev_path}
+		manual_add_modules ide-gd_mod
+		# FIXME: remove post Squeeze
+		manual_add_modules ide-disk
+		manual_add_modules ide-cd
+	fi
+
+	if [ -e /sys/bus/scsi/devices/ ]; then
+		manual_add_modules sd_mod
+	fi
+
+	if [ -e /sys/bus/i2o/devices/ ]; then
+		force_load i2o_block
+		force_load i2o_config
+	fi
+
+	if [ -e /sys/bus/ps3_system_bus/ ]; then
+		for x in ps3disk ps3rom ps3-gelic ps3_sys_manager; do
+			manual_add_modules "${x}"
+		done
+	fi
+
+	if [ -e /sys/bus/vio/ ]; then
+		for x in sunvnet sunvdc; do
+			manual_add_modules "${x}"
+		done
+	fi
+}
+
+
+# The modules "most" classes added per default to the initramfs
+auto_add_modules()
+{
+	case "$1" in
+	base)
+		for x in ehci-hcd ohci-hcd uhci-hcd usbhid usb-storage ext2 \
+		ext3 ext4 ext4dev isofs jfs nfs reiserfs udf xfs af_packet \
+		atkbd i8042 virtio_pci; do
+			manual_add_modules "${x}"
+		done
+	;;
+	net)
+		for x in 3c59x 8139cp 8139too 8390 atl1 atl1e b44 bmac \
+		bnx2 cxgb cxgb3 de2104x de4x5 defxx dl2k dmfe \
+		e100 e1000 e1000e ehea epic100 \
+		ep93xx_eth eql fealnx famachi forcedeth gelic_net \
+		hp100 igb ipg ixgb ixgbe mace mlx4_core mv643xx_eth myri10ge \
+		natsemi ne2k-pci netconsole netxen_nic niu ns83820 \
+		pcnet32 qla3xxx \
+		r8169 s2io sfc sis900 skge sky2 slhc smc911x starfire \
+		sundance sungem sungem_phy sunhme sunvnet tehuti tg3 tlan \
+		tulip typhoon via-rhine via-velocity winbond-840 \
+		xircom_cb xircom_tulip_cb yellowfin; do
+			manual_add_modules "${x}"
+		done
+	;;
+	ide)
+		copy_modules_dir kernel/drivers/ide
+	;;
+	mmc)
+		copy_modules_dir kernel/drivers/mmc
+	;;
+	scsi)
+		copy_modules_dir kernel/drivers/scsi
+		for x in mptfc mptsas mptscsih mptspi zfcp; do
+			manual_add_modules "${x}"
+		done
+	;;
+	ata)
+		copy_modules_dir kernel/drivers/ata
+	;;
+	block)
+		copy_modules_dir kernel/drivers/block
+	;;
+	ieee1394)
+		for x in ohci1394 sbp2; do
+			manual_add_modules "${x}"
+		done
+	;;
+	firewire)
+		for x in firewire-ohci  firewire-sbp2; do
+			manual_add_modules "${x}"
+		done
+	;;
+	i2o)
+		for x in i2o_block; do
+			manual_add_modules "${x}"
+		done
+	;;
+	dasd)
+		for x in dasd_diag_mod dasd_eckd_mod dasd_fba_mod; do
+			manual_add_modules "${x}"
+		done
+	;;
+	*)
+		auto_add_modules base
+		auto_add_modules net
+		auto_add_modules ide
+		auto_add_modules scsi
+		auto_add_modules block
+		auto_add_modules ata
+		auto_add_modules i2o
+		auto_add_modules dasd
+		auto_add_modules ieee1394
+		auto_add_modules firewire
+		auto_add_modules mmc
+	;;
+	esac
+}
+
+usage()
+{
+	cat >&2 << EOF
+
+Usage: ${0} [OPTION]... -o outfile [version]
+
+Options:
+  -d confdir  Specify an alternative configuration directory.
+  -k          Keep temporary directory used to make the image.
+  -o outfile  Write to outfile.
+  -r root     Override ROOT setting in initramfs.conf.
+
+See mkinitramfs(8) for further details.
+EOF
+	exit 1
+
+}
+
+compare_versions()
+{
+	local curv="$1" minv="$2"
+
+	xbps-cmpver $curv $minv
+	if [ $? -eq 0 ] || [ $? -eq 1 ]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+# minimal supported kernel version
+check_minkver()
+{
+	local curversion initdir ARCH minversion cm_x tmp
+
+	curversion="${1}"
+	initdir="${2}"
+	if [ -z "${initdir}" ]; then
+		ARCH=$(uname -m)
+		case ${ARCH} in
+			ia64|hppa)
+				minversion="2.6.15"
+			;;
+			*)
+				minversion="2.6.12"
+			;;
+		esac
+		if ! compare_versions "${curversion}" "${minversion}"; then
+			echo "W: kernel ${curversion} too old for initramfs on ${DPKG_ARCH}" >&2
+			echo "W: not generating requested initramfs for kernel ${curversion}" >&2
+			exit 2
+		fi
+		return 0
+	fi
+	set_initlist
+	for cm_x in ${initlist}; do
+		# sed: keep last line starting with MINKVER=,
+		#      remove MINKVER= and trailing space
+		minver=$(sed '/^MINKVER=/!d;$!d;s/^MINKVER=//;s/[[:space:]]*$//' "${initdir}/${cm_x}")
+		if [ -z "${tmp}" ]; then
+			continue
+		elif ! compare_versions "${curversion}" "${minver}"; then
+			echo "W: ${cm_x} hook script requires at least kernel version ${minver}" >&2
+			echo "W: not generating requested initramfs for kernel ${curversion}" >&2
+			exit 2
+		fi
+	done
+}

@@ -1,0 +1,309 @@
+# -*- shell-script -*-
+
+_log_msg()
+{
+	if [ "$quiet" = "y" ]; then return; fi
+	printf "$@"
+}
+
+log_success_msg()
+{
+	_log_msg "Success: $@\n"
+}
+
+log_failure_msg()
+{
+	_log_msg "Failure: $@\n"
+}
+
+log_warning_msg()
+{
+	_log_msg "Warning: $@\n"
+}
+
+log_begin_msg()
+{
+	if [ -x /sbin/usplash_write ]; then
+		/sbin/usplash_write "TEXT $@"
+	fi
+	_log_msg "Begin: $@ ... "
+}
+
+log_end_msg()
+{
+	if [ -x /sbin/usplash_write ]; then
+		/sbin/usplash_write "SUCCESS ok"
+	fi
+	_log_msg "done.\n"
+}
+
+panic()
+{
+	if [ -x /sbin/usplash_write ]; then
+		/sbin/usplash_write "QUIT"
+	fi
+	# Disallow console access
+	if [ -n "${panic}" ]; then
+		sleep ${panic}
+		reboot
+	fi
+	modprobe i8042
+	modprobe atkbd
+	echo $@
+	PS1='(initramfs) ' /bin/sh -i </dev/console >/dev/console 2>&1
+}
+
+maybe_break()
+{
+	if [ "${break:-}" = "$1" ]; then
+		panic "Spawning shell within the initramfs"
+	fi
+}
+
+render()
+{
+	eval "echo -n \${$@}"
+}
+
+set_initlist()
+{
+	unset initlist
+	for si_x in ${initdir}/*; do
+		# skip empty dirs without warning
+		[ "${si_x}" = "${initdir}/*" ] && return
+
+		# only allow variable name chars
+		case ${si_x#${initdir}/} in
+		*[![:alnum:]_.]*)
+			[ "${verbose}" = "y" ] \
+			&& echo "$si_x ignored: not alphanumeric or '_' file"
+			continue
+			;;
+		esac
+
+		# skip non executable scripts
+		if [ ! -x ${si_x} ]; then
+			[ "${verbose}" = "y" ] \
+			&& echo "$si_x ignored: not executable"
+			continue
+		fi
+
+		# skip directories
+		if [ -d ${si_x} ]; then
+			[ "${verbose}" = "y" ] \
+			&& echo "$si_x ignored: a directory"
+			continue
+		fi
+
+		initlist="${initlist} ${si_x#${initdir}/}"
+	done
+}
+
+reduce_satisfied()
+{
+	deplist="$(render array_${1})"
+	unset tmpdeplist
+	for rs_y in ${deplist}; do
+		# only allow variable name chars
+		case ${rs_y} in
+		*[![:alnum:]_.]*)
+			continue
+			;;
+		esac
+		# skip non executable scripts
+		if [ ! -x ${initdir}/${rs_y} ]; then
+			continue
+		fi
+		# skip directories
+		if [ -d ${initdir}/${rs_y} ]; then
+			continue
+		fi
+		tmpdeplist="${tmpdeplist} ${rs_y}"
+	done
+	deplist=${tmpdeplist}
+	for rs_x in ${runlist}; do
+		pop_list_item ${rs_x} ${deplist}
+		deplist=${tmppop}
+	done
+	eval array_${1}=\"${deplist}\"
+}
+
+get_prereqs()
+{
+	set_initlist
+	for gp_x in ${initlist}; do
+		tmp=$(${initdir}/${gp_x} prereqs)
+		eval array_${gp_x}=\"${tmp}\"
+	done
+}
+
+count_unsatisfied()
+{
+	set -- ${@}
+	return ${#}
+}
+
+# Removes $1 from initlist
+pop_list_item()
+{
+	item=${1}
+	shift
+	set -- ${@}
+	unset tmppop
+	# Iterate
+	for pop in ${@}; do
+		if [ ${pop} = ${item} ]; then
+			continue
+		fi
+		tmppop="${tmppop} ${pop}"
+	done
+
+}
+
+# This function generates the runlist, so we clear it first.
+reduce_prereqs()
+{
+	unset runlist
+	set -- ${initlist}
+	i=$#
+	# Loop until there's no more in the queue to loop through
+	while [ ${i} -ne 0 ]; do
+		oldi=${i}
+		for rp_x in ${initlist}; do
+			reduce_satisfied ${rp_x}
+			count_unsatisfied $(render array_${rp_x})
+			cnt=${?}
+			if [ ${cnt} -eq 0 ]; then
+				runlist="${runlist} ${rp_x}"
+				pop_list_item ${rp_x} ${initlist}
+				initlist=${tmppop}
+				i=$((${i} - 1))
+			fi
+		done
+		if [ ${i} -eq ${oldi} ]; then
+			panic "PANIC: Circular dependancy.  Exiting."
+		fi
+	done
+}
+
+call_scripts()
+{
+	for cs_x in ${runlist}; do
+		# mkinitramfs verbose output
+		if [ "${verbose}" = "y" ]; then
+			echo "Calling hook ${cs_x}"
+		fi
+		${initdir}/${cs_x}
+		# allow boot scripts to modify exported boot paramaters
+		if [ -e /conf/param.conf ]; then
+			. /conf/param.conf
+		fi
+	done
+}
+
+run_scripts()
+{
+	initdir=${1}
+	[ ! -d ${initdir} ] && return
+	get_prereqs
+	reduce_prereqs
+	call_scripts
+}
+
+# Load custom modules first
+load_modules()
+{
+	if [ -e /conf/modules ]; then
+		cat /conf/modules | while read m; do
+			# Skip empty lines
+			if [ -z "$m" ];  then
+				continue
+			fi
+			# Skip comments - d?ash removes whitespace prefix
+			com=$(printf "%.1s" "${m}")
+			if [ "$com" = "#" ]; then
+				continue
+			fi
+			modprobe $m
+		done
+	fi
+}
+
+# lilo compatibility
+parse_numeric() {
+	case $1 in
+	"")
+		return
+		;;
+	/*)
+		return
+		;;
+	[0-9]*:[0-9]*)
+		minor=${1#*:}
+		major=${1%:*}
+		;;
+	[A-Fa-f0-9]*)
+		value=$(( 0x${1} ))
+		minor=$(( ${value} % 256 ))
+		major=$(( ${value} / 256 ))
+		;;
+	*)
+		return
+		;;
+	esac
+
+	mknod -m 600 /dev/root b ${major} ${minor}
+	ROOT=/dev/root
+}
+
+configure_networking()
+{
+	# networking already configured thus bail out
+	[ -n "${DEVICE}" ] && [ -e /tmp/net-"${DEVICE}".conf ] && return 0
+
+	# support ip options see linux sources
+	# Documentation/filesystems/nfsroot.txt
+	case ${IP} in
+	none|off)
+		# Do nothing
+		;;
+	""|on|any)
+		# Bring up device
+		ipconfig -t 180 ${DEVICE}
+		;;
+	dhcp|bootp|rarp|both)
+		ipconfig -t 180 -c ${IP} -d ${DEVICE}
+		;;
+	*)
+		ipconfig -t 180 -d $IP
+
+		# grab device entry from ip option
+		NEW_DEVICE=${IP#*:*:*:*:*:*}
+		if [ "${NEW_DEVICE}" != "${IP}" ]; then
+			NEW_DEVICE=${NEW_DEVICE%:*}
+		else
+			# wrong parse, possibly only a partial string
+			NEW_DEVICE=
+		fi
+		if [ -n "${NEW_DEVICE}" ]; then
+			DEVICE="${NEW_DEVICE}"
+		fi
+		;;
+	esac
+
+	# source ipconfig output
+	if [ -n "${DEVICE}" ]; then
+		# source specific bootdevice
+		. /tmp/net-${DEVICE}.conf
+	else
+		# source any interface as not exaclty specified
+		. /tmp/net-*.conf
+	fi
+}
+
+# Wait for queued kernel/udev events
+wait_for_udev()
+{
+	[ -x "$(command -v udevadm)" ] || return 0
+	udevadm settle ${1:+--timeout=$1}
+}

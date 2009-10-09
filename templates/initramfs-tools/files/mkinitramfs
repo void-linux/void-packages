@@ -1,0 +1,305 @@
+#!/bin/sh
+
+umask 0022
+export PATH='/usr/bin:/sbin:/bin'
+
+# Defaults
+keep="n"
+CONFDIR="/etc/initramfs-tools"
+verbose="n"
+errors_to="2>/dev/null"
+BUSYBOXDIR="/usr/lib/busybox-initramfs/bin"
+
+OPTIONS=`getopt -o d:ko:r:v -n "$0" -- "$@"`
+
+# Check for non-GNU getopt
+if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
+
+eval set -- "$OPTIONS"
+
+while true; do
+	case "$1" in
+	-d)
+		CONFDIR="$2"
+		shift 2
+		if [ ! -d "${CONFDIR}" ]; then
+			echo "${0}: ${CONFDIR}: Not a directory" >&2
+			exit 1
+		fi
+		;;
+	-o)
+		outfile="$2"
+		shift 2
+		;;
+	-k)
+		keep="y"
+		shift
+		;;
+	-r)
+		ROOT="$2"
+		shift 2
+		;;
+	-v)
+		verbose="y"
+		shift
+		;;
+	--)
+		shift
+		break
+		;;
+	*)
+		echo "Internal error!" >&2
+		exit 1
+		;;
+	esac
+done
+
+# For dependency ordered mkinitramfs hook scripts.
+. /usr/share/initramfs-tools/scripts/functions
+. /usr/share/initramfs-tools/hook-functions
+
+. "${CONFDIR}/initramfs.conf"
+EXTRA_CONF=''
+for i in /usr/share/initramfs-tools/conf.d/* ${CONFDIR}/conf.d/*; do
+	EXTRA_CONF="${EXTRA_CONF} $(basename $i \
+		| grep '^[[:alnum:]][[:alnum:]\._-]*$' | grep -v '\.dpkg-.*$')";
+done
+# FIXME: deprecated those settings on mkinitramfs run
+#        these conf dirs are for boot scripts and land on initramfs
+for i in ${EXTRA_CONF}; do
+	if [ -e  ${CONFDIR}/conf.d/${i} ]; then
+		. ${CONFDIR}/conf.d/${i}
+	elif [ -e  /usr/share/initramfs-tools/conf.d/${i} ]; then
+		. /usr/share/initramfs-tools/conf.d/${i}
+	fi
+done
+
+# source package confs
+for i in /usr/share/initramfs-tools/conf-hooks.d/*; do
+	if [ -e "${i}" ]; then
+		. "${i}"
+	fi
+done
+
+if [ -n "${UMASK}" ]; then
+	umask "${UMASK}"
+fi
+
+if [ -z "${outfile}" ]; then
+	usage
+fi
+
+touch "$outfile"
+outfile="$(readlink -f "$outfile")"
+
+# And by "version" we really mean path to kernel modules
+# This is braindead, and exists to preserve the interface with mkinitrd
+if [ ${#} -ne 1 ]; then
+	version="$(uname -r)"
+else
+	version="${1}"
+fi
+
+# Check that we're using a new enough kernel version, first for ourselves,
+# then for each of the hooks, which can have a MINKVER variable defined
+check_minkver ${version}
+check_minkver ${version} /usr/share/initramfs-tools/hooks
+check_minkver ${version} ${CONFDIR}/hooks
+
+case "${version}" in
+/lib/modules/*/[!/]*)
+	;;
+/lib/modules/[!/]*)
+	version="${version#/lib/modules/}"
+	version="${version%%/*}"
+	;;
+esac
+
+case "${version}" in
+*/*)
+	echo "$PROG: ${version} is not a valid kernel version" >&2
+	exit 1
+	;;
+esac
+
+if [ -d "${outfile}" ]; then
+	echo "${outfile} is a directory"
+	exit 1
+fi
+
+MODULESDIR="/lib/modules/${version}"
+
+if [ ! -e "${MODULESDIR}" ]; then
+	echo "Cannot find ${MODULESDIR}"
+	exit 1
+fi
+if [ ! -e "${MODULESDIR}/modules.dep" ]; then
+	depmod ${version}
+fi
+
+DESTDIR="$(mktemp -t -d mkinitramfs_XXXXXX)" || exit 1
+__TMPCPIOGZ="$(mktemp -t mkinitramfs-OL_XXXXXX)" || exit 1
+
+DPKG_ARCH=`uname -m`
+
+# Export environment for hook scripts.
+#
+export MODULESDIR
+export version
+export CONFDIR
+export DESTDIR
+export DPKG_ARCH
+export verbose
+export KEYMAP
+export MODULES
+
+# Private, used by 'catenate_cpiogz'.
+export __TMPCPIOGZ
+
+for d in bin conf/conf.d etc lib/modules sbin scripts ${MODULESDIR}; do
+	mkdir -p "${DESTDIR}/${d}"
+done
+
+# Copy the modules.order file in
+if [ -f "${MODULESDIR}/modules.order" ]; then
+	cp -p "${MODULESDIR}/modules.order" \
+	      "${DESTDIR}${MODULESDIR}/modules.order"
+fi
+
+# MODULES=list case.  Always honour.
+for x in "${CONFDIR}/modules" /usr/share/initramfs-tools/modules.d/*; do
+	if [ -f "${x}" ]; then
+		add_modules_from_file "${x}"
+	fi
+done
+
+# MODULES=most is default
+case "${MODULES}" in
+dep)
+	dep_add_modules
+	;;
+most)
+	auto_add_modules
+	;;
+netboot)
+	auto_add_modules base
+	auto_add_modules net
+	;;
+list)
+	# nothing to add
+	;;
+*)
+	echo "mkinitramfs: Warning unsupported MODULES setting: ${MODULES}."
+	echo "mkinitramfs: Falling back to MODULES=most."
+	auto_add_modules
+	;;
+esac
+
+# Have to do each file, because cpio --dereference doesn't recurse down
+# symlinks.
+
+# klibc
+ln -s /usr/lib/klibc/bin/* ${DESTDIR}/bin
+ln -s /lib/klibc-*.so ${DESTDIR}/lib
+rm -f ${DESTDIR}/bin/kinit* ${DESTDIR}/bin/gzip
+
+cp -p /usr/share/initramfs-tools/init ${DESTDIR}/init
+
+# add existant boot scripts
+for b in $(cd /usr/share/initramfs-tools/scripts/ && find . \
+	-regextype posix-extended -regex '.*/[[:alnum:]_.]+$' -type f); do
+	[ -d "${DESTDIR}/scripts/$(dirname "${b}")" ] \
+		|| mkdir -p "${DESTDIR}/scripts/$(dirname "${b}")"
+	cp -p "/usr/share/initramfs-tools/scripts/${b}" \
+		"${DESTDIR}/scripts/$(dirname "${b}")/"
+done
+for b in $(cd "${CONFDIR}/scripts" && find . \
+	-regextype posix-extended -regex '.*/[[:alnum:]_.]+$' -type f); do
+	[ -d "${DESTDIR}/scripts/$(dirname "${b}")" ] \
+		|| mkdir -p "${DESTDIR}/scripts/$(dirname "${b}")"
+	cp -p "${CONFDIR}/scripts/${b}" "${DESTDIR}/scripts/$(dirname "${b}")/"
+done
+
+echo "DPKG_ARCH=${DPKG_ARCH}" > ${DESTDIR}/conf/arch.conf
+cp -p "${CONFDIR}/initramfs.conf" ${DESTDIR}/conf
+for i in ${EXTRA_CONF}; do
+	if [ -e "${CONFDIR}/conf.d/${i}" ]; then
+		copy_exec "${CONFDIR}/conf.d/${i}" /conf/conf.d
+	elif [ -e "/usr/share/initramfs-tools/conf.d/${i}" ]; then
+		copy_exec "/usr/share/initramfs-tools/conf.d/${i}" /conf/conf.d
+	fi
+done
+
+# ROOT hardcoding
+if [ -n "${ROOT}" ]; then
+	echo "ROOT=${ROOT}" > ${DESTDIR}/conf/conf.d/root
+fi
+
+# Busybox
+if [ "${BUSYBOX}" = "n" ] || [ ! -e ${BUSYBOXDIR}/busybox ]; then
+	# those root need busybox
+	eval "$(mount | awk '/ \/ / {print "r_dev=" $1; exit}')"
+	if [ "${r_dev#/dev/mapper/}" != "${r_dev}" ]; then
+		echo "Warning: Busybox is required for successful boot!"
+	fi
+else
+	rm -f ${DESTDIR}/bin/sh
+	rm -f ${DESTDIR}/bin/busybox
+	copy_exec ${BUSYBOXDIR}/busybox /bin/busybox
+	ln -s ${BUSYBOXDIR}/busybox ${DESTDIR}/bin/sh
+fi
+
+# Module-init-tools
+copy_exec /sbin/modprobe /sbin
+copy_exec /sbin/depmod /sbin
+copy_exec /sbin/rmmod /sbin
+
+# libblkid
+copy_exec /sbin/blkid /sbin
+
+if [ -d /etc/modprobe.d ]; then
+	mkdir -p "${DESTDIR}/etc/modprobe.d"
+	cp -a /etc/modprobe.d/* "${DESTDIR}/etc/modprobe.d/"
+fi
+
+run_scripts /usr/share/initramfs-tools/hooks
+run_scripts "${CONFDIR}"/hooks
+
+# Apply DSDT to initramfs
+if [ -e "${CONFDIR}/DSDT.aml" ]; then
+	copy_exec "${CONFDIR}/DSDT.aml" /
+fi
+
+[ "${verbose}" = y ] && echo "Building cpio ${outfile} initramfs"
+(
+# work around lack of "set -o pipefail" for the following pipe:
+# cd "${DESTDIR}" && find . | cpio --quiet --dereference -o -H newc | gzip >"${outfile}" || exit 1
+exec 3>&1
+eval `
+    # http://cfaj.freeshell.org/shell/cus-faq-2.html
+    exec 4>&1 >&3 3>&-
+    cd  "${DESTDIR}" 
+    {
+        find . 4>&-; echo "ec1=$?;" >&4
+    } | {
+        cpio --quiet --dereference -o -H newc 4>&-; echo "ec2=$?;" >&4
+    } | gzip >"${outfile}"
+    echo "ec3=$?;" >&4
+`
+if [ "$ec1" -ne 0 ]; then exit "$ec1"; fi
+if [ "$ec2" -ne 0 ]; then exit "$ec2"; fi
+if [ "$ec3" -ne 0 ]; then exit "$ec3"; fi
+) || exit 1
+
+if [ -s "${__TMPCPIOGZ}" ]; then
+	cat "${__TMPCPIOGZ}" >>"${outfile}" || exit 1
+fi
+
+if [ "${keep}" = "y" ]; then
+	echo "Working files in ${DESTDIR} and overlay in ${__TMPCPIOGZ}"
+else
+	rm -rf "${DESTDIR}"
+	rm -rf "${__TMPCPIOGZ}"
+fi
+
+exit 0

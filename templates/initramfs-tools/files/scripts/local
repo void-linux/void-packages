@@ -1,0 +1,135 @@
+# Local filesystem mounting			-*- shell-script -*-
+
+# Parameter: device node to check
+# Echos fstype to stdout
+# Return value: indicates if an fs could be recognized
+get_fstype ()
+{
+	local FS FSTYPE FSSIZE RET
+	FS="${1}"
+
+	# blkid has a more complete list of file systems,
+	# but fstype is more robust
+	eval $(fstype "${FS}" 2> /dev/null)
+	if [ "$FSTYPE" = "unknown" ] && [ -x /sbin/blkid ]; then
+		FSTYPE=$(/sbin/blkid -s TYPE -o value "${FS}" 2> /dev/null)
+	fi
+	RET=$?
+
+	if [ -z "${FSTYPE}" ]; then
+		FSTYPE="unknown"
+	fi
+
+	echo "${FSTYPE}"
+	return ${RET}
+}
+
+pre_mountroot()
+{
+	wait_for_udev 10
+
+	[ "$quiet" != "y" ] && log_begin_msg "Running /scripts/local-top"
+	run_scripts /scripts/local-top
+	[ "$quiet" != "y" ] && log_end_msg
+
+	# Don't wait for a root device that doesn't have a corresponding
+	# device in /dev (ie, mtd0)
+	if [ "${ROOT#/dev}" = "${ROOT}" ]; then
+		return
+	fi
+
+	# If the root device hasn't shown up yet, give it a little while
+	# to deal with removable devices
+	if [ ! -e "${ROOT}" ] || ! $(get_fstype "${ROOT}" >/dev/null); then
+		log_begin_msg "Waiting for root file system"
+
+		# Default delay is 180s
+		if [ -z "${ROOTDELAY}" ]; then
+			slumber=180
+		else
+			slumber=${ROOTDELAY}
+		fi
+		if [ -x /sbin/usplash_write ]; then
+			/sbin/usplash_write "TIMEOUT ${slumber}" || true
+		fi
+
+		slumber=$(( ${slumber} * 10 ))
+		while [ ! -e "${ROOT}" ] \
+		|| ! $(get_fstype "${ROOT}" >/dev/null); do
+			/bin/sleep 0.1
+			slumber=$(( ${slumber} - 1 ))
+			[ ${slumber} -gt 0 ] || break
+		done
+
+		if [ ${slumber} -gt 0 ]; then
+			log_end_msg 0
+		else
+			log_end_msg 1 || true
+		fi
+		if [ -x /sbin/usplash_write ]; then
+			/sbin/usplash_write "TIMEOUT 15" || true
+		fi
+	fi
+
+	# We've given up, but we'll let the user fix matters if they can
+	while [ ! -e "${ROOT}" ]; do
+		# give hint about renamed root
+		case "${ROOT}" in 
+		/dev/hd*)
+			suffix="${ROOT#/dev/hd}"
+			major="${suffix%[[:digit:]]}"
+			major="${major%[[:digit:]]}"
+			if [ -d "/sys/block/sd${major}" ]; then
+				echo "WARNING bootdevice may be renamed. Try root=/dev/sd${suffix}"
+			fi
+			;;
+		/dev/sd*)
+			suffix="${ROOT#/dev/sd}"
+			major="${suffix%[[:digit:]]}"
+			major="${major%[[:digit:]]}"
+			if [ -d "/sys/block/hd${major}" ]; then
+				echo "WARNING bootdevice may be renamed. Try root=/dev/hd${suffix}"
+			fi
+			;;
+		esac
+		echo "Gave up waiting for root device.  Common problems:"
+		echo " - Boot args (cat /proc/cmdline)"
+		echo "   - Check rootdelay= (did the system wait long enough?)"
+		echo "   - Check root= (did the system wait for the right device?)"
+		echo " - Missing modules (cat /proc/modules; ls /dev)"
+		panic "ALERT!  ${ROOT} does not exist.  Dropping to a shell!"
+	done
+}
+
+mountroot()
+{
+	pre_mountroot
+
+	# Get the root filesystem type if not set
+	if [ -z "${ROOTFSTYPE}" ]; then
+		FSTYPE=$(get_fstype "${ROOT}")
+	else
+		FSTYPE=${ROOTFSTYPE}
+	fi
+
+	[ "$quiet" != "y" ] && log_begin_msg "Running /scripts/local-premount"
+	run_scripts /scripts/local-premount
+	[ "$quiet" != "y" ] && log_end_msg
+
+	if [ "${readonly}" = "y" ]; then
+		roflag=-r
+	else
+		roflag=-w
+	fi
+
+	# FIXME This has no error checking
+	modprobe ${FSTYPE}
+
+	# FIXME This has no error checking
+	# Mount root
+	mount ${roflag} -t ${FSTYPE} ${ROOTFLAGS} ${ROOT} ${rootmnt}
+
+	[ "$quiet" != "y" ] && log_begin_msg "Running /scripts/local-bottom"
+	run_scripts /scripts/local-bottom
+	[ "$quiet" != "y" ] && log_end_msg
+}
