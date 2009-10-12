@@ -52,20 +52,24 @@ parse_cmdline() {
             live-media-path=*)
                 LIVE_MEDIA_PATH="${x#live-media-path=}"
                 export LIVE_MEDIA_PATH
-                echo "export LIVE_MEDIA_PATH=\"$LIVE_MEDIA_PATH\"" >> /etc/casper.conf ;;
+                echo "export LIVE_MEDIA_PATH=\"$LIVE_MEDIA_PATH\"" \
+			>> /etc/casper.conf ;;
         esac
     done
     if [ "${UNIONFS}" = "" ]; then
-        export UNIONFS="aufs"
+        export UNIONFS="unionfs"
     fi
 }
 
 is_casper_path() {
     path=$1
     if [ -d "$path/$LIVE_MEDIA_PATH" ]; then
-        if [ "$(echo $path/$LIVE_MEDIA_PATH/*.squashfs)" != "$path/$LIVE_MEDIA_PATH/*.squashfs" ] ||
-            [ "$(echo $path/$LIVE_MEDIA_PATH/*.ext2)" != "$path/$LIVE_MEDIA_PATH/*.ext2" ] ||
-            [ "$(echo $path/$LIVE_MEDIA_PATH/*.dir)" != "$path/$LIVE_MEDIA_PATH/*.dir" ]; then
+        if [ "$(echo $path/$LIVE_MEDIA_PATH/*.squashfs)" != \
+		"$path/$LIVE_MEDIA_PATH/*.squashfs" ] ||
+            [ "$(echo $path/$LIVE_MEDIA_PATH/*.ext2)" != \
+		"$path/$LIVE_MEDIA_PATH/*.ext2" ] ||
+            [ "$(echo $path/$LIVE_MEDIA_PATH/*.dir)" != \
+		"$path/$LIVE_MEDIA_PATH/*.dir" ]; then
             return 0
         fi
     fi
@@ -154,7 +158,8 @@ copy_live_to() {
             fstype=$(get_fstype "${dev}")
             freespace=$(fs_size "${dev}")
         else
-            [ "$quiet" != "y" ] && log_warning_msg "${copytodev} is not a block device."
+            [ "$quiet" != "y" ] && \
+		log_warning_msg "${copytodev} is not a block device."
             return 1
         fi
     fi
@@ -167,7 +172,8 @@ copy_live_to() {
     mkdir "${copyto}"
     echo "mount -t ${fstype} ${mount_options} ${dev} ${copyto}"
     mount -t "${fstype}" ${mount_options} "${dev}" "${copyto}"
-    cp -a ${copyfrom}/* ${copyto} # "cp -a" from busybox also copies hidden files
+    # "cp -a" from busybox also copies hidden files
+    cp -a ${copyfrom}/* ${copyto}
     umount ${copyfrom}
     mount -r -o move ${copyto} ${copyfrom}
     rmdir ${copyto}
@@ -209,11 +215,13 @@ do_nfsmount() {
         NFSOPTS=""
     fi
 
-    [ "$quiet" != "y" ] && log_begin_msg "Trying nfsmount -o nolock -o ro ${NFSOPTS} ${NFSROOT} ${mountpoint}"
+    [ "$quiet" != "y" ] && \
+	log_begin_msg "Trying nfsmount -o nolock -o ro ${NFSOPTS} ${NFSROOT} ${mountpoint}"
     # FIXME: This while loop is an ugly HACK round an nfs bug
     i=0
     while [ "$i" -lt 60 ]; do
-        nfsmount -o nolock -o ro ${NFSOPTS} "${NFSROOT}" "${mountpoint}" && rc=0 && break
+        nfsmount -o nolock -o ro ${NFSOPTS} "${NFSROOT}" \
+		"${mountpoint}" && rc=0 && break
         sleep 1
         i="$(($i + 1))"
     done
@@ -229,7 +237,8 @@ do_cifsmount() {
             CIFSOPTS="${NFSOPTS}"
         fi
 
-        [ "$quiet" != "y" ] && log_begin_msg "Trying mount.cifs ${NFSROOT} ${mountpoint} ${CIFSOPTS}"
+        [ "$quiet" != "y" ] && \
+		log_begin_msg "Trying mount.cifs ${NFSROOT} ${mountpoint} ${CIFSOPTS}"
         modprobe "${MP_QUIET}" cifs
 
         if mount.cifs "${NFSROOT}" "${mountpoint}" "${CIFSOPTS}" ; then
@@ -278,7 +287,8 @@ do_snap_copy ()
         return 0
     else
         return 1
-        [ "$quiet" != "y" ] && log_warning_msg "Unable to find the snapshot ${snap_type} medium"
+        [ "$quiet" != "y" ] && \
+	  log_warning_msg "Unable to find the snapshot ${snap_type} medium"
     fi
 }
 
@@ -356,10 +366,6 @@ setup_unionfs() {
     case ${UNIONFS} in
         aufs|unionfs)
             modprobe "${MP_QUIET}" -b ${UNIONFS} || true
-            if ! cut -f2 /proc/filesystems | grep -q "^${UNIONFS}\$" && \
-               [ -x /bin/unionfs-fuse ]; then
-                UNIONFS="unionfs-fuse"
-            fi
             ;;
     esac
 
@@ -377,8 +383,6 @@ setup_unionfs() {
         roopt="nfsro" # work around a bug in nfs-unionfs locking
     elif [ "${UNIONFS}" = "aufs" ]; then
         roopt="rr"
-    elif [ "${UNIONFS}" = "unionfs-fuse" ]; then
-        roopt="RO"
     else
         roopt="ro"
     fi
@@ -417,22 +421,15 @@ setup_unionfs() {
             cow_fstype=$(get_fstype "${cowprobe}")
 	    cow_mountopt="rw,noatime"
         else
-            [ "$quiet" != "y" ] && log_warning_msg "Unable to find the persistent medium"
+            [ "$quiet" != "y" ] && \
+	      log_warning_msg "Unable to find the persistent medium"
         fi
     fi
 
-    mount -t ${cow_fstype} -o ${cow_mountopt} ${cowdevice} /cow || panic "Can not mount $cowdevice on /cow"
-
-    case ${UNIONFS} in
-        unionfs-fuse)
-            (ulimit -n 16384; unionfs-fuse -o cow -o noinitgroups -o default_permissions -o allow_other -o use_ino -o suid /cow=RW:$rofsstring "$rootmnt" || panic "${UNIONFS} mount failed")
-            mkdir -p /dev/.initramfs/varrun
-            pidof unionfs-fuse >> /dev/.initramfs/varrun/sendsigs.omit || true
-            ;;
-        *)
-            mount -t ${UNIONFS} -o noatime,dirs=/cow=rw:$rofsstring ${UNIONFS} "$rootmnt" || panic "${UNIONFS} mount failed"
-            ;;
-    esac
+    mount -t ${cow_fstype} -o ${cow_mountopt} ${cowdevice} \
+	/cow || panic "Can not mount $cowdevice on /cow"
+    mount -t ${UNIONFS} -o noatime,dirs=/cow=rw:$rofsstring \
+	${UNIONFS} "$rootmnt" || panic "${UNIONFS} mount failed"
 
     # Adding other custom mounts
     if [ -n "${PERSISTENT}" ]; then
@@ -440,10 +437,13 @@ setup_unionfs() {
         # FIXME: add a custom mounts configurable system
         homecow=$(find_cow_device "${home_persistence}" )
         if [ -b "${homecow}" ]; then
-            mount -t $(get_fstype "${homecow}") -o rw,noatime "${homecow}" "${rootmnt}/home"
-            export HOMEMOUNTED=1 # used to proper calculate free space in do_snap_copy()
+            mount -t $(get_fstype "${homecow}") -o rw,noatime \
+		"${homecow}" "${rootmnt}/home"
+	    # Used to proper calculate free space in do_snap_copy()
+            export HOMEMOUNTED=1
         else
-            [ "$quiet" != "y" ] && log_warning_msg "Unable to find the persistent home medium"
+            [ "$quiet" != "y" ] && \
+		log_warning_msg "Unable to find the persistent home medium"
         fi
         # Look for other snapshots to copy in
         try_snap "${root_snapshot_label}" "${rootmnt}" "ROOT"
@@ -454,14 +454,12 @@ setup_unionfs() {
         for d in ${rofslist}; do
             mkdir -p "${rootmnt}/${LIVE_MEDIA_PATH}/${d##*/}"
             case d in
-                *.dir) # do nothing # mount -o bind "${d}" "${rootmnt}/${LIVE_MEDIA_PATH}/${d##*/}"
+                *.dir)
+		    # do nothing
                     ;;
                 *)
-                    if [ "${UNIONFS}" = unionfs-fuse ]; then
-                        mount -o bind "${d}" "${rootmnt}/${LIVE_MEDIA_PATH}/${d##*/}"
-                    else
-                        mount -o move "${d}" "${rootmnt}/${LIVE_MEDIA_PATH}/${d##*/}"
-                    fi
+                    mount -o move "${d}" \
+			"${rootmnt}/${LIVE_MEDIA_PATH}/${d##*/}"
                     ;;
             esac
         done
@@ -473,11 +471,7 @@ setup_unionfs() {
     # XXX: hardcode the image name for now (xtraeme).
     # move the first mount.
     mkdir -p "${rootmnt}/rofs"
-    if [ "${UNIONFS}" = unionfs-fuse ]; then
-	mount -o bind /filesystem.squashfs "${rootmnt}/rofs"
-    else
-	mount -o move /filesystem.squashfs "${rootmnt}/rofs"
-    fi
+    mount -o move /filesystem.squashfs "${rootmnt}/rofs"
 }
 
 check_dev ()
@@ -537,7 +531,8 @@ find_livefs() {
         fi
     fi
     # or do the scan of block devices
-    for sysblock in $(echo /sys/block/* | tr ' ' '\n' | grep -vE "/(loop|ram|fd)"); do
+    for sysblock in \
+	$(echo /sys/block/* | tr ' ' '\n' | grep -vE "/(loop|ram|fd)"); do
         devname=$(sys2dev "${sysblock}")
         fstype=$(get_fstype "${devname}")
         if /lib/udev/cdrom_id ${devname} > /dev/null; then
@@ -565,33 +560,14 @@ find_livefs() {
     return 1
 }
 
-set_usplash_timeout() {
-    if [ -x /sbin/usplash_write ]; then
-        /sbin/usplash_write "TIMEOUT 120"
-    fi
-}
-
 mountroot() {
-    exec 6>&1
-    exec 7>&2
-    exec > casper.log
-    exec 2>&1
-    tail -f casper.log >&7 &
-    tailpid="$!"
-
     parse_cmdline
-
     wait_for_udev 10
 
-    set_usplash_timeout
+    maybe_break casper-premount
     [ "$quiet" != "y" ] && log_begin_msg "Running /scripts/casper-premount"
     run_scripts /scripts/casper-premount
     [ "$quiet" != "y" ] && log_end_msg
-
-    # Needed here too because some things (*cough* udev *cough*)
-    # changes the timeout
-
-    set_usplash_timeout
 
     if [ ! -z "${NETBOOT}" ]; then
         if do_netmount ; then
@@ -622,36 +598,16 @@ mountroot() {
         live_dest="${TODISK}"
     fi
     if [ "${live_dest}" ]; then
-        log_begin_msg "Copying live_media to ${live_dest}"
+        [ "$quiet" != "y" ] && \
+		log_begin_msg "Copying live_media to ${live_dest}"
         copy_live_to "${livefs_root}" "${live_dest}"
-        log_end_msg
+        [ "$quiet" != "y" ] && log_end_msg
     fi
 
     mount_images_in_directory "${livefs_root}" "${rootmnt}"
 
-    log_end_msg
-
-    # unionfs-fuse needs /dev to be bind-mounted for the duration of
-    # casper-bottom; udev's init script will take care of things after that
-    if [ "${UNIONFS}" = unionfs-fuse ]; then
-        mount -n -o bind /dev "${rootmnt}/dev"
-    fi
-
     maybe_break casper-bottom
     [ "$quiet" != "y" ] && log_begin_msg "Running /scripts/casper-bottom"
-
     run_scripts /scripts/casper-bottom
     [ "$quiet" != "y" ] && log_end_msg
-
-    if [ "${UNIONFS}" = unionfs-fuse ]; then
-        umount "${rootmnt}/dev"
-    fi
-
-    exec 1>&6 6>&-
-    exec 2>&7 7>&-
-    kill "$tailpid"
-    cp casper.log "${rootmnt}/var/log/"
-    if [ -f /etc/casper.conf ]; then
-        cp /etc/casper.conf "${rootmnt}/etc/"
-    fi
 }
