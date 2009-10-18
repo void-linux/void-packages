@@ -132,9 +132,9 @@ install_xbps_utils()
 		done
 		cp -f $XBPS_INSTALLDIR/sbin/xbps-src $xbps_prefix/sbin
 		if [ -z $XBPS_INSTALLDIR ]; then
-			installdir=/usr/share/xbps
+			installdir=/usr/share/xbps-src
 		else
-			installdir=$XBPS_INSTALLDIR/share/xbps
+			installdir=$XBPS_INSTALLDIR/share/xbps-src
 		fi
 		cp -a $installdir $xbps_prefix/share
 		rebuild_ldso_cache
