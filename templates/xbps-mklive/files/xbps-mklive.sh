@@ -1,0 +1,201 @@
+#!/bin/sh
+
+trap "echo; error_out $?" INT QUIT
+
+[ "$(id -u)" -ne 0 ] && echo "root perms are required." && exit 1
+
+ISOLINUX_ARGS="-b isolinux/isolinux.bin -c isolinux/boot.cat"
+ISOLINUX_ARGS="$ISOLINUX_ARGS -boot-load-size 4 -no-emul-boot"
+ISOLINUX_ARGS="$ISOLINUX_ARGS -boot-info-table"
+
+CONFIG_FILE="$HOME/.xbps-mklive.conf"
+
+#
+# The following vars are overwritten by the config file.
+#
+PACKAGE_REPO="/storage/xbps/packages"
+OUTPUT_FILE="$HOME/xbps-live-$(uname -m).iso"
+ISO_VOLUME="XBPS GNU/Linux Live"
+SYSLINUX_DATADIR="/usr/share/syslinux"
+SPLASH_IMAGE=$HOME/splash.rle
+
+if [ -f $CONFIG_FILE ]; then
+	. $CONFIG_FILE
+fi
+
+if [ -z "$PACKAGE_LIST" ]; then
+	PACKAGE_LIST="xbps-base-system xbps-casper"
+else
+	PACKAGE_LIST="xbps-base-system xbps-casper $PACKAGE_LIST"
+fi
+BUILD_TMPDIR=$(mktemp -d /tmp/xbps-image.XXXXXXXX) || exit 1
+BUILD_TMPDIR=$(readlink -f $BUILD_TMPDIR)
+TEMP_ROOTFS=$(readlink -f $BUILD_TMPDIR)
+TEMP_ROOTFS="$TEMP_ROOTFS/casper/rootfs"
+ISOLINUX_DIR=$(readlink -f $BUILD_TMPDIR)
+ISOLINUX_DIR="$ISOLINUX_DIR/isolinux"
+
+info_msg()
+{
+	printf "\033[1m$@\n\033[m"
+}
+	
+error_out()
+{
+	[ -d $TEMP_ROOTFS/sys ] && umount -f $TEMP_ROOTFS/sys 2>&1 >/dev/null
+	[ -d $TEMP_ROOTFS/proc ] && umount -f $TEMP_ROOTFS/proc 2>&1 >/dev/null
+	[ -d $TEMP_ROOTFS/dev ] && umount -f $TEMP_ROOTFS/dev 2>&1 >/dev/null
+
+	[ "$1" -ne 0 ] && echo "ERROR: stage mentioned above returned $1!"
+	info_msg "Cleaning up $BUILD_TMPDIR..."
+	rm -rf $BUILD_TMPDIR
+	exit 1
+}
+
+write_etc_motd()
+{
+	cat >> "$TEMP_ROOTFS/etc/motd" <<_EOF
+Welcome to the XBPS GNU/Linux Live system, you have been autologged in.
+This user has full sudo(8) permissions without any password, be careful
+executing commands through sudo(8).
+
+To play with package management use the 'xbps-bin' and 'xbps-repo'
+utilities. Please note that working with remote repositories hasn't been
+implemented yet. Visit https://launchpad.net/xbps for news about
+new releases and other documentation.
+
+		---- Juan RP <xtraeme@gmail.com> ----
+
+_EOF
+}
+
+write_default_isolinux_conf()
+{
+	local kver="$1"
+
+	cat >> "$ISOLINUX_DIR/isolinux.cfg" << _EOF
+DEFAULT vesamenu.c32
+PROMPT 0
+TIMEOUT 600
+ONTIMEOUT c
+
+MENU BACKGROUND $(basename $SPLASH_IMAGE)
+MENU VSHIFT 5
+MENU ROWS 20
+MENU TABMSGROW 10
+MENU TABMSG Press ENTER to boot or TAB to edit a menu entry
+MENU AUTOBOOT BIOS default device boot in # second{,s}...
+MENU TIMEOUTROW 12
+
+MENU COLOR title        * #FF5255FF *
+MENU COLOR border       * #00000000 #00000000 none
+MENU COLOR sel          * #ffffffff #FF5255FF *
+
+LABEL linux
+MENU LABEL Boot XBPS GNU/Linux ${kver}
+KERNEL /casper/vmlinuz
+INITRD /casper/initrd.gz
+APPEND boot=casper keymap=es locale=es_ES
+
+LABEL linuxtoram
+MENU LABEL Boot XBPS GNU/Linux ${kver} (toram)
+KERNEL /casper/vmlinuz
+INITRD /casper/initrd.gz
+APPEND boot=casper toram keymap=es locale=es_ES
+
+LABEL c
+MENU LABEL Boot first HD found by the BIOS
+LOCALBOOT 0x80
+_EOF
+}
+
+[ -z "$PACKAGE_LIST" ] && error_out
+[ -z "$OUTPUT_FILE" ] && error_out
+[ -z "$ISO_VOLUME" ] && error_out
+[ -z "$PACKAGE_REPO" ] && error_out
+
+[ ! -d "$TEMP_ROOTFS/var/db/xbps" ] && mkdir -p "$TEMP_ROOTFS/var/db/xbps"
+
+for _repo_ in ${PACKAGE_REPO}; do
+	info_msg "Adding ${_repo_} package repository..."
+	xbps-repo.static -r $TEMP_ROOTFS add ${_repo_}
+	[ $? -ne 0 ] && error_out $?
+done
+
+if [ ! -f $SYSLINUX_DATADIR/isolinux.bin -o \
+     ! -f $SYSLINUX_DATADIR/vesamenu.c32 ]; then
+	echo "Missing required isolinux files in $SYSLINUX_DATADIR!"
+	error_out
+fi
+
+[ ! -d "$ISOLINUX_DIR" ] && mkdir -p "$ISOLINUX_DIR"
+
+if [ ! -f "$ISOLINUX_DIR/isolinux.bin" ]; then
+	cp -f $SYSLINUX_DATADIR/isolinux.bin "$ISOLINUX_DIR"
+fi
+
+if [ ! -f "$ISOLINUX_DIR/isolinux.cfg" ]; then
+	kernel_ver=$(xbps-repo.static -r $TEMP_ROOTFS show kernel|grep Version|awk '{print $2}')
+	if [ -z "$kernel_ver" ]; then
+		echo "Missing 'kernel' pkg in repository pool (xbps-repo)!"
+		error_out
+	fi
+	write_default_isolinux_conf ${kernel_ver}
+fi
+
+[ ! -f "$SPLASH_IMAGE" ] && echo "Cannot find splash image!" && error_out 1
+
+cp -f $SPLASH_IMAGE "$ISOLINUX_DIR"
+
+if [ ! -f "$ISOLINUX_DIR/vesamenu.c32" ]; then
+	cp -f $SYSLINUX_DATADIR/vesamenu.c32 "$ISOLINUX_DIR"
+fi
+
+for _pkg_ in ${PACKAGE_LIST}; do
+	info_msg "Installing ${_pkg_} package..."
+	xbps-bin.static -r $TEMP_ROOTFS -f install ${_pkg_}
+	[ $? -ne 0 ] && error_out $?
+done
+xbps-bin.static -r $TEMP_ROOTFS list > $BUILD_TMPDIR/packages.txt
+
+info_msg "Creating /etc/motd..."
+write_etc_motd
+
+info_msg "Rebuilding and copying initramfs..."
+chroot $TEMP_ROOTFS xbps-bin -f reconfigure kernel
+[ $? -ne 0 ] && error_out $?
+cp -f "$TEMP_ROOTFS/boot/initrd.img-${kernel_ver}" \
+	"$BUILD_TMPDIR/casper/initrd.gz" || error_out $?
+
+info_msg "Copying kernel binary..."
+cp -f "$TEMP_ROOTFS/boot/vmlinuz-${kernel_ver}" \
+	"$BUILD_TMPDIR/casper/vmlinuz" || error_out $?
+
+info_msg "Building squashed root filesystem..."
+mksquashfs "$TEMP_ROOTFS" "$BUILD_TMPDIR/casper/filesystem.squashfs" \
+	-root-becomes / && \
+	chmod 444 "$BUILD_TMPDIR/casper/filesystem.squashfs"
+[ $? -ne 0 ] && error_out $?
+
+info_msg "Removing temporary rootfs directory..."
+rm -rf "$TEMP_ROOTFS" || error_out $?
+
+info_msg "Creating sha256 checksums..."
+cd $BUILD_TMPDIR
+for f in $(find . -type f -print); do
+	[ "$f" = "./sha256.txt" ] && continue
+	printf "${f#.}\t$(xbps-digest $f)\n" >> $BUILD_TMPDIR/sha256.txt
+done
+
+info_msg "Building ISO image..."
+mkisofs -J -r -V "$ISO_VOLUME" -b isolinux/isolinux.bin \
+	-c isolinux/boot.cat -no-emul-boot -boot-load-size 4 \
+	-boot-info-table -o "$OUTPUT_FILE" "$BUILD_TMPDIR"
+[ $? -ne 0 ] && error_out $?
+
+info_msg "Removing temporary build directory..."
+rm -rf "$BUILD_TMPDIR" || error_out $?
+
+info_msg "Created $(readlink -f $OUTPUT_FILE) successfully."
+
+exit 0
