@@ -166,6 +166,7 @@ chroot $TEMP_ROOTFS xbps-bin -f reconfigure kernel
 [ $? -ne 0 ] && error_out $?
 cp -f "$TEMP_ROOTFS/boot/initrd.img-${kernel_ver}" \
 	"$BUILD_TMPDIR/casper/initrd.gz" || error_out $?
+mkdir -p $TEMP_ROOTFS/cow
 
 info_msg "Copying kernel binary..."
 cp -f "$TEMP_ROOTFS/boot/vmlinuz-${kernel_ver}" \
