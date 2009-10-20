@@ -48,8 +48,7 @@ xbps_make_binpkg()
 #
 xbps_make_binpkg_real()
 {
-	local binpkg pkgdir arch use_sudo lver
-	local tar_flags="cfp"
+	local mfiles binpkg pkgdir arch use_sudo lver dirs _dirs d clevel
 
 	if [ ! -d ${DESTDIR} ]; then
 		echo "$pkgname: unexistent destdir... skipping!"
@@ -83,37 +82,27 @@ xbps_make_binpkg_real()
 	# this is to ensure that it's run before any other file is
 	# unpacked.
 	#
-	if [ -x ./INSTALL ]; then
-		run_rootcmd $use_sudo tar $tar_flags \
-			$XBPS_BUILDDIR/$binpkg ./INSTALL
-		[ $? -ne 0 ] && msg_error "Failed to add INSTALL script."
+	if [ -x ./INSTALL -a -x ./REMOVE ]; then
+		mfiles="./INSTALL ./REMOVE"
+	elif [ -x ./INSTALL ]; then
+		mfiles="./INSTALL"
+	elif [ -x ./REMOVE ]; then
+		mfiles="./REMOVE"
 	fi
-	if [ -x ./REMOVE ]; then
-		if [ -x ./INSTALL ]; then
-			tar_flags="rfp"
-		fi
-		run_rootcmd $use_sudo tar $tar_flags \
-			$XBPS_BUILDDIR/$binpkg ./REMOVE
-		[ $? -ne 0 ] && msg_error "Failed to add REMOVE script."
-	fi
-	if [ -x ./INSTALL -o -x ./REMOVE ]; then
-		tar_flags="rfp"
-	elif [ ! -x ./INSTALL -o ! -x ./REMOVE ]; then
-		tar_flags="cfp"
-	fi
-	run_rootcmd $use_sudo tar $tar_flags $XBPS_BUILDDIR/$binpkg \
-		./files.plist ./props.plist
-	[ $? -ne 0 ] && msg_error "Failed to add metadata files."
+	mfiles="$mfiles ./files.plist ./props.plist"
+	_dirs=$(find . -maxdepth 1 -type d)
+	for d in ${_dirs}; do
+		[ "$d" = "." ] && continue
+		dirs="$d $dirs"
+	done
 
-	run_rootcmd $use_sudo tar rfp $XBPS_BUILDDIR/$binpkg . \
-		--exclude "./INSTALL" --exclude "./REMOVE" \
-		--exclude "./files.plist" --exclude "./props.plist" \
-		--exclude "./var/db/xbps/metadata/*/flist" && \
-		bzip2 -9 $XBPS_BUILDDIR/$binpkg && \
-		mv $XBPS_BUILDDIR/$binpkg.bz2 $XBPS_BUILDDIR/$binpkg
+	[ -n "$XBPS_COMPRESS_LEVEL" ] && clevel="-$XBPS_COMPRESS_LEVEL"
+
+	[ ! -d $pkgdir ] && mkdir -p $pkgdir
+	run_rootcmd $use_sudo tar --exclude "var/db/xbps/metadata/*/flist" \
+		-cpf - ${mfiles} ${dirs} | \
+		$XBPS_COMPRESS_CMD ${clevel} -qf > $pkgdir/$binpkg
 	if [ $? -eq 0 ]; then
-		[ ! -d $pkgdir ] && mkdir -p $pkgdir
-		mv -f $XBPS_BUILDDIR/$binpkg $pkgdir
 		echo "=> Built package: $binpkg"
 	fi
 
