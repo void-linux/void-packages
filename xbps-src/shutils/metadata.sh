@@ -213,7 +213,8 @@ xbps_write_metadata_pkg_real()
 		echo "<key>file</key>" >> $TMPFPLIST
 		echo "<string>$j</string>" >> $TMPFPLIST
 		echo "<key>sha256</key>" >> $TMPFPLIST
-		echo "<string>$(xbps-digest $f)</string>"  >> $TMPFPLIST
+		echo "<string>$(xbps-digest.static $f)</string>"  \
+			>> $TMPFPLIST
 		echo "</dict>" >> $TMPFPLIST
 	done
 	echo "</array>" >> $TMPFPLIST
