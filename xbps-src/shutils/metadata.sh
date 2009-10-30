@@ -213,7 +213,7 @@ xbps_write_metadata_pkg_real()
 		echo "<key>file</key>" >> $TMPFPLIST
 		echo "<string>$j</string>" >> $TMPFPLIST
 		echo "<key>sha256</key>" >> $TMPFPLIST
-		echo "<string>$(xbps-digest.static $f)</string>"  \
+		echo "<string>$(${XBPS_DIGEST_CMD} $f)</string>"  \
 			>> $TMPFPLIST
 		echo "</dict>" >> $TMPFPLIST
 	done
@@ -244,7 +244,7 @@ xbps_write_metadata_pkg_real()
 			echo "<key>file</key>" >> $TMPFPLIST
 			echo "<string>$f</string>" >> $TMPFPLIST
 			echo "<key>sha256</key>" >> $TMPFPLIST
-			echo "<string>$(xbps-digest.static ${i})</string>" \
+			echo "<string>$(${XBPS_DIGEST_CMD} ${i})</string>" \
 				>> $TMPFPLIST
 			echo "</dict>" >> $TMPFPLIST
 		done
@@ -258,6 +258,8 @@ xbps_write_metadata_pkg_real()
 	# Write the props.plist file.
 	local TMPFPROPS=$(mktemp -t fprops.XXXXXXXXXX) || exit 1
 
+	local instsize=$(du -sk ${DESTDIR}|awk '{print $1}')
+
 	cat > $TMPFPROPS <<_EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -270,7 +272,7 @@ xbps_write_metadata_pkg_real()
 <key>architecture</key>
 <string>$arch</string>
 <key>installed_size</key>
-<integer>$(du -sb ${DESTDIR}|awk '{print $1}')</integer>
+<integer>$(($instsize * 1024))</integer>
 <key>maintainer</key>
 <string>$(echo $maintainer|sed -e 's|<|[|g;s|>|]|g')</string>
 <key>short_desc</key>
@@ -345,8 +347,8 @@ _EOF
 	mv -f $TMPFPLIST ${DESTDIR}/files.plist
 	mv -f $TMPFPROPS ${DESTDIR}/props.plist
 
-	$XBPS_REGPKGDB_CMD sanitize-plist ${DESTDIR}/files.plist
-	$XBPS_REGPKGDB_CMD sanitize-plist ${DESTDIR}/props.plist
+	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/files.plist
+	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/props.plist
 	chmod 644 ${DESTDIR}/files.plist ${DESTDIR}/props.plist
 	[ -f $metadir/flist ] && chmod 644 $metadir/flist
 

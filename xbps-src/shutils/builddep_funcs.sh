@@ -32,15 +32,15 @@
 install_pkg_deps()
 {
 	local curpkg="$1"
-	local curpkgname=$(xbps-pkgdb getpkgname $1)
-	local saved_prevpkg=$(xbps-pkgdb getpkgname $2)
+	local curpkgname=$(${XBPS_PKGDB_CMD} getpkgname $1)
+	local saved_prevpkg=$(${XBPS_PKGDB_CMD} getpkgname $2)
 	local j jver jname reqver
 
 	[ -z "$curpkg" ] && return 1
 
 	if [ -n "$prev_pkg" ]; then
 		curpkg=$prev_pkg
-		curpkgname=$(xbps-pkgdb getpkgname ${curpkg})
+		curpkgname=$(${XBPS_PKGDB_CMD} getpkgname ${curpkg})
 	fi
 
 	msg_normal "Installing $saved_prevpkg dependency: $curpkgname."
@@ -50,9 +50,9 @@ install_pkg_deps()
 	if [ $? -eq 0 ]; then
 		msg_normal "Dependency $curpkgname requires:"
 		for j in ${build_depends}; do
-			jname=$(xbps-pkgdb getpkgname ${j})
-			jver=$($XBPS_REGPKGDB_CMD version ${jname})
-                	reqver=$(xbps-pkgdb getpkgversion ${j})
+			jname=$(${XBPS_PKGDB_CMD} getpkgname ${j})
+			jver=$($XBPS_PKGDB_CMD version ${jname})
+			reqver=$(${XBPS_PKGDB_CMD} getpkgversion ${j})
                 	check_installed_pkg $j
                 	if [ $? -eq 0 ]; then
                         	echo "   $jname >= $reqver: found $jname-$jver."
@@ -88,7 +88,7 @@ install_pkg_deps()
 install_dependencies_pkg()
 {
 	local pkg="$1"
-	local lpkgname=$(xbps-pkgdb getpkgname ${pkg})
+	local lpkgname=$(${XBPS_PKGDB_CMD} getpkgname ${pkg})
 	local i ipkgname iversion reqvers notinstalled_deps lver
 
 	[ -z "$pkg" ] && return 1
@@ -103,9 +103,9 @@ install_dependencies_pkg()
 
 	msg_normal "Required build dependencies for $pkgname-$lver... "
 	for i in ${build_depends}; do
-                ipkgname=$(xbps-pkgdb getpkgname ${i})
-                iversion=$($XBPS_REGPKGDB_CMD version $ipkgname)
-                reqvers=$(xbps-pkgdb getpkgversion ${i})
+                ipkgname=$(${XBPS_PKGDB_CMD} getpkgname ${i})
+                iversion=$($XBPS_PKGDB_CMD version $ipkgname)
+                reqvers=$(${XBPS_PKGDB_CMD} getpkgversion ${i})
 		check_installed_pkg $i
 		if [ $? -eq 0 ]; then
 			echo "  $ipkgname >= $reqvers: found $ipkgname-$iversion."
@@ -122,7 +122,7 @@ install_dependencies_pkg()
 		check_installed_pkg $i
 		[ $? -eq 0 ] && continue
 
-		ipkgname=$(xbps-pkgdb getpkgname ${i})
+		ipkgname=$(${XBPS_PKGDB_CMD} getpkgname ${i})
 		run_template $ipkgname
 		check_build_depends_pkg
 		if [ $? -eq 1 ]; then
@@ -137,7 +137,7 @@ install_dependencies_pkg()
 install_builddeps_required_pkg()
 {
 	local pkg="$1"
-	local pkgname=$(xbps-pkgdb getpkgname ${pkg})
+	local pkgname=$(${XBPS_PKGDB_CMD} getpkgname ${pkg})
 	local dep depname
 
 	[ -z "$pkg" ] && return 1
@@ -148,7 +148,7 @@ install_builddeps_required_pkg()
 		check_installed_pkg $dep
 		if [ $? -ne 0 ]; then
 			msg_normal "Installing $pkgname dependency: $dep."
-			depname=$(xbps-pkgdb getpkgname ${dep})
+			depname=$(${XBPS_PKGDB_CMD} getpkgname ${dep})
 			install_pkg $depname
 		fi
 	done
@@ -165,11 +165,11 @@ check_installed_pkg()
 
 	[ -z "$pkg" ] && return 2
 
-	pkgname=$(xbps-pkgdb getpkgname $pkg)
-	reqver=$(xbps-pkgdb getpkgversion $pkg)
+	pkgname=$(${XBPS_PKGDB_CMD} getpkgname $pkg)
+	reqver=$(${XBPS_PKGDB_CMD} getpkgversion $pkg)
 	run_template $pkgname
 
-	iver="$($XBPS_REGPKGDB_CMD version $pkgname)"
+	iver="$($XBPS_PKGDB_CMD version $pkgname)"
 	if [ -n "$iver" ]; then
 		xbps-cmpver $pkgname-$iver $pkgname-$reqver
 		[ $? -eq 0 -o $? -eq 1 ] && return 0

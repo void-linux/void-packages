@@ -133,7 +133,7 @@ list_pkg_files()
 
 	[ -z $pkg ] && msg_error "unexistent package, aborting."
 
-	ver=$($XBPS_REGPKGDB_CMD version $pkg)
+	ver=$($XBPS_PKGDB_CMD version $pkg)
 	[ -z "$ver" ] && msg_error "$pkg is not installed."
 
 	cat $XBPS_PKGMETADIR/$pkg/flist
@@ -160,7 +160,7 @@ remove_pkg()
 		fi
 	done
 
-	ver=$($XBPS_REGPKGDB_CMD version $pkg)
+	ver=$($XBPS_PKGDB_CMD version $pkg)
 	[ -z "$ver" ] && msg_error "$pkg is not installed."
 
 	. $XBPS_SHUTILSDIR/stow_funcs.sh

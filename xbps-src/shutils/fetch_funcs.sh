@@ -34,7 +34,7 @@ verify_sha256_cksum()
 
 	[ -z "$file" -o -z "$cksum" ] && return 1
 
-	filesum=$(xbps-digest.static $XBPS_SRCDISTDIR/$file)
+	filesum=$(${XBPS_DIGEST_CMD} $XBPS_SRCDISTDIR/$file)
 	if [ "$origsum" != "$filesum" ]; then
 		msg_error "SHA256 checksum doesn't match for $file."
 	fi
@@ -47,7 +47,7 @@ fetch_update_cksum()
 	local tmpl="$XBPS_TEMPLATESDIR/$pkgname/template"
 	local upcmd=$(basename $XBPS_SRCDISTDIR/$1)
 
-	sed -i -e "s|checksum.*|checksum=$(xbps-digest.static ${upcmd})|" $tmpl
+	sed -i -e "s|checksum.*|checksum=$(${XBPS_DIGEST_CMD} ${upcmd})|" $tmpl
 	return $?
 }
 

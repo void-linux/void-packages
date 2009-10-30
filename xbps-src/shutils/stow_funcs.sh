@@ -106,7 +106,7 @@ stow_pkg_real()
 	else
 		lver="${version}"
 	fi
-	$XBPS_REGPKGDB_CMD register $pkg $lver "$short_desc" || exit 1
+	$XBPS_PKGDB_CMD register $pkg $lver "$short_desc" || exit 1
 	return $?
 }
 
@@ -127,7 +127,7 @@ unstow_pkg()
 
 	run_template $pkg
 
-	ver=$($XBPS_REGPKGDB_CMD version $pkg)
+	ver=$($XBPS_PKGDB_CMD version $pkg)
 	if [ -z "$ver" ]; then
 		msg_error "$pkg is not installed."
 	fi
@@ -165,6 +165,6 @@ unstow_pkg()
 	rm -rf $XBPS_PKGMETADIR/$pkg
 
 	# Unregister pkg from plist file.
-	$XBPS_REGPKGDB_CMD unregister $pkg $ver
+	$XBPS_PKGDB_CMD unregister $pkg $ver
 	return $?
 }

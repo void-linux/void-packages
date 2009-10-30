@@ -86,12 +86,18 @@ ff02::2 ip6-allrouters
 ff02::3 ip6-allhosts
 _EOF
 
-	# Use OpenDNS servers.
-	cat > $XBPS_MASTERDIR/etc/resolv.conf <<_EOF
-nameserver 208.67.222.222
-nameserver 208.67.220.220
-_EOF
+	cp -f /etc/resolv.conf $XBPS_MASTERDIR/etc
 
+	#
+	# Copy host shell, bash is prefered to avoid breakage in
+	# GNU autoconf scripts!
+	#
+	mkdir -p $XBPS_MASTERDIR/bin
+	if [ -x /bin/bash ]; then
+		cp -f /bin/bash $XBPS_MASTERDIR/bin/sh
+	elif [ -x /bin/sh ]; then
+		cp -f /bin/sh $XBPS_MASTERDIR/bin/sh
+	fi
 	touch $XBPS_MASTERDIR/.xbps_perms_done
 
 }
@@ -104,19 +110,37 @@ rebuild_ldso_cache()
 	echo " done."
 }
 
+create_busybox_links()
+{
+	local busyboxdir=$XBPS_MASTERDIR/usr/lib/busybox-initramfs
+	local lbindir=$XBPS_MASTERDIR/usr/local/bin
+
+	[ -f $XBPS_MASTERDIR/.busybox_done ] && return 0
+
+	[ ! -d ${lbindir} ] && mkdir -p ${lbindir}
+
+	# Create other symlinks in /usr/local/bin
+	for f in $(find ${busyboxdir} -type l); do
+		cd ${lbindir} || return 1
+		[ "$(basename $f)" = "sh" ] && continue
+		ln -s ../../lib/busybox-initramfs/bin/busybox $(basename $f)
+	done
+
+	touch -f $XBPS_MASTERDIR/.busybox_done
+}
+
 install_xbps_utils()
 {
 	local needed fetch_cmd
 	local xbps_prefix=$XBPS_MASTERDIR/usr/local
 
 	for f in bin cmpver digest pkgdb; do
-		if [ ! -x $xbps_prefix/sbin/xbps-${f} ]; then
+		if [ ! -x $xbps_prefix/sbin/xbps-${f}.static ]; then
 			needed=yes
 		fi
 	done
 
 	if [ -n "$needed" ]; then
-		cd ${XBPS_MASTERDIR}/bin && ln -s dash sh
 		echo "=> Installing the required XBPS utils."
 		chroot $XBPS_MASTERDIR sh -c \
 			"echo /usr/local/lib > /etc/ld.so.conf"
@@ -128,7 +152,7 @@ install_xbps_utils()
 		cp -f $fetch_cmd $xbps_prefix/sbin
 		for f in bin cmpver digest pkgdb repo; do
 			cp -f $XBPS_INSTALLDIR/sbin/xbps-$f.static \
-				$xbps_prefix/sbin/xbps-$f
+				$xbps_prefix/sbin/
 		done
 		cp -f $XBPS_INSTALLDIR/sbin/xbps-src $xbps_prefix/sbin
 		if [ -z $XBPS_INSTALLDIR ]; then
@@ -146,7 +170,7 @@ xbps_chroot_handler()
 	local action="$1"
 	local pkg="$2"
 	local only_destdir="$3"
-
+	local path="/usr/local/sbin:/bin::/sbin:/usr/bin:/usr/sbin:/usr/local/bin"
 	[ -z "$action" -o -z "$pkg" ] && return 1
 
 	[ "$action" != "configure" -a "$action" != "build" -a \
@@ -154,6 +178,7 @@ xbps_chroot_handler()
 
 	mount_chroot_fs
 	install_xbps_utils
+	create_busybox_links
 
 	if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
 		echo -n "==> Preparing chroot on $XBPS_MASTERDIR... "
@@ -162,12 +187,14 @@ xbps_chroot_handler()
 	fi
 
 	if [ "$action" = "chroot" ]; then
-		env in_chroot=yes LANG=C chroot $XBPS_MASTERDIR /bin/bash
+		env in_chroot=yes LANG=C PATH=$path \
+			chroot $XBPS_MASTERDIR /bin/sh
 	else
 		[ -n "$only_destdir" ] && \
 			local lenv="install_destdir_target=yes"
-		env in_chroot=yes LANG=C ${lenv} chroot $XBPS_MASTERDIR \
-			xbps-src $action $pkg
+		env in_chroot=yes LANG=C PATH=$path \
+			${lenv} chroot $XBPS_MASTERDIR \
+			/usr/local/sbin/xbps-src $action $pkg
 	fi
 	msg_normal "Exiting from the chroot on $XBPS_MASTERDIR."
 	umount_chroot_fs
@@ -250,10 +277,10 @@ umount_chroot_fs()
 [ -n "$base_chroot" ] && return 0
 
 . $XBPS_SHUTILSDIR/builddep_funcs.sh
-check_installed_pkg xbps-base-chroot-0.1
+check_installed_pkg xbps-base-chroot-0.11
 if [ $? -ne 0 ]; then
 	echo "The '$pkgname' package requires to be installed in a chroot."
-	echo "Please install the 'xbps-base-chroot' package and try again."
+	echo "Please install 'xbps-base-chroot>=0.11' and try again."
 	exit 1
 fi
 
