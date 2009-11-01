@@ -89,7 +89,7 @@ install_dependencies_pkg()
 {
 	local pkg="$1"
 	local lpkgname=$(${XBPS_PKGDB_CMD} getpkgname ${pkg})
-	local i ipkgname iversion reqvers notinstalled_deps lver
+	local i ipkgname ivers reqvers notinstalled_deps lver
 
 	[ -z "$pkg" ] && return 1
 
