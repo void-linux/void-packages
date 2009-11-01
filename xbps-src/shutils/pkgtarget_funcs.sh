@@ -54,7 +54,7 @@ install_pkg()
 	pkg="$curpkgn-$version"
 
 	#
-	# If we are the originator package save the path this template in
+	# If we are the originator package save the path for this template in
 	# other var for future use.
 	#
 	[ -z "$origin_tmpl" ] && origin_tmpl=$pkgname
