@@ -104,11 +104,11 @@ install_dependencies_pkg()
 	msg_normal "Required build dependencies for $pkgname-$lver... "
 	for i in ${build_depends}; do
                 ipkgname=$(${XBPS_PKGDB_CMD} getpkgname ${i})
-                iversion=$($XBPS_PKGDB_CMD version $ipkgname)
+                ivers=$($XBPS_PKGDB_CMD version $ipkgname)
                 reqvers=$(${XBPS_PKGDB_CMD} getpkgversion ${i})
 		check_installed_pkg $i
 		if [ $? -eq 0 ]; then
-			echo "  $ipkgname >= $reqvers: found $ipkgname-$iversion."
+			echo "  $ipkgname >= $reqvers: found $ipkgname-$ivers."
 			continue
 		else
 			echo "  $ipkgname >= $reqvers: not found."
@@ -130,26 +130,6 @@ install_dependencies_pkg()
 			install_pkg $ipkgname
 		else
 			install_pkg_deps $i $pkg
-		fi
-	done
-}
-
-install_builddeps_required_pkg()
-{
-	local pkg="$1"
-	local pkgname=$(${XBPS_PKGDB_CMD} getpkgname ${pkg})
-	local dep depname
-
-	[ -z "$pkg" ] && return 1
-
-	run_template $pkgname
-
-	for dep in ${build_depends}; do
-		check_installed_pkg $dep
-		if [ $? -ne 0 ]; then
-			msg_normal "Installing $pkgname dependency: $dep."
-			depname=$(${XBPS_PKGDB_CMD} getpkgname ${dep})
-			install_pkg $depname
 		fi
 	done
 }
