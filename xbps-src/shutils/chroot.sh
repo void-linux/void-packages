@@ -87,17 +87,9 @@ ff02::3 ip6-allhosts
 _EOF
 
 	cp -f /etc/resolv.conf $XBPS_MASTERDIR/etc
+	# Create /bin/sh symlink to bash
+	cd $XBPS_MASTERDIR/bin && ln -sf bash sh
 
-	#
-	# Copy host shell, bash is prefered to avoid breakage in
-	# GNU autoconf scripts!
-	#
-	mkdir -p $XBPS_MASTERDIR/bin
-	if [ -x /bin/bash ]; then
-		cp -f /bin/bash $XBPS_MASTERDIR/bin/sh
-	elif [ -x /bin/sh ]; then
-		cp -f /bin/sh $XBPS_MASTERDIR/bin/sh
-	fi
 	touch $XBPS_MASTERDIR/.xbps_perms_done
 
 }
@@ -176,9 +168,9 @@ xbps_chroot_handler()
 	[ "$action" != "configure" -a "$action" != "build" -a \
 	  "$action" != "install" -a "$action" != "chroot" ] && return 1
 
-	mount_chroot_fs
-	install_xbps_utils
 	create_busybox_links
+	install_xbps_utils
+	mount_chroot_fs
 
 	if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
 		echo -n "==> Preparing chroot on $XBPS_MASTERDIR... "
