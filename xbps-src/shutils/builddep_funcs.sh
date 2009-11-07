@@ -32,15 +32,15 @@
 install_pkg_deps()
 {
 	local curpkg="$1"
-	local curpkgname=$(${XBPS_PKGDB_CMD} getpkgname $1)
-	local saved_prevpkg=$(${XBPS_PKGDB_CMD} getpkgname $2)
+	local curpkgname="$(${XBPS_PKGDB_CMD} getpkgdepname $1)"
+	local saved_prevpkg="$(${XBPS_PKGDB_CMD} getpkgdepname $2)"
 	local j jver jname reqver
 
 	[ -z "$curpkg" ] && return 1
 
 	if [ -n "$prev_pkg" ]; then
 		curpkg=$prev_pkg
-		curpkgname=$(${XBPS_PKGDB_CMD} getpkgname ${curpkg})
+		curpkgname="$(${XBPS_PKGDB_CMD} getpkgdepname ${curpkg})"
 	fi
 
 	msg_normal "Installing $saved_prevpkg dependency: $curpkgname."
@@ -50,33 +50,32 @@ install_pkg_deps()
 	if [ $? -eq 0 ]; then
 		msg_normal "Dependency $curpkgname requires:"
 		for j in ${build_depends}; do
-			jname=$(${XBPS_PKGDB_CMD} getpkgname ${j})
-			jver=$($XBPS_PKGDB_CMD version ${jname})
-			reqver=$(${XBPS_PKGDB_CMD} getpkgversion ${j})
-                	check_installed_pkg $j
-                	if [ $? -eq 0 ]; then
-                        	echo "   $jname >= $reqver: found $jname-$jver."
-                	else
-                        	echo "   $jname >= $reqver: not found."
-                	fi
+			jname="$(${XBPS_PKGDB_CMD} getpkgdepname ${j})"
+			jver="$($XBPS_PKGDB_CMD version ${jname})"
+			check_pkgdep_matched "${j}"
+			if [ $? -eq 0 ]; then
+				echo "   ${j}: found $jname-$jver."
+			else
+				echo "   ${j}: not found."
+			fi
 		done
 	fi
 
-        for j in ${build_depends}; do
-                #
-                # Check if dep already installed.
-                #
-                check_installed_pkg $j
-                [ $? -eq 0 ] && continue
+	for j in ${build_depends}; do
+		#
+		# Check if dep is satisfied.
+		#
+		check_pkgdep_matched "${j}"
+		[ $? -eq 0 ] && continue
 
-                [ -n "$prev_pkg" ] && unset prev_pkg
-                #
+		[ -n "$prev_pkg" ] && unset prev_pkg
+		#
 		# Iterate again, this will check if there are more
 		# required deps for current pkg.
-                #
-                install_pkg_deps $j $curpkg
-                prev_pkg="$j"
-        done
+		#
+		install_pkg_deps $j $curpkg
+		prev_pkg="$j"
+	done
 
 	install_pkg $curpkgname
 	[ -n "$prev_pkg" ] && unset prev_pkg
@@ -88,8 +87,8 @@ install_pkg_deps()
 install_dependencies_pkg()
 {
 	local pkg="$1"
-	local lpkgname=$(${XBPS_PKGDB_CMD} getpkgname ${pkg})
-	local i ipkgname ivers reqvers notinstalled_deps lver
+	local lpkgname=$(${XBPS_PKGDB_CMD} getpkgdepname ${pkg})
+	local i pkgn iver reqver notinstalled_deps lver
 
 	[ -z "$pkg" ] && return 1
 
@@ -103,15 +102,14 @@ install_dependencies_pkg()
 
 	msg_normal "Required build dependencies for $pkgname-$lver... "
 	for i in ${build_depends}; do
-                ipkgname=$(${XBPS_PKGDB_CMD} getpkgname ${i})
-                ivers=$($XBPS_PKGDB_CMD version $ipkgname)
-                reqvers=$(${XBPS_PKGDB_CMD} getpkgversion ${i})
-		check_installed_pkg $i
+		pkgn="$($XBPS_PKGDB_CMD getpkgdepname ${i})"
+		iver="$($XBPS_PKGDB_CMD version $pkgn)"
+		check_pkgdep_matched "${i}"
 		if [ $? -eq 0 ]; then
-			echo "  $ipkgname >= $reqvers: found $ipkgname-$ivers."
+			echo "  ${i}: found $pkgn-$iver."
 			continue
 		else
-			echo "  $ipkgname >= $reqvers: not found."
+			echo "  ${i}: not found."
 			notinstalled_deps="$notinstalled_deps $i"
 		fi
 	done
@@ -119,39 +117,57 @@ install_dependencies_pkg()
 	[ -z "$notinstalled_deps" ] && return 0
 
 	for i in ${notinstalled_deps}; do
-		check_installed_pkg $i
+		pkgn=$($XBPS_PKGDB_CMD getpkgdepname ${i})
+		check_pkgdep_matched "${i}"
 		[ $? -eq 0 ] && continue
 
-		ipkgname=$(${XBPS_PKGDB_CMD} getpkgname ${i})
-		run_template $ipkgname
+		run_template $pkgn
 		check_build_depends_pkg
 		if [ $? -eq 1 ]; then
-			msg_normal "Installing $lpkgname dependency: $ipkgname."
-			install_pkg $ipkgname
+			msg_normal "Installing $lpkgname dependency: $pkgn."
+			install_pkg $pkgn
 		else
-			install_pkg_deps $i $pkg
+			install_pkg_deps "${i}" $pkg
 		fi
 	done
 }
 
 #
-# Checks the registered pkgs db file and returns 0 if a pkg that satisfies
-# the minimal required version is there, or 1 otherwise.
+# Checks if installed pkg dependency is matched against pattern.
 #
-check_installed_pkg()
+check_pkgdep_matched()
 {
-	local pkg="$1"
-	local pkgname reqver iver
+	local pkg="$1" pkgname iver
 
 	[ -z "$pkg" ] && return 2
 
-	pkgname=$(${XBPS_PKGDB_CMD} getpkgname $pkg)
-	reqver=$(${XBPS_PKGDB_CMD} getpkgversion $pkg)
+	pkgname="$($XBPS_PKGDB_CMD getpkgdepname ${pkg})"
 	run_template $pkgname
 
 	iver="$($XBPS_PKGDB_CMD version $pkgname)"
 	if [ -n "$iver" ]; then
-		${XBPS_CMPVER_CMD} $pkgname-$iver $pkgname-$reqver
+		${XBPS_PKGDB_CMD} pkgmatch "${pkgname}-${iver}" "${pkg}"
+		[ $? -eq 1 ] && return 0
+	fi
+
+	return 1
+}
+
+#
+# Check if installed package is installed.
+#
+check_installed_pkg()
+{
+	local pkg="$1" pkgname iver
+
+	[ -z "$pkg" ] && return 2
+
+	pkgname="$($XBPS_PKGDB_CMD getpkgname ${pkg})"
+	run_template $pkgname
+
+	iver="$($XBPS_PKGDB_CMD version $pkgname)"
+	if [ -n "$iver" ]; then
+		${XBPS_CMPVER_CMD} "${pkgname}-${iver}" "${pkg}"
 		[ $? -eq 0 -o $? -eq 1 ] && return 0
 	fi
 

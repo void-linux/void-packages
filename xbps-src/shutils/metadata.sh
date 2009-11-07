@@ -300,7 +300,7 @@ _EOF
 		echo "<key>run_depends</key>" >> $TMPFPROPS
 		echo "<array>" >> $TMPFPROPS
 		for f in ${run_depends}; do
-			echo "<string>$f</string>" >> $TMPFPROPS
+			echo "<string>$(echo $f|sed "s|<|\&lt;|g;s|>|\&gt;|g")</string>" >> $TMPFPROPS
 		done
 		echo "</array>" >> $TMPFPROPS
 	fi
