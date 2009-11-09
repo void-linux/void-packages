@@ -114,7 +114,9 @@ install_src_phase()
 		find ${DESTDIR} -depth -type d -empty -delete
 	fi
 	# Strip bins/libs.
-	strip_files
+	if [ -z "$noarch" ]; then
+		strip_files
+	fi
 
 	# unset cross compiler vars.
 	[ -n "$cross_compiler" ] && cross_compile_unsetvars
