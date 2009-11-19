@@ -100,7 +100,9 @@ install_dependencies_pkg()
 		lver="${version}"
 	fi
 
-	msg_normal "Required build dependencies for $pkgname-$lver... "
+	if [ -n "$build_depends" -o -n "$run_depends" ]; then
+		msg_normal "Required dependencies for $pkgname-$lver... "
+	fi
 	for i in ${build_depends}; do
 		pkgn="$($XBPS_PKGDB_CMD getpkgdepname ${i})"
 		iver="$($XBPS_PKGDB_CMD version $pkgn)"
