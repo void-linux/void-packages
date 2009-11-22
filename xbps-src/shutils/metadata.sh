@@ -38,43 +38,35 @@ _EOF
 
 xbps_write_metadata_pkg()
 {
-	local pkg="$1"
 	local subpkg spkgrev
 
 	for subpkg in ${subpackages}; do
-		if [ "${pkg}" != "${sourcepkg}" ] && \
-		   [ "${pkg}" != "${sourcepkg}-${subpkg}" ]; then
-			continue
-		fi
 		if [ -n "${revision}" ]; then
-			spkgrev="${sourcepkg}-${subpkg}-${version}_${revision}"
+			spkgrev="${subpkg}-${version}_${revision}"
 		else
-			spkgrev="${sourcepkg}-${subpkg}-${version}"
+			spkgrev="${subpkg}-${version}"
 		fi
 		check_installed_pkg ${spkgrev}
 		[ $? -eq 0 ] && continue
 
-		if [ ! -f $XBPS_TEMPLATESDIR/$sourcepkg/$subpkg.template ]; then
-			msg_error "Cannot find subpackage template!"
+		if [ ! -f $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template ]; then
+			msg_error "Cannot find subpackage build template!"
 		fi
 		unset run_depends conf_files noarch triggers replaces \
 			revision openrc_services essential keep_empty_dirs
-		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
-		pkgname=${sourcepkg}-${subpkg}
+		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
+		pkgname=${subpkg}
 		set_tmpl_common_vars
 		xbps_write_metadata_pkg_real
 		run_template ${sourcepkg}
-		[ "${pkg}" = "${sourcepkg}-${subpkg}" ] && break
 	done
-
-	[ -n "${subpackages}" ] && [ "$pkg" != "${sourcepkg}" ] && return $?
 
 	if [ "$build_style" = "meta-template" -a -z "${run_depends}" ]; then
 		for spkg in ${subpackages}; do
 			if [ -n "${revision}" ]; then
-				spkgrev="$sourcepkg-$spkg-${version}_$revision"
+				spkgrev="${spkg}-${version}_$revision"
 			else
-				spkgrev="${sourcepkg}-${spkg}-${version}"
+				spkgrev="${spkg}-${version}"
 			fi
 			run_depends="${run_depends} ${spkgrev}"
 		done
@@ -269,6 +261,8 @@ xbps_write_metadata_pkg_real()
 <string>$pkgname</string>
 <key>version</key>
 <string>$lver</string>
+<key>pkgver</key>
+<string>$pkgname-$lver</string>
 <key>architecture</key>
 <string>$arch</string>
 <key>installed_size</key>

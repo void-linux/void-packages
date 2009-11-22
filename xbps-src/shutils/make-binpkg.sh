@@ -25,19 +25,20 @@
 
 xbps_make_binpkg()
 {
-	local pkg="$1"
 	local subpkg
+
+	[ -z "$pkgname" ] && return 1
 
 	for subpkg in ${subpackages}; do
 		unset revision
-		. $XBPS_TEMPLATESDIR/$pkgname/$subpkg.template
-		pkgname=${sourcepkg}-${subpkg}
+		. $XBPS_SRCPKGDIR/$pkgname/$subpkg.template
+		pkgname=${subpkg}
 		set_tmpl_common_vars
 		xbps_make_binpkg_real
 		run_template ${sourcepkg}
 	done
 
-	set_tmpl_common_vars
+	[ -n "${subpackages}" ] && set_tmpl_common_vars
 	xbps_make_binpkg_real
 	return $?
 }
@@ -50,11 +51,10 @@ xbps_make_binpkg_real()
 {
 	local mfiles binpkg pkgdir arch use_sudo lver dirs _dirs d clevel
 
-	if [ ! -d ${DESTDIR} ]; then
-		echo "$pkgname: unexistent destdir... skipping!"
+	if [ ! -d "${DESTDIR}" ]; then
+		msg_warn "cannot find destdir for $pkgname... skipping!"
 		return 0
 	fi
-
 	cd ${DESTDIR}
 
 	if [ -n "$noarch" ]; then
@@ -62,13 +62,11 @@ xbps_make_binpkg_real()
 	else
 		arch=$xbps_machine
 	fi
-
 	if [ -n "$base_chroot" ]; then
 		use_sudo=no
 	else
 		use_sudo=yes
 	fi
-
 	if [ -n "$revision" ]; then
 		lver="${version}_${revision}"
 	else
@@ -76,6 +74,13 @@ xbps_make_binpkg_real()
 	fi
 	binpkg=$pkgname-$lver.$arch.xbps
 	pkgdir=$XBPS_PACKAGESDIR/$arch
+	#
+	# Don't overwrite existing binpkgs by default, skip them.
+	#
+	if [ -f $pkgdir/$binpkg ]; then
+		msg_normal "Skipping existing $binpkg ..."
+		return 0
+	fi
 
 	#
 	# Make sure that INSTALL is the first file on the archive,
@@ -103,7 +108,7 @@ xbps_make_binpkg_real()
 		-cpf - ${mfiles} ${dirs} | \
 		$XBPS_COMPRESS_CMD ${clevel} -qf > $pkgdir/$binpkg
 	if [ $? -eq 0 ]; then
-		echo "=> Built package: $binpkg"
+		msg_normal "Built package: $binpkg"
 	fi
 
 	return $?

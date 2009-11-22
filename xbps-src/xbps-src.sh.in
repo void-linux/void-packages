@@ -35,28 +35,29 @@ trap "echo && exit 1" INT QUIT
 usage()
 {
 	cat << _EOF
-$progname: [-C] [-c <config_file>] [-u] <target> <pkg>
+$progname: [-C] [-c <config_file>] [-u] <target>
 
 Targets:
- build <pkg>            Build a package (fetch + extract + configure + build).
- build-pkg [<pkg>|all]  Build a binary package from <pkg>.
-                        Package must be installed into destdir. If the <all>
-                        keyword is used instead of <pkg>, all packages
-                        currently installed will be used.
- chroot                 Enter to the chroot in masterdir.
- configure <pkg>        Configure a package (fetch + extract + configure).
- extract <pkg>          Extract distribution file(s) into build directory.
- fetch <pkg>            Download distribution file(s).
- info <pkg>             Show information about <pkg>.
- install-destdir <pkg>  build + install into destdir.
- install <pkg>          install-destdir + stow.
- list                   List installed packages in masterdir.
- listfiles <pkg>        List installed files from <pkg>.
- remove	<pkg>           Remove package completely (destdir + masterdir).
- stow <pkg>             Copy <pkg> files from destdir into masterdir and
-                        register package in database.
- unstow	<pkg>           Remove <pkg> files from masterdir and unregister
-                        package from database.
+ build            Build a package (fetch + extract + configure + build).
+ build-pkg [all]  Build a binary package from <pkg>.
+                  Package must be installed into destdir. If the <all>
+                  keyword is used all packages currently installed will
+		  be used.
+ chroot           Enter to the chroot in masterdir.
+ configure        Configure a package (fetch + extract + configure).
+ extract          Extract distribution file(s) into build directory.
+ fetch            Download distribution file(s).
+ info             Show information for current pkg build template.
+ install-destdir  build + install into destdir.
+ install          install-destdir + stow.
+ list             List installed packages in masterdir.
+ listfiles        List installed files from <pkg>.
+ reinstall        remove + install.
+ remove           Remove package completely (destdir + masterdir).
+ stow             Copy <pkg> files from destdir into masterdir and
+                  register package in database.
+ unstow           Remove <pkg> files from masterdir and unregister
+                  package from database.
 
 Options:
  -C     Do not remove build directory after successful installation.
@@ -65,6 +66,11 @@ Options:
  -u	Update the checksum in template file if used in 'fetch' target.
 _EOF
 	exit 1
+}
+
+basename_cwd()
+{
+	echo $(basename $(pwd))
 }
 
 check_path()
@@ -90,18 +96,20 @@ run_file()
 
 set_defvars()
 {
-	local DDIRS i instver
+	local DDIRS i instver instsharedir
 
-	: ${XBPS_TEMPLATESDIR:=$XBPS_DISTRIBUTIONDIR/templates}
-	: ${XBPS_TRIGGERSDIR:=$XBPS_DISTRIBUTIONDIR/triggers}
-	: ${XBPS_HELPERSDIR:=$XBPS_DISTRIBUTIONDIR/helpers}
-	: ${XBPS_COMMONVARSDIR:=$XBPS_DISTRIBUTIONDIR/common}
+	instsharedir=@@XBPS_INSTALL_SHAREDIR@@
+
+	: ${XBPS_TRIGGERSDIR:=$instsharedir/triggers}
+	: ${XBPS_HELPERSDIR:=$instsharedir/helpers}
+	: ${XBPS_SHUTILSDIR:=$instsharedir/shutils}
+	: ${XBPS_COMMONVARSDIR:=$instsharedir/common}
 	: ${XBPS_DBDIR:=$XBPS_MASTERDIR/var/db/xbps}
 	: ${XBPS_META_PATH:=$XBPS_DBDIR/}
 	: ${XBPS_PKGMETADIR:=$XBPS_DBDIR/metadata}
-	: ${XBPS_SHUTILSDIR:=@@XBPS_INSTALL_SHAREDIR@@}
+	: ${XBPS_SRCPKGDIR:=$XBPS_DISTRIBUTIONDIR/srcpkgs}
 
-	DDIRS="XBPS_TEMPLATESDIR XBPS_TRIGGERSDIR XBPS_HELPERSDIR"
+	DDIRS="XBPS_TRIGGERSDIR XBPS_HELPERSDIR"
 	DDIRS="$DDIRS XBPS_COMMONVARSDIR XBPS_SHUTILSDIR"
 	for i in ${DDIRS}; do
 		eval val="\$$i"
@@ -199,32 +207,32 @@ set_defvars
 case "$target" in
 build|configure)
 	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
-	setup_tmpl $2
+	setup_tmpl $(basename_cwd)
 
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		. $XBPS_SHUTILSDIR/chroot.sh
 		if [ "$target" = "build" ]; then
-			xbps_chroot_handler build $2
+			xbps_chroot_handler build $pkgname
 		else
-			xbps_chroot_handler configure $2
+			xbps_chroot_handler configure $pkgname
 		fi
 	else
 		. $XBPS_SHUTILSDIR/fetch_funcs.sh
-		fetch_distfiles $2
+		fetch_distfiles
 		if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
 			. $XBPS_SHUTILSDIR/extract_funcs.sh
-			extract_distfiles $2
+			extract_distfiles
 		fi
 		if [ "$target" = "configure" ]; then
 			. $XBPS_SHUTILSDIR/configure_funcs.sh
-			configure_src_phase $2
+			configure_src_phase
 		else
 			if [ ! -f "$XBPS_CONFIGURE_DONE" ]; then
 				. $XBPS_SHUTILSDIR/configure_funcs.sh
-				configure_src_phase $2
+				configure_src_phase
 			fi
 			. $XBPS_SHUTILSDIR/build_funcs.sh
-			build_src_phase $2
+			build_src_phase
 		fi
 	fi
 	;;
@@ -234,15 +242,14 @@ build-pkg)
 	if [ "$2" = "all" ]; then
 		for f in $($XBPS_BIN_CMD list|awk '{print $1}'); do
 			pkg=$(${XBPS_PKGDB_CMD} getpkgname $f)
-			setup_tmpl ${pkg}
-			if [ "$pkg" = "$sourcepkg" ]; then
-				xbps_make_binpkg ${pkg}
+			setup_tmpl $pkg
+			if [ "${pkg}" = "${sourcepkg}" ]; then
+				xbps_make_binpkg
 			fi
-			reset_tmpl_vars
 		done
 	else
-		setup_tmpl $2
-		xbps_make_binpkg $2
+		setup_tmpl $(basename_cwd)
+		xbps_make_binpkg
 	fi
 	;;
 chroot)
@@ -251,25 +258,25 @@ chroot)
 	;;
 extract|fetch|info)
 	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
-	setup_tmpl $2
+	setup_tmpl $(basename_cwd)
 	if [ "$target" = "info" ]; then
 		. $XBPS_SHUTILSDIR/tmpl_funcs.sh
-		info_tmpl $2
+		info_tmpl
 		exit $?
 	fi
 	if [ "$target" = "fetch" ]; then
 		. $XBPS_SHUTILSDIR/fetch_funcs.sh
-		fetch_distfiles $2 $update_checksum
+		fetch_distfiles $update_checksum
 		exit $?
 	fi
 	. $XBPS_SHUTILSDIR/extract_funcs.sh
-	extract_distfiles $2
+	extract_distfiles
 	;;
 install|install-destdir)
-	[ -z "$2" ] && msg_error "missing package name after target."
 	[ "$target" = "install-destdir" ] && install_destdir_target=yes
 	. $XBPS_SHUTILSDIR/pkgtarget_funcs.sh
-	install_pkg $2
+	setup_tmpl $(basename_cwd)
+	install_pkg $pkgname
 	;;
 list|listfiles)
 	if [ "$target" = "list" ]; then
@@ -279,23 +286,29 @@ list|listfiles)
 	. $XBPS_SHUTILSDIR/pkgtarget_funcs.sh
 	list_pkg_files $2
 	;;
-remove)
-	[ -z "$2" ] && msg_error "missing package name after target."
+reinstall)
 	. $XBPS_SHUTILSDIR/pkgtarget_funcs.sh
-	remove_pkg $2
+	setup_tmpl $(basename_cwd)
+	remove_pkg
+	install_pkg $pkgname
+	;;
+remove)
+	. $XBPS_SHUTILSDIR/pkgtarget_funcs.sh
+	setup_tmpl $(basename_cwd)
+	remove_pkg
 	;;
 stow)
 	stow_flag=yes
 	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
-	setup_tmpl $2
+	setup_tmpl $(basename_cwd)
 	. $XBPS_SHUTILSDIR/stow_funcs.sh
-	stow_pkg $2
+	stow_pkg_handler stow
 	;;
 unstow)
 	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
-	setup_tmpl $2
+	setup_tmpl $(basename_cwd)
 	. $XBPS_SHUTILSDIR/stow_funcs.sh
-	unstow_pkg $2
+	stow_pkg_handler unstow
 	;;
 *)
 	echo "=> ERROR: invalid target: $target."

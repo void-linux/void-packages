@@ -47,7 +47,6 @@ info_tmpl()
 	echo "$long_desc"
 	echo
 	. $XBPS_SHUTILSDIR/builddep_funcs.sh
-	run_template $pkgname
 	check_build_depends_pkg
 	if [ $? -eq 0 ]; then
 		echo "This package requires the following dependencies to be built:"
@@ -95,22 +94,41 @@ setup_tmpl()
 {
 	local pkg="$1"
 
-	[ -z "$pkg" ] && msg_error "missing package name after target."
+	[ -z "$pkg" ] && return 1
+	[ "$pkgname" = "$pkg" ] && return 0
 
 	for f in $(echo $XBPS_COMMONVARSDIR/*.sh); do
 		[ -r ${f} ] && . ${f}
 	done
 
-	if [ -f "$XBPS_TEMPLATESDIR/$pkg/template" ]; then
-		if [ "$pkgname" != "$pkg" ]; then
-			reset_tmpl_vars
-			. $XBPS_TEMPLATESDIR/$pkg/template
-		fi
+	if [ -f $XBPS_SRCPKGDIR/${pkg}/template ]; then
+		reset_tmpl_vars
+		. $XBPS_SRCPKGDIR/${pkg}/template
 		prepare_tmpl
 	else
-		msg_error "cannot find '$pkg' template build file."
+		msg_error "Cannot find $pkg build template file."
 	fi
 
+}
+
+check_builddep_dup()
+{
+	local dep="$1" i
+
+	for i in ${build_depends}; do
+		[ "${i}" != "${dep}" ] && continue
+		return 1
+	done
+}
+
+check_rundep_dup()
+{
+	local dep="$1" i
+
+	for i in ${run_depends}; do
+		[ "${i}" != "${dep}" ] && continue
+		return 1
+	done
 }
 
 Add_dependency()
@@ -124,29 +142,41 @@ Add_dependency()
 
 	[ -z "$pkgname" ] && msg_error "Add_dependency: pkgname empty!"
 
-	if [ -f $XBPS_TEMPLATESDIR/${pkgname}/${pkgname}.depends ]; then
-		. $XBPS_TEMPLATESDIR/${pkgname}/${pkgname}.depends
-	elif [ -f $XBPS_TEMPLATESDIR/${pkgname}/depends ]; then
-		. $XBPS_TEMPLATESDIR/${pkgname}/depends
+	if [ -f $XBPS_SRCPKGDIR/${pkgname}/${pkgname}.depends ]; then
+		. $XBPS_SRCPKGDIR/${pkgname}/${pkgname}.depends
+	elif [ -f $XBPS_SRCPKGDIR/${pkgname}/depends ]; then
+		. $XBPS_SRCPKGDIR/${pkgname}/depends
 	fi
 
 	if [ "$type" = "full" -o "$type" = "build" ]; then
 		if [ -z "$version" -a -z "$api_depends" ]; then
-			build_depends="${build_depends} ${pkgname}>=0"
+			if check_builddep_dup "${pkgname}>=0"; then
+				build_depends="${build_depends} ${pkgname}>=0"
+			fi
 		elif [ -z "$version" -a -n "$api_depends" ]; then
-			build_depends="${build_depends} ${pkgname}${api_depends}"
+			if check_builddep_dup "${pkgname}${api_depends}"; then
+				build_depends="${build_depends} ${pkgname}${api_depends}"
+			fi
 		else
-			build_depends="${build_depends} ${pkgname}${version}"
+			if check_builddep_dup "${pkgname}${version}"; then
+				build_depends="${build_depends} ${pkgname}${version}"
+			fi
 		fi
 	fi
 
 	if [ "$type" = "full" -o "$type" = "run" ]; then
 		if [ -z "$version" -a -z "$abi_depends" ]; then
-			run_depends="${run_depends} ${pkgname}>=0"
+			if check_rundep_dup "${pkgname}>=0"; then
+				run_depends="${run_depends} ${pkgname}>=0"
+			fi
 		elif [ -z "$version" -a -n "$abi_depends" ]; then
-			run_depends="${run_depends} ${pkgname}${abi_depends}"
+			if check_rundep_dup "${pkgname}${api_depends}"; then
+				run_depends="${run_depends} ${pkgname}${abi_depends}"
+			fi
 		else
-			run_depends="${run_depends} ${pkgname}${version}"
+			if check_rundep_dup "${pkgname}${version}"; then
+				run_depends="${run_depends} ${pkgname}${version}"
+			fi
 		fi
 	fi
 
@@ -212,8 +242,8 @@ set_tmpl_common_vars()
 {
 	[ -z "$pkgname" ] && return 1
 
-	FILESDIR=${XBPS_TEMPLATESDIR}/${pkgname}/files
-	PATCHESDIR=${XBPS_TEMPLATESDIR}/${pkgname}/patches
+	FILESDIR=$XBPS_SRCPKGDIR/$pkgname/files
+	PATCHESDIR=$XBPS_SRCPKGDIR/$pkgname/patches
 	DESTDIR=${XBPS_DESTDIR}/${pkgname}-${version}
 	if [ -z "${sourcepkg}" ]; then
 		sourcepkg=${pkgname}
@@ -227,7 +257,11 @@ run_template()
 
 	if [ "$pkgname" != "$pkg" ]; then
 		reset_tmpl_vars
-		. $XBPS_TEMPLATESDIR/$pkg/template
+		if [ ! -d $XBPS_SRCPKGDIR/$pkg -o \
+		     ! -f $XBPS_SRCPKGDIR/$pkg/template ]; then
+			msg_error "Cannot find $pkg build template file!"
+		fi
+		. $XBPS_SRCPKGDIR/$pkg/template
 		set_tmpl_common_vars
 	fi
 }

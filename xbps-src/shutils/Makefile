@@ -8,14 +8,9 @@ clean:
 
 .PHONY: install
 install:
-	if [ ! -d $(DESTDIR)$(SHAREDIR) ]; then		\
-		install -d $(DESTDIR)$(SHAREDIR);	\
-	fi
-
-	for f in *.sh; do					\
-		install -m 755 $$f $(DESTDIR)$(SHAREDIR);	\
-	done
+	install -d $(DESTDIR)$(SHAREDIR)/shutils
+	install -m 644 *.sh $(DESTDIR)$(SHAREDIR)/shutils
 
 .PHONY: uninstall
 uninstall:
-	-rm -rf $(DESTDIR)$(SHAREDIR)
+	-rm -rf $(DESTDIR)$(SHAREDIR)/shutils

@@ -44,10 +44,10 @@ verify_sha256_cksum()
 
 fetch_update_cksum()
 {
-	local tmpl="$XBPS_TEMPLATESDIR/$pkgname/template"
 	local upcmd=$(basename $XBPS_SRCDISTDIR/$1)
 
-	sed -i -e "s|checksum.*|checksum=$(${XBPS_DIGEST_CMD} ${upcmd})|" $tmpl
+	sed -i -e "s|checksum.*|checksum=$(${XBPS_DIGEST_CMD} ${upcmd})|" \
+		template
 	return $?
 }
 

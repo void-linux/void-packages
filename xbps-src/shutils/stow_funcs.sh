@@ -25,44 +25,40 @@
 
 . ${XBPS_SHUTILSDIR}/builddep_funcs.sh
 
-stow_pkg()
+stow_pkg_handler()
 {
-	local pkg="$1"
-	local subpkg spkgrev
+	local action="$1" subpkg spkgrev
 
 	for subpkg in ${subpackages}; do
-		if [ "${pkg}" != "${sourcepkg}" ] && \
-		   [ "${pkg}" != "${sourcepkg}-${subpkg}" ]; then
-			continue
-		fi
 		if [ -n "$revision" ]; then
-			spkgrev="${sourcepkg}-${subpkg}-${version}_${revision}"
+			spkgrev="${subpkg}-${version}_${revision}"
 		else
-			spkgrev="${sourcepkg}-${subpkg}-${version}"
+			spkgrev="${subpkg}-${version}"
 		fi
-		check_installed_pkg ${spkgrev}
-		[ $? -eq 0 ] && continue
-
-		if [ ! -f $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template ]; then
-			msg_error "Cannot find subpackage template!"
+		if [ "$action" = "stow" ]; then
+			check_installed_pkg ${spkgrev}
+			[ $? -eq 0 ] && continue
+		fi
+		if [ ! -f $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template ]; then
+			msg_error "Cannot find $subpkg subpkg build template!"
 		fi
 		unset revision
-		. $XBPS_TEMPLATESDIR/${sourcepkg}/${subpkg}.template
-		pkgname=${sourcepkg}-${subpkg}
+		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
+		pkgname=${subpkg}
 		set_tmpl_common_vars
-		stow_pkg_real ${pkgname}
-		run_template ${sourcepkg}
-		if [ "${pkg}" = "${sourcepkg}-${subpkg}" ]; then
-			#
-			# If it's a subpackage, just remove sourcepkg from
-			# destdir and return, we are done.
-			#
-			rm -rf $XBPS_DESTDIR/${spkgrev}
-			return $?
+		if [ "$action" = "stow" ]; then
+			stow_pkg_real || return $?
+		else
+			unstow_pkg_real || return $?
 		fi
+		run_template ${sourcepkg}
 	done
 
-	stow_pkg_real ${pkg} ${automatic}
+	if [ "$action" = "stow" ]; then
+		stow_pkg_real
+	else
+		unstow_pkg_real
+	fi
 	return $?
 }
 
@@ -72,20 +68,19 @@ stow_pkg()
 #
 stow_pkg_real()
 {
-	local pkg="$1"
 	local i lver regpkgdb_flags
 
-	[ -z "$pkg" ] && return 2
+	[ -z "$pkgname" ] && return 2
 
 	if [ $(id -u) -ne 0 ] && [ ! -w $XBPS_MASTERDIR ]; then
-		msg_error "cannot stow $pkg! (permission denied)"
+		msg_error "cannot stow $pkgname! (permission denied)"
 	fi
 
 	if [ "$build_style" = "meta-template" ]; then
 		[ ! -d ${DESTDIR} ] && mkdir -p ${DESTDIR}
 	fi
 
-	[ -n "$stow_flag" ] && run_template $pkg
+	[ -n "$stow_flag" ] && run_template $pkgname
 
 	cd ${DESTDIR} || exit 1
 
@@ -106,7 +101,7 @@ stow_pkg_real()
 	else
 		lver="${version}"
 	fi
-	$XBPS_PKGDB_CMD register $pkg $lver "$short_desc" || exit 1
+	$XBPS_PKGDB_CMD register $pkgname $lver "$short_desc"
 	return $?
 }
 
@@ -114,32 +109,32 @@ stow_pkg_real()
 # Unstow a package, i.e remove its files from masterdir and
 # unregister pkg from package database.
 #
-unstow_pkg()
+unstow_pkg_real()
 {
-	local f ver pkg="$1"
+	local f ver
 
-	[ -z $pkg ] && msg_error "template wasn't specified?"
+	[ -z $pkgname ] && return 1
 
 	if [ $(id -u) -ne 0 ] && \
 	   [ ! -w $XBPS_MASTERDIR ]; then
-		msg_error "cannot unstow $pkg! (permission denied)"
+		msg_error "cannot unstow $pkgname! (permission denied)"
 	fi
 
-	run_template $pkg
+	run_template $pkgname
 
-	ver=$($XBPS_PKGDB_CMD version $pkg)
+	ver=$($XBPS_PKGDB_CMD version $pkgname)
 	if [ -z "$ver" ]; then
-		msg_error "$pkg is not installed."
+		msg_error "$pkgname is not installed."
 	fi
 
-	cd $XBPS_PKGMETADIR/$pkg || exit 1
+	cd $XBPS_PKGMETADIR/$pkgname || exit 1
 	if [ "$build_style" = "meta-template" ]; then
 		# If it's a metapkg, do nothing.
 		:
 	elif [ ! -f flist ]; then
-		msg_error "$pkg is incomplete, missing flist."
+		msg_error "$pkgname is incomplete, missing flist."
 	elif [ ! -w flist ]; then
-		msg_error "$pkg cannot be removed (permission denied)."
+		msg_error "$pkgname cannot be removed (permission denied)."
 	elif [ -s flist ]; then
 		# Remove installed files.
 		for f in $(cat flist); do
@@ -162,9 +157,9 @@ unstow_pkg()
 	fi
 
 	# Remove metadata dir.
-	rm -rf $XBPS_PKGMETADIR/$pkg
+	rm -rf $XBPS_PKGMETADIR/$pkgname
 
 	# Unregister pkg from plist file.
-	$XBPS_PKGDB_CMD unregister $pkg $ver
+	$XBPS_PKGDB_CMD unregister $pkgname $ver
 	return $?
 }

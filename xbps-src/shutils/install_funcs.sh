@@ -50,10 +50,9 @@ strip_files()
 
 install_src_phase()
 {
-	local pkg="$1"
-	local f i subpkg lver spkgrev
+	local f i subpkg lver spkgrev saved_wrksrc
 
-	[ -z $pkg ] && [ -z $pkgname ] && return 1
+	[ -z $pkgname ] && return 1
 
 	if [ -n "$revision" ]; then
 		lver="${version}_${revision}"
@@ -70,6 +69,7 @@ install_src_phase()
 		return 0
 	fi
 
+	saved_wrksrc=$wrksrc
 	cd $wrksrc || msg_error "can't change cwd to wrksrc!"
 
 	# Run pre_install func.
@@ -131,38 +131,31 @@ install_src_phase()
 	# Build subpackages if found.
 	#
 	for subpkg in ${subpackages}; do
-		if [ "${pkg}" != "${sourcepkg}" ] && \
-		   [ "${pkg}" != "${sourcepkg}-${subpkg}" ]; then
-			continue
-		fi
 		if [ -n "$revision" ]; then
-			spkgrev="${sourcepkg}-${subpkg}-${version}_${revision}"
+			spkgrev="${subpkg}-${version}_${revision}"
 		else
-			spkgrev="${sourcepkg}-${subpkg}-${version}"
+			spkgrev="${subpkg}-${version}"
 		fi
 		check_installed_pkg ${spkgrev}
 		[ $? -eq 0 ] && continue
 
-		msg_normal "Preparing $sourcepkg subpackage: $sourcepkg-$subpkg"
-		if [ ! -f $XBPS_TEMPLATESDIR/$pkgname/$subpkg.template ]; then
-			msg_error "Cannot find subpackage template!"
+		msg_normal "Preparing ${sourcepkg} subpackage: ${subpkg}"
+		if [ ! -f $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template ]; then
+			msg_error "Cannot find ${subpkg} subpkg build template!"
 		fi
-		. $XBPS_TEMPLATESDIR/$pkgname/$subpkg.template
-		pkgname=${sourcepkg}-${subpkg}
+		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
+		pkgname=${subpkg}
 		set_tmpl_common_vars
 		run_func do_install || \
 			msg_error "$pkgname do_install stage failed!"
-		run_template ${sourcepkg}
-		[ "$pkg" = "${sourcepkg}-${subpkg}" ] && break
 	done
-	[ -n "$subpackages" ] && setup_tmpl ${sourcepkg}
 
 	#
 	# Remove $wrksrc if -C not specified.
 	#
-	if [ -d "$wrksrc" -a -z "$dontrm_builddir" ]; then
-		rm -rf $wrksrc && \
-			msg_normal "Removed $pkgname-$lver build directory."
+	if [ -d "$saved_wrksrc" -a -z "$dontrm_builddir" ]; then
+		rm -rf $saved_wrksrc && \
+			msg_normal "Removed $sourcepkg-$lver build directory."
 	fi
 }
 

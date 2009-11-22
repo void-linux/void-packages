@@ -30,14 +30,7 @@
 #
 install_pkg()
 {
-	local pkg=
-	local curpkgn="$1"
-	local cdestdir=
-	local cur_tmpl="$XBPS_TEMPLATESDIR/$curpkgn/template"
-
-	if [ -z $cur_tmpl -o ! -f $cur_tmpl ]; then
-		msg_error "cannot find $cur_tmpl template build file."
-	fi
+	local curpkgn="$1" pkg cdestdir
 
 	#
 	# If we are being invoked through the chroot, re-read config file
@@ -48,10 +41,12 @@ install_pkg()
 		set_defvars
 	fi
 
-	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
-	reset_tmpl_vars
-	. $cur_tmpl
 	pkg="$curpkgn-$version"
+	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
+	if [ -n "$doing_deps" ]; then
+		reset_tmpl_vars
+		setup_tmpl $curpkgn
+	fi
 
 	#
 	# If we are the originator package save the path for this template in
@@ -67,11 +62,6 @@ install_pkg()
 	fi
 
 	#
-	# We are going to install a new package.
-	#
-	setup_tmpl $curpkgn
-
-	#
 	# Install dependencies required by this package.
 	#
 	if [ -z "$doing_deps" ]; then
@@ -79,10 +69,9 @@ install_pkg()
 		install_dependencies_pkg $pkg
 		#
 		# At this point all required deps are installed, and
-		# only remaining is the origin template; install it.
+		# only remaining is the origin package; install it.
 		#
 		unset doing_deps
-		reset_tmpl_vars
 		setup_tmpl $curpkgn
 	fi
 
@@ -108,18 +97,18 @@ install_pkg()
 	fi
 
 	. $XBPS_SHUTILSDIR/install_funcs.sh
-	install_src_phase $curpkgn
+	install_src_phase
 
 	# Always write metadata to package's destdir.
 	. $XBPS_SHUTILSDIR/metadata.sh
-	xbps_write_metadata_pkg $curpkgn
+	xbps_write_metadata_pkg
 
 	#
 	# Do not stow package if it wasn't requested.
 	#
 	if [ -z "$install_destdir_target" ]; then
 		. $XBPS_SHUTILSDIR/stow_funcs.sh
-		stow_pkg $curpkgn
+		stow_pkg_handler stow
 	fi
 }
 
@@ -128,8 +117,7 @@ install_pkg()
 #
 list_pkg_files()
 {
-	local pkg="$1"
-	local ver=
+	local pkg="$1" ver=
 
 	[ -z $pkg ] && msg_error "unexistent package, aborting."
 
@@ -144,29 +132,24 @@ list_pkg_files()
 #
 remove_pkg()
 {
-	local pkg="$1" subpkg ver
+	local subpkg ver
 
-	[ -z $pkg ] && msg_error "unexistent package, aborting."
+	[ -z $pkgname ] && msg_error "unexistent package, aborting."
 
-	if [ ! -f "$XBPS_TEMPLATESDIR/$pkg/template" ]; then
-		msg_error "cannot find template build file."
-	fi
+	ver=$($XBPS_PKGDB_CMD version $pkgname)
+	[ -z "$ver" ] && msg_error "$pkgname is not installed."
 
-	. $XBPS_TEMPLATESDIR/$pkg/template
-	for f in ${subpackages}; do
-		if [ "$pkg" = "${pkgname}-${f}" ]; then
-			pkgname=${pkg}
-			break;
+	. $XBPS_SHUTILSDIR/stow_funcs.sh
+	stow_pkg_handler unstow || return $?
+
+	for subpkg in ${subpackages}; do
+		if [ -d $XBPS_DESTDIR/${subpkg}-${ver%_${revision}} ]; then
+			rm -rf $XBPS_DESTDIR/${subpkg}-${ver%_${revision}}
 		fi
 	done
 
-	ver=$($XBPS_PKGDB_CMD version $pkg)
-	[ -z "$ver" ] && msg_error "$pkg is not installed."
-
-	. $XBPS_SHUTILSDIR/stow_funcs.sh
-	unstow_pkg $pkg
-	if [ $? -eq 0 -a -d $XBPS_DESTDIR/$pkg-${ver%_${revision}} ]; then
-		rm -rf $XBPS_DESTDIR/$pkg-${ver%_${revision}}
+	if [ -d $XBPS_DESTDIR/${pkgname}-${ver%_${revision}} ]; then
+		rm -rf $XBPS_DESTDIR/${pkgname}-${ver%_${revision}}
 	fi
 	return $?
 }

@@ -191,9 +191,9 @@ _EOF
 	case "$action" in
 	install)
 		if [ -n "${sourcepkg}" -a "${sourcepkg}" != "${pkgname}" ]; then
-			install_file=${XBPS_TEMPLATESDIR}/${pkgname}/${pkgname}.INSTALL
+			install_file=$XBPS_SRCPKGDIR/$pkgname/$pkgname.INSTALL
 		else
-			install_file=${XBPS_TEMPLATESDIR}/${pkgname}/INSTALL
+			install_file=$XBPS_SRCPKGDIR/$pkgname/INSTALL
 		fi
 		if [ -f ${install_file} ]; then
 			found=1
@@ -208,9 +208,9 @@ _EOF
 		;;
 	remove)
 		if [ -n "${sourcepkg}" -a "${sourcepkg}" != "${pkgname}" ]; then
-			remove_file=${XBPS_TEMPLATESDIR}/${pkgname}/${pkgname}.REMOVE
+			remove_file=$XBPS_SRCPKGDIR/$pkgname/$pkgname.REMOVE
 		else
-			remove_file=${XBPS_TEMPLATESDIR}/${pkgname}/REMOVE
+			remove_file=$XBPS_SRCPKGDIR/$pkgname/REMOVE
 		fi
 		if [ -f ${remove_file} ]; then
 			found=1

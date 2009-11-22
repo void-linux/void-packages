@@ -29,11 +29,9 @@
 #
 configure_src_phase()
 {
-	local f lver pkg="$1"
+	local f lver
 
-	[ -z $pkg ] && [ -z $pkgname ] && return 1
-
-	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]."
+	[ -z $pkgname ] && return 1
 
 	# Apply patches if requested by template file
 	if [ ! -f $XBPS_APPLYPATCHES_DONE ]; then
@@ -56,6 +54,8 @@ configure_src_phase()
 	else
 		lver="${version}"
 	fi
+
+	cd $wrksrc || msg_error "unexistent build directory [$wrksrc]."
 
 	# cross compilation vars.
 	if [ -n "$cross_compiler" ]; then

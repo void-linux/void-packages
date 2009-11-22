@@ -143,16 +143,13 @@ install_xbps_utils()
 		fi
 		cp -f $fetch_cmd $xbps_prefix/sbin
 		for f in bin cmpver digest pkgdb repo; do
-			cp -f $XBPS_INSTALLDIR/sbin/xbps-$f.static \
-				$xbps_prefix/sbin/
+			_cmd="$(which xbps-${f}.static 2>/dev/null)"
+			if [ -z "$_cmd" ]; then
+				echo "Unexisting xbps-${f}.static bin!"
+				exit 1	
+			fi
+			cp -f ${_cmd} $xbps_prefix/sbin
 		done
-		cp -f $XBPS_INSTALLDIR/sbin/xbps-src $xbps_prefix/sbin
-		if [ -z $XBPS_INSTALLDIR ]; then
-			installdir=/usr/share/xbps-src
-		else
-			installdir=$XBPS_INSTALLDIR/share/xbps-src
-		fi
-		cp -a $installdir $xbps_prefix/share
 		rebuild_ldso_cache
 	fi
 }
@@ -178,6 +175,13 @@ xbps_chroot_handler()
 		echo "done."
 	fi
 
+	# Reinstall xbps-src in the chroot
+	if [ ! -f $XBPS_MASTERDIR/usr/local/sbin/xbps-src ]; then
+		env in_chroot=yes LANG=C PATH=$path \
+		    chroot $XBPS_MASTERDIR sh -c \
+		    "cd /xbps/xbps-src && make install clean"
+	fi
+
 	if [ "$action" = "chroot" ]; then
 		env in_chroot=yes LANG=C PATH=$path \
 			chroot $XBPS_MASTERDIR /bin/sh
@@ -185,8 +189,8 @@ xbps_chroot_handler()
 		[ -n "$only_destdir" ] && \
 			local lenv="install_destdir_target=yes"
 		env in_chroot=yes LANG=C PATH=$path \
-			${lenv} chroot $XBPS_MASTERDIR \
-			/usr/local/sbin/xbps-src $action $pkg
+			${lenv} chroot $XBPS_MASTERDIR sh -c \
+			"cd /xbps/srcpkgs/$pkg && xbps-src $action"
 	fi
 	msg_normal "Exiting from the chroot on $XBPS_MASTERDIR."
 	umount_chroot_fs
@@ -280,7 +284,7 @@ if [ "$(id -u)" -ne 0 ]; then
 	if [ -n "$origin_tmpl" ]; then
 		. $XBPS_SHUTILSDIR/tmpl_funcs.sh
 		reset_tmpl_vars
-		run_file $XBPS_TEMPLATESDIR/$origin_tmpl/template
+		cd ../$origin_tmpl && . template
 	fi
 	echo "The '$pkgname' package requires to be installed in a chroot."
 	echo "You cannot do this as normal user, try again being root."

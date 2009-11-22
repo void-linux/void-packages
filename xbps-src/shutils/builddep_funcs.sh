@@ -87,7 +87,7 @@ install_pkg_deps()
 install_dependencies_pkg()
 {
 	local pkg="$1"
-	local lpkgname=$(${XBPS_PKGDB_CMD} getpkgdepname ${pkg})
+	local lpkgname=$(${XBPS_PKGDB_CMD} getpkgname ${pkg})
 	local i pkgn iver reqver notinstalled_deps lver
 
 	[ -z "$pkg" ] && return 1
