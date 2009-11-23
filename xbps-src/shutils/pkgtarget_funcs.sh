@@ -48,12 +48,6 @@ install_pkg()
 		setup_tmpl $curpkgn
 	fi
 
-	#
-	# If we are the originator package save the path for this template in
-	# other var for future use.
-	#
-	[ -z "$origin_tmpl" ] && origin_tmpl=$pkgname
-
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		. $XBPS_SHUTILSDIR/chroot.sh
 		[ -n "$install_destdir_target" ] && cdestdir=yes
