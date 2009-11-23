@@ -47,13 +47,6 @@ build_src_phase()
 	cd $wrksrc || exit 1
 
 	[ -n "$revision" ] && pkg="${pkg}_${revision}"
-
-	# cross compilation vars.
-	if [ -n "$cross_compiler" ]; then
-		. $XBPS_SHUTILSDIR/cross-compilation.sh
-		cross_compile_setvars
-	fi
-
 	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
 
 	# Run pre_build func.
@@ -77,10 +70,6 @@ build_src_phase()
 	run_func post_build || msg_error "post_build stage failed!"
 
 	unset makejobs
-
-	# unset cross compiler vars.
-	[ -n "$cross_compiler" ] && cross_compile_unsetvars
-	unset_build_vars
 
 	touch -f $XBPS_BUILD_DONE
 }

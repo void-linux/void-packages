@@ -77,12 +77,6 @@ install_src_phase()
 
 	msg_normal "Running install phase for $pkgname-$lver."
 
-	# cross compilation vars.
-	if [ -n "$cross_compiler" ]; then
-		. $XBPS_SHUTILSDIR/cross-compilation.sh
-		cross_compile_setvars
-	fi
-
 	# Type of installation: custom, make or python.
 	case "$build_style" in
 	custom-install)
@@ -117,9 +111,6 @@ install_src_phase()
 	if [ -z "$noarch" ]; then
 		strip_files
 	fi
-
-	# unset cross compiler vars.
-	[ -n "$cross_compiler" ] && cross_compile_unsetvars
 
 	msg_normal "Installed $pkgname-$lver into $XBPS_DESTDIR."
 

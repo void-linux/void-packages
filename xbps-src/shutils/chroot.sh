@@ -202,10 +202,6 @@ mount_chroot_fs()
 
 	REQFS="sys proc dev xbps xbps_builddir xbps_destdir \
 	       xbps_packagesdir xbps_srcdistdir"
-	if [ -d "$XBPS_CROSS_DIR" ]; then
-		local cross=yes
-		REQFS="$REQFS xbps_crossdir"
-	fi
 
 	for f in ${REQFS}; do
 		if [ ! -f $XBPS_MASTERDIR/.${f}_mount_bind_done ]; then
@@ -217,9 +213,6 @@ mount_chroot_fs()
 				xbps_destdir) blah=$XBPS_DESTDIR;;
 				xbps_srcdistdir) blah=$XBPS_SRCDISTDIR;;
 				xbps_packagesdir) blah=$XBPS_PACKAGESDIR;;
-				xbps_crossdir)
-					[ -n $cross ] && blah=$XBPS_CROSS_DIR
-					;;
 				*) blah=/$f;;
 			esac
 			[ ! -d $blah ] && echo "failed." && continue
@@ -289,7 +282,7 @@ fi
 msg_normal "Entering into the chroot on $XBPS_MASTERDIR."
 
 EXTDIRS="xbps xbps_builddir xbps_destdir xbps_packagesdir \
-	 xbps_srcdistdir xbps_crossdir"
+	 xbps_srcdistdir"
 REQDIRS="bin sbin tmp var sys proc dev usr/local/etc ${EXTDIRS}"
 for f in ${REQDIRS}; do
 	[ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
@@ -310,9 +303,3 @@ echo "XBPS_FETCH_CMD=$XBPS_FETCH_CMD" >> $XBPSSRC_CF
 if [ -n "$XBPS_MAKEJOBS" ]; then
 	echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPSSRC_CF
 fi
-if [ -n "$XBPS_CROSS_TARGET" -a -d "$XBPS_CROSS_DIR" ]; then
-	echo "XBPS_CROSS_TARGET=$XBPS_CROSS_TARGET" >> $XBPSSRC_CF
-	echo "XBPS_CROSS_DIR=/xbps_crossdir" >> $XBPSSRC_CF
-fi
-
-

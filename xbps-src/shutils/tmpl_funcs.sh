@@ -71,7 +71,7 @@ reset_tmpl_vars()
 			post_configure post_build post_install nostrip \
 			make_install_target version revision essential \
 			sgml_catalogs xml_catalogs xml_entries sgml_entries \
-			disable_parallel_build run_depends cross_compiler \
+			disable_parallel_build run_depends \
 			only_for_archs conf_files keep_libtool_archives \
 			noarch subpackages sourcepkg gtk_iconcache_dirs \
 			abi_depends api_depends triggers openrc_services \

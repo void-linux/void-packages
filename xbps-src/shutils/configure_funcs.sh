@@ -57,12 +57,6 @@ configure_src_phase()
 
 	cd $wrksrc || msg_error "unexistent build directory [$wrksrc]."
 
-	# cross compilation vars.
-	if [ -n "$cross_compiler" ]; then
-		. $XBPS_SHUTILSDIR/cross-compilation.sh
-		cross_compile_setvars
-	fi
-
 	# Run pre_configure func.
 	run_func pre_configure || msg_error "pre_configure stage failed!"
 
@@ -123,10 +117,6 @@ configure_src_phase()
 	for f in ${configure_env}; do
 		unset eval ${f%=*}
 	done
-
-	# unset cross compiler vars.
-	[ -n "$cross_compiler" ] && cross_compile_unsetvars
-	unset_build_vars
 
 	touch -f $XBPS_CONFIGURE_DONE
 }
