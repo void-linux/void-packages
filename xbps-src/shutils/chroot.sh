@@ -165,15 +165,15 @@ xbps_chroot_handler()
 	[ "$action" != "configure" -a "$action" != "build" -a \
 	  "$action" != "install" -a "$action" != "chroot" ] && return 1
 
-	create_busybox_links
-	install_xbps_utils
-	mount_chroot_fs
-
 	if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
 		echo -n "==> Preparing chroot on $XBPS_MASTERDIR... "
 		prepare_chroot
 		echo "done."
 	fi
+
+	create_busybox_links
+	install_xbps_utils
+	mount_chroot_fs
 
 	# Reinstall xbps-src in the chroot
 	if [ ! -f $XBPS_MASTERDIR/usr/local/sbin/xbps-src ]; then
