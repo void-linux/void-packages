@@ -46,19 +46,18 @@ xbps_write_metadata_pkg()
 		else
 			spkgrev="${subpkg}-${version}"
 		fi
+		unset run_depends conf_files noarch triggers replaces \
+			revision openrc_services essential keep_empty_dirs
 		check_installed_pkg ${spkgrev}
 		[ $? -eq 0 ] && continue
 
 		if [ ! -f $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template ]; then
-			msg_error "Cannot find subpackage build template!"
+			msg_error "Cannot find subpkg '${subpkg}' build template!"
 		fi
-		unset run_depends conf_files noarch triggers replaces \
-			revision openrc_services essential keep_empty_dirs
-		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${subpkg}
 		set_tmpl_common_vars
 		xbps_write_metadata_pkg_real
-		run_template ${sourcepkg}
+		setup_tmpl ${sourcepkg}
 	done
 
 	if [ "$build_style" = "meta-template" -a -z "${run_depends}" ]; then
