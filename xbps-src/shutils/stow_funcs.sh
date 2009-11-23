@@ -51,7 +51,7 @@ stow_pkg_handler()
 		else
 			unstow_pkg_real || return $?
 		fi
-		run_template ${sourcepkg}
+		setup_tmpl ${sourcepkg}
 	done
 
 	if [ "$action" = "stow" ]; then
@@ -80,7 +80,7 @@ stow_pkg_real()
 		[ ! -d ${DESTDIR} ] && mkdir -p ${DESTDIR}
 	fi
 
-	[ -n "$stow_flag" ] && run_template $pkgname
+	[ -n "$stow_flag" ] && setup_tmpl $pkgname
 
 	cd ${DESTDIR} || exit 1
 
@@ -120,7 +120,7 @@ unstow_pkg_real()
 		msg_error "cannot unstow $pkgname! (permission denied)"
 	fi
 
-	run_template $pkgname
+	setup_tmpl $pkgname
 
 	ver=$($XBPS_PKGDB_CMD version $pkgname)
 	if [ -z "$ver" ]; then

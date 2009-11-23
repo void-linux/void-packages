@@ -86,7 +86,7 @@ fetch_distfiles()
 		if [ -f "$XBPS_SRCDISTDIR/$curfile" ]; then
 			if [ -n "$upcksum" ]; then
 				fetch_update_cksum $curfile
-				run_template $pkgname
+				setup_tmpl $pkgname
 			fi
 
 			for i in ${checksum}; do
@@ -133,7 +133,7 @@ fetch_distfiles()
 
 			if [ -n "$upcksum" ]; then
 				fetch_update_cksum $curfile
-				run_template $pkgname
+				setup_tmpl $pkgname
 			fi
 
 			#

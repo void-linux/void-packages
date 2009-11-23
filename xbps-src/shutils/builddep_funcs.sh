@@ -45,7 +45,7 @@ install_pkg_deps()
 
 	msg_normal "Installing $saved_prevpkg dependency: $curpkgname."
 
-	run_template $curpkgname
+	setup_tmpl $curpkgname
 	check_build_depends_pkg
 	if [ $? -eq 0 ]; then
 		msg_normal "Dependency $curpkgname requires:"
@@ -123,7 +123,7 @@ install_dependencies_pkg()
 		check_pkgdep_matched "${i}"
 		[ $? -eq 0 ] && continue
 
-		run_template $pkgn
+		setup_tmpl $pkgn
 		check_build_depends_pkg
 		if [ $? -eq 1 ]; then
 			msg_normal "Installing $lpkgname dependency: $pkgn."
@@ -144,7 +144,7 @@ check_pkgdep_matched()
 	[ -z "$pkg" ] && return 2
 
 	pkgname="$($XBPS_PKGDB_CMD getpkgdepname ${pkg})"
-	run_template $pkgname
+	setup_tmpl $pkgname
 
 	iver="$($XBPS_PKGDB_CMD version $pkgname)"
 	if [ -n "$iver" ]; then
@@ -165,7 +165,7 @@ check_installed_pkg()
 	[ -z "$pkg" ] && return 2
 
 	pkgname="$($XBPS_PKGDB_CMD getpkgname ${pkg})"
-	run_template $pkgname
+	setup_tmpl $pkgname
 
 	iver="$($XBPS_PKGDB_CMD version $pkgname)"
 	if [ -n "$iver" ]; then

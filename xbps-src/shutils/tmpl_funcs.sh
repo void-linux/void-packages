@@ -250,18 +250,3 @@ set_tmpl_common_vars()
 	fi
 	SRCPKGDESTDIR=${XBPS_DESTDIR}/${sourcepkg}-${version}
 }
-
-run_template()
-{
-	local pkg="$1"
-
-	if [ "$pkgname" != "$pkg" ]; then
-		reset_tmpl_vars
-		if [ ! -d $XBPS_SRCPKGDIR/$pkg -o \
-		     ! -f $XBPS_SRCPKGDIR/$pkg/template ]; then
-			msg_error "Cannot find $pkg build template file!"
-		fi
-		. $XBPS_SRCPKGDIR/$pkg/template
-		set_tmpl_common_vars
-	fi
-}

@@ -35,7 +35,7 @@ xbps_make_binpkg()
 		pkgname=${subpkg}
 		set_tmpl_common_vars
 		xbps_make_binpkg_real
-		run_template ${sourcepkg}
+		setup_tmpl ${sourcepkg}
 	done
 
 	[ -n "${subpackages}" ] && set_tmpl_common_vars
