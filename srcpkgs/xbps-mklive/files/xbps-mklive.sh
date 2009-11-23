@@ -59,12 +59,15 @@ Welcome to the XBPS GNU/Linux Live system, you have been autologged in.
 This user has full sudo(8) permissions without any password, be careful
 executing commands through sudo(8).
 
-To play with package management use the 'xbps-bin' and 'xbps-repo'
-utilities. Please note that working with remote repositories hasn't been
-implemented yet. Visit https://launchpad.net/xbps for news about
-new releases and other documentation.
+To play with package management use the xbps-bin(8) and xbps-repo(8)
+utilities. Please visit:
 
-		---- Juan RP <xtraeme@gmail.com> ----
+	http://xbps.nopcode.org/
+
+For more information and/or documentation about using the X Binary
+Package System. Enjoy it.
+
+		Juan RP <xtraeme@gmail.com>
 
 _EOF
 }
