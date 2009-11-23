@@ -43,6 +43,13 @@ xbps_make_binpkg()
 	return $?
 }
 
+binpkg_cleanup()
+{
+	printf "\nInterrupted! removing $binpkg file!\n"
+	rm -f $pkgdir/$binpkg
+	exit 1
+}
+
 #
 # This function builds a binary package from an installed xbps
 # package in destdir.
@@ -78,7 +85,7 @@ xbps_make_binpkg_real()
 	# Don't overwrite existing binpkgs by default, skip them.
 	#
 	if [ -f $pkgdir/$binpkg ]; then
-		msg_normal "Skipping existing $binpkg ..."
+		echo "=> Skipping existing $binpkg pkg..."
 		return 0
 	fi
 
@@ -104,11 +111,19 @@ xbps_make_binpkg_real()
 	[ -n "$XBPS_COMPRESS_LEVEL" ] && clevel="-$XBPS_COMPRESS_LEVEL"
 
 	[ ! -d $pkgdir ] && mkdir -p $pkgdir
+
+	# Remove binpkg if interrupted...
+	trap "binpkg_cleanup" INT
+
+	echo -n "=> Building $binpkg... "
 	run_rootcmd $use_sudo tar --exclude "var/db/xbps/metadata/*/flist" \
 		-cpf - ${mfiles} ${dirs} | \
 		$XBPS_COMPRESS_CMD ${clevel} -qf > $pkgdir/$binpkg
 	if [ $? -eq 0 ]; then
-		msg_normal "Built package: $binpkg"
+		echo "done."
+	else
+		rm -f $pkgdir/$binpkg
+		echo "failed!"
 	fi
 
 	return $?
