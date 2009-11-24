@@ -123,10 +123,10 @@ create_busybox_links()
 
 install_xbps_utils()
 {
-	local needed fetch_cmd
+	local needed _cmd
 	local xbps_prefix=$XBPS_MASTERDIR/usr/local
 
-	for f in bin cmpver digest pkgdb; do
+	for f in bin repo uhelper; do
 		if [ ! -x $xbps_prefix/sbin/xbps-${f}.static ]; then
 			needed=yes
 		fi
@@ -136,17 +136,11 @@ install_xbps_utils()
 		echo "=> Installing the required XBPS utils."
 		chroot $XBPS_MASTERDIR sh -c \
 			"echo /usr/local/lib > /etc/ld.so.conf"
-		fetch_cmd="$(which $XBPS_FETCH_CMD 2>/dev/null)"
-		if [ -z "$fetch_cmd" ]; then
-			echo "Unexistent XBPS_FETCH_CMD specified!"
-			exit 1
-		fi
-		cp -f $fetch_cmd $xbps_prefix/sbin
-		for f in bin cmpver digest pkgdb repo; do
-			_cmd="$(which xbps-${f}.static 2>/dev/null)"
-			if [ -z "$_cmd" ]; then
-				echo "Unexisting xbps-${f}.static bin!"
-				exit 1	
+		for f in bin repo uhelper; do
+			_cmd=$(which xbps-${f}.static 2>/dev/null)
+			if [ -z "${_cmd}" ]; then
+				echo "Unexistent xbps-uhelper.static file!"
+				exit 1
 			fi
 			cp -f ${_cmd} $xbps_prefix/sbin
 		done
@@ -299,7 +293,7 @@ echo "XBPS_BUILDDIR=/xbps_builddir" >> $XBPSSRC_CF
 echo "XBPS_SRCDISTDIR=/xbps_srcdistdir" >> $XBPSSRC_CF
 echo "XBPS_CFLAGS=\"$XBPS_CFLAGS\"" >> $XBPSSRC_CF
 echo "XBPS_CXXFLAGS=\"\$XBPS_CFLAGS\"" >> $XBPSSRC_CF
-echo "XBPS_FETCH_CMD=$XBPS_FETCH_CMD" >> $XBPSSRC_CF
+echo "XBPS_FETCH_CMD='xbps-uhelper.static fetch'" >> $XBPSSRC_CF
 if [ -n "$XBPS_MAKEJOBS" ]; then
 	echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPSSRC_CF
 fi
