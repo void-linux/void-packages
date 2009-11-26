@@ -188,7 +188,8 @@ info_msg "Creating sha256 checksums..."
 cd $BUILD_TMPDIR
 for f in $(find . -type f -print); do
 	[ "$f" = "./sha256.txt" ] && continue
-	printf "${f#.}\t$(xbps-digest $f)\n" >> $BUILD_TMPDIR/sha256.txt
+	printf "${f#.}\t$(xbps-uhelper.static digest $f)\n" \
+		>> $BUILD_TMPDIR/sha256.txt
 done
 
 info_msg "Building ISO image..."
