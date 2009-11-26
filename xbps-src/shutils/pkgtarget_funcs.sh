@@ -54,9 +54,11 @@ install_pkg()
 	. $XBPS_SHUTILSDIR/builddep_funcs.sh
 	check_installed_pkg "$pkg"
 	if [ $? -eq 1 -o $? -eq 0 ]; then
-		fullpkg="$pkgname-$($XBPS_PKGDB_CMD version $pkgname)"
-		msg_warn "$fullpkg is already installed, remove or reinstall it."
-		exit 0
+		instver="$($XBPS_PKGDB_CMD version $pkgname)"
+		if [ -n "$instver" ]; then
+			msg_warn "$pkgname-$instver is already installed, remove or reinstall it."
+			exit 0
+		fi
 	fi
 
 	#
