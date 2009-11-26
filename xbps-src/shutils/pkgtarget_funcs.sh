@@ -30,7 +30,7 @@
 #
 install_pkg()
 {
-	local curpkgn="$1" pkg cdestdir
+	local curpkgn="$1" fullpkg pkg cdestdir
 
 	#
 	# If we are being invoked through the chroot, re-read config file
@@ -48,6 +48,20 @@ install_pkg()
 		setup_tmpl $curpkgn
 	fi
 
+	#
+	# Refuse to install the same package that is already installed.
+	#
+	. $XBPS_SHUTILSDIR/builddep_funcs.sh
+	check_installed_pkg "$pkg"
+	if [ $? -eq 1 -o $? -eq 0 ]; then
+		fullpkg="$pkgname-$($XBPS_PKGDB_CMD version $pkgname)"
+		msg_warn "$fullpkg is already installed, remove or reinstall it."
+		exit 0
+	fi
+
+	#
+	# Execute command in chroot if necessary.
+	#
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		. $XBPS_SHUTILSDIR/chroot.sh
 		[ -n "$install_destdir_target" ] && cdestdir=yes
