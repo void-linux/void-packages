@@ -159,6 +159,9 @@ for _pkg_ in ${PACKAGE_LIST}; do
 	xbps-bin.static -r $TEMP_ROOTFS -f install ${_pkg_}
 	[ $? -ne 0 ] && error_out $?
 done
+xbps-bin.static -r $TEMP_ROOTFS autoupdate || error_out $?
+xbps-bin.static -r $TEMP_ROOTFS autoremove || error_out $?
+xbps-bin.static -r $TEMP_ROOTFS purge all || error_out $?
 xbps-bin.static -r $TEMP_ROOTFS list > $BUILD_TMPDIR/packages.txt
 
 info_msg "Creating /etc/motd..."
