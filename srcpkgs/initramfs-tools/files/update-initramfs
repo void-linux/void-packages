@@ -3,8 +3,6 @@
 STATEDIR=/var/lib/initramfs-tools
 BOOTDIR=/boot
 CONF=/etc/initramfs-tools/update-initramfs.conf
-KPKGCONF=/etc/kernel-img.conf
-USETRIGGERS=true
 mode=""
 version=""
 
@@ -158,100 +156,30 @@ generate_initramfs()
 	fi
 }
 
-# lilo call
-run_lilo()
-{
-	# show lilo errors on failure
-	if ! lilo -t  > /dev/null 2>&1 ; then
-		echo "ERROR lilo fails for new ${initramfs}:"
-		echo
-		lilo -t
-	fi
-	lilo
-}
-
-# check if lilo is on mbr
-mbr_check()
-{
-	# try to discover grub|grub2 and be happy
-	[ -r /boot/grub/grub.cfg ] \
-		&& groot=$(awk '/^set root=/{print substr($2, 7, 3); exit}' \
-			/boot/grub/grub.cfg)
-	[ -r /boot/grub/menu.lst ] \
-		&& groot=$(awk '/^root/{print substr($2, 2, 3); exit}' \
-			/boot/grub/menu.lst)
-	[ -e /boot/grub/device.map ] && [ -n "${groot}" ] \
-		&& dev=$(awk "/${groot}/{ print \$NF}" /boot/grub/device.map)
-	[ -n "${dev}" ] && [ -r ${dev} ] \
-		&& dd if="${dev}" bs=512 skip=0 count=1 2> /dev/null \
-		| grep -q GRUB && return 0
-
-	# check out lilo.conf for validity
-	boot=$(awk -F = '/^boot=/{ print $2}' /etc/lilo.conf)
-	[ -z "${boot}" ] && return 0
-	case ${boot} in
-	/dev/md/*)
-		if [ -r /proc/mdstat ]; then
-			MD=${boot#/dev/md/}
-			boot="/dev/$(awk "/^md${MD}/{print substr(\$5, 1, 3)}" \
-			/proc/mdstat)"
-		fi
-		;;
-	/dev/md*)
-		if [ -r /proc/mdstat ]; then
-			MD=${boot#/dev/}
-			boot="/dev/$(awk "/^${MD}/{print substr(\$5, 1, 3)}" \
-			/proc/mdstat)"
-		fi
-		;;
-	esac
-	[ ! -r "${boot}" ] && return 0
-	dd if="${boot}" bs=512 skip=0 count=1 2> /dev/null | grep -q LILO \
-		&& run_lilo && return 0
-
-	# no idea which bootloader is used
-	echo
-	echo "WARNING: grub and lilo installed."
-	echo "If you use grub as bootloader everything is fine."
-	echo "If you use lilo as bootloader you must run lilo!"
-	echo
-}
-
 # Invoke bootloader
 run_bootloader()
 {
-	# if both lilo and grub around, figure out if lilo needs to be run
-	if ( [ -x "$(command -v update-grub)" ] || [ -e /boot/grub/menu.lst ] \
-	     || [ -e /boot/grub/grub.cfg ] ) \
-	&& ( [ -e /etc/lilo.conf ] && [ -x /sbin/lilo ] ); then
-		[ -r "${KPKGCONF}" ] && \
-		do_b=$(awk  '/^do_bootloader/{print $3}' "${KPKGCONF}")
-		if [ "${do_b}" = "yes" ] || [ "${do_b}" = "Yes" ] \
-		|| [ "${do_b}" = "YES" ]; then
-			run_lilo
-			return 0
-		elif [ "${do_b}" = "no" ] || [ "${do_b}" = "No" ] \
-		|| [ "${do_b}" = "NO" ]; then
-			return 0
-		fi
+	local grub_installed
 
-		# do_bootloader unconfigured
-		mbr_check
-		return 0
+	[ -r /boot/grub/grub.cfg ] \
+		&& groot=$(awk '/^set root=/{print substr($2, 7, 3); exit}' \
+			/boot/grub/grub.cfg)
+	[ -e /boot/grub/device.map ] && [ -n "${groot}" ] \
+		&& dev=$(awk "/${groot}/{ print \$NF}" /boot/grub/device.map)
+
+	if [ -n "${dev}" -a -r "${dev}" ]; then
+		dd if="${dev}" bs=512 skip=0 count=1 2>/dev/null|grep -q GRUB
+		[ $? -eq 0 ] && grub_installed=1
 	fi
-	if [ -r /etc/lilo.conf ] && [ -x /sbin/lilo ]; then
-		run_lilo
-		return 0
+
+	if [ -n "${dev}" -a -z "$grub_installed" ]; then
+		echo "WARNING: GRUB2 has not been installed into ${dev}."
+		echo "update-initramfs: please run 'grub-install ${dev}'."
 	fi
-	if [ -x /sbin/elilo ]; then
-		elilo
-		return 0
-	fi
-	if [ -r /etc/zipl.conf ]; then
-		zipl
-	fi
-	if flash-kernel --supported >/dev/null 2>&1; then
-		flash-kernel
+
+	if [ -x "$(which grub-mkconfig 2>/dev/null)" ]; then
+		echo "Updating GRUB2 configuration file..."
+		grub-mkconfig -o /boot/grub/grub.cfg
 	fi
 }
 
