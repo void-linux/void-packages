@@ -289,6 +289,12 @@ _EOF
 		echo "<true/>" >> $TMPFPROPS
 	fi
 
+	# pkg needs to preserve its files after removal/upgrade?
+	if [ -n "$preserve" ]; then
+		echo "<key>preserve</key>" >> $TMPFPROPS
+		echo "<true/>" >> $TMPFPROPS
+	fi
+
 	# Dependencies
 	if [ -n "$run_depends" ]; then
 		echo "<key>run_depends</key>" >> $TMPFPROPS
