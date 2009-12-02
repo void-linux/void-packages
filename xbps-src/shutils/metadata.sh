@@ -347,16 +347,6 @@ _EOF
 	[ -f $metadir/flist ] && chmod 644 $metadir/flist
 
 	#
-	# Update desktop-file-utils database if package contains
-	# any desktop file in /usr/share/applications.
-	#
-	if [ -d ${DESTDIR}/usr/share/applications ]; then
-		if find . -type f -name \*.desktop 2>&1 >/dev/null; then
-			triggers="$triggers update-desktopdb"
-		fi
-	fi
-
-	#
 	# Create the INSTALL/REMOVE scripts if package uses them
 	# or uses any available trigger.
 	#

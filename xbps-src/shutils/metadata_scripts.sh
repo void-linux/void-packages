@@ -23,12 +23,22 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 
+_add_trigger()
+{
+	local f found name="$1"
+
+	for f in ${triggers}; do
+		[ "$f" = "$name" ] && found=1
+	done
+	[ -z "$found" ] && triggers="$triggers $name"
+}
+
 xbps_write_metadata_scripts_pkg()
 {
 	local action="$1"
 	local tmpf=$(mktemp -t xbps-install.XXXXXXXXXX) || exit 1
 	local fpattern="s|${DESTDIR}||g;s|^\./$||g;/^$/d"
-	local targets found info_files
+	local targets f info_files
 
 	case "$action" in
 		install) ;;
@@ -81,11 +91,7 @@ _EOF
 			fi
 		done
 		if [ -n "${info_files}" ]; then
-			for f in ${triggers}; do
-				[ "$f" = "info-files" ] && found=1
-			done
-			[ -z "$found" ] && triggers="$triggers info-files"
-			unset found
+			_add_trigger info-files
 			echo "export info_files=\"${info_files}\"" >> $tmpf
 			echo >> $tmpf
 		fi
@@ -103,11 +109,7 @@ _EOF
 	# (Un)Register a shell in /etc/shells.
 	#
 	if [ -n "${register_shell}" ]; then
-		for f in ${triggers}; do
-			[ "$f" = "register-shell" ] && found=1
-		done
-		[ -z "$found" ] && triggers="$triggers register-shell"
-		unset found
+		_add_trigger register-shell
 		echo "export register_shell=\"${register_shell}\"" >> $tmpf
 		echo >> $tmpf
 	fi
@@ -133,11 +135,15 @@ _EOF
 		echo "export xml_entries=\"${xml_entries}\"" >> $tmpf
 		echo >> $tmpf
 	fi
+	if [ -n "${sgml_entries}" -o -n "${xml_entries}" ]; then
+		_add_trigger xml-catalog
+	fi
 
 	#
 	# Handle X11 font updates via mkfontdir/mkfontscale.
 	#
 	if [ -n "${font_dirs}" ]; then
+		_add_trigger x11-fonts
 		echo "export font_dirs=\"${font_dirs}\"" >> $tmpf
 		echo >> $tmpf
 	fi
@@ -146,11 +152,25 @@ _EOF
 	# Handle GTK+ Icon cache directories.
 	#
 	if [ -n "${gtk_iconcache_dirs}" ]; then
+		_add_trigger gtk-icon-cache
 		echo "export gtk_iconcache_dirs=\"${gtk_iconcache_dirs}\"" \
 			>> $tmpf
 		echo >> $tmpf
 	fi
 
+        #
+	# Handle .desktop files in /usr/share/applications with
+	# desktop-file-utils.
+	#
+	if [ -d ${DESTDIR}/usr/share/applications ]; then
+		if find . -type f -name \*.desktop 2>&1 >/dev/null; then
+			_add_trigger update-desktopdb
+		fi
+	fi
+
+	#
+	# Write the INSTALL/REMOVE package scripts.
+	#
 	if [ -n "$triggers" ]; then
 		found=1
 		echo "case \"\${ACTION}\" in" >> $tmpf
