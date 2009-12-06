@@ -172,5 +172,8 @@ extract_distfiles()
 		esac
 	done
 
+	if [ ! -d ${wrksrc} ]; then
+		mkdir -p ${wrksrc}
+	fi
 	touch -f $XBPS_EXTRACT_DONE
 }
