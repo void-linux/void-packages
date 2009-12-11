@@ -1,0 +1,84 @@
+#!/bin/sh -e
+#
+# (Un)registers systems accounts (users/groups).
+#
+# Arguments:	$ACTION = [run/targets]
+#		$TARGET = [post-install/pre-remove]
+#		$PKGNAME
+#		$VERSION
+#		$UPDATE = [yes/no]
+#
+ACTION="$1"
+TARGET="$2"
+PKGNAME="$3"
+VERSION="$4"
+UPDATE="$5"
+
+useradd_cmd=usr/sbin/useradd
+userdel_cmd=usr/sbin/userdel
+groupadd_cmd=usr/sbin/groupadd
+passwd_cmd=usr/bin/passwd
+getent_cmd=usr/bin/getent
+
+case "$ACTION" in
+targets)
+	echo "post-install pre-remove"
+	;;
+run)
+	if [ ! -x $useradd_cmd -a ! -x $groupadd_cmd -a ! -x $passwd_cmd \
+	       -a ! -x $getent_cmd ]; then
+	       exit 0
+	fi
+
+	if [ -z "$system_accounts" ]; then
+		exit 0
+	fi
+
+	case "$TARGET" in
+	post-install)
+		for acct in ${system_accounts}; do
+			eval homedir="\$${acct}_homedir"
+			eval shell="\$${acct}_shell"
+			eval descr="\$${acct}_descr"
+			eval groups="\$${acct}_groups"
+			[ -z "$homedir" ] && homedir="/"
+			[ -z "$shell" ] && shell="/sbin/nologin"
+			[ -z "$descr" ] && descr="$acct unpriviledged user"
+			[ -n "$groups" ] && groups="-G $groups"
+
+			if ! $getent_cmd group ${acct} >/dev/null; then
+				$groupadd_cmd -r ${acct} \
+					2>&1 >/dev/null || exit $?
+				echo "Created ${acct} system group."
+			fi
+			if ! $getent_cmd passwd ${acct} >/dev/null; then
+				$useradd_cmd -c "$descr" -d "$homedir" \
+					-s "$shell" -g ${acct} $groups \
+					-r ${acct} && \
+					$passwd_cmd -l ${acct} \
+					2>&1 >/dev/null || exit $?
+				echo "Created ${acct} system user."
+			fi
+		done
+		;;
+	pre-remove)
+		#
+		# Only unregister if we aren't updating a package.
+		#
+		if [ "$UPDATE" = "no" ]; then
+			for acct in ${system_accounts}; do
+				$userdel_cmd ${acct} 2>&1 >/dev/null
+				if [ $? -eq 0 ]; then
+					echo "Removed ${acct} system user/group."
+				fi
+			done
+		fi
+		;;
+	esac
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

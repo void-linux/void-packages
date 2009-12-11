@@ -75,7 +75,8 @@ reset_tmpl_vars()
 			only_for_archs conf_files keep_libtool_archives \
 			noarch subpackages sourcepkg gtk_iconcache_dirs \
 			abi_depends api_depends triggers openrc_services \
-			replaces XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
+			replaces system_accounts \
+			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE FILESDIR DESTDIR \
 			SRCPKGDESTDIR PATCHESDIR"
 

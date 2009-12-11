@@ -275,11 +275,9 @@ xbps_write_metadata_pkg_real()
 <string>$long_desc</string>
 _EOF
 	#
-	# If package sets $openrc_services, add the openrc-service
-	# trigger and OpenRC run dependency.
+	# If package sets $openrc_services, add the OpenRC rundep.
 	#
 	if [ -n "$openrc_services" ]; then
-		triggers="$triggers openrc-service"
 		Add_dependency run OpenRC
 	fi
 

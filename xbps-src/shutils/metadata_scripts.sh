@@ -38,7 +38,7 @@ xbps_write_metadata_scripts_pkg()
 	local action="$1"
 	local tmpf=$(mktemp -t xbps-install.XXXXXXXXXX) || exit 1
 	local fpattern="s|${DESTDIR}||g;s|^\./$||g;/^$/d"
-	local targets f info_files
+	local targets f info_files home shell descr groups
 
 	case "$action" in
 		install) ;;
@@ -98,9 +98,38 @@ _EOF
         fi
 
 	#
+	# Handle system accounts.
+	#
+	if [ -n "${system_accounts}" ]; then
+		_add_trigger system-accounts
+		echo "export system_accounts=\"${system_accounts}\"" >> $tmpf
+		for f in ${system_accounts}; do
+			eval homedir="\$${f}_homedir"
+			eval shell="\$${f}_shell"
+			eval descr="\$${f}_descr"
+			eval groups="\$${f}_groups"
+			if [ -n "$homedir" ]; then
+				echo "export ${f}_homedir=\"$homedir\"" >> $tmpf
+			fi
+			if [ -n "$shell" ]; then
+				echo "export ${f}_shell=\"$shell\"" >> $tmpf
+			fi
+			if [ -n "$descr" ]; then
+				echo "export ${f}_descr=\"$descr\"" >> $tmpf
+			fi
+			if [ -n "$groups" ]; then
+				echo "export ${f}_groups=\"${groups}\"" >> $tmpf
+			fi
+			unset homedir shell descr groups
+		done
+		echo >> $tmpf
+	fi
+
+	#
 	# Handle OpenRC services.
 	#
 	if [ -n "${openrc_services}" ]; then
+		_add_trigger openrc-service
 		echo "export openrc_services=\"${openrc_services}\"" >> $tmpf
 		echo >> $tmpf
 	fi

@@ -3,6 +3,7 @@ include ../vars.mk
 TRIGGERS=	gtk-icon-cache info-files mimedb register-shell
 TRIGGERS+=	xml-catalog gtk-immodules initramfs-tools openrc-service
 TRIGGERS+=	update-desktopdb gtk-pixbuf-loaders pango-modules x11-fonts
+TRIGGERS+=	system-accounts
 
 .PHONY: all
 all:
