@@ -84,23 +84,27 @@ extract_distfiles()
 		curfile=$(basename $f)
 
 		if $(echo $f|grep -q '.tar.lzma'); then
-			cursufx=".tar.lzma"
+			cursufx="txz"
+		elif $(echo $f|grep -q '.tar.xz'); then
+			cursufx="txz"
+		elif $(echo $f|grep -q '.txz'); then
+			cursufx="txz"
 		elif $(echo $f|grep -q '.tar.bz2'); then
-			cursufx=".tar.bz2"
+			cursufx="tbz"
 		elif $(echo $f|grep -q '.tbz'); then
-			cursufx=".tbz"
+			cursufx="tbz"
 		elif $(echo $f|grep -q '.tar.gz'); then
-			cursufx=".tar.gz"
+			cursufx="tgz"
 		elif $(echo $f|grep -q '.tgz'); then
-			cursufx=".tgz"
+			cursufx="tgz"
 		elif $(echo $f|grep -q '.gz'); then
-			cursufx=".gz"
+			cursufx="gz"
 		elif $(echo $f|grep -q '.bz2'); then
-			cursufx=".bz2"
+			cursufx="bz2"
 		elif $(echo $f|grep -q '.tar'); then
-			cursufx=".tar"
+			cursufx="tar"
 		elif $(echo $f|grep -q '.zip'); then
-			cursufx=".zip"
+			cursufx="zip"
 		else
 			msg_error "unknown distfile suffix for $curfile."
 		fi
@@ -113,35 +117,28 @@ extract_distfiles()
 		fi
 
 		case ${cursufx} in
-		.tar.lzma)
-			if [ -x $XBPS_MASTERDIR/usr/bin/lzma ]; then
-				cp -f $XBPS_SRCDISTDIR/$curfile $lwrksrc
-				cd $lwrksrc && \
-					$XBPS_MASTERDIR/usr/bin/lzma \
-						-d $curfile && \
-					$ltar_cmd xf ${curfile%.lzma} \
-						-C $lwrksrc && \
-					rm -f ${curfile%.lzma}
-				if [ $? -ne 0 ]; then
-					msg_error "extracting $curfile into $lwrksrc."
-				fi
-			else
-				msg_error "cannot find lzma bin for extraction."
+		txz)
+			if [ ! -x $XBPS_MASTERDIR/usr/bin/xz ]; then
+				msg_error "cannot find xz for extraction."
+			fi
+			$ltar_cmd xfJ $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
+			if [ $? -ne 0 ]; then
+				msg_error "extracting $curfile into $lwrksrc."
 			fi
 			;;
-		.tar.bz2|.tbz)
+		tbz)
 			$ltar_cmd xfj $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $lwrksrc."
 			fi
 			;;
-		.tar.gz|.tgz)
+		tgz)
 			$ltar_cmd xfz $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $lwrksrc."
 			fi
 			;;
-		.gz|.bz2)
+		gz|bz2)
 			cp -f $XBPS_SRCDISTDIR/$curfile $lwrksrc
 			if [ "$cursufx" = ".gz" ]; then
 				cd $lwrksrc && gunzip $curfile
@@ -149,13 +146,13 @@ extract_distfiles()
 				cd $lwrksrc && bunzip2 $curfile
 			fi
 			;;
-		.tar)
+		tar)
 			$ltar_cmd xf $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $lwrksrc."
 			fi
 			;;
-		.zip)
+		zip)
 			if [ -x $XBPS_MASTERDIR/usr/bin/unzip ]; then
 				$XBPS_MASTERDIR/usr/bin/unzip \
 					-q -x $XBPS_SRCDISTDIR/$curfile -d $lwrksrc
