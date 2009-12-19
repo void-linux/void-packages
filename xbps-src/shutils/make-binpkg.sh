@@ -102,7 +102,7 @@ xbps_make_binpkg_real()
 		mfiles="./REMOVE"
 	fi
 	mfiles="$mfiles ./files.plist ./props.plist"
-	_dirs=$(find . -maxdepth 1 -type d)
+	_dirs=$(find . -maxdepth 1 -type d -o -type l)
 	for d in ${_dirs}; do
 		[ "$d" = "." ] && continue
 		dirs="$d $dirs"
