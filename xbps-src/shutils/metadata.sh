@@ -54,7 +54,8 @@ xbps_write_metadata_pkg()
 		fi
 		setup_tmpl ${sourcepkg}
 		unset run_depends conf_files noarch triggers replaces \
-			revision openrc_services essential keep_empty_dirs
+			revision openrc_services system_accounts essential \
+			preserve keep_empty_dirs
 		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${subpkg}
 		set_tmpl_common_vars
@@ -279,6 +280,13 @@ _EOF
 	#
 	if [ -n "$openrc_services" ]; then
 		Add_dependency run OpenRC
+	fi
+
+	#
+	# If package sets $system_accounts, add shadow rundep.
+	#
+	if [ -n "$system_accounts" ]; then
+		Add_dependency run shadow
 	fi
 
 	# Is this an essential pkg?
