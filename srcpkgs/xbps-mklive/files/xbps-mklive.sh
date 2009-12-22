@@ -154,14 +154,23 @@ if [ ! -f "$ISOLINUX_DIR/vesamenu.c32" ]; then
 	cp -f $SYSLINUX_DATADIR/vesamenu.c32 "$ISOLINUX_DIR"
 fi
 
-for _pkg_ in ${PACKAGE_LIST}; do
-	info_msg "Installing ${_pkg_} package..."
-	xbps-bin.static -r $TEMP_ROOTFS -f install ${_pkg_}
+xbps_relver=$(xbps-bin.static -V)
+xbps-uhelper.static cmpver ${xbps_relver} 20091222
+if [ $? -eq 255 ]; then
+	yesflag="-f"
+	for _pkg_ in ${PACKAGE_LIST}; do
+		info_msg "Installing ${_pkg_} package..."
+		xbps-bin.static -r $TEMP_ROOTFS ${yesflag} install ${_pkg_}
+		[ $? -ne 0 ] && error_out $?
+	done
+else
+	yesflag="-y"
+	xbps-bin.static -r $TEMP_ROOTFS ${yesflag} install ${PACKAGE_LIST}
 	[ $? -ne 0 ] && error_out $?
-done
-xbps-bin.static -r $TEMP_ROOTFS autoupdate || error_out $?
-xbps-bin.static -r $TEMP_ROOTFS autoremove || error_out $?
-xbps-bin.static -r $TEMP_ROOTFS purge all || error_out $?
+fi
+xbps-bin.static -r $TEMP_ROOTFS ${yesflag} autoupdate || error_out $?
+xbps-bin.static -r $TEMP_ROOTFS ${yesflag} autoremove || error_out $?
+xbps-bin.static -r $TEMP_ROOTFS ${yesflag} purge all || error_out $?
 xbps-bin.static -r $TEMP_ROOTFS list > $BUILD_TMPDIR/packages.txt
 
 info_msg "Creating /etc/motd..."
