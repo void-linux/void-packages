@@ -41,13 +41,12 @@ configure_src_phase()
 
 	#
 	# Skip this phase for: meta-template, only-install, custom-install,
-	# gnu_makefile and python-module style builds.
+	# gnu_makefile style builds.
 	#
 	[ "$build_style" = "meta-template" -o	\
 	  "$build_style" = "only-install" -o	\
 	  "$build_style" = "custom-install" -o	\
-	  "$build_style" = "gnu_makefile" -o	\
-	  "$build_style" = "python-module" ] && return 0
+	  "$build_style" = "gnu_makefile" ] && return 0
 
 	if [ -n "$revision" ]; then
 		lver="${version}_${revision}"
@@ -96,6 +95,13 @@ configure_src_phase()
 		#
 		. $XBPS_HELPERSDIR/perl-module.sh
 		perl_module_build $pkgname
+		;;
+	python-module)
+		#
+		# Packages that are python modules and use setup.py files.
+		# They are all handled by the helper python-module.sh.
+		#
+		python setup.py configure ${configure_args}
 		;;
 	*)
 		#

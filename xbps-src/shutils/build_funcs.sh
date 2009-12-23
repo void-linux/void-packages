@@ -35,25 +35,28 @@ build_src_phase()
 
         #
 	# Skip this phase for: meta-template, only-install, custom-install
-	# and python-module style builds.
+	# style builds.
 	#
 	[ "$build_style" = "meta-template" -o	\
 	  "$build_style" = "only-install" -o	\
-	  "$build_style" = "custom-install" -o	\
-	  "$build_style" = "python-module" ] && return 0
+	  "$build_style" = "custom-install" ] && return 0
 
 	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]"
 
 	cd $wrksrc || exit 1
 
 	[ -n "$revision" ] && pkg="${pkg}_${revision}"
-	[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
 
+	if [ "$build_style" = "python-module" ]; then
+		make_cmd="python"
+		make_build_args="setup.py build"
+	else
+		[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
+		[ -n "$XBPS_MAKEJOBS" -a -z "$disable_parallel_build" ] && \
+			makejobs="-j$XBPS_MAKEJOBS"
+	fi
 	# Run pre_build func.
 	run_func pre_build || msg_error "pre_build stage failed!"
-
-	[ -n "$XBPS_MAKEJOBS" -a -z "$disable_parallel_build" ] && \
-		makejobs="-j$XBPS_MAKEJOBS"
 
 	. $XBPS_SHUTILSDIR/buildvars_funcs.sh
 	set_build_vars
