@@ -5,7 +5,7 @@
 do_install()
 {
 	if [ -z "$make_install_args" ]; then
-		make_install_args="--prefix=usr --root=$DESTDIR"
+		make_install_args="--prefix=/usr --root=$DESTDIR"
 	fi
 
 	cd ${wrksrc} || return 1
