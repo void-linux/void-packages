@@ -87,6 +87,7 @@ ff02::3 ip6-allhosts
 _EOF
 
 	cp -f /etc/resolv.conf $XBPS_MASTERDIR/etc
+	[ -f /etc/localtime ] && cp -f /etc/localtime $XBPS_MASTERDIR/etc
 	# Create /bin/sh symlink to bash
 	cd $XBPS_MASTERDIR/bin && ln -sf bash sh
 
