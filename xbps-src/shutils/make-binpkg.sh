@@ -30,7 +30,7 @@ xbps_make_binpkg()
 	[ -z "$pkgname" ] && return 1
 
 	for subpkg in ${subpackages}; do
-		unset revision
+		unset revision noarch
 		. $XBPS_SRCPKGDIR/$pkgname/$subpkg.template
 		pkgname=${subpkg}
 		set_tmpl_common_vars
