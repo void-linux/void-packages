@@ -29,8 +29,7 @@
 #
 extract_distfiles()
 {
-	local count=0 pkg="$1"
-	local curfile cursufx lwrksrc ltar_cmd f lver
+	local pkg="$1" curfile cursufx ltar_cmd f lver
 
 	[ -f $XBPS_EXTRACT_DONE ] && return 0
 	[ -z "$in_chroot" -a ! -w $XBPS_BUILDDIR ] && \
@@ -58,18 +57,6 @@ extract_distfiles()
 		mkdir $wrksrc
 		touch -f $XBPS_EXTRACT_DONE
 		return 0
-	fi
-
-	for f in ${distfiles}; do
-		count=$(($count + 1))
-	done
-
-	if [ "$count" -gt 1 ]; then
-		if [ -z "$wrksrc" ]; then
-			msg_error "\$wrksrc must be defined with multiple distfiles."
-			exit 1
-		fi
-		mkdir $wrksrc
 	fi
 
 	msg_normal "Extracting $pkgname-$lver distfile(s)."
@@ -109,55 +96,53 @@ extract_distfiles()
 			msg_error "unknown distfile suffix for $curfile."
 		fi
 
-
-		if [ $count -gt 1 ]; then
-			lwrksrc="$wrksrc"
-		else
-			lwrksrc="$XBPS_BUILDDIR"
-		fi
-
 		case ${cursufx} in
 		txz)
 			if [ ! -x $XBPS_MASTERDIR/usr/bin/xz ]; then
 				msg_error "cannot find xz for extraction."
 			fi
-			$ltar_cmd xfJ $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
+			$ltar_cmd xfJ $XBPS_SRCDISTDIR/$curfile \
+				-C $XBPS_BUILDDIR
 			if [ $? -ne 0 ]; then
-				msg_error "extracting $curfile into $lwrksrc."
+				msg_error "extracting $curfile into $XBPS_BUILDDIR."
 			fi
 			;;
 		tbz)
-			$ltar_cmd xfj $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
+			$ltar_cmd xfj $XBPS_SRCDISTDIR/$curfile \
+				-C $XBPS_BUILDDIR
 			if [ $? -ne 0 ]; then
-				msg_error "extracting $curfile into $lwrksrc."
+				msg_error "extracting $curfile into $XBPS_BUILDDIR."
 			fi
 			;;
 		tgz)
-			$ltar_cmd xfz $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
+			$ltar_cmd xfz $XBPS_SRCDISTDIR/$curfile \
+				-C $XBPS_BUILDDIR
 			if [ $? -ne 0 ]; then
-				msg_error "extracting $curfile into $lwrksrc."
+				msg_error "extracting $curfile into $XBPS_BUILDDIR."
 			fi
 			;;
 		gz|bz2)
-			cp -f $XBPS_SRCDISTDIR/$curfile $lwrksrc
+			cp -f $XBPS_SRCDISTDIR/$curfile $XBPS_BUILDDIR
 			if [ "$cursufx" = ".gz" ]; then
-				cd $lwrksrc && gunzip $curfile
+				cd $XBPS_BUILDDIR && gunzip $curfile
 			else
-				cd $lwrksrc && bunzip2 $curfile
+				cd $XBPS_BUILDDIR && bunzip2 $curfile
 			fi
 			;;
 		tar)
-			$ltar_cmd xf $XBPS_SRCDISTDIR/$curfile -C $lwrksrc
+			$ltar_cmd xf $XBPS_SRCDISTDIR/$curfile \
+				-C $XBPS_BUILDDIR
 			if [ $? -ne 0 ]; then
-				msg_error "extracting $curfile into $lwrksrc."
+				msg_error "extracting $curfile into $XBPS_BUILDDIR."
 			fi
 			;;
 		zip)
 			if [ -x $XBPS_MASTERDIR/usr/bin/unzip ]; then
 				$XBPS_MASTERDIR/usr/bin/unzip \
-					-q -x $XBPS_SRCDISTDIR/$curfile -d $lwrksrc
+					-q -x $XBPS_SRCDISTDIR/$curfile \
+					-d $XBPS_BUILDDIR
 				if [ $? -ne 0 ]; then
-					msg_error "extracting $curfile into $lwrksrc."
+					msg_error "extracting $curfile into $XBPS_BUILDDIR."
 				fi
 			else
 				msg_error "cannot find unzip bin for extraction"
