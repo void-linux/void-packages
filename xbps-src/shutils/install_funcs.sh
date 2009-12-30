@@ -71,8 +71,10 @@ install_src_phase()
 
 	saved_wrksrc=$wrksrc
 	cd $wrksrc || msg_error "can't change cwd to wrksrc!"
-	[ -n "$build_wrksrc" ] && cd $build_wrksrc \
-		|| msg_error "can't change cwd to build_wrksrc!"
+	if [ -n "$build_wrksrc" ]; then
+		cd $build_wrksrc \
+			|| msg_error "can't change cwd to build_wrksrc!"
+	fi
 
 	# Run pre_install func.
 	run_func pre_install || msg_error "pre_install stage failed!"
