@@ -68,7 +68,8 @@ configure_src_phase()
 
 	[ -z "$configure_script" ] && configure_script="./configure"
 
-	cd $wrksrc || exit 1
+	cd $wrksrc || return 1
+	[ -n "$build_wrksrc" ] && cd $build_wrksrc || return 1
 
 	. $XBPS_SHUTILSDIR/buildvars_funcs.sh
 	set_build_vars

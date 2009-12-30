@@ -43,7 +43,8 @@ build_src_phase()
 
 	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]"
 
-	cd $wrksrc || exit 1
+	cd $wrksrc || return 1
+	[ -n "$build_wrksrc" ] && cd $build_wrksrc || return 1
 
 	[ -n "$revision" ] && pkg="${pkg}_${revision}"
 
