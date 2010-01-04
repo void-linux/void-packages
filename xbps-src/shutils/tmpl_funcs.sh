@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2009 Juan Romero Pardines.
+# Copyright (c) 2008-2010 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -75,7 +75,7 @@ reset_tmpl_vars()
 			only_for_archs conf_files keep_libtool_archives \
 			noarch subpackages sourcepkg gtk_iconcache_dirs \
 			abi_depends api_depends triggers openrc_services \
-			replaces system_accounts build_wrksrc \
+			replaces system_accounts build_wrksrc create_wrksrc \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE FILESDIR DESTDIR \
 			SRCPKGDESTDIR PATCHESDIR"

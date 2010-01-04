@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008 Juan Romero Pardines.
+# Copyright (c) 2008-2010 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -29,7 +29,7 @@
 #
 extract_distfiles()
 {
-	local pkg="$1" curfile cursufx ltar_cmd f lver
+	local pkg="$1" curfile cursufx f lver
 
 	[ -f $XBPS_EXTRACT_DONE ] && return 0
 	[ -z "$in_chroot" -a ! -w $XBPS_BUILDDIR ] && \
@@ -59,13 +59,11 @@ extract_distfiles()
 		return 0
 	fi
 
-	msg_normal "Extracting $pkgname-$lver distfile(s)."
-
-	if [ -n "$tar_override_cmd" ]; then
-		ltar_cmd="$tar_override_cmd"
-	else
-		ltar_cmd="tar"
+	if [ -n "$create_wrksrc" ]; then
+		mkdir -p ${wrksrc} || return 1
 	fi
+
+	msg_normal "Extracting $pkgname-$lver distfile(s)."
 
 	for f in ${distfiles}; do
 		curfile=$(basename $f)
@@ -96,33 +94,36 @@ extract_distfiles()
 			msg_error "unknown distfile suffix for $curfile."
 		fi
 
+		if [ -n "$create_wrksrc" ]; then
+			extractdir="$wrksrc"
+		else
+			extractdir="$XBPS_BUILDDIR"
+		fi
+
 		case ${cursufx} in
 		txz)
 			if [ ! -x $XBPS_MASTERDIR/usr/bin/xz ]; then
 				msg_error "cannot find xz for extraction."
 			fi
-			$ltar_cmd xfJ $XBPS_SRCDISTDIR/$curfile \
-				-C $XBPS_BUILDDIR
+			tar xfJ $XBPS_SRCDISTDIR/$curfile -C $extractdir
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $XBPS_BUILDDIR."
 			fi
 			;;
 		tbz)
-			$ltar_cmd xfj $XBPS_SRCDISTDIR/$curfile \
-				-C $XBPS_BUILDDIR
+			tar xfj $XBPS_SRCDISTDIR/$curfile -C $extractdir
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $XBPS_BUILDDIR."
 			fi
 			;;
 		tgz)
-			$ltar_cmd xfz $XBPS_SRCDISTDIR/$curfile \
-				-C $XBPS_BUILDDIR
+			tar xfz $XBPS_SRCDISTDIR/$curfile -C $extractdir
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $XBPS_BUILDDIR."
 			fi
 			;;
 		gz|bz2)
-			cp -f $XBPS_SRCDISTDIR/$curfile $XBPS_BUILDDIR
+			cp -f $XBPS_SRCDISTDIR/$curfile $extractdir
 			if [ "$cursufx" = ".gz" ]; then
 				cd $XBPS_BUILDDIR && gunzip $curfile
 			else
@@ -130,8 +131,7 @@ extract_distfiles()
 			fi
 			;;
 		tar)
-			$ltar_cmd xf $XBPS_SRCDISTDIR/$curfile \
-				-C $XBPS_BUILDDIR
+			tar xf $XBPS_SRCDISTDIR/$curfile -C $extractdir
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $XBPS_BUILDDIR."
 			fi
@@ -140,7 +140,7 @@ extract_distfiles()
 			if [ -x $XBPS_MASTERDIR/usr/bin/unzip ]; then
 				$XBPS_MASTERDIR/usr/bin/unzip \
 					-q -x $XBPS_SRCDISTDIR/$curfile \
-					-d $XBPS_BUILDDIR
+					-d $extractdir
 				if [ $? -ne 0 ]; then
 					msg_error "extracting $curfile into $XBPS_BUILDDIR."
 				fi
@@ -154,8 +154,5 @@ extract_distfiles()
 		esac
 	done
 
-	if [ ! -d ${wrksrc} ]; then
-		mkdir -p ${wrksrc}
-	fi
 	touch -f $XBPS_EXTRACT_DONE
 }
