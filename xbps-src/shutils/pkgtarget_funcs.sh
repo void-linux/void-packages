@@ -153,13 +153,13 @@ remove_pkg()
 	stow_pkg_handler unstow || return $?
 
 	for subpkg in ${subpackages}; do
-		if [ -d $XBPS_DESTDIR/${subpkg}-${ver%_${revision}} ]; then
-			rm -rf $XBPS_DESTDIR/${subpkg}-${ver%_${revision}}
+		if [ -d "$XBPS_DESTDIR/${subpkg}-${ver%_*}" ]; then
+			rm -rf "$XBPS_DESTDIR/${subpkg}-${ver%_*}"
 		fi
 	done
 
-	if [ -d $XBPS_DESTDIR/${pkgname}-${ver%_${revision}} ]; then
-		rm -rf $XBPS_DESTDIR/${pkgname}-${ver%_${revision}}
+	if [ -d "$XBPS_DESTDIR/${pkgname}-${ver%_*}" ]; then
+		rm -rf "$XBPS_DESTDIR/${pkgname}-${ver%_*}"
 	fi
 	return $?
 }

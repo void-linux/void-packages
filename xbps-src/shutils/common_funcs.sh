@@ -46,8 +46,7 @@ run_rootcmd()
 
 	[ -n "$in_chroot" ] && unset fakeroot_cmd
 
-	lenv="XBPS_DESTDIR=$XBPS_DESTDIR"
-	lenv="XBPS_DISTRIBUTIONDIR=$XBPS_DISTRIBUTIONDIR $lenv"
+	lenv="XBPS_DISTRIBUTIONDIR=$XBPS_DISTRIBUTIONDIR"
 
 	shift
 	if [ "$usesudo" = "yes" -a -z "$in_chroot" ]; then

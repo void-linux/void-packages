@@ -199,7 +199,7 @@ mount_chroot_fs()
 {
 	local cnt=
 
-	REQFS="sys proc dev xbps xbps_builddir xbps_destdir \
+	REQFS="sys proc dev xbps xbps_builddir \
 	       xbps_packagesdir xbps_srcdistdir"
 
 	for f in ${REQFS}; do
@@ -209,7 +209,6 @@ mount_chroot_fs()
 			case $f in
 				xbps) blah=$XBPS_DISTRIBUTIONDIR;;
 				xbps_builddir) blah=$XBPS_BUILDDIR;;
-				xbps_destdir) blah=$XBPS_DESTDIR;;
 				xbps_srcdistdir) blah=$XBPS_SRCDISTDIR;;
 				xbps_packagesdir) blah=$XBPS_PACKAGESDIR;;
 				*) blah=/$f;;
@@ -292,7 +291,6 @@ XBPSSRC_CF=$XBPS_MASTERDIR/usr/local/etc/xbps-src.conf
 
 echo "XBPS_DISTRIBUTIONDIR=/xbps" > $XBPSSRC_CF
 echo "XBPS_MASTERDIR=/" >> $XBPSSRC_CF
-echo "XBPS_DESTDIR=/xbps_destdir" >> $XBPSSRC_CF
 echo "XBPS_PACKAGESDIR=/xbps_packagesdir" >> $XBPSSRC_CF
 echo "XBPS_BUILDDIR=/xbps_builddir" >> $XBPSSRC_CF
 echo "XBPS_SRCDISTDIR=/xbps_srcdistdir" >> $XBPSSRC_CF
