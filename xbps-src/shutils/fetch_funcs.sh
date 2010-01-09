@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008 Juan Romero Pardines.
+# Copyright (c) 2008-2010 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -42,15 +42,6 @@ verify_sha256_cksum()
 	msg_normal "SHA256 checksum OK for $file."
 }
 
-fetch_update_cksum()
-{
-	local upcmd=$(basename $XBPS_SRCDISTDIR/$1)
-
-	sed -i -e "s|checksum.*|checksum=$(${XBPS_DIGEST_CMD} ${upcmd})|" \
-		template
-	return $?
-}
-
 #
 # Downloads the distfiles and verifies checksum for all them.
 #
@@ -84,11 +75,6 @@ fetch_distfiles()
 	for f in ${distfiles}; do
 		curfile=$(basename $f)
 		if [ -f "$XBPS_SRCDISTDIR/$curfile" ]; then
-			if [ -n "$upcksum" ]; then
-				fetch_update_cksum $curfile
-				setup_tmpl $pkgname
-			fi
-
 			for i in ${checksum}; do
 				if [ $dfcount -eq $ckcount -a -n $i ]; then
 					cksum=$i
@@ -130,12 +116,6 @@ fetch_distfiles()
 			fi
 		else
 			unset localurl
-
-			if [ -n "$upcksum" ]; then
-				fetch_update_cksum $curfile
-				setup_tmpl $pkgname
-			fi
-
 			#
 			# XXX duplicate code.
 			#

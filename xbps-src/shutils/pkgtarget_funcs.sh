@@ -67,7 +67,7 @@ install_pkg()
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		. $XBPS_SHUTILSDIR/chroot.sh
 		[ -n "$install_destdir_target" ] && cdestdir=yes
-		xbps_chroot_handler install $curpkgn $cdestdir
+		xbps_chroot_handler install $curpkgn $cdestdir $dontrm_builddir
 		return $?
 	fi
 

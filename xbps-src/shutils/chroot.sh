@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2009 Juan Romero Pardines.
+# Copyright (c) 2008-2010 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -154,6 +154,7 @@ xbps_chroot_handler()
 	local action="$1"
 	local pkg="$2"
 	local only_destdir="$3"
+	local norm_builddir="$4"
 	local path="/usr/local/sbin:/bin::/sbin:/usr/bin:/usr/sbin:/usr/local/bin"
 	[ -z "$action" -o -z "$pkg" ] && return 1
 
@@ -181,8 +182,11 @@ xbps_chroot_handler()
 		env in_chroot=yes LANG=C PATH=$path \
 			chroot $XBPS_MASTERDIR /bin/sh
 	else
+		local lenv
 		[ -n "$only_destdir" ] && \
-			local lenv="install_destdir_target=yes"
+			lenv="install_destdir_target=yes"
+		[ -n "$norm_builddir" ] && \
+			action="-C $action"
 		env in_chroot=yes LANG=C PATH=$path \
 			${lenv} chroot $XBPS_MASTERDIR sh -c \
 			"cd /xbps/srcpkgs/$pkg && xbps-src $action"
