@@ -72,6 +72,17 @@ msg_error()
 	exit 1
 }
 
+msg_error_nochroot()
+{
+	[ -z "$1" ] && return 1
+
+	printf "\033[1m\033[31m"
+	echo "=> ERROR: $1"
+	printf "\033[m"
+
+	exit 1
+}
+
 msg_warn()
 {
 	[ -z "$1" ] && return 1
@@ -83,6 +94,15 @@ msg_warn()
 	else
 		echo "=> WARNING: $1"
 	fi
+	printf "\033[m"
+}
+
+msg_warn_nochroot()
+{
+	[ -z "$1" ] && return 1
+
+	printf "\033[1m\033[33m"
+	echo "=> WARNING: $1"
 	printf "\033[m"
 }
 
