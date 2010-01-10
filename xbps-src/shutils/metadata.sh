@@ -59,6 +59,8 @@ xbps_write_metadata_pkg()
 		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${subpkg}
 		set_tmpl_common_vars
+		. ${XBPS_SHUTILSDIR}/verify_rundeps.sh
+		verify_rundeps ${DESTDIR}
 		xbps_write_metadata_pkg_real
 	done
 
@@ -73,6 +75,9 @@ xbps_write_metadata_pkg()
 		done
 	fi
 	setup_tmpl ${sourcepkg}
+	# Verify pkg deps.
+	. ${XBPS_SHUTILSDIR}/verify_rundeps.sh
+	verify_rundeps ${DESTDIR}
 	xbps_write_metadata_pkg_real
 }
 
