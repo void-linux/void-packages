@@ -119,6 +119,10 @@ install_dependencies_pkg()
 	[ -z "$notinstalled_deps" ] && return 0
 
 	for i in ${notinstalled_deps}; do
+		if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
+			install_pkg_with_binpkg ${i}
+			[ $? -ne 0 ] && exit $?
+		fi
 		pkgn=$($XBPS_PKGDB_CMD getpkgdepname ${i})
 		check_pkgdep_matched "${i}"
 		[ $? -eq 0 ] && continue

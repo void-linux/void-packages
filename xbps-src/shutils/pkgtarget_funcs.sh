@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2009 Juan Romero Pardines.
+# Copyright (c) 2008-2010 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -120,6 +120,30 @@ install_pkg()
 		. $XBPS_SHUTILSDIR/stow_funcs.sh
 		stow_pkg_handler stow
 	fi
+}
+
+#
+# Installs a pkg by installing a binary package from
+# repository pool, matching the pkg pattern.
+#
+install_pkg_with_binpkg()
+{
+	local pkgpattern="$1"
+
+	#
+	# Check that installed xbps utils version is recent enough.
+	#
+	instver=$(${XBPS_BIN_CMD} -V)
+	${XBPS_CMPVER_CMD} "${instver}" "20100114"
+	if [ $? -eq 255 ]; then
+		echo -n "Your xbps utilities are too old, "
+		echo "required version: 20100114"
+		return 1
+	fi
+
+	msg_normal "Installing binary pkg: $pkgpattern"
+	$XBPS_BIN_CMD -y install "$pkgpattern"
+	return $?
 }
 
 #

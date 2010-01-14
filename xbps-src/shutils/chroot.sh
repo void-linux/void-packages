@@ -31,6 +31,49 @@
 # Umount stuff if SIGINT or SIGQUIT was caught
 trap umount_chroot_fs INT QUIT
 
+[ -n "$base_chroot" ] && return 0
+
+. $XBPS_SHUTILSDIR/builddep_funcs.sh
+check_installed_pkg xbps-base-chroot-0.11
+if [ $? -ne 0 ]; then
+	echo "The '$pkgname' package requires to be installed in a chroot."
+	echo "Please install 'xbps-base-chroot>=0.11' and try again."
+	exit 1
+fi
+
+if [ "$(id -u)" -ne 0 ]; then
+	echo "This package requires to be installed in a chroot."
+	echo "You cannot do this as normal user, try again being root."
+	exit 1
+fi
+
+msg_normal "Entering into the chroot on $XBPS_MASTERDIR."
+
+EXTDIRS="xbps xbps_builddir xbps_destdir xbps_packagesdir \
+	 xbps_srcdistdir"
+REQDIRS="bin sbin tmp var sys proc dev usr/local/etc ${EXTDIRS}"
+for f in ${REQDIRS}; do
+	[ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
+done
+unset f REQDIRS
+
+XBPSSRC_CF=$XBPS_MASTERDIR/usr/local/etc/xbps-src.conf
+
+echo "XBPS_DISTRIBUTIONDIR=/xbps" > $XBPSSRC_CF
+echo "XBPS_MASTERDIR=/" >> $XBPSSRC_CF
+echo "XBPS_PACKAGESDIR=/xbps_packagesdir" >> $XBPSSRC_CF
+echo "XBPS_BUILDDIR=/xbps_builddir" >> $XBPSSRC_CF
+echo "XBPS_SRCDISTDIR=/xbps_srcdistdir" >> $XBPSSRC_CF
+echo "XBPS_CFLAGS=\"$XBPS_CFLAGS\"" >> $XBPSSRC_CF
+echo "XBPS_CXXFLAGS=\"\$XBPS_CFLAGS\"" >> $XBPSSRC_CF
+echo "XBPS_FETCH_CMD='xbps-uhelper.static fetch'" >> $XBPSSRC_CF
+if [ -n "$XBPS_MAKEJOBS" ]; then
+	echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPSSRC_CF
+fi
+if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
+	echo "XBPS_PREFER_BINPKG_DEPS=$XBPS_PREFER_BINPKG_DEPS" >> $XBPSSRC_CF
+fi
+
 prepare_chroot()
 {
 	local f=
@@ -103,6 +146,15 @@ rebuild_ldso_cache()
 	echo " done."
 }
 
+prepare_binpkg_repos()
+{
+	if [ ! -f "$XBPS_MASTERDIR/.xbps_added_local_repo" ]; then
+		msg_normal "Registering local binpkg repo..."
+		chroot $XBPS_MASTERDIR xbps-repo.static add /xbps_packagesdir
+		[ $? -eq 0 ] && touch -f $XBPS_MASTERDIR/.xbps_added_local_repo
+	fi
+}
+
 create_busybox_links()
 {
 	local busyboxdir=$XBPS_MASTERDIR/usr/lib/busybox-initramfs
@@ -170,6 +222,7 @@ xbps_chroot_handler()
 	create_busybox_links
 	install_xbps_utils
 	mount_chroot_fs
+	prepare_binpkg_repos
 
 	# Reinstall xbps-src in the chroot
 	if [ ! -f $XBPS_MASTERDIR/usr/local/sbin/xbps-src ]; then
@@ -260,43 +313,3 @@ umount_chroot_fs()
 		[ -d $XBPS_MASTERDIR/$dir ] && rmdir $XBPS_MASTERDIR/$dir
 	done
 }
-
-[ -n "$base_chroot" ] && return 0
-
-. $XBPS_SHUTILSDIR/builddep_funcs.sh
-check_installed_pkg xbps-base-chroot-0.11
-if [ $? -ne 0 ]; then
-	echo "The '$pkgname' package requires to be installed in a chroot."
-	echo "Please install 'xbps-base-chroot>=0.11' and try again."
-	exit 1
-fi
-
-if [ "$(id -u)" -ne 0 ]; then
-	echo "This package requires to be installed in a chroot."
-	echo "You cannot do this as normal user, try again being root."
-	exit 1
-fi
-
-msg_normal "Entering into the chroot on $XBPS_MASTERDIR."
-
-EXTDIRS="xbps xbps_builddir xbps_destdir xbps_packagesdir \
-	 xbps_srcdistdir"
-REQDIRS="bin sbin tmp var sys proc dev usr/local/etc ${EXTDIRS}"
-for f in ${REQDIRS}; do
-	[ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
-done
-unset f REQDIRS
-
-XBPSSRC_CF=$XBPS_MASTERDIR/usr/local/etc/xbps-src.conf
-
-echo "XBPS_DISTRIBUTIONDIR=/xbps" > $XBPSSRC_CF
-echo "XBPS_MASTERDIR=/" >> $XBPSSRC_CF
-echo "XBPS_PACKAGESDIR=/xbps_packagesdir" >> $XBPSSRC_CF
-echo "XBPS_BUILDDIR=/xbps_builddir" >> $XBPSSRC_CF
-echo "XBPS_SRCDISTDIR=/xbps_srcdistdir" >> $XBPSSRC_CF
-echo "XBPS_CFLAGS=\"$XBPS_CFLAGS\"" >> $XBPSSRC_CF
-echo "XBPS_CXXFLAGS=\"\$XBPS_CFLAGS\"" >> $XBPSSRC_CF
-echo "XBPS_FETCH_CMD='xbps-uhelper.static fetch'" >> $XBPSSRC_CF
-if [ -n "$XBPS_MAKEJOBS" ]; then
-	echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPSSRC_CF
-fi
