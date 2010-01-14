@@ -56,8 +56,8 @@ install_pkg()
 	if [ $? -eq 1 -o $? -eq 0 ]; then
 		instver="$($XBPS_PKGDB_CMD version $pkgname)"
 		if [ -n "$instver" ]; then
-			msg_warn "$pkgname-$instver is already installed, remove or reinstall it."
-			exit 0
+			echo "=> $pkgname-$instver already installed."
+			return 0
 		fi
 	fi
 
