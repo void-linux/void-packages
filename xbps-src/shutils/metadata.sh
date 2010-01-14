@@ -55,7 +55,8 @@ xbps_write_metadata_pkg()
 		setup_tmpl ${sourcepkg}
 		unset run_depends conf_files noarch triggers replaces \
 			revision openrc_services system_accounts essential \
-			preserve keep_empty_dirs
+			preserve keep_empty_dirs xml_entries sgml_entries \
+			xml_catalogs sgml_catalogs
 		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${subpkg}
 		set_tmpl_common_vars
