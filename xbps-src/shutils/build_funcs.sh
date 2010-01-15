@@ -34,12 +34,10 @@ build_src_phase()
 	[ -z $pkgparam ] && [ -z $pkgname -o -z $version ] && return 1
 
         #
-	# Skip this phase for: meta-template, only-install, custom-install
-	# style builds.
+	# Skip this phase for meta-template and only-install style builds.
 	#
 	[ "$build_style" = "meta-template" -o	\
-	  "$build_style" = "only-install" -o	\
-	  "$build_style" = "custom-install" ] && return 0
+	  "$build_style" = "only-install" ] && return 0
 
 	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]"
 
@@ -66,11 +64,15 @@ build_src_phase()
 
 	msg_normal "Running build phase for $pkg."
 
-	#
-	# Build package via make.
-	#
-	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
-	[ $? -ne 0 ] && msg_error "building $pkg (build phase)."
+	if [ "$build_style" = "custom-install" ]; then
+		run_func do_build || msg_error "do_build stage failed!"
+	else
+		#
+		# Build package via make.
+		#
+		${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
+		[ $? -ne 0 ] && msg_error "building $pkg (build phase)."
+	fi
 
 	# Run post_build func.
 	run_func post_build || msg_error "post_build stage failed!"
