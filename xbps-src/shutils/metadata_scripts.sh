@@ -239,6 +239,7 @@ _EOF
 
 	case "$action" in
 	install)
+		unset found
 		if [ -n "${sourcepkg}" -a "${sourcepkg}" != "${pkgname}" ]; then
 			install_file=$XBPS_SRCPKGDIR/$pkgname/$pkgname.INSTALL
 		else
@@ -256,6 +257,7 @@ _EOF
 		mv $tmpf ${DESTDIR}/INSTALL && chmod 755 ${DESTDIR}/INSTALL
 		;;
 	remove)
+		unset found
 		if [ -n "${sourcepkg}" -a "${sourcepkg}" != "${pkgname}" ]; then
 			remove_file=$XBPS_SRCPKGDIR/$pkgname/$pkgname.REMOVE
 		else
