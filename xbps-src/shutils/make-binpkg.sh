@@ -56,7 +56,7 @@ binpkg_cleanup()
 #
 xbps_make_binpkg_real()
 {
-	local mfiles binpkg pkgdir arch use_sudo lver dirs _dirs d clevel
+	local mfiles binpkg pkgdir arch lver dirs _dirs d clevel
 
 	if [ ! -d "${DESTDIR}" ]; then
 		msg_warn "cannot find destdir for $pkgname... skipping!"
@@ -68,11 +68,6 @@ xbps_make_binpkg_real()
 		arch=noarch
 	else
 		arch=$xbps_machine
-	fi
-	if [ -n "$base_chroot" ]; then
-		use_sudo=no
-	else
-		use_sudo=yes
 	fi
 	if [ -n "$revision" ]; then
 		lver="${version}_${revision}"
@@ -116,8 +111,9 @@ xbps_make_binpkg_real()
 	trap "binpkg_cleanup" INT
 
 	echo -n "=> Building $binpkg... "
-	run_rootcmd $use_sudo tar --exclude "var/db/xbps/metadata/*/flist" \
-		-cpf - ${mfiles} ${dirs} | \
+	${fakeroot_cmd} ${fakeroot_cmd_args}			\
+		tar --exclude "var/db/xbps/metadata/*/flist"	\
+		-cpf - ${mfiles} ${dirs} |			\
 		$XBPS_COMPRESS_CMD ${clevel} -qf > $pkgdir/$binpkg
 	if [ $? -eq 0 ]; then
 		echo "done."

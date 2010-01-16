@@ -29,9 +29,18 @@
 #
 
 # Umount stuff if SIGINT or SIGQUIT was caught
-trap umount_chroot_fs INT QUIT
+trap "${sudo_cmd} @@XBPS_INSTALL_LIBEXECDIR@@/xbps-src-chroot-helper umount && exit $?" INT QUIT
 
 [ -n "$base_chroot" ] && return 0
+
+if [ "${chroot_cmd}" = "chroot" ]; then
+	if [ "$(id -u)" -ne 0 ]; then
+		echo "Root permissions are required for the chroot, try again."
+		exit 1
+	fi
+else
+	chroot_cmd_args="--"
+fi
 
 . $XBPS_SHUTILSDIR/builddep_funcs.sh
 check_installed_pkg xbps-base-chroot-0.11
@@ -41,21 +50,11 @@ if [ $? -ne 0 ]; then
 	exit 1
 fi
 
-if [ "$(id -u)" -ne 0 ]; then
-	echo "This package requires to be installed in a chroot."
-	echo "You cannot do this as normal user, try again being root."
-	exit 1
-fi
-
 msg_normal "Entering into the chroot on $XBPS_MASTERDIR."
 
-EXTDIRS="xbps xbps_builddir xbps_destdir xbps_packagesdir \
-	 xbps_srcdistdir"
-REQDIRS="bin sbin tmp var sys proc dev usr/local/etc ${EXTDIRS}"
-for f in ${REQDIRS}; do
-	[ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
-done
-unset f REQDIRS
+if [ ! -d $XBPS_MASTERDIR/usr/local/etc ]; then
+	mkdir -p $XBPS_MASTERDIR/usr/local/etc
+fi
 
 XBPSSRC_CF=$XBPS_MASTERDIR/usr/local/etc/xbps-src.conf
 
@@ -73,13 +72,20 @@ fi
 if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
 	echo "XBPS_PREFER_BINPKG_DEPS=$XBPS_PREFER_BINPKG_DEPS" >> $XBPSSRC_CF
 fi
+echo "XBPS_COMPRESS_CMD=$XBPS_COMPRESS_CMD" >> $XBPSSRC_CF
+if [ -n "$XBPS_COMPRESS_LEVEL" ]; then
+	echo "XBPS_COMPRESS_LEVEL=$XBPS_COMPRESS_LEVEL" >> $XBPSSRC_CF
+fi
 
 prepare_chroot()
 {
 	local f=
 
 	# Create some required files.
-	touch $XBPS_MASTERDIR/etc/mtab
+	cp -f /etc/mtab $XBPS_MASTERDIR/etc
+	cp -f /etc/resolv.conf $XBPS_MASTERDIR/etc
+	[ -f /etc/localtime ] && cp -f /etc/localtime $XBPS_MASTERDIR/etc
+
 	for f in run/utmp log/btmp log/lastlog log/wtmp; do
 		touch -f $XBPS_MASTERDIR/var/$f
 	done
@@ -90,6 +96,7 @@ prepare_chroot()
 	cat > $XBPS_MASTERDIR/etc/passwd <<_EOF
 root:x:0:0:root:/root:/bin/bash
 nobody:x:99:99:Unprivileged User:/dev/null:/bin/false
+$(whoami):x:$(id -u):$(id -g):$(whoami) user:/dev/null:/bin/bash
 _EOF
 
 	# Default group list as specified by LFS.
@@ -117,6 +124,7 @@ storage:x:19:
 scanner:x:20:
 nogroup:x:99:
 users:x:1000:
+$(whoami):x:$(id -g):
 _EOF
 
 	# Default file as in Ubuntu.
@@ -133,28 +141,18 @@ ff02::2 ip6-allrouters
 ff02::3 ip6-allhosts
 _EOF
 
-	cp -f /etc/resolv.conf $XBPS_MASTERDIR/etc
-	[ -f /etc/localtime ] && cp -f /etc/localtime $XBPS_MASTERDIR/etc
 	# Create /bin/sh symlink to bash
 	cd $XBPS_MASTERDIR/bin && ln -sf bash sh
 
 	touch $XBPS_MASTERDIR/.xbps_perms_done
-
-}
-
-rebuild_ldso_cache()
-{
-	echo -n "==> Rebuilding chroot's dynamic linker cache..."
-	chroot $XBPS_MASTERDIR /sbin/ldconfig -c /etc/ld.so.conf
-	chroot $XBPS_MASTERDIR /sbin/ldconfig -C /etc/ld.so.cache
-	echo " done."
 }
 
 prepare_binpkg_repos()
 {
 	if [ ! -f "$XBPS_MASTERDIR/.xbps_added_local_repo" ]; then
 		msg_normal "Registering local binpkg repo..."
-		chroot $XBPS_MASTERDIR xbps-repo.static add /xbps_packagesdir
+		${chroot_cmd} $XBPS_MASTERDIR ${chroot_cmd_args} \
+			xbps-repo.static add /xbps_packagesdir
 		[ $? -eq 0 ] && touch -f $XBPS_MASTERDIR/.xbps_added_local_repo
 	fi
 }
@@ -191,8 +189,6 @@ install_xbps_utils()
 
 	if [ -n "$needed" ]; then
 		echo "=> Installing the required XBPS utils."
-		chroot $XBPS_MASTERDIR sh -c \
-			"echo /usr/local/lib > /etc/ld.so.conf"
 		for f in bin repo uhelper; do
 			_cmd=$(which xbps-${f}.static 2>/dev/null)
 			if [ -z "${_cmd}" ]; then
@@ -201,7 +197,6 @@ install_xbps_utils()
 			fi
 			cp -f ${_cmd} $xbps_prefix/sbin
 		done
-		rebuild_ldso_cache
 	fi
 }
 
@@ -225,19 +220,20 @@ xbps_chroot_handler()
 
 	create_busybox_links
 	install_xbps_utils
-	mount_chroot_fs
+	${sudo_cmd} @@XBPS_INSTALL_LIBEXECDIR@@/xbps-src-chroot-helper mount
+	[ $? -ne 0 ] && return $?
 	prepare_binpkg_repos
 
 	# Reinstall xbps-src in the chroot
 	if [ ! -f $XBPS_MASTERDIR/usr/local/sbin/xbps-src ]; then
 		env in_chroot=yes LANG=C PATH=$path \
-		    chroot $XBPS_MASTERDIR sh -c \
+		    ${chroot_cmd} $XBPS_MASTERDIR ${chroot_cmd_args} sh -c \
 		    "cd /xbps/xbps-src && make install clean"
 	fi
 
 	if [ "$action" = "chroot" ]; then
 		env in_chroot=yes LANG=C PATH=$path \
-			chroot $XBPS_MASTERDIR /bin/sh
+			${chroot_cmd} $XBPS_MASTERDIR /bin/sh
 	else
 		local lenv
 		[ -n "$only_destdir" ] && \
@@ -245,75 +241,11 @@ xbps_chroot_handler()
 		[ -n "$norm_builddir" ] && \
 			action="-C $action"
 		env in_chroot=yes LANG=C PATH=$path \
-			${lenv} chroot $XBPS_MASTERDIR sh -c \
+			${lenv} ${chroot_cmd} $XBPS_MASTERDIR \
+			${chroot_cmd_args} sh -c \
 			"cd /xbps/srcpkgs/$pkg && xbps-src $action"
 	fi
 	msg_normal "Exiting from the chroot on $XBPS_MASTERDIR."
-	umount_chroot_fs
-}
-
-mount_chroot_fs()
-{
-	local cnt=
-
-	REQFS="sys proc dev xbps xbps_builddir \
-	       xbps_packagesdir xbps_srcdistdir"
-
-	for f in ${REQFS}; do
-		if [ ! -f $XBPS_MASTERDIR/.${f}_mount_bind_done ]; then
-			echo -n "=> Mounting $f in chroot... "
-			local blah=
-			case $f in
-				xbps) blah=$XBPS_DISTRIBUTIONDIR;;
-				xbps_builddir) blah=$XBPS_BUILDDIR;;
-				xbps_srcdistdir) blah=$XBPS_SRCDISTDIR;;
-				xbps_packagesdir) blah=$XBPS_PACKAGESDIR;;
-				*) blah=/$f;;
-			esac
-			[ ! -d $blah ] && echo "failed." && continue
-			mount --bind $blah $XBPS_MASTERDIR/$f
-			if [ $? -eq 0 ]; then
-				echo 1 > $XBPS_MASTERDIR/.${f}_mount_bind_done
-				echo "done."
-			else
-				echo "failed."
-			fi
-		else
-			cnt=$(cat $XBPS_MASTERDIR/.${f}_mount_bind_done)
-			cnt=$(($cnt + 1))
-			echo $cnt > $XBPS_MASTERDIR/.${f}_mount_bind_done
-		fi
-	done
-	unset f
-}
-
-umount_chroot_fs()
-{
-	local fs=
-	local dir=
-	local cnt=
-
-	for fs in ${REQFS}; do
-		[ ! -f $XBPS_MASTERDIR/.${fs}_mount_bind_done ] && continue
-		cnt=$(cat $XBPS_MASTERDIR/.${fs}_mount_bind_done)
-		if [ $cnt -gt 1 ]; then
-			cnt=$(($cnt - 1))
-			echo $cnt > $XBPS_MASTERDIR/.${fs}_mount_bind_done
-		else
-			echo -n "=> Unmounting $fs from chroot... "
-			umount -f $XBPS_MASTERDIR/$fs
-			if [ $? -eq 0 ]; then
-				rm -f $XBPS_MASTERDIR/.${fs}_mount_bind_done
-				echo "done."
-			else
-				echo "failed."
-			fi
-		fi
-		unset fs
-	done
-
-	for dir in ${EXTDIRS}; do
-		[ -f $XBPS_MASTERDIR/.${dir}_mount_bind_done ] && continue
-		[ -d $XBPS_MASTERDIR/$dir ] && rmdir $XBPS_MASTERDIR/$dir
-	done
+	${sudo_cmd} @@XBPS_INSTALL_LIBEXECDIR@@/xbps-src-chroot-helper umount
+	return $?
 }

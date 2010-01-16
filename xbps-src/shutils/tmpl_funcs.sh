@@ -97,7 +97,9 @@ setup_tmpl()
 	local pkg="$1"
 
 	[ -z "$pkg" ] && return 1
-	[ "$pkgname" = "$pkg" ] && return 0
+	if [ "$pkgname" = "$pkg" ]; then
+		[ -n "$DESTDIR" ] && return 0
+	fi
 
 	for f in $(echo $XBPS_COMMONVARSDIR/*.sh); do
 		[ -r ${f} ] && . ${f}

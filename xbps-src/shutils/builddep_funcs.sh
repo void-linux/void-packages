@@ -77,7 +77,18 @@ install_pkg_deps()
 		prev_pkg="$j"
 	done
 
-	install_pkg $curpkgname
+	if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
+		install_pkg_with_binpkg ${curpkg}
+		if [ $? -eq 255 ]; then
+			# xbps-bin returned unexpected error
+			return $?
+		elif [ $? -eq 1 ]; then
+			# Package not found, build from source.
+			install_pkg $curpkgname
+		fi
+	else
+		install_pkg $curpkgname
+	fi
 	[ -n "$prev_pkg" ] && unset prev_pkg
 }
 
@@ -121,7 +132,13 @@ install_dependencies_pkg()
 	for i in ${notinstalled_deps}; do
 		if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
 			install_pkg_with_binpkg ${i}
-			[ $? -eq 0 ] && continue
+			if [ $? -eq 255 ]; then
+				# xbps-bin returned unexpected error (-1)
+				return $?
+			elif [ $? -eq 0 ]; then
+				# installed successfully
+				continue
+			fi
 		fi
 		pkgn=$($XBPS_PKGDB_CMD getpkgdepname ${i})
 		check_pkgdep_matched "${i}"
@@ -131,7 +148,21 @@ install_dependencies_pkg()
 		check_build_depends_pkg
 		if [ $? -eq 1 ]; then
 			msg_normal "Installing $lpkgname dependency: $pkgn."
-			install_pkg $pkgn
+			if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
+				install_pkg_with_binpkg ${i}
+				if [ $? -eq 255 ]; then
+					# xbps-bin returned unexpected error
+					return $?
+				elif [ $? -eq 0 ]; then
+					# installed successfully
+					continue
+				else
+					# package not found, build source.
+					install_pkg $pkgn
+				fi
+			else
+				install_pkg $pkgn
+			fi
 		else
 			install_pkg_deps "${i}" $pkg
 		fi

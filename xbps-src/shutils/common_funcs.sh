@@ -39,23 +39,6 @@ run_func()
 	fi
 }
 
-run_rootcmd()
-{
-	local lenv=
-	local usesudo="$1"
-
-	[ -n "$in_chroot" ] && unset fakeroot_cmd
-
-	lenv="XBPS_DISTRIBUTIONDIR=$XBPS_DISTRIBUTIONDIR"
-
-	shift
-	if [ "$usesudo" = "yes" -a -z "$in_chroot" ]; then
-		sudo env ${lenv} $@
-	else
-		env ${lenv} ${fakeroot_cmd} $@
-	fi
-}
-
 msg_error()
 {
 	[ -z "$1" ] && return 1

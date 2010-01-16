@@ -29,6 +29,9 @@ trap "echo && exit 1" INT QUIT
 
 : ${progname:=$(basename $0)}
 : ${fakeroot_cmd:=fakeroot}
+: ${fakeroot_cmd_args:=--}
+: ${sudo_cmd:=sudo}
+: ${chroot_cmd:=chroot}
 : ${xbps_machine:=$(uname -m)}
 : ${XBPS_UTILS_REQVER:=20091124-1}
 
@@ -52,7 +55,6 @@ Targets:
  install          install-destdir + stow.
  list             List installed packages in masterdir.
  listfiles        List installed files from <pkg>.
- reinstall        remove + install.
  remove           Remove package completely (destdir + masterdir).
  stow             Copy <pkg> files from destdir into masterdir and
                   register package in database.
@@ -93,56 +95,6 @@ run_file()
 	. $path_fixed
 }
 
-set_defvars()
-{
-	local DDIRS i instver instsharedir
-
-	instsharedir=@@XBPS_INSTALL_SHAREDIR@@
-
-	: ${XBPS_TRIGGERSDIR:=$instsharedir/triggers}
-	: ${XBPS_HELPERSDIR:=$instsharedir/helpers}
-	: ${XBPS_SHUTILSDIR:=$instsharedir/shutils}
-	: ${XBPS_COMMONVARSDIR:=$instsharedir/common}
-	: ${XBPS_DBDIR:=$XBPS_MASTERDIR/var/db/xbps}
-	: ${XBPS_META_PATH:=$XBPS_DBDIR/}
-	: ${XBPS_PKGMETADIR:=$XBPS_DBDIR/metadata}
-	: ${XBPS_SRCPKGDIR:=$XBPS_DISTRIBUTIONDIR/srcpkgs}
-	if [ -n "$in_chroot" ]; then
-		: ${XBPS_DESTDIR:=/pkg-destdir}
-	else
-		: ${XBPS_DESTDIR:=$XBPS_MASTERDIR/pkg-destdir}
-	fi
-
-	DDIRS="XBPS_TRIGGERSDIR XBPS_HELPERSDIR"
-	DDIRS="$DDIRS XBPS_COMMONVARSDIR XBPS_SHUTILSDIR"
-	for i in ${DDIRS}; do
-		eval val="\$$i"
-		[ ! -d "$val" ] &&  msg_error "cannot find $i, aborting."
-	done
-
-	export XBPS_PKGDB_CMD="xbps-uhelper.static -r $XBPS_MASTERDIR"
-	export XBPS_BIN_CMD="xbps-bin.static -r $XBPS_MASTERDIR"
-	export XBPS_DIGEST_CMD="xbps-uhelper.static digest"
-	export XBPS_CMPVER_CMD="xbps-uhelper.static cmpver"
-	export XBPS_FETCH_CMD="xbps-uhelper.static fetch"
-
-	#
-	# Check that installed xbps utils version is recent enough.
-	#
-	instver=$(${XBPS_PKGDB_CMD} -V)
-	${XBPS_CMPVER_CMD} "${instver}" "${XBPS_UTILS_REQVER}"
-	if [ $? -eq 255 ]; then
-		echo -n "Your xbps utilities are too old, "
-		echo "required version: ${XBPS_UTILS_REQVER}"
-		exit 1
-	fi
-
-}
-
-#
-# Checks that all required variables specified in the configuration
-# file are properly working.
-#
 check_config_vars()
 {
 	local cffound f
@@ -201,8 +153,23 @@ fi
 # Check configuration vars before anyting else, and set defaults vars.
 #
 check_config_vars
+. @@XBPS_INSTALL_SHAREDIR@@/shutils/init_funcs.sh
 set_defvars
+
 . $XBPS_SHUTILSDIR/common_funcs.sh
+
+if [ "$(id -u)" -eq 0 ]; then
+	# disable sudo and fakeroot if uid==0
+	unset sudo_cmd
+	if [ -n "$in_chroot" ]; then
+		unset fakeroot_cmd
+		unset fakeroot_cmd_args
+	fi
+fi
+
+if [ -n "$XBPS_USE_CAPCHROOT" ]; then
+	chroot_cmd="capchroot"
+fi
 
 # Main switch
 case "$target" in
@@ -212,11 +179,7 @@ build|configure)
 
 	if [ -z "$base_chroot" -a -z "$in_chroot" ]; then
 		. $XBPS_SHUTILSDIR/chroot.sh
-		if [ "$target" = "build" ]; then
-			xbps_chroot_handler build $pkgname
-		else
-			xbps_chroot_handler configure $pkgname
-		fi
+		xbps_chroot_handler $target $pkgname
 	else
 		. $XBPS_SHUTILSDIR/fetch_funcs.sh
 		fetch_distfiles
@@ -274,10 +237,20 @@ extract|fetch|info)
 	extract_distfiles
 	;;
 install|install-destdir)
+	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
+	[ ! -r ./template ] && msg_error "missing build template file."
+	. ./template
+
 	[ "$target" = "install-destdir" ] && install_destdir_target=yes
-	. $XBPS_SHUTILSDIR/pkgtarget_funcs.sh
-	setup_tmpl $(basename_cwd)
-	install_pkg $pkgname
+	if [ -z "$in_chroot" -a -z "$base_chroot" ]; then
+		. $XBPS_SHUTILSDIR/chroot.sh
+		xbps_chroot_handler install $(basename_cwd) \
+			$install_destdir_target $dontrm_builddir
+	else
+		. $XBPS_SHUTILSDIR/pkgtarget_funcs.sh
+		setup_tmpl $(basename_cwd)
+		install_pkg $pkgname
+	fi
 	;;
 list|listfiles)
 	if [ "$target" = "list" ]; then
@@ -286,12 +259,6 @@ list|listfiles)
 	fi
 	. $XBPS_SHUTILSDIR/pkgtarget_funcs.sh
 	list_pkg_files $2
-	;;
-reinstall)
-	. $XBPS_SHUTILSDIR/pkgtarget_funcs.sh
-	setup_tmpl $(basename_cwd)
-	remove_pkg
-	install_pkg $pkgname
 	;;
 remove)
 	. $XBPS_SHUTILSDIR/pkgtarget_funcs.sh

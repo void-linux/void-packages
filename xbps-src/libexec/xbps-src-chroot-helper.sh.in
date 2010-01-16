@@ -1,0 +1,111 @@
+#!/bin/sh
+#-
+# Copyright (c) 2010 Juan Romero Pardines.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+# IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+# OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+# IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+# INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+# NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+# THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#-
+
+# Umount stuff if SIGINT or SIGQUIT was caught
+trap umount_chroot_fs INT QUIT
+
+HANDLER="$1"
+
+. @@XBPS_INSTALL_ETCDIR@@/xbps-src.conf
+
+EXTDIRS="xbps xbps_builddir xbps_packagesdir xbps_srcdistdir"
+REQFS="sys proc dev ${EXTDIRS}"
+
+mount_chroot_fs()
+{
+	local cnt f blah
+
+	for f in ${REQFS}; do
+		if [ ! -f ${XBPS_MASTERDIR}/.${f}_mount_bind_done ]; then
+			echo -n "=> Mounting /${f} in chroot... "
+			if [ ! -d ${XBPS_MASTERDIR}/${f} ]; then
+				mkdir -p ${XBPS_MASTERDIR}/${f}
+			fi
+			case ${f} in
+				xbps) blah=${XBPS_DISTRIBUTIONDIR};;
+				xbps_builddir) blah=${XBPS_BUILDDIR};;
+				xbps_srcdistdir) blah=${XBPS_SRCDISTDIR};;
+				xbps_packagesdir) blah=${XBPS_PACKAGESDIR};;
+				*) blah=/${f};;
+			esac
+			[ ! -d ${blah} ] && echo "failed." && continue
+			mount --bind ${blah} ${XBPS_MASTERDIR}/${f}
+			if [ $? -eq 0 ]; then
+				echo 1 > ${XBPS_MASTERDIR}/.${f}_mount_bind_done
+				echo "done."
+			else
+				echo "failed."
+			fi
+		else
+			cnt=$(cat ${XBPS_MASTERDIR}/.${f}_mount_bind_done)
+			cnt=$((${cnt} + 1))
+			echo ${cnt} > ${XBPS_MASTERDIR}/.${f}_mount_bind_done
+		fi
+	done
+}
+
+umount_chroot_fs()
+{
+	local fs dir cnt
+
+	for fs in ${REQFS}; do
+		[ ! -f ${XBPS_MASTERDIR}/.${fs}_mount_bind_done ] && continue
+		cnt=$(cat ${XBPS_MASTERDIR}/.${fs}_mount_bind_done)
+		if [ ${cnt} -gt 1 ]; then
+			cnt=$((${cnt} - 1))
+			echo ${cnt} > ${XBPS_MASTERDIR}/.${fs}_mount_bind_done
+		else
+			echo -n "=> Unmounting ${fs} from chroot... "
+			umount -f ${XBPS_MASTERDIR}/${fs}
+			if [ $? -eq 0 ]; then
+				rm -f ${XBPS_MASTERDIR}/.${fs}_mount_bind_done
+				echo "done."
+			else
+				echo "failed."
+			fi
+		fi
+		unset fs
+	done
+
+	# Remove created dirs
+	for dir in ${EXTDIRS}; do
+		[ -f ${XBPS_MASTERDIR}/.${dir}_mount_bind_done ] && continue
+		[ -d ${XBPS_MASTERDIR}/${dir} ] && rmdir ${XBPS_MASTERDIR}/${dir}
+	done
+}
+
+if [ $# -ne 1 ]; then
+	echo "$0: mount || umount"
+	exit 1
+fi
+
+case "${HANDLER}" in
+	mount) mount_chroot_fs;;
+	umount) umount_chroot_fs;;
+	*) echo "$0: invalid target." && exit 1;;
+esac
+
+exit 0
