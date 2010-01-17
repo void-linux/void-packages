@@ -39,6 +39,7 @@ xbps_write_metadata_scripts_pkg()
 	local tmpf=$(mktemp -t xbps-install.XXXXXXXXXX) || exit 1
 	local fpattern="s|${DESTDIR}||g;s|^\./$||g;/^$/d"
 	local targets f info_files home shell descr groups
+	local found triggers_found
 
 	case "$action" in
 		install) ;;
@@ -201,7 +202,7 @@ _EOF
 	# Write the INSTALL/REMOVE package scripts.
 	#
 	if [ -n "$triggers" ]; then
-		found=1
+		triggers_found=1
 		echo "case \"\${ACTION}\" in" >> $tmpf
 		echo "pre)" >> $tmpf
 		for f in ${triggers}; do
@@ -239,7 +240,6 @@ _EOF
 
 	case "$action" in
 	install)
-		unset found
 		if [ -n "${sourcepkg}" -a "${sourcepkg}" != "${pkgname}" ]; then
 			install_file=$XBPS_SRCPKGDIR/$pkgname/$pkgname.INSTALL
 		else
@@ -250,7 +250,7 @@ _EOF
 			cat ${install_file} >> $tmpf
 		fi
 		echo "exit 0" >> $tmpf
-		if [ -z "$found" ]; then
+		if [ -z "$triggers_found" -a -z "$found" ]; then
 			rm -f $tmpf
 			return 0
 		fi
@@ -268,7 +268,7 @@ _EOF
 			cat ${remove_file} >> $tmpf
 		fi
 		echo "exit 0" >> $tmpf
-		if [ -z "$found" ]; then
+		if [ -z "$triggers_found" -a -z "$found" ]; then
 			rm -f $tmpf
 			return 0
 		fi
