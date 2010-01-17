@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008 Juan Romero Pardines.
+# Copyright (c) 2008-2010 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -35,24 +35,26 @@ set_build_vars()
 		LD_LIBRARY_PATH="$XBPS_MASTERDIR/usr/lib"
 		PKG_CONFIG="$XBPS_MASTERDIR/usr/bin/pkg-config"
 		PKG_CONFIG_LIBDIR="$XBPS_MASTERDIR/usr/lib/pkgconfig"
+		LDFLAGS="-L$XBPS_MASTERDIR/usr/lib"
+		CPPFLAGS="-I$XBPS_MASTERDIR/usr/include $CPPFLAGS"
+		
+		export CPPFLAGS="$CPPFLAGS" LDFLAGS="$LDFLAGS"
 		export LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
 		export PKG_CONFIG_LIBDIR="$PKG_CONFIG_LIBDIR"
 		export PKG_CONFIG="$PKG_CONFIG"
 	fi
-	LDFLAGS="-L$XBPS_MASTERDIR/usr/lib"
 	CFLAGS="$CFLAGS $XBPS_CFLAGS"
 	CXXFLAGS="$CXXFLAGS $XBPS_CXXFLAGS"
-	CPPFLAGS="-I$XBPS_MASTERDIR/usr/include $CPPFLAGS"
 
 	export CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"
-	export CPPFLAGS="$CPPFLAGS" LDFLAGS="$LDFLAGS"
 }
 
 unset_build_vars()
 {
 	if [ -z "$in_chroot" ]; then
+		unset LDFLAGS CPPFLAGS
 		unset PKG_CONFIG LD_LIBRARY_PATH
 		export LD_LIBRARY_PATH=$SAVE_LDLIBPATH
 	fi
-	unset LDFLAGS CFLAGS CXXFLAGS CPPFLAGS
+	unset CFLAGS CXXFLAGS
 }
