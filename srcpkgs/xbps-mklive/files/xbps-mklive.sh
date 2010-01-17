@@ -28,12 +28,10 @@ if [ -z "$PACKAGE_LIST" ]; then
 else
 	PACKAGE_LIST="xbps-base-system xbps-casper $PACKAGE_LIST"
 fi
-BUILD_TMPDIR=$(mktemp -d /tmp/xbps-image.XXXXXXXX) || exit 1
+BUILD_TMPDIR=$(mktemp --tmpdir="$(pwd)" -d) || exit 1
 BUILD_TMPDIR=$(readlink -f $BUILD_TMPDIR)
-TEMP_ROOTFS=$(readlink -f $BUILD_TMPDIR)
-TEMP_ROOTFS="$TEMP_ROOTFS/casper/rootfs"
-ISOLINUX_DIR=$(readlink -f $BUILD_TMPDIR)
-ISOLINUX_DIR="$ISOLINUX_DIR/isolinux"
+TEMP_ROOTFS="$BUILD_TMPDIR/casper/rootfs"
+ISOLINUX_DIR="$BUILD_TMPDIR/isolinux"
 
 info_msg()
 {
@@ -177,7 +175,7 @@ info_msg "Creating /etc/motd..."
 write_etc_motd
 
 info_msg "Rebuilding and copying initramfs..."
-chroot $TEMP_ROOTFS xbps-bin -f reconfigure kernel
+xbps-bin -r $TEMP_ROOTFS -f reconfigure kernel
 [ $? -ne 0 ] && error_out $?
 cp -f "$TEMP_ROOTFS/boot/initrd.img-${kernel_ver}" \
 	"$BUILD_TMPDIR/casper/initrd.gz" || error_out $?
