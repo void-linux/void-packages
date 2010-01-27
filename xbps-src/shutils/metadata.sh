@@ -275,7 +275,7 @@ xbps_write_metadata_pkg_real()
 <key>installed_size</key>
 <integer>$(($instsize * 1024))</integer>
 <key>maintainer</key>
-<string>$(echo $maintainer|sed -e 's|<|[|g;s|>|]|g')</string>
+<string>$(echo $maintainer|sed -e 's|<|\&lt;|g;s|>|\&gt;|g')</string>
 <key>short_desc</key>
 <string>$short_desc</string>
 <key>long_desc</key>
