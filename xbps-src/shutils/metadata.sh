@@ -359,8 +359,8 @@ _EOF
 	mv -f $TMPFPLIST ${DESTDIR}/files.plist
 	mv -f $TMPFPROPS ${DESTDIR}/props.plist
 
-	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/files.plist
-	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/props.plist
+	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/files.plist || exit 1
+	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/props.plist || exit 1
 	chmod 644 ${DESTDIR}/files.plist ${DESTDIR}/props.plist
 	[ -f $metadir/flist ] && chmod 644 $metadir/flist
 
