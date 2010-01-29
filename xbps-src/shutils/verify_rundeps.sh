@@ -50,7 +50,7 @@ verify_rundeps()
 	PKG_DESTDIR="$1"
 	maplib="$XBPS_COMMONVARSDIR/mapping_shlib_binpkg.txt"
 
-	[ -n "$noarch" -o "$nostrip" ] && return 0
+	[ -n "$noarch" -o "$nostrip" -o "$noverifyrdeps" ] && return 0
 	msg_normal "Verifying required $pkgname run dependencies..."
 
 	for f in $(find ${PKG_DESTDIR} -type f); do

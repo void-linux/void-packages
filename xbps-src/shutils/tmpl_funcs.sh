@@ -76,7 +76,7 @@ reset_tmpl_vars()
 			noarch subpackages sourcepkg gtk_iconcache_dirs \
 			abi_depends api_depends triggers openrc_services \
 			replaces system_accounts build_wrksrc create_wrksrc \
-			ignore_vdeps_dir \
+			ignore_vdeps_dir noverifyrdeps \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE FILESDIR DESTDIR \
 			SRCPKGDESTDIR PATCHESDIR"
