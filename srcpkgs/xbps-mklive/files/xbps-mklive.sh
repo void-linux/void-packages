@@ -175,6 +175,9 @@ info_msg "Creating /etc/motd..."
 write_etc_motd
 
 info_msg "Rebuilding and copying initramfs..."
+# Set lzma compression for the initramfs, to save space.
+sed -i -e "s|COMPRESSION_TYPE=gzip|COMPRESSION_TYPE=lzma|" \
+	$TEMP_ROOTFS/etc/initramfs-tools/initramfs.conf
 xbps-bin -r $TEMP_ROOTFS -f reconfigure kernel
 [ $? -ne 0 ] && error_out $?
 cp -f "$TEMP_ROOTFS/boot/initrd.img-${kernel_ver}" \
@@ -184,6 +187,10 @@ mkdir -p $TEMP_ROOTFS/cow
 info_msg "Copying kernel binary..."
 cp -f "$TEMP_ROOTFS/boot/vmlinuz-${kernel_ver}" \
 	"$BUILD_TMPDIR/casper/vmlinuz" || error_out $?
+
+info_msg "Cleaning up rootfs..."
+rm -f $TEMP_ROOTFS/boot/initrd*
+rm -f $TEMP_ROOTFS/boot/vmlinuz*
 
 info_msg "Building squashed root filesystem..."
 mksquashfs "$TEMP_ROOTFS" "$BUILD_TMPDIR/casper/filesystem.squashfs" \
