@@ -1,9 +1,7 @@
 #!/sbin/runscript
-# Copyright 1999-2009 Gentoo Foundation
-# Distributed under the terms of the GNU General Public License v2
-# $Header: /var/www/viewcvs.gentoo.org/raw_cvs/gentoo-x86/dev-db/postgresql-server/files/postgresql.init-8.4,v 1.4 2010/01/26 22:01:21 patrick Exp $
 
-opts="${opts} reload"
+: ${PGLOG:=/var/log/postgresql.log}
+extra_commands="reload"
 
 depend()
 {
@@ -11,96 +9,39 @@ depend()
 	provide postgresql
 }
 
-checkconfig()
+start_pre()
 {
 	if [ ! -d "$PGDATA" ] ; then
-		eerror "Directory not found: $PGDATA"
-		eerror "Please make sure that PGDATA points to the right path."
-		return 1
+		einfo "Creating PostgreSQL dbdir: ${PGDATA}"
+		mkdir -p ${PGDATA} && \
+			chown -R ${PGUSER}.${PGGROUP} ${PGDATA}
+		einfo "Initializing PostgreSQL dbdir: ${PGDATA}"
+		su -l ${PGUSER} -c "/usr/bin/initdb -D ${PGDATA}"
+	fi
+	if [ ! -e ${PGLOG} ]; then
+		touch -f ${PGLOG}
+		chown ${PGUSER} ${PGLOG}
 	fi
 }
 
 start()
 {
-	checkconfig || return 1
-
 	ebegin "Starting PostgreSQL"
-
-	if [ -f "$PGDATA/postmaster.pid" ] ; then
-		rm -f "$PGDATA/postmaster.pid"
-	fi
-
-	local retval
-
-	su -l ${PGUSER} \
-		-c "env PGDATA=\"${PGDATA}\" ${PG_EXTRA_ENV} pg_ctl \
-		start ${WAIT_FOR_START} -o '--silent-mode=true ${PGOPTS}'"
-	retval=$?
-	[ $retval -ne 0 ] && eend $retval && return $retval
-
-	# The following is to catch the case of an already running server
-	# in which pg_ctl doesn't know to which server it connected to and
-	# false reports the server as 'up'
-	sleep 2
-	if [ ! -f "$PGDATA/postmaster.pid" ] ; then
-		eerror "The pid-file doesn't exist but pg_ctl reported \
-a running server."
-		eerror "Please check whether there is another server running \
-on the same port or read the log-file."
-		eend 1
-		return 1
-	fi
-
-	local pid=$(grep "^[0-9]\+" "$PGDATA/postmaster.pid")
-	ps -p "${pid}" &> /dev/null
+	su -l ${PGUSER} -c "/usr/bin/pg_ctl -D ${PGDATA} -l ${PGLOG} \
+			-W start ${PGOPTS}"
 	eend $?
 }
 
 stop()
 {
-	ebegin "Stopping PostgreSQL (this can take up to \
-$(( ${WAIT_FOR_DISCONNECT} + ${WAIT_FOR_CLEANUP} )) seconds)"
-
-	local retval
-
-	su -l ${PGUSER} \
-		-c "env PGDATA=\"${PGDATA}\" pg_ctl \
-		stop -t ${WAIT_FOR_DISCONNECT} -m smart"
-
-	retval=$?
-	[ $retval -eq 0 ] && eend $retval && return $retval
-
-	ewarn "Some clients did not disconnect within \
-${WAIT_FOR_DISCONNECT} seconds."
-	ewarn "Going to shutdown the server anyway."
-
-	su -l ${PGUSER} -c "env PGDATA=\"${PGDATA}\" pg_ctl stop -m fast"
-	retval=$?
-	[ $retval -eq 0 ] && eend $retval && return $retval
-
-	if [ ${WAIT_FOR_QUIT} -eq 0 ] ; then
-		eerror "Server did not shut down and sending the \
-SIGQUIT has been disabled."
-		eend $retval
-		return $retval
-	fi
-
-	ewarn "Shutting down the server gracefully failed."
-	ewarn "Forcing it to shutdown which leads to a recover-run \
-on next startup."
-
-	su -l ${PGUSER} -c "env PGDATA=\"${PGDATA}\" pg_ctl stop -m immediate"
-	retval=$?
-	[ $retval -eq 0 ] && eend $retval && return $retval
-
-	eerror "Forced shutdown failed!!! Something is wrong with your \
-system, please take care of it manually."
+	ebegin "Stopping PostgreSQL"
+	su -l ${PGUSER} -c "/usr/bin/pg_ctl -D ${PGDATA} -l ${PGLOG} -w stop"
 	eend $?
 }
 
 reload()
 {
 	ebegin "Reloading PostgreSQL configuration"
-	su -l ${PGUSER} -c "env PGDATA=\"${PGDATA}\" pg_ctl reload"
+	su -l ${PGUSER} -c "/usr/bin/pg_ctl -D ${PGDATA} -l ${PGLOG} reload"
 	eend $?
 }
