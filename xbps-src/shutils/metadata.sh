@@ -337,6 +337,16 @@ _EOF
 		echo "</array>" >> $TMPFPROPS
 	fi
 
+	# Conflicting package(s).
+	if [ -n "$conflicts" ]; then
+		echo "<key>conflicts</key>" >> $TMPFPROPS
+		echo "<array>" >> $TMPFPROPS
+		for f in ${conflicts}; do
+			echo "<string>$(echo $f|sed "s|<|\&lt;|g;s|>|\&gt;|g")</string>" >> $TMPFPROPS
+		done
+		echo "</array>" >> $TMPFPROPS
+	fi
+
 	# Terminate the property list file.
 	echo "</dict>" >> $TMPFPROPS
 	echo "</plist>" >> $TMPFPROPS
