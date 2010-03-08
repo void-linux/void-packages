@@ -92,12 +92,21 @@ verify_rundeps()
 	for f in ${verify_deps}; do
 		# Bail out if maplib is not aware for this lib
 		rdep="$(grep "$f" $maplib|awk '{print $2}')"
+		rdepcnt="$(grep "$f" $maplib|awk '{print $2}'|wc -l)"
 		if [ -z "$rdep" ]; then
 			msg_error_nochroot "unknown rundep for $f"
 		fi
 		# Ignore libs by current pkg
 		[ "$rdep" = "$pkgname" ] && continue
 
+		# Check if shlib is provided by multiple pkgs.
+		if [ "$rdepcnt" -gt 1 ]; then
+			echo "=> Required $f is provided by these pkgs: "
+			for j in ${rdep}; do
+				printf "\t$j\n"
+			done
+			continue
+		fi
 		# Warn if rundep is not in template.
 		if find_rundep "$rdep"; then
 			msg_warn_nochroot "required $f from $rdep (MISSING)"
@@ -131,7 +140,12 @@ verify_rundeps()
 
 	for f in ${missing_libs}; do
 		rdep="$(grep "$f" $maplib|awk '{print $2}')"
+		rdepcnt="$(grep "$f" $maplib|awk '{print $2}'|wc -l)"
 		builddep="$(grep "$f" $maplib|awk '{print $3}')"
+
+		# If required shlib is provided by multiple pkgs pass
+		# to next one.
+		[ "$rdepcnt" -gt 1 ] && continue
 
 		if [ -z "$rdep_list" ]; then
 			rdep_list="$rdep"
