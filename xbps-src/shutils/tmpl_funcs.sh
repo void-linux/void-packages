@@ -77,6 +77,7 @@ reset_tmpl_vars()
 			abi_depends api_depends triggers openrc_services \
 			replaces system_accounts build_wrksrc create_wrksrc \
 			ignore_vdeps_dir noverifyrdeps conflicts \
+			gconf_entries gconf_schemas \
 			XBPS_EXTRACT_DONE XBPS_CONFIGURE_DONE \
 			XBPS_BUILD_DONE XBPS_INSTALL_DONE FILESDIR DESTDIR \
 			SRCPKGDESTDIR PATCHESDIR"

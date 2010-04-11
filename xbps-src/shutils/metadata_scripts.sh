@@ -199,6 +199,26 @@ _EOF
 	fi
 
 	#
+	# Handle GConf schemas/entries files with gconf-schemas.
+	#
+	if [ -n "${gconf_entries}" -o -n "${gconf_schemas}" ]; then
+		if find . -type f -name \*.schemas \
+			-o -name \*.entries 2>&1 >/dev/null; then
+			_add_trigger gconf-schemas
+		fi
+		if [ -n "${gconf_entries}" ]; then
+			echo "export gconf_entries=\"${gconf_entries}\"" \
+				>> $tmpf
+			echo >> $tmpf
+		fi
+		if [ -n "${gconf_schemas}" ]; then
+			echo "export gconf_schemas=\"${gconf_schemas}\"" \
+				>> $tmpf
+			echo >> $tmpf
+		fi
+	fi
+
+	#
 	# Write the INSTALL/REMOVE package scripts.
 	#
 	if [ -n "$triggers" ]; then
