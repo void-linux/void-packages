@@ -1,0 +1,861 @@
+diff -Nur configure.ac configure.ac
+--- configure.ac	2010-03-29 17:03:47.000000000 +0300
++++ configure.ac	2010-03-29 21:35:17.974333715 +0300
+@@ -251,6 +251,48 @@
+ AC_SUBST(PULSE_CFLAGS)
+ AC_SUBST(PULSE_LIBS)
+ 
++dnl ==============================================
++dnl GStreamer section
++dnl ==============================================
++GST_MAJORMINOR=auto
++
++AC_ARG_ENABLE(gstreamer,
++AC_HELP_STRING([--enable-gstreamer],[use gstreamer if available (and optionally specify a version)]),
++[case "${enableval}" in
++ yes) ENABLE_GSTREAMER=yes ;;
++ 0.10) ENABLE_GSTREAMER=yes && GST_MAJORMINOR=0.10 ;;
++ no)  ENABLE_GSTREAMER=no ;;
++ *) AC_MSG_ERROR([
++                  *** Bad value ${enableval} for --enable-gstreamer
++                  *** Please use one of the following:
++                  ***    --enable-gstreamer=0.10
++               ]) ;;
++esac],
++[ENABLE_GSTREAMER=yes]) dnl Default value
++
++have_gstreamer=no
++if test "x$ENABLE_GSTREAMER" = "xyes"; then
++   GST_REQS=0.10.1.2
++   PKGS="gstreamer-0.10 >= $GST_REQS gstreamer-plugins-base-0.10 >= $GST_REQS"
++
++   PKG_CHECK_MODULES(GST, $PKGS, have_gstreamer=yes,
++                     AC_MSG_RESULT([no]))
++
++   if test "x$have_pulse" = "xtrue"; then
++      AC_MSG_ERROR([*** GStreamer & Pulseaudio both are selected ***])
++   fi
++
++   if test "x$have_gstreamer" = "xyes"; then
++      GST_LIBS="$GST_LIBS -lgstinterfaces-0.10 -lgstaudio-0.10"
++      AC_DEFINE(HAVE_GSTREAMER,1,[enable gstreamer])
++   fi
++else
++   AC_MSG_NOTICE([*** GStreamer support disabled ***])
++fi
++AM_CONDITIONAL(HAVE_GSTREAMER, test "x$have_gstreamer" = "xyes")
++AC_SUBST(GST_LIBS)
++AC_SUBST(GST_CFLAGS)
++
+ # ---------------------------------------------------------------------------
+ # Enable Profiling
+ # ---------------------------------------------------------------------------
+@@ -389,6 +431,7 @@
+         dbus-1 system.d dir:      ${DBUS_SYS_DIR}
+ 
+         Libnotify support:        ${have_libnotify}
++        GStreamer support:        ${have_gstreamer}
+         PulseAudio support:       ${have_pulse}
+         Profiling support:        ${enable_profiling}
+ "
+diff -Nur plugins/media-keys/cut-n-paste/gvc-gstreamer-acme-vol.c plugins/media-keys/cut-n-paste/gvc-gstreamer-acme-vol.c
+--- plugins/media-keys/cut-n-paste/gvc-gstreamer-acme-vol.c	1970-01-01 02:00:00.000000000 +0200
++++ plugins/media-keys/cut-n-paste/gvc-gstreamer-acme-vol.c	2010-03-29 21:35:17.977471980 +0300
+@@ -0,0 +1,402 @@
++/* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
++
++/* acme-volume.c
++
++   Copyright (C) 2002, 2003 Bastien Nocera
++   Copyright (C) 2004 Novell, Inc.
++   Copyright (C) 2009 PERIER Romain <mrpouet@tuxfamily.org>
++
++   The Gnome Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Library General Public License as
++   published by the Free Software Foundation; either version 2 of the
++   License, or (at your option) any later version.
++
++   The Gnome Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Library General Public License for more details.
++
++   You should have received a copy of the GNU Library General Public
++   License along with the Gnome Library; see the file COPYING.LIB.  If not,
++   write to the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
++   Boston, MA 02111-1307, USA.
++
++   Author: Bastien Nocera <hadess@hadess.net>
++           Jon Trowbridge <trow@ximian.com>
++*/
++
++#include "config.h"
++#include "gvc-gstreamer-acme-vol.h"
++
++#include <gst/gst.h>
++#include <gst/audio/mixerutils.h>
++#include <gst/interfaces/mixer.h>
++#include <gst/interfaces/propertyprobe.h>
++
++#include <gconf/gconf-client.h>
++
++#include <string.h>
++
++#define TIMEOUT	4
++
++#define DEFAULT_MIXER_DEVICE_KEY   "/desktop/gnome/sound/default_mixer_device"
++#define DEFAULT_MIXER_TRACKS_KEY   "/desktop/gnome/sound/default_mixer_tracks"
++
++#define ACME_VOLUME_GET_PRIVATE(o) (G_TYPE_INSTANCE_GET_PRIVATE ((o), ACME_TYPE_VOLUME, AcmeVolumePrivate))
++
++struct AcmeVolumePrivate {
++	GstMixer     *mixer;
++	GList        *mixer_tracks;
++	guint         timer_id;
++	gdouble       volume;
++	gboolean      mute;
++	GConfClient  *gconf_client;
++};
++
++G_DEFINE_TYPE (AcmeVolume, acme_volume, G_TYPE_OBJECT)
++
++static gboolean acme_volume_open  (AcmeVolume *acme);
++static void     acme_volume_close (AcmeVolume *acme);
++static gboolean acme_volume_close_real (AcmeVolume *self);
++
++static gpointer acme_volume_object = NULL;
++
++static void
++acme_volume_finalize (GObject *object)
++{
++	AcmeVolume *self;
++
++	g_return_if_fail (object != NULL);
++	g_return_if_fail (ACME_IS_VOLUME (object));
++
++	self = ACME_VOLUME (object);
++
++	if (self->_priv->timer_id != 0)
++		g_source_remove (self->_priv->timer_id);
++	acme_volume_close_real (self);
++
++	if (self->_priv->gconf_client != NULL) {
++		g_object_unref (self->_priv->gconf_client);
++		self->_priv->gconf_client = NULL;
++	}
++
++	G_OBJECT_CLASS (acme_volume_parent_class)->finalize (object);
++}
++
++void
++acme_volume_set_mute (AcmeVolume *self, gboolean val)
++{
++	GList *t;
++
++	g_return_if_fail(ACME_IS_VOLUME(self));
++	g_return_if_fail(acme_volume_open(self));
++
++	for (t = self->_priv->mixer_tracks; t != NULL; t = t->next) {
++		GstMixerTrack *track = GST_MIXER_TRACK (t->data);
++		gst_mixer_set_mute (self->_priv->mixer, track, val);
++	}
++	self->_priv->mute = val;
++	acme_volume_close (self);
++}
++
++static void
++update_state (AcmeVolume * self)
++{
++	gint *volumes, n;
++	gdouble vol = 0;
++	GstMixerTrack *track = GST_MIXER_TRACK (self->_priv->mixer_tracks->data);
++
++	/* update mixer by getting volume */
++	volumes = g_new0 (gint, track->num_channels);
++	gst_mixer_get_volume (self->_priv->mixer, track, volumes);
++	for (n = 0; n < track->num_channels; n++)
++		vol += volumes[n];
++	g_free (volumes);
++	vol /= track->num_channels;
++	vol = 100 * vol / (track->max_volume - track->min_volume);
++
++	/* update mute flag, and volume if not muted */
++	if (GST_MIXER_TRACK_HAS_FLAG (track, GST_MIXER_TRACK_MUTE))
++		self->_priv->mute = TRUE;
++	self->_priv->volume = vol;
++}
++
++gboolean
++acme_volume_get_mute (AcmeVolume *self)
++{
++	g_return_val_if_fail(acme_volume_open(self), FALSE);
++
++	update_state (self);
++	acme_volume_close (self);
++
++	return self->_priv->mute;
++}
++
++gint
++acme_volume_get_volume (AcmeVolume *self)
++{
++
++	g_return_val_if_fail(acme_volume_open(self), 0);
++
++	update_state (self);
++
++	acme_volume_close (self);
++	
++	return (gint) (self->_priv->volume + 0.5);
++}
++
++void
++acme_volume_set_volume (AcmeVolume *self, gint val)
++{
++	GList *t;
++
++	g_return_if_fail(acme_volume_open(self));
++
++	val = CLAMP (val, 0, 100);
++
++	for (t = self->_priv->mixer_tracks; t != NULL; t = t->next) {
++		GstMixerTrack *track = GST_MIXER_TRACK (t->data);
++		gint *volumes, n;
++		gdouble scale = (track->max_volume - track->min_volume) / 100.0;
++		gint vol = (gint) (val * scale + track->min_volume + 0.5);
++
++		volumes = g_new (gint, track->num_channels);
++		for (n = 0; n < track->num_channels; n++)
++			volumes[n] = vol;
++		gst_mixer_set_volume (self->_priv->mixer, track, volumes);
++		g_free (volumes);
++	}
++
++	/* update state */
++	self->_priv->volume = val;
++
++	acme_volume_close (self);
++}
++
++void
++acme_volume_mute_toggle (AcmeVolume *self)
++{
++	gboolean muted;
++
++	g_return_if_fail (self != NULL);
++	g_return_if_fail (ACME_IS_VOLUME(self));
++
++	muted = acme_volume_get_mute(self);
++	acme_volume_set_mute(self, !muted);
++}
++
++gint
++acme_volume_get_threshold (AcmeVolume *self)
++{
++	GList *t;
++	gint steps = 101;
++
++	g_return_val_if_fail(acme_volume_open(self), 1);
++
++	for (t = self->_priv->mixer_tracks; t != NULL; t = t->next) {
++		GstMixerTrack *track = GST_MIXER_TRACK (t->data);
++		gint track_steps = track->max_volume - track->min_volume;
++		if (track_steps > 0 && track_steps < steps)
++			steps = track_steps;
++	}
++
++	acme_volume_close (self);
++
++	return 100 / steps + 1;
++}
++
++static gboolean
++acme_volume_close_real (AcmeVolume *self)
++{
++	if (self->_priv->mixer != NULL)
++	{
++		gst_element_set_state (GST_ELEMENT (self->_priv->mixer), GST_STATE_NULL);
++		gst_object_unref (GST_OBJECT (self->_priv->mixer));
++		g_list_foreach (self->_priv->mixer_tracks, (GFunc) g_object_unref, NULL);
++		g_list_free (self->_priv->mixer_tracks);
++		self->_priv->mixer = NULL;
++		self->_priv->mixer_tracks = NULL;
++	}
++
++	self->_priv->timer_id = 0;
++	return FALSE;
++}
++
++/*
++ * _acme_set_mixer
++ * @mixer  A pointer to mixer element
++ * @data   A pointer to user data (AcmeVolume instance to be modified)
++ * @return A gboolean indicating success if Master track was found, failed otherwises.
++ */
++static gboolean
++_acme_set_mixer(GstMixer *mixer, gpointer user_data)
++{
++	const GList *tracks;
++
++	for (tracks = gst_mixer_list_tracks (mixer); tracks != NULL; tracks = tracks->next) {
++		GstMixerTrack *track = GST_MIXER_TRACK (tracks->data);
++
++		if (GST_MIXER_TRACK_HAS_FLAG (track, GST_MIXER_TRACK_MASTER)) {
++			AcmeVolume *self;
++
++			self = ACME_VOLUME (user_data);
++
++			self->_priv->mixer = mixer;
++			self->_priv->mixer_tracks = g_list_append (self->_priv->mixer_tracks, g_object_ref (track));
++			return TRUE;
++		}
++
++		continue;
++	}
++
++	return FALSE;
++}
++
++/* This is a modified version of code from gnome-media's gst-mixer */
++static gboolean
++acme_volume_open (AcmeVolume *self)
++{
++	gchar *mixer_device, **factory_and_device = NULL;
++	GList *mixer_list;
++
++	if (self->_priv->timer_id != 0) {
++		g_source_remove (self->_priv->timer_id);
++		self->_priv->timer_id = 0;
++		return TRUE;
++	}
++
++	mixer_device = gconf_client_get_string (self->_priv->gconf_client, DEFAULT_MIXER_DEVICE_KEY, NULL);
++	if (mixer_device != NULL)
++		factory_and_device = g_strsplit (mixer_device, ":", 2);
++
++	if (factory_and_device != NULL && factory_and_device[0] != NULL) {
++		GstElement *element;
++
++		element = gst_element_factory_make (factory_and_device[0], NULL);
++
++		if (element != NULL) {
++			if (factory_and_device[1] != NULL &&
++			    g_object_class_find_property (G_OBJECT_GET_CLASS (element), "device"))
++				g_object_set (G_OBJECT (element), "device", factory_and_device[1], NULL);
++			gst_element_set_state (element, GST_STATE_READY);
++
++			if (GST_IS_MIXER (element))
++				self->_priv->mixer = GST_MIXER (element);
++			else {
++				gst_element_set_state (element, GST_STATE_NULL);
++				gst_object_unref (element);
++			}
++		}
++	}
++
++	g_free (mixer_device);
++	g_strfreev (factory_and_device);
++
++	if (self->_priv->mixer != NULL) {
++		const GList *m;
++		GSList *tracks, *t;
++		GError *error = NULL;
++
++		/* Try to use tracks saved in GConf 
++		   Note: errors need to be treated , for example if the user set a non type list for this key
++		   or if the elements type_list are not "matched" */
++		tracks = gconf_client_get_list (self->_priv->gconf_client, DEFAULT_MIXER_TRACKS_KEY, 
++						GCONF_VALUE_STRING, &error);
++
++		if (error) {
++			g_warning("ERROR: %s\n", error->message);
++			g_error_free(error);
++		}
++
++		/* We use these tracks ONLY if they are supported on the system with the following mixer */
++		for (m = gst_mixer_list_tracks (self->_priv->mixer); m != NULL; m = m->next) {
++			GstMixerTrack *track = GST_MIXER_TRACK (m->data);
++
++			for (t = tracks; t != NULL; t = t->next)
++				if (!strcmp (t->data, track->label))
++					self->_priv->mixer_tracks = g_list_append (self->_priv->mixer_tracks, g_object_ref (track));
++
++		}
++
++		g_slist_foreach (tracks, (GFunc)g_free, NULL);
++		g_slist_free (tracks);
++
++		/* If no track stored in GConf is avaiable try to use Master track */
++		if (self->_priv->mixer_tracks == NULL) {
++			for (m = gst_mixer_list_tracks (self->_priv->mixer); m != NULL; m = m->next) {
++				GstMixerTrack *track = GST_MIXER_TRACK (m->data);
++
++				if (GST_MIXER_TRACK_HAS_FLAG (track, GST_MIXER_TRACK_MASTER)) {
++					self->_priv->mixer_tracks = g_list_append (self->_priv->mixer_tracks, g_object_ref (track));
++					break;
++				}
++			}
++		}
++
++		if (self->_priv->mixer_tracks != NULL)
++			return TRUE;
++		else {
++			gst_element_set_state (GST_ELEMENT (self->_priv->mixer), GST_STATE_NULL);
++			gst_object_unref (self->_priv->mixer);
++		}
++	}
++
++	/* Go through all elements of a certain class and check whether
++	 * they implement a mixer. If so, walk through the tracks and look
++	 * for first one named "volume".
++	 *
++	 * We should probably do something intelligent if we don't find an
++	 * appropriate mixer/track.  But now we do something stupid...
++	 * everything just becomes a no-op.
++	 */
++	mixer_list = gst_audio_default_registry_mixer_filter (_acme_set_mixer,
++			TRUE,
++			self);
++
++	if (mixer_list == NULL)
++		return FALSE;
++
++	/* do not unref the mixer as we keep the ref for self->priv->mixer */
++	g_list_free (mixer_list);
++
++	return TRUE;
++}
++
++static void
++acme_volume_close (AcmeVolume *self)
++{
++	self->_priv->timer_id = g_timeout_add_seconds (TIMEOUT,
++			(GSourceFunc) acme_volume_close_real, self);
++}
++
++static void
++acme_volume_init (AcmeVolume *self)
++{
++	self->_priv = ACME_VOLUME_GET_PRIVATE (self);
++	self->_priv->gconf_client = gconf_client_get_default ();
++}
++
++static void
++acme_volume_class_init (AcmeVolumeClass *klass)
++{
++	G_OBJECT_CLASS (klass)->finalize = acme_volume_finalize;
++
++	gst_init (NULL, NULL);
++
++	g_type_class_add_private (klass, sizeof (AcmeVolumePrivate));
++}
++
++/* acme_volume_new
++ * @return A singleton instance of type AcmeVolume
++ */
++AcmeVolume *
++acme_volume_new (void)
++{
++	if (acme_volume_object == NULL) {
++		acme_volume_object = g_object_new (ACME_TYPE_VOLUME, NULL);
++		return ACME_VOLUME(acme_volume_object);
++	}
++	g_object_ref(acme_volume_object);
++	return ACME_VOLUME(acme_volume_object);
++}
++
+diff -Nur plugins/media-keys/cut-n-paste/gvc-gstreamer-acme-vol.h plugins/media-keys/cut-n-paste/gvc-gstreamer-acme-vol.h
+--- plugins/media-keys/cut-n-paste/gvc-gstreamer-acme-vol.h	1970-01-01 02:00:00.000000000 +0200
++++ plugins/media-keys/cut-n-paste/gvc-gstreamer-acme-vol.h	2010-03-29 21:35:17.977471980 +0300
+@@ -0,0 +1,56 @@
++/* acme-volume.h
++
++   Copyright (C) 2002, 2003 Bastien Nocera
++   Copyright (C) 2004 Novell, Inc.
++   Copyright (C) 2009 PERIER Romain <mrpouet@tuxfamily.org>
++
++   The Gnome Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Library General Public License as
++   published by the Free Software Foundation; either version 2 of the
++   License, or (at your option) any later version.
++
++   The Gnome Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Library General Public License for more details.
++
++   You should have received a copy of the GNU Library General Public
++   License along with the Gnome Library; see the file COPYING.LIB.  If not,
++   write to the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
++   Boston, MA 02111-1307, USA.
++
++   Author: Bastien Nocera <hadess@hadess.net>
++           Jon Trowbridge <trow@ximian.com>
++ */
++
++#include <glib-object.h>
++
++#define ACME_TYPE_VOLUME                        (acme_volume_get_type ())
++#define ACME_VOLUME(obj)		        (G_TYPE_CHECK_INSTANCE_CAST ((obj), ACME_TYPE_VOLUME, AcmeVolume))
++#define ACME_VOLUME_CLASS(klass)	        (G_TYPE_CHECK_CLASS_CAST ((klass),  ACME_TYPE_VOLUME, AcmeVolumeClass))
++#define ACME_IS_VOLUME(obj)	                (G_TYPE_CHECK_INSTANCE_TYPE ((obj), ACME_TYPE_VOLUME))
++#define ACME_VOLUME_GET_CLASS(obj)	        (G_TYPE_INSTANCE_GET_CLASS ((obj), ACME_TYPE_VOLUME, AcmeVolumeClass))
++
++typedef struct AcmeVolume AcmeVolume;
++typedef struct AcmeVolumeClass AcmeVolumeClass;
++typedef struct AcmeVolumePrivate AcmeVolumePrivate;
++
++struct AcmeVolume {
++	GObject parent;
++	AcmeVolumePrivate *_priv;
++};
++
++struct AcmeVolumeClass {
++	GObjectClass parent;
++};
++
++GType       acme_volume_get_type      (void);
++AcmeVolume *acme_volume_new           (void);
++void        acme_volume_set_mute      (AcmeVolume *self, gboolean val);
++void        acme_volume_mute_toggle   (AcmeVolume *self);
++gboolean    acme_volume_get_mute      (AcmeVolume *self);
++void        acme_volume_set_volume    (AcmeVolume *self, gint val);
++gint        acme_volume_get_volume    (AcmeVolume *self);
++gint        acme_volume_get_threshold (AcmeVolume *self);
++
++
+diff -Nur plugins/media-keys/cut-n-paste/Makefile.am plugins/media-keys/cut-n-paste/Makefile.am
+--- plugins/media-keys/cut-n-paste/Makefile.am	2009-08-12 12:15:00.000000000 +0300
++++ plugins/media-keys/cut-n-paste/Makefile.am	2010-03-29 21:35:17.977471980 +0300
+@@ -4,16 +4,24 @@
+ 
+ INCLUDES =					\
+ 	$(WARN_CFLAGS)				\
+-	$(VOLUME_CONTROL_CFLAGS)		\
+-	$(PULSE_CFLAGS)				\
+ 	$(NULL)
+ 
+ libgvc_la_LIBADD =		\
+-	$(VOLUME_CONTROL_LIBS)	\
+-	$(PULSE_LIBS)		\
+ 	$(NULL)
+ 
+ libgvc_la_SOURCES =			\
++	$(NULL)
++
++if HAVE_PULSE
++INCLUDES +=					\
++	$(VOLUME_CONTROL_CFLAGS)		\
++	$(PULSE_CFLAGS)
++
++libgvc_la_LIBADD +=		\
++	$(VOLUME_CONTROL_LIBS)	\
++	$(PULSE_LIBS)
++
++libgvc_la_SOURCES +=			\
+ 	gvc-mixer-stream.h		\
+ 	gvc-mixer-stream.c		\
+ 	gvc-channel-map.h		\
+@@ -31,8 +39,22 @@
+ 	gvc-mixer-event-role.h		\
+ 	gvc-mixer-event-role.c		\
+ 	gvc-mixer-control.h		\
+-	gvc-mixer-control.c		\
+-	$(NULL)
++	gvc-mixer-control.c
++endif
++
++if HAVE_GSTREAMER
++INCLUDES +=					\
++	$(SETTINGS_PLUGIN_CFLAGS)		\
++	$(AM_CFLAGS)				\
++	$(GST_CFLAGS)
++
++libgvc_la_LIBADD +=		\
++	$(GST_LIBS)
++
++libgvc_la_SOURCES +=			\
++	gvc-gstreamer-acme-vol.c	\
++	gvc-gstreamer-acme-vol.h
++endif
+ 
+ MAINTAINERCLEANFILES =                  \
+         *~                              \
+diff -Nur plugins/media-keys/gsd-media-keys-manager.c plugins/media-keys/gsd-media-keys-manager.c
+--- plugins/media-keys/gsd-media-keys-manager.c	2010-03-29 11:15:04.000000000 +0300
++++ plugins/media-keys/gsd-media-keys-manager.c	2010-03-29 21:56:13.293985485 +0300
+@@ -53,6 +53,8 @@
+ #ifdef HAVE_PULSE
+ #include <canberra-gtk.h>
+ #include "gvc-mixer-control.h"
++#elif defined(HAVE_GSTREAMER)
++#include "gvc-gstreamer-acme-vol.h"
+ #endif /* HAVE_PULSE */
+ 
+ #define GSD_DBUS_PATH "/org/gnome/SettingsDaemon"
+@@ -78,11 +80,12 @@
+         /* Volume bits */
+         GvcMixerControl *volume;
+         GvcMixerStream  *stream;
++#elif defined(HAVE_GSTREAMER)
++        AcmeVolume      *volume;
+ #endif /* HAVE_PULSE */
+         GtkWidget       *dialog;
+         GConfClient     *conf_client;
+-        GVolumeMonitor  *volume_monitor;
+-
++	GVolumeMonitor  *volume_monitor;
+         /* Multihead stuff */
+         GdkScreen       *current_screen;
+         GSList          *screens;
+@@ -601,15 +604,15 @@
+                 if (score < SCORE_CAN_EJECT) {
+                         fav_drive = drive;
+                         score = SCORE_CAN_EJECT;
+-                }
++                }    
+                 if (g_drive_has_media (drive) == FALSE)
+                         continue;
+                 if (score < SCORE_HAS_MEDIA) {
+                         fav_drive = drive;
+                         score = SCORE_HAS_MEDIA;
+                         break;
+-                }
+-        }
++                }    
++        }    
+ 
+         /* Show the dialogue */
+         dialog_init (manager);
+@@ -632,7 +635,7 @@
+                                       NULL, NULL,
+                                       (GAsyncReadyCallback) do_eject_action_cb,
+                                       manager);
+-        g_object_unref (fav_drive);
++        g_object_unref (fav_drive);        
+ }
+ 
+ static void
+@@ -675,7 +678,9 @@
+                                         CA_PROP_APPLICATION_ID, "org.gnome.VolumeControl",
+                                         NULL);
+ }
++#endif /* HAVE_PULSE */
+ 
++#if defined(HAVE_PULSE) || defined(HAVE_GSTREAMER)
+ static void
+ do_sound_action (GsdMediaKeysManager *manager,
+                  int                  type)
+@@ -685,7 +690,11 @@
+         int vol_step;
+         gboolean sound_changed;
+ 
++#ifdef HAVE_PULSE
+         if (manager->priv->stream == NULL)
++#else
++        if (manager->priv->volume == NULL)
++#endif
+                 return;
+ 
+         vol_step = gconf_client_get_int (manager->priv->conf_client,
+@@ -695,6 +704,7 @@
+         if (vol_step <= 0 || vol_step > 100)
+                 vol_step = VOLUME_STEP;
+ 
++#ifdef HAVE_PULSE
+         norm_vol_step = PA_VOLUME_NORM * vol_step / 100;
+ 
+         /* FIXME: this is racy */
+@@ -702,13 +712,28 @@
+         muted = gvc_mixer_stream_get_is_muted (manager->priv->stream);
+         sound_changed = FALSE;
+ 
++#else
++        if (vol_step > 0) {
++                gint threshold = acme_volume_get_threshold (manager->priv->volume);
++                if (vol_step < threshold)
++                        vol_step = threshold;
++                g_debug ("Using volume step of %d", vol_step);
++        }
++        vol = acme_volume_get_volume (manager->priv->volume);
++        muted = acme_volume_get_mute (manager->priv->volume);
++#endif
+         switch (type) {
+         case MUTE_KEY:
++#ifdef HAVE_PULSE
+                 muted = !muted;
+                 gvc_mixer_stream_change_is_muted (manager->priv->stream, muted);
+                 sound_changed = TRUE;
++#else
++                acme_volume_mute_toggle (manager->priv->volume);
++#endif
+                 break;
+         case VOLUME_DOWN_KEY:
++#ifdef HAVE_PULSE
+                 if (!muted && (vol <= norm_vol_step)) {
+                         muted = !muted;
+                         vol = 0;
+@@ -722,24 +747,37 @@
+                         if (gvc_mixer_stream_set_volume (manager->priv->stream, vol) != FALSE) {
+                                 gvc_mixer_stream_push_volume (manager->priv->stream);
+                                 sound_changed = TRUE;
+-                        }
+                 }
++#else
++                if (!muted && (vol <= vol_step))
++                        acme_volume_mute_toggle (manager->priv->volume);
++                acme_volume_set_volume (manager->priv->volume, vol - vol_step);
++#endif
+                 break;
+         case VOLUME_UP_KEY:
+                 if (muted) {
+                         muted = !muted;
+                         if (vol == 0) {
++#ifdef HAVE_PULSE
+                                vol = vol + norm_vol_step;
+                                gvc_mixer_stream_change_is_muted (manager->priv->stream, muted);
+                                if (gvc_mixer_stream_set_volume (manager->priv->stream, vol) != FALSE) {
+                                         gvc_mixer_stream_push_volume (manager->priv->stream);
+                                         sound_changed = TRUE;
+-                               }
++                                }
+                         } else {
+                                 gvc_mixer_stream_change_is_muted (manager->priv->stream, muted);
+                                 sound_changed = TRUE;
+                         }
++#else
++                                /* We need to unmute otherwise vol is blocked (and muted) */
++                                acme_volume_set_mute   (manager->priv->volume, FALSE);
++                        }
++                        acme_volume_set_volume (manager->priv->volume, vol + vol_step);
++                        
++#endif
+                 } else {
++#ifdef HAVE_PULSE
+                         if (vol < MAX_VOLUME) {
+                                 if (vol + norm_vol_step >= MAX_VOLUME) {
+                                         vol = MAX_VOLUME;
+@@ -751,13 +789,35 @@
+                                         sound_changed = TRUE;
+                                 }
+                         }
++#else
++                        acme_volume_set_volume (manager->priv->volume, vol + vol_step);
++#endif
+                 }
+                 break;
+         }
+ 
++#ifdef HAVE_PULSE
+         update_dialog (manager, vol, muted, sound_changed);
++#else
++        muted = acme_volume_get_mute (manager->priv->volume);
++        vol = acme_volume_get_volume (manager->priv->volume);
++
++        /* FIXME: AcmeVolume should probably emit signals
++           instead of doing it like this */
++        dialog_init (manager);
++        gsd_media_keys_window_set_volume_muted (GSD_MEDIA_KEYS_WINDOW (manager->priv->dialog),
++                                                muted);
++        gsd_media_keys_window_set_volume_level (GSD_MEDIA_KEYS_WINDOW (manager->priv->dialog),
++                                                vol);
++        gsd_media_keys_window_set_action (GSD_MEDIA_KEYS_WINDOW (manager->priv->dialog),
++                                          GSD_MEDIA_KEYS_WINDOW_ACTION_VOLUME);
++        dialog_show (manager);
++#endif /* HAVE_PULSE */
+ }
+ 
++#endif /* defined(HAVE_PULSE) || defined(HAVE_GSTREAMER) */
++
++#ifdef HAVE_PULSE
+ static void
+ update_default_sink (GsdMediaKeysManager *manager)
+ {
+@@ -919,9 +979,9 @@
+         case MUTE_KEY:
+         case VOLUME_DOWN_KEY:
+         case VOLUME_UP_KEY:
+-#ifdef HAVE_PULSE
++#if defined(HAVE_PULSE) || defined(HAVE_GSTREAMER)
+                 do_sound_action (manager, type);
+-#endif /* HAVE_PULSE */
++#endif /* HAVE_PULSE || HAVE_GSTREAMER */
+                 break;
+         case POWER_KEY:
+                 do_exit_action (manager);
+@@ -1064,7 +1124,7 @@
+ 
+         g_debug ("Starting media_keys manager");
+         gnome_settings_profile_start (NULL);
+-        manager->priv->volume_monitor = g_volume_monitor_get ();
++        manager->priv->volume_monitor = g_volume_monitor_get();
+         manager->priv->conf_client = gconf_client_get_default ();
+ 
+         gconf_client_add_dir (manager->priv->conf_client,
+@@ -1122,6 +1182,10 @@
+         gvc_mixer_control_open (manager->priv->volume);
+ 
+         gnome_settings_profile_end ("gvc_mixer_control_new");
++#elif defined(HAVE_GSTREAMER)
++        gnome_settings_profile_start ("acme_volume_new");
++        manager->priv->volume = acme_volume_new ();
++        gnome_settings_profile_end ("acme_volume_new");
+ #endif /* HAVE_PULSE */
+         g_idle_add ((GSourceFunc) start_media_keys_idle_cb, manager);
+ 
+@@ -1199,6 +1263,7 @@
+                 g_object_unref (priv->stream);
+                 priv->stream = NULL;
+         }
++#elif defined(HAVE_GSTREAMER)
+ 
+         if (priv->volume) {
+                 g_object_unref (priv->volume);
+diff -Nur plugins/media-keys/Makefile.am plugins/media-keys/Makefile.am
+--- plugins/media-keys/Makefile.am	2010-03-10 13:59:38.000000000 +0200
++++ plugins/media-keys/Makefile.am	2010-03-29 22:18:20.077410522 +0300
+@@ -3,13 +3,8 @@
+ 
+ NULL =
+ 
+-SUBDIRS =
+-plugin_LTLIBRARIES =
+-
+-if HAVE_PULSE
+-SUBDIRS += cut-n-paste
+-plugin_LTLIBRARIES += libmedia-keys.la
+-endif
++SUBDIRS = cut-n-paste
++plugin_LTLIBRARIES = libmedia-keys.la
+ 
+ BUILT_SOURCES = 			\
+ 	gsd-media-keys-manager-glue.h	\
+@@ -100,7 +95,7 @@
+ 
+ libmedia_keys_la_LIBADD  = 		\
+ 	$(top_builddir)/plugins/common/libcommon.la			\
+-	$(top_builddir)/plugins/media-keys/cut-n-paste/libgvc.la	\
++	$(top_builddir)/plugins/media-keys/cut-n-paste/libgvc.la        \
+ 	$(SETTINGS_PLUGIN_LIBS)						\
+ 	$(XF86MISC_LIBS)						\
+ 	-lm
+@@ -108,9 +103,7 @@
+ plugin_in_files = 		\
+ 	media-keys.gnome-settings-plugin.in
+ 
+-if HAVE_PULSE
+ plugin_DATA = $(plugin_in_files:.gnome-settings-plugin.in=.gnome-settings-plugin)
+-endif
+ 
+ noinst_PROGRAMS =				\
+ 	test-media-keys				\
+@@ -176,9 +169,7 @@
+ 	$(GST_LIBS)				\
+ 	-lm
+ 
+-if HAVE_PULSE
+ test_media_keys_LDADD += $(top_builddir)/plugins/media-keys/cut-n-paste/libgvc.la
+-endif
+ 
+ gtkbuilderdir = $(pkgdatadir)
+ gtkbuilder_DATA =	\
