@@ -1,5 +1,7 @@
 #!/bin/sh
-
+#
+# Public Domain, 2009-2010 - Juan RP <xtraeme@gmail.com>
+#
 trap "echo; error_out $?" INT QUIT
 
 [ "$(id -u)" -ne 0 ] && echo "root perms are required." && exit 1
@@ -37,12 +39,27 @@ info_msg()
 {
 	printf "\033[1m$@\n\033[m"
 }
-	
+
+mount_pseudofs()
+{
+	for fs in sys proc dev; do
+		if [ ! -d $TEMP_ROOTFS/$fs ]; then
+			mkdir -p $TEMP_ROOTFS/$fs
+		fi
+		mount --bind /$fs $TEMP_ROOTFS/$fs || error_out
+	done
+}
+
+umount_pseudofs()
+{
+	for fs in sys proc dev; do
+		umount -f $TEMP_ROOTFS/$fs 2>&1 >/dev/null
+	done
+}
+
 error_out()
 {
-	[ -d $TEMP_ROOTFS/sys ] && umount -f $TEMP_ROOTFS/sys 2>&1 >/dev/null
-	[ -d $TEMP_ROOTFS/proc ] && umount -f $TEMP_ROOTFS/proc 2>&1 >/dev/null
-	[ -d $TEMP_ROOTFS/dev ] && umount -f $TEMP_ROOTFS/dev 2>&1 >/dev/null
+	umount_pseudofs
 
 	[ "$1" -ne 0 ] && echo "ERROR: stage mentioned above returned $1!"
 	info_msg "Cleaning up $BUILD_TMPDIR..."
@@ -152,6 +169,8 @@ if [ ! -f "$ISOLINUX_DIR/vesamenu.c32" ]; then
 	cp -f $SYSLINUX_DATADIR/vesamenu.c32 "$ISOLINUX_DIR"
 fi
 
+mount_pseudofs
+
 xbps_relver=$(xbps-bin.static -V)
 xbps-uhelper.static cmpver ${xbps_relver} 20091222
 if [ $? -eq 255 ]; then
@@ -191,6 +210,8 @@ cp -f "$TEMP_ROOTFS/boot/vmlinuz-${kernel_ver}" \
 info_msg "Cleaning up rootfs..."
 rm -f $TEMP_ROOTFS/boot/initrd*
 rm -f $TEMP_ROOTFS/boot/vmlinuz*
+
+umount_pseudofs
 
 info_msg "Building squashed root filesystem..."
 mksquashfs "$TEMP_ROOTFS" "$BUILD_TMPDIR/casper/filesystem.squashfs" \
