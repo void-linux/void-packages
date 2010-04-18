@@ -59,6 +59,14 @@ extract_distfiles()
 		return 0
 	fi
 
+	# Check that distfiles are there before anything else.
+	for f in ${distfiles}; do
+		curfile=$(basename $f)
+		if [ ! -f ${XBPS_SRCDISTDIR}/${curfile} ]; then
+			msg_error "cannot find ${curfile}, use 'xbps-src fetch' first."
+		fi
+	done
+
 	if [ -n "$create_wrksrc" ]; then
 		mkdir -p ${wrksrc} || return 1
 	fi
