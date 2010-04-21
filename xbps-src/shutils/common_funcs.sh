@@ -32,8 +32,7 @@ run_func()
 
 	[ -z "$func" ] && return 1
 
-	type -t $func | grep -q 'function'
-	if [ $? -eq 0 ]; then
+	if $(type $func | grep -q 'function'); then
 		$func
 		return $?
 	fi
