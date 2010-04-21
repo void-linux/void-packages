@@ -126,8 +126,9 @@ xbps_write_metadata_pkg_real()
 		# Add info-files trigger.
 		triggers="info-files $triggers"
 
-		for f in $(find -L ${DESTDIR}/usr/share/info -type f); do
-			j=$(echo $f|sed -e "$fpattern")
+		for f in $(find ${DESTDIR}/usr/share/info -type f); do
+			rlink=$(readlink -f $f)
+			j=$(echo $rlink|sed -e "$fpattern")
 			[ "$j" = "" ] && continue
 			[ "$j" = "/usr/share/info/dir" ] && continue
 			# Ignore compressed files.
@@ -158,8 +159,9 @@ xbps_write_metadata_pkg_real()
 	# compress all them with gzip.
 	#
 	if [ -d "${DESTDIR}/usr/share/man" ]; then
-		for f in $(find -L ${DESTDIR}/usr/share/man -type f); do
-			j=$(echo $f|sed -e "$fpattern")
+		for f in $(find ${DESTDIR}/usr/share/man -type f); do
+			rlink=$(readlink -f $f)
+			j=$(echo $rlink|sed -e "$fpattern")
 			[ "$j" = "" ] && continue
 			if $(echo $j|grep -q '.*.gz$'); then
 				continue
