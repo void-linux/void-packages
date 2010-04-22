@@ -139,7 +139,7 @@ unstow_pkg_real()
 		# Remove installed files.
 		for f in $(cat flist); do
 			if [ -f $XBPS_MASTERDIR/$f -o -h $XBPS_MASTERDIR/$f ]; then
-				rm $XBPS_MASTERDIR/$f  >/dev/null 2>&1
+				rm -f $XBPS_MASTERDIR/$f >/dev/null 2>&1
 				if [ $? -eq 0 ]; then
 					echo "Removing file: $f"
 				fi
