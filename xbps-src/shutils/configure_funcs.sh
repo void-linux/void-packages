@@ -58,7 +58,7 @@ configure_src_phase()
 	cd $wrksrc || msg_error "unexistent build directory [$wrksrc]."
 
 	# Run pre_configure func.
-	run_func pre_configure || msg_error "pre_configure stage failed!"
+	run_func pre_configure 2>/dev/null || msg_error "pre_configure stage failed!"
 
 	# Export configure_env vars.
 	for f in ${configure_env}; do
@@ -114,7 +114,7 @@ configure_src_phase()
 	fi
 
 	# Run post_configure func.
-	run_func post_configure || msg_error "post_configure stage failed!"
+	run_func post_configure 2>/dev/null || msg_error "post_configure stage failed!"
 
 	# unset configure_env vars.
 	for f in ${configure_env}; do

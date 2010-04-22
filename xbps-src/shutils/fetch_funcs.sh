@@ -67,7 +67,7 @@ fetch_distfiles()
 	# entirely and run the do_fetch() function.
 	#
 	if [ -n "$nofetch" ]; then
-		cd ${XBPS_BUILDDIR} && run_func do_fetch
+		cd ${XBPS_BUILDDIR} && run_func do_fetch 2>/dev/null
 		return $?
 	fi
 
