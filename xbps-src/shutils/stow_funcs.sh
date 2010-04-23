@@ -42,7 +42,8 @@ stow_pkg_handler()
 		if [ ! -f $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template ]; then
 			msg_error "Cannot find $subpkg subpkg build template!"
 		fi
-		unset revision
+		unset revision pre_install pre_remove post_install \
+			post_remove post_stow
 		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${subpkg}
 		set_tmpl_common_vars
@@ -68,7 +69,7 @@ stow_pkg_handler()
 #
 stow_pkg_real()
 {
-	local i lver regpkgdb_flags
+	local i lfile lver regpkgdb_flags
 
 	[ -z "$pkgname" ] && return 2
 
@@ -82,15 +83,64 @@ stow_pkg_real()
 
 	[ -n "$stow_flag" ] && setup_tmpl $pkgname
 
-	cd ${DESTDIR} || exit 1
+	cd ${DESTDIR} || return 1
+
+	msg_normal "Stowning '${pkgname}' into masterdir..."
 
 	# Copy files into masterdir.
-	for i in $(echo *); do
-		if [ "$i" = "INSTALL" -o "$i" = "REMOVE" -o \
-		     "$i" = "files.plist" -o "$i" = "props.plist" ]; then
+	for i in $(find -print); do
+		lfile="$(echo $i|sed -e 's|^\./||')"
+		# Skip pkg metadata
+		if [ "$lfile" = "INSTALL" -o "$lfile" = "REMOVE" -o \
+		     "$lfile" = "files.plist" -o "$lfile" = "props.plist" ]; then
 		     continue
+		# Skip files that are already in masterdir.
+		elif [ -f "$XBPS_MASTERDIR/$lfile" ]; then
+			echo "=> Skipping $lfile file, already exists!"
+			continue
+		elif [ -h "$XBPS_MASTERDIR/$lfile" ]; then
+			echo "=> Skipping $lfile link, already exists!"
+			continue
+		elif [ -d "$XBPS_MASTERDIR/$lfile" ]; then
+			continue
 		fi
-		cp -a ${i} $XBPS_MASTERDIR
+		if [ -d "$i" ]; then
+			mkdir -p $XBPS_MASTERDIR/$lfile
+
+		elif [ -f "$i" -o -h "$i" ]; then
+			# Always copy the pkg metadata flist file.
+			if [ "$(basename $i)" = "flist" ]; then
+				cp -dp $i $XBPS_MASTERDIR/$lfile
+				continue
+			fi
+			if [ -n "$in_chroot" -a -n "$stow_copy_files" ]; then
+				# Templates that set stow_copy_files require
+				# some files to be copied, rather than symlinked.
+				local found
+				for j in ${stow_copy_files}; do
+					if [ "/$lfile" = "${j}" ]; then
+						found=1
+						break
+					fi
+				done
+				if [ -n "$found" ]; then
+					cp -dp $i $XBPS_MASTERDIR/$lfile
+					unset found
+					continue
+				fi
+			fi
+			if [ -n "$in_chroot" -a -n "$stow_copy" -o -z "$in_chroot" ]; then
+				# In the no-chroot case and templates that
+				# set $stow_copy, we can't stow with symlinks.
+				# Just copy them.
+				cp -dp $i $XBPS_MASTERDIR/$lfile
+			else
+				# Always use symlinks in the chroot with pkgs
+				# that don't have $stow_copy set, they can have
+				# full path.
+				ln -sf $DESTDIR/$lfile $XBPS_MASTERDIR/$lfile
+			fi
+		fi
 	done
 
 	#
@@ -101,7 +151,10 @@ stow_pkg_real()
 	else
 		lver="${version}"
 	fi
-	$XBPS_PKGDB_CMD register $pkgname $lver "$short_desc"
+	$XBPS_PKGDB_CMD register $pkgname $lver "$short_desc" || return $?
+
+	run_func post_stow 2>/dev/null || msg_error "post_stow failed!"
+
 	return $?
 }
 
@@ -131,13 +184,16 @@ unstow_pkg_real()
 	if [ "$build_style" = "meta-template" ]; then
 		# If it's a metapkg, do nothing.
 		:
-	elif [ ! -f flist ]; then
+	elif [ ! -f ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
 		msg_error "$pkgname is incomplete, missing flist."
-	elif [ ! -w flist ]; then
+	elif [ ! -w ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
 		msg_error "$pkgname cannot be removed (permission denied)."
-	elif [ -s flist ]; then
+	elif [ -s ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
+		run_func pre_remove 2>/dev/null || \
+			msg_error "pre_remove stage failed!"
+
 		# Remove installed files.
-		for f in $(cat flist); do
+		for f in $(cat ${XBPS_PKGMETADIR}/${pkgname}/flist); do
 			if [ -f $XBPS_MASTERDIR/$f -o -h $XBPS_MASTERDIR/$f ]; then
 				rm -f $XBPS_MASTERDIR/$f >/dev/null 2>&1
 				if [ $? -eq 0 ]; then
@@ -146,7 +202,7 @@ unstow_pkg_real()
 			fi
 		done
 
-		for f in $(cat flist); do
+		for f in $(cat ${XBPS_PKGMETADIR}/${pkgname}/flist); do
 			if [ -d $XBPS_MASTERDIR/$f ]; then
 				rmdir $XBPS_MASTERDIR/$f >/dev/null 2>&1
 				if [ $? -eq 0 ]; then
@@ -155,6 +211,8 @@ unstow_pkg_real()
 			fi
 		done
 	fi
+
+	run_func post_remove 2>/dev/null || msg_error "post_remove failed!"
 
 	# Remove metadata dir.
 	rm -rf $XBPS_PKGMETADIR/$pkgname
