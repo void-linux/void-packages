@@ -227,6 +227,7 @@ prepare_tmpl()
 	[ -z "$wrksrc" ] && wrksrc="$pkgname-$version"
 	wrksrc="$XBPS_BUILDDIR/$wrksrc"
 
+	XBPS_FETCH_DONE="$wrksrc/.xbps_fetch_done"
 	XBPS_EXTRACT_DONE="$wrksrc/.xbps_extract_done"
 	XBPS_APPLYPATCHES_DONE="$wrksrc/.xbps_applypatches_done"
 	XBPS_CONFIGURE_DONE="$wrksrc/.xbps_configure_done"

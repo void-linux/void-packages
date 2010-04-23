@@ -62,6 +62,8 @@ fetch_distfiles()
 	#
 	[ "$build_style" = "meta-template" ] && return 0
 
+	[ -f "$XBPS_FETCH_DONE" ] && return 0
+
 	#
 	# If nofetch is set in a build template, skip this phase
 	# entirely and run the do_fetch() function.
@@ -144,4 +146,5 @@ fetch_distfiles()
 	done
 
 	unset cksum found
+	touch -f $XBPS_FETCH_DONE
 }
