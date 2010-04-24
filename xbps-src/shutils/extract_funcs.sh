@@ -162,5 +162,6 @@ extract_distfiles()
 		esac
 	done
 
+	touch -f $XBPS_FETCH_DONE
 	touch -f $XBPS_EXTRACT_DONE
 }

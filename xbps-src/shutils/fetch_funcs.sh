@@ -146,5 +146,4 @@ fetch_distfiles()
 	done
 
 	unset cksum found
-	touch -f $XBPS_FETCH_DONE
 }
