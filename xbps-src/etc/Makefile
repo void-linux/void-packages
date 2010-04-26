@@ -4,12 +4,9 @@ CONF_FILE = xbps-src.conf
 
 .PHONY: all
 all:
-	sed -e "s|@@XBPS_INSTALL_PREFIX@@|$(PREFIX)|g" \
-		$(CONF_FILE).in > $(CONF_FILE)
 
 .PHONY: clean
 clean:
-	-rm -f $(CONF_FILE)
 
 .PHONY: install
 install:
