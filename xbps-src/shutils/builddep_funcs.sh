@@ -78,7 +78,7 @@ install_pkg_deps()
 	done
 
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
-		install_pkg_with_binpkg ${curpkg}
+		install_pkg_with_binpkg "${curpkg}"
 		if [ $? -eq 255 ]; then
 			# xbps-bin returned unexpected error
 			return $?
@@ -97,7 +97,7 @@ install_pkg_deps()
 #
 install_dependencies_pkg()
 {
-	local pkg="$1"
+	local pkg="$1" rval pkgdep_list
 	local lpkgname=$(${XBPS_PKGDB_CMD} getpkgname ${pkg})
 	local i pkgn iver reqver notinstalled_deps lver
 
@@ -129,13 +129,32 @@ install_dependencies_pkg()
 
 	[ -z "$notinstalled_deps" ] && return 0
 
+	if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
+		for i in ${notinstalled_deps}; do
+			pkgdeplist="${pkgdeplist} \"${i}\" "
+		done
+		msg_normal "Installing required build dependencies from binpkgs..."
+		${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} \
+			-y install ${pkgdeplist}
+		rval=$?
+		if [ $rval -eq 255 ]; then
+			# xbps-bin returned unexpected error (-1)
+			return $?
+		elif [ $rval -eq 0 ]; then
+			# Install successfully
+			echo
+			return 0
+		fi
+	fi
+
 	for i in ${notinstalled_deps}; do
 		if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
-			install_pkg_with_binpkg ${i}
-			if [ $? -eq 255 ]; then
+			install_pkg_with_binpkg "${i}"
+			rval=$?
+			if [ $rval -eq 255 ]; then
 				# xbps-bin returned unexpected error (-1)
 				return $?
-			elif [ $? -eq 0 ]; then
+			elif [ $rval -eq 0 ]; then
 				# installed successfully
 				continue
 			fi
@@ -149,11 +168,12 @@ install_dependencies_pkg()
 		if [ $? -eq 1 ]; then
 			msg_normal "Installing $lpkgname dependency: $pkgn."
 			if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
-				install_pkg_with_binpkg ${i}
-				if [ $? -eq 255 ]; then
+				install_pkg_with_binpkg "${i}"
+				rval=$?
+				if [ $rval -eq 255 ]; then
 					# xbps-bin returned unexpected error
 					return $?
-				elif [ $? -eq 0 ]; then
+				elif [ $rval -eq 0 ]; then
 					# installed successfully
 					continue
 				else

@@ -29,7 +29,8 @@
 #
 
 # Umount stuff if SIGINT or SIGQUIT was caught
-trap "${sudo_cmd} @@XBPS_INSTALL_LIBEXECDIR@@/xbps-src-chroot-helper umount && exit $?" INT QUIT
+trap "MASTERDIR=${XBPS_MASTERDIR} ${sudo_cmd} \
+	@@XBPS_INSTALL_LIBEXECDIR@@/xbps-src-chroot-helper umount && exit $?" INT QUIT
 
 [ -n "$base_chroot" ] && return 0
 
@@ -150,12 +151,24 @@ create_binsh_symlink()
 
 prepare_binpkg_repos()
 {
+	local repo
+
 	if [ ! -f "$XBPS_MASTERDIR/.xbps_added_local_repo" ]; then
-		msg_normal "Registering local binpkg repo..."
-		${chroot_cmd} $XBPS_MASTERDIR \
-			${XBPS_REPO_CMD} add /xbps_packagesdir
-		[ $? -eq 0 ] && touch -f $XBPS_MASTERDIR/.xbps_added_local_repo
+		if [ ! -f ${XBPS_PACKAGESDIR}/${xbps_machine}/pkg-index.plist ]; then
+			:
+		else
+			msg_normal "Registering local binpkg repo..."
+			${chroot_cmd} $XBPS_MASTERDIR \
+			    ${XBPS_REPO_CMD} add /xbps_packagesdir 2>/dev/null
+			[ $? -eq 0 ] && touch -f \
+				$XBPS_MASTERDIR/.xbps_added_local_repo
+		fi
 	fi
+	for repo in ${XBPS_REPO_LIST}; do
+		${chroot_cmd} ${XBPS_MASTERDIR} ${XBPS_REPO_CMD} \
+			add ${repo} 2>/dev/null
+		[ $? -eq 0 ] && msg_normal "Registered remote repository: ${repo}"
+	done
 }
 
 create_busybox_links()
@@ -189,7 +202,7 @@ install_xbps_utils()
 	done
 
 	if [ -n "$needed" ]; then
-		echo "=> Installing the required XBPS utils."
+		echo "=> Installing static XBPS utils into masterdir."
 		for f in bin repo uhelper; do
 			_cmd=$(which xbps-${f}.static 2>/dev/null)
 			if [ -z "${_cmd}" ]; then
@@ -233,9 +246,11 @@ xbps_chroot_handler()
 
 	# Reinstall xbps-src in the chroot
 	if [ ! -f $XBPS_MASTERDIR/usr/local/sbin/xbps-src ]; then
+		msg_normal "Installing xbps-src in the masterdir..."
 		env in_chroot=yes LANG=C PATH=$path \
 		    ${chroot_cmd} $XBPS_MASTERDIR sh -c \
-		    "cd /xbps/xbps-src && make IN_CHROOT=1 install clean"
+		    "cd /xbps/xbps-src && make IN_CHROOT=1 install clean" \
+		    2>&1 >/dev/null
 	fi
 
 	if [ "$action" = "chroot" ]; then
@@ -251,6 +266,7 @@ xbps_chroot_handler()
 			${lenv} ${chroot_cmd} $XBPS_MASTERDIR sh -c \
 			"cd /xbps/srcpkgs/$pkg && xbps-src $action"
 	fi
+
 	msg_normal "Exiting from the chroot on $XBPS_MASTERDIR."
 	MASTERDIR="${XBPS_MASTERDIR}" ${sudo_cmd} \
 		@@XBPS_INSTALL_LIBEXECDIR@@/xbps-src-chroot-helper umount
