@@ -57,7 +57,8 @@ build_src_phase()
 			makejobs="-j$XBPS_MAKEJOBS"
 	fi
 	# Run pre_build func.
-	run_func pre_build 2>/dev/null || msg_error "pre_build stage failed!"
+	run_func pre_build 2>${wrksrc}/.xbps_pre_build.log \
+		|| msg_error "pre_build stage failed!"
 
 	. $XBPS_SHUTILSDIR/buildvars_funcs.sh
 	set_build_vars
@@ -65,17 +66,20 @@ build_src_phase()
 	msg_normal "Running build phase for $pkg."
 
 	if [ "$build_style" = "custom-install" ]; then
-		run_func do_build 2>/dev/null || msg_error "do_build stage failed!"
+		run_func do_build 2>${wrksrc}/.xbps_do_build.log \
+			|| msg_error "do_build stage failed!"
 	else
 		#
 		# Build package via make.
 		#
-		${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
+		${make_cmd} ${makejobs} ${make_build_args} \
+			${make_build_target} 2>${wrksrc}/.xbps_make_build.log
 		[ $? -ne 0 ] && msg_error "building $pkg (build phase)."
 	fi
 
 	# Run post_build func.
-	run_func post_build 2>/dev/null || msg_error "post_build stage failed!"
+	run_func post_build 2>${wrksrc}/.xbps_post_build.log \
+		|| msg_error "post_build stage failed!"
 
 	unset makejobs
 
