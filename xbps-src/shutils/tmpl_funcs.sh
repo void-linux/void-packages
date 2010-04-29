@@ -69,7 +69,7 @@ reset_tmpl_vars()
 			make_build_target configure_script noextract nofetch \
 			pre_configure pre_build pre_install build_depends \
 			post_configure post_build post_install nostrip \
-			make_install_target version revision essential \
+			make_install_target version revision \
 			sgml_catalogs xml_catalogs xml_entries sgml_entries \
 			disable_parallel_build run_depends font_dirs preserve \
 			only_for_archs conf_files keep_libtool_archives \

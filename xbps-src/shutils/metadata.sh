@@ -54,7 +54,7 @@ xbps_write_metadata_pkg()
 		fi
 		setup_tmpl ${sourcepkg}
 		unset run_depends conf_files noarch triggers replaces \
-			revision openrc_services system_accounts essential \
+			revision openrc_services system_accounts \
 			preserve keep_empty_dirs xml_entries sgml_entries \
 			xml_catalogs sgml_catalogs gconf_entries gconf_schemas \
 			gtk_iconcache_dirs font_dirs
@@ -294,12 +294,6 @@ _EOF
 	#
 	if [ -n "$system_accounts" ]; then
 		Add_dependency run shadow
-	fi
-
-	# Is this an essential pkg?
-	if [ -n "$essential" ]; then
-		echo "<key>essential</key>" >> $TMPFPROPS
-		echo "<true/>" >> $TMPFPROPS
 	fi
 
 	# pkg needs to preserve its files after removal/upgrade?
