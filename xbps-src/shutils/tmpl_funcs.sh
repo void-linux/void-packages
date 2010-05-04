@@ -237,11 +237,13 @@ prepare_tmpl()
 	set_tmpl_common_vars
 
 	if [ -z "$in_chroot" ]; then
-		export PATH="$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin"
-		export PATH="$PATH:$XBPS_MASTERDIR/usr/bin"
-		export PATH="$PATH:$XBPS_MASTERDIR/usr/sbin"
-		export PATH="$PATH:/bin:/sbin:/usr/bin:/usr/sbin"
-		export PATH="$PATH:/usr/local/sbin"
+		local _PATH
+		_PATH="$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/sbin"
+		_PATH="${_PATH}:$XBPS_MASTERDIR/usr/bin"
+		_PATH="${_PATH}:$XBPS_MASTERDIR/usr/sbin"
+		_PATH="${_PATH}:/bin:/sbin:/usr/bin:/usr/sbin"
+		_PATH="${_PATH}:/usr/local/sbin"
+		export PATH="${_PATH}:${PATH}"
 	fi
 }
 
