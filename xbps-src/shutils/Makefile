@@ -1,6 +1,6 @@
 include ../vars.mk
 
-SCRIPTS = chroot.sh init_funcs.sh pkgtarget_funcs.sh
+SCRIPTS = tmpl_funcs.sh chroot.sh init_funcs.sh pkgtarget_funcs.sh
 
 .PHONY: all
 all:
