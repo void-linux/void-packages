@@ -59,7 +59,7 @@ configure_src_phase()
 
 	# Run pre_configure func.
 	run_func pre_configure 2>${wrksrc}/.xbps_pre_configure.log \
-		|| msg_error "pre_configure stage failed!"
+		|| msg_error "$pkgname: pre_configure() failed! check $wrksrc/.xbps_pre_configure.log"
 
 	# Export configure_env vars.
 	for f in ${configure_env}; do
@@ -83,9 +83,11 @@ configure_src_phase()
 		#
 		# Packages using GNU autoconf
 		#
-		${configure_script} --prefix=/usr --sysconfdir=/etc \
+		{ ${configure_script} --prefix=/usr --sysconfdir=/etc \
 			--infodir=/usr/share/info --mandir=/usr/share/man \
-			${configure_args}
+			${configure_args} 2>&1 \
+			| tee ${wrksrc}/.xbps_configure.log; } || \
+			msg_error "$pkgname: configure failed! check ${wrksrc}/.xbps_configure.log"
 		;;
 	configure)
 		#
@@ -99,7 +101,8 @@ configure_src_phase()
 		# They are all handled by the helper perl-module.sh.
 		#
 		. $XBPS_HELPERSDIR/perl-module.sh
-		perl_module_build $pkgname
+		{ perl_module_build $pkgname; } \
+			2>&1 | tee ${wrksrc}/.xbps_configure.log
 		;;
 	*)
 		#
@@ -116,7 +119,7 @@ configure_src_phase()
 
 	# Run post_configure func.
 	run_func post_configure 2>${wrksrc}/.xbps_post_configure.log \
-		|| msg_error "post_configure stage failed!"
+		|| msg_error "$pkgname: post_configure() failed! check $wrksrc/.xbps_post_configure.log"
 
 	# unset configure_env vars.
 	for f in ${configure_env}; do

@@ -364,16 +364,18 @@ _EOF
 	mv -f $TMPFPLIST ${DESTDIR}/files.plist
 	mv -f $TMPFPROPS ${DESTDIR}/props.plist
 
-	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/files.plist || return 1
-	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/props.plist || return 1
-	chmod 644 ${DESTDIR}/files.plist ${DESTDIR}/props.plist
-	[ -f $metadir/flist ] && chmod 644 $metadir/flist
-
+	{								\
+	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/files.plist;		\
+	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/props.plist;		\
+	chmod 644 ${DESTDIR}/files.plist ${DESTDIR}/props.plist;	\
+	[ -f $metadir/flist ] && chmod 644 $metadir/flist;		\
+									\
 	#
 	# Create the INSTALL/REMOVE scripts if package uses them
 	# or uses any available trigger.
 	#
-	. ${XBPS_SHUTILSDIR}/metadata_scripts.sh
-	xbps_write_metadata_scripts_pkg install || return $?
-	xbps_write_metadata_scripts_pkg remove || return $?
+	. ${XBPS_SHUTILSDIR}/metadata_scripts.sh;			\
+	xbps_write_metadata_scripts_pkg install;			\
+	xbps_write_metadata_scripts_pkg remove;				\
+	} || return $?
 }
