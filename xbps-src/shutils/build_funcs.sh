@@ -72,10 +72,9 @@ build_src_phase()
 		#
 		# Build package via make.
 		#
-		{ ${make_cmd} ${makejobs} ${make_build_args} \
-			${make_build_target} \
-			2>&1 | tee ${wrksrc}/.xbps_make_build.log; } || \
-			msg_error "$pkgname: build phase failed! check $wrksrc/.xbps_make_build.log"
+		${make_cmd} ${makejobs} ${make_build_args} \
+			${make_build_target} ||
+			msg_error "$pkgname: build phase failed!"
 	fi
 
 	# Run post_build func.

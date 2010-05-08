@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2009 Juan Romero Pardines.
+# Copyright (c) 2008-2010 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -29,7 +29,7 @@
 #
 configure_src_phase()
 {
-	local f lver
+	local f lver error=0
 
 	[ -z $pkgname ] && return 1
 
@@ -83,17 +83,15 @@ configure_src_phase()
 		#
 		# Packages using GNU autoconf
 		#
-		{ ${configure_script} --prefix=/usr --sysconfdir=/etc \
+		${configure_script} --prefix=/usr --sysconfdir=/etc \
 			--infodir=/usr/share/info --mandir=/usr/share/man \
-			${configure_args} 2>&1 \
-			| tee ${wrksrc}/.xbps_configure.log; } || \
-			msg_error "$pkgname: configure failed! check ${wrksrc}/.xbps_configure.log"
+			${configure_args} || error=$?
 		;;
 	configure)
 		#
 		# Packages using custom configure scripts.
 		#
-		${configure_script} ${configure_args}
+		${configure_script} ${configure_args} || error=$?
 		;;
 	perl-module|perl_module)
 		#
@@ -101,8 +99,7 @@ configure_src_phase()
 		# They are all handled by the helper perl-module.sh.
 		#
 		. $XBPS_HELPERSDIR/perl-module.sh
-		{ perl_module_build $pkgname; } \
-			2>&1 | tee ${wrksrc}/.xbps_configure.log
+		perl_module_build $pkgname || error=$?
 		;;
 	*)
 		#
@@ -113,8 +110,8 @@ configure_src_phase()
 		;;
 	esac
 
-	if [ "$build_style" != "perl_module" -a "$?" -ne 0 ]; then
-		msg_error "building $pkg (configure phase)."
+	if [ "$build_style" != "perl_module" -a "$error" -ne 0 ]; then
+		msg_error "$pkgname: configure stage failed!"
 	fi
 
 	# Run post_configure func.
