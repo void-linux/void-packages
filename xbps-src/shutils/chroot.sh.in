@@ -214,6 +214,20 @@ install_xbps_utils()
 	fi
 }
 
+_mount()
+{
+	MASTERDIR="${XBPS_MASTERDIR}" ${sudo_cmd} \
+		@@XBPS_INSTALL_LIBEXECDIR@@/xbps-src-chroot-helper mount
+	return $?
+}
+
+_umount()
+{
+	MASTERDIR="${XBPS_MASTERDIR}" ${sudo_cmd} \
+		@@XBPS_INSTALL_LIBEXECDIR@@/xbps-src-chroot-helper umount
+	return $?
+}
+
 xbps_chroot_handler()
 {
 	local action="$1"
@@ -237,9 +251,7 @@ xbps_chroot_handler()
 	create_busybox_links
 	install_xbps_utils
 
-	MASTERDIR="${XBPS_MASTERDIR}" ${sudo_cmd} \
-		@@XBPS_INSTALL_LIBEXECDIR@@/xbps-src-chroot-helper mount
-	[ $? -ne 0 ] && return $?
+	_mount || return $?
 
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
 		prepare_binpkg_repos
@@ -248,26 +260,26 @@ xbps_chroot_handler()
 	# Reinstall xbps-src in the chroot
 	if [ ! -f $XBPS_MASTERDIR/usr/local/sbin/xbps-src ]; then
 		msg_normal "Installing xbps-src in the masterdir..."
-		{ env in_chroot=yes LANG=C PATH=$path \
+		env in_chroot=yes LANG=C PATH=$path \
 		    ${chroot_cmd} $XBPS_MASTERDIR sh -c \
 		    "cd /xbps/xbps-src && make IN_CHROOT=1 install clean" \
-		    2>&1 >/dev/null; }
+		    2>&1 >/dev/null || return $?
 	fi
 
 	if [ "$action" = "chroot" ]; then
-		{ env in_chroot=yes IN_CHROOT=1 LANG=C PATH=$path \
-			${chroot_cmd} $XBPS_MASTERDIR /bin/sh; }
+		env in_chroot=yes IN_CHROOT=1 LANG=C PATH=$path \
+			${chroot_cmd} $XBPS_MASTERDIR /bin/sh || return $?
 	else
 		[ "$norm_builddir" = "yes" ] && \
 			action="-C $action"
-		{ env in_chroot=yes LANG=C PATH=$path \
+		env in_chroot=yes LANG=C PATH=$path \
 			${chroot_cmd} $XBPS_MASTERDIR sh -c \
-			"cd /xbps/srcpkgs/$pkg && xbps-src $action"; }
+			"cd /xbps/srcpkgs/$pkg && xbps-src $action" || \
+			rv=$? && _umount && return $rv
 	fi
 
 	msg_normal "Exiting from the chroot on $XBPS_MASTERDIR."
-	MASTERDIR="${XBPS_MASTERDIR}" ${sudo_cmd} \
-		@@XBPS_INSTALL_LIBEXECDIR@@/xbps-src-chroot-helper umount
+	_umount
 
 	return $?
 }

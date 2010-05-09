@@ -57,8 +57,12 @@ build_src_phase()
 			makejobs="-j$XBPS_MAKEJOBS"
 	fi
 	# Run pre_build func.
-	run_func pre_build 2>${wrksrc}/.xbps_pre_build.log \
-		|| msg_error "$pkgname: pre_build() failed! check $wrksrc/.xbps_pre_build.log"
+	run_func pre_build 2>${wrksrc}/.xbps_pre_build.log
+	if [ $? -ne 0 ]; then
+		msg_red "$pkgname: pre_build() failed:"
+		cat $wrksrc/.xbps_pre_build.log
+		exit 1
+	fi
 
 	. $XBPS_SHUTILSDIR/buildvars_funcs.sh
 	set_build_vars
@@ -78,8 +82,12 @@ build_src_phase()
 	fi
 
 	# Run post_build func.
-	run_func post_build 2>${wrksrc}/.xbps_post_build.log \
-		|| msg_error "$pkgname: post_build() failed! check $wrksrc/.xbps_post_build.log"
+	run_func post_build 2>${wrksrc}/.xbps_post_build.log
+	if [ $? -ne 0 ]; then
+		msg_red "$pkgname: post_build() failed:"
+		cat $wrksrc/.xbps_post_build.log
+		exit 1
+	fi
 
 	unset makejobs
 

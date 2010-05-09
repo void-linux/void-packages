@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2009 Juan Romero Pardines.
+# Copyright (c) 2008-2010 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -38,7 +38,7 @@ run_func()
 	fi
 }
 
-msg_error()
+msg_red()
 {
 	[ -z "$1" ] && return 1
 
@@ -50,7 +50,11 @@ msg_error()
 		echo "=> ERROR: $1"
 	fi
 	printf "\033[m"
+}
 
+msg_error()
+{
+	msg_red "$@"
 	exit 1
 }
 

@@ -58,8 +58,12 @@ configure_src_phase()
 	cd $wrksrc || msg_error "unexistent build directory [$wrksrc]."
 
 	# Run pre_configure func.
-	run_func pre_configure 2>${wrksrc}/.xbps_pre_configure.log \
-		|| msg_error "$pkgname: pre_configure() failed! check $wrksrc/.xbps_pre_configure.log"
+	run_func pre_configure 2>${wrksrc}/.xbps_pre_configure.log
+	if [ $? -ne 0 ]; then
+		msg_red "$pkgname: pre_configure() failed:"
+		cat $wrksrc/.xbps_pre_configure.log
+		exit 1
+	fi
 
 	# Export configure_env vars.
 	for f in ${configure_env}; do
@@ -115,8 +119,12 @@ configure_src_phase()
 	fi
 
 	# Run post_configure func.
-	run_func post_configure 2>${wrksrc}/.xbps_post_configure.log \
-		|| msg_error "$pkgname: post_configure() failed! check $wrksrc/.xbps_post_configure.log"
+	run_func post_configure 2>${wrksrc}/.xbps_post_configure.log
+	if [ $? -ne 0 ]; then
+		msg_red "$pkgname: post_configure() failed:"
+		cat $wrksrc/.xbps_post_configure.log
+		exit 1
+	fi
 
 	# unset configure_env vars.
 	for f in ${configure_env}; do
