@@ -73,7 +73,7 @@ install_pkg_deps()
 		# Iterate again, this will check if there are more
 		# required deps for current pkg.
 		#
-		install_pkg_deps $j $curpkg
+		install_pkg_deps $j $curpkg || return $?
 		prev_pkg="$j"
 	done
 
@@ -84,10 +84,10 @@ install_pkg_deps()
 			return $?
 		elif [ $? -eq 1 ]; then
 			# Package not found, build from source.
-			install_pkg $curpkgname
+			install_pkg $curpkgname || return $?
 		fi
 	else
-		install_pkg $curpkgname
+		install_pkg $curpkgname || return $?
 	fi
 	[ -n "$prev_pkg" ] && unset prev_pkg
 }
@@ -178,13 +178,13 @@ install_dependencies_pkg()
 					continue
 				else
 					# package not found, build source.
-					install_pkg $pkgn
+					install_pkg $pkgn || return $?
 				fi
 			else
-				install_pkg $pkgn
+				install_pkg $pkgn || return $?
 			fi
 		else
-			install_pkg_deps "${i}" $pkg
+			install_pkg_deps "${i}" $pkg || return $?
 		fi
 	done
 }
