@@ -73,7 +73,7 @@ install_pkg_deps()
 		# Iterate again, this will check if there are more
 		# required deps for current pkg.
 		#
-		install_pkg_deps $j $curpkg || return $?
+		install_pkg_deps $j $curpkg
 		prev_pkg="$j"
 	done
 
