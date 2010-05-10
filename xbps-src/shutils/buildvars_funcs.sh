@@ -30,12 +30,14 @@
 
 set_build_vars()
 {
+	local LDLIBPATH
+
 	if [ -z "$in_chroot" ]; then
 		SAVE_LDLIBPATH=$LD_LIBRARY_PATH
 		if [ -d /usr/lib/libfakeroot ]; then
-			LD_LIBRARY_PATH="/usr/lib/libfakeroot:$XBPS_MASTERDIR/usr/lib"
+			LDLIBPATH="/usr/lib/libfakeroot:$XBPS_MASTERDIR/usr/lib"
 		else
-			LD_LIBRARY_PATH="$XBPS_MASTERDIR/usr/lib"
+			LDLIBPATH="$XBPS_MASTERDIR/usr/lib"
 		fi
 		PKG_CONFIG="$XBPS_MASTERDIR/usr/bin/pkg-config"
 		PKG_CONFIG_LIBDIR="$XBPS_MASTERDIR/usr/lib/pkgconfig"
@@ -43,7 +45,7 @@ set_build_vars()
 		CPPFLAGS="-I$XBPS_MASTERDIR/usr/include $CPPFLAGS"
 		
 		export CPPFLAGS="$CPPFLAGS" LDFLAGS="$LDFLAGS"
-		export LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+		export LD_LIBRARY_PATH="$LDLIBPATH"
 		export PKG_CONFIG_LIBDIR="$PKG_CONFIG_LIBDIR"
 		export PKG_CONFIG="$PKG_CONFIG"
 	fi
