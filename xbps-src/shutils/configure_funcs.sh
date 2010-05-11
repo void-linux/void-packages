@@ -130,6 +130,7 @@ configure_src_phase()
 	for f in ${configure_env}; do
 		unset eval ${f%=*}
 	done
+	unset_build_vars
 
 	touch -f $XBPS_CONFIGURE_DONE
 }
