@@ -184,7 +184,7 @@ install_dependencies_pkg()
 				install_pkg $pkgn || return $?
 			fi
 		else
-			install_pkg_deps "${i}" $pkg || return $?
+			install_pkg_deps "${i}" $pkg
 		fi
 	done
 }
