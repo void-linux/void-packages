@@ -87,7 +87,7 @@ install_pkg_deps()
 			install_pkg $curpkgname || return $?
 		fi
 	else
-		install_pkg $curpkgname || return $?
+		install_pkg $curpkgname
 	fi
 	[ -n "$prev_pkg" ] && unset prev_pkg
 }
@@ -181,7 +181,7 @@ install_dependencies_pkg()
 					install_pkg $pkgn || return $?
 				fi
 			else
-				install_pkg $pkgn || return $?
+				install_pkg $pkgn
 			fi
 		else
 			install_pkg_deps "${i}" $pkg
