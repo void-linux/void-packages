@@ -62,8 +62,8 @@ set_build_vars()
 unset_build_vars()
 {
 	if [ -z "$in_chroot" ]; then
-		unset LDFLAGS CPPFLAGS LD_LIBRARY_PATH
+		unset LD_LIBRARY_PATH
 		export LD_LIBRARY_PATH=$SAVE_LDLIBPATH
 	fi
-	unset PKG_CONFIG PKG_CONFIG_LIBDIR CFLAGS CXXFLAGS
+	unset PKG_CONFIG LDFLAGS CPPFLAGS PKG_CONFIG_LIBDIR CFLAGS CXXFLAGS
 }
