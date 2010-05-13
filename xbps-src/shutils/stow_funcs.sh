@@ -104,10 +104,7 @@ stow_pkg_real()
 		elif [ -d "$XBPS_MASTERDIR/$lfile" ]; then
 			continue
 		fi
-		if [ -d "$i" ]; then
-			mkdir -p $XBPS_MASTERDIR/$lfile
-
-		elif [ -f "$i" -o -h "$i" ]; then
+		if [ -f "$i" -o -h "$i" ]; then
 			# Always copy the pkg metadata flist file.
 			if [ "$(basename $i)" = "flist" ]; then
 				cp -dp $i $XBPS_MASTERDIR/$lfile
@@ -140,6 +137,8 @@ stow_pkg_real()
 				# full path.
 				ln -sf $DESTDIR/$lfile $XBPS_MASTERDIR/$lfile
 			fi
+		elif [ -d "$i" ]; then
+			mkdir -p $XBPS_MASTERDIR/$lfile
 		fi
 	done
 
