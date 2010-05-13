@@ -135,10 +135,10 @@ install_dependencies_pkg()
 		iver="$($XBPS_PKGDB_CMD version $pkgn)"
 		check_pkgdep_matched "${i}"
 		if [ $? -eq 0 ]; then
-			echo "  ${i}: found $pkgn-$iver."
+			echo "   ${i}: found $pkgn-$iver."
 			continue
 		else
-			echo "  ${i}: not found."
+			echo "   ${i}: not found."
 			notinstalled_deps="$notinstalled_deps $i"
 		fi
 	done
