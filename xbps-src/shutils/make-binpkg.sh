@@ -45,6 +45,8 @@ xbps_make_binpkg()
 
 binpkg_cleanup()
 {
+	local pkgdir="$1" binpkg="$2"
+
 	printf "\nInterrupted! removing $binpkg file!\n"
 	rm -f $pkgdir/$binpkg
 	exit 1
@@ -108,7 +110,7 @@ xbps_make_binpkg_real()
 	[ ! -d $pkgdir ] && mkdir -p $pkgdir
 
 	# Remove binpkg if interrupted...
-	trap "binpkg_cleanup" INT
+	trap "binpkg_cleanup $pkgdir $binpkg" INT
 
 	echo -n "=> Building $binpkg... "
 	${fakeroot_cmd} ${fakeroot_cmd_args}			\
