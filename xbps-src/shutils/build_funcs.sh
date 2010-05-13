@@ -90,6 +90,7 @@ build_src_phase()
 	fi
 
 	unset makejobs
+	unset_build_vars
 
 	touch -f $XBPS_BUILD_DONE
 }
