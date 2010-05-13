@@ -71,7 +71,7 @@ extract_distfiles()
 		mkdir -p ${wrksrc} || return 1
 	fi
 
-	msg_normal "Extracting $pkgname-$lver distfile(s)."
+	msg_normal "Package '$pkgname ($lver)': extracting distfile(s), please wait..."
 
 	for f in ${distfiles}; do
 		curfile=$(basename $f)

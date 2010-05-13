@@ -42,20 +42,22 @@ set_defvars
 
 strip_files()
 {
+	local lver="$1"
+
 	if [ ! -x /usr/bin/strip ]; then
 		return 0
 	fi
 	[ -n "$nostrip" ] && return 0
 
-	msg_normal "Finding binaries/libraries to strip..."
+	msg_normal "Package '$pkgname ($lver)': stripping files, please wait..."
 	for f in $(find ${DESTDIR} -type f); do
 		case "$(file -biz $f)" in
 		application/x-executable*)
 			/usr/bin/strip $f && \
-				echo "=> Stripped executable: $(basename $f)";;
+				echo "   Stripped executable: $(basename $f)";;
 		application/x-sharedlib*|application/x-archive*)
 			/usr/bin/strip -S $f && \
-				echo "=> Stripped library: $(basename $f)";;
+				echo "   Stripped library: $(basename $f)";;
 		esac
 	done
 }
@@ -89,25 +91,38 @@ install_src_phase()
 	fi
 
 	# Run pre_install func.
-	run_func pre_install 2>${wrksrc}/.xbps_pre_install.log
-	if [ $? -ne 0 ]; then
-		msg_red "$pkgname: pre_install() failed:"
-		cat $wrksrc/.xbps_pre_install.log
-		exit 1
+	if [ ! -f $XBPS_PRE_INSTALL_DONE ]; then
+		run_func pre_install 2>${wrksrc}/.xbps_pre_install.log
+		if [ $? -ne 0 -a $? -ne 255 ]; then
+			msg_red "Package '$pkgname': pre_install phase failed! errors below"
+			cat $wrksrc/.xbps_pre_install.log
+			exit 1
+		elif [ $? -eq 0 ]; then
+			msg_normal "Package '$pkgname': pre_install (destdir) phase done."
+			touch -f $XBPS_PRE_INSTALL_DONE
+		fi
 	fi
 
-	msg_normal "Running install phase for $pkgname-$lver."
+	msg_normal "Package '$pkgname ($lver)': running install (destdir) phase."
 
 	# Type of installation: custom, make or python.
 	case "$build_style" in
 	custom-install)
-		run_func do_install 2>${wrksrc}/.xbps_do_install.log \
-			|| msg_error "$pkgname: do_install() failed! check $wrksrc/.xbps_do_install.log"
+		run_func do_install 2>${wrksrc}/.xbps_do_install.log
+		if [ $? -ne 0 -a $? -ne 255 ]; then
+			msg_red "Package '$pkgname': do_install phase failed! errors below:"
+			cat $wrksrc/.xbps_do_install.log
+			exit 1
+		fi
 		;;
 	python-module)
 		. $XBPS_HELPERSDIR/python-module.sh
-		run_func do_install 2>${wrksrc}/.xbps_do_install.log \
-			|| msg_error "$pkgname: install failed! check $wrksrc/.xbps_do_install.log"
+		run_func do_install 2>${wrksrc}/.xbps_do_install.log
+		if [ $? -ne 0 -a $? -ne 255 ]; then
+			msg_red "Package '$pkgname': install phase failed! errors below:" 
+			cat $wrksrc/.xbps_do_install.log
+			exit 1
+		fi
 		;;
 	*)
 		make_install $lver 2>${wrksrc}/.xbps_make_install.log
@@ -115,16 +130,24 @@ install_src_phase()
 	esac
 	cd ${wrksrc} || msg_error "can't change cwd to wrksrc!"
 
+	msg_normal "Package '$pkgname ($lver)': install (destdir) phase done."
+
 	# Run post_install func.
-	run_func post_install 2>${wrksrc}/.xbps_post_install.log
-	if [ $? -ne 0 ]; then
-		msg_red "$pkgname: post_install() failed:"
-		cat ${wrksrc}/.xbps_post_install.log
-		exit 1
+	if [ ! -f $XBPS_POST_INSTALL_DONE ]; then
+		run_func post_install 2>${wrksrc}/.xbps_post_install.log
+		if [ $? -ne 0 -a $? -ne 255 ]; then
+			msg_red "Package '$pkgname': post_install phase failed! errors below:"
+			cat ${wrksrc}/.xbps_post_install.log
+			exit 1
+		elif [ $? -eq 0 ]; then
+			msg_normal "Package '$pkgname': post_install (destdir) phase done."
+			touch -f $XBPS_POST_INSTALL_DONE
+		fi
 	fi
 
 	# Remove libtool archives by default.
 	if [ -z "$keep_libtool_archives" ]; then
+		msg_normal "Package '$pkgname ($lver)': removing libtool archives..."
 		find ${DESTDIR} -type f -name \*.la -delete
 	fi
 	# Always remove perllocal.pod and .packlist files.
@@ -134,14 +157,15 @@ install_src_phase()
 	fi
 	# Remove empty directories by default.
 	if [ -z "$keep_empty_dirs" ]; then
+		msg_normal "Package '$pkgname ($lver)': removing empty dirs..."
 		find ${DESTDIR} -depth -type d -exec rmdir 2>/dev/null {} \;
 	fi
 	# Strip bins/libs.
 	if [ -z "$noarch" ]; then
-		strip_files
+		strip_files "$lver"
 	fi
 
-	msg_normal "Installed $pkgname-$lver into $XBPS_DESTDIR."
+	msg_normal "Package '$pkgname ($lver)': installed into destdir."
 
 	if [ "$build_style" != "custom-install" -a -z "$distfiles" ]; then
 		touch -f $XBPS_INSTALL_DONE
@@ -159,18 +183,25 @@ install_src_phase()
 		check_installed_pkg ${spkgrev}
 		[ $? -eq 0 ] && continue
 
-		msg_normal "Preparing ${sourcepkg} subpackage: ${subpkg}"
+		msg_normal "Package '${sourcepkg} ($lver)': preparing subpackage '${subpkg}'."
 		if [ ! -f $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template ]; then
-			msg_error "Cannot find ${subpkg} subpkg build template!"
+			msg_error "Cannot find '${subpkg}' subpkg build template!"
 		fi
 		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${subpkg}
 		set_tmpl_common_vars
-		run_func do_install 2>${wrksrc}/.xbps_do_install_${pkgname}.log
-		if [ $? -ne 0 ]; then
-			msg_red "$pkgname: do_install() failed:"
-			cat ${wrksrc}/.xbps_do_install_${pkgname}.log
-			exit 1
+		if [ ! -f ${wrksrc}/.xbps_do_install_${pkgname}_done ]; then
+			run_func do_install \
+				2>${wrksrc}/.xbps_do_install_${pkgname}.log
+			if [ $? -ne 0 -a $? -eq 255 ]; then
+				msg_red "Package '$pkgname': do_install phase failed! errors below:"
+				cat ${wrksrc}/.xbps_do_install_${pkgname}.log
+				exit 1
+			elif [ $? -eq 0 ]; then
+				touch -f ${wrksrc}/.xbps_do_install_${pkgname}_done
+			fi
+		else
+			msg_normal "Package '$sourcepkg ($lver)': skipping '$pkgname' subpkg, already installed into destdir."
 		fi
 	done
 
@@ -179,7 +210,7 @@ install_src_phase()
 	#
 	if [ -d "$saved_wrksrc" -a "$dontrm_builddir" = "no" ]; then
 		rm -rf $saved_wrksrc && \
-			msg_normal "Removed $sourcepkg-$lver build directory."
+			msg_normal "Package '$sourcepkg ($lver)': removed build directory."
 	fi
 }
 
@@ -202,7 +233,7 @@ make_install()
 	# Install package via make.
 	#
 	${make_cmd} ${make_install_target} ${make_install_args} \
-		|| msg_error "$pkgname: make install failed!"
+		|| msg_error "Package '$pkgname ($lver)': make install failed!"
 }
 
 [ -z "$PKG_TMPLNAME" ] && exit 2

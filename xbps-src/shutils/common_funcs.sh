@@ -36,6 +36,7 @@ run_func()
 		$func
 		return $?
 	fi
+	return 255 # function not found.
 }
 
 msg_red()

@@ -85,7 +85,12 @@ stow_pkg_real()
 
 	cd ${DESTDIR} || return 1
 
-	msg_normal "Stowning '${pkgname}' into masterdir..."
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
+	fi
+	msg_normal "Package '${pkgname} ($lver)': stowning files into masterdir, please wait..."
 
 	# Copy files into masterdir.
 	for i in $(find -print); do
@@ -96,10 +101,10 @@ stow_pkg_real()
 		     continue
 		# Skip files that are already in masterdir.
 		elif [ -f "$XBPS_MASTERDIR/$lfile" ]; then
-			echo "=> Skipping $lfile file, already exists!"
+			echo "   Skipping $lfile file, already exists!"
 			continue
 		elif [ -h "$XBPS_MASTERDIR/$lfile" ]; then
-			echo "=> Skipping $lfile link, already exists!"
+			echo "   Skipping $lfile link, already exists!"
 			continue
 		elif [ -d "$XBPS_MASTERDIR/$lfile" ]; then
 			continue
@@ -145,16 +150,12 @@ stow_pkg_real()
 	#
 	# Register pkg in plist file.
 	#
-	if [ -n "$revision" ]; then
-		lver="${version}_${revision}"
-	else
-		lver="${version}"
-	fi
 	$XBPS_PKGDB_CMD register $pkgname $lver "$short_desc" || return $?
 
-	run_func post_stow 2>/dev/null || msg_error "post_stow failed!"
-
-	return $?
+	run_func post_stow 2>/dev/null
+	if [ $? -ne 0 -a $? -ne 255 ]; then
+		msg_error "Package '$pkgname': post_stow phase failed!"
+	fi
 }
 
 #
@@ -188,8 +189,10 @@ unstow_pkg_real()
 	elif [ ! -w ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
 		msg_error "$pkgname cannot be removed (permission denied)."
 	elif [ -s ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
-		run_func pre_remove 2>/dev/null || \
-			msg_error "pre_remove stage failed!"
+		run_func pre_remove 2>/dev/null
+		if [ $? -ne 0 -a $? -ne 255 ]; then
+			msg_error "Package '$pkgname': pre_remove stage failed!"
+		fi
 
 		# Remove installed files.
 		for f in $(cat ${XBPS_PKGMETADIR}/${pkgname}/flist); do
@@ -211,7 +214,10 @@ unstow_pkg_real()
 		done
 	fi
 
-	run_func post_remove 2>/dev/null || msg_error "post_remove failed!"
+	run_func post_remove 2>/dev/null
+	if [ $? -ne 0 -a $? -ne 255 ]; then
+		msg_error "Package '$pkgname': post_remove phase failed!"
+	fi
 
 	# Remove metadata dir.
 	rm -rf $XBPS_PKGMETADIR/$pkgname

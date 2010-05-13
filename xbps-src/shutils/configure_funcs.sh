@@ -58,11 +58,16 @@ configure_src_phase()
 	cd $wrksrc || msg_error "unexistent build directory [$wrksrc]."
 
 	# Run pre_configure func.
-	run_func pre_configure 2>${wrksrc}/.xbps_pre_configure.log
-	if [ $? -ne 0 ]; then
-		msg_red "$pkgname: pre_configure() failed:"
-		cat $wrksrc/.xbps_pre_configure.log
-		exit 1
+	if [ ! -f $XBPS_PRECONFIGURE_DONE ]; then
+		run_func pre_configure 2>${wrksrc}/.xbps_pre_configure.log
+		if [ $? -ne 0 -a $? -ne 255 ]; then
+			msg_red "Package '$pkgname': pre_configure phase failed! errors below:"
+			cat $wrksrc/.xbps_pre_configure.log
+			exit 1
+		elif [ $? -eq 0 ]; then
+			msg_normal "Package '$pkgname': pre_configure phase done."
+			touch -f $XBPS_PRECONFIGURE_DONE
+		fi
 	fi
 
 	# Export configure_env vars.
@@ -70,7 +75,7 @@ configure_src_phase()
 		export "$f"
 	done
 
-	msg_normal "Running configure phase for $pkgname-$lver."
+	msg_normal "Package '$pkgname ($lver)': running configure phase."
 
 	[ -z "$configure_script" ] && configure_script="./configure"
 
@@ -109,21 +114,27 @@ configure_src_phase()
 		#
 		# Unknown build_style type won't work :-)
 		#
-		msg_error "unknown build_style [$build_style]"
+		msg_error "package '$pkgname': unknown build_style [$build_style]"
 		exit 1
 		;;
 	esac
 
 	if [ "$build_style" != "perl_module" -a "$error" -ne 0 ]; then
-		msg_error "$pkgname: configure stage failed!"
+		msg_error "package '$pkgname': configure stage failed!"
 	fi
+	msg_normal "Package '$pkgname ($lver)': configure phase done."
 
 	# Run post_configure func.
-	run_func post_configure 2>${wrksrc}/.xbps_post_configure.log
-	if [ $? -ne 0 ]; then
-		msg_red "$pkgname: post_configure() failed:"
-		cat $wrksrc/.xbps_post_configure.log
-		exit 1
+	if [ ! -f $XBPS_POSTCONFIGURE_DONE ]; then
+		run_func post_configure 2>${wrksrc}/.xbps_post_configure.log
+		if [ $? -ne 0 -a $? -ne 255 ]; then
+			msg_red "Package '$pkgname': post_configure phase failed! errors below:"
+			cat $wrksrc/.xbps_post_configure.log
+			exit 1
+		elif [ $? -eq 0 ]; then
+			msg_normal "Package '$pkgname': post_configure phase done."
+			touch -f $XBPS_POSTCONFIGURE_DONE
+		fi
 	fi
 
 	# unset configure_env vars.

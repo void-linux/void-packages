@@ -44,14 +44,20 @@ find_rundep()
 
 verify_rundeps()
 {
-	local j i f nlib verify_deps maplib found_dup igndir
+	local j i f nlib verify_deps maplib found_dup igndir lver
 	local missing missing_libs rdep builddep rdep_list builddep_list
 
 	PKG_DESTDIR="$1"
 	maplib="$XBPS_COMMONVARSDIR/mapping_shlib_binpkg.txt"
 
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
+	fi
+
 	[ -n "$noarch" -o "$nostrip" -o "$noverifyrdeps" ] && return 0
-	msg_normal "Verifying required $pkgname run dependencies..."
+	msg_normal "Package '$pkgname ($lver)': verifying required run dependencies, please wait..."
 
 	for f in $(find ${PKG_DESTDIR} -type f); do
 		# Don't check dirs specified in ignore_vdeps_dir.
@@ -94,14 +100,14 @@ verify_rundeps()
 		rdep="$(grep "$f" $maplib|awk '{print $2}')"
 		rdepcnt="$(grep "$f" $maplib|awk '{print $2}'|wc -l)"
 		if [ -z "$rdep" ]; then
-			msg_error_nochroot "unknown rundep for $f"
+			echo "   UNKNOWN PACKAGE FOR SHLIB DEPENDENCY '$f', PLEASE FIX!"
 		fi
 		# Ignore libs by current pkg
 		[ "$rdep" = "$pkgname" ] && continue
 
 		# Check if shlib is provided by multiple pkgs.
 		if [ "$rdepcnt" -gt 1 ]; then
-			echo "=> Required $f is provided by these pkgs: "
+			echo "   shlib dependency '$f' is provided by these pkgs: "
 			for j in ${rdep}; do
 				printf "\t$j\n"
 			done
@@ -109,7 +115,7 @@ verify_rundeps()
 		fi
 		# Warn if rundep is not in template.
 		if find_rundep "$rdep"; then
-			msg_warn_nochroot "required $f from $rdep (MISSING)"
+			echo "   REQUIRED SHLIB DEPENDENCY '$f' FROM PACKAGE '$rdep' MISSING, PLEASE FIX!"
 			missing=1
 			if [ -z "$missing_libs" ]; then
 				missing_libs="$f"
@@ -126,7 +132,7 @@ verify_rundeps()
 			unset found_dup
 			continue
 		fi
-		echo "=> Requires $f from $rdep (OK)"
+		echo "   shlib dependency '$f' provided by the '$rdep' package (OK)."
 		unset rdep
 	done
 

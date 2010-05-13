@@ -125,6 +125,7 @@ xbps_write_metadata_pkg_real()
 		fi
 		# Add info-files trigger.
 		triggers="info-files $triggers"
+		msg_normal "Package '$pkgname ($lver)': processing info(1) files..."
 
 		for f in $(find ${DESTDIR}/usr/share/info -type f -follow); do
 			j=$(echo $f|sed -e "$fpattern")
@@ -148,7 +149,7 @@ xbps_write_metadata_pkg_real()
 				ln -s ${lnkat}.gz ${newlnk}.gz
 				continue
 			fi
-			echo "===> Compressing info file: $j..."
+			echo "   Compressing info file: $j..."
 			gzip -q9 ${DESTDIR}/$j
 		done
 	fi
@@ -158,6 +159,7 @@ xbps_write_metadata_pkg_real()
 	# compress all them with gzip.
 	#
 	if [ -d "${DESTDIR}/usr/share/man" ]; then
+		msg_normal "Package '$pkgname ($lver)': processing manual pages..."
 		for f in $(find ${DESTDIR}/usr/share/man -type f -follow); do
 			j=$(echo $f|sed -e "$fpattern")
 			[ "$j" = "" ] && continue
@@ -173,13 +175,13 @@ xbps_write_metadata_pkg_real()
 				ln -s ${lnkat}.gz ${newlnk}.gz
 				continue
 			fi
-			echo "===> Compressing manpage: $j..."
+			echo "   Compressing manpage: $j..."
 			gzip -q9 ${DESTDIR}/$j
 		done
 	fi
 
 	cd ${DESTDIR}
-	msg_normal "Writing package metadata for $pkgname-$lver..."
+	msg_normal "Package '$pkgname ($lver)': creating package metadata..."
 
 	write_metadata_flist_header $TMPFPLIST
 
@@ -378,4 +380,6 @@ _EOF
 	xbps_write_metadata_scripts_pkg install;			\
 	xbps_write_metadata_scripts_pkg remove;				\
 	} || return $?
+
+	msg_normal "Package '$pkgname ($lver)': successfully created package metadata."
 }

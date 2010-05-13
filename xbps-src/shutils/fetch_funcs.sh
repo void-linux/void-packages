@@ -39,7 +39,7 @@ verify_sha256_cksum()
 		msg_error "SHA256 checksum doesn't match for $file."
 	fi
 
-	msg_normal "SHA256 checksum OK for $file."
+	msg_normal "Package '$pkgname ($lver)': SHA256 checksum OK for $file."
 }
 
 #
@@ -47,15 +47,9 @@ verify_sha256_cksum()
 #
 fetch_distfiles()
 {
-	local pkg="$1"
-	local upcksum="$2"
-	local dfiles=
-	local localurl=
-	local dfcount=0
-	local ckcount=0
-	local f=
+	local pkg="$1" upcksum="$2" dfiles localurl dfcount=0 ckcount=0 f
 
-	[ -z $pkgname ] && exit 1
+	[ -z $pkgname ] && return 1
 
 	#
 	# There's nothing of interest if we are a meta template.
@@ -70,10 +64,18 @@ fetch_distfiles()
 	#
 	if [ -n "$nofetch" ]; then
 		cd ${XBPS_BUILDDIR} && run_func do_fetch 2>/dev/null
-		return $?
+		if [ $? -ne 0 && $? -ne 255 ]; then
+			return $?
+		fi
 	fi
 
 	cd $XBPS_SRCDISTDIR || return 1
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
+	fi
+
 	for f in ${distfiles}; do
 		curfile=$(basename $f)
 		if [ -f "$XBPS_SRCDISTDIR/$curfile" ]; then
@@ -91,6 +93,7 @@ fetch_distfiles()
 				msg_error "cannot find checksum for $curfile."
 			fi
 
+			msg_normal "Package '$pkgname ($lver)': verifying checksum for $curfile..."
 			verify_sha256_cksum $curfile $cksum
 			if [ $? -eq 0 ]; then
 				unset cksum found
@@ -100,7 +103,7 @@ fetch_distfiles()
 			fi
 		fi
 
-		msg_normal "Fetching distfile: $curfile."
+		msg_normal "Package '$pkgname ($lver)': fetching distfile $curfile."
 
 		if [ -n "$distfiles" ]; then
 			localurl="$f"
@@ -145,5 +148,5 @@ fetch_distfiles()
 		dfcount=$(($dfcount + 1))
 	done
 
-	unset cksum found
+	unset lver cksum found
 }

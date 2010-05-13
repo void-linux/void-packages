@@ -43,18 +43,22 @@ install_pkg_deps()
 		curpkgname="$(${XBPS_PKGDB_CMD} getpkgdepname ${curpkg})"
 	fi
 
-	msg_normal "Installing $saved_prevpkg dependency: $curpkgname."
+	if [ -z "$saved_prevpkg" -a -n "${_ORIGINPKG}" ]; then
+		msg_normal "Installing '${_ORIGINPKG}' dependency: '$curpkg'."
+	else
+		msg_normal "Installing '$saved_prevpkg' dependency: '$curpkg'."
+	fi
 
 	setup_tmpl "$curpkgname"
 	check_build_depends_pkg
 	if [ $? -eq 0 ]; then
-		msg_normal "Dependency $curpkgname requires:"
+		msg_normal "Package dependency '$curpkgname' requires:"
 		for j in ${build_depends}; do
 			jname="$(${XBPS_PKGDB_CMD} getpkgdepname ${j})"
 			jver="$($XBPS_PKGDB_CMD version ${jname})"
 			check_pkgdep_matched "${j}"
 			if [ $? -eq 0 ]; then
-				echo "   ${j}: found $jname-$jver."
+				echo "   ${j}: found '$jname-$jver'."
 			else
 				echo "   ${j}: not found."
 			fi
@@ -95,9 +99,9 @@ install_pkg_deps()
 		fi
 	else
 		if [ -n "$saved_prevpkg" ]; then
-			msg_normal "Installing ${curpkgname} required by ${saved_prevpkg}."
+			msg_normal "Installing package '${curpkgname}' required by '${saved_prevpkg}'."
 		else
-			msg_normal "Installing ${curpkgname}."
+			msg_normal "Installing package: '${curpkg}'."
 		fi
 		install_pkg "${curpkgname}"
 		if [ $? -eq 1 ]; then
@@ -128,14 +132,14 @@ install_dependencies_pkg()
 	fi
 
 	if [ -n "$build_depends" -o -n "$run_depends" ]; then
-		msg_normal "Required dependencies for $pkgname-$lver... "
+		msg_normal "$pkgname: installing required package dependencies..."
 	fi
 	for i in ${build_depends}; do
 		pkgn="$($XBPS_PKGDB_CMD getpkgdepname ${i})"
 		iver="$($XBPS_PKGDB_CMD version $pkgn)"
 		check_pkgdep_matched "${i}"
 		if [ $? -eq 0 ]; then
-			echo "   ${i}: found $pkgn-$iver."
+			echo "   ${i}: found '$pkgn-$iver'."
 			continue
 		else
 			echo "   ${i}: not found."
@@ -149,7 +153,7 @@ install_dependencies_pkg()
 		for i in ${notinstalled_deps}; do
 			pkgdeplist="${pkgdeplist} \"${i}\" "
 		done
-		msg_normal "Installing required build dependencies from binpkgs..."
+		msg_normal "$pkgname: installing required dependencies from binpkgs..."
 		${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} \
 			-y install ${pkgdeplist}
 		rval=$?
@@ -182,7 +186,7 @@ install_dependencies_pkg()
 		setup_tmpl "$pkgn"
 		check_build_depends_pkg
 		if [ $? -eq 1 ]; then
-			msg_normal "Installing $lpkgname dependency: $pkgn."
+			msg_normal "Installing '$lpkgname' dependency: '$pkgn'."
 			if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
 				install_pkg_with_binpkg "${j}"
 				rval=$?

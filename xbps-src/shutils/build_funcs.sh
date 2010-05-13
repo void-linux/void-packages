@@ -29,7 +29,7 @@
 #
 build_src_phase()
 {
-	local pkg="$pkgname-$version" pkgparam="$1" f
+	local pkg="$pkgname-$version" pkgparam="$1" f lver
 
 	[ -z $pkgparam ] && [ -z $pkgname -o -z $version ] && return 1
 
@@ -46,7 +46,12 @@ build_src_phase()
 		cd $build_wrksrc || return 1
 	fi
 
-	[ -n "$revision" ] && pkg="${pkg}_${revision}"
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+		pkg="${pkg}_${revision}"
+	else
+		lver="${version}"
+	fi
 
 	if [ "$build_style" = "python-module" ]; then
 		make_cmd="python"
@@ -57,36 +62,50 @@ build_src_phase()
 			makejobs="-j$XBPS_MAKEJOBS"
 	fi
 	# Run pre_build func.
-	run_func pre_build 2>${wrksrc}/.xbps_pre_build.log
-	if [ $? -ne 0 ]; then
-		msg_red "$pkgname: pre_build() failed:"
-		cat $wrksrc/.xbps_pre_build.log
-		exit 1
+	if [ ! -f $XBPS_PRE_BUILD_DONE ]; then
+		run_func pre_build 2>${wrksrc}/.xbps_pre_build.log
+		if [ $? -ne 0 -a $? -ne 255 ]; then
+			msg_red "$pkgname: pre_build phase failed! errors below:"
+			cat $wrksrc/.xbps_pre_build.log
+			exit 1
+		elif [ $? -eq 0 ]; then
+			msg_normal "$pkgname: pre_build phase done."
+			touch -f $XBPS_PRE_BUILD_DONE
+		fi
 	fi
 
 	. $XBPS_SHUTILSDIR/buildvars_funcs.sh
 	set_build_vars
 
-	msg_normal "Running build phase for $pkg."
+	msg_normal "Package '$pkgname ($lver)': running build phase."
 
 	if [ "$build_style" = "custom-install" ]; then
-		run_func do_build 2>${wrksrc}/.xbps_do_build.log \
-			|| msg_error "do_build stage failed!"
+		run_func do_build 2>${wrksrc}/.xbps_do_build.log
+		if [ $? -ne 0 -a $? -ne 255 ]; then
+			msg_error "Package '$pkgname': do_build phase failed!"
+		fi
 	else
 		#
 		# Build package via make.
 		#
 		${make_cmd} ${makejobs} ${make_build_args} \
 			${make_build_target} ||
-			msg_error "$pkgname: build phase failed!"
+			msg_error "Package '$pkgname': build phase failed!"
 	fi
 
+	msg_normal "Package '$pkgname ($lver)': build phase done."
+
 	# Run post_build func.
-	run_func post_build 2>${wrksrc}/.xbps_post_build.log
-	if [ $? -ne 0 ]; then
-		msg_red "$pkgname: post_build() failed:"
-		cat $wrksrc/.xbps_post_build.log
-		exit 1
+	if [ ! -f $XBPS_POST_BUILD_DONE ]; then
+		run_func post_build 2>${wrksrc}/.xbps_post_build.log
+		if [ $? -ne 0 -a $? -ne 255 ]; then
+			msg_red "Package '$pkgname': post_build phase failed! errors below:"
+			cat $wrksrc/.xbps_post_build.log
+			exit 1
+		elif [ $? -eq 0 ]; then
+			msg_normal "Package '$pkgname': post_build phase done."
+			touch -f $XBPS_POST_BUILD_DONE
+		fi
 	fi
 
 	unset makejobs
