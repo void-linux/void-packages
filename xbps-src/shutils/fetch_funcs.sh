@@ -62,20 +62,18 @@ fetch_distfiles()
 	# If nofetch is set in a build template, skip this phase
 	# entirely and run the do_fetch() function.
 	#
-	if [ -n "$nofetch" ]; then
-		cd ${XBPS_BUILDDIR} && run_func do_fetch 2>/dev/null
-		if [ $? -ne 0 && $? -ne 255 ]; then
-			return $?
-		fi
-	fi
-
-	cd $XBPS_SRCDISTDIR || return 1
 	if [ -n "$revision" ]; then
 		lver="${version}_${revision}"
 	else
 		lver="${version}"
 	fi
 
+	if [ -n "$nofetch" ]; then
+		msg_normal "Package '$pkgname ($lver)': running do_fetch phase."
+		cd ${XBPS_BUILDDIR} && run_func do_fetch 2>/dev/null && return $?
+	fi
+
+	cd $XBPS_SRCDISTDIR || return 1
 	for f in ${distfiles}; do
 		curfile=$(basename $f)
 		if [ -f "$XBPS_SRCDISTDIR/$curfile" ]; then
