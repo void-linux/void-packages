@@ -161,9 +161,9 @@ if [ ! -f "$ISOLINUX_DIR/isolinux.cfg" ]; then
 	write_default_isolinux_conf ${kernel_ver}
 fi
 
-[ ! -f "$SPLASH_IMAGE" ] && echo "Cannot find splash image!" && error_out 1
-
-cp -f $SPLASH_IMAGE "$ISOLINUX_DIR"
+if [ -f "$SPLASH_IMAGE" ]; then
+	cp -f $SPLASH_IMAGE "$ISOLINUX_DIR"
+fi
 
 if [ ! -f "$ISOLINUX_DIR/vesamenu.c32" ]; then
 	cp -f $SYSLINUX_DATADIR/vesamenu.c32 "$ISOLINUX_DIR"
