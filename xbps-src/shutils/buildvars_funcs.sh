@@ -49,14 +49,14 @@ set_build_vars()
 		export PKG_CONFIG_LIBDIR="$PKG_CONFIG_LIBDIR"
 		export PKG_CONFIG="$PKG_CONFIG"
 	else
-		PKG_CONFIG="/usr/bin/pkg-config"
-		PKG_CONFIG_LIBDIR="/usr/lib/pkgconfig"
+		export PKG_CONFIG="/usr/bin/pkg-config"
+		export PKG_CONFIG_LIBDIR="/usr/lib/pkgconfig"
 	fi
-	CFLAGS="$CFLAGS $XBPS_CFLAGS"
-	CXXFLAGS="$CXXFLAGS $XBPS_CXXFLAGS"
-
-	export PKG_CONFIG="$PKG_CONFIG" PKG_CONFIG_LIBDIR="$PKG_CONFIG_LIBDIR" \
-		CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS"
+	if [ -z "${_BUILD_VARS_CFLAGS_SET}" ]; then
+		export CFLAGS="$CFLAGS $XBPS_CFLAGS"
+		export CXXFLAGS="$CXXFLAGS $XBPS_CXXFLAGS"
+		_BUILD_VARS_CFLAGS_SET=1
+	fi
 }
 
 unset_build_vars()
