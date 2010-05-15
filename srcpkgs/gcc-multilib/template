@@ -1,39 +1,84 @@
 # Template build file for 'gcc-multilib'
 pkgname=gcc-multilib
-version=4.3.2
-wrksrc="gcc-$version"
-distfiles="http://ftp.gnu.org/pub/gnu/gcc/gcc-$version/gcc-$version.tar.bz2"
+version=4.5.0
+_gmp_ver=5.0.1
+_mpfr_ver=2.4.2
+_mpc_ver=0.8.1
+wrksrc="gcc-${version}"
+distfiles="
+http://ftp.gnu.org/pub/gnu/gcc/gcc-${version}/gcc-${version}.tar.bz2
+ftp://ftp.gmplib.org/pub/gmp-${_gmp_ver}/gmp-${_gmp_ver}.tar.bz2
+http://www.mpfr.org/mpfr-current/mpfr-${_mpfr_ver}.tar.bz2
+http://gcc-uk.internet.bs/infrastructure/mpc-${_mpc_ver}.tar.gz"
 build_style=gnu_configure
-configure_args="--enable-clocale=gnu --disable-bootstrap
- --enable-threads=posix --enable-__cxa_atexit --enable-multilib
- --enable-languages=c,c++ --enable-tls --enable-shared --with-system-zlib
- --with-local-prefix=$XBPS_DESTDIR/$pkgname-$version"
+build_wrksrc=build
+configure_script="../configure"
+configure_args="--enable-clocale=gnu --enable-shared --disable-bootstrap
+--enable-threads=posix --enable-__cxa_atexit --disable-gold --disable-lto
+--enable-languages=c,c++,objc,obj-c++ --disable-nls --with-system-zlib
+--enable-multilib"
 short_desc="The GNU C Compiler suite (multilib libraries)"
 maintainer="Juan RP <xtraeme@gmail.com>"
-checksum=bfbf487731ad5dca37efe480a837417de071bd67e685d5c1df6a290707575165
+checksum="
+8293e9efa68a8ec0fdd0dae9c9bd128a8e742566acd9c8fbcfe79d98ed3756c8
+a2a610f01fd3298dc08c87bf30498c2402590e1bcb227fc40b15ee6d280939fb
+c7e75a08a8d49d2082e4caee1591a05d11b9d5627514e678f02d66a124bcf2ba
+e664603757251fd8a352848276497a4c79b7f8b21fd8aedd5cc0598a38fee3e4"
 long_desc="
- The GNU C Compiler suite, with support for C, C++, Fortran, ObjC.
+ The GNU C Compiler suite, with support for C, C++, ObjC and ObjC++.
 
  This package installs the 32 bit libraries required to compile 32 bit
  code on x86_64 systems."
 
-only_for_archs="x86_64"
+subpackages="libgcc32 libssp32 libgomp32 libobjc32 libstdc++32 libmudflap32"
+subpackages="${subpackages} libmudflap32-devel gcc-c++-multilib"
+subpackages="${subpackages} gcc-objc-multilib gcc-objc++-multilib"
 
-Add_dependency full glibc32
+disable_parallel_build=yes
+nostrip=yes
+noverifyrdeps=yes
+only_for_archs=x86_64
+
+Add_dependency run gcc
+Add_dependency run libgcc32	">=${version}"
+Add_dependency run libgomp32	">=${version}"
+Add_dependency run zlib32
+Add_dependency run glibc32-devel
+
+Add_dependency build glibc32-devel
+Add_dependency build zlib32-devel
+
+pre_configure()
+{
+	mkdir -p ${build_wrksrc}
+	{ mv ${XBPS_BUILDDIR}/gmp-${_gmp_ver} ${wrksrc}/gmp;	\
+	mv ${XBPS_BUILDDIR}/mpfr-${_mpfr_ver} ${wrksrc}/mpfr;	\
+	mv ${XBPS_BUILDDIR}/mpc-${_mpc_ver} ${wrksrc}/mpc; } || return 1
+}
+
+pre_install()
+{
+	mkdir -p ${DESTDIR}/usr/lib
+	cd ${DESTDIR}/usr && ln -sf lib lib64 && cd ${wrksrc}/${build_wrksrc}
+}
 
 post_install()
 {
-	local DESTDIR=$XBPS_DESTDIR/$pkgname-$version
+	local libmddir="/usr/lib/gcc/x86_64-unknown-linux-gnu/${version}"
 
-	# We are only interested in 32bit libs, remove anything else.
-	rm -r $DESTDIR/usr/lib64
-	rm -r $DESTDIR/usr/libexec
-	rm -r $DESTDIR/usr/include
-	rm -r $DESTDIR/usr/bin
-	rm -r $DESTDIR/usr/share
-	rm $DESTDIR/usr/lib/libiberty*
-	rm -r $DESTDIR/usr/lib/gcc/x86_64-unknown-linux-gnu/$version/*include*
-	rm -r $DESTDIR/usr/lib/gcc/x86_64-unknown-linux-gnu/$version/install-tools
-	rm $DESTDIR/usr/lib/gcc/x86_64-unknown-linux-gnu/$version/crt*
-	rm $DESTDIR/usr/lib/gcc/x86_64-unknown-linux-gnu/$version/libgcov*
+	# We are only interested in 32bit stuff, remove anything else.
+	rm -rf ${DESTDIR}/usr/{lib64,include,libexec,bin,share}
+	rm -f ${DESTDIR}/usr/lib/*.{spec,a,so*}
+	rm -f ${DESTDIR}/usr/lib32/{libiberty*,*.py}
+	rm -rf ${DESTDIR}/${libmddir}/{include,include-fixed,install-tools,plugin}
+	rm -f ${DESTDIR}/${libmddir}/*.{a,o}
+
+	# Move around some stuff for multilib.
+	mv ${DESTDIR}/usr/lib32/lib{std,sup}c++.a ${DESTDIR}/${libmddir}/32
+	mv ${DESTDIR}/usr/lib32/lib{gomp,objc*}.a ${DESTDIR}/${libmddir}/32
+	mv ${DESTDIR}/usr/lib32/libssp*.a ${DESTDIR}/${libmddir}/32
+
+	# Install specs file overriding native gcc with no multilib support.
+	install -m644 ${wrksrc}/build/gcc/specs \
+		${DESTDIR}/${libmddir}
 }
