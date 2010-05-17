@@ -18,6 +18,7 @@ HOST=live
 BUILD_SYSTEM=Custom
 
 mkdir -p $mountpoint
+tried=/tmp/tried
 
 [ -f /etc/casper.conf ] && . /etc/casper.conf
 export USERNAME USERFULLNAME HOST BUILD_SYSTEM
@@ -31,8 +32,6 @@ fi
 parse_cmdline() {
     for x in $(cat /proc/cmdline); do
         case $x in
-	    toram)
-	        export TORAM='Yes' ;;
             showmounts|show-cow)
                 export SHOWMOUNTS='Yes' ;;
             persistent)
@@ -52,8 +51,11 @@ parse_cmdline() {
             live-media-path=*)
                 LIVE_MEDIA_PATH="${x#live-media-path=}"
                 export LIVE_MEDIA_PATH
-                echo "export LIVE_MEDIA_PATH=\"$LIVE_MEDIA_PATH\"" \
-			>> /etc/casper.conf ;;
+                echo "export LIVE_MEDIA_PATH=\"$LIVE_MEDIA_PATH\"" >> /etc/casper.conf ;;
+            toram)
+                export TORAM="Yes" ;;
+            todisk=*)
+                export TODISK="${x#todisk=}" ;;
         esac
     done
     if [ "${UNIONFS}" = "" ]; then
@@ -130,7 +132,11 @@ mount_images_in_directory() {
 
 is_nice_device() {
     sysfs_path="${1#/sys}"
-    if /lib/udev/path_id "${sysfs_path}" | grep -E -q "ID_PATH=(usb|pci-[^-]*-(ide|scsi|usb)|platform-mmc|platform-mxsdhci)"; then
+    if /lib/udev/path_id "${sysfs_path}" | egrep -q "ID_PATH=(usb|pci-[^-]*-(ide|scsi|usb)|platform-orion-ehci|platform-
+mmc|platform-mxsdhci)"; then
+        return 0
+    fi
+    if echo ${sysfs_path} | grep -q "^/block/dm-"; then
         return 0
     fi
     return 1
@@ -145,7 +151,7 @@ copy_live_to() {
 
     if [ "${copytodev}" = "ram" ]; then
         # copying to ram:
-        freespace=$( expr $(awk '/MemFree/{print $2}' /proc/meminfo) + $( cat /proc/meminfo | grep Cached | head -n 1 | awk '/Cached/{print $2}' - ) )
+        freespace=$(awk '/^MemFree:/{f=$2} /^Cached:/{c=$2} END{print f+c}' /proc/meminfo)
         mount_options="-o size=${size}k"
         free_string="memory"
         fstype="tmpfs"
@@ -262,7 +268,7 @@ do_snap_copy ()
             todev=$(cat /proc/mounts | grep -s " $(base_path ${todir}) " | awk '{print $1}' )
             freespace=$(df -k  | grep -s ${todev} | awk '{print $4}')
         else
-            freespace=$( expr $(awk '/MemFree/{print $2}' /proc/meminfo) + $( cat /proc/meminfo | grep Cached | head -n 1 | awk '/Cached/{print $2}' - ))
+            freespace=$(awk '/^MemFree:/{f=$2} /^Cached:/{c=$2} END{print f+c}' /proc/meminfo)
         fi
 
         tomount="/mnt/tmpsnap"
@@ -493,6 +499,8 @@ check_dev ()
         fi
     fi
 
+    [ -e "$devname" ] || continue
+
     if [ -n "${LIVEMEDIA_OFFSET}" ]; then
         loopdevname=$(setup_loop "${devname}" "loop" "/sys/block/loop*" "${LIVEMEDIA_OFFSET}")
         devname="${loopdevname}" 
@@ -500,7 +508,10 @@ check_dev ()
 
     fstype=$(get_fstype "${devname}")
     if is_supported_fs ${fstype}; then
+        devuid=$(blkid -o value -s UUID "$devname")
+        [ -n "$devuid" ] && grep -qs "\<$devuid\>" $tried && continue
         mount -t ${fstype} -o ro,noatime "${devname}" $mountpoint || continue
+        [ -n "$devuid" ] && echo "$devuid" >> $tried
         if is_casper_path $mountpoint && \
            ([ "$skip_uuid_check" ] || matches_uuid $mountpoint); then
             echo $mountpoint
@@ -534,6 +545,7 @@ find_livefs() {
     for sysblock in \
 	$(echo /sys/block/* | tr ' ' '\n' | grep -vE "/(loop|ram|fd)"); do
         devname=$(sys2dev "${sysblock}")
+        [ -e "$devname" ] || continue
         fstype=$(get_fstype "${devname}")
         if /lib/udev/cdrom_id ${devname} > /dev/null; then
             if check_dev "null" "${devname}" ; then
