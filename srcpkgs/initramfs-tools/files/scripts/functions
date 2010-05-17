@@ -42,8 +42,8 @@ panic()
 	fi
 	modprobe i8042
 	modprobe atkbd
-	echo $@
-	PS1='(initramfs) ' /bin/sh -i </dev/console >/dev/console 2>&1
+	echo "$@"
+	REASON="$@" PS1='(initramfs) ' /bin/sh -i </dev/console >/dev/console 2>&1
 }
 
 maybe_break()
@@ -179,9 +179,22 @@ reduce_prereqs()
 	done
 }
 
+get_prereq_pairs()
+{
+	set_initlist
+	for gp_x in ${initlist}; do
+		echo ${gp_x} ${gp_x}
+		prereqs=$(${initdir}/${gp_x} prereqs)
+		for prereq in ${prereqs}; do
+			echo ${prereq} ${gp_x}
+		done
+	done
+}
+
 call_scripts()
 {
 	for cs_x in ${runlist}; do
+		[ -f ${initdir}/${cs_x} ] || continue
 		# mkinitramfs verbose output
 		if [ "${verbose}" = "y" ]; then
 			echo "Calling hook ${cs_x}"
@@ -198,9 +211,17 @@ run_scripts()
 {
 	initdir=${1}
 	[ ! -d ${initdir} ] && return
-	get_prereqs
-	reduce_prereqs
-	call_scripts
+
+	if [ -f ${initdir}/ORDER ]; then
+		. ${initdir}/ORDER
+	elif command -v tsort >/dev/null 2>&1; then
+		runlist=$(get_prereq_pairs | tsort)
+		call_scripts $2
+	else
+		get_prereqs
+		reduce_prereqs
+		call_scripts
+	fi
 }
 
 # Load custom modules first
@@ -249,40 +270,114 @@ parse_numeric() {
 	ROOT=/dev/root
 }
 
+# Parameter: device node to check
+# Echos fstype to stdout
+# Return value: indicates if an fs could be recognized
+get_fstype ()
+{
+	local FS FSTYPE FSSIZE RET
+	FS="${1}"
+
+	# vol_id has a more complete list of file systems,
+	# but fstype is more robust
+	eval $(fstype "${FS}" 2> /dev/null)
+	if [ "$FSTYPE" = "unknown" ] &&  command -v blkid >/dev/null 2>&1 ; then
+		FSTYPE=$(blkid -o value -s TYPE "${FS}")
+	elif [ "$FSTYPE" = "unknown" ] && [ -x /lib/udev/vol_id ]; then
+		FSTYPE=$(/lib/udev/vol_id -t "${FS}" 2> /dev/null)
+	fi
+	RET=$?
+
+	if [ -z "${FSTYPE}" ]; then
+		FSTYPE="unknown"
+	fi
+
+	echo "${FSTYPE}"
+	return ${RET}
+}
+
 configure_networking()
 {
+	if [ -n "${BOOTIF}" ]; then
+		# pxelinux sets BOOTIF to a value based on the mac address of the
+		# network card used to PXE boot, so use this value for DEVICE rather
+		# than a hard-coded device name from initramfs.conf. this facilitates
+		# network booting when machines may have multiple network cards.
+		# pxelinux sets BOOTIF to 01-$mac_address
+
+		# strip off the leading "01-", which isn't part of the mac
+		# address
+		temp_mac=${BOOTIF#*-}
+
+		# convert to typical mac address format by replacing "-" with ":"
+		bootif_mac=""
+		IFS='-'
+		for x in $temp_mac ; do
+			if [ -z "$bootif_mac" ]; then
+				bootif_mac="$x"
+			else
+				bootif_mac="$x:$bootif_mac"
+			fi
+		done
+		unset IFS
+
+		# look for devices with matching mac address, and set DEVICE to
+		# appropriate value if match is found.
+		for device in /sys/class/net/* ; do
+			if [ -f "$device/address" ]; then
+				current_mac=$(cat "$device/address")
+				if [ "$bootif_mac" = "$current_mac" ]; then
+					DEVICE=${device##*/}
+					break
+				fi
+			fi
+		done
+	fi
+
 	# networking already configured thus bail out
 	[ -n "${DEVICE}" ] && [ -e /tmp/net-"${DEVICE}".conf ] && return 0
 
 	# support ip options see linux sources
 	# Documentation/filesystems/nfsroot.txt
-	case ${IP} in
-	none|off)
-		# Do nothing
-		;;
-	""|on|any)
-		# Bring up device
-		ipconfig -t 180 ${DEVICE}
-		;;
-	dhcp|bootp|rarp|both)
-		ipconfig -t 180 -c ${IP} -d ${DEVICE}
-		;;
-	*)
-		ipconfig -t 180 -d $IP
+	# Documentation/frv/booting.txt
 
-		# grab device entry from ip option
-		NEW_DEVICE=${IP#*:*:*:*:*:*}
-		if [ "${NEW_DEVICE}" != "${IP}" ]; then
-			NEW_DEVICE=${NEW_DEVICE%:*}
-		else
-			# wrong parse, possibly only a partial string
-			NEW_DEVICE=
+	for ROUNDTTT in 2 3 4 6 9 16 25 36 64 100; do
+
+		# The NIC is to be configured if this file does not exist.
+		# Ip-Config tries to create this file and when it succeds
+		# creating the file, ipconfig is not run again.
+		if [ -e /tmp/net-"${DEVICE}".conf ]; then
+			break;
 		fi
-		if [ -n "${NEW_DEVICE}" ]; then
-			DEVICE="${NEW_DEVICE}"
-		fi
-		;;
-	esac
+
+		case ${IP} in
+		none|off)
+			# Do nothing
+			;;
+		""|on|any)
+			# Bring up device
+			ipconfig -t ${ROUNDTTT} ${DEVICE}
+			;;
+		dhcp|bootp|rarp|both)
+			ipconfig -t ${ROUNDTTT} -c ${IP} -d ${DEVICE}
+			;;
+		*)
+			ipconfig -t ${ROUNDTTT} -d $IP
+
+			# grab device entry from ip option
+			NEW_DEVICE=${IP#*:*:*:*:*:*}
+			if [ "${NEW_DEVICE}" != "${IP}" ]; then
+				NEW_DEVICE=${NEW_DEVICE%:*}
+			else
+				# wrong parse, possibly only a partial string
+				NEW_DEVICE=
+			fi
+			if [ -n "${NEW_DEVICE}" ]; then
+				DEVICE="${NEW_DEVICE}"
+			fi
+			;;
+		esac
+	done
 
 	# source ipconfig output
 	if [ -n "${DEVICE}" ]; then
@@ -297,6 +392,6 @@ configure_networking()
 # Wait for queued kernel/udev events
 wait_for_udev()
 {
-	[ -x "$(command -v udevadm)" ] || return 0
+	command -v udevadm >/dev/null 2>&1 || return 0
 	udevadm settle ${1:+--timeout=$1}
 }

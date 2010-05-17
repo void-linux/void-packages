@@ -33,8 +33,9 @@ add_modules_from_file()
 		return
 	fi
 
-	sed -e '/^#/d' ${1} | while read module rest; do
-		force_load "${module}" "${rest}"
+	grep '^[^#]' ${1} | while read module args; do
+		[ -n "$module" ] || continue
+		force_load "${module}" "${args}"
 	done
 }
 
@@ -44,7 +45,7 @@ manual_add_modules()
 	local mam_x firmwares firmware
 
 	for mam_x in $(modprobe --set-version="${version}" --ignore-install \
-	--show-depends "${1}" 2>/dev/null | awk '/^insmod/ { print $2 }'); do
+	--quiet --show-depends "${1}" | awk '/^insmod/ { print $2 }'); do
 		# Prune duplicates
 		if [ -e "${DESTDIR}/${mam_x}" ]; then
 			continue
@@ -70,7 +71,12 @@ manual_add_modules()
 			# Only print warning for missing fw of loaded module
 			# or forced loaded module
 			if [ ! -e "/lib/firmware/${firmware}" ] \
-			&& [ ! -e "/lib/firmware/${version}/${firmware}" ]; then
+			&& [ ! -e "/lib/firmware/${version}/${firmware}" ] ; then
+				# Only warn about missing firmware if
+				# /proc/modules exists
+				if [ ! -e /proc/modules ] ; then
+					continue
+				fi
 				if grep -q "^$(basename "${mam_x}" .ko)[[:space:]]" \
 				/proc/modules \
 				|| grep -q "^$(basename "${mam_x}" .ko)" \
@@ -145,6 +151,10 @@ copy_exec() {
 	fi
 
 	# Copy the dependant libraries
+	if ! command -v ldd >/dev/null 2>&1 ; then
+		echo "WARNING: no ldd around - install glibc package."
+		exit 1
+	fi
 	for x in $(ldd ${source} 2>/dev/null | sed -e '
 	    /\//!d;
 	    /linux-gate/d;
@@ -152,8 +162,9 @@ copy_exec() {
 	    s/[[:blank:]]*\([^[:blank:]]*\) (.*)/\1/' 2>/dev/null); do
 
 		# Try to use non-optimised libraries where possible.
-		# We assume that all HWCAP libraries will be in tls.
-		nonoptlib=$(echo "${x}" | sed -e 's#/lib/\(tls\|i686\).*/\(lib.*\)#/lib/\2#')
+		# We assume that all HWCAP libraries will be in tls,
+		# sse2, vfp or neon.
+		nonoptlib=$(echo "${x}" | sed -e 's#/lib/\(tls\|i686\|sse2\|neon\|vfp\).*/\(lib.*\)#/lib/\2#')
 
 		if [ -e "${nonoptlib}" ]; then
 			x="${nonoptlib}"
@@ -176,14 +187,24 @@ copy_exec() {
 copy_modules_dir()
 {
 	local x_mod
+	local exclude
+	local dir="$1"
+	shift
 
-	if ! [ -d "${MODULESDIR}/${1}" ]; then
+	if ! [ -d "${MODULESDIR}/${dir}" ]; then
 		return;
 	fi
 	if [ "${verbose}" = "y" ]; then
-		echo "Copying module directory ${1}"
+		echo "Copying module directory ${dir}"
+		if [ $# -ge 1 ]; then
+			echo "(excluding $*)"
+		fi
 	fi
-	for x_mod in $(find "${MODULESDIR}/${1}" -name '*.ko' -print); do
+	while [ $# -ge 1 ]; do
+		exclude="$exclude -name $1 -prune -o "
+		shift
+	done
+	for x_mod in $(find "${MODULESDIR}/${dir}" ${exclude} -name '*.ko' -print); do
 		manual_add_modules $(basename ${x_mod} .ko)
 	done
 }
@@ -196,7 +217,7 @@ sys_walk_mod_add()
 	
 	while [ "${device_path}" != "/sys" ]; do
 		sys_walk_modalias ${device_path}
-		driver_path="$(readlink -f ${device_path}/driver)"
+		driver_path="$(readlink -f ${device_path}/driver/module)"
 		if [ -e "$driver_path" ]; then
 			module="$(basename $(readlink -f $driver_path))"
 			if [ -n "${module}" ]; then
@@ -228,10 +249,16 @@ dep_add_modules()
 {
 	local block minor root FSTYPE root_dev_path x
 
+	# require mounted sysfs
+	if [ ! -d /sys/devices/ ]; then
+		echo "mkinitramfs: MODULES dep requires mounted sysfs on /sys"
+		exit 1
+	fi
+
 	# findout root block device + fstype
 	eval "$(mount | awk '/\/dev\// {if ($3 == "/") {print "root=" $1 "\nFSTYPE=" $5; exit}}')"
 	if [ "${root}" = "/dev/root" ] ; then
-		root="/dev/disk/by-uuid/"$(/sbin/blkid -s UUID -o value ${root}) 2>/dev/null
+		root="/dev/disk/by-uuid/"$(blkid -o value -s UUID ${root}) 2>/dev/null
 	fi
 	root="$(readlink -f ${root})"
 
@@ -242,10 +269,13 @@ dep_add_modules()
 
 	# check that fstype rootfs recognition
 	if [ "${FSTYPE}" = "unknown" ]; then
-		echo "mkinitramfs: unknown fstype on root ${root}"
-		echo "mkinitramfs: workaround is MODULES=most" 
-		echo "mkinitramfs: Error please report bug on initramfs-tools" 
+		FSTYPE=$(blkid -o value -s TYPE "${root}")
+		if [  -z "${FSTYPE}" ]; then
+			echo "mkinitramfs: unknown fstype on root ${root}"
+			echo "mkinitramfs: workaround is MODULES=most" 
+			echo "Error please report bug on initramfs-tools"
 		exit 1
+		fi
 	fi
 
 	# Add rootfs
@@ -256,10 +286,10 @@ dep_add_modules()
 		|| [ "${root#/dev/dm-}" != "${root}" ]; then
 		minor=$((0x$(stat --format "%T" ${root}) % 256))
 		block=$(ls -1 /sys/block/dm-${minor}/slaves | head -n 1)
-		# lvm on luks or luks on lvm
-		if [ "${block#dm-}" != "${block}" ]; then
+		# lvm on luks or luks on lvm, possibly lvm snapshots
+		while [ "${block#dm-}" != "${block}" ]; do
 			block=$(ls -1 /sys/block/${block}/slaves | head -n 1)
-		fi
+		done
 		# lvm on md or luks on md
 		if [ "${block#md}" != "${block}" ]; then
 			block=$(awk "/^${block}/{print substr(\$5, 1, 4); exit}" \
@@ -339,6 +369,10 @@ dep_add_modules()
 		manual_add_modules sd_mod
 	fi
 
+	if [ -e /sys/bus/mmc/devices/ ]; then
+		manual_add_modules mmc_block
+	fi
+
 	if [ -e /sys/bus/i2o/devices/ ]; then
 		force_load i2o_block
 		force_load i2o_config
@@ -363,7 +397,7 @@ auto_add_modules()
 {
 	case "$1" in
 	base)
-		for x in ehci-hcd ohci-hcd uhci-hcd usbhid usb-storage ext2 \
+		for x in ehci-hcd ohci-hcd uhci-hcd usbhid btrfs ext2 \
 		ext3 ext4 ext4dev isofs jfs nfs reiserfs udf xfs af_packet \
 		atkbd i8042 virtio_pci; do
 			manual_add_modules "${x}"
@@ -375,19 +409,9 @@ auto_add_modules()
 		done
 	;;
 	net)
-		for x in 3c59x 8139cp 8139too 8390 atl1 atl1e b44 bmac \
-		bnx2 cxgb cxgb3 de2104x de4x5 defxx dl2k dmfe \
-		e100 e1000 e1000e ehea epic100 \
-		ep93xx_eth eql fealnx famachi forcedeth gelic_net \
-		hp100 igb ipg ixgb ixgbe mace mlx4_core mv643xx_eth myri10ge \
-		natsemi ne2k-pci netconsole netxen_nic niu ns83820 \
-		pcnet32 qla3xxx \
-		r8169 s2io sfc sis900 skge sky2 slhc smc911x starfire \
-		sundance sungem sungem_phy sunhme sunvnet tehuti tg3 tlan \
-		tulip typhoon via-rhine via-velocity winbond-840 \
-		xircom_cb xircom_tulip_cb yellowfin; do
-			manual_add_modules "${x}"
-		done
+		copy_modules_dir kernel/drivers/net \
+			appletalk arcnet bonding can hamradio irda pcmcia \
+			tokenring usb wan wimax wireless
 	;;
 	ide)
 		copy_modules_dir kernel/drivers/ide
@@ -427,6 +451,9 @@ auto_add_modules()
 			manual_add_modules "${x}"
 		done
 	;;
+	usb_storage)
+		copy_modules_dir kernel/drivers/usb/storage
+	;;
 	*)
 		auto_add_modules base
 		auto_add_modules kms
@@ -440,10 +467,12 @@ auto_add_modules()
 		auto_add_modules ieee1394
 		auto_add_modules firewire
 		auto_add_modules mmc
+		auto_add_modules usb_storage
 	;;
 	esac
 }
 
+# mkinitramfs help message
 usage()
 {
 	cat >&2 << EOF
@@ -451,15 +480,32 @@ usage()
 Usage: ${0} [OPTION]... -o outfile [version]
 
 Options:
-  -d confdir  Specify an alternative configuration directory.
-  -k          Keep temporary directory used to make the image.
-  -o outfile  Write to outfile.
-  -r root     Override ROOT setting in initramfs.conf.
+  -c compress  Override COMPRESS setting in initramfs.conf.
+  -d confdir   Specify an alternative configuration directory.
+  -k           Keep temporary directory used to make the image.
+  -o outfile   Write to outfile.
+  -r root      Override ROOT setting in initramfs.conf.
 
 See mkinitramfs(8) for further details.
 EOF
 	exit 1
 
+}
+
+# cache boot scripts order
+cache_run_scripts()
+{
+	DESTDIR=${1}
+	scriptdir=${2}
+	initdir=${DESTDIR}${scriptdir}
+	[ ! -d ${initdir} ] && return
+
+	runlist=$(get_prereq_pairs | tsort)
+	for crs_x in ${runlist}; do
+		[ -f ${initdir}/${crs_x} ] || continue
+		echo "${scriptdir}/${crs_x}" >> ${initdir}/ORDER
+		echo "[ -e /conf/param.conf ] && . /conf/param.conf" >> ${initdir}/ORDER
+	done
 }
 
 compare_versions()

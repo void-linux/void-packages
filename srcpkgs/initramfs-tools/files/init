@@ -32,9 +32,13 @@ tmpfs_size="10M"
 if [ -e /etc/udev/udev.conf ]; then
 	. /etc/udev/udev.conf
 fi
-mount -t tmpfs -o size=$tmpfs_size,mode=0755 udev /dev
-[ -e /dev/console ] || mknod -m 0600 /dev/console c 5 1
-[ -e /dev/null ] || mknod /dev/null c 1 3
+if ! mount -t devtmpfs -o mode=0755 devtmpfs /dev; then
+	mount -t tmpfs -o size=$tmpfs_size,mode=0755 udev /dev
+	[ -e /dev/console ] || mknod -m 0600 /dev/console c 5 1
+	[ -e /dev/null ] || mknod /dev/null c 1 3
+fi
+mkdir /dev/pts
+mount -t devpts -o noexec,nosuid,gid=5,mode=0620 none /dev/pts || true
 > /dev/.initramfs-tools
 mkdir /dev/.initramfs
 
@@ -51,6 +55,8 @@ export ROOTDELAY=
 export ROOTFLAGS=
 export ROOTFSTYPE=
 export IP=
+export BOOT=
+export BOOTIF=
 export break=
 export init=/sbin/init
 export quiet=n
@@ -59,6 +65,7 @@ export rootmnt=/root
 export debug=
 export panic=
 export blacklist=
+export resume=
 export resume_offset=
 
 # Bring in the main config
@@ -82,8 +89,8 @@ for x in $(cat /proc/cmdline); do
 
 			# support any / in LABEL= path (escape to \x2f)
 			case "${ROOT}" in
-			*[/]*)
-			if [ -x "$(command -v sed)" ]; then
+			*/*)
+			if command -v sed >/dev/null 2>&1; then
 				ROOT="$(echo ${ROOT} | sed 's,/,\\x2f,g')"
 			else
 				if [ "${ROOT}" != "${ROOT#/}" ]; then
@@ -95,11 +102,7 @@ for x in $(cat /proc/cmdline); do
 				IFS='/'
 				newroot=
 				for s in $ROOT; do
-					if [ -z "${newroot}" ]; then
-						newroot="${s}"
-					else
-						newroot="${newroot}\\x2f${s}"
-					fi
+					newroot="${newroot:+${newroot}\\x2f}${s}"
 				done
 				unset IFS
 				ROOT="${newroot}"
@@ -184,16 +187,21 @@ for x in $(cat /proc/cmdline); do
 	blacklist=*)
 		blacklist=${x#blacklist=}
 		;;
+	netconsole=*)
+		netconsole=${x#netconsole=}
+		;;
 	esac
 done
 
-if [ -z "${noresume}" ]; then
-	export resume=${RESUME}
-else
+if [ -n "${noresume}" ]; then
 	export noresume
+	unset resume
+else
+	resume=${RESUME:-}
 fi
 
-depmod -a
+[ -n "${netconsole}" ] && modprobe netconsole netconsole="${netconsole}"
+
 maybe_break top
 [ "$quiet" != "y" ] && log_begin_msg "Running /scripts/init-top"
 run_scripts /scripts/init-top
@@ -259,6 +267,8 @@ unset ROOTFSTYPE
 unset ROOTDELAY
 unset ROOT
 unset IP
+unset BOOT
+unset BOOTIF
 unset blacklist
 unset break
 unset noresume

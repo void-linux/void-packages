@@ -9,7 +9,7 @@ CONFDIR="/etc/initramfs-tools"
 verbose="n"
 errors_to="2>/dev/null"
 
-OPTIONS=`getopt -o d:ko:r:v -n "$0" -- "$@"`
+OPTIONS=`getopt -o c:d:ko:r:v -n "$0" -- "$@"`
 
 # Check for non-GNU getopt
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -18,6 +18,10 @@ eval set -- "$OPTIONS"
 
 while true; do
 	case "$1" in
+	-c)
+		compress="$2"
+		shift 2
+		;;
 	-d)
 		CONFDIR="$2"
 		shift 2
@@ -73,16 +77,6 @@ for i in ${EXTRA_CONF}; do
 	fi
 done
 
-# Handle COMPRESSION_TYPE from initramfs.conf.
-compress_cmd_args="-9"
-
-case "${COMPRESSION_TYPE}" in
-gzip) compress_cmd=gzip;;
-bzip2) compress_cmd=bzip2;;
-lzma) compress_cmd=lzma; compress_cmd_args="$compress_cmd_args -c";;
-*) compress_cmd=gzip;;
-esac
-
 # source package confs
 for i in /usr/share/initramfs-tools/conf-hooks.d/*; do
 	if [ -e "${i}" ]; then
@@ -131,6 +125,27 @@ case "${version}" in
 	;;
 esac
 
+# Check userspace and kernel support for compressed initramfs images
+if [ -z "${compress}" ]; then
+	compress=${COMPRESS}
+else
+	COMPRESS=${compress}
+fi
+
+if ! command -v ${compress} >/dev/null 2>&1; then
+	compress=gzip
+	[ "${verbose}" = y ] && \
+		echo "No ${COMPRESS} in ${PATH}, using gzip"
+fi
+
+if [ -r /boot/config-${version} ]; then
+	if ! `grep -q -i config_rd_${COMPRESS}=y /boot/config-${version}` ; then
+		compress=gzip
+		[ "${verbose}" = y ] && \
+			echo "linux-2.6 misses ${COMPRESS} support, using gzip"
+	fi
+fi
+
 if [ -d "${outfile}" ]; then
 	echo "${outfile} is a directory"
 	exit 1
@@ -139,14 +154,15 @@ fi
 MODULESDIR="/lib/modules/${version}"
 
 if [ ! -e "${MODULESDIR}" ]; then
-	echo "Cannot find ${MODULESDIR}"
-	exit 1
+	echo "WARNING: missing ${MODULESDIR}"
+	echo "Device driver support needs thus be built-in linux image!"
 fi
 if [ ! -e "${MODULESDIR}/modules.dep" ]; then
 	depmod ${version}
 fi
 
 DESTDIR="$(mktemp -t -d mkinitramfs_XXXXXX)" || exit 1
+chmod 755 "${DESTDIR}"
 __TMPCPIOGZ="$(mktemp -t mkinitramfs-OL_XXXXXX)" || exit 1
 
 DPKG_ARCH=`uname -m`
@@ -241,15 +257,28 @@ fi
 run_scripts /usr/share/initramfs-tools/hooks
 run_scripts "${CONFDIR}"/hooks
 
+# cache boot run order
+for b in $(cd "${DESTDIR}/scripts" && find . -mindepth 1 -type d); do
+	cache_run_scripts "${DESTDIR}" "/scripts/${b#./}"
+done
+
+# generate module deps
+depmod -a -b "${DESTDIR}" ${version}
+rm -f "${DESTDIR}/lib/modules/${version}"/modules.*map
+
 # Apply DSDT to initramfs
 if [ -e "${CONFDIR}/DSDT.aml" ]; then
 	copy_exec "${CONFDIR}/DSDT.aml" /
 fi
 
+# Remove any looping or broken symbolic links, since they break cpio.
+find "${DESTDIR}" -type l -printf '%p %Y\n' | sed -n 's/ [LN]$//p' \
+	| xargs -rL1 rm -f
+
 # Copy resume from klibc
 copy_exec /bin/resume /bin
 
-[ "${verbose}" = y ] && echo "Building cpio ${outfile} initramfs (${COMPRESSION_TYPE})"
+[ "${verbose}" = y ] && echo "Building cpio ${outfile} initramfs"
 (
 # work around lack of "set -o pipefail" for the following pipe:
 # cd "${DESTDIR}" && find . | cpio --quiet --dereference -o -H newc | gzip >"${outfile}" || exit 1
@@ -262,7 +291,7 @@ eval `
         find . 4>&-; echo "ec1=$?;" >&4
     } | {
         cpio --quiet --dereference -o -H newc 4>&-; echo "ec2=$?;" >&4
-    } | ${compress_cmd} ${compress_cmd_args} >"${outfile}"
+    } | ${compress} >"${outfile}"
     echo "ec3=$?;" >&4
 `
 if [ "$ec1" -ne 0 ]; then exit "$ec1"; fi
