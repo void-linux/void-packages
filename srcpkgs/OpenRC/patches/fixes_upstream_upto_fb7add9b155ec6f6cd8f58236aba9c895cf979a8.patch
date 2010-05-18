@@ -1,0 +1,128 @@
+diff --git init.d/network.in init.d/network.in
+index 7c406c5..135e5d8 100644
+--- init.d/network.in
++++ init.d/network.in
+@@ -64,16 +64,8 @@ tentative()
+ 	case "$RC_UNAME" in
+ 	Linux)
+ 		[ -x /sbin/ip ] || return 1
+-		LC_ALL=C ip addr show | while read inet address rest; do
+-	 		case "${inet}" in
+-			inet6)
+-				case "${rest}" in
+-				*" "tentative*) return 2;;
+-				esac
+-				;;
+-			esac
+-		done
+-		[ $? = 2 ]
++		[ -n "$(ip -f inet6 addr show tentative)" ]
++		;;
+ 	*)
+ 		local inet= address= rest=
+ 		LC_ALL=C ifconfig -a | while read inet address rest; do
+@@ -232,8 +224,6 @@ start()
+ 	if [ "$RC_UNAME" = "Linux" ]; then
+ 		ifconfig lo 127.0.0.1 netmask 255.0.0.0 || cr=1 
+ 		route add -net 127.0.0.0 netmask 255.0.0.0 \
+-			gw 127.0.0.1 2>/dev/null
+-		route add -net 127.0.0.0 netmask 255.0.0.0 \
+ 			gw 127.0.0.1 reject 2>/dev/null
+ 	else
+ 		ifconfig lo0 127.0.0.1 netmask 255.0.0.0 || cr=1
+@@ -289,9 +279,14 @@ start()
+ 	r=5
+ 	while [ $r -gt 0 ]; do
+ 		tentative || break
++		[ $r = 5 ] && vebegin "Waiting for tentative addresses"
+ 		sleep 1
+ 		r=$(($r - 1))
+ 	done
++	if [ $r != 5 ]; then
++		[ $r != 0 ]
++		veend $?
++	fi
+ 	
+ 	if [ -n "$defaultroute" ]; then
+ 		ebegin "Setting default route $defaultroute"
+diff --git net/bonding.sh net/bonding.sh
+index 793280b..559c9a1 100644
+--- net/bonding.sh
++++ net/bonding.sh
+@@ -15,7 +15,7 @@ _is_bond()
+ 
+ bonding_pre_start()
+ {
+-	local x= s= slaves="$(_get_array "slaves_${IFVAR}")" 
++	local x= s= n= slaves="$(_get_array "slaves_${IFVAR}")"
+ 
+ 	[ -z "${slaves}" ] && return 0
+ 
+@@ -43,9 +43,11 @@ bonding_pre_start()
+ 	# Nice and dynamic :)
+ 	for x in /sys/class/net/"${IFACE}"/bonding/*; do
+ 		[ -f "${x}" ] || continue
+-		eval s=\$${x##*/}_${IFVAR}
++		n=${x##*/}
++		eval s=\$${n}_${IFVAR}
+ 		if [ -n "${s}" ]; then
+-			echo "${s}" >"${x}"
++			echo "${s}" >"${x}" || \
++			eerror "Failed to configure $n (${n}_${IFVAR})"
+ 		fi
+ 	done
+ 
+diff --git net/dhclient.sh net/dhclient.sh
+index 6c92c1f..65cacd3 100644
+--- net/dhclient.sh
++++ net/dhclient.sh
+@@ -17,6 +17,7 @@ dhclient_start()
+ 
+ 	# Get our options
+ 	# These options only work in Gentoo, and maybe RedHat
++	eval args=\$dhclient_${IFVAR}
+ 	eval opts=\$dhcp_${IFVAR}
+ 	[ -z "${opts}" ] && opts=${dhcp}
+ 
+diff --git net/iproute2.sh net/iproute2.sh
+index 0df8eef..906a45e 100644
+--- net/iproute2.sh
++++ net/iproute2.sh
+@@ -160,7 +160,8 @@ _add_route()
+ 
+ 	# We cannot use a metric if we're using a nexthop
+ 	if ! ${have_metric} && \
+-		[ -n "${metric}" -a -z "${cmd##* nexthop }" ]
++		[ -n "${metric}" -a \
++			"${cmd##* nexthop }" = "$cmd" ]
+ 	then
+ 		cmd="${cmd} metric ${metric}"
+ 	fi
+diff --git scripts/on_ac_power scripts/on_ac_power
+index 0804952..9ef1df4 100755
+--- scripts/on_ac_power
++++ scripts/on_ac_power
+@@ -9,6 +9,10 @@ if [ -f /proc/acpi/ac_adapter/AC*/state ]; then
+ 		"state:"*"off-line") return 128;;
+ 		esac
+ 	done
++elif [ -f /sys/class/power_supply/AC*/online ]; then
++	cat /sys/class/power_supply/AC*/online | while read line; do
++		[ "${line}" = 0 ] && return 128
++	done
+ elif [ -f /proc/pmu/info ]; then
+ 	cat /proc/pmu/info | while read line; do
+ 		case "$line" in
+diff --git src/rc/rc.c src/rc/rc.c
+index 6d04b3d..ccafbe3 100644
+--- src/rc/rc.c
++++ src/rc/rc.c
+@@ -773,7 +773,7 @@ handle_bad_signal(int sig)
+ #endif
+ 
+ #include "_usage.h"
+-#define getoptstring "o:" getoptstring_COMMON
++#define getoptstring "o:s:S" getoptstring_COMMON
+ static const struct option longopts[] = {
+ 	{ "override", 1, NULL, 'o' },
+ 	{ "service",  1, NULL, 's' },
