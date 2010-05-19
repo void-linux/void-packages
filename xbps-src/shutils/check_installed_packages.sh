@@ -30,9 +30,9 @@ check_installed_packages()
 	local f lpkgn lpkgver rv srcpkgver
 
 	msg_normal "Checking for newer packages from srcpkgs, please wait..."
-	for f in $(xbps-bin.static list|awk '{print $1}'); do
-		lpkgn=$(xbps-uhelper.static getpkgname ${f})
-		lpkgver=$(xbps-uhelper.static getpkgversion ${f})
+	for f in $(${XBPS_BIN_CMD} list|awk '{print $1}'); do
+		lpkgn=$(${XBPS_PKGDB_CMD} getpkgname ${f})
+		lpkgver=$(${XBPS_PKGDB_CMD} getpkgversion ${f})
 
 		if [ ! -r ${XBPS_SRCPKGDIR}/${lpkgn}/template ]; then
 			msg_warn "Installed package ${f} not available as source pkg, skipping."
@@ -48,7 +48,7 @@ check_installed_packages()
 		else
 			srcpkgver="${version}"
 		fi
-		xbps-uhelper.static cmpver ${lpkgver} ${srcpkgver}
+		${XBPS_CMPVER_CMD} ${lpkgver} ${srcpkgver}
 		rv=$?
 		if [ $rv -eq 255 ]; then
 			echo "   ${f}: newer version -> ${srcpkgver}"
