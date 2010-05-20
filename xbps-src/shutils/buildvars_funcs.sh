@@ -45,6 +45,7 @@ set_build_vars()
 			LDFLAGS="-L/lib32 -L/usr/lib32 $LDFLAGS"
 			export PATH="/bin:/usr/bin:$PATH"
 			export CC="gcc -m32"
+			export CXX="g++ -m32"
 		fi
 		PKG_CONFIG="$XBPS_MASTERDIR/usr/bin/pkg-config"
 		PKG_CONFIG_LIBDIR="$XBPS_MASTERDIR/usr/lib/pkgconfig"
@@ -70,6 +71,9 @@ unset_build_vars()
 	if [ -z "$in_chroot" ]; then
 		unset LD_LIBRARY_PATH
 		export LD_LIBRARY_PATH=$SAVE_LDLIBPATH
+	fi
+	if [ -n "$BUILD_32BIT" ]; then
+		unset CC CXX
 	fi
 	unset PKG_CONFIG LDFLAGS CPPFLAGS PKG_CONFIG_LIBDIR CFLAGS CXXFLAGS
 }
