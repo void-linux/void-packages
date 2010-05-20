@@ -34,15 +34,20 @@ set_build_vars()
 
 	if [ -z "$in_chroot" ]; then
 		SAVE_LDLIBPATH=$LD_LIBRARY_PATH
+		LDFLAGS="-L$XBPS_MASTERDIR/usr/lib"
 		if [ -d /usr/lib/libfakeroot ]; then
 			LDLIBPATH="/usr/lib/libfakeroot:$XBPS_MASTERDIR/usr/lib"
 		else
 			LDLIBPATH="$XBPS_MASTERDIR/usr/lib"
 		fi
+		if [ -n "$BUILD_32BIT" ]; then
+			LDLIBPATH="/lib32:/usr/lib32:$LDLIBPATH"
+			LDFLAGS="-L/lib32 -L/usr/lib32 $LDFLAGS"
+			export PATH="/bin:/usr/bin:$PATH"
+			export CC="gcc -m32"
+		fi
 		PKG_CONFIG="$XBPS_MASTERDIR/usr/bin/pkg-config"
 		PKG_CONFIG_LIBDIR="$XBPS_MASTERDIR/usr/lib/pkgconfig"
-		LDFLAGS="-L$XBPS_MASTERDIR/usr/lib"
-		CPPFLAGS="-I$XBPS_MASTERDIR/usr/include $CPPFLAGS"
 		
 		export CPPFLAGS="$CPPFLAGS" LDFLAGS="$LDFLAGS"
 		export LD_LIBRARY_PATH="$LDLIBPATH"
@@ -53,6 +58,7 @@ set_build_vars()
 		export PKG_CONFIG_LIBDIR="/usr/lib/pkgconfig"
 	fi
 	if [ -z "${_BUILD_VARS_CFLAGS_SET}" ]; then
+		export CPPFLAGS="-I$XBPS_MASTERDIR/usr/include $CPPFLAGS"
 		export CFLAGS="$CFLAGS $XBPS_CFLAGS"
 		export CXXFLAGS="$CXXFLAGS $XBPS_CXXFLAGS"
 		_BUILD_VARS_CFLAGS_SET=1
