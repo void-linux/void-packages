@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2010 Juan Romero Pardines.
+# Copyright (c) 2010 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -23,47 +23,47 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 
-#
-# Functions to set some env vars required to build the packages
-# required by the xbps-base-chroot package.
-#
+. ${XBPS_SHUTILSDIR}/tmpl_funcs.sh
 
-set_build_vars()
+strip_files()
 {
-	local LDLIBPATH
+	local subpkg
 
-	if [ -z "$in_chroot" ]; then
-		SAVE_LDLIBPATH=$LD_LIBRARY_PATH
-		LDFLAGS="-L$XBPS_MASTERDIR/usr/lib"
-		if [ -d /usr/lib/libfakeroot ]; then
-			LDLIBPATH="/usr/lib/libfakeroot:$XBPS_MASTERDIR/usr/lib"
-		else
-			LDLIBPATH="$XBPS_MASTERDIR/usr/lib"
-		fi
-		if [ -n "$BUILD_32BIT" ]; then
-			LDLIBPATH="/lib32:/usr/lib32:$LDLIBPATH"
-			LDFLAGS="-L/lib32 -L/usr/lib32 $LDFLAGS"
-			export PATH="/bin:/usr/bin:$PATH"
-			export CC="gcc -m32"
-			export CXX="g++ -m32"
-		fi
-		export CPPFLAGS="-I$XBPS_MASTERDIR/usr/include"
-		export LDFLAGS="$LDFLAGS"
-		export LD_LIBRARY_PATH="$LDLIBPATH"
-	fi
-	export PKG_CONFIG="$XBPS_MASTERDIR/usr/bin/pkg-config"
-	export PKG_CONFIG_LIBDIR="$XBPS_MASTERDIR/usr/lib/pkgconfig"
-	export CFLAGS="$CFLAGS $XBPS_CFLAGS"
-	export CXXFLAGS="$CXXFLAGS $XBPS_CXXFLAGS"
+	for subpkg in ${subpackages}; do
+		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
+		pkgname=${subpkg}
+		set_tmpl_common_vars
+		strip_files_real
+		setup_tmpl ${sourcepkg}
+	done
+
+	strip_files_real
 }
 
-unset_build_vars()
+strip_files_real()
 {
-	if [ -z "$in_chroot" ]; then
-		unset LD_LIBRARY_PATH LDFLAGS
-		export LD_LIBRARY_PATH=$SAVE_LDLIBPATH
-		[ -n "$BUILD_32BIT" ] && unset CC CXX
+	local lver
+
+	if ! command -v strip 2>&1 >/dev/null; then
+		return 0
 	fi
-	unset PKG_CONFIG PKG_CONFIG_LIBDIR
-	unset CPPFLAGS CFLAGS CXXFLAGS
+	[ -n "$nostrip" ] && return 0
+
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
+	fi
+
+	msg_normal "Package '$pkgname ($lver)': stripping files, please wait..."
+	for f in $(find ${DESTDIR} -type f); do
+		case "$(file -biz $f)" in
+		application/x-executable*)
+			strip $f && \
+				echo "   Stripped executable: $(basename $f)";;
+		application/x-sharedlib*|application/x-archive*)
+			strip -S $f && \
+				echo "   Stripped library: $(basename $f)";;
+		esac
+	done
 }

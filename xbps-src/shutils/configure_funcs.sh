@@ -84,9 +84,6 @@ configure_src_phase()
 		cd $build_wrksrc || return 1
 	fi
 
-	. $XBPS_SHUTILSDIR/buildvars_funcs.sh
-	set_build_vars
-
 	case "$build_style" in
 	gnu_configure|gnu-configure)
 		#
@@ -141,7 +138,6 @@ configure_src_phase()
 	for f in ${configure_env}; do
 		unset eval ${f%=*}
 	done
-	unset_build_vars
 
 	touch -f $XBPS_CONFIGURE_DONE
 }

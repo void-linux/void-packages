@@ -74,9 +74,6 @@ build_src_phase()
 		fi
 	fi
 
-	. $XBPS_SHUTILSDIR/buildvars_funcs.sh
-	set_build_vars
-
 	msg_normal "Package '$pkgname ($lver)': running build phase."
 
 	if [ "$build_style" = "custom-install" ]; then
@@ -109,7 +106,6 @@ build_src_phase()
 	fi
 
 	unset makejobs
-	unset_build_vars
 
 	touch -f $XBPS_BUILD_DONE
 }

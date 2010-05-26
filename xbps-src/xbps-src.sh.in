@@ -138,32 +138,40 @@ run_file()
 
 check_config_vars()
 {
-	local val cffound f
+	local val cffound f cfpaths cf="xbps-src.conf"
 
-	if [ -z "$config_file_specified" ]; then
-		config_file_paths="$XBPS_CONFIG_FILE ./etc/xbps-src.conf"
-		for f in $config_file_paths; do
-			[ -f $f ] && XBPS_CONFIG_FILE=$f && \
-				cffound=yes && break
+	if [ -z "$XBPS_CONFIG_FILE" ]; then
+		cfpaths="@@XBPS_INSTALL_PREFIX@@/etc/${cf} ./etc/${cf}"
+		for f in $cfpaths; do
+			if [ -f ${f} ]; then
+				XBPS_CONFIG_FILE=${f}
+				cffound=yes
+				break
+			fi
 		done
 		[ -z "$cffound" ] && msg_error "cannot find a config file"
 	fi
 
 	run_file ${XBPS_CONFIG_FILE}
-	XBPS_CONFIG_FILE=$path_fixed
+	export XBPS_CONFIG_FILE=$path_fixed
 
 	if [ ! -f "$XBPS_CONFIG_FILE" ]; then
 		msg_error "cannot find configuration file: $XBPS_CONFIG_FILE"
 	fi
 
-	eval val="\$XBPS_MASTERDIR"
-	[ -z "$val" ] && msg_error "'XBPS_MASTERDIR' not set in configuration file"
-	if [ ! -d "$val" ]; then
-		mkdir "$val"
-		[ $? -ne 0 ] && msg_error "couldn't create 'XBPS_MASTERDIR' directory"
+	for f in XBPS_DISTRIBUTIONDIR XBPS_MASTERDIR; do
+		eval val="\$${f}"
+		if [ -z "$val" ]; then
+			msg_error "'${f}' not set in configuration file!"
+		fi
+	done
+	if [ ! -d "$XBPS_MASTERDIR" ]; then
+		mkdir -p "$val"
+		if [ $? -ne 0 ]; then
+			msg_error "couldn't create 'XBPS_MASTERDIR' directory"
+		fi
 	fi
-
-	export PATH="@@XBPS_INSTALL_PREFIX@@/sbin:$PATH"
+	export _MASTERDIR="$XBPS_MASTERDIR"
 }
 
 #
@@ -172,7 +180,7 @@ check_config_vars()
 while getopts "Cc:hm:p:" opt; do
 	case $opt in
 		C) export dontrm_builddir=yes;;
-		c) config_file_specified=yes; XBPS_CONFIG_FILE="$OPTARG";;
+		c) XBPS_CONFIG_FILE="$OPTARG";;
 		h) usage && exit 0;;
 		m)
 			_MASTERDIR="$OPTARG"
@@ -205,6 +213,10 @@ fi
 #
 check_reqhost_utils
 
+if [ -n "$in_chroot" ]; then
+	XBPS_CONFIG_FILE="/usr/local/etc/xbps-src.conf"
+fi
+
 #
 # Check configuration vars before anyting else, and set defaults vars.
 #
@@ -217,6 +229,9 @@ set_defvars
 
 . $XBPS_SHUTILSDIR/common_funcs.sh
 
+#
+# Fix up some vars when XBPS_USE_CAPABILITIES is set.
+#
 if [ -n "$XBPS_USE_CAPABILITIES" ]; then
 	chroot_cmd="@@XBPS_INSTALL_LIBEXECDIR@@/xbps-src-capchroot"
 	unset sudo_cmd
@@ -234,7 +249,25 @@ fi
 
 [ -z "$dontrm_builddir" ] && dontrm_builddir=no
 
-# Main switch
+#
+# Sanitize PATH.
+#
+if [ -z "$in_chroot" ]; then
+	# In non chroot case always prefer host tools.
+	MYPATH="/bin:/usr/bin:/sbin:/usr/sbin:$MYPATH"
+	MYPATH="$XBPS_MASTERDIR/bin:$XBPS_MASTERDIR/usr/bin:$MYPATH"
+	MYPATH="$XBPS_MASTERDIR/usr/local/bin:$MYPATH"
+	MYPATH="$XBPS_MASTERDIR/usr/local/sbin:$MYPATH"
+else
+	# In chroot always prefer tools from bootstrap.
+	MYPATH="/tools/bin:/usr/local/sbin:/usr/local/bin"
+	MYPATH="/bin:/sbin:/usr/bin:/usr/sbin:$MYPATH"
+fi
+export PATH="$MYPATH"
+
+#
+# Main switch.
+#
 case "$target" in
 bootstrap)
 	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
