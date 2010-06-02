@@ -42,27 +42,23 @@ add_modules_from_file()
 # Add dependent modules + eventual firmware
 manual_add_modules()
 {
-	local mam_x firmwares firmware
+	local kmod firmware
 
-	for mam_x in $(modprobe --set-version="${version}" --ignore-install \
+	for kmod in $(modprobe --set-version="${version}" --ignore-install \
 	--quiet --show-depends "${1}" | awk '/^insmod/ { print $2 }'); do
 		# Prune duplicates
-		if [ -e "${DESTDIR}/${mam_x}" ]; then
+		if [ -e "${DESTDIR}/${kmod}" ]; then
 			continue
 		fi
 
-		mkdir -p "${DESTDIR}/$(dirname "${mam_x}")"
-		ln -s "${mam_x}" "${DESTDIR}/$(dirname "${mam_x}")"
+		mkdir -p "${DESTDIR}/$(dirname "${kmod}")"
+		ln -s "${kmod}" "${DESTDIR}/$(dirname "${kmod}")"
 		if [ "${verbose}" = "y" ]; then
-			echo "Adding module ${mam_x}"
+			echo "Adding module ${kmod}"
 		fi
 
-		# Add firmware files if necessary
-		firmwares=$(modinfo -F firmware "${mam_x}")
-		if [ -z "${firmwares}" ]; then
-			continue
-		fi
-		for firmware in $firmwares; do
+		# Add required firmware
+		for firmware in $(modinfo -F firmware "${kmod}"); do
 			if [ -e "${DESTDIR}/lib/firmware/${firmware}" ] \
 			|| [ -e "${DESTDIR}/lib/firmware/${version}/${firmware}" ]; then
 				continue
@@ -77,11 +73,11 @@ manual_add_modules()
 				if [ ! -e /proc/modules ] ; then
 					continue
 				fi
-				if grep -q "^$(basename "${mam_x}" .ko)[[:space:]]" \
+				if grep -q "^$(basename "${kmod}" .ko)[[:space:]]" \
 				/proc/modules \
-				|| grep -q "^$(basename "${mam_x}" .ko)" \
+				|| grep -q "^$(basename "${kmod}" .ko)" \
 				"${CONFDIR}/modules"; then
-					echo "W: Possible missing firmware /lib/firmware/${firmware} for module $(basename ${mam_x} .ko)" >&2
+					echo "W: Possible missing firmware /lib/firmware/${firmware} for module $(basename ${kmod} .ko)" >&2
 				fi
 				continue
 			fi
@@ -103,59 +99,33 @@ manual_add_modules()
 	done
 }
 
-# $1 is the source path (e.g. /usr/bin/time)
-# $2 is the relative destination (e.g. /usr or /usr/time)
-#
-# The destination is interpreted in the same way "cp" would, meaning
-# (assuming /bin is a directory):
-#
-#   "copy_exec /usr/bin/time /bin"        -> /bin/time
-#   "copy_exec /usr/bin/time /bin/mytime" -> /bin/mytime
-# 
-# If $2 is left out, the same destination path as for the source arg will
-# be used and directories will be created as needed, so:
-#
-#   "copy_exec /usr/bin/time"             -> /usr/bin/time
-#
+# $1 = file to copy to ramdisk
+# $2 (optional) Name for the file on the ramdisk
+# Location of the image dir is assumed to be $DESTDIR
+# We never overwrite the target if it exists.
 copy_exec() {
-	local source target destination final_destination x nonoptlib
+	local src target x nonoptlib
 	local libname dirname
 
-	source="${1}"
-	if [ -n "${2}" ]; then
-		target="${2}"
-	else
-		if [ ! -e "${DESTDIR}/$(dirname "${1}")" ]; then
-			mkdir -p "${DESTDIR}/$(dirname "${1}")"
-		fi
-		target="${1}"
-	fi
+	src="${1}"
+	target="${2:-$1}"
+
+	[ -f "${src}" ] || return 1
 
 	if [ -d "${DESTDIR}/${target}" ]; then
-		destination="${target}/$(basename "${source}")"
+               # check if already copied
+		[ -e "${DESTDIR}/$target/${src##*/}" ] && return 0
 	else
-		destination="${target}"
+		[ -e "${DESTDIR}/$target" ] && return 0
+		#FIXME: inst_dir
+		mkdir -p "${DESTDIR}/${target%/*}"
 	fi
-	final_destination="${DESTDIR}/${destination}"
 
-	if [ -L "$final_destination" ]; then
-		if [ $(readlink "${final_destination}") != "${source}" ]; then
-			echo "W:copy_exec: Not copying ${source} to \$DESTDIR${destination}, which is already a copy of $(readlink ${final_destination})" >&2
-			return
-		fi
-	else
-		ln -s ${source} ${DESTDIR}/${destination}
-		if [ "${verbose}" = "y" ]; then
-			echo "Adding binary ${source}"
-		fi
-	fi
+	[ "${verbose}" = "y" ] && echo "Adding binary ${src}"
+	ln -s "${src}" "${DESTDIR}/${target}"
 
 	# Copy the dependant libraries
-	if ! command -v ldd >/dev/null 2>&1 ; then
-		echo "WARNING: no ldd around - install glibc package."
-		exit 1
-	fi
-	for x in $(ldd ${source} 2>/dev/null | sed -e '
+	for x in $(ldd ${src} 2>/dev/null | sed -e '
 	    /\//!d;
 	    /linux-gate/d;
 	    /=>/ {s/.*=>[[:blank:]]*\([^[:blank:]]*\).*/\1/};
@@ -173,12 +143,11 @@ copy_exec() {
 		libname=$(basename "${x}")
 		dirname=$(dirname "${x}")
 
+		# FIXME inst_lib
 		mkdir -p "${DESTDIR}/${dirname}"
 		if [ ! -e "${DESTDIR}/${dirname}/${libname}" ]; then
 			ln -s "${x}" "${DESTDIR}/${dirname}"
-			if [ "${verbose}" = "y" ]; then
-				echo "Adding library ${x}"
-			fi
+			[ "${verbose}" = "y" ] && echo "Adding library ${x}"
 		fi
 	done
 }
@@ -186,8 +155,7 @@ copy_exec() {
 # Copy entire subtrees to the initramfs
 copy_modules_dir()
 {
-	local x_mod
-	local exclude
+	local kmod exclude
 	local dir="$1"
 	shift
 
@@ -197,15 +165,15 @@ copy_modules_dir()
 	if [ "${verbose}" = "y" ]; then
 		echo "Copying module directory ${dir}"
 		if [ $# -ge 1 ]; then
-			echo "(excluding $*)"
+		  echo "(excluding $*)"
 		fi
 	fi
 	while [ $# -ge 1 ]; do
-		exclude="$exclude -name $1 -prune -o "
+		exclude="${exclude:-} -name $1 -prune -o "
 		shift
 	done
-	for x_mod in $(find "${MODULESDIR}/${dir}" ${exclude} -name '*.ko' -print); do
-		manual_add_modules $(basename ${x_mod} .ko)
+	for kmod in $(find "${MODULESDIR}/${dir}" ${exclude:-} -name '*.ko' -print); do
+		manual_add_modules $(basename ${kmod} .ko)
 	done
 }
 
@@ -338,6 +306,12 @@ dep_add_modules()
 	elif [ "${root#/dev/mmcblk}" != "${root}" ]; then
 		block=${root#/dev/}
 		block=${block%%p[0-9]*}
+
+	# DAC960 - good old mylex raid - root dev format /dev/rd/cXdXpX
+	elif [ "${root#/dev/rd/c}" != "${root}" ]; then
+		block="rd!c${root#/dev/rd/c}"
+		block=${block%%p[0-9]*}
+
 	# classical root device
 	else
 		block=${root#/dev/}
@@ -395,11 +369,12 @@ dep_add_modules()
 # The modules "most" classes added per default to the initramfs
 auto_add_modules()
 {
-	case "$1" in
+	case "${1:-}" in
 	base)
-		for x in ehci-hcd ohci-hcd uhci-hcd usbhid btrfs ext2 \
-		ext3 ext4 ext4dev isofs jfs nfs reiserfs udf xfs af_packet \
-		atkbd i8042 virtio_pci; do
+		for x in ehci-hcd ohci-hcd uhci-hcd usbhid xhci hid-apple \
+		hid-microsoft \
+		btrfs ext2 ext3 ext4 ext4dev isofs jfs nfs reiserfs udf xfs \
+		af_packet atkbd i8042 virtio_pci; do
 			manual_add_modules "${x}"
 		done
 	;;
@@ -525,8 +500,8 @@ check_minkver()
 {
 	local curversion initdir ARCH minversion cm_x tmp
 
-	curversion="${1}"
-	initdir="${2}"
+	curversion="${1:-}"
+	initdir="${2:-}"
 	if [ -z "${initdir}" ]; then
 		ARCH=$(uname -m)
 		case ${ARCH} in
@@ -545,7 +520,7 @@ check_minkver()
 		return 0
 	fi
 	set_initlist
-	for cm_x in ${initlist}; do
+	for cm_x in ${initlist:-}; do
 		# sed: keep last line starting with MINKVER=,
 		#      remove MINKVER= and trailing space
 		minver=$(sed '/^MINKVER=/!d;$!d;s/^MINKVER=//;s/[[:space:]]*$//' "${initdir}/${cm_x}")
