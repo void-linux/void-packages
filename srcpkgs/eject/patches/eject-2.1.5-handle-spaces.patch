@@ -1,0 +1,57 @@
+http://bugs.gentoo.org/151257
+
+--- eject.c
++++ eject.c
+@@ -370,6 +370,30 @@ static int FileExists(const char *name, 
+ 
+ 
+ /*
++ * Linux mangles spaces in mount points by changing them to an octal string
++ * of '\040'.  So lets scan the mount point and fix it up by replacing all
++ * occurrences off '\0##' with the ASCII value of 0##.  Requires a writable
++ * string as input as we mangle in place.  Some of this was taken from the
++ * util-linux package.
++ */
++#define octalify(a) ((a) & 7)
++#define tooctal(s) (64*octalify(s[1]) + 8*octalify(s[2]) + octalify(s[3]))
++#define isoctal(a) (((a) & ~7) == '0')
++static char *DeMangleMount(char *s)
++{
++	char *tmp = s;
++	while ((tmp = strchr(tmp, '\\')) != NULL) {
++		if (isoctal(tmp[1]) && isoctal(tmp[2]) && isoctal(tmp[3])) {
++			tmp[0] = tooctal(tmp);
++			memmove(tmp+1, tmp+4, strlen(tmp)-3);
++		}
++		++tmp;
++	}
++	return s;
++}
++
++
++/*
+  * Given name, such as foo, see if any of the following exist:
+  *
+  * foo (if foo starts with '.' or '/')
+@@ -884,8 +908,8 @@ static int MountedDevice(const char *nam
+ 			if (((strcmp(s1, name) == 0) || (strcmp(s2, name) == 0)) ||
+ 				((maj != -1) && (maj == mtabmaj) && (min == mtabmin))) {
+ 				FCLOSE(fp);
+-				*deviceName = strdup(s1);
+-				*mountName = strdup(s2);
++				*deviceName = DeMangleMount(strdup(s1));
++				*mountName = DeMangleMount(strdup(s2));
+ 				return 1;
+ 			}
+ 		}
+@@ -928,8 +952,8 @@ static int MountableDevice(const char *n
+ 		rc = sscanf(line, "%1023s %1023s", s1, s2);
+ 		if (rc >= 2 && s1[0] != '#' && strcmp(s2, name) == 0) {
+ 			FCLOSE(fp);
+-			*deviceName = strdup(s1);
+-			*mountName = strdup(s2);
++			*deviceName = DeMangleMount(strdup(s1));
++			*mountName = DeMangleMount(strdup(s2));
+ 			return 1;
+ 		}
+ 	}
