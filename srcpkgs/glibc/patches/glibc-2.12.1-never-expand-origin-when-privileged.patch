@@ -1,0 +1,85 @@
+From 2232b90f0bd3a41b4d63cac98a5b60abbfaccd46 Mon Sep 17 00:00:00 2001
+From: Andreas Schwab <schwab@redhat.com>
+Date: Mon, 18 Oct 2010 11:46:00 +0200
+Subject: [PATCH] Never expand $ORIGIN in privileged programs
+
+---
+ ChangeLog     |    6 ++++++
+ elf/dl-load.c |   30 +++++++++++++-----------------
+ 2 files changed, 19 insertions(+), 17 deletions(-)
+
+diff --git a/elf/dl-load.c b/elf/dl-load.c
+index 0adddf5..1cc6f25 100644
+--- elf/dl-load.c
++++ elf/dl-load.c
+@@ -169,8 +169,7 @@ local_strdup (const char *s)
+ 
+ 
+ static size_t
+-is_dst (const char *start, const char *name, const char *str,
+-	int is_path, int secure)
++is_dst (const char *start, const char *name, const char *str, int is_path)
+ {
+   size_t len;
+   bool is_curly = false;
+@@ -199,11 +198,6 @@ is_dst (const char *start, const char *name, const char *str,
+ 	   && (!is_path || name[len] != ':'))
+     return 0;
+ 
+-  if (__builtin_expect (secure, 0)
+-      && ((name[len] != '\0' && (!is_path || name[len] != ':'))
+-	  || (name != start + 1 && (!is_path || name[-2] != ':'))))
+-    return 0;
+-
+   return len;
+ }
+ 
+@@ -218,13 +212,12 @@ _dl_dst_count (const char *name, int is_path)
+     {
+       size_t len;
+ 
+-      /* $ORIGIN is not expanded for SUID/GUID programs (except if it
+-	 is $ORIGIN alone) and it must always appear first in path.  */
++      /* $ORIGIN is not expanded for SUID/GUID programs.  */
+       ++name;
+-      if ((len = is_dst (start, name, "ORIGIN", is_path,
+-			 INTUSE(__libc_enable_secure))) != 0
+-	  || (len = is_dst (start, name, "PLATFORM", is_path, 0)) != 0
+-	  || (len = is_dst (start, name, "LIB", is_path, 0)) != 0)
++      if (((len = is_dst (start, name, "ORIGIN", is_path)) != 0
++	   && !INTUSE(__libc_enable_secure))
++	  || (len = is_dst (start, name, "PLATFORM", is_path)) != 0
++	  || (len = is_dst (start, name, "LIB", is_path)) != 0)
+ 	++cnt;
+ 
+       name = strchr (name + len, '$');
+@@ -256,9 +249,12 @@ _dl_dst_substitute (struct link_map *l, const char *name, char *result,
+ 	  size_t len;
+ 
+ 	  ++name;
+-	  if ((len = is_dst (start, name, "ORIGIN", is_path,
+-			     INTUSE(__libc_enable_secure))) != 0)
++	  if ((len = is_dst (start, name, "ORIGIN", is_path)) != 0)
+ 	    {
++	      /* Ignore this path element in SUID/SGID programs.  */
++	      if (INTUSE(__libc_enable_secure))
++		repl = (const char *) -1;
++	      else
+ #ifndef SHARED
+ 	      if (l == NULL)
+ 		repl = _dl_get_origin ();
+@@ -266,9 +262,9 @@ _dl_dst_substitute (struct link_map *l, const char *name, char *result,
+ #endif
+ 		repl = l->l_origin;
+ 	    }
+-	  else if ((len = is_dst (start, name, "PLATFORM", is_path, 0)) != 0)
++	  else if ((len = is_dst (start, name, "PLATFORM", is_path)) != 0)
+ 	    repl = GLRO(dl_platform);
+-	  else if ((len = is_dst (start, name, "LIB", is_path, 0)) != 0)
++	  else if ((len = is_dst (start, name, "LIB", is_path)) != 0)
+ 	    repl = DL_DST_LIB;
+ 
+ 	  if (repl != NULL && repl != (const char *) -1)
+-- 
+1.7.2
+
