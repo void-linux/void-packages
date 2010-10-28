@@ -56,7 +56,7 @@ verify_rundeps()
 		lver="${version}"
 	fi
 
-	[ -n "$noarch" -o "$nostrip" -o "$noverifyrdeps" ] && return 0
+	[ -n "$noarch" -o -n "$noverifyrdeps" ] && return 0
 	msg_normal "Package '$pkgname ($lver)': verifying required run dependencies, please wait..."
 
 	for f in $(find ${PKG_DESTDIR} -type f); do
