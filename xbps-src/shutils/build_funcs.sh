@@ -30,6 +30,7 @@
 build_src_phase()
 {
 	local pkg="$pkgname-$version" pkgparam="$1" f lver
+	local mkldflags
 
 	[ -z $pkgparam ] && [ -z $pkgname -o -z $version ] && return 1
 
@@ -57,7 +58,7 @@ build_src_phase()
 		make_cmd="python"
 		make_build_args="setup.py build"
 	else
-		[ -z "$make_cmd" ] && make_cmd=/usr/bin/make
+		[ -z "$make_cmd" ] && make_cmd=make
 		[ -n "$XBPS_MAKEJOBS" -a -z "$disable_parallel_build" ] && \
 			makejobs="-j$XBPS_MAKEJOBS"
 	fi
@@ -77,6 +78,7 @@ build_src_phase()
 	msg_normal "Package '$pkgname ($lver)': running build phase."
 
 	if [ "$build_style" = "custom-install" ]; then
+		[ -n "$XBPS_LDFLAGS" ] && export LDFLAGS="$XBPS_LDFLAGS"
 		run_func do_build 2>${wrksrc}/.xbps_do_build.log
 		if [ $? -ne 0 -a $? -ne 255 ]; then
 			msg_error "Package '$pkgname': do_build phase failed!"
@@ -85,7 +87,12 @@ build_src_phase()
 		#
 		# Build package via make.
 		#
-		${make_cmd} ${makejobs} ${make_build_args} \
+		if [ "$build_style" = "gnu_makefile" ]; then
+			if [ -n "$XBPS_LDFLAGS" ]; then
+				mkldfags="$LDFLAGS $XBPS_LDFLAGS"
+			fi
+		fi
+		env LDFLAGS="$mkldflags" ${make_cmd} ${makejobs} ${make_build_args} \
 			${make_build_target} ||
 			msg_error "Package '$pkgname': build phase failed!"
 	fi

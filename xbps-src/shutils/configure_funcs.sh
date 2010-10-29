@@ -30,6 +30,7 @@
 configure_src_phase()
 {
 	local f lver error=0
+	local conf_ldflags
 
 	[ -z $pkgname ] && return 1
 
@@ -84,12 +85,17 @@ configure_src_phase()
 		cd $build_wrksrc || return 1
 	fi
 
+	if [ -n "$XBPS_LDFLAGS" ]; then
+		conf_ldflags="$XBPS_LDFLAGS"
+	fi
+
 	case "$build_style" in
 	gnu_configure|gnu-configure)
 		#
 		# Packages using GNU autoconf
 		#
-		${configure_script} --prefix=/usr --sysconfdir=/etc \
+		env LDFLAGS="$LDFLAGS $conf_ldflags" \
+			${configure_script} --prefix=/usr --sysconfdir=/etc \
 			--infodir=/usr/share/info --mandir=/usr/share/man \
 			${configure_args} || error=$?
 		;;
@@ -97,7 +103,8 @@ configure_src_phase()
 		#
 		# Packages using custom configure scripts.
 		#
-		${configure_script} ${configure_args} || error=$?
+		env LDFLAGS="$LDFLAGS $conf_ldflags" ${configure_script} \
+			${configure_args} || error=$?
 		;;
 	perl-module|perl_module)
 		#
