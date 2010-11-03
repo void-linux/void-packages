@@ -1,0 +1,76 @@
+Author: Madhusudan.C.S <madhusudancs@gmail.com>
+Description: Uses alloc instead of fixed PATH_MAX value
+Bug-Debian: http://bugs.debian.org/496274
+Index: b/proc/readproc.c
+===================================================================
+--- a/proc/readproc.c	2009-11-24 21:00:41.000000000 +1100
++++ b/proc/readproc.c	2009-11-24 21:00:44.000000000 +1100
+@@ -1036,7 +1036,7 @@
+  * and filled out proc_t structure.
+  */
+ proc_t * get_proc_stats(pid_t pid, proc_t *p) {
+-	static char path[PATH_MAX], sbuf[1024];
++	static char path[32], sbuf[1024];
+ 	struct stat statbuf;
+ 
+ 	sprintf(path, "/proc/%d", pid);
+Index: b/pwdx.c
+===================================================================
+--- a/pwdx.c	2009-11-24 20:53:02.000000000 +1100
++++ b/pwdx.c	2009-11-24 21:00:44.000000000 +1100
+@@ -35,7 +35,6 @@
+ 
+ int main(int argc, char* argv[])
+ {
+-     char buf[PATH_MAX+1];
+      regex_t re;
+      int i;
+ 
+@@ -59,6 +58,7 @@
+ 
+      for (i = 1; i < argc; i++) {
+           if (regexec(&re, argv[i], 0, NULL, 0) != 0) {
++               char buf[27 + strlen (argv[i]) + 1];  // Constant 27 is the length of the error string "pwdx: ... "
+                snprintf(buf, sizeof buf, "pwdx: invalid process id: %s\n", argv[i]);
+                die(buf);
+           }
+@@ -68,9 +68,13 @@
+ 
+      regfree(&re);
+ 
++     int alloclen = 128;
++     char *pathbuf = malloc(alloclen);
++
+      for (i = 1; i < argc; i++) {
+-          char * s = buf;
++          char * s;
+           int len;
++          char buf[10 + strlen(argv[i]) + 1]; // Constant 10 is the length of strings "/proc/" + "/cwd" + 1
+           
+           // At this point, all arguments are in the form /proc/nnnn
+           // or nnnn, so a simple check based on the first char is
+@@ -82,14 +86,22 @@
+ 
+           // buf contains /proc/nnnn/cwd symlink name on entry, the
+           // target of that symlink on return
+-          if ((len = readlink(buf, buf, PATH_MAX)) < 0) {
++          while ((len = readlink(buf, pathbuf, alloclen)) == alloclen) {
++               alloclen *= 2;
++               pathbuf = realloc(pathbuf, alloclen);
++          }
++
++          if (len < 0) {
+                s = strerror(errno == ENOENT ? ESRCH : errno);
+           } else {
+-               buf[len] = 0;
++               pathbuf[len] = 0;
++               s = pathbuf;
+           }
+ 
+           printf("%s: %s\n", argv[i], s);
+      }
+ 
++     free(pathbuf);
++
+      return 0;
+ }

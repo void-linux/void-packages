@@ -1,0 +1,77 @@
+Author: Daniel Novotny
+Description: The contents of /proc/diskstats have changed since 2.6.25
+Bug-Redhat: https://bugzilla.redhat.com/show_bug.cgi?id=485243
+--- a/proc/sysinfo.c
++++ b/proc/sysinfo.c
+@@ -796,6 +796,18 @@
+ }
+ 
+ /////////////////////////////////////////////////////////////////////////////
++static int is_disk(char *dev)
++{
++  char syspath[PATH_MAX];
++  char *slash;
++
++  while ((slash = strchr(dev, '/')))
++    *slash = '!';
++  snprintf(syspath, sizeof(syspath), "/sys/block/%s", dev);
++  return !(access(syspath, F_OK));
++}
++
++/////////////////////////////////////////////////////////////////////////////
+ 
+ unsigned int getdiskstat(struct disk_stat **disks, struct partition_stat **partitions){
+   FILE* fd;
+@@ -803,6 +815,7 @@
+   int cPartition = 0;
+   int fields;
+   unsigned dummy;
++  char devname[PATH_MAX];
+ 
+   *disks = NULL;
+   *partitions = NULL;
+@@ -815,8 +828,9 @@
+       fclose(fd);
+       break;
+     }
+-    fields = sscanf(buff, " %*d %*d %*s %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %u", &dummy);
+-    if (fields == 1){
++    fields = sscanf(buff, " %*d %*d %15s %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %u",
++            &devname, &dummy);
++    if (fields == 2 && is_disk(devname)){
+       (*disks) = realloc(*disks, (cDisk+1)*sizeof(struct disk_stat));
+       sscanf(buff,  "   %*d    %*d %15s %u %u %llu %u %u %u %llu %u %u %u %u",
+         //&disk_major,
+@@ -839,7 +853,9 @@
+     }else{
+       (*partitions) = realloc(*partitions, (cPartition+1)*sizeof(struct partition_stat));
+       fflush(stdout);
+-      sscanf(buff,  "   %*d    %*d %15s %u %llu %u %u",
++      sscanf(buff,  (fields == 2)
++          ? "   %*d    %*d %15s %u %*u %llu %*u %u %*u %llu %*u %*u %*u %*u"
++          : "   %*d    %*d %15s %u %llu %u %llu",
+         //&part_major,
+         //&part_minor,
+         (*partitions)[cPartition].partition_name,
+--- a/proc/sysinfo.h
++++ b/proc/sysinfo.h
+@@ -113,7 +113,7 @@
+ 	unsigned           parent_disk;  // index into a struct disk_stat array
+ 	unsigned           reads;
+ 	unsigned           writes;
+-	unsigned           requested_writes;
++	unsigned long long requested_writes;
+ }partition_stat;
+ 
+ extern unsigned int getpartitions_num(struct disk_stat *disks, int ndisks);
+--- a/vmstat.c
++++ b/vmstat.c
+@@ -286,7 +286,7 @@
+     struct disk_stat *disks;
+     struct partition_stat *partitions, *current_partition=NULL;
+     unsigned long ndisks, j, k, npartitions;
+-    const char format[] = "%20u %10llu %10u %10u\n";
++    const char format[] = "%20u %10llu %10u %10llu\n";
+ 
+     fDiskstat=fopen("/proc/diskstats","rb");
+     if(!fDiskstat){

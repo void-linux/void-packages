@@ -1,0 +1,141 @@
+Description: provides information for pmap -x option
+ Similiar idea to pmap written by Robert Love
+Bug-Debian: http://bugs.debian.org/347476
+Bug-Debian: http://bugs.debian.org/505571
+Author: Craig Small <csmall@debian.org>
+--- a/pmap.c
++++ b/pmap.c
+@@ -126,24 +126,37 @@
+   char buf[32];
+   char mapbuf[9600];
+   char cmdbuf[512];
++  FILE *fp;
+   unsigned long total_shared = 0ul;
+   unsigned long total_private_readonly = 0ul;
+   unsigned long total_private_writeable = 0ul;
+ 
++  char *cp2=NULL;
++  unsigned long long rss = 0ull;
++  unsigned long long private_dirty = 0ull;
++  unsigned long long shared_dirty = 0ull;
++  unsigned long long total_rss = 0ull;
++  unsigned long long total_private_dirty = 0ull;
++  unsigned long long total_shared_dirty = 0ull;
++
+   // Overkill, but who knows what is proper? The "w" prog
+   // uses the tty width to determine this.
+   int maxcmd = 0xfffff;
+ 
+   sprintf(buf,"/proc/%u/maps",p->tgid);
+-  if(!freopen(buf, "r", stdin)) return 1;
++  if ( (fp = fopen(buf, "r")) == NULL) return 1;
++  if (x_option) {
++    sprintf(buf,"/proc/%u/smaps",p->tgid);
++    if ( (fp = freopen(buf, "r", fp)) == NULL) return 1;
++  }
+ 
+   escape_command(cmdbuf, p, sizeof cmdbuf, &maxcmd, ESC_ARGS|ESC_BRACKETS);
+   printf("%u:   %s\n", p->tgid, cmdbuf);
+ 
+   if(!q_option && (x_option|d_option)){
+     if(x_option){
+-      if(sizeof(KLONG)==4) printf("Address   Kbytes     RSS    Anon  Locked Mode   Mapping\n");
+-      else         printf("Address           Kbytes     RSS    Anon  Locked Mode   Mapping\n");
++      if(sizeof(KLONG)==4) printf("Address   Kbytes     RSS   Dirty Mode   Mapping\n");
++      else         printf("Address           Kbytes     RSS   Dirty Mode   Mapping\n");
+     }
+     if(d_option){
+       if(sizeof(KLONG)==4) printf("Address   Kbytes Mode  Offset           Device    Mapping\n");
+@@ -151,12 +164,54 @@
+     }
+   }
+ 
+-  while(fgets(mapbuf,sizeof mapbuf,stdin)){
++  while(fgets(mapbuf,sizeof mapbuf,fp)){
+     char flags[32];
+     char *tmp; // to clean up unprintables
+-    unsigned KLONG start, end, diff;
++    unsigned KLONG start, end, diff=0;
+     unsigned long long file_offset, inode;
+     unsigned dev_major, dev_minor;
++    unsigned long long smap_value;
++    char smap_key[20];
++
++    /* hex values are lower case or numeric, keys are upper */
++    if (mapbuf[0] >= 'A' && mapbuf[0] <= 'Z') {
++      /* Its a key */
++      if (sscanf(mapbuf,"%20[^:]: %llu", smap_key, &smap_value) == 2) {
++        if (strncmp("Rss", smap_key, 3) == 0) {
++          rss = smap_value;
++          total_rss += smap_value;
++          continue;
++        }
++        if (strncmp("Shared_Dirty", smap_key, 12) == 0) {
++          shared_dirty = smap_value;
++          total_shared_dirty += smap_value;
++          continue;
++        }
++        if (strncmp("Private_Dirty", smap_key, 13) == 0) {
++          private_dirty = smap_value;
++          total_private_dirty += smap_value;
++          continue;
++        }
++        if (strncmp("Swap", smap_key, 4) == 0) { /*doesnt matter as long as last*/
++          printf(
++            (sizeof(KLONG)==8)
++              ? "%016"KLF"x %7lu %7llu %7llu %s  %s\n"
++              :      "%08lx %7lu %7llu %7llu %s  %s\n",
++            start,
++            (unsigned long)(diff>>10),
++            rss,
++            (private_dirty + shared_dirty),
++            flags,
++            cp2
++          );
++          /* reset some counters */
++          rss = shared_dirty = private_dirty = 0ull;
++          continue;
++        }
++        /* Other keys */
++        continue;
++      }
++    }
+     sscanf(mapbuf,"%"KLF"x-%"KLF"x %31s %Lx %x:%x %Lu", &start, &end, flags, &file_offset, &dev_major, &dev_minor, &inode);
+ 
+     if(start > range_high)
+@@ -186,16 +241,9 @@
+     flags[5] = '\0';
+ 
+     if(x_option){
+-      const char *cp = mapping_name(p, start, diff, mapbuf, 0, dev_major, dev_minor, inode);
+-      printf(
+-        (sizeof(KLONG)==8)
+-          ? "%016"KLF"x %7lu       -       -       - %s  %s\n"
+-          :      "%08lx %7lu       -       -       - %s  %s\n",
+-        start,
+-        (unsigned long)(diff>>10),
+-        flags,
+-        cp
+-      );
++          cp2 = mapping_name(p, start, diff, mapbuf, 0, dev_major, dev_minor, inode);
++      /* printed with the keys */
++      continue;
+     }
+     if(d_option){
+       const char *cp = mapping_name(p, start, diff, mapbuf, 0, dev_major, dev_minor, inode);
+@@ -232,10 +280,12 @@
+   if(!q_option){
+     if(x_option){
+       if(sizeof(KLONG)==8){
+-        printf("----------------  ------  ------  ------  ------\n");
++        printf("----------------  ------  ------  ------\n");
+         printf(
+-          "total kB %15ld       -       -       -\n",
+-          (total_shared + total_private_writeable + total_private_readonly) >> 10
++          "total kB %15ld %7llu %7llu\n",
++          (total_shared + total_private_writeable + total_private_readonly) >> 10,
++          total_rss, (total_shared_dirty+total_private_dirty)
++
+         );
+       }else{
+         printf("-------- ------- ------- ------- -------\n");

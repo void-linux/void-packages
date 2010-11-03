@@ -1,0 +1,75 @@
+Author: <hesso@pool.math.tu-berlin.de>
+Description: Prevent top from segfaulting when the display is shrinked to only
+a few (read: 3 or less) lines.
+Index: b/top.c
+===================================================================
+--- a/top.c	2009-11-24 21:00:35.000000000 +1100
++++ b/top.c	2009-11-24 21:00:39.000000000 +1100
+@@ -140,7 +140,7 @@
+            are exploited in a macro and represent 90% of our optimization.
+            The Stdout_buf is transparent to our code and regardless of whose
+            buffer is used, stdout is flushed at frame end or if interactive. */
+-static char *Pseudo_scrn;
++static PSEUDO_SCREEN_t Pseudo_scrn;
+ static int   Pseudo_row, Pseudo_cols, Pseudo_size;
+ #ifndef STDOUT_IOLBF
+         // less than stdout's normal buffer but with luck mostly '\n' anyway
+@@ -2431,7 +2431,10 @@
+    Pseudo_cols = Screen_cols + CLRBUFSIZ + 1;
+    if (Batch) Pseudo_size = ROWBUFSIZ + 1;
+    else       Pseudo_size = Pseudo_cols * Screen_rows;
+-   Pseudo_scrn = alloc_r(Pseudo_scrn, Pseudo_size);
++   if( Pseudo_scrn.buf == NULL || Pseudo_size > Pseudo_scrn.mem_size ) {
++      Pseudo_scrn.buf = alloc_r(Pseudo_scrn.buf, Pseudo_size);
++      Pseudo_scrn.mem_size = Pseudo_size;
++   }
+ 
+    // force rebuild of column headers AND libproc/readproc requirements
+    Frames_libflags = 0;
+@@ -3315,7 +3318,7 @@
+    //       reframewins(), who also builds each window's column headers
+    if (!Frames_libflags) {
+       reframewins();
+-      memset(Pseudo_scrn, '\0', Pseudo_size);
++      memset(Pseudo_scrn.buf, '\0', Pseudo_size);
+    }
+    Pseudo_row = Msg_row = scrlins = 0;
+    ppt = summary_show();
+Index: b/top.h
+===================================================================
+--- a/top.h	2009-11-24 20:53:04.000000000 +1100
++++ b/top.h	2009-11-24 21:00:39.000000000 +1100
+@@ -135,7 +135,7 @@
+    int _len = 1 + snprintf(_str, sizeof(_str), fmt, ## arg);   \
+    putp ( Batch ? _str :                                   \
+    ({                                                 \
+-      char *restrict const _pse = &Pseudo_scrn[Pseudo_row++ * Pseudo_cols];  \
++      char *restrict const _pse = &Pseudo_scrn.buf[Pseudo_row++ * Pseudo_cols];  \
+       memcmp(_pse, _str, _len) ? memcpy(_pse, _str, _len) : "\n";  \
+    })                                \
+    );                   \
+@@ -149,7 +149,11 @@
+    int _len = 1 + snprintf(_str, sizeof(_str), fmt, ## arg);   \
+    if (Batch) _ptr = _str;                                   \
+    else {                                                 \
+-      _ptr = &Pseudo_scrn[Pseudo_row++ * Pseudo_cols];  \
++      if (Pseudo_row * Pseudo_cols + _len > Pseudo_size) { \
++         Pseudo_scrn.buf = realloc(Pseudo_scrn.buf, Pseudo_row * Pseudo_cols + _len); \
++	 Pseudo_scrn.mem_size = Pseudo_size = Pseudo_row * Pseudo_cols + _len; \
++      } \
++      _ptr = &Pseudo_scrn.buf[Pseudo_row++ * Pseudo_cols];  \
+       if (memcmp(_ptr, _str, _len)) {                \
+          memcpy(_ptr, _str, _len);                \
+       } else {                                 \
+@@ -237,6 +241,11 @@
+    RCW_t  win [4];              // a 'WIN_t.rc' for each of the 4 windows
+ } RCF_t;
+ 
++typedef struct PSEUDO_SCREEN_t {
++   char *buf;
++   int	mem_size;
++} PSEUDO_SCREEN_t;
++
+ // The scaling 'type' used with scale_num() -- this is how
+ // the passed number is interpreted should scaling be necessary
+ enum scale_num {

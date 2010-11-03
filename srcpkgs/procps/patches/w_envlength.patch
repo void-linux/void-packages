@@ -1,0 +1,173 @@
+Description: Use environment to set user and from/host column widths
+Author: Craig Small <csmall@debian.org>
+Bug-Debian: http://bugs.debian.org/396423
+Bug-Debian: http://bugs.debian.org/341439
+Index: b/w.1
+===================================================================
+--- a/w.1	2009-11-24 21:00:42.000000000 +1100
++++ b/w.1	2009-11-24 21:00:44.000000000 +1100
+@@ -1,6 +1,6 @@
+ .\"             -*-Nroff-*-
+ .\"
+-.TH W 1 "8 Dec 1993 " " " "Linux User's Manual"
++.TH W 1 "5 October 2009 " " " "Linux User's Manual"
+ .SH NAME
+ w \- Show who is logged on and what they are doing.
+ .SH SYNOPSIS
+@@ -61,6 +61,14 @@
+ .B "user "
+ Show information about the specified user only.
+ 
++.SH ENVIRONMENT
++.TP
++PROCPS_USERLEN
++Override the default width of the username column. Defaults to 8.
++.TP
++PROCPS_FROMLEN
++Override the default width of the from column. Defaults to 16.
++
+ .SH FILES
+ .TP
+ .I /var/run/utmp
+Index: b/w.c
+===================================================================
+--- a/w.c	2009-11-24 21:00:43.000000000 +1100
++++ b/w.c	2009-11-24 21:00:44.000000000 +1100
+@@ -44,20 +44,19 @@
+ /* Uh... same thing as UT_NAMESIZE */
+ #define USERSZ (sizeof u->ut_user)
+ 
++/* Arbitary setting, not too big for the screen, max host size */
++#define HOSTSZ 40
++
+ 
+ /* This routine is careful since some programs leave utmp strings
+- * unprintable.  Always outputs at least 16 chars padded with spaces
++ * unprintable.  Always outputs at least fromlen chars padded with spaces
+  * on the right if necessary.
+  */
+-static void print_host(const char *restrict host, int len) {
++static void print_host(const char *restrict host, int len, const int fromlen) {
+     const char *last;
+     int width = 0;
+ 
+-    /* FIXME: there should really be a way to configure this... */
+-    /* for now, we'll just limit it to the 16 that the libc5 version
+-     * of utmp uses.
+-     */
+-    if (len > 16) len = 16;
++    if (len > fromlen) len = fromlen;
+     last = host + len;
+     for ( ; host < last ; host++){
+         if (isprint(*host) && *host != ' ') {
+@@ -68,7 +67,8 @@
+ 	}
+     }
+     // space-fill, and a '-' too if needed to ensure the column exists
+-    if(width < 16) fputs("-               "+width, stdout);
++	while(width++ < fromlen)
++	  fputc(' ',stdout);
+ }
+ 
+ /***** compact 7 char format for time intervals (belongs in libproc?) */
+@@ -180,7 +180,7 @@
+ 
+ 
+ /***** showinfo */
+-static void showinfo(utmp_t *u, int formtype, int maxcmd, int from) {
++static void showinfo(utmp_t *u, int formtype, int maxcmd, int from, const int userlen, const int fromlen) {
+     unsigned long long jcpu;
+     int ut_pid_found;
+     unsigned i;
+@@ -205,9 +205,9 @@
+ 
+     strncpy(uname, u->ut_user, USERSZ);		/* force NUL term for printf */
+     if (formtype) {
+-	printf("%-9.8s%-9.8s", uname, u->ut_line);
++	printf("%-*.*s%-9.8s", userlen+1, userlen, uname, u->ut_line);
+ 	if (from)
+-	    print_host(u->ut_host, sizeof u->ut_host);
++	    print_host(u->ut_host, sizeof u->ut_host, fromlen);
+ 	print_logintime(u->ut_time, stdout);
+ 	if (*u->ut_line == ':')			/* idle unknown for xdm logins */
+ 	    printf(" ?xdm? ");
+@@ -220,9 +220,9 @@
+ 	} else
+ 	    printf("   ?   ");
+     } else {
+-	printf("%-9.8s%-9.8s", u->ut_user, u->ut_line);
++	printf("%-*.*s%-9.8s", userlen+1, userlen, u->ut_user, u->ut_line);
+ 	if (from)
+-	    print_host(u->ut_host, sizeof u->ut_host);
++	    print_host(u->ut_host, sizeof u->ut_host, fromlen);
+ 	if (*u->ut_line == ':')			/* idle unknown for xdm logins */
+ 	    printf(" ?xdm? ");
+ 	else
+@@ -245,6 +245,9 @@
+     utmp_t *u;
+     struct winsize win;
+     int header=1, longform=1, from=1, args, maxcmd, ch;
++    int userlen = 8;
++    int fromlen = 16;
++	char *env_var;
+ 
+ #ifndef W_SHOWFROM
+     from = 0;
+@@ -275,6 +278,22 @@
+     if ((argv[optind]))
+ 	user = (argv[optind]);
+ 
++	/* Get user field length from environment */
++	if ( (env_var = getenv("PROCPS_USERLEN")) != NULL) {
++        userlen = atoi(env_var);
++        if (userlen < 8 || userlen > USERSZ) {
++            fprintf(stderr, "User length environment PROCPS_USERLEN must be between 8 and %d, ignoring.\n", USERSZ);
++			userlen=8;
++        }
++	}
++	/* Get from field length from environment */
++	if ( (env_var = getenv("PROCPS_FROMLEN")) != NULL) {
++        fromlen = atoi(env_var);
++        if (fromlen < 8 || fromlen > HOSTSZ) {
++            fprintf(stderr, "From length environment PROCPS_FROMLEN must be between 8 and %d, ignoring.\n", HOSTSZ);
++			fromlen=16;
++        }
++	}
+     if (ioctl(1, TIOCGWINSZ, &win) != -1 && win.ws_col > 0)
+ 	maxcmd = win.ws_col;
+     else if (p = getenv("COLUMNS"))
+@@ -285,7 +304,7 @@
+ 	fprintf(stderr, "%d column window is too narrow\n", maxcmd);
+ 	exit(1);
+     }
+-    maxcmd -= 29 + (from ? 16 : 0) + (longform ? 20 : 0);
++    maxcmd -= 21 + userlen + (from ? fromlen : 0) + (longform ? 20 : 0);
+     if (maxcmd < 3)
+ 	fprintf(stderr, "warning: screen width %d suboptimal.\n", win.ws_col);
+ 
+@@ -293,7 +312,7 @@
+ 
+     if (header) {				/* print uptime and headers */
+ 	print_uptime();
+-	printf("USER     TTY      ");
++	printf("%-*s TTY      ",userlen,"USER");
+ 	if (from)
+ 	    printf("FROM            ");
+ 	if (longform)
+@@ -309,14 +328,14 @@
+ 	    u = getutent();
+ 	    if (unlikely(!u)) break;
+ 	    if (u->ut_type != USER_PROCESS) continue;
+- 	    if (!strncmp(u->ut_user, user, USERSZ)) showinfo(u, longform, maxcmd, from);
++ 	    if (!strncmp(u->ut_user, user, USERSZ)) showinfo(u, longform, maxcmd, from, userlen, fromlen);
+ 	}
+     } else {
+ 	for (;;) {
+ 	    u = getutent();
+ 	    if (unlikely(!u)) break;
+ 	    if (u->ut_type != USER_PROCESS) continue;
+- 	    if (*u->ut_user) showinfo(u, longform, maxcmd, from);
++ 	    if (*u->ut_user) showinfo(u, longform, maxcmd, from, userlen, fromlen);
+ 	}
+     }
+     endutent();

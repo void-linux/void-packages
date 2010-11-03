@@ -1,0 +1,446 @@
+Description: 506303 ps displays supplementary groups
+Author: Alfredo Esteban <aedelatorre@gmail.com>
+Bug-Debian: http://bugs.debian.org/506303
+Reviewed-by: Craig Small <csmall@debian.org>
+--- a/proc/library.map
++++ b/proc/library.map
+@@ -7,7 +7,7 @@
+ 
+   readproc; readtask; readproctab; readproctab2; look_up_our_self; escape_command;
+   escape_str; escape_strlist;
+-  openproc; closeproc; freeproc;
++  openproc; closeproc; freeproc; allocsupgrp; freesupgrp;
+   tty_to_dev; dev_to_tty; open_psdb_message; open_psdb; lookup_wchan;
+   display_version; procps_version; linux_version_code;
+   Hertz; smp_num_cpus; have_privs;
+--- a/proc/readproc.c
++++ b/proc/readproc.c
+@@ -20,6 +20,7 @@
+ #include <errno.h>
+ #include <stdarg.h>
+ #include <string.h>
++#include <limits.h>
+ #include <unistd.h>
+ #include <signal.h>
+ #include <fcntl.h>
+@@ -85,63 +86,68 @@
+     long Threads = 0;
+     long Tgid = 0;
+     long Pid = 0;
++    int hash = 0;
++    int isupgid = 0;
+ 
+-  static const unsigned char asso[] =
++    static const unsigned char asso[] =
+     {
+-      61, 61, 61, 61, 61, 61, 61, 61, 61, 61,
+-      61, 61, 61, 61, 61, 61, 61, 61, 61, 61,
+-      61, 61, 61, 61, 61, 61, 61, 61, 61, 61,
+-      61, 61, 61, 61, 61, 61, 61, 61, 61, 61,
+-      61, 61, 61, 61, 61, 61, 61, 61, 61, 61,
+-      61, 61, 61, 61, 61, 61, 61, 61, 15, 61,
+-      61, 61, 61, 61, 61, 61, 30,  3,  5,  5,
+-      61,  5, 61,  8, 61, 61,  3, 61, 10, 61,
+-       6, 61, 13,  0, 30, 25,  0, 61, 61, 61,
+-      61, 61, 61, 61, 61, 61, 61,  3, 61, 13,
+-       0,  0, 61, 30, 61, 25, 61, 61, 61,  0,
+-      61, 61, 61, 61,  5, 61,  0, 61, 61, 61,
+-       0, 61, 61, 61, 61, 61, 61, 61
++      66, 66, 66, 66, 66, 66, 66, 66, 66, 66,
++      66, 66, 66, 66, 66, 66, 66, 66, 66, 66,
++      66, 66, 66, 66, 66, 66, 66, 66, 66, 66,
++      66, 66, 66, 66, 66, 66, 66, 66, 66, 66,
++      66, 66, 66, 66, 66, 66, 66, 66, 66, 66,
++      66, 66, 66, 66, 66, 66, 66, 66,  0, 66,
++      66, 66, 66, 66, 66, 66,  3, 30, 20, 30,
++      66, 25, 66, 20, 66, 66, 30, 66, 25, 66,
++       0, 66,  8, 10,  3, 18,  5, 66, 66, 66,
++      66, 66, 66, 66, 66, 66, 66,  3, 66, 10,
++       0,  0, 66, 25, 66,  5, 66, 66, 66, 25,
++      66,  5, 66, 66,  0, 66,  0,  0, 66, 66,
++      25, 66, 66, 66, 66, 66, 66, 66
+     };
+ 
+     static const status_table_struct table[] = {
+-      F(VmStk)
++      F(Pid)
+       NUL NUL
+-      F(State)
++      F(Threads)
++      NUL
++      F(PPid)
++      NUL NUL
++      F(Tgid)
+       NUL
+-      F(VmExe)
+       F(ShdPnd)
++      NUL NUL
++      F(State)
+       NUL
+-      F(VmData)
++      F(VmStk)
++      NUL NUL
++      F(Uid)
+       NUL
+-      F(Name)
++      F(VmSize)
+       NUL NUL
+       F(VmRSS)
+-      NUL NUL
+-      F(VmLck)
+-      NUL NUL NUL
++      NUL
+       F(Gid)
+-      F(Pid)
+-      NUL NUL NUL
+-      F(VmSize)
+       NUL NUL
+-      F(VmLib)
+-      NUL NUL
+-      F(PPid)
+-      NUL
+-      F(SigCgt)
++      F(VmData)
+       NUL
+-      F(Threads)
++      F(Groups)
++      NUL NUL NUL NUL
+       F(SigPnd)
++      NUL NUL
++      F(SigBlk)
+       NUL
++      F(VmLib)
++      NUL NUL NUL NUL
++      F(VmLck)
++      NUL NUL NUL NUL
++      F(Name)
++      NUL NUL NUL NUL
+       F(SigIgn)
+-      NUL
+-      F(Uid)
+-      NUL NUL NUL NUL NUL NUL NUL NUL NUL
+-      NUL NUL NUL NUL NUL
+-      F(Tgid)
+       NUL NUL NUL NUL
+-      F(SigBlk)
+-      NUL NUL NUL
++      F(VmExe)
++      NUL NUL NUL NUL
++      F(SigCgt)
+     };
+ 
+ #undef F
+@@ -157,6 +163,9 @@
+     P->vm_exe  = 0;
+     P->vm_lib  = 0;
+     P->nlwp    = 0;
++    P->nsupgid = 0;
++    P->supgid = NULL;
++    P->supgrp = NULL;
+     P->signal[0] = '\0';  // so we can detect it as missing for very old kernels
+ 
+     goto base;
+@@ -173,7 +182,9 @@
+         // examine a field name (hash and compare)
+     base:
+         if(unlikely(!*S)) break;
+-        entry = table[63 & (asso[(int)S[3]] + asso[(int)S[2]] + asso[(int)S[0]])];
++        hash = asso[S[3]] + asso[S[2]] + asso[S[0]];
++        if (hash > 65) continue;
++        entry = table[hash];
+         colon = strchr(S, ':');
+         if(unlikely(!colon)) break;
+         if(unlikely(colon[1]!='\t')) break;
+@@ -271,6 +282,21 @@
+         P->sgid = strtol(S,&S,10);
+         P->fgid = strtol(S,&S,10);
+         continue;
++    case_Groups:
++        isupgid = 0;
++        if (*S != '\n'){ // Is there any supplementary group ?
++          P->supgid = (int *) xmalloc(0x0004 * sizeof(int));
++          int vctsize = 0x0004;
++          while (S[1] != '\n' && isupgid<INT_MAX){ // There is one blank before '\n'
++            if (isupgid == vctsize){
++              vctsize *= 2;
++              P->supgid = (int *)xrealloc(P->supgid,vctsize * sizeof(int));
++            }
++            P->supgid[isupgid++] = strtol(S,&S,10);
++            P->nsupgid++;
++          }
++        }
++        continue;
+     case_VmData:
+         P->vm_data = strtol(S,&S,10);
+         continue;
+@@ -589,6 +615,13 @@
+         }
+     }
+ 
++    if (flags & PROC_FILLSUPGRP && p->nsupgid > 0){
++        allocsupgrp(p);
++        int i;
++        for (i=0; i < p->nsupgid; i++)
++            memcpy(p->supgrp[i], group_from_gid(p->supgid[i]), P_G_SZ);
++    }
++
+     if ((flags & PROC_FILLCOM) || (flags & PROC_FILLARG))	/* read+parse /proc/#/cmdline */
+ 	p->cmdline = file2strvec(path, "cmdline");
+     else
+@@ -683,6 +716,13 @@
+         }
+     }
+ 
++    if (flags & PROC_FILLSUPGRP && t->nsupgid > 0){
++        allocsupgrp(t);
++        int i;
++        for (i=0; i < t->nsupgid; i++)
++            memcpy(t->supgrp[i], group_from_gid(t->supgid[i]), P_G_SZ);
++    }
++
+ #if 0
+     if ((flags & PROC_FILLCOM) || (flags & PROC_FILLARG))	/* read+parse /proc/#/cmdline */
+ 	t->cmdline = file2strvec(path, "cmdline");
+@@ -897,6 +937,23 @@
+     }
+ }
+ 
++// allocate memory for supgrp
++void allocsupgrp(proc_t *p) {
++    if (!p || p->nsupgid == 0) return;
++    p->supgrp = (char**)xmalloc(p->nsupgid * sizeof(char*));
++    int i;
++    for (i=0; i<p->nsupgid; i++)
++      p->supgrp[i] = (char*)xmalloc(P_G_SZ * sizeof(char));
++}
++
++// free memory allocated for supgrp
++void freesupgrp(proc_t *p) {
++    int i;
++    for (i=0; i<p->nsupgid; i++)
++      if (p->supgrp[i]) free(p->supgrp[i]);
++    free(p->supgrp);
++}
++
+ // deallocate the space allocated by readproc if the passed rbuf was NULL
+ void freeproc(proc_t* p) {
+     if (!p)	/* in case p is NULL */
+--- a/proc/readproc.h
++++ b/proc/readproc.h
+@@ -122,6 +122,7 @@
+     	egroup[P_G_SZ],	// status          effective group name
+     	sgroup[P_G_SZ],	// status          saved group name
+     	fgroup[P_G_SZ],	// status          filesystem group name
++    	**supgrp, // status        supplementary groups
+     	cmd[16];	// stat,status     basename of executable file in call to exec(2)
+     struct proc_t
+ 	*ring,		// n/a             thread group ring
+@@ -137,6 +138,8 @@
+         suid, sgid,     // status          saved
+         fuid, fgid,     // status          fs (used for file access only)
+ 	tpgid,		// stat            terminal process group id
++	nsupgid,	// status        number of supplementary groups
++	*supgid,	// status        supplementary gid's
+ 	exit_signal,	// stat            might not be SIGCHLD
+ 	processor;      // stat            current (or most recent?) CPU
+     	char **cgroup;  // cgroup	   current cgroup, looks like a classic filepath
+@@ -198,6 +201,12 @@
+ // clean-up open files, etc from the openproc()
+ extern void closeproc(PROCTAB* PT);
+ 
++// allocate memory for supgrp
++extern void allocsupgrp(proc_t *p);
++
++// free memory allocated for supgrp
++extern void freesupgrp(proc_t *p);
++
+ // retrieve the next process matching the criteria set by the openproc()
+ extern proc_t* readproc(PROCTAB *restrict const PT, proc_t *restrict p);
+ extern proc_t* readtask(PROCTAB *restrict const PT, const proc_t *restrict const p, proc_t *restrict t);
+@@ -238,6 +247,7 @@
+ #define PROC_FILLWCHAN       0x0080 // look up WCHAN name
+ #define PROC_FILLARG         0x0100 // alloc and fill in `cmdline'
+ #define PROC_FILLCGROUP      0x0200 // alloc and fill in `cgroup`
++#define PROC_FILLSUPGRP      0x0400 // resolve supplementary group id number -> group name
+ 
+ #define PROC_LOOSE_TASKS     0x2000 // threat threads as if they were processes
+ 
+--- a/ps/display.c
++++ b/ps/display.c
+@@ -342,6 +342,8 @@
+       if(buf.cmdline) free((void*)*buf.cmdline); // ought to reuse
+       if(buf.environ) free((void*)*buf.environ); // ought to reuse
+       if(buf.cgroup)  free((void*)*buf.cgroup);
++      if(buf.nsupgid > 0 && buf.supgid) free(buf.supgid);
++      if((ptp->flags & PROC_FILLSUPGRP) && buf.nsupgid>0 && buf.supgrp) freesupgrp(&buf);
+     }
+     break;
+   case TF_show_proc|TF_loose_tasks:    // H option
+@@ -349,12 +351,16 @@
+       proc_t buf2;
+       // must still have the process allocated
+       while(readtask(ptp,&buf,&buf2)){
+-        if(!want_this_proc(&buf)) continue;
+-        show_one_proc(&buf2, task_format_list);
++        if(want_this_proc(&buf)) show_one_proc(&buf2, task_format_list);
++        if(buf2.nsupgid > 0 && buf2.supgid && buf.supgid!=buf2.supgid) free(buf2.supgid);
++        if((ptp->flags & PROC_FILLSUPGRP) && buf2.nsupgid>0 && buf2.supgrp && buf.supgrp!=buf2.supgrp)
++          freesupgrp(&buf2);
+       }
+       if(buf.cmdline) free((void*)*buf.cmdline); // ought to reuse
+       if(buf.environ) free((void*)*buf.environ); // ought to reuse
+       if(buf.cgroup)  free((void*)*buf.cgroup);
++      if(buf.nsupgid > 0 && buf.supgid) free(buf.supgid);
++      if((ptp->flags & PROC_FILLSUPGRP) && buf.nsupgid>0 && buf.supgrp) freesupgrp(&buf);
+     }
+     break;
+   case TF_show_proc|TF_show_task:      // m and -m options
+@@ -363,11 +369,18 @@
+         proc_t buf2;
+         show_one_proc(&buf, proc_format_list);
+         // must still have the process allocated
+-        while(readtask(ptp,&buf,&buf2)) show_one_proc(&buf2, task_format_list);
++        while(readtask(ptp,&buf,&buf2)){
++          show_one_proc(&buf2, task_format_list);
++          if(buf2.nsupgid > 0 && buf2.supgid && buf.supgid!=buf2.supgid) free(buf2.supgid);
++          if(ptp->flags & PROC_FILLSUPGRP && buf2.nsupgid>0 && buf2.supgrp && buf.supgrp!=buf2.supgrp)
++            freesupgrp(&buf2);
++        }
+       }
+       if(buf.cmdline) free((void*)*buf.cmdline); // ought to reuse
+       if(buf.environ) free((void*)*buf.environ); // ought to reuse
+       if(buf.cgroup)  free((void*)*buf.cgroup);
++      if(buf.nsupgid > 0 && buf.supgid) free(buf.supgid);
++      if((ptp->flags & PROC_FILLSUPGRP) && buf.nsupgid>0 && buf.supgrp) freesupgrp(&buf);
+      }
+     break;
+   case TF_show_task:                   // -L and -T options
+@@ -375,11 +388,18 @@
+       if(want_this_proc(&buf)){
+         proc_t buf2;
+         // must still have the process allocated
+-        while(readtask(ptp,&buf,&buf2)) show_one_proc(&buf2, task_format_list);
++        while(readtask(ptp,&buf,&buf2)){
++          show_one_proc(&buf2, task_format_list);
++          if(buf2.nsupgid > 0 && buf2.supgid && buf.supgid!=buf2.supgid) free(buf2.supgid);
++          if(ptp->flags & PROC_FILLSUPGRP && buf2.nsupgid>0 && buf2.supgrp && buf.supgrp!=buf2.supgrp)
++            freesupgrp(&buf2);
++        }
+       }
+       if(buf.cmdline) free((void*)*buf.cmdline); // ought to reuse
+       if(buf.environ) free((void*)*buf.environ); // ought to reuse
+       if(buf.cgroup)  free((void*)*buf.cgroup);
++      if(buf.nsupgid > 0 && buf.supgid) free(buf.supgid);
++      if((ptp->flags & PROC_FILLSUPGRP) && buf.nsupgid>0 && buf.supgrp) freesupgrp(&buf);
+    }
+     break;
+   }
+@@ -542,6 +562,12 @@
+   qsort(processes, n, sizeof(proc_t*), compare_two_procs);
+   if(forest_type) show_forest(n);
+   else show_proc_array(ptp,n);
++  int i;
++  for (i=0; i<n; i++)
++    if (processes[i]->nsupgid>0 && processes[i]->supgid) free(processes[i]->supgid);
++  if (ptp->flags & PROC_FILLSUPGRP)
++    for (i=0; i<n; i++)
++      if (processes[i]->nsupgid>0 && processes[i]->supgrp) freesupgrp(processes[i]);
+   closeproc(ptp);
+ }
+ 
+--- a/ps/output.c
++++ b/ps/output.c
+@@ -211,6 +211,32 @@
+   return 0;
+ }
+ 
++static int sr_supgid(const proc_t* P, const proc_t* Q){
++  int i;
++  for (i = 0; i < INT_MAX; i++){
++    if (P->nsupgid == i){
++      if (Q->nsupgid == i) return 0;
++      else return -1;
++    }
++    if (Q->nsupgid == i) return 1;
++	if (P->supgid[i] != Q->supgid[i]) return P->supgid[i] - Q->supgid[i];
++  }
++  return 0;
++}
++
++static int sr_supgrp(const proc_t* P, const proc_t* Q){
++  int i;
++  for (i = 0; i < INT_MAX; i++){
++    if (P->nsupgid == i){
++      if (Q->nsupgid == i) return 0;
++      else return -1;
++    }
++    if (Q->nsupgid == i) return 1;
++    int cmp = strncmp(P->supgrp[i],Q->supgrp[i],P_G_SZ);
++    if (cmp != 0) return cmp;
++  }
++  return 0;
++}
+ 
+ /***************************************************************************/
+ /************ Lots of format functions, starting with the NOP **************/
+@@ -1062,6 +1088,24 @@
+   return snprintf(outbuf, COLWID, "%d", pp->fuid);
+ }
+ 
++static int pr_supgid(char *restrict const outbuf, const proc_t *restrict const pp){
++  if (pp->nsupgid == 0) return snprintf(outbuf,2,"-");
++  int rest = COLWID;
++  int i = 0;
++  for (i = 0; i < pp->nsupgid && rest > 5; i++)
++    rest-= snprintf(outbuf+COLWID-rest, rest, "%d ", pp->supgid[i]);
++  return COLWID-rest;
++}
++
++static int pr_supgrp(char *restrict const outbuf, const proc_t *restrict const pp){
++  if (pp->nsupgid == 0) return snprintf(outbuf,2,"-");
++  int rest = COLWID;
++  int i = 0;
++  for (i = 0; i < pp->nsupgid && rest > sizeof( pp->supgrp[i] ) + 1; i++)
++    rest-= snprintf(outbuf+COLWID-rest, rest, "%s ", pp->supgrp[i]);
++  return COLWID-rest;
++}
++
+ // The Open Group Base Specifications Issue 6 (IEEE Std 1003.1, 2004 Edition)
+ // requires that user and group names print as decimal numbers if there is
+ // not enough room in the column, so tough luck if you don't like it.
+@@ -1293,6 +1337,7 @@
+ #define USR PROC_FILLUSR     /* uid_t -> user names */
+ #define GRP PROC_FILLGRP     /* gid_t -> group names */
+ #define WCH PROC_FILLWCHAN   /* do WCHAN lookup */
++#define SUPGRP PROC_FILLSUPGRP      /* supgid -> supplementary group names */
+ 
+ #define CGRP PROC_FILLCGROUP /* read cgroup */
+ /* TODO
+@@ -1490,6 +1535,8 @@
+ {"status",    "STATUS",  pr_nop,      sr_nop,     6,   0,    DEC, AN|RIGHT},
+ {"stime",     "STIME",   pr_stime,    sr_stime,   5,   0,    XXX, ET|RIGHT}, /* was 6 wide */
+ {"suid",      "SUID",    pr_suid,     sr_suid,    5,   0,    LNx, ET|RIGHT},
++{"supgid",    "SUPGID",  pr_supgid,   sr_supgid,  27,   0,    LNX, PO|UNLIMITED},
++{"supgrp",    "SUPGRP",  pr_supgrp,   sr_supgrp,  27, SUPGRP, LNX, PO|UNLIMITED},
+ {"suser",     "SUSER",   pr_suser,    sr_suser,   8, USR,    LNx, ET|USER},
+ {"svgid",     "SVGID",   pr_sgid,     sr_sgid,    5,   0,    XXX, ET|RIGHT},
+ {"svgroup",   "SVGROUP", pr_sgroup,   sr_sgroup,  8, GRP,    LNX, ET|USER},
+--- a/ps/ps.1
++++ b/ps/ps.1
+@@ -1303,6 +1303,16 @@
+ saved user\ ID.  (alias\ \fBsvuid\fR).
+ T}
+ 
++supgid	SUPGID	T{
++gid of supplementary groups, see
++.BR getgroups (2).
++T}
++
++supgrp	SUPGRP	T{
++names of supplementary groups, see
++.BR getgroups (2).
++T}
++
+ suser	SUSER	T{
+ saved user name.  This will be the textual user\ ID,
+ if\ it can be obtained and the field width permits,

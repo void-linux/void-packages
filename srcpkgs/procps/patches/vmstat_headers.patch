@@ -1,0 +1,148 @@
+Description: Headers for disk and slab info 
+getopt replacement 
+Author: Liu Xing <liuxing@cn.fujitsu.com>
+Author: Michael Tokarev <mjt@corpit.ru>
+Bug-Debian: http://bugs.debian.org/436805
+Bug-Debian: http://bugs.debian.org/408088
+Index: b/vmstat.c
+===================================================================
+--- a/vmstat.c	2009-11-24 20:53:00.000000000 +1100
++++ b/vmstat.c	2009-11-24 21:00:49.000000000 +1100
+@@ -29,14 +29,15 @@
+ #include "proc/sysinfo.h"
+ #include "proc/version.h"
+ 
+-static unsigned long dataUnit=1024;
+-static char szDataUnit [16];
+ #define UNIT_B        1
+ #define UNIT_k        1000
+ #define UNIT_K        1024
+ #define UNIT_m        1000000
+ #define UNIT_M        1048576
+ 
++static unsigned long dataUnit=UNIT_K;
++static char szDataUnit[3] = "K";
++
+ #define VMSTAT        0
+ #define DISKSTAT      0x00000001
+ #define VMSUMSTAT     0x00000002
+@@ -354,6 +355,7 @@
+   if ((fDiskstat=fopen("/proc/diskstats", "rb"))){
+     fclose(fDiskstat);
+     ndisks=getdiskstat(&disks,&partitions);
++    if (!moreheaders) diskheader();
+     for(k=0; k<ndisks; k++){
+       if (moreheaders && ((k%height)==0)) diskheader();
+       printf(format,
+@@ -424,6 +426,7 @@
+     return;
+   }
+ 
++  if (!moreheaders) slabheader();
+   nSlab = getslabinfo(&slabs);
+   for(k=0; k<nSlab; k++){
+     if (moreheaders && ((k%height)==0)) slabheader();
+@@ -582,12 +585,10 @@
+ ////////////////////////////////////////////////////////////////////////////
+ 
+ int main(int argc, char *argv[]) {
+-  char partition[16];
+-  argc=0; /* redefined as number of integer arguments */
+-  for (argv++;*argv;argv++) {
+-    if ('-' ==(**argv)) {
+-      switch (*(++(*argv))) {
+-    
++  char *partition = NULL;
++  int c;
++
++  while((c = getopt(argc, argv, "VdafmDnp:S:s")) != EOF) switch(c) {
+       case 'V':
+ 	display_version();
+ 	exit(0);
+@@ -603,7 +604,7 @@
+ 	fork_format();
+         exit(0);
+       case 'm':
+-        statMode |= SLABSTAT; 	
++        statMode |= SLABSTAT;
+ 	break;
+       case 'D':
+         statMode |= DISKSUMSTAT; 	
+@@ -614,53 +615,40 @@
+         break;
+       case 'p':
+         statMode |= PARTITIONSTAT;
+-	if (argv[1]){
+-	  char *cp = *++argv;
+-	  if(!memcmp(cp,"/dev/",5)) cp += 5;
+-	  snprintf(partition, sizeof partition, "%s", cp);
+-	}else{
+-	  fprintf(stderr, "-p requires an argument\n");
+-          exit(EXIT_FAILURE);
+-	}
++	partition = optarg;
++	if (memcmp(partition, "/dev/", 5) == 0) partition += 5;
+         break;
+       case 'S':
+-	if (argv[1]){
+-	      ++argv;
+-	 	if (!strcmp(*argv, "k")) dataUnit=UNIT_k;
+-	 	else if (!strcmp(*argv, "K")) dataUnit=UNIT_K;
+-	 	else if (!strcmp(*argv, "m")) dataUnit=UNIT_m;
+-	 	else if (!strcmp(*argv, "M")) dataUnit=UNIT_M;
+-		else {fprintf(stderr, "-S requires k, K, m or M (default is kb)\n");
+-		     exit(EXIT_FAILURE);
+-		}
+-		strcpy(szDataUnit, *argv);
+-	 }else {fprintf(stderr, "-S requires an argument\n");
+-		exit(EXIT_FAILURE);
+-	 }
++	switch(optarg[0]) {
++	case 'b': case 'B': dataUnit = UNIT_B; break;
++	case 'k': dataUnit = UNIT_k; break;
++	case 'K': dataUnit = UNIT_K; break;
++	case 'm': dataUnit = UNIT_m; break;
++	case 'M': dataUnit = UNIT_M; break;
++	default:
++	  fprintf(stderr, "-S requires k, K, m or M (default is kb)\n");
++	  exit(EXIT_FAILURE);
++	}
++	szDataUnit[0] = optarg[0];
+ 	break;
+       case 's':
+-        statMode |= VMSUMSTAT; 	
++        statMode |= VMSUMSTAT;
+ 	break;
+       default:
+ 	/* no other aguments defined yet. */
+ 	usage();
+-      }
+-   }else{
+-      argc++;
+-      switch (argc) {
+-      case 1:
+-        if ((sleep_time = atoi(*argv)) == 0)
++  }
++
++  if (optind < argc) {
++    if ((sleep_time = atoi(argv[optind++])) == 0)
+          usage();
+-       num_updates = ULONG_MAX;
+-       break;
+-      case 2:
+-        num_updates = atol(*argv);
+-       break;
+-      default:
+-       usage();
+-      } /* switch */
++    num_updates = ULONG_MAX;
+   }
+-}
++  if (optind < argc)
++    num_updates = atol(argv[optind++]);
++  if (optind < argc)
++     usage();
++
+   if (moreheaders) {
+       int tmp=winhi()-3;
+       height=((tmp>0)?tmp:22);

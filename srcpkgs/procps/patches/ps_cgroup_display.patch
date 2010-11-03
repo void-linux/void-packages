@@ -1,0 +1,157 @@
+Description: ps displays cgroup 
+Author: Swann Perarnau <swann.perarnau@imag.fr>
+Bug-Debian: http://bugs.debian.org/469669
+Reviewed-by: Craig Small <csmall@debian.org>
+--- a/proc/readproc.c
++++ b/proc/readproc.c
+@@ -598,6 +598,17 @@
+ 	p->environ = file2strvec(path, "environ");
+     else
+         p->environ = NULL;
++
++    if(linux_version_code>=LINUX_VERSION(2,6,24) && (flags & PROC_FILLCGROUP)) {
++	p->cgroup = file2strvec(path, "cgroup"); 	/* read /proc/#/cgroup */
++    	if(p->cgroup && *p->cgroup) {
++		int i = strlen(*p->cgroup);
++		if( (*p->cgroup)[i-1]=='\n' )
++			(*p->cgroup)[i-1] = ' '; //little hack to remove trailing \n
++	}
++    }
++    else
++	p->cgroup = NULL;
+     
+     return p;
+ next_proc:
+@@ -686,7 +697,7 @@
+     t->cmdline = p->cmdline;  // better not free these until done with all threads!
+     t->environ = p->environ;
+ #endif
+-
++    t->cgroup = p->cgroup;
+     t->ppid = p->ppid;  // ought to put the per-task ppid somewhere
+ 
+     return t;
+@@ -896,6 +907,8 @@
+ 	free((void*)*p->cmdline);
+     if (p->environ)
+ 	free((void*)*p->environ);
++    if (p->cgroup)
++	free((void*)*p->cgroup);
+     free(p);
+ }
+ 
+--- a/proc/readproc.h
++++ b/proc/readproc.h
+@@ -139,6 +139,7 @@
+ 	tpgid,		// stat            terminal process group id
+ 	exit_signal,	// stat            might not be SIGCHLD
+ 	processor;      // stat            current (or most recent?) CPU
++    	char **cgroup;  // cgroup	   current cgroup, looks like a classic filepath
+ } proc_t;
+ 
+ // PROCTAB: data structure holding the persistent information readproc needs
+@@ -236,8 +237,9 @@
+ #define PROC_FILLSTAT        0x0040 // read stat -- currently unconditional
+ #define PROC_FILLWCHAN       0x0080 // look up WCHAN name
+ #define PROC_FILLARG         0x0100 // alloc and fill in `cmdline'
++#define PROC_FILLCGROUP      0x0200 // alloc and fill in `cgroup`
+ 
+-#define PROC_LOOSE_TASKS     0x0200 // threat threads as if they were processes
++#define PROC_LOOSE_TASKS     0x2000 // threat threads as if they were processes
+ 
+ // Obsolete, consider only processes with one of the passed:
+ #define PROC_PID             0x1000  // process id numbers ( 0   terminated)
+--- a/ps/display.c
++++ b/ps/display.c
+@@ -223,8 +223,7 @@
+ 
+ #define needs_for_format (proc_format_needs|task_format_needs)
+ 
+-#define PROC_ONLY_FLAGS (PROC_FILLENV|PROC_FILLARG|PROC_FILLCOM|PROC_FILLMEM)
+-
++#define PROC_ONLY_FLAGS (PROC_FILLENV|PROC_FILLARG|PROC_FILLCOM|PROC_FILLMEM|PROC_FILLCGROUP)
+ /***** munge lists and determine openproc() flags */
+ static void lists_and_needs(void){
+   check_headers();
+@@ -342,6 +341,7 @@
+       }
+       if(buf.cmdline) free((void*)*buf.cmdline); // ought to reuse
+       if(buf.environ) free((void*)*buf.environ); // ought to reuse
++      if(buf.cgroup)  free((void*)*buf.cgroup);
+     }
+     break;
+   case TF_show_proc|TF_loose_tasks:    // H option
+@@ -354,6 +354,7 @@
+       }
+       if(buf.cmdline) free((void*)*buf.cmdline); // ought to reuse
+       if(buf.environ) free((void*)*buf.environ); // ought to reuse
++      if(buf.cgroup)  free((void*)*buf.cgroup);
+     }
+     break;
+   case TF_show_proc|TF_show_task:      // m and -m options
+@@ -366,7 +367,8 @@
+       }
+       if(buf.cmdline) free((void*)*buf.cmdline); // ought to reuse
+       if(buf.environ) free((void*)*buf.environ); // ought to reuse
+-    }
++      if(buf.cgroup)  free((void*)*buf.cgroup);
++     }
+     break;
+   case TF_show_task:                   // -L and -T options
+     while(readproc(ptp,&buf)){
+@@ -377,7 +379,8 @@
+       }
+       if(buf.cmdline) free((void*)*buf.cmdline); // ought to reuse
+       if(buf.environ) free((void*)*buf.environ); // ought to reuse
+-    }
++      if(buf.cgroup)  free((void*)*buf.cgroup);
++   }
+     break;
+   }
+   closeproc(ptp);
+--- a/ps/output.c
++++ b/ps/output.c
+@@ -376,6 +376,26 @@
+   return max_rightward-rightward;
+ }
+ 
++static int pr_cgroup(char *restrict const outbuf,const proc_t *restrict const pp) {
++ if(pp->cgroup && *pp->cgroup) {
++   char *endp = outbuf;
++   int rightward=max_rightward;
++   if(forest_prefix){
++       int fh = forest_helper(outbuf);
++       endp += fh;
++       rightward -= fh;
++   }
++   if(rightward>1){
++     *endp++ = ' ';
++     rightward--;
++     endp += escape_str(endp, *pp->cgroup, OUTBUF_SIZE, &rightward);
++   }
++   return max_rightward-rightward;
++ }
++ else
++   return pr_nop(outbuf,pp);
++}
++
+ /* "ucomm" is the same thing: short unless -f */
+ static int pr_comm(char *restrict const outbuf, const proc_t *restrict const pp){
+   char *endp = outbuf;
+@@ -1274,7 +1294,7 @@
+ #define GRP PROC_FILLGRP     /* gid_t -> group names */
+ #define WCH PROC_FILLWCHAN   /* do WCHAN lookup */
+ 
+-
++#define CGRP PROC_FILLCGROUP /* read cgroup */
+ /* TODO
+  *      pull out annoying BSD aliases into another table (to macro table?)
+  *      add sorting functions here (to unify names)
+@@ -1310,6 +1330,7 @@
+ {"bsdtime",   "TIME",    pr_bsdtime,  sr_nop,     6,   0,    LNX, ET|RIGHT},
+ {"c",         "C",       pr_c,        sr_pcpu,    2,   0,    SUN, ET|RIGHT},
+ {"caught",    "CAUGHT",  pr_sigcatch, sr_nop,     9,   0,    BSD, TO|SIGNAL}, /*sigcatch*/
++{"cgroup",    "CGROUP",  pr_cgroup,     sr_nop,     27, CGRP,  LNX, PO|UNLIMITED},
+ {"class",     "CLS",     pr_class,    sr_sched,   3,   0,    XXX, TO|LEFT},
+ {"cls",       "CLS",     pr_class,    sr_sched,   3,   0,    HPU, TO|RIGHT}, /*says HPUX or RT*/
+ {"cmaj_flt",  "-",       pr_nop,      sr_cmaj_flt, 1,  0,    LNX, AN|RIGHT},

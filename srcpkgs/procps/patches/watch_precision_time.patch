@@ -1,0 +1,216 @@
+Description: Add precision wait time option -p 
+Author: Anthony DeRobertis <asd@suespammers.org>
+Bug-Debian: http://bugs.debian.org/183486
+Reviewed-by: Craig Small <csmall@debian.org>
+Index: b/watch.1
+===================================================================
+--- a/watch.1	2009-11-24 21:00:43.000000000 +1100
++++ b/watch.1	2009-11-24 21:00:46.000000000 +1100
+@@ -4,7 +4,7 @@
+ .SH SYNOPSIS
+ .na
+ .B watch
+-.RB [ \-bdehvtx ]
++.RB [ \-bdehpvtx ]
+ .RB [ \-n
+ .IR seconds ]
+ .RB [ \-\-beep ]
+@@ -14,6 +14,7 @@
+ .RB [ \-\-help ]
+ .RB [ \-\-interval=\fIseconds\fP]
+ .RB [ \-\-no\-title ]
++.RB [ \-\-precise ]
+ .RB [ \-\-version ]
+ .I command
+ .SH DESCRIPTION
+@@ -27,7 +28,24 @@
+ .B \-n
+ or
+ .B \-\-interval
+-to specify a different interval.
++to specify a different interval. Normally, this interval is interpreted
++as the amout of time between the completion of one run of
++.I command
++and the beginning of the next run. However, with the
++.I \-p
++or
++.I \-\-precise
++option, you can make
++.BR watch
++attempt to run
++.I command
++every
++.I interval
++seconds. Try it with
++.B ntptime
++and notice how the fractional seconds stays
++(nearly) the same, as opposed to normal mode where they continuously
++increase.
+ .PP
+ The
+ .B \-d
+@@ -97,11 +115,21 @@
+ .br
+ watch echo "'"'$$'"'"
+ .PP
++To see the effect of precision time keeping, try adding
++.I \-p
++to
++.IP
++watch \-n 10 sleep 1
++.PP
+ You can watch for your administrator to install the latest kernel with
+ .IP
+ watch uname \-r
+ .PP
+-(Just kidding.)
++(Note that
++.I \-p
++isn't guaranteed to work across reboots, especially in the face of
++.B ntpdate
++or other bootup time-changing mechanisms)
+ .SH BUGS
+ Upon terminal resize, the screen will not be correctly repainted until the
+ next scheduled update.  All
+@@ -110,6 +138,22 @@
+ .PP
+ Non-printing characters are stripped from program output.  Use "cat -v" as
+ part of the command pipeline if you want to see them.
++.PP
++.I \-\-precise
++mode doesn't yet have advanced temporal distortion technology to
++compensate for a
++.I command
++that takes more than
++.I interval
++seconds to execute.
++.B watch
++also can get into a state where it rapid-fires as many executions of
++.I command
++as it can to catch up from a previous executions running longer than
++.I interval
++(for example,
++.B netstat
++taking ages on a DNS lookup).
+ .SH AUTHORS
+ The original
+ .B watch
+@@ -117,3 +161,7 @@
+ corrections by Francois Pinard.  It was reworked and new features added by
+ Mike Coleman <mkc@acm.org> in 1999.  The beep, exec, and error handling
+ features were added by Morty Abzug <morty@frakir.org> in 2008.
++On a not so dark and stormy morning
++in March of 2003, Anthony DeRobertis <asd@suespammers.org> got sick of
++his watches that should update every minute eventually updating many
++seconds after the minute started, and added microsecond precision.
+Index: b/watch.c
+===================================================================
+--- a/watch.c	2009-11-24 21:00:43.000000000 +1100
++++ b/watch.c	2009-11-24 21:00:46.000000000 +1100
+@@ -21,6 +21,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <sys/ioctl.h>
++#include <sys/time.h>
+ #include <time.h>
+ #include <unistd.h>
+ #include <termios.h>
+@@ -39,13 +40,14 @@
+ 	{"beep", no_argument, 0, 'b'},
+ 	{"errexit", no_argument, 0, 'e'},
+ 	{"exec", no_argument, 0, 'x'},
++	{"precise", no_argument, 0, 'p'},
+ 	{"no-title", no_argument, 0, 't'},
+ 	{"version", no_argument, 0, 'v'},
+ 	{0, 0, 0, 0}
+ };
+ 
+ static char usage[] =
+-    "Usage: %s [-bdhntvx] [--beep] [--differences[=cumulative]] [--exec] [--help] [--interval=<n>] [--no-title] [--version] <command>\n";
++    "Usage: %s [-bdhnptvx] [--beep] [--differences[=cumulative]] [--exec] [--help] [--interval=<n>] [--no-title] [--version] <command>\n";
+ 
+ static char *progname;
+ 
+@@ -54,6 +56,7 @@
+ static int screen_size_changed = 0;
+ static int first_screen = 1;
+ static int show_title = 2;  // number of lines used, 2 or 0
++static int precise_timekeeping = 0;
+ 
+ #define min(x,y) ((x) > (y) ? (y) : (x))
+ 
+@@ -138,6 +141,15 @@
+ 	}
+ }
+ 
++/* get current time in usec */
++typedef unsigned long long watch_usec_t;
++#define USECS_PER_SEC (1000000ull)
++watch_usec_t get_time_usec() {
++	struct timeval now;
++	gettimeofday(&now, NULL);
++	return USECS_PER_SEC*now.tv_sec + now.tv_usec;
++}
++
+ int
+ main(int argc, char *argv[])
+ {
+@@ -152,6 +164,8 @@
+ 	char *command;
+ 	char **command_argv;
+ 	int command_length = 0;	/* not including final \0 */
++    watch_usec_t next_loop; /* next loop time in us, used for precise time
++                               keeping only */
+ 	int pipefd[2];
+ 	int status;
+ 	pid_t child;
+@@ -159,7 +173,7 @@
+ 	setlocale(LC_ALL, "");
+ 	progname = argv[0];
+ 
+-	while ((optc = getopt_long(argc, argv, "+bed::hn:vtx", longopts, (int *) 0))
++	while ((optc = getopt_long(argc, argv, "+bed::hn:pvtx", longopts, (int *) 0))
+ 	       != EOF) {
+ 		switch (optc) {
+ 		case 'b':
+@@ -194,6 +208,9 @@
+ 					interval = ~0u/1000000;
+ 			}
+ 			break;
++		case 'p':
++			precise_timekeeping = 1;
++			break;
+ 		case 'v':
+ 			option_version = 1;
+ 			break;
+@@ -217,6 +234,7 @@
+ 		fputs("  -e, --errexit\t\t\t\texit watch if the command has a non-zero exit\n", stderr);
+ 		fputs("  -h, --help\t\t\t\tprint a summary of the options\n", stderr);
+ 		fputs("  -n, --interval=<seconds>\t\tseconds to wait between updates\n", stderr);
++        fputs("  -p, --precise\t\t\t\tprecise timing, ignore command run time\n", stderr);
+ 		fputs("  -v, --version\t\t\t\tprint the version number\n", stderr);
+ 		fputs("  -t, --no-title\t\t\tturns off showing the header\n", stderr);
+ 		fputs("  -x, --exec\t\t\t\tpass command to exec instead of sh\n", stderr);
+@@ -256,6 +274,9 @@
+ 	noecho();
+ 	cbreak();
+ 
++	if (precise_timekeeping)
++		next_loop = get_time_usec();
++
+ 	for (;;) {
+ 		time_t t = time(NULL);
+ 		char *ts = ctime(&t);
+@@ -400,6 +421,12 @@
+ 
+ 		first_screen = 0;
+ 		refresh();
++		if (precise_timekeeping) {
++			watch_usec_t cur_time = get_time_usec();
++			next_loop += USECS_PER_SEC*interval;
++			if (cur_time < next_loop)
++				usleep(next_loop - cur_time);
++		} else
+ 		usleep(interval * 1000000);
+ 	}
+ 

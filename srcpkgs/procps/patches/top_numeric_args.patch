@@ -1,0 +1,98 @@
+Description: Better top numeric argument handling
+Bug-Debian: http://bugs.debian.org/358724
+Author: Justin Pryzby <justinpryzby@users.sourceforge.net>
+--- a/top.c
++++ b/top.c
+@@ -32,6 +32,7 @@
+ #include <stdarg.h>
+ #include <stdio.h>
+ #include <stdlib.h>
++#include <math.h>
+ #include <string.h>
+ 
+ // Foul POS defines all sorts of stuff...
+@@ -1825,8 +1826,12 @@
+ 
+    while (*args) {
+       const char *cp = *(args++);
++      if (*cp!='-') {
++       std_err(fmtmk("unknown argument '%c'\nusage:\t%s%s" , *cp, Myname, usage));
++      }
+ 
+-      while (*cp) {
++      for(++cp; *cp; cp++) {
++         char *end;
+          switch (*cp) {
+             case '\0':
+             case '-':
+@@ -1842,8 +1847,15 @@
+                else if (*args) cp = *args++;
+                else std_err("-d requires argument");
+                   /* a negative delay will be dealt with shortly... */
+-               if (sscanf(cp, "%f", &tmp_delay) != 1)
+-                  std_err(fmtmk("bad delay '%s'", cp));
++               errno=0;
++               if (( (fabs(tmp_delay=strtod(cp, &end))==HUGE_VAL &&
++                               errno==ERANGE) ||
++                           (tmp_delay==0 && errno!=0) ||
++                           end==cp ||
++                           end!=cp+strlen(cp))) {
++                   std_err(fmtmk("bad delay '%s'", cp));
++               }
++               cp=-1+end;
+                break;
+             case 'H':
+                TOGw(Curwin, Show_THREADS);
+@@ -1859,8 +1871,15 @@
+                if (cp[1]) cp++;
+                else if (*args) cp = *args++;
+                else std_err("-n requires argument");
+-               if (sscanf(cp, "%d", &Loops) != 1 || Loops < 1)
+-                  std_err(fmtmk("bad iterations arg '%s'", cp));
++               errno=0;
++               if ((((Loops=strtol(cp, &end, 0))==LONG_MIN ||
++                                               Loops==LONG_MAX) &&
++                                       errno==ERANGE) ||
++                               end==cp ||
++                               end!=cp+strlen(cp) || Loops<1) {
++                       std_err(fmtmk("bad iterations arg '%s'", cp));
++               }
++               cp=-1+end;
+                break;
+             case 'p':
+                do {
+@@ -1868,11 +1887,19 @@
+                   selection_type = 'p';
+                   if (cp[1]) cp++;
+                   else if (*args) cp = *args++;
+-                  else std_err("-p argument missing");
++                  else std_err("-p requires argument");
+                   if (Monpidsidx >= MONPIDMAX)
+                      std_err(fmtmk("pid limit (%d) exceeded", MONPIDMAX));
+-                  if (sscanf(cp, "%d", &Monpids[Monpidsidx]) != 1 || Monpids[Monpidsidx] < 0)
+-                     std_err(fmtmk("bad pid '%s'", cp));
++                  errno=0;
++                  if ((((Monpids[Monpidsidx]=strtol(cp, &end, 0))==LONG_MIN ||
++                          Monpids[Monpidsidx]==LONG_MAX) &&
++                        errno==ERANGE) ||
++                      end==cp ||
++                      Monpids[Monpidsidx]<1) {
++                    std_err(fmtmk("bad pid '%s'", cp));
++                  }
++                  cp=-1+end;
++
+                   if (!Monpids[Monpidsidx])
+                      Monpids[Monpidsidx] = getpid();
+                   Monpidsidx++;
+@@ -1918,10 +1945,7 @@
+                   , *cp, Myname, usage));
+ 
+          } /* end: switch (*cp) */
+-
+-            /* advance cp and jump over any numerical args used above */
+-         if (*cp) cp += strspn(&cp[1], "- ,.1234567890") + 1;
+-      } /* end: while (*cp) */
++      } /* end: for (; *cp) */
+    } /* end: while (*args) */
+ 
+       /* fixup delay time, maybe... */

@@ -1,0 +1,116 @@
+Description: Don't use ncurses for running once
+ Using ncurses initscr/endwin clears the screen for xterm/etc it
+ now prints raw text using printf
+Bug-Debian: http://bugs.debian.org/503089
+Author: Craig Small <csmall@debian.org>
+--- a/slabtop.c
++++ b/slabtop.c
+@@ -268,11 +268,13 @@
+ 	}
+ }
+ 
++#define print_line(fmt, args...) if (run_once) printf(fmt, ## args); else printw(fmt, ## args)
+ int main(int argc, char *argv[])
+ {
+ 	int o;
+ 	unsigned short old_rows;
+ 	struct slab_info *slab_list = NULL;
++  int run_once=0;
+ 
+ 	struct option longopts[] = {
+ 		{ "delay",	1, NULL, 'd' },
+@@ -306,6 +308,7 @@
+ 			sort_func = set_sort_func(optarg[0]);
+ 			break;
+ 		case 'o':
++      run_once=1;
+ 			delay = 0;
+ 			break;
+ 		case 'V':
+@@ -322,11 +325,13 @@
+ 	if (tcgetattr(0, &saved_tty) == -1)
+ 		perror("tcgetattr");
+ 
+-	initscr();
+-	term_size(0);
+ 	old_rows = rows;
+-	resizeterm(rows, cols);
+-	signal(SIGWINCH, term_size);
++	term_size(0);
++  if (!run_once) {
++    initscr();
++	  resizeterm(rows, cols);
++	  signal(SIGWINCH, term_size);
++  }
+ 	signal(SIGINT, sigint_handler);
+ 
+ 	do {
+@@ -340,13 +345,13 @@
+ 		if (get_slabinfo(&slab_list, &stats))
+ 			break;
+ 
+-		if (old_rows != rows) {
++		if (!run_once && old_rows != rows) {
+ 			resizeterm(rows, cols);
+ 			old_rows = rows;
+ 		}
+ 
+ 		move(0,0);
+-		printw(	" Active / Total Objects (%% used)    : %d / %d (%.1f%%)\n"
++		print_line(	" Active / Total Objects (%% used)    : %d / %d (%.1f%%)\n"
+ 			" Active / Total Slabs (%% used)      : %d / %d (%.1f%%)\n"
+ 			" Active / Total Caches (%% used)     : %d / %d (%.1f%%)\n"
+ 			" Active / Total Size (%% used)       : %.2fK / %.2fK (%.1f%%)\n"
+@@ -361,14 +366,14 @@
+ 		slab_list = slabsort(slab_list);
+ 
+ 		attron(A_REVERSE);
+-		printw(	"%6s %6s %4s %8s %6s %8s %10s %-23s\n",
++		print_line(	"%6s %6s %4s %8s %6s %8s %10s %-23s\n",
+ 			"OBJS", "ACTIVE", "USE", "OBJ SIZE", "SLABS",
+ 			"OBJ/SLAB", "CACHE SIZE", "NAME");
+ 		attroff(A_REVERSE);
+ 
+ 		curr = slab_list;
+ 		for (i = 0; i < rows - 8 && curr->next; i++) {
+-			printw("%6u %6u %3u%% %7.2fK %6u %8u %9uK %-23s\n",
++			print_line("%6u %6u %3u%% %7.2fK %6u %8u %9uK %-23s\n",
+ 				curr->nr_objs, curr->nr_active_objs, curr->use,
+ 				curr->obj_size / 1024.0, curr->nr_slabs,
+ 				curr->objs_per_slab, (unsigned)(curr->cache_size / 1024),
+@@ -376,22 +381,24 @@
+ 			curr = curr->next;
+ 		}
+ 
+-		refresh();
+ 		put_slabinfo(slab_list);
+ 
+-		FD_ZERO(&readfds);
+-		FD_SET(0, &readfds);
+-		tv.tv_sec = delay;
+-		tv.tv_usec = 0;
+-		if (select(1, &readfds, NULL, NULL, &tv) > 0) {
+-			if (read(0, &c, 1) != 1)
+-				break;
+-			parse_input(c);
+-		}
++		if (!run_once) {
++      refresh();
++		  FD_ZERO(&readfds);
++		  FD_SET(0, &readfds);
++		  tv.tv_sec = delay;
++		  tv.tv_usec = 0;
++		  if (select(1, &readfds, NULL, NULL, &tv) > 0) {
++			  if (read(0, &c, 1) != 1)
++				  break;
++			  parse_input(c);
++		  }
++    }
+ 	} while (delay);
+ 
+ 	tcsetattr(0, TCSAFLUSH, &saved_tty);
+ 	free_slabinfo(slab_list);
+-	endwin();
++	if (!run_once) endwin();
+ 	return 0;
+ }
