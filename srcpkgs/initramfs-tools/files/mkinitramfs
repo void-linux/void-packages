@@ -7,12 +7,11 @@ export PATH='/usr/bin:/sbin:/bin'
 keep="n"
 CONFDIR="/etc/initramfs-tools"
 verbose="n"
-errors_to="2>/dev/null"
 
 OPTIONS=`getopt -o c:d:ko:r:v -n "$0" -- "$@"`
 
 # Check for non-GNU getopt
-if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
+if [ $? != 0 ] ; then echo "W: non-GNU getopt" >&2 ; exit 1 ; fi
 
 eval set -- "$OPTIONS"
 
@@ -68,7 +67,7 @@ for i in /usr/share/initramfs-tools/conf.d/* ${CONFDIR}/conf.d/*; do
 		| grep '^[[:alnum:]][[:alnum:]\._-]*$' | grep -v '\.dpkg-.*$')";
 done
 # FIXME: deprecated those settings on mkinitramfs run
-#        these conf dirs are for boot scripts and land on initramfs
+# 	 these conf dirs are for boot scripts and land on initramfs
 for i in ${EXTRA_CONF}; do
 	if [ -e  ${CONFDIR}/conf.d/${i} ]; then
 		. ${CONFDIR}/conf.d/${i}
@@ -132,25 +131,23 @@ else
 	COMPRESS=${compress}
 fi
 
-if ! command -v ${compress} >/dev/null 2>&1; then
+if ! command -v "${compress}" >/dev/null 2>&1; then
 	compress=gzip
+	COMPRESS=gzip
 	[ "${verbose}" = y ] && \
 		echo "No ${COMPRESS} in ${PATH}, using gzip"
 fi
 
-if [ -r /boot/config-${version} ]; then
-	if ! `grep -q -i config_rd_${COMPRESS}=y /boot/config-${version}` ; then
-		compress=gzip
-		[ "${verbose}" = y ] && \
-			echo "linux-2.6 misses ${COMPRESS} support, using gzip"
-	fi
+if ! `grep -q -i ^config_rd_${COMPRESS%p} /boot/config-${version}` ; then
+	compress=gzip
+	[ "${verbose}" = y ] && \
+		echo "linux-2.6 misses ${COMPRESS} support, using gzip"
 fi
 
-# Always use max compression.
-compress="${compress} -9"
+[ "${compress}" = lzop ] && compress="lzop -9"
 
 if [ -d "${outfile}" ]; then
-	echo "${outfile} is a directory"
+	echo "${outfile} is a directory" >&2
 	exit 1
 fi
 
@@ -166,6 +163,16 @@ fi
 
 DESTDIR="$(mktemp -d ${TMPDIR:-/tmp}/mkinitramfs_XXXXXX)" || exit 1
 chmod 755 "${DESTDIR}"
+
+# do not execute cache_run_scripts() if mounted with noexec
+NOEXEC=""
+if [ -r /etc/mtab ]; then
+	fs=$(df $DESTDIR | tail -1 | awk '{print $6}')
+	if [ -n "$fs" ] && mount | grep -q "on $fs .*noexec" ; then
+		NOEXEC=1
+	fi
+fi
+
 __TMPCPIOGZ="$(mktemp ${TMPDIR:-/tmp}/mkinitramfs-OL_XXXXXX)" || exit 1
 
 DPKG_ARCH=`uname -m`
@@ -191,7 +198,7 @@ done
 # Copy the modules.order file in
 if [ -f "${MODULESDIR}/modules.order" ]; then
 	cp -p "${MODULESDIR}/modules.order" \
-	      "${DESTDIR}${MODULESDIR}/modules.order"
+		"${DESTDIR}${MODULESDIR}/modules.order"
 fi
 
 # MODULES=list case.  Always honour.
@@ -217,26 +224,27 @@ list)
 	# nothing to add
 	;;
 *)
-	echo "mkinitramfs: Warning unsupported MODULES setting: ${MODULES}."
-	echo "mkinitramfs: Falling back to MODULES=most."
+	echo "W: mkinitramfs: unsupported MODULES setting: ${MODULES}."
+	echo "W: mkinitramfs: Falling back to MODULES=most."
 	auto_add_modules
 	;;
 esac
 
 # Have to do each file, because cpio --dereference doesn't recurse down
 # symlinks.
+
 cp -p /usr/share/initramfs-tools/init ${DESTDIR}/init
 
 # add existant boot scripts
 for b in $(cd /usr/share/initramfs-tools/scripts/ && find . \
-	-regextype posix-extended -regex '.*/[[:alnum:]_.]+$' -type f); do
+	-regextype posix-extended -regex '.*/[[:alnum:]\._-]+$' -type f); do
 	[ -d "${DESTDIR}/scripts/$(dirname "${b}")" ] \
 		|| mkdir -p "${DESTDIR}/scripts/$(dirname "${b}")"
 	cp -p "/usr/share/initramfs-tools/scripts/${b}" \
 		"${DESTDIR}/scripts/$(dirname "${b}")/"
 done
 for b in $(cd "${CONFDIR}/scripts" && find . \
-	-regextype posix-extended -regex '.*/[[:alnum:]_.]+$' -type f); do
+	-regextype posix-extended -regex '.*/[[:alnum:]\._-]+$' -type f); do
 	[ -d "${DESTDIR}/scripts/$(dirname "${b}")" ] \
 		|| mkdir -p "${DESTDIR}/scripts/$(dirname "${b}")"
 	cp -p "${CONFDIR}/scripts/${b}" "${DESTDIR}/scripts/$(dirname "${b}")/"
@@ -257,16 +265,29 @@ if [ -n "${ROOT:-}" ]; then
 	echo "ROOT=${ROOT}" > ${DESTDIR}/conf/conf.d/root
 fi
 
+if ! command -v ldd >/dev/null 2>&1 ; then
+	echo "WARNING: no ldd around - install libc-bin" >&2
+	exit 1
+fi
+
+# module-init-tools
+copy_exec /sbin/depmod /sbin
+copy_exec /sbin/modprobe /sbin
+copy_exec /sbin/rmmod /sbin
+mkdir -p "${DESTDIR}/etc/modprobe.d"
+cp -a /etc/modprobe.d/* "${DESTDIR}/etc/modprobe.d/"
+
 run_scripts /usr/share/initramfs-tools/hooks
 run_scripts "${CONFDIR}"/hooks
 
 # cache boot run order
-for b in $(cd "${DESTDIR}/scripts" && find . -mindepth 1 -type d); do
-	cache_run_scripts "${DESTDIR}" "/scripts/${b#./}"
-done
-
-# Copy in tsort(1).
-copy_exec /bin/tsort /bin
+if [ -n "$NOEXEC" ]; then
+	echo "W: TMPDIR is mounted noexec, will not cache run scripts."
+else
+	for b in $(cd "${DESTDIR}/scripts" && find . -mindepth 1 -type d); do
+		cache_run_scripts "${DESTDIR}" "/scripts/${b#./}"
+	done
+fi
 
 # generate module deps
 depmod -a -b "${DESTDIR}" ${version}
@@ -279,11 +300,8 @@ fi
 
 # Remove any looping or broken symbolic links, since they break cpio.
 [ "${verbose}" = y ] && xargs_verbose="-t"
-find "${DESTDIR}" -type l -printf '%p %Y\n' | sed -n 's/ [LN]$//p' \
-	| xargs ${xargs_verbose:-} -rL1 rm -f
-
-# Copy resume from klibc
-copy_exec /bin/resume /bin
+(cd "${DESTDIR}" && find . -type l -printf '%p %Y\n' | sed -n 's/ [LN]$//p' \
+	| xargs ${xargs_verbose:-} -rL1 rm -f)
 
 [ "${verbose}" = y ] && echo "Building cpio ${outfile} initramfs"
 (
@@ -291,19 +309,28 @@ copy_exec /bin/resume /bin
 # cd "${DESTDIR}" && find . | cpio --quiet --dereference -o -H newc | gzip >"${outfile}" || exit 1
 exec 3>&1
 eval `
-    # http://cfaj.freeshell.org/shell/cus-faq-2.html
-    exec 4>&1 >&3 3>&-
-    cd  "${DESTDIR}" 
-    {
-        find . 4>&-; echo "ec1=$?;" >&4
-    } | {
-        cpio --quiet --dereference -o -H newc 4>&-; echo "ec2=$?;" >&4
-    } | ${compress} >"${outfile}"
-    echo "ec3=$?;" >&4
+	# http://cfaj.freeshell.org/shell/cus-faq-2.html
+	exec 4>&1 >&3 3>&-
+	cd  "${DESTDIR}"
+	{
+		find . 4>&-; echo "ec1=$?;" >&4
+	} | {
+		cpio --quiet --dereference -o -H newc 4>&-; echo "ec2=$?;" >&4
+	} | ${compress} >"${outfile}"
+	echo "ec3=$?;" >&4
 `
-if [ "$ec1" -ne 0 ]; then exit "$ec1"; fi
-if [ "$ec2" -ne 0 ]; then exit "$ec2"; fi
-if [ "$ec3" -ne 0 ]; then exit "$ec3"; fi
+if [ "$ec1" -ne 0 ]; then
+	echo "E: mkinitramfs failure find $ec1 cpio $ec2 $compress $ec3"
+	exit "$ec1"
+fi
+if [ "$ec2" -ne 0 ]; then
+	echo "E: mkinitramfs failure cpio $ec2 $compress $ec3"
+	exit "$ec2"
+fi
+if [ "$ec3" -ne 0 ]; then
+	echo "E: mkinitramfs failure $compress $ec3"
+	exit "$ec3"
+fi
 ) || exit 1
 
 if [ -s "${__TMPCPIOGZ}" ]; then

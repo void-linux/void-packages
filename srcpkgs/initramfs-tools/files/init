@@ -33,12 +33,13 @@ if [ -e /etc/udev/udev.conf ]; then
 	. /etc/udev/udev.conf
 fi
 if ! mount -t devtmpfs -o mode=0755 devtmpfs /dev; then
+	echo "W: devtmpfs not available, falling back to tmpfs for /dev"
 	mount -t tmpfs -o size=$tmpfs_size,mode=0755 udev /dev
 	[ -e /dev/console ] || mknod -m 0600 /dev/console c 5 1
 	[ -e /dev/null ] || mknod /dev/null c 1 3
 fi
 mkdir /dev/pts
-mount -t devpts -o noexec,nosuid,gid=5,mode=0620 none /dev/pts || true
+mount -t devpts -o noexec,nosuid,gid=5,mode=0620 devpts /dev/pts || true
 > /dev/.initramfs-tools
 mkdir /dev/.initramfs
 
@@ -57,6 +58,7 @@ export ROOTFSTYPE=
 export IP=
 export BOOT=
 export BOOTIF=
+export UBIMTD=
 export break=
 export init=/sbin/init
 export quiet=n
@@ -141,6 +143,9 @@ for x in $(cat /proc/cmdline); do
 	boot=*)
 		BOOT=${x#boot=}
 		;;
+	ubi.mtd=*)
+		UBIMTD=${x#ubi.mtd=}
+		;;
 	resume=*)
 		RESUME="${x#resume=}"
 		;;
@@ -221,12 +226,12 @@ run_scripts /scripts/init-premount
 [ "$quiet" != "y" ] && log_end_msg
 
 maybe_break mount
-[ "$quiet" != "y" ] && log_begin_msg "Mounting root file system"
+log_begin_msg "Mounting root file system"
 . /scripts/${BOOT}
 parse_numeric ${ROOT}
 maybe_break mountroot
 mountroot
-[ "$quiet" != "y" ] && log_end_msg
+log_end_msg
 
 maybe_break bottom
 [ "$quiet" != "y" ] && log_begin_msg "Running /scripts/init-bottom"
@@ -237,25 +242,51 @@ run_scripts /scripts/init-bottom
 mount -n -o move /sys ${rootmnt}/sys
 mount -n -o move /proc ${rootmnt}/proc
 
+validate_init() {
+	checktarget="${1}"
+
+	# Work around absolute symlinks
+	if [ -d "${rootmnt}" ] && [ -h "${rootmnt}${checktarget}" ]; then
+		case $(readlink "${rootmnt}${checktarget}") in /*)
+			checktarget="$(chroot ${rootmnt} readlink ${checktarget})"
+			;;
+		esac
+	fi
+
+	# Make sure the specified init can be executed
+	if [ ! -x "${rootmnt}${checktarget}" ]; then
+		return 1
+	fi
+
+	# Upstart uses /etc/init as configuration directory :-/
+	if [ -d "${rootmnt}${checktarget}" ]; then
+		return 1
+	fi
+}
+
 # Check init bootarg
-if [ -n "${init}" ] && [ ! -x "${rootmnt}${init}" ]; then
-	echo "Target filesystem doesn't have ${init}."
-	init=
+if [ -n "${init}" ]; then
+	if ! validate_init "$init"; then
+		echo "Target filesystem doesn't have requested ${init}."
+		init=
+	fi
 fi
 
-# Search for valid init
-if [ -z "${init}" ] ; then
-	for init in /sbin/init /etc/init /bin/init /bin/sh; do
-		if [ ! -x "${rootmnt}${init}" ]; then
-			continue
-		fi
-		break
-	done
-fi
-
-# No init on rootmount
-if [ ! -x "${rootmnt}${init}" ]; then
-	panic "No init found. Try passing init= bootarg."
+# Common case: /sbin/init is present
+if [ ! -x "${rootmnt}/sbin/init" ]; then
+	# ... if it's not available search for valid init
+	if [ -z "${init}" ] ; then
+		for inittest in /sbin/init /etc/init /bin/init /bin/sh; do
+			if validate_init "${inittest}"; then
+				init="$inittest"
+				break
+			fi
+		done
+	fi
+	# No init on rootmount
+	if ! validate_init "${init}" ; then
+		panic "No init found. Try passing init= bootarg."
+	fi
 fi
 
 maybe_break init
@@ -272,6 +303,7 @@ unset ROOT
 unset IP
 unset BOOT
 unset BOOTIF
+unset UBIMTD
 unset blacklist
 unset break
 unset noresume
@@ -282,5 +314,5 @@ unset resume
 unset resume_offset
 
 # Chain to real filesystem
-exec switch_root ${rootmnt} ${init} "$@"
+exec switch_root ${rootmnt} ${init} "$@" <${rootmnt}/dev/console >${rootmnt}/dev/console
 panic "Could not execute run-init."

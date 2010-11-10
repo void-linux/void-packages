@@ -3,7 +3,7 @@
 catenate_cpiogz() {
 	# Sanity check
 	if [ ! -e "${1}" ]; then
-		echo "W:catenate_cpiogz: arg1='${1}' does not exist." >&2
+		echo "W: catenate_cpiogz: arg1='${1}' does not exist." >&2
 		return
 	fi
 
@@ -29,7 +29,7 @@ add_modules_from_file()
 {
 	# Sanity check
 	if [ ! -e "${1}" ]; then
-		echo "W:add_modules_from_file: arg1='${1}' does not exist." >&2
+		echo "W: add_modules_from_file: arg1='${1}' does not exist." >&2
 		return
 	fi
 
@@ -73,6 +73,7 @@ manual_add_modules()
 				if [ ! -e /proc/modules ] ; then
 					continue
 				fi
+
 				if grep -q "^$(basename "${kmod}" .ko)[[:space:]]" \
 				/proc/modules \
 				|| grep -q "^$(basename "${kmod}" .ko)" \
@@ -113,7 +114,7 @@ copy_exec() {
 	[ -f "${src}" ] || return 1
 
 	if [ -d "${DESTDIR}/${target}" ]; then
-               # check if already copied
+		# check if already copied
 		[ -e "${DESTDIR}/$target/${src##*/}" ] && return 0
 	else
 		[ -e "${DESTDIR}/$target" ] && return 0
@@ -126,10 +127,10 @@ copy_exec() {
 
 	# Copy the dependant libraries
 	for x in $(ldd ${src} 2>/dev/null | sed -e '
-	    /\//!d;
-	    /linux-gate/d;
-	    /=>/ {s/.*=>[[:blank:]]*\([^[:blank:]]*\).*/\1/};
-	    s/[[:blank:]]*\([^[:blank:]]*\) (.*)/\1/' 2>/dev/null); do
+		/\//!d;
+		/linux-gate/d;
+		/=>/ {s/.*=>[[:blank:]]*\([^[:blank:]]*\).*/\1/};
+		s/[[:blank:]]*\([^[:blank:]]*\) (.*)/\1/' 2>/dev/null); do
 
 		# Try to use non-optimised libraries where possible.
 		# We assume that all HWCAP libraries will be in tls,
@@ -147,7 +148,7 @@ copy_exec() {
 		mkdir -p "${DESTDIR}/${dirname}"
 		if [ ! -e "${DESTDIR}/${dirname}/${libname}" ]; then
 			ln -s "${x}" "${DESTDIR}/${dirname}"
-			[ "${verbose}" = "y" ] && echo "Adding library ${x}"
+			[ "${verbose}" = "y" ] && echo "Adding library ${x}" || true
 		fi
 	done
 }
@@ -165,7 +166,7 @@ copy_modules_dir()
 	if [ "${verbose}" = "y" ]; then
 		echo "Copying module directory ${dir}"
 		if [ $# -ge 1 ]; then
-		  echo "(excluding $*)"
+			echo "(excluding $*)"
 		fi
 	fi
 	while [ $# -ge 1 ]; do
@@ -182,7 +183,7 @@ sys_walk_mod_add()
 {
 	local driver_path module
 	device_path="$1"
-	
+
 	while [ "${device_path}" != "/sys" ]; do
 		sys_walk_modalias ${device_path}
 		driver_path="$(readlink -f ${device_path}/driver/module)"
@@ -219,12 +220,38 @@ dep_add_modules()
 
 	# require mounted sysfs
 	if [ ! -d /sys/devices/ ]; then
-		echo "mkinitramfs: MODULES dep requires mounted sysfs on /sys"
+		echo "mkinitramfs: MODULES dep requires mounted sysfs on /sys" >&2
 		exit 1
 	fi
 
 	# findout root block device + fstype
 	eval "$(mount | awk '/\/dev\// {if ($3 == "/") {print "root=" $1 "\nFSTYPE=" $5; exit}}')"
+
+	# On failure fallback to /proc/mounts if readable
+	if [ -z "$root" ] && [ -r /proc/mounts ]; then
+		eval "$(awk '/\/dev\// {if ($2 == "/") {print "root=" $1 "\nFSTYPE=" $5; exit}}' /proc/mounts)"
+	fi
+
+	# recheck root device
+	if [ -z "$root" ]; then
+		echo "mkinitramfs: failed to determine root device" >&2
+		echo "mkinitramfs: workaround is MODULES=most" >&2
+		echo "Error please report bug on initramfs-tools" >&2
+		echo "Include the output of 'mount' and 'cat /proc/mounts'" >&2
+		exit 1
+	fi
+
+	# handle ubifs and return since ubifs root is a char device but
+	# most of the commands below only work with block devices.
+	if [ "${FSTYPE}" = "ubifs" ]; then
+		manual_add_modules "${FSTYPE}"
+		# add some modules required by ubifs on which it doesn's depend
+		manual_add_modules deflate
+		manual_add_modules zlib
+		manual_add_modules lzo
+		return
+	fi
+
 	if [ "${root}" = "/dev/root" ] ; then
 		root="/dev/disk/by-uuid/"$(blkid -o value -s UUID ${root}) 2>/dev/null
 	fi
@@ -239,10 +266,10 @@ dep_add_modules()
 	if [ "${FSTYPE}" = "unknown" ]; then
 		FSTYPE=$(blkid -o value -s TYPE "${root}")
 		if [  -z "${FSTYPE}" ]; then
-			echo "mkinitramfs: unknown fstype on root ${root}"
-			echo "mkinitramfs: workaround is MODULES=most" 
-			echo "Error please report bug on initramfs-tools"
-		exit 1
+			echo "mkinitramfs: unknown fstype on root ${root}" >&2
+			echo "mkinitramfs: workaround is MODULES=most" >&2
+			echo "Error please report bug on initramfs-tools" >&2
+			exit 1
 		fi
 	fi
 
@@ -260,8 +287,7 @@ dep_add_modules()
 		done
 		# lvm on md or luks on md
 		if [ "${block#md}" != "${block}" ]; then
-			block=$(awk "/^${block}/{print substr(\$5, 1, 4); exit}" \
-				/proc/mdstat)
+			block=$(sed -ne 's/multipath/[/' -e 's/linear/[/' -e 's/raid[0-9][0-9]*/[/' -e 's/\([hs]d[a-z][a-z]*\)[0-9][0-9]*/\1/g' -e '/^'${block}' :/s/^[^[]*\[ \([^\[]*\)\[.*$/\1/p' </proc/mdstat)
 		fi
 		# luks or lvm on cciss or ida
 		if [ "${block#cciss}" != "${block}" ] \
@@ -273,13 +299,15 @@ dep_add_modules()
 	# md root new naming scheme /dev/md/X
 	elif [ "${root#/dev/md/}" != "${root}" ]; then
 		root=${root#/dev/md/}
-		block=$(awk "/^md${root}/{print substr(\$5, 1, 3); exit}" \
-			/proc/mdstat)
+		# drop the partition number only for sdX and hdX devices
+		# and keep it for other devices like loop#, dm-# devices
+		block=$(sed -ne 's/multipath/[/' -e 's/linear/[/' -e 's/raid[0-9][0-9]*/[/' -e 's/\([hs]d[a-z][a-z]*\)[0-9][0-9]*/\1/g' -e '/^md'$root' :/s/^[^[]*\[ \([^\[]*\)\[.*$/\1/p' </proc/mdstat)
 	# md root /dev/mdX
 	elif [ "${root#/dev/md}" != "${root}" ]; then
-		root=${root#/dev/}
-		block=$(awk "/^${root}/{print substr(\$5, 1, 3); exit}" \
-			/proc/mdstat)
+		root=${root#/dev/md}
+		# drop the partition number only for sdX and hdX devices
+		# and keep it for other devices like loop#, dm-# devices
+		block=$(sed -ne 's/multipath/[/' -e 's/linear/[/' -e 's/raid[0-9][0-9]*/[/' -e 's/\([hs]d[a-z][a-z]*\)[0-9][0-9]*/\1/g' -e '/^md'$root' :/s/^[^[]*\[ \([^\[]*\)\[.*$/\1/p' </proc/mdstat)
 	# cciss device
 	elif [ "${root#/dev/cciss/}" != "${root}" ]; then
 		block=${root#/dev/cciss/*}
@@ -320,9 +348,9 @@ dep_add_modules()
 
 	# Error out if /sys lack block dev
 	if [ -z "${block}" ] || [ ! -e /sys/block/${block} ]; then
-		echo "mkinitramfs: for root ${root} missing ${block} /sys/block/ entry"
-		echo "mkinitramfs: workaround is MODULES=most" 
-		echo "mkinitramfs: Error please report the bug" 
+		echo "mkinitramfs: for root ${root} missing ${block} /sys/block/ entry" >&2
+		echo "mkinitramfs: workaround is MODULES=most" >&2
+		echo "mkinitramfs: Error please report the bug" >&2
 		exit 1
 	fi
 
@@ -345,6 +373,10 @@ dep_add_modules()
 
 	if [ -e /sys/bus/mmc/devices/ ]; then
 		manual_add_modules mmc_block
+	fi
+
+	if [ -e /sys/bus/virtio ] ; then
+		manual_add_modules virtio_pci
 	fi
 
 	if [ -e /sys/bus/i2o/devices/ ]; then
@@ -372,7 +404,7 @@ auto_add_modules()
 	case "${1:-}" in
 	base)
 		for x in ehci-hcd ohci-hcd uhci-hcd usbhid xhci hid-apple \
-		hid-microsoft \
+		hid-cherry hid-logitech hid-microsoft \
 		btrfs ext2 ext3 ext4 ext4dev isofs jfs nfs reiserfs udf xfs \
 		af_packet atkbd i8042 virtio_pci; do
 			manual_add_modules "${x}"
@@ -405,6 +437,11 @@ auto_add_modules()
 	;;
 	block)
 		copy_modules_dir kernel/drivers/block
+	;;
+	ubi)
+		for x in deflate zlib lzo ubi ubifs; do
+			manual_add_modules "${x}"
+		done
 	;;
 	ieee1394)
 		for x in ohci1394 sbp2; do
@@ -455,11 +492,11 @@ usage()
 Usage: ${0} [OPTION]... -o outfile [version]
 
 Options:
-  -c compress  Override COMPRESS setting in initramfs.conf.
-  -d confdir   Specify an alternative configuration directory.
-  -k           Keep temporary directory used to make the image.
-  -o outfile   Write to outfile.
-  -r root      Override ROOT setting in initramfs.conf.
+  -c compress	Override COMPRESS setting in initramfs.conf.
+  -d confdir	Specify an alternative configuration directory.
+  -k		Keep temporary directory used to make the image.
+  -o outfile	Write to outfile.
+  -r root	Override ROOT setting in initramfs.conf.
 
 See mkinitramfs(8) for further details.
 EOF
@@ -490,9 +527,9 @@ compare_versions()
 	xbps-uhelper cmpver $curv $minv
 	if [ $? -eq 0 ] || [ $? -eq 1 ]; then
 		return 0
-	else
-		return 1
 	fi
+
+	return 1
 }
 
 # minimal supported kernel version
@@ -503,8 +540,7 @@ check_minkver()
 	curversion="${1:-}"
 	initdir="${2:-}"
 	if [ -z "${initdir}" ]; then
-		ARCH=$(uname -m)
-		case ${ARCH} in
+		case ${ARCH:-} in
 			ia64|hppa)
 				minversion="2.6.15"
 			;;
@@ -521,10 +557,10 @@ check_minkver()
 	fi
 	set_initlist
 	for cm_x in ${initlist:-}; do
-		# sed: keep last line starting with MINKVER=,
-		#      remove MINKVER= and trailing space
+		# sed:  keep last line starting with MINKVER=,
+		#	remove MINKVER= and trailing space
 		minver=$(sed '/^MINKVER=/!d;$!d;s/^MINKVER=//;s/[[:space:]]*$//' "${initdir}/${cm_x}")
-		if [ -z "${tmp}" ]; then
+		if [ -z "${tmp:-}" ]; then
 			continue
 		elif ! compare_versions "${curversion}" "${minver}"; then
 			echo "W: ${cm_x} hook script requires at least kernel version ${minver}" >&2
