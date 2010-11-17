@@ -110,7 +110,7 @@ extract_distfiles()
 
 		case ${cursufx} in
 		txz)
-			if [ ! -x $XBPS_MASTERDIR/usr/bin/xz ]; then
+			if ! command -v xz 2>&1 >/dev/null; then
 				msg_error "cannot find xz for extraction."
 			fi
 			tar xfJ $XBPS_SRCDISTDIR/$curfile -C $extractdir
@@ -145,9 +145,8 @@ extract_distfiles()
 			fi
 			;;
 		zip)
-			if [ -x $XBPS_MASTERDIR/usr/bin/unzip ]; then
-				$XBPS_MASTERDIR/usr/bin/unzip \
-					-q -x $XBPS_SRCDISTDIR/$curfile \
+			if command -v unzip 2>&1 >/dev/null; then
+				unzip	-q -x $XBPS_SRCDISTDIR/$curfile \
 					-d $extractdir
 				if [ $? -ne 0 ]; then
 					msg_error "extracting $curfile into $XBPS_BUILDDIR."
