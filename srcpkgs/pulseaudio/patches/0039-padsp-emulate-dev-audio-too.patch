@@ -1,0 +1,142 @@
+From ff2474e5fc9eaa4c7f687e71a39a5bed4f56c259 Mon Sep 17 00:00:00 2001
+From: Lennart Poettering <lennart@poettering.net>
+Date: Tue, 16 Feb 2010 02:03:45 +0100
+Subject: [PATCH 39/62] padsp: emulate /dev/audio, too
+
+https://bugzilla.redhat.com/show_bug.cgi?id=561262
+---
+ src/utils/padsp.c |   55 +++++++++++++++++++---------------------------------
+ 1 files changed, 20 insertions(+), 35 deletions(-)
+
+diff --git a/src/utils/padsp.c b/src/utils/padsp.c
+index 2ed0a03..fb756d3 100644
+--- a/src/utils/padsp.c
++++ b/src/utils/padsp.c
+@@ -1458,11 +1458,11 @@ static int real_open(const char *filename, int flags, mode_t mode) {
+         return _open(filename, flags, mode);
+     }
+ 
+-    if (filename && dsp_cloak_enable() && (strcmp(filename, "/dev/dsp") == 0 || strcmp(filename, "/dev/adsp") == 0))
++    if (filename && dsp_cloak_enable() && (pa_streq(filename, "/dev/dsp") || pa_streq(filename, "/dev/adsp") || pa_streq(filename, "/dev/audio")))
+         r = dsp_open(flags, &_errno);
+-    else if (filename && mixer_cloak_enable() && strcmp(filename, "/dev/mixer") == 0)
++    else if (filename && mixer_cloak_enable() && pa_streq(filename, "/dev/mixer"))
+         r = mixer_open(flags, &_errno);
+-    else if (filename && sndstat_cloak_enable() && strcmp(filename, "/dev/sndstat") == 0)
++    else if (filename && sndstat_cloak_enable() && pa_streq(filename, "/dev/sndstat"))
+         r = sndstat_open(flags, &_errno);
+     else {
+         function_exit();
+@@ -2383,15 +2383,21 @@ int close(int fd) {
+     return 0;
+ }
+ 
++static pa_bool_t is_audio_device_node(const char *path) {
++    return
++        pa_streq(path, "/dev/dsp") ||
++        pa_streq(path, "/dev/adsp") ||
++        pa_streq(path, "/dev/audio") ||
++        pa_streq(path, "/dev/sndstat") ||
++        pa_streq(path, "/dev/mixer");
++}
++
+ int access(const char *pathname, int mode) {
+ 
+     debug(DEBUG_LEVEL_VERBOSE, __FILE__": access(%s)\n", pathname?pathname:"NULL");
+ 
+     if (!pathname ||
+-        (strcmp(pathname, "/dev/dsp") != 0 &&
+-         strcmp(pathname, "/dev/adsp") != 0 &&
+-         strcmp(pathname, "/dev/sndstat") != 0 &&
+-         strcmp(pathname, "/dev/mixer") != 0 )) {
++        !is_audio_device_node(pathname)) {
+         LOAD_ACCESS_FUNC();
+         return _access(pathname, mode);
+     }
+@@ -2417,10 +2423,7 @@ int stat(const char *pathname, struct stat *buf) {
+ 
+     if (!pathname ||
+         !buf ||
+-        ( strcmp(pathname, "/dev/dsp") != 0 &&
+-          strcmp(pathname, "/dev/adsp") != 0 &&
+-          strcmp(pathname, "/dev/sndstat") != 0 &&
+-          strcmp(pathname, "/dev/mixer") != 0 )) {
++        !is_audio_device_node(pathname)) {
+         debug(DEBUG_LEVEL_VERBOSE, __FILE__": stat(%s)\n", pathname?pathname:"NULL");
+         LOAD_STAT_FUNC();
+         return _stat(pathname, buf);
+@@ -2474,10 +2477,7 @@ int stat64(const char *pathname, struct stat64 *buf) {
+ 
+     if (!pathname ||
+         !buf ||
+-        ( strcmp(pathname, "/dev/dsp") != 0 &&
+-          strcmp(pathname, "/dev/adsp") != 0 &&
+-          strcmp(pathname, "/dev/sndstat") != 0 &&
+-          strcmp(pathname, "/dev/mixer") != 0 )) {
++        !is_audio_device_node(pathname)) {
+         LOAD_STAT64_FUNC();
+         return _stat64(pathname, buf);
+     }
+@@ -2519,10 +2519,7 @@ int open64(const char *filename, int flags, ...) {
+     }
+ 
+     if (!filename ||
+-        ( strcmp(filename, "/dev/dsp") != 0 &&
+-          strcmp(filename, "/dev/adsp") != 0 &&
+-          strcmp(filename, "/dev/sndstat") != 0 &&
+-          strcmp(filename, "/dev/mixer") != 0 )) {
++        !is_audio_device_node(filename)) {
+         LOAD_OPEN64_FUNC();
+         return _open64(filename, flags, mode);
+     }
+@@ -2539,10 +2536,7 @@ int __xstat(int ver, const char *pathname, struct stat *buf) {
+ 
+     if (!pathname ||
+         !buf ||
+-        ( strcmp(pathname, "/dev/dsp") != 0 &&
+-          strcmp(pathname, "/dev/adsp") != 0 &&
+-          strcmp(pathname, "/dev/sndstat") != 0 &&
+-          strcmp(pathname, "/dev/mixer") != 0 )) {
++        !is_audio_device_node(pathname)) {
+         LOAD_XSTAT_FUNC();
+         return ___xstat(ver, pathname, buf);
+     }
+@@ -2562,10 +2556,7 @@ int __xstat64(int ver, const char *pathname, struct stat64 *buf) {
+ 
+     if (!pathname ||
+         !buf ||
+-        ( strcmp(pathname, "/dev/dsp") != 0 &&
+-          strcmp(pathname, "/dev/adsp") != 0 &&
+-          strcmp(pathname, "/dev/sndstat") != 0 &&
+-          strcmp(pathname, "/dev/mixer") != 0 )) {
++        !is_audio_device_node(pathname)) {
+         LOAD_XSTAT64_FUNC();
+         return ___xstat64(ver, pathname, buf);
+     }
+@@ -2591,10 +2582,7 @@ FILE* fopen(const char *filename, const char *mode) {
+ 
+     if (!filename ||
+         !mode ||
+-        ( strcmp(filename, "/dev/dsp") != 0 &&
+-          strcmp(filename, "/dev/adsp") != 0 &&
+-          strcmp(filename, "/dev/sndstat") != 0 &&
+-          strcmp(filename, "/dev/mixer") != 0 )) {
++        !is_audio_device_node(filename)) {
+         LOAD_FOPEN_FUNC();
+         return _fopen(filename, mode);
+     }
+@@ -2634,10 +2622,7 @@ FILE *fopen64(const char *filename, const char *mode) {
+ 
+     if (!filename ||
+         !mode ||
+-        ( strcmp(filename, "/dev/dsp") != 0 &&
+-          strcmp(filename, "/dev/adsp") != 0 &&
+-          strcmp(filename, "/dev/sndstat") != 0 &&
+-          strcmp(filename, "/dev/mixer") != 0 )) {
++        !is_audio_device_node(filename)) {
+         LOAD_FOPEN64_FUNC();
+         return _fopen64(filename, mode);
+     }
+-- 
+1.7.0
+

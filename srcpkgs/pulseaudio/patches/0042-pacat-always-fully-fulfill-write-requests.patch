@@ -1,0 +1,79 @@
+From 19fa81bf1375032cb1a27c7715a28a52b238d4cb Mon Sep 17 00:00:00 2001
+From: Lennart Poettering <lennart@poettering.net>
+Date: Thu, 18 Feb 2010 01:54:51 +0100
+Subject: [PATCH 42/62] pacat: always fully fulfill write requests
+
+Make sure we always fulfill write requests from the server. If we don't
+the server won't ask us again and playback will stay stuck.
+
+https://tango.0pointer.de/pipermail/pulseaudio-discuss/2010-February/006611.html
+---
+ src/utils/pacat.c |   47 ++++++++++++++++++++++++++++++-----------------
+ 1 files changed, 30 insertions(+), 17 deletions(-)
+
+diff --git a/src/utils/pacat.c b/src/utils/pacat.c
+index a5d2e9a..d136f6b 100644
+--- a/src/utils/pacat.c
++++ b/src/utils/pacat.c
+@@ -195,28 +195,41 @@ static void stream_write_callback(pa_stream *s, size_t length, void *userdata) {
+ 
+         pa_assert(sndfile);
+ 
+-        if (pa_stream_begin_write(s, &data, &length) < 0) {
+-            pa_log(_("pa_stream_begin_write() failed: %s"), pa_strerror(pa_context_errno(context)));
+-            quit(1);
+-            return;
+-        }
++        for (;;) {
++            size_t data_length = length;
+ 
+-        if (readf_function) {
+-            size_t k = pa_frame_size(&sample_spec);
++            if (pa_stream_begin_write(s, &data, &data_length) < 0) {
++                pa_log(_("pa_stream_begin_write() failed: %s"), pa_strerror(pa_context_errno(context)));
++                quit(1);
++                return;
++            }
+ 
+-            if ((bytes = readf_function(sndfile, data, (sf_count_t) (length/k))) > 0)
+-                bytes *= (sf_count_t) k;
++            if (readf_function) {
++                size_t k = pa_frame_size(&sample_spec);
+ 
+-        } else
+-            bytes = sf_read_raw(sndfile, data, (sf_count_t) length);
++                if ((bytes = readf_function(sndfile, data, (sf_count_t) (data_length/k))) > 0)
++                    bytes *= (sf_count_t) k;
+ 
+-        if (bytes > 0)
+-            pa_stream_write(s, data, (size_t) bytes, NULL, 0, PA_SEEK_RELATIVE);
+-        else
+-            pa_stream_cancel_write(s);
++            } else
++                bytes = sf_read_raw(sndfile, data, (sf_count_t) data_length);
+ 
+-        if (bytes < (sf_count_t) length)
+-            start_drain();
++            if (bytes > 0)
++                pa_stream_write(s, data, (size_t) bytes, NULL, 0, PA_SEEK_RELATIVE);
++            else
++                pa_stream_cancel_write(s);
++
++            /* EOF? */
++            if (bytes < (sf_count_t) data_length) {
++                start_drain();
++                break;
++            }
++
++            /* Request fulfilled */
++            if ((size_t) bytes >= length)
++                break;
++
++            length -= bytes;
++        }
+     }
+ }
+ 
+-- 
+1.7.0
+

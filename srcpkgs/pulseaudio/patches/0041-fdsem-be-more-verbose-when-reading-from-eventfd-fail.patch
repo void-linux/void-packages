@@ -1,0 +1,111 @@
+From 5e2af2d3f3dea473d46b33a5e90a993ac5da3f35 Mon Sep 17 00:00:00 2001
+From: Lennart Poettering <lennart@poettering.net>
+Date: Tue, 16 Feb 2010 03:36:44 +0100
+Subject: [PATCH 41/62] fdsem: be more verbose when reading from eventfd fails.
+
+Apperently reading from an eventfd can fail, which results in an assert
+to be hit. I am not sure about the reason for the failure, but in
+attempt to track down the issue the next time is hit this prints a more
+useful log message.
+
+https://bugzilla.redhat.com/attachment.cgi?id=386380
+---
+ src/pulsecore/fdsem.c |   41 +++++++++++++++++++++++++++++++++++------
+ 1 files changed, 35 insertions(+), 6 deletions(-)
+
+diff --git a/src/pulsecore/fdsem.c b/src/pulsecore/fdsem.c
+index 380f34f..00836f9 100644
+--- a/src/pulsecore/fdsem.c
++++ b/src/pulsecore/fdsem.c
+@@ -35,6 +35,7 @@
+ #include <pulsecore/thread.h>
+ #include <pulsecore/macro.h>
+ #include <pulsecore/core-util.h>
++#include <pulsecore/core-error.h>
+ #include <pulse/xmalloc.h>
+ 
+ #ifndef HAVE_PIPE
+@@ -159,7 +160,12 @@ static void flush(pa_fdsem *f) {
+             uint64_t u;
+ 
+             if ((r = read(f->efd, &u, sizeof(u))) != sizeof(u)) {
+-                pa_assert(r < 0 && errno == EINTR);
++
++                if (r >= 0 || errno != EINTR) {
++                    pa_log_error("Invalid read from eventfd: %s", r < 0 ? pa_cstrerror(errno) : "EOF");
++                    pa_assert_not_reached();
++                }
++
+                 continue;
+             }
+             r = (ssize_t) u;
+@@ -167,7 +173,12 @@ static void flush(pa_fdsem *f) {
+ #endif
+ 
+         if ((r = read(f->fds[0], &x, sizeof(x))) <= 0) {
+-            pa_assert(r < 0 && errno == EINTR);
++
++            if (r >= 0 || errno != EINTR) {
++                pa_log_error("Invalid read from pipe: %s", r < 0 ? pa_cstrerror(errno) : "EOF");
++                pa_assert_not_reached();
++            }
++
+             continue;
+         }
+ 
+@@ -192,14 +203,22 @@ void pa_fdsem_post(pa_fdsem *f) {
+                     uint64_t u = 1;
+ 
+                     if ((r = write(f->efd, &u, sizeof(u))) != sizeof(u)) {
+-                        pa_assert(r < 0 && errno == EINTR);
++                        if (r >= 0 || errno != EINTR) {
++                            pa_log_error("Invalid read from pipe: %s", r < 0 ? pa_cstrerror(errno) : "EOF");
++                            pa_assert_not_reached();
++                        }
++
+                         continue;
+                     }
+                 } else
+ #endif
+ 
+                 if ((r = write(f->fds[1], &x, 1)) != 1) {
+-                    pa_assert(r < 0 && errno == EINTR);
++                    if (r >= 0 || errno != EINTR) {
++                        pa_log_error("Invalid read from pipe: %s", r < 0 ? pa_cstrerror(errno) : "EOF");
++                        pa_assert_not_reached();
++                    }
++
+                     continue;
+                 }
+ 
+@@ -228,7 +247,12 @@ void pa_fdsem_wait(pa_fdsem *f) {
+             uint64_t u;
+ 
+             if ((r = read(f->efd, &u, sizeof(u))) != sizeof(u)) {
+-                pa_assert(r < 0 && errno == EINTR);
++
++                if (r >= 0 || errno != EINTR) {
++                    pa_log_error("Invalid read from pipe: %s", r < 0 ? pa_cstrerror(errno) : "EOF");
++                    pa_assert_not_reached();
++                }
++
+                 continue;
+             }
+ 
+@@ -237,7 +261,12 @@ void pa_fdsem_wait(pa_fdsem *f) {
+ #endif
+ 
+         if ((r = read(f->fds[0], &x, sizeof(x))) <= 0) {
+-            pa_assert(r < 0 && errno == EINTR);
++
++            if (r >= 0 || errno != EINTR) {
++                pa_log_error("Invalid read from pipe: %s", r < 0 ? pa_cstrerror(errno) : "EOF");
++                pa_assert_not_reached();
++            }
++
+             continue;
+         }
+ 
+-- 
+1.7.0
+

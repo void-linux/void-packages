@@ -1,0 +1,153 @@
+From f9b9579cf4fe65d3619629b5bc28ce02ceca305e Mon Sep 17 00:00:00 2001
+From: Lennart Poettering <lennart@poettering.net>
+Date: Sun, 21 Feb 2010 17:35:05 +0100
+Subject: [PATCH 54/62] scache: when playing a sample from the cache make sure not queue them up when the sink is suspended
+
+libcanberra already sets the appropriate flags for uncached sample
+streams, we now need to make sure to set them for cached samples too.
+---
+ src/pulsecore/core-scache.c    |    7 ++++++-
+ src/pulsecore/play-memblockq.c |    7 +++++--
+ src/pulsecore/play-memblockq.h |   18 ++++++++++--------
+ src/pulsecore/play-memchunk.c  |    3 ++-
+ src/pulsecore/play-memchunk.h  |   15 ++++++++-------
+ 5 files changed, 31 insertions(+), 19 deletions(-)
+
+diff --git a/src/pulsecore/core-scache.c b/src/pulsecore/core-scache.c
+index 95aaa10..0172419 100644
+--- a/src/pulsecore/core-scache.c
++++ b/src/pulsecore/core-scache.c
+@@ -351,7 +351,12 @@ int pa_scache_play_item(pa_core *c, const char *name, pa_sink *sink, pa_volume_t
+     if (p)
+         pa_proplist_update(merged, PA_UPDATE_REPLACE, p);
+ 
+-    if (pa_play_memchunk(sink, &e->sample_spec, &e->channel_map, &e->memchunk, pass_volume ? &r : NULL, merged, sink_input_idx) < 0)
++    if (pa_play_memchunk(sink,
++                         &e->sample_spec, &e->channel_map,
++                         &e->memchunk,
++                         pass_volume ? &r : NULL,
++                         merged,
++                         PA_SINK_INPUT_NO_CREATE_ON_SUSPEND|PA_SINK_INPUT_KILL_ON_SUSPEND, sink_input_idx) < 0)
+         goto fail;
+ 
+     pa_proplist_free(merged);
+diff --git a/src/pulsecore/play-memblockq.c b/src/pulsecore/play-memblockq.c
+index f528c49..0d6da3e 100644
+--- a/src/pulsecore/play-memblockq.c
++++ b/src/pulsecore/play-memblockq.c
+@@ -173,7 +173,8 @@ pa_sink_input* pa_memblockq_sink_input_new(
+         const pa_channel_map *map,
+         pa_memblockq *q,
+         pa_cvolume *volume,
+-        pa_proplist *p) {
++        pa_proplist *p,
++        pa_sink_input_flags_t flags) {
+ 
+     memblockq_stream *u = NULL;
+     pa_sink_input_new_data data;
+@@ -198,6 +199,7 @@ pa_sink_input* pa_memblockq_sink_input_new(
+     pa_sink_input_new_data_set_channel_map(&data, map);
+     pa_sink_input_new_data_set_volume(&data, volume);
+     pa_proplist_update(data.proplist, PA_UPDATE_REPLACE, p);
++    data.flags |= flags;
+ 
+     pa_sink_input_new(&u->sink_input, sink->core, &data);
+     pa_sink_input_new_data_done(&data);
+@@ -237,6 +239,7 @@ int pa_play_memblockq(
+         pa_memblockq *q,
+         pa_cvolume *volume,
+         pa_proplist *p,
++        pa_sink_input_flags_t flags,
+         uint32_t *sink_input_index) {
+ 
+     pa_sink_input *i;
+@@ -245,7 +248,7 @@ int pa_play_memblockq(
+     pa_assert(ss);
+     pa_assert(q);
+ 
+-    if (!(i = pa_memblockq_sink_input_new(sink, ss, map, q, volume, p)))
++    if (!(i = pa_memblockq_sink_input_new(sink, ss, map, q, volume, p, flags)))
+         return -1;
+ 
+     pa_sink_input_put(i);
+diff --git a/src/pulsecore/play-memblockq.h b/src/pulsecore/play-memblockq.h
+index 9d5f40f..a55fed0 100644
+--- a/src/pulsecore/play-memblockq.h
++++ b/src/pulsecore/play-memblockq.h
+@@ -31,17 +31,19 @@ pa_sink_input* pa_memblockq_sink_input_new(
+         const pa_channel_map *map,
+         pa_memblockq *q,
+         pa_cvolume *volume,
+-        pa_proplist *p);
++        pa_proplist *p,
++        pa_sink_input_flags_t flags);
+ 
+ void pa_memblockq_sink_input_set_queue(pa_sink_input *i, pa_memblockq *q);
+ 
+ int pa_play_memblockq(
+-    pa_sink *sink,
+-    const pa_sample_spec *ss,
+-    const pa_channel_map *map,
+-    pa_memblockq *q,
+-    pa_cvolume *cvolume,
+-    pa_proplist *p,
+-    uint32_t *sink_input_index);
++        pa_sink *sink,
++        const pa_sample_spec *ss,
++        const pa_channel_map *map,
++        pa_memblockq *q,
++        pa_cvolume *cvolume,
++        pa_proplist *p,
++        pa_sink_input_flags_t flags,
++        uint32_t *sink_input_index);
+ 
+ #endif
+diff --git a/src/pulsecore/play-memchunk.c b/src/pulsecore/play-memchunk.c
+index 1a3bd5b..6fb8902 100644
+--- a/src/pulsecore/play-memchunk.c
++++ b/src/pulsecore/play-memchunk.c
+@@ -43,6 +43,7 @@ int pa_play_memchunk(
+         const pa_memchunk *chunk,
+         pa_cvolume *volume,
+         pa_proplist *p,
++        pa_sink_input_flags_t flags,
+         uint32_t *sink_input_index) {
+ 
+     pa_memblockq *q;
+@@ -59,7 +60,7 @@ int pa_play_memchunk(
+ 
+     pa_assert_se(pa_memblockq_push(q, chunk) >= 0);
+ 
+-    if ((r = pa_play_memblockq(sink, ss, map, q, volume, p, sink_input_index)) < 0) {
++    if ((r = pa_play_memblockq(sink, ss, map, q, volume, p, flags, sink_input_index)) < 0) {
+         pa_memblockq_free(q);
+         return r;
+     }
+diff --git a/src/pulsecore/play-memchunk.h b/src/pulsecore/play-memchunk.h
+index c813611..068add1 100644
+--- a/src/pulsecore/play-memchunk.h
++++ b/src/pulsecore/play-memchunk.h
+@@ -26,12 +26,13 @@
+ #include <pulsecore/memchunk.h>
+ 
+ int pa_play_memchunk(
+-    pa_sink *sink,
+-    const pa_sample_spec *ss,
+-    const pa_channel_map *map,
+-    const pa_memchunk *chunk,
+-    pa_cvolume *cvolume,
+-    pa_proplist *p,
+-    uint32_t *sink_input_index);
++        pa_sink *sink,
++        const pa_sample_spec *ss,
++        const pa_channel_map *map,
++        const pa_memchunk *chunk,
++        pa_cvolume *cvolume,
++        pa_proplist *p,
++        pa_sink_input_flags_t flags,
++        uint32_t *sink_input_index);
+ 
+ #endif
+-- 
+1.7.0
+

@@ -1,0 +1,72 @@
+From 0d1154d078f8f149e2ab9a67b09835a829416e49 Mon Sep 17 00:00:00 2001
+From: Lennart Poettering <lennart@poettering.net>
+Date: Tue, 23 Feb 2010 18:41:18 +0100
+Subject: [PATCH 62/62] core: rework how stream volumes affect sink volumes
+
+---
+ src/pulsecore/sink.c |   42 +++++++++++++++++++++++++++++++++++++++++-
+ 1 files changed, 41 insertions(+), 1 deletions(-)
+
+diff --git a/src/pulsecore/sink.c b/src/pulsecore/sink.c
+index e6d718f..3a92f67 100644
+--- a/src/pulsecore/sink.c
++++ b/src/pulsecore/sink.c
+@@ -1162,6 +1162,46 @@ pa_usec_t pa_sink_get_latency_within_thread(pa_sink *s) {
+     return usec;
+ }
+ 
++static pa_cvolume* cvolume_remap_minimal_impact(
++        pa_cvolume *v,
++        const pa_cvolume *template,
++        const pa_channel_map *from,
++        const pa_channel_map *to) {
++
++    pa_cvolume t;
++
++    pa_assert(v);
++    pa_assert(template);
++    pa_assert(from);
++    pa_assert(to);
++
++    pa_return_val_if_fail(pa_cvolume_compatible_with_channel_map(v, from), NULL);
++    pa_return_val_if_fail(pa_cvolume_compatible_with_channel_map(template, to), NULL);
++
++    /* Much like pa_cvolume_remap(), but tries to minimize impact when
++     * mapping from sink input to sink volumes:
++     *
++     * If template is a possible remapping from v it is used instead
++     * of remapping anew.
++     *
++     * If the channel maps don't match we set an all-channel volume on
++     * the sink to ensure that changing a volume on one stream has no
++     * effect that cannot be compensated for in another stream that
++     * does not have the same channel map as the sink. */
++
++    if (pa_channel_map_equal(from, to))
++        return v;
++
++    t = *template;
++    if (pa_cvolume_equal(pa_cvolume_remap(&t, to, from), v)) {
++        *v = *template;
++        return v;
++    }
++
++    pa_cvolume_set(v, to->channels, pa_cvolume_max(v));
++    return v;
++}
++
+ /* Called from main context */
+ static void compute_reference_ratios(pa_sink *s) {
+     uint32_t idx;
+@@ -1289,7 +1329,7 @@ static void compute_real_volume(pa_sink *s) {
+         pa_cvolume remapped;
+ 
+         remapped = i->volume;
+-        pa_cvolume_remap(&remapped, &i->channel_map, &s->channel_map);
++        cvolume_remap_minimal_impact(&remapped, &s->real_volume, &i->channel_map, &s->channel_map);
+         pa_cvolume_merge(&s->real_volume, &s->real_volume, &remapped);
+     }
+ 
+-- 
+1.7.0
+

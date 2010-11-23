@@ -1,0 +1,92 @@
+From 96592c21150e789156153dcebd14e201cd41cbeb Mon Sep 17 00:00:00 2001
+From: Lennart Poettering <lennart@poettering.net>
+Date: Tue, 16 Feb 2010 02:49:44 +0100
+Subject: [PATCH 40/62] dbus: first restart timer, then dispatch it
+
+This makes sure that we don't access the timer after it might have been
+destroyed already from the dbus timeout callback.
+
+https://bugzilla.redhat.com/attachment.cgi?id=389952
+---
+ src/pulsecore/dbus-util.c |   29 ++++++++++++++++-------------
+ 1 files changed, 16 insertions(+), 13 deletions(-)
+
+diff --git a/src/pulsecore/dbus-util.c b/src/pulsecore/dbus-util.c
+index 4e6148f..40b64a0 100644
+--- a/src/pulsecore/dbus-util.c
++++ b/src/pulsecore/dbus-util.c
+@@ -44,17 +44,16 @@ struct pa_dbus_wrap_connection {
+ };
+ 
+ struct timeout_data {
+-    pa_dbus_wrap_connection *c;
++    pa_dbus_wrap_connection *connection;
+     DBusTimeout *timeout;
+ };
+ 
+ static void dispatch_cb(pa_mainloop_api *ea, pa_defer_event *ev, void *userdata) {
+     DBusConnection *conn = userdata;
+ 
+-    if (dbus_connection_dispatch(conn) == DBUS_DISPATCH_COMPLETE) {
++    if (dbus_connection_dispatch(conn) == DBUS_DISPATCH_COMPLETE)
+         /* no more data to process, disable the deferred */
+         ea->defer_enable(ev, 0);
+-    }
+ }
+ 
+ /* DBusDispatchStatusFunction callback for the pa mainloop */
+@@ -131,13 +130,17 @@ static void handle_time_event(pa_mainloop_api *ea, pa_time_event* e, const struc
+     struct timeout_data *d = userdata;
+ 
+     pa_assert(d);
+-    pa_assert(d->c);
++    pa_assert(d->connection);
+ 
+     if (dbus_timeout_get_enabled(d->timeout)) {
+-        dbus_timeout_handle(d->timeout);
++        /* Restart it for the next scheduled time. We do this before
++         * calling dbus_timeout_handle() to make sure that the time
++         * event is still around. */
++        ea->time_restart(e, pa_timeval_rtstore(&tv,
++                                               pa_timeval_load(t) + dbus_timeout_get_interval(d->timeout) * PA_USEC_PER_MSEC,
++                                               d->connection->use_rtclock));
+ 
+-        /* restart it for the next scheduled time */
+-        ea->time_restart(e, pa_timeval_rtstore(&tv, pa_timeval_load(t) + dbus_timeout_get_interval(d->timeout) * PA_USEC_PER_MSEC, d->c->use_rtclock));
++        dbus_timeout_handle(d->timeout);
+     }
+ }
+ 
+@@ -207,7 +210,7 @@ static dbus_bool_t add_timeout(DBusTimeout *timeout, void *data) {
+         return FALSE;
+ 
+     d = pa_xnew(struct timeout_data, 1);
+-    d->c = c;
++    d->connection = c;
+     d->timeout = timeout;
+     ev = c->mainloop->time_new(c->mainloop, pa_timeval_rtstore(&tv, pa_rtclock_now() + dbus_timeout_get_interval(timeout) * PA_USEC_PER_MSEC, c->use_rtclock), handle_time_event, d);
+     c->mainloop->time_set_destroy(ev, time_event_destroy_cb);
+@@ -236,15 +239,15 @@ static void toggle_timeout(DBusTimeout *timeout, void *data) {
+     struct timeval tv;
+ 
+     pa_assert(d);
+-    pa_assert(d->c);
++    pa_assert(d->connection);
+     pa_assert(timeout);
+ 
+     pa_assert_se(ev = dbus_timeout_get_data(timeout));
+ 
+-    if (dbus_timeout_get_enabled(timeout)) {
+-        d->c->mainloop->time_restart(ev, pa_timeval_rtstore(&tv, pa_rtclock_now() + dbus_timeout_get_interval(timeout) * PA_USEC_PER_MSEC, d->c->use_rtclock));
+-    } else
+-        d->c->mainloop->time_restart(ev, pa_timeval_rtstore(&tv, PA_USEC_INVALID, d->c->use_rtclock));
++    if (dbus_timeout_get_enabled(timeout))
++        d->connection->mainloop->time_restart(ev, pa_timeval_rtstore(&tv, pa_rtclock_now() + dbus_timeout_get_interval(timeout) * PA_USEC_PER_MSEC, d->connection->use_rtclock));
++    else
++        d->connection->mainloop->time_restart(ev, pa_timeval_rtstore(&tv, PA_USEC_INVALID, d->connection->use_rtclock));
+ }
+ 
+ static void wakeup_main(void *userdata) {
+-- 
+1.7.0
+

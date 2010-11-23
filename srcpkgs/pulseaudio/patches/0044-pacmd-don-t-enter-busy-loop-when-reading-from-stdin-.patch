@@ -1,0 +1,257 @@
+From 6e064d1d6d0292d230c752b1f41034fd0754487b Mon Sep 17 00:00:00 2001
+From: Lennart Poettering <lennart@poettering.net>
+Date: Thu, 18 Feb 2010 03:28:56 +0100
+Subject: [PATCH 44/62] pacmd: don't enter busy loop when reading from stdin very early
+
+pointed out in:
+
+https://tango.0pointer.de/pipermail/pulseaudio-discuss/2010-January/006365.html
+---
+ src/utils/pacmd.c |  186 ++++++++++++++++++++++++++++------------------------
+ 1 files changed, 100 insertions(+), 86 deletions(-)
+
+diff --git a/src/utils/pacmd.c b/src/utils/pacmd.c
+index 59aae48..87661e3 100644
+--- a/src/utils/pacmd.c
++++ b/src/utils/pacmd.c
+@@ -45,13 +45,6 @@
+ 
+ int main(int argc, char*argv[]) {
+ 
+-    enum {
+-        WATCH_STDIN,
+-        WATCH_STDOUT,
+-        WATCH_SOCKET,
+-        N_WATCH
+-    };
+-
+     pid_t pid ;
+     int fd = -1;
+     int ret = 1, i;
+@@ -60,7 +53,9 @@ int main(int argc, char*argv[]) {
+     size_t ibuf_index, ibuf_length, obuf_index, obuf_length;
+     char *cli;
+     pa_bool_t ibuf_eof, obuf_eof, ibuf_closed, obuf_closed;
+-    struct pollfd pollfd[N_WATCH];
++    struct pollfd pollfd[3];
++    struct pollfd *watch_socket, *watch_stdin, *watch_stdout;
++
+     int stdin_type = 0, stdout_type = 0, fd_type = 0;
+ 
+     setlocale(LC_ALL, "");
+@@ -129,32 +124,53 @@ int main(int argc, char*argv[]) {
+         ibuf_eof = TRUE;
+     }
+ 
+-    pa_zero(pollfd);
+-
+-    pollfd[WATCH_STDIN].fd = STDIN_FILENO;
+-    pollfd[WATCH_STDOUT].fd = STDOUT_FILENO;
+-    pollfd[WATCH_SOCKET].fd = fd;
+-
+     for (;;) {
++        struct pollfd *p;
++
+         if (ibuf_eof &&
+             obuf_eof &&
+             ibuf_length <= 0 &&
+             obuf_length <= 0)
+             break;
+ 
+-        pollfd[WATCH_STDIN].events = pollfd[WATCH_STDOUT].events = pollfd[WATCH_SOCKET].events = 0;
++        if (ibuf_length <= 0 && ibuf_eof && !ibuf_closed) {
++            shutdown(fd, SHUT_WR);
++            ibuf_closed = TRUE;
++        }
+ 
+-        if (obuf_length > 0)
+-            pollfd[WATCH_STDOUT].events |= POLLOUT;
+-        else if (!obuf_eof)
+-            pollfd[WATCH_SOCKET].events |= POLLIN;
++        if (obuf_length <= 0 && obuf_eof && !obuf_closed) {
++            shutdown(fd, SHUT_RD);
++            obuf_closed = TRUE;
++        }
++
++        pa_zero(pollfd);
++
++        p = pollfd;
+ 
+-        if (ibuf_length > 0)
+-            pollfd[WATCH_SOCKET].events |= POLLOUT;
+-        else if (!ibuf_eof)
+-            pollfd[WATCH_STDIN].events |= POLLIN;
++        if (ibuf_length > 0 || (!obuf_eof && obuf_length <= 0)) {
++            watch_socket = p++;
++            watch_socket->fd = fd;
++            watch_socket->events =
++                (ibuf_length > 0 ? POLLOUT : 0) |
++                (!obuf_eof && obuf_length <= 0 ? POLLIN : 0);
++        } else
++            watch_socket = NULL;
+ 
+-        if (poll(pollfd, N_WATCH, -1) < 0) {
++        if (!ibuf_eof && ibuf_length <= 0) {
++            watch_stdin = p++;
++            watch_stdin->fd = STDIN_FILENO;
++            watch_stdin->events = POLLIN;
++        } else
++            watch_stdin = NULL;
++
++        if (obuf_length > 0) {
++            watch_stdout = p++;
++            watch_stdout->fd = STDOUT_FILENO;
++            watch_stdout->events = POLLOUT;
++        } else
++            watch_stdout = NULL;
++
++        if (poll(pollfd, p-pollfd, -1) < 0) {
+ 
+             if (errno == EINTR)
+                 continue;
+@@ -163,82 +179,80 @@ int main(int argc, char*argv[]) {
+             goto fail;
+         }
+ 
+-        if (pollfd[WATCH_STDIN].revents & POLLIN) {
+-            ssize_t r;
+-            pa_assert(!ibuf_length);
+-
+-            if ((r = pa_read(STDIN_FILENO, ibuf, sizeof(ibuf), &stdin_type)) <= 0) {
+-                if (r < 0) {
+-                    pa_log(_("read(): %s"), strerror(errno));
+-                    goto fail;
++        if (watch_stdin) {
++            if (watch_stdin->revents & POLLIN) {
++                ssize_t r;
++                pa_assert(ibuf_length <= 0);
++
++                if ((r = pa_read(STDIN_FILENO, ibuf, sizeof(ibuf), &stdin_type)) <= 0) {
++                    if (r < 0) {
++                        pa_log(_("read(): %s"), strerror(errno));
++                        goto fail;
++                    }
++
++                    ibuf_eof = TRUE;
++                } else {
++                    ibuf_length = (size_t) r;
++                    ibuf_index = 0;
+                 }
+-
++            } else if (watch_stdin->revents & POLLHUP)
+                 ibuf_eof = TRUE;
+-            } else {
+-                ibuf_length = (size_t) r;
+-                ibuf_index = 0;
+-            }
+         }
+ 
+-        if (pollfd[WATCH_SOCKET].revents & POLLIN) {
+-            ssize_t r;
+-            pa_assert(!obuf_length);
+-
+-            if ((r = pa_read(fd, obuf, sizeof(obuf), &fd_type)) <= 0) {
+-                if (r < 0) {
+-                    pa_log(_("read(): %s"), strerror(errno));
+-                    goto fail;
++        if (watch_socket) {
++            if (watch_socket->revents & POLLIN) {
++                ssize_t r;
++                pa_assert(obuf_length <= 0);
++
++                if ((r = pa_read(fd, obuf, sizeof(obuf), &fd_type)) <= 0) {
++                    if (r < 0) {
++                        pa_log(_("read(): %s"), strerror(errno));
++                        goto fail;
++                    }
++
++                    obuf_eof = TRUE;
++                } else {
++                    obuf_length = (size_t) r;
++                    obuf_index = 0;
+                 }
+-
++            } else if (watch_socket->revents & POLLHUP)
+                 obuf_eof = TRUE;
+-            } else {
+-                obuf_length = (size_t) r;
+-                obuf_index = 0;
+-            }
+         }
+ 
+-        if (pollfd[WATCH_STDOUT].revents & POLLHUP) {
+-            obuf_eof = TRUE;
+-            obuf_length = 0;
+-        } else if (pollfd[WATCH_STDOUT].revents & POLLOUT) {
+-            ssize_t r;
+-            pa_assert(obuf_length);
+-
+-            if ((r = pa_write(STDOUT_FILENO, obuf + obuf_index, obuf_length, &stdout_type)) < 0) {
+-                pa_log(_("write(): %s"), strerror(errno));
+-                goto fail;
+-            }
+-
+-            obuf_length -= (size_t) r;
+-            obuf_index += obuf_index;
+-        }
++        if (watch_stdout) {
++            if (watch_stdout->revents & POLLHUP) {
++                obuf_eof = TRUE;
++                obuf_length = 0;
++            } else if (watch_stdout->revents & POLLOUT) {
++                ssize_t r;
++                pa_assert(obuf_length > 0);
+ 
+-        if (pollfd[WATCH_SOCKET].revents & POLLHUP) {
+-            ibuf_eof = TRUE;
+-            ibuf_length = 0;
+-        } if (pollfd[WATCH_SOCKET].revents & POLLOUT) {
+-            ssize_t r;
+-            pa_assert(ibuf_length);
++                if ((r = pa_write(STDOUT_FILENO, obuf + obuf_index, obuf_length, &stdout_type)) < 0) {
++                    pa_log(_("write(): %s"), strerror(errno));
++                    goto fail;
++                }
+ 
+-            if ((r = pa_write(fd, ibuf + ibuf_index, ibuf_length, &fd_type)) < 0) {
+-                pa_log(_("write(): %s"), strerror(errno));
+-                goto fail;
++                obuf_length -= (size_t) r;
++                obuf_index += obuf_index;
+             }
+-
+-            ibuf_length -= (size_t) r;
+-            ibuf_index += obuf_index;
+         }
+ 
+-        if (ibuf_length <= 0 && ibuf_eof && !ibuf_closed) {
+-            pa_close(STDIN_FILENO);
+-            shutdown(fd, SHUT_WR);
+-            ibuf_closed = TRUE;
+-        }
++        if (watch_socket) {
++            if (watch_socket->revents & POLLHUP) {
++                ibuf_eof = TRUE;
++                ibuf_length = 0;
++            } if (watch_socket->revents & POLLOUT) {
++                ssize_t r;
++                pa_assert(ibuf_length > 0);
+ 
+-        if (obuf_length <= 0 && obuf_eof && !obuf_closed) {
+-            shutdown(fd, SHUT_RD);
+-            pa_close(STDOUT_FILENO);
+-            obuf_closed = TRUE;
++                if ((r = pa_write(fd, ibuf + ibuf_index, ibuf_length, &fd_type)) < 0) {
++                    pa_log(_("write(): %s"), strerror(errno));
++                    goto fail;
++                }
++
++                ibuf_length -= (size_t) r;
++                ibuf_index += obuf_index;
++            }
+         }
+     }
+ 
+-- 
+1.7.0
+
