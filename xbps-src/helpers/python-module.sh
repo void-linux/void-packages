@@ -2,6 +2,11 @@
 # This helper is for templates installing python modules.
 #
 
+do_build()
+{
+	python setup.py build ${make_build_args} || return 1
+}
+
 do_install()
 {
 	if [ -z "$make_install_args" ]; then
