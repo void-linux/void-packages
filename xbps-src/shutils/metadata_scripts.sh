@@ -94,9 +94,16 @@ _EOF
 		if [ -n "${info_files}" ]; then
 			_add_trigger info-files
 			echo "export info_files=\"${info_files}\"" >> $tmpf
-			echo >> $tmpf
 		fi
         fi
+
+	#
+	# Handle OpenRC services.
+	#
+	if [ -n "${openrc_services}" ]; then
+		_add_trigger openrc-service
+		echo "export openrc_services=\"${openrc_services}\"" >> $tmpf
+	fi
 
 	#
 	# Handle system accounts.
@@ -123,16 +130,6 @@ _EOF
 			fi
 			unset homedir shell descr groups
 		done
-		echo >> $tmpf
-	fi
-
-	#
-	# Handle OpenRC services.
-	#
-	if [ -n "${openrc_services}" ]; then
-		_add_trigger openrc-service
-		echo "export openrc_services=\"${openrc_services}\"" >> $tmpf
-		echo >> $tmpf
 	fi
 
 	#
@@ -141,7 +138,6 @@ _EOF
 	if [ -n "${register_shell}" ]; then
 		_add_trigger register-shell
 		echo "export register_shell=\"${register_shell}\"" >> $tmpf
-		echo >> $tmpf
 	fi
 
 	#
@@ -154,7 +150,6 @@ _EOF
 	fi
 	if [ -n "${sgml_entries}" ]; then
 		echo "export sgml_entries=\"${sgml_entries}\"" >> $tmpf
-		echo >> $tmpf
 	fi
 	if [ -n "${xml_catalogs}" ]; then
 		for catalog in ${xml_catalogs}; do
@@ -163,7 +158,6 @@ _EOF
 	fi
 	if [ -n "${xml_entries}" ]; then
 		echo "export xml_entries=\"${xml_entries}\"" >> $tmpf
-		echo >> $tmpf
 	fi
 	if [ -n "${sgml_entries}" -o -n "${xml_entries}" ]; then
 		_add_trigger xml-catalog
@@ -175,7 +169,6 @@ _EOF
 	if [ -n "${font_dirs}" ]; then
 		_add_trigger x11-fonts
 		echo "export font_dirs=\"${font_dirs}\"" >> $tmpf
-		echo >> $tmpf
 	fi
 
 	#
@@ -185,7 +178,6 @@ _EOF
 		_add_trigger gtk-icon-cache
 		echo "export gtk_iconcache_dirs=\"${gtk_iconcache_dirs}\"" \
 			>> $tmpf
-		echo >> $tmpf
 	fi
 
         #
@@ -209,12 +201,10 @@ _EOF
 		if [ -n "${gconf_entries}" ]; then
 			echo "export gconf_entries=\"${gconf_entries}\"" \
 				>> $tmpf
-			echo >> $tmpf
 		fi
 		if [ -n "${gconf_schemas}" ]; then
 			echo "export gconf_schemas=\"${gconf_schemas}\"" \
 				>> $tmpf
-			echo >> $tmpf
 		fi
 	fi
 
