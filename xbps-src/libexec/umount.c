@@ -49,7 +49,7 @@ main(int argc, char **argv)
 	cap_free(cap);
 
 	if ((rv = umount(argv[1])) != 0) {
-		fprintf(stderr, "E: cannot umount %s: %s\n", argv[0],
+		fprintf(stderr, "E: cannot umount %s: %s\n", argv[1],
 		    strerror(errno));
 		exit(EXIT_FAILURE);
 	}
