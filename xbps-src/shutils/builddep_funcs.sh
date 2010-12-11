@@ -131,7 +131,7 @@ install_dependencies_pkg()
 		lver="${version}"
 	fi
 
-	if [ -n "$build_depends" -o -n "$run_depends" ]; then
+	if [ -n "$build_depends" ]; then
 		msg_normal "$pkgname: installing required package dependencies..."
 	fi
 	for i in ${build_depends}; do
