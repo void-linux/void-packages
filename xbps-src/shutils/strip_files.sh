@@ -47,7 +47,7 @@ strip_files_real()
 	if ! command -v strip 2>&1 >/dev/null; then
 		return 0
 	fi
-	[ -n "$nostrip" ] && return 0
+	[ -n "$nostrip" -o -n "$noarch" ] && return 0
 
 	if [ -n "$revision" ]; then
 		lver="${version}_${revision}"
