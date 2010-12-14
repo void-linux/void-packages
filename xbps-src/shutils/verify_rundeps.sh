@@ -59,8 +59,12 @@ verify_rundeps()
 	[ -n "$noarch" -o -n "$noverifyrdeps" ] && return 0
 	msg_normal "Package '$pkgname ($lver)': verifying required run dependencies, please wait..."
 
-	find ${PKG_DESTDIR} -type f | while read f
-	do
+	depsftmp=$(mktemp -t xbps_src_depstmp.XXXXXXXXXX) || exit 1
+	find ${PKG_DESTDIR} -type f -perm -u+w > $depsftmp 2>/dev/null
+
+	exec 3<&0 # save stdin
+	exec < $depsftmp
+	while read f; do
 		# Don't check dirs specified in ignore_vdeps_dir.
 		for j in ${ignore_vdeps_dir}; do
 			if grep -q ${j} "${f}"; then
@@ -71,9 +75,9 @@ verify_rundeps()
 		[ -n "$igndir" ] && continue
 		unset igndir
 
-		case "$(file -biz $f)" in
+		case "$(file -bi "$f")" in
 		application/x-executable*|application/x-sharedlib*)
-			for nlib in $(objdump -p $f|grep NEEDED|awk '{print $2}'); do
+			for nlib in $(objdump -p "$f"|grep NEEDED|awk '{print $2}'); do
 				# Strip major version
 				nlib="$(echo $nlib|sed -e 's|\.[0-9]$||')"
 				if [ -z "$verify_deps" ]; then
@@ -93,6 +97,8 @@ verify_rundeps()
 			;;
 		esac
 	done
+	exec 0<&3 # restore stdin
+	rm -f $depsftmp
 
 	# Now verify that those required libs are added into package's
 	# template via Add_dependency.

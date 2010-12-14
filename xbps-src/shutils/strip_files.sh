@@ -56,9 +56,8 @@ strip_files_real()
 	fi
 
 	msg_normal "Package '$pkgname ($lver)': stripping files, please wait..."
-	find ${DESTDIR} -type f | while read f
-	do
-		case "$(file -biz $f)" in
+	find ${DESTDIR} -type f | while read f; do
+		case "$(file -bi "$f")" in
 		application/x-executable*)
 			strip "$f" && \
 				echo "   Stripped executable: $(basename $f)";;
