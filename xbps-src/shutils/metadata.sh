@@ -127,30 +127,31 @@ xbps_write_metadata_pkg_real()
 		triggers="info-files $triggers"
 		msg_normal "Package '$pkgname ($lver)': processing info(1) files..."
 
-		for f in $(find ${DESTDIR}/usr/share/info -type f -follow); do
-			j=$(echo $f|sed -e "$fpattern")
+		find ${DESTDIR}/usr/share/info -type f -follow | while read f
+		do
+			j=$(echo "$f"|sed -e "$fpattern")
 			[ "$j" = "" ] && continue
 			[ "$j" = "/usr/share/info/dir" ] && continue
 			# Ignore compressed files.
-			if $(echo $j|grep -q '.*.gz$'); then
+			if $(echo "$j"|grep -q '.*.gz$'); then
 				continue
 			fi
 			# Ignore non info files.
-			if ! $(echo $j|grep -q '.*.info$') && \
-			   ! $(echo $j|grep -q '.*.info-[0-9]*$'); then
+			if ! $(echo "$j"|grep -q '.*.info$') && \
+			   ! $(echo "$j"|grep -q '.*.info-[0-9]*$'); then
 				continue
 			fi
-			if [ -h ${DESTDIR}/$j ]; then
-				dirat=$(dirname $j)
-				lnkat=$(readlink ${DESTDIR}/$j)
-				newlnk=$(basename $j)
-				rm -f ${DESTDIR}/$j
-				cd ${DESTDIR}/$dirat
-				ln -s ${lnkat}.gz ${newlnk}.gz
+			if [ -h ${DESTDIR}/"$j" ]; then
+				dirat=$(dirname "$j")
+				lnkat=$(readlink ${DESTDIR}/"$j")
+				newlnk=$(basename "$j")
+				rm -f ${DESTDIR}/"$j"
+				cd ${DESTDIR}/"$dirat"
+				ln -s "${lnkat}".gz "${newlnk}".gz
 				continue
 			fi
 			echo "   Compressing info file: $j..."
-			gzip -q9 ${DESTDIR}/$j
+			gzip -q9 ${DESTDIR}/"$j"
 		done
 	fi
 
@@ -160,23 +161,24 @@ xbps_write_metadata_pkg_real()
 	#
 	if [ -d "${DESTDIR}/usr/share/man" ]; then
 		msg_normal "Package '$pkgname ($lver)': processing manual pages..."
-		for f in $(find ${DESTDIR}/usr/share/man -type f -follow); do
-			j=$(echo $f|sed -e "$fpattern")
+		find ${DESTDIR}/usr/share/man -type f -follow | while read f
+		do
+			j=$(echo "$f"|sed -e "$fpattern")
 			[ "$j" = "" ] && continue
-			if $(echo $j|grep -q '.*.gz$'); then
+			if $(echo "$j"|grep -q '.*.gz$'); then
 				continue
 			fi
-			if [ -h ${DESTDIR}/$j ]; then
-				dirat=$(dirname $j)
-				lnkat=$(readlink ${DESTDIR}/$j)
-				newlnk=$(basename $j)
-				rm -f ${DESTDIR}/$j
-				cd ${DESTDIR}/$dirat
-				ln -s ${lnkat}.gz ${newlnk}.gz
+			if [ -h ${DESTDIR}/"$j" ]; then
+				dirat=$(dirname "$j")
+				lnkat=$(readlink ${DESTDIR}/"$j")
+				newlnk=$(basename "$j")
+				rm -f ${DESTDIR}/"$j"
+				cd ${DESTDIR}/"$dirat"
+				ln -s "${lnkat}".gz "${newlnk}".gz
 				continue
 			fi
 			echo "   Compressing manpage: $j..."
-			gzip -q9 ${DESTDIR}/$j
+			gzip -q9 ${DESTDIR}/"$j"
 		done
 	fi
 
@@ -188,8 +190,9 @@ xbps_write_metadata_pkg_real()
 	# Pass 1: add links.
 	echo "<key>links</key>" >> $TMPFPLIST
 	echo "<array>" >> $TMPFPLIST
-	for f in $(find ${DESTDIR} -type l); do
-		j=$(echo $f|sed -e "$fpattern")
+	find ${DESTDIR} -type l | while read f
+	do
+		j=$(echo "$f"|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
 		echo "$j" >> $TMPFLIST
 		echo "<dict>" >> $TMPFPLIST
@@ -202,8 +205,9 @@ xbps_write_metadata_pkg_real()
 	# Pass 2: add regular files.
 	echo "<key>files</key>" >> $TMPFPLIST
 	echo "<array>" >> $TMPFPLIST
-	for f in $(find ${DESTDIR} -type f); do
-		j=$(echo $f|sed -e "$fpattern")
+	find ${DESTDIR} -type f | while read f
+	do
+		j=$(echo "$f"|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
 		echo "$j" >> $TMPFLIST
 		# Skip configuration files.
@@ -215,7 +219,7 @@ xbps_write_metadata_pkg_real()
 		echo "<key>file</key>" >> $TMPFPLIST
 		echo "<string>$j</string>" >> $TMPFPLIST
 		echo "<key>sha256</key>" >> $TMPFPLIST
-		echo "<string>$(${XBPS_DIGEST_CMD} $f)</string>"  \
+		echo "<string>$(${XBPS_DIGEST_CMD} "$f")</string>"  \
 			>> $TMPFPLIST
 		echo "</dict>" >> $TMPFPLIST
 	done
@@ -224,8 +228,9 @@ xbps_write_metadata_pkg_real()
 	# Pass 3: add directories.
 	echo "<key>dirs</key>" >> $TMPFPLIST
 	echo "<array>" >> $TMPFPLIST
-	for f in $(find ${DESTDIR} -type d|sort -ur); do
-		j=$(echo $f|sed -e "$fpattern")
+	find ${DESTDIR} -type d|sort -ur | while read f
+	do
+		j=$(echo "$f"|sed -e "$fpattern")
 		[ "$j" = "" ] && continue
 		echo "$j" >> $TMPFLIST
 		echo "<dict>" >> $TMPFPLIST
@@ -240,13 +245,13 @@ xbps_write_metadata_pkg_real()
 		echo "<key>conf_files</key>" >> $TMPFPLIST
 		echo "<array>" >> $TMPFPLIST
 		for f in ${conf_files}; do
-			i=${DESTDIR}/${f}
-			[ ! -f ${i} ] && continue
+			i=${DESTDIR}/"${f}"
+			[ ! -f "${i}" ] && continue
 			echo "<dict>" >> $TMPFPLIST
 			echo "<key>file</key>" >> $TMPFPLIST
 			echo "<string>$f</string>" >> $TMPFPLIST
 			echo "<key>sha256</key>" >> $TMPFPLIST
-			echo "<string>$(${XBPS_DIGEST_CMD} ${i})</string>" \
+			echo "<string>$(${XBPS_DIGEST_CMD} "${i}")</string>" \
 				>> $TMPFPLIST
 			echo "</dict>" >> $TMPFPLIST
 		done

@@ -59,10 +59,11 @@ verify_rundeps()
 	[ -n "$noarch" -o -n "$noverifyrdeps" ] && return 0
 	msg_normal "Package '$pkgname ($lver)': verifying required run dependencies, please wait..."
 
-	for f in $(find ${PKG_DESTDIR} -type f); do
+	find ${PKG_DESTDIR} -type f | while read f
+	do
 		# Don't check dirs specified in ignore_vdeps_dir.
 		for j in ${ignore_vdeps_dir}; do
-			if grep -q ${j} ${f}; then
+			if grep -q ${j} "${f}"; then
 				igndir=1
 				break
 			fi

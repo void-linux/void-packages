@@ -56,13 +56,14 @@ strip_files_real()
 	fi
 
 	msg_normal "Package '$pkgname ($lver)': stripping files, please wait..."
-	for f in $(find ${DESTDIR} -type f); do
+	find ${DESTDIR} -type f | while read f
+	do
 		case "$(file -biz $f)" in
 		application/x-executable*)
-			strip $f && \
+			strip "$f" && \
 				echo "   Stripped executable: $(basename $f)";;
 		application/x-sharedlib*|application/x-archive*)
-			strip -S $f && \
+			strip -S "$f" && \
 				echo "   Stripped library: $(basename $f)";;
 		esac
 	done
