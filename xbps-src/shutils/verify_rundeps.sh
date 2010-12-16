@@ -193,4 +193,6 @@ verify_rundeps()
 		echo "Add_dependency build $f"
 	done
 	echo "============ CUT HERE ==============="
+
+	msg_error "Package '${pkgname}-${version}' has wrong dependencies, won't continue..."
 }
