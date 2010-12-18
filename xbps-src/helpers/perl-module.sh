@@ -26,10 +26,6 @@ perl_module_build()
 		cd $wrksrc && \
 			PERL_MM_USE_DEFAULT=1 perl Makefile.PL \
 			${make_build_args} INSTALLDIRS=vendor
-		if [ "$?" -ne 0 ]; then
-			echo "*** ERROR building perl module for $pkgname ***"
-			exit 1
-		fi
 	fi
 
 	for i in "$perl_configure_dirs"; do
@@ -38,7 +34,6 @@ perl_module_build()
 			cd $wrksrc/$i && PERL_MM_USE_DEFAULT=1 \
 				perl Makefile.PL ${make_build_args} \
 				INSTALLDIRS=vendor
-			[ "$?" -ne 0 ] && exit 1
 		else
 			echo -n "*** ERROR: couldn't find $perlmkf"
 			echo ", aborting ***"

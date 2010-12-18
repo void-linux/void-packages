@@ -27,6 +27,20 @@
 # Runs the "build" phase for a pkg. This builds the binaries and other
 # related stuff.
 #
+do_make_build()
+{
+	#
+	# Build package via make.
+	#
+	if [ "$build_style" = "gnu_makefile" ]; then
+		if [ -n "$XBPS_LDFLAGS" ]; then
+			mkldfags="$LDFLAGS $XBPS_LDFLAGS"
+		fi
+	fi
+	env LDFLAGS="$mkldflags" ${make_cmd} ${makejobs} ${make_build_args} \
+		${make_build_target}
+}
+
 build_src_phase()
 {
 	local pkg="$pkgname-$version" pkgparam="$1" f lver
@@ -64,12 +78,8 @@ build_src_phase()
 	fi
 	# Run pre_build func.
 	if [ ! -f $XBPS_PRE_BUILD_DONE ]; then
-		run_func pre_build 2>${wrksrc}/.xbps_pre_build.log
-		if [ $? -ne 0 -a $? -ne 255 ]; then
-			msg_red "$pkgname: pre_build phase failed! errors below:"
-			cat $wrksrc/.xbps_pre_build.log
-			exit 1
-		elif [ $? -eq 0 ]; then
+		run_func pre_build
+		if [ $? -eq 0 ]; then
 			msg_normal "$pkgname: pre_build phase done."
 			touch -f $XBPS_PRE_BUILD_DONE
 		fi
@@ -79,34 +89,17 @@ build_src_phase()
 
 	if [ "$build_style" = "custom-install" ]; then
 		[ -n "$XBPS_LDFLAGS" ] && export LDFLAGS="$XBPS_LDFLAGS"
-		run_func do_build 2>${wrksrc}/.xbps_do_build.log
-		if [ $? -ne 0 -a $? -ne 255 ]; then
-			msg_error "Package '$pkgname': do_build phase failed!"
-		fi
+		run_func do_build
 	else
-		#
-		# Build package via make.
-		#
-		if [ "$build_style" = "gnu_makefile" ]; then
-			if [ -n "$XBPS_LDFLAGS" ]; then
-				mkldfags="$LDFLAGS $XBPS_LDFLAGS"
-			fi
-		fi
-		env LDFLAGS="$mkldflags" ${make_cmd} ${makejobs} ${make_build_args} \
-			${make_build_target} ||
-			msg_error "Package '$pkgname': build phase failed!"
+		run_func do_make_build
 	fi
 
 	msg_normal "Package '$pkgname ($lver)': build phase done."
 
 	# Run post_build func.
 	if [ ! -f $XBPS_POST_BUILD_DONE ]; then
-		run_func post_build 2>${wrksrc}/.xbps_post_build.log
-		if [ $? -ne 0 -a $? -ne 255 ]; then
-			msg_red "Package '$pkgname': post_build phase failed! errors below:"
-			cat $wrksrc/.xbps_post_build.log
-			exit 1
-		elif [ $? -eq 0 ]; then
+		run_func post_build
+		if [ $? -eq 0 ]; then
 			msg_normal "Package '$pkgname': post_build phase done."
 			touch -f $XBPS_POST_BUILD_DONE
 		fi

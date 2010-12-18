@@ -151,11 +151,8 @@ stow_pkg_real()
 	# Register pkg in plist file.
 	#
 	$XBPS_PKGDB_CMD register $pkgname $lver "$short_desc" || return $?
-
-	run_func post_stow 2>/dev/null
-	if [ $? -ne 0 -a $? -ne 255 ]; then
-		msg_error "Package '$pkgname': post_stow phase failed!"
-	fi
+	run_func post_stow
+	return 0
 }
 
 #
@@ -191,11 +188,7 @@ unstow_pkg_real()
 	elif [ ! -w ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
 		msg_error "$pkgname cannot be removed (permission denied)."
 	elif [ -s ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
-		run_func pre_remove 2>/dev/null
-		if [ $? -ne 0 -a $? -ne 255 ]; then
-			msg_error "Package '$pkgname': pre_remove stage failed!"
-		fi
-
+		run_func pre_remove
 		# Remove installed files.
 		for f in $(cat ${XBPS_PKGMETADIR}/${pkgname}/flist); do
 			if [ -f $XBPS_MASTERDIR/$f -o -h $XBPS_MASTERDIR/$f ]; then
@@ -216,11 +209,7 @@ unstow_pkg_real()
 		done
 	fi
 
-	run_func post_remove 2>/dev/null
-	if [ $? -ne 0 -a $? -ne 255 ]; then
-		msg_error "Package '$pkgname': post_remove phase failed!"
-	fi
-
+	run_func post_remove
 	# Remove metadata dir.
 	rm -rf $XBPS_PKGMETADIR/$pkgname
 

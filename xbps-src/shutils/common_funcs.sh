@@ -26,15 +26,83 @@
 #
 # Common functions for xbps.
 #
+run_func_error()
+{
+	local func="$1"
+
+	remove_pkgdestdir_sighandler ${pkgname}
+	msg_error "${pkgname}-${version}: the $func function didn't complete due to errors or SIGINT!"
+
+}
+
+remove_pkgdestdir_sighandler()
+{
+	local subpkg _pkgname="$1"
+
+	setup_tmpl ${_pkgname}
+	[ -z "$sourcepkg" ] && return 0
+
+	# If there is any problem in the middle of writting the metadata,
+	# just remove all files from destdir of pkg.
+
+	for subpkg in ${subpackages}; do
+		if [ -d "$XBPS_DESTDIR/${subpkg}-${version%_*}" ]; then
+			rm -rf "$XBPS_DESTDIR/${subpkg}-${version%_*}"
+		fi
+		if [ -f ${wrksrc}/.xbps_do_install_${subpkg}_done ]; then
+			rm -f ${wrksrc}/.xbps_do_install_${subpkg}_done
+		fi
+	done
+
+	if [ -d "$XBPS_DESTDIR/${sourcepkg}-${version%_*}" ]; then
+		rm -rf "$XBPS_DESTDIR/${sourcepkg}-${version%_*}"
+	fi
+	msg_red "Removed '${sourcepkg}-${version}' files from DESTDIR..."
+}
+
+var_is_a_function()
+{
+	local func="$1"
+	local func_result
+
+	func_result=$(mktemp -t xbps_src_run_func.XXXXXX)
+	type $func > $func_result 2>&1
+	if $(grep -q 'function' $func_result); then
+		rm -f $func_result
+		return 1
+	fi
+
+	rm -f $func_result
+	return 0
+}	
+
 run_func()
 {
-	func="$1"
+	local func="$1"
+	local rval logpipe logfile
 
 	[ -z "$func" ] && return 1
 
-	if $(type $func | grep -q 'function'); then
-		$func
-		return $?
+	var_is_a_function $func
+	if [ $? -eq 1 ]; then
+		logpipe=/tmp/logpipe.$$
+		if [ -d "${wrksrc}" ]; then
+			logfile=${wrksrc}/.xbps_${func}.log
+		else
+			logfile=$(mktemp -t xbps_${func}_${pkgname}.log.XXXXXXXX)
+		fi
+		mkfifo "$logpipe"
+		exec 3>&1
+		tee "$logfile" < "$logpipe" &
+		exec 1>"$logpipe" 2>"$logpipe"
+		set -e
+		trap "run_func_error $func" 0
+		$func 2>&1
+		set +e
+		trap '' 0
+		exec 1>&3 2>&3 3>&-
+		rm -f "$logpipe"
+		return 0
 	fi
 	return 255 # function not found.
 }

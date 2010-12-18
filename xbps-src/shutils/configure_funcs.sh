@@ -27,6 +27,36 @@
 # Runs the "configure" phase for a pkg. This setups the Makefiles or any
 # other stuff required to be able to build binaries or such.
 #
+do_gnu_configure()
+{
+	#
+	# Packages using GNU autoconf
+	#
+	env LDFLAGS="$LDFLAGS $conf_ldflags" \
+		${configure_script} --prefix=/usr --sysconfdir=/etc \
+		--infodir=/usr/share/info --mandir=/usr/share/man \
+		${configure_args}
+}
+
+do_configure()
+{
+	#
+	# Packages using custom configure scripts.
+	#
+	env LDFLAGS="$LDFLAGS $conf_ldflags" ${configure_script} \
+		${configure_args}
+}
+
+do_perl_configure()
+{
+	#
+	# Packages that are perl modules and use Makefile.PL files.
+	# They are all handled by the helper perl-module.sh.
+	#
+	. $XBPS_HELPERSDIR/perl-module.sh
+	perl_module_build $pkgname
+}
+
 configure_src_phase()
 {
 	local f lver error=0
@@ -60,12 +90,8 @@ configure_src_phase()
 
 	# Run pre_configure func.
 	if [ ! -f $XBPS_PRECONFIGURE_DONE ]; then
-		run_func pre_configure 2>${wrksrc}/.xbps_pre_configure.log
-		if [ $? -ne 0 -a $? -ne 255 ]; then
-			msg_red "Package '$pkgname': pre_configure phase failed! errors below:"
-			cat $wrksrc/.xbps_pre_configure.log
-			exit 1
-		elif [ $? -eq 0 ]; then
+		run_func pre_configure
+		if [ $? -eq 0 ]; then
 			msg_normal "Package '$pkgname': pre_configure phase done."
 			touch -f $XBPS_PRECONFIGURE_DONE
 		fi
@@ -90,52 +116,23 @@ configure_src_phase()
 	fi
 
 	case "$build_style" in
-	gnu_configure|gnu-configure)
-		#
-		# Packages using GNU autoconf
-		#
-		env LDFLAGS="$LDFLAGS $conf_ldflags" \
-			${configure_script} --prefix=/usr --sysconfdir=/etc \
-			--infodir=/usr/share/info --mandir=/usr/share/man \
-			${configure_args} || error=$?
-		;;
-	configure)
-		#
-		# Packages using custom configure scripts.
-		#
-		env LDFLAGS="$LDFLAGS $conf_ldflags" ${configure_script} \
-			${configure_args} || error=$?
-		;;
-	perl-module|perl_module)
-		#
-		# Packages that are perl modules and use Makefile.PL files.
-		# They are all handled by the helper perl-module.sh.
-		#
-		. $XBPS_HELPERSDIR/perl-module.sh
-		perl_module_build $pkgname || error=$?
-		;;
+	gnu_configure|gnu-configure) run_func do_gnu_configure ;;
+	configure) run_func do_configure ;;
+	perl-module|perl_module) run_func do_perl_configure ;;
 	*)
 		#
 		# Unknown build_style type won't work :-)
 		#
 		msg_error "package '$pkgname': unknown build_style [$build_style]"
-		exit 1
 		;;
 	esac
 
-	if [ "$build_style" != "perl_module" -a "$error" -ne 0 ]; then
-		msg_error "package '$pkgname': configure stage failed!"
-	fi
 	msg_normal "Package '$pkgname ($lver)': configure phase done."
 
 	# Run post_configure func.
 	if [ ! -f $XBPS_POSTCONFIGURE_DONE ]; then
-		run_func post_configure 2>${wrksrc}/.xbps_post_configure.log
-		if [ $? -ne 0 -a $? -ne 255 ]; then
-			msg_red "Package '$pkgname': post_configure phase failed! errors below:"
-			cat $wrksrc/.xbps_post_configure.log
-			exit 1
-		elif [ $? -eq 0 ]; then
+		run_func post_configure
+		if [ $? -eq 0 ]; then
 			msg_normal "Package '$pkgname': post_configure phase done."
 			touch -f $XBPS_POSTCONFIGURE_DONE
 		fi

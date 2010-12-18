@@ -70,7 +70,7 @@ fetch_distfiles()
 
 	if [ -n "$nofetch" ]; then
 		msg_normal "Package '$pkgname ($lver)': running do_fetch phase."
-		cd ${XBPS_BUILDDIR} && run_func do_fetch 2>/dev/null && return $?
+		cd ${XBPS_BUILDDIR} && run_func do_fetch && return $?
 	fi
 
 	cd $XBPS_SRCDISTDIR || return 1
