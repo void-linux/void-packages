@@ -40,7 +40,7 @@ stow_pkg_handler()
 			[ $? -eq 0 ] && continue
 		fi
 		if [ ! -f $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template ]; then
-			msg_error "Cannot find $subpkg subpkg build template!"
+			msg_error "Cannot find $subpkg subpkg build template!\n"
 		fi
 		unset revision pre_install pre_remove post_install \
 			post_remove post_stow
@@ -74,7 +74,7 @@ stow_pkg_real()
 	[ -z "$pkgname" ] && return 2
 
 	if [ $(id -u) -ne 0 ] && [ ! -w $XBPS_MASTERDIR ]; then
-		msg_error "cannot stow $pkgname! (permission denied)"
+		msg_error "cannot stow $pkgname! (permission denied)\n"
 	fi
 
 	if [ "$build_style" = "meta-template" ]; then
@@ -90,7 +90,7 @@ stow_pkg_real()
 	else
 		lver="${version}"
 	fi
-	msg_normal "Package '${pkgname} ($lver)': stowning files into masterdir, please wait..."
+	msg_normal "'${pkgname}-$lver': stowning files into masterdir, please wait...\n"
 
 	# Copy files into masterdir.
 	for i in $(find -print); do
@@ -169,14 +169,14 @@ unstow_pkg_real()
 
 	if [ $(id -u) -ne 0 ] && \
 	   [ ! -w $XBPS_MASTERDIR ]; then
-		msg_error "cannot unstow $pkgname! (permission denied)"
+		msg_error "cannot unstow $pkgname! (permission denied)\n"
 	fi
 
 	setup_tmpl $pkgname
 
 	ver=$($XBPS_PKGDB_CMD version $pkgname)
 	if [ -z "$ver" ]; then
-		msg_error "$pkgname is not installed."
+		msg_error "$pkgname is not installed.\n"
 	fi
 
 	cd $XBPS_PKGMETADIR/$pkgname || exit 1
@@ -184,9 +184,9 @@ unstow_pkg_real()
 		# If it's a metapkg, do nothing.
 		:
 	elif [ ! -f ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
-		msg_error "$pkgname is incomplete, missing flist."
+		msg_error "$pkgname is incomplete, missing flist.\n"
 	elif [ ! -w ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
-		msg_error "$pkgname cannot be removed (permission denied)."
+		msg_error "$pkgname cannot be removed (permission denied).\n"
 	elif [ -s ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
 		run_func pre_remove
 		# Remove installed files.

@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2009 Juan Romero Pardines.
+# Copyright (c) 2008-2010 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -29,7 +29,7 @@
 #
 _process_patch()
 {
-	local args _patch i=$1
+	local lver args _patch i=$1
 
 	args="-Np0"
 	_patch=$(basename $i)
@@ -39,6 +39,12 @@ _process_patch()
 		args=$patch_args
 	fi
 	cp -f $i $wrksrc
+
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
+	fi
 
 	# Try to guess if its a compressed patch.
 	if $(echo $i|grep -q '.diff.gz'); then
@@ -58,15 +64,15 @@ _process_patch()
 	elif $(echo $i|grep -q '.patch'); then
 		:
 	else
-		msg_warn "unknown patch type: $i."
+		msg_warn "'$pkgname-$lver': unknown patch type: $i.\n"
 		continue
 	fi
 
 	cd $wrksrc && patch -s ${args} < ${_patch} 2>/dev/null
 	if [ $? -eq 0 ]; then
-		msg_normal "Patch applied: ${_patch}."
+		msg_normal "'$pkgname-$lver': Patch applied: ${_patch}.\n"
 	else
-		msg_error "couldn't apply patch: ${_patch}."
+		msg_error "'$pkgname-$lver': couldn't apply patch: ${_patch}.\n"
 	fi
 }
 

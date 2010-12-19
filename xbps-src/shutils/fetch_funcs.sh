@@ -34,12 +34,12 @@ verify_sha256_cksum()
 
 	[ -z "$file" -o -z "$cksum" ] && return 1
 
+	msg_normal "'$pkgname-$lver': verifying checksum for $file... "
 	filesum=$(${XBPS_DIGEST_CMD} $XBPS_SRCDISTDIR/$file)
 	if [ "$origsum" != "$filesum" ]; then
-		msg_error "SHA256 checksum doesn't match for $file."
+		msg_error "SHA256 checksum doesn't match for $file.\n"
 	fi
-
-	msg_normal "Package '$pkgname ($lver)': SHA256 checksum OK for $file."
+	msg_normal_append "OK.\n"
 }
 
 #
@@ -69,7 +69,6 @@ fetch_distfiles()
 	fi
 
 	if [ -n "$nofetch" ]; then
-		msg_normal "Package '$pkgname ($lver)': running do_fetch phase."
 		cd ${XBPS_BUILDDIR} && run_func do_fetch && return $?
 	fi
 
@@ -88,10 +87,9 @@ fetch_distfiles()
 			done
 
 			if [ -z $found ]; then
-				msg_error "cannot find checksum for $curfile."
+				msg_error "cannot find checksum for $curfile.\n"
 			fi
 
-			msg_normal "Package '$pkgname ($lver)': verifying checksum for $curfile..."
 			verify_sha256_cksum $curfile $cksum
 			if [ $? -eq 0 ]; then
 				unset cksum found
@@ -101,7 +99,7 @@ fetch_distfiles()
 			fi
 		fi
 
-		msg_normal "Package '$pkgname ($lver)': fetching distfile $curfile."
+		msg_normal "'$pkgname-$lver': fetching distfile $curfile...\n"
 
 		if [ -n "$distfiles" ]; then
 			localurl="$f"
@@ -113,9 +111,9 @@ fetch_distfiles()
 		if [ $? -ne 0 ]; then
 			unset localurl
 			if [ ! -f $XBPS_SRCDISTDIR/$curfile ]; then
-				msg_error "couldn't fetch $curfile."
+				msg_error "couldn't fetch $curfile.\n"
 			else
-				msg_error "there was an error fetching $curfile."
+				msg_error "there was an error fetching $curfile.\n"
 			fi
 		else
 			unset localurl
@@ -133,7 +131,7 @@ fetch_distfiles()
 			done
 
 			if [ -z $found ]; then
-				msg_error "cannot find checksum for $curfile."
+				msg_error "cannot find checksum for $curfile.\n"
 			fi
 
 			verify_sha256_cksum $curfile $cksum

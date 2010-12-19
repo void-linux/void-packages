@@ -44,15 +44,15 @@ install_pkg_deps()
 	fi
 
 	if [ -z "$saved_prevpkg" -a -n "${_ORIGINPKG}" ]; then
-		msg_normal "Installing '${_ORIGINPKG}' dependency: '$curpkg'."
+		msg_normal "Installing '${_ORIGINPKG}' dependency: '$curpkg'.\n"
 	else
-		msg_normal "Installing '$saved_prevpkg' dependency: '$curpkg'."
+		msg_normal "Installing '$saved_prevpkg' dependency: '$curpkg'.\n"
 	fi
 
 	setup_tmpl "$curpkgname"
 	check_build_depends_pkg
 	if [ $? -eq 0 ]; then
-		msg_normal "Package dependency '$curpkgname' requires:"
+		msg_normal "Package dependency '$curpkgname' requires:\n"
 		for j in ${build_depends}; do
 			jname="$(${XBPS_PKGDB_CMD} getpkgdepname ${j})"
 			jver="$($XBPS_PKGDB_CMD version ${jname})"
@@ -79,7 +79,7 @@ install_pkg_deps()
 		prev_pkg="$j"
 		install_pkg_deps "${j}" "${curpkg}"
 		if [ $? -eq 1 ]; then
-			msg_red "install_pkg_deps: cannot install '$curpkg' ($j)."
+			msg_red "install_pkg_deps: cannot install '$curpkg' ($j).\n"
 			return 1
 		fi
 	done
@@ -93,19 +93,19 @@ install_pkg_deps()
 			# Package not found, build from source.
 			install_pkg "${curpkgname}"
 			if [ $? -eq 1 ]; then
-				msg_red "cannot install '$curpkgname'!"
+				msg_red "cannot install '$curpkgname'!\n"
 				return 1
 			fi
 		fi
 	else
 		if [ -n "$saved_prevpkg" ]; then
-			msg_normal "Installing package '${curpkgname}' required by '${saved_prevpkg}'."
+			msg_normal "Installing package '${curpkgname}' required by '${saved_prevpkg}'.\n"
 		else
-			msg_normal "Installing package: '${curpkg}'."
+			msg_normal "Installing package: '${curpkg}'.\n"
 		fi
 		install_pkg "${curpkgname}"
 		if [ $? -eq 1 ]; then
-			msg_red "install_pkg_deps: cannot install '$curpkgname'!"
+			msg_red "install_pkg_deps: cannot install '$curpkgname'!\n"
 			return 1
 		fi
 	fi
@@ -132,7 +132,7 @@ install_dependencies_pkg()
 	fi
 
 	if [ -n "$build_depends" ]; then
-		msg_normal "$pkgname: installing required package dependencies..."
+		msg_normal "'$pkgname-$lver': required package build dependencies...\n"
 	fi
 	for i in ${build_depends}; do
 		pkgn="$($XBPS_PKGDB_CMD getpkgdepname ${i})"
@@ -140,7 +140,6 @@ install_dependencies_pkg()
 		check_pkgdep_matched "${i}"
 		if [ $? -eq 0 ]; then
 			echo "   ${i}: found '$pkgn-$iver'."
-			continue
 		else
 			echo "   ${i}: not found."
 			notinstalled_deps="$notinstalled_deps $i"
@@ -153,7 +152,7 @@ install_dependencies_pkg()
 		for i in ${notinstalled_deps}; do
 			pkgdeplist="${pkgdeplist} \"${i}\" "
 		done
-		msg_normal "$pkgname: installing required dependencies from binpkgs..."
+		msg_normal "$pkgname-$lver: installing build dependencies from binpkgs...\n"
 		${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} \
 			-y install ${pkgdeplist}
 		rval=$?
@@ -186,7 +185,7 @@ install_dependencies_pkg()
 		setup_tmpl "$pkgn"
 		check_build_depends_pkg
 		if [ $? -eq 1 ]; then
-			msg_normal "Installing '$lpkgname' dependency: '$pkgn'."
+			msg_normal "Installing '$lpkgname' dependency: '$pkgn'.\n"
 			if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
 				install_pkg_with_binpkg "${j}"
 				rval=$?
@@ -200,21 +199,21 @@ install_dependencies_pkg()
 					# package not found, build source.
 					install_pkg "${pkgn}"
 					if [ $? -eq 1 ]; then
-						msg_red "cannot install '$pkgn'!"
+						msg_red "cannot install '$pkgn'!\n"
 						return 1
 					fi
 				fi
 			else
 				install_pkg "${pkgn}"
 				if [ $? -eq 1 ]; then
-					msg_red "cannot install '$pkgn'!"
+					msg_red "cannot install '$pkgn'!\n"
 					return 1
 				fi
 			fi
 		else
 			install_pkg_deps "${j}" "${pkg}"
 			if [ $? -eq 1 ]; then
-				msg_red "install_dependencies_pkg: cannot install pkgdeps required by $pkg ($j)."
+				msg_red "cannot install pkgdeps required by $pkg ($j).\n"
 				return 1
 			fi
 		fi

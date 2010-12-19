@@ -54,7 +54,7 @@ build_src_phase()
 	[ "$build_style" = "meta-template" -o	\
 	  "$build_style" = "only-install" ] && return 0
 
-	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]"
+	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]\n"
 
 	cd $wrksrc || return 1
 	if [ -n "$build_wrksrc" ]; then
@@ -80,12 +80,10 @@ build_src_phase()
 	if [ ! -f $XBPS_PRE_BUILD_DONE ]; then
 		run_func pre_build
 		if [ $? -eq 0 ]; then
-			msg_normal "$pkgname: pre_build phase done."
+			msg_normal "'$pkgname-$lver': pre_build phase done.\n"
 			touch -f $XBPS_PRE_BUILD_DONE
 		fi
 	fi
-
-	msg_normal "Package '$pkgname ($lver)': running build phase."
 
 	if [ "$build_style" = "custom-install" ]; then
 		[ -n "$XBPS_LDFLAGS" ] && export LDFLAGS="$XBPS_LDFLAGS"
@@ -94,13 +92,13 @@ build_src_phase()
 		run_func do_make_build
 	fi
 
-	msg_normal "Package '$pkgname ($lver)': build phase done."
+	msg_normal "'$pkgname-$lver': build phase done.\n"
 
 	# Run post_build func.
 	if [ ! -f $XBPS_POST_BUILD_DONE ]; then
 		run_func post_build
 		if [ $? -eq 0 ]; then
-			msg_normal "Package '$pkgname': post_build phase done."
+			msg_normal "'$pkgname-l$ver': post_build phase done.\n"
 			touch -f $XBPS_POST_BUILD_DONE
 		fi
 	fi

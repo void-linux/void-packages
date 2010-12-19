@@ -47,7 +47,7 @@ binpkg_cleanup()
 {
 	local pkgdir="$1" binpkg="$2"
 
-	printf "\nInterrupted! removing $binpkg file!\n"
+	msg_red "\nInterrupted! removing $binpkg file!\n"
 	rm -f $pkgdir/$binpkg
 	exit 1
 }
@@ -61,7 +61,7 @@ xbps_make_binpkg_real()
 	local mfiles binpkg pkgdir arch lver dirs _dirs d clevel
 
 	if [ ! -d "${DESTDIR}" ]; then
-		msg_warn "cannot find destdir for $pkgname... skipping!"
+		msg_warn "cannot find destdir for $pkgname... skipping!\n"
 		return 0
 	fi
 	cd ${DESTDIR}
@@ -82,7 +82,7 @@ xbps_make_binpkg_real()
 	# Don't overwrite existing binpkgs by default, skip them.
 	#
 	if [ -f $pkgdir/$binpkg ]; then
-		echo "=> Skipping existing $binpkg pkg..."
+		msg_normal "Skipping existing $binpkg pkg...\n"
 		return 0
 	fi
 
@@ -112,16 +112,16 @@ xbps_make_binpkg_real()
 	# Remove binpkg if interrupted...
 	trap "binpkg_cleanup $pkgdir $binpkg" INT
 
-	echo -n "=> Building $binpkg... "
+	msg_normal "Building $binpkg... "
 	${fakeroot_cmd} ${fakeroot_cmd_args}			\
 		tar --exclude "var/db/xbps/metadata/*/flist"	\
 		-cpf - ${mfiles} ${dirs} |			\
 		$XBPS_COMPRESS_CMD ${clevel} -qf > $pkgdir/$binpkg
 	if [ $? -eq 0 ]; then
-		echo "done."
+		msg_normal_append "done.\n"
 	else
 		rm -f $pkgdir/$binpkg
-		echo "failed!"
+		msg_normal_append "failed!\n"
 	fi
 
 	return $?

@@ -55,7 +55,7 @@ strip_files_real()
 		lver="${version}"
 	fi
 
-	msg_normal "Package '$pkgname ($lver)': stripping files, please wait..."
+	msg_normal "'$pkgname-$lver': stripping files, please wait...\n"
 	find ${DESTDIR} -type f | while read f; do
 		case "$(file -bi "$f")" in
 		application/x-executable*)

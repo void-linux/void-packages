@@ -86,13 +86,13 @@ configure_src_phase()
 		lver="${version}"
 	fi
 
-	cd $wrksrc || msg_error "unexistent build directory [$wrksrc]."
+	cd $wrksrc || msg_error "unexistent build directory [$wrksrc].\n"
 
 	# Run pre_configure func.
 	if [ ! -f $XBPS_PRECONFIGURE_DONE ]; then
 		run_func pre_configure
 		if [ $? -eq 0 ]; then
-			msg_normal "Package '$pkgname': pre_configure phase done."
+			msg_normal "'$pkgname-$lver': pre_configure phase done.\n"
 			touch -f $XBPS_PRECONFIGURE_DONE
 		fi
 	fi
@@ -101,8 +101,6 @@ configure_src_phase()
 	for f in ${configure_env}; do
 		export "$f"
 	done
-
-	msg_normal "Package '$pkgname ($lver)': running configure phase."
 
 	[ -z "$configure_script" ] && configure_script="./configure"
 
@@ -123,17 +121,17 @@ configure_src_phase()
 		#
 		# Unknown build_style type won't work :-)
 		#
-		msg_error "package '$pkgname': unknown build_style [$build_style]"
+		msg_error "'$pkgname-$lver': unknown build_style [$build_style]\n"
 		;;
 	esac
 
-	msg_normal "Package '$pkgname ($lver)': configure phase done."
+	msg_normal "'$pkgname-$lver': configure phase done.\n"
 
 	# Run post_configure func.
 	if [ ! -f $XBPS_POSTCONFIGURE_DONE ]; then
 		run_func post_configure
 		if [ $? -eq 0 ]; then
-			msg_normal "Package '$pkgname': post_configure phase done."
+			msg_normal "'$pkgname-$lver': post_configure phase done."
 			touch -f $XBPS_POSTCONFIGURE_DONE
 		fi
 	fi

@@ -50,7 +50,7 @@ xbps_write_metadata_pkg()
 		[ $? -eq 0 ] && continue
 
 		if [ ! -f $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template ]; then
-			msg_error "Cannot find subpkg '${subpkg}' build template!"
+			msg_error "Cannot find subpkg '${subpkg}' build template!\n"
 		fi
 		setup_tmpl ${sourcepkg}
 		unset run_depends conf_files noarch triggers replaces \
@@ -94,8 +94,7 @@ xbps_write_metadata_pkg_real()
 	local fpattern="s|${DESTDIR}||g;s|^\./$||g;/^$/d"
 
 	if [ ! -d "${DESTDIR}" ]; then
-		echo "ERROR: $pkgname not installed into destdir."
-		exit 1
+		msg_error "$pkgname not installed into destdir.\n"
 	fi
 
 	if [ -n "$noarch" ]; then
@@ -125,7 +124,7 @@ xbps_write_metadata_pkg_real()
 		fi
 		# Add info-files trigger.
 		triggers="info-files $triggers"
-		msg_normal "Package '$pkgname ($lver)': processing info(1) files..."
+		msg_normal "'$pkgname-$lver': processing info(1) files...\n"
 
 		find ${DESTDIR}/usr/share/info -type f -follow | while read f
 		do
@@ -160,7 +159,7 @@ xbps_write_metadata_pkg_real()
 	# compress all them with gzip.
 	#
 	if [ -d "${DESTDIR}/usr/share/man" ]; then
-		msg_normal "Package '$pkgname ($lver)': processing manual pages..."
+		msg_normal "'$pkgname-$lver': processing manual pages...\n"
 		find ${DESTDIR}/usr/share/man -type f -follow | while read f
 		do
 			j=$(echo "$f"|sed -e "$fpattern")
@@ -183,7 +182,7 @@ xbps_write_metadata_pkg_real()
 	fi
 
 	cd ${DESTDIR}
-	msg_normal "Package '$pkgname ($lver)': creating package metadata..."
+	msg_normal "'$pkgname-$lver': creating package metadata...\n"
 
 	write_metadata_flist_header $TMPFPLIST
 
@@ -356,7 +355,7 @@ _EOF
 	if [ ! -d $metadir ]; then
 		mkdir -p $metadir >/dev/null 2>&1
 		if [ $? -ne 0 ]; then
-			echo "ERROR: you don't have enough perms for this."
+			msg_red "you don't have enough perms for this!\n"
 			rm -f $TMPFLIST $TMPFPROPS
 			exit 1
 		fi
@@ -386,5 +385,5 @@ _EOF
 	xbps_write_metadata_scripts_pkg remove;				\
 	} || return $?
 
-	msg_normal "Package '$pkgname ($lver)': successfully created package metadata."
+	msg_normal "'$pkgname-$lver': successfully created package metadata.\n"
 }

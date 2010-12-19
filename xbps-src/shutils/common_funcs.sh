@@ -28,19 +28,31 @@
 #
 run_func_error()
 {
-	local func="$1"
+	local lver func="$1"
 
 	remove_pkgdestdir_sighandler ${pkgname}
-	msg_error "${pkgname}-${version}: the $func function didn't complete due to errors or SIGINT!"
 
+	if [ -n "${revision}" ]; then
+		lver="${version}_${revision}"
+	else    
+		lver="${version}"
+	fi
+
+	msg_error "'${pkgname}-${lver}': '$func' phase didn't complete due to errors or SIGINT!\n"
 }
 
 remove_pkgdestdir_sighandler()
 {
-	local subpkg _pkgname="$1"
+	local lver subpkg _pkgname="$1"
 
 	setup_tmpl ${_pkgname}
 	[ -z "$sourcepkg" ] && return 0
+
+	if [ -n "${revision}" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
+	fi
 
 	# If there is any problem in the middle of writting the metadata,
 	# just remove all files from destdir of pkg.
@@ -57,7 +69,7 @@ remove_pkgdestdir_sighandler()
 	if [ -d "$XBPS_DESTDIR/${sourcepkg}-${version%_*}" ]; then
 		rm -rf "$XBPS_DESTDIR/${sourcepkg}-${version%_*}"
 	fi
-	msg_red "Removed '${sourcepkg}-${version}' files from DESTDIR..."
+	msg_red "'${sourcepkg}-${lver}': removed files from DESTDIR...\n"
 }
 
 var_is_a_function()
@@ -79,9 +91,15 @@ var_is_a_function()
 run_func()
 {
 	local func="$1"
-	local rval logpipe logfile
+	local lver rval logpipe logfile
 
 	[ -z "$func" ] && return 1
+
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
+	fi
 
 	var_is_a_function $func
 	if [ $? -eq 1 ]; then
@@ -97,6 +115,7 @@ run_func()
 		exec 1>"$logpipe" 2>"$logpipe"
 		set -e
 		trap "run_func_error $func" 0
+		msg_normal "'$pkgname-$lver': running $func phase...\n"
 		$func 2>&1
 		set +e
 		trap '' 0
@@ -109,14 +128,12 @@ run_func()
 
 msg_red()
 {
-	[ -z "$1" ] && return 1
-
 	# error messages in bold/red
 	printf "\033[1m\033[31m"
 	if [ -n "$in_chroot" ]; then
-		echo "[chroot] => ERROR: $1"
+		printf "[chroot] => ERROR: $@"
 	else
-		echo "=> ERROR: $1"
+		printf "=> ERROR: $@"
 	fi
 	printf "\033[m"
 }
@@ -129,10 +146,8 @@ msg_error()
 
 msg_error_nochroot()
 {
-	[ -z "$1" ] && return 1
-
 	printf "\033[1m\033[31m"
-	echo "=> ERROR: $1"
+	printf "=> ERROR: $@"
 	printf "\033[m"
 
 	exit 1
@@ -140,37 +155,36 @@ msg_error_nochroot()
 
 msg_warn()
 {
-	[ -z "$1" ] && return 1
-
 	# warn messages in bold/yellow
 	printf "\033[1m\033[33m"
 	if [ -n "$in_chroot" ]; then
-		echo "[chroot] => WARNING: $1"
+		printf "[chroot] => WARNING: $@"
 	else
-		echo "=> WARNING: $1"
+		printf "=> WARNING: $@"
 	fi
 	printf "\033[m"
 }
 
 msg_warn_nochroot()
 {
-	[ -z "$1" ] && return 1
-
 	printf "\033[1m\033[33m"
-	echo "=> WARNING: $1"
+	printf "=> WARNING: $@"
 	printf "\033[m"
 }
 
 msg_normal()
 {
-	[ -z "$1" ] && return 1
-
 	# normal messages in bold
 	printf "\033[1m"
 	if [ -n "$in_chroot" ]; then
-		echo "[chroot] => $1"
+		printf "[chroot] => $@"
 	else
-		echo "=> $1"
+		printf "=> $@"
 	fi
 	printf "\033[m"
+}
+
+msg_normal_append()
+{
+	printf "\033[1m$@\033[m"
 }

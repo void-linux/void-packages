@@ -39,8 +39,8 @@ replace_interpreter()
 
 	if [ -f $file ]; then
 		sed -i -e "1s|^#![[:space:]]*${orsb}|#!${trpath}|" $file && \
-			msg_normal "Transformed $lang script: ${file##$wrksrc}."
+			msg_normal "Transformed $lang script: ${file##$wrksrc}.\n"
 	else
-		msg_warn "Ignoring unexistent $lang script: ${file##$wrksrc}."
+		msg_warn "Ignoring unexistent $lang script: ${file##$wrksrc}.\n"
 	fi
 }

@@ -218,7 +218,7 @@ _EOF
 		for f in ${triggers}; do
 			if [ ! -f $XBPS_TRIGGERSDIR/$f ]; then
 				rm -f $tmpf
-				msg_error "$pkgname: unknown trigger $f, aborting!"
+				msg_error "$pkgname: unknown trigger $f, aborting!\n"
 			fi
 		done
 		for f in ${triggers}; do

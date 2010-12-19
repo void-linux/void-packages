@@ -57,7 +57,7 @@ verify_rundeps()
 	fi
 
 	[ -n "$noarch" -o -n "$noverifyrdeps" ] && return 0
-	msg_normal "Package '$pkgname ($lver)': verifying required run dependencies, please wait..."
+	msg_normal "'$pkgname-$lver': verifying required run dependencies, please wait...\n"
 
 	depsftmp=$(mktemp -t xbps_src_depstmp.XXXXXXXXXX) || exit 1
 	find ${PKG_DESTDIR} -type f -perm -u+w > $depsftmp 2>/dev/null
@@ -148,7 +148,7 @@ verify_rundeps()
 	# Print an informative message suggesting what needs to be added
 	# into the build template.
 
-	msg_normal "The following code needs to be added into the build template:"
+	msg_normal "The following code needs to be added into the build template:\n"
 	echo "============ CUT HERE ==============="
 
 	for f in ${missing_libs}; do
@@ -194,5 +194,5 @@ verify_rundeps()
 	done
 	echo "============ CUT HERE ==============="
 
-	msg_error "Package '${pkgname}-${version}' has wrong dependencies, won't continue..."
+	msg_error "'${pkgname}-${lver}': incorrect run dependencies, won't continue...\n"
 }

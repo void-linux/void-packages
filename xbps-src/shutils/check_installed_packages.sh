@@ -29,13 +29,13 @@ check_installed_packages()
 {
 	local f lpkgn lpkgver rv srcpkgver
 
-	msg_normal "Checking for newer packages from srcpkgs, please wait..."
+	msg_normal "Checking for newer packages from srcpkgs, please wait...\n"
 	for f in $(${XBPS_BIN_CMD} list|awk '{print $1}'); do
 		lpkgn=$(${XBPS_PKGDB_CMD} getpkgname ${f})
 		lpkgver=$(${XBPS_PKGDB_CMD} getpkgversion ${f})
 
 		if [ ! -r ${XBPS_SRCPKGDIR}/${lpkgn}/template ]; then
-			msg_warn "Installed package ${f} not available as source pkg, skipping."
+			msg_warn "Installed package ${f} not available as source pkg, skipping.\n"
 			continue
 		fi
 		. ${XBPS_SRCPKGDIR}/${lpkgn}/template
@@ -59,5 +59,5 @@ check_installed_packages()
 		fi
 		reset_tmpl_vars
 	done
-	msg_normal "done."
+	msg_normal "done.\n"
 }
