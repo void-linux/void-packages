@@ -34,10 +34,11 @@ verify_sha256_cksum()
 
 	[ -z "$file" -o -z "$cksum" ] && return 1
 
-	msg_normal "'$pkgname-$lver': verifying checksum for $file... "
+	msg_normal "'$pkgname-$lver': verifying checksum for distfile '$file'... "
 	filesum=$(${XBPS_DIGEST_CMD} $XBPS_SRCDISTDIR/$file)
 	if [ "$origsum" != "$filesum" ]; then
-		msg_error "SHA256 checksum doesn't match for $file.\n"
+		echo
+		msg_error "SHA256 mismatch for '$file'!\n"
 	fi
 	msg_normal_append "OK.\n"
 }
@@ -99,7 +100,7 @@ fetch_distfiles()
 			fi
 		fi
 
-		msg_normal "'$pkgname-$lver': fetching distfile $curfile...\n"
+		msg_normal "'$pkgname-$lver': fetching distfile '$curfile'...\n"
 
 		if [ -n "$distfiles" ]; then
 			localurl="$f"
