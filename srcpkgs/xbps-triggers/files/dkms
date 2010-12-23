@@ -1,0 +1,100 @@
+#!/bin/sh
+#
+# DKMS trigger. Used to add/build/install or remove the specified modules
+# from all kernels.
+# 
+# Modules can be specified like:
+#  dkms_modules="<modulename> <version> ..."
+#
+# Arguments:	$ACTION = [run/targets]
+#		$TARGET = [post-install/pre-remove]
+#		$PKGNAME
+#		$VERSION
+#		$UPDATE = [yes/no]
+#
+ACTION="$1"
+TARGET="$2"
+PKGNAME="$3"
+VERSION="$4"
+UPDATE="$5"
+
+DKMS=usr/sbin/dkms
+
+remove_modules()
+{
+	# Remove the specified modules from all kernels.
+	set -- ${dkms_modules}
+	while [ $# -gt 0 ]; do
+		if $DKMS status -m $1 | egrep -q '(added|built|installed)' > /dev/null; then
+			echo -n "Removing DKMS module '$1-$2'... "
+			$DKMS remove -m $1 -v $2 --all >/dev/null 2>&1
+			if [ $? -eq 0 ]; then
+				echo "done."
+			else
+				echo "FAILED!"
+			fi
+		fi
+		shift; shift;
+	done
+}
+
+add_modules()
+{
+	# Add/build and install the specified modules for all kernels.
+	set -- ${dkms_modules}
+	while [ $# -gt 0 ]; do
+		$DKMS add -m "$1" -v "$2" >/dev/null 2>&1
+		if [ $? -eq 0 ]; then
+			echo "Added DKMS module '$1-$2'."
+		else
+			echo "Failed to add DKMS module: '$1-$2'..."
+			err=1
+		fi
+		shift; shift;
+	done
+	[ -n "$err" ] && exit $err
+
+	for f in $(echo lib/modules/*); do
+		_kver=$(basename $f)
+		set -- ${dkms_modules}
+		while [ $# -gt 0 ]; do
+			echo -n "Installing DKMS module '$1-$2' for kernel ${_kver}... "
+			$DKMS build -m "$1" -v "$2" -k "${_kver}" >/dev/null 2>&1 && \
+				$DKMS install -m "$1" -v "$2" -k "${_kver}" >/dev/null 2>&1
+			if [ $? -eq 0 ]; then
+				echo "done."
+			else
+				echo "FAILED!"
+				echo "DKMS module '$1-$2' failed to install, please do this manually"
+				echo "and check for errors in the log file."
+			fi
+			shift; shift;
+		done
+	done
+}
+
+case "$ACTION" in
+targets)
+	echo "post-install pre-remove"
+	;;
+run)
+	[ ! -x $DKMS -o -z "$dkms_modules" ] && exit 0
+
+	case "$TARGET" in
+	post-install)
+		add_modules
+		;;
+	pre-remove)
+		remove_modules
+		;;
+	*)
+		exit 1
+		;;
+	esac
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0
