@@ -1,0 +1,186 @@
+# Template file for 'virtualbox-ose'
+pkgname=virtualbox-ose
+version=4.0.0
+wrksrc="VirtualBox-${version}_OSE"
+distfiles="http://download.virtualbox.org/virtualbox/$version/VirtualBox-$version.tar.bz2"
+build_style=custom-install
+short_desc="General-purpose full virtualizer for x86 hardware"
+maintainer="Juan RP <xtraeme@gmail.com>"
+checksum=c60b42385b4956780babd133d2b694dade4838e18ef723a78f899fc3bd8543a0
+long_desc="
+ VirtualBox is a free x86 virtualization solution allowing a wide range of x86
+ operating systems such as Windows, DOS, BSD or Linux to run on a Linux system."
+
+gtk_iconcache_dirs="/usr/share/icons/hicolor"
+subpackages="${pkgname}-dkms ${pkgname}-guest ${pkgname}-guest-dkms"
+
+Add_dependency run libgcc
+Add_dependency run glibc
+Add_dependency run libstdc++
+Add_dependency run libpng
+Add_dependency run zlib
+Add_dependency run libssl
+Add_dependency run libxml2
+Add_dependency run libcurl
+Add_dependency run SDL
+Add_dependency run qt
+Add_dependency run libX11
+Add_dependency run libXmu
+Add_dependency run libXext
+Add_dependency run python
+Add_dependency run libXcursor
+Add_dependency run libXt
+Add_dependency run libXinerama
+Add_dependency run MesaLib
+Add_dependency run libIDL
+Add_dependency run glib
+Add_dependency run ${pkgname}-dkms	">=${version}"
+
+Add_dependency build libpng-devel
+Add_dependency build zlib-devel
+Add_dependency build openssl-devel
+Add_dependency build libxml2-devel
+Add_dependency build libcurl-devel
+Add_dependency build SDL-devel
+Add_dependency build qt-devel
+Add_dependency build libX11-devel
+Add_dependency build libXmu-devel
+Add_dependency build libXext-devel
+Add_dependency build python-devel
+Add_dependency build libXcursor-devel
+Add_dependency build libXt-devel
+Add_dependency build libXinerama-devel
+Add_dependency build MesaLib-devel
+Add_dependency build libIDL-devel
+Add_dependency build glib-devel
+Add_dependency build pam-devel
+Add_dependency build libxslt
+Add_dependency build docbook-xml
+Add_dependency build docbook-xsl
+Add_dependency build acpica-utils
+Add_dependency build kernel-headers
+Add_dependency build dev86
+Add_dependency build makeself
+if [ "${xbps_machine}" = "x86_64" ]; then
+	Add_dependency build gcc-c++-multilib
+fi
+Add_dependency full gcc
+Add_dependency full coreutils
+Add_dependency full hicolor-icon-theme
+Add_dependency full desktop-file-utils
+
+do_build()
+{
+	_khdrver=$($XBPS_PKGDB_CMD version kernel-headers)
+
+	# Fix path for kernel-headers location.
+	sed -i -e "s|@@XBPS_KERNHDRVER@@|${_khdrver}|g" configure
+
+	# Build.
+	cp -f ${FILESDIR}/LocalConfig.kmk .
+	./configure --disable-kmods --disable-java --enable-vde --disable-docs
+	source ./env.sh
+	kmk all
+}
+
+do_install()
+{
+	local f _osedir _guestdir
+
+	source ./env.sh
+	#
+	# virtualbox-ose.
+	#
+	cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin
+	mkdir -p ${DESTDIR}/usr/{bin,lib/virtualbox/components,share/virtualbox/nls}
+
+	install -m0755 VBox.sh ${DESTDIR}/usr/bin/VBox
+	for f in VirtualBox VBoxManage VBoxSDL VBoxHeadless vboxwebsrv; do
+		ln -sf VBox ${DESTDIR}/usr/bin/${f}
+	done
+	install -m0755 components/* -t ${DESTDIR}/usr/lib/virtualbox/components
+	install -m0755 *.so ${DESTDIR}/usr/lib/virtualbox
+	install -m0644 *.gc *.r0 VBoxEFI* ${DESTDIR}/usr/lib/virtualbox
+	install -m4755 VBoxHeadless VBoxSDL VBoxNetDHCP VBoxNetAdpCtl \
+		VirtualBox VBoxBFE -t ${DESTDIR}/usr/lib/virtualbox
+	install -m0755 VBoxManage VBoxSVC VBoxXPCOMIPCD VBoxSysInfo.sh xpidl \
+		VBoxTestOGL EfiThunk *.py -t ${DESTDIR}/usr/lib/virtualbox
+	
+	install -m0755 nls/*.qm -t ${DESTDIR}/usr/share/virtualbox/nls
+
+	install -D -m0644 VBox.png ${DESTDIR}/usr/share/pixmaps/VBox.png
+	install -D -m0644 virtualbox.desktop \
+		${DESTDIR}/usr/share/applications/virtualbox.desktop
+	sed -i -e "s|Icon=VBox|Icon=VBox.png|" \
+		${DESTDIR}/usr/share/applications/virtualbox.desktop
+	install -d ${DESTDIR}/usr/share/icons/hicolor
+	cp -a icons ${DESTDIR}/usr/share/icons/hicolor
+
+	mkdir -p ${DESTDIR}/etc/vbox
+	echo 'INSTALL_DIR=/usr/lib/virtualbox' > ${DESTDIR}/etc/vbox/vbox.cfg
+
+	mkdir -p ${DESTDIR}/usr/lib/virtualbox/sdk/bindings/xpcom/python
+	cd sdk/installer
+	VBOX_INSTALL_PATH="/usr/lib/virtualBox" \
+		python vboxapisetup.py install --root "${DESTDIR}"
+	cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/sdk/bindings/xpcom/python
+	cp -r xpcom ${DESTDIR}/usr/lib/virtualbox/sdk/bindings/xpcom/python
+	chmod 644 ${DESTDIR}/usr/lib/virtualbox/sdk/bindings/xpcom/python/xpcom/*.py
+	chmod 644 ${DESTDIR}/usr/lib/virtualbox/sdk/bindings/xpcom/python/xpcom/server/*.py
+	chmod 644 ${DESTDIR}/usr/lib/virtualbox/sdk/bindings/xpcom/python/xpcom/client/*.py
+
+	cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin
+	install -d ${DESTDIR}/usr/share/licenses/${pkgname}
+	install -m0644 ${wrksrc}/COPYING* \
+		${DESTDIR}/usr/share/licenses/${pkgname}
+	#
+	# virtualbox-ose-dkms.
+	#
+	cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/src
+	local _osedir=${DESTDIR}/usr/src/${pkgname}-${version}
+
+	mkdir -p ${_osedir}
+	cp -a . ${_osedir}
+
+	install -m644 ${FILESDIR}/${pkgname}-dkms.dkms ${_osedir}/dkms.conf
+	mkdir -p ${DESTDIR}/lib/udev/rules.d
+	install -m644 ${FILESDIR}/${pkgname}-dkms.udev \
+		${DESTDIR}/lib/udev/rules.d/60-virtualbox-ose-dkms.rules
+	#
+	# virtualbox-ose-guest.
+	#
+	cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/additions
+	install -d ${DESTDIR}/usr/bin ${DESTDIR}/sbin
+
+	install -m755 VBoxClient VBoxControl VBoxService ${DESTDIR}/usr/bin
+	install -m755 mount.vboxsf ${DESTDIR}/sbin
+	install -m644 -D ${wrksrc}/src/VBox/Additions/x11/Installer/50-vboxmouse.conf \
+		${DESTDIR}/usr/share/X11/xorg.conf.d/50-vboxmouse.conf
+	install -m644 -D ${wrksrc}/src/VBox/Additions/linux/installer/70-xorg-vboxmouse.rules \
+		${DESTDIR}/lib/udev/rules.d/70-xorg-vboxmouse.rules
+	install -m755 -D ${wrksrc}/src/VBox/Additions/x11/Installer/98vboxadd-xclient \
+		${DESTDIR}/etc/X11/Xsession.d/98vboxadd-xclient
+	install -m755 -D ${wrksrc}/src/VBox/Additions/x11/Installer/vboxclient.desktop \
+		${DESTDIR}/etc/xdg/autostart/vboxclient.desktop
+	install -D vboxmouse_drv_19.so \
+		${DESTDIR}/usr/lib/xorg/modules/input/vboxmouse.so
+	install -D vboxvideo_drv_19.so \
+		${DESTDIR}/usr/lib/xorg/modules/drivers/vboxvideo.so
+	install -d ${DESTDIR}/usr/lib/xorg/modules/dri
+	install -m755 VBoxOGL*.so ${DESTDIR}/usr/lib
+	cd ${DESTDIR}/usr/lib && ln -s VBoxOGL.so \
+		${DESTDIR}/usr/lib/xorg/modules/dri/vboxvideo_dri.so
+	cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/additions
+	install -m755 -D pam_vbox.so ${DESTDIR}/lib/security/pam_vbox.so
+	#
+	# virtualbox-ose-guest-dkms.
+	#
+	cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/additions/src
+	local _guestdir=${DESTDIR}/usr/src/${pkgname}-guest-${version}
+
+	cp -a . ${_guestdir}
+	install -m644 ${FILESDIR}/${pkgname}-guest-dkms.dkms \
+		${_guestdir}/dkms.conf
+	install -m644 ${FILESDIR}/${pkgname}-guest-dkms.udev \
+		${DESTDIR}/lib/udev/rules.d/60-virtualbox-ose-guest-dkms.rules
+}
