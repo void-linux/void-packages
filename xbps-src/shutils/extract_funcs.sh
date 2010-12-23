@@ -53,8 +53,9 @@ extract_distfiles()
 	#
 	# If noextract is set, do a "fake extraction".
 	#
-	if [ -z "$distfiles" -o -n "$noextract" ]; then
+	if [ -n "$noextract" ]; then
 		mkdir $wrksrc
+		run_func do_extract
 		touch -f $XBPS_EXTRACT_DONE
 		return 0
 	fi
