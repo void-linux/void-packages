@@ -289,6 +289,13 @@ xbps_write_metadata_pkg_real()
 <string>$long_desc</string>
 _EOF
 	#
+	# If package sets $dkms_modules, add dkms rundep.
+	#
+	if [ -n "$dkms_modules" ]; then
+		Add_dependency run dkms
+	fi
+
+	#
 	# If package sets $openrc_services, add the OpenRC rundep.
 	#
 	if [ -n "$openrc_services" ]; then

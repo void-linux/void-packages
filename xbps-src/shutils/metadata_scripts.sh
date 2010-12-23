@@ -63,7 +63,7 @@ xbps_write_metadata_scripts_pkg()
 # not possible to chroot(3).
 #
 
-export PATH="./bin:./sbin:./usr/bin:./usr/sbin"
+export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
 
 TRIGGERSDIR="./var/db/xbps/triggers"
 ACTION="\$1"
@@ -77,25 +77,12 @@ UPDATE="\$4"
 _EOF
 
 	#
-	# Handle GNU Info files.
+	# Handle DKMS modules.
 	#
-	if [ -d "${DESTDIR}/usr/share/info" ]; then
-		unset info_files
-		for f in $(find ${DESTDIR}/usr/share/info -type f); do
-			j=$(echo $f|sed -e "$fpattern")
-                        [ "$j" = "" ] && continue
-			[ "$j" = "/usr/share/info/dir" ] && continue
-			if [ -z "$info_files" ]; then
-				info_files="$j"
-			else
-				info_files="$info_files $j"
-			fi
-		done
-		if [ -n "${info_files}" ]; then
-			_add_trigger info-files
-			echo "export info_files=\"${info_files}\"" >> $tmpf
-		fi
-        fi
+	if [ -n "${dkms_modules}" ]; then
+		_add_trigger dkms
+		echo "export dkms_modules=\"${dkms_modules}\"" >> $tmpf
+	fi
 
 	#
 	# Handle OpenRC services.
@@ -131,6 +118,27 @@ _EOF
 			unset homedir shell descr groups
 		done
 	fi
+
+	#
+	# Handle GNU Info files.
+	#
+	if [ -d "${DESTDIR}/usr/share/info" ]; then
+		unset info_files
+		for f in $(find ${DESTDIR}/usr/share/info -type f); do
+			j=$(echo $f|sed -e "$fpattern")
+                        [ "$j" = "" ] && continue
+			[ "$j" = "/usr/share/info/dir" ] && continue
+			if [ -z "$info_files" ]; then
+				info_files="$j"
+			else
+				info_files="$info_files $j"
+			fi
+		done
+		if [ -n "${info_files}" ]; then
+			_add_trigger info-files
+			echo "export info_files=\"${info_files}\"" >> $tmpf
+		fi
+        fi
 
 	#
 	# (Un)Register a shell in /etc/shells.
@@ -207,6 +215,9 @@ _EOF
 				>> $tmpf
 		fi
 	fi
+
+	# End of trigger var exports.
+	echo >> $tmpf
 
 	#
 	# Write the INSTALL/REMOVE package scripts.
