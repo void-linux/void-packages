@@ -93,6 +93,13 @@ _EOF
 	fi
 
 	#
+	# Handle system groups.
+	#
+	if [ -n "${system_groups}" ]; then
+		_add_trigger system-accounts
+		echo "export system_groups=\"${system_groups}\"" >> $tmpf
+	fi
+	#
 	# Handle system accounts.
 	#
 	if [ -n "${system_accounts}" ]; then
@@ -118,7 +125,6 @@ _EOF
 			unset homedir shell descr groups
 		done
 	fi
-
 	#
 	# Handle GNU Info files.
 	#

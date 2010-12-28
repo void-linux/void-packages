@@ -54,10 +54,10 @@ xbps_write_metadata_pkg()
 		fi
 		setup_tmpl ${sourcepkg}
 		unset run_depends conf_files noarch triggers replaces \
-			revision openrc_services system_accounts \
+			revision openrc_services system_accounts system_groups \
 			preserve keep_empty_dirs xml_entries sgml_entries \
 			xml_catalogs sgml_catalogs gconf_entries gconf_schemas \
-			gtk_iconcache_dirs font_dirs
+			gtk_iconcache_dirs font_dirs dkms_modules
 		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${subpkg}
 		set_tmpl_common_vars
@@ -303,9 +303,9 @@ _EOF
 	fi
 
 	#
-	# If package sets $system_accounts, add shadow rundep.
+	# If package sets $system_accounts or $system_groups, add shadow rundep.
 	#
-	if [ -n "$system_accounts" ]; then
+	if [ -n "$system_accounts" -o -n "$system_groups" ]; then
 		Add_dependency run shadow
 	fi
 
