@@ -14,28 +14,44 @@ PKGNAME="$3"
 VERSION="$4"
 UPDATE="$5"
 
-useradd_cmd=usr/sbin/useradd
-userdel_cmd=usr/sbin/userdel
-groupadd_cmd=usr/sbin/groupadd
-passwd_cmd=usr/bin/passwd
-getent_cmd=usr/bin/getent
+USERADD=usr/sbin/useradd
+USERDEL=usr/sbin/userdel
+GROUPADD=usr/sbin/groupadd
+GROUPDEL=usr/sbin/groupdel
+PASSWD=usr/bin/passwd
+GETENT=usr/bin/getent
+
+group_add()
+{
+	local grp="$1"
+
+	if ! $GETENT group ${grp} >/dev/null; then
+		$GROUPADD -r ${grp} >/dev/null 2>&1
+		if [ $? -eq 0 ]; then
+			echo "Created ${grp} system group."
+		else
+			echo "Failed to create ${grp} system group!"
+			exit 1
+		fi
+	fi
+}
 
 case "$ACTION" in
 targets)
 	echo "post-install pre-remove"
 	;;
 run)
-	if [ ! -x $useradd_cmd -a ! -x $groupadd_cmd -a ! -x $passwd_cmd \
-	       -a ! -x $getent_cmd ]; then
+	if [ ! -x $USERADD -a ! -x $GROUPADD -a ! -x $PASSWD -a ! -x $GETENT ]; then
 	       exit 0
 	fi
 
-	if [ -z "$system_accounts" ]; then
+	if [ -z "$system_accounts" -a -z "$system_groups" ]; then
 		exit 0
 	fi
 
 	case "$TARGET" in
 	post-install)
+		# System user/group required by a package.
 		for acct in ${system_accounts}; do
 			eval homedir="\$${acct}_homedir"
 			eval shell="\$${acct}_shell"
@@ -46,19 +62,25 @@ run)
 			[ -z "$descr" ] && descr="$acct unpriviledged user"
 			[ -n "$groups" ] && groups="-G $groups"
 
-			if ! $getent_cmd group ${acct} >/dev/null; then
-				$groupadd_cmd -r ${acct} \
-					2>&1 >/dev/null || exit $?
-				echo "Created ${acct} system group."
-			fi
-			if ! $getent_cmd passwd ${acct} >/dev/null; then
-				$useradd_cmd -c "$descr" -d "$homedir" \
+			group_add $groups
+
+			if ! $GETENT passwd ${acct} >/dev/null; then
+				$USERADD -c "$descr" -d "$homedir" \
 					-s "$shell" -g ${acct} $groups \
 					-r ${acct} && \
-					$passwd_cmd -l ${acct} \
-					2>&1 >/dev/null || exit $?
-				echo "Created ${acct} system user."
+					$PASSWD -l ${acct} >/dev/null 2>&1
+				if [ $? -eq 0 ]; then
+					echo "Created ${acct} system user."
+				else
+					echo "Failed to create ${acct} system user!"
+					exit 1
+				fi
 			fi
+		done
+
+		# System groups required by a package.
+		for grp in ${system_groups}; do
+			group_add $grp
 		done
 		;;
 	pre-remove)
@@ -67,9 +89,15 @@ run)
 		#
 		if [ "$UPDATE" = "no" ]; then
 			for acct in ${system_accounts}; do
-				$userdel_cmd ${acct} 2>&1 >/dev/null
+				$USERDEL ${acct} >/dev/null 2>&1
 				if [ $? -eq 0 ]; then
 					echo "Removed ${acct} system user/group."
+				fi
+			done
+			for grp in ${system_groups}; do
+				$GROUPDEL ${grp} >/dev/null 2>&1
+				if [ $? -eq 0 ]; then
+					echo "Removed ${grp} system group."
 				fi
 			done
 		fi
