@@ -85,6 +85,11 @@ build_src_phase()
 		fi
 	fi
 
+	# Disable -Wl,--as-needed if requested!
+	if [ -n "$broken_as_needed" ]; then
+		export XBPS_LDFLAGS="$(echo $XBPS_LDFLAGS|sed -e "s|-Wl,--as-needed||g")"
+	fi
+
 	if [ "$build_style" = "custom-install" ]; then
 		[ -n "$XBPS_LDFLAGS" ] && export LDFLAGS="$XBPS_LDFLAGS"
 		run_func do_build

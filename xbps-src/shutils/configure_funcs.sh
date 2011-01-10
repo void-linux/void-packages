@@ -113,6 +113,10 @@ configure_src_phase()
 		conf_ldflags="$XBPS_LDFLAGS"
 	fi
 
+	if [ -n "$broken_as_needed" ]; then
+		export XBPS_LDFLAGS="$(echo $XBPS_LDFLAGS|sed -e "s|-Wl,--as-needed||g")"
+	fi
+
 	case "$build_style" in
 	gnu_configure|gnu-configure) run_func do_gnu_configure ;;
 	configure) run_func do_configure ;;
