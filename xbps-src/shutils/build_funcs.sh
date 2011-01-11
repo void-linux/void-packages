@@ -91,7 +91,8 @@ build_src_phase()
 	fi
 
 	if [ "$build_style" = "custom-install" ]; then
-		[ -n "$XBPS_LDFLAGS" ] && export LDFLAGS="$XBPS_LDFLAGS"
+		[ -n "$XBPS_LDFLAGS" ] && export LDFLAGS="$LDFLAGS $XBPS_LDFLAGS"
+		[ -n "$XBPS_CFLAGS" ] && export CFLAGS="$CFLAGS $XBPS_CFLAGS"
 		run_func do_build
 	else
 		run_func do_make_build
