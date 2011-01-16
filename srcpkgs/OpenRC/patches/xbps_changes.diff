@@ -3,10 +3,17 @@ xbps changes:
 * Installs a "locale" service into the "boot" runlevel to set
   a global system locale.
 * Adds consolefont by default in "boot" runlevel.
+* Removes hardcoded rpath for bins/lib.
 * Modified inittab to pass correct parameters to reboot(8).
 * Sets unicode, rc_logger and rc_shell in /etc/rc.conf by default.
 * Sets windowkeys and fix_euro in /etc/conf.d/keymaps by default.
 * In local service, start/stop vmware-tools services if script exists.
+* The sysfs service mounts /var/run, /var/lock and /var/tmp as tmpfs with
+  appropiate permissions.
+* The bootmisc service no longer cleans up /var/run, as it is now mounted tmpfs.
+* The devfs service mounts /dev/shm with type tmpfs rather than "shm".
+* The mtab service checks if / is of type rootfs and tmpfs, and don't add it
+  into /etc/mtab, which is redundant.
 
 --- runlevels/Makefile.Linux.orig	2009-05-07 15:48:37.075825332 +0000
 +++ runlevels/Makefile.Linux	2009-05-07 15:48:52.008557039 +0000
@@ -139,3 +146,105 @@ xbps changes:
  
  # Network fstypes. Below is the default.
  net_fs_list="afs cifs coda davfs fuse fuse.sshfs gfs glusterfs lustre ncpfs nfs nfs4 ocfs2 shfs smbfs"
+--- init.d/sysfs.in.orig	2011-01-16 12:42:39.930029312 +0100
++++ init.d/sysfs.in	2011-01-16 12:43:08.090153349 +0100
+@@ -52,13 +52,39 @@ mount_misc()
+ 	fi
+ }
+ 
++mount_var_run_lock()
++{
++	local _args _mode _mnt
++
++	for _mnt in run lock tmp; do
++		if [ "${_mnt}" != "run" ]; then
++			_mode=1777
++			_args="mode=${_mode},nosuid,noexec,nodev"
++		else
++			_mode=0755
++			_args="mode=${_mode},nosuid"
++		fi
++		if [ ! -d /var/${_mnt} ]; then
++			if ! mkdir -m ${_mode} /var/${_mnt}; then
++				ewarn "Could not create /var/${_mnt}!"
++				return 1
++			fi
++		fi
++
++		ebegin "Mounting /var/${_mnt}"
++		if ! fstabinfo --mount /var/${_mnt}; then
++			mount -n -t tmpfs -o ${_args} tmpfs /var/${_mnt}
++		fi
++		eend $?
++	done
++}
++
+ start()
+ {
+-	local retval
+ 	mount_sys
+-	retval=$?
+-	if [ $retval -eq 0 ]; then
++	if [ $? -eq 0 ]; then
+ 		mount_misc
+ 	fi
+-	return $retval
++	mount_var_run_lock
++	return $?
+ }
+--- init.d/mtab.in.orig	2011-01-16 12:44:28.947251849 +0100
++++ init.d/mtab.in	2011-01-16 12:44:37.896926832 +0100
+@@ -28,7 +28,7 @@ start()
+ 	# makes / readonly and dismounts all tmpfs even if in use which is
+ 	# not good. Luckily, umount uses /etc/mtab instead of /proc/mounts
+ 	# which allows this hack to work.
+-	grep -v "^[^ ]* / tmpfs " /proc/mounts > /etc/mtab
++	egrep -v "^[^ ]* / (rootfs|tmpfs) " /proc/mounts > /etc/mtab
+ 
+ 	# Remove stale backups
+ 	rm -f /etc/mtab~ /etc/mtab~~
+--- init.d/bootmisc.in.orig	2011-01-16 12:45:10.633395765 +0100
++++ init.d/bootmisc.in	2011-01-16 12:46:00.591163353 +0100
+@@ -97,31 +97,6 @@ start()
+ 		done
+ 		[ -e /var/log/wtmp ] || mkutmp /var/log/wtmp
+ 		eend 0
+-
+-		ebegin "Cleaning /var/run"
+-		for x in $(find /var/run ! -type d ! -name utmp \
+-			! -name random-seed ! -name dev.db \
+-			! -name ld-elf.so.hints ! -name ld.so.hints);
+-		do
+-			# Clean stale sockets
+-			if [ -S "$x" ]; then
+-				if type fuser >/dev/null 2>&1; then
+-					fuser "$x" >/dev/null 2>&1 || rm -- "$x"
+-				else
+-					rm -- "$x"
+-				fi
+-			fi
+-			[ ! -f "$x" ] && continue
+-			# Do not remove pidfiles of already running daemons
+-			case "$x" in
+-				*.pid)
+-					start-stop-daemon --test --quiet \
+-					--stop --pidfile "$x" && continue
+-				;;
+-			esac
+-			rm -f -- "$x"
+-		done
+-		eend 0
+ 	fi
+ 
+ 	# Clean up /tmp directories
+--- init.d/devfs.in.orig	2011-01-16 12:46:46.645636416 +0100
++++ init.d/devfs.in	2011-01-16 12:46:58.783551737 +0100
+@@ -13,7 +13,7 @@ start() {
+ 	# Mount required stuff as user may not have then in /etc/fstab
+ 	for x in \
+ 		"devpts /dev/pts 0755 ,gid=5,mode=0620 devpts" \
+-		"tmpfs /dev/shm 1777 ,nodev shm" \
++		"tmpfs /dev/shm 1777 ,nodev tmpfs" \
+ 	; do
+ 		set -- $x
+ 		grep -Eq "[[:space:]]+$1$" /proc/filesystems || continue
