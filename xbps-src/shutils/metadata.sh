@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2010 Juan Romero Pardines.
+# Copyright (c) 2008-2011 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -57,7 +57,8 @@ xbps_write_metadata_pkg()
 			revision openrc_services system_accounts system_groups \
 			preserve keep_empty_dirs xml_entries sgml_entries \
 			xml_catalogs sgml_catalogs gconf_entries gconf_schemas \
-			gtk_iconcache_dirs font_dirs dkms_modules
+			gtk_iconcache_dirs font_dirs dkms_modules provides \
+			conflicts
 		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${subpkg}
 		set_tmpl_common_vars
@@ -350,6 +351,16 @@ _EOF
 		echo "<key>conflicts</key>" >> $TMPFPROPS
 		echo "<array>" >> $TMPFPROPS
 		for f in ${conflicts}; do
+			echo "<string>$(echo $f|sed "s|<|\&lt;|g;s|>|\&gt;|g")</string>" >> $TMPFPROPS
+		done
+		echo "</array>" >> $TMPFPROPS
+	fi
+
+	# Provides virtual package(s).
+	if [ -n "$provides" ]; then
+		echo "<key>provides</key>" >> $TMPFPROPS
+		echo "<array>" >> $TMPFPROPS
+		for f in ${provides}; do
 			echo "<string>$(echo $f|sed "s|<|\&lt;|g;s|>|\&gt;|g")</string>" >> $TMPFPROPS
 		done
 		echo "</array>" >> $TMPFPROPS
