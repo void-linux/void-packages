@@ -1,15 +1,9 @@
 # Template file for 'glibc'
 pkgname=glibc
 version=2.13
+revision=1
 distfiles="http://ftp.gnu.org/gnu/glibc/glibc-${version}.tar.bz2"
-build_style=gnu_configure
-build_wrksrc="build"
-configure_script="../configure"
-configure_args="--with-tls --enable-kernel=2.6.27 --enable-add-ons
---libexecdir=/usr/lib --libdir=/usr/lib --enable-stackguard-randomization
---with-headers=$XBPS_MASTERDIR/usr/include --enable-bind-now SHELL=/bin/bash"
-make_install_target="SHELL=/bin/bash
-install_root=$XBPS_DESTDIR/$pkgname-$version install"
+build_style=custom-install
 short_desc="The GNU C library"
 maintainer="Juan RP <xtraeme@gmail.com>"
 checksum=0173c92a0545e6d99a46a4fbed2da00ba26556f5c6198e2f9f1631ed5318dbb2
@@ -20,12 +14,6 @@ long_desc="
  as C++ and Objective C; the runtime facilities of other programming
  languages use the C library to access the underlying operating system."
 
-# Build with -mno-tls-direct-seg-refs to avoid performance problems
-# with Xen on x86 32bit.
-if [ "${xbps_machine}" = "i686" ]; then
-	CFLAGS="-mno-tls-direct-seg-refs"
-fi
-
 # Don't check for deps here
 ignore_vdeps_dir="/usr/lib/gconv"
 
@@ -33,33 +21,46 @@ base_chroot=yes
 conf_files="/etc/rpc /etc/ld.so.conf /etc/nsswitch.conf"
 subpackages="glibc-devel glibc-locales nscd"
 
-Add_dependency build	gcc
-Add_dependency build	kernel-libc-headers
-Add_dependency run	xbps-base-files
-Add_dependency run	libgcc
-Add_dependency run	glibc-locales
+Add_dependency run xbps-base-files
+Add_dependency run libgcc
+Add_dependency run glibc-locales
+Add_dependency build gcc
+Add_dependency build kernel-libc-headers
 
-pre_configure()
+do_build()
 {
-	# We must configure it in another directory.
-	mkdir -p ${build_wrksrc}
-	echo "slibdir=/lib" > ${build_wrksrc}/configparms
-	# glibc fails to build if -march not set for a minimal cpu.
-	if [ "$xbps_machine" != "x86_64" ]; then
-		echo "CFLAGS+=-march=${xbps_machine%%-*} -mtune=generic" \
-			>> ${build_wrksrc}/configparms
+	local cflags
+
+	mkdir build && cd build
+	echo "slibdir=/lib" > configparms
+
+	# Build with -mno-tls-direct-seg-refs to avoid performance problems
+	# with Xen on x86 32bit.
+	if [ "${xbps_machine}" = "i686" ]; then
+		cflags="-mno-tls-direct-seg-refs -march=${xbps_machine%%-*}"
+		cflags="$cflags -mtune=generic"
 	fi
+	cflags="$XBPS_CFLAGS $cflags"
+	echo "CFLAGS=$cflags" >> configparms
+
+	SHELL=/bin/bash ../configure --prefix=/usr --with-tls \
+		--enable-add-ons --disable-multi-arch \
+		--enable-bind-now --enable-kernel=2.6.27 \
+		--enable-stack-guard-randomization --disable-profile \
+		--without-cvs --without-gd --libexecdir=/usr/lib \
+		--libdir=/usr/lib --with-headers=${XBPS_MASTERDIR}/usr/include
+
+	make ${makejobs}
 }
 
-pre_install()
+do_install()
 {
 	# Create DESTDIR/etc/ld.so.conf
 	mkdir -p ${DESTDIR}/etc
 	echo "include /etc/ld.so.conf.d/*.conf" > ${DESTDIR}/etc/ld.so.conf
-}
 
-post_install()
-{
+	cd ${wrksrc}/build && make SHELL=/bin/bash install_root=${DESTDIR} install
+
 	# Replace hardcoded path to bash.
 	. $XBPS_HELPERSDIR/replace-interpreter.sh
 	replace_interpreter bash ${DESTDIR}/usr/bin/ldd
@@ -70,9 +71,7 @@ post_install()
 		sed -i "s|^RTLDLIST.*$|RTLDLIST=\"$rtldlist\"|" \
 			${DESTDIR}/usr/bin/ldd
 	fi
-	install -m644 ${FILESDIR}/nsswitch.conf \
-		${DESTDIR}/etc/nsswitch.conf || return 1
-
+	install -m644 ${FILESDIR}/nsswitch.conf ${DESTDIR}/etc/nsswitch.conf
 	install -d ${DESTDIR}/etc/ld.so.conf.d
 	echo "/usr/local/lib" > ${DESTDIR}/etc/ld.so.conf.d/usr_local.conf
 	chmod 644 ${DESTDIR}/etc/ld.so.conf.d/usr_local.conf
