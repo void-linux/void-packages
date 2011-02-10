@@ -4,7 +4,7 @@
 
 do_build()
 {
-	python setup.py build ${make_build_args} || return 1
+	python setup.py build ${make_build_args}
 }
 
 do_install()
@@ -12,8 +12,5 @@ do_install()
 	if [ -z "$make_install_args" ]; then
 		make_install_args="--prefix=/usr --root=$DESTDIR"
 	fi
-
-	cd ${wrksrc} || return 1
-	sed -i 's|man/man1|share/man/man1|g' setup.py || return 1
-	python setup.py install ${make_install_args} || return 1
+	python setup.py install ${make_install_args}
 }
