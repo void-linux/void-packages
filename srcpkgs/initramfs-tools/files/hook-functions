@@ -229,7 +229,7 @@ dep_add_modules()
 
 	# On failure fallback to /proc/mounts if readable
 	if [ -z "$root" ] && [ -r /proc/mounts ]; then
-		eval "$(awk '/\/dev\// {if ($2 == "/") {print "root=" $1 "\nFSTYPE=" $5; exit}}' /proc/mounts)"
+		eval "$(awk '!/^rootfs / {if ($2 == "/") {print "root=" $1 "\nFSTYPE=" $3; exit}}' /proc/mounts)"
 	fi
 
 	# recheck root device
@@ -299,12 +299,16 @@ dep_add_modules()
 	# md root new naming scheme /dev/md/X
 	elif [ "${root#/dev/md/}" != "${root}" ]; then
 		root=${root#/dev/md/}
+		# strip partion number
+		root=${root%%p[0-9]*}
 		# drop the partition number only for sdX and hdX devices
 		# and keep it for other devices like loop#, dm-# devices
 		block=$(sed -ne 's/multipath/[/' -e 's/linear/[/' -e 's/raid[0-9][0-9]*/[/' -e 's/\([hs]d[a-z][a-z]*\)[0-9][0-9]*/\1/g' -e '/^md'$root' :/s/^[^[]*\[ \([^\[]*\)\[.*$/\1/p' </proc/mdstat)
 	# md root /dev/mdX
 	elif [ "${root#/dev/md}" != "${root}" ]; then
 		root=${root#/dev/md}
+		# strip partion number
+		root=${root%%p[0-9]*}
 		# drop the partition number only for sdX and hdX devices
 		# and keep it for other devices like loop#, dm-# devices
 		block=$(sed -ne 's/multipath/[/' -e 's/linear/[/' -e 's/raid[0-9][0-9]*/[/' -e 's/\([hs]d[a-z][a-z]*\)[0-9][0-9]*/\1/g' -e '/^md'$root' :/s/^[^[]*\[ \([^\[]*\)\[.*$/\1/p' </proc/mdstat)
@@ -340,6 +344,10 @@ dep_add_modules()
 		block="rd!c${root#/dev/rd/c}"
 		block=${block%%p[0-9]*}
 
+	# etherd device
+	elif [ "${root#/dev/etherd/}" != "${root}" ]; then
+		block=${root#/dev/etherd/*}
+		block="etherd!${block%p*}"
 	# classical root device
 	else
 		block=${root#/dev/}
@@ -359,7 +367,7 @@ dep_add_modules()
 	sys_walk_mod_add ${root_dev_path}
 
 	# catch old-style IDE
-	if [ -e /sys/bus/ide/devices/ ]; then
+	if [ -d "${DESTDIR}/lib/modules/${version}/kernel/drivers/ide" ]; then
 		sys_walk_modalias ${root_dev_path}
 		manual_add_modules ide-gd_mod
 		# FIXME: remove post Squeeze
@@ -367,7 +375,7 @@ dep_add_modules()
 		manual_add_modules ide-cd
 	fi
 
-	if [ -e /sys/bus/scsi/devices/ ]; then
+	if [ -d "${DESTDIR}/lib/modules/${version}/kernel/drivers/scsi" ]; then
 		manual_add_modules sd_mod
 	fi
 
@@ -407,11 +415,6 @@ auto_add_modules()
 		hid-cherry hid-logitech hid-microsoft \
 		btrfs ext2 ext3 ext4 ext4dev isofs jfs nfs reiserfs udf xfs \
 		af_packet atkbd i8042 virtio_pci; do
-			manual_add_modules "${x}"
-		done
-	;;
-	kms)
-		for x in fbcon intel_agp radeon i915; do
 			manual_add_modules "${x}"
 		done
 	;;
@@ -468,7 +471,6 @@ auto_add_modules()
 	;;
 	*)
 		auto_add_modules base
-		auto_add_modules kms
 		auto_add_modules net
 		auto_add_modules ide
 		auto_add_modules scsi
@@ -482,6 +484,20 @@ auto_add_modules()
 		auto_add_modules usb_storage
 	;;
 	esac
+}
+
+# 'depmod' only looks at symbol dependencies; there is no way for
+# modules to declare explicit dependencies through module information,
+# so dependencies on e.g. crypto providers are hidden.  Until this is
+# fixed, we need to handle those hidden dependencies.
+hidden_dep_add_modules()
+{
+	for dep in "lib/libcrc32c crc32c"; do
+		set -- $dep
+		if [ -f "${DESTDIR}/lib/modules/${version}/kernel/$1.ko" ]; then
+			manual_add_modules "$2"
+		fi
+	done
 }
 
 # mkinitramfs help message

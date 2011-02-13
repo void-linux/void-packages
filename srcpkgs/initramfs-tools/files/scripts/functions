@@ -2,7 +2,7 @@
 
 _log_msg()
 {
-	[ "$quiet" = "y" ] && return
+	if [ "$quiet" = "y" ]; then return; fi
 	printf "\033[1m"
 	printf "$@"
 	printf "\033[m\n"
@@ -25,16 +25,30 @@ log_warning_msg()
 
 log_begin_msg()
 {
+	if [ -x /sbin/usplash_write ]; then
+		/sbin/usplash_write "TEXT $@"
+	fi
 	_log_msg "$@ ..."
 }
 
 log_end_msg()
 {
+	if [ -x /sbin/usplash_write ]; then
+		/sbin/usplash_write "SUCCESS ok"
+	fi
 	:
 }
 
 panic()
 {
+	if [ -x /sbin/usplash_write ]; then
+		/sbin/usplash_write "QUIT"
+	fi
+
+	if command -v chvt >/dev/null 2>&1; then
+		chvt 1
+	fi
+
 	# Disallow console access
 	if [ -n "${panic}" ]; then
 		sleep ${panic}
@@ -67,7 +81,7 @@ set_initlist()
 
 		# only allow variable name chars
 		case ${si_x#${initdir}/} in
-		*[![:alnum:]_.]*)
+		*[![:alnum:]\._-]*)
 			[ "${verbose}" = "y" ] \
 			&& echo "$si_x ignored: not alphanumeric or '_' file"
 			continue
@@ -88,7 +102,14 @@ set_initlist()
 			continue
 		fi
 
-		initlist="${initlist} ${si_x#${initdir}/}"
+		# skip bad syntax
+		if ! sh -n ${si_x} ; then
+			[ "${verbose}" = "y" ] \
+			&& echo "$si_x ignored: bad syntax"
+			continue
+		fi
+
+		initlist="${initlist:-} ${si_x#${initdir}/}"
 	done
 }
 
@@ -99,18 +120,17 @@ reduce_satisfied()
 	for rs_y in ${deplist}; do
 		# only allow variable name chars
 		case ${rs_y} in
-		*[![:alnum:]_.]*)
+		*[![:alnum:]\._-]*)
 			continue
 			;;
 		esac
 		# skip non executable scripts
-		if [ ! -x ${initdir}/${rs_y} ]; then
-			continue
-		fi
+		[ ! -x ${initdir}/${rs_y} ] && continue
 		# skip directories
-		if [ -d ${initdir}/${rs_y} ]; then
-			continue
-		fi
+		[ -d ${initdir}/${rs_y} ] && continue
+		# skip bad syntax
+		sh -n ${initdir}/${rs_y} || continue
+
 		tmpdeplist="${tmpdeplist} ${rs_y}"
 	done
 	deplist=${tmpdeplist}
@@ -193,18 +213,26 @@ get_prereq_pairs()
 
 call_scripts()
 {
+	set -e
 	for cs_x in ${runlist}; do
 		[ -f ${initdir}/${cs_x} ] || continue
 		# mkinitramfs verbose output
 		if [ "${verbose}" = "y" ]; then
 			echo "Calling hook ${cs_x}"
 		fi
-		${initdir}/${cs_x}
-		# allow boot scripts to modify exported boot paramaters
+		${initdir}/${cs_x} && ec=$? || ec=$?
+		# allow hooks to abort build:
+		if [ "$ec" -ne 0 ]; then
+			echo "E: ${initdir}/${cs_x} failed with return $ec."
+			# only errexit on mkinitramfs
+			[ -n "${version}" ] && exit $ec
+		fi
+		# allow boot scripts to modify exported boot parameters
 		if [ -e /conf/param.conf ]; then
 			. /conf/param.conf
 		fi
 	done
+	set +e
 }
 
 run_scripts()
@@ -345,9 +373,9 @@ configure_networking()
 		# The NIC is to be configured if this file does not exist.
 		# Ip-Config tries to create this file and when it succeds
 		# creating the file, ipconfig is not run again.
-		if [ -e /tmp/net-"${DEVICE}".conf ]; then
-			break;
-		fi
+		for x in /tmp/net-"${DEVICE}".conf /tmp/net-*.conf ; do
+			[ -e "$x" ] && break 2
+		done
 
 		case ${IP} in
 		none|off)
