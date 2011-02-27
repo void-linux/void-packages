@@ -1,0 +1,264 @@
+--- microcode.ctl-1.17.orig/microcode_ctl.c
++++ microcode.ctl-1.17/microcode_ctl.c
+@@ -18,28 +18,30 @@
+ #include <string.h>
+ 
+ static char *progname;
+-int print_normal_messages=1;
+-int print_error_messages=1;
++static int print_normal_messages=1;
++static int print_error_messages=1;
+ 
+ #define BUFFER_SIZE	4096
+-#define MAX_MICROCODE	2000000
++#define MICROCODE_SIZE (128*1024) /* initial size, expanded as needed */
++#define FILENAME_MAXLEN 2048
+ 
+ #define MICROCODE_DEVICE_DEFAULT	"/dev/cpu/microcode"
+-#define MICROCODE_FILE_DEFAULT		"/etc/microcode.dat"
++#define MICROCODE_FILE_DEFAULT		"/lib/firmware/intel-microcode.dat"
+ 
+-static void usage(void)
++
++static void usage(FILE *file)
+ {
+-	fprintf(stderr, "\nThis program is for updating the microcode on Intel processors\n"
+-			"belonging to the IA32 family - PentiumPro upwards (x86_64 included).\n"
+-			"It depends on the Linux kernel microcode driver.\n\n"
+-			"Usage: %s [-h] [-u] [-q] [-Q] [-f microcode]\n\n"
+-			"  -h	this usage message\n"
+-			"  -q	run silently when successful\n"
+-			"  -Q	run silently even on failure\n"
+-			"  -u	upload microcode (default filename:\"%s\"\n"
+-			"  -f	upload microcode from named Intel formatted file\n\n", 
+-			progname, MICROCODE_FILE_DEFAULT);
+-	exit(1);
++	fputs(
++"\nThis program is for updating the microcode on Intel processors\n"
++"belonging to the IA32 family - PentiumPro upwards (x86_64 included).\n"
++"It depends on the Linux kernel microcode driver.\n\n"
++"Usage: microcode_ctl [-h] [-u] [-q] [-Q] [-f microcode]\n\n"
++"  -h	this usage message\n"
++"  -q	run silently when successful\n"
++"  -Q	run silently even on failure\n"
++"  -u	upload microcode (default filename:\""MICROCODE_FILE_DEFAULT"\"\n"
++"  -f	upload microcode from named Intel formatted file\n\n",
++        file);
+ }
+ 
+ /* 
+@@ -52,45 +54,66 @@
+ {
+ 	FILE *fp;
+ 	char line_buffer[BUFFER_SIZE];
+-	int microcode[MAX_MICROCODE];
+-	int *pos;
++        size_t microcode_size = MICROCODE_SIZE/sizeof(unsigned);
++        unsigned *microcode = malloc(microcode_size * sizeof(unsigned));
++        size_t pos = 0;
+ 	int outfd;
+ 	int wrote, length;
+ 
++       if(!microcode){
++               if(print_error_messages)
++                       fprintf(stderr, "%s: not enough memory\n", progname);
++               return ENOMEM;
++       }
+ 
+ 	if( (fp=fopen(filename, "r")) == NULL){
+ 		if(print_error_messages)
+-			fprintf(stderr, "%s: cannot open source file '%s' errno=%d (%s)\n",
++                       fprintf(stderr,
++                               "%s: cannot open source file '%s' errno=%d (%s)\n",
+ 				progname, filename, errno, strerror(errno));
+ 		return errno;
+ 	}
+ 
+-	pos = microcode;
+-
+ 	while(fgets(line_buffer, BUFFER_SIZE, fp) != NULL) {
++	         /*
++		  * Expand microcode buffer if needed
++                  */
++               if(microcode_size < pos + 4) {
++                       microcode_size *= 2;
++                       microcode = realloc(microcode,
++                                          microcode_size * sizeof(unsigned));
++                       if (!microcode) {
++                               if(print_error_messages)
++                                       fprintf(stderr, "%s: not enough memory\n",
++                                               progname);
++                               fclose(fp);
++                               return ENOMEM;
++                       }
++               }
+ 		 /*
+ 		  * Data lines will are of the form "%x, %x, %x, %x", therefore
+ 		  * lines start with a 0
+ 		  */
+                 if(*line_buffer == '0'){
+-			sscanf(line_buffer, "%x, %x, %x, %x", pos,
+-					(pos + 1), (pos + 2), (pos + 3));
+-			pos += 4;
++                        int scanned;
++                        scanned = sscanf(line_buffer, "%x, %x, %x, %x",
++                                         microcode + pos,
++                                         microcode + pos + 1,
++                                         microcode + pos + 2,
++                                         microcode + pos + 3);
++                        if(scanned != 4) {
++                                fprintf(stderr, "%s: %s: invalid file format\n",
++                                        progname, filename);
++                                fclose(fp);
++                                return EINVAL;
++                        }
++                        pos += 4;
+ 		}
+-
+-		if (MAX_MICROCODE < (pos - microcode)){
+-			/* not checking the buffer length could cause grief? */
+-			if(print_error_messages)
+-				fprintf(stderr, "%s: file too large for utility microcode buffer\n"
+-						"%s: change MAX_MICROCODE yourself :)\n", progname, progname);
+-			fclose(fp);	
+-			return errno;
+-		}
+-		
+ 	}
+ 
+ 	fclose(fp);
+-	length = sizeof(int) * (pos - microcode);
++        length = pos * sizeof(unsigned);
++
+ 	if(print_normal_messages)
+ 		fprintf(stderr, "%s: writing microcode (length: %d)\n",  progname, length);
+ 	
+@@ -101,7 +124,7 @@
+ 		return errno;
+ 	}
+ 
+-	if( (wrote = write(outfd, &microcode, length)) < 0){
++	if( (wrote = write(outfd, microcode, length)) < 0){
+ 		if(print_error_messages)
+ 			fprintf(stderr, "%s: error writing to '%s' errno=%d (%s)\n"
+ 					"%s: there may be messages from the driver in your system log.\n",
+@@ -122,20 +145,17 @@
+ int main(int argc, char *argv[])
+ {
+ 	int c;
+-	static char device[2048];
+-	static char filename[2048];
++        static char device[FILENAME_MAXLEN+1] = MICROCODE_DEVICE_DEFAULT;
++        static char filename[FILENAME_MAXLEN+1] = MICROCODE_FILE_DEFAULT;
+ 	int upload=0;
+-	int return_code;
+ 
+ 	progname = argv[0];
+ 
+-	strcpy(device, MICROCODE_DEVICE_DEFAULT);
+-	strcpy(filename, MICROCODE_FILE_DEFAULT);
+-	
+-	while (EOF != (c = getopt(argc, argv, "hqQud:f:"))) {
++	while (EOF != (c = getopt(argc, argv, "-hqQiud:f:"))) {
+ 		switch(c) {
+ 			case 'h':
+-				usage();
++				usage(stdout);
++				exit(0);
+ 
+ 			case 'q':
+ 				print_normal_messages=0;
+@@ -147,7 +167,7 @@
+ 				break;
+ 
+ 			case 'd':
+-				strcpy(device, optarg);
++				strncpy(device, optarg, FILENAME_MAXLEN);
+ 				break;
+ 
+ 			case 'u': /* do a microcode upload */
+@@ -156,19 +176,25 @@
+ 
+ 			case 'f': /* set microcode file to optarg and upload */
+ 				upload++;
+-				strcpy(filename, optarg);
++                                strncpy(filename, optarg, FILENAME_MAXLEN);
++				break;
++		        case 'i':
++	  		        fputs("microcode_ctl: flag '-i' is now obsolete",
++     				      stderr);
+ 				break;
+-
+ 			case '?':
+-				usage();
++                        case 1:
++                                usage(stdout);
++                                exit(2);
++
+ 		}
+ 	}
+ 
+ 	if (upload) {
+-		if((return_code = do_update(device, filename)))
+-			exit(return_code);
++                if(do_update(device, filename))
++                        exit(1);
+ 	} else
+-		usage();
++		usage(stderr);
+ 
+ 	return 0;
+ }
+--- microcode.ctl-1.17.orig/microcode_ctl.8
++++ microcode.ctl-1.17/microcode_ctl.8
+@@ -4,13 +4,13 @@
+ microcode_ctl \- microcode utility for Intel IA32 processors
+ .SH SYNOPSIS
+ .B microcode_ctl
+-[\fI\-h\fR] [\fI\-u\fR [\fI\-q\fR]] [\fI\-Q\fR] [\fI\-f microcode\fR]
++[\fI\-h\fR] [\fI\-u\fR] [\fI\-q\fR] [\fI\-Q\fR] [\fI\-f microcode\fR]
+ .br
+ .SH DESCRIPTION
+-." Add any additional description here
+-.PP
+-The microcode_ctl utility is a companion to the IA32 microcode driver written
+-by Tigran Aivazian <tigran@aivazian.fsnet.co.uk>. The uaility has two uses:
++The
++.B microcode_ctl
++utility is a companion to the IA32 microcode driver written
++by Tigran Aivazian <tigran@aivazian.fsnet.co.uk>. The utility has two uses:
+ .br
+ .PP
+ \fBa)\fR it decodes and sends new microcode to the kernel driver to be
+@@ -49,14 +49,14 @@
+ Upload microcode using defaults
+ .SH FILES
+ .TP
+-/etc/microcode.dat
++/lib/firmware/intel-microcode.dat
+ The default microcode location
+ .PD
+ .SH AUTHOR
+ Microcode utility written by Simon Trimmer
+ .br
+ Linux Kernel driver written by Tigran Aivazian.
+-.SH "REPORTING BUGS"
++.SH REPORTING BUGS
+ Report bugs to either Simon Trimmer <simon@urbanmyth.org> or
+ Tigran Aivazian <tigran@aivazian.fsnet.co.uk>
+ .SH COPYRIGHT
+@@ -64,12 +64,12 @@
+ .br
+ This is free software; see the source for copying conditions.  There is NO
+ warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+-.SH "SPECIAL THANKS"
++.SH SPECIAL THANKS
+ Thanks to the Intel Corporation, for supplying microcode update data and
+ publishing the specifications that enabled us to write microcode driver for
+ Linux.
+ .br 
+-.SH "SEE ALSO"
++.SH SEE ALSO
+ The brave are recommended to view the driver source code located in the
+ Linux Kernel source tree in arch/i386/kernel/microcode.c
+ .PP
