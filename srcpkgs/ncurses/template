@@ -1,12 +1,11 @@
 # Template build file for 'ncurses'.
 pkgname=ncurses
-version=5.7
+version=5.8
 distfiles="http://ftp.gnu.org/pub/gnu/ncurses/$pkgname-$version.tar.gz"
-build_style=gnu_configure
-configure_args="--with-shared --without-debug CFLAGS=-fPIC"
+build_style=custom-install
 short_desc="A System V Release 4.0 curses emulation library"
 maintainer="Juan RP <xtraeme@gmail.com>"
-checksum=0a9bdea5c7de8ded5c9327ed642915f2cc380753f12d4ad120ef7da3ea3498f4
+checksum=51597f89fd53aa990321954e33e5b4869c4a5ee6137bfa800f98f91d4b6b54b5
 long_desc="
  The ncurses (new curses) library is a freeware emulation of System V Release
  4.0 curses. It uses terminfo format, supports pads and color and multiple
@@ -21,8 +20,59 @@ subpackages="ncurses-base ncurses-devel ncurses-libs ncurses-term"
 Add_dependency run glibc
 Add_dependency run ncurses-libs
 
-post_install()
+do_build()
 {
-	# Remove broken symlinks.
-	rm -f ${DESTDIR}/usr/lib/lib*.so
+	mkdir ncurses-build ncursesw-build
+	cd ${wrksrc}/ncursesw-build
+
+	# widec build
+	CFLAGS="$XBPS_CFLAGS -fPIC" \
+		../configure --enable-widec --with-shared \
+		--prefix=/usr --mandir=/usr/share/man --without-debug \
+		--with-manpage-symlinks --without-ada --enable-ext-colors \
+		--with-install-prefix=${DESTDIR}
+	make ${makejobs}
+
+	cd ${wrksrc}/ncurses-build
+	# non-widec build
+	CFLAGS="$XBPS_CFLAGS -fPIC" \
+		../configure --prefix=/usr --with-shared \
+		--without-debug --without-ada --with-install-prefix=${DESTDIR}
+	make ${makejobs}
+}
+
+do_install()
+{
+	cd ${wrksrc}/ncursesw-build
+	make install
+
+	install -dm755 ${DESTDIR}/lib
+	mv ${DESTDIR}/usr/lib/libncursesw.so.* ${DESTDIR}/lib
+	ln -sf ../../lib/libncursesw.so.6 ${DESTDIR}/usr/lib/libncursesw.so
+
+	# Fool packages looking to link to non-wide-character ncurses libraries
+	for lib in curses ncurses form panel menu; do
+		rm -f ${DESTDIR}/usr/lib/lib${lib}.so
+		echo "INPUT(-l${lib}w)" >${DESTDIR}/usr/lib/lib${lib}.so
+		ln -sf lib${lib}w.a ${DESTDIR}/usr/lib/lib${lib}.a
+	done
+	ln -sf libncurses++w.a ${DESTDIR}/usr/lib/libncurses++.a
+
+	# install tput to /bin
+	install -dm755 ${DESTDIR}/bin/
+	mv ${DESTDIR}/usr/bin/tput ${DESTDIR}/bin/tput
+
+	# Some packages look for -lcurses during build
+	rm -f ${DESTDIR}/usr/lib/libcursesw.so
+	echo "INPUT(-lncursesw)" >${DESTDIR}/usr/lib/libcursesw.so
+	ln -sf libncurses.so ${DESTDIR}/usr/lib/libcurses.so
+	ln -sf libncursesw.a ${DESTDIR}/usr/lib/libcursesw.a
+	ln -sf libncurses.a ${DESTDIR}/usr/lib/libcurses.a
+
+	# non-widec compatibility library
+	cd ${wrksrc}/ncurses-build
+	install -Dm755 lib/libncurses.so.${version} \
+		${DESTDIR}/usr/lib/libncurses.so.${version}
+	ln -sf libncurses.so.${version} \
+		${DESTDIR}/usr/lib/libncurses.so.5
 }
