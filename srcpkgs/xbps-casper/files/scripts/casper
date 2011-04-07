@@ -23,6 +23,7 @@ tried=/tmp/tried
 [ -f /etc/casper.conf ] && . /etc/casper.conf
 export USERNAME USERFULLNAME HOST BUILD_SYSTEM
 
+. /scripts/functions
 . /scripts/casper-helpers
 
 if [ ! -f /casper.vars ]; then
@@ -40,12 +41,6 @@ parse_cmdline() {
                 export PERSISTENT="" ;;
             union=*)
                 export UNIONFS="${x#union=}";;
-            ip*)
-                STATICIP=${x#ip=}
-                if [ "${STATICIP}" = "" ]; then
-                    STATICIP="frommedia"
-                fi
-                export STATICIP ;;
             ignore_uuid)
                 IGNORE_UUID="Yes" ;;
             live-media-path=*)
@@ -184,74 +179,6 @@ copy_live_to() {
     mount -r -o move ${copyto} ${copyfrom}
     rmdir ${copyto}
     return 0
-}
-
-do_netmount() {
-    rc=1
-
-    modprobe "${MP_QUIET}" af_packet # For DHCP
-
-    /sbin/udevadm trigger --action=add
-    /sbin/udevadm settle
-
-    ipconfig ${DEVICE} /tmp/net-${DEVICE}.conf | tee /netboot.config
-
-    if [ "${NFSROOT}" = "auto" ]; then
-        NFSROOT=${ROOTSERVER}:${ROOTPATH}
-    fi
-
-    [ "$quiet" != "y" ] && log_begin_msg "Trying netboot from ${NFSROOT}"
-
-    if [ "${NETBOOT}" != "nfs" ] && do_cifsmount ; then
-        rc=0
-    elif do_nfsmount ; then
-        NETBOOT="nfs"
-        export NETBOOT
-        rc=0
-    fi
-
-    [ "$quiet" != "y" ] && log_end_msg
-    return ${rc}
-}
-
-do_nfsmount() {
-    rc=1
-    modprobe "${MP_QUIET}" nfs
-    if [ -z "${NFSOPTS}" ]; then
-        NFSOPTS=""
-    fi
-
-    [ "$quiet" != "y" ] && \
-	log_begin_msg "Trying nfsmount -o nolock -o ro ${NFSOPTS} ${NFSROOT} ${mountpoint}"
-    # FIXME: This while loop is an ugly HACK round an nfs bug
-    i=0
-    while [ "$i" -lt 60 ]; do
-        nfsmount -o nolock -o ro ${NFSOPTS} "${NFSROOT}" \
-		"${mountpoint}" && rc=0 && break
-        sleep 1
-        i="$(($i + 1))"
-    done
-    return ${rc}
-}
-
-do_cifsmount() {
-    rc=1
-    if [ -x "/sbin/mount.cifs" ]; then
-        if [ -z "${NFSOPTS}" ]; then
-            CIFSOPTS="-ouser=root,password="
-        else
-            CIFSOPTS="${NFSOPTS}"
-        fi
-
-        [ "$quiet" != "y" ] && \
-		log_begin_msg "Trying mount.cifs ${NFSROOT} ${mountpoint} ${CIFSOPTS}"
-        modprobe "${MP_QUIET}" cifs
-
-        if mount.cifs "${NFSROOT}" "${mountpoint}" "${CIFSOPTS}" ; then
-            rc=0
-        fi
-    fi
-    return ${rc}
 }
 
 do_snap_copy ()
@@ -577,28 +504,18 @@ mountroot() {
     wait_for_udev 10
 
     maybe_break casper-premount
-    [ "$quiet" != "y" ] && log_begin_msg "Running /scripts/casper-premount"
+    log_begin_msg "Running /scripts/casper-premount"
     run_scripts /scripts/casper-premount
-    [ "$quiet" != "y" ] && log_end_msg
+    log_end_msg
 
-    if [ ! -z "${NETBOOT}" ]; then
-        if do_netmount ; then
-            livefs_root="${mountpoint}"
-        else
-            panic "Unable to find a live file system on the network"
-        fi
-    else
-        # Scan local devices for the image
-        i=0
-        while [ "$i" -lt 60 ]; do
-            livefs_root=$(find_livefs $i)
-            if [ "${livefs_root}" ]; then
-                break
-            fi
-            sleep 1
-            i="$(($i + 1))"
-        done
-    fi
+    # Scan local devices for the image
+    i=0
+    while [ "$i" -lt 60 ]; do
+      livefs_root=$(find_livefs $i)
+        [ -n "${livefs_root}" ] && break
+        sleep 1
+        i="$(($i + 1))"
+    done
 
     if [ -z "${livefs_root}" ]; then
         panic "Unable to find a medium containing a live file system"
@@ -610,16 +527,15 @@ mountroot() {
         live_dest="${TODISK}"
     fi
     if [ "${live_dest}" ]; then
-        [ "$quiet" != "y" ] && \
-		log_begin_msg "Copying live_media to ${live_dest}"
+	log_begin_msg "Copying live_media to ${live_dest}"
         copy_live_to "${livefs_root}" "${live_dest}"
-        [ "$quiet" != "y" ] && log_end_msg
+        log_end_msg
     fi
 
     mount_images_in_directory "${livefs_root}" "${rootmnt}"
 
     maybe_break casper-bottom
-    [ "$quiet" != "y" ] && log_begin_msg "Running /scripts/casper-bottom"
+    log_begin_msg "Running /scripts/casper-bottom"
     run_scripts /scripts/casper-bottom
-    [ "$quiet" != "y" ] && log_end_msg
+    log_end_msg
 }
