@@ -7,12 +7,15 @@ xbps changes:
 * Modified inittab to pass correct parameters to reboot(8).
 * Sets unicode, rc_logger and rc_shell in /etc/rc.conf by default.
 * Sets windowkeys and fix_euro in /etc/conf.d/keymaps by default.
-* The sysfs service mounts /var/run, /var/lock and /var/tmp as tmpfs with
-  appropiate permissions.
-* The bootmisc service no longer cleans up /var/run, as it is now mounted tmpfs.
-* The devfs service mounts /dev/shm with type tmpfs rather than "shm".
+* The bootmisc service no longer cleans up /var/run, as it is now mounted tmpfs
+  (symlinked to /run, which is tmpfs).
 * The mtab service checks if / is of type rootfs and tmpfs, and don't add it
   into /etc/mtab, which is redundant.
+* mount_svcdir() doesn't mount any tmpfs or ramfs anymore, rather uses symlinks
+  pointing to the /run directory which is always a tmpfs. Compat symlinks
+  for common dirs are also provided.
+* Backported a patch to skip unmounting the /run mountpoint from upstream
+  git repo (Gentoo).
 
 --- runlevels/Makefile.Linux.orig	2009-05-07 15:48:37.075825332 +0000
 +++ runlevels/Makefile.Linux	2009-05-07 15:48:52.008557039 +0000
@@ -109,52 +112,6 @@ xbps changes:
  
  # Network fstypes. Below is the default.
  net_fs_list="afs cifs coda davfs fuse fuse.sshfs gfs glusterfs lustre ncpfs nfs nfs4 ocfs2 shfs smbfs"
---- init.d/sysfs.in.orig	2011-01-16 12:42:39.930029312 +0100
-+++ init.d/sysfs.in	2011-01-16 12:43:08.090153349 +0100
-@@ -52,13 +52,39 @@ mount_misc()
- 	fi
- }
- 
-+mount_var_run_lock()
-+{
-+	local _args _mode _mnt
-+
-+	for _mnt in run lock tmp; do
-+		if [ "${_mnt}" != "run" ]; then
-+			_mode=1777
-+			_args="mode=${_mode},nosuid,noexec,nodev"
-+		else
-+			_mode=0755
-+			_args="mode=${_mode},nosuid"
-+		fi
-+		if [ ! -d /var/${_mnt} ]; then
-+			if ! mkdir -m ${_mode} /var/${_mnt}; then
-+				ewarn "Could not create /var/${_mnt}!"
-+				return 1
-+			fi
-+		fi
-+
-+		ebegin "Mounting /var/${_mnt}"
-+		if ! fstabinfo --mount /var/${_mnt}; then
-+			mount -n -t tmpfs -o ${_args} tmpfs /var/${_mnt}
-+		fi
-+		eend $?
-+	done
-+}
-+
- start()
- {
--	local retval
- 	mount_sys
--	retval=$?
--	if [ $retval -eq 0 ]; then
-+	if [ $? -eq 0 ]; then
- 		mount_misc
- 	fi
--	return $retval
-+	mount_var_run_lock
-+	return $?
- }
 --- init.d/mtab.in.orig	2011-01-16 12:44:28.947251849 +0100
 +++ init.d/mtab.in	2011-01-16 12:44:37.896926832 +0100
 @@ -28,7 +28,7 @@ start()
@@ -200,14 +157,124 @@ xbps changes:
  	fi
  
  	# Clean up /tmp directories
---- init.d/devfs.in.orig	2011-01-16 12:46:46.645636416 +0100
-+++ init.d/devfs.in	2011-01-16 12:46:58.783551737 +0100
-@@ -13,7 +13,7 @@ start() {
+--- init.d/localmount.in.orig	2011-04-29 17:06:22.273007691 +0200
++++ init.d/localmount.in	2011-04-29 17:06:50.247007699 +0200
+@@ -49,7 +49,7 @@ stop()
+ 	fi
+ 
+ 	if [ "$RC_UNAME" = Linux ]; then
+-		no_umounts_r="$no_umounts_r|/proc|/proc/.*|/sys|/sys/.*"
++		no_umounts_r="$no_umounts_r|/proc|/proc/.*|/run|/sys|/sys/.*"
+ 	fi
+ 	no_umounts_r="^($no_umounts_r)$"
+ 
+--- sh/init.sh.Linux.in.orig	2011-02-10 06:15:24.000000000 +0100
++++ sh/init.sh.Linux.in	2011-04-29 18:11:13.254999893 +0200
+@@ -3,59 +3,50 @@
+ # Copyright (c) 2007-2009 Roy Marples <roy@marples.name>
+ # All rights reserved. Released under the 2-clause BSD license.
+ 
+-# This basically mounts $RC_SVCDIR as a ramdisk.
+-# The tricky part is finding something our kernel supports
+-# tmpfs and ramfs are easy, so force one or the other.
+-svcdir_restorecon()
+-{
+-	local rc=0
+-	if [ -x /usr/sbin/selinuxenabled -a -c /selinux/null ] &&
+-	  selinuxenabled; then
+-		restorecon $RC_SVCDIR
+-		rc=$?
+-	fi
+-	return $rc
+-}
+-
++# /lib/rc/init.d should be rw, previously it was mounted as tmpfs or
++# ramfs. XBPS no longer mounts this, rather uses a symlink to /run/init.d
++# which is always a tmpfs.
++#
+ mount_svcdir()
+ {
+-	# mount from fstab if we can
+-	fstabinfo --mount "$RC_SVCDIR" && return 0
+-
+-	local fs= fsopts="-o rw,noexec,nodev,nosuid"
+-	local svcsize=${rc_svcsize:-1024}
++	# Create /lib/rc/init.d symlink to /run/init.d.
++	if [ ! -d /run/init.d ]; then
++		mkdir -p -m 0755 /run/init.d
++	fi
++	rm -rf /lib/rc/init.d && ln -sf /run/init.d /lib/rc/init.d
+ 
+-	# Some buggy kernels report tmpfs even when not present :(
+-	if grep -Eq "[[:space:]]+tmpfs$" /proc/filesystems; then
+-		local tmpfsopts="${fsopts},mode=755,size=${svcsize}k"
+-		mount -n -t tmpfs $tmpfsopts rc-svcdir "$RC_SVCDIR"
+-		if [ $? -eq 0 ]; then
+-			svcdir_restorecon
+-			[ $? -eq 0 ] && return 0
++	# Create compatibility symlinks for:
++	#
++	# 	/tmp		->	/run/tmp
++	# 	/var/tmp	->	/run/tmp
++	# 	/var/lock	->	/run/lock
++	# 	/var/run	->	/run/pid
++	# 	/dev/shm	->	/run/shm
++
++	[ ! -d /run/tmp ] && mkdir -m 1777 /run/tmp
++	[ ! -d /run/lock ] && mkdir -m 1777 /run/lock
++	[ ! -d /run/pid ] && mkdir -m 0755 /run/pid
++	[ ! -d /run/shm ] && mkdir -m 1777 /run/shm
++
++	if [ -d /tmp ]; then
++		rmdir /tmp
++		ln -sf /run/tmp /tmp
+ 		fi
++	if [ -d /var/tmp ]; then
++		rmdir /var/tmp
++		ln -sf /run/tmp	/var/tmp
+ 	fi
+-
+-	if grep -Eq "[[:space:]]+ramfs$" /proc/filesystems; then
+-		fs="ramfs"
+-		# ramfs has no special options
+-	elif [ -e /dev/ram0 ] \
+-		&& grep -Eq "[[:space:]]+ext2$" /proc/filesystems; then
+-		devdir="/dev/ram0"
+-		fs="ext2"
+-		dd if=/dev/zero of="$devdir" bs=1k count="$svcsize"
+-		mkfs -t "$fs" -i 1024 -vm0 "$devdir" "$svcsize"
+-	else
+-		echo
+-		eerror "OpenRC requires tmpfs, ramfs or a ramdisk + ext2"
+-		eerror "compiled into the kernel"
+-		echo
+-		return 1
++	if [ -d /var/run ]; then
++		rm -rf /var/run
++		ln -sf /run/pid /var/run
+ 	fi
+-
+-	mount -n -t "$fs" $fsopts rc-svcdir "$RC_SVCDIR"
+-	if [ $? -eq 0 ]; then
+-		svcdir_restorecon
+-		[ $? -eq 0 ] && return 0
++	if [ -d /var/lock ]; then
++		rmdir /var/lock
++		ln -sf /run/lock /var/lock
++	fi
++	if [ -d /run/shm ]; then
++		[ -d /dev/shm ] && rmdir /dev/shm
++		ln -sf /run/shm /dev/shm
+ 	fi
+ }
+ 
+--- init.d/devfs.in.orig	2011-02-10 06:15:24.000000000 +0100
++++ init.d/devfs.in	2011-04-29 18:12:48.983999871 +0200
+@@ -13,7 +13,6 @@ start() {
  	# Mount required stuff as user may not have then in /etc/fstab
  	for x in \
  		"devpts /dev/pts 0755 ,gid=5,mode=0620 devpts" \
 -		"tmpfs /dev/shm 1777 ,nodev shm" \
-+		"tmpfs /dev/shm 1777 ,nodev tmpfs" \
  	; do
  		set -- $x
  		grep -Eq "[[:space:]]+$1$" /proc/filesystems || continue
