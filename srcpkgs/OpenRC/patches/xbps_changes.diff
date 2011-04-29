@@ -11,9 +11,9 @@ xbps changes:
   (symlinked to /run, which is tmpfs).
 * The mtab service checks if / is of type rootfs and tmpfs, and don't add it
   into /etc/mtab, which is redundant.
-* mount_svcdir() doesn't mount any tmpfs or ramfs anymore, rather uses symlinks
-  pointing to the /run directory which is always a tmpfs. Compat symlinks
-  for common dirs are also provided.
+* mount_svcdir() doesn't mount any tmpfs or ramfs anymore, rather mounts an
+  tmpfs in /run and creates compat symlinks on it for /tmp, /dev/shm, /var/tmp,
+  /var/lock, /var/run, etc.
 * Backported a patch to skip unmounting the /run mountpoint from upstream
   git repo (Gentoo).
 
@@ -168,9 +168,19 @@ xbps changes:
  	fi
  	no_umounts_r="^($no_umounts_r)$"
  
---- sh/init.sh.Linux.in.orig	2011-02-10 06:15:24.000000000 +0100
-+++ sh/init.sh.Linux.in	2011-04-29 18:11:13.254999893 +0200
-@@ -3,59 +3,50 @@
+--- init.d/devfs.in.orig	2011-02-10 06:15:24.000000000 +0100
++++ init.d/devfs.in	2011-04-29 18:12:48.983999871 +0200
+@@ -13,7 +13,6 @@ start() {
+ 	# Mount required stuff as user may not have then in /etc/fstab
+ 	for x in \
+ 		"devpts /dev/pts 0755 ,gid=5,mode=0620 devpts" \
+-		"tmpfs /dev/shm 1777 ,nodev shm" \
+ 	; do
+ 		set -- $x
+ 		grep -Eq "[[:space:]]+$1$" /proc/filesystems || continue
+--- sh/init.sh.Linux.in.orig	2011-04-29 22:12:20.648999920 +0200
++++ sh/init.sh.Linux.in	2011-04-29 22:15:20.159999881 +0200
+@@ -3,59 +3,42 @@
  # Copyright (c) 2007-2009 Roy Marples <roy@marples.name>
  # All rights reserved. Released under the 2-clause BSD license.
  
@@ -188,10 +198,6 @@ xbps changes:
 -	return $rc
 -}
 -
-+# /lib/rc/init.d should be rw, previously it was mounted as tmpfs or
-+# ramfs. XBPS no longer mounts this, rather uses a symlink to /run/init.d
-+# which is always a tmpfs.
-+#
  mount_svcdir()
  {
 -	# mount from fstab if we can
@@ -199,12 +205,7 @@ xbps changes:
 -
 -	local fs= fsopts="-o rw,noexec,nodev,nosuid"
 -	local svcsize=${rc_svcsize:-1024}
-+	# Create /lib/rc/init.d symlink to /run/init.d.
-+	if [ ! -d /run/init.d ]; then
-+		mkdir -p -m 0755 /run/init.d
-+	fi
-+	rm -rf /lib/rc/init.d && ln -sf /run/init.d /lib/rc/init.d
- 
+-
 -	# Some buggy kernels report tmpfs even when not present :(
 -	if grep -Eq "[[:space:]]+tmpfs$" /proc/filesystems; then
 -		local tmpfsopts="${fsopts},mode=755,size=${svcsize}k"
@@ -212,26 +213,24 @@ xbps changes:
 -		if [ $? -eq 0 ]; then
 -			svcdir_restorecon
 -			[ $? -eq 0 ] && return 0
-+	# Create compatibility symlinks for:
-+	#
-+	# 	/tmp		->	/run/tmp
-+	# 	/var/tmp	->	/run/tmp
-+	# 	/var/lock	->	/run/lock
-+	# 	/var/run	->	/run/pid
-+	# 	/dev/shm	->	/run/shm
++	# Mount /run as tmpfs.
++	mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
++	# Create required /run directories.
++	for d in init.d pid udev; do
++		mkdir -m0755 /run/${d}
++	done
++	for d in lock tmp shm; do
++		mkdir -m1777 /run/${d}
++	done
 +
-+	[ ! -d /run/tmp ] && mkdir -m 1777 /run/tmp
-+	[ ! -d /run/lock ] && mkdir -m 1777 /run/lock
-+	[ ! -d /run/pid ] && mkdir -m 0755 /run/pid
-+	[ ! -d /run/shm ] && mkdir -m 1777 /run/shm
-+
-+	if [ -d /tmp ]; then
-+		rmdir /tmp
-+		ln -sf /run/tmp /tmp
++	# Create /run compat symlinks.
++	if [ "$(readlink -f /lib/rc/init.d)" != "/run/init.d" ]; then
++		rm -rf /lib/rc/init.d
++		ln -sf /run/init.d /lib/rc/init.d
  		fi
-+	if [ -d /var/tmp ]; then
-+		rmdir /var/tmp
-+		ln -sf /run/tmp	/var/tmp
++	if [ "$(readlink -f /tmp)" != "/run/tmp" ]; then
++		rm -rf /tmp
++		ln -sf /run/tmp /tmp
  	fi
 -
 -	if grep -Eq "[[:space:]]+ramfs$" /proc/filesystems; then
@@ -249,32 +248,26 @@ xbps changes:
 -		eerror "compiled into the kernel"
 -		echo
 -		return 1
-+	if [ -d /var/run ]; then
-+		rm -rf /var/run
-+		ln -sf /run/pid /var/run
++	if [ "$(readlink -f /var/tmp)" != "/run/tmp" ]; then
++		rm -rf /var/tmp
++		ln -sf /run/tmp /var/tmp
  	fi
 -
 -	mount -n -t "$fs" $fsopts rc-svcdir "$RC_SVCDIR"
 -	if [ $? -eq 0 ]; then
 -		svcdir_restorecon
 -		[ $? -eq 0 ] && return 0
-+	if [ -d /var/lock ]; then
-+		rmdir /var/lock
-+		ln -sf /run/lock /var/lock
-+	fi
-+	if [ -d /run/shm ]; then
-+		[ -d /dev/shm ] && rmdir /dev/shm
++	if [ "$(readlink -f /dev/shm)" != "/run/shm" ]; then
++		rm -rf /dev/shm
 +		ln -sf /run/shm /dev/shm
++	fi
++	if [ "$(readlink -f /var/run)" != "/run/pid" ]; then
++		rm -rf /var/run
++		ln -sf /run/pid /var/run
++	fi
++	if [ "$(readlink -f /var/lock)" != "/run/lock" ]; then
++		rm -rf /var/lock
++		ln -sf /run/lock /var/lock
  	fi
  }
  
---- init.d/devfs.in.orig	2011-02-10 06:15:24.000000000 +0100
-+++ init.d/devfs.in	2011-04-29 18:12:48.983999871 +0200
-@@ -13,7 +13,6 @@ start() {
- 	# Mount required stuff as user may not have then in /etc/fstab
- 	for x in \
- 		"devpts /dev/pts 0755 ,gid=5,mode=0620 devpts" \
--		"tmpfs /dev/shm 1777 ,nodev shm" \
- 	; do
- 		set -- $x
- 		grep -Eq "[[:space:]]+$1$" /proc/filesystems || continue
