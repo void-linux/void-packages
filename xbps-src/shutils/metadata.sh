@@ -366,6 +366,22 @@ _EOF
 		echo "</array>" >> $TMPFPROPS
 	fi
 
+	# Build date.
+	echo "<key>build_date</key>" >> $TMPFPROPS
+	echo "<string>$(LANG=C date -u "+%A %d %B, %Y, %T UTC")</string>" >> $TMPFPROPS
+
+	# Homepage
+	if [ -n "$homepage" ]; then
+		echo "<key>homepage</key>" >> $TMPFPROPS
+		echo "<string>$homepage</string>" >> $TMPFPROPS
+	fi
+
+	# License
+	if [ -n "$license" ]; then
+		echo "<key>license</key>" >> $TMPFPROPS
+		echo "<string>$license</string>" >> $TMPFPROPS
+	fi
+
 	# Terminate the property list file.
 	echo "</dict>" >> $TMPFPROPS
 	echo "</plist>" >> $TMPFPROPS
