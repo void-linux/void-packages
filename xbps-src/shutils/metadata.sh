@@ -23,19 +23,6 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 
-write_metadata_flist_header()
-{
-	[ ! -f "$1" ] && return 1
-
-	cat > $1 <<_EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-_EOF
-
-}
-
 xbps_write_metadata_pkg()
 {
 	local subpkg spkgrev
@@ -110,10 +97,6 @@ xbps_write_metadata_pkg_real()
 		lver="${version}"
 	fi
 
-	# Write the files.plist file.
-	TMPFLIST=$(mktemp -t flist.XXXXXXXXXX) || exit 1
-	TMPFPLIST=$(mktemp -t fplist.XXXXXXXXXX) || exit 1
-
         #
         # Find out if this package contains info files and compress
         # all them with gzip.
@@ -182,11 +165,18 @@ xbps_write_metadata_pkg_real()
 		done
 	fi
 
-	cd ${DESTDIR}
+	# Write the files.plist file.
+	TMPFLIST=$(mktemp -t flist.XXXXXXXXXX) || exit 1
+	TMPFPLIST=$(mktemp -t fplist.XXXXXXXXXX) || exit 1
+
 	msg_normal "'$pkgname-$lver': creating package metadata...\n"
 
-	write_metadata_flist_header $TMPFPLIST
-
+	cat > "$TMPFPLIST" <<_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+_EOF
 	# Pass 1: add links.
 	echo "<key>links</key>" >> $TMPFPLIST
 	echo "<array>" >> $TMPFPLIST
@@ -198,6 +188,9 @@ xbps_write_metadata_pkg_real()
 		echo "<dict>" >> $TMPFPLIST
 		echo "<key>file</key>" >> $TMPFPLIST
 		echo "<string>$j</string>" >> $TMPFPLIST
+		echo "<key>target</key>" >> $TMPFPLIST
+		echo "<string>$(readlink -f "$f"|sed -e "$fpattern")</string>" \
+			>> $TMPFPLIST
 		echo "</dict>" >> $TMPFPLIST
 	done
 	echo "</array>" >> $TMPFPLIST
