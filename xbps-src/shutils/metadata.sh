@@ -189,8 +189,11 @@ _EOF
 		echo "<key>file</key>" >> $TMPFPLIST
 		echo "<string>$j</string>" >> $TMPFPLIST
 		echo "<key>target</key>" >> $TMPFPLIST
-		echo "<string>$(readlink -f "$f"|sed -e "$fpattern")</string>" \
-			>> $TMPFPLIST
+		lnk=$(readlink -f "$f"|sed -e "s|${DESTDIR}||")
+		if [ -z "$lnk" -o "$lnk" = "" ]; then
+			lnk=$(readlink "$f"|sed -e "s|${DESTDIR}||")
+		fi
+		echo "<string>$lnk</string>" >> $TMPFPLIST
 		echo "</dict>" >> $TMPFPLIST
 	done
 	echo "</array>" >> $TMPFPLIST
