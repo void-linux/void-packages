@@ -1,0 +1,43 @@
+From 640b53438c20818b3e344343b58b1f1765606a85 Mon Sep 17 00:00:00 2001
+From: Martin Pitt <martin.pitt@ubuntu.com>
+Date: Mon, 31 Jan 2011 15:30:01 +0100
+Subject: [PATCH] 49bluetooth: Wait for btusb module to get unused
+
+The 49bluetooth hook disables /proc/acpi/ibm/bluetooth but this isn't
+synchronous, i. e. it doesn't wait until the module usage count actually drops
+to 0. Due to that, it's impossible to add btusb to SUSPEND_MODULES (on some
+models/older kernels you need to do that to fix suspend problems), as at that
+point the module is still in use.
+
+On my system (ThinkPad X201) the module takes between 0.3 and 0.5 seconds to
+unload, so use 100 ms wait steps with a timeout of 2 seconds.
+
+Bug: https://bugs.freedesktop.org//show_bug.cgi?id=33759
+Bug-Ubuntu: https://launchpad.net/bugs/698331
+---
+ pm/sleep.d/49bluetooth |    9 +++++++++
+ 1 files changed, 9 insertions(+), 0 deletions(-)
+
+diff --git a/pm/sleep.d/49bluetooth b/pm/sleep.d/49bluetooth
+index d46ba49..0dc1909 100755
+--- a/pm/sleep.d/49bluetooth
++++ b/pm/sleep.d/49bluetooth
+@@ -12,6 +12,15 @@ suspend_bluetooth()
+ 	if grep -q enabled /proc/acpi/ibm/bluetooth; then
+ 		savestate ibm_bluetooth enable
+ 		echo disable > /proc/acpi/ibm/bluetooth
++
++		# wait for up to 2 seconds for the module to actually get
++		# unused
++		TIMEOUT=20
++		while [ $TIMEOUT -ge 0 ]; do
++		    [ `cat /sys/module/btusb/refcnt` = 0 ] && break
++		    TIMEOUT=$((TIMEOUT-1))
++		    sleep 0.1
++		done
+ 	else
+ 		savestate ibm_bluetooth disable
+ 	fi
+-- 
+1.7.2.3
+
