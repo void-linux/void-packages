@@ -161,11 +161,9 @@ stow_pkg_real()
 #
 unstow_pkg_real()
 {
-	local f ver lpwd
+	local f ver
 
 	[ -z $pkgname ] && return 1
-
-	lpwd=$(pwd)
 
 	if [ $(id -u) -ne 0 ] && \
 	   [ ! -w $XBPS_MASTERDIR ]; then
@@ -214,8 +212,6 @@ unstow_pkg_real()
 	rm -rf $XBPS_PKGMETADIR/$pkgname
 
 	# Unregister pkg from plist file.
-	$XBPS_PKGDB_CMD unregister $pkgname $ver || return $?
-	cd ${lwd}
-
+	$XBPS_PKGDB_CMD unregister $pkgname $ver
 	return $?
 }
