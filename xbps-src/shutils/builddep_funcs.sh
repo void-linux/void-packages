@@ -158,7 +158,7 @@ install_dependencies_pkg()
 		rval=$?
 		if [ $rval -eq 255 ]; then
 			# xbps-bin returned unexpected error (-1)
-			return $?
+			msg_error "${pkgname}-${lver}: failed to install required binpkgdeps!\n"
 		elif [ $rval -eq 0 ]; then
 			# Install successfully
 			echo
