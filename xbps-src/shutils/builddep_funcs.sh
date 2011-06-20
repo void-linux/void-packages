@@ -154,7 +154,7 @@ install_dependencies_pkg()
 		done
 		msg_normal "$pkgname-$lver: installing build dependencies from binpkgs...\n"
 		${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} \
-			-y install ${pkgdeplist}
+			-Ay install ${pkgdeplist}
 		rval=$?
 		if [ $rval -eq 255 ]; then
 			# xbps-bin returned unexpected error (-1)
