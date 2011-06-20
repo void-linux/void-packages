@@ -182,7 +182,10 @@ unstow_pkg_real()
 		# If it's a metapkg, do nothing.
 		:
 	elif [ ! -f ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
-		msg_error "$pkgname is incomplete, missing flist.\n"
+		# If flist not found, perhaps the pkg has been installed via
+		# xbps-bin, so try to remove it.
+		${XBPS_BIN_CMD} -pyf remove ${pkgname} || \
+			msg_error "${pkgname}: failed to remove!\n"
 	elif [ ! -w ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
 		msg_error "$pkgname cannot be removed (permission denied).\n"
 	elif [ -s ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
