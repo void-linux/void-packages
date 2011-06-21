@@ -129,13 +129,13 @@ run_func()
 msg_red()
 {
 	# error messages in bold/red
-	printf "\033[1m\033[31m"
+	printf >&2 "\033[1m\033[31m"
 	if [ -n "$in_chroot" ]; then
-		printf "[chroot] => ERROR: $@"
+		printf >&2 "[chroot] => ERROR: $@"
 	else
-		printf "=> ERROR: $@"
+		printf >&2 "=> ERROR: $@"
 	fi
-	printf "\033[m"
+	printf >&2 "\033[m"
 }
 
 msg_error()
@@ -146,9 +146,7 @@ msg_error()
 
 msg_error_nochroot()
 {
-	printf "\033[1m\033[31m"
-	printf "=> ERROR: $@"
-	printf "\033[m"
+	printf >&2 "\033[1m\033[31m>= ERROR: $@\033[m"
 
 	exit 1
 }
@@ -156,20 +154,18 @@ msg_error_nochroot()
 msg_warn()
 {
 	# warn messages in bold/yellow
-	printf "\033[1m\033[33m"
+	printf >&2 "\033[1m\033[33m"
 	if [ -n "$in_chroot" ]; then
-		printf "[chroot] => WARNING: $@"
+		printf >&2 "[chroot] => WARNING: $@"
 	else
-		printf "=> WARNING: $@"
+		printf >&2 "=> WARNING: $@"
 	fi
-	printf "\033[m"
+	printf >&2  "\033[m"
 }
 
 msg_warn_nochroot()
 {
-	printf "\033[1m\033[33m"
-	printf "=> WARNING: $@"
-	printf "\033[m"
+	printf >&2 "\033[1m\033[33m=> WARNING: $@\033[m"
 }
 
 msg_normal()
