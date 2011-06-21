@@ -174,7 +174,8 @@ unstow_pkg_real()
 
 	ver=$($XBPS_PKGDB_CMD version $pkgname)
 	if [ -z "$ver" ]; then
-		msg_error "$pkgname is not installed.\n"
+		msg_warn "$pkgname is not installed.\n"
+		return 0
 	fi
 
 	cd $XBPS_PKGMETADIR/$pkgname || exit 1
@@ -186,6 +187,7 @@ unstow_pkg_real()
 		# xbps-bin, so try to remove it.
 		${XBPS_BIN_CMD} -pyf remove ${pkgname} || \
 			msg_error "${pkgname}: failed to remove!\n"
+		return $?
 	elif [ ! -w ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
 		msg_error "$pkgname cannot be removed (permission denied).\n"
 	elif [ -s ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
