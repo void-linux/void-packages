@@ -151,7 +151,7 @@ install_dependencies_pkg()
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
 		msg_normal "'$pkgname-${lver}': installing dependencies from binpkgs...\n"
 		for i in ${notinstalled_deps}; do
-			install_pkg_with_binpkg "${i}"
+			install_pkg_with_binpkg "\"${i}\""
 		done
 		rval=$?
 		if [ $rval -eq 255 ]; then
