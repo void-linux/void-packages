@@ -117,7 +117,7 @@ install_pkg_deps()
 #
 install_dependencies_pkg()
 {
-	local pkg="$1" rval pkgdep_list
+	local pkg="$1" rval
 	local lpkgname=$(${XBPS_PKGDB_CMD} getpkgname ${pkg})
 	local i j pkgn iver reqver notinstalled_deps lver
 
@@ -149,16 +149,14 @@ install_dependencies_pkg()
 	[ -z "$notinstalled_deps" ] && return 0
 
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
+		msg_normal "'$pkgname-${lver}': installing dependencies from binpkgs...\n"
 		for i in ${notinstalled_deps}; do
-			pkgdeplist="${pkgdeplist} \"${i}\" "
+			install_pkg_with_binpkg "${i}"
 		done
-		msg_normal "$pkgname-$lver: installing build dependencies from binpkgs...\n"
-		${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} \
-			-Ay install ${pkgdeplist}
 		rval=$?
 		if [ $rval -eq 255 ]; then
 			# xbps-bin returned unexpected error (-1)
-			msg_error "${pkgname}-${lver}: failed to install required binpkgdeps!\n"
+			msg_error "'${pkgname}-${lver}': failed to install required binpkgdeps!\n"
 		elif [ $rval -eq 0 ]; then
 			# Install successfully
 			echo
