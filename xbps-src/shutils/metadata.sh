@@ -101,10 +101,11 @@ xbps_write_metadata_pkg_real()
         # Find out if this package contains info files and compress
         # all them with gzip.
         #
-	if [ -f ${DESTDIR}/usr/share/info/dir ]; then
+	if [ -d ${DESTDIR}/usr/share/info ]; then
 		# Always remove this file if curpkg is not texinfo.
 		if [ "$pkgname" != "texinfo" ]; then
-			rm -f ${DESTDIR}/usr/share/info/dir
+			[ -f ${DESTDIR}/usr/share/info/dir ] && \
+				rm -f ${DESTDIR}/usr/share/info/dir
 		fi
 		# Add info-files trigger.
 		triggers="info-files $triggers"
