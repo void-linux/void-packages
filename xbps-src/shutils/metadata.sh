@@ -101,7 +101,7 @@ xbps_write_metadata_pkg_real()
         # Find out if this package contains info files and compress
         # all them with gzip.
         #
-	if [ -d ${DESTDIR}/usr/share/info ]; then
+	if [ -f ${DESTDIR}/usr/share/info/dir ]; then
 		# Always remove this file if curpkg is not texinfo.
 		if [ "$pkgname" != "texinfo" ]; then
 			[ -f ${DESTDIR}/usr/share/info/dir ] && \
