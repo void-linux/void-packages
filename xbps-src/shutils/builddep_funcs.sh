@@ -85,7 +85,7 @@ install_pkg_deps()
 	done
 
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
-		install_pkg_with_binpkg "${curpkg}"
+		install_pkg_with_binpkg ${curpkg}
 		if [ $? -eq 255 ]; then
 			# xbps-bin returned unexpected error
 			return $?
@@ -151,7 +151,7 @@ install_dependencies_pkg()
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
 		msg_normal "'$pkgname-${lver}': installing dependencies from binpkgs...\n"
 		for i in ${notinstalled_deps}; do
-			install_pkg_with_binpkg "${i}"
+			install_pkg_with_binpkg ${i}
 		done
 		rval=$?
 		if [ $rval -eq 255 ]; then
@@ -165,17 +165,6 @@ install_dependencies_pkg()
 	fi
 
 	for j in ${notinstalled_deps}; do
-		if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
-			install_pkg_with_binpkg "${j}"
-			rval=$?
-			if [ $rval -eq 255 ]; then
-				# xbps-bin returned unexpected error (-1)
-				return $?
-			elif [ $rval -eq 0 ]; then
-				# installed successfully
-				continue
-			fi
-		fi
 		pkgn=$($XBPS_PKGDB_CMD getpkgdepname ${j})
 		check_pkgdep_matched "${j}"
 		[ $? -eq 0 ] && continue
@@ -185,7 +174,7 @@ install_dependencies_pkg()
 		if [ $? -eq 1 ]; then
 			msg_normal "Installing '$lpkgname' dependency: '$pkgn'.\n"
 			if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
-				install_pkg_with_binpkg "${j}"
+				install_pkg_with_binpkg ${j}
 				rval=$?
 				if [ $rval -eq 255 ]; then
 					# xbps-bin returned unexpected error
