@@ -38,7 +38,7 @@ verify_sha256_cksum()
 	filesum=$(${XBPS_DIGEST_CMD} $XBPS_SRCDISTDIR/$file)
 	if [ "$origsum" != "$filesum" ]; then
 		echo
-		msg_error "SHA256 mismatch for '$file: $filesum'\n"
+		msg_error "SHA256 mismatch for '$file:'\n$filesum\n"
 	fi
 	msg_normal_append "OK.\n"
 }
