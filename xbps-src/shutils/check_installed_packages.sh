@@ -51,11 +51,7 @@ check_installed_packages()
 		${XBPS_CMPVER_CMD} ${lpkgver} ${srcpkgver}
 		rv=$?
 		if [ $rv -eq 255 ]; then
-			echo "   ${f}: newer version -> ${srcpkgver}"
-		elif [ $rv -eq 1 ]; then
-			echo "   ${f}: sourcepkg outdated -> ${srcpkgver}"
-		else
-			echo >&2 "   ${f}: already up to date."
+			echo "[$XBPS_MASTERDIR] ${f} < ${srcpkgver} [srcpkgs]"
 		fi
 		reset_tmpl_vars
 	done
