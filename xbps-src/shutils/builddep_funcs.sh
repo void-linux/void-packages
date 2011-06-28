@@ -84,7 +84,7 @@ install_pkg_deps()
 		fi
 	done
 
-	if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
+	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" ]; then
 		install_pkg_with_binpkg ${curpkg}
 		if [ $? -eq 255 ]; then
 			# xbps-bin returned unexpected error
@@ -148,7 +148,7 @@ install_dependencies_pkg()
 
 	[ -z "$notinstalled_deps" ] && return 0
 
-	if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
+	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" ]; then
 		msg_normal "'$pkgname-${lver}': installing dependencies from binpkgs...\n"
 		for i in ${notinstalled_deps}; do
 			install_pkg_with_binpkg ${i}
@@ -173,7 +173,7 @@ install_dependencies_pkg()
 		check_build_depends_pkg
 		if [ $? -eq 1 ]; then
 			msg_normal "Installing '$lpkgname' dependency: '$pkgn'.\n"
-			if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
+			if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" ]; then
 				install_pkg_with_binpkg ${j}
 				rval=$?
 				if [ $rval -eq 255 ]; then
