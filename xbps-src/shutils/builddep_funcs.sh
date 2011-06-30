@@ -33,6 +33,7 @@ install_pkg_from_repos()
 	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
 
 	msg_normal "'$pkgname': installing required dependency '$pkg' ...\n"
+	[ -z "${wrksrc}" ] && wrksrc="$XBPS_BUILDDIR/$pkgname"
 	[ ! -d "${wrksrc}" ] && mkdir -p "${wrksrc}"
 	${cmd} "\"$pkg\"" >${wrksrc}/.xbps_install_dependency_${pkgdepname}.log 2>&1
 	rval=$?
