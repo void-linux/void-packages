@@ -70,15 +70,9 @@ remove_pkgdestdir_sighandler()
 		rm -rf "$XBPS_DESTDIR/${sourcepkg}-${version%_*}"
 	fi
 	msg_red "'${sourcepkg}-${lver}': removed files from DESTDIR...\n"
-        #
-	# If XBPS_PREFER_BINPKG_DEPS is set, we should remove those
-	# package dependencies installed by the target package, do it.
-	#
-	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" ]; then
-		msg_normal "Removing binary package dependencies...\n"
-		${fakeroot_cmd} ${fakeroot_cmd_args} \
-			${XBPS_BIN_CMD} -Rpyf autoremove
-	fi
+
+	. ${XBPS_SHUTILSDIR}/builddep_funcs.sh
+	autoremove_binpkgs
 }
 
 var_is_a_function()

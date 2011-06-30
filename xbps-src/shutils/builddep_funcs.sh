@@ -25,6 +25,49 @@
 
 . $XBPS_SHUTILSDIR/tmpl_funcs.sh
 
+install_pkg_from_repos()
+{
+	local cmd rval pkgdepname pkg="$1"
+
+	pkgdepname=$($XBPS_PKGDB_CMD getpkgdepname "$pkg")
+	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
+
+	msg_normal "'$pkgname': installing required dependency '$pkg' ...\n"
+	[ ! -d "${wrksrc}" ] && mkdir -p "${wrksrc}"
+	${cmd} "\"$pkg\"" >${wrksrc}/.xbps_install_dependency_${pkgdepname}.log 2>&1
+	rval=$?
+	if [ $rval -ne 0 -a $rval -ne 6 -a $rval -ne 2 ]; then
+		# EEXIST errors are ignored, handle all any errors here.
+		msg_red "'${pkgname}': failed to install '${pkg}' dependency!\n"
+		msg_error "Please see ${wrksrc}/.xbps_install_${pkgdepname}.log to see what went wrong!\n"
+	elif [ $rval -eq 2 ]; then
+		# package not found (ENOENT), try to workaround it if there
+		# are extra double quotes.
+		${cmd} "$pkg" >${wrksrc}/.xbps_install_dependency_${pkgdepname}.log 2>&1
+		if [ $? -ne 0 -a $? -ne 6 ]; then
+			msg_red "Please see ${wrksrc}/.xbps_install_${pkgdepname}.log to see what went wrong!\n"
+			msg_error "'${pkgname}': failed to install '${pkg}' required dependencies!\n"
+		fi
+	fi
+
+	return $rval
+}
+
+autoremove_binpkgs()
+{
+	local cmd
+
+	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD}"
+
+	# If XBPS_PREFER_BINPKG_DEPS is set, we should remove those
+	# package dependencies installed by the target package, do it.
+	#
+	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$doing_deps" ]; then
+		msg_normal "'$pkgname': removing automatically installed dependencies ...\n"
+		${cmd} -y reconfigure all && ${cmd} -Rpyf autoremove 2>&1 >/dev/null
+	fi
+}
+
 #
 # Recursive function that installs all direct and indirect
 # dependencies of a package.
@@ -85,7 +128,7 @@ install_pkg_deps()
 	done
 
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" ]; then
-		install_pkg_with_binpkg ${curpkg}
+		install_pkg_from_repos ${curpkg}
 		if [ $? -eq 255 ]; then
 			# xbps-bin returned unexpected error
 			return $?
@@ -149,19 +192,18 @@ install_dependencies_pkg()
 	[ -z "$notinstalled_deps" ] && return 0
 
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" ]; then
-		msg_normal "'$pkgname-${lver}': installing dependencies from binpkgs...\n"
+		msg_normal "'$pkg': installing dependencies from repositories ...\n"
 		for i in ${notinstalled_deps}; do
-			install_pkg_with_binpkg ${i}
+			install_pkg_from_repos ${i}
+			rval=$?
+			if [ $rval -eq 255 ]; then
+				# xbps-bin returned unexpected error (-1)
+				msg_error "'${pkg}': failed to install required dependencies!\n"
+			elif [ $rval -eq 0 ]; then
+				# Install successfully
+				continue
+			fi
 		done
-		rval=$?
-		if [ $rval -eq 255 ]; then
-			# xbps-bin returned unexpected error (-1)
-			msg_error "'${pkgname}-${lver}': failed to install required binpkgdeps!\n"
-		elif [ $rval -eq 0 ]; then
-			# Install successfully
-			echo
-			return 0
-		fi
 	fi
 
 	for j in ${notinstalled_deps}; do
@@ -174,7 +216,7 @@ install_dependencies_pkg()
 		if [ $? -eq 1 ]; then
 			msg_normal "Installing '$lpkgname' dependency: '$pkgn'.\n"
 			if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" ]; then
-				install_pkg_with_binpkg ${j}
+				install_pkg_from_repos ${j}
 				rval=$?
 				if [ $rval -eq 255 ]; then
 					# xbps-bin returned unexpected error
