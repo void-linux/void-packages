@@ -45,9 +45,9 @@ install_pkg_from_repos()
 		# package not found (ENOENT), try to workaround it if there
 		# are extra double quotes.
 		${cmd} "$pkg" >${wrksrc}/.xbps_install_dependency_${pkgdepname}.log 2>&1
-		if [ $? -ne 0 -a $? -ne 6 ]; then
-			msg_red "Please see ${wrksrc}/.xbps_install_${pkgdepname}.log to see what went wrong!\n"
-			msg_error "'${pkgname}': failed to install '${pkg}' required dependencies!\n"
+		if [ $? -ne 0 -a $? -ne 6 -a $? -ne 2 ]; then
+			msg_red "'${pkgname}': failed to install '${pkg}' dependency!\n"
+			msg_error "Please see ${wrksrc}/.xbps_install_${pkgdepname}.log to see what went wrong!\n"
 		fi
 	fi
 
