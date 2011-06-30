@@ -111,22 +111,22 @@ extract_distfiles()
 
 		case ${cursufx} in
 		txz)
-			if ! command -v xz 2>&1 >/dev/null; then
+			if ! command -v unxz 2>&1 >/dev/null; then
 				msg_error "cannot find xz for extraction.\n"
 			fi
-			tar xfJ $XBPS_SRCDISTDIR/$curfile -C $extractdir
+			unxz -cf $XBPS_SRCDISTDIR/$curfile | tar xf - -C $extractdir
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
 			;;
 		tbz)
-			tar xfj $XBPS_SRCDISTDIR/$curfile -C $extractdir
+			bunzip2 -cf $XBPS_SRCDISTDIR/$curfile | tar xf - -C $extractdir
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
 			;;
 		tgz)
-			tar xfz $XBPS_SRCDISTDIR/$curfile -C $extractdir
+			gunzip -cf $XBPS_SRCDISTDIR/$curfile | tar xf - -C $extractdir
 			if [ $? -ne 0 ]; then
 				msg_error "extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
