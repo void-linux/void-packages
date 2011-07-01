@@ -2,6 +2,7 @@
 # HTTP/FTP vars that can be used by templates.
 #
 
+# SITE used for ditfiles mirrors
 SOURCEFORGE_SITE="http://downloads.sourceforge.net/sourceforge"
 NONGNU_SITE="http://download.savannah.nongnu.org/releases"
 UBUNTU_SITE="http://archive.ubuntu.com/ubuntu/pool"
@@ -12,3 +13,8 @@ KERNEL_SITE="http://www.kernel.org/pub/linux"
 CPAN_SITE="http://cpan.perl.org/modules/by-module"
 MOZILLA_SITE="ftp://ftp.mozilla.org/pub/mozilla.org"
 GNU_SITE="http://mirrors.kernel.org/gnu"
+
+
+# repetative sub homepage's with no real project page
+# ie. some gnome and xorg projects
+XORG_HOME="http://xorg.freedesktop.org/wiki/"
