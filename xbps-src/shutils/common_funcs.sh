@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2010 Juan Romero Pardines.
+# Copyright (c) 2008-2011 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -68,11 +68,8 @@ remove_pkgdestdir_sighandler()
 
 	if [ -d "$XBPS_DESTDIR/${sourcepkg}-${version%_*}" ]; then
 		rm -rf "$XBPS_DESTDIR/${sourcepkg}-${version%_*}"
+		msg_red "'${sourcepkg}-${lver}': removed files from DESTDIR...\n"
 	fi
-	msg_red "'${sourcepkg}-${lver}': removed files from DESTDIR...\n"
-
-	. ${XBPS_SHUTILSDIR}/builddep_funcs.sh
-	autoremove_binpkgs
 }
 
 var_is_a_function()
@@ -144,6 +141,9 @@ msg_red()
 msg_error()
 {
 	msg_red "$@"
+	. $XBPS_SHUTILSDIR/builddep_funcs.sh
+	autoremove_pkg_dependencies
+
 	exit 1
 }
 

@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2010 Juan Romero Pardines.
+# Copyright (c) 2008-2011 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -183,11 +183,8 @@ unstow_pkg_real()
 		# If it's a metapkg, do nothing.
 		:
 	elif [ ! -f ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
-		# If flist not found, perhaps the pkg has been installed via
-		# xbps-bin, so try to remove it.
-		${XBPS_BIN_CMD} -pyf remove ${pkgname} || \
-			msg_error "${pkgname}: failed to remove!\n"
-		return $?
+		msg_warn "$pkgname wasn't installed from source!\n"
+		return 0
 	elif [ ! -w ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
 		msg_error "$pkgname cannot be removed (permission denied).\n"
 	elif [ -s ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
@@ -214,7 +211,7 @@ unstow_pkg_real()
 
 	run_func post_remove
 	# Remove metadata dir.
-	rm -rf $XBPS_PKGMETADIR/$pkgname
+	[ -d $XBPS_PKGMETADIR/$pkgname ] && rm -rf $XBPS_PKGMETADIR/$pkgname
 
 	# Unregister pkg from plist file.
 	$XBPS_PKGDB_CMD unregister $pkgname $ver
