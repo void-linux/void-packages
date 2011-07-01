@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2009-2010 Juan Romero Pardines.
+# Copyright (c) 2009-2011 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -63,7 +63,7 @@ xbps_write_metadata_scripts_pkg()
 # not possible to chroot(3).
 #
 
-export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
+export PATH="/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin"
 
 TRIGGERSDIR="./var/db/xbps/triggers"
 ACTION="\$1"
