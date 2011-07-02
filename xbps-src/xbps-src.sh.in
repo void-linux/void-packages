@@ -52,7 +52,7 @@ check_reqhost_utils()
 usage()
 {
 	cat << _EOF
-$progname: [-Ch] [-c <file>] [-m <dir>] [-p <dir>] [-s <dir>] <target>
+$progname: [-ChS] [-c <file>] [-m <dir>] [-p <dir>] [-s <dir>] <target> [<pkgname>]
 
 Targets:
  bootstrap              Build and install the bootstrap packages into <masterdir>.
@@ -92,9 +92,12 @@ Options:
         if not specified @@XBPS_INSTALL_ETCDIR@@/xbps-src.conf is used.
  -h	Usage output.
  -m     Master directory, overwritting the value set in the configuration
-        file at @@XBPS_INSTALL_ETCDIR@@/xbps-src.conf.
+        file xbps-src.conf.
  -p     Package directory, overwritting default path at
         <masterdir>/pkg-binpkgs.
+ -S     Overrides and disables XBPS_PREFER_BINPKG_DEPS even if it was
+        set in the configuration file xbps-src.conf.
+        it was set in the configuration file.
  -s     Source distribution files directory, overwritting default path at
         <masterdir>/pkg-srcdistdir.
 
@@ -168,9 +171,9 @@ check_config_vars()
 #
 # main()
 #
-while getopts "Cc:hm:p:s:" opt; do
+while getopts "Cc:hm:p:Ss:" opt; do
 	case $opt in
-		C) export dontrm_builddir=yes;;
+		C) KEEP_WRKSRC=1;;
 		c) XBPS_CONFIG_FILE="$OPTARG";;
 		h) usage && exit 0;;
 		m)
@@ -187,6 +190,7 @@ while getopts "Cc:hm:p:s:" opt; do
 				mkdir -p ${_PACKAGEDIR}/noarch
 			fi
 			;;
+		S) UNSET_PREFER_BINPKG_DEPS=1;;
 		s) export XBPS_SRCDISTDIR="$OPTARG";;
 		--) shift; break;;
 	esac
@@ -221,6 +225,9 @@ for f in $(echo @@XBPS_INSTALL_SHAREDIR@@/shutils/*.sh); do
 	fi
 done
 
+# Disable XBPS_PREFER_BINPKG_DEPS if requested.
+[ -n "$UNSET_PREFER_BINPKG_DEPS" ] && unset XBPS_PREFER_BINPKG_DEPS
+
 #
 # Check for required utilities in host system.
 #
@@ -243,8 +250,6 @@ if [ "$(id -u)" -eq 0 ]; then
 		unset fakeroot_cmd_args
 	fi
 fi
-
-[ -z "$dontrm_builddir" ] && dontrm_builddir=no
 
 #
 # Sanitize PATH.
@@ -275,7 +280,6 @@ bootstrap)
 	setup_tmpl ${_ORIGINPKG} && install_pkg $pkgname
 	;;
 build|configure)
-	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
 	if [ -z "${_pkgname}" ]; then
 		[ ! -r ./template ] && msg_error "missing build template in $(pwd).\n"
 		. ./template
@@ -371,7 +375,7 @@ install|install-destdir)
 	_ORIGINPKG="${_pkgname}"
 	if [ -z "$in_chroot" -a -z "$base_chroot" ]; then
 		. $XBPS_SHUTILSDIR/chroot.sh
-		xbps_chroot_handler $target ${_ORIGINPKG} $dontrm_builddir
+		xbps_chroot_handler $target ${_ORIGINPKG} $KEEP_WRKSRC
 	else
 		setup_tmpl ${_ORIGINPKG}
 		install_pkg $pkgname
@@ -403,7 +407,7 @@ remove)
 	setup_tmpl ${_pkgname}
 	if [ -z "$in_chroot" -a -z "$base_chroot" ]; then
 		. $XBPS_SHUTILSDIR/chroot.sh
-		xbps_chroot_handler $target ${_pkgname} $dontrm_builddir
+		xbps_chroot_handler $target ${_pkgname} $KEEP_WRKSRC
         else
 		remove_pkg
 	fi
@@ -418,7 +422,6 @@ stow)
 	stow_pkg_handler stow
 	;;
 unstow)
-	. $XBPS_SHUTILSDIR/tmpl_funcs.sh
 	if [ -z "${_pkgname}" ]; then
 		[ ! -r ./template ] && msg_error "missing build template in $(pwd).\n"
 		_pkgname=$(basename_cwd)
