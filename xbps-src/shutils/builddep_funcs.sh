@@ -23,8 +23,6 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 
-. $XBPS_SHUTILSDIR/tmpl_funcs.sh
-
 install_pkg_from_repos()
 {
 	local cmd rval pkgdepname pkg="$1"
@@ -91,7 +89,6 @@ autoremove_pkg_dependencies()
 					continue
 				fi
 				# remove pkg.
-				. ${XBPS_SHUTILSDIR}/pkgtarget_funcs.sh
 				msg_warn "removing package $pkgname installed from source...\n"
 				remove_pkg
 			fi

@@ -23,8 +23,6 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 
-. ${XBPS_SHUTILSDIR}/builddep_funcs.sh
-
 stow_pkg_handler()
 {
 	local action="$1" subpkg spkgrev

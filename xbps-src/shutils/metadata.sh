@@ -49,7 +49,6 @@ xbps_write_metadata_pkg()
 		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${subpkg}
 		set_tmpl_common_vars
-		. ${XBPS_SHUTILSDIR}/verify_rundeps.sh
 		verify_rundeps ${DESTDIR}
 		xbps_write_metadata_pkg_real
 	done
@@ -66,7 +65,6 @@ xbps_write_metadata_pkg()
 	fi
 	setup_tmpl ${sourcepkg}
 	# Verify pkg deps.
-	. ${XBPS_SHUTILSDIR}/verify_rundeps.sh
 	verify_rundeps ${DESTDIR}
 	xbps_write_metadata_pkg_real
 }
@@ -412,7 +410,6 @@ _EOF
 	# Create the INSTALL/REMOVE scripts if package uses them
 	# or uses any available trigger.
 	#
-	. ${XBPS_SHUTILSDIR}/metadata_scripts.sh;			\
 	xbps_write_metadata_scripts_pkg install;			\
 	xbps_write_metadata_scripts_pkg remove;				\
 	} || return $?

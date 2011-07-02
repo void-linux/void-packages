@@ -66,7 +66,6 @@ configure_src_phase()
 
 	# Apply patches if requested by template file
 	if [ ! -f $XBPS_APPLYPATCHES_DONE ]; then
-		. $XBPS_SHUTILSDIR/patch_funcs.sh
 		apply_tmpl_patches
 	fi
 

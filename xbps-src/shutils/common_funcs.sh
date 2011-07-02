@@ -141,7 +141,6 @@ msg_red()
 msg_error()
 {
 	msg_red "$@"
-	. $XBPS_SHUTILSDIR/builddep_funcs.sh
 	autoremove_pkg_dependencies
 
 	exit 1
