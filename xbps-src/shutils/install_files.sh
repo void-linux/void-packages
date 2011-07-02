@@ -82,14 +82,18 @@ vmove()
 		msg_red "vmove: SRCPKGDESTDIR unset, can't continue...\n"
 		return 1
 	fi
-	if [ $# -ne 2 ]; then
-		msg_red "vmove: 2 arguments expected: <files> <target-directory>\n"
+	if [ $# -lt 1 ]; then
+		msg_red "vmove: 1 argument expected: <files>\n"
 		return 1
 	fi
-	if [ ! -d ${DESTDIR}/${targetdir} ]; then
+	if [ -n "${targetdir}" -a ! -d ${DESTDIR}/${targetdir} ]; then
 		vmkdir ${targetdir}
 	fi
-	mv ${SRCPKGDESTDIR}/$files ${DESTDIR}/${targetdir}
+	if [ -z "${targetdir}" ]; then
+		mv ${SRCPKGDESTDIR}/$files ${DESTDIR}
+	else
+		mv ${SRCPKGDESTIDR}/$files ${DESTDIR}/${targetdir}
+	fi
 }
 
 vmkdir()
