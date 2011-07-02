@@ -32,12 +32,12 @@ vinstall()
 	local targetfile="$4"
 
 	if [ -z "$DESTDIR" ]; then
-		msg_red "vinstall: package DESTDIR unset, can't continue...\n"
+		msg_red "vinstall: DESTDIR unset, can't continue...\n"
 		return 1
 	fi
 
 	if [ $# -lt 3 ]; then
-		msg_red "vinstall: 3 arguments expected, only provided $#\n"
+		msg_red "vinstall: 3 arguments expected: <file> <mode> <target-directory>\n"
 		return 1
 	fi
 
@@ -47,9 +47,9 @@ vinstall()
 	fi
 
 	if [ -z "$targetfile" ]; then
-		install -Dm${mode} ${file} ${DESTDIR}/${targetdir}/${file}
+		install -Dm${mode} ${file} "${DESTDIR}/${targetdir}/$(basename ${file})"
 	else
-		install -Dm${mode} ${file} ${DESTDIR}/${targetdir}/${targetfile}
+		install -Dm${mode} ${file} "${DESTDIR}/${targetdir}/$(basename ${targetfile})"
 	fi
 }
 
@@ -58,6 +58,10 @@ vcopy()
 	local files=$1
 	local targetdir="$2"
 
+	if [ -z "$DESTDIR" ]; then
+		msg_red "vcopy: DESTDIR unset, can't continue...\n"
+		return 1
+	fi
 	if [ $# -ne 2 ]; then
 		msg_red "vcopy: 2 arguments expected: <files> <target-directory>\n"
 		return 1
@@ -66,24 +70,46 @@ vcopy()
 	cp -a $files ${DESTDIR}/${targetdir}
 }
 
+vmove()
+{
+	local files=$1
+	local targetdir="$2"
+
+	if [ -z "$DESTDIR" ]; then
+		msg_red "vmove: DESTDIR unset, can't continue...\n"
+		return 1
+	elif [ -z "$SRCPKGDESTDIR" ]; then
+		msg_red "vmove: SRCPKGDESTDIR unset, can't continue...\n"
+		return 1
+	fi
+	if [ $# -ne 2 ]; then
+		msg_red "vmove: 2 arguments expected: <files> <target-directory>\n"
+		return 1
+	fi
+	if [ ! -d ${DESTDIR}/${targetdir} ]; then
+		vmkdir ${targetdir}
+	fi
+	mv ${SRCPKGDESTDIR}/$files ${DESTDIR}/${targetdir}
+}
+
 vmkdir()
 {
 	local dir="$1"
 	local mode="$2"
 
 	if [ -z "$DESTDIR" ]; then
-		msg_red "vmkdir: package DESTDIR unset, can't continue...\n"
+		msg_red "vmkdir: DESTDIR unset, can't continue...\n"
 		return 1
 	fi
 
-	if [ $# -lt 1 ]; then
-		msg_red "vmkdir: 1 arguments expected: <directory> <mode>\n"
+	if [ -z "$dir" ]; then
+		msg_red "vmkdir: directory argument unset.\n"
 		return 1
 	fi
 
 	if [ -z "$mode" ]; then
 		install -d ${DESTDIR}/${dir}
 	else
-		install -d -m${mode} ${DESTDIR}/${dir}
+		install -dm${mode} ${DESTDIR}/${dir}
 	fi
 }
