@@ -86,13 +86,12 @@ vmove()
 		msg_red "vmove: 1 argument expected: <files>\n"
 		return 1
 	fi
-	if [ -n "${targetdir}" -a ! -d ${DESTDIR}/${targetdir} ]; then
-		vmkdir ${targetdir}
-	fi
 	if [ -z "${targetdir}" ]; then
+		[ ! -d ${DESTDIR} ] && install -d ${DESTDIR}
 		mv ${SRCPKGDESTDIR}/$files ${DESTDIR}
 	else
-		mv ${SRCPKGDESTIDR}/$files ${DESTDIR}/${targetdir}
+		[ ! -d ${DESTDIR}/${targetdir} ] && vmkdir ${targetdir}
+		mv ${SRCPKGDESTDIR}/$files ${DESTDIR}/${targetdir}
 	fi
 }
 
