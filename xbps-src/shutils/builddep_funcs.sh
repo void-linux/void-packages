@@ -45,7 +45,7 @@ install_pkg_from_repos()
 		${cmd} "$pkg" >${wrksrc}/.xbps_install_dependency_${pkgdepname}.log 2>&1
 		if [ $? -ne 0 -a $? -ne 6 -a $? -ne 2 ]; then
 			msg_red "'${pkgname}': failed to install '${pkg}' dependency!\n"
-			msg_error "Please see ${wrksrc}/.xbps_install_${pkgdepname}.log to see what went wrong!\n"
+			msg_red "Please see ${wrksrc}/.xbps_install_${pkgdepname}.log to see what went wrong!\n"
 		fi
 	fi
 
@@ -179,7 +179,7 @@ install_pkg_deps()
 		if [ $? -eq 255 ]; then
 			# xbps-bin returned unexpected error
 			return $?
-		elif [ $? -eq 1 ]; then
+		elif [ $? -eq 2 ]; then
 			# Package not found, build from source.
 			install_pkg "${curpkgname}"
 			if [ $? -eq 1 ]; then
