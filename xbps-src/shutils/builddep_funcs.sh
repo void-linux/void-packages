@@ -35,18 +35,17 @@ install_pkg_from_repos()
 	[ ! -d "${wrksrc}" ] && mkdir -p "${wrksrc}"
 	${cmd} "\"$pkg\"" >${wrksrc}/.xbps_install_dependency_${pkgdepname}.log 2>&1
 	rval=$?
-	if [ $rval -ne 0 -a $rval -ne 6 -a $rval -ne 2 ]; then
-		# EEXIST errors are ignored, handle all any errors here.
-		msg_red "'${pkgname}': failed to install '${pkg}' dependency!\n"
+	if [ $rval -ne 0 -a $rval -ne 6 ]; then
+		# xbps-bin can return:
+		#
+		#	SUCCESS (0): package installed successfully.
+		#	ENOENT  (2): package missing in repositories.
+		#	EEXIST  (6): package already installed.
+		#	ENODEV (19): package depends on missing dependencies.
+		#
+		# Any other returned is criticial.
+		msg_red "'${pkgname}': failed to install '${pkg}' dependency! (error $rval)\n"
 		msg_error "Please see ${wrksrc}/.xbps_install_${pkgdepname}.log to see what went wrong!\n"
-	elif [ $rval -eq 2 ]; then
-		# package not found (ENOENT), try to workaround it if there
-		# are extra double quotes.
-		${cmd} "$pkg" >${wrksrc}/.xbps_install_dependency_${pkgdepname}.log 2>&1
-		if [ $? -ne 0 -a $? -ne 6 -a $? -ne 2 ]; then
-			msg_red "'${pkgname}': failed to install '${pkg}' dependency!\n"
-			msg_red "Please see ${wrksrc}/.xbps_install_${pkgdepname}.log to see what went wrong!\n"
-		fi
 	fi
 
 	return $rval
@@ -67,7 +66,8 @@ autoremove_pkg_dependencies()
 		# Autoremove installed binary packages.
 		${cmd} -y reconfigure all && ${cmd} -Rpyf autoremove 2>&1 >/dev/null
 		if [ $? -ne 0 ]; then
-			msg_error "'$pkgname': failed to remove automatic dependencies!\n"
+			msg_red "'$pkgname': failed to remove automatic dependencies!\n"
+			exit 1
 		fi
 		# Maybe some dependency wasn't available in repositories and it had
 		# to be built from source, remove them too.
