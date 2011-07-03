@@ -23,6 +23,43 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 
+#
+# Install all required package dependencies in one pass, like:
+#
+#	xbps-bin install "foo>=0" "blah<=0" "..."
+#
+install_pkglist_from_repos()
+{
+	local cmd rval
+
+	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
+
+	msg_normal "'$pkgname': installing required dependencies ...\n"
+	[ -z "${wrksrc}" ] && wrksrc="$XBPS_BUILDDIR/$pkgname"
+	[ ! -d "${wrksrc}" ] && mkdir -p "${wrksrc}"
+	${cmd} ${1} >${wrksrc}/.xbps_install_dependencies.log 2>&1
+	rval=$?
+	if [ $rval -ne 0 -a $rval -ne 6 ]; then
+		# xbps-bin can return:
+		#
+		#	SUCCESS (0): package installed successfully.
+		#	ENOENT  (2): package missing in repositories.
+		#	EEXIST  (6): package already installed.
+		#	ENODEV (19): package depends on missing dependencies.
+		#
+		# Any other returned is criticial.
+		msg_red "'${pkgname}': failed to install required dependencies! (error $rval)\n"
+		msg_error "'${pkgname}': please take a look the logs in \$wrksrc.\n"
+	fi
+
+	return $rval
+}
+
+#
+# Install a required package dependency, like:
+#
+#	xbps-bin instlal "foo>=0"
+#
 install_pkg_from_repos()
 {
 	local cmd rval pkgdepname pkg="$1"
@@ -239,16 +276,17 @@ install_dependencies_pkg()
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" ]; then
 		msg_normal "'$pkg': installing dependencies from repositories ...\n"
 		for i in ${notinstalled_deps}; do
-			install_pkg_from_repos ${i}
-			rval=$?
-			if [ $rval -eq 255 ]; then
-				# xbps-bin returned unexpected error (-1)
-				msg_error "'${lpkgname}': failed to install dependency: '$i'.\n"
-			elif [ $rval -eq 0 ]; then
-				# Install successfully
-				continue
+			if [ -z "$pkglist" ]; then
+				pkglist="\"$i\""
+			else
+				pkglist="${pkglist} \"$i\""
 			fi
 		done
+		install_pkglist_from_repos "${pkglist}"
+		if [ $? -eq 0 ]; then
+			# Install successfully
+			return 0
+		fi
 	fi
 
 	# Install direct and indirect build dependencies from source.
