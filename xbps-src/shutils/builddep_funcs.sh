@@ -60,8 +60,7 @@ autoremove_pkg_dependencies()
 	# If XBPS_PREFER_BINPKG_DEPS is set, we should remove those
 	# package dependencies installed by the target package, do it.
 	#
-	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" \
-	     -a -z "$INSTALLING_DEPS" ]; then
+	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" ]; then
 		msg_normal "'$pkgname': removing automatically installed dependencies ...\n"
 		# Autoremove installed binary packages.
 		${cmd} -y reconfigure all && ${cmd} -Rpyf autoremove 2>&1 >/dev/null
