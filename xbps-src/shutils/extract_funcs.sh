@@ -32,7 +32,7 @@ extract_distfiles()
 	local pkg="$1" curfile cursufx f lver
 
 	[ -f $XBPS_EXTRACT_DONE ] && return 0
-	[ -z "$in_chroot" -a ! -w $XBPS_BUILDDIR ] && \
+	[ -z "$IN_CHROOT" -a ! -w $XBPS_BUILDDIR ] && \
 		msg_error "can't extract distfile(s) (permission denied)\n"
 
 	#

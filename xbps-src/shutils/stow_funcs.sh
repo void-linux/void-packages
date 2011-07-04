@@ -113,7 +113,7 @@ stow_pkg_real()
 				cp -dp $i $XBPS_MASTERDIR/$lfile
 				continue
 			fi
-			if [ -n "$in_chroot" -a -n "$stow_copy_files" ]; then
+			if [ -n "$IN_CHROOT" -a -n "$stow_copy_files" ]; then
 				# Templates that set stow_copy_files require
 				# some files to be copied, rather than symlinked.
 				local found
@@ -129,7 +129,7 @@ stow_pkg_real()
 					continue
 				fi
 			fi
-			if [ -n "$in_chroot" -a -n "$stow_copy" -o -z "$in_chroot" ]; then
+			if [ -n "$IN_CHROOT" -a -n "$stow_copy" -o -z "$IN_CHROOT" ]; then
 				# In the no-chroot case and templates that
 				# set $stow_copy, we can't stow with symlinks.
 				# Just copy them.

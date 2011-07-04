@@ -70,6 +70,9 @@ remove_pkgdestdir_sighandler()
 		rm -rf "$XBPS_DESTDIR/${sourcepkg}-${version%_*}"
 		msg_red "'${sourcepkg}-${lver}': removed files from DESTDIR...\n"
 	fi
+
+	[ -n "$2" ] && KEEP_AUTODEPS=1
+	autoremove_pkg_dependencies
 }
 
 var_is_a_function()
@@ -130,7 +133,7 @@ msg_red()
 {
 	# error messages in bold/red
 	printf >&2 "\033[1m\033[31m"
-	if [ -n "$in_chroot" ]; then
+	if [ -n "$IN_CHROOT" ]; then
 		printf >&2 "[chroot] => ERROR: $@"
 	else
 		printf >&2 "=> ERROR: $@"
@@ -141,7 +144,6 @@ msg_red()
 msg_error()
 {
 	msg_red "$@"
-	autoremove_pkg_dependencies
 
 	exit 1
 }
@@ -157,7 +159,7 @@ msg_warn()
 {
 	# warn messages in bold/yellow
 	printf >&2 "\033[1m\033[33m"
-	if [ -n "$in_chroot" ]; then
+	if [ -n "$IN_CHROOT" ]; then
 		printf >&2 "[chroot] => WARNING: $@"
 	else
 		printf >&2 "=> WARNING: $@"
@@ -174,7 +176,7 @@ msg_normal()
 {
 	# normal messages in bold
 	printf "\033[1m"
-	if [ -n "$in_chroot" ]; then
+	if [ -n "$IN_CHROOT" ]; then
 		printf "[chroot] => $@"
 	else
 		printf "=> $@"

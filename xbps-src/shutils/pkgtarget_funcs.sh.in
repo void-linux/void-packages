@@ -34,10 +34,13 @@ install_pkg()
 	# If we are being invoked through the chroot, re-read config file
 	# to get correct stuff.
 	#
-	if [ -n "$in_chroot" ]; then
+	if [ -n "$IN_CHROOT" ]; then
 		check_config_vars
 		set_defvars
 	fi
+
+	# Remove automatic package dependencies if set.
+	autoremove_pkg_dependencies
 
 	pkg="$curpkgn-$version"
 	[ -n "$INSTALLING_DEPS" ] && setup_tmpl $curpkgn
@@ -53,12 +56,15 @@ install_pkg()
 		fi
 	fi
 
+	# Always fetch distfiles before installing dependencies if
+	# template doesn't use nofetch and do_fetch().
+	[ -z "$nofetch" ] && fetch_distfiles
+
 	#
 	# Install dependencies required by this package.
 	#
 	if [ -z "$INSTALLING_DEPS" ]; then
-		install_dependencies_pkg $pkg
-		[ $? -eq 1 ] && return 1
+		install_dependencies_pkg $pkg || return $?
 		#
 		# At this point all required deps are installed, and
 		# only remaining is the origin package; install it.
@@ -68,10 +74,9 @@ install_pkg()
 		msg_normal "Installing '$pkgname'...\n"
 	fi
 
-	#
-	# Fetch distfiles before checking its dependencies.
-	#
-	fetch_distfiles
+	# Fetch distfiles after installing required dependencies,
+	# because some of them might be required for do_fetch().
+	[ -n "$nofetch" ] && fetch_distfiles
 
 	#
 	# Fetch, extract, build and install into the destination directory.
@@ -104,18 +109,14 @@ install_pkg()
 	env xbps_machine=${xbps_machine} MASTERDIR=${_MASTERDIR}	\
 		wrksrc=${wrksrc}					\
 		${fakeroot_cmd} ${fakeroot_cmd_args}			\
-		@@XBPS_INSTALL_LIBEXECDIR@@/xbps-src-doinst-helper ${curpkgn}
-	if [ $? -ne 0 ]; then
-		return 1
-	fi
+		@@XBPS_INSTALL_LIBEXECDIR@@/xbps-src-doinst-helper	\
+		${curpkgn} || return $?
 
 	# Strip binaries/libraries.
-	if [ -z "$noarch" ]; then
-		strip_files
-	fi
+	strip_files
 
 	# Always write metadata to package's destdir.
-	trap 'remove_pkgdestdir_sighandler ${pkgname}' INT
+	trap 'remove_pkgdestdir_sighandler $pkgname $KEEP_AUTODEPS' INT
 	xbps_write_metadata_pkg
 	if [ $? -ne 0 ]; then
 		msg_red "cannot write package metadata for '$pkgname'!\n"
