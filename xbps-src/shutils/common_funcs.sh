@@ -43,7 +43,7 @@ run_func_error()
 
 remove_pkgdestdir_sighandler()
 {
-	local lver subpkg _pkgname="$1"
+	local lver subpkg _pkgname="$1" _kwrksrc="$2"
 
 	setup_tmpl ${_pkgname}
 	[ -z "$sourcepkg" ] && return 0
@@ -71,8 +71,7 @@ remove_pkgdestdir_sighandler()
 		msg_red "'${sourcepkg}-${lver}': removed files from DESTDIR...\n"
 	fi
 
-	[ -n "$2" ] && KEEP_AUTODEPS=1
-	autoremove_pkg_dependencies
+	autoremove_pkg_dependencies ${_kwrksrc}
 }
 
 var_is_a_function()

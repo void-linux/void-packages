@@ -48,7 +48,7 @@ install_pkglist_from_repos()
 		#	ENODEV (19): package depends on missing dependencies.
 		#
 		# Any other returned is criticial.
-		autoremove_pkg_dependencies
+		autoremove_pkg_dependencies $KEEP_AUTODEPS
 		msg_red "'${pkgname}': failed to install required dependencies! (error $rval)\n"
 		msg_error "'${pkgname}': please take a look the logs in \$wrksrc.\n"
 	fi
@@ -82,7 +82,7 @@ install_pkg_from_repos()
 		#	ENODEV (19): package depends on missing dependencies.
 		#
 		# Any other returned is criticial.
-		autoremove_pkg_dependencies
+		autoremove_pkg_dependencies $KEEP_AUTODEPS
 		msg_red "'${pkgname}': failed to install '${pkg}' dependency! (error $rval)\n"
 		msg_error "Please see ${wrksrc}/.xbps_install_${pkgdepname}.log to see what went wrong!\n"
 	fi
@@ -94,7 +94,7 @@ autoremove_pkg_dependencies()
 {
 	local cmd saved_pkgname x f found
 
-	[ -n "$KEEP_AUTODEPS" ] && return 0
+	[ -n "$1" ] && return 0
 
 	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD}"
 
