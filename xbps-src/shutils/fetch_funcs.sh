@@ -70,7 +70,11 @@ fetch_distfiles()
 	fi
 
 	if [ -n "$nofetch" ]; then
-		cd ${XBPS_BUILDDIR} && run_func do_fetch && return $?
+		cd ${XBPS_BUILDDIR}
+		[ -n "$build_wrksrc" ] && mkdir -p "$wrksrc"
+		run_func do_fetch
+		touch -f $XBPS_FETCH_DONE
+		return 0
 	fi
 
 	cd $XBPS_SRCDISTDIR || return 1
