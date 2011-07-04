@@ -79,7 +79,7 @@ build_src_phase()
 	fi
 
 	# Disable -Wl,--as-needed if requested!
-	if [ -n "$broken_as_needed" -n "$XBPS_LDFLAGS" ]; then
+	if [ -n "$broken_as_needed" -a -n "$XBPS_LDFLAGS" ]; then
 		export XBPS_LDFLAGS="$(echo $XBPS_LDFLAGS|sed -e "s|-Wl,--as-needed||g")"
 		export LDFLAGS="$XBPS_LDFLAGS $LDFLAGS"
 	fi
