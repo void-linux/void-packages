@@ -105,11 +105,6 @@ configure_src_phase()
 		cd $build_wrksrc || return 1
 	fi
 
-	if [ -n "$broken_as_needed" -a -n "$XBPS_LDFLAGS" ]; then
-		export XBPS_LDFLAGS="$(echo $XBPS_LDFLAGS|sed -e "s|-Wl,--as-needed||g")"
-		export LDFLAGS="$XBPS_LDFLAGS $LDFLAGS"
-	fi
-
 	case "$build_style" in
 	gnu_configure|gnu-configure) run_func do_gnu_configure ;;
 	configure) run_func do_configure ;;
