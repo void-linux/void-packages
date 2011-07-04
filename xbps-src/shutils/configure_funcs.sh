@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2010 Juan Romero Pardines.
+# Copyright (c) 2008-2011 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -27,15 +27,19 @@
 # Runs the "configure" phase for a pkg. This setups the Makefiles or any
 # other stuff required to be able to build binaries or such.
 #
+
+# This variable can be used for packages wanting to use common arguments
+# to GNU configure scripts.
+#
+export CONFIGURE_SHARED_ARGS="--prefix=/usr --sysconfdir=/etc \
+	--infodir=/usr/share/info --mandir=/usr/share/man"
+
 do_gnu_configure()
 {
 	#
 	# Packages using GNU autoconf
 	#
-	env LDFLAGS="$LDFLAGS $conf_ldflags" \
-		${configure_script} --prefix=/usr --sysconfdir=/etc \
-		--infodir=/usr/share/info --mandir=/usr/share/man \
-		${configure_args}
+	${configure_script} ${CONFIGURE_SHARED_ARGS} ${configure_args}
 }
 
 do_configure()
@@ -43,8 +47,7 @@ do_configure()
 	#
 	# Packages using custom configure scripts.
 	#
-	env LDFLAGS="$LDFLAGS $conf_ldflags" ${configure_script} \
-		${configure_args}
+	${configure_script} ${configure_args}
 }
 
 do_perl_configure()
@@ -59,8 +62,7 @@ do_perl_configure()
 
 configure_src_phase()
 {
-	local f lver error=0
-	local conf_ldflags
+	local f lver
 
 	[ -z $pkgname ] && return 1
 
@@ -96,11 +98,6 @@ configure_src_phase()
 		fi
 	fi
 
-	# Export configure_env vars.
-	for f in ${configure_env}; do
-		export "$f"
-	done
-
 	[ -z "$configure_script" ] && configure_script="./configure"
 
 	cd $wrksrc || return 1
@@ -108,12 +105,9 @@ configure_src_phase()
 		cd $build_wrksrc || return 1
 	fi
 
-	if [ -n "$XBPS_LDFLAGS" ]; then
-		conf_ldflags="$XBPS_LDFLAGS"
-	fi
-
-	if [ -n "$broken_as_needed" ]; then
+	if [ -n "$broken_as_needed" -a -n "$XBPS_LDFLAGS" ]; then
 		export XBPS_LDFLAGS="$(echo $XBPS_LDFLAGS|sed -e "s|-Wl,--as-needed||g")"
+		export LDFLAGS="$XBPS_LDFLAGS $LDFLAGS"
 	fi
 
 	case "$build_style" in
@@ -138,11 +132,6 @@ configure_src_phase()
 			touch -f $XBPS_POSTCONFIGURE_DONE
 		fi
 	fi
-
-	# unset configure_env vars.
-	for f in ${configure_env}; do
-		unset eval ${f%=*}
-	done
 
 	touch -f $XBPS_CONFIGURE_DONE
 }

@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2010 Juan Romero Pardines.
+# Copyright (c) 2008-2011 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -32,19 +32,12 @@ do_make_build()
 	#
 	# Build package via make.
 	#
-	if [ "$build_style" = "gnu_makefile" ]; then
-		if [ -n "$XBPS_LDFLAGS" ]; then
-			mkldfags="$LDFLAGS $XBPS_LDFLAGS"
-		fi
-	fi
-	env LDFLAGS="$mkldflags" ${make_cmd} ${makejobs} ${make_build_args} \
-		${make_build_target}
+	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
 }
 
 build_src_phase()
 {
 	local pkg="$pkgname-$version" pkgparam="$1" f lver
-	local mkldflags
 
 	[ -z $pkgparam ] && [ -z $pkgname -o -z $version ] && return 1
 
@@ -86,13 +79,12 @@ build_src_phase()
 	fi
 
 	# Disable -Wl,--as-needed if requested!
-	if [ -n "$broken_as_needed" ]; then
+	if [ -n "$broken_as_needed" -n "$XBPS_LDFLAGS" ]; then
 		export XBPS_LDFLAGS="$(echo $XBPS_LDFLAGS|sed -e "s|-Wl,--as-needed||g")"
+		export LDFLAGS="$XBPS_LDFLAGS $LDFLAGS"
 	fi
 
 	if [ "$build_style" = "custom-install" ]; then
-		[ -n "$XBPS_LDFLAGS" ] && export LDFLAGS="$LDFLAGS $XBPS_LDFLAGS"
-		[ -n "$XBPS_CFLAGS" ] && export CFLAGS="$CFLAGS $XBPS_CFLAGS"
 		run_func do_build
 	else
 		run_func do_make_build
