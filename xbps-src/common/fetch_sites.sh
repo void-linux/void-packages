@@ -13,6 +13,7 @@ KERNEL_SITE="http://www.kernel.org/pub/linux"
 CPAN_SITE="http://cpan.perl.org/modules/by-module"
 MOZILLA_SITE="ftp://ftp.mozilla.org/pub/mozilla.org"
 GNU_SITE="http://mirrors.kernel.org/gnu"
+FREEDESKTOP_SITE="http://freedesktop.org/software"
 
 
 # repetative sub homepage's with no real project page
