@@ -30,7 +30,7 @@ run_func_error()
 {
 	local lver func="$1"
 
-	remove_pkgdestdir_sighandler ${pkgname}
+	remove_pkgdestdir_sighandler ${pkgname} $KEEP_AUTODEPS
 
 	if [ -n "${revision}" ]; then
 		lver="${version}_${revision}"
