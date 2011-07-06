@@ -101,7 +101,7 @@ autoremove_pkg_dependencies()
 	# If XBPS_PREFER_BINPKG_DEPS is set, we should remove those
 	# package dependencies installed by the target package, do it.
 	#
-	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" ]; then
+	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
 		msg_normal "'$pkgname': removing automatically installed dependencies ...\n"
 		# Autoremove installed binary packages.
 		${cmd} -y reconfigure all && ${cmd} -Rpyf autoremove 2>&1 >/dev/null
@@ -188,7 +188,7 @@ install_pkg_deps()
 		[ $? -eq 0 ] && continue
 
 		prev_pkg="$j"
-		if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" ]; then
+		if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
 			install_pkg_from_repos ${j}
 			if [ $? -eq 255 ]; then
 				# xbps-bin returned unexpected error
@@ -214,7 +214,7 @@ install_pkg_deps()
 		fi
 	done
 
-	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" ]; then
+	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
 		install_pkg_from_repos ${curpkg}
 		if [ $? -eq 255 ]; then
 			# xbps-bin returned unexpected error
@@ -279,7 +279,7 @@ install_dependencies_pkg()
 	[ -z "$notinstalled_deps" ] && return 0
 
 	# Install direct build dependencies from binary packages.
-	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$base_chroot" ]; then
+	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
 		msg_normal "'$pkg': installing dependencies from repositories ...\n"
 		for i in ${notinstalled_deps}; do
 			if [ -z "$pkglist" ]; then
