@@ -169,10 +169,12 @@ unstow_pkg_real()
 	fi
 
 	setup_tmpl $pkgname
+	pkg="${pkgname}-${version}"
+	[ -n "$revision" ] && pkg="${pkg}_${revision}"
 
 	ver=$($XBPS_PKGDB_CMD version $pkgname)
 	if [ -z "$ver" ]; then
-		msg_warn "$pkgname is not installed.\n"
+		msg_warn "'${pkg}' not installed in masterdir!\n"
 		return 0
 	fi
 
@@ -181,8 +183,8 @@ unstow_pkg_real()
 		# If it's a metapkg, do nothing.
 		:
 	elif [ ! -f ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
-		msg_warn "$pkgname wasn't installed from source!\n"
-		return 0
+		msg_warn "'${pkg}' wasn't installed from source!\n"
+		return 1
 	elif [ ! -w ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
 		msg_error "$pkgname cannot be removed (permission denied).\n"
 	elif [ -s ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
