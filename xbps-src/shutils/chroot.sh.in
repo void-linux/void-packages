@@ -23,12 +23,6 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #-
 
-#
-# Script to install packages into a sandbox in masterdir.
-# Actually this needs the xbps-base-chroot package installed.
-#
-trap "_umount && return $?" 0 INT QUIT TERM
-
 _mount()
 {
 	MASTERDIR="${XBPS_MASTERDIR}" CACHEDIR="${XBPS_CACHEDIR}" \
@@ -45,31 +39,34 @@ _umount()
 	return $?
 }
 
-[ -n "$bootstrap" ] && return 0
+chroot_init()
+{
+	trap "_umount && return $?" 0 INT QUIT TERM
 
-if [ "${chroot_cmd}" = "chroot" ]; then
-	if [ "$(id -u)" -ne 0 ]; then
-		echo "Root permissions are required for the chroot, try again."
+	[ -n "$bootstrap" ] && return 0
+
+	if [ "${chroot_cmd}" = "chroot" ]; then
+		if [ "$(id -u)" -ne 0 ]; then
+			msg_error "Root permissions are required for the chroot, try again."
+		fi
+	fi
+
+	check_installed_pkg base-chroot-0.11
+	if [ $? -ne 0 ]; then
+		echo "${XBPS_MASTERDIR} has not been prepared for chroot operations."
+		echo "Please install 'base-chroot>=0.11' and try again."
 		exit 1
 	fi
-fi
 
-check_installed_pkg base-chroot-0.11
-if [ $? -ne 0 ]; then
-	echo "${XBPS_MASTERDIR} has not been prepared for chroot operations."
-	echo "Please install 'base-chroot>=0.11' and try again."
-	exit 1
-fi
+	msg_normal "Entering into the chroot on $XBPS_MASTERDIR.\n"
 
-msg_normal "Entering into the chroot on $XBPS_MASTERDIR.\n"
+	if [ ! -d $XBPS_MASTERDIR/usr/local/etc ]; then
+		mkdir -p $XBPS_MASTERDIR/usr/local/etc
+	fi
 
-if [ ! -d $XBPS_MASTERDIR/usr/local/etc ]; then
-	mkdir -p $XBPS_MASTERDIR/usr/local/etc
-fi
+	XBPSSRC_CF=$XBPS_MASTERDIR/usr/local/etc/xbps-src.conf
 
-XBPSSRC_CF=$XBPS_MASTERDIR/usr/local/etc/xbps-src.conf
-
-cat > $XBPSSRC_CF <<_EOF
+	cat > $XBPSSRC_CF <<_EOF
 # Generated configuration file by xbps-src, DO NOT EDIT!
 XBPS_DISTRIBUTIONDIR=/xbps
 XBPS_MASTERDIR=/
@@ -80,27 +77,28 @@ XBPS_FETCH_CMD="xbps-uhelper.static fetch"
 XBPS_COMPRESS_CMD="$XBPS_COMPRESS_CMD"
 _EOF
 
-if [ -n "$XBPS_MAKEJOBS" ]; then
-	echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPSSRC_CF
-fi
-if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
-	echo "XBPS_PREFER_BINPKG_DEPS=$XBPS_PREFER_BINPKG_DEPS" >> $XBPSSRC_CF
-fi
-if [ -n "$XBPS_COMPRESS_LEVEL" ]; then
-	echo "XBPS_COMPRESS_LEVEL=$XBPS_COMPRESS_LEVEL" >> $XBPSSRC_CF
-fi
-if [ -n "$XBPS_CACHEDIR" ]; then
-	echo "XBPS_CACHEDIR=/cachedir" >> $XBPSSRC_CF
-fi
-
-echo "# End of configuration file." >> $XBPSSRC_CF
-
-if [ -d $XBPS_MASTERDIR/tmp ]; then
-	if [ ! -f $XBPS_MASTERDIR/.xbps_mount_bind_done ]; then
-		msg_normal "Cleaning up /tmp...\n"
-		[ -h ${XBPS_MASTERDIR}/tmp ] || rm -rf $XBPS_MASTERDIR/tmp/*
+	if [ -n "$XBPS_MAKEJOBS" ]; then
+		echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPSSRC_CF
 	fi
-fi
+	if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
+		echo "XBPS_PREFER_BINPKG_DEPS=$XBPS_PREFER_BINPKG_DEPS" >> $XBPSSRC_CF
+	fi
+	if [ -n "$XBPS_COMPRESS_LEVEL" ]; then
+		echo "XBPS_COMPRESS_LEVEL=$XBPS_COMPRESS_LEVEL" >> $XBPSSRC_CF
+	fi
+	if [ -n "$XBPS_CACHEDIR" ]; then
+		echo "XBPS_CACHEDIR=/cachedir" >> $XBPSSRC_CF
+	fi
+
+	echo "# End of configuration file." >> $XBPSSRC_CF
+
+	if [ -d $XBPS_MASTERDIR/tmp ]; then
+		if [ ! -f $XBPS_MASTERDIR/.xbps_mount_bind_done ]; then
+			msg_normal "Cleaning up /tmp...\n"
+			[ -h ${XBPS_MASTERDIR}/tmp ] || rm -rf $XBPS_MASTERDIR/tmp/*
+		fi
+	fi
+}
 
 prepare_chroot()
 {
@@ -277,7 +275,7 @@ xbps_chroot_handler()
 
 	[ "$action" != "configure" -a "$action" != "build" -a \
 	  "$action" != "install" -a "$action" != "chroot" -a \
-	  "$action" != "install-destdir" -a "$action" != "remove" ] && return 1
+	  "$action" != "remove" ] && return 1
 
 	if [ ! -f $XBPS_MASTERDIR/.xbps_perms_done ]; then
 		echo -n "==> Preparing chroot on $XBPS_MASTERDIR... "
@@ -285,10 +283,9 @@ xbps_chroot_handler()
 		echo "done."
 	fi
 
-	if [ ! -d "$XBPS_MASTERDIR/tmp" ]; then
-		mkdir -p "$XBPS_MASTERDIR/tmp"
-	fi
+	[ ! -d "$XBPS_MASTERDIR/tmp" ] && mkdir -p "$XBPS_MASTERDIR/tmp"
 
+	chroot_init
 	create_binsh_symlink
 	create_busybox_links
 	install_xbps_utils
