@@ -41,16 +41,6 @@ extract_distfiles()
 	[ -n "$pkg" -a -z "$pkgname" ] && return 1
 
 	#
-	# There's nothing of interest if we are a meta template.
-	#
-	[ "$build_style" = "meta-template" ] && return 0
-
-	if [ -n "$revision" ]; then
-		lver="${version}_${revision}"
-	else
-		lver="${version}"
-	fi
-	#
 	# If noextract is set, do a "fake extraction".
 	#
 	if [ -z "$distfiles" -o -n "$noextract" ]; then
