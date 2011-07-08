@@ -34,7 +34,9 @@ xbps_write_metadata_pkg()
 			spkgrev="${subpkg}-${version}"
 		fi
 		check_installed_pkg ${spkgrev}
-		[ $? -eq 0 ] && continue
+		if [ $? -eq 0 -a -z "$DESTDIR_ONLY_INSTALL" ]; then
+			continue
+		fi
 
 		if [ ! -f $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template ]; then
 			msg_error "Cannot find subpkg '${subpkg}' build template!\n"
