@@ -77,6 +77,14 @@ UPDATE="\$4"
 _EOF
 
 	#
+	# Handle kernel hooks.
+	#
+	if [ -n "${kernel_hooks_version}" ]; then
+		_add_trigger kernel
+		echo "export kernel_hooks_version=\"${kernel_hooks_version}\"" >> $tmpf
+	fi
+
+	#
 	# Handle DKMS modules.
 	#
 	if [ -n "${dkms_modules}" ]; then
