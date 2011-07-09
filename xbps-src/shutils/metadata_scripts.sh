@@ -80,7 +80,7 @@ _EOF
 	# Handle kernel hooks.
 	#
 	if [ -n "${kernel_hooks_version}" ]; then
-		_add_trigger kernel
+		_add_trigger kernel-hooks
 		echo "export kernel_hooks_version=\"${kernel_hooks_version}\"" >> $tmpf
 	fi
 
