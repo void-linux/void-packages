@@ -11,8 +11,8 @@ usage()
 Usage: $progname <target> [<version>]
 
 Targets:
- list	Lists old installed kernels.
- rm	Remove kernel <version>
+ list			Lists old installed kernels.
+ rm <version|all>	Remove kernel <version> or all old kernels.
 
 Example:
 	$ $progname list
@@ -94,8 +94,16 @@ remove_kernel()
 if [ "$1" = "list" ]; then
 	list_kernels
 elif [ "$1" = "rm" ]; then
-	[ -z "$2" ] && usage
-	remove_kernel "$2"
+	if [ -z "$2" ]; then
+		usage
+	elif [ "$2" = "all" ]; then
+		kernels=$(list_kernels)
+		for k in ${kernels}; do
+			remove_kernel "$k"
+		done
+	else
+		remove_kernel "$2"
+	fi
 else
 	usage
 fi
