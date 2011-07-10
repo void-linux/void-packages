@@ -1,0 +1,75 @@
+#!/bin/sh
+#
+# DKMS post-install kernel hook.
+#
+# Arguments passed to this script: $1 pkgname, $2 version.
+#
+PKGNAME="$1"
+VERSION="$2"
+ARCH=$(uname -m)
+
+if [ ! -x /usr/sbin/dkms ]; then
+	exit 0
+fi
+
+if [ ! -e /lib/modules/${VERSION}/build/include ] ; then
+	echo "WARNING: cannot build DKMS modules! missing kernel headers package for ${VERSION}."
+	exit 0
+fi
+
+# Check available DKMS modules
+for _mod_ in /var/lib/dkms/*; do
+	[ ! -d ${_mod_} ] && continue
+	module=$(basename ${_mod_})
+	for _modver_ in ${_mod_}/*; do
+		if [ -d ${_modver_} -a ! -h ${_modver_} ]; then
+			modulever=$(basename ${_modver_})
+			echo "Available DKMS module: ${module}-${modulever}."
+			if [ -z "${DKMS_MODULES}" ]; then
+				DKMS_MODULES="${module} ${modulever}"
+			else
+				DKMS_MODULES="${DKMS_MODULES} ${module} ${modulever}"
+			fi
+		fi
+	done
+done
+
+set -- ${DKMS_MODULES}
+while [ $# -ne 0 ]; do
+	module="$1"
+	modulever="$2"
+
+	status=$(dkms status -m ${module} -v ${modulever} -k ${VERSION})
+	if [ $(echo "$status"|grep -c ": built") -eq 0 ]; then
+		# Build the module
+		echo -n "Building DKMS module: ${module}-${modulever}... "
+		dkms build -q -m ${module} -v ${modulever} -k ${VERSION} -a ${ARCH}
+		rval=$?
+		if [ $rval -eq 9 ]; then
+			echo "skipped!"
+			shift; shift
+			continue
+		elif [ $rval -eq 0 ]; then
+			echo "done."
+		else
+			exit $?
+		fi
+		status=$(dkms status -m ${module} -v ${modulever} -k ${VERSION})
+	fi
+
+	#if the module is built (either pre-built or just now), install it
+	if [ $(echo "$status"|grep -c ": built") -eq 1 ] &&
+	   [ $(echo "$status"|grep -c ": installed") -eq 0 ]; then
+		echo -n "Installing DKMS module: ${module}-${modulever}... "
+	        dkms install -q -m ${module} -v ${modulever} -k ${VERSION} -a ${ARCH}
+		if [ $? -eq 0 ]; then
+			echo "done."
+		else
+			echo "FAILED!"
+			exit $?
+		fi
+	fi
+	shift; shift
+done
+
+exit 0
