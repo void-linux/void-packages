@@ -1,9 +1,9 @@
 include ../vars.mk
 
-SH_BINS = xbps-src-chroot-helper xbps-src-doinst-helper xbps-src-getdeps-helper
-MOUNT_BIN = xbps-src-chroot-capmount
-UMOUNT_BIN = xbps-src-chroot-capumount
-CHROOT_BIN = xbps-src-capchroot
+SCRIPTS = chroot-helper doinst-helper getdeps-helper
+MOUNT_BIN = capmount
+UMOUNT_BIN = capumount
+CHROOT_BIN = capchroot
 BINS = $(CHROOT_BIN) $(MOUNT_BIN) $(UMOUNT_BIN)
 WFLAGS = -Wall -Werror
 LDFLAGS = -lcap
@@ -14,7 +14,7 @@ endif
 
 .PHONY: all
 all: $(BINS)
-	for bin in $(SH_BINS); do					\
+	for bin in $(SCRIPTS); do					\
 		sed -e	"s|@@XBPS_INSTALL_PREFIX@@|$(PREFIX)|g"		\
 		    -e	"s|@@XBPS_INSTALL_ETCDIR@@|$(ETCDIR)|g"		\
 		    -e  "s|@@XBPS_INSTALL_SHAREDIR@@|$(SHAREDIR)|g"	\
@@ -25,12 +25,12 @@ all: $(BINS)
 
 .PHONY: clean
 clean:
-	-rm -f $(BINS) $(SH_BINS)
+	-rm -f $(BINS) $(SCRIPTS)
 
 .PHONY: install
 install: all
 	install -d $(DESTDIR)$(LIBEXECDIR)
-	for bin in $(SH_BINS); do					\
+	for bin in $(SCRIPTS); do					\
 		install -m755 $$bin $(DESTDIR)$(LIBEXECDIR);		\
 	done
 ifdef BINS
@@ -44,7 +44,7 @@ endif
 
 .PHONY: uninstall
 uninstall:
-	for bin in $(BINS) $(SH_BINS); do			\
+	for bin in $(BINS) $(SCRIPTS); do			\
 		rm -f $(DESTDIR)$(LIBEXECDIR)/$$bin;		\
 	done
 
