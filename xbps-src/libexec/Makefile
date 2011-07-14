@@ -1,6 +1,6 @@
 include ../vars.mk
 
-SH_BINS = xbps-src-chroot-helper xbps-src-doinst-helper
+SH_BINS = xbps-src-chroot-helper xbps-src-doinst-helper xbps-src-getdeps-helper
 MOUNT_BIN = xbps-src-chroot-capmount
 UMOUNT_BIN = xbps-src-chroot-capumount
 CHROOT_BIN = xbps-src-capchroot
