@@ -92,7 +92,7 @@ install_pkg_from_repos()
 
 autoremove_pkg_dependencies()
 {
-	local cmd saved_pkgname x f found
+	local cmd curpkgname f
 
 	[ -n "$1" ] && return 0
 
@@ -111,29 +111,19 @@ autoremove_pkg_dependencies()
 		fi
 		# Maybe some dependency wasn't available in repositories and it had
 		# to be built from source, remove them too.
-		saved_pkgname=$pkgname
 		for f in $($XBPS_BIN_CMD list|awk '{print $1}'); do
-			pkgname=$($XBPS_PKGDB_CMD getpkgname $f)
-			[ "$pkgname" = "$saved_pkgname" ] && continue
-			if [ -f $XBPS_PKGMETADIR/$pkgname/flist ]; then
-				setup_tmpl $pkgname
-				for x in ${subpackages}; do
-					if [ "$pkgname" = "$x" ]; then
-						found=1
-						break;
-					fi
-				done
-				if [ -n "$found" ]; then
-					# ignore subpkgs.
-					unset found
-					continue
-				fi
+			curpkgname=$($XBPS_PKGDB_CMD getpkgname $f)
+			[ "${_ORIGINPKG}" = "$curpkgname" ] && continue
+			if [ -f $XBPS_PKGMETADIR/$curpkgname/flist ]; then
+				# ignore subpkgs.
+				setup_subpkg_tmpl $curpkgname
+				[ -n "$SUBPKG" ] && continue
 				# remove pkg.
-				msg_warn "removing package $pkgname installed from source...\n"
+				msg_warn "removing package $curpkgname installed from source...\n"
 				remove_pkg
 			fi
 		done
-		setup_tmpl $saved_pkgname
+		setup_tmpl ${_ORIGINPKG}
 	fi
 }
 
