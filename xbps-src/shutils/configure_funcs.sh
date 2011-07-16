@@ -42,7 +42,7 @@ do_gnu_configure()
 	${configure_script} ${CONFIGURE_SHARED_ARGS} ${configure_args}
 }
 
-do_configure()
+do_nongnu_configure()
 {
 	#
 	# Packages using custom configure scripts.
@@ -72,12 +72,11 @@ configure_src_phase()
 	fi
 
 	#
-	# Skip this phase for: meta-template, only-install, custom-install,
+	# Skip this phase for: meta-template, only-install,
 	# gnu_makefile and python-module style builds.
 	#
 	[ "$build_style" = "meta-template" -o	\
 	  "$build_style" = "only-install" -o	\
-	  "$build_style" = "custom-install" -o	\
 	  "$build_style" = "gnu_makefile" -o \
 	  "$build_style" = "python-module" ] && return 0
 
@@ -107,8 +106,9 @@ configure_src_phase()
 
 	case "$build_style" in
 	gnu_configure|gnu-configure) run_func do_gnu_configure ;;
-	configure) run_func do_configure ;;
+	configure) run_func do_nongnu_configure ;;
 	perl-module|perl_module) run_func do_perl_configure ;;
+	custom-install) run_func do_configure;;
 	*)
 		#
 		# Unknown build_style type won't work :-)
