@@ -42,10 +42,8 @@ strip_files_real()
 {
 	local lver
 
-	if ! command -v strip 2>&1 >/dev/null; then
-		return 0
-	fi
 	[ -n "$nostrip" -o -n "$noarch" ] && return 0
+	[ -z "$strip_cmd" ] && strip_cmd=strip
 
 	if [ -n "$revision" ]; then
 		lver="${version}_${revision}"
@@ -57,10 +55,10 @@ strip_files_real()
 	find ${DESTDIR} -type f | while read f; do
 		case "$(file -bi "$f")" in
 		application/x-executable*)
-			strip "$f" && \
+			${strip_cmd} "$f" && \
 				echo "   Stripped executable: $(basename $f)";;
 		application/x-sharedlib*|application/x-archive*)
-			strip -S "$f" && \
+			${strip_cmd} -S "$f" && \
 				echo "   Stripped library: $(basename $f)";;
 		esac
 	done
