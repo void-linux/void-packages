@@ -77,7 +77,7 @@ xbps_write_metadata_pkg()
 #
 xbps_write_metadata_pkg_real()
 {
-	local metadir=${DESTDIR}/var/db/xbps/metadata/$pkgname
+	local metadir=${XBPS_PKGMETADIR}/$pkgname
 	local f i j found arch dirat lnkat newlnk lver TMPFLIST TMPFPLIST
 	local fpattern="s|${DESTDIR}||g;s|^\./$||g;/^$/d"
 
