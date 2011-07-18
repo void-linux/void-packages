@@ -38,7 +38,8 @@ run_func_error()
 		lver="${version}"
 	fi
 
-	msg_error "'${pkgname}-${lver}': '$func' phase didn't complete due to errors or SIGINT!\n"
+	echo
+	msg_error "${pkgname}-${lver}: '$func' interrupted!\n"
 }
 
 remove_pkgdestdir_sighandler()
@@ -116,14 +117,17 @@ run_func()
 		tee "$logfile" < "$logpipe" &
 		exec 1>"$logpipe" 2>"$logpipe"
 		set -e
-		trap "run_func_error $func" 0
+		trap "run_func_error $func && return $?" INT
 		msg_normal "'$pkgname-$lver': running $func phase...\n"
 		$func 2>&1
+		rval=$?
 		set +e
-		trap '' 0
+		trap - INT
 		exec 1>&3 2>&3 3>&-
 		rm -f "$logpipe"
-		return 0
+		if [ $rval -ne 0 ]; then
+			msg_error "${pkgname}-${lver}: $func failed!\n"
+		fi
 	fi
 	return 255 # function not found.
 }

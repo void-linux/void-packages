@@ -37,9 +37,9 @@ do_make_build()
 
 build_src_phase()
 {
-	local pkg="$pkgname-$version" pkgparam="$1" f lver
+	local pkg="$pkgname-$version" f lver
 
-	[ -z $pkgparam ] && [ -z $pkgname -o -z $version ] && return 1
+	[ -z $pkgname -o -z $version ] && return 1
 
         #
 	# Skip this phase for meta-template and only-install style builds.
@@ -72,10 +72,8 @@ build_src_phase()
 	# Run pre_build func.
 	if [ ! -f $XBPS_PRE_BUILD_DONE ]; then
 		run_func pre_build
-		if [ $? -eq 0 ]; then
-			msg_normal "'$pkgname-$lver': pre_build phase done.\n"
-			touch -f $XBPS_PRE_BUILD_DONE
-		fi
+		msg_normal "'$pkgname-$lver': pre_build phase done.\n"
+		touch -f $XBPS_PRE_BUILD_DONE
 	fi
 
 	if [ "$build_style" = "custom-install" ]; then
@@ -89,10 +87,8 @@ build_src_phase()
 	# Run post_build func.
 	if [ ! -f $XBPS_POST_BUILD_DONE ]; then
 		run_func post_build
-		if [ $? -eq 0 ]; then
-			msg_normal "'$pkgname-l$ver': post_build phase done.\n"
-			touch -f $XBPS_POST_BUILD_DONE
-		fi
+		msg_normal "'$pkgname-l$ver': post_build phase done.\n"
+		touch -f $XBPS_POST_BUILD_DONE
 	fi
 
 	unset makejobs

@@ -40,6 +40,11 @@ extract_distfiles()
 	#
 	[ -n "$pkg" -a -z "$pkgname" ] && return 1
 
+	if [ -n "$revision" ]; then
+		lver="${version}_${revision}"
+	else
+		lver="${version}"
+	fi
 	#
 	# If noextract is set, do a "fake extraction".
 	#

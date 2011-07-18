@@ -73,27 +73,20 @@ install_pkg()
 	# Fetch, extract, build and install into the destination directory.
 	#
 	if [ ! -f "$XBPS_EXTRACT_DONE" ]; then
-		extract_distfiles
-		if [ $? -ne 0 ]; then
-			msg_red "cannot extract distfiles for '$pkgname'!\n"
-			return 1
-		fi
+		extract_distfiles || return $?
+	fi
+
+	# Apply patches if requested by template file
+	if [ ! -f $XBPS_APPLYPATCHES_DONE ]; then
+		apply_tmpl_patches || return $?
 	fi
 
 	if [ ! -f "$XBPS_CONFIGURE_DONE" ]; then
-		configure_src_phase
-		if [ $? -ne 0 ]; then
-			msg_red "cannot configure '$pkgname'!\n"
-			return 1
-		fi
+		configure_src_phase || return $?
 	fi
 
 	if [ ! -f "$XBPS_BUILD_DONE" ]; then
-		build_src_phase
-		if [ $? -ne 0 ]; then
-			msg_red "cannot build '$pkgname'!\n"
-			return 1
-		fi
+		build_src_phase || return $?
 	fi
 
 	# Install pkg into destdir.
@@ -127,20 +120,24 @@ install_pkg()
 		# -B is set.
 		if [ -n "$BUILD_BINPKG" ]; then
 			xbps_make_binpkg
-			[ $? -ne 0 ] && return $?
-			msg_normal "Updating pkg-index for local repository at:\n"
-			msg_normal " $XBPS_PACKAGESDIR\n"
-			${XBPS_REPO_CMD} genindex ${XBPS_PACKAGESDIR} 2>/dev/null
+			rval=$?
+			if [ $rval -ne 0 -a $rval -ne 6 ]; then
+				return $?
+			elif [ $rval -eq 6 ]; then
+				# binpkg exists, no need to update
+				# repo pkg-index.
+				:
+			else
+				msg_normal "Updating pkg-index for local repository at:\n"
+				msg_normal " $XBPS_PACKAGESDIR\n"
+				${XBPS_REPO_CMD} genindex ${XBPS_PACKAGESDIR} 2>/dev/null
+			fi
 		fi
 		return 0
 	fi
 
 	# Stow package into masterdir.
-	stow_pkg_handler stow
-	if [ $? -ne 0 ]; then
-		msg_red "cannot stow '$pkgname'!\n"
-		return 1
-	fi
+	stow_pkg_handler stow || return $?
 
 	# Copy generated pkg metadata files into its metadata dir.
 	if [ ! -f ${DESTDIR}/files.plist ]; then
@@ -176,10 +173,17 @@ install_pkg()
 	# -B is set.
 	if [ -n "$BUILD_BINPKG" ]; then
 		xbps_make_binpkg
-		[ $? -ne 0 ] && return $?
-		msg_normal "Updating pkg-index for local repository at:\n"
-		msg_normal " $XBPS_PACKAGESDIR\n"
-		${XBPS_REPO_CMD} genindex ${XBPS_PACKAGESDIR} 2>/dev/null
+		rval=$?
+		if [ "$rval" -ne 0 -a "$rval" -ne 6 ]; then
+			return $rval
+		elif [ "$rval" -eq 6 ]; then
+			# binpkg exists no need to update pkg-index in repo.
+			:
+		else
+			msg_normal "Updating pkg-index for local repository at:\n"
+			msg_normal " $XBPS_PACKAGESDIR\n"
+			${XBPS_REPO_CMD} genindex ${XBPS_PACKAGESDIR} 2>/dev/null
+		fi
 	fi
 
 	return $?

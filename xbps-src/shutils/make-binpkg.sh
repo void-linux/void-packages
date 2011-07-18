@@ -48,7 +48,7 @@ binpkg_cleanup()
 	local pkgdir="$1" binpkg="$2"
 
 	[ -z "$pkgdir" -o -z "$binpkg" ] && return 1
-	msg_red "\nInterrupted! removing $binpkg file!\n"
+	msg_red "Interrupted! removing $binpkg file!\n"
 	rm -f $pkgdir/$binpkg
 	exit 1
 }
@@ -84,7 +84,7 @@ xbps_make_binpkg_real()
 	#
 	if [ -f $pkgdir/$binpkg ]; then
 		msg_normal "Skipping existing $binpkg pkg...\n"
-		return 0
+		return 6 # EEXIST
 	fi
 
 	#
@@ -111,13 +111,14 @@ xbps_make_binpkg_real()
 
 	# Remove binpkg if interrupted...
 	trap "binpkg_cleanup $pkgdir $binpkg" INT
-
 	msg_normal "Building $binpkg... "
 	${fakeroot_cmd} ${fakeroot_cmd_args}			\
 		tar --exclude "var/db/xbps/metadata/*/flist"	\
 		-cpf - ${mfiles} ${dirs} |			\
 		$XBPS_COMPRESS_CMD ${clevel} -qf > $pkgdir/$binpkg
 	rval=$?
+	trap - INT
+
 	if [ $rval -eq 0 ]; then
 		msg_normal_append "done.\n"
 	else

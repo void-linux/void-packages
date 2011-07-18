@@ -65,12 +65,6 @@ configure_src_phase()
 	local f lver
 
 	[ -z $pkgname ] && return 1
-
-	# Apply patches if requested by template file
-	if [ ! -f $XBPS_APPLYPATCHES_DONE ]; then
-		apply_tmpl_patches
-	fi
-
 	#
 	# Skip this phase for: meta-template, only-install,
 	# gnu_makefile and python-module style builds.
@@ -91,10 +85,8 @@ configure_src_phase()
 	# Run pre_configure func.
 	if [ ! -f $XBPS_PRECONFIGURE_DONE ]; then
 		run_func pre_configure
-		if [ $? -eq 0 ]; then
-			msg_normal "'$pkgname-$lver': pre_configure phase done.\n"
-			touch -f $XBPS_PRECONFIGURE_DONE
-		fi
+		msg_normal "'$pkgname-$lver': pre_configure phase done.\n"
+		touch -f $XBPS_PRECONFIGURE_DONE
 	fi
 
 	[ -z "$configure_script" ] && configure_script="./configure"
@@ -104,28 +96,28 @@ configure_src_phase()
 		cd $build_wrksrc || return 1
 	fi
 
-	case "$build_style" in
-	gnu_configure|gnu-configure) run_func do_gnu_configure ;;
-	configure) run_func do_nongnu_configure ;;
-	perl-module|perl_module) run_func do_perl_configure ;;
-	custom-install) run_func do_configure;;
-	*)
+	if [ "$build_style" = "gnu_configure" ]; then
+		run_func do_gnu_configure
+	elif [ "$build_style" = "configure" ]; then
+		run_func do_nongnu_configure
+	elif [ "$build_style" = "perl-module" ]; then
+		run_func do_perl_configure
+	elif [ "$build_style" = "custom-install" ]; then
+		run_func do_configure
+	else
 		#
 		# Unknown build_style type won't work :-)
 		#
 		msg_error "'$pkgname-$lver': unknown build_style [$build_style]\n"
-		;;
-	esac
+	fi
 
 	msg_normal "'$pkgname-$lver': configure phase done.\n"
 
 	# Run post_configure func.
 	if [ ! -f $XBPS_POSTCONFIGURE_DONE ]; then
 		run_func post_configure
-		if [ $? -eq 0 ]; then
-			msg_normal "'$pkgname-$lver': post_configure phase done."
-			touch -f $XBPS_POSTCONFIGURE_DONE
-		fi
+		msg_normal "'$pkgname-$lver': post_configure phase done.\n"
+		touch -f $XBPS_POSTCONFIGURE_DONE
 	fi
 
 	touch -f $XBPS_CONFIGURE_DONE
