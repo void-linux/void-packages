@@ -29,7 +29,7 @@
 #
 extract_distfiles()
 {
-	local pkg="$1" curfile cursufx f lver
+	local pkg="$1" curfile cursufx f
 
 	[ -f $XBPS_EXTRACT_DONE ] && return 0
 	[ -z "$IN_CHROOT" -a ! -w $XBPS_BUILDDIR ] && \
@@ -40,11 +40,6 @@ extract_distfiles()
 	#
 	[ -n "$pkg" -a -z "$pkgname" ] && return 1
 
-	if [ -n "$revision" ]; then
-		lver="${version}_${revision}"
-	else
-		lver="${version}"
-	fi
 	#
 	# If noextract is set, do a "fake extraction".
 	#
@@ -67,7 +62,7 @@ extract_distfiles()
 		mkdir -p ${wrksrc} || return 1
 	fi
 
-	msg_normal "'$pkgname-$lver': extracting distfile(s), please wait...\n"
+	msg_normal "$pkgver: extracting distfile(s), please wait...\n"
 
 	for f in ${distfiles}; do
 		curfile=$(basename $f)

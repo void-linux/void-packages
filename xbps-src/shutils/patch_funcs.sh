@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2010 Juan Romero Pardines.
+# Copyright (c) 2008-2011 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -25,11 +25,11 @@
 
 #
 # Applies to the build directory all patches found in PATCHESDIR
-# (templates/$pkgname/patches).
+# (srcpkgs/$pkgname/patches).
 #
 _process_patch()
 {
-	local lver args _patch i=$1
+	local args _patch i=$1
 
 	args="-Np0"
 	_patch=$(basename $i)
@@ -39,12 +39,6 @@ _process_patch()
 		args=$patch_args
 	fi
 	cp -f $i $wrksrc
-
-	if [ -n "$revision" ]; then
-		lver="${version}_${revision}"
-	else
-		lver="${version}"
-	fi
 
 	# Try to guess if its a compressed patch.
 	if $(echo $i|grep -q '.diff.gz'); then
@@ -64,15 +58,15 @@ _process_patch()
 	elif $(echo $i|grep -q '.patch'); then
 		:
 	else
-		msg_warn "'$pkgname-$lver': unknown patch type: $i.\n"
+		msg_warn "$pkgver: unknown patch type: $i.\n"
 		continue
 	fi
 
 	cd $wrksrc && patch -s ${args} < ${_patch} 2>/dev/null
 	if [ $? -eq 0 ]; then
-		msg_normal "'$pkgname-$lver': Patch applied: ${_patch}.\n"
+		msg_normal "$pkgver: Patch applied: ${_patch}.\n"
 	else
-		msg_error "'$pkgname-$lver': couldn't apply patch: ${_patch}.\n"
+		msg_error "'$pkgver: couldn't apply patch: ${_patch}.\n"
 	fi
 }
 
@@ -87,7 +81,7 @@ apply_tmpl_patches()
 			_process_patch "$PATCHESDIR/$f"
 		done
 	else
-		for f in $(echo $PATCHESDIR/*); do
+		for f in $PATCHESDIR/*; do
 			if $(echo $f|grep -q '.args'); then
 				continue
 			fi

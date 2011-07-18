@@ -88,7 +88,7 @@ stow_pkg_real()
 	else
 		lver="${version}"
 	fi
-	msg_normal "'${pkgname}-$lver': stowning files into masterdir, please wait...\n"
+	msg_normal "$pkgver: stowning files into masterdir, please wait...\n"
 
 	# Copy files into masterdir.
 	for i in $(find -print); do

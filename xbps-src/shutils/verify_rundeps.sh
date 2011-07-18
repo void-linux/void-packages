@@ -44,20 +44,14 @@ find_rundep()
 
 verify_rundeps()
 {
-	local j i f nlib verify_deps maplib found_dup igndir lver
+	local j i f nlib verify_deps maplib found_dup igndir
 	local missing missing_libs rdep builddep rdep_list builddep_list
 
 	PKG_DESTDIR="$1"
 	maplib="$XBPS_COMMONVARSDIR/mapping_shlib_binpkg.txt"
 
-	if [ -n "$revision" ]; then
-		lver="${version}_${revision}"
-	else
-		lver="${version}"
-	fi
-
 	[ -n "$noarch" -o -n "$noverifyrdeps" ] && return 0
-	msg_normal "'$pkgname-$lver': verifying required run dependencies, please wait...\n"
+	msg_normal "$pkgver: verifying required run dependencies, please wait...\n"
 
 	depsftmp=$(mktemp -t xbps_src_depstmp.XXXXXXXXXX) || exit 1
 	find ${PKG_DESTDIR} -type f -perm -u+w > $depsftmp 2>/dev/null
@@ -194,5 +188,5 @@ verify_rundeps()
 	done
 	echo "============ CUT HERE ==============="
 
-	msg_error "'${pkgname}-${lver}': incorrect run dependencies, won't continue...\n"
+	msg_error "$pkgver: incorrect run dependencies, won't continue...\n"
 }

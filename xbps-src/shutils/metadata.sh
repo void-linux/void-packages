@@ -109,7 +109,7 @@ xbps_write_metadata_pkg_real()
 		fi
 		# Add info-files trigger.
 		triggers="info-files $triggers"
-		msg_normal "'$pkgname-$lver': processing info(1) files...\n"
+		msg_normal "$pkgver: processing info(1) files...\n"
 
 		find ${DESTDIR}/usr/share/info -type f -follow | while read f
 		do
@@ -144,7 +144,7 @@ xbps_write_metadata_pkg_real()
 	# compress all them with gzip.
 	#
 	if [ -d "${DESTDIR}/usr/share/man" ]; then
-		msg_normal "'$pkgname-$lver': processing manual pages...\n"
+		msg_normal "$pkgver: processing manual pages...\n"
 		find ${DESTDIR}/usr/share/man -type f -follow | while read f
 		do
 			j=$(echo "$f"|sed -e "$fpattern")
@@ -170,7 +170,7 @@ xbps_write_metadata_pkg_real()
 	TMPFLIST=$(mktemp -t flist.XXXXXXXXXX) || exit 1
 	TMPFPLIST=$(mktemp -t fplist.XXXXXXXXXX) || exit 1
 
-	msg_normal "'$pkgname-$lver': creating package metadata...\n"
+	msg_normal "$pkgver: creating package metadata...\n"
 
 	cat > "$TMPFPLIST" <<_EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -275,7 +275,7 @@ _EOF
 <key>version</key>
 <string>$lver</string>
 <key>pkgver</key>
-<string>$pkgname-$lver</string>
+<string>$pkgver</string>
 <key>architecture</key>
 <string>$arch</string>
 <key>installed_size</key>
@@ -416,5 +416,5 @@ _EOF
 	xbps_write_metadata_scripts_pkg remove;				\
 	} || return $?
 
-	msg_normal "'$pkgname-$lver': successfully created package metadata.\n"
+	msg_normal "$pkgver: successfully created package metadata.\n"
 }

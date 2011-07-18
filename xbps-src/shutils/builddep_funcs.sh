@@ -34,7 +34,7 @@ install_pkglist_from_repos()
 
 	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
 
-	msg_normal "'$pkgname': installing required dependencies ...\n"
+	msg_normal "$pkgver: installing required dependencies ...\n"
 	[ -z "${wrksrc}" ] && wrksrc="$XBPS_BUILDDIR/$pkgname"
 	[ ! -d "${wrksrc}" ] && mkdir -p "${wrksrc}"
 	${cmd} ${1} >${wrksrc}/.xbps_install_dependencies.log 2>&1
@@ -49,8 +49,8 @@ install_pkglist_from_repos()
 		#
 		# Any other returned is criticial.
 		autoremove_pkg_dependencies $KEEP_AUTODEPS
-		msg_red "'${pkgname}': failed to install required dependencies! (error $rval)\n"
-		msg_error "'${pkgname}': please take a look the logs in \$wrksrc.\n"
+		msg_red "$pkgver: failed to install required dependencies! (error $rval)\n"
+		msg_error "$pkgver': please take a look the logs in \$wrksrc.\n"
 	fi
 
 	return $rval
@@ -68,7 +68,7 @@ install_pkg_from_repos()
 	pkgdepname=$($XBPS_PKGDB_CMD getpkgdepname "$pkg")
 	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
 
-	msg_normal "'$pkgname': installing required dependency '$pkg' ...\n"
+	msg_normal "$pkgver: installing required dependency '$pkg' ...\n"
 	[ -z "${wrksrc}" ] && wrksrc="$XBPS_BUILDDIR/$pkgname"
 	[ ! -d "${wrksrc}" ] && mkdir -p "${wrksrc}"
 	${cmd} "\"$pkg\"" >${wrksrc}/.xbps_install_dependency_${pkgdepname}.log 2>&1
@@ -83,7 +83,7 @@ install_pkg_from_repos()
 		#
 		# Any other returned is criticial.
 		autoremove_pkg_dependencies $KEEP_AUTODEPS
-		msg_red "'${pkgname}': failed to install '${pkg}' dependency! (error $rval)\n"
+		msg_red "$pkgver: failed to install '${pkg}' dependency! (error $rval)\n"
 		msg_error "Please see ${wrksrc}/.xbps_install_${pkgdepname}.log to see what went wrong!\n"
 	fi
 
@@ -102,11 +102,11 @@ autoremove_pkg_dependencies()
 	# package dependencies installed by the target package, do it.
 	#
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
-		msg_normal "'$pkgname': removing automatically installed dependencies ...\n"
+		msg_normal "$pkgver: removing automatically installed dependencies ...\n"
 		# Autoremove installed binary packages.
 		${cmd} -y reconfigure all && ${cmd} -Rpyf autoremove 2>&1 >/dev/null
 		if [ $? -ne 0 ]; then
-			msg_red "'$pkgname': failed to remove automatic dependencies!\n"
+			msg_red "$pkgver: failed to remove automatic dependencies!\n"
 			exit 1
 		fi
 		# Maybe some dependency wasn't available in repositories and it had
@@ -149,9 +149,9 @@ install_pkg_deps()
 	[ $? -eq 0 ] && return 0
 
 	if [ -z "$saved_prevpkg" -a -n "${_ORIGINPKG}" ]; then
-		msg_normal "Installing '${_ORIGINPKG}' dependency: '$curpkg'.\n"
+		msg_normal "Installing ${_ORIGINPKG} dependency: '$curpkg'.\n"
 	else
-		msg_normal "Installing '$saved_prevpkg' dependency: '$curpkg'.\n"
+		msg_normal "Installing $saved_prevpkg dependency: '$curpkg'.\n"
 	fi
 
 	setup_tmpl "$curpkgname"
@@ -196,9 +196,9 @@ install_pkg_deps()
 		install_pkg_deps "${j}" "${curpkg}"
 		if [ $? -eq 1 ]; then
 			if [ -n "$saved_prevpkg" ]; then
-				msg_red "'$saved_prevpkg': failed to install dependency '$curpkg'\n"
+				msg_red "$saved_prevpkg: failed to install dependency '$curpkg'\n"
 			else
-				msg_red "'${_ORIGINPKG}': failed to install dependency '$curpkg'\n"
+				msg_red "${_ORIGINPKG}: failed to install dependency '$curpkg'\n"
 			fi
 			return 1
 		fi
@@ -213,19 +213,19 @@ install_pkg_deps()
 			# Package not found, build from source.
 			install_pkg "${curpkgname}"
 			if [ $? -eq 1 ]; then
-				msg_red "'$saved_prevpkg': failed to install dependency '$curpkg'\n"
+				msg_red "$saved_prevpkg: failed to install dependency '$curpkg'\n"
 				return 1
 			fi
 		fi
 	else
 		if [ -n "$saved_prevpkg" ]; then
-			msg_normal "'$saved_prevpkg': installing dependency '$curpkg'...\n"
+			msg_normal "$saved_prevpkg: installing dependency '$curpkg'...\n"
 		else
-			msg_normal "'${_ORIGINPKG}': installing dependency '$curpkg'...\n"
+			msg_normal "${_ORIGINPKG}: installing dependency '$curpkg'...\n"
 		fi
 		install_pkg "${curpkgname}"
 		if [ $? -eq 1 ]; then
-			msg_red "'$saved_prevpkg': failed to install dependency '$curpkg'\n"
+			msg_red "$saved_prevpkg: failed to install dependency '$curpkg'\n"
 			return 1
 		fi
 	fi
@@ -239,20 +239,14 @@ install_dependencies_pkg()
 {
 	local pkg="$1" rval
 	local lpkgname=$(${XBPS_PKGDB_CMD} getpkgname ${pkg})
-	local i j pkgn iver reqver notinstalled_deps lver
+	local i j pkgn iver reqver notinstalled_deps
 
 	[ -z "$pkg" ] && return 2
 	[ -z "$build_depends" ] && return 0
 
 	INSTALLING_DEPS=1
 
-	if [ -n "$revision" ]; then
-		lver="${version}_${revision}"
-	else
-		lver="${version}"
-	fi
-
-	msg_normal "'$pkgname-$lver': required build dependencies...\n"
+	msg_normal "$pkgver: required build dependencies...\n"
 
 	for i in ${build_depends}; do
 		pkgn="$($XBPS_PKGDB_CMD getpkgdepname ${i})"
@@ -270,7 +264,7 @@ install_dependencies_pkg()
 
 	# Install direct build dependencies from binary packages.
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
-		msg_normal "'$pkg': installing dependencies from repositories ...\n"
+		msg_normal "$pkgver: installing dependencies from repositories ...\n"
 		for i in ${notinstalled_deps}; do
 			if [ -z "$pkglist" ]; then
 				pkglist="\"$i\""

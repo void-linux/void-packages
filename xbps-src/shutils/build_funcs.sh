@@ -37,7 +37,7 @@ do_make_build()
 
 build_src_phase()
 {
-	local pkg="$pkgname-$version" f lver
+	local f
 
 	[ -z $pkgname -o -z $version ] && return 1
 
@@ -54,13 +54,6 @@ build_src_phase()
 		cd $build_wrksrc || return 1
 	fi
 
-	if [ -n "$revision" ]; then
-		lver="${version}_${revision}"
-		pkg="${pkg}_${revision}"
-	else
-		lver="${version}"
-	fi
-
 	if [ "$build_style" = "python-module" ]; then
 		make_cmd="python"
 		make_build_args="setup.py build"
@@ -72,7 +65,7 @@ build_src_phase()
 	# Run pre_build func.
 	if [ ! -f $XBPS_PRE_BUILD_DONE ]; then
 		run_func pre_build
-		msg_normal "'$pkgname-$lver': pre_build phase done.\n"
+		msg_normal "$pkgver: pre_build phase done.\n"
 		touch -f $XBPS_PRE_BUILD_DONE
 	fi
 
@@ -82,12 +75,12 @@ build_src_phase()
 		run_func do_make_build
 	fi
 
-	msg_normal "'$pkgname-$lver': build phase done.\n"
+	msg_normal "$pkgver: build phase done.\n"
 
 	# Run post_build func.
 	if [ ! -f $XBPS_POST_BUILD_DONE ]; then
 		run_func post_build
-		msg_normal "'$pkgname-l$ver': post_build phase done.\n"
+		msg_normal "$pkgver: post_build phase done.\n"
 		touch -f $XBPS_POST_BUILD_DONE
 	fi
 

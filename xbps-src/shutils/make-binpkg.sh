@@ -59,7 +59,7 @@ binpkg_cleanup()
 #
 xbps_make_binpkg_real()
 {
-	local mfiles binpkg pkgdir arch lver dirs _dirs d clevel
+	local mfiles binpkg pkgdir arch dirs _dirs d clevel
 
 	if [ ! -d "${DESTDIR}" ]; then
 		msg_warn "cannot find destdir for $pkgname... skipping!\n"
@@ -72,12 +72,7 @@ xbps_make_binpkg_real()
 	else
 		arch=$xbps_machine
 	fi
-	if [ -n "$revision" ]; then
-		lver="${version}_${revision}"
-	else
-		lver="${version}"
-	fi
-	binpkg=$pkgname-$lver.$arch.xbps
+	binpkg=$pkgver.$arch.xbps
 	pkgdir=$XBPS_PACKAGESDIR/$arch
 	#
 	# Don't overwrite existing binpkgs by default, skip them.

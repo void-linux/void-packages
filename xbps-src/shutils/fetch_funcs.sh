@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2010 Juan Romero Pardines.
+# Copyright (c) 2008-2011 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -34,7 +34,7 @@ verify_sha256_cksum()
 
 	[ -z "$file" -o -z "$cksum" ] && return 1
 
-	msg_normal "'$pkgname-$lver': verifying checksum for distfile '$file'... "
+	msg_normal "$pkgver: verifying checksum for distfile '$file'... "
 	filesum=$(${XBPS_DIGEST_CMD} $XBPS_SRCDISTDIR/$file)
 	if [ "$origsum" != "$filesum" ]; then
 		echo
@@ -63,12 +63,6 @@ fetch_distfiles()
 	# If nofetch is set in a build template, skip this phase
 	# entirely and run the do_fetch() function.
 	#
-	if [ -n "$revision" ]; then
-		lver="${version}_${revision}"
-	else
-		lver="${version}"
-	fi
-
 	if [ -n "$nofetch" ]; then
 		cd ${XBPS_BUILDDIR}
 		[ -n "$build_wrksrc" ] && mkdir -p "$wrksrc"
@@ -104,7 +98,7 @@ fetch_distfiles()
 			fi
 		fi
 
-		msg_normal "'$pkgname-$lver': fetching distfile '$curfile'...\n"
+		msg_normal "$pkgver: fetching distfile '$curfile'...\n"
 
 		if [ -n "$distfiles" ]; then
 			localurl="$f"
@@ -149,5 +143,5 @@ fetch_distfiles()
 		dfcount=$(($dfcount + 1))
 	done
 
-	unset lver cksum found
+	unset cksum found
 }

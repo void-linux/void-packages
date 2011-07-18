@@ -62,7 +62,7 @@ do_perl_configure()
 
 configure_src_phase()
 {
-	local f lver
+	local f
 
 	[ -z $pkgname ] && return 1
 	#
@@ -74,18 +74,12 @@ configure_src_phase()
 	  "$build_style" = "gnu_makefile" -o \
 	  "$build_style" = "python-module" ] && return 0
 
-	if [ -n "$revision" ]; then
-		lver="${version}_${revision}"
-	else
-		lver="${version}"
-	fi
-
 	cd $wrksrc || msg_error "unexistent build directory [$wrksrc].\n"
 
 	# Run pre_configure func.
 	if [ ! -f $XBPS_PRECONFIGURE_DONE ]; then
 		run_func pre_configure
-		msg_normal "'$pkgname-$lver': pre_configure phase done.\n"
+		msg_normal "$pkgver: pre_configure phase done.\n"
 		touch -f $XBPS_PRECONFIGURE_DONE
 	fi
 
@@ -108,15 +102,15 @@ configure_src_phase()
 		#
 		# Unknown build_style type won't work :-)
 		#
-		msg_error "'$pkgname-$lver': unknown build_style [$build_style]\n"
+		msg_error "$pkgver: unknown build_style [$build_style]\n"
 	fi
 
-	msg_normal "'$pkgname-$lver': configure phase done.\n"
+	msg_normal "$pkgver: configure phase done.\n"
 
 	# Run post_configure func.
 	if [ ! -f $XBPS_POSTCONFIGURE_DONE ]; then
 		run_func post_configure
-		msg_normal "'$pkgname-$lver': post_configure phase done.\n"
+		msg_normal "$pkgver: post_configure phase done.\n"
 		touch -f $XBPS_POSTCONFIGURE_DONE
 	fi
 

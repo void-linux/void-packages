@@ -28,32 +28,19 @@
 #
 run_func_error()
 {
-	local lver func="$1"
+	local func="$1"
 
 	remove_pkgdestdir_sighandler ${pkgname} $KEEP_AUTODEPS
-
-	if [ -n "${revision}" ]; then
-		lver="${version}_${revision}"
-	else    
-		lver="${version}"
-	fi
-
 	echo
-	msg_error "${pkgname}-${lver}: '$func' interrupted!\n"
+	msg_error "$pkgver: '$func' interrupted!\n"
 }
 
 remove_pkgdestdir_sighandler()
 {
-	local lver subpkg _pkgname="$1" _kwrksrc="$2"
+	local subpkg _pkgname="$1" _kwrksrc="$2"
 
 	setup_tmpl ${_pkgname}
 	[ -z "$sourcepkg" ] && return 0
-
-	if [ -n "${revision}" ]; then
-		lver="${version}_${revision}"
-	else
-		lver="${version}"
-	fi
 
 	# If there is any problem in the middle of writting the metadata,
 	# just remove all files from destdir of pkg.
@@ -69,7 +56,7 @@ remove_pkgdestdir_sighandler()
 
 	if [ -d "$XBPS_DESTDIR/${sourcepkg}-${version%_*}" ]; then
 		rm -rf "$XBPS_DESTDIR/${sourcepkg}-${version%_*}"
-		msg_red "'${sourcepkg}-${lver}': removed files from DESTDIR...\n"
+		msg_red "$pkgver: removed files from DESTDIR...\n"
 	fi
 
 	autoremove_pkg_dependencies ${_kwrksrc}
@@ -94,15 +81,9 @@ var_is_a_function()
 run_func()
 {
 	local func="$1"
-	local lver rval logpipe logfile
+	local rval logpipe logfile
 
 	[ -z "$func" ] && return 1
-
-	if [ -n "$revision" ]; then
-		lver="${version}_${revision}"
-	else
-		lver="${version}"
-	fi
 
 	var_is_a_function $func
 	if [ $? -eq 1 ]; then
@@ -118,7 +99,7 @@ run_func()
 		exec 1>"$logpipe" 2>"$logpipe"
 		set -e
 		trap "run_func_error $func && return $?" INT
-		msg_normal "'$pkgname-$lver': running $func phase...\n"
+		msg_normal "$pkgver: running $func phase...\n"
 		$func 2>&1
 		rval=$?
 		set +e
@@ -126,7 +107,7 @@ run_func()
 		exec 1>&3 2>&3 3>&-
 		rm -f "$logpipe"
 		if [ $rval -ne 0 ]; then
-			msg_error "${pkgname}-${lver}: $func failed!\n"
+			msg_error "$pkgver: $func failed!\n"
 		fi
 	fi
 	return 255 # function not found.

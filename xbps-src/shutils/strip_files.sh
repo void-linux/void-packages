@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2010 Juan Romero Pardines.
+# Copyright (c) 2010-2011 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -40,18 +40,10 @@ strip_files()
 
 strip_files_real()
 {
-	local lver
-
 	[ -n "$nostrip" -o -n "$noarch" ] && return 0
 	[ -z "$strip_cmd" ] && strip_cmd=strip
 
-	if [ -n "$revision" ]; then
-		lver="${version}_${revision}"
-	else
-		lver="${version}"
-	fi
-
-	msg_normal "'$pkgname-$lver': stripping files, please wait...\n"
+	msg_normal "$pkgver: stripping files, please wait...\n"
 	find ${DESTDIR} -type f | while read f; do
 		case "$(file -bi "$f")" in
 		application/x-executable*)
