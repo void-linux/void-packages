@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2008-2010 Juan Romero Pardines.
+# Copyright (c) 2008-2011 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -47,6 +47,7 @@ binpkg_cleanup()
 {
 	local pkgdir="$1" binpkg="$2"
 
+	[ -z "$pkgdir" -o -z "$binpkg" ] && return 1
 	msg_red "\nInterrupted! removing $binpkg file!\n"
 	rm -f $pkgdir/$binpkg
 	exit 1
@@ -106,7 +107,6 @@ xbps_make_binpkg_real()
 	done
 
 	[ -n "$XBPS_COMPRESS_LEVEL" ] && clevel="-$XBPS_COMPRESS_LEVEL"
-
 	[ ! -d $pkgdir ] && mkdir -p $pkgdir
 
 	# Remove binpkg if interrupted...
@@ -117,12 +117,13 @@ xbps_make_binpkg_real()
 		tar --exclude "var/db/xbps/metadata/*/flist"	\
 		-cpf - ${mfiles} ${dirs} |			\
 		$XBPS_COMPRESS_CMD ${clevel} -qf > $pkgdir/$binpkg
-	if [ $? -eq 0 ]; then
+	rval=$?
+	if [ $rval -eq 0 ]; then
 		msg_normal_append "done.\n"
 	else
 		rm -f $pkgdir/$binpkg
 		msg_normal_append "failed!\n"
 	fi
 
-	return $?
+	return $rval
 }
