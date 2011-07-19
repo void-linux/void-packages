@@ -108,6 +108,8 @@ run_func()
 		rm -f "$logpipe"
 		if [ $rval -ne 0 ]; then
 			msg_error "$pkgver: $func failed!\n"
+		else
+			msg_normal "$pkgver: $func phase done.\n"
 		fi
 	fi
 	return 255 # function not found.

@@ -79,7 +79,6 @@ configure_src_phase()
 	# Run pre_configure func.
 	if [ ! -f $XBPS_PRECONFIGURE_DONE ]; then
 		run_func pre_configure
-		msg_normal "$pkgver: pre_configure phase done.\n"
 		touch -f $XBPS_PRECONFIGURE_DONE
 	fi
 
@@ -110,7 +109,6 @@ configure_src_phase()
 	# Run post_configure func.
 	if [ ! -f $XBPS_POSTCONFIGURE_DONE ]; then
 		run_func post_configure
-		msg_normal "$pkgver: post_configure phase done.\n"
 		touch -f $XBPS_POSTCONFIGURE_DONE
 	fi
 

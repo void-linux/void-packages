@@ -65,7 +65,6 @@ build_src_phase()
 	# Run pre_build func.
 	if [ ! -f $XBPS_PRE_BUILD_DONE ]; then
 		run_func pre_build
-		msg_normal "$pkgver: pre_build phase done.\n"
 		touch -f $XBPS_PRE_BUILD_DONE
 	fi
 
@@ -80,7 +79,6 @@ build_src_phase()
 	# Run post_build func.
 	if [ ! -f $XBPS_POST_BUILD_DONE ]; then
 		run_func post_build
-		msg_normal "$pkgver: post_build phase done.\n"
 		touch -f $XBPS_POST_BUILD_DONE
 	fi
 
