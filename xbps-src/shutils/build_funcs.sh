@@ -37,7 +37,7 @@ do_make_build()
 
 build_src_phase()
 {
-	local f
+	local f rval
 
 	[ -z $pkgname -o -z $version ] && return 1
 
@@ -65,7 +65,7 @@ build_src_phase()
 	# Run pre_build func.
 	if [ ! -f $XBPS_PRE_BUILD_DONE ]; then
 		run_func pre_build
-		touch -f $XBPS_PRE_BUILD_DONE
+		[ $? -eq 0 ] && touch -f $XBPS_PRE_BUILD_DONE
 	fi
 
 	if [ "$build_style" = "custom-install" ]; then
@@ -73,16 +73,17 @@ build_src_phase()
 	else
 		run_func do_make_build
 	fi
-
-	msg_normal "$pkgver: build phase done.\n"
+	rval=$?
 
 	# Run post_build func.
 	if [ ! -f $XBPS_POST_BUILD_DONE ]; then
 		run_func post_build
-		touch -f $XBPS_POST_BUILD_DONE
+		[ $? -eq 0 ] && touch -f $XBPS_POST_BUILD_DONE
 	fi
 
 	unset makejobs
 
-	touch -f $XBPS_BUILD_DONE
+	[ "$rval" -eq 0 ] && touch -f $XBPS_BUILD_DONE
+
+	return 0
 }

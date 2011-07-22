@@ -62,7 +62,7 @@ do_perl_configure()
 
 configure_src_phase()
 {
-	local f
+	local f rval
 
 	[ -z $pkgname ] && return 1
 	#
@@ -79,7 +79,7 @@ configure_src_phase()
 	# Run pre_configure func.
 	if [ ! -f $XBPS_PRECONFIGURE_DONE ]; then
 		run_func pre_configure
-		touch -f $XBPS_PRECONFIGURE_DONE
+		[ $? -eq 0 ] && touch -f $XBPS_PRECONFIGURE_DONE
 	fi
 
 	[ -z "$configure_script" ] && configure_script="./configure"
@@ -103,14 +103,15 @@ configure_src_phase()
 		#
 		msg_error "$pkgver: unknown build_style [$build_style]\n"
 	fi
-
-	msg_normal "$pkgver: configure phase done.\n"
+	rval=$?
 
 	# Run post_configure func.
 	if [ ! -f $XBPS_POSTCONFIGURE_DONE ]; then
 		run_func post_configure
-		touch -f $XBPS_POSTCONFIGURE_DONE
+		[ $? -eq 0 ] && touch -f $XBPS_POSTCONFIGURE_DONE
 	fi
 
-	touch -f $XBPS_CONFIGURE_DONE
+	[ "$rval" -eq 0 ] && touch -f $XBPS_CONFIGURE_DONE
+
+	return 0
 }
