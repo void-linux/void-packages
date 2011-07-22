@@ -110,6 +110,7 @@ run_func()
 			msg_error "$pkgver: $func failed!\n"
 		else
 			msg_normal "$pkgver: $func phase done.\n"
+			return 0
 		fi
 	fi
 	return 255 # function not found.
