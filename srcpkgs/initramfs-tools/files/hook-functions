@@ -52,7 +52,7 @@ manual_add_modules()
 		fi
 
 		mkdir -p "${DESTDIR}/$(dirname "${kmod}")"
-		ln -s "${kmod}" "${DESTDIR}/$(dirname "${kmod}")"
+		cp -pL "${kmod}" "${DESTDIR}/$(dirname "${kmod}")"
 		if [ "${verbose}" = "y" ]; then
 			echo "Adding module ${kmod}"
 		fi
@@ -123,7 +123,7 @@ copy_exec() {
 	fi
 
 	[ "${verbose}" = "y" ] && echo "Adding binary ${src}"
-	ln -s "${src}" "${DESTDIR}/${target}"
+	cp -pL "${src}" "${DESTDIR}/${target}"
 
 	# Copy the dependant libraries
 	for x in $(ldd ${src} 2>/dev/null | sed -e '
@@ -147,7 +147,7 @@ copy_exec() {
 		# FIXME inst_lib
 		mkdir -p "${DESTDIR}/${dirname}"
 		if [ ! -e "${DESTDIR}/${dirname}/${libname}" ]; then
-			ln -s "${x}" "${DESTDIR}/${dirname}"
+			cp -pL "${x}" "${DESTDIR}/${dirname}"
 			[ "${verbose}" = "y" ] && echo "Adding library ${x}" || true
 		fi
 	done
@@ -235,7 +235,9 @@ dep_add_modules()
 	# recheck root device
 	if [ -z "$root" ]; then
 		echo "mkinitramfs: failed to determine root device" >&2
-		echo "mkinitramfs: workaround is MODULES=most" >&2
+		echo "mkinitramfs: workaround is MODULES=most, check" >&2
+		echo "grep -r MODULES /etc/initramfs-tools/" >&2
+		echo "" >&2
 		echo "Error please report bug on initramfs-tools" >&2
 		echo "Include the output of 'mount' and 'cat /proc/mounts'" >&2
 		exit 1
@@ -245,10 +247,6 @@ dep_add_modules()
 	# most of the commands below only work with block devices.
 	if [ "${FSTYPE}" = "ubifs" ]; then
 		manual_add_modules "${FSTYPE}"
-		# add some modules required by ubifs on which it doesn's depend
-		manual_add_modules deflate
-		manual_add_modules zlib
-		manual_add_modules lzo
 		return
 	fi
 
@@ -370,6 +368,7 @@ dep_add_modules()
 	if [ -d "${DESTDIR}/lib/modules/${version}/kernel/drivers/ide" ]; then
 		sys_walk_modalias ${root_dev_path}
 		manual_add_modules ide-gd_mod
+		manual_add_modules ide-cd
 	fi
 
 	if [ -d "${DESTDIR}/lib/modules/${version}/kernel/drivers/scsi" ]; then
@@ -408,8 +407,8 @@ auto_add_modules()
 {
 	case "${1:-}" in
 	base)
-		for x in ehci-hcd ohci-hcd uhci-hcd usbhid xhci hid-apple \
-		hid-cherry hid-logitech hid-microsoft \
+		for x in ehci-hcd ohci-hcd uhci-hcd usbhid xhci xhci-hcd \
+		hid-apple hid-cherry hid-logitech hid-microsoft hid-sunplus \
 		btrfs ext2 ext3 ext4 ext4dev isofs jfs nfs reiserfs udf xfs \
 		af_packet atkbd i8042 virtio_pci; do
 			manual_add_modules "${x}"
@@ -489,10 +488,14 @@ auto_add_modules()
 # fixed, we need to handle those hidden dependencies.
 hidden_dep_add_modules()
 {
-	for dep in "lib/libcrc32c crc32c"; do
+	for dep in "lib/libcrc32c crc32c" "fs/ubifs/ubifs deflate zlib lzo"; do
 		set -- $dep
 		if [ -f "${DESTDIR}/lib/modules/${version}/kernel/$1.ko" ]; then
-			manual_add_modules "$2"
+			shift
+			for i in "$@" ; do
+				manual_add_modules "$i"
+				shift
+			done
 		fi
 	done
 }
