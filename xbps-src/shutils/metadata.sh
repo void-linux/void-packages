@@ -192,8 +192,7 @@ _EOF
 		echo "<key>target</key>" >> $TMPFPLIST
 		lnk=$(readlink -f "$f"|sed -e "s|${DESTDIR}||")
 		if [ -z "$lnk" -o "$lnk" = "" ]; then
-			rellnk=$(readlink "$f")
-			lnk=$(readlink -f $(dirname $f)/$rellnk|sed -e "s|${DESTDIR}||")
+			lnk=$(readlink "$f"|sed -e "s|${DESTDIR}||")
 		fi
 		echo "<string>$lnk</string>" >> $TMPFPLIST
 		echo "</dict>" >> $TMPFPLIST
