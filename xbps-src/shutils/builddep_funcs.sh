@@ -267,9 +267,9 @@ install_dependencies_pkg()
 		msg_normal "$pkgver: installing dependencies from repositories ...\n"
 		for i in ${notinstalled_deps}; do
 			if [ -z "$pkglist" ]; then
-				pkglist="\"$i\""
+				pkglist="${i}"
 			else
-				pkglist="${pkglist} \"$i\""
+				pkglist="${pkglist} ${i}"
 			fi
 		done
 		install_pkglist_from_repos "${pkglist}"
