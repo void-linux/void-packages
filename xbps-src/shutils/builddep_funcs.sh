@@ -249,8 +249,8 @@ install_dependencies_pkg()
 	msg_normal "$pkgver: required build dependencies...\n"
 
 	for i in ${build_depends}; do
-		pkgn="$($XBPS_PKGDB_CMD getpkgdepname ${i})"
-		iver="$($XBPS_PKGDB_CMD version $pkgn)"
+		pkgn=$($XBPS_PKGDB_CMD getpkgdepname "${i}")
+		iver=$($XBPS_PKGDB_CMD version "${pkgn}")
 		check_pkgdep_matched "${i}"
 		if [ $? -eq 0 ]; then
 			echo "   ${i}: found '$pkgn-$iver'."
@@ -269,7 +269,7 @@ install_dependencies_pkg()
 			if [ -z "$pkglist" ]; then
 				pkglist="${i}"
 			else
-				pkglist="${pkglist} ${i}"
+				pkglist="${pkglist} \"${i}\""
 			fi
 		done
 		install_pkglist_from_repos "${pkglist}"
