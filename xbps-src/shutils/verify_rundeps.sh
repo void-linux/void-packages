@@ -72,8 +72,6 @@ verify_rundeps()
 		case "$(file -bi "$f")" in
 		application/x-executable*|application/x-sharedlib*)
 			for nlib in $(objdump -p "$f"|grep NEEDED|awk '{print $2}'); do
-				# Strip major version
-				nlib="$(echo $nlib|sed -e 's|\.[0-9]$||')"
 				if [ -z "$verify_deps" ]; then
 					verify_deps="$nlib"
 					continue
