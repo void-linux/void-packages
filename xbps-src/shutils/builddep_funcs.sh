@@ -47,10 +47,11 @@ install_pkglist_from_repos()
 		#	EEXIST  (6): package already installed.
 		#	ENODEV (19): package depends on missing dependencies.
 		#
-		# Any other returned is criticial.
+		# Any other error returned is critical.
 		autoremove_pkg_dependencies $KEEP_AUTODEPS
 		msg_red "$pkgver: failed to install required dependencies! (error $rval)\n"
-		msg_error "$pkgver': please take a look the logs in \$wrksrc.\n"
+		cat ${wrksrc}/.xbps_install_dependencies.log
+		msg_error "Please see above for the real error, exiting...\n"
 	fi
 
 	return $rval
@@ -59,7 +60,7 @@ install_pkglist_from_repos()
 #
 # Install a required package dependency, like:
 #
-#	xbps-bin instlal "foo>=0"
+#	xbps-bin install "foo>=0"
 #
 install_pkg_from_repos()
 {
@@ -71,7 +72,7 @@ install_pkg_from_repos()
 	msg_normal "$pkgver: installing required dependency '$pkg' ...\n"
 	[ -z "${wrksrc}" ] && wrksrc="$XBPS_BUILDDIR/$pkgname"
 	[ ! -d "${wrksrc}" ] && mkdir -p "${wrksrc}"
-	${cmd} "\"$pkg\"" >${wrksrc}/.xbps_install_dependency_${pkgdepname}.log 2>&1
+	${cmd} "${pkg}" >${wrksrc}/.xbps_install_dependency_${pkgdepname}.log 2>&1
 	rval=$?
 	if [ $rval -ne 0 -a $rval -ne 6 ]; then
 		# xbps-bin can return:
@@ -81,10 +82,11 @@ install_pkg_from_repos()
 		#	EEXIST  (6): package already installed.
 		#	ENODEV (19): package depends on missing dependencies.
 		#
-		# Any other returned is criticial.
+		# Any other error returned is critical.
 		autoremove_pkg_dependencies $KEEP_AUTODEPS
 		msg_red "$pkgver: failed to install '${pkg}' dependency! (error $rval)\n"
-		msg_error "Please see ${wrksrc}/.xbps_install_${pkgdepname}.log to see what went wrong!\n"
+		cat ${wrksrc}/.xbps_install_${pkgdepname}.log
+		msg_error "Please see above for the real error, exiting...\n"
 	fi
 
 	return $rval
@@ -179,7 +181,7 @@ install_pkg_deps()
 
 		prev_pkg="$j"
 		if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
-			install_pkg_from_repos ${j}
+			install_pkg_from_repos "${j}"
 			if [ $? -eq 255 ]; then
 				# xbps-bin returned unexpected error
 				msg_red "$saved_prevpkg: failed to install dependency '$j'\n"
@@ -205,7 +207,7 @@ install_pkg_deps()
 	done
 
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
-		install_pkg_from_repos ${curpkg}
+		install_pkg_from_repos "${curpkg}"
 		if [ $? -eq 255 ]; then
 			# xbps-bin returned unexpected error
 			return $?
@@ -267,7 +269,7 @@ install_dependencies_pkg()
 		msg_normal "$pkgver: installing dependencies from repositories ...\n"
 		for i in ${notinstalled_deps}; do
 			if [ -z "$pkglist" ]; then
-				pkglist="${i}"
+				pkglist="\"${i}\""
 			else
 				pkglist="${pkglist} \"${i}\""
 			fi
