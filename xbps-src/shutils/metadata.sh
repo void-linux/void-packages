@@ -47,7 +47,8 @@ xbps_write_metadata_pkg()
 			preserve keep_empty_dirs xml_entries sgml_entries \
 			xml_catalogs sgml_catalogs gconf_entries gconf_schemas \
 			gtk_iconcache_dirs font_dirs dkms_modules provides \
-			kernel_hooks_version conflicts
+			kernel_hooks_version conflicts pycompile_dirs \
+			pycompile_module
 		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${subpkg}
 		set_tmpl_common_vars
