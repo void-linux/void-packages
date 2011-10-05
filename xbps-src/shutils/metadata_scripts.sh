@@ -258,6 +258,19 @@ _EOF
 		fi
 	fi
 
+	#
+	# Handle python bytecode archives with pycompile trigger.
+	#
+	if [ -n "${pycompile_dirs}" -o -n "${pycompile_module}" ]; then
+		if [ -n "${pycompile_dirs}" ]; then
+			echo "export pycompile_dirs=\"${pycompile_dirs}\"" >>$tmpf
+		fi
+		if [ -n "${pycompile_module}" ]; then
+			echo "export pycompile_module=\"${pycompile_module}\"" >>$tmpf
+		fi
+		_add_trigger pycompile
+	fi
+
 	# End of trigger var exports.
 	echo >> $tmpf
 
