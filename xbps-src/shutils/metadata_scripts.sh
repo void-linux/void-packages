@@ -230,6 +230,16 @@ _EOF
 		fi
 	fi
 
+	#
+	# Handle gsettings schemas in /usr/share/glib-2.0/schemas with
+	# gsettings-schemas.
+	#
+	if [ -d ${DESTDIR}/usr/share/glib-2.0/schemas ]; then
+		if find ${DESTDIR}/usr/share/glib-2.0/schemas -type f -name \*.xml 2>&1 >/dev/null; then
+			_add_trigger gsettings-schemas
+		fi
+	fi
+
 	# End of trigger var exports.
 	echo >> $tmpf
 
