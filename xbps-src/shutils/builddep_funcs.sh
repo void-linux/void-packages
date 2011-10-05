@@ -268,10 +268,18 @@ install_dependencies_pkg()
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
 		msg_normal "$pkgver: installing dependencies from repositories ...\n"
 		for i in ${notinstalled_deps}; do
-			if [ -z "$pkglist" ]; then
-				pkglist="\"${i}\""
+			if [ "${notinstalled_deps}" = "${build_depends}" ]; then
+				if [ -z "$pkglist" ]; then
+					pkglist="\"${i}\""
+				else
+					pkglist="${pkglist} \"${i}\""
+				fi
 			else
-				pkglist="${pkglist} \"${i}\""
+				if [ -z "$pkglist" ]; then
+					pkglist="${i}"
+				else
+					pkglist="${pkglist} ${i}"
+				fi
 			fi
 		done
 		install_pkglist_from_repos "${pkglist}"
