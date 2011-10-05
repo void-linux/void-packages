@@ -240,6 +240,15 @@ _EOF
 		fi
 	fi
 
+	#
+	# Handle mime database in /usr/share/mime with update-mime-database.
+	#
+	if [ -d ${DESTDIR}/usr/share/mime ]; then
+		if find ${DESTDIR}/usr/share/mime -type f -name \*.xml 2>&1 >/dev/null; then
+			_add_trigger mimedb
+		fi
+	fi
+
 	# End of trigger var exports.
 	echo >> $tmpf
 
