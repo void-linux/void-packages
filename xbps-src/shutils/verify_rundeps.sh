@@ -1,4 +1,3 @@
-#!/bin/sh
 #-
 # Copyright (c) 2010 Juan Romero Pardines.
 # All rights reserved.
