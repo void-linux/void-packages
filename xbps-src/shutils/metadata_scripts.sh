@@ -231,6 +231,15 @@ _EOF
 	fi
 
 	#
+	# Handle gio-modules trigger.
+	#
+	if [ -d ${DESTDIR}/usr/lib/gio/modules ]; then
+		if find ${DESTDIR}/usr/lib/gio/modules -type f -name \*.so 2>&1 >/dev/null; then
+			_add_trigger gio-modules
+		fi
+	fi
+
+	#
 	# Handle gsettings schemas in /usr/share/glib-2.0/schemas with
 	# gsettings-schemas.
 	#
