@@ -258,7 +258,7 @@ install_dependencies_pkg()
 			echo "   ${i}: found '$pkgn-$iver'."
 		else
 			echo "   ${i}: not found."
-			notinstalled_deps="$notinstalled_deps $i"
+			notinstalled_deps="${notinstalled_deps} \"${i}\""
 		fi
 	done
 
