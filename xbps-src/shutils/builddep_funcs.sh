@@ -37,8 +37,15 @@ install_pkglist_from_repos()
 	msg_normal "$pkgver: installing required dependencies ...\n"
 	[ -z "${wrksrc}" ] && wrksrc="$XBPS_BUILDDIR/$pkgname"
 	[ ! -d "${wrksrc}" ] && mkdir -p "${wrksrc}"
-	${cmd} ${1} >${wrksrc}/.xbps_install_dependencies.log 2>&1
+
+	depstmpf=$(mktemp)
+	for f in ${1}; do
+		echo "'${f}' " >> $depstmpf
+	done
+	${cmd} $(cat $depstmpf) >${wrksrc}/.xbps_install_dependencies.log 2>&1
 	rval=$?
+	rm -f $depstmpf
+
 	if [ $rval -ne 0 -a $rval -ne 6 ]; then
 		# xbps-bin can return:
 		#
@@ -241,7 +248,7 @@ install_dependencies_pkg()
 {
 	local pkg="$1" rval
 	local lpkgname=$(${XBPS_PKGDB_CMD} getpkgname ${pkg})
-	local i j pkgn iver reqver notinstalled_deps
+	local i j pkgn iver reqver notinstalled_deps pkglist
 
 	[ -z "$pkg" ] && return 2
 	[ -z "$build_depends" ] && return 0
@@ -268,18 +275,10 @@ install_dependencies_pkg()
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
 		msg_normal "$pkgver: installing dependencies from repositories ...\n"
 		for i in ${notinstalled_deps}; do
-			if [ "${notinstalled_deps}" = "${build_depends}" ]; then
-				if [ -z "$pkglist" ]; then
-					pkglist="\"${i}\""
-				else
-					pkglist="${pkglist} \"${i}\""
-				fi
+			if [ -z "$pkglist" ]; then
+				pkglist="${i}"
 			else
-				if [ -z "$pkglist" ]; then
-					pkglist="${i}"
-				else
-					pkglist="${pkglist} ${i}"
-				fi
+				pkglist="${pkglist} ${i}"
 			fi
 		done
 		install_pkglist_from_repos "${pkglist}"
