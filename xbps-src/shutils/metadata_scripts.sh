@@ -85,6 +85,14 @@ _EOF
 	fi
 
 	#
+	# Handle systemd services.
+	#
+	if [ -n "${systemd_services}" ]; then
+		_add_triger systemd-service
+		echo "export systemd_services=\"${systemd_services}\"" >> $tmpf
+	fi
+
+	#
 	# Handle DKMS modules.
 	#
 	if [ -n "${dkms_modules}" ]; then
