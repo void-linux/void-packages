@@ -88,7 +88,7 @@ _EOF
 	# Handle systemd services.
 	#
 	if [ -n "${systemd_services}" ]; then
-		_add_triger systemd-service
+		_add_trigger systemd-service
 		echo "export systemd_services=\"${systemd_services}\"" >> $tmpf
 	fi
 
