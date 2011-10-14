@@ -59,6 +59,7 @@ install_pkglist_from_repos()
 		cat $tmplogf && rm -f $tmplogf
 		msg_error "Please see above for the real error, exiting...\n"
 	fi
+	rm -f $tmplogf
 
 	return $rval
 }
