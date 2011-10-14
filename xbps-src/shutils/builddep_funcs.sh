@@ -30,19 +30,18 @@
 #
 install_pkglist_from_repos()
 {
-	local cmd rval
+	local cmd rval depstmpf tmplogf
 
 	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
 
 	msg_normal "$pkgver: installing required dependencies ...\n"
-	[ -z "${wrksrc}" ] && wrksrc="$XBPS_BUILDDIR/$pkgname"
-	[ ! -d "${wrksrc}" ] && mkdir -p "${wrksrc}"
 
 	depstmpf=$(mktemp)
 	for f in ${1}; do
 		echo "'${f}' " >> $depstmpf
 	done
-	${cmd} $(cat $depstmpf) >${wrksrc}/.xbps_install_dependencies.log 2>&1
+	tmplogf=$(mktemp)
+	${cmd} $(cat $depstmpf) >$tmplogf 2>&1
 	rval=$?
 	rm -f $depstmpf
 
@@ -57,7 +56,7 @@ install_pkglist_from_repos()
 		# Any other error returned is critical.
 		autoremove_pkg_dependencies $KEEP_AUTODEPS
 		msg_red "$pkgver: failed to install required dependencies! (error $rval)\n"
-		cat ${wrksrc}/.xbps_install_dependencies.log
+		cat $tmplogf && rm -f $tmplogf
 		msg_error "Please see above for the real error, exiting...\n"
 	fi
 
@@ -73,12 +72,13 @@ install_pkg_from_repos()
 {
 	local cmd rval pkgdepname pkg="$1"
 
+	[ ! -d "${wrksrc}" ] && return 1
+
 	pkgdepname=$($XBPS_PKGDB_CMD getpkgdepname "$pkg")
 	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
 
 	msg_normal "$pkgver: installing required dependency '$pkg' ...\n"
-	[ -z "${wrksrc}" ] && wrksrc="$XBPS_BUILDDIR/$pkgname"
-	[ ! -d "${wrksrc}" ] && mkdir -p "${wrksrc}"
+
 	${cmd} "${pkg}" >${wrksrc}/.xbps_install_dependency_${pkgdepname}.log 2>&1
 	rval=$?
 	if [ $rval -ne 0 -a $rval -ne 6 ]; then
