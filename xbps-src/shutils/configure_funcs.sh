@@ -32,7 +32,8 @@
 # to GNU configure scripts.
 #
 export CONFIGURE_SHARED_ARGS="--prefix=/usr --sysconfdir=/etc \
-	--infodir=/usr/share/info --mandir=/usr/share/man"
+	--infodir=/usr/share/info --mandir=/usr/share/man \
+	--localstatedir=/var"
 
 do_gnu_configure()
 {
