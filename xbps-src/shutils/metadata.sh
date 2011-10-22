@@ -402,19 +402,22 @@ _EOF
 	mv -f $TMPFPLIST ${DESTDIR}/files.plist
 	mv -f $TMPFPROPS ${DESTDIR}/props.plist
 
-	{								\
-	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/files.plist;		\
-	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/props.plist;		\
-	chmod 644 ${DESTDIR}/files.plist ${DESTDIR}/props.plist;	\
-	[ -f $metadir/flist ] && chmod 644 $metadir/flist;		\
-									\
+	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/files.plist || \
+		msg_error "$pkgname: failed to externalize files.plist!\n"
+	$XBPS_PKGDB_CMD sanitize-plist ${DESTDIR}/props.plist || \
+		msg_error "$pkgname: failed to externalize props.plist!\n"
+
+	chmod 644 ${DESTDIR}/files.plist ${DESTDIR}/props.plist
+	[ -f $metadir/flist ] && chmod 644 $metadir/flist
+
 	#
 	# Create the INSTALL/REMOVE scripts if package uses them
 	# or uses any available trigger.
 	#
-	xbps_write_metadata_scripts_pkg install;			\
-	xbps_write_metadata_scripts_pkg remove;				\
-	} || return $?
+	xbps_write_metadata_scripts_pkg install || \
+		msg_error "$pkgname: failed to write INSTALL metadata file!\n"
+	xbps_write_metadata_scripts_pkg remove || \
+		msg_error "$pkgname: failed to write REMOVE metadata file!\n"
 
 	msg_normal "$pkgver: successfully created package metadata.\n"
 }
