@@ -56,7 +56,7 @@ xbps_write_metadata_pkg()
 		xbps_write_metadata_pkg_real
 	done
 
-	if [ "$build_style" = "meta-template" -a -z "${run_depends}" ]; then
+	if [ -n "$build_style" -a "$build_style" = "meta-template" -a -z "${run_depends}" ]; then
 		for spkg in ${subpackages}; do
 			if [ -n "${revision}" ]; then
 				spkgrev="${spkg}-${version}_$revision"

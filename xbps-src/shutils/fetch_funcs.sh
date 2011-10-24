@@ -55,7 +55,7 @@ fetch_distfiles()
 	#
 	# There's nothing of interest if we are a meta template.
 	#
-	[ "$build_style" = "meta-template" ] && return 0
+	[ -n "$build_style" -a "$build_style" = "meta-template" ] && return 0
 
 	[ -f "$XBPS_FETCH_DONE" ] && return 0
 

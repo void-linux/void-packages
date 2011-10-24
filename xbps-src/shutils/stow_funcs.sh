@@ -75,7 +75,7 @@ stow_pkg_real()
 		msg_error "cannot stow $pkgname! (permission denied)\n"
 	fi
 
-	if [ "$build_style" = "meta-template" ]; then
+	if [ -n "$build_style" -a "$build_style" = "meta-template" ]; then
 		[ ! -d ${DESTDIR} ] && mkdir -p ${DESTDIR}
 	fi
 
