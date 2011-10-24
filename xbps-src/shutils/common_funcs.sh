@@ -62,54 +62,36 @@ remove_pkgdestdir_sighandler()
 	autoremove_pkg_dependencies ${_kwrksrc}
 }
 
-var_is_a_function()
-{
-	local func="$1"
-	local func_result
-
-	func_result=$(mktemp -t xbps_src_run_func.XXXXXX)
-	type $func > $func_result 2>&1
-	if $(grep -q 'function' $func_result); then
-		rm -f $func_result
-		return 1
-	fi
-
-	rm -f $func_result
-	return 0
-}	
-
 run_func()
 {
-	local func="$1"
 	local rval logpipe logfile
 
-	[ -z "$func" ] && return 1
+	[ -z "$1" ] && return 1
 
-	var_is_a_function $func
-	if [ $? -eq 1 ]; then
-		logpipe=/tmp/logpipe.$$
+	if type ${1} >/dev/null 2>&1; then
+		logpipe=$(mktemp -u -t xbps_${1}_${pkgname}_logpipe.XXXXXXXXXX)
 		if [ -d "${wrksrc}" ]; then
-			logfile=${wrksrc}/.xbps_${func}.log
+			logfile=${wrksrc}/.xbps_${1}.log
 		else
-			logfile=$(mktemp -t xbps_${func}_${pkgname}.log.XXXXXXXX)
+			logfile=$(mktemp -t xbps_${1}_${pkgname}.log.XXXXXXXX)
 		fi
 		mkfifo "$logpipe"
 		exec 3>&1
 		tee "$logfile" < "$logpipe" &
 		exec 1>"$logpipe" 2>"$logpipe"
 		set -e
-		trap "run_func_error $func && return $?" INT
-		msg_normal "$pkgver: running $func phase...\n"
-		$func 2>&1
+		trap "run_func_error $1 && return $?" INT
+		msg_normal "$pkgver: running $1 phase...\n"
+		$1 2>&1
 		rval=$?
 		set +e
 		trap - INT
 		exec 1>&3 2>&3 3>&-
 		rm -f "$logpipe"
 		if [ $rval -ne 0 ]; then
-			msg_error "$pkgver: $func failed!\n"
+			msg_error "$pkgver: $1 failed!\n"
 		else
-			msg_normal "$pkgver: $func phase done.\n"
+			msg_normal "$pkgver: $1 phase done.\n"
 			return 0
 		fi
 	fi
