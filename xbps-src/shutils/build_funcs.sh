@@ -34,7 +34,7 @@ build_src_phase()
 	[ -z $pkgname -o -z $version ] && return 1
 
 	# Skip this phase for meta-template style builds.
-	[ -m "$build_style" -a "$build_style" = "meta-template" ] && return 0
+	[ -n "$build_style" -a "$build_style" = "meta-template" ] && return 0
 
 	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]\n"
 
