@@ -4,17 +4,15 @@
 #
 # Required vars to be set by a template:
 #
-# 	build_style=perl_module
+# 	build_style=perl-module
 #
 # Optionally if the module needs more directories to be configured other
 # than $XBPS_BUILDDIR/$wrksrc, one can use (relative to $wrksrc):
 #
 #	perl_configure_dirs="blob/bob foo/blah"
 #
-
-perl_module_build()
-{
-	local perlmkf=
+do_configure() {
+	local perlmkf
 
 	if [ -z "$perl_configure_dirs" ]; then
 		perlmkf="$wrksrc/Makefile.PL"
@@ -41,3 +39,6 @@ perl_module_build()
 		fi
 	done
 }
+
+# Perl modules use standard make(1) to install.
+. ${XBPS_HELPERSDIR}/gnu-makefile.sh

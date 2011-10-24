@@ -27,25 +27,14 @@
 # Runs the "build" phase for a pkg. This builds the binaries and other
 # related stuff.
 #
-do_make_build()
-{
-	#
-	# Build package via make.
-	#
-	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
-}
-
 build_src_phase()
 {
-	local f rval
+	local rval
 
 	[ -z $pkgname -o -z $version ] && return 1
 
-        #
-	# Skip this phase for meta-template and only-install style builds.
-	#
-	[ "$build_style" = "meta-template" -o	\
-	  "$build_style" = "only-install" ] && return 0
+	# Skip this phase for meta-template style builds.
+	[ "$build_style" = "meta-template" ] && return 0
 
 	[ ! -d $wrksrc ] && msg_error "unexistent build directory [$wrksrc]\n"
 
@@ -54,25 +43,18 @@ build_src_phase()
 		cd $build_wrksrc || return 1
 	fi
 
-	if [ "$build_style" = "python-module" ]; then
-		make_cmd="python"
-		make_build_args="setup.py build"
-	else
-		[ -z "$make_cmd" ] && make_cmd=make
-		[ -n "$XBPS_MAKEJOBS" -a -z "$disable_parallel_build" ] && \
-			makejobs="-j$XBPS_MAKEJOBS"
-	fi
 	# Run pre_build func.
 	if [ ! -f $XBPS_PRE_BUILD_DONE ]; then
 		run_func pre_build
 		[ $? -eq 0 ] && touch -f $XBPS_PRE_BUILD_DONE
 	fi
 
-	if [ "$build_style" = "custom-install" ]; then
-		run_func do_build
-	else
-		run_func do_make_build
+	if [ -r $XBPS_HELPERSDIR/${build_style}.sh ]; then
+		. $XBPS_HELPERSDIR/${build_style}.sh
 	fi
+
+	# do_build()
+	run_func do_build
 	rval=$?
 
 	# Run post_build func.
@@ -80,8 +62,6 @@ build_src_phase()
 		run_func post_build
 		[ $? -eq 0 ] && touch -f $XBPS_POST_BUILD_DONE
 	fi
-
-	unset makejobs
 
 	[ "$rval" -eq 0 ] && touch -f $XBPS_BUILD_DONE
 

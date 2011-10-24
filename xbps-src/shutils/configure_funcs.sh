@@ -28,52 +28,14 @@
 # other stuff required to be able to build binaries or such.
 #
 
-# This variable can be used for packages wanting to use common arguments
-# to GNU configure scripts.
-#
-export CONFIGURE_SHARED_ARGS="--prefix=/usr --sysconfdir=/etc \
-	--infodir=/usr/share/info --mandir=/usr/share/man \
-	--localstatedir=/var"
-
-do_gnu_configure()
-{
-	#
-	# Packages using GNU autoconf
-	#
-	${configure_script} ${CONFIGURE_SHARED_ARGS} ${configure_args}
-}
-
-do_nongnu_configure()
-{
-	#
-	# Packages using custom configure scripts.
-	#
-	${configure_script} ${configure_args}
-}
-
-do_perl_configure()
-{
-	#
-	# Packages that are perl modules and use Makefile.PL files.
-	# They are all handled by the helper perl-module.sh.
-	#
-	. $XBPS_HELPERSDIR/perl-module.sh
-	perl_module_build $pkgname
-}
-
 configure_src_phase()
 {
 	local f rval
 
 	[ -z $pkgname ] && return 1
-	#
-	# Skip this phase for: meta-template, only-install,
-	# gnu_makefile and python-module style builds.
-	#
-	[ "$build_style" = "meta-template" -o	\
-	  "$build_style" = "only-install" -o	\
-	  "$build_style" = "gnu_makefile" -o \
-	  "$build_style" = "python-module" ] && return 0
+
+	# Skip this phase for meta-template style builds.
+	[ "$build_style" = "meta-template" ] && return 0
 
 	cd $wrksrc || msg_error "unexistent build directory [$wrksrc].\n"
 
@@ -83,27 +45,16 @@ configure_src_phase()
 		[ $? -eq 0 ] && touch -f $XBPS_PRECONFIGURE_DONE
 	fi
 
-	[ -z "$configure_script" ] && configure_script="./configure"
-
 	cd $wrksrc || return 1
 	if [ -n "$build_wrksrc" ]; then
 		cd $build_wrksrc || return 1
 	fi
 
-	if [ "$build_style" = "gnu_configure" ]; then
-		run_func do_gnu_configure
-	elif [ "$build_style" = "configure" ]; then
-		run_func do_nongnu_configure
-	elif [ "$build_style" = "perl-module" ]; then
-		run_func do_perl_configure
-	elif [ "$build_style" = "custom-install" ]; then
-		run_func do_configure
-	else
-		#
-		# Unknown build_style type won't work :-)
-		#
-		msg_error "$pkgver: unknown build_style [$build_style]\n"
+	if [ -r $XBPS_HELPERSDIR/${build_style}.sh ]; then
+		. $XBPS_HELPERSDIR/${build_style}.sh
 	fi
+	# run do_configure()
+	run_func do_configure
 	rval=$?
 
 	# Run post_configure func.
