@@ -85,6 +85,7 @@ autoremove_pkg_dependencies()
 				# ignore subpkgs.
 				setup_subpkg_tmpl $curpkgname
 				[ -n "$SUBPKG" ] && continue
+				[ -n "$bootstrap" ] && continue
 				# remove pkg.
 				msg_warn "removing package $curpkgname installed from source...\n"
 				remove_pkg
