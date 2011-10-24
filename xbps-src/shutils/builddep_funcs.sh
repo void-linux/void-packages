@@ -24,62 +24,19 @@
 #-
 
 #
-# Install all required package dependencies in one pass, like:
-#
-#	xbps-bin install "foo>=0" "blah<=0" "..."
-#
-install_pkglist_from_repos()
-{
-	local cmd rval depstmpf tmplogf
-
-	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
-
-	msg_normal "$pkgver: installing required dependencies ...\n"
-
-	depstmpf=$(mktemp)
-	for f in ${1}; do
-		echo "'${f}' " >> $depstmpf
-	done
-	tmplogf=$(mktemp)
-	${cmd} $(cat $depstmpf) >$tmplogf 2>&1
-	rval=$?
-	rm -f $depstmpf
-
-	if [ $rval -ne 0 -a $rval -ne 6 ]; then
-		# xbps-bin can return:
-		#
-		#	SUCCESS (0): package installed successfully.
-		#	ENOENT  (2): package missing in repositories.
-		#	EEXIST  (6): package already installed.
-		#	ENODEV (19): package depends on missing dependencies.
-		#
-		# Any other error returned is critical.
-		autoremove_pkg_dependencies $KEEP_AUTODEPS
-		msg_red "$pkgver: failed to install required dependencies! (error $rval)\n"
-		cat $tmplogf && rm -f $tmplogf
-		msg_error "Please see above for the real error, exiting...\n"
-	fi
-	rm -f $tmplogf
-
-	return $rval
-}
-
-#
 # Install a required package dependency, like:
 #
-#	xbps-bin install "foo>=0"
+#	xbps-bin -Ay install "pattern"
 #
 install_pkg_from_repos()
 {
-	local cmd rval pkgdepname tmplogf pkg="$1"
+	local cmd rval tmplogf
 
-	pkgdepname=$($XBPS_PKGDB_CMD getpkgdepname "$pkg")
+	msg_normal "$pkgver: installing dependency $1 ...\n"
+
 	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
-
-	msg_normal "$pkgver: installing required dependency '$pkg' ...\n"
-
 	tmplogf=$(mktemp)
-	${cmd} "${pkg}" >${tmplogf} 2>&1
+	${cmd} ${1} >${tmplogf} 2>&1
 	rval=$?
 	if [ $rval -ne 0 -a $rval -ne 6 ]; then
 		# xbps-bin can return:
@@ -91,7 +48,7 @@ install_pkg_from_repos()
 		#
 		# Any other error returned is critical.
 		autoremove_pkg_dependencies $KEEP_AUTODEPS
-		msg_red "$pkgver: failed to install '${pkg}' dependency! (error $rval)\n"
+		msg_red "$pkgver: failed to install '$1' dependency! (error $rval)\n"
 		cat $tmplogf && rm -f $tmplogf
 		msg_error "Please see above for the real error, exiting...\n"
 	fi
@@ -189,7 +146,7 @@ install_pkg_deps()
 
 		prev_pkg="$j"
 		if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
-			install_pkg_from_repos "${j}"
+			install_pkg_from_repos \"${j}\"
 			if [ $? -eq 255 ]; then
 				# xbps-bin returned unexpected error
 				msg_red "$saved_prevpkg: failed to install dependency '$j'\n"
@@ -215,7 +172,7 @@ install_pkg_deps()
 	done
 
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
-		install_pkg_from_repos "${curpkg}"
+		install_pkg_from_repos \"${curpkg}\"
 		if [ $? -eq 255 ]; then
 			# xbps-bin returned unexpected error
 			return $?
@@ -248,8 +205,7 @@ install_pkg_deps()
 install_dependencies_pkg()
 {
 	local pkg="$1"
-	local lpkgname=$(${XBPS_PKGDB_CMD} getpkgname ${pkg})
-	local rval i j pkgn iver reqver notinstalled_deps pkglist pkgcount
+	local i pkgn iver missing_deps
 
 	[ -z "$pkg" ] && return 2
 	[ -z "$build_depends" ] && return 0
@@ -266,39 +222,24 @@ install_dependencies_pkg()
 			echo "   ${i}: found '$pkgn-$iver'."
 		else
 			echo "   ${i}: not found."
-			notinstalled_deps="${notinstalled_deps} ${i}"
+			missing_deps=1
 		fi
 	done
 
-	[ -z "$notinstalled_deps" ] && return 0
+	[ -z "$missing_deps" ] && return 0
 
 	# Install direct build dependencies from binary packages.
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
 		msg_normal "$pkgver: installing dependencies from repositories ...\n"
-		pkgcount=0
-		for i in ${notinstalled_deps}; do
-			if [ -z "$pkglist" ]; then
-				pkgcount=1
-				pkglist="${i}"
-			else
-				pkglist="${pkglist} ${i}"
-				pkgcount=$(($pkgcount + 1))
-			fi
+		for i in ${build_depends}; do
+			install_pkg_from_repos \"${i}\"
 		done
-		if [ "$pkgcount" -eq 1 ]; then
-			install_pkg_from_repos "${pkglist}"
-		else
-			install_pkglist_from_repos "${pkglist}"
-		fi
-		if [ $? -eq 0 ]; then
-			# Install successfully
-			return 0
-		fi
+		return 0
 	fi
 
 	# Install direct and indirect build dependencies from source.
-	for j in ${notinstalled_deps}; do
-		install_pkg_deps "${j}" "${pkg}"
+	for i in ${build_depends}; do
+		install_pkg_deps "${i}" "${pkg}"
 		if [ $? -eq 1 ]; then
 			return 1
 		fi
