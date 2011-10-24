@@ -71,16 +71,15 @@ install_pkglist_from_repos()
 #
 install_pkg_from_repos()
 {
-	local cmd rval pkgdepname pkg="$1"
-
-	[ ! -d "${wrksrc}" ] && return 1
+	local cmd rval pkgdepname tmplogf pkg="$1"
 
 	pkgdepname=$($XBPS_PKGDB_CMD getpkgdepname "$pkg")
 	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
 
 	msg_normal "$pkgver: installing required dependency '$pkg' ...\n"
 
-	${cmd} "${pkg}" >${wrksrc}/.xbps_install_dependency_${pkgdepname}.log 2>&1
+	tmplogf=$(mktemp)
+	${cmd} "${pkg}" >${tmplogf} 2>&1
 	rval=$?
 	if [ $rval -ne 0 -a $rval -ne 6 ]; then
 		# xbps-bin can return:
@@ -93,9 +92,10 @@ install_pkg_from_repos()
 		# Any other error returned is critical.
 		autoremove_pkg_dependencies $KEEP_AUTODEPS
 		msg_red "$pkgver: failed to install '${pkg}' dependency! (error $rval)\n"
-		cat ${wrksrc}/.xbps_install_${pkgdepname}.log
+		cat $tmplogf && rm -f $tmplogf
 		msg_error "Please see above for the real error, exiting...\n"
 	fi
+	rm -f $tmplogf
 
 	return $rval
 }
@@ -247,9 +247,9 @@ install_pkg_deps()
 #
 install_dependencies_pkg()
 {
-	local pkg="$1" rval
+	local pkg="$1"
 	local lpkgname=$(${XBPS_PKGDB_CMD} getpkgname ${pkg})
-	local i j pkgn iver reqver notinstalled_deps pkglist
+	local rval i j pkgn iver reqver notinstalled_deps pkglist pkgcount
 
 	[ -z "$pkg" ] && return 2
 	[ -z "$build_depends" ] && return 0
@@ -275,14 +275,21 @@ install_dependencies_pkg()
 	# Install direct build dependencies from binary packages.
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
 		msg_normal "$pkgver: installing dependencies from repositories ...\n"
+		pkgcount=0
 		for i in ${notinstalled_deps}; do
 			if [ -z "$pkglist" ]; then
+				pkgcount=1
 				pkglist="${i}"
 			else
 				pkglist="${pkglist} ${i}"
+				pkgcount=$(($pkgcount + 1))
 			fi
 		done
-		install_pkglist_from_repos "${pkglist}"
+		if [ "$pkgcount" -eq 1 ]; then
+			install_pkg_from_repos "${pkglist}"
+		else
+			install_pkglist_from_repos "${pkglist}"
+		fi
 		if [ $? -eq 0 ]; then
 			# Install successfully
 			return 0
