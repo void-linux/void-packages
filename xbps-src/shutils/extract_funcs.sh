@@ -137,8 +137,7 @@ extract_distfiles()
 			;;
 		zip)
 			if command -v unzip 2>&1 >/dev/null; then
-				unzip	-q -x $XBPS_SRCDISTDIR/$curfile \
-					-d $extractdir
+				unzip -q $XBPS_SRCDISTDIR/$curfile -d $extractdir
 				if [ $? -ne 0 ]; then
 					msg_error "extracting $curfile into $XBPS_BUILDDIR.\n"
 				fi
