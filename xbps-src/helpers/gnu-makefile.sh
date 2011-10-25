@@ -5,9 +5,6 @@ do_build() {
 	if [ -z "$make_cmd" ]; then
 		make_cmd=make
 	fi
-	if [ -n "$XBPS_MAKEJOBS" -a -z "$disable_parallel_build" ]; then
-		makejobs="-j$XBPS_MAKEJOBS"
-	fi
 	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
 }
 

@@ -43,6 +43,10 @@ build_src_phase()
 		cd $build_wrksrc || return 1
 	fi
 
+	if [ -n "$XBPS_MAKEJOBS" -a -z "$disable_parallel_build" ]; then
+		makejobs="-j$XBPS_MAKEJOBS"
+	fi
+
 	# Run pre_build func.
 	if [ ! -f $XBPS_PRE_BUILD_DONE ]; then
 		run_func pre_build
