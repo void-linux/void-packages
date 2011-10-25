@@ -69,7 +69,7 @@ run_func()
 	[ -z "$1" ] && return 1
 
 	if type ${1} >/dev/null 2>&1; then
-		logpipe=$(mktemp -u -t xbps_${1}_${pkgname}_logpipe.XXXXXXXXXX)
+		logpipe=/tmp/xbps_src_logpipe.$$
 		if [ -d "${wrksrc}" ]; then
 			logfile=${wrksrc}/.xbps_${1}.log
 		else
