@@ -171,7 +171,7 @@ unstow_pkg_real()
 	ver=$($XBPS_PKGDB_CMD version $pkgname)
 	if [ -z "$ver" ]; then
 		msg_warn "'${pkgname}' not installed in masterdir!\n"
-		return 0
+		return 1
 	fi
 
 	if [ "$build_style" = "meta-template" ]; then

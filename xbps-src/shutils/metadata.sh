@@ -98,6 +98,33 @@ xbps_write_metadata_pkg_real()
 		lver="${version}"
 	fi
 
+	#
+	# If package provides virtual packages, create dynamically the
+	# required virtualpkg.d files.
+	#
+	if [ -n "$provides" -a -n "$replaces" ]; then
+		_tmpf=$(mktemp) || msg_error "$pkgver: failed to create tempfile.\n"
+		cat > ${_tmpf} <<_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>virtual-pkgver</key>
+	<string>$provides</string>
+	<key>target-pkgpattern</key>
+	<string>$replaces</string>
+</dict>
+</plist>
+_EOF
+		install -Dm644 ${_tmpf} \
+			${DESTDIR}/etc/xbps/virtualpkg.d/${pkgname}.plist
+		vmkdir etc/xbps/virtualpkg.d.wants && curcwd=$(pwd) && \
+			cd ${DESTDIR}/etc/xbps/virtualpkg.d.wants && \
+			ln -sf ../virtualpkg.d/${pkgname}.plist . && \
+			cd ${curcwd} && rm -f ${_tmpf} || \
+			msg_error "$pkgver: failed to create virtualpkg.d file in DESTDIR!\n"
+	fi
+
         #
         # Find out if this package contains info files and compress
         # all them with gzip.
