@@ -43,7 +43,7 @@ xbps_write_metadata_pkg()
 		fi
 		setup_tmpl ${sourcepkg}
 		unset run_depends conf_files noarch triggers replaces \
-			revision openrc_services system_accounts system_groups \
+			revision system_accounts system_groups \
 			preserve keep_empty_dirs xml_entries sgml_entries \
 			xml_catalogs sgml_catalogs gconf_entries gconf_schemas \
 			gtk_iconcache_dirs font_dirs dkms_modules provides \
@@ -292,13 +292,6 @@ _EOF
 	#
 	if [ -n "$dkms_modules" ]; then
 		Add_dependency run dkms
-	fi
-
-	#
-	# If package sets $openrc_services, add the OpenRC rundep.
-	#
-	if [ -n "$openrc_services" ]; then
-		Add_dependency run OpenRC
 	fi
 
 	#

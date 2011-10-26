@@ -101,14 +101,6 @@ _EOF
 	fi
 
 	#
-	# Handle OpenRC services.
-	#
-	if [ -n "${openrc_services}" ]; then
-		_add_trigger openrc-service
-		echo "export openrc_services=\"${openrc_services}\"" >> $tmpf
-	fi
-
-	#
 	# Handle system groups.
 	#
 	if [ -n "${system_groups}" ]; then
