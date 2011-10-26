@@ -168,26 +168,22 @@ unstow_pkg_real()
 		msg_error "cannot unstow $pkgname! (permission denied)\n"
 	fi
 
-	setup_tmpl $pkgname
-	pkg="${pkgname}-${version}"
-	[ -n "$revision" ] && pkg="${pkg}_${revision}"
-
 	ver=$($XBPS_PKGDB_CMD version $pkgname)
 	if [ -z "$ver" ]; then
-		msg_warn "'${pkg}' not installed in masterdir!\n"
+		msg_warn "'${pkgname}' not installed in masterdir!\n"
 		return 0
 	fi
 
-	cd $XBPS_PKGMETADIR/$pkgname || exit 1
 	if [ "$build_style" = "meta-template" ]; then
 		# If it's a metapkg, do nothing.
 		:
 	elif [ ! -f ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
-		msg_warn "'${pkg}' wasn't installed from source!\n"
+		msg_warn "${pkgname}-${ver}: wasn't installed from source!\n"
 		return 1
 	elif [ ! -w ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
-		msg_error "$pkgname cannot be removed (permission denied).\n"
+		msg_error "${pkgname}-${ver}: cannot be removed (permission denied).\n"
 	elif [ -s ${XBPS_PKGMETADIR}/${pkgname}/flist ]; then
+		msg_normal "${pkgname}-${ver}: removing files from masterdir...\n"
 		run_func pre_remove
 		# Remove installed files.
 		for f in $(cat ${XBPS_PKGMETADIR}/${pkgname}/flist); do
@@ -196,11 +192,7 @@ unstow_pkg_real()
 				if [ $? -eq 0 ]; then
 					echo "Removing file: $f"
 				fi
-			fi
-		done
-
-		for f in $(cat ${XBPS_PKGMETADIR}/${pkgname}/flist); do
-			if [ -d $XBPS_MASTERDIR/$f ]; then
+			elif  [ -d $XBPS_MASTERDIR/$f ]; then
 				rmdir $XBPS_MASTERDIR/$f >/dev/null 2>&1
 				if [ $? -eq 0 ]; then
 					echo "Removing directory: $f"
