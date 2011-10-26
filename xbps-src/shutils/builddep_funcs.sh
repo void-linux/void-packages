@@ -235,16 +235,12 @@ install_dependencies_pkg()
 		for i in ${build_depends}; do
 			install_pkg_from_repos \"${i}\"
 		done
-		return 0
+	else
+		# Install direct and indirect build dependencies from source.
+		for i in ${build_depends}; do
+			install_pkg_deps "${i}" "${pkg}" || return 1
+		done
 	fi
-
-	# Install direct and indirect build dependencies from source.
-	for i in ${build_depends}; do
-		install_pkg_deps "${i}" "${pkg}"
-		if [ $? -eq 1 ]; then
-			return 1
-		fi
-	done
 }
 
 #
