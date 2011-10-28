@@ -139,12 +139,6 @@ install_pkg_deps()
 	fi
 
 	for j in ${build_depends}; do
-		#
-		# Check if dep is satisfied.
-		#
-		check_pkgdep_matched "${j}"
-		[ $? -eq 0 ] && continue
-
 		prev_pkg="$j"
 		if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
 			install_pkg_from_repos \"${j}\"
@@ -156,19 +150,20 @@ install_pkg_deps()
 				:
 				continue
 			fi
-		fi
-		#
-		# Iterate again, this will check if there are more
-		# required deps for current pkg.
-		#
-		install_pkg_deps "${j}" "${curpkg}"
-		if [ $? -eq 1 ]; then
-			if [ -n "$saved_prevpkg" ]; then
-				msg_red "$saved_prevpkg: failed to install dependency '$curpkg'\n"
-			else
-				msg_red "${_ORIGINPKG}: failed to install dependency '$curpkg'\n"
+		else
+			#
+			# Iterate again, this will check if there are more
+			# required deps for current pkg.
+			#
+			install_pkg_deps "${j}" "${curpkg}"
+			if [ $? -eq 1 ]; then
+				if [ -n "$saved_prevpkg" ]; then
+					msg_red "$saved_prevpkg: failed to install dependency '$curpkg'\n"
+				else
+					msg_red "${_ORIGINPKG}: failed to install dependency '$curpkg'\n"
+				fi
+				return 1
 			fi
-			return 1
 		fi
 	done
 
