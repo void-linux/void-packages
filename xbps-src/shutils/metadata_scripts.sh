@@ -36,6 +36,7 @@ _add_trigger()
 xbps_write_metadata_scripts_pkg()
 {
 	local action="$1"
+	local action_file="$2"
 	local tmpf=$(mktemp -t xbps-install.XXXXXXXXXX) || exit 1
 	local fpattern="s|${DESTDIR}||g;s|^\./$||g;/^$/d"
 	local targets f info_files home shell descr groups
@@ -316,38 +317,20 @@ _EOF
 
 	case "$action" in
 	install)
-		if [ -n "${sourcepkg}" -a "${sourcepkg}" != "${pkgname}" ]; then
-			install_file=$XBPS_SRCPKGDIR/$pkgname/$pkgname.INSTALL
-		else
-			install_file=$XBPS_SRCPKGDIR/$pkgname/INSTALL
-		fi
-		if [ -f ${install_file} ]; then
+		if [ -f ${action_file} ]; then
 			found=1
-			cat ${install_file} >> $tmpf
+			cat ${action_file} >> $tmpf
 		fi
 		echo "exit 0" >> $tmpf
-		if [ -z "$triggers_found" -a -z "$found" ]; then
-			rm -f $tmpf
-			return 0
-		fi
 		mv $tmpf ${DESTDIR}/INSTALL && chmod 755 ${DESTDIR}/INSTALL
 		;;
 	remove)
 		unset found
-		if [ -n "${sourcepkg}" -a "${sourcepkg}" != "${pkgname}" ]; then
-			remove_file=$XBPS_SRCPKGDIR/$pkgname/$pkgname.REMOVE
-		else
-			remove_file=$XBPS_SRCPKGDIR/$pkgname/REMOVE
-		fi
-		if [ -f ${remove_file} ]; then
+		if [ -f ${action_file} ]; then
 			found=1
-			cat ${remove_file} >> $tmpf
+			cat ${action_file} >> $tmpf
 		fi
 		echo "exit 0" >> $tmpf
-		if [ -z "$triggers_found" -a -z "$found" ]; then
-			rm -f $tmpf
-			return 0
-		fi
 		mv $tmpf ${DESTDIR}/REMOVE && chmod 755 ${DESTDIR}/REMOVE
 		;;
 	esac

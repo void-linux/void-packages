@@ -434,10 +434,21 @@ _EOF
 	# Create the INSTALL/REMOVE scripts if package uses them
 	# or uses any available trigger.
 	#
-	xbps_write_metadata_scripts_pkg install || \
-		msg_error "$pkgname: failed to write INSTALL metadata file!\n"
-	xbps_write_metadata_scripts_pkg remove || \
-		msg_error "$pkgname: failed to write REMOVE metadata file!\n"
-
+	local meta_install meta_remove
+	if [ -n "${sourcepkg}" -a "${sourcepkg}" != "${pkgname}" ]; then
+		meta_install=${XBPS_SRCPKGDIR}/${pkgname}/${pkgname}.INSTALL
+		meta_remove=${XBPS_SRCPKGDIR}/${pkgname}/${pkgname}.REMOVE
+	else
+		meta_install=${XBPS_SRCPKGDIR}/${pkgname}/INSTALL
+		meta_remove=${XBPS_SRCPKGDIR}/${pkgname}/REMOVE
+	fi
+	if [ -f "$meta_install" -o -n "$triggers" ]; then
+		xbps_write_metadata_scripts_pkg install ${meta_install} || \
+			msg_error "$pkgname: failed to write INSTALL metadata file!\n"
+	fi
+	if [ -f "$meta_remove" -o -n "$triggers" ]; then
+		xbps_write_metadata_scripts_pkg remove ${meta_remove} || \
+			msg_error "$pkgname: failed to write REMOVE metadata file!\n"
+	fi
 	msg_normal "$pkgver: successfully created package metadata.\n"
 }
