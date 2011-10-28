@@ -249,16 +249,16 @@ install_dependencies_pkg()
 #
 check_pkgdep_matched()
 {
-	local pkg="$1" pkgname iver
+	local pkg="$1" pkgn iver
 
 	[ -z "$pkg" ] && return 2
 
-	pkgname="$($XBPS_PKGDB_CMD getpkgdepname ${pkg})"
-	setup_tmpl $pkgname
+	pkgn="$($XBPS_PKGDB_CMD getpkgdepname ${pkg})"
+	[ -z "$pkgn" ] && return 2
 
-	iver="$($XBPS_PKGDB_CMD version $pkgname)"
+	iver="$($XBPS_PKGDB_CMD version $pkgn)"
 	if [ -n "$iver" ]; then
-		${XBPS_PKGDB_CMD} pkgmatch "${pkgname}-${iver}" "${pkg}"
+		${XBPS_PKGDB_CMD} pkgmatch "${pkgn}-${iver}" "${pkg}"
 		[ $? -eq 1 ] && return 0
 	fi
 
@@ -271,16 +271,16 @@ check_pkgdep_matched()
 #
 check_installed_pkg()
 {
-	local pkg="$1" pkgname iver
+	local pkg="$1" pkgn iver
 
 	[ -z "$pkg" ] && return 2
 
-	pkgname="$($XBPS_PKGDB_CMD getpkgname ${pkg})"
-	setup_tmpl $pkgname
+	pkgn="$($XBPS_PKGDB_CMD getpkgname ${pkg})"
+	[ -z "$pkgn" ] && return 2
 
-	iver="$($XBPS_PKGDB_CMD version $pkgname)"
+	iver="$($XBPS_PKGDB_CMD version $pkgn)"
 	if [ -n "$iver" ]; then
-		${XBPS_CMPVER_CMD} "${pkgname}-${iver}" "${pkg}"
+		${XBPS_CMPVER_CMD} "${pkgn}-${iver}" "${pkg}"
 		[ $? -eq 0 -o $? -eq 1 ] && return 0
 	fi
 
