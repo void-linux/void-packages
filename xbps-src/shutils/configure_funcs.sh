@@ -27,6 +27,9 @@
 # Runs the "configure" phase for a pkg. This setups the Makefiles or any
 # other stuff required to be able to build binaries or such.
 #
+export CONFIGURE_SHARED_ARGS="--prefix=/usr --sysconfdir=/etc \
+	--infodir=/usr/share/info --mandir=/usr/share/man \
+	--localstatedir=/var"
 
 configure_src_phase()
 {
