@@ -442,13 +442,11 @@ _EOF
 		meta_install=${XBPS_SRCPKGDIR}/${pkgname}/INSTALL
 		meta_remove=${XBPS_SRCPKGDIR}/${pkgname}/REMOVE
 	fi
-	if [ -f "$meta_install" -o -n "$triggers" ]; then
-		xbps_write_metadata_scripts_pkg install ${meta_install} || \
-			msg_error "$pkgname: failed to write INSTALL metadata file!\n"
-	fi
-	if [ -f "$meta_remove" -o -n "$triggers" ]; then
-		xbps_write_metadata_scripts_pkg remove ${meta_remove} || \
-			msg_error "$pkgname: failed to write REMOVE metadata file!\n"
-	fi
+	xbps_write_metadata_scripts_pkg install ${meta_install} || \
+		msg_error "$pkgname: failed to write INSTALL metadata file!\n"
+
+	xbps_write_metadata_scripts_pkg remove ${meta_remove} || \
+		msg_error "$pkgname: failed to write REMOVE metadata file!\n"
+
 	msg_normal "$pkgver: successfully created package metadata.\n"
 }
