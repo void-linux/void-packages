@@ -36,7 +36,7 @@ install_pkg_from_repos()
 
 	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
 	tmplogf=$(mktemp)
-	${cmd} ${1} >${tmplogf} 2>&1
+	${cmd} "${1}" >${tmplogf} 2>&1
 	rval=$?
 	if [ $rval -ne 0 -a $rval -ne 6 ]; then
 		# xbps-bin can return:
@@ -228,7 +228,7 @@ install_dependencies_pkg()
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
 		msg_normal "$pkgver: installing dependencies from repositories ...\n"
 		for i in ${build_depends}; do
-			install_pkg_from_repos \"${i}\"
+			install_pkg_from_repos "${i}"
 		done
 	else
 		# Install direct and indirect build dependencies from source.
