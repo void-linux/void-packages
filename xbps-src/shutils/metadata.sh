@@ -112,7 +112,7 @@ xbps_write_metadata_pkg_real()
 	<key>virtual-pkgver</key>
 	<string>$provides</string>
 	<key>target-pkgpattern</key>
-	<string>$replaces</string>
+	<string>$(echo $replaces|sed "s|<|\&lt;|g;s|>|\&gt;|g")</string>
 </dict>
 </plist>
 _EOF
