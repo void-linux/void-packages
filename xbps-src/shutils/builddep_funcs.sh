@@ -30,13 +30,16 @@
 #
 install_pkg_from_repos()
 {
-	local cmd rval tmplogf
+	local cmd rval tmplogf tmpdepf
 
 	msg_normal "$pkgver: installing dependency $1 ...\n"
 
 	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
 	tmplogf=$(mktemp)
-	${cmd} "${1}" >${tmplogf} 2>&1
+	tmpdepf=$(mktemp)
+	echo "'${1}'" > $tmpdepf
+	${cmd} $(cat $tmpdepf) >$tmplogf 2>&1
+	rm -f $tmpdepf
 	rval=$?
 	if [ $rval -ne 0 -a $rval -ne 6 ]; then
 		# xbps-bin can return:
