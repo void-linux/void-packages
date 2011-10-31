@@ -30,9 +30,25 @@
 #
 install_pkg_from_repos()
 {
-	local cmd rval tmplogf tmpdepf
+	local cmd rval tmplogf tmpdepf xver
 
-	msg_normal "$pkgver: installing dependency $1 ...\n"
+	msg_normal "$pkgver: installing '$1'... "
+
+	xver=$(xbps-bin.static -V|awk '{print $2}')
+	case "$xver" in
+	0.1[1-9].[0-9]*)
+		_pkgdepname=$($XBPS_PKGDB_CMD getpkgdepname "$1")
+		_pkgver=$($XBPS_REPO_CMD} -oversion show ${_pkgdepname})
+		_repoloc=$($XBPS_REPO_CMD} -orepository show ${_pkgdepname})
+		if [ -n "${_pkgver}" -a -n "${_repoloc}" ]; then
+			msg_normal_append "found ${_pkgver} (${_repoloc})\n"
+		else
+			msg_normal_append "NOT FOUND!\n"
+			install_pkg_deps "${1}"
+		fi
+		;;
+	*)	msg_normal_append "\n";;
+	esac
 
 	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
 	tmplogf=$(mktemp)
@@ -107,7 +123,7 @@ install_pkg_deps()
 	local curpkg="$1"
 	local curpkgname="$(${XBPS_PKGDB_CMD} getpkgdepname $1)"
 	local saved_prevpkg="$(${XBPS_PKGDB_CMD} getpkgdepname $2)"
-	local j jver jname reqver
+	local j jver jname reqver missing_deps
 
 	[ -z "$curpkg" -o -z "$curpkgname" ] && return 2
 
@@ -128,7 +144,7 @@ install_pkg_deps()
 	setup_tmpl "$curpkgname"
 	check_build_depends_pkg
 	if [ $? -eq 0 ]; then
-		msg_normal "Package dependency '$curpkgname' requires:\n"
+		msg_normal "Package '$curpkgname' requires:\n"
 		for j in ${build_depends}; do
 			jname="$(${XBPS_PKGDB_CMD} getpkgdepname ${j})"
 			jver="$($XBPS_PKGDB_CMD version ${jname})"
@@ -137,17 +153,22 @@ install_pkg_deps()
 				echo "   ${j}: found '$jname-$jver'."
 			else
 				echo "   ${j}: not found."
+				if [ -z "$missing_deps" ]; then
+					missing_deps="${j}"
+				else
+					missing_deps="${missing_deps} ${j}"
+				fi
 			fi
 		done
 	fi
 
-	for j in ${build_depends}; do
+	for j in ${missing_deps}; do
 		prev_pkg="$j"
 		if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
-			install_pkg_from_repos \"${j}\"
+			install_pkg_from_repos "${j}"
 			if [ $? -eq 255 ]; then
 				# xbps-bin returned unexpected error
-				msg_red "$saved_prevpkg: failed to install dependency '$j'\n"
+				msg_red "$saved_prevpkg: failed to install '$j'\n"
 			elif [ $? -eq 0 ]; then
 				# package installed successfully.
 				:
@@ -161,9 +182,9 @@ install_pkg_deps()
 			install_pkg_deps "${j}" "${curpkg}"
 			if [ $? -eq 1 ]; then
 				if [ -n "$saved_prevpkg" ]; then
-					msg_red "$saved_prevpkg: failed to install dependency '$curpkg'\n"
+					msg_red "$saved_prevpkg: failed to install '$curpkg'\n"
 				else
-					msg_red "${_ORIGINPKG}: failed to install dependency '$curpkg'\n"
+					msg_red "${_ORIGINPKG}: failed to install '$curpkg'\n"
 				fi
 				return 1
 			fi
@@ -171,7 +192,7 @@ install_pkg_deps()
 	done
 
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
-		install_pkg_from_repos \"${curpkg}\"
+		install_pkg_from_repos "${curpkg}"
 		if [ $? -eq 255 ]; then
 			# xbps-bin returned unexpected error
 			return $?
@@ -179,19 +200,19 @@ install_pkg_deps()
 			# Package not found, build from source.
 			install_pkg "${curpkgname}"
 			if [ $? -eq 1 ]; then
-				msg_red "$saved_prevpkg: failed to install dependency '$curpkg'\n"
+				msg_red "$saved_prevpkg: failed to install '$curpkg'\n"
 				return 1
 			fi
 		fi
 	else
 		if [ -n "$saved_prevpkg" ]; then
-			msg_normal "$saved_prevpkg: installing dependency '$curpkg'...\n"
+			msg_normal "$saved_prevpkg: installing '$curpkg'...\n"
 		else
-			msg_normal "${_ORIGINPKG}: installing dependency '$curpkg'...\n"
+			msg_normal "${_ORIGINPKG}: installing '$curpkg'...\n"
 		fi
 		install_pkg "${curpkgname}"
 		if [ $? -eq 1 ]; then
-			msg_red "$saved_prevpkg: failed to install dependency '$curpkg'\n"
+			msg_red "$saved_prevpkg: failed to install '$curpkg'\n"
 			return 1
 		fi
 	fi
@@ -205,6 +226,7 @@ install_dependencies_pkg()
 {
 	local pkg="$1"
 	local i pkgn iver missing_deps
+	trap "msg_error 'interrupted\n'" INT
 
 	[ -z "$pkg" ] && return 2
 	[ -z "$build_depends" ] && return 0
@@ -221,7 +243,11 @@ install_dependencies_pkg()
 			echo "   ${i}: found '$pkgn-$iver'."
 		else
 			echo "   ${i}: not found."
-			missing_deps=1
+			if [ -z "$missing_deps" ]; then
+				missing_deps="${i}"
+			else
+				missing_deps="${missing_deps} ${i}"
+			fi
 		fi
 	done
 
@@ -230,15 +256,18 @@ install_dependencies_pkg()
 	# Install direct build dependencies from binary packages.
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
 		msg_normal "$pkgver: installing dependencies from repositories ...\n"
-		for i in ${build_depends}; do
+		for i in ${missing_deps}; do
 			install_pkg_from_repos "${i}"
 		done
 	else
 		# Install direct and indirect build dependencies from source.
-		for i in ${build_depends}; do
+		for i in ${missing_deps}; do
 			install_pkg_deps "${i}" "${pkg}" || return 1
 		done
 	fi
+
+	# unregister sighandler.
+	trap - INT
 }
 
 #
