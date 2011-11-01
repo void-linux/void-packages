@@ -55,8 +55,8 @@ install_pkg_from_repos()
 	tmpdepf=$(mktemp)
 	echo "'${1}'" > $tmpdepf
 	${cmd} $(cat $tmpdepf) >$tmplogf 2>&1
-	rm -f $tmpdepf
 	rval=$?
+	rm -f $tmpdepf
 	if [ $rval -ne 0 -a $rval -ne 6 ]; then
 		# xbps-bin can return:
 		#
