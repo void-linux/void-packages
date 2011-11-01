@@ -34,18 +34,18 @@ install_pkg_from_repos()
 
 	msg_normal "$pkgver: installing '$1'... "
 
-	xver=$(xbps-bin.static -V|awk '{print $2}')
+	xver=$($XBPS_BIN_CMD -V|awk '{print $2}')
 	case "$xver" in
 	0.1[1-9].[0-9]*)
 		_pkgdepname=$($XBPS_PKGDB_CMD getpkgdepname "$1")
+		$XBPS_REPO_CMD -oversion show ${_pkgdepname} >/dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			msg_normal_append "not found, building from source...\n"
+			return 2
+		fi
 		_pkgver=$($XBPS_REPO_CMD} -oversion show ${_pkgdepname})
 		_repoloc=$($XBPS_REPO_CMD} -orepository show ${_pkgdepname})
-		if [ -n "${_pkgver}" -a -n "${_repoloc}" ]; then
-			msg_normal_append "found ${_pkgver} (${_repoloc})\n"
-		else
-			msg_normal_append "NOT FOUND!\n"
-			install_pkg_deps "${1}"
-		fi
+		msg_normal_append "found ${_pkgver} (${_repoloc})\n"
 		;;
 	*)	msg_normal_append "\n";;
 	esac
@@ -95,22 +95,6 @@ autoremove_pkg_dependencies()
 			msg_red "$pkgver: failed to remove automatic dependencies!\n"
 			exit 1
 		fi
-		# Maybe some dependency wasn't available in repositories and it had
-		# to be built from source, remove them too.
-		for f in $($XBPS_BIN_CMD list|awk '{print $1}'); do
-			curpkgname=$($XBPS_PKGDB_CMD getpkgname $f)
-			[ "${_ORIGINPKG}" = "$curpkgname" ] && continue
-			if [ -f $XBPS_PKGMETADIR/$curpkgname/flist ]; then
-				# ignore subpkgs.
-				setup_subpkg_tmpl $curpkgname
-				[ -n "$SUBPKG" ] && continue
-				[ -n "$bootstrap" ] && continue
-				# remove pkg.
-				msg_warn "removing package $curpkgname installed from source...\n"
-				remove_pkg
-			fi
-		done
-		setup_tmpl ${_ORIGINPKG}
 	fi
 }
 
@@ -258,6 +242,15 @@ install_dependencies_pkg()
 		msg_normal "$pkgver: installing dependencies from repositories ...\n"
 		for i in ${missing_deps}; do
 			install_pkg_from_repos "${i}"
+			if [ $? -eq 2 ]; then
+				# ENOENT; install from source
+				install_pkg_deps "${i}" "${pkg}" || return 1
+				curpkgdepname="$($XBPS_PKGDB_CMD getpkgdepname ${i})"
+				setup_tmpl $curpkgdepname
+				install_pkg $curpkgdepname
+				setup_tmpl $($XBPS_PKGDB_CMD getpkgname ${pkg})
+				install_dependencies_pkg "${pkg}"
+			fi
 		done
 	else
 		# Install direct and indirect build dependencies from source.
