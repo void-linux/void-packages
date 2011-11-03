@@ -30,7 +30,7 @@ show_pkg_revdeps()
 	[ -z "$1" ] && return 1
 
 	for f in $(find ${XBPS_SRCPKGDIR} -type f -name \*template); do
-		if ! egrep -q "^Add_dependency[[:blank:]]+(run|full|build)[[:blank:]]+${1}$" $f; then
+		if ! egrep -q "^Add_dependency[[:blank:]]+(run|full|build)[[:blank:]]+${1}([[:space:]]+\".*\")*$" $f; then
 			continue
 		fi
 		tmplf=$(basename $f)
