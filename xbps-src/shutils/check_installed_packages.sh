@@ -35,9 +35,9 @@ check_installed_packages()
 {
 	local f lpkgn lpkgver rv srcpkgver
 
-	msg_normal "Checking for newer packages from srcpkgs, please wait...\n"
 	for f in $(${XBPS_BIN_CMD} list|awk '{print $1}'); do
 		lpkgn=$(${XBPS_PKGDB_CMD} getpkgname ${f})
+		lpkgver=$(${XBPS_PKGDB_CMD} getpkgversion ${f})
 
 		if [ -r ${XBPS_SRCPKGDIR}/${lpkgn}/${lpkgn}.template ]; then
 			. ${XBPS_SRCPKGDIR}/${lpkgn}/template
@@ -46,7 +46,6 @@ check_installed_packages()
 			. ${XBPS_SRCPKGDIR}/${lpkgn}/${lpkgn}.template
 		else
 			if [ ! -r ${XBPS_SRCPKGDIR}/${lpkgn}/template ]; then
-				msg_warn "Installed package ${f} not available as source pkg, skipping.\n"
 				continue
 			fi
 			. ${XBPS_SRCPKGDIR}/${lpkgn}/template
@@ -59,9 +58,8 @@ check_installed_packages()
 		${XBPS_CMPVER_CMD} ${f} ${srcpkgver}
 		rv=$?
 		if [ $rv -eq 255 ]; then
-			echo "[$XBPS_MASTERDIR] ${f} < ${srcpkgver} [srcpkgs]"
+			echo "${lpkgn} ${lpkgver} ${version}"
 		fi
 		unset pkgname version revision
 	done
-	msg_normal "done.\n"
 }
