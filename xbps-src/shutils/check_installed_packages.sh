@@ -33,7 +33,7 @@ Add_dependency() {
 
 check_installed_packages()
 {
-	local f lpkgn lpkgver rv srcpkgver
+	local f lpkgn lpkgver rv srcpkgver srcver
 
 	for f in $(${XBPS_BIN_CMD} list|awk '{print $1}'); do
 		lpkgn=$(${XBPS_PKGDB_CMD} getpkgname ${f})
@@ -51,14 +51,16 @@ check_installed_packages()
 			. ${XBPS_SRCPKGDIR}/${lpkgn}/template
 		fi
 		if [ -n "$revision" ]; then
+			srcver="${version}_${revision}"
 			srcpkgver="${lpkgn}-${version}_${revision}"
 		else
+			srcver="${version}"
 			srcpkgver="${lpkgn}-${version}"
 		fi
 		${XBPS_CMPVER_CMD} ${f} ${srcpkgver}
 		rv=$?
 		if [ $rv -eq 255 ]; then
-			echo "${lpkgn} ${lpkgver} ${version}"
+			echo "${lpkgn} ${lpkgver} ${srcver}"
 		fi
 		unset pkgname version revision
 	done
