@@ -153,4 +153,6 @@ extract_distfiles()
 
 	touch -f $XBPS_FETCH_DONE
 	touch -f $XBPS_EXTRACT_DONE
+
+	run_func post_extract
 }
