@@ -30,12 +30,11 @@
 #
 install_pkg_from_repos()
 {
-	local cmd rval tmplogf tmpdepf xver
+	local cmd rval tmplogf tmpdepf
 
 	msg_normal "$pkgver: installing '$1'... "
 
-	xver=$($XBPS_BIN_CMD -V|awk '{print $2}')
-	case "$xver" in
+	case "${XBPS_VERSION}" in
 	0.1[1-9].[0-9]*)
 		_pkgdepname=$($XBPS_PKGDB_CMD getpkgdepname "$1")
 		$XBPS_REPO_CMD -oversion show ${_pkgdepname} >/dev/null 2>&1
@@ -50,7 +49,7 @@ install_pkg_from_repos()
 	*)	msg_normal_append "\n";;
 	esac
 
-	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD} -Ay install"
+	cmd="${FAKEROOT_CMD} ${FAKEROOT_CMD_ARGS} ${XBPS_BIN_CMD} -Ay install"
 	tmplogf=$(mktemp)
 	tmpdepf=$(mktemp)
 	echo "'${1}'" > $tmpdepf
@@ -82,7 +81,7 @@ autoremove_pkg_dependencies()
 
 	[ -n "$1" ] && return 0
 
-	cmd="${fakeroot_cmd} ${fakeroot_cmd_args} ${XBPS_BIN_CMD}"
+	cmd="${FAKEROOT_CMD} ${FAKEROOT_CMD_ARGS} ${XBPS_BIN_CMD}"
 
 	# If XBPS_PREFER_BINPKG_DEPS is set, we should remove those
 	# package dependencies installed by the target package, do it.
@@ -105,9 +104,9 @@ autoremove_pkg_dependencies()
 install_pkg_deps()
 {
 	local curpkg="$1"
-	local curpkgname="$(${XBPS_PKGDB_CMD} getpkgdepname $1)"
-	local saved_prevpkg="$(${XBPS_PKGDB_CMD} getpkgdepname $2)"
-	local j jver jname reqver missing_deps
+	local curpkgname=$(${XBPS_PKGDB_CMD} getpkgdepname "$1")
+	local saved_prevpkg=$(${XBPS_PKGDB_CMD} getpkgdepname "$2")
+	local j jver jname reqver
 
 	[ -z "$curpkg" -o -z "$curpkgname" ] && return 2
 
@@ -137,16 +136,11 @@ install_pkg_deps()
 				echo "   ${j}: found '$jname-$jver'."
 			else
 				echo "   ${j}: not found."
-				if [ -z "$missing_deps" ]; then
-					missing_deps="${j}"
-				else
-					missing_deps="${missing_deps} ${j}"
-				fi
 			fi
 		done
 	fi
 
-	for j in ${missing_deps}; do
+	for j in ${build_depends}; do
 		prev_pkg="$j"
 		if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
 			install_pkg_from_repos "${j}"

@@ -26,6 +26,43 @@
 #
 # Installs a pkg by reading its build template file.
 #
+make_repoidx()
+{
+	local f
+
+	case "${XBPS_VERSION}" in
+	# >= 0.11.0
+	[0-9].[1-9][1-9].[0-9])
+		for f in ${XBPS_MACHINE} noarch nonfree/${XBPS_MACHINE}; do
+			msg_normal "Updating pkg-index for local repository at:\n"
+			msg_normal " $XBPS_PACKAGESDIR/$f\n"
+			${XBPS_REPO_CMD} genindex ${XBPS_PACKAGESDIR}/${f} 2>/dev/null
+		done
+		;;
+	*)
+		msg_normal "Updating pkg-index for local repository at:\n"
+		msg_normal " $XBPS_PACKAGESDIR\n"
+		${XBPS_REPO_CMD} genindex ${XBPS_PACKAGESDIR} 2>/dev/null
+		;;
+	esac
+}
+
+_build_pkg_and_update_repos()
+{
+	local rval f
+
+	[ -z "$BUILD_BINPKG" ] && return 0
+
+	# Build binary package and update local repo index if -B is set.
+	xbps_make_binpkg
+	if [ $? -ne 0 -a $? -ne 6 ]; then
+		return $?
+	fi
+	make_repoidx
+
+	return 0
+}
+
 install_pkg()
 {
 	local curpkgn="$1" fullpkg pkg cdestdir
@@ -87,12 +124,12 @@ install_pkg()
 	fi
 
 	# Install pkg into destdir.
-	env xbps_machine=${xbps_machine} MASTERDIR=${_MASTERDIR}	\
-		wrksrc=${wrksrc}					\
-		BOOTSTRAP_PKG_REBUILD=$BOOTSTRAP_PKG_REBUILD		\
-		CONFIG_FILE=${XBPS_CONFIG_FILE}				\
-		${fakeroot_cmd} ${fakeroot_cmd_args}			\
-		@@XBPS_INSTALL_LIBEXECDIR@@/doinst-helper		\
+	env XBPS_MACHINE=${XBPS_MACHINE} wrksrc=${wrksrc}	\
+		MASTERDIR="${XBPS_MASTERDIR}"			\
+		BOOTSTRAP_PKG_REBUILD=$BOOTSTRAP_PKG_REBUILD	\
+		CONFIG_FILE=${XBPS_CONFIG_FILE}			\
+		${FAKEROOT_CMD} ${FAKEROOT_CMD_ARGS}		\
+		@@XBPS_INSTALL_LIBEXECDIR@@/doinst-helper	\
 		${curpkgn} || return $?
 
 	# Strip binaries/libraries.
@@ -114,24 +151,8 @@ install_pkg()
 			remove_tmpl_wrksrc $wrksrc
 		fi
 		autoremove_pkg_dependencies $KEEP_AUTODEPS
-		# Build binary package and update local repo index if
-		# -B is set.
-		if [ -n "$BUILD_BINPKG" ]; then
-			xbps_make_binpkg
-			rval=$?
-			if [ $rval -ne 0 -a $rval -ne 6 ]; then
-				return $?
-			elif [ $rval -eq 6 ]; then
-				# binpkg exists, no need to update
-				# repo pkg-index.
-				:
-			else
-				msg_normal "Updating pkg-index for local repository at:\n"
-				msg_normal " $XBPS_PACKAGESDIR\n"
-				${XBPS_REPO_CMD} genindex ${XBPS_PACKAGESDIR} 2>/dev/null
-			fi
-		fi
-		return 0
+		_build_pkg_and_update_repos
+		return $?
 	fi
 
 	# Stow package into masterdir.

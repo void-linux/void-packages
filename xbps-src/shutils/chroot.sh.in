@@ -26,7 +26,7 @@
 _mount()
 {
 	MASTERDIR="${XBPS_MASTERDIR}" DISTRIBUTIONDIR="${XBPS_DISTRIBUTIONDIR}" \
-		HOSTDIR="${XBPS_HOSTDIR}" ${sudo_cmd} \
+		HOSTDIR="${XBPS_HOSTDIR}" ${SUDO_CMD} \
 		@@XBPS_INSTALL_LIBEXECDIR@@/chroot-helper mount
 	return $?
 }
@@ -34,7 +34,7 @@ _mount()
 _umount()
 {
 	MASTERDIR="${XBPS_MASTERDIR}" DISTRIBUTIONDIR="${XBPS_DISTRIBUTIONDIR}" \
-		HOSTDIR="${XBPS_HOSTDIR}" ${sudo_cmd} \
+		HOSTDIR="${XBPS_HOSTDIR}" ${SUDO_CMD} \
 		@@XBPS_INSTALL_LIBEXECDIR@@/chroot-helper umount
 	return $?
 }
@@ -45,7 +45,7 @@ chroot_init()
 
 	[ -n "$bootstrap" ] && return 0
 
-	if [ "${chroot_cmd}" = "chroot" ]; then
+	if [ "${CHROOT_CMD}" = "chroot" ]; then
 		if [ "$(id -u)" -ne 0 ]; then
 			msg_error "Root permissions are required for the chroot, try again."
 		fi
@@ -100,6 +100,20 @@ _EOF
 			[ -h ${XBPS_MASTERDIR}/tmp ] || rm -rf $XBPS_MASTERDIR/tmp/*
 		fi
 	fi
+
+	[ -s $XBPS_MASTERDIR/bin/xbps-shell ] && return 0
+
+	# Create custom script to start the chroot bash shell.
+	cat > $XBPS_MASTERDIR/bin/xbps-shell <<_EOF
+#!/bin/sh
+
+. /usr/local/etc/xbps-src.conf
+. /usr/local/share/xbps-src/shutils/init_funcs.sh
+set_defvars
+
+exec env PS1="[\u@masterdir-chroot \W]$ " /bin/bash "$@"
+_EOF
+	chmod 755 $XBPS_MASTERDIR/bin/xbps-shell
 }
 
 prepare_chroot()
@@ -198,10 +212,9 @@ create_binsh_symlink()
 
 prepare_binpkg_repos()
 {
-	local repo xver CONF_FILE
+	local repo CONF_FILE
 
-	xver=$($XBPS_PKGDB_CMD -V|awk '{print $2}')
-	case "$xver" in
+	case "${XBPS_VERSION}" in
 	0.1[0-9].[0-9]*)
 		mkdir -p ${XBPS_MASTERDIR}/usr/local/etc/xbps
 		for f in /etc /usr/local/etc; do
@@ -310,19 +323,18 @@ xbps_chroot_handler()
 
 	# Reinstall xbps-src in the chroot
 	msg_normal "Installing xbps-src in the masterdir...\n"
-	env IN_CHROOT=yes LANG=C PATH=$PATH:/usr/local/bin \
-	    ${chroot_cmd} $XBPS_MASTERDIR sh -c \
+	env IN_CHROOT=yes LANG=C \
+	    ${CHROOT_CMD} $XBPS_MASTERDIR sh -c \
 	    "cd /xbps/xbps-src && make IN_CHROOT=1 install clean" \
 	    2>&1 >/dev/null || return $?
 
 	# Update ld.so(8) cache
 	msg_normal "Updating ld.so(8) cache...\n"
-	env PATH=$PATH:/usr/local/bin \
-		${chroot_cmd} $XBPS_MASTERDIR sh -c "ldconfig" || return $?
+	${CHROOT_CMD} $XBPS_MASTERDIR sh -c "ldconfig" || return $?
 
 	if [ "$action" = "chroot" ]; then
-		env IN_CHROOT=1 LANG=C PATH=$PATH:/usr/local/bin \
-			${chroot_cmd} $XBPS_MASTERDIR /bin/sh || rv=$?
+		env IN_CHROOT=1 LANG=C \
+			${CHROOT_CMD} $XBPS_MASTERDIR /bin/xbps-shell || rv=$?
 	else
 		[ -n "$KEEP_WRKSRC" ] && arg="$arg -C"
 		[ -n "$KEEP_AUTODEPS" ] && arg="$arg -K"
@@ -331,8 +343,7 @@ xbps_chroot_handler()
 
 		action="$arg $action"
 		env in_chroot=1 IN_CHROOT=1 LANG=C _ORIGINPKG="$pkg" \
-			PATH=$PATH:/usr/local/bin \
-			${chroot_cmd} $XBPS_MASTERDIR sh -c \
+			${CHROOT_CMD} $XBPS_MASTERDIR sh -c \
 			"xbps-src $action $pkg" || rv=$?
 	fi
 

@@ -89,7 +89,7 @@ xbps_write_metadata_pkg_real()
 	if [ -n "$noarch" ]; then
 		arch=noarch
 	else
-		arch=$xbps_machine
+		arch=$XBPS_MACHINE
 	fi
 
 	if [ -n "$revision" ]; then
