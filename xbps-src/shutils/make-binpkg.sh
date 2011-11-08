@@ -30,7 +30,7 @@ xbps_make_binpkg()
 	[ -z "$pkgname" ] && return 1
 
 	for subpkg in ${subpackages}; do
-		unset revision noarch
+		unset revision noarch nonfree
 		. $XBPS_SRCPKGDIR/$pkgname/$subpkg.template
 		pkgname=${subpkg}
 		set_tmpl_common_vars
@@ -70,10 +70,14 @@ xbps_make_binpkg_real()
 	if [ -n "$noarch" ]; then
 		arch=noarch
 	else
-		arch=$xbps_machine
+		arch=$XBPS_MACHINE
 	fi
 	binpkg=$pkgver.$arch.xbps
-	pkgdir=$XBPS_PACKAGESDIR/$arch
+	if [ -n "$nonfree" ]; then
+		pkgdir=$XBPS_PACKAGESDIR/nonfree/$arch
+	else
+		pkgdir=$XBPS_PACKAGESDIR/$arch
+	fi
 	#
 	# Don't overwrite existing binpkgs by default, skip them.
 	#
@@ -107,7 +111,7 @@ xbps_make_binpkg_real()
 	# Remove binpkg if interrupted...
 	trap "binpkg_cleanup $pkgdir $binpkg" INT
 	msg_normal "Building $binpkg... "
-	${fakeroot_cmd} ${fakeroot_cmd_args}			\
+	${FAKEROOT_CMD} ${FAKEROOT_CMD_ARGS}			\
 		tar --exclude "var/db/xbps/metadata/*/flist"	\
 		-cpf - ${mfiles} ${dirs} |			\
 		$XBPS_COMPRESS_CMD ${clevel} -qf > $pkgdir/$binpkg
