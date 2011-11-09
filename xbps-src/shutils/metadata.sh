@@ -405,7 +405,7 @@ _EOF
 	echo "</plist>" >> $TMPFPROPS
 
 	if [ ! -d $metadir ]; then
-		mkdir -p $metadir >/dev/null 2>&1
+		mkdir -m0755 -p $metadir >/dev/null 2>&1
 		if [ $? -ne 0 ]; then
 			msg_red "you don't have enough perms for this!\n"
 			rm -f $TMPFLIST $TMPFPROPS
