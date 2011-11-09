@@ -76,7 +76,6 @@ UPDATE="\$4"
 # The following code will run the triggers.
 #
 _EOF
-
 	#
 	# Handle kernel hooks.
 	#
@@ -84,15 +83,6 @@ _EOF
 		_add_trigger kernel-hooks
 		echo "export kernel_hooks_version=\"${kernel_hooks_version}\"" >> $tmpf
 	fi
-
-	#
-	# Handle systemd services.
-	#
-	if [ -n "${systemd_services}" ]; then
-		_add_trigger systemd-service
-		echo "export systemd_services=\"${systemd_services}\"" >> $tmpf
-	fi
-
 	#
 	# Handle DKMS modules.
 	#
@@ -100,7 +90,6 @@ _EOF
 		_add_trigger dkms
 		echo "export dkms_modules=\"${dkms_modules}\"" >> $tmpf
 	fi
-
 	#
 	# Handle system groups.
 	#
@@ -135,6 +124,20 @@ _EOF
 		done
 	fi
 	#
+	# Handle mkdirs trigger.
+	#
+	if [ -n "${make_dirs}" ]; then
+		_add_trigger mkdirs
+		echo "export make_dirs=\"${make_dirs}\"" >> $tmpf
+	fi
+	#
+	# Handle systemd services.
+	#
+	if [ -n "${systemd_services}" ]; then
+		_add_trigger systemd-service
+		echo "export systemd_services=\"${systemd_services}\"" >> $tmpf
+	fi
+	#
 	# Handle GNU Info files.
 	#
 	if [ -d "${DESTDIR}/usr/share/info" ]; then
@@ -154,7 +157,6 @@ _EOF
 			echo "export info_files=\"${info_files}\"" >> $tmpf
 		fi
         fi
-
 	#
 	# (Un)Register a shell in /etc/shells.
 	#
@@ -162,7 +164,6 @@ _EOF
 		_add_trigger register-shell
 		echo "export register_shell=\"${register_shell}\"" >> $tmpf
 	fi
-
 	#
 	# Handle SGML/XML catalog entries via xmlcatmgr.
 	#
@@ -185,7 +186,6 @@ _EOF
 	if [ -n "${sgml_entries}" -o -n "${xml_entries}" ]; then
 		_add_trigger xml-catalog
 	fi
-
 	#
 	# Handle X11 font updates via mkfontdir/mkfontscale.
 	#
@@ -193,7 +193,6 @@ _EOF
 		_add_trigger x11-fonts
 		echo "export font_dirs=\"${font_dirs}\"" >> $tmpf
 	fi
-
 	#
 	# Handle GTK+ Icon cache directories.
 	#
@@ -202,7 +201,6 @@ _EOF
 		echo "export gtk_iconcache_dirs=\"${gtk_iconcache_dirs}\"" \
 			>> $tmpf
 	fi
-
         #
 	# Handle .desktop files in /usr/share/applications with
 	# desktop-file-utils.
@@ -212,7 +210,6 @@ _EOF
 			_add_trigger update-desktopdb
 		fi
 	fi
-
 	#
 	# Handle GConf schemas/entries files with gconf-schemas.
 	#
@@ -230,7 +227,6 @@ _EOF
 				>> $tmpf
 		fi
 	fi
-
 	#
 	# Handle gio-modules trigger.
 	#
@@ -239,7 +235,6 @@ _EOF
 			_add_trigger gio-modules
 		fi
 	fi
-
 	#
 	# Handle gsettings schemas in /usr/share/glib-2.0/schemas with
 	# gsettings-schemas.
@@ -249,7 +244,6 @@ _EOF
 			_add_trigger gsettings-schemas
 		fi
 	fi
-
 	#
 	# Handle mime database in /usr/share/mime with update-mime-database.
 	#
@@ -258,7 +252,6 @@ _EOF
 			_add_trigger mimedb
 		fi
 	fi
-
 	#
 	# Handle python bytecode archives with pycompile trigger.
 	#
