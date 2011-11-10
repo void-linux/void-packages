@@ -30,7 +30,7 @@
 #
 install_pkg_from_repos()
 {
-	local cmd rval tmplogf tmpdepf
+	local rval tmplogf tmpdepf
 
 	msg_normal "$pkgver: installing '$1'... "
 
@@ -43,19 +43,22 @@ install_pkg_from_repos()
 			return 2
 		fi
 		_pkgver=$($XBPS_REPO_CMD} -oversion show ${_pkgdepname})
-		_repoloc=$($XBPS_REPO_CMD} -orepository show ${_pkgdepname})
-		msg_normal_append "found ${_pkgver} (${_repoloc})\n"
+		msg_normal_append "found ${_pkgver} "
+		$XBPS_PKGDB_CMD pkgmatch "${_pkgdepname}-${_pkgver}" "${1}"
+		if [ $? -eq 1 ]; then
+			_repoloc=$($XBPS_REPO_CMD} -orepository show ${_pkgdepname})
+			msg_normal_append "(${_repoloc})\n"
+		else
+			msg_normal_append "not matched, building from source...\n"
+			return 2
+		fi
 		;;
 	*)	msg_normal_append "\n";;
 	esac
 
-	cmd="${FAKEROOT_CMD} ${FAKEROOT_CMD_ARGS} ${XBPS_BIN_CMD} -Ay install"
 	tmplogf=$(mktemp)
-	tmpdepf=$(mktemp)
-	echo "'${1}'" > $tmpdepf
-	${cmd} $(cat $tmpdepf) >$tmplogf 2>&1
+	$FAKEROOT_CMD $FAKEROOT_CMD_ARGS $XBPS_BIN_CMD -Ay install ${_pkgdepname} >$tmplogf 2>&1
 	rval=$?
-	rm -f $tmpdepf
 	if [ $rval -ne 0 -a $rval -ne 6 ]; then
 		# xbps-bin can return:
 		#
