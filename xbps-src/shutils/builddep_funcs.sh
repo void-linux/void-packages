@@ -53,7 +53,7 @@ install_pkg_from_repos()
 	tmplogf=$(mktemp)
 	tmpdepf=$(mktemp)
 	echo "'${1}'" > $tmpdepf
-	${cmd} $(cat $tmpdepf) >$tmplogf 2>&1
+	eval ${cmd} $(cat $tmpdepf) >$tmplogf 2>&1
 	rval=$?
 	rm -f $tmpdepf
 	if [ $rval -ne 0 -a $rval -ne 6 ]; then

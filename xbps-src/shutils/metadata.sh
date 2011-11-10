@@ -44,11 +44,11 @@ xbps_write_metadata_pkg()
 		setup_tmpl ${sourcepkg}
 		unset run_depends conf_files noarch triggers replaces \
 			revision system_accounts system_groups \
-			preserve keep_empty_dirs xml_entries sgml_entries \
+			preserve xml_entries sgml_entries \
 			xml_catalogs sgml_catalogs gconf_entries gconf_schemas \
 			gtk_iconcache_dirs font_dirs dkms_modules provides \
 			kernel_hooks_version conflicts pycompile_dirs \
-			pycompile_module systemd_services
+			pycompile_module systemd_services make_dirs
 		. $XBPS_SRCPKGDIR/${sourcepkg}/${subpkg}.template
 		pkgname=${subpkg}
 		set_tmpl_common_vars
@@ -313,6 +313,8 @@ _EOF
 <string>$short_desc</string>
 <key>long_desc</key>
 <string>$long_desc</string>
+<key>packaged-with</key>
+<string>xbps-src $XBPS_SRC_BUILD_VERSION</string>
 _EOF
 	#
 	# If package sets $dkms_modules, add dkms rundep.
@@ -405,7 +407,7 @@ _EOF
 	echo "</plist>" >> $TMPFPROPS
 
 	if [ ! -d $metadir ]; then
-		mkdir -p $metadir >/dev/null 2>&1
+		mkdir -m0755 -p $metadir >/dev/null 2>&1
 		if [ $? -ne 0 ]; then
 			msg_red "you don't have enough perms for this!\n"
 			rm -f $TMPFLIST $TMPFPROPS
