@@ -1,6 +1,13 @@
 #!/bin/sh
 #
-# Enable and disable systemd services.
+# Enable and disable systemd services. The systemd_services environmental
+# variable is expected to be set as follows:
+#
+# SERVICE_NAME	RESTART
+# foo.service	off
+# blah.service	on
+#
+# i.e systemd_services='foo.service off blah.service on'
 #
 # Arguments:	$ACTION = [run/targets]
 #		$TARGET	= [post-install/pre-remove]
@@ -28,35 +35,48 @@ run)
 		systemd_booted=yes
 	fi
 
-	if [ "$TARGET" = "pre-remove" ]; then
-		if [ "$UPDATE" = "no" ]; then
-			# package is being removed.
-			# disable and stop the units.
-			systemctl --no-reload disable ${systemd_services} >/dev/null 2>&1 || :
-			systemctl stop ${systemd_services} >/dev/null 2>&1 || :
-		fi
-	elif [ "$TARGET" = "post-install" ]; then
-		if [ "$UPDATE" = "no" ]; then
-			# package is being installed.
-			# enable (but don't start) the units by default.
-			systemctl enable ${systemd_services} >/dev/null 2>&1 || :
-			if [ "$systemd_booted" ]; then
-				# reload systemd if running.
-				systemctl daemon-reload >/dev/null 2>&1 || :
+	while [ $# -gt 0 ]; do
+		_srv="$1"
+		case "$2" in
+		[Yy][Ee][Ss]|[Tt][Rr][Uu][Ee]|[Oo][Nn]|1)
+			restart=1
+			;;
+		*)
+			unset restart
+			;;
+		esac
+		if [ "$TARGET" = "pre-remove" ]; then
+			if [ "$UPDATE" = "no" ]; then
+				# package is being removed.
+				# disable and stop the unit.
+				systemctl --no-reload disable ${_srv} >/dev/null 2>&1 || :
+				systemctl stop ${_srv} >/dev/null 2>&1 || :
 			fi
-		else
-			# package is being updated.
-			if [ "$system_booted" ]; then
-				# reload systemd if running.
-				systemctl daemon-reload >/dev/null 2>&1 || :
+		elif [ "$TARGET" = "post-install" ]; then
+			if [ "$UPDATE" = "no" ]; then
+				# package is being installed.
+				# enable (but don't start) the unit by default.
+				systemctl enable ${_srv} >/dev/null 2>&1 || :
+				if [ "$systemd_booted" ]; then
+					# reload systemd if running.
+					systemctl daemon-reload >/dev/null 2>&1 || :
+				fi
+			else
+				# package is being updated.
+				if [ "$system_booted" ]; then
+					# reload systemd if running.
+					systemctl daemon-reload >/dev/null 2>&1 || :
+				fi
+				if [ -n "$restart" ]; then
+					# try restarting package service.
+					systemctl try-restart ${_srv} >/dev/null 2>&1 || :
+				else
+					echo "systemd ${_srv} service must be restarted manually!"
+				fi
 			fi
-			# try restarting package services.
-			systemctl try-restart ${systemd_services} >/dev/null 2>&1 || :
 		fi
-	else
-		exit 1
-	fi
-
+		shift; shift
+	done
 	;;
 *)
 	exit 1
