@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2010 Juan Romero Pardines.
+# Copyright (c) 2010-2011 Juan Romero Pardines.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -43,17 +43,16 @@ find_rundep()
 
 verify_rundeps()
 {
-	local j i f nlib verify_deps maplib found_dup igndir
-	local missing missing_libs rdep builddep rdep_list builddep_list
+	local j f nlib verify_deps maplib found_dup igndir
+	local broken rdep found rsonamef soname_list
 
-	PKG_DESTDIR="$1"
 	maplib="$XBPS_COMMONVARSDIR/mapping_shlib_binpkg.txt"
 
 	[ -n "$noarch" -o -n "$noverifyrdeps" ] && return 0
-	msg_normal "$pkgver: verifying required run dependencies, please wait...\n"
+	msg_normal "$pkgver: verifying required shlibs...\n"
 
 	depsftmp=$(mktemp -t xbps_src_depstmp.XXXXXXXXXX) || exit 1
-	find ${PKG_DESTDIR} -type f -perm -u+w > $depsftmp 2>/dev/null
+	find ${1} -type f -perm -u+w > $depsftmp 2>/dev/null
 
 	exec 3<&0 # save stdin
 	exec < $depsftmp
@@ -75,8 +74,8 @@ verify_rundeps()
 					verify_deps="$nlib"
 					continue
 				fi
-				for i in ${verify_deps}; do
-					[ "$i" != "$nlib" ] && continue
+				for j in ${verify_deps}; do
+					[ "$j" != "$nlib" ] && continue
 					found_dup=1
 					break
 				done
@@ -91,99 +90,94 @@ verify_rundeps()
 	exec 0<&3 # restore stdin
 	rm -f $depsftmp
 
-	# Now verify that those required libs are added into package's
-	# template via Add_dependency.
+	#
+	# Add required run time packages by using required shlibs resolved
+	# above, the mapping is done thru the mapping_shlib_binpkg.txt file.
+	#
 	for f in ${verify_deps}; do
 		# Bail out if maplib is not aware for this lib
 		rdep="$(grep "$f" $maplib|awk '{print $2}')"
 		rdepcnt="$(grep "$f" $maplib|awk '{print $2}'|wc -l)"
 		if [ -z "$rdep" ]; then
-			echo "   UNKNOWN PACKAGE FOR SHLIB DEPENDENCY '$f', PLEASE FIX!"
+			echo "   SONAME: $f <-> UNKNOWN PKG PLEASE FIX!"
+			broken=1
 		fi
-		# Ignore libs by current pkg
-		[ "$rdep" = "$pkgname" ] && continue
-
 		# Check if shlib is provided by multiple pkgs.
 		if [ "$rdepcnt" -gt 1 ]; then
-			echo "   shlib dependency '$f' is provided by these pkgs: "
 			for j in ${rdep}; do
-				printf "\t$j\n"
+				[ -z "${_rdep}" ] && _rdep=$j
 			done
+		else
+			_rdep=$rdep
+		fi
+		# Ignore libs by current pkg
+		if [ "${_rdep}" = "$pkgname" ]; then
+			echo "   SONAME: $f <-> ${_rdep} (ignored)"
 			continue
 		fi
-		# Warn if rundep is not in template.
-		if find_rundep "$rdep"; then
-			echo "   REQUIRED SHLIB DEPENDENCY '$f' FROM PACKAGE '$rdep' MISSING, PLEASE FIX!"
-			missing=1
-			if [ -z "$missing_libs" ]; then
-				missing_libs="$f"
+
+		# Add required shlib to rundeps.
+		echo "   SONAME: $f <-> ${_rdep}"
+		if [ -z "$soname_list" ]; then
+			soname_list="${f}"
+		else
+			soname_list="${soname_list} ${f}"
+		fi
+		if find_rundep ${_rdep}; then
+			Add_dependency run ${_rdep}
+		fi
+		unset rdep _rdep rdepcnt
+	done
+
+	#
+	# If pkg uses any SONAME not known, error out.
+	#
+	[ -n "$broken" ] && \
+		msg_error "$pkgver: cannot guess required shlibs, aborting!\n"
+
+	#
+	# Update package's rshlibs file.
+	#
+	unset broken
+	msg_normal "$pkgver: updating rshlibs file...\n"
+	rsonamef=${XBPS_SRCPKGDIR}/${pkgname}/${pkgname}.rshlibs
+	if [ ! -f $rsonamef ]; then
+		# file not found, add soname.
+		for j in ${soname_list}; do
+			echo "   SONAME: $j (added)"
+			echo "${j}" >> $rsonamef
+		done
+	else
+		# check if soname is already in the rshlibs file.
+		for j in ${soname_list}; do
+			if ! grep -q "$j" $rsonamef; then
+				echo "   SONAME: $j (added)"
+				echo "$j" >> $rsonamef
+				broken=1
+			fi
+		done
+		exec 3<&0 # save stdin
+		exec < $rsonamef
+		# now check if any soname in the rshlibs file is unnecessary.
+		while read f; do
+			for j in ${soname_list}; do
+				if [ "$f" = "$j" ]; then
+					found=1
+					continue
+				fi
+			done
+			if [ -n "$found" ]; then
+				unset found
 				continue
 			fi
-			for i in ${missing_libs}; do
-				[ "$i" != "$f" ] && continue
-				found_dup=1
-				break
-			done
-			if [ -z "$found_dup" ]; then
-				missing_libs="$missing_libs $f"
-			fi
-			unset found_dup
-			continue
-		fi
-		echo "   shlib dependency '$f' provided by the '$rdep' package (OK)."
-		unset rdep
-	done
-
-	[ -z "$missing" ] && return 0
-
-	# Print an informative message suggesting what needs to be added
-	# into the build template.
-
-	msg_normal "The following code needs to be added into the build template:\n"
-	echo "============ CUT HERE ==============="
-
-	for f in ${missing_libs}; do
-		rdep="$(grep "$f" $maplib|awk '{print $2}')"
-		rdepcnt="$(grep "$f" $maplib|awk '{print $2}'|wc -l)"
-		builddep="$(grep "$f" $maplib|awk '{print $3}')"
-
-		# If required shlib is provided by multiple pkgs pass
-		# to next one.
-		[ "$rdepcnt" -gt 1 ] && continue
-
-		if [ -z "$rdep_list" ]; then
-			rdep_list="$rdep"
-		fi
-		if [ -z "$builddep_list" -a -n "$builddep" ]; then
-			builddep_list="$builddep"
-		fi
-		for i in ${rdep_list}; do
-			[ "$rdep" != "$i" ] && continue
-			found_dup=1
-			break
+			echo "   SONAME: $f (removed, not required)"
+			sed -i "/^${f}$/d" $rsonamef
+			broken=1
 		done
-		if [ -z "$found_dup" ]; then
-			rdep_list="$rdep_list $rdep"
-		fi
-		unset found_dup
-		for i in ${builddep_list}; do
-			[ "$builddep" != "$i" ] && continue
-			found_dup=1
-			break
-		done
-		if [ -z "$found_dup" ]; then
-			builddep_list="$builddep_list $builddep"
-		fi
-		unset found_dup
-	done
+		exec 0<&3 # restore stdin
+	fi
 
-	for f in ${rdep_list}; do
-		echo "Add_dependency run $f"
-	done
-	for f in ${builddep_list}; do
-		echo "Add_dependency build $f"
-	done
-	echo "============ CUT HERE ==============="
-
-	msg_error "$pkgver: incorrect run dependencies, won't continue...\n"
+	if [ -n "$broken" ]; then
+		msg_error "$pkgver: shlibs changed: a revbump is necessary!\n"
+	fi
 }
