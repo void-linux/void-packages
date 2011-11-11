@@ -130,13 +130,26 @@ verify_rundeps()
 			tmplf=$XBPS_SRCPKGDIR/$pkgname/template
 		fi
 		sed -i "/^Add_dependency run ${_rdep}.*$/d" $tmplf
-
+		_rev=$(egrep '^revision=.*' $tmplf)
+		if [ -n "${_rev}" ]; then
+			newrev=$((${_rev#revision=} + 1))
+			if [ -z "$revbumped" ]; then
+				sed -i "s/^revision=.*$/revision=${newrev}/" $tmplf
+				revbumped=1
+			fi
+		else
+			if [ -z "$revbumped" ]; then
+				sed -i "/^short_desc=.*$/irevision=1" $tmplf
+				revbumped=1
+			fi
+		fi
 		if find_rundep ${_rdep}; then
 			Add_dependency run ${_rdep}
-		fi
-		unset rdep _rdep rdepcnt
-	done
 
+		fi
+		unset rdep _rdep rdepcnt _rev newrev
+	done
+	unset revbumped
 	#
 	# If pkg uses any SONAME not known, error out.
 	#
