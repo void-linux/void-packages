@@ -123,6 +123,14 @@ verify_rundeps()
 		else
 			soname_list="${soname_list} ${f}"
 		fi
+		# Try to remove the line from template
+		if [ -f $XBPS_SRCPKGDIR/$pkgname/$pkgname.template ]; then
+			tmplf=$XBPS_SRCPKGDIR/$pkgname/$pkgname.template
+		else
+			tmplf=$XBPS_SRCPKGDIR/$pkgname/template
+		fi
+		sed -i "/^Add_dependency run ${_rdep}.*$/d" $tmplf
+
 		if find_rundep ${_rdep}; then
 			Add_dependency run ${_rdep}
 		fi
