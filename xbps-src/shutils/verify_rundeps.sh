@@ -44,7 +44,7 @@ find_rundep()
 verify_rundeps()
 {
 	local j f nlib verify_deps maplib found_dup igndir
-	local broken rdep found rsonamef soname_list revbumped
+	local broken rdep found rsonamef soname_list revbumped tmplf
 
 	maplib="$XBPS_COMMONVARSDIR/mapping_shlib_binpkg.txt"
 
@@ -90,6 +90,11 @@ verify_rundeps()
 	exec 0<&3 # restore stdin
 	rm -f $depsftmp
 
+	if [ -f $XBPS_SRCPKGDIR/$pkgname/$pkgname.template ]; then
+		tmplf=$XBPS_SRCPKGDIR/$pkgname/$pkgname.template
+	else
+		tmplf=$XBPS_SRCPKGDIR/$pkgname/template
+	fi
 	#
 	# Add required run time packages by using required shlibs resolved
 	# above, the mapping is done thru the mapping_shlib_binpkg.txt file.
@@ -124,11 +129,6 @@ verify_rundeps()
 			soname_list="${soname_list} ${f}"
 		fi
 		# Try to remove the line from template
-		if [ -f $XBPS_SRCPKGDIR/$pkgname/$pkgname.template ]; then
-			tmplf=$XBPS_SRCPKGDIR/$pkgname/$pkgname.template
-		else
-			tmplf=$XBPS_SRCPKGDIR/$pkgname/template
-		fi
 		sed -i -r "/^Add_dependency run ${_rdep}([[:space:]]+\".*\")*$/d" $tmplf
 		if find_rundep ${_rdep}; then
 			Add_dependency run ${_rdep}
@@ -188,11 +188,6 @@ verify_rundeps()
 
 	if [ -n "$broken" ]; then
 		msg_warn "$pkgver: shlibs changed... package has been revbumped!\n"
-		if [ -f $XBPS_SRCPKGDIR/$pkgname/$pkgname.template ]; then
-			tmplf=$XBPS_SRCPKGDIR/$pkgname/$pkgname.template
-		else
-			tmplf=$XBPS_SRCPKGDIR/$pkgname/template
-		fi
 		_rev=$(egrep '^revision=.*' $tmplf)
 		if [ -n "${_rev}" ]; then
 			newrev=$((${_rev#revision=} + 1))
