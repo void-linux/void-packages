@@ -132,7 +132,6 @@ verify_rundeps()
 		sed -i -r "/^Add_dependency run ${_rdep}([[:space:]]+\".*\")*$/d" $tmplf
 		if find_rundep ${_rdep}; then
 			Add_dependency run ${_rdep}
-
 		fi
 		unset rdep _rdep rdepcnt
 	done
