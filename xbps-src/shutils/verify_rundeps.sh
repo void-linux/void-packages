@@ -134,9 +134,8 @@ verify_rundeps()
 			Add_dependency run ${_rdep}
 
 		fi
-		unset rdep _rdep rdepcnt _rev
+		unset rdep _rdep rdepcnt
 	done
-	unset revbumped
 	#
 	# If pkg uses any SONAME not known, error out.
 	#
@@ -194,12 +193,14 @@ verify_rundeps()
 				readonly newrev=$((${_rev#revision=} + 1))
 				sed -i "s/^revision=.*$/revision=${newrev}/" $tmplf
 				export revision=${newrev}
+				export pkgver="${pkgname}-${version}_${revision}"
 				revbumped=1
 			fi
 		else
 			if [ -z "$revbumped" ]; then
 				sed -i "/^short_desc=.*$/irevision=1" $tmplf
 				export revision=1
+				export pkgver="${pkgname}-${version}_${revision}"
 				revbumped=1
 			fi
 		fi
