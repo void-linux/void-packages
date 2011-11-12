@@ -44,7 +44,7 @@ find_rundep()
 verify_rundeps()
 {
 	local j f nlib verify_deps maplib found_dup igndir
-	local broken rdep found rsonamef soname_list revbumped tmplf
+	local broken rdep found rsonamef soname_list revbumped tmplf newrev
 
 	maplib="$XBPS_COMMONVARSDIR/mapping_shlib_binpkg.txt"
 
@@ -134,7 +134,7 @@ verify_rundeps()
 			Add_dependency run ${_rdep}
 
 		fi
-		unset rdep _rdep rdepcnt _rev newrev
+		unset rdep _rdep rdepcnt _rev
 	done
 	unset revbumped
 	#
@@ -190,8 +190,8 @@ verify_rundeps()
 		msg_warn "$pkgver: shlibs changed... package has been revbumped!\n"
 		_rev=$(egrep '^revision=.*' $tmplf)
 		if [ -n "${_rev}" ]; then
-			newrev=$((${_rev#revision=} + 1))
 			if [ -z "$revbumped" ]; then
+				readonly newrev=$((${_rev#revision=} + 1))
 				sed -i "s/^revision=.*$/revision=${newrev}/" $tmplf
 				export revision=${newrev}
 				revbumped=1
@@ -199,7 +199,7 @@ verify_rundeps()
 		else
 			if [ -z "$revbumped" ]; then
 				sed -i "/^short_desc=.*$/irevision=1" $tmplf
-				export revision=${newrev}
+				export revision=1
 				revbumped=1
 			fi
 		fi
