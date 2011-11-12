@@ -193,11 +193,13 @@ verify_rundeps()
 			newrev=$((${_rev#revision=} + 1))
 			if [ -z "$revbumped" ]; then
 				sed -i "s/^revision=.*$/revision=${newrev}/" $tmplf
+				export revision=${newrev}
 				revbumped=1
 			fi
 		else
 			if [ -z "$revbumped" ]; then
 				sed -i "/^short_desc=.*$/irevision=1" $tmplf
+				export revision=${newrev}
 				revbumped=1
 			fi
 		fi
