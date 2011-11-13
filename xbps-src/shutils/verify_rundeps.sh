@@ -43,7 +43,7 @@ find_rundep()
 
 verify_rundeps()
 {
-	local j f nlib verify_deps maplib found_dup igndir
+	local j f nlib verify_deps maplib found_dup igndir soname_arch
 	local broken rdep found rsonamef soname_list revbumped tmplf newrev
 
 	maplib="$XBPS_COMMONVARSDIR/mapping_shlib_binpkg.txt"
@@ -177,9 +177,15 @@ verify_rundeps()
 				unset found
 				continue
 			fi
-			echo "   SONAME: $f (removed, not required)"
-			sed -i "/^${f}$/d" $rsonamef
-			broken=1
+			# If SONAME is arch specific, only remove it if
+			# matching on the target arch.
+			soname_arch=$(grep "$f" $maplib|awk '{print $4}')
+			if [ -z "$soname_arch" ] || \
+			   [ -n "$soname_arch" -a "$soname_arch" = "$XBPS_MACHINE" ]; then
+				echo "   SONAME: $f (removed, not required)"
+				sed -i "/^${f}$/d" $rsonamef
+				broken=1
+			fi
 		done
 		exec 0<&3 # restore stdin
 	fi
