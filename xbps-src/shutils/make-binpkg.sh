@@ -59,7 +59,7 @@ binpkg_cleanup()
 #
 xbps_make_binpkg_real()
 {
-	local mfiles binpkg pkgdir arch d clevel
+	local mfiles binpkg pkgdir arch dirs _dirs d clevel
 
 	if [ ! -d "${DESTDIR}" ]; then
 		msg_warn "cannot find destdir for $pkgname... skipping!\n"
@@ -99,14 +99,10 @@ xbps_make_binpkg_real()
 		mfiles="./REMOVE"
 	fi
 	mfiles="$mfiles ./files.plist ./props.plist"
-	for d in $(find . -type f -o -type l); do
-		if [ "$d" = "./INSTALL" -o \
-		     "$d" = "./REMOVE" -o \
-		     "$d" = "./files.plist" -o \
-		     "$d" = "./props.plist" ]; then
-			continue
-		fi
-		mfiles="$mfiles $d"
+	_dirs=$(find . -maxdepth 1 -type d -o -type l)
+	for d in ${_dirs}; do
+		[ "$d" = "." ] && continue
+		dirs="$d $dirs"
 	done
 
 	[ -n "$XBPS_COMPRESS_LEVEL" ] && clevel="-$XBPS_COMPRESS_LEVEL"
@@ -117,7 +113,7 @@ xbps_make_binpkg_real()
 	msg_normal "Building $binpkg... "
 	${FAKEROOT_CMD} ${FAKEROOT_CMD_ARGS}			\
 		tar --exclude "var/db/xbps/metadata/*/flist"	\
-		-cpf - ${mfiles} |				\
+		-cpf - ${mfiles} ${dirs} |			\
 		$XBPS_COMPRESS_CMD ${clevel} -qf > $pkgdir/$binpkg
 	rval=$?
 	trap - INT
