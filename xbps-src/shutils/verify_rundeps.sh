@@ -100,6 +100,7 @@ verify_rundeps()
 	# above, the mapping is done thru the mapping_shlib_binpkg.txt file.
 	#
 	for f in ${verify_deps}; do
+		unset j rdep _rdep rdepcnt
 		# Bail out if maplib is not aware for this lib
 		rdep="$(grep "$f" $maplib|awk '{print $2}')"
 		rdepcnt="$(grep "$f" $maplib|awk '{print $2}'|wc -l)"
@@ -112,7 +113,6 @@ verify_rundeps()
 			done
 			if [ -n "$found" ]; then
 				echo "   SONAME: $f <-> $pkgname (ignored)"
-				unset found
 				continue
 			else
 				echo "   SONAME: $f <-> UNKNOWN PKG PLEASE FIX!"
@@ -144,7 +144,6 @@ verify_rundeps()
 		if find_rundep ${_rdep}; then
 			Add_dependency run ${_rdep}
 		fi
-		unset rdep _rdep rdepcnt
 	done
 	#
 	# If pkg uses any SONAME not known, error out.
