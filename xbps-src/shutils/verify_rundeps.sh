@@ -104,8 +104,20 @@ verify_rundeps()
 		rdep="$(grep "$f" $maplib|awk '{print $2}')"
 		rdepcnt="$(grep "$f" $maplib|awk '{print $2}'|wc -l)"
 		if [ -z "$rdep" ]; then
-			echo "   SONAME: $f <-> UNKNOWN PKG PLEASE FIX!"
-			broken=1
+			# Ignore libs by current pkg
+			for j in ${verify_deps}; do
+				[ "$j" != "$f" ] && continue
+				found=1
+				break
+			done
+			if [ -n "$found" ]; then
+				echo "   SONAME: $f <-> $pkgname (ignored)"
+				unset found
+				continue
+			else
+				echo "   SONAME: $f <-> UNKNOWN PKG PLEASE FIX!"
+				broken=1
+			fi
 		fi
 		# Check if shlib is provided by multiple pkgs.
 		if [ "$rdepcnt" -gt 1 ]; then
@@ -115,12 +127,6 @@ verify_rundeps()
 		else
 			_rdep=$rdep
 		fi
-		# Ignore libs by current pkg
-		if [ "${_rdep}" = "$pkgname" ]; then
-			echo "   SONAME: $f <-> ${_rdep} (ignored)"
-			continue
-		fi
-
 		# Add required shlib to rundeps.
 		echo "   SONAME: $f <-> ${_rdep}"
 		if [ -z "$soname_list" ]; then
