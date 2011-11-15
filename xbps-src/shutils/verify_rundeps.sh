@@ -127,6 +127,11 @@ verify_rundeps()
 		else
 			_rdep=$rdep
 		fi
+		# Ignore libs by current pkg
+		if [ "${_rdep}" = "$pkgname" ]; then
+			echo "   SONAME: $f <-> ${_rdep} (ignored)"
+			continue
+		fi
 		# Add required shlib to rundeps.
 		echo "   SONAME: $f <-> ${_rdep}"
 		if [ -z "$soname_list" ]; then
