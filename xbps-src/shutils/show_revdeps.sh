@@ -45,7 +45,7 @@ _show_shlib_pkg_deps()
 {
 	local f j
 
-	revshlibs=$(grep "$1" ${XBPS_SRCPKGDIR}/*/*.rshlibs)
+	revshlibs=$(egrep "^${1}$" ${XBPS_SRCPKGDIR}/*/*.rshlibs)
 	for f in ${revshlibs}; do
 		unset pkg revdepname tmprev
 		revdepname=$(basename "$f")
@@ -65,7 +65,7 @@ show_pkg_revdeps()
 
 	[ -z "$1" ] && return 1
 
-	shlibs=$(grep "$1" $SHLIBS_MAP|awk '{print $1}')
+	shlibs=$(egrep "${1}[[:blank:]]+.*$" $SHLIBS_MAP|awk '{print $1}')
 	if [ -n "$shlibs" ]; then
 		# pkg provides shlibs
 		_show_shlib_pkg_deps "$shlibs"
