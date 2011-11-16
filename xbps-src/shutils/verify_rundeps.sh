@@ -154,7 +154,7 @@ verify_rundeps()
 	#
 	# Update package's rshlibs file.
 	#
-	unset broken
+	unset broken f
 	msg_normal "$pkgver: updating rshlibs file...\n"
 	rsonamef=${XBPS_SRCPKGDIR}/${pkgname}/${pkgname}.rshlibs
 	if [ ! -f $rsonamef ]; then
@@ -173,12 +173,16 @@ verify_rundeps()
 				broken=1
 			fi
 		done
+		unset f
 		exec 3<&0 # save stdin
 		exec < $rsonamef
 		# now check if any soname in the rshlibs file is unnecessary.
 		while read f; do
+			local _soname=$(echo "$f"|awk '{print $1}')
+			local _soname_arch=$(echo "$f"|awk '{print $2}')
+
 			for j in ${soname_list}; do
-				if [ "$f" = "$j" ]; then
+				if [ "${_soname}" = "$j" ]; then
 					found=1
 					continue
 				fi
@@ -187,15 +191,22 @@ verify_rundeps()
 				unset found
 				continue
 			fi
+			# Sometimes a required SONAME is arch dependent, so
+			# ignore it in such case.
+			if [ -n "${_soname_arch}" -a "${_soname_arch}" != "$XBPS_MACHINE" ]; then
+				continue
+			fi
+
 			# If SONAME is arch specific, only remove it if
 			# matching on the target arch.
-			soname_arch=$(grep "$f" $maplib|awk '{print $4}')
-			if [ -z "$soname_arch" ] || \
-			   [ -n "$soname_arch" -a "$soname_arch" = "$XBPS_MACHINE" ]; then
+			_soname_arch=$(grep "$f" $maplib|awk '{print $4}')
+			if [ -z "${_soname_arch}" ] || \
+			   [ -n "${_soname_arch}" -a "${_soname_arch}" = "$XBPS_MACHINE" ]; then
 				echo "   SONAME: $f (removed, not required)"
-				sed -i "/^${f}$/d" $rsonamef
+				sed -i "/^${_soname}$/d" $rsonamef
 				broken=1
 			fi
+			unset _soname _soname_arch
 		done
 		exec 0<&3 # restore stdin
 	fi
