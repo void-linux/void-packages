@@ -92,7 +92,7 @@ autoremove_pkg_dependencies()
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" -a -z "$bootstrap" ]; then
 		msg_normal "$pkgver: removing automatically installed dependencies ...\n"
 		# Autoremove installed binary packages.
-		${cmd} -y reconfigure all && ${cmd} -Rpyf autoremove 2>&1 >/dev/null
+		${cmd} -y reconfigure all && ${cmd} -Rpyf autoremove
 		if [ $? -ne 0 ]; then
 			msg_red "$pkgver: failed to remove automatic dependencies!\n"
 			exit 1
