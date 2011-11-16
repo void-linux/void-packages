@@ -45,14 +45,17 @@ _show_shlib_pkg_deps()
 {
 	local f j
 
-	for f in $(find ${XBPS_SRCPKGDIR} -type f -name *.rshlibs); do
-		for j in ${1}; do
-			if grep -q "$j" "$f"; then
-				revdepname=$(basename $f)
-				echo "${revdepname%.rshlibs}"
-				break
-			fi
-		done
+	revshlibs=$(grep "$1" ${XBPS_SRCPKGDIR}/*/*.rshlibs)
+	for f in ${revshlibs}; do
+		unset pkg revdepname tmprev
+		revdepname=$(basename "$f")
+		revdepname=${revdepname%.rshlibs*}
+		tmprev=$(echo "$revdepname"|sed 's/-//g')
+		eval pkg=\$pkg_"${tmprev}"
+		if [ -z "${pkg}" ]; then
+			eval local pkg_${tmprev}=1
+			echo "$revdepname"
+		fi
 	done
 }
 
@@ -62,7 +65,7 @@ show_pkg_revdeps()
 
 	[ -z "$1" ] && return 1
 
-	shlibs=$(grep "$1" $SHLIBS_MAP)
+	shlibs=$(grep "$1" $SHLIBS_MAP|awk '{print $1}')
 	if [ -n "$shlibs" ]; then
 		# pkg provides shlibs
 		_show_shlib_pkg_deps "$shlibs"
