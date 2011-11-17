@@ -43,9 +43,11 @@ _show_hard_pkg_deps()
 
 _show_shlib_pkg_deps()
 {
-	local f j
+	local f j soname
 
-	revshlibs=$(egrep "^${1}$" ${XBPS_SRCPKGDIR}/*/*.rshlibs)
+	soname=$(echo "$1"|sed 's|\+|\\+|g')
+
+	revshlibs=$(grep -E "^${soname}$" ${XBPS_SRCPKGDIR}/*/*.rshlibs)
 	for f in ${revshlibs}; do
 		unset pkg revdepname tmprev
 		revdepname=$(basename "$f")
@@ -62,10 +64,13 @@ _show_shlib_pkg_deps()
 show_pkg_revdeps()
 {
 	local SHLIBS_MAP="$XBPS_COMMONVARSDIR/mapping_shlib_binpkg.txt"
+	local _pkgn shlibs
 
 	[ -z "$1" ] && return 1
 
-	shlibs=$(egrep "${1}[[:blank:]]+.*$" $SHLIBS_MAP|awk '{print $1}')
+	_pkgn=$(echo "$1"|sed 's|\+|\\+|g')
+
+	shlibs=$(grep -E "^lib.*\.so\.[[:digit:]]+[[:blank:]]+${_pkgn}[[:blank:]]+.*$" $SHLIBS_MAP|awk '{print $1}')
 	if [ -n "$shlibs" ]; then
 		# pkg provides shlibs
 		_show_shlib_pkg_deps "$shlibs"
