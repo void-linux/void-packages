@@ -101,7 +101,6 @@ verify_rundeps()
 	#
 	for f in ${verify_deps}; do
 		unset j rdep _rdep rdepcnt
-		# Bail out if maplib is not aware for this lib
 		rdep="$(grep "$f" $maplib|awk '{print $2}')"
 		rdepcnt="$(grep "$f" $maplib|awk '{print $2}'|wc -l)"
 		if [ -z "$rdep" ]; then
@@ -115,25 +114,38 @@ verify_rundeps()
 				echo "   SONAME: $f <-> $pkgname (ignored)"
 				continue
 			else
+				# Bail out if maplib is not aware for this lib
 				echo "   SONAME: $f <-> UNKNOWN PKG PLEASE FIX!"
 				broken=1
 			fi
-		fi
-		# Check if shlib is provided by multiple pkgs.
-		if [ "$rdepcnt" -gt 1 ]; then
+		elif [ "$rdepcnt" -gt 1 ]; then
+			unset j found
+			# Check if shlib is provided by multiple pkgs.
 			for j in ${rdep}; do
-				[ -z "${_rdep}" ] && _rdep=$j
+				# if there's a SONAME matching pkgname, use it.
+				[ "${j}" != "${pkgname}" ] && continue
+				found=1
+				break
 			done
+			if [ -n "$found" ]; then
+				_rdep=$j
+			else
+				# otherwise pick up the first one.
+				for j in ${rdep}; do
+					[ -z "${_rdep}" ] && _rdep=$j
+				done
+			fi
 		else
 			_rdep=$rdep
 		fi
-		# Ignore libs by current pkg
-		if [ "${_rdep}" = "$pkgname" ]; then
+		if [ "${_rdep}" != "$pkgname" ]; then
+			echo "   SONAME: $f <-> ${_rdep}"
+		else
+			# Ignore libs by current pkg
 			echo "   SONAME: $f <-> ${_rdep} (ignored)"
 			continue
 		fi
 		# Add required shlib to rundeps.
-		echo "   SONAME: $f <-> ${_rdep}"
 		if [ -z "$soname_list" ]; then
 			soname_list="${f}"
 		else
