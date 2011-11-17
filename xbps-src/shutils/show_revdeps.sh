@@ -70,7 +70,7 @@ show_pkg_revdeps()
 
 	_pkgn=$(echo "$1"|sed 's|\+|\\+|g')
 
-	shlibs=$(grep -E "^lib.*\.so\.[[:digit:]]+[[:blank:]]+${_pkgn}[[:blank:]]+.*$" $SHLIBS_MAP|awk '{print $1}')
+	shlibs=$(grep -E "^lib.*\.so\.[[:digit:]]+[[:blank:]]+${_pkgn}[[:blank:]]?.*$" $SHLIBS_MAP|awk '{print $1}')
 	if [ -n "$shlibs" ]; then
 		# pkg provides shlibs
 		_show_shlib_pkg_deps "$shlibs"
