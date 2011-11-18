@@ -1,6 +1,6 @@
 include ../vars.mk
 
-SCRIPTS = chroot-helper doinst-helper getdeps-helper
+SCRIPTS = chroot-helper doinst-helper
 MOUNT_BIN = capmount
 UMOUNT_BIN = capumount
 CHROOT_BIN = capchroot
@@ -10,6 +10,7 @@ LDFLAGS = -lcap
 
 ifdef IN_CHROOT
 BINS =
+SCRIPTS = doinst-helper
 endif
 
 .PHONY: all
