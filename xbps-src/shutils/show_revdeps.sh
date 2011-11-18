@@ -25,12 +25,12 @@
 
 _show_hard_pkg_deps()
 {
-	local f tmplf revdepname
+	local f tmplf deps revdepname _pkgn
 
-	for f in $(find ${XBPS_SRCPKGDIR} -type f -name \*template); do
-		if ! egrep -q "^Add_dependency[[:blank:]]+(run|full|build)[[:blank:]]+${1}([[:space:]]+\".*\")*$" $f; then
-			continue
-		fi
+	_pkgn=$(echo "$1"|sed 's|\+|\\+|g')
+	deps=$(grep -E "^Add_dependency[[:blank:]]+(run|full|build)[[:blank:]]+${_pkgn}([[:space:]]+\".*\")*$" $XBPS_SRCPKGDIR/*/*template|sed 's/:Add_dependency.*//g')
+	for f in ${deps}; do
+		[ -h "$(dirname $f)" ] && continue
 		tmplf=$(basename $f)
 		if [ "$tmplf" != template ]; then
 			revdepname=${tmplf%.template}
@@ -74,8 +74,7 @@ show_pkg_revdeps()
 	if [ -n "$shlibs" ]; then
 		# pkg provides shlibs
 		_show_shlib_pkg_deps "$shlibs"
-	else
-		# pkg does not provide shlibs
-		_show_hard_pkg_deps "$1"
 	fi
+	# show pkgs that use Add_dependency
+	_show_hard_pkg_deps "$1"
 }
