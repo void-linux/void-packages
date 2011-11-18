@@ -28,7 +28,7 @@ _mount()
 	MASTERDIR="${XBPS_MASTERDIR}" DISTRIBUTIONDIR="${XBPS_DISTRIBUTIONDIR}" \
 		HOSTDIR="${XBPS_HOSTDIR}" XBPS_ETCDIR="${XBPS_ETCDIR}" \
 		XBPS_SHAREDIR="${XBPS_SHAREDIR}" ${SUDO_CMD} \
-		${XBPS_LIBEXECDIR}/chroot-helper mount
+		${XBPS_LIBEXECDIR}/chroot-helper.sh mount
 	return $?
 }
 
@@ -37,7 +37,7 @@ _umount()
 	MASTERDIR="${XBPS_MASTERDIR}" DISTRIBUTIONDIR="${XBPS_DISTRIBUTIONDIR}" \
 		HOSTDIR="${XBPS_HOSTDIR}" XBPS_ETCDIR="${XBPS_ETCDIR}" \
 		XBPS_SHAREDIR="${XBPS_SHAREDIR}" ${SUDO_CMD} \
-		${XBPS_LIBEXECDIR}/chroot-helper umount
+		${XBPS_LIBEXECDIR}/chroot-helper.sh umount
 	return $?
 }
 

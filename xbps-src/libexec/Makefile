@@ -1,6 +1,6 @@
 include ../vars.mk
 
-SCRIPTS = chroot-helper doinst-helper
+SCRIPTS = chroot-helper.sh doinst-helper.sh
 MOUNT_BIN = capmount
 UMOUNT_BIN = capumount
 CHROOT_BIN = capchroot
@@ -10,26 +10,18 @@ LDFLAGS = -lcap
 
 ifdef IN_CHROOT
 BINS =
-SCRIPTS = doinst-helper
+SCRIPTS = doinst-helper.sh
 endif
 
 .PHONY: all
 all: $(BINS)
-	for bin in $(SCRIPTS); do					\
-		sed -e	"s|@@XBPS_INSTALL_PREFIX@@|$(PREFIX)|g"		\
-		    -e	"s|@@XBPS_INSTALL_ETCDIR@@|$(ETCDIR)|g"		\
-		    -e  "s|@@XBPS_INSTALL_SHAREDIR@@|$(SHAREDIR)|g"	\
-		    -e  "s|@@XBPS_INSTALL_SBINDIR@@|$(SBINDIR)|g"	\
-		    -e	"s|@@XBPS_INSTALL_LIBEXECDIR@@|$(LIBEXECDIR)|g"	\
-			$$bin.sh.in > $$bin;				\
-	done
 
 .PHONY: clean
 clean:
-	-rm -f $(BINS) $(SCRIPTS)
+	-rm -f $(BINS)
 
 .PHONY: install
-install: all
+install:
 	install -d $(DESTDIR)$(LIBEXECDIR)
 	for bin in $(SCRIPTS); do					\
 		install -m755 $$bin $(DESTDIR)$(LIBEXECDIR);		\
@@ -50,10 +42,10 @@ uninstall:
 	done
 
 $(MOUNT_BIN):
-	$(CC) $(WFLAGS) $(LDFLAGS) mount.c -o $@
+	$(CC) $(WFLAGS) mount.c $(LDFLAGS) -o $@
 
 $(UMOUNT_BIN):
-	$(CC) $(WFLAGS) $(LDFLAGS) umount.c -o $@
+	$(CC) $(WFLAGS) umount.c $(LDFLAGS) -o $@
 
 $(CHROOT_BIN):
-	$(CC) $(WFLAGS) $(LDFLAGS) chroot.c -o $@
+	$(CC) $(WFLAGS) chroot.c $(LDFLAGS) -o $@

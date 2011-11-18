@@ -6,5 +6,5 @@ SBINDIR	?= $(DESTDIR)$(PREFIX)/sbin
 # The following vars shouldn't be specified with DESTDIR!
 #
 SHAREDIR ?= $(PREFIX)/share/xbps-src
-LIBEXECDIR ?= $(PREFIX)/libexec
+LIBEXECDIR ?= $(PREFIX)/libexec/xbps-src
 ETCDIR	?= $(PREFIX)/etc
