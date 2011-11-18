@@ -270,13 +270,7 @@ install_xbps_utils()
 	local needed _cmd
 	local xbps_prefix=$XBPS_MASTERDIR/usr/local
 
-	for f in bin repo uhelper; do
-		if [ ! -x $xbps_prefix/sbin/xbps-${f}.static ]; then
-			needed=yes
-		fi
-	done
-
-	if [ -n "$needed" ]; then
+	if [ ! -f ${XBPS_MASTERDIR}/.xbps_utils_done ]; then
 		echo "=> Installing static XBPS utils into masterdir."
 		for f in bin repo uhelper; do
 			_cmd=$(which xbps-${f}.static 2>/dev/null)
@@ -286,7 +280,27 @@ install_xbps_utils()
 			fi
 			cp -f ${_cmd} $xbps_prefix/sbin
 		done
+		touch ${XBPS_MASTERDIR}/.xbps_utils_done
 	fi
+}
+
+install_xbps_src()
+{
+	set -e
+	install -Dm755 ${XBPS_SBINDIR}/xbps-src \
+		${XBPS_MASTERDIR}/usr/local/sbin/xbps-src
+	install -Dm755 ${XBPS_LIBEXECDIR}/doinst-helper.sh \
+		${XBPS_MASTERDIR}/usr/local/libexec/xbps-src/doinst-helper.sh
+	install -d ${XBPS_MASTERDIR}/usr/local/share/xbps-src/shutils
+	install -m644 ${XBPS_SHAREDIR}/shutils/*.sh \
+		${XBPS_MASTERDIR}/usr/local/share/xbps-src/shutils
+	install -d ${XBPS_MASTERDIR}/usr/local/share/xbps-src/common
+	install -m644 ${XBPS_SHAREDIR}/common/* \
+		${XBPS_MASTERDIR}/usr/local/share/xbps-src/common
+	install -d ${XBPS_MASTERDIR}/usr/local/share/xbps-src/helpers
+	install -m644 ${XBPS_SHAREDIR}/helpers/*.sh \
+		${XBPS_MASTERDIR}/usr/local/share/xbps-src/helpers
+	set +e
 }
 
 xbps_chroot_handler()
@@ -307,19 +321,13 @@ xbps_chroot_handler()
 	create_binsh_symlink
 	create_busybox_links
 	install_xbps_utils
+	install_xbps_src
 
 	_mount || return $?
 
 	if [ -n "$XBPS_PREFER_BINPKG_DEPS" ]; then
 		prepare_binpkg_repos
 	fi
-
-	# Reinstall xbps-src in the chroot
-	msg_normal "Installing xbps-src in the masterdir...\n"
-	env IN_CHROOT=yes LANG=C \
-	    ${CHROOT_CMD} $XBPS_MASTERDIR sh -c \
-	    "cd /xbps/xbps-src && make IN_CHROOT=1 install clean" \
-	    2>&1 >/dev/null || return $?
 
 	# Update ld.so(8) cache
 	msg_normal "Updating ld.so(8) cache...\n"
