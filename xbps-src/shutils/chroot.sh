@@ -66,7 +66,7 @@ chroot_init()
 		mkdir -p $XBPS_MASTERDIR/usr/local/etc
 	fi
 
-	XBPSSRC_CF=$XBPS_MASTERDIR/usr/local/etc/xbps-src.conf
+	XBPSSRC_CF=$XBPS_MASTERDIR/usr/local/etc/xbps/xbps-src.conf
 
 	cat > $XBPSSRC_CF <<_EOF
 # Generated configuration file by xbps-src, DO NOT EDIT!
@@ -107,7 +107,7 @@ _EOF
 	cat > $XBPS_MASTERDIR/bin/xbps-shell <<_EOF
 #!/bin/sh
 
-. /usr/local/etc/xbps-src.conf
+. /usr/local/etc/xbps/xbps-src.conf
 . /usr/local/share/xbps-src/shutils/init_funcs.sh
 set_defvars
 

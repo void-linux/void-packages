@@ -25,8 +25,8 @@ install:
 		install -d $(DESTDIR)$(ETCDIR);		\
 	fi
 
-	if [ ! -f $(DESTDIR)$(ETCDIR)/$(CONF_FILE) ]; then		\
-		install -m 644 $(CONF_FILE) $(DESTDIR)$(ETCDIR);	\
+	if [ ! -f $(DESTDIR)$(ETCDIR)/$(CONF_FILE) ]; then 	\
+		install -m644 $(CONF_FILE) $(DESTDIR)$(ETCDIR); \
 	fi
 
 .PHONY: uninstall

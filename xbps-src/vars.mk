@@ -7,4 +7,4 @@ SBINDIR	?= $(DESTDIR)$(PREFIX)/sbin
 #
 SHAREDIR ?= $(PREFIX)/share/xbps-src
 LIBEXECDIR ?= $(PREFIX)/libexec/xbps-src
-ETCDIR	?= $(PREFIX)/etc
+ETCDIR	?= $(PREFIX)/etc/xbps
