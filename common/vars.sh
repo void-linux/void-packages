@@ -1,8 +1,7 @@
-# 
-# HTTP/FTP vars that can be used by templates.
 #
-
-# SITE used for ditfiles mirrors
+# Common variables that can be used by xbps-src.
+#
+# SITE used for ditfiles mirrors. For use in $distfiles.
 SOURCEFORGE_SITE="http://downloads.sourceforge.net/sourceforge"
 NONGNU_SITE="http://download.savannah.nongnu.org/releases"
 UBUNTU_SITE="http://archive.ubuntu.com/ubuntu/pool"
@@ -16,7 +15,6 @@ MOZILLA_SITE="http://ftp.mozilla.org/pub/mozilla.org"
 GNU_SITE="http://mirrors.kernel.org/gnu"
 FREEDESKTOP_SITE="http://freedesktop.org/software"
 
-
-# repetative sub homepage's with no real project page
-# ie. some gnome and xorg projects
+# Repetitive sub homepage's with no real project page
+# ie. some gnome and xorg projects. For use in $homepage.
 XORG_HOME="http://xorg.freedesktop.org/wiki/"

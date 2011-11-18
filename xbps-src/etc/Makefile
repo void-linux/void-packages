@@ -24,7 +24,6 @@ install:
 	if [ ! -d $(DESTDIR)$(ETCDIR) ]; then		\
 		install -d $(DESTDIR)$(ETCDIR);		\
 	fi
-
 	if [ ! -f $(DESTDIR)$(ETCDIR)/$(CONF_FILE) ]; then 	\
 		install -m644 $(CONF_FILE) $(DESTDIR)$(ETCDIR); \
 	fi

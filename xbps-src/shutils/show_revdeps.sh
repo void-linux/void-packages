@@ -63,7 +63,7 @@ _show_shlib_pkg_deps()
 
 show_pkg_revdeps()
 {
-	local SHLIBS_MAP="$XBPS_COMMONVARSDIR/mapping_shlib_binpkg.txt"
+	local SHLIBS_MAP=$XBPS_COMMONDIR/shlibs
 	local _pkgn shlibs
 
 	[ -z "$1" ] && return 1

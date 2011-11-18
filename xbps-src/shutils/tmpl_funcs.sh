@@ -30,7 +30,7 @@ info_tmpl()
 {
 	local i=
 
-	for f in $XBPS_COMMONVARSDIR/*.sh; do
+	for f in $XBPS_COMMONDIR/*.sh; do
 		[ -r ${f} ] && . ${f}
 	done
 
@@ -132,7 +132,7 @@ setup_tmpl()
 		[ -n "$DESTDIR" ] && return 0
 	fi
 
-	for f in $XBPS_COMMONVARSDIR/*.sh; do
+	for f in $XBPS_COMMONDIR/*.sh; do
 		[ -r ${f} ] && . ${f}
 	done
 

@@ -46,7 +46,7 @@ verify_rundeps()
 	local j f nlib verify_deps maplib found_dup igndir soname_arch
 	local broken rdep found rsonamef soname_list revbumped tmplf newrev
 
-	maplib="$XBPS_COMMONVARSDIR/mapping_shlib_binpkg.txt"
+	maplib=$XBPS_COMMONDIR/shlibs
 
 	[ -n "$noarch" -o -n "$noverifyrdeps" ] && return 0
 	msg_normal "$pkgver: verifying required shlibs...\n"

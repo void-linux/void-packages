@@ -1,7 +1,7 @@
 include vars.mk
 
 BINS	= xbps-src
-SUBDIRS	= etc common libexec helpers shutils
+SUBDIRS	= etc libexec helpers shutils
 
 .PHONY: all
 all:
