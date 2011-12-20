@@ -1,14 +1,13 @@
 # Template file for 'nss'
 pkgname=nss
-version=3.12.11
-revision=2
+version=3.13.1
 _distver=$(echo $version|sed -e "s|\.|_|g")
 distfiles="${MOZILLA_SITE}/security/nss/releases/NSS_${_distver}_RTM/src/${pkgname}-${version}.tar.gz"
 short_desc="Mozilla Network Security Services"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://www.mozilla.org/projects/security/pki/nss/"
 license="GPL-2, MPL-1.1"
-checksum=d043f8d44212bc9418b6a954ca88e05b8ab2a71f8c59e6829a9a36d8a28e9f16
+checksum=95d933b59be466f19f90f595a35b4b92213fef084caecafeb89f4e2ce7160660
 long_desc="
  Network Security Services (NSS) is a set of libraries designed to support
  cross-platform development of security-enabled server applications.
@@ -22,8 +21,14 @@ Add_dependency build zlib-devel
 Add_dependency build nspr-devel
 Add_dependency build sqlite-devel
 
-do_build()
-{
+do_build() {
+	# Respect LDFLAGS
+	sed -e 's/\$(MKSHLIB) -o/\$(MKSHLIB) \$(LDFLAGS) -o/g' \
+		-i mozilla/security/coreconf/rules.mk
+
+	# Generate certdata.c from certdata.txt
+	make -C mozilla/security/nss/lib/ckfw/builtins generate
+
 	if [ "$XBPS_MACHINE" = "x86_64" ]; then
 		_use64="USE_64=1"
 	fi
@@ -32,49 +37,55 @@ do_build()
 			LIBRUNPATH= BUILD_OPT=1 \
 			NSS_USE_SYSTEM_SQLITE=1 \
 			NSPR_INCLUDE_DIR=/usr/include/nspr \
-			NSPR_LIB_DIR=/usr/lib ${_use64}
+			NSPR_LIB_DIR=/usr/lib \
+			XCFLAGS="${CFLAGS}" ${_use64}
 	done
 }
 
-do_install()
-{
-	install -d ${DESTDIR}/usr/include/nss \
-		${DESTDIR}/usr/lib/pkgconfig
-	install -m644 mozilla/dist/public/nss/*.h \
-		${DESTDIR}/usr/include/nss
-	install -m755 mozilla/dist/*.OBJ/lib/*.so \
-		${DESTDIR}/usr/lib
-	for f in libcrmf.a libnssb.a libnssckfw.a; do
-		install -m644 mozilla/dist/*.OBJ/lib/${f} \
-			${DESTDIR}/usr/lib
-	done
-
-	( \
-	  echo "prefix=/usr"; \
-	  echo "exec_prefix=/usr/bin"; \
-	  echo "libdir=/usr/lib"; \
-	  echo "includedir=/usr/include/nss"; \
-	  echo; \
-	  echo "Name: NSS"; \
-	  echo "Description: Mozilla Network Security Services"; \
-	  echo "Version: ${version}"; \
-	  echo "Requires: nspr >= ${version}"; \
-	  echo "Cflags: -I/usr/include/nss"; \
-	  echo "Libs: -lnss3 -lsmime3 -lssl3 -lnssutil3"; \
-	) >${DESTDIR}/usr/lib/pkgconfig/nss.pc
-	chmod 644 ${DESTDIR}/usr/lib/pkgconfig/nss.pc
-	cd ${DESTDIR}/usr/lib/pkgconfig && ln -s nss.pc mozilla-nss.pc 
-
-	cd ${wrksrc}
-	mkdir -p ${DESTDIR}/usr/bin
+do_install() {
+	vmkdir usr/lib/pkgconfig
+	vmkdir usr/bin
+	vmkdir usr/include/nss
 
 	NSS_VMAJOR=$(grep "#define.*NSS_VMAJOR" mozilla/security/nss/lib/nss/nss.h | awk '{print $3}')
 	NSS_VMINOR=$(grep "#define.*NSS_VMINOR" mozilla/security/nss/lib/nss/nss.h | awk '{print $3}')
 	NSS_VPATCH=$(grep "#define.*NSS_VPATCH" mozilla/security/nss/lib/nss/nss.h | awk '{print $3}')
-	sed "${FILESDIR}/nss-config.in" \
+
+	sed ${FILESDIR}/nss.pc.in \
+		-e "s,%libdir%,/usr/lib,g" \
+		-e "s,%prefix%,/usr,g" \
+		-e "s,%exec_prefix%,/usr/bin,g" \
+		-e "s,%includedir%,/usr/include/nss,g" \
+		-e "s,%NSPR_VERSION%,${version},g" \
+		-e "s,%NSS_VERSION%,${version},g" > \
+		${DESTDIR}/usr/lib/pkgconfig/nss.pc
+
+	ln -sf nss.pc ${DESTDIR}/usr/lib/pkgconfig/mozilla-nss.pc
+	chmod 644 ${DESTDIR}/usr/lib/pkgconfig/*.pc
+
+	sed ${FILESDIR}/nss-config.in \
+		-e "s,@libdir@,/usr/lib,g" \
+		-e "s,@prefix@,/usr/bin,g" \
+		-e "s,@exec_prefix@,/usr/bin,g" \
+		-e "s,@includedir@,/usr/include/nss,g" \
 		-e "s,@MOD_MAJOR_VERSION@,${NSS_VMAJOR},g" \
 		-e "s,@MOD_MINOR_VERSION@,${NSS_VMINOR},g" \
 		-e "s,@MOD_PATCH_VERSION@,${NSS_VPATCH},g" \
-		> "${DESTDIR}/usr/bin/nss-config"
-	chmod 755 "${DESTDIR}/usr/bin/nss-config"
+		> ${DESTDIR}/usr/bin/nss-config
+	chmod 755 ${DESTDIR}/usr/bin/nss-config
+
+	for f in libsoftokn3.so libfreebl3.so libnss3.so libnssutil3.so \
+		libssl3.so libsmime3.so libnssckbi.so libnssdbm3.so; do
+		install -m755 mozilla/dist/*.OBJ/lib/${f} ${DESTDIR}/usr/lib
+	done
+
+	install -m644 mozilla/dist/*.OBJ/lib/libcrmf.a ${DESTDIR}/usr/lib
+	install -m644 mozilla/dist/*.OBJ/lib/*.chk ${DESTDIR}/usr/lib
+
+	for f in certutil cmsutil crlutil modutil pk12util shlibsign \
+		signtool signver ssltap; do
+		install -m755 mozilla/dist/*.OBJ/bin/${f} ${DESTDIR}/usr/bin
+	done
+
+	install -m644 mozilla/dist/public/nss/*.h ${DESTDIR}/usr/include/nss
 }
