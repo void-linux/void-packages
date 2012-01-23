@@ -1,0 +1,98 @@
+diff -up iputils-s20100418/Makefile.idn iputils-s20100418/Makefile
+--- iputils-s20100418/Makefile.idn	2010-04-20 16:07:59.018479157 +0200
++++ iputils-s20100418/Makefile	2010-04-20 16:10:06.389481427 +0200
+@@ -28,8 +28,13 @@ all: $(TARGETS)
+ 
+ tftpd: tftpd.o tftpsubs.o
+-arping: arping.o -lsysfs
++arping: arping.o
++
+ ping: ping.o ping_common.o
+-ping6: ping6.o ping_common.o -lresolv -lcrypto
++	$(CC) $(CFLAGS) $(LDFLAGS) ping.o ping_common.o -lidn -o ping
++
++ping6: ping6.o ping_common.o
++	$(CC) $(CFLAGS) $(LDFLAGS) ping6.o ping_common.o -lresolv -lcrypto -o ping6
++
+ ping.o ping6.o ping_common.o: ping_common.h
+ tftpd.o tftpsubs.o: tftp.h
+ 
+diff -up iputils-s20100418/ping.c.idn iputils-s20100418/ping.c
+--- iputils-s20100418/ping.c.idn	2010-04-20 16:07:59.038484302 +0200
++++ iputils-s20100418/ping.c	2010-04-20 16:07:59.077485007 +0200
+@@ -58,6 +58,9 @@ char copyright[] =
+  *	This program has to run SUID to ROOT to access the ICMP socket.
+  */
+ 
++#include <idna.h>
++#include <locale.h>
++
+ #include "ping_common.h"
+ 
+ #include <netinet/ip.h>
+@@ -123,6 +126,10 @@ main(int argc, char **argv)
+ 	char *target, hnamebuf[MAX_HOSTNAMELEN];
+ 	char rspace[3 + 4 * NROUTES + 1];	/* record route space */
+ 
++	char *idn;
++	int rc = 0;
++	setlocale(LC_ALL, "");
++
+ 	icmp_sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+ 	socket_errno = errno;
+ 
+@@ -250,13 +257,27 @@ main(int argc, char **argv)
+ 			if (argc == 1)
+ 				options |= F_NUMERIC;
+ 		} else {
+-			hp = gethostbyname(target);
++			rc = idna_to_ascii_lz (target, &idn, 0);
++			if (rc == IDNA_SUCCESS)
++				hp = gethostbyname (idn);
++			else {
++				fprintf(stderr, "ping: IDN encoding of '%s' failed with error code %d\n", target, rc);
++				exit(2);
++			}
++			free(idn);
+ 			if (!hp) {
+ 				fprintf(stderr, "ping: unknown host %s\n", target);
+ 				exit(2);
+ 			}
+ 			memcpy(&whereto.sin_addr, hp->h_addr, 4);
+-			strncpy(hnamebuf, hp->h_name, sizeof(hnamebuf) - 1);
++			rc = idna_to_unicode_lzlz (hp->h_name, &idn, 0);
++			if (rc == IDNA_SUCCESS)
++				strncpy(hnamebuf, idn, sizeof(hnamebuf) - 1);
++			else {
++				fprintf(stderr, "ping: IDN encoding of '%s' failed with error code %d\n", hp->h_name, rc);
++				exit(2);
++			}
++			free(idn);
+ 			hnamebuf[sizeof(hnamebuf) - 1] = 0;
+ 			hostname = hnamebuf;
+ 		}
+diff -up iputils-s20100418/ping_common.c.idn iputils-s20100418/ping_common.c
+--- iputils-s20100418/ping_common.c.idn	2010-04-20 16:07:59.039478452 +0200
++++ iputils-s20100418/ping_common.c	2010-04-20 16:07:59.069478660 +0200
+@@ -1,3 +1,5 @@
++#include <locale.h>
++
+ #include "ping_common.h"
+ #include <ctype.h>
+ #include <sched.h>
+@@ -98,6 +100,7 @@ static void fill(char *patp)
+ 
+ void common_options(int ch)
+ {
++	setlocale(LC_ALL, "C");
+ 	switch(ch) {
+ 	case 'a':
+ 		options |= F_AUDIBLE;
+@@ -242,6 +245,7 @@ void common_options(int ch)
+ 	default:
+ 		abort();
+ 	}
++	setlocale(LC_ALL, "");
+ }
+ 
+ 
