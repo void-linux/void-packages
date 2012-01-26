@@ -1,18 +1,20 @@
 # Template file for 'samba'
 pkgname=samba
-version=3.5.6
-revision=2
+version=3.6.2
 build_wrksrc=source3
 distfiles="http://us1.samba.org/samba/ftp/stable/$pkgname-$version.tar.gz"
 build_style=gnu-configure
-configure_args="--with-fhs --with-pthreads
---with-configdir=/etc/samba --with-lockdir=/var/lock/samba
---with-piddir=/var/run/samba --with-pammodulesdir=/lib/security
---with-syslog --enable-external-libtalloc --with-cifsumount
---enable-external-libtdb --disable-fam"
+configure_args="--with-fhs --with-pam --with-pam_smbpass --with-ldap
+--with-configdir=/etc/samba --with-lockdir=/var/samba
+--with-cachedir=/var/samba --with-nmbdsocketdir=/run/samba/socket
+--with-statedir=/var/samba --with-piddir=/run/samba --with-dnsupdate
+--with-pammodulesdir=/lib/security --with-automount --disable-swat
+--with-syslog --enable-external-libtalloc --with-quotas --disable-cups
+--enable-external-libtdb --disable-fam --with-ads --with-acl-support
+--with-shared-modules=idmap_ad,idmap_adex,idmap_rid,idmap_hash,idmap_tdb2"
 short_desc="SMB/CIFS file, print, and login server for Unix"
 maintainer="Juan RP <xtraeme@gmail.com>"
-checksum=466410868375d19a286ac3fc5d9f3c267ce359189f8e0d76e72ec10bd54247da
+checksum=f6ce5f39b23540b82a00b1fcf6735bcef65cc1cf3639679c9e2e0cb850a3014f
 long_desc="
  Samba is an implementation of the SMB/CIFS protocol for Unix systems,
  providing support for cross-platform file and printer sharing with Microsoft
@@ -20,34 +22,74 @@ long_desc="
  NT4-style domain controller, and can integrate with both NT4 domains and
  Active Directory realms as a member server."
 
-# XXX: Prepare rc service, conf files, etc.
-subpackages="cifs-utils smbclient libsmbclient samba-devel"
+# Require a newer libsmclient.
+shlib_depends="libsmbclient>=${version}"
+subpackages="smbclient libsmbclient samba-devel"
 
-Add_dependency run readline
+# Don't restart services automatically.
+systemd_services="
+nmbd.service off
+smbd.service off
+winbindd.service off"
+
+conf_files="/etc/samba/smb.conf /etc/pam.d/samba"
+
 Add_dependency run smbclient
 
+Add_dependency build perl
+Add_dependency build python-devel
 Add_dependency build gettext
 Add_dependency build libcap-devel
 Add_dependency build popt-devel
-Add_dependency build mit-krb5-devel
 Add_dependency build e2fsprogs-devel
+Add_dependency build mit-krb5-devel
 Add_dependency build libldap-devel
 Add_dependency build zlib-devel
 Add_dependency build pam-devel
 Add_dependency build acl-devel
-Add_dependency build attr-devel
 Add_dependency build avahi-libs-devel
 Add_dependency build readline-devel
 Add_dependency build tdb-devel
 Add_dependency build talloc-devel
 
-post_install()
-{
-	# Remove tdb manpages!
-	rm -f ${DESTDIR}/usr/share/man/man8/tdb*
+post_install() {
+	# conf file
+	cat examples/smb.conf.default | \
+		sed 's|log file = .*$|log file = /var/log/samba/%m.log|g' > \
+		${DESTDIR}/etc/samba/smb.conf
 
-	# Remove swat (outdated, unsecure).
-	rm -f ${DESTDIR}/usr/sbin/swat
-	rm -f ${DESTDIR}/usr/share/man/man8/swat
-	rm -rf ${DESTDIR}/usr/share/samba/swat
+	# fix logrotate
+	sed -i -e 's|log.%m|%m.log|g' ${DESTDIR}/etc/samba/smb.conf
+
+	# fix spool directory
+	sed -i 's|/usr/spool/samba|/var/spool/samba|g' \
+		${DESTDIR}/etc/samba/smb.conf
+
+	# nsswitch libraries
+	vinstall nsswitch/libnss_wins.so 755 lib
+	ln -s libnss_wins.so ${DESTDIR}/lib/libnss_wins.so.2
+
+	vinstall nsswitch/libnss_winbind.so 755 lib
+	ln -s libnss_winbind.so ${DESTDIR}/lib/libnss_winbind.so.2
+
+	# winbind krb5 locator
+	vinstall source3/bin/winbind_krb5_locator.so 755 \
+		usr/lib/krb5/plugins/libkrb5
+
+	# Remove unused manpages
+	rm -f ${DESTDIR}/usr/share/man/man8/tdb*
+	rm -f ${DESTDIR}/usr/share/man/man8/swat*
+
+	# systemd units
+	for f in nmbd smbd winbindd; do
+		vinstall ${FILESDIR}/${f}.service 644 lib/systemd/system
+	done
+	# systemd tmpfiles
+	vinstall ${FILESDIR}/samba.tmpfiles 644 usr/lib/tmpfiles.d samba.conf
+
+	# PAM support
+	vinstall ${FILESDIR}/samba.pam 644 etc/pam.d samba
+
+	# logrotate file
+	vinstall ${FILESDIR}/samba.logrotate 644 etc/logrotate.d samba
 }
