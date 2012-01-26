@@ -31,7 +31,8 @@ run)
 	[ ! -x bin/systemctl ] && exit 0
 	[ -z "${systemd_services}" ] && exit 1
 
-	if [ -e sys/fs/cgroups/systemd ]; then
+	systemd-notify --booted
+	if [ $? -eq 0 ]; then
 		systemd_booted=yes
 	fi
 
@@ -50,21 +51,41 @@ run)
 			if [ "$UPDATE" = "no" ]; then
 				# package is being removed.
 				# disable and stop the unit.
+				echo "Disabling systemd service ${_srv}..."
 				systemctl --no-reload disable ${_srv} >/dev/null 2>&1 || :
+				echo "Stopping systemd service ${_srv}..."
 				systemctl stop ${_srv} >/dev/null 2>&1 || :
 			fi
 		elif [ "$TARGET" = "post-install" ]; then
 			if [ "$UPDATE" = "no" ]; then
 				# package is being installed.
 				# enable (but don't start) the unit by default.
+				echo "Enabling systemd service ${_srv}..."
 				systemctl enable ${_srv} >/dev/null 2>&1 || :
-				if [ "$systemd_booted" ]; then
+				if [ -n "$systemd_booted" ]; then
 					# reload systemd if running.
 					systemctl daemon-reload >/dev/null 2>&1 || :
 				fi
+				cat <<_EOF
+==========================================================================
+
+The service "${_srv}" has been enabled by default,
+that means that it will be started in next boot. To start it immediately,
+execute the following command (as root):
+
+	$ systemctl start ${_srv}
+
+And to stop it:
+
+	$ systemctl stop ${_srv}
+
+Refer to the systemd documentation if more information is required.
+
+==========================================================================
+_EOF
 			else
 				# package is being updated.
-				if [ "$system_booted" ]; then
+				if [ -n "$system_booted" ]; then
 					# reload systemd if running.
 					systemctl daemon-reload >/dev/null 2>&1 || :
 				fi
@@ -75,6 +96,9 @@ run)
 					echo "systemd ${_srv} service must be restarted manually!"
 				fi
 			fi
+			# Always create required tmpfiles in case a service
+			# needs any of them.
+			systemd-tmpfiles --create
 		fi
 		shift; shift
 	done
