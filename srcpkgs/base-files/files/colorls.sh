@@ -32,7 +32,7 @@ if [ -z "$USER_LS_COLORS" ]; then
 
   eval `dircolors --sh "$COLORS" 2>/dev/null`
   [ -z "$LS_COLORS" ] && return
-  egrep -qi "^COLOR.*none" $COLORS >/dev/null 2>/dev/null && return
+  grep -Eqi "^COLOR.*none" $COLORS >/dev/null 2>/dev/null && return
 fi
 
 alias ll='ls -l --color=auto' 2>/dev/null
