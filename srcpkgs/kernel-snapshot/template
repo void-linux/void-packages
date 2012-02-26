@@ -1,18 +1,220 @@
-# Build template for 'kernel-snapshot'. To test the latest and greatest
-# kernel available from www.kernel.org.
-_kernel_snapshot=yes
-_kernel_ver=3.3
-_kernel_ver_minor=0
-_kernel_patch_ver=rc4
+# Template file for 'kernel-snapshot'
+#
+_kmajor=3.3
+_kminor=0
+_kpatch=rc5
 
-. ${XBPS_SRCPKGDIR}/kernel/template
-# Override required vars.
 pkgname=kernel-snapshot
-_kernel_headers_revision=${revision}
-version=${_kernel_ver}.${_kernel_ver_minor}${_kernel_patch_ver}
-short_desc="The Linux kernel (3.x series) and modules"
-wrksrc="linux-${_kernel_ver}-${_kernel_patch_ver}"
-distfiles="http://www.kernel.org/pub/linux/kernel/v3.0/testing/linux-${_kernel_ver}-${_kernel_patch_ver}.tar.xz"
-checksum=7b2ee107f3ee66068e31e672986ec74e6fe2c76cd3300bf20c8c0b9c805cfd2a
-subpackages="$pkgname-headers"
+version=${_kmajor}.${_kminor}${_kpatch}
+wrksrc="linux-${_kmajor}-${_kpatch}"
+distfiles="http://www.kernel.org/pub/linux//kernel/v3.0/testing/linux-${_kmajor}-${_kpatch}.tar.xz"
+maintainer="Juan RP <xtraeme@gmail.com>"
+homepage="http://www.kernel.org"
+license="GPL-2"
+short_desc="The Linux kernel and modules (testing snapshot)"
+long_desc="
+ This package provides the linux kernel image and associated modules
+ for the testing kernel (future stable releases)."
+checksum=8d84fadd0f5fe6c95d9cadc9bb245be4075f3a408b0f884a4e92aa9170fcb8ee
+subpackages="kernel-snapshot-headers"
+triggers="kernel-hooks"
+
+nostrip=yes
 noverifyrdeps=yes
+preserve=yes
+patch_args="-Np1"
+#revision=1
+_kernel_headers_revision=$revision
+
+if [ -n "$revision" ]; then
+	_kernver="${_kmajor}.${_kminor}-${_kpatch}_${revision}"
+else
+	_kernver="${_kmajor}.${_kminor}-${_kpatch}"
+fi
+kernel_hooks_version="${_kernver}"
+stow_copy_files="/lib/modules/${_kernver}/build"
+
+# These files could be modified when an external module is built.
+mutable_files="
+/lib/modules/${_kernver}/modules.dep
+/lib/modules/${_kernver}/modules.dep.bin
+/lib/modules/${_kernver}/modules.symbols
+/lib/modules/${_kernver}/modules.symbols.bin"
+
+Add_dependency run glibc
+Add_dependency run initramfs-tools
+Add_dependency run linux-firmware
+Add_dependency run module-init-tools
+Add_dependency build perl	">=0"
+Add_dependency build kmod
+
+do_configure() {
+	# If there's a file called <arch>-dotconfig, use it to
+	# configure the kernel; otherwise use arch defaults and all stuff
+	# as modules (defconfig+allmodconfig).
+	local arch
+
+	if [ "$XBPS_MACHINE" != "x86_64" ]; then
+		arch=i386
+	else
+		arch=x86_64
+	fi
+
+	if [ -f ${FILESDIR}/${arch}-dotconfig ]; then
+		msg_normal "Detected a .config file for your arch, using it.\n"
+		cp -f ${FILESDIR}/${arch}-dotconfig .config
+		make ${makejobs} oldconfig
+	else
+		msg_normal "Defaulting to 'defconfig and allmodconfig'.\n"
+		make ${makejobs} defconfig && make ${makejobs} allmodconfig
+	fi
+	if [ -n "${revision}" ]; then
+		sed -i -e "s|\(LOCALVERSION\)=\"\"|\1=\"_${revision}\"|" .config
+	fi
+}
+
+do_build() {
+	make ${makejobs} prepare
+	make ${makejobs} bzImage modules
+}
+
+do_install() {
+	local arch hdrdest
+
+	if [ "$XBPS_MACHINE" != "x86_64" ]; then
+		arch=i386
+	else
+		arch=x86_64
+	fi
+
+	# Install kernel, firmware and modules
+	make INSTALL_MOD_PATH=${DESTDIR} modules_install
+
+	hdrdest=${DESTDIR}/usr/src/kernel-headers-${_kernver}
+
+	install -Dm644 .config ${DESTDIR}/boot/config-${_kernver}
+	install -Dm644 arch/x86/boot/bzImage \
+		${DESTDIR}/boot/vmlinuz-${_kernver}
+	install -Dm644 System.map \
+		${DESTDIR}/boot/System.map-${_kernver}
+	cd ${DESTDIR}/lib/modules/${_kernver} && \
+		rm -f source build && \
+		ln -sf ../../../usr/src/kernel-headers-${_kernver} build
+
+	cd ${wrksrc}
+	# Install required headers to build external modules
+	install -Dm644 Makefile ${hdrdest}/Makefile
+	install -Dm644 kernel/Makefile ${hdrdest}/kernel/Makefile
+	install -Dm644 .config ${hdrdest}/.config
+	mkdir -p ${hdrdest}/include
+	# Remove firmware stuff provided by the "linux-firmware" pkg.
+	rm -rf ${DESTDIR}/lib/firmware
+
+	for i in acpi asm-generic config generated linux math-emu media net \
+		pcmcia scsi sound trace video; do
+		[ -d include/$i ] && \
+			cp -a include/$i ${hdrdest}/include
+	done
+
+	# Add workaround for vmware not finding kernel headers.
+	cd ${hdrdest}/include/linux && \
+		ln -sf ../generated/utsrelease.h . && \
+		ln -sf ../generated/autoconf.h .
+
+	cd ${wrksrc}
+	mkdir -p ${hdrdest}/arch/x86
+	cp -a arch/x86/include ${hdrdest}/arch/x86
+	cp -a include/xen ${hdrdest}/include
+
+	# Copy files necessary for later builds, like nvidia and vmware
+	cp Module.symvers ${hdrdest}
+	cp -a scripts ${hdrdest}
+
+	mkdir -p ${hdrdest}/arch/x86/kernel
+	cp arch/x86/Makefile ${hdrdest}/arch/x86
+	if [ "$arch" = "i386" ]; then
+		cp arch/x86/Makefile_32.cpu ${hdrdest}/arch/x86
+	fi
+	cp arch/x86/kernel/asm-offsets.s ${hdrdest}/arch/x86/kernel
+
+	# Add headers for lirc package
+	mkdir -p ${hdrdest}/drivers/media/video
+	cp drivers/media/video/*.h \
+		${hdrdest}/drivers/media/video
+	for i in $(find ${hdrdest}/drivers/media/video/ -mindepth 1 -type d); do
+		_dir=$(basename $i)
+		mkdir -p ${hdrdest}/drivers/media/video/${_dir}
+		cp -a drivers/media/video/${_dir}/*.h \
+			${hdrdest}/drivers/media/video/${_dir}
+	done
+
+	# Add docbook makefile
+	install -D -m644 Documentation/DocBook/Makefile \
+		${hdrdest}/Documentation/DocBook/Makefile
+
+	# Add md headers
+	mkdir -p ${hdrdest}/drivers/md
+	cp drivers/md/*.h ${hdrdest}/drivers/md
+
+	# Add inotify.h
+	mkdir -p ${hdrdest}/include/linux
+	cp include/linux/inotify.h ${hdrdest}/include/linux
+
+	# Add wireless headers
+	mkdir -p ${hdrdest}/net/mac80211/
+	cp net/mac80211/*.h ${hdrdest}/net/mac80211
+
+	# Add dvb headers for external modules in reference to:
+	# http://bugs.archlinux.org/task/9912
+	mkdir -p ${hdrdest}/drivers/media/dvb/dvb-core
+	cp drivers/media/dvb/dvb-core/*.h \
+		${hdrdest}/drivers/media/dvb/dvb-core
+
+	# Add dvb headers for external modules in reference to:
+	# http://bugs.archlinux.org/task/11194
+	mkdir -p ${hdrdest}/include/config/dvb
+	cp include/config/dvb/*.h ${hdrdest}/include/config/dvb
+
+	# Add dvb headers for http://mcentral.de/hg/~mrec/em28xx-new
+	# in reference to:
+	# http://bugs.archlinux.org/task/13146
+	mkdir -p ${hdrdest}/drivers/media/dvb/frontends
+	cp drivers/media/dvb/frontends/lgdt330x.h \
+		${hdrdest}/drivers/media/dvb/frontends
+	cp drivers/media/video/msp3400-driver.h \
+		${hdrdest}/drivers/media/dvb/frontends
+
+	# Add dvb headers in reference to:
+	# http://bugs.archlinux.org/task/20402
+	mkdir -p ${hdrdest}/drivers/media/dvb/dvb-usb
+	cp drivers/media/dvb/dvb-usb/*.h ${hdrdest}/drivers/media/dvb/dvb-usb
+	mkdir -p ${hdrdest}/drivers/media/dvb/frontends
+	cp drivers/media/dvb/frontends/*.h ${hdrdest}/drivers/media/dvb/frontends
+	mkdir -p ${hdrdest}/drivers/media/common/tuners
+	cp drivers/media/common/tuners/*.h ${hdrdest}/drivers/media/common/tuners
+
+	# Add xfs and shmem for aufs building
+	mkdir -p ${hdrdest}/fs/xfs
+	mkdir -p ${hdrdest}/mm
+	cp fs/xfs/xfs_sb.h ${hdrdest}/fs/xfs/xfs_sb.h
+
+	# Add headers vor virtualbox in reference to:
+	# http://bugs.archlinux.org/task/14568
+	cp -a include/drm ${hdrdest}/include
+
+	# Add headers for broadcom wl in reference to:
+	# http://bugs.archlinux.org/task/14568
+	cp -a include/trace ${hdrdest}/include
+
+	# Copy in Kconfig files
+	for i in $(find . -name "Kconfig*"); do
+		mkdir -p ${hdrdest}/$(echo $i | sed 's|/Kconfig.*||')
+		cp $i ${hdrdest}/$i
+	done
+
+	# Remove unneeded architectures
+	for arch in alpha arm* avr32 blackfin cris frv h8300 \
+		ia64 m* p* s* um v850 xtensa; do
+		rm -rf ${hdrdest}/arch/${arch}
+	done
+}
