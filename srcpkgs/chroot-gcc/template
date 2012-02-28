@@ -1,0 +1,105 @@
+# Template build file for 'chroot-gcc'
+pkgname=chroot-gcc
+_majorver=4.6
+_gmp_ver=5.0.3
+_mpfr_ver=3.1.0
+_mpc_ver=0.8.2
+version=${_majorver}.2
+wrksrc="gcc-${version}"
+distfiles="
+http://ftp.gnu.org/pub/gnu/gcc/gcc-${version}/gcc-${version}.tar.bz2
+http://ftp.gnu.org/pub/gnu/gmp/gmp-${_gmp_ver}.tar.bz2
+http://www.mpfr.org/mpfr-current/mpfr-${_mpfr_ver}.tar.bz2
+http://www.multiprecision.org/mpc/download/mpc-${_mpc_ver}.tar.gz"
+homepage="http://gcc.gnu.org"
+short_desc="The GNU C Compiler suite -- for xbps-src use"
+maintainer="Juan RP <xtraeme@gmail.com>"
+license="GPL-3"
+checksum="
+60b05463dfe18d40d68fb8a71b25b408a01f86cc6ceaf5e6b22238b6b0f450c2
+dcafe9989c7f332b373e1f766af8e9cd790fc802fdec422a1910a6ef783480e3
+74a7bbbad168dd1cc414f1c9210b8fc16ccfc8e422d34b3371a8978e31eab680
+ae79f8d41d8a86456b68607e9ca398d00f8b7342d1d83bcf4428178ac45380c7"
+long_desc="
+ The GNU C Compiler suite, with support for C and C++.
+
+ This package is only meant to be used by xbps-src, don't install it manually."
+
+provides="libgcc-${version} libstdc++-${version} libstdc++-devel-${version}
+gcc-${version} gcc-c++-${version}"
+
+conflicts="libgcc>=0 libstdc++>=0 libstdc++-devel>=0 gcc>=0 gcc-c++>=0"
+
+pre_configure() {
+	# As specified in the LFS book, disable installing libiberty.
+	sed -i 's/install_to_$(INSTALL_DEST) //' libiberty/Makefile.in
+	# Do not run fixincludes
+	sed -i 's@\./fixinc\.sh@-c true@' gcc/Makefile.in
+
+	{ mv ${XBPS_BUILDDIR}/gmp-${_gmp_ver} ${wrksrc}/gmp; \
+	mv ${XBPS_BUILDDIR}/mpfr-${_mpfr_ver} ${wrksrc}/mpfr; \
+	mv ${XBPS_BUILDDIR}/mpc-${_mpc_ver} ${wrksrc}/mpc; }
+}
+
+do_configure() {
+	CONFIG_SHELL=/bin/bash ./configure \
+		--prefix=/usr --libdir=/usr/lib --libexecdir=/usr/lib \
+		--enable-clocale=gnu --enable-shared --disable-bootstrap \
+		--enable-threads=posix --enable-__cxa_atexit \
+		--disable-gold --disable-lto --enable-linker-build-id \
+		--enable-gnu-unique-object --enable-checking=release \
+		--enable-languages=c,c++ --disable-nls --disable-multilib \
+		--with-mpfr-include=${wrksrc}/mpfr/src \
+		--with-mpfr-lib=${wrksrc}/mpfr/src/.libs \
+		--without-cloog --without-ppl --disable-libstdcxx-pch \
+		--disable-libquadmath --disable-libquadmath-support \
+		--disable-libgomp --disable-libssp
+}
+
+do_build() {
+	make ${makejobs}
+}
+
+do_install() {
+	local _triplet=
+
+	if [ "${XBPS_MACHINE}" = "x86_64" ]; then
+		_triplet="${XBPS_MACHINE}-unknown-linux-gnu"
+	else
+		_triplet="${XBPS_MACHINE}-pc-linux-gnu"
+	fi
+
+	if [ "$XBPS_MACHINE" = "x86_64" ]; then
+		vmkdir usr/lib
+		cd ${DESTDIR}/usr && ln -sf lib lib64 && cd ${wrksrc}
+	fi
+	make DESTDIR=${DESTDIR} install
+
+	# Make version a symlink of major version to make all versions
+	# from the same series work automagically.
+	mv ${DESTDIR}/usr/lib/gcc/${_triplet}/${version} \
+		${DESTDIR}/usr/lib/gcc/${_triplet}/${_majorver}
+	ln -sf /usr/lib/gcc/${_triplet}/${_majorver} \
+		${DESTDIR}/usr/lib/gcc/${_triplet}/${version}
+
+	# Ditto for c++ headers.
+	mv ${DESTDIR}/usr/include/c++/${version} \
+		${DESTDIR}/usr/include/c++/${_majorver}
+	ln -sf /usr/include/c++/${_majorver} \
+		${DESTDIR}/usr/include/c++/${version}
+
+	# cc symlink.
+	ln -sf /usr/bin/gcc ${DESTDIR}/usr/bin/cc
+	# rpcgen wants /lib/cpp, make a symlink.
+	vmkdir lib
+	ln -sf /usr/bin/cpp ${DESTDIR}/lib/cpp
+	rm -f ${DESTDIR}/usr/lib64
+
+	# Remove unused stuff.
+	rm -f ${DESTDIR}/usr/lib/libffi*
+	rm -f ${DESTDIR}/usr/lib/libmudflap*
+	rm -rf ${DESTDIR}/usr/share
+
+	# Remove all python scripts in libdir.
+	rm -f ${DESTDIR}/usr/lib/*.py
+}
