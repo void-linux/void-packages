@@ -1,0 +1,78 @@
+# Template file for 'chroot-glibc'
+pkgname=chroot-glibc
+version=2.14.1
+wrksrc="glibc-${version}"
+distfiles="http://ftp.gnu.org/gnu/glibc/glibc-${version}.tar.bz2"
+short_desc="The GNU C library -- for xbps-src use"
+maintainer="Juan RP <xtraeme@gmail.com>"
+homepage="http://www.gnu.org/software/libc"
+license="GPL-2, LGPL-2.1, BSD"
+checksum=6e85a2fa3ebe6b28103361f09d27eeda37a021f24dab73f34064456d5a715b3b
+long_desc="
+ The GNU C Library is the standard system C library for all GNU systems,
+ and is an important part of what makes up a GNU system.  It provides the
+ system API for all programs written in C and C-compatible languages such
+ as C++ and Objective C; the runtime facilities of other programming
+ languages use the C library to access the underlying operating system."
+
+noverifyrdeps=yes
+bootstrap=yes
+nostrip_files="
+ld-${version}.so libc-${version}.so libpthread-${version}.so libthread_db-1.0.so"
+
+provides="glibc-${version} glibc-devel-${version}"
+conflicts="glibc>=0 glibc-devel>=0"
+
+do_configure() {
+	local cflags
+
+	mkdir build && cd build
+	echo "slibdir=/lib" > configparms
+
+	# Build with -mno-tls-direct-seg-refs to avoid performance problems
+	# with Xen on x86 32bit.
+	if [ "${XBPS_MACHINE}" = "i686" ]; then
+		cflags="-mno-tls-direct-seg-refs -O2 -march=${XBPS_MACHINE%%-*}"
+		echo "CFLAGS=$cflags" >> configparms
+	fi
+
+	SHELL=/bin/bash ../configure \
+		${CONFIGURE_SHARED_ARGS} --with-tls \
+		--enable-add-ons=nptl,libidn \
+		--enable-multi-arch --with-__thread \
+		--enable-bind-now --enable-kernel=2.6.27 \
+		--enable-stack-guard-randomization --disable-profile \
+		--without-cvs --without-gd --libexecdir=/usr/lib \
+		--libdir=/usr/lib --with-headers=${XBPS_MASTERDIR}/usr/include
+}
+
+do_build() {
+	cd build && make ${makejobs}
+}
+
+do_install() {
+	# Create DESTDIR/etc/ld.so.conf
+	mkdir -p ${DESTDIR}/etc
+	echo "include /etc/ld.so.conf.d/*.conf" > ${DESTDIR}/etc/ld.so.conf
+
+	cd ${wrksrc}/build
+	make SHELL=/bin/bash install_root=${DESTDIR} install
+
+	# ldd is a bash script, so make it run as such.
+	. $XBPS_HELPERSDIR/replace-interpreter.sh
+	replace_interpreter bash ${DESTDIR}/usr/bin/ldd
+
+	# On x86_64, add dynamic linker's 32bit version to ldd.
+	if [ "$XBPS_MACHINE" = "x86_64" ]; then
+		rtldlist="/lib/ld-linux.so.2 /lib/ld-linux-x86-64.so.2"
+		sed -i "s|^RTLDLIST.*$|RTLDLIST=\"$rtldlist\"|" \
+			${DESTDIR}/usr/bin/ldd
+	fi
+	vmkdir etc/ld.so.conf.d
+	echo "/usr/local/lib" > ${DESTDIR}/etc/ld.so.conf.d/usr_local.conf
+	chmod 644 ${DESTDIR}/etc/ld.so.conf.d/usr_local.conf
+	rm -f ${DESTDIR}/etc/ld.so.cache
+
+	# Remove unused stuff.
+	rm -rf ${DESTDIR}/usr/share
+}
