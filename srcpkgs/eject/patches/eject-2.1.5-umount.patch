@@ -1,0 +1,176 @@
+diff --git a/eject.c b/eject.c
+index 4175756..057d2ea 100644
+--- a/eject.c
++++ b/eject.c
+@@ -42,6 +42,7 @@
+ #include <string.h>
+ #include <fcntl.h>
+ #include <limits.h>
++#include <dirent.h>
+ 
+ #ifdef GETOPTLONG
+ #include <getopt.h>
+@@ -1133,6 +1134,145 @@ static char *MultiplePartitions(const char *name)
+ 	return 0;
+ }
+ 
++/*
++ * Find device name in /sys/block/. Returns NULL if not
++ * found. The returned pointer must be free()'d.
++ */
++static char* FindDeviceSysBlock(const char* deviceName)
++{
++	DIR *dir = opendir("/sys/block");
++	struct dirent *d;
++	const char *baseName = strrchr(deviceName, '/');
++	char *device;
++	int len;
++	
++	baseName = baseName ? baseName + 1 : deviceName;
++	if (!dir) {
++		fprintf(stderr, _("%s: can not open directory /sys/block/"), programName);
++		return NULL;
++	}
++	while ((d = readdir(dir)) != NULL) { 
++		if (d->d_type != DT_DIR && d->d_type != DT_LNK && d->d_type != DT_UNKNOWN)
++			continue;
++		len = strlen(d->d_name);
++		if (!strncmp(baseName, d->d_name, len)) {
++			if ((*(baseName+len) >= '0' &&
++			     *(baseName+len) <= '9') ||
++			     *(baseName+len) == '\0') {
++				device = strdup(d->d_name);
++				closedir(dir);
++				return device;
++			}
++		}
++	}
++	closedir(dir);
++	return NULL;
++}
++
++/*
++ * From given path gets a subsystem. Returns subsystem if any found
++ * otherwise returns NULL. Returned value must not be free()'d
++ */
++static char *GetSubSystem(const char *sysfspath)
++{
++	static char subsystem[PATH_MAX];
++	char link_subsystem[PATH_MAX];
++	struct stat buf;
++	char *pos;
++
++	snprintf(link_subsystem, sizeof(link_subsystem), "%s/subsystem", sysfspath);
++
++	if (lstat(link_subsystem, &buf) == -1)
++		return NULL;
++	if (!S_ISLNK(buf.st_mode))
++		return NULL;
++	if (readlink(link_subsystem, subsystem, sizeof(subsystem)) == -1)
++		return NULL;
++	if ((pos = strrchr(subsystem, '/')) == NULL)
++		return NULL;
++	strncpy(subsystem, pos+1, sizeof(subsystem));
++
++	return subsystem;
++}
++
++/*
++ * Check content of /sys/block/<dev>/removable. Returns 1 if the file 
++ * contains '1' otherwise returns 0.
++ */
++static int CheckRemovable(const char* deviceName)
++{
++	FILE *fp;
++	int removable = 0;
++	char *device;
++	char path[PATH_MAX];
++
++	if ((device = FindDeviceSysBlock(deviceName)) == NULL) {
++		fprintf(stderr,
++				_("%s: did not find a device %s in /sys/block/\n"),
++				programName, deviceName);
++		exit(1);
++	}
++	snprintf(path, sizeof(path), "/sys/block/%s/removable", device);
++	free(device);
++	if((fp = fopen(path, "r")) == NULL)
++		return removable;
++	if (fgetc(fp) == '1')
++		removable = 1;
++	
++	fclose(fp);
++	return removable;
++}
++
++/* Check if a device is on hotpluggable subsystem. Returns 1 if is
++ * otherwise returns 0.
++ */
++static int CheckHotpluggable(const char* deviceName)
++{
++	int hotpluggable = 0;
++	char *device;
++	char path[PATH_MAX];
++	char *device_chain;
++	struct stat buf;
++	char *subsystem;
++	char *pos;
++
++	if ((device = FindDeviceSysBlock(deviceName)) == NULL) {
++		fprintf(stderr, _("%s: did not find a device %s in /sys/block/\n"),
++				programName, deviceName);
++		exit(1);
++	}
++	snprintf(path, sizeof(path), "/sys/block/%s/device", device);
++	free(device);
++
++	if (lstat(path, &buf) == -1) 
++		return hotpluggable;
++	if (!S_ISLNK(buf.st_mode))
++		return hotpluggable;
++	if ((device_chain = SymLink(path)) == NULL) 
++		return hotpluggable;
++	while ( strncmp(device_chain, "", sizeof(device_chain) != 0)) {
++		subsystem = GetSubSystem(device_chain);
++		if (subsystem) {
++			/* as hotpluggable we assume devices on these buses  */
++			if (strncmp("usb", subsystem, sizeof("usb")) == 0 ||
++			    strncmp("ieee1394", subsystem, sizeof("ieee1394")) == 0 ||
++			    strncmp("pcmcia", subsystem, sizeof("pcmcia")) == 0 ||
++			    strncmp("mmc", subsystem, sizeof("mmc")) == 0 ||
++			    strncmp("ccw", subsystem, sizeof("ccw")) == 0) {
++				hotpluggable = 1;
++				break;
++			}
++		}
++		/* remove one member from devicechain */
++		pos = strrchr(device_chain, '/');
++		if (pos) 
++			pos[0] = '\0';
++		else
++			device_chain[0] = '\0';
++	}
++
++	return hotpluggable;
++}
+ 
+ /* handle -x option */
+ static void HandleXOption(char *deviceName)
+@@ -1276,6 +1416,17 @@ int main(int argc, char **argv)
+ 		exit(0);
+ 	}
+ 
++	/* Check if device has removable flag*/
++	if (v_option)
++		printf(_("%s: checking if device \"%s\" has a removable or hotpluggable flag\n"),
++				programName, deviceName);
++	if (!CheckRemovable(deviceName) && !CheckHotpluggable(deviceName))
++	{
++		fprintf(stderr, _("%s: device \"%s\" doesn't have a removable or hotpluggable flag\n"),
++				programName, deviceName);
++		exit(1);		
++	}
++	
+ 	/* handle -i option */
+ 	if (i_option) {
+ 		fd = OpenDevice(deviceName);

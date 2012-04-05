@@ -1,0 +1,171 @@
+ eject.1 |   13 +++++++++++--
+ eject.c |   54 ++++++++++++++++++++++++++++++++++++++++++++++++++++--
+ 2 files changed, 63 insertions(+), 4 deletions(-)
+
+diff --git a/eject.1 b/eject.1
+index 3c388c6..315dc6d 100644
+--- a/eject.1
++++ b/eject.1
+@@ -17,6 +17,8 @@ eject [\-vn] \-a on|off|1|0 [<name>]
+ .br
+ eject [\-vn] \-c slot [<name>]
+ .br
++eject [\-vn] \-i on|off|1|0 [<name>]
++.br
+ eject [\-vn] \-t [<name>]
+ .br
+ eject [\-vn] \-T [<name>]
+@@ -83,6 +85,13 @@ for a change request to work. Please also note that the first slot of
+ the changer is referred to as 0, not 1.
+ 
+ .TP 0.5i
++.B \-i on|1|off|0
++This option controls locking of the hardware eject button. When
++enabled, the drive will not be ejected when the button is pressed.
++This is useful when you are carrying a laptop in a bag or case and
++don't want it to eject if the button is inadvertently pressed.
++
++.TP 0.5i
+ .B \-t
+ With this option the drive is given a CD-ROM tray close command. Not
+ all devices support this command.
+@@ -121,8 +130,8 @@ performed.
+ .B \-r
+ This option specifies that the drive should be ejected using a
+ CDROM eject command.
+-.TP 0.5i
+ 
++.TP 0.5i
+ .B \-s
+ This option specifies that the drive should be ejected using
+ SCSI commands.
+@@ -145,7 +154,7 @@ also passes the \-n option to umount(1).
+ .TP 0.5i
+ .B \-m
+ This option allows eject to work with device drivers which automatically
+-mount removable media and therefore must be always mount()ed.
++mount removable media and therefore must be always mount(1)ed.
+ The option tells eject to not try to unmount the given device,
+ even if it is mounted according to /etc/mtab or /proc/mounts.
+ 
+diff --git a/eject.c b/eject.c
+index f7b2a2e..4175756 100644
+--- a/eject.c
++++ b/eject.c
+@@ -116,6 +116,7 @@ int d_option = 0;
+ int f_option = 0;
+ int h_option = 0;
+ int n_option = 0;
++int i_option = 0;
+ int q_option = 0;
+ int r_option = 0;
+ int s_option = 0;
+@@ -129,6 +130,7 @@ int m_option = 0;
+ int a_arg = 0;
+ int c_arg = 0;
+ int x_arg = 0;
++int i_arg = 0;
+ static char *programName; /* used in error messages */
+ 
+ /*
+@@ -163,6 +165,7 @@ static void usage()
+ "  eject [-vn] -c <slot> [<name>]	-- switch discs on a CD-ROM changer\n"
+ "  eject [-vn] -t [<name>]		-- close tray\n"
+ "  eject [-vn] -T [<name>]		-- toggle tray\n"
++"  eject [-vn] -i on|off|1|0 [<name>]	-- toggle manual eject protection on/off\n"
+ "  eject [-vn] -x <speed> [<name>]	-- set CD-ROM max speed\n"
+ "  eject [-vn] -X [<name>]		-- list CD-ROM available speeds\n"
+ "Options:\n"
+@@ -200,7 +203,7 @@ static void usage()
+ #endif
+ "\n"
+ "  -n --noop   -V --version\n"
+-"  -p --proc   -m --no-unmount   -T --traytoggle\n"));
++"  -p --proc   -m --no-unmount   -T --traytoggle -i --manualeject\n"));
+ #endif /* GETOPTLONG */
+ 	fprintf(stderr,_(
+ "Parameter <name> can be a device file or a mount point.\n"
+@@ -214,7 +217,7 @@ static void usage()
+ /* Handle command line options. */
+ static void parse_args(int argc, char **argv, char **device)
+ {
+-	const char *flags = "a:c:x:dfhnqrstTXvVpm";
++	const char *flags = "a:c:x:i:dfhnqrstTXvVpm";
+ #ifdef GETOPTLONG
+ 	static struct option long_options[] =
+ 	{
+@@ -223,6 +226,7 @@ static void parse_args(int argc, char **argv, char **device)
+ 		{"default",	no_argument,	   NULL, 'd'},
+ 		{"auto",	required_argument, NULL, 'a'},
+ 		{"changerslot", required_argument, NULL, 'c'},
++		{"manualeject",	required_argument, NULL, 'i'},
+ 		{"trayclose",	no_argument,	   NULL, 't'},
+ 		{"traytoggle",	no_argument,	   NULL, 'T'},
+ 		{"cdspeed",	required_argument, NULL, 'x'},
+@@ -297,6 +301,21 @@ static void parse_args(int argc, char **argv, char **device)
+ 			  usage();
+ 			  exit(0);
+ 			  break;
++		  case 'i':
++			  i_option = 1;
++			  if (!strcmp(optarg, "0"))
++				  i_arg = 0;
++			  else if (!strcmp(optarg, "off"))
++				  i_arg = 0;
++			  else if (!strcmp(optarg, "1"))
++				  i_arg = 1;
++			  else if (!strcmp(optarg, "on"))
++				  i_arg = 1;
++			  else {
++				  fprintf(stderr, _("%s: invalid argument to -i option\n"), programName);
++				  exit(1);
++			  }
++			  break;
+ 		  case 'm':
+ 			  m_option = 1;
+ 			  break;
+@@ -482,6 +501,30 @@ static char *FindDevice(const char *name)
+ }
+ 
+ 
++/*
++ * Stops CDROM from opening on manual eject pressing the button.
++ * This can be useful when you carry your laptop
++ * in your bag while it's on and no CD inserted in it's drive.
++ * Implemented as found in Documentation/ioctl/cdrom.txt
++ *
++ * TODO: Maybe we should check this also:
++ * EDRIVE_CANT_DO_THIS   Door lock function not supported.
++ * EBUSY                 Attempt to unlock when multiple users
++ *                       have the drive open and not CAP_SYS_ADMIN
++ */
++static void ManualEject(int fd, int onOff) 
++{
++	if (ioctl(fd, CDROM_LOCKDOOR, onOff) < 0) {
++		perror("ioctl on CDROM_LOCKDOOR");
++        } else {
++            if (onOff)
++	        printf("CD-Drive may NOT be ejected with device button\n");
++            else
++                printf("CD-Drive may be ejected with device button\n");
++        }
++}
++
++
+ /* Set or clear auto-eject mode. */
+ static void AutoEject(int fd, int onOff)
+ {
+@@ -1233,6 +1276,13 @@ int main(int argc, char **argv)
+ 		exit(0);
+ 	}
+ 
++	/* handle -i option */
++	if (i_option) {
++		fd = OpenDevice(deviceName);
++		ManualEject(fd, i_arg);
++		exit(0);
++	}
++
+ 	/* handle -a option */
+ 	if (a_option) {
+ 		if (v_option) {
