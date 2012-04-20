@@ -1,0 +1,118 @@
+See https://bugs.freedesktop.org/show_bug.cgi?id=47266
+
+--- exa/exa_glyphs.c		2012-03-30 04:57:25.000000000 +0200
++++ exa/exa_glyphs.c.new	2012-04-15 11:48:51.683214230 +0200
+@@ -686,6 +686,7 @@
+     PixmapPtr pMaskPixmap = 0;
+     PicturePtr pMask = NULL;
+     ScreenPtr pScreen = pDst->pDrawable->pScreen;
++    ExaScreenPriv(pScreen);
+     int width = 0, height = 0;
+     int x, y;
+     int first_xOff = list->xOff, first_yOff = list->yOff;
+@@ -697,7 +698,6 @@
+     ExaGlyphBuffer buffer;
+
+     if (maskFormat) {
+-        ExaScreenPriv(pScreen);
+         GCPtr pGC;
+         xRectangle rect;
+
+@@ -719,22 +719,20 @@
+                                                 maskFormat->depth,
+                                                 CREATE_PIXMAP_USAGE_SCRATCH);
+         if (!pMaskPixmap)
+-            return;
++	    goto fallback;
+         component_alpha = NeedsComponent(maskFormat->format);
+         pMask = CreatePicture(0, &pMaskPixmap->drawable,
+                               maskFormat, CPComponentAlpha, &component_alpha,
+                               serverClient, &error);
+-        if (!pMask ||
+-            (!component_alpha && pExaScr->info->CheckComposite &&
+-             !(*pExaScr->info->CheckComposite) (PictOpAdd, pSrc, NULL, pMask)))
++        (*pScreen->DestroyPixmap) (pMaskPixmap);
++	if (!pMask)
++	    goto fallback;
++
++	if (!component_alpha && pExaScr->info->CheckComposite &&
++	    !(*pExaScr->info->CheckComposite) (PictOpAdd, pSrc, NULL, pMask))
+         {
+             PictFormatPtr argbFormat;
+
+-            (*pScreen->DestroyPixmap) (pMaskPixmap);
+-
+-            if (!pMask)
+-                return;
+-
+             /* The driver can't seem to composite to a8, let's try argb (but
+              * without component-alpha) */
+             FreePicture((pointer) pMask, (XID) 0);
+@@ -748,15 +746,25 @@
+                                                     maskFormat->depth,
+                                                     CREATE_PIXMAP_USAGE_SCRATCH);
+             if (!pMaskPixmap)
+-                return;
++	    goto fallback;
+
+             pMask = CreatePicture(0, &pMaskPixmap->drawable, maskFormat, 0, 0,
+                                   serverClient, &error);
+-            if (!pMask) {
+-                (*pScreen->DestroyPixmap) (pMaskPixmap);
+-                return;
+-            }
++            (*pScreen->DestroyPixmap) (pMaskPixmap);
++	    if (!pMask)
++	    goto fallback;
+         }
++
++	if (pExaScr->info->CheckComposite &&
++	    (!(*pExaScr->info->CheckComposite) (PictOpAdd, pSrc, NULL, pMask) ||
++	     (!(*pExaScr->info->CheckComposite) (op, pSrc, pMask, pDst) &&
++	      (op != PictOpOver ||
++	       !(*pExaScr->info->CheckComposite) (PictOpOutReverse, pSrc, pMask, pDst) ||
++	       !(*pExaScr->info->CheckComposite) (PictOpOver, pSrc, pMask, pDst))))) {
++	    FreePicture ((pointer) pMask, (XID) 0);
++	    goto fallback;
++	}
++
+         pGC = GetScratchGC(pMaskPixmap->drawable.depth, pScreen);
+         ValidateGC(&pMaskPixmap->drawable, pGC);
+         rect.x = 0;
+@@ -769,6 +777,13 @@
+         y = -extents.y1;
+     }
+     else {
++    	if (pExaScr->info->CheckComposite &&
++	    !(*pExaScr->info->CheckComposite) (op, pSrc, NULL, pDst) &&
++	    (op != PictOpOver ||
++	     !(*pExaScr->info->CheckComposite) (PictOpOutReverse, pSrc, NULL, pDst) ||
++	     !(*pExaScr->info->CheckComposite) (PictOpOver, pSrc, NULL, pDst)))
++	    goto fallback;
++
+         x = 0;
+         y = 0;
+     }
+@@ -834,6 +849,10 @@
+                          xSrc + x - first_xOff,
+                          ySrc + y - first_yOff, 0, 0, x, y, width, height);
+         FreePicture((pointer) pMask, (XID) 0);
+-        (*pScreen->DestroyPixmap) (pMaskPixmap);
+     }
++
++    return;
++
++fallback:
++    ExaCheckGlyphs(op, pSrc, pDst, maskFormat, xSrc, ySrc, nlist, list, glyphs);
+ }
+--- exa/exa_render.c		2012-03-30 04:57:25.000000000 +0200
++++ exa/exa_render.c.new	2012-04-15 11:50:35.272482047 +0200
+@@ -878,7 +878,7 @@
+     Bool saveMaskRepeat = pMask ? pMask->repeat : 0;
+     RegionRec region;
+
+-    if (pExaScr->swappedOut)
++    if (pExaScr->fallback_counter || pExaScr->swappedOut)
+         goto fallback;
+
+     /* Remove repeat in source if useless */
