@@ -1,0 +1,532 @@
+From fbee314a4194671bfc6dfaa90141498a2f45de4e Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Mon, 27 Feb 2012 16:29:38 +0000
+Subject: [PATCH 1/5] uxa/gen3: Remove special casing of solid pictures
+
+Fixes use of alpha-groups and opacity masks in cairo.
+
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+---
+ src/i915_render.c |  366 ++++++++++++++++++-----------------------------------
+ 1 file changed, 122 insertions(+), 244 deletions(-)
+
+diff --git a/src/i915_render.c b/src/i915_render.c
+index 87d2336..6210035 100644
+--- a/src/i915_render.c
++++ b/src/i915_render.c
+@@ -257,11 +257,8 @@ i915_check_composite_texture(ScreenPtr screen, PicturePtr picture)
+		return FALSE;
+	}
+
+-	if (picture->pSourcePict) {
+-		SourcePict *source = picture->pSourcePict;
+-		if (source->type == SourcePictTypeSolidFill)
+-			return TRUE;
+-	}
++	if (picture->pSourcePict)
++		return FALSE;
+
+	if (picture->pDrawable) {
+		int w, h, i;
+@@ -387,23 +384,6 @@ static Bool i915_texture_setup(PicturePtr picture, PixmapPtr pixmap, int unit)
+ }
+
+ static void
+-i915_emit_composite_primitive_constant(intel_screen_private *intel,
+-				       int srcX, int srcY,
+-				       int maskX, int maskY,
+-				       int dstX, int dstY,
+-				       int w, int h)
+-{
+-	OUT_VERTEX(dstX + w);
+-	OUT_VERTEX(dstY + h);
+-
+-	OUT_VERTEX(dstX);
+-	OUT_VERTEX(dstY + h);
+-
+-	OUT_VERTEX(dstX);
+-	OUT_VERTEX(dstY);
+-}
+-
+-static void
+ i915_emit_composite_primitive_identity_source(intel_screen_private *intel,
+					      int srcX, int srcY,
+					      int maskX, int maskY,
+@@ -470,29 +450,6 @@ i915_emit_composite_primitive_affine_source(intel_screen_private *intel,
+ }
+
+ static void
+-i915_emit_composite_primitive_constant_identity_mask(intel_screen_private *intel,
+-						     int srcX, int srcY,
+-						     int maskX, int maskY,
+-						     int dstX, int dstY,
+-						     int w, int h)
+-{
+-	OUT_VERTEX(dstX + w);
+-	OUT_VERTEX(dstY + h);
+-	OUT_VERTEX((maskX + w) * intel->scale_units[0][0]);
+-	OUT_VERTEX((maskY + h) * intel->scale_units[0][1]);
+-
+-	OUT_VERTEX(dstX);
+-	OUT_VERTEX(dstY + h);
+-	OUT_VERTEX(maskX * intel->scale_units[0][0]);
+-	OUT_VERTEX((maskY + h) * intel->scale_units[0][1]);
+-
+-	OUT_VERTEX(dstX);
+-	OUT_VERTEX(dstY);
+-	OUT_VERTEX(maskX * intel->scale_units[0][0]);
+-	OUT_VERTEX(maskY * intel->scale_units[0][1]);
+-}
+-
+-static void
+ i915_emit_composite_primitive_identity_source_mask(intel_screen_private *intel,
+						   int srcX, int srcY,
+						   int maskX, int maskY,
+@@ -536,63 +493,61 @@ i915_emit_composite_primitive(intel_screen_private *intel,
+
+	per_vertex = 2;		/* dest x/y */
+
+-	if (! intel->render_source_is_solid) {
+-		src_unit = tex_unit++;
+-
+-		is_affine_src = intel_transform_is_affine(intel->transform[src_unit]);
+-		if (is_affine_src) {
+-			if (!intel_get_transformed_coordinates(srcX, srcY,
+-							      intel->
+-							      transform[src_unit],
+-							      &src_x[0],
+-							      &src_y[0]))
+-				return;
+-
+-			if (!intel_get_transformed_coordinates(srcX, srcY + h,
+-							      intel->
+-							      transform[src_unit],
+-							      &src_x[1],
+-							      &src_y[1]))
+-				return;
+-
+-			if (!intel_get_transformed_coordinates(srcX + w, srcY + h,
+-							      intel->
+-							      transform[src_unit],
+-							      &src_x[2],
+-							      &src_y[2]))
+-				return;
+-
+-			per_vertex += 2;	/* src x/y */
+-		} else {
+-			if (!intel_get_transformed_coordinates_3d(srcX, srcY,
+-								 intel->
+-								 transform[src_unit],
+-								 &src_x[0],
+-								 &src_y[0],
+-								 &src_w[0]))
+-				return;
+-
+-			if (!intel_get_transformed_coordinates_3d(srcX, srcY + h,
+-								 intel->
+-								 transform[src_unit],
+-								 &src_x[1],
+-								 &src_y[1],
+-								 &src_w[1]))
+-				return;
+-
+-			if (!intel_get_transformed_coordinates_3d(srcX + w, srcY + h,
+-								 intel->
+-								 transform[src_unit],
+-								 &src_x[2],
+-								 &src_y[2],
+-								 &src_w[2]))
+-				return;
+-
+-			per_vertex += 4;	/* src x/y/z/w */
+-		}
++	src_unit = tex_unit++;
++
++	is_affine_src = intel_transform_is_affine(intel->transform[src_unit]);
++	if (is_affine_src) {
++		if (!intel_get_transformed_coordinates(srcX, srcY,
++						      intel->
++						      transform[src_unit],
++						      &src_x[0],
++						      &src_y[0]))
++			return;
++
++		if (!intel_get_transformed_coordinates(srcX, srcY + h,
++						      intel->
++						      transform[src_unit],
++						      &src_x[1],
++						      &src_y[1]))
++			return;
++
++		if (!intel_get_transformed_coordinates(srcX + w, srcY + h,
++						      intel->
++						      transform[src_unit],
++						      &src_x[2],
++						      &src_y[2]))
++			return;
++
++		per_vertex += 2;	/* src x/y */
++	} else {
++		if (!intel_get_transformed_coordinates_3d(srcX, srcY,
++							 intel->
++							 transform[src_unit],
++							 &src_x[0],
++							 &src_y[0],
++							 &src_w[0]))
++			return;
++
++		if (!intel_get_transformed_coordinates_3d(srcX, srcY + h,
++							 intel->
++							 transform[src_unit],
++							 &src_x[1],
++							 &src_y[1],
++							 &src_w[1]))
++			return;
++
++		if (!intel_get_transformed_coordinates_3d(srcX + w, srcY + h,
++							 intel->
++							 transform[src_unit],
++							 &src_x[2],
++							 &src_y[2],
++							 &src_w[2]))
++			return;
++
++		per_vertex += 4;	/* src x/y/z/w */
+	}
+
+-	if (intel->render_mask && ! intel->render_mask_is_solid) {
++	if (intel->render_mask) {
+		mask_unit = tex_unit++;
+
+		is_affine_mask = intel_transform_is_affine(intel->transform[mask_unit]);
+@@ -650,15 +605,13 @@ i915_emit_composite_primitive(intel_screen_private *intel,
+
+	OUT_VERTEX(dstX + w);
+	OUT_VERTEX(dstY + h);
+-	if (! intel->render_source_is_solid) {
+-	    OUT_VERTEX(src_x[2] * intel->scale_units[src_unit][0]);
+-	    OUT_VERTEX(src_y[2] * intel->scale_units[src_unit][1]);
+-	    if (!is_affine_src) {
++	OUT_VERTEX(src_x[2] * intel->scale_units[src_unit][0]);
++	OUT_VERTEX(src_y[2] * intel->scale_units[src_unit][1]);
++	if (!is_affine_src) {
+		OUT_VERTEX(0.0);
+		OUT_VERTEX(src_w[2]);
+-	    }
+	}
+-	if (intel->render_mask && ! intel->render_mask_is_solid) {
++	if (intel->render_mask) {
+		OUT_VERTEX(mask_x[2] * intel->scale_units[mask_unit][0]);
+		OUT_VERTEX(mask_y[2] * intel->scale_units[mask_unit][1]);
+		if (!is_affine_mask) {
+@@ -669,15 +622,13 @@ i915_emit_composite_primitive(intel_screen_private *intel,
+
+	OUT_VERTEX(dstX);
+	OUT_VERTEX(dstY + h);
+-	if (! intel->render_source_is_solid) {
+-	    OUT_VERTEX(src_x[1] * intel->scale_units[src_unit][0]);
+-	    OUT_VERTEX(src_y[1] * intel->scale_units[src_unit][1]);
+-	    if (!is_affine_src) {
++	OUT_VERTEX(src_x[1] * intel->scale_units[src_unit][0]);
++	OUT_VERTEX(src_y[1] * intel->scale_units[src_unit][1]);
++	if (!is_affine_src) {
+		OUT_VERTEX(0.0);
+		OUT_VERTEX(src_w[1]);
+-	    }
+	}
+-	if (intel->render_mask && ! intel->render_mask_is_solid) {
++	if (intel->render_mask) {
+		OUT_VERTEX(mask_x[1] * intel->scale_units[mask_unit][0]);
+		OUT_VERTEX(mask_y[1] * intel->scale_units[mask_unit][1]);
+		if (!is_affine_mask) {
+@@ -688,15 +639,13 @@ i915_emit_composite_primitive(intel_screen_private *intel,
+
+	OUT_VERTEX(dstX);
+	OUT_VERTEX(dstY);
+-	if (! intel->render_source_is_solid) {
+-	    OUT_VERTEX(src_x[0] * intel->scale_units[src_unit][0]);
+-	    OUT_VERTEX(src_y[0] * intel->scale_units[src_unit][1]);
+-	    if (!is_affine_src) {
++	OUT_VERTEX(src_x[0] * intel->scale_units[src_unit][0]);
++	OUT_VERTEX(src_y[0] * intel->scale_units[src_unit][1]);
++	if (!is_affine_src) {
+		OUT_VERTEX(0.0);
+		OUT_VERTEX(src_w[0]);
+-	    }
+	}
+-	if (intel->render_mask && ! intel->render_mask_is_solid) {
++	if (intel->render_mask) {
+		OUT_VERTEX(mask_x[0] * intel->scale_units[mask_unit][0]);
+		OUT_VERTEX(mask_y[0] * intel->scale_units[mask_unit][1]);
+		if (!is_affine_mask) {
+@@ -729,29 +678,11 @@ i915_prepare_composite(int op, PicturePtr source_picture,
+	intel->render_dest_picture = dest_picture;
+	intel->render_dest = dest;
+
+-	intel->render_source_is_solid = FALSE;
+-	if (source_picture->pSourcePict) {
+-		SourcePict *source = source_picture->pSourcePict;
+-		if (source->type == SourcePictTypeSolidFill) {
+-			intel->render_source_is_solid = TRUE;
+-			intel->render_source_solid = source->solidFill.color;
+-		}
+-	}
+-	if (!intel->render_source_is_solid && !intel_check_pitch_3d(source))
++	if (!intel_check_pitch_3d(source))
+		return FALSE;
+
+-	intel->render_mask_is_solid = FALSE;
+-	if (mask) {
+-		if (mask_picture->pSourcePict) {
+-			SourcePict *source = mask_picture->pSourcePict;
+-			if (source->type == SourcePictTypeSolidFill) {
+-				intel->render_mask_is_solid = TRUE;
+-				intel->render_mask_solid = source->solidFill.color;
+-			}
+-		}
+-		if (!intel->render_mask_is_solid && !intel_check_pitch_3d(mask))
+-			return FALSE;
+-	}
++	if (mask && !intel_check_pitch_3d(mask))
++		return FALSE;
+
+	if (!intel_check_pitch_3d(dest))
+		return FALSE;
+@@ -787,31 +718,27 @@ i915_prepare_composite(int op, PicturePtr source_picture,
+	intel->scale_units[1][1] = -1;
+
+	floats_per_vertex = 2;		/* dest x/y */
+-	if (! intel->render_source_is_solid) {
+-		if (!i915_texture_setup(source_picture, source, tex_unit++)) {
+-			intel_debug_fallback(scrn, "fail to setup src texture\n");
+-			return FALSE;
+-		}
+-
+-		if (intel_transform_is_affine(source_picture->transform))
+-			floats_per_vertex += 2;	/* src x/y */
+-		else
+-			floats_per_vertex += 4;	/* src x/y/z/w */
++	if (!i915_texture_setup(source_picture, source, tex_unit++)) {
++		intel_debug_fallback(scrn, "fail to setup src texture\n");
++		return FALSE;
+	}
+
+-	if (mask != NULL) {
+-		if (! intel->render_mask_is_solid) {
+-			if (!i915_texture_setup(mask_picture, mask, tex_unit++)) {
+-				intel_debug_fallback(scrn,
+-						"fail to setup mask texture\n");
+-				return FALSE;
+-			}
++	if (intel_transform_is_affine(source_picture->transform))
++		floats_per_vertex += 2;	/* src x/y */
++	else
++		floats_per_vertex += 4;	/* src x/y/z/w */
+
+-			if (intel_transform_is_affine(mask_picture->transform))
+-				floats_per_vertex += 2;	/* mask x/y */
+-			else
+-				floats_per_vertex += 4;	/* mask x/y/z/w */
++	if (mask != NULL) {
++		if (!i915_texture_setup(mask_picture, mask, tex_unit++)) {
++			intel_debug_fallback(scrn,
++					     "fail to setup mask texture\n");
++			return FALSE;
+		}
++
++		if (intel_transform_is_affine(mask_picture->transform))
++			floats_per_vertex += 2;	/* mask x/y */
++		else
++			floats_per_vertex += 4;	/* mask x/y/z/w */
+	}
+
+	intel->i915_render_state.op = op;
+@@ -827,17 +754,13 @@ i915_prepare_composite(int op, PicturePtr source_picture,
+
+	intel->prim_emit = i915_emit_composite_primitive;
+	if (!mask) {
+-		if (intel->render_source_is_solid)
+-			intel->prim_emit = i915_emit_composite_primitive_constant;
+-		else if (intel->transform[0] == NULL)
++		if (intel->transform[0] == NULL)
+			intel->prim_emit = i915_emit_composite_primitive_identity_source;
+		else if (intel_transform_is_affine(intel->transform[0]))
+			intel->prim_emit = i915_emit_composite_primitive_affine_source;
+	} else {
+		if (intel->transform[0] == NULL) {
+-			if (intel->render_source_is_solid)
+-				intel->prim_emit = i915_emit_composite_primitive_constant_identity_mask;
+-			else if (intel->transform[1] == NULL)
++			if (intel->transform[1] == NULL)
+				intel->prim_emit = i915_emit_composite_primitive_identity_source_mask;
+		}
+	}
+@@ -856,39 +779,25 @@ i915_composite_emit_shader(intel_screen_private *intel, CARD8 op)
+	PicturePtr mask_picture = intel->render_mask_picture;
+	PixmapPtr mask = intel->render_mask;
+	int src_reg, mask_reg;
+-	Bool is_solid_src, is_solid_mask;
+	Bool dest_is_alpha = PIXMAN_FORMAT_RGB(intel->render_dest_picture->format) == 0;
+-	int tex_unit, t;
+	FS_LOCALS();
+
+-	is_solid_src = intel->render_source_is_solid;
+-	is_solid_mask = intel->render_mask_is_solid;
+-
+	FS_BEGIN();
+
+	/* Declare the registers necessary for our program.  */
+-	t = 0;
+-	if (is_solid_src) {
+-		i915_fs_dcl(FS_T8);
+-		src_reg = FS_T8;
+-	} else {
+-		i915_fs_dcl(FS_T0);
+-		i915_fs_dcl(FS_S0);
+-		t++;
+-	}
++	i915_fs_dcl(FS_T0);
++	i915_fs_dcl(FS_S0);
+	if (!mask) {
+		/* No mask, so load directly to output color */
+-		if (! is_solid_src) {
+-			if (dest_is_alpha)
+-				src_reg = FS_R0;
+-			else
+-				src_reg = FS_OC;
++		if (dest_is_alpha)
++			src_reg = FS_R0;
++		else
++			src_reg = FS_OC;
+
+-			if (intel_transform_is_affine(intel->transform[0]))
+-				i915_fs_texld(src_reg, FS_S0, FS_T0);
+-			else
+-				i915_fs_texldp(src_reg, FS_S0, FS_T0);
+-		}
++		if (intel_transform_is_affine(intel->transform[0]))
++			i915_fs_texld(src_reg, FS_S0, FS_T0);
++		else
++			i915_fs_texldp(src_reg, FS_S0, FS_T0);
+
+		if (src_reg != FS_OC) {
+			if (dest_is_alpha)
+@@ -897,35 +806,24 @@ i915_composite_emit_shader(intel_screen_private *intel, CARD8 op)
+				i915_fs_mov(FS_OC, i915_fs_operand_reg(src_reg));
+		}
+	} else {
+-		if (is_solid_mask) {
+-			i915_fs_dcl(FS_T9);
+-			mask_reg = FS_T9;
+-		} else {
+-			i915_fs_dcl(FS_T0 + t);
+-			i915_fs_dcl(FS_S0 + t);
+-		}
++		i915_fs_dcl(FS_T1);
++		i915_fs_dcl(FS_S1);
+
+-		tex_unit = 0;
+-		if (! is_solid_src) {
+-			/* Load the source_picture texel */
+-			if (intel_transform_is_affine(intel->transform[tex_unit]))
+-				i915_fs_texld(FS_R0, FS_S0, FS_T0);
+-			else
+-				i915_fs_texldp(FS_R0, FS_S0, FS_T0);
++		/* Load the source_picture texel */
++		if (intel_transform_is_affine(intel->transform[0]))
++			i915_fs_texld(FS_R0, FS_S0, FS_T0);
++		else
++			i915_fs_texldp(FS_R0, FS_S0, FS_T0);
+
+-			src_reg = FS_R0;
+-			tex_unit++;
+-		}
++		src_reg = FS_R0;
+
+-		if (! is_solid_mask) {
+-			/* Load the mask_picture texel */
+-			if (intel_transform_is_affine(intel->transform[tex_unit]))
+-				i915_fs_texld(FS_R1, FS_S0 + t, FS_T0 + t);
+-			else
+-				i915_fs_texldp(FS_R1, FS_S0 + t, FS_T0 + t);
++		/* Load the mask_picture texel */
++		if (intel_transform_is_affine(intel->transform[1]))
++			i915_fs_texld(FS_R1, FS_S1, FS_T1);
++		else
++			i915_fs_texldp(FS_R1, FS_S1, FS_T1);
+
+-			mask_reg = FS_R1;
+-		}
++		mask_reg = FS_R1;
+
+		if (dest_is_alpha) {
+			i915_fs_mul(FS_OC,
+@@ -972,7 +870,6 @@ static void i915_emit_composite_setup(ScrnInfoPtr scrn)
+	PicturePtr dest_picture = intel->render_dest_picture;
+	PixmapPtr mask = intel->render_mask;
+	PixmapPtr dest = intel->render_dest;
+-	Bool is_solid_src, is_solid_mask;
+	int tex_count, t;
+
+	intel->needs_render_state_emit = FALSE;
+@@ -980,12 +877,7 @@ static void i915_emit_composite_setup(ScrnInfoPtr scrn)
+	IntelEmitInvarientState(scrn);
+	intel->last_3d = LAST_3D_RENDER;
+
+-	is_solid_src = intel->render_source_is_solid;
+-	is_solid_mask = intel->render_mask_is_solid;
+-
+-	tex_count = 0;
+-	tex_count += ! is_solid_src;
+-	tex_count += mask && ! is_solid_mask;
++	tex_count = 1 + (mask != NULL);
+
+	assert(intel->in_batch_atomic);
+
+@@ -1007,15 +899,6 @@ static void i915_emit_composite_setup(ScrnInfoPtr scrn)
+	    }
+	}
+
+-	if (is_solid_src) {
+-	    OUT_BATCH (_3DSTATE_DFLT_DIFFUSE_CMD);
+-	    OUT_BATCH (intel->render_source_solid);
+-	}
+-	if (mask && is_solid_mask) {
+-	    OUT_BATCH (_3DSTATE_DFLT_SPEC_CMD);
+-	    OUT_BATCH (intel->render_mask_solid);
+-	}
+-
+	/* BUF_INFO is an implicit flush, so avoid if the target has not changed.
+	 * XXX However for reasons unfathomed, correct rendering in KDE requires
+	 * at least a MI_FLUSH | INHIBIT_RENDER_CACHE_FLUSH here.
+@@ -1058,20 +941,15 @@ static void i915_emit_composite_setup(ScrnInfoPtr scrn)
+		uint32_t ss2;
+
+		ss2 = ~0;
+-		t = 0;
+-		if (! is_solid_src) {
+-		    ss2 &= ~S2_TEXCOORD_FMT(t, TEXCOORDFMT_NOT_PRESENT);
+-		    ss2 |= S2_TEXCOORD_FMT(t,
+-					   intel_transform_is_affine(intel->transform[t]) ?
+-					   TEXCOORDFMT_2D : TEXCOORDFMT_4D);
+-		    t++;
+-		}
+-		if (mask && ! is_solid_mask) {
+-		    ss2 &= ~S2_TEXCOORD_FMT(t, TEXCOORDFMT_NOT_PRESENT);
+-		    ss2 |= S2_TEXCOORD_FMT(t,
+-					   intel_transform_is_affine(intel->transform[t]) ?
++		ss2 &= ~S2_TEXCOORD_FMT(0, TEXCOORDFMT_NOT_PRESENT);
++		ss2 |= S2_TEXCOORD_FMT(0,
++				       intel_transform_is_affine(intel->transform[0]) ?
++				       TEXCOORDFMT_2D : TEXCOORDFMT_4D);
++		if (mask) {
++		    ss2 &= ~S2_TEXCOORD_FMT(1, TEXCOORDFMT_NOT_PRESENT);
++		    ss2 |= S2_TEXCOORD_FMT(1,
++					   intel_transform_is_affine(intel->transform[1]) ?
+					   TEXCOORDFMT_2D : TEXCOORDFMT_4D);
+-		    t++;
+		}
+
+		if (intel->needs_render_ca_pass) {
+--
+1.7.10

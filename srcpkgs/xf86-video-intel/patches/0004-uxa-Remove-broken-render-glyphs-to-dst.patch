@@ -1,0 +1,390 @@
+From 1aee0af6d8296c108b6b4eb1bcf583aae385d22d Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Fri, 30 Mar 2012 12:47:21 +0100
+Subject: [PATCH 4/5] uxa: Remove broken render glyphs-to-dst
+
+Reported-by: Vincent Untz <vuntz@gnome.org>
+Reported-by: Robert Bradford <robert.bradford@intel.com>
+Bugzilla: https://bugs.freedesktop.org/show_bug.cgi?id=48045
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+---
+ uxa/uxa-glyphs.c |  330 +++---------------------------------------------------
+ 1 file changed, 17 insertions(+), 313 deletions(-)
+
+diff --git a/uxa/uxa-glyphs.c b/uxa/uxa-glyphs.c
+index 6172f2f..b754f4e 100644
+--- a/uxa/uxa-glyphs.c
++++ b/uxa/uxa-glyphs.c
+@@ -663,190 +663,6 @@ uxa_glyph_cache(ScreenPtr screen, GlyphPtr glyph, int *out_x, int *out_y)
+	return cache->picture;
+ }
+
+-static int
+-uxa_glyphs_to_dst(CARD8 op,
+-		  PicturePtr pSrc,
+-		  PicturePtr pDst,
+-		  INT16 src_x, INT16 src_y,
+-		  INT16 xDst, INT16 yDst,
+-		  int nlist, GlyphListPtr list, GlyphPtr * glyphs,
+-		  BoxPtr extents)
+-{
+-	ScreenPtr screen = pDst->pDrawable->pScreen;
+-	uxa_screen_t *uxa_screen = uxa_get_screen(screen);
+-	PixmapPtr src_pixmap, dst_pixmap;
+-	PicturePtr localSrc, glyph_atlas;
+-	int x, y, n;
+-	BoxRec box;
+-
+-	if (uxa_screen->info->check_composite_texture &&
+-	    uxa_screen->info->check_composite_texture(screen, pSrc)) {
+-		if (pSrc->pDrawable) {
+-			int src_off_x, src_off_y;
+-
+-			src_pixmap = uxa_get_offscreen_pixmap(pSrc->pDrawable, &src_off_x, &src_off_y);
+-			if (src_pixmap == NULL)
+-				return -1;
+-
+-			src_x += pSrc->pDrawable->x + src_off_x;
+-			src_y += pSrc->pDrawable->y + src_off_y;
+-		} else {
+-			src_pixmap = NULL;
+-		}
+-		localSrc = pSrc;
+-	} else {
+-		int width, height;
+-
+-		if (extents == NULL) {
+-			uxa_glyph_extents(nlist, list, glyphs, &box);
+-			extents = &box;
+-		}
+-
+-		width  = extents->x2 - extents->x1;
+-		height = extents->y2 - extents->y1;
+-		if (width == 0 || height == 0)
+-			return 0;
+-
+-		if (pSrc->pDrawable) {
+-			int src_off_x, src_off_y;
+-
+-			src_off_x = extents->x1 - xDst;
+-			src_off_y = extents->y1 - yDst;
+-			localSrc = uxa_acquire_drawable(screen, pSrc,
+-							src_x + src_off_x, src_y + src_off_y,
+-							width, height,
+-							&src_x, &src_y);
+-			if (uxa_screen->info->check_composite_texture &&
+-			    !uxa_screen->info->check_composite_texture(screen, localSrc)) {
+-				if (localSrc != pSrc)
+-					FreePicture(localSrc, 0);
+-				return -1;
+-			}
+-
+-			src_pixmap = uxa_get_offscreen_pixmap(localSrc->pDrawable, &src_off_x, &src_off_y);
+-			if (src_pixmap == NULL) {
+-				if (localSrc != pSrc)
+-					FreePicture(localSrc, 0);
+-				return -1;
+-			}
+-
+-			src_x += localSrc->pDrawable->x + src_off_x;
+-			src_y += localSrc->pDrawable->y + src_off_y;
+-		} else {
+-			localSrc = uxa_acquire_pattern(screen, pSrc,
+-						       PICT_a8r8g8b8, x, y, width, height);
+-			if (!localSrc)
+-				return 1;
+-
+-			src_pixmap = uxa_get_drawable_pixmap(localSrc->pDrawable);
+-			if (src_pixmap == NULL) {
+-				FreePicture(localSrc, 0);
+-				return -1;
+-			}
+-
+-			src_x = src_y = 0;
+-		}
+-	}
+-
+-	dst_pixmap = uxa_get_offscreen_pixmap(pDst->pDrawable, &x, &y);
+-	x += xDst + pDst->pDrawable->x - list->xOff;
+-	y += yDst + pDst->pDrawable->y - list->yOff;
+-
+-	glyph_atlas = NULL;
+-	while (nlist--) {
+-		x += list->xOff;
+-		y += list->yOff;
+-		n = list->len;
+-		while (n--) {
+-			GlyphPtr glyph = *glyphs++;
+-			PicturePtr this_atlas;
+-			int mask_x, mask_y, nrect;
+-			struct uxa_glyph *priv;
+-			BoxPtr rects;
+-
+-			if (glyph->info.width == 0 || glyph->info.height == 0)
+-				goto next_glyph;
+-
+-			priv = uxa_glyph_get_private(glyph);
+-			if (priv != NULL) {
+-				mask_x = priv->x;
+-				mask_y = priv->y;
+-				this_atlas = priv->cache->picture;
+-			} else {
+-				if (glyph_atlas) {
+-					uxa_screen->info->done_composite(dst_pixmap);
+-					glyph_atlas = NULL;
+-				}
+-				this_atlas = uxa_glyph_cache(screen, glyph, &mask_x, &mask_y);
+-				if (this_atlas == NULL) {
+-					/* no cache for this glyph */
+-					this_atlas = GlyphPicture(glyph)[screen->myNum];
+-					mask_x = mask_y = 0;
+-				}
+-			}
+-
+-			if (this_atlas != glyph_atlas) {
+-				PixmapPtr mask_pixmap;
+-
+-				if (glyph_atlas)
+-					uxa_screen->info->done_composite(dst_pixmap);
+-
+-				mask_pixmap =
+-					uxa_get_drawable_pixmap(this_atlas->pDrawable);
+-				if (!uxa_pixmap_is_offscreen(mask_pixmap) ||
+-				    !uxa_screen->info->prepare_composite(op,
+-									 localSrc, this_atlas, pDst,
+-									 src_pixmap, mask_pixmap, dst_pixmap))
+-					return -1;
+-
+-				glyph_atlas = this_atlas;
+-			}
+-
+-			rects = REGION_RECTS(pDst->pCompositeClip);
+-			nrect = REGION_NUM_RECTS(pDst->pCompositeClip);
+-			while (nrect--) {
+-				int x1 = x - glyph->info.x, dx = 0;
+-				int y1 = y - glyph->info.y, dy = 0;
+-				int x2 = x1 + glyph->info.width;
+-				int y2 = y1 + glyph->info.height;
+-
+-				if (rects->y1 >= y2)
+-					break;
+-
+-				if (x1 < rects->x1)
+-					dx = rects->x1 - x1, x1 = rects->x1;
+-				if (x2 > rects->x2)
+-					x2 = rects->x2;
+-				if (y1 < rects->y1)
+-					dy = rects->y1 - y1, y1 = rects->y1;
+-				if (y2 > rects->y2)
+-					y2 = rects->y2;
+-
+-				if (x1 < x2 && y1 < y2) {
+-					uxa_screen->info->composite(dst_pixmap,
+-								    x1 + src_x,  y1 + src_y,
+-								    dx + mask_x, dy + mask_y,
+-								    x1, y1,
+-								    x2 - x1, y2 - y1);
+-				}
+-				rects++;
+-			}
+-
+-next_glyph:
+-			x += glyph->info.xOff;
+-			y += glyph->info.yOff;
+-		}
+-		list++;
+-	}
+-	if (glyph_atlas)
+-		uxa_screen->info->done_composite(dst_pixmap);
+-
+-	if (localSrc != pSrc)
+-		FreePicture(localSrc, 0);
+-
+-	return 0;
+-}
+-
+ static void
+ uxa_clear_pixmap(ScreenPtr screen,
+		 uxa_screen_t *uxa_screen,
+@@ -894,37 +710,30 @@ uxa_glyphs_via_mask(CARD8 op,
+		    PicturePtr pDst,
+		    PictFormatPtr maskFormat,
+		    INT16 xSrc, INT16 ySrc,
+-		    INT16 xDst, INT16 yDst,
+-		    int nlist, GlyphListPtr list, GlyphPtr * glyphs,
+-		    BoxPtr extents)
++		    int nlist, GlyphListPtr list, GlyphPtr * glyphs)
+ {
+	ScreenPtr screen = pDst->pDrawable->pScreen;
+	uxa_screen_t *uxa_screen = uxa_get_screen(screen);
+	CARD32 component_alpha;
+	PixmapPtr pixmap;
+	PicturePtr glyph_atlas, mask;
++	int xDst = list->xOff, yDst = list->yOff;
+	int x, y, width, height;
+	int dst_off_x, dst_off_y;
+	int n, error;
+	BoxRec box;
+
+-	if (!extents) {
+-		uxa_glyph_extents(nlist, list, glyphs, &box);
++	uxa_glyph_extents(nlist, list, glyphs, &box);
++	if (box.x2 <= box.x1 || box.y2 <= box.y1)
++		return 0;
+
+-		if (box.x2 <= box.x1 || box.y2 <= box.y1)
+-			return 0;
++	dst_off_x = box.x1;
++	dst_off_y = box.y1;
+
+-		extents = &box;
+-		dst_off_x = box.x1;
+-		dst_off_y = box.y1;
+-	} else {
+-		dst_off_x = dst_off_y = 0;
+-	}
+-
+-	width  = extents->x2 - extents->x1;
+-	height = extents->y2 - extents->y1;
+-	x = -extents->x1;
+-	y = -extents->y1;
++	width  = box.x2 - box.x1;
++	height = box.y2 - box.y1;
++	x = -box.x1;
++	y = -box.y1;
+
+	if (maskFormat->depth == 1) {
+		PictFormatPtr a8Format =
+@@ -1061,11 +870,6 @@ uxa_glyphs(CARD8 op,
+ {
+	ScreenPtr screen = pDst->pDrawable->pScreen;
+	uxa_screen_t *uxa_screen = uxa_get_screen(screen);
+-	int xDst = list->xOff, yDst = list->yOff;
+-	BoxRec extents = { 0, 0, 0, 0 };
+-	Bool have_extents = FALSE;
+-	int width, height, ret;
+-	PicturePtr localDst = pDst;
+
+	if (uxa_screen->info->flags & UXA_USE_GLAMOR) {
+		int ok;
+@@ -1128,112 +932,12 @@ fallback:
+		}
+	}
+
+-	if (!maskFormat &&
+-	    uxa_screen->info->check_composite_target &&
+-	    !uxa_screen->info->check_composite_target(uxa_get_drawable_pixmap(pDst->pDrawable))) {
+-		int depth = pDst->pDrawable->depth;
+-		PixmapPtr pixmap;
+-		int x, y, error;
+-		GCPtr gc;
+-
+-		pixmap = uxa_get_drawable_pixmap(pDst->pDrawable);
+-		if (uxa_screen->info->check_copy &&
+-		    !uxa_screen->info->check_copy(pixmap, pixmap, GXcopy, FB_ALLONES))
+-			goto fallback;
+-
+-		uxa_glyph_extents(nlist, list, glyphs, &extents);
+-
+-		/* clip against dst bounds */
+-		if (extents.x1 < 0)
+-			extents.x1 = 0;
+-		if (extents.y1 < 0)
+-			extents.y1 = 0;
+-		if (extents.x2 > pDst->pDrawable->width)
+-			extents.x2 = pDst->pDrawable->width;
+-		if (extents.y2 > pDst->pDrawable->height)
+-			extents.y2 = pDst->pDrawable->height;
+-
+-		if (extents.x2 <= extents.x1 || extents.y2 <= extents.y1)
+-			return;
+-		width  = extents.x2 - extents.x1;
+-		height = extents.y2 - extents.y1;
+-		x = -extents.x1;
+-		y = -extents.y1;
+-		have_extents = TRUE;
+-
+-		xDst += x;
+-		yDst += y;
+-
+-		pixmap = screen->CreatePixmap(screen,
+-					      width, height, depth,
+-					      CREATE_PIXMAP_USAGE_SCRATCH);
+-		if (!pixmap)
+-			return;
+-
+-		if (!uxa_pixmap_is_offscreen(pixmap)) {
+-			screen->DestroyPixmap(pixmap);
+-			goto fallback;
+-		}
+-
+-		gc = GetScratchGC(depth, screen);
+-		if (!gc) {
+-			screen->DestroyPixmap(pixmap);
+-			return;
+-		}
+-
+-		ValidateGC(&pixmap->drawable, gc);
+-		gc->ops->CopyArea(pDst->pDrawable, &pixmap->drawable, gc,
+-				  extents.x1, extents.y1,
+-				  width, height,
+-				  0, 0);
+-		FreeScratchGC(gc);
+-
+-		localDst = CreatePicture(0, &pixmap->drawable,
+-					 PictureMatchFormat(screen, depth, pDst->format),
+-					 0, 0, serverClient, &error);
+-		screen->DestroyPixmap(pixmap);
+-
+-		if (!localDst)
+-			return;
+-
+-		ValidatePicture(localDst);
+-	}
+-
+-	if (maskFormat) {
+-		ret = uxa_glyphs_via_mask(op,
+-					  pSrc, localDst, maskFormat,
+-					  xSrc, ySrc,
+-					  xDst, yDst,
+-					  nlist, list, glyphs,
+-					  have_extents ? &extents : NULL);
+-	} else {
+-		ret = uxa_glyphs_to_dst(op,
+-					pSrc, localDst,
+-					xSrc, ySrc,
+-					xDst, yDst,
+-					nlist, list, glyphs,
+-					have_extents ? &extents : NULL);
+-	}
+-	if (ret) {
+-		if (localDst != pDst)
+-			FreePicture(localDst, 0);
+-
++	if (!maskFormat)
+		goto fallback;
+-	}
+
+-	if (localDst != pDst) {
+-		GCPtr gc;
+-
+-		gc = GetScratchGC(pDst->pDrawable->depth, screen);
+-		if (gc) {
+-			ValidateGC(pDst->pDrawable, gc);
+-			gc->ops->CopyArea(localDst->pDrawable, pDst->pDrawable, gc,
+-					  0, 0,
+-					  width, height,
+-					  extents.x1, extents.y1);
+-			FreeScratchGC(gc);
+-		}
+-
+-		FreePicture(localDst, 0);
+-	}
++	if (uxa_glyphs_via_mask(op,
++				pSrc, pDst, maskFormat,
++				xSrc, ySrc,
++				nlist, list, glyphs))
++		goto fallback;
+ }
+--
+1.7.10
