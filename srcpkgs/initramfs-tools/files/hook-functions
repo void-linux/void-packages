@@ -83,11 +83,6 @@ manual_add_modules()
 				continue
 			fi
 
-			if [ ! -e "${DESTDIR}/lib/udev/firmware.agent" ] \
-			&& [ -e "/lib/udev/firmware.agent" ]; then
-				copy_exec /lib/udev/firmware.agent
-			fi
-
 			if [ -e "/lib/firmware/${version}/${firmware}" ]; then
 				copy_exec "/lib/firmware/${version}/${firmware}"
 			else
@@ -135,7 +130,7 @@ copy_exec() {
 		# Try to use non-optimised libraries where possible.
 		# We assume that all HWCAP libraries will be in tls,
 		# sse2, vfp or neon.
-		nonoptlib=$(echo "${x}" | sed -e 's#/lib/\(tls\|i686\|sse2\|neon\|vfp\).*/\(lib.*\)#/lib/\2#')
+		nonoptlib=$(echo "${x}" | sed -e 's#/lib/\([^/]*/\)\?\(tls\|i686\|sse2\|neon\|vfp\).*/\(lib.*\)#/lib/\1\3#')
 
 		if [ -e "${nonoptlib}" ]; then
 			x="${nonoptlib}"
@@ -225,17 +220,22 @@ dep_add_modules()
 	fi
 
 	# findout root block device + fstype
-	eval "$(mount | awk '/\/dev\// {if ($3 == "/") {print "root=" $1 "\nFSTYPE=" $5; exit}}')"
+	eval "$( mount | while read dev foo mp foo fs opts rest ; do \
+		[ "$mp" = "/" ] && printf "root=$dev\nFSTYPE=$fs" \
+		&& break; done)"
 
 	# On failure fallback to /proc/mounts if readable
 	if [ -z "$root" ] && [ -r /proc/mounts ]; then
-		eval "$(awk '!/^rootfs / {if ($2 == "/") {print "root=" $1 "\nFSTYPE=" $3; exit}}' /proc/mounts)"
+		eval "$(while read dev mp fs opts rest ; do \
+			[ "$mp" = "/" ] && [ "$fs" != "rootfs" ] \
+			&& printf "root=$dev\nFSTYPE=$fs"\
+			&& break; done < /proc/mounts)"
 	fi
 
 	# recheck root device
 	if [ -z "$root" ]; then
 		echo "mkinitramfs: failed to determine root device" >&2
-		echo "mkinitramfs: workaround is MODULES=most, check" >&2
+		echo "mkinitramfs: workaround is MODULES=most, check:" >&2
 		echo "grep -r MODULES /etc/initramfs-tools/" >&2
 		echo "" >&2
 		echo "Error please report bug on initramfs-tools" >&2
@@ -349,12 +349,13 @@ dep_add_modules()
 	sys_walk_mod_add ${root_dev_path}
 
 	# catch old-style IDE
-	if [ -d "${DESTDIR}/lib/modules/${version}/kernel/drivers/ide" ]; then
+	if [ -e /sys/bus/ide/devices/ ]; then
 		sys_walk_modalias ${root_dev_path}
 		manual_add_modules ide-gd_mod
+		manual_add_modules ide-cd
 	fi
 
-	if [ -d "${DESTDIR}/lib/modules/${version}/kernel/drivers/scsi" ]; then
+	if [ -e /sys/bus/scsi/devices/ ]; then
 		manual_add_modules sd_mod
 	fi
 
@@ -379,9 +380,9 @@ auto_add_modules()
 	case "${1:-}" in
 	base)
 		for x in ehci-hcd ohci-hcd uhci-hcd usbhid xhci-hcd \
-		hid-apple hid-cherry hid-logitech hid-microsoft hid-sunplus \
-		btrfs ext2 ext3 ext4 isofs jfs reiserfs udf xfs nilfs2 \
-		i8042 virtio_pci; do
+		hid-apple hid-cherry hid-logitech hid-logitech-dj \
+		hid-microsoft hid-sunplus btrfs ext2 ext3 ext4 isofs \
+		jfs reiserfs udf xfs nilfs2 i8042 virtio_pci; do
 			manual_add_modules "${x}"
 		done
 	;;
