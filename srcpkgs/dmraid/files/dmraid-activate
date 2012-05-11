@@ -1,0 +1,291 @@
+#!/bin/sh
+#
+# dmraid-activate: Script to reformat the output of dmraid to be useful with
+# udev.
+#
+# (c) 2008 Canonical Ltd.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+# Arguments: $1 = Name of array you want activated.
+activate_array ()
+{
+	Raid_Setinfo=$(dmraid -i -si "$1")
+	if [ -z "$Raid_Setinfo" ]; then
+		log_error "Cannot retrieve RAID set information for $1"
+		return 1
+	fi
+
+	Raid_Type=$(dmraid -i -si -ct "$1")
+	Raid_Nodevs=$(dmraid -i -si -cd "$1")
+
+	case "$Raid_Type" in
+		stripe)
+			if [ "$Raid_Nodevs" -lt 2 ]; then
+				if [ -n "$Degraded" ]; then
+					log_error "Cannot bring up a RAID0 array in degraded mode, not all devices present."
+				fi
+				return 2
+			fi
+			;;
+		mirror)
+			if [ "$Raid_Nodevs" -lt 2 ]; then
+				if [ -z "$Degraded" ]; then
+					log_error "Raid set $Raid_Name is degraded. Not activating"
+					return 2
+				else
+					log_warning "Activating $Raid_Name in degraded mode"
+					Return_Val=3
+				fi
+			fi
+			;;
+		raid5_*)
+			modprobe -q dm_raid45
+			if [ "$Raid_Nodevs" -lt 3 ]; then
+				if [ -z "$Degraded" ]; then
+					log_error "Raid set $Raid_Name is degraded. Not activating"
+					return 2
+				else
+					log_warning "Activating $Raid_Name in degraded mode"
+					Return_Val=3
+				fi
+			fi
+			;;
+	esac
+
+	# At this point we have the required number of devs, or the user wants the
+	# array brought up in degraded mode, except in the case of striped arrays.
+	# We need to know the root device for determining if the -Z flag can be used 
+	# (see #533848 and LP: 392510)
+	if [ -z "$ROOT" ]; then
+		for x in $(cat /proc/cmdline); do
+			case $x in
+				root=*)
+				ROOT=${x#root=}
+				;;
+			esac
+		done
+		case "$ROOT" in
+			LABEL=*)
+			ROOT=$(readlink -f /dev/disk/by-uuid/${ROOT#LABEL=})
+			;;
+			UUID=*)
+			ROOT=$(readlink -f /dev/disk/by-uuid/${ROOT#UUID=})
+			;;
+		esac
+	else
+		ROOT=$(readlink -f $ROOT)
+	fi
+	
+	if (echo $ROOT | grep -q $1) ; then
+		dmraid -i -ay -Z "$1"
+	else
+		dmraid -i -ay "$1"
+	fi
+	
+	return $Return_Val
+}
+
+log_warning()
+{
+	if type logger > /dev/null ; then
+		logger -t dmraid-activate "WARNING: $1"
+	else
+		echo "dmraid-activate: WARNING: $1"
+	fi
+}
+
+log_error()
+{
+	if type logger > /dev/null ; then
+		logger -t dmraid-activate "ERROR: $1"
+	else
+		echo "dmraid-activate: ERROR: $1"
+	fi
+}
+
+ddf1_virtual_drive_names()
+{
+	ddf1_awk_script="$(cat <<'EOF'
+BEGIN {
+    section = ""
+    disk_ref = ""
+    guid_i = 0
+
+    # Heximal to decimal conversion array
+    for (i = 0; i <= 9; i++) hex2dec[i] = i
+    hex2dec["a"] = 10; hex2dec["b"] = 11; hex2dec["c"] = 12
+    hex2dec["e"] = 13; hex2dec["d"] = 14; hex2dec["f"] = 15;
+}
+
+function section_begins(name)
+{
+    section = name
+    vd_guid = ""
+    drive_map = 0
+}
+
+function extract_vd_guid(line,      g)
+{
+    g = substr(line, match(line,/\[[0-9a-f ]+\]$/)+1, RLENGTH-2)
+    gsub(/ /, "", g)
+    # IF LSI, do timestamp substitution to get persistent name, see
+    # 19_ddf1_lsi_persistent_name.patch
+    if (g ~ /^4c5349/)
+        g = substr(g, 1, 32) "47114711" substr(g, 41)
+    return g
+}
+
+function extract_vd_name(line,     hex, n, max, i, d1, d2, sed)
+{
+    n = tolower(substr(line, match(line,/\[[0-9a-f ]+\]$/)+1, RLENGTH-2))
+    max = split(n, hex, / /)
+
+    if (max <= 0 || hex[0] == "00") return ""
+
+    # Convert name from hex to string (16 bytes)
+    n = ""
+    for (i = 1; i <= max; i++) {
+        d1 = hex2dec[substr(hex[i], 1, 1)]
+        d2 = hex2dec[substr(hex[i], 2, 1)]
+        if ((d1 + d2) == 0) break
+        n = n sprintf("%c", d1 * 16 + d2)
+    }
+    # Shell-escape single quotes in the name
+    gsub(/'/,"'\\''", n)
+    # Finally strip non-graph chars from the end of the string
+    # mawk does not support character classes. Use sed.
+    sed = "echo '" n "' | sed 's/[^[:graph:]]\+$//'"
+    sed | getline n
+    close(sed)
+    return n
+}
+
+{
+    if (!/^0x/ && / at /) {
+        # Section begins
+        section_begins(substr($0, 1, match($0, / at /)-1))
+    } else if (section == "Disk Data" && /^0x020 reference:[ \t]*[0-9A-Fx]+/) {
+        disk_ref = $3
+        sub(/^0x/, "", disk_ref)
+    } else if (disk_ref) {
+        # We need to parse 'Virtual Drive' sections in order to extract VD
+        # names
+        if (section == "Virtual Drive") {
+            if (/^0x000 guid:/) {
+                vd_guid = extract_vd_guid($0)
+            } else if (/^0x030 name:/) {
+                vd_name = extract_vd_name($0)
+                if (vd_name)
+                    vd_names[vd_guid] = vd_name
+            }
+        } else if (section == "Virtual Drive Config Record") {
+            if (/^0x008 guid:/) {
+                vd_guid = extract_vd_guid($0)
+            } else if (drive_map) {
+                # 0: 4BCBB980 @ 0
+                if ($2 == disk_ref) {
+                    guids[guid_i] = vd_guid
+                    guid_i++
+                }
+            } else if (vd_guid) {
+                drive_map = /^Drive map:/
+            }
+        }
+    }
+}
+END {
+    # Print discovered virtual drive names (or GUIDs) which belong to this
+    # physical drive
+    for (guid_i in guids) {
+        guid = guids[guid_i]
+        if (guid in vd_names) {
+            print vd_names[guid]
+        } else {
+            print guid
+        }
+    }
+}
+EOF
+)"
+	dmraid -i -n "$1" | awk "$ddf1_awk_script"
+}
+
+if grep -qs "\<nodmraid\>" /proc/cmdline; then
+	log_warning "dmraid disabled by boot option"
+	exit 0
+fi
+
+modprobe -q dm_mod
+
+if [ -z "$1" ] || [ "$1" = "--degraded" ] && [ "$#" -lt 2 ]; then
+	echo "Node name not specified." >&2
+	exit 1
+fi
+
+if [ "$1" = "--degraded" ]; then
+	Degraded=1
+	Node_Name=$2
+else
+	Node_Name=$1
+fi
+
+Raid_Name=$(dmraid -i -r -cr /dev/$Node_Name | grep -vi "No RAID disks" | grep -vi "formats discovered")
+
+if [ -z "$Raid_Name" ]; then
+	exit 0
+fi
+
+newline="
+"
+
+case "$Raid_Name" in
+	isw_*)
+		# We need a special case for isw arrays, since it is possible to have several
+		# subsets of a RAID group, of varying RAID types.
+		Isw_Group_Name=$Raid_Name
+		Isw_Subsets=$(dmraid -i -n "/dev/$Node_Name" | grep volume | sed 's/.*volume: " *\(.*\)"$/\1/')
+
+		for isw_subset in $Isw_Subsets
+		do
+			activate_array "${Isw_Group_Name}_${isw_subset}"
+		done
+		break
+		;;
+	.ddf1_disks)
+		# Dummy name for the main DDF1 group. Needs special handling to
+		# find RAID subsets (name or GUID) for this physical drive
+		Ddf1_names=`ddf1_virtual_drive_names "/dev/$Node_Name"`
+
+		# Returned names might contain space characters. Therefore
+		# split fields at new line. Use $IFS to avoid forking a new shell
+		save_IFS="$IFS"
+		IFS="$newline"
+		for ddf1_name in $Ddf1_names
+		do
+			IFS="$save_IFS"
+			activate_array "ddf1_${ddf1_name}"
+			IFS="$newline"
+		done
+		IFS="$save_IFS"
+		break
+		;;
+	*)
+		activate_array "$Raid_Name"
+		break
+		;;
+esac
+
+exit $Return_Val
