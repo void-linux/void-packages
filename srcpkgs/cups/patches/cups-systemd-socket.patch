@@ -1,0 +1,527 @@
+diff -up cups-1.5.2/config.h.in.systemd-socket cups-1.5.2/config.h.in
+--- cups-1.5.2/config.h.in.systemd-socket	2012-03-16 14:50:57.089449755 +0000
++++ cups-1.5.2/config.h.in	2012-03-16 14:50:57.146449787 +0000
+@@ -503,6 +503,13 @@
+ 
+ 
+ /*
++ * Do we have systemd support?
++ */
++
++#undef HAVE_SYSTEMD
++
++
++/*
+  * Various scripting languages...
+  */
+ 
+diff -up cups-1.5.2/config-scripts/cups-systemd.m4.systemd-socket cups-1.5.2/config-scripts/cups-systemd.m4
+--- cups-1.5.2/config-scripts/cups-systemd.m4.systemd-socket	2012-03-16 14:50:57.146449787 +0000
++++ cups-1.5.2/config-scripts/cups-systemd.m4	2012-03-16 14:50:57.146449787 +0000
+@@ -0,0 +1,36 @@
++dnl
++dnl "$Id$"
++dnl
++dnl   systemd stuff for CUPS.
++
++dnl Find whether systemd is available
++
++SDLIBS=""
++AC_ARG_WITH([systemdsystemunitdir],
++        AS_HELP_STRING([--with-systemdsystemunitdir=DIR], [Directory for systemd service files]),
++        [], [with_systemdsystemunitdir=$($PKGCONFIG --variable=systemdsystemunitdir systemd)])
++if test "x$with_systemdsystemunitdir" != xno; then
++        AC_MSG_CHECKING(for libsystemd-daemon)
++        if $PKGCONFIG --exists libsystemd-daemon; then
++		AC_MSG_RESULT(yes)
++        	SDCFLAGS=`$PKGCONFIG --cflags libsystemd-daemon`
++        	SDLIBS=`$PKGCONFIG --libs libsystemd-daemon`
++		AC_SUBST([systemdsystemunitdir], [$with_systemdsystemunitdir])
++		AC_DEFINE(HAVE_SYSTEMD)
++	else
++		AC_MSG_RESULT(no)
++	fi
++fi
++
++if test -n "$with_systemdsystemunitdir" -a "x$with_systemdsystemunitdir" != xno ; then
++        SYSTEMD_UNITS="cups.service cups.socket cups.path"
++else
++        SYSTEMD_UNITS=""
++fi
++
++AC_SUBST(SYSTEMD_UNITS)
++AC_SUBST(SDLIBS)
++
++dnl
++dnl "$Id$"
++dnl
+diff -up cups-1.5.2/configure.in.systemd-socket cups-1.5.2/configure.in
+--- cups-1.5.2/configure.in.systemd-socket	2011-08-31 02:36:33.000000000 +0100
++++ cups-1.5.2/configure.in	2012-03-16 14:50:57.146449787 +0000
+@@ -37,6 +37,7 @@ sinclude(config-scripts/cups-pam.m4)
+ sinclude(config-scripts/cups-largefile.m4)
+ sinclude(config-scripts/cups-dnssd.m4)
+ sinclude(config-scripts/cups-launchd.m4)
++sinclude(config-scripts/cups-systemd.m4)
+ sinclude(config-scripts/cups-defaults.m4)
+ sinclude(config-scripts/cups-pdf.m4)
+ sinclude(config-scripts/cups-scripting.m4)
+@@ -71,6 +72,9 @@ AC_OUTPUT(Makedefs
+ 	  conf/snmp.conf
+ 	  cups-config
+ 	  data/testprint
++          data/cups.service
++          data/cups.socket
++          data/cups.path
+ 	  desktop/cups.desktop
+ 	  doc/help/ref-cupsd-conf.html
+ 	  doc/help/standard.html
+diff -up cups-1.5.2/cups/usersys.c.systemd-socket cups-1.5.2/cups/usersys.c
+--- cups-1.5.2/cups/usersys.c.systemd-socket	2012-03-16 14:50:57.054449734 +0000
++++ cups-1.5.2/cups/usersys.c	2012-03-16 14:50:57.148449788 +0000
+@@ -778,7 +778,7 @@ cups_read_client_conf(
+     struct stat	sockinfo;		/* Domain socket information */
+ 
+     if (!stat(CUPS_DEFAULT_DOMAINSOCKET, &sockinfo) &&
+-	(sockinfo.st_mode & S_IRWXO) == S_IRWXO)
++	(sockinfo.st_mode & (S_IROTH | S_IWOTH)) == (S_IROTH | S_IWOTH))
+       cups_server = CUPS_DEFAULT_DOMAINSOCKET;
+     else
+ #endif /* CUPS_DEFAULT_DOMAINSOCKET */
+diff -up cups-1.5.2/data/cups.path.in.systemd-socket cups-1.5.2/data/cups.path.in
+--- cups-1.5.2/data/cups.path.in.systemd-socket	2012-03-16 14:50:57.148449788 +0000
++++ cups-1.5.2/data/cups.path.in	2012-03-16 14:50:57.148449788 +0000
+@@ -0,0 +1,8 @@
++[Unit]
++Description=CUPS Printer Service Spool
++
++[Path]
++PathExistsGlob=@CUPS_REQUESTS@/d*
++
++[Install]
++WantedBy=multi-user.target
+diff -up cups-1.5.2/data/cups.service.in.systemd-socket cups-1.5.2/data/cups.service.in
+--- cups-1.5.2/data/cups.service.in.systemd-socket	2012-03-16 14:50:57.149449788 +0000
++++ cups-1.5.2/data/cups.service.in	2012-03-16 14:50:57.149449788 +0000
+@@ -0,0 +1,10 @@
++[Unit]
++Description=CUPS Printing Service
++
++[Service]
++ExecStart=@sbindir@/cupsd -f
++PrivateTmp=true
++
++[Install]
++Also=cups.socket cups.path
++WantedBy=printer.target
+diff -up cups-1.5.2/data/cups.socket.in.systemd-socket cups-1.5.2/data/cups.socket.in
+--- cups-1.5.2/data/cups.socket.in.systemd-socket	2012-03-16 14:50:57.150449788 +0000
++++ cups-1.5.2/data/cups.socket.in	2012-03-16 14:50:57.150449788 +0000
+@@ -0,0 +1,11 @@
++[Unit]
++Description=CUPS Printing Service Sockets
++
++[Socket]
++ListenStream=@CUPS_DEFAULT_DOMAINSOCKET@
++ListenStream=631
++ListenDatagram=0.0.0.0:631
++BindIPv6Only=ipv6-only
++
++[Install]
++WantedBy=sockets.target
+diff -up cups-1.5.2/data/Makefile.systemd-socket cups-1.5.2/data/Makefile
+--- cups-1.5.2/data/Makefile.systemd-socket	2011-05-12 06:21:56.000000000 +0100
++++ cups-1.5.2/data/Makefile	2012-03-16 14:50:57.151449789 +0000
+@@ -112,6 +112,12 @@ install-data:
+ 		$(INSTALL_DATA) $$file $(DATADIR)/ppdc; \
+ 	done
+ 	$(INSTALL_DIR) -m 755 $(DATADIR)/profiles
++	if test "x$(SYSTEMD_UNITS)" != "x" ; then \
++		$(INSTALL_DIR) -m 755 $(SYSTEMDUNITDIR); \
++		for file in $(SYSTEMD_UNITS); do \
++			$(INSTALL_DATA) $$file $(SYSTEMDUNITDIR); \
++		done; \
++	fi
+ 
+ 
+ #
+@@ -159,6 +165,9 @@ uninstall:
+ 	-$(RMDIR) $(DATADIR)/charsets
+ 	-$(RMDIR) $(DATADIR)/banners
+ 	-$(RMDIR) $(DATADIR)
++	for file in $(SYSTEMD_UNITS); do \
++		$(RM) $(SYSTEMDUNITDIR)/$$file; \
++	done
+ 
+ 
+ #
+diff -up cups-1.5.2/Makedefs.in.systemd-socket cups-1.5.2/Makedefs.in
+--- cups-1.5.2/Makedefs.in.systemd-socket	2012-03-16 14:50:57.081449751 +0000
++++ cups-1.5.2/Makedefs.in	2012-03-16 14:50:57.152449790 +0000
+@@ -143,6 +143,7 @@ CXXFLAGS	=	@CPPFLAGS@ @CXXFLAGS@
+ CXXLIBS		=	@CXXLIBS@
+ DBUS_NOTIFIER	=	@DBUS_NOTIFIER@
+ DBUS_NOTIFIERLIBS =	@DBUS_NOTIFIERLIBS@
++SYSTEMD_UNITS   =       @SYSTEMD_UNITS@
+ DNSSD_BACKEND	=	@DNSSD_BACKEND@
+ DSOFLAGS	=	-L../cups @DSOFLAGS@
+ DSOLIBS		=	@DSOLIBS@ $(COMMONLIBS)
+@@ -151,6 +152,7 @@ FONTS		=	@FONTS@
+ IMGLIBS		=	@IMGLIBS@
+ IMGFILTERS	=	@IMGFILTERS@
+ LAUNCHDLIBS	=	@LAUNCHDLIBS@
++SDLIBS		=	@SDLIBS@
+ LDFLAGS		=	-L../cgi-bin -L../cups -L../filter -L../ppdc \
+ 			-L../scheduler @LDARCHFLAGS@ \
+ 			@LDFLAGS@ @RELROFLAGS@ @PIEFLAGS@ $(OPTIM)
+@@ -267,6 +269,7 @@ PAMFILE		=	@PAMFILE@
+ 
+ DEFAULT_LAUNCHD_CONF =	@DEFAULT_LAUNCHD_CONF@
+ DBUSDIR		=	@DBUSDIR@
++SYSTEMDUNITDIR  =       $(BUILDROOT)@systemdsystemunitdir@
+ 
+ 
+ #
+diff -up cups-1.5.2/scheduler/client.h.systemd-socket cups-1.5.2/scheduler/client.h
+--- cups-1.5.2/scheduler/client.h.systemd-socket	2011-03-25 21:25:38.000000000 +0000
++++ cups-1.5.2/scheduler/client.h	2012-03-16 14:50:57.153449791 +0000
+@@ -75,6 +75,9 @@ typedef struct
+   int			fd;		/* File descriptor for this server */
+   http_addr_t		address;	/* Bind address of socket */
+   http_encryption_t	encryption;	/* To encrypt or not to encrypt... */
++#ifdef HAVE_SYSTEMD
++  int			is_systemd;	/* Is this a systemd socket? */
++#endif /* HAVE_SYSTEMD */
+ } cupsd_listener_t;
+ 
+ 
+diff -up cups-1.5.2/scheduler/dirsvc.c.systemd-socket cups-1.5.2/scheduler/dirsvc.c
+--- cups-1.5.2/scheduler/dirsvc.c.systemd-socket	2012-03-16 14:50:57.112449768 +0000
++++ cups-1.5.2/scheduler/dirsvc.c	2012-03-16 14:50:57.155449792 +0000
+@@ -1512,7 +1512,7 @@ cupsdStartBrowsing(void)
+       }
+     }
+ 
+-    if (BrowseSocket >= 0)
++    if (BrowseSocket >= 0 && !BrowseSocketIsSystemd)
+     {
+      /*
+       * Bind the socket to browse port...
+@@ -1556,13 +1556,17 @@ cupsdStartBrowsing(void)
+ 	cupsdLogMessage(CUPSD_LOG_ERROR, "Unable to set broadcast mode - %s.",
+ 			strerror(errno));
+ 
++	if (!BrowseSocketIsSystemd)
++	{
+ #ifdef WIN32
+-	closesocket(BrowseSocket);
++	  closesocket(BrowseSocket);
+ #else
+-	close(BrowseSocket);
++	  close(BrowseSocket);
+ #endif /* WIN32 */
+ 
+-	BrowseSocket = -1;
++	  BrowseSocket = -1;
++	}
++
+ 	BrowseLocalProtocols &= ~BROWSE_CUPS;
+ 	BrowseRemoteProtocols &= ~BROWSE_CUPS;
+ 
+@@ -1885,15 +1889,22 @@ cupsdStopBrowsing(void)
+   if (((BrowseLocalProtocols | BrowseRemoteProtocols) & BROWSE_CUPS) &&
+       BrowseSocket >= 0)
+   {
+-   /*
+-    * Close the socket and remove it from the input selection set.
+-    */
++    if (!BrowseSocketIsSystemd)
++    {
++     /*
++      * Close the socket.
++      */
+ 
+ #ifdef WIN32
+-    closesocket(BrowseSocket);
++      closesocket(BrowseSocket);
+ #else
+-    close(BrowseSocket);
++      close(BrowseSocket);
+ #endif /* WIN32 */
++    }
++
++   /*
++    * Remove it from the input selection set.
++    */
+ 
+     cupsdRemoveSelect(BrowseSocket);
+     BrowseSocket = -1;
+@@ -5693,11 +5704,14 @@ update_cups_browse(void)
+                       strerror(errno));
+       cupsdLogMessage(CUPSD_LOG_ERROR, "CUPS browsing turned off.");
+ 
++      if (!BrowseSocketIsSystemd)
++      {
+ #ifdef WIN32
+-      closesocket(BrowseSocket);
++	closesocket(BrowseSocket);
+ #else
+-      close(BrowseSocket);
++	close(BrowseSocket);
+ #endif /* WIN32 */
++      }
+ 
+       cupsdRemoveSelect(BrowseSocket);
+       BrowseSocket = -1;
+diff -up cups-1.5.2/scheduler/dirsvc.h.systemd-socket cups-1.5.2/scheduler/dirsvc.h
+--- cups-1.5.2/scheduler/dirsvc.h.systemd-socket	2012-03-16 14:50:57.113449769 +0000
++++ cups-1.5.2/scheduler/dirsvc.h	2012-03-16 14:50:57.157449792 +0000
+@@ -100,6 +100,8 @@ VAR int			Browsing	VALUE(TRUE),
+ 					/* Short names for remote printers? */
+ 			BrowseSocket	VALUE(-1),
+ 					/* Socket for browsing */
++			BrowseSocketIsSystemd	VALUE(0),
++					/* BrowseSocket is systemd-provided? */
+ 			BrowsePort	VALUE(IPP_PORT),
+ 					/* Port number for broadcasts */
+ 			BrowseInterval	VALUE(DEFAULT_INTERVAL),
+diff -up cups-1.5.2/scheduler/listen.c.systemd-socket cups-1.5.2/scheduler/listen.c
+--- cups-1.5.2/scheduler/listen.c.systemd-socket	2011-04-16 00:38:13.000000000 +0100
++++ cups-1.5.2/scheduler/listen.c	2012-03-16 14:50:57.158449792 +0000
+@@ -401,7 +401,11 @@ cupsdStopListening(void)
+        lis;
+        lis = (cupsd_listener_t *)cupsArrayNext(Listeners))
+   {
+-    if (lis->fd != -1)
++    if (lis->fd != -1
++#ifdef HAVE_SYSTEMD
++        && !lis->is_systemd
++#endif /* HAVE_SYSTEMD */
++        )
+     {
+ #ifdef WIN32
+       closesocket(lis->fd);
+diff -up cups-1.5.2/scheduler/main.c.systemd-socket cups-1.5.2/scheduler/main.c
+--- cups-1.5.2/scheduler/main.c.systemd-socket	2012-03-16 14:50:57.121449773 +0000
++++ cups-1.5.2/scheduler/main.c	2012-03-16 14:51:55.409483636 +0000
+@@ -26,6 +26,8 @@
+  *   launchd_checkin()     - Check-in with launchd and collect the listening
+  *                           fds.
+  *   launchd_checkout()    - Update the launchd KeepAlive file as needed.
++ *   systemd_checkin()     - Check-in with systemd and collect the
++ *                           listening fds.
+  *   parent_handler()      - Catch USR1/CHLD signals...
+  *   process_children()    - Process all dead children...
+  *   select_timeout()      - Calculate the select timeout value.
+@@ -62,6 +64,10 @@
+ #  endif /* !LAUNCH_JOBKEY_SERVICEIPC */
+ #endif /* HAVE_LAUNCH_H */
+ 
++#ifdef HAVE_SYSTEMD
++#include <systemd/sd-daemon.h>
++#endif /* HAVE_SYSTEMD */
++
+ #if defined(HAVE_MALLOC_H) && defined(HAVE_MALLINFO)
+ #  include <malloc.h>
+ #endif /* HAVE_MALLOC_H && HAVE_MALLINFO */
+@@ -78,6 +84,9 @@
+ static void		launchd_checkin(void);
+ static void		launchd_checkout(void);
+ #endif /* HAVE_LAUNCHD */
++#ifdef HAVE_SYSTEMD
++static void		systemd_checkin(void);
++#endif /* HAVE_SYSTEMD */
+ static void		parent_handler(int sig);
+ static void		process_children(void);
+ static void		sigchld_handler(int sig);
+@@ -537,6 +546,13 @@ main(int  argc,				/* I - Number of comm
+   }
+ #endif /* HAVE_LAUNCHD */
+ 
++#ifdef HAVE_SYSTEMD
++ /*
++  * If we were started by systemd get the listen sockets file descriptors...
++  */
++  systemd_checkin();
++#endif /* HAVE_SYSTEMD */
++
+  /*
+   * Startup the server...
+   */
+@@ -759,6 +775,15 @@ main(int  argc,				/* I - Number of comm
+ 	}
+ #endif /* HAVE_LAUNCHD */
+ 
++#ifdef HAVE_SYSTEMD
++       /*
++	* If we were started by systemd get the listen sockets file
++	* descriptors...
++        */
++
++        systemd_checkin();
++#endif /* HAVE_SYSTEMD */
++
+        /*
+         * Startup the server...
+         */
+@@ -1584,6 +1609,139 @@ launchd_checkout(void)
+ }
+ #endif /* HAVE_LAUNCHD */
+ 
++#ifdef HAVE_SYSTEMD
++static void
++systemd_checkin(void)
++{
++  int n, fd;
++
++  n = sd_listen_fds(0);
++  if (n < 0)
++  {
++    cupsdLogMessage(CUPSD_LOG_ERROR,
++           "systemd_checkin: Failed to acquire sockets from systemd - %s",
++           strerror(-n));
++    exit(EXIT_FAILURE);
++    return;
++  }
++
++  if (n == 0)
++    return;
++
++  for (fd = SD_LISTEN_FDS_START; fd < SD_LISTEN_FDS_START + n; fd ++)
++  {
++    http_addr_t addr;
++    socklen_t addrlen = sizeof (addr);
++    int r;
++    cupsd_listener_t *lis;
++    char s[256];
++
++    r = sd_is_socket(fd, AF_UNSPEC, SOCK_STREAM, 1);
++    if (r < 0)
++    {
++      cupsdLogMessage(CUPSD_LOG_ERROR,
++             "systemd_checkin: Unable to verify socket type - %s",
++             strerror(-r));
++      continue;
++    }
++
++    if (!r)
++    {
++      if (Browsing &&
++	  ((BrowseLocalProtocols | BrowseRemoteProtocols) & BROWSE_CUPS))
++      {
++	r = sd_is_socket(fd, AF_UNSPEC, SOCK_DGRAM, 0);
++	if (r < 0)
++	{
++	  cupsdLogMessage(CUPSD_LOG_ERROR,
++			  "systemd_checkin: Unable to verify socket type - %s",
++			  strerror(-r));
++	  continue;
++	}
++
++	if (r)
++	{
++	 /*
++	  * This is the browse socket.
++	  */
++
++	  char addrstr[256];
++	  if (getsockname(fd, (struct sockaddr*) &addr, &addrlen))
++	  {
++	    cupsdLogMessage(CUPSD_LOG_ERROR,
++			    "systemd_checkin: Unable to get local address - %s",
++			    strerror(errno));
++	    continue;
++	  }
++
++	  httpAddrString (&addr, addrstr, sizeof (addrstr));
++	  BrowseSocket = fd;
++	  BrowseSocketIsSystemd = 1;
++	  cupsdLogMessage(CUPSD_LOG_DEBUG,
++			  "systemd_checkin: Matched browse (port %d) with fd %d:%s...",
++			  BrowsePort, fd, addrstr);
++	  continue;
++	}
++
++      }
++      cupsdLogMessage(CUPSD_LOG_ERROR,
++             "systemd_checkin: Socket not of the right type");
++      continue;
++    }
++
++    if (getsockname(fd, (struct sockaddr*) &addr, &addrlen))
++    {
++      cupsdLogMessage(CUPSD_LOG_ERROR,
++             "systemd_checkin: Unable to get local address - %s",
++             strerror(errno));
++      continue;
++    }
++
++   /*
++    * Try to match the systemd socket address to one of the listeners...
++    */
++
++    for (lis = (cupsd_listener_t *)cupsArrayFirst(Listeners);
++       lis;
++       lis = (cupsd_listener_t *)cupsArrayNext(Listeners))
++      if (httpAddrEqual(&lis->address, &addr))
++	break;
++
++    if (lis)
++    {
++      cupsdLogMessage(CUPSD_LOG_DEBUG,
++                      "systemd_checkin: Matched existing listener %s with fd %d...",
++                      httpAddrString(&(lis->address), s, sizeof(s)), fd);
++    }
++    else
++    {
++      cupsdLogMessage(CUPSD_LOG_DEBUG,
++                      "systemd_checkin: Adding new listener %s with fd %d...",
++                      httpAddrString(&addr, s, sizeof(s)), fd);
++
++      if ((lis = calloc(1, sizeof(cupsd_listener_t))) == NULL)
++      {
++        cupsdLogMessage(CUPSD_LOG_ERROR,
++                        "systemd_checkin: Unable to allocate listener - "
++                        "%s.", strerror(errno));
++        exit(EXIT_FAILURE);
++      }
++
++      cupsArrayAdd(Listeners, lis);
++
++      memcpy(&lis->address, &addr, sizeof(lis->address));
++    }
++
++    lis->fd = fd;
++    lis->is_systemd = 1;
++
++#  ifdef HAVE_SSL
++    if (_httpAddrPort(&(lis->address)) == 443)
++      lis->encryption = HTTP_ENCRYPT_ALWAYS;
++#  endif /* HAVE_SSL */
++  }
++}
++#endif /* HAVE_SYSTEMD */
+ 
+ /*
+  * 'parent_handler()' - Catch USR1/CHLD signals...
+diff -up cups-1.5.2/scheduler/Makefile.systemd-socket cups-1.5.2/scheduler/Makefile
+--- cups-1.5.2/scheduler/Makefile.systemd-socket	2012-03-16 14:50:57.130449778 +0000
++++ cups-1.5.2/scheduler/Makefile	2012-03-16 14:50:57.160449794 +0000
+@@ -382,7 +382,7 @@ cupsd:	$(CUPSDOBJS) $(LIBCUPSMIME) ../cu
+ 	$(CC) $(LDFLAGS) -o cupsd $(CUPSDOBJS) -L. -lcupsmime \
+ 		$(LIBZ) $(SSLLIBS) $(LIBSLP) $(LIBLDAP) $(PAMLIBS) \
+ 		$(LIBPAPER) $(LIBMALLOC) $(SERVERLIBS) $(DNSSDLIBS) $(LIBS) \
+-		$(LIBGSSAPI) $(LIBWRAP)
++		$(LIBGSSAPI) $(LIBWRAP) $(SDLIBS)
+ 
+ cupsd-static:	$(CUPSDOBJS) libcupsmime.a ../cups/$(LIBCUPSSTATIC)
+ 	echo Linking $@...
+@@ -390,7 +390,7 @@ cupsd-static:	$(CUPSDOBJS) libcupsmime.a
+ 		$(LIBZ) $(SSLLIBS) $(LIBSLP) $(LIBLDAP) $(PAMLIBS) \
+ 		../cups/$(LIBCUPSSTATIC) $(COMMONLIBS) $(LIBZ) $(LIBPAPER) \
+ 		$(LIBMALLOC) $(SERVERLIBS) $(DNSSDLIBS) $(LIBGSSAPI) \
+-		$(LIBWRAP)
++		$(LIBWRAP) $(SDLIBS)
+ 
+ 
+ #
