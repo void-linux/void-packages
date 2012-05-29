@@ -10,7 +10,7 @@ echo "USERNAME=$USERNAME" >> ${NEWROOT}/etc/default/live.conf
 chmod 644 ${NEWROOT}/etc/default/live.conf
 
 # Create new user and remove password. We'll use autologin by default.
-chroot ${NEWROOT} useradd -c $USERNAME -m $USERNAME -G audio,video,wheel -s /bin/bash
+chroot ${NEWROOT} useradd -c $USERNAME -m $USERNAME -G audio,video,wheel -s /bin/sh
 chroot ${NEWROOT} passwd -d $USERNAME 2>&1 >/dev/null
 
 # Enable sudo permission by default.
