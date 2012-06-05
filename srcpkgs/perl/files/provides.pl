@@ -285,5 +285,5 @@ my @pkgs = map {
 
 for my $pkg (@pkgs) {
     my ($name, $ver) = @$pkg;
-    print "$name-$ver\n";
+    print "$name-$ver\_1\n";
 }
