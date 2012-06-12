@@ -1,13 +1,15 @@
 # Template file for 'binutils'
 pkgname=binutils
-version=2.22
-revision=2
-distfiles="${GNU_SITE}/binutils/$pkgname-$version.tar.bz2"
+version=2.22.52.0.4
+revision=1
+makedepends="flex perl"
+subpackages="$pkgname-devel"
 short_desc="GNU binary utilities"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://www.gnu.org/software/binutils/"
 license="GPL-3"
-checksum=6c7af8ed1c8cf9b4b9d6e6fe09a3e1d3d479fe63984ba8b9b26bf356b6313ca9
+distfiles="${KERNEL_SITE}/devel/binutils/$pkgname-$version.tar.xz"
+checksum=d88ea0bc8591098a1666d9b97b93d81098816dd16faff90d3ed15072b40e1caf
 long_desc="
  The GNU binutils package contains essential tools to assemble, link and
  manipulate binary and object files. They are often used with a compiler
@@ -21,16 +23,29 @@ long_desc="
  stripping out symbols (like debugging information) from object files,
  and other tools."
 
-subpackages="$pkgname-devel"
-
 do_configure() {
 	./configure ${CONFIGURE_SHARED_ARGS} --enable-threads \
 		--enable-64-bit-bfd --enable-multilib --enable-plugins \
-		--enable-secureplt --with-mmap --enable-shared
+		--enable-secureplt --with-mmap
 }
 
 do_build() {
 	make ${makejobs}
+	# Rebuild libiberty.a with -fPIC
+	cp -a libiberty libiberty-pic
+	make -C libiberty-pic clean
+	make CFLAGS="$CFLAGS -fPIC" -C libiberty-pic
+
+	# Rebuild libbfd.a with -fPIC
+	# hidden visability prevent 3rd party shared libraries exporting bfd non-stable API
+	cp -a bfd bfd-pic
+	make -C bfd-pic clean
+	make CFLAGS="$CFLAGS -fPIC -fvisibility=hidden" -C bfd-pic
+
+	# Rebuild libopcodes.a with -fPIC
+	cp -a opcodes opcodes-pic
+	make -C opcodes-pic clean
+	make CFLAGS="$CFLAGS -fPIC" -C opcodes-pic
 }
 
 do_install() {
@@ -40,6 +55,23 @@ do_install() {
 	fi
 
 	make DESTDIR=${DESTDIR} tooldir=/usr install
+
+	# Add some useful headers
+	install -m644 include/libiberty.h ${DESTDIR}/usr/include
+	install -m644 include/demangle.h ${DESTDIR}/usr/include
+
+	# install libraries rebuilt with -fPIC
+	install -m644 libiberty-pic/libiberty.a ${DESTDIR}/usr/lib
+	install -m644 bfd-pic/libbfd.a ${DESTDIR}/usr/lib
+	install -m644 opcodes-pic/libopcodes.a ${DESTDIR}/usr/lib
+
+	# Remove these symlinks, they are not ABI stable.
+	# Programs should compile static to the .a file.
+	rm -f ${DESTDIR}/usr/lib/lib{bfd,opcodes}.so
+	echo "INPUT ( /usr/lib/libbfd.a -liberty -lz )" \
+		>${DESTDIR}/usr/lib/libbfd.so
+	echo "INPUT ( /usr/lib/libopcodes.a -lbfd )" \
+		>${DESTDIR}/usr/lib/libopcodes.so
 
 	# Remove info file that conflicts with autoconf.
 	rm -f ${DESTDIR}/usr/share/info/standards.info
