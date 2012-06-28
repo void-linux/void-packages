@@ -23,9 +23,10 @@ short_desc="Google's attempt at creating a safer, faster, and more stable browse
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://www.chromium.org/"
 license="BSD"
+_url_base="http://commondatastorage.googleapis.com"
 distfiles="
-http://commondatastorage.googleapis.com/chromium-browser-official/$pkgname-$version.tar.bz2
-http://commondatastorage.googleapis.com/nativeclient-mirror/nacl/nacl_sdk/$version/naclsdk_linux.bz2"
+${_url_base}/chromium-browser-official/$pkgname-$version.tar.bz2
+${_url_base}/nativeclient-mirror/nacl/nacl_sdk/$version/naclsdk_linux.bz2"
 checksum="
 c21bdee0ec136102e10c527a0d98e3a29e40406d8f7eb63e8e0ac23801722824
 aa836ba493e659f028e8624764ba7662ef4eccd609be4c6812a7901eaf63f6e4"
@@ -43,14 +44,21 @@ pre_configure() {
 	# http://code.google.com/p/chromium/issues/detail?id=109527
 	sed -i 's|glib/gutils.h|glib.h|' ui/base/l10n/l10n_util.cc
 
-	# Unpack nacl, file is a real POSIX tar archive compressed with bzip2.
-	tar xf $wrksrc/naclsdk_linux -C $wrksrc
+	#XXX: nacl enabled only for x86_64 (can't build it on i686)
+	if [ "$XBPS_MACHINE" = "x86_64" ]; then
+		# Unpack nacl, its a POSIX tar archive compressed with bzip2.
+		tar xf $wrksrc/naclsdk_linux -C $wrksrc
 
-	ln -s $wrksrc/pepper_${version%%.*}/toolchain/linux_x86_newlib \
-		native_client/toolchain/linux_x86_newlib
+		ln -s $wrksrc/pepper_${version%%.*}/toolchain/linux_x86_newlib \
+			native_client/toolchain/linux_x86_newlib
+	fi
 }
 
 do_configure() {
+	local _nonacl
+	if [ "$XBPS_MACHINE" = "i686" ]; then
+		_nonacl="-Ddisable_nacl=1"
+	fi
 	build/gyp_chromium -f make build/all.gyp --depth=. \
 		-Dwerror= -Dlinux_sandbox_path=/usr/lib/chromium/chromium-sandbox \
 		-Drelease_extra_cflags="$CFLAGS" -Dlinux_use_gold_binary=0 \
@@ -62,7 +70,7 @@ do_configure() {
 		-Duse_system_libevent=1 -Duse_system_ssl=0 \
 		-Duse_system_xdg_utils=1 -Duse_system_vpx=1 \
 		-Duse_system_speex=1 -Duse_system_libwebp=1 \
-		-Duse_hunspell=1 -Duse_system_flac=1 -Duse_gconf=0
+		-Duse_hunspell=1 -Duse_system_flac=1 -Duse_gconf=0 ${_nonacl}
 }
 
 do_build() {
@@ -75,10 +83,13 @@ do_install() {
 	vinstall out/Release/chrome.pak 644 usr/lib/${pkgname}
 	vinstall out/Release/resources.pak 644 usr/lib/${pkgname}
 	vinstall out/Release/libffmpegsumo.so 755 usr/lib/${pkgname}
-	vinstall out/Release/libppGoogleNaClPluginChrome.so 755 usr/lib/${pkgname}
-	vinstall out/Release/nacl_helper 755 usr/lib/$pkgname
-	vinstall out/Release/nacl_helper_bootstrap 755 usr/lib/$pkgname
-	vcopy "out/Release/nacl_irt_*.nexe" usr/lib/${pkgname}
+	if [ "$XBPS_MACHINE" = "x86_64" ]; then
+		vinstall out/Release/libppGoogleNaClPluginChrome.so 755 \
+			usr/lib/${pkgname}
+		vinstall out/Release/nacl_helper 755 usr/lib/$pkgname
+		vinstall out/Release/nacl_helper_bootstrap 755 usr/lib/$pkgname
+		vcopy "out/Release/nacl_irt_*.nexe" usr/lib/${pkgname}
+	fi
 
 	for f in locales resources; do
 		vcopy out/Release/${f} usr/lib/chromium
