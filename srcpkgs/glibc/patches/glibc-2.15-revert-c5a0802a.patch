@@ -1,0 +1,223 @@
+--- nptl/sysdeps/unix/sysv/linux/i386/i486/pthread_cond_wait.S	2011-12-22 18:04:12.937212834 +0000
++++ nptl/sysdeps/unix/sysv/linux/i386/i486/pthread_cond_wait.S	2011-12-22 18:04:42.104222278 +0000
+@@ -137,7 +137,6 @@ __pthread_cond_wait:
+	cmpl	$PI_BIT, %eax
+	jne	18f
+
+-90:
+	movl	$(FUTEX_WAIT_REQUEUE_PI|FUTEX_PRIVATE_FLAG), %ecx
+	movl	%ebp, %edx
+	xorl	%esi, %esi
+@@ -151,9 +150,6 @@ __pthread_cond_wait:
+	sete	16(%esp)
+	je	19f
+
+-	cmpl	$-EAGAIN, %eax
+-	je	91f
+-
+	/* Normal and PI futexes dont mix. Use normal futex functions only
+	   if the kernel does not support the PI futex functions.  */
+	cmpl	$-ENOSYS, %eax
+@@ -398,78 +394,6 @@ __pthread_cond_wait:
+ #endif
+	call	__lll_unlock_wake
+	jmp	11b
+-
+-91:
+-.LcleanupSTART2:
+-	/* FUTEX_WAIT_REQUEUE_PI returned EAGAIN.  We need to
+-	   call it again.  */
+-
+-	/* Get internal lock.  */
+-	movl	$1, %edx
+-	xorl	%eax, %eax
+-	LOCK
+-#if cond_lock == 0
+-	cmpxchgl %edx, (%ebx)
+-#else
+-	cmpxchgl %edx, cond_lock(%ebx)
+-#endif
+-	jz	92f
+-
+-#if cond_lock == 0
+-	movl	%ebx, %edx
+-#else
+-	leal	cond_lock(%ebx), %edx
+-#endif
+-#if (LLL_SHARED-LLL_PRIVATE) > 255
+-	xorl	%ecx, %ecx
+-#endif
+-	cmpl	$-1, dep_mutex(%ebx)
+-	setne	%cl
+-	subl	$1, %ecx
+-	andl	$(LLL_SHARED-LLL_PRIVATE), %ecx
+-#if LLL_PRIVATE != 0
+-	addl	$LLL_PRIVATE, %ecx
+-#endif
+-	call	__lll_lock_wait
+-
+-92:
+-	/* Increment the cond_futex value again, so it can be used as a new
+-	   expected value. */
+-	addl	$1, cond_futex(%ebx)
+-	movl	cond_futex(%ebx), %ebp
+-
+-	/* Unlock.  */
+-	LOCK
+-#if cond_lock == 0
+-	subl	$1, (%ebx)
+-#else
+-	subl	$1, cond_lock(%ebx)
+-#endif
+-	je	93f
+-#if cond_lock == 0
+-	movl	%ebx, %eax
+-#else
+-	leal	cond_lock(%ebx), %eax
+-#endif
+-#if (LLL_SHARED-LLL_PRIVATE) > 255
+-	xorl	%ecx, %ecx
+-#endif
+-	cmpl	$-1, dep_mutex(%ebx)
+-	setne	%cl
+-	subl	$1, %ecx
+-	andl	$(LLL_SHARED-LLL_PRIVATE), %ecx
+-#if LLL_PRIVATE != 0
+-	addl	$LLL_PRIVATE, %ecx
+-#endif
+-	call	__lll_unlock_wake
+-
+-93:
+-	/* Set the rest of SYS_futex args for FUTEX_WAIT_REQUEUE_PI. */
+-	xorl	%ecx, %ecx
+-	movl	dep_mutex(%ebx), %edi
+-	jmp	90b
+-.LcleanupEND2:
+-
+	.size	__pthread_cond_wait, .-__pthread_cond_wait
+ versioned_symbol (libpthread, __pthread_cond_wait, pthread_cond_wait,
+		  GLIBC_2_3_2)
+@@ -642,10 +566,6 @@ __condvar_w_cleanup:
+	.long	.LcleanupEND-.Lsub_cond_futex
+	.long	__condvar_w_cleanup-.LSTARTCODE
+	.uleb128  0
+-	.long	.LcleanupSTART2-.LSTARTCODE
+-	.long	.LcleanupEND2-.LcleanupSTART2
+-	.long	__condvar_w_cleanup-.LSTARTCODE
+-	.uleb128  0
+	.long	.LcallUR-.LSTARTCODE
+	.long	.LENDCODE-.LcallUR
+	.long	0
+--- nptl/sysdeps/unix/sysv/linux/x86_64/pthread_cond_wait.S	2011-12-22 18:04:12.941212837 +0000
++++ nptl/sysdeps/unix/sysv/linux/x86_64/pthread_cond_wait.S	2011-12-22 18:05:05.155229737 +0000
+@@ -23,7 +23,6 @@
+ #include <lowlevelcond.h>
+ #include <tcb-offsets.h>
+ #include <pthread-pi-defines.h>
+-#include <pthread-errnos.h>
+ #include <stap-probe.h>
+
+ #include <kernel-features.h>
+@@ -137,14 +136,11 @@ __pthread_cond_wait:
+	cmpl	$PI_BIT, %eax
+	jne	61f
+
+-90:
+	movl	$(FUTEX_WAIT_REQUEUE_PI|FUTEX_PRIVATE_FLAG), %esi
+	movl	$SYS_futex, %eax
+	syscall
+
+	movl	$1, %r8d
+-	cmpq	$-EAGAIN, %rax
+-	je	91f
+ #ifdef __ASSUME_REQUEUE_PI
+	jmp	62f
+ #else
+@@ -331,70 +327,6 @@ __pthread_cond_wait:
+
+ 13:	movq	%r10, %rax
+	jmp	14b
+-
+-91:
+-.LcleanupSTART2:
+-	/* FUTEX_WAIT_REQUEUE_PI returned EAGAIN.  We need to
+-	   call it again.  */
+-	movq	8(%rsp), %rdi
+-
+-	/* Get internal lock.  */
+-	movl	$1, %esi
+-	xorl	%eax, %eax
+-	LOCK
+-#if cond_lock == 0
+-	cmpxchgl %esi, (%rdi)
+-#else
+-	cmpxchgl %esi, cond_lock(%rdi)
+-#endif
+-	jz	92f
+-
+-#if cond_lock != 0
+-	addq	$cond_lock, %rdi
+-#endif
+-	LP_OP(cmp) $-1, dep_mutex-cond_lock(%rdi)
+-	movl	$LLL_PRIVATE, %eax
+-	movl	$LLL_SHARED, %esi
+-	cmovne	%eax, %esi
+-	callq	__lll_lock_wait
+-#if cond_lock != 0
+-	subq	$cond_lock, %rdi
+-#endif
+-92:
+-	/* Increment the cond_futex value again, so it can be used as a new
+-	   expected value. */
+-	incl	cond_futex(%rdi)
+-	movl	cond_futex(%rdi), %edx
+-
+-	/* Release internal lock.  */
+-	LOCK
+-#if cond_lock == 0
+-	decl	(%rdi)
+-#else
+-	decl	cond_lock(%rdi)
+-#endif
+-	jz	93f
+-
+-#if cond_lock != 0
+-	addq	$cond_lock, %rdi
+-#endif
+-	LP_OP(cmp) $-1, dep_mutex-cond_lock(%rdi)
+-	movl	$LLL_PRIVATE, %eax
+-	movl	$LLL_SHARED, %esi
+-	cmovne	%eax, %esi
+-	/* The call preserves %rdx.  */
+-	callq	__lll_unlock_wake
+-#if cond_lock != 0
+-	subq	$cond_lock, %rdi
+-#endif
+-93:
+-	/* Set the rest of SYS_futex args for FUTEX_WAIT_REQUEUE_PI. */
+-	xorq	%r10, %r10
+-	mov	dep_mutex(%rdi), %R8_LP
+-	leaq	cond_futex(%rdi), %rdi
+-	jmp	90b
+-.LcleanupEND2:
+-
+	.size	__pthread_cond_wait, .-__pthread_cond_wait
+ versioned_symbol (libpthread, __pthread_cond_wait, pthread_cond_wait,
+		  GLIBC_2_3_2)
+@@ -547,15 +479,11 @@ __condvar_cleanup1:
+	.uleb128 .LcleanupSTART-.LSTARTCODE
+	.uleb128 .LcleanupEND-.LcleanupSTART
+	.uleb128 __condvar_cleanup1-.LSTARTCODE
+-	.uleb128 0
+-	.uleb128 .LcleanupSTART2-.LSTARTCODE
+-	.uleb128 .LcleanupEND2-.LcleanupSTART2
+-	.uleb128 __condvar_cleanup1-.LSTARTCODE
+-	.uleb128 0
++	.uleb128  0
+	.uleb128 .LcallUR-.LSTARTCODE
+	.uleb128 .LENDCODE-.LcallUR
+	.uleb128 0
+-	.uleb128 0
++	.uleb128  0
+ .Lcstend:
+
