@@ -1,0 +1,61 @@
+Backported patch from master to make dracut --hostonly work while
+lazy resolving deps in dracut-install.
+
+http://dracut.git.sourceforge.net/git/gitweb.cgi?p=dracut/dracut;a=commitdiff;h=998bf6e0888d93443278c2ff5335fc594d318e4b
+
+--- dracut.sh.orig	2012-07-02 19:06:26.472444019 +0200
++++ dracut.sh	2012-07-02 19:09:01.052274527 +0200
+@@ -783,6 +783,27 @@ if [[ $no_kernel != yes ]]; then
+     dinfo "*** Installing kernel module dependencies and firmware done ***"
+ fi
+ 
++if [[ $kernel_only != yes ]]; then
++    (( ${#install_items[@]} > 0 )) && dracut_install  ${install_items[@]}
++
++    while pop fstab_lines line; do
++        echo "$line 0 0" >> "${initdir}/etc/fstab"
++    done
++
++    for f in $add_fstab; do
++        cat $f >> "${initdir}/etc/fstab"
++    done
++
++    if [[ $DRACUT_RESOLVE_LAZY ]] && [[ $DRACUT_INSTALL ]]; then
++        dinfo "*** Resolving executable dependencies ***"
++        find "$initdir" -type f \
++                '(' -perm -0100 -or -perm -0010 -or -perm -0001 ')' \
++                -not -path '*.ko' -print0 \
++            | xargs -r -0 $DRACUT_INSTALL ${initdir+-D "$initdir"} -R ${DRACUT_FIPS_MODE+-H}
++        dinfo "*** Resolving executable dependencies done***"
++    fi
++fi
++
+ while pop include_src src && pop include_target tgt; do
+     if [[ $src && $tgt ]]; then
+         if [[ -f $src ]]; then
+@@ -810,25 +831,6 @@ while pop include_src src && pop include
+ done
+ 
+ if [[ $kernel_only != yes ]]; then
+-    (( ${#install_items[@]} > 0 )) && dracut_install  ${install_items[@]}
+-
+-    while pop fstab_lines line; do
+-        echo "$line 0 0" >> "${initdir}/etc/fstab"
+-    done
+-
+-    for f in $add_fstab; do
+-        cat $f >> "${initdir}/etc/fstab"
+-    done
+-
+-    if [[ $DRACUT_RESOLVE_LAZY ]] && [[ -x /usr/bin/dracut-install ]]; then
+-        dinfo "*** Resolving executable dependencies ***"
+-        find "$initdir" -type f \
+-            '(' -perm -0100 -or -perm -0010 -or -perm -0001 ')' \
+-            -not -path '*.ko' -print0 \
+-        | xargs -0 dracut-install ${initdir+-D "$initdir"} -R ${DRACUT_FIPS_MODE+-H}
+-        dinfo "*** Resolving executable dependencies done***"
+-    fi
+-
+     # make sure that library links are correct and up to date
+     for f in /etc/ld.so.conf /etc/ld.so.conf.d/*; do
+         [[ -f $f ]] && inst_simple "$f"
