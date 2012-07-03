@@ -1,0 +1,159 @@
+diff --git a/src/efibootmgr/efibootmgr.c b/src/efibootmgr/efibootmgr.c
+index 5db0d9e..199af39 100644
+--- src/efibootmgr/efibootmgr.c
++++ src/efibootmgr/efibootmgr.c
+@@ -328,6 +328,7 @@ add_to_boot_order(uint16_t num)
+ 	/* Now new_data has what we need */
+ 	memcpy(&(boot_order.Data), new_data, new_data_size);
+ 	boot_order.DataSize = new_data_size;
++	free(new_data);
+ 	return create_or_edit_variable(&boot_order);
+ }
+ 
+diff --git a/src/include/disk.h b/src/include/disk.h
+index eb93d10..8aa37d7 100644
+--- src/include/disk.h
++++ src/include/disk.h
+@@ -65,6 +65,9 @@ enum _interface_type {interface_type_unknown,
+ 		      ata, atapi, scsi, usb,
+ 		      i1394, fibre, i2o, md};
+ 
++
++unsigned int lcm(unsigned int x, unsigned int y);
++
+ int disk_get_pci(int fd,
+ 		 unsigned char *bus,
+ 		 unsigned char *device,
+diff --git a/src/lib/disk.c b/src/lib/disk.c
+index 883864f..8ad590b 100644
+--- src/lib/disk.c
++++ src/lib/disk.c
+@@ -55,7 +55,7 @@ disk_info_from_fd(int fd,
+ 		return 1;
+ 	}
+ 	major = buf.st_dev >> 8;
+-	minor = buf.st_dev && 0xFF;
++	minor = buf.st_dev & 0xFF;
+ 
+ 	/* IDE disks can have up to 64 partitions, or 6 bits worth,
+ 	 * and have one bit for the disk number.
+@@ -420,6 +420,27 @@ get_sector_size(int filedes)
+ 	return sector_size;
+ }
+ 
++/************************************************************
++ * lcm
++ * Requires:
++ * - numbers of which to find the lowest common multiple
++ * Modifies: nothing
++ * Returns:
++ *  lowest common multiple of x and y
++ ************************************************************/
++unsigned int
++lcm(unsigned int x, unsigned int y)
++{
++	unsigned int m = x, n = y, o;
++
++	while ((o = m % n)) {
++		m = n;
++		n = o;
++	}
++
++	return (x / n) * y;
++}
++
+ /**
+  * disk_get_partition_info()
+  *  @fd - open file descriptor to disk
+@@ -442,26 +463,27 @@ disk_get_partition_info (int fd,
+ 			 uint8_t *mbr_type, uint8_t *signature_type)
+ {
+ 	legacy_mbr *mbr;
+-	void *mbr_unaligned;
++	void *mbr_sector;
++	size_t mbr_size;
+ 	off_t offset;
+ 	int this_bytes_read = 0;
+ 	int gpt_invalid=0, mbr_invalid=0;
+ 	int rc=0;
+ 	int sector_size = get_sector_size(fd);
+ 
+-	if (sizeof(*mbr) != sector_size)
+-		return 1;
+-	mbr_unaligned = malloc(sizeof(*mbr)+sector_size-1);
+-	mbr = (legacy_mbr *)
+-		(((unsigned long)mbr_unaligned + sector_size - 1) &
+-		 ~(unsigned long)(sector_size-1));
+-	memset(mbr, 0, sizeof(*mbr));
++
++	mbr_size = lcm(sizeof(*mbr), sector_size);
++	if ((rc = posix_memalign(&mbr_sector, sector_size, mbr_size)) != 0)
++		goto error;
++	memset(mbr_sector, '\0', mbr_size);
++
+ 	offset = lseek(fd, 0, SEEK_SET);
+-	this_bytes_read = read(fd, mbr, sizeof(*mbr));
++	this_bytes_read = read(fd, mbr_sector, mbr_size);
+ 	if (this_bytes_read < sizeof(*mbr)) {
+ 		rc=1;
+ 		goto error_free_mbr;
+ 	}
++	mbr = (legacy_mbr *)mbr_sector;
+ 	gpt_invalid = gpt_disk_get_partition_info(fd, num,
+ 						  start, size,
+ 						  signature,
+@@ -479,7 +501,8 @@ disk_get_partition_info (int fd,
+ 		}
+ 	}
+  error_free_mbr:
+-	free(mbr_unaligned);
++	free(mbr_sector);
++ error:
+ 	return rc;
+ }
+ 
+diff --git a/src/lib/gpt.c b/src/lib/gpt.c
+index d90ddaf..83e7a94 100644
+--- src/lib/gpt.c
++++ src/lib/gpt.c
+@@ -215,26 +215,24 @@ read_lastoddsector(int fd, uint64_t lba, void *buffer, size_t count)
+ static ssize_t
+ read_lba(int fd, uint64_t lba, void *buffer, size_t bytes)
+ {
+-	int sector_size = get_sector_size(fd);
+-	off_t offset = lba * sector_size;
++        int sector_size = get_sector_size(fd);
++        off_t offset = lba * sector_size;
+         ssize_t bytesread;
+-        void *aligned;
+-        void *unaligned;
+-
+-        if (bytes % sector_size)
+-                return EINVAL;
++        void *iobuf;
++        size_t iobuf_size;
++        int rc;
+ 
+-	unaligned = malloc(bytes+sector_size-1);
+-	aligned = (void *)
+-		(((unsigned long)unaligned + sector_size - 1) &
+-		 ~(unsigned long)(sector_size-1));
+-	memset(aligned, 0, bytes);
++        iobuf_size = lcm(bytes, sector_size);
++        rc = posix_memalign(&iobuf, sector_size, iobuf_size);
++        if (rc)
++                return rc;
++        memset(iobuf, 0, bytes);
+ 
+ 
+-	lseek(fd, offset, SEEK_SET);
+-	bytesread = read(fd, aligned, bytes);
+-        memcpy(buffer, aligned, bytesread);
+-        free(unaligned);
++        lseek(fd, offset, SEEK_SET);
++        bytesread = read(fd, iobuf, iobuf_size);
++        memcpy(buffer, iobuf, bytes);
++        free(iobuf);
+ 
+         /* Kludge.  This is necessary to read/write the last
+            block of an odd-sized disk, until Linux 2.5.x kernel fixes.
