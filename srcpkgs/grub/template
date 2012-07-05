@@ -1,9 +1,7 @@
 # Template file for 'grub'
 pkgname=grub
 version="2.00"
-revision=3
-build_style=gnu-configure
-configure_args="--disable-werror"
+revision=4
 makedepends="flex libusb-compat-devel ncurses-devel freetype-devel
 liblzma-devel device-mapper-devel font-unifont-bdf fuse-devel"
 fulldepends="os-prober"
@@ -19,12 +17,49 @@ long_desc="
  GRUB 2 is rewritten from scratch to make GNU GRUB cleaner, safer, more
  robust, more powerful, and more portable."
 
-pre_configure() {
+if [ "$XBPS_MACHINE" = "x86_64" ]; then
+	makedepends="$makedepends dosfstools efibootmgr"
+fi
+
+do_configure() {
+	local sharedargs="--enable-device-mapper --enable-cache-stats --enable-nls \
+		--enable-grub-mkfont --enable-grub-mount --disable-werror"
+
 	# fix unifont.bdf location so grub-mkfont can create *.pf2 files
 	sed -i 's|/usr/share/fonts/unifont|/usr/share/fonts/misc|' configure
+
+	# build BIOS version
+	mkdir $wrksrc/bios_build && cd $wrksrc/bios_build
+	../configure ${CONFIGURE_SHARED_ARGS} --with-platform=pc $sharedargs
+
+	if [ "$XBPS_MACHINE" = "x86_64" ]; then
+		mkdir $wrksrc/efi_build && cd $wrksrc/efi_build
+		../configure ${CONFIGURE_SHARED_ARGS} --with-platform=efi \
+			--target="x86_64" --disable-efiemu $sharedargs
+	fi
 }
 
-post_install() {
+do_build() {
+	msg_normal "Building BIOS grub...\n"
+	cd $wrksrc/bios_build && make ${makejobs}
+	if [ "$XBPS_MACHINE" = "x86_64" ]; then
+		msg_normal "Building EFI grub...\n"
+		cd $wrksrc/efi_build && make ${makejobs}
+	fi
+}
+
+do_install() {
+	if [ "$XBPS_MACHINE" = "x86_64" ]; then
+		cd $wrksrc/efi_build && make DESTDIR=$DESTDIR/efi install
+		# Remove non-platform specific files
+		rm -rf ${DESTDIR}/efi/{boot,etc,usr/{share,bin,sbin}}
+		rm -f ${DESTDIR}/efi/usr/lib/grub/x86_64-efi/x86_64-*
+		rm -f ${DESTDIR}/efi/usr/lib/grub/x86_64-efi/*.{module,image}
+		mv ${DESTDIR}/efi/* ${DESTDIR}
+		rmdir ${DESTDIR}/efi
+	fi
+	cd $wrksrc/bios_build && make DESTDIR=$DESTDIR install
+
 	# Required to compress info files.
 	vmkdir usr/share/info
 	touch -f ${DESTDIR}/usr/share/info/dir
