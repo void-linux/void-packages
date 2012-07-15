@@ -1,0 +1,134 @@
+From 6124a3842dfa8484b52e067a8ab8105c3875a4f7 Mon Sep 17 00:00:00 2001
+From: Jim Meyering <meyering@redhat.com>
+Date: Thu, 10 May 2012 19:43:00 +0200
+Subject: [PATCH] ls: color each symlink-to-relative-name in / properly
+
+In order for ls --color to color each symlink, it must form the name
+of each referent and then stat it to see if the link is dangling, to
+a directory, to a file, etc.  When the symlink is to a relative name,
+ls must concatenate the starting directory name and that relative name.
+When, in addition, the starting directory was "/" or "/some-name",
+the result was ill-formed, and the subsequent stat would usually fail,
+making the caller color it as a dangling symlink.
+* src/ls.c (make_link_name): Don't botch the case in which
+dir_name(NAME) == "/" and LINKNAME is relative.
+* tests/ls/root-rel-symlink-color: New file.  Test for the above.
+* tests/Makefile.am (TESTS): Add it.
+* NEWS (Bug fixes): Mention it.
+Reported by Mike Frysinger in http://bugs.gnu.org/11453
+Bug introduced by commit v8.16-23-gbcb9078.
+---
+ NEWS                            |  5 ++++
+ src/ls.c                        |  9 +++++++-
+ tests/Makefile.am               |  1 +
+ tests/ls/root-rel-symlink-color | 51 +++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 65 insertions(+), 1 deletion(-)
+ create mode 100755 tests/ls/root-rel-symlink-color
+
+diff --git a/NEWS b/NEWS
+index 6c620b3..f9e9c70 100644
+--- NEWS
++++ NEWS
+@@ -2,6 +2,11 @@ GNU coreutils NEWS                                    -*- outline -*-
+
+ * Noteworthy changes in release ?.? (????-??-??) [?]
+
++** Bug fixes
++
++  ls --color would mis-color relative-named symlinks in /
++  [bug introduced in coreutils-8.17]
++
+
+ * Noteworthy changes in release 8.17 (2012-05-10) [stable]
+
+diff --git a/src/ls.c b/src/ls.c
+index 397e4ea..9494ae9 100644
+--- src/ls.c
++++ src/ls.c
+@@ -3213,7 +3213,14 @@ make_link_name (char const *name, char const *linkname)
+     return xstrdup (linkname);
+
+   char *p = xmalloc (prefix_len + 1 + strlen (linkname) + 1);
+-  stpcpy (stpncpy (p, name, prefix_len + 1), linkname);
++
++  /* PREFIX_LEN usually specifies a string not ending in slash.
++     In that case, extend it by one, since the next byte *is* a slash.
++     Otherwise, the prefix is "/", so leave the length unchanged.  */
++  if ( ! ISSLASH (name[prefix_len - 1]))
++    ++prefix_len;
++
++  stpcpy (stpncpy (p, name, prefix_len), linkname);
+   return p;
+ }
+
+diff --git a/tests/Makefile.am b/tests/Makefile.am
+index a4370a6..0bafc5f 100644
+--- tests/Makefile.am
++++ tests/Makefile.am
+@@ -449,6 +449,7 @@ TESTS =						\
+   ls/proc-selinux-segfault			\
+   ls/readdir-mountpoint-inode			\
+   ls/recursive					\
++  ls/root-rel-symlink-color			\
+   ls/rt-1					\
+   ls/slink-acl					\
+   ls/stat-dtype					\
+diff --git a/tests/ls/root-rel-symlink-color b/tests/ls/root-rel-symlink-color
+new file mode 100755
+index 0000000..d795432
+--- /dev/null
++++ b/tests/ls/root-rel-symlink-color
+@@ -0,0 +1,51 @@
++#!/bin/sh
++# Exercise the 8.17 ls bug with coloring relative-named symlinks in "/".
++
++# Copyright (C) 2012 Free Software Foundation, Inc.
++
++# This program is free software: you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation, either version 3 of the License, or
++# (at your option) any later version.
++
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++. "${srcdir=.}/init.sh"; path_prepend_ ../src
++print_ver_ ls
++
++symlink_to_rel=
++for i in /*; do
++  # Skip non-symlinks:
++  env test -h "$i" || continue
++
++  # Skip dangling symlinks:
++  env test -e "$i" || continue
++
++  # Skip any symlink-to-absolute-name:
++  case $(readlink "$i") in /*) continue ;; esac
++
++  symlink_to_rel=$i
++  break
++done
++
++test -z "$symlink_to_rel" \
++  && skip_ no relative symlink in /
++
++e='\33'
++color_code='01;36'
++c_pre="$e[0m$e[${color_code}m"
++c_post="$e[0m"
++printf "$c_pre$symlink_to_rel$c_post\n" > exp || framework_failure_
++
++env TERM=xterm LS_COLORS="ln=$color_code:or=1;31;42" \
++  ls -d --color=always "$symlink_to_rel" > out || fail=1
++
++compare exp out || fail=1
++
++Exit $fail
+--
+1.7.11.2
