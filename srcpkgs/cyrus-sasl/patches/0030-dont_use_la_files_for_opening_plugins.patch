@@ -1,0 +1,134 @@
+--- a/lib/dlopen.c
++++ b/lib/dlopen.c
+@@ -247,105 +247,6 @@ static int _sasl_plugin_load(char *plugi
+     return result;
+ }
+ 
+-/* this returns the file to actually open.
+- *  out should be a buffer of size PATH_MAX
+- *  and may be the same as in. */
+-
+-/* We'll use a static buffer for speed unless someone complains */
+-#define MAX_LINE 2048
+-
+-static int _parse_la(const char *prefix, const char *in, char *out) 
+-{
+-    FILE *file;
+-    size_t length;
+-    char line[MAX_LINE];
+-    char *ntmp = NULL;
+-
+-    if(!in || !out || !prefix || out == in) return SASL_BADPARAM;
+-
+-    /* Set this so we can detect failure */
+-    *out = '\0';
+-
+-    length = strlen(in);
+-
+-    if (strcmp(in + (length - strlen(LA_SUFFIX)), LA_SUFFIX)) {
+-	if(!strcmp(in + (length - strlen(SO_SUFFIX)),SO_SUFFIX)) {
+-	    /* check for a .la file */
+-	    strcpy(line, prefix);
+-	    strcat(line, in);
+-	    length = strlen(line);
+-	    *(line + (length - strlen(SO_SUFFIX))) = '\0';
+-	    strcat(line, LA_SUFFIX);
+-	    file = fopen(line, "r");
+-	    if(file) {
+-		/* We'll get it on the .la open */
+-		fclose(file);
+-		return SASL_FAIL;
+-	    }
+-	}
+-	strcpy(out, prefix);
+-	strcat(out, in);
+-	return SASL_OK;
+-    }
+-
+-    strcpy(line, prefix);
+-    strcat(line, in);
+-
+-    file = fopen(line, "r");
+-    if(!file) {
+-	_sasl_log(NULL, SASL_LOG_WARN,
+-		  "unable to open LA file: %s", line);
+-	return SASL_FAIL;
+-    }
+-    
+-    while(!feof(file)) {
+-	if(!fgets(line, MAX_LINE, file)) break;
+-	if(line[strlen(line) - 1] != '\n') {
+-	    _sasl_log(NULL, SASL_LOG_WARN,
+-		      "LA file has too long of a line: %s", in);
+-	    return SASL_BUFOVER;
+-	}
+-	if(line[0] == '\n' || line[0] == '#') continue;
+-	if(!strncmp(line, "dlname=", sizeof("dlname=") - 1)) {
+-	    /* We found the line with the name in it */
+-	    char *end;
+-	    char *start;
+-	    size_t len;
+-	    end = strrchr(line, '\'');
+-	    if(!end) continue;
+-	    start = &line[sizeof("dlname=")-1];
+-	    len = strlen(start);
+-	    if(len > 3 && start[0] == '\'') {
+-		ntmp=&start[1];
+-		*end='\0';
+-		/* Do we have dlname="" ? */
+-		if(ntmp == end) {
+-		    _sasl_log(NULL, SASL_LOG_DEBUG,
+-			      "dlname is empty in .la file: %s", in);
+-		    return SASL_FAIL;
+-		}
+-		strcpy(out, prefix);
+-		strcat(out, ntmp);
+-	    }
+-	    break;
+-	}
+-    }
+-    if(ferror(file) || feof(file)) {
+-	_sasl_log(NULL, SASL_LOG_WARN,
+-		  "Error reading .la: %s\n", in);
+-	fclose(file);
+-	return SASL_FAIL;
+-    }
+-    fclose(file);
+-
+-    if(!(*out)) {
+-	_sasl_log(NULL, SASL_LOG_WARN,
+-		  "Could not find a dlname line in .la file: %s", in);
+-	return SASL_FAIL;
+-    }
+-
+-    return SASL_OK;
+-}
+ #endif /* DO_DLOPEN */
+ 
+ /* loads a plugin library */
+@@ -499,18 +400,18 @@ int _sasl_load_plugins(const add_plugin_
+ 		if (length + pos>=PATH_MAX) continue; /* too big */
+ 
+ 		if (strcmp(dir->d_name + (length - strlen(SO_SUFFIX)),
+-			   SO_SUFFIX)
+-		    && strcmp(dir->d_name + (length - strlen(LA_SUFFIX)),
+-			   LA_SUFFIX))
++			   SO_SUFFIX))
+ 		    continue;
+ 
++		/* We only use .so files for loading plugins */
++
+ 		memcpy(name,dir->d_name,length);
+ 		name[length]='\0';
+ 
+-		result = _parse_la(prefix, name, tmp);
+-		if(result != SASL_OK)
+-		    continue;
+-		
++		/* Create full name with path */
++		strncpy(tmp, prefix, PATH_MAX);
++		strncat(tmp, name, PATH_MAX);
++
+ 		/* skip "lib" and cut off suffix --
+ 		   this only need be approximate */
+ 		strcpy(plugname, name + 3);

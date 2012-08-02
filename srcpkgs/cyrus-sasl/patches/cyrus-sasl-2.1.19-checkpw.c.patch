@@ -1,0 +1,170 @@
+diff -ur ../cyrus-sasl-2.1.19.orig/lib/Makefile.in ./lib/Makefile.in
+--- ../cyrus-sasl-2.1.19.orig/lib/Makefile.in	2004-07-02 21:40:15.000000000 +0200
++++ ./lib/Makefile.in	2004-09-07 13:21:22.746680576 +0200
+@@ -120,7 +120,7 @@
+ JAVA_TRUE = @JAVA_TRUE@
+ LDFLAGS = @LDFLAGS@
+ LIBOBJS = @LIBOBJS@
+-LIBS = @LIBS@
++LIBS = -lcrypt @LIBS@
+ LIBTOOL = @LIBTOOL@
+ LIB_CRYPT = @LIB_CRYPT@
+ LIB_DES = @LIB_DES@
+diff -ur ../cyrus-sasl-2.1.19.orig/lib/checkpw.c ./lib/checkpw.c
+--- ../cyrus-sasl-2.1.19.orig/lib/checkpw.c	2004-03-17 14:58:13.000000000 +0100
++++ ./lib/checkpw.c	2004-09-07 13:21:12.645916147 +0200
+@@ -94,6 +94,23 @@
+ # endif
+ #endif
+ 
++/******************************
++ * crypt(3) patch start       *
++ ******************************/
++char *crypt(const char *key, const char *salt);
++
++/* cleartext password formats */
++#define PASSWORD_FORMAT_CLEARTEXT 1
++#define PASSWORD_FORMAT_CRYPT 2
++#define PASSWORD_FORMAT_CRYPTTRAD 3
++#define PASSWORD_SALT_BUF_LEN 22
++
++/* weeds out crypt(3) password's salt */
++int _sasl_get_salt (char *dest, char *src, int format);
++
++/******************************
++ * crypt(3) patch stop        *
++ ******************************/
+ 
+ /* we store the following secret to check plaintext passwords:
+  *
+@@ -143,7 +160,51 @@
+ 				       "*cmusaslsecretPLAIN",
+ 				       NULL };
+     struct propval auxprop_values[3];
+-    
++
++	/******************************
++	 * crypt(3) patch start       *
++	 * for password format check  *
++	 ******************************/
++    sasl_getopt_t *getopt;
++    void *context;
++    const char *p = NULL;
++	/**
++	 * MD5: 12 char salt
++	 * BLOWFISH: 16 char salt
++	 */
++	char salt[PASSWORD_SALT_BUF_LEN];
++	int password_format;
++
++	/* get password format from auxprop configuration */
++	if (_sasl_getcallback(conn, SASL_CB_GETOPT, &getopt, &context) == SASL_OK) {
++		getopt(context, NULL, "password_format", &p, NULL);
++	}
++
++	/* set password format */
++	if (p) {
++		/*
++		memset(pass_format_str, '\0', PASSWORD_FORMAT_STR_LEN);
++		strncpy(pass_format_str, p, (PASSWORD_FORMAT_STR_LEN - 1));
++		*/
++		/* modern, modular crypt(3) */
++		if (strncmp(p, "crypt", 11) == 0)
++			password_format = PASSWORD_FORMAT_CRYPT;
++		/* traditional crypt(3) */
++		else if (strncmp(p, "crypt_trad", 11) == 0)
++			password_format = PASSWORD_FORMAT_CRYPTTRAD;
++		/* cleartext password */
++		else
++			password_format = PASSWORD_FORMAT_CLEARTEXT;
++	} else {
++		/* cleartext password */
++		password_format = PASSWORD_FORMAT_CLEARTEXT;
++	}
++
++	/******************************
++	 * crypt(3) patch stop        *
++	 * for password format check  *
++	 ******************************/
++
+     if (!conn || !userstr)
+ 	return SASL_BADPARAM;
+ 
+@@ -180,14 +241,31 @@
+ 	goto done;
+     }
+ 
+-    /* At the point this has been called, the username has been canonified
+-     * and we've done the auxprop lookup.  This should be easy. */
+-    if(auxprop_values[0].name
+-       && auxprop_values[0].values
+-       && auxprop_values[0].values[0]
+-       && !strcmp(auxprop_values[0].values[0], passwd)) {
+-	/* We have a plaintext version and it matched! */
+-	return SASL_OK;
++
++	/******************************
++	 * crypt(3) patch start       *
++	 ******************************/	
++
++	/* get salt */
++	_sasl_get_salt(salt, (char *) auxprop_values[0].values[0], password_format);
++	
++	/* crypt(3)-ed password? */
++	if (password_format != PASSWORD_FORMAT_CLEARTEXT) {
++		/* compare password */
++		if (auxprop_values[0].name && auxprop_values[0].values && auxprop_values[0].values[0] && strcmp(crypt(passwd, salt), auxprop_values[0].values[0]) == 0)
++			return SASL_OK;
++		else
++			ret = SASL_BADAUTH;
++	}
++	else if (password_format == PASSWORD_FORMAT_CLEARTEXT) {
++		/* compare passwords */
++		if (auxprop_values[0].name && auxprop_values[0].values && auxprop_values[0].values[0] && strcmp(auxprop_values[0].values[0], passwd) == 0)
++			return SASL_OK;
++		else
++			ret = SASL_BADAUTH;
++	/******************************
++	 * crypt(3) patch stop        *
++	 ******************************/
+     } else if(auxprop_values[1].name
+ 	      && auxprop_values[1].values
+ 	      && auxprop_values[1].values[0]) {
+@@ -975,3 +1053,37 @@
+ #endif     
+     { NULL, NULL }
+ };
++
++/* weeds out crypt(3) password's salt */
++int _sasl_get_salt (char *dest, char *src, int format) {
++	int num;	/* how many characters is salt long? */
++	switch (format) {
++		case PASSWORD_FORMAT_CRYPT:
++			/* md5 crypt */
++			if (src[1] == '1')
++				num = 12;
++			/* blowfish crypt */
++			else if (src[1] == '2')
++				num = (src[1] == '2' && src[2] == 'a') ? 17 : 16;
++			/* traditional crypt */
++			else
++				num = 2;
++			break;
++	
++		case PASSWORD_FORMAT_CRYPTTRAD:
++			num = 2;
++			break;
++
++		default:
++			return 1;
++	}
++
++	/* destroy destination */
++	memset(dest, '\0', (num + 1));
++
++	/* copy salt to destination */
++	strncpy(dest, src, num);
++
++	return 1;
++}
++
