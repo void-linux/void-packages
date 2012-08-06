@@ -1,24 +1,15 @@
 # Template file for 'mysql'
 pkgname=mysql
-version=5.1.54
-distfiles="http://downloads.mysql.com/archives/mysql-5.1/$pkgname-$version.tar.gz"
-build_style=gnu-configure
-configure_args="--sysconfdir=/etc/mysql
---with-libwrap --with-charset=utf8 --with-collation=utf8_general_ci
---with-extra-charsets=complex --with-embedded-server --enable-local-infile
---with-unix-socket-path=/var/run/mysqld/mysqld.sock --enable-assembler
---with-pthread --with-named-curses-libs=\"-lncursesw\" --with-ssl=/usr
---with-zlib-dir=/usr --with-fast-mutexes --with-big-tables
---with-plugins=all --with-embedded-privilege-control --with-mysqlmanager
---with-mysqld-user=mysqld --enable-thread-safe-client
---libexecdir=/usr/sbin --without-readline"
-revision=5
+version=5.5.27
+revision=1
 depends="mysql-client"
-makedepends="libstdc++-devel zlib-devel tcp_wrappers-devel ncurses-devel openssl-devel readline-devel"
-fulldepends="perl>=0 procps"
+makedepends="perl cmake bison zlib-devel ncurses-devel openssl-devel readline-devel"
 short_desc="The world's most popular open source database"
 maintainer="Juan RP <xtraeme@gmail.com>"
-checksum=84370fffc4fe277645fb3a5040d153ff567576b664f0663452be077826b7ab1f
+homepage="https://www.mysql.com/products/community/"
+license="GPL-2"
+distfiles="http://ftp.gwdg.de/pub/misc/mysql/Downloads/MySQL-5.5/$pkgname-$version.tar.gz"
+checksum=51ffafbd82039f8afbe5b3c26f15cc338ed6cd4f67e56d7dd33efaa28c9d99e4
 long_desc="
  MySQL is the world's most popular open source database software, with over
  100 million copies of its software downloaded or distributed throughout
@@ -28,30 +19,70 @@ long_desc="
  the major problems associated with downtime, maintenance and administration
  for modern, online applications."
 
-# Fix build with gcc-4.4.
-CFLAGS="-fPIC -fno-strict-aliasing"
-CXXFLAGS="-fPIC -fno-strict-aliasing"
-
-subpackages="libmysqlclient libmysqlclient-devel libndbclient"
-subpackages="${subpackages} libndbclient-devel libmysqld-devel"
-subpackages="${subpackages} mysql-client mysql-ndb"
-
-conf_files="/etc/mysql/my.cnf /etc/conf.d/mysqld"
-openrc_services="mysqld default false"
-
-# Create mysqld user/group.
-system_accounts="mysqld"
+subpackages="libmysqlclient libmysqlclient-devel mysql-client"
+conf_files="/etc/mysql/my.cnf"
+systemd_services="mysqld.service on"
+system_accounts="mysql"
 mysqld_homedir="/var/lib/mysql"
 
+do_configure() {
+	mkdir build
+	cd build
 
+	cmake .. \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DSYSCONFDIR=/etc/mysql \
+		-DMYSQL_DATADIR=/var/lib/mysql \
+		-DMYSQL_UNIX_ADDR=/run/mysqld/mysqld.sock \
+		-DDEFAULT_CHARSET=utf8 \
+		-DDEFAULT_COLLATION=utf8_general_ci \
+		-DENABLED_LOCAL_INFILE=ON \
+		-DINSTALL_INFODIR=share/mysql/docs \
+		-DINSTALL_MANDIR=share/man \
+		-DINSTALL_PLUGINDIR=/usr/lib/mysql/plugin \
+		-DINSTALL_SCRIPTDIR=bin \
+		-DINSTALL_INCLUDEDIR=include/mysql \
+		-DINSTALL_DOCREADMEDIR=share/mysql \
+		-DINSTALL_SUPPORTFILESDIR=share/mysql \
+		-DINSTALL_MYSQLSHAREDIR=share/mysql \
+		-DINSTALL_DOCDIR=share/mysql/docs \
+		-DINSTALL_SHAREDIR=share/mysql \
+		-DWITH_READLINE=ON \
+		-DWITH_ZLIB=system \
+		-DWITH_SSL=system \
+		-DWITH_LIBWRAP=OFF \
+		-DWITH_MYSQLD_LDFLAGS="${LDFLAGS}" \
+		-DWITH_EXTRA_CHARSETS=complex \
+		-DWITH_EMBEDDED_SERVER=ON \
+		-DWITH_INNOBASE_STORAGE_ENGINE=1 \
+		-DWITH_PARTITION_STORAGE_ENGINE=1 \
+		-DWITHOUT_EXAMPLE_STORAGE_ENGINE=1 \
+		-DWITHOUT_ARCHIVE_STORAGE_ENGINE=1 \
+		-DWITHOUT_BLACKHOLE_STORAGE_ENGINE=1 \
+		-DWITHOUT_FEDERATED_STORAGE_ENGINE=1 \
+		-DCMAKE_C_FLAGS="-fPIC ${CFLAGS} -fno-strict-aliasing -DBIG_JOINS=1 -fomit-frame-pointer" \
+		-DCMAKE_CXX_FLAGS="-fPIC ${CXXFLAGS} -fno-strict-aliasing -DBIG_JOINS=1 -felide-constructors -fno-rtti"
+}
 
-post_install()
-{
-	# Remove tests
-	rm -rf ${DESTDIR}/usr/sql-bench ${DESTDIR}/usr/mysql-test
+do_build() {
+	cd build
+	make ${makejobs}
+}
 
-	# Install config files and OpenRC service.
-	install -D -m640 ${FILESDIR}/my.cnf ${DESTDIR}/etc/mysql/my.cnf
-	install -D -m644 ${FILESDIR}/mysqld.confd ${DESTDIR}/etc/conf.d/mysqld
-	install -D -m755 ${FILESDIR}/mysqld.rc ${DESTDIR}/etc/init.d/mysqld
+do_install() {
+	cd build
+	make DESTDIR=${DESTDIR} install
+
+	# Remove unneeded stuff.
+	rm -rf ${DESTDIR}/usr/{sql-bench,mysql-test,data}
+	rm -f ${DESTDIR}/usr/share/man/man1/mysql-test-run.pl.1
+
+	# Configuration file.
+	vinstall ${FILESDIR}/my.cnf 640 etc/mysql
+
+	# systemd service.
+	vinstall ${FILESDIR}/mysqld.service 644 usr/lib/systemd/system
+	vinstall ${FILESDIR}/mysqld-post 755 usr/lib/systemd/scripts
+	vinstall ${FILESDIR}/mysqld.tmpfilesd 644 usr/lib/tmpfiles.d mysqld.conf
 }
