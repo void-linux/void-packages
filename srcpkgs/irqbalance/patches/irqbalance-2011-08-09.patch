@@ -1,0 +1,1584 @@
+diff --git a/ChangeLog b/ChangeLog
+deleted file mode 100644
+index f5e9428..0000000
+--- a/ChangeLog
++++ /dev/null
+@@ -1,3 +0,0 @@
+-This is all tracked in the SVN repo.  This file is just here to keep the
+-autotools from complaining
+-
+diff --git a/Makefile.am b/Makefile.am
+index 9847232..188e34f 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -22,17 +22,17 @@
+
+ AUTOMAKE_OPTIONS = no-dependencies
+ ACLOCAL_AMFLAGS = -I m4
+-EXTRA_DIST = README INSTALL COPYING autogen.sh m4/cap-ng.m4 misc/irqbalance.service
+-
++EXTRA_DIST = INSTALL COPYING autogen.sh misc/irqbalance.service
++
+ INCLUDES = -I${top_srcdir}
+-LIBS = $(CAPNG_LDADD) $(GLIB_LIBS) @LIBS@
+-AM_CFLAGS = $(GLIB_CFLAGS)
++AM_CFLAGS = $(LIBCAP_NG_CFLAGS) $(GLIB_CFLAGS)
+ AM_CPPFLAGS = -W -Wall -Wshadow -Wformat -Wundef -D_GNU_SOURCE
+ noinst_HEADERS = bitmap.h constants.h cpumask.h irqbalance.h non-atomic.h \
+	types.h
+ sbin_PROGRAMS = irqbalance
+ irqbalance_SOURCES = activate.c bitmap.c classify.c cputree.c irqbalance.c \
+-	irqlist.c numa.c placement.c powermode.c procinterrupts.c
++	irqlist.c numa.c placement.c procinterrupts.c
++irqbalance_LDADD = $(LIBCAP_NG_LIBS) $(GLIB_LIBS)
+ dist_man_MANS = irqbalance.1
+
+ CONFIG_CLEAN_FILES = debug*.list config/*
+@@ -40,3 +40,6 @@ clean-generic:
+	rm -rf autom4te*.cache
+	rm -f *.rej *.orig *~
+
++if LOCAL_GLIB
++SUBDIRS = glib-local
++endif
+diff --git a/NEWS b/NEWS
+deleted file mode 100644
+index 7cc0277..0000000
+--- a/NEWS
++++ /dev/null
+@@ -1 +0,0 @@
+-No news currently
+diff --git a/README b/README
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/activate.c b/activate.c
+index 292c44a..02fc8dc 100644
+--- a/activate.c
++++ b/activate.c
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2006, Intel Corporation
++ * Copyright (C) 2012, Neil Horman <nhorman@tuxdriver.com>
+  *
+  * This file is part of irqbalance
+  *
+@@ -31,34 +32,63 @@
+
+ #include "irqbalance.h"
+
++static int check_affinity(struct irq_info *info, cpumask_t applied_mask)
++{
++	cpumask_t current_mask;
++	char buf[PATH_MAX];
++	char *line = NULL;
++	size_t size = 0;
++	FILE *file;
++
++	sprintf(buf, "/proc/irq/%i/smp_affinity", info->irq);
++	file = fopen(buf, "r");
++	if (!file)
++		return 1;
++	if (getline(&line, &size, file)==0) {
++		free(line);
++		fclose(file);
++		return 1;
++	}
++	cpumask_parse_user(line, strlen(line), current_mask);
++	fclose(file);
++	free(line);
++
++	return cpus_equal(applied_mask, current_mask);
++}
+
+ static void activate_mapping(struct irq_info *info, void *data __attribute__((unused)))
+ {
+	char buf[PATH_MAX];
+	FILE *file;
+	cpumask_t applied_mask;
++	int valid_mask = 0;
++
++	if ((hint_policy == HINT_POLICY_EXACT) &&
++	    (!cpus_empty(info->affinity_hint))) {
++		applied_mask = info->affinity_hint;
++		valid_mask = 1;
++	} else if (info->assigned_obj) {
++		applied_mask = info->assigned_obj->mask;
++		valid_mask = 1;
++		if ((hint_policy == HINT_POLICY_SUBSET) &&
++		    (!cpus_empty(info->affinity_hint)))
++			cpus_and(applied_mask, applied_mask, info->affinity_hint);
++	}
+
+	/*
+	 * only activate mappings for irqs that have moved
+	 */
+-	if (!info->moved)
++	if (!info->moved && (!valid_mask || check_affinity(info, applied_mask)))
+		return;
+
+	if (!info->assigned_obj)
+		return;
+
+-
+	sprintf(buf, "/proc/irq/%i/smp_affinity", info->irq);
+	file = fopen(buf, "w");
+	if (!file)
+		return;
+
+-	if ((hint_policy == HINT_POLICY_EXACT) &&
+-	    (!cpus_empty(info->affinity_hint)))
+-		applied_mask = info->affinity_hint;
+-	else
+-		applied_mask = info->assigned_obj->mask;
+-
+	cpumask_scnprintf(buf, PATH_MAX, applied_mask);
+	fprintf(file, "%s", buf);
+	fclose(file);
+diff --git a/autogen.sh b/autogen.sh
+index 5ad9f14..b792e8b 100755
+--- a/autogen.sh
++++ b/autogen.sh
+@@ -1,4 +1,5 @@
+ #! /bin/sh
+ set -x -e
++mkdir -p m4
+ # --no-recursive is available only in recent autoconf versions
+ autoreconf -fv --install
+diff --git a/classify.c b/classify.c
+index 124dab0..05b3bfb 100644
+--- a/classify.c
++++ b/classify.c
+@@ -52,6 +52,8 @@ static short class_codes[MAX_CLASS] = {
+ };
+
+ static GList *interrupts_db;
++static GList *new_irq_list;
++static GList *banned_irqs;
+
+ #define SYSDEV_DIR "/sys/bus/pci/devices"
+
+@@ -63,6 +65,30 @@ static gint compare_ints(gconstpointer a, gconstpointer b)
+	return ai->irq - bi->irq;
+ }
+
++void add_banned_irq(int irq)
++{
++	struct irq_info find, *new;
++	GList *entry;
++
++	find.irq = irq;
++	entry = g_list_find_custom(banned_irqs, &find, compare_ints);
++	if (entry)
++		return;
++
++	new = calloc(sizeof(struct irq_info), 1);
++	if (!new) {
++		if (debug_mode)
++			printf("No memory to ban irq %d\n", irq);
++		return;
++	}
++
++	new->irq = irq;
++
++	banned_irqs = g_list_append(banned_irqs, new);
++	return;
++}
++
++
+ /*
+  * Inserts an irq_info struct into the intterupts_db list
+  * devpath points to the device directory in sysfs for the
+@@ -90,6 +116,13 @@ static struct irq_info *add_one_irq_to_db(const char *devpath, int irq)
+		return NULL;
+	}
+
++	entry = g_list_find_custom(banned_irqs, &find, compare_ints);
++	if (entry) {
++		if (debug_mode)
++			printf("SKIPPING BANNED IRQ %d\n", irq);
++		return NULL;
++	}
++
+	new = calloc(sizeof(struct irq_info), 1);
+	if (!new)
+		return NULL;
+@@ -175,6 +208,43 @@ out:
+	return new;
+ }
+
++static int check_for_irq_ban(char *path, int irq)
++{
++	char *cmd;
++	int rc;
++
++	if (!banscript)
++		return 0;
++
++	cmd = alloca(strlen(path)+strlen(banscript)+32);
++	if (!cmd)
++		return 0;
++
++	sprintf(cmd, "%s %s %d",banscript, path, irq);
++	rc = system(cmd);
++
++	/*
++ 	 * The system command itself failed
++ 	 */
++	if (rc == -1) {
++		if (debug_mode)
++			printf("%s failed, please check the --banscript option\n", cmd);
++		else
++			syslog(LOG_INFO, "%s failed, please check the --banscript option\n", cmd);
++		return 0;
++	}
++
++	if (WEXITSTATUS(rc)) {
++		if (debug_mode)
++			printf("irq %d is baned by %s\n", irq, banscript);
++		else
++			syslog(LOG_INFO, "irq %d is baned by %s\n", irq, banscript);
++		return 1;
++	}
++	return 0;
++
++}
++
+ /*
+  * Figures out which interrupt(s) relate to the device we're looking at in dirname
+  */
+@@ -199,6 +269,10 @@ static void build_one_dev_entry(const char *dirname)
+			irqnum = strtol(entry->d_name, NULL, 10);
+			if (irqnum) {
+				sprintf(path, "%s/%s", SYSDEV_DIR, dirname);
++				if (check_for_irq_ban(path, irqnum)) {
++					add_banned_irq(irqnum);
++					continue;
++				}
+				new = add_one_irq_to_db(path, irqnum);
+				if (!new)
+					continue;
+@@ -221,6 +295,11 @@ static void build_one_dev_entry(const char *dirname)
+	 */
+	if (irqnum) {
+		sprintf(path, "%s/%s", SYSDEV_DIR, dirname);
++		if (check_for_irq_ban(path, irqnum)) {
++			add_banned_irq(irqnum);
++			goto done;
++		}
++
+		new = add_one_irq_to_db(path, irqnum);
+		if (!new)
+			goto done;
+@@ -248,6 +327,8 @@ void rebuild_irq_db(void)
+ {
+	DIR *devdir = opendir(SYSDEV_DIR);
+	struct dirent *entry;
++	GList *gentry;
++	struct irq_info *ninfo, *iinfo;
+
+	free_irq_db();
+
+@@ -263,22 +344,46 @@ void rebuild_irq_db(void)
+	build_one_dev_entry(entry->d_name);
+
+	} while (entry != NULL);
++
+	closedir(devdir);
++
++	if (!new_irq_list)
++		return;
++	gentry = g_list_first(new_irq_list);
++	while(gentry) {
++		ninfo = gentry->data;
++		iinfo = get_irq_info(ninfo->irq);
++		new_irq_list = g_list_remove(gentry, ninfo);
++		if (!iinfo) {
++			if (debug_mode)
++				printf("Adding untracked IRQ %d to database\n", ninfo->irq);
++			interrupts_db = g_list_append(interrupts_db, ninfo);
++		} else
++			free(ninfo);
++
++		gentry = g_list_first(new_irq_list);
++	}
++	g_list_free(new_irq_list);
++	new_irq_list = NULL;
++
+ }
+
+-struct irq_info *add_misc_irq(int irq)
++struct irq_info *add_new_irq(int irq)
+ {
+-	struct irq_info *new;
++	struct irq_info *new, *nnew;
+
+	new = calloc(sizeof(struct irq_info), 1);
+-	if (!new)
++	nnew = calloc(sizeof(struct irq_info), 1);
++	if (!new || !nnew)
+		return NULL;
+
+	new->irq = irq;
+	new->type = IRQ_TYPE_LEGACY;
+	new->class = IRQ_OTHER;
+	new->numa_node = get_numa_node(-1);
++	memcpy(nnew, new, sizeof(struct irq_info));
+	interrupts_db = g_list_append(interrupts_db, new);
++	new_irq_list = g_list_append(new_irq_list, nnew);
+	return new;
+ }
+
+@@ -307,7 +412,7 @@ struct irq_info *get_irq_info(int irq)
+ void migrate_irq(GList **from, GList **to, struct irq_info *info)
+ {
+	GList *entry;
+-	struct irq_info find, *tmp;;
++	struct irq_info find, *tmp;
+
+	find.irq = info->irq;
+	entry = g_list_find_custom(*from, &find, compare_ints);
+@@ -325,18 +430,9 @@ static gint sort_irqs(gconstpointer A, gconstpointer B)
+         a = (struct irq_info*)A;
+         b = (struct irq_info*)B;
+
+-	if (a->class < b->class)
+-		return 1;
+-	if (a->class > b->class)
+-		return -1;
+-	if (a->load < b->load)
+-		return 1;
+-	if (a->load > b->load)
+-		return -1;
+-	if (a<b)
++	if (a->class < b->class || a->load < b->load || a < b)
+		return 1;
+         return -1;
+-
+ }
+
+ void sort_irq_list(GList **list)
+diff --git a/configure.ac b/configure.ac
+index eed55ba..1230d66 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -1,49 +1,12 @@
+-dnl
+-define([AC_INIT_NOTICE],
+-[### Generated automatically using autoconf version] AC_ACVERSION [
+-### Copyright 2009 Steve Grubb <sgrubb@redhat.com>
+-###
+-### Permission is hereby granted, free of charge, to any person obtaining a
+-### copy of this software and associated documentation files (the "Software"),
+-### to deal in the Software without restriction, including without limitation
+-### the rights to use, copy, modify, merge, publish, distribute, sublicense,
+-### and/or sell copies of the Software, and to permit persons to whom the
+-### Software is furnished to do so, subject to the following conditions:
+-###
+-### The above copyright notice and this permission notice shall be included
+-### in all copies or substantial portions of the Software.
+-###
+-### THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+-### IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+-### FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+-### THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+-### OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+-### ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+-### OTHER DEALINGS IN THE SOFTWARE.
+-###
+-### For usage, run `./configure --help'
+-### For more detailed information on installation, read the file `INSTALL'.
+-###
+-### If configuration succeeds, status is in the file `config.status'.
+-### A log of configuration tests is in `config.log'.
+-])
+-
+-AC_REVISION($Revision: 1.3 $)dnl
+ AC_INIT(irqbalance,1.0.3)
+ AC_PREREQ(2.12)dnl
+ AM_CONFIG_HEADER(config.h)
+
+-echo Configuring irqbalance $VERSION
+-
+ AC_CONFIG_MACRO_DIR([m4])
+-AC_CANONICAL_TARGET
+-AM_INIT_AUTOMAKE
++AM_INIT_AUTOMAKE([foreign])
+ AM_PROG_LIBTOOL
+ AC_SUBST(LIBTOOL_DEPS)
+
+-AC_MSG_NOTICE()
+-AC_MSG_NOTICE([Checking for programs])
+-
+ AC_PROG_CC
+ AC_PROG_INSTALL
+ AC_PROG_AWK
+@@ -55,9 +18,6 @@ AS_IF([test "$enable_numa" = "no"],[
+   ac_cv_lib_numa_numa_available=no
+ ])
+
+-AC_MSG_NOTICE
+-AC_MSG_NOTICE([echo Checking for header files])
+-
+ AC_HEADER_STDC
+ AC_CHECK_HEADERS([numa.h])
+
+@@ -70,10 +30,57 @@ AC_C_CONST
+ AC_C_INLINE
+ AM_PROG_CC_C_O
+
+-PKG_CHECK_MODULES([GLIB], [glib-2.0 >= 2.28])
+-LIBCAP_NG_PATH
++AC_ARG_WITH([glib2],
++  [AS_HELP_STRING([--without-glib2],
++    [Don't use system glib2 library. Use local implementation instead.])],
++  [],
++  [with_glib2=check])
++
++local_glib2=
++AS_IF(
++  [test "x$with_glib2" = xyes],
++  [PKG_CHECK_MODULES([GLIB], [glib-2.0 >= 2.28])],
++
++  [test "x$with_glib2" = xno],
++  [local_glib2="yes"],
++
++  [PKG_CHECK_MODULES([GLIB], [glib-2.0 >= 2.28], [], [local_glib2="yes"])]
++)
++
++AS_IF(
++  [test "x$local_glib2" = xyes],
++  [
++  GLIB_CFLAGS=-I./glib-local
++  GLIB_LIBS=glib-local/libglib.a
++  AC_SUBST(GLIB_CFLAGS)
++  AC_SUBST(GLIB_LIBS)
++  AC_MSG_WARN(Using locale implementation of GList functions)
++  ]
++)
++
++AM_CONDITIONAL([LOCAL_GLIB], [test "x$local_glib2" = "xyes"])
++
++AC_ARG_WITH([libcap-ng],
++  AS_HELP_STRING([libcap-ng], [Add libcap-ng-support @<:@default=auto@:>@]))
++
++AS_IF(
++  [test "x$libcap_ng" != "xno"],
++  [
++  PKG_CHECK_MODULES([LIBCAP_NG], [libcap-ng],
++    [AC_DEFINE(HAVE_LIBCAP_NG,1,[libcap-ng support])],
++    [
++     AS_IF(
++       [test "x$libcap_ng" = "xyes"],
++       [
++       AC_MSG_ERROR([libcap-ng not found])
++       ]
++       )
++    ]
++  )
++  ]
++)
+
+-AC_OUTPUT(Makefile)
++AC_OUTPUT(Makefile glib-local/Makefile)
+
+ AC_MSG_NOTICE()
+ AC_MSG_NOTICE([irqbalance Version:     $VERSION])
+diff --git a/cputree.c b/cputree.c
+index af4fd3a..9568967 100644
+--- a/cputree.c
++++ b/cputree.c
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2006, Intel Corporation
++ * Copyright (C) 2012, Neil Horman <nhorman@tuxdriver.com>
+  *
+  * This file is part of irqbalance
+  *
+diff --git a/glib-local/Makefile.am b/glib-local/Makefile.am
+new file mode 100644
+index 0000000..336b56e
+--- /dev/null
++++ b/glib-local/Makefile.am
+@@ -0,0 +1,8 @@
++## Process this file with automake to produce Makefile.in
++noinst_LIBRARIES = libglib.a
++
++libglib_a_SOURCES = glist.c
++
++libglib_a_CFLAGS = @GLIB_CFLAGS@
++
++noinst_HEADERS = glib.h glist.h
+diff --git a/glib-local/glib.h b/glib-local/glib.h
+new file mode 100644
+index 0000000..5874892
+--- /dev/null
++++ b/glib-local/glib.h
+@@ -0,0 +1 @@
++#include <glist.h>
+diff --git a/glib-local/glist.c b/glib-local/glist.c
+new file mode 100644
+index 0000000..6fa1761
+--- /dev/null
++++ b/glib-local/glist.c
+@@ -0,0 +1,381 @@
++#include <stdlib.h>
++
++#include "glist.h"
++
++/**
++ * g_list_free:
++ * @list: a #GList
++ *
++ * Frees all of the memory used by a #GList.
++ * The freed elements are returned to the slice allocator.
++ *
++ * <note><para>
++ * If list elements contain dynamically-allocated memory,
++ * you should either use g_list_free_full() or free them manually
++ * first.
++ * </para></note>
++ */
++void
++g_list_free (GList *list)
++{
++	GList *l = list;
++
++	while(l) {
++		GList *tmp = l->next;
++		free(l);
++		l = tmp;
++	}
++}
++
++/**
++ * g_list_last:
++ * @list: a #GList
++ *
++ * Gets the last element in a #GList.
++ *
++ * Returns: the last element in the #GList,
++ *     or %NULL if the #GList has no elements
++ */
++GList*
++g_list_last (GList *list)
++{
++  if (list)
++    {
++      while (list->next)
++	list = list->next;
++    }
++
++  return list;
++}
++
++/**
++ * g_list_append:
++ * @list: a pointer to a #GList
++ * @data: the data for the new element
++ *
++ * Adds a new element on to the end of the list.
++ *
++ * <note><para>
++ * The return value is the new start of the list, which
++ * may have changed, so make sure you store the new value.
++ * </para></note>
++ *
++ * <note><para>
++ * Note that g_list_append() has to traverse the entire list
++ * to find the end, which is inefficient when adding multiple
++ * elements. A common idiom to avoid the inefficiency is to prepend
++ * the elements and reverse the list when all elements have been added.
++ * </para></note>
++ *
++ * |[
++ * /&ast; Notice that these are initialized to the empty list. &ast;/
++ * GList *list = NULL, *number_list = NULL;
++ *
++ * /&ast; This is a list of strings. &ast;/
++ * list = g_list_append (list, "first");
++ * list = g_list_append (list, "second");
++ *
++ * /&ast; This is a list of integers. &ast;/
++ * number_list = g_list_append (number_list, GINT_TO_POINTER (27));
++ * number_list = g_list_append (number_list, GINT_TO_POINTER (14));
++ * ]|
++ *
++ * Returns: the new start of the #GList
++ */
++GList*
++g_list_append (GList	*list,
++	       gpointer	 data)
++{
++  GList *new_list;
++  GList *last;
++
++  new_list = malloc(sizeof(*new_list));
++  new_list->data = data;
++  new_list->next = NULL;
++
++  if (list)
++    {
++      last = g_list_last (list);
++      /* g_assert (last != NULL); */
++      last->next = new_list;
++      new_list->prev = last;
++
++      return list;
++    }
++  else
++    {
++      new_list->prev = NULL;
++      return new_list;
++    }
++}
++
++static inline GList*
++_g_list_remove_link (GList *list,
++		     GList *link)
++{
++  if (link)
++    {
++      if (link->prev)
++	link->prev->next = link->next;
++      if (link->next)
++	link->next->prev = link->prev;
++
++      if (link == list)
++	list = list->next;
++
++      link->next = NULL;
++      link->prev = NULL;
++    }
++
++  return list;
++}
++
++/**
++ * g_list_delete_link:
++ * @list: a #GList
++ * @link_: node to delete from @list
++ *
++ * Removes the node link_ from the list and frees it.
++ * Compare this to g_list_remove_link() which removes the node
++ * without freeing it.
++ *
++ * Returns: the new head of @list
++ */
++GList*
++g_list_delete_link (GList *list,
++		    GList *link_)
++{
++  list = _g_list_remove_link (list, link_);
++  free (link_);
++
++  return list;
++}
++
++/**
++ * g_list_first:
++ * @list: a #GList
++ *
++ * Gets the first element in a #GList.
++ *
++ * Returns: the first element in the #GList,
++ *     or %NULL if the #GList has no elements
++ */
++GList*
++g_list_first (GList *list)
++{
++  if (list)
++    {
++      while (list->prev)
++	list = list->prev;
++    }
++
++  return list;
++}
++
++static GList *
++g_list_sort_merge (GList     *l1,
++		   GList     *l2,
++		   GFunc     compare_func,
++		   gpointer  user_data)
++{
++  GList list, *l, *lprev;
++  gint cmp;
++
++  l = &list;
++  lprev = NULL;
++
++  while (l1 && l2)
++    {
++      cmp = ((GCompareDataFunc) compare_func) (l1->data, l2->data, user_data);
++
++      if (cmp <= 0)
++        {
++	  l->next = l1;
++	  l1 = l1->next;
++        }
++      else
++	{
++	  l->next = l2;
++	  l2 = l2->next;
++        }
++      l = l->next;
++      l->prev = lprev;
++      lprev = l;
++    }
++  l->next = l1 ? l1 : l2;
++  l->next->prev = l;
++
++  return list.next;
++}
++
++static GList*
++g_list_sort_real (GList    *list,
++		  GFunc     compare_func,
++		  gpointer  user_data)
++{
++  GList *l1, *l2;
++
++  if (!list)
++    return NULL;
++  if (!list->next)
++    return list;
++
++  l1 = list;
++  l2 = list->next;
++
++  while ((l2 = l2->next) != NULL)
++    {
++      if ((l2 = l2->next) == NULL)
++	break;
++      l1 = l1->next;
++    }
++  l2 = l1->next;
++  l1->next = NULL;
++
++  return g_list_sort_merge (g_list_sort_real (list, compare_func, user_data),
++			    g_list_sort_real (l2, compare_func, user_data),
++			    compare_func,
++			    user_data);
++}
++
++/**
++ * g_list_sort:
++ * @list: a #GList
++ * @compare_func: the comparison function used to sort the #GList.
++ *     This function is passed the data from 2 elements of the #GList
++ *     and should return 0 if they are equal, a negative value if the
++ *     first element comes before the second, or a positive value if
++ *     the first element comes after the second.
++ *
++ * Sorts a #GList using the given comparison function.
++ *
++ * Returns: the start of the sorted #GList
++ */
++/**
++ * GCompareFunc:
++ * @a: a value.
++ * @b: a value to compare with.
++ * @Returns: negative value if @a &lt; @b; zero if @a = @b; positive
++ *           value if @a > @b.
++ *
++ * Specifies the type of a comparison function used to compare two
++ * values.  The function should return a negative integer if the first
++ * value comes before the second, 0 if they are equal, or a positive
++ * integer if the first value comes after the second.
++ **/
++GList *
++g_list_sort (GList        *list,
++	     GCompareFunc  compare_func)
++{
++  return g_list_sort_real (list, (GFunc) compare_func, NULL);
++
++}
++
++/**
++ * g_list_length:
++ * @list: a #GList
++ *
++ * Gets the number of elements in a #GList.
++ *
++ * <note><para>
++ * This function iterates over the whole list to
++ * count its elements.
++ * </para></note>
++ *
++ * Returns: the number of elements in the #GList
++ */
++guint
++g_list_length (GList *list)
++{
++  guint length;
++
++  length = 0;
++  while (list)
++    {
++      length++;
++      list = list->next;
++    }
++
++  return length;
++}
++
++/**
++ * g_list_foreach:
++ * @list: a #GList
++ * @func: the function to call with each element's data
++ * @user_data: user data to pass to the function
++ *
++ * Calls a function for each element of a #GList.
++ */
++/**
++ * GFunc:
++ * @data: the element's data.
++ * @user_data: user data passed to g_list_foreach() or
++ *             g_slist_foreach().
++ *
++ * Specifies the type of functions passed to g_list_foreach() and
++ * g_slist_foreach().
++ **/
++void
++g_list_foreach (GList	 *list,
++		GFunc	  func,
++		gpointer  user_data)
++{
++  while (list)
++    {
++      GList *next = list->next;
++      (*func) (list->data, user_data);
++      list = next;
++    }
++}
++
++/**
++ * g_list_free_full:
++ * @list: a pointer to a #GList
++ * @free_func: the function to be called to free each element's data
++ *
++ * Convenience method, which frees all the memory used by a #GList, and
++ * calls the specified destroy function on every element's data.
++ *
++ * Since: 2.28
++ */
++void
++g_list_free_full (GList          *list,
++		  GDestroyNotify  free_func)
++{
++  g_list_foreach (list, (GFunc) free_func, NULL);
++  g_list_free (list);
++}
++
++/**
++ * g_list_find_custom:
++ * @list: a #GList
++ * @data: user data passed to the function
++ * @func: the function to call for each element.
++ *     It should return 0 when the desired element is found
++ *
++ * Finds an element in a #GList, using a supplied function to
++ * find the desired element. It iterates over the list, calling
++ * the given function which should return 0 when the desired
++ * element is found. The function takes two #gconstpointer arguments,
++ * the #GList element's data as the first argument and the
++ * given user data.
++ *
++ * Returns: the found #GList element, or %NULL if it is not found
++ */
++GList*
++g_list_find_custom (GList         *list,
++		    gconstpointer  data,
++		    GCompareFunc   func)
++{
++  g_return_val_if_fail (func != NULL, list);
++
++  while (list)
++    {
++      if (! func (list->data, data))
++	return list;
++      list = list->next;
++    }
++
++  return NULL;
++}
+diff --git a/glib-local/glist.h b/glib-local/glist.h
+new file mode 100644
+index 0000000..47f2cfe
+--- /dev/null
++++ b/glib-local/glist.h
+@@ -0,0 +1,56 @@
++#ifndef __G_LIST_H__
++#define __G_LIST_H__
++
++typedef int    gint;
++typedef unsigned int    guint;
++typedef void* gpointer;
++typedef const void *gconstpointer;
++typedef gint            (*GCompareFunc)         (gconstpointer  a,
++                                                 gconstpointer  b);
++typedef gint            (*GCompareDataFunc)     (gconstpointer  a,
++                                                 gconstpointer  b,
++						 gpointer       user_data);
++typedef void            (*GFunc)                (gpointer       data,
++                                                 gpointer       user_data);
++typedef void            (*GDestroyNotify)       (gpointer       data);
++
++struct _GList;
++typedef struct _GList GList;
++
++struct _GList
++{
++  gpointer data;
++  GList *next;
++  GList *prev;
++};
++
++/* Doubly linked lists
++ */
++void     g_list_free                    (GList            *list);
++GList*   g_list_append                  (GList            *list,
++					 gpointer          data);
++GList*   g_list_delete_link             (GList            *list,
++					 GList            *link_);
++GList*   g_list_first                   (GList            *list);
++GList*   g_list_sort                    (GList            *list,
++					 GCompareFunc      compare_func);
++guint    g_list_length                  (GList            *list);
++void     g_list_foreach                 (GList            *list,
++					 GFunc             func,
++					 gpointer          user_data);
++void     g_list_free_full               (GList            *list,
++					 GDestroyNotify    free_func);
++GList*   g_list_find_custom             (GList            *list,
++					 gconstpointer     data,
++					 GCompareFunc      func);
++
++#define g_list_previous(list)	        ((list) ? (((GList *)(list))->prev) : NULL)
++#define g_list_next(list)	        ((list) ? (((GList *)(list))->next) : NULL)
++
++#define g_return_val_if_fail(expr,val)	do {			\
++     if (expr) { } else						\
++       {								\
++	 return (val);							\
++       }				} while(0);
++
++#endif /* __G_LIST_H__ */
+diff --git a/irqbalance.1 b/irqbalance.1
+index 55fc15f..20105bc 100644
+--- a/irqbalance.1
++++ b/irqbalance.1
+@@ -39,7 +39,11 @@ Causes irqbalance to be run once, after which the daemon exits
+ .TP
+
+ .B --debug
+-Causes irqbalance to run in the foreground and extra debug information to be printed
++Causes irqbalance to print extra debug information.  Implies --foreground
++
++.TP
++.B --foreground
++Causes irqbalance to run in the foreground (without --debug)
+
+ .TP
+ .B --hintpolicy=[exact | subset | ignore]
+@@ -62,6 +66,30 @@ average cpu softirq workload, and no cpus are more than 1 standard deviation
+ above (and have more than 1 irq assigned to them), attempt to place 1 cpu in
+ powersave mode.  In powersave mode, a cpu will not have any irqs balanced to it,
+ in an effort to prevent that cpu from waking up without need.
++
++.TP
++.B --banirq=<irqnum>
++Add the specified irq list to the set of banned irqs. irqbalance will not affect
++the affinity of any irqs on the banned list, allowing them to be specified
++manually.  This option is addative and can be specified multiple times
++
++.TP
++.B --banscript=<script>
++Execute the specified script for each irq that is discovered, passing the sysfs
++path to the associated device as the first argument, and the irq vector as the
++second.  An exit value of 0 tells irqbalance that this interrupt should balanced
++and managed as a normal irq, while a non-zero exit code indicates this irq
++should be ignored by irqbalance completely (see --banirq above).  Use of this
++script provides users the ability to dynamically select which irqs get exluded
++from balancing, and provides an opportunity for manual affinity setting in one
++single code point.
++
++.TP
++.B --pid=<file>
++Have irqbalance write its process id to the specified file.  By default no
++pidfile is written.  The written pidfile is automatically unlinked when
++irqbalance exits.
++
+ .SH "ENVIRONMENT VARIABLES"
+ .TP
+ .B IRQBALANCE_ONESHOT
+@@ -75,9 +103,10 @@ Same as --debug
+ .B IRQBALANCE_BANNED_CPUS
+ Provides a mask of cpus which irqbalance should ignore and never assign interrupts to
+
++.SH "SIGNALS"
+ .TP
+-.B IRQBALANCE_BANNED_INTERRUPTS
+-A list of space delimited IRQ numbers that irqbalance should not touch
++.B SIGHUP
++Forces a rescan of the available irqs and system topology
+
+ .SH "Homepage"
+ http://code.google.com/p/irqbalance
+diff --git a/irqbalance.c b/irqbalance.c
+index 99c5db7..fbe6ac6 100644
+--- a/irqbalance.c
++++ b/irqbalance.c
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2006, Intel Corporation
++ * Copyright (C) 2012, Neil Horman <nhorman@tuxdriver.com>
+  *
+  * This file is part of irqbalance
+  *
+@@ -27,6 +28,10 @@
+ #include <syslog.h>
+ #include <unistd.h>
+ #include <signal.h>
++#include <time.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <fcntl.h>
+ #ifdef HAVE_GETOPT_LONG
+ #include <getopt.h>
+ #endif
+@@ -39,12 +44,15 @@
+ volatile int keep_going = 1;
+ int one_shot_mode;
+ int debug_mode;
++int foreground_mode;
+ int numa_avail;
+-int need_cpu_rescan;
++int need_rescan;
+ extern cpumask_t banned_cpus;
+ enum hp_e hint_policy = HINT_POLICY_SUBSET;
+ unsigned long power_thresh = ULONG_MAX;
+ unsigned long long cycle_count = 0;
++char *pidfile = NULL;
++char *banscript = NULL;
+
+ void sleep_approx(int seconds)
+ {
+@@ -64,32 +72,45 @@ void sleep_approx(int seconds)
+ struct option lopts[] = {
+	{"oneshot", 0, NULL, 'o'},
+	{"debug", 0, NULL, 'd'},
++	{"foreground", 0, NULL, 'f'},
+	{"hintpolicy", 1, NULL, 'h'},
+	{"powerthresh", 1, NULL, 'p'},
++	{"banirq", 1 , NULL, 'i'},
++	{"banscript", 1, NULL, 'b'},
++	{"pid", 1, NULL, 's'},
+	{0, 0, 0, 0}
+ };
+
+ static void usage(void)
+ {
+-	printf("irqbalance [--oneshot | -o] [--debug | -d] [--hintpolicy= | -h [exact|subset|ignore]]\n");
+-	printf("	[--powerthresh= | -p <off> | <n>]\n");
++	printf("irqbalance [--oneshot | -o] [--debug | -d] [--foreground | -f] [--hintpolicy= | -h [exact|subset|ignore]]\n");
++	printf("	[--powerthresh= | -p <off> | <n>] [--banirq= | -i <n>]\n");
+ }
+
+ static void parse_command_line(int argc, char **argv)
+ {
+	int opt;
+	int longind;
++	unsigned long val;
+
+	while ((opt = getopt_long(argc, argv,
+-		"odh:p:",
++		"odfh:i:p:s:",
+		lopts, &longind)) != -1) {
+
+		switch(opt) {
+			case '?':
+				usage();
+				exit(1);
++				break;
++			case 'b':
++				banscript = strdup(optarg);
++				break;
+			case 'd':
+				debug_mode=1;
++				foreground_mode=1;
++				break;
++			case 'f':
++				foreground_mode=1;
+				break;
+			case 'h':
+				if (!strncmp(optarg, "exact", strlen(optarg)))
+@@ -103,6 +124,14 @@ static void parse_command_line(int argc, char **argv)
+					exit(1);
+				}
+				break;
++			case 'i':
++				val = strtoull(optarg, NULL, 10);
++				if (val == ULONG_MAX) {
++					usage();
++					exit(1);
++				}
++				add_banned_irq((int)val);
++				break;
+			case 'p':
+				if (!strncmp(optarg, "off", strlen(optarg)))
+					power_thresh = ULONG_MAX;
+@@ -117,6 +146,9 @@ static void parse_command_line(int argc, char **argv)
+			case 'o':
+				one_shot_mode=1;
+				break;
++			case 's':
++				pidfile = optarg;
++				break;
+		}
+	}
+ }
+@@ -172,18 +204,34 @@ static void handler(int signum)
+	keep_going = 0;
+ }
+
++static void force_rescan(int signum)
++{
++	if (cycle_count)
++		need_rescan = 1;
++}
++
+ int main(int argc, char** argv)
+ {
+-	struct sigaction action;
++	struct sigaction action, hupaction;
+
+ #ifdef HAVE_GETOPT_LONG
+	parse_command_line(argc, argv);
+ #else
+-	if (argc>1 && strstr(argv[1],"--debug"))
++	if (argc>1 && strstr(argv[1],"--debug")) {
+		debug_mode=1;
++		foreground_mode=1;
++	}
++	if (argc>1 && strstr(argv[1],"--foreground"))
++		foreground_mode=1;
+	if (argc>1 && strstr(argv[1],"--oneshot"))
+		one_shot_mode=1;
+ #endif
++
++	/*
++ 	 * Open the syslog connection
++ 	 */
++	openlog(argv[0], 0, LOG_DAEMON);
++
+	if (getenv("IRQBALANCE_BANNED_CPUS"))  {
+		cpumask_parse_user(getenv("IRQBALANCE_BANNED_CPUS"), strlen(getenv("IRQBALANCE_BANNED_CPUS")), banned_cpus);
+	}
+@@ -212,17 +260,35 @@ int main(int argc, char** argv)
+
+
+	/* On single core UP systems irqbalance obviously has no work to do */
+-	if (core_count<2)
++	if (core_count<2) {
++		char *msg = "Balaincing is ineffective on systems with a "
++			    "single cache domain.  Shutting down\n";
++
++		if (debug_mode)
++			printf("%s", msg);
++		else
++			syslog(LOG_INFO, "%s", msg);
+		exit(EXIT_SUCCESS);
++	}
+	/* On dual core/hyperthreading shared cache systems just do a one shot setup */
+	if (cache_domain_count==1)
+		one_shot_mode = 1;
+
+-	if (!debug_mode)
++	if (!foreground_mode) {
++		int pidfd = -1;
+		if (daemon(0,0))
+			exit(EXIT_FAILURE);
++		/* Write pidfile */
++		if (pidfile && (pidfd = open(pidfile,
++			O_WRONLY | O_CREAT | O_EXCL | O_TRUNC,
++			S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) >= 0) {
++			char str[16];
++			snprintf(str, sizeof(str), "%u\n", getpid());
++			write(pidfd, str, strlen(str));
++			close(pidfd);
++		}
++	}
+
+-	openlog(argv[0], 0, LOG_DAEMON);
+
+ #ifdef HAVE_LIBCAP_NG
+	// Drop capabilities
+@@ -236,6 +302,11 @@ int main(int argc, char** argv)
+	parse_proc_interrupts();
+	parse_proc_stat();
+
++	hupaction.sa_handler = force_rescan;
++	sigemptyset(&hupaction.sa_mask);
++	hupaction.sa_flags = 0;
++	sigaction(SIGHUP, &hupaction, NULL);
++
+	while (keep_going) {
+		sleep_approx(SLEEP_INTERVAL);
+		if (debug_mode)
+@@ -247,8 +318,8 @@ int main(int argc, char** argv)
+		parse_proc_stat();
+
+		/* cope with cpu hotplug -- detected during /proc/interrupts parsing */
+-		if (need_cpu_rescan) {
+-			need_cpu_rescan = 0;
++		if (need_rescan) {
++			need_rescan = 0;
+			/* if there's a hotplug event we better turn off power mode for a bit until things settle */
+			power_mode = 0;
+			if (debug_mode)
+@@ -282,5 +353,10 @@ int main(int argc, char** argv)
+
+	}
+	free_object_tree();
++
++	/* Remove pidfile */
++	if (!foreground_mode && pidfile)
++		unlink(pidfile);
++
+	return EXIT_SUCCESS;
+ }
+diff --git a/irqbalance.h b/irqbalance.h
+index 4e85325..e46f31f 100644
+--- a/irqbalance.h
++++ b/irqbalance.h
+@@ -9,6 +9,7 @@
+ #include <stdint.h>
+ #include <glib.h>
+ #include <syslog.h>
++#include <limits.h>
+
+ #include "types.h"
+ #ifdef HAVE_NUMA_H
+@@ -40,7 +41,6 @@ void dump_tree(void);
+
+ void activate_mappings(void);
+ void account_for_nic_stats(void);
+-void check_power_mode(void);
+ void clear_cpu_tree(void);
+ void pci_numa_scan(void);
+
+@@ -64,10 +64,11 @@ enum hp_e {
+ extern int debug_mode;
+ extern int one_shot_mode;
+ extern int power_mode;
+-extern int need_cpu_rescan;
++extern int need_rescan;
+ extern enum hp_e hint_policy;
+ extern unsigned long long cycle_count;
+ extern unsigned long power_thresh;
++extern char *banscript;
+
+ /*
+  * Numa node access routines
+@@ -103,10 +104,11 @@ extern int get_cpu_count(void);
+  */
+ extern void rebuild_irq_db(void);
+ extern void free_irq_db(void);
++extern void add_banned_irq(int irq);
+ extern void for_each_irq(GList *list, void (*cb)(struct irq_info *info,  void *data), void *data);
+ extern struct irq_info *get_irq_info(int irq);
+ extern void migrate_irq(GList **from, GList **to, struct irq_info *info);
+-extern struct irq_info *add_misc_irq(int irq);
++extern struct irq_info *add_new_irq(int irq);
+ #define irq_numa_node(irq) ((irq)->numa_node)
+
+
+diff --git a/irqlist.c b/irqlist.c
+index c29ee84..2523173 100644
+--- a/irqlist.c
++++ b/irqlist.c
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2006, Intel Corporation
++ * Copyright (C) 2012, Neil Horman <nhorman@tuxdriver.com>
+  *
+  * This file is part of irqbalance
+  *
+@@ -45,6 +46,7 @@ struct load_balance_info {
+	unsigned int num_within;
+	unsigned int num_over;
+	unsigned int num_under;
++	unsigned int num_powersave;
+	struct topo_obj *powersave;
+ };
+
+@@ -106,13 +108,16 @@ static void migrate_overloaded_irqs(struct topo_obj *obj, void *data)
+	struct load_balance_info *info = data;
+	int deviation;
+
++	if (obj->powersave_mode)
++		info->num_powersave++;
++
+	/*
+	 * Don't rebalance irqs on objects whos load is below the average
+	 */
+	if (obj->load <= info->avg_load) {
+		if ((obj->load + info->std_deviation) <= info->avg_load) {
+			info->num_under++;
+-			if (!info->powersave)
++			if (power_thresh != ULONG_MAX && !info->powersave)
+				if (!obj->powersave_mode)
+					info->powersave = obj;
+		} else
+@@ -172,13 +177,13 @@ void update_migration_status(void)
+ {
+	struct load_balance_info info;
+	find_overloaded_objs(cpus, info);
+-	if (cycle_count > 5) {
++	if (power_thresh != ULONG_MAX && cycle_count > 5) {
+		if (!info.num_over && (info.num_under >= power_thresh) && info.powersave) {
+			syslog(LOG_INFO, "cpu %d entering powersave mode\n", info.powersave->number);
+			info.powersave->powersave_mode = 1;
+			if (g_list_length(info.powersave->interrupts) > 0)
+				for_each_irq(info.powersave->interrupts, force_irq_migration, NULL);
+-		} else if (info.num_over) {
++		} else if ((info.num_over) && (info.num_powersave)) {
+			syslog(LOG_INFO, "Load average increasing, re-enabling all cpus for irq balancing\n");
+			for_each_object(cpus, clear_powersave_mode, NULL);
+		}
+diff --git a/m4/cap-ng.m4 b/m4/cap-ng.m4
+deleted file mode 100644
+index 0024edc..0000000
+--- a/m4/cap-ng.m4
++++ /dev/null
+@@ -1,40 +0,0 @@
+-# libcap-ng.m4 - Checks for the libcap-ng support
+-# 	Copyright (c) 2009 Steve Grubb sgrubb@redhat.com
+-#
+-AC_DEFUN([LIBCAP_NG_PATH],
+-[
+-  AC_ARG_WITH(libcap-ng,
+-    [  --with-libcap-ng=[auto/yes/no]  Add Libcap-ng support [default=auto]],,
+-    with_libcap_ng=auto)
+-
+-  # Check for Libcap-ng API
+-  #
+-  # libcap-ng detection
+-
+-  if test x$with_libcap_ng = xno ; then
+-      have_libcap_ng=no;
+-  else
+-      # Start by checking for header file
+-      AC_CHECK_HEADER(cap-ng.h, capng_headers=yes, capng_headers=no)
+-
+-      # See if we have libcap-ng library
+-      AC_CHECK_LIB(cap-ng, capng_clear,
+-	         CAPNG_LDADD=-lcap-ng,)
+-
+-      # Check results are usable
+-      if test x$with_libcap_ng = xyes -a x$CAPNG_LDADD = x ; then
+-         AC_MSG_ERROR(libcap-ng support was requested and the library was not found)
+-      fi
+-      if test x$CAPNG_LDADD != x -a $capng_headers = no ; then
+-         AC_MSG_ERROR(libcap-ng libraries found but headers are missing)
+-      fi
+-  fi
+-  AC_SUBST(CAPNG_LDADD)
+-  AC_MSG_CHECKING(whether to use libcap-ng)
+-  if test x$CAPNG_LDADD != x ; then
+-      AC_DEFINE(HAVE_LIBCAP_NG,1,[libcap-ng support])
+-      AC_MSG_RESULT(yes)
+-  else
+-      AC_MSG_RESULT(no)
+-  fi
+-])
+diff --git a/misc/irqbalance.env b/misc/irqbalance.env
+new file mode 100644
+index 0000000..bd87e3d
+--- /dev/null
++++ b/misc/irqbalance.env
+@@ -0,0 +1,26 @@
++# irqbalance is a daemon process that distributes interrupts across
++# CPUS on SMP systems.  The default is to rebalance once every 10
++# seconds.  This is the environment file that is specified to systemd via the
++# EnvironmentFile key in the service unit file (or via whatever method the init
++# system you're using has.
++#
++# ONESHOT=yes
++#    after starting, wait for a minute, then look at the interrupt
++#    load and balance it once; after balancing exit and do not change
++#    it again.
++#IRQBALANCE_ONESHOT=
++
++#
++# IRQBALANCE_BANNED_CPUS
++#    64 bit bitmask which allows you to indicate which cpu's should
++#    be skipped when reblancing irqs.  Cpu numbers which have their
++#    corresponding bits set to one in this mask will not have any
++#    irq's assigned to them on rebalance
++#
++#IRQBALANCE_BANNED_CPUS=
++
++#
++# IRQBALANCE_ARGS
++#    append any args here to the irqbalance daemon as documented in the man page
++#
++#IRQBALANCE_ARGS=
+diff --git a/misc/irqbalance.service b/misc/irqbalance.service
+index f349616..3139a83 100644
+--- a/misc/irqbalance.service
++++ b/misc/irqbalance.service
+@@ -3,9 +3,8 @@ Description=irqbalance daemon
+ After=syslog.target
+
+ [Service]
+-EnvironmentFile=/etc/sysconfig/irqbalance
+-Type=forking
+-ExecStart=/usr/sbin/irqbalance $ONESHOT
++EnvironmentFile=/path/to/irqbalance.env
++ExecStart=/usr/sbin/irqbalance --foreground $IRQBALANCE_ARGS
+
+ [Install]
+ WantedBy=multi-user.target
+diff --git a/numa.c b/numa.c
+index 710ed67..96703bd 100644
+--- a/numa.c
++++ b/numa.c
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2006, Intel Corporation
++ * Copyright (C) 2012, Neil Horman <nhorman@tuxdriver.com>
+  *
+  * This file is part of irqbalance
+  *
+@@ -106,11 +107,11 @@ void build_numa_node_list(void)
+ static void free_numa_node(gpointer data)
+ {
+	struct topo_obj *obj = data;
+-	if (data == &unspecified_node)
+-		return;
+-
+	g_list_free(obj->children);
+-	free(data);
++	g_list_free(obj->interrupts);
++
++	if (data != &unspecified_node)
++		free(data);
+ }
+
+ void free_numa_node_list(void)
+diff --git a/placement.c b/placement.c
+index 108ccc9..1172849 100644
+--- a/placement.c
++++ b/placement.c
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2006, Intel Corporation
++ * Copyright (C) 2012, Neil Horman <nhoramn@tuxdriver.com>
+  *
+  * This file is part of irqbalance
+  *
+@@ -48,7 +49,7 @@ static void find_best_object(struct topo_obj *d, void *data)
+	/*
+	 * Don't consider the unspecified numa node here
+	 */
+-	if ((d->obj_type == OBJ_TYPE_NODE) && (d->number == -1))
++	if (numa_avail && (d->obj_type == OBJ_TYPE_NODE) && (d->number == -1))
+		return;
+
+	/*
+diff --git a/powermode.c b/powermode.c
+deleted file mode 100644
+index 82ba490..0000000
+--- a/powermode.c
++++ /dev/null
+@@ -1,34 +0,0 @@
+-/*
+- * Copyright (C) 2006, Intel Corporation
+- *
+- * This file is part of irqbalance
+- *
+- * This program file is free software; you can redistribute it and/or modify it
+- * under the terms of the GNU General Public License as published by the
+- * Free Software Foundation; version 2 of the License.
+- *
+- * This program is distributed in the hope that it will be useful, but WITHOUT
+- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+- * for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program in a file named COPYING; if not, write to the
+- * Free Software Foundation, Inc.,
+- * 51 Franklin Street, Fifth Floor,
+- * Boston, MA 02110-1301 USA
+- */
+-#include "config.h"
+-#include <stdio.h>
+-#include <stdlib.h>
+-#include <unistd.h>
+-#include <stdint.h>
+-#include <string.h>
+-
+-#include "irqbalance.h"
+-
+-
+-void check_power_mode(void)
+-{
+-}
+-
+diff --git a/procinterrupts.c b/procinterrupts.c
+index 4d3b07b..431fffa 100644
+--- a/procinterrupts.c
++++ b/procinterrupts.c
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2006, Intel Corporation
++ * Copyright (C) 2012, Neil Horman <nhorman@tuxdriver.com>
+  *
+  * This file is part of irqbalance
+  *
+@@ -32,6 +33,8 @@
+
+ #define LINESIZE 4096
+
++extern cpumask_t banned_cpus;
++
+ static int proc_int_has_msi = 0;
+ static int msi_found_in_sysfs = 0;
+
+@@ -80,8 +83,12 @@ void parse_proc_interrupts(void)
+		c++;
+		number = strtoul(line, NULL, 10);
+		info = get_irq_info(number);
+-		if (!info)
+-			info = add_misc_irq(number);
++		if (!info) {
++			if (!cycle_count)
++				continue;
++			need_rescan = 1;
++			info = add_new_irq(number);
++		}
+
+		count = 0;
+		cpunr = 0;
+@@ -97,7 +104,7 @@ void parse_proc_interrupts(void)
+			cpunr++;
+		}
+		if (cpunr != core_count)
+-			need_cpu_rescan = 1;
++			need_rescan = 1;
+
+		info->last_irq_count = info->irq_count;
+		info->irq_count = count;
+@@ -217,6 +224,9 @@ void parse_proc_stat(void)
+
+		cpunr = strtoul(&line[3], NULL, 10);
+
++		if (cpu_isset(cpunr, banned_cpus))
++			continue;
++
+		rc = sscanf(line, "%*s %*d %*d %*d %*d %*d %d %d", &irq_load, &softirq_load);
+		if (rc < 2)
+			break;
