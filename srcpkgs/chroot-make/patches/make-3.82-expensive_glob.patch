@@ -1,0 +1,118 @@
+http://lists.gnu.org/archive/html/bug-make/2011-04/msg00002.html
+
+Index: read.c
+===================================================================
+RCS file: /sources/make/make/read.c,v
+retrieving revision 1.198
+retrieving revision 1.200
+diff -u -r1.198 -r1.200
+--- read.c	29 Apr 2011 15:27:39 -0000	1.198
++++ read.c	7 May 2011 14:36:12 -0000	1.200
+@@ -2901,6 +2901,7 @@
+       const char *name;
+       const char **nlist = 0;
+       char *tildep = 0;
++      int globme = 1;
+ #ifndef NO_ARCHIVES
+       char *arname = 0;
+       char *memname = 0;
+@@ -3109,32 +3110,40 @@
+	}
+ #endif /* !NO_ARCHIVES */
+
+-      switch (glob (name, GLOB_NOSORT|GLOB_ALTDIRFUNC, NULL, &gl))
+-	{
+-	case GLOB_NOSPACE:
+-	  fatal (NILF, _("virtual memory exhausted"));
+-
+-	case 0:
+-          /* Success.  */
+-          i = gl.gl_pathc;
+-          nlist = (const char **)gl.gl_pathv;
+-          break;
+-
+-        case GLOB_NOMATCH:
+-          /* If we want only existing items, skip this one.  */
+-          if (flags & PARSEFS_EXISTS)
+-            {
+-              i = 0;
+-              break;
+-            }
+-          /* FALLTHROUGH */
+-
+-	default:
+-          /* By default keep this name.  */
++      /* glob() is expensive: don't call it unless we need to.  */
++      if (!(flags & PARSEFS_EXISTS) && strpbrk (name, "?*[") == NULL)
++        {
++          globme = 0;
+           i = 1;
+           nlist = &name;
+-          break;
+-	}
++        }
++      else
++        switch (glob (name, GLOB_NOSORT|GLOB_ALTDIRFUNC, NULL, &gl))
++          {
++          case GLOB_NOSPACE:
++            fatal (NILF, _("virtual memory exhausted"));
++
++          case 0:
++            /* Success.  */
++            i = gl.gl_pathc;
++            nlist = (const char **)gl.gl_pathv;
++            break;
++
++          case GLOB_NOMATCH:
++            /* If we want only existing items, skip this one.  */
++            if (flags & PARSEFS_EXISTS)
++              {
++                i = 0;
++                break;
++              }
++            /* FALLTHROUGH */
++
++          default:
++            /* By default keep this name.  */
++            i = 1;
++            nlist = &name;
++            break;
++          }
+
+       /* For each matched element, add it to the list.  */
+       while (i-- > 0)
+@@ -3174,7 +3183,8 @@
+ #endif /* !NO_ARCHIVES */
+           NEWELT (concat (2, prefix, nlist[i]));
+
+-      globfree (&gl);
++      if (globme)
++        globfree (&gl);
+
+ #ifndef NO_ARCHIVES
+       if (arname)
+Index: tests/scripts/functions/wildcard
+===================================================================
+RCS file: /sources/make/make/tests/scripts/functions/wildcard,v
+retrieving revision 1.6
+retrieving revision 1.7
+diff -u -r1.6 -r1.7
+--- tests/scripts/functions/wildcard	13 Jun 2009 21:21:49 -0000	1.6
++++ tests/scripts/functions/wildcard	7 May 2011 14:36:11 -0000	1.7
+@@ -88,4 +88,16 @@
+ !,
+               '', "\n");
+
++# TEST #5: wildcard used to verify file existence
++
++touch('xxx.yyy');
++
++run_make_test(q!exists: ; @echo file=$(wildcard xxx.yyy)!,
++              '', "file=xxx.yyy\n");
++
++unlink('xxx.yyy');
++
++run_make_test(q!exists: ; @echo file=$(wildcard xxx.yyy)!,
++              '', "file=\n");
++
+ 1;
