@@ -1,0 +1,243 @@
+diff -urpN make/ChangeLog make-new/ChangeLog
+--- ChangeLog	2010-09-13 13:42:35.000000000 +0200
++++ ChangeLog	2010-09-13 13:42:09.000000000 +0200
+@@ -1,3 +1,22 @@
++2010-08-13  Paul Smith  <psmith@gnu.org>
++
++	* NEWS: Accidentally forgot to back out the sorted wildcard
++	enhancement in 3.82, so update NEWS.
++	Also add NEWS about the error check for explicit and pattern
++	targets in the same rule, added to 3.82.
++
++	* main.c (main): Add "oneshell" to $(.FEATURES) (forgot to add
++	this in 3.82!)
++
++	* read.c (parse_file_seq): Fix various errors parsing archives
++	with multiple objects in the parenthesis, as well as wildcards.
++	Fixes Savannah bug #30612.
++
++2010-08-10  Paul Smith  <psmith@gnu.org>
++
++	* main.c (main): Expand MAKEFLAGS before adding it to the
++	environment when re-exec'ing.  Fixes Savannah bug #30723.
++
+ 2010-07-28  Paul Smith  <psmith@gnu.org>
+ 
+ 	Version 3.82 released.
+--- main.c	2010-09-13 13:42:35.000000000 +0200
++++ main.c	2010-09-13 13:42:12.000000000 +0200
+@@ -1138,7 +1138,7 @@ main (int argc, char **argv, char **envp
+      a macro and some compilers (MSVC) don't like conditionals in macros.  */
+   {
+     const char *features = "target-specific order-only second-expansion"
+-                           " else-if shortest-stem undefine"
++                           " else-if shortest-stem undefine oneshell"
+ #ifndef NO_ARCHIVES
+                            " archives"
+ #endif
+@@ -2093,7 +2093,7 @@ main (int argc, char **argv, char **envp
+             const char *pv = define_makeflags (1, 1);
+             char *p = alloca (sizeof ("MAKEFLAGS=") + strlen (pv) + 1);
+             sprintf (p, "MAKEFLAGS=%s", pv);
+-            putenv (p);
++            putenv (allocated_variable_expand (p));
+           }
+ 
+ 	  if (ISDB (DB_BASIC))
+--- NEWS	2010-09-13 13:42:35.000000000 +0200
++++ NEWS	2010-09-13 13:42:11.000000000 +0200
+@@ -18,14 +18,6 @@ http://sv.gnu.org/bugs/index.php?group=m
+ * Compiling GNU make now requires a conforming ISO C 1989 compiler and
+   standard runtime library.
+ 
+-* WARNING: Future backward-incompatibility!
+-  Wildcards are not documented as returning sorted values, but up to and
+-  including this release the results have been sorted and some makefiles are
+-  apparently depending on that.  In the next release of GNU make, for
+-  performance reasons, we may remove that sorting.  If your makefiles
+-  require sorted results from wildcard expansions, use the $(sort ...)
+-  function to request it explicitly.
+-
+ * WARNING: Backward-incompatibility!
+   The POSIX standard for make was changed in the 2008 version in a
+   fundamentally incompatible way: make is required to invoke the shell as if
+@@ -42,6 +34,21 @@ http://sv.gnu.org/bugs/index.php?group=m
+   existing targets were provided in $?).
+ 
+ * WARNING: Backward-incompatibility!
++  Wildcards were not documented as returning sorted values, but the results
++  have been sorted up until this release..  If your makefiles require sorted
++  results from wildcard expansions, use the $(sort ...)  function to request
++  it explicitly.
++
++* WARNING: Backward-incompatibility!
++  In previous versions of make it was acceptable to list one or more explicit
++  targets followed by one or more pattern targets in the same rule and it
++  worked "as expected".  However, this was not documented as acceptable and if
++  you listed any explicit targets AFTER the pattern targets, the entire rule
++  would be mis-parsed.  This release removes this ability completely: make
++  will generate an error message if you mix explicit and pattern targets in
++  the same rule.
++
++* WARNING: Backward-incompatibility!
+   As a result of parser enhancements, three backward-compatibility issues
+   exist: first, a prerequisite containing an "=" cannot be escaped with a
+   backslash any longer.  You must create a variable containing an "=" and
+--- read.c	2010-09-13 13:42:35.000000000 +0200
++++ read.c	2010-09-13 13:42:11.000000000 +0200
+@@ -3028,7 +3028,7 @@ parse_file_seq (char **stringp, unsigned
+             {
+               /* This looks like the first element in an open archive group.
+                  A valid group MUST have ')' as the last character.  */
+-              const char *e = p + nlen;
++              const char *e = p;
+               do
+                 {
+                   e = next_token (e);
+@@ -3084,19 +3084,19 @@ parse_file_seq (char **stringp, unsigned
+          Go to the next item in the string.  */
+       if (flags & PARSEFS_NOGLOB)
+         {
+-          NEWELT (concat (2, prefix, tp));
++          NEWELT (concat (2, prefix, tmpbuf));
+           continue;
+         }
+ 
+       /* If we get here we know we're doing glob expansion.
+          TP is a string in tmpbuf.  NLEN is no longer used.
+          We may need to do more work: after this NAME will be set.  */
+-      name = tp;
++      name = tmpbuf;
+ 
+       /* Expand tilde if applicable.  */
+-      if (tp[0] == '~')
++      if (tmpbuf[0] == '~')
+ 	{
+-	  tildep = tilde_expand (tp);
++	  tildep = tilde_expand (tmpbuf);
+ 	  if (tildep != 0)
+             name = tildep;
+ 	}
+@@ -3152,7 +3152,10 @@ parse_file_seq (char **stringp, unsigned
+             else
+               {
+                 /* We got a chain of items.  Attach them.  */
+-                (*newp)->next = found;
++                if (*newp)
++                  (*newp)->next = found;
++                else
++                  *newp = found;
+ 
+                 /* Find and set the new end.  Massage names if necessary.  */
+                 while (1)
+--- tests/ChangeLog	2010-09-13 13:42:35.000000000 +0200
++++ tests/ChangeLog	2010-09-13 13:42:10.000000000 +0200
+@@ -1,3 +1,16 @@
++2010-08-13  Paul Smith  <psmith@gnu.org>
++
++	* scripts/features/archives: New regression tests for archive
++	support.  Test for fix to Savannah bug #30612.
++
++	* run_make_tests.pl (set_more_defaults): Set a %FEATURES hash to
++	the features available in $(.FEATURES).
++
++2010-08-10  Paul Smith  <psmith@gnu.org>
++
++	* scripts/features/reinvoke: Ensure command line variable settings
++	are preserved across make re-exec.  Tests Savannah bug #30723.
++
+ 2010-07-28  Paul Smith  <psmith@gnu.org>
+ 
+ 	* scripts/targets/POSIX: Compatibility issues with Solaris (and
+--- tests/run_make_tests.pl	2010-09-13 13:42:35.000000000 +0200
++++ tests/run_make_tests.pl	2010-09-13 13:42:10.000000000 +0200
+@@ -29,6 +29,7 @@
+ # You should have received a copy of the GNU General Public License along with
+ # this program.  If not, see <http://www.gnu.org/licenses/>.
+ 
++%FEATURES = ();
+ 
+ $valgrind = 0;              # invoke make with valgrind
+ $valgrind_args = '';
+@@ -367,6 +368,8 @@ sub set_more_defaults
+      $parallel_jobs = 1;
+    }
+ 
++   %FEATURES = map { $_ => 1 } split /\s+/, `sh -c "echo '\\\$(info \\\$(.FEATURES))' | $make_path -f- 2>/dev/null"`;
++
+    # Set up for valgrind, if requested.
+ 
+    if ($valgrind) {
+--- tests/scripts/features/archives	1970-01-01 01:00:00.000000000 +0100
++++ tests/scripts/features/archives	2010-09-13 13:42:10.000000000 +0200
+@@ -0,0 +1,42 @@
++#                                                              -*-mode: perl-*-
++
++$description = "Test GNU make's archive management features.";
++
++$details = "\
++This only works on systems that support it.";
++
++# If this instance of make doesn't support archives, skip it
++exists $FEATURES{archives} or return -1;
++
++# Create some .o files to work with
++utouch(-60, qw(a1.o a2.o a3.o));
++
++# Very simple
++run_make_test('all: libxx.a(a1.o)',
++              '', "ar rv libxx.a a1.o\nar: creating libxx.a\na - a1.o\n");
++
++# Multiple .o's.  Add a new one to the existing library
++run_make_test('all: libxx.a(a1.o a2.o)',
++              '', "ar rv libxx.a a2.o\na - a2.o\n");
++
++# Touch one of the .o's so it's rebuilt
++utouch(-40, 'a1.o');
++run_make_test(undef, '', "ar rv libxx.a a1.o\nr - a1.o\n");
++
++# Use wildcards
++run_make_test('all: libxx.a(*.o)',
++              '', "#MAKE#: Nothing to be done for `all'.\n");
++
++# Touch one of the .o's so it's rebuilt
++utouch(-30, 'a1.o');
++run_make_test(undef, '', "ar rv libxx.a a1.o\nr - a1.o\n");
++
++# Use both wildcards and simple names
++utouch(-50, 'a2.o');
++run_make_test('all: libxx.a(a3.o *.o)', '',
++              "ar rv libxx.a a3.o\na - a3.o\nar rv libxx.a a2.o\nr - a2.o\n");
++
++rmfiles(qw(a1.o a2.o a3.o libxx.a));
++
++# This tells the test driver that the perl test script executed properly.
++1;
+--- tests/scripts/features/reinvoke	2010-09-13 13:42:35.000000000 +0200
++++ tests/scripts/features/reinvoke	2010-09-13 13:42:10.000000000 +0200
+@@ -57,9 +57,24 @@ include $(F)',
+ # Now try with the file we're not updating being the actual file we're
+ # including: this and the previous one test different parts of the code.
+ 
+-run_make_test(undef, "F=b", "[ -f b ] || echo >> b\nhello\n")
++run_make_test(undef, 'F=b', "[ -f b ] || echo >> b\nhello\n")
+ 
+ &rmfiles('a','b','c');
+ 
++# Ensure command line variables are preserved properly across re-exec
++# Tests for Savannah bug #30723
++
++run_make_test('
++ifdef RECURSE
++-include foo30723
++endif
++recurse: ; @$(MAKE) -f $(MAKEFILE_LIST) RECURSE=1 test
++test: ; @echo F.O=$(F.O)
++foo30723: ; @touch $@
++',
++              '--no-print-directory F.O=bar', "F.O=bar\n");
++
++unlink('foo30723');
++
+ # This tells the test driver that the perl test script executed properly.
+ 1;

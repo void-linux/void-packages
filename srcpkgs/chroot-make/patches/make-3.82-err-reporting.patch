@@ -1,0 +1,154 @@
+--- misc.c	2010-07-19 09:10:54.000000000 +0200
++++ misc.c	2010-08-11 15:26:45.000000000 +0200
+@@ -342,17 +342,31 @@ strerror (int errnum)
+ /* Print an error message from errno.  */
+ 
+ void
++perror_with_name_err (const char *str, const char *name, int errnum)
++{
++  error (NILF, _("%s%s: %s"), str, name, strerror (errnum));
++}
++
++void
+ perror_with_name (const char *str, const char *name)
+ {
+-  error (NILF, _("%s%s: %s"), str, name, strerror (errno));
++  perror_with_name_err (str, name, errno);
+ }
+ 
+ /* Print an error message from errno and exit.  */
+ 
+ void
++pfatal_with_name_err (const char *name, int errnum)
++{
++  fatal (NILF, _("%s: %s"), name, strerror (errnum));
++
++  /* NOTREACHED */
++}
++
++void
+ pfatal_with_name (const char *name)
+ {
+-  fatal (NILF, _("%s: %s"), name, strerror (errno));
++  pfatal_with_name_err (name, errno);
+ 
+   /* NOTREACHED */
+ }
+--- main.c	2010-08-11 15:34:12.000000000 +0200
++++ main.c	2010-08-11 15:30:11.000000000 +0200
+@@ -1536,13 +1536,13 @@ main (int argc, char **argv, char **envp
+ 	    strcat (template, DEFAULT_TMPFILE);
+ 	    outfile = open_tmpfile (&stdin_nm, template);
+ 	    if (outfile == 0)
+-	      pfatal_with_name (_("fopen (temporary file)"));
++	      pfatal_with_name_err (_("fopen (temporary file)"), errno);
+ 	    while (!feof (stdin) && ! ferror (stdin))
+ 	      {
+ 		char buf[2048];
+ 		unsigned int n = fread (buf, 1, sizeof (buf), stdin);
+ 		if (n > 0 && fwrite (buf, 1, n, outfile) != n)
+-		  pfatal_with_name (_("fwrite (temporary file)"));
++		  pfatal_with_name_err (_("fwrite (temporary file)"), errno);
+ 	      }
+ 	    fclose (outfile);
+ 
+@@ -1747,7 +1747,7 @@ main (int argc, char **argv, char **envp
+       else if ((job_rfd = dup (job_fds[0])) < 0)
+         {
+           if (errno != EBADF)
+-            pfatal_with_name (_("dup jobserver"));
++            pfatal_with_name_err (_("dup jobserver"), errno);
+ 
+           error (NILF,
+                  _("warning: jobserver unavailable: using -j1.  Add `+' to parent make rule."));
+@@ -1788,7 +1788,7 @@ main (int argc, char **argv, char **envp
+       char c = '+';
+ 
+       if (pipe (job_fds) < 0 || (job_rfd = dup (job_fds[0])) < 0)
+-	pfatal_with_name (_("creating jobs pipe"));
++	pfatal_with_name_err (_("creating jobs pipe"), errno);
+ 
+       /* Every make assumes that it always has one job it can run.  For the
+          submakes it's the token they were given by their parent.  For the
+@@ -1803,7 +1803,7 @@ main (int argc, char **argv, char **envp
+ 
+           EINTRLOOP (r, write (job_fds[1], &c, 1));
+           if (r != 1)
+-            pfatal_with_name (_("init jobserver pipe"));
++            pfatal_with_name_err (_("init jobserver pipe"), errno);
+         }
+ 
+       /* Fill in the jobserver_fds struct for our children.  */
+@@ -2226,7 +2226,7 @@ main (int argc, char **argv, char **envp
+   /* If there is a temp file from reading a makefile from stdin, get rid of
+      it now.  */
+   if (stdin_nm && unlink (stdin_nm) < 0 && errno != ENOENT)
+-    perror_with_name (_("unlink (temporary file): "), stdin_nm);
++    perror_with_name_err (_("unlink (temporary file): "), stdin_nm, errno);
+ 
+   /* If there were no command-line goals, use the default.  */
+   if (goals == 0)
+Только в make-3.82-pm: job.c~
+Только в make-3.82-pm: main.c~
+--- make.h	2010-08-11 15:34:12.000000000 +0200
++++ make.h	2010-08-11 15:31:26.000000000 +0200
+@@ -385,6 +385,8 @@ void die (int) __attribute__ ((noreturn)
+ void log_working_directory (int);
+ void pfatal_with_name (const char *) __attribute__ ((noreturn));
+ void perror_with_name (const char *, const char *);
++void pfatal_with_name_err (const char *, int errnum) __attribute__ ((noreturn));
++void perror_with_name_err (const char *, const char *, int errnum);
+ void *xmalloc (unsigned int);
+ void *xcalloc (unsigned int);
+ void *xrealloc (void *, unsigned int);
+diff -urp make-3.82/job.c make-3.82-pm/job.c
+--- job.c	2010-07-24 10:27:50.000000000 +0200
++++ job.c	2010-08-11 15:33:54.000000000 +0200
+@@ -917,7 +917,7 @@ free_child (struct child *child)
+ 
+       EINTRLOOP (r, write (job_fds[1], &token, 1));
+       if (r != 1)
+-	pfatal_with_name (_("write jobserver"));
++	pfatal_with_name_err (_("write jobserver"), errno);
+ 
+       DB (DB_JOBS, (_("Released token for child %p (%s).\n"),
+                     child, child->file->name));
+@@ -1768,6 +1768,7 @@ new_job (struct file *file)
+ 
+         /* Set interruptible system calls, and read() for a job token.  */
+ 	set_child_handler_action_flags (1, waiting_jobs != NULL);
++	errno = 0;
+ 	got_token = read (job_rfd, &token, 1);
+ 	saved_errno = errno;
+ 	set_child_handler_action_flags (0, waiting_jobs != NULL);
+@@ -1782,10 +1783,14 @@ new_job (struct file *file)
+ 
+         /* If the error _wasn't_ expected (EINTR or EBADF), punt.  Otherwise,
+            go back and reap_children(), and try again.  */
+-	errno = saved_errno;
+-        if (errno != EINTR && errno != EBADF)
+-          pfatal_with_name (_("read jobs pipe"));
+-        if (errno == EBADF)
++        if (saved_errno != EINTR && saved_errno != EBADF)
++	  {
++	    if (got_token == 0)
++	      fatal (NILF, _("read jobs pipe EOF"));
++	    else
++	      pfatal_with_name_err (_("read jobs pipe"), saved_errno);
++	  }
++        if (saved_errno == EBADF)
+           DB (DB_JOBS, ("Read returned EBADF.\n"));
+       }
+ #endif
+@@ -1909,7 +1914,8 @@ load_too_high (void)
+ 	    error (NILF,
+                    _("cannot enforce load limits on this operating system"));
+ 	  else
+-	    perror_with_name (_("cannot enforce load limit: "), "getloadavg");
++	    perror_with_name_err (_("cannot enforce load limit: "),
++				  "getloadavg", errno);
+ 	}
+       lossage = errno;
+       load = 0;
+Только в make-3.82-pm: make.h~
+Только в make-3.82-pm: misc.c.orig

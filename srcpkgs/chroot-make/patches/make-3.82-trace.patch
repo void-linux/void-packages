@@ -1,0 +1,108 @@
+
+This patch add the support for --debug=c and --debug=e to make
+this option when activated will trace in stdout the activity of $(call and $(eval in the Makefile
+
+The trace use the format:
+ ### xxx -->
+ ### xxx <--
+the number of space before ### is at least 1 and increase with the nesting of eval/call
+
+usage: make --debug=c,e
+
+--- debug.h	2010-07-12 20:20:38.000000000 -0500
++++ debug.h	2011-06-22 12:06:37.000000000 -0500
+@@ -21,6 +21,8 @@
+ #define DB_JOBS         (0x004)
+ #define DB_IMPLICIT     (0x008)
+ #define DB_MAKEFILES    (0x100)
++#define DB_CALL       (0x01000)
++#define DB_EVAL       (0x02000)
+ 
+ #define DB_ALL          (0xfff)
+ 
+--- function.c	2011-06-23 01:01:35.000000000 -0500
++++ function.c	2011-06-23 01:40:05.000000000 -0500
+@@ -28,6 +28,8 @@
+ #include "amiga.h"
+ #endif
+ 
++static int depth = 0;
++
+ 
+ struct function_table_entry
+   {
+@@ -1371,7 +1373,12 @@
+ 
+   install_variable_buffer (&buf, &len);
+ 
++  depth += 1;
++  DBS( DB_EVAL, ("### eval -->\n"));
++  DB( DB_EVAL, ("%s\n", argv[0]));
+   eval_buffer (argv[0]);
++  DBS( DB_EVAL, ("### eval <--\n"));
++  depth -= 1;
+ 
+   restore_variable_buffer (buf, len);
+ 
+@@ -2338,6 +2345,7 @@
+   if (v == 0 || *v->value == '\0')
+     return o;
+ 
++  depth += 1;
+   body = alloca (flen + 4);
+   body[0] = '$';
+   body[1] = '(';
+@@ -2345,6 +2353,7 @@
+   body[flen+2] = ')';
+   body[flen+3] = '\0';
+ 
++  DBS(DB_CALL, ("### call %s -->\n", body));
+   /* Set up arguments $(1) .. $(N).  $(0) is the function name.  */
+ 
+   push_new_variable_scope ();
+@@ -2354,6 +2363,7 @@
+       char num[11];
+ 
+       sprintf (num, "%d", i);
++      DBS(DB_CALL, ("### arg %i for call %s is '%s'\n", i, body, *argv));
+       define_variable (num, strlen (num), *argv, o_automatic, 0);
+     }
+ 
+@@ -2367,6 +2377,7 @@
+       char num[11];
+ 
+       sprintf (num, "%d", i);
++      DBS(DB_CALL, ("### arg %i for call %s is implicit\n", i, body));
+       define_variable (num, strlen (num), "", o_automatic, 0);
+     }
+ 
+@@ -2377,7 +2388,14 @@
+ 
+   saved_args = max_args;
+   max_args = i;
++
+   o = variable_expand_string (o, body, flen+3);
++  DBS(DB_CALL, ("### call to %s expended into\n", body));
++  DB(DB_CALL, ("%s\n", o));
++  DBS(DB_CALL, ("### call %s <--\n", body));
++
++  depth -= 1;
++
+   max_args = saved_args;
+ 
+   v->exp_count = 0;
+--- main.c	2010-07-19 02:10:53.000000000 -0500
++++ main.c	2011-06-22 11:46:39.000000000 -0500
+@@ -634,6 +634,12 @@
+             case 'b':
+               db_level |= DB_BASIC;
+               break;
++            case 'c':
++              db_level |= DB_CALL;
++              break;
++            case 'e':
++              db_level |= DB_EVAL;
++              break;
+             case 'i':
+               db_level |= DB_BASIC | DB_IMPLICIT;
+               break;
