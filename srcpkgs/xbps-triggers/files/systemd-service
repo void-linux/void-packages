@@ -1,13 +1,19 @@
 #!/bin/sh
 #
-# Enable and disable systemd services. The systemd_services environmental
-# variable is expected to be set as follows:
+# systemd trigger to enable/disable services, create/remove files via
+# systemd-tmpfiles(5) and load/unload modules via modules-load.d(5).
 #
-# SERVICE_NAME	RESTART
-# foo.service	off
-# blah.service	on
+# The following env vars are recognized:
+#	- systemd_services (expects at least two arguments: service name
+#	    and a boolean to restart automatically the service on upgrade).
+#	- systemd_tmpfiles (expects a black separated list of fileanmes).
+#	- systemd_modules  (expects a blank separated list of filenames).
 #
-# i.e systemd_services='foo.service off blah.service on'
+# Examples:
+
+# systemd_services="foo.service off blah.service on"
+# systemd_tmpfiles="foo.conf blah.conf"
+# systemd_modules="foo.conf blah.conf"
 #
 # Arguments:	$ACTION = [run/targets]
 #		$TARGET	= [post-install/pre-remove]
@@ -29,7 +35,7 @@ targets)
 	;;
 run)
 	[ ! -x bin/systemctl ] && exit 0
-	[ -z "${systemd_services}" ] && exit 1
+	[ -z "$systemd_services" -a -z "$systemd_tmpfiles" -a -z "$systemd_modules" ] && exit 1
 
 	systemd-notify --booted
 	if [ $? -eq 0 ]; then
@@ -59,8 +65,9 @@ run)
 				# Package update, just disable the unit.
 				echo "Disabling systemd service ${_srv}..."
 				systemctl --no-reload disable ${_srv} >/dev/null 2>&1 || :
+
 			fi
-		elif [ "$TARGET" = "post-install" ]; then
+		else
 			if [ "$UPDATE" = "no" ]; then
 				# package is being installed.
 				# enable (but don't start) the unit by default.
@@ -106,6 +113,25 @@ _EOF
 		fi
 		shift; shift
 	done
+	if [ "$TARGET" = "pre-remove" ]; then
+		# Unload the modules specified in systemd_modules files.
+		for f in ${systemd_modules}; do
+			for j in $(cat usr/lib/modules-load.d/${f}); do
+				modprobe -rq ${j} || :
+			done
+		done
+	else
+		# Create stuff specified in systemd_tmpfiles files.
+		for f in ${systemd_tmpfiles}; do
+			systemd-tmpfiles --create ${f} || :
+		done
+		# Load modules specified in systemd_modules files.
+		for f in ${systemd_modules}; do
+			for j in $(cat usr/lib/modules-load.d/${f}); do
+				modprobe -q ${j} || :
+			done
+		done
+	fi
 	;;
 *)
 	exit 1
