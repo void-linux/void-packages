@@ -1,0 +1,776 @@
+http://sourceware.org/git/?p=glibc.git;a=patch;h=c30e8edf
+
+--- nptl/Makefile
++++ nptl/Makefile
+@@ -206,7 +206,7 @@ tests = tst-typesizes \
+	tst-cond1 tst-cond2 tst-cond3 tst-cond4 tst-cond5 tst-cond6 tst-cond7 \
+	tst-cond8 tst-cond9 tst-cond10 tst-cond11 tst-cond12 tst-cond13 \
+	tst-cond14 tst-cond15 tst-cond16 tst-cond17 tst-cond18 tst-cond19 \
+-	tst-cond20 tst-cond21 tst-cond22 tst-cond23 \
++	tst-cond20 tst-cond21 tst-cond22 tst-cond23 tst-cond24 \
+	tst-robust1 tst-robust2 tst-robust3 tst-robust4 tst-robust5 \
+	tst-robust6 tst-robust7 tst-robust8 tst-robust9 \
+	tst-robustpi1 tst-robustpi2 tst-robustpi3 tst-robustpi4 tst-robustpi5 \
+@@ -274,6 +275,7 @@ gen-as-const-headers = pthread-errnos.sym
+
+ LDFLAGS-pthread.so = -Wl,--enable-new-dtags,-z,nodelete,-z,initfirst
+
++LDFLAGS-tst-cond24 = $(no-as-needed) -lrt
+
+ include ../Makeconfig
+
+diff --git a/nptl/sysdeps/unix/sysv/linux/i386/i486/pthread_cond_timedwait.S b/nptl/sysdeps/unix/sysv/linux/i386/i486/pthread_cond_timedwait.S
+index d14d7de..6761c13 100644
+--- nptl/sysdeps/unix/sysv/linux/i386/i486/pthread_cond_timedwait.S
++++ nptl/sysdeps/unix/sysv/linux/i386/i486/pthread_cond_timedwait.S
+@@ -212,8 +212,23 @@ __pthread_cond_timedwait:
+	sete	24(%esp)
+	je	41f
+
+-	/* Normal and PI futexes dont mix. Use normal futex functions only
+-	   if the kernel does not support the PI futex functions.  */
++	/* When a futex syscall with FUTEX_WAIT_REQUEUE_PI returns
++	   successfully, it has already locked the mutex for us and the
++	   pi_flag (24(%esp)) is set to denote that fact.  However, if another
++	   thread changed the futex value before we entered the wait, the
++	   syscall may return an EAGAIN and the mutex is not locked.  We go
++	   ahead with a success anyway since later we look at the pi_flag to
++	   decide if we got the mutex or not.  The sequence numbers then make
++	   sure that only one of the threads actually wake up.  We retry using
++	   normal FUTEX_WAIT only if the kernel returned ENOSYS, since normal
++	   and PI futexes don't mix.
++
++	   Note that we don't check for EAGAIN specifically; we assume that the
++	   only other error the futex function could return is EAGAIN (barring
++	   the ETIMEOUT of course, for the timeout case in futex) since
++	   anything else would mean an error in our function.  It is too
++	   expensive to do that check for every call (which is  quite common in
++	   case of a large number of threads), so it has been skipped.  */
+	cmpl	$-ENOSYS, %eax
+	jne	41f
+	xorl	%ecx, %ecx
+@@ -273,9 +288,24 @@ __pthread_cond_timedwait:
+	jne	9f
+
+ 15:	cmpl	$-ETIMEDOUT, %esi
+-	jne	8b
++	je	28f
++
++	/* We need to go back to futex_wait.  If we're using requeue_pi, then
++	   release the mutex we had acquired and go back.  */
++	movl	24(%esp), %edx
++	test	%edx, %edx
++	jz	8b
++
++	/* Adjust the mutex values first and then unlock it.  The unlock
++	   should always succeed or else the kernel did not lock the mutex
++	   correctly.  */
++	movl	dep_mutex(%ebx), %eax
++	call	__pthread_mutex_cond_lock_adjust
++	xorl	%edx, %edx
++	call	__pthread_mutex_unlock_usercnt
++	jmp	8b
+
+-	addl	$1, wakeup_seq(%ebx)
++28:	addl	$1, wakeup_seq(%ebx)
+	adcl	$0, wakeup_seq+4(%ebx)
+	addl	$1, cond_futex(%ebx)
+	movl	$ETIMEDOUT, %esi
+diff --git a/nptl/sysdeps/unix/sysv/linux/i386/i486/pthread_cond_wait.S b/nptl/sysdeps/unix/sysv/linux/i386/i486/pthread_cond_wait.S
+index 366de69..0af06ac 100644
+--- nptl/sysdeps/unix/sysv/linux/i386/i486/pthread_cond_wait.S
++++ nptl/sysdeps/unix/sysv/linux/i386/i486/pthread_cond_wait.S
+@@ -136,7 +136,6 @@ __pthread_cond_wait:
+	cmpl	$PI_BIT, %eax
+	jne	18f
+
+-90:
+	movl	$(FUTEX_WAIT_REQUEUE_PI|FUTEX_PRIVATE_FLAG), %ecx
+	movl	%ebp, %edx
+	xorl	%esi, %esi
+@@ -152,11 +151,22 @@ __pthread_cond_wait:
+	sete	16(%esp)
+	je	19f
+
+-	cmpl	$-EAGAIN, %eax
+-	je	91f
+-
+-	/* Normal and PI futexes dont mix. Use normal futex functions only
+-	   if the kernel does not support the PI futex functions.  */
++	/* When a futex syscall with FUTEX_WAIT_REQUEUE_PI returns
++	   successfully, it has already locked the mutex for us and the
++	   pi_flag (16(%esp)) is set to denote that fact.  However, if another
++	   thread changed the futex value before we entered the wait, the
++	   syscall may return an EAGAIN and the mutex is not locked.  We go
++	   ahead with a success anyway since later we look at the pi_flag to
++	   decide if we got the mutex or not.  The sequence numbers then make
++	   sure that only one of the threads actually wake up.  We retry using
++	   normal FUTEX_WAIT only if the kernel returned ENOSYS, since normal
++	   and PI futexes don't mix.
++
++	   Note that we don't check for EAGAIN specifically; we assume that the
++	   only other error the futex function could return is EAGAIN since
++	   anything else would mean an error in our function.  It is too
++	   expensive to do that check for every call (which is 	quite common in
++	   case of a large number of threads), so it has been skipped.  */
+	cmpl	$-ENOSYS, %eax
+	jne	19f
+	xorl	%ecx, %ecx
+@@ -206,12 +216,12 @@ __pthread_cond_wait:
+	cmpl	8(%esp), %edx
+	jne	7f
+	cmpl	4(%esp), %edi
+-	je	8b
++	je	22f
+
+ 7:	cmpl	%ecx, %edx
+	jne	9f
+	cmp	%eax, %edi
+-	je	8b
++	je	22f
+
+ 9:	addl	$1, woken_seq(%ebx)
+	adcl	$0, woken_seq+4(%ebx)
+@@ -287,6 +297,22 @@ __pthread_cond_wait:
+	jmp	20b
+
+	cfi_adjust_cfa_offset(-FRAME_SIZE);
++
++	/* We need to go back to futex_wait.  If we're using requeue_pi, then
++	   release the mutex we had acquired and go back.  */
++22:	movl	16(%esp), %edx
++	test	%edx, %edx
++	jz	8b
++
++	/* Adjust the mutex values first and then unlock it.  The unlock
++	   should always succeed or else the kernel did not lock the mutex
++	   correctly.  */
++	movl	dep_mutex(%ebx), %eax
++	call    __pthread_mutex_cond_lock_adjust
++	xorl	%edx, %edx
++	call	__pthread_mutex_unlock_usercnt
++	jmp	8b
++
+	/* Initial locking failed.  */
+ 1:
+ #if cond_lock == 0
+@@ -400,77 +426,6 @@ __pthread_cond_wait:
+	call	__lll_unlock_wake
+	jmp	11b
+
+-91:
+-.LcleanupSTART2:
+-	/* FUTEX_WAIT_REQUEUE_PI returned EAGAIN.  We need to
+-	   call it again.  */
+-
+-	/* Get internal lock.  */
+-	movl	$1, %edx
+-	xorl	%eax, %eax
+-	LOCK
+-#if cond_lock == 0
+-	cmpxchgl %edx, (%ebx)
+-#else
+-	cmpxchgl %edx, cond_lock(%ebx)
+-#endif
+-	jz	92f
+-
+-#if cond_lock == 0
+-	movl	%ebx, %edx
+-#else
+-	leal	cond_lock(%ebx), %edx
+-#endif
+-#if (LLL_SHARED-LLL_PRIVATE) > 255
+-	xorl	%ecx, %ecx
+-#endif
+-	cmpl	$-1, dep_mutex(%ebx)
+-	setne	%cl
+-	subl	$1, %ecx
+-	andl	$(LLL_SHARED-LLL_PRIVATE), %ecx
+-#if LLL_PRIVATE != 0
+-	addl	$LLL_PRIVATE, %ecx
+-#endif
+-	call	__lll_lock_wait
+-
+-92:
+-	/* Increment the cond_futex value again, so it can be used as a new
+-	   expected value. */
+-	addl	$1, cond_futex(%ebx)
+-	movl	cond_futex(%ebx), %ebp
+-
+-	/* Unlock.  */
+-	LOCK
+-#if cond_lock == 0
+-	subl	$1, (%ebx)
+-#else
+-	subl	$1, cond_lock(%ebx)
+-#endif
+-	je	93f
+-#if cond_lock == 0
+-	movl	%ebx, %eax
+-#else
+-	leal	cond_lock(%ebx), %eax
+-#endif
+-#if (LLL_SHARED-LLL_PRIVATE) > 255
+-	xorl	%ecx, %ecx
+-#endif
+-	cmpl	$-1, dep_mutex(%ebx)
+-	setne	%cl
+-	subl	$1, %ecx
+-	andl	$(LLL_SHARED-LLL_PRIVATE), %ecx
+-#if LLL_PRIVATE != 0
+-	addl	$LLL_PRIVATE, %ecx
+-#endif
+-	call	__lll_unlock_wake
+-
+-93:
+-	/* Set the rest of SYS_futex args for FUTEX_WAIT_REQUEUE_PI. */
+-	xorl	%ecx, %ecx
+-	movl	dep_mutex(%ebx), %edi
+-	jmp	90b
+-.LcleanupEND2:
+-
+	.size	__pthread_cond_wait, .-__pthread_cond_wait
+ versioned_symbol (libpthread, __pthread_cond_wait, pthread_cond_wait,
+		  GLIBC_2_3_2)
+@@ -651,10 +606,6 @@ __condvar_w_cleanup:
+	.long	.LcleanupEND-.Lsub_cond_futex
+	.long	__condvar_w_cleanup-.LSTARTCODE
+	.uleb128  0
+-	.long	.LcleanupSTART2-.LSTARTCODE
+-	.long	.LcleanupEND2-.LcleanupSTART2
+-	.long	__condvar_w_cleanup-.LSTARTCODE
+-	.uleb128  0
+	.long	.LcallUR-.LSTARTCODE
+	.long	.LENDCODE-.LcallUR
+	.long	0
+diff --git a/nptl/sysdeps/unix/sysv/linux/x86_64/pthread_cond_timedwait.S b/nptl/sysdeps/unix/sysv/linux/x86_64/pthread_cond_timedwait.S
+index a1c8ca8..b669abb 100644
+--- nptl/sysdeps/unix/sysv/linux/x86_64/pthread_cond_timedwait.S
++++ nptl/sysdeps/unix/sysv/linux/x86_64/pthread_cond_timedwait.S
+@@ -103,7 +103,7 @@ __pthread_cond_timedwait:
+	mov	%RSI_LP, dep_mutex(%rdi)
+
+ 22:
+-	xorl	%r15d, %r15d
++	xorb	%r15b, %r15b
+
+ #ifndef __ASSUME_FUTEX_CLOCK_REALTIME
+ #  ifdef PIC
+@@ -190,18 +190,39 @@ __pthread_cond_timedwait:
+	movl	$SYS_futex, %eax
+	syscall
+
+-	movl	$1, %r15d
++	cmpl	$0, %eax
++	sete	%r15b
++
+ #ifdef __ASSUME_REQUEUE_PI
+	jmp	62f
+ #else
+-	cmpq	$-4095, %rax
+-	jnae	62f
++	je	62f
++
++	/* When a futex syscall with FUTEX_WAIT_REQUEUE_PI returns
++	   successfully, it has already locked the mutex for us and the
++	   pi_flag (%r15b) is set to denote that fact.  However, if another
++	   thread changed the futex value before we entered the wait, the
++	   syscall may return an EAGAIN and the mutex is not locked.  We go
++	   ahead with a success anyway since later we look at the pi_flag to
++	   decide if we got the mutex or not.  The sequence numbers then make
++	   sure that only one of the threads actually wake up.  We retry using
++	   normal FUTEX_WAIT only if the kernel returned ENOSYS, since normal
++	   and PI futexes don't mix.
++
++	   Note that we don't check for EAGAIN specifically; we assume that the
++	   only other error the futex function could return is EAGAIN (barring
++	   the ETIMEOUT of course, for the timeout case in futex) since
++	   anything else would mean an error in our function.  It is too
++	   expensive to do that check for every call (which is  quite common in
++	   case of a large number of threads), so it has been skipped.  */
++	cmpl    $-ENOSYS, %eax
++	jne     62f
+
+	subq	$cond_futex, %rdi
+ #endif
+
+ 61:	movl	$(FUTEX_WAIT_BITSET|FUTEX_PRIVATE_FLAG), %esi
+-60:	xorl	%r15d, %r15d
++60:	xorb	%r15b, %r15b
+	xorl	%eax, %eax
+	/* The following only works like this because we only support
+	   two clocks, represented using a single bit.  */
+@@ -248,7 +269,23 @@ __pthread_cond_timedwait:
+	ja	39f
+
+ 45:	cmpq	$-ETIMEDOUT, %r14
+-	jne	38b
++	je	99f
++
++	/* We need to go back to futex_wait.  If we're using requeue_pi, then
++	   release the mutex we had acquired and go back.  */
++	test	%r15b, %r15b
++	jz	38b
++
++	/* Adjust the mutex values first and then unlock it.  The unlock
++	   should always succeed or else the kernel did not lock the
++	   mutex correctly.  */
++	movq	%r8, %rdi
++	callq	__pthread_mutex_cond_lock_adjust
++	xorl	%esi, %esi
++	callq	__pthread_mutex_unlock_usercnt
++	/* Reload cond_var.  */
++	movq	8(%rsp), %rdi
++	jmp	38b
+
+ 99:	incq	wakeup_seq(%rdi)
+	incl	cond_futex(%rdi)
+@@ -298,7 +335,7 @@ __pthread_cond_timedwait:
+	/* If requeue_pi is used the kernel performs the locking of the
+	   mutex. */
+ 41:	movq	16(%rsp), %rdi
+-	testl	%r15d, %r15d
++	testb	%r15b, %r15b
+	jnz	64f
+
+	callq	__pthread_mutex_cond_lock
+diff --git a/nptl/sysdeps/unix/sysv/linux/x86_64/pthread_cond_wait.S b/nptl/sysdeps/unix/sysv/linux/x86_64/pthread_cond_wait.S
+index 6194852..ec403cd 100644
+--- nptl/sysdeps/unix/sysv/linux/x86_64/pthread_cond_wait.S
++++ nptl/sysdeps/unix/sysv/linux/x86_64/pthread_cond_wait.S
+@@ -136,19 +136,36 @@ __pthread_cond_wait:
+	cmpl	$PI_BIT, %eax
+	jne	61f
+
+-90:
+	movl	$(FUTEX_WAIT_REQUEUE_PI|FUTEX_PRIVATE_FLAG), %esi
+	movl	$SYS_futex, %eax
+	syscall
+
+-	movl	$1, %r8d
+-	cmpq	$-EAGAIN, %rax
+-	je	91f
++	cmpl	$0, %eax
++	sete	%r8b
++
+ #ifdef __ASSUME_REQUEUE_PI
+	jmp	62f
+ #else
+-	cmpq	$-4095, %rax
+-	jnae	62f
++	je	62f
++
++	/* When a futex syscall with FUTEX_WAIT_REQUEUE_PI returns
++	   successfully, it has already locked the mutex for us and the
++	   pi_flag (%r8b) is set to denote that fact.  However, if another
++	   thread changed the futex value before we entered the wait, the
++	   syscall may return an EAGAIN and the mutex is not locked.  We go
++	   ahead with a success anyway since later we look at the pi_flag to
++	   decide if we got the mutex or not.  The sequence numbers then make
++	   sure that only one of the threads actually wake up.  We retry using
++	   normal FUTEX_WAIT only if the kernel returned ENOSYS, since normal
++	   and PI futexes don't mix.
++
++	   Note that we don't check for EAGAIN specifically; we assume that the
++	   only other error the futex function could return is EAGAIN since
++	   anything else would mean an error in our function.  It is too
++	   expensive to do that check for every call (which is 	quite common in
++	   case of a large number of threads), so it has been skipped.  */
++	cmpl	$-ENOSYS, %eax
++	jne	62f
+
+ # ifndef __ASSUME_PRIVATE_FUTEX
+	movl	$FUTEX_WAIT, %esi
+@@ -161,7 +178,7 @@ __pthread_cond_wait:
+ #else
+	orl	%fs:PRIVATE_FUTEX, %esi
+ #endif
+-60:	xorl	%r8d, %r8d
++60:	xorb	%r8b, %r8b
+	movl	$SYS_futex, %eax
+	syscall
+
+@@ -191,10 +208,10 @@ __pthread_cond_wait:
+	jne	16f
+
+	cmpq	24(%rsp), %r9
+-	jbe	8b
++	jbe	19f
+
+	cmpq	%rax, %r9
+-	jna	8b
++	jna	19f
+
+	incq	woken_seq(%rdi)
+
+@@ -236,7 +253,7 @@ __pthread_cond_wait:
+	/* If requeue_pi is used the kernel performs the locking of the
+	   mutex. */
+ 11:	movq	16(%rsp), %rdi
+-	testl	%r8d, %r8d
++	testb	%r8b, %r8b
+	jnz	18f
+
+	callq	__pthread_mutex_cond_lock
+@@ -253,6 +270,23 @@ __pthread_cond_wait:
+	xorl	%eax, %eax
+	jmp	14b
+
++	/* We need to go back to futex_wait.  If we're using requeue_pi, then
++	   release the mutex we had acquired and go back.  */
++19:	testb	%r8b, %r8b
++	jz	8b
++
++	/* Adjust the mutex values first and then unlock it.  The unlock
++	   should always succeed or else the kernel did not lock the mutex
++	   correctly.  */
++	movq	16(%rsp), %rdi
++	callq	__pthread_mutex_cond_lock_adjust
++	movq	%rdi, %r8
++	xorl	%esi, %esi
++	callq	__pthread_mutex_unlock_usercnt
++	/* Reload cond_var.  */
++	movq	8(%rsp), %rdi
++	jmp	8b
++
+	/* Initial locking failed.  */
+ 1:
+ #if cond_lock != 0
+@@ -331,69 +365,6 @@ __pthread_cond_wait:
+ 13:	movq	%r10, %rax
+	jmp	14b
+
+-91:
+-.LcleanupSTART2:
+-	/* FUTEX_WAIT_REQUEUE_PI returned EAGAIN.  We need to
+-	   call it again.  */
+-	movq	8(%rsp), %rdi
+-
+-	/* Get internal lock.  */
+-	movl	$1, %esi
+-	xorl	%eax, %eax
+-	LOCK
+-#if cond_lock == 0
+-	cmpxchgl %esi, (%rdi)
+-#else
+-	cmpxchgl %esi, cond_lock(%rdi)
+-#endif
+-	jz	92f
+-
+-#if cond_lock != 0
+-	addq	$cond_lock, %rdi
+-#endif
+-	LP_OP(cmp) $-1, dep_mutex-cond_lock(%rdi)
+-	movl	$LLL_PRIVATE, %eax
+-	movl	$LLL_SHARED, %esi
+-	cmovne	%eax, %esi
+-	callq	__lll_lock_wait
+-#if cond_lock != 0
+-	subq	$cond_lock, %rdi
+-#endif
+-92:
+-	/* Increment the cond_futex value again, so it can be used as a new
+-	   expected value. */
+-	incl	cond_futex(%rdi)
+-	movl	cond_futex(%rdi), %edx
+-
+-	/* Release internal lock.  */
+-	LOCK
+-#if cond_lock == 0
+-	decl	(%rdi)
+-#else
+-	decl	cond_lock(%rdi)
+-#endif
+-	jz	93f
+-
+-#if cond_lock != 0
+-	addq	$cond_lock, %rdi
+-#endif
+-	LP_OP(cmp) $-1, dep_mutex-cond_lock(%rdi)
+-	movl	$LLL_PRIVATE, %eax
+-	movl	$LLL_SHARED, %esi
+-	cmovne	%eax, %esi
+-	/* The call preserves %rdx.  */
+-	callq	__lll_unlock_wake
+-#if cond_lock != 0
+-	subq	$cond_lock, %rdi
+-#endif
+-93:
+-	/* Set the rest of SYS_futex args for FUTEX_WAIT_REQUEUE_PI. */
+-	xorq	%r10, %r10
+-	mov	dep_mutex(%rdi), %R8_LP
+-	leaq	cond_futex(%rdi), %rdi
+-	jmp	90b
+-.LcleanupEND2:
+-
+	.size	__pthread_cond_wait, .-__pthread_cond_wait
+ versioned_symbol (libpthread, __pthread_cond_wait, pthread_cond_wait,
+		  GLIBC_2_3_2)
+@@ -547,10 +518,6 @@ __condvar_cleanup1:
+	.uleb128 .LcleanupEND-.LcleanupSTART
+	.uleb128 __condvar_cleanup1-.LSTARTCODE
+	.uleb128 0
+-	.uleb128 .LcleanupSTART2-.LSTARTCODE
+-	.uleb128 .LcleanupEND2-.LcleanupSTART2
+-	.uleb128 __condvar_cleanup1-.LSTARTCODE
+-	.uleb128 0
+	.uleb128 .LcallUR-.LSTARTCODE
+	.uleb128 .LENDCODE-.LcallUR
+	.uleb128 0
+diff --git a/nptl/tst-cond24.c b/nptl/tst-cond24.c
+new file mode 100644
+index 0000000..2eb2df1
+--- /dev/null
++++ nptl/tst-cond24.c
+@@ -0,0 +1,249 @@
++/* Verify that condition variables synchronized by PI mutexes don't hang.
++   Copyright (C) 2012 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#include <pthread.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <errno.h>
++#include <sys/types.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++#include <sys/time.h>
++#include <time.h>
++
++#define THREADS_NUM 5
++#define MAXITER 50000
++
++static pthread_mutex_t mutex;
++static pthread_mutexattr_t mutex_attr;
++static pthread_cond_t cond;
++static pthread_t threads[THREADS_NUM];
++static int pending = 0;
++
++typedef void * (*threadfunc) (void *);
++
++void *
++thread_fun_timed (void *arg)
++{
++  int *ret = arg;
++  int rv, i;
++
++  printf ("Started thread_fun_timed[%d]\n", *ret);
++
++  for (i = 0; i < MAXITER / THREADS_NUM; i++)
++    {
++      rv = pthread_mutex_lock (&mutex);
++      if (rv)
++        {
++	  printf ("pthread_mutex_lock: %s(%d)\n", strerror (rv), rv);
++	  *ret = 1;
++	  goto out;
++	}
++
++      while (!pending)
++	{
++	  struct timespec ts;
++	  clock_gettime(CLOCK_REALTIME, &ts);
++	  ts.tv_sec += 20;
++	  rv = pthread_cond_timedwait (&cond, &mutex, &ts);
++
++	  /* There should be no timeout either.  */
++	  if (rv)
++            {
++	      printf ("pthread_cond_wait: %s(%d)\n", strerror (rv), rv);
++	      *ret = 1;
++	      goto out;
++	    }
++	}
++
++      pending--;
++
++      rv = pthread_mutex_unlock (&mutex);
++      if (rv)
++        {
++	  printf ("pthread_mutex_unlock: %s(%d)\n", strerror (rv), rv);
++	  *ret = 1;
++	  goto out;
++	}
++    }
++
++  *ret = 0;
++
++out:
++  return ret;
++}
++
++void *
++thread_fun (void *arg)
++{
++  int *ret = arg;
++  int rv, i;
++
++  printf ("Started thread_fun[%d]\n", *ret);
++
++  for (i = 0; i < MAXITER / THREADS_NUM; i++)
++    {
++      rv = pthread_mutex_lock (&mutex);
++      if (rv)
++        {
++	  printf ("pthread_mutex_lock: %s(%d)\n", strerror (rv), rv);
++	  *ret = 1;
++	  goto out;
++	}
++
++      while (!pending)
++	{
++	  rv = pthread_cond_wait (&cond, &mutex);
++
++	  if (rv)
++            {
++	      printf ("pthread_cond_wait: %s(%d)\n", strerror (rv), rv);
++	      *ret = 1;
++	      goto out;
++	    }
++	}
++
++      pending--;
++
++      rv = pthread_mutex_unlock (&mutex);
++      if (rv)
++        {
++	  printf ("pthread_mutex_unlock: %s(%d)\n", strerror (rv), rv);
++	  *ret = 1;
++	  goto out;
++	}
++    }
++
++  *ret = 0;
++
++out:
++  return ret;
++}
++
++static int
++do_test_wait (threadfunc f)
++{
++  int i;
++  int rv;
++  int counter = 0;
++  int retval[THREADS_NUM];
++
++  puts ("Starting test");
++
++  rv = pthread_mutexattr_init (&mutex_attr);
++  if (rv)
++    {
++      printf ("pthread_mutexattr_init: %s(%d)\n", strerror (rv), rv);
++      return 1;
++    }
++
++  rv = pthread_mutexattr_setprotocol (&mutex_attr, PTHREAD_PRIO_INHERIT);
++  if (rv)
++    {
++      printf ("pthread_mutexattr_setprotocol: %s(%d)\n", strerror (rv), rv);
++      return 1;
++    }
++
++  rv = pthread_mutex_init (&mutex, &mutex_attr);
++  if (rv)
++    {
++      printf ("pthread_mutex_init: %s(%d)\n", strerror (rv), rv);
++      return 1;
++    }
++
++  rv = pthread_cond_init (&cond, NULL);
++  if (rv)
++    {
++      printf ("pthread_cond_init: %s(%d)\n", strerror (rv), rv);
++      return 1;
++    }
++
++  for (i = 0; i < THREADS_NUM; i++)
++    {
++      retval[i] = i;
++      rv = pthread_create (&threads[i], NULL, f, &retval[i]);
++      if (rv)
++        {
++          printf ("pthread_create: %s(%d)\n", strerror (rv), rv);
++          return 1;
++        }
++    }
++
++  for (; counter < MAXITER; counter++)
++    {
++      rv = pthread_mutex_lock (&mutex);
++      if (rv)
++        {
++          printf ("pthread_mutex_lock: %s(%d)\n", strerror (rv), rv);
++          return 1;
++        }
++
++      if (!(counter % 100))
++	printf ("counter: %d\n", counter);
++      pending += 1;
++
++      rv = pthread_cond_signal (&cond);
++      if (rv)
++        {
++          printf ("pthread_cond_signal: %s(%d)\n", strerror (rv), rv);
++          return 1;
++        }
++
++      rv = pthread_mutex_unlock (&mutex);
++      if (rv)
++        {
++          printf ("pthread_mutex_unlock: %s(%d)\n", strerror (rv), rv);
++          return 1;
++        }
++    }
++
++  for (i = 0; i < THREADS_NUM; i++)
++    {
++      void *ret;
++      rv = pthread_join (threads[i], &ret);
++      if (rv)
++        {
++          printf ("pthread_join: %s(%d)\n", strerror (rv), rv);
++          return 1;
++        }
++      if (ret && *(int *)ret)
++        {
++	  printf ("Thread %d returned with an error\n", i);
++	  return 1;
++	}
++    }
++
++  return 0;
++}
++
++static int
++do_test (void)
++{
++  puts ("Testing pthread_cond_wait");
++  int ret = do_test_wait (thread_fun);
++  if (ret)
++    return ret;
++
++  puts ("Testing pthread_cond_timedwait");
++  return do_test_wait (thread_fun_timed);
++}
++
++#define TIMEOUT 10
++#define TEST_FUNCTION do_test ()
++#include "../test-skeleton.c"
+--
+1.7.3.4
