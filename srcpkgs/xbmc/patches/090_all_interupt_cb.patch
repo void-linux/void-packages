@@ -1,0 +1,102 @@
+commit 0bf68bf61aab44ccf6f54a2923ed567f9a56af4a
+Author: Alexis Ballier <aballier@gentoo.org>
+Date:   Thu Mar 1 10:22:11 2012 -0300
+
+    Drop url_set_interrupt_cb usage which was removed in libavformat 54 and set the callback directly in the AVFormatContext, which was added in libavformat-53.15.0
+
+diff --git a/lib/DllAvFormat.h b/lib/DllAvFormat.h
+index d6753ae..405a58b 100644
+--- a/lib/DllAvFormat.h
++++ b/lib/DllAvFormat.h
+@@ -74,7 +74,6 @@ public:
+ #if (!defined USE_EXTERNAL_FFMPEG)
+   virtual int avformat_find_stream_info_dont_call(AVFormatContext *ic, AVDictionary **options)=0;
+ #endif
+-  virtual void url_set_interrupt_cb(URLInterruptCB *interrupt_cb)=0;
+   virtual int avformat_open_input(AVFormatContext **ps, const char *filename, AVInputFormat *fmt, AVDictionary **options)=0;
+   virtual int init_put_byte(AVIOContext *s, unsigned char *buffer, int buffer_size, int write_flag, void *opaque,
+                             int (*read_packet)(void *opaque, uint8_t *buf, int buf_size),
+@@ -139,7 +138,6 @@ public:
+     CSingleLock lock(DllAvCodec::m_critSection);
+     return ::avformat_find_stream_info(ic, options);
+   }
+-  virtual void url_set_interrupt_cb(URLInterruptCB *interrupt_cb) { ::url_set_interrupt_cb(interrupt_cb); }
+   virtual int avformat_open_input(AVFormatContext **ps, const char *filename, AVInputFormat *fmt, AVDictionary **options)
+   { return ::avformat_open_input(ps, filename, fmt, options); }
+   virtual int init_put_byte(AVIOContext *s, unsigned char *buffer, int buffer_size, int write_flag, void *opaque,
+@@ -216,7 +214,6 @@ class DllAvFormat : public DllDynamic, DllAvFormatInterface
+   DEFINE_FUNC_ALIGNED2(void, __cdecl, put_be24, AVIOContext*, unsigned int)
+   DEFINE_FUNC_ALIGNED2(void, __cdecl, put_be32, AVIOContext*, unsigned int)
+   DEFINE_FUNC_ALIGNED2(void, __cdecl, put_be16, AVIOContext*, unsigned int)
+-  DEFINE_METHOD1(void, url_set_interrupt_cb, (URLInterruptCB *p1))
+   DEFINE_METHOD8(int, init_put_byte, (AVIOContext *p1, unsigned char *p2, int p3, int p4, void *p5,
+                   int (*p6)(void *opaque, uint8_t *buf, int buf_size),
+                   int (*p7)(void *opaque, uint8_t *buf, int buf_size),
+@@ -253,7 +250,6 @@ class DllAvFormat : public DllDynamic, DllAvFormatInterface
+     RESOLVE_METHOD(av_read_frame_flush)
+     RESOLVE_METHOD(av_seek_frame)
+     RESOLVE_METHOD_RENAME(avformat_find_stream_info, avformat_find_stream_info_dont_call)
+-    RESOLVE_METHOD(url_set_interrupt_cb)
+     RESOLVE_METHOD(avformat_open_input)
+     RESOLVE_METHOD(init_put_byte)
+     RESOLVE_METHOD(av_probe_input_format)
+diff --git a/xbmc/cores/dvdplayer/DVDDemuxers/DVDDemuxFFmpeg.cpp b/xbmc/cores/dvdplayer/DVDDemuxers/DVDDemuxFFmpeg.cpp
+index 1205e05..aff44f6 100644
+--- a/xbmc/cores/dvdplayer/DVDDemuxers/DVDDemuxFFmpeg.cpp
++++ b/xbmc/cores/dvdplayer/DVDDemuxers/DVDDemuxFFmpeg.cpp
+@@ -160,7 +160,7 @@ static TLS g_tls;
+ #define g_demuxer (*((CDVDDemuxFFmpeg**)g_tls.Get()))
+ #endif
+ 
+-static int interrupt_cb(void)
++static int interrupt_cb(void* unused)
+ {
+   if(g_demuxer && g_demuxer->Aborted())
+     return 1;
+@@ -178,7 +178,7 @@ static int dvd_file_open(URLContext *h, const char *filename, int flags)
+ 
+ static int dvd_file_read(void *h, uint8_t* buf, int size)
+ {
+-  if(interrupt_cb())
++  if(interrupt_cb(NULL))
+     return -1;
+ 
+   CDVDInputStream* pInputStream = (CDVDInputStream*)h;
+@@ -192,7 +192,7 @@ static int dvd_file_write(URLContext *h, BYTE* buf, int size)
+ */
+ static offset_t dvd_file_seek(void *h, offset_t pos, int whence)
+ {
+-  if(interrupt_cb())
++  if(interrupt_cb(NULL))
+     return -1;
+ 
+   CDVDInputStream* pInputStream = (CDVDInputStream*)h;
+@@ -236,6 +236,7 @@ bool CDVDDemuxFFmpeg::Open(CDVDInputStream* pInput)
+   m_speed = DVD_PLAYSPEED_NORMAL;
+   g_demuxer = this;
+   m_program = UINT_MAX;
++  const AVIOInterruptCB int_cb = { interrupt_cb, NULL };
+ 
+   if (!pInput) return false;
+ 
+@@ -246,10 +247,6 @@ bool CDVDDemuxFFmpeg::Open(CDVDInputStream* pInput)
+ 
+   // register codecs
+   m_dllAvFormat.av_register_all();
+-  m_dllAvFormat.url_set_interrupt_cb(interrupt_cb);
+-
+-  // could be used for interupting ffmpeg while opening a file (eg internet streams)
+-  // url_set_interrupt_cb(NULL);
+ 
+   m_pInput = pInput;
+   strFile = m_pInput->GetFileName();
+@@ -424,6 +421,9 @@ bool CDVDDemuxFFmpeg::Open(CDVDInputStream* pInput)
+     }
+   }
+ 
++  // set the interrupt callback, appeared in libavformat 53.15.0
++  m_pFormatContext->interrupt_callback = int_cb;
++
+   // analyse very short to speed up mjpeg playback start
+   if (iformat && (strcmp(iformat->name, "mjpeg") == 0) && m_ioContext->seekable == 0)
+     m_pFormatContext->max_analyze_duration = 500000;
