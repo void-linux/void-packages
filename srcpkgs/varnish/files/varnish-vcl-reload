@@ -1,0 +1,20 @@
+#!/bin/sh
+
+cfg=${1:-/etc/varnish/default.vcl}
+if [ ! -e "$cfg" ]; then
+  printf 'ERROR: VCL file %s does not exist\n' "$cfg" >&2
+  exit 1
+fi
+
+activecfg=$(varnishadm 'vcl.list' | awk '/active/ { print $3 }')
+if [ -z "$activecfg" ]; then
+  printf 'ERROR: No active VCL found!\n' >&2
+  exit 1
+fi
+
+newcfg=$(date +'vcl-%s')
+printf 'INFO: using new config %s\n' "$cfg"
+
+varnishadm "vcl.load $newcfg $cfg" &&
+varnishadm "vcl.use $newcfg" &&
+varnishadm "vcl.discard $activecfg"
