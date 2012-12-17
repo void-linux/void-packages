@@ -31,7 +31,7 @@ remove_modules()
 	while [ $# -gt 0 ]; do
 		$DKMS status -m "$1" | while read line; do
 			if $(echo "$line" | egrep -vq '(added|built|installed)'); then
-				shift; shift; continue
+				shift 2; continue
 			fi
 			_modver=$(echo "$line"|sed "s/$1,[[:blank:]]\([^,]*\)[,:].*/\1/;t;d")
 			_kver=$(echo "$line"|awk '{print $3}'|sed "s/\(.*\),$/\1/")
@@ -43,23 +43,28 @@ remove_modules()
 				echo "FAILED!"
 			fi
 		done
-		shift; shift;
+		shift 2
 	done
 }
 
 add_modules()
 {
+	local rval=
+
 	# Add/build and install the specified modules for all kernels.
 	set -- ${dkms_modules}
 	while [ $# -gt 0 ]; do
 		$DKMS add -m "$1" -v "$2" >/dev/null 2>&1
-		if [ $? -eq 0 ]; then
+		rval=$?
+		if [ $rval -eq 0 ]; then
 			echo "Added DKMS module '$1-$2'."
+		elif [ $rval -eq 3 ]; then
+			echo "DKMS module '$1-$2' already added, skipping."
 		else
 			echo "Failed to add DKMS module: '$1-$2'..."
 			err=1
 		fi
-		shift; shift;
+		shift 2
 	done
 	[ -n "$err" ] && exit $err
 
@@ -71,9 +76,18 @@ add_modules()
 		fi
 		set -- ${dkms_modules}
 		while [ $# -gt 0 ]; do
+			echo -n "Building DKMS module '$1-$2' for kernel-${_kver}... "
+			$DKMS build -m "$1" -v "$2" -k "${_kver}" >/dev/null 2>&1
+			if [ $? -eq 0 ]; then
+				echo "done."
+			else
+				echo "FAILED!"
+				echo "DKMS module '$1-$2' failed to build, please check /var/lib/dkms"
+				echo "for errors in the log file."
+				shift 2; continue
+			fi
 			echo -n "Installing DKMS module '$1-$2' for kernel-${_kver}... "
-			$DKMS build -m "$1" -v "$2" -k "${_kver}" >/dev/null 2>&1 && \
-				$DKMS install -m "$1" -v "$2" -k "${_kver}" >/dev/null 2>&1
+			$DKMS install -m "$1" -v "$2" -k "${_kver}" >/dev/null 2>&1
 			if [ $? -eq 0 ]; then
 				echo "done."
 			else
@@ -81,7 +95,7 @@ add_modules()
 				echo "DKMS module '$1-$2' failed to install, please do this manually"
 				echo "and check for errors in the log file."
 			fi
-			shift; shift;
+			shift 2
 		done
 	done
 }
