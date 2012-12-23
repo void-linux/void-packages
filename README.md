@@ -15,5 +15,6 @@ the binary package with:
 
 Enjoy and happy hacking! meet us at xbps@irc.freenode.net.
 
-http://code.google.com/p/xbps
-http://www.voidlinux.eu
+XBPS website: http://code.google.com/p/xbps
+
+Void Linux website: http://www.voidlinux.eu
