@@ -1,0 +1,138 @@
+http://bugs.gentoo.org/397575
+http://sourceforge.net/tracker/?func=detail&aid=3476707&group_id=704&atid=100704
+
+--- configure.in
++++ configure.in
+@@ -33,8 +33,8 @@ AC_CHECK_LIB(gnugetopt, getopt_long)
+ AM_CONDITIONAL(WITH_MP4V2, false)
+ AM_CONDITIONAL(WITH_EXTERNAL_MP4V2, false)
+
+-AC_CHECK_DECLS([MP4Create, MP4MetadataDelete],
+-               AC_CHECK_LIB(mp4v2, MP4MetadataDelete, external_mp4v2=yes,
++AC_CHECK_DECLS([MP4Create],
++               AC_CHECK_LIB(mp4v2, MP4Create, external_mp4v2=yes,
+                             external_mp4v2=no, -lstdc++),
+                external_mp4v2=no, [#include <mp4v2/mp4v2.h>])
+
+@@ -42,6 +42,7 @@ if test x$external_mp4v2 = xyes; then
+   AC_MSG_NOTICE([*** Building with external mp4v2 ***])
+   MY_DEFINE(HAVE_EXTERNAL_LIBMP4V2)
+   AM_CONDITIONAL(WITH_EXTERNAL_MP4V2, true)
++  AC_CHECK_DECLS([MP4TagsAlloc], [], [], [#include <mp4v2/mp4v2.h>])
+ else
+   if test x$WITHMP4V2 = xyes; then
+      AC_MSG_NOTICE([*** Building with internal mp4v2 ***])
+--- frontend/main.c
++++ frontend/main.c
+@@ -873,8 +873,12 @@ int main(int argc, char *argv[])
+     if (!faacEncSetConfiguration(hEncoder, myFormat)) {
+         fprintf(stderr, "Unsupported output format!\n");
+ #ifdef HAVE_LIBMP4V2
++#ifdef MP4_CLOSE_DO_NOT_COMPUTE_BITRATE /* r479 fix */
++        if (container == MP4_CONTAINER) MP4Close(MP4hFile, 0);
++#else
+         if (container == MP4_CONTAINER) MP4Close(MP4hFile);
+ #endif
++#endif
+         return 1;
+     }
+
+@@ -885,12 +889,10 @@ int main(int argc, char *argv[])
+         unsigned long ASCLength = 0;
+     char *version_string;
+
+-#ifdef MP4_CREATE_EXTENSIBLE_FORMAT
+-    /* hack to compile against libmp4v2 >= 1.0RC3
+-     * why is there no version identifier in mp4.h? */
++#ifdef MP4_DETAILS_ERROR /* r453 fix */
+         MP4hFile = MP4Create(aacFileName, MP4_DETAILS_ERROR, 0);
+ #else
+-    MP4hFile = MP4Create(aacFileName, MP4_DETAILS_ERROR, 0, 0);
++        MP4hFile = MP4Create(aacFileName, 0);
+ #endif
+         if (!MP4_IS_VALID_FILE_HANDLE(MP4hFile)) {
+             fprintf(stderr, "Couldn't create output file %s\n", aacFileName);
+@@ -905,12 +907,22 @@ int main(int argc, char *argv[])
+     free(ASC);
+
+     /* set metadata */
++#if HAVE_DECL_MP4TAGSALLOC
++    const MP4Tags* tags;
++    tags = MP4TagsAlloc();
++    MP4TagsFetch( tags, MP4hFile );
++#endif
+     version_string = malloc(strlen(faac_id_string) + 6);
+     strcpy(version_string, "FAAC ");
+     strcpy(version_string + 5, faac_id_string);
++#if !HAVE_DECL_MP4TAGSALLOC
+     MP4SetMetadataTool(MP4hFile, version_string);
++#else
++    MP4TagsSetEncodingTool(tags, version_string);
++#endif
+     free(version_string);
+
++#if !HAVE_DECL_MP4TAGSALLOC
+     if (artist) MP4SetMetadataArtist(MP4hFile, artist);
+     if (writer) MP4SetMetadataWriter(MP4hFile, writer);
+     if (title) MP4SetMetadataName(MP4hFile, title);
+@@ -923,8 +935,40 @@ int main(int argc, char *argv[])
+     if (comment) MP4SetMetadataComment(MP4hFile, comment);
+         if (artSize) {
+         MP4SetMetadataCoverArt(MP4hFile, art, artSize);
++#else
++    if (artist) MP4TagsSetArtist(tags, artist);
++    if (writer) MP4TagsSetComposer(tags, writer);
++    if (title) MP4TagsSetName(tags, title);
++    if (album) MP4TagsSetAlbum(tags, album);
++    if (trackno > 0) {
++        MP4TagTrack tt;
++        tt.index = trackno;
++        tt.total = ntracks;
++        MP4TagsSetTrack(tags, &tt);
++    }
++    if (discno > 0) {
++        MP4TagDisk td;
++        td.index = discno;
++        td.total = ndiscs;
++        MP4TagsSetDisk(tags, &td);
++    }
++    if (compilation) MP4TagsSetCompilation(tags, compilation);
++    if (year) MP4TagsSetReleaseDate(tags, year);
++    if (genre) MP4TagsSetGenre(tags, genre);
++    if (comment) MP4TagsSetComments(tags, comment);
++    if (artSize) {
++        MP4TagArtwork mp4art;
++        mp4art.data = art;
++        mp4art.size = artSize;
++        mp4art.type = MP4_ART_UNDEFINED; // delegate typing to libmp4v2
++        MP4TagsAddArtwork( tags, &mp4art );
++#endif
+         free(art);
+     }
++#if HAVE_DECL_MP4TAGSALLOC
++    MP4TagsStore( tags, MP4hFile );
++    MP4TagsFree( tags );
++#endif
+     }
+     else
+     {
+@@ -1141,11 +1185,19 @@ int main(int argc, char *argv[])
+         /* clean up */
+         if (container == MP4_CONTAINER)
+         {
++#ifdef MP4_CLOSE_DO_NOT_COMPUTE_BITRATE /* r479 fix */
++            MP4Close(MP4hFile, 0);
++#else
+             MP4Close(MP4hFile);
++#endif
+             if (optimizeFlag == 1)
+             {
+                 fprintf(stderr, "\n\nMP4 format optimization... ");
++#ifdef MP4_DETAILS_ERROR /* r453 fix */
+                 MP4Optimize(aacFileName, NULL, 0);
++#else
++                MP4Optimize(aacFileName, NULL);
++#endif
+                 fprintf(stderr, "Done!");
+             }
+         } else
