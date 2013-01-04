@@ -1,60 +1,82 @@
 # Template file for 'llvm'
 pkgname=llvm
-version=3.1
-wrksrc="${pkgname}-${version}.src"
-distfiles="
-http://www.llvm.org/releases/${version}/llvm-${version}.src.tar.gz
-http://www.llvm.org/releases/${version}/clang-${version}.src.tar.gz"
-subpackages="libclang clang-analyzer clang clang-devel libllvm llvm-devel llvm-docs"
+version=3.2
+wrksrc="llvm-${version}.src"
+revision=1
 build_style=gnu-configure
 configure_args="--disable-expensive-checks --disable-debug-runtime
---enable-targets=all --enable-bindings=none --enable-optimize
---enable-shared --enable-libffi --enable-llvmc-dynamic"
-# XXX: Investigate bindings support.
-makedepends="groff perl python libffi-devel"
-revision=1
+ --enable-targets=all --enable-bindings=none --enable-optimize
+ --enable-shared --enable-libffi --enable-llvmc-dynamic
+ --disable-assertions --libdir=/usr/lib/llvm"
 short_desc="Low Level Virtual Machine"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://www.llvm.org"
 license="BSD"
+distfiles="
+ http://www.llvm.org/releases/${version}/llvm-${version}.src.tar.gz
+ http://www.llvm.org/releases/${version}/clang-${version}.src.tar.gz
+ http://dev.archlinux.org/~foutrelis/sources/compiler-rt/compiler-rt-${version}.src.tar.xz"
 checksum="
-1ea05135197b5400c1f88d00ff280d775ce778f8f9ea042e25a1e1e734a4b9ab
-ff63e215dcd3e2838ffdea38502f8d35bab17e487f3c3799579961e452d5a786"
-long_desc="
- Low Level Virtual Machine (LLVM) is:
+ 125090c4d26740f1d5e9838477c931ed7d9ad70d599ba265f46f3a42cb066343
+ 2aaaf03f7c0f6b16fe97ecc81247dc2bf2d4bec7620a77cc74670b7e07ff5658 
+ a9a6b73a1bd5fc763f3b3826a6ce796cb150042d37d319e06e72d3d9778aaac1"
 
- 1. A compilation strategy designed to enable effective program optimization
-    across the entire lifetime of a program. LLVM supports effective
-    optimization at compile time, link-time (particularly interprocedural),
-    run-time and offline (i.e., after software is installed), while remaining
-    transparent to developers and maintaining compatibility with existing
-    build scripts.
+# Do not build huge debug pkgs.
+disable_debug=yes
 
- 2. A virtual instruction set - LLVM is a low-level object code
-    representation that uses simple RISC-like instructions, but provides
-    rich, language-independent, type information and dataflow (SSA)
-    information about operands. This combination enables sophisticated
-    transformations on object code, while remaining light-weight enough to
-    be attached to the executable. This combination is key to allowing
-    link-time, run-time, and offline transformations.
+# XXX gzip compressed wtf?!!
+skip_extraction="compiler-rt-${version}.src.tar.xz"
 
- 3. A compiler infrastructure - LLVM is also a collection of source code that
-    implements the language and compilation strategy. The primary components
-    of the LLVM infrastructure are a GCC-based C &amp; C++ front-end, a
-    link-time optimization framework with a growing set of global and
-    interprocedural analyses and transformations, static back-ends for many
-    popular (and some obscure) architectures, a back-end which emits portable
-    C code, and a Just-In-Time compilers for several architectures.
-
- 4. LLVM does not imply things that you would expect from a high-level
-    virtual machine. It does not require garbage collection or run-time code
-    generation (In fact, LLVM makes a great static compiler!). Note that
-    optional LLVM components can be used to build high-level virtual machines
-    and other systems that need these services."
+# XXX Investigate ocaml bindings.
+subpackages="clang-analyzer clang llvm-docs"
+makedepends="groff bsdtar perl python libffi-devel"
 
 post_extract() {
 	# Move clang files into the llvm source.
 	if [ -d ${XBPS_BUILDDIR}/clang-${version}.src ]; then
 		mv ${XBPS_BUILDDIR}/clang-${version}.src ${wrksrc}/tools/clang
+	fi
+	# XXX unpack with bsdtar due to being gzip compressed!
+	bsdtar xf ${XBPS_SRCDISTDIR}/compiler-rt-${version}.src.tar.xz -C ${XBPS_BUILDDIR}
+	# Move compiler-rt files into the llvm source.
+	if [ -d ${XBPS_BUILDDIR}/compiler-rt-${version}.src ]; then
+		mv ${XBPS_BUILDDIR}/compiler-rt-${version}.src \
+			${wrksrc}/projects/compiler-rt
+	fi
+}
+
+pre_configure() {
+	# Fix installation directories, ./configure doesn't seem to set them right
+	sed -i -e 's:\$(PROJ_prefix)/etc/llvm:/etc/llvm:' \
+		-e 's:\$(PROJ_prefix)/lib:$(PROJ_prefix)/lib/llvm:' \
+		-e 's:\$(PROJ_prefix)/docs/llvm:$(PROJ_prefix)/share/doc/llvm:' \
+		Makefile.config.in
+	sed -i '/ActiveLibDir = ActivePrefix/s:lib:lib/llvm:' \
+		tools/llvm-config/llvm-config.cpp
+	sed -i 's:LLVM_LIBDIR="${prefix}/lib":LLVM_LIBDIR="${prefix}/lib/llvm":' \
+		autoconf/configure.ac configure
+
+	# Drop "svn" suffix from version string
+	sed -i 's/3\.2svn/3.2/g' configure
+}
+
+post_install() {
+	# Fix permissions of static libs
+	chmod -x ${DESTDIR}/usr/lib/llvm/*.a
+ 
+	# Get rid of example Hello transformation
+	rm ${DESTDIR}/usr/lib/llvm/*LLVMHello.*
+
+	# Add ld.so.conf.d entry
+	vmkdir etc/ld.so.conf.d
+	echo /usr/lib/llvm > ${DESTDIR}/etc/ld.so.conf.d/llvm.conf
+
+	# Required for multilib.
+	if [ "$XBPS_MACHINE" = "x86_64" ]; then
+		for _header in config llvm-config; do
+			mv ${DESTDIR}/usr/include/llvm/Config/${_header}{,-64}.h
+			vinstall ${FILESDIR}/llvm-Config-${_header}.h 644 \
+				usr/include/llvm/Config ${_header}.h
+		done
 	fi
 }
