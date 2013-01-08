@@ -1,0 +1,284 @@
+From 8d9778589f4b3a174e884338adb0fe1bdeca5eb7 Mon Sep 17 00:00:00 2001
+From: Tom Stellard <thomas.stellard@amd.com>
+Date: Thu, 10 May 2012 14:21:54 +0000
+Subject: radeon: Support LLVM 3.2
+
+LLVM 3.2 and newer requires that the R600/SI backend be part of the
+LLVM tree.
+---
+diff --git a/configure.ac b/configure.ac
+index 896f98a..32f412b 100644
+--- configure.ac
++++ configure.ac
+@@ -1661,6 +1661,7 @@ if test "x$enable_gallium_llvm" = xyes; then
+             if $LLVM_CONFIG --components | grep -q '\<mcjit\>'; then
+                 LLVM_COMPONENTS="${LLVM_COMPONENTS} mcjit"
+             fi
++            LLVM_COMPONENTS="${LLVM_COMPONENTS} all-targets"
+             if test "x$enable_opencl" = xyes; then
+                 LLVM_COMPONENTS="${LLVM_COMPONENTS} ipo linker instrumentation"
+             fi
+@@ -1782,6 +1783,23 @@ gallium_require_drm_loader() {
+     fi
+ }
+
++radeon_llvm_check() {
++    LLVM_VERSION_MAJOR=`echo $LLVM_VERSION | cut -d. -f1`
++    if test "$LLVM_VERSION_MAJOR" -lt "3" -o "x$LLVM_VERSION" = "x3.0"; then
++        AC_MSG_ERROR([LLVM 3.1 or newer is required for the r600/radeonsi llvm compiler.])
++    fi
++    if test "$LLVM_VERSION_MAJOR" -ge "3" -a "x$LLVM_VERSION" != "x3.1" && $LLVM_CONFIG --targets-built | grep -qv '\<AMDGPU\>' ; then
++        AC_MSG_ERROR([To use the r600/radeonsi LLVM backend with LLVM 3.2 and newer, you need to fetch the LLVM source from:
++                      git://people.freedesktop.org/~tstellar/llvm master
++                      and build with --enable-experimental-targets==AMDGPU])
++    fi
++    if test "$LLVM_VERSION" = "3.2"; then
++        dnl LLVM 3.2 does not add experimental libraries to llvm-config's
++        dnl library list.
++        LLVM_LIBS="$LLVM_LIBS -lLLVMAMDGPUCodeGen -lLLVMAMDGPUDesc -lLLVMAMDGPUAsmPrinter -lLLVMAMDGPUInfo `$LLVM_CONFIG --libs mc`"
++    fi
++}
++
+ dnl Gallium drivers
+ dnl Duplicates in GALLIUM_DRIVERS_DIRS are removed by sorting it after this block
+ if test "x$with_gallium_drivers" != x; then
+@@ -1812,9 +1830,7 @@ if test "x$with_gallium_drivers" != x; then
+             gallium_require_drm_loader
+             GALLIUM_DRIVERS_DIRS="$GALLIUM_DRIVERS_DIRS r600"
+             if test "x$enable_r600_llvm" = xyes -o "x$enable_opencl" = xyes; then
+-                if test "x$LLVM_VERSION" != "x3.1"; then
+-                    AC_MSG_ERROR([LLVM 3.1 is required for the r600 llvm compiler.])
+-                fi
++                radeon_llvm_check
+                 NEED_RADEON_GALLIUM=yes;
+             fi
+             if test "x$enable_r600_llvm" = xyes; then
+@@ -1829,9 +1845,7 @@ if test "x$with_gallium_drivers" != x; then
+             PKG_CHECK_MODULES([RADEON], [libdrm_radeon >= $LIBDRM_RADEON_REQUIRED])
+             gallium_require_drm_loader
+             GALLIUM_DRIVERS_DIRS="$GALLIUM_DRIVERS_DIRS radeonsi"
+-            if test "x$LLVM_VERSION" != "x3.1"; then
+-                AC_MSG_ERROR([LLVM 3.1 is required to build the radeonsi driver.])
+-            fi
++            radeon_llvm_check
+	    NEED_RADEON_GALLIUM=yes;
+             gallium_check_st "radeon/drm" "dri-radeonsi" "xorg-radeonsi" "" "" "vdpau-radeonsi" ""
+             ;;
+diff --git a/src/gallium/drivers/radeon/Makefile b/src/gallium/drivers/radeon/Makefile
+index 7f1c613..bcc2646 100644
+--- src/gallium/drivers/radeon/Makefile
++++ src/gallium/drivers/radeon/Makefile
+@@ -12,6 +12,12 @@ TBLGEN = $(LLVM_BINDIR)/llvm-tblgen
+
+ CXXFLAGS+= $(LLVM_CXXFLAGS)
+
++ifeq ($(LLVM_VERSION),3.1)
++	CPP_SOURCES += $(LLVM_CPP_SOURCES)
++else
++	CXXFLAGS+= -DEXTERNAL_LLVM
++endif
++
+ include ../../Makefile.template
+
+ CXXFLAGS := $(filter-out -DDEBUG, $(CXXFLAGS))
+diff --git a/src/gallium/drivers/radeon/Makefile.sources b/src/gallium/drivers/radeon/Makefile.sources
+index c5d1207..5e79342 100644
+--- src/gallium/drivers/radeon/Makefile.sources
++++ src/gallium/drivers/radeon/Makefile.sources
+@@ -23,8 +23,7 @@ TD_FILES := \
+	SIRegisterInfo.td	\
+	SISchedule.td
+
+-
+-GENERATED_SOURCES := \
++LLVM_GENERATED_SOURCES := \
+	R600Intrinsics.td		\
+	R600RegisterInfo.td		\
+	SIRegisterInfo.td		\
+@@ -41,7 +40,7 @@ GENERATED_SOURCES := \
+	AMDGPUGenMCCodeEmitter.inc	\
+	AMDGPUGenDFAPacketizer.inc
+
+-CPP_SOURCES := \
++LLVM_CPP_SOURCES := \
+	AMDIL7XXDevice.cpp		\
+	AMDILCFGStructurizer.cpp	\
+	AMDILDevice.cpp			\
+@@ -81,6 +80,8 @@ CPP_SOURCES := \
+	MCTargetDesc/SIMCCodeEmitter.cpp \
+	MCTargetDesc/R600MCCodeEmitter.cpp \
+	TargetInfo/AMDGPUTargetInfo.cpp	\
++
++CPP_SOURCES := \
+	radeon_llvm_emit.cpp
+
+ C_SOURCES := \
+diff --git a/src/gallium/drivers/radeon/radeon_llvm_emit.cpp b/src/gallium/drivers/radeon/radeon_llvm_emit.cpp
+index 1b67bfe..625b0b4 100644
+--- src/gallium/drivers/radeon/radeon_llvm_emit.cpp
++++ src/gallium/drivers/radeon/radeon_llvm_emit.cpp
+@@ -90,6 +90,7 @@ radeon_llvm_compile(LLVMModuleRef M, unsigned char ** bytes,
+    /* XXX: Can we just initialize the AMDGPU target here? */
+    InitializeAllTargets();
+    InitializeAllTargetMCs();
++   InitializeAllAsmPrinters();
+ #else
+    LLVMInitializeAMDGPUTargetInfo();
+    LLVMInitializeAMDGPUTarget();
+--
+cgit v0.9.0.2-2-gbebe
+From 67fcb3c2b4ecbd87e465b6c6b316be44811ea116 Mon Sep 17 00:00:00 2001
+From: Tom Stellard <thomas.stellard@amd.com>
+Date: Mon, 01 Oct 2012 21:00:00 +0000
+Subject: configure.ac: Use amdgpu component for LLVM 3.2
+
+The amdgpu component actually does exist.  I must have been using an
+older version of llvm-config by accident when I first made this change.
+---
+diff --git a/configure.ac b/configure.ac
+index 32f412b..0de506d 100644
+--- configure.ac
++++ configure.ac
+@@ -1793,10 +1793,8 @@ radeon_llvm_check() {
+                       git://people.freedesktop.org/~tstellar/llvm master
+                       and build with --enable-experimental-targets==AMDGPU])
+     fi
+-    if test "$LLVM_VERSION" = "3.2"; then
+-        dnl LLVM 3.2 does not add experimental libraries to llvm-config's
+-        dnl library list.
+-        LLVM_LIBS="$LLVM_LIBS -lLLVMAMDGPUCodeGen -lLLVMAMDGPUDesc -lLLVMAMDGPUAsmPrinter -lLLVMAMDGPUInfo `$LLVM_CONFIG --libs mc`"
++    if test "x$LLVM_VERSION" = "x3.2"; then
++        LLVM_LIBS="$LLVM_LIBS `$LLVM_CONFIG --libs amdgpu`"
+     fi
+ }
+
+--
+cgit v0.9.0.2-2-gbebe
+From 4cc530f452436a5304a628d1428ed7f07247a175 Mon Sep 17 00:00:00 2001
+From: Tom Stellard <thomas.stellard@amd.com>
+Date: Wed, 10 Oct 2012 21:00:13 +0000
+Subject: radeon/llvm: Fix build with LLVM 3.2
+
+---
+diff --git a/src/gallium/drivers/radeon/radeon_llvm_emit.cpp b/src/gallium/drivers/radeon/radeon_llvm_emit.cpp
+index 2f2eb4c..21661a0 100644
+--- src/gallium/drivers/radeon/radeon_llvm_emit.cpp
++++ src/gallium/drivers/radeon/radeon_llvm_emit.cpp
+@@ -36,13 +36,16 @@
+ #include <llvm/Support/TargetRegistry.h>
+ #include <llvm/Support/TargetSelect.h>
+ #include <llvm/Support/Threading.h>
+-#include <llvm/Target/TargetData.h>
+ #include <llvm/Target/TargetMachine.h>
+-
+ #include <llvm/Transforms/Scalar.h>
+-
+ #include <llvm-c/Target.h>
+
++#if HAVE_LLVM < 0x0302
++#include <llvm/Target/TargetData.h>
++#else
++#include <llvm/DataLayout.h>
++#endif
++
+ #include <iostream>
+ #include <stdlib.h>
+ #include <stdio.h>
+@@ -120,7 +123,11 @@ radeon_llvm_compile(LLVMModuleRef M, unsigned char ** bytes,
+                      ));
+    TargetMachine &AMDGPUTargetMachine = *tm.get();
+    PassManager PM;
++#if HAVE_LLVM < 0x0302
+    PM.add(new TargetData(*AMDGPUTargetMachine.getTargetData()));
++#else
++   PM.add(new DataLayout(*AMDGPUTargetMachine.getDataLayout()));
++#endif
+    PM.add(createPromoteMemoryToRegisterPass());
+    AMDGPUTargetMachine.setAsmVerbosityDefault(true);
+
+--
+cgit v0.9.0.2-2-gbebe
+From b21455f27db6e55e708f8e264f4a15412ee8fa52 Mon Sep 17 00:00:00 2001
+From: Dmitry Cherkasov <dcherkassov@gmail.com>
+Date: Wed, 17 Oct 2012 18:03:13 +0000
+Subject: configure.ac: Fix LLVM 3.2 r600/radeonsi error message
+
+Reviewed-by: Tom Stellard <thomas.stellard@amd.com>
+Signed-off-by: Dmitry Cherkasov <Dmitrii.Cherkasov@amd.com>
+---
+diff --git a/configure.ac b/configure.ac
+index aefa142..ca24856 100644
+--- configure.ac
++++ configure.ac
+@@ -1757,7 +1757,7 @@ radeon_llvm_check() {
+     if test "$LLVM_VERSION_MAJOR" -ge "3" -a "x$LLVM_VERSION" != "x3.1" && $LLVM_CONFIG --targets-built | grep -qv '\<AMDGPU\>' ; then
+         AC_MSG_ERROR([To use the r600/radeonsi LLVM backend with LLVM 3.2 and newer, you need to fetch the LLVM source from:
+                       git://people.freedesktop.org/~tstellar/llvm master
+-                      and build with --enable-experimental-targets==AMDGPU])
++                      and build with --enable-experimental-targets=AMDGPU])
+     fi
+     if test "x$LLVM_VERSION" = "x3.2"; then
+         LLVM_LIBS="$LLVM_LIBS `$LLVM_CONFIG --libs amdgpu`"
+--
+cgit v0.9.0.2-2-gbebe
+From d2b0338e3354fadc90a3751520f4aa44ba01954f Mon Sep 17 00:00:00 2001
+From: Tom Stellard <thomas.stellard@amd.com>
+Date: Wed, 17 Oct 2012 19:21:48 +0000
+Subject: r600g: Remove special handling of PRED_SET* insructions for LLVM 3.2
+
+The 3.2 version of the backend now sets all the correct fields for
+PRED_SET* instructions.
+---
+diff --git a/src/gallium/drivers/r600/r600_shader.c b/src/gallium/drivers/r600/r600_shader.c
+index 053a988..58b7fb2 100644
+--- src/gallium/drivers/r600/r600_shader.c
++++ src/gallium/drivers/r600/r600_shader.c
+@@ -330,6 +330,7 @@ static unsigned r600_alu_from_byte_stream(struct r600_shader_ctx *ctx,
+			alu.src[src_idx].sel += 512;
+	}
+
++#if HAVE_LLVM < 0x0302
+	if (alu.inst == CTX_INST(V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_PRED_SETNE) ||
+	    alu.inst == CTX_INST(V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_PRED_SETE) ||
+	    alu.inst == CTX_INST(V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_PRED_SETE_INT) ||
+@@ -340,6 +341,7 @@ static unsigned r600_alu_from_byte_stream(struct r600_shader_ctx *ctx,
+		alu.src[1].chan = 0;
+		alu.last = 1;
+	}
++#endif
+
+	if (alu.execute_mask) {
+		alu.pred_sel = 0;
+--
+cgit v0.9.0.2-2-gbebe
+From f2f17fc348c847bbf5c54bb75b76e1661e8ced60 Mon Sep 17 00:00:00 2001
+From: Tom Stellard <thomas.stellard@amd.com>
+Date: Mon, 01 Oct 2012 21:01:06 +0000
+Subject: radeon/llvm: Only initialize the AMDGPU target
+
+---
+diff --git a/src/gallium/drivers/radeon/radeon_llvm_emit.cpp b/src/gallium/drivers/radeon/radeon_llvm_emit.cpp
+index 625b0b4..2f2eb4c 100644
+--- src/gallium/drivers/radeon/radeon_llvm_emit.cpp
++++ src/gallium/drivers/radeon/radeon_llvm_emit.cpp
+@@ -86,17 +86,11 @@ radeon_llvm_compile(LLVMModuleRef M, unsigned char ** bytes,
+
+    Triple AMDGPUTriple(sys::getDefaultTargetTriple());
+
+-#ifdef EXTERNAL_LLVM
+-   /* XXX: Can we just initialize the AMDGPU target here? */
+-   InitializeAllTargets();
+-   InitializeAllTargetMCs();
+-   InitializeAllAsmPrinters();
+-#else
+    LLVMInitializeAMDGPUTargetInfo();
+    LLVMInitializeAMDGPUTarget();
+    LLVMInitializeAMDGPUTargetMC();
+    LLVMInitializeAMDGPUAsmPrinter();
+-#endif
++
+    std::string err;
+    const Target * AMDGPUTarget = TargetRegistry::lookupTarget("r600", err);
+    if(!AMDGPUTarget) {
+--
+cgit v0.9.0.2-2-gbebe
