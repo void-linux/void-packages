@@ -4,7 +4,7 @@ _systemd_version=197
 
 pkgname=dbus
 version=1.6.8
-revision=5
+revision=6
 short_desc="Message bus system"
 maintainer="Juan RP <xtraeme@gmail.com>"
 license="GPL-2"
@@ -18,28 +18,40 @@ checksum="
 
 create_wrksrc=yes
 subpackages="dbus-devel dbus-libs dbus-x11"
-makedepends="pkg-config intltool gperf chrpath expat-devel
- libX11-devel libcap-devel"
+makedepends="pkg-config intltool gperf expat-devel libX11-devel libcap-devel"
+crossmakedepends="expat-devel libX11-devel libcap-devel"
 conf_files="/etc/dbus-1/session.conf /etc/dbus-1/system.conf"
 system_accounts="dbus"
+
+if [ -n "$XBPS_CROSS_TRIPLET" ]; then
+	_systemddir="/usr/$XBPS_CROSS_TRIPLET"
+	makedepends="automake gettext-devel pkg-config intltool gperf libgcrypt-devel"
+else
+	_systemddir="/usr"
+fi
 
 pre_configure() {
 	# Build a temporary dbus; we are only interested in libdbus.
 	[ ! -d dbus-bootstrap ] && mkdir dbus-bootstrap
 	cd dbus-bootstrap
 
-	../dbus-${version}/configure --prefix=${wrksrc}/tmpbuild/usr \
+	../dbus-${version}/configure ${CONFIGURE_SHARED_ARGS} \
+		--prefix=${wrksrc}/tmpbuild/usr \
 		--disable-systemd --without-x || return 1
 	make && make install || return 1
 
 	# Build a temporary systemd; we are only interested in libsystemd-login.
+	if [ -n "$XBPS_CROSS_TRIPLET" ]; then
+		cd ${wrksrc}/systemd-${_systemd_version} && autoreconf -fi
+	fi
+
 	cd ${wrksrc}
 	[ ! -d systemd-bootstrap ] && mkdir systemd-bootstrap
 	cd systemd-bootstrap
 
 	env PKG_CONFIG_LIBDIR=${wrksrc}/tmpbuild/usr/lib/pkgconfig \
 		../systemd-${_systemd_version}/configure \
-		--prefix=${wrksrc}/tmpbuild/usr --disable-nls \
+		${CONFIGURE_SHARED_ARGS} --prefix=/usr --disable-nls \
 		--enable-introspection=no --disable-kmod --disable-blkid \
 		--disable-ima --disable-chkconfig --disable-selinux \
 		--disable-xz --disable-tcpwrap --disable-pam \
@@ -53,13 +65,26 @@ pre_configure() {
 		--disable-manpages --without-python --with-sysvinit-path= \
 		--with-sysvrcnd-path= --disable-tests || return 1
 
-	make && make install || return 1
+	make && make DESTDIR=${wrksrc}/systemd-install install || return 1
+
+	# Copy libsystemd-*, headers and pkg-config files.
+	cp -a ${wrksrc}/systemd-install/usr/lib/libsystemd* \
+		${_systemddir}/lib/
+	rm -f ${_systemddir}/lib/*.la
+	cp -a ${wrksrc}/systemd-install/usr/include/* \
+		${_systemddir}/include/
+	cp -a ${wrksrc}/systemd-install/usr/lib/pkgconfig/libsystemd* \
+		${_systemddir}/lib/pkgconfig/
 }
 
 do_configure() {
-	env PKG_CONFIG_LIBDIR=${wrksrc}/tmpbuild/usr/lib/pkgconfig \
-		LDFLAGS="$LDFLAGS -Wl,--disable-new-dtags" \
-		./dbus-${version}/configure ${CONFIGURE_SHARED_ARGS} \
+	cd ${wrksrc}/dbus-${version}
+
+	if [ -n "$XBPS_CROSS_TRIPLET" ]; then
+		autoreconf -fi
+		_confargs="PKG_CONFIG_LIBDIR=${_systemddir}/lib/pkgconfig"
+	fi
+	./configure ${CONFIGURE_SHARED_ARGS} \
 		--disable-selinux --enable-userdb-cache --with-xml=expat \
 		--disable-dnotify --enable-inotify --with-dbus-user=dbus \
 		--disable-doxygen-docs --disable-xml-docs --disable-static \
@@ -68,17 +93,20 @@ do_configure() {
 		--with-system-pid-file=/run/dbus/pid \
 		--with-console-auth-dir=/run/console/ \
 		--with-systemdsystemunitdir=/usr/lib/systemd/system \
-		--enable-systemd
+		--enable-abstract-sockets --enable-systemd ${_confargs}
 }
 
 do_build() {
+	cd ${wrksrc}/dbus-${version}
 	make ${makejobs}
 }
 
 do_install() {
+	cd ${wrksrc}/dbus-${version}
 	make DESTDIR=${DESTDIR} install
-	# Remove broken rpath from bins/libs.
-	for f in usr/bin/dbus-daemon usr/libexec/dbus-daemon-launch-helper; do
-		chrpath -d ${DESTDIR}/${f}
-	done
+
+	# Remove systemd temp files from masterdir.
+	rm -f ${_systemddir}/lib/pkgconfig/libsystemd-*
+	rm -rf ${_systemddir}/include/systemd
+	rm -f ${_systemddir}/lib/libsystemd-*
 }
