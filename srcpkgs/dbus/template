@@ -1,21 +1,84 @@
 # Template file for 'dbus'
+#
+_systemd_version=197
+
 pkgname=dbus
 version=1.6.8
-revision=4
-build_style=gnu-configure
-configure_args="--disable-selinux --enable-userdb-cache --with-xml=expat
- --disable-dnotify --enable-inotify --with-dbus-user=dbus --disable-tests
- --disable-doxygen-docs --disable-xml-docs --disable-static --enable-epoll
- --disable-asserts --with-system-socket=/run/dbus/system_bus_socket
- --with-system-pid-file=/run/dbus/pid --with-console-auth-dir=/run/console/
- --with-systemdsystemunitdir=/usr/lib/systemd/system"
-makedepends="pkg-config expat-devel libX11-devel"
-conf_files="/etc/dbus-1/session.conf /etc/dbus-1/system.conf"
-subpackages="dbus-devel dbus-libs dbus-x11"
-system_accounts="dbus"
+revision=5
 short_desc="Message bus system"
 maintainer="Juan RP <xtraeme@gmail.com>"
 license="GPL-2"
 homepage="http://dbus.freedesktop.org/"
-distfiles="${homepage}/releases/dbus/dbus-${version}.tar.gz"
-checksum=fc1370ef38abeeb13f55c905ec002e60705fb0bfde3b8d21c8d6eb8056c11bac
+distfiles="
+ ${homepage}/releases/dbus/dbus-${version}.tar.gz
+ http://www.freedesktop.org/software/systemd/systemd-${_systemd_version}.tar.xz"
+checksum="
+ fc1370ef38abeeb13f55c905ec002e60705fb0bfde3b8d21c8d6eb8056c11bac
+ e6857ea21ae24d7056e7b0f4c2aaaba73b8bf57025b8949c0a8af0c1bc9774b5"
+
+create_wrksrc=yes
+subpackages="dbus-devel dbus-libs dbus-x11"
+makedepends="pkg-config intltool gperf chrpath expat-devel
+ libX11-devel libcap-devel"
+conf_files="/etc/dbus-1/session.conf /etc/dbus-1/system.conf"
+system_accounts="dbus"
+
+pre_configure() {
+	# Build a temporary dbus; we are only interested in libdbus.
+	[ ! -d dbus-bootstrap ] && mkdir dbus-bootstrap
+	cd dbus-bootstrap
+
+	../dbus-${version}/configure --prefix=${wrksrc}/tmpbuild/usr \
+		--disable-systemd --without-x || return 1
+	make && make install || return 1
+
+	# Build a temporary systemd; we are only interested in libsystemd-login.
+	cd ${wrksrc}
+	[ ! -d systemd-bootstrap ] && mkdir systemd-bootstrap
+	cd systemd-bootstrap
+
+	env PKG_CONFIG_LIBDIR=${wrksrc}/tmpbuild/usr/lib/pkgconfig \
+		../systemd-${_systemd_version}/configure \
+		--prefix=${wrksrc}/tmpbuild/usr --disable-nls \
+		--enable-introspection=no --disable-kmod --disable-blkid \
+		--disable-ima --disable-chkconfig --disable-selinux \
+		--disable-xz --disable-tcpwrap --disable-pam \
+		--disable-acl --disable-xattr --disable-gcrypt \
+		--disable-audit --disable-libcryptsetup --disable-qrencode \
+		--disable-microhttpd --disable-binfmt --disable-vconsole \
+		--disable-readahead --disable-bootchart --disable-quotacheck \
+		--disable-randomseed --disable-hostnamed \
+		--disable-timedated --disable-localed --disable-coredump \
+		--disable-myhostname --disable-gudev --disable-keymap \
+		--disable-manpages --without-python --with-sysvinit-path= \
+		--with-sysvrcnd-path= --disable-tests || return 1
+
+	make && make install || return 1
+}
+
+do_configure() {
+	env PKG_CONFIG_LIBDIR=${wrksrc}/tmpbuild/usr/lib/pkgconfig \
+		LDFLAGS="$LDFLAGS -Wl,--disable-new-dtags" \
+		./dbus-${version}/configure ${CONFIGURE_SHARED_ARGS} \
+		--disable-selinux --enable-userdb-cache --with-xml=expat \
+		--disable-dnotify --enable-inotify --with-dbus-user=dbus \
+		--disable-doxygen-docs --disable-xml-docs --disable-static \
+		--disable-tests --enable-epoll --disable-asserts \
+		--with-system-socket=/run/dbus/system_bus_socket \
+		--with-system-pid-file=/run/dbus/pid \
+		--with-console-auth-dir=/run/console/ \
+		--with-systemdsystemunitdir=/usr/lib/systemd/system \
+		--enable-systemd
+}
+
+do_build() {
+	make ${makejobs}
+}
+
+do_install() {
+	make DESTDIR=${DESTDIR} install
+	# Remove broken rpath from bins/libs.
+	for f in usr/bin/dbus-daemon usr/libexec/dbus-daemon-launch-helper; do
+		chrpath -d ${DESTDIR}/${f}
+	done
+}
