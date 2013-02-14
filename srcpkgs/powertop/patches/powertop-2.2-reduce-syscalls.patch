@@ -1,0 +1,149 @@
+From 63b20549280e606e5e73d5c9fe701c79a5abc6cf Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jaroslav=20=C5=A0karvada?= <jskarvad@redhat.com>
+Date: Wed, 12 Dec 2012 16:19:56 +0100
+Subject: [PATCH] Reduced number of useless 'open' syscalls
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+There are called many useless 'open' syscalls that always fail, like:
+  open("/sys/devices/system/cpu/uevent/cpufreq/scaling_governor", O_RDONLY) = -1 ENOTDIR (Not a directory)
+This patch filters them to 'likely' patterns, like e.g.:
+/sys/devices/system/cpu/cpuX/cpufreq/scaling_governor, where X is string
+starting with digit. For match cases it will add only small overhead.
+
+Originally reported as:
+https://bugzilla.redhat.com/show_bug.cgi?id=886185
+
+Signed-off-by: Jaroslav Škarvada <jskarvad@redhat.com>
+---
+ src/devices/alsa.cpp       |  2 +-
+ src/devices/backlight.cpp  |  2 ++
+ src/devlist.cpp            |  3 ++-
+ src/tuning/cpufreq.cpp     | 11 ++++++-----
+ src/tuning/tuningsysfs.cpp |  5 +----
+ 5 files changed, 12 insertions(+), 11 deletions(-)
+
+diff --git a/src/devices/alsa.cpp b/src/devices/alsa.cpp
+index 4f5d3f9..33a52f5 100644
+--- src/devices/alsa.cpp
++++ src/devices/alsa.cpp
+@@ -167,7 +167,7 @@ void create_all_alsa(void)
+ 		entry = readdir(dir);
+ 		if (!entry)
+ 			break;
+-		if (entry->d_name[0] == '.')
++		if (strncmp(entry->d_name, "hwC", 3) != 0)
+ 			continue;
+ 		sprintf(filename, "/sys/class/sound/card0/%s/power_on_acct", entry->d_name);
+ 
+diff --git a/src/devices/backlight.cpp b/src/devices/backlight.cpp
+index b8c9147..03aa5bc 100644
+--- src/devices/backlight.cpp
++++ src/devices/backlight.cpp
+@@ -90,6 +90,8 @@ static int dpms_screen_on(void)
+ 		if (!entry)
+ 			break;
+ 
++		if (strncmp(entry->d_name, "card", 4) != 0)
++			continue;
+ 		sprintf(filename, "/sys/class/drm/card0/%s/enabled", entry->d_name);
+ 		file.open(filename, ios::in);
+ 		if (!file)
+diff --git a/src/devlist.cpp b/src/devlist.cpp
+index de5abff..633a568 100644
+--- src/devlist.cpp
++++ src/devlist.cpp
+@@ -37,6 +37,7 @@
+ #include <sys/types.h>
+ #include <dirent.h>
+ #include <string.h>
++#include <ctype.h>
+ 
+ using namespace std;
+ 
+@@ -117,7 +118,7 @@ void collect_open_devices(void)
+ 			entry2 = readdir(dir2);
+ 			if (!entry2)
+ 				break;
+-			if (entry2->d_name[0] == '.')
++			if (!isdigit(entry2->d_name[0]))
+ 				continue;
+ 			sprintf(filename, "/proc/%s/fd/%s", entry->d_name, entry2->d_name);
+ 			memset(link, 0, 4096);
+diff --git a/src/tuning/cpufreq.cpp b/src/tuning/cpufreq.cpp
+index df245ad..e870559 100644
+--- src/tuning/cpufreq.cpp
++++ src/tuning/cpufreq.cpp
+@@ -36,6 +36,7 @@
+ #include <dirent.h>
+ #include <errno.h>
+ #include <sys/stat.h>
++#include <ctype.h>
+ 
+ #include "../lib.h"
+ #include "cpufreq.h"
+@@ -72,7 +73,7 @@ int cpufreq_tunable::good_bad(void)
+ 		return ret;
+ 
+ 	while ((dirent = readdir(dir))) {
+-		if (dirent->d_name[0]=='.')
++		if (strncmp(dirent->d_name, "cpu", 3) != 0 || !isdigit(dirent->d_name[3]))
+ 			continue;
+ 		sprintf(filename, "/sys/devices/system/cpu/%s/cpufreq/scaling_governor", dirent->d_name);
+ 		file = fopen(filename, "r");
+@@ -123,7 +124,7 @@ void cpufreq_tunable::toggle(void)
+ 			return;
+ 
+ 		while ((dirent = readdir(dir))) {
+-			if (dirent->d_name[0]=='.')
++			if (strncmp(dirent->d_name, "cpu", 3) != 0 || !isdigit(dirent->d_name[3]))
+ 				continue;
+ 			sprintf(filename, "/sys/devices/system/cpu/%s/cpufreq/scaling_governor", dirent->d_name);
+ 			file = fopen(filename, "w");
+@@ -141,7 +142,7 @@ void cpufreq_tunable::toggle(void)
+ 		return;
+ 
+ 	while ((dirent = readdir(dir))) {
+-		if (dirent->d_name[0]=='.')
++		if (strncmp(dirent->d_name, "cpu", 3) != 0 || !isdigit(dirent->d_name[3]))
+ 			continue;
+ 		sprintf(filename, "/sys/devices/system/cpu/%s/cpufreq/scaling_governor", dirent->d_name);
+ 		file = fopen(filename, "w");
+@@ -171,7 +172,7 @@ const char *cpufreq_tunable::toggle_script(void) {
+ 			return NULL;
+ 
+ 		while ((dirent = readdir(dir))) {
+-			if (dirent->d_name[0]=='.')
++			if (strncmp(dirent->d_name, "cpu", 3) != 0 || !isdigit(dirent->d_name[3]))
+ 				continue;
+ 			sprintf(filename, "/sys/devices/system/cpu/%s/cpufreq/scaling_governor", dirent->d_name);
+ 			if (stat(filename, &statbuf) == -1)
+@@ -189,7 +190,7 @@ const char *cpufreq_tunable::toggle_script(void) {
+ 		return NULL;
+ 
+ 	while ((dirent = readdir(dir))) {
+-		if (dirent->d_name[0]=='.')
++		if (strncmp(dirent->d_name, "cpu", 3) != 0 || !isdigit(dirent->d_name[3]))
+ 			continue;
+ 		sprintf(filename, "/sys/devices/system/cpu/%s/cpufreq/scaling_governor", dirent->d_name);
+ 		if (stat(filename, &statbuf) == -1)
+diff --git a/src/tuning/tuningsysfs.cpp b/src/tuning/tuningsysfs.cpp
+index 33d3786..ec1ca6b 100644
+--- src/tuning/tuningsysfs.cpp
++++ src/tuning/tuningsysfs.cpp
+@@ -131,10 +131,7 @@ void add_sata_tunables(void)
+ 		if (!entry)
+ 			break;
+ 
+-                if (strcmp(entry->d_name, ".") == 0)
+-                        continue;
+-
+-		if (strcmp(entry->d_name, "..") == 0)
++		if (entry->d_name[0] == '.')
+ 			continue;
+ 
+ 		sprintf(filename, "/sys/class/scsi_host/%s/link_power_management_policy", entry->d_name);
+-- 
+1.7.11.7
+
