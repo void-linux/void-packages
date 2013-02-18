@@ -15,13 +15,14 @@ checksum=8a9283d7010fb9fe5ece3ca507e0af5c19412626384f8a5e9434251ae100b084
 
 if [ "${XBPS_MACHINE}" = "x86_64" ]; then
 	# Required stuff for multilib packages.
-	makedepends="${makedepends} glibc32-devel"
-	subpackages="gcc-multilib gcc-c++-multilib gcc-objc-multilib libgcc32"
-	subpackages="${subpackages} libgomp32 libmudflap32-devel libmudflap32"
-	subpackages="${subpackages} libobjc32 libssp32 libstdc++32-devel"
-	subpackages="${subpackages} libstdc++32 libitm32"
-
 	_triplet="${XBPS_MACHINE}-unknown-linux-gnu"
+	makedepends="${makedepends} glibc32-devel"
+	subpackages="gcc-multilib gcc-c++-multilib gcc-objc-multilib libgcc32
+			libgomp32 libmudflap32-devel libmudflap32
+			libobjc32 libssp32 libstdc++32-devel
+			libstdc++32 libitm32"
+elif [ "$XBPS_MACHINE" = "armv6l" ]; then
+	_triplet="arm-linux-gnueabihf"
 else
 	_triplet="${XBPS_MACHINE}-pc-linux-gnu"
 fi
@@ -34,21 +35,45 @@ subpackages="${subpackages} libgcc libgo libssp libssp-devel libstdc++
  libobjc-devel  libgfortran libgfortran-devel gcc-fortran gcc-c++
  gcc-objc gcc-objc++ gcc-go"
 
+if [ -n "$XBPS_CROSS_TRIPLET" ]; then
+	# XXX enable default langs: objc, obj-c++, fortran and go.
+	makedepends="perl flex"
+	crossmakedepends="libfl-devel zlib-devel gmp-devel mpfr-devel mpc-devel
+			  ppl-devel>=1.0 cloog-devel"
+	subpackages="libgcc libssp libssp-devel libstdc++
+		libstdc++-devel libgomp libgomp-devel
+		libitm libmudflap libmudflap-devel gcc-c++"
+fi
+
 do_configure() {
 	# As specified in the LFS book, disable installing libiberty.
 	sed -i 's/install_to_$(INSTALL_DEST) //' libiberty/Makefile.in
 	# Do not run fixincludes
 	sed -i 's@\./fixinc\.sh@-c true@' gcc/Makefile.in
 
-	./configure --libexecdir=/usr/lib \
+	if [ -n "$XBPS_CROSS_TRIPLET" ]; then
+		export CC="$XBPS_CROSS_TRIPLET-gcc --sysroot=/usr/$XBPS_CROSS_TRIPLET"
+		export CC_FOR_TARGET="$CC"
+		export GCC="$CC"
+		export GCC_FOR_TARGET="$CC"
+		export CXX="$XBPS_CROSS_TRIPLET-g++ --sysroot=/usr/$XBPS_CROSS_TRIPLET"
+		export CXX_FOR_TARGET="$CXX"
+		export CFLAGS="$XBPS_CROSS_CFLAGS"
+		export CXXFLAGS="$CFLAGS"
+		_args="--disable-multilib --with-float=hard"
+		_langs="c,c++,lto"
+	else
+		_langs="c,c++,objc,obj-c++,fortran,go,lto"
+	fi
+
+	./configure ${CONFIGURE_SHARED_ARGS} --libexecdir=/usr/lib \
 		--enable-clocale=gnu --disable-bootstrap --libdir=/usr/lib \
 		--enable-threads=posix --enable-__cxa_atexit --enable-multilib \
-		--enable-languages=c,c++,objc,obj-c++,fortran,go,lto --enable-tls \
 		--disable-rpath --with-system-zlib --enable-shared --enable-lto \
 		--enable-linker-build-id --enable-gnu-unique-object \
 		--enable-checking=release --disable-libstdcxx-pch \
 		--with-ppl --enable-cloog-backend=isl --enable-libstdcxx-time \
-		${CONFIGURE_SHARED_ARGS}
+		--enable-tls --enable-languages=${_langs} ${_args}
 }
 
 do_build() {
@@ -87,12 +112,14 @@ do_install() {
 
 	# Remove unused stuff for multilib.
 	if [ "${XBPS_MACHINE}" = "x86_64" ]; then
-		rm -f ${DESTDIR}/usr/lib32/libffi*
-		rm -f ${DESTDIR}/usr/lib32/libgfortran*
-		rm -f ${DESTDIR}/usr/lib32/libgo.{a,so*}
-		rm -f ${DESTDIR}/usr/lib32/libgobegin.a
-		rm -f ${DESTDIR}/usr/lib32/libquadmath*
-		rm -rf ${DESTDIR}/usr/lib32/go
+		if [ -d ${DESTDIR}/usr/lib32 ]; then
+			rm -f ${DESTDIR}/usr/lib32/libffi*
+			rm -f ${DESTDIR}/usr/lib32/libgfortran*
+			rm -f ${DESTDIR}/usr/lib32/libgo.{a,so*}
+			rm -f ${DESTDIR}/usr/lib32/libgobegin.a
+			rm -f ${DESTDIR}/usr/lib32/libquadmath*
+			rm -rf ${DESTDIR}/usr/lib32/go
+		fi
 	fi
 
 	# Remove all python scripts in libdir.
