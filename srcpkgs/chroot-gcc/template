@@ -1,9 +1,11 @@
 # Template build file for 'chroot-gcc'
-pkgname=chroot-gcc
+#
 _majorver=4.7
-_gmp_ver=5.0.3
+_gmp_ver=5.0.5
 _mpfr_ver=3.1.1
 _mpc_ver=0.8.2
+
+pkgname=chroot-gcc
 version=${_majorver}.2
 revision=2
 wrksrc="gcc-${version}"
@@ -12,18 +14,20 @@ short_desc="The GNU C Compiler suite -- for xbps-src use"
 maintainer="Juan RP <xtraeme@gmail.com>"
 license="GPL-3"
 distfiles="
-http://ftp.gnu.org/pub/gnu/gcc/gcc-${version}/gcc-${version}.tar.bz2
-http://ftp.gnu.org/pub/gnu/gmp/gmp-${_gmp_ver}.tar.bz2
-http://www.mpfr.org/mpfr-current/mpfr-${_mpfr_ver}.tar.bz2
-http://www.multiprecision.org/mpc/download/mpc-${_mpc_ver}.tar.gz"
+ http://ftp.gnu.org/pub/gnu/gcc/gcc-${version}/gcc-${version}.tar.bz2
+ http://ftp.gnu.org/pub/gnu/gmp/gmp-${_gmp_ver}.tar.bz2
+ http://www.mpfr.org/mpfr-current/mpfr-${_mpfr_ver}.tar.bz2
+ http://www.multiprecision.org/mpc/download/mpc-${_mpc_ver}.tar.gz"
 checksum="
-8a9283d7010fb9fe5ece3ca507e0af5c19412626384f8a5e9434251ae100b084
-dcafe9989c7f332b373e1f766af8e9cd790fc802fdec422a1910a6ef783480e3
-7b66c3f13dc8385f08264c805853f3e1a8eedab8071d582f3e661971c9acd5fd
-ae79f8d41d8a86456b68607e9ca398d00f8b7342d1d83bcf4428178ac45380c7"
+ 8a9283d7010fb9fe5ece3ca507e0af5c19412626384f8a5e9434251ae100b084
+ 1f588aaccc41bb9aed946f9fe38521c26d8b290d003c5df807f65690f2aadec9
+ 7b66c3f13dc8385f08264c805853f3e1a8eedab8071d582f3e661971c9acd5fd
+ ae79f8d41d8a86456b68607e9ca398d00f8b7342d1d83bcf4428178ac45380c7"
 
-disable_debug=yes
+create_wrksrc=yes
 noverifyrdeps=yes
+bootstrap=yes
+
 provides="libgcc-${version} libstdc++-${version} libstdc++-devel-${version}
  gcc-${version} gcc-c++-${version}"
 conflicts="libgcc>=0 libstdc++>=0 libstdc++-devel>=0 gcc>=0 gcc-c++>=0"
@@ -34,32 +38,118 @@ if [ -n "$IN_CHROOT" ]; then
 fi
 
 pre_configure() {
+	cd gcc-${version}
+	for f in ${FILESDIR}/*.{diff,patch}; do
+		patch -Np0 -i ${f}
+	done
 	# As specified in the LFS book, disable installing libiberty.
 	sed -i 's/install_to_$(INSTALL_DEST) //' libiberty/Makefile.in
 	# Do not run fixincludes
 	sed -i 's@\./fixinc\.sh@-c true@' gcc/Makefile.in
+}
 
-	{ mv ${XBPS_BUILDDIR}/gmp-${_gmp_ver} ${wrksrc}/gmp; \
-	mv ${XBPS_BUILDDIR}/mpfr-${_mpfr_ver} ${wrksrc}/mpfr; \
-	mv ${XBPS_BUILDDIR}/mpc-${_mpc_ver} ${wrksrc}/mpc; }
+_gmp_build() {
+	cd ${wrksrc}
+	[ ! -d gmp-build ] && mkdir gmp-build
+	cd gmp-build
+	[ -f .gmp_build_done ] && return
+
+	../gmp-${_gmp_ver}/configure \
+		${CONFIGURE_SHARED_ARGS} --prefix=${wrksrc}/buildtmp \
+		--disable-shared --enable-static
+
+	make ${makejobs}
+	make install
+
+	rm -f ${wrksrc}/buildtmp/lib/*.la
+
+	touch .gmp_build_done
+}
+
+_mpfr_build() {
+	cd ${wrksrc}
+	[ ! -d mpfr-build ] && mkdir mpfr-build
+	cd mpfr-build
+	[ -f .mpfr_build_done ] && return
+
+	../mpfr-${_mpfr_ver}/configure \
+		${CONFIGURE_SHARED_ARGS} --prefix=${wrksrc}/buildtmp \
+		--with-gmp=${wrksrc}/buildtmp \
+		--disable-shared --enable-static
+
+	make ${makejobs}
+	make install
+
+	rm -f ${wrksrc}/buildtmp/lib/*.la
+
+	touch .mpfr_build_done
+}
+
+_mpc_build() {
+	cd ${wrksrc}
+	[ ! -d mpc-build ] && mkdir mpc-build
+	cd mpc-build
+	[ -f .mpc_build_done ] && return
+
+	../mpc-${_mpc_ver}/configure \
+		${CONFIGURE_SHARED_ARGS} --prefix=${wrksrc}/buildtmp \
+		--with-gmp=${wrksrc}/buildtmp \
+		--with-mpfr=${wrksrc}/buildtmp \
+		--disable-shared --enable-static
+
+	make ${makejobs}
+	make install
+
+	rm -f ${wrksrc}/buildtmp/lib/*.la
+
+	touch .mpfr_build_done
 }
 
 do_configure() {
-	CONFIG_SHELL=/bin/bash ./configure \
-		--prefix=/usr --libdir=/usr/lib --libexecdir=/usr/lib \
-		--enable-clocale=gnu --enable-shared --disable-bootstrap \
+	local _floatabi _args
+
+	if [ "${XBPS_MACHINE}" = "armv6l" ]; then
+		_floatabi="--with-float=hard"
+	fi
+
+	if [ -n "$XBPS_CROSS_TRIPLET" ]; then
+		export CC="$XBPS_CROSS_TRIPLET-gcc"
+		export GCC="$CC"
+		export CC_FOR_TARGET="$CC"
+		export GCC_FOR_TARGET="$CC"
+		export CXX="$XBPS_CROSS_TRIPLET-g++"
+		export CXX_FOR_TARGET="$CXX"
+		export CFLAGS="-Os"
+		export CXXFLAGS="$CFLAGS"
+	fi
+
+	_gmp_build
+	_mpfr_build
+	_mpc_build
+
+	cd ${wrksrc}
+	[ ! -d gcc-build ] && mkdir gcc-build
+	cd gcc-build
+
+	CONFIG_SHELL=/bin/bash \
+		../gcc-${version}/configure ${CONFIGURE_SHARED_ARGS} \
+		--libdir=/usr/lib --libexecdir=/usr/lib \
+		--enable-clocale=gnu --enable-shared \
 		--enable-threads=posix --enable-__cxa_atexit \
 		--disable-gold --disable-lto --enable-linker-build-id \
+		--with-gmp=${wrksrc}/buildtmp \
+		--with-mpfr=${wrksrc}/buildtmp \
+		--with-mpc=${wrksrc}/buildtmp \
 		--enable-gnu-unique-object --enable-checking=release \
 		--enable-languages=c,c++ --disable-nls --disable-multilib \
-		--with-mpfr-include=${wrksrc}/mpfr/src \
-		--with-mpfr-lib=${wrksrc}/mpfr/src/.libs \
 		--without-cloog --without-ppl --disable-libstdcxx-pch \
 		--disable-libquadmath --disable-libquadmath-support \
-		--disable-libgomp --disable-libssp --disable-libitm
+		--disable-libgomp --disable-libssp --disable-libitm \
+		${_floatabi}
 }
 
 do_build() {
+	cd gcc-build
 	make ${makejobs}
 }
 
@@ -68,14 +158,20 @@ do_install() {
 
 	if [ "${XBPS_MACHINE}" = "x86_64" ]; then
 		_triplet="${XBPS_MACHINE}-unknown-linux-gnu"
-	else
+	elif [ "${XBPS_MACHINE}" = "i686" ]; then
 		_triplet="${XBPS_MACHINE}-pc-linux-gnu"
+	elif [ "${XBPS_MACHINE}" = "armv6l" ]; then
+		_triplet="arm-linux-gnueabihf"
+	else
+		msg_error "$pkgver: unknown XBPS_MACHINE\n"
 	fi
 
 	if [ "$XBPS_MACHINE" = "x86_64" ]; then
 		vmkdir usr/lib
 		cd ${DESTDIR}/usr && ln -sf lib lib64 && cd ${wrksrc}
 	fi
+
+	cd gcc-build
 	make DESTDIR=${DESTDIR} install
 
 	# Make version a symlink of major version to make all versions
