@@ -1,24 +1,14 @@
 # Template build file for 'perl'.
 pkgname=perl
 version=5.16.2
-revision=1
-makedepends="gdbm-devel db-devel less groff"
+revision=2
+makedepends="which gdbm-devel db-devel less groff"
 short_desc="Practical Extraction and Report Language"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://www.perl.org"
 license="GPL-2"
 distfiles="http://www.cpan.org/src/5.0/perl-${version}.tar.bz2"
 checksum=5ba91d9aa40220c615b644bb48fa5df7fbca4afb1c9e911bdc0ce2a93f072d7d
-long_desc="
- Perl is a general-purpose programming language originally developed
- for text manipulation and now used for a wide range of tasks including
- system administration, web development, network programming, GUI
- development, and more.  The language is intended to be practical (easy
- to use, efficient, complete) rather than beautiful (tiny, elegant,
- minimal).  Its major features are that it's easy to use, supports both
- procedural and object-oriented (OO) programming, has powerful built-in
- support for text processing, and has one of the world's most impressive
- collections of third-party modules."
 
 # Before updating this package to a new major version, run ${FILESDIR}/provides.pl
 # against ${wrksrc} to find the list of built in packages.
@@ -161,29 +151,78 @@ for _f in ${_provides}; do
 	replaces="${replaces} ${_p}>=0"
 done
 
-do_build() {
-	./Configure							\
-		-des -Dusethreads -Duseshrplib				\
-		-Dinstallprefix=/usr					\
-		-Dprefix=/usr -Dvendorprefix=/usr			\
-		-Dprivlib=/usr/share/perl5/core_perl			\
-		-Darchlib=/usr/lib/perl5/core_perl			\
-		-Dsitelib=/usr/share/perl5/site_perl			\
-		-Dsitearch=/usr/lib/perl5/site_perl			\
-		-Dvendorlib=/usr/share/perl5/vendor_perl		\
-		-Dvendorarch=/usr/lib/perl5/vendor_perl			\
-		-Dscriptdir=/usr/lib/perl5/core_perl/bin		\
-		-Dsitescript=/usr/lib/perl5/site_perl/bin		\
-		-Dvendorscript=/usr/lib/perl5/vendor_perl/bin		\
-		-Dinc_version_list=none	-Dman1ext=1p -Dman3ext=3p	\
-		-Dcccdlflags="-fPIC" -Doptimize="${XBPS_CFLAGS}"
+if [ -n "$XBPS_CROSS_TRIPLET" ]; then
+	makedepends="perl>=${version} which less groff"
+	crossmakedepends="zlib-devel bzip2-devel db-devel gdbm-devel"
+fi
 
-	make ${makejobs}
+do_configure() {
+	local _args="-Dusethreads -Duseshrplib
+		-Dprefix=/usr -Dvendorprefix=/usr
+		-Dprivlib=/usr/share/perl5/core_perl
+		-Darchlib=/usr/lib/perl5/core_perl
+		-Dsitelib=/usr/share/perl5/site_perl
+		-Dsitearch=/usr/lib/perl5/site_perl
+		-Dvendorlib=/usr/share/perl5/vendor_perl
+		-Dvendorarch=/usr/lib/perl5/vendor_perl
+		-Dscriptdir=/usr/lib/perl5/core_perl/bin
+		-Dvendorscript=/usr/lib/perl5/vendor_perl/bin
+		-Dinc_version_list=none -Dman1ext=1p -Dman3ext=3p"
+
+	if [ -n "$XBPS_CROSS_TRIPLET" ]; then
+		# Copy target files
+		cp -f ${FILESDIR}/${XBPS_CROSS_TRIPLET}/* .
+		cp -f ${FILESDIR}/Configure.cross .
+		sh ./Configure.cross
+		perl -Ilib make_patchnum.pl
+	else
+		./Configure -des ${_args} \
+			-Dcccdlflags="-fPIC" \
+			-Doptimize="${XBPS_CFLAGS}"
+	fi
+}
+
+do_build() {
+	if [ -n "$XBPS_CROSS_TRIPLET" ]; then
+		export HOST_PERL=/usr/bin/perl
+		export PERL_TO_USE=$HOST_PERL
+		export HOST_PERL_LIBS=/usr/lib/perl5/core_perl
+		export LIB=/usr/$XBPS_CROSS_TRIPLET/lib
+		export INCLUDE=/usr/$XBPS_CROSS_TRIPLET/include
+
+		make SHRPLDFLAGS='-shared -Wl,-soname,libperl.so' \
+			CROSS_PERL=$HOST_PERL libperl.so ${makejobs}
+
+		cp -fr $HOST_PERL_LIBS/auto/* lib/auto/
+		mkdir -p lib/$XBPS_CROSS_TRIPLET
+		make extensions CROSS_PERL=$HOST_PERL \
+			INST_ARCHLIB=$wrksrc/lib/$XBPS_CROSS_TRIPLET \
+			${makejobs}
+	else
+		make ${makejobs}
+	fi
 }
 
 do_install() {
-	# We use the same defaults than Arch Linux.
-	make DESTDIR=${DESTDIR} install
+	if [ -n "$XBPS_CROSS_TRIPLET" ]; then
+		export HOST_PERL=/usr/bin/perl
+		export PERL_TO_USE=$HOST_PERL
+		export HOST_PERL_LIBS=/usr/lib/perl5/core_perl
+		export LIB=/usr/$XBPS_CROSS_TRIPLET/lib
+		export INCLUDE=/usr/$XBPS_CROSS_TRIPLET/include
+
+		cp -fr $HOST_PERL_LIBS/auto/* lib/auto/
+		make CROSS_PERL=$HOST_PERL DESTDIR=$DESTDIR install
+		find lib/auto -name .exists -o -name '*.bs' | xargs rm -f
+		vmkdir usr/lib/perl5/core_perl/auto
+		cp -fr lib/$XBPS_CROSS_TRIPLET/auto/* \
+			${DESTDIR}/usr/lib/perl5/core_perl/auto/
+		find ${DESTDIR} -name .exists |xargs rm -f
+		rm -rf ${DESTDIR}/usr/share/perl5/core_perl/$XBPS_CROSS_TRIPLET
+	else
+		# We use the same defaults than Arch Linux.
+		make DESTDIR=${DESTDIR} install
+	fi
 
 	# Make a link from perl${version} to perl.
 	cd ${DESTDIR}/usr/bin && ln -sf perl${version} perl
