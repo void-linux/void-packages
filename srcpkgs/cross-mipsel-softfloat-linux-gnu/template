@@ -5,15 +5,16 @@ _gcc_version=4.7.2
 _glibc_version=2.17
 _gmp_version=5.0.5
 _mpfr_version=3.1.1
+_linux_version=3.7.1
 
 _triplet=mipsel-softfloat-linux-gnu
 _fpuflags="--with-float=soft --without-fp"
 _archflags="-mtune=mips32r2 -mabi=32 -msoft-float"
 
 pkgname=cross-${_triplet}
-version=0.3
+version=0.4
 revision=1
-short_desc="GNU Cross toolchain for the ${_triplet} target (binutils/gcc/glibc)"
+short_desc="GNU Cross toolchain for the ${_triplet} LE target (binutils/gcc/glibc)"
 maintainer="pancake <pancake@nopcode.org>"
 homepage="http://www.voidlinux.eu"
 license="Public Domain"
@@ -22,25 +23,40 @@ distfiles="
  http://ftp.gnu.org/pub/gnu/gcc/gcc-${_gcc_version}/gcc-${_gcc_version}.tar.bz2
  http://ftp.gnu.org/gnu/glibc/glibc-${_glibc_version}.tar.xz
  http://mirrors.kernel.org/gnu/gmp/gmp-${_gmp_version}.tar.bz2
- http://www.mpfr.org/mpfr-current/mpfr-${_mpfr_version}.tar.bz2"
+ http://www.mpfr.org/mpfr-current/mpfr-${_mpfr_version}.tar.bz2
+ http://www.kernel.org/pub/linux/kernel/v3.x/linux-${_linux_version}.tar.xz"
 checksum="
  2ab2e5b03e086d12c6295f831adad46b3e1410a3a234933a2e8fac66cb2e7a19
  8a9283d7010fb9fe5ece3ca507e0af5c19412626384f8a5e9434251ae100b084
  6914e337401e0e0ade23694e1b2c52a5f09e4eda3270c67e7c3ba93a89b5b23e
  1f588aaccc41bb9aed946f9fe38521c26d8b290d003c5df807f65690f2aadec9
- 7b66c3f13dc8385f08264c805853f3e1a8eedab8071d582f3e661971c9acd5fd"
+ 7b66c3f13dc8385f08264c805853f3e1a8eedab8071d582f3e661971c9acd5fd
+ e1ca8b8376ebdf797357f5f1734ed6eed3cadc16c32d280a780f150372de7255"
 
-nostrip_files="libgcc.a libgcov.a libgcc_eh.a"
 create_wrksrc=yes
 disable_debug=yes
+nostrip_files="libgcc.a libgcov.a libgcc_eh.a"
 subpackages="${pkgname}-libc"
-makedepends="perl flex gmp-devel mpc-devel cloog-ppl-devel
- ${pkgname}-libc-headers-3.7.1_1"
-depends="${pkgname}-libc-headers ${pkgname}-libc-${version}_${revision}"
+makedepends="perl flex gmp-devel mpc-devel cloog-ppl-devel"
+depends="${pkgname}-libc-${version}_${revision}"
 
 _CROSS_TARGET=${_triplet}
 _CROSS_DIR="/usr"
 _CROSS_SYSROOT="${_CROSS_DIR}/${_CROSS_TARGET}"
+
+_linux_headers() {
+	[ -f ${wrksrc}/.linux_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building Linux API headers for MIPS\n"
+
+	cd linux-${_linux_version}
+
+	make ARCH=mips headers_check
+	make ARCH=mips INSTALL_HDR_PATH=/usr/${_CROSS_TARGET}/usr headers_install
+
+	touch ${wrksrc}/.linux_build_done
+}
 
 _binutils_bootstrap() {
 	[ -f ${wrksrc}/.binutils_bootstrap_done ] && return 0
@@ -280,6 +296,7 @@ _glibc_final() {
 	touch ${wrksrc}/.glibc_final_done
 }
 
+
 do_build() {
 	unset LDFLAGS
 	export CFLAGS="-Os" CXXFLAGS="-Os"
@@ -293,6 +310,7 @@ do_build() {
 		fi
 	done
 
+	_linux_headers
 	_binutils_bootstrap
 	_gcc_bootstrap
 	_glibc_headers
@@ -325,6 +343,13 @@ do_install() {
 	cd ${wrksrc}/glibc-final && \
 		make install_root=${DESTDIR}/usr/${_CROSS_TARGET} install
 
+	# install linux API headers for MIPS
+	cd ${wrksrc}/linux-${_linux_version} && \
+		make ARCH=mips INSTALL_HDR_PATH=${DESTDIR}/usr/${_CROSS_TARGET}/usr \
+		headers_install
+	rm -f $(find ${DESTDIR}/usr/${_CROSS_TARGET}/usr/include -name .install -or -name ..install.cmd)
+	rm -rf ${DESTDIR}/usr/${_CROSS_TARGET}/usr/include/drm
+
 	# Remove unnecessary stuff
 	rm -f ${DESTDIR}/usr/lib*/libiberty.a
 	rm -rf ${DESTDIR}/usr/share
@@ -338,7 +363,9 @@ do_install() {
 		getent ldd; do
 		rm -f ${DESTDIR}/${_CROSS_SYSROOT}/usr/bin/${f}
 	done
+}
 
+do_clean() {
 	# Remove temporary stuff from masterdir
 	rm -rf ${_CROSS_SYSROOT}
 	rm -f /usr/bin/${_CROSS_TARGET}*
