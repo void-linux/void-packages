@@ -12,7 +12,7 @@ _fpuflags="--with-float=hard"
 _archflags="-march=armv6 -mfpu=vfp -mfloat-abi=hard"
 
 pkgname=cross-${_triplet}
-version=0.5
+version=0.6
 revision=1
 short_desc="GNU Cross toolchain for the ${_triplet} LE target (binutils/gcc/glibc)"
 maintainer="pancake <pancake@nopcode.org>"
@@ -62,7 +62,7 @@ _linux_headers() {
 	cd linux-${_linux_version}
 
 	make ARCH=arm headers_check
-	make ARCH=arm INSTALL_HDR_PATH=/usr/${_CROSS_TARGET}/usr headers_install
+	make ARCH=arm INSTALL_HDR_PATH=${_CROSS_SYSROOT}/usr headers_install
 
 	touch ${wrksrc}/.linux_build_done
 }
@@ -100,7 +100,7 @@ _gcc_bootstrap() {
 
 	../gcc-${_gcc_version}/configure --prefix=${_CROSS_DIR} \
 		--target=${_CROSS_TARGET} --without-headers \
-		--disable-nls --disable-shared --without-headers \
+		--disable-nls --disable-shared \
 		--disable-decimal-float --disable-libgomp --disable-libmudflap \
 		--disable-libssp --disable-threads --enable-languages=c \
 		--disable-sjlj-exceptions --disable-multilib \
@@ -127,12 +127,12 @@ _glibc_headers() {
 	echo "libc_cv_forced_unwind=yes" > config.cache
 	echo "libc_cv_c_cleanup=yes" >> config.cache
 
-	export CC="${_CROSS_TARGET}-gcc" LD="${_CROSS_TARGET}-ld" AS="${_CROSS_TARGET}-as"
-	export PATH=${_CROSS_DIR}/bin:${PATH}
+	export CC="${_CROSS_TARGET}-gcc" LD="${_CROSS_TARGET}-ld" \
+		AS="${_CROSS_TARGET}-as" CPP="${_CROSS_TARGET}-cpp"
 
 	../glibc-${_glibc_version}/configure \
 		--host=${_CROSS_TARGET} --prefix=/usr \
-		--with-headers=/usr/${_CROSS_TARGET}/usr/include \
+		--with-headers=${_CROSS_SYSROOT}/usr/include \
 		--config-cache --enable-add-ons=nptl,ports \
 		--enable-obsolete-rpc \
 		--enable-kernel=2.6.27 ${_fpuflags}
@@ -155,12 +155,13 @@ _glibc_build() {
 	echo "libc_cv_forced_unwind=yes" > config.cache
 	echo "libc_cv_c_cleanup=yes" >> config.cache
 
-	export CC="${_CROSS_TARGET}-gcc" LD="${_CROSS_TARGET}-ld" AS="${_CROSS_TARGET}-as"
+	export CC="${_CROSS_TARGET}-gcc" LD="${_CROSS_TARGET}-ld" \
+		AS="${_CROSS_TARGET}-as" CPP="${_CROSS_TARGET}-cpp"
 	export CFLAGS="-Os -pipe ${_archflags}"
 
 	../glibc-${_glibc_version}/configure \
 		--host=${_CROSS_TARGET} --prefix=/usr \
-		--with-headers=/usr/${_CROSS_TARGET}/usr/include \
+		--with-headers=${_CROSS_SYSROOT}/usr/include \
 		--config-cache --enable-add-ons=nptl,ports \
 		--enable-obsolete-rpc --disable-profile \
 		--enable-kernel=2.6.27 ${_fpuflags}
@@ -180,8 +181,9 @@ _gcc_static() {
 	[ ! -d gcc-static ] && mkdir gcc-static
 	cd gcc-static
 
-	echo "libc_cv_forced_unwind=yes" > config.cache
-	echo "libc_cv_c_cleanup=yes" >>config.cache
+	# XXX
+	ln -sfr ${_CROSS_SYSROOT}/usr/include/gnu/stubs-hard.h \
+		${_CROSS_SYSROOT}/usr/include/gnu/stubs-soft.h
 
 	export CC="gcc"
 	export CFLAGS="-Os"
@@ -211,10 +213,6 @@ _gmp_static() {
 	[ ! -d gmp-static ] && mkdir gmp-static
 	cd gmp-static
 
-	# XXX
-	ln -sfr ${_CROSS_SYSROOT}/usr/include/gnu/stubs-soft.h \
-		${_CROSS_SYSROOT}/usr/include/gnu/stubs-hard.h
-
 	export CC="${_CROSS_TARGET}-gcc" LD="${_CROSS_TARGET}-ld" AS="${_CROSS_TARGET}-as"
 	export CFLAGS="-Os -pipe ${_archflags} -static"
 
@@ -237,7 +235,8 @@ _mpfr_build() {
 	[ ! -d mpfr-build ] && mkdir mpfr-build
 	cd mpfr-build
 
-	export CC="${_CROSS_TARGET}-gcc" LD="${_CROSS_TARGET}-ld" AS="${_CROSS_TARGET}-as"
+	export CC="${_CROSS_TARGET}-gcc" LD="${_CROSS_TARGET}-ld" \
+		AS="${_CROSS_TARGET}-as" CPP="${_CROSS_TARGET}-cpp"
 	export CFLAGS="-Os -pipe -fPIC ${_archflags}"
 
 	../mpfr-${_mpfr_version}/configure \
@@ -295,12 +294,13 @@ _glibc_final() {
 	echo "libc_cv_forced_unwind=yes" > config.cache
 	echo "libc_cv_c_cleanup=yes" >> config.cache
 
-	export CC="${_CROSS_TARGET}-gcc" LD="${_CROSS_TARGET}-ld" AS="${_CROSS_TARGET}-as"
+	export CC="${_CROSS_TARGET}-gcc" LD="${_CROSS_TARGET}-ld" \
+		AS="${_CROSS_TARGET}-as" CPP="${_CROSS_TARGET}-cpp"
 	export CFLAGS="-Os -pipe ${_archflags}"
 
 	../glibc-${_glibc_version}/configure \
 		--host=${_CROSS_TARGET} --prefix=/usr \
-		--with-headers=/usr/${_CROSS_TARGET}/usr/include \
+		--with-headers=${_CROSS_SYSROOT}/usr/include \
 		--config-cache --enable-add-ons=nptl,ports \
 		--enable-obsolete-rpc --disable-profile \
 		--enable-kernel=2.6.27 ${_fpuflags}
@@ -355,18 +355,21 @@ do_install() {
 
 	# install glibc for target
 	cd ${wrksrc}/glibc-final && \
-		make install_root=${DESTDIR}/usr/${_CROSS_TARGET} install
+		make install_root=${DESTDIR}/${_CROSS_SYSROOT} install
 
 	# XXX hard-float only toolchain.
-	ln -sfr ${DESTDIR}/${_CROSS_SYSROOT}/usr/include/gnu/stubs-soft.h \
-		${DESTDIR}/${_CROSS_SYSROOT}/usr/include/gnu/stubs-hard.h
+	ln -sfr ${DESTDIR}/${_CROSS_SYSROOT}/usr/include/gnu/stubs-hard.h \
+		${DESTDIR}/${_CROSS_SYSROOT}/usr/include/gnu/stubs-soft.h
+
+	ln -sfr ${DESTDIR}/${_CROSS_SYSROOT}/usr/lib/ld-linux-armhf.so.3 \
+		${DESTDIR}/${_CROSS_SYSROOT}/usr/lib/ld-linux.so.3
 
 	# install linux API headers for MIPS
 	cd ${wrksrc}/linux-${_linux_version} && \
-		make ARCH=arm INSTALL_HDR_PATH=${DESTDIR}/usr/${_CROSS_TARGET}/usr \
+		make ARCH=arm INSTALL_HDR_PATH=${DESTDIR}/${_CROSS_SYSROOT}/usr \
 		headers_install
-	rm -f $(find ${DESTDIR}/usr/${_CROSS_TARGET}/usr/include -name .install -or -name ..install.cmd)
-	rm -rf ${DESTDIR}/usr/${_CROSS_TARGET}/usr/include/drm
+	rm -f $(find ${DESTDIR}/${_CROSS_SYSROOT}/usr/include -name .install -or -name ..install.cmd)
+	rm -rf ${DESTDIR}/${_CROSS_SYSROOT}/usr/include/drm
 
 	# Remove unnecessary stuff
 	rm -f ${DESTDIR}/usr/lib*/libiberty.a
