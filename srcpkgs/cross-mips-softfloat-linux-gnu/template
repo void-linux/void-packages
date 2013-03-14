@@ -5,6 +5,7 @@ _gcc_version=4.7.2
 _glibc_version=2.17
 _gmp_version=5.0.5
 _mpfr_version=3.1.1
+_mpc_version=0.9
 _linux_version=3.7.1
 
 _triplet=mips-softfloat-linux-gnu
@@ -12,7 +13,7 @@ _fpuflags="--with-float=soft --without-fp"
 _archflags="-mtune=mips32r2 -mabi=32 -msoft-float"
 
 pkgname=cross-${_triplet}
-version=0.4
+version=0.5
 revision=1
 short_desc="GNU Cross toolchain for the ${_triplet} BE target (binutils/gcc/glibc)"
 maintainer="pancake <pancake@nopcode.org>"
@@ -24,6 +25,7 @@ distfiles="
  http://ftp.gnu.org/gnu/glibc/glibc-${_glibc_version}.tar.xz
  http://mirrors.kernel.org/gnu/gmp/gmp-${_gmp_version}.tar.bz2
  http://www.mpfr.org/mpfr-current/mpfr-${_mpfr_version}.tar.bz2
+ http://www.multiprecision.org/mpc/download/mpc-${_mpc_version}.tar.gz
  http://www.kernel.org/pub/linux/kernel/v3.x/linux-${_linux_version}.tar.xz"
 checksum="
  2ab2e5b03e086d12c6295f831adad46b3e1410a3a234933a2e8fac66cb2e7a19
@@ -31,18 +33,18 @@ checksum="
  6914e337401e0e0ade23694e1b2c52a5f09e4eda3270c67e7c3ba93a89b5b23e
  1f588aaccc41bb9aed946f9fe38521c26d8b290d003c5df807f65690f2aadec9
  7b66c3f13dc8385f08264c805853f3e1a8eedab8071d582f3e661971c9acd5fd
+ fd3efe422f0d454592059e80f2c00d1a2e381bf2beda424c5094abd4deb049ac
  e1ca8b8376ebdf797357f5f1734ed6eed3cadc16c32d280a780f150372de7255"
 
 create_wrksrc=yes
 disable_debug=yes
 nostrip_files="libgcc.a libgcov.a libgcc_eh.a"
 subpackages="${pkgname}-libc"
-makedepends="perl flex gmp-devel mpc-devel cloog-ppl-devel"
+makedepends="perl flex"
 depends="${pkgname}-libc-${version}_${revision}"
 
 _CROSS_TARGET=${_triplet}
-_CROSS_DIR="/usr"
-_CROSS_SYSROOT="${_CROSS_DIR}/${_CROSS_TARGET}"
+_CROSS_SYSROOT="/usr/${_CROSS_TARGET}"
 
 _linux_headers() {
 	[ -f ${wrksrc}/.linux_build_done ] && return 0
@@ -67,7 +69,7 @@ _binutils_bootstrap() {
 	cd binutils-build
 
 	../binutils-${_binutils_version}/configure \
-		--prefix=${_CROSS_DIR} --target=${_CROSS_TARGET} \
+		--prefix=/usr --target=${_CROSS_TARGET} \
 		--with-sysroot=${_CROSS_SYSROOT} --disable-nls --disable-shared \
 		--disable-multilib --disable-werror
 
@@ -85,22 +87,29 @@ _gcc_bootstrap() {
 
 	cd gcc-${_gcc_version}
 
-	[ ! -d ../gcc-build ] && mkdir ../gcc-build
-	cd ../gcc-build
+	[ ! -d ../gcc-bootstrap ] && mkdir ../gcc-bootstrap
+	cd ../gcc-bootstrap
 
-	../gcc-${_gcc_version}/configure --prefix=${_CROSS_DIR} \
+	if [ ! -d ${wrksrc}/gcc-${_gcc_version}/gmp ]; then
+		mv ${wrksrc}/gmp-${_gmp_version} ${wrksrc}/gcc-${_gcc_version}/gmp
+	fi
+	if [ ! -d ${wrksrc}/gcc-${_gcc_version}/mpfr ]; then
+		mv ${wrksrc}/mpfr-${_mpfr_version} ${wrksrc}/gcc-${_gcc_version}/mpfr
+	fi
+	if [ ! -d ${wrksrc}/gcc-${_gcc_version}/mpc ]; then
+		mv ${wrksrc}/mpc-${_mpc_version} ${wrksrc}/gcc-${_gcc_version}/mpc
+	fi
+
+	../gcc-${_gcc_version}/configure --prefix=/usr \
 		--target=${_CROSS_TARGET} --without-headers \
 		--disable-nls --disable-shared --without-headers \
 		--disable-decimal-float --disable-libgomp --disable-libmudflap \
 		--disable-libssp --disable-threads --enable-languages=c \
 		--disable-sjlj-exceptions --disable-multilib \
-		--with-gnu-ld --with-gnu-as ${fpuflags}
+		--with-gnu-ld --with-gnu-as --disable-libquadmath ${_fpuflags}
 
-	make ${makejobs} all-gcc all-target-libgcc
-	make install-gcc install-target-libgcc
-
-	ln -sfr ${_CROSS_DIR}/lib/gcc/${_CROSS_TARGET}/${_gcc_version}/libgcc.a \
-		${_CROSS_DIR}/lib/gcc/${_CROSS_TARGET}/${_gcc_version}/libgcc_sh.a
+	make ${makejobs}
+	make install
 
 	touch ${wrksrc}/.gcc_bootstrap_done
 }
@@ -118,7 +127,6 @@ _glibc_headers() {
 	echo "libc_cv_c_cleanup=yes" >> config.cache
 
 	export CC="${_CROSS_TARGET}-gcc" LD="${_CROSS_TARGET}-ld" AS="${_CROSS_TARGET}-as"
-	export PATH=${_CROSS_DIR}/bin:${PATH}
 
 	../glibc-${_glibc_version}/configure \
 		--host=${_CROSS_TARGET} --prefix=/usr \
@@ -153,7 +161,7 @@ _glibc_build() {
 		--with-headers=/usr/${_CROSS_TARGET}/usr/include \
 		--config-cache --enable-add-ons=nptl,ports \
 		--enable-obsolete-rpc --disable-profile \
-		${_fpuflags} --enable-kernel=2.6.27
+		--enable-kernel=2.6.27 ${_fpuflags}
 	
 	make ${makejobs}
 	make install_root=${_CROSS_SYSROOT} install
@@ -161,89 +169,14 @@ _glibc_build() {
 	touch ${wrksrc}/.glibc_build_done
 }
 
-_gcc_static() {
-	[ -f ${wrksrc}/.gcc_static_done ] && return 0
-
-	cd ${wrksrc}
-	msg_normal "Building cross gcc static\n"
-
-	[ ! -d gcc-static ] && mkdir gcc-static
-	cd gcc-static
-
-	echo "libc_cv_forced_unwind=yes" > config.cache
-	echo "libc_cv_c_cleanup=yes" >>config.cache
-
-	export CC="gcc"
-	export CFLAGS="-Os"
-
-	../gcc-${_gcc_version}/configure \
-		--target=${_CROSS_TARGET} --prefix=${_CROSS_DIR} \
-		--with-sysroot=${_CROSS_SYSROOT} --enable-languages=c \
-		--with-gnu-as --with-gnu-ld --disable-multilib \
-		${_fpuflags} --disable-sjlj-exceptions --disable-nls \
-		--enable-threads=posix --enable-long-longx
-
-	make ${makejobs} all-gcc
-	make install-gcc
-
-	ln -sfr ${_CROSS_DIR}/lib/gcc/${_CROSS_TARGET}/${_gcc_version}/libgcc.a \
-		${_CROSS_DIR}/lib/gcc/${_CROSS_TARGET}/${_gcc_version}/libgcc_eh.a
-
-	touch ${wrksrc}/.gcc_static_done
-}
-
-_gmp_static() {
-	[ -f ${wrksrc}/.gmp_static_done ] && return 0
-
-	cd ${wrksrc}
-	msg_normal "Building cross gmp static\n"
-
-	[ ! -d gmp-static ] && mkdir gmp-static
-	cd gmp-static
-
-	export CC="${_CROSS_TARGET}-gcc" LD="${_CROSS_TARGET}-ld" AS="${_CROSS_TARGET}-as"
-	export CFLAGS="-Os -pipe -fPIC ${_archflags}"
-
-	../gmp-${_gmp_version}/configure \
-		--host=${_CROSS_TARGET} --prefix=${_CROSS_SYSROOT} \
-		--disable-shared ${_fpuflags}
-
-	make ${makejobs}
-	make install
-
-	touch ${wrksrc}/.gmp_static_done
-}
-
-_mpfr_build() {
-	[ -f ${wrksrc}/.mpfr_build_done ] && return 0
-
-	cd ${wrksrc}
-	msg_normal "Building cross mpfr\n"
-
-	[ ! -d mpfr-build ] && mkdir mpfr-build
-	cd mpfr-build
-
-	export CC="${_CROSS_TARGET}-gcc" LD="${_CROSS_TARGET}-ld" AS="${_CROSS_TARGET}-as"
-	export CFLAGS="-Os -pipe -fPIC ${_archflags}"
-
-	../mpfr-${_mpfr_version}/configure \
-		--host=${_CROSS_TARGET} --prefix=${_CROSS_SYSROOT} \
-		--with-gmp=${_CROSS_SYSROOT}
-
-	make ${makejobs}
-	make install
-
-	touch ${wrksrc}/.mpfr_build_done
-}
-
-_gcc_final() {
-	[ -f ${wrksrc}/.gcc_final_done ] && return 0
+_gcc_build() {
+	[ -f ${wrksrc}/.gcc_build_done ] && return 0
 
 	cd ${wrksrc}
 	msg_normal "Building cross gcc final\n"
 
-	[ ! -d gcc-final ] && mkdir gcc-final
-	cd gcc-final
+	[ ! -d gcc-build ] && mkdir gcc-build
+	cd gcc-build
 
 	export CC="gcc" CFLAGS="-Os -pipe"
 	unset LD AS
@@ -259,43 +192,15 @@ _gcc_final() {
 		--target=${_CROSS_TARGET} --prefix=/usr \
 		--with-sysroot=${_CROSS_SYSROOT} --enable-languages=c,c++ \
 		--with-gnu-as --with-gnu-ld --disable-multilib \
-		${_fpuflags} --disable-nls --disable-sjlj-exceptions \
+		--disable-nls --disable-sjlj-exceptions \
 		--enable-threads=posix --enable-long-longx \
-		--enable-shared
+		--enable-shared --disable-libquadmath \
+		--disable-libstdcxx-pch ${_fpuflags}
 
 	make ${makejobs}
-	make install
 
-	touch ${wrksrc}/.gcc_final_done
+	touch ${wrksrc}/.gcc_build_done
 }
-
-_glibc_final() {
-	[ -f ${wrksrc}/.glibc_final_done ] && return 0
-
-	cd ${wrksrc}
-	msg_normal "Building final glibc for target\n"
-
-	[ ! -d glibc-final ] && mkdir glibc-final
-	cd glibc-final
-
-	echo "libc_cv_forced_unwind=yes" > config.cache
-	echo "libc_cv_c_cleanup=yes" >> config.cache
-
-	export CC="${_CROSS_TARGET}-gcc" LD="${_CROSS_TARGET}-ld" AS="${_CROSS_TARGET}-as"
-	export CFLAGS="-Os -pipe ${_archflags}"
-
-	../glibc-${_glibc_version}/configure \
-		--host=${_CROSS_TARGET} --prefix=/usr \
-		--with-headers=/usr/${_CROSS_TARGET}/usr/include \
-		--config-cache --enable-add-ons=nptl,ports \
-		--enable-obsolete-rpc --disable-profile \
-		${_fpuflags} --enable-kernel=2.6.27
-	
-	make ${makejobs}
-
-	touch ${wrksrc}/.glibc_final_done
-}
-
 
 do_build() {
 	unset LDFLAGS
@@ -310,16 +215,12 @@ do_build() {
 		fi
 	done
 
-	_linux_headers
 	_binutils_bootstrap
 	_gcc_bootstrap
+	_linux_headers
 	_glibc_headers
 	_glibc_build
-	_gcc_static
-	_gmp_static
-	_mpfr_build
-	_gcc_final
-	_glibc_final
+	_gcc_build
 }
 
 do_install() {
@@ -337,11 +238,7 @@ do_install() {
 	cd ${wrksrc}/binutils-build && make DESTDIR=${DESTDIR} install
 
 	# install cross gcc
-	cd ${wrksrc}/gcc-final && make DESTDIR=${DESTDIR} install
-
-	# install glibc for target
-	cd ${wrksrc}/glibc-final && \
-		make install_root=${DESTDIR}/usr/${_CROSS_TARGET} install
+	cd ${wrksrc}/gcc-build && make DESTDIR=${DESTDIR} install
 
 	# install linux API headers for MIPS
 	cd ${wrksrc}/linux-${_linux_version} && \
@@ -349,6 +246,10 @@ do_install() {
 		headers_install
 	rm -f $(find ${DESTDIR}/usr/${_CROSS_TARGET}/usr/include -name .install -or -name ..install.cmd)
 	rm -rf ${DESTDIR}/usr/${_CROSS_TARGET}/usr/include/drm
+
+	# install glibc for target
+	cd ${wrksrc}/glibc-build && \
+		make install_root=${DESTDIR}/usr/${_CROSS_TARGET} install install-headers
 
 	# Remove unnecessary stuff
 	rm -f ${DESTDIR}/usr/lib*/libiberty.a
