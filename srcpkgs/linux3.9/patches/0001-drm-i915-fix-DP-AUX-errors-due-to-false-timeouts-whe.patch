@@ -1,0 +1,53 @@
+From b75c5a66f0cc21a340beb462c4f051ee6cd53cb9 Mon Sep 17 00:00:00 2001
+From: Imre Deak <imre.deak@intel.com>
+Date: Wed, 1 May 2013 21:18:46 +0300
+Subject: [PATCH] drm/i915: fix DP AUX errors due to false timeouts when using
+ wait_event_timeout
+
+Due to possible scheduling latencies wait_event_timeout doesn't
+guarantee a non-zero return value, even if the condition becomes true
+before the specified timeout expires. Thus we can incorrectly signal a
+timeout and abort a DP AUX transaction.
+
+If wait_event_timeout returns 0, it's guaranteed that at least the
+specified timeout (minus one jiffies, see below) had passed, so we can
+fix this by checking the condition explicitly in this case.
+
+Also the timeout that wait_event_timeout() is guaranteed to wait if the
+condition doesn't become true is one less jiffies than what is passed to
+it as a parameter. This is because the absolute expiration time in
+schedule_timeout() may be calculated at a moment close to the next
+scheduling tick, when jiffies is incremented. So make sure we pass always
+a jiffies value of 2 or greater. Here this makes a difference only for
+HZ=100.
+
+This fixes DP AUX errors I saw during booting on an ILK.
+
+This should ideally be fixed in wait_event_timeout(), but that can take
+a while. Until that's done use this fix as a band-aid.
+
+Signed-off-by: Imre Deak <imre.deak@intel.com>
+---
+ drivers/gpu/drm/i915/intel_dp.c |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/intel_dp.c b/drivers/gpu/drm/i915/intel_dp.c
+index 8759fb1..7ce96c5 100644
+--- drivers/gpu/drm/i915/intel_dp.c
++++ drivers/gpu/drm/i915/intel_dp.c
+@@ -303,10 +303,10 @@ intel_dp_aux_wait_done(struct intel_dp *intel_dp, bool has_aux_irq)
+ #define C (((status = I915_READ_NOTRACE(ch_ctl)) & DP_AUX_CH_CTL_SEND_BUSY) == 0)
+ 	if (has_aux_irq)
+ 		done = wait_event_timeout(dev_priv->gmbus_wait_queue, C,
+-					  msecs_to_jiffies(10));
++					  msecs_to_jiffies(10) + 1);
+ 	else
+ 		done = wait_for_atomic(C, 10) == 0;
+-	if (!done)
++	if (!done && !(C))
+ 		DRM_ERROR("dp aux hw did not signal timeout (has irq: %i)!\n",
+ 			  has_aux_irq);
+ #undef C
+-- 
+1.7.10.4
+
