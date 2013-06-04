@@ -1,11 +1,13 @@
 # Template file for 'xen'
 pkgname=xen
-version=4.1.2
+version=4.2.2
 wrksrc=xen-${version}
-revision=2
-makedepends="which lzo-devel openssl-devel e2fsprogs-devel zlib-devel gnutls-devel>=3.1.5
+revision=1
+hostmakedepends="which wget bison pkg-config"
+makedepends="lzo-devel openssl-devel e2fsprogs-devel zlib-devel gnutls-devel>=3.1.5
  libbluetooth-devel pciutils-devel libX11-devel libXext-devel SDL-devel MesaLib-devel
- ncurses-devel liblzma-devel python-devel dev86 acpica-utils wget git"
+ ncurses-devel liblzma-devel python-devel yajl-devel libglib-devel iproute2
+ bridge-utils dev86 acpica-utils"
 if [ "${XBPS_MACHINE}" = "x86_64" ]; then
 	makedepends+=" gcc-multilib"
 fi
@@ -14,59 +16,84 @@ maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://xen.org"
 license="GPL-2"
 distfiles="http://bits.xensource.com/oss-xen/release/$version/xen-$version.tar.gz"
-checksum=7d9c93057cf480d3f1efa792b19285a84fa3c06060ea5c5c453be00887389b0d
+checksum=c9bfe91a5e72f8545acebad9889d64368020359bfe18044c0e683133e55ae005
 long_desc="
  This package provides the official Xen Hypervisor and related utilities
  for starting/stopping/accessing unprivileged domains (domUs)."
 
-broken_as_needed=yes
+do_configure() {
+	unset CC LD AR AS RANLIB CPP CFLAGS CPPFLAGS LDFLAGS
+	./configure --prefix=/usr
+}
 
 do_build() {
 	install -d ${DESTDIR}
-	cd ${DESTDIR} && ln -sf . install
+	cd ${DESTDIR}
+	ln -sf . install
 	if [ "${XBPS_MACHINE}" = "x86_64" ]; then
 		install -d ${DESTDIR}/usr/lib
-		cd ${DESTDIR}/usr && ln -s lib lib64 && cd ${wrksrc}
+		cd ${DESTDIR}/usr
+		ln -sf lib lib64
+		cd ${wrksrc}
 	fi
-	cd ${wrksrc} && make ${makejobs} DISTDIR=${DESTDIR} xen tools
+	unset CC LD AR AS RANLIB CPP CFLAGS CPPFLAGS LDFLAGS
+	make ${makejobs} DISTDIR=${DESTDIR}
 }
 
 do_install() {
 	if [ "${XBPS_MACHINE}" = "x86_64" ]; then
 		install -d ${DESTDIR}/usr/lib
-		cd ${DESTDIR}/usr && ln -s lib lib64 && cd ${wrksrc}
+		cd ${DESTDIR}/usr
+		ln -sf lib lib64
+		cd ${wrksrc}
 	fi
-
+	unset CC LD AR AS RANLIB CPP CFLAGS CPPFLAGS LDFLAGS
 	make DESTDIR=${DESTDIR} install-xen install-tools
-	rm -f ${DESTDIR}/usr/lib/lib
-
-	# Remove unneeded stuff.
-	rm -f ${DESTDIR}/install ${DESTDIR}/usr/lib64
 
 	# Move example config files into correct directory.
 	vmkdir usr/share/examples/xen
-	mv ${DESTDIR}/etc/xen/xmexample* ${DESTDIR}/usr/share/examples/xen
+	mv ${DESTDIR}/etc/xen/x*example* ${DESTDIR}/usr/share/examples/xen
 	mv ${DESTDIR}/etc/xen/cpupool ${DESTDIR}/usr/share/examples/xen
+
+	# Remove useless stuff.
+	rm -rf ${DESTDIR}/etc/init.d ${DESTDIR}/usr/local
+	rm -f ${DESTDIR}/install.sh ${DESTDIR}/usr/lib64
+	rm -rf ${DESTDIR}/usr/bin/qemu-*-xen
+	rm -rf ${DESTDIR}/usr/share/qemu-xen
+	rm -f ${DESTDIR}/boot/xen{,-4,-4.2}.gz
+	rm -f ${DESTDIR}/usr/sbin/xen-python-path
+
+	# Move bash-completion to the correct dir.
+	vmkdir usr/share/bash-completion/completions
+	mv ${DESTDIR}/etc/bash_completion.d/* \
+		${DESTDIR}/usr/share/bash-completion/completions
+
+	# Install systemd services.
+	vmkdir usr/lib/systemd/system
+	install -m644 ${FILESDIR}/*.{mount,service} ${DESTDIR}/usr/lib/systemd/system
+	vmkdir usr/lib/modules-load.d
+	install -m644 ${FILESDIR}/xen.conf ${DESTDIR}/usr/lib/modules-load.d
+	install -Dm644 ${FILESDIR}/tmpfiles.d-xen.conf \
+		${DESTDIR}/usr/lib/tmpfiles.d/xen.conf
+
+	# Move bins to /usr/bin.
+	mv ${DESTDIR}/usr/sbin/* ${DESTDIR}/usr/bin/
 }
 
 xen-devel_package() {
-	depends="xen"
-	short_desc="${sourcepkg} development files"
+	short_desc="Xen development files"
 	pkg_install() {
 		vmove usr/include
-		vmove "usr/lib/lib*.*a"
+		vmove "usr/lib/*.a"
 	}
 }
 
 xen_package() {
 	make_dirs="
 		/var/run/xenstored	755	root	root
-		/var/run/xend/boot	755	root	root
 		/var/lib/xenstored	755	root 	root
 		/var/lib/xen/xenpaging	755	root	root
 		/var/xen/dump		755	root	root
-		/var/log/xen		755	root	root
-		/var/lock/subsys	755	root	root
 		/etc/xen/auto		755	root	root"
 	conf_files="
 		/etc/default/xendomains
@@ -76,11 +103,15 @@ xen_package() {
 		/etc/xen/xend-config.sxp
 		/etc/xen/xend-pci-quirks.sxp
 		/etc/xen/xend-pci-permissive.sxp"
+	nostrip_files="
+		openbios-ppc
+		openbios-sparc32
+		openbios-sparc64
+		palcode-clipper
+		xen-syms-${version}"
 	pycompile_module="xen grub"
 	depends="iproute2 bridge-utils"
-	nostrip=yes
 	pkg_install() {
-		vmove etc
-		vmove usr
+		vmove all
 	}
 }
