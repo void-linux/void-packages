@@ -1,0 +1,255 @@
+From 3f92e4b4b61042391bd44de4dceb18177df0dd57 Mon Sep 17 00:00:00 2001
+From: Lennart Poettering <lennart@poettering.net>
+Date: Thu, 16 May 2013 00:19:03 +0200
+Subject: [PATCH] utmp: turn systemd-update-utmp-shutdown.service into a normal
+ runtime service
+
+With this change systemd-update-utmp-shutdown.service is replaced by
+systemd-update-utmp.service which is started at boot and stays around
+until shutdown. This allows us to properly order the unit against both
+/var/log and auditd.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=853104
+https://bugs.freedesktop.org/show_bug.cgi?id=64365
+---
+ Makefile-man.am                                     | 12 ++++++------
+ Makefile.am                                         |  8 ++++----
+ ....service.xml => systemd-update-utmp.service.xml} | 16 ++++++++--------
+ src/update-utmp/update-utmp.c                       |  2 +-
+ units/.gitignore                                    |  2 +-
+ units/systemd-update-utmp-runlevel.service.in       |  8 +++++---
+ units/systemd-update-utmp-shutdown.service.in       | 19 -------------------
+ units/systemd-update-utmp.service.in                | 21 +++++++++++++++++++++
+ 8 files changed, 46 insertions(+), 42 deletions(-)
+ rename man/{systemd-update-utmp-runlevel.service.xml => systemd-update-utmp.service.xml} (82%)
+ delete mode 100644 units/systemd-update-utmp-shutdown.service.in
+ create mode 100644 units/systemd-update-utmp.service.in
+
+diff --git a/Makefile-man.am b/Makefile-man.am
+index 7d62094..5888158 100644
+--- Makefile-man.am
++++ Makefile-man.am
+@@ -72,7 +72,7 @@ MANPAGES += \
+ 	man/systemd-tmpfiles.8 \
+ 	man/systemd-tty-ask-password-agent.1 \
+ 	man/systemd-udevd.service.8 \
+-	man/systemd-update-utmp-runlevel.service.8 \
++	man/systemd-update-utmp.service.8 \
+ 	man/systemd.1 \
+ 	man/systemd.automount.5 \
+ 	man/systemd.device.5 \
+@@ -191,7 +191,7 @@ MANPAGES_ALIAS += \
+ 	man/systemd-udevd-control.socket.8 \
+ 	man/systemd-udevd-kernel.socket.8 \
+ 	man/systemd-udevd.8 \
+-	man/systemd-update-utmp-shutdown.service.8 \
++	man/systemd-update-utmp-runlevel.service.8 \
+ 	man/systemd-update-utmp.8 \
+ 	man/systemd-user.conf.5
+ man/SD_ALERT.3: man/sd-daemon.3
+@@ -289,8 +289,8 @@ man/systemd-tmpfiles-setup.service.8: man/systemd-tmpfiles.8
+ man/systemd-udevd-control.socket.8: man/systemd-udevd.service.8
+ man/systemd-udevd-kernel.socket.8: man/systemd-udevd.service.8
+ man/systemd-udevd.8: man/systemd-udevd.service.8
+-man/systemd-update-utmp-shutdown.service.8: man/systemd-update-utmp-runlevel.service.8
+-man/systemd-update-utmp.8: man/systemd-update-utmp-runlevel.service.8
++man/systemd-update-utmp-runlevel.service.8: man/systemd-update-utmp.service.8
++man/systemd-update-utmp.8: man/systemd-update-utmp.service.8
+ man/systemd-user.conf.5: man/systemd-system.conf.5
+ man/SD_ALERT.html: man/sd-daemon.html
+ 	$(html-alias)
+@@ -577,10 +577,10 @@ man/systemd-udevd-kernel.socket.html: man/systemd-udevd.service.html
+ man/systemd-udevd.html: man/systemd-udevd.service.html
+ 	$(html-alias)
+ 
+-man/systemd-update-utmp-shutdown.service.html: man/systemd-update-utmp-runlevel.service.html
++man/systemd-update-utmp-runlevel.service.html: man/systemd-update-utmp.service.html
+ 	$(html-alias)
+ 
+-man/systemd-update-utmp.html: man/systemd-update-utmp-runlevel.service.html
++man/systemd-update-utmp.html: man/systemd-update-utmp.service.html
+ 	$(html-alias)
+ 
+ man/systemd-user.conf.html: man/systemd-system.conf.html
+diff --git a/Makefile.am b/Makefile.am
+index 8d8139c..4c5e6fc 100644
+--- Makefile.am
++++ Makefile.am
+@@ -417,8 +417,8 @@ nodist_systemunit_DATA = \
+ 	units/systemd-initctl.service \
+ 	units/systemd-shutdownd.service \
+ 	units/systemd-remount-fs.service \
++	units/systemd-update-utmp.service \
+ 	units/systemd-update-utmp-runlevel.service \
+-	units/systemd-update-utmp-shutdown.service \
+ 	units/systemd-tmpfiles-setup-dev.service \
+ 	units/systemd-tmpfiles-setup.service \
+ 	units/systemd-tmpfiles-clean.service \
+@@ -463,8 +463,8 @@ EXTRA_DIST += \
+ 	units/systemd-initctl.service.in \
+ 	units/systemd-shutdownd.service.in \
+ 	units/systemd-remount-fs.service.in \
++	units/systemd-update-utmp.service.in \
+ 	units/systemd-update-utmp-runlevel.service.in \
+-	units/systemd-update-utmp-shutdown.service.in \
+ 	units/systemd-tmpfiles-setup-dev.service.in \
+ 	units/systemd-tmpfiles-setup.service.in \
+ 	units/systemd-tmpfiles-clean.service.in \
+@@ -4070,8 +4070,8 @@ RUNLEVEL4_TARGET_WANTS += \
+ RUNLEVEL5_TARGET_WANTS += \
+ 	systemd-update-utmp-runlevel.service
+ endif
+-SHUTDOWN_TARGET_WANTS += \
+-	systemd-update-utmp-shutdown.service
++SYSINIT_TARGET_WANTS += \
++	systemd-update-utmp.service
+ LOCAL_FS_TARGET_WANTS += \
+ 	systemd-remount-fs.service \
+ 	systemd-fsck-root.service \
+diff --git a/man/systemd-update-utmp-runlevel.service.xml b/man/systemd-update-utmp.service.xml
+similarity index 82%
+rename from man/systemd-update-utmp-runlevel.service.xml
+rename to man/systemd-update-utmp.service.xml
+index 867b958..846fc95 100644
+--- man/systemd-update-utmp-runlevel.service.xml
++++ man/systemd-update-utmp.service.xml
+@@ -19,10 +19,10 @@
+   You should have received a copy of the GNU Lesser General Public License
+   along with systemd; If not, see <http://www.gnu.org/licenses/>.
+ -->
+-<refentry id="systemd-update-utmp-runlevel.service">
++<refentry id="systemd-update-utmp.service">
+ 
+         <refentryinfo>
+-                <title>systemd-update-utmp-runlevel.service</title>
++                <title>systemd-update-utmp.service</title>
+                 <productname>systemd</productname>
+ 
+                 <authorgroup>
+@@ -36,21 +36,21 @@
+         </refentryinfo>
+ 
+         <refmeta>
+-                <refentrytitle>systemd-update-utmp-runlevel.service</refentrytitle>
++                <refentrytitle>systemd-update-utmp.service</refentrytitle>
+                 <manvolnum>8</manvolnum>
+         </refmeta>
+ 
+         <refnamediv>
++                <refname>systemd-update-utmp.service</refname>
+                 <refname>systemd-update-utmp-runlevel.service</refname>
+-                <refname>systemd-update-utmp-shutdown.service</refname>
+                 <refname>systemd-update-utmp</refname>
+-                <refpurpose>Write audit and utmp updates at runlevel
++                <refpurpose>Write audit and utmp updates at bootup, runlevel
+                 changes and shutdown</refpurpose>
+         </refnamediv>
+ 
+         <refsynopsisdiv>
++                <para><filename>systemd-update-utmp.service</filename></para>
+                 <para><filename>systemd-update-utmp-runlevel.service</filename></para>
+-                <para><filename>systemd-update-utmp-shutdown.service</filename></para>
+                 <para><filename>/usr/lib/systemd/systemd-update-utmp</filename></para>
+         </refsynopsisdiv>
+ 
+@@ -60,8 +60,8 @@
+                 <para><filename>systemd-update-utmp-runlevel.service</filename>
+                 is a service that writes SysV runlevel changes to utmp
+                 and wtmp, as well as the audit logs, as they
+-                occur. <filename>systemd-update-utmp-shutdown.service</filename>
+-                does the same for shut-down requests.</para>
++                occur. <filename>systemd-update-utmp.service</filename>
++                does the same for system reboots and shut-down requests.</para>
+         </refsect1>
+ 
+         <refsect1>
+diff --git a/src/update-utmp/update-utmp.c b/src/update-utmp/update-utmp.c
+index 9184025..202aa98 100644
+--- src/update-utmp/update-utmp.c
++++ src/update-utmp/update-utmp.c
+@@ -104,7 +104,7 @@ static int get_current_runlevel(Context *c) {
+                 { '3', SPECIAL_RUNLEVEL3_TARGET },
+                 { '4', SPECIAL_RUNLEVEL4_TARGET },
+                 { '2', SPECIAL_RUNLEVEL2_TARGET },
+-                { 'S', SPECIAL_RESCUE_TARGET },
++                { '1', SPECIAL_RESCUE_TARGET },
+         };
+         const char
+                 *interface = "org.freedesktop.systemd1.Unit",
+diff --git a/units/systemd-update-utmp-runlevel.service.in b/units/systemd-update-utmp-runlevel.service.in
+index 27fae2c..99783e2 100644
+--- units/systemd-update-utmp-runlevel.service.in
++++ units/systemd-update-utmp-runlevel.service.in
+@@ -7,12 +7,14 @@
+ 
+ [Unit]
+ Description=Update UTMP about System Runlevel Changes
+-Documentation=man:systemd-update-utmp-runlevel.service(8) man:utmp(5)
++Documentation=man:systemd-update-utmp.service(8) man:utmp(5)
+ DefaultDependencies=no
+ RequiresMountsFor=/var/log/wtmp
+-After=systemd-remount-fs.service systemd-tmpfiles-setup.service auditd.service
++Conflicts=shutdown.target
++Requisite=systemd-update-utmp.service
++After=systemd-update-utmp.service
+ After=runlevel1.target runlevel2.target runlevel3.target runlevel4.target runlevel5.target
+-Before=final.target
++Before=shutdown.target
+ 
+ [Service]
+ Type=oneshot
+diff --git a/units/systemd-update-utmp-shutdown.service.in b/units/systemd-update-utmp-shutdown.service.in
+deleted file mode 100644
+index aa93562..0000000
+--- units/systemd-update-utmp-shutdown.service.in
++++ /dev/null
+@@ -1,19 +0,0 @@
+-#  This file is part of systemd.
+-#
+-#  systemd is free software; you can redistribute it and/or modify it
+-#  under the terms of the GNU Lesser General Public License as published by
+-#  the Free Software Foundation; either version 2.1 of the License, or
+-#  (at your option) any later version.
+-
+-[Unit]
+-Description=Update UTMP about System Shutdown
+-Documentation=man:systemd-update-utmp-runlevel.service(8) man:utmp(5)
+-DefaultDependencies=no
+-RequiresMountsFor=/var/log/wtmp
+-After=systemd-remount-fs.service systemd-tmpfiles-setup.service auditd.service
+-After=systemd-update-utmp-runlevel.service
+-Before=final.target
+-
+-[Service]
+-Type=oneshot
+-ExecStart=@rootlibexecdir@/systemd-update-utmp shutdown
+diff --git a/units/systemd-update-utmp.service.in b/units/systemd-update-utmp.service.in
+new file mode 100644
+index 0000000..e7c20a5
+--- /dev/null
++++ units/systemd-update-utmp.service.in
+@@ -0,0 +1,21 @@
++#  This file is part of systemd.
++#
++#  systemd is free software; you can redistribute it and/or modify it
++#  under the terms of the GNU Lesser General Public License as published by
++#  the Free Software Foundation; either version 2.1 of the License, or
++#  (at your option) any later version.
++
++[Unit]
++Description=Update UTMP about System Reboot/Shutdown
++Documentation=man:systemd-update-utmp.service(8) man:utmp(5)
++DefaultDependencies=no
++RequiresMountsFor=/var/log/wtmp
++Conflicts=shutdown.target
++After=systemd-readahead-collect.service systemd-readahead-replay.service systemd-remount-fs.service systemd-tmpfiles-setup.service auditd.service
++Before=sysinit.target shutdown.target
++
++[Service]
++Type=oneshot
++RemainAfterExit=yes
++ExecStart=@rootlibexecdir@/systemd-update-utmp reboot
++ExecStop=@rootlibexecdir@/systemd-update-utmp shutdown
+-- 
+1.8.2.3
+
