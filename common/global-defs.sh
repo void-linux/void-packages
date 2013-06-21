@@ -11,7 +11,7 @@
 # increased to "reproduce" the build behaviour (somewhat :-).
 
 # xbps-src version.
-XBPS_SRC_REQ=57
+XBPS_SRC_REQ=58
 
 # XBPS utils version.
 XBPS_UTILS_REQ=0.24
