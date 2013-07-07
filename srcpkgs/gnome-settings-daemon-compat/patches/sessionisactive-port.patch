@@ -1,0 +1,73 @@
+From 32b0b2d85629ae765543df1d940a5ca3c37dcec1 Mon Sep 17 00:00:00 2001
+From: Colin Walters <walters@verbum.org>
+Date: Tue, 06 Nov 2012 22:47:05 +0000
+Subject: [wip] Port to gnome-session's SessionIsActive property
+
+Rather than maintaining the systemd code here, monitor gnome-session's
+SessionIsActive property.  This allows us to drop the compile-time
+dependency on systemd.
+
+The power plugin is declared dependent on systemd at runtime, but the
+rest of the code should operate in more "basic functionality" mode.
+---
+(limited to 'plugins/automount')
+
+diff --git a/plugins/automount/gsd-automount-manager.c b/plugins/automount/gsd-automount-manager.c
+index 7912f19..d8e9e07 100644
+--- a/plugins/automount/gsd-automount-manager.c
++++ b/plugins/automount/gsd-automount-manager.c
+@@ -42,7 +42,7 @@ struct GsdAutomountManagerPrivate
+ 	GVolumeMonitor *volume_monitor;
+ 	unsigned int automount_idle_id;
+ 
+-        GnomeSettingsSession *session;
++        GDBusProxy *session;
+         gboolean session_is_active;
+         gboolean screensaver_active;
+         guint ss_watch_id;
+@@ -288,17 +288,21 @@ mount_added_callback (GVolumeMonitor *monitor,
+ 
+ 
+ static void
+-session_state_changed (GnomeSettingsSession *session, GParamSpec *pspec, gpointer user_data)
++session_props_changed (GDBusProxy *session, GVariant *v, char **props, gpointer user_data)
+ {
+         GsdAutomountManager *manager = user_data;
+         GsdAutomountManagerPrivate *p = manager->priv;
++        GVariant *active_v = NULL;
++        gboolean is_active;
+ 
+-        if (gnome_settings_session_get_state (session) == GNOME_SETTINGS_SESSION_STATE_ACTIVE) {
+-                p->session_is_active = TRUE;
+-        }
+-        else {
+-                p->session_is_active = FALSE;
+-        }
++        active_v = g_dbus_proxy_get_cached_property (session, "SessionIsActive");
++        if (!active_v)
++                return;
++
++        g_variant_get (active_v, "b", &is_active);
++        g_variant_unref (active_v);
++        g_printerr ("AUTOMOUNT: session is active: %d -> %d\n", p->session_is_active, is_active);
++        p->session_is_active = is_active;
+ 
+         if (!p->session_is_active) {
+                 if (p->volume_queue != NULL) {
+@@ -311,10 +315,10 @@ session_state_changed (GnomeSettingsSession *session, GParamSpec *pspec, gpointe
+ static void
+ do_initialize_session (GsdAutomountManager *manager)
+ {
+-        manager->priv->session = gnome_settings_session_new ();
+-        g_signal_connect (manager->priv->session, "notify::state",
+-                          G_CALLBACK (session_state_changed), manager);
+-        session_state_changed (manager->priv->session, NULL, manager);
++        manager->priv->session = gnome_settings_session_get_session_proxy ();
++        g_signal_connect (manager->priv->session, "g-properties-changed",
++                          G_CALLBACK (session_props_changed), manager);
++        session_props_changed (manager->priv->session, NULL, NULL, manager);
+ }
+ 
+ #define SCREENSAVER_NAME "org.gnome.ScreenSaver"
+--
+cgit v0.9.1

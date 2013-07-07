@@ -1,0 +1,160 @@
+diff -Naur gnome-settings-daemon-3.6.4.orig/plugins/automount/gsd-automount-manager.c gnome-settings-daemon-3.6.4/plugins/automount/gsd-automount-manager.c
+--- gnome-settings-daemon-3.6.4.orig/plugins/automount/gsd-automount-manager.c	2013-04-10 17:19:51.796298000 +0200
++++ gnome-settings-daemon-3.6.4/plugins/automount/gsd-automount-manager.c	2013-04-10 17:31:27.382311947 +0200
+@@ -28,13 +28,43 @@
+ #include <glib/gi18n.h>
+ #include <gio/gio.h>
+ 
+-#include "gnome-settings-profile.h"
+-#include "gnome-settings-session.h"
+ #include "gsd-automount-manager.h"
+ #include "gsd-autorun.h"
+ 
+ #define GSD_AUTOMOUNT_MANAGER_GET_PRIVATE(o) (G_TYPE_INSTANCE_GET_PRIVATE ((o), GSD_TYPE_AUTOMOUNT_MANAGER, GsdAutomountManagerPrivate))
+ 
++#define GNOME_SESSION_DBUS_NAME      "org.gnome.SessionManager"
++#define GNOME_SESSION_DBUS_OBJECT    "/org/gnome/SessionManager"
++#define GNOME_SESSION_DBUS_INTERFACE "org.gnome.SessionManager"
++
++GDBusProxy *
++get_session_proxy (void)
++{
++        static GDBusProxy *session_proxy;
++        GError *error =  NULL;
++
++        if (session_proxy != NULL) {
++                g_object_ref (session_proxy);
++        } else {
++                session_proxy = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SESSION,
++                                                               G_DBUS_PROXY_FLAGS_NONE,
++                                                               NULL,
++                                                               GNOME_SESSION_DBUS_NAME,
++                                                               GNOME_SESSION_DBUS_OBJECT,
++                                                               GNOME_SESSION_DBUS_INTERFACE,
++                                                               NULL,
++                                                               &error);
++                if (error) {
++                        g_warning ("Failed to connect to the session manager: %s", error->message);
++                        g_error_free (error);
++                } else {
++                        g_object_add_weak_pointer (G_OBJECT (session_proxy), (gpointer*)&session_proxy);
++                }
++        }
++
++        return session_proxy;
++}
++
+ struct GsdAutomountManagerPrivate
+ {
+         GSettings   *settings;
+@@ -315,7 +345,7 @@
+ static void
+ do_initialize_session (GsdAutomountManager *manager)
+ {
+-        manager->priv->session = gnome_settings_session_get_session_proxy ();
++        manager->priv->session = get_session_proxy ();
+         g_signal_connect (manager->priv->session, "g-properties-changed",
+                           G_CALLBACK (session_props_changed), manager);
+         session_props_changed (manager->priv->session, NULL, NULL, manager);
+@@ -490,13 +520,10 @@
+                                        GError              **error)
+ {
+         g_debug ("Starting automounting manager");
+-        gnome_settings_profile_start (NULL);
+ 
+         manager->priv->settings = g_settings_new ("org.gnome.desktop.media-handling");
+         setup_automounter (manager);
+ 
+-        gnome_settings_profile_end (NULL);
+-
+         return TRUE;
+ }
+ 
+diff -Naur gnome-settings-daemon-3.6.4.orig/plugins/automount/Makefile.am gnome-settings-daemon-3.6.4/plugins/automount/Makefile.am
+--- gnome-settings-daemon-3.6.4.orig/plugins/automount/Makefile.am	2013-01-10 14:37:58.000000000 +0100
++++ gnome-settings-daemon-3.6.4/plugins/automount/Makefile.am	2013-04-10 17:33:09.697997021 +0200
+@@ -8,7 +8,6 @@
+ 	gsd-autorun.h
+ 
+ gnome_fallback_mount_helper_CPPFLAGS = \
+-	-I$(top_srcdir)/gnome-settings-daemon		\
+ 	-DGNOME_SETTINGS_LOCALEDIR=\""$(datadir)/locale"\" \
+ 	$(AM_CPPFLAGS)
+ 
+@@ -20,8 +19,7 @@
+ gnome_fallback_mount_helper_LDADD =	\
+ 	$(SETTINGS_PLUGIN_LIBS)		\
+ 	$(SYSTEMD_LIBS)			\
+-	$(AUTOMOUNT_LIBS)		\
+-	$(top_builddir)/gnome-settings-daemon/libgsd.la
++	$(AUTOMOUNT_LIBS)
+ 
+ autostartdir = $(sysconfdir)/xdg/autostart
+ autostart_in_files = gnome-fallback-mount-helper.desktop.in
+diff -Naur gnome-settings-daemon-3.6.4.orig/plugins/background/gsd-background-manager.c gnome-settings-daemon-3.6.4/plugins/background/gsd-background-manager.c
+--- gnome-settings-daemon-3.6.4.orig/plugins/background/gsd-background-manager.c	2013-04-10 17:19:51.792965000 +0200
++++ gnome-settings-daemon-3.6.4/plugins/background/gsd-background-manager.c	2013-04-10 17:22:46.930334951 +0200
+@@ -42,7 +42,6 @@
+ #include <libgnome-desktop/gnome-bg.h>
+ #include <X11/Xatom.h>
+ 
+-#include "gnome-settings-profile.h"
+ #include "gsd-background-manager.h"
+ 
+ #define GSD_BACKGROUND_MANAGER_GET_PRIVATE(o) (G_TYPE_INSTANCE_GET_PRIVATE ((o), GSD_TYPE_BACKGROUND_MANAGER, GsdBackgroundManagerPrivate))
+@@ -85,8 +84,6 @@
+         int         i;
+ 
+ 
+-        gnome_settings_profile_start (NULL);
+-
+         display = gdk_display_get_default ();
+         n_screens = gdk_display_get_n_screens (display);
+ 
+@@ -121,8 +118,6 @@
+ 
+                 cairo_surface_destroy (surface);
+         }
+-
+-        gnome_settings_profile_end (NULL);
+ }
+ 
+ static void
+@@ -309,14 +304,11 @@
+         gboolean show_desktop_icons;
+ 
+         g_debug ("Starting background manager");
+-        gnome_settings_profile_start (NULL);
+ 
+         manager->priv->settings = g_settings_new ("org.gnome.desktop.background");
+ 
+         setup_bg (manager);
+ 
+-        gnome_settings_profile_end (NULL);
+-
+         return TRUE;
+ }
+ 
+diff -Naur gnome-settings-daemon-3.6.4.orig/plugins/background/Makefile.am gnome-settings-daemon-3.6.4/plugins/background/Makefile.am
+--- gnome-settings-daemon-3.6.4.orig/plugins/background/Makefile.am	2013-04-10 17:43:32.768975155 +0200
++++ gnome-settings-daemon-3.6.4/plugins/background/Makefile.am	2013-04-10 17:43:19.115328380 +0200
+@@ -6,18 +6,16 @@
+ 	gsd-background-manager.h
+ 
+ gnome_fallback_background_helper_CPPFLAGS = \
+-	-I$(top_srcdir)/gnome-settings-daemon		\
+ 	-DGNOME_SETTINGS_LOCALEDIR=\""$(datadir)/locale"\" \
+ 	$(AM_CPPFLAGS)
+ 
+ gnome_fallback_background_helper_CFLAGS =	\
+ 	$(SETTINGS_PLUGIN_CFLAGS)	\
+ 	$(BACKGROUND_CFLAGS)
+ 
+ gnome_fallback_background_helper_LDADD =	\
+ 	$(SETTINGS_PLUGIN_LIBS)		\
+-	$(BACKGROUND_LIBS)		\
+-	$(top_builddir)/gnome-settings-daemon/libgsd.la
++	$(BACKGROUND_LIBS)
+ 
+ autostartdir = $(sysconfdir)/xdg/autostart
+ autostart_in_files = gnome-fallback-background-helper.desktop.in
