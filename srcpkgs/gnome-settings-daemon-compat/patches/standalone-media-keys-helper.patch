@@ -1,0 +1,564 @@
+diff -Naur gnome-settings-daemon-3.6.4.orig/data/org.gnome.settings-daemon.plugins.gschema.xml.in.in gnome-settings-daemon-3.6.4/data/org.gnome.settings-daemon.plugins.gschema.xml.in.in
+--- gnome-settings-daemon-3.6.4.orig/data/org.gnome.settings-daemon.plugins.gschema.xml.in.in	2013-04-24 03:11:02.893859531 +0200
++++ gnome-settings-daemon-3.6.4/data/org.gnome.settings-daemon.plugins.gschema.xml.in.in	2013-04-24 13:43:11.128884064 +0200
+@@ -9,7 +9,6 @@
+     <child name="gsdwacom" schema="org.gnome.settings-daemon.plugins.gsdwacom"/>
+     <child name="housekeeping" schema="org.gnome.settings-daemon.plugins.housekeeping"/>
+     <child name="keyboard" schema="org.gnome.settings-daemon.plugins.keyboard"/>
+-    <child name="media-keys" schema="org.gnome.settings-daemon.plugins.media-keys"/>
+     <child name="mouse" schema="org.gnome.settings-daemon.plugins.mouse"/>
+     <child name="orientation" schema="org.gnome.settings-daemon.plugins.orientation"/>
+     <child name="power" schema="org.gnome.settings-daemon.plugins.power"/>
+diff -Naur gnome-settings-daemon-3.6.4.orig/plugins/media-keys/gnome-fallback-media-keys-helper.c gnome-settings-daemon-3.6.4/plugins/media-keys/gnome-fallback-media-keys-helper.c
+--- gnome-settings-daemon-3.6.4.orig/plugins/media-keys/gnome-fallback-media-keys-helper.c	1970-01-01 01:00:00.000000000 +0100
++++ gnome-settings-daemon-3.6.4/plugins/media-keys/gnome-fallback-media-keys-helper.c	2013-04-24 13:43:11.132217470 +0200
+@@ -0,0 +1,65 @@
++/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 8 -*-
++ *
++ * Copyright (C) 2010 Red Hat, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * Author: Tomas Bzatek <tbzatek@redhat.com>
++ */
++
++#include "config.h"
++
++#include <glib.h>
++#include <glib/gi18n.h>
++#include <unistd.h>
++#include <gtk/gtk.h>
++
++#include "gsd-media-keys-manager.h"
++
++int
++main (int argc,
++      char **argv)
++{
++        GMainLoop *loop;
++        GsdMediaKeysManager *manager;
++        GError *error = NULL;
++
++        g_type_init ();
++        gtk_init (&argc, &argv);
++
++        bindtextdomain (GETTEXT_PACKAGE, GNOME_SETTINGS_LOCALEDIR);
++        bind_textdomain_codeset (GETTEXT_PACKAGE, "UTF-8");
++        textdomain (GETTEXT_PACKAGE);
++
++        loop = g_main_loop_new (NULL, FALSE);
++        manager = gsd_media_keys_manager_new ();
++
++        gsd_media_keys_manager_start (manager, &error);
++
++        if (error != NULL) {
++                g_printerr ("Unable to start the media-keys manager: %s",
++                            error->message);
++
++                g_error_free (error);
++                _exit (1);
++        }
++
++        g_main_loop_run (loop);
++
++        gsd_media_keys_manager_stop (manager);
++        g_main_loop_unref (loop);
++
++        return 0;
++}
+diff -Naur gnome-settings-daemon-3.6.4.orig/plugins/media-keys/gnome-fallback-media-keys-helper.desktop.in.in gnome-settings-daemon-3.6.4/plugins/media-keys/gnome-fallback-media-keys-helper.desktop.in.in
+--- gnome-settings-daemon-3.6.4.orig/plugins/media-keys/gnome-fallback-media-keys-helper.desktop.in.in	1970-01-01 01:00:00.000000000 +0100
++++ gnome-settings-daemon-3.6.4/plugins/media-keys/gnome-fallback-media-keys-helper.desktop.in.in	2013-04-24 13:43:11.132217470 +0200
+@@ -0,0 +1,12 @@
++[Desktop Entry]
++_Name=Media keys
++_Comment=Media keys plugin
++Exec=@LIBEXECDIR@/gnome-fallback-media-keys-helper
++Icon=multimedia
++Terminal=false
++Type=Application
++Categories=
++NoDisplay=true
++OnlyShowIn=GNOME;Unity;
++X-GNOME-Autostart-Notify=true
++AutostartCondition=GNOME3 if-session gnome-fallback
+diff -Naur gnome-settings-daemon-3.6.4.orig/plugins/media-keys/gsd-media-keys-manager.c gnome-settings-daemon-3.6.4/plugins/media-keys/gsd-media-keys-manager.c
+--- gnome-settings-daemon-3.6.4.orig/plugins/media-keys/gsd-media-keys-manager.c	2013-01-10 14:37:58.000000000 +0100
++++ gnome-settings-daemon-3.6.4/plugins/media-keys/gsd-media-keys-manager.c	2013-04-24 13:43:11.132217470 +0200
+@@ -44,7 +44,6 @@
+ #include <gudev/gudev.h>
+ #endif
+ 
+-#include "gnome-settings-profile.h"
+ #include "gsd-marshal.h"
+ #include "gsd-media-keys-manager.h"
+ 
+@@ -622,8 +621,6 @@
+         char **custom_paths;
+         int i;
+ 
+-        gnome_settings_profile_start (NULL);
+-
+         gdk_error_trap_push ();
+ 
+         manager->priv->keys = g_ptr_array_new_with_free_func ((GDestroyNotify) media_key_free);
+@@ -661,8 +658,6 @@
+         gdk_flush ();
+         if (gdk_error_trap_pop ())
+                 g_warning ("Grab failed for some keys, another application may already have access the them.");
+-
+-        gnome_settings_profile_end (NULL);
+ }
+ 
+ static void
+@@ -2090,7 +2085,6 @@
+         char *theme_name;
+ 
+         g_debug ("Starting media_keys manager");
+-        gnome_settings_profile_start (NULL);
+ 
+         manager->priv->settings = g_settings_new (SETTINGS_BINDING_DIR);
+         g_signal_connect (G_OBJECT (manager->priv->settings), "changed",
+@@ -2137,19 +2131,14 @@
+ 
+         /* Start filtering the events */
+         for (l = manager->priv->screens; l != NULL; l = l->next) {
+-                gnome_settings_profile_start ("gdk_window_add_filter");
+-
+                 g_debug ("adding key filter for screen: %d",
+                          gdk_screen_get_number (l->data));
+ 
+                 gdk_window_add_filter (gdk_screen_get_root_window (l->data),
+                                        (GdkFilterFunc) filter_key_events,
+                                        manager);
+-                gnome_settings_profile_end ("gdk_window_add_filter");
+         }
+ 
+-        gnome_settings_profile_end (NULL);
+-
+         manager->priv->start_idle_id = 0;
+ 
+         return FALSE;
+@@ -2161,8 +2150,6 @@
+ {
+         const char * const subsystems[] = { "input", "usb", "sound", NULL };
+ 
+-        gnome_settings_profile_start (NULL);
+-
+         if (supports_xinput2_devices (&manager->priv->opcode) == FALSE) {
+                 g_debug ("No Xinput2 support, disabling plugin");
+                 return TRUE;
+@@ -2179,8 +2166,6 @@
+          * The rest (grabbing and setting the keys) can happen in an
+          * idle.
+          */
+-        gnome_settings_profile_start ("gvc_mixer_control_new");
+-
+         manager->priv->volume = gvc_mixer_control_new ("GNOME Volume Control Media Keys");
+ 
+         g_signal_connect (manager->priv->volume,
+@@ -2198,14 +2183,10 @@
+ 
+         gvc_mixer_control_open (manager->priv->volume);
+ 
+-        gnome_settings_profile_end ("gvc_mixer_control_new");
+-
+         manager->priv->start_idle_id = g_idle_add ((GSourceFunc) start_media_keys_idle_cb, manager);
+ 
+         register_manager (manager_object);
+ 
+-        gnome_settings_profile_end (NULL);
+-
+         return TRUE;
+ }
+ 
+diff -Naur gnome-settings-daemon-3.6.4.orig/plugins/media-keys/gsd-media-keys-plugin.c gnome-settings-daemon-3.6.4/plugins/media-keys/gsd-media-keys-plugin.c
+--- gnome-settings-daemon-3.6.4.orig/plugins/media-keys/gsd-media-keys-plugin.c	2013-01-10 14:37:58.000000000 +0100
++++ gnome-settings-daemon-3.6.4/plugins/media-keys/gsd-media-keys-plugin.c	1970-01-01 01:00:00.000000000 +0100
+@@ -1,104 +0,0 @@
+-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 8 -*-
+- *
+- * Copyright (C) 2007 William Jon McCann <mccann@jhu.edu>
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2, or (at your option)
+- * any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+- *
+- */
+-
+-#include "config.h"
+-
+-#include <glib/gi18n-lib.h>
+-#include <gmodule.h>
+-
+-#include "gnome-settings-plugin.h"
+-#include "gsd-media-keys-plugin.h"
+-#include "gsd-media-keys-manager.h"
+-
+-struct GsdMediaKeysPluginPrivate {
+-        GsdMediaKeysManager *manager;
+-};
+-
+-#define GSD_MEDIA_KEYS_PLUGIN_GET_PRIVATE(object) (G_TYPE_INSTANCE_GET_PRIVATE ((object), GSD_TYPE_MEDIA_KEYS_PLUGIN, GsdMediaKeysPluginPrivate))
+-
+-GNOME_SETTINGS_PLUGIN_REGISTER (GsdMediaKeysPlugin, gsd_media_keys_plugin)
+-
+-static void
+-gsd_media_keys_plugin_init (GsdMediaKeysPlugin *plugin)
+-{
+-        plugin->priv = GSD_MEDIA_KEYS_PLUGIN_GET_PRIVATE (plugin);
+-
+-        g_debug ("GsdMediaKeysPlugin initializing");
+-
+-        plugin->priv->manager = gsd_media_keys_manager_new ();
+-}
+-
+-static void
+-gsd_media_keys_plugin_finalize (GObject *object)
+-{
+-        GsdMediaKeysPlugin *plugin;
+-
+-        g_return_if_fail (object != NULL);
+-        g_return_if_fail (GSD_IS_MEDIA_KEYS_PLUGIN (object));
+-
+-        g_debug ("GsdMediaKeysPlugin finalizing");
+-
+-        plugin = GSD_MEDIA_KEYS_PLUGIN (object);
+-
+-        g_return_if_fail (plugin->priv != NULL);
+-
+-        if (plugin->priv->manager != NULL) {
+-                g_object_unref (plugin->priv->manager);
+-        }
+-
+-        G_OBJECT_CLASS (gsd_media_keys_plugin_parent_class)->finalize (object);
+-}
+-
+-static void
+-impl_activate (GnomeSettingsPlugin *plugin)
+-{
+-        gboolean res;
+-        GError  *error;
+-
+-        g_debug ("Activating media_keys plugin");
+-
+-        error = NULL;
+-        res = gsd_media_keys_manager_start (GSD_MEDIA_KEYS_PLUGIN (plugin)->priv->manager, &error);
+-        if (! res) {
+-                g_warning ("Unable to start media_keys manager: %s", error->message);
+-                g_error_free (error);
+-        }
+-}
+-
+-static void
+-impl_deactivate (GnomeSettingsPlugin *plugin)
+-{
+-        g_debug ("Deactivating media_keys plugin");
+-        gsd_media_keys_manager_stop (GSD_MEDIA_KEYS_PLUGIN (plugin)->priv->manager);
+-}
+-
+-static void
+-gsd_media_keys_plugin_class_init (GsdMediaKeysPluginClass *klass)
+-{
+-        GObjectClass           *object_class = G_OBJECT_CLASS (klass);
+-        GnomeSettingsPluginClass *plugin_class = GNOME_SETTINGS_PLUGIN_CLASS (klass);
+-
+-        object_class->finalize = gsd_media_keys_plugin_finalize;
+-
+-        plugin_class->activate = impl_activate;
+-        plugin_class->deactivate = impl_deactivate;
+-
+-        g_type_class_add_private (klass, sizeof (GsdMediaKeysPluginPrivate));
+-}
+diff -Naur gnome-settings-daemon-3.6.4.orig/plugins/media-keys/gsd-media-keys-plugin.h gnome-settings-daemon-3.6.4/plugins/media-keys/gsd-media-keys-plugin.h
+--- gnome-settings-daemon-3.6.4.orig/plugins/media-keys/gsd-media-keys-plugin.h	2013-01-10 14:37:58.000000000 +0100
++++ gnome-settings-daemon-3.6.4/plugins/media-keys/gsd-media-keys-plugin.h	1970-01-01 01:00:00.000000000 +0100
+@@ -1,59 +0,0 @@
+-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 8 -*-
+- *
+- * Copyright (C) 2007 William Jon McCann <mccann@jhu.edu>
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; either version 2, or (at your option)
+- * any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+- *
+- */
+-
+-#ifndef __GSD_MEDIA_KEYS_PLUGIN_H__
+-#define __GSD_MEDIA_KEYS_PLUGIN_H__
+-
+-#include <glib.h>
+-#include <glib-object.h>
+-#include <gmodule.h>
+-
+-#include "gnome-settings-plugin.h"
+-
+-G_BEGIN_DECLS
+-
+-#define GSD_TYPE_MEDIA_KEYS_PLUGIN                (gsd_media_keys_plugin_get_type ())
+-#define GSD_MEDIA_KEYS_PLUGIN(o)                  (G_TYPE_CHECK_INSTANCE_CAST ((o), GSD_TYPE_MEDIA_KEYS_PLUGIN, GsdMediaKeysPlugin))
+-#define GSD_MEDIA_KEYS_PLUGIN_CLASS(k)            (G_TYPE_CHECK_CLASS_CAST((k), GSD_TYPE_MEDIA_KEYS_PLUGIN, GsdMediaKeysPluginClass))
+-#define GSD_IS_MEDIA_KEYS_PLUGIN(o)               (G_TYPE_CHECK_INSTANCE_TYPE ((o), GSD_TYPE_MEDIA_KEYS_PLUGIN))
+-#define GSD_IS_MEDIA_KEYS_PLUGIN_CLASS(k)         (G_TYPE_CHECK_CLASS_TYPE ((k), GSD_TYPE_MEDIA_KEYS_PLUGIN))
+-#define GSD_MEDIA_KEYS_PLUGIN_GET_CLASS(o)        (G_TYPE_INSTANCE_GET_CLASS ((o), GSD_TYPE_MEDIA_KEYS_PLUGIN, GsdMediaKeysPluginClass))
+-
+-typedef struct GsdMediaKeysPluginPrivate GsdMediaKeysPluginPrivate;
+-
+-typedef struct
+-{
+-        GnomeSettingsPlugin    parent;
+-        GsdMediaKeysPluginPrivate *priv;
+-} GsdMediaKeysPlugin;
+-
+-typedef struct
+-{
+-        GnomeSettingsPluginClass parent_class;
+-} GsdMediaKeysPluginClass;
+-
+-GType   gsd_media_keys_plugin_get_type            (void) G_GNUC_CONST;
+-
+-/* All the plugins must implement this function */
+-G_MODULE_EXPORT GType register_gnome_settings_plugin (GTypeModule *module);
+-
+-G_END_DECLS
+-
+-#endif /* __GSD_MEDIA_KEYS_PLUGIN_H__ */
+diff -Naur gnome-settings-daemon-3.6.4.orig/plugins/media-keys/Makefile.am gnome-settings-daemon-3.6.4/plugins/media-keys/Makefile.am
+--- gnome-settings-daemon-3.6.4.orig/plugins/media-keys/Makefile.am	2013-01-10 14:37:58.000000000 +0100
++++ gnome-settings-daemon-3.6.4/plugins/media-keys/Makefile.am	2013-04-24 14:26:01.414463895 +0200
+@@ -1,17 +1,11 @@
+ icondir = $(datadir)/icons/hicolor
+ context = actions
+ 
+-plugin_name = media-keys
+-
+-NULL =
+-
+ SUBDIRS = cut-n-paste
+-plugin_LTLIBRARIES = libmedia-keys.la
+ 
+ BUILT_SOURCES = 			\
+ 	gsd-marshal.h			\
+-	gsd-marshal.c			\
+-	$(NULL)
++	gsd-marshal.c
+ 
+ gsd-marshal.c: gsd-marshal.list
+ 	$(AM_V_GEN) $(GLIB_GENMARSHAL) --prefix=gsd_marshal $< --header --body --internal > $@
+@@ -19,62 +13,16 @@
+ gsd-marshal.h: gsd-marshal.list
+ 	$(AM_V_GEN) $(GLIB_GENMARSHAL) --prefix=gsd_marshal $< --header --internal > $@
+ 
+-libmedia_keys_la_SOURCES = 		\
+-	gsd-media-keys-plugin.h		\
+-	gsd-media-keys-plugin.c		\
+-	gsd-media-keys-manager.h	\
+-	gsd-media-keys-manager.c	\
+-	gsd-osd-window.c		\
+-	gsd-osd-window.h		\
+-	gsd-osd-window-private.h	\
+-	shortcuts-list.h		\
+-	$(BUILT_SOURCES)		\
+-	$(NULL)
+-
+-libmedia_keys_la_CPPFLAGS = \
+-	-I$(top_srcdir)/data/					\
+-	-I$(top_srcdir)/gnome-settings-daemon			\
+-	-I$(top_srcdir)/plugins/common				\
+-	-I$(top_srcdir)/plugins/media-keys/cut-n-paste		\
+-	-DBINDIR=\"$(bindir)\"					\
+-	-DPIXMAPDIR=\""$(pkgdatadir)"\"				\
+-	-DGTKBUILDERDIR=\""$(pkgdatadir)"\"			\
+-	-DGNOME_SETTINGS_LOCALEDIR=\""$(datadir)/locale"\"	\
+-	$(AM_CPPFLAGS)
+-
+-libmedia_keys_la_CFLAGS = \
+-	$(PLUGIN_CFLAGS)		\
+-	$(SETTINGS_PLUGIN_CFLAGS)	\
+-	$(MEDIA_KEYS_CFLAGS)		\
+-	$(AM_CFLAGS)
+-
+-libmedia_keys_la_LDFLAGS = 		\
+-	$(GSD_PLUGIN_LDFLAGS)
+-
+-libmedia_keys_la_LIBADD  = 		\
+-	$(top_builddir)/plugins/common/libcommon.la			\
+-	$(top_builddir)/plugins/media-keys/cut-n-paste/libgvc.la	\
+-	$(MEDIA_KEYS_LIBS)						\
+-	$(SETTINGS_PLUGIN_LIBS)						\
+-	-lm
+-
+-plugin_in_files = 		\
+-	media-keys.gnome-settings-plugin.in
+-
+-plugin_DATA = $(plugin_in_files:.gnome-settings-plugin.in=.gnome-settings-plugin)
+-
+ noinst_PROGRAMS = test-media-window
+ 
+ test_media_window_SOURCES =			\
+ 	gsd-osd-window.c			\
+ 	gsd-osd-window.h			\
+ 	gsd-osd-window-private.h		\
+-	test-media-window.c			\
+-	$(NULL)
++	test-media-window.c
+ 
+ test_media_window_CPPFLAGS = \
+ 	-I$(top_srcdir)/data/					\
+-	-I$(top_srcdir)/gnome-settings-daemon			\
+ 	-I$(top_srcdir)/plugins/common				\
+ 	-I$(top_srcdir)/plugins/media-keys/cut-n-paste		\
+ 	-DDATADIR=\""$(datadir)"\"				\
+@@ -93,21 +41,19 @@
+ 	$(SETTINGS_PLUGIN_LIBS)			\
+ 	-lm
+ 
+-libexec_PROGRAMS = gsd-test-media-keys
++libexec_PROGRAMS = gnome-fallback-media-keys-helper
+ 
+-gsd_test_media_keys_SOURCES =			\
++gnome_fallback_media_keys_helper_SOURCES =	\
+ 	gsd-media-keys-manager.c		\
+ 	gsd-media-keys-manager.h		\
+ 	gsd-osd-window.c			\
+ 	gsd-osd-window.h			\
+ 	gsd-osd-window-private.h		\
+-	test-media-keys.c			\
+-	$(BUILT_SOURCES)			\
+-	$(NULL)
++	gnome-fallback-media-keys-helper.c	\
++	$(BUILT_SOURCES)
+ 
+-gsd_test_media_keys_CPPFLAGS = \
++gnome_fallback_media_keys_helper_CPPFLAGS = \
+ 	-I$(top_srcdir)/data/					\
+-	-I$(top_srcdir)/gnome-settings-daemon			\
+ 	-I$(top_srcdir)/plugins/common				\
+ 	-I$(top_srcdir)/plugins/media-keys/cut-n-paste		\
+ 	-DBINDIR=\"$(bindir)\"					\
+@@ -116,14 +62,12 @@
+ 	-DGNOME_SETTINGS_LOCALEDIR=\""$(datadir)/locale"\"	\
+ 	$(AM_CPPFLAGS)
+ 
+-gsd_test_media_keys_CFLAGS = \
++gnome_fallback_media_keys_helper_CFLAGS = \
+ 	$(PLUGIN_CFLAGS)		\
+ 	$(SETTINGS_PLUGIN_CFLAGS)	\
+-	$(MEDIA_KEYS_CFLAGS)		\
+-	$(AM_CFLAGS)
++	$(MEDIA_KEYS_CFLAGS)
+ 
+-gsd_test_media_keys_LDADD = \
+-	$(top_builddir)/gnome-settings-daemon/libgsd.la		\
++gnome_fallback_media_keys_helper_LDADD = \
+ 	$(top_builddir)/plugins/common/libcommon.la			\
+ 	$(top_builddir)/plugins/media-keys/cut-n-paste/libgvc.la	\
+ 	$(SETTINGS_DAEMON_LIBS)			\
+@@ -131,17 +75,24 @@
+ 	$(MEDIA_KEYS_LIBS)			\
+ 	-lm
+ 
++autostartdir = $(sysconfdir)/xdg/autostart
++autostart_in_files = gnome-fallback-media-keys-helper.desktop.in
++autostart_in_in_files = gnome-fallback-media-keys-helper.desktop.in.in
++autostart_DATA = $(autostart_in_files:.desktop.in=.desktop)
++
++$(autostart_in_files): $(autostart_in_in_files)
++	@sed -e "s|\@LIBEXECDIR\@|$(libexecdir)|" $< > $@
++ 
++@INTLTOOL_DESKTOP_RULE@
++
+ EXTRA_DIST = 				\
+ 	gsd-marshal.list		\
+ 	README.media-keys-API		\
+ 	test-media-window-clutter.c	\
+-	$(plugin_in_files)
++	$(autostart_in_in_files)
+ 
+ CLEANFILES = 			\
+ 	$(BUILT_SOURCES)	\
+-	$(plugin_DATA)
+-
+-DISTCLEANFILES =		\
+-	$(plugin_DATA)
++	$(autostart_DATA)	\
++	$(autostart_in_files)
+ 
+-@GSD_INTLTOOL_PLUGIN_RULE@
+diff -Naur gnome-settings-daemon-3.6.4.orig/plugins/media-keys/media-keys.gnome-settings-plugin.in gnome-settings-daemon-3.6.4/plugins/media-keys/media-keys.gnome-settings-plugin.in
+--- gnome-settings-daemon-3.6.4.orig/plugins/media-keys/media-keys.gnome-settings-plugin.in	2012-04-07 15:21:20.000000000 +0200
++++ gnome-settings-daemon-3.6.4/plugins/media-keys/media-keys.gnome-settings-plugin.in	1970-01-01 01:00:00.000000000 +0100
+@@ -1,8 +0,0 @@
+-[GNOME Settings Plugin]
+-Module=media-keys
+-IAge=0
+-_Name=Media keys
+-_Description=Media keys plugin
+-Authors=
+-Copyright=Copyright © 2007
+-Website=
+diff -Naur gnome-settings-daemon-3.6.4.orig/plugins/media-keys/test-media-keys.c gnome-settings-daemon-3.6.4/plugins/media-keys/test-media-keys.c
+--- gnome-settings-daemon-3.6.4.orig/plugins/media-keys/test-media-keys.c	2012-06-01 22:02:53.000000000 +0200
++++ gnome-settings-daemon-3.6.4/plugins/media-keys/test-media-keys.c	1970-01-01 01:00:00.000000000 +0100
+@@ -1,7 +0,0 @@
+-#define NEW gsd_media_keys_manager_new
+-#define START gsd_media_keys_manager_start
+-#define STOP gsd_media_keys_manager_stop
+-#define MANAGER GsdMediaKeysManager
+-#include "gsd-media-keys-manager.h"
+-
+-#include "test-plugin.h"
+diff -Naur gnome-settings-daemon-3.6.4.orig/po/POTFILES.in gnome-settings-daemon-3.6.4/po/POTFILES.in
+--- gnome-settings-daemon-3.6.4.orig/po/POTFILES.in	2013-04-24 03:11:02.897192946 +0200
++++ gnome-settings-daemon-3.6.4/po/POTFILES.in	2013-04-24 13:43:11.132217470 +0200
+@@ -34,7 +34,7 @@
+ [type: gettext/ini]plugins/keyboard/keyboard.gnome-settings-plugin.in
+ plugins/media-keys/cut-n-paste/gvc-mixer-control.c
+ plugins/media-keys/gsd-media-keys-manager.c
+-[type: gettext/ini]plugins/media-keys/media-keys.gnome-settings-plugin.in
++plugins/media-keys/gnome-fallback-media-keys-helper.desktop.in.in
+ plugins/mouse/gsd-mouse-manager.c
+ [type: gettext/ini]plugins/mouse/mouse.gnome-settings-plugin.in
+ plugins/power/gpm-common.c
+diff -Naur gnome-settings-daemon-3.6.4.orig/po/POTFILES.skip gnome-settings-daemon-3.6.4/po/POTFILES.skip
+--- gnome-settings-daemon-3.6.4.orig/po/POTFILES.skip	2013-04-24 03:11:02.897192946 +0200
++++ gnome-settings-daemon-3.6.4/po/POTFILES.skip	2013-04-24 13:43:11.132217470 +0200
+@@ -22,5 +22,6 @@
+ data/org.gnome.settings-daemon.plugins.xsettings.gschema.xml.in
+ plugins/background/gnome-fallback-background-helper.desktop.in
+ plugins/automount/gnome-fallback-mount-helper.desktop.in
++plugins/media-keys/gnome-fallback-media-keys-helper.desktop.in
+ plugins/power/org.gnome.settings-daemon.plugins.power.policy.in
+ plugins/wacom/org.gnome.settings-daemon.plugins.wacom.policy.in
