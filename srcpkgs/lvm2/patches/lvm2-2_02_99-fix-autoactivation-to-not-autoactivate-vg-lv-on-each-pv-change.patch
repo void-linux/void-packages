@@ -1,0 +1,62 @@
+commit 0bf7bdf5216eae93cff7abb47a76b39270d71413
+Author: Peter Rajnoha <prajnoha@redhat.com>
+Date:   Tue Apr 9 10:07:15 2013 +0200
+
+    0
+---
+ WHATS_NEW                     |  1 +
+ udev/10-dm.rules.in           |  2 +-
+ udev/69-dm-lvm-metad.rules.in | 16 ++++++++++++----
+ 3 files changed, 14 insertions(+), 5 deletions(-)
+
+diff --git a/WHATS_NEW b/WHATS_NEW
+index 67a24c7..c481e68 100644
+--- a/WHATS_NEW
++++ b/WHATS_NEW
+@@ -1,5 +1,6 @@
+ Version 2.02.99 - 
+ ===================================
++  Fix autoactivation to not autoactivate VG/LV on each change of the PVs used.
+   Skip mlocking [vectors] on arm architecture.
+   Exit pvscan --cache immediately if cluster locking used or lvmetad not used.
+   Don't use lvmetad in lvm2-monitor.service ExecStop to avoid a systemd issue.
+diff --git a/udev/10-dm.rules.in b/udev/10-dm.rules.in
+index 29af467..cfee145 100644
+--- a/udev/10-dm.rules.in
++++ b/udev/10-dm.rules.in
+@@ -45,7 +45,7 @@ ENV{DISK_RO}=="1", GOTO="dm_disable"
+ # in libdevmapper so we need to detect this and try to behave correctly.
+ # For such spurious events, regenerate all flags from current udev database content
+ # (this information would normally be inaccessible for spurious ADD and CHANGE events).
+-ENV{DM_UDEV_PRIMARY_SOURCE_FLAG}=="1", GOTO="dm_flags_done"
++ENV{DM_UDEV_PRIMARY_SOURCE_FLAG}=="1", ENV{DM_ACTIVATION}="1", GOTO="dm_flags_done"
+ IMPORT{db}="DM_UDEV_DISABLE_DM_RULES_FLAG"
+ IMPORT{db}="DM_UDEV_DISABLE_SUBSYSTEM_RULES_FLAG"
+ IMPORT{db}="DM_UDEV_DISABLE_DISK_RULES_FLAG"
+diff --git a/udev/69-dm-lvm-metad.rules.in b/udev/69-dm-lvm-metad.rules.in
+index 706c03b..b16a27a 100644
+--- a/udev/69-dm-lvm-metad.rules.in
++++ b/udev/69-dm-lvm-metad.rules.in
+@@ -17,10 +17,18 @@
+ SUBSYSTEM!="block", GOTO="lvm_end"
+ (LVM_EXEC_RULE)
+ 
+-# Device-mapper devices are processed only on change event or on supported synthesized event.
+-KERNEL=="dm-[0-9]*", ENV{DM_UDEV_RULES_VSN}!="?*", GOTO="lvm_end"
+-
+ # Only process devices already marked as a PV - this requires blkid to be called before.
+-ENV{ID_FS_TYPE}=="LVM2_member|LVM1_member", RUN+="(LVM_EXEC)/lvm pvscan --cache --activate ay --major $major --minor $minor"
++ENV{ID_FS_TYPE}!="LVM2_member|LVM1_member", GOTO="lvm_end"
++
++ACTION=="remove", GOTO="lvm_scan"
++
++# If the PV is not a dm device, scan only after device addition (ADD event)
++KERNEL!="dm-[0-9]*", ACTION!="add", GOTO="lvm_end"
++
++# If the PV is a dm device, scan only after proper mapping activation (CHANGE event + DM_ACTIVATION=1)
++KERNEL=="dm-[0-9]*", ENV{DM_ACTIVATION}!="1", GOTO="lvm_end"
++
++LABEL="lvm_scan"
++RUN+="(LVM_EXEC)/lvm pvscan --cache --activate ay --major $major --minor $minor"
+ 
+ LABEL="lvm_end"

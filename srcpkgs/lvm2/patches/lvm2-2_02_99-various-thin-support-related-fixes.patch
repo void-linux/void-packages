@@ -1,0 +1,2066 @@
+commit 426de775ff89de7fd9a01f3168e18a711615d23a
+Author: Peter Rajnoha <prajnoha@redhat.com>
+Date:   Tue May 14 11:02:19 2013 +0200
+
+    lvm2-2_02_99-various-thin-support-related-fixes.patch
+---
+ WHATS_NEW                        |  11 ++
+ WHATS_NEW_DM                     |   1 +
+ doc/example.conf.in              |  27 +++++
+ lib/activate/activate.h          |   1 +
+ lib/config/defaults.h            |   3 +
+ lib/format_text/archiver.c       |  24 ++--
+ lib/format_text/archiver.h       |   4 +-
+ lib/metadata/lv.c                |   5 +
+ lib/metadata/lv.h                |   1 +
+ lib/metadata/lv_manip.c          |  11 +-
+ lib/metadata/metadata-exported.h |   5 +-
+ lib/metadata/metadata.h          |   2 +
+ lib/metadata/mirror.c            |   9 +-
+ lib/metadata/thin_manip.c        |  18 +++
+ lib/report/columns.h             |   2 +-
+ lib/report/properties.c          |  22 ++--
+ lib/report/report.c              |   3 +-
+ lib/thin/thin.c                  |  93 +++++++++++----
+ libdm/libdm-deptree.c            |   5 +
+ liblvm/lvm_lv.c                  |   8 +-
+ man/lvconvert.8.in               | 114 +++++++++++++++---
+ man/lvcreate.8.in                |  18 +--
+ man/vgcfgrestore.8.in            |   9 ++
+ test/api/thin_percent.c          |  10 ++
+ test/api/thin_percent.sh         |   2 +-
+ test/shell/lvconvert-thin.sh     |  81 ++++++++++---
+ test/shell/thin-defaults.sh      |  35 ++++++
+ test/shell/thin-restore.sh       |  34 ++++++
+ tools/args.h                     |   1 +
+ tools/commands.h                 |  10 +-
+ tools/lvchange.c                 |   8 +-
+ tools/lvconvert.c                | 245 +++++++++++++++++++++++++--------------
+ tools/lvcreate.c                 | 117 +++++--------------
+ tools/toollib.c                  | 195 +++++++++++++++++++++++++++++++
+ tools/toollib.h                  |  14 +++
+ tools/vgcfgrestore.c             |   5 +-
+ 36 files changed, 860 insertions(+), 293 deletions(-)
+
+diff --git a/WHATS_NEW b/WHATS_NEW
+index 03345d8..5231745 100644
+--- a/WHATS_NEW
++++ b/WHATS_NEW
+@@ -1,5 +1,16 @@
+ Version 2.02.99 - 
+ ===================================
++  Fix lvm2app to return all property sizes in bytes.
++  Add lvm.conf option global/thin_disabled_features.
++  Add lvconvert support to swap thin pool metadata volume.
++  Implement internal function detach_pool_metadata_lv().
++  Fix lvm2app and return lvseg discards property as string.
++  Allow forced vgcfgrestore of lvm2 metadata with thin volumes.
++  Add lvm.conf thin pool defs thin_pool_{chunk_size|discards|zero}.
++  Support discards for non-power-of-2 thin pool chunks.
++  Support allocation of pool metadata with lvconvert command.
++  Move common functionality for thin lvcreate and lvconvert to toollib.
++  Use lv_is_active() instead of lv_info() call.
+   Synchronize with udev in pvscan --cache and fix dangling udev_sync cookies.
+   Fix autoactivation to not autoactivate VG/LV on each change of the PVs used.
+   Skip mlocking [vectors] on arm architecture.
+diff --git a/WHATS_NEW_DM b/WHATS_NEW_DM
+index 3f8d9c9..e0b8d51 100644
+--- a/WHATS_NEW_DM
++++ b/WHATS_NEW_DM
+@@ -1,5 +1,6 @@
+ Version 1.02.78 - 
+ ===================================
++  Automatically deactivate failed preloaded dm tree node.
+   Fix dm_task_set_cookie to properly process udev flags if udev_sync disabled.
+ 
+ Version 1.02.77 - 15th October 2012
+diff --git a/doc/example.conf.in b/doc/example.conf.in
+index 442ad64..1bf89d3 100644
+--- a/doc/example.conf.in
++++ b/doc/example.conf.in
+@@ -232,6 +232,23 @@ allocation {
+     # Set to 1 to guarantee that thin pool metadata will always
+     # be placed on different PVs from the pool data.
+     thin_pool_metadata_require_separate_pvs = 0
++
++    # Specify the minimal chunk size (in KB) for thin pool volumes.
++    # Use of the larger chunk size may improve perfomance for plain
++    # thin volumes, however using them for snapshot volumes is less efficient,
++    # as it consumes more space and takes extra time for copying.
++    # When unset, lvm tries to estimate chunk size starting from 64KB
++    # Supported values are in range from 64 to 1048576.
++    # thin_pool_chunk_size = 64
++
++    # Specify discards behavior of the thin pool volume.
++    # Select one of  "ignore", "nopassdown", "passdown"
++    # thin_pool_discards = "passdown"
++
++    # Set to 0, to disable zeroing of thin pool data chunks before their
++    # first use.
++    # N.B. zeroing larger thin pool chunk size degrades performance.
++    # thin_pool_zero = 1
+ }
+ 
+ # This section that allows you to configure the nature of the
+@@ -507,6 +524,16 @@ global {
+     # String with options passed with thin_check command. By default,
+     # option '-q' is for quiet output.
+     thin_check_options = [ "-q" ]
++
++    # If set, given features are not used by thin driver.
++    # This can be helpful not just for testing, but i.e. allows to avoid
++    # using problematic implementation of some thin feature.
++    # Features:
++    #   block_size
++    #   discards
++    #   discards_non_power_2
++    #
++    # thin_disabled_features = [ "discards", "block_size" ]
+ }
+ 
+ activation {
+diff --git a/lib/activate/activate.h b/lib/activate/activate.h
+index ba24d2a..0a0c97e 100644
+--- a/lib/activate/activate.h
++++ b/lib/activate/activate.h
+@@ -51,6 +51,7 @@ enum {
+ 	THIN_FEATURE_EXTERNAL_ORIGIN		= (1 << 1),
+ 	THIN_FEATURE_HELD_ROOT			= (1 << 2),
+ 	THIN_FEATURE_BLOCK_SIZE			= (1 << 3),
++	THIN_FEATURE_DISCARDS_NON_POWER_2	= (1 << 4),
+ };
+ 
+ void set_activation(int activation);
+diff --git a/lib/config/defaults.h b/lib/config/defaults.h
+index 9730a2d..348fa75 100644
+--- a/lib/config/defaults.h
++++ b/lib/config/defaults.h
+@@ -69,6 +69,9 @@
+ #define DEFAULT_THIN_POOL_MAX_METADATA_SIZE (16 * 1024 * 1024)  /* KB */
+ #define DEFAULT_THIN_POOL_MIN_METADATA_SIZE 2048  /* KB */
+ #define DEFAULT_THIN_POOL_OPTIMAL_SIZE     (128 * 1024 * 1024)	/* KB */
++#define DEFAULT_THIN_POOL_CHUNK_SIZE	    64	  /* KB */
++#define DEFAULT_THIN_POOL_DISCARDS "passdown"
++#define DEFAULT_THIN_POOL_ZERO 1
+ 
+ #define DEFAULT_UMASK 0077
+ 
+diff --git a/lib/format_text/archiver.c b/lib/format_text/archiver.c
+index ccefb4c..8599e3b 100644
+--- a/lib/format_text/archiver.c
++++ b/lib/format_text/archiver.c
+@@ -347,7 +347,7 @@ int backup_restore_vg(struct cmd_context *cmd, struct volume_group *vg)
+ 
+ /* ORPHAN and VG locks held before calling this */
+ int backup_restore_from_file(struct cmd_context *cmd, const char *vg_name,
+-			     const char *file)
++			     const char *file, int force)
+ {
+ 	struct volume_group *vg;
+ 	int missing_pvs, r = 0;
+@@ -360,14 +360,20 @@ int backup_restore_from_file(struct cmd_context *cmd, const char *vg_name,
+ 		return_0;
+ 
+ 	/* FIXME: Restore support is missing for now */
+-	dm_list_iterate_items(lvl, &vg->lvs)
++	dm_list_iterate_items(lvl, &vg->lvs) {
+ 		if (lv_is_thin_type(lvl->lv)) {
+-			log_error("Cannot restore Volume Group %s with "
+-				  "thin logical volumes. "
+-				  "(not yet supported).", vg->name);
+-			r = 0;
+-			goto out;
++			if (!force) {
++				log_error("Consider using option --force to restore "
++					  "Volume Group %s with thin volumes.",
++					  vg->name);
++				goto out;
++			} else {
++				log_warn("WARNING: Forced restore of Volume Group "
++					 "%s with thin volumes.", vg->name);
++				break;
++			}
+ 		}
++	}
+ 
+ 	missing_pvs = vg_missing_pv_count(vg);
+ 	if (missing_pvs == 0)
+@@ -381,7 +387,7 @@ out:
+ 	return r;
+ }
+ 
+-int backup_restore(struct cmd_context *cmd, const char *vg_name)
++int backup_restore(struct cmd_context *cmd, const char *vg_name, int force)
+ {
+ 	char path[PATH_MAX];
+ 
+@@ -391,7 +397,7 @@ int backup_restore(struct cmd_context *cmd, const char *vg_name)
+ 		return 0;
+ 	}
+ 
+-	return backup_restore_from_file(cmd, vg_name, path);
++	return backup_restore_from_file(cmd, vg_name, path, force);
+ }
+ 
+ int backup_to_file(const char *file, const char *desc, struct volume_group *vg)
+diff --git a/lib/format_text/archiver.h b/lib/format_text/archiver.h
+index 7346f93..ddff687 100644
+--- a/lib/format_text/archiver.h
++++ b/lib/format_text/archiver.h
+@@ -53,8 +53,8 @@ struct volume_group *backup_read_vg(struct cmd_context *cmd,
+ 				    const char *vg_name, const char *file);
+ int backup_restore_vg(struct cmd_context *cmd, struct volume_group *vg);
+ int backup_restore_from_file(struct cmd_context *cmd, const char *vg_name,
+-			     const char *file);
+-int backup_restore(struct cmd_context *cmd, const char *vg_name);
++			     const char *file, int force);
++int backup_restore(struct cmd_context *cmd, const char *vg_name, int force);
+ 
+ int backup_to_file(const char *file, const char *desc, struct volume_group *vg);
+ 
+diff --git a/lib/metadata/lv.c b/lib/metadata/lv.c
+index 4032f34..34b428a 100644
+--- a/lib/metadata/lv.c
++++ b/lib/metadata/lv.c
+@@ -123,6 +123,11 @@ char *lvseg_segtype_dup(struct dm_pool *mem, const struct lv_segment *seg)
+ 	return dm_pool_strdup(mem, seg->segtype->ops->name(seg));
+ }
+ 
++char *lvseg_discards_dup(struct dm_pool *mem, const struct lv_segment *seg)
++{
++	return  dm_pool_strdup(mem, get_pool_discards_name(seg->discards));
++}
++
+ uint64_t lvseg_chunksize(const struct lv_segment *seg)
+ {
+ 	uint64_t size;
+diff --git a/lib/metadata/lv.h b/lib/metadata/lv.h
+index 0daab62..838b002 100644
+--- a/lib/metadata/lv.h
++++ b/lib/metadata/lv.h
+@@ -74,6 +74,7 @@ uint64_t lvseg_start(const struct lv_segment *seg);
+ uint64_t lvseg_size(const struct lv_segment *seg);
+ uint64_t lvseg_chunksize(const struct lv_segment *seg);
+ char *lvseg_segtype_dup(struct dm_pool *mem, const struct lv_segment *seg);
++char *lvseg_discards_dup(struct dm_pool *mem, const struct lv_segment *seg);
+ char *lvseg_tags_dup(const struct lv_segment *seg);
+ char *lvseg_devices(struct dm_pool *mem, const struct lv_segment *seg);
+ char *lvseg_seg_pe_ranges(struct dm_pool *mem, const struct lv_segment *seg);
+diff --git a/lib/metadata/lv_manip.c b/lib/metadata/lv_manip.c
+index d469fe8..a59e03f 100644
+--- a/lib/metadata/lv_manip.c
++++ b/lib/metadata/lv_manip.c
+@@ -4217,7 +4217,6 @@ static struct logical_volume *_lv_create_an_lv(struct volume_group *vg, struct l
+ 	struct logical_volume *pool_lv;
+ 	struct lv_list *lvl;
+ 	int origin_active = 0;
+-	struct lvinfo info;
+ 
+ 	if (new_lv_name && find_lv_in_vg(vg, new_lv_name)) {
+ 		log_error("Logical volume \"%s\" already exists in "
+@@ -4349,12 +4348,12 @@ static struct logical_volume *_lv_create_an_lv(struct volume_group *vg, struct l
+ 				log_warn("WARNING: See global/mirror_segtype_default in lvm.conf.");
+ 			}
+ 
+-			if (!lv_info(cmd, org, 0, &info, 0, 0)) {
++			if (!lv_is_active(org)) {
+ 				log_error("Check for existence of active snapshot "
+ 					  "origin '%s' failed.", org->name);
+ 				return NULL;
+ 			}
+-			origin_active = info.exists;
++			origin_active = 1;
+ 
+ 			if (vg_is_clustered(vg) &&
+ 			    !lv_is_active_exclusive_locally(org)) {
+@@ -4696,8 +4695,8 @@ revert_new_lv:
+ 	return NULL;
+ }
+ 
+-int lv_create_single(struct volume_group *vg,
+-		     struct lvcreate_params *lp)
++struct logical_volume *lv_create_single(struct volume_group *vg,
++					struct lvcreate_params *lp)
+ {
+ 	struct logical_volume *lv;
+ 
+@@ -4725,5 +4724,5 @@ int lv_create_single(struct volume_group *vg,
+ out:
+ 	log_print_unless_silent("Logical volume \"%s\" created", lv->name);
+ 
+-	return 1;
++	return lv;
+ }
+diff --git a/lib/metadata/metadata-exported.h b/lib/metadata/metadata-exported.h
+index d149f95..11ca5be 100644
+--- a/lib/metadata/metadata-exported.h
++++ b/lib/metadata/metadata-exported.h
+@@ -609,6 +609,7 @@ struct lvcreate_params {
+ 	uint32_t mirrors; /* mirror */
+ 
+ 	const struct segment_type *segtype; /* all */
++	unsigned target_attr; /* all */
+ 
+ 	/* size */
+ 	uint32_t extents; /* all */
+@@ -625,8 +626,8 @@ struct lvcreate_params {
+ 	struct dm_list tags;	/* all */
+ };
+ 
+-int lv_create_single(struct volume_group *vg,
+-		     struct lvcreate_params *lp);
++struct logical_volume *lv_create_single(struct volume_group *vg,
++					struct lvcreate_params *lp);
+ 
+ /*
+  * Functions for layer manipulation
+diff --git a/lib/metadata/metadata.h b/lib/metadata/metadata.h
+index 7bc7eaf..19bf742 100644
+--- a/lib/metadata/metadata.h
++++ b/lib/metadata/metadata.h
+@@ -460,6 +460,8 @@ int fixup_imported_mirrors(struct volume_group *vg);
+  */
+ int attach_pool_metadata_lv(struct lv_segment *pool_seg,
+ 			    struct logical_volume *pool_metadata_lv);
++int detach_pool_metadata_lv(struct lv_segment *pool_seg,
++			    struct logical_volume **pool_metadata_lv);
+ int attach_pool_data_lv(struct lv_segment *pool_seg,
+ 			struct logical_volume *pool_data_lv);
+ int attach_pool_lv(struct lv_segment *seg, struct logical_volume *pool_lv,
+diff --git a/lib/metadata/mirror.c b/lib/metadata/mirror.c
+index c4683df..084c93a 100644
+--- a/lib/metadata/mirror.c
++++ b/lib/metadata/mirror.c
+@@ -282,7 +282,6 @@ static int _init_mirror_log(struct cmd_context *cmd,
+ 			    struct dm_list *tags, int remove_on_failure)
+ {
+ 	struct str_list *sl;
+-	struct lvinfo info;
+ 	uint64_t orig_status = log_lv->status;
+ 	int was_active = 0;
+ 
+@@ -298,14 +297,13 @@ static int _init_mirror_log(struct cmd_context *cmd,
+ 	}
+ 
+ 	/* If the LV is active, deactivate it first. */
+-	if (lv_info(cmd, log_lv, 0, &info, 0, 0) && info.exists) {
+-		(void)deactivate_lv(cmd, log_lv);
++	if (lv_is_active(log_lv)) {
+ 		/*
+ 		 * FIXME: workaround to fail early
+ 		 * Ensure that log is really deactivated because deactivate_lv
+ 		 * on cluster do not fail if there is log_lv with different UUID.
+ 		 */
+-		if (lv_info(cmd, log_lv, 0, &info, 0, 0) && info.exists) {
++		if (!deactivate_lv(cmd, log_lv)) {
+ 			log_error("Aborting. Unable to deactivate mirror log.");
+ 			goto revert_new_lv;
+ 		}
+@@ -1714,7 +1712,6 @@ int remove_mirror_log(struct cmd_context *cmd,
+ 		      int force)
+ {
+ 	percent_t sync_percent;
+-	struct lvinfo info;
+ 	struct volume_group *vg = lv->vg;
+ 
+ 	/* Unimplemented features */
+@@ -1724,7 +1721,7 @@ int remove_mirror_log(struct cmd_context *cmd,
+ 	}
+ 
+ 	/* Had disk log, switch to core. */
+-	if (lv_info(cmd, lv, 0, &info, 0, 0) && info.exists) {
++	if (lv_is_active(lv)) {
+ 		if (!lv_mirror_percent(cmd, lv, 0, &sync_percent,
+ 				       NULL)) {
+ 			log_error("Unable to determine mirror sync status.");
+diff --git a/lib/metadata/thin_manip.c b/lib/metadata/thin_manip.c
+index e7e96df..e2762a0 100644
+--- a/lib/metadata/thin_manip.c
++++ b/lib/metadata/thin_manip.c
+@@ -30,6 +30,24 @@ int attach_pool_metadata_lv(struct lv_segment *pool_seg, struct logical_volume *
+ 	return add_seg_to_segs_using_this_lv(metadata_lv, pool_seg);
+ }
+ 
++int detach_pool_metadata_lv(struct lv_segment *pool_seg, struct logical_volume **metadata_lv)
++{
++	struct logical_volume *lv = pool_seg->metadata_lv;
++
++	if (!lv || !lv_is_thin_pool_metadata(lv) ||
++	    !remove_seg_from_segs_using_this_lv(lv, pool_seg)) {
++		log_error(INTERNAL_ERROR "LV %s is invalid thin pool.", pool_seg->lv->name);
++		return 0;
++	}
++
++	lv_set_visible(lv);
++	lv->status &= ~THIN_POOL_METADATA;
++	*metadata_lv = lv;
++	pool_seg->metadata_lv = NULL;
++
++	return 1;
++}
++
+ int attach_pool_data_lv(struct lv_segment *pool_seg, struct logical_volume *pool_data_lv)
+ {
+ 	if (!set_lv_segment_area_lv(pool_seg, 0, pool_data_lv, 0, THIN_POOL_DATA))
+diff --git a/lib/report/columns.h b/lib/report/columns.h
+index 6299a2b..11b3f3f 100644
+--- a/lib/report/columns.h
++++ b/lib/report/columns.h
+@@ -140,7 +140,7 @@ FIELD(SEGS, seg, NUM, "Region", region_size, 6, size32, region_size, "For mirror
+ FIELD(SEGS, seg, NUM, "Chunk", list, 5, chunksize, chunksize, "For snapshots, the unit of data used when tracking changes.", 0)
+ FIELD(SEGS, seg, NUM, "Chunk", list, 5, chunksize, chunk_size, "For snapshots, the unit of data used when tracking changes.", 0)
+ FIELD(SEGS, seg, NUM, "#Thins", list, 4, thincount, thin_count, "For thin pools, the number of thin volumes in this pool.", 0)
+-FIELD(SEGS, seg, NUM, "Discards", list, 8, discards, discards, "For thin pools, how discards are handled.", 0)
++FIELD(SEGS, seg, STR, "Discards", list, 8, discards, discards, "For thin pools, how discards are handled.", 0)
+ FIELD(SEGS, seg, NUM, "Zero", list, 4, thinzero, zero, "For thin pools, if zeroing is enabled.", 0)
+ FIELD(SEGS, seg, NUM, "TransId", list, 4, transactionid, transaction_id, "For thin pools, the transaction id.", 0)
+ FIELD(SEGS, seg, NUM, "Start", list, 5, segstart, seg_start, "Offset within the LV to the start of the segment in current units.", 0)
+diff --git a/lib/report/properties.c b/lib/report/properties.c
+index c4f6ab9..a871d66 100644
+--- a/lib/report/properties.c
++++ b/lib/report/properties.c
+@@ -183,7 +183,7 @@ GET_LV_NUM_PROPERTY_FN(seg_count, dm_list_size(&lv->segments))
+ #define _seg_count_set _not_implemented_set
+ GET_LV_STR_PROPERTY_FN(origin, lv_origin_dup(lv->vg->vgmem, lv))
+ #define _origin_set _not_implemented_set
+-GET_LV_NUM_PROPERTY_FN(origin_size, lv_origin_size(lv))
++GET_LV_NUM_PROPERTY_FN(origin_size, (SECTOR_SIZE * lv_origin_size(lv)))
+ #define _origin_size_set _not_implemented_set
+ GET_LV_NUM_PROPERTY_FN(snap_percent, _snap_percent(lv))
+ #define _snap_percent_set _not_implemented_set
+@@ -231,7 +231,7 @@ GET_VG_NUM_PROPERTY_FN(vg_free, (SECTOR_SIZE * vg_free(vg)))
+ #define _vg_free_set _not_implemented_set
+ GET_VG_STR_PROPERTY_FN(vg_sysid, vg_system_id_dup(vg))
+ #define _vg_sysid_set _not_implemented_set
+-GET_VG_NUM_PROPERTY_FN(vg_extent_size, vg->extent_size)
++GET_VG_NUM_PROPERTY_FN(vg_extent_size, (SECTOR_SIZE * vg->extent_size))
+ #define _vg_extent_size_set _not_implemented_set
+ GET_VG_NUM_PROPERTY_FN(vg_extent_count, vg->extent_count)
+ #define _vg_extent_count_set _not_implemented_set
+@@ -267,17 +267,17 @@ GET_LVSEG_STR_PROPERTY_FN(segtype, lvseg_segtype_dup(lvseg->lv->vg->vgmem, lvseg
+ #define _segtype_set _not_implemented_set
+ GET_LVSEG_NUM_PROPERTY_FN(stripes, lvseg->area_count)
+ #define _stripes_set _not_implemented_set
+-GET_LVSEG_NUM_PROPERTY_FN(stripesize, lvseg->stripe_size)
++GET_LVSEG_NUM_PROPERTY_FN(stripesize, (SECTOR_SIZE * lvseg->stripe_size))
+ #define _stripesize_set _not_implemented_set
+-GET_LVSEG_NUM_PROPERTY_FN(stripe_size, lvseg->stripe_size)
++GET_LVSEG_NUM_PROPERTY_FN(stripe_size, (SECTOR_SIZE * lvseg->stripe_size))
+ #define _stripe_size_set _not_implemented_set
+-GET_LVSEG_NUM_PROPERTY_FN(regionsize, lvseg->region_size)
++GET_LVSEG_NUM_PROPERTY_FN(regionsize, (SECTOR_SIZE * lvseg->region_size))
+ #define _regionsize_set _not_implemented_set
+-GET_LVSEG_NUM_PROPERTY_FN(region_size, lvseg->region_size)
++GET_LVSEG_NUM_PROPERTY_FN(region_size, (SECTOR_SIZE * lvseg->region_size))
+ #define _region_size_set _not_implemented_set
+-GET_LVSEG_NUM_PROPERTY_FN(chunksize, lvseg_chunksize(lvseg))
++GET_LVSEG_NUM_PROPERTY_FN(chunksize, (SECTOR_SIZE * lvseg_chunksize(lvseg)))
+ #define _chunksize_set _not_implemented_set
+-GET_LVSEG_NUM_PROPERTY_FN(chunk_size, lvseg_chunksize(lvseg))
++GET_LVSEG_NUM_PROPERTY_FN(chunk_size, (SECTOR_SIZE * lvseg_chunksize(lvseg)))
+ #define _chunk_size_set _not_implemented_set
+ GET_LVSEG_NUM_PROPERTY_FN(thin_count, dm_list_size(&lvseg->lv->segs_using_this_lv))
+ #define _thin_count_set _not_implemented_set
+@@ -285,9 +285,9 @@ GET_LVSEG_NUM_PROPERTY_FN(zero, lvseg->zero_new_blocks)
+ #define _zero_set _not_implemented_set
+ GET_LVSEG_NUM_PROPERTY_FN(transaction_id, lvseg->transaction_id)
+ #define _transaction_id_set _not_implemented_set
+-GET_LVSEG_NUM_PROPERTY_FN(discards, lvseg->discards)
++GET_LVSEG_STR_PROPERTY_FN(discards, lvseg_discards_dup(lvseg->lv->vg->vgmem, lvseg))
+ #define _discards_set _not_implemented_set
+-GET_LVSEG_NUM_PROPERTY_FN(seg_start, lvseg_start(lvseg))
++GET_LVSEG_NUM_PROPERTY_FN(seg_start, (SECTOR_SIZE * lvseg_start(lvseg)))
+ #define _seg_start_set _not_implemented_set
+ GET_LVSEG_NUM_PROPERTY_FN(seg_start_pe, lvseg->le)
+ #define _seg_start_pe_set _not_implemented_set
+@@ -305,7 +305,7 @@ GET_LVSEG_STR_PROPERTY_FN(devices, lvseg_devices(lvseg->lv->vg->vgmem, lvseg))
+ /* PVSEG */
+ GET_PVSEG_NUM_PROPERTY_FN(pvseg_start, pvseg->pe)
+ #define _pvseg_start_set _not_implemented_set
+-GET_PVSEG_NUM_PROPERTY_FN(pvseg_size, pvseg->len)
++GET_PVSEG_NUM_PROPERTY_FN(pvseg_size, (SECTOR_SIZE * pvseg->len))
+ #define _pvseg_size_set _not_implemented_set
+ 
+ 
+diff --git a/lib/report/report.c b/lib/report/report.c
+index eeca282..b1e2bc1 100644
+--- a/lib/report/report.c
++++ b/lib/report/report.c
+@@ -830,7 +830,6 @@ static int _snpercent_disp(struct dm_report *rh __attribute__((unused)), struct
+ 			   const void *data, void *private __attribute__((unused)))
+ {
+ 	const struct logical_volume *lv = (const struct logical_volume *) data;
+-	struct lvinfo info;
+ 	percent_t snap_percent;
+ 	uint64_t *sortval;
+ 	char *repstr;
+@@ -847,7 +846,7 @@ static int _snpercent_disp(struct dm_report *rh __attribute__((unused)), struct
+ 	}
+ 
+ 	if ((!lv_is_cow(lv) && !lv_is_merging_origin(lv)) ||
+-	    !lv_info(lv->vg->cmd, lv, 0, &info, 0, 0) || !info.exists) {
++	    !lv_is_active(lv)) {
+ 		*sortval = UINT64_C(0);
+ 		dm_report_field_set_value(field, "", sortval);
+ 		return 1;
+diff --git a/lib/thin/thin.c b/lib/thin/thin.c
+index 2b6c71f..d7c45ca 100644
+--- a/lib/thin/thin.c
++++ b/lib/thin/thin.c
+@@ -37,6 +37,9 @@
+ 	log_error(t " segment %s of logical volume %s.", ## p, \
+ 		  dm_config_parent_name(sn), seg->lv->name), 0;
+ 
++/* TODO: using static field here, maybe should be a part of segment_type */
++static unsigned _feature_mask;
++
+ static int _thin_target_present(struct cmd_context *cmd,
+ 				const struct lv_segment *seg,
+ 				unsigned *attributes);
+@@ -282,10 +285,15 @@ static int _thin_pool_add_target_line(struct dev_manager *dm,
+ 		return_0;
+ 
+ 	if (attr & THIN_FEATURE_DISCARDS) {
++		/* Use ignore for discards ignore or non-power-of-2 chunk_size and <1.5 target */
+ 		/* FIXME: Check whether underlying dev supports discards */
+-		if (!dm_tree_node_set_thin_pool_discard(node,
+-							seg->discards == THIN_DISCARDS_IGNORE,
+-							seg->discards == THIN_DISCARDS_NO_PASSDOWN))
++		if (((!(attr & THIN_FEATURE_DISCARDS_NON_POWER_2) &&
++		      (seg->chunk_size & (seg->chunk_size - 1))) ||
++		     (seg->discards == THIN_DISCARDS_IGNORE)) &&
++		    !dm_tree_node_set_thin_pool_discard(node, 1, 0))
++			return_0;
++		else if (!dm_tree_node_set_thin_pool_discard(node, 0,
++							     (seg->discards == THIN_DISCARDS_NO_PASSDOWN)))
+ 			return_0;
+ 	} else if (seg->discards != THIN_DISCARDS_IGNORE)
+ 		log_warn_suppress(_no_discards++, "WARNING: Thin pool target does "
+@@ -534,10 +542,28 @@ static int _thin_target_present(struct cmd_context *cmd,
+ 				const struct lv_segment *seg,
+ 				unsigned *attributes)
+ {
++	/* List of features with their kernel target version */
++	static const struct feature {
++		uint32_t maj;
++		uint32_t min;
++		unsigned thin_feature;
++		const char *feature;
++	} const _features[] = {
++		{ 1, 1, THIN_FEATURE_DISCARDS, "discards" },
++		{ 1, 1, THIN_FEATURE_EXTERNAL_ORIGIN, "external_origin" },
++		{ 1, 4, THIN_FEATURE_BLOCK_SIZE, "block_size" },
++		{ 1, 5, THIN_FEATURE_DISCARDS_NON_POWER_2, "discards_non_power_2" },
++	};
++
++	static const char _lvmconf[] = "global/thin_disabled_features";
+ 	static int _checked = 0;
+ 	static int _present = 0;
+-	static int _attrs = 0;
++	static unsigned _attrs = 0;
+ 	uint32_t maj, min, patchlevel;
++	unsigned i;
++	const struct dm_config_node *cn;
++	const struct dm_config_value *cv;
++	const char *str;
+ 
+ 	if (!_checked) {
+ 		_present = target_present(cmd, THIN_MODULE, 1);
+@@ -547,29 +573,46 @@ static int _thin_target_present(struct cmd_context *cmd,
+ 			return 0;
+ 		}
+ 
+-		if (maj >=1 && min >= 1)
+-			_attrs |= THIN_FEATURE_DISCARDS;
+-		else
+-		/* FIXME Log this as WARNING later only if the user asked for the feature to be used but it's not present */
+-			log_debug("Target " THIN_MODULE " does not support discards.");
+-
+-		if (maj >=1 && min >= 1)
+-			_attrs |= THIN_FEATURE_EXTERNAL_ORIGIN;
+-		else
+-		/* FIXME Log this as WARNING later only if the user asked for the feature to be used but it's not present */
+-			log_debug("Target " THIN_MODULE " does not support external origins.");
+-
+-		if (maj >=1 && min >= 4)
+-			_attrs |= THIN_FEATURE_BLOCK_SIZE;
+-		else
+-		/* FIXME Log this as WARNING later only if the user asked for the feature to be used but it's not present */
+-			log_debug("Target " THIN_MODULE " does not support non power of 2 block sizes.");
++		for (i = 0; i < sizeof(_features)/sizeof(*_features); i++)
++			if (maj >= _features[i].maj && min >= _features[i].min)
++				_attrs |= _features[i].thin_feature;
++			else
++				log_very_verbose("Target " THIN_MODULE " does not support %s.",
++						 _features[i].feature);
+ 
+ 		_checked = 1;
+ 	}
+ 
+-	if (attributes)
+-		*attributes = _attrs;
++	if (attributes) {
++		if (!_feature_mask) {
++			/* Support runtime lvm.conf changes, N.B. avoid 32 feature */
++			if ((cn = find_config_tree_node(cmd, _lvmconf))) {
++				for (cv = cn->v; cv; cv = cv->next) {
++					if (cv->type != DM_CFG_STRING) {
++						log_error("Ignoring invalid string in config file %s.",
++							  _lvmconf);
++						continue;
++					}
++					str = cv->v.str;
++					if (!*str) {
++						log_error("Ignoring empty string in config file %s.",
++							  _lvmconf);
++						continue;
++					}
++					for (i = 0; i < sizeof(_features)/sizeof(*_features); i++)
++						if (strcasecmp(str, _features[i].feature) == 0)
++							_feature_mask |= _features[i].thin_feature;
++				}
++			}
++			_feature_mask = ~_feature_mask;
++			for (i = 0; i < sizeof(_features)/sizeof(*_features); i++)
++				if ((_attrs & _features[i].thin_feature) &&
++				    !(_feature_mask & _features[i].thin_feature))
++					log_very_verbose("Target "THIN_MODULE " %s support disabled by %s",
++							 _features[i].feature, _lvmconf);
++		}
++		*attributes = _attrs & _feature_mask;
++	}
+ 
+ 	return _present;
+ }
+@@ -671,5 +714,9 @@ int init_multiple_segtypes(struct cmd_context *cmd, struct segtype_library *segl
+ 		log_very_verbose("Initialised segtype: %s", segtype->name);
+ 	}
+ 
++
++	/* Reset mask for recalc */
++	_feature_mask = 0;
++
+ 	return 1;
+ }
+diff --git a/libdm/libdm-deptree.c b/libdm/libdm-deptree.c
+index 096eba2..e4a574d 100644
+--- a/libdm/libdm-deptree.c
++++ b/libdm/libdm-deptree.c
+@@ -2496,6 +2496,11 @@ int dm_tree_preload_children(struct dm_tree_node *dnode,
+ 			log_error("Unable to resume %s (%" PRIu32
+ 				  ":%" PRIu32 ")", child->name, child->info.major,
+ 				  child->info.minor);
++			if (!_deactivate_node(child->name, child->info.major, child->info.minor,
++					      &child->dtree->cookie, child->udev_flags, 0))
++				log_error("Unable to deactivate %s (%" PRIu32
++					  ":%" PRIu32 ")", child->name, child->info.major,
++					  child->info.minor);
+ 			r = 0;
+ 			continue;
+ 		}
+diff --git a/liblvm/lvm_lv.c b/liblvm/lvm_lv.c
+index d47a857..b2a604d 100644
+--- a/liblvm/lvm_lv.c
++++ b/liblvm/lvm_lv.c
+@@ -146,7 +146,7 @@ lv_t lvm_vg_create_lv_linear(vg_t vg, const char *name, uint64_t size)
+ {
+ 	struct lvcreate_params lp = { 0 };
+ 	uint64_t extents;
+-	struct lv_list *lvl;
++	struct logical_volume *lv;
+ 
+ 	if (vg_read_error(vg))
+ 		return NULL;
+@@ -162,11 +162,9 @@ lv_t lvm_vg_create_lv_linear(vg_t vg, const char *name, uint64_t size)
+ 	_lv_set_default_params(&lp, vg, name, extents);
+ 	if (!_lv_set_default_linear_params(vg->cmd, &lp))
+ 		return_NULL;
+-	if (!lv_create_single(vg, &lp))
++	if (!(lv = lv_create_single(vg, &lp)))
+ 		return_NULL;
+-	if (!(lvl = find_lv_in_vg(vg, name)))
+-		return NULL;
+-	return (lv_t) lvl->lv;
++	return (lv_t) lv;
+ }
+ 
+ /*
+diff --git a/man/lvconvert.8.in b/man/lvconvert.8.in
+index 2659719..4fe9bdd 100644
+--- a/man/lvconvert.8.in
++++ b/man/lvconvert.8.in
+@@ -40,7 +40,7 @@ lvconvert \- convert a logical volume from linear to mirror or snapshot
+ .B lvconvert
+ .BR \-s | \-\-snapshot
+ .RB [ \-c | \-\-chunksize
+-.IR ChunkSize ]
++.IR ChunkSize [ bBsSkK ]]
+ .RB [ \-h | \-? | \-\-help ]
+ .RB [ \-\-noudevsync ]
+ .RB [ \-v | \-\-verbose ]
+@@ -59,17 +59,6 @@ lvconvert \- convert a logical volume from linear to mirror or snapshot
+ .RB [ \-\-version ]
+ .IR LogicalVolume [ Path ]...
+ .sp
+-.B lvconvert \-\-thinpool
+-.IR ThinPoolLogicalVolume { Name | Path }
+-.RB [ \-c | \-\-chunksize
+-.IR ChunkSize ]
+-.RB [ \-h | \-? | \-\-help ]
+-.RB [ \-v | \-\-verbose ]
+-.RB [ \-\-version ]
+-.RB [ \-Z | \-\-zero
+-.RI { y | n }]
+-.IR ThinMetadataLogicalVolume { Name | Path }
+-.sp
+ .B lvconvert \-\-repair
+ .RB [ \-h | \-? | \-\-help ]
+ .RB [ \-v | \-\-verbose ]
+@@ -83,6 +72,31 @@ lvconvert \- convert a logical volume from linear to mirror or snapshot
+ .RB [ \-\-version ]
+ .IR LogicalVolume [ Path ]
+ .RI [ PhysicalVolume [ Path ]...]
++.sp
++.B lvconvert \-\-thinpool
++.IR ThinPoolLogicalVolume { Name | Path }
++.RB [ \-c | \-\-chunksize
++.IR ChunkSize [ bBsSkKmMgG ]]
++.RB [ \-\-discards
++.RI { ignore | nopassdown | passdown }]
++.RB [[ \-\-poolmetadata
++.IR ThinPoolMetadataLogicalVolume { Name | Path }]
++|
++.RB [ \-\-poolmetadatasize
++.IR ThinPoolMetadataSize [ bBsSkKmMgG ]]
++.RB [ \-r | \-\-readahead
++.RI { ReadAheadSectors | auto | none }]
++.RB [ \-\-stripes
++.I Stripes
++.RB [ \-I | \-\-stripesize
++.IR StripeSize ]]]
++.RB [ \-Z | \-\-zero
++.RI { y | n }]
++.RB [ \-h | \-? | \-\-help ]
++.RB [ \-v | \-\-verbose ]
++.RB [ \-\-version ]
++.RI [ PhysicalVolume [ Path ][ :PE [ -PE ]]...]
++.sp
+ 
+ .SH DESCRIPTION
+ lvconvert is used to change the segment type (i.e. linear, mirror, etc) or
+@@ -102,8 +116,9 @@ the freed extents come first from the specified PhysicalVolumes.
+ See \fBlvm\fP(8) for common options.
+ .br
+ Exactly one of 
+-.BR \-\-splitmirrors ", " \-\-mirrors ", " \-\-repair ", " \-\-snapshot
+-or \fB\-\-merge\fP arguments is required.
++.BR \-\-merge ", " \-\-mirrors ", " \-\-repair ", " \-\-replace
++.RB ", " \-\-snapshot ", " \-\-splitmirrors " or " \-\-thinpool
++arguments is required.
+ .TP
+ .BR \-m ", " \-\-mirrors " " \fIMirrors
+ Specifies the degree of the mirror you wish to create.
+@@ -170,12 +185,28 @@ implementation and not with the original device-mapper mirror implementation.
+ Create a snapshot from existing logical volume using another
+ existing logical volume as its origin.
+ .TP
+-.BR \-c ", " \-\-chunksize " " \fIChunkSize
+-Power of 2 chunk size for the snapshot logical volume between 4KiB and 512KiB.
++.BR \-c ", " \-\-chunksize " " \fIChunkSize [ \fIbBsSkKmMgG ]
++Gives the size of chunk for snapshot and thin pool logical volumes.
++For snapshots the value must be power of 2 between 4KiB and 512KiB
++and the default value is 4.
++For thin pools the value must be between 64KiB and
++1GiB and the default value starts with 64 and scales
++up to fit the pool metadata size within 128MB,
++if the pool metadata size is not specified.
++Older dm thin pool target version (<1.4) requires the value to be power of 2.
++The newer version requires to be the multiple of 64KiB, however discard is
++not supported for non power of 2 values.
++Default unit is in kilobytes.
++.TP
++.BR \-\-discards " {" \fIignore | \fInopassdown | \fIpassdown }
++Sets discards behavior for thin pool.
++Default is \fIpassdown\fP.
+ .TP
+ .BR \-Z ", " \-\-zero " {" \fIy | \fIn }
+ Controls zeroing of the first KB of data in the snapshot.
+ If the volume is read-only the snapshot will not be zeroed.
++For thin pool volumes it controls zeroing of provisioned blocks.
++Note: Provisioning of large zeroed chunks impacts performance.
+ .TP
+ .B \-\-merge
+ Merges a snapshot into its origin volume or merges a raid1 image that has
+@@ -195,6 +226,35 @@ merge finishes, the merged snapshot is removed.  Multiple snapshots may
+ be specified on the commandline or a @tag may be used to specify
+ multiple snapshots be merged to their respective origin.
+ .TP
++.BR \-\-poolmetadata " " \fIThinPoolMetadataLogicalVolume { \fIName | \fIPath }
++Specifies thin pool metadata logical volume.
++The size should be in between 2MiB and 16GiB.
++Thin pool is specified with the option
++\fB\-\-thinpool\fP.
++When the specified thin pool already exists,
++the thin pool's metadata volume will be swapped with the given LV.
++Properties of the thin pool like chunk size, discards or zero
++are preserved by default in this case.
++It can be useful for thin pool metadata repair or its offline resize,
++since the content of metadata becomes accessible for
++thin provisioning tools \fBthin_dump\fP(8) and \fBthin_restore\fP(8).
++.TP
++.BR \-\-poolmetadatasize " " \fIThinPoolMetadataSize [ \fIbBsSkKmMgG ]
++Sets the size of thin pool's metadata logical volume,
++if the pool metadata volume is undefined.
++Thin pool is specified with the option
++\fB\-\-thinpool\fP.
++Supported value is in the range between 2MiB and 16GiB.
++The default value is estimated with this formula
++(Pool_LV_size / Pool_LV_chunk_size * 64b).
++Default unit is megabytes.
++.TP
++.IR \fB\-r ", " \fB\-\-readahead " {" ReadAheadSectors | auto | none }
++Sets read ahead sector count of thin pool metadata logical volume.
++The default value is "auto" which allows the kernel to choose
++a suitable value automatically.
++"None" is equivalent to specifying zero.
++.TP
+ .B \-\-repair
+ Repair a mirror after suffering a disk failure. The mirror will be brought back
+ into a consistent state.  By default, the original number of mirrors will be
+@@ -210,6 +270,24 @@ Remove the specified device (\fIPhysicalVolume\fP) and replace it with one
+ that is available in the volume group or from the specific list provided.
+ This option is only available to RAID segment types
+ (e.g. "raid1", "raid5", etc).
++.TP
++.BR \-\-stripes " " \fIStripes
++Gives the number of stripes.
++This is equal to the number of physical volumes to scatter
++the logical volume.
++.TP
++.BR \-I ", " \-\-stripesize " " \fIStripeSize
++Gives the number of kilobytes for the granularity of the stripes.
++.br
++StripeSize must be 2^n (n = 2 to 9) for metadata in LVM1 format.
++For metadata in LVM2 format, the stripe size may be a larger
++power of 2 but must not exceed the physical extent size.
++.TP
++.IR \fB\-\-thinpool " " ThinPoolLogicalVolume { Name | Path }
++Changes logical volume into a thin pool volume. The volume
++will store the pool's data.
++Thin pool metadata logical volume can be specified with the option
++\fB\-\-poolmetadata\fP or allocated with \fB\-\-poolmetadatasize\fP.
+ 
+ .SH Examples
+ Converts the linear logical volume "vg00/lvol1" to a two-way mirror
+@@ -304,4 +382,6 @@ available in the volume group.
+ .BR lvextend (8),
+ .BR lvreduce (8),
+ .BR lvdisplay (8),
+-.BR lvscan (8)
++.BR lvscan (8),
++.BR thin_dump(8),
++.BR thin_restore(8)
+diff --git a/man/lvcreate.8.in b/man/lvcreate.8.in
+index fb54cc6..0616150 100644
+--- a/man/lvcreate.8.in
++++ b/man/lvcreate.8.in
+@@ -53,11 +53,11 @@ lvcreate \- create a logical volume in an existing volume group
+ .RB [ \-t | \-\-test ]
+ .RB [ \-T | \-\-thin
+ .RB [ \-c | \-\-chunksize
+-.IR ChunkSize ]
++.IR ChunkSize [ bBsSkKmMgG ]]
+ .RB [ \-\-discards
+ .RI { ignore | nopassdown | passdown }]
+ .RB [ \-\-poolmetadatasize
+-.IR MetadataSize [ bBsSkKmMgG ]]]
++.IR ThinPoolMetadataSize [ bBsSkKmMgG ]]]
+ .RB [ \-\-thinpool
+ .IR ThinPoolLogicalVolume { Name | Path }]
+ .RB [ \-\-type
+@@ -76,7 +76,7 @@ lvcreate \- create a logical volume in an existing volume group
+ .BR \-L | \-\-size
+ .IR LogicalVolumeSize [ bBsSkKmMgGtTpPeE ]]
+ .RB [ \-c | \-\-chunksize
+-.IR ChunkSize ]
++.IR ChunkSize [ bBsSkK ]]
+ .RB [ \-\-noudevsync ]
+ .RB [ \-\-ignoremonitoring ]
+ .RB [ \-\-monitor " {" \fIy | \fIn }]
+@@ -125,14 +125,14 @@ always assumed and it can't be overridden. If clustered locking is enabled,
+ \fB\-a\fIey\fR will activate exclusively on one node and \fB\-a\fIly\fR will
+ activate only on the local node.
+ .TP
+-.BR \-c ", " \-\-chunksize " " \fIChunkSize
++.BR \-c ", " \-\-chunksize " " \fIChunkSize [ \fIbBsSkKmMgG ]
+ Gives the size of chunk for snapshot and thin pool logical volumes.
+ For snapshots the value must be power of 2 between 4KiB and 512KiB
+ and the default value is 4.
+ For thin pools the value must be between 64KiB and
+-1048576KiB and the default value starts with 64 and scales
++1GiB and the default value starts with 64 and scales
+ up to fit the pool metadata size within 128MB,
+-if the poolmetadata size is not specified.
++if the pool metadata size is not specified.
+ Older dm thin pool target version (<1.4) requires the value to be power of 2.
+ The newer version requires to be the multiple of 64KiB, however discard is
+ not supported for non power of 2 values.
+@@ -144,7 +144,7 @@ logical volumes. Default is no contiguous allocation based
+ on a next free principle.
+ .TP
+ .BR \-\-discards " {" \fIignore | \fInopassdown | \fIpassdown }
+-Set discards behavior.
++Set discards behavior for thin pool.
+ Default is \fIpassdown\fP.
+ .TP
+ .BR \-i ", " \-\-stripes " " \fIStripes
+@@ -236,7 +236,7 @@ Set access permissions to read only or read and write.
+ .br
+ Default is read and write.
+ .TP
+-.IR \fB\-\-poolmetadatasize " " MetadataSize [ bBsSkKmMgG ]
++.IR \fB\-\-poolmetadatasize " " ThinPoolMetadataSize [ bBsSkKmMgG ]
+ Set the size of thin pool's metadata logical volume.
+ Supported value is in range between 2MiB and 16GiB.
+ Default value is  (Pool_LV_size / Pool_LV_chunk_size * 64b).
+@@ -364,7 +364,7 @@ a parity drive for a total of 4 devices) and a stripesize of 64KiB:
+ .B lvcreate \-\-type raid5 \-L 5G \-i 3 \-I 64 \-n my_lv vg00
+ 
+ Creates 100MiB pool logical volume for thin provisioning
+-build with 2 stripes 64KiB and chunk size 128KiB together with
++build with 2 stripes 64KiB and chunk size 256KiB together with
+ 1TiB thin provisioned logical volume "vg00/thin_lv":
+ .sp
+ .B lvcreate \-i 2 \-I 64 \-c 256 \-L100M \-T vg00/pool \-V 1T \-\-name thin_lv
+diff --git a/man/vgcfgrestore.8.in b/man/vgcfgrestore.8.in
+index 3b7b038..7b8dd59 100644
+--- a/man/vgcfgrestore.8.in
++++ b/man/vgcfgrestore.8.in
+@@ -6,6 +6,7 @@ vgcfgrestore \- restore volume group descriptor area
+ .RB [ \-d | \-\-debug ]
+ .RB [ \-f | \-\-file
+ .RI < filename >]
++.RB [ \-\-force ]
+ .RB [ \-l [ l ]| \-\-list ]
+ .RB [ \-h | \-\-help ]
+ .RB [ \-M | \-\-metadatatype
+@@ -32,6 +33,14 @@ May be used with the \fB\-f\fP option.  Does not restore \fIVolumeGroupName\fP.
+ Name of LVM metadata backup file
+ Specifies a metadata backup or archive file to be used for restoring 
+ VolumeGroupName.  Often this file has been created with \fBvgcfgbackup\fP.
++.TP
++.B \-\-force
++To restore metadata with thin pool volumes, user currently
++needs to use this flag. The tool DOES NOT make any validation.
++.br
++WARNING: Restoring lvm2 metadata that are not matching thin pool
++kernel metadata may lead to the destruction of the pool content.
++Use with extreme caution.
+ .SH REPLACING PHYSICAL VOLUMES
+ \fBvgdisplay \-\-partial \-\-verbose\fP will show you the UUIDs and sizes of
+ any PVs that are no longer present.
+diff --git a/test/api/thin_percent.c b/test/api/thin_percent.c
+index 2c8b19b..ae511df 100644
+--- a/test/api/thin_percent.c
++++ b/test/api/thin_percent.c
+@@ -23,6 +23,8 @@ int main(int argc, char *argv[])
+ 	vg_t vg;
+ 	lv_t lv;
+ 	struct lvm_property_value v;
++	struct dm_list *lvsegs;
++	struct lvm_lvseg_list *lvl;
+ 
+ 	handle = lvm_init(NULL);
+ 	assert(handle);
+@@ -33,6 +35,14 @@ int main(int argc, char *argv[])
+ 	lv = lvm_lv_from_name(vg, "pool");
+ 	assert(lv);
+ 
++	lvsegs = lvm_lv_list_lvsegs(lv);
++	assert(lvsegs && (dm_list_size(lvsegs) == 1));
++	dm_list_iterate_items(lvl, lvsegs) {
++		v = lvm_lvseg_get_property(lvl->lvseg, "discards");
++		assert(v.is_valid && v.is_string);
++		assert(strcmp(v.value.string, "passdown") == 0);
++	}
++
+ 	v = lvm_lv_get_property(lv, "data_percent");
+ 	assert(v.is_valid);
+ 	assert(v.value.integer == 25 * PERCENT_1);
+diff --git a/test/api/thin_percent.sh b/test/api/thin_percent.sh
+index 9287cf3..e14e807 100644
+--- a/test/api/thin_percent.sh
++++ b/test/api/thin_percent.sh
+@@ -30,7 +30,7 @@ dd if=/dev/urandom of="$DM_DEV_DIR/$vg/thin" count=2 bs=256K
+ lvcreate -s $vg/thin -n snap
+ dd if=/dev/urandom of="$DM_DEV_DIR/$vg/snap" count=3 bs=256K
+ 
+-lvs $vg
++lvs -o+discards $vg
+ 
+ aux apitest thin_percent $vg
+ 
+diff --git a/test/shell/lvconvert-thin.sh b/test/shell/lvconvert-thin.sh
+index 97ccc09..4634aa2 100644
+--- a/test/shell/lvconvert-thin.sh
++++ b/test/shell/lvconvert-thin.sh
+@@ -12,6 +12,13 @@
+ 
+ . lib/test
+ 
++prepare_lvs()
++{
++	lvremove -f $vg
++	lvcreate -L10M -n $lv1 $vg
++	lvcreate -L8M -n $lv2 $vg
++}
++
+ #
+ # Main
+ #
+@@ -19,25 +26,73 @@ aux have_thin 1 0 0 || skip
+ 
+ aux prepare_pvs 4 64
+ 
+-vgcreate $vg -s 64K $(cat DEVICES)
++# build one large PV
++vgcreate $vg1 $(cut -d ' ' -f -3 DEVICES)
++lvcreate -s -l 100%FREE -n $lv $vg1 --virtualsize 64T
++aux lvmconf 'devices/filter = [ "a/dev\/mapper\/.*$/", "a/dev\/LVMTEST/", "r/.*/" ]'
++
++pvcreate "$DM_DEV_DIR/$vg1/$lv"
++vgcreate $vg -s 64K $(cut -d ' ' -f 4 DEVICES) "$DM_DEV_DIR/$vg1/$lv"
+ 
+ # create mirrored LVs for data and metadata volumes
+-lvcreate -aey -l8 -m1 --mirrorlog core -n $lv1 $vg
+-lvcreate -aey -l4 -m1 --mirrorlog core -n $lv2 $vg
++lvcreate -aey -L10M -m1 --mirrorlog core -n $lv1 $vg
++lvcreate -aey -L8M -m1 --mirrorlog core -n $lv2 $vg
++lvchange -an $vg/$lv1
++
++
++# conversion fails for internal volumes
++not lvconvert --thinpool $vg/${lv1}_mimage_0
++not lvconvert --thinpool $vg/$lv1 --poolmetadata $vg/${lv2}_mimage_0
++# can't use --readahead with --poolmetadata
++not lvconvert --thinpool $vg/$lv1 --poolmetadata $vg/$lv2 --readahead 512
++
++lvconvert --thinpool $vg/$lv1 --poolmetadata $vg/$lv2
++
++prepare_lvs
++lvconvert -c 64 --stripes 2 --thinpool $vg/$lv1 --readahead 48
++
++lvremove -f $vg
++lvcreate -L1T -n $lv1 $vg
++lvconvert -c 8M --thinpool $vg/$lv1
++
++lvremove -f $vg
++# test with bigger sizes
++lvcreate -L1T -n $lv1 $vg
++lvcreate -L8M -n $lv2 $vg
++lvcreate -L1M -n $lv3 $vg
+ 
+-lvconvert -c 64K --thinpool $vg/$lv1 --poolmetadata $vg/$lv2
++# chunk size is bigger then size of thin pool data
++not lvconvert -c 1G --thinpool $vg/$lv3
++# stripes can't be used with poolmetadata
++not lvconvert --stripes 2 --thinpool $vg/$lv1 --poolmetadata $vg/$lv2
++# too small metadata (<2M)
++not lvconvert -c 64 --thinpool $vg/$lv1 --poolmetadata $vg/$lv3
++# too small chunk size fails
++not lvconvert -c 4 --thinpool $vg/$lv1 --poolmetadata $vg/$lv2
++# too big chunk size fails
++not lvconvert -c 2G --thinpool $vg/$lv1 --poolmetadata $vg/$lv2
++# negative chunk size fails
++not lvconvert -c -256 --thinpool $vg/$lv1 --poolmetadata $vg/$lv2
++# non power of 2 fails
++not lvconvert -c 88 --thinpool $vg/$lv1 --poolmetadata $vg/$lv2
+ 
+-lvcreate -V10M -T $vg/$lv1 --name $lv3
++# Warning about smaller then suggested
++lvconvert -c 256 --thinpool $vg/$lv1 --poolmetadata $vg/$lv2 |& tee err
++grep "WARNING: Chunk size is smaller" err
+ 
+-# check lvrename work properly
+-lvrename $vg/$lv1  $vg/pool
+-check lv_field $vg/pool name "pool"
++lvremove -f $vg
++lvcreate -L1T -n $lv1 $vg
++lvcreate -L32G -n $lv2 $vg
++# Warning about bigger then needed
++lvconvert --thinpool $vg/$lv1 --poolmetadata $vg/$lv2 |& tee err
++grep "WARNING: Maximum size" err
+ 
+-lvrename $vg/$lv3  $vg/$lv4
+-check lv_field $vg/$lv4 name "$lv4"
++lvremove -f $vg
++lvcreate -L24T -n $lv1 $vg
++# Warning about bigger then needed (24T data and 16G -> 128K chunk)
++lvconvert -c 64 --thinpool $vg/$lv1 |& tee err
++grep "WARNING: Chunk size is too small" err
+ 
+-# not yet supported conversions
+-not lvconvert -m 1 $vg/pool
+-not lvconvert -m 1 $vg/$lv3
++#lvs -a -o+chunk_size,stripe_size,seg_pe_ranges
+ 
+ vgremove -ff $vg
+diff --git a/test/shell/thin-defaults.sh b/test/shell/thin-defaults.sh
+new file mode 100644
+index 0000000..677d2f1
+--- /dev/null
++++ b/test/shell/thin-defaults.sh
+@@ -0,0 +1,35 @@
++#!/bin/bash
++# Copyright (C) 2012 Red Hat, Inc. All rights reserved.
++#
++# This copyrighted material is made available to anyone wishing to use,
++# modify, copy, or redistribute it subject to the terms and conditions
++# of the GNU General Public License v.2.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software Foundation,
++# Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++
++# test defaults entered through lvm.conf
++
++. lib/test
++
++#
++# Main
++#
++aux have_thin 1 0 0 || skip
++
++aux prepare_vg 2
++
++lvcreate -T -L8M $vg/pool0
++
++aux lvmconf "allocation/thin_pool_chunk_size = 128" \
++	    "allocation/thin_pool_discards = \"ignore\"" \
++	    "allocation/thin_pool_zero = 0"
++
++lvcreate -T -L8M $vg/pool1
++
++check lv_field $vg/pool1 chunksize "128.00k"
++check lv_field $vg/pool1 discards "ignore"
++check lv_field $vg/pool1 zero 0
++
++vgremove -f $vg
+diff --git a/test/shell/thin-restore.sh b/test/shell/thin-restore.sh
+new file mode 100644
+index 0000000..7580ae4
+--- /dev/null
++++ b/test/shell/thin-restore.sh
+@@ -0,0 +1,34 @@
++#!/bin/bash
++# Copyright (C) 2012 Red Hat, Inc. All rights reserved.
++#
++# This copyrighted material is made available to anyone wishing to use,
++# modify, copy, or redistribute it subject to the terms and conditions
++# of the GNU General Public License v.2.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software Foundation,
++# Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++
++# test restore operation of thin pool metadata
++
++. lib/test
++
++#
++# Main
++#
++aux have_thin 1 0 0 || skip
++
++aux prepare_vg 2
++
++lvcreate -T -L8M $vg/pool -V10M -n $lv1
++
++vgcfgbackup -f backup $vg
++
++# use of --force is mandatory
++not vgcfgrestore -f backup $vg
++
++vgcfgrestore -f backup --force $vg
++
++check lv_field $vg/pool transaction_id 1
++
++vgremove -f $vg
+diff --git a/tools/args.h b/tools/args.h
+index 0d9605a..d4d6c40 100644
+--- a/tools/args.h
++++ b/tools/args.h
+@@ -73,6 +73,7 @@ arg(poll_ARG, '\0', "poll", yes_no_arg, 0)
+ arg(poolmetadata_ARG, '\0', "poolmetadata", string_arg, 0)
+ arg(poolmetadatasize_ARG, '\0', "poolmetadatasize", size_mb_arg, 0)
+ arg(discards_ARG, '\0', "discards", discards_arg, 0)
++arg(force_long_ARG, '\0', "force", NULL, ARG_COUNTABLE)
+ arg(stripes_long_ARG, '\0', "stripes", int_arg, 0)
+ arg(sysinit_ARG, '\0', "sysinit", NULL, 0)
+ arg(thinpool_ARG, '\0', "thinpool", string_arg, 0)
+diff --git a/tools/commands.h b/tools/commands.h
+index 6415d34..986539e 100644
+--- a/tools/commands.h
++++ b/tools/commands.h
+@@ -147,13 +147,16 @@ xx(lvconvert,
+    "--thinpool ThinPoolLogicalVolume[Path]\n"
+    "\t[--chunksize size]\n"
+    "\t[--discards {ignore|nopassdown|passdown}]\n"
+-   "\t[[--poolmetadatasize size] | --poolmetadata ThinMetadataLogicalVolume[Path]]\n"
++   "\t[--poolmetadata ThinMetadataLogicalVolume[Path] |\n"
++   "\t [--poolmetadatasize size]\n"
++   "\t [-r|--readahead ReadAheadSectors|auto|none]\n"
++   "\t [--stripes Stripes [-I|--stripesize StripeSize]]]\n"
+    "\t[-Z|--zero {y|n}]\n"
+    "\t[-d|--debug] [-h|-?|--help] [-v|--verbose]\n",
+ 
+    alloc_ARG, background_ARG, chunksize_ARG, corelog_ARG, interval_ARG,
+    merge_ARG, mirrorlog_ARG, mirrors_ARG, name_ARG, noudevsync_ARG,
+-   regionsize_ARG, repair_ARG, replace_ARG, snapshot_ARG, splitmirrors_ARG,
++   readahead_ARG, regionsize_ARG, repair_ARG, replace_ARG, snapshot_ARG, splitmirrors_ARG,
+    trackchanges_ARG, type_ARG, stripes_long_ARG, stripesize_ARG, test_ARG,
+    chunksize_ARG, discards_ARG, poolmetadata_ARG, poolmetadatasize_ARG, thinpool_ARG,
+    use_policies_ARG, yes_ARG, force_ARG, zero_ARG)
+@@ -722,6 +725,7 @@ xx(vgcfgrestore,
+    "vgcfgrestore " "\n"
+    "\t[-d|--debug] " "\n"
+    "\t[-f|--file filename] " "\n"
++   "\t[--force]\n"
+    "\t[-l[l]|--list [--list]]" "\n"
+    "\t[-M|--metadatatype 1|2]" "\n"
+    "\t[-h|--help]" "\n"
+@@ -730,7 +734,7 @@ xx(vgcfgrestore,
+    "\t[--version] " "\n"
+    "\tVolumeGroupName",
+ 
+-   file_ARG, list_ARG, metadatatype_ARG, test_ARG)
++   file_ARG, force_long_ARG, list_ARG, metadatatype_ARG, test_ARG)
+ 
+ xx(vgchange,
+    "Change volume group attributes",
+diff --git a/tools/lvchange.c b/tools/lvchange.c
+index 04facdd..7156eeb 100644
+--- a/tools/lvchange.c
++++ b/tools/lvchange.c
+@@ -111,13 +111,7 @@ static int lvchange_pool_update(struct cmd_context *cmd,
+ 	if (arg_count(cmd, discards_ARG)) {
+ 		discards = (thin_discards_t) arg_uint_value(cmd, discards_ARG, THIN_DISCARDS_IGNORE);
+ 		if (discards != first_seg(lv)->discards) {
+-			if ((discards != THIN_DISCARDS_IGNORE) &&
+-				 (first_seg(lv)->chunk_size &
+-				  (first_seg(lv)->chunk_size - 1)))
+-				log_error("Cannot change discards state for "
+-					  "logical volume \"%s\" "
+-					  "with non power of 2 chunk size.", lv->name);
+-			else if (((discards == THIN_DISCARDS_IGNORE) ||
++			if (((discards == THIN_DISCARDS_IGNORE) ||
+ 			     (first_seg(lv)->discards == THIN_DISCARDS_IGNORE)) &&
+ 			    lv_is_active(lv))
+ 				log_error("Cannot change discards state for active "
+diff --git a/tools/lvconvert.c b/tools/lvconvert.c
+index 132a69d..c584180 100644
+--- a/tools/lvconvert.c
++++ b/tools/lvconvert.c
+@@ -39,8 +39,10 @@ struct lvconvert_params {
+ 	uint32_t keep_mimages;
+ 	uint32_t stripes;
+ 	uint32_t stripe_size;
++	uint32_t read_ahead;
+ 
+ 	const struct segment_type *segtype;
++	unsigned target_attr;
+ 
+ 	alloc_policy_t alloc;
+ 
+@@ -155,6 +157,7 @@ static int _read_params(struct lvconvert_params *lp, struct cmd_context *cmd,
+ 	int pagesize = lvm_getpagesize();
+ 
+ 	memset(lp, 0, sizeof(*lp));
++	lp->target_attr = ~0;
+ 
+ 	if ((arg_count(cmd, snapshot_ARG) || arg_count(cmd, merge_ARG)) &&
+ 	    (arg_count(cmd, mirrorlog_ARG) || arg_count(cmd, mirrors_ARG) ||
+@@ -268,6 +271,8 @@ static int _read_params(struct lvconvert_params *lp, struct cmd_context *cmd,
+ 	if (lp->merge) {	/* Snapshot merge */
+ 		if (arg_count(cmd, regionsize_ARG) || arg_count(cmd, chunksize_ARG) ||
+ 		    arg_count(cmd, zero_ARG) || arg_count(cmd, regionsize_ARG) ||
++		    arg_count(cmd, poolmetadata_ARG) || arg_count(cmd, poolmetadatasize_ARG) ||
++		    arg_count(cmd, readahead_ARG) ||
+ 		    arg_count(cmd, stripes_long_ARG) || arg_count(cmd, stripesize_ARG)) {
+ 			log_error("Only --background and --interval are valid "
+ 				  "arguments for snapshot merge");
+@@ -335,53 +340,21 @@ static int _read_params(struct lvconvert_params *lp, struct cmd_context *cmd,
+ 			return 0;
+ 		}
+ 
++		if (!get_pool_params(cmd,
++				     &lp->chunk_size,
++				     &lp->discards,
++				     &lp->poolmetadata_size,
++				     &lp->zero))
++			return_0;
++
+ 		if (arg_count(cmd, poolmetadata_ARG)) {
+-			lp->pool_metadata_lv_name = arg_str_value(cmd, poolmetadata_ARG, "");
+-		} else if (arg_count(cmd, poolmetadatasize_ARG)) {
+-			if (arg_sign_value(cmd, poolmetadatasize_ARG, SIGN_NONE) == SIGN_MINUS) {
+-				log_error("Negative pool metadata size is invalid.");
++			if (arg_count(cmd, poolmetadatasize_ARG)) {
++				log_error("--poolmetadatasize is invalid with --poolmetadata.");
+ 				return 0;
+ 			}
+-			lp->poolmetadata_size = arg_uint64_value(cmd, poolmetadatasize_ARG, UINT64_C(0));
+-
+-			if (lp->poolmetadata_size > (2 * DEFAULT_THIN_POOL_MAX_METADATA_SIZE)) {
+-				if (arg_count(cmd, poolmetadatasize_ARG))
+-					log_warn("WARNING: Maximum supported pool metadata size is 16GB.");
+-				lp->poolmetadata_size = 2 * DEFAULT_THIN_POOL_MAX_METADATA_SIZE;
+-			} else if (lp->poolmetadata_size < (2 * DEFAULT_THIN_POOL_MIN_METADATA_SIZE)) {
+-				if (arg_count(cmd, poolmetadatasize_ARG))
+-					log_warn("WARNING: Minimum supported pool metadata size is 2M.");
+-				lp->poolmetadata_size = 2 * DEFAULT_THIN_POOL_MIN_METADATA_SIZE;
+-			}
+-
+-			log_verbose("Setting pool metadata size to %" PRIu64 " sectors.",
+-				    lp->poolmetadata_size);
++			lp->pool_metadata_lv_name = arg_str_value(cmd, poolmetadata_ARG, "");
+ 		}
+ 
+-		if (arg_count(cmd, chunksize_ARG)) {
+-			if (arg_sign_value(cmd, chunksize_ARG, SIGN_NONE) == SIGN_MINUS) {
+-				log_error("Negative chunk size is invalid.");
+-				return 0;
+-			}
+-			lp->chunk_size = arg_uint_value(cmd, chunksize_ARG,
+-							DM_THIN_MIN_DATA_BLOCK_SIZE);
+-
+-			if ((lp->chunk_size < DM_THIN_MIN_DATA_BLOCK_SIZE) ||
+-			    (lp->chunk_size > DM_THIN_MAX_DATA_BLOCK_SIZE)) {
+-				log_error("Chunk size must be in the range %uK to %uK.",
+-					  (DM_THIN_MIN_DATA_BLOCK_SIZE / 2),
+-					  (DM_THIN_MAX_DATA_BLOCK_SIZE / 2));
+-				return 0;
+-			}
+-		} else
+-			lp->chunk_size = DM_THIN_MIN_DATA_BLOCK_SIZE;
+-
+-		log_verbose("Setting pool metadata chunk size to %u sectors.",
+-			    lp->chunk_size);
+-
+-		if (arg_count(cmd, zero_ARG))
+-			lp->zero = strcmp(arg_str_value(cmd, zero_ARG, "y"), "n");
+-
+ 		/* If --thinpool contains VG name, extract it. */
+ 		if ((tmp_str = strchr(lp->pool_data_lv_name, (int) '/'))) {
+ 			if (!(lp->vg_name = extract_vgname(cmd, lp->pool_data_lv_name)))
+@@ -460,7 +433,7 @@ static int _read_params(struct lvconvert_params *lp, struct cmd_context *cmd,
+ 	}
+ 
+ 	if (activation() && lp->segtype && lp->segtype->ops->target_present &&
+-	    !lp->segtype->ops->target_present(cmd, NULL, NULL)) {
++	    !lp->segtype->ops->target_present(cmd, NULL, &lp->target_attr)) {
+ 		log_error("%s: Required device-mapper target(s) not "
+ 			  "detected in your kernel", lp->segtype->name);
+ 		return 0;
+@@ -1826,12 +1799,20 @@ static int _lvconvert_thinpool(struct cmd_context *cmd,
+ {
+ 	int r = 0;
+ 	char *name;
++	const char *old_name;
+ 	int len;
+ 	struct lv_segment *seg;
+ 	struct logical_volume *data_lv;
+ 	struct logical_volume *metadata_lv;
++	struct logical_volume *pool_metadata_lv;
++
++	if (!lv_is_visible(pool_lv)) {
++		log_error("Can't convert internal LV %s/%s.",
++			  pool_lv->vg->name, pool_lv->name);
++		return 0;
++	}
+ 
+-	if (lv_is_thin_type(pool_lv)) {
++	if (lv_is_thin_type(pool_lv) && !lp->pool_metadata_lv_name) {
+ 		log_error("Can't use thin logical volume %s/%s for thin pool data.",
+ 			  pool_lv->vg->name, pool_lv->name);
+ 		return 0;
+@@ -1839,19 +1820,48 @@ static int _lvconvert_thinpool(struct cmd_context *cmd,
+ 
+ 	/* We are changing target type, so deactivate first */
+ 	if (!deactivate_lv(cmd, pool_lv)) {
+-		log_error("Can't deactivate logical volume %s/%s.",
++		log_error("Aborting. Failed to deactivate logical volume %s/%s.",
+ 			  pool_lv->vg->name, pool_lv->name);
+ 		return 0;
+ 	}
+ 
++	len = strlen(pool_lv->name) + 16;
++	if (!(name = dm_pool_alloc(pool_lv->vg->vgmem, len))) {
++		log_error("Can't allocate new name.");
++		return 0;
++	}
++
++	if (dm_snprintf(name, len, "%s_tmeta", pool_lv->name) < 0) {
++		log_error("Failed to create layer name.");
++		return 0;
++	}
++
+ 	if (lp->pool_metadata_lv_name) {
++		if (arg_count(cmd, stripesize_ARG) || arg_count(cmd, stripes_long_ARG)) {
++			log_error("Can't use --stripes and --stripesize with --poolmetadata.");
++			return 0;
++		}
++		if (arg_count(cmd, readahead_ARG)) {
++			log_error("Can't use --readahead with --poolmetadata.");
++			return 0;
++		}
+ 		metadata_lv = find_lv(pool_lv->vg, lp->pool_metadata_lv_name);
+ 		if (!metadata_lv) {
+-			log_error("Unknown metadata LV %s", lp->pool_metadata_lv_name);
++			log_error("Unknown metadata LV %s.", lp->pool_metadata_lv_name);
++			return 0;
++		}
++		if (!lv_is_visible(metadata_lv)) {
++			log_error("Can't convert internal LV %s/%s.",
++				  metadata_lv->vg->name, metadata_lv->name);
++			return 0;
++		}
++		if (metadata_lv->status & LOCKED) {
++			log_error("Can't convert locked LV %s/%s.",
++				  metadata_lv->vg->name, metadata_lv->name);
+ 			return 0;
+ 		}
+ 		if (metadata_lv == pool_lv) {
+-			log_error("Can't use same LV for thin data and metadata LV %s",
++			log_error("Can't use same LV for thin pool data and metadata LV %s.",
+ 				  lp->pool_metadata_lv_name);
+ 			return 0;
+ 		}
+@@ -1861,37 +1871,95 @@ static int _lvconvert_thinpool(struct cmd_context *cmd,
+ 				  metadata_lv->vg->name, metadata_lv->name);
+ 			return 0;
+ 		}
+-	} else if (arg_count(cmd, poolmetadatasize_ARG)) {
+-		/* FIXME: allocate metadata LV! */
+-		metadata_lv = NULL;
+-		log_error("Uncreated metadata.");
+-		return 0;
+-	} else {
+-		log_error("Uknown metadata.");
+-		return 0;
+-	}
+ 
+-	len = strlen(pool_lv->name) + 16;
+-	if (!(name = dm_pool_alloc(pool_lv->vg->vgmem, len))) {
+-		log_error("Cannot allocate new name.");
+-		return 0;
+-	}
++		/* Swap normal LV with pool's metadata LV ? */
++		if (lv_is_thin_pool(pool_lv)) {
++			if (!deactivate_lv(cmd, metadata_lv)) {
++				log_error("Aborting. Failed to deactivate thin metadata lv.");
++				return 0;
++			}
++			if (!arg_count(cmd, yes_ARG) &&
++			    yes_no_prompt("Do you want to swap metadata of %s/%s pool with "
++					  "volume %s/%s? [y/n]: ",
++					  pool_lv->vg->name, pool_lv->name,
++					  pool_lv->vg->name, metadata_lv->name) == 'n') {
++				log_error("Conversion aborted.");
++				return 0;
++			}
++			seg = first_seg(pool_lv);
++			/* Swap names between old and new metadata LV */
++			if (!detach_pool_metadata_lv(seg, &pool_metadata_lv))
++				return_0;
++			old_name = metadata_lv->name;
++			if (!lv_rename_update(cmd, metadata_lv, "pvmove_tmeta", 0))
++				return_0;
++			if (!lv_rename_update(cmd, pool_metadata_lv, old_name, 0))
++				return_0;
+ 
+-	if (!lv_is_active(metadata_lv)) {
+-		if (!deactivate_lv(cmd, metadata_lv)) {
+-			log_error("Can't deactivate logical volume %s/%s.",
+-				  metadata_lv->vg->name, metadata_lv->name);
+-			return 0;
++			if (!arg_count(cmd, chunksize_ARG))
++				lp->chunk_size = seg->chunk_size;
++			else if ((lp->chunk_size != seg->chunk_size) &&
++				 !arg_count(cmd, force_ARG) &&
++				 yes_no_prompt("Do you really want to change chunk size %s to %s for %s/%s "
++					       "pool volume? [y/n]: ", display_size(cmd, seg->chunk_size),
++					       display_size(cmd, lp->chunk_size),
++					       pool_lv->vg->name, pool_lv->name) == 'n') {
++				log_error("Conversion aborted.");
++				return 0;
++			}
++			if (!arg_count(cmd, discards_ARG))
++				lp->discards = seg->discards;
++			if (!arg_count(cmd, zero_ARG))
++				lp->zero = seg->zero_new_blocks;
++
++			goto mda_write;
+ 		}
+-		if (!activate_lv_local(cmd, metadata_lv)) {
++
++		if (!lv_is_active(metadata_lv) &&
++		    !activate_lv_local(cmd, metadata_lv)) {
+ 			log_error("Aborting. Failed to activate thin metadata lv.");
+ 			return 0;
+ 		}
+-	}
++		if (!set_lv(cmd, metadata_lv, UINT64_C(0), 0)) {
++			log_error("Aborting. Failed to wipe thin metadata lv.");
++			return 0;
++		}
+ 
+-	if (!set_lv(cmd, metadata_lv, UINT64_C(0), 0)) {
+-		log_error("Aborting. Failed to wipe thin metadata lv.");
+-		return 0;
++		lp->poolmetadata_size =
++			(uint64_t) metadata_lv->le_count * metadata_lv->vg->extent_size;
++		if (lp->poolmetadata_size > (2 * DEFAULT_THIN_POOL_MAX_METADATA_SIZE)) {
++			log_warn("WARNING: Maximum size used by metadata is %s, rest is unused.",
++				 display_size(cmd, 2 * DEFAULT_THIN_POOL_MAX_METADATA_SIZE));
++			lp->poolmetadata_size = 2 * DEFAULT_THIN_POOL_MAX_METADATA_SIZE;
++		} else if (lp->poolmetadata_size < (2 * DEFAULT_THIN_POOL_MIN_METADATA_SIZE)) {
++			log_error("Logical volume %s/%s is too small (<%s) for metadata.",
++				  metadata_lv->vg->name, metadata_lv->name,
++				  display_size(cmd, 2 * DEFAULT_THIN_POOL_MIN_METADATA_SIZE));
++			return 0;
++		}
++		if (!update_pool_params(cmd, lp->target_attr,
++					pool_lv->le_count, pool_lv->vg->extent_size,
++					&lp->chunk_size, &lp->discards,
++					&lp->poolmetadata_size))
++			return_0;
++	} else {
++		if (!update_pool_params(cmd, lp->target_attr,
++					pool_lv->le_count, pool_lv->vg->extent_size,
++					&lp->chunk_size, &lp->discards,
++					&lp->poolmetadata_size))
++			return_0;
++
++		if (!get_stripe_params(cmd, &lp->stripes, &lp->stripe_size))
++			return_0;
++		/* Hmm _read_activation_params */
++		lp->read_ahead = arg_uint_value(cmd, readahead_ARG,
++						cmd->default_settings.read_ahead);
++
++		if (!(metadata_lv = alloc_pool_metadata(pool_lv, lp->alloc, name,
++							lp->pvh, lp->read_ahead,
++							lp->stripes, lp->stripe_size,
++							lp->poolmetadata_size)))
++			return_0;
+ 	}
+ 
+ 	if (!deactivate_lv(cmd, metadata_lv)) {
+@@ -1900,14 +1968,6 @@ static int _lvconvert_thinpool(struct cmd_context *cmd,
+ 		return 0;
+ 	}
+ 
+-	if (dm_snprintf(name, len, "%s_tmeta", pool_lv->name) < 0)
+-		return_0;
+-
+-	/* Rename deactivated metadata LV to have _tmeta suffix */
+-	/* Implicit checks if metadata_lv is visible */
+-	if (!lv_rename_update(cmd, metadata_lv, name, 0))
+-		return_0;
+-
+ 	/*
+ 	 * Since we wish to have underlaying dev, to match _tdata
+ 	 * rename data LV first, also checks for visible LV
+@@ -1925,18 +1985,26 @@ static int _lvconvert_thinpool(struct cmd_context *cmd,
+ 	seg->segtype = lp->segtype;
+ 	seg->lv->status |= THIN_POOL;
+ 
+-	seg->chunk_size = lp->chunk_size;
+-	seg->zero_new_blocks = lp->zero ? 1 : 0;
+-	seg->discards = lp->discards;
++	/* Drop reference as attach_pool_data_lv() takes it again */
++	remove_seg_from_segs_using_this_lv(data_lv, seg);
++	if (!attach_pool_data_lv(seg, data_lv))
++		return_0;
++
+ 	seg->low_water_mark = 0;
+ 	seg->transaction_id = 0;
+ 
+-	if (!attach_pool_metadata_lv(seg, metadata_lv))
++mda_write:
++	seg->chunk_size = lp->chunk_size;
++	seg->discards = lp->discards;
++	seg->zero_new_blocks = lp->zero ? 1 : 0;
++
++	/* Rename deactivated metadata LV to have _tmeta suffix */
++	/* Implicit checks if metadata_lv is visible */
++	if (strcmp(metadata_lv->name, name) &&
++	    !lv_rename_update(cmd, metadata_lv, name, 0))
+ 		return_0;
+ 
+-	/* Drop reference as attach_pool_data_lv() takes it again */
+-	remove_seg_from_segs_using_this_lv(data_lv, seg);
+-	if (!attach_pool_data_lv(seg, data_lv))
++	if (!attach_pool_metadata_lv(seg, metadata_lv))
+ 		return_0;
+ 
+ 	if (!vg_write(pool_lv->vg) || !vg_commit(pool_lv->vg))
+@@ -1945,6 +2013,11 @@ static int _lvconvert_thinpool(struct cmd_context *cmd,
+ 	if (!activate_lv_excl(cmd, pool_lv)) {
+ 		log_error("Failed to activate pool logical volume %s/%s.",
+ 			  pool_lv->vg->name, pool_lv->name);
++		/* Deactivate subvolumes */
++		if (!deactivate_lv(cmd, seg_lv(seg, 0)))
++			log_error("Failed to deactivate pool data logical volume.");
++		if (!deactivate_lv(cmd, seg->metadata_lv))
++			log_error("Failed to deactivate pool metadata logical volume.");
+ 		goto out;
+ 	}
+ 
+diff --git a/tools/lvcreate.c b/tools/lvcreate.c
+index 3ea8f46..1fcbde3 100644
+--- a/tools/lvcreate.c
++++ b/tools/lvcreate.c
+@@ -234,7 +234,6 @@ static int _update_extents_params(struct volume_group *vg,
+ {
+ 	uint32_t pv_extent_count;
+ 	struct logical_volume *origin = NULL;
+-	int changed = 0;
+ 	uint32_t size_rest;
+ 	uint32_t stripesize_extents;
+ 
+@@ -308,38 +307,11 @@ static int _update_extents_params(struct volume_group *vg,
+ 	}
+ 
+ 	if (lp->create_thin_pool) {
+-		if (!arg_count(vg->cmd, poolmetadatasize_ARG)) {
+-			/* Defaults to nr_pool_blocks * 64b */
+-			lp->poolmetadatasize =  (uint64_t) lp->extents * vg->extent_size /
+-				(uint64_t) (lp->chunk_size * (SECTOR_SIZE / UINT64_C(64)));
+-
+-			/* Check if we could eventually use bigger chunk size */
+-			if (!arg_count(vg->cmd, chunksize_ARG)) {
+-				while ((lp->poolmetadatasize >
+-					(DEFAULT_THIN_POOL_OPTIMAL_SIZE / SECTOR_SIZE)) &&
+-				       (lp->chunk_size < DM_THIN_MAX_DATA_BLOCK_SIZE)) {
+-					lp->chunk_size <<= 1;
+-					lp->poolmetadatasize >>= 1;
+-					changed++;
+-				}
+-				if (changed)
+-					log_verbose("Changed chunksize to %u sectors.",
+-						    lp->chunk_size);
+-			}
+-		}
+-
+-		if (lp->poolmetadatasize > (2 * DEFAULT_THIN_POOL_MAX_METADATA_SIZE)) {
+-			if (arg_count(vg->cmd, poolmetadatasize_ARG))
+-				log_warn("WARNING: Maximum supported pool metadata size is 16GB.");
+-			lp->poolmetadatasize = 2 * DEFAULT_THIN_POOL_MAX_METADATA_SIZE;
+-		} else if (lp->poolmetadatasize < (2 * DEFAULT_THIN_POOL_MIN_METADATA_SIZE)) {
+-			if (arg_count(vg->cmd, poolmetadatasize_ARG))
+-				log_warn("WARNING: Minimum supported pool metadata size is 2M.");
+-			lp->poolmetadatasize = 2 * DEFAULT_THIN_POOL_MIN_METADATA_SIZE;
+-		}
+-
+-		log_verbose("Setting pool metadata size to %" PRIu64 " sectors.",
+-			    lp->poolmetadatasize);
++		if (!update_pool_params(vg->cmd, lp->target_attr,
++					lp->extents, vg->extent_size,
++					&lp->chunk_size, &lp->discards,
++					&lp->poolmetadatasize))
++			return_0;
+ 
+ 		if (!(lp->poolmetadataextents =
+ 		      extents_from_size(vg->cmd, lp->poolmetadatasize, vg->extent_size)))
+@@ -386,16 +358,9 @@ static int _read_size_params(struct lvcreate_params *lp,
+ 	if (lp->thin && (arg_count(cmd, size_ARG) || arg_count(cmd, extents_ARG)))
+ 		lp->create_thin_pool = 1;
+ 
+-	if (arg_count(cmd, poolmetadatasize_ARG)) {
+-		if (!seg_is_thin(lp)) {
+-			log_error("--poolmetadatasize may only be specified when allocating the thin pool.");
+-			return 0;
+-		}
+-		if (arg_sign_value(cmd, poolmetadatasize_ARG, SIGN_NONE) == SIGN_MINUS) {
+-			log_error("Negative poolmetadatasize is invalid.");
+-			return 0;
+-		}
+-		lp->poolmetadatasize = arg_uint64_value(cmd, poolmetadatasize_ARG, UINT64_C(0));
++	if (arg_count(cmd, poolmetadatasize_ARG) && !seg_is_thin(lp)) {
++		log_error("--poolmetadatasize may only be specified when allocating the thin pool.");
++		return 0;
+ 	}
+ 
+ 	/* Size returned in kilobyte units; held in sectors */
+@@ -679,11 +644,11 @@ static int _lvcreate_params(struct lvcreate_params *lp,
+ 	struct arg_value_group_list *current_group;
+ 	const char *segtype_str;
+ 	const char *tag;
+-	unsigned attr = 0;
+ 
+ 	memset(lp, 0, sizeof(*lp));
+ 	memset(lcp, 0, sizeof(*lcp));
+ 	dm_list_init(&lp->tags);
++	lp->target_attr = ~0;
+ 
+ 	/*
+ 	 * Check selected options are compatible and determine segtype
+@@ -796,7 +761,7 @@ static int _lvcreate_params(struct lvcreate_params *lp,
+ 	}
+ 
+ 	if (activation() && lp->segtype->ops->target_present &&
+-	    !lp->segtype->ops->target_present(cmd, NULL, &attr)) {
++	    !lp->segtype->ops->target_present(cmd, NULL, &lp->target_attr)) {
+ 		log_error("%s: Required device-mapper target(s) not "
+ 			  "detected in your kernel", lp->segtype->name);
+ 		return 0;
+@@ -812,16 +777,23 @@ static int _lvcreate_params(struct lvcreate_params *lp,
+ 		}
+ 	}
+ 
++	/*
++	 * Should we zero the lv.
++	 */
++	lp->zero = strcmp(arg_str_value(cmd, zero_ARG,
++		(lp->segtype->flags & SEG_CANNOT_BE_ZEROED) ? "n" : "y"), "n");
++
+ 	if (!_lvcreate_name_params(lp, cmd, &argc, &argv) ||
+ 	    !_read_size_params(lp, lcp, cmd) ||
+ 	    !get_stripe_params(cmd, &lp->stripes, &lp->stripe_size) ||
++	    (lp->create_thin_pool &&
++	     !get_pool_params(cmd, &lp->chunk_size, &lp->discards,
++			      &lp->poolmetadatasize, &lp->zero)) ||
+ 	    !_read_mirror_params(lp, cmd) ||
+ 	    !_read_raid_params(lp, cmd))
+ 		return_0;
+ 
+-	if (lp->create_thin_pool)
+-		lp->discards = (thin_discards_t) arg_uint_value(cmd, discards_ARG, THIN_DISCARDS_PASSDOWN);
+-	else if (arg_count(cmd, discards_ARG)) {
++	if (!lp->create_thin_pool && arg_count(cmd, discards_ARG)) {
+ 		log_error("--discards is only available for thin pool creation.");
+ 		return 0;
+ 	}
+@@ -831,58 +803,27 @@ static int _lvcreate_params(struct lvcreate_params *lp,
+ 	else if (lp->thin && !lp->create_thin_pool) {
+ 		if (arg_count(cmd, chunksize_ARG))
+ 			log_warn("WARNING: Ignoring --chunksize when using an existing pool.");
+-	} else if (lp->snapshot || lp->create_thin_pool) {
++	} else if (lp->snapshot) {
+ 		if (arg_sign_value(cmd, chunksize_ARG, SIGN_NONE) == SIGN_MINUS) {
+ 			log_error("Negative chunk size is invalid");
+ 			return 0;
+ 		}
+-		if (lp->snapshot) {
+-			lp->chunk_size = arg_uint_value(cmd, chunksize_ARG, 8);
+-			if (lp->chunk_size < 8 || lp->chunk_size > 1024 ||
+-			    (lp->chunk_size & (lp->chunk_size - 1))) {
+-				log_error("Chunk size must be a power of 2 in the "
+-					  "range 4K to 512K");
+-				return 0;
+-			}
+-		} else {
+-			lp->chunk_size = arg_uint_value(cmd, chunksize_ARG,
+-							DM_THIN_MIN_DATA_BLOCK_SIZE);
+-			if ((lp->chunk_size < DM_THIN_MIN_DATA_BLOCK_SIZE) ||
+-			    (lp->chunk_size > DM_THIN_MAX_DATA_BLOCK_SIZE)) {
+-				log_error("Chunk size must be in the range %uK to %uK",
+-					  (DM_THIN_MIN_DATA_BLOCK_SIZE / 2),
+-					  (DM_THIN_MAX_DATA_BLOCK_SIZE / 2));
+-				return 0;
+-			}
+-			if (!(attr & THIN_FEATURE_BLOCK_SIZE) &&
+-			    (lp->chunk_size & (lp->chunk_size - 1))) {
+-				log_error("Chunk size must be a power of 2 for this thin target version.");
+-				return 0;
+-			} else if (lp->chunk_size & (DM_THIN_MIN_DATA_BLOCK_SIZE - 1)) {
+-				log_error("Chunk size must be multiple of %uK.",
+-					  DM_THIN_MIN_DATA_BLOCK_SIZE / 2);
+-				return 0;
+-			} else if ((lp->discards != THIN_DISCARDS_IGNORE) &&
+-				   (lp->chunk_size & (lp->chunk_size - 1))) {
+-				log_warn("WARNING: Using discards ignore for chunk size non power of 2.");
+-				lp->discards = THIN_DISCARDS_IGNORE;
+-			}
++		lp->chunk_size = arg_uint_value(cmd, chunksize_ARG, 8);
++		if (lp->chunk_size < 8 || lp->chunk_size > 1024 ||
++		    (lp->chunk_size & (lp->chunk_size - 1))) {
++			log_error("Chunk size must be a power of 2 in the "
++				  "range 4K to 512K");
++			return 0;
+ 		}
+-		log_verbose("Setting chunksize to %u sectors.", lp->chunk_size);
++		log_verbose("Setting chunksize to %s.", display_size(cmd, lp->chunk_size));
+ 
+ 		if (!lp->thin && lp->snapshot && !(lp->segtype = get_segtype_from_string(cmd, "snapshot")))
+ 			return_0;
+-	} else if (arg_count(cmd, chunksize_ARG)) {
++	} else if (arg_count(cmd, chunksize_ARG) && !lp->create_thin_pool) {
+ 		log_error("-c is only available with snapshots and thin pools");
+ 		return 0;
+ 	}
+ 
+-	/*
+-	 * Should we zero the lv.
+-	 */
+-	lp->zero = strcmp(arg_str_value(cmd, zero_ARG,
+-		(lp->segtype->flags & SEG_CANNOT_BE_ZEROED) ? "n" : "y"), "n");
+-
+ 	if (lp->mirrors > DEFAULT_MIRROR_MAX_IMAGES) {
+ 		log_error("Only up to %d images in mirror supported currently.",
+ 			  DEFAULT_MIRROR_MAX_IMAGES);
+diff --git a/tools/toollib.c b/tools/toollib.c
+index 3fe1c14..5fe94e0 100644
+--- a/tools/toollib.c
++++ b/tools/toollib.c
+@@ -15,6 +15,7 @@
+ 
+ #include "tools.h"
+ #include <sys/stat.h>
++#include <strings.h>
+ 
+ const char *command_name(struct cmd_context *cmd)
+ {
+@@ -1521,6 +1522,200 @@ int get_activation_monitoring_mode(struct cmd_context *cmd,
+ 	return 1;
+ }
+ 
++int get_pool_params(struct cmd_context *cmd,
++		    uint32_t *chunk_size,
++		    thin_discards_t *discards,
++		    uint64_t *pool_metadata_size,
++		    int *zero)
++{
++	const char *dstr;
++
++	if (arg_count(cmd, zero_ARG)) {
++		*zero = strcmp(arg_str_value(cmd, zero_ARG, "y"), "n");
++		log_very_verbose("Setting pool zeroing: %u", *zero);
++	} else
++		*zero = find_config_tree_int(cmd,
++					     "allocation/thin_pool_zero",
++					     DEFAULT_THIN_POOL_ZERO);
++
++	if (arg_count(cmd, discards_ARG)) {
++		*discards = (thin_discards_t) arg_uint_value(cmd, discards_ARG, 0);
++		log_very_verbose("Setting pool discards: %s",
++				 get_pool_discards_name(*discards));
++	} else {
++		dstr = find_config_tree_str(cmd,
++					    "allocation/thin_pool_discards",
++					    DEFAULT_THIN_POOL_DISCARDS);
++		if (!get_pool_discards(dstr, discards))
++			return_0;
++	}
++
++	if (arg_count(cmd, chunksize_ARG)) {
++		if (arg_sign_value(cmd, chunksize_ARG, SIGN_NONE) == SIGN_MINUS) {
++			log_error("Negative chunk size is invalid.");
++			return 0;
++		}
++		*chunk_size = arg_uint_value(cmd, chunksize_ARG,
++					     DM_THIN_MIN_DATA_BLOCK_SIZE);
++		log_very_verbose("Setting pool chunk size: %s",
++				 display_size(cmd, *chunk_size));
++	} else
++		*chunk_size = find_config_tree_int(cmd,
++						   "allocation/thin_pool_chunk_size",
++						   DEFAULT_THIN_POOL_CHUNK_SIZE) * 2;
++
++	if ((*chunk_size < DM_THIN_MIN_DATA_BLOCK_SIZE) ||
++	    (*chunk_size > DM_THIN_MAX_DATA_BLOCK_SIZE)) {
++		log_error("Chunk size must be in the range %s to %s.",
++			  display_size(cmd, DM_THIN_MIN_DATA_BLOCK_SIZE),
++			  display_size(cmd, DM_THIN_MAX_DATA_BLOCK_SIZE));
++		return 0;
++	}
++
++	if (arg_sign_value(cmd, poolmetadatasize_ARG, SIGN_NONE) == SIGN_MINUS) {
++		log_error("Negative pool metadata size is invalid.");
++		return 0;
++	}
++	*pool_metadata_size = arg_uint64_value(cmd, poolmetadatasize_ARG, UINT64_C(0));
++
++	return 1;
++}
++
++int update_pool_params(struct cmd_context *cmd, unsigned attr,
++		       uint32_t data_extents, uint32_t extent_size,
++		       uint32_t *chunk_size, thin_discards_t *discards,
++		       uint64_t *pool_metadata_size)
++{
++	size_t estimate_chunk_size;
++
++	if (!(attr & THIN_FEATURE_BLOCK_SIZE) &&
++	    (*chunk_size & (*chunk_size - 1))) {
++		log_error("Chunk size must be a power of 2 for this thin target version.");
++		return 0;
++	} else if (*chunk_size & (DM_THIN_MIN_DATA_BLOCK_SIZE - 1)) {
++		log_error("Chunk size must be multiple of %s.",
++			  display_size(cmd, DM_THIN_MIN_DATA_BLOCK_SIZE));
++		return 0;
++	} else if ((*discards != THIN_DISCARDS_IGNORE) &&
++		   (*chunk_size & (*chunk_size - 1))) {
++		log_warn("WARNING: Using discards ignore for chunk size non power of 2.");
++		*discards = THIN_DISCARDS_IGNORE;
++	}
++
++	if (!*pool_metadata_size) {
++		/* Defaults to nr_pool_blocks * 64b converted to size in sectors */
++		*pool_metadata_size = (uint64_t) data_extents * extent_size /
++			(*chunk_size * (SECTOR_SIZE / UINT64_C(64)));
++		/* Check if we could eventually use bigger chunk size */
++		if (!arg_count(cmd, chunksize_ARG)) {
++			while ((*pool_metadata_size >
++				(DEFAULT_THIN_POOL_OPTIMAL_SIZE / SECTOR_SIZE)) &&
++			       (*chunk_size < DM_THIN_MAX_DATA_BLOCK_SIZE)) {
++				*chunk_size <<= 1;
++				*pool_metadata_size >>= 1;
++			}
++			log_verbose("Setting chunk size to %s.",
++				    display_size(cmd, *chunk_size));
++		} else if (*pool_metadata_size > (2 * DEFAULT_THIN_POOL_MAX_METADATA_SIZE)) {
++			/* Suggest bigger chunk size */
++			estimate_chunk_size = (uint64_t) data_extents * extent_size /
++				(2 * DEFAULT_THIN_POOL_MAX_METADATA_SIZE *
++				 (SECTOR_SIZE / UINT64_C(64)));
++			log_warn("WARNING: Chunk size is too small for pool, suggested minimum is %s.",
++				 display_size(cmd, 1 << (ffs(estimate_chunk_size) + 1)));
++		}
++
++		/* Round up to extent size */
++		if (*pool_metadata_size % extent_size)
++			*pool_metadata_size += extent_size - *pool_metadata_size % extent_size;
++	} else {
++		estimate_chunk_size =  (uint64_t) data_extents * extent_size /
++			(*pool_metadata_size * (SECTOR_SIZE / UINT64_C(64)));
++		/* Check to eventually use bigger chunk size */
++		if (!arg_count(cmd, chunksize_ARG)) {
++			*chunk_size = estimate_chunk_size;
++
++			if (*chunk_size < DM_THIN_MIN_DATA_BLOCK_SIZE)
++				*chunk_size = DM_THIN_MIN_DATA_BLOCK_SIZE;
++			else if (*chunk_size > DM_THIN_MAX_DATA_BLOCK_SIZE)
++				*chunk_size = DM_THIN_MAX_DATA_BLOCK_SIZE;
++
++			log_verbose("Setting chunk size %s.",
++				    display_size(cmd, *chunk_size));
++		} else if (*chunk_size < estimate_chunk_size) {
++			/* Suggest bigger chunk size */
++			log_warn("WARNING: Chunk size is smaller then suggested minimum size %s.",
++				 display_size(cmd, estimate_chunk_size));
++		}
++	}
++
++	if ((uint64_t) *chunk_size > (uint64_t) data_extents * extent_size) {
++		log_error("Chunk size is bigger then pool data size.");
++		return 0;
++	}
++
++	if (*pool_metadata_size > (2 * DEFAULT_THIN_POOL_MAX_METADATA_SIZE)) {
++		if (arg_count(cmd, poolmetadatasize_ARG))
++			log_warn("WARNING: Maximum supported pool metadata size is %s.",
++				 display_size(cmd, 2 * DEFAULT_THIN_POOL_MAX_METADATA_SIZE));
++		*pool_metadata_size = 2 * DEFAULT_THIN_POOL_MAX_METADATA_SIZE;
++	} else if (*pool_metadata_size < (2 * DEFAULT_THIN_POOL_MIN_METADATA_SIZE)) {
++		if (arg_count(cmd, poolmetadatasize_ARG))
++			log_warn("WARNING: Minimum supported pool metadata size is %s.",
++				 display_size(cmd, 2 * DEFAULT_THIN_POOL_MIN_METADATA_SIZE));
++		*pool_metadata_size = 2 * DEFAULT_THIN_POOL_MIN_METADATA_SIZE;
++	}
++
++	log_verbose("Setting pool metadata size to %s.",
++		    display_size(cmd, *pool_metadata_size));
++
++	return 1;
++}
++
++struct logical_volume *alloc_pool_metadata(struct logical_volume *pool_lv,
++					   alloc_policy_t alloc,
++					   const char *name,
++					   struct dm_list *pvh,
++					   uint32_t read_ahead,
++					   uint32_t stripes,
++					   uint32_t stripe_size,
++					   uint64_t size)
++{
++	struct logical_volume *metadata_lv;
++	struct lvcreate_params lvc;
++
++	/* FIXME: Make lvm2api usable */
++	memset(&lvc, 0, sizeof(lvc));
++
++	if (!(lvc.extents = extents_from_size(pool_lv->vg->cmd, size,
++					      pool_lv->vg->extent_size)))
++		return_0;
++
++	if (!(lvc.segtype = get_segtype_from_string(pool_lv->vg->cmd, "striped")))
++		return_0;
++
++	dm_list_init(&lvc.tags);
++
++	/* FIXME: allocate properly space for metadata_lv */
++	lvc.activate = CHANGE_ALY;
++	lvc.alloc = alloc;
++	lvc.lv_name = name;
++	lvc.major = -1;
++	lvc.minor = -1;
++	lvc.permission = LVM_READ | LVM_WRITE;
++	lvc.pvh = pvh;
++	lvc.read_ahead = read_ahead;
++	lvc.stripe_size = stripe_size;
++	lvc.stripes = stripes;
++	lvc.vg_name = pool_lv->vg->name;
++	lvc.zero = 1;
++
++	if (!(metadata_lv = lv_create_single(pool_lv->vg, &lvc)))
++		return_0;
++
++	return metadata_lv;
++}
++
+ /*
+  * Generic stripe parameter checks.
+  */
+diff --git a/tools/toollib.h b/tools/toollib.h
+index b3b0a7c..80c01fd 100644
+--- a/tools/toollib.h
++++ b/tools/toollib.h
+@@ -111,6 +111,20 @@ int pvcreate_params_validate(struct cmd_context *cmd,
+ 
+ int get_activation_monitoring_mode(struct cmd_context *cmd,
+ 				   int *monitoring_mode);
++int get_pool_params(struct cmd_context *cmd,
++		    uint32_t *chunk_size,
++		    thin_discards_t *discards,
++		    uint64_t *pool_metadata_size,
++		    int *zero);
++int update_pool_params(struct cmd_context *cmd, unsigned attr,
++		       uint32_t data_extents, uint32_t extent_size,
++		       uint32_t *chunk_size, thin_discards_t *discards,
++		       uint64_t *pool_metadata_size);
++struct logical_volume *alloc_pool_metadata(struct logical_volume *pool_lv,
++					   alloc_policy_t alloc, const char *name,
++					   struct dm_list *pvh, uint32_t read_ahead,
++					   uint32_t stripes, uint32_t stripe_size,
++					   uint64_t size);
+ int get_stripe_params(struct cmd_context *cmd, uint32_t *stripes,
+ 		      uint32_t *stripe_size);
+ 
+diff --git a/tools/vgcfgrestore.c b/tools/vgcfgrestore.c
+index d62df99..20ca16b 100644
+--- a/tools/vgcfgrestore.c
++++ b/tools/vgcfgrestore.c
+@@ -62,8 +62,9 @@ int vgcfgrestore(struct cmd_context *cmd, int argc, char **argv)
+ 
+ 	if (!(arg_count(cmd, file_ARG) ?
+ 	      backup_restore_from_file(cmd, vg_name,
+-				       arg_str_value(cmd, file_ARG, "")) :
+-	      backup_restore(cmd, vg_name))) {
++				       arg_str_value(cmd, file_ARG, ""),
++				       arg_count(cmd, force_long_ARG)) :
++	      backup_restore(cmd, vg_name, arg_count(cmd, force_long_ARG)))) {
+ 		unlock_vg(cmd, VG_ORPHANS);
+ 		unlock_vg(cmd, vg_name);
+ 		log_error("Restore failed.");

@@ -1,0 +1,111 @@
+diff --git a/WHATS_NEW b/WHATS_NEW
+index 5887ec7..d0e0cd4 100644
+--- a/WHATS_NEW
++++ b/WHATS_NEW
+@@ -1,5 +1,6 @@
+ Version 2.02.99 - 
+ ===================================
++  Initialize lvmetad lazily to avoid early socket access on config overrides.
+   Hardcode use_lvmetad=0 if cluster locking used and issue a warning msg.
+ 
+ Version 2.02.98 - 15th October 2012
+diff --git a/lib/cache/lvmetad.c b/lib/cache/lvmetad.c
+index 6a374ac..72e07fd 100644
+--- a/lib/cache/lvmetad.c
++++ b/lib/cache/lvmetad.c
+@@ -33,7 +33,8 @@ static struct cmd_context *_lvmetad_cmd = NULL;
+ 
+ void lvmetad_disconnect(void)
+ {
+-	daemon_close(_lvmetad);
++	if (_lvmetad_connected)
++		daemon_close(_lvmetad);
+ 	_lvmetad_connected = 0;
+ 	_lvmetad_cmd = NULL;
+ }
+@@ -41,19 +42,25 @@ void lvmetad_disconnect(void)
+ void lvmetad_init(struct cmd_context *cmd)
+ {
+ 	if (!_lvmetad_use && !access(LVMETAD_PIDFILE, F_OK))
+-		log_warn("WARNING: lvmetad is running but disabled. Restart lvmetad before enabling it!");
++		log_warn("WARNING: lvmetad is running but disabled."
++			 " Restart lvmetad before enabling it!");
++	_lvmetad_cmd = cmd;
++}
++
++static void _lvmetad_connect()
++{
+ 	if (_lvmetad_use && _lvmetad_socket && !_lvmetad_connected) {
+ 		assert(_lvmetad_socket);
+ 		_lvmetad = lvmetad_open(_lvmetad_socket);
+-		if (_lvmetad.socket_fd >= 0 && !_lvmetad.error) {
++		if (_lvmetad.socket_fd >= 0 && !_lvmetad.error)
+ 			_lvmetad_connected = 1;
+-			_lvmetad_cmd = cmd;
+-		}
+ 	}
+ }
+ 
+ void lvmetad_warning(void)
+ {
++	if (!_lvmetad_connected)
++		_lvmetad_connect();
+ 	if (_lvmetad_use && (_lvmetad.socket_fd < 0 || _lvmetad.error))
+ 		log_warn("WARNING: Failed to connect to lvmetad: %s. Falling back to internal scanning.",
+ 			 strerror(_lvmetad.error));
+@@ -61,7 +68,11 @@ void lvmetad_warning(void)
+ 
+ int lvmetad_active(void)
+ {
+-	return _lvmetad_use && _lvmetad_connected;
++	if (!_lvmetad_use)
++		return 0;
++	if (!_lvmetad_connected)
++		_lvmetad_connect();
++	return _lvmetad_connected;
+ }
+ 
+ void lvmetad_set_active(int active)
+@@ -873,6 +884,11 @@ int lvmetad_pvscan_all_devs(struct cmd_context *cmd, activation_handler handler)
+ 	char *future_token;
+ 	int was_silent;
+ 
++	if (!lvmetad_active()) {
++		log_error("Cannot proceed since lvmetad is not active.");
++		return 0;
++	}
++
+ 	if (!(iter = dev_iter_create(cmd->lvmetad_filter, 1))) {
+ 		log_error("dev_iter creation failed");
+ 		return 0;
+diff --git a/test/shell/lvmetad-override.sh b/test/shell/lvmetad-override.sh
+new file mode 100644
+index 0000000..3fb281a
+--- /dev/null
++++ b/test/shell/lvmetad-override.sh
+@@ -0,0 +1,25 @@
++#!/bin/sh
++# Copyright (C) 2012 Red Hat, Inc. All rights reserved.
++#
++# This copyrighted material is made available to anyone wishing to use,
++# modify, copy, or redistribute it subject to the terms and conditions
++# of the GNU General Public License v.2.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software Foundation,
++# Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++
++. lib/test
++
++test -e LOCAL_LVMETAD || skip
++aux prepare_pvs 2
++
++vgcreate $vg1 $dev1 $dev2
++lvchange -ay $vg1 2>&1 | not grep "Failed to connect"
++kill $(cat LOCAL_LVMETAD)
++lvchange -ay $vg1 2>&1 | grep "Failed to connect"
++lvchange -ay $vg1 --sysinit 2>&1 | not grep "Failed to connect"
++lvchange -ay $vg1 --config 'global { use_lvmetad = 0 }' 2>&1 | not grep "Failed to connect"
++aux lvmconf "global/use_lvmetad = 0"
++lvchange -ay $vg1 --config 'global { use_lvmetad = 1 }' 2>&1 | grep "Failed to connect"
++
