@@ -6,14 +6,12 @@ CFLAGS+=-std=c++0x -DSTANDALONE -D__STDC_CONSTANT_MACROS \
  -DHAVE_CMAKE_CONFIG -D__VIDEOCORE4__ -U_FORTIFY_SOURCE -Wall \
  -mfpu=vfp -mno-apcs-stack-check -DHAVE_OMXLIB -DUSE_EXTERNAL_FFMPEG \
  -DHAVE_LIBAVCODEC_AVCODEC_H -DHAVE_LIBAVUTIL_MEM_H \
+ -DHAVE_LIBAVUTIL_OPT_H \
  -DHAVE_LIBAVUTIL_AVUTIL_H -DHAVE_LIBAVFORMAT_AVFORMAT_H \
  -DHAVE_LIBAVFILTER_AVFILTER_H -DHAVE_LIBSWRESAMPLE_SWRESAMPLE_H -DOMX \
  -DOMX_SKIP64BIT -ftree-vectorize -pipe -DUSE_EXTERNAL_OMX \
  -DTARGET_RASPBERRY_PI -DHAVE_PLATFORM_RASPBERRY_PI \
  -DUSE_EXTERNAL_LIBBCM_HOST -Wno-psabi 
-
-#### Ugly ffmpeg-compat hack. Feel free to fix properly
-CFLAGS +=-DAV_CODEC_ID_SSA=0x3a2d7c7c -DAV_CODEC_ID_SUBRIP=0x3a2d7c7c
 
 LDFLAGS+=-L./ -lWFC -lGLESv2 -lEGL -lbcm_host -lopenmaxil -lfreetype -lz
 INCLUDES+=-I./ -Ilinux
@@ -42,7 +40,8 @@ SRC=linux/XMemUtils.cpp \
 		Srt.cpp \
 		SubtitleRenderer.cpp \
 		Unicode.cpp \
-		omxplayer.cpp \
+		KeyConfig.cpp \
+		omxplayer.cpp
 
 OBJS+=$(filter %.o,$(SRC:.cpp=.o))
 
