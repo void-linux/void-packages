@@ -1,15 +1,30 @@
 # Template file for 'mysql'
 pkgname=mysql
-version=5.5.27
-revision=2
+version=5.6.12
+revision=1
+build_style=cmake
+configure_args="-DSYSCONFDIR=/etc/mysql -DMYSQL_DATADIR=/var/lib/mysql
+ -DMYSQL_UNIX_ADDR=/run/mysqld/mysqld.sock -DDEFAULT_CHARSET=utf8
+ -DDEFAULT_COLLATION=utf8_general_ci -DENABLED_LOCAL_INFILE=ON
+ -DINSTALL_INFODIR=share/mysql/docs -DINSTALL_MANDIR=share/man
+ -DINSTALL_PLUGINDIR=/usr/lib/mysql/plugin -DINSTALL_SCRIPTDIR=bin
+ -DINSTALL_INCLUDEDIR=include/mysql -DINSTALL_DOCREADMEDIR=share/mysql
+ -DINSTALL_SUPPORTFILESDIR=share/mysql -DINSTALL_MYSQLSHAREDIR=share/mysql
+ -DINSTALL_DOCDIR=share/mysql/docs -DINSTALL_SHAREDIR=share/mysql
+ -DWITH_ZLIB=system -DWITH_SSL=system -DWITH_LIBWRAP=OFF
+ -DWITH_EXTRA_CHARSETS=complex -DWITH_EMBEDDED_SERVER=ON
+ -DWITH_INNOBASE_STORAGE_ENGINE=1 -DWITH_PARTITION_STORAGE_ENGINE=1
+ -DWITHOUT_EXAMPLE_STORAGE_ENGINE=1 -DWITHOUT_ARCHIVE_STORAGE_ENGINE=1
+ -DWITHOUT_BLACKHOLE_STORAGE_ENGINE=1 -DWITHOUT_FEDERATED_STORAGE_ENGINE=1
+ -DSTACK_DIRECTION=1"
 hostmakedepends="perl cmake bison"
 makedepends="zlib-devel ncurses-devel openssl-devel readline-devel"
 short_desc="The world's most popular open source database"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="https://www.mysql.com/products/community/"
 license="GPL-2"
-distfiles="https://downloads.mysql.com/archives/mysql-5.5/$pkgname-$version.tar.gz"
-checksum=51ffafbd82039f8afbe5b3c26f15cc338ed6cd4f67e56d7dd33efaa28c9d99e4
+distfiles="http://mirror.cogentco.com/pub/mysql/MySQL-5.6/mysql-${version}.tar.gz"
+checksum=7911af0180c8014b9193bde42b6b705460fa70bf75681b62c64d1cf2580686bc
 long_desc="
  MySQL is the world's most popular open source database software, with over
  100 million copies of its software downloaded or distributed throughout
@@ -19,55 +34,36 @@ long_desc="
  the major problems associated with downtime, maintenance and administration
  for modern, online applications."
 
-do_configure() {
-	mkdir build
-	cd build
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" ncurses-devel"
+fi
 
-	cmake .. \
-		-DCMAKE_BUILD_TYPE=Release \
-		-DCMAKE_INSTALL_PREFIX=/usr \
-		-DSYSCONFDIR=/etc/mysql \
-		-DMYSQL_DATADIR=/var/lib/mysql \
-		-DMYSQL_UNIX_ADDR=/run/mysqld/mysqld.sock \
-		-DDEFAULT_CHARSET=utf8 \
-		-DDEFAULT_COLLATION=utf8_general_ci \
-		-DENABLED_LOCAL_INFILE=ON \
-		-DINSTALL_INFODIR=share/mysql/docs \
-		-DINSTALL_MANDIR=share/man \
-		-DINSTALL_PLUGINDIR=/usr/lib/mysql/plugin \
-		-DINSTALL_SCRIPTDIR=bin \
-		-DINSTALL_INCLUDEDIR=include/mysql \
-		-DINSTALL_DOCREADMEDIR=share/mysql \
-		-DINSTALL_SUPPORTFILESDIR=share/mysql \
-		-DINSTALL_MYSQLSHAREDIR=share/mysql \
-		-DINSTALL_DOCDIR=share/mysql/docs \
-		-DINSTALL_SHAREDIR=share/mysql \
-		-DWITH_READLINE=ON \
-		-DWITH_ZLIB=system \
-		-DWITH_SSL=system \
-		-DWITH_LIBWRAP=OFF \
-		-DWITH_MYSQLD_LDFLAGS="${LDFLAGS}" \
-		-DWITH_EXTRA_CHARSETS=complex \
-		-DWITH_EMBEDDED_SERVER=ON \
-		-DWITH_INNOBASE_STORAGE_ENGINE=1 \
-		-DWITH_PARTITION_STORAGE_ENGINE=1 \
-		-DWITHOUT_EXAMPLE_STORAGE_ENGINE=1 \
-		-DWITHOUT_ARCHIVE_STORAGE_ENGINE=1 \
-		-DWITHOUT_BLACKHOLE_STORAGE_ENGINE=1 \
-		-DWITHOUT_FEDERATED_STORAGE_ENGINE=1 \
-		-DCMAKE_C_FLAGS="-fPIC ${CFLAGS} -fno-strict-aliasing -DBIG_JOINS=1 -fomit-frame-pointer" \
-		-DCMAKE_CXX_FLAGS="-fPIC ${CXXFLAGS} -fno-strict-aliasing -DBIG_JOINS=1 -felide-constructors -fno-rtti"
+pre_configure() {
+	# We need some host binaries before starting cross compilation.
+	if [ "$CROSS_BUILD" ]; then
+		CC= CXX= CPP= LD= AR= AS= RANLIB= CFLAGS= CXXFLAGS= LDFLAGS= cmake .
+		make comp_err comp_sql gen_lex_hash gen_pfs_lex_token
+		mkdir bin.host
+		cp extra/comp_err bin.host
+		cp scripts/comp_sql bin.host
+		cp sql/gen_lex_hash bin.host
+		cp storage/perfschema/gen_pfs_lex_token bin.host
+		make clean
+		rm CMakeCache.txt
+	fi
 }
 
-do_build() {
-	cd build
-	make ${makejobs}
+pre_build() {
+	if [ "$CROSS_BUILD" ]; then
+		cp bin.host/comp_err ${wrksrc}/extra
+		cp bin.host/comp_sql ${wrksrc}/scripts
+		cp bin.host/gen_lex_hash ${wrksrc}/sql
+		cp bin.host/gen_pfs_lex_token ${wrksrc}/storage/perfschema
+		export PATH=${PATH}:${wrksrc}/extra:${wrksrc}/scripts:${wrksrc}/sql:${wrksrc}/storage/perfschema
+	fi
 }
 
-do_install() {
-	cd build
-	make DESTDIR=${DESTDIR} install
-
+post_install() {
 	# Remove unneeded stuff.
 	rm -rf ${DESTDIR}/usr/{sql-bench,mysql-test,data}
 	rm -f ${DESTDIR}/usr/share/man/man1/mysql-test-run.pl.1
@@ -84,7 +80,7 @@ do_install() {
 libmysqlclient_package() {
 	short_desc="MySQL database client library"
 	pkg_install() {
-		vmove "usr/lib/libmysqlclient*.so*"
+		vmove "usr/lib/libmysqlclient*.so.*"
 	}
 }
 
@@ -96,6 +92,7 @@ libmysqlclient-devel_package() {
 		vmove usr/share/man/man1/mysql_config.1
 		vmove usr/include
 		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
 	}
 }
 
@@ -131,7 +128,6 @@ mysql_package() {
 	system_accounts="mysql"
 	mysqld_homedir="/var/lib/mysql"
 	pkg_install() {
-		vmove etc
-		vmove usr
+		vmove all
 	}
 }
