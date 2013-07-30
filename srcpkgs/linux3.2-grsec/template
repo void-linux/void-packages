@@ -1,0 +1,198 @@
+# Template file for 'linux3.2-grsec'
+#
+_grsecurity="2.9.1"
+
+pkgname=linux3.2-grsec
+version=3.2.48
+revision="1.${_grsecurity}"
+wrksrc="linux-${version}"
+maintainer="Juan RP <xtraeme@gmail.com>"
+homepage="http://www.kernel.org"
+license="GPL-2"
+short_desc="The Linux kernel and modules (3.2 series) (hardened kernel with grsec patch)"
+distfiles="http://www.kernel.org/pub/linux//kernel/v3.x/linux-${version}.tar.xz"
+checksum=13db330daab5d735f64f2fa5198fca5e92a8a384e024a6b8276a232cf6dd44c4
+
+only_for_archs="i686 x86_64"
+makedepends="perl kmod>=11_2 openssl which elfutils"
+_kernver="${version}-grsec_${revision}"
+
+pre_configure() {
+	local url="http://grsecurity.net/stable/grsecurity-${_grsecurity}-3.2.48-201307261327.patch"
+	local _patch="$(basename ${url})"
+
+	msg_normal "$pkgver: downloading grsecurity patch: ${_patch}\n"
+	$XBPS_FETCH_CMD ${url}
+	msg_normal "$pkgver: applying grsecurity patch: ${_patch}\n"
+	patch -slNp1 -i ${_patch}
+}
+
+do_configure() {
+	# If there's a file called <arch>-dotconfig, use it to
+	# configure the kernel; otherwise use arch defaults and all stuff
+	# as modules (defconfig+allmodconfig).
+	local arch
+
+	if [ "$XBPS_TARGET_MACHINE" != "x86_64" ]; then
+		arch=i386
+	else
+		arch=x86_64
+	fi
+
+	if [ -f ${FILESDIR}/${arch}-dotconfig-custom ]; then
+		msg_normal "Detected a custom .config file for your arch, using it.\n"
+		cp -f ${FILESDIR}/${arch}-dotconfig-custom .config
+		make ${makejobs} oldconfig
+	elif [ -f ${FILESDIR}/${arch}-dotconfig ]; then
+		msg_normal "Detected a .config file for your arch, using it.\n"
+		cp -f ${FILESDIR}/${arch}-dotconfig .config
+		make ${makejobs} oldconfig
+	else
+		msg_normal "Defaulting to 'defconfig and allmodconfig'.\n"
+		make ${makejobs} defconfig && make ${makejobs} allmodconfig
+	fi
+	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
+	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
+}
+
+do_build() {
+	make ${makejobs} prepare
+	make ${makejobs} bzImage modules
+}
+
+do_install() {
+	local arch hdrdest
+
+	if [ "$XBPS_TARGET_MACHINE" != "x86_64" ]; then
+		arch=i386
+	else
+		arch=x86_64
+	fi
+
+	# Run depmod after compressing modules.
+	sed -i '2iexit 0' scripts/depmod.sh
+
+	# Install kernel, firmware and modules
+	make INSTALL_MOD_PATH=${DESTDIR} modules_install
+
+	hdrdest=${DESTDIR}/usr/src/kernel-headers-${_kernver}
+
+	install -Dm644 .config ${DESTDIR}/boot/config-${_kernver}
+	install -Dm644 arch/x86/boot/bzImage ${DESTDIR}/boot/vmlinuz-${_kernver}
+	install -Dm644 System.map ${DESTDIR}/boot/System.map-${_kernver}
+
+	# Switch to /usr.
+	vmkdir usr
+	mv ${DESTDIR}/lib ${DESTDIR}/usr
+
+	cd ${DESTDIR}/usr/lib/modules/${_kernver}
+	rm -f source build
+	ln -sf ../../../src/kernel-headers-${_kernver} build
+
+	cd ${wrksrc}
+	# Install required headers to build external modules
+	install -Dm644 Makefile ${hdrdest}/Makefile
+	install -Dm644 kernel/Makefile ${hdrdest}/kernel/Makefile
+	install -Dm644 .config ${hdrdest}/.config
+	mkdir -p ${hdrdest}/include
+	# Remove firmware stuff provided by the "linux-firmware" pkg.
+	rm -rf ${DESTDIR}/usr/lib/firmware
+
+	for i in acpi asm-generic config crypto drm generated linux math-emu \
+		media net pcmcia scsi sound trace uapi video xen; do
+		if [ -d include/$i ]; then
+			cp -a include/$i ${hdrdest}/include
+		fi
+	done
+
+	cd ${wrksrc}
+	mkdir -p ${hdrdest}/arch/x86
+	cp -a arch/x86/include ${hdrdest}/arch/x86
+
+	# Copy files necessary for later builds, like nvidia and vmware
+	cp Module.symvers ${hdrdest}
+	cp -a scripts ${hdrdest}
+
+	mkdir -p ${hdrdest}/arch/x86/kernel
+	cp arch/x86/Makefile ${hdrdest}/arch/x86
+	if [ "$arch" = "i386" ]; then
+		cp arch/x86/Makefile_32.cpu ${hdrdest}/arch/x86
+	fi
+	cp arch/x86/kernel/asm-offsets.s ${hdrdest}/arch/x86/kernel
+
+	# Add docbook makefile
+	install -Dm644 Documentation/DocBook/Makefile \
+		${hdrdest}/Documentation/DocBook/Makefile
+
+	# Add md headers
+	mkdir -p ${hdrdest}/drivers/md
+	cp drivers/md/*.h ${hdrdest}/drivers/md
+
+	# Add inotify.h
+	mkdir -p ${hdrdest}/include/linux
+	cp include/linux/inotify.h ${hdrdest}/include/linux
+
+	# Add wireless headers
+	mkdir -p ${hdrdest}/net/mac80211/
+	cp net/mac80211/*.h ${hdrdest}/net/mac80211
+
+	# add dvb headers for external modules
+	mkdir -p ${hdrdest}/include/config/dvb/
+	cp include/config/dvb/*.h ${hdrdest}/include/config/dvb/
+
+	# Add xfs and shmem for aufs building
+	mkdir -p ${hdrdest}/fs/xfs
+	mkdir -p ${hdrdest}/mm
+	cp fs/xfs/xfs_sb.h ${hdrdest}/fs/xfs/xfs_sb.h
+
+	# Copy in Kconfig files
+	for i in $(find . -name "Kconfig*"); do
+		mkdir -p ${hdrdest}/$(echo $i | sed 's|/Kconfig.*||')
+		cp $i ${hdrdest}/$i
+	done
+
+	# Remove unneeded architectures
+	for arch in alpha arm* avr32 blackfin cris frv h8300 \
+		ia64 m* p* s* um v850 xtensa; do
+		rm -rf ${hdrdest}/arch/${arch}
+	done
+
+	# Compress all modules with xz to save a few MBs.
+	msg_normal "$pkgver: compressing kernel modules with xz, please wait...\n"
+	find ${DESTDIR} -name '*.ko' -exec xz -9 {} \;
+
+	# ... and run depmod again.
+	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
+}
+
+linux3.2-grsec-headers_package() {
+	preserve=yes
+	nostrip=yes
+	noverifyrdeps=yes
+	short_desc+=" - source headers for 3rd party modules"
+	pkg_install() {
+		vmove usr/src
+		vmove usr/lib/modules/${_kernver}/build
+	}
+}
+
+linux3.2-grsec_package() {
+	nostrip=yes
+	noverifyrdeps=yes
+	preserve=yes
+	triggers="kernel-hooks"
+	kernel_hooks_version="${_kernver}"
+	depends="dracut linux-firmware kmod>=11_2"
+	# These files could be modified when an external module is built.
+	mutable_files="
+		/usr/lib/modules/${_kernver}/modules.dep
+		/usr/lib/modules/${_kernver}/modules.dep.bin
+		/usr/lib/modules/${_kernver}/modules.symbols
+		/usr/lib/modules/${_kernver}/modules.symbols.bin
+		/usr/lib/modules/${_kernver}/modules.alias
+		/usr/lib/modules/${_kernver}/modules.alias.bin
+		/usr/lib/modules/${_kernver}/modules.devname"
+	pkg_install() {
+		vmove all
+	}
+}
