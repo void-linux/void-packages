@@ -1,0 +1,158 @@
+# Template file for 'linux-tools'
+pkgname=linux-tools
+version=3.10
+revision=1
+wrksrc="linux-${version}"
+short_desc="Linux kernel tools"
+hostmakedepends="flex perl asciidoc xmlto python automake libtool"
+makedepends="pciutils-devel libnuma-devel python-devel libglib-devel libsysfs-devel
+ elfutils-devel libunwind-devel"
+maintainer="Juan RP <xtraeme@gmail.com>"
+license="GPL-2"
+homepage="http://www.kernel.org"
+distfiles="http://ftp.kernel.org/pub/linux/kernel/v3.x/linux-${version}.tar.xz"
+checksum=df27fa92d27a9c410bfe6c4a89f141638500d7eadcca5cce578954efc2ad3544
+
+only_for_archs="i686 x86_64"
+
+do_build() {
+	cd ${wrksrc}/tools/perf
+	make ${makejobs} CC=$CC \
+		WERROR=0 \
+		DESTDIR=$DESTDIR \
+		perfexecdir='lib/perf' \
+		NO_GTK2=1 \
+		PERF_VERSION=${version}_${revision} \
+		all man
+
+	cd ${wrksrc}/tools/power/cpupower
+	# Disable --as-needed.
+	unset LDFLAGS
+	make CC=$CC VERSION=${version}_${revision}
+
+	cd ${wrksrc}/tools/power/x86/x86_energy_perf_policy
+	make ${makejobs}
+
+	cd ${wrksrc}/drivers/staging/usbip/userspace
+	# fix missing man page
+	sed -i 's/usbip_bind_driver.8//' Makefile.am
+	./autogen.sh
+	./configure --prefix=/usr --sbindir=/usr/bin
+	make ${makejobs}
+}
+
+do_install() {
+	# cpupower
+	cd ${wrksrc}/tools/power/cpupower
+	make DESTDIR=${DESTDIR} \
+		sbindir='/usr/bin' \
+		mandir='/usr/share/man' \
+		docdir='/usr/share/doc/cpupower' \
+		install install-man
+
+	# perf
+	cd ${wrksrc}/tools/perf
+	make WERROR=0 DESTDIR=${DESTDIR}/usr \
+		perfexecdir='lib/perf' \
+		NO_GTK2=1 \
+		PERF_VERSION=${version}_${revision} \
+		install install-man
+	# move completion in new directory
+	vmkdir usr/share/bash-completion/completions
+	mv ${DESTDIR}/usr/etc/bash_completion.d/perf \
+		${DESTDIR}/usr/share/bash-completion/completions
+
+	# usbip
+	cd ${wrksrc}/drivers/staging/usbip/userspace
+	make install DESTDIR=${DESTDIR}
+	vmkdir usr/lib/modules-load.d
+	printf 'usbip-core\nusbip-host\n' > \
+		${DESTDIR}/usr/lib/modules-load.d/usbip.conf
+	vinstall ${FILESDIR}/usbipd.service 644 usr/lib/systemd/system
+
+	# x86_energy_perf_policy
+	cd ${wrksrc}/tools/power/x86/x86_energy_perf_policy
+	vinstall x86_energy_perf_policy 755 usr/bin
+	vinstall x86_energy_perf_policy.8 644 usr/share/man/man8
+}
+
+cpupower_package() {
+	short_desc="Linux kernel tool to set CPU power features"
+	conf_files="/etc/cpufreq-bench.conf"
+	pkg_install() {
+		vmove "usr/bin/cpu*"
+		vmove "usr/share/man/man1/cpu*"
+		vmove usr/share/doc/cpupower
+		vmove usr/share/locale
+		vmove etc/cpufreq-bench.conf
+	}
+}
+
+libcpupower_package() {
+	short_desc="Linux kernel tool to set CPU power features - runtime library"
+	pkg_install() {
+		vmove "usr/lib/libcpupower.so.*"
+	}
+}
+
+libcpupower-devel_package() {
+	short_desc="Linux kernel tool to set CPU power features - development files"
+	depends="libcpupower-${version}_${revision}"
+	pkg_install() {
+		vmove usr/include/cpufreq.h
+		vmove usr/lib/libcpupower.so
+	}
+}
+
+libusbip_package() {
+	short_desc="An USB device sharing system over IP network - runtime library"
+	pkg_install() {
+		vmove "usr/lib/libusbip.so.*"
+	}
+}
+
+libusbip-devel_package() {
+	short_desc="An USB device sharing system over IP network - development files"
+	depends="libusbip-${version}_${revision}"
+	pkg_install() {
+		vmove usr/include/usbip
+		vmove usr/lib/libusbip.a
+		vmove usr/lib/libusbip.so
+	}
+}
+
+perf_package() {
+	short_desc="Linux kernel performance auditing tool"
+	pkg_install() {
+		vmove usr/bin/perf
+		vmove usr/lib/perf
+		vmove usr/share/bash-completion
+		vmove "usr/share/man/man1/perf*"
+	}
+}
+
+x86_energy_perf_policy_package() {
+	short_desc=""
+	pkg_install() {
+		vmove usr/bin/x86_energy_perf_policy
+		vmove usr/share/man/man8/x86_energy_perf_policy.8
+	}
+}
+
+usbip_package() {
+	short_desc="An USB device sharing system over IP network"
+	systemd_services="usbipd.service"
+	pkg_install() {
+		vmove "usr/bin/usbip*"
+		vmove "usr/share/man/man8/usbip*"
+		vmove usr/lib/modules-load.d/usbip.conf
+		vmove usr/lib/systemd/system/usbipd.service
+	}
+}
+
+linux-tools_package() {
+	depends="cpupower>=${version} perf>=${version} usbip>=${version} x86_energy_perf_policy>=${version}"
+	pkg_install() {
+		vmkdir usr
+	}
+}
