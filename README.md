@@ -11,7 +11,7 @@ Void Linux you can fetch its sources from:
 Or alternatively if you are already using Void you can install
 the binary package with:
 
-	$ xbps-install -y xbps-src
+	$ xbps-install -S xbps-src
 
 Enjoy and happy hacking! meet us at xbps@irc.freenode.net.
 
