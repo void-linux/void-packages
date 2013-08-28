@@ -61,6 +61,9 @@
 /* Default width of border window, in pixels. Used unless -b width. */
 #define BORDERWIDTH 1
 
+/* Default snap margin in pixels. Used unless -s width. */
+#define SNAPMARGIN 0
+
 /*
  * Keysym codes for window operations. Look in X11/keysymdefs.h for
  * actual symbols. Use XK_VoidSymbol to disable a function.
