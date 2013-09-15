@@ -1,0 +1,1434 @@
+Only things missing here from upstream are translations and .gitignore changes
+
+diff --git a/cogl/Makefile.am b/cogl/Makefile.am
+index 33214ab..80d3b09 100644
+--- a/cogl/Makefile.am
++++ b/cogl/Makefile.am
+@@ -349,6 +349,8 @@ cogl_sources_c = \
+ 	$(srcdir)/cogl-pipeline-snippet.c		\
+ 	$(srcdir)/cogl-pipeline-cache.h			\
+ 	$(srcdir)/cogl-pipeline-cache.c			\
++	$(srcdir)/cogl-pipeline-hash-table.h		\
++	$(srcdir)/cogl-pipeline-hash-table.c		\
+ 	$(srcdir)/cogl-material-compat.c		\
+ 	$(srcdir)/cogl-program.c			\
+ 	$(srcdir)/cogl-program-private.h		\
+@@ -552,7 +554,7 @@ include $(top_srcdir)/build/autotools/Makefile.am.enums
+ 
+ lib_LTLIBRARIES += libcogl.la
+ 
+-libcogl_la_LIBADD = -lm $(COGL_DEP_LIBS) $(COGL_EXTRA_LDFLAGS)
++libcogl_la_LIBADD = $(LIBM) $(COGL_DEP_LIBS) $(COGL_EXTRA_LDFLAGS)
+ if !USE_GLIB
+ libcogl_la_LIBADD += $(top_builddir)/deps/glib/libglib.la
+ libcogl_la_LIBADD += $(top_builddir)/deps/gmodule/libgmodule.la
+diff --git a/cogl/cogl-bitmap-pixbuf.c b/cogl/cogl-bitmap-pixbuf.c
+index a02b253..ad34234 100644
+--- a/cogl/cogl-bitmap-pixbuf.c
++++ b/cogl/cogl-bitmap-pixbuf.c
+@@ -125,11 +125,24 @@ _cogl_bitmap_from_file (CoglContext *ctx,
+   /* allocate buffer big enough to hold pixel data */
+   bmp = _cogl_bitmap_new_with_malloc_buffer (ctx,
+                                              width, height,
+-                                             COGL_PIXEL_FORMAT_ARGB_8888);
++                                             COGL_PIXEL_FORMAT_ARGB_8888,
++                                             error);
++  if (bmp == NULL)
++    {
++      CFRelease (image);
++      return NULL;
++    }
+   rowstride = cogl_bitmap_get_rowstride (bmp);
+   out_data = _cogl_bitmap_map (bmp,
+                                COGL_BUFFER_ACCESS_WRITE,
+-                               COGL_BUFFER_MAP_HINT_DISCARD);
++                               COGL_BUFFER_MAP_HINT_DISCARD,
++                               error);
++  if (out_data == NULL)
++    {
++      cogl_object_unref (bmp);
++      CFRelease (image);
++      return NULL;
++    }
+ 
+   /* render to buffer */
+   color_space = CGColorSpaceCreateWithName (kCGColorSpaceGenericRGB);
+diff --git a/cogl/cogl-matrix.h b/cogl/cogl-matrix.h
+index 90f3ea9..a136ea0 100644
+--- a/cogl/cogl-matrix.h
++++ b/cogl/cogl-matrix.h
+@@ -27,6 +27,8 @@
+ #ifndef __COGL_MATRIX_H
+ #define __COGL_MATRIX_H
+ 
++#include <cogl/cogl-defines.h>
++
+ #ifdef COGL_HAS_GTYPE_SUPPORT
+ #include <glib-object.h>
+ #endif /* COGL_HAS_GTYPE_SUPPORT */
+diff --git a/cogl/cogl-pipeline-cache.c b/cogl/cogl-pipeline-cache.c
+index fab3614..df4c433 100644
+--- a/cogl/cogl-pipeline-cache.c
++++ b/cogl/cogl-pipeline-cache.c
+@@ -3,7 +3,7 @@
+  *
+  * An object oriented GL/GLES Abstraction/Utility Layer
+  *
+- * Copyright (C) 2011 Intel Corporation.
++ * Copyright (C) 2011, 2013 Intel Corporation.
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -32,133 +32,47 @@
+ #include "cogl-context-private.h"
+ #include "cogl-pipeline-private.h"
+ #include "cogl-pipeline-cache.h"
++#include "cogl-pipeline-hash-table.h"
+ 
+ struct _CoglPipelineCache
+ {
+-  GHashTable *fragment_hash;
+-  GHashTable *vertex_hash;
+-  GHashTable *combined_hash;
++  CoglPipelineHashTable fragment_hash;
++  CoglPipelineHashTable vertex_hash;
++  CoglPipelineHashTable combined_hash;
+ };
+ 
+-static unsigned int
+-pipeline_fragment_hash (const void *data)
+-{
+-  unsigned int fragment_state;
+-  unsigned int layer_fragment_state;
+-
+-  _COGL_GET_CONTEXT (ctx, 0);
+-
+-  fragment_state =
+-    _cogl_pipeline_get_state_for_fragment_codegen (ctx);
+-  layer_fragment_state =
+-    _cogl_pipeline_get_layer_state_for_fragment_codegen (ctx);
+-
+-  return _cogl_pipeline_hash ((CoglPipeline *)data,
+-                              fragment_state, layer_fragment_state,
+-                              0);
+-}
+-
+-static CoglBool
+-pipeline_fragment_equal (const void *a, const void *b)
++CoglPipelineCache *
++_cogl_pipeline_cache_new (void)
+ {
++  CoglPipelineCache *cache = g_new (CoglPipelineCache, 1);
++  unsigned long vertex_state;
++  unsigned long layer_vertex_state;
+   unsigned int fragment_state;
+   unsigned int layer_fragment_state;
+ 
+   _COGL_GET_CONTEXT (ctx, 0);
+ 
++  vertex_state =
++    COGL_PIPELINE_STATE_AFFECTS_VERTEX_CODEGEN;
++  layer_vertex_state =
++    COGL_PIPELINE_LAYER_STATE_AFFECTS_VERTEX_CODEGEN;
+   fragment_state =
+     _cogl_pipeline_get_state_for_fragment_codegen (ctx);
+   layer_fragment_state =
+     _cogl_pipeline_get_layer_state_for_fragment_codegen (ctx);
+ 
+-  return _cogl_pipeline_equal ((CoglPipeline *)a, (CoglPipeline *)b,
+-                               fragment_state, layer_fragment_state,
+-                               0);
+-}
+-
+-static unsigned int
+-pipeline_vertex_hash (const void *data)
+-{
+-  unsigned long vertex_state =
+-    COGL_PIPELINE_STATE_AFFECTS_VERTEX_CODEGEN;
+-  unsigned long layer_vertex_state =
+-    COGL_PIPELINE_LAYER_STATE_AFFECTS_VERTEX_CODEGEN;
+-
+-  return _cogl_pipeline_hash ((CoglPipeline *)data,
+-                              vertex_state, layer_vertex_state,
+-                              0);
+-}
+-
+-static CoglBool
+-pipeline_vertex_equal (const void *a, const void *b)
+-{
+-  unsigned long vertex_state =
+-    COGL_PIPELINE_STATE_AFFECTS_VERTEX_CODEGEN;
+-  unsigned long layer_vertex_state =
+-    COGL_PIPELINE_LAYER_STATE_AFFECTS_VERTEX_CODEGEN;
+-
+-  return _cogl_pipeline_equal ((CoglPipeline *)a, (CoglPipeline *)b,
+-                               vertex_state, layer_vertex_state,
+-                               0);
+-}
+-
+-static unsigned int
+-pipeline_combined_hash (const void *data)
+-{
+-  unsigned int combined_state;
+-  unsigned int layer_combined_state;
+-
+-  _COGL_GET_CONTEXT (ctx, 0);
+-
+-  combined_state =
+-    _cogl_pipeline_get_state_for_fragment_codegen (ctx) |
+-    COGL_PIPELINE_STATE_AFFECTS_VERTEX_CODEGEN;
+-  layer_combined_state =
+-    _cogl_pipeline_get_layer_state_for_fragment_codegen (ctx) |
+-    COGL_PIPELINE_LAYER_STATE_AFFECTS_VERTEX_CODEGEN;
+-
+-  return _cogl_pipeline_hash ((CoglPipeline *)data,
+-                              combined_state, layer_combined_state,
+-                              0);
+-}
+-
+-static CoglBool
+-pipeline_combined_equal (const void *a, const void *b)
+-{
+-  unsigned int combined_state;
+-  unsigned int layer_combined_state;
+-
+-  _COGL_GET_CONTEXT (ctx, 0);
+-
+-  combined_state =
+-    _cogl_pipeline_get_state_for_fragment_codegen (ctx) |
+-    COGL_PIPELINE_STATE_AFFECTS_VERTEX_CODEGEN;
+-  layer_combined_state =
+-    _cogl_pipeline_get_layer_state_for_fragment_codegen (ctx) |
+-    COGL_PIPELINE_LAYER_STATE_AFFECTS_VERTEX_CODEGEN;
+-
+-  return _cogl_pipeline_equal ((CoglPipeline *)a, (CoglPipeline *)b,
+-                               combined_state, layer_combined_state,
+-                               0);
+-}
+-
+-CoglPipelineCache *
+-_cogl_pipeline_cache_new (void)
+-{
+-  CoglPipelineCache *cache = g_new (CoglPipelineCache, 1);
+-
+-  cache->fragment_hash = g_hash_table_new_full (pipeline_fragment_hash,
+-                                                pipeline_fragment_equal,
+-                                                cogl_object_unref,
+-                                                cogl_object_unref);
+-  cache->vertex_hash = g_hash_table_new_full (pipeline_vertex_hash,
+-                                              pipeline_vertex_equal,
+-                                              cogl_object_unref,
+-                                              cogl_object_unref);
+-  cache->combined_hash = g_hash_table_new_full (pipeline_combined_hash,
+-                                                pipeline_combined_equal,
+-                                                cogl_object_unref,
+-                                                cogl_object_unref);
++  _cogl_pipeline_hash_table_init (&cache->vertex_hash,
++                                  vertex_state,
++                                  layer_vertex_state,
++                                  "vertex shaders");
++  _cogl_pipeline_hash_table_init (&cache->fragment_hash,
++                                  fragment_state,
++                                  layer_fragment_state,
++                                  "fragment shaders");
++  _cogl_pipeline_hash_table_init (&cache->combined_hash,
++                                  vertex_state | fragment_state,
++                                  layer_vertex_state | layer_fragment_state,
++                                  "programs");
+ 
+   return cache;
+ }
+@@ -166,9 +80,9 @@ _cogl_pipeline_cache_new (void)
+ void
+ _cogl_pipeline_cache_free (CoglPipelineCache *cache)
+ {
+-  g_hash_table_destroy (cache->fragment_hash);
+-  g_hash_table_destroy (cache->vertex_hash);
+-  g_hash_table_destroy (cache->combined_hash);
++  _cogl_pipeline_hash_table_destroy (&cache->fragment_hash);
++  _cogl_pipeline_hash_table_destroy (&cache->vertex_hash);
++  _cogl_pipeline_hash_table_destroy (&cache->combined_hash);
+   g_free (cache);
+ }
+ 
+@@ -176,107 +90,22 @@ CoglPipeline *
+ _cogl_pipeline_cache_get_fragment_template (CoglPipelineCache *cache,
+                                             CoglPipeline *key_pipeline)
+ {
+-  CoglPipeline *template =
+-    g_hash_table_lookup (cache->fragment_hash, key_pipeline);
+-
+-  if (template == NULL)
+-    {
+-      /* XXX: I wish there was a way to insert into a GHashTable with
+-       * a pre-calculated hash value since there is a cost to
+-       * calculating the hash of a CoglPipeline and in this case we
+-       * know we have already called _cogl_pipeline_hash during the
+-       * lookup so we could pass the value through to here to avoid
+-       * hashing it again.
+-       */
+-
+-      /* XXX: Any keys referenced by the hash table need to remain
+-       * valid all the while that there are corresponding values,
+-       * so for now we simply make a copy of the current authority
+-       * pipeline.
+-       *
+-       * FIXME: A problem with this is that our key into the cache may
+-       * hold references to some arbitrary user textures which will
+-       * now be kept alive indefinitly which is a shame. A better
+-       * solution will be to derive a special "key pipeline" from the
+-       * authority which derives from the base Cogl pipeline (to avoid
+-       * affecting the lifetime of any other pipelines) and only takes
+-       * a copy of the state that relates to the fragment shader and
+-       * references small dummy textures instead of potentially large
+-       * user textures. */
+-      template = cogl_pipeline_copy (key_pipeline);
+-
+-      g_hash_table_insert (cache->fragment_hash,
+-                           template,
+-                           cogl_object_ref (template));
+-
+-      if (G_UNLIKELY (g_hash_table_size (cache->fragment_hash) > 50))
+-        {
+-          static CoglBool seen = FALSE;
+-          if (!seen)
+-            g_warning ("Over 50 separate fragment shaders have been "
+-                       "generated which is very unusual, so something "
+-                       "is probably wrong!\n");
+-          seen = TRUE;
+-        }
+-    }
+-
+-  return template;
++  return _cogl_pipeline_hash_table_get (&cache->fragment_hash,
++                                        key_pipeline);
+ }
+ 
+ CoglPipeline *
+ _cogl_pipeline_cache_get_vertex_template (CoglPipelineCache *cache,
+                                           CoglPipeline *key_pipeline)
+ {
+-  CoglPipeline *template =
+-    g_hash_table_lookup (cache->vertex_hash, key_pipeline);
+-
+-  if (template == NULL)
+-    {
+-      template = cogl_pipeline_copy (key_pipeline);
+-
+-      g_hash_table_insert (cache->vertex_hash,
+-                           template,
+-                           cogl_object_ref (template));
+-
+-      if (G_UNLIKELY (g_hash_table_size (cache->vertex_hash) > 50))
+-        {
+-          static CoglBool seen = FALSE;
+-          if (!seen)
+-            g_warning ("Over 50 separate vertex shaders have been "
+-                       "generated which is very unusual, so something "
+-                       "is probably wrong!\n");
+-          seen = TRUE;
+-        }
+-    }
+-
+-  return template;
++  return _cogl_pipeline_hash_table_get (&cache->vertex_hash,
++                                        key_pipeline);
+ }
+ 
+ CoglPipeline *
+ _cogl_pipeline_cache_get_combined_template (CoglPipelineCache *cache,
+                                             CoglPipeline *key_pipeline)
+ {
+-  CoglPipeline *template =
+-    g_hash_table_lookup (cache->combined_hash, key_pipeline);
+-
+-  if (template == NULL)
+-    {
+-      template = cogl_pipeline_copy (key_pipeline);
+-
+-      g_hash_table_insert (cache->combined_hash,
+-                           template,
+-                           cogl_object_ref (template));
+-
+-      if (G_UNLIKELY (g_hash_table_size (cache->combined_hash) > 50))
+-        {
+-          static CoglBool seen = FALSE;
+-          if (!seen)
+-            g_warning ("Over 50 separate programs have been "
+-                       "generated which is very unusual, so something "
+-                       "is probably wrong!\n");
+-          seen = TRUE;
+-        }
+-    }
+-
+-  return template;
++  return _cogl_pipeline_hash_table_get (&cache->combined_hash,
++                                        key_pipeline);
+ }
+diff --git a/cogl/cogl-pipeline-hash-table.c b/cogl/cogl-pipeline-hash-table.c
+new file mode 100644
+index 0000000..8921efc
+--- /dev/null
++++ b/cogl/cogl-pipeline-hash-table.c
+@@ -0,0 +1,153 @@
++/*
++ * Cogl
++ *
++ * An object oriented GL/GLES Abstraction/Utility Layer
++ *
++ * Copyright (C) 2013 Intel Corporation.
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library. If not, see
++ * <http://www.gnu.org/licenses/>.
++ *
++ *
++ * Authors:
++ *   Neil Roberts <neil@linux.intel.com>
++ *   Robert Bragg <robert@linux.intel.com>
++ */
++
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif
++
++#include "cogl-context-private.h"
++#include "cogl-pipeline-private.h"
++#include "cogl-pipeline-hash-table.h"
++
++typedef struct
++{
++  /* The template pipeline */
++  CoglPipeline *pipeline;
++
++  /* Calculating the hash is a little bit expensive for pipelines so
++   * we don't want to do it repeatedly for entries that are already in
++   * the hash table. Instead we cache the value here and calculate it
++   * outside of the GHashTable. */
++  unsigned int hash_value;
++
++  /* GHashTable annoyingly doesn't let us pass a user data pointer to
++   * the hash and equal functions so to work around it we have to
++   * store the pointer in every hash table entry. We will use this
++   * entry as both the key and the value */
++  CoglPipelineHashTable *hash;
++} CoglPipelineHashTableEntry;
++
++static void
++value_destroy_cb (void *value)
++{
++  CoglPipelineHashTableEntry *entry = value;
++
++  cogl_object_unref (entry->pipeline);
++
++  g_slice_free (CoglPipelineHashTableEntry, entry);
++}
++
++static unsigned int
++entry_hash (const void *data)
++{
++  const CoglPipelineHashTableEntry *entry = data;
++
++  return entry->hash_value;
++}
++
++static CoglBool
++entry_equal (const void *a,
++             const void *b)
++{
++  const CoglPipelineHashTableEntry *entry_a = a;
++  const CoglPipelineHashTableEntry *entry_b = b;
++  const CoglPipelineHashTable *hash = entry_a->hash;
++
++  return _cogl_pipeline_equal (entry_a->pipeline,
++                               entry_b->pipeline,
++                               hash->main_state,
++                               hash->layer_state,
++                               0);
++}
++
++void
++_cogl_pipeline_hash_table_init (CoglPipelineHashTable *hash,
++                                unsigned int main_state,
++                                unsigned int layer_state,
++                                const char *debug_string)
++{
++  hash->n_unique_pipelines = 0;
++  hash->debug_string = debug_string;
++  hash->main_state = main_state;
++  hash->layer_state = layer_state;
++  hash->table = g_hash_table_new_full (entry_hash,
++                                       entry_equal,
++                                       NULL, /* key destroy */
++                                       value_destroy_cb);
++}
++
++void
++_cogl_pipeline_hash_table_destroy (CoglPipelineHashTable *hash)
++{
++  g_hash_table_destroy (hash->table);
++}
++
++CoglPipeline *
++_cogl_pipeline_hash_table_get (CoglPipelineHashTable *hash,
++                               CoglPipeline *key_pipeline)
++{
++  CoglPipelineHashTableEntry dummy_entry;
++  CoglPipelineHashTableEntry *entry;
++  unsigned int copy_state;
++
++  dummy_entry.pipeline = key_pipeline;
++  dummy_entry.hash = hash;
++  dummy_entry.hash_value = _cogl_pipeline_hash (key_pipeline,
++                                                hash->main_state,
++                                                hash->layer_state,
++                                                0);
++  entry = g_hash_table_lookup (hash->table, &dummy_entry);
++
++  if (entry)
++    return entry->pipeline;
++
++  if (hash->n_unique_pipelines == 50)
++    g_warning ("Over 50 separate %s have been generated which is very "
++               "unusual, so something is probably wrong!\n",
++               hash->debug_string);
++
++  entry = g_slice_new (CoglPipelineHashTableEntry);
++  entry->hash = hash;
++  entry->hash_value = dummy_entry.hash_value;
++
++  copy_state = hash->main_state;
++  if (hash->layer_state)
++    copy_state |= COGL_PIPELINE_STATE_LAYERS;
++
++  /* Create a new pipeline that is a child of the root pipeline
++   * instead of a normal copy so that the template pipeline won't hold
++   * a reference to the original pipeline */
++  entry->pipeline = _cogl_pipeline_deep_copy (key_pipeline,
++                                              copy_state,
++                                              hash->layer_state);
++
++  g_hash_table_insert (hash->table, entry, entry);
++
++  hash->n_unique_pipelines++;
++
++  return entry->pipeline;
++}
+diff --git a/cogl/cogl-pipeline-hash-table.h b/cogl/cogl-pipeline-hash-table.h
+new file mode 100644
+index 0000000..1b0a0d9
+--- /dev/null
++++ b/cogl/cogl-pipeline-hash-table.h
+@@ -0,0 +1,69 @@
++/*
++ * Cogl
++ *
++ * An object oriented GL/GLES Abstraction/Utility Layer
++ *
++ * Copyright (C) 2013 Intel Corporation.
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library. If not, see <http://www.gnu.org/licenses/>.
++ *
++ *
++ */
++
++#ifndef __COGL_PIPELINE_HASH_H__
++#define __COGL_PIPELINE_HASH_H__
++
++#include "cogl-pipeline.h"
++
++typedef struct
++{
++  /* Total number of pipelines that were ever added to the hash. This
++   * is not decremented when a pipeline is removed. It is only used to
++   * generate a warning if an unusually high number of pipelines are
++   * generated */
++  int n_unique_pipelines;
++
++  /* String that will be used to describe the usage of this hash table
++   * in the debug warning when too many pipelines are generated. This
++   * must be a static string because it won't be copied or freed */
++  const char *debug_string;
++
++  unsigned int main_state;
++  unsigned int layer_state;
++
++  GHashTable *table;
++} CoglPipelineHashTable;
++
++void
++_cogl_pipeline_hash_table_init (CoglPipelineHashTable *hash,
++                                unsigned int main_state,
++                                unsigned int layer_state,
++                                const char *debug_string);
++
++void
++_cogl_pipeline_hash_table_destroy (CoglPipelineHashTable *hash);
++
++/*
++ * Gets a pipeline from the hash that has the same state as
++ * @key_pipeline according to the limited state bits passed to
++ * _cogl_pipeline_hash_table_init(). If there is no matching pipelines
++ * already then a copy of key_pipeline is stored in the hash so that
++ * it will be used next time the function is called with a similar
++ * pipeline. In that case the copy itself will be returned
++ */
++CoglPipeline *
++_cogl_pipeline_hash_table_get (CoglPipelineHashTable *hash,
++                               CoglPipeline *key_pipeline);
++
++#endif /* __COGL_PIPELINE_HASH_H__ */
+diff --git a/cogl/cogl-pipeline-layer-private.h b/cogl/cogl-pipeline-layer-private.h
+index 125b967..7577559 100644
+--- a/cogl/cogl-pipeline-layer-private.h
++++ b/cogl/cogl-pipeline-layer-private.h
+@@ -358,6 +358,11 @@ _cogl_pipeline_layer_get_wrap_mode_t (CoglPipelineLayer *layer);
+ CoglPipelineWrapMode
+ _cogl_pipeline_layer_get_wrap_mode_p (CoglPipelineLayer *layer);
+ 
++void
++_cogl_pipeline_layer_copy_differences (CoglPipelineLayer *dest,
++                                       CoglPipelineLayer *src,
++                                       unsigned long differences);
++
+ unsigned long
+ _cogl_pipeline_layer_compare_differences (CoglPipelineLayer *layer0,
+                                           CoglPipelineLayer *layer1);
+diff --git a/cogl/cogl-pipeline-layer.c b/cogl/cogl-pipeline-layer.c
+index d9590c8..9bc26ef 100644
+--- a/cogl/cogl-pipeline-layer.c
++++ b/cogl/cogl-pipeline-layer.c
+@@ -42,6 +42,8 @@
+ #include "cogl-context-private.h"
+ #include "cogl-texture-private.h"
+ 
++#include <string.h>
++
+ static void
+ _cogl_pipeline_layer_free (CoglPipelineLayer *layer);
+ 
+@@ -146,6 +148,107 @@ _cogl_get_n_args_for_combine_func (CoglPipelineCombineFunc func)
+   return 0;
+ }
+ 
++void
++_cogl_pipeline_layer_copy_differences (CoglPipelineLayer *dest,
++                                       CoglPipelineLayer *src,
++                                       unsigned long differences)
++{
++  CoglPipelineLayerBigState *big_dest, *big_src;
++
++  if ((differences & COGL_PIPELINE_LAYER_STATE_NEEDS_BIG_STATE) &&
++      !dest->has_big_state)
++    {
++      dest->big_state = g_slice_new (CoglPipelineLayerBigState);
++      dest->has_big_state = TRUE;
++    }
++
++  big_dest = dest->big_state;
++  big_src = src->big_state;
++
++  dest->differences |= differences;
++
++  while (differences)
++    {
++      int index = _cogl_util_ffs (differences) - 1;
++
++      differences &= ~(1 << index);
++
++      /* This convoluted switch statement is just here so that we'll
++       * get a warning if a new state is added without handling it
++       * here */
++      switch (index)
++        {
++        case COGL_PIPELINE_LAYER_STATE_COUNT:
++        case COGL_PIPELINE_LAYER_STATE_UNIT_INDEX:
++          g_warn_if_reached ();
++          break;
++
++        case COGL_PIPELINE_LAYER_STATE_TEXTURE_TYPE_INDEX:
++          dest->texture_type = src->texture_type;
++          break;
++
++        case COGL_PIPELINE_LAYER_STATE_TEXTURE_DATA_INDEX:
++          dest->texture = src->texture;
++          if (dest->texture)
++            cogl_object_ref (dest->texture);
++          break;
++
++        case COGL_PIPELINE_LAYER_STATE_SAMPLER_INDEX:
++          dest->sampler_cache_entry = src->sampler_cache_entry;
++          break;
++
++        case COGL_PIPELINE_LAYER_STATE_COMBINE_INDEX:
++          {
++            CoglPipelineCombineFunc func;
++            int n_args, i;
++
++            func = big_src->texture_combine_rgb_func;
++            big_dest->texture_combine_rgb_func = func;
++            n_args = _cogl_get_n_args_for_combine_func (func);
++            for (i = 0; i < n_args; i++)
++              {
++                big_dest->texture_combine_rgb_src[i] =
++                  big_src->texture_combine_rgb_src[i];
++                big_dest->texture_combine_rgb_op[i] =
++                  big_src->texture_combine_rgb_op[i];
++              }
++
++            func = big_src->texture_combine_alpha_func;
++            big_dest->texture_combine_alpha_func = func;
++            n_args = _cogl_get_n_args_for_combine_func (func);
++            for (i = 0; i < n_args; i++)
++              {
++                big_dest->texture_combine_alpha_src[i] =
++                  big_src->texture_combine_alpha_src[i];
++                big_dest->texture_combine_alpha_op[i] =
++                  big_src->texture_combine_alpha_op[i];
++              }
++          }
++          break;
++
++        case COGL_PIPELINE_LAYER_STATE_COMBINE_CONSTANT_INDEX:
++          memcpy (big_dest->texture_combine_constant,
++                  big_src->texture_combine_constant,
++                  sizeof (big_dest->texture_combine_constant));
++          break;
++
++        case COGL_PIPELINE_LAYER_STATE_POINT_SPRITE_COORDS_INDEX:
++          big_dest->point_sprite_coords = big_src->point_sprite_coords;
++          break;
++
++        case COGL_PIPELINE_LAYER_STATE_VERTEX_SNIPPETS_INDEX:
++          _cogl_pipeline_snippet_list_copy (&big_dest->vertex_snippets,
++                                            &big_src->vertex_snippets);
++          break;
++
++        case COGL_PIPELINE_LAYER_STATE_FRAGMENT_SNIPPETS_INDEX:
++          _cogl_pipeline_snippet_list_copy (&big_dest->fragment_snippets,
++                                            &big_src->fragment_snippets);
++          break;
++        }
++    }
++}
++
+ static void
+ _cogl_pipeline_layer_init_multi_property_sparse_state (
+                                                   CoglPipelineLayer *layer,
+diff --git a/cogl/cogl-pipeline-private.h b/cogl/cogl-pipeline-private.h
+index 56700b5..acb5653 100644
+--- a/cogl/cogl-pipeline-private.h
++++ b/cogl/cogl-pipeline-private.h
+@@ -845,6 +845,17 @@ _cogl_pipeline_hash (CoglPipeline *pipeline,
+                      unsigned long layer_differences,
+                      CoglPipelineEvalFlags flags);
+ 
++/* Makes a copy of the given pipeline that is a child of the root
++ * pipeline rather than a child of the source pipeline. That way the
++ * new pipeline won't hold a reference to the source pipeline. The
++ * differences specified in @differences and @layer_differences are
++ * copied across and all other state is left with the default
++ * values. */
++CoglPipeline *
++_cogl_pipeline_deep_copy (CoglPipeline *pipeline,
++                          unsigned long differences,
++                          unsigned long layer_differences);
++
+ CoglPipeline *
+ _cogl_pipeline_journal_ref (CoglPipeline *pipeline);
+ 
+diff --git a/cogl/cogl-pipeline.c b/cogl/cogl-pipeline.c
+index c029f45..a91ad25 100644
+--- a/cogl/cogl-pipeline.c
++++ b/cogl/cogl-pipeline.c
+@@ -2771,6 +2771,97 @@ _cogl_pipeline_hash (CoglPipeline *pipeline,
+ 
+ typedef struct
+ {
++  CoglContext *context;
++  CoglPipeline *src_pipeline;
++  CoglPipeline *dst_pipeline;
++  unsigned int layer_differences;
++} DeepCopyData;
++
++static CoglBool
++deep_copy_layer_cb (CoglPipelineLayer *src_layer,
++                    void *user_data)
++{
++  DeepCopyData *data = user_data;
++  CoglPipelineLayer *dst_layer;
++  unsigned int differences = data->layer_differences;
++
++  dst_layer = _cogl_pipeline_get_layer (data->dst_pipeline, src_layer->index);
++
++  while (src_layer != data->context->default_layer_n &&
++         src_layer != data->context->default_layer_0 &&
++         differences)
++    {
++      unsigned long to_copy = differences & src_layer->differences;
++
++      if (to_copy)
++        {
++          _cogl_pipeline_layer_copy_differences (dst_layer, src_layer, to_copy);
++          differences ^= to_copy;
++        }
++
++      src_layer = COGL_PIPELINE_LAYER (COGL_NODE (src_layer)->parent);
++    }
++
++  return TRUE;
++}
++
++CoglPipeline *
++_cogl_pipeline_deep_copy (CoglPipeline *pipeline,
++                          unsigned long differences,
++                          unsigned long layer_differences)
++{
++  CoglPipeline *new, *authority;
++  CoglBool copy_layer_state;
++
++  _COGL_GET_CONTEXT (ctx, NULL);
++
++  if ((differences & COGL_PIPELINE_STATE_LAYERS))
++    {
++      copy_layer_state = TRUE;
++      differences &= ~COGL_PIPELINE_STATE_LAYERS;
++    }
++  else
++    copy_layer_state = FALSE;
++
++  new = cogl_pipeline_new (ctx);
++
++  for (authority = pipeline;
++       authority != ctx->default_pipeline && differences;
++       authority = COGL_PIPELINE (COGL_NODE (authority)->parent))
++    {
++      unsigned long to_copy = differences & authority->differences;
++
++      if (to_copy)
++        {
++          _cogl_pipeline_copy_differences (new, authority, to_copy);
++          differences ^= to_copy;
++        }
++    }
++
++  if (copy_layer_state)
++    {
++      DeepCopyData data;
++
++      /* The unit index doesn't need to be copied because it should
++       * end up with the same values anyway because the new pipeline
++       * will have the same indices as the source pipeline */
++      layer_differences &= ~COGL_PIPELINE_LAYER_STATE_UNIT;
++
++      data.context = ctx;
++      data.src_pipeline = pipeline;
++      data.dst_pipeline = new;
++      data.layer_differences = layer_differences;
++
++      _cogl_pipeline_foreach_layer_internal (pipeline,
++                                             deep_copy_layer_cb,
++                                             &data);
++    }
++
++  return new;
++}
++
++typedef struct
++{
+   int i;
+   CoglPipelineLayer **layers;
+ } AddLayersToArrayState;
+diff --git a/cogl/cogl-xlib-renderer.c b/cogl/cogl-xlib-renderer.c
+index 18c0fe6..eb1f51a 100644
+--- a/cogl/cogl-xlib-renderer.c
++++ b/cogl/cogl-xlib-renderer.c
+@@ -238,7 +238,7 @@ update_outputs (CoglRenderer *renderer,
+ 
+   _cogl_xlib_renderer_trap_errors (renderer, &state);
+ 
+-  for (i = 0; i < resources->ncrtc && !error; i++)
++  for (i = 0; resources && i < resources->ncrtc && !error; i++)
+     {
+       XRRCrtcInfo *crtc_info = NULL;
+       XRROutputInfo *output_info = NULL;
+diff --git a/cogl/cogl-xlib.h b/cogl/cogl-xlib.h
+index 7a6bc7e..5dab8ae 100644
+--- a/cogl/cogl-xlib.h
++++ b/cogl/cogl-xlib.h
+@@ -79,6 +79,8 @@ cogl_xlib_set_display (Display *display);
+ CoglFilterReturn
+ cogl_xlib_handle_event (XEvent *xevent);
+ 
++COGL_END_DECLS
++
+ #undef __COGL_XLIB_H_INSIDE__
+ 
+ #endif /* __COGL_XLIB_H__ */
+diff --git a/configure.ac b/configure.ac
+index 43bf407..4ba85b8 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -25,7 +25,7 @@ m4_define([cogl_version],
+ dnl Since the core Cogl library has to also maintain support for the
+ dnl Cogl 1.x API for Clutter then we track the 1.x version separately.
+ m4_define([cogl_1_minor_version], [14])
+-m4_define([cogl_1_micro_version], [0])
++m4_define([cogl_1_micro_version], [1])
+ m4_define([cogl_1_version], [1.cogl_1_minor_version.cogl_1_micro_version])
+ 
+ dnl ================================================================
+@@ -70,7 +70,7 @@ dnl ================================================================
+ # libtool version info we don't automatically derive this from the
+ # pretty version number because we want to test the results of
+ # updating the version number in advance of a release.
+-m4_define([cogl_release_status], [release])
++m4_define([cogl_release_status], [git])
+ 
+ AC_INIT(cogl, [cogl_1_version])
+ AC_CONFIG_SRCDIR(cogl/cogl.h)
+@@ -178,6 +178,12 @@ dnl internal glib configure (as-glibconfig.m4)
+ m4_ifdef([LT_OUTPUT], [LT_OUTPUT])
+ 
+ dnl ================================================================
++dnl Find an appropriate libm, for sin() etc.
++dnl ================================================================
++LT_LIB_M
++AC_SUBST(LIBM)
++
++dnl ================================================================
+ dnl See what platform we are building for
+ dnl ================================================================
+ AC_CANONICAL_HOST
+@@ -474,6 +480,7 @@ AS_IF(
+     EXPERIMENTAL_OPTIONS="$EXPERIMENTAL_OPTIONS Quartz Core Graphics,"
+     AC_DEFINE([USE_QUARTZ], 1,
+ 	      [Use Core Graphics (Quartz) for loading image data])
++    COGL_EXTRA_LDFLAGS="$COGL_EXTRA_LDFLAGS -framework ApplicationServices"
+     COGL_IMAGE_BACKEND="quartz"
+   ],
+   [
+@@ -1173,6 +1180,12 @@ AC_CHECK_FUNCS([ffs])
+ dnl 'memmem' is a GNU extension but we have a simple fallback
+ AC_CHECK_FUNCS([memmem])
+ 
++dnl This is used in the cogl-gles2-gears example but it is a GNU extension
++save_libs="$LIBS"
++LIBS="$LIBS $LIBM"
++AC_CHECK_FUNCS([sincos])
++LIBS="$save_libs"
++
+ dnl ================================================================
+ dnl Platform values
+ dnl ================================================================
+diff --git a/examples/Makefile.am b/examples/Makefile.am
+index 86801c6..ae3e5f7 100644
+--- a/examples/Makefile.am
++++ b/examples/Makefile.am
+@@ -20,7 +20,8 @@ endif
+ 
+ common_ldadd = \
+ 	$(COGL_DEP_LIBS) \
+-	$(top_builddir)/cogl/libcogl.la
++	$(top_builddir)/cogl/libcogl.la \
++	$(LIBM)
+ 
+ if !USE_GLIB
+ common_ldadd += $(top_builddir)/deps/glib/libglib.la
+diff --git a/examples/android/hello/jni/main.c b/examples/android/hello/jni/main.c
+index 2c5bd9b..c9a8401 100644
+--- a/examples/android/hello/jni/main.c
++++ b/examples/android/hello/jni/main.c
+@@ -42,7 +42,7 @@ static int test_init (TestData* data)
+   CoglOnscreen *onscreen;
+   CoglError *error = NULL;
+   CoglVertexP2C4 triangle_vertices[] = {
+-        {0, 0.7, 0xff, 0x00, 0x00, 0x80},
++        {0, 0.7, 0xff, 0x00, 0x00, 0xff},
+         {-0.7, -0.7, 0x00, 0xff, 0x00, 0xff},
+         {0.7, -0.7, 0x00, 0x00, 0xff, 0xff}
+   };
+diff --git a/examples/cogl-gles2-context.c b/examples/cogl-gles2-context.c
+index 1cf375f..de66c21 100644
+--- a/examples/cogl-gles2-context.c
++++ b/examples/cogl-gles2-context.c
+@@ -70,7 +70,7 @@ main (int argc, char **argv)
+     CoglOnscreen *onscreen;
+     CoglError *error = NULL;
+     CoglVertexP2C4 triangle_vertices[] = {
+-        {0, 0.7, 0xff, 0x00, 0x00, 0x80},
++        {0, 0.7, 0xff, 0x00, 0x00, 0xff},
+         {-0.7, -0.7, 0x00, 0xff, 0x00, 0xff},
+         {0.7, -0.7, 0x00, 0x00, 0xff, 0xff}
+     };
+diff --git a/examples/cogl-gles2-gears.c b/examples/cogl-gles2-gears.c
+index d7dd271..c7185b6 100644
+--- a/examples/cogl-gles2-gears.c
++++ b/examples/cogl-gles2-gears.c
+@@ -35,6 +35,10 @@
+  * Jul 13, 2010
+  */
+ 
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif
++
+ #define GL_GLEXT_PROTOTYPES
+ 
+ #include <math.h>
+@@ -110,6 +114,15 @@ static GLfloat ProjectionMatrix[16];
+ /** The direction of the directional light for the scene */
+ static const GLfloat LightSourcePosition[4] = { 5.0, 5.0, 10.0, 1.0};
+ 
++#ifndef HAVE_SINCOS
++static void
++sincos (double x, double *sinx, double *cosx)
++{
++  *sinx = sin (x);
++  *cosx = cos (x);
++}
++#endif /* HAVE_SINCOS */
++
+ /**
+  * Fills a gear vertex.
+  *
+diff --git a/examples/cogl-hello.c b/examples/cogl-hello.c
+index 5bda9bf..3ba1e31 100644
+--- a/examples/cogl-hello.c
++++ b/examples/cogl-hello.c
+@@ -39,7 +39,7 @@ main (int argc, char **argv)
+     CoglOnscreen *onscreen;
+     CoglError *error = NULL;
+     CoglVertexP2C4 triangle_vertices[] = {
+-        {0, 0.7, 0xff, 0x00, 0x00, 0x80},
++        {0, 0.7, 0xff, 0x00, 0x00, 0xff},
+         {-0.7, -0.7, 0x00, 0xff, 0x00, 0xff},
+         {0.7, -0.7, 0x00, 0x00, 0xff, 0xff}
+     };
+diff --git a/examples/cogl-msaa.c b/examples/cogl-msaa.c
+index 73f9c4e..4a388bc 100644
+--- a/examples/cogl-msaa.c
++++ b/examples/cogl-msaa.c
+@@ -12,7 +12,7 @@ main (int argc, char **argv)
+     CoglFramebuffer *fb;
+     CoglError *error = NULL;
+     CoglVertexP2C4 triangle_vertices[] = {
+-        {0, 0.7, 0xff, 0x00, 0x00, 0x80},
++        {0, 0.7, 0xff, 0x00, 0x00, 0xff},
+         {-0.7, -0.7, 0x00, 0xff, 0x00, 0xff},
+         {0.7, -0.7, 0x00, 0x00, 0xff, 0xff}
+     };
+diff --git a/examples/cogl-sdl-hello.c b/examples/cogl-sdl-hello.c
+index 961137a..acb9125 100644
+--- a/examples/cogl-sdl-hello.c
++++ b/examples/cogl-sdl-hello.c
+@@ -80,7 +80,7 @@ main (int argc, char **argv)
+   CoglOnscreen *onscreen;
+   CoglError *error = NULL;
+   CoglVertexP2C4 triangle_vertices[] = {
+-    {0, 0.7, 0xff, 0x00, 0x00, 0x80},
++    {0, 0.7, 0xff, 0x00, 0x00, 0xff},
+     {-0.7, -0.7, 0x00, 0xff, 0x00, 0xff},
+     {0.7, -0.7, 0x00, 0x00, 0xff, 0xff}
+   };
+diff --git a/examples/cogl-sdl2-hello.c b/examples/cogl-sdl2-hello.c
+index 405cb92..12e6ced 100644
+--- a/examples/cogl-sdl2-hello.c
++++ b/examples/cogl-sdl2-hello.c
+@@ -89,7 +89,7 @@ main (int argc, char **argv)
+   CoglOnscreen *onscreen;
+   CoglError *error = NULL;
+   CoglVertexP2C4 triangle_vertices[] = {
+-    {0, 0.7, 0xff, 0x00, 0x00, 0x80},
++    {0, 0.7, 0xff, 0x00, 0x00, 0xff},
+     {-0.7, -0.7, 0x00, 0xff, 0x00, 0xff},
+     {0.7, -0.7, 0x00, 0x00, 0xff, 0xff}
+   };
+diff --git a/examples/cogl-x11-foreign.c b/examples/cogl-x11-foreign.c
+index ca9e3ed..a60397c 100644
+--- a/examples/cogl-x11-foreign.c
++++ b/examples/cogl-x11-foreign.c
+@@ -61,7 +61,7 @@ main (int argc, char **argv)
+   unsigned long mask;
+   Window xwin;
+   CoglVertexP2C4 triangle_vertices[] = {
+-      {0, 0.7, 0xff, 0x00, 0x00, 0x80},
++      {0, 0.7, 0xff, 0x00, 0x00, 0xff},
+       {-0.7, -0.7, 0x00, 0xff, 0x00, 0xff},
+       {0.7, -0.7, 0x00, 0x00, 0xff, 0xff}
+   };
+diff --git a/examples/cogland.c b/examples/cogland.c
+index c18850a..7a02719 100644
+--- a/examples/cogland.c
++++ b/examples/cogland.c
+@@ -93,7 +93,6 @@ struct _CoglandCompositor
+   struct wl_display *wayland_display;
+   struct wl_event_loop *wayland_loop;
+ 
+-  CoglDisplay *cogl_display;
+   CoglContext *cogl_context;
+ 
+   int virtual_width;
+@@ -336,15 +335,16 @@ cogland_queue_redraw (CoglandCompositor *compositor)
+ }
+ 
+ static void
+-shm_buffer_damaged (CoglandSurface *surface,
+-                    int32_t x,
+-                    int32_t y,
+-                    int32_t width,
+-                    int32_t height)
++surface_damaged (CoglandSurface *surface,
++                 int32_t x,
++                 int32_t y,
++                 int32_t width,
++                 int32_t height)
+ {
+   struct wl_buffer *wayland_buffer = surface->buffer;
+ 
+-  if (surface->texture)
++  if (surface->texture &&
++      wl_buffer_is_shm (surface->buffer))
+     {
+       CoglPixelFormat format;
+       int stride = wl_shm_buffer_get_stride (wayland_buffer);
+@@ -381,6 +381,8 @@ shm_buffer_damaged (CoglandSurface *surface,
+                                stride,
+                                data);
+     }
++
++  cogland_queue_redraw (surface->compositor);
+ }
+ 
+ static void
+@@ -546,16 +548,18 @@ cogland_surface_commit (struct wl_client *client,
+ 
+           wl_signal_add (&surface->buffer->resource.destroy_signal,
+                          &surface->buffer_destroy_listener);
+-          wl_list_remove (&surface->pending.buffer_destroy_listener.link);
+         }
+     }
+-  surface->pending.buffer = NULL;
++  if (surface->pending.buffer)
++    {
++      wl_list_remove (&surface->pending.buffer_destroy_listener.link);
++      surface->pending.buffer = NULL;
++    }
+   surface->pending.sx = 0;
+   surface->pending.sy = 0;
+ 
+   /* wl_surface.damage */
+   if (surface->buffer &&
+-      wl_buffer_is_shm (surface->buffer) &&
+       surface->texture &&
+       !region_is_empty (&surface->pending.damage))
+     {
+@@ -571,11 +575,11 @@ cogland_surface_commit (struct wl_client *client,
+       if (region->y1 < 0)
+         region->y1 = 0;
+ 
+-      shm_buffer_damaged (surface,
+-                          region->x1,
+-                          region->y1,
+-                          region->x2 - region->x1,
+-                          region->y2 - region->y1);
++      surface_damaged (surface,
++                       region->x1,
++                       region->y1,
++                       region->x2 - region->x1,
++                       region->y2 - region->y1);
+     }
+   region_init (&surface->pending.damage);
+ 
+@@ -583,8 +587,6 @@ cogland_surface_commit (struct wl_client *client,
+   wl_list_insert_list (&compositor->frame_callbacks,
+                        &surface->pending.frame_callback_list);
+   wl_list_init (&surface->pending.frame_callback_list);
+-
+-  cogland_queue_redraw (compositor);
+ }
+ 
+ static void
+@@ -614,6 +616,9 @@ cogland_surface_free (CoglandSurface *surface)
+   compositor->surfaces = g_list_remove (compositor->surfaces, surface);
+   cogland_surface_detach_buffer_and_notify (surface);
+ 
++  if (surface->pending.buffer)
++    wl_list_remove (&surface->pending.buffer_destroy_listener.link);
++
+   wl_list_for_each_safe (cb, next,
+                          &surface->pending.frame_callback_list, link)
+     wl_resource_destroy (&cb->resource);
+@@ -970,7 +975,7 @@ get_shell_surface (struct wl_client *client,
+                    struct wl_resource *surface_resource)
+ {
+   CoglandSurface *surface = surface_resource->data;
+-  CoglandShellSurface *shell_surface = g_new0 (CoglandShellSurface, 1);
++  CoglandShellSurface *shell_surface;
+ 
+   if (surface->has_shell_surface)
+     {
+@@ -980,6 +985,7 @@ get_shell_surface (struct wl_client *client,
+       return;
+     }
+ 
++  shell_surface = g_new0 (CoglandShellSurface, 1);
+   shell_surface->resource.destroy = destroy_shell_surface;
+   shell_surface->resource.object.id = id;
+   shell_surface->resource.object.interface = &wl_shell_surface_interface;
+@@ -1012,6 +1018,36 @@ bind_shell (struct wl_client *client,
+                         &cogland_shell_interface, id, data);
+ }
+ 
++static CoglContext *
++create_cogl_context (CoglandCompositor *compositor,
++                     CoglBool use_egl_constraint,
++                     CoglError **error)
++{
++  CoglRenderer *renderer = renderer = cogl_renderer_new ();
++  CoglDisplay *display;
++  CoglContext *context;
++
++  if (use_egl_constraint)
++    cogl_renderer_add_constraint (renderer, COGL_RENDERER_CONSTRAINT_USES_EGL);
++
++  if (!cogl_renderer_connect (renderer, error))
++    {
++      cogl_object_unref (renderer);
++      return NULL;
++    }
++
++  display = cogl_display_new (renderer, NULL);
++  cogl_wayland_display_set_compositor_display (display,
++                                               compositor->wayland_display);
++
++  context = cogl_context_new (display, error);
++
++  cogl_object_unref (renderer);
++  cogl_object_unref (display);
++
++  return context;
++}
++
+ int
+ main (int argc, char **argv)
+ {
+@@ -1020,7 +1056,7 @@ main (int argc, char **argv)
+   CoglError *error = NULL;
+   GError *gerror = NULL;
+   CoglVertexP2C4 triangle_vertices[] = {
+-      {0, 0.7, 0xff, 0x00, 0x00, 0x80},
++      {0, 0.7, 0xff, 0x00, 0x00, 0xff},
+       {-0.7, -0.7, 0x00, 0xff, 0x00, 0xff},
+       {0.7, -0.7, 0x00, 0x00, 0xff, 0xff}
+   };
+@@ -1055,13 +1091,30 @@ main (int argc, char **argv)
+     wayland_event_source_new (compositor.wayland_display);
+   g_source_attach (compositor.wayland_event_source, NULL);
+ 
+-  compositor.cogl_display = cogl_display_new (NULL, NULL);
+-  cogl_wayland_display_set_compositor_display (compositor.cogl_display,
+-                                               compositor.wayland_display);
+-
+-  compositor.cogl_context = cogl_context_new (compositor.cogl_display, &error);
+-  if (!compositor.cogl_context)
+-    g_error ("Failed to create a Cogl context: %s\n", error->message);
++  /* We want Cogl to use an EGL renderer because otherwise it won't
++   * set up the wl_drm object and only SHM buffers will work. */
++  compositor.cogl_context =
++    create_cogl_context (&compositor,
++                         TRUE /* use EGL constraint */,
++                         &error);
++  if (compositor.cogl_context == NULL)
++    {
++      /* If we couldn't get an EGL context then try any type of
++       * context */
++      cogl_error_free (error);
++      error = NULL;
++
++      compositor.cogl_context =
++        create_cogl_context (&compositor,
++                             FALSE, /* don't set EGL constraint */
++                             &error);
++
++      if (compositor.cogl_context)
++        g_warning ("Failed to create context with EGL constraint, "
++                   "falling back");
++      else
++        g_error ("Failed to create a Cogl context: %s\n", error->message);
++    }
+ 
+   compositor.virtual_width = 800;
+   compositor.virtual_height = 600;
+diff --git a/tests/conform/Makefile.am b/tests/conform/Makefile.am
+index 69a460d..9782755 100644
+--- a/tests/conform/Makefile.am
++++ b/tests/conform/Makefile.am
+@@ -65,6 +65,7 @@ test_sources = \
+ 	test-framebuffer-get-bits.c \
+ 	test-primitive-and-journal.c \
+ 	test-copy-replace-texture.c \
++	test-pipeline-cache-unrefs-texture.c \
+ 	$(NULL)
+ 
+ test_conformance_SOURCES = $(common_sources) $(test_sources)
+@@ -131,7 +132,10 @@ AM_CPPFLAGS += \
+ 	-DCOGL_COMPILATION
+ 
+ test_conformance_CFLAGS = -g3 -O0 $(COGL_DEP_CFLAGS) $(COGL_EXTRA_CFLAGS)
+-test_conformance_LDADD = $(COGL_DEP_LIBS) $(top_builddir)/cogl/libcogl.la
++test_conformance_LDADD = \
++	$(COGL_DEP_LIBS) \
++	$(top_builddir)/cogl/libcogl.la \
++	$(LIBM)
+ if !USE_GLIB
+ test_conformance_LDADD += $(top_builddir)/deps/glib/libglib.la
+ endif
+diff --git a/tests/conform/test-conform-main.c b/tests/conform/test-conform-main.c
+index 0b55db6..1d1447e 100644
+--- a/tests/conform/test-conform-main.c
++++ b/tests/conform/test-conform-main.c
+@@ -120,6 +120,8 @@ main (int argc, char **argv)
+ 
+   ADD_TEST (test_copy_replace_texture, 0, 0);
+ 
++  ADD_TEST (test_pipeline_cache_unrefs_texture, 0, 0);
++
+   UNPORTED_TEST (test_viewport);
+ 
+   ADD_TEST (test_gles2_context, TEST_REQUIREMENT_GLES2_CONTEXT, 0);
+diff --git a/tests/conform/test-pipeline-cache-unrefs-texture.c b/tests/conform/test-pipeline-cache-unrefs-texture.c
+new file mode 100644
+index 0000000..ccd02e7
+--- /dev/null
++++ b/tests/conform/test-pipeline-cache-unrefs-texture.c
+@@ -0,0 +1,92 @@
++#include <cogl/cogl.h>
++
++#include "test-utils.h"
++
++/* Keep track of the number of textures that we've created and are
++ * still alive */
++static int destroyed_texture_count = 0;
++
++#define N_TEXTURES 3
++
++static void
++free_texture_cb (void *user_data)
++{
++  destroyed_texture_count++;
++}
++
++static CoglTexture *
++create_texture (void)
++{
++  static const guint8 data[] =
++    { 0xff, 0xff, 0xff, 0xff };
++  static CoglUserDataKey texture_data_key;
++  CoglTexture2D *tex_2d;
++
++  tex_2d = cogl_texture_2d_new_from_data (test_ctx,
++                                          1, 1, /* width / height */
++                                          COGL_PIXEL_FORMAT_RGBA_8888_PRE,
++                                          COGL_PIXEL_FORMAT_ANY,
++                                          4, /* rowstride */
++                                          data,
++                                          NULL);
++
++  /* Set some user data on the texture so we can track when it has
++   * been destroyed */
++  cogl_object_set_user_data (COGL_OBJECT (tex_2d),
++                             &texture_data_key,
++                             GINT_TO_POINTER (1),
++                             free_texture_cb);
++
++  return COGL_TEXTURE (tex_2d);
++}
++
++void
++test_pipeline_cache_unrefs_texture (void)
++{
++  CoglPipeline *pipeline = cogl_pipeline_new (test_ctx);
++  CoglPipeline *simple_pipeline;
++  int i;
++
++  /* Create a pipeline with three texture layers. That way we can be
++   * pretty sure the pipeline will cause a unique shader to be
++   * generated in the cache */
++  for (i = 0; i < N_TEXTURES; i++)
++    {
++      CoglTexture *tex = create_texture ();
++      cogl_pipeline_set_layer_texture (pipeline, i, tex);
++      cogl_object_unref (tex);
++    }
++
++  /* Draw something with the pipeline to ensure it gets into the
++   * pipeline cache */
++  cogl_framebuffer_draw_rectangle (test_fb,
++                                   pipeline,
++                                   0, 0, 10, 10);
++  cogl_framebuffer_finish (test_fb);
++
++  /* Draw something else so that it is no longer the current flushed
++   * pipeline, and the units have a different texture bound */
++  simple_pipeline = cogl_pipeline_new (test_ctx);
++  for (i = 0; i < N_TEXTURES; i++)
++    {
++      CoglColor combine_constant;
++      cogl_color_init_from_4ub (&combine_constant, i, 0, 0, 255);
++      cogl_pipeline_set_layer_combine_constant (simple_pipeline,
++                                                i,
++                                                &combine_constant);
++    }
++  cogl_framebuffer_draw_rectangle (test_fb, simple_pipeline, 0, 0, 10, 10);
++  cogl_framebuffer_finish (test_fb);
++  cogl_object_unref (simple_pipeline);
++
++  g_assert_cmpint (destroyed_texture_count, ==, 0);
++
++  /* Destroy the pipeline. This should immediately cause the textures
++   * to be freed */
++  cogl_object_unref (pipeline);
++
++  g_assert_cmpint (destroyed_texture_count, ==, N_TEXTURES);
++
++  if (cogl_test_verbose ())
++    g_print ("OK\n");
++}
+diff --git a/tests/micro-perf/Makefile.am b/tests/micro-perf/Makefile.am
+index c221dd6..5c5f69d 100644
+--- a/tests/micro-perf/Makefile.am
++++ b/tests/micro-perf/Makefile.am
+@@ -19,5 +19,10 @@ endif
+ 
+ AM_CFLAGS = $(COGL_DEP_CFLAGS) $(COGL_EXTRA_CFLAGS)
+ 
++common_ldadd = \
++	$(COGL_DEP_LIBS) \
++	$(top_builddir)/cogl/libcogl.la \
++	$(LIBM)
++
+ test_journal_SOURCES = test-journal.c
+-test_journal_LDADD = $(COGL_DEP_LIBS) $(top_builddir)/cogl/libcogl.la
++test_journal_LDADD = $(common_ldadd)
