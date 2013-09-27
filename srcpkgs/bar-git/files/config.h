@@ -14,15 +14,18 @@
 #define BAR_FONT       "-*-terminus-medium-r-normal-*-12-*-*-*-c-*-*-1","fixed"
 /* Some fonts don't set the right width for some chars, pheex it */
 #define BAR_FONT_FALLBACK_WIDTH 6
+/* Define the opacity of the bar (requires a compositor such as compton) */
+#define BAR_OPACITY 1.0 /* 0 is invisible, 1 is opaque */
 /* Color palette */
-#define COLOR0  0x1A1A1A /* background */
-#define COLOR1  0xA9A9A9 /* foreground */
-#define COLOR2  0x303030
-#define COLOR3  0xF92672
-#define COLOR4  0xA6E22E
-#define COLOR5  0xFD971F
-#define COLOR6  0x66D9EF
-#define COLOR7  0x9E6FFE
-#define COLOR8  0xAF875F
-#define COLOR9  0xCCCCC6
-
+#define BACKGROUND 0x232c31
+#define COLOR0 0x2d3c46
+#define COLOR1 0xac4142
+#define COLOR2 0x90a959
+#define COLOR3 0xde935f
+#define COLOR4 0x6a9fb5
+#define COLOR5 0xaa759f
+#define COLOR6 0x75b5aa
+#define COLOR7 0x6c7a80
+#define COLOR8 0x425059
+#define COLOR9 0xcc6666
+#define FOREGROUND 0xc5c8c6
