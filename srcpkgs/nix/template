@@ -4,9 +4,9 @@ version=1.6
 revision=1
 build_style=gnu-configure
 # Use /nix/var as suggested by the official Manual.
-configure_args="ac_cv_path_curl=/usr/bin/curl --localstatedir=/nix/var"
+configure_args="--localstatedir=/nix/var"
 hostmakedepends="pkg-config flex"
-makedepends="bzip2-devel openssl-devel sqlite-devel gc-devel perl-WWW-Curl perl-DBD-SQLite"
+makedepends="bzip2-devel openssl-devel sqlite-devel gc-devel curl perl-WWW-Curl perl-DBD-SQLite"
 short_desc="A purely functional package manager"
 maintainer="Juan RP <xtraeme@gmail.com>"
 license="MIT"
@@ -16,17 +16,29 @@ checksum=2e451a6ad0b43997d8df71d29a7d20ef42f7715fe16efbf4b53bdcdd1d5227fe
 
 post_install() {
 	# Remove unused stuff.
-	rm -rf ${DESTDIR}/usr/include ${DESTDIR}/nix ${DESTDIR}/etc/nix
+	rm -rf ${DESTDIR}/usr/include ${DESTDIR}/nix
 	# Let users interact with the nix-daemon by default.
 	vmkdir etc/profile.d
 	echo 'export NIX_REMOTE=daemon' > ${DESTDIR}/etc/profile.d/nix-daemon.sh
 	# Install nix-daemon systemd service.
 	vinstall ${FILESDIR}/nix-daemon.service 644 usr/lib/systemd/system
+	# Setup build users.
+	echo 'build-users-group = nixbld' > ${DESTDIR}/etc/nix/nix.conf
 }
 
 nix_package() {
-	depends="perl-WWW-Curl perl-DBD-SQLite"
-	systemd_service="nix-daemon.service on"
+	# Extra run-time dependencies.
+	depends="curl perl-WWW-Curl perl-DBD-SQLite"
+	# Create required build users/groups.
+	system_groups="nixbld"
+	for f in $(seq 10); do
+		system_accounts+=" nixbld${f}"
+		eval export nixbld\${f}_homedir="/var/empty"
+		eval export nixbld\${f}_groups="nixbld"
+	done
+	# Register systemd service by default.
+	systemd_services="nix-daemon.service on"
+	# Create required run-time directories.
 	make_dirs="
 		/nix/var/log/nix/drvs 0755 root root
 		/nix/var/nix/profiles 0755 root root
@@ -35,7 +47,7 @@ nix_package() {
 		/nix/var/nix/manifests 0755 root root
 		/nix/var/nix/userpool 0755 root root
 		/nix/var/nix/db 0755 root root
-		/nix/store 0755 root root"
+		/nix/store 1755 root nixbld"
 	pkg_install() {
 		vmove all
 	}
