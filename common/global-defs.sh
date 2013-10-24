@@ -11,7 +11,7 @@
 # increased to "reproduce" the build behaviour (somewhat :-).
 
 # xbps-src version.
-XBPS_SRC_REQ=71
+XBPS_SRC_REQ=73
 
 # XBPS utils version.
 XBPS_UTILS_REQ=0.26
@@ -20,4 +20,4 @@ XBPS_UTILS_REQ=0.26
 XBPS_UTILS_API_REQ=20130918
 
 # base-chroot version.
-BASE_CHROOT_REQ=0.35_1
+BASE_CHROOT_REQ=0.39_1
