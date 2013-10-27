@@ -2,7 +2,7 @@
 pkgname=gcc
 _majorver=4.7
 version=${_majorver}.3
-revision=6
+revision=7
 short_desc="The GNU C Compiler"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://gcc.gnu.org"
@@ -11,24 +11,18 @@ distfiles="http://ftp.gnu.org/pub/gnu/gcc/gcc-$version/gcc-$version.tar.bz2"
 checksum=2f7c37eb4fc14422ff2358a9ef59c974a75ab41204ef0e49fc34ab1d8981a9c3
 
 hostmakedepends="perl flex"
+makedepends="zlib-devel libmpc-devel>=1.0.1_2 ppl-devel>=1.0 cloog-devel isl-devel libfl-devel"
+
 if [ -z "$CROSS_BUILD" ]; then
+	# Required by gcj
 	hostmakedepends+=" zip unzip"
 fi
-makedepends="zlib-devel gmp-devel mpfr-devel libmpc-devel>=1.0.1_2 ppl-devel>=1.0 cloog-devel isl-devel"
 
-if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-	# Required stuff for multilib packages.
-	_triplet="${XBPS_MACHINE}-unknown-linux-gnu"
-	makedepends+=" glibc32-devel"
-elif [ "$XBPS_TARGET_MACHINE" = "armv6l" ]; then
-	_triplet="arm-linux-gnueabihf"
-else
-	_triplet="${XBPS_TARGET_MACHINE}-pc-linux-gnu"
-fi
-
-if [ "$CROSS_BUILD" ]; then
-	makedepends+=" libfl-devel"
-fi
+case "$XBPS_TARGET_MACHINE" in
+	i?86) _triplet="${XBPS_TARGET_MACHINE}-pc-linux-gnu";;
+	x86_64) _triplet="${XBPS_MACHINE}-unknown-linux-gnu";;
+	armv6l) _triplet="arm-linux-gnueabihf";;
+esac
 
 do_configure() {
 	local _langs _args
@@ -59,7 +53,7 @@ do_configure() {
 	./configure --prefix=/usr --mandir=/usr/share/man \
 		--infodir=/usr/share/info --libexecdir=/usr/lib \
 		--enable-clocale=gnu --disable-bootstrap --libdir=/usr/lib \
-		--enable-threads=posix --enable-__cxa_atexit --enable-multilib \
+		--enable-threads=posix --enable-__cxa_atexit --disable-multilib \
 		--disable-rpath --with-system-zlib --enable-shared --enable-lto \
 		--enable-linker-build-id --enable-gnu-unique-object \
 		--enable-checking=release --disable-libstdcxx-pch \
@@ -106,18 +100,6 @@ do_install() {
 	rm -f ${DESTDIR}/usr/lib/libffi*
 	rm -f ${DESTDIR}/usr/share/man/man3/ffi*
 
-	# Remove unused stuff for multilib.
-	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		if [ -d ${DESTDIR}/usr/lib32 ]; then
-			rm -f ${DESTDIR}/usr/lib32/libffi*
-			rm -f ${DESTDIR}/usr/lib32/libgfortran*
-			rm -f ${DESTDIR}/usr/lib32/libgo.{a,so*}
-			rm -f ${DESTDIR}/usr/lib32/libgobegin.a
-			rm -f ${DESTDIR}/usr/lib32/libquadmath*
-			rm -rf ${DESTDIR}/usr/lib32/go
-		fi
-	fi
-
 	# Remove all python scripts in libdir.
 	rm -f ${DESTDIR}/usr/lib/*.py
 
@@ -132,137 +114,6 @@ do_install() {
 		vinstall ${FILESDIR}/${f}.1 644 usr/share/man/man1 ${f}.1
 	done
 }
-
-# Multilib packages
-if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-
-gcc-c++-multilib_package() {
-	depends="gcc-c++>=${_majorver} gcc-multilib>=${_majorver} libstdc++32-devel>=${_majorver}"
-	short_desc="GCC C++ compiler (multilib files)"
-	noverifyrdeps=yes
-	pkg_install() {
-		vmkdir usr/lib/gcc/${_triplet}/${_majorver}/32
-		mv ${DESTDIR}/usr/lib32/libstdc++.a \
-			${PKGDESTDIR}/usr/lib/gcc/${_triplet}/${_majorver}/32
-		mv ${DESTDIR}/usr/lib32/libsupc++.a \
-			${PKGDESTDIR}/usr/lib/gcc/${_triplet}/${_majorver}/32
-	}
-}
-
-gcc-multilib_package() {
-	depends="gcc>=${_majorver} libgcc32>=${_majorver} libgomp32>=${_majorver} libitm32>=${_majorver} zlib32 glibc32-devel"
-	short_desc="GCC C compiler (multilib files)"
-	noverifyrdeps=yes
-	pkg_install() {
-		vmove usr/lib/gcc/${_triplet}/${_majorver}/32
-		vmove "usr/lib32/libssp*.a"
-		vinstall ${wrksrc}/host-${_triplet}/gcc/specs 644 usr/lib/gcc/${_triplet}/${_majorver}
-	}
-}
-
-gcc-objc-multilib_package() {
-	depends="gcc-multilib>=${_majorver} gcc-objc>=${_majorver} libobjc32>=${_majorver}"
-	short_desc="The GNU Objective-C compiler (multilib files)"
-	noverifyrdeps=yes
-	pkg_install() {
-		vmkdir usr/lib/gcc/${_triplet}/${_majorver}/32
-		mv ${DESTDIR}/usr/lib32/libobjc*.a \
-			${PKGDESTDIR}/usr/lib/gcc/${_triplet}/${_majorver}/32
-	}
-}
-
-libgcc32_package() {
-	short_desc="GCC version ${version} shared library support (32bit)"
-	noverifyrdeps=yes
-	pkg_install() {
-		vmove "usr/lib32/libgcc_s.so*"
-	}
-}
-
-libgcj32_package() {
-	short_desc="GCC Java library ${version} shared library support (32bit)"
-	noverifyrdeps=yes
-	pkg_install() {
-		vmove "usr/lib32/libgcj*.so*"
-		vmove "usr/lib32/libgij.so*"
-		vmove usr/lib32/gcj-${version}-13
-		vmove usr/lib32/logging.properties
-		vmove usr/lib32/security/classpath.security
-	}
-}
-
-libgomp32_package() {
-	depends="libgcc32 glibc32"
-	short_desc="GCC OpenMP v3.0 shared support library (32bit)"
-	noverifyrdeps=yes
-	pkg_install() {
-		vmove "usr/lib32/libgomp.*"
-	}
-}
-
-libitm32_package() {
-	depends="libgcc32"
-	short_desc="GCC Transactional Memory support library (32bit)"
-	noverifyrdeps=yes
-	pkg_install() {
-		vmove "usr/lib32/libitm*"
-	}
-}
-
-libmudflap32-devel_package() {
-	depends="gcc-multilib glibc32-devel libmudflap32"
-	short_desc="GCC 32bit mudflap support libraries (development files)"
-	pkg_install() {
-		vmove "usr/lib32/libmudflap*.a"
-	}
-}
-
-libmudflap32_package() {
-	depends="gcc-multilib glibc32"
-	short_desc="GCC mudflap shared support libraries (32bit)"
-	noverifyrdeps=yes
-	pkg_install() {
-		vmove "usr/lib32/libmudflap*.so*"
-	}
-}
-
-libobjc32_package() {
-	depends="libgcc32 glibc32"
-	short_desc="GCC Objective-C shared library support (32bit)"
-	noverifyrdeps=yes
-	pkg_install() {
-		vmove "usr/lib32/libobjc.so*"
-	}
-}
-
-libssp32_package() {
-	depends="glibc32"
-	short_desc="GCC SSP shared library support (32bit)"
-	noverifyrdeps=yes
-	pkg_install() {
-		vmove "usr/lib32/libssp.so*"
-	}
-}
-
-libstdc++32-devel_package() {
-	depends="libstdc++-devel libstdc++32"
-	short_desc="GCC Standard C++ Library (32bit) development files"
-	noverifyrdeps=yes
-	pkg_install() {
-		vmove usr/include/c++/${_majorver}/${_triplet}/32
-	}
-}
-
-libstdc++32_package() {
-	depends="libgcc32 glibc32 libstdc++"
-	short_desc="GCC Standard C++ Library (32bit)"
-	noverifyrdeps=yes
-	pkg_install() {
-		vmove "usr/lib32/libstdc++.so*"
-	}
-}
-
-fi # !x86_64
 
 # Disabled packages in cross builds.
 if [ -z "$CROSS_BUILD" ]; then
@@ -341,7 +192,7 @@ gcc-objc_package() {
 }
 
 libgcj-devel_package() {
-	short_desc="GCC Java library ${version} - development files"
+	short_desc="GCC Java library - development files"
 	pkg_install() {
 		vmove usr/include/c++/${_majorver}/gnu
 		vmove usr/include/c++/${_majorver}/java
@@ -359,7 +210,7 @@ libgcj-devel_package() {
 }
 
 libgcj_package() {
-	short_desc="GCC Java library ${version} shared library support"
+	short_desc="GCC Java library"
 	pkg_install() {
 		vmove "usr/lib/libgcj*.so*"
 		vmove "usr/lib/libgij.so*"
@@ -373,7 +224,7 @@ libgcj_package() {
 
 libgfortran-devel_package() {
 	depends="libgfortran>=${_majorver}"
-	short_desc="GCC Fortran library ${version} - development files"
+	short_desc="GCC Fortran library - development files"
 	pkg_install() {
 		vmove usr/lib/libgfortran.a
 		vmove usr/lib/gcc/${_triplet}/${_majorver}/libgfortranbegin.a
@@ -381,7 +232,7 @@ libgfortran-devel_package() {
 }
 
 libgfortran_package() {
-	short_desc="GCC Fortran library ${version} shared library support"
+	short_desc="GCC Fortran library"
 	pkg_install() {
 		vmove "usr/lib/libgfortran.so*"
 		vmove usr/lib/libgfortran.spec
@@ -391,7 +242,7 @@ libgfortran_package() {
 
 libgo-devel_package() {
 	depends="libgo>=${_majorver}"
-	short_desc="GCC Go library ${version} shared library support - development files"
+	short_desc="GCC Go library - development files"
 	pkg_install() {
 		vmove usr/lib/libgo.a
 		vmove usr/lib/libgobegin.a
@@ -399,7 +250,7 @@ libgo-devel_package() {
 }
 
 libgo_package() {
-	short_desc="Go library ${version} shared library support"
+	short_desc="GCC Go library"
 	pkg_install() {
 		vmove "usr/lib/libgo.so*"
 		vinstall ${wrksrc}/COPYING.RUNTIME 644 usr/share/licenses/$pkgname RUNTIME.LIBRARY.EXCEPTION
@@ -408,14 +259,14 @@ libgo_package() {
 
 libobjc-devel_package() {
 	depends="libobjc>=${_majorver}"
-	short_desc="GCC Objective-C shared library support (development files)"
+	short_desc="GCC Objective-C library - development files"
 	pkg_install() {
 		vmove "usr/lib/libobjc.*a"
 	}
 }
 
 libobjc_package() {
-	short_desc="GCC Objective-C shared library support"
+	short_desc="GCC Objective-C library"
 	pkg_install() {
 		vmove "usr/lib/libobjc.so*"
 		vinstall ${wrksrc}/COPYING.RUNTIME 644 usr/share/licenses/$pkgname RUNTIME.LIBRARY.EXCEPTION
@@ -424,7 +275,7 @@ libobjc_package() {
 
 libquadmath-devel_package() {
 	depends="libquadmath>=${_majorver}"
-	short_desc="GCC quadmath shared support library (development files)"
+	short_desc="GCC quadmath library - development files"
 	pkg_install() {
 		vmove "usr/lib/gcc/${_triplet}/${_majorver}/include/quadmath*"
 		vmove "usr/lib/libquadmath*.a"
@@ -434,7 +285,7 @@ libquadmath-devel_package() {
 }
 
 libquadmath_package() {
-	short_desc="GCC quad match ${version} shared library support"
+	short_desc="GCC quadmath library"
 	pkg_install() {
 		vmove "usr/lib/libquadmath.so*"
 		vinstall ${wrksrc}/COPYING.RUNTIME 644 usr/share/licenses/$pkgname RUNTIME.LIBRARY.EXCEPTION
@@ -444,7 +295,7 @@ libquadmath_package() {
 fi # !CROSS_BUILD
 
 libgcc_package() {
-	short_desc="GCC version ${version} shared library support"
+	short_desc="GCC library"
 	noverifyrdeps=yes
 	pkg_install() {
 		vmove "usr/lib/libgcc_s.so*"
@@ -454,7 +305,7 @@ libgcc_package() {
 
 libgomp-devel_package() {
 	depends="libgomp>=${_majorver}"
-	short_desc="GCC OpenMP v3.0 shared support library - development files"
+	short_desc="GCC OpenMP v3.0 library - development files"
 	pkg_install() {
 		vmove usr/lib/libgomp.a
 		vmove usr/share/info/libgomp.info
@@ -463,7 +314,7 @@ libgomp-devel_package() {
 }
 
 libgomp_package() {
-	short_desc="GCC OpenMP v3.0 shared support library"
+	short_desc="GCC OpenMP v3.0 library"
 	replaces="gcc>=4.6.3<4.6.3_3"
 	pkg_install() {
 		vmove usr/lib/gcc/${_triplet}/${_majorver}/include/omp.h
@@ -474,7 +325,7 @@ libgomp_package() {
 }
 
 libitm_package() {
-	short_desc="GCC Transactional Memory support library"
+	short_desc="GCC Transactional Memory library"
 	pkg_install() {
 		vmove "usr/lib/libitm.*"
 		vmove usr/share/info/libitm.info
@@ -484,14 +335,14 @@ libitm_package() {
 
 libmudflap-devel_package() {
 	depends="libmudflap>=${_majorver}"
-	short_desc="GCC mudflap shared support library (development files)"
+	short_desc="GCC mudflap library - development files"
 	pkg_install() {
 		vmove "usr/lib/libmudflap*.a"
 	}
 }
 
 libmudflap_package() {
-	short_desc="GCC mudflap shared support library"
+	short_desc="GCC mudflap library"
 	pkg_install() {
 		vmove "usr/lib/libmudflap*.so*"
 		vinstall ${wrksrc}/COPYING.RUNTIME 644 usr/share/licenses/$pkgname RUNTIME.LIBRARY.EXCEPTION
@@ -500,7 +351,7 @@ libmudflap_package() {
 
 libssp-devel_package() {
 	depends="glibc-devel libssp>=${_majorver}"
-	short_desc="GCC SSP library support"
+	short_desc="GCC SSP (StackSmashingProtection)library - development files"
 	pkg_install() {
 		vmove "usr/lib/libssp*.a"
 		vmove usr/lib/gcc/${_triplet}/${_majorver}/include/ssp
@@ -508,7 +359,7 @@ libssp-devel_package() {
 }
 
 libssp_package() {
-	short_desc="GCC SSP shared library support"
+	short_desc="GCC SSP (StackSmashingProtection) library"
 	pkg_install() {
 		vmove "usr/lib/libssp.so*"
 		vinstall ${wrksrc}/COPYING.RUNTIME 644 usr/share/licenses/$pkgname RUNTIME.LIBRARY.EXCEPTION
@@ -517,7 +368,7 @@ libssp_package() {
 
 libstdc++-devel_package() {
 	depends="libstdc++>=${_majorver}"
-	short_desc="GCC Standard C++ Library (development files)"
+	short_desc="GCC Standard C++ Library - development files"
 	pkg_install() {
 		vmove "usr/lib/libstdc++.*a"
 		vmove "usr/lib/libsupc++.*"
