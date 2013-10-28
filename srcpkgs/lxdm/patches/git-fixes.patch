@@ -1,0 +1,3702 @@
+diff --git a/Makefile.am b/Makefile.am
+index bfac56b..6f997b8 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -1,4 +1,5 @@
+ NULL =
++
+ SUBDIRS= \
+ 	src \
+ 	po \
+@@ -6,6 +7,10 @@ SUBDIRS= \
+ 	data \
+ 	$(NULL)
+ 
++if HAVE_SYSTEMD
++SUBDIRS += systemd
++endif
++
+ rpm: dist @PACKAGE_NAME@.spec
+ 	rpmbuild -bb \
+ 	--define "_sourcedir `pwd`" \
+diff --git a/configure.ac b/configure.ac
+index e952473..8958c9c 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -2,8 +2,8 @@
+ # Process this file with autoconf to produce a configure script.
+ 
+ AC_PREREQ([2.63])
+-AC_INIT([lxdm], [0.4.1], [http://lxde.org/])
+-AM_INIT_AUTOMAKE([-Wall -Werror foreign])
++AC_INIT([lxdm], [0.5.0], [http://lxde.org/])
++AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
+ 
+ AC_CONFIG_SRCDIR([src/lxdm.c])
+ AC_CONFIG_HEADERS([config.h])
+@@ -16,10 +16,17 @@ AM_PROG_CC_C_O
+ # Checks for libraries.
+ AC_CHECK_LIB([crypt], [crypt])
+ 
+-AC_ARG_WITH(pam,AC_HELP_STRING([--without-pam],[build without pam]),
+-[],[AC_CHECK_LIB([pam], [pam_open_session])])
+-
+-AC_CHECK_LIB([ck-connector],[ck_connector_open_session])
++# Check for PAM support
++AC_ARG_WITH(pam, AC_HELP_STRING([--with-pam],[Use PAM for authentication]),
++	[USE_PAM=$withval], [USE_PAM=$use_pam_default])
++if test "x$USE_PAM" != "xno" ; then
++	AC_SEARCH_LIBS(pam_open_session,[pam])
++	AC_CHECK_FUNC(pam_open_session, 
++		[AC_DEFINE(USE_PAM,1,[Use PAM for authentication])],
++		[if test "x$USE_PAM" != "xtry" ; then
++			AC_MSG_ERROR(["PAM support requested, but pam_open_session not found."])
++		 fi])
++fi
+ 
+ # Checks for header files.
+ AC_PATH_X
+@@ -80,11 +87,22 @@ PKG_CHECK_MODULES(GTK, [$pkg_modules])
+ AC_SUBST(GTK_CFLAGS)
+ AC_SUBST(GTK_LIBS)
+ 
+-PKG_CHECK_MODULES(CONSOLEKIT, "ck-connector",[
++
++AC_ARG_ENABLE(consolekit,
++	AC_HELP_STRING([--disable-consolekit],[disable ConsoleKit support]),
++	[enable_consolekit=$enableval],
++	[enable_consolekit=yes]
++)
++
++if test "x$enable_consolekit" = "xyes" ; then
++  PKG_CHECK_MODULES(CONSOLEKIT, "ck-connector",[
+ 	AC_SUBST(CONSOLEKIT_CFLAGS)
+ 	AC_SUBST(CONSOLEKIT_LIBS)],[
+ 	echo "ConsoleKit devel package not found"
+ 	])
++  AC_CHECK_LIB([ck-connector],[ck_connector_open_session])
++fi
++
+ 
+ AC_ARG_ENABLE(password,
+ AC_HELP_STRING([--enable-password],[enable to load autologin password store at config file]),
+@@ -118,7 +136,7 @@ if test "x$enable_debug" = "x$yes" ; then
+ fi
+ 
+ AC_ARG_WITH(xconn,
+-	[AC_HELP_STRING([-with-xconn=@<:@xlib/xcb@:>@],[use xlib or xcb to use])],
++	[AC_HELP_STRING([--with-xconn=@<:@xlib/xcb@:>@],[use xlib or xcb to use])],
+ 	[if test "x$with_xconn" = "xxlib"; then
+ 		PKG_CHECK_MODULES(XCONN,"x11")
+ 		AC_SUBST(XCONN_CFLAGS)
+@@ -138,6 +156,14 @@ AC_ARG_WITH(xconn,
+ 	]
+ )
+ 
++AC_ARG_WITH([systemdsystemunitdir],
++        AS_HELP_STRING([--with-systemdsystemunitdir=DIR], [Directory for systemd service files]),
++        [], [with_systemdsystemunitdir=$($PKG_CONFIG --variable=systemdsystemunitdir systemd)])
++if test "x$with_systemdsystemunitdir" != xno; then
++        AC_SUBST([systemdsystemunitdir], [$with_systemdsystemunitdir])
++fi
++AM_CONDITIONAL(HAVE_SYSTEMD, [test -n "$with_systemdsystemunitdir" -a "x$with_systemdsystemunitdir" != xno ])
++
+ GETTEXT_PACKAGE=lxdm
+ AC_SUBST(GETTEXT_PACKAGE)
+ AC_DEFINE_UNQUOTED(GETTEXT_PACKAGE,"$GETTEXT_PACKAGE", [Gettext package.])
+@@ -148,6 +174,7 @@ AC_CONFIG_FILES([
+ 	src/Makefile
+ 	po/Makefile.in
+ 	pam/Makefile
++	systemd/Makefile
+ 	data/Makefile
+ 	data/PostLogin
+ 	data/PostLogout
+diff --git a/data/Makefile.am b/data/Makefile.am
+index 6d3fad6..9500da9 100644
+--- a/data/Makefile.am
++++ b/data/Makefile.am
+@@ -1,6 +1,6 @@
+ FULL_LIBEXECDIR=$(libexecdir)
+ 
+-lxdm.conf : lxdm.conf.in
++lxdm.conf: lxdm.conf.in
+ 	cat lxdm.conf.in | sed 's,@FULL_LIBEXECDIR@,$(FULL_LIBEXECDIR),' > $@
+ 
+ NULL=
+diff --git a/data/Xsession b/data/Xsession
+index 287db71..fe76de0 100755
+--- a/data/Xsession
++++ b/data/Xsession
+@@ -15,12 +15,7 @@ fi
+ if [ -f /etc/X11/xinit/xinitrc-common ]; then
+ # fedora
+ 	. /etc/X11/xinit/xinitrc-common
+-	if ! [ -z "$XDG_SESSION_COOKIE" ]; then
+-		CK_XINIT_SESSION=
+-	elif [ -x /usr/bin/ck-launch-session -a -z "$CK_XINIT_SESSION" ]; then
+-		CK_XINIT_SESSION="/usr/bin/ck-launch-session"
+-	fi
+-	exec -l $SHELL -c "$CK_XINIT_SESSION \"$LXSESSION\""
++	exec -l bash -c "$LXSESSION"
+ elif [ -x /etc/X11/xinit/Xsession ]; then
+ # fedora
+ 	exec /etc/X11/xinit/Xsession "$LXSESSION"
+@@ -30,17 +25,24 @@ elif [ -x /etc/X11/Xsession ]; then
+ elif [ -x /etc/X11/xinit/xinitrc ]; then
+ #suse
+ 	export WINDOWMANAGER=$LXSESSION
+-	exec -l $SHELL -c /etc/X11/xinit/xinitrc
++	exec -l bash -c /etc/X11/xinit/xinitrc
+ else
+ # unknown, user should custom /etc/lxdm/xinitrc self
+ 	if [ -x /etc/lxdm/xinitrc ]; then
+-		. /etc/lxdm/xinitrc
++		. /etc/lxdm/xinitrc "$LXSESSION"
++	fi
++	if [ -d /etc/X11/xinit/xinitrc.d ] ; then
++		for f in /etc/X11/xinit/xinitrc.d/* ; do
++			[ -x "$f" ] && . "$f"
++		done
++		unset f
+ 	fi
+-	if ! [ -z "$XDG_SESSION_COOKIE" ]; then
+-		CK_XINIT_SESSION=
+-	elif [ -x /usr/bin/ck-launch-session ]; then
+-		CK_XINIT_SESSION="/usr/bin/ck-launch-session"
++
++	if which dbus-launch >/dev/null && test -z "$DBUS_SESSION_BUS_ADDRESS";
++	then
++		eval "$(dbus-launch --sh-syntax --exit-with-session)"
+ 	fi
+-	exec -l $SHELL -c "$CK_XINIT_SESSION \"$LXSESSION\""
++
++	exec -l bash -c "$LXSESSION"
+ fi
+ 
+diff --git a/data/config.ui b/data/config.ui
+index 423fe56..b6d724d 100644
+--- a/data/config.ui
++++ b/data/config.ui
+@@ -175,8 +175,99 @@
+           </packing>
+         </child>
+         <child>
++          <object class="GtkHBox" id="hbox3">
++            <property name="visible">True</property>
++            <property name="can_focus">False</property>
++			<child>
++              <object class="GtkCheckButton" id="lxdm-enable-bottom-pane">
++                <property name="label" translatable="yes">Enable bottom panel</property>
++                <property name="visible">True</property>
++                <property name="can_focus">True</property>
++                <property name="receives_default">False</property>
++                <property name="use_action_appearance">False</property>
++                <property name="xalign">0</property>
++                <property name="draw_indicator">True</property>
++              </object>
++              <packing>
++                <property name="expand">False</property>
++                <property name="fill">True</property>
++                <property name="position">0</property>
++              </packing>
++            </child>
++          </object>
++          <packing>
++            <property name="expand">False</property>
++            <property name="fill">True</property>
++            <property name="position">3</property>
++          </packing>
++		</child>
++		<child>
++		  <object class="GtkAlignment" id="alignment3">
++		  <property name="visible">True</property>
++		  <property name="xscale">0</property>
++		  <property name="yscale">0</property>
++		  <child>
++            <object class="GtkHBox" id="hbox4">
++              <property name="visible">True</property>
++              <property name="can_focus">False</property>
++              <child>
++                <object class="GtkLabel" id="label3">
++                  <property name="visible">True</property>
++                  <property name="can_focus">False</property>
++                  <property name="label" translatable="yes">Bottom Panel Options</property>
++		  <attributes>
++                    <attribute name="underline" value="True"/>
++		  </attributes>
++                </object>
++                <packing>
++                  <property name="expand">False</property>
++                  <property name="fill">True</property>
++                  <property name="position">0</property>
++                </packing>
++              </child>
++            </object>
++		  </child>
++		  </object>
++		</child>
++		<child>
++          <object class="GtkVBox" id="vbox2">
++            <property name="visible">True</property>
++            <property name="can_focus">False</property>
++			<child>
++              <object class="GtkCheckButton" id="lxdm-transparent-pane">
++                <property name="label" translatable="yes">Transparent panel</property>
++                <property name="visible">True</property>
++                <property name="can_focus">True</property>
++                <property name="receives_default">False</property>
++                <property name="use_action_appearance">False</property>
++                <property name="xalign">0</property>
++                <property name="draw_indicator">True</property>
++              </object>
++              <packing>
++                <property name="expand">False</property>
++                <property name="fill">True</property>
++                <property name="position">0</property>
++              </packing>
++            </child>
++            <child>
++              <object class="GtkCheckButton" id="lxdm-hide-sessions">
++                <property name="label" translatable="yes">Hide sessions</property>
++                <property name="visible">True</property>
++                <property name="can_focus">True</property>
++                <property name="receives_default">False</property>
++                <property name="use_action_appearance">False</property>
++                <property name="xalign">0</property>
++                <property name="draw_indicator">True</property>
++              </object>
++              <packing>
++                <property name="expand">False</property>
++                <property name="fill">True</property>
++                <property name="position">1</property>
++              </packing>
++            </child>
++            <child>
+           <object class="GtkCheckButton" id="lxdm-show-lang">
+-            <property name="label" translatable="yes">Show languanges menu</property>
++            <property name="label" translatable="yes">Show languages menu</property>
+             <property name="visible">True</property>
+             <property name="can_focus">True</property>
+             <property name="receives_default">False</property>
+@@ -187,7 +278,7 @@
+           <packing>
+             <property name="expand">False</property>
+             <property name="fill">True</property>
+-            <property name="position">3</property>
++                <property name="position">2</property>
+           </packing>
+         </child>
+         <child>
+@@ -203,9 +294,60 @@
+           <packing>
+             <property name="expand">False</property>
+             <property name="fill">True</property>
++                <property name="position">3</property>
++              </packing>
++            </child>
++            <child>
++              <object class="GtkCheckButton" id="lxdm-hide-exit">
++                <property name="label" translatable="yes">Hide quit button</property>
++                <property name="visible">True</property>
++                <property name="can_focus">True</property>
++                <property name="receives_default">False</property>
++                <property name="use_action_appearance">False</property>
++                <property name="xalign">0</property>
++                <property name="draw_indicator">True</property>
++              </object>
++              <packing>
++                <property name="expand">False</property>
++                <property name="fill">True</property>
+             <property name="position">4</property>
+           </packing>
+         </child>
++          </object>
++          <packing>
++            <property name="expand">False</property>
++            <property name="fill">True</property>
++            <property name="position">5</property>
++          </packing>
++		</child>
++                <child>
++                  <object class="GtkAlignment" id="alignment4">
++                  <property name="visible">True</property>
++                  <property name="xscale">0</property>
++                  <property name="yscale">0</property>
++                  <child>
++            <object class="GtkHBox" id="hbox5">
++              <property name="visible">True</property>
++              <property name="can_focus">False</property>
++              <child>
++                <object class="GtkLabel" id="label4">
++                  <property name="visible">True</property>
++                  <property name="can_focus">False</property>
++                  <property name="label" translatable="yes">Other Options</property>
++                  <attributes>
++                    <attribute name="underline" value="True"/>
++                  </attributes>
++                </object>
++                <packing>
++                  <property name="expand">False</property>
++                  <property name="fill">True</property>
++                  <property name="position">0</property>
++                </packing>
++              </child>
++            </object>
++                  </child>
++                  </object>
++                </child>
+         <child>
+           <object class="GtkCheckButton" id="lxdm-user-list">
+             <property name="label" translatable="yes">Show user list</property>
+@@ -219,7 +361,23 @@
+           <packing>
+             <property name="expand">False</property>
+             <property name="fill">True</property>
+-            <property name="position">5</property>
++            <property name="position">7</property>
++          </packing>
++		</child>
++        <child>
++          <object class="GtkCheckButton" id="lxdm-hide-time">
++            <property name="label" translatable="yes">Hide time</property>
++            <property name="visible">True</property>
++            <property name="can_focus">True</property>
++            <property name="receives_default">False</property>
++            <property name="use_action_appearance">False</property>
++            <property name="xalign">0</property>
++            <property name="draw_indicator">True</property>
++          </object>
++          <packing>
++            <property name="expand">False</property>
++            <property name="fill">True</property>
++            <property name="position">8</property>
+           </packing>
+         </child>
+         <child>
+diff --git a/data/lxdm.conf.in b/data/lxdm.conf.in
+index dd94686..d93f280 100644
+--- a/data/lxdm.conf.in
++++ b/data/lxdm.conf.in
+@@ -15,12 +15,19 @@
+ ## set this if you don't want to put xauth file at ~/.Xauthority
+ # xauth_path=/tmp
+ 
++# not ask password for users who have empty password
++# skip_password=1
++
+ ## greeter used to welcome the user
+ greeter=@FULL_LIBEXECDIR@/lxdm-greeter-gtk
+ 
+ [server]
+ ## arg used to start xserver, not fully function
+ # arg=/usr/bin/X -background vt1
++# uncomment this if you really want xserver listen to tcp
++# tcp_listen=1
++# uncoment this if you want reset the xserver after logou
++# reset=1
+ 
+ [display]
+ ## gtk theme used by greeter
+diff --git a/data/lxdm.glade b/data/lxdm.glade
+index 81175e8..221c2a3 100644
+--- a/data/lxdm.glade
++++ b/data/lxdm.glade
+@@ -125,7 +125,9 @@
+                   </packing>
+                 </child>
+                 <child>
+-                  <object class="GtkComboBoxEntry" id="keyboard"/>
++                  <object class="GtkComboBoxEntry" id="keyboard">
++                  <property name="text_column">0</property>
++                  </object>
+                   <packing>
+                     <property name="expand">False</property>
+                     <property name="position">3</property>
+diff --git a/data/themes/Industrial/greeter-gtk3.ui b/data/themes/Industrial/greeter-gtk3.ui
+index 483809c..2f4e631 100644
+--- a/data/themes/Industrial/greeter-gtk3.ui
++++ b/data/themes/Industrial/greeter-gtk3.ui
+@@ -1,7 +1,5 @@
+ <?xml version="1.0"?>
+ <interface>
+-  <!-- interface-requires gtk+ 2.12 -->
+-  <!-- interface-naming-policy project-wide -->
+   <object class="GtkWindow" id="lxdm">
+     <property name="decorated">False</property>
+     <child>
+@@ -25,7 +23,7 @@
+           <object class="GtkAlignment" id="alignment1">
+             <property name="visible">True</property>
+             <property name="xscale">0</property>
+-            <property name="yscale">0</property>
++            <property name="yscale">1</property>
+             <child>
+               <object class="GtkVBox" id="vbox2">
+                 <property name="visible">True</property>
+@@ -34,6 +32,7 @@
+                   <object class="GtkImage" id="image1">
+                     <property name="visible">True</property>
+                     <property name="pixbuf">login.png</property>
++                    <property name="yalign">0.8</property>
+                   </object>
+                   <packing>
+                     <property name="position">0</property>
+@@ -42,6 +41,7 @@
+                 <child>
+                   <object class="GtkAlignment" id="alignment2">
+                     <property name="visible">True</property>
++                    <property name="yalign">0.1</property>
+                     <property name="xscale">0</property>
+                     <property name="yscale">0</property>
+                     <child>
+@@ -61,19 +61,22 @@
+                           </packing>
+                         </child>
+                         <child>
+-                          <object class="GtkIconView" id="user_list">
++                          <object class="GtkScrolledWindow" id="user_list_scrolled">
+                             <property name="visible">True</property>
+-                            <property name="can_focus">True</property>
+-                            <property name="item-padding">1</property>
+-                            <property name="margin">2</property>
+-                            <property name="column-spacing">0</property>
+-                            <property name="row-spacing">1</property>
++                            <property name="can_focus">False</property>
++                            <property name="hscrollbar_policy">GTK_POLICY_NEVER</property>
++                            <property name="vscrollbar_policy">GTK_POLICY_NEVER</property>
++                            <child>
++                              <object class="GtkIconView" id="user_list">
++                                <property name="visible">True</property>
++                                <property name="can_focus">True</property>
++                                <property name="item-padding">1</property>
++                                <property name="margin">2</property>
++                                <property name="column-spacing">0</property>
++                                <property name="row-spacing">1</property>
++                              </object>
++                            </child>
+                           </object>
+-                          <packing>
+-                            <property name="expand">False</property>
+-                            <property name="fill">False</property>
+-                            <property name="position">1</property>
+-                          </packing>
+                         </child>
+                         <child>
+                           <object class="GtkEntry" id="login_entry">
+diff --git a/data/themes/Industrial/greeter.ui b/data/themes/Industrial/greeter.ui
+index 77a4f8d..3413922 100644
+--- a/data/themes/Industrial/greeter.ui
++++ b/data/themes/Industrial/greeter.ui
+@@ -25,7 +25,7 @@
+           <object class="GtkAlignment" id="alignment1">
+             <property name="visible">True</property>
+             <property name="xscale">0</property>
+-            <property name="yscale">0</property>
++            <property name="yscale">1</property>
+             <child>
+               <object class="GtkVBox" id="vbox2">
+                 <property name="visible">True</property>
+@@ -34,6 +34,7 @@
+                   <object class="GtkImage" id="image1">
+                     <property name="visible">True</property>
+                     <property name="pixbuf">login.png</property>
++                    <property name="yalign">0.8</property>
+                   </object>
+                   <packing>
+                     <property name="position">0</property>
+@@ -42,6 +43,7 @@
+                 <child>
+                   <object class="GtkAlignment" id="alignment2">
+                     <property name="visible">True</property>
++                    <property name="yalign">0.1</property>
+                     <property name="xscale">0</property>
+                     <property name="yscale">0</property>
+                     <child>
+@@ -61,19 +63,22 @@
+                           </packing>
+                         </child>
+                         <child>
+-                          <object class="GtkIconView" id="user_list">
++                          <object class="GtkScrolledWindow" id="user_list_scrolled">
+                             <property name="visible">True</property>
+-                            <property name="can_focus">True</property>
+-                            <property name="item-padding">1</property>
+-                            <property name="margin">2</property>
+-                            <property name="column-spacing">0</property>
+-                            <property name="row-spacing">1</property>
++                            <property name="can_focus">False</property>
++                            <property name="hscrollbar_policy">GTK_POLICY_NEVER</property>
++                            <property name="vscrollbar_policy">GTK_POLICY_NEVER</property>
++                            <child>
++                              <object class="GtkIconView" id="user_list">
++                                <property name="visible">True</property>
++                                <property name="can_focus">True</property>
++                                <property name="item-padding">1</property>
++                                <property name="margin">2</property>
++                                <property name="column-spacing">0</property>
++                                <property name="row-spacing">1</property>
++                              </object>
++                            </child>
+                           </object>
+-                          <packing>
+-                            <property name="expand">False</property>
+-                            <property name="fill">False</property>
+-                            <property name="position">1</property>
+-                          </packing>
+                         </child>
+                         <child>
+                           <object class="GtkEntry" id="login_entry">
+@@ -201,7 +206,9 @@
+                   </packing>
+                 </child>
+                 <child>
+-                  <object class="GtkComboBoxEntry" id="keyboard"/>
++                  <object class="GtkComboBoxEntry" id="keyboard">
++                  <property name="text_column">0</property>
++                  </object>
+                   <packing>
+                     <property name="expand">False</property>
+                     <property name="position">3</property>
+diff --git a/data/themes/Industrial/gtk.css b/data/themes/Industrial/gtk.css
+index eefe846..7621345 100644
+--- a/data/themes/Industrial/gtk.css
++++ b/data/themes/Industrial/gtk.css
+@@ -1,20 +1,21 @@
+ #lxdm {
+-	background-image: url("wave.svg")
++	background-image: url("wave.svg");
++	background-size: 100%;
+ }
+ 
+ #bottom_pane {
+-	background-image: url("shade.png")
++	background-color: rgba(0,0,0,0.24);
+ }
+ 
+ #time {
+ 	font: Sans 12;
+-	color: #ffffff
++	color: #ffffff;
+ }
+ 
+ #user_list, #login_entry {
+-	background-image: none
++	background-image: none;
+ }
+ 
+ #prompt, #bottom_pane GtkLabel {
+-	color: #ffffff
++	color: #ffffff;
+ }
+diff --git a/data/themes/Industrial/gtkrc b/data/themes/Industrial/gtkrc
+index 9ee55d5..8f1d810 100644
+--- a/data/themes/Industrial/gtkrc
++++ b/data/themes/Industrial/gtkrc
+@@ -45,6 +45,6 @@ style "bottom"
+ 
+ widget "lxdm" style "back"
+ widget "lxdm.*.time" style "time"
+-widget "lxdm.*.prompt" style "prompt"
++widget "*.prompt" style "prompt"
+ widget "lxdm.*.bottom_pane" style "bottom"
+ widget_class "GtkWindow.*.GtkEventBox.*.<GtkLabel>" style "bottom"
+diff --git a/gnome-shell/LXDM_User_Switch@dgod/extension.js b/gnome-shell/LXDM_User_Switch@dgod/extension.js
+new file mode 100644
+index 0000000..5c0498f
+--- /dev/null
++++ b/gnome-shell/LXDM_User_Switch@dgod/extension.js
+@@ -0,0 +1,28 @@
++const Main = imports.ui.main;
++const GLib = imports.gi.GLib;
++const PopupMenu = imports.ui.popupMenu;
++
++let button, menu, evt;
++
++function _buttonActivate() {
++	Main.overview.hide();
++	GLib.spawn_command_line_async("lxdm -c USER_SWITCH");
++}
++
++function init() {
++}
++
++function enable() {
++	menu = Main.panel["statusArea"].userMenu;
++	button = menu._loginScreenItem;
++	evt=button.connect('activate', function(){GLib.spawn_command_line_async("lxdm -c USER_SWITCH");});
++	button.actor.visible=true;
++}
++
++function disable() {
++	if(evt && button)
++		button.disconnect(evt);
++	evt=undefined;
++	button=undefined;
++	menu=undefined;
++}
+diff --git a/gnome-shell/LXDM_User_Switch@dgod/metadata.json b/gnome-shell/LXDM_User_Switch@dgod/metadata.json
+new file mode 100644
+index 0000000..a5a19f7
+--- /dev/null
++++ b/gnome-shell/LXDM_User_Switch@dgod/metadata.json
+@@ -0,0 +1 @@
++{"shell-version": ["3.6.0"], "uuid": "LXDM_User_Switch@dgod", "name": "LXDM User Switch", "description": "LXDM User Switch"}
+\ No newline at end of file
+diff --git a/gnome-shell/LXDM_User_Switch@dgod/stylesheet.css b/gnome-shell/LXDM_User_Switch@dgod/stylesheet.css
+new file mode 100644
+index 0000000..e69de29
+diff --git a/lxdm.spec.in b/lxdm.spec.in
+index ae5b345..3033d74 100644
+--- a/lxdm.spec.in
++++ b/lxdm.spec.in
+@@ -14,7 +14,8 @@ Source0:	lxdm-%{version}.tar.gz
+ 
+ BuildRoot:	%{_tmppath}/%{name}-%{version}-%{release}
+ 
+-BuildRequires:	gtk2-devel pam-devel intltool
++BuildRequires:	gtk3-devel pam-devel intltool
++Provides:       service(graphical-login) = lxdm
+ 
+ %description
+ Light weight X11 display manager
+@@ -26,7 +27,7 @@ Light weight X11 display manager
+ export CFLAGS="$RPM_OPT_FLAGS"
+ export CXXFLAGS="$RPM_OPT_FLAGS"
+ 
+-%configure
++%configure --enable-gtk3
+ 
+ %__make
+ 
+@@ -64,6 +65,7 @@ rm -rf $RPM_BUILD_ROOT
+ %{_sysconfdir}/lxdm/Xsession
+ %config %{_sysconfdir}/lxdm/lxdm.conf
+ %{_sysconfdir}/pam.d/lxdm
++%{_unitdir}/lxdm.service
+ 
+ %changelog
+ 
+diff --git a/pam/lxdm b/pam/lxdm
+index 51ffda4..41c95f4 100644
+--- a/pam/lxdm
++++ b/pam/lxdm
+@@ -4,6 +4,6 @@ auth       optional	pam_gnome_keyring.so
+ account    include	system-auth
+ session    optional	pam_keyinit.so force revoke
+ session    include	system-auth
+-session    required	pam_loginuid.so
+ session    optional	pam_console.so
+ session    optional	pam_gnome_keyring.so auto_start
++session    optional	pam_selinux.so
+diff --git a/src/Makefile.am b/src/Makefile.am
+index 7fdfd99..4f9a11c 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -8,6 +8,7 @@ lxdm_binary_CFLAGS = \
+ 	-DXSESSIONS_DIR=\"@datarootdir@/xsessions\" \
+ 	-DLXDM_DATA_DIR=@datadir@/@PACKAGE@ \
+ 	-DLXDM_NUMLOCK_PATH=\"@libexecdir@/lxdm-numlock\" \
++	-DLXDM_SESSION_PATH=\"@libexecdir@/lxdm-session\" \
+ 	$(CONSOLEKIT_CFLAGS) \
+ 	-Werror-implicit-function-declaration \
+ 	-Wall \
+@@ -20,10 +21,10 @@ lxdm_binary_LDADD = \
+ 	$(NULL)
+ 
+ lxdm_binary_SOURCES = \
+-	lxdm.c lxdm.h ui.c lxcom.c lxcom.h xconn.c xconn.h \
++	lxdm.c lxdm.h ui.c lxcom.c lxcom.h xconn.c xconn.h auth.c lxcommon.h \
+ 	$(NULL)
+ 
+-libexec_PROGRAMS = lxdm-greeter-gdk lxdm-numlock lxdm-greeter-gtk
++libexec_PROGRAMS = lxdm-greeter-gdk lxdm-numlock lxdm-greeter-gtk lxdm-session
+ 
+ lxdm_greeter_gtk_CFLAGS = \
+ 	$(GTK_CFLAGS) \
+@@ -49,6 +50,7 @@ lxdm_greeter_gtk_SOURCES = \
+ 	gdm/locarchive.h \
+ 	lxcom.c lxcom.h \
+ 	greeter-utils.c greeter-utils.h \
++	lxcommon.h \
+ 	$(NULL)
+ 
+ lxdm_greeter_gdk_CFLAGS = \
+@@ -84,6 +86,18 @@ lxdm_numlock_LDADD = \
+ 	$(XLIB_LIBS) \
+ 	$(NULL)
+ 
++lxdm_session_SOURCES = \
++	pam.c \
++	$(NULL)
++
++lxdm_session_CFLAGS = \
++	$(GLIB_CFLAGS) \
++	$(NULL)
++
++lxdm_session_LDFLAGS = \
++	$(GLIB_LIBS) \
++	$(NULL)
++
+ bin_PROGRAMS = lxdm-config
+ 
+ lxdm_config_CFLAGS = \
+@@ -100,3 +114,4 @@ lxdm_config_SOURCES = \
+ 	config.c \
+ 	$(NULL)
+ 
++
+diff --git a/src/auth.c b/src/auth.c
+new file mode 100644
+index 0000000..10c047c
+--- /dev/null
++++ b/src/auth.c
+@@ -0,0 +1,632 @@
++/*
++ *      lxdm.c - main entry of lxdm
++ *
++ *      Copyright 2009 dgod <dgod.osa@gmail.com>
++ *
++ *      This program is free software; you can redistribute it and/or modify
++ *      it under the terms of the GNU General Public License as published by
++ *      the Free Software Foundation; either version 3 of the License, or
++ *      (at your option) any later version.
++ *
++ *      This program is distributed in the hope that it will be useful,
++ *      but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *      GNU General Public License for more details.
++ *
++ *      You should have received a copy of the GNU General Public License
++ *      along with this program; if not, write to the Free Software
++ *      Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
++ *      MA 02110-1301, USA.
++ */
++
++#define _GNU_SOURCE
++
++#ifdef HAVE_CONFIG_H
++#include <config.h>
++#endif
++#ifndef HAVE_LIBPAM
++#ifdef USE_PAM
++#define HAVE_LIBPAM 1
++#else
++#define HAVE_LIBPAM 0
++#endif
++#endif
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <stdarg.h>
++
++#include <pwd.h>
++#include <grp.h>
++#include <shadow.h>
++#include <unistd.h>
++#include <errno.h>
++
++#include <glib.h>
++
++#include "lxdm.h"
++#include "auth.h"
++
++#if HAVE_LIBPAM
++
++#define PAM_MP	1
++
++#endif
++
++void switch_user(struct passwd *pw, const char *run, char **env);
++
++static void passwd_clean(struct passwd *pw)
++{
++	g_free(pw->pw_name);
++	g_free(pw->pw_gecos);
++	g_free(pw->pw_dir);
++	g_free(pw->pw_shell);
++	memset(pw,0,sizeof(*pw));
++}
++
++#if !PAM_MP
++static void passwd_copy(struct passwd *dst,struct passwd *src)
++{
++	dst->pw_name=g_strdup(src->pw_name);
++	dst->pw_uid=src->pw_uid;
++	dst->pw_gid=src->pw_gid;
++	if(src->pw_gecos)
++		dst->pw_gecos=g_strdup(src->pw_gecos);
++	dst->pw_dir=g_strdup(src->pw_dir);
++	dst->pw_shell=g_strdup(src->pw_shell);
++}
++#endif
++
++#if !HAVE_LIBPAM
++
++
++int lxdm_auth_init(LXDM_AUTH *a)
++{
++	memset(a,0m,sizeof(*a));
++	return 0;
++}
++
++int lxdm_auth_cleanup(LXDM_AUTH *a)
++{
++	passwd_clean(&a->pw);
++	return 0;
++}
++
++int lxdm_auth_user_authenticate(LXDM_AUTH *a,const char *user,const char *pass,int type)
++{
++	struct passwd *pw;
++	struct spwd *sp;
++    char *real;
++    char *enc;
++	if(!user || !user[0])
++	{
++		g_debug("user==NULL\n");
++		return AUTH_ERROR;
++	}
++	pw = getpwnam(user);
++	endpwent();
++	if(!pw)
++	{
++		g_debug("user %s not found\n",user);
++		return AUTH_BAD_USER;
++	}
++	if(strstr(pw->pw_shell, "nologin"))
++    {
++        g_debug("user %s have nologin shell\n",user);
++        return AUTH_PRIV;
++    }
++    if(type==AUTH_TYPE_AUTO_LOGIN && !pass)
++    {
++		goto out;
++	}
++    sp = getspnam(user);
++    if( !sp )
++    {
++		return AUTH_FAIL;
++	}
++    endspent();
++    real = sp->sp_pwdp;
++    if( !real || !real[0] )
++    {
++        if( !pass || !pass[0] )
++        {
++            *ppw = pw;
++            g_debug("user %s auth with no password ok\n",user);
++            return AUTH_SUCCESS;
++        }
++        else
++        {
++            g_debug("user %s password not match\n",user);
++            return AUTH_FAIL;
++        }
++    }
++    enc = crypt(pass, real);
++    if( strcmp(real, enc) )
++    {
++        g_debug("user %s password not match\n",user);
++        return AUTH_FAIL;
++    }
++out:
++    g_debug("user %s auth ok\n",pw->pw_name);
++	passwd_copy(&a->pw,pw);
++    return AUTH_SUCCESS;
++}
++
++int lxdm_auth_session_begin(LXDM_AUTH *a,int tty,int display,char mcookie[16])
++{
++	return 0;
++}
++
++int lxdm_auth_session_end(LXDM_AUTH *a)
++{
++	return 0;
++}
++
++int lxdm_auth_clean_for_child(LXDM_AUTH *a)
++{
++	return 0;
++}
++
++char **lxdm_auth_append_env(LXDM_AUTH *a,char **env)
++{
++	return env;
++}
++
++int lxdm_auth_session_run(LXDM_AUTH *a,const char *session_exec,char **env)
++{
++	int pid;
++	pid = fork();
++	if(pid==0)
++	{
++		env=lxdm_auth_append_env(a,env);
++		lxdm_auth_clean_for_child(a);
++		switch_user(&a->pw, session_exec, env);
++		lxdm_quit_self(4);
++	}
++	return pid;
++}
++
++#elif !PAM_MP
++
++#include <security/pam_appl.h>
++
++static char *user_pass[2];
++
++static int do_conv(int num, const struct pam_message **msg,struct pam_response **resp, void *arg)
++{
++	int result = PAM_SUCCESS;
++	int i;
++	*resp = (struct pam_response *) calloc(num, sizeof(struct pam_response));
++	for(i=0;i<num;i++)
++	{
++		//printf("MSG: %d %s\n",msg[i]->msg_style,msg[i]->msg);
++		switch(msg[i]->msg_style){
++		case PAM_PROMPT_ECHO_ON:
++			resp[i]->resp=strdup(user_pass[0]?user_pass[0]:"");
++			break;
++		case PAM_PROMPT_ECHO_OFF:
++			//resp[i]->resp=strdup(user_pass[1]?user_pass[1]:"");
++			resp[i]->resp=user_pass[1]?strdup(user_pass[1]):NULL;
++			break;
++		case PAM_ERROR_MSG:
++		case PAM_TEXT_INFO:
++			//printf("PAM: %s\n",msg[i]->msg);
++			break;
++		default:
++			break;
++		}
++	}
++	return result;
++}
++
++static struct pam_conv conv={.conv=do_conv,.appdata_ptr=user_pass};
++
++int lxdm_auth_init(LXDM_AUTH *a)
++{
++	memset(a,0,sizeof(*a));
++	return 0;
++}
++
++int lxdm_auth_cleanup(LXDM_AUTH *a)
++{
++	passwd_clean(&a->pw);
++	return 0;
++}
++
++int lxdm_auth_user_authenticate(LXDM_AUTH *a,const char *user,const char *pass,int type)
++{
++	struct passwd *pw;
++	if(!user || !user[0])
++	{
++		g_debug("user==NULL\n");
++		return AUTH_ERROR;
++	}
++	pw = getpwnam(user);
++	endpwent();
++	if(!pw)
++	{
++		g_debug("user %s not found\n",user);
++		return AUTH_BAD_USER;
++	}
++	if(strstr(pw->pw_shell, "nologin"))
++    {
++        g_debug("user %s have nologin shell\n",user);
++        return AUTH_PRIV;
++    }
++	if(a->handle) pam_end(a->handle,0);
++	if(PAM_SUCCESS != pam_start("lxdm", pw->pw_name, &conv, (pam_handle_t**)&a->handle))
++	{
++		a->handle=NULL;
++		g_debug("user %s start pam fail\n",user);
++		return AUTH_FAIL;
++	}
++	else
++	{
++		int ret;
++		if(type==AUTH_TYPE_AUTO_LOGIN && !pass)
++			goto out;
++		user_pass[0]=(char*)user;user_pass[1]=(char*)pass;
++		ret=pam_authenticate(a->handle,PAM_SILENT);
++		user_pass[0]=0;user_pass[1]=0;
++		if(ret!=PAM_SUCCESS)
++		{
++			g_debug("user %s auth fail with %d\n",user,ret);
++			return AUTH_FAIL;
++		}
++		ret=pam_acct_mgmt(a->handle,PAM_SILENT);
++		if(ret!=PAM_SUCCESS)
++		{
++			g_debug("user %s acct mgmt fail with %d\n",user,ret);
++			return AUTH_FAIL;
++		}
++	}
++out:
++	passwd_copy(&a->pw,pw);
++	return AUTH_SUCCESS;
++}
++
++int lxdm_auth_session_begin(LXDM_AUTH *a,const char *name,int tty,int display,char mcookie[16])
++{
++	int err;
++	char x[256];
++	
++	if(!a->handle)
++    {
++        g_message("begin session without auth\n");
++        return -1;
++    }
++	sprintf(x, "tty%d", tty);
++    pam_set_item(a->handle, PAM_TTY, x);
++#ifdef PAM_XDISPLAY
++	sprintf(x,":%d",display);
++    pam_set_item(a->handle, PAM_XDISPLAY, x);
++#endif
++#if !defined(DISABLE_XAUTH) && defined(PAM_XAUTHDATA)
++	struct pam_xauth_data value;
++	value.name="MIT-MAGIC-COOKIE-1";
++	value.namelen=18;
++	value.data=mcookie;
++	value.datalen=16;
++	pam_set_item (a->handle, PAM_XAUTHDATA, &value);
++#endif
++    if(name && name[0])
++    {
++        char *env;
++        env = g_strdup_printf ("DESKTOP_SESSION=%s", name);
++        pam_putenv (a->handle, env);
++        g_free (env);
++    }
++	err = pam_open_session(a->handle, 0); /* FIXME pam session failed */
++    if( err != PAM_SUCCESS )
++        g_warning( "pam open session error \"%s\"\n", pam_strerror(a->handle, err));
++	return 0;
++}
++
++int lxdm_auth_session_end(LXDM_AUTH *a)
++{
++	int err;
++    if(!a->handle)
++		return 0;
++    err = pam_close_session(a->handle, 0);
++    pam_end(a->handle, err);
++    a->handle = NULL;
++    passwd_clean(&a->pw);
++	return 0;
++}
++
++int lxdm_auth_clean_for_child(LXDM_AUTH *a)
++{
++	pam_end(a->handle,0);
++	return 0;
++}
++
++char **lxdm_auth_append_env(LXDM_AUTH *a,char **env)
++{
++	int i,j,n,pa;
++	char **penv;
++	if(!a->handle) return env;
++	penv=pam_getenvlist(a->handle);
++	if(!penv) return env;
++	pa=g_strv_length(penv);
++	if(pa==0)
++	{
++		free(penv);
++		return env;
++	}
++	env=g_renew(char *,env,g_strv_length(env)+1+pa+10);
++	for(i=0;penv[i]!=NULL;i++)
++	{
++		fprintf(stderr,"PAM %s\n",penv[i]);
++		n=strcspn(penv[i],"=")+1;
++		for(j=0;env[j]!=NULL;j++)
++		{
++			if(!strncmp(penv[i],env[j],n))
++				break;
++			if(env[j+1]==NULL)
++			{
++				env[j+1]=g_strdup(penv[i]);
++				env[j+2]=NULL;
++				break;
++			}
++		}
++		free(penv[i]);
++	}
++	free(penv);
++	return env;
++}
++
++int lxdm_auth_session_run(LXDM_AUTH *a,const char *session_exec,char **env)
++{
++	int pid;
++	pid = fork();
++	if(pid==0)
++	{
++		env=lxdm_auth_append_env(a,env);
++		lxdm_auth_clean_for_child(a);
++		switch_user(&a->pw, session_exec, env);
++		lxdm_quit_self(4);
++	}
++	return pid;
++}
++
++#else
++
++static void xwrite(int fd,const void *buf,size_t size)
++{
++	int ret;
++	do{
++		ret=write(fd,buf,size);
++	}while(ret==-1 && errno==EINTR);
++}
++
++static int xreadline(int fd,char *buf,size_t size)
++{
++	int i;
++	for(i=0;i<size-1;i++)
++	{
++		int ret;
++		do{
++			ret=read(fd,buf+i,1);
++		}while(ret==-1 && errno==EINTR);
++		if(buf[i]==-1 || buf[i]=='\n')
++			break;
++	}
++	buf[i]=0;
++	return i;
++}
++
++int lxdm_auth_init(LXDM_AUTH *a)
++{
++	memset(a,0,sizeof(*a));
++	a->pipe[0]=a->pipe[1]=-1;
++	return 0;
++}
++
++int lxdm_auth_cleanup(LXDM_AUTH *a)
++{
++	passwd_clean(&a->pw);
++	if(a->pipe[0]!=-1)
++	{
++		close(a->pipe[0]);
++		a->pipe[0]=-1;
++	}
++	if(a->pipe[1]!=-1)
++	{
++		close(a->pipe[1]);
++		a->pipe[1]=-1;
++	}
++	return 0;
++}
++
++//#undef LXDM_SESSION_PATH
++//#define LXDM_SESSION_PATH "./lxdm-session"
++static int check_child(LXDM_AUTH *a)
++{
++	if(a->pipe[0]!=-1)
++		return 0;
++	char *argv[3]={LXDM_SESSION_PATH,NULL,NULL};
++	GPid pid;
++	gboolean ret;
++	ret = g_spawn_async_with_pipes(NULL, argv, NULL,
++				   G_SPAWN_DO_NOT_REAP_CHILD, NULL,NULL,
++				   &pid, a->pipe + 0, a->pipe + 1, NULL, NULL);
++	if(ret==FALSE)
++	{
++		g_message("spawn lxdm-auth fail\n");
++		return -1;
++	}
++	a->child=(int)pid;
++	return 0;
++}
++
++int lxdm_auth_user_authenticate(LXDM_AUTH *a,const char *user,const char *pass,int type)
++{
++	char temp[128];
++	char res[8];
++	int ret;
++	if(check_child(a)!=0)
++	{
++		printf("check child fail\n");
++		return -1;
++	}
++	if(type==AUTH_TYPE_AUTO_LOGIN && pass)
++		type=AUTH_TYPE_NORMAL;
++	else if(type==AUTH_TYPE_NORMAL && !pass)
++		type=AUTH_TYPE_NULL_PASS;
++	xwrite(a->pipe[0],"auth\n",5);
++	ret=sprintf(temp,"%d\n",type);
++	xwrite(a->pipe[0],temp,ret);
++	ret=sprintf(temp,"%s\n",user);
++	xwrite(a->pipe[0],temp,ret);
++	if(pass!=NULL)
++		ret=sprintf(temp,"%s\n",pass);
++	xwrite(a->pipe[0],temp,ret);
++	ret=xreadline(a->pipe[1],res,sizeof(res));
++	if(ret<=0)
++	{
++		g_message("read user auth result fail\n");
++		return -1;
++	}
++	ret=atoi(res);
++	if(ret==AUTH_SUCCESS)
++	{
++		passwd_clean(&a->pw);
++		a->pw.pw_name=g_strdup(user);
++		ret=xreadline(a->pipe[1],temp,sizeof(temp));
++		if(ret==-1) return -1;
++		a->pw.pw_uid=atoi(temp);
++		ret=xreadline(a->pipe[1],temp,sizeof(temp));
++		if(ret==-1) return -1;
++		a->pw.pw_gid=atoi(temp);
++		ret=xreadline(a->pipe[1],temp,sizeof(temp));
++		if(ret==-1) return -1;
++		a->pw.pw_gecos=g_strdup(temp);
++		ret=xreadline(a->pipe[1],temp,sizeof(temp));
++		if(ret==-1) return -1;
++		a->pw.pw_dir=g_strdup(temp);
++		ret=xreadline(a->pipe[1],temp,sizeof(temp));
++		if(ret==-1) return -1;
++		a->pw.pw_shell=g_strdup(temp);
++	}
++	return atoi(res);
++}
++#include <assert.h>
++int lxdm_auth_session_begin(LXDM_AUTH *a,const char *name,int tty,int display,char mcookie[16])
++{
++	char temp[32];
++	char res[8];
++	gchar *b64;
++	int ret;
++
++	if(check_child(a)!=0)
++		return -1;
++	xwrite(a->pipe[0],"begin\n",6);
++	ret=sprintf(temp,"%s\n",name?:"");
++	xwrite(a->pipe[0],temp,ret);
++	ret=sprintf(temp,"%d\n",tty);
++	xwrite(a->pipe[0],temp,ret);
++	ret=sprintf(temp,"%d\n",display);
++	xwrite(a->pipe[0],temp,ret);
++	b64=g_base64_encode((const guchar*)mcookie,16);
++	assert(b64!=NULL);
++	ret=sprintf(temp,"%s\n",b64);
++	g_free(b64);
++	xwrite(a->pipe[0],temp,ret);
++	ret=xreadline(a->pipe[1],res,sizeof(res));
++	if(ret<=0)
++	{
++		g_message("pam session begin fail\n");
++		return -1;
++	}
++	ret=atoi(res);
++	return ret;
++}
++
++int lxdm_auth_session_end(LXDM_AUTH *a)
++{
++	passwd_clean(&a->pw);
++	if(a->pipe[0]!=-1)
++	{
++		xwrite(a->pipe[0],"exit\n",5);
++		close(a->pipe[0]);
++		a->pipe[0]=-1;
++	}
++	if(a->pipe[1]!=-1)
++	{
++		close(a->pipe[1]);
++		a->pipe[1]=-1;
++	}
++	return 0;
++}
++
++int lxdm_auth_clean_for_child(LXDM_AUTH *a)
++{
++	return 0;
++}
++
++char **lxdm_auth_append_env(LXDM_AUTH *a,char **env)
++{
++	int i,j,n,pa;
++	char temp[1024];
++	int ret;
++	char **penv;
++	
++	if(check_child(a)!=0)
++		return env;
++	xwrite(a->pipe[0],"env\n",4);
++	ret=xreadline(a->pipe[1],temp,sizeof(temp));
++	if(ret<=0) return env;
++	penv=g_strsplit(temp," ",-1);
++	pa=g_strv_length(penv);
++	if(pa==0)
++	{
++		g_strfreev(penv);
++		return env;
++	}
++	env=g_renew(char *,env,g_strv_length(env)+1+pa+10);
++	for(i=0;penv[i]!=NULL;i++)
++	{
++		g_debug("PAM %s\n",penv[i]);
++		n=strcspn(penv[i],"=")+1;
++		for(j=0;env[j]!=NULL;j++)
++		{
++			if(!strncmp(penv[i],env[j],n))
++				break;
++			if(env[j+1]==NULL)
++			{
++				env[j+1]=g_strdup(penv[i]);
++				env[j+2]=NULL;
++				break;
++			}
++		}
++	}
++	g_strfreev(penv);
++	return env;
++}
++
++int lxdm_auth_session_run(LXDM_AUTH *a,const char *session_exec,char **env)
++{
++	int fd;
++	if(check_child(a)!=0)
++		return -1;
++	fd=a->pipe[0];
++	if(env!=NULL)
++	{
++		int i;
++		xwrite(fd,"putenv\n",7);
++		for(i=0;env[i]!=NULL;i++)
++		{
++			xwrite(fd,env[i],strlen(env[i]));
++			xwrite(fd,"\n",1);
++		}
++		xwrite(a->pipe[0],"\n",1);
++	}
++	xwrite(fd,"exec\n",5);
++	xwrite(fd,session_exec,strlen(session_exec));
++	xwrite(fd,"\n",1);
++	return a->child;
++}
++
++#endif
++
+diff --git a/src/auth.h b/src/auth.h
+new file mode 100644
+index 0000000..84d2267
+--- /dev/null
++++ b/src/auth.h
+@@ -0,0 +1,44 @@
++/*
++ *      lxdm.c - main entry of lxdm
++ *
++ *      Copyright 2009 dgod <dgod.osa@gmail.com>
++ *
++ *      This program is free software; you can redistribute it and/or modify
++ *      it under the terms of the GNU General Public License as published by
++ *      the Free Software Foundation; either version 3 of the License, or
++ *      (at your option) any later version.
++ *
++ *      This program is distributed in the hope that it will be useful,
++ *      but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *      GNU General Public License for more details.
++ *
++ *      You should have received a copy of the GNU General Public License
++ *      along with this program; if not, write to the Free Software
++ *      Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
++ *      MA 02110-1301, USA.
++ */
++
++#pragma once
++
++typedef struct{
++	void *handle;
++	struct passwd pw;
++	int pipe[2];
++	int child;
++}LXDM_AUTH;
++
++enum{
++	AUTH_TYPE_NORMAL=0,
++	AUTH_TYPE_AUTO_LOGIN,
++	AUTH_TYPE_NULL_PASS
++};
++
++int lxdm_auth_init(LXDM_AUTH *a);
++int lxdm_auth_cleanup(LXDM_AUTH *a);
++int lxdm_auth_user_authenticate(LXDM_AUTH *a,const char *user,const char *pass,int type);
++int lxdm_auth_session_begin(LXDM_AUTH *a,const char *name,int tty,int display,char mcookie[16]);
++int lxdm_auth_session_end(LXDM_AUTH *a);
++int lxdm_auth_clean_for_child(LXDM_AUTH *a);
++char **lxdm_auth_append_env(LXDM_AUTH *a,char **env);
++int lxdm_auth_session_run(LXDM_AUTH *a,const char *session_exec,char **env);
+diff --git a/src/config.c b/src/config.c
+index 3f92f7b..bee826d 100644
+--- a/src/config.c
++++ b/src/config.c
+@@ -125,24 +125,19 @@ static gboolean image_file_valid(const char *filename)
+ static void update_face_image(GtkWidget *w)
+ {
+ 	GdkPixbuf *pixbuf;
+-	char *path;
+-	path=g_build_filename(user->pw_dir,".face",NULL);
+-	if(access(path,R_OK))
+-	{
+-		g_free(path);
+-		if(ui_nobody)
+-			pixbuf=gdk_pixbuf_new_from_file_at_scale(ui_nobody,48,48,FALSE,NULL);
+-		if(!pixbuf)
+-			pixbuf=gtk_icon_theme_load_icon(gtk_icon_theme_get_default(),
++	char *path=g_build_filename(user->pw_dir,".face",NULL);
++	pixbuf=gdk_pixbuf_new_from_file_at_scale(path,48,48,FALSE,NULL);
++	g_free(path);
++	if(!pixbuf && ui_nobody)
++		pixbuf=gdk_pixbuf_new_from_file_at_scale(ui_nobody,48,48,FALSE,NULL);
++	if(!pixbuf)
++		pixbuf=gtk_icon_theme_load_icon(gtk_icon_theme_get_default(),
+ 						"avatar-default", 48,GTK_ICON_LOOKUP_FORCE_SIZE,NULL);
+-	}
+-	else
++	if(pixbuf)
+ 	{
+-		pixbuf=gdk_pixbuf_new_from_file_at_scale(path,48,48,FALSE,NULL);
+-		g_free(path);
++		gtk_image_set_from_pixbuf(GTK_IMAGE(w),pixbuf);
++		g_object_unref(pixbuf);
+ 	}
+-	gtk_image_set_from_pixbuf(GTK_IMAGE(w),pixbuf);
+-	g_object_unref(pixbuf);
+ }
+ 
+ static void set_face_file(const char *filename)
+@@ -484,6 +479,82 @@ void prepare_bg(GtkBuilder *builder)
+ 	g_signal_connect(w,"toggled",on_bg_type_toggled,NULL);
+ }
+ 
++static void on_enable_pane_toggled(GtkToggleButton *button)
++{
++        int val;
++        val=gtk_toggle_button_get_active(button);
++        g_key_file_set_integer(config,"display","bottom_pane",val);
++        GtkWidget *w;
++        w=(GtkWidget*)gtk_builder_get_object(builder,"vbox2");
++        gtk_widget_set_sensitive(w,val?TRUE:FALSE);
++	dirty++;
++}
++
++static void prepare_enable_pane(GtkBuilder *builder)
++{
++        gint val;
++        GtkWidget *w;
++        w=(GtkWidget*)gtk_builder_get_object(builder,"lxdm-enable-bottom-pane");
++        val=g_key_file_get_integer(config,"display","bottom_pane",NULL);
++        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(w),val?TRUE:FALSE);
++        if(!root) gtk_widget_set_sensitive(w,FALSE);
++        g_signal_connect(w,"toggled",G_CALLBACK(on_enable_pane_toggled),NULL);
++}
++
++static void prepare_vbox2(GtkBuilder *builder)
++{
++        gint val;
++        GtkWidget *w;
++        w=(GtkWidget*)gtk_builder_get_object(builder,"vbox2");
++        val=g_key_file_get_integer(config,"display","bottom_pane",NULL);
++        if(!root) 
++	{
++		gtk_widget_set_sensitive(w,FALSE);
++	}
++	else
++	{
++		gtk_widget_set_sensitive(w,val?TRUE:FALSE);
++	}
++}
++
++static void on_transparent_pane_toggled(GtkToggleButton *button)
++{
++        int val;
++        val=gtk_toggle_button_get_active(button);
++        g_key_file_set_integer(config,"display","transparent_pane",val);
++        dirty++;
++}
++
++static void prepare_transparent_pane(GtkBuilder *builder)
++{
++        gint val;
++        GtkWidget *w;
++        w=(GtkWidget*)gtk_builder_get_object(builder,"lxdm-transparent-pane");
++        val=g_key_file_get_integer(config,"display","transparent_pane",NULL);
++        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(w),val?TRUE:FALSE);
++        if(!root) gtk_widget_set_sensitive(w,FALSE);
++        g_signal_connect(w,"toggled",G_CALLBACK(on_transparent_pane_toggled),NULL);
++}
++
++static void on_hide_sessions_toggled(GtkToggleButton *button)
++{
++        int val;
++        val=gtk_toggle_button_get_active(button);
++        g_key_file_set_integer(config,"display","hide_sessions",val);
++        dirty++;
++}
++
++static void prepare_hide_sessions(GtkBuilder *builder)
++{
++        gint val;
++        GtkWidget *w;
++        w=(GtkWidget*)gtk_builder_get_object(builder,"lxdm-hide-sessions");
++        val=g_key_file_get_integer(config,"display","hide_sessions",NULL);
++        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(w),val?TRUE:FALSE);
++        if(!root) gtk_widget_set_sensitive(w,FALSE);
++        g_signal_connect(w,"toggled",G_CALLBACK(on_hide_sessions_toggled),NULL);
++}
++
+ static void on_show_lang_toggled(GtkToggleButton *button)
+ {
+ 	int val;
+@@ -522,6 +593,44 @@ static void prepare_show_keyboard(GtkBuilder *builder)
+ 	g_signal_connect(w,"toggled",G_CALLBACK(on_show_keyboard_toggled),NULL);
+ }
+ 
++static void on_hide_exit_toggled(GtkToggleButton *button)
++{
++        int val;
++        val=gtk_toggle_button_get_active(button);
++        g_key_file_set_integer(config,"display","hide_exit",val);
++        dirty++;
++}
++
++static void prepare_hide_exit(GtkBuilder *builder)
++{
++        gint val;
++        GtkWidget *w;
++        w=(GtkWidget*)gtk_builder_get_object(builder,"lxdm-hide-exit");
++        val=g_key_file_get_integer(config,"display","hide_exit",NULL);
++        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(w),val?TRUE:FALSE);
++        if(!root) gtk_widget_set_sensitive(w,FALSE);
++        g_signal_connect(w,"toggled",G_CALLBACK(on_hide_exit_toggled),NULL);
++}
++
++static void on_hide_time_toggled(GtkToggleButton *button)
++{
++        int val;
++        val=gtk_toggle_button_get_active(button);
++        g_key_file_set_integer(config,"display","hide_time",val);
++        dirty++;
++}
++
++static void prepare_hide_time(GtkBuilder *builder)
++{
++        gint val;
++        GtkWidget *w;
++        w=(GtkWidget*)gtk_builder_get_object(builder,"lxdm-hide-time");
++        val=g_key_file_get_integer(config,"display","hide_time",NULL);
++        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(w),val?TRUE:FALSE);
++        if(!root) gtk_widget_set_sensitive(w,FALSE);
++        g_signal_connect(w,"toggled",G_CALLBACK(on_hide_time_toggled),NULL);
++}
++
+ static void on_show_userlist_toggled(GtkToggleButton *button)
+ {
+ 	int val;
+@@ -553,8 +662,14 @@ GtkDialog *dialog_create(void)
+ 	prepare_user_name(builder);
+ 	prepare_user_autologin(builder);
+ 	prepare_bg(builder);
++	prepare_enable_pane(builder);
++	prepare_vbox2(builder);
++	prepare_transparent_pane(builder);
++	prepare_hide_sessions(builder);
+ 	prepare_show_lang(builder);
+ 	prepare_show_keyboard(builder);
++	prepare_hide_exit(builder);
++	prepare_hide_time(builder);
+ 	prepare_show_userlist(builder);
+ 
+ 	return dlg;
+diff --git a/src/greeter-utils.c b/src/greeter-utils.c
+index 78b71dd..6d7055a 100644
+--- a/src/greeter-utils.c
++++ b/src/greeter-utils.c
+@@ -42,17 +42,29 @@ int ui_get_geometry(GdkWindow *win,GdkRectangle *rc)
+ void ui_set_bg(GdkWindow *win,GKeyFile *config)
+ {
+ 	GdkPixbuf *bg_img=NULL;
++#if GTK_CHECK_VERSION(3,4,0)
++	GdkRGBA bg_color;
++#else
+ 	GdkColor bg_color;
++#endif
+ 	GdkWindow *root=gdk_get_default_root_window();
+ 	char *p=g_key_file_get_string(config,"display","bg",NULL);
++#if GTK_CHECK_VERSION(3,4,0)
++	gdk_rgba_parse(&bg_color,"#222E45");
++#else
+ 	gdk_color_parse("#222E45",&bg_color);
++#endif
+ 	if( p && p[0] != '#' )
+ 	{
+ 		bg_img = gdk_pixbuf_new_from_file(p, 0);
+ 	}
+ 	if( p && p[0] == '#' )
+ 	{
+-		gdk_color_parse(p, &bg_color);
++#if GTK_CHECK_VERSION(3,4,0)
++		gdk_rgba_parse(&bg_color,p);
++#else
++		gdk_color_parse(p,&bg_color);
++#endif
+ 	}
+ 	g_free(p);
+ 
+@@ -95,8 +107,13 @@ void ui_set_bg(GdkWindow *win,GKeyFile *config)
+ 	else
+ 	{
+ #ifdef ENABLE_GTK3
++#if GTK_CHECK_VERSION(3,4,0)
++		if(win) gdk_window_set_background_rgba(win,&bg_color);
++		gdk_window_set_background_rgba(root,&bg_color);
++#else
+ 		if(win) gdk_window_set_background(win,&bg_color);
+ 		gdk_window_set_background(root,&bg_color);
++#endif	
+ #else
+ 		GdkColormap *map;
+ 		if(win)
+@@ -139,12 +156,20 @@ void ui_add_cursor(void)
+     XDefineCursor(gdk_x11_get_default_xdisplay(),
+     	GDK_WINDOW_XID(gdk_get_default_root_window()),
+     	GDK_CURSOR_XCURSOR(cur));
++#if GTK_CHECK_VERSION(3,0,0)
++	g_object_unref(cur);
++#else
+     gdk_cursor_unref(cur);
++#endif
+ }
+ 
+ void ui_set_cursor(GdkWindow *win,int which)
+ {
+ 	GdkCursor *cursor=gdk_cursor_new(which);
+ 	gdk_window_set_cursor (win,cursor);
++#if GTK_CHECK_VERSION(3,0,0)
++	g_object_unref(cursor);
++#else
+ 	gdk_cursor_unref(cursor);
++#endif
+ }
+diff --git a/src/greeter.c b/src/greeter.c
+index 095227b..2c6e5be 100644
+--- a/src/greeter.c
++++ b/src/greeter.c
+@@ -25,6 +25,10 @@
+ 
+ #include <gtk/gtk.h>
+ #include <gdk/gdkx.h>
++#include <gdk/gdkkeysyms.h>
++#ifdef ENABLE_GTK3
++#include <gdk/gdkkeysyms-compat.h>
++#endif
+ #include <glib/gi18n.h>
+ #include <X11/XKBlib.h>
+ 
+@@ -36,6 +40,7 @@
+ 
+ #include "lxcom.h"
+ #include "greeter-utils.h"
++#include "lxcommon.h"
+ 
+ enum {
+     COL_SESSION_NAME,
+@@ -50,15 +55,16 @@ enum {
+     N_LANG_COLS
+ };
+ 
+-#define VCONFIG_FILE 		"/var/lib/lxdm/lxdm.conf"
+ #define XKB_SYMBOL_DIR		"/usr/share/X11/xkb/symbols.dir"
+ 
+ static GtkBuilder* builder;
+ static GKeyFile *config;
+ static GKeyFile * var_config;
+ static GtkWidget* win;
++static GtkWidget* alignment2;
+ static GtkWidget* prompt;
+ static GtkWidget* login_entry;
++static GtkWidget* user_list_scrolled;
+ static GtkWidget* user_list;
+ 
+ static GtkWidget* sessions;
+@@ -110,7 +116,7 @@ static char *get_session_exec(void)
+ 	GtkTreeModel* model;
+ 	GtkTreeIter it;
+ 	gchar *res;
+-	if(!lang)
++	if(!sessions)
+ 		return g_strdup("");
+ 	
+ 	if(!gtk_combo_box_get_active_iter(GTK_COMBO_BOX(sessions), &it))
+@@ -120,12 +126,73 @@ static char *get_session_exec(void)
+ 	return res;
+ }
+ 
++static void switch_to_input_user(void)
++{
++	if(user)
++	{
++		g_free(user);
++		user=NULL;
++	}
++	if(pass)
++	{
++		g_free(pass);
++		pass=NULL;
++	}
++	gtk_label_set_text( GTK_LABEL(prompt), _("User:"));
++	gtk_widget_show(prompt);
++	if(user_list)
++	{
++		gtk_widget_hide(login_entry);
++		if(user_list_scrolled)
++			gtk_widget_show(user_list_scrolled);
++		else
++			gtk_widget_hide(user_list);
++		gtk_widget_grab_focus(user_list);
++	}
++	else
++	{
++		gtk_widget_show(login_entry);
++		gtk_widget_grab_focus(login_entry);
++	}
++}
++
++static void switch_to_input_passwd(void)
++{
++	if(user_list!=NULL)
++	{
++		if(user_list_scrolled)
++			gtk_widget_hide(user_list_scrolled);
++		else
++			gtk_widget_hide(user_list);
++	}
++	gtk_label_set_text( GTK_LABEL(prompt), _("Password:") );
++	gtk_entry_set_text(GTK_ENTRY(login_entry), "");
++	gtk_entry_set_visibility(GTK_ENTRY(login_entry), FALSE);
++	gtk_widget_show(login_entry);
++	gtk_widget_grab_focus(login_entry);
++}
++
++static void try_login_user(const char *user)
++{
++	char *session_exec=get_session_exec();
++	char *session_lang=get_session_lang();
++	
++	printf("login user=%s session=%s lang=%s\n",
++			user, session_exec, session_lang);
++			
++	g_free(session_lang);
++	g_free(session_exec);
++			
++}	
++
+ static void on_entry_activate(GtkEntry* entry)
+ {
+ 	char* tmp;
+ 	if( !user )
+ 	{
+ 		user = g_strdup( gtk_entry_get_text( GTK_ENTRY(entry) ) );
++		
++#if 0
+ 		gtk_entry_set_text(GTK_ENTRY(entry), "");
+ 		gtk_label_set_text( GTK_LABEL(prompt), _("Password:") );
+ 		if(strchr(user, ' '))
+@@ -135,6 +202,16 @@ static void on_entry_activate(GtkEntry* entry)
+ 			return;
+ 		}
+ 		gtk_entry_set_visibility(entry, FALSE);
++#endif
++		if(g_key_file_get_integer(config,"base","skip_password",NULL)!=0)
++		{
++			gtk_label_set_text( GTK_LABEL(prompt), "");
++			try_login_user(user);
++		}
++		else
++		{
++			switch_to_input_passwd();
++		}
+ 	}
+ 	else
+ 	{
+@@ -805,7 +882,10 @@ static void on_user_select(GtkIconView *iconview)
+ 	g_list_foreach (list, (GFunc)gtk_tree_path_free, NULL);
+ 	g_list_free (list);
+ 	gtk_tree_model_get(model,&iter,2,&name,-1);
+-	gtk_widget_hide(user_list);
++	if(user_list_scrolled)
++		gtk_widget_hide(user_list_scrolled);
++	else
++		gtk_widget_hide(user_list);
+ 	if(name && name[0])
+ 	{
+ 		if(auto_login && is_autologin_user(name))
+@@ -825,6 +905,13 @@ static void on_user_select(GtkIconView *iconview)
+ 			gtk_widget_hide( GTK_WIDGET(login_entry) );
+ 			return;
+ 		}
++		if(g_key_file_get_integer(config,"base","skip_password",NULL)!=0)
++		{
++			gtk_label_set_text( GTK_LABEL(prompt), "");
++			user=name;
++			try_login_user(user);
++			return;
++		}
+ 		gtk_entry_set_text(GTK_ENTRY(login_entry),name);
+ 		g_free(name);
+ 		on_entry_activate(GTK_ENTRY(login_entry));
+@@ -890,6 +977,10 @@ static gboolean load_user_list(GtkWidget *widget)
+ #else
+ 	gtk_icon_view_set_orientation(GTK_ICON_VIEW(widget),GTK_ORIENTATION_HORIZONTAL);
+ #endif
++	// FIXME: this should be done at greeter-gtk3.ui
++	// but set there will cause "Floating point exception"
++	gtk_icon_view_set_columns(GTK_ICON_VIEW(widget),1);
++	
+ 	model=gtk_list_store_new(5,GDK_TYPE_PIXBUF,G_TYPE_STRING,
+ 			G_TYPE_STRING,G_TYPE_STRING,G_TYPE_BOOLEAN);
+ 	gtk_icon_view_set_model(GTK_ICON_VIEW(widget),GTK_TREE_MODEL(model));
+@@ -906,18 +997,30 @@ static gboolean load_user_list(GtkWidget *widget)
+ 	}
+ 	if(count>3)
+ 	{
+-		// TODO: better ui needed
+-		count=3;
++		if(user_list_scrolled)
++		{
++			gtk_alignment_set(GTK_ALIGNMENT(alignment2), 0.5, 0.1, 0, 0.3);
++			gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(user_list_scrolled), GTK_POLICY_NEVER, GTK_POLICY_ALWAYS);
++		}
++		else
++			count=3;
+ 	}
+ 	for(i=0;i<count;i++)
+ 	{		
+ 		char *gecos,*face_path,*display;
++		gchar *gecos_escape;
+ 		gboolean login;
+ 		GdkPixbuf *face=NULL;
+ 		gtk_list_store_append(model,&iter);
+ 		gecos=g_key_file_get_string(kf,users[i],"gecos",0);
+ 		face_path=g_key_file_get_string(kf,users[i],"face",0);
+ 		login=g_key_file_get_boolean(kf,users[i],"login",0);
++		if(gecos!=NULL)
++		{
++			char *comma=gecos?strchr(gecos,','):NULL;
++			if (comma)
++				*comma='\0';
++		}
+ 		if(face_path)
+ 			face=gdk_pixbuf_new_from_file_at_scale(face_path,48,48,TRUE,NULL);
+ 		if(!face)
+@@ -929,13 +1032,15 @@ static gboolean load_user_list(GtkWidget *widget)
+ 				face=gtk_icon_theme_load_icon(gtk_icon_theme_get_default(),
+ 						"avatar-default", 48,GTK_ICON_LOOKUP_FORCE_SIZE,NULL);
+ 		}
++		gecos_escape=g_markup_escape_text(gecos?gecos:users[i],-1);
+ 		display=g_strdup_printf("<span font_size=\"x-large\">%s</span>%s%s%s%s",
+-			gecos?gecos:users[i],
+-			(gecos&&strcmp(gecos,users[i]))?"(":"",
++			gecos_escape,
++			(gecos&&strcmp(gecos,users[i]))?" (":"",
+ 			(gecos&&strcmp(gecos,users[i]))?users[i]:"",
+ 			(gecos&&strcmp(gecos,users[i]))?")":"",
+ 			login?_("\n<i>logged in</i>"):"");
+ 		// don't translate it now, not freeze
++		g_free(gecos_escape);
+ 		gtk_list_store_set(model,&iter,0,face,1,display,2,users[i],3,gecos,4,login,-1);
+ 		if(face) g_object_unref(G_OBJECT(face));
+ 		g_free(display);
+@@ -944,16 +1049,17 @@ static gboolean load_user_list(GtkWidget *widget)
+ 	}
+ 	g_strfreev(users);
+ 	g_key_file_free(kf);
+-	
++
+ 	// add "More ..."
+ 	gtk_list_store_append(model,&iter);
+ 	gtk_list_store_set(model,&iter,1,_("More ..."),2,"",3,"",4,FALSE,-1);
+-	
++
+ 	path=gtk_tree_path_new_from_string("0");
+ 	gtk_icon_view_select_path(GTK_ICON_VIEW(widget),path);
+ 	gtk_widget_grab_focus(widget);
+ 	gtk_icon_view_set_cursor(GTK_ICON_VIEW(widget),path,NULL,FALSE);
+ 	gtk_tree_path_free(path);
++		
+ 	return TRUE;
+ }
+ 
+@@ -981,6 +1087,13 @@ static void on_screen_size_changed(GdkScreen *screen,GtkWidget *win)
+ 	ui_set_bg(window,config);
+ }
+ 
++static gint login_entry_on_key_press (GtkWidget *widget,GdkEventKey *event)
++{
++	if(event->keyval == GDK_Escape)
++		switch_to_input_user();
++	return FALSE;
++}		     
++
+ static void create_win()
+ {
+     GSList* objs, *l;
+@@ -1029,63 +1142,91 @@ static void create_win()
+         
+     } /* otherwise, let gtk theme paint it. */
+ 
++    alignment2=(GtkWidget*)gtk_builder_get_object(builder,"alignment2");
++    user_list_scrolled=(GtkWidget*)gtk_builder_get_object(builder,"user_list_scrolled");
+     user_list=(GtkWidget*)gtk_builder_get_object(builder,"user_list");
+ 
+     prompt = (GtkWidget*)gtk_builder_get_object(builder, "prompt");
+     login_entry = (GtkWidget*)gtk_builder_get_object(builder, "login_entry");
++    if(login_entry!=NULL)
++    {
++		g_signal_connect_after(login_entry,"key-press-event",G_CALLBACK(login_entry_on_key_press),NULL);
++	}
+ 
+     g_signal_connect(login_entry, "activate", G_CALLBACK(on_entry_activate), NULL);
+ 
+-    sessions = (GtkWidget*)gtk_builder_get_object(builder, "sessions");
+-    gtk_widget_set_name(sessions, "sessions");
+-    fix_combobox_entry(sessions);
+-    load_sessions();
+-
+-    w = (GtkWidget*)gtk_builder_get_object(builder, "bottom_pane");
+-    if( g_key_file_get_integer(config, "display", "bottom_pane", 0) )
++    if( g_key_file_get_integer(config, "display", "bottom_pane", 0)==1)
+     {
+         /* hacks to let GtkEventBox paintable with gtk pixmap engine. */
++        w = (GtkWidget*)gtk_builder_get_object(builder, "bottom_pane");
++        if(g_key_file_get_integer(config, "display", "transparent_pane", 0)==1)
++		{
++		}
++        else
++		{
+ #if GTK_CHECK_VERSION(2,18,0)
+-        if(gtk_widget_get_app_paintable(w))
++			if(gtk_widget_get_app_paintable(w))
+ #else
+-        if(GTK_WIDGET_APP_PAINTABLE(w))
++			if(GTK_WIDGET_APP_PAINTABLE(w))
+ #endif
+ 
+ #if GTK_CHECK_VERSION(3,0,0)
+-		g_signal_connect(w,"draw",G_CALLBACK(on_evt_box_draw),NULL);
++				g_signal_connect(w,"draw",G_CALLBACK(on_evt_box_draw),NULL);
+ #else
+-		g_signal_connect(w, "expose-event", G_CALLBACK(on_evt_box_expose), NULL);
++				g_signal_connect(w, "expose-event", G_CALLBACK(on_evt_box_expose), NULL);
+ #endif
++		}
++        if( g_key_file_get_integer(config, "display", "hide_sessions", 0)==1)
++        {
++            w = (GtkWidget*)gtk_builder_get_object(builder, "sessions_box");
++            if(w) gtk_widget_hide(w);
++		}
++		else
++		{
++			sessions = (GtkWidget*)gtk_builder_get_object(builder, "sessions");
++			gtk_widget_set_name(sessions, "sessions");
++			fix_combobox_entry(sessions);
++			load_sessions();
++		}
++
++		if( g_key_file_get_integer(config, "display", "lang", 0) == 0 )
++		{
++			w = (GtkWidget*)gtk_builder_get_object(builder, "lang_box");
++			if(w) gtk_widget_hide(w);
++		}
++		else
++		{
++			lang = (GtkWidget*)gtk_builder_get_object(builder, "lang");
++			gtk_widget_set_name(lang, "lang");
++			fix_combobox_entry(lang);
++			load_langs();
++		}
++
++		if(g_key_file_get_integer(config, "display", "keyboard", 0)==1)
++		{
++			w=(GtkWidget*)gtk_builder_get_object(builder, "keyboard");
++			if((load_keyboards(w))!=FALSE)
++			{
++				fix_combobox_entry(w);
++				gtk_widget_show(w);
++				w=(GtkWidget*)gtk_builder_get_object(builder, "label_keyboard");
++				if(w) gtk_widget_show(w);
++			}
++		}
+     }
+     else
+-        gtk_event_box_set_visible_window(GTK_EVENT_BOX(w), FALSE);
+-
+-    if( g_key_file_get_integer(config, "display", "lang", 0) == 0 )
+     {
+-        w = (GtkWidget*)gtk_builder_get_object(builder, "lang_box");
+-        if( w )
+-            gtk_widget_hide(w);
++    	w = (GtkWidget*)gtk_builder_get_object(builder, "bottom_pane");
++	gtk_widget_hide(w);
+     }
+-    else
++
++    if(g_key_file_get_integer(config, "display", "hide_time", 0)==1)
+     {
+-        lang = (GtkWidget*)gtk_builder_get_object(builder, "lang");
+-        gtk_widget_set_name(lang, "lang");
+-        fix_combobox_entry(lang);
+-        load_langs();
++        w = (GtkWidget*)gtk_builder_get_object(builder, "time");
++        gtk_widget_hide(w);
+     }
+-    
+-    if(g_key_file_get_integer(config, "display", "keyboard", 0)==1)
++    else
+     {
+-		w=(GtkWidget*)gtk_builder_get_object(builder, "keyboard");
+-		if((load_keyboards(w))!=FALSE)
+-		{
+-			fix_combobox_entry(w);
+-			gtk_widget_show(w);
+-			w=(GtkWidget*)gtk_builder_get_object(builder, "label_keyboard");
+-			if(w) gtk_widget_show(w);
+-		}
+-	}
+-
+ 	if( (w = (GtkWidget*)gtk_builder_get_object(builder, "time"))!=NULL )
+ 	{
+ 		guint timeout = g_timeout_add(1000, (GSourceFunc)on_timeout, w);
+@@ -1093,14 +1234,22 @@ static void create_win()
+ 			G_CALLBACK(g_source_remove), GUINT_TO_POINTER(timeout));
+ 		on_timeout((GtkLabel*)w);
+ 	}
++    }
+ 
+-	exit_btn = (GtkWidget*)gtk_builder_get_object(builder, "exit");
+-	load_exit();
++    if(g_key_file_get_integer(config, "display", "hide_exit", 0)==1)
++    {
++		w=(GtkWidget*)gtk_builder_get_object(builder, "exit");
++        gtk_widget_hide(w);
++    }
++    else
++    {
++		exit_btn = (GtkWidget*)gtk_builder_get_object(builder, "exit");
++		load_exit();
++    }
+ 
+ 	ui_get_geometry(window,&rc);
+ 	gtk_window_move(GTK_WINDOW(win),rc.x,rc.y);
+ 	gtk_window_set_default_size(GTK_WINDOW(win),rc.width,rc.height);
+-	ui_set_bg(window,config);
+ 
+ 	if(user_list && !g_key_file_get_integer(config,"userlist","disable",NULL) && 
+ 			load_user_list(user_list))
+@@ -1111,7 +1260,10 @@ static void create_win()
+ 	{
+ 		if(user_list)
+ 		{
+-			gtk_widget_hide(user_list);
++			if(user_list_scrolled)
++				gtk_widget_hide(user_list_scrolled);
++			else
++				gtk_widget_hide(user_list);
+ 			user_list=NULL;
+ 		}
+ 	}
+@@ -1119,6 +1271,8 @@ static void create_win()
+ 	ui_add_cursor();
+ 	ui_set_cursor(gtk_widget_get_window(win),GDK_LEFT_PTR);
+ 	gtk_widget_show(win);
++	ui_set_bg(window,config);
++	
+ 	ui_set_focus(window);
+ 	if(!user_list)
+ 		gtk_widget_grab_focus(login_entry);
+@@ -1142,29 +1296,11 @@ static gboolean on_lxdm_command(GIOChannel *source, GIOCondition condition, gpoi
+ 	gtk_main_quit();
+ 	else if( !strncmp(str, "reset", 5) )
+ 	{
+-		if(user)
+-		{
+-			g_free(user);
+-			user=NULL;
+-		}
+-		if(pass)
+-		{
+-			g_free(pass);
+-			pass=NULL;
+-		}
+-		gtk_label_set_text( GTK_LABEL(prompt), _("User:"));
+-		gtk_widget_show(prompt);
+-		if(user_list)
+-		{
+-			gtk_widget_hide(login_entry);
+-			gtk_widget_show(user_list);
+-			gtk_widget_grab_focus(user_list);
+-		}
+-		else
+-		{
+-			gtk_widget_show(login_entry);
+-			gtk_widget_grab_focus(login_entry);
+-		}
++		switch_to_input_user();
++	}
++	else if( !strncmp(str, "password", 8))
++	{
++		switch_to_input_passwd();
+ 	}
+ 	g_free(str);
+ 	return TRUE;
+diff --git a/src/lxcom.c b/src/lxcom.c
+index 02763eb..eef3d1b 100644
+--- a/src/lxcom.c
++++ b/src/lxcom.c
+@@ -89,7 +89,7 @@ static gboolean lxcom_prepare (GSource *source,gint *timeout)
+ 
+ static gboolean lxcom_check(GSource *source)
+ {
+-	return TRUE;
++	return (((LXComSource*)source)->poll.revents&G_IO_IN)?TRUE:FALSE;
+ }
+ 
+ static gboolean lxcom_dispatch (GSource *source,GSourceFunc callback,gpointer user_data)
+@@ -272,6 +272,7 @@ void lxcom_init(const char *sock)
+ 
+ 	s->poll.fd=self_server_fd;
+ 	s->poll.events=G_IO_IN;
++	s->poll.revents=0;
+ 	g_source_add_poll((GSource*)s,&s->poll);	
+ 	self_source_id=g_source_attach((GSource*)s,NULL);
+ 
+diff --git a/src/lxcommon.h b/src/lxcommon.h
+new file mode 100644
+index 0000000..24a6c38
+--- /dev/null
++++ b/src/lxcommon.h
+@@ -0,0 +1,7 @@
++#ifndef _LXCOMMON_H_
++#define _LXCOMMON_H_
++
++#define VCONFIG_FILE 		"/var/lib/lxdm/lxdm.conf"
++
++#endif /*_LXCOMMON_H_*/
++
+diff --git a/src/lxdm.c b/src/lxdm.c
+index 5c279af..8ac8478 100644
+--- a/src/lxdm.c
++++ b/src/lxdm.c
+@@ -24,9 +24,6 @@
+ #ifdef HAVE_CONFIG_H
+ #include <config.h>
+ #endif
+-#ifndef HAVE_LIBPAM
+-#define HAVE_LIBPAM 0
+-#endif
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+@@ -58,17 +55,27 @@
+ #include <utmpx.h>
+ #endif
+ 
+-#if HAVE_LIBPAM
+-#include <security/pam_appl.h>
+-#endif
+-
+ #if HAVE_LIBCK_CONNECTOR
+ #include <ck-connector.h>
+ #endif
+ 
++#ifndef HAVE_LIBPAM
++#ifdef USE_PAM
++#define HAVE_LIBPAM 1
++#else
++#define HAVE_LIBPAM 0
++#endif
++#endif
++
++#if HAVE_LIBPAM
++#include <security/pam_appl.h>
++#endif
++
+ #include "lxdm.h"
+ #include "lxcom.h"
+ #include "xconn.h"
++#include "lxcommon.h"
++#include "auth.h"
+ 
+ #define LOGFILE "/var/log/lxdm.log"
+ 
+@@ -82,9 +89,7 @@ typedef struct{
+ 	int display;
+ 	char *option;	/* hold option in config file */
+ 	xconn_t dpy;	/* hold this, or X crack */
+-#if HAVE_LIBPAM
+-	pam_handle_t *pamh;
+-#endif
++	LXDM_AUTH auth;
+ #if HAVE_LIBCK_CONNECTOR
+ 	CkConnector *ckc;
+ #endif
+@@ -96,6 +101,7 @@ typedef struct{
+ 
+ GKeyFile *config;
+ static int old_tty=1,def_tty = 7,nr_tty=0;
++static int def_display=0;
+ static GSList *session_list;
+ 
+ static void lxdm_startx(LXSession *s);
+@@ -128,7 +134,7 @@ static void set_active_vt(int vt)
+ 	if( fd < 0 )
+ 		fd = 0;
+ 	ioctl(fd, VT_ACTIVATE, vt);
+-	if( fd != 0 )
++	if(fd!=0)
+ 		close(fd);
+ }
+ 
+@@ -142,28 +148,19 @@ void stop_pid(int pid)
+     {
+         if( kill(pid, SIGTERM) )
+             kill(pid, SIGKILL);
+-        while( 1 )
+-        {
+-            int wpid, status;
+-            wpid = waitpid(pid,&status,0);
+-            if(wpid<0 || pid == wpid)
+-            	break;
+-        }
+     }
+-    while( waitpid(-1, 0, WNOHANG) > 0 ) ;
+-}
++    while( 1 )
++    {
++        int wpid, status;
++        wpid = waitpid(pid,&status,0);
++        if(pid == wpid)
++            break;
++	if(wpid<0 && errno!=EINTR)
++		break;
++    }
+ 
+-#if HAVE_LIBPAM
+-static void close_pam_session(pam_handle_t *pamh)
+-{
+-    int err;
+-    if( !pamh ) return;
+-    err = pam_close_session(pamh, 0);
+-    //err=pam_setcred(pamh, PAM_DELETE_CRED);
+-    pam_end(pamh, err);
+-    pamh = NULL;
++    while( waitpid(-1, 0, WNOHANG) > 0 ) ;
+ }
+-#endif
+ 
+ static LXSession *lxsession_find_greeter(void)
+ {
+@@ -271,7 +268,7 @@ static int lxsession_alloc_tty(void)
+ static int lxsession_alloc_display(void)
+ {
+ 	int i;
+-	for(i=0;i<11;i++)
++	for(i=def_display;i<11;i++)
+ 	{
+ 		if(!display_is_used(i))
+ 			return i;
+@@ -299,6 +296,7 @@ static LXSession *lxsession_add(void)
+ 		return NULL;
+ 	}
+ 	s->env=NULL;
++	lxdm_auth_init(&s->auth);
+ 	session_list=g_slist_prepend(session_list,s);
+ 	lxdm_startx(s);
+ 	return s;
+@@ -354,10 +352,7 @@ static void lxsession_stop(LXSession *s)
+ 	{
+ 		xconn_clean(s->dpy);
+ 	}
+-#if HAVE_LIBPAM
+-	close_pam_session(s->pamh);
+-	s->pamh=NULL;
+-#endif
++	lxdm_auth_session_end(&s->auth);
+ #if HAVE_LIBCK_CONNECTOR
+ 	if( s->ckc != NULL )
+ 	{
+@@ -427,6 +422,7 @@ static char *lxsession_xserver_command(LXSession *s)
+ 	int arc;
+ 	char **arg;
+ 	int i;
++	int novtswitch=0;
+ 	
+ 	if(s->option)
+ 	{
+@@ -462,12 +458,16 @@ static char *lxsession_xserver_command(LXSession *s)
+ 			g_free(arg[i]);
+ 			arc--;memcpy(arg+i,arg+i+1,(arc-i)*sizeof(char*));
+ 		}
++		else if(!strcmp(p,"-novtswitch"))
++		{
++			novtswitch=1;
++		}
+ 		else
+ 		{
+ 			i++;
+ 		}
+ 	}
+-printf("arc %d\n",arc);
++
+ 	arg = g_renew(char *, arg, arc + 10);
+ 	if(nr_tty)
+ 	{
+@@ -477,8 +477,15 @@ printf("arc %d\n",arc);
+ 	arg[arc++] = g_strdup_printf(":%d",s->display);
+ 	if(s->tty>0)
+ 		arg[arc++] = g_strdup_printf("vt%02d", s->tty);
+-	arg[arc++] = g_strdup("-nolisten");
+-	arg[arc++] = g_strdup("tcp");
++	if(g_key_file_get_integer(config,"server","tcp_listen",0)!=1)
++	{
++		arg[arc++] = g_strdup("-nolisten");
++		arg[arc++] = g_strdup("tcp");
++	}
++	if(!novtswitch)
++	{
++		arg[arc++] = g_strdup("-novtswitch");
++	}
+ 	arg[arc] = NULL;
+ 	p=g_strjoinv(" ", arg);
+ 	g_strfreev(arg);
+@@ -518,15 +525,17 @@ void lxdm_get_tty(void)
+ 		{
+ 			nr_tty=1;
+ 		}
++		else if(p[0]==':' && isdigit(p[1]))
++		{
++			def_display=atoi(p+1);
++		}
+ 	}
+ 	if(!gotvtarg)
+ 	{
+ 		/* support plymouth */
+-		nr_tty = g_file_test("/var/spool/gdm/force-display-on-active-vt", G_FILE_TEST_EXISTS);
+-		if( nr_tty || g_key_file_get_integer(config, "server", "active_vt", 0) )
++		if(g_key_file_get_integer(config, "server", "active_vt", 0) )
+ 			/* use the active vt */
+ 			def_tty = old_tty;
+-		if( nr_tty ) unlink("/var/spool/gdm/force-display-on-active-vt");
+ 		if(plymouth)
+ 		{
+ 			nr_tty=1;
+@@ -550,13 +559,13 @@ void lxdm_quit_self(int code)
+ static void log_init(void)
+ {
+ 	int fd_log;
+-
+ 	g_unlink(LOGFILE ".old");
+ 	g_rename(LOGFILE, LOGFILE ".old");
+ 	fd_log = open(LOGFILE, O_CREAT|O_APPEND|O_TRUNC|O_WRONLY|O_EXCL, 0640);
+ 	if(fd_log == -1) return;
+ 	dup2(fd_log, 1);
+ 	dup2(fd_log, 2);
++	close(fd_log);
+ }
+ 
+ static void log_ignore(const gchar *log_domain, GLogLevelFlags log_level,
+@@ -647,6 +656,19 @@ static void replace_env(char** env, const char* name, const char* new_val)
+     *(penv + 1) = NULL;
+ }
+ 
++static const char *get_env(char **env, const char *name)
++{
++	register char** penv;
++    for(penv = env; *penv; ++penv)
++    {
++        if(g_str_has_prefix(*penv, name))
++        {
++            return *penv+strlen(name);
++        }
++    }
++    return NULL;
++}
++
+ #ifndef DISABLE_XAUTH
+ 
+ static inline void xauth_write_uint16(int fd,uint16_t data)
+@@ -665,15 +687,20 @@ static inline void xauth_write_string(int fd,const char *s)
+ 	write(fd,s,len);
+ }
+ 
+-static void xauth_write_file(const char *file,char data[16])
++static void xauth_write_file(const char *file,int dpy,char data[16])
+ {
+ 	int fd;
++	char addr[128];
++	char buf[16];
++	
++	sprintf(buf,"%d",dpy);
++	gethostname(addr,sizeof(addr));
+ 	
+ 	fd=open(file,O_CREAT|O_TRUNC|O_WRONLY,0600);
+ 	if(!fd==-1) return;
+-	xauth_write_uint16(fd,252);		//FamilyLocalHost
+-	xauth_write_string(fd,"");
+-	xauth_write_string(fd,"");
++	xauth_write_uint16(fd,256);		//FamilyLocalHost
++	xauth_write_string(fd,addr);
++	xauth_write_string(fd,buf);
+ 	xauth_write_string(fd,"MIT-MAGIC-COOKIE-1");
+ 	xauth_write_uint16(fd,16);
+ 	write(fd,data,16);
+@@ -695,139 +722,55 @@ static void create_server_auth(LXSession *s)
+ 
+ 	authfile = g_strdup_printf("/var/run/lxdm/lxdm-:%d.auth",s->display);
+ 
+-	setenv("XAUTHORITY",authfile,1);
++	//setenv("XAUTHORITY",authfile,1);
+ 	remove(authfile);
+-	xauth_write_file(authfile,s->mcookie);
++	xauth_write_file(authfile,s->display,s->mcookie);
+ 	g_free(authfile);
+ }
+ 
+-static void create_client_auth(char *home,char **env)
++static void create_client_auth(struct passwd *pw,char **env)
+ {
+ 	LXSession *s;
+ 	char *authfile;
+-	uid_t user;
+-	char *path;
+ 	
+-	if((user=getuid())== 0 ) /* root don't need it */
++	if(pw->pw_uid==0) /* root don't need it */
+ 		return;
+         
+-	s=lxsession_find_user(user);
++	s=lxsession_find_user(pw->pw_uid);
+ 	if(!s)
+ 		return;
+-
+-	path=g_key_file_get_string(config,"base","xauth_path",NULL);
+-	if(path)
++	
++	/* pam_mktemp may provide XAUTHORITY to DM, just use it */
++	if((authfile=(char*)get_env(env,"XAUTHORITY="))!=NULL)
+ 	{
+-		authfile = g_strdup_printf("%s/.Xauth%d", path,getuid());
+-		g_free(path);
++		authfile=g_strdup(authfile);
+ 	}
+ 	else
+ 	{
+-		authfile = g_strdup_printf("%s/.Xauthority", home);
++		char *path;
++		path=g_key_file_get_string(config,"base","xauth_path",NULL);
++		if(path)
++		{
++			authfile = g_strdup_printf("%s/.Xauth%d", path,pw->pw_uid);
++			g_free(path);
++		}
++		else
++		{
++			authfile = g_strdup_printf("%s/.Xauthority", pw->pw_dir);
++		}
+ 	}
+ 	remove(authfile);
+-	xauth_write_file(authfile,s->mcookie);
++	xauth_write_file(authfile,s->display,s->mcookie);
+ 	replace_env(env,"XAUTHORITY=",authfile);
++	chown(authfile,pw->pw_uid,pw->pw_gid);
+ 	g_free(authfile);
+ }
+ #endif
+ 
+-#if HAVE_LIBPAM
+-static char *user_pass[2];
+-
+-static int do_conv(int num, const struct pam_message **msg,struct pam_response **resp, void *arg)
++int lxdm_auth_user(int type,char *user, char *pass, struct passwd **ppw)
+ {
+-	int result = PAM_SUCCESS;
+-	int i;
+-	*resp = (struct pam_response *) calloc(num, sizeof(struct pam_response));
+-	for(i=0;i<num;i++)
+-	{
+-		//printf("MSG: %d %s\n",msg[i]->msg_style,msg[i]->msg);
+-		switch(msg[i]->msg_style){
+-		case PAM_PROMPT_ECHO_ON:
+-			resp[i]->resp=strdup(user_pass[0]?user_pass[0]:"");
+-			break;
+-		case PAM_PROMPT_ECHO_OFF:
+-			resp[i]->resp=strdup(user_pass[1]?user_pass[1]:"");
+-			break;
+-		case PAM_ERROR_MSG:
+-		case PAM_TEXT_INFO:
+-			//printf("PAM: %s\n",msg[i]->msg);
+-			break;
+-		default:
+-			break;
+-		}
+-	}
+-	return result;
+-}
+-
+-static struct pam_conv conv={.conv=do_conv,.appdata_ptr=user_pass};
+-#endif
+-
+-int lxdm_auth_user(char *user, char *pass, struct passwd **ppw)
+-{
+-    struct passwd *pw;
+-#if !HAVE_LIBPAM
+-    struct spwd *sp;
+-    char *real;
+-    char *enc;
+-#endif
+-    if( !user )
+-    {
+-        g_debug("user==NULL\n");
+-        return AUTH_ERROR;
+-    }
+-    if( !user[0] )
+-    {
+-        g_debug("user[0]==0\n");
+-        return AUTH_BAD_USER;
+-    }
+-    pw = getpwnam(user);
+-    endpwent();
+-    if( !pw )
+-    {
+-        g_debug("user %s not found\n",user);
+-        return AUTH_BAD_USER;
+-    }
+-    if( !pass )
+-    {
+-        *ppw = pw;
+-        g_debug("user %s auth ok\n",user);
+-        return AUTH_SUCCESS;
+-    }
+-    if(strstr(pw->pw_shell, "nologin"))
+-    {
+-        g_debug("user %s have nologin shell\n",user);
+-        return AUTH_PRIV;
+-    }
+-#if !HAVE_LIBPAM
+-    sp = getspnam(user);
+-    if( !sp )
+-        return AUTH_FAIL;
+-    endspent();
+-    real = sp->sp_pwdp;
+-    if( !real || !real[0] )
+-    {
+-        if( !pass[0] )
+-        {
+-            *ppw = pw;
+-            g_debug("user %s auth with no password ok\n",user);
+-            return AUTH_SUCCESS;
+-        }
+-        else
+-        {
+-            g_debug("user %s password not match\n",user);
+-            return AUTH_FAIL;
+-        }
+-    }
+-    enc = crypt(pass, real);
+-    if( strcmp(real, enc) )
+-    {
+-        g_debug("user %s password not match\n",user);
+-        return AUTH_FAIL;
+-    }
+-#else
+     LXSession *s;
++    int ret;
+     s=lxsession_find_greeter();
+     if(!s) s=lxsession_find_idle();
+     if(!s) s=lxsession_add();
+@@ -836,97 +779,12 @@ int lxdm_auth_user(char *user, char *pass, struct passwd **ppw)
+         g_critical("lxsession_add fail\n");
+         exit(0);
+     }
+-	if(s->pamh) pam_end(s->pamh,0);
+-	if(PAM_SUCCESS != pam_start("lxdm", pw->pw_name, &conv, &s->pamh))
+-	{
+-		s->pamh=NULL;
+-		g_debug("user %s start pam fail\n",user);
+-		return AUTH_FAIL;
+-	}
+-	else
+-	{
+-		int ret;
+-		user_pass[0]=user;user_pass[1]=pass;
+-		ret=pam_authenticate(s->pamh,PAM_SILENT);
+-		user_pass[0]=0;user_pass[1]=0;
+-		if(ret!=PAM_SUCCESS)
+-		{
+-			g_debug("user %s auth fail with %d\n",user,ret);
+-			return AUTH_FAIL;
+-		}
+-		ret=pam_acct_mgmt(s->pamh,PAM_SILENT);
+-		if(ret!=PAM_SUCCESS)
+-		{
+-			g_debug("user %s acct mgmt fail with %d\n",user,ret);
+-			return AUTH_FAIL;
+-		}
+-		//ret=pam_setcred(s->pamh, PAM_ESTABLISH_CRED);
+-	}
+-#endif
+-    *ppw = pw;
+-    g_debug("user %s auth ok\n",pw->pw_name);
+-    return AUTH_SUCCESS;
++	ret=lxdm_auth_user_authenticate(&s->auth,user,pass,type);
++	if(ret==AUTH_SUCCESS)
++		*ppw=&s->auth.pw;
++	return ret;
+ }
+ 
+-#if HAVE_LIBPAM
+-void setup_pam_session(LXSession *s,struct passwd *pw,char *session_name)
+-{
+-    int err;
+-    char x[256];
+- 
+-    if(!s->pamh && PAM_SUCCESS != pam_start("lxdm", pw->pw_name, &conv, &s->pamh))
+-    {
+-        s->pamh = NULL;
+-        return;
+-    }
+-    if(!s->pamh) return;
+-    sprintf(x, "tty%d", s->tty);
+-    pam_set_item(s->pamh, PAM_TTY, x);
+-#ifdef PAM_XDISPLAY
+-    pam_set_item(s->pamh, PAM_XDISPLAY, getenv("DISPLAY") );
+-#endif
+-
+-    if(session_name && session_name[0])
+-    {
+-        char *env;
+-        env = g_strdup_printf ("DESKTOP_SESSION=%s", session_name);
+-        pam_putenv (s->pamh, env);
+-        g_free (env);
+-    }
+-    err = pam_open_session(s->pamh, 0); /* FIXME pam session failed */
+-    if( err != PAM_SUCCESS )
+-        g_warning( "pam open session error \"%s\"\n", pam_strerror(s->pamh, err));
+-}
+-
+-void append_pam_environ(pam_handle_t *pamh,char **env)
+-{
+-	int i,j,n;
+-	char **penv;
+-	if(!pamh) return;
+-	penv=pam_getenvlist(pamh);
+-	if(!penv) return;
+-	for(i=0;penv[i]!=NULL;i++)
+-	{
+-		//printf("PAM %s\n",penv[i]);
+-		n=strcspn(penv[i],"=")+1;
+-		for(j=0;env[j]!=NULL;j++)
+-		{
+-			if(!strncmp(penv[i],env[j],n))
+-				break;
+-			if(env[j+1]==NULL)
+-			{
+-				env[j+1]=g_strdup(penv[i]);
+-				env[j+2]=NULL;
+-				break;
+-			}
+-		}
+-		free(penv[i]);
+-	}
+-	free(penv);
+-}
+-
+-#endif
+-
+ static void close_left_fds(void)
+ {
+ 	struct dirent **list;
+@@ -945,9 +803,15 @@ static void close_left_fds(void)
+ 		close(fd);
+ 	}
+ 	free(list);
++	
++	int fd = open("/dev/null", O_WRONLY);
++	if(fd == -1) return;
++	dup2(fd, 1);
++	dup2(fd, 2);
++	close(fd);
+ }
+ 
+-void switch_user(struct passwd *pw, char *run, char **env)
++void switch_user(struct passwd *pw, const char *run, char **env)
+ {
+     int fd;
+     
+@@ -968,9 +832,6 @@ void switch_user(struct passwd *pw, char *run, char **env)
+         dup2(fd,STDERR_FILENO);
+         close(fd);
+     }
+-#ifndef DISABLE_XAUTH
+-    create_client_auth(pw->pw_dir,env);
+-#endif
+ 
+ 	/* reset signal */
+ 	signal(SIGCHLD, SIG_DFL);
+@@ -1114,7 +975,7 @@ void lxdm_startx(LXSession *s)
+ 	g_strfreev(args);
+ 	lxcom_add_child_watch(s->server, on_xserver_stop, s);
+ 
+-	g_message("add xserver watch\n");
++	g_message("%ld: add xserver watch\n",time(NULL));
+ 	for( i = 0; i < 100; i++ )
+ 	{
+ 		if(lxcom_last_sig==SIGINT || lxcom_last_sig==SIGTERM)
+@@ -1124,6 +985,7 @@ void lxdm_startx(LXSession *s)
+ 		g_usleep(50 * 1000);
+ 		//g_message("retry %d\n",i);
+ 	}
++	g_message("%ld: start xserver in %d retry",time(NULL),i);
+ 	if(s->dpy==NULL)
+ 		exit(EXIT_FAILURE);
+ 	
+@@ -1200,6 +1062,11 @@ static void on_session_stop(void *data,int pid, int status)
+ 	{
+ 		lxsession_free(s);
+ 	}
++	else if(g_key_file_get_integer(config,"server","reset",NULL)==1)
++	{
++		lxsession_free(s);
++		lxsession_greeter();
++	}
+ 	gchar *argv[] = { "/etc/lxdm/PostLogout", NULL };
+ 	g_spawn_async(NULL, argv, s->env, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+ }
+@@ -1212,7 +1079,7 @@ gboolean lxdm_get_session_info(char *session,char **pname,char **pexec)
+ 		name=g_key_file_get_string(config, "base", "session", 0);
+ 		if(!name && getenv("PREFERRED"))
+ 			name = g_strdup(getenv("PREFERRED"));
+-		if(!session && getenv("DESKTOP"))
++		if(!name && getenv("DESKTOP"))
+ 			name = g_strdup(getenv("DESKTOP"));
+ 		if(!name) name=g_strdup("LXDE");
+ 	}
+@@ -1291,7 +1158,7 @@ static void lxdm_save_login(char *session,char *lang)
+ 		lang="";
+ 	var=g_key_file_new();
+ 	g_key_file_set_list_separator(var, ' ');
+-	g_key_file_load_from_file(var,"/var/lib/lxdm/lxdm.conf",0,NULL);
++	g_key_file_load_from_file(var,VCONFIG_FILE,0,NULL);
+ 	old=g_key_file_get_string(var,"base","last_session",0);
+ 	if(0!=g_strcmp0(old,session))
+ 	{
+@@ -1343,7 +1210,7 @@ static void lxdm_save_login(char *session,char *lang)
+         char* data = g_key_file_to_data(var, &len, NULL);
+ 		mkdir("/var/lib/lxdm",0755);
+ 		chmod("/var/lib/lxdm",0755);
+-        g_file_set_contents("/var/lib/lxdm/lxdm.conf", data, len, NULL);
++        g_file_set_contents(VCONFIG_FILE, data, len, NULL);
+         g_free(data);
+ 	}
+ 	g_key_file_free(var);
+@@ -1357,6 +1224,8 @@ void lxdm_do_login(struct passwd *pw, char *session, char *lang, char *option)
+ 	LXSession *s,*prev;
+ 	
+ 	lxdm_save_login(session,lang);
++	if(!strcmp(session,"__default__"))
++		session=NULL;
+ 
+ 	if(!session ||!session[0] || !lang || !lang[0])
+ 	{
+@@ -1423,12 +1292,10 @@ void lxdm_do_login(struct passwd *pw, char *session, char *lang, char *option)
+ 		s->ckc=NULL;
+ 	}
+ #endif
+-#if HAVE_LIBPAM
+-	setup_pam_session(s,pw,session_name);
+-#endif
++	lxdm_auth_session_begin(&s->auth,session_name,s->tty,s->display,s->mcookie);
+ #if HAVE_LIBCK_CONNECTOR
+ #if HAVE_LIBPAM
+-	if(!s->ckc && (!s->pamh || !pam_getenv(s->pamh,"XDG_SESSION_COOKIE")))
++	if(!s->ckc && (!s->auth.handle || !pam_getenv(s->auth.handle,"XDG_SESSION_COOKIE")))
+ #else
+ 	if(!s->ckc)
+ #endif
+@@ -1451,9 +1318,20 @@ void lxdm_do_login(struct passwd *pw, char *session, char *lang, char *option)
+ 							  "x11-display", &n,
+ 							  "is-local",&is_local,
+ 							  NULL))
+-		setenv("XDG_SESSION_COOKIE", ck_connector_get_cookie(s->ckc), 1);
++		{
++			setenv("XDG_SESSION_COOKIE", ck_connector_get_cookie(s->ckc), 1);
++		}
++		else
++		{
++			g_message("create ConsoleKit session fail\n");
++		}
++	}
++	else
++	{
++		g_message("create ConsoleKit connector fail\n");
+ 	}
+ #endif
++
+ 	char** env, *path;
+ 	int n_env,i;
+ 	n_env  = g_strv_length(environ);
+@@ -1483,17 +1361,22 @@ void lxdm_do_login(struct passwd *pw, char *session, char *lang, char *option)
+ 		replace_env(env, "LANGUAGE=", lang);
+ 	}
+ 	s->env = env;
++	
++#ifndef DISABLE_XAUTH
++	create_client_auth(pw,env);
++#endif
+ 
+-	s->child = pid = fork();
++	/*s->child = pid = fork();
+ 	if(s->child==0)
+ 	{
+-#if HAVE_LIBPAM
+-		append_pam_environ(s->pamh,env);
+-		pam_end(s->pamh,0);
+-#endif
++		env=lxdm_auth_append_env(&s->auth,env);
++		lxdm_auth_clean_for_child(&s->auth);
+ 		switch_user(pw, session_exec, env);
+ 		lxdm_quit_self(4);
+-	}
++	}*/
++	
++	s->child = pid = lxdm_auth_session_run(&s->auth,session_exec,env);
++	
+ 	g_free(session_name);
+ 	g_free(session_exec);
+ 	if(alloc_session)
+@@ -1519,7 +1402,7 @@ void lxdm_do_shutdown(void)
+ 	char *cmd;
+ 	cmd = g_key_file_get_string(config, "cmd", "shutdown", 0);
+ 	if( !cmd ) cmd = g_strdup("shutdown -h now");
+-	g_spawn_command_line_sync("/etc/lxdm/PreReboot",0,0,0,0);
++	g_spawn_command_line_sync("/etc/lxdm/PreShutdown",0,0,0,0);
+ 	g_spawn_command_line_async(cmd,0);
+ 	g_free(cmd);
+ 	lxdm_quit_self(0);
+@@ -1548,10 +1431,30 @@ int lxdm_do_auto_login(void)
+ 	if(count==1)
+ 		pass = g_key_file_get_string(config, "base", "password", 0);
+ 	#endif
++
++	/* get defaults from last login */
++	GKeyFile *var_config = g_key_file_new();
++	g_key_file_set_list_separator(var_config, ' ');
++	g_key_file_load_from_file(var_config,VCONFIG_FILE,G_KEY_FILE_KEEP_COMMENTS, NULL);
++
++	char* last_session = g_key_file_get_string(var_config, "base", "last_session", NULL);
++	if(last_session != NULL && last_session[0] == 0)
++	{
++		g_free(last_session);
++		last_session = NULL;
++	}
++
++	char* last_lang = g_key_file_get_string(var_config, "base", "last_lang", NULL);
++
++	g_key_file_free(var_config);
++
+ 	for(i=0;i<count;i++)
+ 	{
+ 		char *user,*session=NULL,*lang=NULL,*option=NULL;
+ 		p=users[i];
++		/* autologin users starting with '@' get own config section with
++		 * user=, session= and lang= entry
++		 */
+ 		if(p[0]=='@')	
+ 		{
+ 			option=p+1;
+@@ -1559,11 +1462,16 @@ int lxdm_do_auto_login(void)
+ 			session=g_key_file_get_string(config,option,"session",0);
+ 			lang=g_key_file_get_string(config,option,"lang",0);
+ 		}
++		/* autologin users not starting with '@' get user, session, lang section
++                 * from last login
++                 */
+ 		else
+ 		{
+ 			user=g_strdup(p);
++			session=g_strdup(last_session);
++			lang=g_strdup(last_lang);
+ 		}
+-		ret=lxdm_auth_user(user, pass, &pw);
++		ret=lxdm_auth_user(AUTH_TYPE_AUTO_LOGIN, user, pass, &pw);
+ 		if(ret==AUTH_SUCCESS)
+ 		{
+ 			lxdm_do_login(pw,session,lang,option);
+@@ -1571,9 +1479,11 @@ int lxdm_do_auto_login(void)
+ 		}
+ 		g_free(user);g_free(session);g_free(lang);
+ 	}
++	g_free(last_lang);
++	g_free(last_session);
+ 	g_strfreev(users);
+ 	g_free(pass);
+-	return success;;
++	return success;
+ }
+ 
+ static void log_sigsegv(void)
+@@ -1677,8 +1587,23 @@ GKeyFile *lxdm_user_list(void)
+ 	g_key_file_set_comment(kf,NULL,NULL,"lxdm user list",NULL);
+ 	while((pw=getpwent())!=NULL)
+ 	{
++		char *valid_shell;
++		gboolean ret;
++	
+ 		if(strstr(pw->pw_shell, "nologin"))
+ 			continue;
++
++		ret = FALSE;
++		setusershell();
++		while ((valid_shell = getusershell()) != NULL) {
++			if (g_strcmp0 (pw->pw_shell, valid_shell) != 0)
++				continue;
++			ret = TRUE;
++		}
++		endusershell();
++		if(!ret)
++			continue;
++
+ 		if(strncmp(pw->pw_dir,"/home/",6))
+ 		{
+ 			if(!strv_find(white,pw->pw_name))
+@@ -1780,21 +1705,21 @@ int main(int arc, char *arg[])
+ 			return res?0:-1;
+ 		}
+ 	}
+-	if( getuid() != 0 )
++	if(getuid() != 0)
+ 	{
+ 		fprintf(stderr, "only root is allowed to use this program\n");
+ 		exit(EXIT_FAILURE);
+ 	}
+ 
+-	if( daemonmode )
++	if(daemonmode)
+ 	{
+ 		(void)daemon(1, 1);
+ 	}
+ 	log_init();
+ 
+-	if( debugmode )
++	if(!debugmode)
+ 	{
+-		/* turn of debug output */
++		/* turn off debug output */
+ 		g_log_set_handler(NULL, G_LOG_LEVEL_DEBUG, log_ignore, NULL);
+ 	}
+ 
+@@ -1832,3 +1757,4 @@ int main(int arc, char *arg[])
+ 
+ 	return 0;
+ }
++
+diff --git a/src/lxdm.h b/src/lxdm.h
+index 4c79ca3..568573f 100644
+--- a/src/lxdm.h
++++ b/src/lxdm.h
+@@ -29,11 +29,12 @@ G_BEGIN_DECLS
+ 
+ extern GKeyFile *config;
+ 
+-int lxdm_auth_user(char *user,char *pass,struct passwd **ppw);
++int lxdm_auth_user(int type,char *user,char *pass,struct passwd **ppw);
+ void lxdm_do_login(struct passwd *pw,char *session,char *lang,char *option);
+ void lxdm_do_reboot(void);
+ void lxdm_do_shutdown(void);
+ int lxdm_do_auto_login(void);
++void lxdm_quit_self(int code);
+ 
+ enum AuthResult
+ {
+diff --git a/src/pam.c b/src/pam.c
+new file mode 100644
+index 0000000..810e44f
+--- /dev/null
++++ b/src/pam.c
+@@ -0,0 +1,578 @@
++/*
++ *      lxdm.c - main entry of lxdm
++ *
++ *      Copyright 2009 dgod <dgod.osa@gmail.com>
++ *
++ *      This program is free software; you can redistribute it and/or modify
++ *      it under the terms of the GNU General Public License as published by
++ *      the Free Software Foundation; either version 3 of the License, or
++ *      (at your option) any later version.
++ *
++ *      This program is distributed in the hope that it will be useful,
++ *      but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *      GNU General Public License for more details.
++ *
++ *      You should have received a copy of the GNU General Public License
++ *      along with this program; if not, write to the Free Software
++ *      Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
++ *      MA 02110-1301, USA.
++ */
++
++#define _GNU_SOURCE
++
++#ifdef HAVE_CONFIG_H
++#include <config.h>
++#endif
++#ifndef HAVE_LIBPAM
++#ifdef USE_PAM
++#define HAVE_LIBPAM 1
++#else
++#define HAVE_LIBPAM 0
++#endif
++#endif
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <stdarg.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <dirent.h>
++#include <errno.h>
++#include <poll.h>
++
++#include <pwd.h>
++#include <grp.h>
++#include <shadow.h>
++
++#include <glib.h>
++
++#include "lxdm.h"
++#include "auth.h"
++
++static void passwd_copy(struct passwd *dst,struct passwd *src)
++{
++	dst->pw_name=g_strdup(src->pw_name);
++	dst->pw_uid=src->pw_uid;
++	dst->pw_gid=src->pw_gid;
++	if(src->pw_gecos)
++		dst->pw_gecos=g_strdup(src->pw_gecos);
++	dst->pw_dir=g_strdup(src->pw_dir);
++	dst->pw_shell=g_strdup(src->pw_shell);
++}
++
++static void passwd_clean(struct passwd *pw)
++{
++	g_free(pw->pw_name);
++	g_free(pw->pw_gecos);
++	g_free(pw->pw_dir);
++	g_free(pw->pw_shell);
++	memset(pw,0,sizeof(*pw));
++}
++
++#if !HAVE_LIBPAM
++
++int lxdm_auth_init(LXDM_AUTH *a)
++{
++	memset(a,0m,sizeof(*a));
++	return 0;
++}
++
++int lxdm_auth_cleanup(LXDM_AUTH *a)
++{
++	passwd_clean(&a->pw);
++	return 0;
++}
++
++int lxdm_auth_user_authenticate(LXDM_AUTH *a,const char *user,const char *pass,int type)
++{
++	struct passwd *pw;
++	struct spwd *sp;
++    char *real;
++    char *enc;
++	if(!user || !user[0])
++	{
++		g_debug("user==NULL\n");
++		return AUTH_ERROR;
++	}
++	pw = getpwnam(user);
++	endpwent();
++	if(!pw)
++	{
++		g_debug("user %s not found\n",user);
++		return AUTH_BAD_USER;
++	}
++	if(strstr(pw->pw_shell, "nologin"))
++    {
++        g_debug("user %s have nologin shell\n",user);
++        return AUTH_PRIV;
++    }
++    if(type==AUTH_TYPE_AUTO_LOGIN && !pass)
++    {
++		goto out;
++	}
++    sp = getspnam(user);
++    if( !sp )
++    {
++		return AUTH_FAIL;
++	}
++    endspent();
++    real = sp->sp_pwdp;
++    if( !real || !real[0] )
++    {
++        if( !pass || !pass[0] )
++        {
++            *ppw = pw;
++            g_debug("user %s auth with no password ok\n",user);
++            return AUTH_SUCCESS;
++        }
++        else
++        {
++            g_debug("user %s password not match\n",user);
++            return AUTH_FAIL;
++        }
++    }
++    enc = crypt(pass, real);
++    if( strcmp(real, enc) )
++    {
++        g_debug("user %s password not match\n",user);
++        return AUTH_FAIL;
++    }
++    g_debug("user %s auth ok\n",pw->pw_name);
++	passwd_copy(&a->pw,pw);
++    return AUTH_SUCCESS;
++}
++
++int lxdm_auth_session_begin(LXDM_AUTH *a,int tty,int display,char mcookie[16])
++{
++	return 0;
++}
++
++int lxdm_auth_session_end(LXDM_AUTH *a)
++{
++	return 0;
++}
++
++int lxdm_auth_clean_for_child(LXDM_AUTH *a)
++{
++	return 0;
++}
++
++void lxdm_auth_print_env(LXDM_AUTH *a)
++{
++}
++
++#else
++
++#include <security/pam_appl.h>
++
++static char *user_pass[2];
++
++static int do_conv(int num, const struct pam_message **msg,struct pam_response **resp, void *arg)
++{
++	int result = PAM_SUCCESS;
++	int i;
++	*resp = (struct pam_response *) calloc(num, sizeof(struct pam_response));
++	for(i=0;i<num;i++)
++	{
++		//printf("MSG: %d %s\n",msg[i]->msg_style,msg[i]->msg);
++		switch(msg[i]->msg_style){
++		case PAM_PROMPT_ECHO_ON:
++			resp[i]->resp=strdup(user_pass[0]?user_pass[0]:"");
++			break;
++		case PAM_PROMPT_ECHO_OFF:
++			//resp[i]->resp=strdup(user_pass[1]?user_pass[1]:"");
++			resp[i]->resp=user_pass[1]?strdup(user_pass[1]):NULL;
++			break;
++		case PAM_ERROR_MSG:
++		case PAM_TEXT_INFO:
++			//printf("PAM: %s\n",msg[i]->msg);
++			break;
++		default:
++			break;
++		}
++	}
++	return result;
++}
++
++static struct pam_conv conv={.conv=do_conv,.appdata_ptr=user_pass};
++
++int lxdm_auth_init(LXDM_AUTH *a)
++{
++	memset(a,0,sizeof(*a));
++	return 0;
++}
++
++int lxdm_auth_cleanup(LXDM_AUTH *a)
++{
++	passwd_clean(&a->pw);
++	return 0;
++}
++
++int lxdm_auth_user_authenticate(LXDM_AUTH *a,const char *user,const char *pass,int type)
++{
++	struct passwd *pw;
++	if(!user || !user[0])
++	{
++		g_debug("user==NULL\n");
++		return AUTH_ERROR;
++	}
++	pw = getpwnam(user);
++	endpwent();
++	if(!pw)
++	{
++		g_debug("user %s not found\n",user);
++		return AUTH_BAD_USER;
++	}
++	if(strstr(pw->pw_shell, "nologin"))
++	{
++		g_debug("user %s have nologin shell\n",user);
++		return AUTH_PRIV;
++	}
++	if(a->handle) pam_end(a->handle,0);
++	if(PAM_SUCCESS != pam_start("lxdm", pw->pw_name, &conv, (pam_handle_t**)&a->handle))
++	{
++		a->handle=NULL;
++		g_debug("user %s start pam fail\n",user);
++		return AUTH_FAIL;
++	}
++	else
++	{
++		int ret;
++		if(type==AUTH_TYPE_AUTO_LOGIN && !pass)
++			goto out;
++		user_pass[0]=(char*)user;user_pass[1]=(char*)pass;
++		ret=pam_authenticate(a->handle,PAM_SILENT);
++		user_pass[0]=0;user_pass[1]=0;
++		if(ret!=PAM_SUCCESS)
++		{
++			g_debug("user %s auth fail with %d\n",user,ret);
++			return AUTH_FAIL;
++		}
++		ret=pam_acct_mgmt(a->handle,PAM_SILENT);
++		if(ret!=PAM_SUCCESS)
++		{
++			g_debug("user %s acct mgmt fail with %d\n",user,ret);
++			return AUTH_FAIL;
++		}
++	}
++out:
++	passwd_copy(&a->pw,pw);
++	return AUTH_SUCCESS;
++}
++
++int lxdm_auth_session_begin(LXDM_AUTH *a,const char *name,int tty,int display,char mcookie[16])
++{
++	int err;
++	char x[256];
++	
++	if(!a->handle)
++	{
++		return -1;
++	}
++	sprintf(x, "tty%d", tty);
++	pam_set_item(a->handle, PAM_TTY, x);
++#ifdef PAM_XDISPLAY
++	sprintf(x,":%d",display);
++	pam_set_item(a->handle, PAM_XDISPLAY, x);
++#endif
++#if !defined(DISABLE_XAUTH) && defined(PAM_XAUTHDATA)
++	struct pam_xauth_data value;
++	value.name="MIT-MAGIC-COOKIE-1";
++	value.namelen=18;
++	value.data=mcookie;
++	value.datalen=16;
++	pam_set_item (a->handle, PAM_XAUTHDATA, &value);
++#endif
++	if(name && name[0])
++	{
++		char *env;
++		env = g_strdup_printf ("DESKTOP_SESSION=%s", name);
++		pam_putenv (a->handle, env);
++		g_free (env);
++	}
++	err = pam_open_session(a->handle, 0); /* FIXME pam session failed */
++	if( err != PAM_SUCCESS )
++		g_warning( "pam open session error \"%s\"\n", pam_strerror(a->handle, err));
++	return 0;
++}
++
++int lxdm_auth_session_end(LXDM_AUTH *a)
++{
++	int err;
++	if(!a->handle)
++		return 0;
++	err = pam_close_session(a->handle, 0);
++	pam_end(a->handle, err);
++	a->handle = NULL;
++	passwd_clean(&a->pw);
++	return 0;
++}
++
++int lxdm_auth_clean_for_child(LXDM_AUTH *a)
++{
++	pam_end(a->handle,0);
++	return 0;
++}
++
++void lxdm_auth_print_env(LXDM_AUTH *a)
++{
++	int i;
++	char **penv;
++	if(!a->handle) return;
++	penv=pam_getenvlist(a->handle);
++	if(!penv) return;
++	for(i=0;penv[i]!=NULL;i++)
++	{
++		if(i!=0) printf(" ");
++		printf("%s",penv[i]);
++	}
++	free(penv);
++}
++
++void lxdm_auth_put_env(LXDM_AUTH *a)
++{
++	int i;
++	char **penv;
++
++	if(!a->handle) return;
++	penv=pam_getenvlist(a->handle);
++	if(!penv) return;
++	for(i=0;penv[i]!=NULL;i++)
++	{
++		if(i!=0) printf(" ");
++		if(0!=putenv(penv[i]))
++			perror("putenv");
++	}
++	free(penv);
++}
++
++#endif
++
++static void close_left_fds(void)
++{
++	struct dirent **list;
++	char path[256];
++	int n;
++
++	snprintf(path,sizeof(path),"/proc/%d/fd",getpid());
++	n=scandir(path,&list,0,0);
++	if(n<0) return;
++	while(n--)
++	{
++		int fd=atoi(list[n]->d_name);
++		free(list[n]);
++		if(fd<=STDERR_FILENO)
++			continue;
++		close(fd);
++	}
++	free(list);
++	
++	int fd = open("/dev/null", O_WRONLY);
++	if(fd == -1) return;
++	dup2(fd, 1);
++	dup2(fd, 2);
++	close(fd);
++}
++
++void switch_user(struct passwd *pw, const char *run, char **env)
++{
++	int fd;
++    
++	setenv("USER",pw->pw_name,1);
++	setenv("LOGNAME",pw->pw_name,1);
++	setenv("SHELL",pw->pw_shell,1);
++	setenv("HOME",pw->pw_dir,1);
++
++	g_spawn_command_line_sync ("/etc/lxdm/PreLogin",NULL,NULL,NULL,NULL);
++
++	if( !pw || initgroups(pw->pw_name, pw->pw_gid) ||
++			setgid(pw->pw_gid) || setuid(pw->pw_uid)/* || setsid() == -1 */)
++		exit(EXIT_FAILURE);
++    chdir(pw->pw_dir);
++    fd=open(".xsession-errors",O_WRONLY|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR);
++    if(fd!=-1)
++    {
++        dup2(fd,STDERR_FILENO);
++        close(fd);
++    }
++
++	/* reset signal */
++	signal(SIGCHLD, SIG_DFL);
++	signal(SIGTERM, SIG_DFL);
++	signal(SIGPIPE, SIG_DFL);
++	signal(SIGALRM, SIG_DFL);
++	signal(SIGHUP, SIG_DFL);
++	close_left_fds();
++
++	g_spawn_command_line_async ("/etc/lxdm/PostLogin",NULL);
++	execle("/etc/lxdm/Xsession", "/etc/lxdm/Xsession", run, NULL, environ);
++	perror("execle");
++	exit(EXIT_FAILURE);
++}
++
++void run_session(LXDM_AUTH *a,const char *run)
++{
++	setsid();
++	a->child=fork();
++	if(a->child==0)
++	{
++		lxdm_auth_put_env(a);
++		lxdm_auth_clean_for_child(a);
++		switch_user(&a->pw,run,NULL);
++		_exit(EXIT_FAILURE);
++	}
++}
++
++LXDM_AUTH a;
++static int session_exit=0;
++
++static int xreadline(int fd,char *buf,size_t size)
++{
++	int i;
++	for(i=0;i<size-1;i++)
++	{
++		int ret;
++		do{
++			ret=read(fd,buf+i,1);
++		}while(ret==-1 && errno==EINTR);
++		if(buf[i]==-1 || buf[i]=='\n')
++			break;
++	}
++	buf[i]=0;
++	return i;
++}
++
++int file_get_line(char *line, size_t n, FILE *fp)
++{
++	int len;
++	
++	if(session_exit)
++		return -1;
++/*	
++	if(!fgets(line,n,fp))
++		return -1;
++	len=strcspn(line,"\r\n");
++	line[len]=0;
++*/
++
++	struct pollfd fds;
++	fds.fd=fileno(fp);
++	fds.events=POLLIN;
++	poll(&fds,1,-1);
++	if(session_exit)
++		return -1;
++
++	len=xreadline(fileno(fp),line,n);
++	return len;
++}
++
++void sig_handler(int sig)
++{
++	if(sig==SIGCHLD)
++	{
++		int wpid, status;
++		while(1)
++		{
++			wpid = waitpid(-1,&status,0);
++			if(wpid==a.child)
++			{
++				session_exit=1;
++			}
++			if(wpid<0) break;
++		}
++	}
++}
++
++int main(int arc,char *arg[])
++{
++	char cmd[128];
++	int ret;
++
++	setvbuf(stdout, NULL, _IOLBF, 0 );
++	signal(SIGCHLD,sig_handler);
++	
++	lxdm_auth_init(&a);
++	while(file_get_line(cmd,sizeof(cmd),stdin)>=0)
++	{
++		//fprintf(stderr,"begin %s\n",cmd);
++		if(!strcmp(cmd,"auth"))
++		{
++			char temp[8],user[64],pass[64];
++			int type;
++			ret=file_get_line(temp,sizeof(temp),stdin);
++			if(ret<0) break;
++			type=atoi(temp);
++			ret=file_get_line(user,sizeof(user),stdin);
++			if(ret<0) break;
++			if(type==AUTH_TYPE_NORMAL)
++			{
++				ret=file_get_line(pass,sizeof(pass),stdin);
++				if(ret<0) break;
++				ret=lxdm_auth_user_authenticate(&a,user,pass,type);
++			}
++			else
++			{
++				ret=lxdm_auth_user_authenticate(&a,user,NULL,type);
++			}
++			printf("%d\n",ret);
++			if(ret==AUTH_SUCCESS)
++			{
++				printf("%d\n",a.pw.pw_uid);
++				printf("%d\n",a.pw.pw_gid);
++				printf("%s\n",a.pw.pw_gecos?:"");
++				printf("%s\n",a.pw.pw_dir);
++				printf("%s\n",a.pw.pw_shell);
++			}
++		}
++		else if(!strcmp(cmd,"begin"))
++		{
++			char name[128],tty[8],display[8],mcookie[32];
++			gsize out_len;
++			ret=file_get_line(name,sizeof(name),stdin);
++			if(ret<0) break;
++			ret=file_get_line(tty,sizeof(tty),stdin);
++			if(ret<0) break;
++			ret=file_get_line(display,sizeof(display),stdin);
++			if(ret<0) break;
++			ret=file_get_line(mcookie,sizeof(mcookie),stdin);
++			if(ret<0) break;
++			g_base64_decode_inplace(mcookie,&out_len);
++			ret=lxdm_auth_session_begin(&a,name,atoi(tty),atoi(display),mcookie);
++			printf("%d\n",ret);
++		}
++		else if(!strcmp(cmd,"end"))
++		{
++			ret=lxdm_auth_session_end(&a);
++			printf("%d\n",ret);
++		}
++		else if(!strcmp(cmd,"env"))
++		{
++			lxdm_auth_print_env(&a);
++			printf("\n");
++		}
++		else if(!strcmp(cmd,"putenv"))
++		{
++			char env[1024];
++			while(file_get_line(env,sizeof(env),stdin)>0)
++			{
++				putenv(env);
++			}
++		}
++		else if(!strcmp(cmd,"exec"))
++		{
++			char run[256];
++			if(file_get_line(run,sizeof(run),stdin)>0)
++				run_session(&a,run);
++		}
++		else if(!strcmp(cmd,"exit"))
++		{
++			break;
++		}
++		//fprintf(stderr,"end\n");
++	}
++	lxdm_auth_cleanup(&a);
++	return 0;
++}
++
+diff --git a/src/ui.c b/src/ui.c
+index 2691a03..f233589 100644
+--- a/src/ui.c
++++ b/src/ui.c
+@@ -20,8 +20,6 @@
+  */
+ 
+ 
+-#include <X11/Xlib.h>
+-
+ #include <string.h>
+ #include <poll.h>
+ #include <grp.h>
+@@ -34,6 +32,7 @@
+ 
+ #include "lxdm.h"
+ #include "lxcom.h"
++#include "auth.h"
+ 
+ static pid_t greeter = -1;
+ static int greeter_pipe[2];
+@@ -153,17 +152,22 @@ static gboolean on_greeter_input(GIOChannel *source, GIOCondition condition, gpo
+ 		char *pass = greeter_param(str, "pass");
+ 		char *session = greeter_param(str, "session");
+ 		char *lang = greeter_param(str, "lang");
+-		if( user && pass )
++		if( user/* && pass */)
+ 		{
+ 			struct passwd *pw;
+-			int ret = lxdm_auth_user(user, pass, &pw);
++			int ret = lxdm_auth_user(AUTH_TYPE_NORMAL, user, pass, &pw);
+ 			if( AUTH_SUCCESS == ret && pw != NULL )
+ 			{
+ 				ui_drop();
+ 				lxdm_do_login(pw, session, lang,NULL);
+ 			}
+ 			else
+-				xwrite(greeter_pipe[0], "reset\n", 6);
++			{
++				if(pass!=NULL)
++					xwrite(greeter_pipe[0], "reset\n", 6);
++				else
++					xwrite(greeter_pipe[0], "password\n", 9);
++			}
+ 		}
+ 		g_free(user);
+ 		g_free(pass);
+@@ -180,7 +184,7 @@ static gboolean on_greeter_input(GIOChannel *source, GIOCondition condition, gpo
+ 		if(user)
+ 		{
+ 			struct passwd *pw;
+-			int ret = lxdm_auth_user(user, pass, &pw);
++			int ret = lxdm_auth_user(AUTH_TYPE_AUTO_LOGIN, user, pass, &pw);
+ 			if( AUTH_SUCCESS == ret && pw != NULL )
+ 			{
+ 				ui_drop();
+diff --git a/systemd/Makefile.am b/systemd/Makefile.am
+new file mode 100644
+index 0000000..b568c5a
+--- /dev/null
++++ b/systemd/Makefile.am
+@@ -0,0 +1,10 @@
++NULL= 
++
++lxdm_systemddir = @systemdsystemunitdir@
++lxdm_systemd_DATA = \
++	lxdm.service \
++	$(NULL)
++
++EXTRA_DIST = \
++	$(lxdm_systemd_DATA) \
++	$(NULL)
+diff --git a/systemd/lxdm.service b/systemd/lxdm.service
+new file mode 100644
+index 0000000..bf4a0a8
+--- /dev/null
++++ b/systemd/lxdm.service
+@@ -0,0 +1,12 @@
++[Unit]
++Description=LXDE Display Manager
++Conflicts=getty@tty1.service plymouth-quit.service
++After=systemd-user-sessions.service getty@tty1.service plymouth-quit.service
++
++[Service]
++ExecStart=/usr/sbin/lxdm
++Restart=always
++IgnoreSIGPIPE=no
++
++[Install]
++Alias=display-manager.service
