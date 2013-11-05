@@ -46,3 +46,4 @@ static Key keys[] = { \
 
 	{ 0,                            XK_F11,    fullscreen,     { 0 } },
 };
+
