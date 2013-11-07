@@ -1,0 +1,60 @@
+From 7df60e06e6a176e2ee177df015d5e7ecc80ed229 Mon Sep 17 00:00:00 2001
+From: Jonathan Nieder <jrnieder@gmail.com>
+Date: Mon, 26 Sep 2011 16:16:37 -0500
+Subject: [BUILTIN] Fix "test -x" as root on platforms with old-fashioned
+ faccessat()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+When dash switched from its own emulation to the true faccessat in
+v0.5.7~54 (2010-04-02), on some platforms (e.g., old versions of
+glibc-bsd), "test -x <path>" started returning true on all files when
+run as root.  This violates POSIX.1-2008 §4.4 "File Access
+Permission", which says:
+
+	If execute permission is requested, access shall be granted
+	if execute permission is granted to at least one user by the
+	file permission bits or by an alternate access control
+	mechanism; otherwise, access shall be denied.
+
+Unfortunately, for historical reasons, access() and faccessat() are
+allowed by POSIX to return success for X_OK when the current process
+is privileged even when the above condition is not fulfilled and
+actual execution would fail.  Work around this by checking the
+permissions bits when mode == X_OK and geteuid() == 0.
+
+Reported-by: Christoph Egger <christoph@debian.org>
+Analysis-by: Petr Salinger <Petr.Salinger@seznam.cz>
+Signed-off-by: Jonathan Nieder <jrnieder@gmail.com>
+---
+ src/bltin/test.c |   11 +++++++++++
+ 1 files changed, 11 insertions(+), 0 deletions(-)
+
+diff --git a/src/bltin/test.c b/src/bltin/test.c
+index 90135e14..1093b59f 100644
+--- src/bltin/test.c
++++ src/bltin/test.c
+@@ -485,8 +485,19 @@ equalf (const char *f1, const char *f2)
+ }
+ 
+ #ifdef HAVE_FACCESSAT
++static int has_exec_bit_set(const char *path)
++{
++	struct stat64 st;
++
++	if (stat64(path, &st))
++		return 0;
++	return st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH);
++}
++
+ static int test_file_access(const char *path, int mode)
+ {
++	if (mode == X_OK && geteuid() == 0 && !has_exec_bit_set(path))
++		return 0;
+ 	return !faccessat(AT_FDCWD, path, mode, AT_EACCESS);
+ }
+ #else	/* HAVE_FACCESSAT */
+-- 
+1.7.7.rc1
+
