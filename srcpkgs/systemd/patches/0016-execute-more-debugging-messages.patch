@@ -1,0 +1,124 @@
+From 669ac5ee25f166bdf688b06f96e8e8fd3cf9f43c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Zbigniew=20J=C4=99drzejewski-Szmek?= <zbyszek@in.waw.pl>
+Date: Wed, 28 Aug 2013 08:01:30 -0400
+Subject: [PATCH] execute: more debugging messages
+
+---
+ src/core/execute.c     | 35 +++++++++++++++++++++--------------
+ src/login/pam-module.c |  3 ++-
+ 2 files changed, 23 insertions(+), 15 deletions(-)
+
+diff --git a/src/core/execute.c b/src/core/execute.c
+index 3979f35..3f7ca52 100644
+--- a/src/core/execute.c
++++ b/src/core/execute.c
+@@ -317,12 +317,12 @@ static int setup_input(const ExecContext *context, int socket_fd, bool apply_tty
+         case EXEC_INPUT_TTY_FAIL: {
+                 int fd, r;
+ 
+-                if ((fd = acquire_terminal(
+-                                     tty_path(context),
+-                                     i == EXEC_INPUT_TTY_FAIL,
+-                                     i == EXEC_INPUT_TTY_FORCE,
+-                                     false,
+-                                     (usec_t) -1)) < 0)
++                fd = acquire_terminal(tty_path(context),
++                                      i == EXEC_INPUT_TTY_FAIL,
++                                      i == EXEC_INPUT_TTY_FORCE,
++                                      false,
++                                      (usec_t) -1);
++                if (fd < 0)
+                         return fd;
+ 
+                 if (fd != STDIN_FILENO) {
+@@ -748,6 +748,7 @@ static int setup_pam(
+         char **e = NULL;
+         bool close_session = false;
+         pid_t pam_pid = 0, parent_pid;
++        int flags = 0;
+ 
+         assert(name);
+         assert(user);
+@@ -760,6 +761,9 @@ static int setup_pam(
+          * daemon. We do things this way to ensure that the main PID
+          * of the daemon is the one we initially fork()ed. */
+ 
++        if (log_get_max_level() < LOG_PRI(LOG_DEBUG))
++                flags |= PAM_SILENT;
++
+         pam_code = pam_start(name, user, &conv, &handle);
+         if (pam_code != PAM_SUCCESS) {
+                 handle = NULL;
+@@ -772,11 +776,11 @@ static int setup_pam(
+                         goto fail;
+         }
+ 
+-        pam_code = pam_acct_mgmt(handle, PAM_SILENT);
++        pam_code = pam_acct_mgmt(handle, flags);
+         if (pam_code != PAM_SUCCESS)
+                 goto fail;
+ 
+-        pam_code = pam_open_session(handle, PAM_SILENT);
++        pam_code = pam_open_session(handle, flags);
+         if (pam_code != PAM_SUCCESS)
+                 goto fail;
+ 
+@@ -850,7 +854,7 @@ static int setup_pam(
+ 
+                 /* If our parent died we'll end the session */
+                 if (getppid() != parent_pid) {
+-                        pam_code = pam_close_session(handle, PAM_DATA_SILENT);
++                        pam_code = pam_close_session(handle, flags);
+                         if (pam_code != PAM_SUCCESS)
+                                 goto child_finish;
+                 }
+@@ -858,7 +862,7 @@ static int setup_pam(
+                 r = 0;
+ 
+         child_finish:
+-                pam_end(handle, pam_code | PAM_DATA_SILENT);
++                pam_end(handle, pam_code | flags);
+                 _exit(r);
+         }
+ 
+@@ -880,16 +884,19 @@ static int setup_pam(
+         return 0;
+ 
+ fail:
+-        if (pam_code != PAM_SUCCESS)
++        if (pam_code != PAM_SUCCESS) {
++                log_error("PAM failed: %s", pam_strerror(handle, pam_code));
+                 err = -EPERM;  /* PAM errors do not map to errno */
+-        else
++        } else {
++                log_error("PAM failed: %m");
+                 err = -errno;
++        }
+ 
+         if (handle) {
+                 if (close_session)
+-                        pam_code = pam_close_session(handle, PAM_DATA_SILENT);
++                        pam_code = pam_close_session(handle, flags);
+ 
+-                pam_end(handle, pam_code | PAM_DATA_SILENT);
++                pam_end(handle, pam_code | flags);
+         }
+ 
+         strv_free(e);
+diff --git a/src/login/pam-module.c b/src/login/pam-module.c
+index 49296b5..973daf7 100644
+--- a/src/login/pam-module.c
++++ b/src/login/pam-module.c
+@@ -199,7 +199,8 @@ _public_ PAM_EXTERN int pam_sm_open_session(
+ 
+         dbus_error_init(&error);
+ 
+-        /* pam_syslog(handle, LOG_INFO, "pam-systemd initializing"); */
++        if (debug)
++                pam_syslog(handle, LOG_INFO, "pam-systemd initializing");
+ 
+         /* Make this a NOP on non-logind systems */
+         if (!logind_running())
+-- 
+1.8.4.652.g0d6e0ce
+

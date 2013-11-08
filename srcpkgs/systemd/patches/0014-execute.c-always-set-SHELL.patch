@@ -1,0 +1,169 @@
+From 0a1d15d3b802128cc9be10c849c29b76a8fae3ed Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Zbigniew=20J=C4=99drzejewski-Szmek?= <zbyszek@in.waw.pl>
+Date: Wed, 2 Oct 2013 13:23:10 +0200
+Subject: [PATCH] execute.c: always set $SHELL
+
+In e6dca81 $SHELL was added to user@.service. Let's
+instead provide it to all units which have a user.
+---
+ TODO                   |  2 --
+ man/systemd.exec.xml   | 21 +++++++++++++++++--
+ src/core/execute.c     | 56 +++++++++++++++++---------------------------------
+ units/user@.service.in |  1 -
+ 4 files changed, 38 insertions(+), 42 deletions(-)
+
+diff --git a/TODO b/TODO
+index 07269f4..425f673 100644
+--- a/TODO
++++ b/TODO
+@@ -54,8 +54,6 @@ CGroup Rework Completion:
+ 
+ Features:
+ 
+-* set $SHELL where we set $HOME and $USER when User= is set of a service, drop its manual setting from user@.service
+-
+ * we probably should replace the left-over uses of strv_append() and replace them by strv_push() or strv_extend()
+ 
+ * move config_parse_path_strv() out of conf-parser.c
+diff --git a/man/systemd.exec.xml b/man/systemd.exec.xml
+index f50161f..e213ec4 100644
+--- a/man/systemd.exec.xml
++++ b/man/systemd.exec.xml
+@@ -1021,10 +1021,13 @@
+ 
+                         <varlistentry>
+                                 <term><varname>$USER</varname></term>
++                                <term><varname>$LOGNAME</varname></term>
+                                 <term><varname>$HOME</varname></term>
++                                <term><varname>$SHELL</varname></term>
+ 
+-                                <listitem><para>User name and home
+-                                directory.  Set for the units which
++                                <listitem><para>User name (twice), home
++                                directory, and the login shell.
++                                Set for the units which
+                                 have <varname>User=</varname> set,
+                                 which includes user
+                                 <command>systemd</command> instances.
+@@ -1080,6 +1083,20 @@
+                                 <citerefentry><refentrytitle>sd_listen_fds</refentrytitle><manvolnum>3</manvolnum></citerefentry>.
+                                 </para></listitem>
+                         </varlistentry>
++
++                        <varlistentry>
++                                <term><varname>$TERM</varname></term>
++
++                                <listitem><para>Terminal type, set
++                                only for units connected to a terminal
++                                (<varname>StandardInput=tty</varname>,
++                                <varname>StandardOutput=tty</varname>,
++                                or
++                                <varname>StandardError=tty</varname>).
++                                See
++                                <citerefentry><refentrytitle>termcap</refentrytitle><manvolnum>5</manvolnum></citerefentry>.
++                                </para></listitem>
++                        </varlistentry>
+                 </variablelist>
+ 
+                 <para>Additional variables may be configured by the
+diff --git a/src/core/execute.c b/src/core/execute.c
+index a53ef48..3979f35 100644
+--- a/src/core/execute.c
++++ b/src/core/execute.c
+@@ -1094,7 +1094,7 @@ int exec_spawn(ExecCommand *command,
+         if (pid == 0) {
+                 int i, err;
+                 sigset_t ss;
+-                const char *username = NULL, *home = NULL;
++                const char *username = NULL, *home = NULL, *shell = NULL;
+                 uid_t uid = (uid_t) -1;
+                 gid_t gid = (gid_t) -1;
+                 _cleanup_strv_free_ char **our_env = NULL, **pam_env = NULL,
+@@ -1277,7 +1277,7 @@ int exec_spawn(ExecCommand *command,
+ 
+                 if (context->user) {
+                         username = context->user;
+-                        err = get_user_creds(&username, &uid, &gid, &home, NULL);
++                        err = get_user_creds(&username, &uid, &gid, &home, &shell);
+                         if (err < 0) {
+                                 r = EXIT_USER;
+                                 goto fail_child;
+@@ -1462,46 +1462,28 @@ int exec_spawn(ExecCommand *command,
+                         }
+                 }
+ 
+-                our_env = new0(char*, 7);
+-                if (!our_env) {
++                our_env = new(char*, 8);
++                if (!our_env ||
++                    (n_fds > 0 && (
++                            asprintf(our_env + n_env++, "LISTEN_PID=%lu", (unsigned long) getpid()) < 0 ||
++                            asprintf(our_env + n_env++, "LISTEN_FDS=%u", n_fds) < 0)) ||
++                    (home && asprintf(our_env + n_env++, "HOME=%s", home) < 0) ||
++                    (username && (
++                            asprintf(our_env + n_env++, "LOGNAME=%s", username) < 0 ||
++                            asprintf(our_env + n_env++, "USER=%s", username) < 0)) ||
++                    (shell && asprintf(our_env + n_env++, "SHELL=%s", shell) < 0) ||
++                    ((is_terminal_input(context->std_input) ||
++                      context->std_output == EXEC_OUTPUT_TTY ||
++                      context->std_error == EXEC_OUTPUT_TTY) && (
++                              !(our_env[n_env++] = strdup(default_term_for_tty(tty_path(context))))))) {
++
+                         err = -ENOMEM;
+                         r = EXIT_MEMORY;
+                         goto fail_child;
+                 }
+ 
+-                if (n_fds > 0)
+-                        if (asprintf(our_env + n_env++, "LISTEN_PID=%lu", (unsigned long) getpid()) < 0 ||
+-                            asprintf(our_env + n_env++, "LISTEN_FDS=%u", n_fds) < 0) {
+-                                err = -ENOMEM;
+-                                r = EXIT_MEMORY;
+-                                goto fail_child;
+-                        }
+-
+-                if (home)
+-                        if (asprintf(our_env + n_env++, "HOME=%s", home) < 0) {
+-                                err = -ENOMEM;
+-                                r = EXIT_MEMORY;
+-                                goto fail_child;
+-                        }
+-
+-                if (username)
+-                        if (asprintf(our_env + n_env++, "LOGNAME=%s", username) < 0 ||
+-                            asprintf(our_env + n_env++, "USER=%s", username) < 0) {
+-                                err = -ENOMEM;
+-                                r = EXIT_MEMORY;
+-                                goto fail_child;
+-                        }
+-
+-                if (is_terminal_input(context->std_input) ||
+-                    context->std_output == EXEC_OUTPUT_TTY ||
+-                    context->std_error == EXEC_OUTPUT_TTY)
+-                        if (!(our_env[n_env++] = strdup(default_term_for_tty(tty_path(context))))) {
+-                                err = -ENOMEM;
+-                                r = EXIT_MEMORY;
+-                                goto fail_child;
+-                        }
+-
+-                assert(n_env <= 7);
++                our_env[n_env++] = NULL;
++                assert(n_env <= 8);
+ 
+                 final_env = strv_env_merge(5,
+                                            environment,
+diff --git a/units/user@.service.in b/units/user@.service.in
+index 3718a57..3f8b59d 100644
+--- a/units/user@.service.in
++++ b/units/user@.service.in
+@@ -13,7 +13,6 @@ After=systemd-user-sessions.service
+ User=%I
+ PAMName=systemd-user
+ Type=notify
+-Environment=SHELL=%s
+ ExecStart=-@rootlibexecdir@/systemd --user
+ Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%I/dbus/user_bus_socket
+ Slice=user-%i.slice
+-- 
+1.8.4.652.g0d6e0ce
+
