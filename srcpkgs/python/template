@@ -1,71 +1,56 @@
 # Template build file for 'python'.
 pkgname=python
-version=2.7.3
-revision=7
+version=2.7.6
+revision=1
 wrksrc="Python-${version}"
 short_desc="Interpreted, interactive, object-oriented programming language"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://www.python.org"
 license="PSF"
 distfiles="http://www.python.org/ftp/python/$version/Python-$version.tar.xz"
-checksum=61d36be58e9e9c733c49d7b76858d5c08e2c63a84f2066b29d35d3521057c985
+checksum=1fd68e81f8bf7386ff239b7faee9ba387129d2cf34eab13350bd8503a0bff6a1
 
 hostmakedepends="pkg-config"
 makedepends="libffi-devel readline-devel gdbm-devel openssl-devel
- expat-devel db-devel>=5.3 sqlite-devel bzip2-devel zlib-devel"
+ expat-devel sqlite-devel bzip2-devel zlib-devel"
 
-# Force posix semaphores by default; sem_open requires /dev/shm and
-# it's not mounted in chroot.
-configure_args+=" --with-threads --enable-ipv6 --with-signal-module --enable-shared
+configure_args="
+ --with-threads --enable-ipv6 --with-signal-module --enable-shared
  --with-system-ffi --enable-unicode=ucs4 --with-system-expat
- --with-wctype-functions ac_cv_posix_semaphores_enabled=yes
- ac_cv_broken_sem_getvalue=no"
+ --with-wctype-functions ac_cv_file__dev_ptc=no ac_cv_file__dev_ptmx=yes
+ ac_cv_have_long_long_format=yes"
 
-if [ "$CROSS_BUILD" ]; then
-	# cross build; have to build it in 2 stages: native and host.
-	do_configure() {
-		# Native build
-		env CC=gcc LD=ld AS=as RANLIB=ranlib CFLAGS= LDFLAGS= OPT="-Os" \
-			./configure && make ${makejobs} python Parser/pgen
+pre_configure() {
+	# Ensure that internal copies of expat, libffi and zlib are not used.
+	rm -r Modules/expat
+	rm -r Modules/_ctypes/libffi*
+	rm -r Modules/zlib
+}
+
+do_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		env CC=gcc LD=gcc AR=ar AS=as RANLIB=ranlib \
+			CFLAGS=-Os LDFLAGS= ./configure
+		make python
+		mkdir hostpython
 		mv python hostpython
-		mv Parser/pgen Parser/hostpgen
 		make distclean
+		patch -Np0 -i ${FILESDIR}/Python-${version}-xcompile.patch
+	fi
+	./configure --build=${XBPS_MACHINE}-unknown-linux-gnu ${configure_args}
+}
 
-		# Cross build
-		patch -Np1 -i ${FILESDIR}/Python-2.7.3-xcompile.patch
-		sed -i "/SQLITE_OMIT_LOAD_EXTENSION/d" setup.py
-		CFLAGS="$CFLAGS -I$XBPS_CROSS_BASE/include" \
-			LDFLAGS="$LDFLAGS -L$XBPS_CROSS_BASE/lib" \
-			./configure ${configure_args} CC="$CC" LD="$CC" \
-			ac_cv_buggy_getaddrinfo=no
-	}
-	do_build() {
-		make HOSTPYTHON=./hostpython HOSTPGEN=./Parser/hostpgen \
-			BLDSHARED="${XBPS_CROSS_TRIPLET}-gcc -shared" \
-			CROSS_COMPILE=$XBPS_CROSS_TARGET CROSS_COMPILE_TARGET=yes \
-			HOSTARCH=$XBPS_CROSS_TRIPLET BUILDARCH=$XBPS_MACHINE-unknown-linux-gnu \
-			PYTHON_XCOMPILE_DEPENDENCIES_PREFIX="$XBPS_CROSS_BASE" ${makejobs}
-	}
-	do_install() {
-		# cross install
-		make DESTDIR=${DESTDIR} HOSTPYTHON=./hostpython \
-			CROSS_COMPILE=$XBPS_CROSS_TARGET \
-			CROSS_COMPILE_TARGET=yes install
-	}
-else
-	# Native build
-	do_configure() {
-		# Enable built-in SQLite3 module to load extensions (Arch fix FS#22122)
-		sed -i "/SQLITE_OMIT_LOAD_EXTENSION/d" setup.py
-		CC="gcc" LD="gcc" ./configure ${configure_args}
-	}
-	do_build() {
-		make ${makejobs}
-	}
-	do_install() {
-		make DESTDIR=${DESTDIR} install
-	}
-fi
+do_build() {
+	# Avoid invoking pgen for cross-compiles.
+	touch Include/graminit.h Python/graminit.c
+	export PATH="$PATH:$wrksrc/hostpython"
+	make ${makejobs}
+}
+
+do_install() {
+	export PATH="$PATH:$wrksrc/hostpython"
+	make DESTDIR=${DESTDIR} altinstall
+}
 
 post_install() {
 	chmod 755 ${DESTDIR}/usr/lib/libpython*.so*
@@ -82,15 +67,14 @@ python_package() {
 }
 
 python-devel_package() {
-	depends="libffi-devel zlib-devel readline-devel bzip2-devel gdbm-devel                                   
-		openssl-devel expat-devel db-devel>=5.3 ncurses-devel sqlite-devel                                           
-		python>=${version}"
-        short_desc="Python development files"
+	depends="python>=${version}_${revision}"
+        short_desc+=" - development files"
 	pkg_install() {
 		vmove "usr/bin/python*-config"
 		vmove usr/lib/pkgconfig
 		vmove usr/include
 		mkdir -p ${DESTDIR}/usr/include/python2.7
-		mv ${PKGDESTDIR}/usr/include/python2.7/pyconfig.h ${DESTDIR}/usr/include/python2.7
+		mv ${PKGDESTDIR}/usr/include/python2.7/pyconfig.h \
+			${DESTDIR}/usr/include/python2.7
 	}
 }
