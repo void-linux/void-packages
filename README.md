@@ -1,4 +1,4 @@
-## The official source repository for voidlinux.
+## The official source repository for Void.
 
 This repository contains the source package tree to build xbps binary
 packages from sources for the Void Linux distribution.
@@ -13,8 +13,4 @@ the binary package with:
 
 	$ xbps-install -S xbps-src
 
-Enjoy and happy hacking! meet us at xbps@irc.freenode.net.
-
-XBPS website: http://code.google.com/p/xbps
-
-Void Linux website: http://www.voidlinux.eu
+http://www.voidlinux.eu
