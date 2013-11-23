@@ -9,9 +9,9 @@
 
 /* Package name      : perl5
  * Source directory  : .
- * Configuration time: Sun Feb 24 12:15:56 CET 2013
+ * Configuration time: Sat Nov 23 09:08:21 CET 2013
  * Configured by     : juan
- * Target system     : linux void-rpi 3.6.11_1 #1 preempt tue feb 19 17:40:24 cet 2013 armv6l gnulinux 
+ * Target system     : linux void-rpi 3.10.18_4 #1 preempt fri nov 15 10:55:23 cet 2013 armv6l gnulinux 
  */
 
 #ifndef _config_h_
@@ -890,7 +890,7 @@
  *	feature tests from Configure are generally more reliable.
  */
 #define OSNAME "linux"		/**/
-#define OSVERS "3.6.11_1"		/**/
+#define OSVERS "3.10.18_4"		/**/
 
 /* USE_CROSS_COMPILE:
  *	This symbol, if defined, indicates that Perl is being cross-compiled.
@@ -916,13 +916,10 @@
 /* MEM_ALIGNBYTES:
  *	This symbol contains the number of bytes required to align a
  *	double, or a long double when applicable. Usual values are 2,
- *	4 and 8. The default is eight, for safety.
+ *	4 and 8. The default is eight, for safety.  For cross-compiling
+ *  	or multiarch support, Configure will set a minimum of 8.
  */
-#if defined(USE_CROSS_COMPILE) || defined(MULTIARCH)
-#  define MEM_ALIGNBYTES 8
-#else
 #define MEM_ALIGNBYTES 8
-#endif
 
 /* ARCHLIB:
  *	This variable, if defined, holds the name of the directory in
@@ -962,7 +959,7 @@
  */
 #define BIN "/usr/bin"	/**/
 #define BIN_EXP "/usr/bin"	/**/
-/*#define PERL_RELOCATABLE_INC  		/ **/
+#define PERL_RELOCATABLE_INC "undef" 		/**/
 
 /* INTSIZE:
  *	This symbol contains the value of sizeof(int) so that the C
@@ -984,7 +981,7 @@
  *	This symbol holds the hexadecimal constant defined in byteorder,
  *	in a UV, i.e. 0x1234 or 0x4321 or 0x12345678, etc...
  *	If the compiler supports cross-compiling or multiple-architecture
- *	binaries (eg. on NeXT systems), use compiler-defined macros to
+ *	binaries (e.g. on NeXT systems), use compiler-defined macros to
  *	determine the byte order.
  *	On NeXT 3.2 (and greater), you can build "Fat" Multiple Architecture
  *	Binaries (MAB) on either big endian or little endian machines.
@@ -2359,9 +2356,21 @@
  *	This symbol, if defined, indicates that the struct sockaddr_in6
  *	structure has a member called sin6_scope_id.
  */
+/* HAS_IP_MREQ:
+ *	This symbol, if defined, indicates the availability of
+ *	struct ip_mreq;
+ */
+/* HAS_IP_MREQ_SOURCE:
+ *	This symbol, if defined, indicates the availability of
+ *	struct ip_mreq_source;
+ */
 /* HAS_IPV6_MREQ:
  *	This symbol, if defined, indicates the availability of
  *	struct ipv6_mreq;
+ */
+/* HAS_IPV6_MREQ_SOURCE:
+ *	This symbol, if defined, indicates the availability of
+ *	struct ipv6_mreq_source;
  */
 #define	HAS_SOCKET		/**/
 #define	HAS_SOCKETPAIR	/**/
@@ -2374,7 +2383,10 @@
 #define	HAS_SCM_RIGHTS	/**/
 #define	HAS_SOCKADDR_IN6	/**/
 #define	HAS_SIN6_SCOPE_ID	/**/
+#define	HAS_IP_MREQ	/**/
+#define	HAS_IP_MREQ_SOURCE	/**/
 #define	HAS_IPV6_MREQ	/**/
+/*#define	HAS_IPV6_MREQ_SOURCE	/ **/
 
 /* HAS_SRAND48_R:
  *	This symbol, if defined, indicates that the srand48_r routine
@@ -2661,10 +2673,17 @@
 #define DOUBLESIZE 8		/**/
 
 /* EBCDIC:
- *     This symbol, if defined, indicates that this system uses
+ *	This symbol, if defined, indicates that this system uses
  *	EBCDIC encoding.
  */
+/* BOOTSTRAP_CHARSET:
+ *	This symbol, if defined, indicates that this system needs
+ *	converting various files to the native character set before
+ *	bringing up perl on a system that has a non-ASCII character
+ *	set and no working perl.
+ */
 /*#define	EBCDIC 		/ **/
+/*#define	BOOTSTRAP_CHARSET	/ **/
 
 /* Fpos_t:
  *	This symbol holds the type used to declare file positions in libc.
@@ -2679,7 +2698,7 @@
 #define	Gid_t_f		"lu"		/**/
 
 /* Gid_t_sign:
- *	This symbol holds the signedess of a Gid_t.
+ *	This symbol holds the signedness of a Gid_t.
  *	1 for unsigned, -1 for signed.
  */
 #define Gid_t_sign	1		/* GID sign */
@@ -3238,7 +3257,7 @@
 #define	Uid_t_f		"lu"		/**/
 
 /* Uid_t_sign:
- *	This symbol holds the signedess of a Uid_t.
+ *	This symbol holds the signedness of a Uid_t.
  *	1 for unsigned, -1 for signed.
  */
 #define Uid_t_sign	1		/* UID sign */
@@ -3701,7 +3720,7 @@
 #define     HAS_INT64_T               /**/
 
 /* HAS_ISBLANK:
- *	This manifest constant lets the C program know that isblank 
+ *	This manifest constant lets the C program know that isblank
  *	is available.
  */
 #define HAS_ISBLANK		/**/
@@ -4220,9 +4239,9 @@
  */
 #define DB_Hash_t	u_int32_t		/**/
 #define DB_Prefix_t	size_t  	/**/
-#define DB_VERSION_MAJOR_CFG	4  	/**/
-#define DB_VERSION_MINOR_CFG	8  	/**/
-#define DB_VERSION_PATCH_CFG	30  	/**/
+#define DB_VERSION_MAJOR_CFG	5  	/**/
+#define DB_VERSION_MINOR_CFG	3  	/**/
+#define DB_VERSION_PATCH_CFG	28  	/**/
 
 /* I_FP:
  *	This symbol, if defined, indicates that <fp.h> exists and
@@ -4581,7 +4600,7 @@
  *	This variable contains the size of struct stat's st_ino in bytes.
  */
 /* ST_INO_SIGN:
- *	This symbol holds the signedess of struct stat's st_ino.
+ *	This symbol holds the signedness of struct stat's st_ino.
  *	1 for unsigned, -1 for signed.
  */
 #define ST_INO_SIGN 1	/* st_ino sign */
