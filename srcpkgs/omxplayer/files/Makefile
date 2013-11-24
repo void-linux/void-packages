@@ -60,6 +60,7 @@ clean:
 
 install:
 	install -d $(DESTDIR)/usr/bin
-	install -Dm755 omxplayer.bin $(DESTDIR)/usr/bin/omxplayer
+	install -Dm755 omxplayer.sh $(DESTDIR)/usr/bin/omxplayer
+	install -Dm755 omxplayer.bin $(DESTDIR)/usr/bin
 
 	
