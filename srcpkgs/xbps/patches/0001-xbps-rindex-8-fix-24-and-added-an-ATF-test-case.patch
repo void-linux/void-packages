@@ -1,0 +1,135 @@
+From 7c57918950de56d700c255f2524443becb5280be Mon Sep 17 00:00:00 2001
+From: Juan RP <xtraeme@gmail.com>
+Date: Fri, 29 Nov 2013 17:30:45 +0100
+Subject: [PATCH] xbps-rindex(8): fix #24 and added an ATF test case.
+
+---
+ NEWS                               |  2 ++
+ bin/xbps-rindex/index-add.c        | 22 +++++++++++-----------
+ tests/xbps/xbps-rindex/Kyuafile    |  1 +
+ tests/xbps/xbps-rindex/Makefile    |  2 +-
+ tests/xbps/xbps-rindex/add_test.sh | 35 +++++++++++++++++++++++++++++++++++
+ 5 files changed, 50 insertions(+), 12 deletions(-)
+ create mode 100644 tests/xbps/xbps-rindex/add_test.sh
+
+diff --git a/bin/xbps-rindex/index-add.c b/bin/xbps-rindex/index-add.c
+index 2289897..572e2a4 100644
+--- bin/xbps-rindex/index-add.c
++++ bin/xbps-rindex/index-add.c
+@@ -49,8 +49,8 @@ index_add(struct xbps_handle *xhp, int argc, char **argv, bool force)
+ 	xbps_object_t obj, fileobj;
+ 	struct xbps_repo *repo;
+ 	struct stat st;
+-	const char *oldpkgver, *arch, *oldarch;
+-	char *pkgver, *pkgname, *sha256, *repodir, *buf;
++	const char *arch;
++	char *pkgver, *opkgver, *oarch, *pkgname, *sha256, *repodir;
+ 	char *tmprepodir;
+ 	int rv = 0, ret = 0;
+ 	bool flush = false, found = false;
+@@ -116,17 +116,17 @@ index_add(struct xbps_handle *xhp, int argc, char **argv, bool force)
+ 			}
+ 		} else if (!force) {
+ 			/* Only check version if !force */
+-			xbps_dictionary_get_cstring_nocopy(curpkgd,
+-			    "pkgver", &oldpkgver);
+-			xbps_dictionary_get_cstring_nocopy(curpkgd,
+-			    "architecture", &oldarch);
+-			ret = xbps_cmpver(pkgver, oldpkgver);
++			xbps_dictionary_get_cstring(curpkgd, "pkgver", &opkgver);
++			xbps_dictionary_get_cstring(curpkgd, "architecture", &oarch);
++			ret = xbps_cmpver(pkgver, opkgver);
+ 			if (ret <= 0) {
+ 				/* Same version or index version greater */
+ 				fprintf(stderr, "index: skipping `%s' "
+ 				    "(%s), already registered.\n",
+ 				    pkgver, arch);
+ 				xbps_object_release(newpkgd);
++				free(opkgver);
++				free(oarch);
+ 				free(pkgver);
+ 				free(pkgname);
+ 				continue;
+@@ -135,11 +135,11 @@ index_add(struct xbps_handle *xhp, int argc, char **argv, bool force)
+ 			 * Current package version is greater than
+ 			 * index version.
+ 			 */
+-			buf = xbps_xasprintf("`%s' (%s)", oldpkgver, oldarch);
+ 			xbps_dictionary_remove(idx, pkgname);
+-			xbps_dictionary_remove(idxfiles, oldpkgver);
+-			printf("index: removed obsolete entry %s.\n", buf);
+-			free(buf);
++			xbps_dictionary_remove(idxfiles, opkgver);
++			printf("index: removed obsolete entry `%s' (%s).\n", opkgver, oarch);
++			free(opkgver);
++			free(oarch);
+ 		}
+ 		/*
+ 		 * We have the dictionary now, add the required
+diff --git a/tests/xbps/xbps-rindex/Kyuafile b/tests/xbps/xbps-rindex/Kyuafile
+index 2cf4d6a..f5061b0 100644
+--- tests/xbps/xbps-rindex/Kyuafile
++++ tests/xbps/xbps-rindex/Kyuafile
+@@ -1,4 +1,5 @@
+ syntax("kyuafile", 1)
+ 
+ test_suite("xbps-rindex")
++atf_test_program{name="add_test"}
+ atf_test_program{name="clean_test"}
+diff --git a/tests/xbps/xbps-rindex/Makefile b/tests/xbps/xbps-rindex/Makefile
+index b31c71c..6456ed9 100644
+--- tests/xbps/xbps-rindex/Makefile
++++ tests/xbps/xbps-rindex/Makefile
+@@ -1,7 +1,7 @@
+ TOPDIR = ../../..
+ -include $(TOPDIR)/config.mk
+ 
+-TESTSHELL = clean_test
++TESTSHELL = add_test clean_test
+ TESTSSUBDIR = xbps/xbps-rindex
+ EXTRA_FILES = Kyuafile
+ 
+diff --git a/tests/xbps/xbps-rindex/add_test.sh b/tests/xbps/xbps-rindex/add_test.sh
+new file mode 100644
+index 0000000..158ca02
+--- /dev/null
++++ tests/xbps/xbps-rindex/add_test.sh
+@@ -0,0 +1,35 @@
++#! /usr/bin/env atf-sh
++# Test that xbps-rindex(8) -a (add mode) works as expected.
++
++# 1st test: test that update mode work as expected.
++atf_test_case update
++
++update_head() {
++	atf_set "descr" "xbps-rindex(8) -a: update test"
++}
++
++update_body() {
++	mkdir -p some_repo pkg_A
++	touch pkg_A/file00
++	cd some_repo
++	xbps-create -A noarch -n foo-1.0_1 -s "foo pkg" ../pkg_A
++	atf_check_equal $? 0
++	xbps-rindex -a *.xbps
++	atf_check_equal $? 0
++	xbps-create -A noarch -n foo-1.1_1 -s "foo pkg" ../pkg_A
++	atf_check_equal $? 0
++	xbps-rindex -a *.xbps
++	atf_check_equal $? 0
++	cd ..
++	result="$(xbps-query --repository=some_repo -o \*)"
++	expected="foo-1.1_1: /file00 (some_repo)"
++	rv=0
++	if [ "$result" != "$expected" ]; then
++		rv=1
++	fi
++	atf_check_equal $rv 0
++}
++
++atf_init_test_cases() {
++	atf_add_test_case update
++}
+-- 
+1.8.4.1
+
