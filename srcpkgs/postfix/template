@@ -1,19 +1,26 @@
 # Template file for 'postfix'
 pkgname=postfix
-version=2.10.0
-revision=2
+version=2.10.2
+revision=1
 short_desc="High-performance mail transport agent"
 maintainer="Juan RP <xtraeme@gmail.com>"
 license="IBM Public License 1.0, BSD-alike"
 homepage="http://www.postfix.org/"
 distfiles="ftp://ftp.porcupine.org/mirrors/postfix-release/official/$pkgname-$version.tar.gz"
-checksum=4a42a6029af418cbd4a8668b4f8c7e1ea9975cbe9756df760649c0a941bfeb7b
+checksum=f1a735a5a9ffeac8fca59046c437c3b76e7f923fb4249db2a55b2bff0306ddd4
 
 hostmakedepends="perl"
 makedepends="openssl-devel db-devel>=5.3 pcre-devel>=8.30 libsasl-devel
  libldap-devel libmysqlclient-devel>=5.5.27 postgresql-libs-devel sqlite-devel"
 
+if [ "$CROSS_BUILD" ]; then
+	# XXX postfix-install needs native binaries.
+	hostmakedepends+=" ${pkgname}>=2.10.2"
+fi
+
 do_build() {
+	sed -e "s,\(/usr/include/db.h\),${XBPS_CROSS_BASE}/\1,g" -i makedefs
+
 	make makefiles DEBUG='' CCARGS=' \
 		-DUSE_SASL_AUTH -DUSE_CYRUS_SASL -I/usr/include/sasl \
 		-DHAS_LDAP \
@@ -21,6 +28,11 @@ do_build() {
 		-DHAS_MYSQL -I/usr/include/mysql \
 		-DHAS_PGSQL -I/usr/include/postgresql \
 		-DHAS_SQLITE \
+		-DDEF_COMMAND_DIR=\"/usr/bin\" \
+		-DDEF_SENDMAIL_PATH=\"/usr/bin/sendmail\" \
+		-DDEF_README_DIR=\"/usr/share/doc/postfix\" \
+		-DDEF_SAMPLE_DIR=\"/usr/share/examples/postfix/\" \
+		-DDEF_MANPAGE_DIR=\"/usr/share/man\" \
 	' AUXLIBS=' \
 		-lsasl2 \
 		-lldap -llber \
@@ -30,22 +42,27 @@ do_build() {
 		-lsqlite3 -lpthread \
 	' OPT="${CFLAGS} ${LDFLAGS}"
 
+	if [ "$CROSS_BUILD" ]; then
+		sed -e "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" -i Makefile
+	fi
 	make ${makejobs}
 }
 
+pre_install() {
+	if [ "$CROSS_BUILD" ]; then
+		sed -e 's,bin/postconf,/usr/bin/postconf,g' -i postfix-install
+	fi
+}
+
 do_install() {
-	sh postfix-install -non-interactive \
-		install_root="${DESTDIR}" \
-		daemon_directory="/usr/lib/${pkgname}" \
-		sample_directory="/etc/${pkgname}/sample" \
-		manpage_directory="/usr/share/man"
+	sh postfix-install -non-interactive install_root=${DESTDIR}
 
 	vinstall LICENSE 644 usr/share/licenses/${pkgname}
 	vinstall TLS_LICENSE 644 usr/share/licenses/${pkgname}
 
-	sed 's/\(^\$manpage[^:]*\):/\1.gz:/' -i \
-		${DESTDIR}/usr/lib/${pkgname}/postfix-files
-	cd ${DESTDIR}; patch -p0 -i ${FILESDIR}/aliases.patch
+	cd $DESTDIR
+	sed 's/\(^\$manpage[^:]*\):/\1.gz:/' -i usr/libexec/${pkgname}/postfix-files
+	patch -p0 -i ${FILESDIR}/aliases.patch
 
 	# Remove unused stuff.
 	rm -f ${DESTDIR}/etc/postfix/*LICENSE
@@ -72,7 +89,7 @@ postfix_package() {
 	system_accounts="postfix"
 	postfix_homedir="/var/spool/postfix"
 	system_groups="postdrop"
-	provides="smtp-server-0"
+	provides="smtp-server-0_1"
 	replaces="smtp-server>=0"
 	make_dirs="
 		/var/lib/postfix		0750	postfix	root
