@@ -46,6 +46,12 @@ enum {
 	GIF_LOOP     = 0    /* endless loop [0/1] */
 };
 
+/* gamma correction: the user-visible ranges [-GAMMA_RANGE, 0] and
+ * (0, GAMMA_RANGE] are mapped to the ranges [0, 1], and (1, GAMMA_MAX].
+ * */
+static const double GAMMA_MAX   = 10.0;
+static const int    GAMMA_RANGE = 32;
+
 #endif
 #ifdef _THUMBS_CONFIG
 
@@ -95,6 +101,7 @@ static const keymap_t keys[] = {
 	{ true,   XK_space,         i_toggle_animation,   (arg_t) None },
 
 	{ false,  XK_m,             it_toggle_image_mark, (arg_t) None },
+	{ false,  XK_M,             it_reverse_marks,     (arg_t) None },
 	{ false,  XK_N,             it_navigate_marked,   (arg_t) +1 },
 	{ false,  XK_P,             it_navigate_marked,   (arg_t) -1 },
 
@@ -140,6 +147,11 @@ static const keymap_t keys[] = {
 
 	{ false,  XK_a,             i_toggle_antialias,   (arg_t) None },
 	{ false,  XK_A,             it_toggle_alpha,      (arg_t) None },
+
+	/* decrease/increase/reset gamma */
+	{ false,  XK_braceleft,     i_change_gamma,       (arg_t) -1 },
+	{ false,  XK_braceright,    i_change_gamma,       (arg_t) +1 },
+	{ true,   XK_G,             i_change_gamma,       (arg_t)  0 },
 
 	/* open current image with given program: */
 	{ true,   XK_g,             it_open_with,         (arg_t) "gimp" },
