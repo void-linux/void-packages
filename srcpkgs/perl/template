@@ -12,124 +12,7 @@ license="GPL-2"
 distfiles="http://ftp.freebsd.org/pub/FreeBSD/distfiles/perl/perl-${version}.tar.bz2"
 checksum=bf46c732c68fb160ea276b4b0cda26971646a206e31951abb8623a60f0ee5249
 
-# Before updating this package to a new major version, run ${FILESDIR}/provides.pl
-# against ${wrksrc} to find the list of built in packages.
-if [ "$CROSS_BUILD" ]; then
-	hostmakedepends+=" perl>=${version}"
-fi
-
-do_configure() {
-	local _args="-Dusethreads -Duseshrplib
-		-Dprefix=/usr -Dvendorprefix=/usr
-		-Dprivlib=/usr/share/perl5/core_perl
-		-Darchlib=/usr/lib/perl5/core_perl
-		-Dsitelib=/usr/share/perl5/site_perl
-		-Dsitearch=/usr/lib/perl5/site_perl
-		-Dvendorlib=/usr/share/perl5/vendor_perl
-		-Dvendorarch=/usr/lib/perl5/vendor_perl
-		-Dscriptdir=/usr/bin -Dvendorscript=/usr/bin
-		-Dinc_version_list=none -Dman1ext=1p -Dman3ext=3p
-		-Dman1dir=/usr/share/man/man1
-		-Dman3dir=/usr/share/man/man3"
-
-	if [ "$CROSS_BUILD" ]; then
-		# Copy target files
-		if [ ! -d $FILESDIR/$XBPS_CROSS_TRIPLET ]; then
-			msg_error "$pkgver: cannot be cross built for $XBPS_CROSS_TRIPLET, contact $maintainer.\n"
-		fi
-		cp -f ${FILESDIR}/${XBPS_CROSS_TRIPLET}/* .
-		cp -f ${FILESDIR}/Configure.cross .
-
-		# substitute some required strings in generated config.sh
-		sed -e "s|@@PERL_VERSION@@|${version}|g" \
-			-e "s|@@PERL_SUBVERSION@@|${version##*.}|g" \
-			-i config.sh
-
-		sh ./Configure.cross
-		perl -Ilib make_patchnum.pl
-	else
-		./Configure -des ${_args} -Dcccdlflags="-fPIC" -Doptimize="$CFLAGS"
-	fi
-}
-
-do_build() {
-	if [ "$CROSS_BUILD" ]; then
-		export HOST_PERL=/usr/bin/perl
-		export PERL_TO_USE=$HOST_PERL
-		export HOST_PERL_LIBS=/usr/lib/perl5/core_perl
-		export LIB=$XBPS_CROSS_BASE/usr/lib
-		export INCLUDE=$XBPS_CROSS_BASE/usr/include
-
-		make SHRPLDFLAGS='-shared -Wl,-soname,libperl.so' \
-			CROSS_PERL=$HOST_PERL libperl.so ${makejobs}
-
-		cp -fr $HOST_PERL_LIBS/auto/* lib/auto/
-		mkdir -p lib/$XBPS_CROSS_TRIPLET
-		make extensions CROSS_PERL=$HOST_PERL \
-			INST_ARCHLIB=$wrksrc/lib/$XBPS_CROSS_TRIPLET \
-			${makejobs}
-	else
-		make ${makejobs}
-	fi
-}
-
-do_install() {
-	if [ "$CROSS_BUILD" ]; then
-		export HOST_PERL=/usr/bin/perl
-		export PERL_TO_USE=$HOST_PERL
-		export HOST_PERL_LIBS=/usr/lib/perl5/core_perl
-		export LIB=$XBPS_CROSS_BASE/usr/lib
-		export INCLUDE=$XBPS_CROSS_BASE/usr/include
-
-		cp -fr $HOST_PERL_LIBS/auto/* lib/auto/
-		make CROSS_PERL=$HOST_PERL DESTDIR=$DESTDIR install
-		find lib/auto -name .exists -o -name '*.bs' | xargs rm -f
-		vmkdir usr/lib/perl5/core_perl/auto
-		cp -fr lib/$XBPS_CROSS_TRIPLET/auto/* \
-			${DESTDIR}/usr/lib/perl5/core_perl/auto/
-		find ${DESTDIR} -name .exists |xargs rm -f
-		rm -rf ${DESTDIR}/usr/share/perl5/core_perl/$XBPS_CROSS_TRIPLET
-	else
-		# We use the same defaults than Arch Linux.
-		make DESTDIR=${DESTDIR} install
-	fi
-
-	# Set proper perms to shared libs.
-	find ${DESTDIR} -type f -name \*.so -exec chmod 644 {} \;
-
-	# Make a link from perl${version} to perl.
-	ln -sf /usr/bin/perl${version} ${DESTDIR}/usr/bin/perl
-
-	### CPAN Settings ###
-	# Set CPAN default config to use the site directories.
-	sed -e '/(makepl_arg =>/   s/""/"INSTALLDIRS=site"/' \
-		-e '/(mbuildpl_arg =>/ s/""/"installdirs=site"/' \
-		-i ${DESTDIR}/usr/share/perl5/core_perl/CPAN/FirstTime.pm
-
-	### CPANPLUS Settings ###
-	# Set CPANPLUS default config to use the site directories.
-	sed -e "/{'makemakerflags'}/ s/'';/'INSTALLDIRS=site';/" \
-		-e "/{'buildflags'}/     s/'';/'installdirs=site';/" \
-		-i ${DESTDIR}/usr/share/perl5/core_perl/CPANPLUS/Config.pm
-
-	# Remove all pod files *except* those under
-	# /usr/share/perl5/core_perl/pod/ (FS#16488)
-	rm -f ${DESTDIR}/usr/share/perl5/core_perl/*.pod
-	for d in ${DESTDIR}/usr/share/perl5/core_perl/*; do
-		if [ -d $d -a $(basename $d) != "pod" ]; then
-			find $d -name *.pod -delete
-		fi
-	done
-	find ${DESTDIR}/usr/lib -name *.pod -delete
-	find ${DESTDIR} -name .packlist -delete
-
-	# Make a symlink so that libperl.so is accesible.
-	cd ${DESTDIR}/usr/lib && \
-		ln -sf ./perl5/core_perl/CORE/libperl.so libperl.so
-}
-
-perl_package() {
-	provides="
+provides="
 perl-Archive-Extract-0.68_1
 perl-Archive-Tar-1.90_1
 perl-Attribute-Handlers-0.94_1
@@ -264,11 +147,122 @@ perl-threads-1.86_1
 perl-threads-shared-1.43_1
 perl-version-0.9902_1
 "
-	for f in ${provides}; do
-		replaces+=" $($XBPS_UHELPER_CMD getpkgname ${f})>=0"
-	done
+for f in ${provides}; do
+	replaces+=" $($XBPS_UHELPER_CMD getpkgname ${f})>=0"
+done
 
-	pkg_install() {
-		vmove all
-	}
+# Before updating this package to a new major version, run ${FILESDIR}/provides.pl
+# against ${wrksrc} to find the list of built in packages.
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" perl>=${version}"
+fi
+
+do_configure() {
+	local _args="-Dusethreads -Duseshrplib
+		-Dprefix=/usr -Dvendorprefix=/usr
+		-Dprivlib=/usr/share/perl5/core_perl
+		-Darchlib=/usr/lib/perl5/core_perl
+		-Dsitelib=/usr/share/perl5/site_perl
+		-Dsitearch=/usr/lib/perl5/site_perl
+		-Dvendorlib=/usr/share/perl5/vendor_perl
+		-Dvendorarch=/usr/lib/perl5/vendor_perl
+		-Dscriptdir=/usr/bin -Dvendorscript=/usr/bin
+		-Dinc_version_list=none -Dman1ext=1p -Dman3ext=3p
+		-Dman1dir=/usr/share/man/man1
+		-Dman3dir=/usr/share/man/man3"
+
+	if [ "$CROSS_BUILD" ]; then
+		# Copy target files
+		if [ ! -d $FILESDIR/$XBPS_CROSS_TRIPLET ]; then
+			msg_error "$pkgver: cannot be cross built for $XBPS_CROSS_TRIPLET, contact $maintainer.\n"
+		fi
+		cp -f ${FILESDIR}/${XBPS_CROSS_TRIPLET}/* .
+		cp -f ${FILESDIR}/Configure.cross .
+
+		# substitute some required strings in generated config.sh
+		sed -e "s|@@PERL_VERSION@@|${version}|g" \
+			-e "s|@@PERL_SUBVERSION@@|${version##*.}|g" \
+			-i config.sh
+
+		sh ./Configure.cross
+		perl -Ilib make_patchnum.pl
+	else
+		./Configure -des ${_args} -Dcccdlflags="-fPIC" -Doptimize="$CFLAGS"
+	fi
+}
+
+do_build() {
+	if [ "$CROSS_BUILD" ]; then
+		export HOST_PERL=/usr/bin/perl
+		export PERL_TO_USE=$HOST_PERL
+		export HOST_PERL_LIBS=/usr/lib/perl5/core_perl
+		export LIB=$XBPS_CROSS_BASE/usr/lib
+		export INCLUDE=$XBPS_CROSS_BASE/usr/include
+
+		make SHRPLDFLAGS='-shared -Wl,-soname,libperl.so' \
+			CROSS_PERL=$HOST_PERL libperl.so ${makejobs}
+
+		cp -fr $HOST_PERL_LIBS/auto/* lib/auto/
+		mkdir -p lib/$XBPS_CROSS_TRIPLET
+		make extensions CROSS_PERL=$HOST_PERL \
+			INST_ARCHLIB=$wrksrc/lib/$XBPS_CROSS_TRIPLET \
+			${makejobs}
+	else
+		make ${makejobs}
+	fi
+}
+
+do_install() {
+	if [ "$CROSS_BUILD" ]; then
+		export HOST_PERL=/usr/bin/perl
+		export PERL_TO_USE=$HOST_PERL
+		export HOST_PERL_LIBS=/usr/lib/perl5/core_perl
+		export LIB=$XBPS_CROSS_BASE/usr/lib
+		export INCLUDE=$XBPS_CROSS_BASE/usr/include
+
+		cp -fr $HOST_PERL_LIBS/auto/* lib/auto/
+		make CROSS_PERL=$HOST_PERL DESTDIR=$DESTDIR install
+		find lib/auto -name .exists -o -name '*.bs' | xargs rm -f
+		vmkdir usr/lib/perl5/core_perl/auto
+		cp -fr lib/$XBPS_CROSS_TRIPLET/auto/* \
+			${DESTDIR}/usr/lib/perl5/core_perl/auto/
+		find ${DESTDIR} -name .exists |xargs rm -f
+		rm -rf ${DESTDIR}/usr/share/perl5/core_perl/$XBPS_CROSS_TRIPLET
+	else
+		# We use the same defaults than Arch Linux.
+		make DESTDIR=${DESTDIR} install
+	fi
+
+	# Set proper perms to shared libs.
+	find ${DESTDIR} -type f -name \*.so -exec chmod 644 {} \;
+
+	# Make a link from perl${version} to perl.
+	ln -sf /usr/bin/perl${version} ${DESTDIR}/usr/bin/perl
+
+	### CPAN Settings ###
+	# Set CPAN default config to use the site directories.
+	sed -e '/(makepl_arg =>/   s/""/"INSTALLDIRS=site"/' \
+		-e '/(mbuildpl_arg =>/ s/""/"installdirs=site"/' \
+		-i ${DESTDIR}/usr/share/perl5/core_perl/CPAN/FirstTime.pm
+
+	### CPANPLUS Settings ###
+	# Set CPANPLUS default config to use the site directories.
+	sed -e "/{'makemakerflags'}/ s/'';/'INSTALLDIRS=site';/" \
+		-e "/{'buildflags'}/     s/'';/'installdirs=site';/" \
+		-i ${DESTDIR}/usr/share/perl5/core_perl/CPANPLUS/Config.pm
+
+	# Remove all pod files *except* those under
+	# /usr/share/perl5/core_perl/pod/ (FS#16488)
+	rm -f ${DESTDIR}/usr/share/perl5/core_perl/*.pod
+	for d in ${DESTDIR}/usr/share/perl5/core_perl/*; do
+		if [ -d $d -a $(basename $d) != "pod" ]; then
+			find $d -name *.pod -delete
+		fi
+	done
+	find ${DESTDIR}/usr/lib -name *.pod -delete
+	find ${DESTDIR} -name .packlist -delete
+
+	# Make a symlink so that libperl.so is accesible.
+	cd ${DESTDIR}/usr/lib && \
+		ln -sf ./perl5/core_perl/CORE/libperl.so libperl.so
 }
