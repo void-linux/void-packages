@@ -1,6 +1,6 @@
 # Cross build profile for ARM EABI5 Hard Float and Musl libc.
 
-XBPS_TARGET_ARCH="armv6l"
+XBPS_TARGET_ARCH="armv6l-musl"
 XBPS_CROSS_TRIPLET="arm-linux-musleabi"
 XBPS_CFLAGS="-O2 -pipe"
 XBPS_CXXFLAGS="$XBPS_CFLAGS"

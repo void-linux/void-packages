@@ -1,6 +1,6 @@
 # Cross build profile for x86_64 and Musl libc.
 
-XBPS_TARGET_ARCH="x86_64"
+XBPS_TARGET_ARCH="x86_64-musl"
 XBPS_CROSS_TRIPLET="x86_64-linux-musl"
 XBPS_CFLAGS="-O2 -pipe"
 XBPS_CXXFLAGS="$XBPS_CFLAGS"

@@ -1,6 +1,6 @@
 # Cross build profile for i686 and Musl libc.
 
-XBPS_TARGET_ARCH="i686"
+XBPS_TARGET_ARCH="i686-musl"
 XBPS_CROSS_TRIPLET="i686-linux-musl"
 XBPS_CFLAGS="-O2 -pipe"
 XBPS_CXXFLAGS="$XBPS_CFLAGS"
