@@ -1,10 +1,10 @@
 # Template file for 'dbus'
 #
-_systemd_version=204
+_systemd_version=208
 
 pkgname=dbus
 version=1.6.18
-revision=1
+revision=2
 short_desc="Message bus system"
 maintainer="Juan RP <xtraeme@gmail.com>"
 license="GPL-2"
@@ -14,33 +14,37 @@ distfiles="
  http://www.freedesktop.org/software/systemd/systemd-${_systemd_version}.tar.xz"
 checksum="
  7085a0895a9eb11a952394cdbea6d8b4358e17cb991fed0e8fb85e2b9e686dcd
- 072c393503c7c1e55ca7acf3db659cbd28c7fe5fa94fab3db95360bafd96731b"
+ aa64fa864466fd5727005c55d61c092828b94b4f857272c0b503695022146390"
 
 create_wrksrc=yes
 hostmakedepends="pkg-config intltool gperf"
 makedepends="expat-devel libX11-devel libcap-devel"
 conf_files="/etc/dbus-1/session.conf /etc/dbus-1/system.conf"
 
-if [ "$CROSS_BUILD" ]; then
-	_systemddir="$XBPS_CROSS_BASE"
-	hostmakedepends+=" libtool automake gettext-devel libgcrypt-devel"
-else
-	_systemddir="/usr"
+# Package build options
+build_options="systemd"
+build_options_default="systemd"
+desc_option_systemd="Enable support for systemd"
+
+if [ "$build_option_systemd" ]; then
+	if [ "$CROSS_BUILD" ]; then
+		_systemddir="$XBPS_CROSS_BASE"
+		_confargs="--host=$XBPS_CROSS_TRIPLET --with-libtool-sysroot=$XBPS_CROSS_BASE"
+		hostmakedepends+=" libtool automake gettext-devel libgcrypt-devel"
+	else
+		_systemddir="/usr"
+	fi
 fi
 
-pre_configure() {
-	cd dbus-${version}
+post_extract() {
+	cd ${wrksrc}/dbus-${version}
 	patch -Np0 -i ${FILESDIR}/systemd-user-session.patch
+}
 
+_dbus_bootstrap() {
 	# Build a temporary dbus; we are only interested in libdbus.
-	cd ${wrksrc}
-	[ ! -d dbus-bootstrap ] && mkdir dbus-bootstrap
-	cd dbus-bootstrap
-
-	if [ "$CROSS_BUILD" ]; then
-		_confargs="--host=$XBPS_CROSS_TRIPLET
-			--with-libtool-sysroot=$XBPS_CROSS_BASE"
-	fi
+	mkdir ${wrksrc}/dbus-bootstrap
+	cd ${wrksrc}/dbus-bootstrap
 
 	../dbus-${version}/configure ${_confargs} \
 		--prefix=${wrksrc}/tmpbuild/usr \
@@ -48,23 +52,25 @@ pre_configure() {
 		--enable-abstract-sockets ac_cv_have_abstract_sockets=yes
 	make ${makejobs}
 	make install
+}
 
+_systemd_bootstrap() {
 	# Build a temporary systemd; we are only interested in libsystemd-login.
-	if [ "$CROSS_BUILD" ]; then
-		cd ${wrksrc}/systemd-${_systemd_version}
-		autoreconf -fi
+	if [ ! -d ${wrksrc}/systemd-bootstrap ]; then
+		if [ "$CROSS_BUILD" ]; then
+			cd ${wrksrc}/systemd-${_systemd_version}
+			autoreconf -fi
+		fi
+		mkdir ${wrksrc}/systemd-bootstrap
 	fi
-
-	cd ${wrksrc}
-	[ ! -d systemd-bootstrap ] && mkdir systemd-bootstrap
-	cd systemd-bootstrap
+	cd ${wrksrc}/systemd-bootstrap
 
 	unset PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_PATH
 
 	env PKG_CONFIG_LIBDIR=${wrksrc}/tmpbuild/usr/lib/pkgconfig \
 		../systemd-${_systemd_version}/configure ${_confargs} \
 		--prefix=/usr --disable-nls \
-		--enable-introspection=no --disable-kmod --disable-blkid \
+		--disable-introspection --disable-kmod --disable-blkid \
 		--disable-ima --disable-chkconfig --disable-selinux \
 		--disable-xz --disable-tcpwrap --disable-pam \
 		--disable-acl --disable-xattr --disable-gcrypt \
@@ -90,13 +96,29 @@ pre_configure() {
 		${_systemddir}/lib/pkgconfig/
 }
 
+pre_configure() {
+	if [ "$build_option_systemd" ]; then
+		if [ ! -f ${wrksrc}/dbus_bootstrap_done ]; then
+			_dbus_bootstrap
+			touch -f ${wrksrc}/dbus_bootstrap_done
+		fi
+		if [ ! -f ${wrksrc}/systemd_bootstrap_done ]; then
+			_systemd_bootstrap
+			touch -f ${wrksrc}/systemd_bootstrap_done
+		fi
+	fi
+}
+
 do_configure() {
 	cd ${wrksrc}/dbus-${version}
 
-	if [ "$CROSS_BUILD" ]; then
-		autoreconf -fi
-		export PKG_CONFIG_LIBDIR="${_systemddir}/lib/pkgconfig"
+	if [ "$build_option_systemd" ]; then
+		if [ "$CROSS_BUILD" ]; then
+			autoreconf -fi
+			export PKG_CONFIG_LIBDIR="${_systemddir}/lib/pkgconfig"
+		fi
 	fi
+
 	./configure ${configure_args} \
 		--disable-selinux --enable-userdb-cache --with-xml=expat \
 		--disable-dnotify --enable-inotify --with-dbus-user=dbus \
@@ -106,7 +128,7 @@ do_configure() {
 		--with-system-pid-file=/run/dbus/pid \
 		--with-console-auth-dir=/run/console/ \
 		--with-systemdsystemunitdir=/usr/lib/systemd/system \
-		--enable-abstract-sockets --enable-systemd \
+		--enable-abstract-sockets \
 		ac_cv_have_abstract_sockets=yes
 }
 
@@ -120,9 +142,11 @@ do_install() {
 	make DESTDIR=${DESTDIR} install
 
 	# Remove systemd temp files from masterdir.
-	rm -f ${_systemddir}/lib/pkgconfig/libsystemd-*
-	rm -rf ${_systemddir}/include/systemd
-	rm -f ${_systemddir}/lib/libsystemd-*
+	if [ "$build_option_systemd" ]; then
+		rm -f ${_systemddir}/lib/pkgconfig/libsystemd-*
+		rm -rf ${_systemddir}/include/systemd
+		rm -f ${_systemddir}/lib/libsystemd-*
+	fi
 }
 
 dbus-devel_package() {
