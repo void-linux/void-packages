@@ -7,7 +7,7 @@
 # =========================================================
 #
 # xbps-src version.
-XBPS_SRC_REQ=96
+XBPS_SRC_REQ=98
 
 # XBPS utils version.
 XBPS_UTILS_REQ=0.29
