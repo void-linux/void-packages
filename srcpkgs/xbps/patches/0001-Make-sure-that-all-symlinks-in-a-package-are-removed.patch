@@ -1,0 +1,125 @@
+From 292be5c4200ef1866885e3933a2740777c024f7f Mon Sep 17 00:00:00 2001
+From: Juan RP <xtraeme@gmail.com>
+Date: Sun, 12 Jan 2014 17:10:07 +0100
+Subject: [PATCH] Make sure that all symlinks in a package are removed, not
+ just dangling symlinks.
+
+---
+ NEWS                                    |  5 +++++
+ lib/package_remove.c                    | 18 ----------------
+ tests/xbps/libxbps/shell/remove_test.sh | 38 ++++++++++++++++++++++++++++++++-
+ 3 files changed, 42 insertions(+), 19 deletions(-)
+
+diff --git a/NEWS b/NEWS
+index 640a275..c8d1586 100644
+--- a/NEWS
++++ b/NEWS
+@@ -1,3 +1,8 @@
++xbps-0.30 (??):
++
++ * Fixed a bug where in some cases valid symlinks in a package were not removed
++   (just dangling symlinks were removed).
++
+ xbps-0.29 (2014-01-09):
+ 
+  * Added XBPS_ARCH environment variable to override tha native architecture
+diff --git a/lib/package_remove.c b/lib/package_remove.c
+index 2bfa2fc..4bd7646 100644
+--- a/lib/package_remove.c
++++ b/lib/package_remove.c
+@@ -54,13 +54,11 @@ xbps_remove_pkg_files(struct xbps_handle *xhp,
+ 		      const char *key,
+ 		      const char *pkgver)
+ {
+-	struct stat st;
+ 	xbps_array_t array;
+ 	xbps_object_iterator_t iter;
+ 	xbps_object_t obj;
+ 	const char *file, *sha256, *curobj = NULL;
+ 	char *path = NULL;
+-	char buf[PATH_MAX];
+ 	int rv = 0;
+ 	bool found;
+ 
+@@ -137,22 +135,6 @@ xbps_remove_pkg_files(struct xbps_handle *xhp,
+ 				free(path);
+ 				break;
+ 			}
+-		} else if (strcmp(key, "links") == 0) {
+-			/*
+-			 * All regular files from package were removed at this
+-			 * point, so we will only remove dangling symlinks.
+-			 */
+-			if (realpath(path, buf) == NULL) {
+-				if (errno != ENOENT && errno != ELOOP) {
+-					free(path);
+-					rv = errno;
+-					break;
+-				}
+-			}
+-			if (stat(buf, &st) == 0) {
+-				free(path);
+-				continue;
+-			}
+ 		}
+ 		/*
+ 		 * Make sure to not remove any symlink of root directory.
+diff --git a/tests/xbps/libxbps/shell/remove_test.sh b/tests/xbps/libxbps/shell/remove_test.sh
+index 37d3f26..d049f6e 100644
+--- a/tests/xbps/libxbps/shell/remove_test.sh
++++ b/tests/xbps/libxbps/shell/remove_test.sh
+@@ -20,7 +20,7 @@ keep_base_symlinks_body() {
+ 	xbps-rindex -a *.xbps
+ 	atf_check_equal $? 0
+ 	cd ..
+-	xbps-install -r root --repository=$PWD/some_repo -y foo
++	xbps-install -r root -C null.conf --repository=$PWD/some_repo -y foo
+ 	atf_check_equal $? 0
+ 	xbps-remove -r root -y foo
+ 	atf_check_equal $? 0
+@@ -32,6 +32,42 @@ keep_base_symlinks_body() {
+ 	atf_check_equal $rv 0
+ }
+ 
++# 2nd test: make sure that all symlinks are removed.
++atf_test_case remove_symlinks
++
++remove_symlinks_head() {
++	atf_set "descr" "Tests for package removal: symlink cleanup test"
++}
++
++remove_symlinks_body() {
++	mkdir some_repo
++	mkdir -p pkg_A/usr/lib pkg_B/usr/lib
++	touch -f pkg_A/usr/lib/libfoo.so.1.2.0
++	ln -sfr pkg_A/usr/lib/libfoo.so.1.2.0 pkg_A/usr/lib/libfoo.so.1
++	ln -sfr pkg_B/usr/lib/libfoo.so.1 pkg_B/usr/lib/libfoo.so
++
++	cd some_repo
++	xbps-create -A noarch -n A-1.0_1 -s "A pkg" ../pkg_A
++	atf_check_equal $? 0
++	xbps-create -A noarch -n B-1.0_1 --dependencies "A>=0" -s "B pkg" ../pkg_B
++	atf_check_equal $? 0
++	xbps-rindex -a *.xbps
++	atf_check_equal $? 0
++	cd ..
++	xbps-install -r root -C null.conf --repository=$PWD/some_repo -y B
++	atf_check_equal $? 0
++	xbps-pkgdb -r root -m manual A
++	atf_check_equal $? 0
++	xbps-remove -r root -Ryv B
++	atf_check_equal $? 0
++	rv=0
++	if [ -h root/usr/lib/libfoo.so ]; then
++	        rv=1
++	fi
++	atf_check_equal $rv 0
++}
++
+ atf_init_test_cases() {
+ 	atf_add_test_case keep_base_symlinks
++	atf_add_test_case remove_symlinks
+ }
+-- 
+1.8.5.2
+
