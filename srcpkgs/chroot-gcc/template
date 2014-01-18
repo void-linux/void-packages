@@ -7,7 +7,7 @@ _mpc_ver=0.8.2
 
 pkgname=chroot-gcc
 version=${_majorver}.3
-revision=5
+revision=6
 wrksrc="gcc-${version}"
 homepage="http://gcc.gnu.org"
 short_desc="The GNU C Compiler suite -- for xbps-src use"
@@ -118,17 +118,13 @@ _mpc_build() {
 do_configure() {
 	local _floatabi _args
 
-	if [ "$CROSS_BUILD" ]; then
-		_args="--host=$XBPS_CROSS_TRIPLET"
-	fi
-
-	if [ "$XBPS_TARGET_MACHINE" = "armv6l" ]; then
-		_args+=" --with-arch=armv6 --with-fpu=vfp --with-float=hard"
-	elif [ "$XBPS_TARGET_MACHINE" = "armv7l" ]; then
-		_args+=" --with-arch=armv7-a --with-fpu=vfpv3-d16 --with-float=hard"
-	fi
+	case "$XBPS_TARGET_MACHINE" in
+		armv6*) _args+=" --with-arch=armv6 --with-fpu=vfp --with-float=hard";;
+		armv7*) _args+=" --with-arch=armv7-a --with-fpu=vfpv3 --with-float=hard";;
+	esac
 
 	if [ "$CROSS_BUILD" ]; then
+		_args+=" --host=$XBPS_CROSS_TRIPLET"
 		export CC="$XBPS_CROSS_TRIPLET-gcc"
 		export GCC="$CC"
 		export CC_FOR_TARGET="$CC"
@@ -148,7 +144,8 @@ do_configure() {
 	cd gcc-build
 
 	CONFIG_SHELL=/bin/bash \
-		../gcc-${version}/configure --prefix=/usr \
+		../gcc-${version}/configure --disable-bootstrap \
+		--prefix=/usr --bindir=/usr/bin \
 		--mandir=/usr/share/man --infodir=/usr/share/info \
 		--libdir=/usr/lib --libexecdir=/usr/lib \
 		--enable-clocale=gnu --enable-shared \
@@ -171,17 +168,17 @@ do_build() {
 }
 
 do_install() {
-	local _triplet=
+	local _triplet
 
-	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		_triplet="${XBPS_TARGET_MACHINE}-unknown-linux-gnu"
-	elif [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
-		_triplet="${XBPS_TARGET_MACHINE}-pc-linux-gnu"
-	elif [ "$XBPS_TARGET_MACHINE" = "armv6l" ]; then
-		_triplet="arm-linux-gnueabihf"
-	else
-		_triplet=${XBPS_CROSS_TRIPLET}
-	fi
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64) _triplet="x86_64-unknown-linux-gnu";;
+		x86_64-musl) _triplet="x86_64-unknown-linux-musl";;
+		i686) _triplet="i686-pc-linux-gnu";;
+		i686-musl) _triplet="i686-pc-linux-musl";;
+		armv[678]l) _triplet="arm-unknown-linux-gnueabihf";;
+		armv[678]l-musl) _triplet="arm-unknown-linux-musleabi";;
+		*) _triplet="$XBPS_CROSS_TRIPLET";;
+	esac
 
 	cd gcc-build
 	make DESTDIR=${DESTDIR} install
@@ -190,22 +187,19 @@ do_install() {
 	# from the same series work automagically.
 	mv ${DESTDIR}/usr/lib/gcc/${_triplet}/${version} \
 		${DESTDIR}/usr/lib/gcc/${_triplet}/${_majorver}
-	cd ${DESTDIR}/usr/lib/gcc/${_triplet} && ln -sf ${_majorver} ${version}
+	ln -sfr ${DESTDIR}/usr/lib/gcc/${_triplet}/${_majorver} \
+		${DESTDIR}/usr/lib/gcc/${_triplet}/${version}
 
 	# Ditto for c++ headers.
 	mv ${DESTDIR}/usr/include/c++/${version} \
 		${DESTDIR}/usr/include/c++/${_majorver}
-	cd ${DESTDIR}/usr/include/c++ && ln -sf ${_majorver} ${version}
+	ln -sfr ${DESTDIR}/usr/include/c++/${_majorver} \
+		${DESTDIR}/usr/include/c++/${version}
 
 	# cc symlink.
-	cd ${DESTDIR}/usr/bin && ln -sf gcc cc
+	ln -sfr ${DESTDIR}/usr/bin/gcc ${DESTDIR}/usr/bin/cc
 	# rpcgen wants /lib/cpp, make a symlink
-	cd ${DESTDIR}/usr/lib && ln -sf ../bin/cpp .
-
-	if [ -d ${DESTDIR}/usr/lib64 ]; then
-		mv ${DESTDIR}/usr/lib64/* ${DESTDIR}/usr/lib
-	fi
-	rm -rf ${DESTDIR}/usr/lib64
+	ln -sfr ${DESTDIR}/usr/bin/cpp ${DESTDIR}/usr/bin/cpp
 
 	# Remove unused stuff.
 	rm -f ${DESTDIR}/usr/lib/libffi*
