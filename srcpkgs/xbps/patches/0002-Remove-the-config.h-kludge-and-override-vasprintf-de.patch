@@ -1,0 +1,399 @@
+From 5eea259c1371448be362ccf1bc123da784aef39d Mon Sep 17 00:00:00 2001
+From: Juan RP <xtraeme@gmail.com>
+Date: Mon, 20 Jan 2014 18:50:33 +0100
+Subject: [PATCH] Remove the config.h kludge and override vasprintf detection
+ via HAVE_VASPRINTF.
+
+---
+ Makefile                          |  4 ++--
+ bin/xbps-install/fetch_cb.c       |  1 -
+ bin/xbps-query/search.c           |  4 +---
+ configure                         | 32 +++++++++++++++++---------------
+ include/compat.h                  |  2 +-
+ include/xbps_api_impl.h           |  2 +-
+ lib/cb_util.c                     |  4 ----
+ lib/external/dewey.c              |  3 ---
+ lib/external/fexec.c              |  4 +++-
+ lib/fetch/common.c                |  5 ++---
+ lib/fetch/fetch.c                 |  5 ++---
+ lib/fetch/file.c                  |  5 ++---
+ lib/fetch/ftp.c                   |  5 ++---
+ lib/fetch/http.c                  |  5 ++---
+ lib/package_configure.c           |  1 -
+ lib/package_unpack.c              |  4 ----
+ lib/portableproplib/prop_object.c |  4 +---
+ lib/util.c                        |  4 ----
+ 18 files changed, 36 insertions(+), 58 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 16e8851..f6e6c89 100644
+--- a/Makefile
++++ b/Makefile
+@@ -12,7 +12,7 @@ endif
+ 
+ .PHONY: all
+ all:
+-	@if test ! -e config.h; then \
++	@if test ! -e config.mk; then \
+ 		echo "You didn't run ./configure ... exiting."; \
+ 		exit 1; \
+ 	fi
+@@ -45,4 +45,4 @@ clean:
+ 	@for dir in $(SUBDIRS); do		\
+ 		$(MAKE) -C $$dir clean || exit 1;	\
+ 	done
+-	-rm -f config.h config.mk _ccflag.{,c,err}
++	-rm -f config.mk _ccflag.{,c,err}
+diff --git a/bin/xbps-install/fetch_cb.c b/bin/xbps-install/fetch_cb.c
+index de671cf..162fcf7 100644
+--- a/bin/xbps-install/fetch_cb.c
++++ b/bin/xbps-install/fetch_cb.c
+@@ -42,7 +42,6 @@
+ 
+ #include <xbps.h>
+ #include "defs.h"
+-#include "config.h"
+ 
+ static void
+ get_time(struct timeval *tvp)
+diff --git a/bin/xbps-query/search.c b/bin/xbps-query/search.c
+index d2358cc..4f91ca4 100644
+--- a/bin/xbps-query/search.c
++++ b/bin/xbps-query/search.c
+@@ -27,9 +27,7 @@
+ # define _GNU_SOURCE    /* for strcasestr(3) */
+ #endif
+ 
+-#ifdef HAVE_CONFIG_H
+-#include "config.h"
+-#endif
++#include "compat.h"
+ 
+ #include <stdio.h>
+ #include <stdbool.h>
+diff --git a/configure b/configure
+index 299e826..89c3049 100755
+--- a/configure
++++ b/configure
+@@ -111,7 +111,6 @@ _which()
+ 	return 1
+ }
+ 
+-CONFIG_H=config.h
+ CONFIG_MK=config.mk
+ 
+ if [ -z "$BUILD" ]; then
+@@ -138,9 +137,8 @@ if [ -z "$OS" ]; then
+ fi
+ 
+ echo "Configuring xbps for ... $OS"
+-rm -f $CONFIG_H $CONFIG_MK
++rm -f $CONFIG_MK
+ echo "# Common vars used by XBPS on $OS." >$CONFIG_MK
+-echo "/* $OS */" >$CONFIG_H
+ 
+ echo "VERSION = $VERSION" >>$CONFIG_MK
+ echo "TOPDIR ?=	$TOPDIR" >>$CONFIG_MK
+@@ -186,7 +184,6 @@ echo "CFLAGS = -O2 -pthread" >>$CONFIG_MK
+ 
+ echo "LDFLAGS =  	-L\$(TOPDIR)/lib" >>$CONFIG_MK
+ echo "CPPFLAGS = 	-I. -I\$(TOPDIR) -I\$(TOPDIR)/include" >>$CONFIG_MK
+-echo "CPPFLAGS +=	-DHAVE_CONFIG_H" >>$CONFIG_MK
+ echo "CPPFLAGS +=	-DXBPS_SYSCONF_PATH=\\\"${ETCDIR}\\\"" >>$CONFIG_MK
+ echo "CPPFLAGS +=	-DXBPS_VERSION=\\\"${VERSION}\\\"" >>$CONFIG_MK
+ echo "CPPFLAGS +=	-D_unused=\"__attribute__((__unused__))\"" >>$CONFIG_MK
+@@ -206,7 +203,7 @@ fi
+ 
+ case "$OS" in
+ linux)
+-	echo "CPPFLAGS +=       -D_XOPEN_SOURCE=700" >>$CONFIG_MK
++	echo "CPPFLAGS += 	-D_XOPEN_SOURCE=700" >>$CONFIG_MK
+ 	echo "CPPFLAGS += 	-D_FILE_OFFSET_BITS=64" >> $CONFIG_MK
+ 	;;
+ *)
+@@ -346,22 +343,31 @@ echo "STATIC_LIBS +=	-lpthread" >>$CONFIG_MK
+ #
+ func=vasprintf
+ printf "Checking for $func() ... "
+-cat <<EOF >_$func.c
++if test -n "$HAVE_VASPRINTF"; then
++	echo "yes (cached)."
++else
++	cat <<EOF >_$func.c
++#define _GNU_SOURCE
+ #include <stdio.h>
+ int main(void) {
+ 	vasprintf(NULL, NULL, NULL);
+ 	return 0;
+ }
+ EOF
+-if $XCC -D_GNU_SOURCE _$func.c -o _$func 2>/dev/null; then
+-	echo yes.
++
++	if $XCC _$func.c -o _$func 2>/dev/null; then
++		echo yes.
++		HAVE_VASPRINTF=1
++	else
++		echo no.
++	fi
++	rm -f _$func.c _$func
++fi
++if test -n "$HAVE_VASPRINTF"; then
+ 	echo "CPPFLAGS +=	-DHAVE_VASPRINTF" >> $CONFIG_MK
+ else
+-	echo no.
+ 	echo "COMPAT_SRCS+=	compat/vasprintf.o" >>$CONFIG_MK
+-	echo "#include \"compat.h\"" >>$CONFIG_H
+ fi
+-rm -f _$func.c _$func
+ 
+ #
+ # Check for strcasestr().
+@@ -384,7 +390,6 @@ if $XCC _$func.c -o _$func 2>/dev/null; then
+ else
+ 	echo no.
+ 	echo "COMPAT_SRCS +=	compat/strcasestr.o" >>$CONFIG_MK
+-	echo "#include \"compat.h\"" >>$CONFIG_H
+ fi
+ rm -f _$func _$func.c
+ 
+@@ -408,7 +413,6 @@ if $XCC _$func.c -o _$func 2>/dev/null; then
+ else
+ 	echo no.
+ 	echo "COMPAT_SRCS +=	compat/strlcpy.o" >>$CONFIG_MK
+-	echo "#include \"compat.h\"" >>$CONFIG_H
+ fi
+ rm -f _$func.c _$func
+ 
+@@ -431,7 +435,6 @@ if $XCC _$func.c -o _$func 2>/dev/null; then
+ else
+ 	echo no.
+ 	echo "COMPAT_SRCS +=	compat/strlcat.o" >>$CONFIG_MK
+-	echo "#include \"compat.h\"" >>$CONFIG_H
+ fi
+ rm -f _$func.c _$func
+ 
+@@ -454,7 +457,6 @@ if $XCC -lutil _$func.c -o _$func 2>/dev/null; then
+ else
+ 	echo no.
+ 	echo "COMPAT_SRCS+=	compat/humanize_number.o" >>$CONFIG_MK
+-	echo "#include \"compat.h\"" >>$CONFIG_H
+ fi
+ rm -f _$func.c _$func
+ 
+diff --git a/include/compat.h b/include/compat.h
+index 9f057f9..235000a 100644
+--- a/include/compat.h
++++ b/include/compat.h
+@@ -22,7 +22,7 @@ size_t HIDDEN strlcpy(char *, const char *, size_t);
+ char HIDDEN *strcasestr(const char *, const char *);
+ #endif
+ 
+-#if !defined(HAVE_VASPRINTF) && !defined(_GNU_SOURCE)
++#ifndef HAVE_VASPRINTF
+ int HIDDEN vasprintf(char **, const char *, va_list);
+ #endif
+ 
+diff --git a/include/xbps_api_impl.h b/include/xbps_api_impl.h
+index 497477e..e45350a 100644
+--- a/include/xbps_api_impl.h
++++ b/include/xbps_api_impl.h
+@@ -30,7 +30,7 @@
+ #include <assert.h>
+ #include <confuse.h>
+ #define LIBXBPS_PRIVATE
+-#include <xbps.h>
++#include "xbps.h"
+ 
+ /*
+  * By default all public functions have default visibility, unless
+diff --git a/lib/cb_util.c b/lib/cb_util.c
+index 9cf65ac..1aa0f07 100644
+--- a/lib/cb_util.c
++++ b/lib/cb_util.c
+@@ -34,10 +34,6 @@
+ #include <stdarg.h>
+ #include <errno.h>
+ 
+-#ifdef HAVE_CONFIG_H
+-#include "config.h"
+-#endif
+-
+ #include "xbps_api_impl.h"
+ 
+ #ifdef __clang__
+diff --git a/lib/external/dewey.c b/lib/external/dewey.c
+index fb8dabf..f6502d4 100644
+--- a/lib/external/dewey.c
++++ b/lib/external/dewey.c
+@@ -37,9 +37,6 @@
+ #include <ctype.h>
+ 
+ #include "xbps_api_impl.h"
+-#ifdef HAVE_CONFIG_H
+-#include "config.h"
+-#endif
+ 
+ #define PKG_PATTERN_MAX 1024
+ 
+diff --git a/lib/external/fexec.c b/lib/external/fexec.c
+index 6261f59..cbdb0d5 100644
+--- a/lib/external/fexec.c
++++ b/lib/external/fexec.c
+@@ -29,13 +29,15 @@
+ 
+ #define _BSD_SOURCE	/* for vfork and chroot */
+ #include <sys/types.h>
++#include <unistd.h>
++
+ #include <sys/wait.h>
+ #include <errno.h>
+ #include <stdarg.h>
+ #include <stdlib.h>
+ #include <string.h>
+-#include <unistd.h>
+ 
++#undef _BSD_SOURCE
+ #include "xbps_api_impl.h"
+ 
+ static int
+diff --git a/lib/fetch/common.c b/lib/fetch/common.c
+index dde3682..8d7d3f5 100644
+--- a/lib/fetch/common.c
++++ b/lib/fetch/common.c
+@@ -30,9 +30,8 @@
+  * $FreeBSD: common.c,v 1.53 2007/12/19 00:26:36 des Exp $
+  */
+ 
+-#if HAVE_CONFIG_H
+-#include "config.h"
+-#endif
++#include "compat.h"
++
+ #ifndef NETBSD
+ #include <nbcompat.h>
+ #endif
+diff --git a/lib/fetch/fetch.c b/lib/fetch/fetch.c
+index e0bc07f..9b1ac27 100644
+--- a/lib/fetch/fetch.c
++++ b/lib/fetch/fetch.c
+@@ -30,9 +30,8 @@
+  * $FreeBSD: fetch.c,v 1.41 2007/12/19 00:26:36 des Exp $
+  */
+ 
+-#if HAVE_CONFIG_H
+-#include "config.h"
+-#endif
++#include "compat.h"
++
+ #ifndef NETBSD
+ #include <nbcompat.h>
+ #endif
+diff --git a/lib/fetch/file.c b/lib/fetch/file.c
+index 4e4b6a4..14640be 100644
+--- a/lib/fetch/file.c
++++ b/lib/fetch/file.c
+@@ -30,9 +30,8 @@
+  * $FreeBSD: file.c,v 1.18 2007/12/14 10:26:58 des Exp $
+  */
+ 
+-#if HAVE_CONFIG_H
+-#include "config.h"
+-#endif
++#include "compat.h"
++
+ #ifndef NETBSD
+ #include <nbcompat.h>
+ #endif
+diff --git a/lib/fetch/ftp.c b/lib/fetch/ftp.c
+index 9426e43..c104d5f 100644
+--- a/lib/fetch/ftp.c
++++ b/lib/fetch/ftp.c
+@@ -57,9 +57,8 @@
+  *
+  */
+ 
+-#if HAVE_CONFIG_H
+-#include "config.h"
+-#endif
++#include "compat.h"
++
+ #ifndef NETBSD
+ #include <nbcompat.h>
+ #endif
+diff --git a/lib/fetch/http.c b/lib/fetch/http.c
+index 4b2b558..d405a6a 100644
+--- a/lib/fetch/http.c
++++ b/lib/fetch/http.c
+@@ -63,9 +63,8 @@
+  * SUCH DAMAGE.
+  */
+ 
+-#if HAVE_CONFIG_H
+-#include "config.h"
+-#endif
++#include "compat.h"
++
+ #ifndef NETBSD
+ #include <nbcompat.h>
+ #endif
+diff --git a/lib/package_configure.c b/lib/package_configure.c
+index 79c313a..1ded640 100644
+--- a/lib/package_configure.c
++++ b/lib/package_configure.c
+@@ -29,7 +29,6 @@
+ #include <errno.h>
+ 
+ #include "xbps_api_impl.h"
+-
+ /**
+  * @file lib/package_configure.c
+  * @brief Package configuration routines
+diff --git a/lib/package_unpack.c b/lib/package_unpack.c
+index 5de73db..84565af 100644
+--- a/lib/package_unpack.c
++++ b/lib/package_unpack.c
+@@ -23,10 +23,6 @@
+  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  */
+ 
+-#ifdef HAVE_CONFIG_H
+-#include "config.h"
+-#endif
+-
+ #include <sys/stat.h>
+ #include <stdio.h>
+ #include <stdbool.h>
+diff --git a/lib/portableproplib/prop_object.c b/lib/portableproplib/prop_object.c
+index bc1aaa2..05dc256 100644
+--- a/lib/portableproplib/prop_object.c
++++ b/lib/portableproplib/prop_object.c
+@@ -29,9 +29,7 @@
+  * POSSIBILITY OF SUCH DAMAGE.
+  */
+ 
+-#ifdef HAVE_CONFIG_H
+-#include "config.h"
+-#endif
++#include "compat.h"
+ 
+ #include <prop/prop_object.h>
+ #include "prop_object_impl.h"
+diff --git a/lib/util.c b/lib/util.c
+index dcea8a9..761d888 100644
+--- a/lib/util.c
++++ b/lib/util.c
+@@ -27,10 +27,6 @@
+ # define _GNU_SOURCE	/* for vasprintf(3) */
+ #endif
+ 
+-#ifdef HAVE_CONFIG_H
+-#include "config.h"
+-#endif
+-
+ #include <stdio.h>
+ #include <stdbool.h>
+ #include <stdlib.h>
+-- 
+1.8.5.3
+
