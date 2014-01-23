@@ -1,8 +1,7 @@
 # Template file for 'nss'
 pkgname=nss
 version=3.15.3
-_distver="3_15_3"
-revision=1
+revision=2
 hostmakedepends="perl"
 makedepends="zlib-devel nspr-devel>=4.10 sqlite-devel"
 depends="nspr>=4.10"
@@ -10,7 +9,7 @@ short_desc="Mozilla Network Security Services"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://www.mozilla.org/projects/security/pki/nss/"
 license="GPL-2, MPL-1.1"
-distfiles="${MOZILLA_SITE}/security/nss/releases/NSS_${_distver}_RTM/src/nss-${version}.tar.gz"
+distfiles="${MOZILLA_SITE}/security/nss/releases/NSS_${version//./_/}_RTM/src/nss-${version}.tar.gz"
 checksum=ec5f01f7d9f42cf8ad3f95c7f8921bde583df9297c83dc9062930462e3717a18
 
 do_build() {
@@ -21,18 +20,42 @@ do_build() {
 	export BUILD_OPT=1
 	export NSS_USE_SYSTEM_SQLITE=1
 	export NSS_ENABLE_ECC=1
-	export NSPR_INCLUDE_DIR=/usr/include/nspr
-	export NSPR_LIB_DIR=/usr/lib
-	export XCFLAGS="${CFLAGS}"
 
 	if [ "$XBPS_MACHINE" = "x86_64" ]; then
-		export USE_64=1
+		_use64="USE_64=1"
 	fi
 
 	cd nss
-	make -C coreconf
-	make -C lib/dbm
-	make
+	# Build nsinstall for host.
+	make ${_use64} -C coreconf
+
+	if [ "$CROSS_BUILD" ]; then
+		case "$XBPS_TARGET_MACHINE" in
+			arm*) _ARCH="arm";;
+			mips*) _ARCH="mips";;
+			*) msg_error "$pkgver: unknown target machine\n";;
+		esac
+		# ... and then copy it to $wrksrc.
+		find ${wrksrc} -type f -name nsinstall -exec cp {} ${wrksrc} \;
+		make clean
+
+		export NSPR_INCLUDE_DIR=${XBPS_CROSS_BASE}/usr/include/nspr
+		export NSPR_LIB_DIR=${XBPS_CROSS_BASE}/usr/lib
+		export XCFLAGS="${CFLAGS}"
+
+		make CROSS_COMPILE=1 OS_TEST="${_ARCH}" NSINSTALL="${wrksrc}/nsinstall" \
+			CC="$CC" CCC="$CXX" RANLIB="$RANLIB" -C lib/dbm
+		make CROSS_COMPILE=1 OS_TEST="${_ARCH}" NSINSTALL="${wrksrc}/nsinstall" \
+			CC="$CC" CCC="$CXX" RANLIB="$RANLIB"
+	else
+		# native build
+		export NSPR_INCLUDE_DIR=/usr/include/nspr
+		export NSPR_LIB_DIR=/usr/lib
+		export XCFLAGS="${CFLAGS}"
+
+		make ${_use64} -C lib/dbm
+		make ${_use64}
+	fi
 }
 
 do_install() {
@@ -73,7 +96,6 @@ do_install() {
 	done
 
 	install -m644 dist/*.OBJ/lib/libcrmf.a ${DESTDIR}/usr/lib
-	install -m644 dist/*.OBJ/lib/*.chk ${DESTDIR}/usr/lib
 
 	for f in certutil cmsutil crlutil modutil pk12util shlibsign \
 		signtool signver ssltap; do
@@ -91,6 +113,5 @@ nss-devel_package() {
 		vmove usr/lib/pkgconfig
 		vmove usr/include
 		vmove "usr/lib/*.a"
-		vmove "usr/lib/*.chk"
 	}
 }
