@@ -21,7 +21,11 @@ do_configure() {
 		fi
 
 		cd $wrksrc
-		PERL_MM_USE_DEFAULT=1 LD="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
+		PERL_MM_USE_DEFAULT=1 GCC="$CC" CC="$CC" LD="$CC" \
+			OPTIMIZE="$CFLAGS" \
+			CFLAGS="$CFLAGS -I${XBPS_CROSS_BASE}/usr/include" \
+			LDFLAGS="$LDFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
+			LDDLFLAGS="-shared $CFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
 			perl Makefile.PL ${configure_args} INSTALLDIRS=vendor
 	fi
 
@@ -29,7 +33,11 @@ do_configure() {
 		perlmkf="$wrksrc/$i/Makefile.PL"
 		if [ -f $perlmkf ]; then
 			cd $wrksrc/$i
-			PERL_MM_USE_DEFAULT=1 LD="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
+			PERL_MM_USE_DEFAULT=1 GCC="$CC" CC="$CC" LD="$CC" \
+				OPTIMIZE="$CFLAGS" \
+				CFLAGS="$CFLAGS -I${XBPS_CROSS_BASE}/usr/include" \
+				LDFLAGS="$LDFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
+				LDDLFLAGS="-shared $CFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
 				perl Makefile.PL ${make_build_args} INSTALLDIRS=vendor
 		else
 			msg_error "*** ERROR: couldn't find $perlmkf, aborting **\n"
@@ -40,7 +48,10 @@ do_configure() {
 do_build() {
 	: ${make_cmd:=make}
 
-	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
+	${make_cmd} CC="$CC" LD="$CC" CFLAGS="$CFLAGS" OPTIMIZE="$CFLAGS" \
+		LDFLAGS="$LDFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
+		LDDLFLAGS="-shared $CFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
+		${makejobs} ${make_build_args} ${make_build_target}
 }
 
 do_install() {
