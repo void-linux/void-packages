@@ -7,13 +7,10 @@
 # =========================================================
 #
 # xbps-src version.
-XBPS_SRC_REQ=98
+export XBPS_SRC_REQ=98
 
 # XBPS utils version.
-XBPS_UTILS_REQ=0.29
+export XBPS_UTILS_REQ=0.29
 
 # XBPS utils API version.
-XBPS_UTILS_API_REQ=20131224
-
-# Obsolete since xbps-src>=96 (base-chroot version).
-BASE_CHROOT_REQ=0.40_1
+export XBPS_UTILS_API_REQ=20131224
