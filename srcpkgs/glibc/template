@@ -1,7 +1,7 @@
 # Template file for 'glibc'
 pkgname=glibc
 version=2.18
-revision=4
+revision=6
 bootstrap=yes
 # Force creation of -dbg pkg, required by valgrind.
 force_debug_pkgs=yes
@@ -12,6 +12,21 @@ homepage="http://www.gnu.org/software/libc"
 license="GPL-2, LGPL-2.1, BSD"
 distfiles="http://ftp.gnu.org/gnu/glibc/glibc-${version}.tar.xz"
 checksum=2cb4e1e381928f1e5e55e71ab1ba8e0ea7ede75ff9709770435bfd018ea257a3
+# Do not strip these files, objcopy errors out.
+nostrip_files="
+	XBS5_ILP32_OFFBIG
+	XBS5_ILP32_OFF32
+	POSIX_V6_ILP32_OFF32
+	POSIX_V6_ILP32_OFFBIG
+	POSIX_V7_ILP32_OFF32
+	POSIX_V7_ILP32_OFFBIG
+	POSIX_V6_LP64_OFF64
+	POSIX_V7_LP64_OFF64
+	XBS5_LP64_OFF64"
+conf_files="
+	/etc/rpc
+	/etc/ld.so.conf"
+depends="base-files glibc-locales>=${version}_${revision}"
 
 if [ "$CHROOT_READY" ]; then
 	hostmakedepends="bison perl"
@@ -26,15 +41,16 @@ do_configure() {
 	echo "sbindir=/usr/sbin" >> configparms
 	echo "rootsbindir=/usr/sbin" >> configparms
 
-	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
+	case "$XBPS_TARGET_MACHINE" in
 		# Build with -mno-tls-direct-seg-refs to avoid performance
 		# problems with Xen on x86 32bit.
-		export CFLAGS+=" -mno-tls-direct-seg-refs"
-	elif [ "$XBPS_TARGET_MACHINE" = "armv6l" ]; then
+		i686) export CFLAGS+=" -mno-tls-direct-seg-refs";;
 		# Force hard float ABI.
 		# To build for soft float: --with-float=soft --without-fp.
-		configure_args+=" --with-float=hard"
-	fi
+		armv6l*) configure_args+=" --with-march=armv6 --with-fpu=vfp --with-float=hard";;
+		armv7l*) configure_args+=" --with-march=armv7-a --with-fpu=vfpv3 --with-float=hard";;
+	esac
+
 	if [ "$CROSS_BUILD" ]; then
 		configure_args+=" --with-headers=${XBPS_CROSS_BASE}/usr/include"
 	else
@@ -48,7 +64,7 @@ do_configure() {
 		--enable-multi-arch --enable-bind-now \
 		--disable-profile --enable-kernel=2.6.27 \
 		--enable-stack-guard-randomization --enable-lock-elision \
-		--without-cvs --without-gd
+		--without-selinux --without-cvs --without-gd
 }
 
 do_build() {
@@ -89,10 +105,9 @@ do_install() {
 	rm -f ${DESTDIR}/etc/ld.so.cache
 
 	# Create ld-linux.so.3 symlink for ARM.
-	if [ "$XBPS_TARGET_MACHINE" = "armv6l" ]; then
-		ln -sfr ${DESTDIR}/usr/lib/ld-linux-armhf.so.3 \
-			${DESTDIR}/usr/lib/ld-linux.so.3
-	fi
+	case "$XBPS_TARGET_MACHINE" in
+		armv?l) ln -sfr ${DESTDIR}/usr/lib/ld-linux-armhf.so.3 ${DESTDIR}/usr/lib/ld-linux.so.3;;
+	esac
 }
 
 glibc-devel_package() {
@@ -101,7 +116,7 @@ glibc-devel_package() {
 	pkg_install() {
 		vmove usr/include
 		vmove "usr/lib/*.a"
-		vmove "usr/lib/*crt1.o"
+		vmove "usr/lib/*.o"
 		vmove usr/share/info
 	}
 }
@@ -127,26 +142,5 @@ nscd_package() {
 		vinstall ${FILESDIR}/nscd.socket 644 usr/lib/systemd/system
 		vinstall ${FILESDIR}/nscd.tmpfiles.d 644 usr/lib/tmpfiles.d nscd.conf
 		vinstall ${FILESDIR}/nscd.conf 644 etc
-	}
-}
-
-glibc_package() {
-	# Do not strip these files, objcopy errors out.
-	nostrip_files="
-		XBS5_ILP32_OFFBIG
-		XBS5_ILP32_OFF32
-		POSIX_V6_ILP32_OFF32
-		POSIX_V6_ILP32_OFFBIG
-		POSIX_V7_ILP32_OFF32
-		POSIX_V7_ILP32_OFFBIG
-		POSIX_V6_LP64_OFF64
-		POSIX_V7_LP64_OFF64
-		XBS5_LP64_OFF64"
-	conf_files="
-		/etc/rpc
-		/etc/ld.so.conf"
-	depends="base-files glibc-locales>=${version}_${revision}"
-	pkg_install() {
-		vmove all
 	}
 }

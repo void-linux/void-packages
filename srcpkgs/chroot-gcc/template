@@ -1,13 +1,16 @@
 # Template build file for 'chroot-gcc'
 #
+# WARNING: version and revision must match gcc, otherwise exact dependencies
+# won't work (libgfortran depends on libgcc-${version}_${revision}).
+#
 _majorver=4.7
-_gmp_ver=5.0.5
+_gmp_ver=5.1.3
 _mpfr_ver=3.1.2
-_mpc_ver=0.8.2
+_mpc_ver=1.0.2
 
 pkgname=chroot-gcc
 version=${_majorver}.3
-revision=4
+revision=10
 wrksrc="gcc-${version}"
 homepage="http://gcc.gnu.org"
 short_desc="The GNU C Compiler suite -- for xbps-src use"
@@ -20,12 +23,25 @@ distfiles="
  http://www.multiprecision.org/mpc/download/mpc-${_mpc_ver}.tar.gz"
 checksum="
  2f7c37eb4fc14422ff2358a9ef59c974a75ab41204ef0e49fc34ab1d8981a9c3
- 1f588aaccc41bb9aed946f9fe38521c26d8b290d003c5df807f65690f2aadec9
+ 752079520b4690531171d0f4532e40f08600215feefede70b24fabdc6f1ab160
  79c73f60af010a30a5c27a955a1d2d01ba095b72537dab0ecaad57f5a7bb1b6b
- ae79f8d41d8a86456b68607e9ca398d00f8b7342d1d83bcf4428178ac45380c7"
+ b561f54d8a479cee3bc891ee52735f18ff86712ba30f036f8b8537bae380c488"
 
 create_wrksrc=yes
 bootstrap=yes
+provides="
+	libgcc-${version}_${revision}
+	libstdc++-${version}_${revision}
+	libstdc++-devel-${version}_${revision}
+	gcc-${version}_${revision}
+	gcc-c++-${version}_${revision}"
+conflicts="
+	libgcc>=0
+	libstdc++>=0
+	libstdc++-devel>=0
+	gcc>=0
+	gcc-c++>=0"
+noverifyrdeps=yes
 
 if [ "$CHROOT_READY" ]; then
 	hostmakedepends+=" perl flex"
@@ -33,8 +49,11 @@ fi
 
 pre_configure() {
 	cd gcc-${version}
-	for f in ${FILESDIR}/*; do
-		patch -Np0 -i ${f}
+	case "$XBPS_TARGET_MACHINE" in
+		*-musl) patch -Np1 -i ${FILESDIR}/gcc-${version}-musl.diff;;
+	esac
+	for f in ${FILESDIR}/*.patch; do
+		patch -Np1 -i $f
 	done
 	# As specified in the LFS book, disable installing libiberty.
 	sed -i 's/install_to_$(INSTALL_DEST) //' libiberty/Makefile.in
@@ -47,11 +66,12 @@ _gmp_build() {
 	[ ! -d gmp-build ] && mkdir gmp-build
 	cd gmp-build
 	[ -f .gmp_build_done ] && return
+	cp -f ${XBPS_CROSSPFDIR}/config.sub ../gmp-${_gmp_ver}/configfsf.sub
 
-	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
-		export ABI=32
-	fi
-	../gmp-${_gmp_ver}/configure --prefix=${wrksrc}/buildtmp \
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) _abi="env ABI=32";;
+	esac
+	${_abi} ../gmp-${_gmp_ver}/configure --prefix=${wrksrc}/buildtmp \
 		--disable-shared --enable-static "$@"
 
 	make ${makejobs}
@@ -67,6 +87,7 @@ _mpfr_build() {
 	[ ! -d mpfr-build ] && mkdir mpfr-build
 	cd mpfr-build
 	[ -f .mpfr_build_done ] && return
+	cp -f ${XBPS_CROSSPFDIR}/config.sub ../mpfr-${_mpfr_ver}/
 
 	../mpfr-${_mpfr_ver}/configure --prefix=${wrksrc}/buildtmp \
 		--with-gmp=${wrksrc}/buildtmp \
@@ -85,6 +106,7 @@ _mpc_build() {
 	[ ! -d mpc-build ] && mkdir mpc-build
 	cd mpc-build
 	[ -f .mpc_build_done ] && return
+	cp -f ${XBPS_CROSSPFDIR}/config.sub ../mpc-${_mpc_ver}/
 
 	../mpc-${_mpc_ver}/configure --prefix=${wrksrc}/buildtmp \
 		--with-gmp=${wrksrc}/buildtmp \
@@ -102,25 +124,16 @@ _mpc_build() {
 do_configure() {
 	local _floatabi _args
 
-	if [ "$CROSS_BUILD" ]; then
-		_args="--host=$XBPS_CROSS_TRIPLET"
-	fi
-
-	if [ "$XBPS_TARGET_MACHINE" = "armv6l" ]; then
-		_args+=" --with-arch=armv6 --with-fpu=vfp --with-float=hard"
-	elif [ "$XBPS_TARGET_MACHINE" = "armv7l" ]; then
-		_args+=" --with-arch=armv7-a --with-fpu=vfpv3-d16 --with-float=hard"
-	fi
+	case "$XBPS_TARGET_MACHINE" in
+		armv6*) _args+=" --with-arch=armv6 --with-fpu=vfp --with-float=hard";;
+		armv7*) _args+=" --with-arch=armv7-a --with-fpu=vfpv3 --with-float=hard";;
+	esac
 
 	if [ "$CROSS_BUILD" ]; then
-		export CC="$XBPS_CROSS_TRIPLET-gcc"
-		export GCC="$CC"
+		_args+=" --host=$XBPS_CROSS_TRIPLET"
 		export CC_FOR_TARGET="$CC"
 		export GCC_FOR_TARGET="$CC"
-		export CXX="$XBPS_CROSS_TRIPLET-g++"
 		export CXX_FOR_TARGET="$CXX"
-		export CFLAGS="-Os"
-		export CXXFLAGS="$CFLAGS"
 	fi
 
 	_gmp_build ${_args}
@@ -132,7 +145,8 @@ do_configure() {
 	cd gcc-build
 
 	CONFIG_SHELL=/bin/bash \
-		../gcc-${version}/configure --prefix=/usr \
+		../gcc-${version}/configure --disable-bootstrap \
+		--prefix=/usr --bindir=/usr/bin \
 		--mandir=/usr/share/man --infodir=/usr/share/info \
 		--libdir=/usr/lib --libexecdir=/usr/lib \
 		--enable-clocale=gnu --enable-shared \
@@ -146,7 +160,7 @@ do_configure() {
 		--without-cloog --without-ppl --disable-libstdcxx-pch \
 		--disable-libquadmath --disable-libquadmath-support \
 		--disable-libgomp --disable-libssp --disable-libitm \
-		${_args}
+		--disable-libmudflap ${_args}
 }
 
 do_build() {
@@ -155,43 +169,45 @@ do_build() {
 }
 
 do_install() {
-	local _triplet=
+	local _triplet
 
-	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		_triplet="${XBPS_TARGET_MACHINE}-unknown-linux-gnu"
-	elif [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
-		_triplet="${XBPS_TARGET_MACHINE}-pc-linux-gnu"
-	elif [ "$XBPS_TARGET_MACHINE" = "armv6l" ]; then
-		_triplet="arm-linux-gnueabihf"
-	else
-		msg_error "$pkgver: unknown XBPS_MACHINE\n"
-	fi
-
-	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		vmkdir usr/lib
-		cd ${DESTDIR}/usr && ln -sf lib lib64 && cd ${wrksrc}
-	fi
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64) _triplet="x86_64-unknown-linux-gnu";;
+		x86_64-musl) _triplet="x86_64-unknown-linux-musl";;
+		i686) _triplet="i686-pc-linux-gnu";;
+		i686-musl) _triplet="i686-pc-linux-musl";;
+		armv6l) _triplet="arm-linux-gnueabihf";;
+		armv7l) _triplet="arm-linux-gnueabihf7";;
+		armv6l-musl) _triplet="arm-linux-musleabi";;
+		armv7l-musl) _triplet="arm-linux-musleabi7";;
+		*) _triplet="$XBPS_CROSS_TRIPLET";;
+	esac
 
 	cd gcc-build
 	make DESTDIR=${DESTDIR} install
+
+	if [ -d ${DESTDIR}/usr/lib64 ]; then
+		mv ${DESTDIR}/usr/lib64/* ${DESTDIR}/usr/lib/
+		rmdir ${DESTDIR}/usr/lib64
+	fi
 
 	# Make version a symlink of major version to make all versions
 	# from the same series work automagically.
 	mv ${DESTDIR}/usr/lib/gcc/${_triplet}/${version} \
 		${DESTDIR}/usr/lib/gcc/${_triplet}/${_majorver}
-	cd ${DESTDIR}/usr/lib/gcc/${_triplet} && ln -sf ${_majorver} ${version}
+	ln -sfr ${DESTDIR}/usr/lib/gcc/${_triplet}/${_majorver} \
+		${DESTDIR}/usr/lib/gcc/${_triplet}/${version}
 
 	# Ditto for c++ headers.
 	mv ${DESTDIR}/usr/include/c++/${version} \
 		${DESTDIR}/usr/include/c++/${_majorver}
-	cd ${DESTDIR}/usr/include/c++ && ln -sf ${_majorver} ${version}
+	ln -sfr ${DESTDIR}/usr/include/c++/${_majorver} \
+		${DESTDIR}/usr/include/c++/${version}
 
 	# cc symlink.
-	cd ${DESTDIR}/usr/bin && ln -sf gcc cc
+	ln -sfr ${DESTDIR}/usr/bin/gcc ${DESTDIR}/usr/bin/cc
 	# rpcgen wants /lib/cpp, make a symlink
-	cd ${DESTDIR}/usr/lib && ln -sf ../bin/cpp .
-
-	rm -f ${DESTDIR}/usr/lib64
+	ln -sfr ${DESTDIR}/usr/bin/cpp ${DESTDIR}/usr/lib/cpp
 
 	# Remove unused stuff.
 	rm -f ${DESTDIR}/usr/lib/libffi*
@@ -200,14 +216,4 @@ do_install() {
 
 	# Remove all python scripts in libdir.
 	rm -f ${DESTDIR}/usr/lib/*.py
-}
-
-chroot-gcc_package() {
-	provides="libgcc-${version} libstdc++-${version} libstdc++-devel-${version}
-		gcc-${version} gcc-c++-${version}"
-	conflicts="libgcc>=0 libstdc++>=0 libstdc++-devel>=0 gcc>=0 gcc-c++>=0"
-	noverifyrdeps=yes
-	pkg_install() {
-		vmove all
-	}
 }

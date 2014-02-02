@@ -1,0 +1,169 @@
+diff -Naur xbmc-frodo-0ff0d2e/configure.in xbmc-frodo-0ff0d2e.patch/configure.in
+--- xbmc-frodo-0ff0d2e/configure.in	2012-10-11 15:45:44.000000000 +0200
++++ xbmc-frodo-0ff0d2e.patch/configure.in	2012-10-11 16:49:08.872850880 +0200
+@@ -452,6 +452,12 @@
+   [use_texturepacker=$enableval],
+   [use_texturepacker=auto])
+ 
++AC_ARG_WITH([texturepacker-root],
++  [AS_HELP_STRING([--with-texturepacker-root],
++  [root dir to search for librarys and includes if building native TexturePacker (default is \$prefix)])],
++  [use_texturepacker_root=$withval],
++  [use_texturepacker_root=$prefix])
++
+ AC_ARG_WITH([lirc-device],
+   [AS_HELP_STRING([--with-lirc-device=file],
+   [specify the default LIRC device (default is /dev/lircd)])],
+@@ -2000,13 +2006,13 @@
+ 
+ USE_TEXTUREPACKER_NATIVE=0
+ if test "x$use_texturepacker" != "xno"; then
+-  final_message="$final_message\n  TexturePacker:Yes"
+   USE_TEXTUREPACKER=1
+-  if test "x$use_texturepacker_native" = "xyes"; then
++  if test "x$cross_compiling" = "xyes"; then
+     USE_TEXTUREPACKER_NATIVE=1
+-    if [[ ! -d "$USE_TEXTUREPACKER_NATIVE_ROOT" ]]; then 
+-      USE_TEXTUREPACKER_NATIVE_ROOT= 
+-    fi
++    USE_TEXTUREPACKER_NATIVE_ROOT="$use_texturepacker_root"
++    final_message="$final_message\n  TexturePacker:Native ($USE_TEXTUREPACKER_NATIVE_ROOT)"
++  else
++    final_message="$final_message\n  TexturePacker:Yes"
+   fi
+ else
+   final_message="$final_message\n  TexturePacker:No"
+diff -Naur xbmc-frodo-0ff0d2e/lib/libsquish/Makefile.in xbmc-frodo-0ff0d2e.patch/lib/libsquish/Makefile.in
+--- xbmc-frodo-0ff0d2e/lib/libsquish/Makefile.in	2012-10-11 15:47:26.000000000 +0200
++++ xbmc-frodo-0ff0d2e.patch/lib/libsquish/Makefile.in	2012-10-11 16:49:08.873850900 +0200
+@@ -11,26 +11,25 @@
+   singlecolourfit.cpp \
+   squish.cpp
+ 
+-CXXFLAGS+=-I.
+-
+-LIB=libsquish.a
+-
+-ifeq (@USE_TEXTUREPACKER_NATIVE@,1)
+-NATIVE_LIB=libsquish-native.so
+-CLEAN_FILES+=$(NATIVE_LIB)
++LIB              = libsquish.a
++NATIVE_LIB       = libsquish-native.so
++CLEAN_FILES     += $(NATIVE_LIB)
++
++HOST_CXX        ?= g++
++CXXFLAGS        += -I.
++HOST_CXXFLAGS   += -I.
+ 
+ ifeq ($(findstring Darwin,$(shell uname -s)),Darwin)
+-NATIVE_ARCH=@DARWIN_NATIVE_ARCH@
++  HOST_CXXFLAGS += @DARWIN_NATIVE_ARCH@
+ endif
+ 
+-all: $(LIB) $(NATIVE_LIB)
++$(LIB): $(SRCS)
+ # TexturePacker links to libsquish and needs to run on build system, so make a native flavor.
+ $(NATIVE_LIB): $(SRCS)
+ ifeq ($(findstring Darwin,$(shell uname -s)),Darwin)
+-	g++ $(NATIVE_ARCH) -I. $(SRCS) -dynamiclib -install_name `pwd`/libsquish-native.so -o $@
++	$(HOST_CXX) $(HOST_CXXFLAGS) $(SRCS) -dynamiclib -install_name `pwd`/libsquish-native.so -o $@
+ else
+-	g++ -I. $(SRCS) -shared -fPIC -Wl,-soname,`pwd`/libsquish-native.so -o $@
+-endif
++	$(HOST_CXX) $(HOST_CXXFLAGS) $(SRCS) -shared -fPIC -Wl,-soname,`pwd`/libsquish-native.so -o $@
+ endif
+ 
+ include ../../Makefile.include
+diff -Naur xbmc-frodo-0ff0d2e/tools/TexturePacker/Makefile.in xbmc-frodo-0ff0d2e.patch/tools/TexturePacker/Makefile.in
+--- xbmc-frodo-0ff0d2e/tools/TexturePacker/Makefile.in	2012-10-11 15:47:05.000000000 +0200
++++ xbmc-frodo-0ff0d2e.patch/tools/TexturePacker/Makefile.in	2012-10-11 16:49:08.874850920 +0200
+@@ -1,56 +1,54 @@
+-DEFINES += -D_LINUX -DUSE_LZO_PACKING
++DEFINES       += -D_LINUX -DUSE_LZO_PACKING
+ ifneq ($(or $(findstring powerpc,@ARCH@),$(findstring ppc, @ARCH@)),)
+-DEFINES += -DHOST_BIGENDIAN
++DEFINES       += -DHOST_BIGENDIAN
+ endif
+ 
+-CXXFLAGS+= \
++SRCS           = \
++  md5.cpp \
++  SDL_anigif.cpp \
++  XBTFWriter.cpp \
++  XBMCTex.cpp \
++  @abs_top_srcdir@/xbmc/guilib/XBTF.cpp
++
++TARGET         = TexturePacker
++CLEAN_FILES    = $(TARGET)
++
++all: $(TARGET)
++
++HOST_CXX      ?= g++
++HOST_ROOT_PATH = @USE_TEXTUREPACKER_NATIVE_ROOT@
++
++LIBS          += -lSDL_image -lSDL -llzo2
++LIBS          += -L@abs_top_srcdir@/lib/libsquish -lsquish
++HOST_LIBS     += -L$(HOST_ROOT_PATH)/lib -lSDL_image -lSDL -llzo2
++HOST_LIBS     += -L@abs_top_srcdir@/lib/libsquish -lsquish-native
++
++CXXFLAGS      += \
+   -I. \
+   -I@abs_top_srcdir@/lib \
+   -I@abs_top_srcdir@/xbmc \
+   -I@abs_top_srcdir@/xbmc/linux
+ 
+-RPATH=-Wl,-rpath=$(NATIVE_ROOT_PATH)/lib
++HOST_CXXFLAGS += \
++  -I. \
++  -I@abs_top_srcdir@/lib \
++  -I@abs_top_srcdir@/xbmc \
++  -I@abs_top_srcdir@/xbmc/linux \
++  -I$(HOST_ROOT_PATH)/include
++
++RPATH=-Wl,-rpath=$(HOST_ROOT_PATH)/lib
+ 
+-ifeq (@USE_TEXTUREPACKER_NATIVE@,1)
+-NATIVE_ROOT_PATH=@USE_TEXTUREPACKER_NATIVE_ROOT@
+-ifdef NATIVE_ROOT_PATH
+ ifeq ($(findstring Darwin,$(shell uname -s)),Darwin)
+ DEFINES += -DTARGET_DARWIN
+ NATIVE_ARCH=@DARWIN_NATIVE_ARCH@
+ RPATH=
+ endif
+-NATIVE_CXXFLAGS+= -I. \
+-                  -I$(NATIVE_ROOT_PATH)/include \
+-                  -I@abs_top_srcdir@/lib \
+-                  -I@abs_top_srcdir@/xbmc \
+-                  -I@abs_top_srcdir@/xbmc/linux
+-NATIVE_LIBS    += -L$(NATIVE_ROOT_PATH)/lib
+-endif
+-NATIVE_LIBS    += -lSDL_image -lSDL -llzo2
+-NATIVE_LIBS    += -L@abs_top_srcdir@/lib/libsquish -lsquish-native
+-else
+-LIBS    += -L@abs_top_srcdir@/lib/libsquish -lsquish
+-endif
+-
+-LIBS    += -lSDL_image -lSDL -llzo2
+-
+-SRCS = \
+-  md5.cpp \
+-  SDL_anigif.cpp \
+-  XBTFWriter.cpp \
+-  XBMCTex.cpp \
+-  @abs_top_srcdir@/xbmc/guilib/XBTF.cpp
+-
+-
+-TARGET = TexturePacker
+-CLEAN_FILES=$(TARGET)
+-
+-all: $(TARGET)
+ 
+ ifeq (@USE_TEXTUREPACKER_NATIVE@,1)
+ # TexturePacker run native on build system, build it with native tools
+ $(TARGET): $(SRCS) @abs_top_srcdir@/xbmc/guilib/XBTF.h
+-	g++ $(DEFINES) $(NATIVE_ARCH) $(NATIVE_CXXFLAGS) $(SRCS) $(NATIVE_LIBS) $(RPATH) -o $(TARGET)
++	make -C @abs_top_srcdir@/lib/libsquish libsquish-native.so
++	$(HOST_CXX) $(DEFINES) $(NATIVE_ARCH) $(HOST_CXXFLAGS) $(SRCS) $(HOST_LIBS) $(RPATH) -o $(TARGET)
+ clean:
+ 	rm -f $(TARGET)
+ else
