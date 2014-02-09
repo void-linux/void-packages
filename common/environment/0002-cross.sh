@@ -9,8 +9,10 @@ PKG_CONFIG_SYSROOT_DIR="$XBPS_CROSS_BASE"
 PKG_CONFIG_PATH="$XBPS_CROSS_BASE/lib/pkgconfig:$XBPS_CROSS_BASE/usr/share/pkgconfig"
 PKG_CONFIG_LIBDIR="$XBPS_CROSS_BASE/lib/pkgconfig"
 
-if [ "$build_style" = "gnu-configure" -o -z "$build_style" ]; then
-	configure_args+=" --host=$XBPS_CROSS_TRIPLET --with-sysroot=$XBPS_CROSS_BASE --with-libtool-sysroot=$XBPS_CROSS_BASE "
+configure_args+=" --host=$XBPS_CROSS_TRIPLET --with-sysroot=$XBPS_CROSS_BASE --with-libtool-sysroot=$XBPS_CROSS_BASE "
+
+if [ -z "$build_style" -o "$build_style" != "gnu-configure" ]; then
+	set +a; return 0
 fi
 
 # Read autoconf cache variables for cross target (taken from OE).
