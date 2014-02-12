@@ -14,7 +14,6 @@ hook() {
 	if [ "$pkgname" != "texinfo" ]; then
 		rm -f ${PKGDESTDIR}/usr/share/info/dir
 	fi
-	msg_normal "$pkgver: processing info(1) files...\n"
 
 	find ${PKGDESTDIR}/usr/share/info -type f -follow | while read f
 	do

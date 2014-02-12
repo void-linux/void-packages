@@ -8,7 +8,6 @@ hook() {
 		return 0
 	fi
 
-	msg_normal "$pkgver: processing manual pages...\n"
 	find ${PKGDESTDIR}/usr/share/man -type f -follow | while read f
 	do
 		j=$(echo "$f"|sed -e "$fpattern")
