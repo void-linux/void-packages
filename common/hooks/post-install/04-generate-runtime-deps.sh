@@ -33,6 +33,11 @@ add_rundep() {
 hook() {
 	local depsftmp f j tmplf mapshlibs sorequires
 
+	# Disable trap on ERR, xbps-uhelper cmd might return error... but not something
+	# to be worried about because if there are broken shlibs this hooks returns
+	# error via msg_error().
+	trap - ERR
+
 	mapshlibs=$XBPS_COMMONDIR/shlibs
 	tmplf=$XBPS_SRCPKGDIR/$pkgname/template
 
