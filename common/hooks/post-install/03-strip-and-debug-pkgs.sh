@@ -59,6 +59,10 @@ create_debug_pkg() {
 hook() {
 	local fname= x= f= _soname=
 
+	if [ -n "$nostrip" -o -n "$noarch" ]; then
+		return 0
+	fi
+
 	find ${PKGDESTDIR} -type f | while read f; do
 		fname=$(basename "$f")
 		for x in ${nostrip_files}; do
