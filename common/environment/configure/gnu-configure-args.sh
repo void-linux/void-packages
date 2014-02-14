@@ -24,7 +24,8 @@ case "$XBPS_TARGET_MACHINE" in
 	*-musl) . ${_AUTOCONFCACHEDIR}/common-linux
 		;;
 	# gnu libc
-	*)	. ${_AUTOCONFCACHEDIR}/common-glibc
+	*)	. ${_AUTOCONFCACHEDIR}/common-linux
+		. ${_AUTOCONFCACHEDIR}/common-glibc
 		;;
 esac
 
