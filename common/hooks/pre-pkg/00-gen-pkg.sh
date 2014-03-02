@@ -40,6 +40,9 @@ genpkg() {
 	if [ -s ${PKGDESTDIR}/shlib-requires ]; then
 		_shrequires="$(cat ${PKGDESTDIR}/shlib-requires)"
 	fi
+	if [ -s ${wrksrc}/.xbps_${sourcepkg}_git_revs ]; then
+		_gitrevs="$(cat ${wrksrc}/.xbps_${sourcepkg}_git_revs)"
+	fi
 
 	if [ -n "$provides" ]; then
 		local _provides=
@@ -92,7 +95,7 @@ genpkg() {
 		--built-with "xbps-src-${XBPS_SRC_VERSION}" \
 		--build-options "${PKG_BUILD_OPTIONS}" \
 		--pkgver "${pkgver}" --quiet \
-		--source-revisions "$(cat ${PKG_GITREVS_FILE:-/dev/null} 2>/dev/null)" \
+		--source-revisions "${_gitrevs}" \
 		--shlib-provides "${_shprovides}" \
 		--shlib-requires "${_shrequires}" \
 		${_preserve} ${_sourcerevs} ${PKGDESTDIR}
