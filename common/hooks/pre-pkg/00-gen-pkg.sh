@@ -143,4 +143,12 @@ hook() {
 		PKGDESTDIR="${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}"
 		genpkg ${repo} ${arch} "${_desc}" ${_pkgver} ${binpkg}
 	fi
+	# Generate 32bit pkg.
+	if [ -d "${XBPS_DESTDIR}/${pkgname}32-${version}" ]; then
+		_pkgver=${pkgname}32-${version}_${revision}
+		_desc="${short_desc} (32bit)"
+		binpkg=${_pkgver}.x86_64.xbps
+		PKGDESTDIR="${XBPS_DESTDIR}/${pkgname}32-${version}"
+		genpkg ${repo} x86_64 "${_desc}" ${_pkgver} ${binpkg}
+	fi
 }
