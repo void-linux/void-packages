@@ -1,40 +1,23 @@
 # This hook generates a XBPS binary package from an installed package in destdir.
 
 genpkg() {
-	local binpkg= pkgdir= arch= _deps= f=
+	local pkgdir="$1" arch="$2" desc="$3" pkgver="$4" binpkg="$5" _deps= f=
 
 	if [ ! -d "${PKGDESTDIR}" ]; then
 		msg_warn "$pkgver: cannot find pkg destdir... skipping!\n"
 		return 0
 	fi
 
-	if [ -n "$noarch" ]; then
-		arch=noarch
-	elif [ -n "$XBPS_TARGET_MACHINE" ]; then
-		arch=$XBPS_TARGET_MACHINE
-	else
-		arch=$XBPS_MACHINE
-	fi
-	if [ -z "$noarch" -a -n "$XBPS_ARCH" -a "$XBPS_ARCH" != "$XBPS_TARGET_MACHINE" ]; then
-		arch=${XBPS_ARCH}
-	fi
-	binpkg=$pkgver.$arch.xbps
-	if [ -n "$nonfree" ]; then
-		pkgdir=$XBPS_REPOSITORY/nonfree
-	else
-		pkgdir=$XBPS_REPOSITORY
-	fi
-
 	[ ! -d $pkgdir ] && mkdir -p $pkgdir
 
 	while [ -f $pkgdir/${binpkg}.lock ]; do
-		msg_warn "$pkgver: binpkg is being created, waiting for 1s...\n"
+		msg_warn "${pkgver}: binpkg is being created, waiting for 1s...\n"
 		sleep 1
 	done
 
 	# Don't overwrite existing binpkgs by default, skip them.
 	if [ -f $pkgdir/$binpkg -a -z "$XBPS_BUILD_FORCEMODE" ]; then
-		msg_normal "$pkgver: skipping existing $binpkg pkg...\n"
+		msg_normal "${pkgver}: skipping existing $binpkg pkg...\n"
 		return 0
 	fi
 
@@ -89,7 +72,7 @@ genpkg() {
 		done
 	fi
 
-	msg_normal "$pkgver: creating $binpkg for repository $pkgdir ...\n"
+	msg_normal "$sourcepkg: creating $binpkg for repository $pkgdir ...\n"
 
 	#
 	# Create the XBPS binary package.
@@ -105,7 +88,7 @@ genpkg() {
 		--homepage "${homepage}" \
 		--license "${license}" \
 		--maintainer "${maintainer}" \
-		--long-desc "${long_desc}" --desc "${short_desc}" \
+		--desc "${desc}" \
 		--built-with "xbps-src-${XBPS_SRC_VERSION}" \
 		--build-options "${PKG_BUILD_OPTIONS}" \
 		--pkgver "${pkgver}" --quiet \
@@ -126,15 +109,35 @@ genpkg() {
 }
 
 hook() {
-	genpkg
+	local arch= binpkg= repo= _pkgver= _desc=
+
+	if [ -n "$noarch" ]; then
+		arch=noarch
+	elif [ -n "$XBPS_TARGET_MACHINE" ]; then
+		arch=$XBPS_TARGET_MACHINE
+	else
+		arch=$XBPS_MACHINE
+	fi
+	if [ -z "$noarch" -a -n "$XBPS_ARCH" -a "$XBPS_ARCH" != "$XBPS_TARGET_MACHINE" ]; then
+		arch=${XBPS_ARCH}
+	fi
+
+	binpkg=${pkgver}.${arch}.xbps
+
+	if [ -n "$nonfree" ]; then
+		repo=$XBPS_REPOSITORY/nonfree
+	else
+		repo=$XBPS_REPOSITORY
+	fi
+
+	genpkg ${repo} ${arch} "${short_desc}" ${pkgver} ${binpkg}
 
 	# Generate -dbg pkg.
-	if [ -d "$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${pkgname}-dbg-${version}" ]; then
-		reset_subpkg_vars
-		pkgname="${pkgname}-dbg"
-		pkgver="${pkgname}-${version}_${revision}"
-		short_desc+=" (debug files)"
-		PKGDESTDIR="$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${pkgname}-${version}"
-		genpkg
+	if [ -d "${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}" ]; then
+		_pkgver=${pkgname}-dbg-${version}_${revision}
+		_desc="${short_desc} (debug files)"
+		binpkg=${_pkgver}.${arch}.xbps
+		PKGDESTDIR="${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}"
+		genpkg ${repo} ${arch} "${_desc}" ${_pkgver} ${binpkg}
 	fi
 }

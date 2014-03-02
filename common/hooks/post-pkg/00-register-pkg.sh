@@ -35,10 +35,12 @@ hook() {
 		pkgdir=$XBPS_REPOSITORY
 	fi
 	binpkg=${pkgver}.${arch}.xbps
-	binpkg_dbg=${pkgver}-dbg.${arch}.xbps
+	binpkg_dbg=${pkgname}-dbg-${version}_${revision}.${arch}.xbps
 
 	# Register binpkg.
-	registerpkg $pkgdir $binpkg
+	if [ -f ${pkgdir}/${binpkg} ]; then
+		registerpkg ${pkgdir} ${binpkg}
+	fi
 
 	# Register -dbg binpkg if it exists.
 	if [ -f ${pkgdir}/${binpkg_dbg} ]; then
