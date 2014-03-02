@@ -1,6 +1,6 @@
 # This hook generates a XBPS binary package from an installed package in destdir.
 
-hook() {
+genpkg() {
 	local binpkg= pkgdir= arch= _deps= f=
 
 	if [ ! -d "${PKGDESTDIR}" ]; then
@@ -123,4 +123,18 @@ hook() {
 	fi
 
 	msg_normal "Created binary package successfully: ${binpkg}\n"
+}
+
+hook() {
+	genpkg
+
+	# Generate -dbg pkg.
+	if [ -d "$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${pkgname}-dbg-${version}" ]; then
+		reset_subpkg_vars
+		pkgname="${pkgname}-dbg"
+		pkgver="${pkgname}-${version}_${revision}"
+		short_desc+=" (debug files)"
+		PKGDESTDIR="$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${pkgname}-${version}"
+		genpkg
+	fi
 }

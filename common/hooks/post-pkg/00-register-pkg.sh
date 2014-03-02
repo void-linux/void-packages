@@ -1,5 +1,21 @@
 # This hook registers a XBPS binary package into the specified local repository.
 
+registerpkg() {
+	local repo="$1" pkg="$2"
+
+	if [ ! -f ${repo}/${pkg} ]; then
+		msg_error "Unexistent binary package ${repo}/${pkg}!\n"
+	fi
+
+	msg_normal "Registering ${pkg} into ${repo} ...\n"
+
+	if [ -n "$XBPS_CROSS_BUILD" ]; then
+		$XBPS_RINDEX_XCMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${repo}/${pkg}
+	else
+		$XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${repo}/${pkg}
+	fi
+}
+
 hook() {
 	local arch= binpkg= pkgdir=
 
@@ -13,22 +29,19 @@ hook() {
 	if [ -z "$noarch" -a -n "$XBPS_ARCH" -a "$XBPS_ARCH" != "$XBPS_TARGET_MACHINE" ]; then
 		arch=${XBPS_ARCH}
 	fi
-	binpkg=$pkgver.$arch.xbps
 	if [ -n "$nonfree" ]; then
 		pkgdir=$XBPS_REPOSITORY/nonfree
 	else
 		pkgdir=$XBPS_REPOSITORY
 	fi
+	binpkg=${pkgver}.${arch}.xbps
+	binpkg_dbg=${pkgver}-dbg.${arch}.xbps
 
-	if [ ! -f ${pkgdir}/${binpkg} ]; then
-		msg_error "Unexistent binary package ${pkgdir}/${binpkg}!\n"
-	fi
+	# Register binpkg.
+	registerpkg $pkgdir $binpkg
 
-	msg_normal "Registering ${binpkg} into ${pkgdir} ...\n"
-
-	if [ -n "$XBPS_CROSS_BUILD" ]; then
-		$XBPS_RINDEX_XCMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${pkgdir}/${binpkg}
-	else
-		$XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${pkgdir}/${binpkg}
+	# Register -dbg binpkg if it exists.
+	if [ -f ${pkgdir}/${binpkg_dbg} ]; then
+		registerpkg ${pkgdir} ${binpkg_dbg}
 	fi
 }
