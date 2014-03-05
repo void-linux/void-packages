@@ -28,6 +28,9 @@ hook() {
 
 	cd $srcdir || msg_error "$pkgver: cannot change dir to $srcdir!\n"
 
+	# Disable trap on ERR; the code is smart enough to report errors and abort.
+	trap - ERR
+
 	for f in ${distfiles}; do
 		curfile=$(basename $f)
 		distfile="$srcdir/$curfile"
