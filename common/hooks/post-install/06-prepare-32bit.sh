@@ -1,14 +1,14 @@
 # This hook creates a new PKGDESTDIR with 32bit libraries for x86_64.
 #
 # XXX remaining issues:
-#	- Conditionalized for now with "lib32" template var.
 #	- due to ${pkgname} -> ${pkgname}32 renaming, some pkgs have wrong deps
-#	  (noarch pkgs, dependencies without shlibs).
+#	  (noarch pkgs, development pkgs, etc).
 
 hook() {
-	local destdir32=${XBPS_DESTDIR}/${pkgname}32-${version}
+	local destdir32=${XBPS_DESTDIR}/${pkgname}-32bit-${version}
 
-	if [ -z "$lib32" ]; then
+	# By default always enabled unless "lib32_disabled" is set.
+	if [ -n "$lib32_disabled" ]; then
 		return
 	fi
 	# This hook will only work when building for x86.
@@ -54,8 +54,9 @@ hook() {
 	# 32bit dependencies.
 	trap - ERR
 
+	: > ${destdir32}/rdeps
+
 	if [ -s "$PKGDESTDIR/rdeps" ]; then
-		: > $destdir32/rdeps
 		for f in $(cat ${PKGDESTDIR}/rdeps); do
 			pkgn="$($XBPS_UHELPER_CMD getpkgdepname $f)"
 			if [ -z "${pkgn}" ]; then
@@ -63,17 +64,17 @@ hook() {
 				if [ -z "${pkgn}" ]; then
 					msg_error "$pkgver: invalid dependency $f\n"
 				fi
-				pkgv="$($XBPS_UHELPER_CMD getpkgversion ${f})"
+				pkgv="-$($XBPS_UHELPER_CMD getpkgversion ${f})"
 			else
 				pkgv="$($XBPS_UHELPER_CMD getpkgdepversion ${f})"
 			fi
-			printf "${pkgn}32${pkgv} " >> $destdir32/rdeps
+			printf "${pkgn}-32bit${pkgv} " >> $destdir32/rdeps
 		done
 	fi
 
 	# If it's a development pkg add a dependency to the 64bit pkg.
 	if [[ $pkgname =~ '-devel' ]]; then
-		printf "${pkgver} " >> $destdir32/rdeps
+		printf "${pkgver} " >> ${destdir32}/rdeps
 	fi
-	printf "\n" >> $destdir32/rdeps
+	printf "\n" >> ${destdir32}/rdeps
 }

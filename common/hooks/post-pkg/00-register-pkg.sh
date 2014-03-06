@@ -39,7 +39,7 @@ hook() {
 		pkgdir=$XBPS_REPOSITORY
 	fi
 	binpkg=${pkgver}.${arch}.xbps
-	binpkg32=${pkgname}32-${version}_${revision}.x86_64.xbps
+	binpkg32=${pkgname}-32bit-${version}_${revision}.x86_64.xbps
 	binpkg_dbg=${pkgname}-dbg-${version}_${revision}.${arch}.xbps
 
 	# Register binpkg.

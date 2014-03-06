@@ -144,11 +144,11 @@ hook() {
 		genpkg ${repo} ${arch} "${_desc}" ${_pkgver} ${binpkg}
 	fi
 	# Generate 32bit pkg.
-	if [ -d "${XBPS_DESTDIR}/${pkgname}32-${version}" ]; then
-		_pkgver=${pkgname}32-${version}_${revision}
+	if [ -d "${XBPS_DESTDIR}/${pkgname}-32bit-${version}" ]; then
+		_pkgver=${pkgname}-32bit-${version}_${revision}
 		_desc="${short_desc} (32bit)"
 		binpkg=${_pkgver}.x86_64.xbps
-		PKGDESTDIR="${XBPS_DESTDIR}/${pkgname}32-${version}"
+		PKGDESTDIR="${XBPS_DESTDIR}/${pkgname}-32bit-${version}"
 		genpkg ${repo} x86_64 "${_desc}" ${_pkgver} ${binpkg}
 	fi
 }
