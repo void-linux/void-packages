@@ -67,12 +67,13 @@ hook() {
 			else
 				pkgv="$($XBPS_UHELPER_CMD getpkgdepversion ${f})"
 			fi
-			echo "${pkgn}32${pkgv}" >> $destdir32/rdeps
+			printf "${pkgn}32${pkgv} " >> $destdir32/rdeps
 		done
 	fi
 
 	# If it's a development pkg add a dependency to the 64bit pkg.
 	if [[ $pkgname =~ '-devel' ]]; then
-		echo "${pkgver}" >> $destdir32/rdeps
+		printf "${pkgver} " >> $destdir32/rdeps
 	fi
+	printf "\n" >> $destdir32/rdeps
 }
