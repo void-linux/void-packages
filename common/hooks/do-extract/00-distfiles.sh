@@ -89,7 +89,7 @@ hook() {
 			;;
 		gz|bz2)
 			cp -f $srcdir/$curfile $extractdir
-			if [ "$cursufx" = ".gz" ]; then
+			if [ "$cursufx" = "gz" ]; then
 				cd $extractdir && gunzip $curfile
 			else
 				cd $extractdir && bunzip2 $curfile
