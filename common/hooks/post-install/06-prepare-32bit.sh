@@ -33,6 +33,7 @@ hook() {
 		-name '*.so.*' -or \
 		-name '*.a' -or \
 		-name '*.la' -or \
+		-name '*.o' -or \
 		-type d \
 	\) -delete
 
