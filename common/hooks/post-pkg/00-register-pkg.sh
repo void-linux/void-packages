@@ -53,6 +53,9 @@ hook() {
 	fi
 
 	# Register 32bit binpkg if it exists.
+	if [ "$XBPS_TARGET_MACHINE" != "i686" ]; then
+		return
+	fi
 	if [ -f ${pkgdir}/${binpkg32} ]; then
 		registerpkg ${pkgdir} ${binpkg32} x86_64
 	fi

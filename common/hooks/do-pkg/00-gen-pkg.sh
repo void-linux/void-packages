@@ -144,6 +144,9 @@ hook() {
 		genpkg ${repo} ${arch} "${_desc}" ${_pkgver} ${binpkg}
 	fi
 	# Generate 32bit pkg.
+	if [ "$XBPS_TARGET_MACHINE" != "i686" ]; then
+		return
+	fi
 	if [ -d "${XBPS_DESTDIR}/${pkgname}-32bit-${version}" ]; then
 		_pkgver=${pkgname}-32bit-${version}_${revision}
 		_desc="${short_desc} (32bit)"
