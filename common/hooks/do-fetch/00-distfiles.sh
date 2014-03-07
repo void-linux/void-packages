@@ -20,6 +20,7 @@ verify_sha256_cksum() {
 
 hook() {
 	local srcdir="$XBPS_SRCDISTDIR/$pkgname-$version"
+	local errors=0
 
 	if [ ! -d "$srcdir" ]; then
 		mkdir -p -m775 "$srcdir"
@@ -56,7 +57,9 @@ hook() {
 			fi
 
 			verify_sha256_cksum $curfile $cksum $distfile
-			errors=$(($errors + 1))
+			if [ $? -ne 0 ]; then
+				errors=$(($errors + 1))
+			fi
 			unset cksum found
 			ckcount=0
 			dfcount=$(($dfcount + 1))
@@ -96,14 +99,16 @@ hook() {
 				msg_error "$pkgver: cannot find checksum for $curfile.\n"
 			fi
 			verify_sha256_cksum $curfile $cksum $distfile
-			errors=$(($errors + 1))
+			if [ $? -ne 0 ]; then
+				errors=$(($errors + 1))
+			fi
 			unset cksum found
 			ckcount=0
 		fi
 		dfcount=$(($dfcount + 1))
 	done
 
-	if [ "$errors" -gt 0 ]; then
+	if [ $errors -gt 0 ]; then
 		msg_error "$pkgver: couldn't verify distfiles, exiting...\n"
 	fi
 }
