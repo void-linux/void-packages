@@ -12,7 +12,7 @@ hook() {
 		return
 	fi
 	# This hook will only work when building for x86.
-	if [ "$XBPS_MACHINE" != "i686" ]; then
+	if [ "$XBPS_TARGET_MACHINE" != "i686" ]; then
 		return
 	fi 
 	# Ignore noarch pkgs.
@@ -42,6 +42,10 @@ hook() {
 		[ -z "${_dir}" ] && continue
 		rmdir --ignore-fail-on-non-empty -p "$f" &>/dev/null
 	done
+
+	if [ ! -d ${destdir32} ]; then
+		return
+	fi
 
 	# Switch pkg-config files to lib32.
 	if [ -d ${destdir32}/usr/lib32/pkgconfig ]; then
