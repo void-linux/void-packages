@@ -56,7 +56,7 @@ hook() {
 			fi
 
 			verify_sha256_cksum $curfile $cksum $distfile
-			rval=$?
+			errors=$(($errors + 1))
 			unset cksum found
 			ckcount=0
 			dfcount=$(($dfcount + 1))
@@ -96,14 +96,14 @@ hook() {
 				msg_error "$pkgver: cannot find checksum for $curfile.\n"
 			fi
 			verify_sha256_cksum $curfile $cksum $distfile
-			rval=$?
+			errors=$(($errors + 1))
 			unset cksum found
 			ckcount=0
 		fi
 		dfcount=$(($dfcount + 1))
 	done
 
-	if [ "$rval" -ne 0 ]; then
+	if [ "$errors" -gt 0 ]; then
 		msg_error "$pkgver: couldn't verify distfiles, exiting...\n"
 	fi
 }
