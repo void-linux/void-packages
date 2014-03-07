@@ -102,4 +102,8 @@ hook() {
 		fi
 		dfcount=$(($dfcount + 1))
 	done
+
+	if [ "$rval" -ne 0 ]; then
+		msg_error "$pkgver: couldn't verify distfiles, exiting...\n"
+	fi
 }
