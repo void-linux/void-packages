@@ -3,13 +3,10 @@
 # Variables that can be used in templates:
 #	- lib32depends: if set, 32bit pkg will use this rather than "depends".
 #	- lib32disabled: if set, no 32bit pkg will be created.
+#	- lib32files: additional files to add to the 32bit pkg (abs paths, separated by blanks).
 #	- lib32mode:
 #		* if unset only files for libraries will be copied.
 #		* if set to "full" all files will be copied.
-#
-# XXX remaining issues:
-#	- wrong dependencies in some cases.
-#	- no way to specify additional files.
 
 hook() {
 	local destdir32=${XBPS_DESTDIR}/${pkgname}-32bit-${version}
@@ -104,11 +101,18 @@ hook() {
 		done
 	fi
 
+	# Also install additional files set via "lib32files".
+	for f in ${lib32files}; do
+		echo "$pkgver: installing additional files: $f ..."
+		_targetdir=${destdir32}/$(dirname ${f})
+		mkdir -p ${_targetdir}
+		cp -a ${PKGDESTDIR}/${f} ${_targetdir}
+	done
 	# If it's a development pkg add a dependency to the 64bit pkg.
 	if [[ $pkgname =~ '-devel' ]]; then
 		printf "${pkgver} " >> ${destdir32}/rdeps
 	fi
 	printf "\n" >> ${destdir32}/rdeps
 
-	unset lib32depends lib32disabled lib32mode
+	unset lib32depends lib32disabled lib32files lib32mode
 }
