@@ -148,6 +148,7 @@ hook() {
 		return
 	fi
 	if [ -d "${XBPS_DESTDIR}/${pkgname}-32bit-${version}" ]; then
+		unset conf_files provides replaces preserve
 		_pkgver=${pkgname}-32bit-${version}_${revision}
 		_desc="${short_desc} (32bit)"
 		binpkg=${_pkgver}.x86_64.xbps
