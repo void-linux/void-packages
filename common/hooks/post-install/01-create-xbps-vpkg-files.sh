@@ -9,9 +9,9 @@ hook() {
 		_tmpf=$(mktemp) || msg_error "$pkgver: failed to create tempfile.\n"
 		echo "# Virtual packages provided by '${pkgname}':" >>${_tmpf}
 		for f in ${provides}; do
-			echo "virtual-package ${pkgname} { targets = \"${f}\" }" >>${_tmpf}
+			echo "virtualpkg=${f}:${pkgname}" >>${_tmpf}
 		done
-		install -Dm644 ${_tmpf} ${PKGDESTDIR}/etc/xbps/virtualpkg.d/${pkgname}.conf
+		install -Dm644 ${_tmpf} ${PKGDESTDIR}/etc/xbps/virtualpkg.d/${pkgname}.vpkg
 		rm -f ${_tmpf}
 	fi
 }
