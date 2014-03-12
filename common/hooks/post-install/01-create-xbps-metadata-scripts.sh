@@ -34,6 +34,7 @@ process_metadata_scripts() {
 # \$3 = VERSION
 # \$4 = UPDATE	[yes/no]
 # \$5 = CONF_FILE (path to xbps.conf)
+# \$6 = ARCH (uname -m)
 #
 # Note that paths must be relative to CWD, to avoid calling
 # host commands if /bin/sh (dash) is not installed and it's
@@ -48,6 +49,7 @@ PKGNAME="\$2"
 VERSION="\$3"
 UPDATE="\$4"
 CONF_FILE="\$5"
+ARCH="\$6"
 
 #
 # The following code will run the triggers.
