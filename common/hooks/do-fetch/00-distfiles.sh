@@ -2,17 +2,28 @@
 # the $distfiles variable and then verifies its sha256 checksum comparing
 # its value with the one stored in the $checksum variable.
 
-verify_sha256_cksum() {
-	local file="$1" origsum="$2" distfile="$3"
+verify_cksum() {
+	local curfile="$1" distfile="$2" dfcount="$3" filesum ckcount cksum found i
 
-	[ -z "$file" -o -z "$cksum" ] && return 1
+	ckcount=0
+	for i in ${checksum}; do
+		if [ $dfcount -eq $ckcount -a -n "$i" ]; then
+			cksum=$i
+			found=yes
+			break
+		fi
+		ckcount=$(($ckcount + 1))
+	done
+	if [ -z $found ]; then
+		msg_error "$pkgver: cannot find checksum for $curfile.\n"
+	fi
 
-	msg_normal "$pkgver: verifying checksum for distfile '$file'... "
+	msg_normal "$pkgver: verifying checksum for distfile '$curfile'... "
 	filesum=$(${XBPS_DIGEST_CMD} $distfile)
-	if [ "$origsum" != "$filesum" ]; then
+	if [ "$cksum" != "$filesum" ]; then
 		echo
-		msg_red "SHA256 mismatch for '$file:'\n$filesum\n"
-		return 1
+		msg_red "SHA256 mismatch for '$curfile:'\n$filesum\n"
+		errors=$(($errors + 1))
 	else
 		msg_normal_append "OK.\n"
 	fi
@@ -20,7 +31,7 @@ verify_sha256_cksum() {
 
 hook() {
 	local srcdir="$XBPS_SRCDISTDIR/$pkgname-$version"
-	local errors=0
+	local dfcount=0 errors=0
 
 	if [ ! -d "$srcdir" ]; then
 		mkdir -p -m775 "$srcdir"
@@ -33,79 +44,27 @@ hook() {
 	trap - ERR
 
 	for f in ${distfiles}; do
+		localurl="${f%>*}"
 		curfile=$(basename "${f#*>}")
-
 		distfile="$srcdir/$curfile"
+
+		# If file lock cannot be acquired wait until it's available.
 		while true; do
 			flock -w 1 ${distfile}.part true
-			if [ $? -eq 0 ]; then
-				break
-			fi
-			msg_warn "$pkgver: ${distfile} is being already downloaded, waiting for 1s ...\n"
+			[ $? -eq 0 ] && break
+			msg_warn "$pkgver: ${curfile} is being already downloaded, waiting for 1s ...\n"
 		done
-		if [ -f "$distfile" ]; then
-			flock -n ${distfile}.part rm -f ${distfile}.part
-			for i in ${checksum}; do
-				if [ $dfcount -eq $ckcount -a -n "$i" ]; then
-					cksum=$i
-					found=yes
-					break
-				fi
-				ckcount=$(($ckcount + 1))
-			done
-			if [ -z $found ]; then
-				msg_error "$pkgver: cannot find checksum for $curfile.\n"
+		# If distfile does not exist download it.
+		if [ ! -f "$distfile" ]; then
+			msg_normal "$pkgver: fetching distfile '$curfile'...\n"
+			flock "${distfile}.part" $XBPS_FETCH_CMD $localurl
+			if [ ! -f "$distfile" ]; then
+				msg_error "$pkgver: failed to fetch $curfile.\n"
 			fi
-
-			verify_sha256_cksum $curfile $cksum $distfile
-			if [ $? -ne 0 ]; then
-				errors=$(($errors + 1))
-			fi
-			unset cksum found
-			ckcount=0
-			dfcount=$(($dfcount + 1))
-			continue
 		fi
-
-		msg_normal "$pkgver: fetching distfile '$curfile'...\n"
-
-		if [ -n "$distfiles" ]; then
-			localurl="${f%>*}"
-		else
-			localurl="$url/$curfile"
-		fi
-
-		flock ${distfile}.part $XBPS_FETCH_CMD $localurl
-		if [ $? -ne 0 ]; then
-			unset localurl
-			if [ ! -f $distfile ]; then
-				msg_error "$pkgver: couldn't fetch $curfile.\n"
-			else
-				msg_error "$pkgver: there was an error fetching $curfile.\n"
-			fi
-		else
-			unset localurl
-			#
-			# XXX duplicate code.
-			#
-			for i in ${checksum}; do
-				if [ $dfcount -eq $ckcount -a -n "$i" ]; then
-					cksum=$i
-					found=yes
-					break
-				fi
-				ckcount=$(($ckcount + 1))
-			done
-			if [ -z $found ]; then
-				msg_error "$pkgver: cannot find checksum for $curfile.\n"
-			fi
-			verify_sha256_cksum $curfile $cksum $distfile
-			if [ $? -ne 0 ]; then
-				errors=$(($errors + 1))
-			fi
-			unset cksum found
-			ckcount=0
-		fi
+		# distfile downloaded, verify sha256 hash.
+		flock -n ${distfile}.part rm -f ${distfile}.part
+		verify_cksum $curfile $distfile $dfcount
 		dfcount=$(($dfcount + 1))
 	done
 
