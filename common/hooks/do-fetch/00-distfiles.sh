@@ -44,7 +44,6 @@ hook() {
 	trap - ERR
 
 	for f in ${distfiles}; do
-		localurl="${f%>*}"
 		curfile=$(basename "${f#*>}")
 		distfile="$srcdir/$curfile"
 
@@ -57,7 +56,7 @@ hook() {
 		# If distfile does not exist download it.
 		if [ ! -f "$distfile" ]; then
 			msg_normal "$pkgver: fetching distfile '$curfile'...\n"
-			flock "${distfile}.part" $XBPS_FETCH_CMD $localurl
+			flock "${distfile}.part" $XBPS_FETCH_CMD "$f"
 			if [ ! -f "$distfile" ]; then
 				msg_error "$pkgver: failed to fetch $curfile.\n"
 			fi
