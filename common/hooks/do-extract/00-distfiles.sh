@@ -11,7 +11,7 @@ hook() {
 
 	# Check that distfiles are there before anything else.
 	for f in ${distfiles}; do
-		curfile=$(basename $f)
+		curfile=$(basename "${f#*>}")
 		if [ ! -f $srcdir/$curfile ]; then
 			msg_error "$pkgver: cannot find ${curfile}, use 'xbps-src fetch' first.\n"
 		fi
@@ -24,7 +24,7 @@ hook() {
 	msg_normal "$pkgver: extracting distfile(s), please wait...\n"
 
 	for f in ${distfiles}; do
-		curfile=$(basename $f)
+		curfile=$(basename "${f#*>}")
 		for j in ${skip_extraction}; do
 			if [ "$curfile" = "$j" ]; then
 				found=1
@@ -36,31 +36,20 @@ hook() {
 			continue
 		fi
 
-		if $(echo $f|grep -q '.tar.lzma'); then
-			cursufx="txz"
-		elif $(echo $f|grep -q '.tar.xz'); then
-			cursufx="txz"
-		elif $(echo $f|grep -q '.txz'); then
-			cursufx="txz"
-		elif $(echo $f|grep -q '.tar.bz2'); then
-			cursufx="tbz"
-		elif $(echo $f|grep -q '.tbz'); then
-			cursufx="tbz"
-		elif $(echo $f|grep -q '.tar.gz'); then
-			cursufx="tgz"
-		elif $(echo $f|grep -q '.tgz'); then
-			cursufx="tgz"
-		elif $(echo $f|grep -q '.gz'); then
-			cursufx="gz"
-		elif $(echo $f|grep -q '.bz2'); then
-			cursufx="bz2"
-		elif $(echo $f|grep -q '.tar'); then
-			cursufx="tar"
-		elif $(echo $f|grep -q '.zip'); then
-			cursufx="zip"
-		else
-			msg_error "$pkgver: unknown distfile suffix for $curfile.\n"
-		fi
+		case $curfile in
+		*.tar.lzma)   cursufx="txz";;
+		*.tar.xz)     cursufx="txz";;
+		*.txz)        cursufx="txz";;
+		*.tar.bz2)    cursufx="tbz";;
+		*.tbz)        cursufx="tbz";;
+		*.tar.gz)     cursufx="tgz";;
+		*.tgz)        cursufx="tgz";;
+		*.gz)         cursufx="gz";;
+		*.bz2)        cursufx="bz2";;
+		*.tar)        cursufx="tar";;
+		*.zip)        cursufx="zip";;
+		*) msg_error "$pkgver: unknown distfile suffix for $curfile.\n";;
+		esac
 
 		if [ -n "$create_wrksrc" ]; then
 			extractdir="$wrksrc"
