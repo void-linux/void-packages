@@ -33,7 +33,8 @@ hook() {
 	trap - ERR
 
 	for f in ${distfiles}; do
-		curfile=$(basename $f)
+		curfile=$(basename "${f#*>}")
+
 		distfile="$srcdir/$curfile"
 		while true; do
 			flock -w 1 ${distfile}.part true
@@ -69,7 +70,7 @@ hook() {
 		msg_normal "$pkgver: fetching distfile '$curfile'...\n"
 
 		if [ -n "$distfiles" ]; then
-			localurl="$f"
+			localurl="${f%>*}"
 		else
 			localurl="$url/$curfile"
 		fi
