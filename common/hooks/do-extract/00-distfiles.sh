@@ -6,7 +6,7 @@ hook() {
 
 	if [ -z "$distfiles" -a -z "$checksum" ]; then
 		mkdir -p $wrksrc
-		exit 0
+		return 0
 	fi
 
 	# Check that distfiles are there before anything else.
