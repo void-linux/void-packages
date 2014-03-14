@@ -38,6 +38,8 @@ hook() {
 
 		case $curfile in
 		*.tar.lzma)   cursufx="txz";;
+		*.tar.lz)     cursufx="tlz";;
+		*.tlz)        cursufx="tlz";;
 		*.tar.xz)     cursufx="txz";;
 		*.txz)        cursufx="txz";;
 		*.tar.bz2)    cursufx="tbz";;
@@ -58,20 +60,8 @@ hook() {
 		fi
 
 		case ${cursufx} in
-		txz)
-			unxz -cf $srcdir/$curfile | tar xf - -C $extractdir
-			if [ $? -ne 0 ]; then
-				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
-			fi
-			;;
-		tbz)
-			bunzip2 -cf $srcdir/$curfile | tar xf - -C $extractdir
-			if [ $? -ne 0 ]; then
-				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
-			fi
-			;;
-		tgz)
-			gunzip -cf $srcdir/$curfile | tar xf - -C $extractdir
+		txz|tbz|tlz|tgz)
+			tar xf $srcdir/$curfile -C $extractdir
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
