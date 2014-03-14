@@ -1,0 +1,76 @@
+From cbbdc4c8bc41e3ec9efffd6db58eea03753bb9e4 Mon Sep 17 00:00:00 2001
+From: Juan RP <xtraeme@gmail.com>
+Date: Thu, 13 Mar 2014 21:28:31 +0100
+Subject: [PATCH 4/4] xbps_configure_pkg: try to use pkgname if possible to
+ configure a pkg.
+
+In pwwka's case for some reason the transaction was trying to configure
+'man-pages-3.62_1' while in pkgdb there was only 'man-pages-3.55_1'.
+
+By using the pkgname the pkg stored in pkgdb will be configured, without
+caring what version it is.
+---
+ lib/package_configure.c | 29 ++++++++++++++++++++---------
+ 1 file changed, 20 insertions(+), 9 deletions(-)
+
+diff --git a/lib/package_configure.c b/lib/package_configure.c
+index 9eba42c..8608e79 100644
+--- lib/package_configure.c
++++ lib/package_configure.c
+@@ -87,13 +87,25 @@ xbps_configure_pkg(struct xbps_handle *xhp,
+ 
+ 	assert(pkgver != NULL);
+ 
+-	pkgd = xbps_pkgdb_get_pkg(xhp, pkgver);
+-	if (pkgd == NULL)
++	if ((pkgname = xbps_pkg_name(pkgver)) == NULL) {
++		xbps_dbg_printf(xhp, "[configure] cannot guess "
++		    "pkgname for %s\n", pkgver);
++		/* assume pkgver == pkgname */
++		pkgname = strdup(pkgver);
++		assert(pkgname);
++	}
++	pkgd = xbps_pkgdb_get_pkg(xhp, pkgname);
++	if (pkgd == NULL) {
++		free(pkgname);
++		xbps_dbg_printf(xhp, "[configure] cannot find %s (%s) "
++		    "in pkgdb\n", pkgname, pkgver);
+ 		return ENOENT;
++	}
+ 
+ 	rv = xbps_pkg_state_dictionary(pkgd, &state);
+ 	xbps_dbg_printf(xhp, "%s: state %d rv %d\n", pkgver, state, rv);
+ 	if (rv != 0) {
++		free(pkgname);
+ 		xbps_dbg_printf(xhp, "%s: [configure] failed to get "
+ 		    "pkg state: %s\n", pkgver, strerror(rv));
+ 		return EINVAL;
+@@ -101,19 +113,18 @@ xbps_configure_pkg(struct xbps_handle *xhp,
+ 
+ 	if (check_state) {
+ 		if (state == XBPS_PKG_STATE_INSTALLED) {
+-			if ((xhp->flags & XBPS_FLAG_FORCE_CONFIGURE) == 0)
++			if ((xhp->flags & XBPS_FLAG_FORCE_CONFIGURE) == 0) {
++				free(pkgname);
+ 				return 0;
+-		} else if (state != XBPS_PKG_STATE_UNPACKED)
++			}
++		} else if (state != XBPS_PKG_STATE_UNPACKED) {
++			free(pkgname);
+ 			return EINVAL;
++		}
+ 	}
+ 
+ 	xbps_set_cb_state(xhp, XBPS_STATE_CONFIGURE, 0, pkgver, NULL);
+ 
+-	/* internalize pkg dictionary from metadir */
+-	pkgname = xbps_pkg_name(pkgver);
+-	if (pkgname == NULL) /* assume pkgname */
+-		pkgname = strdup(pkgver);
+-
+ 	plist = xbps_xasprintf("%s/.%s.plist", xhp->metadir, pkgname);
+ 	free(pkgname);
+ 
+-- 
+1.9.0
+
