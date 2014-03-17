@@ -19,8 +19,8 @@ hook() {
 	if [ "$XBPS_TARGET_MACHINE" != "i686" ]; then
 		return
 	fi 
-	# Ignore noarch and bootstrap pkgs.
-	if [ -n "$noarch" -o -n "$bootstrap" ]; then
+	# Ignore noarch pkgs.
+	if [ -n "$noarch" ]; then
 		return
 	fi
 	if [ -z "$lib32mode" ]; then
