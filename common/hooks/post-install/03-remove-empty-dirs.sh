@@ -7,4 +7,6 @@ hook() {
 		rmdir --ignore-fail-on-non-empty -p "$f" &>/dev/null
 		msg_warn "$pkgver: removed empty dir: ${_dir}\n"
 	done
+	# Create PKGDESTDIR in case it has been removed previously.
+	mkdir -p ${PKGDESTDIR}
 }
