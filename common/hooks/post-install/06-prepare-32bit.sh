@@ -113,6 +113,4 @@ hook() {
 		printf "${pkgver} " >> ${destdir32}/rdeps
 	fi
 	printf "\n" >> ${destdir32}/rdeps
-
-	unset lib32depends lib32disabled lib32files lib32mode
 }

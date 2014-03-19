@@ -105,7 +105,7 @@ hook() {
 				return 1
 			fi
 			echo "   Stripped library: ${f#$PKGDESTDIR}"
-			_soname=$(objdump -p "$f"|grep SONAME|awk '{print $2}')
+			_soname=$(${OBJDUMP} -p "$f"|grep SONAME|awk '{print $2}')
 			if [ -n "${_soname}" ]; then
 				echo "${_soname}" >> ${PKGDESTDIR}/.shlib-provides
 			fi

@@ -1,7 +1,7 @@
 # This file sets up configure_args with common settings.
 
 if [ -z "$build_style" -o "$build_style" = "gnu-configure" ]; then
-	configure_args="--prefix=/usr --sysconfdir=/etc --infodir=/usr/share/info --mandir=/usr/share/man --localstatedir=/var ${configure_args}"
+	export configure_args="--prefix=/usr --sysconfdir=/etc --infodir=/usr/share/info --mandir=/usr/share/man --localstatedir=/var ${configure_args}"
 fi
 
 
@@ -10,9 +10,12 @@ if [ -z "$CROSS_BUILD" ]; then
 	return 0
 fi
 
-configure_args+=" --host=$XBPS_CROSS_TRIPLET --with-sysroot=$XBPS_CROSS_BASE --with-libtool-sysroot=$XBPS_CROSS_BASE "
+export configure_args+=" --host=$XBPS_CROSS_TRIPLET --with-sysroot=$XBPS_CROSS_BASE --with-libtool-sysroot=$XBPS_CROSS_BASE "
 
 _AUTOCONFCACHEDIR=${XBPS_COMMONDIR}/environment/configure/autoconf_cache
+
+# From now on all vars are exported to the environment
+set -a
 
 # Read autoconf cache variables for cross target (taken from OE).
 case "$XBPS_TARGET_MACHINE" in
@@ -56,3 +59,5 @@ case "$XBPS_TARGET_MACHINE" in
 esac
 
 unset _AUTOCONFCACHEDIR
+
+set +a # vars are not exported to the environment anymore

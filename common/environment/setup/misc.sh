@@ -2,6 +2,8 @@
 # Common variables that can be used by xbps-src.
 #
 # SITE used for ditfiles mirrors. For use in $distfiles.
+set -a
+
 SOURCEFORGE_SITE="http://downloads.sourceforge.net/sourceforge"
 NONGNU_SITE="http://download.savannah.nongnu.org/releases"
 UBUNTU_SITE="http://archive.ubuntu.com/ubuntu/pool"
@@ -18,3 +20,5 @@ FREEDESKTOP_SITE="http://freedesktop.org/software"
 # Repetitive sub homepage's with no real project page
 # ie. some gnome and xorg projects. For use in $homepage.
 XORG_HOME="http://xorg.freedesktop.org/wiki/"
+
+set +a
