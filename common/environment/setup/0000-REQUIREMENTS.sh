@@ -9,7 +9,7 @@
 set -a
 
 # xbps-src version.
-XBPS_SRC_REQ=110
+XBPS_SRC_REQ=112
 
 # XBPS utils version.
 XBPS_UTILS_REQ=0.33
