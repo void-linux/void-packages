@@ -9,6 +9,7 @@ To start using it first you'll need some external dependencies:
 - GNU bash
 - C compiler
 - fakeroot
+- xbps >= 0.33
 
 The `xbps-src` utility and its helpers must be built first:
 
