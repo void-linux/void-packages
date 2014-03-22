@@ -163,7 +163,7 @@ The optional 4th argument can be used to change the `file name`.
 
 	Creates a directory in the pkg `$DESTDIR`. The 2nd optional argument sets the mode of the directory.
 
-> NOTE: shell wildcards must be properly quoted, i.e `vmove "usr/lib/*.a"`.
+> Shell wildcards must be properly quoted, i.e `vmove "usr/lib/*.a"`.
 
 ### Global variables
 
@@ -372,7 +372,7 @@ available in repositories.
 
 - `waf` For packages that use the Python `waf` method with python2.
 
-> NOTE: if `build_style` is not set, the template must (at least) define a
+> If `build_style` is not set, the template must (at least) define a
 `do_install()` function and optionally more phases via `do_xxx()` functions.
 
 ### Functions
@@ -405,7 +405,7 @@ still be passed in if it's a GNU configure script.
 
 - `post_install()` Actions to execute after `do_install()`.
 
-> NOTE: A function defined in a template has preference over the same function
+> A function defined in a template has preference over the same function
 defined by a `build_style` script.
 
 ### Build options
@@ -420,7 +420,7 @@ The following variables may be set to allow package build options:
 
 - `build_options_default` Sets the default build options to be used by the source package.
 
-- `desc_option_<option>`: Sets the description for the build option `option`. This must match the
+- `desc_option_<option>` Sets the description for the build option `option`. This must match the
 keyword set in *build_options*.
 
 After defining those required variables, you can check for the
@@ -477,20 +477,19 @@ The build options can also be shown for binary packages via `xbps-query(8)`:
 
     $ xbps-query -R --property=build-options foo
 
-### Run-time dependencies
+### Runtime dependencies
 
-Dependencies for ELF executables or shared libraries are detected
-automatically by `xbps-src`, hence run-time dependencies must not be specified
-in templates with the following exceptions:
+Dependencies for ELF objects are detected automatically by `xbps-src`, hence runtime
+dependencies must not be specified in templates via `$depends` with the following exceptions:
 
-- ELF binaries using dlopen(3).
+- ELF objects using dlopen(3).
 - non ELF objects, i.e perl/python/ruby/etc modules.
 - Overriding the minimal version specified in the `shlibs` file.
 
-The run-time dependencies for ELF binaries are detected by checking which SONAMEs
-use and then the SONAMEs are mapped to a binary package name with a minimal
+The runtime dependencies for ELF objects are detected by checking which SONAMEs
+they require and then the SONAMEs are mapped to a binary package name with a minimal
 required version. The `shlibs` file in the `xbps-packages/common` directory
-sets up the `SONAME pkgname>=version` mappings.
+sets up the `<SONAME> <pkgname>>=<version>` mappings.
 
 For example the `foo-1.0_1` package provides the `libfoo.so.1` SONAME and
 software requiring this library will link to `libfoo`; the resulting binary
@@ -541,13 +540,10 @@ those detected automatically by xbps-src and **depends**. Please note that
 dependencies must be specified with version comparators, i.e
 `lib32depends="foo>=0 blah<2.0"`.
 
-- `lib32disabled` If this variable is set, no 32bit package will be built. Please note that
-this variable if used in the global scope it will disable 32bit packages for
-the **main package and its subpackages**.
+- `lib32disabled` If this variable is set, no 32bit package will be built.
 
 - `lib32files` Additional files to be added to the **32bit** package. This expect absolute
-paths separated by blanks, i.e `lib32files="/usr/bin/blah
-/usr/include/blah."`.
+paths separated by blanks, i.e `lib32files="/usr/bin/blah /usr/include/blah."`.
 
 - `lib32mode` If unset, only shared libraries and pkg-config files will be copied to the
 **32bit** package. If set to `full` all files will be copied as is.
