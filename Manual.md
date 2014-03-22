@@ -45,76 +45,7 @@ If everything went fine after running
 a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local repository
 `<masterdir>/host/binpkgs`.
 
-### Subpackages
 
-In the example shown above just a binary package is generated, but with some
-simple tweaks multiple binary packages can be generated from a single
-template/build, this is called `subpackages`.
-
-To create additional `subpackages` the `template` must define a new function
-with this naming: `<subpkgname>_package()`, i.e:
-
-```
-# Template file for 'foo'
-
-pkgname="foo"
-version="1.0"
-revision=1
-build_style=gnu-configure
-short_desc="A short description max 72 chars"
-maintainer="name <email>"
-license="GPL-3"
-homepage="http://www.foo.org"
-distfiles="http://www.foo.org/foo-${version}.tar.gz"
-checksum="fea0a94d4b605894f3e2d5572e3f96e4413bcad3a085aae7367c2cf07908b2ff"
-
-# foo-devel is a subpkg
-foo-devel_package() {
-	short_desc+=" - development files"
-	depends="${sourcepkg}>=${version}_${revision}"
-	pkg_install() {
-		vmove usr/include
-		vmove usr/lib/*.a
-		vmove usr/lib/*.so
-		vmove usr/lib/pkgconfig
-	}
-}
-```
-
-All subpackages need an additional symlink to the `main` pkg, otherwise dependencies
-requiring those packages won't find its `template` i.e:
-
-```
- /srcpkgs
-  |- foo <- directory (main pkg)
-  |  |- template
-  |- foo-devel <- symlink to `foo`
-```
-
-An important point of `subpackages` is that they are processed after the main
-package has run its `install` phase. The `pkg_install()` function specified on them
-commonly is used to move files from the `main` package destdir to the `subpackage` destdir.
-
-The helper functions `vinstall`, `vmkdir`, `vcopy` and `vmove` are just wrappers that simplify
-the process of creating, copying and moving files/directories between the `main` package
-destdir (`$DESTDIR`) to the `subpackage` destdir (`$PKGDESTDIR`).
-
-### Development packages
-
-A development package, commonly generated as a subpackage, shall only contain
-files required for development, that is, headers, static libraries, shared
-library symlinks, pkg-config files, API documentation or any other script
-that is only useful when developping for the target software.
-
-A development package should depend on packages that are required to link
-against the provided shared libraries, i.e if `libfoo` provides the
-`libfoo.so.2` shared library and the linking needs `-lbar`, the package
-providing the `libbar` shared library should be added as a dependency;
-and most likely it shall depend on its development package.
-
-If a development package provides a `pkg-config` file, you should verify
-what dependencies the package needs for dynamic or static linking, and add
-the appropiate `development` packages as dependencies.
 
 ### Package build phases
 
@@ -241,6 +172,12 @@ or `foo-1.0_1` to match an exact version. If version comparator is not
 defined (just a package name), the version comparator is automatically set to `>=0`.
 Example `makedepends="foo blah>=1.0"`.
 
+- `depends` The list of dependencies required to run the package. Dependencies
+can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
+or `foo-1.0_1` to match an exact version. If version comparator is not
+defined (just a package name), the version comparator is automatically set to `>=0`.
+Example `depends="foo blah>=1.0"`. See the `Runtime dependencies` section for more information.
+
 - `bootstrap` If enabled the source package is considered to be part of the `bootstrap`
 process and required to be able to build packages in the chroot. Only a
 small number of packages must set this property.
@@ -336,8 +273,8 @@ default all binaries are stripped.
 
 The `build_style` variable specifies the build method to build and install a
 package. It expects the name of any available script in the
-`/usr/share/xbps-src/build_style` directory. Please note that required packages
-to execute a `build_style` script must be defined via `hostmakedepends`.
+`xbps-packages/common/build_style` directory. Please note that required packages
+to execute a `build_style` script must be defined via `$hostmakedepends`.
 
 The current list of available `build_style` scripts is the following:
 
@@ -548,6 +485,79 @@ paths separated by blanks, i.e `lib32files="/usr/bin/blah /usr/include/blah."`.
 - `lib32mode` If unset, only shared libraries and pkg-config files will be copied to the
 **32bit** package. If set to `full` all files will be copied as is.
 
+### Subpackages
+
+In the example shown above just a binary package is generated, but with some
+simple tweaks multiple binary packages can be generated from a single
+template/build, this is called `subpackages`.
+
+To create additional `subpackages` the `template` must define a new function
+with this naming: `<subpkgname>_package()`, i.e:
+
+```
+# Template file for 'foo'
+
+pkgname="foo"
+version="1.0"
+revision=1
+build_style=gnu-configure
+short_desc="A short description max 72 chars"
+maintainer="name <email>"
+license="GPL-3"
+homepage="http://www.foo.org"
+distfiles="http://www.foo.org/foo-${version}.tar.gz"
+checksum="fea0a94d4b605894f3e2d5572e3f96e4413bcad3a085aae7367c2cf07908b2ff"
+
+# foo-devel is a subpkg
+foo-devel_package() {
+	short_desc+=" - development files"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/*.a
+		vmove usr/lib/*.so
+		vmove usr/lib/pkgconfig
+	}
+}
+```
+
+All subpackages need an additional symlink to the `main` pkg, otherwise dependencies
+requiring those packages won't find its `template` i.e:
+
+```
+ /srcpkgs
+  |- foo <- directory (main pkg)
+  |  |- template
+  |- foo-devel <- symlink to `foo`
+```
+
+The main package should specify all required `build dependencies` to be able to build
+all subpackages defined in the template.
+
+An important point of `subpackages` is that they are processed after the main
+package has run its `install` phase. The `pkg_install()` function specified on them
+commonly is used to move files from the `main` package destdir to the `subpackage` destdir.
+
+The helper functions `vinstall`, `vmkdir`, `vcopy` and `vmove` are just wrappers that simplify
+the process of creating, copying and moving files/directories between the `main` package
+destdir (`$DESTDIR`) to the `subpackage` destdir (`$PKGDESTDIR`).
+
+### Development packages
+
+A development package, commonly generated as a subpackage, shall only contain
+files required for development, that is, headers, static libraries, shared
+library symlinks, pkg-config files, API documentation or any other script
+that is only useful when developping for the target software.
+
+A development package should depend on packages that are required to link
+against the provided shared libraries, i.e if `libfoo` provides the
+`libfoo.so.2` shared library and the linking needs `-lbar`, the package
+providing the `libbar` shared library should be added as a dependency;
+and most likely it shall depend on its development package.
+
+If a development package provides a `pkg-config` file, you should verify
+what dependencies the package needs for dynamic or static linking, and add
+the appropiate `development` packages as dependencies.
 ### Notes
 
 - Make sure that all software is configured to use the `/usr` prefix.
