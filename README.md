@@ -1,16 +1,30 @@
-## The official source package repository for Void
+## The XBPS packages collection
 
-This repository contains the source package tree to build xbps binary
-packages from sources for the Void Linux distribution.
+This repository contains the XBPS package collection to build binary packages
+for the Void Linux distribution.
 
-To use this repository the 'xbps-src' utility is required. If you don't use
-Void Linux you can fetch its sources from:
+To start using it first you'll need some external dependencies:
 
-	https://github.com/voidlinux/xbps-src
+- GNU make
+- GNU bash
+- C compiler
+- fakeroot
 
-Or alternatively if you are already using Void you can install
-the binary package with:
+The `xbps-src` utility and its helpers must be built first:
 
-	# xbps-install -S xbps-src
+     $ make
+
+The `xbps-src` chroot helper required to chroot and setup the bind mounts must
+be a setgid binary that can only be executed by a special group, by default `xbuilder`.
+To set the appropiate permissions run the `setup` target:
+
+     $ sudo make setup
+
+After that you can run:
+
+     $ ./xbps-src -h
+
+to see all available targets/options and start building any available package
+in the `srcpkgs` directory.
 
 See Manual.md for documentation to create and learn about the source packages.
