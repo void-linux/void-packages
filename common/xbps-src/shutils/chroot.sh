@@ -175,7 +175,7 @@ chroot_handler() {
 	[ -z "$action" -a -z "$pkg" ] && return 1
 
 	case "$action" in
-	fetch|extract|build|configure|install-destdir|build-pkg|bootstrap-update|chroot)
+	fetch|extract|build|configure|install|install-destdir|build-pkg|bootstrap-update|chroot)
 		chroot_prepare || return $?
 		chroot_init || return $?
 		chroot_sync_repos || return $?

@@ -87,7 +87,7 @@ install_pkg() {
 	done
 
 	if [ "$XBPS_TARGET_PKG" = "$sourcepkg" ]; then
-		[ "$target" = "install-destdir" ] && return 0
+		[ "$target" = "install" -o "$target" = "install-destdir" ] && return 0
 	fi
 
 	# If install went ok generate the binpkgs.

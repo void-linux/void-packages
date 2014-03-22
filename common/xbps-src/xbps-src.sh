@@ -45,11 +45,11 @@ Targets: (only one may be specified)
  fetch <pkgname>
    Download package source distribution file(s).
 
- install-destdir <pkgname>
+ install <pkgname>
    Install target package into <destdir> but not building the binary package
    and not removing build directory for inspection purposes.
 
- remove-destdir <pkgname>
+ remove <pkgname>
    Remove target package from <destdir>. If <pkgname>-<version> is not matched
    from build template nothing is removed.
 
@@ -516,7 +516,7 @@ remove-autodeps)
 		remove_pkg_autodeps
 	fi
 	;;
-fetch|extract|build|configure|install-destdir|build-pkg)
+fetch|extract|build|configure|install|install-destdir|build-pkg)
 	BEGIN_INSTALL=1
     setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
 	if [ -n "$CHROOT_READY" -a -z "$IN_CHROOT" ]; then
@@ -525,7 +525,7 @@ fetch|extract|build|configure|install-destdir|build-pkg)
 		install_pkg $XBPS_TARGET $XBPS_CROSS_BUILD
 	fi
 	;;
-remove-destdir)
+remove|remove-destdir)
     setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
 	remove_pkg $XBPS_CROSS_BUILD
 	;;
