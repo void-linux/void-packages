@@ -558,15 +558,22 @@ and most likely it shall depend on its development package.
 If a development package provides a `pkg-config` file, you should verify
 what dependencies the package needs for dynamic or static linking, and add
 the appropiate `development` packages as dependencies.
+
 ### Notes
 
 - Make sure that all software is configured to use the `/usr` prefix.
+
 - Binaries should always be installed at `/usr/bin` and `/usr/sbin`.
+
 - Manual pages should always be installed at `/usr/share/man` and
 uncompressed.
+
 - If a software provides **shared libraries** and headers, probably you should
 create a `development package` that contains `headers`, `static libraries`
 and other files required for development (not required at runtime).
+
+- If you are updating a package please be careful with SONAME bumps, check
+the installed files (`xbps-src show-files`) before pushing new updates.
 
 ### Contributing via git
 
