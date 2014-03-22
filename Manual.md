@@ -110,20 +110,20 @@ the appropiate `development` packages as dependencies.
 
 Building a package consist of the following phases:
 
-- *fetch*: This phase downloads required sources for a `source package`, as defined by
+- `fetch` This phase downloads required sources for a `source package`, as defined by
 the `distfiles` variable or `do_fetch()` function.
 
-- *extract*: This phase extracts the `distfiles` files into `$wrksrc` or executes the `do_extract()`
+- `extract` This phase extracts the `distfiles` files into `$wrksrc` or executes the `do_extract()`
 function, which is the directory to be used to compile the `source package`.
 
-- *configure*: This phase executes the `configuration` of a `source package`, i.e `GNU configure scripts`.
+- `configure` This phase executes the `configuration` of a `source package`, i.e `GNU configure scripts`.
 
-- build*: This phase compiles/prepares the `source files` via `make` or any other compatible method.
+- `build` This phase compiles/prepares the `source files` via `make` or any other compatible method.
 
-- *install*: This phase installs the `package files` into a `fake destdir`,
+- `install` This phase installs the `package files` into a `fake destdir`,
 via `make install` or any other compatible method.
 
-- *package*: This phase builds the `binary packages` with files stored in the
+- `package` This phase builds the `binary packages` with files stored in the
 `package destdir` and registers them into the local repository.
 
 `xbps-src` supports running just the specified phase, and if it ran
@@ -157,38 +157,38 @@ The optional 4th argument can be used to change the `file name`.
 
 The following variables are defined by `xbps-src` and can be used on any template:
 
-- *makejobs*: Set to `-jX` if `XBPS_MAKEJOBS` is defined, to allow parallel jobs with `GNU make`.
+- `makejobs` Set to `-jX` if `XBPS_MAKEJOBS` is defined, to allow parallel jobs with `GNU make`.
 
-- *sourcepkg*:  Set to the to main package name, can be used to match the main package
+- `sourcepkg`  Set to the to main package name, can be used to match the main package
 rather than additional binary package names.
 
-- *CHROOT_READY*:  True if the target chroot (masterdir) is ready for chroot builds.
+- `CHROOT_READY`  True if the target chroot (masterdir) is ready for chroot builds.
 
-- *CROSS_BUILD*: True if `xbps-src` is cross compiling a package.
+- `CROSS_BUILD` True if `xbps-src` is cross compiling a package.
 
-- *DESTDIR*: Full path to the fake destdir used by the source pkg, set to
+- `DESTDIR` Full path to the fake destdir used by the source pkg, set to
 `${XBPS_MASTERDIR}/destdir/${sourcepkg}-${version}`.
 
-- *FILESDIR*: Full path to the `files` package directory, i.e `srcpkgs/foo/files`.
+- `FILESDIR` Full path to the `files` package directory, i.e `srcpkgs/foo/files`.
 The `files` directory can be used to store additional files to be installed
 as part of the source package.
 
-- *PKGDESTDIR*: Full path to the fake destdir used by the `pkg_install()` function in
+- `PKGDESTDIR` Full path to the fake destdir used by the `pkg_install()` function in
 `subpackages`, set to `${XBPS_MASTERDIR}/destdir/${pkgname}-${version}`.
 
-- *XBPS_BUILDDIR*: Directory to store the `source code` of the source package being processed,
+- `XBPS_BUILDDIR` Directory to store the `source code` of the source package being processed,
 set to `${XBPS_MASTERDIR}/destdir`. The package `wrksrc` is always stored
 in this directory.
 
-- *XBPS_MACHINE*: The machine architecture as returned by `uname -m`.
+- `XBPS_MACHINE` The machine architecture as returned by `uname -m`.
 
-- *XBPS_SRCDISTDIR*: Full path to where the `source distfiles` are stored, i.e `$XBPS_HOSTDIR/sources`.
+- `XBPS_SRCDISTDIR` Full path to where the `source distfiles` are stored, i.e `$XBPS_HOSTDIR/sources`.
 
-- *XBPS_SRCPKGDIR*: Full path to the `srcpkgs` directory.
+- `XBPS_SRCPKGDIR` Full path to the `srcpkgs` directory.
 
-- *XBPS_TARGET_MACHINE*: The target machine architecture when cross compiling a package.
+- `XBPS_TARGET_MACHINE` The target machine architecture when cross compiling a package.
 
-- *XBPS_FETCH_CMD*: The utility to fetch files from `ftp`, `http` of `https` servers.
+- `XBPS_FETCH_CMD` The utility to fetch files from `ftp`, `http` of `https` servers.
 
 ### Available variables
 
@@ -196,128 +196,128 @@ in this directory.
 
 The list of mandatory variables for a template:
 
-- *homepage*: A string pointing to the `upstream` homepage.
+- `homepage` A string pointing to the `upstream` homepage.
 
-- *license*: A string matching any license file available in `/usr/share/licenses`.
+- `license` A string matching any license file available in `/usr/share/licenses`.
 Multiple licenses should be separated by commas, i.e `GPL-3, LGPL-2.1`.
 
-- *maintainer*: A string in the form of `name <user@domain>`.
+- `maintainer` A string in the form of `name <user@domain>`.
 
-- *pkgname*: A string with the package name, matching `srcpkgs/<pkgname>`.
+- `pkgname` A string with the package name, matching `srcpkgs/<pkgname>`.
 
-- *revision*: A number that must be set to 1 when the `source package` is created, or
+- `revision` A number that must be set to 1 when the `source package` is created, or
 updated to a new `upstream version`. This should only be increased when
 the generated `binary packages` have been modified.
 
-- *short_desc*: A string with a brief description for this package. Max 72 chars.
+- `short_desc` A string with a brief description for this package. Max 72 chars.
 
-- *version*: A string with the package version. Must not contain dashes and at least
+- `version` A string with the package version. Must not contain dashes and at least
 one digit is required.
 
 
 #### Optional variables
 
-- *hostmakedepends*: The list of `host` dependencies required to build the package. Dependencies
+- `hostmakedepends` The list of `host` dependencies required to build the package. Dependencies
 can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
 or `foo-1.0_1` to match an exact version. If version comparator is not
 defined (just a package name), the version comparator is automatically set to `>=0`.
 Example `hostmakedepends="foo blah<1.0"`.
 
-- *makedepends*: The list of `target` dependencies required to build the package. Dependencies
+- `makedepends` The list of `target` dependencies required to build the package. Dependencies
 can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
 or `foo-1.0_1` to match an exact version. If version comparator is not
 defined (just a package name), the version comparator is automatically set to `>=0`.
 Example `makedepends="foo blah>=1.0"`.
 
-- *bootstrap*: If enabled the source package is considered to be part of the `bootstrap`
+- `bootstrap` If enabled the source package is considered to be part of the `bootstrap`
 process and required to be able to build packages in the chroot. Only a
 small number of packages must set this property.
 
-- *distfiles*: The full URL to the `upstream` source distribution files. Multiple files
+- `distfiles` The full URL to the `upstream` source distribution files. Multiple files
 can be separated by whitespaces. The files must end in `.tar.lzma`, `.tar.xz`,
 `.txz`, `.tar.bz2`, `.tbz`, `.tar.gz`, `.tgz`, `.gz`, `.bz2`, `.tar` or
 `.zip`. To define a target filename, append `>filename` to the URL.
 Example:
 	distfiles="http://foo.org/foo-1.0.tar.gz http://foo.org/bar-1.0.tar.gz>bar.tar.gz"
 
-- *checksum*: The `sha256` digests matching `${distfiles}`. Multiple files can be
+- `checksum` The `sha256` digests matching `${distfiles}`. Multiple files can be
 separated by blanks. Please note that the order must be the same than
 was used in `${distfiles}`. Example `checksum="kkas00xjkjas"`
 
-- *wrksrc*: The directory name where the package sources are extracted, by default
+- `wrksrc` The directory name where the package sources are extracted, by default
 set to `${pkgname}-${version}`.
 
-- *build_wrksrc*: A directory relative to `${wrksrc}` that will be used when building the package.
+- `build_wrksrc` A directory relative to `${wrksrc}` that will be used when building the package.
 
-- *create_wrksrc*: Enable it to create the `${wrksrc}` directory. Required if a package
+- `create_wrksrc` Enable it to create the `${wrksrc}` directory. Required if a package
 contains multiple `distfiles`.
 
-- *only_for_archs*: This expects a separated list of architectures where the package can be
+- `only_for_archs` This expects a separated list of architectures where the package can be
 built matching `uname -m` output. Example `only_for_archs="x86_64 armv6l"`
 
-- *build_style*: This specifies the `build method` for a package. Read below to know more
+- `build_style` This specifies the `build method` for a package. Read below to know more
 about the available package `build methods`. If `build_style` is not set,
 the package must define at least a `do_install()` function, and optionally
 more build phases as such `do_configure()`, `do_build()`, etc.
 
-- *configure_script*: The name of the `configure` script to execute at the `configure` phase if
+- `configure_script` The name of the `configure` script to execute at the `configure` phase if
 `${build_style}` is set to `configure` or `gnu-configure` build methods.
 By default set to `./configure`.
 
-- *configure_args*: The arguments to be passed in to the `configure` script if `${build_style}`
+- `configure_args` The arguments to be passed in to the `configure` script if `${build_style}`
 is set to `configure` or `gnu-configure` build methods. By default, prefix
 must be set to `/usr`. In `gnu-configure` packages, some options are already
 set by default: `--prefix=/usr --sysconfdir=/etc --infodir=/usr/share/info --mandir=/usr/share/man --localstatedir=/var`.
 
-- *make_cmd*: The executable to run at the `build` phase if `${build_style}` is set to
+- `make_cmd` The executable to run at the `build` phase if `${build_style}` is set to
 `configure`, `gnu-configure` or `gnu-makefile` build methods.
 By default set to `make`.
 
-- *make_build_args*: The arguments to be passed in to `${make_cmd}` at the build phase if
+- `make_build_args` The arguments to be passed in to `${make_cmd}` at the build phase if
 `${build_style}` is set to `configure`, `gnu-configure` or `gnu_makefile`
 build methods. Unset by default.
 
-- *make_install_args*: The arguments to be passed in to `${make_cmd}` at the `install-destdir`
+- `make_install_args` The arguments to be passed in to `${make_cmd}` at the `install-destdir`
 phase if `${build_style}` is set to `configure`, `gnu-configure` or
 `gnu_makefile` build methods. By default set to
 `PREFIX=/usr DESTDIR=${DESTDIR}`.
 
-- *make_build_target*: The target to be passed in to `${make_cmd}` at the build phase if
+- `make_build_target` The target to be passed in to `${make_cmd}` at the build phase if
 `${build_style}` is set to `configure`, `gnu-configure` or `gnu_makefile`
 build methods. Unset by default (`all` target).
 
-- *make_install_target*: The target to be passed in to `${make_cmd}` at the `install-destdir` phase
+- `make_install_target` The target to be passed in to `${make_cmd}` at the `install-destdir` phase
 if `${build_style}` is set to `configure`, `gnu-configure` or `gnu_makefile`
 build methods. By default set to `install`.
 
-- *patch_args*: The arguments to be passed in to the `patch(1)` command when applying
+- `patch_args` The arguments to be passed in to the `patch(1)` command when applying
 patches to the package sources after `do_extract()`. Patches are stored in
 `srcpkgs/<pkgname>/patches` and must be in `-p0` format. By default set to `-Np0`.
 
-- *disable_parallel_build*: If set the package won't be built in parallel
+- `disable_parallel_build` If set the package won't be built in parallel
 and `XBPS_MAKEJOBS` has no effect.
 
-- *keep_libtool_archives*: If enabled the `GNU Libtool` archives won't be removed. By default those
+- `keep_libtool_archives` If enabled the `GNU Libtool` archives won't be removed. By default those
 files are always removed automatically.
 
-- *skip_extraction*: A list of filenames that should not be extracted in the `extract` phase.
+- `skip_extraction` A list of filenames that should not be extracted in the `extract` phase.
 This must match the basename of any url defined in `${distfiles}`.
 Example `skip_extraction="foo-${version}.tar.gz"`.
 
-- *force_debug_pkgs*: If enabled binary packages with debugging symbols will be generated
+- `force_debug_pkgs` If enabled binary packages with debugging symbols will be generated
 even if `XBPS_DEBUG_PKGS` is disabled in `xbps-src.conf` or in the
 `command line arguments`.
 
-- *conf_files*: A list of configuration files the binary package owns; this expects full
+- `conf_files` A list of configuration files the binary package owns; this expects full
 paths, and multiple entries can be separated by blanks, i.e:
 `conf_files="/etc/foo.conf /etc/foo2.conf"`.
 
-- *noarch*: If set, the binary package is not architecture specific and can be shared
+- `noarch` If set, the binary package is not architecture specific and can be shared
 by all supported architectures.
 
-- *nonfree*: If set, the binary package will be put into the *non free* repository.
+- `nonfree` If set, the binary package will be put into the *non free* repository.
 
-- *nostrip*: If set, the ELF binaries with debugging symbols won't be stripped. By
+- `nostrip` If set, the ELF binaries with debugging symbols won't be stripped. By
 default all binaries are stripped.
 
 ### build style scripts
@@ -329,36 +329,36 @@ to execute a `build_style` script must be defined via `hostmakedepends`.
 
 The current list of available `build_style` scripts is the following:
 
-- *cmake*: For packages that use the CMake build system, configuration arguments
+- `cmake` For packages that use the CMake build system, configuration arguments
 can be passed in via `configure_args`.
 
-- *configure*: For packages that use non-GNU configure scripts, at least `--prefix=/usr`
+- `configure` For packages that use non-GNU configure scripts, at least `--prefix=/usr`
 should be passed in via `configure_args`.
 
-- *gnu-configure*: For packages that use GNU configure scripts, additional configuration
+- `gnu-configure` For packages that use GNU configure scripts, additional configuration
 arguments can be passed in via `configure_args`.
 
-- *gnu-makefile*: For packages that use GNU make, build arguments can be passed in via
+- `gnu-makefile` For packages that use GNU make, build arguments can be passed in via
 `make_build_args` and install arguments via `make_install_args`. The build
 target can be overriden via `make_build_target` and the install target
 via `make_install_target`.
 
-- *meta*: For `meta-packages`, i.e packages that only install local files or simply
+- `meta` For `meta-packages`, i.e packages that only install local files or simply
 depend on additional packages. This build style does not install
 dependencies to the root directory, and only checks if a binary package is
 available in repositories.
 
-- *perl-ModuleBuild*: For packages that use the Perl
+- `perl-ModuleBuild` For packages that use the Perl
 [Module::Build](http://search.cpan.org/~leont/Module-Build-0.4202/lib/Module/Build.pm) method.
 
-- *perl*: For packages that use the Perl
+- `perl` For packages that use the Perl
 [ExtUtils::MakeMaker](http://perldoc.perl.org/ExtUtils/MakeMaker.html) build method.
 
-- *python-module*: For packages that use the Python module build method (setup.py).
+- `python-module` For packages that use the Python module build method (setup.py).
 
-- *waf3*: For packages that use the Python3 `waf` build method with python3.
+- `waf3` For packages that use the Python3 `waf` build method with python3.
 
-- *waf*: For packages that use the Python `waf` method with python2.
+- `waf` For packages that use the Python `waf` method with python2.
 
 > NOTE: if `build_style` is not set, the template must (at least) define a
 `do_install()` function and optionally more phases via `do_xxx()` functions.
@@ -368,30 +368,30 @@ available in repositories.
 The following functions can be defined to change the behavior of how the
 package is downloaded, compiled and installed.
 
-- *do_fetch()*: if defined and `distfiles` is not set, use it to fetch the required sources.
+- `do_fetch()` if defined and `distfiles` is not set, use it to fetch the required sources.
 
-- *do_extract()*: if defined and `distfiles` is not set, use it to extract the required sources.
+- `do_extract()` if defined and `distfiles` is not set, use it to extract the required sources.
 
-- *post_extract()*: Actions to execute after `do_extract()`.
+- `post_extract()` Actions to execute after `do_extract()`.
 
-- *pre_configure()*: Actions to execute after `post_extract()`.
+- `pre_configure()` Actions to execute after `post_extract()`.
 
-- *do_configure()*: Actions to execute to configure the package; `${configure_args}` should
+- `do_configure()` Actions to execute to configure the package; `${configure_args}` should
 still be passed in if it's a GNU configure script.
 
-- *post_configure()*: Actions to execute after `do_configure()`.
+- `post_configure()` Actions to execute after `do_configure()`.
 
-- *pre_build()*: Actions to execute after `post_configure()`.
+- `pre_build()` Actions to execute after `post_configure()`.
 
-- *do_build()*: Actions to execute to build the package.
+- `do_build()` Actions to execute to build the package.
 
-- *post_build()*: Actions to execute after `do_build()`.
+- `post_build()` Actions to execute after `do_build()`.
 
-- *pre_install()*: ctions to execute after `post_build()`.
+- `pre_install()` ctions to execute after `post_build()`.
 
-- *do_install()*: Actions to execute to install the package files into the `fake destdir`.
+- `do_install()` Actions to execute to install the package files into the `fake destdir`.
 
-- *post_install()*: Actions to execute after `do_install()`.
+- `post_install()` Actions to execute after `do_install()`.
 
 > NOTE: A function defined in a template has preference over the same function
 defined by a `build_style` script.
@@ -404,9 +404,9 @@ to the `template` file.
 
 The following variables may be set to allow package build options:
 
-- *build_options*: Sets the build options supported by the source package.
+- `build_options` Sets the build options supported by the source package.
 
-- *build_options_default*: Sets the default build options to be used by the source package.
+- `build_options_default` Sets the default build options to be used by the source package.
 
 - `desc_option_<option>`: Sets the description for the build option `option`. This must match the
 keyword set in *build_options*.
@@ -502,18 +502,18 @@ There's a trigger along with some variables that are specifically to create
 **system users and groups** when the binary package is being configured.
 The following variables can be used for this purpose:
 
-- *system_groups*: This specifies the names of the new *system groups* to be created, separated
+- `system_groups` This specifies the names of the new *system groups* to be created, separated
 by blanks. Optionally the **gid** can be specified by delimiting it with a
 colon, i.e `system_groups="mygroup:78"` or `system_groups="foo blah:8000"`.
 
-- *system_accounts*: This specifies the names of the new **system users/groups** to be created,
+- `system_accounts` This specifies the names of the new **system users/groups** to be created,
 separated by blanks, i.e `system_accounts="foo blah"`. Additional variables
 for the **system accounts** can be specified to change its behavior:
 
-	- `<account>_homedir`: the home directory for the user. If unset defaults to `/`.
-	- `<account>_shell`: the shell for the new user. If unset defaults to `/sbin/nologin`.
-	- `<account>_descr`: the description for the new user. If unset defaults to `<user> unprivileged user`.
-	- `<account>_groups`: additional groups to be added to for the new user.
+	- `<account>_homedir` the home directory for the user. If unset defaults to `/`.
+	- `<account>_shell` the shell for the new user. If unset defaults to `/sbin/nologin`.
+	- `<account>_descr` the description for the new user. If unset defaults to `<user> unprivileged user`.
+	- `<account>_groups` additional groups to be added to for the new user.
 
 The **system user** is created by using a dynamically allocated **uid/gid** in your system
 and it's created as a `system account`. A new group will be created for the
@@ -524,20 +524,20 @@ specified `system account` and used exclusived for this purpose.
 32bit packages are built automatically when the builder is x86 (32bit), but
 there are some variables that can change the behavior:
 
-- *lib32depends*: If this variable is set, dependencies listed here will be used rather than
+- `lib32depends` If this variable is set, dependencies listed here will be used rather than
 those detected automatically by xbps-src and **depends**. Please note that
 dependencies must be specified with version comparators, i.e
 `lib32depends="foo>=0 blah<2.0"`.
 
-- *lib32disabled*: If this variable is set, no 32bit package will be built. Please note that
+- `lib32disabled` If this variable is set, no 32bit package will be built. Please note that
 this variable if used in the global scope it will disable 32bit packages for
 the **main package and its subpackages**.
 
-- *lib32files*: Additional files to be added to the **32bit** package. This expect absolute
+- `lib32files` Additional files to be added to the **32bit** package. This expect absolute
 paths separated by blanks, i.e `lib32files="/usr/bin/blah
 /usr/include/blah."`.
 
-- *lib32mode*: If unset, only shared libraries and pkg-config files will be copied to the
+- `lib32mode` If unset, only shared libraries and pkg-config files will be copied to the
 **32bit** package. If set to `full` all files will be copied as is.
 
 ### Notes
@@ -563,7 +563,6 @@ To pull in new changes from `upstream`:
 
 Once you've made changes to your `forked` repository you can submit
 a github pull request; see https://help.github.com/articles/fork-a-repo for more information.
-for more information.
 
 For commit messages please use the following rules:
 
