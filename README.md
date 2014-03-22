@@ -13,4 +13,4 @@ the binary package with:
 
 	# xbps-install -S xbps-src
 
-See doc/manual.txt for documentation when creating new source packages.
+See Manual.md for documentation to create and learn about the source packages.
