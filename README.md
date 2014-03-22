@@ -27,4 +27,5 @@ After that you can run:
 to see all available targets/options and start building any available package
 in the `srcpkgs` directory.
 
-See Manual.md for documentation to create and learn about the source packages.
+See [https://github.com/voidlinux/xbps-packages/blob/master/Manual.md](Manual.md)
+for documentation to create and learn about the source packages.
