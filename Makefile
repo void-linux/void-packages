@@ -20,6 +20,8 @@ all:
 		${CURDIR}/common/xbps-src/xbps-src.sh > ${CURDIR}/xbps-src
 	$(CC) $(CFLAGS) ${LIBEXECDIR}/$(CHROOT_C) -o ${LIBEXECDIR}/$(CHROOT_BIN)
 	chmod 755 xbps-src
+	@echo "Ignoring changes to etc/conf for local overrides."
+	@git update-index --assume-unchanged etc/conf
 	@echo
 	@echo "The chroot helper must be a setgid binary (4750) for the group '$(PRIVILEGED_GROUP)'."
 	@echo "Please run 'sudo make setup' to set appropiate permissions."
