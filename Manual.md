@@ -465,8 +465,8 @@ The build options can also be shown for binary packages via `xbps-query(8)`:
 
     $ xbps-query -R --property=build-options foo
 
-Run-time dependencies
----------------------
+### Run-time dependencies
+
 Dependencies for ELF executables or shared libraries are detected
 automatically by `xbps-src`, hence run-time dependencies must not be specified
 in templates with the following exceptions:
