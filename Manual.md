@@ -37,8 +37,12 @@ generated with the definitions specified on it.
 Don't worry if anything is not clear as it should be. The reserved `variables`
 and `functions` will be explained later. This `template` file should be created
 in a directory matching `$pkgname`, i.e: `xbps-packages/srcpkgs/foo/template`.
-If everything went fine after running `xbps-src build-pkg` a binary package
-called `foo-1.0_1.<arch>.xbps` will be generated in the local repository:
+
+If everything went fine after running
+
+    $ xbps-src build-pkg
+    
+a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local repository
 `<masterdir>/host/binpkgs`.
 
 ### Subpackages
@@ -77,7 +81,8 @@ foo-devel_package() {
 }
 ```
 
-All subpackages need an additional symlink to the `main` pkg, i.e:
+All subpackages need an additional symlink to the `main` pkg, otherwise dependencies
+requiring those packages won't find its `template` i.e:
 
 ```
  /srcpkgs
@@ -86,8 +91,13 @@ All subpackages need an additional symlink to the `main` pkg, i.e:
   |- foo-devel <- symlink to `foo`
 ```
 
-Otherwise dependencies requiring those packages won't find its `template`
-file.
+An important point of `subpackages` is that they are processed after the main
+package has run its `install` phase. The `pkg_install()` function specified on them
+commonly is used to move files from the `main` package destdir to the `subpackage` destdir.
+
+The helper functions `vinstall`, `vmkdir`, `vcopy` and `vmove` are just wrappers that simplify
+the process of creating, copying and moving files/directories between the `main` package
+destdir (`$DESTDIR`) to the `subpackage` destdir (`$PKGDESTDIR`).
 
 ### Development packages
 
@@ -106,9 +116,11 @@ If a development package provides a `pkg-config` file, you should verify
 what dependencies the package needs for dynamic or static linking, and add
 the appropiate `development` packages as dependencies.
 
-## Package build phases
+### Package build phases
 
 Building a package consist of the following phases:
+
+- `setup` This phase prepares the environment for building a package.
 
 - `fetch` This phase downloads required sources for a `source package`, as defined by
 the `distfiles` variable or `do_fetch()` function.
@@ -123,7 +135,7 @@ function, which is the directory to be used to compile the `source package`.
 - `install` This phase installs the `package files` into a `fake destdir`,
 via `make install` or any other compatible method.
 
-- `package` This phase builds the `binary packages` with files stored in the
+- `pkg` This phase builds the `binary packages` with files stored in the
 `package destdir` and registers them into the local repository.
 
 `xbps-src` supports running just the specified phase, and if it ran
