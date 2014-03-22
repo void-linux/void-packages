@@ -28,5 +28,8 @@ After that you can run:
 to see all available targets/options and start building any available package
 in the `srcpkgs` directory.
 
+The `etc/defaults.conf` file contains the possible settings that can be overrided
+through `etc/conf` configuration file for the `xbps-src` utility.
+
 See [Manual](https://github.com/voidlinux/xbps-packages/blob/master/Manual.md)
 for documentation to create and learn about the source packages.
