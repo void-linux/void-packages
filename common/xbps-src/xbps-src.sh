@@ -275,6 +275,18 @@ exit_func() {
 	exit 2
 }
 
+basename_cwd() {
+    echo $(basename $(pwd))
+}
+
+read_pkg() {
+    if [ -z "${XBPS_TARGET_PKG}" ]; then
+        [ ! -r ./template ] && msg_error "missing build template in $(pwd).\n"
+        XBPS_TARGET_PKG=$(basename_cwd)
+    fi
+    setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
+}
+
 #
 # main()
 #
@@ -498,7 +510,7 @@ chroot)
 	chroot_handler chroot dummy
 	;;
 clean)
-    setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
+    read_pkg
 	if [ -n "$CHROOT_READY" -a -z "$IN_CHROOT" ]; then
 		chroot_handler $XBPS_TARGET $XBPS_TARGET_PKG || exit $?
 	else
@@ -518,7 +530,7 @@ remove-autodeps)
 	;;
 fetch|extract|build|configure|install|install-destdir|build-pkg)
 	BEGIN_INSTALL=1
-    setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
+    read_pkg
 	if [ -n "$CHROOT_READY" -a -z "$IN_CHROOT" ]; then
 		chroot_handler $XBPS_TARGET $XBPS_TARGET_PKG
 	else
@@ -526,38 +538,38 @@ fetch|extract|build|configure|install|install-destdir|build-pkg)
 	fi
 	;;
 remove|remove-destdir)
-    setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
+    read_pkg
 	remove_pkg $XBPS_CROSS_BUILD
 	;;
 list)
 	$XBPS_QUERY_CMD -l
 	;;
 show)
-    setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
+    read_pkg
 	show_pkg
 	;;
 show-files)
-    setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
+    read_pkg
 	show_pkg_files
 	;;
 show-deps)
-    setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
+    read_pkg
 	show_pkg_deps
 	;;
 show-build-deps)
-    setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
+    read_pkg
 	show_pkg_build_deps
 	;;
 show-options)
-    setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
+    read_pkg
 	show_pkg_options
 	;;
 show-shlib-provides)
-    setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
+    read_pkg
 	show_pkg_shlib_provides
 	;;
 show-shlib-requires)
-    setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
+    read_pkg
 	show_pkg_shlib_requires
 	;;
 zap)
