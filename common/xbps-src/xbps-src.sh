@@ -287,6 +287,12 @@ read_pkg() {
     setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
 }
 
+readonly XBPS_VERSION=$(xbps-uhelper -V|awk '{print $2}')
+readonly XBPS_APIVER=$(xbps-uhelper -V|awk '{print $4}')
+readonly XBPS_SRC_VERSION="@@XBPS_SRC_VERSION@@"
+readonly FAKEROOT_CMD="fakeroot --"
+readonly XBPS_MACHINE=$(uname -m)
+
 #
 # main()
 #
@@ -383,12 +389,6 @@ readonly CHROOT_CMD=$XBPS_LIBEXECDIR/xbps-src-chroot-helper
 export XBPS_FETCH_CMD="xbps-uhelper fetch"
 readonly XBPS_DIGEST_CMD="xbps-uhelper digest"
 readonly XBPS_CMPVER_CMD="xbps-uhelper cmpver"
-
-readonly XBPS_VERSION=$(xbps-uhelper -V|awk '{print $2}')
-readonly XBPS_APIVER=$(xbps-uhelper -V|awk '{print $4}')
-readonly XBPS_SRC_VERSION="@@XBPS_SRC_VERSION@@"
-readonly FAKEROOT_CMD="fakeroot --"
-readonly XBPS_MACHINE=$(uname -m)
 
 XBPS_TARGET="$1"
 XBPS_TARGET_PKG="$2"
