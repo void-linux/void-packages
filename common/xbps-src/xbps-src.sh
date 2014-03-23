@@ -23,17 +23,11 @@ Targets: (only one may be specified)
  build <pkgname>
    Build package source (fetch + extract + configure + build).
 
- build-pkg <pkgname>
-   Build binary package for <pkgname> and all required dependencies.
-
  chroot
    Enter to the chroot in <masterdir>.
 
  clean <pkgname>
    Remove <pkgname> build directory.
-
- remove-autodeps
-   Removes all package dependencies installed automatically.
 
  configure <pkgname>
    Configure a package (fetch + extract + configure).
@@ -49,9 +43,15 @@ Targets: (only one may be specified)
    Install target package into <destdir> but not building the binary package
    and not removing build directory for inspection purposes.
 
+ pkg <pkgname>
+   Build binary package for <pkgname> and all required dependencies.
+
  remove <pkgname>
    Remove target package from <destdir>. If <pkgname>-<version> is not matched
    from build template nothing is removed.
+
+ remove-autodeps
+   Removes all package dependencies that were installed automatically.
 
  show <pkgname>
    Show information for the specified package.
@@ -528,7 +528,7 @@ remove-autodeps)
 		remove_pkg_autodeps
 	fi
 	;;
-fetch|extract|build|configure|install|install-destdir|build-pkg)
+fetch|extract|build|configure|install|install-destdir|pkg|build-pkg)
 	BEGIN_INSTALL=1
     read_pkg
 	if [ -n "$CHROOT_READY" -a -z "$IN_CHROOT" ]; then
