@@ -338,7 +338,7 @@ if [ -n "$IN_CHROOT" ]; then
     readonly XBPS_CONFIG_FILE=/etc/xbps/xbps-src.conf
 	readonly XBPS_DISTDIR=/xbps-packages
 else
-    _distdir="$(dirname $0)"
+    _distdir="$(readlink -f $(dirname $0))"
     if [ "${_distdir}" = "." ]; then
         readonly XBPS_DISTDIR="$(pwd -P)"
     else
