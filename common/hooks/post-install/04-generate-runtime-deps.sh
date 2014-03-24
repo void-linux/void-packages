@@ -81,7 +81,7 @@ hook() {
 	#
 	for f in ${verify_deps}; do
 		unset _f j rdep _rdep rdepcnt soname _pkgname _rdepver found
-		_f=$(echo "$f"|sed 's|\+|\\+|g')
+		_f=$(echo "$f"|sed -E 's|\+|\\+|g')
 		rdep="$(grep -E "^${_f}[[:blank:]]+.*$" $mapshlibs|awk '{print $2}')"
 		rdepcnt="$(grep -E "^${_f}[[:blank:]]+.*$" $mapshlibs|awk '{print $2}'|wc -l)"
 		if [ -z "$rdep" ]; then
