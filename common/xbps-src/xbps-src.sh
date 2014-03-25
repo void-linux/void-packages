@@ -211,6 +211,7 @@ check_build_requirements() {
 	    cd $XBPS_DISTDIR
 	    _gitbranch="$(git symbolic-ref --short HEAD 2>/dev/null)"
 	    if [ -n "${_gitbranch}" -a "${_gitbranch}" != "master" ]; then
+            export XBPS_ALT_REPOSITORY="${_gitbranch}"
 		    export XBPS_REPOSITORY="${XBPS_REPOSITORY}/${_gitbranch}"
 		    msg_normal "Using \`$XBPS_REPOSITORY\' as local repository.\n"
 	    fi
