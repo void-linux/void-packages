@@ -309,13 +309,6 @@ setup_pkg() {
 		fi
 	fi
 
-	# Setup some specific package vars.
-	if [ -z "$wrksrc" ]; then
-		wrksrc="$XBPS_BUILDDIR/${sourcepkg}-${version}"
-	else
-		wrksrc="$XBPS_BUILDDIR/$wrksrc"
-	fi
-
 	FILESDIR=$XBPS_SRCPKGDIR/$sourcepkg/files
 	PATCHESDIR=$XBPS_SRCPKGDIR/$sourcepkg/patches
 	DESTDIR=$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${sourcepkg}-${version}
@@ -377,6 +370,13 @@ setup_pkg() {
 	fi
 
 	set_build_options
+
+	# Setup some specific package vars.
+	if [ -z "$wrksrc" ]; then
+		wrksrc="$XBPS_BUILDDIR/${sourcepkg}-${version}"
+	else
+		wrksrc="$XBPS_BUILDDIR/$wrksrc"
+	fi
 
 }
 
