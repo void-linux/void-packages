@@ -28,7 +28,8 @@ hook() {
 	for filename in `cat ${PKGDESTDIR}/shlib-provides`; do
 		rev=${filename#*.so.}
 		libname=${filename%.so*}
-		grep -E "^${libname}\.so[\.0-9.]*[[:blank:]]+${pkgname}-[^-]+_[0-9]+$" $mapshlibs | { \
+		_pkgname=$(echo "$pkgname"|sed -E 's|\+|\\+|g')
+		grep -E "^${libname}\.so[\.0-9.]*[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$" $mapshlibs | { \
 			while read conflictFile conflictPkg; do
 				found=1
 				conflictRev=${conflictFile#*.so.}
