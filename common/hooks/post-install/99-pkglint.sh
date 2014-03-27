@@ -4,6 +4,8 @@ hook() {
 	local error=0 filename= rev= libname= conflictPkg= conflictFile=
 		conflictRev= found= mapshlibs=$XBPS_COMMONDIR/shlibs
 
+	set +E
+
 	for f in bin sbin lib lib32; do
 		if [ -d ${PKGDESTDIR}/${f} ]; then
 			msg_red "${pkgver}: /${f} directory is not allowed, use /usr/${f}.\n"
@@ -28,7 +30,9 @@ hook() {
 	for filename in `cat ${PKGDESTDIR}/shlib-provides`; do
 		rev=${filename#*.so.}
 		libname=${filename%.so*}
-		grep -E "^${libname}\.so[\.0-9.]*[[:blank:]]+${pkgname}-[^-]+_[0-9]+$" $mapshlibs | { \
+		_libname=$(echo "$libname"|sed -E 's|\+|\\+|g')
+		_pkgname=$(echo "$pkgname"|sed -E 's|\+|\\+|g')
+		grep -E "^${_libname}\.so[\.0-9.]*[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$" $mapshlibs | { \
 			while read conflictFile conflictPkg; do
 				found=1
 				conflictRev=${conflictFile#*.so.}
@@ -45,6 +49,19 @@ hook() {
 				done
 				msg_error "${pkgver}: cannot continue with installation!\n"
 			done
+			# Try to match provided shlibs in virtual packages.
+			for f in ${provides}; do
+				_vpkgname="$($XBPS_UHELPER_CMD getpkgname ${f} 2>/dev/null)"
+				_spkgname="$(grep "^${filename}" $mapshlibs | awk '{print $2}')"
+				_libpkgname="$($XBPS_UHELPER_CMD getpkgname ${_spkgname} 2>/dev/null)"
+				if [ -z "${_spkgname}" -o  -z "${_libpkgname}" ]; then
+					continue
+				fi
+				if [ "${_vpkgname}" = "${_libpkgname}" ]; then
+					found=1
+					break
+				fi
+			done;
 			if [ -z "$found" ]; then
 				msg_error "${pkgver}: ${libname}.so.${rev} not found in common/shlibs. Please add it.\n"
 			fi;
