@@ -106,7 +106,8 @@ hook() {
 			fi
 			echo "   Stripped library: ${f#$PKGDESTDIR}"
 			_soname=$(${OBJDUMP} -p "$f"|grep SONAME|awk '{print $2}')
-			if [[ "${_soname}" ]] && [[ ${_soname} =~ .so.[0-9] ]]; then
+			pattern="^lib[[:alnum:]]+\.(so)\.[0-9]*"
+			if [[ $fname =~ $pattern ]] && [[ ${_soname} =~ $pattern ]]; then
 				echo "${_soname}" >> ${PKGDESTDIR}/.shlib-provides
 			fi
 			attach_debug "$f"
