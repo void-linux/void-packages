@@ -97,6 +97,13 @@ hook() {
 				printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
 				continue
 			fi
+			# If dependency does not have "shlib-provides" do not
+			# change it to 32bit.
+			_shprovides="$($XBPS_QUERY_CMD -R --property=shlib-provides "$f")"
+			if [ -z "${_shprovides}" ]; then
+				printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
+				continue
+			fi
 			printf "${pkgn}-32bit${pkgv} " >> $destdir32/rdeps
 		done
 	fi
