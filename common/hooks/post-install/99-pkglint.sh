@@ -30,15 +30,15 @@ hook() {
 	for filename in `cat ${PKGDESTDIR}/shlib-provides`; do
 		rev=${filename#*.so.}
 		libname=${filename%.so*}
-		_libname=$(echo "$libname"|sed -E 's|\+|\\+|g')
+		_shlib=$(echo "$filename"|sed -E 's|\+|\\+|g')
 		_pkgname=$(echo "$pkgname"|sed -E 's|\+|\\+|g')
-		grep -E "^${_libname}\.so[\.0-9.]*[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$" $mapshlibs | { \
+		grep -E "^${_shlib}[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$" $mapshlibs | { \
 			while read conflictFile conflictPkg; do
 				found=1
 				conflictRev=${conflictFile#*.so.}
 				if [ "$rev" = "$conflictRev" ]; then
 					continue
-				elif [[ "$rev".* =~ "$conflictRev" ]]; then
+				elif [[ ${rev}.* =~ $conflictRev ]]; then
 					continue
 				fi
 				msg_red "${pkgver}: SONAME bump detected: ${libname}.so.${conflictRev} -> ${libname}.so.${rev}\n"
