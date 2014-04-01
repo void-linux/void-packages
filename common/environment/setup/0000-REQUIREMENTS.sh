@@ -5,6 +5,7 @@
 # =========================================================
 # DO NOT MODIFY THIS FILE WITHOUT PRIOR WRITTEN PERMISSION!
 # =========================================================
+# OBSOLETE WITH XBPS>=0.35, KEEP THIS FOR COMPAT.
 
 set -a
 
