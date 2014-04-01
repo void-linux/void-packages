@@ -108,6 +108,9 @@ hook() {
 			_soname=$(${OBJDUMP} -p "$f"|grep SONAME|awk '{print $2}')
 			pattern="^lib[[:alnum:]]*([-(\.*)[[:alnum:]]*)\.(so\.[0-9]*|so)"
 			if [[ $fname =~ $pattern ]] && [[ ${_soname} =~ $pattern ]]; then
+				if [ ! -f ${PKGDESTDIR}/usr/lib/${fname} ]; then
+					continue
+				fi
 				echo "${_soname}" >> ${PKGDESTDIR}/.shlib-provides
 			fi
 			attach_debug "$f"
