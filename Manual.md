@@ -577,14 +577,21 @@ the installed files (`xbps-src show-files`) before pushing new updates.
 
 ### Contributing via git
 
-You can fork the `xbps-packages` git repository on github and then set up
-a remote to pull in new changes:
+Fork the voidlinux `xbps-packages` git repository on github and clone it:
 
-    $ git remote add voidlinux git://github.com/voidlinux/xbps-packages.git
+    $ git clone git://github.com/<user>/xbps-packages.git
 
-To pull in new changes from `voidlinux`:
+You can now make your own commits to the `forked` repository:
 
-    $ git pull voidlinux master
+    $ git add ...
+    $ git commit ...
+    $ git push ...
+
+To keep your forked repository always up to date, setup the `upstream` remote
+to pull in new changes:
+
+    $ git remote add upstream git://github.com/voidlinux/xbps-packages.git
+    $ git pull upstream master
 
 Once you've made changes to your `forked` repository you can submit
 a github pull request; see https://help.github.com/articles/fork-a-repo for more information.
