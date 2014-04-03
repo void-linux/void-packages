@@ -579,7 +579,7 @@ the installed files (`xbps-src show-files`) before pushing new updates.
 
 Fork the voidlinux `xbps-packages` git repository on github and clone it:
 
-    $ git clone git://github.com/<user>/xbps-packages.git
+    $ git clone git@github.com:<user>/xbps-packages.git
 
 You can now make your own commits to the `forked` repository:
 
