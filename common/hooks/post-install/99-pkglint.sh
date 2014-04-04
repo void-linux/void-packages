@@ -30,9 +30,9 @@ hook() {
 	for filename in `cat ${PKGDESTDIR}/shlib-provides`; do
 		rev=${filename#*.so.}
 		libname=${filename%.so*}
-		_shlib=$(echo "$filename"|sed -E 's|\+|\\+|g')
+		_shlib=$(echo "$libname"|sed -E 's|\+|\\+|g')
 		_pkgname=$(echo "$pkgname"|sed -E 's|\+|\\+|g')
-		grep -E "^${_shlib}[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$" $mapshlibs | { \
+		grep -E "^${_shlib}\.so(.*)[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$" $mapshlibs | { \
 			while read conflictFile conflictPkg; do
 				found=1
 				conflictRev=${conflictFile#*.so.}
@@ -44,8 +44,9 @@ hook() {
 				msg_red "${pkgver}: SONAME bump detected: ${libname}.so.${conflictRev} -> ${libname}.so.${rev}\n"
 				msg_red "${pkgver}: please update common/shlibs with this line: \"${libname}.so.${rev} ${pkgver}\"\n"
 				msg_red "${pkgver}: all reverse dependencies should also be revbumped to be rebuilt against ${libname}.so.${rev}:\n"
-				for x in $($XBPS_QUERY_XCMD -RX ${pkgname}); do
-					msg_red "   ${x}\n"
+				_revdeps=$($XBPS_QUERY_XCMD -s ${libname} -p shlib-requires|awk '{print $1}')
+				for x in ${_revdeps}; do
+					msg_red "   ${x%:}\n"
 				done
 				msg_error "${pkgver}: cannot continue with installation!\n"
 			done
