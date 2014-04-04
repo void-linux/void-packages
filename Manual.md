@@ -120,8 +120,8 @@ as part of the source package.
 `subpackages`, set to `${XBPS_MASTERDIR}/destdir/${pkgname}-${version}`.
 
 - `XBPS_BUILDDIR` Directory to store the `source code` of the source package being processed,
-set to `${XBPS_MASTERDIR}/destdir`. The package `wrksrc` is always stored
-in this directory.
+set to `${XBPS_MASTERDIR}/builddir`. The package `wrksrc` is always stored
+in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_MACHINE` The machine architecture as returned by `uname -m`.
 
