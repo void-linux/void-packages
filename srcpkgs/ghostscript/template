@@ -1,26 +1,33 @@
 # Template file for 'ghostscript'
 pkgname=ghostscript
-version=9.10
+version=9.14
 revision=1
 short_desc="An interpreter for the PostScript language"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://www.ghostscript.com/"
 license="GPL-3, custom"
 distfiles="http://downloads.ghostscript.com/public/$pkgname-$version.tar.bz2"
-checksum=6c8d9d1b23bd8ffd238274e342a40ab21762b0aab6355083ca0db673267dd580
+checksum=1c74c5aac4042d841b9d5314200b8932a62d03c92d25d329e993534d1279cc74
 
 hostmakedepends="automake libtool pkg-config"
-makedepends="dbus-devel libXext-devel libXt-devel libpng-devel>=1.6
+makedepends="zlib-devel dbus-devel libXext-devel libXt-devel libpng-devel>=1.6
  fontconfig-devel jasper-devel tiff-devel lcms2-devel jbig2dec-devel
  cups-devel gsfonts"
 depends="gsfonts"
 
 pre_configure() {
 	# force it to use system libs.
-	rm -rf jpeg libpng zlib jasper expat tiff lcms lcms2 freetype cups/libs jbig2dec
+	rm -rf jpeg libpng jasper expat tiff lcms lcms2 freetype cups/libs jbig2dec
+	cd ijs
+	autoreconf -fi
 }
 
 do_configure() {
+	case "${XBPS_TARGET_MACHINE}" in
+		mips) configure_args+=" --enable-big-endian";;
+		*) configure_args+=" --enable-little-endian";;
+	esac
+
 	# configure ghostscript
 	./configure ${configure_args} --enable-dynamic --with-ijs \
 		--with-jbig2dec --with-omni --with-x --with-drivers=ALL \
@@ -31,24 +38,29 @@ do_configure() {
 
 	# configure libijs
 	cd ijs
-	sed -i -e "s|AM_PROG_CC_STDC|AC_PROG_CC|g" configure.ac
-	./autogen.sh
 	./configure ${configure_args} --enable-shared --disable-static
 }
 
 do_build() {
+	if [ "$CROSS_BUILD" ]; then
+		# Build host utils.
+		make CC=cc CCLD=cc CFLAGS=-Os base/genarch base/genconf base/echogs
+		mkdir -p obj/aux soobj/aux
+		cp base/{echogs,genarch,genconf} obj/aux
+		cp base/{echogs,genarch,genconf} soobj/aux
+	fi
 	# build ghostscript
-	make
-	make so
+	make ${makejobs}
+	make ${makejobs} so
 	# build libijs
 	cd ijs
-	make
+	make ${makejobs}
 }
 
 do_install() {
 	# install ghostscript
 	make DESTDIR=${DESTDIR} cups_serverroot=${DESTDIR}/etc/cups \
-		cups_serverbin=${DESTDIR}/usr/lib/cups install soinstall
+		cups_serverbin=${DESTDIR}/usr/lib/cups install install-so
 	# install missing doc files # http://bugs.archlinux.org/task/18023
 	install -m644 doc/{Ps2ps2.htm,gs-vms.hlp,gsdoc.el,pscet_status.txt} \
 		${DESTDIR}/usr/share/ghostscript/$version/doc/
