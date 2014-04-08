@@ -6,7 +6,7 @@
 pkgname=avahi-discover
 version=0.6.31
 wrksrc="avahi-${version}"
-revision=13
+revision=14
 noarch=yes
 build_style=gnu-configure
 configure_args="--disable-qt3 --disable-qt4 --disable-mono --disable-monodoc
@@ -25,23 +25,69 @@ homepage="http://www.avahi.org"
 distfiles="$homepage/download/avahi-$version.tar.gz"
 checksum=8372719b24e2dd75de6f59bb1315e600db4fd092805bd1201ed0cb651a2dab48
 
-hostmakedepends="pkg-config intltool"
+hostmakedepends="automake libtool pkg-config intltool pygtk-devel dbus-python"
 makedepends="dbus-devel libcap-devel libdaemon-devel gdbm-devel
- pygtk-devel dbus-python gtk+3-devel gobject-introspection"
+ pygtk-devel dbus-python gtk+3-devel"
 depends="avahi>=$version python avahi-python>=$version dbus-python pygtk desktop-file-utils"
 pycompile_module="avahi_discover"
 
-if [ "$CROSS_BUILD" ]; then
-	msg_error "${pkgname}-${version}: this package is not cross buildable currently.\n"
+# Package build options
+build_options="gir"
+desc_option_gir="Enable support for building gobject introspection data"
+
+# Disable gir for cross builds.
+if [ -z "$CROSS_BUILD" ]; then
+	build_options_default="gir"
+fi
+
+if [ "$build_option_gir" ]; then
+	configure_args+=" --enable-introspection"
+	makedepends+=" gobject-introspection"
+else
+	configure_args+=" --disable-introspection"
 fi
 
 pre_configure() {
+	autoreconf -fi
+
 	# Disable GTK deprecations and -Werror to let this build with gtk+>=3.10.
 	sed -e 's,-DG_DISABLE_DEPRECATED=1,,' \
 		-e 's,-DGDK_DISABLE_DEPRECATED=1,,' \
 		-e 's,-DGTK_DISABLE_DEPRECATED=1,,' \
 		-i avahi-ui/Makefile.in
 	sed -e 's,-Werror,,g' -i configure
+}
+
+do_install() {
+	make DESTDIR=${wrksrc}/tmpinstall install
+
+	# Move all required files to ${DESTDIR} now...
+	vmkdir usr/bin
+	vmkdir usr/share/man/man1
+	vmkdir usr/share/applications
+	vmkdir usr/include
+	vmkdir usr/lib/pkgconfig
+
+	for f in bvnc bssh bshell avahi-bookmarks avahi-discover avahi-discover-standalone; do
+		mv ${wrksrc}/tmpinstall/usr/bin/${f} ${DESTDIR}/usr/bin
+		if [ -f ${wrksrc}/tmpinstall/usr/share/man/man1/${f}.1 ]; then
+			mv ${wrksrc}/tmpinstall/usr/share/man/man1/${f}.1 ${DESTDIR}/usr/share/man/man1
+		fi
+		if [ -f ${wrksrc}/tmpinstall/usr/share/applications/${f}.desktop ]; then
+			mv ${wrksrc}/tmpinstall/usr/share/applications/${f}.desktop ${DESTDIR}/usr/share/applications
+		fi
+	done
+	mv ${wrksrc}/tmpinstall/usr/include/avahi-g* ${DESTDIR}/usr/include
+	mv ${wrksrc}/tmpinstall/usr/include/avahi-ui* ${DESTDIR}/usr/include
+	mv ${wrksrc}/tmpinstall/usr/lib/python2.7 ${DESTDIR}/usr/lib
+	mv ${wrksrc}/tmpinstall/usr/lib/*avahi-g* ${DESTDIR}/usr/lib
+	mv ${wrksrc}/tmpinstall/usr/lib/*avahi-ui* ${DESTDIR}/usr/lib
+	mv ${wrksrc}/tmpinstall/usr/lib/pkgconfig/avahi-g* ${DESTDIR}/usr/lib/pkgconfig
+	mv ${wrksrc}/tmpinstall/usr/lib/pkgconfig/avahi-ui* ${DESTDIR}/usr/lib/pkgconfig
+	if [ "$build_option_gir" ]; then
+		mv ${wrksrc}/tmpinstall/usr/lib/girepository-1.0 ${DESTDIR}/usr/lib
+		mv ${wrksrc}/tmpinstall/usr/share/gir-1.0 ${DESTDIR}/usr/share
+	fi
 }
 
 avahi-python-utils_package() {
@@ -70,7 +116,9 @@ avahi-glib-libs-devel_package() {
 	pkg_install() {
 		vmove "usr/include/avahi-g*"
 		vmove "usr/lib/pkgconfig/avahi-g*"
-		vmove "usr/share/gir-*"
+		if [ "$build_option_gir" ]; then
+			vmove usr/share/gir-1.0
+		fi
 		vmove usr/lib/libavahi-glib.so
 		vmove usr/lib/libavahi-gobject.so
 	}
@@ -81,7 +129,9 @@ avahi-glib-libs_package() {
 	pkg_install() {
 		vmove "usr/lib/libavahi-glib.so.*"
 		vmove "usr/lib/libavahi-gobject.so.*"
-		vmove "usr/lib/girepository*"
+		if [ "$build_option_gir" ]; then
+			vmove usr/lib/girepository-1.0
+		fi
 	}
 }
 
