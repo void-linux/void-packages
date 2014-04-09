@@ -35,7 +35,7 @@ hook() {
 		if [ "$rev" = "$filename" ]; then
 			_pattern="^${_shlib}\.so[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$"
 		else
-			_pattern="^${_shlib}\.so\.[0-9]+[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$"
+			_pattern="^${_shlib}\.so\.[0-9]+(.*)[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$"
 		fi
 		grep -E "${_pattern}" $mapshlibs | { \
 			while read conflictFile conflictPkg; do
