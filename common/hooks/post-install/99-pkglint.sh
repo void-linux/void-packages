@@ -32,7 +32,12 @@ hook() {
 		libname=${filename%.so*}
 		_shlib=$(echo "$libname"|sed -E 's|\+|\\+|g')
 		_pkgname=$(echo "$pkgname"|sed -E 's|\+|\\+|g')
-		grep -E "^${_shlib}\.so(.*)[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$" $mapshlibs | { \
+		if [ "$rev" = "$filename" ]; then
+			_pattern="^${_shlib}\.so[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$"
+		else
+			_pattern="^${_shlib}\.so\.[0-9]+[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$"
+		fi
+		grep -E "${_pattern}" $mapshlibs | { \
 			while read conflictFile conflictPkg; do
 				found=1
 				conflictRev=${conflictFile#*.so.}
