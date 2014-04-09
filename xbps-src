@@ -78,6 +78,12 @@ Targets: (only one may be specified)
  show-var <var>
    Prints the value of <var> if it's defined in xbps-src.
 
+ show-repo-updates
+   Prints the list of outdated packages in repositories.
+
+ show-sys-updates
+   Prints the list of oudated packages in your system.
+
  zap
    Removes a masterdir but preserving ccache, distcc and host directories.
 
@@ -473,6 +479,53 @@ check_build_requirements
 
 trap 'exit_func' INT TERM HUP
 
+bulk_getlink() {
+    local p="$(basename $1)"
+    local target="$(readlink $XBPS_SRCPKGDIR/$p)"
+
+    if [ $? -eq 0 -a -n "$target" ]; then
+        p=$target
+    fi
+    echo $p
+}
+
+bulk_build() {
+    local args="$1" pkg= pkgs= _pkgs= _realdep= _deps= found= x= result=
+
+    if ! command -v xbps-checkvers &>/dev/null; then
+        msg_error "xbps-src: cannot find xbps-{repo,}checkvers command!\n"
+    fi
+    _pkgs=$(xbps-checkvers ${args} -d $XBPS_DISTDIR | awk '{print $2}')
+    # Only add to the list real pkgs, not subpkgs.
+    for pkg in ${_pkgs}; do
+        _realdep=$(bulk_getlink $pkg)
+        unset found
+        for x in ${pkgs}; do
+            if [ "$x" = "${_realdep}" ]; then
+                found=1
+                break
+            fi
+        done
+        if [ -z "$found" ]; then
+            pkgs="$pkgs ${_realdep}"
+        fi
+    done
+    for pkg in ${pkgs}; do
+        unset found
+        setup_pkg $pkg $XBPS_CROSS_BUILD
+        _deps="$(show_pkg_build_deps | sed -e 's|[<>].*\$||g')"
+        _realdep=$(bulk_getlink $pkg)
+        for x in ${_deps}; do
+            if [ "${_realdep}" = "${pkg}" ]; then
+                found=1
+                break
+            fi
+        done
+        [ -n $found ] && result="${_realdep} ${result}"
+    done
+    echo "$result"
+}
+
 #
 # Main switch.
 #
@@ -565,6 +618,12 @@ show-shlib-requires)
 show-var)
     eval value="\${$XBPS_TARGET_PKG}"
     echo $value
+    ;;
+show-repo-updates)
+    bulk_build
+    ;;
+show-sys-updates)
+    bulk_build -i
     ;;
 zap)
 	masterdir_zap
