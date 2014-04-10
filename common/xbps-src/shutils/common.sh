@@ -276,6 +276,8 @@ setup_pkg() {
         fi
     done
 
+    . ${XBPS_SHUTILSDIR}/build_dependencies.sh
+
     # Check if base-chroot is already installed.
     if [ -z "$bootstrap" ]; then
         check_installed_pkg base-chroot-0.1_1
