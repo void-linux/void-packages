@@ -454,7 +454,6 @@ _remove_pkg_cross_deps() {
     rm -f $tmplogf
 }
 
-
 remove_pkg_autodeps() {
     local rval= tmplogf=
 
@@ -536,31 +535,4 @@ remove_cross_pkg() {
     if [ $rval -ne 0 ]; then
         msg_error "failed to remove cross-${XBPS_CROSS_TRIPLET} (error $rval)\n"
     fi
-}
-
-#
-# Returns 0 if pkgpattern in $1 is installed and greater than current
-# installed package, otherwise 1.
-#
-check_installed_pkg() {
-    local pkg="$1" cross="$2" uhelper= pkgn= iver=
-
-    [ -z "$pkg" ] && return 2
-
-    pkgn="$($XBPS_UHELPER_CMD getpkgname ${pkg})"
-    [ -z "$pkgn" ] && return 2
-
-    if [ -n "$cross" ]; then
-        uhelper="$XBPS_UHELPER_XCMD"
-    else
-        uhelper="$XBPS_UHELPER_CMD"
-    fi
-
-    iver="$($uhelper version $pkgn)"
-    if [ $? -eq 0 -a -n "$iver" ]; then
-        $XBPS_CMPVER_CMD "${pkgn}-${iver}" "${pkg}"
-        [ $? -eq 0 -o $? -eq 1 ] && return 0
-    fi
-
-    return 1
 }

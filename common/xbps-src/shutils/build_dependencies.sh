@@ -70,6 +70,33 @@ check_pkgdep_matched() {
 }
 
 #
+# Returns 0 if pkgpattern in $1 is installed and greater than current
+# installed package, otherwise 1.
+#
+check_installed_pkg() {
+    local pkg="$1" cross="$2" uhelper= pkgn= iver=
+
+    [ -z "$pkg" ] && return 2
+
+    pkgn="$($XBPS_UHELPER_CMD getpkgname ${pkg})"
+    [ -z "$pkgn" ] && return 2
+
+    if [ -n "$cross" ]; then
+        uhelper="$XBPS_UHELPER_XCMD"
+    else
+        uhelper="$XBPS_UHELPER_CMD"
+    fi
+
+    iver="$($uhelper version $pkgn)"
+    if [ $? -eq 0 -a -n "$iver" ]; then
+        $XBPS_CMPVER_CMD "${pkgn}-${iver}" "${pkg}"
+        [ $? -eq 0 -o $? -eq 1 ] && return 0
+    fi
+
+    return 1
+}
+
+#
 # Installs all dependencies required by a package.
 #
 install_pkg_deps() {
@@ -201,7 +228,7 @@ install_pkg_deps() {
         ${XBPS_UHELPER_CMD} pkgmatch "$pkgver" "$i"
         if [ $? -eq 0 ]; then
             setup_pkg $XBPS_TARGET_PKG
-            msg_error_nochroot "$pkgver: required host dependency '$i' cannot be resolved!\n"
+            msg_error "$pkgver: required host dependency '$i' cannot be resolved!\n"
         fi
         install_pkg full
         setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
@@ -218,7 +245,7 @@ install_pkg_deps() {
         $XBPS_UHELPER_CMD pkgmatch "$pkgver" "$i"
         if [ $? -eq 0 ]; then
             setup_pkg $XBPS_TARGET_PKG $cross
-            msg_error_nochroot "$pkgver: required target dependency '$i' cannot be resolved!\n"
+            msg_error "$pkgver: required target dependency '$i' cannot be resolved!\n"
         fi
         install_pkg full $cross
         setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
