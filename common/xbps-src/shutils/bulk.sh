@@ -38,15 +38,18 @@ bulk_build() {
     for pkg in ${pkgs}; do
         . ${XBPS_SRCPKGDIR}/${pkg}/template
         _pkgs="$(show_pkg_build_deps | sed -e 's|[<>].*\$||g')"
+        found=0
         for x in ${_pkgs}; do
             _pkg=$(bulk_getlink $x)
             for f in ${pkgs}; do
                 if [ "${f}" != "${_pkg}" ]; then
                     continue
                 fi
+                found=1
                 echo "${pkg} ${f}" >> $tmpf
             done
         done
+        [ $found -eq 0 ] && echo "${pkg} ${pkg}" >> $tmpf
     done
     tsort $tmpf|tac
     rm -f $tmpf
