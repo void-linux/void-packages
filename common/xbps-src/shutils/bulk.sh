@@ -11,40 +11,45 @@ bulk_getlink() {
 }
 
 bulk_build() {
-    local args="$1" pkg= pkgs= _pkgs= _realdep= _deps= found= x= result=
-
     if ! command -v xbps-checkvers &>/dev/null; then
         msg_error "xbps-src: cannot find xbps-checkvers(8) command!\n"
     fi
-    _pkgs=$(xbps-checkvers ${args} -d $XBPS_DISTDIR | awk '{print $2}')
-    # Only add to the list real pkgs, not subpkgs.
+    _pkgs=$(xbps-checkvers ${1} -d $XBPS_DISTDIR | awk '{print $2}')
+    # Iterate over the list and make sure that only real pkgs are
+    # added to our pkglist.
     for pkg in ${_pkgs}; do
-        _realdep=$(bulk_getlink $pkg)
-        unset found
+        found=0
+        f=$(bulk_getlink $pkg)
         for x in ${pkgs}; do
-            if [ "$x" = "${_realdep}" ]; then
+            if [ "$x" = "${f}" ]; then
                 found=1
                 break
             fi
         done
-        if [ -z "$found" ]; then
-            pkgs="$pkgs ${_realdep}"
+        if [ $found -eq 0 ]; then
+            pkgs+="${f} "
         fi
     done
+
+    tmpf=$(mktemp)
+    # Now make the real dependency graph of all pkgs to build.
+    # Perform a topological sort of all pkgs but only with build dependencies
+    # that are found in previous step.
     for pkg in ${pkgs}; do
-        unset found
-        setup_pkg $pkg $XBPS_CROSS_BUILD
-        _deps="$(show_pkg_build_deps | sed -e 's|[<>].*\$||g')"
-        _realdep=$(bulk_getlink $pkg)
-        for x in ${_deps}; do
-            if [ "${_realdep}" = "${pkg}" ]; then
-                found=1
-                break
-            fi
+        . ${XBPS_SRCPKGDIR}/${pkg}/template
+        _pkgs="$(show_pkg_build_deps | sed -e 's|[<>].*\$||g')"
+        for x in ${_pkgs}; do
+            _pkg=$(bulk_getlink $x)
+            for f in ${pkgs}; do
+                if [ "${f}" != "${_pkg}" ]; then
+                    continue
+                fi
+                echo "${pkg} ${f}" >> $tmpf
+            done
         done
-        [ -n $found ] && result="${_realdep} ${result}"
     done
-    [ -n "$result" ] && echo "$result"
+    tsort $tmpf|tac
+    rm -f $tmpf
 }
 
 bulk_update() {
