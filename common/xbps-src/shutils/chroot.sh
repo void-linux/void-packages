@@ -195,7 +195,7 @@ chroot_handler() {
         [ -n "$XBPS_ALT_REPOSITORY" ] && arg="$arg -r $XBPS_ALT_REPOSITORY"
 
         action="$arg $action"
-        env -i PATH=/bin:/sbin:/usr/bin:/usr/sbin HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
+        env -i PATH=/bin:/sbin:/usr/bin:/usr/sbin:$PATH HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
             $CHROOT_CMD ${_chargs} $XBPS_MASTERDIR /xbps-packages/xbps-src $action $pkg || rv=$?
     fi
 
