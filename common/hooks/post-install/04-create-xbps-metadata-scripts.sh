@@ -302,6 +302,7 @@ _EOF
 			found=1
 			cat ${action_file} >> $tmpf
 		fi
+		echo >> $tmpf
 		echo "exit 0" >> $tmpf
 		mv $tmpf ${PKGDESTDIR}/INSTALL && chmod 755 ${PKGDESTDIR}/INSTALL
 		;;
@@ -311,6 +312,7 @@ _EOF
 			found=1
 			cat ${action_file} >> $tmpf
 		fi
+		echo >> $tmpf
 		echo "exit 0" >> $tmpf
 		mv $tmpf ${PKGDESTDIR}/REMOVE && chmod 755 ${PKGDESTDIR}/REMOVE
 		;;
