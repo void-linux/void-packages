@@ -14,7 +14,7 @@ bulk_build() {
     if ! command -v xbps-checkvers &>/dev/null; then
         msg_error "xbps-src: cannot find xbps-checkvers(8) command!\n"
     fi
-    _pkgs=$(xbps-checkvers ${1} -d $XBPS_DISTDIR | awk '{print $2}')
+    _pkgs=$(xbps-checkvers ${1} --distdir=$XBPS_DISTDIR | awk '{print $2}')
     # Iterate over the list and make sure that only real pkgs are
     # added to our pkglist.
     for pkg in ${_pkgs}; do
