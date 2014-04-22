@@ -43,9 +43,7 @@ If everything went fine after running
     $ xbps-src build-pkg
     
 a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local repository
-`<masterdir>/host/binpkgs`.
-
-
+`hostdir/binpkgs`.
 
 ### Package build phases
 
@@ -110,17 +108,17 @@ rather than additional binary package names.
 - `CROSS_BUILD` True if `xbps-src` is cross compiling a package.
 
 - `DESTDIR` Full path to the fake destdir used by the source pkg, set to
-`${XBPS_MASTERDIR}/destdir/${sourcepkg}-${version}`.
+`<masterdir>/destdir/${sourcepkg}-${version}`.
 
 - `FILESDIR` Full path to the `files` package directory, i.e `srcpkgs/foo/files`.
 The `files` directory can be used to store additional files to be installed
 as part of the source package.
 
 - `PKGDESTDIR` Full path to the fake destdir used by the `pkg_install()` function in
-`subpackages`, set to `${XBPS_MASTERDIR}/destdir/${pkgname}-${version}`.
+`subpackages`, set to `<masterdir>/destdir/${pkgname}-${version}`.
 
 - `XBPS_BUILDDIR` Directory to store the `source code` of the source package being processed,
-set to `${XBPS_MASTERDIR}/builddir`. The package `wrksrc` is always stored
+set to `<masterdir>/builddir`. The package `wrksrc` is always stored
 in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_MACHINE` The machine architecture as returned by `uname -m`.
