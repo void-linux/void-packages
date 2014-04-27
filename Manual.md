@@ -334,7 +334,7 @@ still be passed in if it's a GNU configure script.
 
 - `post_build()` Actions to execute after `do_build()`.
 
-- `pre_install()` ctions to execute after `post_build()`.
+- `pre_install()` Actions to execute after `post_build()`.
 
 - `do_install()` Actions to execute to install the package files into the `fake destdir`.
 
