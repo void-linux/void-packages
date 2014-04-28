@@ -40,7 +40,7 @@ in a directory matching `$pkgname`, i.e: `xbps-packages/srcpkgs/foo/template`.
 
 If everything went fine after running
 
-    $ xbps-src build-pkg
+    $ ./xbps-src pkg <pkgname>
     
 a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local repository
 `hostdir/binpkgs`.
@@ -252,7 +252,7 @@ This must match the basename of any url defined in `${distfiles}`.
 Example `skip_extraction="foo-${version}.tar.gz"`.
 
 - `force_debug_pkgs` If enabled binary packages with debugging symbols will be generated
-even if `XBPS_DEBUG_PKGS` is disabled in `xbps-src.conf` or in the
+even if `XBPS_DEBUG_PKGS` is disabled in `xbps-packages/etc/conf` or in the
 `command line arguments`.
 
 - `conf_files` A list of configuration files the binary package owns; this expects full
@@ -346,7 +346,7 @@ defined by a `build_style` script.
 ### Build options
 
 Some packages might be built with different build options to enable/disable
-additional features; `xbps-src` allows you to do this with some simple tweaks
+additional features; The XBPS source packages collection allows you to do this with some simple tweaks
 to the `template` file.
 
 The following variables may be set to allow package build options:
@@ -391,22 +391,22 @@ fi
 
 ```
 
-The supported build options for a source package can be shown with xbps-src:
+The supported build options for a source package can be shown with `xbps-src`:
 
-    $ xbps-src show-options foo
+    $ ./xbps-src show-options foo
 
-Build options can be enabled with the `-o` flag of xbps-src:
+Build options can be enabled with the `-o` flag of `xbps-src`:
 
-    $ xbps-src -o option,option1 foo
+    $ ./xbps-src -o option,option1 foo
 
 Build options can be disabled by prefixing them with `~`:
 
-    $ xbps-src -o ~option,~option1 foo
+    $ ./xbps-src -o ~option,~option1 foo
 
 Both ways can be used together to enable and/or disable multiple options
-at the same time with xbps-src:
+at the same time with `xbps-src`:
 
-    $ xbps-src -o option,~option1,~option2 foo
+    $ ./xbps-src -o option,~option1,~option2 foo
 
 The build options can also be shown for binary packages via `xbps-query(8)`:
 
@@ -471,7 +471,7 @@ specified `system account` and used exclusived for this purpose.
 there are some variables that can change the behavior:
 
 - `lib32depends` If this variable is set, dependencies listed here will be used rather than
-those detected automatically by xbps-src and **depends**. Please note that
+those detected automatically by `xbps-src` and **depends**. Please note that
 dependencies must be specified with version comparators, i.e
 `lib32depends="foo>=0 blah<2.0"`.
 
@@ -571,7 +571,7 @@ create a `development package` that contains `headers`, `static libraries`
 and other files required for development (not required at runtime).
 
 - If you are updating a package please be careful with SONAME bumps, check
-the installed files (`xbps-src show-files`) before pushing new updates.
+the installed files (`./xbps-src show-files pkg`) before pushing new updates.
 
 ### Contributing via git
 
