@@ -9,7 +9,7 @@ To start using it first you'll need some external dependencies:
 - fakeroot (only required by the bootstrap target)
 - xbps >= 0.35
 
-Make sure your user is added to the `xbuilder` group to be able to use `xbps-uchroot`,
+Make sure your user is added to the `xbuilder` group to be able to use `xbps-uchroot(8)`,
 otherwise `xbps-src` won't work correctly.
 
 The `xbps-src` utility will allow you to generate XBPS binary packages, type
