@@ -67,6 +67,8 @@ via `make install` or any other compatible method.
 - `pkg` This phase builds the `binary packages` with files stored in the
 `package destdir` and registers them into the local repository.
 
+- `clean` This phase cleans up the package (if defined).
+
 `xbps-src` supports running just the specified phase, and if it ran
 successfully, the phase will be skipped later (unless its work directory
 `${wrksrc}` is removed with `xbps-src clean`).
@@ -339,6 +341,8 @@ still be passed in if it's a GNU configure script.
 - `do_install()` Actions to execute to install the package files into the `fake destdir`.
 
 - `post_install()` Actions to execute after `do_install()`.
+
+- `do_clean()` Actions to execute to clean up after a successful package phase.
 
 > A function defined in a template has preference over the same function
 defined by a `build_style` script.
