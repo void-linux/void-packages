@@ -73,6 +73,77 @@ via `make install` or any other compatible method.
 successfully, the phase will be skipped later (unless its work directory
 `${wrksrc}` is removed with `xbps-src clean`).
 
+### Package naming conventions
+
+#### Libraries
+
+Libraries are packages which provide shared objects (\*.so) files in /usr/lib.
+They should be named like their upstream package name with the following
+exceptions:
+
+- The package is a subpackage of a front end application providing and provides
+shared objects used by the base package and other third party libraries. In that
+case it should be prefixed with 'lib'. An exception from that rule is: If an
+executable is only used for building that package, it moves to the -devel
+package.
+
+Example: wireshark -> subpkg libwireshark
+
+Libraries have to be split into two sub packages: <name> and <name>-devel.
+
+- `<name>` should only contain those parts of a package which are needed to run
+a linking program.
+
+- `<name>-devel` should contain all files which are needed to compile a package
+against this package.
+
+#### Language Modules
+
+Language modules are extensions to script or compiled languages. Those packages
+do not provide any executables themselfes, but can be used by other packages
+written in the same language.
+
+The naming convention to those packages is:
+
+```
+<language>-<name>
+```
+
+If a package provides both, a module and a executable, it should be split into
+a package providing the executable named `<name>` and the module named
+`<language>-<name>`. If a package starts with the languages name itself, the
+language prefix can be dropped. Short names for languages are no valid substitute
+for the language prefix.
+
+Example: python-pam, perl-URI, python-pyside
+
+#### Language Bindings
+
+Language Bindings are similiar to Language Modules described above. They're
+main difference is that bindings are loosely coupled to that language.
+
+The naming convention to those packages is:
+```
+<name>-<language>
+```
+
+Example: kde-python, gimp-python, irssi-perl
+
+#### Programs
+
+Programs put executables under /usr/bin (or in very special cases in other
+.../bin directories)
+
+For those packages the upstream packages name should be used. Remember that
+in contrast to many other distributions, void doesn't lowercase package names.
+As a rule of thumb, if the tar.gz of a package contains uppercase letter, then
+the package name should contain them too; if it doesn't, the package name
+is lowercase.
+
+Programs can be split into program packages and library packages. The program
+package should be named as describe above. The library package should be prefix
+with "lib" (see section `Libraries`)
+
 ### Global functions
 
 The following functions are defined by `xbps-src` and can be used on any template:
@@ -268,6 +339,9 @@ by all supported architectures.
 
 - `nostrip` If set, the ELF binaries with debugging symbols won't be stripped. By
 default all binaries are stripped.
+
+- `python_versions` A white space seperated list of python versions which will
+be used to build that package. This is only used by build_style=python-module.
 
 ### build style scripts
 
