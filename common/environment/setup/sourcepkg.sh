@@ -5,7 +5,7 @@
 unset -v pkgname version revision short_desc homepage license maintainer
 unset -v only_for_archs distfiles checksum build_style
 unset -v configure_script configure_args wrksrc build_wrksrc create_wrksrc
-unset -v make_cmd make_build_args make_install_args make_build_target make_install_target
+unset -v make_cmd make_build_args make_install_args make_build_target make_install_target python_versions
 unset -v patch_args disable_parallel_build keep_libtool_archives
 unset -v makedepends hostmakedepends depends
 unset -v build_options build_options_default bootstrap
