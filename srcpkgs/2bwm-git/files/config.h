@@ -5,8 +5,8 @@
 /* Move this many pixels when moving or resizing with keyboard unless the window has hints saying otherwise.
  *0)move step slow   1)move step fast
  *2)mouse slow       3)mouse fast     */
-static const uint16_t movements[] = {10,40,15,450};
-/* resize by line like in mcwm -- jjumbi */
+static const uint16_t movements[] = {20,40,15,400};
+/* resize by line like in mcwm -- jmbi */
 static const bool     resize_by_line          = true;
 /* the ratio used when resizing and keeping the aspect */
 static const float    resize_keep_aspect_ratio= 1.03;
@@ -19,29 +19,38 @@ static const uint8_t offsets[] = {0,0,0,0};
  *2)fixedcol         3)unkilcol
  *4)fixedunkilcol    5)outerbordercol
  *6)emptycol         */
-static const char *colors[] = {"#323232","#191919","#4c5739","#682a2a","#604818","#151515","#222222"};
+static const char *colors[] = {"#35586c","#333333","#7a8c5c","#ff6666","#cc9933","#0d131a","#000000"};
 /* if this is set to true the inner border and outer borders colors will be swapped */
-static const bool inverted_colors = false;
+static const bool inverted_colors = true;
+///---Cursor---///
+/* default position of the cursor:
+ * correct values are:
+ * TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, MIDDLE
+ * All these are relative to the current window. */
+#define CURSOR_POSITION MIDDLE
 ///---Borders---///
 /*0) Outer border size. If you put this negative it will be a square.
  *1) Full borderwidth    2) Magnet border size    
  *3) Resize border size  */
-static const uint8_t borders[] = {2,5,9,9};
+static const uint8_t borders[] = {3,5,5,4};
 /* Windows that won't have a border.*/
-#define NB_NAMES 1
-#define LOOK_INTO "_NET_WM_NAME"
-static const char *ignore_names[] = {"bar"};
-///---Cursor---///
-/* Check /usr/include/X11/cursorfont.h for more details */
-#define CURSOR_MOVING   52
-#define CURSOR_RESIZING 120
+#define LOOK_INTO "WM_NAME"
+static const char *ignore_names[] = {"bar", "xclock"};
 ///--Menus and Programs---///
 static const char *menucmd[]   = { "/usr/bin/my_menu.sh", NULL };
 static const char *gmrun[]     = { "/usr/bin/gmrun",NULL};
 static const char *terminal[]  = { "urxvtc", NULL };
-static const char *twobwm_path = "/usr/local/bin/2bwm";
+///--Custom foo---///
+static void halfandcentered(const Arg *arg)
+{
+	Arg arg2 = {.i=2};
+	maxhalf(&arg2);
+	Arg arg3 = {.i=0};
+	teleport(&arg3);
+}
 ///---Shortcuts---///
 /* Check /usr/include/X11/keysymdef.h for the list of all keys
+ * 0x000000 is for no modkey
  * For AZERTY keyboards XK_1...0 should be replaced by :
  *      DESKTOPCHANGE(     XK_ampersand,                     0)
  *      DESKTOPCHANGE(     XK_eacute,                        1)
@@ -135,6 +144,9 @@ static key keys[] = {
     // Next/Previous workspace
     {  MOD ,              XK_v,          nextworkspace,     {.i=0}},
     {  MOD ,              XK_c,          prevworkspace,     {.i=0}},
+    // Move to Next/Previous workspace
+    {  MOD |SHIFT ,       XK_v,          sendtonextworkspace,{.i=0}},
+    {  MOD |SHIFT ,       XK_c,          sendtoprevworkspace,{.i=0}},
     // Iconify the window
     {  MOD ,              XK_i,          hide,              {.i=0}},
     // Make the window unkillable
@@ -160,6 +172,7 @@ static key keys[] = {
     // Exit or restart 2bwm
     {  MOD |CONTROL,      XK_q,          twobwm_exit,         {.i=0}},
     {  MOD |CONTROL,      XK_r,          twobwm_restart,      {.i=0}},
+    {  MOD ,              XK_space,      halfandcentered,    {.i=0}},
     // Change current workspace
        DESKTOPCHANGE(     XK_1,                             0)
        DESKTOPCHANGE(     XK_2,                             1)
