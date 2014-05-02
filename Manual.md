@@ -341,7 +341,7 @@ by all supported architectures.
 default all binaries are stripped.
 
 - `python_versions` A white space seperated list of python versions which will
-be used to build that package. This is only used by build_style=python-module.
+be used to build that package. This is only used by the `python-module` build style.
 
 ### build style scripts
 
@@ -378,6 +378,9 @@ available in repositories.
 [ExtUtils::MakeMaker](http://perldoc.perl.org/ExtUtils/MakeMaker.html) build method.
 
 - `python-module` For packages that use the Python module build method (setup.py).
+By default the module will be built for python2. The `python_versions` variable may
+be defined to set the allowed python versions to be built, i.e:
+`python_version="2 3"`.
 
 - `waf3` For packages that use the Python3 `waf` build method with python3.
 
