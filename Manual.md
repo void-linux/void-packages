@@ -77,7 +77,7 @@ successfully, the phase will be skipped later (unless its work directory
 
 #### Libraries
 
-Libraries are packages which provide shared objects (\*.so) files in /usr/lib.
+Libraries are packages which provide shared objects (\*.so) in /usr/lib.
 They should be named like their upstream package name with the following
 exceptions:
 
@@ -100,7 +100,7 @@ against this package.
 #### Language Modules
 
 Language modules are extensions to script or compiled languages. Those packages
-do not provide any executables themselfes, but can be used by other packages
+do not provide any executables themselves, but can be used by other packages
 written in the same language.
 
 The naming convention to those packages is:
