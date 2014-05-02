@@ -61,7 +61,7 @@ function, which is the directory to be used to compile the `source package`.
 
 - `build` This phase compiles/prepares the `source files` via `make` or any other compatible method.
 
-- `install` This phase installs the `package files` into a `fake destdir`,
+- `install` This phase installs the `package files` into the package destdir `<masterdir>/destdir/<pkgname>-<version>`,
 via `make install` or any other compatible method.
 
 - `pkg` This phase builds the `binary packages` with files stored in the
