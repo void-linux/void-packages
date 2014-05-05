@@ -117,14 +117,10 @@ chroot_sync_repos() {
         install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/xbps.conf \
             ${XBPS_MASTERDIR}/etc/xbps/xbps.conf
     fi
-    if [ ! -f ${XBPS_MASTERDIR}/etc/xbps/repos/local.conf ]; then
-        install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-local.conf \
-            ${XBPS_MASTERDIR}/etc/xbps/repos/local.conf
-    fi
-    if [ ! -f ${XBPS_MASTERDIR}/etc/xbps/repos/remote.conf ]; then
-        install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-remote.conf \
-            ${XBPS_MASTERDIR}/etc/xbps/repos/remote.conf
-    fi
+    install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-local.conf \
+        ${XBPS_MASTERDIR}/etc/xbps/repos/local.conf
+    install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-remote.conf \
+        ${XBPS_MASTERDIR}/etc/xbps/repos/remote.conf
 
     # if -N is set, comment out remote repositories from xbps.conf.
     if [ -n "$XBPS_SKIP_REMOTEREPOS" ]; then
