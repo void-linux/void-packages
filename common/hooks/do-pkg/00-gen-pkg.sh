@@ -75,7 +75,7 @@ genpkg() {
 		done
 	fi
 
-	msg_normal "$sourcepkg: creating $binpkg for repository $pkgdir ...\n"
+	msg_normal "Creating $binpkg for repository $pkgdir ...\n"
 
 	#
 	# Create the XBPS binary package.
@@ -107,8 +107,6 @@ genpkg() {
 		rm -f $pkgdir/$binpkg
 		msg_error "Failed to created binary package: $binpkg!\n"
 	fi
-
-	msg_normal "Created binary package successfully: ${binpkg}\n"
 }
 
 hook() {
@@ -137,6 +135,7 @@ hook() {
 
 	# Generate -dbg pkg.
 	if [ -d "${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}" ]; then
+		repo=$XBPS_REPOSITORY/debug
 		_pkgver=${pkgname}-dbg-${version}_${revision}
 		_desc="${short_desc} (debug files)"
 		binpkg=${_pkgver}.${arch}.xbps
@@ -149,6 +148,11 @@ hook() {
 	fi
 	if [ -d "${XBPS_DESTDIR}/${pkgname}-32bit-${version}" ]; then
 		unset conf_files provides replaces preserve
+		if [ -n "$nonfree" ]; then
+			repo=$XBPS_REPOSITORY/multilib/nonfree
+		else
+			repo=$XBPS_REPOSITORY/multilib
+		fi
 		_pkgver=${pkgname}-32bit-${version}_${revision}
 		_desc="${short_desc} (32bit)"
 		binpkg=${_pkgver}.x86_64.xbps

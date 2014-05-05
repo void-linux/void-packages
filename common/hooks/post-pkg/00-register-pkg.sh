@@ -48,7 +48,9 @@ hook() {
 	fi
 
 	# Register -dbg binpkg if it exists.
-	if [ -f ${pkgdir}/${binpkg_dbg} ]; then
+	pkgdir=$XBPS_REPOSITORY/debug
+	PKGDESTDIR="${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}"
+	if [ -d ${PKGDESTDIR} -a -f ${pkgdir}/${binpkg_dbg} ]; then
 		registerpkg ${pkgdir} ${binpkg_dbg}
 	fi
 
@@ -56,7 +58,13 @@ hook() {
 	if [ "$XBPS_TARGET_MACHINE" != "i686" ]; then
 		return
 	fi
-	if [ -f ${pkgdir}/${binpkg32} ]; then
+	if [ -n "$nonfree" ]; then
+		pkgdir=$XBPS_REPOSITORY/multilib/nonfree
+	else
+		pkgdir=$XBPS_REPOSITORY/multilib
+	fi
+	PKGDESTDIR="${XBPS_DESTDIR}/${pkgname}-32bit-${version}"
+	if [ -d ${PKGDESTDIR} -a -f ${pkgdir}/${binpkg32} ]; then
 		registerpkg ${pkgdir} ${binpkg32} x86_64
 	fi
 }
