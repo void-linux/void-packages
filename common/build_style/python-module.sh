@@ -3,7 +3,7 @@
 #
 
 do_build() {
-	: ${python_versions:=2}
+	: ${python_versions:=2.7}
 	local python_version=
 
 	for python_version in $python_versions; do
@@ -25,7 +25,7 @@ do_build() {
 }
 
 do_install() {
-	: ${python_versions:=2}
+	: ${python_versions:=2.7}
 	local python_version=
 
 	make_install_args+=" --prefix=/usr --root=$DESTDIR"
