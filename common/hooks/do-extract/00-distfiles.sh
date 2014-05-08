@@ -50,6 +50,7 @@ hook() {
 		*.bz2)        cursufx="bz2";;
 		*.tar)        cursufx="tar";;
 		*.zip)        cursufx="zip";;
+		*.rpm)        cursufx="rpm";;
 		*) msg_error "$pkgver: unknown distfile suffix for $curfile.\n";;
 		esac
 
@@ -81,13 +82,24 @@ hook() {
 			fi
 			;;
 		zip)
-			if command -v unzip 2>&1 >/dev/null; then
+			if command -v unzip &>/dev/null; then
 				unzip -q $srcdir/$curfile -d $extractdir
 				if [ $? -ne 0 ]; then
 					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 				fi
 			else
 				msg_error "$pkgver: cannot find unzip bin for extraction.\n"
+			fi
+			;;
+		rpm)
+			if command -v rpmextract &>/dev/null; then
+				cd $extractdir
+				rpmextract $srcdir/$curfile
+				if [ $? -ne 0 ]; then
+					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
+				fi
+			else
+				msg_error "$pkgver: cannot find rpmextract for extraction.\n"
 			fi
 			;;
 		*)
