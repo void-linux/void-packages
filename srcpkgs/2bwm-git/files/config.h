@@ -40,6 +40,9 @@ static const char *ignore_names[] = {"bar", "xclock"};
 static const char *menucmd[]   = { "/usr/bin/my_menu.sh", NULL };
 static const char *gmrun[]     = { "/usr/bin/gmrun",NULL};
 static const char *terminal[]  = { "urxvtc", NULL };
+static const char *click1[]    = { "xdotool","click", "1", NULL };
+static const char *click2[]    = { "xdotool","click", "2", NULL };
+static const char *click3[]    = { "xdotool","click", "3", NULL };
 ///--Custom foo---///
 static void halfandcentered(const Arg *arg)
 {
@@ -173,6 +176,10 @@ static key keys[] = {
     {  MOD |CONTROL,      XK_q,          twobwm_exit,         {.i=0}},
     {  MOD |CONTROL,      XK_r,          twobwm_restart,      {.i=0}},
     {  MOD ,              XK_space,      halfandcentered,    {.i=0}},
+    // Fake clicks using xdotool
+    {  MOD |CONTROL,      XK_Up,         start,             {.com = click1}},
+    {  MOD |CONTROL,      XK_Down,       start,             {.com = click2}},
+    {  MOD |CONTROL,      XK_Right,      start,             {.com = click3}},
     // Change current workspace
        DESKTOPCHANGE(     XK_1,                             0)
        DESKTOPCHANGE(     XK_2,                             1)
