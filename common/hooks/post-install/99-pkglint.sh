@@ -69,7 +69,9 @@ hook() {
 				fi
 			done;
 			if [ -z "$found" ]; then
-				msg_warn "${pkgver}: ${libname}.so.${rev} not found in common/shlibs!\n"
+				_myshlib="${libname}.so"
+				[ "${_myshlib}" != "${rev}" ] && _myshlib+=".${rev}"
+				msg_warn "${pkgver}: ${_myshlib} not found in common/shlibs!\n"
 			fi;
 		}
 	done
