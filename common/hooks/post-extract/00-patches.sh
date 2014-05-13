@@ -13,21 +13,21 @@ _process_patch() {
 	cp -f $i $wrksrc
 
 	# Try to guess if its a compressed patch.
-	if $(echo $i|grep -q '.diff.gz'); then
+	if [[ $f =~ .diff*.gz ]]; then
 		gunzip $wrksrc/${_patch}
 		_patch=${_patch%%.gz}
-	elif $(echo $i|grep -q '.patch.gz'); then
+	elif [[ $f =~ .patch*.gz ]]; then
 		gunzip $wrksrc/${_patch}
 		_patch=${_patch%%.gz}
-	elif $(echo $i|grep -q '.diff.bz2'); then
+	elif [[ $f =~ .diff*.bz2 ]]; then
 		bunzip2 $wrksrc/${_patch}
 		_patch=${_patch%%.bz2}
-	elif $(echo $i|grep -q '.patch.bz2'); then
+	elif [[ $f =~ .patch*.bz2 ]]; then
 		bunzip2 $wrksrc/${_patch}
 		_patch=${_patch%%.bz2}
-	elif $(echo $i|grep -q '.diff'); then
+	elif [[ $f =~ .diff ]]; then
 		:
-	elif $(echo $i|grep -q '.patch'); then
+	elif [[ $f =~ .patch ]]; then
 		:
 	else
 		msg_warn "$pkgver: unknown patch type: $i.\n"
