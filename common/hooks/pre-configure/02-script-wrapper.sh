@@ -13,6 +13,14 @@ icu_config_wrapper() {
 	chmod 755 ${WRAPPERDIR}/icu-config
 }
 
+libgcrypt_config_wrapper() {
+	[ ! -x ${XBPS_CROSS_BASE}/usr/bin/libgcrypt-config ] && return 0
+
+	echo "#!/bin/sh" >> ${WRAPPERDIR}/libgcrypt-config
+	echo "exec ${XBPS_CROSS_BASE}/usr/bin/libgcrypt-config --prefix=${XBPS_CROSS_BASE}/usr \"\$@\"" >> ${WRAPPERDIR}/libgcrypt-config
+	chmod 755 ${WRAPPERDIR}/libgcrypt-config
+}
+
 hook() {
 	[ -z "$CROSS_BUILD" ] && return 0
 
@@ -20,6 +28,7 @@ hook() {
 
 	# create wrapers
 	icu_config_wrapper
+	libgcrypt_config_wrapper
 
 	export PATH=${WRAPPERDIR}:$PATH
 }
