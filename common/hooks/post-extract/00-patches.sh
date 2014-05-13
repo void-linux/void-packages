@@ -13,16 +13,16 @@ _process_patch() {
 	cp -f $i $wrksrc
 
 	# Try to guess if its a compressed patch.
-	if [[ $f =~ .diff*.gz ]]; then
+	if [[ $f =~ .diff.*.gz ]]; then
 		gunzip $wrksrc/${_patch}
 		_patch=${_patch%%.gz}
-	elif [[ $f =~ .patch*.gz ]]; then
+	elif [[ $f =~ .patch.*.gz ]]; then
 		gunzip $wrksrc/${_patch}
 		_patch=${_patch%%.gz}
-	elif [[ $f =~ .diff*.bz2 ]]; then
+	elif [[ $f =~ .diff.*.bz2 ]]; then
 		bunzip2 $wrksrc/${_patch}
 		_patch=${_patch%%.bz2}
-	elif [[ $f =~ .patch*.bz2 ]]; then
+	elif [[ $f =~ .patch.*.bz2 ]]; then
 		bunzip2 $wrksrc/${_patch}
 		_patch=${_patch%%.bz2}
 	elif [[ $f =~ .diff ]]; then
