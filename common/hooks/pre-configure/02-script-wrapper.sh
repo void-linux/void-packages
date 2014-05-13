@@ -23,6 +23,7 @@ hook() {
 	generic_wrapper icu-config
 	generic_wrapper libgcrypt-config
 	generic_wrapper freetype-config
+	generic_wrapper sdl-config
 
 	export PATH=${WRAPPERDIR}:$PATH
 }
