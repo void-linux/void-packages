@@ -5,20 +5,13 @@
 
 WRAPPERDIR="${wrksrc}/.xbps/bin"
 
-icu_config_wrapper() {
-	[ ! -x ${XBPS_CROSS_BASE}/usr/bin/icu-config ] && return 0
+generic_wrapper() {
+	local wrapper="$1"
+	[ ! -x ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ] && return 0
 
-	echo "#!/bin/sh" >> ${WRAPPERDIR}/icu-config
-	echo "exec ${XBPS_CROSS_BASE}/usr/bin/icu-config --prefix=${XBPS_CROSS_BASE}/usr \"\$@\"" >> ${WRAPPERDIR}/icu-config
-	chmod 755 ${WRAPPERDIR}/icu-config
-}
-
-libgcrypt_config_wrapper() {
-	[ ! -x ${XBPS_CROSS_BASE}/usr/bin/libgcrypt-config ] && return 0
-
-	echo "#!/bin/sh" >> ${WRAPPERDIR}/libgcrypt-config
-	echo "exec ${XBPS_CROSS_BASE}/usr/bin/libgcrypt-config --prefix=${XBPS_CROSS_BASE}/usr \"\$@\"" >> ${WRAPPERDIR}/libgcrypt-config
-	chmod 755 ${WRAPPERDIR}/libgcrypt-config
+	echo "#!/bin/sh" >> ${WRAPPERDIR}/${wrapper}
+	echo "exec ${XBPS_CROSS_BASE}/usr/bin/${wrapper} --prefix=${XBPS_CROSS_BASE}/usr \"\$@\"" >> ${WRAPPERDIR}/${wrapper}
+	chmod 755 ${WRAPPERDIR}/${wrapper}
 }
 
 hook() {
@@ -27,8 +20,9 @@ hook() {
 	mkdir -p ${WRAPPERDIR}
 
 	# create wrapers
-	icu_config_wrapper
-	libgcrypt_config_wrapper
+	generic_wrapper icu-config
+	generic_wrapper libgcrypt-config
+	generic_wrapper freetype-config
 
 	export PATH=${WRAPPERDIR}:$PATH
 }
