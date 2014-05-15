@@ -1,20 +1,31 @@
 # Template build file for 'gcc'
 pkgname=gcc
-_majorver=4.7
-version=${_majorver}.3
-revision=12
-patch_args="-Np1"
+_majorver=4.9
+version=${_majorver}.0
+revision=1
 short_desc="The GNU C Compiler"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://gcc.gnu.org"
 license="GFDL-1.2, GPL-3, LGPL-2.1"
 distfiles="http://ftp.gnu.org/pub/gnu/gcc/gcc-$version/gcc-$version.tar.bz2"
-checksum=2f7c37eb4fc14422ff2358a9ef59c974a75ab41204ef0e49fc34ab1d8981a9c3
+checksum=b9b047a97bade9c1c89970bc8e211ff57b7b8998a1730a80a653d329f8ed1257
 
 lib32disabled=yes
 hostmakedepends="perl flex"
-makedepends="zlib-devel libmpc-devel>=1.0.1_2 ppl-devel>=1.0 cloog-devel isl-devel libfl-devel"
-depends="binutils libgomp>=${_majorver} libitm>=${_majorver} libssp-devel>=${_majorver}"
+makedepends="zlib-devel libmpc-devel>=1.0.1_2 ppl-devel>=1.0 cloog-devel isl-devel"
+
+# Depend in all -devel pkgs to have a full featured package.
+depends="
+	binutils
+	libatomic-devel>=${_majorver}
+	libcilkrts-devel>=${_majorver}
+	libgomp-devel>=${_majorver}
+	libitm-devel>=${_majorver}
+	libsanitizer-devel>=${_majorver}
+	libssp-devel>=${_majorver}
+	libvtv-devel>=${_majorver}"
+# mudflap is gone in 4.9
+replaces="libmudflap>=0 libmudflap-devel>=0"
 
 if [ -z "$CROSS_BUILD" ]; then
 	# Required by gcj
@@ -25,7 +36,7 @@ case "$XBPS_TARGET_MACHINE" in
 	i686) _triplet="i686-pc-linux-gnu";;
 	i686-musl) _triplet="i686-pc-linux-musl";;
 	x86_64) _triplet="x86_64-unknown-linux-gnu";;
-	x86_64-musl) _triplet="x86_64-unknown-linux-musl";;
+	x86_64-musl) _triplet="x86_64-linux-musl";;
 	armv5tel) _triplet="arm-linux-gnueabi";;
 	armv6l) _triplet="arm-linux-gnueabihf";;
 	armv7l) _triplet="arm-linux-gnueabihf7";;
@@ -34,18 +45,14 @@ case "$XBPS_TARGET_MACHINE" in
 esac
 
 pre_configure() {
-	case "$XBPS_TARGET_MACHINE" in
-		*-musl) patch -Np1 -i ${FILESDIR}/gcc-${version}-musl.diff ;;
-	esac
-}
-
-do_configure() {
-	local _langs _args
-
 	# As specified in the LFS book, disable installing libiberty.
 	sed -i 's/install_to_$(INSTALL_DEST) //' libiberty/Makefile.in
 	# Do not run fixincludes
 	sed -i 's@\./fixinc\.sh@-c true@' gcc/Makefile.in
+}
+
+do_configure() {
+	local _langs _args
 
 	case "$XBPS_TARGET_MACHINE" in
 		armv5*) _args+=" --with-arch=armv5te --with-float=soft";;
@@ -59,9 +66,9 @@ do_configure() {
 		export CXX_FOR_TARGET="$CXX"
 
 		_langs="c,c++,lto"
-		_args+=" --disable-multilib --host=$XBPS_CROSS_TRIPLET"
+		_args+=" --disable-multilib --host=$XBPS_CROSS_TRIPLET --with-build-sysroot=${XBPS_CROSS_BASE}"
 	else
-		_langs="c,c++,objc,obj-c++,fortran,go,lto,java"
+		_langs="c,c++,objc,obj-c++,fortran,lto,go,java"
 		_args+=" --enable-java-gc=boehm --enable-fast-character"
 	fi
 
@@ -73,11 +80,22 @@ do_configure() {
 		--enable-linker-build-id --enable-gnu-unique-object \
 		--enable-checking=release --disable-libstdcxx-pch \
 		--with-ppl --enable-cloog-backend=isl --enable-libstdcxx-time \
-		--enable-tls --enable-languages=${_langs} ${_args}
+		--enable-tls --with-linker-hash-style=gnu \
+		--enable-languages=${_langs} ${_args}
 }
 
 do_build() {
 	make ${makejobs}
+}
+
+pre_install() {
+	if [ "$CROSS_BUILD" ]; then
+		# XXX otherwise links to host libpthread
+		for f in $(find ${wrksrc}/${XBPS_CROSS_TRIPLET} -type f -name libtool); do
+			sed -e "s,add_dir=\"-L\$libdir\",add_dir=\"-L${XBPS_CROSS_BASE}\$libdir\",g" \
+				-i ${wrksrc}/${XBPS_CROSS_TRIPLET}/libsanitizer/libtool
+		done
+	fi
 }
 
 do_install() {
@@ -128,6 +146,10 @@ do_install() {
 		vinstall ${FILESDIR}/${f}.sh 755 usr/bin ${f}
 		vinstall ${FILESDIR}/${f}.1 644 usr/share/man/man1 ${f}.1
 	done
+
+	if [ "$CROSS_BUILD" ]; then
+		rm -f ${DESTDIR}/usr/share/info/libquadmath.info
+	fi
 }
 
 # Disabled packages in cross builds.
@@ -136,7 +158,7 @@ if [ -z "$CROSS_BUILD" ]; then
 gcc-gcj_package() {
 	lib32disabled=yes
 	depends="gcc>=${_majorver} libgcj-devel>=${_majorver} eclipse-ecj"
-	short_desc="GCC Java compiler frontend"
+	short_desc+=" - Java compiler frontend"
 	pkg_install() {
 		for f in gcj jv-convert gjarsigner gjar grmic jcf-dump \
 			gtnameserv gcjh gnative2ascii gserialver gkeytool \
@@ -160,26 +182,10 @@ gcc-gcj_package() {
 	}
 }
 
-gcc-fortran_package() {
-	lib32disabled=yes
-	depends="gcc>=${_majorver} libgfortran-devel>=${_majorver}"
-	short_desc="GCC Fortran compiler frontend"
-	pkg_install() {
-		for f in gfortran ${_triplet}-gfortran; do
-			vmove usr/bin/${f}
-		done
-		vmove usr/lib/gcc/${_triplet}/${_majorver}/f951
-		vmove usr/lib/gcc/${_triplet}/${_majorver}/finclude
-		vmove usr/share/info/gfortran.info
-		touch ${PKGDESTDIR}/usr/share/info/dir
-		vmove usr/share/man/man1/gfortran.1
-	}
-}
-
 gcc-go_package() {
 	lib32disabled=yes
 	depends="gcc>=${_majorver} libgo-devel>=${_majorver}"
-	short_desc="GCC Go compiler frontend"
+	short_desc+=" - Go compiler frontend"
 	pkg_install() {
 		for f in gccgo ${_triplet}-gccgo; do
 			vmove usr/bin/${f}
@@ -192,10 +198,26 @@ gcc-go_package() {
 	}
 }
 
+gcc-fortran_package() {
+	lib32disabled=yes
+	depends="gcc>=${_majorver} libgfortran-devel>=${_majorver}"
+	short_desc+=" - Fortran compiler frontend"
+	pkg_install() {
+		for f in gfortran ${_triplet}-gfortran; do
+			vmove usr/bin/${f}
+		done
+		vmove usr/lib/gcc/${_triplet}/${_majorver}/f951
+		vmove usr/lib/gcc/${_triplet}/${_majorver}/finclude
+		vmove usr/share/info/gfortran.info
+		touch ${PKGDESTDIR}/usr/share/info/dir
+		vmove usr/share/man/man1/gfortran.1
+	}
+}
+
 gcc-objc++_package() {
 	lib32disabled=yes
 	depends="gcc-c++>=${_majorver} gcc-objc>=${_majorver}"
-	short_desc="GCC Objective-C++ support"
+	short_desc+=" - Objective-C++ support"
 	pkg_install() {
 		vmove usr/lib/gcc/${_triplet}/${_majorver}/cc1objplus
 	}
@@ -204,15 +226,22 @@ gcc-objc++_package() {
 gcc-objc_package() {
 	lib32disabled=yes
 	depends="gcc>=${_majorver} libobjc>=${_majorver}"
-	short_desc="GCC Objective-C support"
+	short_desc+=" - Objective-C support"
 	pkg_install() {
 		vmove usr/lib/gcc/${_triplet}/${_majorver}/include/objc
 		vmove usr/lib/gcc/${_triplet}/${_majorver}/cc1obj
 	}
 }
 
+libcilkrts_package() {
+	short_desc+=" - Intel(R) Cilk(TM) Plus runtime library"
+	pkg_install() {
+		vmove usr/lib/libcilkrts.so.*
+	}
+}
+
 libgcj-devel_package() {
-	short_desc="GCC Java library - development files"
+	short_desc+=" - Java library - development files"
 	pkg_install() {
 		vmove usr/include/c++/${_majorver}/gnu
 		vmove usr/include/c++/${_majorver}/java
@@ -225,16 +254,16 @@ libgcj-devel_package() {
 		vmove "usr/lib/gcc/${_triplet}/${_majorver}/include/gcj*"
 		vmove "usr/lib/gcc/${_triplet}/${_majorver}/include/jvm*"
 		vmove "usr/lib/gcc/${_triplet}/${_majorver}/include/jawt*"
-		vmove usr/lib/pkgconfig/libgcj-4.7.pc
+		vmove usr/lib/pkgconfig/libgcj-${_majorver}.pc
 	}
 }
 
 libgcj_package() {
-	short_desc="GCC Java library"
+	short_desc+=" - Java libraries"
 	pkg_install() {
 		vmove "usr/lib/libgcj*.so*"
 		vmove "usr/lib/libgij.so*"
-		vmove usr/lib/gcj-${version}-13
+		vmove usr/lib/gcj-${version}-15
 		vmove usr/lib/logging.properties
 		vmove usr/lib/libgcj.spec
 		vmove usr/lib/security/classpath.security
@@ -244,7 +273,7 @@ libgcj_package() {
 
 libgfortran-devel_package() {
 	depends="libgfortran>=${_majorver}"
-	short_desc="GCC Fortran library - development files"
+	short_desc+=" - Fortran library - development files"
 	pkg_install() {
 		vmove usr/lib/libgfortran.a
 		vmove usr/lib/gcc/${_triplet}/${_majorver}/libgfortranbegin.a
@@ -252,7 +281,7 @@ libgfortran-devel_package() {
 }
 
 libgfortran_package() {
-	short_desc="GCC Fortran library"
+	short_desc+=" - Fortran library"
 	pkg_install() {
 		vmove "usr/lib/libgfortran.so*"
 		vmove usr/lib/libgfortran.spec
@@ -262,7 +291,7 @@ libgfortran_package() {
 
 libgo-devel_package() {
 	depends="libgo>=${_majorver}"
-	short_desc="GCC Go library - development files"
+	short_desc+=" - Go library - development files"
 	pkg_install() {
 		vmove usr/lib/libgo.a
 		vmove usr/lib/libgobegin.a
@@ -270,7 +299,7 @@ libgo-devel_package() {
 }
 
 libgo_package() {
-	short_desc="GCC Go library"
+	short_desc+=" - Go library"
 	pkg_install() {
 		vmove "usr/lib/libgo.so*"
 		vinstall ${wrksrc}/COPYING.RUNTIME 644 usr/share/licenses/$pkgname RUNTIME.LIBRARY.EXCEPTION
@@ -279,14 +308,14 @@ libgo_package() {
 
 libobjc-devel_package() {
 	depends="libobjc>=${_majorver}"
-	short_desc="GCC Objective-C library - development files"
+	short_desc+=" - Objective-C library - development files"
 	pkg_install() {
 		vmove "usr/lib/libobjc.*a"
 	}
 }
 
 libobjc_package() {
-	short_desc="GCC Objective-C library"
+	short_desc+=" - Objective-C library"
 	pkg_install() {
 		vmove "usr/lib/libobjc.so*"
 		vinstall ${wrksrc}/COPYING.RUNTIME 644 usr/share/licenses/$pkgname RUNTIME.LIBRARY.EXCEPTION
@@ -295,7 +324,7 @@ libobjc_package() {
 
 libquadmath-devel_package() {
 	depends="libquadmath>=${_majorver}"
-	short_desc="GCC quadmath library - development files"
+	short_desc+=" - quadmath library - development files"
 	pkg_install() {
 		vmove "usr/lib/gcc/${_triplet}/${_majorver}/include/quadmath*"
 		vmove "usr/lib/libquadmath*.a"
@@ -305,17 +334,49 @@ libquadmath-devel_package() {
 }
 
 libquadmath_package() {
-	short_desc="GCC quadmath library"
+	short_desc+=" - quadmath library"
 	pkg_install() {
 		vmove "usr/lib/libquadmath.so*"
 		vinstall ${wrksrc}/COPYING.RUNTIME 644 usr/share/licenses/$pkgname RUNTIME.LIBRARY.EXCEPTION
 	}
 }
 
+libvtv-devel_package() {
+	depends="libvtv>=${_majorver}"
+	short_desc+=" - Vtable Verification Runtime Library - development files"
+	pkg_install() {
+		vmove usr/lib/libvtv.a
+		vmove usr/lib/libvtv.so
+	}
+}
+
+libvtv_package() {
+	short_desc+=" - Vtable Verification Runtime Library"
+	pkg_install() {
+		vmove usr/lib/libvtv.so.*
+	}
+}
+
 fi # !CROSS_BUILD
 
+libatomic-devel_package() {
+	depends="libatomic>=${_majorver}"
+	short_desc+=" - Atomics library - development files"
+	pkg_install() {
+		vmove usr/lib/libatomic.a
+		vmove usr/lib/libatomic.so
+	}
+}
+
+libatomic_package() {
+	short_desc+=" - Atomics library"
+	pkg_install() {
+		vmove usr/lib/libatomic.so.*
+	}
+}
+
 libgcc_package() {
-	short_desc="GCC library"
+	short_desc+=" - GCC library"
 	noverifyrdeps=yes
 	pkg_install() {
 		vmove "usr/lib/libgcc_s.so*"
@@ -325,7 +386,7 @@ libgcc_package() {
 
 libgomp-devel_package() {
 	depends="libgomp>=${_majorver}"
-	short_desc="GCC OpenMP v3.0 library - development files"
+	short_desc+=" - OpenMP v4.0 library - development files"
 	pkg_install() {
 		vmove usr/lib/libgomp.a
 		vmove usr/share/info/libgomp.info
@@ -334,7 +395,7 @@ libgomp-devel_package() {
 }
 
 libgomp_package() {
-	short_desc="GCC OpenMP v3.0 library"
+	short_desc+=" - OpenMP v4.0 library"
 	replaces="gcc>=4.6.3<4.6.3_3"
 	pkg_install() {
 		vmove usr/lib/gcc/${_triplet}/${_majorver}/include/omp.h
@@ -344,34 +405,48 @@ libgomp_package() {
 	}
 }
 
-libitm_package() {
-	short_desc="GCC Transactional Memory library"
+libitm-devel_package() {
+	depends="libitm>=${_majorver}"
+	short_desc+=" - Transactional Memory library - development files"
+	replaces="libitm<4.9.0_1"
 	pkg_install() {
-		vmove "usr/lib/libitm.*"
+		vmove usr/lib/libitm.a
+		vmove usr/lib/libitm.so
+		vmove usr/lib/libitm.spec
 		vmove usr/share/info/libitm.info
 		touch ${PKGDESTDIR}/usr/share/info/dir
 	}
 }
 
-libmudflap-devel_package() {
-	depends="libmudflap>=${_majorver}"
-	short_desc="GCC mudflap library - development files"
+libitm_package() {
+	short_desc+=" -Transactional Memory library"
 	pkg_install() {
-		vmove "usr/lib/libmudflap*.a"
+		vmove "usr/lib/libitm.so.*"
 	}
 }
 
-libmudflap_package() {
-	short_desc="GCC mudflap library"
+
+libsanitizer-devel_package() {
+	depends="libsanitizer>=${_majorver}"
+	short_desc+=" - Sanitizer libraries - development files"
 	pkg_install() {
-		vmove "usr/lib/libmudflap*.so*"
-		vinstall ${wrksrc}/COPYING.RUNTIME 644 usr/share/licenses/$pkgname RUNTIME.LIBRARY.EXCEPTION
+		vmove "usr/lib/lib*san*.so"
+		vmove "usr/lib/lib*san*.a"
+		vmove usr/lib/libasan_preinit.o
+		vmove usr/lib/libsanitizer.spec
+	}
+}
+
+libsanitizer_package() {
+	short_desc+=" - Sanitizer libraries"
+	pkg_install() {
+		vmove "usr/lib/lib*san*.so.*"
 	}
 }
 
 libssp-devel_package() {
 	depends="glibc-devel libssp>=${_majorver}"
-	short_desc="GCC SSP (StackSmashingProtection)library - development files"
+	short_desc+=" - SSP (StackSmashingProtection) library - development files"
 	pkg_install() {
 		vmove "usr/lib/libssp*.a"
 		vmove usr/lib/gcc/${_triplet}/${_majorver}/include/ssp
@@ -379,7 +454,7 @@ libssp-devel_package() {
 }
 
 libssp_package() {
-	short_desc="GCC SSP (StackSmashingProtection) library"
+	short_desc+=" - SSP (StackSmashingProtection) library"
 	pkg_install() {
 		vmove "usr/lib/libssp.so*"
 		vinstall ${wrksrc}/COPYING.RUNTIME 644 usr/share/licenses/$pkgname RUNTIME.LIBRARY.EXCEPTION
@@ -388,7 +463,7 @@ libssp_package() {
 
 libstdc++-devel_package() {
 	depends="libstdc++>=${_majorver}"
-	short_desc="GCC Standard C++ Library - development files"
+	short_desc+=" - Standard C++ Library - development files"
 	pkg_install() {
 		vmove "usr/lib/libstdc++.*a"
 		vmove "usr/lib/libsupc++.*"
@@ -397,7 +472,7 @@ libstdc++-devel_package() {
 }
 
 libstdc++_package() {
-	short_desc="GCC Standard C++ Library"
+	short_desc+=" - Standard C++ Library"
 	pkg_install() {
 		vmove "usr/lib/libstdc++.so*"
 		vmove usr/share/locale/fr/LC_MESSAGES/libstdc++.mo
@@ -409,7 +484,7 @@ libstdc++_package() {
 gcc-c++_package() {
 	lib32disabled=yes
 	depends="gcc>=${_majorver} libstdc++-devel>=${_majorver}"
-	short_desc="GCC C++ support"
+	short_desc+=" - C++ support"
 	pkg_install() {
 		for f in g++ c++ ${_triplet}-g++ ${_triplet}-c++; do
 			vmove usr/bin/${f}
