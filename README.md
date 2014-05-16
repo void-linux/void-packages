@@ -23,5 +23,11 @@ The `etc/defaults.conf` file contains the possible settings that can be override
 through the `etc/conf` configuration file for the `xbps-src` utility; optionally if
 `~/.xbps-src.conf` exists it's also read after `etc/conf`.
 
+If you want to customize default `CFLAGS`, `CXXFLAGS` and `LDFLAGS`, don't override
+those defined in `etc/defaults.conf`, append to them instead via `etc/conf` i.e:
+
+    $ echo 'CFLAGS+=" your flags here "' >> etc/conf
+    $ echo 'LDFLAGS+=" your flags here "' >> etc/conf
+
 See [Manual](https://github.com/voidlinux/xbps-packages/blob/master/Manual.md)
 for documentation to create and learn about the source packages.
