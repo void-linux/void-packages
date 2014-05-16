@@ -26,8 +26,8 @@ through the `etc/conf` configuration file for the `xbps-src` utility; optionally
 If you want to customize default `CFLAGS`, `CXXFLAGS` and `LDFLAGS`, don't override
 those defined in `etc/defaults.conf`, append to them instead via `etc/conf` i.e:
 
-    $ echo 'CFLAGS+=" your flags here "' >> etc/conf
-    $ echo 'LDFLAGS+=" your flags here "' >> etc/conf
+    $ echo 'XBPS_CFLAGS+=" your flags here "' >> etc/conf
+    $ echo 'XBPS_LDFLAGS+=" your flags here "' >> etc/conf
 
 See [Manual](https://github.com/voidlinux/xbps-packages/blob/master/Manual.md)
 for documentation to create and learn about the source packages.
