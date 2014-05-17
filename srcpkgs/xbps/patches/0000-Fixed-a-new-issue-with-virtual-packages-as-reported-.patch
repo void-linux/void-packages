@@ -1,0 +1,364 @@
+From 869466278b5585190847063f54e2d42dc25e5475 Mon Sep 17 00:00:00 2001
+From: Juan RP <xtraeme@gmail.com>
+Date: Thu, 15 May 2014 22:07:10 +0200
+Subject: [PATCH 1/4] Fixed a new issue with virtual packages, as reported by
+ Gottox.
+
+---
+ NEWS                                  |   4 ++
+ lib/repo_pkgdeps.c                    | 126 ++++++++++++++++++----------------
+ tests/xbps/libxbps/common/Kyuafile    |   1 +
+ tests/xbps/libxbps/shell/Makefile     |   1 +
+ tests/xbps/libxbps/shell/vpkg_test.sh |  47 +++++++++++++
+ 5 files changed, 120 insertions(+), 59 deletions(-)
+ create mode 100644 tests/xbps/libxbps/shell/vpkg_test.sh
+
+diff --git a/lib/repo_pkgdeps.c b/lib/repo_pkgdeps.c
+index 96c9ff1..fa1cb38 100644
+--- lib/repo_pkgdeps.c
++++ lib/repo_pkgdeps.c
+@@ -1,5 +1,5 @@
+ /*-
+- * Copyright (c) 2008-2013 Juan Romero Pardines.
++ * Copyright (c) 2008-2014 Juan Romero Pardines.
+  * All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+@@ -111,8 +111,7 @@ add_missing_reqdep(struct xbps_handle *xhp, const char *reqpkg)
+ 			 * if new dependency version is greater than current
+ 			 * one, store it.
+ 			 */
+-			xbps_dbg_printf(xhp, "Missing pkgdep name matched, "
+-			    "curver: %s newver: %s\n", curver, pkgver);
++			xbps_dbg_printf(xhp, "Missing pkgdep name matched, curver: %s newver: %s\n", curver, pkgver);
+ 			if (xbps_cmpver(curver, pkgver) <= 0) {
+ 				add_pkgdep = false;
+ 				free(curpkgnamedep);
+@@ -164,6 +163,7 @@ find_repo_deps(struct xbps_handle *xhp,
+ 	const char *reqpkg, *pkgver_q, *reason = NULL;
+ 	char *pkgname, *reqpkgname;
+ 	int rv = 0;
++	bool foundvpkg;
+ 
+ 	if (*depth >= MAX_DEPTH)
+ 		return ELOOP;
+@@ -176,18 +176,18 @@ find_repo_deps(struct xbps_handle *xhp,
+ 	assert(iter);
+ 
+ 	while ((obj = xbps_object_iterator_next(iter))) {
++		foundvpkg = false;
+ 		reqpkg = xbps_string_cstring_nocopy(obj);
+ 		if (xhp->flags & XBPS_FLAG_DEBUG) {
+ 			xbps_dbg_printf(xhp, "");
+-			for (unsigned short x = 0; x < *depth; x++)
++			for (unsigned short x = 0; x < *depth; x++) {
+ 				xbps_dbg_printf_append(xhp, " ");
+-			xbps_dbg_printf_append(xhp, "%s: requires dependency '%s': ",
+-			    curpkg != NULL ? curpkg : " ", reqpkg);
++			}
++			xbps_dbg_printf_append(xhp, "%s: requires dependency '%s': ", curpkg ? curpkg : " ", reqpkg);
+ 		}
+ 		if (((pkgname = xbps_pkgpattern_name(reqpkg)) == NULL) &&
+ 		    ((pkgname = xbps_pkg_name(reqpkg)) == NULL)) {
+-			xbps_dbg_printf(xhp, "can't guess pkgname for %s\n",
+-			    reqpkg);
++			xbps_dbg_printf(xhp, "can't guess pkgname for %s\n", reqpkg);
+ 			rv = EINVAL;
+ 			break;
+ 		}
+@@ -206,8 +206,7 @@ find_repo_deps(struct xbps_handle *xhp,
+ 		 */
+ 		if ((curpkgd = xbps_find_pkg_in_array(unsorted, reqpkg)) ||
+ 		    (curpkgd = xbps_find_virtualpkg_in_array(xhp, unsorted, reqpkg))) {
+-			xbps_dictionary_get_cstring_nocopy(curpkgd,
+-			    "pkgver", &pkgver_q);
++			xbps_dictionary_get_cstring_nocopy(curpkgd, "pkgver", &pkgver_q);
+ 			xbps_dbg_printf_append(xhp, " (%s queued)\n", pkgver_q);
+ 			free(pkgname);
+ 			continue;
+@@ -216,14 +215,16 @@ find_repo_deps(struct xbps_handle *xhp,
+ 		 * Pass 3: check if required dependency is already installed
+ 		 * and its version is fully matched.
+ 		 */
+-		if (((curpkgd = xbps_pkgdb_get_pkg(xhp, pkgname)) == NULL) &&
+-		    ((curpkgd = xbps_pkgdb_get_virtualpkg(xhp, pkgname)) == NULL)) {
++		if ((curpkgd = xbps_pkgdb_get_pkg(xhp, pkgname)) == NULL) {
++			if ((curpkgd = xbps_pkgdb_get_virtualpkg(xhp, pkgname))) {
++				foundvpkg = true;
++			}
++		}
++		if (curpkgd == NULL) {
+ 			if (errno && errno != ENOENT) {
+ 				/* error */
+ 				rv = errno;
+-				xbps_dbg_printf(xhp, "failed to find "
+-				    "installed pkg for `%s': %s\n",
+-				    reqpkg, strerror(errno));
++				xbps_dbg_printf(xhp, "failed to find installed pkg for `%s': %s\n", reqpkg, strerror(errno));
+ 				free(pkgname);
+ 				break;
+ 			}
+@@ -233,7 +234,6 @@ find_repo_deps(struct xbps_handle *xhp,
+ 			reason = "install";
+ 			state = XBPS_PKG_STATE_NOT_INSTALLED;
+ 		} else {
+-			free(pkgname);
+ 			/*
+ 			 * Check if installed version matches the
+ 			 * required pkgdep version.
+@@ -242,36 +242,61 @@ find_repo_deps(struct xbps_handle *xhp,
+ 			    "pkgver", &pkgver_q);
+ 
+ 			/* Check its state */
+-			if ((rv = xbps_pkg_state_dictionary(curpkgd, &state)) != 0)
++			if ((rv = xbps_pkg_state_dictionary(curpkgd, &state)) != 0) {
++				free(pkgname);
+ 				break;
+-			if (xbps_match_virtual_pkg_in_dict(curpkgd, reqpkg)) {
++			}
++
++			if (foundvpkg && xbps_match_virtual_pkg_in_dict(curpkgd, reqpkg)) {
+ 				/*
+ 				 * Check if required dependency is a virtual
+ 				 * package and is satisfied by an
+ 				 * installed package.
+ 				 */
+-				xbps_dbg_printf_append(xhp,
+-				    "[virtual] satisfied by "
+-				    "`%s'.\n", pkgver_q);
++				xbps_dbg_printf_append(xhp, "[virtual] satisfied by `%s'.\n", pkgver_q);
++				free(pkgname);
+ 				continue;
+ 			}
+ 			rv = xbps_pkgpattern_match(pkgver_q, reqpkg);
+ 			if (rv == 0) {
++				xbps_array_t replaces;
++				const char *pkgdep;
++				char *pkgdepname;
++				bool matching_vpkg = false;
+ 				/*
+ 				 * Package is installed but does not match
+-				 * the dependency pattern, update pkg if it's not
+-				 * on hold state.
++				 * the dependency pattern, if dependency does not
++				 * replace the provided vpkg, update it.
+ 				 */
+-				xbps_dbg_printf_append(xhp,
+-				    "installed `%s', "
+-				    "must be updated.", pkgver_q);
+-				if (xbps_dictionary_get(curpkgd, "hold"))
+-					xbps_dbg_printf_append(xhp, " on hold state! ignoring update.\n");
+-				else {
++				if (foundvpkg) {
++					replaces = xbps_dictionary_get(curpkgd, "replaces");
++					for (unsigned int x = 0; x < xbps_array_count(replaces); x++) {
++						xbps_array_get_cstring_nocopy(replaces, x, &pkgdep);
++						pkgdepname = xbps_pkgpattern_name(pkgdep);
++						assert(pkgdepname);
++						if (strcmp(pkgname, pkgdepname) == 0) {
++							matching_vpkg = true;
++							free(pkgdepname);
++							break;
++						}
++						free(pkgdepname);
++					}
++				}
++				if (matching_vpkg) {
++					xbps_dbg_printf_append(xhp, "installed `%s', must be updated.", pkgver_q);
++					if (xbps_dictionary_get(curpkgd, "hold"))
++						xbps_dbg_printf_append(xhp, " on hold state! ignoring update.\n");
++					else {
++						xbps_dbg_printf_append(xhp, "\n");
++						reason = "update";
++					}
++				} else {
+ 					xbps_dbg_printf_append(xhp, "\n");
+-					reason = "update";
++					reason = "install";
+ 				}
++				free(pkgname);
+ 			} else if (rv == 1) {
++				free(pkgname);
+ 				rv = 0;
+ 				if (state == XBPS_PKG_STATE_UNPACKED) {
+ 					/*
+@@ -279,10 +304,7 @@ find_repo_deps(struct xbps_handle *xhp,
+ 					 * pattern but was only unpacked,
+ 					 * configure pkg.
+ 					 */
+-					xbps_dbg_printf_append(xhp,
+-					    "installed `%s'"
+-					    ", must be configured.\n",
+-					    pkgver_q);
++					xbps_dbg_printf_append(xhp, "installed `%s', must be configured.\n", pkgver_q);
+ 					reason = "configure";
+ 				} else if (state == XBPS_PKG_STATE_INSTALLED) {
+ 					/*
+@@ -290,15 +312,13 @@ find_repo_deps(struct xbps_handle *xhp,
+ 					 * pattern and is fully installed,
+ 					 * skip to next one.
+ 					 */
+-					xbps_dbg_printf_append(xhp,
+-					    "installed "
+-					    "`%s'.\n", pkgver_q);
++					xbps_dbg_printf_append(xhp, "installed `%s'.\n", pkgver_q);
+ 					continue;
+ 				}
+ 			} else {
+ 				/* error matching pkgpattern */
+-				xbps_dbg_printf(xhp, "failed to match "
+-				    "pattern %s with %s\n", reqpkg, pkgver_q);
++				xbps_dbg_printf(xhp, "failed to match pattern %s with %s\n", reqpkg, pkgver_q);
++				free(pkgname);
+ 				break;
+ 			}
+ 		}
+@@ -311,32 +331,24 @@ find_repo_deps(struct xbps_handle *xhp,
+ 		    ((curpkgd = xbps_rpool_get_virtualpkg(xhp, reqpkg)) == NULL)) {
+ 			/* pkg not found, there was some error */
+ 			if (errno && errno != ENOENT) {
+-				xbps_dbg_printf(xhp, "failed to find pkg "
+-				    "for `%s' in rpool: %s\n",
+-				    reqpkg, strerror(errno));
++				xbps_dbg_printf(xhp, "failed to find pkg for `%s' in rpool: %s\n", reqpkg, strerror(errno));
+ 				rv = errno;
+ 				break;
+ 			}
+ 			rv = add_missing_reqdep(xhp, reqpkg);
+ 			if (rv != 0 && rv != EEXIST) {
+-				xbps_dbg_printf_append(xhp, "`%s': "
+-				    "add_missing_reqdep failed %s\n",
+-				    reqpkg);
++				xbps_dbg_printf_append(xhp, "`%s': add_missing_reqdep failed %s\n", reqpkg);
+ 				break;
+ 			} else if (rv == EEXIST) {
+-				xbps_dbg_printf_append(xhp, "`%s' missing "
+-				    "dep already added.\n", reqpkg);
++				xbps_dbg_printf_append(xhp, "`%s' missing dep already added.\n", reqpkg);
+ 				rv = 0;
+ 				continue;
+ 			} else {
+-				xbps_dbg_printf_append(xhp, "`%s' added "
+-				    "into the missing deps array.\n",
+-				    reqpkg);
++				xbps_dbg_printf_append(xhp, "`%s' added into the missing deps array.\n", reqpkg);
+ 				continue;
+ 			}
+ 		}
+-		xbps_dictionary_get_cstring_nocopy(curpkgd,
+-		    "pkgver", &pkgver_q);
++		xbps_dictionary_get_cstring_nocopy(curpkgd, "pkgver", &pkgver_q);
+ 		reqpkgname = xbps_pkg_name(pkgver_q);
+ 		assert(reqpkgname);
+ 		/*
+@@ -345,9 +357,7 @@ find_repo_deps(struct xbps_handle *xhp,
+ 		pkgname = xbps_pkg_name(curpkg);
+ 		assert(pkgname);
+ 		if (strcmp(pkgname, reqpkgname) == 0) {
+-			xbps_dbg_printf_append(xhp, "[ignoring wrong dependency "
+-			    "%s (depends on itself)]\n",
+-			    reqpkg);
++			xbps_dbg_printf_append(xhp, "[ignoring wrong dependency %s (depends on itself)]\n", reqpkg);
+ 			xbps_remove_string_from_array(pkg_rdeps_array, reqpkg);
+ 			free(pkgname);
+ 			free(reqpkgname);
+@@ -366,8 +376,7 @@ find_repo_deps(struct xbps_handle *xhp,
+ 		xbps_dictionary_set_cstring_nocopy(curpkgd, "transaction", reason);
+ 		rv = store_dependency(xhp, unsorted, curpkgd, state);
+ 		if (rv != 0) {
+-			xbps_dbg_printf(xhp, "store_dependency failed for "
+-			    "`%s': %s\n", reqpkg, strerror(rv));
++			xbps_dbg_printf(xhp, "store_dependency failed for `%s': %s\n", reqpkg, strerror(rv));
+ 			break;
+ 		}
+ 		/*
+@@ -394,8 +403,7 @@ find_repo_deps(struct xbps_handle *xhp,
+ 		rv = find_repo_deps(xhp, unsorted, curpkgrdeps,
+ 				curpkgprovides, pkgver_q, depth);
+ 		if (rv != 0) {
+-			xbps_dbg_printf(xhp, "Error checking %s for rundeps: %s\n",
+-			    reqpkg, strerror(rv));
++			xbps_dbg_printf(xhp, "Error checking %s for rundeps: %s\n", reqpkg, strerror(rv));
+ 			break;
+ 		}
+ 	}
+diff --git a/tests/xbps/libxbps/common/Kyuafile b/tests/xbps/libxbps/common/Kyuafile
+index 1c9d607..978d5bb 100644
+--- tests/xbps/libxbps/common/Kyuafile
++++ tests/xbps/libxbps/common/Kyuafile
+@@ -19,6 +19,7 @@ atf_test_program{name="installmode_test"}
+ atf_test_program{name="obsoletefiles_test"}
+ atf_test_program{name="scripts_test"}
+ atf_test_program{name="incorrect_deps_test"}
++atf_test_program{name="vpkg_test"}
+ 
+ include('config/Kyuafile')
+ include('find_pkg_orphans/Kyuafile')
+diff --git a/tests/xbps/libxbps/shell/Makefile b/tests/xbps/libxbps/shell/Makefile
+index 76f9acd..5c3648f 100644
+--- tests/xbps/libxbps/shell/Makefile
++++ tests/xbps/libxbps/shell/Makefile
+@@ -4,6 +4,7 @@ TOPDIR = ../../../..
+ TESTSHELL = conf_files_test issue6_test issue18_test issue20_test remove_test
+ TESTSHELL+= replace_test installmode_test obsoletefiles_test
+ TESTSHELL+= issue31_test scripts_test incorrect_deps_test
++TESTSHELL+= vpkg_test
+ 
+ include ../Makefile.inc
+ include $(TOPDIR)/mk/test.mk
+diff --git a/tests/xbps/libxbps/shell/vpkg_test.sh b/tests/xbps/libxbps/shell/vpkg_test.sh
+new file mode 100644
+index 0000000..2b3ba95
+--- /dev/null
++++ tests/xbps/libxbps/shell/vpkg_test.sh
+@@ -0,0 +1,47 @@
++#!/usr/bin/env atf-sh
++#
++
++# This test case is a bit special because it stresses how virtual packages
++# are handled in xbps.
++#
++# - A-1.0 is installed, provides vpkg libEGL-1.0.
++# - B-1.0 is installed and depends on A.
++# - C-1.0 is installed and depends on libEGL>=2.0.
++# - D-1.0 is installed as dependency of C, and provides libEGL-2.0.
++# - A should not be updated to D.
++#
++# D should replace A only if it has "replaces" property on A. The result should be
++# that D must be installed and A being as is.
++
++atf_test_case vpkg_noupdate
++
++vpkg_noupdate_head() {
++	atf_set "descr" "Tests for virtual pkgs: don't update vpkg"
++}
++
++vpkg_noupdate_body() {
++	mkdir some_repo
++	mkdir -p pkg_{A,B,C,D}/usr/bin
++	cd some_repo
++	xbps-create -A noarch -n A-1.0_1 -s "A pkg" --provides "libEGL-1.0_1" ../pkg_A
++	atf_check_equal $? 0
++	xbps-create -A noarch -n B-1.0_1 -s "B pkg" --dependencies "A>=0" ../pkg_B
++	atf_check_equal $? 0
++	xbps-create -A noarch -n C-1.0_1 -s "C pkg" --dependencies "libEGL>=2.0" ../pkg_C
++	atf_check_equal $? 0
++	xbps-create -A noarch -n D-1.0_1 -s "D pkg" --provides "libEGL-2.0_1" ../pkg_D
++	atf_check_equal $? 0
++
++	xbps-rindex -a *.xbps
++	atf_check_equal $? 0
++	cd ..
++
++	xbps-install -C empty.conf -r root --repository=$PWD/some_repo -dy A
++	atf_check_equal $? 0
++	xbps-install -C empty.conf -r root --repository=$PWD/some_repo -dy C
++	atf_check_equal $? 0
++}
++
++atf_init_test_cases() {
++	atf_add_test_case vpkg_noupdate
++}
+-- 
+1.9.2
+
