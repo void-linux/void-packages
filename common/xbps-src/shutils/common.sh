@@ -532,7 +532,7 @@ remove_cross_pkg() {
     fi
 
     msg_normal "Removing cross pkg: cross-${XBPS_CROSS_TRIPLET} ...\n"
-    $XBPS_REMOVE_CMD -y cross-${XBPS_CROSS_TRIPLET} &>/dev/null
+    $XBPS_REMOVE_CMD -Ry cross-${XBPS_CROSS_TRIPLET} &>/dev/null
     rval=$?
     if [ $rval -ne 0 ]; then
         msg_error "failed to remove cross-${XBPS_CROSS_TRIPLET} (error $rval)\n"
