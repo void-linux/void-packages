@@ -14,7 +14,11 @@ install_pkg_from_repos() {
     if [ -n "$cross" ]; then
         $FAKEROOT_CMD $XBPS_INSTALL_XCMD -Ayd "$pkg" >$tmplogf 2>&1
     else
-        $FAKEROOT_CMD $XBPS_INSTALL_CMD -Ayd "$pkg" >$tmplogf 2>&1
+        if [ -z "$CHROOT_READY" ]; then
+            $XBPS_INSTALL_CMD -Ayd "$pkg" >$tmplogf 2>&1
+        else
+            $FAKEROOT_CMD $XBPS_INSTALL_CMD -Ayd "$pkg" >$tmplogf 2>&1
+        fi
     fi
     rval=$?
     if [ $rval -ne 0 -a $rval -ne 17 ]; then
