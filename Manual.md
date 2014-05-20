@@ -626,7 +626,7 @@ destdir (`$DESTDIR`) to the `subpackage` destdir (`$PKGDESTDIR`).
 A development package, commonly generated as a subpackage, shall only contain
 files required for development, that is, headers, static libraries, shared
 library symlinks, pkg-config files, API documentation or any other script
-that is only useful when developping for the target software.
+that is only useful when developing for the target software.
 
 A development package should depend on packages that are required to link
 against the provided shared libraries, i.e if `libfoo` provides the
