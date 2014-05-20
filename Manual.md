@@ -95,7 +95,8 @@ Libraries have to be split into two sub packages: <name> and <name>-devel.
 a linking program.
 
 - `<name>-devel` should contain all files which are needed to compile a package
-against this package.
+against this package. If the library is a sub package, its corresponding
+development package should be named `lib<name>-devel`
 
 #### Language Modules
 
