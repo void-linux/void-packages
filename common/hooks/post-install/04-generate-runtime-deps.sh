@@ -100,16 +100,18 @@ hook() {
 			for j in ${rdep}; do
 				_pkgname=$($XBPS_UHELPER_CMD getpkgname "$j")
 				# if there's a SONAME matching pkgname, use it.
-				for f in ${pkgname} ${subpackages}; do
-					if [ "${_pkgname}" = "${f}" ]; then
+				for x in ${pkgname} ${subpackages}; do
+					if [ "${_pkgname}" = "${x}" ]; then
 						found=1
 						break
 					fi
 				done
+				if [ -n "$found" ]; then
+					_rdep=$j
+					break
+				fi
 			done
-			if [ -n "$found" ]; then
-				_rdep=$j
-			else
+			if [ -z "${_rdep}" ]; then
 				# otherwise pick up the first one.
 				for j in ${rdep}; do
 					[ -z "${_rdep}" ] && _rdep=$j
