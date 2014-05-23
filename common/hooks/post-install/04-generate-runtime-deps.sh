@@ -34,7 +34,7 @@ hook() {
 	local depsftmp f j tmplf mapshlibs sorequires
 
 	# Disable trap on ERR, xbps-uhelper cmd might return error... but not something
-	# to be worried about because if there are broken shlibs this hooks returns
+	# to be worried about because if there are broken shlibs this hook returns
 	# error via msg_error().
 	trap - ERR
 
@@ -100,9 +100,12 @@ hook() {
 			for j in ${rdep}; do
 				_pkgname=$($XBPS_UHELPER_CMD getpkgname "$j")
 				# if there's a SONAME matching pkgname, use it.
-				[ "${pkgname}" != "${_pkgname}" ] && continue
-				found=1
-				break
+				for f in ${pkgname} ${subpackages}; do
+					if [ "${_pkgname}" = "${f}" ]; then
+						found=1
+						break
+					fi
+				done
 			done
 			if [ -n "$found" ]; then
 				_rdep=$j
