@@ -1,7 +1,7 @@
 # Template file for 'SDL2'
 pkgname=SDL2
 version=2.0.3
-revision=1
+revision=2
 build_style=gnu-configure
 configure_args="--enable-alsa --disable-esd --disable-rpath --enable-libudev
  --enable-clock_gettime --disable-nas --disable-arts --disable-x11-shared
@@ -16,18 +16,64 @@ distfiles="http://www.libsdl.org/release/${pkgname}-$version.tar.gz"
 checksum=a5a69a6abf80bcce713fa873607735fe712f44276a7f048d60a61bb2f6b3c90c
 
 # Package build options
-build_options="gles opengl pulseaudio x11"
+build_options="gles opengl pulseaudio wayland x11"
 
 desc_option_gles="Enable support for OpenGL/ES rendering"
 desc_option_opengl="Enable support for OpenGL rendering"
 desc_option_pulseaudio="Enable support for pulseaudio audio output"
+desc_option_wayland="Enable support for wayland video output"
 desc_option_x11="Enable support for X11 video output"
 
-build_options_default="x11"
-
 if [ "$XBPS_TARGET_MACHINE" = "i686" -o "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-	# Enable OpenGL and pulseaudio on x86.
-	build_options_default+=" opengl pulseaudio"
+	# Enable OpenGL, pulseaudio, wayland and x11
+	build_options_default+=" opengl pulseaudio wayland x11"
+
+elif [ "$XBPS_TARGET_MACHINE" = "armv6l" ]; then
+	# Enable OpenGL/ES on RaspberryPi
+	build_options_default+=" gles"
+
+fi
+
+if [ "$build_option_gles" ]; then
+	# libGLESv2.so.1 is dynamically loaded with dlopen.
+	depends+=" libGLES>=1.0"
+	configure_args+=" --enable-video-opengles"
+	if [ "$XBPS_TARGET_MACHINE" = "armv6l" ]; then
+		# RaspberryPi, use Videocore IV
+		makedepends+=" rpi-firmware"
+		CFLAGS="-I${XBPS_CROSS_BASE}/opt/vc/include -I${XBPS_CROSS_BASE}/opt/vc/include/interface/vcos/pthreads"
+		LDFLAGS="-L${XBPS_CROSS_BASE}/opt/vc/lib"
+	else
+		makedepends+=" glu-devel"
+	fi
+else
+	configure_args+=" --disable-video-opengles"
+fi
+
+if [ "$build_option_opengl" ]; then
+	# libGL.so.1 is dynamically loaded with dlopen.
+	depends+=" libGL"
+	configure_args+=" --enable-video-opengl"
+	makedepends+=" glu-devel"
+else
+	configure_args+=" --disable-video-opengl"
+fi
+
+if [ "$build_option_pulseaudio" ]; then
+	configure_args+=" --enable-pulseaudio"
+	makedepends+=" pulseaudio-devel"
+else
+	configure_args+=" --disable-pulseaudio"
+fi
+
+if [ "$build_option_wayland" ]; then
+	if [ "$build_option_opengl" ]; then
+		msg_error "$pkgname: wayland option requires gles and not opengl.\n"
+	fi
+	configure_args+=" --enable-video-wayland --disable-wayland-shared"
+	makedepends+=" libxkbcommon-devel wayland-devel"
+else
+	configure_args+=" --disable-video-wayland"
 fi
 
 if [ "$build_option_x11" ]; then
@@ -40,50 +86,24 @@ else
 	configure_args+=" --without-x"
 fi
 
-if [ "$build_option_opengl" ]; then
-	configure_args+=" --enable-video-opengl"
-	makedepends+=" glu-devel"
-else
-	configure_args+=" --disable-video-opengl"
-fi
-
-if [ "$build_option_gles" ]; then
-	configure_args+=" --enable-video-opengles"
-	makedepends+=" glu-devel"
-else
-	configure_args+=" --disable-video-opengles"
-fi
-
-if [ "$build_option_pulseaudio" ]; then
-	configure_args+=" --enable-pulseaudio"
-	makedepends+=" pulseaudio-devel"
-else
-	configure_args+=" --disable-pulseaudio"
-fi
-
-if [ "$build_option_opengl" ]; then
-	# libGL.so.1 is dynamically loaded with dlopen.
-	depends+=" libGL"
-fi
-if [ "$build_option_gles" ]; then
-	# libGLESv2.so.1 is dynamically loaded with dlopen.
-	depends+=" libGLES"
-fi
-
 SDL2-devel_package() {
 	short_desc+=" - development files"
 	depends="alsa-lib-devel ${sourcepkg}>=${version}_${revision}"
 
-	if [ "$build_option_x11" ]; then
-		depends+=" libSM-devel libXcursor-devel libXinerama-devel libXScrnSaver-devel libXrandr-devel"
-	fi
-
-	if [ "$build_option_opengl" -o "$build_option_gles" ]; then
+	if [ "$build_option_opengl" ]; then
 		depends+=" glu-devel"
 	fi
 
 	if [ "$build_option_pulseaudio" ]; then
 		depends+=" pulseaudio-devel"
+	fi
+
+	if [ "$build_option_wayland" ]; then
+		depends+=" wayland-devel"
+	fi
+
+	if [ "$build_option_x11" ]; then
+		depends+=" libSM-devel libXcursor-devel libXinerama-devel libXScrnSaver-devel libXrandr-devel"
 	fi
 
 	pkg_install() {
