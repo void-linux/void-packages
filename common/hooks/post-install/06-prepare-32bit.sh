@@ -61,6 +61,8 @@ hook() {
 		# Full 32bit mode; copy everything to new destdir.
 		mkdir -p ${destdir32}
 		cp -a ${PKGDESTDIR}/* ${destdir32}/
+		# remove symlink
+		rm ${destdir32}/usr/lib32
 	fi
 	if [ ! -d ${destdir32} ]; then
 		return
