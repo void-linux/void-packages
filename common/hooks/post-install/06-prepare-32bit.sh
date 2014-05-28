@@ -62,7 +62,13 @@ hook() {
 		mkdir -p ${destdir32}
 		cp -a ${PKGDESTDIR}/* ${destdir32}/
 		# remove symlink
-		rm ${destdir32}/usr/lib32
+		if [ -h ${destdir32}/usr/lib32 ]; then
+			rm ${destdir32}/usr/lib32
+		fi
+		# if /usr/lib dir exists move it to lib32.
+		if [ -d ${destdir32}/usr/lib ]; then
+			mv ${destdir32}/usr/lib ${destdir32}/usr/lib32
+		fi
 	fi
 	if [ ! -d ${destdir32} ]; then
 		return
