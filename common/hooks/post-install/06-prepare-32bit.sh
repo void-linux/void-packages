@@ -87,7 +87,7 @@ hook() {
 			_deps="$(cat ${PKGDESTDIR}/rdeps)"
 		fi
 		for f in ${_deps}; do
-			unset pkgn pkgv _noarch _hasdevel
+			unset pkgn pkgv _arch _shprovides
 
 			pkgn="$($XBPS_UHELPER_CMD getpkgdepname $f)"
 			if [ -z "${pkgn}" ]; then
@@ -100,8 +100,8 @@ hook() {
 				pkgv="$($XBPS_UHELPER_CMD getpkgdepversion ${f})"
 			fi
 			# If dependency is noarch do not change it to 32bit.
-			_noarch=$($XBPS_QUERY_CMD -R --property=architecture "$f")
-			if [ "${_noarch}" = "noarch" ]; then
+			_arch=$($XBPS_QUERY_CMD -R --property=architecture "$f")
+			if [ "${_arch}" = "noarch" ]; then
 				printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
 				continue
 			fi
