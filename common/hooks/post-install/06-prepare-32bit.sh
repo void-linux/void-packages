@@ -87,7 +87,7 @@ hook() {
 			_deps="$(cat ${PKGDESTDIR}/rdeps)"
 		fi
 		for f in ${_deps}; do
-			unset pkgn pkgv _arch _shprovides
+			unset found pkgn pkgv _arch _shprovides
 
 			pkgn="$($XBPS_UHELPER_CMD getpkgdepname $f)"
 			if [ -z "${pkgn}" ]; then
@@ -107,12 +107,31 @@ hook() {
 			fi
 			# If dependency does not have "shlib-provides" do not
 			# change it to 32bit.
-			_shprovides="$($XBPS_QUERY_CMD -R --property=shlib-provides "$f")"
-			if [ -z "${_shprovides}" ]; then
-				printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
-				continue
+			for x in ${subpackages}; do
+				if [ "$x" = "$pkgn" ]; then
+					found=1
+					break
+				fi
+			done
+			if [ -z "$found" ]; then
+				# Dependency is not a subpkg, check shlib-provides
+				# via binpkgs.
+				_shprovides="$($XBPS_QUERY_CMD -R --property=shlib-provides "$f")"
+				if [ -n "${_shprovides}" ]; then
+					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv}"
+					printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
+				else
+					printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
+				fi
+			else
+				# XXX
+				# dependency is a subpkg, assume shlib-provides exists.
+				# The issue is that subpkgs are processed in alphabetical
+				# order and a required subpkg might not be processed at this
+				# point.
+				echo "   RDEP: $f -> ${pkgn}-32bit${pkgv}"
+				printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
 			fi
-			printf "${pkgn}-32bit${pkgv} " >> $destdir32/rdeps
 		done
 	fi
 
