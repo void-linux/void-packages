@@ -152,15 +152,17 @@ static const keymap_t keys[] = {
 /* mouse button mappings for image mode: */
 static const button_t buttons[] = {
 	/* modifiers    button            function              argument */
-	{ 0,            Button1,          i_navigate,           (arg_t) +1 },
-	{ 0,            Button3,          i_navigate,           (arg_t) -1 },
-	{ 0,            Button2,          i_drag,               (arg_t) None },
-	{ 0,            Button4,          it_scroll_move,       (arg_t) DIR_UP },
-	{ 0,            Button5,          it_scroll_move,       (arg_t) DIR_DOWN },
-	{ ShiftMask,    Button4,          it_scroll_move,       (arg_t) DIR_LEFT },
-	{ ShiftMask,    Button5,          it_scroll_move,       (arg_t) DIR_RIGHT },
-	{ ControlMask,  Button4,          i_zoom,               (arg_t) +1 },
-	{ ControlMask,  Button5,          i_zoom,               (arg_t) -1 },
+	{ 0,            1,                i_navigate,           (arg_t) +1 },
+	{ 0,            3,                i_navigate,           (arg_t) -1 },
+	{ 0,            2,                i_drag,               (arg_t) None },
+	{ 0,            4,                it_scroll_move,       (arg_t) DIR_UP },
+	{ 0,            5,                it_scroll_move,       (arg_t) DIR_DOWN },
+	{ ShiftMask,    4,                it_scroll_move,       (arg_t) DIR_LEFT },
+	{ ShiftMask,    5,                it_scroll_move,       (arg_t) DIR_RIGHT },
+	{ 0,            6,                it_scroll_move,       (arg_t) DIR_LEFT },
+	{ 0,            7,                it_scroll_move,       (arg_t) DIR_RIGHT },
+	{ ControlMask,  4,                i_zoom,               (arg_t) +1 },
+	{ ControlMask,  5,                i_zoom,               (arg_t) -1 },
 };
 
 #endif
