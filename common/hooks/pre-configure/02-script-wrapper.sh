@@ -44,6 +44,7 @@ hook() {
 	generic_wrapper freetype-config
 	generic_wrapper sdl-config
 	generic_wrapper sdl2-config
+	generic_wrapper gpgme-config
 	libpng_config_wrapper
 
 	export PATH=${WRAPPERDIR}:$PATH
