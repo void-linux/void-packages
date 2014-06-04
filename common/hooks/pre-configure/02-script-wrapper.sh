@@ -15,22 +15,26 @@ generic_wrapper() {
 	chmod 755 ${WRAPPERDIR}/${wrapper}
 }
 
-libpng_config_wrapper() {
-	[ ! -x ${XBPS_CROSS_BASE}/usr/bin/libpng-config ] && return 0
-	[ -x ${WRAPPERDIR}/libpng-config ] && return 0
+generic_wrapper2() {
+	local wrapper="$1" incdir="$2"
 
-	cat >>${WRAPPERDIR}/libpng-config<<_EOF
+	[ ! -x ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ] && return 0
+	[ -x ${WRAPPERDIR}/${wrapper} ] && return 0
+
+	cat >>${WRAPPERDIR}/${wrapper}<<_EOF
 #!/bin/sh
 if [ "\$1" = "--prefix" ]; then
 	echo "${XBPS_CROSS_BASE}/usr"
 elif [ "\$1" = "--cflags" ]; then
-	echo "-I${XBPS_CROSS_BASE}/usr/include/libpng16"
+	${XBPS_CROSS_BASE}/usr/bin/${wrapper} --libs | sed -e "s,-I/usr,-I${XBPS_CROSS_BASE}/usr,g;s,-L/usr,-L${XBPS_CROSS_BASE}/usr,g"
+elif [ "\$1" = "--libs" ]; then
+	${XBPS_CROSS_BASE}/usr/bin/${wrapper} --libs | sed -e "s,-L/usr,-L${XBPS_CROSS_BASE}/usr,g"
 else
-	echo "exec ${XBPS_CROSS_BASE}/usr/bin/libpng-config "\$@"
+	exec ${XBPS_CROSS_BASE}/usr/bin/${wrapper} "\$@"
 fi
 exit \$?
 _EOF
-	chmod 755 ${WRAPPERDIR}/libpng-config
+	chmod 755 ${WRAPPERDIR}/${wrapper}
 }
 
 hook() {
@@ -45,7 +49,8 @@ hook() {
 	generic_wrapper sdl-config
 	generic_wrapper sdl2-config
 	generic_wrapper gpgme-config
-	libpng_config_wrapper
+	generic_wrapper2 libpng-config libpng16
+	generic_wrapper2 ncurses5-config ncurses
 
 	export PATH=${WRAPPERDIR}:$PATH
 }
