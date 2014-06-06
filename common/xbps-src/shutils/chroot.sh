@@ -136,6 +136,10 @@ chroot_sync_repos() {
             fi
             cp -a $XBPS_MASTERDIR/var/db/xbps/keys/*.plist \
                 $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys
+            rm -rf $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps/repo.d
+            mkdir -p $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps/repo.d
+            cp ${XBPS_MASTERDIR}/etc/xbps/repo.d/*.conf \
+                $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps/repo.d
             env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
                 $CHROOT_CMD $XBPS_MASTERDIR /usr/sbin/xbps-install \
                 -r /usr/$XBPS_CROSS_TRIPLET -S
