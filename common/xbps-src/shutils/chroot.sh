@@ -57,14 +57,14 @@ _EOF
     cp -f /etc/resolv.conf $XBPS_MASTERDIR/etc
 
     # Update xbps alternative repository if set.
-    mkdir -p $XBPS_MASTERDIR/etc/xbps/repos
+    mkdir -p $XBPS_MASTERDIR/etc/xbps/repo.d
     if [ -n "$XBPS_ALT_REPOSITORY" ]; then
         ( \
             echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}"; \
             echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}/nonfree"; \
-            ) > $XBPS_MASTERDIR/etc/xbps/repos/alternative.conf
+            ) > $XBPS_MASTERDIR/etc/xbps/repo.d/00-alternative.conf
     else
-        : > $XBPS_MASTERDIR/etc/xbps/repos/alternative.conf
+        rm -f $XBPS_MASTERDIR/etc/xbps/repo.d/00-alternative.conf
     fi
 }
 
@@ -95,7 +95,8 @@ chroot_prepare() {
     # Copy /etc/hosts from base-files.
     cp -f $XBPS_SRCPKGDIR/base-files/files/hosts $XBPS_MASTERDIR/etc
 
-    rm -f $XBPS_MASTERDIR/etc/xbps/xbps.conf
+    echo "syslog=false" >> $XBPS_MASTERDIR/etc/xbps/xbps.conf
+    rm -f $XBPS_MASTERDIR/usr/share/xbps/repo.d/*.conf
 
     # Prepare default locale: en_US.UTF-8.
     if [ -s ${XBPS_MASTERDIR}/etc/default/libc-locales ]; then
@@ -118,17 +119,14 @@ chroot_sync_repos() {
             ${XBPS_MASTERDIR}/etc/xbps/xbps.conf
     fi
     install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-local.conf \
-        ${XBPS_MASTERDIR}/etc/xbps/repos/local.conf
+        ${XBPS_MASTERDIR}/etc/xbps/repo.d/10-local.conf
     install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-remote.conf \
-        ${XBPS_MASTERDIR}/etc/xbps/repos/remote.conf
+        ${XBPS_MASTERDIR}/etc/xbps/repo.d/20-remote.conf
 
     # if -N is set, comment out remote repositories from xbps.conf.
     if [ -n "$XBPS_SKIP_REMOTEREPOS" ]; then
-        sed -e 's,^.*\(include=/etc/xbps/repos/remote.conf$\),#\1,' \
-            -i ${XBPS_MASTERDIR}/etc/xbps/xbps.conf
+        rm -f ${XBPS_MASTERDIR}/etc/xbps/repo.d/20-remote.conf
     else
-        sed -e 's,^#.*\(include=/etc/xbps/repos/remote.conf$\),\1,' \
-            -i ${XBPS_MASTERDIR}/etc/xbps/xbps.conf
         # Make sure to sync index for remote repositories.
         $CHROOT_CMD $XBPS_MASTERDIR /usr/sbin/xbps-install -S
         if [ -n "$XBPS_CROSS_BUILD" ]; then
