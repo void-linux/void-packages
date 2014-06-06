@@ -1,7 +1,9 @@
 # This hook generates a XBPS binary package from an installed package in destdir.
 
 genpkg() {
-	local pkgdir="$1" arch="$2" desc="$3" pkgver="$4" binpkg="$5" _deps= f=
+	local pkgdir="$1" arch="$2" desc="$3" pkgver="$4" binpkg="$5"
+	local _preserve _deps _shprovides _shrequires _gitrevs _provides _conflicts
+	local _replaces _mutable_files _conf_files f
 
 	if [ ! -d "${PKGDESTDIR}" ]; then
 		msg_warn "$pkgver: cannot find pkg destdir... skipping!\n"
@@ -94,7 +96,7 @@ genpkg() {
 		--desc "${desc}" \
 		--built-with "xbps-src-${XBPS_SRC_VERSION}" \
 		--build-options "${PKG_BUILD_OPTIONS}" \
-		--pkgver "${pkgver}" --quiet \
+		--pkgver "${pkgver}" --tags "${tags}" --quiet \
 		--source-revisions "${_gitrevs}" \
 		--shlib-provides "${_shprovides}" \
 		--shlib-requires "${_shrequires}" \
@@ -135,6 +137,7 @@ hook() {
 
 	# Generate -dbg pkg.
 	if [ -d "${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}" ]; then
+		source ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
 		repo=$XBPS_REPOSITORY/debug
 		_pkgver=${pkgname}-dbg-${version}_${revision}
 		_desc="${short_desc} (debug files)"
@@ -147,7 +150,7 @@ hook() {
 		return
 	fi
 	if [ -d "${XBPS_DESTDIR}/${pkgname}-32bit-${version}" ]; then
-		unset conf_files provides replaces preserve
+		source ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
 		if [ -n "$nonfree" ]; then
 			repo=$XBPS_REPOSITORY/multilib/nonfree
 		else
