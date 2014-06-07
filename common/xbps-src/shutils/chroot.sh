@@ -96,6 +96,7 @@ chroot_prepare() {
     cp -f $XBPS_SRCPKGDIR/base-files/files/hosts $XBPS_MASTERDIR/etc
 
     echo "syslog=false" >> $XBPS_MASTERDIR/etc/xbps/xbps.conf
+    echo "cachedir=/host/repocache" >> $XBPS_MASTERDIR/etc/xbps/xbps.conf
     rm -f $XBPS_MASTERDIR/usr/share/xbps/repo.d/*.conf
 
     # Prepare default locale: en_US.UTF-8.
