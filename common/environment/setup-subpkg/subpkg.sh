@@ -2,7 +2,7 @@
 # a package template and can also be used in subpkgs.
 
 ## VARIABLES
-unset -v noarch nonfree conf_files mutable_files preserve triggers
+unset -v noarch conf_files mutable_files preserve triggers
 unset -v depends run_depends replaces provides conflicts tags
 
 # hooks/post-install/03-strip-and-debug-pkgs
