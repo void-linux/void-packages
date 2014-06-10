@@ -11,7 +11,7 @@ hook() {
 		for f in ${provides}; do
 			echo "virtualpkg=${f}:${pkgname}" >>${_tmpf}
 		done
-		install -Dm644 ${_tmpf} ${PKGDESTDIR}/etc/xbps/virtualpkg.d/${pkgname}.vpkg
+		install -Dm644 ${_tmpf} ${PKGDESTDIR}/usr/share/xbps/virtualpkg.d/${pkgname}.conf
 		rm -f ${_tmpf}
 	fi
 }
