@@ -120,9 +120,17 @@ chroot_sync_repos() {
     install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-remote.conf \
         ${XBPS_MASTERDIR}/etc/xbps/repo.d/20-remote.conf
 
+    if [ "$XBPS_MACHINE" = "x86_64" ]; then
+        install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-local-x86_64.conf \
+            ${XBPS_MASTERDIR}/etc/xbps/repo.d/12-local-x86_64.conf
+        install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-remote-x86_64.conf \
+            ${XBPS_MASTERDIR}/etc/xbps/repo.d/22-remote-x86_64.conf
+    fi
+
     # if -N is set, comment out remote repositories from xbps.conf.
     if [ -n "$XBPS_SKIP_REMOTEREPOS" ]; then
         rm -f ${XBPS_MASTERDIR}/etc/xbps/repo.d/20-remote.conf
+        rm -f ${XBPS_MASTERDIR}/etc/xbps/repo.d/22-remote-x86_64.conf
     else
         # Make sure to sync index for remote repositories.
         $CHROOT_CMD $XBPS_MASTERDIR /usr/sbin/xbps-install -S
