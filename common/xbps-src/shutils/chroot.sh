@@ -131,20 +131,6 @@ chroot_sync_repos() {
     if [ -n "$XBPS_SKIP_REMOTEREPOS" ]; then
         rm -f ${XBPS_MASTERDIR}/etc/xbps/repo.d/20-remote.conf
         rm -f ${XBPS_MASTERDIR}/etc/xbps/repo.d/22-remote-x86_64.conf
-    else
-        # Make sure to sync index for remote repositories.
-        $CHROOT_CMD $XBPS_MASTERDIR /usr/sbin/xbps-install -S
-        if [ -n "$XBPS_CROSS_BUILD" ]; then
-            # Copy host keys to the target rootdir.
-            if [ ! -d $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys ]; then
-                mkdir -p $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys
-            fi
-            cp -a $XBPS_MASTERDIR/var/db/xbps/keys/*.plist \
-                $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys
-            env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
-                $CHROOT_CMD $XBPS_MASTERDIR /usr/sbin/xbps-install \
-                -r /usr/$XBPS_CROSS_TRIPLET -S
-        fi
     fi
 
     # Copy host repos to the cross root.
@@ -153,6 +139,21 @@ chroot_sync_repos() {
         mkdir -p $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps/repo.d
         cp ${XBPS_MASTERDIR}/etc/xbps/repo.d/*.conf \
             $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps/repo.d
+        rm -f $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps/repo.d/*-x86_64.conf
+    fi
+
+    # Make sure to sync index for remote repositories.
+    $CHROOT_CMD $XBPS_MASTERDIR /usr/sbin/xbps-install -S
+    if [ -n "$XBPS_CROSS_BUILD" ]; then
+        # Copy host keys to the target rootdir.
+        if [ ! -d $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys ]; then
+            mkdir -p $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys
+        fi
+        cp -a $XBPS_MASTERDIR/var/db/xbps/keys/*.plist \
+            $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys
+        env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
+            $CHROOT_CMD $XBPS_MASTERDIR /usr/sbin/xbps-install \
+            -r /usr/$XBPS_CROSS_TRIPLET -S
     fi
 
     return 0
