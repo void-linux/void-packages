@@ -7,7 +7,9 @@ fi
 if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
 	# on x86 use /usr/lib32 as libdir, but just as fake directory,
 	# because /usr/lib32 is a symlink to /usr/lib in void.
-	export configure_args+=" --libdir=/usr/lib32"
+	if [ -z "$build_style" -o "$build_style" = "gnu-configure" ]; then
+		export configure_args+=" --libdir=/usr/lib32"
+	fi
 fi
 
 # Cross compilation vars
