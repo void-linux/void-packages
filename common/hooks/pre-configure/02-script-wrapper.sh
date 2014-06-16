@@ -16,7 +16,7 @@ generic_wrapper() {
 }
 
 generic_wrapper2() {
-	local wrapper="$1" incdir="$2"
+	local wrapper="$1"
 
 	[ ! -x ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ] && return 0
 	[ -x ${WRAPPERDIR}/${wrapper} ] && return 0
@@ -49,8 +49,9 @@ hook() {
 	generic_wrapper sdl-config
 	generic_wrapper sdl2-config
 	generic_wrapper gpgme-config
-	generic_wrapper2 libpng-config libpng16
-	generic_wrapper2 ncurses5-config ncurses
+	generic_wrapper2 gpg-error-config
+	generic_wrapper2 libpng-config
+	generic_wrapper2 ncurses5-config
 
 	export PATH=${WRAPPERDIR}:$PATH
 }
