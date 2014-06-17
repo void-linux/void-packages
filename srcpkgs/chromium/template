@@ -1,15 +1,15 @@
 # Template file for 'chromium'
 pkgname=chromium
 #See http://www.chromium.org/developers/calendar for the latest version
-version=34.0.1847.116
-revision=3
+version=35.0.1916.153
+revision=1
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://www.chromium.org/"
 license="BSD"
 
 _url_base="https://commondatastorage.googleapis.com"
-_toolchains_rev=12773
+_toolchains_rev=12935
 
 lib32disabled=yes
 # XXX cannot be cross compiled right now, disabled for now.
@@ -23,11 +23,11 @@ distfiles="
  ${_url_base}/nativeclient-archive2/toolchain/${_toolchains_rev}/naclsdk_pnacl_translator.tgz.sha1hash"
 
 checksum="
- dd6579c170eecd8d1f366461575e9754e44200e0b9fefde20941e15cb6729711
- 4c2adc718e53f36e38202aabf6518ceaa0244e281567433489b0a4e6dab1dc2f
- 13cf0e23176787fcaa039c0bd230745e5cf5699877a51e77694c97392dc0973d
- 3a087d34cf2890d85d1e2fad0d63e9db82d47c400994dfe6f0e2ee8bcedb4195
- 581fb67410dad60fbe484294e4da2fed0de2487caabe33d595fa7abdf72e0f59"
+ 280ceb4307ba334918aacd1c5672e6ce6538bf229f90415245ede5b569e5e70e
+ 2d72245cf0fc5aec95dcf315d88d787aaeff85e2fae28b8521d60a3dd95e28d4
+ 6baee05d11e353aac83a94125722d1f85c1aaa5fae0bfea55f996bd1d9c2a6eb
+ 142108d8ce184c3e2b18126a01bed14e286f953d90897a6d1c97f2bf7802cc0a
+ 67005b390ba80b736b48fb1511bdf3fccd8fc808f4928e7fcca69f5677148b83"
 
 skip_extraction="
  naclsdk_linux_x86.tgz
@@ -35,7 +35,7 @@ skip_extraction="
  naclsdk_pnacl_translator.tgz
  naclsdk_pnacl_translator.tgz.sha1hash"
 
-hostmakedepends="which yasm python pkg-config perl gperf bison"
+hostmakedepends="which yasm python pkg-config perl gperf bison ninja clang llvm"
 makedepends="libpng-devel>=1.6 gtk+-devel nss-devel pciutils-devel
  libXi-devel libgcrypt-devel libgnome-keyring-devel cups-devel elfutils-devel
  libXcomposite-devel speech-dispatcher-devel libXrandr-devel mit-krb5-devel
@@ -51,9 +51,7 @@ if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
 	makedepends+=" gcc-c++-multilib"
 fi
 
-do_configure() {
-	local conf=""
-
+pre_configure() {
 	# XXX xtraeme: fix gcc{,-c++}-multilib instead.
 	ldconfig &>/dev/null
 
@@ -67,7 +65,20 @@ do_configure() {
 	ln -sf ${XBPS_SRCDISTDIR}/${pkgver%_*}/naclsdk_pnacl_translator.tgz.sha1hash \
 		native_client/toolchain/pnacl_translator/SOURCE_SHA1
 
-	export LD="$CXX"
+	# Build with clang as a temporary solution to startup crash with GCC 4.9
+	mkdir -p third_party/llvm-build/Release+Asserts/bin
+	ln -s /usr/bin/clang third_party/llvm-build/Release+Asserts/bin/
+	ln -s /usr/bin/clang++ third_party/llvm-build/Release+Asserts/bin/
+	ln -s /usr/bin/llvm-symbolizer third_party/llvm-build/Release+Asserts/bin/
+	# clang 3.4 doesn't support this option
+	sed -i '/-Wno-absolute-value/d' build/common.gypi
+}
+
+do_configure() {
+	local conf=""
+
+	unset CC CXX
+	export -n CFLAGS CXXFLAGS
 
 	# Google API keys (see http://www.chromium.org/developers/how-tos/api-keys)
 	# Note: These are for Void Linux use ONLY.
@@ -88,11 +99,15 @@ do_configure() {
 	# TODO: use_system_sqlite (http://crbug.com/22208).
 	#
 	# XXX xtraeme: broken currently
+	# -Duse_system_v8=1
 	# -Duse_system_icu=1
 	# -Duse_system_protobuf=1
+	# -Duse_system_opus=1
+	# -Duse_system_zlib=1
 	conf+="
+		-Dclang=1
+		-Dclang_use_chrome_plugins=0
 		-Dpython_ver=2.7
-		-Duse_system_v8=1
 		-Duse_system_bzip2=1
 		-Duse_system_flac=1
 		-Duse_system_harfbuzz=1
@@ -105,17 +120,16 @@ do_configure() {
 		-Duse_system_libwebp=1
 		-Duse_system_minizip=1
 		-Duse_system_nspr=1
-		-Duse_system_opus=1
 		-Duse_system_re2=1
 		-Duse_system_snappy=1
 		-Duse_system_speex=1
 		-Duse_system_xdg_utils=1
-		-Duse_system_zlib=1
 		-Duse_system_yasm=1
 		-Duse_cups=1
 		-Dlinux_link_cups=1
 		-Duse_pulseaudio=1
 		-Dlinux_link_pulseaudio=1
+		-Duse_mojo=0
 		-Duse_gconf=0"
 
 	# TODO: re-enable on vp9 libvpx release (http://crbug.com/174287).
@@ -153,20 +167,16 @@ do_configure() {
 			arm*) arch="arm";;
 		esac
 		conf+=" -Dtarget_arch=${arch}"
-		export AR_host=ar
-		export CC_host=cc
-		export CXX_host=g++
-		export LD_host=ld
 	fi
 
 	build/linux/unbundle/replace_gyp_files.py ${conf}
-	build/gyp_chromium --depth=. -f make ${conf} -Drelease_extra_cflags="${CFLAGS/-fstack-protector-strong/}"
+	build/gyp_chromium --depth=. ${conf} -Drelease_extra_cflags="${CFLAGS/-fstack-protector-strong/}"
 }
 
 do_build() {
-	export CFLAGS="${CFLAGS/-fstack-protector-strong/}"
-	export CXXFLAGS="${CXXFLAGS/-fstack-protector-strong/}"
-	make BUILDTYPE=Release ${makejobs} chrome chrome_sandbox chromedriver
+	unset CC CXX
+	export -n CFLAGS CXXFLAGS
+	ninja -C out/Release ${makejobs} chrome chrome_sandbox chromedriver
 }
 
 do_install() {
