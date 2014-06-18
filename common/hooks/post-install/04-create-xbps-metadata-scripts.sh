@@ -239,6 +239,7 @@ _EOF
 	# Handle python bytecode archives with pycompile trigger.
 	#
 	if [ -n "${pycompile_dirs}" -o -n "${pycompile_module}" ]; then
+		echo "export pycompile_version=\"${pycompile_version:=2.7}\"" >>$tmpf
 		if [ -n "${pycompile_dirs}" ]; then
 			echo "export pycompile_dirs=\"${pycompile_dirs}\"" >>$tmpf
 		fi
