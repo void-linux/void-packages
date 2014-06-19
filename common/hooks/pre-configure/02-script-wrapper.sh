@@ -37,6 +37,19 @@ _EOF
 	chmod 755 ${WRAPPERDIR}/${wrapper}
 }
 
+python_wrapper() {
+	local wrapper="$1" version="$2"
+
+	cat >>${WRAPPERDIR}/${wrapper}<<_EOF
+#!/bin/sh
+if [ "\$1" = "--includes" ]; then
+	echo "-I${XBPS_CROSS_BASE}/usr/include/python${version}"
+fi
+exit $?
+_EOF
+	chmod 755 ${WRAPPERDIR}/${wrapper}
+}
+
 hook() {
 	[ -z "$CROSS_BUILD" ] && return 0
 
@@ -52,6 +65,8 @@ hook() {
 	generic_wrapper2 gpg-error-config
 	generic_wrapper2 libpng-config
 	generic_wrapper2 ncurses5-config
+	python_wrapper python-config 2.7
+	python_wrapper python3-config 3.4
 
 	export PATH=${WRAPPERDIR}:$PATH
 }
