@@ -66,7 +66,7 @@ hook() {
 	generic_wrapper2 libpng-config
 	generic_wrapper2 ncurses5-config
 	python_wrapper python-config 2.7
-	python_wrapper python3-config 3.4
+	python_wrapper python3.4-config 3.4m
 
 	export PATH=${WRAPPERDIR}:$PATH
 }
