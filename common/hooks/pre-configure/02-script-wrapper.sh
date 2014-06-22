@@ -62,6 +62,7 @@ hook() {
 	generic_wrapper sdl-config
 	generic_wrapper sdl2-config
 	generic_wrapper gpgme-config
+	generic_wrapper imlib2-config
 	generic_wrapper2 gpg-error-config
 	generic_wrapper2 libpng-config
 	generic_wrapper2 ncurses5-config
