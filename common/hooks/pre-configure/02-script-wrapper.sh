@@ -45,6 +45,7 @@ generic_wrapper3() {
 	cp ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ${WRAPPERDIR}
 	sed -e "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" -i ${WRAPPERDIR}/${wrapper}
 	sed -e "s,/usr/lib,${XBPS_CROSS_BASE}/usr/lib,g" -i ${WRAPPERDIR}/${wrapper}
+	sed -e "s,^prefix=/usr,prefix=${XBPS_CROSS_BASE}/usr," -i ${WRAPPERDIR}/${wrapper}
 	chmod 755 ${WRAPPERDIR}/${wrapper}
 }
 
@@ -81,6 +82,8 @@ hook() {
 	generic_wrapper2 libpng-config
 	generic_wrapper2 ncurses5-config
 	generic_wrapper3 xmlrpc-c-config
+	generic_wrapper3 krb5-config
+	generic_wrapper3 mysql_config
 	python_wrapper python-config 2.7
 	python_wrapper python3.4-config 3.4m
 
