@@ -11,7 +11,9 @@ XBPS_CXXFLAGS="$XBPS_CXXFLAGS"
 XBPS_CPPFLAGS="$XBPS_CPPFLAGS"
 XBPS_LDFLAGS="$XBPS_LDFLAGS"
 _EOF
-    grep -E '^XBPS_.*' $XBPS_CONFIG_FILE >> $XBPSSRC_CF
+    if [ -e $XBPS_CONFIG_FILE ]; then
+        grep -E '^XBPS_.*' $XBPS_CONFIG_FILE >> $XBPSSRC_CF
+    fi
 
     echo "# End of configuration file." >> $XBPSSRC_CF
 
