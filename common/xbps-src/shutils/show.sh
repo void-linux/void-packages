@@ -56,23 +56,24 @@ show_pkg_build_deps() {
     done
 }
 
-show_pkg_options() {
-    local f= j= state= desc= enabled=
 
-    for f in ${build_options}; do
-        for j in ${build_options_default}; do
-            if [ "$f" = "$j" ]; then
-                enabled=1
-                break
-            fi
-        done
-        state="OFF"
-        if [ -n "$enabled" ]; then
-            state="ON"
-            unset enabled
+show_pkg_build_options() {
+    local f opt desc
+
+    [ -z "$PKG_BUILD_OPTIONS" ] && return 0
+
+    source $XBPS_COMMONDIR/options.description
+    msg_normal "$pkgver: the following build options are set:\n"
+    for f in ${PKG_BUILD_OPTIONS}; do
+        opt="${f#\~}"
+        eval desc="\${desc_option_${opt}}"
+        if [[ ${f:0:1} == '~' ]]; then
+            echo "    $opt: $desc (OFF)"
+        else
+            printf "    "
+            msg_normal_append "$opt: "
+            printf "$desc (ON)\n"
         fi
-        eval desc="\$desc_option_$f"
-        printf "$f: $desc [$state]\n"
     done
 }
 

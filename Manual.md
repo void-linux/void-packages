@@ -438,7 +438,8 @@ The following variables may be set to allow package build options:
 - `build_options_default` Sets the default build options to be used by the source package.
 
 - `desc_option_<option>` Sets the description for the build option `option`. This must match the
-keyword set in *build_options*.
+keyword set in *build_options*. Note that if the build option is generic enough, its description
+should be added to `common/options.description` instead.
 
 After defining those required variables, you can check for the
 `build_option_<option>` variable to know if it has been set and adapt the source
@@ -493,6 +494,10 @@ at the same time with `xbps-src`:
 The build options can also be shown for binary packages via `xbps-query(8)`:
 
     $ xbps-query -R --property=build-options foo
+
+Permanent global package build options can be set via `XBPS_PKG_OPTIONS` variable in the
+`etc/conf` configuration file. Per package build options can be set via
+`XBPS_PKG_OPTIONS_<pkgname>`.
 
 ### Runtime dependencies
 

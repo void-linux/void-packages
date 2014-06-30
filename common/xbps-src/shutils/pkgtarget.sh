@@ -1,24 +1,5 @@
 # vim: set ts=4 sw=4 et:
 
-show_build_options() {
-    local f opt desc
-
-    [ -z "$PKG_BUILD_OPTIONS" ] && return 0
-
-    msg_normal "$pkgver: the following build options are set:\n"
-    for f in ${PKG_BUILD_OPTIONS}; do
-        opt="${f#\~}"
-        eval desc="\${desc_option_${opt}}"
-        if [[ ${f:0:1} == '~' ]]; then
-            echo "    $opt: $desc (OFF)"
-        else
-            printf "    "
-            msg_normal_append "$opt: "
-            printf "$desc (ON)\n"
-        fi
-    done
-}
-
 check_pkg_arch() {
     local cross="$1"
 
@@ -48,7 +29,7 @@ install_pkg() {
 
     [ -z "$pkgname" ] && return 1
 
-    show_build_options
+    show_pkg_build_options
     check_pkg_arch $cross
     install_cross_pkg $cross
 

@@ -11,25 +11,7 @@ XBPS_CXXFLAGS="$XBPS_CXXFLAGS"
 XBPS_CPPFLAGS="$XBPS_CPPFLAGS"
 XBPS_LDFLAGS="$XBPS_LDFLAGS"
 _EOF
-    if [ -n "$XBPS_MAKEJOBS" ]; then
-        echo "XBPS_MAKEJOBS=$XBPS_MAKEJOBS" >> $XBPSSRC_CF
-    fi
-    if [ -n "$XBPS_HOSTDIR" ]; then
-        echo "XBPS_HOSTDIR=/host" >> $XBPSSRC_CF
-    fi
-    if [ -n "$XBPS_CCACHE" ]; then
-        echo "XBPS_CCACHE=$XBPS_CCACHE" >> $XBPSSRC_CF
-    fi
-    if [ -n "$XBPS_DISTCC" ]; then
-        echo "XBPS_DISTCC=$XBPS_DISTCC" >> $XBPSSRC_CF
-        echo "XBPS_DISTCC_HOSTS=\"${XBPS_DISTCC_HOSTS}\"" >> $XBPSSRC_CF
-    fi
-    if [ -n "$XBPS_USE_GIT_REVS" ]; then
-        echo "XBPS_USE_GIT_REVS=yes" >> $XBPSSRC_CF
-    fi
-    if [ -n "$XBPS_DEBUG_PKGS" ]; then
-        echo "XBPS_DEBUG_PKGS=yes" >> $XBPSSRC_CF
-    fi
+    grep -E '^XBPS_.*' $XBPS_CONFIG_FILE >> $XBPSSRC_CF
 
     echo "# End of configuration file." >> $XBPSSRC_CF
 
@@ -192,7 +174,6 @@ chroot_handler() {
     if [ "$action" = "chroot" ]; then
         $CHROOT_CMD ${_chargs} $XBPS_MASTERDIR /bin/xbps-shell || rv=$?
     else
-        [ -n "$XBPS_BUILD_OPTS" ] && arg="$arg -o $XBPS_BUILD_OPTS"
         [ -n "$XBPS_CROSS_BUILD" ] && arg="$arg -a $XBPS_CROSS_BUILD"
         [ -n "$XBPS_KEEP_ALL" ] && arg="$arg -C"
         [ -n "$NOCOLORS" ] && arg="$arg -L"

@@ -89,7 +89,7 @@ msg_normal_append() {
 }
 
 set_build_options() {
-    local f j opt optval _optsset
+    local f j opt optval _optsset pkgopts
     local -A options
 
     if [ -z "$build_options" ]; then
@@ -97,15 +97,19 @@ set_build_options() {
     fi
 
     for f in ${build_options}; do
+        eval pkgopts="\$XBPS_PKG_OPTIONS_${pkgname}"
+        if [ -z "$pkgopts" -o "$pkgopts" = "" ]; then
+            pkgopts=${XBPS_PKG_OPTIONS}
+        fi
         OIFS="$IFS"; IFS=','
-        for j in ${XBPS_BUILD_OPTS}; do
+        for j in ${pkgopts}; do
             opt=${j#\~}
             opt_disabled=${j:0:1}
             if [ "$opt" = "$f" ]; then
                 if [ "$opt_disabled" != "~" ]; then
-                    options[$opt]=1
+                    eval options[$opt]=1
                 else
-                    options[$opt]=0
+                    eval options[$opt]=0
                 fi
             fi
         done
@@ -137,11 +141,11 @@ set_build_options() {
     fi
 
     for f in ${build_options}; do
-        optval=${options[$f]}
+        eval optval=${options[$f]}
         if [[ $optval -eq 1 ]]; then
-            _optsset="${_optsset} ${f}"
+            _optsset+=" ${f}"
         else
-            _optsset="${_optsset} ~${f}"
+            _optsset+=" ~${f}"
         fi
     done
 
@@ -149,7 +153,7 @@ set_build_options() {
         if [ -z "$PKG_BUILD_OPTIONS" ]; then
             PKG_BUILD_OPTIONS="$f"
         else
-            PKG_BUILD_OPTIONS="$PKG_BUILD_OPTIONS $f"
+            PKG_BUILD_OPTIONS+=" $f"
         fi
     done
 
