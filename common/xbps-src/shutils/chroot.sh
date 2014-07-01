@@ -12,7 +12,7 @@ XBPS_CPPFLAGS="$XBPS_CPPFLAGS"
 XBPS_LDFLAGS="$XBPS_LDFLAGS"
 XBPS_HOSTDIR=/host
 _EOF
-    if [ -e $XBPS_CONFIG_FILE ]; then
+    if [ -n "$XBPS_CONFIG_FILE" -a -e $XBPS_CONFIG_FILE ]; then
         grep -E '^XBPS_.*' $XBPS_CONFIG_FILE >> $XBPSSRC_CF
     fi
 
