@@ -20,8 +20,8 @@ to see all available targets/options and start building any available package
 in the `srcpkgs` directory.
 
 The `etc/defaults.conf` file contains the possible settings that can be overrided
-through the `etc/conf` configuration file for the `xbps-src` utility; optionally if
-`~/.xbps-src.conf` exists it's also read after `etc/conf`.
+through the `etc/conf` configuration file for the `xbps-src` utility; if that file
+does not exist, will try to read configuration settings from `~/.xbps-src.conf`.
 
 If you want to customize default `CFLAGS`, `CXXFLAGS` and `LDFLAGS`, don't override
 those defined in `etc/defaults.conf`, append to them instead via `etc/conf` i.e:
