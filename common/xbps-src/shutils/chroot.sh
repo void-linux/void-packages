@@ -177,16 +177,7 @@ chroot_handler() {
     if [ "$action" = "chroot" ]; then
         $CHROOT_CMD ${_chargs} $XBPS_MASTERDIR /bin/xbps-shell || rv=$?
     else
-        [ -n "$XBPS_CROSS_BUILD" ] && arg="$arg -a $XBPS_CROSS_BUILD"
-        [ -n "$XBPS_KEEP_ALL" ] && arg="$arg -C"
-        [ -n "$NOCOLORS" ] && arg="$arg -L"
-        [ -n "$XBPS_BUILD_FORCEMODE" ] && arg="$arg -f"
-        [ -n "$XBPS_MAKEJOBS" ] && arg="$arg -j$XBPS_MAKEJOBS"
-        [ -n "$XBPS_DEBUG_PKGS" ] && arg="$arg -g"
-        [ -n "$XBPS_SKIP_DEPS" ] && arg="$arg -I"
-        [ -n "$XBPS_ALT_REPOSITORY" ] && arg="$arg -r $XBPS_ALT_REPOSITORY"
-
-        action="$arg $action"
+        action="$XBPS_OPTIONS $action"
         env -i PATH=/bin:/sbin:/usr/bin:/usr/sbin:$PATH HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
             $CHROOT_CMD ${_chargs} $XBPS_MASTERDIR /xbps-packages/xbps-src $action $pkg || rv=$?
     fi
