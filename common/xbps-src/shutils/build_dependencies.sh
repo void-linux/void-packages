@@ -24,11 +24,12 @@ install_pkg_from_repos() {
     if [ $rval -ne 0 -a $rval -ne 17 ]; then
         # xbps-install can return:
         #
-        #	SUCCESS  (0): package installed successfully.
-        #	ENOENT   (2): package missing in repositories.
-        #	EEXIST  (17): package already installed.
-        #	ENODEV  (19): package depends on missing dependencies.
-        #	ENOTSUP (95): no repositories registered.
+        # SUCCESS  (0): package installed successfully.
+        # ENOENT   (2): package missing in repositories.
+        # ENXIO    (6): package depends on invalid dependencies.
+        # EEXIST  (17): package already installed.
+        # ENODEV  (19): package depends on missing dependencies.
+        # ENOTSUP (95): no repositories registered.
         #
         [ -z "$XBPS_KEEP_ALL" ] && remove_pkg_autodeps
         msg_red "$pkgver: failed to install '$1' dependency! (error $rval)\n"
