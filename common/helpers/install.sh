@@ -29,15 +29,31 @@ _vbin() {
 }
 
 _vman() {
-	local file="$1" section="$2" targetfile="$3"
+	local file="$1" target="${2:-$1}"
 
-	if [ $# -lt 2 ]; then
-		msg_red "$pkgver: vman: 2 arguments expected: <file> <section>\n"
+	if [ $# -lt 1 ]; then
+		msg_red "$pkgver: vman: 1 argument expected: <file>\n"
 		return 1
 	fi
 
-	vmkdir "usr/share/man/${section}"
-	vinstall "$file" 644 "usr/share/man/${section}" "$3"
+	suffix=${target##*.}
+
+	if  [[ $target =~ (.*)\.([a-z][a-z](_[A-Z][A-Z])?)\.(.*) ]]
+	then
+		name=${BASH_REMATCH[1]##*/}.${BASH_REMATCH[4]}
+		mandir=${BASH_REMATCH[2]}/man${suffix:0:1}
+	else
+		name=${name##*/}
+		mandir=man${suffix:0:1}
+	fi
+
+	if [[ ${mandir} == *man[0-9n] ]] ; then
+		vinstall "$file" 644 "usr/share/man/${mandir}" "$name"
+		return 0
+	fi
+
+	msg_red "$pkgver: vman: Filename '${target}' does not look like a man page\n"
+	return 1
 }
 
 _vdoc() {
