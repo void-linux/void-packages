@@ -499,6 +499,9 @@ Permanent global package build options can be set via `XBPS_PKG_OPTIONS` variabl
 `etc/conf` configuration file. Per package build options can be set via
 `XBPS_PKG_OPTIONS_<pkgname>`.
 
+The list of supported package build options and its description is defined in the
+`common/options.description` file.
+
 ### Runtime dependencies
 
 Dependencies for ELF objects are detected automatically by `xbps-src`, hence runtime
