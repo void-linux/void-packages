@@ -166,6 +166,36 @@ The optional 4th argument can be used to change the `file name`.
 
 	Creates a directory in the pkg `$DESTDIR`. The 2nd optional argument sets the mode of the directory.
 
+- *vbin()* `vbin <file> [<name>]`
+
+	Installs `file` into usr/bin in the pkg `$DESTDIR` with the
+	permissions 0755. The optional 2nd argument can be used to change
+	the `file name`.
+
+- *vman()* `vman <file> <section> [<name>]`
+
+	Installs `file` into usr/share/man/<section> in the pkg
+	`$DESTDIR`. The optional 3rd argument can be used to change the
+	`file name`.
+
+- *vdoc()* `vdoc <file> [<name>]`
+
+	Installs `file` into usr/share/doc/<pkgname> in the pkg
+	`$DESTDIR`. The optional 2nd argument can be used to change the
+	`file name`.
+
+- *vsconf()* `vsconf <file> [<name>]`
+
+	Installs `file` into usr/share/examples/<pkgname> in the pkg
+	`$DESTDIR`. The optional 2nd argument can be used to change the
+	`file name`.
+
+- *vlicense()* `vlicense <file> [<name>]`
+
+	Installs `file` into usr/share/licenses/<pkgname> in the pkg
+	`$DESTDIR`. The optional 2nd argument can be used to change the
+	`file name`.
+
 > Shell wildcards must be properly quoted, i.e `vmove "usr/lib/*.a"`.
 
 ### Global variables

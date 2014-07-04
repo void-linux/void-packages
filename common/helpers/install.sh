@@ -13,9 +13,65 @@ _noglob_helper() {
 }
 
 # Apply _noglob to v* commands
-for cmd in vinstall vcopy vmove vmkdir; do
+for cmd in vinstall vcopy vmove vmkdir vbin vman vdoc vsconf vlicense; do
        alias ${cmd}="set -f; _noglob_helper _${cmd}"
 done
+
+_vbin() {
+	local file="$1" targetfile="$2"
+
+	if [ $# -lt 1 ]; then
+		msg_red "$pkgver: vbin: 1 argument expected: <file>\n"
+		return 1
+	fi
+
+	vinstall "$file" 755 usr/bin "$targetfile"
+}
+
+_vman() {
+	local file="$1" section="$2" targetfile="$3"
+
+	if [ $# -lt 2 ]; then
+		msg_red "$pkgver: vman: 2 arguments expected: <file> <section>\n"
+		return 1
+	fi
+
+	vmkdir "usr/share/man/${section}"
+	vinstall "$file" 644 "usr/share/man/${section}" "$3"
+}
+
+_vdoc() {
+	local file="$1" targetfile="$2"
+
+	if [ $# -lt 1 ]; then
+		msg_red "$pkgver: vdoc: 1 argument expected: <file>\n"
+		return 1
+	fi
+
+	vinstall "$file" 644 "usr/share/doc/${pkgname}" "$targetfile"
+}
+
+_vsconf() {
+	local file="$1" targetfile="$2"
+
+	if [ $# -lt 1 ]; then
+		msg_red "$pkgver: vsconf: 1 argument expected: <file>\n"
+		return 1
+	fi
+
+	vinstall "$file" 644 "usr/share/examples/${pkgname}" "$targetfile"
+}
+
+_vlicense() {
+	local file="$1" targetfile="$2"
+
+	if [ $# -lt 1 ]; then
+		msg_red "$pkgver: vlicense: 1 argument expected: <file>\n"
+		return 1
+	fi
+
+	vinstall "$file" 644 "usr/share/licenses/${pkgname}" "$targetfile"
+}
 
 _vinstall() {
 	local file="$1" mode="$2" targetdir="$3" targetfile="$4"
