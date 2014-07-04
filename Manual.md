@@ -644,6 +644,40 @@ If a development package provides a `pkg-config` file, you should verify
 what dependencies the package needs for dynamic or static linking, and add
 the appropiate `development` packages as dependencies.
 
+### Python packages
+
+Python packages should be built with the `python-module` build style, if possible. This sets
+some environment variables required to allow cross compilation. Support to allow building
+a python module for multiple versions from a single template is also possible.
+
+To allow cross compilation, the `python-devel` package (for python 2.7) must be added
+to `hostmakedepends` and `makedepends`. If any other python version is also supported,
+for example python3.4, those must also be added as host and target build dependencies.
+
+The following variables may influence how the python packages are built and configured
+at post-install time:
+
+- `python_versions`: this variable expects the python versions supported by the module.
+By default it's always set to `2.7`. If a package for another python version is wanted
+you can set all acceptable versions, i.e `python_versions="2.7 3.4"` will build a package
+for `python (2.7)` and `python3.4`.
+
+- `pycompile_version`: this variable expects the python version that is used to
+byte-compile the python code (it generates the `.py[co]` files at post-install time).
+By default it's set to `2.7` for `python 2.x` packages.
+
+- `pycompile_module`: this variable expects the python modules that should be `byte-compiled`
+at post-install time. Python modules are those that are installed into the `site-packages`
+prefix: `usr/lib/pythonX.X/site-packages`. Multiple python modules may be specified separated
+by blanks, i.e `pycompile_module="foo blah"`.
+
+- `pycompile_dirs`: this variable expects the python directories that should be `byte-compiled`
+recusively by the target python version. This differs from `pycompile_module` in that any
+path may be specified, i.e `pycompile_dirs="usr/share/foo"`.
+
+> NOTE: it's expected that additional subpkgs must be generated to allow packaging for multiple
+python versions.
+
 ### Notes
 
 - Make sure that all software is configured to use the `/usr` prefix.
