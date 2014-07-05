@@ -177,9 +177,9 @@ The optional 4th argument can be used to change the `file name`.
 	Installs `file` as a man page. `vman()` parses the name and
 	determines the section as well as localization. Example mappings:
 
-	`foo.1` -> `${DESTDIR}/usr/share/man/man1/foo.1`
-	`foo.fr.1` -> `${DESTDIR}/usr/share/man/fr/man1/foo.1`
-	`foo.1p` -> `${DESTDIR}/usr/share/man/man1/foo.1p`
+	`foo.1` -> `${DESTDIR}/usr/share/man/man1/foo.1`  
+	`foo.fr.1` -> `${DESTDIR}/usr/share/man/fr/man1/foo.1`  
+	`foo.1p` -> `${DESTDIR}/usr/share/man/man1/foo.1p`  
 
 - *vdoc()* `vdoc <file> [<name>]`
 
