@@ -168,7 +168,7 @@ The optional 4th argument can be used to change the `file name`.
 
 - *vbin()* `vbin <file> [<name>]`
 
-	Installs `file` into usr/bin in the pkg `$DESTDIR` with the
+	Installs `file` into `usr/bin` in the pkg `$DESTDIR` with the
 	permissions 0755. The optional 2nd argument can be used to change
 	the `file name`.
 
@@ -183,19 +183,19 @@ The optional 4th argument can be used to change the `file name`.
 
 - *vdoc()* `vdoc <file> [<name>]`
 
-	Installs `file` into usr/share/doc/<pkgname> in the pkg
+	Installs `file` into `usr/share/doc/<pkgname>` in the pkg
 	`$DESTDIR`. The optional 2nd argument can be used to change the
 	`file name`.
 
 - *vsconf()* `vsconf <file> [<name>]`
 
-	Installs `file` into usr/share/examples/<pkgname> in the pkg
+	Installs `file` into `usr/share/examples/<pkgname>` in the pkg
 	`$DESTDIR`. The optional 2nd argument can be used to change the
 	`file name`.
 
 - *vlicense()* `vlicense <file> [<name>]`
 
-	Installs `file` into usr/share/licenses/<pkgname> in the pkg
+	Installs `file` into `usr/share/licenses/<pkgname>` in the pkg
 	`$DESTDIR`. The optional 2nd argument can be used to change the
 	`file name`.
 
