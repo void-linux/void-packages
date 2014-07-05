@@ -5,6 +5,11 @@ chroot_init() {
 
     cat > $XBPSSRC_CF <<_EOF
 # Generated configuration file by xbps-src, DO NOT EDIT!
+_EOF
+    if [ -e "$XBPS_CONFIG_FILE" ]; then
+        grep -E '^XBPS_.*' $XBPS_CONFIG_FILE >> $XBPSSRC_CF
+    fi
+    cat >> $XBPSSRC_CF <<_EOF
 XBPS_MASTERDIR=/
 XBPS_CFLAGS="$XBPS_CFLAGS"
 XBPS_CXXFLAGS="$XBPS_CXXFLAGS"
@@ -12,9 +17,6 @@ XBPS_CPPFLAGS="$XBPS_CPPFLAGS"
 XBPS_LDFLAGS="$XBPS_LDFLAGS"
 XBPS_HOSTDIR=/host
 _EOF
-    if [ -n "$XBPS_CONFIG_FILE" -a -e "$XBPS_CONFIG_FILE" ]; then
-        grep -E '^XBPS_.*' $XBPS_CONFIG_FILE >> $XBPSSRC_CF
-    fi
 
     echo "# End of configuration file." >> $XBPSSRC_CF
 
