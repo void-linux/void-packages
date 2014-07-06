@@ -29,7 +29,7 @@ _vbin() {
 }
 
 _vman() {
-	local file="$1" target="${2:-$1}"
+	local file="$1" target="${2:-${1##*/}}"
 
 	if [ $# -lt 1 ]; then
 		msg_red "$pkgver: vman: 1 argument expected: <file>\n"
@@ -40,10 +40,10 @@ _vman() {
 
 	if  [[ $target =~ (.*)\.([a-z][a-z](_[A-Z][A-Z])?)\.(.*) ]]
 	then
-		name=${BASH_REMATCH[1]##*/}.${BASH_REMATCH[4]}
+		name=${BASH_REMATCH[1]}.${BASH_REMATCH[4]}
 		mandir=${BASH_REMATCH[2]}/man${suffix:0:1}
 	else
-		name=${name##*/}
+		name=$target
 		mandir=man${suffix:0:1}
 	fi
 
