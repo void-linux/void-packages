@@ -483,7 +483,7 @@ remove_pkg_autodeps() {
 }
 
 install_cross_pkg() {
-    local cross="$1" rval
+    local cross="$1" rval errlog
 
     [ -z "$cross" -o "$cross" = "" ] && return 0
 
@@ -498,13 +498,17 @@ install_cross_pkg() {
 
     # Install required pkgs for cross building.
     if [ "$XBPS_TARGET" != "remove-autodeps" ]; then
+        errlog=$(mktemp)
         check_installed_pkg cross-${XBPS_CROSS_TRIPLET}-0.1_1
         if [ $? -ne 0 ]; then
             msg_normal "Installing cross pkg: cross-${XBPS_CROSS_TRIPLET} ...\n"
-            $XBPS_INSTALL_CMD -y cross-${XBPS_CROSS_TRIPLET} &>/dev/null
+            $XBPS_INSTALL_CMD -Syd cross-${XBPS_CROSS_TRIPLET} &>$errlog
             rval=$?
-            if [ $rval -ne 0 ]; then
-                msg_error "failed to install cross-${XBPS_CROSS_TRIPLET} (error $rval)\n"
+            if [ $rval -ne 0 -a $rval -ne 17 ]; then
+                msg_red "failed to install cross-${XBPS_CROSS_TRIPLET} (error $rval)\n"
+                cat $errlog
+                rm -f $errlog
+                msg_error "cannot continue due to errors above\n"
             fi
         fi
         if [ ! -d ${XBPS_CROSS_BASE}/var/db/xbps/keys ]; then
@@ -512,11 +516,13 @@ install_cross_pkg() {
             cp ${XBPS_MASTERDIR}/var/db/xbps/keys/*.plist \
                 ${XBPS_CROSS_BASE}/var/db/xbps/keys
         fi
-        $XBPS_INSTALL_CMD --repository=http://repo.voidlinux.eu/current \
-            -r ${XBPS_CROSS_BASE} -SAy cross-vpkg-dummy &>/dev/null
+        $XBPS_INSTALL_CMD -r ${XBPS_CROSS_BASE} -SAyd cross-vpkg-dummy &>$errlog
         rval=$?
         if [ $rval -ne 0 -a $rval -ne 17 ]; then
-            msg_error "failed to install cross-vpkg-dummy (error $rval)\n"
+            msg_red "failed to install cross-vpkg-dummy (error $rval)\n"
+            cat $errlog
+            rm -f $errlog
+            msg_error "cannot continue due to errors above\n"
         fi
     fi
 }
