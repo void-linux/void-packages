@@ -46,8 +46,19 @@ if declare -f do_extract >/dev/null; then
     cd $wrksrc
     run_func do_extract
 else
-    # Run do-extract hooks
-    run_pkg_hooks "do-extract"
+    if [ -n "$build_style" ]; then
+        if [ ! -r $XBPS_BUILDSTYLEDIR/${build_style}.sh ]; then
+            msg_error "$pkgver: cannot find build helper $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
+        fi
+        . $XBPS_BUILDSTYLEDIR/${build_style}.sh
+    fi
+    # If the build_style script declares do_extract(), use it rather than hooks.
+    if declare -f do_extract >/dev/null; then
+        run_func do_extract
+    else
+        # Run do-extract hooks
+        run_pkg_hooks "do-extract"
+    fi
 fi
 
 touch -f $XBPS_EXTRACT_DONE
