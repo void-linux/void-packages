@@ -12,16 +12,14 @@ hook() {
 		return 0
 	fi
 
-	echo "	 Uncompressing manpages..."
-
 	# rewrite symlinks
 	find $mandir -type l -regex '.*\.\(gz\|bz2\)' | while read f
 	do
 		lnkat=$(readlink "$f")
-		ln -vs ${lnkat%.*} ${f%.*}
+		ln -s ${lnkat%.*} ${f%.*}
 		rm $f
 	done
 
-	find $mandir -type f -name '*.gz' -exec gunzip -v {} +
-	find $mandir -type f -name '*.bz2' -exec bunzip2 -v {} +
+	find $mandir -type f -name '*.gz' -exec gunzip -v {} + &>/dev/null
+	find $mandir -type f -name '*.bz2' -exec bunzip2 -v {} + &>/dev/null
 }
