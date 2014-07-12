@@ -1,0 +1,249 @@
+diff -uNp -r mutt-1.5.22.orig/PATCHES mutt-1.5.22/PATCHES
+--- mutt-1.5.22.orig/PATCHES	Sun Feb 21 05:51:26 2010
++++ mutt-1.5.22/PATCHES	Fri Oct 18 10:00:49 2013
+@@ -0,0 +1 @@
++patch-1.5.16hg.cd.trash_folder.vl.1
+diff -uNp -r mutt-1.5.22.orig/commands.c mutt-1.5.22/commands.c
+--- mutt-1.5.22.orig/commands.c	Fri Oct 18 05:48:24 2013
++++ mutt-1.5.22/commands.c	Fri Oct 18 10:00:49 2013
+@@ -720,6 +720,7 @@ int _mutt_save_message (HEADER *h, CONTEXT *ctx, int d
+     if (option (OPTDELETEUNTAG))
+       mutt_set_flag (Context, h, M_TAG, 0);
+   }
++  mutt_set_flag (Context, h, M_APPENDED, 1);
+   
+   return 0;
+ }
+diff -uNp -r mutt-1.5.22.orig/flags.c mutt-1.5.22/flags.c
+--- mutt-1.5.22.orig/flags.c	Sun Feb 21 22:10:41 2010
++++ mutt-1.5.22/flags.c	Fri Oct 18 10:00:49 2013
+@@ -65,7 +65,13 @@ void _mutt_set_flag (CONTEXT *ctx, HEADER *h, int flag
+       {
+ 	h->deleted = 0;
+         update = 1;
+-	if (upd_ctx) ctx->deleted--;
++        if (upd_ctx)
++        {
++          ctx->deleted--;
++          if (h->appended)
++            ctx->appended--;
++        }
++        h->appended = 0; /* when undeleting, also reset the appended flag */
+ #ifdef USE_IMAP
+         /* see my comment above */
+ 	if (ctx->magic == M_IMAP) 
+@@ -84,6 +90,17 @@ void _mutt_set_flag (CONTEXT *ctx, HEADER *h, int flag
+ 	 */
+ 	if (ctx->magic == M_MAILDIR && upd_ctx && h->trash)
+ 	  ctx->changed = 1;
++      }
++      break;
++
++    case M_APPENDED:
++      if (bf)
++      {
++       if (!h->appended)
++       {
++         h->appended = 1;
++         if (upd_ctx) ctx->appended++;
++       }
+       }
+       break;
+ 
+diff -uNp -r mutt-1.5.22.orig/globals.h mutt-1.5.22/globals.h
+--- mutt-1.5.22.orig/globals.h	Sat Dec  3 19:10:04 2011
++++ mutt-1.5.22/globals.h	Fri Oct 18 10:00:49 2013
+@@ -139,6 +139,7 @@ WHERE char *StChars;
+ WHERE char *Status;
+ WHERE char *Tempdir;
+ WHERE char *Tochars;
++WHERE char *TrashPath;
+ WHERE char *Username;
+ WHERE char *Visual;
+ 
+diff -uNp -r mutt-1.5.22.orig/imap/message.c mutt-1.5.22/imap/message.c
+--- mutt-1.5.22.orig/imap/message.c	Fri Oct 18 05:48:24 2013
++++ mutt-1.5.22/imap/message.c	Fri Oct 18 10:00:49 2013
+@@ -876,6 +876,7 @@ int imap_copy_messages (CONTEXT* ctx, HEADER* h, char*
+         if (ctx->hdrs[n]->tagged)
+         {
+           mutt_set_flag (ctx, ctx->hdrs[n], M_DELETE, 1);
++         mutt_set_flag (ctx, ctx->hdrs[n], M_APPENDED, 1);
+           if (option (OPTDELETEUNTAG))
+             mutt_set_flag (ctx, ctx->hdrs[n], M_TAG, 0);
+         }
+@@ -883,6 +884,7 @@ int imap_copy_messages (CONTEXT* ctx, HEADER* h, char*
+     else
+     {
+       mutt_set_flag (ctx, h, M_DELETE, 1);
++      mutt_set_flag (ctx, h, M_APPENDED, 1);
+       if (option (OPTDELETEUNTAG))
+         mutt_set_flag (ctx, h, M_TAG, 0);
+     }
+diff -uNp -r mutt-1.5.22.orig/init.h mutt-1.5.22/init.h
+--- mutt-1.5.22.orig/init.h	Tue Jan 15 07:37:15 2013
++++ mutt-1.5.22/init.h	Fri Oct 18 10:00:49 2013
+@@ -3241,6 +3241,16 @@ struct option_t MuttVars[] = {
+   ** by \fIyou\fP.  The sixth character is used to indicate when a mail
+   ** was sent to a mailing-list you subscribe to.
+   */
++  { "trash",           DT_PATH, R_NONE, UL &TrashPath, 0 },
++  /*
++  ** .pp
++  ** If set, this variable specifies the path of the trash folder where the
++  ** mails marked for deletion will be moved, instead of being irremediably
++  ** purged.
++  ** .pp
++  ** NOTE: When you delete a message in the trash folder, it is really
++  ** deleted, so that you have a way to clean the trash.
++  */
+ #ifdef USE_SOCKET
+   { "tunnel",            DT_STR, R_NONE, UL &Tunnel, UL 0 },
+   /*
+diff -uNp -r mutt-1.5.22.orig/mutt.h mutt-1.5.22/mutt.h
+--- mutt-1.5.22.orig/mutt.h	Fri Oct 18 05:48:24 2013
++++ mutt-1.5.22/mutt.h	Fri Oct 18 10:00:49 2013
+@@ -185,6 +185,7 @@ enum
+   M_DELETE,
+   M_UNDELETE,
+   M_DELETED,
++  M_APPENDED,
+   M_FLAG,
+   M_TAG,
+   M_UNTAG,
+@@ -707,6 +708,7 @@ typedef struct header
+   unsigned int mime : 1;    		/* has a MIME-Version header? */
+   unsigned int flagged : 1; 		/* marked important? */
+   unsigned int tagged : 1;
++  unsigned int appended : 1; /* has been saved */
+   unsigned int deleted : 1;
+   unsigned int changed : 1;
+   unsigned int attach_del : 1; 		/* has an attachment marked for deletion */
+@@ -879,6 +881,7 @@ typedef struct _context
+   int new;			/* how many new messages? */
+   int unread;			/* how many unread messages? */
+   int deleted;			/* how many deleted messages */
++  int appended;                 /* how many saved messages? */
+   int flagged;			/* how many flagged messages */
+   int msgnotreadyet;		/* which msg "new" in pager, -1 if none */
+ 
+diff -uNp -r mutt-1.5.22.orig/muttlib.c mutt-1.5.22/muttlib.c
+--- mutt-1.5.22.orig/muttlib.c	Fri Oct 18 05:48:24 2013
++++ mutt-1.5.22/muttlib.c	Fri Oct 18 10:00:49 2013
+@@ -1515,7 +1515,9 @@ int mutt_save_confirm (const char *s, struct stat *st)
+ 
+   if (magic > 0 && !mx_access (s, W_OK))
+   {
+-    if (option (OPTCONFIRMAPPEND))
++    if (option (OPTCONFIRMAPPEND) &&
++       (!TrashPath || (mutt_strcmp (s, TrashPath) != 0)))
++      /* if we're appending to the trash, there's no point in asking */
+     {
+       snprintf (tmp, sizeof (tmp), _("Append messages to %s?"), s);
+       if ((rc = mutt_yesorno (tmp, M_YES)) == M_NO)
+diff -uNp -r mutt-1.5.22.orig/mx.c mutt-1.5.22/mx.c
+--- mutt-1.5.22.orig/mx.c	Fri Oct 18 05:48:24 2013
++++ mutt-1.5.22/mx.c	Fri Oct 18 10:00:49 2013
+@@ -776,6 +776,53 @@ static int sync_mailbox (CONTEXT *ctx, int *index_hint
+   return rc;
+ }
+ 
++/* move deleted mails to the trash folder */
++static int trash_append (CONTEXT *ctx)
++{
++    CONTEXT *ctx_trash;
++    int i = 0;
++    struct stat st, stc;
++
++    if (!TrashPath || !ctx->deleted ||
++       (ctx->magic == M_MAILDIR && option (OPTMAILDIRTRASH)))
++      return 0;
++
++    for (;i < ctx->msgcount && (!ctx->hdrs[i]->deleted ||
++                               ctx->hdrs[i]->appended); i++);
++    if (i == ctx->msgcount)
++      return 0; /* nothing to be done */
++
++    if (mutt_save_confirm (TrashPath, &st) != 0)
++    {
++      mutt_error _("message(s) not deleted");
++      return -1;
++    }
++
++    if (lstat (ctx->path, &stc) == 0 && stc.st_ino == st.st_ino
++       && stc.st_dev == st.st_dev && stc.st_rdev == st.st_rdev)
++      return 0;  /* we are in the trash folder: simple sync */
++
++    if ((ctx_trash = mx_open_mailbox (TrashPath, M_APPEND, NULL)) != NULL)
++    {
++      for (i = 0 ; i < ctx->msgcount ; i++)
++       if (ctx->hdrs[i]->deleted && !ctx->hdrs[i]->appended
++           && mutt_append_message (ctx_trash, ctx, ctx->hdrs[i], 0, 0) == -1)
++         {
++           mx_close_mailbox (ctx_trash, NULL);
++           return -1;
++         }
++
++      mx_close_mailbox (ctx_trash, NULL);
++    }
++    else
++    {
++      mutt_error _("Can't open trash folder");
++      return -1;
++    }
++
++    return 0;
++}
++
+ /* save changes and close mailbox */
+ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
+ {
+@@ -912,6 +959,7 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
+ 	  if (mutt_append_message (&f, ctx, ctx->hdrs[i], 0, CH_UPDATE_LEN) == 0)
+ 	  {
+ 	    mutt_set_flag (ctx, ctx->hdrs[i], M_DELETE, 1);
++            mutt_set_flag (ctx, ctx->hdrs[i], M_APPENDED, 1);
+ 	  }
+ 	  else
+ 	  {
+@@ -936,6 +984,14 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
+     return 0;
+   }
+   
++  /* copy mails to the trash before expunging */
++  if (purge && ctx->deleted)
++    if (trash_append (ctx) != 0)
++    {
++      ctx->closing = 0;
++      return -1;
++    }
++
+ #ifdef USE_IMAP
+   /* allow IMAP to preserve the deleted flag across sessions */
+   if (ctx->magic == M_IMAP)
+@@ -1132,6 +1188,12 @@ int mx_sync_mailbox (CONTEXT *ctx, int *index_hint)
+    * mx_update_tables, so ctx->deleted is 0 when it comes back */
+   msgcount = ctx->msgcount;
+   deleted = ctx->deleted;
++
++  if (purge && ctx->deleted)
++  {
++    if (trash_append (ctx) == -1)
++      return -1;
++  } 
+ 
+ #ifdef USE_IMAP
+   if (ctx->magic == M_IMAP)
+diff -uNp -r mutt-1.5.22.orig/postpone.c mutt-1.5.22/postpone.c
+--- mutt-1.5.22.orig/postpone.c	Thu Dec 20 00:23:54 2012
++++ mutt-1.5.22/postpone.c	Fri Oct 18 10:00:49 2013
+@@ -277,6 +277,9 @@ int mutt_get_postponed (CONTEXT *ctx, HEADER *hdr, HEA
+   /* finished with this message, so delete it. */
+   mutt_set_flag (PostContext, h, M_DELETE, 1);
+ 
++  /* and consider it saved, so that it won't be moved to the trash folder */
++  mutt_set_flag (PostContext, h, M_APPENDED, 1);
++
+   /* update the count for the status display */
+   PostCount = PostContext->msgcount - PostContext->deleted;
+ 
