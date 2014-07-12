@@ -392,6 +392,8 @@ can be passed in via `configure_args`.
 - `configure` For packages that use non-GNU configure scripts, at least `--prefix=/usr`
 should be passed in via `configure_args`.
 
+- `fetch` For packages that only fetch files and are installed as is via `do_install()`.
+
 - `gnu-configure` For packages that use GNU configure scripts, additional configuration
 arguments can be passed in via `configure_args`.
 
