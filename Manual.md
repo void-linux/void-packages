@@ -563,7 +563,7 @@ libfoo.so.1 foo-1.0_1
 
 - The first field specifies the SONAME.
 - The second field specified the package name and minimal version required.
-- A third optional field specifies the architecture (rarely used).
+- A third optional field (usually set to `ignore`) can be used to skip checks in soname bumps.
 
 ### Creating system accounts/groups at runtime
 
