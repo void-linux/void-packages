@@ -187,6 +187,12 @@ The optional 4th argument can be used to change the `file name`.
 	`$DESTDIR`. The optional 2nd argument can be used to change the
 	`file name`.
 
+- *vconf()* `vconf <file> [<name>]`
+
+	Installs `file` into `etc` in the pkg
+	`$DESTDIR`. The optional 2nd argument can be used to change the
+	`file name`.
+
 - *vsconf()* `vsconf <file> [<name>]`
 
 	Installs `file` into `usr/share/examples/<pkgname>` in the pkg
