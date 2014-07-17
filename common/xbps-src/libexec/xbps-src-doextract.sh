@@ -63,6 +63,8 @@ fi
 
 touch -f $XBPS_EXTRACT_DONE
 
+[ -d $wrksrc ] && cd $wrksrc
+
 # If template defines post_extract(), use it.
 if declare -f post_extract >/dev/null; then
     run_func post_extract
