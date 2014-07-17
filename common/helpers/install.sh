@@ -13,7 +13,7 @@ _noglob_helper() {
 }
 
 # Apply _noglob to v* commands
-for cmd in vinstall vcopy vmove vmkdir vbin vman vdoc vsconf vlicense; do
+for cmd in vinstall vcopy vmove vmkdir vbin vman vdoc vconf vsconf vlicense; do
        alias ${cmd}="set -f; _noglob_helper _${cmd}"
 done
 
@@ -65,6 +65,17 @@ _vdoc() {
 	fi
 
 	vinstall "$file" 644 "usr/share/doc/${pkgname}" "$targetfile"
+}
+
+_vconf() {
+	local file="$1" targetfile="$2"
+
+	if [ $# -lt 1 ]; then
+		msg_red "$pkgver: vconf: 1 argument expected: <file>\n"
+		return 1
+	fi
+
+	vinstall "$file" 644 "etc/${pkgname}" "$targetfile"
 }
 
 _vsconf() {
