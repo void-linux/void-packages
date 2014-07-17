@@ -4,10 +4,6 @@ do_fetch() {
 	:
 }
 
-do_extract() {
-	:
-}
-
 do_install() {
 	:
 }
