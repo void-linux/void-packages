@@ -90,14 +90,15 @@ msg_normal_append() {
 
 set_build_options() {
     local f j opt optval _optsset pkgopts
-    local -A options
+    local -A options _pkgname
 
     if [ -z "$build_options" ]; then
         return 0
     fi
 
     for f in ${build_options}; do
-        eval pkgopts="\$XBPS_PKG_OPTIONS_${pkgname}"
+        _pkgname=${pkgname//\-/\_}
+        eval pkgopts="\$XBPS_PKG_OPTIONS_${_pkgname}"
         if [ -z "$pkgopts" -o "$pkgopts" = "" ]; then
             pkgopts=${XBPS_PKG_OPTIONS}
         fi

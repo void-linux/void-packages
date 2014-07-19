@@ -540,6 +540,9 @@ Permanent global package build options can be set via `XBPS_PKG_OPTIONS` variabl
 `etc/conf` configuration file. Per package build options can be set via
 `XBPS_PKG_OPTIONS_<pkgname>`.
 
+> NOTE: if `pkgname` contains `dashes`, those should be replaced by `underscores`
+i.e `XBPS_PKG_OPTIONS_xorg_server=opt`.
+
 The list of supported package build options and its description is defined in the
 `common/options.description` file.
 
