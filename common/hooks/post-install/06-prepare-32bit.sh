@@ -124,13 +124,14 @@ hook() {
 					printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
 				fi
 			else
-				# XXX
-				# dependency is a subpkg, assume shlib-provides exists.
-				# The issue is that subpkgs are processed in alphabetical
-				# order and a required subpkg might not be processed at this
-				# point.
-				echo "   RDEP: $f -> ${pkgn}-32bit${pkgv}"
-				printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
+				if [ -s ${XBPS_DESTDIR}/${pkgn}-32bit-${version}/shlib-provides ]; then
+					# Dependency is a subpkg; check if it provides any shlib
+					# and convert to 32bit if true.
+					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv}"
+					printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
+				else
+					printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
+				fi
 			fi
 		done
 	fi
