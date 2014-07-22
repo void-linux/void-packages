@@ -75,7 +75,6 @@ hook() {
 	generic_wrapper sdl2-config
 	generic_wrapper gpgme-config
 	generic_wrapper imlib2-config
-	generic_wrapper cups-config
 	generic_wrapper xml2-config
 	generic_wrapper2 curl-config
 	generic_wrapper2 gpg-error-config
@@ -85,6 +84,7 @@ hook() {
 	generic_wrapper3 krb5-config
 	generic_wrapper3 mysql_config
 	generic_wrapper3 taglib-config
+	generic_wrapper3 cups-config
 	python_wrapper python-config 2.7
 	python_wrapper python3.4-config 3.4m
 
