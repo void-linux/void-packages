@@ -112,7 +112,7 @@ genpkg() {
 }
 
 hook() {
-	local arch= binpkg= repo= _pkgver= _desc=
+	local arch= binpkg= repo= _pkgver= _desc= _pkgn= _pkgv= _provides= _replaces=
 
 	if [ -n "$noarch" ]; then
 		arch=noarch
@@ -150,11 +150,10 @@ hook() {
 		return
 	fi
 	if [ -d "${XBPS_DESTDIR}/${pkgname}-32bit-${version}" ]; then
-		unset pkgn pkgv _provides _replaces
 		for f in ${provides}; do
-			pkgn="$($XBPS_UHELPER_CMD getpkgname $f)"
-			pkgv="$($XBPS_UHELPER_CMD getpkgversion $f)"
-			_provides+=" ${pkgn}-32bit-${pkgv}"
+			_pkgn="$($XBPS_UHELPER_CMD getpkgname $f)"
+			_pkgv="$($XBPS_UHELPER_CMD getpkgversion $f)"
+			_provides+=" ${_pkgn}-32bit-${_pkgv}"
 		done
 		source ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
 		if [ -n "$nonfree" ]; then
