@@ -150,6 +150,12 @@ hook() {
 		return
 	fi
 	if [ -d "${XBPS_DESTDIR}/${pkgname}-32bit-${version}" ]; then
+		unset pkgn pkgv _provides _replaces
+		for f in ${provides}; do
+			pkgn="$($XBPS_UHELPER_CMD getpkgname $f)"
+			pkgv="$($XBPS_UHELPER_CMD getpkgversion $f)"
+			_provides+=" ${pkgn}-32bit-${pkgv}"
+		done
 		source ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
 		if [ -n "$nonfree" ]; then
 			repo=$XBPS_REPOSITORY/multilib/nonfree
@@ -160,6 +166,7 @@ hook() {
 		_desc="${short_desc} (32bit)"
 		binpkg=${_pkgver}.x86_64.xbps
 		PKGDESTDIR="${XBPS_DESTDIR}/${pkgname}-32bit-${version}"
+		[ -n "${_provides}" ] && export provides="${_provides}"
 		genpkg ${repo} x86_64 "${_desc}" ${_pkgver} ${binpkg}
 	fi
 }
