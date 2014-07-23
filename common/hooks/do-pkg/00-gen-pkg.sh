@@ -135,6 +135,12 @@ hook() {
 
 	genpkg ${repo} ${arch} "${short_desc}" ${pkgver} ${binpkg}
 
+	for f in ${provides}; do
+		_pkgn="$($XBPS_UHELPER_CMD getpkgname $f)"
+		_pkgv="$($XBPS_UHELPER_CMD getpkgversion $f)"
+		_provides+=" ${_pkgn}-32bit-${_pkgv}"
+	done
+
 	# Generate -dbg pkg.
 	if [ -d "${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}" ]; then
 		source ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
@@ -150,11 +156,6 @@ hook() {
 		return
 	fi
 	if [ -d "${XBPS_DESTDIR}/${pkgname}-32bit-${version}" ]; then
-		for f in ${provides}; do
-			_pkgn="$($XBPS_UHELPER_CMD getpkgname $f)"
-			_pkgv="$($XBPS_UHELPER_CMD getpkgversion $f)"
-			_provides+=" ${_pkgn}-32bit-${_pkgv}"
-		done
 		source ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
 		if [ -n "$nonfree" ]; then
 			repo=$XBPS_REPOSITORY/multilib/nonfree
