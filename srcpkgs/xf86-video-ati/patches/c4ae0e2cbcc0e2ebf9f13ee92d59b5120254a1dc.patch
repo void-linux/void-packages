@@ -1,0 +1,71 @@
+From c4ae0e2cbcc0e2ebf9f13ee92d59b5120254a1dc Mon Sep 17 00:00:00 2001
+From: Michel Dänzer <michel.daenzer@amd.com>
+Date: Mon, 30 Jun 2014 01:20:12 +0000
+Subject: Handle CRTC DPMS from output DPMS hooks
+
+This fixes at least two issues:
+
+The CRTC DPMS hook isn't called after a modeset, so the vertical blank
+interrupt emulation code considered the CRTC disabled after a modeset. As
+a side effect, page flipping was no longer used after a modeset.
+
+This change also makes sure the vertical blank interrupt emulation code
+runs before the hardware CRTC is disabled and after it's enabled from the
+output DPMS hook. The wrong order could cause gnome-shell to hang after
+a suspend/resume and/or DPMS off/on cycle.
+
+Signed-off-by: Michel Dänzer <michel.daenzer@amd.com>
+Reviewed-by: Alex Deucher <alexander.deucher@amd.com>
+---
+diff --git a/src/drmmode_display.c b/src/drmmode_display.c
+index bd8e701..c366203 100644
+--- src/drmmode_display.c
++++ src/drmmode_display.c
+@@ -247,7 +247,7 @@ int drmmode_get_current_ust(int drm_fd, CARD64 *ust)
+ }
+ 
+ static void
+-drmmode_crtc_dpms(xf86CrtcPtr crtc, int mode)
++drmmode_do_crtc_dpms(xf86CrtcPtr crtc, int mode)
+ {
+ 	drmmode_crtc_private_ptr drmmode_crtc = crtc->driver_private;
+ 	ScrnInfoPtr scrn = crtc->scrn;
+@@ -308,6 +308,12 @@ drmmode_crtc_dpms(xf86CrtcPtr crtc, int mode)
+ 	drmmode_crtc->dpms_mode = mode;
+ }
+ 
++static void
++drmmode_crtc_dpms(xf86CrtcPtr crtc, int mode)
++{
++	/* Nothing to do. drmmode_do_crtc_dpms() is called as appropriate */
++}
++
+ static PixmapPtr
+ create_pixmap_for_fbcon(drmmode_ptr drmmode,
+ 			ScrnInfoPtr pScrn, int fbcon_id)
+@@ -973,9 +979,14 @@ drmmode_output_dpms(xf86OutputPtr output, int mode)
+ 	drmModeConnectorPtr koutput = drmmode_output->mode_output;
+ 	drmmode_ptr drmmode = drmmode_output->drmmode;
+ 
++	if (mode != DPMSModeOn && output->crtc)
++		drmmode_do_crtc_dpms(output->crtc, mode);
++
+ 	drmModeConnectorSetProperty(drmmode->fd, koutput->connector_id,
+ 				    drmmode_output->dpms_enum_id, mode);
+-	return;
++
++	if (mode == DPMSModeOn && output->crtc)
++		drmmode_do_crtc_dpms(output->crtc, mode);
+ }
+ 
+ 
+@@ -1833,6 +1844,7 @@ Bool drmmode_set_desired_modes(ScrnInfoPtr pScrn, drmmode_ptr drmmode)
+ 
+ 		/* Skip disabled CRTCs */
+ 		if (!crtc->enabled) {
++			drmmode_do_crtc_dpms(crtc, DPMSModeOff);
+ 			drmModeSetCrtc(drmmode->fd, drmmode_crtc->mode_crtc->crtc_id,
+ 				       0, 0, 0, NULL, 0, NULL);
+ 			continue;
+--
+cgit v0.9.0.2-2-gbebe
