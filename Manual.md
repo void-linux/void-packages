@@ -383,6 +383,10 @@ default all binaries are stripped.
 - `python_versions` A white space seperated list of python versions which will
 be used to build that package. This is only used by the `python-module` build style.
 
+- `subpackages` A white space separated list of subpackages (matching `foo_package()`)
+to override the guessed list. Only use this if a specific order of subpackages is required,
+otherwise the default would work in most cases.
+
 ### build style scripts
 
 The `build_style` variable specifies the build method to build and install a

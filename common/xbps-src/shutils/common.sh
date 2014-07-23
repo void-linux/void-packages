@@ -293,7 +293,9 @@ setup_pkg() {
     fi
 
     sourcepkg="${pkgname}"
-    subpackages="$(get_subpkgs)"
+    if [ -z "$subpackages" ]; then
+        subpackages="$(get_subpkgs)"
+    fi
 
     if [ -h $XBPS_SRCPKGDIR/$pkg ]; then
         # Source all subpkg environment setup snippets.

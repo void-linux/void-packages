@@ -7,7 +7,7 @@ unset -v only_for_archs distfiles checksum build_style nonfree
 unset -v configure_script configure_args wrksrc build_wrksrc create_wrksrc
 unset -v make_cmd make_build_args make_install_args make_build_target make_install_target python_versions
 unset -v patch_args disable_parallel_build keep_libtool_archives
-unset -v makedepends hostmakedepends depends
+unset -v subpackages makedepends hostmakedepends depends
 unset -v build_options build_options_default bootstrap
 unset -v CFLAGS CXXFLAGS CPPFLAGS LDFLAGS LD_LIBRARY_PATH
 unset -v CC CXX CPP GCC LD AR AS RANLIB NM OBJDUMP OBJCOPY STRIP READELF
