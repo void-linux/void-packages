@@ -124,7 +124,7 @@ hook() {
 					printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
 				fi
 			else
-				if [ -s ${XBPS_DESTDIR}/${pkgn}-32bit-${version}/shlib-provides ]; then
+				if [ -s ${XBPS_DESTDIR}/${pkgn}-${version}/shlib-provides ]; then
 					# Dependency is a subpkg; check if it provides any shlib
 					# and convert to 32bit if true.
 					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv}"
