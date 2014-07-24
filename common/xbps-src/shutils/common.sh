@@ -138,6 +138,7 @@ set_build_options() {
         XBPS_BUILD_OPTIONS_PARSED=1
         unset PKG_BUILD_OPTIONS
         set_build_options
+        unset XBPS_BUILD_OPTIONS_PARSED
         return 0
     fi
 
