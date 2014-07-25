@@ -85,6 +85,7 @@ hook() {
 	generic_wrapper3 mysql_config
 	generic_wrapper3 taglib-config
 	generic_wrapper3 cups-config
+	generic_wrapper3 Magick-config
 	python_wrapper python-config 2.7
 	python_wrapper python3.4-config 3.4m
 
