@@ -75,7 +75,7 @@ _vconf() {
 		return 1
 	fi
 
-	vinstall "$file" 644 "etc/${pkgname}" "$targetfile"
+	vinstall "$file" 644 etc "$targetfile"
 }
 
 _vsconf() {
