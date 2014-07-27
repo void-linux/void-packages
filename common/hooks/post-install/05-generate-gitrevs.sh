@@ -15,7 +15,7 @@ hook() {
 	fi
 
 	cd $XBPS_SRCPKGDIR
-	rev="$(git rev-parse --short HEAD)"
+	rev="$(chroot-git rev-parse --short HEAD)"
 	echo "${sourcepkg}:${rev}"
 	echo "${sourcepkg}:${rev}" > $GITREVS_FILE
 }
