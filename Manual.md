@@ -591,8 +591,9 @@ by blanks. Optionally the **gid** can be specified by delimiting it with a
 colon, i.e `system_groups="mygroup:78"` or `system_groups="foo blah:8000"`.
 
 - `system_accounts` This specifies the names of the new **system users/groups** to be created,
-separated by blanks, i.e `system_accounts="foo blah"`. Additional variables
-for the **system accounts** can be specified to change its behavior:
+separated by blanks, i.e `system_accounts="foo blah:22"`. Optionally the **uid** and **gid**
+can be specified by delimiting it with a color, i.e `system_accounts="foo:48"`.
+Additional variables for the **system accounts** can be specified to change its behavior:
 
 	- `<account>_homedir` the home directory for the user. If unset defaults to `/`.
 	- `<account>_shell` the shell for the new user. If unset defaults to `/sbin/nologin`.
@@ -600,7 +601,7 @@ for the **system accounts** can be specified to change its behavior:
 	- `<account>_groups` additional groups to be added to for the new user.
 
 The **system user** is created by using a dynamically allocated **uid/gid** in your system
-and it's created as a `system account`. A new group will be created for the
+and it's created as a `system account`, unless the **uid** is set. A new group will be created for the
 specified `system account` and used exclusived for this purpose.
 
 ### 32bit packages
