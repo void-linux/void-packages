@@ -105,7 +105,8 @@ check_installed_pkg() {
 # Installs all dependencies required by a package.
 #
 install_pkg_deps() {
-    local pkg="$1" cross="$2" i rval _realpkg curpkgdepname pkgn iver _props _exact
+    local pkg="$1" cross="$2" rval _realpkg curpkgdepname pkgn iver _props _exact
+    local i j found rundep
 
     local -a host_binpkg_deps binpkg_deps
     local -a host_missing_deps missing_deps
@@ -114,7 +115,7 @@ install_pkg_deps() {
 
     setup_pkg_depends
 
-    if [ -z "$build_depends" -a -z "$host_build_depends" ]; then
+    if [ -z "$build_depends" -a -z "$host_build_depends" -a -z "$run_depends" ]; then
         return 0
     fi
 
@@ -176,7 +177,7 @@ install_pkg_deps() {
     #
     # Target build dependencies.
     #
-    for i in ${build_depends}; do
+    for i in ${build_depends} ${run_depends}; do
         _realpkg="${i%\?*}"
         pkgn=$($XBPS_UHELPER_CMD getpkgdepname "${_realpkg}")
         if [ -z "$pkgn" ]; then
@@ -186,18 +187,29 @@ install_pkg_deps() {
             fi
             _exact=1
         fi
+        # Check if dependency is a subpkg, if it is, ignore it.
+        unset found
+        for j in ${subpackages}; do
+            [ "$j" = "$pkgn" ] && found=1 && break
+        done
+        [ -n "$found" ] && continue
+        # Check if it's a runtime dependency.
+        unset rundep
+        for j in ${run_depends}; do
+            [ "$j" = "$i" ] && rundep="runtime" && break
+        done
         check_pkgdep_matched "${_realpkg}" $cross
         local rval=$?
         if [ $rval -eq 0 ]; then
             iver=$($XBPS_UHELPER_XCMD version "${pkgn}")
             if [ $? -eq 0 -a -n "$iver" ]; then
-                echo "   [target] ${_realpkg}: found '$pkgn-$iver'."
+                echo "   [${rundep:-target}] ${_realpkg}: found '$pkgn-$iver'."
                 continue
             fi
         elif [ $rval -eq 1 ]; then
             iver=$($XBPS_UHELPER_XCMD version "${pkgn}")
             if [ $? -eq 0 -a -n "$iver" ]; then
-                echo "   [target] ${_realpkg}: installed ${iver} (unresolved) removing..."
+                echo "   [${rundep:-target}] ${_realpkg}: installed ${iver} (unresolved) removing..."
                 $XBPS_REMOVE_XCMD -iyf $pkgn >/dev/null 2>&1
             fi
         else
@@ -211,16 +223,20 @@ install_pkg_deps() {
                 set -- ${_props}
                 $XBPS_UHELPER_CMD pkgmatch ${1} "${_realpkg}"
                 if [ $? -eq 1 ]; then
-                    echo "   [target] ${_realpkg}: found $1 in $2."
-                    binpkg_deps+=("$1")
+                    # If dependency is part of run_depends just check if the binpkg has
+                    # been created, but don't install it.
+                    if [ -z "$rundep" ]; then
+                        binpkg_deps+=("$1")
+                    fi
+                    echo "   [${rundep:-target}] ${_realpkg}: found $1 in $2."
                     shift 2
                     continue
                 else
-                    echo "   [target] ${_realpkg}: not found."
+                    echo "   [${rundep:-target}] ${_realpkg}: not found."
                 fi
                 shift 2
             else
-                echo "   [target] ${_realpkg}: not found."
+                echo "   [${rundep:-target}] ${_realpkg}: not found."
             fi
         fi
         missing_deps+=("${_realpkg}")

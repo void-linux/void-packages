@@ -271,19 +271,23 @@ one digit is required.
 
 #### Optional variables
 
-- `hostmakedepends` The list of `host` dependencies required to build the package. Dependencies
+- `hostmakedepends` The list of `host` dependencies required to build the package, and
+that will be installed to the master directory. Dependencies
 can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
 or `foo-1.0_1` to match an exact version. If version comparator is not
 defined (just a package name), the version comparator is automatically set to `>=0`.
 Example `hostmakedepends="foo blah<1.0"`.
 
-- `makedepends` The list of `target` dependencies required to build the package. Dependencies
+- `makedepends` The list of `target` dependencies required to build the package, and that
+will be installed to the master directory. Dependencies
 can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
 or `foo-1.0_1` to match an exact version. If version comparator is not
 defined (just a package name), the version comparator is automatically set to `>=0`.
 Example `makedepends="foo blah>=1.0"`.
 
-- `depends` The list of dependencies required to run the package. Dependencies
+- `depends` The list of dependencies required to run the package. These dependencies
+are not installed to the master directory, rather are only checked if a binary package
+in the local repository exists to satisfy the required version. Dependencies
 can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
 or `foo-1.0_1` to match an exact version. If version comparator is not
 defined (just a package name), the version comparator is automatically set to `>=0`.
@@ -550,7 +554,7 @@ i.e `XBPS_PKG_OPTIONS_xorg_server=opt`.
 The list of supported package build options and its description is defined in the
 `common/options.description` file.
 
-### Runtime dependencies
+#### Runtime dependencies
 
 Dependencies for ELF objects are detected automatically by `xbps-src`, hence runtime
 dependencies must not be specified in templates via `$depends` with the following exceptions:
@@ -579,6 +583,10 @@ libfoo.so.1 foo-1.0_1
 - The first field specifies the SONAME.
 - The second field specified the package name and minimal version required.
 - A third optional field (usually set to `ignore`) can be used to skip checks in soname bumps.
+
+Dependencies declared via `${depends}` are not installed to the master directory, rather are
+only checked if they exist as binary packages, and are built automatically by `xbps-src` if
+the specified version is not in the local repository.
 
 ### Creating system accounts/groups at runtime
 
