@@ -83,6 +83,13 @@ _EOF
 		_add_trigger system-accounts
 		echo "export system_accounts=\"${system_accounts}\"" >> $tmpf
 		for f in ${system_accounts}; do
+			local _uname="${acct%:*}"
+			local _uid="${acct#*:}"
+
+			if [ "${_uid}" = "${_uname}" ]; then
+				continue
+			fi
+
 			eval homedir="\$${f}_homedir"
 			eval shell="\$${f}_shell"
 			eval descr="\$${f}_descr"
