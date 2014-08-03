@@ -83,28 +83,24 @@ _EOF
 		_add_trigger system-accounts
 		echo "export system_accounts=\"${system_accounts}\"" >> $tmpf
 		for f in ${system_accounts}; do
-			local _uname="${acct%:*}"
-			local _uid="${acct#*:}"
+			local _uname="${f%:*}"
+			local _uid="${f#*:}"
 
-			if [ "${_uid}" = "${_uname}" ]; then
-				continue
-			fi
-
-			eval homedir="\$${f}_homedir"
-			eval shell="\$${f}_shell"
-			eval descr="\$${f}_descr"
-			eval groups="\$${f}_groups"
+			eval homedir="\$${_uname}_homedir"
+			eval shell="\$${_uname}_shell"
+			eval descr="\$${_uname}_descr"
+			eval groups="\$${_uname}_groups"
 			if [ -n "$homedir" ]; then
-				echo "export ${f}_homedir=\"$homedir\"" >> $tmpf
+				echo "export ${_uname}_homedir=\"$homedir\"" >> $tmpf
 			fi
 			if [ -n "$shell" ]; then
-				echo "export ${f}_shell=\"$shell\"" >> $tmpf
+				echo "export ${_uname}_shell=\"$shell\"" >> $tmpf
 			fi
 			if [ -n "$descr" ]; then
-				echo "export ${f}_descr=\"$descr\"" >> $tmpf
+				echo "export ${_uname}_descr=\"$descr\"" >> $tmpf
 			fi
 			if [ -n "$groups" ]; then
-				echo "export ${f}_groups=\"${groups}\"" >> $tmpf
+				echo "export ${_uname}_groups=\"${groups}\"" >> $tmpf
 			fi
 			unset homedir shell descr groups
 		done
