@@ -106,7 +106,7 @@ check_installed_pkg() {
 #
 install_pkg_deps() {
     local pkg="$1" cross="$2" rval _realpkg curpkgdepname pkgn iver _props _exact
-    local i j found rundep
+    local i j found rundep rdeps
 
     local -a host_binpkg_deps binpkg_deps
     local -a host_missing_deps missing_deps
@@ -177,7 +177,8 @@ install_pkg_deps() {
     #
     # Target build dependencies.
     #
-    for i in ${build_depends} ${run_depends}; do
+    for i in ${build_depends} "RDEPS" ${run_depends}; do
+        [ "$i" = "RDEPS" ] && rundep="runtime" && continue
         _realpkg="${i%\?*}"
         pkgn=$($XBPS_UHELPER_CMD getpkgdepname "${_realpkg}")
         if [ -z "$pkgn" ]; then
@@ -193,11 +194,6 @@ install_pkg_deps() {
             [ "$j" = "$pkgn" ] && found=1 && break
         done
         [ -n "$found" ] && continue
-        # Check if it's a runtime dependency.
-        unset rundep
-        for j in ${run_depends}; do
-            [ "$j" = "$i" ] && rundep="runtime" && break
-        done
         check_pkgdep_matched "${_realpkg}" $cross
         local rval=$?
         if [ $rval -eq 0 ]; then
