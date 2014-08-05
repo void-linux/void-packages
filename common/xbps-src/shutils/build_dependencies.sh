@@ -106,7 +106,7 @@ check_installed_pkg() {
 #
 install_pkg_deps() {
     local pkg="$1" cross="$2" rval _realpkg curpkgdepname pkgn iver _props _exact
-    local i j found rundep rdeps
+    local i j found rundep
 
     local -a host_binpkg_deps binpkg_deps
     local -a host_missing_deps missing_deps
