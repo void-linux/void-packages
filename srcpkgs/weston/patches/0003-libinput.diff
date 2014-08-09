@@ -1,0 +1,97 @@
+From 3b843d3a61286d4b2a9552a3a2cae80c6b1cf8cd Mon Sep 17 00:00:00 2001
+From: Peter Hutterer <peter.hutterer@who-t.net>
+Date: Wed, 25 Jun 2014 14:07:36 +1000
+Subject: Require libinput 0.4.0
+
+No functional changes, just adjusting for API changes in libinput:
+- libinput_destroy() replaced by libinput_unref()
+- log functions now take a libinput context, userdata is gone
+- udev seat creation is now libinput_udev_create_context() and
+  libinput_udev_assign_seat()
+
+Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+diff --git configure.ac configure.ac
+index b4511fc..648bee8 100644
+--- configure.ac
++++ configure.ac
+@@ -160,7 +160,7 @@ AC_ARG_ENABLE(libinput-backend, [  --enable-libinput-backend],,
+ AM_CONDITIONAL([ENABLE_LIBINPUT_BACKEND], [test x$enable_libinput_backend = xyes])
+ if test x$enable_libinput_backend = xyes; then
+   AC_DEFINE([BUILD_LIBINPUT_BACKEND], [1], [Build the libinput input device backend])
+-  PKG_CHECK_MODULES(LIBINPUT_BACKEND, [libinput >= 0.3.0])
++  PKG_CHECK_MODULES(LIBINPUT_BACKEND, [libinput >= 0.4.0])
+ fi
+ 
+ 
+diff --git src/libinput-seat.c src/libinput-seat.c
+index d59ae42..09cf7c7 100644
+--- src/libinput-seat.c
++++ src/libinput-seat.c
+@@ -252,8 +252,9 @@ udev_input_enable(struct udev_input *input)
+ }
+ 
+ static void
+-libinput_log_func(enum libinput_log_priority priority, void *user_data,
+-		     const char *format, va_list args)
++libinput_log_func(struct libinput *libinput,
++		  enum libinput_log_priority priority,
++		  const char *format, va_list args)
+ {
+ 	weston_vlog(format, args);
+ }
+@@ -268,25 +269,34 @@ udev_input_init(struct udev_input *input, struct weston_compositor *c, struct ud
+ 
+ 	input->compositor = c;
+ 
+-	libinput_log_set_handler(&libinput_log_func, NULL);
+-
+ 	log_priority = getenv("WESTON_LIBINPUT_LOG_PRIORITY");
+ 
++	input->libinput = libinput_udev_create_context(&libinput_interface,
++						       input, udev);
++	if (!input->libinput) {
++		return -1;
++	}
++
++	libinput_log_set_handler(input->libinput, &libinput_log_func);
++
+ 	if (log_priority) {
+ 		if (strcmp(log_priority, "debug") == 0) {
+-			libinput_log_set_priority(LIBINPUT_LOG_PRIORITY_DEBUG);
++			libinput_log_set_priority(input->libinput,
++						  LIBINPUT_LOG_PRIORITY_DEBUG);
+ 		} else if (strcmp(log_priority, "info") == 0) {
+-			libinput_log_set_priority(LIBINPUT_LOG_PRIORITY_INFO);
++			libinput_log_set_priority(input->libinput,
++						  LIBINPUT_LOG_PRIORITY_INFO);
+ 		} else if (strcmp(log_priority, "error") == 0) {
+-			libinput_log_set_priority(LIBINPUT_LOG_PRIORITY_ERROR);
++			libinput_log_set_priority(input->libinput,
++						  LIBINPUT_LOG_PRIORITY_ERROR);
+ 		}
+ 	}
+ 
+-	input->libinput = libinput_udev_create_for_seat(&libinput_interface, input,
+-							udev, seat_id);
+-	if (!input->libinput) {
++	if (libinput_udev_assign_seat(input->libinput, seat_id) != 0) {
++		libinput_unref(input->libinput);
+ 		return -1;
+ 	}
++
+ 	process_events(input);
+ 
+ 	return udev_input_enable(input);
+@@ -300,7 +310,7 @@ udev_input_destroy(struct udev_input *input)
+ 	wl_event_source_remove(input->libinput_source);
+ 	wl_list_for_each_safe(seat, next, &input->compositor->seat_list, base.link)
+ 		udev_seat_destroy(seat);
+-	libinput_destroy(input->libinput);
++	libinput_unref(input->libinput);
+ }
+ 
+ static void
+-- 
+cgit v0.10.2
+
