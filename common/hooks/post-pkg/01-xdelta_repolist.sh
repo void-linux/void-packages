@@ -19,6 +19,11 @@ hook() {
 				done
 			fi
 
+			# generate an empty diff to the new file
+			newchk=`sha256sum ${newfile} | awk '{ print $1 }'`
+			xdelta3 -D -R -f -e -s "${newfile}" "${newfile}" \
+				"${newfile}.${newchk}.vcdiff"
+
 			rm -- "${oldfile}"
 		done
 }
