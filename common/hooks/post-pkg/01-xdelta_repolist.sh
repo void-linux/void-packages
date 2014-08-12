@@ -10,7 +10,7 @@ hook() {
 
 			if ! cmp -s "${newfile}" "${oldfile}"; then
 				newdiff="${newfile}.${chk}.vcdiff"
-				xdelta3 -D -R -f -e -s "${oldfile}" "${newfile}" "${newdiff}"
+				xdelta3 -f -e -s "${oldfile}" "${newfile}" "${newdiff}"
 				for diff in ${newfile}.*.vcdiff; do
 					[ "${diff}" = "${newdiff}" ] && continue;
 					cp -- "${diff}" "${diff}.tmp"
@@ -21,7 +21,7 @@ hook() {
 
 			# generate an empty diff to the new file
 			newchk=`sha256sum ${newfile} | awk '{ print $1 }'`
-			xdelta3 -D -R -f -e -s "${newfile}" "${newfile}" \
+			xdelta3 -f -e -s "${newfile}" "${newfile}" \
 				"${newfile}.${newchk}.vcdiff"
 
 			rm -- "${oldfile}"
