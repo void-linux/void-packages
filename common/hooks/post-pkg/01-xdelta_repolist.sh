@@ -2,7 +2,7 @@
 
 hook() {
 	set -x
-	[ -z "$XBPS_GENERATE_VCDIFF" ] && return 0;
+	type -P xdelta3 > /dev/null || return 0;
 
 	find $XBPS_REPOSITORY -name '*.genVcdiff' | xargs -r sha256sum | \
 		while read chk oldfile; do
