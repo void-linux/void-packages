@@ -3,7 +3,7 @@
 hook() {
 	type -P xdelta3 > /dev/null || return 0
 
-	find $XBPS_REPOSITORY -name '*.genVcdiff' | xargs -r sha256sum | \
+	find $XBPS_REPOSITORY -name "${XBPS_TARGET_MACHINE}-repodata.genVcdiff" | xargs -r sha256sum | \
 		while read chk oldfile; do
 			newfile=${oldfile/.genVcdiff/}
 
