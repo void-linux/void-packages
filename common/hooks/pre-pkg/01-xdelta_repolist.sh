@@ -5,6 +5,6 @@ hook() {
 
 	# create links to preserve old versions of repodata
 	find $XBPS_REPOSITORY -name '*-repodata' | while read; do
-		ln "${REPLY}" "${REPLY}.genVcdiff"
+		cp "${REPLY}" "${REPLY}.genVcdiff"
 	done
 }
