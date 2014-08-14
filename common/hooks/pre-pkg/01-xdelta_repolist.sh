@@ -3,10 +3,9 @@
 hook() {
 	type -P xdelta3 > /dev/null || return 0
 
-	env
 	# create links to preserve old versions of repodata
 	find $XBPS_REPOSITORY -name "${XBPS_TARGET_MACHINE}-repodata" | while read; do
-		rm "${REPLY}.genVcdiff" || true
+		( rm "${REPLY}.genVcdiff" 2>/dev/null ) || true
 		cp "${REPLY}" "${REPLY}.genVcdiff"
 	done
 }
