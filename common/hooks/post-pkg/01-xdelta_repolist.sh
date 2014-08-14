@@ -1,6 +1,7 @@
 # This hook generates vcdiffs for repository data.
 
 hook() {
+	[ -z "$XBPS_REPO_DELTAS" ] && return 0
 	type -P xdelta3 > /dev/null || return 0
 
 	find $XBPS_REPOSITORY -name "${XBPS_TARGET_MACHINE}-repodata.genVcdiff" | xargs -r sha256sum | \

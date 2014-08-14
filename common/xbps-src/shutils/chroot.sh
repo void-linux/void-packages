@@ -187,6 +187,7 @@ chroot_handler() {
     else
         [ -n "$XBPS_CROSS_BUILD" ] && arg="$arg -a $XBPS_CROSS_BUILD"
         [ -n "$XBPS_KEEP_ALL" ] && arg="$arg -C"
+        [ -n "$XBPS_REPO_DELTAS" ] && arg="$arg -D"
         [ -n "$NOCOLORS" ] && arg="$arg -L"
         [ -n "$XBPS_BUILD_FORCEMODE" ] && arg="$arg -f"
         [ -n "$XBPS_MAKEJOBS" ] && arg="$arg -j$XBPS_MAKEJOBS"
