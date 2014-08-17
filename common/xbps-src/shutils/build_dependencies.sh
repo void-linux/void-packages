@@ -180,6 +180,11 @@ install_pkg_deps() {
     for i in ${build_depends} "RDEPS" ${run_depends}; do
         [ "$i" = "RDEPS" ] && rundep="runtime" && continue
         _realpkg="${i%\?*}"
+        if [ "${_realpkg}" = "virtual" ]; then
+            # ignore virtual dependencies
+            echo "   [${rundep:-target}] ${i#*\?}: virtual dependency."
+            continue
+        fi
         pkgn=$($XBPS_UHELPER_CMD getpkgdepname "${_realpkg}")
         if [ -z "$pkgn" ]; then
             pkgn=$($XBPS_UHELPER_CMD getpkgname "${_realpkg}")
