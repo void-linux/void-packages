@@ -53,8 +53,8 @@ hook() {
 
 		# Switch pkg-config files to lib32.
 		if [ -d ${destdir32}/usr/lib32/pkgconfig ]; then
-			sed -e 's,/usr/lib,/usr/lib32,g' \
-			    -e 's,${exec_prefix}/lib,${exec_prefix}/lib32,g' \
+			sed -e 's,/usr/lib$,/usr/lib32,g' \
+			    -e 's,${exec_prefix}/lib$,${exec_prefix}/lib32,g' \
 			    -i ${destdir32}/usr/lib32/pkgconfig/*.pc
 		fi
 	elif [ "$lib32mode" = "full" ]; then
