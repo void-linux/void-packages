@@ -101,12 +101,14 @@ hook() {
 			fi
 			# If dependency is a development pkg switch it to 32bit.
 			if [[ $pkgn =~ '-devel' ]]; then
+				echo "   RDEP: $f -> ${pkgn}-32bit${pkgv}"
 				printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
 				continue
 			fi
 			# If dependency is noarch do not change it to 32bit.
 			_arch=$($XBPS_QUERY_CMD -R --property=architecture "$f")
 			if [ "${_arch}" = "noarch" ]; then
+				echo "   RDEP: $f -> ${pkgn}${pkgv}"
 				printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
 				continue
 			fi
@@ -126,6 +128,7 @@ hook() {
 					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv}"
 					printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
 				else
+					echo "   RDEP: $f -> ${pkgn}${pkgv}"
 					printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
 				fi
 			else
@@ -135,6 +138,7 @@ hook() {
 					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv}"
 					printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
 				else
+					echo "   RDEP: $f -> ${pkgn}${pkgv}"
 					printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
 				fi
 			fi
@@ -150,6 +154,7 @@ hook() {
 	done
 	# If it's a development pkg add a dependency to the 64bit pkg.
 	if [[ $pkgname =~ '-devel' ]]; then
+		echo "   RDEP: ${pkgver}"
 		printf "${pkgver} " >> ${destdir32}/rdeps
 	fi
 	printf "\n" >> ${destdir32}/rdeps
