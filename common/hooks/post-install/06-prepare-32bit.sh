@@ -108,7 +108,7 @@ hook() {
 			# If dependency is noarch do not change it to 32bit.
 			_arch=$($XBPS_QUERY_CMD -R --property=architecture "$f")
 			if [ "${_arch}" = "noarch" ]; then
-				echo "   RDEP: $f -> ${pkgn}${pkgv}"
+				echo "   RDEP: $f -> ${pkgn}${pkgv} (noarch)"
 				printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
 				continue
 			fi
@@ -128,7 +128,7 @@ hook() {
 					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv}"
 					printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
 				else
-					echo "   RDEP: $f -> ${pkgn}${pkgv}"
+					echo "   RDEP: $f -> ${pkgn}${pkgv} (no shlib-provides)"
 					printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
 				fi
 			else
@@ -138,7 +138,7 @@ hook() {
 					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv}"
 					printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
 				else
-					echo "   RDEP: $f -> ${pkgn}${pkgv}"
+					echo "   RDEP: $f -> ${pkgn}${pkgv} (subpkg, no shlib-provides)"
 					printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
 				fi
 			fi
