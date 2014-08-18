@@ -99,6 +99,11 @@ hook() {
 			else
 				pkgv="$($XBPS_UHELPER_CMD getpkgdepversion ${f})"
 			fi
+			# If dependency is a development pkg switch it to 32bit.
+			if [[ $pkgn =~ '-devel' ]]; then
+				printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
+				continue
+			fi
 			# If dependency is noarch do not change it to 32bit.
 			_arch=$($XBPS_QUERY_CMD -R --property=architecture "$f")
 			if [ "${_arch}" = "noarch" ]; then
