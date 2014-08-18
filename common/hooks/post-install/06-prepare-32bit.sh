@@ -101,7 +101,7 @@ hook() {
 			fi
 			# If dependency is a development pkg switch it to 32bit.
 			if [[ $pkgn =~ '-devel' ]]; then
-				echo "   RDEP: $f -> ${pkgn}-32bit${pkgv}"
+				echo "   RDEP: $f -> ${pkgn}-32bit${pkgv} (development)"
 				printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
 				continue
 			fi
@@ -123,9 +123,9 @@ hook() {
 			if [ -z "$found" ]; then
 				# Dependency is not a subpkg, check shlib-provides
 				# via binpkgs.
-				_shprovides="$($XBPS_QUERY_CMD -R --property=shlib-provides "$f")"
+				_shprovides="$($XBPS_QUERY_CMD -R --property=shlib-provides "$pkgn")"
 				if [ -n "${_shprovides}" ]; then
-					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv}"
+					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv} (shlib-provides)"
 					printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
 				else
 					echo "   RDEP: $f -> ${pkgn}${pkgv} (no shlib-provides)"
@@ -135,7 +135,7 @@ hook() {
 				if [ -s ${XBPS_DESTDIR}/${pkgn}-${version}/shlib-provides ]; then
 					# Dependency is a subpkg; check if it provides any shlib
 					# and convert to 32bit if true.
-					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv}"
+					echo "   RDEP: $f -> ${pkgn}-32bit${pkgv} (subpkg, shlib-provides)"
 					printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
 				else
 					echo "   RDEP: $f -> ${pkgn}${pkgv} (subpkg, no shlib-provides)"
