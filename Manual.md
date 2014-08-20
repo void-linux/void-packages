@@ -594,12 +594,12 @@ The INSTALL and REMOVE shell snippets can be used to execute certain actions at 
 stage when a binary package is installed, updated or removed. There are some variables
 that are always set by `xbps` when the scripts are executed:
 
-	- `$ACTION`: to conditionalize its actions: `pre` or `post`.
-	- `$PKGNAME`: the package name.
-	- `$VERSION`: the package version.
-	- `$UPDATE`: set to `yes` if package is being upgraded, `no` if package is being `installed` or `removed`.
-	- `$CONF_FILE`: full path to `xbps.conf`.
-	- `$ARCH`: the target architecture it is running on.
+- `$ACTION`: to conditionalize its actions: `pre` or `post`.
+- `$PKGNAME`: the package name.
+- `$VERSION`: the package version.
+- `$UPDATE`: set to `yes` if package is being upgraded, `no` if package is being `installed` or `removed`.
+- `$CONF_FILE`: full path to `xbps.conf`.
+- `$ARCH`: the target architecture it is running on.
 
 An example of how an `INSTALL` or `REMOVE` script shall be created is shown below:
 
