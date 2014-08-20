@@ -588,6 +588,43 @@ Dependencies declared via `${depends}` are not installed to the master directory
 only checked if they exist as binary packages, and are built automatically by `xbps-src` if
 the specified version is not in the local repository.
 
+### INSTALL and REMOVE files
+
+The INSTALL and REMOVE shell snippets can be used to execute certain actions at a specified
+stage when a binary package is installed, updated or removed. There are some variables
+that are always set by `xbps` when the scripts are executed:
+
+	- `$ACTION`: to conditionalize its actions: `pre` or `post`.
+	- `$PKGNAME`: the package name.
+	- `$VERSION`: the package version.
+	- `$UPDATE`: set to `yes` if package is being upgraded, `no` if package is being `installed` or `removed`.
+	- `$CONF_FILE`: full path to `xbps.conf`.
+	- `$ARCH`: the target architecture it is running on.
+
+An example of how an `INSTALL` or `REMOVE` script shall be created is shown below:
+
+```
+# INSTALL
+case "$ACTION" in
+pre)
+	# Actions to execute before the package files are unpacked.
+	...
+	;;
+post)
+	if [ "$UPDATE" = "yes" ]; then
+		# actions to execute if package is being updated.
+		...
+	else
+		# actions to execute if package is being installed.
+		...
+	fi
+	;;
+esac
+```
+
+> NOTE: always use paths relative to the current working directory, otherwise if the scripts cannot
+be executed via `chroot(2)` won't work correctly.
+
 ### Creating system accounts/groups at runtime
 
 There's a trigger along with some variables that are specifically to create
