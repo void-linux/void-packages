@@ -589,7 +589,7 @@ only checked if they exist as binary packages, and are built automatically by `x
 the specified version is not in the local repository.
 
 There's a special variant of how `virtual` dependencies can be specified as `runtime dependencies`
-and is by using the `virtual` keyword, i.e `depends="virtual?vpkg-0.1_1"`. This declares
+and is by using the `virtual?` keyword, i.e `depends="virtual?vpkg-0.1_1"`. This declares
 a `runtime` virtual dependency to `vpkg-0.1_1`; this `virtual` dependency will be simply ignored
 when the package is being built with `xbps-src`.
 
