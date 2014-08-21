@@ -12,4 +12,3 @@ TIFFLIB = libtiff.so
 JPEGLIB = libjpeg.so
 ZLIB = libz.so
 NETPBM_DOCURL = http://netpbm.sourceforge.net/doc/
-WANT_SSE = Y
