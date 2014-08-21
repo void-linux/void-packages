@@ -384,6 +384,8 @@ by all supported architectures.
 - `nostrip` If set, the ELF binaries with debugging symbols won't be stripped. By
 default all binaries are stripped.
 
+- `nocross` If set, cross compilation won't be allowed and will exit with an error.
+
 - `python_versions` A white space seperated list of python versions which will
 be used to build that package. This is only used by the `python-module` build style.
 

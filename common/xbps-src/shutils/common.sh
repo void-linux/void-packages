@@ -388,6 +388,9 @@ setup_pkg() {
         wrksrc="$XBPS_BUILDDIR/$wrksrc"
     fi
 
+    if [ "$cross" -a "$nocross" ]; then
+        msg_error "$pkgver: cannot be cross compiled, exiting...\n"
+    fi
 }
 
 setup_pkg_depends() {
