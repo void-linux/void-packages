@@ -89,7 +89,8 @@ chroot_prepare() {
 
     echo "syslog=false" >> $XBPS_MASTERDIR/etc/xbps/xbps.conf
     echo "cachedir=/host/repocache" >> $XBPS_MASTERDIR/etc/xbps/xbps.conf
-    rm -f $XBPS_MASTERDIR/usr/share/xbps/repo.d/*.conf
+    mkdir -p $XBPS_MASTERDIR/etc/xbps/repo.d
+    ln -s /dev/null $XBPS_MASTERDIR/etc/xbps/repo.d/00-main.conf
 
     # Prepare default locale: en_US.UTF-8.
     if [ -s ${XBPS_MASTERDIR}/etc/default/libc-locales ]; then
