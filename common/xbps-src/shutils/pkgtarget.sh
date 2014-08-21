@@ -133,6 +133,8 @@ remove_pkg() {
         _destdir="$XBPS_DESTDIR"
     fi
 
+    [ ! -d ${_destdir} ] && return
+
     for f in ${sourcepkg} ${subpackages}; do
         if [ -d "${_destdir}/${f}-${version}" ]; then
             msg_normal "$f: removing files from destdir...\n"
