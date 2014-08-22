@@ -384,7 +384,7 @@ by all supported architectures.
 - `nostrip` If set, the ELF binaries with debugging symbols won't be stripped. By
 default all binaries are stripped.
 
-- `nocross` If set, cross compilation won't be allowed and will exit with an error.
+- `nocross` If set, cross compilation won't be allowed and will exit immediately.
 
 - `python_versions` A white space seperated list of python versions which will
 be used to build that package. This is only used by the `python-module` build style.
@@ -392,6 +392,8 @@ be used to build that package. This is only used by the `python-module` build st
 - `subpackages` A white space separated list of subpackages (matching `foo_package()`)
 to override the guessed list. Only use this if a specific order of subpackages is required,
 otherwise the default would work in most cases.
+
+- `broken` If set, building the package won't be allowed because its state is currently broken.
 
 ### build style scripts
 

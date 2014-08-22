@@ -389,7 +389,11 @@ setup_pkg() {
     fi
 
     if [ "$cross" -a "$nocross" ]; then
-        msg_error "$pkgver: cannot be cross compiled, exiting...\n"
+        msg_red "$pkgver: cannot be cross compiled, exiting...\n"
+        exit 0
+    elif [ "$broken" ]; then
+        msg_red "$pkgver: cannot be built, it's currently broken; exiting...\n"
+        exit 0
     fi
 }
 
