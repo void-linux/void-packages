@@ -140,6 +140,11 @@ hook() {
 		_pkgv="$($XBPS_UHELPER_CMD getpkgversion $f)"
 		_provides+=" ${_pkgn}-32bit-${_pkgv}"
 	done
+	for f in ${replaces}; do
+		_pkgn="$($XBPS_UHELPER_CMD getpkgdepname $f)"
+		_pkgv="$($XBPS_UHELPER_CMD getpkgdepversion $f)"
+		_replaces+=" ${_pkgn}-32bit${_pkgv}"
+	done
 
 	# Generate -dbg pkg.
 	if [ -d "${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}" ]; then
@@ -167,6 +172,7 @@ hook() {
 		binpkg=${_pkgver}.x86_64.xbps
 		PKGDESTDIR="${XBPS_DESTDIR}/${pkgname}-32bit-${version}"
 		[ -n "${_provides}" ] && export provides="${_provides}"
+		[ -n "${_replaces}" ] && export replaces="${_replaces}"
 		genpkg ${repo} x86_64 "${_desc}" ${_pkgver} ${binpkg}
 	fi
 }
