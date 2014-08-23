@@ -304,6 +304,24 @@ can be separated by whitespaces. The files must end in `.tar.lzma`, `.tar.xz`,
 Example:
 	distfiles="http://foo.org/foo-1.0.tar.gz http://foo.org/bar-1.0.tar.gz>bar.tar.gz"
 
+  To avoid repetition, several variables for common hosting sites
+  exist:
+
+  | Variable         | Value                                           |
+  |------------------|-------------------------------------------------|
+  | CPAN_SITE        | http://cpan.perl.org/modules/by-module          |
+  | DEBIAN_SITE      | http://ftp.debian.org/debian/pool               |
+  | FREEDESKTOP_SITE | http://freedesktop.org/software                 |
+  | GNOME_SITE       | http://ftp.gnome.org/pub/GNOME/sources          |
+  | GNU_SITE         | http://mirrors.kernel.org/gnu                   |
+  | KERNEL_SITE      | http://www.kernel.org/pub/linux                 |
+  | MOZILLA_SITE     | http://ftp.mozilla.org/pub/mozilla.org          |
+  | NONGNU_SITE      | http://download.savannah.nongnu.org/releases    |
+  | SOURCEFORGE_SITE | http://downloads.sourceforge.net/sourceforge    |
+  | UBUNTU_SITE      | http://archive.ubuntu.com/ubuntu/pool           |
+  | XORG_HOME        | http://xorg.freedesktop.org/wiki/               |
+  | XORG_SITE        | http://xorg.freedesktop.org/releases/individual |
+
 - `checksum` The `sha256` digests matching `${distfiles}`. Multiple files can be
 separated by blanks. Please note that the order must be the same than
 was used in `${distfiles}`. Example `checksum="kkas00xjkjas"`
