@@ -751,6 +751,14 @@ The helper functions `vinstall`, `vmkdir`, `vcopy` and `vmove` are just wrappers
 the process of creating, copying and moving files/directories between the `main` package
 destdir (`$DESTDIR`) to the `subpackage` destdir (`$PKGDESTDIR`).
 
+The order of how the subpackages are processed is the following:
+
+- Non development packages are processed in alphabetical order.
+- Development packages are processed in alphabetical order (-devel).
+
+To force a custom order the `subpackages` variable can be declared with the specified
+order of how subpackages shall be processed.
+
 ### Development packages
 
 A development package, commonly generated as a subpackage, shall only contain
