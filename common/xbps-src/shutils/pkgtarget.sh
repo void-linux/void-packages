@@ -59,12 +59,14 @@ install_pkg() {
     $XBPS_LIBEXECDIR/xbps-src-dobuild.sh $sourcepkg $cross || exit 1
     [ "$target" = "build" ] && return 0
 
-    # Install sourcepkg into destdir.
+    # Install pkgs into destdir.
     $FAKEROOT_CMD $XBPS_LIBEXECDIR/xbps-src-doinstall.sh $sourcepkg $cross || exit 1
 
     for subpkg in ${subpackages} ${sourcepkg}; do
-        # Run subpkg pkg_install func.
-        $FAKEROOT_CMD $XBPS_LIBEXECDIR/xbps-src-dopkg.sh $subpkg $cross || exit 1
+        $FAKEROOT_CMD $XBPS_LIBEXECDIR/xbps-src-doinstall.sh $subpkg $cross || exit 1
+    done
+    for subpkg in ${subpackages} ${sourcepkg}; do
+        $FAKEROOT_CMD $XBPS_LIBEXECDIR/xbps-src-prepkg.sh $subpkg $cross || exit 1
     done
 
     if [ "$XBPS_TARGET_PKG" = "$sourcepkg" ]; then
@@ -72,8 +74,8 @@ install_pkg() {
     fi
 
     # If install went ok generate the binpkgs.
-    for subpkg in ${sourcepkg} ${subpackages}; do
-        $FAKEROOT_CMD $XBPS_LIBEXECDIR/xbps-src-genpkg.sh $subpkg "$XBPS_REPOSITORY" "$cross" || exit 1
+    for subpkg in ${subpackages} ${sourcepkg}; do
+        $FAKEROOT_CMD $XBPS_LIBEXECDIR/xbps-src-dopkg.sh $subpkg "$XBPS_REPOSITORY" "$cross" || exit 1
     done
 
     # pkg cleanup
