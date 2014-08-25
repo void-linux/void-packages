@@ -70,7 +70,6 @@ chroot_prepare() {
     fi
 
     # Create some required files.
-    cp -f /etc/services $XBPS_MASTERDIR/etc
     [ -f /etc/localtime ] && cp -f /etc/localtime $XBPS_MASTERDIR/etc
 
     for f in dev sys proc host boot; do
