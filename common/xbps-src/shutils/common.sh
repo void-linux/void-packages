@@ -195,8 +195,13 @@ get_subpkgs() {
     while [ $# -gt 0 ]; do
         list+=" ${3%_package}"; shift 3
     done
+    # first all non development pkgs ...
     for f in ${list}; do
-        echo "$f"
+        [[ $f =~ '-devel' ]] || echo "$f"
+    done
+    # ... and then only development pkgs
+    for f in ${list}; do
+        [[ $f =~ '-devel' ]] && echo "$f"
     done
 }
 
