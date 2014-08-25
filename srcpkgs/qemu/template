@@ -1,13 +1,7 @@
 # Template file for 'qemu'
 pkgname=qemu
 version=2.1.0
-revision=1
-build_style=configure
-configure_args="--prefix=/usr --sysconfdir=/etc --libexecdir=/usr/libexec
- --enable-kvm --audio-drv-list=alsa,sdl,pa --disable-xen --enable-tpm
- --enable-vhost-net --enable-vnc-png --enable-vnc-tls --enable-virtfs
- --disable-gtk --enable-seccomp --enable-libusb --disable-glusterfs
- --localstatedir=/var --with-sdlabi=2.0"
+revision=2
 short_desc="Open Source Processor Emulator"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://qemu.org"
@@ -17,7 +11,7 @@ checksum=397e23184f4bf613589a8fe0c6542461dc2afdf17ed337e97e6fd2f31e8f8802
 
 nostrip=yes
 hostmakedepends="pkg-config perl python automake libtool flex"
-makedepends="attr-devel libpng-devel>=1.6 libjpeg-turbo-devel pixman-devel
+makedepends="libpng-devel>=1.6 libjpeg-turbo-devel pixman-devel
  libuuid-devel libX11-devel alsa-lib-devel gnutls-devel>=3.1.5 SDL2-devel
  libsasl-devel libglib-devel ncurses-devel libseccomp-devel>=2.1.0 nss-devel
  libcurl-devel xfsprogs-devel libcap-ng-devel libcap-devel vde2-devel
@@ -25,7 +19,41 @@ makedepends="attr-devel libpng-devel>=1.6 libjpeg-turbo-devel pixman-devel
 depends="libusb>=1.0.15"
 conf_files="/etc/qemu/target-x86_64.conf"
 
-post_install() {
+do_configure() {
+	local args=
+
+	sed -e 's,-rpath /usr/local/lib,,g' -i configure
+
+	if [ "$CROSS_BUILD" ]; then
+		args+=" --cross-prefix=${XBPS_CROSS_TRIPLET}-"
+		export PKG_CONFIG=pkg-config
+		export LIBTOOL=libtool
+		export CFLAGS+=" -D_LINUX_XATTR_H"
+	fi
+	# seccomp only supported on x86
+	case "$XBPS_TARGET_MACHINE" in
+		i686*|x86_64*) args+=" --enable-seccomp";;
+		*) args+=" --disable-seccomp";;
+	esac
+	./configure --prefix=/usr --sysconfdir=/etc --libexecdir=/usr/libexec \
+		--enable-kvm --audio-drv-list=alsa,sdl,pa --disable-xen --enable-tpm \
+		--enable-vhost-net --enable-vnc-png --enable-vnc-tls --enable-virtfs \
+		--disable-gtk --enable-libusb --disable-glusterfs \
+		--enable-pie --localstatedir=/var --with-sdlabi=2.0 ${args}
+}
+do_build() {
+	if [ "$CROSS_BUILD" ]; then
+		# XXX libtool execs cc and ar.
+		mkdir -p ${wrksrc}/cross
+		ln -sf /usr/bin/${XBPS_CROSS_TRIPLET}-gcc ${wrksrc}/cross/cc
+		ln -sf /usr/bin/${XBPS_CROSS_TRIPLET}-ar ${wrksrc}/cross/ar
+		export PATH=${wrksrc}/cross:$PATH
+	fi
+	make ${makejobs}
+}
+do_install() {
+	make DESTDIR=${DESTDIR} install
+
 	vinstall ${FILESDIR}/65-kvm.rules 644 usr/lib/udev/rules.d
 	# qemu-bridge-helper must be setuid for non privileged users.
 	chmod u+s ${DESTDIR}/usr/libexec/qemu-bridge-helper
