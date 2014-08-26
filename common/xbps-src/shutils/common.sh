@@ -479,16 +479,18 @@ _remove_pkg_cross_deps() {
 remove_pkg_autodeps() {
     local rval= tmplogf=
 
-    [ -z "$CHROOT_READY" ] && return 0
-
     cd $XBPS_MASTERDIR || return 1
     msg_normal "${pkgver:-xbps-src}: removing autodeps, please wait...\n"
     tmplogf=$(mktemp)
 
-    _remove_pkg_cross_deps
-
-    $FAKEROOT_CMD xbps-reconfigure -a >> $tmplogf 2>&1
-    $FAKEROOT_CMD xbps-remove -Ryo >> $tmplogf 2>&1
+    if [ -z "$CHROOT_READY" ]; then
+        $FAKEROOT_CMD xbps-reconfigure -r $XBPS_MASTERDIR -a >> $tmplogf 2>&1
+        $FAKEROOT_CMD xbps-remove -r $XBPS_MASTERDIR -Ryo >> $tmplogf 2>&1
+    else
+        _remove_pkg_cross_deps
+        $FAKEROOT_CMD xbps-reconfigure -a >> $tmplogf 2>&1
+        $FAKEROOT_CMD xbps-remove -Ryo >> $tmplogf 2>&1
+    fi
 
     if [ $? -ne 0 ]; then
         msg_red "${pkgver:-xbps-src}: failed to remove autodeps:\n"

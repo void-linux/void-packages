@@ -91,9 +91,10 @@ install_pkg() {
         remove_pkg $cross
     fi
 
-    # If base-chroot not installed, install binpkg into masterdir
-    # from local repository.
-    if [ -z "$CHROOT_READY" ]; then
+    # If base-chroot not installed, install "base-files" into masterdir
+    # from local repository; this is the only pkg required to be able to build
+    # the bootstrap pkgs from scratch.
+    if [ -z "$CHROOT_READY" -a "$pkgname" = "base-files" ]; then
         msg_normal "Installing $opkg into masterdir...\n"
         local _log=$(mktemp --tmpdir|| exit 1)
         if [ -n "$XBPS_BUILD_FORCEMODE" ]; then
@@ -113,7 +114,7 @@ install_pkg() {
         # Package built successfully. Exit directly due to nested install_pkg
         # and install_pkg_deps functions.
         remove_cross_pkg $cross
-        exit 0
+        return 0
     fi
 }
 
