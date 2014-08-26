@@ -76,11 +76,6 @@ if [ ! -f $XBPS_INSTALL_DONE ]; then
     exit 0
 fi
 
-# Always remove metadata files generated in a previous installation.
-for f in INSTALL REMOVE files.plist props.plist rdeps shlib-provides shlib-requires; do
-    [ -f ${PKGDESTDIR}/${f} ] && rm -f ${PKGDESTDIR}/${f}
-done
-
 # If it's a subpkg execute the pkg_install() function.
 if [ "$sourcepkg" != "$PKGNAME" ]; then
     # Source all subpkg environment setup snippets.
