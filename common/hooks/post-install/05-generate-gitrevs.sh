@@ -3,7 +3,7 @@
 
 hook() {
 	local GITREVS_FILE=${wrksrc}/.xbps_${sourcepkg}_git_revs
-	local rev
+	local GIT_CMD rev
 
 	# If XBPS_USE_GIT_REVS is disabled in conf file don't continue.
 	if [ -z $XBPS_USE_GIT_REVS ]; then
@@ -14,8 +14,16 @@ hook() {
 		return
 	fi
 
+	if command -v chroot-git &>/dev/null; then
+		GIT_CMD=$(command -v chroot-git)
+	elif command -v git &>/dev/null; then
+		GIT_CMD=$(command -v git)
+	else
+		msg_error "$pkgver: cannot find chroot-git or git utility, exiting...\n"
+	fi
+
 	cd $XBPS_SRCPKGDIR
-	rev="$(chroot-git rev-parse --short HEAD)"
+	rev="$($GIT_CMD rev-parse --short HEAD)"
 	echo "${sourcepkg}:${rev}"
 	echo "${sourcepkg}:${rev}" > $GITREVS_FILE
 }
