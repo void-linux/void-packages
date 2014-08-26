@@ -43,6 +43,7 @@ hook() {
 
 	if [ -n "$noarch" -o -n "$noverifyrdeps" ]; then
 		echo "$run_depends" > ${PKGDESTDIR}/rdeps
+		sed 's,virtual?,,g' -i ${PKGDESTDIR}/rdeps
 		return 0
 	fi
 
@@ -156,6 +157,8 @@ hook() {
 
 	if [ -n "$run_depends" ]; then
 		echo "$run_depends" > ${PKGDESTDIR}/rdeps
+	fi
+	if [ -s ${PKGDESTDIR}/rdeps ]; then
 		sed 's,virtual?,,g' -i ${PKGDESTDIR}/rdeps
 	fi
 	if [ -n "${sorequires}" ]; then
