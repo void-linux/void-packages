@@ -514,7 +514,26 @@ should be added to `common/options.description` instead.
 
 After defining those required variables, you can check for the
 `build_option_<option>` variable to know if it has been set and adapt the source
-package accordingly.
+package accordingly. Additionally, the following functions are available:
+
+- *vopt_if()* `vopt_if <option> <if_true> [<if_false>]`
+
+  Outputs `if_true` if `option` is set, or `if_false` if it isn't set.
+
+- *vopt_with()* `vopt_with <option> [<flag>]`
+
+  Outputs `--with-<flag>` if the option is set, or `--without-<flag>`
+  otherwise. If `flag` isn't set, it defaults to `option`.
+
+  Examples:
+
+  - `vopt_with dbus`
+  - `vopt_with xml xml2`
+
+- *vopt_enable()* `vopt_enable <option> [<flag>]`
+
+  Same as `vopt_with`, but uses `--enable-<flag>` and
+  `--disable-<flag>` respectively.
 
 The following example shows how to change a source package that uses GNU
 configure to enable a new build option to support PNG images:
@@ -525,6 +544,8 @@ pkgname=foo
 version=1.0
 revision=1
 build_style=gnu-configure
+configure_args="... $(vopt_with png)"
+makedepends="... $(vopt_if png libpng-devel)"
 ...
 
 # Package build options
@@ -535,12 +556,6 @@ desc_option_png="Enable support for PNG images"
 #
 # build_options_default="png"
 
-if [ "$build_option_png" ]; then
-	configure_args+=" --with-png"
-	makedepends+=" libpng-devel"
-else
-	configure_args+=" --without-png"
-fi
 ...
 
 ```

@@ -566,3 +566,24 @@ remove_cross_pkg() {
         msg_error "failed to remove cross-${XBPS_CROSS_TRIPLET} (error $rval)\n"
     fi
 }
+
+vopt_if() {
+    local opt="$1" t="$2" f="$3"
+    name="build_option_$opt"
+    if [ ${!name} ]; then
+        echo -n "$t"
+    else
+        echo -n "$f"
+    fi
+}
+
+vopt_with() {
+    local opt="$1" flag="${2:-$1}"
+    vopt_if "$1" "--with-${flag}" "--without-${flag}"
+}
+
+vopt_enable() {
+    local opt="$1" flag="${2:-$1}"
+    vopt_if "$1" "--enable-${flag}" "--disable-${flag}"
+}
+
