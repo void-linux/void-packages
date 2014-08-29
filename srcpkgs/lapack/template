@@ -1,0 +1,123 @@
+# Template file for 'lapack'
+pkgname=lapack
+version=3.5.0
+revision=1
+wrksrc="${pkgname}-${version}"
+hostmakedepends="gcc-fortran doxygen"
+replaces="liblapack>=0"
+short_desc="Linear Algebra PACKage"
+maintainer="Alessio Sergi <al3hex@gmail.com>"
+homepage="http://www.netlib.org/lapack/"
+license="3-clause-BSD"
+distfiles="http://www.netlib.org/${pkgname}/${pkgname}-${version}.tgz"
+checksum="9ad8f0d3f3fb5521db49f2dd716463b8fb2b6bc9dc386a9956b8c6144f726352"
+
+pre_build() {
+	cp -f ${FILESDIR}/make.inc.template ${wrksrc}/make.inc
+	cp -f ${FILESDIR}/Doxyfile_man.blas ${wrksrc}/DOCS
+	cp -f ${FILESDIR}/Doxyfile_man.lapack ${wrksrc}/DOCS
+}
+
+do_build() {
+	export FC=gfortran
+	export FFLAGS=$CFLAGS
+	export FFLAGS_NOOPT=${CFLAGS/-O2/}
+	export OPTS="$FFLAGS -frecursive"
+	export NOOPT="$FFLAGS_NOOPT -O0 -frecursive"
+	export PICOPT="-fPIC"
+
+	# Build the shared blas library
+	make blaslib OPTS="$OPTS $PICOPT" NOOPT="$NOOPT $PICOPT"
+	mv librefblas.a libblas_pic.a
+
+	mkdir tmp
+	( cd tmp; ar x ../libblas_pic.a )
+	"$FC" -shared -Wl,-soname=libblas.so.${version%%.*} -o libblas.so.${version} tmp/*.o
+	ln -sf libblas.so.${version} libblas.so
+	rm -rf tmp
+
+	# Build the static blas library
+	make cleanlib
+	make blaslib OPTS="$OPTS" NOOPT="$NOOPT"
+	mv librefblas.a libblas.a
+	make cleanlib
+
+	# Build the shared lapack library
+	make lapacklib OPTS="$OPTS $PICOPT" NOOPT="$NOOPT $PICOPT"
+	mv liblapack.a liblapack_pic.a
+
+	mkdir tmp
+	( cd tmp; ar x ../liblapack_pic.a )
+	"$FC" -shared -Wl,-soname=liblapack.so.${version%%.*} -o liblapack.so.${version} tmp/*.o -L. -lblas
+	rm -rf tmp
+
+	# Build the static lapack library
+	make cleanlib
+	make lapacklib OPTS="$OPTS" NOOPT="$NOOPT"
+
+	# Build blas and lapack man pages
+	doxygen DOCS/Doxyfile_man.blas
+	doxygen DOCS/Doxyfile_man.lapack
+}
+
+do_install() {
+	for libname in libblas liblapack; do
+		vinstall ${libname}.a 644 usr/lib ${libname}.a
+		vinstall ${libname}.so.${version} 755 usr/lib ${libname}.so.${version}
+	done
+	vlicense LICENSE
+}
+
+post_install() {
+	for libname in libblas liblapack; do
+		ln -sf ${libname}.so.${version} ${DESTDIR}/usr/lib/${libname}.so
+		ln -sf ${libname}.so.${version} ${DESTDIR}/usr/lib/${libname}.so.${version%%.*}
+	done
+}
+
+lapack-devel_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/lib/liblapack.a
+		vmove usr/lib/liblapack.so
+	}
+}
+
+lapack-doc_package() {
+	noarch=yes
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - documentation"
+	pkg_install() {
+		vmkdir usr/share
+		vcopy ${wrksrc}/DOCS/lapack/man usr/share
+	}
+}
+
+blas_package() {
+	replaces="libBLAS>=0"
+	short_desc+=" - BLAS (Basic Linear Algebra Subprograms) library"
+	pkg_install() {
+		vmove usr/lib/libblas.so.*
+		vlicense ${wrksrc}/LICENSE
+	}
+}
+
+blas-devel_package() {
+	depends="blas>=${version}_${revision}"
+	short_desc+=" - BLAS development files"
+	pkg_install() {
+		vmove usr/lib/libblas.a
+		vmove usr/lib/libblas.so
+	}
+}
+
+blas-doc_package() {
+	noarch=yes
+	depends="blas>=${version}_${revision}"
+	short_desc+=" - BLAS documentation"
+	pkg_install() {
+		vmkdir usr/share
+		vcopy ${wrksrc}/DOCS/blas/man usr/share
+	}
+}
