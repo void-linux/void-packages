@@ -92,7 +92,7 @@ Example: wireshark -> subpkg libwireshark
 Libraries have to be split into two sub packages: <name> and <name>-devel.
 
 - `<name>` should only contain those parts of a package which are needed to run
-a linking program.
+a linked program.
 
 - `<name>-devel` should contain all files which are needed to compile a package
 against this package. If the library is a sub package, its corresponding
