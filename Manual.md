@@ -120,15 +120,15 @@ Example: python-pam, perl-URI, python-pyside
 
 #### Language Bindings
 
-Language Bindings are similiar to Language Modules described above. They're
-main difference is that bindings are loosely coupled to that language.
+Language Bindings are packages which allow programs or libraries to have
+extensions or plugins written in a certian language.
 
 The naming convention to those packages is:
 ```
 <name>-<language>
 ```
 
-Example: kde-python, gimp-python, irssi-perl
+Example: gimp-python, irssi-perl
 
 #### Programs
 
@@ -216,9 +216,9 @@ The following variables are defined by `xbps-src` and can be used on any templat
 - `sourcepkg`  Set to the to main package name, can be used to match the main package
 rather than additional binary package names.
 
-- `CHROOT_READY`  True if the target chroot (masterdir) is ready for chroot builds.
+- `CHROOT_READY`  Set if the target chroot (masterdir) is ready for chroot builds.
 
-- `CROSS_BUILD` True if `xbps-src` is cross compiling a package.
+- `CROSS_BUILD` Set if `xbps-src` is cross compiling a package.
 
 - `DESTDIR` Full path to the fake destdir used by the source pkg, set to
 `<masterdir>/destdir/${sourcepkg}-${version}`.
