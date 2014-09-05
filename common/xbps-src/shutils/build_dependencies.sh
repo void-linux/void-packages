@@ -1,5 +1,62 @@
 # vim: set ts=4 sw=4 et:
 #
+setup_pkg_depends() {
+    local pkg="$1" j _pkgdepname _pkgdep _rpkgname _depname
+
+    if [ -n "$pkg" ]; then
+        # subpkg
+        if declare -f ${pkg}_package >/dev/null; then
+            ${pkg}_package
+        fi
+    fi
+
+    for j in ${depends}; do
+        _rpkgname="${j%\?*}"
+        _depname="${j#*\?}"
+        _pkgdepname="$($XBPS_UHELPER_CMD getpkgdepname ${_depname} 2>/dev/null)"
+        if [ -z "${_pkgdepname}" ]; then
+            _pkgdepname="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
+        fi
+
+        if [ -z "${_pkgdepname}" ]; then
+            _pkgdep="${_depname}>=0"
+        else
+            _pkgdep="${_depname}"
+        fi
+        if [ "${_rpkgname}" = "virtual" ]; then
+            run_depends+=" virtual?${_pkgdep}"
+        else
+            run_depends+=" ${_pkgdep}"
+        fi
+    done
+    for j in ${hostmakedepends}; do
+        _depname="${j%\?*}"
+        _pkgdepname="$($XBPS_UHELPER_CMD getpkgdepname ${_depname} 2>/dev/null)"
+        if [ -z "${_pkgdepname}" ]; then
+            _pkgdepname="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
+        fi
+        if [ -z "${_pkgdepname}" ]; then
+            _pkgdep="${_depname}>=0"
+        else
+            _pkgdep="${_depname}"
+        fi
+        host_build_depends+=" ${_pkgdep}"
+    done
+    for j in ${makedepends}; do
+        _depname="${j%\?*}"
+        _pkgdepname="$($XBPS_UHELPER_CMD getpkgdepname ${_depname} 2>/dev/null)"
+        if [ -z "${_pkgdepname}" ]; then
+            _pkgdepname="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
+        fi
+        if [ -z "${_pkgdepname}" ]; then
+            _pkgdep="${_depname}>=0"
+        else
+            _pkgdep="${_depname}"
+        fi
+        build_depends+=" ${_pkgdep}"
+    done
+}
+
 # Install a required package dependency, like:
 #
 #	xbps-install -Ay <pkgname>

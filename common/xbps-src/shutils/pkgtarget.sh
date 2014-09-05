@@ -118,6 +118,30 @@ install_pkg() {
     fi
 }
 
+remove_pkg_autodeps() {
+    local rval= tmplogf=
+
+    cd $XBPS_MASTERDIR || return 1
+    msg_normal "${pkgver:-xbps-src}: removing autodeps, please wait...\n"
+    tmplogf=$(mktemp)
+
+    if [ -z "$CHROOT_READY" ]; then
+        $FAKEROOT_CMD xbps-reconfigure -r $XBPS_MASTERDIR -a >> $tmplogf 2>&1
+        $FAKEROOT_CMD xbps-remove -r $XBPS_MASTERDIR -Ryo >> $tmplogf 2>&1
+    else
+        remove_pkg_cross_deps
+        $FAKEROOT_CMD xbps-reconfigure -a >> $tmplogf 2>&1
+        $FAKEROOT_CMD xbps-remove -Ryo >> $tmplogf 2>&1
+    fi
+
+    if [ $? -ne 0 ]; then
+        msg_red "${pkgver:-xbps-src}: failed to remove autodeps:\n"
+        cat $tmplogf && rm -f $tmplogf
+        msg_error "${pkgver:-xbps-src}: cannot continue!\n"
+    fi
+    rm -f $tmplogf
+}
+
 remove_pkg_wrksrc() {
     if [ -d "$wrksrc" ]; then
         msg_normal "$pkgver: cleaning build directory...\n"
