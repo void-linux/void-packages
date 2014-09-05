@@ -535,6 +535,10 @@ package accordingly. Additionally, the following functions are available:
   Same as `vopt_with`, but uses `--enable-<flag>` and
   `--disable-<flag>` respectively.
 
+- *vopt_conflict()* `vopt_conflict <option 1> <option 2>`
+
+  Emits an error and exits if both options are set at the same time.
+
 The following example shows how to change a source package that uses GNU
 configure to enable a new build option to support PNG images:
 

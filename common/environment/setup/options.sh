@@ -19,3 +19,9 @@ vopt_enable() {
     vopt_if "$1" "--enable-${flag}" "--disable-${flag}"
 }
 
+vopt_conflict() {
+    local opt1="$1" opt2="$2" n1="build_option_$1" n2="build_option_$2"
+    if [ "${!n1}" -a "${!n2}" ]; then
+        msg_error "options '${opt1}' and '${opt2}' conflict\n"
+    fi
+}
