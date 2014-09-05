@@ -1,0 +1,63 @@
+From 8b03fdbfb0dd8e0147aa61ff30b8311235caf5f3 Mon Sep 17 00:00:00 2001
+From: Jeff Layton <jlayton@poochiereds.net>
+Date: Thu, 1 May 2014 11:15:16 -0400
+Subject: [PATCH] mountd: fix segfault in add_name with newer gcc compilers
+Bug-Debian: http://bugs.debian.org/757835
+Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+bug/1355829
+
+I hit a segfault in add_name with a mountd built with gcc-4.9.0. Some
+NULL pointer checks got reordered such that a pointer was dereferenced
+before checking to see whether it was NULL. The problem was due to
+nfs-utils relying on undefined behavior, which tricked gcc into assuming
+that the pointer would never be NULL.
+
+At first I assumed that this was a compiler bug, but Jakub Jelinek and
+Jeff Law pointed out:
+
+"If old is NULL, then:
+
+	strncpy(new, old, cp-old);
+
+is undefined behavior (even when cp == old == NULL in that case),
+therefore gcc assumes that old is never NULL, as otherwise it would be
+invalid.
+
+Just guard
+	strncpy(new, old, cp-old);
+	new[cp-old] = 0;
+with if (old) { ... }."
+
+This patch does that. If old is NULL though, then we still need to
+ensure that new is NULL terminated, lest the subsequent strcats walk off
+the end of it.
+
+Cc: Jeff Law <law@redhat.com>
+Cc: Jakub Jelinek <jakub@redhat.com>
+Signed-off-by: Jeff Layton <jlayton@poochiereds.net>
+Signed-off-by: Steve Dickson <steved@redhat.com>
+---
+ support/export/client.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git support/export/client.c support/export/client.c
+index ba2db8f..e749cac 100644
+--- support/export/client.c
++++ support/export/client.c
+@@ -482,8 +482,12 @@ add_name(char *old, const char *add)
+ 		else
+ 			cp = cp + strlen(cp);
+ 	}
+-	strncpy(new, old, cp-old);
+-	new[cp-old] = 0;
++	if (old) {
++		strncpy(new, old, cp-old);
++		new[cp-old] = 0;
++	} else {
++		new[0] = 0;
++	}
+ 	if (cp != old && !*cp)
+ 		strcat(new, ",");
+ 	strcat(new, add);
+-- 
+2.1.0.rc1
+
