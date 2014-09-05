@@ -114,7 +114,7 @@ install_pkg() {
         # Package built successfully. Exit directly due to nested install_pkg
         # and install_pkg_deps functions.
         remove_cross_pkg $cross
-        exit 0
+        return 0
     fi
 }
 
