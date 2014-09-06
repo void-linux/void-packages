@@ -1,7 +1,7 @@
 # vim: set ts=4 sw=4 et:
 #
 setup_pkg_depends() {
-    local pkg="$1" j _pkgdepname _pkgdep _rpkgname _depname
+    local pkg="$1" j _pkgdepname _pkgdep _rpkgname _depname _replacement
 
     if [ -n "$pkg" ]; then
         # subpkg
@@ -17,7 +17,17 @@ setup_pkg_depends() {
         if [ -z "${_pkgdepname}" ]; then
             _pkgdepname="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
         fi
-
+        if [ -s ${XBPS_DISTDIR}/etc/virtual ]; then
+            _replacement=$(egrep "^${_pkgdepname:-${_depname}}[[:blank:]]" ${XBPS_DISTDIR}/etc/virtual|cut -d ' ' -f2)
+            if [ -n "${_replacement}" ]; then
+                _depname="${_depname/${_pkgdepname:-${_depname}}/${_replacement}}"
+            fi
+        elif [ -s ${XBPS_DISTDIR}/etc/defaults.virtual ]; then
+            _replacement=$(egrep "^${_pkgdepname:-${_depname}}[[:blank:]]" ${XBPS_DISTDIR}/etc/defaults.virtual|cut -d ' ' -f2)
+            if [ -n "${_replacement}" ]; then
+                _depname="${_depname/${_pkgdepname:-${_depname}}/${_replacement}}"
+            fi
+        fi
         if [ -z "${_pkgdepname}" ]; then
             _pkgdep="${_depname}>=0"
         else
@@ -35,6 +45,17 @@ setup_pkg_depends() {
         if [ -z "${_pkgdepname}" ]; then
             _pkgdepname="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
         fi
+        if [ -s ${XBPS_DISTDIR}/etc/virtual ]; then
+            _replacement=$(egrep "^${_pkgdepname:-${_depname}}[[:blank:]]" ${XBPS_DISTDIR}/etc/virtual|cut -d ' ' -f2)
+            if [ -n "${_replacement}" ]; then
+                _depname="${_depname/${_pkgdepname:-${_depname}}/${_replacement}}"
+            fi
+        elif [ -s ${XBPS_DISTDIR}/etc/defaults.virtual ]; then
+            _replacement=$(egrep "^${_pkgdepname:-${_depname}}[[:blank:]]" ${XBPS_DISTDIR}/etc/defaults.virtual|cut -d ' ' -f2)
+            if [ -n "${_replacement}" ]; then
+                _depname="${_depname/${_pkgdepname:-${_depname}}/${_replacement}}"
+            fi
+        fi
         if [ -z "${_pkgdepname}" ]; then
             _pkgdep="${_depname}>=0"
         else
@@ -47,6 +68,17 @@ setup_pkg_depends() {
         _pkgdepname="$($XBPS_UHELPER_CMD getpkgdepname ${_depname} 2>/dev/null)"
         if [ -z "${_pkgdepname}" ]; then
             _pkgdepname="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
+        fi
+        if [ -s ${XBPS_DISTDIR}/etc/virtual ]; then
+            _replacement=$(egrep "^${_pkgdepname:-${_depname}}[[:blank:]]" ${XBPS_DISTDIR}/etc/virtual|cut -d ' ' -f2)
+            if [ -n "${_replacement}" ]; then
+                _depname="${_depname/${_pkgdepname:-${_depname}}/${_replacement}}"
+            fi
+        elif [ -s ${XBPS_DISTDIR}/etc/defaults.virtual ]; then
+            _replacement=$(egrep "^${_pkgdepname:-${_depname}}[[:blank:]]" ${XBPS_DISTDIR}/etc/defaults.virtual|cut -d ' ' -f2)
+            if [ -n "${_replacement}" ]; then
+                _depname="${_depname/${_pkgdepname:-${_depname}}/${_replacement}}"
+            fi
         fi
         if [ -z "${_pkgdepname}" ]; then
             _pkgdep="${_depname}>=0"
