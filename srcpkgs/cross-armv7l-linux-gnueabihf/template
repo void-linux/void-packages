@@ -1,0 +1,298 @@
+# Template build file for 'cross-armv7l-linux-gnueabihf'
+#
+_binutils_version=2.24
+_gcc_version=4.9.1
+_glibc_version=2.19
+_linux_version=3.10.6
+
+_triplet=armv7l-linux-gnueabihf
+_fpuflags="--with-arch=armv7-a --with-fpu=vfpv3 --with-float=hard"
+_archflags="-march=armv7-a -mfpu=vfpv3 -mfloat-abi=hard"
+_CROSS_SYSROOT="/usr/${_triplet}"
+
+pkgname=cross-${_triplet}
+version=0.18
+revision=1
+short_desc="GNU Cross toolchain for the ${_triplet} LE target (binutils/gcc/glibc)"
+maintainer="Juan RP <xtraeme@gmail.com>"
+homepage="http://www.voidlinux.eu"
+license="Public Domain"
+distfiles="
+ http://ftp.gnu.org/pub/gnu/binutils/binutils-${_binutils_version}.tar.bz2
+ http://ftp.gnu.org/pub/gnu/gcc/gcc-${_gcc_version}/gcc-${_gcc_version}.tar.bz2
+ http://ftp.gnu.org/gnu/glibc/glibc-${_glibc_version}.tar.xz
+ http://www.kernel.org/pub/linux/kernel/v3.x/linux-${_linux_version}.tar.xz"
+checksum="
+ e5e8c5be9664e7f7f96e0d09919110ab5ad597794f5b1809871177a0f0f14137 
+ d334781a124ada6f38e63b545e2a3b8c2183049515a1abab6d513f109f1d717e
+ 2d3997f588401ea095a0b27227b1d50cdfdd416236f6567b564549d3b46ea2a2
+ ed4dfd9f56b7c82e9c71331bbf8d2ea01ddfddc1b6209bd3f3c8640aa24065cf"
+
+lib32disabled=yes
+nocross=yes
+create_wrksrc=yes
+hostmakedepends="perl flex"
+makedepends="zlib-devel gmp-devel mpfr-devel libmpc-devel"
+depends="${pkgname}-libc-${version}_${revision}"
+nostrip_files="libgcc.a libgcov.a libgcc_eh.a"
+only_for_archs="i686 x86_64"
+
+_apply_patch() {
+	local pname="$(basename $1)"
+
+	if [ ! -f ".${pname}_done" ]; then
+		patch -Np0 -i ${1}
+		touch .${pname}_done
+	fi
+}
+
+_linux_headers() {
+	[ -f ${wrksrc}/.linux_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building Linux API headers for ARM\n"
+
+	cd linux-${_linux_version}
+
+	make ARCH=arm headers_check
+	make ARCH=arm INSTALL_HDR_PATH=${_CROSS_SYSROOT}/usr headers_install
+
+	touch ${wrksrc}/.linux_build_done
+}
+
+_binutils_build() {
+	[ -f ${wrksrc}/.binutils_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross binutils\n"
+	[ ! -d binutils-build ] && mkdir binutils-build
+	cd binutils-build
+
+	../binutils-${_binutils_version}/configure \
+		--prefix=/usr --target=${_triplet} \
+		--with-sysroot=${_CROSS_SYSROOT} --disable-nls --disable-shared \
+		--disable-multilib --disable-werror
+
+	make configure-host && make ${makejobs}
+	make install
+
+	touch ${wrksrc}/.binutils_build_done
+}
+
+_gcc_bootstrap() {
+	[ -f ${wrksrc}/.gcc_bootstrap_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross gcc bootstrap\n"
+
+	cd gcc-${_gcc_version}
+
+	[ ! -d ../gcc-bootstrap ] && mkdir ../gcc-bootstrap
+	cd ../gcc-bootstrap
+
+	../gcc-${_gcc_version}/configure --prefix=/usr \
+		--target=${_triplet} --without-headers \
+		--disable-nls --disable-shared --disable-libquadmath \
+		--disable-decimal-float --disable-libgomp --disable-libmudflap \
+		--disable-libssp --disable-libitm --disable-libatomic \
+		--disable-threads --enable-languages=c \
+		--disable-sjlj-exceptions --disable-multilib \
+		--with-gnu-ld --with-gnu-as ${_fpuflags}
+
+	make ${makejobs}
+	make install
+
+	touch ${wrksrc}/.gcc_bootstrap_done
+}
+
+_glibc_headers() {
+	[ -f ${wrksrc}/.glibc_headers_done ] && return 0
+
+	cd ${wrksrc}/glibc-${_glibc_version}
+	_apply_patch ${FILESDIR}/glibc-2.18-xattr-compat-hack.patch
+
+	cd ${wrksrc}
+	msg_normal "Building cross glibc headers\n"
+
+	[ ! -d glibc-headers ] && mkdir glibc-headers
+	cd glibc-headers
+
+	echo "libc_cv_forced_unwind=yes" > config.cache
+	echo "libc_cv_c_cleanup=yes" >> config.cache
+
+	export CC="${_triplet}-gcc" LD="${_triplet}-ld" \
+		AS="${_triplet}-as" CPP="${_triplet}-cpp"
+
+	../glibc-${_glibc_version}/configure \
+		--host=${_triplet} --prefix=/usr \
+		--with-headers=${_CROSS_SYSROOT}/usr/include \
+		--config-cache --enable-add-ons=nptl,ports \
+		--enable-obsolete-rpc \
+		--enable-kernel=2.6.27 ${_fpuflags}
+
+	make -k install-headers cross_compiling=yes \
+		install_root=${_CROSS_SYSROOT}
+
+	touch ${wrksrc}/.glibc_headers_done
+}
+
+_glibc_build() {
+	[ -f ${wrksrc}/.glibc_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross glibc\n"
+
+	[ ! -d glibc-build ] && mkdir glibc-build
+	cd glibc-build
+
+	echo "libc_cv_forced_unwind=yes" > config.cache
+	echo "libc_cv_c_cleanup=yes" >> config.cache
+
+	export CC="${_triplet}-gcc" LD="${_triplet}-ld" \
+		AS="${_triplet}-as" CPP="${_triplet}-cpp"
+	export CFLAGS="-Os -pipe ${_archflags}"
+
+	../glibc-${_glibc_version}/configure \
+		--host=${_triplet} --prefix=/usr --libdir=/usr/lib \
+		--with-headers=${_CROSS_SYSROOT}/usr/include \
+		--config-cache --enable-add-ons=nptl,ports \
+		--enable-obsolete-rpc --disable-profile \
+		--enable-kernel=2.6.27 ${_fpuflags}
+	
+	make ${makejobs}
+	make install_root=${_CROSS_SYSROOT} install
+
+	touch ${wrksrc}/.glibc_build_done
+}
+
+_gcc_build() {
+	[ -f ${wrksrc}/.gcc_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross gcc final\n"
+
+	[ ! -d gcc-build ] && mkdir gcc-build
+	cd gcc-build
+
+	export CC="gcc" CFLAGS="-Os -pipe"
+	unset LD AS
+
+	# Make this link to target libs.
+	if [ ! -f .sed_subst_done ]; then
+		sed -e "s, /lib/, ${_CROSS_SYSROOT}/lib/,g;s, /usr/lib/, ${_CROSS_SYSROOT}/usr/lib/,g" \
+			-i ${_CROSS_SYSROOT}/lib/libc.so ${_CROSS_SYSROOT}/lib/libpthread.so
+		touch .sed_subst_done
+	fi
+	
+	../gcc-${_gcc_version}/configure \
+		--target=${_triplet} --prefix=/usr --libdir=/usr/lib \
+		--with-sysroot=${_CROSS_SYSROOT} --enable-languages=c,c++,lto \
+		--with-gnu-as --with-gnu-ld --disable-multilib \
+		--disable-nls --disable-sjlj-exceptions \
+		--enable-threads=posix --enable-long-longx \
+		--enable-shared --enable-linker-build-id \
+		--enable-gnu-unique-object --enable-lto \
+		--disable-libquadmath --disable-libatomic \
+		--disable-libssp --disable-libmudflap \
+		--disable-libsanitizer --disable-libcilkrts \
+		--disable-libitm --disable-libvtv --disable-libstdcxx-pch \
+		--enable-libstdcxx-time --with-linker-hash-style=gnu ${_fpuflags}
+
+	make ${makejobs}
+
+	touch ${wrksrc}/.gcc_build_done
+}
+
+do_build() {
+	unset LDFLAGS
+	export CFLAGS="-Os" CXXFLAGS="-Os"
+
+	for f in include lib libexec bin sbin; do
+		if [ ! -d ${_CROSS_SYSROOT}/usr/${f} ]; then
+			mkdir -p ${_CROSS_SYSROOT}/usr/${f}
+		fi
+		if [ ! -h ${_CROSS_SYSROOT}/${f} ]; then
+			ln -sfr ${_CROSS_SYSROOT}/usr/${f} ${_CROSS_SYSROOT}/${f}
+		fi
+	done
+
+	_binutils_build
+	_gcc_bootstrap
+	_linux_headers
+	_glibc_headers
+	_glibc_build
+	_gcc_build
+}
+
+do_install() {
+	for f in include lib libexec bin sbin; do
+		if [ ! -d ${DESTDIR}/${_CROSS_SYSROOT}/usr/${f} ]; then
+			mkdir -p ${DESTDIR}/${_CROSS_SYSROOT}/usr/${f}
+		fi
+		if [ ! -h ${DESTDIR}/${_CROSS_SYSROOT}/${f} ]; then
+			ln -sfr ${DESTDIR}/${_CROSS_SYSROOT}/usr/${f} \
+				${DESTDIR}/${_CROSS_SYSROOT}/${f}
+		fi
+	done
+
+	# install cross binutils
+	cd ${wrksrc}/binutils-build
+	make DESTDIR=${DESTDIR} install
+
+	# install cross gcc
+	cd ${wrksrc}/gcc-build
+	make DESTDIR=${DESTDIR} install
+
+	# install linux API headers for MIPS
+	cd ${wrksrc}/linux-${_linux_version}
+	make ARCH=arm INSTALL_HDR_PATH=${DESTDIR}/${_CROSS_SYSROOT}/usr headers_install
+	rm -f $(find ${DESTDIR}/${_CROSS_SYSROOT}/usr/include -name .install -or -name ..install.cmd)
+	rm -rf ${DESTDIR}/${_CROSS_SYSROOT}/usr/include/drm
+
+	# install glibc for target
+	cd ${wrksrc}/glibc-build
+	make install_root=${DESTDIR}/${_CROSS_SYSROOT} install install-headers
+
+	# XXX hard-float only toolchain.
+	ln -sfr ${DESTDIR}/${_CROSS_SYSROOT}/usr/include/gnu/stubs-hard.h \
+		${DESTDIR}/${_CROSS_SYSROOT}/usr/include/gnu/stubs-soft.h
+
+	ln -sfr ${DESTDIR}/${_CROSS_SYSROOT}/usr/lib/ld-linux-armhf.so.3 \
+		${DESTDIR}/${_CROSS_SYSROOT}/usr/lib/ld-linux.so.3
+
+	# Remove unnecessary stuff
+	rm -f ${DESTDIR}/usr/lib*/libiberty.a
+	rm -rf ${DESTDIR}/usr/share
+	rm -rf ${DESTDIR}/${_CROSS_SYSROOT}/{etc,var}
+	rm -rf ${DESTDIR}/${_CROSS_SYSROOT}/usr/{sbin,share,libexec}
+	rm -rf ${DESTDIR}/${_CROSS_SYSROOT}/usr/lib/gconv
+	rm -f ${DESTDIR}/${_CROSS_SYSROOT}/libexec
+
+	for f in sprof localedef gencat pldd sotruss tzselect iconv mtrace \
+		catchsegv xtrace makedb pcprofiledump locale rpcgen getconf \
+		getent ldd; do
+		rm -f ${DESTDIR}/${_CROSS_SYSROOT}/usr/bin/${f}
+	done
+}
+
+do_clean() {
+	# Remove temporary stuff from masterdir
+	rm -rf ${_CROSS_SYSROOT}
+	rm -f /usr/bin/${_triplet}*
+	rm -rf /usr/lib/gcc/${_triplet}
+	rm -rf /usr/libexec/gcc/${_triplet}
+}
+
+cross-armv7l-linux-gnueabihf-libc_package() {
+	short_desc+=" - glibc files"
+	noarch=yes
+	nostrip=yes
+	noverifyrdeps=yes
+
+	pkg_install() {
+		vmove usr/${_triplet}
+		mkdir -p ${DESTDIR}/usr/${_triplet}/usr/
+		mv ${PKGDESTDIR}/usr/${_triplet}/usr/bin \
+			${DESTDIR}/usr/${_triplet}/usr
+	}
+}
