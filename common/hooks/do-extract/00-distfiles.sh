@@ -51,6 +51,7 @@ hook() {
 		*.tar)        cursufx="tar";;
 		*.zip)        cursufx="zip";;
 		*.rpm)        cursufx="rpm";;
+		*.patch)      cursufx="pch";;
 		*) msg_error "$pkgver: unknown distfile suffix for $curfile.\n";;
 		esac
 
