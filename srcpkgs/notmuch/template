@@ -1,18 +1,78 @@
 # Template file for 'notmuch'
 pkgname=notmuch
 version=0.18.1
-revision=1
-hostmakedepends="pkg-config"
-makedepends="xapian-core-devel gmime-devel talloc-devel"
+revision=2
+hostmakedepends="automake libtool pkg-config"
+makedepends="
+ xapian-core-devel gmime-devel talloc-devel perl emacs bash-completion
+ ruby-devel python-devel python3.4-devel python-docutils"
 build_style=gnu-configure
-configure_args="--bashcompletiondir=/usr/share/bash-completion/completions --without-emacs"
-short_desc="notmuch -- the mail indexer"
+configure_args="--bashcompletiondir=/usr/share/bash-completion/completions
+  --without-zsh-completion" # zsh completion is part of zsh itself
+short_desc="The mail indexer"
 maintainer="Jan S. <jan.schreib@gmail.com>"
 license="GPL-3"
 homepage="http://notmuchmail.org"
 distfiles="http://notmuchmail.org/releases/${pkgname}-${version}.tar.gz"
 checksum=f2d53dc1916283123d008a6084de860340a436631e83b1a41b2d9ced0f4db7dd
 nocross=yes
+
+pre_build() {
+	cp -a bindings/python{,3.4}
+}
+
+post_build() {
+	# Build notmuch-mutt
+	make -C contrib/${pkgname}-mutt
+
+	# Build notmuch-deliver
+	cd ${wrksrc}/contrib/${pkgname}-deliver
+	./autogen.sh
+	LDFLAGS="-L$(pwd)/../../lib/" CPPFLAGS="-I$(pwd)/../../lib/" \
+	./configure --prefix=/usr --sysconfdir=/etc --includedir=/usr/include
+	make ${makejobs}
+
+	# Build ruby bindings
+	cd ${wrksrc}/bindings/ruby
+	ruby extconf.rb --vendor
+	make ${makejobs}
+
+	# Build python bindings
+	cd ${wrksrc}/bindings/python
+	python setup.py build
+	cd ${wrksrc}/bindings/python3.4
+	python3.4 setup.py build
+}
+
+post_install() {
+	# Install notmuch-mutt
+	vbin contrib/${pkgname}-mutt/${pkgname}-mutt
+	vman contrib/${pkgname}-mutt/${pkgname}-mutt.1
+
+	# Install notmuch-deliver
+	make -C contrib/${pkgname}-deliver DESTDIR=${DESTDIR} install
+
+	# Install ruby bindings
+	make -C bindings/ruby DESTDIR=${DESTDIR} install
+
+	# Install python bindings
+	cd ${wrksrc}/bindings/python
+	python setup.py install --root=${DESTDIR}
+	cd ${wrksrc}/bindings/python3.4
+	python3.4 setup.py install --root=${DESTDIR}
+
+	# Install vim interface
+	vmkdir usr/share/vim/vimfiles
+	cd ${wrksrc}/contrib/${pkgname}-vim
+	vcopy "plugin syntax" usr/share/vim/vimfiles
+}
+
+libnotmuch_package() {
+	short_desc+=" - runtime library"
+	pkg_install() {
+		vmove "usr/lib/*.so.*"
+	}
+}
 
 libnotmuch-devel_package() {
 	short_desc+=" - development files"
@@ -23,9 +83,69 @@ libnotmuch-devel_package() {
 	}
 }
 
-libnotmuch_package() {
-	short_desc+=" - runtime library"
+notmuch-python_package() {
+	noarch=yes
+	short_desc+=" - Python2 bindings"
+	depends="libnotmuch>=${version}_${revision} python"
+	pycompile_module="notmuch"
 	pkg_install() {
-		vmove "usr/lib/*.so.*"
+		vmove usr/lib/python2.7
+	}
+}
+
+notmuch-python3.4_package() {
+	noarch=yes
+	short_desc+=" - Python3.4 bindings"
+	depends="libnotmuch>=${version}_${revision} python3.4"
+	pycompile_version="3.4"
+	pycompile_module="notmuch"
+	pkg_install() {
+		vmove usr/lib/python3.4
+	}
+}
+
+notmuch-ruby_package() {
+	short_desc+=" - Ruby bindings"
+	pkg_install() {
+		vmove usr/lib/ruby
+	}
+}
+
+notmuch-deliver_package() {
+	short_desc+=" - Maildir delivery tool"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/bin/notmuch-deliver
+		vmove usr/share/doc/notmuch-deliver
+	}
+}
+
+notmuch-emacs_package() {
+	noarch=yes
+	short_desc+=" - Emacs interface"
+	depends="${sourcepkg}>=${version}_${revision} virtual?emacs"
+	pkg_install() {
+		vmove usr/share/emacs/site-lisp
+	}
+}
+
+notmuch-vim_package() {
+	noarch=yes
+	short_desc+=" - Vim interface"
+	depends="${sourcepkg}>=${version}_${revision} notmuch-ruby vim-huge"
+	pkg_install() {
+		vmove usr/share/vim/vimfiles
+	}
+}
+
+notmuch-mutt_package() {
+	noarch=yes
+	short_desc+=" - Mutt interface"
+	depends="
+	 ${sourcepkg}>=${version}_${revision} perl-Mail-Box perl-MailTools
+	 perl-String-ShellQuote perl-Term-ReadLine-Gnu perl-File-Which"
+	pkg_install() {
+		vmove usr/bin/notmuch-mutt
+		vmove usr/share/man/man1/notmuch-mutt.1
 	}
 }
