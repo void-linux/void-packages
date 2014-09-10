@@ -2,7 +2,7 @@
 
 hook() {
 	local error=0 filename= rev= libname= conflictPkg= conflictFile=
-		conflictRev= found= mapshlibs=$XBPS_COMMONDIR/shlibs
+	local conflictRev= ignore= found= mapshlibs=$XBPS_COMMONDIR/shlibs
 
 	set +E
 
@@ -33,15 +33,17 @@ hook() {
 		_shlib=$(echo "$libname"|sed -E 's|\+|\\+|g')
 		_pkgname=$(echo "$pkgname"|sed -E 's|\+|\\+|g')
 		if [ "$rev" = "$filename" ]; then
-			_pattern="^${_shlib}\.so[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$"
+			_pattern="^${_shlib}\.so[[:blank:]]+${_pkgname}-[^-]+_[0-9]+"
 		else
-			_pattern="^${_shlib}\.so\.[0-9]+(.*)[[:blank:]]+${_pkgname}-[^-]+_[0-9]+$"
+			_pattern="^${_shlib}\.so\.[0-9]+(.*)[[:blank:]]+${_pkgname}-[^-]+_[0-9]+"
 		fi
 		grep -E "${_pattern}" $mapshlibs | { \
-			while read conflictFile conflictPkg; do
+			while read conflictFile conflictPkg ignore; do
 				found=1
 				conflictRev=${conflictFile#*.so.}
-				if [ "$rev" = "$conflictRev" ]; then
+				if [ -n "$ignore" -a "$ignore" != "$XBPS_TARGET_MACHINE" ]; then
+					continue
+				elif [ "$rev" = "$conflictRev" ]; then
 					continue
 				elif [[ ${rev}.* =~ $conflictRev ]]; then
 					continue
