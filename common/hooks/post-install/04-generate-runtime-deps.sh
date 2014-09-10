@@ -161,6 +161,9 @@ hook() {
 	if [ -s ${PKGDESTDIR}/rdeps ]; then
 		sed 's,virtual?,,g' -i ${PKGDESTDIR}/rdeps
 	fi
+	for f in ${shlib_requires}; do
+		sorequires+="${f} "
+	done
 	if [ -n "${sorequires}" ]; then
 		echo "${sorequires}" > ${PKGDESTDIR}/shlib-requires
 	fi

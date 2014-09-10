@@ -125,6 +125,9 @@ hook() {
 		esac
 	done
 
+	for f in ${shlib_provides}; do
+		echo "$f" >> ${PKGDESTDIR}/.shlib-provides
+	done
 	if [ -s "$PKGDESTDIR/.shlib-provides" ]; then
 		cat $PKGDESTDIR/.shlib-provides | tr '\n' ' ' > $PKGDESTDIR/shlib-provides
 		echo >> $PKGDESTDIR/shlib-provides

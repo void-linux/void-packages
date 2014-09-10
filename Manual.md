@@ -413,6 +413,12 @@ otherwise the default would work in most cases.
 
 - `broken` If set, building the package won't be allowed because its state is currently broken.
 
+- `shlib_provides` A white space separated list of additional sonames the package provides on.
+This appends to the generated file rather than replacing it.
+
+- `shlib_requires` A white space separated list of additional sonames the package requires.
+This appends to the generated file rather than replacing it.
+
 ### build style scripts
 
 The `build_style` variable specifies the build method to build and install a
