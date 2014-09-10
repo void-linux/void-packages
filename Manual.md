@@ -317,6 +317,7 @@ Example:
   | KERNEL_SITE      | http://www.kernel.org/pub/linux                 |
   | MOZILLA_SITE     | http://ftp.mozilla.org/pub/mozilla.org          |
   | NONGNU_SITE      | http://download.savannah.nongnu.org/releases    |
+  | PYPI_SITE        | http://pypi.python.org/packages/source          |
   | SOURCEFORGE_SITE | http://downloads.sourceforge.net/sourceforge    |
   | UBUNTU_SITE      | http://archive.ubuntu.com/ubuntu/pool           |
   | XORG_HOME        | http://xorg.freedesktop.org/wiki/               |
