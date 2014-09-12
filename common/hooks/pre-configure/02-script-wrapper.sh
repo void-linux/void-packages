@@ -75,6 +75,7 @@ hook() {
 	generic_wrapper sdl2-config
 	generic_wrapper gpgme-config
 	generic_wrapper imlib2-config
+	generic_wrapper xslt-config
 	generic_wrapper xml2-config
 	generic_wrapper2 curl-config
 	generic_wrapper2 gpg-error-config
