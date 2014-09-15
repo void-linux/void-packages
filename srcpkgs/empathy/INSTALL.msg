@@ -1,6 +1,3 @@
-case "${ACTION}" in
-post)
-	cat <<_EOF
 ===========================================================================
 Some optional packages must be installed for additional functionality:
 
@@ -12,6 +9,3 @@ Some optional packages must be installed for additional functionality:
 	- telepathy-salut for link-local XMPP support
 
 ===========================================================================
-_EOF
-	;;
-esac
