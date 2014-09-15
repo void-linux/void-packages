@@ -1,12 +1,3 @@
-#
-# This script will advice the user of the procedure of installation 
-# of the Perl interface for GraphicsMagick
-#
-
-case "${ACTION}" in
-post)
- 
-    cat << _EOF
 =====================================================================
  
  The libgraphicsmagick-devel package contain also:
@@ -20,10 +11,6 @@ post)
 
    /usr/share/doc/GraphicsMagick/PerlMagick/README.txt
 
-  The VoidLinux Team
+  The Void Linux Team
 
 =====================================================================
-_EOF
-    ;;
-esac
-
