@@ -1,11 +1,3 @@
-
-# This script will advise the user of the needed steps to 
-# activate the runit service of PC/SC Lite
-#
-case "${ACTION}" in
-post)
-    	
-    cat << _EOF
 =====================================================================
 
 - To activate pcscd that is needed to manage the smart card you
@@ -34,7 +26,3 @@ post)
   for more details.
 
 =====================================================================
-
-_EOF
-    ;;
-esac
