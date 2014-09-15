@@ -1,6 +1,3 @@
-case "${ACTION}" in
-post)
-	cat<<EOF
 =========================================================================
 
 In order to use the software, you have to agree to ID Software's license
@@ -38,6 +35,3 @@ If you are using pulseaudio don't forget to also install the
 'alsa-plugins-pulseaudio-32bit' for x86_64 (64bit).
 
 =========================================================================
-EOF
-	;;
-esac
