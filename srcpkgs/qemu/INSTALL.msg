@@ -1,18 +1,12 @@
-case "${ACTION}" in
-post)
-	cat <<_EOF
 ==========================================================================
 
 To enable KVM your user must be added to the 'wheel' group:
 
 	$ usermod -aG wheel <username>
 
-Don't forget to load the appropiate KVM module for your CPU:
+Don't forget to load the appropiate KVM module for your CPU (x86 only):
 
 	$ modprobe kvm-amd # for AMD CPUs
 	$ modprobe kvm-intel # for Intel CPUs
 
 ==========================================================================
-_EOF
-	;;
-esac
