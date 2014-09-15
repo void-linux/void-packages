@@ -329,15 +329,26 @@ hook() {
 	if [ -n "${sourcepkg}" -a "${sourcepkg}" != "${pkgname}" ]; then
 		# subpkg
 		meta_install=${XBPS_SRCPKGDIR}/${pkgname}/${pkgname}.INSTALL
+		msg_install=${XBPS_SRCPKGDIR}/${pkgname}/${pkgname}.INSTALL.msg
 		meta_remove=${XBPS_SRCPKGDIR}/${pkgname}/${pkgname}.REMOVE
+		msg_remove=${XBPS_SRCPKGDIR}/${pkgname}/${pkgname}.REMOVE.msg
 	else
 		# sourcepkg
 		meta_install=${XBPS_SRCPKGDIR}/${pkgname}/INSTALL
+		msg_install=${XBPS_SRCPKGDIR}/${pkgname}/INSTALL.msg
 		meta_remove=${XBPS_SRCPKGDIR}/${pkgname}/REMOVE
+		msg_remove=${XBPS_SRCPKGDIR}/${pkgname}/REMOVE.msg
 	fi
 	process_metadata_scripts install ${meta_install} || \
 		msg_error "$pkgver: failed to write INSTALL metadata file!\n"
 
 	process_metadata_scripts remove ${meta_remove} || \
 		msg_error "$pkgver: failed to write REMOVE metadata file!\n"
+
+	if [ -s ${msg_install} ]; then
+		install -m644 ${msg_install} ${PKGDESTDIR}
+	fi
+	if [ -s ${msg_remove} ]; then
+		install -m644 ${msg_remove} ${PKGDESTDIR}
+	fi
 }

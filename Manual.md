@@ -681,6 +681,18 @@ as `srcpkgs/<pkgname>/<subpkg>.INSTALL` or `srcpkgs/<pkgname>/<subpkg>.REMOVE` r
 > NOTE: always use paths relative to the current working directory, otherwise if the scripts cannot
 be executed via `chroot(2)` won't work correctly.
 
+> NOTE: do not use INSTALL/REMOVE scripts to print messages, see the next section for
+more information.
+
+### INSTALL.msg and REMOVE.msg files
+
+The `INSTALL.msg` and `REMOVE.msg` files can be used to print a message at post-install
+or pre-remove time, respectively.
+
+Ideally those files should not exceed 80 chars per line.
+
+subpackages can also have their own `INSTALL.msg` and `REMOVE.msg` files, simply create them
+as `srcpkgs/<pkgname>/<subpkg>.INSTALL.msg` or `srcpkgs/<pkgname>/<subpkg>.REMOVE.msg` respectively.
 
 ### Creating system accounts/groups at runtime
 
