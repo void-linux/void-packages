@@ -675,8 +675,12 @@ post)
 esac
 ```
 
+subpackages can also have their own `INSTALL` and `REMOVE` files, simply create them
+as `srcpkgs/<pkgname>/<subpkg>.INSTALL` or `srcpkgs/<pkgname>/<subpkg>.REMOVE` respectively.
+
 > NOTE: always use paths relative to the current working directory, otherwise if the scripts cannot
 be executed via `chroot(2)` won't work correctly.
+
 
 ### Creating system accounts/groups at runtime
 
