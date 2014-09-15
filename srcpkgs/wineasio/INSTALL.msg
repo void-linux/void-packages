@@ -1,12 +1,3 @@
-#
-# This script will advise the user to register the wineasio.dll with WINE
-# for their user account.
-#
-case "${ACTION}" in
-pre)
-	;;
-post)
-	cat << _EOF
 =====================================================================
 
 Be sure to run 'regsvr32 wineasio.dll' as your user before use!
@@ -18,6 +9,3 @@ NOTE: The JACK server must be running in order to load the driver
 into an application.
 
 =====================================================================
-_EOF
-	;;
-esac
