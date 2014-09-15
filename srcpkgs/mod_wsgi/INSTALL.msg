@@ -1,8 +1,3 @@
-# Instructions for loading mod_wsgi.
-#
-case "${ACTION}" in
-post)
-	cat << _EOF
 ==========================================================================
 
 To enable ${PKGNAME} in the Apache HTTP server, add the following line
@@ -12,9 +7,6 @@ into /etc/httpd/httpd.conf:
 
 and reload the Apache daemon with:
 
-	$ /etc/init.d/apache reload
+	# sv restart apache
 
 ==========================================================================
-_EOF
-	;;
-esac
