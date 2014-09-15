@@ -1,12 +1,3 @@
-#
-# This script will advise the user of the needed TeXLive packages
-# that are needed to make Lyx working out of the box in a smooth
-# way  
-#
-case "${ACTION}" in
-post)
-    	
-    cat << _EOF
 =====================================================================
 
   LyX the document processor need a set of TeXLive packages present
@@ -41,10 +32,6 @@ post)
 
    Happy LyXing
 
-   The VoidLinux mantainers		 
+   The Void Linux mantainers		 
    	
 =====================================================================
-_EOF
-    ;;
-esac
-
