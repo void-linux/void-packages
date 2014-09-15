@@ -1,12 +1,3 @@
-#
-# This script will advise the user to re-login to have JRE included
-# in PATH
-#
-case "${ACTION}" in
-pre)
-    ;;
-post)
-    cat << _EOF
 =====================================================================
 
 - Please re-login to include Apache Ant in your PATH or re-source
@@ -15,7 +6,3 @@ post)
 	$ source /etc/profile
 
 =====================================================================
-_EOF
-    ;;
-esac
-
