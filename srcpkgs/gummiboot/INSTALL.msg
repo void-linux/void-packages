@@ -1,5 +1,3 @@
-==========================================================================
-
 Make gummiboot your default bootloader with:
 
 	$ mount -t efivarfs none /sys/firmware/efi/efivars
@@ -14,4 +12,3 @@ Reconfigure your kernel package to create loader entries:
 
 	$ xbps-reconfigure -f linux3.XX
 
-==========================================================================
