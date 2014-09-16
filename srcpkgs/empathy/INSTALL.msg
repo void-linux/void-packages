@@ -1,4 +1,3 @@
-===========================================================================
 Some optional packages must be installed for additional functionality:
 
 	- telepathy-butterfly for MSN support
@@ -7,5 +6,3 @@ Some optional packages must be installed for additional functionality:
 	- telepathy-idle for IRC support
 	- telepathy-rakia for SIP support
 	- telepathy-salut for link-local XMPP support
-
-===========================================================================
