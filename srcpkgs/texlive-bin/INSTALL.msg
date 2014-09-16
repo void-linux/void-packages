@@ -1,5 +1,3 @@
-=====================================================================
-
 - TeXLive is free software see the files:
 
   /usr/share/licenses/texlive-bin/LICENSE.TL
@@ -41,5 +39,3 @@
     		 		 
   WARNING: To avoid messing up your TeXLive installation, DON'T use
   the installation scripts in /opt/texlive-installer.
-
-=====================================================================
