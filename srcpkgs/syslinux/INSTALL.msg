@@ -1,6 +1,3 @@
-case "${ACTION}" in
-post)
-	cat <<_EOF
 =======================================================================
 
 Some optional packages must be installed for additional functionality:
@@ -11,6 +8,3 @@ Some optional packages must be installed for additional functionality:
  - dosfstools: EFI support
 
 =======================================================================
-_EOF
-	;;
-esac
