@@ -1,5 +1,3 @@
-=====================================================================
-
 - To activate pcscd that is needed to manage the smart card you
   have to activate the runit service typing as root:
 
@@ -24,5 +22,3 @@
   https://alioth.debian.org/projects/pcsclite/
 
   for more details.
-
-=====================================================================
