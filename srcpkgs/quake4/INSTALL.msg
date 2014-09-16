@@ -1,5 +1,3 @@
-=========================================================================
-
 In order to use the software, you have to agree to ID Software's license
 located in /usr/share/licenses/quake4/License.txt and Punkbuster's license
 located in /usr/share/licenses/quake4/PBEULA.txt.
@@ -33,5 +31,3 @@ http://zerowing.idsoftware.com/linux/
 If you are using pulseaudio don't forget to also install the
 'alsa-plugins-pulseaudio' package for x86 (32bit) or
 'alsa-plugins-pulseaudio-32bit' for x86_64 (64bit).
-
-=========================================================================
