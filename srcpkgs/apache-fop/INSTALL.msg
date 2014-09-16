@@ -1,13 +1,3 @@
-#
-# This script will advise the user of the needed steps to 
-# configure apache-fop
-#
-case "${ACTION}" in
-post)
-    	
-    cat << _EOF
-=====================================================================
-
 - FOP environment configuration file is:
 
   /etc/fop.conf
@@ -16,7 +6,7 @@ post)
 
   FOP_OPTS="-Xmx512m"
   FOP_HOME="/usr/share/fop"
-  
+
   note in FOPS_OPTS="-Xmx<your memory size>m" is preconfigured as 512 Mb
   if you want use a different amount of memory modify it according your
   needs.
@@ -38,14 +28,14 @@ post)
   In this package I've included the full documentation in HTML format
   in:
 
-  /usr/share/doc/fop/javadocs/ 
+  /usr/share/doc/fop/javadocs/
 
  =============
 
   You may need to reboot to ensure that PATH is update correctly,
   for the impatients, if you want you can type
 
-  $ source /etc/profile
+  $ . /etc/profile
 
   and check the PATH.
 
@@ -59,19 +49,10 @@ post)
 
   /usr/share/fop/lib
 
-  as a jar file, see the offo-hyphenation documentation for more info. 	
-
+  as a jar file, see the offo-hyphenation documentation for more info.
 
   Some part of the code of FOP are not licensed under Apache-2.0,
   see in /usr/share/fop/lib/ for the licenses of this parts
   of code that for convenience are in the distribution of FOP.
 
   Happy FOPping!
-
-=====================================================================
-
-
-_EOF
-    ;;
-esac
-
