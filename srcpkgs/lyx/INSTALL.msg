@@ -1,5 +1,3 @@
-=====================================================================
-
   LyX the document processor need a set of TeXLive packages present
   to deploy his power.
 
@@ -33,5 +31,3 @@
    Happy LyXing
 
    The Void Linux mantainers		 
-   	
-=====================================================================
