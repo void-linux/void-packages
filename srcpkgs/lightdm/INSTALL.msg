@@ -1,17 +1,7 @@
-case ${ACTION} in
-post)
-	# polkit rules must be owned by the polkit user
-	chown -R polkitd:polkitd usr/share/polkit-1/rules.d
-
-	cat <<_EOF
 ==========================================================================
 To make lightdm work a greeter package must be installed:
 
 	lightdm-gtk-greeter: for a GTK+ greeter
 	lightdm-gtk3-greeter: for a GTK+3 greeter
 
-To start lightdm: 'systemctl start lightdm.service'.
 ==========================================================================
-_EOF
-	;;
-esac
