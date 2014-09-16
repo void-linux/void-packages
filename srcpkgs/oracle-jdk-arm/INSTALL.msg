@@ -1,5 +1,3 @@
-=====================================================================
-
 - The Oracle JDK package is licensed software.
 
 	You MUST read and agree to the license stored in
@@ -10,5 +8,3 @@
   /etc/profile:
 
 	$ source /etc/profile
-
-=====================================================================
