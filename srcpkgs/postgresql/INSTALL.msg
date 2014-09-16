@@ -1,17 +1,9 @@
-# *-*-shell-*-*
-#
-case ${ACTION} in
-post)
-	cat << _EOF
 =====================================================================
 
-To customize PostgreSQL's systemd initialization:
+To customize PostgreSQL's initialization:
 	/etc/default/postgresql
 
 To customize PostgreSQL's server configuration:
 	/etc/postgresql/postgresql.conf
 
 =====================================================================
-_EOF
-	;;
-esac
