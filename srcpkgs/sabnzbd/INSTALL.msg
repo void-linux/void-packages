@@ -1,5 +1,3 @@
-=======================================================================
-
 Some optional packages must be installed for additional functionality:
 
  - unrar: for automatic extraction of rar archives
@@ -10,5 +8,3 @@ on configuration directives.
 
 All SABnzbd settings are stored in \$HOME/.sabnzbd. Editing global
 configuration files should not be necessary.
-
-=======================================================================
