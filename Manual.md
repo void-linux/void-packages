@@ -853,8 +853,7 @@ python versions.
 
 - Binaries should always be installed at `/usr/bin` and `/usr/sbin`.
 
-- Manual pages should always be installed at `/usr/share/man` and
-uncompressed.
+- Manual pages should always be installed at `/usr/share/man`.
 
 - If a software provides **shared libraries** and headers, probably you should
 create a `development package` that contains `headers`, `static libraries`
@@ -862,6 +861,9 @@ and other files required for development (not required at runtime).
 
 - If you are updating a package please be careful with SONAME bumps, check
 the installed files (`./xbps-src show-files pkg`) before pushing new updates.
+
+- Make sure that binaries are not stripped by the software, let xbps-src do this;
+otherwise the `debug` packages won't have debugging symbols.
 
 ### Contributing via git
 
