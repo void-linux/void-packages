@@ -135,7 +135,7 @@ install_pkg_from_repos() {
 # package, 1 if no match and 2 if not installed.
 #
 check_pkgdep_matched() {
-    local pkg="$1" cross="$2" uhelper= pkgn= iver=
+    local pkg="$1" checkver="$2" cross="$3" uhelper= pkgn= iver=
 
     [ "$build_style" = "meta" ] && return 2
     [ -z "$pkg" ] && return 255
@@ -152,7 +152,7 @@ check_pkgdep_matched() {
         uhelper="$XBPS_UHELPER_CMD"
     fi
 
-    iver="$($uhelper version $pkgn)"
+    iver="$($uhelper $checkver $pkgn)"
     if [ $? -eq 0 -a -n "$iver" ]; then
         $XBPS_UHELPER_CMD pkgmatch "${pkgn}-${iver}" "${pkg}"
         [ $? -eq 1 ] && return 0
@@ -195,7 +195,7 @@ check_installed_pkg() {
 #
 install_pkg_deps() {
     local pkg="$1" cross="$2" rval _realpkg curpkgdepname pkgn iver _props _exact
-    local i j found rundep
+    local i j found rundep checkver
 
     local -a host_binpkg_deps binpkg_deps
     local -a host_missing_deps missing_deps
@@ -223,7 +223,7 @@ install_pkg_deps() {
             fi
             _exact=1
         fi
-        check_pkgdep_matched "${_realpkg}"
+        check_pkgdep_matched "${_realpkg}" version
         local rval=$?
         if [ $rval -eq 0 ]; then
             iver=$($XBPS_UHELPER_CMD version "${pkgn}")
@@ -267,7 +267,11 @@ install_pkg_deps() {
     # Target build dependencies.
     #
     for i in ${build_depends} "RDEPS" ${run_depends}; do
-        [ "$i" = "RDEPS" ] && rundep="runtime" && continue
+        if [ "$i" = "RDEPS" ]; then
+            rundep="runtime"
+            checkver="real-version"
+            continue
+        fi
         _realpkg="${i%\?*}"
         if [ "${_realpkg}" = "virtual" ]; then
             # ignore virtual dependencies
@@ -288,16 +292,16 @@ install_pkg_deps() {
             [ "$j" = "$pkgn" ] && found=1 && break
         done
         [ -n "$found" ] && continue
-        check_pkgdep_matched "${_realpkg}" $cross
+        check_pkgdep_matched "${_realpkg}" $checkver $cross
         local rval=$?
         if [ $rval -eq 0 ]; then
-            iver=$($XBPS_UHELPER_XCMD version "${pkgn}")
+            iver=$($XBPS_UHELPER_XCMD ${checkver:-version} "${pkgn}")
             if [ $? -eq 0 -a -n "$iver" ]; then
                 echo "   [${rundep:-target}] ${_realpkg}: found '$pkgn-$iver'."
                 continue
             fi
         elif [ $rval -eq 1 ]; then
-            iver=$($XBPS_UHELPER_XCMD version "${pkgn}")
+            iver=$($XBPS_UHELPER_XCMD ${checkver:-version} "${pkgn}")
             if [ $? -eq 0 -a -n "$iver" ]; then
                 echo "   [${rundep:-target}] ${_realpkg}: installed ${iver} (unresolved) removing..."
                 $XBPS_REMOVE_XCMD -iyf $pkgn >/dev/null 2>&1
