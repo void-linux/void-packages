@@ -9,7 +9,9 @@ hook() {
 		fi
 
 		case ${section} in
-			${mandir}/man?)
+			${mandir}/man[0-9n]|${mandir}/man[013][fp])
+				continue;;
+			${mandir}/cat[0-9n]|${mandir}/cat[013][fp])
 				continue;;
 		esac
 
