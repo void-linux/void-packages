@@ -60,13 +60,13 @@ install_pkg() {
     [ "$target" = "build" ] && return 0
 
     # Install pkgs into destdir.
-    $FAKEROOT_CMD $XBPS_LIBEXECDIR/xbps-src-doinstall.sh $sourcepkg $cross || exit 1
+    $XBPS_LIBEXECDIR/xbps-src-doinstall.sh $sourcepkg $cross || exit 1
 
     for subpkg in ${subpackages} ${sourcepkg}; do
-        $FAKEROOT_CMD $XBPS_LIBEXECDIR/xbps-src-doinstall.sh $subpkg $cross || exit 1
+        $XBPS_LIBEXECDIR/xbps-src-doinstall.sh $subpkg $cross || exit 1
     done
     for subpkg in ${subpackages} ${sourcepkg}; do
-        $FAKEROOT_CMD $XBPS_LIBEXECDIR/xbps-src-prepkg.sh $subpkg $cross || exit 1
+        $XBPS_LIBEXECDIR/xbps-src-prepkg.sh $subpkg $cross || exit 1
     done
 
     if [ "$XBPS_TARGET_PKG" = "$sourcepkg" ]; then
@@ -75,7 +75,7 @@ install_pkg() {
 
     # If install went ok generate the binpkgs.
     for subpkg in ${subpackages} ${sourcepkg}; do
-        $FAKEROOT_CMD $XBPS_LIBEXECDIR/xbps-src-dopkg.sh $subpkg "$XBPS_REPOSITORY" "$cross" || exit 1
+        $XBPS_LIBEXECDIR/xbps-src-dopkg.sh $subpkg "$XBPS_REPOSITORY" "$cross" || exit 1
     done
 
     # pkg cleanup
@@ -126,12 +126,12 @@ remove_pkg_autodeps() {
     tmplogf=$(mktemp)
 
     if [ -z "$CHROOT_READY" ]; then
-        $FAKEROOT_CMD xbps-reconfigure -r $XBPS_MASTERDIR -a >> $tmplogf 2>&1
-        $FAKEROOT_CMD xbps-remove -r $XBPS_MASTERDIR -Ryo >> $tmplogf 2>&1
+        xbps-reconfigure -r $XBPS_MASTERDIR -a >> $tmplogf 2>&1
+        xbps-remove -r $XBPS_MASTERDIR -Ryo >> $tmplogf 2>&1
     else
         remove_pkg_cross_deps
-        $FAKEROOT_CMD xbps-reconfigure -a >> $tmplogf 2>&1
-        $FAKEROOT_CMD xbps-remove -Ryo >> $tmplogf 2>&1
+        xbps-reconfigure -a >> $tmplogf 2>&1
+        xbps-remove -Ryo >> $tmplogf 2>&1
     fi
 
     if [ $? -ne 0 ]; then

@@ -52,13 +52,6 @@ msg_red_nochroot() {
 
 msg_error() {
     msg_red "$@"
-    kill -INT $$; exit 1
-}
-
-msg_error_nochroot() {
-    [ -n "$NOCOLORS" ] || printf >&2 "\033[1m\033[31m"
-    printf >&2 "=> ERROR: $@"
-    [ -n "$NOCOLORS" ] || printf >&2 "\033[m"
     exit 1
 }
 

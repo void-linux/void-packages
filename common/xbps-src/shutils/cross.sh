@@ -13,7 +13,7 @@ remove_pkg_cross_deps() {
         XBPS_REMOVE_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH xbps-remove -r /usr/$XBPS_CROSS_TRIPLET"
     fi
 
-    $FAKEROOT_CMD $XBPS_REMOVE_XCMD -Ryo > $tmplogf 2>&1
+    $XBPS_REMOVE_XCMD -Ryo > $tmplogf 2>&1
     if [ $? -ne 0 ]; then
         msg_red "${pkgver:-xbps-src}: failed to remove autocrossdeps:\n"
         cat $tmplogf && rm -f $tmplogf

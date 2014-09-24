@@ -6,7 +6,6 @@ for the Void Linux distribution.
 To start using it first you'll need some external dependencies:
 
 - bash
-- fakeroot (only required by the bootstrap target)
 - xbps >= 0.38
 
 Make sure your user is added to the `xbuilder` group to be able to use `xbps-uchroot(8)`,

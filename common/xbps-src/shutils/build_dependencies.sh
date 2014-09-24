@@ -101,13 +101,9 @@ install_pkg_from_repos() {
 
     tmplogf=$(mktemp)
     if [ -n "$cross" ]; then
-        $FAKEROOT_CMD $XBPS_INSTALL_XCMD -Ayd "$pkg" >$tmplogf 2>&1
+        $XBPS_INSTALL_XCMD -Ayd "$pkg" >$tmplogf 2>&1
     else
-        if [ -z "$CHROOT_READY" ]; then
-            $XBPS_INSTALL_CMD -Ayd "$pkg" >$tmplogf 2>&1
-        else
-            $FAKEROOT_CMD $XBPS_INSTALL_CMD -Ayd "$pkg" >$tmplogf 2>&1
-        fi
+        $XBPS_INSTALL_CMD -Ayd "$pkg" >$tmplogf 2>&1
     fi
     rval=$?
     if [ $rval -ne 0 -a $rval -ne 17 ]; then
@@ -235,7 +231,7 @@ install_pkg_deps() {
             iver=$($XBPS_UHELPER_CMD version "${pkgn}")
             if [ $? -eq 0 -a -n "$iver" ]; then
                 echo "   [host] ${_realpkg}: installed ${iver} (unresolved) removing..."
-                $FAKEROOT_CMD $XBPS_REMOVE_CMD -iyf $pkgn >/dev/null 2>&1
+                $XBPS_REMOVE_CMD -iyf $pkgn >/dev/null 2>&1
             fi
         else
             if [ -n "${_exact}" ]; then
