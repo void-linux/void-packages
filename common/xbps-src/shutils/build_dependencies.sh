@@ -262,6 +262,7 @@ install_pkg_deps() {
     #
     # Target build dependencies.
     #
+    checkver="version"
     for i in ${build_depends} "RDEPS" ${run_depends}; do
         if [ "$i" = "RDEPS" ]; then
             rundep="runtime"
