@@ -62,12 +62,28 @@ _EOF
 	chmod 755 ${WRAPPERDIR}/${wrapper}
 }
 
+pkgconfig_wrapper() {
+	if [ ! -x /usr/bin/pkg-config ]; then
+		return 0
+	fi
+	cat >>${WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config<<_EOF
+#!/bin/sh
+
+export PKG_CONFIG_SYSROOT_DIR="$XBPS_CROSS_BASE"
+export PKG_CONFIG_PATH="$XBPS_CROSS_BASE/lib/pkgconfig:$XBPS_CROSS_BASE/usr/share/pkgconfig"
+export PKG_CONFIG_LIBDIR="$XBPS_CROSS_BASE/lib/pkgconfig"
+exec /usr/bin/pkg-config "\$@"
+_EOF
+	chmod 755 ${WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config
+}
+
 hook() {
 	[ -z "$CROSS_BUILD" ] && return 0
 
 	mkdir -p ${WRAPPERDIR}
 
 	# create wrapers
+	pkgconfig_wrapper
 	generic_wrapper icu-config
 	generic_wrapper libgcrypt-config
 	generic_wrapper freetype-config
