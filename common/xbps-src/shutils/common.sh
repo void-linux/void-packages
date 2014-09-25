@@ -339,6 +339,14 @@ setup_pkg() {
 
     export BUILD_CC="cc"
     export BUILD_CFLAGS="$XBPS_CFLAGS"
+    export CC_FOR_BUILD="cc"
+    export CXX_FOR_BUILD="g++"
+    export CPP_FOR_BUILD="cpp"
+    export LD_FOR_BUILD="ld"
+    export CFLAGS_FOR_BUILD="$XBPS_CFLAGS"
+    export CXXFLAGS_FOR_BUILD="$XBPS_CXXFLAGS"
+    export CPPFLAGS_FOR_BUILD="$XBPS_CPPFLAGS"
+    export LDFLAGS_FOR_BUILD="$XBPS_LDFLAGS"
 
     if [ -n "$cross" ]; then
         export CC="${XBPS_CROSS_TRIPLET}-gcc"
