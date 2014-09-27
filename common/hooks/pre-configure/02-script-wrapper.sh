@@ -52,6 +52,7 @@ generic_wrapper3() {
 python_wrapper() {
 	local wrapper="$1" version="$2"
 
+	[ -x ${WRAPPERDIR}/${wrapper} ] && return 0
 	cat >>${WRAPPERDIR}/${wrapper}<<_EOF
 #!/bin/sh
 if [ "\$1" = "--includes" ]; then
@@ -66,6 +67,7 @@ pkgconfig_wrapper() {
 	if [ ! -x /usr/bin/pkg-config ]; then
 		return 0
 	fi
+	[ -x ${WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config ] && return 0
 	cat >>${WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config<<_EOF
 #!/bin/sh
 
