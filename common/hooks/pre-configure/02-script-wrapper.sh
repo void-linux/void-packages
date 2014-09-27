@@ -77,6 +77,7 @@ export PKG_CONFIG_LIBDIR="$XBPS_CROSS_BASE/lib/pkgconfig"
 exec /usr/bin/pkg-config "\$@"
 _EOF
 	chmod 755 ${WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config
+	ln -sf ${XBPS_CROSS_TRIPLET}-pkg-config ${WRAPPERDIR}/pkg-config
 }
 
 hook() {
