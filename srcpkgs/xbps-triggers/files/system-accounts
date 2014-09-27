@@ -14,13 +14,6 @@ PKGNAME="$3"
 VERSION="$4"
 UPDATE="$5"
 
-USERADD=usr/sbin/useradd
-USERDEL=usr/sbin/userdel
-GROUPADD=usr/sbin/groupadd
-GROUPDEL=usr/sbin/groupdel
-PASSWD=usr/bin/passwd
-GETENT=usr/bin/getent
-
 group_add() {
 	local _grname _gid use_gid
 
@@ -31,11 +24,11 @@ group_add() {
 		use_gid="gid ${_gid}"
 	fi
 
-	if ! $GETENT group ${_grname} >/dev/null; then
+	if ! getent group ${_grname} >/dev/null; then
 		if [ -n "$use_gid" ]; then
-			$GROUPADD -r ${_grname} -g ${_gid} >/dev/null 2>&1
+			groupadd -r ${_grname} -g ${_gid} >/dev/null 2>&1
 		else
-			$GROUPADD -r ${_grname} >/dev/null 2>&1
+			groupadd -r ${_grname} >/dev/null 2>&1
 		fi
 		if [ $? -eq 0 ]; then
 			echo "Created ${_grname} ($use_gid) system group."
@@ -51,31 +44,33 @@ targets)
 	echo "post-install pre-remove"
 	;;
 run)
-	if [ ! -x $USERADD -a ! -x $GROUPADD -a ! -x $PASSWD -a ! -x $GETENT ]; then
-	       exit 0
-	fi
-
 	if [ -z "$system_accounts" -a -z "$system_groups" ]; then
 		exit 0
 	fi
 
-	HOST_ARCH=$(uname -m)
-
-	if [ -n "$XBPS_TARGET_ARCH" -a "$XBPS_TARGET_ARCH" != "$HOST_ARCH" ]; then
-		USERADD=useradd
-		USERDEL=userdel
-		GROUPADD=groupadd
-		GROUPDEL=groupdel
-		PASSWD=passwd
-		GETENT=getent
+	if [ -x sbin/useradd ]; then
+		USERADD=1
+	fi
+	if [ -x sbin/userdel ]; then
+		USERDEL=1
+	fi
+	if [ -x sbin/groupadd ]; then
+		GROUPADD=1
+	fi
+	if [ -x sbin/groupdel ]; then
+		GROUPDEL=1
+	fi
+	if [ -x sbin/getent ]; then
+		GETENT=1
 	fi
 
 	case "$TARGET" in
 	post-install)
 		# System groups required by a package.
 		for grp in ${system_groups}; do
-			if [ ! -x "$GROUPADD" ]; then
-				echo "WARNING: cannot create ${grp} system group (missing groupadd)"
+			if [ -z "$GROUPADD" -a -z "$GETENT" ]; then
+				echo "WARNING: cannot create ${grp} system group (missing groupadd/getent)"
+				echo "The following group must be created manually: $grp"
 				continue
 			fi
 			group_add $grp
@@ -87,10 +82,6 @@ run)
 			_uid="${acct#*:}"
 			[ "${_uid}" != "${_uname}" ] && use_id="-u ${_uid} -g ${_uid}"
 
-			if [ ! -x "$USERADD" ]; then
-				echo "WARNING: cannot create ${acct} system user/group (missing useradd)"
-				continue
-			fi
 			eval homedir="\$${_uname}_homedir"
 			eval shell="\$${_uname}_shell"
 			eval descr="\$${_uname}_descr"
@@ -100,10 +91,22 @@ run)
 			[ -z "$descr" ] && descr="${_uname} unprivileged user"
 			[ -n "$groups" ] && user_groups="-G $groups"
 
+			if [ -z "$USERADD" -a -z "$GETENT" ]; then
+				echo "WARNING: cannot create ${acct} system user/group (missing useradd/getent)"
+				echo "The following system account must be created:"
+				echo "   Account: ${uname:-${_uid}} (uid: '${_uid}')"
+				echo "   Description: '${descr}'"
+				echo "   Homedir: '${homedir}'"
+				echo "   Shell: '${shell}'"
+				echo "   Additional groups: '${groups}'"
+				continue
+			fi
+
 			group_add ${acct}
 
-			if ! $GETENT passwd ${_uname} >/dev/null; then
-				$USERADD -c "$descr" -d "$homedir" -s "$shell" ${user_groups} ${use_id:=-g ${_uname}} -r ${_uname} && \
+			if ! getent passwd ${_uname} >/dev/null; then
+				useradd -c "$descr" -d "$homedir" -s "$shell" \
+					${user_groups} ${use_id:=-g ${_uname}} -r ${_uname} && \
 					$PASSWD -l ${_uname} >/dev/null 2>&1
 				if [ $? -eq 0 ]; then
 					echo "Created ${_uname} (${_uid}) system user."
@@ -122,11 +125,11 @@ run)
 			for acct in ${system_accounts}; do
 				_uname="${acct%:*}"
 				_uid="${acct#*:}"
-				if [ ! -x "$USERDEL" ]; then
+				if [ -z "$USERDEL" ]; then
 					echo "WARNING: cannot remove ${acct} system user/group (missing userdel)"
 					continue
 				fi
-				$USERDEL ${_uname} >/dev/null 2>&1
+				userdel ${_uname} >/dev/null 2>&1
 				if [ $? -eq 0 ]; then
 					echo "Removed ${_uname} (${_uid}) system user/group."
 				fi
@@ -134,11 +137,11 @@ run)
 			for grp in ${system_groups}; do
 				_uname="${acct%:*}"
 				_uid="${acct#*:}"
-				if [ ! -x "$GROUPDEL" ]; then
+				if [ -z "$GROUPDEL" ]; then
 					echo "WARNING: cannot remove ${acct} system group (missing groupdel)"
 					continue
 				fi
-				$GROUPDEL ${_uname} >/dev/null 2>&1
+				groupdel ${_uname} >/dev/null 2>&1
 				if [ $? -eq 0 ]; then
 					echo "Removed ${_uname} (${_uid}) system group."
 				fi
@@ -153,3 +156,4 @@ run)
 esac
 
 exit 0
+# end
