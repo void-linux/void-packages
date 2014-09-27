@@ -64,6 +64,10 @@ hook() {
 	fi
 
 	find ${PKGDESTDIR} -type f | while read f; do
+		if [[ $f =~ ^/usr/lib/debug/ ]]; then
+			continue
+		fi
+
 		fname=$(basename "$f")
 		for x in ${nostrip_files}; do
 			if [ "$x" = "$fname" ]; then
@@ -77,6 +81,7 @@ hook() {
 		fi
 		case "$(file -bi "$f")" in
 		application/x-executable*)
+			chmod 755 "$f"
 			if echo "$(file $f)" | grep -q "statically linked"; then
 				# static binary
 				$STRIP "$f"
@@ -97,6 +102,7 @@ hook() {
 			fi
 			;;
 		application/x-sharedlib*)
+			chmod 755 "$f"
 			# shared library
 			make_debug "$f"
 			$STRIP --strip-unneeded "$f"
@@ -116,6 +122,7 @@ hook() {
 			attach_debug "$f"
 			;;
 		application/x-archive*)
+			chmod 644 "$f"
 			$STRIP --strip-debug "$f"
 			if [ $? -ne 0 ]; then
 				msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
