@@ -44,8 +44,9 @@ generic_wrapper3() {
 
 	cp ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ${WRAPPERDIR}
 	sed -e "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" -i ${WRAPPERDIR}/${wrapper}
-	sed -e "s,/usr/lib,${XBPS_CROSS_BASE}/usr/lib,g" -i ${WRAPPERDIR}/${wrapper}
+	sed -e "s,libdir=/usr/lib,libdir=${XBPS_CROSS_BASE}/usr/lib,g" -i ${WRAPPERDIR}/${wrapper}
 	sed -e "s,^prefix=/usr,prefix=${XBPS_CROSS_BASE}/usr," -i ${WRAPPERDIR}/${wrapper}
+
 	chmod 755 ${WRAPPERDIR}/${wrapper}
 }
 
