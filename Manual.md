@@ -420,6 +420,11 @@ This appends to the generated file rather than replacing it.
 - `shlib_requires` A white space separated list of additional sonames the package requires.
 This appends to the generated file rather than replacing it.
 
+- `reverts` xbps supports a unique feature which allows to downgrade from broken
+packages automaticly. In the `reverts` field one can define a list of broken
+pkgver the resulting package should revert. This field *must* be defined before
+`version` and `revision` fields in order to work as expected. example: `reverts="2.0_1 2.0_2`
+
 ### build style scripts
 
 The `build_style` variable specifies the build method to build and install a
