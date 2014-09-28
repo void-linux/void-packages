@@ -394,4 +394,6 @@ setup_pkg() {
         msg_red "$pkgver: cannot be built, it's currently broken; exiting...\n"
         exit 0
     fi
+
+    export XBPS_WRAPPERDIR="${wrksrc}/.xbps/bin"
 }
