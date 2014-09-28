@@ -3,7 +3,7 @@
 genpkg() {
 	local pkgdir="$1" arch="$2" desc="$3" pkgver="$4" binpkg="$5"
 	local _preserve _deps _shprovides _shrequires _gitrevs _provides _conflicts
-	local _replaces _mutable_files _conf_files f
+	local _replaces _reverts _mutable_files _conf_files f
 
 	if [ ! -d "${PKGDESTDIR}" ]; then
 		msg_warn "$pkgver: cannot find pkg destdir... skipping!\n"
@@ -64,6 +64,12 @@ genpkg() {
 			_replaces="${_replaces} ${f}"
 		done
 	fi
+	if [ -n "$reverts" ]; then
+		local _reverts=
+		for f in ${reverts}; do
+			_reverts="${_reverts} ${f}"
+		done
+	fi
 	if [ -n "$mutable_files" ]; then
 		local _mutable_files=
 		for f in ${mutable_files}; do
@@ -87,6 +93,7 @@ genpkg() {
 		--provides "${_provides}" \
 		--conflicts "${_conflicts}" \
 		--replaces "${_replaces}" \
+		--reverts "${_reverts}" \
 		--mutable-files "${_mutable_files}" \
 		--dependencies "${_deps}" \
 		--config-files "${_conf_files}" \
@@ -112,7 +119,8 @@ genpkg() {
 }
 
 hook() {
-	local arch= binpkg= repo= _pkgver= _desc= _pkgn= _pkgv= _provides= _replaces=
+	local arch= binpkg= repo= _pkgver= _desc= _pkgn= _pkgv= _provides= \
+		_replaces= _reverts=
 
 	if [ -n "$noarch" ]; then
 		arch=noarch
