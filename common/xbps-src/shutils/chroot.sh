@@ -169,6 +169,7 @@ chroot_handler() {
     fi
     if [ ! -d $XBPS_MASTERDIR/xbps-packages ]; then
         mkdir -p $XBPS_MASTERDIR/xbps-packages
+        ln -s xbps-packages $XBPS_MASTERDIR/void-packages
     fi
     _chargs+=" -D ${XBPS_DISTDIR}"
 
