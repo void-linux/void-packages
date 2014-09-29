@@ -6,7 +6,7 @@ for the Void Linux distribution.
 To start using it first you'll need some external dependencies:
 
 - bash
-- xbps >= 0.38
+- xbps >= 0.41
 
 Make sure your user is added to the `xbuilder` group to be able to use `xbps-uchroot(8)`,
 otherwise `xbps-src` won't work correctly.
