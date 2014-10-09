@@ -5,7 +5,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 
 ## Introduction
 
-The `xbps-packages` repository contains all `source` packages that are the
+The `void-packages` repository contains all `source` packages that are the
 recipes to download, compile and build binary packages for `Void`.
 Those `source` package files are called `templates`.
 
@@ -36,7 +36,7 @@ generated with the definitions specified on it.
 
 Don't worry if anything is not clear as it should be. The reserved `variables`
 and `functions` will be explained later. This `template` file should be created
-in a directory matching `$pkgname`, i.e: `xbps-packages/srcpkgs/foo/template`.
+in a directory matching `$pkgname`, i.e: `void-packages/srcpkgs/foo/template`.
 
 If everything went fine after running
 
@@ -388,7 +388,7 @@ This must match the basename of any url defined in `${distfiles}`.
 Example `skip_extraction="foo-${version}.tar.gz"`.
 
 - `force_debug_pkgs` If enabled binary packages with debugging symbols will be generated
-even if `XBPS_DEBUG_PKGS` is disabled in `xbps-packages/etc/conf` or in the
+even if `XBPS_DEBUG_PKGS` is disabled in `void-packages/etc/conf` or in the
 `command line arguments`.
 
 - `conf_files` A list of configuration files the binary package owns; this expects full
@@ -431,7 +431,7 @@ example: `reverts="2.0_1 2.0_2"`
 
 The `build_style` variable specifies the build method to build and install a
 package. It expects the name of any available script in the
-`xbps-packages/common/build_style` directory. Please note that required packages
+`void-packages/common/build_style` directory. Please note that required packages
 to execute a `build_style` script must be defined via `$hostmakedepends`.
 
 The current list of available `build_style` scripts is the following:
@@ -620,7 +620,7 @@ dependencies must not be specified in templates via `$depends` with the followin
 
 The runtime dependencies for ELF objects are detected by checking which SONAMEs
 they require and then the SONAMEs are mapped to a binary package name with a minimal
-required version. The `shlibs` file in the `xbps-packages/common` directory
+required version. The `shlibs` file in the `void-packages/common` directory
 sets up the `<SONAME> <pkgname>>=<version>` mappings.
 
 For example the `foo-1.0_1` package provides the `libfoo.so.1` SONAME and
@@ -874,9 +874,9 @@ otherwise the `debug` packages won't have debugging symbols.
 
 ### Contributing via git
 
-Fork the voidlinux `xbps-packages` git repository on github and clone it:
+Fork the voidlinux `void-packages` git repository on github and clone it:
 
-    $ git clone git@github.com:<user>/xbps-packages.git
+    $ git clone git@github.com:<user>/void-packages.git
 
 You can now make your own commits to the `forked` repository:
 
@@ -887,7 +887,7 @@ You can now make your own commits to the `forked` repository:
 To keep your forked repository always up to date, setup the `upstream` remote
 to pull in new changes:
 
-    $ git remote add upstream git://github.com/voidlinux/xbps-packages.git
+    $ git remote add upstream git://github.com/voidlinux/void-packages.git
     $ git pull upstream master
 
 Once you've made changes to your `forked` repository you can submit
