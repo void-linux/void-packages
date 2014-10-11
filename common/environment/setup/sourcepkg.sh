@@ -24,3 +24,4 @@ unset -f pre_extract do_extract post_extract
 unset -f pre_configure do_configure post_configure
 unset -f pre_build do_build post_build
 unset -f pre_install do_install post_install
+unset -f do_clean
