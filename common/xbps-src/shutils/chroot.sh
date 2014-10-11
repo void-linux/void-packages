@@ -199,7 +199,7 @@ chroot_handler() {
 
         action="$arg $action"
         env -i PATH=/bin:/sbin:/usr/bin:/usr/sbin:$PATH HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
-            $CHROOT_CMD ${_chargs} $XBPS_MASTERDIR /xbps-packages/xbps-src $action $pkg || rv=$?
+            $CHROOT_CMD ${_chargs} $XBPS_MASTERDIR /void-packages/xbps-src $action $pkg || rv=$?
     fi
 
     return $rv
