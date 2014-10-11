@@ -16,7 +16,7 @@ unset -v CC CXX CPP GCC LD AR AS RANLIB NM OBJDUMP OBJCOPY STRIP READELF
 unset -v skip_extraction
 
 # hooks/post-install/03-strip-and-debug-pkgs
-unset -v force_debug_pkgs
+unset -v disable_debug force_debug_pkgs
 
 ## FUNCTIONS
 unset -f pre_fetch do_fetch post_fetch
