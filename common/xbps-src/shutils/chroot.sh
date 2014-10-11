@@ -28,7 +28,7 @@ XBPS_SRC_VERSION="$XBPS_SRC_VERSION"
 
 . /etc/xbps/xbps-src.conf
 
-PATH=/xbps-packages:/usr/bin:/usr/sbin
+PATH=/void-packages:/usr/bin:/usr/sbin
 
 exec env -i PATH="\$PATH" DISTCC_HOSTS="\$XBPS_DISTCC_HOSTS" DISTCC_DIR="/distcc" @@XARCH@@ \
     CCACHE_DIR="/ccache" IN_CHROOT=1 LANG=en_US.UTF-8 TERM=linux HOME="/tmp" \
