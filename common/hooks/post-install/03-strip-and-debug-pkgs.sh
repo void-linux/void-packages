@@ -81,6 +81,7 @@ hook() {
 		fi
 		case "$(file -bi "$f")" in
 		application/x-executable*)
+			chmod +w "$f"
 			if echo "$(file $f)" | grep -q "statically linked"; then
 				# static binary
 				$STRIP "$f"
@@ -101,6 +102,7 @@ hook() {
 			fi
 			;;
 		application/x-sharedlib*)
+			chmod +w "$f"
 			# shared library
 			make_debug "$f"
 			$STRIP --strip-unneeded "$f"
@@ -120,6 +122,7 @@ hook() {
 			attach_debug "$f"
 			;;
 		application/x-archive*)
+			chmod +w "$f"
 			$STRIP --strip-debug "$f"
 			if [ $? -ne 0 ]; then
 				msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
