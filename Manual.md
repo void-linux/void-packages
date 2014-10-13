@@ -205,7 +205,7 @@ The optional 4th argument can be used to change the `file name`.
 	`$DESTDIR`. The optional 2nd argument can be used to change the
 	`file name`.
 
-- *vsv()* `svs <service>
+- *vsv()* `vsv <service>
 	Installs `service` from `${FILESDIR}` to /etc/sv. The service must
 	be a directory containing a `supervise` link and the at least a run script.
 	For further informations on how to create a new service directory see
