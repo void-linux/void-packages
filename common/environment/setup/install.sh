@@ -13,9 +13,21 @@ _noglob_helper() {
 }
 
 # Apply _noglob to v* commands
-for cmd in vinstall vcopy vmove vmkdir vbin vman vdoc vconf vsconf vlicense; do
+for cmd in vinstall vcopy vmove vmkdir vbin vman vdoc vconf vsconf vlicense vsv; do
        alias ${cmd}="set -f; _noglob_helper _${cmd}"
 done
+
+_vsv() {
+	local service="$1"
+
+	if [ $# -lt 1 ]; then
+		msg_red "$pkgver: vsv: 1 argument expected: <service>\n"
+		return 1
+	fi
+
+	vmkdir etc/sv
+	vcopy "${FILESDIR}/$service" etc/sv
+}
 
 _vbin() {
 	local file="$1" targetfile="$2"
