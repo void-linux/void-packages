@@ -205,6 +205,12 @@ The optional 4th argument can be used to change the `file name`.
 	`$DESTDIR`. The optional 2nd argument can be used to change the
 	`file name`.
 
+- *vsv()* `svs <service>
+	Installs `service` from `${FILESDIR}` to /etc/sv. The service must
+	be a directory containing a `supervise` link and the at least a run script.
+	For further informations on how to create a new service directory see
+	[The corresponding section the FAQ](http://smarden.org/runit/faq.html#create).
+
 > Shell wildcards must be properly quoted, i.e `vmove "usr/lib/*.a"`.
 
 ### Global variables
