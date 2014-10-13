@@ -27,6 +27,11 @@ _vsv() {
 
 	vmkdir etc/sv
 	vcopy "${FILESDIR}/$service" etc/sv
+	chmod +x ${PKGDESTDIR}/etc/sv/${service}/run
+	if [ -r ${PKGDESTDIR}/etc/sv/${service}/finish ]; then
+		chmod +x ${PKGDESTDIR}/etc/sv/${service}/finish
+	fi
+	ln -s /run/runit/supervise.${service} ${PKGDESTDIR}/etc/sv/${service}/supervise
 }
 
 _vbin() {
