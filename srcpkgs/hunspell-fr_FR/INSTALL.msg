@@ -8,8 +8,6 @@
 
  hunspell-fr_FR_moderne           ==>  Dictionnaire “Moderne”        
  
- hunspell-fr_FR_classique         ==>  Dictionnaire “Classique”   
- 
  hunspell-fr_FR_reforme1990       ==>  Dictionnaire “Réforme 1990” 
  
  hunspell-fr_FR_toutesvariantes   ==>  Dictionnaire “Toutes variantes”
