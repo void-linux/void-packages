@@ -1,6 +1,6 @@
 #!/bin/sh
 
-exec_make() {
+exec_mame() {
   /usr/share/sdlmame/sdlmame \
     -artpath "$HOME/.mame/artwork;artwork" \
     -ctrlrpath "$HOME/.mame/ctrlr;ctrlr" \
@@ -28,7 +28,7 @@ if [ "$1" = "--newini" ]; then
     echo "Your old ini file has been renamed to sdlmameini.bak"
     mv sdlmame.ini sdlmameini.bak
   fi
-  exec_make
+  exec_mame
 elif [ ! -e $HOME/.mame ]; then
   echo "Running SDLMAME for the first time..."
   echo "Creating an ini file for SDLMAME at $HOME/.mame/sdlmame.ini"
