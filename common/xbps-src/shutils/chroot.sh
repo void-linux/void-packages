@@ -30,8 +30,8 @@ XBPS_SRC_VERSION="$XBPS_SRC_VERSION"
 
 PATH=/void-packages:/usr/bin:/usr/sbin
 
-exec env -i PATH="\$PATH" DISTCC_HOSTS="\$XBPS_DISTCC_HOSTS" DISTCC_DIR="/distcc" @@XARCH@@ \
-    CCACHE_DIR="/ccache" IN_CHROOT=1 LANG=en_US.UTF-8 TERM=linux HOME="/tmp" \
+exec env -i PATH="\$PATH" DISTCC_HOSTS="\$XBPS_DISTCC_HOSTS" DISTCC_DIR="/host/distcc" @@XARCH@@ \
+    CCACHE_DIR="/host/ccache" IN_CHROOT=1 LANG=en_US.UTF-8 TERM=linux HOME="/tmp" \
     PS1="[\u@$XBPS_MASTERDIR \W]$ " /bin/bash +h
 _EOF
     if [ -n "$XBPS_ARCH" ]; then
