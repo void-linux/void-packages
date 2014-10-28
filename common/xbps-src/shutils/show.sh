@@ -68,7 +68,7 @@ show_pkg_build_options() {
         opt="${f#\~}"
         eval desc="\${desc_option_${opt}}"
         if [[ ${f:0:1} == '~' ]]; then
-            echo "    $opt: $desc (OFF)"
+            echo "   $opt: $desc (OFF)"
         else
             printf "    "
             msg_normal_append "$opt: "
