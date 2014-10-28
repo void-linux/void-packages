@@ -11,7 +11,6 @@ exec_mame() {
     -comment_directory $HOME/.mame/comments \
     -diff_directory $HOME/.mame/diff \
     -input_directory $HOME/.mame/inp \
-    -memcard_directory $HOME/.mame/memcard \
     -nvram_directory $HOME/.mame/nvram \
     -snapshot_directory $HOME/.mame/snap \
     -state_directory $HOME/.mame/sta \
@@ -24,18 +23,18 @@ if [ "$1" = "--newini" ]; then
   echo "Modify this file for permanent changes to your SDLMAME"
   echo "options and paths before running SDLMAME again."
   cd $HOME/.mame
-  if [ -e sdlmame.ini ]; then
-    echo "Your old ini file has been renamed to sdlmameini.bak"
-    mv sdlmame.ini sdlmameini.bak
+  if [ -e mame.ini ]; then
+    echo "Your old ini file has been renamed to mame.ini.bak"
+    mv mame.ini mame.ini.bak
   fi
   exec_mame
 elif [ ! -e $HOME/.mame ]; then
   echo "Running SDLMAME for the first time..."
-  echo "Creating an ini file for SDLMAME at $HOME/.mame/sdlmame.ini"
+  echo "Creating an ini file for SDLMAME at $HOME/.mame/mame.ini"
   echo "Modify this file for permanent changes to your SDLMAME"
   echo "options and paths before running SDLMAME again."
   mkdir $HOME/.mame
-  for f in artwork cfg comments ctrlr diff ini ip memcard nvram \
+  for f in artwork cfg comments ctrlr diff ini ip nvram \
 	  samples snap sta roms; do
   	mkdir $HOME/.mame/${f}
   done
