@@ -2,7 +2,7 @@
 pkgname=chromium
 #See http://www.chromium.org/developers/calendar for the latest version
 version=38.0.2125.111
-revision=1
+revision=2
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://www.chromium.org/"
@@ -12,9 +12,8 @@ checksum=e6b43c86c0dff8451c532d7411546f973aa94d755fc2ce6574d8eabe55d35a1f
 
 lib32disabled=yes
 disable_debug=yes
-nocross=yes
 
-hostmakedepends="yasm python pkg-config perl gperf bison ninja clang llvm"
+hostmakedepends="yasm python pkg-config perl gperf bison ninja clang llvm protobuf-devel hwids"
 makedepends="libpng-devel>=1.6 gtk+-devel nss-devel pciutils-devel
  libXi-devel libgcrypt-devel libgnome-keyring-devel cups-devel elfutils-devel
  libXcomposite-devel speech-dispatcher-devel libXrandr-devel mit-krb5-devel
@@ -22,21 +21,23 @@ makedepends="libpng-devel>=1.6 gtk+-devel nss-devel pciutils-devel
  libxml2-devel libxslt-devel opus-devel pulseaudio-devel nss-devel libexif-devel
  libXcursor-devel libflac-devel speex-devel libmtp-devel libwebp-devel>=0.4.0
  libjpeg-turbo-devel libevent-devel json-c-devel re2-devel harfbuzz-devel
- minizip-devel jsoncpp-devel zlib-devel libcap-devel v8-devel>=3.24 hwids"
+ minizip-devel jsoncpp-devel zlib-devel libcap-devel v8-devel>=3.24"
 depends="desktop-file-utils hicolor-icon-theme"
 nostrip_files="nacl_irt_x86_64.nexe nacl_irt_x86_32.nexe"
 
-if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-	makedepends+=" gcc-c++-multilib"
-fi
+case "$XBPS_TARGET_MACHINE" in
+	x86_64|arm*) hostmakedepends+=" gcc-c++-multilib"
+esac
 
 pre_configure() {
 	# XXX xtraeme: fix gcc{,-c++}-multilib instead.
 	ldconfig &>/dev/null
 
-	# Download NaCL toolchains
-	python2 build/download_nacl_toolchains.py \
-		--packages nacl_x86_newlib,pnacl_newlib,pnacl_translator
+	if [ "$XBPS_TARGET_MACHINE" = "i686" -o "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		# Download NaCL toolchains
+		python2 build/download_nacl_toolchains.py \
+			--packages nacl_x86_newlib,pnacl_newlib,pnacl_translator
+	fi
 
 	# Build with clang as a temporary solution to startup crash with GCC 4.9
 	mkdir -p third_party/llvm-build/Release+Asserts/bin
@@ -54,6 +55,9 @@ do_configure() {
 
 	unset CC CXX
 	export -n CFLAGS CXXFLAGS LDFLAGS
+	if [ "$CROSS_BUILD" ]; then
+		export GYP_CROSSCOMPILE=1
+	fi
 
 	# Google API keys (see http://www.chromium.org/developers/how-tos/api-keys)
 	# Note: These are for Void Linux use ONLY.
@@ -65,6 +69,12 @@ do_configure() {
 	# Disable glibc Native Client toolchain.
 	conf+=" -Ddisable_glibc=1"
 
+	if [ "$XBPS_TARGET_MACHINE" = "i686" -o "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		conf+=" -Dclang=1 -Dhost_clang=1"
+	else
+		conf+=" -Dclang=0 -Dhost_clang=0"
+	fi
+
 	# Use system-provided libraries.
 	# TODO: use_system_hunspell (upstream changes needed).
 	# TODO: use_system_libsrtp.
@@ -75,11 +85,9 @@ do_configure() {
 	# XXX xtraeme: broken currently
 	# -Duse_system_icu=1 (needs icu-52)
 	# -Duse_system_v8=1
-	# -Duse_system_protobuf=1
 	# -Duse_system_opus=1 (needs opus_custom.h)
 	# -Duse_system_zlib=1
 	conf+="
-		-Dclang=1
 		-Dclang_use_chrome_plugins=0
 		-Dpython_ver=2.7
 		-Duse_system_bzip2=1
@@ -91,9 +99,9 @@ do_configure() {
 		-Duse_system_libpng=1
 		-Duse_system_libxml=1
 		-Duse_system_libxslt=1
-		-Duse_system_libwebp=1
 		-Duse_system_minizip=1
 		-Duse_system_nspr=1
+		-Duse_system_protobuf=1
 		-Duse_system_re2=1
 		-Duse_system_snappy=1
 		-Duse_system_speex=1
@@ -105,6 +113,12 @@ do_configure() {
 		-Dlinux_link_pulseaudio=1
 		-Duse_mojo=0
 		-Duse_gconf=0"
+	if [ "$CROSS_BUILD" ]; then
+		conf+=" -Denable_webrtc=0"
+		conf+=" -Duse_system_libwebp=0"
+	else
+		conf+=" -Duse_system_libwebp=1"
+	fi
 
 	# TODO: re-enable on vp9 libvpx release (http://crbug.com/174287).
 	# conf+=" -Dmedia_use_libvpx=0"
@@ -136,12 +150,34 @@ do_configure() {
 	# Save space by removing DLOG and DCHECK messages (about 6% reduction).
 	conf+=" -Dlogging_like_official_build=1"
 
-	if [ "$CROSS_BUILD" ]; then
-		case "${XBPS_TARGET_MACHINE}" in
-			arm*) arch="arm";;
-		esac
-		conf+=" -Dtarget_arch=${arch}"
-	fi
+	case "${XBPS_TARGET_MACHINE}" in
+		arm*) conf+="
+			-Dtarget_arch=arm
+			-Darm_neon=0
+			-Ddisable_nacl=1
+			-Dv8_use_arm_eabi_hardfloat=true
+			-Darm_float_abi=hard"
+			if [ "$CROSS_BUILD" ]; then
+				sed -i "s/arm-linux-gnueabihf-/${XBPS_CROSS_TRIPLET}-/g" build/common.gypi
+				conf+=" -Dsysroot=${XBPS_CROSS_BASE}"
+			else
+				conf+=" -Dsysroot="
+			fi;;
+	esac
+	case "${XBPS_TARGET_MACHINE}" in
+		armv7*) conf+="
+			-Darmv7=1
+			-Darm_fpu=vfpv3-d16";;
+		armv6*)
+			conf+="
+			-Darmv7=0
+			-Darmv6=1
+			-Darm_fpu=vfp
+			-Darm_thumb=0
+			-Dv8_can_use_vfp_instructions=false
+			-Dv8_can_use_vfp2_instructions=true";;
+	esac
+
 	# https://code.google.com/p/chromium/issues/detail?id=386097
 	third_party/libaddressinput/chromium/tools/update-strings.py
 
@@ -160,13 +196,17 @@ do_install() {
 	vinstall out/Release/chromedriver 755 usr/lib/${pkgname} chromedriver
 	vinstall out/Release/chrome_sandbox 4755 usr/lib/${pkgname} chrome-sandbox
 
-	cp out/Release/{*.pak,libffmpegsumo.so,nacl_helper{,_bootstrap}} \
+	if [ "$XBPS_TARGET_MACHINE" = "i686" -o "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		cp out/Release/nacl_helper{,_bootstrap} \
+			${DESTDIR}/usr/lib/chromium
+	fi
+	cp out/Release/{*.pak,libffmpegsumo.so} \
 		out/Release/libpdf.so \
 		${DESTDIR}/usr/lib/chromium
 
 	cp -a out/Release/locales out/Release/icudtl.dat ${DESTDIR}/usr/lib/chromium
 
-	vinstall out/Release/chrome.1 644 usr/share/man/man1 chromium.1
+	vman out/Release/chrome.1 chromium.1
 	vinstall ${FILESDIR}/chromium.desktop 644 usr/share/applications
 
 	for size in 22 24 48 64 128 256; do
@@ -178,7 +218,7 @@ do_install() {
 		${DESTDIR}/usr/share/icons/hicolor/${size}x${size}/apps/chromium.png
 	done
 
-	vinstall ${FILESDIR}/chromium.sh 755 usr/bin chromium
-	vinstall LICENSE 644 usr/share/licenses/${pkgname}
+	vbin ${FILESDIR}/chromium.sh chromium
+	vlicense LICENSE
 	ln -s /usr/lib/chromium/chromedriver ${DESTDIR}/usr/bin/chromedriver
 }
