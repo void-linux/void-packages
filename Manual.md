@@ -451,7 +451,9 @@ matches a version number enclosed in `<b>...</b>` tags.
 
 - `update_ignore` is a space-separated list of shell globs that match
 version numbers which are not taken into account for checking newer
-versions.  Example: `update_ignore="*b*"` 
+versions.  Example: `update_ignore="*b*"`
+
+You can run such a check using `./xbps-src update-check <pkgname>`.
 
 ### build style scripts
 
