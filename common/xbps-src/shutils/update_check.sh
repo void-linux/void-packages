@@ -2,6 +2,12 @@
 
 update_check() {
     local i p url rx found_version consider
+
+    if ! command -v curl &>/dev/null; then
+        echo "ERROR: cannot find \`curl' executable!"
+        return 1
+    fi
+
     export LC_ALL=C
     : ${update_pkgname:=$pkgname}
 
@@ -66,7 +72,7 @@ update_check() {
         if $consider; then
             xbps-uhelper cmpver "$pkgname-${version}_1" "$pkgname-${found_version}_1"
             if [ $? = 255 ]; then
-                echo "NEWER VERSION $pkgname-$found_version (have $pkgname-${version})"
+                echo "${pkgname}-${version} -> ${pkgname}-${found_version}"
             fi
         fi
     done
