@@ -435,6 +435,24 @@ pkgver the resulting package should revert. This field *must* be defined before
 defined in `reverts` must be lesser than the one defined in `version`.
 example: `reverts="2.0_1 2.0_2"`
 
+#### Checking for new upstream releases
+
+For automatic checking of new versions, in some cases you need to define
+these variables (in most cases, the sensible defaults work):
+
+- `update_site` contains the URL where the version number is
+  mentioned.  If unset, defaults to `homepage` and the directories where
+`distfiles` reside.
+
+- `update_pattern` is a perl-compatible regular expression
+matching the version number.  Anchor the version number using `\K`
+and `(?=...)`.  Example: `update_pattern='<b>\K[\d.]+(?=</b>)'`, this
+matches a version number enclosed in `<b>...</b>` tags.
+
+- `update_ignore` is a space-separated list of shell globs that match
+version numbers which are not taken into account for checking newer
+versions.  Example: `update_ignore="*b*"` 
+
 ### build style scripts
 
 The `build_style` variable specifies the build method to build and install a
