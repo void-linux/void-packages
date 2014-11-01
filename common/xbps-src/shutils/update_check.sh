@@ -72,7 +72,8 @@ update_check() {
             esac
         done
         if $consider; then
-            xbps-uhelper cmpver "$pkgname-${version}_1" "$pkgname-${found_version}_1"
+            xbps-uhelper cmpver "$pkgname-${version}_1" \
+                "$pkgname-$(printf %s "$found_version" | tr - .)_1"
             if [ $? = 255 ]; then
                 echo "${pkgname}-${version} -> ${pkgname}-${found_version}"
             fi
