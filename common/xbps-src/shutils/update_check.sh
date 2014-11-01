@@ -28,7 +28,8 @@ update_check() {
             *code.google.com*|*googlecode*)
                 url="http://code.google.com/p/$update_pkgname/downloads/list";;
             *launchpad.net*)
-                url="https://launchpad.net/$update_pkgname/+download";;
+                lpname="$(printf %s "$url" | cut -d/ -f4)"
+                url="https://launchpad.net/$lpname/+download";;
             *cpan.*)
                 update_pkgname=${update_pkgname#perl-};;
             *pypi.python.org*)
