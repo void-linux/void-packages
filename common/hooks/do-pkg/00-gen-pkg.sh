@@ -135,8 +135,8 @@ hook() {
 
 	binpkg=${pkgver}.${arch}.xbps
 
-	if [ -n "$nonfree" ]; then
-		repo=$XBPS_REPOSITORY/nonfree
+	if [ -n "$repository" ]; then
+		repo=$XBPS_REPOSITORY/$repository
 	else
 		repo=$XBPS_REPOSITORY
 	fi
@@ -170,8 +170,8 @@ hook() {
 	fi
 	if [ -d "${XBPS_DESTDIR}/${pkgname}-32bit-${version}" ]; then
 		source ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
-		if [ -n "$nonfree" ]; then
-			repo=$XBPS_REPOSITORY/multilib/nonfree
+		if [ -n "$repository" ]; then
+			repo=$XBPS_REPOSITORY/multilib/$repository
 		else
 			repo=$XBPS_REPOSITORY/multilib
 		fi

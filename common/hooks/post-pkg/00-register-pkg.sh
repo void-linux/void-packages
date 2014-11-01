@@ -33,8 +33,8 @@ hook() {
 	if [ -z "$noarch" -a -z "$XBPS_CROSS_BUILD" -a -n "$XBPS_ARCH" -a "$XBPS_ARCH" != "$XBPS_TARGET_MACHINE" ]; then
 		arch=${XBPS_ARCH}
 	fi
-	if [ -n "$nonfree" ]; then
-		pkgdir=$XBPS_REPOSITORY/nonfree
+	if [ -n "$repository" ]; then
+		pkgdir=$XBPS_REPOSITORY/$repository
 	else
 		pkgdir=$XBPS_REPOSITORY
 	fi
@@ -58,8 +58,8 @@ hook() {
 	if [ "$XBPS_TARGET_MACHINE" != "i686" ]; then
 		return
 	fi
-	if [ -n "$nonfree" ]; then
-		pkgdir=$XBPS_REPOSITORY/multilib/nonfree
+	if [ -n "$repository" ]; then
+		pkgdir=$XBPS_REPOSITORY/multilib/$repository
 	else
 		pkgdir=$XBPS_REPOSITORY/multilib
 	fi
