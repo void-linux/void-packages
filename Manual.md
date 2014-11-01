@@ -444,6 +444,9 @@ these variables (in most cases, the sensible defaults work):
   mentioned.  If unset, defaults to `homepage` and the directories where
 `distfiles` reside.
 
+- `update_pkgname` is the package name the default pattern checks for.
+If unset, defaults to `pkgname`.
+
 - `update_pattern` is a perl-compatible regular expression
 matching the version number.  Anchor the version number using `\K`
 and `(?=...)`.  Example: `update_pattern='<b>\K[\d.]+(?=</b>)'`, this
