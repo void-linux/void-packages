@@ -406,7 +406,8 @@ paths, and multiple entries can be separated by blanks, i.e:
 - `noarch` If set, the binary package is not architecture specific and can be shared
 by all supported architectures.
 
-- `nonfree` If set, the binary package will be put into the *non free* repository.
+- `repository` Defines the repository in which the package will be placed. See
+  *Repositories* for a list of valid repositories.
 
 - `nostrip` If set, the ELF binaries with debugging symbols won't be stripped. By
 default all binaries are stripped.
@@ -434,6 +435,27 @@ pkgver the resulting package should revert. This field *must* be defined before
 `version` and `revision` fields in order to work as expected. The versions
 defined in `reverts` must be lesser than the one defined in `version`.
 example: `reverts="2.0_1 2.0_2"`
+
+#### Repositories
+
+##### Repositories defined by Branch
+
+The global repository takes the name of
+the current branch, except if the name of the branch is master. Then the resulting
+repository will be at the global scope. The usage scenario is that the user can
+update multiple packages in a second branch without polluting his local repository.
+
+##### Package defined Repositories
+
+The second way to define a repository is by setting the `repository` variable in
+a template. This way the maintainer can define repositories for a specific
+package or a group of packages. This is currently used to distinguish between
+closed source packages, which are put in the `nonfree` repository and other
+packages which are at the root-repository.
+
+The following repository names are valid:
+
+* `nonfree`: Repository for closed source packages.
 
 #### Checking for new upstream releases
 
