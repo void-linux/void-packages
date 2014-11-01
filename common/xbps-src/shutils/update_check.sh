@@ -3,7 +3,7 @@
 update_check() {
     local i p url rx found_version consider
 
-    if ! command -v curl &>/dev/null; then
+    if ! type curl >/dev/null 2>&1; then
         echo "ERROR: cannot find \`curl' executable!"
         return 1
     fi
