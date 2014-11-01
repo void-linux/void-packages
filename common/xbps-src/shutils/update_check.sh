@@ -23,7 +23,8 @@ update_check() {
         if [ -z "$update_site" ]; then
             case "$url" in
             *sourceforge.net/sourceforge*)
-                url="http://sourceforge.net/projects/$update_pkgname/rss?limit=200";;
+                sfname="$(printf %s "$url" | cut -d/ -f5)"
+                url="http://sourceforge.net/projects/$sfname/rss?limit=200";;
             *code.google.com*|*googlecode*)
                 url="http://code.google.com/p/$update_pkgname/downloads/list";;
             *launchpad.net*)
