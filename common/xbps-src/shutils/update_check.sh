@@ -36,8 +36,8 @@ update_check() {
                 update_pkgname=${update_pkgname#python-};;
             *github.com*)
                 githubname="$(printf %s "$url" | cut -d/ -f4,5)"
-                url="https://api.github.com/repos/$githubname/tags"
-                rx='"name":\s*"(v|'"$update_pkgname"'-)?\K[^\d]*([\d\.]+)(?=")';;
+                url="https://github.com/$githubname/tags"
+                rx='/archive/(v?|\Q'"$update_pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
             esac
         fi
 
