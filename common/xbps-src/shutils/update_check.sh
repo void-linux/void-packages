@@ -42,7 +42,7 @@ update_check() {
         fi
 
         rx=${update_pattern:-$rx}
-        rx=${rx:-'(?<!-)\b'"$update_pkgname"'[-_]?((src|source)[-_])?\K([^-/_\s]*?\d[^-/_\s]*?)(?=(?:[-_.](?:src|source|orig))?\.(?:[jt]ar|shar|t[bglx]z|tbz2|zip))\b'}
+        rx=${rx:-'(?<!-)\b\Q'"$update_pkgname"'\E[-_]?((src|source)[-_])?\K([^-/_\s]*?\d[^-/_\s]*?)(?=(?:[-_.](?:src|source|orig))?\.(?:[jt]ar|shar|t[bglx]z|tbz2|zip))\b'}
 
         if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
             echo "fetching $url" 1>&2
