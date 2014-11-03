@@ -1,7 +1,7 @@
 # vim: set ts=4 sw=4 et:
 
 update_check() {
-    local i p url rx found_version consider
+    local i p url sfname lpname githubname rx found_version consider
 
     if ! type curl >/dev/null 2>&1; then
         echo "ERROR: cannot find \`curl' executable!"
