@@ -11,13 +11,6 @@ update_check() {
     export LC_ALL=C
     : ${update_pkgname:=$pkgname}
 
-    if [ -z "$distfiles" ]; then
-        if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
-            echo "no distfiles to check for $pkgname"
-        fi
-        return
-    fi
-
     if [ -z "$update_site" ]; then
         printf '%s\n' "$homepage"
         for i in $distfiles; do
