@@ -20,6 +20,7 @@ update_check() {
         printf '%s\n' "$update_site"
     fi |
     while IFS= read -r url; do
+        rx=
         if [ -z "$update_site" ]; then
             case "$url" in
             *sourceforge.net/sourceforge*)
