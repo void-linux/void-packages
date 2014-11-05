@@ -319,8 +319,7 @@ setup_pkg() {
         makejobs="-j$XBPS_MAKEJOBS"
     fi
 
-    # For nonfree/bootstrap pkgs there's no point in building -dbg pkgs, disable them.
-    if [ -z "$XBPS_DEBUG_PKGS" -o "$repository" = "nonfree" -o -n "$bootstrap" ]; then
+    if [ -z "$XBPS_DEBUG_PKGS" -o "$repository" = "nonfree" ]; then
         disable_debug=yes
     fi
     # If a package sets force_debug_pkgs, always build -dbg pkgs.
