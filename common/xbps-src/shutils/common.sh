@@ -320,7 +320,7 @@ setup_pkg() {
     fi
 
     # For nonfree/bootstrap pkgs there's no point in building -dbg pkgs, disable them.
-    if [ -z "$XBPS_DEBUG_PKGS" -o -n "$repository" = "nonfree" -o -n "$bootstrap" ]; then
+    if [ -z "$XBPS_DEBUG_PKGS" -o "$repository" = "nonfree" -o -n "$bootstrap" ]; then
         disable_debug=yes
     fi
     # If a package sets force_debug_pkgs, always build -dbg pkgs.
