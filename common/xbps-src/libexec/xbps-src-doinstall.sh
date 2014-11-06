@@ -28,13 +28,13 @@ XBPS_INSTALL_DONE="$wrksrc/.xbps_${sourcepkg}_${XBPS_CROSS_BUILD}_install_done"
 XBPS_PRE_INSTALL_DONE="$wrksrc/.xbps_${sourcepkg}_${XBPS_CROSS_BUILD}_pre_install_done"
 XBPS_POST_INSTALL_DONE="$wrksrc/.xbps_${sourcepkg}_${XBPS_CROSS_BUILD}_post_install_done"
 
+cd $wrksrc || msg_error "$pkgver: cannot access to wrksrc [$wrksrc]\n"
+if [ -n "$build_wrksrc" ]; then
+    cd $build_wrksrc || msg_error "$pkgver: cannot access to build_wrksrc [$build_wrksrc]\n"
+fi
+
 if [ ! -f $XBPS_INSTALL_DONE ]; then
     mkdir -p $XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/$pkgname-$version
-
-    cd $wrksrc || msg_error "$pkgver: cannot access to wrksrc [$wrksrc]\n"
-    if [ -n "$build_wrksrc" ]; then
-        cd $build_wrksrc || msg_error "$pkgver: cannot access to build_wrksrc [$build_wrksrc]\n"
-    fi
 
     run_pkg_hooks pre-install
 

@@ -47,8 +47,6 @@ run_pkg_hooks pre-build
 
 # Run pre_build()
 if [ ! -f $XBPS_PRE_BUILD_DONE ]; then
-    cd $wrksrc
-    [ -n "$build_wrksrc" ] && cd $build_wrksrc
     if declare -f pre_build >/dev/null; then
         run_func pre_build
         touch -f $XBPS_PRE_BUILD_DONE
@@ -56,8 +54,6 @@ if [ ! -f $XBPS_PRE_BUILD_DONE ]; then
 fi
 
 # Run do_build()
-cd $wrksrc
-[ -n "$build_wrksrc" ] && cd $build_wrksrc
 if declare -f do_build >/dev/null; then
     run_func do_build
 else
@@ -76,8 +72,6 @@ touch -f $XBPS_BUILD_DONE
 
 # Run post_build()
 if [ ! -f $XBPS_POST_BUILD_DONE ]; then
-    cd $wrksrc
-    [ -n "$build_wrksrc" ] && cd $build_wrksrc
     if declare -f post_build >/dev/null; then
         run_func post_build
         touch -f $XBPS_POST_BUILD_DONE

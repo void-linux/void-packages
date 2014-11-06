@@ -42,10 +42,6 @@ run_pkg_hooks pre-configure
 
 # Run pre_configure()
 if [ ! -f $XBPS_PRECONFIGURE_DONE ]; then
-    cd $wrksrc
-    if [ -n "$build_wrksrc" ]; then
-        cd $build_wrksrc
-    fi
     if declare -f pre_configure >/dev/null; then
         run_func pre_configure
         touch -f $XBPS_PRECONFIGURE_DONE
@@ -53,10 +49,6 @@ if [ ! -f $XBPS_PRECONFIGURE_DONE ]; then
 fi
 
 # Run do_configure()
-cd $wrksrc
-if [ -n "$build_wrksrc" ]; then
-    cd $build_wrksrc
-fi
 if declare -f do_configure >/dev/null; then
     run_func do_configure
 else
@@ -75,10 +67,6 @@ touch -f $XBPS_CONFIGURE_DONE
 
 # Run post_configure()
 if [ ! -f $XBPS_POSTCONFIGURE_DONE ]; then
-    cd $wrksrc
-    if [ -n "$build_wrksrc" ]; then
-        cd $build_wrksrc
-    fi
     if declare -f post_configure >/dev/null; then
         run_func post_configure
         touch -f $XBPS_POSTCONFIGURE_DONE
