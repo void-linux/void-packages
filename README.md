@@ -1,5 +1,3 @@
-[![Pullreq xlint](https://travis-ci.org/voidlinux/void-packages.svg?branch=master)](https://travis-ci.org/voidlinux/void-packages)
-
 ## The XBPS source packages collection
 
 This repository contains the XBPS source packages collection to build binary packages
