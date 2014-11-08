@@ -155,9 +155,6 @@ chroot_sync_repos() {
 chroot_handler() {
     local action="$1" pkg="$2" rv=0 arg= _envargs= _chargs=
 
-    if [ -z "$CHROOT_READY" ]; then
-        return 0
-    fi
     # Debian uses /run/shm instead...
     if [ -d /run/shm ]; then
         mkdir -p ${XBPS_MASTERDIR}/run/shm
