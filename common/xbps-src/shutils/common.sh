@@ -331,7 +331,7 @@ setup_pkg() {
         dbgflags="-g"
     fi
 
-    if [ -z "$XBPS_CFLAGS" -a -z "$XBPS_CXXFLAGS" -a -z "$CHROOT_READY" ]; then
+    if [ -z "$XBPS_CFLAGS" -a -z "$XBPS_CXXFLAGS" -a -n "$CHROOT_READY" ]; then
         if [ -s ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh ]; then
             . ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
         fi
