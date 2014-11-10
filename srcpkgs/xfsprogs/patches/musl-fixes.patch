@@ -1,0 +1,162 @@
+diff --git a/fsr/xfs_fsr.c b/fsr/xfs_fsr.c
+index 6f00b41..5b4af53 100644
+--- fsr/xfs_fsr.c
++++ fsr/xfs_fsr.c
+@@ -44,6 +44,10 @@
+ #define _PATH_FSRLAST		"/var/tmp/.fsrlast_xfs"
+ #define _PATH_PROC_MOUNTS	"/proc/mounts"
+ 
++#ifndef _PATH_MOUNTED
++#define _PATH_MOUNTED MOUNTED
++#endif
++
+ 
+ char *progname;
+ 
+diff --git a/include/platform_defs.h.in b/include/platform_defs.h.in
+index ac260bc..0e7fccf 100644
+--- include/platform_defs.h.in
++++ include/platform_defs.h.in
+@@ -68,6 +68,32 @@ typedef __u64	__bitwise	__be64;
+ 
+ typedef struct filldir		filldir_t;
+ 
++#ifndef __uint8_t
++#define __uint8_t uint8_t
++#endif
++#ifndef __uint16_t
++#define __uint16_t uint16_t
++#endif
++#ifndef __uint32_t
++#define __uint32_t uint32_t
++#endif
++#ifndef __uint64_t
++#define __uint64_t uint64_t
++#endif
++
++#ifndef __int8_t
++#define __int8_t int8_t
++#endif
++#ifndef __int16_t
++#define __int16_t int16_t
++#endif
++#ifndef __int32_t
++#define __int32_t int32_t
++#endif
++#ifndef __int64_t
++#define __int64_t int64_t
++#endif
++
+ #if defined(__linux__)
+ #include <xfs/linux.h>
+ #elif defined(__FreeBSD__)
+diff --git a/libhandle/handle.c b/libhandle/handle.c
+index 9a232fa..1db7772 100644
+--- libhandle/handle.c
++++ libhandle/handle.c
+@@ -20,6 +20,9 @@
+ #include <xfs/xfs.h>
+ #include <xfs/handle.h>
+ #include <xfs/parent.h>
++#if defined(__linux__)
++#include <linux/limits.h>
++#endif
+ 
+ /* just pick a value we know is more than big enough */
+ #define	MAXHANSIZ	64
+diff --git a/libhandle/jdm.c b/libhandle/jdm.c
+index 070407b..8dd6322 100644
+--- libhandle/jdm.c
++++ libhandle/jdm.c
+@@ -20,6 +20,9 @@
+ #include <xfs/handle.h>
+ #include <xfs/jdm.h>
+ #include <xfs/parent.h>
++#if defined(__linux__)
++#include <linux/limits.h>
++#endif
+ 
+ /* internal fshandle - typecast to a void for external use */
+ #define FSHANDLE_SZ		8
+diff --git a/libxfs/linux.c b/libxfs/linux.c
+index 2e07d54..4075786 100644
+--- libxfs/linux.c
++++ libxfs/linux.c
+@@ -16,12 +16,9 @@
+  * Inc.,  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+  */
+ 
+-#define ustat __kernel_ustat
+ #include <xfs/libxfs.h>
+ #include <mntent.h>
+ #include <sys/stat.h>
+-#undef ustat
+-#include <sys/ustat.h>
+ #include <sys/mount.h>
+ #include <sys/ioctl.h>
+ #include <sys/sysinfo.h>
+@@ -49,9 +46,12 @@ static int max_block_alignment;
+ int
+ platform_check_ismounted(char *name, char *block, struct stat64 *s, int verbose)
+ {
+-	/* Pad ust; pre-2.6.28 linux copies out too much in 32bit compat mode */
+-	struct ustat	ust[2];
+ 	struct stat64	st;
++	FILE		*f;
++	struct stat64	mst;
++	struct mntent	*mnt;
++	char		mounts[MAXPATHLEN];
++	int		ismounted = 0;
+ 
+ 	if (!s) {
+ 		if (stat64(block, &st) < 0)
+@@ -61,14 +61,25 @@ platform_check_ismounted(char *name, char *block, struct stat64 *s, int verbose)
+ 		s = &st;
+ 	}
+ 
+-	if (ustat(s->st_rdev, ust) >= 0) {
++	strcpy(mounts, (!access(PROC_MOUNTED, R_OK)) ? PROC_MOUNTED : MOUNTED);
++	if ((f = setmntent(mounts, "r")) == NULL)
++		return 0;
++
++	while ((mnt = getmntent(f)) != NULL) {
++		if (stat64(mnt->mnt_dir, &mst) < 0)
++			continue;
++		if (mst.st_dev != s->st_rdev)
++			continue;
++
+ 		if (verbose)
+ 			fprintf(stderr,
+ 				_("%s: %s contains a mounted filesystem\n"),
+ 				progname, name);
+-		return 1;
++		ismounted = 1;
++		break;
+ 	}
+-	return 0;
++	endmntent(f);
++	return ismounted;
+ }
+ 
+ int
+--- include/linux.h.orig	2014-11-10 15:20:54.601136271 +0100
++++ include/linux.h	2014-11-10 15:21:35.905541676 +0100
+@@ -28,6 +28,7 @@
+ #include <getopt.h>
+ #include <endian.h>
+ #include <stdbool.h>
++#include <linux/limits.h>	/* XATTR_SIZE_MAX */
+ 
+ static __inline__ int xfsctl(const char *path, int fd, int cmd, void *p)
+ {
+@@ -138,6 +139,10 @@ platform_discard_blocks(int fd, uint64_t
+ #define EFSCORRUPTED	EUCLEAN	/* Filesystem is corrupted */
+ #define EFSBADCRC	EBADMSG	/* Bad CRC detected */
+ 
++#ifndef loff_t
++#define loff_t 	off_t
++#endif
++
+ typedef loff_t		xfs_off_t;
+ typedef __uint64_t	xfs_ino_t;
+ typedef __uint32_t	xfs_dev_t;
