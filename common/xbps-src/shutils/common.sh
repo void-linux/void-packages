@@ -331,6 +331,11 @@ setup_pkg() {
         dbgflags="-g"
     fi
 
+    if [ -z "$XBPS_CFLAGS" -a -z "$XBPS_CXXFLAGS" -a -z "$bootstrap" ]; then
+        if [ -s ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh ]; then
+            . ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
+        fi
+    fi
     export CFLAGS="$XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
     export CXXFLAGS="$XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"
     export CPPFLAGS="$XBPS_CPPFLAGS $XBPS_CROSS_CPPFLAGS $CPPFLAGS"
