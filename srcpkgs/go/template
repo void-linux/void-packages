@@ -1,17 +1,16 @@
 # Template file for 'go'
 pkgname=go
-version=1.3.3
+version=1.4
 revision=1
 wrksrc=go
-hostmakedepends="mercurial ca-certificates"
-depends="perl"
+hostmakedepends="git ca-certificates"
 short_desc="The Go Programming Language"
 maintainer="Dominik Honnef <dominik@honnef.co>"
 homepage="http://golang.org/"
 update_ignore="*beta* *rc*"
 license="BSD"
 distfiles="http://golang.org/dl/go${version}.src.tar.gz"
-checksum=1bb6fde89cfe8b9756a875af55d994cce0994861227b5dc0f268c143d91cd5ff
+checksum=3ae9f67e45a5ca7004b28808da8b1367d328a371d641ddbe636c0fb0ae0ffdae
 
 nostrip=yes
 noverifyrdeps=yes
@@ -58,43 +57,16 @@ do_build() {
 	GOOS=linux
 	GOARCH=$targetarch
 
-	hg clone -u release-branch.go$(echo "$version" | cut -d "." -f "1-2") \
-		--config web.cacerts=/etc/ssl/certs/ca-certificates.crt \
-		https://code.google.com/p/go.tools/ \
-		$GOPATH/src/code.google.com/p/go.tools
+	git clone https://go.googlesource.com/tools \
+		-b release-branch.go$(echo "$version" | cut -d "." -f "1-2") \
+		$GOPATH/src/golang.org/x/tools
 
 	for tool in godoc vet cover; do
-		$GOROOT/bin/go install code.google.com/p/go.tools/cmd/${tool}
+		$GOROOT/bin/go install golang.org/x/tools/cmd/${tool}
 	done
 }
 
 do_install() {
-	vinstall LICENSE 644 usr/share/licenses/go
-
-	# TODO Beginning with Go 1.4, there will be no editor or shell
-	# integration in the Go distribution anymore (see
-	# https://codereview.appspot.com/105470043) - While the emacs
-	# integration has a canonical upstream at
-	# https://github.com/dominikh/go-mode.el, neither vim, bash nor
-	# zsh have one (yet). In any case, there'll need to be made a
-	# decision between pulling 3rd party integration into this
-	# package, providing extra packages, or doing nothing at all.
-	vinstall misc/bash/go 644 usr/share/bash-completion/completions
-	vinstall misc/emacs/go-mode-load.el 644 usr/share/emacs/site-lisp
-	vinstall misc/emacs/go-mode.el 644 usr/share/emacs/site-lisp
-	vinstall misc/zsh/go 644 usr/share/zsh/site-functions _go
-
-	for f in ftdetect/gofiletype.vim autoload/go/complete.vim indent/go.vim \
-		ftplugin/go/fmt.vim ftplugin/go/import.vim \
-		syntax/go.vim syntax/godoc.vim plugin/godoc.vim; do
-		vinstall misc/vim/$f 644 usr/share/vim/vimfiles
-	done
-
-	install -d ${DESTDIR}/{etc/profile.d,usr/{share/go,lib/go,lib/go/src,lib/go/site/src}}
-
-	cp -r doc misc -t ${DESTDIR}/usr/share/go
-	ln -s /usr/share/go/doc ${DESTDIR}/usr/lib/go/doc
-
 	if [ "$CROSS_BUILD" ]; then
 		case "$XBPS_TARGET_MACHINE" in
 			arm*) bindir=bin/linux_arm;;
@@ -106,26 +78,14 @@ do_install() {
 	fi
 
 	vmkdir usr/bin
+	vmkdir usr/lib/go
+	vmkdir usr/share/go
 	cp -d --preserve=all ${bindir}/* ${DESTDIR}/usr/bin || true
-	cp -a pkg ${DESTDIR}/usr/lib/go
-	cp -a src/pkg ${DESTDIR}/usr/lib/go/src/
-	cp -a src/cmd ${DESTDIR}/usr/lib/go/src/cmd
-	cp -a src/lib9 ${DESTDIR}/usr/lib/go/src/
-	cp -a lib ${DESTDIR}/usr/lib/go/
-	cp -a include ${DESTDIR}/usr/lib/go/
-
-	install -Dm644 src/Make.* ${DESTDIR}/usr/lib/go/src
-
-	# Remove object files from target src dir
-	find ${DESTDIR}/usr/lib/go/src/ -type f -name '*.[ao]' -delete
-	find ${DESTDIR}/usr/lib/go/src/pkg -type f -executable -delete
-
-	# Headers for C modules
-	vinstall src/pkg/runtime/runtime.h 644 usr/lib/go/src/pkg/runtime
-	vinstall src/pkg/runtime/cgocall.h 644 usr/lib/go/src/pkg/runtime
-
-	# For packages that source /etc/profile.d/go.sh
+	cp -a pkg src lib include ${DESTDIR}/usr/lib/go
+	cp -r doc misc -t ${DESTDIR}/usr/share/go
+	ln -s /usr/share/go/doc ${DESTDIR}/usr/lib/go/doc
 	vinstall ${FILESDIR}/go.sh 755 etc/profile.d
+	vlicense LICENSE
 
 	# This is to make go get code.google.com/p/go-tour/gotour and
 	# then running the gotour executable work out of the box.
@@ -165,11 +125,11 @@ go-cross-linux_package() {
 			fi
 		done
 
-		mkdir -p $PKGDESTDIR/usr/lib/go/src/pkg/runtime/
-		cd ${DESTDIR}/usr/lib/go/src/pkg/runtime/
+		mkdir -p $PKGDESTDIR/usr/lib/go/src/runtime/
+		cd ${DESTDIR}/usr/lib/go/src/runtime/
 		for i in zasm_linux_*.h; do
 			if [ "$i" != "zasm_linux_${targetarch}.h" ]; then
-				mv "$i" $PKGDESTDIR/usr/lib/go/src/pkg/runtime/
+				mv "$i" $PKGDESTDIR/usr/lib/go/src/runtime/
 			fi
 		done
 	}
@@ -183,7 +143,7 @@ go-cross-darwin_package() {
 	pkg_install() {
 		vmove "usr/lib/go/pkg/tool/darwin_*"
 		vmove "usr/lib/go/pkg/darwin_*"
-		vmove "usr/lib/go/src/pkg/runtime/zasm_darwin_*.h"
+		vmove "usr/lib/go/src/runtime/zasm_darwin_*.h"
 	}
 }
 
@@ -195,7 +155,7 @@ go-cross-freebsd_package() {
 	pkg_install() {
 		vmove "usr/lib/go/pkg/tool/freebsd_*"
 		vmove "usr/lib/go/pkg/freebsd_*"
-		vmove "usr/lib/go/src/pkg/runtime/zasm_freebsd_*.h"
+		vmove "usr/lib/go/src/runtime/zasm_freebsd_*.h"
 	}
 }
 
@@ -208,6 +168,6 @@ go-cross-windows_package() {
 	pkg_install() {
 		vmove "usr/lib/go/pkg/tool/windows_*"
 		vmove "usr/lib/go/pkg/windows_*"
-		vmove "usr/lib/go/src/pkg/runtime/zasm_windows_*.h"
+		vmove "usr/lib/go/src/runtime/zasm_windows_*.h"
 	}
 }
