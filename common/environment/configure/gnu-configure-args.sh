@@ -14,6 +14,8 @@ fi
 
 # Cross compilation vars
 if [ -z "$CROSS_BUILD" ]; then
+	. ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
+	export configure_args+=" --host=$XBPS_TRIPLET --build=$XBPS_TRIPLET"
 	return 0
 fi
 
