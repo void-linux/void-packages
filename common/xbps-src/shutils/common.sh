@@ -395,7 +395,8 @@ setup_pkg() {
         msg_red "$pkgver: cannot be cross compiled, exiting...\n"
         exit 0
     elif [ "$broken" ]; then
-        msg_red "$pkgver: cannot be built, it's currently broken; exiting...\n"
+        msg_red "$pkgver: cannot be built, it's currently broken; see the build log:\n"
+        msg_red "$pkgver: $broken\n"
         exit 0
     fi
 
