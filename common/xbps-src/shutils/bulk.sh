@@ -36,6 +36,9 @@ bulk_build() {
     # Perform a topological sort of all pkgs but only with build dependencies
     # that are found in previous step.
     for pkg in ${pkgs}; do
+        for x in ${XBPS_COMMONDIR}/environment/setup/*.sh; do
+            . $x
+        done
         . ${XBPS_SRCPKGDIR}/${pkg}/template
         _pkgs="$(show_pkg_build_deps | sed -e 's|[<>].*\$||g')"
         found=0
