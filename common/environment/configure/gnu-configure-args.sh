@@ -2,6 +2,8 @@
 
 if [ -z "$build_style" -o "$build_style" = "gnu-configure" ]; then
 	export configure_args="--prefix=/usr --sysconfdir=/etc --infodir=/usr/share/info --mandir=/usr/share/man --localstatedir=/var ${configure_args}"
+	. ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
+	export configure_args+=" --host=$XBPS_TRIPLET --build=$XBPS_TRIPLET"
 fi
 
 if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
@@ -14,8 +16,6 @@ fi
 
 # Cross compilation vars
 if [ -z "$CROSS_BUILD" ]; then
-	. ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
-	export configure_args+=" --host=$XBPS_TRIPLET --build=$XBPS_TRIPLET"
 	return 0
 fi
 
