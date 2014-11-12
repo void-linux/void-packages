@@ -136,7 +136,7 @@ chroot_sync_repos() {
     fi
 
     # Make sure to sync index for remote repositories.
-    $CHROOT_CMD $XBPS_MASTERDIR /usr/sbin/xbps-install -S
+    xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install -S
     if [ -n "$XBPS_CROSS_BUILD" ]; then
         # Copy host keys to the target rootdir.
         if [ ! -d $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys ]; then
@@ -145,7 +145,7 @@ chroot_sync_repos() {
         cp -a $XBPS_MASTERDIR/var/db/xbps/keys/*.plist \
             $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys
         env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
-            $CHROOT_CMD $XBPS_MASTERDIR /usr/sbin/xbps-install \
+            xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install \
             -r /usr/$XBPS_CROSS_TRIPLET -S
     fi
 
@@ -186,7 +186,7 @@ chroot_handler() {
     esac
 
     if [ "$action" = "chroot" ]; then
-        $CHROOT_CMD ${_chargs} $XBPS_MASTERDIR /bin/xbps-shell || rv=$?
+        xbps-uchroot ${_chargs} $XBPS_MASTERDIR /bin/xbps-shell || rv=$?
     else
         [ -n "$XBPS_CROSS_BUILD" ] && arg="$arg -a $XBPS_CROSS_BUILD"
         [ -n "$XBPS_KEEP_ALL" ] && arg="$arg -C"
@@ -200,8 +200,8 @@ chroot_handler() {
         [ -n "$XBPS_PKG_OPTIONS" ] && arg="$arg -o $XBPS_PKG_OPTIONS"
 
         action="$arg $action"
-        env -i PATH=/bin:/sbin:/usr/bin:/usr/sbin:$PATH HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
-            $CHROOT_CMD ${_chargs} $XBPS_MASTERDIR /void-packages/xbps-src $action $pkg || rv=$?
+        env -i PATH=/usr/bin:/usr/sbin:$PATH HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
+            xbps-uchroot ${_chargs} $XBPS_MASTERDIR /void-packages/xbps-src $action $pkg || rv=$?
     fi
 
     return $rv
