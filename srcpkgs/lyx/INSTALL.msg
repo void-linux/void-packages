@@ -10,14 +10,14 @@
   to install the missing packages, the quickiest way is to run as 
   root:
 
-  'tlmgr install algorithm2e algorithms apacite bbding besoz 
-      bibtopic breakurl covington csquotes diagbox endnotes enumitem
-      epstopdf esint eurosym feyn fragments framed frankenstein 
-      harvard hyphenat jurabib lettrine luainputenc marginnote 
-      mathdesign mathdots mhchem multirow nicefrac nomencl picinpar 
-      pict2e prettyref preview rotfloat rsfs shapepar sidecap  
-      splitindex symbol tex-gyre ulem undertilde units wasy wasysym 
-      wrapfig xargs'
+  'tlmgr install algorithm2e algorithms apacite bbding bezos bibtopic'
+  'tlmgr install breakurl covington csquotes diagbox endnotes enumitem'
+  'tlmgr install epstopdf esint eurosym feyn fragments framed frankenstein'
+  'tlmgr install harvard hyphenat jurabib lettrine luainputenc marginnote'
+  'tlmgr install mathdesign mathdots mhchem multirow nicefrac nomencl'
+  'tlmgr install picinpar pict2e prettyref preview rotfloat rsfs shapepar'
+  'tlmgr install sidecap splitindex symbol tex-gyre ulem units wasy wasysym'
+  'tlmgr install wrapfig xargs'
 
 
    As there are many flavour of your preferred applications, I didn't
