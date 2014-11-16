@@ -393,7 +393,7 @@ files are always removed automatically.
 This must match the basename of any url defined in `${distfiles}`.
 Example `skip_extraction="foo-${version}.tar.gz"`.
 
-- `disable_debug` If enabled -dbg packages won't be generated even if `XBPS_DEBUG_PKGS` is set.
+- `nodebug` If enabled -dbg packages won't be generated even if `XBPS_DEBUG_PKGS` is set.
 
 - `force_debug_pkgs` If enabled binary packages with debugging symbols will be generated
 even if `XBPS_DEBUG_PKGS` is disabled in `void-packages/etc/conf` or in the

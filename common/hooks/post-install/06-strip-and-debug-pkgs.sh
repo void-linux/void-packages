@@ -6,7 +6,7 @@
 make_debug() {
 	local dname= fname= dbgfile=
 
-	[ -n "$disable_debug" ] && return 0
+	[ -n "$nodebug" ] && return 0
 
 	dname=$(echo "$(dirname $1)"|sed -e "s|${PKGDESTDIR}||g")
 	fname="$(basename $1)"
@@ -25,7 +25,7 @@ make_debug() {
 attach_debug() {
 	local dname= fname= dbgfile=
 
-	[ -n "$disable_debug" ] && return 0
+	[ -n "$nodebug" ] && return 0
 
 	dname=$(echo "$(dirname $1)"|sed -e "s|${PKGDESTDIR}||g")
 	fname="$(basename $1)"
@@ -41,7 +41,7 @@ attach_debug() {
 create_debug_pkg() {
 	local _pkgname= _destdir=
 
-	[ -n "$disable_debug" ] && return 0
+	[ -n "$nodebug" ] && return 0
 	[ ! -d "${PKGDESTDIR}/usr/lib/debug" ] && return 0
 
 	_pkgname="${pkgname}-dbg-${version}"

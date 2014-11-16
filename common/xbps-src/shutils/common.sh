@@ -320,14 +320,14 @@ setup_pkg() {
     fi
 
     if [ -z "$XBPS_DEBUG_PKGS" -o "$repository" = "nonfree" ]; then
-        disable_debug=yes
+        nodebug=yes
     fi
     # If a package sets force_debug_pkgs, always build -dbg pkgs.
     if [ -n "$force_debug_pkgs" ]; then
-        unset disable_debug
+        unset nodebug
     fi
     # -g is required to build -dbg packages.
-    if [ -z "$disable_debug" ]; then
+    if [ -z "$nodebug" ]; then
         dbgflags="-g"
     fi
 
