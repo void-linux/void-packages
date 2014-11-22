@@ -115,9 +115,12 @@ $ cd void-packages
 $ ./xbps-src pkg <pkgname>
 ```
 
-When the package and its required dependencies are built, the binary packages will be in
-default local repository at `hostdir/binpkgs`; the path to this local repository can be added to 
-the xbps configuration files or by explicitly appending it via cmdline, i.e `xbps-install --repository=/path/to/hostdir/binpkgs`.
+When the package and its required dependencies are built, the binary packages will be created
+and registered in the default local repository at `hostdir/binpkgs`; the path to this local repository can be added to 
+any xbps configuration file or by explicitly appending them via cmdline, i.e:
+
+    $ xbps-install --repository=/path/to/hostdir/binpkgs ...
+    $ xbps-query --repository=/path/to/hostdir/binpkgs ...
 
 By default **xbps-src** will try to resolve package dependencies in this order:
 
@@ -126,6 +129,8 @@ By default **xbps-src** will try to resolve package dependencies in this order:
  - If dependency exists in a source package, use it.
 
 It is possible to avoid using remote repositories completely by using the `-N` flag.
+
+> NOTE: the default local repository may contain multiple `sub-repositories`: `debug`, `multilib`, etc.
 
 ### Rebuilding and overwriting existing local packages
 
