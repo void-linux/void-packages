@@ -5,7 +5,7 @@ for the Void Linux distribution.
 
 The included `xbps-src` script will fetch and compile the sources, and install its
 files into a `fake destdir` to generate XBPS binary packages that can be installed
-through the `xbps-install(8)` utility.
+or queried through the `xbps-install(8)` and `xbps-query(8)` utilities, respectively.
 
 The `xbps-src` utility uses `xbps-uchroot(8)` to build packages in lightweight linux
 `containers` through the use of `namespaces`, that means that processes and bind mounts
@@ -16,8 +16,8 @@ are isolated (among others).
 - GNU bash
 - xbps >= 0.41
 
-Make sure your user is added to the `xbuilder` group to be able to use `xbps-uchroot(8)`,
-otherwise `xbps-src` won't work correctly.
+A privileged group is required to be able to execute `xbps-uchroot(8)`, by default in void
+it's the `xbuilder` group.
 
 ### Quick setup in Void
 
@@ -73,8 +73,7 @@ and edit it accordingly to your needs.
 
 The following directory tree is used with a default configuration file:
 
-    /home/foo
-         |- void-packages
+         /void-packages
             |- common
             |- etc
             |- srcpkgs
@@ -102,8 +101,8 @@ The description of these directories is as follows:
  - `destdir`: to install packages, aka **fake destdir**.
  - `hostdir/ccache-<arch>`: to store ccache data if the `XBPS_CCACHE` option is enabled.
  - `hostdir/distcc-<arch>`: to store distcc data if the `XBPS_DISTCC` option is enabled.
- - `hostdir/repocache`: to store downloaded binary packages from remote repositories to resolve package dependencies.
- - `hostdir/sources`: to store package source tarballs.
+ - `hostdir/repocache`: to store binary packages from remote repositories.
+ - `hostdir/sources`: to store package sources.
  - `hostdir/binpkgs`: local repository to store generated binary packages.
 
 ### Building packages
@@ -130,7 +129,7 @@ By default **xbps-src** will try to resolve package dependencies in this order:
 
 It is possible to avoid using remote repositories completely by using the `-N` flag.
 
-> NOTE: the default local repository may contain multiple `sub-repositories`: `debug`, `multilib`, etc.
+> NOTE: the default local repository may contain multiple *sub-repositories*: `debug`, `multilib`, etc.
 
 ### Rebuilding and overwriting existing local packages
 
@@ -162,7 +161,7 @@ In the host (machine that executes xbps-src) enable the following settings in th
     XBPS_DISTCC=yes
     XBPS_DISTCC_HOSTS="192.168.2.101 192.168.2.102"
 
-### Cross building packages for a target architecture
+### Cross compiling packages for a target architecture
 
 Currently `xbps-src` can cross build packages for some target architectures with a cross compiler. The supported target list is the following:
 
@@ -180,11 +179,11 @@ If a source package has been adapted to be **cross buildable** `xbps-src` will a
 
     $ ./xbps-src -a <target> pkg <pkgname>
 
-If the build for whatever reason fails, might be a new build issue or simply because it hasn't been adapted to be **cross built**. Join #xbps on irc.freenode.net for more information.
+If the build for whatever reason fails, might be a new build issue or simply because it hasn't been adapted to be **cross compiled**.
 
 ### Using xbps-src in a foreign linux distribution
 
-xbps-src can be used in any recent linux distribution matching the cpu architecture. At least a linux kernel 2.6.32 is required.
+xbps-src can be used in any recent linux distribution matching the cpu architecture.
 
 To use xbps-src in your linux distribution use the following instructions. Let's start downloading the xbps static binaries:
 
