@@ -8,8 +8,8 @@ files into a `fake destdir` to generate XBPS binary packages that can be install
 through the `xbps-install(8)` utility.
 
 The `xbps-src` utility uses `xbps-uchroot(8)` to build packages in lightweight linux
-`containers` thru the use of `namespaces`, that means that processes and bind mounts
-(among others) won't be visible to other processes in the system.
+`containers` through the use of `namespaces`, that means that processes and bind mounts
+are isolated (among others).
 
 ### Requirements
 
