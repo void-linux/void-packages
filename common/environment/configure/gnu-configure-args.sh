@@ -1,17 +1,17 @@
 # This file sets up configure_args with common settings.
 
-if [ -z "$build_style" -o "$build_style" = "gnu-configure" ]; then
-	export configure_args="--prefix=/usr --sysconfdir=/etc --infodir=/usr/share/info --mandir=/usr/share/man --localstatedir=/var ${configure_args}"
-	. ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
-	export configure_args+=" --host=$XBPS_TRIPLET --build=$XBPS_TRIPLET"
+if [ -n "$build_style" -a "$build_style" != "gnu-configure" ]; then
+	return 0
 fi
+
+export configure_args="--prefix=/usr --sysconfdir=/etc --infodir=/usr/share/info --mandir=/usr/share/man --localstatedir=/var ${configure_args}"
+. ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
+export configure_args+=" --host=$XBPS_TRIPLET --build=$XBPS_TRIPLET"
 
 if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
 	# on x86 use /usr/lib32 as libdir, but just as fake directory,
 	# because /usr/lib32 is a symlink to /usr/lib in void.
-	if [ -z "$build_style" -o "$build_style" = "gnu-configure" ]; then
-		export configure_args+=" --libdir=/usr/lib32"
-	fi
+	export configure_args+=" --libdir=/usr/lib32"
 fi
 
 # Cross compilation vars
