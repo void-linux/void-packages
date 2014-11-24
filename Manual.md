@@ -478,6 +478,9 @@ matches a version number enclosed in `<b>...</b>` tags.
 version numbers which are not taken into account for checking newer
 versions.  Example: `update_ignore="*b*"`
 
+- `update_version` is the version number used to compare against
+upstream versions. Example: `update_version=${version//./_}`
+
 You can run such a check using `./xbps-src update-check <pkgname>`.
 
 ### build style scripts
