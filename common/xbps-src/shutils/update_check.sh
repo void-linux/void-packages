@@ -1,7 +1,7 @@
 # vim: set ts=4 sw=4 et:
 
 update_check() {
-    local i p url sfname lpname githubname rx found_version consider
+    local i p url sfname lpname bbname githubname rx found_version consider
 
     if ! type curl >/dev/null 2>&1; then
         echo "ERROR: cannot find \`curl' executable!"
@@ -39,6 +39,10 @@ update_check() {
                 githubname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$githubname/tags"
                 rx='/archive/(v?|\Q'"$update_pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
+            *bitbucket.org*)
+                bbname="$(printf %s "$url" | cut -d/ -f4,5)"
+                url="https://bitbucket.org/$bbname/downloads"
+                rx='/(get|downloads)/(v?|\Q'"$update_pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
             esac
         fi
 
