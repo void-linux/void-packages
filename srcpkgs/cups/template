@@ -1,19 +1,19 @@
 # Template file for 'cups'
 pkgname=cups
-version=1.7.5
-revision=3
+version=2.0.1
+revision=1
 patch_args="-Np1"
 short_desc="Common Unix Printing System"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://www.cups.org/"
 license="GPL-2"
 distfiles="http://www.cups.org/software/${version}/cups-${version}-source.tar.gz"
-checksum=0bf2680ee191a6caf5a8ac5c231a75312e5c41a02dfbf48a32db4bf974d111c0
+checksum=59a6260f464c29bb727b23b490f47bd7fb04231e2fd305d5f73b54c867416ccd
 
-hostmakedepends="automake pkg-config poppler-utils"
-makedepends="
- acl-devel libjpeg-turbo-devel libpng-devel>=1.5.10 tiff-devel
- libressl-devel pam-devel poppler-devel libusb-devel avahi-libs-devel"
+hostmakedepends="automake pkg-config poppler-utils gnutls-devel avahi-libs-devel"
+makedepends="acl-devel libjpeg-turbo-devel libpng-devel>=1.5.10 tiff-devel
+ gnutls-devel pam-devel poppler-devel libusb-devel avahi-libs-devel
+ $(vopt_if systemd systemd-devel)"
 depends="libcups>=${version}_${revision} cups-filters bc xdg-utils"
 conf_files="
 	/etc/cups/cupsd.conf
@@ -25,45 +25,44 @@ conf_files="
 	/etc/pam.d/cups"
 make_dirs="
 	/var/cache/cups/rss 	0750 root lp
-	/var/run/cups/certs 	0750 root lp
 	/var/log/cups 		0750 root root
 	/var/spool/cups 	0755 root lp
 	/etc/cups/ssl 		0700 root lp"
-replaces="runit-void<20141013_2"
 
 # Package build options
 build_options="systemd"
-
-if [ "$build_option_systemd" ]; then
-	makedepends+=" systemd-devel"
-	configure_args+=" --with-systemdsystemunitdir=/usr/lib/systemd/system"
-	systemd_services="cups.socket on"
-fi
 
 pre_configure() {
 	aclocal -I config-scripts
 	autoconf -I config-scripts
 }
-
 do_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		CC=cc AR= RANLIB= CFLAGS=-Os LDFLAGS= ./configure
+		make -C cups libcups.a
+		make -C man mantohtml
+		mkdir cross-tools
+		cp man/mantohtml cross-tools
+		make clean
+	fi
 	./configure ${configure_args} --libdir=/usr/lib \
 		--enable-acl --enable-dbus --enable-raw-printing \
 		--enable-threads --with-logdir=/var/log/cups \
 		--with-docdir=/usr/share/cups/doc --disable-gssapi \
 		--with-cups-user=daemon --with-cups-group=lp --enable-relro \
-		--enable-avahi --enable-pam --enable-openssl --disable-gnutls \
-		--with-menudir=/usr/share/applications \
-		--with-optim="${CFLAGS}"
+		--enable-avahi --enable-pam --enable-ssl \
+		--with-menudir=/usr/share/applications --with-xinetd=/etc/xinetd.d \
+		--with-optim="${CFLAGS}" $(vopt_with systemd) \
+		--without-perl --without-php --without-python
 }
-
 do_build() {
 	# Do not run genstrings binary in cross builds.
 	if [ "$CROSS_BUILD" ]; then
 		sed -e '/.\/genstrings.*/d' -i ppdc/Makefile
+		sed -e "s,./mantohtml,${wrksrc}/cross-tools/mantohtml,g" -i man/Makefile
 	fi
 	make ${makejobs}
 }
-
 do_install() {
 	make BUILDROOT=${DESTDIR} install
 	# Remove sysvinit scripts.
@@ -93,14 +92,16 @@ do_install() {
 	# comment out all conversion rules which use any of the removed filters
 	perl -p -i -e 's:^(.*\s+bannertops\s*)$:#\1:' \
 		${DESTDIR}/usr/share/cups/mime/mime.convs
+	# comment out unnecessary PageLogFormat entry
+	sed -i -e 's:PageLogFormat:#PageLogFormat:' ${DESTDIR}/etc/cups/cupsd.conf*
 
+	# runit service
 	vsv cupsd
 }
 
 libcups_package() {
 	short_desc+=" - client runtime shared libraries"
 	conf_files="/etc/cups/client.conf"
-	replaces="cups<1.6.0_1"
 	pkg_install() {
 		vmove "usr/lib/*.so.*"
 		vmove etc/cups/client.conf
