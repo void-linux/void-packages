@@ -513,6 +513,9 @@ depend on additional packages. This build style does not install
 dependencies to the root directory, and only checks if a binary package is
 available in repositories.
 
+- `ruby-module` For packages that are ruby modules and are installable via `ruby install.rb`.
+Additional install arguments can be specified via `make_install_args`.
+
 - `perl-ModuleBuild` For packages that use the Perl
 [Module::Build](http://search.cpan.org/~leont/Module-Build-0.4202/lib/Module/Build.pm) method.
 
