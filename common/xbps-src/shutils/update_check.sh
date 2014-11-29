@@ -43,6 +43,9 @@ update_check() {
                 bbname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://bitbucket.org/$bbname/downloads"
                 rx='/(get|downloads)/(v?|\Q'"$update_pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
+            *ftp.gnome.org*)
+                : ${update_pattern="$update_pkgname-\K[0-9]\.[0-9]*[02468]\.[0-9.]*[0-9](?=)"}
+                url="http://ftp.gnome.org/pub/GNOME/sources/$update_pkgname/cache.json";;
             esac
         fi
 
