@@ -46,6 +46,8 @@ update_check() {
             *ftp.gnome.org*)
                 : ${update_pattern="$update_pkgname-\K[0-9]\.[0-9]*[02468]\.[0-9.]*[0-9](?=)"}
                 url="http://ftp.gnome.org/pub/GNOME/sources/$update_pkgname/cache.json";;
+            *kernel.org/pub/linux/kernel/*)
+                rx=linux-'\K'${version%.*}'[\d.]+(?=\.tar\.xz)';;
             esac
         fi
 
