@@ -175,7 +175,7 @@ _vcopy() {
 }
 
 _vmove() {
-	local files="$1" _destdir _pkgdestdir _targetdir
+	local f files="$1" _destdir _pkgdestdir _targetdir
 
 	if [ -z "$DESTDIR" ]; then
 		msg_red "$pkgver: vmove: DESTDIR unset, can't continue...\n"
