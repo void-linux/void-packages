@@ -1,28 +1,28 @@
 # Template file for 'chromium'
 pkgname=chromium
 #See http://www.chromium.org/developers/calendar for the latest version
-version=38.0.2125.122
+version=39.0.2171.71
 revision=1
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://www.chromium.org/"
 license="BSD"
 distfiles="https://commondatastorage.googleapis.com/${pkgname}-browser-official/${pkgname}-${version}.tar.xz"
-checksum=3ea94fb3151f59c2d5088f832f8e894897489922a63bfa04f0068ee2fc0e36f3
+checksum=b7597ce853528861d14a281f847cd5335cdce09984e42701e9b5f3bfe21fd190
 
 lib32disabled=yes
 nodebug=yes
 
-hostmakedepends="yasm python pkg-config perl gperf bison ninja clang llvm protobuf-devel hwids"
+hostmakedepends="yasm python pkg-config perl gperf bison ninja hwids"
 makedepends="libpng-devel>=1.6 gtk+-devel nss-devel pciutils-devel
  libXi-devel libgcrypt-devel libgnome-keyring-devel cups-devel elfutils-devel
  libXcomposite-devel speech-dispatcher-devel libXrandr-devel mit-krb5-devel
- libXScrnSaver-devel alsa-lib-devel icu-devel protobuf-devel snappy-devel
- libxml2-devel libxslt-devel opus-devel pulseaudio-devel nss-devel libexif-devel
+ libXScrnSaver-devel alsa-lib-devel icu-devel snappy-devel
+ libxml2-devel libxslt-devel pulseaudio-devel nss-devel libexif-devel
  libXcursor-devel libflac-devel speex-devel libmtp-devel libwebp-devel>=0.4.0
  libjpeg-turbo-devel libevent-devel json-c-devel re2-devel harfbuzz-devel
  minizip-devel jsoncpp-devel zlib-devel libcap-devel libXdamage-devel"
-depends="desktop-file-utils hicolor-icon-theme"
+depends="hwids desktop-file-utils hicolor-icon-theme"
 nostrip_files="nacl_irt_x86_64.nexe nacl_irt_x86_32.nexe"
 
 case "$XBPS_TARGET_MACHINE" in
@@ -33,27 +33,20 @@ pre_configure() {
 	# XXX xtraeme: fix gcc{,-c++}-multilib instead.
 	ldconfig &>/dev/null
 
-	if [ "$XBPS_TARGET_MACHINE" = "i686" -o "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
 		# Download NaCL toolchains
 		python2 build/download_nacl_toolchains.py \
 			--packages nacl_x86_newlib,pnacl_newlib,pnacl_translator
 	fi
-
-	# Build with clang as a temporary solution to startup crash with GCC 4.9
-	mkdir -p third_party/llvm-build/Release+Asserts/bin
-	ln -s /usr/bin/clang third_party/llvm-build/Release+Asserts/bin/
-	ln -s /usr/bin/clang++ third_party/llvm-build/Release+Asserts/bin/
-	ln -s /usr/bin/llvm-symbolizer third_party/llvm-build/Release+Asserts/bin/
-	# clang 3.4 doesn't support this option
-	sed -i '/-Wno-absolute-value/d' \
-		build/common.gypi \
-		third_party/ffmpeg/ffmpeg.gyp
+	# Remove bundled ICU; its header files appear to get picked up instead of
+	# the system ones, leading to errors during the final link stage
+	# https://groups.google.com/a/chromium.org/d/topic/chromium-packagers/BNGvJc08B6Q
+	find third_party/icu -type f \! -regex '.*\.\(gyp\|gypi\|isolate\)' -delete
 }
 
 do_configure() {
 	local conf=""
 
-	unset CC CXX
 	export -n CFLAGS CXXFLAGS LDFLAGS
 	if [ "$CROSS_BUILD" ]; then
 		export GYP_CROSSCOMPILE=1
@@ -69,11 +62,8 @@ do_configure() {
 	# Disable glibc Native Client toolchain.
 	conf+=" -Ddisable_glibc=1"
 
-	if [ "$XBPS_TARGET_MACHINE" = "i686" -o "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		conf+=" -Dclang=1 -Dhost_clang=1"
-	else
-		conf+=" -Dclang=0 -Dhost_clang=0"
-	fi
+	# Disable clang for native and host builds.
+	conf+=" -Dclang=0 -Dhost_clang=0"
 
 	# Use system-provided libraries.
 	# TODO: use_system_hunspell (upstream changes needed).
@@ -83,7 +73,6 @@ do_configure() {
 	# TODO: use_system_sqlite (http://crbug.com/22208).
 	#
 	# XXX xtraeme: broken currently
-	# -Duse_system_icu=1 (needs icu-52)
 	# -Duse_system_opus=1 (needs opus_custom.h)
 	# -Duse_system_protobuf
 	# -Duse_system_v8=1
@@ -91,6 +80,7 @@ do_configure() {
 	conf+="
 		-Dclang_use_chrome_plugins=0
 		-Dpython_ver=2.7
+		-Dicu_use_data_file_flag=0
 		-Duse_system_bzip2=1
 		-Duse_system_flac=1
 		-Duse_system_harfbuzz=1
@@ -107,6 +97,7 @@ do_configure() {
 		-Duse_system_speex=1
 		-Duse_system_xdg_utils=1
 		-Duse_system_yasm=1
+		-Duse_system_icu=1
 		-Duse_cups=1
 		-Dlinux_link_cups=1
 		-Duse_pulseaudio=1
@@ -151,9 +142,11 @@ do_configure() {
 	conf+=" -Dlogging_like_official_build=1"
 
 	case "${XBPS_TARGET_MACHINE}" in
+		i686*) conf+=" -Ddisable_nacl=1 -Ddisable_pnacl=1";;
 		arm*) conf+="
 			-Dtarget_arch=arm
 			-Darm_neon=0
+			-Ddisable_pnacl=1
 			-Ddisable_nacl=1
 			-Dv8_use_arm_eabi_hardfloat=true
 			-Darm_float_abi=hard"
@@ -178,14 +171,10 @@ do_configure() {
 			-Dv8_can_use_vfp2_instructions=true";;
 	esac
 
-	# https://code.google.com/p/chromium/issues/detail?id=386097
-	third_party/libaddressinput/chromium/tools/update-strings.py
-
 	build/linux/unbundle/replace_gyp_files.py ${conf}
-	build/gyp_chromium --depth=. ${conf} -Drelease_extra_cflags="${CFLAGS/-fstack-protector-strong/}"
+	build/gyp_chromium --depth=. ${conf} -Drelease_extra_cflags="${CFLAGS}"
 }
 do_build() {
-	unset CC CXX
 	export -n CFLAGS CXXFLAGS LDFLAGS
 	ninja -C out/Release ${makejobs} chrome chrome_sandbox chromedriver
 }
@@ -194,20 +183,16 @@ do_install() {
 	vinstall out/Release/chromedriver 755 usr/lib/${pkgname} chromedriver
 	vinstall out/Release/chrome_sandbox 4755 usr/lib/${pkgname} chrome-sandbox
 
-	if [ "$XBPS_TARGET_MACHINE" = "i686" -o "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
 		cp out/Release/nacl_helper{,_bootstrap} \
 			${DESTDIR}/usr/lib/chromium
-	fi
-	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
 		cp out/Release/nacl_irt_x86_64.nexe ${DESTDIR}/usr/lib/chromium
-	elif [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
-		cp out/Release/nacl_irt_x86_32.nexe ${DESTDIR}/usr/lib/chromium
 	fi
 	cp out/Release/{*.pak,libffmpegsumo.so} \
 		out/Release/libpdf.so \
 		${DESTDIR}/usr/lib/chromium
 
-	cp -a out/Release/locales out/Release/icudtl.dat ${DESTDIR}/usr/lib/chromium
+	cp -a out/Release/locales ${DESTDIR}/usr/lib/chromium
 
 	vman out/Release/chrome.1 chromium.1
 	vinstall ${FILESDIR}/chromium.desktop 644 usr/share/applications
