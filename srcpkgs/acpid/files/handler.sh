@@ -16,7 +16,7 @@ case "$1" in
         case "$2" in
             PBTN|PWRF)
 		    logger "PowerButton pressed: $2"
-		    shutdown -h -P now
+		    shutdown -P now
 		    ;;
             *)      logger "ACPI action undefined: $2" ;;
         esac
@@ -68,6 +68,7 @@ case "$1" in
 		open)  logger "LID opened" ;;
 		*) logger "ACPI action undefined (LID): $2";;
 	esac
+	;;
     *)
         logger "ACPI group/action undefined: $1 / $2"
         ;;
