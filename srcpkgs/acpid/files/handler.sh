@@ -14,13 +14,19 @@ case "$1" in
     button/power)
         #echo "PowerButton pressed!">/dev/tty5
         case "$2" in
-            PWRF)   logger "PowerButton pressed: $2" ;;
+            PBTN|PWRF)
+		    logger "PowerButton pressed: $2"
+		    shutdown -h -P now
+		    ;;
             *)      logger "ACPI action undefined: $2" ;;
         esac
         ;;
     button/sleep)
         case "$2" in
-            SLPB)   echo -n mem >/sys/power/state ;;
+            SBTN|SLPB)
+		    logger "Sleep Button pressed: $2"
+		    echo -n mem >/sys/power/state
+		    ;;
             *)      logger "ACPI action undefined: $2" ;;
         esac
         ;;
@@ -57,8 +63,11 @@ case "$1" in
         esac
         ;;
     button/lid)
-        #echo "LID switched!">/dev/tty5
-        ;;
+	case "$3" in
+		close) logger "LID closed" ;;
+		open)  logger "LID opened" ;;
+		*) logger "ACPI action undefined (LID): $2";;
+	esac
     *)
         logger "ACPI group/action undefined: $1 / $2"
         ;;
