@@ -1,0 +1,153 @@
+--- include/configs/am335x_evm.h.orig	2014-12-05 05:14:09.200354837 +0100
++++ include/configs/am335x_evm.h	2014-12-05 05:32:28.909069021 +0100
+@@ -18,6 +18,8 @@
+ 
+ #include <configs/ti_am335x_common.h>
+ 
++#define CONFIG_SUPPORT_RAW_INITRD
++
+ #ifndef CONFIG_SPL_BUILD
+ # define CONFIG_FIT
+ # define CONFIG_TIMESTAMP
+@@ -78,15 +80,17 @@
+ 	"bootpart=0:2\0" \
+ 	"bootdir=/boot\0" \
+ 	"bootfile=zImage\0" \
++	"fdtdir=/boot/dtbs\0" \
+ 	"fdtfile=undefined\0" \
++	"rdfile=initramfs.img\0" \
+ 	"console=ttyO0,115200n8\0" \
+ 	"partitions=" \
+ 		"uuid_disk=${uuid_gpt_disk};" \
+ 		"name=rootfs,start=2MiB,size=-,uuid=${uuid_gpt_rootfs}\0" \
+ 	"optargs=\0" \
+ 	"mmcdev=0\0" \
+-	"mmcroot=/dev/mmcblk0p2 ro\0" \
+-	"mmcrootfstype=ext4 rootwait\0" \
++	"mmcroot=/dev/mmcblk0p2\0" \
++	"mmcrootextra=rw fixrtc rootwait\0" \
+ 	"rootpath=/export/rootfs\0" \
+ 	"nfsopts=nolock\0" \
+ 	"static_ip=${ipaddr}:${serverip}:${gatewayip}:${netmask}:${hostname}" \
+@@ -95,8 +99,7 @@
+ 	"ramrootfstype=ext2\0" \
+ 	"mmcargs=setenv bootargs console=${console} " \
+ 		"${optargs} " \
+-		"root=${mmcroot} " \
+-		"rootfstype=${mmcrootfstype}\0" \
++		"root=${mmcroot} ${mmcrootextra}\0" \
+ 	"spiroot=/dev/mtdblock4 rw\0" \
+ 	"spirootfstype=jffs2\0" \
+ 	"spisrcaddr=0xe0000\0" \
+@@ -122,41 +125,43 @@
+ 		"${optargs} " \
+ 		"root=${ramroot} " \
+ 		"rootfstype=${ramrootfstype}\0" \
+-	"loadramdisk=load mmc ${mmcdev} ${rdaddr} ramdisk.gz\0" \
++	"loadramdisk=load mmc ${bootpart} ${rdaddr} ${bootdir}/${rdfile}\0" \
+ 	"loadimage=load mmc ${bootpart} ${loadaddr} ${bootdir}/${bootfile}\0" \
+-	"loadfdt=load mmc ${bootpart} ${fdtaddr} ${bootdir}/${fdtfile}\0" \
+-	"mmcloados=run mmcargs; " \
+-		"if test ${boot_fdt} = yes || test ${boot_fdt} = try; then " \
+-			"if run loadfdt; then " \
+-				"bootz ${loadaddr} - ${fdtaddr}; " \
+-			"else " \
+-				"if test ${boot_fdt} = try; then " \
+-					"bootz; " \
+-				"else " \
+-					"echo WARN: Cannot load the DT; " \
+-				"fi; " \
+-			"fi; " \
+-		"else " \
+-			"bootz; " \
+-		"fi;\0" \
++	"loadfdt=load mmc ${bootpart} ${fdtaddr} ${fdtdir}/${fdtfile}\0" \
+ 	"mmcboot=mmc dev ${mmcdev}; " \
+ 		"if mmc rescan; then " \
++			"gpio set 54;" \
+ 			"echo SD/MMC found on device ${mmcdev};" \
+-			"if run loadbootscript; then " \
+-				"run bootscript;" \
+-			"else " \
+ 				"if run loadbootenv; then " \
++				"gpio set 55;" \
+ 					"echo Loaded environment from ${bootenv};" \
+ 					"run importbootenv;" \
+ 				"fi;" \
++			"if test -n $cape; then " \
++				"if test -e mmc ${bootpart} ${fdtdir}/$fdtbase-$cape.dtb; then " \
++					"setenv fdtfile $fdtbase-$cape.dtb; " \
++				"fi; " \
++				"echo using: $fdtfile...; " \
++			"fi; " \
++			"echo Checking if uenvcmd is set ...;" \
+ 				"if test -n $uenvcmd; then " \
++				"gpio set 56; " \
+ 					"echo Running uenvcmd ...;" \
+ 					"run uenvcmd;" \
+ 				"fi;" \
+ 				"if run loadimage; then " \
+-					"run mmcloados;" \
++				"if run loadfdt; then " \
++					"run mmcargs;" \
++					"if run loadramdisk; then " \
++						"bootz ${loadaddr} ${rdaddr}:${filesize} ${fdtaddr};" \
++					"else " \
++						"bootz ${loadaddr} - ${fdtaddr};" \
++					"fi;" \
++				"else " \
++					"echo Kernel found, but no device tree found;" \
++				"fi;" \
+ 				"fi;" \
+-			"fi ;" \
++			"echo No kernel found;"\
+ 		"fi;\0" \
+ 	"spiboot=echo Booting from spi ...; " \
+ 		"run spiargs; " \
+@@ -175,26 +180,42 @@
+ 		"bootz ${loadaddr} ${rdaddr} ${fdtaddr}\0" \
+ 	"findfdt="\
+ 		"if test $board_name = A335BONE; then " \
+-			"setenv fdtfile am335x-bone.dtb; fi; " \
++			"setenv fdtfile am335x-bone.dtb; setenv fdtbase am335x-bone; fi; " \
+ 		"if test $board_name = A335BNLT; then " \
+-			"setenv fdtfile am335x-boneblack.dtb; fi; " \
++			"setenv fdtfile am335x-boneblack.dtb; setenv fdtbase am335x-boneblack; fi; " \
+ 		"if test $board_name = A33515BB; then " \
+ 			"setenv fdtfile am335x-evm.dtb; fi; " \
+ 		"if test $board_name = A335X_SK; then " \
+ 			"setenv fdtfile am335x-evmsk.dtb; fi; " \
+ 		"if test $fdtfile = undefined; then " \
+ 			"echo WARNING: Could not determine device tree to use; fi; \0" \
++	"findmmc=" \
++		"if test $board_name = A335BNLT; then " \
++			"setenv mmc1 1;" \
++			"mmc dev 0;" \
++			"if mmc rescan; then " \
++				"setenv mmc0 1;" \
++			"else " \
++				"setenv mmc0 0;" \
++			"fi;" \
++		"fi;\0" \
+ 	NANDARGS \
+ 	DFUARGS
+ #endif
+ 
+ #define CONFIG_BOOTCOMMAND \
++	"gpio set 53; " \
++	"i2c mw 0x24 1 0x3e; " \
++	"run findmmc; " \
+ 	"run findfdt; " \
+ 	"run mmcboot;" \
++	"gpio clear 56; " \
++	"gpio clear 55; " \
++	"gpio clear 54; " \
+ 	"setenv mmcdev 1; " \
+ 	"setenv bootpart 1:2; " \
+-	"run mmcboot;" \
+-	"run nandboot;"
++	"if test $mmc0 = 1; then setenv mmcroot /dev/mmcblk1p2; fi; " \
++	"run mmcboot;"
+ 
+ /* NS16550 Configuration */
+ #define CONFIG_SYS_NS16550_COM1		0x44e09000	/* Base EVM has UART0 */
