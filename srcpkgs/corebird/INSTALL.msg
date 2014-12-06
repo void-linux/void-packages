@@ -1,2 +1,6 @@
-Optional dependencies for video and gif support:
-gst-plugins-base1 gst-plugins-bad1 gst-plugins-good1 gst-libav
+Some optional packages must be installed for additional functionality:
+
+- gst-plugins-base1: Video and GIF support
+- gst-plugins-bad1: Video and GIF support
+- gst-plugins-good1: Video and GIF support
+- gst-libav: Video and GIF support
