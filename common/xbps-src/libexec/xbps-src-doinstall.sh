@@ -24,9 +24,9 @@ for f in $XBPS_COMMONDIR/environment/install/*.sh; do
     source_file "$f"
 done
 
-XBPS_INSTALL_DONE="$wrksrc/.xbps_${sourcepkg}_${XBPS_CROSS_BUILD}_install_done"
-XBPS_PRE_INSTALL_DONE="$wrksrc/.xbps_${sourcepkg}_${XBPS_CROSS_BUILD}_pre_install_done"
-XBPS_POST_INSTALL_DONE="$wrksrc/.xbps_${sourcepkg}_${XBPS_CROSS_BUILD}_post_install_done"
+XBPS_INSTALL_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_install_done"
+XBPS_PRE_INSTALL_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_pre_install_done"
+XBPS_POST_INSTALL_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_post_install_done"
 
 cd $wrksrc || msg_error "$pkgver: cannot access to wrksrc [$wrksrc]\n"
 if [ -n "$build_wrksrc" ]; then
@@ -76,21 +76,24 @@ fi
 
 # If it's a subpkg execute the pkg_install() function.
 if [ "$sourcepkg" != "$PKGNAME" ]; then
-    # Source all subpkg environment setup snippets.
-    for f in ${XBPS_COMMONDIR}/environment/setup-subpkg/*.sh; do
-        source_file "$f"
-    done
-    ${PKGNAME}_package
-    pkgname=$PKGNAME
+    XBPS_SUBPKG_INSTALL_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_${PKGNAME}_install_done"
+    if [ ! -f $XBPS_SUBPKG_INSTALL_DONE ]; then
+        # Source all subpkg environment setup snippets.
+        for f in ${XBPS_COMMONDIR}/environment/setup-subpkg/*.sh; do
+            source_file "$f"
+        done
+        ${PKGNAME}_package
+        pkgname=$PKGNAME
 
-    install -d $PKGDESTDIR
-    if declare -f pkg_install >/dev/null; then
-        export XBPS_PKGDESTDIR=1
-        run_func pkg_install
+        install -d $PKGDESTDIR
+        if declare -f pkg_install >/dev/null; then
+            export XBPS_PKGDESTDIR=1
+            run_func pkg_install
+        fi
+        setup_pkg_depends $pkgname
+        run_pkg_hooks post-install
+        touch -f $XBPS_SUBPKG_INSTALL_DONE
     fi
 fi
-
-setup_pkg_depends $pkgname
-run_pkg_hooks post-install
 
 exit 0

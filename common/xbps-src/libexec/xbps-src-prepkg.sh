@@ -24,6 +24,13 @@ for f in $XBPS_COMMONDIR/environment/install/*.sh; do
     source_file "$f"
 done
 
+
+XBPS_PREPKG_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_${PKGNAME}_prepkg_done"
+
+if [ -f $XBPS_PREPKG_DONE ]; then
+    exit 0
+fi
+
 # If it's a subpkg execute the pkg_install() function.
 if [ "$sourcepkg" != "$PKGNAME" ]; then
     # Source all subpkg environment setup snippets.
@@ -35,7 +42,7 @@ if [ "$sourcepkg" != "$PKGNAME" ]; then
 fi
 
 setup_pkg_depends $pkgname
-
 run_pkg_hooks pre-pkg
+touch -f $XBPS_PREPKG_DONE
 
 exit 0
