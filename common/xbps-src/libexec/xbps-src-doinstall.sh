@@ -74,10 +74,11 @@ if [ ! -f $XBPS_INSTALL_DONE ]; then
     exit 0
 fi
 
+XBPS_SUBPKG_INSTALL_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_${PKGNAME}_install_done"
+
 # If it's a subpkg execute the pkg_install() function.
-if [ "$sourcepkg" != "$PKGNAME" ]; then
-    XBPS_SUBPKG_INSTALL_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_${PKGNAME}_install_done"
-    if [ ! -f $XBPS_SUBPKG_INSTALL_DONE ]; then
+if [ ! -f $XBPS_SUBPKG_INSTALL_DONE ]; then
+    if [ "$sourcepkg" != "$PKGNAME" ]; then
         # Source all subpkg environment setup snippets.
         for f in ${XBPS_COMMONDIR}/environment/setup-subpkg/*.sh; do
             source_file "$f"
@@ -90,10 +91,10 @@ if [ "$sourcepkg" != "$PKGNAME" ]; then
             export XBPS_PKGDESTDIR=1
             run_func pkg_install
         fi
-        setup_pkg_depends $pkgname
-        run_pkg_hooks post-install
-        touch -f $XBPS_SUBPKG_INSTALL_DONE
     fi
+    setup_pkg_depends ${pkgname:=$PKGNAME}
+    run_pkg_hooks post-install
+    touch -f $XBPS_SUBPKG_INSTALL_DONE
 fi
 
 exit 0
