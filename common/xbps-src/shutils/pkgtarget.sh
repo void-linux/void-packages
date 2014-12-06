@@ -69,9 +69,11 @@ install_pkg() {
         $XBPS_LIBEXECDIR/xbps-src-prepkg.sh $subpkg $cross || exit 1
     done
 
-    if [ "$XBPS_TARGET_PKG" = "$sourcepkg" ]; then
-        [ "$target" = "install" -o "$target" = "install-destdir" ] && return 0
-    fi
+    for subpkg in ${subpackages} ${sourcepkg}; do
+        if [ "$XBPS_TARGET_PKG" = "${subpkg}" -a "$target" = "install" ]; then
+            return 0
+        fi
+    done
 
     # If install went ok generate the binpkgs.
     for subpkg in ${subpackages} ${sourcepkg}; do
