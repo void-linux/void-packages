@@ -200,7 +200,7 @@ chroot_handler() {
         [ -n "$XBPS_PKG_OPTIONS" ] && arg="$arg -o $XBPS_PKG_OPTIONS"
 
         action="$arg $action"
-        env -i PATH=/usr/bin:/usr/sbin:$PATH HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
+        env -i PATH="/usr/bin:/usr/sbin:$PATH" HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
             xbps-uchroot ${_chargs} $XBPS_MASTERDIR /void-packages/xbps-src $action $pkg || rv=$?
     fi
 
