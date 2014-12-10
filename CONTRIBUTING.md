@@ -41,20 +41,19 @@ xnew pkgname subpkg1 subpkg2 ...
 
 Once you have built your template files there are certian rules on how the commit should be named.
 
-* Use the following for newly added packages: `New package: <pkgname>-<version>`
-  Example: https://github.com/voidlinux/void-packages/commit/176d9655429188aac10cd229827f99b72982ab10
+* Use the following for newly added packages: ```New package: <pkgname>-<version>```
+  [Example](https://github.com/voidlinux/void-packages/commit/176d9655429188aac10cd229827f99b72982ab10)
 
-* Use the following if you update a package: '<pkgname>: update to <version>.'
-  Example: https://github.com/voidlinux/void-packages/commit/b6b82dcbd4aeea5fc37a32e4b6a8dd8bd980d5a3
+* Use the following if you update a package: ```<pkgname>: update to <version>.```
+  [Example](https://github.com/voidlinux/void-packages/commit/b6b82dcbd4aeea5fc37a32e4b6a8dd8bd980d5a3)
 
-* If you changed something on the template without a version change use '<pkgname>: <reason>'
-  Example: https://github.com/voidlinux/void-packages/commit/8b68d6bf1eb997cd5e7c095acd040e2c5379c91d
+* If you changed something on the template without a version change use ```<pkgname>: <reason>```
+  [Example](https://github.com/voidlinux/void-packages/commit/8b68d6bf1eb997cd5e7c095acd040e2c5379c91d)
 
 If you want to describe your changes in more detail, make an empty line and add the description afterwards.
-Example: https://github.com/voidlinux/void-packages/commit/f1c45a502086ba1952f23ace9084a870ce437bc6
+[Example](https://github.com/voidlinux/void-packages/commit/f1c45a502086ba1952f23ace9084a870ce437bc6)
 
 This is also described in the [manual](https://github.com/voidlinux/void-packages/blob/master/Manual.md) in deeper detail.
-
 
 There's a helper tool for comitting packages in the [xtools](https://github.com/chneukirchen/xtools) package:
 ```
