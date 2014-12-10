@@ -51,7 +51,7 @@ hook() {
 				msg_red "${pkgver}: SONAME bump detected: ${libname}.so.${conflictRev} -> ${libname}.so.${rev}\n"
 				msg_red "${pkgver}: please update common/shlibs with this line: \"${libname}.so.${rev} ${pkgver}\"\n"
 				msg_red "${pkgver}: all reverse dependencies should also be revbumped to be rebuilt against ${libname}.so.${rev}:\n"
-				_revdeps=$($XBPS_QUERY_XCMD -s ${libname}.so -p shlib-requires|awk '{print $1}')
+				_revdeps=$($XBPS_QUERY_XCMD -Rs ${libname}.so -p shlib-requires|awk '{print $1}')
 				for x in ${_revdeps}; do
 					msg_red "   ${x%:}\n"
 				done
