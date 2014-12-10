@@ -92,7 +92,7 @@ The reviewers will comment your pull request and point out which changes are nee
 
 Once you have applied all comments, the reviewers will merge your request.
 
-If the pull request gets inactive for some days, the reviews may or may not warn you when they are about to close it.
+If the pull request gets inactive for some days, the reviewers may or may not warn you when they are about to close it.
 If it stays inactive further, it'll be closed.
 
 Please abstain from temporary closing a pull request while revising the templates. Only close your pull request if
@@ -102,4 +102,3 @@ you're sure you don't want your changes to be included.
 
 Once the reviewers have merged the pullrequest, our [build server](http://build.voidlinux.eu) is automaticly triggered and builds
 all packages from this pull request for all supported platforms. Once it is finished, the packages are available to all Void Linux users.
-
