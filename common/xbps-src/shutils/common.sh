@@ -1,21 +1,18 @@
 # vim: set ts=4 sw=4 et:
 
 run_func() {
-    local func="$1" desc="$2" restoretrap= logpipe= logfile= teepid=
+    local func="$1" desc="$2" funcname="$3" restoretrap= logpipe= logfile= teepid=
 
-    if [ -d "${wrksrc}" ]; then
-        logpipe=$(mktemp -u --tmpdir=${wrksrc} .xbps_${XBPS_CROSS_BUILD}_XXXXXXXX.logpipe)
-        logfile=${wrksrc}/.xbps_${XBPS_CROSS_BUILD}_${func}.log
-    else
-        logpipe=$(mktemp -t -u .xbps_${XBPS_CROSS_BUILD}_${func}_${pkgname}_logpipe.XXXXXXX)
-        logfile=$(mktemp -t .xbps_${XBPS_CROSS_BUILD}_${func}_${pkgname}.log.XXXXXXXX)
-    fi
+    : ${funcname:=$func}
+
+    logpipe=$(mktemp -u --tmpdir=${XBPS_STATEDIR} ${pkgname}_${XBPS_CROSS_BUILD}_XXXXXXXX.logpipe)
+    logfile=${XBPS_STATEDIR}/${pkgname}_${XBPS_CROSS_BUILD}_${funcname}.log
 
     msg_normal "${pkgver:-xbps-src}: running ${desc:-${func}} ...\n"
 
     set -E
     restoretrap=$(trap -p ERR)
-    trap 'error_func $func $LINENO' ERR
+    trap 'error_func $funcname $LINENO' ERR
 
     mkfifo "$logpipe"
     tee "$logfile" < "$logpipe" &
@@ -176,7 +173,7 @@ run_pkg_hooks() {
         hookn=$(basename $f)
         hookn=${hookn%.sh}
         . $f
-        run_func hook "$phase hook: $hookn"
+        run_func hook "$phase hook: $hookn" ${phase}_${hookn}
     done
 }
 
@@ -400,5 +397,7 @@ setup_pkg() {
         exit 0
     fi
 
-    export XBPS_WRAPPERDIR="${wrksrc}/.xbps/bin"
+    export XBPS_STATEDIR="${XBPS_BUILDDIR}/.xbps-${sourcepkg}-${version}"
+    export XBPS_WRAPPERDIR="${XBPS_STATEDIR}/wrappers"
+    mkdir -p $XBPS_WRAPPERDIR
 }

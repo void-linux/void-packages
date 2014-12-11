@@ -2,7 +2,7 @@
 # commit sha1 (in short mode) for all files of a source pkg.
 
 hook() {
-	local GITREVS_FILE=${wrksrc}/.xbps_${sourcepkg}_git_revs
+	local GITREVS_FILE=${XBPS_STATEDIR}/gitrev
 	local GIT_CMD rev
 
 	# If XBPS_USE_GIT_REVS is disabled in conf file don't continue.

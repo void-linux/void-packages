@@ -42,8 +42,8 @@ genpkg() {
 	if [ -s ${PKGDESTDIR}/shlib-requires ]; then
 		_shrequires="$(cat ${PKGDESTDIR}/shlib-requires)"
 	fi
-	if [ -s ${wrksrc}/.xbps_${sourcepkg}_git_revs ]; then
-		_gitrevs="$(cat ${wrksrc}/.xbps_${sourcepkg}_git_revs)"
+	if [ -s ${XBPS_STATEDIR}/gitrev ]; then
+		_gitrevs="$(cat ${XBPS_STATEDIR}/gitrev)"
 	fi
 
 	if [ -n "$provides" ]; then

@@ -29,9 +29,9 @@ if [ -z $pkgname -o -z $version ]; then
     exit 1
 fi
 
-XBPS_BUILD_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_build_done"
-XBPS_PRE_BUILD_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_pre_build_done"
-XBPS_POST_BUILD_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_post_build_done"
+XBPS_BUILD_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_build_done"
+XBPS_PRE_BUILD_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_pre_build_done"
+XBPS_POST_BUILD_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_post_build_done"
 
 if [ -f "$XBPS_BUILD_DONE" ]; then
     exit 0

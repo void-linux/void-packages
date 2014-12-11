@@ -177,10 +177,10 @@ remove_pkg() {
             msg_normal "$f: removing 32bit files from destdir...\n"
             rm -rf ${_destdir}/${f}-32bit-${version}
         fi
-        rm -f $wrksrc/.xbps_${XBPS_CROSS_BUILD}_${f}_install_done
-        rm -f $wrksrc/.xbps_${XBPS_CROSS_BUILD}_${f}_prepkg_done
+        rm -f ${XBPS_STATEDIR}/${f}_${cross}_subpkg_install_done
+        rm -f ${XBPS_STATEDIR}/${f}_${cross}_prepkg_done
     done
-    rm -f $wrksrc/.xbps_${cross}_install_done
-    rm -f $wrksrc/.xbps_${cross}_pre_install_done
-    rm -f $wrksrc/.xbps_${cross}_post_install_done
+    rm -f ${XBPS_STATEDIR}/${sourcepkg}_${cross}_install_done
+    rm -f ${XBPS_STATEDIR}/${sourcepkg}_${cross}_pre_install_done
+    rm -f ${XBPS_STATEDIR}/${sourcepkg}_${cross}_post_install_done
 }

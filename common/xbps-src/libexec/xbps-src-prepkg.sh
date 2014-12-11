@@ -25,7 +25,7 @@ for f in $XBPS_COMMONDIR/environment/install/*.sh; do
 done
 
 
-XBPS_PREPKG_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_${PKGNAME}_prepkg_done"
+XBPS_PREPKG_DONE="${XBPS_STATEDIR}/${PKGNAME}_${XBPS_CROSS_BUILD}_prepkg_done"
 
 if [ -f $XBPS_PREPKG_DONE ]; then
     exit 0

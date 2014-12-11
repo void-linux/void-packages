@@ -24,9 +24,9 @@ for f in $XBPS_COMMONDIR/environment/configure/*.sh; do
     source_file "$f"
 done
 
-XBPS_CONFIGURE_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_configure_done"
-XBPS_PRECONFIGURE_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_pre_configure_done"
-XBPS_POSTCONFIGURE_DONE="$wrksrc/.xbps_${XBPS_CROSS_BUILD}_post_configure_done"
+XBPS_CONFIGURE_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_configure_done"
+XBPS_PRECONFIGURE_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_pre_configure_done"
+XBPS_POSTCONFIGURE_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_post_configure_done"
 
 if [ -f "$XBPS_CONFIGURE_DONE" ]; then
     exit 0

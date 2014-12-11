@@ -24,7 +24,7 @@ for f in $XBPS_COMMONDIR/environment/fetch/*.sh; do
     source_file "$f"
 done
 
-XBPS_FETCH_DONE="$wrksrc/.xbps_fetch_done"
+XBPS_FETCH_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_fetch_done"
 
 if [ -f "$XBPS_FETCH_DONE" ]; then
     exit 0

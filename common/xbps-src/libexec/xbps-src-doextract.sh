@@ -24,7 +24,7 @@ for f in $XBPS_COMMONDIR/environment/extract/*.sh; do
     source_file "$f"
 done
 
-XBPS_EXTRACT_DONE="$wrksrc/.xbps_extract_done"
+XBPS_EXTRACT_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_extract_done"
 
 if [ -f $XBPS_EXTRACT_DONE ]; then
     exit 0
