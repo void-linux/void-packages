@@ -84,7 +84,7 @@ hook() {
 			;;
 		zip)
 			if command -v unzip &>/dev/null; then
-				unzip -q $srcdir/$curfile -d $extractdir
+				unzip -o -q $srcdir/$curfile -d $extractdir
 				if [ $? -ne 0 ]; then
 					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 				fi
