@@ -64,7 +64,7 @@ xbump <pkgname>
 
 Once you successfully build the package at least on x86 (building it on armv* is recommended too) you can start a pull request.
 
-Most pull request should only contain a single package and it's dependencies which are not part of void-packages yet.
+Most pull request should only contain a single package and its dependencies which are not part of void-packages yet.
 
 If you make updates to packages containing a soname bump you also need to revbump all packages that are dependant. Those
 packages should also be part of the same pull request.
