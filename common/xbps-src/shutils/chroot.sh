@@ -121,7 +121,6 @@ chroot_sync_repos() {
 
     # if -N is set, comment out remote repositories from xbps.conf.
     if [ -n "$XBPS_SKIP_REMOTEREPOS" ]; then
-        rm -f ${XBPS_MASTERDIR}/usr/share/xbps/repo.d/00-main.conf
         rm -f ${XBPS_MASTERDIR}/etc/xbps/repo.d/20-remote.conf
         rm -f ${XBPS_MASTERDIR}/etc/xbps/repo.d/22-remote-x86_64.conf
     fi
