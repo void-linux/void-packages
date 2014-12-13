@@ -91,6 +91,7 @@ install_pkg() {
         remove_pkg_wrksrc
         setup_pkg $sourcepkg $cross
         remove_pkg $cross
+        remove_pkg_statedir
     fi
 
     # If base-chroot not installed, install "base-files" into masterdir
@@ -148,6 +149,12 @@ remove_pkg_wrksrc() {
     if [ -d "$wrksrc" ]; then
         msg_normal "$pkgver: cleaning build directory...\n"
         rm -rf $wrksrc
+    fi
+}
+
+remove_pkg_statedir() {
+    if [ -d "$XBPS_STATEDIR" ]; then
+        rm -rf "$XBPS_STATEDIR"
     fi
 }
 
