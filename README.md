@@ -253,5 +253,7 @@ To see if the musl C dynamic linker is working as expected.
 
 ### Contributing
 
-See [Manual](https://github.com/voidlinux/xbps-packages/blob/master/Manual.md)
-for documentation to create and learn about the source packages.
+See [Contributing](https://github.com/voidlinux/xbps-packages/blob/master/CONTRIBUTING.md)
+for a general overview of how to contribute and the
+[Manual](https://github.com/voidlinux/xbps-packages/blob/master/Manual.md)
+for details of how to create source packages.
