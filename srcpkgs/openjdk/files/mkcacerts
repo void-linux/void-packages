@@ -1,0 +1,214 @@
+#!/bin/sh
+# Script provided by http://www.linuxfromscratch.org/blfs/view/svn/general/openjdk.html#ojdk-certs
+# EB 20141217: removed bashisms
+# Simple script to extract x509 certificates and create a JRE cacerts file.
+
+get_args()
+    {
+        if test -z "${1}" ; then
+            showhelp
+            exit 1
+        fi
+
+        while test -n "${1}" ; do
+            case "${1}" in
+                -f | --cafile)
+                    check_arg $1 $2
+                    CAFILE="${2}"
+                    shift 2
+                    ;;
+                -d | --cadir)
+                    check_arg $1 $2
+                    CADIR="${2}"
+                    shift 2
+                    ;;
+                -o | --outfile)
+                    check_arg $1 $2
+                    OUTFILE="${2}"
+                    shift 2
+                    ;;
+                -k | --keytool)
+                    check_arg $1 $2
+                    KEYTOOL="${2}"
+                    shift 2
+                    ;;
+                -s | --openssl)
+                    check_arg $1 $2
+                    OPENSSL="${2}"
+                    shift 2
+                    ;;
+                -h | --help)
+                    showhelp
+                    exit 0
+                    ;;
+                *)
+                    showhelp
+                    exit 1
+                    ;;
+            esac
+        done
+    }
+
+check_arg()
+    {
+        echo "${2}" | grep -v "^-" > /dev/null
+        if [ -z "$?" -o ! -n "$2" ]; then
+            echo "Error:  $1 requires a valid argument."
+            exit 1
+        fi
+    }
+
+# The date binary is not reliable on 32bit systems for dates after 2038
+mydate()
+    {
+        local y=$( echo $1 | cut -d" " -f4 )
+        local M=$( echo $1 | cut -d" " -f1 )
+        local d=$( echo $1 | cut -d" " -f2 )
+        local m
+
+        if [ ${d} -lt 10 ]; then d="0${d}"; fi
+
+        case $M in
+            Jan) m="01";;
+            Feb) m="02";;
+            Mar) m="03";;
+            Apr) m="04";;
+            May) m="05";;
+            Jun) m="06";;
+            Jul) m="07";;
+            Aug) m="08";;
+            Sep) m="09";;
+            Oct) m="10";;
+            Nov) m="11";;
+            Dec) m="12";;
+        esac
+
+        certdate="${y}${m}${d}"
+    }
+
+showhelp()
+    {
+        echo "`basename ${0}` creates a valid cacerts file for use with IcedTea."
+        echo ""
+        echo "        -f  --cafile     The path to a file containing PEM"
+        echo "                         formated CA certificates. May not be"
+        echo "                         used with -d/--cadir."
+        echo ""
+        echo "        -d  --cadir      The path to a directory of PEM formatted"
+        echo "                         CA certificates. May not be used with"
+        echo "                         -f/--cafile."
+        echo ""
+        echo "        -o  --outfile    The path to the output file."
+        echo ""
+        echo "        -k  --keytool    The path to the java keytool utility."
+        echo ""
+        echo "        -s  --openssl    The path to the openssl utility."
+        echo ""
+        echo "        -h  --help       Show this help message and exit."
+        echo ""
+        echo ""
+    }
+
+# Initialize empty variables so that the shell does not pollute the script
+CAFILE=""
+CADIR=""
+OUTFILE=""
+OPENSSL=""
+KEYTOOL=""
+certdate=""
+date=""
+today=$( date +%Y%m%d )
+
+# Process command line arguments
+get_args ${@}
+
+# Handle common errors
+if test "${CAFILE}x" = "x" -a "${CADIR}x" = "x" ; then
+    echo "ERROR!  You must provide an x509 certificate store!"
+    echo "\'$(basename ${0}) --help\' for more info."
+    echo ""
+    exit 1
+fi
+
+if test "${CAFILE}x" != "x" -a "${CADIR}x" != "x" ; then
+    echo "ERROR!  You cannot provide two x509 certificate stores!"
+    echo "\'$(basename ${0}) --help\' for more info."
+    echo ""
+    exit 1
+fi
+
+if test "${KEYTOOL}x" = "x" ; then
+    echo "ERROR!  You must provide a valid keytool program!"
+    echo "\'$(basename ${0}) --help\' for more info."
+    echo ""
+    exit 1
+fi
+
+if test "${OPENSSL}x" = "x" ; then
+    echo "ERROR!  You must provide a valid path to openssl!"
+    echo "\'$(basename ${0}) --help\' for more info."
+    echo ""
+    exit 1
+fi
+
+if test "${OUTFILE}x" = "x" ; then
+    echo "ERROR!  You must provide a valid output file!"
+    echo "\'$(basename ${0}) --help\' for more info."
+    echo ""
+    exit 1
+fi
+
+# Get on with the work
+
+# If using a CAFILE, split it into individual files in a temp directory
+if test "${CAFILE}x" != "x" ; then
+    TEMPDIR=`mktemp -d`
+    CADIR="${TEMPDIR}"
+
+    # Get a list of staring lines for each cert
+    CERTLIST=`grep -n "^-----BEGIN" "${CAFILE}" | cut -d ":" -f 1`
+
+    # Get a list of ending lines for each cert
+    ENDCERTLIST=`grep -n "^-----END" "${CAFILE}" | cut -d ":" -f 1`
+
+    # Start a loop
+    for certbegin in ${CERTLIST} ; do
+        for certend in ${ENDCERTLIST} ; do
+            if test "${certend}" -gt "${certbegin}"; then
+                break
+            fi
+        done
+        sed -n "${certbegin},${certend}p" "${CAFILE}" > "${CADIR}/${certbegin}.pem"
+        keyhash=`${OPENSSL} x509 -noout -in "${CADIR}/${certbegin}.pem" -hash`
+        echo "Generated PEM file with hash:  ${keyhash}."
+    done
+fi
+
+# Write the output file
+for cert in `find "${CADIR}" -type f -name "*.pem" -o -name "*.crt"`
+do
+
+    # Make sure the certificate date is valid...
+    date=$( ${OPENSSL} x509 -enddate -in "${cert}" -noout | sed 's/^notAfter=//' )
+    mydate "${date}"
+    if test "${certdate}" -lt "${today}" ; then
+        echo "${cert} expired on ${certdate}! Skipping..."
+        unset date certdate
+        continue
+    fi
+    unset date certdate
+    ls "${cert}"
+    tempfile=`mktemp`
+    sed -n "/^-----BEGIN/,/^-----END/p" "${cert}" > "${tempfile}"
+    echo yes | env LC_ALL=C "${KEYTOOL}" -import                     \
+                                         -alias `basename "${cert}"` \
+                                         -keystore "${OUTFILE}"      \
+                                         -storepass 'changeit'       \
+                                         -file "${tempfile}"
+    rm "${tempfile}"
+done
+
+if test "${TEMPDIR}x" != "x" ; then
+    rm -rf "${TEMPDIR}"
+fi
+exit 0
