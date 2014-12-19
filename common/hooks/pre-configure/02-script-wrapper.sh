@@ -57,7 +57,7 @@ python_wrapper() {
 if [ "\$1" = "--includes" ]; then
 	echo "-I${XBPS_CROSS_BASE}/usr/include/python${version}"
 fi
-exit $?
+exit \$?
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}
 }
@@ -108,4 +108,6 @@ hook() {
 	generic_wrapper3 xml2-config
 	python_wrapper python-config 2.7
 	python_wrapper python3.4-config 3.4m
+
+	export PATH="$XBPS_WRAPPERDIR:$PATH"
 }
