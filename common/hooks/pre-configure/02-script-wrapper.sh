@@ -3,25 +3,23 @@
 # Wrappers are created in ${wrksrc}/.xbps/bin and this path is appended
 # to make configure scripts find them.
 
-WRAPPERDIR="${wrksrc}/.xbps/bin"
-
 generic_wrapper() {
 	local wrapper="$1"
 	[ ! -x ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ] && return 0
-	[ -x ${WRAPPERDIR}/${wrapper} ] && return 0
+	[ -x ${XBPS_WRAPPERDIR}/${wrapper} ] && return 0
 
-	echo "#!/bin/sh" >> ${WRAPPERDIR}/${wrapper}
-	echo "exec ${XBPS_CROSS_BASE}/usr/bin/${wrapper} --prefix=${XBPS_CROSS_BASE}/usr \"\$@\"" >> ${WRAPPERDIR}/${wrapper}
-	chmod 755 ${WRAPPERDIR}/${wrapper}
+	echo "#!/bin/sh" >> ${XBPS_WRAPPERDIR}/${wrapper}
+	echo "exec ${XBPS_CROSS_BASE}/usr/bin/${wrapper} --prefix=${XBPS_CROSS_BASE}/usr \"\$@\"" >> ${XBPS_WRAPPERDIR}/${wrapper}
+	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}
 }
 
 generic_wrapper2() {
 	local wrapper="$1"
 
 	[ ! -x ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ] && return 0
-	[ -x ${WRAPPERDIR}/${wrapper} ] && return 0
+	[ -x ${XBPS_WRAPPERDIR}/${wrapper} ] && return 0
 
-	cat >>${WRAPPERDIR}/${wrapper}<<_EOF
+	cat >>${XBPS_WRAPPERDIR}/${wrapper}<<_EOF
 #!/bin/sh
 if [ "\$1" = "--prefix" ]; then
 	echo "${XBPS_CROSS_BASE}/usr"
@@ -34,42 +32,42 @@ else
 fi
 exit \$?
 _EOF
-	chmod 755 ${WRAPPERDIR}/${wrapper}
+	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}
 }
 
 generic_wrapper3() {
 	local wrapper="$1"
 	[ ! -x ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ] && return 0
-	[ -x ${WRAPPERDIR}/${wrapper} ] && return 0
+	[ -x ${XBPS_WRAPPERDIR}/${wrapper} ] && return 0
 
-	cp ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ${WRAPPERDIR}
-	sed -e "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" -i ${WRAPPERDIR}/${wrapper}
-	sed -e "s,libdir=/usr/lib,libdir=${XBPS_CROSS_BASE}/usr/lib,g" -i ${WRAPPERDIR}/${wrapper}
-	sed -e "s,^prefix=/usr,prefix=${XBPS_CROSS_BASE}/usr," -i ${WRAPPERDIR}/${wrapper}
+	cp ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ${XBPS_WRAPPERDIR}
+	sed -e "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" -i ${XBPS_WRAPPERDIR}/${wrapper}
+	sed -e "s,libdir=/usr/lib,libdir=${XBPS_CROSS_BASE}/usr/lib,g" -i ${XBPS_WRAPPERDIR}/${wrapper}
+	sed -e "s,^prefix=/usr,prefix=${XBPS_CROSS_BASE}/usr," -i ${XBPS_WRAPPERDIR}/${wrapper}
 
-	chmod 755 ${WRAPPERDIR}/${wrapper}
+	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}
 }
 
 python_wrapper() {
 	local wrapper="$1" version="$2"
 
-	[ -x ${WRAPPERDIR}/${wrapper} ] && return 0
-	cat >>${WRAPPERDIR}/${wrapper}<<_EOF
+	[ -x ${XBPS_WRAPPERDIR}/${wrapper} ] && return 0
+	cat >>${XBPS_WRAPPERDIR}/${wrapper}<<_EOF
 #!/bin/sh
 if [ "\$1" = "--includes" ]; then
 	echo "-I${XBPS_CROSS_BASE}/usr/include/python${version}"
 fi
 exit $?
 _EOF
-	chmod 755 ${WRAPPERDIR}/${wrapper}
+	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}
 }
 
 pkgconfig_wrapper() {
 	if [ ! -x /usr/bin/pkg-config ]; then
 		return 0
 	fi
-	[ -x ${WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config ] && return 0
-	cat >>${WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config<<_EOF
+	[ -x ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config ] && return 0
+	cat >>${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config<<_EOF
 #!/bin/sh
 
 export PKG_CONFIG_SYSROOT_DIR="$XBPS_CROSS_BASE"
@@ -77,14 +75,12 @@ export PKG_CONFIG_PATH="$XBPS_CROSS_BASE/lib/pkgconfig:$XBPS_CROSS_BASE/usr/shar
 export PKG_CONFIG_LIBDIR="$XBPS_CROSS_BASE/lib/pkgconfig"
 exec /usr/bin/pkg-config "\$@"
 _EOF
-	chmod 755 ${WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config
-	ln -sf ${XBPS_CROSS_TRIPLET}-pkg-config ${WRAPPERDIR}/pkg-config
+	chmod 755 ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config
+	ln -sf ${XBPS_CROSS_TRIPLET}-pkg-config ${XBPS_WRAPPERDIR}/pkg-config
 }
 
 hook() {
 	[ -z "$CROSS_BUILD" ] && return 0
-
-	mkdir -p ${WRAPPERDIR}
 
 	# create wrapers
 	pkgconfig_wrapper
@@ -112,6 +108,4 @@ hook() {
 	generic_wrapper3 xml2-config
 	python_wrapper python-config 2.7
 	python_wrapper python3.4-config 3.4m
-
-	export PATH=${WRAPPERDIR}:$PATH
 }
