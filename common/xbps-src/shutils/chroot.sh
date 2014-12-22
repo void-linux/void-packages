@@ -44,14 +44,14 @@ _EOF
     cp -f /etc/resolv.conf $XBPS_MASTERDIR/etc
 
     # Update xbps alternative repository if set.
-    mkdir -p $XBPS_MASTERDIR/etc/xbps/repo.d
+    mkdir -p $XBPS_MASTERDIR/etc/xbps.d
     if [ -n "$XBPS_ALT_REPOSITORY" ]; then
         ( \
             echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}"; \
             echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}/nonfree"; \
-            ) > $XBPS_MASTERDIR/etc/xbps/repo.d/00-alternative.conf
+            ) > $XBPS_MASTERDIR/etc/xbps.d/00-repository-alternative.conf
     else
-        rm -f $XBPS_MASTERDIR/etc/xbps/repo.d/00-alternative.conf
+        rm -f $XBPS_MASTERDIR/etc/xbps.d/00-repository-alternative.conf
     fi
 
     if [ -d $XBPS_MASTERDIR/tmp ]; then
@@ -88,8 +88,8 @@ chroot_prepare() {
 
     echo "syslog=false" >> $XBPS_MASTERDIR/etc/xbps/xbps.conf
     echo "cachedir=/host/repocache" >> $XBPS_MASTERDIR/etc/xbps/xbps.conf
-    mkdir -p $XBPS_MASTERDIR/etc/xbps/repo.d
-    ln -s /dev/null $XBPS_MASTERDIR/etc/xbps/repo.d/00-main.conf
+    mkdir -p $XBPS_MASTERDIR/etc/xbps.d
+    ln -s /dev/null $XBPS_MASTERDIR/etc/xbps.d/00-repository-main.conf
 
     # Prepare default locale: en_US.UTF-8.
     if [ -s ${XBPS_MASTERDIR}/etc/default/libc-locales ]; then
@@ -108,30 +108,30 @@ chroot_sync_repos() {
 
     # Copy xbps configuration files to the masterdir.
     install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-local.conf \
-        ${XBPS_MASTERDIR}/etc/xbps/repo.d/10-local.conf
+        ${XBPS_MASTERDIR}/etc/xbps.d/10-repository-local.conf
     install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-remote.conf \
-        ${XBPS_MASTERDIR}/etc/xbps/repo.d/20-remote.conf
+        ${XBPS_MASTERDIR}/etc/xbps.d/20-repository-remote.conf
 
     if [ "$XBPS_MACHINE" = "x86_64" ]; then
         install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-local-x86_64.conf \
-            ${XBPS_MASTERDIR}/etc/xbps/repo.d/12-local-x86_64.conf
+            ${XBPS_MASTERDIR}/etc/xbps.d/12-repository-local-x86_64.conf
         install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-remote-x86_64.conf \
-            ${XBPS_MASTERDIR}/etc/xbps/repo.d/22-remote-x86_64.conf
+            ${XBPS_MASTERDIR}/etc/xbps.d/22-repository-remote-x86_64.conf
     fi
 
     # if -N is set, comment out remote repositories from xbps.conf.
     if [ -n "$XBPS_SKIP_REMOTEREPOS" ]; then
-        rm -f ${XBPS_MASTERDIR}/etc/xbps/repo.d/20-remote.conf
-        rm -f ${XBPS_MASTERDIR}/etc/xbps/repo.d/22-remote-x86_64.conf
+        rm -f ${XBPS_MASTERDIR}/etc/xbps.d/20-repository-remote.conf
+        rm -f ${XBPS_MASTERDIR}/etc/xbps.d/22-repository-remote-x86_64.conf
     fi
 
     # Copy host repos to the cross root.
     if [ -n "$XBPS_CROSS_BUILD" ]; then
-        rm -rf $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps/repo.d
-        mkdir -p $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps/repo.d
-        cp ${XBPS_MASTERDIR}/etc/xbps/repo.d/*.conf \
-            $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps/repo.d
-        rm -f $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps/repo.d/*-x86_64.conf
+        rm -rf $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps.d
+        mkdir -p $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps.d
+        cp ${XBPS_MASTERDIR}/etc/xbps.d/*.conf \
+            $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps.d
+        rm -f $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps.d/*-x86_64.conf
     fi
 
     # Make sure to sync index for remote repositories.

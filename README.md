@@ -14,7 +14,7 @@ are isolated (among others).
 ### Requirements
 
 - GNU bash
-- xbps >= 0.41
+- xbps >= 0.42
 
 A privileged group is required to be able to execute `xbps-uchroot(8)`, by default in void
 it's the `xbuilder` group.
