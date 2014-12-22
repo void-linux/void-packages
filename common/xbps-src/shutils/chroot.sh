@@ -3,6 +3,8 @@
 chroot_init() {
     XBPSSRC_CF=$XBPS_MASTERDIR/etc/xbps/xbps-src.conf
 
+    mkdir -p $XBPS_MASTERDIR/etc/xbps
+
     cat > $XBPSSRC_CF <<_EOF
 # Generated configuration file by xbps-src, DO NOT EDIT!
 _EOF
