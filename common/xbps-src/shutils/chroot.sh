@@ -86,9 +86,9 @@ chroot_prepare() {
     # Copy /etc/hosts from base-files.
     cp -f $XBPS_SRCPKGDIR/base-files/files/hosts $XBPS_MASTERDIR/etc
 
-    echo "syslog=false" >> $XBPS_MASTERDIR/etc/xbps/xbps.conf
-    echo "cachedir=/host/repocache" >> $XBPS_MASTERDIR/etc/xbps/xbps.conf
     mkdir -p $XBPS_MASTERDIR/etc/xbps.d
+    echo "syslog=false" >> $XBPS_MASTERDIR/etc/xbps.d/xbps.conf
+    echo "cachedir=/host/repocache" >> $XBPS_MASTERDIR/etc/xbps.d/xbps.conf
     ln -s /dev/null $XBPS_MASTERDIR/etc/xbps.d/00-repository-main.conf
 
     # Prepare default locale: en_US.UTF-8.
