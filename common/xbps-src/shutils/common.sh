@@ -332,6 +332,9 @@ setup_pkg() {
         if [ -s ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh ]; then
             . ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
         fi
+    else
+        XBPS_CFLAGS="-O2 -pipe"
+        XBPS_CXXFLAGS="$XBPS_CFLAGS"
     fi
     export CFLAGS="$XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
     export CXXFLAGS="$XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"
