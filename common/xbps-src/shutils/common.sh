@@ -328,13 +328,12 @@ setup_pkg() {
         dbgflags="-g"
     fi
 
-    if [ -z "$XBPS_CFLAGS" -a -z "$XBPS_CXXFLAGS" -a -n "$CHROOT_READY" ]; then
-        if [ -s ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh ]; then
-            . ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
+    if [ -z "$XBPS_CFLAGS" -a -z "$XBPS_CXXFLAGS" ]; then
+        if [ -z "$CHROOT_READY" ]; then
+            source_file ${XBPS_COMMONDIR}/build-profiles/bootstrap.sh
+        else
+            source_file ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
         fi
-    else
-        XBPS_CFLAGS="-O2 -pipe"
-        XBPS_CXXFLAGS="$XBPS_CFLAGS"
     fi
     export CFLAGS="$XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
     export CXXFLAGS="$XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"
