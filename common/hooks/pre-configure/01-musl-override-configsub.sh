@@ -5,8 +5,8 @@ hook() {
 		*-musl);;
 		*) return 0;;
 	esac
-	if [ "$build_style" = "gnu-configure" ]; then
-		for f in $(find ${wrksrc} -type f -name *config*.sub); do
+	if [ -z "$build_style" -o "$build_style" = "gnu-configure" ]; then
+		for f in $(find ${wrksrc} -type f -name "*config*.sub"); do
 			cp -f ${XBPS_CROSSPFDIR}/config.sub ${f}
 		done
 	fi
