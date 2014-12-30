@@ -51,7 +51,14 @@ _EOF
         ( \
             echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}"; \
             echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}/nonfree"; \
+            echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}/debug"; \
             ) > $XBPS_MASTERDIR/etc/xbps.d/00-repository-alternative.conf
+        if [ "$XBPS_MACHINE" = "x86_64" ]; then
+            ( \
+                echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}/multilib"; \
+                echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}/multilib/nonfree"; \
+            ) >> $XBPS_MASTERDIR/etc/xbps.d/00-repository-alternative.conf
+        fi
     else
         rm -f $XBPS_MASTERDIR/etc/xbps.d/00-repository-alternative.conf
     fi
