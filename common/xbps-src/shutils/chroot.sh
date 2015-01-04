@@ -164,7 +164,7 @@ chroot_handler() {
     local action="$1" pkg="$2" rv=0 arg= _envargs= _chargs=
 
     if [ -n "$IN_CHROOT" -o -z "$CHROOT_READY" ]; then
-        return 0
+        return 1
     fi
     # Debian uses /run/shm instead...
     if [ -d /run/shm ]; then
