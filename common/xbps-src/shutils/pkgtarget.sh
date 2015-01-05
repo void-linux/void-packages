@@ -113,11 +113,15 @@ install_pkg() {
         rm -f ${_log}
     fi
 
-    if [ "$XBPS_TARGET_PKG" = "$sourcepkg" -a "$XBPS_TARGET" != "bootstrap" ]; then
-        # Package built successfully. Exit directly due to nested install_pkg
-        # and install_pkg_deps functions.
-        remove_cross_pkg $cross
-        exit 0
+    if [ "$XBPS_TARGET_PKG" = "$sourcepkg" ]; then
+        if [ "$XBPS_TARGET" = "bootstrap" ]; then
+            return 0
+        else
+            # Package built successfully. Exit directly due to nested install_pkg
+            # and install_pkg_deps functions.
+            remove_cross_pkg $cross
+            exit 0
+        fi
     fi
 }
 
