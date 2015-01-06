@@ -1,0 +1,1349 @@
+From aa548ebc044767ced3c1a22f8b8086c910a27831 Mon Sep 17 00:00:00 2001
+From: Robby Workman <rworkman@slackware.com>
+Date: Mon, 8 Dec 2014 00:55:13 -0600
+Subject: [PATCH 10/12] Add --with-rundir configure flag
+
+This allows use of /run on tmpfs instead of /var/run
+without downstream symlink magic or patches.
+---
+ configure.ac                 |  20 +-
+ doc/console-kit-daemon.1m    | 472 -------------------------------------------
+ doc/console-kit-daemon.1m.in | 472 +++++++++++++++++++++++++++++++++++++++++++
+ src/Makefile.am              |   7 +-
+ src/ck-inhibit.c             |  12 +-
+ src/ck-manager.c             |  10 +-
+ src/main.c                   |   2 +-
+ tools/70-udev-acl.rules      |  76 -------
+ tools/70-udev-acl.rules.in   |  76 +++++++
+ tools/Makefile.am            |   1 +
+ tools/udev-acl.c             |   2 +-
+ 11 files changed, 585 insertions(+), 565 deletions(-)
+ delete mode 100644 doc/console-kit-daemon.1m
+ create mode 100644 doc/console-kit-daemon.1m.in
+ delete mode 100644 tools/70-udev-acl.rules
+ create mode 100644 tools/70-udev-acl.rules.in
+
+diff --git a/configure.ac b/configure.ac
+index d45a937..dd1f5bb 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -163,6 +163,21 @@ fi
+ Z_LIBS="${Z_LIBS} -lz"
+ AC_SUBST(Z_LIBS)
+ 
++
++dnl ---------------------------------------------------------------------------
++dnl - Path to rundir e.g. /var/run
++dnl ---------------------------------------------------------------------------
++
++AC_ARG_WITH(rundir,
++	[AS_HELP_STRING([--with-rundir=<dir>],[run directory location, e.g. /var/run])])
++if ! test -z "$with_rundir" ; then
++        RUNDIR="$with_rundir"
++else
++        RUNDIR="$localstatedir/run"
++fi
++AC_SUBST(RUNDIR)
++
++
+ dnl ---------------------------------------------------------------------------
+ dnl - PID file
+ dnl ---------------------------------------------------------------------------
+@@ -173,7 +188,7 @@ AC_ARG_WITH(pid-file,
+ if ! test -z "$with_pid_file"; then
+    CONSOLE_KIT_PID_FILE=$with_pid_file
+ else
+-   CONSOLE_KIT_PID_FILE=${localstatedir}/run/ConsoleKit/pid
++   CONSOLE_KIT_PID_FILE=${RUNDIR}/ConsoleKit/pid
+ fi
+ 
+ AC_SUBST(CONSOLE_KIT_PID_FILE)
+@@ -472,6 +487,7 @@ AC_SUBST(PACKAGE)
+ AC_CONFIG_FILES([
+ Makefile
+ src/Makefile
++tools/70-udev-acl.rules
+ tools/Makefile
+ tools/linux/Makefile
+ tools/freebsd/Makefile
+@@ -479,6 +495,7 @@ tools/openbsd/Makefile
+ tools/solaris/Makefile
+ data/Makefile
+ doc/Makefile
++doc/console-kit-daemon.1m
+ doc/dbus/ConsoleKit.xml
+ doc/dbus/Makefile
+ libck-connector/Makefile
+@@ -500,6 +517,7 @@ echo "
+         sbindir:                  ${sbindir}
+         sysconfdir:               ${sysconfdir}
+         localstatedir:            ${localstatedir}
++        rundir:                   ${RUNDIR}
+         datadir:                  ${datadir}
+ 	source code location:	  ${srcdir}
+ 	compiler:		  ${CC}
+diff --git a/doc/console-kit-daemon.1m b/doc/console-kit-daemon.1m
+deleted file mode 100644
+index 1e1a618..0000000
+--- a/doc/console-kit-daemon.1m
++++ /dev/null
+@@ -1,472 +0,0 @@
+-'\" te
+-.TH console-kit-daemon 1m "24 Oct 2009" "SunOS 5.11" "Maintenance Commands"
+-.SH "NAME"
+-console-kit-daemon \- ConsoleKit daemon
+-.SH "SYNOPSIS"
+-.PP
+-\fBconsole-kit-daemon\fR [-\fB-debug\fR] [-\fB-help\fR] [-\fB-no-daemon\fR] [-\fB-timed-exit\fR]
+-.SH "DESCRIPTION"
+-.PP
+-\fBconsole-kit-daemon\fR is a service for defining and tracking users, login
+-sessions and seats\&.  It provides interfaces for managing switching sessions
+-and session migration when using mechanisms such as Virtual Terminals (VT)\&.
+-ConsoleKit provides a number of interfaces to specify what displays are managed
+-by the display manager, and how\&.
+-.PP
+-ConsoleKit maintains a database of which users are logged into the system\&.
+-ConsoleKit groups sessions by seats which represent a set of hardware (usually
+-a keyboard and mouse)\&.  Other process communicate with ConsoleKit via D-Bus\&.
+-.PP
+-One session leader process is responsible for asking \fBconsole-kit-daemon\fR
+-to open a new session\&.  In the typical case, the session leader would be a
+-ConsoleKit enabled display manager, such as GDM\&.  This leader makes a
+-connection to the D-Bus system bus and asks \fBconsole-kit-daemon\fR to open a
+-session when needed\&.
+-.PP
+-If the operation succeeds, \fBconsole-kit-daemon\fR will return a cookie to the
+-session leader\&. The session leader should store this variable in the
+-environment as XDG_SESSION_COOKIE so that it may be shared with its child
+-processes\&.  The environment variable contains the UUID used to tie processes to
+-a session\&.
+-.PP
+-At this point the session will be registered with ConsoleKit and a particular
+-set of information about the session will be stored along with it\&.
+-.PP
+-The Session will remain open until the Session Leader disconnects from the
+-D-Bus system bus\&. The session will be removed from its seat, and deregistered\&.
+-.PP
+-Various other programs need to know information about running user sessions,
+-such as the Fast User Switch Applet and other mechanisms for switching the
+-console to use a different VT display\&.  Such programs make use of ConsoleKit
+-interfaces to determine if user switching is supported and to manage the
+-switching of different sessions on the same seat\&.
+-.PP
+-ConsoleKit provides a pam_ck_connector so that non-graphical logins (e\&.g\&.
+-telnet, ssh, etc\&.) are registered with ConsoleKit\&.  This functionality works
+-if this PAM module is enabled in the
+-\fBpam\&.conf\fR(4) configuration\&.  Thus ConsoleKit can be
+-used as a utmp/wtmp replacement since it stores a superset of the information
+-as in the utmp/wtmp database\&.
+-.PP
+-The ConsoleKit database is stored in the file
+-\fB/var/run/ConsoleKit/database\fR\&.  It stores information about
+-active Seats, Sessions, and the current SessionLeader\&.
+-.SH "OPTIONS"
+-.PP
+-The following options are supported:
+-.sp
+-.ne 2
+-.mk
+-\fB-\fB-debug\fR\fR
+-.in +24n
+-.rt
+-Enable debug output\&.
+-.sp
+-.sp 1
+-.in -24n
+-.sp
+-.ne 2
+-.mk
+-\fB-\fBh\fR, -\fB-help\fR\fR
+-.in +24n
+-.rt
+-Display detailed usage message\&.
+-.sp
+-.sp 1
+-.in -24n
+-.sp
+-.ne 2
+-.mk
+-\fB-\fB-no-daemon\fR\fR
+-.in +24n
+-.rt
+-Avoid starting \fBconsole-kit-daemon\fR as a daemon\&.  Useful for debugging\&.
+-.sp
+-.sp 1
+-.in -24n
+-.sp
+-.ne 2
+-.mk
+-\fB-\fB-timed-exit\fR\fR
+-.in +24n
+-.rt
+-Exit after 30 seconds\&.	Useful for debugging\&.
+-.sp
+-.sp 1
+-.in -24n
+-.SH "ENVIRONMENT VARIABLES"
+-.PP
+-See
+-\fBenviron\fR(5)
+-for descriptions of environment variables\&.
+-.sp
+-.ne 2
+-.mk
+-\fB\fBDISPLAY\fR\fR
+-.sp .6
+-.in +4
+-This environment variable corresponds to the Xserver display value associated
+-with the ConsoleKit session\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fB\fBXDG_SESSION_COOKIE\fR\fR
+-.sp .6
+-.in +4
+-ConsoleKit provides this environment variable to the session leader\&.  The
+-session leader is expected to ensure this is set for the session process
+-started\&.  It contains a UUID used to tie the processes to the session\&.  This is
+-used to support user switching on displays that support it (currently only
+-graphical VT displays on the console)\&.
+-.sp
+-.sp 1
+-.in -4
+-.PP
+-The following environment variables are set when \fBconsole-kit-daemon\fR
+-runs the \fBrun-seat\&.d\fR scripts\&.  These values correspond to those
+-values returned by the \fBck-list-session\fR(1) utility\&.
+-.sp
+-.ne 2
+-.mk
+-\fB\fBCK_SESSION_SEAT_ID\fR\fR
+-.sp .6
+-.in +4
+-The seat ID associated with the session\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fB\fBCK_SESSION_SEAT_UID\fR\fR
+-.sp .6
+-.in +4
+-The user id associated with the session
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fB\fBCK_SESSION_DISPLAY_DEVICE\fR\fR
+-.sp .6
+-.in +4
+-The display device associated with the session\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fB\fBCK_SESSION_X11_DISPLAY_DEVICE\fR\fR
+-.sp .6
+-.in +4
+-The value of the display device that the X11 display for the session is
+-connected to\&.  If there is no x11-display set, then this value is undefined\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fB\fBCK_SESSION_X11_DISPLAY\fR\fR
+-.sp .6
+-.in +4
+-The value of the X11 DISPLAY environment variable for this session if one is
+-present\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fB\fBCK_SESSION_REMOTE_HOST_NAME\fR\fR
+-.sp .6
+-.in +4
+-If the session is not local, the value is the host name associated with the
+-session\&.  If the session is local, the value is empty\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fB\fBCK_SESSION_IS_ACTIVE\fR\fR
+-.sp .6
+-.in +4
+-The value is "TRUE" if the session is active on the seat to which it
+-is attached, and "FALSE" otherwise\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fB\fBCK_SESSION_IS_LOCAL\fR\fR
+-.sp .6
+-.in +4
+-The value is "TRUE" if the session is local, and "FALSE"
+-if remote\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fB\fBCK_SESSION_IS_DYNAMIC\fR\fR
+-.sp .6
+-.in +4
+-The value is "TRUE" if the session was started with
+-\fBck-seat-tool\fR, and "FALSE" otherwise\&.
+-.sp
+-.sp 1
+-.in -4
+-.SH "EXTENDED DESCRIPTION"
+-.SS "ConsoleKit Seat Configuration"
+-.PP
+-ConsoleKit seat configuration files are located in the
+-/etc/ConsoleKit/seats\&.d directory\&.  Each seat
+-configuration file ends with the \fB\&.seat\fR suffix\&.  ConsoleKit
+-provides a default seat file named \fB00-primary\&.seat\fR\&.
+-Additional seat configuration files may be added\&.  These files are in standard
+-INI format\&.
+-.PP
+-The settings below are in
+-"group/key=\fIdefault_value\fR" format, and show
+-the default values of the \fB00-primary\&.seat\fR file\&.  For
+-example, to specify a different "Seat Entry/Name" value, you would
+-modify the this file so it contains these lines:
+-.PP
+-.nf
+-[Seat Entry]
+-[\&.\&.\&.]
+-Name=Customized seat name
+-.fi
+-.PP
+-The following keys are supported for configuring ConsoleKit seats:
+-.sp
+-.ne 2
+-.mk
+-\fBSeat Entry/Version=1\&.0\fR
+-.sp .6
+-.in +4
+-Version number of the seat file\&.  This specifies the version number of the
+-configuration file format used\&.  Currently only the value "1\&.0" is
+-supported\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fBSeat Entry/Name=Primary seat\fR
+-.sp .6
+-.in +4
+-Name of the seat\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fBSeat Entry/ID=StaticSeat\fR
+-.sp .6
+-.in +4
+-Specifies the unique ID of the seat\&.  If the value is NULL, then
+-\fBconsole-kit-daemon\fR will provide a value\&.  The ID may only contain the
+-ASCII characters [A-Z][a=z][0-9]_"\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fBSeat Entry/Hidden=false\fR
+-.sp .6
+-.in +4
+-If this value is set to "false", then ConsoleKit will create this
+-seat\&.  Otherwise, the seat will not be created\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fBSeat Entry/Devices\fR
+-.sp .6
+-.in +4
+-This value is not currently supported\&.  In the future, it is planned that
+-ConsoleKit will provide the ability to manage how device permissions are
+-managed, and this key is a placeholder\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fBSeat Entry/Sessions=Local\fR
+-.sp .6
+-.in +4
+-List of sessions to start on the seat, separated by the ";"
+-character\&.  Each session must be defined in a ConsoleKit session configuration
+-file named
+-\fB/etc/ConsoleKit/sessions\&.d/\fIsessions\fR\&.session\fR where \fIsessions\fR is the value of this key\&.
+-.sp
+-.sp 1
+-.in -4
+-.SS "ConsoleKit Session Configuration"
+-.PP
+-ConsoleKit session configuration files are located in the
+-/etc/ConsoleKit/sessions\&.d directory\&.  Each session
+-configuration file ends with the \fB\&.session\fR suffix\&.
+-Additional seat configuration files may be added\&.  These files are in standard
+-INI format\&.
+-.PP
+-The settings below are in
+-"group/key" format, so to specify the "Session Entry/Name"
+-value, the file shoulld contain these lines:
+-.PP
+-.nf
+-[Session Entry]
+-[\&.\&.\&.]
+-Name=Customized Session
+-.fi
+-.PP
+-The following keys are supported for configuring ConsoleKit sessions:
+-.sp
+-.ne 2
+-.mk
+-\fBSession Entry/Name\fR
+-.sp .6
+-.in +4
+-Unique name of the session\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fBSession Entry/Type\fR
+-.sp .6
+-.in +4
+-Type of the session
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fBSession Entry/Description\fR
+-.sp .6
+-.in +4
+-Description of the session\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fBSession Entry/DisplayTemplate\fR
+-.sp .6
+-.in +4
+-This specifies the display type to be used with the session\&.  This corresponds
+-to the file
+-\fB/etc/ConsoleKit/displays\&.d/\fIdisplay_template\fR\&.display\fR
+-where \fIdisplay_template\fR is the value of this key\&.
+-.sp
+-.sp 1
+-.in -4
+-.sp
+-.ne 2
+-.mk
+-\fBLocal/\fIvariable\fR\fR
+-.sp .6
+-.in +4
+-The ConsoleKit display configuration file associated with the
+-"Entry/DisplayTemplate" key specifies the command to run to launch
+-the display\&.  This command is defined in the ConsoleKit display configuration
+-file in the key "X11/Exec"\&.  This command can include variables that
+-begin with the "$" character, such as "$display"\&.  The
+-values to be used for these variables can be defined in this section\&.  So if
+-the session configuration file contains the value
+-"Local/display=:0", this will cause the variable used when launching
+-the command to be replaced with the value "0"\&.
+-.sp
+-.sp 1
+-.in -4
+-.SS "ConsoleKit System Restart and Stop"
+-.PP
+-\fBconsole-kit-daemon\fR provides D-Bus interfaces that will restart or stop
+-the system\&.  When \fBconsole-kit-daemon\fR receives a D-Bus request to restart
+-the system, it will run the
+-\fB/usr/lib/ConsoleKit/scripts/ck-system-restart\fR script if
+-the user has privilege to do this operation\&.  When \fBconsole-kit-daemon\fR
+-receives a D-Bus request to stop the system, it will run the
+-\fB/usr/lib/ConsoleKit/scripts/ck-system-stop\fR script if the
+-user has privilege to do this operation\&.
+-.SH "EXAMPLES"
+-.PP
+-\fBExample 1: To start the ConsoleKit daemon\fR
+-.PP
+-.PP
+-.nf
+-example% \fBconsole-kit-daemon\fR
+-.fi
+-.PP
+-\fBExample 2: To configure ConsoleKit to start multiple sessions on a single seat\fR
+-.PP
+-To start two local displays: DISPLAY ":0" on vt7 and DISPLAY
+-":1" on "vt8",
+-edit the \fB00-primary\&.seat\fR file as follows:
+-.PP
+-.nf
+-[Seat Entry]
+-Version=1\&.0
+-Name=Primary seat
+-Description=start static displays :0 on vt7 and :1 on vt8
+-Hidden=false
+-Devices=
+-Sessions=Local;Local2;
+-.fi
+-.PP
+-Then, in addition to the original
+-\fB/etc/ConsoleKit/sessions\&.d/Local\&.session\fR file, add the
+-following \fB/etc/ConsoleKit/sessions\&.d/Local2\&.session\fR file:
+-.PP
+-.nf
+-[Session Entry]
+-Name=Local
+-Type=LoginWindow
+-Description=Local Login Screen
+-DisplayTemplate=Local
+-
+-[Local]
+-display=:1
+-vt=/dev/vt/8
+-.fi
+-.PP
+-.SH "SEE ALSO"
+-.PP
+-More information can be found at:
+-.PP
+-\fBhttps://github\&.com/ConsoleKit2/ConsoleKit2\fR
+-.PP
+-\fBck-history\fR(1),
+-\fBck-launch-session\fR(1),
+-\fBck-list-sessions\fR(1),
+-\fBsvcadm\fR(1m),
+-\fBenviron\fR(5),
+-\fBsmf\fR(5),
+-\fBconsole\fR(4)
+-.SH "NOTES"
+-.PP
+-Brian Cameron, Sun Microsystems Inc\&., 2009\&.
+-Copyright (c) 2009 by Sun Microsystems, Inc\&.
+-.PP
+-Some of the documentation in this manpage is from the ConsoleKit documentation
+-written by William Jon McCann\&.
+-...\" created by instant / solbook-to-man, Sat 24 Oct 2009, 14:10
+-...\" LSARC 2009/432 ConsoleKit
+diff --git a/doc/console-kit-daemon.1m.in b/doc/console-kit-daemon.1m.in
+new file mode 100644
+index 0000000..edecf0e
+--- /dev/null
++++ b/doc/console-kit-daemon.1m.in
+@@ -0,0 +1,472 @@
++'\" te
++.TH console-kit-daemon 1m "24 Oct 2009" "SunOS 5.11" "Maintenance Commands"
++.SH "NAME"
++console-kit-daemon \- ConsoleKit daemon
++.SH "SYNOPSIS"
++.PP
++\fBconsole-kit-daemon\fR [-\fB-debug\fR] [-\fB-help\fR] [-\fB-no-daemon\fR] [-\fB-timed-exit\fR]
++.SH "DESCRIPTION"
++.PP
++\fBconsole-kit-daemon\fR is a service for defining and tracking users, login
++sessions and seats\&.  It provides interfaces for managing switching sessions
++and session migration when using mechanisms such as Virtual Terminals (VT)\&.
++ConsoleKit provides a number of interfaces to specify what displays are managed
++by the display manager, and how\&.
++.PP
++ConsoleKit maintains a database of which users are logged into the system\&.
++ConsoleKit groups sessions by seats which represent a set of hardware (usually
++a keyboard and mouse)\&.  Other process communicate with ConsoleKit via D-Bus\&.
++.PP
++One session leader process is responsible for asking \fBconsole-kit-daemon\fR
++to open a new session\&.  In the typical case, the session leader would be a
++ConsoleKit enabled display manager, such as GDM\&.  This leader makes a
++connection to the D-Bus system bus and asks \fBconsole-kit-daemon\fR to open a
++session when needed\&.
++.PP
++If the operation succeeds, \fBconsole-kit-daemon\fR will return a cookie to the
++session leader\&. The session leader should store this variable in the
++environment as XDG_SESSION_COOKIE so that it may be shared with its child
++processes\&.  The environment variable contains the UUID used to tie processes to
++a session\&.
++.PP
++At this point the session will be registered with ConsoleKit and a particular
++set of information about the session will be stored along with it\&.
++.PP
++The Session will remain open until the Session Leader disconnects from the
++D-Bus system bus\&. The session will be removed from its seat, and deregistered\&.
++.PP
++Various other programs need to know information about running user sessions,
++such as the Fast User Switch Applet and other mechanisms for switching the
++console to use a different VT display\&.  Such programs make use of ConsoleKit
++interfaces to determine if user switching is supported and to manage the
++switching of different sessions on the same seat\&.
++.PP
++ConsoleKit provides a pam_ck_connector so that non-graphical logins (e\&.g\&.
++telnet, ssh, etc\&.) are registered with ConsoleKit\&.  This functionality works
++if this PAM module is enabled in the
++\fBpam\&.conf\fR(4) configuration\&.  Thus ConsoleKit can be
++used as a utmp/wtmp replacement since it stores a superset of the information
++as in the utmp/wtmp database\&.
++.PP
++The ConsoleKit database is stored in the file
++\fB@RUNDIR@/ConsoleKit/database\fR\&.  It stores information about
++active Seats, Sessions, and the current SessionLeader\&.
++.SH "OPTIONS"
++.PP
++The following options are supported:
++.sp
++.ne 2
++.mk
++\fB-\fB-debug\fR\fR
++.in +24n
++.rt
++Enable debug output\&.
++.sp
++.sp 1
++.in -24n
++.sp
++.ne 2
++.mk
++\fB-\fBh\fR, -\fB-help\fR\fR
++.in +24n
++.rt
++Display detailed usage message\&.
++.sp
++.sp 1
++.in -24n
++.sp
++.ne 2
++.mk
++\fB-\fB-no-daemon\fR\fR
++.in +24n
++.rt
++Avoid starting \fBconsole-kit-daemon\fR as a daemon\&.  Useful for debugging\&.
++.sp
++.sp 1
++.in -24n
++.sp
++.ne 2
++.mk
++\fB-\fB-timed-exit\fR\fR
++.in +24n
++.rt
++Exit after 30 seconds\&.	Useful for debugging\&.
++.sp
++.sp 1
++.in -24n
++.SH "ENVIRONMENT VARIABLES"
++.PP
++See
++\fBenviron\fR(5)
++for descriptions of environment variables\&.
++.sp
++.ne 2
++.mk
++\fB\fBDISPLAY\fR\fR
++.sp .6
++.in +4
++This environment variable corresponds to the Xserver display value associated
++with the ConsoleKit session\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fB\fBXDG_SESSION_COOKIE\fR\fR
++.sp .6
++.in +4
++ConsoleKit provides this environment variable to the session leader\&.  The
++session leader is expected to ensure this is set for the session process
++started\&.  It contains a UUID used to tie the processes to the session\&.  This is
++used to support user switching on displays that support it (currently only
++graphical VT displays on the console)\&.
++.sp
++.sp 1
++.in -4
++.PP
++The following environment variables are set when \fBconsole-kit-daemon\fR
++runs the \fBrun-seat\&.d\fR scripts\&.  These values correspond to those
++values returned by the \fBck-list-session\fR(1) utility\&.
++.sp
++.ne 2
++.mk
++\fB\fBCK_SESSION_SEAT_ID\fR\fR
++.sp .6
++.in +4
++The seat ID associated with the session\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fB\fBCK_SESSION_SEAT_UID\fR\fR
++.sp .6
++.in +4
++The user id associated with the session
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fB\fBCK_SESSION_DISPLAY_DEVICE\fR\fR
++.sp .6
++.in +4
++The display device associated with the session\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fB\fBCK_SESSION_X11_DISPLAY_DEVICE\fR\fR
++.sp .6
++.in +4
++The value of the display device that the X11 display for the session is
++connected to\&.  If there is no x11-display set, then this value is undefined\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fB\fBCK_SESSION_X11_DISPLAY\fR\fR
++.sp .6
++.in +4
++The value of the X11 DISPLAY environment variable for this session if one is
++present\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fB\fBCK_SESSION_REMOTE_HOST_NAME\fR\fR
++.sp .6
++.in +4
++If the session is not local, the value is the host name associated with the
++session\&.  If the session is local, the value is empty\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fB\fBCK_SESSION_IS_ACTIVE\fR\fR
++.sp .6
++.in +4
++The value is "TRUE" if the session is active on the seat to which it
++is attached, and "FALSE" otherwise\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fB\fBCK_SESSION_IS_LOCAL\fR\fR
++.sp .6
++.in +4
++The value is "TRUE" if the session is local, and "FALSE"
++if remote\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fB\fBCK_SESSION_IS_DYNAMIC\fR\fR
++.sp .6
++.in +4
++The value is "TRUE" if the session was started with
++\fBck-seat-tool\fR, and "FALSE" otherwise\&.
++.sp
++.sp 1
++.in -4
++.SH "EXTENDED DESCRIPTION"
++.SS "ConsoleKit Seat Configuration"
++.PP
++ConsoleKit seat configuration files are located in the
++/etc/ConsoleKit/seats\&.d directory\&.  Each seat
++configuration file ends with the \fB\&.seat\fR suffix\&.  ConsoleKit
++provides a default seat file named \fB00-primary\&.seat\fR\&.
++Additional seat configuration files may be added\&.  These files are in standard
++INI format\&.
++.PP
++The settings below are in
++"group/key=\fIdefault_value\fR" format, and show
++the default values of the \fB00-primary\&.seat\fR file\&.  For
++example, to specify a different "Seat Entry/Name" value, you would
++modify the this file so it contains these lines:
++.PP
++.nf
++[Seat Entry]
++[\&.\&.\&.]
++Name=Customized seat name
++.fi
++.PP
++The following keys are supported for configuring ConsoleKit seats:
++.sp
++.ne 2
++.mk
++\fBSeat Entry/Version=1\&.0\fR
++.sp .6
++.in +4
++Version number of the seat file\&.  This specifies the version number of the
++configuration file format used\&.  Currently only the value "1\&.0" is
++supported\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fBSeat Entry/Name=Primary seat\fR
++.sp .6
++.in +4
++Name of the seat\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fBSeat Entry/ID=StaticSeat\fR
++.sp .6
++.in +4
++Specifies the unique ID of the seat\&.  If the value is NULL, then
++\fBconsole-kit-daemon\fR will provide a value\&.  The ID may only contain the
++ASCII characters [A-Z][a=z][0-9]_"\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fBSeat Entry/Hidden=false\fR
++.sp .6
++.in +4
++If this value is set to "false", then ConsoleKit will create this
++seat\&.  Otherwise, the seat will not be created\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fBSeat Entry/Devices\fR
++.sp .6
++.in +4
++This value is not currently supported\&.  In the future, it is planned that
++ConsoleKit will provide the ability to manage how device permissions are
++managed, and this key is a placeholder\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fBSeat Entry/Sessions=Local\fR
++.sp .6
++.in +4
++List of sessions to start on the seat, separated by the ";"
++character\&.  Each session must be defined in a ConsoleKit session configuration
++file named
++\fB/etc/ConsoleKit/sessions\&.d/\fIsessions\fR\&.session\fR where \fIsessions\fR is the value of this key\&.
++.sp
++.sp 1
++.in -4
++.SS "ConsoleKit Session Configuration"
++.PP
++ConsoleKit session configuration files are located in the
++/etc/ConsoleKit/sessions\&.d directory\&.  Each session
++configuration file ends with the \fB\&.session\fR suffix\&.
++Additional seat configuration files may be added\&.  These files are in standard
++INI format\&.
++.PP
++The settings below are in
++"group/key" format, so to specify the "Session Entry/Name"
++value, the file shoulld contain these lines:
++.PP
++.nf
++[Session Entry]
++[\&.\&.\&.]
++Name=Customized Session
++.fi
++.PP
++The following keys are supported for configuring ConsoleKit sessions:
++.sp
++.ne 2
++.mk
++\fBSession Entry/Name\fR
++.sp .6
++.in +4
++Unique name of the session\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fBSession Entry/Type\fR
++.sp .6
++.in +4
++Type of the session
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fBSession Entry/Description\fR
++.sp .6
++.in +4
++Description of the session\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fBSession Entry/DisplayTemplate\fR
++.sp .6
++.in +4
++This specifies the display type to be used with the session\&.  This corresponds
++to the file
++\fB/etc/ConsoleKit/displays\&.d/\fIdisplay_template\fR\&.display\fR
++where \fIdisplay_template\fR is the value of this key\&.
++.sp
++.sp 1
++.in -4
++.sp
++.ne 2
++.mk
++\fBLocal/\fIvariable\fR\fR
++.sp .6
++.in +4
++The ConsoleKit display configuration file associated with the
++"Entry/DisplayTemplate" key specifies the command to run to launch
++the display\&.  This command is defined in the ConsoleKit display configuration
++file in the key "X11/Exec"\&.  This command can include variables that
++begin with the "$" character, such as "$display"\&.  The
++values to be used for these variables can be defined in this section\&.  So if
++the session configuration file contains the value
++"Local/display=:0", this will cause the variable used when launching
++the command to be replaced with the value "0"\&.
++.sp
++.sp 1
++.in -4
++.SS "ConsoleKit System Restart and Stop"
++.PP
++\fBconsole-kit-daemon\fR provides D-Bus interfaces that will restart or stop
++the system\&.  When \fBconsole-kit-daemon\fR receives a D-Bus request to restart
++the system, it will run the
++\fB/usr/lib/ConsoleKit/scripts/ck-system-restart\fR script if
++the user has privilege to do this operation\&.  When \fBconsole-kit-daemon\fR
++receives a D-Bus request to stop the system, it will run the
++\fB/usr/lib/ConsoleKit/scripts/ck-system-stop\fR script if the
++user has privilege to do this operation\&.
++.SH "EXAMPLES"
++.PP
++\fBExample 1: To start the ConsoleKit daemon\fR
++.PP
++.PP
++.nf
++example% \fBconsole-kit-daemon\fR
++.fi
++.PP
++\fBExample 2: To configure ConsoleKit to start multiple sessions on a single seat\fR
++.PP
++To start two local displays: DISPLAY ":0" on vt7 and DISPLAY
++":1" on "vt8",
++edit the \fB00-primary\&.seat\fR file as follows:
++.PP
++.nf
++[Seat Entry]
++Version=1\&.0
++Name=Primary seat
++Description=start static displays :0 on vt7 and :1 on vt8
++Hidden=false
++Devices=
++Sessions=Local;Local2;
++.fi
++.PP
++Then, in addition to the original
++\fB/etc/ConsoleKit/sessions\&.d/Local\&.session\fR file, add the
++following \fB/etc/ConsoleKit/sessions\&.d/Local2\&.session\fR file:
++.PP
++.nf
++[Session Entry]
++Name=Local
++Type=LoginWindow
++Description=Local Login Screen
++DisplayTemplate=Local
++
++[Local]
++display=:1
++vt=/dev/vt/8
++.fi
++.PP
++.SH "SEE ALSO"
++.PP
++More information can be found at:
++.PP
++\fBhttps://github\&.com/ConsoleKit2/ConsoleKit2\fR
++.PP
++\fBck-history\fR(1),
++\fBck-launch-session\fR(1),
++\fBck-list-sessions\fR(1),
++\fBsvcadm\fR(1m),
++\fBenviron\fR(5),
++\fBsmf\fR(5),
++\fBconsole\fR(4)
++.SH "NOTES"
++.PP
++Brian Cameron, Sun Microsystems Inc\&., 2009\&.
++Copyright (c) 2009 by Sun Microsystems, Inc\&.
++.PP
++Some of the documentation in this manpage is from the ConsoleKit documentation
++written by William Jon McCann\&.
++...\" created by instant / solbook-to-man, Sat 24 Oct 2009, 14:10
++...\" LSARC 2009/432 ConsoleKit
+diff --git a/src/Makefile.am b/src/Makefile.am
+index 80e1304..e4c5eb1 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -20,6 +20,7 @@ AM_CFLAGS =							\
+ 	-DDATADIR=\""$(datadir)"\"				\
+ 	-DSYSCONFDIR=\""$(sysconfdir)"\" 			\
+ 	-DLOCALSTATEDIR=\""$(localstatedir)"\" 			\
++	-DRUNDIR=\""$(RUNDIR)"\" 				\
+ 	-DCONSOLE_KIT_PID_FILE=\""$(CONSOLE_KIT_PID_FILE)"\"	\
+ 	-DLOCALEDIR=\"$(localedir)\"		\
+ 	$(WARN_CFLAGS)						\
+@@ -211,8 +212,8 @@ test_tty_idle_monitor_LDADD =		\
+ 
+ test_inhibit_CFLAGS = \
+ 	$(AM_CFLAGS)	\
+-	-ULOCALSTATEDIR	\
+-	-DLOCALSTATEDIR=\"/tmp\" 			\
++	-URUNDIR	\
++	-DRUNDIR=\"/tmp\" 			\
+ 	$(NULL)
+ 
+ test_inhibit_SOURCES = 	\
+@@ -251,5 +252,5 @@ install-data-local:
+ 	-mkdir -p $(DESTDIR)$(prefix)/lib/ConsoleKit/run-session.d
+ 	-mkdir -p $(DESTDIR)$(sysconfdir)/ConsoleKit/run-seat.d
+ 	-mkdir -p $(DESTDIR)$(prefix)/lib/ConsoleKit/run-seat.d
+-	-mkdir -p $(DESTDIR)$(localstatedir)/run/ConsoleKit
++	-mkdir -p $(DESTDIR)$(RUNDIR)/ConsoleKit
+ 	-mkdir -p $(DESTDIR)$(localstatedir)/log/ConsoleKit
+diff --git a/src/ck-inhibit.c b/src/ck-inhibit.c
+index 6a87aa6..3395f95 100644
+--- a/src/ck-inhibit.c
++++ b/src/ck-inhibit.c
+@@ -216,19 +216,19 @@ create_inhibit_base_directory (void)
+         gint res;
+ 
+         errno = 0;
+-        res = g_mkdir_with_parents (LOCALSTATEDIR "/run/ConsoleKit/inhibit",
++        res = g_mkdir_with_parents (RUNDIR "/ConsoleKit/inhibit",
+                                     S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+         if (res < 0) {
+                 g_warning ("Unable to create directory %s (%s)",
+-                           LOCALSTATEDIR "/run/ConsoleKit/inhibit",
++                           RUNDIR "/ConsoleKit/inhibit",
+                            g_strerror (errno));
+ 
+                 return FALSE;
+         }
+ 
+-        if (g_chmod (LOCALSTATEDIR "/run/ConsoleKit/inhibit", 0755) == -1) {
++        if (g_chmod (RUNDIR "/ConsoleKit/inhibit", 0755) == -1) {
+                 g_warning ("Failed to change permissions for %s",
+-                           LOCALSTATEDIR "/run/ConsoleKit/inhibit");
++                           RUNDIR "/ConsoleKit/inhibit");
+         }
+ 
+         return TRUE;
+@@ -391,8 +391,8 @@ get_named_pipe_path (const char* who)
+ 
+         errno = 0;
+ 
+-        path = g_strdup_printf ("%s/run/ConsoleKit/inhibit/inhibit.XXXXXX.pipe",
+-                                LOCALSTATEDIR);
++        path = g_strdup_printf ("%s/ConsoleKit/inhibit/inhibit.XXXXXX.pipe",
++                                RUNDIR);
+ 
+         /* check that we got a string */
+         if (path == NULL) {
+diff --git a/src/ck-manager.c b/src/ck-manager.c
+index e1bf022..da1cce6 100644
+--- a/src/ck-manager.c
++++ b/src/ck-manager.c
+@@ -202,8 +202,8 @@ ck_manager_dump (CkManager *manager)
+ {
+         int         fd;
+         int         res;
+-        const char *filename = LOCALSTATEDIR "/run/ConsoleKit/database";
+-        const char *filename_tmp = LOCALSTATEDIR "/run/ConsoleKit/database~";
++        const char *filename = RUNDIR "/ConsoleKit/database";
++        const char *filename_tmp = RUNDIR "/ConsoleKit/database~";
+ 
+         if (manager == NULL) {
+                 g_warning ("ck_manager_dump: manager == NULL");
+@@ -212,16 +212,16 @@ ck_manager_dump (CkManager *manager)
+ 
+         /* always make sure we have a directory */
+         errno = 0;
+-        res = g_mkdir_with_parents (LOCALSTATEDIR "/run/ConsoleKit",
++        res = g_mkdir_with_parents (RUNDIR "/ConsoleKit",
+                                     S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+         if (res < 0) {
+                 g_warning ("Unable to create directory %s (%s)",
+-                           LOCALSTATEDIR "/run/ConsoleKit",
++                           RUNDIR "/ConsoleKit",
+                            g_strerror (errno));
+                 return;
+         }
+ 
+-        g_debug ("ck_manager_dump: %s/run/ConsoleKit folder created", LOCALSTATEDIR);
++        g_debug ("ck_manager_dump: %s/ConsoleKit folder created", RUNDIR);
+ 
+         fd = g_open (filename_tmp, O_CREAT | O_WRONLY, 0644);
+         if (fd == -1) {
+diff --git a/src/main.c b/src/main.c
+index 40d4e02..3137bf9 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -186,7 +186,7 @@ delete_inhibit_files (void)
+ {
+         GDir *dir;
+         GError *error = NULL;
+-        const gchar *INHIBIT_DIRECTORY = LOCALSTATEDIR "/run/ConsoleKit/inhibit";
++        const gchar *INHIBIT_DIRECTORY = RUNDIR "/ConsoleKit/inhibit";
+         const gchar *name;
+ 
+         g_debug ("Cleaning up %s", INHIBIT_DIRECTORY);
+diff --git a/tools/70-udev-acl.rules b/tools/70-udev-acl.rules
+deleted file mode 100644
+index 2dac283..0000000
+--- a/tools/70-udev-acl.rules
++++ /dev/null
+@@ -1,76 +0,0 @@
+-# do not edit this file, it will be overwritten on update
+-
+-# Do not use TAG+="udev-acl" outside of this file. This variable is private to
+-# udev-acl of this udev release and may be replaced at any time.
+-
+-ENV{MAJOR}=="", GOTO="acl_end"
+-ACTION=="remove", GOTO="acl_apply"
+-
+-# systemd replaces udev-acl entirely, skip if active
+-TEST=="/sys/fs/cgroup/systemd", TAG=="uaccess", GOTO="acl_end"
+-
+-# PTP/MTP protocol devices, cameras, portable media players
+-SUBSYSTEM=="usb", ENV{ID_USB_INTERFACES}=="*:060101:*", TAG+="udev-acl"
+-
+-# digicams with proprietary protocol
+-ENV{ID_GPHOTO2}=="*?", TAG+="udev-acl"
+-
+-# SCSI and USB scanners
+-ENV{libsane_matched}=="yes", TAG+="udev-acl"
+-
+-# HPLIP devices (necessary for ink level check and HP tool maintenance)
+-ENV{ID_HPLIP}=="1", TAG+="udev-acl"
+-
+-# optical drives
+-SUBSYSTEM=="block", ENV{ID_CDROM}=="1", TAG+="udev-acl"
+-SUBSYSTEM=="scsi_generic", SUBSYSTEMS=="scsi", ATTRS{type}=="4|5", TAG+="udev-acl"
+-
+-# sound devices
+-SUBSYSTEM=="sound", TAG+="udev-acl"
+-
+-# ffado is an userspace driver for firewire sound cards
+-SUBSYSTEM=="firewire", ENV{ID_FFADO}=="1", TAG+="udev-acl"
+-
+-# webcams, frame grabber, TV cards
+-SUBSYSTEM=="video4linux", TAG+="udev-acl"
+-SUBSYSTEM=="dvb", TAG+="udev-acl"
+-
+-# IIDC devices: industrial cameras and some webcams
+-SUBSYSTEM=="firewire", ATTR{units}=="*0x00a02d:0x00010*",  TAG+="udev-acl"
+-SUBSYSTEM=="firewire", ATTR{units}=="*0x00b09d:0x00010*",  TAG+="udev-acl"
+-# AV/C devices: camcorders, set-top boxes, TV sets, audio devices, and more
+-SUBSYSTEM=="firewire", ATTR{units}=="*0x00a02d:0x010001*", TAG+="udev-acl"
+-SUBSYSTEM=="firewire", ATTR{units}=="*0x00a02d:0x014001*", TAG+="udev-acl"
+-
+-# DRI video devices
+-SUBSYSTEM=="drm", KERNEL=="card*", TAG+="udev-acl"
+-
+-# KVM
+-SUBSYSTEM=="misc", KERNEL=="kvm", TAG+="udev-acl"
+-
+-# smart-card readers
+-ENV{ID_SMARTCARD_READER}=="*?", TAG+="udev-acl"
+-
+-# PDA devices
+-ENV{ID_PDA}=="*?", TAG+="udev-acl"
+-
+-# Programmable remote control
+-ENV{ID_REMOTE_CONTROL}=="1", TAG+="udev-acl"
+-
+-# joysticks
+-SUBSYSTEM=="input", ENV{ID_INPUT_JOYSTICK}=="?*", TAG+="udev-acl"
+-
+-# color measurement devices
+-ENV{COLOR_MEASUREMENT_DEVICE}=="*?", TAG+="udev-acl"
+-
+-# DDC/CI device, usually high-end monitors such as the DreamColor
+-ENV{DDC_DEVICE}=="*?", TAG+="udev-acl"
+-
+-# media player raw devices (for user-mode drivers, Android SDK, etc.)
+-SUBSYSTEM=="usb", ENV{ID_MEDIA_PLAYER}=="?*", TAG+="udev-acl"
+-
+-# apply ACL for all locally logged in users
+-LABEL="acl_apply", TAG=="udev-acl", TEST=="/var/run/ConsoleKit/database", \
+-  RUN+="udev-acl --action=$env{ACTION} --device=$env{DEVNAME}"
+-
+-LABEL="acl_end"
+diff --git a/tools/70-udev-acl.rules.in b/tools/70-udev-acl.rules.in
+new file mode 100644
+index 0000000..de6720e
+--- /dev/null
++++ b/tools/70-udev-acl.rules.in
+@@ -0,0 +1,76 @@
++# do not edit this file, it will be overwritten on update
++
++# Do not use TAG+="udev-acl" outside of this file. This variable is private to
++# udev-acl of this udev release and may be replaced at any time.
++
++ENV{MAJOR}=="", GOTO="acl_end"
++ACTION=="remove", GOTO="acl_apply"
++
++# systemd replaces udev-acl entirely, skip if active
++TEST=="/sys/fs/cgroup/systemd", TAG=="uaccess", GOTO="acl_end"
++
++# PTP/MTP protocol devices, cameras, portable media players
++SUBSYSTEM=="usb", ENV{ID_USB_INTERFACES}=="*:060101:*", TAG+="udev-acl"
++
++# digicams with proprietary protocol
++ENV{ID_GPHOTO2}=="*?", TAG+="udev-acl"
++
++# SCSI and USB scanners
++ENV{libsane_matched}=="yes", TAG+="udev-acl"
++
++# HPLIP devices (necessary for ink level check and HP tool maintenance)
++ENV{ID_HPLIP}=="1", TAG+="udev-acl"
++
++# optical drives
++SUBSYSTEM=="block", ENV{ID_CDROM}=="1", TAG+="udev-acl"
++SUBSYSTEM=="scsi_generic", SUBSYSTEMS=="scsi", ATTRS{type}=="4|5", TAG+="udev-acl"
++
++# sound devices
++SUBSYSTEM=="sound", TAG+="udev-acl"
++
++# ffado is an userspace driver for firewire sound cards
++SUBSYSTEM=="firewire", ENV{ID_FFADO}=="1", TAG+="udev-acl"
++
++# webcams, frame grabber, TV cards
++SUBSYSTEM=="video4linux", TAG+="udev-acl"
++SUBSYSTEM=="dvb", TAG+="udev-acl"
++
++# IIDC devices: industrial cameras and some webcams
++SUBSYSTEM=="firewire", ATTR{units}=="*0x00a02d:0x00010*",  TAG+="udev-acl"
++SUBSYSTEM=="firewire", ATTR{units}=="*0x00b09d:0x00010*",  TAG+="udev-acl"
++# AV/C devices: camcorders, set-top boxes, TV sets, audio devices, and more
++SUBSYSTEM=="firewire", ATTR{units}=="*0x00a02d:0x010001*", TAG+="udev-acl"
++SUBSYSTEM=="firewire", ATTR{units}=="*0x00a02d:0x014001*", TAG+="udev-acl"
++
++# DRI video devices
++SUBSYSTEM=="drm", KERNEL=="card*", TAG+="udev-acl"
++
++# KVM
++SUBSYSTEM=="misc", KERNEL=="kvm", TAG+="udev-acl"
++
++# smart-card readers
++ENV{ID_SMARTCARD_READER}=="*?", TAG+="udev-acl"
++
++# PDA devices
++ENV{ID_PDA}=="*?", TAG+="udev-acl"
++
++# Programmable remote control
++ENV{ID_REMOTE_CONTROL}=="1", TAG+="udev-acl"
++
++# joysticks
++SUBSYSTEM=="input", ENV{ID_INPUT_JOYSTICK}=="?*", TAG+="udev-acl"
++
++# color measurement devices
++ENV{COLOR_MEASUREMENT_DEVICE}=="*?", TAG+="udev-acl"
++
++# DDC/CI device, usually high-end monitors such as the DreamColor
++ENV{DDC_DEVICE}=="*?", TAG+="udev-acl"
++
++# media player raw devices (for user-mode drivers, Android SDK, etc.)
++SUBSYSTEM=="usb", ENV{ID_MEDIA_PLAYER}=="?*", TAG+="udev-acl"
++
++# apply ACL for all locally logged in users
++LABEL="acl_apply", TAG=="udev-acl", TEST=="@RUNDIR@/ConsoleKit/database", \
++  RUN+="udev-acl --action=$env{ACTION} --device=$env{DEVNAME}"
++
++LABEL="acl_end"
+diff --git a/tools/Makefile.am b/tools/Makefile.am
+index 774b4ed..5138e03 100644
+--- a/tools/Makefile.am
++++ b/tools/Makefile.am
+@@ -45,6 +45,7 @@ AM_CFLAGS =							\
+ 	-DDATADIR=\""$(datadir)"\"				\
+ 	-DSYSCONFDIR=\""$(sysconfdir)"\" 			\
+ 	-DLOCALSTATEDIR=\""$(localstatedir)"\" 			\
++	-DRUNDIR=\""$(RUNDIR)"\" 			\
+ 	-DLOCALEDIR=\"$(localedir)\"		\
+ 	$(HISTORY_CFLAGS)					\
+ 	$(WARN_CFLAGS)						\
+diff --git a/tools/udev-acl.c b/tools/udev-acl.c
+index 4f49f04..5e394fb 100644
+--- a/tools/udev-acl.c
++++ b/tools/udev-acl.c
+@@ -132,7 +132,7 @@ static GSList *uids_with_local_active_session(const char *own_id)
+         GKeyFile *keyfile;
+ 
+         keyfile = g_key_file_new();
+-        if (g_key_file_load_from_file(keyfile, "/var/run/ConsoleKit/database", 0, NULL)) {
++        if (g_key_file_load_from_file(keyfile, RUNDIR "/ConsoleKit/database", 0, NULL)) {
+                 gchar **groups;
+ 
+                 groups = g_key_file_get_groups(keyfile, NULL);
+-- 
+2.2.1
+

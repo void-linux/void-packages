@@ -1,0 +1,411 @@
+From cea7cb81dd95b447a8d5cb279307c435d9dc968c Mon Sep 17 00:00:00 2001
+From: Eric Koegel <eric.koegel@gmail.com>
+Date: Mon, 17 Nov 2014 10:16:26 +0300
+Subject: [PATCH 05/12] Add the PrepareForSleep/Shutdown signals
+
+This patch adds the PrepareForSleep/Shutdown signals so apps can
+listed for these signals and perform operations prior to the event
+such as logging out of online chatrooms.
+---
+ po/ConsoleKit2.pot                         |  14 +-
+ src/ck-manager.c                           | 210 +++++++++++++++++++++++++----
+ src/ck-manager.h                           |   4 +
+ src/org.freedesktop.ConsoleKit.Manager.xml |  31 +++++
+ 4 files changed, 224 insertions(+), 35 deletions(-)
+
+diff --git a/po/ConsoleKit2.pot b/po/ConsoleKit2.pot
+index 331b9e2..31f9ec7 100644
+--- a/po/ConsoleKit2.pot
++++ b/po/ConsoleKit2.pot
+@@ -8,7 +8,7 @@ msgid ""
+ msgstr ""
+ "Project-Id-Version: PACKAGE VERSION\n"
+ "Report-Msgid-Bugs-To: https://github.com/ConsoleKit2/ConsoleKit2/issues\n"
+-"POT-Creation-Date: 2014-11-02 15:43+0300\n"
++"POT-Creation-Date: 2014-11-17 10:15+0300\n"
+ "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+ "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+ "Language-Team: LANGUAGE <LL@li.org>\n"
+@@ -65,29 +65,29 @@ msgstr ""
+ msgid "No consoles available"
+ msgstr ""
+ 
+-#: src/ck-manager.c:2516 src/ck-manager.c:2615 src/ck-manager.c:2672
++#: src/ck-manager.c:2648 src/ck-manager.c:2747 src/ck-manager.c:2804
+ msgid "Unable to get information about the calling process"
+ msgstr ""
+ 
+-#: src/ck-manager.c:2529 src/ck-session.c:278
++#: src/ck-manager.c:2661 src/ck-session.c:278
+ #, c-format
+ msgid "Unable to lookup information about calling process '%d'"
+ msgstr ""
+ 
+-#: src/ck-manager.c:2553 src/ck-manager.c:2565 src/ck-manager.c:2822
++#: src/ck-manager.c:2685 src/ck-manager.c:2697 src/ck-manager.c:2954
+ msgid "Unable to find session for cookie"
+ msgstr ""
+ 
+-#: src/ck-manager.c:2629
++#: src/ck-manager.c:2761
+ #, c-format
+ msgid "Unable to lookup session information for process '%d'"
+ msgstr ""
+ 
+-#: src/ck-manager.c:2830
++#: src/ck-manager.c:2962
+ msgid "User ID does not match the owner of cookie"
+ msgstr ""
+ 
+-#: src/ck-manager.c:2840
++#: src/ck-manager.c:2972
+ msgid "Process ID does not match the owner of cookie"
+ msgstr ""
+ 
+diff --git a/src/ck-manager.c b/src/ck-manager.c
+index cf5a40b..0110d89 100644
+--- a/src/ck-manager.c
++++ b/src/ck-manager.c
+@@ -83,15 +83,31 @@ struct CkManagerPrivate
+         gboolean         system_idle_hint;
+         GTimeVal         system_idle_since_hint;
+ 
++        /* How long to delay after emitting the PREPARE_FOR_SHUTDOWN or
++         * PREPARE_FOR_SLEEP signal */
++        guint            system_action_idle_delay;
++
+         CkInhibitManager *inhibit_manager;
+ };
+ 
+-enum {
++typedef enum {
+         SEAT_ADDED,
+         SEAT_REMOVED,
+         SYSTEM_IDLE_HINT_CHANGED,
++        PREPARE_FOR_SHUTDOWN,
++        PREPARE_FOR_SLEEP,
+         LAST_SIGNAL
+-};
++} SIGNALS;
++
++typedef struct
++{
++        CkManager             *manager;
++        DBusGMethodInvocation *context;
++        const gchar           *command;
++        CkLogEventType         event_type;
++        const gchar           *description;
++        SIGNALS                signal;
++} SystemActionData;
+ 
+ static guint signals [LAST_SIGNAL] = { 0, };
+ 
+@@ -1198,7 +1214,7 @@ do_system_action (CkManager             *manager,
+         g_debug ("command is %s", command);
+ 
+         error = NULL;
+-        res = g_spawn_command_line_async (command, &error);
++        res = g_spawn_command_line_sync (command, NULL, NULL, NULL, &error);
+ 
+         if (! res) {
+                 GError *new_error;
+@@ -1218,15 +1234,55 @@ do_system_action (CkManager             *manager,
+         }
+ }
+ 
++static gboolean
++system_action_idle_cb(SystemActionData *data)
++{
++        g_return_val_if_fail (data != NULL, FALSE);
++
++        /* Perform the action */
++        do_system_action (data->manager,
++                          data->context,
++                          data->command,
++                          data->event_type,
++                          data->description);
++
++        /* If we got here the sleep action is done and we're awake again
++         * or the operation failed. Either way we can signal to the apps */
++        g_signal_emit (data->manager, signals [data->signal], 0, FALSE);
++
++        g_free (data);
++
++        return FALSE;
++}
++
+ static void
+ do_restart (CkManager             *manager,
+             DBusGMethodInvocation *context)
+ {
+-        do_system_action (manager,
+-                          context,
+-                          PREFIX "/lib/ConsoleKit/scripts/ck-system-restart",
+-                          CK_LOG_EVENT_SYSTEM_RESTART,
+-                          "Restart");
++        SystemActionData *data;
++
++        /* Emit the signal */
++        g_signal_emit (manager, signals [PREPARE_FOR_SHUTDOWN], 0, TRUE);
++
++        /* Allocate and fill the data struct to pass to the idle cb */
++        data = g_new0 (SystemActionData, 1);
++        if (data == NULL) {
++                g_critical ("failed to allocate memory to perform shutdown\n");
++                g_signal_emit (manager, signals [PREPARE_FOR_SHUTDOWN], 0, FALSE);
++                return;
++        }
++
++        data->manager = manager;
++        data->context = context;
++        data->command = PREFIX "/lib/ConsoleKit/scripts/ck-system-restart";
++        data->event_type = CK_LOG_EVENT_SYSTEM_RESTART;
++        data->description = "Restart";
++        data->signal = PREPARE_FOR_SHUTDOWN;
++
++        /* Sleep so user applications have time to respond */
++        g_timeout_add (data->manager->priv->system_action_idle_delay,
++                       (GSourceFunc)system_action_idle_cb,
++                       data);
+ }
+ 
+ /*
+@@ -1289,11 +1345,30 @@ static void
+ do_stop (CkManager             *manager,
+          DBusGMethodInvocation *context)
+ {
+-        do_system_action (manager,
+-                          context,
+-                          PREFIX "/lib/ConsoleKit/scripts/ck-system-stop",
+-                          CK_LOG_EVENT_SYSTEM_STOP,
+-                          "Stop");
++        SystemActionData *data;
++
++        /* Emit the signal */
++        g_signal_emit (manager, signals [PREPARE_FOR_SHUTDOWN], 0, TRUE);
++
++        /* Allocate and fill the data struct to pass to the idle cb */
++        data = g_new0 (SystemActionData, 1);
++        if (data == NULL) {
++                g_critical ("failed to allocate memory to perform shutdown\n");
++                g_signal_emit (manager, signals [PREPARE_FOR_SHUTDOWN], 0, FALSE);
++                return;
++        }
++
++        data->manager = manager;
++        data->context = context;
++        data->command = PREFIX "/lib/ConsoleKit/scripts/ck-system-stop";
++        data->event_type = CK_LOG_EVENT_SYSTEM_STOP;
++        data->description = "Stop";
++        data->signal = PREPARE_FOR_SHUTDOWN;
++
++        /* Sleep so user applications have time to respond */
++        g_timeout_add (data->manager->priv->system_action_idle_delay,
++                       (GSourceFunc)system_action_idle_cb,
++                       data);
+ }
+ 
+ gboolean
+@@ -1486,11 +1561,30 @@ static void
+ do_suspend (CkManager             *manager,
+             DBusGMethodInvocation *context)
+ {
+-        do_system_action (manager,
+-                          context,
+-                          PREFIX "/lib/ConsoleKit/scripts/ck-system-suspend",
+-                          CK_LOG_EVENT_SYSTEM_SUSPEND,
+-                          "Suspend");
++        SystemActionData *data;
++
++        /* Emit the signal */
++        g_signal_emit (manager, signals [PREPARE_FOR_SLEEP], 0, TRUE);
++
++        /* Allocate and fill the data struct to pass to the idle cb */
++        data = g_new0 (SystemActionData, 1);
++        if (data == NULL) {
++                g_critical ("failed to allocate memory to perform suspend\n");
++                g_signal_emit (manager, signals [PREPARE_FOR_SLEEP], 0, FALSE);
++                return;
++        }
++
++        data->manager = manager;
++        data->context = context;
++        data->command = PREFIX "/lib/ConsoleKit/scripts/ck-system-suspend";
++        data->event_type = CK_LOG_EVENT_SYSTEM_SUSPEND;
++        data->description = "Suspend";
++        data->signal = PREPARE_FOR_SLEEP;
++
++        /* Sleep so user applications have time to respond */
++        g_timeout_add (data->manager->priv->system_action_idle_delay,
++                       (GSourceFunc)system_action_idle_cb,
++                       data);
+ }
+ 
+ /*
+@@ -1572,11 +1666,30 @@ static void
+ do_hibernate (CkManager             *manager,
+               DBusGMethodInvocation *context)
+ {
+-        do_system_action (manager,
+-                          context,
+-                          PREFIX "/lib/ConsoleKit/scripts/ck-system-hibernate",
+-                          CK_LOG_EVENT_SYSTEM_HIBERNATE,
+-                          "Hibernate");
++        SystemActionData *data;
++
++        /* Emit the signal */
++        g_signal_emit (manager, signals [PREPARE_FOR_SLEEP], 0, TRUE);
++
++        /* Allocate and fill the data struct to pass to the idle cb */
++        data = g_new0 (SystemActionData, 1);
++        if (data == NULL) {
++                g_critical ("failed to allocate memory to perform suspend\n");
++                g_signal_emit (manager, signals [PREPARE_FOR_SLEEP], 0, FALSE);
++                return;
++        }
++
++        data->manager = manager;
++        data->context = context;
++        data->command = PREFIX "/lib/ConsoleKit/scripts/ck-system-hibernate";
++        data->event_type = CK_LOG_EVENT_SYSTEM_HIBERNATE;
++        data->description = "Hibernate";
++        data->signal = PREPARE_FOR_SLEEP;
++
++        /* Sleep so user applications have time to respond */
++        g_timeout_add (data->manager->priv->system_action_idle_delay,
++                       (GSourceFunc)system_action_idle_cb,
++                       data);
+ }
+ 
+ /*
+@@ -1658,11 +1771,30 @@ static void
+ do_hybrid_sleep (CkManager             *manager,
+                  DBusGMethodInvocation *context)
+ {
+-        do_system_action (manager,
+-                          context,
+-                          PREFIX "/lib/ConsoleKit/scripts/ck-system-hybridsleep",
+-                          CK_LOG_EVENT_SYSTEM_HIBERNATE,
+-                          "Hybrid Sleep");
++        SystemActionData *data;
++
++        /* Emit the signal */
++        g_signal_emit (manager, signals [PREPARE_FOR_SLEEP], 0, TRUE);
++
++        /* Allocate and fill the data struct to pass to the idle cb */
++        data = g_new0 (SystemActionData, 1);
++        if (data == NULL) {
++                g_critical ("failed to allocate memory to perform suspend\n");
++                g_signal_emit (manager, signals [PREPARE_FOR_SLEEP], 0, FALSE);
++                return;
++        }
++
++        data->manager = manager;
++        data->context = context;
++        data->command = PREFIX "/lib/ConsoleKit/scripts/ck-system-hybridsleep";
++        data->event_type = CK_LOG_EVENT_SYSTEM_HIBERNATE;
++        data->description = "Hybrid Sleep";
++        data->signal = PREPARE_FOR_SLEEP;
++
++        /* Sleep so user applications have time to respond */
++        g_timeout_add (data->manager->priv->system_action_idle_delay,
++                       (GSourceFunc)system_action_idle_cb,
++                       data);
+ }
+ 
+ /*
+@@ -3043,6 +3175,26 @@ ck_manager_class_init (CkManagerClass *klass)
+                               g_cclosure_marshal_VOID__BOOLEAN,
+                               G_TYPE_NONE,
+                               1, G_TYPE_BOOLEAN);
++        signals [PREPARE_FOR_SHUTDOWN] =
++                g_signal_new ("prepare-for-shutdown",
++                              G_TYPE_FROM_CLASS (object_class),
++                              G_SIGNAL_RUN_LAST,
++                              G_STRUCT_OFFSET (CkManagerClass, prepare_for_shutdown),
++                              NULL,
++                              NULL,
++                              g_cclosure_marshal_VOID__BOOLEAN,
++                              G_TYPE_NONE,
++                              1, G_TYPE_BOOLEAN);
++        signals [PREPARE_FOR_SLEEP] =
++                g_signal_new ("prepare-for-sleep",
++                              G_TYPE_FROM_CLASS (object_class),
++                              G_SIGNAL_RUN_LAST,
++                              G_STRUCT_OFFSET (CkManagerClass, prepare_for_sleep),
++                              NULL,
++                              NULL,
++                              g_cclosure_marshal_VOID__BOOLEAN,
++                              G_TYPE_NONE,
++                              1, G_TYPE_BOOLEAN);
+ 
+         dbus_g_object_type_install_info (CK_TYPE_MANAGER, &dbus_glib_ck_manager_object_info);
+         dbus_g_error_domain_register (CK_MANAGER_ERROR, NULL, CK_MANAGER_TYPE_ERROR);
+@@ -3256,6 +3408,8 @@ ck_manager_init (CkManager *manager)
+ 
+         manager->priv->inhibit_manager = ck_inhibit_manager_get ();
+ 
++        manager->priv->system_action_idle_delay = 4 * 1000;
++
+         create_seats (manager);
+ }
+ 
+diff --git a/src/ck-manager.h b/src/ck-manager.h
+index 098d464..5bdc76e 100644
+--- a/src/ck-manager.h
++++ b/src/ck-manager.h
+@@ -54,6 +54,10 @@ typedef struct
+                                                     const char *sid);
+         void          (* system_idle_hint_changed) (CkManager  *manager,
+                                                     gboolean    idle_hint);
++        void          (* prepare_for_shutdown)     (CkManager  *manager,
++                                                    gboolean    active);
++        void          (* prepare_for_sleep)        (CkManager  *manager,
++                                                    gboolean    active);
+ } CkManagerClass;
+ 
+ typedef enum
+diff --git a/src/org.freedesktop.ConsoleKit.Manager.xml b/src/org.freedesktop.ConsoleKit.Manager.xml
+index eb44d45..9b94120 100644
+--- a/src/org.freedesktop.ConsoleKit.Manager.xml
++++ b/src/org.freedesktop.ConsoleKit.Manager.xml
+@@ -603,5 +603,36 @@
+         </doc:description>
+       </doc:doc>
+     </signal>
++    <signal name="PrepareForShutdown">
++      <arg name="active" type="b">
++        <doc:doc>
++          <doc:summary>TRUE when the system is starting to halt.</doc:summary>
++        </doc:doc>
++      </arg>
++      <doc:doc>
++        <doc:description>
++          <doc:para>Emitted when the system is halting (active = TRUE). If
++                    successful there will not be a FALSE signal emitted since
++                    the system will poweroff or reboot. It will emit a FALSE
++                    signal if the shutdown operation failed.
++          </doc:para>
++        </doc:description>
++      </doc:doc>
++    </signal>
++    <signal name="PrepareForSleep">
++      <arg name="active" type="b">
++        <doc:doc>
++          <doc:summary>TRUE when starting to sleep.</doc:summary>
++        </doc:doc>
++      </arg>
++      <doc:doc>
++        <doc:description>
++          <doc:para>Emitted when the system is starting the sleep process.
++                    It will emit with an active = FALSE when resuming from sleep
++                    or if the sleep operation failed.
++          </doc:para>
++        </doc:description>
++      </doc:doc>
++    </signal>
+   </interface>
+ </node>
+-- 
+2.2.1
+
