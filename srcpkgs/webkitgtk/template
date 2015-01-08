@@ -1,9 +1,9 @@
 # Template file for 'webkitgtk'
 pkgname=webkitgtk
 version=2.4.8
-revision=1
+revision=2
 build_style=gnu-configure
-configure_args="--disable-gtk-doc --with-gtk=3.0 --disable-schemas-compile
+configure_args="--disable-gtk-doc --disable-schemas-compile
  --enable-accelerated-compositing $(vopt_enable gir introspection)
  $(vopt_enable wayland wayland-target) $(vopt_enable x11 x11-target)"
 short_desc="GTK+3 port of the WebKit browser engine"
@@ -34,8 +34,43 @@ if [ -z "$CROSS_BUILD" ]; then
 	build_options_default+=" gir"
 fi
 
+# Explicit order since webkitgtk2-devel depends on webkitgtk2
+subpackages="webkitgtk-devel webkitgtk2 webkitgtk2-devel"
+
 pre_configure() {
 	autoreconf -fi
+
+	local v
+	for v in 3.0 2.0; do
+		mkdir -p /tmp/$v
+		cp -a $wrksrc/* /tmp/$v
+		mv /tmp/$v $wrksrc/$v
+	done
+}
+
+do_configure() {
+	local v
+	for v in 3.0 2.0; do
+		cd $wrksrc/$v
+
+		if [ $v = 2.0 ]; then
+			configure_args+=" --disable-webkit2"
+		fi
+		./configure $configure_args --with-gtk=${v}
+	done
+}
+
+do_build() {
+	local v
+	for v in 3.0 2.0; do
+		cd $wrksrc/$v
+		make $makejobs
+	done
+}
+
+do_install() {
+	cd $wrksrc/3.0
+	make DESTDIR=$DESTDIR install
 }
 
 webkitgtk-devel_package() {
@@ -49,5 +84,32 @@ webkitgtk-devel_package() {
 		fi
 		vmove "usr/lib/*.so"
 		vmove usr/share/gtk-doc
+	}
+}
+
+webkitgtk2_package() {
+    short_desc="${short_desc/3/2}"
+	replaces="webkit-gtk>=0"
+	pkg_install() {
+		cd $wrksrc/2.0
+		make DESTDIR=$PKGDESTDIR install
+	}
+}
+
+webkitgtk2-devel_package() {
+	depends="gtk+-devel libsoup-devel webkitgtk2>=${version}_${revision}"
+	short_desc="${short_desc/3/2} - development files"
+	replaces="webkit-gtk-devel>=0"
+	pkg_install() {
+		local parent=$PKGDESTDIR/../webkitgtk2-${version}
+
+		install -d $PKGDESTDIR/usr/{lib,share}
+		mv $parent/usr/include $PKGDESTDIR/usr
+		mv $parent/usr/lib/pkgconfig $PKGDESTDIR/usr/lib
+		if [ "$build_option_gir" ]; then
+			mv $parent/usr/share/gir-1.0 $PKGDESTDIR/usr/share
+		fi
+		mv $parent/usr/lib/*.so $PKGDESTDIR/usr/lib
+		mv $parent/usr/share/gtk-doc $PKGDESTDIR/usr/share
 	}
 }
