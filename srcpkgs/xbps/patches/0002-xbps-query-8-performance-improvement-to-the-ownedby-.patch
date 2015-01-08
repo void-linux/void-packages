@@ -1,0 +1,88 @@
+From cdf7fc81af26414c8729721771d948677194ecef Mon Sep 17 00:00:00 2001
+From: Juan RP <xtraeme@gmail.com>
+Date: Thu, 8 Jan 2015 10:32:08 +0100
+Subject: [PATCH 2/3] xbps-query(8): performance improvement to the ownedby
+ mode with --regex.
+
+Only compile the ERE once, rather than on any file. Found and suggested
+by Christian Neukirchen (@chneukirchen).
+---
+ NEWS                     |  3 +++
+ bin/xbps-query/ownedby.c | 23 ++++++++++++++---------
+ 2 files changed, 17 insertions(+), 9 deletions(-)
+
+diff --git a/bin/xbps-query/ownedby.c b/bin/xbps-query/ownedby.c
+index 0def81a..4e3e175 100644
+--- bin/xbps-query/ownedby.c
++++ bin/xbps-query/ownedby.c
+@@ -1,5 +1,5 @@
+ /*-
+- * Copyright (c) 2010-2014 Juan Romero Pardines.
++ * Copyright (c) 2010-2015 Juan Romero Pardines.
+  * All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+@@ -37,8 +37,9 @@
+ #include "defs.h"
+ 
+ struct ffdata {
+-	bool regex;
++	bool rematch;
+ 	const char *pat, *repouri;
++	regex_t regex;
+ 	xbps_array_t allkeys;
+ 	xbps_dictionary_t filesd;
+ };
+@@ -52,7 +53,6 @@ match_files_by_pattern(xbps_dictionary_t pkg_filesd,
+ 	xbps_array_t array;
+ 	xbps_object_t obj;
+ 	const char *keyname, *filestr, *typestr;
+-	regex_t regex;
+ 
+ 	keyname = xbps_dictionary_keysym_cstring_nocopy(key);
+ 
+@@ -72,13 +72,10 @@ match_files_by_pattern(xbps_dictionary_t pkg_filesd,
+ 		xbps_dictionary_get_cstring_nocopy(obj, "file", &filestr);
+ 		if (filestr == NULL)
+ 			continue;
+-		if (ffd->regex) {
+-			if (regcomp(&regex, ffd->pat, REG_EXTENDED|REG_NOSUB) != 0)
+-				return;
+-			if (regexec(&regex, filestr, 0, 0, 0) == 0) {
++		if (ffd->rematch) {
++			if (regexec(&ffd->regex, filestr, 0, 0, 0) == 0) {
+ 				printf("%s: %s (%s)\n", pkgver, filestr, typestr);
+ 			}
+-			regfree(&regex);
+ 		} else {
+ 			if ((fnmatch(ffd->pat, filestr, FNM_PERIOD)) == 0)
+ 				printf("%s: %s (%s)\n", pkgver, filestr, typestr);
+@@ -176,16 +173,24 @@ ownedby(struct xbps_handle *xhp, const char *pat, bool repo, bool regex)
+ 	char *rfile;
+ 	int rv;
+ 
+-	ffd.regex = regex;
++	ffd.rematch = false;
+ 	ffd.pat = pat;
+ 
+ 	if ((rfile = realpath(pat, NULL)) != NULL)
+ 		ffd.pat = rfile;
+ 
++	if (regex) {
++		ffd.rematch = true;
++		if (regcomp(&ffd.regex, ffd.pat, REG_EXTENDED|REG_NOSUB) != 0)
++			return EINVAL;
++	}
+ 	if (repo)
+ 		rv = xbps_rpool_foreach(xhp, repo_ownedby_cb, &ffd);
+ 	else
+ 		rv = xbps_pkgdb_foreach_cb(xhp, ownedby_pkgdb_cb, &ffd);
+ 
++	if (regex)
++		regfree(&ffd.regex);
++
+ 	return rv;
+ }
+-- 
+2.2.1
+
