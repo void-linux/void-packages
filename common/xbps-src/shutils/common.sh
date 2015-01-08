@@ -340,6 +340,10 @@ setup_pkg() {
     export CPPFLAGS="$XBPS_CPPFLAGS $XBPS_CROSS_CPPFLAGS $CPPFLAGS"
     export LDFLAGS="$XBPS_LDFLAGS $XBPS_CROSS_LDFLAGS $LDFLAGS"
 
+    if [ -n "$broken_as_needed" ]; then
+        LDFLAGS="${LDFLAGS/-Wl,--as-needed/}"
+    fi
+
     export BUILD_CC="cc"
     export BUILD_CFLAGS="$XBPS_CFLAGS"
     export CC_FOR_BUILD="cc"
