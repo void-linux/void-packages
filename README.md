@@ -132,7 +132,7 @@ By default **xbps-src** will try to resolve package dependencies in this order:
 
 It is possible to avoid using remote repositories completely by using the `-N` flag.
 
-> NOTE: the default local repository may contain multiple *sub-repositories*: `debug`, `multilib`, etc.
+> The default local repository may contain multiple *sub-repositories*: `debug`, `multilib`, etc.
 
 ### Sharing and signing your local repositories
 
@@ -147,13 +147,13 @@ or
 
 	$ ssh-keygen -t rsa -b 4096 -f privkey.pem
 
-> NOTE: only RSA keys in PEM format are currently accepted by xbps.
+> Only RSA keys in PEM format are currently accepted by xbps.
 
 Once the RSA private key is ready you can use it to sign the repository:
 
 	$ xbps-rindex --sign --signedby "I'm Groot" --privkey privkey.pem $PWD/hostdir/binpkgs
 
-> NOTE: If --privkey is unset, it defaults to `~/.ssh/id_rsa`.
+> If --privkey is unset, it defaults to `~/.ssh/id_rsa`.
 
 If the RSA key was protected with a passphrase you'll have to type it, or alternatively set
 it via the `XBPS_PASSPHRASE` environment variable.
@@ -162,6 +162,11 @@ Once the binary packages have been signed, check the repository contains the app
 
 	$ xbps-query --repository=$PWD/hostdir/binpkgs -vL
 	...
+
+Each time a binary package is created, the repository must be signed as explained above with
+the difference that only those new packages will be signed.
+
+> It is not possible to sign a repository with multiple RSA keys.
 
 ### Rebuilding and overwriting existing local packages
 
