@@ -116,10 +116,13 @@ $ ./xbps-src pkg <pkgname>
 
 When the package and its required dependencies are built, the binary packages will be created
 and registered in the default local repository at `hostdir/binpkgs`; the path to this local repository can be added to 
-any xbps configuration file or by explicitly appending them via cmdline, i.e:
+any xbps configuration file (see xbps.d(5)) or by explicitly appending them via cmdline, i.e:
 
     $ xbps-install --repository=/path/to/hostdir/binpkgs ...
     $ xbps-query --repository=/path/to/hostdir/binpkgs ...
+
+> Currently xbps expects absolute path when using the `--repository` option. This has been
+corrected in the 0.44 version.
 
 By default **xbps-src** will try to resolve package dependencies in this order:
 
