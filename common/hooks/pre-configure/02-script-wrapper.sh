@@ -42,8 +42,8 @@ generic_wrapper3() {
 
 	cp ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ${XBPS_WRAPPERDIR}
 	sed -e "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" -i ${XBPS_WRAPPERDIR}/${wrapper}
-	sed -e "s,libdir=/usr/lib,libdir=${XBPS_CROSS_BASE}/usr/lib,g" -i ${XBPS_WRAPPERDIR}/${wrapper}
-	sed -e "s,^prefix=/usr,prefix=${XBPS_CROSS_BASE}/usr," -i ${XBPS_WRAPPERDIR}/${wrapper}
+	sed -e "s,^libdir=.*,libdir=${XBPS_CROSS_BASE}/usr/lib,g" -i ${XBPS_WRAPPERDIR}/${wrapper}
+	sed -e "s,^prefix=.*,prefix=${XBPS_CROSS_BASE}/usr," -i ${XBPS_WRAPPERDIR}/${wrapper}
 
 	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}
 }
@@ -106,6 +106,7 @@ hook() {
 	generic_wrapper3 fltk-config
 	generic_wrapper3 xslt-config
 	generic_wrapper3 xml2-config
+	generic_wrapper3 fox-config
 	python_wrapper python-config 2.7
 	python_wrapper python3.4-config 3.4m
 
