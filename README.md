@@ -148,18 +148,19 @@ or
 	$ ssh-keygen -t rsa -b 4096 -f privkey.pem
 
 > NOTE: only RSA keys in PEM format are currently accepted by xbps.
-> NOTE: If --privkey is unset, it defaults to `~/.ssh/id_rsa`.
 
 Once the RSA private key is ready you can use it to sign the repository:
 
-	$ xbps-rindex --sign --signedby "I'm Groot <groot@me>" --privkey privkey.pem ~/void-packages/hostdir/binpkgs
+	$ xbps-rindex --sign --signedby "I'm Groot" --privkey privkey.pem $PWD/hostdir/binpkgs
+
+> NOTE: If --privkey is unset, it defaults to `~/.ssh/id_rsa`.
 
 If the RSA key was protected with a passphrase you'll have to type it, or alternatively set
 it via the `XBPS_PASSPHRASE` environment variable.
 
 Once the binary packages have been signed, check the repository contains the appropiate `hex fingerprint`:
 
-	$ xbps-query --repository=~/void-packages/hostdir/binpkgs -vL
+	$ xbps-query --repository=$PWD/hostdir/binpkgs -vL
 	...
 
 ### Rebuilding and overwriting existing local packages
