@@ -148,6 +148,7 @@ or
 	$ ssh-keygen -t rsa -b 4096 -f privkey.pem
 
 > NOTE: only RSA keys in PEM format are currently accepted by xbps.
+> NOTE: If --privkey is unset, it defaults to `~/.ssh/id_rsa`.
 
 Once the RSA private key is ready you can use it to sign the repository:
 
