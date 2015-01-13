@@ -1,0 +1,224 @@
+From 46877cc2bd497ec23acfa07fedaf29f45522dc6f Mon Sep 17 00:00:00 2001
+From: "Jasper St. Pierre" <jstpierre@mecheye.net>
+Date: Wed, 22 Oct 2014 18:44:22 -0700
+Subject: actor: Create a PangoContext per actor
+
+For a variety of complicated reasons, ClutterText currently sets fields
+on the PangoContext when creating a layout. This causes ClutterText to
+behave somewhat erratically in certain cases, since the PangoContext is
+currently shared between all actors.
+
+GTK+ creates a PangoContext for every single GtkWidget, so it seems like
+we should do the same here.
+
+Move the private code that was previously in clutter-main.c into
+clutter-actor.c and clean it up a bit. This gives every actor its own
+PangoContext it can mutilate whenever it wants, at its heart's content.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=739050
+
+diff --git a/clutter/clutter-actor.c b/clutter/clutter-actor.c
+index 6a0582a..33fe3e7 100644
+--- a/clutter/clutter-actor.c
++++ b/clutter/clutter-actor.c
+@@ -15474,6 +15474,46 @@ clutter_actor_grab_key_focus (ClutterActor *self)
+     clutter_stage_set_key_focus (CLUTTER_STAGE (stage), self);
+ }
+ 
++static void
++update_pango_context (ClutterBackend *backend,
++                      PangoContext   *context)
++{
++  ClutterSettings *settings;
++  PangoFontDescription *font_desc;
++  const cairo_font_options_t *font_options;
++  gchar *font_name;
++  PangoDirection pango_dir;
++  gdouble resolution;
++
++  settings = clutter_settings_get_default ();
++
++  /* update the text direction */
++  if (clutter_get_default_text_direction () == CLUTTER_TEXT_DIRECTION_RTL)
++    pango_dir = PANGO_DIRECTION_RTL;
++  else
++    pango_dir = PANGO_DIRECTION_LTR;
++
++  pango_context_set_base_dir (context, pango_dir);
++
++  g_object_get (settings, "font-name", &font_name, NULL);
++
++  /* get the configuration for the PangoContext from the backend */
++  font_options = clutter_backend_get_font_options (backend);
++  resolution = clutter_backend_get_resolution (backend);
++
++  font_desc = pango_font_description_from_string (font_name);
++
++  if (resolution < 0)
++    resolution = 96.0; /* fall back */
++
++  pango_context_set_font_description (context, font_desc);
++  pango_cairo_context_set_font_options (context, font_options);
++  pango_cairo_context_set_resolution (context, resolution);
++
++  pango_font_description_free (font_desc);
++  g_free (font_name);
++}
++
+ /**
+  * clutter_actor_get_pango_context:
+  * @self: a #ClutterActor
+@@ -15500,16 +15540,23 @@ PangoContext *
+ clutter_actor_get_pango_context (ClutterActor *self)
+ {
+   ClutterActorPrivate *priv;
++  ClutterBackend *backend = clutter_get_default_backend ();
+ 
+   g_return_val_if_fail (CLUTTER_IS_ACTOR (self), NULL);
+ 
+   priv = self->priv;
+ 
+-  if (priv->pango_context != NULL)
+-    return priv->pango_context;
++  if (G_UNLIKELY (priv->pango_context == NULL))
++    {
++      priv->pango_context = clutter_actor_create_pango_context (self);
+ 
+-  priv->pango_context = _clutter_context_get_pango_context ();
+-  g_object_ref (priv->pango_context);
++      g_signal_connect_object (backend, "resolution-changed",
++                               G_CALLBACK (update_pango_context), priv->pango_context, 0);
++      g_signal_connect_object (backend, "font-changed",
++                               G_CALLBACK (update_pango_context), priv->pango_context, 0);
++    }
++  else
++    update_pango_context (backend, priv->pango_context);
+ 
+   return priv->pango_context;
+ }
+@@ -15533,9 +15580,16 @@ clutter_actor_get_pango_context (ClutterActor *self)
+ PangoContext *
+ clutter_actor_create_pango_context (ClutterActor *self)
+ {
+-  g_return_val_if_fail (CLUTTER_IS_ACTOR (self), NULL);
++  CoglPangoFontMap *font_map;
++  PangoContext *context;
++
++  font_map = COGL_PANGO_FONT_MAP (clutter_get_font_map ());
++
++  context = cogl_pango_font_map_create_context (font_map);
++  update_pango_context (clutter_get_default_backend (), context);
++  pango_context_set_language (context, pango_language_get_default ());
+ 
+-  return _clutter_context_create_pango_context ();
++  return context;
+ }
+ 
+ /**
+diff --git a/clutter/clutter-main.c b/clutter/clutter-main.c
+index 3b9385a..1a337c0 100644
+--- a/clutter/clutter-main.c
++++ b/clutter/clutter-main.c
+@@ -764,86 +764,6 @@ clutter_get_text_direction (void)
+   return dir;
+ }
+ 
+-static void
+-update_pango_context (ClutterBackend *backend,
+-                      PangoContext   *context)
+-{
+-  ClutterSettings *settings;
+-  PangoFontDescription *font_desc;
+-  const cairo_font_options_t *font_options;
+-  gchar *font_name;
+-  PangoDirection pango_dir;
+-  gdouble resolution;
+-
+-  settings = clutter_settings_get_default ();
+-
+-  /* update the text direction */
+-  if (clutter_text_direction == CLUTTER_TEXT_DIRECTION_RTL)
+-    pango_dir = PANGO_DIRECTION_RTL;
+-  else
+-    pango_dir = PANGO_DIRECTION_LTR;
+-
+-  pango_context_set_base_dir (context, pango_dir);
+-
+-  g_object_get (settings, "font-name", &font_name, NULL);
+-
+-  /* get the configuration for the PangoContext from the backend */
+-  font_options = clutter_backend_get_font_options (backend);
+-  resolution = clutter_backend_get_resolution (backend);
+-
+-  font_desc = pango_font_description_from_string (font_name);
+-
+-  if (resolution < 0)
+-    resolution = 96.0; /* fall back */
+-
+-  pango_context_set_font_description (context, font_desc);
+-  pango_cairo_context_set_font_options (context, font_options);
+-  pango_cairo_context_set_resolution (context, resolution);
+-
+-  pango_font_description_free (font_desc);
+-  g_free (font_name);
+-}
+-
+-PangoContext *
+-_clutter_context_get_pango_context (void)
+-{
+-  ClutterMainContext *self = _clutter_context_get_default ();
+-
+-  if (G_UNLIKELY (self->pango_context == NULL))
+-    {
+-      PangoContext *context;
+-
+-      context = _clutter_context_create_pango_context ();
+-      self->pango_context = context;
+-
+-      g_signal_connect (self->backend, "resolution-changed",
+-                        G_CALLBACK (update_pango_context),
+-                        self->pango_context);
+-      g_signal_connect (self->backend, "font-changed",
+-                        G_CALLBACK (update_pango_context),
+-                        self->pango_context);
+-    }
+-  else
+-    update_pango_context (self->backend, self->pango_context);
+-
+-  return self->pango_context;
+-}
+-
+-PangoContext *
+-_clutter_context_create_pango_context (void)
+-{
+-  CoglPangoFontMap *font_map;
+-  PangoContext *context;
+-
+-  font_map = clutter_context_get_pango_fontmap ();
+-
+-  context = cogl_pango_font_map_create_context (font_map);
+-  update_pango_context (clutter_get_default_backend (), context);
+-  pango_context_set_language (context, pango_language_get_default ());
+-
+-  return context;
+-}
+-
+ /**
+  * clutter_main_quit:
+  *
+diff --git a/clutter/clutter-private.h b/clutter/clutter-private.h
+index bf92626..b714edc 100644
+--- a/clutter/clutter-private.h
++++ b/clutter/clutter-private.h
+@@ -198,8 +198,6 @@ ClutterMainContext *    _clutter_context_get_default                    (void);
+ void                    _clutter_context_lock                           (void);
+ void                    _clutter_context_unlock                         (void);
+ gboolean                _clutter_context_is_initialized                 (void);
+-PangoContext *          _clutter_context_create_pango_context           (void);
+-PangoContext *          _clutter_context_get_pango_context              (void);
+ ClutterPickMode         _clutter_context_get_pick_mode                  (void);
+ void                    _clutter_context_push_shader_stack              (ClutterActor *actor);
+ ClutterActor *          _clutter_context_pop_shader_stack               (ClutterActor *actor);
+-- 
+cgit v0.10.1
+

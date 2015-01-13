@@ -149,8 +149,8 @@ hook() {
 	for f in ${lib32files}; do
 		echo "$pkgver: installing additional files: $f ..."
 		_targetdir=${destdir32}/$(dirname ${f})
-		mkdir -p ${_targetdir}
-		cp -a ${PKGDESTDIR}/${f} ${_targetdir}
+		mkdir -p ${_targetdir/\/usr\/lib/\/usr\/lib32}
+		cp -a ${PKGDESTDIR}/${f} ${_targetdir/\/usr\/lib/\/usr\/lib32}
 	done
 	# If it's a development pkg add a dependency to the 64bit pkg.
 	if [[ $pkgname =~ '-devel' ]]; then

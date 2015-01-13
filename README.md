@@ -14,7 +14,7 @@ are isolated (among others).
 ### Requirements
 
 - GNU bash
-- xbps >= 0.42
+- xbps >= 0.43.1
 
 A privileged group is required to be able to execute `xbps-uchroot(8)`, by default in void
 it's the `xbuilder` group.
@@ -116,10 +116,13 @@ $ ./xbps-src pkg <pkgname>
 
 When the package and its required dependencies are built, the binary packages will be created
 and registered in the default local repository at `hostdir/binpkgs`; the path to this local repository can be added to 
-any xbps configuration file or by explicitly appending them via cmdline, i.e:
+any xbps configuration file (see xbps.d(5)) or by explicitly appending them via cmdline, i.e:
 
     $ xbps-install --repository=/path/to/hostdir/binpkgs ...
     $ xbps-query --repository=/path/to/hostdir/binpkgs ...
+
+> Currently xbps expects absolute path when using the `--repository` option. This has been
+corrected in the 0.44 version.
 
 By default **xbps-src** will try to resolve package dependencies in this order:
 
@@ -129,7 +132,41 @@ By default **xbps-src** will try to resolve package dependencies in this order:
 
 It is possible to avoid using remote repositories completely by using the `-N` flag.
 
-> NOTE: the default local repository may contain multiple *sub-repositories*: `debug`, `multilib`, etc.
+> The default local repository may contain multiple *sub-repositories*: `debug`, `multilib`, etc.
+
+### Sharing and signing your local repositories
+
+To share a local repository remotely it's mandatory to sign it and the binary packages
+stored on it. This is accomplished with the `xbps-rindex(8)` utility.
+
+First a RSA key must be created with `openssl(1)` or `ssh-keygen(8)`:
+
+	$ openssl genrsa -des3 -out privkey.pem 4096
+
+or
+
+	$ ssh-keygen -t rsa -b 4096 -f privkey.pem
+
+> Only RSA keys in PEM format are currently accepted by xbps.
+
+Once the RSA private key is ready you can use it to sign the repository:
+
+	$ xbps-rindex --sign --signedby "I'm Groot" --privkey privkey.pem $PWD/hostdir/binpkgs
+
+> If --privkey is unset, it defaults to `~/.ssh/id_rsa`.
+
+If the RSA key was protected with a passphrase you'll have to type it, or alternatively set
+it via the `XBPS_PASSPHRASE` environment variable.
+
+Once the binary packages have been signed, check the repository contains the appropiate `hex fingerprint`:
+
+	$ xbps-query --repository=$PWD/hostdir/binpkgs -vL
+	...
+
+Each time a binary package is created, the repository must be signed as explained above with
+the difference that only those new packages will be signed.
+
+> It is not possible to sign a repository with multiple RSA keys.
 
 ### Rebuilding and overwriting existing local packages
 

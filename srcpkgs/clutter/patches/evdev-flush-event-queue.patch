@@ -1,0 +1,54 @@
+From 7764fd2079318fede95b4b96c72d18bd31699270 Mon Sep 17 00:00:00 2001
+From: Carlos Garnacho <carlosg@gnome.org>
+Date: Tue, 14 Oct 2014 12:41:10 +0200
+Subject: evdev: Flush event queue before removing an input device
+
+libinput_suspend() will trigger the removal of input devices, but also
+the emission of button/key releases pairing everything that is pressed
+at that moment. These events are queued, but the ClutterInputDevice
+pointers in these will point to invalid memory at the time these are
+processed.
+
+Fix this by flushing the event queue, in order to ensure there are no
+unprocessed input events after libinput_suspend().
+
+https://bugzilla.gnome.org/show_bug.cgi?id=738520
+
+diff --git a/clutter/evdev/clutter-device-manager-evdev.c b/clutter/evdev/clutter-device-manager-evdev.c
+index 77a8ec6..7b48481 100644
+--- a/clutter/evdev/clutter-device-manager-evdev.c
++++ b/clutter/evdev/clutter-device-manager-evdev.c
+@@ -1017,6 +1017,18 @@ clutter_seat_evdev_sync_leds (ClutterSeatEvdev *seat)
+     }
+ }
+ 
++static void
++flush_event_queue (void)
++{
++  ClutterEvent *event;
++
++  while ((event = clutter_event_get ()) != NULL)
++    {
++      _clutter_process_event (event);
++      clutter_event_free (event);
++    }
++}
++
+ static gboolean
+ process_base_event (ClutterDeviceManagerEvdev *manager_evdev,
+                     struct libinput_event *event)
+@@ -1034,6 +1046,11 @@ process_base_event (ClutterDeviceManagerEvdev *manager_evdev,
+       break;
+ 
+     case LIBINPUT_EVENT_DEVICE_REMOVED:
++      /* Flush all queued events, there
++       * might be some from this device.
++       */
++      flush_event_queue ();
++
+       libinput_device = libinput_event_get_device (event);
+ 
+       device = libinput_device_get_user_data (libinput_device);
+-- 
+cgit v0.10.1
+
