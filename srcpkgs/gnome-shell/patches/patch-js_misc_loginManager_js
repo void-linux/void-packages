@@ -1,0 +1,118 @@
+$OpenBSD: patch-js_misc_loginManager_js,v 1.1 2014/10/21 13:11:03 ajacoutot Exp $
+
+REVERT:
+From a244c1e987502e359c45c0a9bc0012b5bc635553 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Thu, 24 Apr 2014 17:55:56 +0200
+Subject: loginManager: Kill ConsoleKit support
+
+--- js/misc/loginManager.js.orig	Tue Oct 21 14:59:33 2014
++++ js/misc/loginManager.js	Tue Oct 21 15:02:21 2014
+@@ -46,6 +46,32 @@ const SystemdLoginSessionIface = '<node> \
+ const SystemdLoginManager = Gio.DBusProxy.makeProxyWrapper(SystemdLoginManagerIface);
+ const SystemdLoginSession = Gio.DBusProxy.makeProxyWrapper(SystemdLoginSessionIface);
+ 
++const ConsoleKitManagerIface = '<node> \
++<interface name="org.freedesktop.ConsoleKit.Manager"> \
++<method name="CanRestart"> \
++    <arg type="b" direction="out"/> \
++</method> \
++<method name="CanStop"> \
++    <arg type="b" direction="out"/> \
++</method> \
++<method name="Restart" /> \
++<method name="Stop" /> \
++<method name="GetCurrentSession"> \
++    <arg type="o" direction="out" /> \
++</method> \
++</interface> \
++</node>';
++
++const ConsoleKitSessionIface = '<node> \
++<interface name="org.freedesktop.ConsoleKit.Session"> \
++<signal name="Lock" /> \
++<signal name="Unlock" /> \
++</interface> \
++</node>';
++
++const ConsoleKitSession = Gio.DBusProxy.makeProxyWrapper(ConsoleKitSessionIface);
++const ConsoleKitManager = Gio.DBusProxy.makeProxyWrapper(ConsoleKitManagerIface);
++
+ function haveSystemd() {
+     return GLib.access("/run/systemd/seats", 0) >= 0;
+ }
+@@ -75,7 +101,7 @@ function canLock() {
+                                                -1, null);
+ 
+         let version = result.deep_unpack()[0].deep_unpack();
+-        return haveSystemd() && versionCompare('3.5.91', version);
++        return versionCompare('3.5.91', version);
+     } catch(e) {
+         return false;
+     }
+@@ -93,7 +119,7 @@ function getLoginManager() {
+         if (haveSystemd())
+             _loginManager = new LoginManagerSystemd();
+         else
+-            _loginManager = new LoginManagerDummy();
++            _loginManager = new LoginManagerConsoleKit();
+     }
+ 
+     return _loginManager;
+@@ -110,6 +136,9 @@ const LoginManagerSystemd = new Lang.Class({
+                                   Lang.bind(this, this._prepareForSleep));
+     },
+ 
++    // Having this function is a bit of a hack since the Systemd and ConsoleKit
++    // session objects have different interfaces - but in both cases there are
++    // Lock/Unlock signals, and that's all we count upon at the moment.
+     getCurrentSessionProxy: function(callback) {
+         if (this._currentSession) {
+             callback (this._currentSession);
+@@ -177,13 +206,35 @@ const LoginManagerSystemd = new Lang.Class({
+ });
+ Signals.addSignalMethods(LoginManagerSystemd.prototype);
+ 
+-const LoginManagerDummy = new Lang.Class({
+-    Name: 'LoginManagerDummy',
++const LoginManagerConsoleKit = new Lang.Class({
++    Name: 'LoginManagerConsoleKit',
+ 
++    _init: function() {
++        this._proxy = new ConsoleKitManager(Gio.DBus.system,
++                                            'org.freedesktop.ConsoleKit',
++                                            '/org/freedesktop/ConsoleKit/Manager');
++    },
++
++    // Having this function is a bit of a hack since the Systemd and ConsoleKit
++    // session objects have different interfaces - but in both cases there are
++    // Lock/Unlock signals, and that's all we count upon at the moment.
+     getCurrentSessionProxy: function(callback) {
+-        // we could return a DummySession object that fakes whatever callers
+-        // expect (at the time of writing: connect() and connectSignal()
+-        // methods), but just never calling the callback should be safer
++        if (this._currentSession) {
++            callback (this._currentSession);
++            return;
++        }
++
++        this._proxy.GetCurrentSessionRemote(Lang.bind(this,
++            function(result, error) {
++                if (error) {
++                    logError(error, 'Could not get a proxy for the current session');
++                } else {
++                    this._currentSession = new ConsoleKitSession(Gio.DBus.system,
++                                                                 'org.freedesktop.ConsoleKit',
++                                                                 result[0]);
++                    callback(this._currentSession);
++                }
++            }));
+     },
+ 
+     canSuspend: function(asyncCallback) {
+@@ -203,4 +254,4 @@ const LoginManagerDummy = new Lang.Class({
+         callback(null);
+     }
+ });
+-Signals.addSignalMethods(LoginManagerDummy.prototype);
++Signals.addSignalMethods(LoginManagerConsoleKit.prototype);
