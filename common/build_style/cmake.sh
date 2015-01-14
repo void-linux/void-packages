@@ -23,7 +23,14 @@ _EOF
 		configure_args+=" -DCMAKE_TOOLCHAIN_FILE=cross_${XBPS_CROSS_TRIPLET}.cmake"
 	fi
 	configure_args+=" -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release"
-	configure_args+=" -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_SBINDIR=sbin"
+
+	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
+		configure_args+=" -DCMAKE_INSTALL_LIBDIR=lib32"
+	else
+		configure_args+=" -DCMAKE_INSTALL_LIBDIR=lib"
+	fi
+
+	configure_args+=" -DCMAKE_INSTALL_SBINDIR=sbin"
 
 	cmake ${configure_args} ..
 }
