@@ -3,6 +3,6 @@
 hook() {
 	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
 		vmkdir usr/lib
-		ln -sf lib ${DESTDIR}/usr/lib32
+		ln -sf lib ${PKGDESTDIR}/usr/lib32
 	fi
 }

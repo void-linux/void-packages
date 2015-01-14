@@ -88,8 +88,8 @@ if [ ! -f $XBPS_SUBPKG_INSTALL_DONE ]; then
 
         install -d $PKGDESTDIR
         if declare -f pkg_install >/dev/null; then
-            run_pkg_hooks pre-install
             export XBPS_PKGDESTDIR=1
+            run_pkg_hooks pre-install
             run_func pkg_install
         fi
     fi

@@ -2,6 +2,6 @@
 
 hook() {
 	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
-		rm -f ${DESTDIR}/usr/lib32
+		rm -f ${PKGDESTDIR}/usr/lib32
 	fi
 }
