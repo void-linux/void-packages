@@ -81,7 +81,6 @@ _EOF
 
 hook() {
 	[ -z "$CROSS_BUILD" ] && return 0
-	[ -e "$XBPS_WRAPPERDIR/done" ] && return 0
 
 	# create wrapers
 	pkgconfig_wrapper
@@ -111,6 +110,5 @@ hook() {
 	python_wrapper python-config 2.7
 	python_wrapper python3.4-config 3.4m
 
-	touch $XBPS_WRAPPERDIR/done
 	export PATH="$XBPS_WRAPPERDIR:$PATH"
 }
