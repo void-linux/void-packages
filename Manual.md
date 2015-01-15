@@ -459,29 +459,29 @@ The following repository names are valid:
 
 #### Checking for new upstream releases
 
-For automatic checking of new versions, in some cases you need to define
-these variables (in most cases, the sensible defaults work):
+New upstream versions can be automatically checked using
+`./xbps-src update-check <pkgname>`. In some cases you need to override
+the sensible defaults by assigning the following variables in a `update`
+file in the same directory as the relevant `template` file:
 
-- `update_site` contains the URL where the version number is
+- `site` contains the URL where the version number is
   mentioned.  If unset, defaults to `homepage` and the directories where
 `distfiles` reside.
 
-- `update_pkgname` is the package name the default pattern checks for.
-If unset, defaults to `pkgname`.
+- `pkgname` is the package name the default pattern checks for.
+If unset, defaults to `pkgname` from the template.
 
-- `update_pattern` is a perl-compatible regular expression
+- `pattern` is a perl-compatible regular expression
 matching the version number.  Anchor the version number using `\K`
-and `(?=...)`.  Example: `update_pattern='<b>\K[\d.]+(?=</b>)'`, this
+and `(?=...)`.  Example: `pattern='<b>\K[\d.]+(?=</b>)'`, this
 matches a version number enclosed in `<b>...</b>` tags.
 
-- `update_ignore` is a space-separated list of shell globs that match
+- `ignore` is a space-separated list of shell globs that match
 version numbers which are not taken into account for checking newer
-versions.  Example: `update_ignore="*b*"`
+versions.  Example: `ignore="*b*"`
 
-- `update_version` is the version number used to compare against
-upstream versions. Example: `update_version=${version//./_}`
-
-You can run such a check using `./xbps-src update-check <pkgname>`.
+- `version` is the version number used to compare against
+upstream versions. Example: `version=${version//./_}`
 
 ### build style scripts
 
