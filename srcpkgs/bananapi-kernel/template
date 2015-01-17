@@ -1,0 +1,165 @@
+# Template file for 'bananapi kernel'
+#
+# Based on odroid u2 kernel template.
+pkgname=bananapi-kernel
+version="3.4"
+revision="91"
+maintainer="necrophcodr <necrophcodr@necrophcodr.me>"
+homepage="http://www.kernel.org"
+license="GPL-2"
+short_desc="The Linux kernel and modules for the Banana Pi"
+# For some reason, tarballs are tagged as [version]-[revision]-r0 for the most
+# part, although they aren't release candidates or anything.
+# Oh well, append -r0 to the distfiles thing just for fetching it.
+distfiles="https://github.com/bananapi-dev/linux-sunxi/archive/sunxi-v${version}.${revision}-r0.tar.gz"
+checksum="b1ae7d5b1290713f94f85f56b320f7c8138304155d1782d0552c51fda9839d26"
+# wrksrc needs appending -r0 too.
+wrksrc="linux-sunxi-sunxi-v${version}.${revision}-r0"
+provides="kernel-bananapi-${version}_${revision}"
+replaces="kernel-bananapi>=0"
+
+_kernver="${version}.${revision}"
+
+nostrip=yes
+noverifyrdeps=yes
+only_for_archs="armv7l"
+hostmakedepends="perl python kmod>=11_2 uboot-mkimage libressl-openssl elfutils bc"
+makedepends="ncurses-devel"
+depends="kmod>=11_2"
+triggers="kernel-hooks"
+# These files could be modified when an external module is built.
+mutable_files="
+	/usr/lib/modules/${_kernver}/modules.dep
+	/usr/lib/modules/${_kernver}/modules.dep.bin
+	/usr/lib/modules/${_kernver}/modules.symbols
+	/usr/lib/modules/${_kernver}/modules.symbols.bin
+	/usr/lib/modules/${_kernver}/modules.alias
+	/usr/lib/modules/${_kernver}/modules.alias.bin
+	/usr/lib/modules/${_kernver}/modules.devname"
+
+do_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+
+	unset LDFLAGS
+	cat ${FILESDIR}/bananapi.config > .config
+
+}
+
+do_build() {
+	if [ "$CROSS_BUILD" ]; then
+		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+	unset LDFLAGS
+	make ${makejobs} ${_args} ARCH=arm prepare
+	make ${makejobs} ${_args} ARCH=arm zImage modules
+}
+
+do_install() {
+	local hdrdest
+
+	# Run depmod after compressing modules.
+	sed -i '2iexit 0' scripts/depmod.sh
+
+	# Install kernel, firmware and modules
+	make ARCH=arm INSTALL_MOD_PATH=${DESTDIR} modules_install
+
+	vinstall arch/arm/boot/zImage 644 boot
+
+	hdrdest=${DESTDIR}/usr/src/${sourcepkg}-headers-${_kernver}
+
+	# Switch to /usr.
+	vmkdir usr
+	cp -aru ${DESTDIR}/lib ${DESTDIR}/usr
+	rm -rf ${DESTDIR}/lib
+
+	cd ${DESTDIR}/usr/lib/modules/${_kernver}
+	rm -f source build
+	ln -sf ../../../src/${sourcepkg}-headers-${_kernver} build
+
+	cd ${wrksrc}
+
+	# Remove firmware stuff provided by the "linux-firmware" pkg.
+	rm -rf ${DESTDIR}/usr/lib/firmware
+
+	mkdir -p ${hdrdest}/include
+	for i in acpi asm-generic config crypto drm generated linux math-emu \
+		media net pcmcia scsi sound trace video xen; do
+		[ -d include/$i ] && cp -a include/$i ${hdrdest}/include
+	done
+
+	cd ${wrksrc}
+	# Copy files necessary for later builds.
+	cp Module.symvers ${hdrdest}
+	cp -a scripts ${hdrdest}
+
+	# fix permissions on scripts dir
+	chmod og-w -R ${hdrdest}/scripts
+
+	# copy arch includes for external modules
+	mkdir -p ${hdrdest}/arch/arm/mach-exynos
+	mkdir -p ${hdrdest}/arch/arm/plat-samsung
+
+	cp -a arch/arm/include ${hdrdest}/arch/arm
+	cp -a arch/arm/mach-exynos/include ${hdrdest}/arch/arm/mach-exynos
+	cp -a arch/arm/plat-samsung/include ${hdrdest}/arch/arm/plat-samsung
+
+	mkdir -p ${hdrdest}/arch/arm/kernel
+
+	cp arch/arm/Makefile ${hdrdest}/arch/arm
+	if [ "$MACHINE_ARCH" = "i686" ]; then
+		cp arch/arm/Makefile_32.cpu ${hdrdest}/arch/arm
+	fi
+	cp arch/arm/kernel/asm-offsets.s ${hdrdest}/arch/arm/kernel
+
+	# Add docbook makefile
+	install -Dm644 Documentation/DocBook/Makefile \
+		${hdrdest}/Documentation/DocBook/Makefile
+
+	# Add md headers
+	mkdir -p ${hdrdest}/drivers/md
+	cp drivers/md/*.h ${hdrdest}/drivers/md
+
+	# Add inotify.h
+	mkdir -p ${hdrdest}/include/linux
+	cp include/linux/inotify.h ${hdrdest}/include/linux
+
+	# Add wireless headers
+	mkdir -p ${hdrdest}/net/mac80211/
+	cp net/mac80211/*.h ${hdrdest}/net/mac80211
+
+	# add dvb headers for external modules
+	mkdir -p ${hdrdest}/include/config/dvb/
+	cp include/config/dvb/*.h ${hdrdest}/include/config/dvb/
+
+	# Copy in Kconfig files
+	for i in $(find . -name "Kconfig*"); do
+		mkdir -p ${hdrdest}/$(echo $i | sed 's|/Kconfig.*||')
+		cp $i ${hdrdest}/$i
+	done
+
+	# Remove unneeded architectures
+	for arch in alpha arm26 avr32 blackfin cris frv h8300 \
+		ia64 m* p* s* um v850 x86 xtensa; do
+		rm -rf ${hdrdest}/arch/${arch}
+	done
+
+	# Compress all modules with xz to save a few MBs.
+	msg_normal "$pkgver: compressing kernel modules with gzip, please wait...\n"
+	find ${DESTDIR} -name '*.ko' -exec gzip -9 {} \;
+
+	# ... and run depmod again.
+	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
+}
+
+#odroid-u2-kernel-headers_package() {
+#	nostrip=yes
+#	noverifyrdeps=yes
+#	short_desc="Linux kernel headers for the Odroid U2/U3 (${version%.*} series [${_gitshort}])"
+#	pkg_install() {
+#		vmove usr/src
+#		vmove usr/lib/modules/${_kernver}/build
+#	}
+#}
+
