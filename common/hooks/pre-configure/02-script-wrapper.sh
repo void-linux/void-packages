@@ -94,6 +94,7 @@ hook() {
 	generic_wrapper libmikmod-config
 	generic_wrapper2 curl-config
 	generic_wrapper2 gpg-error-config
+	generic_wrapper2 libassuan-config
 	generic_wrapper2 libpng-config
 	generic_wrapper2 ncurses5-config
 	generic_wrapper2 ncursesw5-config
