@@ -3,7 +3,7 @@
 
 ## VARIABLES
 unset -v noarch conf_files mutable_files preserve triggers
-unset -v depends run_depends replaces provides conflicts tags reverts
+unset -v depends run_depends replaces provides conflicts tags
 
 # hooks/post-install/03-strip-and-debug-pkgs
 unset -v nostrip nostrip_files shlib_requires
