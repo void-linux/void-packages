@@ -92,6 +92,12 @@ The build options can also be shown for binary packages via `xbps-query(8)`:
 
     $ xbps-query -R --property=build-options foo
 
+> NOTE: if you build a package with a custom option, and that package is available
+in an official void repository, an update will ignore those options. Put that package
+on `hold` mode via `xbps-pkgdb(8)`, i.e `xbps-pkgdb -m hold foo` to ignore updates
+with `xbps-install -u`. Once the package is on `hold`, the only way to update it
+is by declaring it explicitely: `xbps-install -u foo`.
+
 Permanent global package build options can be set via `XBPS_PKG_OPTIONS` variable in the
 `etc/conf` configuration file. Per package build options can be set via
 `XBPS_PKG_OPTIONS_<pkgname>`.
