@@ -61,13 +61,46 @@ those defined in `etc/defaults.conf`, append to them instead via `etc/conf` i.e:
     $ echo 'XBPS_CFLAGS+=" your flags here "' >> etc/conf
     $ echo 'XBPS_LDFLAGS+=" your flags here "' >> etc/conf
 
-#### Virtual packages
+### Virtual packages
 
 The `etc/defaults.virtual` file contains the default replacements for virtual packages,
 used as dependencies in the source packages tree.
 
 If you want to customize those replacements, copy `etc/defaults.virtual` to `etc/virtual`
 and edit it accordingly to your needs.
+
+### Package build options
+
+The supported build options for a source package can be shown with `xbps-src show-options`:
+
+    $ ./xbps-src show-options foo
+
+Build options can be enabled with the `-o` flag of `xbps-src`:
+
+    $ ./xbps-src -o option,option1 foo
+
+Build options can be disabled by prefixing them with `~`:
+
+    $ ./xbps-src -o ~option,~option1 foo
+
+Both ways can be used together to enable and/or disable multiple options
+at the same time with `xbps-src`:
+
+    $ ./xbps-src -o option,~option1,~option2 foo
+
+The build options can also be shown for binary packages via `xbps-query(8)`:
+
+    $ xbps-query -R --property=build-options foo
+
+Permanent global package build options can be set via `XBPS_PKG_OPTIONS` variable in the
+`etc/conf` configuration file. Per package build options can be set via
+`XBPS_PKG_OPTIONS_<pkgname>`.
+
+> NOTE: if `pkgname` contains `dashes`, those should be replaced by `underscores`
+i.e `XBPS_PKG_OPTIONS_xorg_server=opt`.
+
+The list of supported package build options and its description is defined in the
+`common/options.description` file or in the `template` file.
 
 ### Directory tree
 
@@ -267,7 +300,7 @@ Packages that are multilib only (32bit) must be built on a 32bit masterdir.
 
     $ ./xbps-src -m masterdir-x86 ...
 
-#### Building packages natively for the musl C library
+### Building packages natively for the musl C library
 
 A native build environment is required to be able to cross compile the bootstrap packages for the musl C library; this is accomplished by installing them via `binary-bootstrap`:
 
