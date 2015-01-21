@@ -52,7 +52,7 @@ update_check() {
                 url="https://bitbucket.org/$bbname/downloads"
                 rx='/(get|downloads)/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
             *ftp.gnome.org*)
-                : ${pattern="$pkgname-\K[0-9]\.[0-9]*[02468]\.[0-9.]*[0-9](?=)"}
+                : ${pattern="\Q$pkgname\E-\K[0-9]\.[0-9]*[02468]\.[0-9.]*[0-9](?=)"}
                 url="http://ftp.gnome.org/pub/GNOME/sources/$pkgname/cache.json";;
             *kernel.org/pub/linux/kernel/*)
                 rx=linux-'\K'${version%.*}'[\d.]+(?=\.tar\.xz)';;
