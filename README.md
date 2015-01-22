@@ -69,45 +69,6 @@ used as dependencies in the source packages tree.
 If you want to customize those replacements, copy `etc/defaults.virtual` to `etc/virtual`
 and edit it accordingly to your needs.
 
-### Package build options
-
-The supported build options for a source package can be shown with `xbps-src show-options`:
-
-    $ ./xbps-src show-options foo
-
-Build options can be enabled with the `-o` flag of `xbps-src`:
-
-    $ ./xbps-src -o option,option1 foo
-
-Build options can be disabled by prefixing them with `~`:
-
-    $ ./xbps-src -o ~option,~option1 foo
-
-Both ways can be used together to enable and/or disable multiple options
-at the same time with `xbps-src`:
-
-    $ ./xbps-src -o option,~option1,~option2 foo
-
-The build options can also be shown for binary packages via `xbps-query(8)`:
-
-    $ xbps-query -R --property=build-options foo
-
-> NOTE: if you build a package with a custom option, and that package is available
-in an official void repository, an update will ignore those options. Put that package
-on `hold` mode via `xbps-pkgdb(8)`, i.e `xbps-pkgdb -m hold foo` to ignore updates
-with `xbps-install -u`. Once the package is on `hold`, the only way to update it
-is by declaring it explicitely: `xbps-install -u foo`.
-
-Permanent global package build options can be set via `XBPS_PKG_OPTIONS` variable in the
-`etc/conf` configuration file. Per package build options can be set via
-`XBPS_PKG_OPTIONS_<pkgname>`.
-
-> NOTE: if `pkgname` contains `dashes`, those should be replaced by `underscores`
-i.e `XBPS_PKG_OPTIONS_xorg_server=opt`.
-
-The list of supported package build options and its description is defined in the
-`common/options.description` file or in the `template` file.
-
 ### Directory tree
 
 The following directory tree is used with a default configuration file:
@@ -172,6 +133,45 @@ By default **xbps-src** will try to resolve package dependencies in this order:
 It is possible to avoid using remote repositories completely by using the `-N` flag.
 
 > The default local repository may contain multiple *sub-repositories*: `debug`, `multilib`, etc.
+
+### Package build options
+
+The supported build options for a source package can be shown with `xbps-src show-options`:
+
+    $ ./xbps-src show-options foo
+
+Build options can be enabled with the `-o` flag of `xbps-src`:
+
+    $ ./xbps-src -o option,option1 pkg foo
+
+Build options can be disabled by prefixing them with `~`:
+
+    $ ./xbps-src -o ~option,~option1 pkg foo
+
+Both ways can be used together to enable and/or disable multiple options
+at the same time with `xbps-src`:
+
+    $ ./xbps-src -o option,~option1,~option2 pkg foo
+
+The build options can also be shown for binary packages via `xbps-query(8)`:
+
+    $ xbps-query -R --property=build-options foo
+
+> NOTE: if you build a package with a custom option, and that package is available
+in an official void repository, an update will ignore those options. Put that package
+on `hold` mode via `xbps-pkgdb(8)`, i.e `xbps-pkgdb -m hold foo` to ignore updates
+with `xbps-install -u`. Once the package is on `hold`, the only way to update it
+is by declaring it explicitely: `xbps-install -u foo`.
+
+Permanent global package build options can be set via `XBPS_PKG_OPTIONS` variable in the
+`etc/conf` configuration file. Per package build options can be set via
+`XBPS_PKG_OPTIONS_<pkgname>`.
+
+> NOTE: if `pkgname` contains `dashes`, those should be replaced by `underscores`
+i.e `XBPS_PKG_OPTIONS_xorg_server=opt`.
+
+The list of supported package build options and its description is defined in the
+`common/options.description` file or in the `template` file.
 
 ### Sharing and signing your local repositories
 
