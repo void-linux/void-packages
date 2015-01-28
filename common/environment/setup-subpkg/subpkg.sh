@@ -12,7 +12,7 @@ unset -v nostrip nostrip_files shlib_requires
 unset -v noverifyrdeps allow_unknown_shlibs shlib_provides
 
 # hooks/post-install/06-prepare-32bit
-unset -v lib32depends lib32disabled lib32files lib32mode
+unset -v lib32depends lib32disabled lib32files lib32mode lib32symlinks
 
 # xbps-triggers: system-accounts
 unset -v system_accounts system_groups
