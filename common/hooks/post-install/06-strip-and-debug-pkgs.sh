@@ -1,7 +1,6 @@
 # This hook executes the following tasks:
 #	- strips ELF binaries/libraries
 #	- generates -dbg pkgs
-#	- generates shlib-provides file for xbps-create(8)
 
 make_debug() {
 	local dname= fname= dbgfile=
@@ -111,14 +110,6 @@ hook() {
 				return 1
 			fi
 			echo "   Stripped library: ${f#$PKGDESTDIR}"
-			_soname=$(${OBJDUMP} -p "$f"|grep SONAME|awk '{print $2}')
-			pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)*$"
-			if [[ ${_soname} =~ $pattern ]]; then
-				if [ ! -e ${PKGDESTDIR}/usr/lib/${fname} ]; then
-					continue
-				fi
-				echo "${_soname}" >> ${PKGDESTDIR}/.shlib-provides
-			fi
 			attach_debug "$f"
 			;;
 		application/x-archive*)
@@ -131,16 +122,6 @@ hook() {
 			echo "   Stripped static library: ${f#$PKGDESTDIR}";;
 		esac
 	done
-
-	for f in ${shlib_provides}; do
-		echo "$f" >> ${PKGDESTDIR}/.shlib-provides
-	done
-	if [ -s "$PKGDESTDIR/.shlib-provides" ]; then
-		cat $PKGDESTDIR/.shlib-provides | tr '\n' ' ' > $PKGDESTDIR/shlib-provides
-		echo >> $PKGDESTDIR/shlib-provides
-		rm -f $PKGDESTDIR/.shlib-provides
-	fi
-
 	create_debug_pkg
 	return $?
 }
