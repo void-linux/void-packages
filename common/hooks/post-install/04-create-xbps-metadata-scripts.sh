@@ -12,7 +12,7 @@ _add_trigger() {
 process_metadata_scripts() {
 	local action="$1"
 	local action_file="$2"
-	local tmpf=$(mktemp -t xbps-install.XXXXXXXXXX) || exit 1
+	local tmpf=$(mktemp)
 	local fpattern="s|${PKGDESTDIR}||g;s|^\./$||g;/^$/d"
 	local targets= f= _f= info_files= home= shell= descr= groups=
 	local found= triggers_found= _icondirs= _schemas= _mods= _tmpfiles=
