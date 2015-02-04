@@ -525,7 +525,7 @@ Additional install arguments can be specified via `make_install_args`.
 - `python-module` For packages that use the Python module build method (setup.py).
 By default the module will be built for python2. The `python_versions` variable may
 be defined to set the allowed python versions to be built, i.e:
-`python_version="2.7 3.3"`.
+`python_versions="2.7 3.3"`.
 
 - `waf3` For packages that use the Python3 `waf` build method with python3.
 
