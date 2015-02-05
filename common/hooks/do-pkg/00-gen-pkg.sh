@@ -120,7 +120,7 @@ genpkg() {
 
 hook() {
 	local arch= binpkg= repo= _pkgver= _desc= _pkgn= _pkgv= _provides= \
-		_replaces= _reverts=
+		_replaces= _reverts= f= found_dbg_subpkg=
 
 	if [ -n "$noarch" ]; then
 		arch=noarch
@@ -155,7 +155,15 @@ hook() {
 	done
 
 	# Generate -dbg pkg.
-	if [ -d "${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}" ]; then
+	for f in ${subpackages}; do
+		# If there's an explicit subpkg named ${pkgname}-dbg, don't generate
+		# it automagically (required by linuxX.X).
+		if [ "${sourcepkg}-dbg" = "$f" ]; then
+			found_dbg_subpkg=1
+			break
+		fi
+	done
+	if [ -z "$found_dbg_subpkg" -a -d "${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}" ]; then
 		source ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
 		repo=$XBPS_REPOSITORY/debug
 		_pkgver=${pkgname}-dbg-${version}_${revision}
