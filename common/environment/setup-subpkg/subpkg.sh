@@ -8,11 +8,14 @@ unset -v depends run_depends replaces provides conflicts tags
 # hooks/post-install/03-strip-and-debug-pkgs
 unset -v nostrip nostrip_files shlib_requires
 
-# hooks/post-install/04-generate-runtime-deps
+# hooks/re-pkg/04-generate-runtime-deps
 unset -v noverifyrdeps allow_unknown_shlibs shlib_provides
 
-# hooks/post-install/06-prepare-32bit
+# hooks/pre-pkg/06-prepare-32bit
 unset -v lib32depends lib32disabled lib32files lib32mode lib32symlinks
+
+# hooks/pre-pkg/06-shlib-provides
+unset -v noshlibprovides
 
 # xbps-triggers: system-accounts
 unset -v system_accounts system_groups

@@ -412,6 +412,9 @@ by all supported architectures.
 - `nostrip` If set, the ELF binaries with debugging symbols won't be stripped. By
 default all binaries are stripped.
 
+- `noshlibprovides` If set, the ELF binaries won't be inspected to collect the provided
+sonames in shared libraries.
+
 - `nocross` If set, cross compilation won't be allowed and will exit immediately.
 
 - `python_versions` A white space seperated list of python versions which will

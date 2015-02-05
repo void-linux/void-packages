@@ -43,7 +43,7 @@ collect_sonames() {
 hook() {
 	local _destdir32=${XBPS_DESTDIR}/${pkgname}-32bit-${version}
 
-	if [ -n "$noarch" ]; then
+	if [ -n "$noarch" -o -n "$noshlibprovides" ]; then
 		return 0
 	fi
 
