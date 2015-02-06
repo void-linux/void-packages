@@ -1,28 +1,29 @@
 # Template file for 'rpi-kernel'
 #
-_githash="c157458351071104eaa8afa7313f2f26afb499da"
+_githash="85ee3d9bd54594f61b0971f9c3655a9bff9c1b04"
 _gitshort="${_githash:0:7}"
 
 pkgname=rpi-kernel
 version=3.18.5
-revision=1
+revision=2
 wrksrc="linux-${_githash}"
 maintainer="Juan RP <xtraeme@gmail.com>"
 homepage="http://www.kernel.org"
 license="GPL-2"
-short_desc="The Linux kernel and modules for Raspberry Pi (${version%.*} series [git ${_gitshort}])"
+short_desc="The Linux kernel for Raspberry Pi (${version%.*} series [git ${_gitshort}])"
 distfiles="https://github.com/raspberrypi/linux/archive/${_githash}.tar.gz"
-checksum=f79266465b649be9a5d21d825a5cf2e8e1bbfe789154d02eb70aac03c2c66465
+checksum=5322de70aa7756edc773d2298ee1148ea7614f8979922b09887d7b6002e711b5
 
 _kernver="${version}_${revision}"
 
 nostrip=yes
 noverifyrdeps=yes
+noshlibprovides=yes
 
-only_for_archs="armv6l"
-hostmakedepends="perl python kmod>=11_2 uboot-mkimage libressl-openssl elfutils bc"
+# RPi and RPi2
+only_for_archs="armv6l armv7l"
+hostmakedepends="perl kmod uboot-mkimage libressl-openssl bc"
 makedepends="ncurses-devel"
-replaces="kernel-rpi>=0"
 triggers="kernel-hooks"
 # These files could be modified when an external module is built.
 mutable_files="
@@ -35,6 +36,8 @@ mutable_files="
 	/usr/lib/modules/${_kernver}/modules.devname"
 
 pre_configure() {
+	$XBPS_FETCH_CMD https://raw.githubusercontent.com/raspberrypi/tools/master/mkimage/mkknlimg
+	chmod +x mkknlimg
 	# Remove .git directory, otherwise scripts/setkernelversion.sh
 	# modifies KERNELRELEASE and appends + to it.
 	rm -rf .git
@@ -44,11 +47,6 @@ do_configure() {
 	if [ "$CROSS_BUILD" ]; then
 		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
 	fi
-
-	# Copy required files to create the bootable image.
-	cp ${FILESDIR}/args-uncompressed.txt arch/arm/boot/
-	cp ${FILESDIR}/boot-uncompressed.txt arch/arm/boot/
-	cp ${FILESDIR}/imagetool-uncompressed.py arch/arm/boot/
 
 	# Use upstream default configuration, no need to maintain ours.
 	make ${makejobs} ${_args} ARCH=arm bcmrpi_defconfig
@@ -62,7 +60,7 @@ do_build() {
 		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
 	fi
 	make ${makejobs} ${_args} ARCH=arm prepare
-	make ${makejobs} ${_args} ARCH=arm uImage modules
+	make ${makejobs} ${_args} ARCH=arm zImage modules dtbs
 }
 
 do_install() {
@@ -74,11 +72,16 @@ do_install() {
 	# Install kernel, firmware and modules
 	make ${makejobs} ARCH=arm INSTALL_MOD_PATH=${DESTDIR} modules_install
 
+	vmkdir boot
 	# Generate kernel.img and install it to destdir.
-	cd arch/arm/boot
-	/usr/bin/python2 imagetool-uncompressed.py
-	cd ${wrksrc}
-	vinstall arch/arm/boot/kernel.img 644 boot
+	if [ "$XBPS_TARGET_MACHINE" = "armv7l" ]; then
+		./mkknlimg --dtok arch/arm/boot/zImage ${DESTDIR}/boot/kernel7.img
+	else
+		./mkknlimg --dtok arch/arm/boot/zImage ${DESTDIR}/boot/kernel.img
+	fi
+	vmkdir boot/overlays
+	cp arch/arm/boot/dts/*-overlay.dtb ${DESTDIR}/boot/overlays
+	cp arch/arm/boot/dts/*.dtb ${DESTDIR}/boot
 
 	hdrdest=${DESTDIR}/usr/src/${sourcepkg}-headers-${_kernver}
 
@@ -166,6 +169,7 @@ do_install() {
 rpi-kernel-headers_package() {
 	nostrip=yes
 	noverifyrdeps=yes
+	noshlibprovides=yes
 	replaces="kernel-rpi-headers>=0"
 	short_desc="The Linux kernel headers for Raspberry Pi (${version%.*} series [git ${_gitshort}])"
 	pkg_install() {
