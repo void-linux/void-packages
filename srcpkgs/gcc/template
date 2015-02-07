@@ -17,14 +17,23 @@ if [ "$CHROOT_READY" ]; then
 	hostmakedepends="perl flex"
 fi
 makedepends="zlib-devel libmpc-devel>=1.0.1_2 cloog-devel>=0.18"
-depends="binutils glibc-devel libgcc-${version}_${revision}"
+depends="binutils libgcc-${version}_${revision}"
 # mudflap is gone in 4.9
 replaces="libmudflap>=0 libmudflap-devel>=0 chroot-gcc>=0"
+
+subpackages="libgcc libgomp libgomp-devel libatomic libatomic-devel"
+subpackages+=" libitm libitm-devel libssp libssp-devel gcc-c++"
 
 if [ "$CHROOT_READY" -a -z "$CROSS_BUILD" ]; then
 	# Required by gcj
 	hostmakedepends+=" zip unzip"
+	subpackages+=" gcc-gcj gcc-go gcc-fortran gcc-objc gcc-objc++"
+	subpackages+=" libgcj-devel libgcj libgo-devel libgo"
+	subpackages+=" libgfortran-devel libgfortran"
+	subpackages+=" libobjc-devel libobjc"
 fi
+
+subpackages+=" libstdc++-devel libstdc++"
 
 case "$XBPS_TARGET_MACHINE" in
 	i686) _triplet="i686-pc-linux-gnu";;
@@ -36,14 +45,28 @@ case "$XBPS_TARGET_MACHINE" in
 	armv7l) _triplet="arm-linux-gnueabihf7";;
 	arm*-musl) _triplet="arm-linux-musleabi";;
 esac
+case "$XBPS_TARGET_MACHINE" in
+	*-musl) depends+=" musl";;
+	*) subpackages+=" libsanitizer libsanitizer-devel"; depends+=" glibc-devel";;
+esac
+case "$XBPS_TARGET_MACHINE" in
+	i686*|x86_64*)
+		subpackages+=" libquadmath libquadmath-devel"
+		subpackages+=" libcilkrts libcilkrts-devel"
+		subpackages+=" libvtv libvtv-devel"
+		;;
+esac
 
 pre_configure() {
+	case "$XBPS_TARGET_MACHINE" in
+		*-musl) patch -Np1 -i ${FILESDIR}/gcc-${version}-musl.diff;;
+	esac
+
 	# As specified in the LFS book, disable installing libiberty.
 	sed -i 's/install_to_$(INSTALL_DEST) //' libiberty/Makefile.in
 	# Do not run fixincludes
 	sed -i 's@\./fixinc\.sh@-c true@' gcc/Makefile.in
 }
-
 do_configure() {
 	local _langs _args
 
@@ -77,6 +100,9 @@ do_configure() {
 		_args+=" --with-cloog=${XBPS_MASTERDIR}/usr"
 		_langs="c,c++,lto"
 	fi
+	case "$XBPS_TARGET_MACHINE" in
+		*-musl) _args+=" --disable-libsanitizer";;
+	esac
 
 	CONFIG_SHELL=/bin/bash \
 		./configure --prefix=/usr --mandir=/usr/share/man \
@@ -99,18 +125,17 @@ pre_install() {
 	if [ "$CROSS_BUILD" ]; then
 		# XXX otherwise links to host libpthread
 		for f in $(find ${wrksrc}/${XBPS_CROSS_TRIPLET} -type f -name libtool); do
-			sed -e "s,add_dir=\"-L\$libdir\",add_dir=\"-L${XBPS_CROSS_BASE}\$libdir\",g" \
-				-i ${wrksrc}/${XBPS_CROSS_TRIPLET}/libsanitizer/libtool
+			sed -e "s,add_dir=\"-L\$libdir\",add_dir=\"-L${XBPS_CROSS_BASE}\$libdir\",g" -i $f
 		done
 	fi
 }
 do_install() {
-	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+	case "$XBPS_TARGET_MACHINE" in
+	x86_64*)
 		vmkdir usr/lib
-		cd ${DESTDIR}/usr
-		ln -sf lib lib64
-	fi
-	cd ${wrksrc}
+		ln -sfr ${DESTDIR}/usr/lib ${DESTDIR}/usr/lib64
+		;;
+	esac
 	make DESTDIR=${DESTDIR} install
 
 	# Make version a symlink of major version to make all versions
@@ -153,13 +178,11 @@ do_install() {
 		vinstall ${FILESDIR}/${f}.1 644 usr/share/man/man1 ${f}.1
 	done
 
-	if ! [ "$XBPS_TARGET_MACHINE" = "i686" -o "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		rm -f ${DESTDIR}/usr/share/info/libquadmath.info
-	fi
+	case "$XBPS_TARGET_MACHINE" in
+		i686*|x86_64*) ;;
+		*) rm -f ${DESTDIR}/usr/share/info/libquadmath.info;;
+	esac
 }
-
-# Disabled packages in bootstrap/cross builds.
-if [ "$CHROOT_READY" -a -z "$CROSS_BUILD" ]; then
 
 gcc-gcj_package() {
 	lib32disabled=yes
@@ -308,11 +331,6 @@ libobjc_package() {
 		vinstall ${wrksrc}/COPYING.RUNTIME 644 usr/share/licenses/$pkgname RUNTIME.LIBRARY.EXCEPTION
 	}
 }
-
-fi # !CHROOT_READY || !CROSS_BUILD
-
-if [ "$XBPS_TARGET_MACHINE" = "i686" -o "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-
 libquadmath-devel_package() {
 	depends="libquadmath>=${_majorver}"
 	short_desc+=" - quadmath library - development files"
@@ -361,9 +379,6 @@ libvtv_package() {
 		vmove usr/lib/libvtv.so.*
 	}
 }
-
-fi # !x86
-
 libatomic-devel_package() {
 	depends="libatomic>=${_majorver}"
 	short_desc+=" - Atomics library - development files"
@@ -467,8 +482,13 @@ libstdc++_package() {
 	short_desc+=" - Standard C++ Library"
 	pkg_install() {
 		vmove "usr/lib/libstdc++.so*"
-		vmove usr/share/locale/fr/LC_MESSAGES/libstdc++.mo
-		vmove usr/share/locale/de/LC_MESSAGES/libstdc++.mo
+		case "$XBPS_TARGET_MACHINE" in
+			*-musl);;
+			*)
+			vmove usr/share/locale/fr/LC_MESSAGES/libstdc++.mo
+			vmove usr/share/locale/de/LC_MESSAGES/libstdc++.mo
+			;;
+		esac
 		vinstall ${wrksrc}/COPYING.RUNTIME 644 usr/share/licenses/$pkgname RUNTIME.LIBRARY.EXCEPTION
 	}
 }
