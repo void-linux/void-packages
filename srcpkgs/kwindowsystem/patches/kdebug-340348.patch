@@ -1,0 +1,136 @@
+commit 34c49b24920274455f2784b2ae6ac9108b226856
+Author: Thomas Lübking <thomas.luebking@gmail.com>
+Date:   Mon Nov 17 20:09:03 2014 +0100
+
+    simplify format selection, make 24bit rgb32
+    
+    an image w/o alphachannel is certainly not
+    premultiplied
+    
+    the findFormat() made not much sense at all
+    it was only used if the image depth was
+    the default depth and then looked up supported
+    16, 24 and 32 bit formats
+    
+    However 32 bit images were handled before
+    unconditionally so this was only relevant for
+    16 bit images (where we supported either 5-6-5
+    or nothing) or 24bit images, where a false value
+    (ARGB_premultiplied implies 32bit) was returned.
+    
+    IOW: for the majority of images (32bit) this was
+    not used, for 24bpp displays we got a falsely
+    colored images and for 16bpp either a correctly
+    colored (for 5-6-5 layouts) or no image at all
+    (for 5-5-5 or [4-]4-4-4 layouts)
+    
+    I don't know whether 16bpp w/ 5-5-5 or 4-4-4 itw.,
+    but better show them miscolored images (and trigger
+    a bug) than none.
+    If there're funky 24bpp servers (other than 8-8-8)
+    somebody shall please report a bug to us.
+    
+    Possible TODO:
+    add a single call to test the server layout (channel
+    masks) and yell an error if there's something "strange"
+    
+    BUG: 340348
+
+diff --git a/src/kxutils.cpp b/src/kxutils.cpp
+index c75c08e..015749d 100644
+--- src/kxutils.cpp
++++ src/kxutils.cpp
+@@ -30,57 +30,6 @@
+ namespace KXUtils
+ {
+ 
+-static uint8_t defaultDepth()
+-{
+-    xcb_connection_t *c = QX11Info::connection();
+-    int screen = QX11Info::appScreen();
+-
+-    xcb_screen_iterator_t it = xcb_setup_roots_iterator(xcb_get_setup(c));
+-    for (; it.rem; --screen, xcb_screen_next(&it)) {
+-        if (screen == 0) {
+-            return it.data->root_depth;
+-        }
+-    }
+-    return 0;
+-}
+-
+-static QImage::Format findFormat()
+-{
+-    xcb_connection_t *c = QX11Info::connection();
+-    int screen = QX11Info::appScreen();
+-
+-    xcb_screen_iterator_t screenIt = xcb_setup_roots_iterator(xcb_get_setup(c));
+-    for (; screenIt.rem; --screen, xcb_screen_next(&screenIt)) {
+-        if (screen != 0) {
+-            continue;
+-        }
+-        xcb_depth_iterator_t depthIt = xcb_screen_allowed_depths_iterator(screenIt.data);
+-        for (; depthIt.rem; xcb_depth_next(&depthIt)) {
+-            xcb_visualtype_iterator_t visualIt = xcb_depth_visuals_iterator(depthIt.data);
+-            for (; visualIt.rem; xcb_visualtype_next(&visualIt)) {
+-                if (screenIt.data->root_visual != visualIt.data->visual_id) {
+-                    continue;
+-                }
+-                xcb_visualtype_t *visual = visualIt.data;
+-                if ((depthIt.data->depth == 24 || depthIt.data->depth == 32) &&
+-                        visual->red_mask   == 0x00ff0000 &&
+-                        visual->green_mask == 0x0000ff00 &&
+-                        visual->blue_mask  == 0x000000ff) {
+-                    return QImage::Format_ARGB32_Premultiplied;
+-                }
+-                if (depthIt.data->depth == 16 &&
+-                        visual->red_mask   == 0xf800 &&
+-                        visual->green_mask == 0x07e0 &&
+-                        visual->blue_mask  == 0x001f) {
+-                    return QImage::Format_RGB16;
+-                }
+-                break;
+-            }
+-        }
+-    }
+-    return QImage::Format_Invalid;
+-}
+-
+ template <typename T> T fromNative(xcb_pixmap_t pixmap)
+ {
+     xcb_connection_t *c = QX11Info::connection();
+@@ -99,11 +48,17 @@ template <typename T> T fromNative(xcb_pixmap_t pixmap)
+         // request for image data failed
+         return T();
+     }
+-    QImage::Format format = QImage::Format_ARGB32_Premultiplied;
++    QImage::Format format = QImage::Format_Invalid;
+     switch (xImage->depth) {
+     case 1:
+         format = QImage::Format_MonoLSB;
+         break;
++    case 16:
++        format = QImage::Format_RGB16;
++        break;
++    case 24:
++        format = QImage::Format_RGB32;
++        break;
+     case 30: {
+         // Qt doesn't have a matching image format. We need to convert manually
+         uint32_t *pixels = reinterpret_cast<uint32_t *>(xcb_get_image_data(xImage.data()));
+@@ -120,15 +75,7 @@ template <typename T> T fromNative(xcb_pixmap_t pixmap)
+         format = QImage::Format_ARGB32_Premultiplied;
+         break;
+     default:
+-        if (xImage->depth == defaultDepth()) {
+-            format = findFormat();
+-            if (format == QImage::Format_Invalid) {
+-                return T();
+-            }
+-        } else {
+-            // we don't know
+-            return T();
+-        }
++        return T(); // we don't know
+     }
+     QImage image(xcb_get_image_data(xImage.data()), geo->width, geo->height,
+                  xcb_get_image_data_length(xImage.data()) / geo->height, format, free, xImage.data());
