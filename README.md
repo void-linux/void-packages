@@ -307,7 +307,7 @@ The first mode (cross compilation) is as easy as:
 
     $ ./xbps-src -a i686 pkg ...
 
-The second mode (native) needs x86 `masterdir`:
+The second mode (native) needs a new x86 `masterdir`:
 
     $ ./xbps-src -m masterdir-x86 binary-bootstrap i686
     $ ./xbps-src -m masterdir-x86 ...
