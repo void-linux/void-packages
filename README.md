@@ -298,12 +298,18 @@ Sometimes the bootstrap packages must be updated to the latest available version
 
 ### Building i686/32bit packages on x86_64
 
-A new x86 `masterdir` must be created to build 32bit packages:
+Two ways are available to build 32bit packages on x86\_64:
+
+ - cross compilation mode
+ - native mode with a 32bit masterdir
+
+The first mode (cross compilation) is as easy as:
+
+    $ ./xbps-src -a i686 pkg ...
+
+The second mode (native) needs x86 `masterdir`:
 
     $ ./xbps-src -m masterdir-x86 binary-bootstrap i686
-
-Packages that are multilib only (32bit) must be built on a 32bit masterdir.
-
     $ ./xbps-src -m masterdir-x86 ...
 
 ### Building packages natively for the musl C library
