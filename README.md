@@ -296,7 +296,7 @@ Sometimes the bootstrap packages must be updated to the latest available version
 
     $ ./xbps-src bootstrap-update
 
-### Building i686/32bit packages on x86_64
+### Building 32bit packages on x86_64
 
 Two ways are available to build 32bit packages on x86\_64:
 
