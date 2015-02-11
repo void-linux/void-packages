@@ -95,9 +95,9 @@ hook() {
 	generic_wrapper2 curl-config
 	generic_wrapper2 gpg-error-config
 	generic_wrapper2 libassuan-config
-	generic_wrapper2 libpng-config
 	generic_wrapper2 ncurses5-config
 	generic_wrapper2 ncursesw5-config
+	generic_wrapper3 libpng-config
 	generic_wrapper3 xmlrpc-c-config
 	generic_wrapper3 krb5-config
 	generic_wrapper3 mysql_config
