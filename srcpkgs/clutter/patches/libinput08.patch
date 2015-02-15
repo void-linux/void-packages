@@ -1,0 +1,90 @@
+From ede13b11d72a310e535f9a6f0b7e3f774f5529dc Mon Sep 17 00:00:00 2001
+From: Peter Hutterer <peter.hutterer@who-t.net>
+Date: Fri, 16 Jan 2015 01:03:52 +0100
+Subject: evdev: use libinput's new merged scroll events
+
+libinput's API changed from separate scroll events for vert/horiz scrolling to
+a single event that contains both axes if they changed.
+
+Updated by Armin K. to use the discrete axis value for wheel events as done
+in Weston.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=742829
+
+diff --git a/clutter/evdev/clutter-device-manager-evdev.c b/clutter/evdev/clutter-device-manager-evdev.c
+index 7b48481..2b3828a 100644
+--- a/clutter/evdev/clutter-device-manager-evdev.c
++++ b/clutter/evdev/clutter-device-manager-evdev.c
+@@ -1191,29 +1191,43 @@ process_device_event (ClutterDeviceManagerEvdev *manager_evdev,
+ 
+     case LIBINPUT_EVENT_POINTER_AXIS:
+       {
+-        gdouble value, dx = 0.0, dy = 0.0;
++        gdouble dx = 0.0, dy = 0.0;
+         guint32 time;
++        gboolean wheel = FALSE;
+         enum libinput_pointer_axis axis;
++        enum libinput_pointer_axis_source source;
+         struct libinput_event_pointer *axis_event =
+           libinput_event_get_pointer_event (event);
++
+         device = libinput_device_get_user_data (libinput_device);
+ 
+         time = libinput_event_pointer_get_time (axis_event);
+-        value = libinput_event_pointer_get_axis_value (axis_event);
+-        axis = libinput_event_pointer_get_axis (axis_event);
++        source = libinput_event_pointer_get_axis_source (axis_event);
+ 
+-        switch (axis)
+-          {
+-          case LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL:
+-            dx = 0;
+-            dy = value;
+-            break;
++        /* libinput < 0.8 sent wheel click events with value 10. Since 0.8
++           the value is the angle of the click in degrees. To keep
++           backwards-compat with existing clients, we just send multiples of
++           the click count. */
++
++        if (source == LIBINPUT_POINTER_AXIS_SOURCE_WHEEL)
++            wheel = TRUE;
+ 
+-          case LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL:
+-            dx = value;
+-            dy = 0;
+-            break;
++        axis = LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL;
++        if (libinput_event_pointer_has_axis (axis_event, axis))
++          {
++            if (wheel)
++              dy = 10 * libinput_event_pointer_get_axis_value_discrete (axis_event, axis);
++            else
++              dy = libinput_event_pointer_get_axis_value (axis_event, axis);
++          }
+ 
++        axis = LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL;
++        if (libinput_event_pointer_has_axis (axis_event, axis))
++          {
++            if (wheel)
++              dx = 10 * libinput_event_pointer_get_axis_value_discrete (axis_event, axis);
++            else
++              dx = libinput_event_pointer_get_axis_value (axis_event, axis);
+           }
+ 
+         notify_scroll (device, time, dx, dy);
+diff --git a/configure.ac b/configure.ac
+index 0a9a580..2a47744 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -146,7 +146,7 @@ m4_define([uprof_req_version],          [0.3])
+ m4_define([gtk_doc_req_version],        [1.20])
+ m4_define([xcomposite_req_version],     [0.4])
+ m4_define([gdk_req_version],            [3.3.18])
+-m4_define([libinput_req_version],       [0.4.0])
++m4_define([libinput_req_version],       [0.8.0])
+ m4_define([libudev_req_version],        [136])
+ 
+ AC_SUBST([GLIB_REQ_VERSION],       [glib_req_version])
+-- 
+cgit v0.10.1
+
