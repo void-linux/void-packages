@@ -79,8 +79,8 @@ msg_normal_append() {
 }
 
 set_build_options() {
-    local f j opt optval _optsset pkgopts
-    local -A options _pkgname
+    local f j opt optval _optsset pkgopts _pkgname
+    local -A options
 
     if [ -z "$build_options" ]; then
         return 0
@@ -118,7 +118,7 @@ set_build_options() {
     for f in ${!options[@]}; do
         optval=${options[$f]}
         if [[ $optval -eq 1 ]]; then
-            eval build_option_${f}=1
+            eval export build_option_${f}=1
         fi
     done
 
