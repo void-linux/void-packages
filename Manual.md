@@ -208,7 +208,8 @@ The optional 4th argument can be used to change the `file name`.
 - *vsv()* `vsv <service>`
 
 	Installs `service` from `${FILESDIR}` to /etc/sv. The service must
-	be a directory containing at least a `supervise` link and a run script.
+	be a directory containing at least a run script. Note the `supervise`
+	symlink will be created automatically by `vsv`.
 	For further informations on how to create a new service directory see
 	[The corresponding section the FAQ](http://smarden.org/runit/faq.html#create).
 
