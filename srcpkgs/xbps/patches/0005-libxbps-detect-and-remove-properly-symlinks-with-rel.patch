@@ -1,0 +1,133 @@
+From 1403826fa6509c570ae167bc1344cc7acf605138 Mon Sep 17 00:00:00 2001
+From: Juan RP <xtraeme@gmail.com>
+Date: Tue, 17 Feb 2015 11:59:05 +0100
+Subject: [PATCH] libxbps: detect and remove properly symlinks with relative
+ targets.
+
+Close #78
+---
+ NEWS                                    |  3 +++
+ lib/package_remove.c                    | 23 +++++++++++++++--------
+ tests/xbps/libxbps/shell/remove_test.sh | 32 +++++++++++++++++++++++++++++++-
+ 3 files changed, 49 insertions(+), 9 deletions(-)
+
+diff --git a/lib/package_remove.c b/lib/package_remove.c
+index 57ea49b..04d6e00 100644
+--- lib/package_remove.c
++++ lib/package_remove.c
+@@ -96,7 +96,7 @@ static char *
+ symlink_target(struct xbps_handle *xhp, const char *path)
+ {
+ 	struct stat sb;
+-	char *lnk, *res;
++	char *lnk, *res = NULL;
+ 	ssize_t r;
+ 
+ 	if (lstat(path, &sb) == -1)
+@@ -111,16 +111,23 @@ symlink_target(struct xbps_handle *xhp, const char *path)
+ 		return NULL;
+ 	}
+ 	lnk[sb.st_size] = '\0';
+-	if (lnk[0] != '/') {
+-		char *p, *dname;
++	if (strstr(lnk, "./") || lnk[0] != '/') {
++		char *p, *p1, *dname;
+ 
+ 		/* relative */
+ 		p = strdup(path);
+ 		assert(p);
+ 		dname = dirname(p);
+ 		assert(dname);
+-		dname += strlen(xhp->rootdir) + 1;
+-		res = xbps_xasprintf("%s/%s", dname, lnk);
++		p = xbps_xasprintf("%s/%s", dname, lnk);
++		assert(p);
++		if (strstr(p, "./") && ((p1 = realpath(p, NULL)))) {
++			res = strdup(p1 + strlen(xhp->rootdir));
++		}
++		if (res == NULL) {
++			res = strdup(p + strlen(xhp->rootdir)+1);
++		}
++		assert(res);
+ 		free(lnk);
+ 		free(p);
+ 	} else {
+@@ -375,15 +382,15 @@ xbps_remove_pkg(struct xbps_handle *xhp, const char *pkgver, bool update)
+ 			rv = EPERM;
+ 			goto out;
+ 		}
++		/* Remove links */
++		if ((rv = remove_pkg_files(xhp, pkgfilesd, "links", pkgver)) != 0)
++			goto out;
+ 		/* Remove regular files */
+ 		if ((rv = remove_pkg_files(xhp, pkgfilesd, "files", pkgver)) != 0)
+ 			goto out;
+ 		/* Remove configuration files */
+ 		if ((rv = remove_pkg_files(xhp, pkgfilesd, "conf_files", pkgver)) != 0)
+ 			goto out;
+-		/* Remove links */
+-		if ((rv = remove_pkg_files(xhp, pkgfilesd, "links", pkgver)) != 0)
+-			goto out;
+ 		/* Remove dirs */
+ 		if ((rv = remove_pkg_files(xhp, pkgfilesd, "dirs", pkgver)) != 0)
+ 			goto out;
+diff --git a/tests/xbps/libxbps/shell/remove_test.sh b/tests/xbps/libxbps/shell/remove_test.sh
+index a160a67..1566903 100644
+--- tests/xbps/libxbps/shell/remove_test.sh
++++ tests/xbps/libxbps/shell/remove_test.sh
+@@ -62,7 +62,7 @@ remove_symlinks_body() {
+ 	xbps-rindex -d -a $PWD/*.xbps
+ 	atf_check_equal $? 0
+ 	cd ..
+-	xbps-install -r root -C null.conf --repository=$PWD/some_repo -y B
++	xbps-install -r root --repository=$PWD/some_repo -y B
+ 	atf_check_equal $? 0
+ 	xbps-pkgdb -r root -m manual A
+ 	atf_check_equal $? 0
+@@ -75,6 +75,35 @@ remove_symlinks_body() {
+ 	atf_check_equal $rv 0
+ }
+ 
++atf_test_case remove_symlinks_relative
++
++remove_symlinks_relative_head() {
++	atf_set "descr" "Tests for package removal: relative symlink cleanup test"
++}
++
++remove_symlinks_relative_body() {
++	mkdir some_repo
++	mkdir -p pkg_A/usr/lib pkg_A/usr/share/lib
++	touch -f pkg_A/usr/lib/libfoo.so.1.2.0
++	ln -sfr pkg_A/usr/lib/libfoo.so.1.2.0 pkg_A/usr/share/lib/libfoo.so.1
++
++	cd some_repo
++	xbps-create -A noarch -n A-1.0_1 -s "A pkg" ../pkg_A
++	atf_check_equal $? 0
++	xbps-rindex -d -a $PWD/*.xbps
++	atf_check_equal $? 0
++	cd ..
++	xbps-install -r root --repository=$PWD/some_repo -y A
++	atf_check_equal $? 0
++	xbps-remove -r root -Ryvd A
++	atf_check_equal $? 0
++	rv=0
++	if [ -h root/usr/share/lib/libfoo.so.1 -o -h root/usr/lib/libfoo.so.1.2.0 -o -d root/usr/share/lib -o -d root/usr/lib ]; then
++	        rv=1
++	fi
++	atf_check_equal $rv 0
++}
++
+ # 3rd test: make sure that symlinks to the rootfs are also removed.
+ atf_test_case remove_symlinks_from_root
+ 
+@@ -353,6 +382,7 @@ atf_init_test_cases() {
+ 	atf_add_test_case keep_modified_symlinks
+ 	atf_add_test_case remove_readonly_files
+ 	atf_add_test_case remove_symlinks
++	atf_add_test_case remove_symlinks_relative
+ 	atf_add_test_case remove_symlinks_from_root
+ 	atf_add_test_case remove_symlinks_modified
+ 	atf_add_test_case remove_dups
+-- 
+2.3.0
+
