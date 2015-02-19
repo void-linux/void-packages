@@ -10,7 +10,5 @@ do_build() {
 }
 
 do_install() {
-	make_install_args+=" --destdir=$DESTDIR"
-
-	PYTHON=python3 python3 waf install ${make_install_args}
+	PYTHON=python3 python3 waf install --destdir=${DESTDIR} ${make_install_args}
 }

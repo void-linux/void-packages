@@ -46,8 +46,6 @@ do_install() {
 	: ${make_cmd:=make}
 	: ${make_install_target:=install}
 
-	make_install_args+=" DESTDIR=${DESTDIR}"
-
 	cd build
-	${make_cmd} ${make_install_args} ${make_install_target}
+	${make_cmd} DESTDIR=${DESTDIR} ${make_install_args} ${make_install_target}
 }

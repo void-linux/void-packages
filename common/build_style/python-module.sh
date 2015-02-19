@@ -30,8 +30,6 @@ do_install() {
 	: ${python_versions:=2.7}
 	local pyver= pysufx=
 
-	make_install_args+=" --prefix=/usr --root=$DESTDIR"
-
 	for pyver in $python_versions; do
 		if [ -n "$CROSS_BUILD" ]; then
 			PYPREFIX="$XBPS_CROSS_BASE"
@@ -47,7 +45,8 @@ do_install() {
 				LDFLAGS="$LDFLAGS" python${pyver} setup.py \
 					build --build-base=build-${pyver} install ${make_install_args}
 		else
-			python${pyver} setup.py build --build-base=build-${pyver} install ${make_install_args}
+			python${pyver} setup.py build --build-base=build-${pyver} \
+				install --prefix=/usr --root=$DESTDIR ${make_install_args}
 		fi
 	done
 }

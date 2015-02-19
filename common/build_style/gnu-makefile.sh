@@ -14,7 +14,5 @@ do_install() {
 	: ${make_cmd:=make}
 	: ${make_install_target:=install}
 
-	make_install_args+=" STRIP=: PREFIX=/usr DESTDIR=${DESTDIR}"
-
-	${make_cmd} ${make_install_args} ${make_install_target}
+	${make_cmd} STRIP=true PREFIX=/usr DESTDIR=${DESTDIR} ${make_install_args} ${make_install_target}
 }
