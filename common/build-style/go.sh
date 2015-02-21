@@ -13,13 +13,13 @@ do_build() {
 	export GOPATH="/tmp/gopath"
 
 	if [[ "${go_get}" != "yes" ]]; then
-		local path="${GOPATH}/src/${import_path}"
+		local path="${GOPATH}/src/${go_import_path}"
 		mkdir -p "$(dirname ${path})"
 		ln -fs $PWD "${path}"
 	fi
 
-	go get -d -v "${import_path}"
-	go build -x "${import_path}"
+	go get -d -v "${go_import_path}"
+	go build -x "${go_import_path}"
 }
 
 do_install() {

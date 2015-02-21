@@ -514,7 +514,7 @@ target can be overriden via `make_build_target` and the install target
 via `make_install_target`.
 
 - `go` For programs written in Go that follow the standard package
-  structure. The variable `import_path` must be set to the package's
+  structure. The variable `go_import_path` must be set to the package's
   import path, e.g. `github.com/github/hub` for the `hub` program. If
   the variable `go_get` is set to `yes`, the package will be
   downloaded with `go get`. Otherwise (the default) it's expected that
@@ -939,10 +939,10 @@ setting up cross compilation.
 
 The following variables influence how Go packages are built:
 
-- `import_path`: The import path of the package, as it would be used
-  with `go get`. For example, GitHub's `hub` program has the import
-  path `github.com/github/hub`. This variable is required.
-- `go_get`: If set to yes, the package specified via `import_path`
+- `go_import_path`: The import path of the package, as it would be
+  used with `go get`. For example, GitHub's `hub` program has the
+  import path `github.com/github/hub`. This variable is required.
+- `go_get`: If set to yes, the package specified via `go_import_path`
   will be downloaded with `go get`. Otherwise, a distfile has to be
   provided. This option should only be used with `-git` (or similar)
   packages; using a versioned distfile is prefered.
