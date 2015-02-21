@@ -1,0 +1,31 @@
+#
+# This helper is for templates for Go packages.
+#
+
+do_build() {
+	case "$XBPS_TARGET_MACHINE" in
+		armv6*) export GOARCH=arm; export GOARM=6;;
+		armv7*) export GOARCH=arm; export GOARM=7;;
+		i686*) export GOARCH=386;;
+		x86_64*) export GOARCH=amd64;;
+	esac
+
+	export GOPATH="/tmp/gopath"
+
+	if [[ "${go_get}" != "yes" ]]; then
+		local path="${GOPATH}/src/${import_path}"
+		mkdir -p "$(dirname ${path})"
+		ln -fs $PWD "${path}"
+	fi
+
+	go get -d -v "${import_path}"
+	go build -x "${import_path}"
+}
+
+do_install() {
+	vbin ${pkgname}
+}
+
+do_clean() {
+	rm -rf /tmp/gopath
+}

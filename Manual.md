@@ -513,6 +513,14 @@ arguments can be passed in via `configure_args`.
 target can be overriden via `make_build_target` and the install target
 via `make_install_target`.
 
+- `go` For programs written in Go that follow the standard package
+  structure. The variable `import_path` must be set to the package's
+  import path, e.g. `github.com/github/hub` for the `hub` program. If
+  the variable `go_get` is set to `yes`, the package will be
+  downloaded with `go get`. Otherwise (the default) it's expected that
+  the distfile contains the package. In both cases, dependencies will
+  be downloaded with `go get`.
+
 - `meta` For `meta-packages`, i.e packages that only install local files or simply
 depend on additional packages. This build style does not install
 dependencies to the root directory, and only checks if a binary package is
@@ -922,6 +930,22 @@ path may be specified, i.e `pycompile_dirs="usr/share/foo"`.
 
 > NOTE: it's expected that additional subpkgs must be generated to allow packaging for multiple
 python versions.
+
+### Go packages
+
+Go packages should be built with the `go` build style, if possible.
+The `go` build style takes care of downloading Go dependencies and
+setting up cross compilation.
+
+The following variables influence how Go packages are built:
+
+- `import_path`: The import path of the package, as it would be used
+  with `go get`. For example, GitHub's `hub` program has the import
+  path `github.com/github/hub`. This variable is required.
+- `go_get`: If set to yes, the package specified via `import_path`
+  will be downloaded with `go get`. Otherwise, a distfile has to be
+  provided. This option should only be used with `-git` (or similar)
+  packages; using a versioned distfile is prefered.
 
 ### Notes
 
