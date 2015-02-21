@@ -10,7 +10,7 @@ do_build() {
 		x86_64*) export GOARCH=amd64;;
 	esac
 
-	export GOPATH="/tmp/gopath"
+	export GOPATH="$(mktemp -d --tmpdir="${wrksrc}")"
 
 	if [[ "${go_get}" != "yes" ]]; then
 		local path="${GOPATH}/src/${go_import_path}"
@@ -24,8 +24,4 @@ do_build() {
 
 do_install() {
 	vbin ${pkgname}
-}
-
-do_clean() {
-	rm -rf /tmp/gopath
 }
