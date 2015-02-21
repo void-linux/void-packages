@@ -37,10 +37,12 @@ if [ "$sourcepkg" != "$PKGNAME" ]; then
     for f in ${XBPS_COMMONDIR}/environment/setup-subpkg/*.sh; do
         source_file "$f"
     done
+
     ${PKGNAME}_package
     pkgname=$PKGNAME
 fi
 
+source_file $XBPS_COMMONDIR/environment/build_style/${build_style}.sh
 setup_pkg_depends $pkgname
 run_pkg_hooks pre-pkg
 touch -f $XBPS_PREPKG_DONE

@@ -83,8 +83,11 @@ if [ ! -f $XBPS_SUBPKG_INSTALL_DONE ]; then
         for f in ${XBPS_COMMONDIR}/environment/setup-subpkg/*.sh; do
             source_file "$f"
         done
+
         ${PKGNAME}_package
         pkgname=$PKGNAME
+
+        source_file $XBPS_COMMONDIR/environment/build_style/${build_style}.sh
 
         install -d $PKGDESTDIR
         if declare -f pkg_install >/dev/null; then
