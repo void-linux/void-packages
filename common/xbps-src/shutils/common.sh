@@ -407,5 +407,5 @@ setup_pkg() {
     export XBPS_WRAPPERDIR="${XBPS_STATEDIR}/wrappers"
     mkdir -p $XBPS_WRAPPERDIR
 
-    source_file $XBPS_COMMONDIR/environment/build_style/${build_style}.sh
+    source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
 }

@@ -87,7 +87,7 @@ if [ ! -f $XBPS_SUBPKG_INSTALL_DONE ]; then
         ${PKGNAME}_package
         pkgname=$PKGNAME
 
-        source_file $XBPS_COMMONDIR/environment/build_style/${build_style}.sh
+        source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
 
         install -d $PKGDESTDIR
         if declare -f pkg_install >/dev/null; then

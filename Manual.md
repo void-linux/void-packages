@@ -492,7 +492,7 @@ upstream versions. Example: `version=${version//./_}`
 
 The `build_style` variable specifies the build method to build and install a
 package. It expects the name of any available script in the
-`void-packages/common/build_style` directory. Please note that required packages
+`void-packages/common/build-style` directory. Please note that required packages
 to execute a `build_style` script must be defined via `$hostmakedepends`.
 
 The current list of available `build_style` scripts is the following:
@@ -538,6 +538,11 @@ be defined to set the allowed python versions to be built, i.e:
 
 > If `build_style` is not set, the template must (at least) define a
 `do_install()` function and optionally more phases via `do_xxx()` functions.
+
+Environment variables for a specific `build_style` can be declared in a filename
+matching the `build_style` name, i.e:
+
+    `common/environment/build-style/gnu-configure.sh`
 
 ### Functions
 
