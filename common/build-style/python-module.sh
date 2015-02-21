@@ -43,10 +43,11 @@ do_install() {
 			env CC="$CC" LDSHARED="$LDSHARED" \
 				PYPREFIX="$PYPREFIX" CFLAGS="$CFLAGS" \
 				LDFLAGS="$LDFLAGS" python${pyver} setup.py \
-					build --build-base=build-${pyver} install ${make_install_args}
+					build --build-base=build-${pyver} \
+					install --prefix=/usr --root=${DESTDIR} ${make_install_args}
 		else
 			python${pyver} setup.py build --build-base=build-${pyver} \
-				install --prefix=/usr --root=$DESTDIR ${make_install_args}
+				install --prefix=/usr --root=${DESTDIR} ${make_install_args}
 		fi
 	done
 }
