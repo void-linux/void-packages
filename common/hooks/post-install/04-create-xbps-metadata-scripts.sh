@@ -267,6 +267,7 @@ _EOF
 				rm -f $tmpf
 				msg_error "$pkgname: unknown trigger $f, aborting!\n"
 			fi
+			echo "   Added trigger '$f' for the '${action^^}' script."
 		done
 		for f in ${triggers}; do
 			targets=$($XBPS_TRIGGERSDIR/$f targets)
