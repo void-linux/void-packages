@@ -108,6 +108,7 @@ hook() {
 	generic_wrapper3 xslt-config
 	generic_wrapper3 xml2-config
 	generic_wrapper3 fox-config
+	generic_wrapper3 xapian-config
 	python_wrapper python-config 2.7
 	python_wrapper python3.4-config 3.4m
 
