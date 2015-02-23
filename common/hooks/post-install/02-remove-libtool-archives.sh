@@ -2,6 +2,6 @@
 
 hook() {
 	if [ -z "$keep_libtool_archives" -a -d "${PKGDESTDIR}" ]; then
-		find ${PKGDESTDIR} -type f -name \*.la -delete
+		find ${PKGDESTDIR} -name \*.la -delete
 	fi
 }
