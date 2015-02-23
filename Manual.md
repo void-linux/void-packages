@@ -793,10 +793,11 @@ separated by blanks, i.e `system_accounts="foo blah:22"`. Optionally the **uid**
 can be specified by delimiting it with a color, i.e `system_accounts="foo:48"`.
 Additional variables for the **system accounts** can be specified to change its behavior:
 
-	- `<account>_homedir` the home directory for the user. If unset defaults to `/`.
+	- `<account>_homedir` the home directory for the user. If unset defaults to `/dev/null`.
 	- `<account>_shell` the shell for the new user. If unset defaults to `/sbin/nologin`.
-	- `<account>_descr` the description for the new user. If unset defaults to `<user> unprivileged user`.
+	- `<account>_descr` the description for the new user. If unset defaults to `<account> unprivileged user`.
 	- `<account>_groups` additional groups to be added to for the new user.
+	- `<account>_pgroup` to set the primary group, by default primary group is set to `<account>`.
 
 The **system user** is created by using a dynamically allocated **uid/gid** in your system
 and it's created as a `system account`, unless the **uid** is set. A new group will be created for the

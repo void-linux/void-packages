@@ -90,6 +90,7 @@ _EOF
 			eval shell="\$${_uname}_shell"
 			eval descr="\$${_uname}_descr"
 			eval groups="\$${_uname}_groups"
+			eval pgroup="\$${_uname}_pgroup"
 			if [ -n "$homedir" ]; then
 				echo "export ${_uname}_homedir=\"$homedir\"" >> $tmpf
 			fi
@@ -102,7 +103,10 @@ _EOF
 			if [ -n "$groups" ]; then
 				echo "export ${_uname}_groups=\"${groups}\"" >> $tmpf
 			fi
-			unset homedir shell descr groups
+			if [ -n "$pgroup" ]; then
+				echo "export ${_uname}_pgroup=\"${pgroup}\"" >> $tmpf
+			fi
+			unset homedir shell descr groups pgroup
 		done
 	fi
 	#
