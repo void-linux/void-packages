@@ -5,7 +5,8 @@
 # required variables
 #
 #   build_style=slashpackage
-#   wrksrc=<category>/${pkgname}-${version}
+#   wrksrc=<category>
+#   build_wrksrc=${pkgname}-${version}
 #   distfiles=<download link>
 # 
 # example (daemontools)
@@ -14,15 +15,14 @@
 #   pkgname=daemontools
 #   version=0.76
 #   revision=1
-#   wrksrc=admin/${pkgname}-${version}
+#   wrksrc=admin
+#   build_wrksrc=${pkgname}-${version}
 #   build_style=slashpackage
 #   short_desc="A collection of tools for managing UNIX services"
 #   maintainer="bougyman <tj@geoforce.com>"
 #   license="Public Domain"
 #   homepage="http://cr.yp.to/daemontools.html"
 #   distfiles="http://cr.yp.to/daemontools/${pkgname}-${version}.tar.gz"
-#
-#   patch_args="-p1" # << important for most slashpackage patches
 
 do_build() {
 	package/compile
