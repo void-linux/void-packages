@@ -14,6 +14,10 @@
 do_configure() {
 	local perlmkf
 
+	if [ -f ${wrksrc}/Makefile.PL ]; then
+		sed -i "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" ${wrksrc}/Makefile.PL
+	fi
+
 	if [ -z "$perl_configure_dirs" ]; then
 		perlmkf="$wrksrc/Makefile.PL"
 		if [ ! -f $perlmkf ]; then
@@ -29,7 +33,7 @@ do_configure() {
 			perl Makefile.PL ${configure_args} INSTALLDIRS=vendor
 	fi
 
-	for i in "$perl_configure_dirs"; do
+	for i in ${perl_configure_dirs}; do
 		perlmkf="$wrksrc/$i/Makefile.PL"
 		if [ -f $perlmkf ]; then
 			cd $wrksrc/$i
@@ -43,6 +47,7 @@ do_configure() {
 			msg_error "*** ERROR: couldn't find $perlmkf, aborting **\n"
 		fi
 	done
+
 }
 
 do_build() {
