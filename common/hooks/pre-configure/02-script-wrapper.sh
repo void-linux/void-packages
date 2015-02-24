@@ -24,7 +24,7 @@ generic_wrapper2() {
 if [ "\$1" = "--prefix" ]; then
 	echo "${XBPS_CROSS_BASE}/usr"
 elif [ "\$1" = "--cflags" ]; then
-	${XBPS_CROSS_BASE}/usr/bin/${wrapper} --libs | sed -e "s,-I/usr,-I${XBPS_CROSS_BASE}/usr,g;s,-L/usr,-L${XBPS_CROSS_BASE}/usr,g"
+	${XBPS_CROSS_BASE}/usr/bin/${wrapper} --cflags | sed -e "s,-I/usr,-I${XBPS_CROSS_BASE}/usr,g;s,-L/usr,-L${XBPS_CROSS_BASE}/usr,g"
 elif [ "\$1" = "--libs" ]; then
 	${XBPS_CROSS_BASE}/usr/bin/${wrapper} --libs | sed -e "s,-L/usr,-L${XBPS_CROSS_BASE}/usr,g"
 else
