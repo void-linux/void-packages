@@ -544,6 +544,8 @@ be defined to set the allowed python versions to be built, i.e:
 
 - `waf` For packages that use the Python `waf` method with python2.
 
+- `slashpackage` For packages that use the /package heirarchy and package/compile to build.
+
 > If `build_style` is not set, the template must (at least) define a
 `do_install()` function and optionally more phases via `do_xxx()` functions.
 
