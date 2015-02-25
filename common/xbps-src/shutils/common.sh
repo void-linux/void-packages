@@ -165,7 +165,7 @@ source_file() {
 }
 
 run_pkg_hooks() {
-    local phase="$1" hookn
+    local phase="$1" hookn f
 
     eval unset -f hook
     for f in ${XBPS_COMMONDIR}/hooks/${phase}/*.sh; do
@@ -174,6 +174,14 @@ run_pkg_hooks() {
         hookn=${hookn%.sh}
         . $f
         run_func hook "$phase hook: $hookn" ${phase}_${hookn}
+    done
+}
+
+unset_package_funcs() {
+    local f
+
+    for f in $(typeset -F|grep -E '_package$'); do
+        eval unset -f $f
     done
 }
 
@@ -192,23 +200,21 @@ get_subpkgs() {
 
 setup_pkg() {
     local pkg="$1" cross="$2"
-    local val _vars f
+    local val _vars f dbgflags
 
     [ -z "$pkg" ] && return 1
 
     # Start with a sane environment
     unset -v PKG_BUILD_OPTIONS XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_CPPFLAGS XBPS_CROSS_LDFLAGS
-    unset -v run_depends build_depends host_build_depends
+    unset -v subpackages run_depends build_depends host_build_depends
 
-    for f in ${subpackages}; do
-        eval unset -f ${f}_package
-    done
+    unset_package_funcs
 
     if [ -n "$cross" ]; then
         source_file $XBPS_CROSSPFDIR/${cross}.sh
 
-        REQ_VARS="TARGET_ARCH CROSS_TRIPLET CROSS_CFLAGS CROSS_CXXFLAGS"
-        for f in ${REQ_VARS}; do
+        _vars="TARGET_ARCH CROSS_TRIPLET CROSS_CFLAGS CROSS_CXXFLAGS"
+        for f in ${_vars}; do
             eval val="\$XBPS_$f"
             if [ -z "$val" ]; then
                 echo "ERROR: XBPS_$f is not defined!"
@@ -244,11 +250,11 @@ setup_pkg() {
         XBPS_REMOVE_XCMD XBPS_RINDEX_XCMD XBPS_UHELPER_XCMD
 
     # Source all sourcepkg environment setup snippets.
-    for f in ${XBPS_COMMONDIR}/environment/setup/*.sh; do
-        source_file "$f"
-    done
     # Source all subpkg environment setup snippets.
     for f in ${XBPS_COMMONDIR}/environment/setup-subpkg/*.sh; do
+        source_file "$f"
+    done
+    for f in ${XBPS_COMMONDIR}/environment/setup/*.sh; do
         source_file "$f"
     done
 
