@@ -95,8 +95,6 @@ hook() {
 	generic_wrapper2 curl-config
 	generic_wrapper2 gpg-error-config
 	generic_wrapper2 libassuan-config
-	generic_wrapper2 ncurses5-config
-	generic_wrapper2 ncursesw5-config
 	generic_wrapper3 libpng-config
 	generic_wrapper3 xmlrpc-c-config
 	generic_wrapper3 krb5-config
@@ -109,6 +107,8 @@ hook() {
 	generic_wrapper3 xml2-config
 	generic_wrapper3 fox-config
 	generic_wrapper3 xapian-config
+	generic_wrapper3 ncurses5-config
+	generic_wrapper3 ncursesw5-config
 	python_wrapper python-config 2.7
 	python_wrapper python3.4-config 3.4m
 
