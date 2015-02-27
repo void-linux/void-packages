@@ -50,6 +50,8 @@ show_pkg_files() {
 show_pkg_build_deps() {
     local f=
 
+    BEGIN_INSTALL=1
+    check_pkg_arch $XBPS_CROSS_BUILD
     # build time deps
     for f in ${hostmakedepends} ${makedepends}; do
         echo "$f"
