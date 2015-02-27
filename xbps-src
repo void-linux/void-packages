@@ -159,6 +159,11 @@ Options:
     be stored into <hostdir>/binpkgs/<repo>.
     This alternative repository will also be used to resolve dependencies
     with highest priority order than others.
+
+-t  Create a temporary masterdir to not pollute the current one. Note that
+    the existing masterdir must be fully populated with binary-bootstrap first.
+    Once the target has finished, this temporary masterdir will be removed.
+
 _EOF
 }
 
@@ -201,6 +206,20 @@ check_config_vars() {
         exit 1
     fi
 }
+
+create_temporary_masterdir() {
+    local tmpmdir=$(mktemp -d -q -p $XBPS_DISTDIR masterdir.XXXXXXXXX || exit 1)
+
+    echo "=> Creating a temporary masterdir at $tmpmdir, please wait..."
+    cp -al $XBPS_MASTERDIR/* $tmpmdir/
+    if [ $? -ne 0 ]; then
+        echo "ERROR: failed to setup temporary masterdir $tmpmdir!"
+        exit 1
+    fi
+    export CHROOT_READY=1
+    export XBPS_MASTERDIR=$tmpmdir
+}
+
 
 check_build_requirements() {
     local found
@@ -314,7 +333,7 @@ export XBPS_MACHINE=$(uname -m)
 #
 XBPS_OPTIONS=
 
-while getopts "a:CfgGhH:Ij:Lm:No:r:V" opt; do
+while getopts "a:CfgGhH:Ij:Lm:No:r:tV" opt; do
     case $opt in
         a) readonly XBPS_CROSS_BUILD="$OPTARG"; XBPS_OPTIONS+="-a $OPTARG ";;
         C) readonly XBPS_KEEP_ALL=1; XBPS_OPTIONS+="-C ";;
@@ -330,6 +349,7 @@ while getopts "a:CfgGhH:Ij:Lm:No:r:V" opt; do
         N) readonly XBPS_SKIP_REMOTEREPOS=1; XBPS_OPTIONS+="-N ";;
         o) readonly XBPS_PKG_OPTIONS="$OPTARG"; XBPS_OPTIONS+="-o $OPTARG ";;
         r) readonly XBPS_ALT_REPOSITORY="$OPTARG"; XBPS_OPTIONS+="-r $OPTARG ";;
+        t) readonly XBPS_TEMP_MASTERDIR=1; XBPS_KEEP_ALL=1; XBPS_OPTIONS+=" -t -C";;
         V) echo $XBPS_SRC_VERSION && exit 0;;
         --) shift; break;;
     esac
@@ -381,6 +401,11 @@ fi
 # Check configuration vars before anyting else, and set defaults vars.
 #
 check_config_vars
+
+if [ -z "$IN_CHROOT" -a -n "$XBPS_TEMP_MASTERDIR" ]; then
+    # Create a temporary masterdir (hardlinked) for this build.
+    create_temporary_masterdir
+fi
 
 if [ -n "$XBPS_HOSTDIR" ]; then
     export XBPS_REPOSITORY=$XBPS_HOSTDIR/binpkgs
@@ -469,7 +494,7 @@ export XBPS_SHUTILSDIR XBPS_CROSSPFDIR XBPS_TRIGGERSDIR \
     XBPS_CCACHE XBPS_DISTCC XBPS_DISTCC_HOSTS XBPS_SKIP_DEPS \
     XBPS_SKIP_REMOTEREPOS XBPS_CROSS_BUILD XBPS_PKG_OPTIONS \
     XBPS_CONFIG_FILE XBPS_KEEP_ALL XBPS_HOSTDIR XBPS_MASTERDIR \
-    XBPS_SRC_VERSION XBPS_DESTDIR XBPS_MACHINE
+    XBPS_SRC_VERSION XBPS_DESTDIR XBPS_MACHINE XBPS_TEMP_MASTERDIR
 
 for i in REPOSITORY DESTDIR BUILDDIR SRCDISTDIR; do
     eval val="\$XBPS_$i"
@@ -649,6 +674,11 @@ case "$XBPS_TARGET" in
         usage && exit 1
         ;;
 esac
+
+if [ -n "$XBPS_TEMP_MASTERDIR" ]; then
+    msg_normal "Removing temporary masterdir at $XBPS_MASTERDIR...\n"
+    rm -rf $XBPS_MASTERDIR
+fi
 
 # Agur
 exit $?
