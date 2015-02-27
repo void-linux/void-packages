@@ -52,8 +52,9 @@ show_pkg_build_deps() {
 
     BEGIN_INSTALL=1
     check_pkg_arch $XBPS_CROSS_BUILD
+    setup_pkg_depends
     # build time deps
-    for f in ${hostmakedepends} ${makedepends}; do
+    for f in ${host_build_depends} ${build_depends}; do
         echo "$f"
     done
 }
