@@ -48,7 +48,7 @@ show_pkg_files() {
 }
 
 show_pkg_build_deps() {
-    local f x _pkgname _dep
+    local f x _pkgname _dep found
 
     BEGIN_INSTALL=1
     check_pkg_arch $XBPS_CROSS_BUILD
@@ -71,6 +71,7 @@ show_pkg_build_deps() {
             fi
         done
         if [ -n "$found" ]; then
+            unset found
             continue
         fi
         echo "$f"
