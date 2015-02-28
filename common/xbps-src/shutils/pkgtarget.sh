@@ -1,9 +1,9 @@
 # vim: set ts=4 sw=4 et:
 
 check_pkg_arch() {
-    local cross="$1"
+    local cross="$1" err="$2" _arch f found
 
-    if [ -n "$BEGIN_INSTALL" -a -n "$only_for_archs" ]; then
+    if [ -n "$only_for_archs" ]; then
         if [ -n "$cross" ]; then
             _arch="$XBPS_TARGET_MACHINE"
         elif [ -n "$XBPS_ARCH" ]; then
@@ -19,7 +19,7 @@ check_pkg_arch() {
         done
         if [ -z "$found" ]; then
             msg_red "$pkgname: this package cannot be built for ${_arch}.\n"
-            exit 0
+            exit ${err:=0}
         fi
     fi
 }
