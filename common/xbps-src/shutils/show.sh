@@ -48,18 +48,19 @@ show_pkg_files() {
 }
 
 show_pkg_build_deps() {
-    local f x _pkgname
+    local f x _pkgname _dep
 
     BEGIN_INSTALL=1
     check_pkg_arch $XBPS_CROSS_BUILD
     setup_pkg_depends
     # build time deps
     for f in ${host_build_depends} ${build_depends} ${run_depends}; do
+        _dep="${f#virtual?}"
         # check for subpkgs
         for x in ${subpackages}; do
-            _pkgname="$($XBPS_UHELPER_CMD getpkgdepname $f 2>/dev/null)"
+            _pkgname="$($XBPS_UHELPER_CMD getpkgdepname ${_dep} 2>/dev/null)"
             if [ -z "${_pkgname}" ]; then
-                _pkgname="$($XBPS_UHELPER_CMD getpkgname $f 2>/dev/null)"
+                _pkgname="$($XBPS_UHELPER_CMD getpkgname ${_dep} 2>/dev/null)"
             fi
             if [ "${_pkgname}" = "$x" ]; then
                 found=1
@@ -69,7 +70,7 @@ show_pkg_build_deps() {
         if [ -n "$found" ]; then
             continue
         fi
-        echo "$f"
+        echo "${_dep}"
     done
 }
 
