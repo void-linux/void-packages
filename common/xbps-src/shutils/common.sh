@@ -322,6 +322,10 @@ setup_pkg() {
         makejobs="-j$XBPS_MAKEJOBS"
     fi
 
+    if [ -n "$XBPS_BINPKG_EXISTS" -a -f "$XBPS_REPOSITORY/${pkgver}.${XBPS_TARGET_MACHINE}.xbps" ]; then
+        exit 0
+    fi
+
     if [ -z "$XBPS_DEBUG_PKGS" -o "$repository" = "nonfree" ]; then
         nodebug=yes
     fi
