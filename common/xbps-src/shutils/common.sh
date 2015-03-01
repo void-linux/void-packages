@@ -34,6 +34,15 @@ error_func() {
     exit 2
 }
 
+exit_and_cleanup() {
+    local rval=$1
+
+    if [ -n "$XBPS_TEMP_MASTERDIR" ]; then
+        rm -rf "$XBPS_MASTERDIR"
+    fi
+    exit ${rval:=0}
+}
+
 msg_red() {
     # error messages in bold/red
     [ -n "$NOCOLORS" ] || printf >&2 "\033[1m\033[31m"
@@ -200,7 +209,7 @@ get_subpkgs() {
 
 setup_pkg() {
     local pkg="$1" cross="$2"
-    local val _vars f dbgflags
+    local val _vars f dbgflags _arch
 
     [ -z "$pkg" ] && return 1
 
@@ -322,8 +331,13 @@ setup_pkg() {
         makejobs="-j$XBPS_MAKEJOBS"
     fi
 
-    if [ -n "$XBPS_BINPKG_EXISTS" -a -f "$XBPS_REPOSITORY/${pkgver}.${XBPS_TARGET_MACHINE}.xbps" ]; then
-        exit 0
+    if [ -n "$noarch" ]; then
+        _arch="noarch"
+    else
+        _arch="$XBPS_TARGET_MACHINE"
+    fi
+    if [ -n "$XBPS_BINPKG_EXISTS" -a -f "${XBPS_REPOSITORY}/${pkgver}.${_arch}.xbps" ]; then
+        exit_and_cleanup
     fi
 
     if [ -z "$XBPS_DEBUG_PKGS" -o "$repository" = "nonfree" ]; then
