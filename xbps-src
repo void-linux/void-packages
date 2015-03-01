@@ -211,15 +211,18 @@ check_config_vars() {
 }
 
 create_temporary_masterdir() {
-    local tmpmdir=$(mktemp -d -q -p $XBPS_DISTDIR masterdir.XXXXXXXXX || exit 1)
+    if [ -n "$IN_CHROOT" -o -z "$XBPS_TEMP_MASTERDIR" ]; then
+        return
+    fi
+    XBPS_TEMP_MASTERDIR=$(mktemp -d -q -p $XBPS_DISTDIR masterdir.XXXXXXXXX || exit 1)
 
-    cp -a $XBPS_MASTERDIR/* $tmpmdir/
+    cp -a $XBPS_MASTERDIR/* $XBPS_TEMP_MASTERDIR/
     if [ $? -ne 0 ]; then
-        echo "ERROR: failed to setup temporary masterdir $tmpmdir!"
+        echo "ERROR: failed to setup temporary masterdir $XBPS_TEMP_MASTERDIR!"
         exit 1
     fi
     export CHROOT_READY=1
-    export XBPS_MASTERDIR=$tmpmdir
+    export XBPS_MASTERDIR=$XBPS_TEMP_MASTERDIR
 }
 
 
@@ -337,22 +340,22 @@ XBPS_OPTIONS=
 
 while getopts "a:CEfgGhH:Ij:Lm:No:r:tV" opt; do
     case $opt in
-        a) readonly XBPS_CROSS_BUILD="$OPTARG"; XBPS_OPTIONS+="-a $OPTARG ";;
-        C) readonly XBPS_KEEP_ALL=1; XBPS_OPTIONS+="-C ";;
+        a) readonly XBPS_CROSS_BUILD="$OPTARG"; XBPS_OPTIONS+=" -a $OPTARG";;
+        C) readonly XBPS_KEEP_ALL=1; XBPS_OPTIONS+=" -C";;
         E) readonly XBPS_BINPKG_EXISTS=1; XBPS_OPTIONS+=" -E";;
-        f) readonly XBPS_BUILD_FORCEMODE=1; XBPS_OPTIONS+="-f ";;
-        G) readonly XBPS_USE_GIT_REVS=1; XBPS_OPTIONS+="-G ";;
-        g) readonly XBPS_DEBUG_PKGS=1; XBPS_OPTIONS+="-g ";;
-        H) readonly XBPS_HOSTDIR="$(readlink -m $OPTARG 2>/dev/null)"; XBPS_OPTIONS+="-H $XBPS_HOSTDIR ";;
+        f) readonly XBPS_BUILD_FORCEMODE=1; XBPS_OPTIONS+=" -f";;
+        G) readonly XBPS_USE_GIT_REVS=1; XBPS_OPTIONS+=" -G";;
+        g) readonly XBPS_DEBUG_PKGS=1; XBPS_OPTIONS+=" -g";;
+        H) readonly XBPS_HOSTDIR="$(readlink -m $OPTARG 2>/dev/null)"; XBPS_OPTIONS+=" -H $XBPS_HOSTDIR";;
         h) usage && exit 0;;
-        I) readonly XBPS_SKIP_DEPS=1; XBPS_OPTIONS+="-I ";;
-        j) readonly XBPS_MAKEJOBS="$OPTARG"; XBPS_OPTIONS+="-j $OPTARG ";;
-        L) export NOCOLORS=1; XBPS_OPTIONS+="-L ";;
-        m) readonly XBPS_MASTERDIR=$(readlink -m $OPTARG 2>/dev/null); XBPS_OPTIONS+="-m $XBPS_MASTERDIR ";;
-        N) readonly XBPS_SKIP_REMOTEREPOS=1; XBPS_OPTIONS+="-N ";;
-        o) readonly XBPS_PKG_OPTIONS="$OPTARG"; XBPS_OPTIONS+="-o $OPTARG ";;
-        r) readonly XBPS_ALT_REPOSITORY="$OPTARG"; XBPS_OPTIONS+="-r $OPTARG ";;
-        t) readonly XBPS_TEMP_MASTERDIR=1; XBPS_KEEP_ALL=1; XBPS_OPTIONS+=" -t -C";;
+        I) readonly XBPS_SKIP_DEPS=1; XBPS_OPTIONS+=" -I";;
+        j) readonly XBPS_MAKEJOBS="$OPTARG"; XBPS_OPTIONS+=" -j $OPTARG";;
+        L) export NOCOLORS=1; XBPS_OPTIONS+=" -L";;
+        m) readonly XBPS_MASTERDIR=$(readlink -m $OPTARG 2>/dev/null); XBPS_OPTIONS+=" -m $XBPS_MASTERDIR";;
+        N) readonly XBPS_SKIP_REMOTEREPOS=1; XBPS_OPTIONS+=" -N";;
+        o) readonly XBPS_PKG_OPTIONS="$OPTARG"; XBPS_OPTIONS+=" -o $OPTARG";;
+        r) readonly XBPS_ALT_REPOSITORY="$OPTARG"; XBPS_OPTIONS+=" -r $OPTARG";;
+        t) export XBPS_TEMP_MASTERDIR=1; XBPS_OPTIONS+=" -t -C";;
         V) echo $XBPS_SRC_VERSION && exit 0;;
         --) shift; break;;
     esac
@@ -404,11 +407,6 @@ fi
 # Check configuration vars before anyting else, and set defaults vars.
 #
 check_config_vars
-
-if [ -z "$IN_CHROOT" -a -n "$XBPS_TEMP_MASTERDIR" ]; then
-    # Create a temporary masterdir (hardlinked) for this build.
-    create_temporary_masterdir
-fi
 
 if [ -n "$XBPS_HOSTDIR" ]; then
     export XBPS_REPOSITORY=$XBPS_HOSTDIR/binpkgs
@@ -537,6 +535,7 @@ check_build_requirements
 
 trap 'exit_func' INT TERM
 
+
 #
 # Main switch.
 #
@@ -609,6 +608,7 @@ case "$XBPS_TARGET" in
     fetch|extract|build|configure|install|pkg)
         BEGIN_INSTALL=1
         read_pkg
+        create_temporary_masterdir
         if [ -n "$CHROOT_READY" -a -z "$IN_CHROOT" ]; then
             chroot_handler $XBPS_TARGET $XBPS_TARGET_PKG
         else

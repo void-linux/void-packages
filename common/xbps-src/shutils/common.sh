@@ -37,8 +37,8 @@ error_func() {
 exit_and_cleanup() {
     local rval=$1
 
-    if [ -n "$XBPS_TEMP_MASTERDIR" ]; then
-        rm -rf "$XBPS_MASTERDIR"
+    if [ -n "$XBPS_TEMP_MASTERDIR" -a "$XBPS_TEMP_MASTERDIR" != "1" ]; then
+        rm -rf "$XBPS_TEMP_MASTERDIR"
     fi
     exit ${rval:=0}
 }

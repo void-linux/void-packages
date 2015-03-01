@@ -206,6 +206,8 @@ chroot_handler() {
         [ -n "$XBPS_ALT_REPOSITORY" ] && arg="$arg -r $XBPS_ALT_REPOSITORY"
         [ -n "$XBPS_USE_GIT_REVS" ] && arg="$arg -G"
         [ -n "$XBPS_PKG_OPTIONS" ] && arg="$arg -o $XBPS_PKG_OPTIONS"
+        [ -n "$XBPS_TEMP_MASTERDIR" ] && arg="$arg -t -C"
+        [ -n "$XBPS_BINPKG_EXISTS" ] && arg="$arg -E"
 
         action="$arg $action"
         env -i PATH="/usr/bin:/usr/sbin:$PATH" HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
