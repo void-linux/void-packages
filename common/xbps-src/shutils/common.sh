@@ -209,7 +209,7 @@ get_subpkgs() {
 
 setup_pkg() {
     local pkg="$1" cross="$2"
-    local val _vars f dbgflags _arch
+    local val _vars f dbgflags arch
 
     [ -z "$pkg" ] && return 1
 
@@ -332,11 +332,11 @@ setup_pkg() {
     fi
 
     if [ -n "$noarch" ]; then
-        _arch="noarch"
+        arch="noarch"
     else
-        _arch="$XBPS_TARGET_MACHINE"
+        arch="$XBPS_TARGET_MACHINE"
     fi
-    if [ -n "$XBPS_BINPKG_EXISTS" -a -f "${XBPS_REPOSITORY}/${pkgver}.${_arch}.xbps" ]; then
+    if [ -n "$XBPS_BINPKG_EXISTS" -a -f "${XBPS_REPOSITORY}/${pkgver}.${arch}.xbps" ]; then
         exit_and_cleanup
     fi
 
