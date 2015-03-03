@@ -99,7 +99,8 @@ setup_pkg_depends() {
 install_pkg_from_repos() {
     local pkg="$1" cross="$2" rval= tmplogf=
 
-    tmplogf=$(mktemp)
+    tmplogf=${XBPS_STATEDIR}/xbps_${XBPS_TARGET_MACHINE}_bdep_${pkg}.log
+
     if [ -n "$cross" ]; then
         $XBPS_INSTALL_XCMD -Ayd "$pkg" >$tmplogf 2>&1
     else
@@ -118,10 +119,9 @@ install_pkg_from_repos() {
         #
         [ -z "$XBPS_KEEP_ALL" ] && remove_pkg_autodeps
         msg_red "$pkgver: failed to install '$1' dependency! (error $rval)\n"
-        cat $tmplogf && rm -f $tmplogf
+        cat $tmplogf
         msg_error "Please see above for the real error, exiting...\n"
     fi
-    rm -f $tmplogf
     [ $rval -eq 17 ] && rval=0
     return $rval
 }
