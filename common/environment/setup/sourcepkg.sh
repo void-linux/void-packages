@@ -8,7 +8,7 @@ unset -v configure_script configure_args wrksrc build_wrksrc create_wrksrc
 unset -v make_cmd make_build_args make_install_args make_build_target make_install_target python_versions
 unset -v patch_args disable_parallel_build keep_libtool_archives
 unset -v reverts subpackages makedepends hostmakedepends depends
-unset -v build_options build_options_default bootstrap repository reverts
+unset -v build_pie build_options build_options_default bootstrap repository reverts
 unset -v CFLAGS CXXFLAGS CPPFLAGS LDFLAGS LD_LIBRARY_PATH
 unset -v CC CXX CPP GCC LD AR AS RANLIB NM OBJDUMP OBJCOPY STRIP READELF
 
