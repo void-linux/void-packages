@@ -56,10 +56,10 @@ through the `etc/conf` configuration file for the `xbps-src` utility; if that fi
 does not exist, will try to read configuration settings from `~/.xbps-src.conf`.
 
 If you want to customize default `CFLAGS`, `CXXFLAGS` and `LDFLAGS`, don't override
-those defined in `etc/defaults.conf`, append to them instead via `etc/conf` i.e:
+those defined in `etc/defaults.conf`, set them on `etc/conf` instead i.e:
 
-    $ echo 'XBPS_CFLAGS+=" your flags here "' >> etc/conf
-    $ echo 'XBPS_LDFLAGS+=" your flags here "' >> etc/conf
+    $ echo 'XBPS_CFLAGS="your flags here"' >> etc/conf
+    $ echo 'XBPS_LDFLAGS="your flags here"' >> etc/conf
 
 ### Virtual packages
 
