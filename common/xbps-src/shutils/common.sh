@@ -352,17 +352,18 @@ setup_pkg() {
         dbgflags="-g"
     fi
 
-    if [ -z "$XBPS_CFLAGS" -a -z "$XBPS_CXXFLAGS" ]; then
+    if [ -z "$cross" ]; then
         if [ -z "$CHROOT_READY" ]; then
             source_file ${XBPS_COMMONDIR}/build-profiles/bootstrap.sh
         else
             source_file ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
         fi
     fi
-    export CFLAGS="$XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
-    export CXXFLAGS="$XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"
-    export CPPFLAGS="$XBPS_CPPFLAGS $XBPS_CROSS_CPPFLAGS $CPPFLAGS"
-    export LDFLAGS="$XBPS_LDFLAGS $XBPS_CROSS_LDFLAGS $LDFLAGS"
+
+    export CFLAGS="$XBPS_TARGET_CFLAGS $XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
+    export CXXFLAGS="$XBPS_TARGET_CXXFLAGS $XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"
+    export CPPFLAGS="$XBPS_TARGET_CPPFLAGS $XBPS_CPPFLAGS $XBPS_CROSS_CPPFLAGS $CPPFLAGS"
+    export LDFLAGS="$XBPS_TARGET_LDFLAGS $XBPS_LDFLAGS $XBPS_CROSS_LDFLAGS $LDFLAGS"
 
     if [ -n "$broken_as_needed" ]; then
         LDFLAGS="${LDFLAGS/-Wl,--as-needed/}"

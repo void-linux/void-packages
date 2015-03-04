@@ -1,3 +1,3 @@
-XBPS_CFLAGS="-O2 -mtune=generic -pipe -fstack-protector-strong"
-XBPS_CXXFLAGS="$XBPS_CFLAGS"
+XBPS_TARGET_CFLAGS="-mtune=generic"
+XBPS_TARGET_CXXFLAGS="$XBPS_TARGET_CFLAGS"
 XBPS_TRIPLET="x86_64-unknown-linux-musl"
