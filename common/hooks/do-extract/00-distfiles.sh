@@ -63,7 +63,7 @@ hook() {
 
 		case ${cursufx} in
 		txz|tbz|tlz|tgz)
-			tar xf $srcdir/$curfile -C $extractdir
+			tar -x --no-same-permissions --no-same-owner -f $srcdir/$curfile -C $extractdir
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
@@ -77,7 +77,7 @@ hook() {
 			fi
 			;;
 		tar)
-			tar xf $srcdir/$curfile -C $extractdir
+			tar -x --no-same-permissions --no-same-owner -f $srcdir/$curfile -C $extractdir
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
