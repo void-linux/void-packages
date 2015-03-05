@@ -144,7 +144,16 @@ chroot_sync_repos() {
     fi
 
     # Make sure to sync index for remote repositories.
-    xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install -S
+    if command -v xbps-uunshare &>/dev/null; then
+        xbps-uunshare $XBPS_MASTERDIR /usr/sbin/xbps-install -S
+        if [ $? -eq 99 ]; then
+            # userns not supported, fallback to uchroot
+            xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install -S
+        fi
+    else
+        xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install -S
+    fi
+
     if [ -n "$XBPS_CROSS_BUILD" ]; then
         # Copy host keys to the target rootdir.
         if [ ! -d $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys ]; then
@@ -194,7 +203,19 @@ chroot_handler() {
     esac
 
     if [ "$action" = "chroot" ]; then
-        xbps-uchroot ${_chargs} $XBPS_MASTERDIR /bin/xbps-shell || rv=$?
+        if command -v xbps-uunshare &>/dev/null; then
+            xbps-uunshare ${_chargs} $XBPS_MASTERDIR /bin/xbps-shell
+            rv=$?
+            if [ $rv -eq 99 ]; then
+                # userns not supported, fallback to uchroot
+                xbps-uchroot ${_chargs} $XBPS_MASTERDIR /bin/xbps-shell
+                rv=$?
+            fi
+        else
+            # uunshare not available
+            xbps-uchroot ${_chargs} $XBPS_MASTERDIR /bin/xbps-shell
+            rv=$?
+        fi
     else
         [ -n "$XBPS_CROSS_BUILD" ] && arg="$arg -a $XBPS_CROSS_BUILD"
         [ -n "$XBPS_KEEP_ALL" ] && arg="$arg -C"
@@ -210,8 +231,21 @@ chroot_handler() {
         [ -n "$XBPS_BINPKG_EXISTS" ] && arg="$arg -E"
 
         action="$arg $action"
-        env -i PATH="/usr/bin:/usr/sbin:$PATH" HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
-            xbps-uchroot ${_chargs} $XBPS_MASTERDIR /void-packages/xbps-src $action $pkg || rv=$?
+        if command -v xbps-uunshare &>/dev/null; then
+            env -i PATH="/usr/bin:/usr/sbin:$PATH" HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
+                xbps-uunshare ${_chargs} $XBPS_MASTERDIR /void-packages/xbps-src $action $pkg
+            rv=$?
+            if [ $rv -eq 99 ]; then
+                # userns not supported, fallback to uchroot
+                env -i PATH="/usr/bin:/usr/sbin:$PATH" HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
+                    xbps-uchroot ${_chargs} $XBPS_MASTERDIR /void-packages/xbps-src $action $pkg
+                rv=$?
+            fi
+        else
+            # uunshare not available
+            xbps-uchroot ${_chargs} $XBPS_MASTERDIR /bin/xbps-shell
+            rv=$?
+        fi
     fi
 
     return $rv
