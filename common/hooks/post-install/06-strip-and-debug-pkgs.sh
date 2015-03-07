@@ -109,7 +109,11 @@ hook() {
 				msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
 				return 1
 			fi
-			echo "   Stripped library: ${f#$PKGDESTDIR}"
+			if file $f | grep -q "interpreter "; then
+				echo "   Stripped position-independent executable: ${f#$PKGDESTDIR}"
+			else
+				echo "   Stripped library: ${f#$PKGDESTDIR}"
+			fi
 			attach_debug "$f"
 			;;
 		application/x-archive*)
