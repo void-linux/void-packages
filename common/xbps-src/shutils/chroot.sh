@@ -198,7 +198,9 @@ chroot_handler() {
         fetch|extract|build|configure|install|install-destdir|pkg|build-pkg|bootstrap-update|chroot)
             chroot_prepare || return $?
             chroot_init || return $?
-            chroot_sync_repos || return $?
+            if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
+                chroot_sync_repos || return $?
+            fi
             ;;
     esac
 
