@@ -143,15 +143,17 @@ chroot_sync_repos() {
         rm -f $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps.d/*-x86_64.conf
     fi
 
-    # Make sure to sync index for remote repositories.
-    if command -v xbps-uunshare &>/dev/null; then
-        xbps-uunshare $XBPS_MASTERDIR /usr/sbin/xbps-install -S
-        if [ $? -eq 99 ]; then
-            # userns not supported, fallback to uchroot
+    if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
+        # Make sure to sync index for remote repositories.
+        if command -v xbps-uunshare &>/dev/null; then
+            xbps-uunshare $XBPS_MASTERDIR /usr/sbin/xbps-install -S
+            if [ $? -eq 99 ]; then
+                # userns not supported, fallback to uchroot
+                xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install -S
+            fi
+        else
             xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install -S
         fi
-    else
-        xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install -S
     fi
 
     if [ -n "$XBPS_CROSS_BUILD" ]; then
@@ -198,9 +200,7 @@ chroot_handler() {
         fetch|extract|build|configure|install|install-destdir|pkg|build-pkg|bootstrap-update|chroot)
             chroot_prepare || return $?
             chroot_init || return $?
-            if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
-                chroot_sync_repos || return $?
-            fi
+            chroot_sync_repos || return $?
             ;;
     esac
 
