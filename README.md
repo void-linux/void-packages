@@ -7,7 +7,8 @@ The included `xbps-src` script will fetch and compile the sources, and install i
 files into a `fake destdir` to generate XBPS binary packages that can be installed
 or queried through the `xbps-install(8)` and `xbps-query(8)` utilities, respectively.
 
-The `xbps-src` utility uses `xbps-uchroot(8)` to build packages in lightweight linux
+The `xbps-src` utility uses `xbps-uunshare(8)` (or `xbps-uchroot(8)` if the system
+does not support `user namespaces`) to build packages in lightweight linux
 `containers` through the use of `namespaces`, that means that processes and bind mounts
 are isolated (among others).
 
@@ -16,12 +17,10 @@ are isolated (among others).
 - GNU bash
 - xbps >= 0.43.1
 
-A privileged group is required to be able to execute `xbps-uchroot(8)`, by default in void
-it's the `xbuilder` group.
-
 ### Quick setup in Void
 
-Add your user to the `xbuilder` group:
+If your system does not support `user namespaces` your user must be added to a special
+group to be able to use `xbps-uchroot(8)`:
 
     # usermod -a -G xbuilder <user>
 
@@ -268,7 +267,8 @@ To use xbps-src in your linux distribution use the following instructions. Let's
     $ tar xvf xbps-static-latest.<arch>.tar.xz -C ~/XBPS
     $ export PATH=~/XBPS/usr/sbin:$PATH
 
-A privileged group is required to be able to chroot with xbps-src, by default it's set to the `xbuilder` group, change this to your desired group:
+If your system does not support `user namespaces`, a privileged group is required to be able to use
+`xbps-uchroot(8)` with xbps-src, by default it's set to the `xbuilder` group, change this to your desired group:
 
     # chown root:<group> ~/XBPS/usr/sbin/xbps-uchroot.static
     # chmod 4750 ~/XBPS/usr/sbin/xbps-uchroot.static
