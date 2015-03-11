@@ -24,9 +24,9 @@ generic_wrapper2() {
 if [ "\$1" = "--prefix" ]; then
 	echo "${XBPS_CROSS_BASE}/usr"
 elif [ "\$1" = "--cflags" ]; then
-	${XBPS_CROSS_BASE}/usr/bin/${wrapper} --cflags | sed -e "s,-I/usr,-I${XBPS_CROSS_BASE}/usr,g;s,-L/usr,-L${XBPS_CROSS_BASE}/usr,g"
+	${XBPS_CROSS_BASE}/usr/bin/${wrapper} --cflags | sed -e "s,-I/usr/include,-I${XBPS_CROSS_BASE}/usr/include,g"
 elif [ "\$1" = "--libs" ]; then
-	${XBPS_CROSS_BASE}/usr/bin/${wrapper} --libs | sed -e "s,-L/usr,-L${XBPS_CROSS_BASE}/usr,g"
+	${XBPS_CROSS_BASE}/usr/bin/${wrapper} --libs | sed -e "s,-L/usr/lib,-L${XBPS_CROSS_BASE}/usr/lib,g"
 else
 	exec ${XBPS_CROSS_BASE}/usr/bin/${wrapper} "\$@"
 fi
@@ -95,10 +95,10 @@ hook() {
 	generic_wrapper2 curl-config
 	generic_wrapper2 gpg-error-config
 	generic_wrapper2 libassuan-config
+	generic_wrapper2 mysql_config
 	generic_wrapper3 libpng-config
 	generic_wrapper3 xmlrpc-c-config
 	generic_wrapper3 krb5-config
-	generic_wrapper3 mysql_config
 	generic_wrapper3 taglib-config
 	generic_wrapper3 cups-config
 	generic_wrapper3 Magick-config
