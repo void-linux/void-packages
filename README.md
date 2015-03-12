@@ -15,7 +15,7 @@ are isolated (among others).
 ### Requirements
 
 - GNU bash
-- xbps >= 0.43.1
+- xbps >= 0.44
 
 ### Quick setup in Void
 
