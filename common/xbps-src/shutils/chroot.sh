@@ -163,9 +163,16 @@ chroot_sync_repos() {
         fi
         cp -a $XBPS_MASTERDIR/var/db/xbps/keys/*.plist \
             $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys
-        env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
-            xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install \
-            -r /usr/$XBPS_CROSS_TRIPLET -S
+        # Make sure to sync index for remote repositories.
+        if command -v xbps-uunshare &>/dev/null; then
+            env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
+                xbps-uunshare $XBPS_MASTERDIR /usr/sbin/xbps-install \
+                -r /usr/$XBPS_CROSS_TRIPLET -S
+        else
+            env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
+                xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install \
+                -r /usr/$XBPS_CROSS_TRIPLET -S
+        fi
     fi
 
     return 0
