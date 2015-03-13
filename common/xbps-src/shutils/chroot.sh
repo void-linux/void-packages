@@ -116,15 +116,15 @@ chroot_sync_repos() {
     local f=
 
     # Copy xbps configuration files to the masterdir.
-    install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-local.conf \
+    install -Dm644 ${XBPS_DISTDIR}/etc/repos-local.conf \
         ${XBPS_MASTERDIR}/etc/xbps.d/10-repository-local.conf
-    install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-remote.conf \
+    install -Dm644 ${XBPS_DISTDIR}/etc/repos-remote.conf \
         ${XBPS_MASTERDIR}/etc/xbps.d/20-repository-remote.conf
 
     if [ "$XBPS_MACHINE" = "x86_64" ]; then
-        install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-local-x86_64.conf \
+        install -Dm644 ${XBPS_DISTDIR}/etc/repos-local-x86_64.conf \
             ${XBPS_MASTERDIR}/etc/xbps.d/12-repository-local-x86_64.conf
-        install -Dm644 ${XBPS_COMMONDIR}/xbps-src/chroot/repos-remote-x86_64.conf \
+        install -Dm644 ${XBPS_DISTDIR}/etc/repos-remote-x86_64.conf \
             ${XBPS_MASTERDIR}/etc/xbps.d/22-repository-remote-x86_64.conf
     fi
 
