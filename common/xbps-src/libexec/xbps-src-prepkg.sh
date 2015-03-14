@@ -45,6 +45,7 @@ fi
 source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
 setup_pkg_depends $pkgname
 run_pkg_hooks pre-pkg
+
 touch -f $XBPS_PREPKG_DONE
 
 exit 0

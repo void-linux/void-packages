@@ -252,12 +252,16 @@ check_build_requirements() {
         if [ -n "${_gitbranch}" -a "${_gitbranch}" != "master" ]; then
             export XBPS_ALT_REPOSITORY="${_gitbranch}"
             export XBPS_REPOSITORY="${XBPS_REPOSITORY}/${_gitbranch}"
-            msg_normal "Using \`$XBPS_REPOSITORY\' as local repository.\n"
+            if [ -z "$IN_CHROOT" ]; then
+                msg_normal "Using \`$XBPS_REPOSITORY\' as local repository.\n"
+            fi
         fi
         popd &>/dev/null
     else
         export XBPS_REPOSITORY="${XBPS_REPOSITORY}/${XBPS_ALT_REPOSITORY}"
-        msg_normal "Using \`$XBPS_REPOSITORY\' as local repository.\n"
+        if [ -z "$IN_CHROOT" ]; then
+            msg_normal "Using \`$XBPS_REPOSITORY\' as local repository.\n"
+        fi
     fi
 }
 
@@ -462,8 +466,8 @@ export XBPS_FETCH_CMD="xbps-uhelper fetch"
 readonly XBPS_DIGEST_CMD="xbps-uhelper digest"
 readonly XBPS_CMPVER_CMD="xbps-uhelper cmpver"
 
-XBPS_TARGET="$1"
-XBPS_TARGET_PKG="${2##*/}"
+readonly XBPS_TARGET="$1"
+readonly XBPS_TARGET_PKG="${2##*/}"
 
 # Check if stdout is a tty; if false disable colors.
 test -t 1 || export NOCOLORS=1
@@ -500,7 +504,7 @@ export XBPS_SHUTILSDIR XBPS_CROSSPFDIR XBPS_TRIGGERSDIR \
     XBPS_SKIP_REMOTEREPOS XBPS_CROSS_BUILD XBPS_PKG_OPTIONS \
     XBPS_CONFIG_FILE XBPS_KEEP_ALL XBPS_HOSTDIR XBPS_MASTERDIR \
     XBPS_SRC_VERSION XBPS_DESTDIR XBPS_MACHINE XBPS_TEMP_MASTERDIR \
-    XBPS_BINPKG_EXISTS
+    XBPS_BINPKG_EXISTS XBPS_LIBEXECDIR
 
 for i in REPOSITORY DESTDIR BUILDDIR SRCDISTDIR; do
     eval val="\$XBPS_$i"
@@ -537,8 +541,9 @@ fi
 
 check_build_requirements
 
-trap 'exit_func' INT TERM
-
+if [ -z "$IN_CHROOT" ]; then
+    trap 'exit_func' INT TERM
+fi
 
 #
 # Main switch.
@@ -553,7 +558,6 @@ case "$XBPS_TARGET" in
         check_reqhost_utils bootstrap
         [ ! -d $XBPS_SRCPKGDIR/base-chroot ] && \
             msg_error "Cannot find $XBPS_SRCPKGDIR/base-chroot directory!\n"
-        XBPS_TARGET_PKG="base-chroot"
         bootstrap_vpkg=${XBPS_MASTERDIR}/etc/xbps.d/bootstrap-vpkgs.conf
         mkdir -p ${XBPS_MASTERDIR}/etc/xbps.d
         if [ ! -s ${bootstrap_vpkg} ]; then
@@ -561,11 +565,8 @@ case "$XBPS_TARGET" in
             echo 'virtualpkg=libgcc-4.4.0_1:base-files' >> ${bootstrap_vpkg}
             echo 'virtualpkg=libstdc++-4.4.0_1:base-files' >> ${bootstrap_vpkg}
         fi
-        BEGIN_INSTALL=1
-        setup_pkg $XBPS_TARGET_PKG
-        install_pkg $XBPS_TARGET
+        $XBPS_LIBEXECDIR/build.sh base-chroot base-chroot $XBPS_TARGET || exit 1
         [ -d $XBPS_MASTERDIR ] && rm -rf $XBPS_MASTERDIR
-        unset XBPS_TARGET_PKG
         install_bbootstrap
         ;;
     bootstrap-update)
@@ -605,7 +606,6 @@ case "$XBPS_TARGET" in
         fi
         ;;
     fetch|extract|build|configure|install|pkg)
-        BEGIN_INSTALL=1
         read_pkg
         if [ -n "$XBPS_TEMP_MASTERDIR" ]; then
             bootstrap_update
@@ -614,7 +614,8 @@ case "$XBPS_TARGET" in
         if [ -n "$CHROOT_READY" -a -z "$IN_CHROOT" ]; then
             chroot_handler $XBPS_TARGET $XBPS_TARGET_PKG
         else
-            install_pkg $XBPS_TARGET $XBPS_CROSS_BUILD
+            $XBPS_LIBEXECDIR/build.sh $XBPS_TARGET_PKG $XBPS_TARGET_PKG \
+                $XBPS_TARGET $XBPS_CROSS_BUILD || exit 1
         fi
         ;;
     remove|remove-destdir)

@@ -24,11 +24,6 @@ for f in $XBPS_COMMONDIR/environment/build/*.sh; do
     source_file "$f"
 done
 
-if [ -z $pkgname -o -z $version ]; then
-    msg_error "$1: pkgname/version not set in pkg template!\n"
-    exit 1
-fi
-
 XBPS_BUILD_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_build_done"
 XBPS_PRE_BUILD_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_pre_build_done"
 XBPS_POST_BUILD_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_post_build_done"
@@ -68,7 +63,6 @@ else
     fi
 fi
 
-touch -f $XBPS_BUILD_DONE
 
 # Run post_build()
 if [ ! -f $XBPS_POST_BUILD_DONE ]; then
@@ -79,5 +73,7 @@ if [ ! -f $XBPS_POST_BUILD_DONE ]; then
 fi
 
 run_pkg_hooks post-build
+
+touch -f $XBPS_BUILD_DONE
 
 exit 0

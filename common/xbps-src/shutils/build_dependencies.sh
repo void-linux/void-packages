@@ -190,21 +190,25 @@ check_installed_pkg() {
 # Installs all dependencies required by a package.
 #
 install_pkg_deps() {
-    local pkg="$1" cross="$2" rval _realpkg curpkgdepname pkgn iver _props _exact
+    local pkg="$1" targetpkg="$2" target="$3" cross="$4"
+    local rval _realpkg curpkgdepname pkgn iver _props _exact
     local i j found rundep checkver
 
-    local -a host_binpkg_deps binpkg_deps
-    local -a host_missing_deps missing_deps
+    local -a host_binpkg_deps binpkg_deps host_missing_deps missing_deps
 
     [ -z "$pkgname" ] && return 2
 
     setup_pkg_depends
 
+    if [ "$pkg" != "$targetpkg" ]; then
+        msg_normal "$pkgver: building (dependency of $targetpkg) ...\n"
+    else
+        msg_normal "$pkgver: building ...\n"
+    fi
+
     if [ -z "$build_depends" -a -z "$host_build_depends" -a -z "$run_depends" ]; then
         return 0
     fi
-
-    msg_normal "$pkgver: required dependencies:\n"
 
     #
     # Host build dependencies.
@@ -335,37 +339,38 @@ install_pkg_deps() {
 
     # Host missing dependencies, build from srcpkgs.
     for i in ${host_missing_deps[@]}; do
+        # packages not found in repos, install from source.
+        (
         curpkgdepname=$($XBPS_UHELPER_CMD getpkgdepname "$i")
         setup_pkg $curpkgdepname
         ${XBPS_UHELPER_CMD} pkgmatch "$pkgver" "$i"
         if [ $? -eq 0 ]; then
-            setup_pkg $XBPS_TARGET_PKG
+            setup_pkg $pkg
             msg_error "$pkgver: required host dependency '$i' cannot be resolved!\n"
         fi
-        install_pkg full
-        setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
-        install_pkg_deps $sourcepkg $XBPS_CROSS_BUILD
+        exec env XBPS_BINPKG_EXISTS=1 $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target || exit 1
+        ) || exit 1
+        host_binpkg_deps+=("$i")
     done
 
     # Target missing dependencies, build from srcpkgs.
     for i in ${missing_deps[@]}; do
         # packages not found in repos, install from source.
+        (
         curpkgdepname=$($XBPS_UHELPER_CMD getpkgdepname "$i")
         setup_pkg $curpkgdepname $cross
-        # Check if version in srcpkg satisfied required dependency,
-        # and bail out if doesn't.
         $XBPS_UHELPER_CMD pkgmatch "$pkgver" "$i"
         if [ $? -eq 0 ]; then
-            setup_pkg $XBPS_TARGET_PKG $cross
+            setup_pkg $pkg $cross
             msg_error "$pkgver: required target dependency '$i' cannot be resolved!\n"
         fi
-        install_pkg full $cross
-        setup_pkg $XBPS_TARGET_PKG $XBPS_CROSS_BUILD
-        install_pkg_deps $sourcepkg $XBPS_CROSS_BUILD
+        exec env XBPS_BINPKG_EXISTS=1 $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target $cross || exit 1
+        ) || exit 1
+        binpkg_deps+=("$i")
     done
 
-    if [ "$TARGETPKG_PKGDEPS_DONE" ]; then
-        return 0
+    if [ "$pkg" != "$targetpkg" ]; then
+        msg_normal "$pkg: building (dependency of $targetpkg) ...\n"
     fi
 
     for i in ${host_binpkg_deps[@]}; do
@@ -374,14 +379,7 @@ install_pkg_deps() {
     done
 
     for i in ${binpkg_deps[@]}; do
-        if [ -n "$CHROOT_READY" -a "$build_style" = "meta" ]; then
-            continue
-        fi
         msg_normal "$pkgver: installing target dependency '$i' ...\n"
         install_pkg_from_repos "$i" $cross
     done
-
-    if [ "$XBPS_TARGET_PKG" = "$sourcepkg" ]; then
-        TARGETPKG_PKGDEPS_DONE=1
-    fi
 }

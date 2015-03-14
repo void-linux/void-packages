@@ -59,7 +59,6 @@ else
     fi
 fi
 
-touch -f $XBPS_EXTRACT_DONE
 
 [ -d $wrksrc ] && cd $wrksrc
 
@@ -70,5 +69,7 @@ fi
 
 # Run post-extract hooks
 run_pkg_hooks post-extract
+
+touch -f $XBPS_EXTRACT_DONE
 
 exit 0

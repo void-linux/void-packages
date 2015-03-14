@@ -43,7 +43,6 @@ if declare -f do_fetch >/dev/null; then
     cd ${XBPS_BUILDDIR}
     [ -n "$build_wrksrc" ] && mkdir -p "$wrksrc"
     run_func do_fetch
-    touch -f $XBPS_FETCH_DONE
 else
     # Run do-fetch hooks.
     run_pkg_hooks "do-fetch"
@@ -56,5 +55,7 @@ fi
 
 # Run post-fetch hooks.
 run_pkg_hooks post-fetch
+
+touch -f $XBPS_FETCH_DONE
 
 exit 0

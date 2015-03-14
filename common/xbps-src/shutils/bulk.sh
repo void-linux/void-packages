@@ -68,14 +68,12 @@ bulk_update() {
     done
     echo
     for f in ${pkgs}; do
-        BEGIN_INSTALL=1
-        XBPS_TARGET_PKG="$f"
         read_pkg
         msg_normal "xbps-src: building ${pkgver} ...\n"
         if [ -n "$CHROOT_READY" -a -z "$IN_CHROOT" ]; then
             chroot_handler pkg $XBPS_TARGET_PKG
         else
-            install_pkg pkg $XBPS_CROSS_BUILD
+            $XBPS_LIBEXECDIR/build.sh $f $f pkg $XBPS_CROSS_BUILD || return 1
         fi
         if [ $? -ne 0 ]; then
             msg_error "xbps-src: failed to build $pkgver pkg!\n"
@@ -84,6 +82,6 @@ bulk_update() {
     if [ -n "$pkgs" -a -n "$args" ]; then
         echo
         msg_normal "xbps-src: updating your system, confirm to proceed...\n"
-        ${XBPS_SUCMD} "xbps-install --repository=$XBPS_REPOSITORY --repository=$XBPS_REPOSITORY/nonfree -u ${pkgs}"
+        ${XBPS_SUCMD} "xbps-install --repository=$XBPS_REPOSITORY --repository=$XBPS_REPOSITORY/nonfree -u ${pkgs}" || return 1
     fi
 }

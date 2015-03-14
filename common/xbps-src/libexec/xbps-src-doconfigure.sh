@@ -63,8 +63,6 @@ else
     fi
 fi
 
-touch -f $XBPS_CONFIGURE_DONE
-
 # Run post_configure()
 if [ ! -f $XBPS_POSTCONFIGURE_DONE ]; then
     if declare -f post_configure >/dev/null; then
@@ -74,5 +72,7 @@ if [ ! -f $XBPS_POSTCONFIGURE_DONE ]; then
 fi
 
 run_pkg_hooks post-configure
+
+touch -f $XBPS_CONFIGURE_DONE
 
 exit 0
