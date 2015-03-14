@@ -11,6 +11,8 @@ bulk_getlink() {
 }
 
 bulk_build() {
+    local _pkgs pkg found f x tmpf
+
     if ! command -v xbps-checkvers &>/dev/null; then
         msg_error "xbps-src: cannot find xbps-checkvers(8) command!\n"
     fi
@@ -59,7 +61,7 @@ bulk_build() {
 }
 
 bulk_update() {
-    local args="$1" pkgs=
+    local args="$1" pkgs f
 
     pkgs="$(bulk_build ${args})"
     msg_normal "xbps-src: the following packages must be rebuilt and updated:\n"
@@ -68,6 +70,7 @@ bulk_update() {
     done
     echo
     for f in ${pkgs}; do
+        XBPS_TARGET_PKG=$f
         read_pkg
         msg_normal "xbps-src: building ${pkgver} ...\n"
         if [ -n "$CHROOT_READY" -a -z "$IN_CHROOT" ]; then
