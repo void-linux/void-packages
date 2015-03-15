@@ -336,8 +336,10 @@ setup_pkg() {
     else
         arch="$XBPS_TARGET_MACHINE"
     fi
-    if [ -n "$XBPS_BINPKG_EXISTS" -a -f "${XBPS_REPOSITORY}/${pkgver}.${arch}.xbps" ]; then
-        exit_and_cleanup
+    if [ -n "$XBPS_BINPKG_EXISTS" ]; then
+        if [ "$($XBPS_QUERY_XCMD -R -ppkgver $pkgver 2>/dev/null)" = "$pkgver" ]; then
+            exit_and_cleanup
+        fi
     fi
 
     if [ -z "$XBPS_DEBUG_PKGS" -o "$repository" = "nonfree" ]; then
