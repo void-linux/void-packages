@@ -3,6 +3,42 @@
 This article contains an exhaustive manual of how to create new source
 packages for XBPS, the `Void Linux` native packaging system.
 
+*Table of Contents*  
+
+* [Introduction](#Introduction)
+	* [Package build phases](#buildphase)
+	* [Package naming conventions](#namingconvention)
+		* [Libraries](#libs)
+		* [Language Modules](#language_modules)
+		* [Language Bindings](#language_bindings)
+		* [Programs](#programs)
+	* [Global functions](#global_funcs)
+	* [Global variables](#global_vars)
+	* [Available variables](#available_vars)
+		* [Mandatory variables](#mandatory_vars)
+		* [Optional variables](#optional_vars)
+	* [Repositories](#repositories)
+		* [Repositories defined by Branch](#repo_by_branch)
+		* [Package defined repositories](#pkg_defined_repo)
+	* [Checking for new upstream releases](#updates)
+	* [Build style scripts](#build_scripts)
+	* [Functions](#functions)
+	* [Build otions](#build_options)
+		* [Runtime dependencies](#deps_runtime)
+	* [INSTALL and REMOVE files](#install_remove_files)
+	* [INSTALL.msg and REMOVE.msg files](#install_remove_files_msg)
+	* [Creating system accounts/groups at runtime](#runtime_account_creation)
+	* [32bit packages](#32bit_pkgs)
+	* [Subpackages](#pkgs_sub)
+	* [Development packages](#pkgs_development)
+	* [Python packages](#pkgs_python)
+	* [Go packages](#pkgs_go)
+	* [Notes](#notes)
+	* [Contributing via git](#contributing)
+* [Help](#help)
+	
+
+<a id="Introduction"></a>
 ## Introduction
 
 The `void-packages` repository contains all `source` packages that are the
@@ -45,6 +81,7 @@ If everything went fine after running
 a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local repository
 `hostdir/binpkgs`.
 
+<a id="buildphase"></a>
 ### Package build phases
 
 Building a package consist of the following phases:
@@ -73,8 +110,10 @@ via `make install` or any other compatible method.
 successfully, the phase will be skipped later (unless its work directory
 `${wrksrc}` is removed with `xbps-src clean`).
 
+<a id="namingconventions"></a>
 ### Package naming conventions
 
+<a id="libs"></a>
 #### Libraries
 
 Libraries are packages which provide shared objects (\*.so) in /usr/lib.
@@ -98,6 +137,7 @@ a linked program.
 against this package. If the library is a sub package, its corresponding
 development package should be named `lib<name>-devel`
 
+<a id="language_modules"></a>
 #### Language Modules
 
 Language modules are extensions to script or compiled languages. Those packages
@@ -118,6 +158,7 @@ for the language prefix.
 
 Example: python-pam, perl-URI, python-pyside
 
+<a id="language_bindings"></a>
 #### Language Bindings
 
 Language Bindings are packages which allow programs or libraries to have
@@ -130,6 +171,7 @@ The naming convention to those packages is:
 
 Example: gimp-python, irssi-perl
 
+<a id="programs"></a>
 #### Programs
 
 Programs put executables under /usr/bin (or in very special cases in other
@@ -145,6 +187,7 @@ Programs can be split into program packages and library packages. The program
 package should be named as describe above. The library package should be prefix
 with "lib" (see section `Libraries`)
 
+<a id="global_funcs"></a>
 ### Global functions
 
 The following functions are defined by `xbps-src` and can be used on any template:
@@ -215,6 +258,7 @@ The optional 4th argument can be used to change the `file name`.
 
 > Shell wildcards must be properly quoted, i.e `vmove "usr/lib/*.a"`.
 
+<a id="global_vars"></a>
 ### Global variables
 
 The following variables are defined by `xbps-src` and can be used on any template:
@@ -252,8 +296,10 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_FETCH_CMD` The utility to fetch files from `ftp`, `http` of `https` servers.
 
+<a id="available_vars"></a>
 ### Available variables
 
+<a id="mandatory_vars"></a>
 #### Mandatory variables
 
 The list of mandatory variables for a template:
@@ -276,7 +322,7 @@ the generated `binary packages` have been modified.
 - `version` A string with the package version. Must not contain dashes and at least
 one digit is required.
 
-
+<a id="optional_vars"></a>
 #### Optional variables
 
 - `hostmakedepends` The list of `host` dependencies required to build the package, and
@@ -441,8 +487,10 @@ pkgver the resulting package should revert. This field *must* be defined before
 defined in `reverts` must be lesser than the one defined in `version`.
 example: `reverts="2.0_1 2.0_2"`
 
+<a id="repositories"></a>
 #### Repositories
 
+<a id="repo_by_branch"></a>
 ##### Repositories defined by Branch
 
 The global repository takes the name of
@@ -450,6 +498,7 @@ the current branch, except if the name of the branch is master. Then the resulti
 repository will be at the global scope. The usage scenario is that the user can
 update multiple packages in a second branch without polluting his local repository.
 
+<a id="pkg_defined_repo"></a>
 ##### Package defined Repositories
 
 The second way to define a repository is by setting the `repository` variable in
@@ -462,7 +511,8 @@ The following repository names are valid:
 
 * `nonfree`: Repository for closed source packages.
 
-#### Checking for new upstream releases
+<a id="updates"></a>
+### Checking for new upstream releases
 
 New upstream versions can be automatically checked using
 `./xbps-src update-check <pkgname>`. In some cases you need to override
@@ -488,6 +538,7 @@ versions.  Example: `ignore="*b*"`
 - `version` is the version number used to compare against
 upstream versions. Example: `version=${version//./_}`
 
+<a id="build_scripts"></a>
 ### build style scripts
 
 The `build_style` variable specifies the build method to build and install a
@@ -555,6 +606,7 @@ matching the `build_style` name, i.e:
 
     `common/environment/build-style/gnu-configure.sh`
 
+<a id="functions"></a>
 ### Functions
 
 The following functions can be defined to change the behavior of how the
@@ -590,6 +642,7 @@ still be passed in if it's a GNU configure script.
 > A function defined in a template has preference over the same function
 defined by a `build_style` script.
 
+<a id="build_options"></a>
 ### Build options
 
 Some packages might be built with different build options to enable/disable
@@ -689,6 +742,7 @@ i.e `XBPS_PKG_OPTIONS_xorg_server=opt`.
 The list of supported package build options and its description is defined in the
 `common/options.description` file.
 
+<a id="deps_runtime"></a>
 #### Runtime dependencies
 
 Dependencies for ELF objects are detected automatically by `xbps-src`, hence runtime
@@ -728,6 +782,7 @@ and is by using the `virtual?` keyword, i.e `depends="virtual?vpkg-0.1_1"`. This
 a `runtime` virtual dependency to `vpkg-0.1_1`; this `virtual` dependency will be simply ignored
 when the package is being built with `xbps-src`.
 
+<a id="install_remove_files"></a>
 ### INSTALL and REMOVE files
 
 The INSTALL and REMOVE shell snippets can be used to execute certain actions at a specified
@@ -771,6 +826,7 @@ be executed via `chroot(2)` won't work correctly.
 > NOTE: do not use INSTALL/REMOVE scripts to print messages, see the next section for
 more information.
 
+<a id="install_remove_files_msg"></a>
 ### INSTALL.msg and REMOVE.msg files
 
 The `INSTALL.msg` and `REMOVE.msg` files can be used to print a message at post-install
@@ -781,6 +837,7 @@ Ideally those files should not exceed 80 chars per line.
 subpackages can also have their own `INSTALL.msg` and `REMOVE.msg` files, simply create them
 as `srcpkgs/<pkgname>/<subpkg>.INSTALL.msg` or `srcpkgs/<pkgname>/<subpkg>.REMOVE.msg` respectively.
 
+<a id="runtime_account_creation"></a>
 ### Creating system accounts/groups at runtime
 
 There's a trigger along with some variables that are specifically to create
@@ -806,6 +863,7 @@ The **system user** is created by using a dynamically allocated **uid/gid** in y
 and it's created as a `system account`, unless the **uid** is set. A new group will be created for the
 specified `system account` and used exclusived for this purpose.
 
+<a id="32bit_pkgs"></a>
 ### 32bit packages
 
 32bit packages are built automatically when the builder is x86 (32bit), but
@@ -824,6 +882,7 @@ paths separated by blanks, i.e `lib32files="/usr/bin/blah /usr/include/blah."`.
 - `lib32mode` If unset, only shared libraries and pkg-config files will be copied to the
 **32bit** package. If set to `full` all files will be copied as is.
 
+<a id="pkgs_sub"></a>
 ### Subpackages
 
 In the example shown above just a binary package is generated, but with some
@@ -884,6 +943,7 @@ destdir (`$DESTDIR`) to the `subpackage` destdir (`$PKGDESTDIR`).
 Subpackages are processed always in alphabetical order; To force a custom order,
 the `subpackages` variable can be declared with the wanted order.
 
+<a id="pkgs_development"></a>
 ### Development packages
 
 A development package, commonly generated as a subpackage, shall only contain
@@ -901,6 +961,7 @@ If a development package provides a `pkg-config` file, you should verify
 what dependencies the package needs for dynamic or static linking, and add
 the appropiate `development` packages as dependencies.
 
+<a id="pkgs_python"></a>
 ### Python packages
 
 Python packages should be built with the `python-module` build style, if possible. This sets
@@ -935,6 +996,7 @@ path may be specified, i.e `pycompile_dirs="usr/share/foo"`.
 > NOTE: it's expected that additional subpkgs must be generated to allow packaging for multiple
 python versions.
 
+<a id="pkgs_go"></a>
 ### Go packages
 
 Go packages should be built with the `go` build style, if possible.
@@ -951,6 +1013,7 @@ The following variables influence how Go packages are built:
   provided. This option should only be used with `-git` (or similar)
   packages; using a versioned distfile is prefered.
 
+<a id="notes"></a>
 ### Notes
 
 - Make sure that all software is configured to use the `/usr` prefix.
@@ -969,6 +1032,7 @@ the installed files (`./xbps-src show-files pkg`) before pushing new updates.
 - Make sure that binaries are not stripped by the software, let xbps-src do this;
 otherwise the `debug` packages won't have debugging symbols.
 
+<a id="contributing"></a>
 ### Contributing via git
 
 Fork the voidlinux `void-packages` git repository on github and clone it:
@@ -997,6 +1061,7 @@ For commit messages please use the following rules:
 - If you've removed a package use `"<pkgname>: removed ..."`.
 - If you've modified a package use `"<pkgname>: ..."`.
 
+<a id="help"></a>
 ## Help
 
 If after reading this `manual` you still need some kind of help, please join
