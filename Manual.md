@@ -23,7 +23,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [Checking for new upstream releases](#updates)
 	* [Build style scripts](#build_scripts)
 	* [Functions](#functions)
-	* [Build otions](#build_options)
+	* [Build options](#build_options)
 		* [Runtime dependencies](#deps_runtime)
 	* [INSTALL and REMOVE files](#install_remove_files)
 	* [INSTALL.msg and REMOVE.msg files](#install_remove_files_msg)
