@@ -11,7 +11,7 @@ bulk_getlink() {
 }
 
 bulk_build() {
-    local _pkgs pkg found f x tmpf
+    local _pkgs _pkg pkgs pkg found f x tmpf
 
     if ! command -v xbps-checkvers &>/dev/null; then
         msg_error "xbps-src: cannot find xbps-checkvers(8) command!\n"
