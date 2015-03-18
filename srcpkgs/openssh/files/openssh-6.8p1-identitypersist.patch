@@ -1,0 +1,199 @@
+From a2431e7ad6a99821a09e9e3037faf89e15d3b2a3 Mon Sep 17 00:00:00 2001
+From: Christian Neukirchen <chneukirchen@gmail.com>
+Date: Wed, 18 Mar 2015 11:46:16 +0100
+Subject: [PATCH] Add an identity to the agent automatically when loading the
+ identity
+
+Updated patch from https://bugzilla.mindrot.org/show_bug.cgi?id=2191
+Originally by Tomohiro Matsuyama.
+---
+ readconf.c    | 39 +++++++++++++++++++++++++++++++++++++++
+ readconf.h    |  4 ++++
+ sshconnect2.c | 31 ++++++++++++++++++++++++-------
+ 3 files changed, 67 insertions(+), 7 deletions(-)
+
+diff --git readconf.c readconf.c
+index 42a2961..4eb0bae 100644
+--- readconf.c
++++ readconf.c
+@@ -148,6 +148,7 @@ typedef enum {
+ 	oEnableSSHKeysign, oRekeyLimit, oVerifyHostKeyDNS, oConnectTimeout,
+ 	oAddressFamily, oGssAuthentication, oGssDelegateCreds,
+ 	oServerAliveInterval, oServerAliveCountMax, oIdentitiesOnly,
++	oIdentityPersist, oIdentityPersistConfirm,
+ 	oSendEnv, oControlPath, oControlMaster, oControlPersist,
+ 	oHashKnownHosts,
+ 	oTunnel, oTunnelDevice, oLocalCommand, oPermitLocalCommand,
+@@ -249,6 +250,8 @@ static struct {
+ 	{ "addressfamily", oAddressFamily },
+ 	{ "serveraliveinterval", oServerAliveInterval },
+ 	{ "serveralivecountmax", oServerAliveCountMax },
++	{ "identitypersist", oIdentityPersist },
++	{ "identitypersistconfirm", oIdentityPersistConfirm },
+ 	{ "sendenv", oSendEnv },
+ 	{ "controlpath", oControlPath },
+ 	{ "controlmaster", oControlMaster },
+@@ -1274,6 +1277,33 @@ parse_int:
+ 		intptr = &options->server_alive_count_max;
+ 		goto parse_int;
+ 
++	case oIdentityPersist:
++		/* no/false/yes/true, or a time spec */
++		intptr = &options->identity_persist;
++		arg = strdelim(&s);
++		if (!arg || *arg == '\0')
++			fatal("%.200s line %d: Missing IdentityPersist"
++			    " argument.", filename, linenum);
++		value = 0;
++		value2 = 0;	/* lifetime */
++		if (strcmp(arg, "no") == 0 || strcmp(arg, "false") == 0)
++			value = 0;
++		else if (strcmp(arg, "yes") == 0 || strcmp(arg, "true") == 0)
++			value = 1;
++		else if ((value2 = convtime(arg)) >= 0)
++			value = 1;
++		else
++			fatal("%.200s line %d: Bad IdentityPersist argument.",
++			    filename, linenum);
++		if (*activep && *intptr == -1) {
++			*intptr = value;
++			options->identity_persist_lifetime = value2;
++		}
++		break;
++	case oIdentityPersistConfirm:
++		intptr = &options->identity_persist_confirm;
++		goto parse_flag;
++
+ 	case oSendEnv:
+ 		while ((arg = strdelim(&s)) != NULL && *arg != '\0') {
+ 			if (strchr(arg, '=') != NULL)
+@@ -1649,6 +1679,9 @@ initialize_options(Options * options)
+ 	options->verify_host_key_dns = -1;
+ 	options->server_alive_interval = -1;
+ 	options->server_alive_count_max = -1;
++	options->identity_persist = -1;
++	options->identity_persist_lifetime = -1;
++	options->identity_persist_confirm = -1;
+ 	options->num_send_env = 0;
+ 	options->control_path = NULL;
+ 	options->control_master = -1;
+@@ -1819,6 +1852,12 @@ fill_default_options(Options * options)
+ 		options->server_alive_interval = 0;
+ 	if (options->server_alive_count_max == -1)
+ 		options->server_alive_count_max = 3;
++	if (options->identity_persist == -1)
++		options->identity_persist = 0;
++	if (options->identity_persist_lifetime == -1)
++		options->identity_persist_lifetime = 0;
++	if (options->identity_persist_confirm == -1)
++		options->identity_persist_confirm = 0;
+ 	if (options->control_master == -1)
+ 		options->control_master = 0;
+ 	if (options->control_persist == -1) {
+diff --git readconf.h readconf.h
+index 576b9e3..bc0b2ce 100644
+--- readconf.h
++++ readconf.h
+@@ -112,6 +112,10 @@ typedef struct {
+ 	int	server_alive_interval;
+ 	int	server_alive_count_max;
+ 
++	int	identity_persist;
++	int	identity_persist_lifetime;
++	int	identity_persist_confirm;
++
+ 	int     num_send_env;
+ 	char   *send_env[MAX_SEND_ENV];
+ 
+diff --git sshconnect2.c sshconnect2.c
+index ba56f64..5058e7c 100644
+--- sshconnect2.c
++++ sshconnect2.c
+@@ -320,7 +320,7 @@ void	userauth(Authctxt *, char *);
+ static int sign_and_send_pubkey(Authctxt *, Identity *);
+ static void pubkey_prepare(Authctxt *);
+ static void pubkey_cleanup(Authctxt *);
+-static Key *load_identity_file(char *, int);
++static Key *load_identity_file(Authctxt *, char *, int);
+ 
+ static Authmethod *authmethod_get(char *authlist);
+ static Authmethod *authmethod_lookup(const char *name);
+@@ -978,7 +978,7 @@ input_userauth_passwd_changereq(int type, u_int32_t seqnr, void *ctxt)
+ }
+ 
+ static int
+-identity_sign(struct identity *id, u_char **sigp, size_t *lenp,
++identity_sign(Authctxt *authctxt, struct identity *id, u_char **sigp, size_t *lenp,
+     const u_char *data, size_t datalen, u_int compat)
+ {
+ 	Key *prv;
+@@ -997,7 +997,7 @@ identity_sign(struct identity *id, u_char **sigp, size_t *lenp,
+ 		return (sshkey_sign(id->key, sigp, lenp, data, datalen,
+ 		    compat));
+ 	/* load the private key from the file */
+-	if ((prv = load_identity_file(id->filename, id->userprovided)) == NULL)
++	if ((prv = load_identity_file(authctxt, id->filename, id->userprovided)) == NULL)
+ 		return (-1); /* XXX return decent error code */
+ 	ret = sshkey_sign(prv, sigp, lenp, data, datalen, compat);
+ 	sshkey_free(prv);
+@@ -1052,7 +1052,7 @@ sign_and_send_pubkey(Authctxt *authctxt, Identity *id)
+ 	buffer_put_string(&b, blob, bloblen);
+ 
+ 	/* generate signature */
+-	ret = identity_sign(id, &signature, &slen,
++	ret = identity_sign(authctxt, id, &signature, &slen,
+ 	    buffer_ptr(&b), buffer_len(&b), datafellows);
+ 	if (ret != 0) {
+ 		free(blob);
+@@ -1125,11 +1125,13 @@ send_pubkey_test(Authctxt *authctxt, Identity *id)
+ }
+ 
+ static Key *
+-load_identity_file(char *filename, int userprovided)
++load_identity_file(Authctxt *authctxt, char *filename, int userprovided)
+ {
+ 	Key *private;
+ 	char prompt[300], *passphrase;
++	char *comment = NULL;
+ 	int r, perm_ok = 0, quit = 0, i;
++	int agent_fd = -1;
+ 	struct stat st;
+ 
+ 	if (stat(filename, &st) < 0) {
+@@ -1151,8 +1153,23 @@ load_identity_file(char *filename, int userprovided)
+ 			}
+ 		}
+ 		switch ((r = sshkey_load_private_type(KEY_UNSPEC, filename,
+-		    passphrase, &private, NULL, &perm_ok))) {
++		    passphrase, &private, &comment, &perm_ok))) {
+ 		case 0:
++			ssh_get_authentication_socket(&agent_fd);
++			if (authctxt && agent_fd &&
++			    private && options.identity_persist) {
++				if (comment == NULL)
++					comment = xstrdup(filename);
++				if (ssh_add_identity_constrained(agent_fd,
++				    private, comment,
++				    options.identity_persist_lifetime,
++				    options.identity_persist_confirm) == 0) {
++					fprintf(stderr,
++					    "Identity added: %s (%s) %d\n",
++					    filename, comment, agent_fd);
++				}
++				free(comment);
++			}
+ 			break;
+ 		case SSH_ERR_KEY_WRONG_PASSPHRASE:
+ 			if (options.batch_mode) {
+@@ -1344,7 +1361,7 @@ userauth_pubkey(Authctxt *authctxt)
+ 			}
+ 		} else {
+ 			debug("Trying private key: %s", id->filename);
+-			id->key = load_identity_file(id->filename,
++			id->key = load_identity_file(authctxt, id->filename,
+ 			    id->userprovided);
+ 			if (id->key != NULL) {
+ 				id->isprivate = 1;
+-- 
+2.3.3
+
