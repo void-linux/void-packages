@@ -29,7 +29,7 @@ install_cross_pkg $XBPS_CROSS_BUILD
 
 # Install dependencies from binary packages
 if [ "$PKGNAME" != "$TARGET_PKG" -o -z "$XBPS_SKIP_DEPS" ]; then
-    install_pkg_deps $PKGNAME $TARGET_PKG pkg $XBPS_CROSS_BUILD || exit 1
+    install_pkg_deps $PKGNAME $TARGET_PKG pkg $XBPS_CROSS_BUILD || exit $?
 fi
 
 # Fetch distfiles after installing required dependencies,

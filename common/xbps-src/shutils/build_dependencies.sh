@@ -348,8 +348,8 @@ install_pkg_deps() {
             setup_pkg $pkg
             msg_error "$pkgver: required host dependency '$i' cannot be resolved!\n"
         fi
-        exec env XBPS_BINPKG_EXISTS=1 $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target || exit 1
-        ) || exit 1
+        exec env XBPS_BINPKG_EXISTS=1 $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target || exit $?
+        ) || exit $?
         host_binpkg_deps+=("$i")
     done
 
@@ -364,8 +364,8 @@ install_pkg_deps() {
             setup_pkg $pkg $cross
             msg_error "$pkgver: required target dependency '$i' cannot be resolved!\n"
         fi
-        exec env XBPS_BINPKG_EXISTS=1 $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target $cross || exit 1
-        ) || exit 1
+        exec env XBPS_BINPKG_EXISTS=1 $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target $cross || exit $?
+        ) || exit $?
         binpkg_deps+=("$i")
     done
 
