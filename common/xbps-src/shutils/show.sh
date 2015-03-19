@@ -50,7 +50,7 @@ show_pkg_files() {
 show_pkg_build_deps() {
     local f x _pkgname _dep found
 
-    check_pkg_arch "$XBPS_CROSS_BUILD" 1
+    check_pkg_arch "$XBPS_CROSS_BUILD"
     setup_pkg_depends
     # build time deps
     for f in ${host_build_depends} ${build_depends} ${run_depends}; do
