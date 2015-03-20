@@ -289,6 +289,16 @@ setup_pkg() {
         fi
     done
 
+    # Check if version is valid.
+    case "$version" in
+        *-*) msg_error "version contains invalid character: -\n";;
+        *_*) msg_error "version contains invalid character: _\n";;
+    esac
+    case "$version" in
+        *[0-9]*) : good ;;
+        *) msg_error "version must contain at least one digit.\n";;
+    esac
+
     # Check if base-chroot is already installed.
     if [ -z "$bootstrap" ]; then
         check_installed_pkg base-chroot-0.1_1
