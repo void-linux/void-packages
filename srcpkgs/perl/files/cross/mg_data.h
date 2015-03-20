@@ -145,7 +145,7 @@
     /* tiedscalar 'q' Tied scalar or handle */
     want_vtbl_packelem,
     /* qr 'r' precompiled qr// regex */
-    want_vtbl_regexp | PERL_MAGIC_VALUE_MAGIC,
+    want_vtbl_regexp | PERL_MAGIC_READONLY_ACCEPTABLE | PERL_MAGIC_VALUE_MAGIC,
     /* sigelem 's' %SIG hash element */
     want_vtbl_sigelem,
     /* taint 't' Taintedness */
