@@ -56,7 +56,7 @@ bulk_build() {
         done
         [ $found -eq 0 ] && echo "${pkg} ${pkg}" >> $tmpf
     done
-    tsort $tmpf|tac
+    tsort $tmpf
     rm -f $tmpf
 }
 
