@@ -31,7 +31,7 @@ error_func() {
     if [ -n "$1" -a -n "$2" ]; then
         msg_red "$pkgver: failed to run $1() at line $2.\n"
     fi
-    exit 2
+    exit 1
 }
 
 exit_and_cleanup() {
