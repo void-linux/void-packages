@@ -17,12 +17,12 @@ if [ -z "$USER_LS_COLORS" ]; then
     [ -e "$colors" ] && COLORS="$colors" && break
   done
 
-  [ -z "$COLORS" ] && [ -e "/etc/DIR_COLORS.256color" ] && \
+  [ -z "$COLORS" ] && [ -e "/etc/colors/DIR_COLORS.256color" ] && \
       [ "x`tput colors 2>/dev/null`" = "x256" ] && \
-      COLORS="/etc/DIR_COLORS.256color"
+      COLORS="/etc/colors/DIR_COLORS.256color"
 
   if [ -z "$COLORS" ]; then
-    for colors in "/etc/DIR_COLORS.$TERM" "/etc/DIR_COLORS" ; do
+    for colors in "/etc/colors/DIR_COLORS.$TERM" "/etc/colors/DIR_COLORS" ; do
       [ -e "$colors" ] && COLORS="$colors" && break
     done
   fi
