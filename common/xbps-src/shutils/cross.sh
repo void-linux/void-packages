@@ -27,12 +27,6 @@ prepare_cross_sysroot() {
 
     [ -z "$cross" -o "$cross" = "" ] && return 0
 
-    if [ ! -d ${XBPS_CROSS_BASE}/var/db/xbps/keys ]; then
-        mkdir -p ${XBPS_CROSS_BASE}/var/db/xbps/keys
-        cp ${XBPS_MASTERDIR}/var/db/xbps/keys/*.plist \
-            ${XBPS_CROSS_BASE}/var/db/xbps/keys
-    fi
-
     # Check for cross-vpkg-dummy available for the target arch, otherwise build it.
     pkg_available cross-vpkg-dummy $cross
     if [ $? -eq 0 ]; then
@@ -41,7 +35,7 @@ prepare_cross_sysroot() {
 
     errlog=$(mktemp)
     msg_normal "Installing $cross cross pkg: cross-vpkg-dummy ...\n"
-    $XBPS_INSTALL_XCMD -r $XBPS_CROSS_BASE -SAyd cross-vpkg-dummy &>$errlog
+    $XBPS_INSTALL_XCMD -SAyd cross-vpkg-dummy &>$errlog
     rval=$?
     if [ $rval -ne 0 -a $rval -ne 17 ]; then
         msg_red "failed to install cross-vpkg-dummy (error $rval)\n"
@@ -60,13 +54,13 @@ install_cross_pkg() {
     [ -z "$cross" -o "$cross" = "" ] && return 0
 
     # Check if the cross compiler pkg is available in repos, otherwise build it.
-    msg_normal "Installing $cross cross compiler: cross-${XBPS_CROSS_TRIPLET} ...\n"
     pkg_available cross-${XBPS_CROSS_TRIPLET}
     rval=$?
     if [ $rval -eq 0 ]; then
         $XBPS_LIBEXECDIR/build.sh cross-${XBPS_CROSS_TRIPLET} cross-${XBPS_CROSS_TRIPLET} pkg || return $rval
     fi
 
+    msg_normal "Installing $cross cross compiler: cross-${XBPS_CROSS_TRIPLET} ...\n"
     errlog=$(mktemp)
     $XBPS_INSTALL_CMD -Syd cross-${XBPS_CROSS_TRIPLET} &>$errlog
     rval=$?

@@ -136,11 +136,11 @@ chroot_sync_repos() {
 
     # Copy host repos to the cross root.
     if [ -n "$XBPS_CROSS_BUILD" ]; then
-        rm -rf $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps.d
-        mkdir -p $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps.d
+        rm -rf $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
+        mkdir -p $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
         cp ${XBPS_MASTERDIR}/etc/xbps.d/*.conf \
-            $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps.d
-        rm -f $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/etc/xbps.d/*-x86_64.conf
+            $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
+        rm -f $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d/*-x86_64.conf
     fi
 
     if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
@@ -154,19 +154,19 @@ chroot_sync_repos() {
 
     if [ -n "$XBPS_CROSS_BUILD" ]; then
         # Copy host keys to the target rootdir.
-        if [ ! -d $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys ]; then
-            mkdir -p $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys
-        fi
+        mkdir -p $XBPS_MASTERDIR/$XBPS_CROSS_BASE/var/db/xbps/keys
         cp -a $XBPS_MASTERDIR/var/db/xbps/keys/*.plist \
-            $XBPS_MASTERDIR/usr/$XBPS_CROSS_TRIPLET/var/db/xbps/keys
+            $XBPS_MASTERDIR/$XBPS_CROSS_BASE/var/db/xbps/keys
         # Make sure to sync index for remote repositories.
-        env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
-            xbps-uunshare $XBPS_MASTERDIR /usr/sbin/xbps-install \
-            -r /usr/$XBPS_CROSS_TRIPLET -S
-        if [ $? -eq 99 ]; then
+        if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
             env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
-                xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install \
-                -r /usr/$XBPS_CROSS_TRIPLET -S
+                xbps-uunshare $XBPS_MASTERDIR /usr/sbin/xbps-install \
+                -r $XBPS_CROSS_BASE -S
+            if [ $? -eq 99 ]; then
+                env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
+                    xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install \
+                    -r $XBPS_CROSS_BASE -S
+            fi
         fi
     fi
 
