@@ -95,6 +95,8 @@ set_build_options() {
         return 0
     fi
 
+    . $XBPS_CONFIG_FILE 2>/dev/null
+
     for f in ${build_options}; do
         _pkgname=${pkgname//\-/\_}
         eval pkgopts="\$XBPS_PKG_OPTIONS_${_pkgname}"
