@@ -190,7 +190,7 @@ check_installed_pkg() {
 # Installs all dependencies required by a package.
 #
 install_pkg_deps() {
-    local pkg="$1" targetpkg="$2" target="$3" cross="$4"
+    local pkg="$1" targetpkg="$2" target="$3" cross="$4" cross_prepare="$5"
     local rval _realpkg curpkgdepname pkgn iver _props _exact
     local i j found rundep checkver
 
@@ -364,7 +364,7 @@ install_pkg_deps() {
             setup_pkg $pkg $cross
             msg_error "$pkgver: required target dependency '$i' cannot be resolved!\n"
         fi
-        exec env XBPS_BINPKG_EXISTS=1 $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target $cross || exit $?
+        exec env XBPS_BINPKG_EXISTS=1 $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target $cross $cross_prepare || exit $?
         ) || exit $?
         binpkg_deps+=("$i")
     done

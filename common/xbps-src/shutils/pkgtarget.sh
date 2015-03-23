@@ -24,6 +24,22 @@ check_pkg_arch() {
     fi
 }
 
+# Returns 1 if pkg is available in xbps repositories, 0 otherwise.
+pkg_available() {
+    local pkg="$1" cross="$2" pkgver
+
+    if [ -n "$cross" ]; then
+        pkgver=$($XBPS_QUERY_XCMD -R -ppkgver "${pkg}" 2>/dev/null)
+    else
+        pkgver=$($XBPS_QUERY_CMD -R -ppkgver "${pkg}" 2>/dev/null)
+    fi
+
+    if [ -z "$pkgver" ]; then
+        return 0
+    fi
+    return 1
+}
+
 remove_pkg_autodeps() {
     local rval= tmplogf=
 

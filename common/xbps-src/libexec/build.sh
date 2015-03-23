@@ -7,8 +7,9 @@
 #   $2 - target pkgname (origin) to build [REQUIRED]
 #   $3 - xbps target [REQUIRED]
 #   $4 - cross target [OPTIONAL]
+#   $5 - internal [OPTIONAL]
 
-if [ $# -lt 3 -o $# -gt 4 ]; then
+if [ $# -lt 3 -o $# -gt 5 ]; then
     echo "$(basename $0): invalid number of arguments: pkgname targetpkg target [cross-target]"
     exit 1
 fi
@@ -17,6 +18,7 @@ readonly PKGNAME="$1"
 readonly TARGET_PKG="$2"
 readonly TARGET="$3"
 readonly XBPS_CROSS_BUILD="$4"
+readonly XBPS_CROSS_PREPARE="$5"
 
 for f in $XBPS_SHUTILSDIR/*.sh; do
     . $f
@@ -25,11 +27,15 @@ done
 setup_pkg "$PKGNAME" $XBPS_CROSS_BUILD
 show_pkg_build_options
 check_pkg_arch $XBPS_CROSS_BUILD
-install_cross_pkg $XBPS_CROSS_BUILD
+
+if [ -z "$XBPS_CROSS_PREPARE" ]; then
+    install_cross_pkg $XBPS_CROSS_BUILD || exit $?
+    prepare_cross_sysroot $XBPS_CROSS_BUILD || exit $?
+fi
 
 # Install dependencies from binary packages
 if [ "$PKGNAME" != "$TARGET_PKG" -o -z "$XBPS_SKIP_DEPS" ]; then
-    install_pkg_deps $PKGNAME $TARGET_PKG pkg $XBPS_CROSS_BUILD || exit $?
+    install_pkg_deps $PKGNAME $TARGET_PKG pkg $XBPS_CROSS_BUILD $XBPS_CROSS_PREPARE || exit $?
 fi
 
 # Fetch distfiles after installing required dependencies,

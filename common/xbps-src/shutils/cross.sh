@@ -22,49 +22,63 @@ remove_pkg_cross_deps() {
     rm -f $tmplogf
 }
 
+prepare_cross_sysroot() {
+    local cross="$1"
+
+    [ -z "$cross" -o "$cross" = "" ] && return 0
+
+    if [ ! -d ${XBPS_CROSS_BASE}/var/db/xbps/keys ]; then
+        mkdir -p ${XBPS_CROSS_BASE}/var/db/xbps/keys
+        cp ${XBPS_MASTERDIR}/var/db/xbps/keys/*.plist \
+            ${XBPS_CROSS_BASE}/var/db/xbps/keys
+    fi
+
+    # Check for cross-vpkg-dummy available for the target arch, otherwise build it.
+    pkg_available cross-vpkg-dummy $cross
+    if [ $? -eq 0 ]; then
+        $XBPS_LIBEXECDIR/build.sh cross-vpkg-dummy cross-vpkg-dummy pkg $cross init || return $?
+    fi
+
+    errlog=$(mktemp)
+    msg_normal "Installing $cross cross pkg: cross-vpkg-dummy ...\n"
+    $XBPS_INSTALL_XCMD -r $XBPS_CROSS_BASE -SAyd cross-vpkg-dummy &>$errlog
+    rval=$?
+    if [ $rval -ne 0 -a $rval -ne 17 ]; then
+        msg_red "failed to install cross-vpkg-dummy (error $rval)\n"
+        cat $errlog
+        rm -f $errlog
+        msg_error "cannot continue due to errors above\n"
+    fi
+    rm -f $errlog
+
+    return 0
+}
+
 install_cross_pkg() {
     local cross="$1" rval errlog
 
     [ -z "$cross" -o "$cross" = "" ] && return 0
 
-    source_file ${XBPS_CROSSPFDIR}/${cross}.sh
-
-    if [ -z "$CHROOT_READY" ]; then
-        echo "ERROR: chroot mode not activated (install a bootstrap)."
-        exit 1
-    elif [ -z "$IN_CHROOT" ]; then
-        return 0
+    # Check if the cross compiler pkg is available in repos, otherwise build it.
+    msg_normal "Installing $cross cross compiler: cross-${XBPS_CROSS_TRIPLET} ...\n"
+    pkg_available cross-${XBPS_CROSS_TRIPLET}
+    rval=$?
+    if [ $rval -eq 0 ]; then
+        $XBPS_LIBEXECDIR/build.sh cross-${XBPS_CROSS_TRIPLET} cross-${XBPS_CROSS_TRIPLET} pkg || return $rval
     fi
 
-    # Install required pkgs for cross building.
-    if [ "$XBPS_TARGET" != "remove-autodeps" ]; then
-        errlog=$(mktemp)
-        check_installed_pkg cross-${XBPS_CROSS_TRIPLET}-0.1_1
-        if [ $? -ne 0 ]; then
-            msg_normal "Installing cross pkg: cross-${XBPS_CROSS_TRIPLET} ...\n"
-            $XBPS_INSTALL_CMD -Syd cross-${XBPS_CROSS_TRIPLET} &>$errlog
-            rval=$?
-            if [ $rval -ne 0 -a $rval -ne 17 ]; then
-                msg_red "failed to install cross-${XBPS_CROSS_TRIPLET} (error $rval)\n"
-                cat $errlog
-                rm -f $errlog
-                msg_error "cannot continue due to errors above\n"
-            fi
-        fi
-        if [ ! -d ${XBPS_CROSS_BASE}/var/db/xbps/keys ]; then
-            mkdir -p ${XBPS_CROSS_BASE}/var/db/xbps/keys
-            cp ${XBPS_MASTERDIR}/var/db/xbps/keys/*.plist \
-                ${XBPS_CROSS_BASE}/var/db/xbps/keys
-        fi
-        $XBPS_INSTALL_CMD -r ${XBPS_CROSS_BASE} -SAyd cross-vpkg-dummy &>$errlog
-        rval=$?
-        if [ $rval -ne 0 -a $rval -ne 17 ]; then
-            msg_red "failed to install cross-vpkg-dummy (error $rval)\n"
-            cat $errlog
-            rm -f $errlog
-            msg_error "cannot continue due to errors above\n"
-        fi
+    errlog=$(mktemp)
+    $XBPS_INSTALL_CMD -Syd cross-${XBPS_CROSS_TRIPLET} &>$errlog
+    rval=$?
+    if [ $rval -ne 0 -a $rval -ne 17 ]; then
+        msg_red "failed to install cross-${XBPS_CROSS_TRIPLET} (error $rval)\n"
+        cat $errlog
+        rm -f $errlog
+        msg_error "cannot continue due to errors above\n"
     fi
+    rm -f $errlog
+
+    return 0
 }
 
 remove_cross_pkg() {
