@@ -48,10 +48,13 @@ show_pkg_files() {
 }
 
 show_pkg_build_deps() {
-    local f x _pkgname _dep found
+    local f x _pkgname _dep found result
 
     check_pkg_arch "$XBPS_CROSS_BUILD"
     setup_pkg_depends
+
+    result=$(mktemp || exit 1)
+
     # build time deps
     for f in ${host_build_depends} ${build_depends} ${run_depends}; do
         # ignore virtual deps
@@ -73,8 +76,10 @@ show_pkg_build_deps() {
             unset found
             continue
         fi
-        echo "$f"
+        echo "$f" >> $result
     done
+    sort -u $result
+    rm -f $result
 }
 
 
