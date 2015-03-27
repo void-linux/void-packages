@@ -326,18 +326,14 @@ one digit is required.
 #### Optional variables
 
 - `hostmakedepends` The list of `host` dependencies required to build the package, and
-that will be installed to the master directory. Dependencies
-can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
-or `foo-1.0_1` to match an exact version. If version comparator is not
-defined (just a package name), the version comparator is automatically set to `>=0`.
-Example `hostmakedepends="foo blah<1.0"`.
+that will be installed to the master directory. There is no need to specify a version
+because the current version in srcpkgs will always be required.
+Example `hostmakedepends="foo blah"`.
 
 - `makedepends` The list of `target` dependencies required to build the package, and that
-will be installed to the master directory. Dependencies
-can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
-or `foo-1.0_1` to match an exact version. If version comparator is not
-defined (just a package name), the version comparator is automatically set to `>=0`.
-Example `makedepends="foo blah>=1.0"`.
+will be installed to the master directory. There is no need to specify a version
+because the current version in srcpkgs will always be required.
+Example `makedepends="foo blah"`.
 
 - `depends` The list of dependencies required to run the package. These dependencies
 are not installed to the master directory, rather are only checked if a binary package
