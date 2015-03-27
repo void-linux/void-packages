@@ -143,9 +143,9 @@ authentication = "internal_plain"
 -- Logging configuration
 -- For advanced logging see http://prosody.im/doc/logging
 log = {
-	info = "/var/log/prosody/prosody.log"; -- Change 'info' to 'debug' for verbose logging
-	error = "/var/log/prosody/prosody.err";
-	-- "*syslog"; -- Uncomment this for logging to syslog
+	-- info = "/var/log/prosody/prosody.log"; -- Change 'info' to 'debug' for verbose logging
+	-- error = "/var/log/prosody/prosody.err";
+	"*syslog"; -- Uncomment this for logging to syslog
 	-- "*console"; -- Log to the console, useful for debugging with daemonize=false
 }
 
