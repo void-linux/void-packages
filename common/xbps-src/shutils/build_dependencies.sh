@@ -82,6 +82,7 @@ setup_pkg_depends() {
 install_pkg_from_repos() {
     local pkg="$1" cross="$2" rval= tmplogf=
 
+    mkdir -p $XBPS_STATEDIR
     tmplogf=${XBPS_STATEDIR}/xbps_${XBPS_TARGET_MACHINE}_bdep_${pkg}.log
 
     if [ -n "$cross" ]; then
