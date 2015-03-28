@@ -223,8 +223,15 @@ install_pkg_deps() {
             echo "   [host] ${i}: installed."
             continue
         elif [ $rval -eq 1 ]; then
-            echo "   [host] ${i}: unresolved (must be updated) ..."
-            return 1
+            _realpkg="$($XBPS_UHELPER_CMD getpkgname $i 2>/dev/null)"
+            iver=$($XBPS_UHELPER_CMD version ${_realpkg})
+            if [ $? -eq 0 -a -n "$iver" ]; then
+                echo "   [host] ${i}: installed $iver (virtualpkg)."
+                continue
+            else
+                echo "   [host] ${i}: unresolved build dependency!"
+                return 1
+            fi
         else
             repo=$($XBPS_QUERY_CMD -R -prepository ${i} 2>/dev/null)
             if [ -n "${repo}" ]; then
@@ -252,19 +259,25 @@ install_pkg_deps() {
         check_pkgdep_matched "${i}" version $cross
         local rval=$?
         if [ $rval -eq 0 ]; then
-            echo "   [${rundep:-target}] ${i}: installed."
+            echo "   [target] ${i}: installed."
             continue
         elif [ $rval -eq 1 ]; then
-            echo "   [${rundep:-target}] ${i}: unresolved (must be updated) ..."
-            return 1
+            iver=$($XBPS_UHELPER_XCMD version ${_realpkg})
+            if [ $? -eq 0 -a -n "$iver" ]; then
+                echo "   [target] ${i}: installed $iver (virtualpkg)."
+                continue
+            else
+                echo "   [target] ${i}: unresolved build dependency!"
+                return 1
+            fi
         else
             repo=$($XBPS_QUERY_XCMD -R -prepository ${i} 2>/dev/null)
             if [ -n "${repo}" ]; then
-                echo "   [${rundep:-target}] ${i}: found ($repo)"
+                echo "   [target] ${i}: found ($repo)"
                 binpkg_deps+=("${i}")
                 continue
             else
-                echo "   [${rundep:-target}] ${i}: not found."
+                echo "   [target] ${i}: not found."
             fi
         fi
         missing_deps+=("${i}")
