@@ -217,7 +217,7 @@ setup_pkg() {
     [ -z "$pkg" ] && return 1
 
     # Start with a sane environment
-    unset -v PKG_BUILD_OPTIONS XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_CPPFLAGS XBPS_CROSS_LDFLAGS
+    unset -v MAKEFLAGS PKG_BUILD_OPTIONS XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_CPPFLAGS XBPS_CROSS_LDFLAGS
     unset -v subpackages run_depends build_depends host_build_depends
 
     unset_package_funcs
@@ -375,6 +375,10 @@ setup_pkg() {
         else
             source_file ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
         fi
+    fi
+
+    if [ -n "${makejobs}" ]; then
+        export MAKEFLAGS="${makejobs}"
     fi
 
     export CFLAGS="$XBPS_TARGET_CFLAGS $XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
