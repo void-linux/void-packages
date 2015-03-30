@@ -1,0 +1,519 @@
+From 5d5abdca31cdb4db5303999778fa25c4a1371084 Mon Sep 17 00:00:00 2001
+From: Ben Gamari <bgamari.foss@gmail.com>
+Date: Mon, 9 Feb 2015 15:21:28 -0600
+Subject: [PATCH 1/1] llvmGen: move to LLVM 3.6 exclusively
+
+Summary:
+Rework llvmGen to use LLVM 3.6 exclusively. The plans for the 7.12 release are to ship LLVM alongside GHC in the interests of user (and developer) sanity.
+
+Along the way, refactor TNTC support to take advantage of the new `prefix` data support in LLVM 3.6. This allows us to drop the section-reordering component of the LLVM mangler.
+
+Test Plan: Validate, look at emitted code
+
+Reviewers: dterei, austin, scpmw
+
+Reviewed By: austin
+
+Subscribers: erikd, awson, spacekitteh, thomie, carter
+
+Differential Revision: https://phabricator.haskell.org/D530
+
+GHC Trac Issues: #10074
+---
+ compiler/llvmGen/Llvm/AbsSyn.hs      | 13 ++++--
+ compiler/llvmGen/Llvm/MetaData.hs    | 14 +++---
+ compiler/llvmGen/Llvm/PpLlvm.hs      | 37 +++++++++------
+ compiler/llvmGen/LlvmCodeGen.hs      |  7 +--
+ compiler/llvmGen/LlvmCodeGen/Base.hs | 26 ++---------
+ compiler/llvmGen/LlvmCodeGen/Data.hs |  2 +-
+ compiler/llvmGen/LlvmCodeGen/Ppr.hs  | 90 ++++++++++--------------------------
+ compiler/llvmGen/LlvmMangler.hs      | 49 ++------------------
+ 8 files changed, 72 insertions(+), 166 deletions(-)
+
+diff --git a/compiler/llvmGen/Llvm/AbsSyn.hs b/compiler/llvmGen/Llvm/AbsSyn.hs
+index 24d0856..b0eae2c 100644
+--- a/compiler/llvmGen/Llvm/AbsSyn.hs
++++ b/compiler/llvmGen/Llvm/AbsSyn.hs
+@@ -48,19 +48,22 @@ data LlvmModule = LlvmModule  {
+ -- | An LLVM Function
+ data LlvmFunction = LlvmFunction {
+     -- | The signature of this declared function.
+-    funcDecl  :: LlvmFunctionDecl,
++    funcDecl      :: LlvmFunctionDecl,
+ 
+     -- | The functions arguments
+-    funcArgs  :: [LMString],
++    funcArgs      :: [LMString],
+ 
+     -- | The function attributes.
+-    funcAttrs :: [LlvmFuncAttr],
++    funcAttrs     :: [LlvmFuncAttr],
+ 
+     -- | The section to put the function into,
+-    funcSect  :: LMSection,
++    funcSect      :: LMSection,
++
++    -- | Prefix data
++    funcPrefix    :: Maybe LlvmStatic,
+ 
+     -- | The body of the functions.
+-    funcBody  :: LlvmBlocks
++    funcBody      :: LlvmBlocks
+   }
+ 
+ type LlvmFunctions = [LlvmFunction]
+diff --git a/compiler/llvmGen/Llvm/MetaData.hs b/compiler/llvmGen/Llvm/MetaData.hs
+index 36efcd7..e1e63c9 100644
+--- a/compiler/llvmGen/Llvm/MetaData.hs
++++ b/compiler/llvmGen/Llvm/MetaData.hs
+@@ -20,12 +20,12 @@ import Outputable
+ --   information. They consist of metadata strings, metadata nodes, regular
+ --   LLVM values (both literals and references to global variables) and
+ --   metadata expressions (i.e., recursive data type). Some examples:
+---     !{ metadata !"hello", metadata !0, i32 0 }
+---     !{ metadata !1, metadata !{ i32 0 } }
++--     !{ !"hello", !0, i32 0 }
++--     !{ !1, !{ i32 0 } }
+ --
+ -- * Metadata nodes -- global metadata variables that attach a metadata
+ --   expression to a number. For example:
+---     !0 = metadata !{ [<metadata expressions>] !}
++--     !0 = !{ [<metadata expressions>] !}
+ --
+ -- * Named metadata -- global metadata variables that attach a metadata nodes
+ --   to a name. Used ONLY to communicated module level information to LLVM
+@@ -39,7 +39,7 @@ import Outputable
+ -- * Attach to instructions -- metadata can be attached to LLVM instructions
+ --   using a specific reference as follows:
+ --     %l = load i32* @glob, !nontemporal !10
+---     %m = load i32* @glob, !nontemporal !{ i32 0, metadata !{ i32 0 } }
++--     %m = load i32* @glob, !nontemporal !{ i32 0, !{ i32 0 } }
+ --   Only metadata nodes or expressions can be attached, named metadata cannot.
+ --   Refer to LLVM documentation for which instructions take metadata and its
+ --   meaning.
+@@ -63,10 +63,10 @@ data MetaExpr = MetaStr LMString
+               deriving (Eq)
+ 
+ instance Outputable MetaExpr where
+-  ppr (MetaStr    s ) = text "metadata !\"" <> ftext s <> char '"'
+-  ppr (MetaNode   n ) = text "metadata !" <> int n
++  ppr (MetaStr    s ) = text "!\"" <> ftext s <> char '"'
++  ppr (MetaNode   n ) = text "!" <> int n
+   ppr (MetaVar    v ) = ppr v
+-  ppr (MetaStruct es) = text "metadata !{ " <> ppCommaJoin es <> char '}'
++  ppr (MetaStruct es) = text "!{ " <> ppCommaJoin es <> char '}'
+ 
+ -- | Associates some metadata with a specific label for attaching to an
+ -- instruction.
+diff --git a/compiler/llvmGen/Llvm/PpLlvm.hs b/compiler/llvmGen/Llvm/PpLlvm.hs
+index 7307725..0b3deac 100644
+--- a/compiler/llvmGen/Llvm/PpLlvm.hs
++++ b/compiler/llvmGen/Llvm/PpLlvm.hs
+@@ -77,12 +77,12 @@ ppLlvmGlobal (LMGlobal var@(LMGlobalVar _ _ link x a c) dat) =
+             Nothing   -> ppr (pLower $ getVarType var)
+ 
+         -- Position of linkage is different for aliases.
+-        const_link = case c of
+-          Global   -> ppr link <+> text "global"
+-          Constant -> ppr link <+> text "constant"
+-          Alias    -> text "alias" <+> ppr link
++        const = case c of
++          Global   -> text "global"
++          Constant -> text "constant"
++          Alias    -> text "alias"
+ 
+-    in ppAssignment var $ const_link <+> rhs <> sect <> align
++    in ppAssignment var $ ppr link <+> const <+> rhs <> sect <> align
+        $+$ newLine
+ 
+ ppLlvmGlobal (LMGlobal var val) = sdocWithDynFlags $ \dflags ->
+@@ -117,11 +117,11 @@ ppLlvmMeta (MetaNamed n m)
+ 
+ -- | Print out an LLVM metadata value.
+ ppLlvmMetaExpr :: MetaExpr -> SDoc
+-ppLlvmMetaExpr (MetaStr    s ) = text "metadata !" <> doubleQuotes (ftext s)
+-ppLlvmMetaExpr (MetaNode   n ) = text "metadata !" <> int n
++ppLlvmMetaExpr (MetaStr    s ) = text "!" <> doubleQuotes (ftext s)
++ppLlvmMetaExpr (MetaNode   n ) = text "!" <> int n
+ ppLlvmMetaExpr (MetaVar    v ) = ppr v
+ ppLlvmMetaExpr (MetaStruct es) =
+-    text "metadata !{" <> hsep (punctuate comma (map ppLlvmMetaExpr es)) <> char '}'
++    text "!{" <> hsep (punctuate comma (map ppLlvmMetaExpr es)) <> char '}'
+ 
+ 
+ -- | Print out a list of function definitions.
+@@ -130,15 +130,18 @@ ppLlvmFunctions funcs = vcat $ map ppLlvmFunction funcs
+ 
+ -- | Print out a function definition.
+ ppLlvmFunction :: LlvmFunction -> SDoc
+-ppLlvmFunction (LlvmFunction dec args attrs sec body) =
+-    let attrDoc = ppSpaceJoin attrs
+-        secDoc = case sec of
++ppLlvmFunction fun =
++    let attrDoc = ppSpaceJoin (funcAttrs fun)
++        secDoc = case funcSect fun of
+                       Just s' -> text "section" <+> (doubleQuotes $ ftext s')
+                       Nothing -> empty
+-    in text "define" <+> ppLlvmFunctionHeader dec args
+-        <+> attrDoc <+> secDoc
++        prefixDoc = case funcPrefix fun of
++                        Just v  -> text "prefix" <+> ppr v
++                        Nothing -> empty
++    in text "define" <+> ppLlvmFunctionHeader (funcDecl fun) (funcArgs fun)
++        <+> attrDoc <+> secDoc <+> prefixDoc
+         $+$ lbrace
+-        $+$ ppLlvmBlocks body
++        $+$ ppLlvmBlocks (funcBody fun)
+         $+$ rbrace
+         $+$ newLine
+         $+$ newLine
+@@ -269,7 +272,7 @@ ppCall ct fptr args attrs = case fptr of
+     where
+         ppCall' (LlvmFunctionDecl _ _ cc ret argTy params _) =
+             let tc = if ct == TailCall then text "tail " else empty
+-                ppValues = ppCommaJoin args
++                ppValues = hsep $ punctuate comma $ map ppCallMetaExpr args
+                 ppArgTy  = (ppCommaJoin $ map fst params) <>
+                            (case argTy of
+                                VarArgs   -> text ", ..."
+@@ -280,6 +283,10 @@ ppCall ct fptr args attrs = case fptr of
+                     <> fnty <+> ppName fptr <> lparen <+> ppValues
+                     <+> rparen <+> attrDoc
+ 
++        -- Metadata needs to be marked as having the `metadata` type when used
++        -- in a call argument
++        ppCallMetaExpr (MetaVar v) = ppr v
++        ppCallMetaExpr v           = text "metadata" <+> ppr v
+ 
+ ppMachOp :: LlvmMachOp -> LlvmVar -> LlvmVar -> SDoc
+ ppMachOp op left right =
+diff --git a/compiler/llvmGen/LlvmCodeGen.hs b/compiler/llvmGen/LlvmCodeGen.hs
+index 6120a72..f0c184a 100644
+--- a/compiler/llvmGen/LlvmCodeGen.hs
++++ b/compiler/llvmGen/LlvmCodeGen.hs
+@@ -138,13 +138,8 @@ cmmLlvmGen cmm@CmmProc{} = do
+     -- generate llvm code from cmm
+     llvmBC <- withClearVars $ genLlvmProc fixed_cmm
+ 
+-    -- allocate IDs for info table and code, so the mangler can later
+-    -- make sure they end up next to each other.
+-    itableSection <- freshSectionId
+-    _codeSection <- freshSectionId
+-
+     -- pretty print
+-    (docs, ivars) <- fmap unzip $ mapM (pprLlvmCmmDecl itableSection) llvmBC
++    (docs, ivars) <- fmap unzip $ mapM pprLlvmCmmDecl llvmBC
+ 
+     -- Output, note down used variables
+     renderLlvm (vcat docs)
+diff --git a/compiler/llvmGen/LlvmCodeGen/Base.hs b/compiler/llvmGen/LlvmCodeGen/Base.hs
+index 83b06a9..15918a3 100644
+--- a/compiler/llvmGen/LlvmCodeGen/Base.hs
++++ b/compiler/llvmGen/LlvmCodeGen/Base.hs
+@@ -24,11 +24,10 @@ module LlvmCodeGen.Base (
+ 
+         getMetaUniqueId,
+         setUniqMeta, getUniqMeta,
+-        freshSectionId,
+ 
+         cmmToLlvmType, widthToLlvmFloat, widthToLlvmInt, llvmFunTy,
+-        llvmFunSig, llvmStdFunAttrs, llvmFunAlign, llvmInfAlign,
+-        llvmPtrBits, mkLlvmFunc, tysToParams,
++        llvmFunSig, llvmFunArgs, llvmStdFunAttrs, llvmFunAlign, llvmInfAlign,
++        llvmPtrBits, tysToParams,
+ 
+         strCLabel_llvm, strDisplayName_llvm, strProcedureName_llvm,
+         getGlobalPtr, generateExternDecls,
+@@ -133,15 +132,6 @@ llvmFunSig' live lbl link
+                                  (map (toParams . getVarType) (llvmFunArgs dflags live))
+                                  (llvmFunAlign dflags)
+ 
+--- | Create a Haskell function in LLVM.
+-mkLlvmFunc :: LiveGlobalRegs -> CLabel -> LlvmLinkageType -> LMSection -> LlvmBlocks
+-           -> LlvmM LlvmFunction
+-mkLlvmFunc live lbl link sec blks
+-  = do funDec <- llvmFunSig live lbl link
+-       dflags <- getDynFlags
+-       let funArgs = map (fsLit . Outp.showSDoc dflags . ppPlainName) (llvmFunArgs dflags live)
+-       return $ LlvmFunction funDec funArgs llvmStdFunAttrs sec blks
+-
+ -- | Alignment to use for functions
+ llvmFunAlign :: DynFlags -> LMAlign
+ llvmFunAlign dflags = Just (wORD_SIZE dflags)
+@@ -186,13 +176,13 @@ type LlvmVersion = Int
+ 
+ -- | The LLVM Version we assume if we don't know
+ defaultLlvmVersion :: LlvmVersion
+-defaultLlvmVersion = 30
++defaultLlvmVersion = 36
+ 
+ minSupportLlvmVersion :: LlvmVersion
+-minSupportLlvmVersion = 28
++minSupportLlvmVersion = 36
+ 
+ maxSupportLlvmVersion :: LlvmVersion
+-maxSupportLlvmVersion = 35
++maxSupportLlvmVersion = 36
+ 
+ -- ----------------------------------------------------------------------------
+ -- * Environment Handling
+@@ -203,7 +193,6 @@ data LlvmEnv = LlvmEnv
+   , envDynFlags :: DynFlags        -- ^ Dynamic flags
+   , envOutput :: BufHandle         -- ^ Output buffer
+   , envUniq :: UniqSupply          -- ^ Supply of unique values
+-  , envNextSection :: Int          -- ^ Supply of fresh section IDs
+   , envFreshMeta :: Int            -- ^ Supply of fresh metadata IDs
+   , envUniqMeta :: UniqFM Int      -- ^ Global metadata nodes
+   , envFunMap :: LlvmEnvMap        -- ^ Global functions so far, with type
+@@ -257,7 +246,6 @@ runLlvm dflags ver out us m = do
+                       , envUniq = us
+                       , envFreshMeta = 0
+                       , envUniqMeta = emptyUFM
+-                      , envNextSection = 1
+                       }
+ 
+ -- | Get environment (internal)
+@@ -362,10 +350,6 @@ setUniqMeta f m = modifyEnv $ \env -> env { envUniqMeta = addToUFM (envUniqMeta
+ getUniqMeta :: Unique -> LlvmM (Maybe Int)
+ getUniqMeta s = getEnv (flip lookupUFM s . envUniqMeta)
+ 
+--- | Returns a fresh section ID
+-freshSectionId :: LlvmM Int
+-freshSectionId = LlvmM $ \env -> return (envNextSection env, env { envNextSection = envNextSection env + 1})
+-
+ -- ----------------------------------------------------------------------------
+ -- * Internal functions
+ --
+diff --git a/compiler/llvmGen/LlvmCodeGen/Data.hs b/compiler/llvmGen/LlvmCodeGen/Data.hs
+index 90ce443..42f4dcd 100644
+--- a/compiler/llvmGen/LlvmCodeGen/Data.hs
++++ b/compiler/llvmGen/LlvmCodeGen/Data.hs
+@@ -4,7 +4,7 @@
+ --
+ 
+ module LlvmCodeGen.Data (
+-        genLlvmData
++        genLlvmData, genData
+     ) where
+ 
+ #include "HsVersions.h"
+diff --git a/compiler/llvmGen/LlvmCodeGen/Ppr.hs b/compiler/llvmGen/LlvmCodeGen/Ppr.hs
+index 5dd27ab..1a9373b 100644
+--- a/compiler/llvmGen/LlvmCodeGen/Ppr.hs
++++ b/compiler/llvmGen/LlvmCodeGen/Ppr.hs
+@@ -4,7 +4,7 @@
+ -- | Pretty print helpers for the LLVM Code generator.
+ --
+ module LlvmCodeGen.Ppr (
+-        pprLlvmHeader, pprLlvmCmmDecl, pprLlvmData, infoSection, iTableSuf
++        pprLlvmHeader, pprLlvmCmmDecl, pprLlvmData, infoSection
+     ) where
+ 
+ #include "HsVersions.h"
+@@ -96,28 +96,36 @@ pprLlvmData (globals, types) =
+ 
+ 
+ -- | Pretty print LLVM code
+-pprLlvmCmmDecl :: Int -> LlvmCmmDecl -> LlvmM (SDoc, [LlvmVar])
+-pprLlvmCmmDecl _ (CmmData _ lmdata)
++pprLlvmCmmDecl :: LlvmCmmDecl -> LlvmM (SDoc, [LlvmVar])
++pprLlvmCmmDecl (CmmData _ lmdata)
+   = return (vcat $ map pprLlvmData lmdata, [])
+ 
+-pprLlvmCmmDecl count (CmmProc mb_info entry_lbl live (ListGraph blks))
+-  = do (idoc, ivar) <- case mb_info of
+-                        Nothing -> return (empty, [])
+-                        Just (Statics info_lbl dat)
+-                         -> pprInfoTable count info_lbl (Statics entry_lbl dat)
+-
+-       let sec = mkLayoutSection (count + 1)
+-           (lbl',sec') = case mb_info of
+-                           Nothing                   -> (entry_lbl, Nothing)
+-                           Just (Statics info_lbl _) -> (info_lbl,  sec)
+-           link = if externallyVisibleCLabel lbl'
++pprLlvmCmmDecl (CmmProc mb_info entry_lbl live (ListGraph blks))
++  = do let lbl = case mb_info of
++                     Nothing                   -> entry_lbl
++                     Just (Statics info_lbl _) -> info_lbl
++           link = if externallyVisibleCLabel lbl
+                       then ExternallyVisible
+                       else Internal
+            lmblocks = map (\(BasicBlock id stmts) ->
+                                 LlvmBlock (getUnique id) stmts) blks
+ 
+-       fun <- mkLlvmFunc live lbl' link  sec' lmblocks
+-       let name = decName $ funcDecl fun
++       funDec <- llvmFunSig live lbl link
++       dflags <- getDynFlags
++       let buildArg = fsLit . showSDoc dflags . ppPlainName
++           funArgs = map buildArg (llvmFunArgs dflags live)
++
++       -- generate the info table
++       prefix <- case mb_info of
++                     Nothing -> return Nothing
++                     Just (Statics _ statics) -> do
++                       infoStatics <- mapM genData statics
++                       let infoTy = LMStruct $ map getStatType infoStatics
++                       return $ Just $ LMStaticStruc infoStatics infoTy
++
++       let fun = LlvmFunction funDec funArgs llvmStdFunAttrs Nothing
++                              prefix lmblocks
++           name = decName $ funcDecl fun
+            defName = name `appendFS` fsLit "$def"
+            funcDecl' = (funcDecl fun) { decName = defName }
+            fun' = fun { funcDecl = funcDecl' }
+@@ -138,55 +146,7 @@ pprLlvmCmmDecl count (CmmProc mb_info entry_lbl live (ListGraph blks))
+                             (Just $ LMBitc (LMStaticPointer defVar)
+                                            (LMPointer $ LMInt 8))
+ 
+-       return (ppLlvmGlobal alias $+$ idoc $+$ ppLlvmFunction fun', ivar)
+-
+-
+--- | Pretty print CmmStatic
+-pprInfoTable :: Int -> CLabel -> CmmStatics -> LlvmM (SDoc, [LlvmVar])
+-pprInfoTable count info_lbl stat
+-  = do (ldata, ltypes) <- genLlvmData (Text, stat)
+-
+-       dflags <- getDynFlags
+-       platform <- getLlvmPlatform
+-       let setSection :: LMGlobal -> LlvmM (LMGlobal, [LlvmVar])
+-           setSection (LMGlobal (LMGlobalVar _ ty l _ _ c) d) = do
+-             lbl <- strCLabel_llvm info_lbl
+-             let sec = mkLayoutSection count
+-                 ilabel = lbl `appendFS` fsLit iTableSuf
+-                 gv = LMGlobalVar ilabel ty l sec (llvmInfAlign dflags) c
+-                 -- See Note [Subsections Via Symbols]
+-                 v = if (platformHasSubsectionsViaSymbols platform
+-                         && l == ExternallyVisible)
+-                        || l == Internal
+-                     then [gv]
+-                     else []
+-             funInsert ilabel ty
+-             return (LMGlobal gv d, v)
+-           setSection v = return (v,[])
+-
+-       (ldata', llvmUsed) <- unzip `fmap` mapM setSection ldata
+-       ldata'' <- mapM aliasify ldata'
+-       let modUsedLabel (LMGlobalVar name ty link sect align const) =
+-             LMGlobalVar (name `appendFS` fsLit "$def") ty link sect align const
+-           modUsedLabel v = v
+-           llvmUsed' = map modUsedLabel $ concat llvmUsed
+-       return (pprLlvmData (concat ldata'', ltypes), llvmUsed')
+-
+-
+--- | We generate labels for info tables by converting them to the same label
+--- as for the entry code but adding this string as a suffix.
+-iTableSuf :: String
+-iTableSuf = "_itable"
+-
+-
+--- | Create a specially crafted section declaration that encodes the order this
+--- section should be in the final object code.
+---
+--- The LlvmMangler.llvmFixupAsm pass over the assembly produced by LLVM uses
+--- this section declaration to do its processing.
+-mkLayoutSection :: Int -> LMSection
+-mkLayoutSection n
+-  = Just (fsLit $ infoSection ++ show n)
++       return (ppLlvmGlobal alias $+$ ppLlvmFunction fun', [])
+ 
+ 
+ -- | The section we are putting info tables and their entry code into, should
+diff --git a/compiler/llvmGen/LlvmMangler.hs b/compiler/llvmGen/LlvmMangler.hs
+index 8652a89..267feb5 100644
+--- a/compiler/llvmGen/LlvmMangler.hs
++++ b/compiler/llvmGen/LlvmMangler.hs
+@@ -11,33 +11,24 @@ module LlvmMangler ( llvmFixupAsm ) where
+ 
+ import DynFlags ( DynFlags )
+ import ErrUtils ( showPass )
+-import LlvmCodeGen.Ppr ( infoSection )
+ 
+ import Control.Exception
+ import Control.Monad ( when )
+ import qualified Data.ByteString.Char8 as B
+-import Data.Char
+ import System.IO
+ 
+-import Data.List ( sortBy )
+-import Data.Function ( on )
+-
+ #if x86_64_TARGET_ARCH
+ #define REWRITE_AVX
+ #endif
+ 
+ -- Magic Strings
+-secStmt, infoSec, newLine, textStmt, dataStmt, syntaxUnified :: B.ByteString
++secStmt, newLine, textStmt, dataStmt, syntaxUnified :: B.ByteString
+ secStmt       = B.pack "\t.section\t"
+-infoSec       = B.pack infoSection
+ newLine       = B.pack "\n"
+ textStmt      = B.pack "\t.text"
+ dataStmt      = B.pack "\t.data"
+ syntaxUnified = B.pack "\t.syntax unified"
+ 
+-infoLen :: Int
+-infoLen = B.length infoSec
+-
+ -- Search Predicates
+ isType :: B.ByteString -> Bool
+ isType = B.isPrefixOf (B.pack "\t.type")
+@@ -53,7 +44,7 @@ llvmFixupAsm dflags f1 f2 = {-# SCC "llvm_mangler" #-} do
+     w <- openBinaryFile f2 WriteMode
+     ss <- readSections r w
+     hClose r
+-    let fixed = (map rewriteAVX . fixTables) ss
++    let fixed = map rewriteAVX ss
+     mapM_ (writeSection w) fixed
+     hClose w
+     return ()
+@@ -91,11 +82,7 @@ readSections r w = go B.empty [] []
+ 
+       -- Decide whether to directly output the section or append it
+       -- to the list for resorting.
+-      let finishSection
+-            | infoSec `B.isInfixOf` hdr =
+-                cts `seq` return $ (hdr, cts):ss
+-            | otherwise =
+-                writeSection w (hdr, cts) >> return ss
++      let finishSection = writeSection w (hdr, cts) >> return ss
+ 
+       case e_l of
+         Right l | l == syntaxUnified
+@@ -149,33 +136,3 @@ replace matchBS replaceBS = loop
+           (hd,tl) | B.null tl -> hd
+                   | otherwise -> hd `B.append` replaceBS `B.append`
+                                  loop (B.drop (B.length matchBS) tl)
+-
+--- | Reorder and convert sections so info tables end up next to the
+--- code. Also does stack fixups.
+-fixTables :: [Section] -> [Section]
+-fixTables ss = map strip sorted
+-  where
+-    -- Resort sections: We only assign a non-zero number to all
+-    -- sections having the "STRIP ME" marker. As sortBy is stable,
+-    -- this will cause all these sections to be appended to the end of
+-    -- the file in the order given by the indexes.
+-    extractIx hdr
+-      | B.null a  = 0
+-      | otherwise = 1 + readInt (B.takeWhile isDigit $ B.drop infoLen a)
+-      where (_,a) = B.breakSubstring infoSec hdr
+-
+-    indexed = zip (map (extractIx . fst) ss) ss
+-
+-    sorted = map snd $ sortBy (compare `on` fst) indexed
+-
+-    -- Turn all the "STRIP ME" sections into normal text sections, as
+-    -- they are in the right place now.
+-    strip (hdr, cts)
+-      | infoSec `B.isInfixOf` hdr = (textStmt, cts)
+-      | otherwise                 = (hdr, cts)
+-
+--- | Read an int or error
+-readInt :: B.ByteString -> Int
+-readInt str | B.all isDigit str = (read . B.unpack) str
+-            | otherwise = error $ "LLvmMangler Cannot read " ++ show str
+-                                ++ " as it's not an Int"
+-- 
+1.9.1
+
