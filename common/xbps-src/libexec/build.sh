@@ -25,6 +25,8 @@ for f in $XBPS_SHUTILSDIR/*.sh; do
 done
 
 setup_pkg "$PKGNAME" $XBPS_CROSS_BUILD
+readonly SOURCEPKG="$sourcepkg"
+
 show_pkg_build_options
 check_pkg_arch $XBPS_CROSS_BUILD
 
@@ -39,23 +41,23 @@ fi
 
 # Fetch distfiles after installing required dependencies,
 # because some of them might be required for do_fetch().
-$XBPS_LIBEXECDIR/xbps-src-dofetch.sh $PKGNAME $XBPS_CROSS_BUILD || exit 1
+$XBPS_LIBEXECDIR/xbps-src-dofetch.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
 [ "$TARGET" = "fetch" ] && exit 0
 
 # Fetch, extract, build and install into the destination directory.
-$XBPS_LIBEXECDIR/xbps-src-doextract.sh $PKGNAME $XBPS_CROSS_BUILD || exit 1
+$XBPS_LIBEXECDIR/xbps-src-doextract.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
 [ "$TARGET" = "extract" ] && exit 0
 
 # Run configure phase
-$XBPS_LIBEXECDIR/xbps-src-doconfigure.sh $PKGNAME $XBPS_CROSS_BUILD || exit 1
+$XBPS_LIBEXECDIR/xbps-src-doconfigure.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
 [ "$TARGET" = "configure" ] && exit 0
 
 # Run build phase
-$XBPS_LIBEXECDIR/xbps-src-dobuild.sh $PKGNAME $XBPS_CROSS_BUILD || exit 1
+$XBPS_LIBEXECDIR/xbps-src-dobuild.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
 [ "$TARGET" = "build" ] && exit 0
 
 # Install pkgs into destdir.
-$XBPS_LIBEXECDIR/xbps-src-doinstall.sh $sourcepkg $XBPS_CROSS_BUILD || exit 1
+$XBPS_LIBEXECDIR/xbps-src-doinstall.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
 
 for subpkg in ${subpackages} ${sourcepkg}; do
     $XBPS_LIBEXECDIR/xbps-src-doinstall.sh $subpkg $XBPS_CROSS_BUILD || exit 1
