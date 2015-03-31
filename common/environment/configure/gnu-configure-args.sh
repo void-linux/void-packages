@@ -45,6 +45,11 @@ case "$XBPS_TARGET_MACHINE" in
 		. ${_AUTOCONFCACHEDIR}/arm-linux
 		;;
 
+	aarch64*)
+		. ${_AUTOCONFCACHEDIR}/endian-little
+		. ${_AUTOCONFCACHEDIR}/aarch64-linux
+		;;
+
 	i686*)	. ${_AUTOCONFCACHEDIR}/endian-little
 		. ${_AUTOCONFCACHEDIR}/ix86-common
 		;;

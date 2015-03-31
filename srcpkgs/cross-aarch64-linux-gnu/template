@@ -1,0 +1,294 @@
+# Template build file for 'cross-aarch64-linux-gnu'
+#
+_binutils_version=2.25
+_gcc_version=4.9.2
+_glibc_version=2.21
+_linux_version=3.14.34
+
+_triplet=aarch64-linux-gnu
+_archflags="-march=armv8-a"
+_CROSS_SYSROOT="/usr/${_triplet}"
+
+pkgname=cross-${_triplet}
+version=0.19
+revision=1
+short_desc="GNU Cross toolchain for the ${_triplet} LE target (binutils/gcc/glibc)"
+maintainer="Christian Neukirchen <chneukirchen@gmail.com>"
+homepage="http://www.voidlinux.eu"
+license="Public Domain"
+distfiles="
+ http://ftp.gnu.org/pub/gnu/binutils/binutils-${_binutils_version}.tar.bz2
+ http://ftp.gnu.org/pub/gnu/gcc/gcc-${_gcc_version}/gcc-${_gcc_version}.tar.bz2
+ http://ftp.gnu.org/gnu/glibc/glibc-${_glibc_version}.tar.xz
+ http://www.kernel.org/pub/linux/kernel/v3.x/linux-${_linux_version}.tar.xz"
+checksum="22defc65cfa3ef2a3395faaea75d6331c6e62ea5dfacfed3e2ec17b08c882923
+ 2020c98295856aa13fda0f2f3a4794490757fc24bcca918d52cc8b4917b972dd
+ aeeb362437965a5d3f40b151094ca79def04a115bd363fdd4a9a0c69482923b8
+ 041e2a65565dc93bb5f64422c56d3ca11057b0a2ac2287f04fe9ee9aa1ae0da2"
+
+lib32disabled=yes
+nocross=yes
+create_wrksrc=yes
+hostmakedepends="perl flex"
+makedepends="zlib-devel gmp-devel mpfr-devel libmpc-devel"
+depends="${pkgname}-libc-${version}_${revision}"
+nostrip_files="libgcc.a libgcov.a libgcc_eh.a"
+only_for_archs="i686 x86_64"
+
+_apply_patch() {
+	local pname="$(basename $1)"
+
+	if [ ! -f ".${pname}_done" ]; then
+		patch -Np0 -i ${1}
+		touch .${pname}_done
+	fi
+}
+
+_linux_headers() {
+	[ -f ${wrksrc}/.linux_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building Linux API headers for ARM\n"
+
+	cd linux-${_linux_version}
+
+	make ARCH=arm64 headers_check
+	make ARCH=arm64 INSTALL_HDR_PATH=${_CROSS_SYSROOT}/usr headers_install
+
+	touch ${wrksrc}/.linux_build_done
+}
+
+_binutils_build() {
+	[ -f ${wrksrc}/.binutils_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross binutils\n"
+	[ ! -d binutils-build ] && mkdir binutils-build
+	cd binutils-build
+
+	../binutils-${_binutils_version}/configure \
+		--prefix=/usr --target=${_triplet} \
+		--with-sysroot=${_CROSS_SYSROOT} --disable-nls --disable-shared \
+		--disable-multilib --disable-werror --enable-gold
+
+	make configure-host && make ${makejobs}
+	make install
+
+	touch ${wrksrc}/.binutils_build_done
+}
+
+_gcc_bootstrap() {
+	[ -f ${wrksrc}/.gcc_bootstrap_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross gcc bootstrap\n"
+
+	cd gcc-${_gcc_version}
+
+	[ ! -d ../gcc-bootstrap ] && mkdir ../gcc-bootstrap
+	cd ../gcc-bootstrap
+
+	../gcc-${_gcc_version}/configure --prefix=/usr \
+		--target=${_triplet} --without-headers \
+		--disable-nls --disable-shared --disable-libquadmath \
+		--disable-decimal-float --disable-libgomp --disable-libmudflap \
+		--disable-libssp --disable-libitm --disable-libatomic \
+		--disable-threads --enable-languages=c \
+		--disable-sjlj-exceptions --disable-multilib \
+		--with-gnu-ld --with-gnu-as
+
+	make ${makejobs}
+	make install
+
+	touch ${wrksrc}/.gcc_bootstrap_done
+}
+
+_glibc_headers() {
+	[ -f ${wrksrc}/.glibc_headers_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross glibc headers\n"
+
+	[ ! -d glibc-headers ] && mkdir glibc-headers
+	cd glibc-headers
+
+	echo "libc_cv_forced_unwind=yes" > config.cache
+	echo "libc_cv_c_cleanup=yes" >> config.cache
+
+	export CC="${_triplet}-gcc" LD="${_triplet}-ld" \
+		AS="${_triplet}-as" CPP="${_triplet}-cpp"
+
+	../glibc-${_glibc_version}/configure \
+		--host=${_triplet} --prefix=/usr \
+		--with-headers=${_CROSS_SYSROOT}/usr/include \
+		--config-cache \
+		--enable-obsolete-rpc \
+		--enable-kernel=2.6.27 
+
+	make -k install-headers cross_compiling=yes \
+		install_root=${_CROSS_SYSROOT}
+
+	touch ${wrksrc}/.glibc_headers_done
+}
+
+_glibc_build() {
+	[ -f ${wrksrc}/.glibc_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross glibc\n"
+
+	[ ! -d glibc-build ] && mkdir glibc-build
+	cd glibc-build
+
+	echo "libc_cv_forced_unwind=yes" > config.cache
+	echo "libc_cv_c_cleanup=yes" >> config.cache
+
+	export CC="${_triplet}-gcc" LD="${_triplet}-ld" \
+		AS="${_triplet}-as" CPP="${_triplet}-cpp"
+	export CFLAGS="-Os -pipe -Wno-error ${_archflags}"
+
+	../glibc-${_glibc_version}/configure \
+		--host=${_triplet} --prefix=/usr --libdir=/usr/lib \
+		--with-headers=${_CROSS_SYSROOT}/usr/include \
+		--config-cache \
+		--enable-obsolete-rpc --disable-profile \
+		--enable-kernel=2.6.27
+	
+	make ${makejobs}
+	make install_root=${_CROSS_SYSROOT} install
+
+	touch ${wrksrc}/.glibc_build_done
+}
+
+_gcc_build() {
+	[ -f ${wrksrc}/.gcc_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross gcc final\n"
+
+	[ ! -d gcc-build ] && mkdir gcc-build
+	cd gcc-build
+
+	export CC="gcc" CFLAGS="-Os -pipe"
+	unset LD AS
+
+	# Make this link to target libs.
+	if [ ! -f .sed_subst_done ]; then
+		sed -e "s, /lib/, ${_CROSS_SYSROOT}/lib/,g;s, /usr/lib/, ${_CROSS_SYSROOT}/usr/lib/,g" \
+			-i ${_CROSS_SYSROOT}/lib/libc.so ${_CROSS_SYSROOT}/lib/libpthread.so
+		sed -e "s, /lib64/, ${_CROSS_SYSROOT}/lib64/,g;s, /usr/lib/, ${_CROSS_SYSROOT}/usr/lib/,g" \
+			-i ${_CROSS_SYSROOT}/lib/libc.so ${_CROSS_SYSROOT}/lib/libpthread.so
+		touch .sed_subst_done
+	fi
+	
+	../gcc-${_gcc_version}/configure \
+		--target=${_triplet} --prefix=/usr --libdir=/usr/lib \
+		--with-sysroot=${_CROSS_SYSROOT} --enable-languages=c,c++,lto \
+		--with-gnu-as --with-gnu-ld --disable-multilib \
+		--disable-nls --disable-sjlj-exceptions \
+		--enable-threads=posix --enable-long-longx \
+		--enable-shared --enable-linker-build-id \
+		--enable-gnu-unique-object --enable-lto \
+		--disable-libquadmath --disable-libatomic \
+		--disable-libssp --disable-libmudflap \
+		--disable-libsanitizer --disable-libcilkrts \
+		--disable-libitm --disable-libvtv --disable-libstdcxx-pch \
+		--enable-libstdcxx-time --with-linker-hash-style=gnu
+
+	make ${makejobs}
+
+	touch ${wrksrc}/.gcc_build_done
+}
+
+do_build() {
+	unset LDFLAGS
+	export CFLAGS="-Os" CXXFLAGS="-Os"
+
+	for f in include lib libexec bin sbin; do
+		if [ ! -d ${_CROSS_SYSROOT}/usr/${f} ]; then
+			mkdir -p ${_CROSS_SYSROOT}/usr/${f}
+		fi
+		if [ ! -h ${_CROSS_SYSROOT}/${f} ]; then
+			ln -sfr ${_CROSS_SYSROOT}/usr/${f} ${_CROSS_SYSROOT}/${f}
+		fi
+	done
+
+	_binutils_build
+	_gcc_bootstrap
+	_linux_headers
+	_glibc_headers
+	_glibc_build
+	_gcc_build
+}
+
+do_install() {
+	for f in include lib libexec bin sbin; do
+		if [ ! -d ${DESTDIR}/${_CROSS_SYSROOT}/usr/${f} ]; then
+			mkdir -p ${DESTDIR}/${_CROSS_SYSROOT}/usr/${f}
+		fi
+		if [ ! -h ${DESTDIR}/${_CROSS_SYSROOT}/${f} ]; then
+			ln -sfr ${DESTDIR}/${_CROSS_SYSROOT}/usr/${f} \
+				${DESTDIR}/${_CROSS_SYSROOT}/${f}
+		fi
+	done
+
+	# install cross binutils
+	cd ${wrksrc}/binutils-build
+	make DESTDIR=${DESTDIR} install
+
+	# install cross gcc
+	cd ${wrksrc}/gcc-build
+	make DESTDIR=${DESTDIR} install
+
+	# install linux API headers for ARM64
+	cd ${wrksrc}/linux-${_linux_version}
+	make ARCH=arm64 INSTALL_HDR_PATH=${DESTDIR}/${_CROSS_SYSROOT}/usr headers_install
+	rm -f $(find ${DESTDIR}/${_CROSS_SYSROOT}/usr/include -name .install -or -name ..install.cmd)
+	rm -rf ${DESTDIR}/${_CROSS_SYSROOT}/usr/include/drm
+
+	# install glibc for target
+	cd ${wrksrc}/glibc-build
+	make install_root=${DESTDIR}/${_CROSS_SYSROOT} install install-headers
+
+        # Move files to /usr/lib (lib64).
+        if [ -d ${DESTDIR}/${_sysroot}/usr/lib64 ]; then  
+                mv ${DESTDIR}/${_sysroot}/usr/lib64/* ${DESTDIR}/${_sysroot}/usr/lib/
+                rmdir ${DESTDIR}/${_sysroot}/usr/lib64
+        fi
+
+	# Remove unnecessary stuff
+	rm -f ${DESTDIR}/usr/lib*/libiberty.a
+	rm -rf ${DESTDIR}/usr/share
+	rm -rf ${DESTDIR}/${_CROSS_SYSROOT}/{etc,var}
+	rm -rf ${DESTDIR}/${_CROSS_SYSROOT}/usr/{sbin,share,libexec}
+	rm -rf ${DESTDIR}/${_CROSS_SYSROOT}/usr/lib/gconv
+	rm -f ${DESTDIR}/${_CROSS_SYSROOT}/libexec
+
+	for f in sprof localedef gencat pldd sotruss tzselect iconv mtrace \
+		catchsegv xtrace makedb pcprofiledump locale rpcgen getconf \
+		getent ldd; do
+		rm -f ${DESTDIR}/${_CROSS_SYSROOT}/usr/bin/${f}
+	done
+}
+
+do_clean() {
+	# Remove temporary stuff from masterdir
+	rm -rf ${_CROSS_SYSROOT}
+	rm -f /usr/bin/${_triplet}*
+	rm -rf /usr/lib/gcc/${_triplet}
+	rm -rf /usr/libexec/gcc/${_triplet}
+}
+
+cross-aarch64-linux-gnu-libc_package() {
+	short_desc+=" - glibc files"
+	noarch=yes
+	nostrip=yes
+	noverifyrdeps=yes
+
+	pkg_install() {
+		vmove usr/${_triplet}
+		mkdir -p ${DESTDIR}/usr/${_triplet}/usr/
+		mv ${PKGDESTDIR}/usr/${_triplet}/usr/bin \
+			${DESTDIR}/usr/${_triplet}/usr
+	}
+}
