@@ -351,9 +351,9 @@ hook() {
 		msg_error "$pkgver: failed to write REMOVE metadata file!\n"
 
 	if [ -s ${msg_install} ]; then
-		install -m644 ${msg_install} ${PKGDESTDIR}
+		install -m644 ${msg_install} ${PKGDESTDIR}/INSTALL.msg
 	fi
 	if [ -s ${msg_remove} ]; then
-		install -m644 ${msg_remove} ${PKGDESTDIR}
+		install -m644 ${msg_remove} ${PKGDESTDIR}/REMOVE.msg
 	fi
 }
