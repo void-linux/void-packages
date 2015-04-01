@@ -79,10 +79,18 @@ _EOF
 	ln -sf ${XBPS_CROSS_TRIPLET}-pkg-config ${XBPS_WRAPPERDIR}/pkg-config
 }
 
+install_wrapper() {
+	install -m0755 ${XBPS_COMMONDIR}/hooks/pre-configure/install-wrapper \
+		${XBPS_WRAPPERDIR}/install
+}
+
 hook() {
+	export PATH="$XBPS_WRAPPERDIR:$PATH"
+
+	install_wrapper
+
 	[ -z "$CROSS_BUILD" ] && return 0
 
-	# create wrapers
 	pkgconfig_wrapper
 	generic_wrapper icu-config
 	generic_wrapper libgcrypt-config
@@ -112,6 +120,4 @@ hook() {
 	generic_wrapper3 libetpan-config
 	python_wrapper python-config 2.7
 	python_wrapper python3.4-config 3.4m
-
-	export PATH="$XBPS_WRAPPERDIR:$PATH"
 }
