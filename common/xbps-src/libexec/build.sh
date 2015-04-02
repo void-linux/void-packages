@@ -75,6 +75,7 @@ done
 # If install went ok generate the binpkgs.
 for subpkg in ${subpackages} ${sourcepkg}; do
     $XBPS_LIBEXECDIR/xbps-src-dopkg.sh $subpkg "$XBPS_REPOSITORY" "$XBPS_CROSS_BUILD" || exit 1
+    sleep 1
 done
 
 # pkg cleanup
