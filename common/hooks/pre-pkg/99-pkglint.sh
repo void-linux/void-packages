@@ -6,6 +6,7 @@ hook() {
 
 	set +E
 
+	# Check for forbidden directories that are symlinks in void.
 	for f in bin sbin lib lib32; do
 		if [ -d ${PKGDESTDIR}/${f} ]; then
 			msg_red "${pkgver}: /${f} directory is not allowed, use /usr/${f}.\n"
@@ -18,6 +19,15 @@ hook() {
 			error=1
 		fi
 	done
+
+	# Check that configuration files really exist.
+	for f in ${conf_files}; do
+		if [ ! -f ${PKGDESTDIR}/${f} ]; then
+			msg_red "${pkgver}: '$f' configuration file not in PKGDESTDIR!\n"
+			error=1
+		fi
+	done
+
 	if [ $error -gt 0 ]; then
 		msg_error "${pkgver}: cannot continue with installation!\n"
 	fi
