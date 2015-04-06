@@ -60,6 +60,10 @@ those defined in `etc/defaults.conf`, set them on `etc/conf` instead i.e:
     $ echo 'XBPS_CFLAGS="your flags here"' >> etc/conf
     $ echo 'XBPS_LDFLAGS="your flags here"' >> etc/conf
 
+Native and cross compiler/linker flags are set per architecture in `common/build-profiles`
+and `common/cross-profiles` respectively. Ideally those settings are good enough by default,
+and there's no need to set your own unless you know what you are doing.
+
 ### Virtual packages
 
 The `etc/defaults.virtual` file contains the default replacements for virtual packages,
@@ -117,11 +121,8 @@ When the package and its required dependencies are built, the binary packages wi
 and registered in the default local repository at `hostdir/binpkgs`; the path to this local repository can be added to 
 any xbps configuration file (see xbps.d(5)) or by explicitly appending them via cmdline, i.e:
 
-    $ xbps-install --repository=/path/to/hostdir/binpkgs ...
-    $ xbps-query --repository=/path/to/hostdir/binpkgs ...
-
-> Currently xbps expects absolute path when using the `--repository` option. This has been
-corrected in the 0.44 version.
+    $ xbps-install --repository=hostdir/binpkgs ...
+    $ xbps-query --repository=hostdir/binpkgs ...
 
 By default **xbps-src** will try to resolve package dependencies in this order:
 
