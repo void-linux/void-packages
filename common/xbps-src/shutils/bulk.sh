@@ -13,6 +13,10 @@ bulk_getlink() {
 bulk_build() {
     local _pkgs _pkg pkgs pkg found f x tmpf
 
+    if [ "$XBPS_CROSS_BUILD" ]; then
+        source ${XBPS_COMMONDIR}/cross-profiles/${XBPS_CROSS_BUILD}.sh
+        export XBPS_ARCH=${XBPS_TARGET_ARCH}
+    fi
     if ! command -v xbps-checkvers &>/dev/null; then
         msg_error "xbps-src: cannot find xbps-checkvers(8) command!\n"
     fi
@@ -42,7 +46,7 @@ bulk_build() {
             . $x
         done
         . ${XBPS_SRCPKGDIR}/${pkg}/template
-        _pkgs="$(show_pkg_build_deps | sed -e 's|[<>].*\$||g')"
+        _pkgs="$(show_pkg_build_deps 2>/dev/null| sed -e 's|[<>].*\$||g')"
         found=0
         for x in ${_pkgs}; do
             _pkg=$(bulk_getlink $x)
