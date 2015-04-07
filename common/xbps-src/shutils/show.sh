@@ -61,6 +61,7 @@ show_pkg_build_deps() {
         if [ "${f%\?*}" = "virtual" ]; then
             continue
         fi
+        unset found
         # check for subpkgs
         for x in ${subpackages}; do
             _pkgname="$($XBPS_UHELPER_CMD getpkgdepname $f 2>/dev/null)"
@@ -73,10 +74,16 @@ show_pkg_build_deps() {
             fi
         done
         if [ -n "$found" ]; then
-            unset found
             continue
         fi
-        echo "$f" >> $result
+        _pkgname="$($XBPS_UHELPER_CMD getpkgdepname $f 2>/dev/null)"
+        if [ -z "${_pkgname}" ]; then
+            _pkgname="$($XBPS_UHELPER_CMD getpkgname $f 2>/dev/null)"
+        fi
+        if [ -z "${_pkgname}" ]; then
+            _pkgname="$f"
+        fi
+        echo "${_pkgname}" >> $result
     done
     sort -u $result
     rm -f $result
