@@ -49,14 +49,9 @@ remove_pkg_autodeps() {
     msg_normal "${pkgver:-xbps-src}: removing autodeps, please wait...\n"
     tmplogf=$(mktemp)
 
-    if [ -z "$CHROOT_READY" ]; then
-        xbps-reconfigure -r $XBPS_MASTERDIR -a >> $tmplogf 2>&1
-        xbps-remove -r $XBPS_MASTERDIR -Ryo >> $tmplogf 2>&1
-    else
-        remove_pkg_cross_deps
-        xbps-reconfigure -a >> $tmplogf 2>&1
-        xbps-remove -Ryo >> $tmplogf 2>&1
-    fi
+    remove_pkg_cross_deps
+    $XBPS_RECONFIGURE_CMD -a >> $tmplogf 2>&1
+    $XBPS_REMOVE_CMD -Ryo >> $tmplogf 2>&1
 
     if [ $? -ne 0 ]; then
         msg_red "${pkgver:-xbps-src}: failed to remove autodeps:\n"
