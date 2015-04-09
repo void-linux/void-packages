@@ -145,11 +145,9 @@ chroot_sync_repos() {
 
     if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
         # Make sure to sync index for remote repositories.
-        xbps-uunshare $XBPS_MASTERDIR /usr/sbin/xbps-install -S
-        if [ $? -eq 99 ]; then
-            # userns not supported, fallback to uchroot
-            xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install -S
-        fi
+        $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
+            $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" \
+            "$XBPS_CHROOT_CMD_ARGS" /usr/sbin/xbps-install -S
     fi
 
     if [ -n "$XBPS_CROSS_BUILD" ]; then
@@ -160,13 +158,9 @@ chroot_sync_repos() {
         # Make sure to sync index for remote repositories.
         if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
             env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
-                xbps-uunshare $XBPS_MASTERDIR /usr/sbin/xbps-install \
-                -r $XBPS_CROSS_BASE -S
-            if [ $? -eq 99 ]; then
-                env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
-                    xbps-uchroot $XBPS_MASTERDIR /usr/sbin/xbps-install \
-                    -r $XBPS_CROSS_BASE -S
-            fi
+                $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
+                $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" \
+                /usr/sbin/xbps-install -r $XBPS_CROSS_BASE -S
         fi
     fi
 
@@ -174,27 +168,14 @@ chroot_sync_repos() {
 }
 
 chroot_handler() {
-    local action="$1" pkg="$2" rv=0 arg= _envargs= _chargs=
+    local action="$1" pkg="$2" rv=0 arg= _envargs=
 
     if [ -n "$IN_CHROOT" -o -z "$CHROOT_READY" ]; then
         return 0
     fi
-    # Debian uses /run/shm instead...
-    if [ -d /run/shm ]; then
-        mkdir -p ${XBPS_MASTERDIR}/run/shm
-        _chargs+=" -S /run/shm"
-    elif [ -d /dev/shm ]; then
-        mkdir -p ${XBPS_MASTERDIR}/dev/shm
-        _chargs+=" -S /dev/shm"
-    fi
-
-    if [ -n "$XBPS_HOSTDIR" ]; then
-        _chargs+=" -H $XBPS_HOSTDIR"
-    fi
     if [ ! -d $XBPS_MASTERDIR/void-packages ]; then
         mkdir -p $XBPS_MASTERDIR/void-packages
     fi
-    _chargs+=" -D ${XBPS_DISTDIR}"
 
     [ -z "$action" -a -z "$pkg" ] && return 1
 
@@ -207,13 +188,9 @@ chroot_handler() {
     esac
 
     if [ "$action" = "chroot" ]; then
-        xbps-uunshare ${_chargs} $XBPS_MASTERDIR /bin/xbps-shell
+        $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
+            $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" /bin/xbps-shell
         rv=$?
-        if [ $rv -eq 99 ]; then
-            # userns not supported, fallback to uchroot
-            xbps-uchroot ${_chargs} $XBPS_MASTERDIR /bin/xbps-shell
-            rv=$?
-        fi
     else
         [ -n "$XBPS_CROSS_BUILD" ] && arg="$arg -a $XBPS_CROSS_BUILD"
         [ -n "$XBPS_KEEP_ALL" ] && arg="$arg -C"
@@ -230,14 +207,10 @@ chroot_handler() {
 
         action="$arg $action"
         env -i PATH="/usr/bin:/usr/sbin:$PATH" HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
-            xbps-uunshare ${_chargs} $XBPS_MASTERDIR /void-packages/xbps-src $action $pkg
+            $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
+            $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" \
+            /void-packages/xbps-src $action $pkg
         rv=$?
-        if [ $rv -eq 99 ]; then
-            # userns not supported, fallback to uchroot
-            env -i PATH="/usr/bin:/usr/sbin:$PATH" HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
-                xbps-uchroot ${_chargs} $XBPS_MASTERDIR /void-packages/xbps-src $action $pkg
-            rv=$?
-        fi
     fi
 
     return $rv
