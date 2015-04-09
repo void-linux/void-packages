@@ -17,6 +17,6 @@ if [ -z "$MASTERDIR" -o -z "$DISTDIR" ]; then
 	exit 1
 fi
 
-exec proot -r $XBPS_MASTERDIR -w / -b $DISTDIR:/void-packages \
+exec proot -r $MASTERDIR -w / -b $DISTDIR:/void-packages \
 	${HOSTDIR:+-b $HOSTDIR:/host} -b /proc:/proc -b /dev:/dev \
 	-b /sys:/sys $EXTRA_ARGS $@
