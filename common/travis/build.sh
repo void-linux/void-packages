@@ -11,3 +11,4 @@ for pkg in $(cat /tmp/templates); do
 	[ $? -eq 1 ] && exit 1
 done
 
+exit 0
