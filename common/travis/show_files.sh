@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# build.sh
+# show_files.sh
 
 for pkg in $(cat /tmp/templates); do
 	for subpkg in $(xsubpkg $pkg); do
