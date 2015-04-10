@@ -1,4 +1,4 @@
-#! /bin/sh
+#!/bin/sh
 #
 # changed_templates.sh
 
