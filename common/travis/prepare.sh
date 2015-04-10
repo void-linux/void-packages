@@ -20,3 +20,4 @@ wget -q -O - https://github.com/chneukirchen/xtools/archive/master.tar.gz | \
 
 /bin/echo -e '\x1b[32mUpdating etc/conf...\x1b[0m'
 echo XBPS_CHROOT_CMD=proot >> etc/conf
+echo XBPS_MAKEJOBS=4 >> etc/conf
