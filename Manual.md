@@ -849,7 +849,7 @@ separated by blanks, i.e `system_accounts="foo blah:22"`. Optionally the **uid**
 can be specified by delimiting it with a color, i.e `system_accounts="foo:48"`.
 Additional variables for the **system accounts** can be specified to change its behavior:
 
-	- `<account>_homedir` the home directory for the user. If unset defaults to `/dev/null`.
+	- `<account>_homedir` the home directory for the user. If unset defaults to `/var/empty`.
 	- `<account>_shell` the shell for the new user. If unset defaults to `/sbin/nologin`.
 	- `<account>_descr` the description for the new user. If unset defaults to `<account> unprivileged user`.
 	- `<account>_groups` additional groups to be added to for the new user.
