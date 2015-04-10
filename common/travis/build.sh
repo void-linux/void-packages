@@ -7,7 +7,7 @@ if [ "$1" != x86_64 ]; then
 fi
 
 for pkg in $(cat /tmp/templates); do
-	./xbps-src $arch -C pkg "$pkg"
+	./xbps-src -H $HOME/hostdir $arch -C pkg "$pkg"
 	[ $? -eq 1 ] && exit 1
 done
 
