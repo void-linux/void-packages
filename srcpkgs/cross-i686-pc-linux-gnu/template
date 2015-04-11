@@ -1,16 +1,16 @@
 # Template build file for 'cross-i686-pc-linux-gnu'
 #
-_binutils_version=2.24
-_gcc_version=4.7.3
-_glibc_version=2.19
-_linux_version=3.10.6
+_binutils_version=2.25
+_gcc_version=4.9.2
+_glibc_version=2.21
+_linux_version=3.18.5
 
 _triplet=i686-pc-linux-gnu
 _archflags="-march=i686 -mtune=generic"
 _CROSS_SYSROOT="/usr/${_triplet}"
 
 pkgname=cross-${_triplet}
-version=0.16
+version=0.17
 revision=1
 short_desc="GNU Cross toolchain for the ${_triplet} target (binutils/gcc/glibc)"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
@@ -22,14 +22,14 @@ distfiles="
  http://ftp.gnu.org/gnu/glibc/glibc-${_glibc_version}.tar.xz
  http://www.kernel.org/pub/linux/kernel/v3.x/linux-${_linux_version}.tar.xz"
 checksum="
- e5e8c5be9664e7f7f96e0d09919110ab5ad597794f5b1809871177a0f0f14137
- 2f7c37eb4fc14422ff2358a9ef59c974a75ab41204ef0e49fc34ab1d8981a9c3
- 2d3997f588401ea095a0b27227b1d50cdfdd416236f6567b564549d3b46ea2a2
- ed4dfd9f56b7c82e9c71331bbf8d2ea01ddfddc1b6209bd3f3c8640aa24065cf"
+ 22defc65cfa3ef2a3395faaea75d6331c6e62ea5dfacfed3e2ec17b08c882923
+ 2020c98295856aa13fda0f2f3a4794490757fc24bcca918d52cc8b4917b972dd
+ aeeb362437965a5d3f40b151094ca79def04a115bd363fdd4a9a0c69482923b8
+ e4442436e59c74169e98d38d2e2a434c7b73f8eda0aa8f20e454eaf52270fc90"
 
-lib32disabled=yes
 nocross=yes
-only_for_archs="x86_64"
+nodebug=yes
+lib32disabled=yes
 create_wrksrc=yes
 hostmakedepends="perl flex"
 makedepends="zlib-devel gmp-devel mpfr-devel libmpc-devel"
@@ -57,9 +57,8 @@ _binutils_build() {
 
 	../binutils-${_binutils_version}/configure \
 		--prefix=/usr --target=${_triplet} \
-		--with-sysroot=${_CROSS_SYSROOT} \
-		--disable-nls --disable-multilib --disable-werror \
-		--disable-shared ${_fpuflags}
+		--with-sysroot=${_CROSS_SYSROOT} --disable-nls --disable-shared \
+		--disable-multilib --disable-werror
 
 	make configure-host && make ${makejobs}
 	make install
@@ -77,13 +76,15 @@ _gcc_bootstrap() {
 	[ ! -d ../gcc-bootstrap ] && mkdir ../gcc-bootstrap
 	cd ../gcc-bootstrap
 
-	../gcc-${_gcc_version}/configure --prefix=/usr \
-		--target=${_triplet} --with-newlib \
-		--with-sysroot=${_CROSS_SYSROOT} \
-		--disable-nls --disable-shared --disable-multilib \
+	CFLAGS="-O0 -g0" CXXFLAGS="-O0 -g0" \
+		../gcc-${_gcc_version}/configure --prefix=/usr \
+		--target=${_triplet} --without-headers \
+		--disable-nls --disable-shared --disable-libquadmath \
 		--disable-decimal-float --disable-libgomp --disable-libmudflap \
-		--disable-libquadmath --disable-libssp --disable-threads \
-		--enable-languages=c ${_fpuflags}
+		--disable-libssp --disable-libitm --disable-libatomic \
+		--disable-threads --enable-languages=c \
+		--disable-sjlj-exceptions --disable-multilib \
+		--with-gnu-ld --with-gnu-as ${_fpuflags}
 
 	make ${makejobs}
 	make install
@@ -108,9 +109,6 @@ _linux_headers() {
 _glibc_headers() {
 	[ -f ${wrksrc}/.glibc_headers_done ] && return 0
 
-	cd ${wrksrc}/glibc-${_glibc_version}
-	_apply_patch ${FILESDIR}/glibc-2.18-xattr-compat-hack.patch
-
 	cd ${wrksrc}
 	msg_normal "Building cross glibc headers\n"
 
@@ -127,9 +125,8 @@ _glibc_headers() {
 	../glibc-${_glibc_version}/configure \
 		--host=${_triplet} --prefix=/usr \
 		--with-headers=${_CROSS_SYSROOT}/usr/include \
-		--config-cache --enable-add-ons=nptl,ports \
-		--enable-obsolete-rpc \
-		--enable-kernel=2.6.27
+		--config-cache --enable-obsolete-rpc \
+		--enable-kernel=2.6.27 ${_fpuflags}
 
 	make -k install-headers cross_compiling=yes \
 		install_root=${_CROSS_SYSROOT}
@@ -152,14 +149,13 @@ _glibc_build() {
 
 	export CC="${_triplet}-gcc" LD="${_triplet}-ld" \
 		AS="${_triplet}-as" CPP="${_triplet}-cpp"
-	export CFLAGS="-Os -pipe ${_archflags}"
+	export CFLAGS="-Os -pipe -Wno-error ${_archflags}"
 
 	../glibc-${_glibc_version}/configure \
 		--host=${_triplet} --prefix=/usr \
 		--with-headers=${_CROSS_SYSROOT}/usr/include \
-		--config-cache --enable-add-ons=nptl,ports \
-		--enable-obsolete-rpc --disable-profile \
-		--enable-kernel=2.6.27
+		--config-cache --enable-obsolete-rpc \
+		--enable-kernel=2.6.27 ${_fpuflags}
 	
 	make ${makejobs}
 	make install_root=${_CROSS_SYSROOT} install
@@ -187,13 +183,18 @@ _gcc_build() {
 	fi
 
 	../gcc-${_gcc_version}/configure \
-		--target=${_triplet} --prefix=/usr \
-		--with-sysroot=${_CROSS_SYSROOT} \
-		--enable-languages=c,c++,lto --enable-lto \
-		--disable-multilib --disable-nls --disable-libquadmath \
-		--disable-libmudflap --enable-c99 --enable-shared \
-		--enable-long-long --enable-threads=posix \
-		--disable-libstdcxx-pch --enable-libstdcxx-time
+		--target=${_triplet} --prefix=/usr --libdir=/usr/lib \
+		--with-sysroot=${_CROSS_SYSROOT} --enable-languages=c,c++,lto \
+		--with-gnu-as --with-gnu-ld --disable-multilib \
+		--disable-nls --disable-sjlj-exceptions \
+		--enable-threads=posix --enable-long-longx \
+		--enable-shared --enable-linker-build-id \
+		--enable-gnu-unique-object --enable-lto \
+		--disable-libquadmath --disable-libatomic \
+		--disable-libssp --disable-libmudflap \
+		--disable-libsanitizer --disable-libcilkrts \
+		--disable-libitm --disable-libvtv --disable-libstdcxx-pch \
+		--enable-libstdcxx-time --with-linker-hash-style=gnu ${_fpuflags}
 
 	make ${makejobs}
 
@@ -201,7 +202,7 @@ _gcc_build() {
 }
 
 do_build() {
-        # Ensure we use sane environment
+	# Ensure we use sane environment
 	unset CC CXX CPP LD AS AR RANLIB OBJDUMP READELF NM
 	unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
 	export CFLAGS="-Os" CXXFLAGS="-Os"
@@ -273,6 +274,7 @@ cross-i686-pc-linux-gnu-libc_package() {
 	noarch=yes
 	nostrip=yes
 	noverifydeps=yes
+	noshlibprovides=yes
 	pkg_install() {
 		vmove usr/${_triplet}
 	}
