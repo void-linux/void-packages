@@ -64,6 +64,9 @@ bulk_update() {
     local args="$1" pkgs f
 
     pkgs="$(bulk_build ${args})"
+    if [ -z "$pkgs" ]; then
+        return 0
+    fi
     msg_normal "xbps-src: the following packages must be rebuilt and updated:\n"
     for f in ${pkgs}; do
         echo "   $f"
