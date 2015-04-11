@@ -17,6 +17,14 @@ if [ -z "$MASTERDIR" -o -z "$DISTDIR" ]; then
 	exit 1
 fi
 
-exec proot -r $MASTERDIR -w / -b $DISTDIR:/void-packages \
+# proot does not properly return the resultcode. Workaround this
+RESULT=$(mktemp result.XXXXXXXXXX)
+
+proot -r $MASTERDIR -w / -b "$RESULT:/.result" -b $DISTDIR:/void-packages \
 	${HOSTDIR:+-b $HOSTDIR:/host} -b /proc:/proc -b /dev:/dev \
-	-b /sys:/sys $EXTRA_ARGS $@
+	-b /sys:/sys $EXTRA_ARGS /bin/sh -c '$@; echo $? > /.result' $0 $@
+
+rv=$(cat "$RESULT")
+rm "$RESULT"
+
+exit $rv
