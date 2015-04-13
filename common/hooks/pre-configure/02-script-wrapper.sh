@@ -100,6 +100,7 @@ hook() {
 	generic_wrapper gpgme-config
 	generic_wrapper imlib2-config
 	generic_wrapper libmikmod-config
+	generic_wrapper pcre-config
 	generic_wrapper2 curl-config
 	generic_wrapper2 gpg-error-config
 	generic_wrapper2 libassuan-config
