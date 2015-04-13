@@ -19,6 +19,10 @@ if [ -z "$CROSS_BUILD" ]; then
 	return 0
 fi
 
+if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
+	ln -sf lib ${XBPS_CROSS_BASE}/usr/lib32
+fi
+
 export configure_args+=" --host=$XBPS_CROSS_TRIPLET --with-sysroot=$XBPS_CROSS_BASE --with-libtool-sysroot=$XBPS_CROSS_BASE "
 
 _AUTOCONFCACHEDIR=${XBPS_COMMONDIR}/environment/configure/autoconf_cache
