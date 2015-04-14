@@ -59,6 +59,7 @@ executable must be `setgid`:
 
     # chown root:<group> xbps-uchroot
     # chmod 4750 xbps-uchroot
+    # usermod -a -G <group> <user>
 
 > NOTE: by default in void you shouldn't do this manually, your user must be a member of
 the `xbuilder` group.
