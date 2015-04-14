@@ -16,11 +16,8 @@ multiple utilities to accomplish this task:
  - `unshare(1)` - util-linux utility that uses `user_namespaces(7)`.
  - `proot(1)` - utility that implements chroot/bind mounts in user space, see http://proot.me.
 
-By default `xbps-src` uses `xbps-uunshare(8)`, but you can change the utility with
-the `XBPS_CHROOT_CMD` configuration variable in `etc/conf`, i.e:
-
-    $ cd void-packages
-    $ echo XBPS_CHROOT_CMD=uchroot >> etc/conf
+> NOTE: you don't need to be `root` to use `xbps-src`, use your preferred chroot style as explained
+below.
 
 #### xbps-uunshare(8)
 
