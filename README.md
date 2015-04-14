@@ -7,10 +7,44 @@ The included `xbps-src` script will fetch and compile the sources, and install i
 files into a `fake destdir` to generate XBPS binary packages that can be installed
 or queried through the `xbps-install(8)` and `xbps-query(8)` utilities, respectively.
 
-The `xbps-src` utility uses `xbps-uunshare(8)` (or `xbps-uchroot(8)` if the system
-does not support `user namespaces`) to build packages in lightweight linux
-`containers` through the use of `namespaces`, that means that processes and bind mounts
-are isolated (among others).
+The `xbps-src` utility requires an utility to chroot and bind mount existing directories
+into a `masterdir` that is used as its main `chroot` directory. `xbps-src` supports
+multiple utilities to accomplish this task:
+
+ - `xbps-uunshare(8)` - XBPS utility that uses `user_namespaces(7)`.
+ - `xbps-uchroot(8)` - XBPS utility that uses `namespaces` and must be `setgid`.
+ - `unshare(1)` - util-linux utility that uses `user_namespaces(7)`.
+ - `proot(1)` - utility that implements chroot/bind mounts in user space, see http://proot.me.
+
+By default `xbps-src` uses `xbps-uunshare(8)`, but you can change the utility with
+the `XBPS_CHROOT_CMD` configuration variable in `etc/conf`, i.e:
+
+    $ cd void-packages
+    $ echo XBPS_CHROOT_CMD=uchroot >> etc/conf
+
+#### xbps-uunshare(8)
+
+This utility requires these linux kernel options:
+
+- CONFIG\_NAMESPACES
+- CONFIG\_IPC\_NS
+- CONFIG\_UTS\_NS
+- CONFIG\_USER\_NS
+
+#### xbps-uchroot(8)
+
+This utility requires these linux kernel options:
+
+- CONFIG\_NAMESPACES
+- CONFIG\_IPC\_NS
+- CONFIG\_PID\_NS
+- CONFIG\_UTS\_NS
+
+Your user must be added to a special group to be able to use `xbps-uchroot(8)` and the
+executable must be `setgid`:
+
+    # usermod -a -G xbuilder <user>
+    # chmod 4750 root:xbuilder xbps-uchroot
 
 ### Requirements
 
@@ -18,11 +52,6 @@ are isolated (among others).
 - xbps >= 0.44
 
 ### Quick setup in Void
-
-If your system does not support `user namespaces` your user must be added to a special
-group to be able to use `xbps-uchroot(8)`:
-
-    # usermod -a -G xbuilder <user>
 
 Clone the `void-packages` git repository, install the bootstrap packages:
 
@@ -268,6 +297,7 @@ To use xbps-src in your linux distribution use the following instructions. Let's
     $ tar xvf xbps-static-latest.<arch>.tar.xz -C ~/XBPS
     $ export PATH=~/XBPS/usr/sbin:$PATH
 
+
 If your system does not support `user namespaces`, a privileged group is required to be able to use
 `xbps-uchroot(8)` with xbps-src, by default it's set to the `xbuilder` group, change this to your desired group:
 
@@ -283,6 +313,7 @@ and `xbps-src` should be fully functional; just start the `bootstrap` process, i
     $ ./xbps-src binary-bootstrap
 
 The default masterdir is created in the current working directory, i.e `void-packages/masterdir`.
+
 
 ### Remaking the masterdir
 
