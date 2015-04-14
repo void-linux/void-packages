@@ -28,6 +28,9 @@ This utility requires these linux kernel options:
 - CONFIG\_UTS\_NS
 - CONFIG\_USER\_NS
 
+This is the default method, and if your system does not support any of the required kernel
+options it will fail with `EINVAL (Invalid argument)`.
+
 #### unshare(1)
 
 This utility also requires `user_namespaces(7)` support and these linux kernel options:
@@ -64,6 +67,10 @@ To enable it:
 
     $ cd void-packages
     $ echo XBPS_CHROOT_CMD=uchroot >> etc/conf
+
+If for some reason it's erroring out as `ERROR clone (Operation not permited)`, check that
+your user is a member of the required `group` and that `xbps-uchroot(8)` utility has the
+proper permissions and owner/group as explained above.
 
 #### proot(1)
 
