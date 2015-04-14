@@ -403,6 +403,22 @@ Your new masterdir is now ready to build natively packages for the musl C librar
 
 To see if the musl C dynamic linker is working as expected.
 
+### Building void base-system from scratch
+
+To rebuild all packages in `base-system` for your native architecture:
+
+    $ ./xbps-src -N pkg base-system
+
+It's also possible to cross compile everything from scratch:
+
+    $ ./xbps-src -a <target> -N pkg base-system
+
+Once the build has finished, you can specify the path to the local repository to `void-mklive`, i.e:
+
+    # cd void-mklive
+    # make
+    # ./mklive.sh ... -r /path/to/hostdir/binpkgs
+
 ### Contributing
 
 See [Contributing](https://github.com/voidlinux/xbps-packages/blob/master/CONTRIBUTING.md)
