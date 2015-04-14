@@ -38,7 +38,7 @@ prepare_cross_sysroot() {
 
     msg_normal "Installing $cross cross pkg: cross-vpkg-dummy ...\n"
     errlog=$(mktemp)
-    $XBPS_INSTALL_XCMD -SAyfd cross-vpkg-dummy &>$errlog
+    $XBPS_INSTALL_XCMD -Syfd cross-vpkg-dummy &>$errlog
     rval=$?
     if [ $rval -ne 0 -a $rval -ne 17 ]; then
         msg_red "failed to install cross-vpkg-dummy (error $rval)\n"
