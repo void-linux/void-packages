@@ -7,7 +7,7 @@ The included `xbps-src` script will fetch and compile the sources, and install i
 files into a `fake destdir` to generate XBPS binary packages that can be installed
 or queried through the `xbps-install(8)` and `xbps-query(8)` utilities, respectively.
 
-The `xbps-src` utility requires an utility to chroot and bind mount existing directories
+`xbps-src` requires an utility to chroot and bind mount existing directories
 into a `masterdir` that is used as its main `chroot` directory. `xbps-src` supports
 multiple utilities to accomplish this task:
 
@@ -31,6 +31,20 @@ This utility requires these linux kernel options:
 - CONFIG\_UTS\_NS
 - CONFIG\_USER\_NS
 
+#### unshare(1)
+
+This utility also requires `user_namespaces(7)` support and these linux kernel options:
+
+- CONFIG\_NAMESPACES
+- CONFIG\_IPC\_NS
+- CONFIG\_UTS\_NS
+- CONFIG\_USER\_NS
+
+To enable it:
+
+    $ cd void-packages
+    $ echo XBPS_CHROOT_CMD=unshare >> etc/conf
+
 #### xbps-uchroot(8)
 
 This utility requires these linux kernel options:
@@ -48,6 +62,22 @@ executable must be `setgid`:
 
 > NOTE: by default in void you shouldn't do this manually, your user must be a member of
 the `xbuilder` group.
+
+To enable it:
+
+    $ cd void-packages
+    $ echo XBPS_CHROOT_CMD=uchroot >> etc/conf
+
+#### proot(1)
+
+The `proot(1)` utility implements chroot and bind mounts support completely in user space,
+and can be used if your linux kernel does not have support for namespaces. See http://proot.me
+for more information.
+
+To enable it:
+
+    $ cd void-packages
+    $ echo XBPS_CHROOT_CMD=proot >> etc/conf
 
 ### Requirements
 
