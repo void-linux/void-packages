@@ -33,8 +33,11 @@ prepare_cross_sysroot() {
         $XBPS_LIBEXECDIR/build.sh cross-vpkg-dummy cross-vpkg-dummy pkg $cross init || return $?
     fi
 
-    errlog=$(mktemp)
+    check_installed_pkg cross-vpkg-dummy-0.17_1 $cross
+    [ $? -eq 0 ] && return 0
+
     msg_normal "Installing $cross cross pkg: cross-vpkg-dummy ...\n"
+    errlog=$(mktemp)
     $XBPS_INSTALL_XCMD -SAyd cross-vpkg-dummy &>$errlog
     rval=$?
     if [ $rval -ne 0 -a $rval -ne 17 ]; then
@@ -60,8 +63,11 @@ install_cross_pkg() {
         $XBPS_LIBEXECDIR/build.sh cross-${XBPS_CROSS_TRIPLET} cross-${XBPS_CROSS_TRIPLET} pkg || return $rval
     fi
 
-    msg_normal "Installing $cross cross compiler: cross-${XBPS_CROSS_TRIPLET} ...\n"
+    check_installed_pkg cross-${XBPS_CROSS_TRIPLET}-0.1_1
+    [ $? -eq 0 ] && return 0
+
     errlog=$(mktemp)
+    msg_normal "Installing $cross cross compiler: cross-${XBPS_CROSS_TRIPLET} ...\n"
     $XBPS_INSTALL_CMD -Syd cross-${XBPS_CROSS_TRIPLET} &>$errlog
     rval=$?
     if [ $rval -ne 0 -a $rval -ne 17 ]; then
