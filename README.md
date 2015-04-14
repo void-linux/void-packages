@@ -43,8 +43,11 @@ This utility requires these linux kernel options:
 Your user must be added to a special group to be able to use `xbps-uchroot(8)` and the
 executable must be `setgid`:
 
-    # usermod -a -G xbuilder <user>
-    # chmod 4750 root:xbuilder xbps-uchroot
+    # chown root:<group> xbps-uchroot
+    # chmod 4750 xbps-uchroot
+
+> NOTE: by default in void you shouldn't do this manually, your user must be a member of
+the `xbuilder` group.
 
 ### Requirements
 
