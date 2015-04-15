@@ -2,4 +2,4 @@
 #
 # bootstrap.sh
 
-./xbps-src -H $HOME/hostdir binary-bootstrap
+./xbps-src -H $HOME/hostdir binary-bootstrap $1
