@@ -2,8 +2,8 @@
 #
 # build.sh
 
-if [ "$1" != x86_64 ]; then
-	arch="-a $1"
+if [ "$1" != "$2" ]; then
+	arch="-a $2"
 fi
 
 for pkg in $(cat /tmp/templates); do
