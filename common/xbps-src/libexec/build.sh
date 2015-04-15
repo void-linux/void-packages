@@ -31,8 +31,8 @@ show_pkg_build_options
 check_pkg_arch $XBPS_CROSS_BUILD
 
 if [ -z "$XBPS_CROSS_PREPARE" ]; then
-    install_cross_pkg $XBPS_CROSS_BUILD
-    prepare_cross_sysroot $XBPS_CROSS_BUILD
+    install_cross_pkg $XBPS_CROSS_BUILD || exit $?
+    prepare_cross_sysroot $XBPS_CROSS_BUILD || exit $?
 fi
 # Install dependencies from binary packages
 if [ "$PKGNAME" != "$TARGET_PKG" -o -z "$XBPS_SKIP_DEPS" ]; then
