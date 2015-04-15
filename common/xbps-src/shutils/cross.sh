@@ -47,6 +47,8 @@ prepare_cross_sysroot() {
         msg_error "cannot continue due to errors above\n"
     fi
     rm -f $errlog
+    # Create top level symlinks in sysroot.
+    XBPS_ARCH=$XBPS_TARGET_ARCH xbps-reconfigure -r $XBPS_CROSS_BASE -f base-directories
 
     return 0
 }
