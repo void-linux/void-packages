@@ -47,10 +47,13 @@ show_pkg_files() {
     [ -d ${PKGDESTDIR} ] && find ${PKGDESTDIR} -print
 }
 
+show_avail() {
+    check_pkg_arch "$XBPS_CROSS_BUILD" 2>/dev/null
+}
+
 show_pkg_build_deps() {
     local f x _pkgname _dep found result
 
-    check_pkg_arch "$XBPS_CROSS_BUILD"
     setup_pkg_depends
 
     result=$(mktemp || exit 1)
