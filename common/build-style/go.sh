@@ -9,10 +9,14 @@ do_build() {
 		ln -fs $PWD "${path}"
 	fi
 
-	go get -d "${go_import_path}"
-	go build -x "${go_import_path}"
+	go_package=${go_package:-$go_import_path}
+	cd "${GOPATH}/src/${go_package}"
+	go get -d "${go_package}"
+	go build -x "${go_package}"
 }
 
 do_install() {
+	go_package=${go_package:-$go_import_path}
+	cd "${GOPATH}/src/${go_package}"
 	vbin ${pkgname}
 }
