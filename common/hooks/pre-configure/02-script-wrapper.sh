@@ -80,9 +80,8 @@ _EOF
 }
 
 install_wrappers() {
-	for f in install ldconfig; do
-		install -m0755 ${XBPS_COMMONDIR}/hooks/pre-configure/${f}-wrapper \
-			${XBPS_WRAPPERDIR}/${f}
+	for f in ${XBPS_COMMONDIR}/wrappers/*.sh; do
+		install -m0755 ${f} ${XBPS_WRAPPERDIR}/$(basename ${f%.sh})
 	done
 }
 
