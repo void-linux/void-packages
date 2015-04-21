@@ -79,15 +79,17 @@ _EOF
 	ln -sf ${XBPS_CROSS_TRIPLET}-pkg-config ${XBPS_WRAPPERDIR}/pkg-config
 }
 
-install_wrapper() {
-	install -m0755 ${XBPS_COMMONDIR}/hooks/pre-configure/install-wrapper \
-		${XBPS_WRAPPERDIR}/install
+install_wrappers() {
+	for f in install ldconfig; do
+		install -m0755 ${XBPS_COMMONDIR}/hooks/pre-configure/${f}-wrapper \
+			${XBPS_WRAPPERDIR}/${f}
+	done
 }
 
 hook() {
 	export PATH="$XBPS_WRAPPERDIR:$PATH"
 
-	install_wrapper
+	install_wrappers
 
 	[ -z "$CROSS_BUILD" ] && return 0
 
