@@ -2,7 +2,7 @@
 pkgname=gcc
 _majorver=4.9
 version=${_majorver}.2
-revision=2
+revision=3
 short_desc="The GNU C Compiler"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 homepage="http://gcc.gnu.org"
@@ -25,19 +25,24 @@ subpackages="libgcc libgomp libgomp-devel libatomic libatomic-devel"
 subpackages+=" libitm libitm-devel libssp libssp-devel gcc-c++"
 
 if [ "$CHROOT_READY" -a -z "$CROSS_BUILD" ]; then
-	# Required by gcj
-	hostmakedepends+=" zip unzip"
-	subpackages+=" gcc-gcj gcc-go gcc-fortran gcc-objc gcc-objc++"
-	subpackages+=" libgcj-devel libgcj libgo-devel libgo"
+	subpackages+=" gcc-fortran gcc-objc gcc-objc++"
 	subpackages+=" libgfortran-devel libgfortran"
 	subpackages+=" libobjc-devel libobjc"
+	# Required by gcj
+	case "$XBPS_TARGET_MACHINE" in
+		*-musl);;
+		*)	# XXX disable go and java with musl
+			hostmakedepends+=" zip unzip"
+			subpackages+=" gcc-go libgo-devel libgo gcc-gcj libgcj-devel libgcj"
+			;;
+	esac
 fi
 
 subpackages+=" libstdc++-devel libstdc++"
 
 case "$XBPS_TARGET_MACHINE" in
 	i686) _triplet="i686-pc-linux-gnu";;
-	i686-musl) _triplet="i686-pc-linux-musl";;
+	i686-musl) _triplet="i686-linux-musl";;
 	x86_64) _triplet="x86_64-unknown-linux-gnu";;
 	x86_64-musl) _triplet="x86_64-linux-musl";;
 	armv5tel) _triplet="arm-linux-gnueabi";;
@@ -78,7 +83,14 @@ do_configure() {
 		armv5*) _args+=" --with-arch=armv5te --with-float=soft";;
 		armv6l*) _args+=" --with-arch=armv6 --with-fpu=vfp --with-float=hard";;
 		armv7l*) _args+=" --with-arch=armv7-a --with-fpu=vfpv3 --with-float=hard";;
-		aarch64*) _args+=" --with-arch=armv8-a";;
+		aarch64*) # use lib not lib64 by default
+			_args+=" --with-arch=armv8-a"
+			sed -i '/m64=/s/lib64/lib/' gcc/config/aarch64/t-aarch64-linux
+			;;
+		x86_64*) # use lib not lib64 by default
+			sed -i '/m64=/s/lib64/lib/' gcc/config/i386/t-linux64
+			sed -i 's/lib64/lib/' gcc/config/i386/linux64.h
+			;;
 	esac
 
 	if [ "$CROSS_BUILD" ]; then
@@ -90,10 +102,11 @@ do_configure() {
 		_args+=" --disable-multilib --host=$XBPS_CROSS_TRIPLET --with-build-sysroot=${XBPS_CROSS_BASE}"
 	else
 		case "$XBPS_TARGET_MACHINE" in
-			arm*|aarch64*) _args+=" --build=${_triplet}";;
+			# XXX disable go and java with musl
+			*-musl) _langs="c,c++,objc,obj-c++,fortran,lto";;
+			*) _langs="c,c++,objc,obj-c++,fortran,lto,go,java";;
 		esac
-		_langs="c,c++,objc,obj-c++,fortran,lto,go,java"
-		_args+=" --enable-java-gc=boehm --enable-fast-character"
+		_args+=" --build=${_triplet} --enable-java-gc=boehm --enable-fast-character"
 	fi
 
 	if [ -z "$CHROOT_READY" ]; then
@@ -106,8 +119,7 @@ do_configure() {
 		_langs="c,c++,lto"
 	fi
 	case "$XBPS_TARGET_MACHINE" in
-		*-musl) _args+=" --disable-libsanitizer";;
-		aarch64*) _args+=" --disable-libsanitizer";;
+		aarch64*|*-musl) _args+=" --disable-libsanitizer";;
 	esac
 
 	export CFLAGS="${CFLAGS/-D_FORTIFY_SOURCE=2/}"
@@ -122,12 +134,10 @@ do_configure() {
 		--enable-linker-build-id --enable-gnu-unique-object \
 		--enable-checking=release --disable-libstdcxx-pch \
 		--enable-cloog-backend=isl --with-linker-hash-style=gnu \
-		--enable-languages=${_langs} --enable-sjlj-exceptions=no ${_args}
+		--disable-werror --enable-languages=${_langs} \
+		--enable-sjlj-exceptions=no ${_args}
 }
 do_build() {
-	if [ -z "$CHROOT_READY" ]; then
-		export LD_LIBRARY_PATH="${XBPS_MASTERDIR}/usr/lib"
-	fi
 	make ${makejobs}
 }
 pre_install() {
