@@ -1,7 +1,7 @@
 # This hooks removes empty dirs and warns about them.
 
 hook() {
-	find ${PKGDESTDIR} -type d -empty -print0|sort -z -r|while IFS="" read f; do
+	for f in $(find ${PKGDESTDIR} -type d -empty|sort -r); do
 		_dir="${f##${PKGDESTDIR}}"
 		[ -z "${_dir}" ] && continue
 		rmdir --ignore-fail-on-non-empty -p "$f" &>/dev/null
