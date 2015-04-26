@@ -52,7 +52,7 @@ show_avail() {
 }
 
 show_pkg_build_deps() {
-    local f x _pkgname _dep found result
+    local f x _pkgname _srcpkg _dep found result
 
     setup_pkg_depends
 
@@ -86,7 +86,8 @@ show_pkg_build_deps() {
         if [ -z "${_pkgname}" ]; then
             _pkgname="$f"
         fi
-        echo "${_pkgname}" >> $result
+        _srcpkg=$(basename $(readlink -f ${XBPS_SRCPKGDIR}/${_pkgname}))
+        echo "${_srcpkg}" >> $result
     done
     sort -u $result
     rm -f $result
