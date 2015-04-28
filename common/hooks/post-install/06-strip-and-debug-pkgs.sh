@@ -56,11 +56,13 @@ create_debug_pkg() {
 }
 
 hook() {
-	local fname= x= f= _soname=
+	local fname= x= f= _soname= STRIPCMD=
 
 	if [ -n "$nostrip" -o -n "$noarch" ]; then
 		return 0
 	fi
+
+	STRIPCMD=/usr/bin/$STRIP
 
 	find ${PKGDESTDIR} -type f | while read f; do
 		if [[ $f =~ ^/usr/lib/debug/ ]]; then
@@ -83,7 +85,7 @@ hook() {
 			chmod +w "$f"
 			if echo "$(file $f)" | grep -q "statically linked"; then
 				# static binary
-				$STRIP "$f"
+				$STRIPCMD "$f"
 				if [ $? -ne 0 ]; then
 					msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
 					return 1
@@ -91,7 +93,7 @@ hook() {
 				echo "   Stripped static executable: ${f#$PKGDESTDIR}"
 			else
 				make_debug "$f"
-				$STRIP "$f"
+				$STRIPCMD "$f"
 				if [ $? -ne 0 ]; then
 					msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
 					return 1
@@ -104,7 +106,7 @@ hook() {
 			chmod +w "$f"
 			# shared library
 			make_debug "$f"
-			$STRIP --strip-unneeded "$f"
+			$STRIPCMD --strip-unneeded "$f"
 			if [ $? -ne 0 ]; then
 				msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
 				return 1
@@ -118,7 +120,7 @@ hook() {
 			;;
 		application/x-archive*)
 			chmod +w "$f"
-			$STRIP --strip-debug "$f"
+			$STRIPCMD --strip-debug "$f"
 			if [ $? -ne 0 ]; then
 				msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
 				return 1
