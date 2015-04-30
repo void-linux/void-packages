@@ -1,7 +1,7 @@
 # vim: set ts=4 sw=4 et:
 #
 setup_pkg_depends() {
-    local pkg="$1" j _pkgdepname _pkgdep _rpkgname _depname _replacement
+    local pkg="$1" j _pkgdepname _pkgdep _rpkgname _depname _depver _replacement
 
     if [ -n "$pkg" ]; then
         # subpkg
@@ -53,7 +53,8 @@ setup_pkg_depends() {
                 _depname="${_depname/${_depname}/${_replacement}}"
             fi
         fi
-        host_build_depends+=" ${_depname}-$(srcpkg_get_version ${_depname})"
+        _depver=$(srcpkg_get_version ${_depname}) || exit $?
+        host_build_depends+=" ${_depname}-${_depver}"
     done
     for j in ${makedepends}; do
         _depname="${j%\?*}"
@@ -68,7 +69,8 @@ setup_pkg_depends() {
                 _depname="${_depname/${_depname}/${_replacement}}"
             fi
         fi
-        build_depends+=" ${_depname}-$(srcpkg_get_version ${_depname})"
+        _depver=$(srcpkg_get_version ${_depname}) || exit $?
+        build_depends+=" ${_depname}-${_depver}"
     done
 }
 
@@ -175,9 +177,9 @@ srcpkg_get_version() {
     # Run this in a sub-shell to avoid polluting our env.
     (
         unset XBPS_BINPKG_EXISTS
-        setup_pkg $pkg || return $?
+        setup_pkg $pkg || exit $?
         echo "${version}_${revision}"
-    ) || return $?
+    ) || exit $?
 }
 
 srcpkg_get_pkgver() {
@@ -185,9 +187,9 @@ srcpkg_get_pkgver() {
     # Run this in a sub-shell to avoid polluting our env.
     (
         unset XBPS_BINPKG_EXISTS
-        setup_pkg $pkg || return $?
+        setup_pkg $pkg || exit $?
         echo "${sourcepkg}-${version}_${revision}"
-    ) || return $?
+    ) || exit $?
 }
 
 #
