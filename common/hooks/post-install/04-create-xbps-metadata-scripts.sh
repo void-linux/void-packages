@@ -119,23 +119,25 @@ _EOF
 	#
 	# Handle systemd services.
 	#
-	if [ -n "${systemd_services}" ]; then
-		_add_trigger systemd-service
-		echo "export systemd_services=\"${systemd_services}\"" >> $tmpf
-	fi
-	if [ -d ${PKGDESTDIR}/usr/lib/tmpfiles.d ]; then
-		for f in ${PKGDESTDIR}/usr/lib/tmpfiles.d/*; do
-			_tmpfiles="${_tmpfiles} $(basename $f)"
-		done
-		_add_trigger systemd-service
-		echo "export systemd_tmpfiles=\"${_tmpfiles}\"" >> $tmpf
-	fi
-	if [ -d ${PKGDESTDIR}/usr/lib/modules-load.d ]; then
-		for f in ${PKGDESTDIR}/usr/lib/modules-load.d/*; do
-			_mods="${_mods} $(basename $f)"
-		done
-		_add_trigger systemd-service
-		echo "export systemd_modules=\"${_mods}\"" >> $tmpf
+	if [ -n "$build_option_systemd" ]; then
+		if [ -n "${systemd_services}" ]; then
+			_add_trigger systemd-service
+			echo "export systemd_services=\"${systemd_services}\"" >> $tmpf
+		fi
+		if [ -d ${PKGDESTDIR}/usr/lib/tmpfiles.d ]; then
+			for f in ${PKGDESTDIR}/usr/lib/tmpfiles.d/*; do
+				_tmpfiles="${_tmpfiles} $(basename $f)"
+			done
+			_add_trigger systemd-service
+			echo "export systemd_tmpfiles=\"${_tmpfiles}\"" >> $tmpf
+		fi
+		if [ -d ${PKGDESTDIR}/usr/lib/modules-load.d ]; then
+			for f in ${PKGDESTDIR}/usr/lib/modules-load.d/*; do
+				_mods="${_mods} $(basename $f)"
+			done
+			_add_trigger systemd-service
+			echo "export systemd_modules=\"${_mods}\"" >> $tmpf
+		fi
 	fi
 	#
 	# Handle GNU Info files.
