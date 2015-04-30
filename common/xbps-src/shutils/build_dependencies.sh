@@ -179,7 +179,7 @@ srcpkg_get_version() {
         unset XBPS_BINPKG_EXISTS
         setup_pkg $pkg || exit $?
         echo "${version}_${revision}"
-    ) || exit $?
+    ) || msg_error "$pkgver: failed to transform dependency $pkg\n"
 }
 
 srcpkg_get_pkgver() {
@@ -189,7 +189,7 @@ srcpkg_get_pkgver() {
         unset XBPS_BINPKG_EXISTS
         setup_pkg $pkg || exit $?
         echo "${sourcepkg}-${version}_${revision}"
-    ) || exit $?
+    ) || msg_error "$pkgver: failed to transform dependency $pkg\n"
 }
 
 #
