@@ -39,7 +39,7 @@ esac
 
 # Read apropiate autoconf cache files for target machine.
 case "$XBPS_TARGET_MACHINE" in
-	armv?l*)
+	armv5te*|armv?l*)
 		. ${_AUTOCONFCACHEDIR}/endian-little
 		. ${_AUTOCONFCACHEDIR}/arm-common
 		. ${_AUTOCONFCACHEDIR}/arm-linux
