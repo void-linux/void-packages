@@ -31,20 +31,6 @@ This utility requires these linux kernel options:
 This is the default method, and if your system does not support any of the required kernel
 options it will fail with `EINVAL (Invalid argument)`.
 
-#### unshare(1)
-
-This utility also requires `user_namespaces(7)` support and these linux kernel options:
-
-- CONFIG\_NAMESPACES
-- CONFIG\_IPC\_NS
-- CONFIG\_UTS\_NS
-- CONFIG\_USER\_NS
-
-To enable it:
-
-    $ cd void-packages
-    $ echo XBPS_CHROOT_CMD=unshare >> etc/conf
-
 #### xbps-uchroot(8)
 
 This utility requires these linux kernel options:
