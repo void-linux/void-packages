@@ -83,7 +83,7 @@ if declare -f do_clean >/dev/null; then
     run_func do_clean
 fi
 
-if [ -z "$XBPS_KEEP_ALL" ]; then
+if [ -n "$XBPS_DEPENDENCY" -o -z "$XBPS_KEEP_ALL" ]; then
     remove_pkg_autodeps
     remove_pkg_wrksrc
     remove_pkg $XBPS_CROSS_BUILD

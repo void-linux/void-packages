@@ -43,8 +43,6 @@ pkg_available() {
 remove_pkg_autodeps() {
     local rval= tmplogf=
 
-    [ -n "$XBPS_KEEP_ALL" ] && return 0
-
     cd $XBPS_MASTERDIR || return 1
     msg_normal "${pkgver:-xbps-src}: removing autodeps, please wait...\n"
     tmplogf=$(mktemp)
