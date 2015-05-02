@@ -7,13 +7,17 @@ The included `xbps-src` script will fetch and compile the sources, and install i
 files into a `fake destdir` to generate XBPS binary packages that can be installed
 or queried through the `xbps-install(8)` and `xbps-query(8)` utilities, respectively.
 
+### Requirements
+
+- GNU bash
+- xbps >= 0.44
+
 `xbps-src` requires an utility to chroot and bind mount existing directories
 into a `masterdir` that is used as its main `chroot` directory. `xbps-src` supports
 multiple utilities to accomplish this task:
 
- - `xbps-uunshare(8)` - XBPS utility that uses `user_namespaces(7)`.
- - `xbps-uchroot(8)` - XBPS utility that uses `namespaces` and must be `setgid`.
- - `unshare(1)` - util-linux utility that uses `user_namespaces(7)`.
+ - `xbps-uunshare(8)` - XBPS utility that uses `user_namespaces(7)` (part of xbps, default).
+ - `xbps-uchroot(8)` - XBPS utility that uses `namespaces` and must be `setgid` (part of xbps).
  - `proot(1)` - utility that implements chroot/bind mounts in user space, see http://proot.me.
 
 > NOTE: you don't need to be `root` to use `xbps-src`, use your preferred chroot style as explained
@@ -69,11 +73,6 @@ To enable it:
 
     $ cd void-packages
     $ echo XBPS_CHROOT_CMD=proot >> etc/conf
-
-### Requirements
-
-- GNU bash
-- xbps >= 0.44
 
 ### Quick setup in Void
 
