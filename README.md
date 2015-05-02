@@ -293,17 +293,8 @@ In the host (machine that executes xbps-src) enable the following settings in th
 
 ### Cross compiling packages for a target architecture
 
-Currently `xbps-src` can cross build packages for some target architectures with a cross compiler. The supported target list is the following:
-
-* i686          - for Linux i686 GNU.
-* i686-musl     - for Linux i686 Musl libc.
-* armv6hf       - for Linux ARMv6 EABI5 (LE Hard Float / GNU)
-* armv6hf-musl  - for Linux ARMv6 EABI5 (LE Hard Float / Musl libc)
-* armv7hf       - for Linux ARMv7 EABI5 (LE Hard Float / GNU)
-* armv7hf-musl  - for Linux ARMv7 EABI5 (LE Hard Float / Musl libc)
-* mips          - for Linux MIPS o32 (BE Soft Float / GNU)
-* mipsel        - for Linux MIPS o32 (LE Soft Float / GNU)
-* x86_64-musl   - for x86_64 Musl/Linux
+Currently `xbps-src` can cross build packages for some target architectures with a cross compiler.
+The supported target is shown with `./xbps-src -h`.
 
 If a source package has been adapted to be **cross buildable** `xbps-src` will automatically build the binary package(s) with a simple command:
 
