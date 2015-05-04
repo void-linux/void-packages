@@ -1005,8 +1005,8 @@ The following variables influence how Go packages are built:
   distfile, as it would be used with `go get`. For example, GitHub's
   `hub` program has the import path `github.com/github/hub`. This
   variable is required.
-- `go_package`: The import path of the package that should be built.
-  Defaults to `go_import_path`.
+- `go_package`: A space-separated list of import paths of the packages
+  that should be built. Defaults to `go_import_path`.
 - `go_get`: If set to yes, the package specified via `go_import_path`
   will be downloaded with `go get`. Otherwise, a distfile has to be
   provided. This option should only be used with `-git` (or similar)

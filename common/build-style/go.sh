@@ -10,13 +10,11 @@ do_build() {
 	fi
 
 	go_package=${go_package:-$go_import_path}
-	cd "${GOPATH}/src/${go_package}"
-	go get -d "${go_package}"
-	go build -x "${go_package}"
+	go get -x ${go_package}
 }
 
 do_install() {
-	go_package=${go_package:-$go_import_path}
-	cd "${GOPATH}/src/${go_package}"
-	vbin ${pkgname}
+	for f in "${GOBIN}"/*; do
+		vbin "$f"
+	done
 }
