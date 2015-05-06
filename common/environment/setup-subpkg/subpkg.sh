@@ -6,7 +6,7 @@ unset -v noarch conf_files mutable_files preserve triggers
 unset -v depends run_depends replaces provides conflicts tags
 
 # hooks/post-install/03-strip-and-debug-pkgs
-unset -v nostrip nostrip_files nodebug
+unset -v nostrip nostrip_files
 
 # hooks/pre-pkg/04-generate-runtime-deps
 unset -v noverifyrdeps allow_unknown_shlibs shlib_requires
