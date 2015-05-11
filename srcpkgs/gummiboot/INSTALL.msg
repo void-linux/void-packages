@@ -1,6 +1,6 @@
 Make gummiboot your default bootloader with:
 
-	$ mount -t efivarfs none /sys/firmware/efi/efivars
+	$ mount -t efivarfs efivarfs /sys/firmware/efi/efivars
 	$ gummiboot install
 
 Kernel options should be defined in /boot/loader/void-options.conf:
@@ -10,5 +10,5 @@ Kernel options should be defined in /boot/loader/void-options.conf:
 
 Reconfigure your kernel package to create loader entries:
 
-	$ xbps-reconfigure -f linux3.XX
+	$ xbps-reconfigure -f linux4.XX
 
