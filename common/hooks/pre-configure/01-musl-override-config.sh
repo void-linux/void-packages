@@ -2,7 +2,7 @@
 
 hook() {
 	case "$XBPS_TARGET_MACHINE" in
-		aarch64*);;
+		aarch64*|*-musl);;
 		*) return 0;;
 	esac
 	if [ -z "$build_style" -o "$build_style" = "gnu-configure" ]; then
