@@ -1,0 +1,83 @@
+# Patch to make the build system honour CC, CXX, CFLAGS, CXXFLAGS and LDFLAGS. 
+# See http://subversion.ffado.org/ticket/382 for more information.
+# Applied upstream.
+
+Index: SConstruct
+===================================================================
+--- SConstruct	(revision 2575)
++++ SConstruct	(revision 2577)
+@@ -77,7 +77,8 @@
+     EnumVariable('DIST_TARGET', 'Build target for cross compiling packagers', 'auto', allowed_values=('auto', 'i386', 'i686', 'x86_64', 'powerpc', 'powerpc64', 'none' ), ignorecase=2),
+     BoolVariable( "ENABLE_OPTIMIZATIONS", "Enable optimizations and the use of processor specific extentions (MMX/SSE/...).", False ),
+     BoolVariable( "PEDANTIC", "Enable -Werror and more pedantic options during compile.", False ),
+-    ( "COMPILE_FLAGS", "Add additional flags to the environment.\nOnly meant for distributors and gentoo-users who want to over-optimize their built.\n Using this is not supported by the ffado-devs!" ),
++    BoolVariable( "CUSTOM_ENV", "Respect CC, CXX, CFLAGS, CXXFLAGS and LDFLAGS.\nOnly meant for distributors and gentoo-users who want to over-optimize their build.\n Using this is not supported by the ffado-devs!", False ),
++    ( "COMPILE_FLAGS", "Deprecated (use CFLAGS and CXXFLAGS with CUSTOM_ENV=True instead).  Add additional flags to the environment.\nOnly meant for distributors and gentoo-users who want to over-optimize their build.\n Using this is not supported by the ffado-devs!" ),
+     EnumVariable( "ENABLE_SETBUFFERSIZE_API_VER", "Report API version at runtime which includes support for dynamic buffer resizing (requires recent jack).", 'auto', allowed_values=('auto', 'true', 'false', 'force'), ignorecase=2),
+ 
+     )
+@@ -87,14 +88,42 @@
+ 
+ env = Environment( tools=['default','scanreplace','pyuic','pyuic4','dbus','doxygen','pkgconfig'], toolpath=['admin'], ENV = buildenv, options=opts )
+ 
++custom_flags = False
++
+ if env.has_key('COMPILE_FLAGS') and len(env['COMPILE_FLAGS']) > 0:
++    print "The COMPILE_FLAGS option is deprecated. Use CFLAGS and CXXFLAGS with CUSTOM_ENV=True instead"
++    custom_flags = True
++    env.MergeFlags(env['COMPILE_FLAGS'])
++
++if env['CUSTOM_ENV']:
++    custom_flags = True
++
++    # Honour the user choice of compiler (if any).
++    if os.environ.has_key('CC') and len(os.environ['CC']) > 0:
++        env['CC'] = os.environ['CC']
++    if os.environ.has_key('CXX') and len(os.environ['CXX']) > 0:
++        env['CXX'] = os.environ['CXX']
++
++    # Honour the user supplied flags (if any), but notify the user that this is not supported.
++    if os.environ.has_key('CFLAGS') and len(os.environ['CFLAGS']) > 0:
++        env.Append(CFLAGS = str(os.environ['CFLAGS'].replace('\"', '')))
++    if os.environ.has_key('CXXFLAGS') and len(os.environ['CXXFLAGS']) > 0:
++        env.Append(CXXFLAGS = str(os.environ['CXXFLAGS'].replace('\"', '')))
++    if os.environ.has_key('LDFLAGS') and len(os.environ['LDFLAGS']) > 0:
++        env.Append(LINKFLAGS = str(os.environ['LDFLAGS'].replace('\"', '')))
++
++if custom_flags:
+     print '''
+  * Usage of additional flags is not supported by the ffado-devs.
+  * Use at own risk!
+  *
+- * Currentl value is '%s'
+- ''' % env['COMPILE_FLAGS']
+-    env.MergeFlags(env['COMPILE_FLAGS'])
++ * Flags in use:
++ *   CC = %s
++ *   CXX = %s
++ *   CFLAGS = %s
++ *   CXXFLAGS = %s
++ *   LDFLAGS = %s
++''' % (env['CC'], env['CXX'], env['CFLAGS'], env['CXXFLAGS'], env['LINKFLAGS'])
+ 
+ Help( """
+ For building ffado you can set different options as listed below. You have to
+@@ -331,7 +360,7 @@
+         oldcf = env['CFLAGS']
+     else:
+         oldcf = ""
+-    oldcf = env.Append(CFLAGS = '-std=c99')
++    env.Append(CFLAGS = '-std=c99')
+     if conf.CheckLibWithHeader( "m", "math.h", "c", "lrint(3.2);" ):
+         HAVE_LRINT = 1
+     else:
+@@ -415,7 +444,8 @@
+     print "Doing a debug build"
+     env.MergeFlags( "-Wall -g -DDEBUG" )
+     env['DEBUG_MESSAGES'] = True
+-else:
++elif not custom_flags:
++    # Only merge -O2 to flags if the user has not specified custom flags.
+     env.MergeFlags( "-O2" )
+ 
+ if env['DEBUG_MESSAGES']:
