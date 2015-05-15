@@ -1,0 +1,92 @@
+Submitted By:            Armin K. <krejzi at email dot com>
+Date:                    2012-12-30
+Initial Package Version: 1.13.1
+Upstream Status:         Not submitted.
+Origin:                  Upstream mailing list.
+Description:             Adds PRIME support to Xorg Server to make GPU offloading work.
+
+--- hw/xfree86/common/xf86Init.c	2014-06-04 12:49:11.000000000 +0200
++++ hw/xfree86/common/xf86Init.c	2014-06-04 14:00:29.539324458 +0200
+@@ -363,6 +363,16 @@
+     return ret;
+ }
+ 
++extern void xf86AutoConfigOutputDevice(ScrnInfoPtr pScrn, ScrnInfoPtr master);                              
++static void
++xf86AutoConfigOutputDevices(void)
++{
++    int i;
++
++    for (i = 0; i < xf86NumGPUScreens; i++)
++        xf86AutoConfigOutputDevice(xf86GPUScreens[i], xf86Screens[0]);
++}
++
+ static void
+ InstallSignalHandlers(void)
+ {
+@@ -952,6 +962,8 @@
+     for (i = 0; i < xf86NumGPUScreens; i++)
+         AttachUnboundGPU(xf86Screens[0]->pScreen, xf86GPUScreens[i]->pScreen);
+ 
++    xf86AutoConfigOutputDevices();
++
+     xf86VGAarbiterWrapFunctions();
+     if (sigio_blocked)
+         OsReleaseSIGIO();
+--- hw/xfree86/common/xf86platformBus.c	2014-06-04 12:49:11.000000000 +0200
++++ hw/xfree86/common/xf86platformBus.c	2014-06-04 14:00:29.539324458 +0200
+@@ -426,6 +426,8 @@
+     return foundScreen;
+ }
+ 
++extern void xf86AutoConfigOutputDevice(ScrnInfoPtr pScrn, ScrnInfoPtr master);
++
+ int
+ xf86platformAddDevice(int index)
+ {
+@@ -494,6 +496,7 @@
+    }
+    /* attach unbound to 0 protocol screen */
+    AttachUnboundGPU(xf86Screens[0]->pScreen, xf86GPUScreens[i]->pScreen);
++   xf86AutoConfigOutputDevice(xf86GPUScreens[i], xf86Screens[0]);
+ 
+    RRResourcesChanged(xf86Screens[0]->pScreen);
+    RRTellChanged(xf86Screens[0]->pScreen);
+--- hw/xfree86/modes/xf86Crtc.c	2014-06-04 12:49:11.000000000 +0200
++++ hw/xfree86/modes/xf86Crtc.c	2014-06-04 14:00:29.540324474 +0200
+@@ -3387,3 +3387,35 @@
+             crtc->x = crtc->y = 0;
+         }
+ }
++
++
++void xf86AutoConfigOutputDevice(ScrnInfoPtr pScrn, ScrnInfoPtr master)
++{
++    RRProviderPtr master_provider;
++    xf86CrtcConfigPtr config = XF86_CRTC_CONFIG_PTR(master);
++    xf86CrtcConfigPtr slave_config = XF86_CRTC_CONFIG_PTR(pScrn);
++    Bool unbound = FALSE;
++
++    if (!config || !slave_config)
++        return;
++
++    master_provider = config->randr_provider;
++
++    if ((master->capabilities & RR_Capability_SinkOffload) &&
++        pScrn->capabilities & RR_Capability_SourceOffload) {
++            /* source offload */
++            
++        DetachUnboundGPU(pScrn->pScreen);
++        unbound = TRUE;
++        AttachOffloadGPU(master->pScreen, pScrn->pScreen);
++        slave_config->randr_provider->offload_sink = master_provider;
++    }
++    if ((master->capabilities & RR_Capability_SourceOutput) &&
++               pScrn->capabilities & RR_Capability_SinkOutput) {
++        /* sink offload */
++        if (!unbound)
++            DetachUnboundGPU(pScrn->pScreen);
++        AttachOutputGPU(master->pScreen, pScrn->pScreen);
++        slave_config->randr_provider->output_source = master_provider;
++    }
++}
