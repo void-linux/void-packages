@@ -30,6 +30,7 @@ set -a
 case "$XBPS_TARGET_MACHINE" in
 	# musl libc
 	*-musl) . ${_AUTOCONFCACHEDIR}/common-linux
+		. ${_AUTOCONFCACHEDIR}/musl-linux
 		;;
 	# gnu libc
 	*)	. ${_AUTOCONFCACHEDIR}/common-linux
