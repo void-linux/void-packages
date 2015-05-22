@@ -4,7 +4,9 @@ if [ -n "$build_style" -a "$build_style" != "gnu-configure" ]; then
 	return 0
 fi
 
-export configure_args="--prefix=/usr --sysconfdir=/etc --infodir=/usr/share/info --mandir=/usr/share/man --localstatedir=/var ${configure_args}"
+export configure_args="--prefix=/usr --sysconfdir=/etc --bindir=/usr/bin
+ --mandir=/usr/share/man --infodir=/usr/share/info --localstatedir=/var ${configure_args}"
+
 . ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
 export configure_args+=" --host=$XBPS_TRIPLET --build=$XBPS_TRIPLET"
 
@@ -14,22 +16,31 @@ if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
 	export configure_args+=" --libdir=/usr/lib32"
 fi
 
-# Cross compilation vars
-if [ -z "$CROSS_BUILD" ]; then
-	return 0
-fi
-
-export configure_args+=" --host=$XBPS_CROSS_TRIPLET --with-sysroot=$XBPS_CROSS_BASE --with-libtool-sysroot=$XBPS_CROSS_BASE "
-
 _AUTOCONFCACHEDIR=${XBPS_COMMONDIR}/environment/configure/autoconf_cache
 
 # From now on all vars are exported to the environment
 set -a
 
+# Read autoconf cache variables for native target.
+case "$XBPS_TARGET_MACHINE" in
+	# musl libc
+	*-musl) . ${_AUTOCONFCACHEDIR}/musl-linux
+		;;
+esac
+
+# Cross compilation vars
+if [ -z "$CROSS_BUILD" ]; then
+	set +a
+	return 0
+fi
+
+export configure_args+=" --host=$XBPS_CROSS_TRIPLET --with-sysroot=$XBPS_CROSS_BASE --with-libtool-sysroot=$XBPS_CROSS_BASE "
+
 # Read autoconf cache variables for cross target (taken from OE).
 case "$XBPS_TARGET_MACHINE" in
 	# musl libc
 	*-musl) . ${_AUTOCONFCACHEDIR}/common-linux
+		. ${_AUTOCONFCACHEDIR}/musl-linux
 		;;
 	# gnu libc
 	*)	. ${_AUTOCONFCACHEDIR}/common-linux
