@@ -5,7 +5,7 @@ if [ -n "$build_style" -a "$build_style" != "gnu-configure" ]; then
 fi
 
 export configure_args="--prefix=/usr --sysconfdir=/etc --bindir=/usr/bin
- --infodir=/usr/share/info --localstatedir=/var ${configure_args}"
+ --mandir=/usr/share/man --infodir=/usr/share/info --localstatedir=/var ${configure_args}"
 
 . ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
 export configure_args+=" --host=$XBPS_TRIPLET --build=$XBPS_TRIPLET"
