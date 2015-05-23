@@ -42,6 +42,7 @@ generic_wrapper3() {
 
 	cp ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ${XBPS_WRAPPERDIR}
 	sed -e "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" -i ${XBPS_WRAPPERDIR}/${wrapper}
+	sed -e "s,/usr/lib,${XBPS_CROSS_BASE}/usr/lib,g" -i ${XBPS_WRAPPERDIR}/${wrapper}
 	sed -e "s,^libdir=.*,libdir=${XBPS_CROSS_BASE}/usr/lib,g" -i ${XBPS_WRAPPERDIR}/${wrapper}
 	sed -e "s,^prefix=.*,prefix=${XBPS_CROSS_BASE}/usr," -i ${XBPS_WRAPPERDIR}/${wrapper}
 
@@ -120,6 +121,7 @@ hook() {
 	generic_wrapper3 ncurses5-config
 	generic_wrapper3 ncursesw5-config
 	generic_wrapper3 libetpan-config
+	generic_wrapper3 nspr-config
 	python_wrapper python-config 2.7
 	python_wrapper python3.4-config 3.4m
 }

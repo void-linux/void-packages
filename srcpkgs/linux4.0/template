@@ -17,8 +17,8 @@ noverifyrdeps=yes
 noshlibprovides=yes
 preserve=yes
 
-only_for_archs="i686 i686-musl x86_64 x86_64-musl"
-makedepends="bc perl kmod libressl-openssl"
+only_for_archs="i686 i686-musl x86_64 x86_64-musl armv7l armv7l-musl"
+hostmakedepends="bc perl kmod libressl-openssl uboot-mkimage"
 triggers="kernel-hooks"
 
 _kernver="${version}_${revision}"
@@ -38,40 +38,60 @@ do_configure() {
 	# If there's a file called <arch>-dotconfig, use it to
 	# configure the kernel; otherwise use arch defaults and all stuff
 	# as modules (defconfig+allmodconfig).
-	local arch
+	local arch _args
 
 	case "$XBPS_TARGET_MACHINE" in
 		i686*) arch=i386;;
 		x86_64*) arch=x86_64;;
+		armv7*) arch=arm
+			$XBPS_FETCH_CMD http://rcn-ee.com/deb/sid-armhf/v${version}-armv7-x2/patch-${version}-armv7-x2.diff.gz
+			gunzip patch-${version}-armv7-x2.diff.gz
+			patch -Np1 -i patch-${version}-armv7-x2.diff
+			;;
 	esac
+
+        if [ "$CROSS_BUILD" ]; then
+                _args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+        fi
 
 	if [ -f ${FILESDIR}/${arch}-dotconfig-custom ]; then
 		msg_normal "Detected a custom .config file for your arch, using it.\n"
 		cp -f ${FILESDIR}/${arch}-dotconfig-custom .config
-		make ${makejobs} oldconfig
+		make ${makejobs} ARCH=$arch ${_args} oldconfig
 	elif [ -f ${FILESDIR}/${arch}-dotconfig ]; then
 		msg_normal "Detected a .config file for your arch, using it.\n"
 		cp -f ${FILESDIR}/${arch}-dotconfig .config
-		make ${makejobs} oldconfig
+		make ${makejobs} ARCH=$arch ${_args} oldconfig
 	else
 		msg_normal "Defaulting to 'defconfig and allmodconfig'.\n"
-		make ${makejobs} defconfig
-		make ${makejobs} allmodconfig
+		make ${makejobs} ARCH=$arch ${_args} defconfig
+		make ${makejobs} ARCH=$arch ${_args} allmodconfig
 	fi
 	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
 	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
 }
 do_build() {
-	# Override EXTRAVERSION because we can't have dashes in kernel name
-	make EXTRAVERSION=${_patchver} ${makejobs} prepare
-	make EXTRAVERSION=${_patchver} ${makejobs} bzImage modules
+	local arch _cross _args
+
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) _args="bzImage modules"; arch=i386;;
+		x86_64*) _args="bzImage modules"; arch=x86_64;;
+		armv7*) _args="zImage modules dtbs"; arch=arm;;
+	esac
+        if [ "$CROSS_BUILD" ]; then
+                _cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+        fi
+
+	make ARCH=$arch ${_cross} ${makejobs} prepare
+	make ARCH=$arch ${_cross} ${makejobs} ${_args}
 }
 do_install() {
-	local arch hdrdest
+	local arch _args hdrdest
 
 	case "$XBPS_TARGET_MACHINE" in
 		i686*) arch=i386;;
 		x86_64*) arch=x86_64;;
+		armv7*) arch=arm;;
 	esac
 
 	# Run depmod after compressing modules.
@@ -82,11 +102,19 @@ do_install() {
 
 	hdrdest=${DESTDIR}/usr/src/kernel-headers-${_kernver}
 
-	install -Dm644 .config ${DESTDIR}/boot/config-${_kernver}
-	install -Dm644 arch/x86/boot/bzImage \
-		${DESTDIR}/boot/vmlinuz-${_kernver}
-	install -Dm644 System.map \
-		${DESTDIR}/boot/System.map-${_kernver}
+	vinstall .config 644 boot config-${_kernver}
+	vinstall System.map 644 boot System.map-${_kernver}
+
+	case "$arch" in
+		i386|x86_64)
+			vinstall arch/x86/boot/bzImage 644 boot vmlinuz-${_kernver}
+			;;
+		arm)
+			vinstall arch/arm/boot/zImage 644 boot
+			vmkdir boot/dtbs
+			cp arch/arm/boot/dts/*.dtb ${DESTDIR}/boot/dtbs
+			;;
+	esac
 
 	# Switch to /usr.
 	vmkdir usr
@@ -113,19 +141,21 @@ do_install() {
 	done
 
 	cd ${wrksrc}
-	mkdir -p ${hdrdest}/arch/x86
-	cp -a arch/x86/include ${hdrdest}/arch/x86
+	mkdir -p ${hdrdest}/arch/${arch}
+	cp -a arch/x86/include ${hdrdest}/arch/${arch}
 
 	# Copy files necessary for later builds, like nvidia and vmware
 	cp Module.symvers ${hdrdest}
 	cp -a scripts ${hdrdest}
 
-	mkdir -p ${hdrdest}/arch/x86/kernel
-	cp arch/x86/Makefile ${hdrdest}/arch/x86
+	mkdir -p ${hdrdest}/arch/${arch}/kernel
+	cp arch/x86/Makefile ${hdrdest}/arch/${arch}
 	if [ "$arch" = "i386" ]; then
 		cp arch/x86/Makefile_32.cpu ${hdrdest}/arch/x86
 	fi
-	cp arch/x86/kernel/asm-offsets.s ${hdrdest}/arch/x86/kernel
+	if [ "$arch" = "i386" -o "$arch" = "x86_64" ]; then
+		cp arch/x86/kernel/asm-offsets.s ${hdrdest}/arch/x86/kernel
+	fi
 
 	# add headers for lirc package
 	# pci
@@ -194,8 +224,12 @@ do_install() {
 	done
 
 	# Remove unneeded architectures
-	for arch in alpha arm* avr32 blackfin cris frv h8300 \
-		ia64 m* p* s* um v850 xtensa; do
+	case "$arch" in
+		i386|x86_64) _args="arm*";;
+		arm) _args="x86*";;
+	esac
+	for arch in alpha avr32 blackfin cris frv h8300 \
+		ia64 m* p* s* um v850 xtensa ${_args}; do
 		rm -rf ${hdrdest}/arch/${arch}
 	done
 
