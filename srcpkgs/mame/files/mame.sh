@@ -1,7 +1,7 @@
 #!/bin/sh
 
 exec_mame() {
-  /usr/share/sdlmame/sdlmame \
+  /usr/share/mame/mame \
     -artpath "$HOME/.mame/artwork;artwork" \
     -ctrlrpath "$HOME/.mame/ctrlr;ctrlr" \
     -inipath $HOME/.mame/ini \
@@ -19,7 +19,7 @@ exec_mame() {
 }
 
 if [ "$1" = "--newini" ]; then
-  echo "Rebuilding the ini file at $HOME/.mame/sdlmame.ini"
+  echo "Rebuilding the ini file at $HOME/.mame/mame.ini"
   echo "Modify this file for permanent changes to your SDLMAME"
   echo "options and paths before running SDLMAME again."
   cd $HOME/.mame
@@ -40,6 +40,6 @@ elif [ ! -e $HOME/.mame ]; then
   done
   cd $HOME/.mame && exec_mame
 else
-  cd /usr/share/sdlmame
-  ./sdlmame "$@"
+  cd /usr/share/mame
+  ./mame "$@"
 fi
