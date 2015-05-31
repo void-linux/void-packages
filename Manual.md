@@ -407,20 +407,20 @@ set by default: `--prefix=/usr --sysconfdir=/etc --infodir=/usr/share/info --man
 By default set to `make`.
 
 - `make_build_args` The arguments to be passed in to `${make_cmd}` at the build phase if
-`${build_style}` is set to `configure`, `gnu-configure` or `gnu_makefile`
+`${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
 build methods. Unset by default.
 
 - `make_install_args` The arguments to be passed in to `${make_cmd}` at the `install-destdir`
 phase if `${build_style}` is set to `configure`, `gnu-configure` or
-`gnu_makefile` build methods. By default set to
+`gnu-makefile` build methods. By default set to
 `PREFIX=/usr DESTDIR=${DESTDIR}`.
 
 - `make_build_target` The target to be passed in to `${make_cmd}` at the build phase if
-`${build_style}` is set to `configure`, `gnu-configure` or `gnu_makefile`
+`${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
 build methods. Unset by default (`all` target).
 
 - `make_install_target` The target to be passed in to `${make_cmd}` at the `install-destdir` phase
-if `${build_style}` is set to `configure`, `gnu-configure` or `gnu_makefile`
+if `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
 build methods. By default set to `install`.
 
 - `patch_args` The arguments to be passed in to the `patch(1)` command when applying
