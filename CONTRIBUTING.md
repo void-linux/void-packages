@@ -26,6 +26,9 @@ to build package files from templates.
 
 For this guide, we assume you have basic knowledge about [git](http://git-scm.org) and a [GitHub Account](http://github.com)
 
+Please note that we do not accept any packages containing non-release versions such
+as specific git- or svn-revisions anymore.
+
 #### Creating a new template
 
 templates must be placed in `void-packages/srcpkgs/<pkgname>/template` where `pkgname` is the same as the pkgname variable in the template.
