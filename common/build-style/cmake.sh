@@ -30,7 +30,7 @@ _EOF
 		configure_args+=" -DCMAKE_INSTALL_LIBDIR=lib"
 	fi
 
-	configure_args+=" -DCMAKE_INSTALL_SBINDIR=sbin"
+	configure_args+=" -DCMAKE_INSTALL_SBINDIR=bin"
 
 	cmake ${configure_args} ..
 }
