@@ -1,0 +1,138 @@
+From 803188070e486030cb1d2e53692b39305c742b17 Mon Sep 17 00:00:00 2001
+From: Joe Julian <jjulian@io.com>
+Date: Tue, 19 May 2015 23:54:08 -0700
+Subject: [PATCH] Use swig generated python loader
+
+---
+ .gitignore           |  6 +++++-
+ M2Crypto/__init__.py |  4 ++--
+ M2Crypto/m2.py       |  4 +---
+ SWIG/_m2crypto.def   |  2 +-
+ SWIG/_m2crypto.i     |  2 +-
+ setup.py             | 25 +++++++++++++++++++++----
+ 6 files changed, 31 insertions(+), 12 deletions(-)
+
+diff --git a/M2Crypto/__init__.py b/M2Crypto/__init__.py
+index 647e057..38dbbd5 100644
+--- a/M2Crypto/__init__.py
++++ b/M2Crypto/__init__.py
+@@ -19,7 +19,7 @@ Copyright 2008-2011 Heikki Toivonen. All rights reserved.
+ version_info = (0, 22)
+ version = '.'.join([str(_v) for _v in version_info])
+ 
+-import __m2crypto
++import m2crypto
+ import m2
+ import ASN1
+ import AuthCookie
+@@ -47,4 +47,4 @@ import m2xmlrpclib
+ import threading
+ import util
+ 
+-__m2crypto.lib_init()
++m2crypto.lib_init()
+diff --git a/M2Crypto/m2.py b/M2Crypto/m2.py
+index e4bb695..516cadb 100644
+--- a/M2Crypto/m2.py
++++ b/M2Crypto/m2.py
+@@ -25,7 +25,5 @@ Portions created by Open Source Applications Foundation (OSAF) are
+ Copyright (C) 2004 OSAF. All Rights Reserved.
+ """
+ 
+-from __m2crypto import *
++from m2crypto import *
+ lib_init()
+-
+-
+diff --git a/SWIG/_m2crypto.def b/SWIG/_m2crypto.def
+index 753db2c..3e9d5bc 100644
+--- a/SWIG/_m2crypto.def
++++ b/SWIG/_m2crypto.def
+@@ -1,2 +1,2 @@
+ EXPORTS
+-init__m2crypto
++init_m2crypto
+diff --git a/SWIG/_m2crypto.i b/SWIG/_m2crypto.i
+index 50be5c3..e491222 100644
+--- a/SWIG/_m2crypto.i
++++ b/SWIG/_m2crypto.i
+@@ -8,7 +8,7 @@
+  *
+  */
+ 
+-%module(threads=1) _m2crypto
++%module(threads=1) m2crypto
+ /* We really don't need threadblock (PyGILState_Ensure() etc.) anywhere.
+    Disable threadallow as well, only enable it for operations likely to
+    block. */
+diff --git a/setup.py b/setup.py
+index bac6f9f..fc89513 100644
+--- a/setup.py
++++ b/setup.py
+@@ -17,9 +17,22 @@ import os, sys, platform
+ from setuptools import setup
+ from setuptools.command import build_ext
+ 
++from distutils.util import get_platform
+ from distutils.core import Extension
+ from distutils.spawn import find_executable
+ 
++from distutils.command.build import build
++from setuptools.command.install import install
++
++class CustomBuild(build):
++    def run(self):
++        self.run_command('build_ext')
++        build.run(self)
++
++class CustomInstall(install):
++    def run(self):
++        self.run_command('build_ext')
++        self.do_egg_install()
+ 
+ class _M2CryptoBuildExt(build_ext.build_ext):
+     '''Specialization of build_ext to enable swig_opts to inherit any
+@@ -70,11 +83,12 @@ class _M2CryptoBuildExt(build_ext.build_ext):
+ 
+         self.add_multiarch_paths()
+ 
+-        opensslIncludeDir = os.path.join(self.openssl, 'include')
++        includeDir = os.path.join(self.openssl, 'include')
++        opensslIncludeDir = os.path.join(self.openssl, 'include', 'openssl')
+         opensslLibraryDir = os.path.join(self.openssl, 'lib')
+ 
+         self.swig_opts = ['-I%s' % i for i in self.include_dirs + \
+-                          [opensslIncludeDir, os.path.join(opensslIncludeDir, "openssl")]]
++                          [opensslIncludeDir, includeDir]]
+         self.swig_opts.append('-includeall')
+         self.swig_opts.append('-modern')
+ 
+@@ -85,6 +99,9 @@ class _M2CryptoBuildExt(build_ext.build_ext):
+             elif platform.architecture()[0] == '32bit':
+                 self.swig_opts.append('-D__i386__')
+ 
++        self.swig_opts.append('-outdir')
++        self.swig_opts.append(os.path.join(os.getcwd(),'M2Crypto'))
++
+         self.include_dirs += [os.path.join(self.openssl, opensslIncludeDir),
+                               os.path.join(os.getcwd(), 'SWIG')]
+ 
+@@ -103,7 +120,7 @@ if sys.platform == 'darwin':
+ else:
+    my_extra_compile_args = []
+ 
+-m2crypto = Extension(name = 'M2Crypto.__m2crypto',
++m2crypto = Extension(name = 'M2Crypto._m2crypto',
+                      sources = ['SWIG/_m2crypto.i'],
+                      extra_compile_args = ['-DTHREADING'] + my_extra_compile_args,
+                      #extra_link_args = ['-Wl,-search_paths_first'], # Uncomment to build Universal Mac binaries
+@@ -145,5 +162,5 @@ interface.''',
+ 
+       ext_modules = [m2crypto],
+       test_suite='tests.alltests.suite',
+-      cmdclass = {'build_ext': _M2CryptoBuildExt}
++      cmdclass = {'build': CustomBuild, 'install': CustomInstall, 'build_ext': _M2CryptoBuildExt}
+       )
+-- 
+2.4.1
+
