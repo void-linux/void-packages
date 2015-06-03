@@ -48,7 +48,7 @@ prepare_cross_sysroot() {
     fi
     rm -f $errlog
     # Create top level symlinks in sysroot.
-    XBPS_ARCH=$XBPS_TARGET_ARCH xbps-reconfigure -r $XBPS_CROSS_BASE -f base-files
+    XBPS_ARCH=$XBPS_TARGET_ARCH xbps-reconfigure -r $XBPS_CROSS_BASE -f base-directories base-files &>/dev/null
     # Create a sysroot/include symlink just in case.
     ln -s usr/include ${XBPS_CROSS_BASE}/include
 
