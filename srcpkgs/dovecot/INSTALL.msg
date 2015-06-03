@@ -3,4 +3,4 @@ this should be created again with proper settings in dovecot-openssl.cnf:
 
 	$ rm -f /etc/ssl/{certs,private}/dovecot.pem
 	$ [edit /etc/ssl/dovecot-openssl.cnf]
-	$ /usr/sbin/dovecot-mkcert.sh
+	$ /usr/bin/dovecot-mkcert.sh
