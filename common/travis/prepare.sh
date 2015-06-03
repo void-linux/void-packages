@@ -10,7 +10,7 @@ install -m 755 proot-x86_64 $HOME/bin/proot || exit 1
 
 /bin/echo -e '\x1b[32mInstalling xbps...\x1b[0m'
 wget -q -O - http://repo.voidlinux.eu/static/xbps-static-latest.x86_64-musl.tar.xz | \
-	unxz | tar x -C $HOME/bin --wildcards "./usr/sbin/xbps-*" \
+	unxz | tar x -C $HOME/bin --wildcards "./usr/bin/xbps-*" \
 	--strip-components=3 || exit 1
 
 /bin/echo -e '\x1b[32mInstalling xtools...\x1b[0m'
