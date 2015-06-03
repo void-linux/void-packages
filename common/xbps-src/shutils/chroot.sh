@@ -147,7 +147,7 @@ chroot_sync_repos() {
         # Make sure to sync index for remote repositories.
         $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
             $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" \
-            "$XBPS_CHROOT_CMD_ARGS" xbps-install -- -S
+            "$XBPS_CHROOT_CMD_ARGS" xbps-install -S
     fi
 
     if [ -n "$XBPS_CROSS_BUILD" ]; then
@@ -160,7 +160,7 @@ chroot_sync_repos() {
             env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
                 $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
                 $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" \
-                xbps-install -- -r $XBPS_CROSS_BASE -S
+                xbps-install -r $XBPS_CROSS_BASE -S
         fi
     fi
 
@@ -209,7 +209,7 @@ chroot_handler() {
         env -i PATH="/usr/bin:/usr/sbin:$PATH" HOME=/tmp IN_CHROOT=1 LANG=en_US.UTF-8 \
             $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
             $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" \
-            /void-packages/xbps-src -- $action $pkg
+            /void-packages/xbps-src $action $pkg
         rv=$?
     fi
 
