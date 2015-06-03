@@ -4,7 +4,7 @@ if [ -n "$build_style" -a "$build_style" != "gnu-configure" ]; then
 	return 0
 fi
 
-export configure_args="--prefix=/usr --sysconfdir=/etc --bindir=/usr/bin
+export configure_args="--prefix=/usr --sysconfdir=/etc --sbindir=/usr/bin --bindir=/usr/bin
  --mandir=/usr/share/man --infodir=/usr/share/info --localstatedir=/var ${configure_args}"
 
 . ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
