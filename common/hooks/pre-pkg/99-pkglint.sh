@@ -13,6 +13,10 @@ hook() {
 			error=1
 		fi
 	done
+	if [ -d ${PKGDESTDIR}/usr/sbin ]; then
+		msg_red "${pkgver}: /usr/sbin directory is not allowed, use /usr/bin.\n"
+		error=1
+	fi
 	for f in sys dev home root run var/run tmp usr/lib64 usr/local; do
 		if [ -d ${PKGDESTDIR}/${f} ]; then
 			msg_red "${pkgver}: /${f} directory is not allowed, remove it!\n"
