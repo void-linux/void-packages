@@ -10,7 +10,7 @@ or queried through the `xbps-install(8)` and `xbps-query(8)` utilities, respecti
 ### Requirements
 
 - GNU bash
-- xbps >= 0.44
+- xbps >= 0.45
 
 `xbps-src` requires an utility to chroot and bind mount existing directories
 into a `masterdir` that is used as its main `chroot` directory. `xbps-src` supports
