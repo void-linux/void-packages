@@ -311,14 +311,13 @@ To use xbps-src in your linux distribution use the following instructions. Let's
     $ wget http://repo.voidlinux.eu/static/xbps-static-latest.<arch>-musl.tar.xz
     $ mkdir ~/XBPS
     $ tar xvf xbps-static-latest.<arch>.tar.xz -C ~/XBPS
-    $ export PATH=~/XBPS/usr/sbin:$PATH
-
+    $ export PATH=~/XBPS/usr/bin:$PATH
 
 If your system does not support `user namespaces`, a privileged group is required to be able to use
 `xbps-uchroot(8)` with xbps-src, by default it's set to the `xbuilder` group, change this to your desired group:
 
-    # chown root:<group> ~/XBPS/usr/sbin/xbps-uchroot.static
-    # chmod 4750 ~/XBPS/usr/sbin/xbps-uchroot.static
+    # chown root:<group> ~/XBPS/usr/bin/xbps-uchroot.static
+    # chmod 4750 ~/XBPS/usr/bin/xbps-uchroot.static
 
 Clone the `void-packages` git repository:
 
