@@ -5,7 +5,7 @@ for the Void Linux distribution.
 
 The included `xbps-src` script will fetch and compile the sources, and install its
 files into a `fake destdir` to generate XBPS binary packages that can be installed
-or queried through the `xbps-install(8)` and `xbps-query(8)` utilities, respectively.
+or queried through the `xbps-install(1)` and `xbps-query(1)` utilities, respectively.
 
 ### Requirements
 
@@ -16,14 +16,14 @@ or queried through the `xbps-install(8)` and `xbps-query(8)` utilities, respecti
 into a `masterdir` that is used as its main `chroot` directory. `xbps-src` supports
 multiple utilities to accomplish this task:
 
- - `xbps-uunshare(8)` - XBPS utility that uses `user_namespaces(7)` (part of xbps, default).
- - `xbps-uchroot(8)` - XBPS utility that uses `namespaces` and must be `setgid` (part of xbps).
+ - `xbps-uunshare(1)` - XBPS utility that uses `user_namespaces(7)` (part of xbps, default).
+ - `xbps-uchroot(1)` - XBPS utility that uses `namespaces` and must be `setgid` (part of xbps).
  - `proot(1)` - utility that implements chroot/bind mounts in user space, see http://proot.me.
 
 > NOTE: you don't need to be `root` to use `xbps-src`, use your preferred chroot style as explained
 below.
 
-#### xbps-uunshare(8)
+#### xbps-uunshare(1)
 
 This utility requires these linux kernel options:
 
@@ -35,7 +35,7 @@ This utility requires these linux kernel options:
 This is the default method, and if your system does not support any of the required kernel
 options it will fail with `EINVAL (Invalid argument)`.
 
-#### xbps-uchroot(8)
+#### xbps-uchroot(1)
 
 This utility requires these linux kernel options:
 
@@ -44,7 +44,7 @@ This utility requires these linux kernel options:
 - CONFIG\_PID\_NS
 - CONFIG\_UTS\_NS
 
-Your user must be added to a special group to be able to use `xbps-uchroot(8)` and the
+Your user must be added to a special group to be able to use `xbps-uchroot(1)` and the
 executable must be `setgid`:
 
     # chown root:<group> xbps-uchroot
@@ -60,7 +60,7 @@ To enable it:
     $ echo XBPS_CHROOT_CMD=uchroot >> etc/conf
 
 If for some reason it's erroring out as `ERROR clone (Operation not permited)`, check that
-your user is a member of the required `group` and that `xbps-uchroot(8)` utility has the
+your user is a member of the required `group` and that `xbps-uchroot(1)` utility has the
 proper permissions and owner/group as explained above.
 
 #### proot(1)
@@ -207,13 +207,13 @@ at the same time with `xbps-src`:
 
     $ ./xbps-src -o option,~option1,~option2 pkg foo
 
-The build options can also be shown for binary packages via `xbps-query(8)`:
+The build options can also be shown for binary packages via `xbps-query(1)`:
 
     $ xbps-query -R --property=build-options foo
 
 > NOTE: if you build a package with a custom option, and that package is available
 in an official void repository, an update will ignore those options. Put that package
-on `hold` mode via `xbps-pkgdb(8)`, i.e `xbps-pkgdb -m hold foo` to ignore updates
+on `hold` mode via `xbps-pkgdb(1)`, i.e `xbps-pkgdb -m hold foo` to ignore updates
 with `xbps-install -u`. Once the package is on `hold`, the only way to update it
 is by declaring it explicitely: `xbps-install -u foo`.
 
@@ -230,9 +230,9 @@ The list of supported package build options and its description is defined in th
 ### Sharing and signing your local repositories
 
 To share a local repository remotely it's mandatory to sign it and the binary packages
-stored on it. This is accomplished with the `xbps-rindex(8)` utility.
+stored on it. This is accomplished with the `xbps-rindex(1)` utility.
 
-First a RSA key must be created with `openssl(1)` or `ssh-keygen(8)`:
+First a RSA key must be created with `openssl(1)` or `ssh-keygen(1)`:
 
 	$ openssl genrsa -des3 -out privkey.pem 4096
 
@@ -314,7 +314,7 @@ To use xbps-src in your linux distribution use the following instructions. Let's
     $ export PATH=~/XBPS/usr/bin:$PATH
 
 If your system does not support `user namespaces`, a privileged group is required to be able to use
-`xbps-uchroot(8)` with xbps-src, by default it's set to the `xbuilder` group, change this to your desired group:
+`xbps-uchroot(1)` with xbps-src, by default it's set to the `xbuilder` group, change this to your desired group:
 
     # chown root:<group> ~/XBPS/usr/bin/xbps-uchroot.static
     # chmod 4750 ~/XBPS/usr/bin/xbps-uchroot.static
