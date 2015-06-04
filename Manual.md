@@ -1017,7 +1017,7 @@ The following variables influence how Go packages are built:
 
 - Make sure that all software is configured to use the `/usr` prefix.
 
-- Binaries should always be installed at `/usr/bin` and `/usr/sbin`.
+- Binaries should always be installed at `/usr/bin`.
 
 - Manual pages should always be installed at `/usr/share/man`.
 
