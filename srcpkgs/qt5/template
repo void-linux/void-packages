@@ -1,7 +1,7 @@
 # Template file for 'qt5'
 pkgname=qt5
 version=5.4.1
-revision=4
+revision=5
 wrksrc="qt-everywhere-opensource-src-${version}"
 homepage="http://qt.io/"
 short_desc="A cross-platform application and UI framework (QT5)"
@@ -24,13 +24,23 @@ makedepends="
  nss-devel libcap-devel libxkbcommon-devel wayland-devel"
 depends="qtchooser"
 
-case "$XBPS_TARGET_MACHINE" in
-	*-musl) broken="http://build.voidlinux.eu/builders/x86_64-musl_builder/builds/723/steps/shell_3/logs/stdio";;
-esac
-
 pre_configure() {
 	sed -i "s|-O2|${CXXFLAGS}|" qtbase/mkspecs/common/{g++,gcc}-base.conf
 	sed -i "/^QMAKE_LFLAGS\s/s|+=|+= ${LDFLAGS}|g" qtbase/mkspecs/common/gcc-base.conf
+
+	# Compatibility functions res_ninit() and res_nclose() for musl libc
+	cp ${FILESDIR}/resolv_compat.h ${wrksrc}/qtwebengine/src/3rdparty/chromium/net/dns
+	case "$XBPS_TARGET_MACHINE" in
+	*-musl)
+		# Patch .../linx/*/config.{h,asm} to define HAVE_SYSCTL 0
+		local config chromium=${wrksrc}/qtwebengine/src/3rdparty/chromium
+		for config in $(find ${chromium}/third_party/ffmpeg/chromium/config -name "config\.*" | grep linux); do
+			sed -i ${config} -e "s;HAVE_SYSCTL 1;HAVE_SYSCTL 0;"
+		done
+		# Define WTF_OS_LINUX_MUSL to 1 to activate the patch qt-musl-pthread_getattr_np.patch
+		sed -i ${chromium}/third_party/WebKit/Source/platform/heap/ThreadState.cpp \
+			-e "/namespace WebCore/i #define WTF_OS_LINUX_MUSL 1"
+	esac
 }
 do_configure() {
 	export LD_LIBRARY_PATH="${wrksrc}/qtbase/lib:${wrksrc}/qttools/lib:${LD_LIBRARY_PATH}"
