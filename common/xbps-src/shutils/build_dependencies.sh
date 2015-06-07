@@ -88,9 +88,9 @@ install_pkg_from_repos() {
     tmplogf=${XBPS_STATEDIR}/xbps_${XBPS_TARGET_MACHINE}_bdep_${pkg}.log
 
     if [ -n "$cross" ]; then
-        $XBPS_INSTALL_XCMD -UAyd "$pkg" >$tmplogf 2>&1
+        $XBPS_INSTALL_XCMD -Ayd "$pkg" >$tmplogf 2>&1
     else
-        $XBPS_INSTALL_CMD -UAyd "$pkg" >$tmplogf 2>&1
+        $XBPS_INSTALL_CMD -Ayd "$pkg" >$tmplogf 2>&1
     fi
     rval=$?
     if [ $rval -ne 0 -a $rval -ne 17 ]; then
