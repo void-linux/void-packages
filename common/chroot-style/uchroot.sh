@@ -6,8 +6,7 @@ readonly MASTERDIR="$1"
 readonly DISTDIR="$2"
 readonly HOSTDIR="$3"
 readonly EXTRA_ARGS="$4"
-readonly CMD="$5"
-shift 5
+shift 4
 
 if ! command -v xbps-uchroot >/dev/null 2>&1; then
 	exit 1
@@ -18,4 +17,5 @@ if [ -z "$MASTERDIR" -o -z "$DISTDIR" ]; then
 	exit 1
 fi
 
-exec xbps-uchroot $EXTRA_ARGS -b $DISTDIR:/void-packages ${HOSTDIR:+-b $HOSTDIR:/host} $MASTERDIR $CMD -- $@
+export POSIXLY_CORRECT=1
+exec xbps-uchroot $EXTRA_ARGS -b $DISTDIR:/void-packages ${HOSTDIR:+-b $HOSTDIR:/host} $MASTERDIR $@
