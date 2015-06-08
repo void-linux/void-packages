@@ -41,8 +41,6 @@ generic_wrapper3() {
 	[ -x ${XBPS_WRAPPERDIR}/${wrapper} ] && return 0
 
 	cp ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ${XBPS_WRAPPERDIR}
-	sed -e "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" -i ${XBPS_WRAPPERDIR}/${wrapper}
-	sed -e "s,/usr/lib,${XBPS_CROSS_BASE}/usr/lib,g" -i ${XBPS_WRAPPERDIR}/${wrapper}
 	sed -e "s,^libdir=.*,libdir=${XBPS_CROSS_BASE}/usr/lib,g" -i ${XBPS_WRAPPERDIR}/${wrapper}
 	sed -e "s,^prefix=.*,prefix=${XBPS_CROSS_BASE}/usr," -i ${XBPS_WRAPPERDIR}/${wrapper}
 
