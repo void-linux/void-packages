@@ -106,10 +106,10 @@ hook() {
 	generic_wrapper2 gpg-error-config
 	generic_wrapper2 libassuan-config
 	generic_wrapper2 mysql_config
+	generic_wrapper2 taglib-config
 	generic_wrapper3 libpng-config
 	generic_wrapper3 xmlrpc-c-config
 	generic_wrapper3 krb5-config
-	generic_wrapper3 taglib-config
 	generic_wrapper3 cups-config
 	generic_wrapper3 Magick-config
 	generic_wrapper3 fltk-config
