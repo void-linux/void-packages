@@ -1,0 +1,225 @@
+From 80f8dc8620b8932aa922c470b4aa2cd2fe7afe50 Mon Sep 17 00:00:00 2001
+From: Antoine Jacoutot <ajacoutot@gnome.org>
+Date: Thu, 27 Nov 2014 10:28:36 +0100
+Subject: [PATCH 07/12] openbsd: cleanups and sync with ConsoleKit port
+
+We never needed to use an external helper script with the original
+ConsoleKit for ck-get-x11-*, so drop these.
+Make sure we install the other tools and simplify the scripts in the
+process.
+---
+ src/ck-vt-monitor.c                     |  2 +-
+ tools/Makefile.am                       |  4 ++++
+ tools/openbsd/Makefile.am               |  2 --
+ tools/openbsd/ck-get-x11-display-device | 41 ---------------------------------
+ tools/openbsd/ck-get-x11-server-pid     | 17 --------------
+ tools/openbsd/ck-system-hibernate       | 11 +--------
+ tools/openbsd/ck-system-hybridsleep     |  1 -
+ tools/openbsd/ck-system-restart         | 11 +--------
+ tools/openbsd/ck-system-stop            | 17 +-------------
+ tools/openbsd/ck-system-suspend         | 11 +--------
+ 10 files changed, 9 insertions(+), 108 deletions(-)
+ delete mode 100755 tools/openbsd/ck-get-x11-display-device
+ delete mode 100755 tools/openbsd/ck-get-x11-server-pid
+
+diff --git a/src/ck-vt-monitor.c b/src/ck-vt-monitor.c
+index 2b7f28b..1041f79 100644
+--- a/src/ck-vt-monitor.c
++++ b/src/ck-vt-monitor.c
+@@ -408,7 +408,7 @@ static void
+ vt_add_watches (CkVtMonitor *vt_monitor)
+ {
+ #if defined (__sun) && !defined (HAVE_SYS_VT_H) || (defined(__OpenBSD__) && (!defined(__i386__) && !defined(__amd64__) && !defined(__powerpc__)))
+-        /* On OpenBSD, VT are only available on i386 and amd64 */
++        /* On OpenBSD, VT are only available on i386, amd64 and powerpc */
+         /* Best to do nothing if VT is not supported */
+ #elif defined (__sun) && defined (HAVE_SYS_VT_H)
+         /*
+diff --git a/tools/Makefile.am b/tools/Makefile.am
+index 873f684..2948ad1 100644
+--- a/tools/Makefile.am
++++ b/tools/Makefile.am
+@@ -14,6 +14,10 @@ if CK_COMPILE_FREEBSD
+ SUBDIRS += freebsd
+ endif
+ 
++if CK_COMPILE_OPENBSD
++SUBDIRS += openbsd
++endif
++
+ if CK_COMPILE_SOLARIS
+ SUBDIRS += solaris
+ endif
+diff --git a/tools/openbsd/Makefile.am b/tools/openbsd/Makefile.am
+index b06d00c..3fb3679 100644
+--- a/tools/openbsd/Makefile.am
++++ b/tools/openbsd/Makefile.am
+@@ -13,8 +13,6 @@ script_SCRIPTS =			\
+ 	ck-system-suspend		\
+ 	ck-system-hibernate		\
+ 	ck-system-hybridsleep		\
+-	ck-get-x11-display-device	\
+-	ck-get-x11-server-pid		\
+ 	$(NULL)
+ 
+ EXTRA_DIST =				\
+diff --git a/tools/openbsd/ck-get-x11-display-device b/tools/openbsd/ck-get-x11-display-device
+deleted file mode 100755
+index 7efc084..0000000
+--- a/tools/openbsd/ck-get-x11-display-device
++++ /dev/null
+@@ -1,41 +0,0 @@
+-#!/bin/sh
+-
+-FSTAT="/usr/bin/fstat"
+-GREP="/usr/bin/grep"
+-AWK="/usr/bin/awk"
+-SED="/usr/bin/sed"
+-CAT="/bin/cat"
+-
+-dispnum=0
+-if [ x"$1" = x"--display" ]; then
+-    if [ $# != 2 ]; then
+-	echo "usage: $0 [--display DISPLAY]"
+-	exit 1
+-    fi
+-    DISPLAY=$2
+-fi
+-if [ ! -z "${DISPLAY}" ]; then
+-    dispnum=$(echo ${DISPLAY} | ${SED} -E -e 's|:([0-9]+).*|\1|')
+-fi
+-
+-if [ ! -f "/tmp/.X${dispnum}-lock" ]; then
+-    echo "ERROR: Failed to find X lock file for display ${dispnum}"
+-    exit 1
+-fi
+-pid=$(${CAT} "/tmp/.X${dispnum}-lock")
+-
+-device=$(${FSTAT} -p ${pid} | ${GREP} ttyv | ${AWK} '{print $8}')
+-
+-if [ -z "${device}" ]; then
+-    echo "ERROR: Failed to find TTY device for X server on display ${dispnum}"
+-    exit 1
+-fi
+-
+-ret=""
+-for dev in ${device}; do
+-    if [ "${dev}" \> "${ret}" ]; then
+-	ret=${dev}
+-    fi
+-done
+-
+-echo "/dev/${dev}"
+diff --git a/tools/openbsd/ck-get-x11-server-pid b/tools/openbsd/ck-get-x11-server-pid
+deleted file mode 100755
+index 05c433e..0000000
+--- a/tools/openbsd/ck-get-x11-server-pid
++++ /dev/null
+@@ -1,17 +0,0 @@
+-#!/bin/sh
+-
+-SED="/usr/bin/sed"
+-CAT="/bin/cat"
+-
+-dispnum=0
+-if [ ! -z "${DISPLAY}" ]; then
+-    dispnum=$(echo ${DISPLAY} | ${SED} -E -e 's|:([0-9]+).*|\1|')
+-fi
+-
+-if [ ! -f "/tmp/.X${dispnum}-lock" ]; then
+-    echo "ERROR: Failed to find X lock file for display ${dispnum}"
+-    exit 1
+-fi
+-pid=$(${CAT} "/tmp/.X${dispnum}-lock")
+-
+-echo ${pid}
+diff --git a/tools/openbsd/ck-system-hibernate b/tools/openbsd/ck-system-hibernate
+index 2f35fe4..dd2568a 100644
+--- a/tools/openbsd/ck-system-hibernate
++++ b/tools/openbsd/ck-system-hibernate
+@@ -1,12 +1,3 @@
+ #!/bin/sh
+ 
+-#Try for common tools
+-if [ -x "/sbin/ZZZ" ] ; then
+-	/sbin/ZZZ
+-	exit $?
+-elif [ -x "/usr/sbin/ZZZ" ] ; then
+-	/usr/sbin/ZZZ
+-	exit $?
+-else
+-	exit 1
+-fi
++/usr/sbin/ZZZ
+diff --git a/tools/openbsd/ck-system-hybridsleep b/tools/openbsd/ck-system-hybridsleep
+index 8405318..9dda927 100644
+--- a/tools/openbsd/ck-system-hybridsleep
++++ b/tools/openbsd/ck-system-hybridsleep
+@@ -2,4 +2,3 @@
+ 
+ # Not implemented
+ exit 1
+-
+diff --git a/tools/openbsd/ck-system-restart b/tools/openbsd/ck-system-restart
+index 8e0664e..8272348 100755
+--- a/tools/openbsd/ck-system-restart
++++ b/tools/openbsd/ck-system-restart
+@@ -1,12 +1,3 @@
+ #!/bin/sh
+ 
+-#Try for common tools
+-if [ -x "/sbin/shutdown" ] ; then
+-	/sbin/shutdown -r now
+-	exit $?
+-elif [ -x "/usr/sbin/shutdown" ] ; then
+-	/usr/sbin/shutdown -r now
+-	exit $?
+-else
+-	exit 1
+-fi
++/sbin/shutdown -r now
+diff --git a/tools/openbsd/ck-system-stop b/tools/openbsd/ck-system-stop
+index 7bdb13d..8ab51af 100755
+--- a/tools/openbsd/ck-system-stop
++++ b/tools/openbsd/ck-system-stop
+@@ -1,18 +1,3 @@
+ #!/bin/sh
+ 
+-unsupported() {
+-	echo "org.freedesktop.Hal.Device.SystemPowerManagement.NotSupported" >&2
+-	echo "No shutdown command found" >&2
+-	exit 1
+-}
+-
+-#Try for common tools
+-if [ -x "/sbin/shutdown" ] ; then
+-	/sbin/shutdown -hp now
+-	exit $?
+-elif [ -x "/usr/sbin/shutdown" ] ; then
+-	/usr/sbin/shutdown -p now
+-	exit $?
+-else
+-	unsupported
+-fi
++/sbin/shutdown -hp now
+diff --git a/tools/openbsd/ck-system-suspend b/tools/openbsd/ck-system-suspend
+index 092165c..27304af 100644
+--- a/tools/openbsd/ck-system-suspend
++++ b/tools/openbsd/ck-system-suspend
+@@ -1,12 +1,3 @@
+ #!/bin/sh
+ 
+-#Try for common tools
+-if [ -x "/sbin/zzz" ] ; then
+-	/sbin/zzz
+-	exit $?
+-elif [ -x "/usr/sbin/zzz" ] ; then
+-	/usr/sbin/zzz
+-	exit $?
+-else
+-	exit 1
+-fi
++/usr/sbin/zzz
+-- 
+2.2.1
+

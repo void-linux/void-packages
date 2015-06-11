@@ -1,0 +1,140 @@
+From cfea98feebc9b1668d555d98481698dc4eefe532 Mon Sep 17 00:00:00 2001
+From: Eric Koegel <eric.koegel@gmail.com>
+Date: Tue, 11 Nov 2014 19:20:43 +0300
+Subject: [PATCH 01/12] Fix installing logrotate file
+
+This ensures the logrotate file will rotate the history file correctly.
+It also now installs to the right location.
+---
+ .gitignore                   |  1 +
+ configure.ac                 | 13 -------------
+ data/Makefile.am             | 34 +++++++++++++++++++++++++++++-----
+ data/consolekit.logrotate    |  8 --------
+ data/consolekit.logrotate.in |  8 ++++++++
+ 5 files changed, 38 insertions(+), 26 deletions(-)
+ delete mode 100644 data/consolekit.logrotate
+ create mode 100644 data/consolekit.logrotate.in
+
+diff --git a/configure.ac b/configure.ac
+index 8516c53..12cb074 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -287,18 +287,6 @@ else
+ fi
+ AC_SUBST(PAM_MODULE_DIR)
+ 
+-dnl ---------------------------------------------------------------------------
+-dnl - Install directory for syslog rotation file
+-dnl ---------------------------------------------------------------------------
+-
+-AC_ARG_WITH(logrotate-dir,
+-	[AS_HELP_STRING([--with-logrotate-dir=<dir>],[directory to install syslog rotation file])])
+-if ! test -z "$with_logrotate_dir"; then
+-	LOGROTATE_DIR="$with_logrotate_dir"
+-else
+-	LOGROTATE_DIR="/etc/logrotate.d"
+-fi
+-AC_SUBST(LOGROTATE_DIR)
+ 
+ dnl ---------------------------------------------------------------------------
+ dnl - Install directory for xinitrc file
+@@ -527,7 +515,6 @@ echo "
+         Build PAM module:         ${msg_pam_module}
+         Build udev-acl:           ${enable_udev_acl}
+         Build docs:               ${enable_docbook_docs}
+-        Log rotate dir:           ${LOGROTATE_DIR}
+         xinitrc dir:              ${XINITRC_DIR}
+ 
+         PolicyKit support         ${have_polkit}
+diff --git a/data/Makefile.am b/data/Makefile.am
+index 173df0e..38876d5 100644
+--- a/data/Makefile.am
++++ b/data/Makefile.am
+@@ -1,12 +1,13 @@
+ NULL =
+ 
++BUILT_SOURCES =
++
+ dbusconfdir = $(DBUS_SYS_DIR)
+ dbusconf_DATA = ConsoleKit.conf
+ 
+ seatdir = $(sysconfdir)/ConsoleKit/seats.d
+ seat_DATA = 00-primary.seat
+ 
+-logdir = $(LOGROTATE_DIR)
+ xinitrcdir = $(XINITRC_DIR)
+ 
+ if HAVE_POLKIT
+@@ -72,14 +73,35 @@ edit = sed \
+ 	-e 's|@localstatedir[@]|$(localstatedir)|g' \
+ 	-e 's|@CONSOLE_KIT_PID_FILE[@]|$(CONSOLE_KIT_PID_FILE)|g'
+ 
+-
+-install-log:
+-	$(INSTALL_PROGRAM) consolekit.logrotate $(logdir)
+-
+ install-xinitrc:
+ 	$(INSTALL_PROGRAM) 90-consolekit $(xinitrcdir) && \
+ 	chmod +x $(xinitrcdir)/90-consolekit
+ 
++install-data-local: install-logrotate
++	$(MKDIR_P) $(DESTDIR)$(localstatedir)/log/ConsoleKit/
++
++uninstall-local:: uninstall-logrotate
++	rmdir $(DESTDIR)$(localstatedir)/log/ConsoleKit/
++
++LOGROTATE_CONFS = consolekit.logrotate
++
++BUILT_SOURCES += $(LOGROTATE_CONFS)
++
++consolekit.logrotate: consolekit.logrotate.in
++	sed							\
++	    -e 's![@]localstatedir[@]!$(localstatedir)!g'	\
++	    < $< > $@-t
++	mv $@-t $@
++
++install-logrotate: $(LOGROTATE_CONFS)
++	$(MKDIR_P) $(DESTDIR)$(localstatedir)/log/ConsoleKit/ \
++		   $(DESTDIR)$(sysconfdir)/logrotate.d/
++	$(INSTALL_DATA) consolekit.logrotate $(DESTDIR)$(sysconfdir)/logrotate.d/consolekit
++
++
++uninstall-logrotate:
++	rm -f $(DESTDIR)$(sysconfdir)/logrotate.d/consolekit
++
+ EXTRA_DIST =						\
+ 	ck-log-system-restart				\
+ 	ck-log-system-start				\
+@@ -92,6 +114,7 @@ EXTRA_DIST =						\
+ 	console-kit-log-system-stop.service.in          \
+ 	console-kit-log-system-restart.service.in       \
+ 	90-consolekit                                   \
++	consolekit.logrotate.in                         \
+ 	$(NULL)
+ 
+ MAINTAINERCLEANFILES =			\
+@@ -100,6 +123,7 @@ MAINTAINERCLEANFILES =			\
+ 
+ CLEANFILES =                                            \
+ 	$(service_DATA)                                 \
++	$(BUILT_SOURCES)                                \
+ 	console-kit-daemon.service                      \
+ 	console-kit-log-system-start.service        	\
+ 	console-kit-log-system-stop.service     	\
+diff --git a/data/consolekit.logrotate.in b/data/consolekit.logrotate.in
+new file mode 100644
+index 0000000..656b312
+--- /dev/null
++++ b/data/consolekit.logrotate.in
+@@ -0,0 +1,8 @@
++@localstatedir@/log/ConsoleKit/history {
++       monthly
++       rotate 6
++       delaycompress
++       compress
++       notifempty
++       missingok
++}
+-- 
+2.2.1
+

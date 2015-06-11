@@ -1,0 +1,187 @@
+From 2c1f7c245a2592b94b8a19d380a77ad1326a7ea4 Mon Sep 17 00:00:00 2001
+From: Eric Koegel <eric.koegel@gmail.com>
+Date: Mon, 10 Nov 2014 15:53:36 +0300
+Subject: [PATCH 03/12] Fix installing 90-consolekit file
+
+This ensures the 90-consolekit file will be installed to the
+right location.
+---
+ .gitignore            |  1 +
+ configure.ac          |  2 +-
+ data/90-consolekit    | 32 --------------------------------
+ data/90-consolekit.in | 32 ++++++++++++++++++++++++++++++++
+ data/Makefile.am      | 31 ++++++++++++++++++++++---------
+ 5 files changed, 56 insertions(+), 42 deletions(-)
+ delete mode 100644 data/90-consolekit
+ create mode 100644 data/90-consolekit.in
+
+diff --git a/configure.ac b/configure.ac
+index 12cb074..d45a937 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -297,7 +297,7 @@ AC_ARG_WITH(xinitrc-dir,
+ if ! test -z "$with_xinitrc_dir"; then
+ 	XINITRC_DIR="$with_xinitrc_dir"
+ else
+-	XINITRC_DIR="/etc/X11/xinit/xinitrc.d"
++	XINITRC_DIR="$sysconfdir/X11/xinit/xinitrc.d"
+ fi
+ AC_SUBST(XINITRC_DIR)
+ 
+diff --git a/data/90-consolekit b/data/90-consolekit
+deleted file mode 100644
+index f0082a7..0000000
+--- a/data/90-consolekit
++++ /dev/null
+@@ -1,32 +0,0 @@
+-# -*- sh -*-
+-# Xsession.d script for ck-launch-session.
+-#
+-#
+-# This file is sourced by Xsession(5), not executed.
+-
+-CK_LAUNCH_SESSION=/usr/bin/ck-launch-session
+-
+-is_on_console() {
+-	session=$(dbus-send --system --dest=org.freedesktop.ConsoleKit \
+-		--type=method_call --print-reply --reply-timeout=2000 \
+-		/org/freedesktop/ConsoleKit/Manager \
+-		org.freedesktop.ConsoleKit.Manager.GetCurrentSession \
+-		| grep path | awk '{print $3}' | sed s/\"//g)
+-	x11_display=$(dbus-send --system --dest=org.freedesktop.ConsoleKit \
+-		--type=method_call --print-reply --reply-timeout=2000 \
+-		$session org.freedesktop.ConsoleKit.Session.GetX11Display \
+-		| grep string | awk '{print $2}' | sed s/\"//g)
+-
+-	if [ -z "$x11_display" ] ; then
+-		return 0
+-	else
+-		return 1
+-	fi
+-}
+-
+-# gdm already creates a CK session for us, so do not run the expensive D-Bus
+-# calls if we have $GDMSESSION
+-if [ -z "$GDMSESSION" ] && [ -x "$CK_LAUNCH_SESSION" ] && \
+- ( [ -z "$XDG_SESSION_COOKIE" ] || is_on_console ) ; then
+-    STARTUP="$CK_LAUNCH_SESSION $STARTUP"
+-fi
+diff --git a/data/90-consolekit.in b/data/90-consolekit.in
+new file mode 100644
+index 0000000..30847b2
+--- /dev/null
++++ b/data/90-consolekit.in
+@@ -0,0 +1,32 @@
++# -*- sh -*-
++# Xsession.d script for ck-launch-session.
++#
++#
++# This file is sourced by Xsession(5), not executed.
++
++@CK_LAUNCH_SESSION@
++
++is_on_console() {
++	session=$(dbus-send --system --dest=org.freedesktop.ConsoleKit \
++		--type=method_call --print-reply --reply-timeout=2000 \
++		/org/freedesktop/ConsoleKit/Manager \
++		org.freedesktop.ConsoleKit.Manager.GetCurrentSession \
++		| grep path | awk '{print $3}' | sed s/\"//g)
++	x11_display=$(dbus-send --system --dest=org.freedesktop.ConsoleKit \
++		--type=method_call --print-reply --reply-timeout=2000 \
++		$session org.freedesktop.ConsoleKit.Session.GetX11Display \
++		| grep string | awk '{print $2}' | sed s/\"//g)
++
++	if [ -z "$x11_display" ] ; then
++		return 0
++	else
++		return 1
++	fi
++}
++
++# gdm already creates a CK session for us, so do not run the expensive D-Bus
++# calls if we have $GDMSESSION
++if [ -z "$GDMSESSION" ] && [ -x "$CK_LAUNCH_SESSION" ] && \
++ ( [ -z "$XDG_SESSION_COOKIE" ] || is_on_console ) ; then
++    STARTUP="$CK_LAUNCH_SESSION $STARTUP"
++fi
+diff --git a/data/Makefile.am b/data/Makefile.am
+index acb381f..6b47655 100644
+--- a/data/Makefile.am
++++ b/data/Makefile.am
+@@ -8,7 +8,6 @@ dbusconf_DATA = ConsoleKit.conf
+ seatdir = $(sysconfdir)/ConsoleKit/seats.d
+ seat_DATA = 00-primary.seat
+ 
+-xinitrcdir = $(XINITRC_DIR)
+ 
+ if HAVE_POLKIT
+ polkit_policydir = $(datadir)/polkit-1/actions
+@@ -80,19 +79,20 @@ edit += \
+ endif
+ 
+ 
+-install-xinitrc:
+-	$(INSTALL_PROGRAM) 90-consolekit $(xinitrcdir) && \
+-	chmod +x $(xinitrcdir)/90-consolekit
+-
+-install-data-local: install-logrotate
++install-data-local: install-logrotate install-90-consolekit
+ 	$(MKDIR_P) $(DESTDIR)$(localstatedir)/log/ConsoleKit/
+ 
+-uninstall-local:: uninstall-logrotate
++uninstall-local:: uninstall-logrotate uninstall-90-consolekit
+ 	rmdir $(DESTDIR)$(localstatedir)/log/ConsoleKit/
+ 
+ LOGROTATE_CONFS = consolekit.logrotate
+ 
+-BUILT_SOURCES += $(LOGROTATE_CONFS)
++XINITRC_CONFS = 90-consolekit
++
++BUILT_SOURCES += \
++	$(LOGROTATE_CONFS)	\
++	$(XINITRC_CONFS)	\
++	$(NULL)
+ 
+ consolekit.logrotate: consolekit.logrotate.in
+ 	sed							\
+@@ -100,15 +100,28 @@ consolekit.logrotate: consolekit.logrotate.in
+ 	    < $< > $@-t
+ 	mv $@-t $@
+ 
++90-consolekit: 90-consolekit.in
++	sed							\
++	    -e 's![@]CK_LAUNCH_SESSION[@]!CK_LAUNCH_SESSION=$(bindir)/ck-launch-session!g'	\
++	    < $< > $@-t
++	mv $@-t $@
++
+ install-logrotate: $(LOGROTATE_CONFS)
+ 	$(MKDIR_P) $(DESTDIR)$(localstatedir)/log/ConsoleKit/ \
+ 		   $(DESTDIR)$(sysconfdir)/logrotate.d/
+ 	$(INSTALL_DATA) consolekit.logrotate $(DESTDIR)$(sysconfdir)/logrotate.d/consolekit
+ 
++install-90-consolekit: $(XINITRC_CONFS)
++	$(MKDIR_P) $(DESTDIR)$(XINITRC_DIR)/
++	$(INSTALL_PROGRAM) 90-consolekit $(DESTDIR)$(XINITRC_DIR) && \
++		chmod +x $(DESTDIR)$(XINITRC_DIR)/90-consolekit
+ 
+ uninstall-logrotate:
+ 	rm -f $(DESTDIR)$(sysconfdir)/logrotate.d/consolekit
+ 
++uninstall-90-consolekit:
++	rm -f $(DESTDIR)$(XINITRC_DIR)/90-consolekit
++
+ EXTRA_DIST =						\
+ 	ck-log-system-restart				\
+ 	ck-log-system-start				\
+@@ -120,7 +133,7 @@ EXTRA_DIST =						\
+ 	console-kit-log-system-start.service.in         \
+ 	console-kit-log-system-stop.service.in          \
+ 	console-kit-log-system-restart.service.in       \
+-	90-consolekit                                   \
++	90-consolekit.in                                \
+ 	consolekit.logrotate.in                         \
+ 	$(NULL)
+ 
+-- 
+2.2.1
+
