@@ -14,7 +14,8 @@ do_build() {
 }
 
 do_install() {
-	for f in "${GOBIN}"/*; do
-		vbin "$f"
+	find "${GOBIN}" -type f -executable | while read line
+	do
+		vbin "${line}"
 	done
 }
