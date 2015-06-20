@@ -16,6 +16,9 @@ vopt_with() {
 
 vopt_enable() {
     local opt="$1" flag="${2:-$1}"
+    if [ "$#" -gt "2" ]; then
+        msg_error "vopt_enable $opt: $(($# - 2)) excess parameter(s)\n"
+    fi
     vopt_if "$1" "--enable-${flag}" "--disable-${flag}"
 }
 
