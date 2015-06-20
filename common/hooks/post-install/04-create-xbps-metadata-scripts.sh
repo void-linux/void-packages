@@ -117,6 +117,13 @@ _EOF
 		echo "export make_dirs=\"${make_dirs}\"" >> $tmpf
 	fi
 	#
+	# Handle binfmts trigger
+	#
+	if [ -n "${binfmts}" ]; then
+		_add_trigger binfmts
+		echo "export binfmts=\"${binfmts}\"" >> $tmpf
+	fi
+	#
 	# Handle systemd services.
 	#
 	if [ -n "$build_option_systemd" ]; then
