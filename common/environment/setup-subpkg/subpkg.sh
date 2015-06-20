@@ -40,3 +40,6 @@ unset -v systemd_services
 
 # xbps-triggers: mkdirs
 unset -v make_dirs
+
+# xbps-triggers: binfmts
+unset -v binfmts
