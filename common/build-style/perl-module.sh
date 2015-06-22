@@ -28,7 +28,7 @@ do_configure() {
 		PERL_MM_USE_DEFAULT=1 GCC="$CC" CC="$CC" LD="$CC" \
 			OPTIMIZE="$CFLAGS" \
 			CFLAGS="$CFLAGS -I${XBPS_CROSS_BASE}/usr/include" \
-			LDFLAGS="$LDFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
+			LDFLAGS="$LDFLAGS -L${XBPS_CROSS_BASE}/usr/lib -lperl" \
 			LDDLFLAGS="-shared $CFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
 			perl Makefile.PL ${configure_args} INSTALLDIRS=vendor
 	fi
@@ -40,8 +40,8 @@ do_configure() {
 			PERL_MM_USE_DEFAULT=1 GCC="$CC" CC="$CC" LD="$CC" \
 				OPTIMIZE="$CFLAGS" \
 				CFLAGS="$CFLAGS -I${XBPS_CROSS_BASE}/usr/include" \
-				LDFLAGS="$LDFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
-				LDDLFLAGS="-shared $CFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
+				LDFLAGS="$LDFLAGS -L${XBPS_CROSS_BASE}/usr/lib -lperl" \
+				LDDLFLAGS="-shared $CFLAGS -L${XBPS_CROSS_BASE}/usr/lib -lperl" \
 				perl Makefile.PL ${make_build_args} INSTALLDIRS=vendor
 		else
 			msg_error "*** ERROR: couldn't find $perlmkf, aborting **\n"
@@ -54,8 +54,8 @@ do_build() {
 	: ${make_cmd:=make}
 
 	${make_cmd} CC="$CC" LD="$CC" CFLAGS="$CFLAGS" OPTIMIZE="$CFLAGS" \
-		LDFLAGS="$LDFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
-		LDDLFLAGS="-shared $CFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
+		LDFLAGS="$LDFLAGS -L${XBPS_CROSS_BASE}/usr/lib -lperl" \
+		LDDLFLAGS="-shared $CFLAGS -L${XBPS_CROSS_BASE}/usr/lib -lperl" \
 		${makejobs} ${make_build_args} ${make_build_target}
 }
 
