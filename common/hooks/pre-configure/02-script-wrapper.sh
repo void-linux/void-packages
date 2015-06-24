@@ -107,6 +107,7 @@ hook() {
 	generic_wrapper2 libassuan-config
 	generic_wrapper2 mysql_config
 	generic_wrapper2 taglib-config
+	generic_wrapper2 nspr-config
 	generic_wrapper3 libpng-config
 	generic_wrapper3 xmlrpc-c-config
 	generic_wrapper3 krb5-config
@@ -120,7 +121,6 @@ hook() {
 	generic_wrapper3 ncurses5-config
 	generic_wrapper3 ncursesw5-config
 	generic_wrapper3 libetpan-config
-	generic_wrapper3 nspr-config
 	python_wrapper python-config 2.7
 	python_wrapper python3.4-config 3.4m
 }
