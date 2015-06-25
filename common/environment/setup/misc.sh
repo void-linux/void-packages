@@ -15,7 +15,7 @@ KERNEL_SITE="http://www.kernel.org/pub/linux"
 CPAN_SITE="http://cpan.perl.org/modules/by-module"
 PYPI_SITE="http://pypi.python.org/packages/source"
 MOZILLA_SITE="http://ftp.mozilla.org/pub/mozilla.org"
-GNU_SITE="http://mirrors.kernel.org/gnu"
+GNU_SITE="http://ftp.gnu.org/gnu"
 FREEDESKTOP_SITE="http://freedesktop.org/software"
 
 # Repetitive sub homepage's with no real project page
