@@ -25,7 +25,7 @@ below.
 
 #### xbps-uunshare(1)
 
-This utility requires these linux kernel options:
+This utility requires these Linux kernel options:
 
 - CONFIG\_NAMESPACES
 - CONFIG\_IPC\_NS
@@ -37,7 +37,7 @@ options it will fail with `EINVAL (Invalid argument)`.
 
 #### xbps-uchroot(1)
 
-This utility requires these linux kernel options:
+This utility requires these Linux kernel options:
 
 - CONFIG\_NAMESPACES
 - CONFIG\_IPC\_NS
@@ -59,14 +59,14 @@ To enable it:
     $ cd void-packages
     $ echo XBPS_CHROOT_CMD=uchroot >> etc/conf
 
-If for some reason it's erroring out as `ERROR clone (Operation not permited)`, check that
+If for some reason it's erroring out as `ERROR clone (Operation not permitted)`, check that
 your user is a member of the required `group` and that `xbps-uchroot(1)` utility has the
 proper permissions and owner/group as explained above.
 
 #### proot(1)
 
 The `proot(1)` utility implements chroot and bind mounts support completely in user space,
-and can be used if your linux kernel does not have support for namespaces. See http://proot.me
+and can be used if your Linux kernel does not have support for namespaces. See http://proot.me
 for more information.
 
 To enable it:
@@ -104,7 +104,7 @@ If you don't want to waste your time building everything from scratch probably i
 
 ### Configuration
 
-The `etc/defaults.conf` file contains the possible settings that can be overrided
+The `etc/defaults.conf` file contains the possible settings that can be overridden
 through the `etc/conf` configuration file for the `xbps-src` utility; if that file
 does not exist, will try to read configuration settings from `~/.xbps-src.conf`.
 
@@ -215,7 +215,7 @@ The build options can also be shown for binary packages via `xbps-query(1)`:
 in an official void repository, an update will ignore those options. Put that package
 on `hold` mode via `xbps-pkgdb(1)`, i.e `xbps-pkgdb -m hold foo` to ignore updates
 with `xbps-install -u`. Once the package is on `hold`, the only way to update it
-is by declaring it explicitely: `xbps-install -u foo`.
+is by declaring it explicitly: `xbps-install -u foo`.
 
 Permanent global package build options can be set via `XBPS_PKG_OPTIONS` variable in the
 `etc/conf` configuration file. Per package build options can be set via
@@ -251,7 +251,7 @@ Once the RSA private key is ready you can use it to sign the repository:
 If the RSA key was protected with a passphrase you'll have to type it, or alternatively set
 it via the `XBPS_PASSPHRASE` environment variable.
 
-Once the binary packages have been signed, check the repository contains the appropiate `hex fingerprint`:
+Once the binary packages have been signed, check the repository contains the appropriate `hex fingerprint`:
 
 	$ xbps-query --repository=$PWD/hostdir/binpkgs -vL
 	...
@@ -302,11 +302,11 @@ If a source package has been adapted to be **cross buildable** `xbps-src` will a
 
 If the build for whatever reason fails, might be a new build issue or simply because it hasn't been adapted to be **cross compiled**.
 
-### Using xbps-src in a foreign linux distribution
+### Using xbps-src in a foreign Linux distribution
 
-xbps-src can be used in any recent linux distribution matching the cpu architecture.
+xbps-src can be used in any recent Linux distribution matching the CPU architecture.
 
-To use xbps-src in your linux distribution use the following instructions. Let's start downloading the xbps static binaries:
+To use xbps-src in your Linux distribution use the following instructions. Let's start downloading the xbps static binaries:
 
     $ wget http://repo.voidlinux.eu/static/xbps-static-latest.<arch>-musl.tar.xz
     $ mkdir ~/XBPS
