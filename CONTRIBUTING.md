@@ -42,7 +42,7 @@ There's a helper tool for creating new packages in the [xtools](https://github.c
 
 #### Committing your changes
 
-Once you have built your template files there are certian rules on how the commit should be named.
+Once you have built your template files there are certain rules on how the commit should be named.
 
 * Use the following for newly added packages: ```New package: <pkgname>-<version>```
   [Example](https://github.com/voidlinux/void-packages/commit/176d9655429188aac10cd229827f99b72982ab10)
@@ -58,7 +58,7 @@ If you want to describe your changes in more detail, make an empty line and add 
 
 This is also described in the [manual](https://github.com/voidlinux/void-packages/blob/master/Manual.md) in deeper detail.
 
-There's a helper tool for comitting packages in the [xtools](https://github.com/chneukirchen/xtools) package:
+There's a helper tool for committing packages in the [xtools](https://github.com/chneukirchen/xtools) package:
 
     $ xbump <pkgname>
 
@@ -88,7 +88,7 @@ your pull request will contain mistakes. It's nothing bad, it just happens.
 
 The reviewers will comment your pull request and point out which changes are needed before the template can be included.
 
-We recommend having only a single commit for pull request, so if you need to make changes in commits que already has a pull resquest, use the Following commands:
+We recommend having only a single commit for pull request, so if you need to make changes in commits but already have a pull request, use the following commands:
 
 
     $ git add <file>
@@ -107,5 +107,5 @@ you're sure you don't want your changes to be included.
 
 ##### Publishing the package
 
-Once the reviewers have merged the pullrequest, our [build server](http://build.voidlinux.eu) is automaticly triggered and builds
+Once the reviewers have merged the pull request, our [build server](http://build.voidlinux.eu) is automatically triggered and builds
 all packages from this pull request for all supported platforms. Once it is finished, the packages are available to all Void Linux users.
