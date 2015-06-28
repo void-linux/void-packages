@@ -162,7 +162,7 @@ Example: python-pam, perl-URI, python-pyside
 #### Language Bindings
 
 Language Bindings are packages which allow programs or libraries to have
-extensions or plugins written in a certian language.
+extensions or plugins written in a certain language.
 
 The naming convention to those packages is:
 ```
@@ -199,7 +199,7 @@ The optional 4th argument can be used to change the `file name`.
 
 - *vcopy()* `vcopy <pattern> <targetdir>`
 
-	Copies resursively all files in `pattern` to `targetdir` into the pkg `$DESTDIR`
+	Copies recursively all files in `pattern` to `targetdir` into the pkg `$DESTDIR`
 
 - *vmove()* `vmove <pattern>`
 
@@ -253,7 +253,7 @@ The optional 4th argument can be used to change the `file name`.
 	Installs `service` from `${FILESDIR}` to /etc/sv. The service must
 	be a directory containing at least a run script. Note the `supervise`
 	symlink will be created automatically by `vsv`.
-	For further informations on how to create a new service directory see
+	For further information on how to create a new service directory see
 	[The corresponding section the FAQ](http://smarden.org/runit/faq.html#create).
 
 > Shell wildcards must be properly quoted, i.e `vmove "usr/lib/*.a"`.
@@ -461,7 +461,7 @@ sonames in shared libraries.
 
 - `nocross` If set, cross compilation won't be allowed and will exit immediately.
 
-- `python_versions` A white space seperated list of python versions which will
+- `python_versions` A white space separated list of python versions which will
 be used to build that package. This is only used by the `python-module` build style.
 
 - `subpackages` A white space separated list of subpackages (matching `foo_package()`)
@@ -557,7 +557,7 @@ arguments can be passed in via `configure_args`.
 
 - `gnu-makefile` For packages that use GNU make, build arguments can be passed in via
 `make_build_args` and install arguments via `make_install_args`. The build
-target can be overriden via `make_build_target` and the install target
+target can be overridden via `make_build_target` and the install target
 via `make_install_target`.
 
 - `go` For programs written in Go that follow the standard package
@@ -857,7 +857,7 @@ Additional variables for the **system accounts** can be specified to change its 
 
 The **system user** is created by using a dynamically allocated **uid/gid** in your system
 and it's created as a `system account`, unless the **uid** is set. A new group will be created for the
-specified `system account` and used exclusived for this purpose.
+specified `system account` and used exclusively for this purpose.
 
 <a id="32bit_pkgs"></a>
 ### 32bit packages
@@ -955,7 +955,7 @@ and most likely it shall depend on its development package.
 
 If a development package provides a `pkg-config` file, you should verify
 what dependencies the package needs for dynamic or static linking, and add
-the appropiate `development` packages as dependencies.
+the appropriate `development` packages as dependencies.
 
 <a id="pkgs_python"></a>
 ### Python packages
@@ -986,7 +986,7 @@ prefix: `usr/lib/pythonX.X/site-packages`. Multiple python modules may be specif
 by blanks, i.e `pycompile_module="foo blah"`.
 
 - `pycompile_dirs`: this variable expects the python directories that should be `byte-compiled`
-recusively by the target python version. This differs from `pycompile_module` in that any
+recursively by the target python version. This differs from `pycompile_module` in that any
 path may be specified, i.e `pycompile_dirs="usr/share/foo"`.
 
 > NOTE: it's expected that additional subpkgs must be generated to allow packaging for multiple
@@ -1010,7 +1010,7 @@ The following variables influence how Go packages are built:
 - `go_get`: If set to yes, the package specified via `go_import_path`
   will be downloaded with `go get`. Otherwise, a distfile has to be
   provided. This option should only be used with `-git` (or similar)
-  packages; using a versioned distfile is prefered.
+  packages; using a versioned distfile is preferred.
 
 <a id="notes"></a>
 ### Notes
