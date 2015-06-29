@@ -36,9 +36,9 @@ templates must be placed in `void-packages/srcpkgs/<pkgname>/template` where `pk
 For deeper insights on the contents of template files consider reading the [manual](https://github.com/voidlinux/void-packages/blob/master/Manual.md)
 
 There's a helper tool for creating new packages in the [xtools](https://github.com/chneukirchen/xtools) package:
-```
-xnew pkgname subpkg1 subpkg2 ...
-```
+
+    $ xnew pkgname subpkg1 subpkg2 ...
+
 
 #### Committing your changes
 
@@ -59,9 +59,8 @@ If you want to describe your changes in more detail, make an empty line and add 
 This is also described in the [manual](https://github.com/voidlinux/void-packages/blob/master/Manual.md) in deeper detail.
 
 There's a helper tool for comitting packages in the [xtools](https://github.com/chneukirchen/xtools) package:
-```
-xbump <pkgname>
-```
+
+    $ xbump <pkgname>
 
 #### Starting a pull request
 
@@ -79,9 +78,8 @@ comply with the our guidelines. At the moment not all packages comply to the rul
 reports errors on places you haven't touched. So feel free to fix those errors too.
 
 You are encouraged to check your templates beforehand using the helper from the [xtools](https://github.com/chneukirchen/xtools) package:
-```
-xlint template
-```
+
+    $ xlint template
 
 ##### Review
 
@@ -89,6 +87,13 @@ GitHub reports new pull request at our IRC-Channel, so the reviewers will be ins
 your pull request will contain mistakes. It's nothing bad, it just happens.
 
 The reviewers will comment your pull request and point out which changes are needed before the template can be included.
+
+We recommend having only a single commit for pull request, so if you need to make changes in commits que already has a pull resquest, use the Following commands:
+
+
+    $ git add <file>
+    $ git commit --amend
+    $ git push -f
 
 ##### Closing the pull request
 
