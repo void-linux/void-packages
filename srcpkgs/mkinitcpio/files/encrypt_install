@@ -1,0 +1,44 @@
+#!/bin/bash
+
+build() {
+    local mod
+
+    add_module dm-crypt
+    if [[ $CRYPTO_MODULES ]]; then
+        for mod in $CRYPTO_MODULES; do
+            add_module "$mod"
+        done
+    else
+        add_all_modules '/crypto/'
+    fi
+
+    add_binary "cryptsetup"
+    add_binary "dmsetup"
+    add_file "/usr/lib/udev/rules.d/10-dm.rules"
+    add_file "/usr/lib/udev/rules.d/13-dm-disk.rules"
+    add_file "/usr/lib/udev/rules.d/95-dm-notify.rules"
+    add_file "/usr/lib/initcpio/udev/11-dm-initramfs.rules" "/usr/lib/udev/rules.d/11-dm-initramfs.rules"
+
+    add_runscript
+}
+
+help() {
+    cat <<HELPEOF
+This hook allows for an encrypted root device. Users should specify the device
+to be unlocked using 'cryptdevice=device:dmname' on the kernel command line,
+where 'device' is the path to the raw device, and 'dmname' is the name given to
+the device after unlocking, and will be available as /dev/mapper/dmname.
+
+For unlocking via keyfile, 'cryptkey=device:fstype:path' should be specified on
+the kernel cmdline, where 'device' represents the raw block device where the key
+exists, 'fstype' is the filesystem type of 'device' (or auto), and 'path' is
+the absolute path of the keyfile within the device.
+
+Without specifying a keyfile, you will be prompted for the password at runtime.
+This means you must have a keyboard available to input it, and you may need
+the keymap hook as well to ensure that the keyboard is using the layout you
+expect.
+HELPEOF
+}
+
+# vim: set ft=sh ts=4 sw=4 et:
