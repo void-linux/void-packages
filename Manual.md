@@ -545,7 +545,9 @@ to execute a `build_style` script must be defined via `$hostmakedepends`.
 The current list of available `build_style` scripts is the following:
 
 - `cmake` For packages that use the CMake build system, configuration arguments
-can be passed in via `configure_args`.
+can be passed in via `configure_args`. The `cmake_builddir` variable may be
+defined to specify the directory for building under `build_wrksrc` instead of
+the default `build`.
 
 - `configure` For packages that use non-GNU configure scripts, at least `--prefix=/usr`
 should be passed in via `configure_args`.

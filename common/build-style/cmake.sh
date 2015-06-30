@@ -2,8 +2,8 @@
 # This helper is for templates using cmake.
 #
 do_configure() {
-	[ ! -d build ] && mkdir build
-	cd build
+	[ ! -d ${cmake_builddir:=build} ] && mkdir -p ${cmake_builddir}
+	cd ${cmake_builddir}
 
 	if [ "$CROSS_BUILD" ]; then
 		cat > cross_${XBPS_CROSS_TRIPLET}.cmake <<_EOF
@@ -32,13 +32,14 @@ _EOF
 
 	configure_args+=" -DCMAKE_INSTALL_SBINDIR=bin"
 
-	cmake ${configure_args} ..
+	cmake ${configure_args} $(echo ${cmake_builddir}|sed \
+		-e 's|[^/]$|/|' -e 's|[^/]*||g' -e 's|/|../|g')
 }
 
 do_build() {
 	: ${make_cmd:=make}
 
-	cd build
+	cd ${cmake_builddir:=build}
 	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
 }
 
@@ -46,6 +47,6 @@ do_install() {
 	: ${make_cmd:=make}
 	: ${make_install_target:=install}
 
-	cd build
+	cd ${cmake_builddir:=build}
 	${make_cmd} DESTDIR=${DESTDIR} ${make_install_args} ${make_install_target}
 }
