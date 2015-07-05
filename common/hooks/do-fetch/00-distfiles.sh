@@ -2,22 +2,29 @@
 # the $distfiles variable and then verifies its sha256 checksum comparing
 # its value with the one stored in the $checksum variable.
 
-verify_cksum() {
-	local curfile="$1" distfile="$2" dfcount="$3" filesum ckcount cksum found i
+# Get the checksum for $curfile at index $dfcount
+get_cksum() {
+	local curfile="$1" dfcount="$2" ckcount cksum i
 
 	ckcount=0
+	cksum=0
 	for i in ${checksum}; do
 		if [ $dfcount -eq $ckcount -a -n "$i" ]; then
 			cksum=$i
-			found=yes
-			break
 		fi
-		ckcount=$(($ckcount + 1))
+		ckcount=$((ckcount + 1))
 	done
-	if [ -z $found ]; then
+	if [ -z "$cksum" ]; then
 		msg_error "$pkgver: cannot find checksum for $curfile.\n"
 	fi
+	echo "$cksum"
+}
 
+# Verify the checksum for $curfile stored at $distfile and index $dfcount
+verify_cksum() {
+	local curfile="$1" distfile="$2" dfcount="$3" filesum cksum
+
+	cksum=$(get_cksum $curfile $dfcount)
 	msg_normal "$pkgver: verifying checksum for distfile '$curfile'... "
 	filesum=$(${XBPS_DIGEST_CMD} $distfile)
 	if [ "$cksum" != "$filesum" ]; then
@@ -25,7 +32,22 @@ verify_cksum() {
 		msg_red "SHA256 mismatch for '$curfile:'\n$filesum\n"
 		errors=$(($errors + 1))
 	else
+		if [ ! -f "$XBPS_SRCDISTDIR/by_sha256/$cksum" ]; then
+			mkdir -p "$XBPS_SRCDISTDIR/by_sha256"
+			ln -f "$distfile" "$XBPS_SRCDISTDIR/by_sha256/${cksum}_${curfile}"
+		fi
 		msg_normal_append "OK.\n"
+	fi
+}
+
+# Link an existing cksum $distfile for $curfile at index $dfcount
+link_cksum() {
+	local curfile="$1" distfile="$2" dfcount="$3" filesum cksum
+
+	cksum=$(get_cksum $curfile $dfcount)
+	if [ -n "$cksum" -a -f "$XBPS_SRCDISTDIR/by_sha256/${cksum}_${curfile}" ]; then
+		ln -f "$XBPS_SRCDISTDIR/by_sha256/${cksum}_${curfile}" "$distfile"
+		msg_normal "$pkgver: using known distfile $curfile.\n"
 	fi
 }
 
@@ -53,7 +75,11 @@ hook() {
 			[ $? -eq 0 ] && break
 			msg_warn "$pkgver: ${curfile} is being already downloaded, waiting for 1s ...\n"
 		done
-		# If distfile does not exist download it.
+		# If distfile does not exist, try to link to it.
+		if [ ! -f "$distfile" ]; then
+			link_cksum $curfile $distfile $dfcount
+		fi
+		# If distfile does not exist, download it.
 		if [ ! -f "$distfile" ]; then
 			msg_normal "$pkgver: fetching distfile '$curfile'...\n"
 			flock "${distfile}.part" $XBPS_FETCH_CMD "$f"
