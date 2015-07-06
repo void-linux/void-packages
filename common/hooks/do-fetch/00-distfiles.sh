@@ -32,7 +32,7 @@ verify_cksum() {
 		msg_red "SHA256 mismatch for '$curfile:'\n$filesum\n"
 		errors=$(($errors + 1))
 	else
-		if [ ! -f "$XBPS_SRCDISTDIR/by_sha256/$cksum" ]; then
+		if [ ! -f "$XBPS_SRCDISTDIR/by_sha256/${cksum}_${curfile}" ]; then
 			mkdir -p "$XBPS_SRCDISTDIR/by_sha256"
 			ln -f "$distfile" "$XBPS_SRCDISTDIR/by_sha256/${cksum}_${curfile}"
 		fi
