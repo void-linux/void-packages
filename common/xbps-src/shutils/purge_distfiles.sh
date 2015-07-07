@@ -4,6 +4,10 @@
 
 
 purge_distfiles() {
+	# Ignore msg_error calls when sourcing templates
+	msg_error() {
+		:
+	}
 	if [ -z "$XBPS_SRCDISTDIR" ]; then
 		msg_error "The variable \$XBPS_SRCDISTDIR is not set."
 		exit 1
