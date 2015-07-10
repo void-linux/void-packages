@@ -342,9 +342,10 @@ setup_pkg() {
     DESTDIR=$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${sourcepkg}-${version}
     PKGDESTDIR=$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${pkg}-${version}
 
-    if [ -n "$XBPS_MAKEJOBS" -a -z "$disable_parallel_build" ]; then
-        makejobs="-j$XBPS_MAKEJOBS"
+    if [ -n "$disable_parallel_build" -o -z "$XBPS_MAKEJOBS" ]; then
+        XBPS_MAKEJOBS=1
     fi
+    makejobs="-j$XBPS_MAKEJOBS"
 
     if [ -n "$noarch" ]; then
         arch="noarch"
