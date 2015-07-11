@@ -35,9 +35,6 @@ unset -v dkms_modules
 # xbps-triggers: kernel-hooks
 unset -v kernel_hooks_version
 
-# xbps-triggers: systemd-service
-unset -v systemd_services
-
 # xbps-triggers: mkdirs
 unset -v make_dirs
 
