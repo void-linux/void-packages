@@ -145,9 +145,7 @@ chroot_sync_repos() {
 
     if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
         # Make sure to sync index for remote repositories.
-        $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
-            $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" \
-            "$XBPS_CHROOT_CMD_ARGS" xbps-install -S
+        xbps-install -r $XBPS_MASTERDIR -S
     fi
 
     if [ -n "$XBPS_CROSS_BUILD" ]; then
@@ -158,9 +156,7 @@ chroot_sync_repos() {
         # Make sure to sync index for remote repositories.
         if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
             env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
-                $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
-                $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" \
-                xbps-install -r $XBPS_CROSS_BASE -S
+                xbps-install -r $XBPS_MASTERDIR/$XBPS_CROSS_BASE -S
         fi
     fi
 
