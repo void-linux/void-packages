@@ -449,7 +449,7 @@ setup_pkg() {
     export XBPS_STATEDIR="${XBPS_BUILDDIR}/.xbps-${sourcepkg}"
     export XBPS_WRAPPERDIR="${XBPS_STATEDIR}/wrappers"
 
-    if [ -z "$CHROOT_READY" -o -n "$IN_CHROOT" ]; then
+    if [ -n "$bootstrap" -a -z "$CHROOT_READY" -o -n "$IN_CHROOT" ]; then
         mkdir -p $XBPS_WRAPPERDIR
     fi
 
