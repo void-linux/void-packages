@@ -10,7 +10,7 @@ or queried through the `xbps-install(1)` and `xbps-query(1)` utilities, respecti
 ### Requirements
 
 - GNU bash
-- xbps >= 0.45
+- xbps >= 0.46
 
 `xbps-src` requires an utility to chroot and bind mount existing directories
 into a `masterdir` that is used as its main `chroot` directory. `xbps-src` supports
@@ -126,9 +126,9 @@ used as dependencies in the source packages tree.
 If you want to customize those replacements, copy `etc/defaults.virtual` to `etc/virtual`
 and edit it accordingly to your needs.
 
-### Directory tree
+### Directory hierarchy
 
-The following directory tree is used with a default configuration file:
+The following directory hierarchy is used with a default configuration file:
 
          /void-packages
             |- common
@@ -156,7 +156,7 @@ The description of these directories is as follows:
  - `masterdir`: master directory to be used as rootfs to build/install packages.
  - `builddir`: to unpack package source tarballs and where packages are built.
  - `destdir`: to install packages, aka **fake destdir**.
- - `hostdir/ccache-<arch>`: to store ccache data if the `XBPS_CCACHE` option is enabled.
+ - `hostdir/ccache`: to store ccache data if the `XBPS_CCACHE` option is enabled.
  - `hostdir/distcc-<arch>`: to store distcc data if the `XBPS_DISTCC` option is enabled.
  - `hostdir/repocache`: to store binary packages from remote repositories.
  - `hostdir/sources`: to store package sources.
@@ -242,9 +242,13 @@ or
 
 > Only RSA keys in PEM format are currently accepted by xbps.
 
-Once the RSA private key is ready you can use it to sign the repository:
+Once the RSA private key is ready you can use it to initialize the repository metadata:
 
 	$ xbps-rindex --sign --signedby "I'm Groot" --privkey privkey.pem $PWD/hostdir/binpkgs
+
+And then make a signature per package:
+
+	$ xbps-rindex --sign-pkg --privkey privkey.pem $PWD/hostdir/binpkgs/*.xbps
 
 > If --privkey is unset, it defaults to `~/.ssh/id_rsa`.
 
@@ -253,11 +257,10 @@ it via the `XBPS_PASSPHRASE` environment variable.
 
 Once the binary packages have been signed, check the repository contains the appropriate `hex fingerprint`:
 
-	$ xbps-query --repository=$PWD/hostdir/binpkgs -vL
+	$ xbps-query --repository=hostdir/binpkgs -vL
 	...
 
-Each time a binary package is created, the repository must be signed as explained above with
-the difference that only those new packages will be signed.
+Each time a binary package is created, a package signature must be created with `--sign-pkg`.
 
 > It is not possible to sign a repository with multiple RSA keys.
 
