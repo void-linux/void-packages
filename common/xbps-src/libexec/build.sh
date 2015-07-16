@@ -34,6 +34,9 @@ if [ -z "$XBPS_CROSS_PREPARE" ]; then
     install_cross_pkg $XBPS_CROSS_BUILD || exit $?
     prepare_cross_sysroot $XBPS_CROSS_BUILD || exit $?
 fi
+if [ -z "$XBPS_DEPENDENCY" -a -z "$XBPS_TEMP_MASTERDIR" ]; then
+    remove_pkg_autodeps
+fi
 # Install dependencies from binary packages
 if [ "$PKGNAME" != "$TARGET_PKG" -o -z "$XBPS_SKIP_DEPS" ]; then
     install_pkg_deps $PKGNAME $TARGET_PKG pkg $XBPS_CROSS_BUILD $XBPS_CROSS_PREPARE || exit $?
