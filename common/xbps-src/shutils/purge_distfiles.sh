@@ -23,6 +23,7 @@ purge_distfiles() {
 		msg_error "No srcpkgs/*/template files found. Wrong working directory?"
 		exit 1
 	fi
+	percent=-1
 	for template in ${templates[@]}; do
 		pkg="$(echo "$template" | cut -d / -f 2)"
 		if [ ! -L "srcpkgs/$pkg" ]; then
@@ -37,7 +38,11 @@ purge_distfiles() {
 			done
 		fi
 		cur=$((cur + 1))
-		printf "\rScanning templates  : %3d%% (%d/%d)" $((100*$cur/$max)) $cur $max
+		pnew=$((100 * cur / max))
+		if [ $pnew -ne $percent ]; then
+			percent=$pnew
+			printf "\rScanning templates  : %3d%% (%d/%d)" $percent $cur $max
+		fi
 	done
 	echo
 	echo "Number of hashes    : ${#my_hashes[@]}"
@@ -49,6 +54,7 @@ purge_distfiles() {
 	distfiles=($XBPS_SRCDISTDIR/*/*)
 	max=${#distfiles[@]}
 	cur=0
+	percent=-1
 	for distfile in ${distfiles[@]}; do
 		inode=$(stat "$distfile" --printf "%i")
 		if [ -z "${inodes[$inode]}" ]; then
@@ -57,7 +63,11 @@ purge_distfiles() {
 			inodes[$inode]+="|$distfile"
 		fi
 		cur=$((cur + 1))
-		printf "\rCollecting inodes   : %3d%% (%d/%d)" $((100*$cur/$max)) $cur $max
+		pnew=$((100 * cur / max))
+		if [ $pnew -ne $percent ]; then
+			percent=$pnew
+			printf "\rCollecting inodes   : %3d%% (%d/%d)" $percent $cur $max
+		fi
 	done
 	echo
 
