@@ -446,6 +446,11 @@ setup_pkg() {
         exit 2
     fi
 
+    if [ -n "$restricted" -a -z "$XBPS_ALLOW_RESTRICTED" ]; then
+        msg_red "$pkgver: does not allow redistribution of sources/binaries (restricted license).\n"
+        exit 2
+    fi
+
     export XBPS_STATEDIR="${XBPS_BUILDDIR}/.xbps-${sourcepkg}"
     export XBPS_WRAPPERDIR="${XBPS_STATEDIR}/wrappers"
 
