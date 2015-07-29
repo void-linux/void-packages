@@ -34,7 +34,7 @@ if [ -z "$XBPS_CROSS_PREPARE" ]; then
     install_cross_pkg $XBPS_CROSS_BUILD || exit $?
     prepare_cross_sysroot $XBPS_CROSS_BUILD || exit $?
 fi
-if [ -z "$XBPS_DEPENDENCY" -a -z "$XBPS_TEMP_MASTERDIR" ]; then
+if [ -z "$XBPS_DEPENDENCY" -a -z "$XBPS_TEMP_MASTERDIR" -a -n "$XBPS_KEEP_ALL" -a "$XBPS_CHROOT_CMD" = "proot" ]; then
     remove_pkg_autodeps
 fi
 # Install dependencies from binary packages
