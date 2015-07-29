@@ -28,7 +28,7 @@ XBPS_INSTALL_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_install_don
 XBPS_PRE_INSTALL_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_pre_install_done"
 XBPS_POST_INSTALL_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_post_install_done"
 
-cd $wrksrc || msg_error "$pkgver: cannot access to wrksrc [$wrksrc]\n"
+cd "$wrksrc" || msg_error "$pkgver: cannot access to wrksrc [$wrksrc]\n"
 if [ -n "$build_wrksrc" ]; then
     cd $build_wrksrc || msg_error "$pkgver: cannot access to build_wrksrc [$build_wrksrc]\n"
 fi
@@ -48,7 +48,7 @@ if [ ! -f $XBPS_INSTALL_DONE ]; then
 
     # Run do_install()
     if [ ! -f $XBPS_INSTALL_DONE ]; then
-        cd $wrksrc
+        cd "$wrksrc"
         [ -n "$build_wrksrc" ] && cd $build_wrksrc
         if declare -f do_install >/dev/null; then
             run_func do_install
@@ -64,7 +64,7 @@ if [ ! -f $XBPS_INSTALL_DONE ]; then
 
     # Run post_install()
     if [ ! -f $XBPS_POST_INSTALL_DONE ]; then
-        cd $wrksrc
+        cd "$wrksrc"
         [ -n "$build_wrksrc" ] && cd $build_wrksrc
         if declare -f post_install >/dev/null; then
             run_func post_install
