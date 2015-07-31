@@ -10,14 +10,14 @@ _process_patch() {
 	elif [ -n "$patch_args" ]; then
 		_args=$patch_args
 	fi
-	cp -f $i $wrksrc
+	cp -f $i "$wrksrc"
 
 	# Try to guess if its a compressed patch.
 	if [[ $f =~ .gz$ ]]; then
-		gunzip $wrksrc/${_patch}
+		gunzip "$wrksrc/${_patch}"
 		_patch=${_patch%%.gz}
 	elif [[ $f =~ .bz2$ ]]; then
-		bunzip2 $wrksrc/${_patch}
+		bunzip2 "$wrksrc/${_patch}"
 		_patch=${_patch%%.bz2}
 	elif [[ $f =~ .diff ]]; then
 		:
@@ -28,7 +28,7 @@ _process_patch() {
 		continue
 	fi
 
-	cd $wrksrc
+	cd "$wrksrc"
 	patch -sl ${_args} -i ${_patch} 2>/dev/null
 	msg_normal "$pkgver: patch applied: ${_patch}.\n"
 }

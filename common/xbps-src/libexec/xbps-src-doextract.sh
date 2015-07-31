@@ -41,7 +41,7 @@ fi
 # If template defines do_extract() use it rather than the hooks.
 if declare -f do_extract >/dev/null; then
     [ ! -d "$wrksrc" ] && mkdir -p $wrksrc
-    cd $wrksrc
+    cd "$wrksrc"
     run_func do_extract
 else
     if [ -n "$build_style" ]; then
@@ -60,7 +60,7 @@ else
 fi
 
 
-[ -d $wrksrc ] && cd $wrksrc
+[ -d "$wrksrc" ] && cd "$wrksrc"
 
 # If template defines post_extract(), use it.
 if declare -f post_extract >/dev/null; then
