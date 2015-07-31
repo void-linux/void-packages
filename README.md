@@ -285,14 +285,29 @@ Setup the slaves (machines that will compile the code):
 
     # xbps-install -Sy distcc
 
+Modify the configuration to allow your local network machines to use distcc (e.g. `192.168.2.0/24`):
+
+    # echo "192.168.2.0/24" >> /etc/distcc/clients.allow
+
 Enable and start the `distccd` service:
 
     # ln -s /etc/sv/distccd /var/service
 
-In the host (machine that executes xbps-src) enable the following settings in the `void-packages/etc/conf` file:
+Install distcc on the host (machine that executes xbps-src) as well.
+Unless you want to use the host as slave from other machines, there is no need
+to modify the configuration.
+
+On the host you can now enable distcc in the `void-packages/etc/conf` file:
 
     XBPS_DISTCC=yes
-    XBPS_DISTCC_HOSTS="192.168.2.101 192.168.2.102"
+    XBPS_DISTCC_HOSTS="localhost/2 --localslots_cpp=24 192.168.2.101/9 192.168.2.102/2"
+    XBPS_MAKEJOBS=16
+
+The example values assume a localhost CPU with 4 cores of which at most 2 are used for compiler jobs.
+The number of slots for preprocessor jobs is set to 24 in order to have enough preprocessed data for other CPUs to compile.
+The slave 192.168.2.101 has a CPU with 8 cores and the /9 for the number of jobs is a saturating choice.
+The slave 192.168.2.102 is set to run at most 2 compile jobs to keep its load low, even if its CPU has 4 cores.
+The XBPS_MAKEJOBS setting is increased to 16 to account for the possible parallelism (2 + 9 + 2 + some slack).
 
 ### Cross compiling packages for a target architecture
 
