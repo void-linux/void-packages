@@ -29,8 +29,8 @@ _process_patch() {
 	fi
 
 	cd "$wrksrc"
+	msg_normal "$pkgver: patching: ${_patch}.\n"
 	patch -sl ${_args} -i ${_patch} 2>/dev/null
-	msg_normal "$pkgver: patch applied: ${_patch}.\n"
 }
 
 hook() {
