@@ -10,17 +10,10 @@ bulk_getlink() {
     echo $p
 }
 
-bulk_build() {
+bulk_sortdeps() {
     local _pkgs _pkg pkgs pkg found f x tmpf
 
-    if [ "$XBPS_CROSS_BUILD" ]; then
-        source ${XBPS_COMMONDIR}/cross-profiles/${XBPS_CROSS_BUILD}.sh
-        export XBPS_ARCH=${XBPS_TARGET_ARCH}
-    fi
-    if ! command -v xbps-checkvers &>/dev/null; then
-        msg_error "xbps-src: cannot find xbps-checkvers(8) command!\n"
-    fi
-    _pkgs=$(xbps-checkvers ${1} --distdir=$XBPS_DISTDIR | awk '{print $2}')
+    _pkgs="$@"
     # Iterate over the list and make sure that only real pkgs are
     # added to our pkglist.
     for pkg in ${_pkgs}; do
@@ -58,6 +51,19 @@ bulk_build() {
     done
     tsort $tmpf|tac
     rm -f $tmpf
+}
+
+bulk_build() {
+
+    if [ "$XBPS_CROSS_BUILD" ]; then
+        source ${XBPS_COMMONDIR}/cross-profiles/${XBPS_CROSS_BUILD}.sh
+        export XBPS_ARCH=${XBPS_TARGET_ARCH}
+    fi
+    if ! command -v xbps-checkvers &>/dev/null; then
+        msg_error "xbps-src: cannot find xbps-checkvers(8) command!\n"
+    fi
+
+    bulk_sortdeps "$(xbps-checkvers ${1} --distdir=$XBPS_DISTDIR | awk '{print $2}')"
 }
 
 bulk_update() {
