@@ -2,14 +2,12 @@
 # This helper is for templates using Qt4/Qt5 qmake.
 #
 do_configure() {
-	configure_script=qmake
-
 	if [ -n "$build_pie" ]; then
-		${configure_script} ${configure_args} \
+		qmake ${configure_args} \
 			QMAKE_LFLAGS_SHLIB+=" -Wl,-z,now" \
 			QMAKE_LFLAGS_PLUGIN+=" -Wl,-z,now"
 	else
-		${configure_script} ${configure_args}
+		qmake ${configure_args}
 	fi
 }
 
