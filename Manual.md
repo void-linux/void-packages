@@ -596,6 +596,12 @@ be defined to set the allowed python versions to be built, i.e:
 - `slashpackage` For packages that use the /package hierarchy and package/compile to build,
 such as `daemontools` or any `djb` software.
 
+- `qmake` For packages that use Qt4/Qt5 qmake profiles (`*.pro`), qmake arguments
+for the configure phase can be passed in via `configure_args`, make build arguments can
+be passed in via `make_build_args` and install arguments via `make_install_args`. The build
+target can be overridden via `make_build_target` and the install target
+via `make_install_target`.
+
 > If `build_style` is not set, the template must (at least) define a
 `do_install()` function and optionally more phases via `do_xxx()` functions.
 
