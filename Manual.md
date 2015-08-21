@@ -347,6 +347,12 @@ Example `depends="foo blah>=1.0"`. See the `Runtime dependencies` section for mo
 process and required to be able to build packages in the chroot. Only a
 small number of packages must set this property.
 
+- `conflicts` An optional list of packages conflicting with this package.
+Conflicts can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
+or `foo-1.0_1` to match an exact version. If version comparator is not
+defined (just a package name), the version comparator is automatically set to `>=0`.
+Example `conflicts="foo blah>=0.42.3"`.
+
 - `distfiles` The full URL to the `upstream` source distribution files. Multiple files
 can be separated by whitespaces. The files must end in `.tar.lzma`, `.tar.xz`,
 `.txz`, `.tar.bz2`, `.tbz`, `.tar.gz`, `.tgz`, `.gz`, `.bz2`, `.tar` or
