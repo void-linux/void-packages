@@ -2,7 +2,7 @@
 # This helper is for templates using Qt4/Qt5 qmake.
 #
 do_configure() {
-	: ${configure_script:=qmake}
+	configure_script=qmake
 
 	if [ -n "$build_pie" ]; then
 		${configure_script} ${configure_args} \
