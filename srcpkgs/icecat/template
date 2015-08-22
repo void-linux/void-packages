@@ -1,0 +1,182 @@
+# Template build file for 'icecat'.
+pkgname=icecat
+version=31.8.0
+revision=1
+short_desc="GNU version of the Firefox browser"
+maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
+homepage="https://www.gnu.org/software/${pkgname}/"
+license="MPL-1.1, GPL-2, LGPL-2.1"
+distfiles="${GNU_SITE}/${pkgname}/${version}/${pkgname}-${version}-gnu1.tar.bz2"
+checksum="370087d0adadf8b1c1e6a9920e26488a8902b9dc461d305f258fddb26a129d87"
+
+lib32disabled=yes
+
+hostmakedepends="unzip zip pkg-config perl python yasm"
+makedepends="nss-devel libjpeg-turbo-devel icu55-devel
+ pixman-devel sqlite-devel gst-plugins-base1-devel gtk+-devel
+ libevent-devel libnotify-devel libvpx-devel libXrender-devel
+ startup-notification-devel dbus-glib-devel alsa-lib-devel pulseaudio-devel
+ hunspell-devel libXcomposite-devel libSM-devel libXScrnSaver-devel
+ libXt-devel libXdamage-devel"
+depends="desktop-file-utils hicolor-icon-theme"
+
+# Make config/system_wrappers/alsa/alsalib.h and pulse/pulse.h find
+# the required includes
+CFLAGS="-I${XBPS_CROSS_BASE}/usr/include/alsa \
+	-I${XBPS_CROSS_BASE}/usr/include/pulse \
+	-I${XBPS_CROSS_BASE}/usr/include/nspr \
+	-I${XBPS_CROSS_BASE}/usr/include/nss"
+CXXFLAGS="${CFLAGS}"
+LDFLAGS="-L${XBPS_CROSS_BASE}/usr/lib"
+
+pre_configure() {
+	case "$XBPS_TARGET_MACHINE" in
+	*-musl)
+		cp ${FILESDIR}/stab.h toolkit/crashreporter/google-breakpad/src/
+		;;
+	esac
+
+	# configure script misdetects the preprocessor without an optimization level
+	sed -i '/ac_cpp=/s/$CPPFLAGS/& -O2/' configure
+
+	# Google API key (see http://www.chromium.org/developers/how-tos/api-keys)
+	# Note: This is for Void Linux use ONLY.
+	_google_api_key="AIzaSyCIFdBA7eQP43R6kXRwTq7j6Mvj1ITze90"
+	echo -n "$_google_api_key" > google-api-key
+	[ ! -d xbps-build ] && mkdir -p xbps-build
+
+	# Remove the spyblock@gnu.org addon because it causes a permanent
+	# error message to be printed at the bottom of the window and is
+	# said to not work right anyway:
+	# http://lists.gnu.org/archive/html/bug-gnuzilla/2015-07/msg00041.html
+	# TODO: find a fix for the annoying error message
+	rm -r extensions/gnu/spyblock@gnu.org
+	sed -i browser/installer/package-manifest.in \
+		-e "/@BINPATH@\/browser\/extensions\/spyblock@gnu.org\/\*/d"
+	sed -i mobile/android/installer/package-manifest.in \
+		-e "/@BINPATH@\/browser\/extensions\/spyblock@gnu.org\/\*/d"
+	sed -i extensions/gnu/abouticecat\@gnu.org/chrome/content/aboutIceCat/aboutIceCat.xhtml \
+		-e "/.*spyblock@gnu.org/d"
+}
+do_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		export HOST_CFLAGS="${XBPS_CFLAGS}"
+		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
+
+		cross_args+=" --target=$XBPS_CROSS_TRIPLET"
+		export ac_cv_sqlite_secure_delete=yes
+		export ac_cv_sqlite_threadsafe=yes
+		export ac_cv_sqlite_enable_fts3=yes
+		export ac_cv_sqlite_enable_unlock_notify=yes
+		export ac_cv_prog_hostcxx_works=1
+		# Fix wrong assignment of (modified) $HOST_CXXFLAGS in js/src/configure
+		sed -i js/src/configure \
+			-e "s;CFLAGS=\"\$HOST_CXXFLAGS\";CFLAGS=\"${XBPS_CXXFLAGS}\";"
+	fi
+	case "$XBPS_TARGET_MACHINE" in
+		*-musl) export ac_cv_header_execinfo_h=no
+	esac
+
+	export ac_cv_sqlite_secure_delete=yes
+	export ac_cv_sqlite_threadsafe=yes
+	export ac_cv_sqlite_enable_fts3=yes
+	export ac_cv_sqlite_enable_unlock_notify=yes
+	export ac_cv_prog_hostcxx_works=1
+
+	mkdir -p /usr/lib/icecat
+	export LDFLAGS+=" -Wl,-rpath=/usr/lib/icecat"
+
+	# Patch to use /usr/lib/icecat instead of /usr/lib/icecat-${version}
+	sed -i config/baseconfig.mk \
+ 		-e 's;$(libdir)/$(MOZ_APP_NAME)-$(MOZ_APP_VERSION);$(libdir)/$(MOZ_APP_NAME);g' \
+		-e 's;$(libdir)/$(MOZ_APP_NAME)-devel-$(MOZ_APP_VERSION);$(libdir)/$(MOZ_APP_NAME)-devel;g'
+
+	cd xbps-build
+	SHELL=/bin/bash ../configure \
+		--prefix=/usr \
+		--libdir=/usr/lib \
+		--with-system-nspr \
+		--with-system-nss \
+		--with-system-bz2  \
+		--with-system-jpeg \
+		--with-system-zlib \
+		--without-system-png \
+		--with-system-libevent \
+		--with-system-libvpx \
+		--enable-system-cairo  \
+		--enable-system-pixman \
+		--enable-system-hunspell \
+		--enable-system-sqlite \
+		--enable-system-ffi \
+		--enable-startup-notification \
+		--disable-gio \
+		--with-pthreads \
+		--enable-official-branding \
+		--enable-safe-browsing \
+		--enable-url-classifier \
+		--disable-skia \
+		--disable-debug \
+		--disable-gnomevfs \
+		--disable-gconf \
+		--disable-crashreporter \
+		--disable-updater \
+		--disable-xprint \
+		--disable-tests \
+		--disable-mochitest \
+		--disable-installer \
+		--disable-elf-hack \
+		--with-system-icu \
+		--enable-pulseaudio \
+		--enable-gstreamer=1.0 \
+		--disable-cpp-exceptions \
+		--disable-javaxpcom \
+		--with-nspr-prefix=${XBPS_CROSS_BASE}/usr \
+		--with-nss-prefix=${XBPS_CROSS_BASE}/usr \
+		--with-google-api-keyfile="${wrksrc}/google-api-key" \
+		--enable-optimize="$CFLAGS -fPIC" \
+		--disable-strip \
+		--enable-gold=no \
+		--disable-install-strip \
+		--disable-static \
+		--disable-jemalloc \
+		--enable-pie \
+		--disable-profiling \
+		--disable-profilelocking \
+		${cross_args}
+}
+do_build() {
+	cd xbps-build
+	SHELL=/bin/bash make ${makejobs}
+}
+do_install() {
+	cd xbps-build
+	make DESTDIR=${DESTDIR} install
+
+	vinstall ${FILESDIR}/vendor.js 644 usr/lib/icecat/defaults/pref
+	vinstall ${FILESDIR}/icecat.desktop 644 usr/share/applications
+
+	for i in 16x16 22x22 24x24 32x32 48x48 256x256; do
+		vinstall ${wrksrc}/browser/branding/official/default${i%x*}.png 644 \
+			usr/share/icons/hicolor/${i}/apps icecat.png
+	done
+	vinstall ${wrksrc}/browser/branding/official/default256.png 644 \
+		usr/share/pixmaps icecat.png
+
+	# Use system-provided dictionaries
+	rm -rf ${DESTDIR}/usr/lib/icecat/{dictionaries,hyphenation}
+	ln -s /usr/share/hunspell ${DESTDIR}/usr/lib/icecat/dictionaries
+	ln -s /usr/share/hyphen ${DESTDIR}/usr/lib/icecat/hyphenation
+
+	# https://bugzilla.mozilla.org/show_bug.cgi?id=658850
+	ln -sf icecat ${DESTDIR}/usr/lib/icecat/icecat-bin
+}
+
+icecat-devel_package() {
+	short_desc+=" - development files"
+	depends="${sourcpkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/icecat-devel
+		vmove usr/share/idl
+	}
+}
