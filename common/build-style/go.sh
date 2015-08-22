@@ -14,7 +14,7 @@ do_build() {
 }
 
 do_install() {
-	find "${GOBIN}" -type f -executable | while read line
+	find "${GOPATH}/bin" -type f -executable | while read line
 	do
 		vbin "${line}"
 	done

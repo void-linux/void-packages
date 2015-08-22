@@ -12,4 +12,3 @@ case "$XBPS_TARGET_MACHINE" in
 esac
 
 export GOPATH="${wrksrc}/_build-${pkgname}-xbps"
-export GOBIN="${wrksrc}/_build-${pkgname}-xbps-bin"
