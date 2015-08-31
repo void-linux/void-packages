@@ -51,6 +51,47 @@ link_cksum() {
 	fi
 }
 
+try_mirrors() {
+	local curfile="$1" distfile="$2" dfcount="$3" subdir="$4" f="$5"
+	local filesum cksum basefile mirror path scheme
+	[ -z "$XBPS_DISTFILES_MIRROR" ] && return
+	basefile="$(basename $f)"
+	cksum=$(get_cksum $curfile $dfcount)
+	for mirror in $XBPS_DISTFILES_MIRROR; do
+		scheme="file"
+		if [[ $mirror == *://* ]]; then
+			scheme="${mirror%%:/*}"
+			path="${mirror#${scheme}://}"
+		else
+			path="$mirror"
+		fi
+		if [ "$scheme" == "file" ]; then
+			# Skip file:// mirror locations (/some/where or file:///some/where)
+			# where the specified directory does not exist
+			if [ ! -d "$path" ]; then
+				msg_warn "$pkgver: mount point $path does not exist...\n"
+				continue
+			fi
+		fi
+		if [[ "$mirror" == *voidlinux* ]]; then
+			# For distfiles.voidlinux.* append the subdirectory
+			mirror="$mirror/$subdir"
+		fi
+		msg_normal "$pkgver: fetching distfile '$curfile' from '$mirror'...\n"
+		$XBPS_FETCH_CMD "$mirror/$basefile"
+		# If basefile was not found, but a curfile file may exist, try to fetch it
+		if [ ! -f "$distfile" -a "$basefile" != "$curfile" ]; then
+			$XBPS_FETCH_CMD "$mirror/$curfile"
+		fi
+		[ ! -f "$distfile" ] && continue
+		flock -n ${distfile}.part rm -f ${distfile}.part
+		filesum=$(${XBPS_DIGEST_CMD} "$distfile")
+		[ "$cksum" == "$filesum" ] && break
+		msg_normal "$pkgver: checksum failed - removing '$curfile'...\n"
+		rm -f ${distfile}
+	done
+}
+
 hook() {
 	local srcdir="$XBPS_SRCDISTDIR/$pkgname-$version"
 	local dfcount=0 errors=0
@@ -79,13 +120,17 @@ hook() {
 		if [ ! -f "$distfile" ]; then
 			link_cksum $curfile $distfile $dfcount
 		fi
-		# If distfile does not exist, download it.
+		# If distfile does not exist, download it from a mirror location.
+		if [ ! -f "$distfile" ]; then
+			try_mirrors $curfile $distfile $dfcount $pkgname-$version $f
+		fi
+		# If distfile does not exist, download it from the original location.
 		if [ ! -f "$distfile" ]; then
 			msg_normal "$pkgver: fetching distfile '$curfile'...\n"
 			flock "${distfile}.part" $XBPS_FETCH_CMD "$f"
-			if [ ! -f "$distfile" ]; then
-				msg_error "$pkgver: failed to fetch $curfile.\n"
-			fi
+		fi
+		if [ ! -f "$distfile" ]; then
+			msg_error "$pkgver: failed to fetch $curfile.\n"
 		fi
 		# distfile downloaded, verify sha256 hash.
 		flock -n ${distfile}.part rm -f ${distfile}.part
