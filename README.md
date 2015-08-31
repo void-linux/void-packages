@@ -77,11 +77,14 @@ To enable it:
 ### Distfiles mirror(s)
 
 In etc/conf you may optionally define a mirror or a list of mirrors to search for distfiles.
+
     $ echo 'XBPS_DISTFILES_MIRROR="ftp://192.168.100.5/gentoo/distfiles"' >> etc/conf
 
 If more than one mirror is to be searched, you can either specify multiple URLs separated
 with blanks, or add to the variable like this
+
     $ echo 'XBPS_DISTFILES_MIRROR+=" http://repo.voidlinux.de/distfiles"' >> etc/conf
+
 Make sure to put the blank after the first double quote in this case.
 
 The mirrors are searched in order for the distfiles to build a package until the
