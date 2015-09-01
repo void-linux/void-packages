@@ -246,7 +246,8 @@ The optional 4th argument can be used to change the `file name`.
 
 	Installs `file` into `usr/share/licenses/<pkgname>` in the pkg
 	`$DESTDIR`. The optional 2nd argument can be used to change the
-	`file name`.
+	`file name`. Note: Non-`GPL` licenses, `MIT`, `BSD` and `ISC` require the 
+	license file to	be supplied with the binary package.
 
 - *vsv()* `vsv <service>`
 
