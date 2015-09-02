@@ -62,11 +62,6 @@ _EOF
     else
         rm -f $XBPS_MASTERDIR/etc/xbps.d/00-repository-alternative.conf
     fi
-
-    if [ -d $XBPS_MASTERDIR/tmp ]; then
-        rm -rf $XBPS_MASTERDIR/tmp
-        mkdir -p $XBPS_MASTERDIR/tmp
-    fi
 }
 
 chroot_prepare() {
