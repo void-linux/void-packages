@@ -107,6 +107,7 @@ genpkg() {
 		--source-revisions "${_gitrevs}" \
 		--shlib-provides "${_shprovides}" \
 		--shlib-requires "${_shrequires}" \
+		--compression ${XBPS_PKG_COMPTYPE:=xz} \
 		${_preserve} ${_sourcerevs} ${PKGDESTDIR}
 	rval=$?
 
