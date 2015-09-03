@@ -212,9 +212,10 @@ get_subpkgs() {
 
 setup_pkg() {
     local pkg="$1" cross="$2"
-    local val _vars f dbgflags arch
+    local basepkg val _vars f dbgflags arch
 
     [ -z "$pkg" ] && return 1
+    basepkg=${pkg%-32bit}
 
     # Start with a sane environment
     unset -v PKG_BUILD_OPTIONS XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_CPPFLAGS XBPS_CROSS_LDFLAGS
@@ -272,15 +273,15 @@ setup_pkg() {
         source_file "$f"
     done
 
-    if [ ! -f ${XBPS_SRCPKGDIR}/${pkg}/template ]; then
-        msg_error "xbps-src: unexistent file: ${XBPS_SRCPKGDIR}/${pkg}/template\n"
+    if [ ! -f ${XBPS_SRCPKGDIR}/${basepkg}/template ]; then
+        msg_error "xbps-src: unexistent file: ${XBPS_SRCPKGDIR}/${basepkg}/template\n"
     fi
     if [ -n "$cross" ]; then
         export CROSS_BUILD="$cross"
-        source_file ${XBPS_SRCPKGDIR}/${pkg}/template
+        source_file ${XBPS_SRCPKGDIR}/${basepkg}/template
     else
         unset CROSS_BUILD
-        source_file ${XBPS_SRCPKGDIR}/${pkg}/template
+        source_file ${XBPS_SRCPKGDIR}/${basepkg}/template
     fi
 
     # Check if required vars weren't set.
@@ -316,14 +317,14 @@ setup_pkg() {
         subpackages="$(get_subpkgs)"
     fi
 
-    if [ -h $XBPS_SRCPKGDIR/$pkg ]; then
+    if [ -h $XBPS_SRCPKGDIR/$basepkg ]; then
         # Source all subpkg environment setup snippets.
         for f in ${XBPS_COMMONDIR}/environment/setup-subpkg/*.sh; do
             source_file "$f"
         done
         pkgname=$pkg
-        if ! declare -f ${pkg}_package >/dev/null; then
-            msg_error "$pkgname: missing ${pkg}_package() function!\n"
+        if ! declare -f ${basepkg}_package >/dev/null; then
+            msg_error "$pkgname: missing ${basepkg}_package() function!\n"
         fi
     fi
 
