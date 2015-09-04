@@ -78,10 +78,10 @@ try_mirrors() {
 			mirror="$mirror/$subdir"
 		fi
 		msg_normal "$pkgver: fetching distfile '$curfile' from '$mirror'...\n"
-		$XBPS_FETCH_CMD "$mirror/$basefile"
+		$XBPS_FETCH_CMD "$mirror/$curfile"
 		# If basefile was not found, but a curfile file may exist, try to fetch it
 		if [ ! -f "$distfile" -a "$basefile" != "$curfile" ]; then
-			$XBPS_FETCH_CMD "$mirror/$curfile"
+			$XBPS_FETCH_CMD "$mirror/$basefile"
 		fi
 		[ ! -f "$distfile" ] && continue
 		flock -n ${distfile}.part rm -f ${distfile}.part
