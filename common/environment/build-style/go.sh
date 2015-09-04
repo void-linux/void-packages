@@ -12,3 +12,8 @@ case "$XBPS_TARGET_MACHINE" in
 esac
 
 export GOPATH="${wrksrc}/_build-${pkgname}-xbps"
+export CGO_CFLAGS="$CFLAGS"
+export CGO_CPPFLAGS="$CPPFLAGS"
+export CGO_CXXFLAGS="$CXXFLAGS"
+export CGO_LDFLAGS="$LDFLAGS"
+export CGO_ENABLED=1
