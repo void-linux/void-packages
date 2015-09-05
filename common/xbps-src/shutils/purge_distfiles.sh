@@ -25,7 +25,8 @@ purge_distfiles() {
 	fi
 	percent=-1
 	for template in ${templates[@]}; do
-		pkg="$(echo "$template" | cut -d / -f 2)"
+		pkg=${template#*/}
+		pkg=${pkg%/*}
 		if [ ! -L "srcpkgs/$pkg" ]; then
 			unset checksum
 			source $template 2>/dev/null
