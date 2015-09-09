@@ -10,6 +10,17 @@ setspeed="/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed"
 
 set $*
 
+PID=$(pgrep dbus-launch)
+USER=$(ps -o user --no-headers $PID)
+USERHOME=$(getent passwd $USER | cut -d: -f6)
+export XAUTHORITY="$USERHOME/.Xauthority"
+for x in /tmp/.X11-unix/*; do
+    displaynum=`echo $x | sed s#/tmp/.X11-unix/X##`
+    if [ x"$XAUTHORITY" != x"" ]; then
+        export DISPLAY=":$displaynum"
+    fi
+done
+
 case "$1" in
     button/power)
         #echo "PowerButton pressed!">/dev/tty5
@@ -58,7 +69,7 @@ case "$1" in
                     ;;
                 esac
                 ;;
-            CPU0)	
+            CPU0)
                 ;;
             *)  logger "ACPI action undefined: $2" ;;
         esac
