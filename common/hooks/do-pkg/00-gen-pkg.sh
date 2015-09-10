@@ -89,26 +89,28 @@ genpkg() {
 	# Create the XBPS binary package.
 	#
 	xbps-create \
+		${_provides:+--provides "${_provides}"} \
+		${_conflicts:+--conflicts "${_conflicts}"} \
+		${_replaces:+--replaces "${_replaces}"} \
+		${_reverts:+--reverts "${_reverts}"} \
+		${_mutable_files:+--mutable-files "${_mutable_files}"} \
+		${_deps:+--dependencies "${_deps}"} \
+		${_conf_files:+--config-files "${_conf_files}"} \
+		${PKG_BUILD_OPTIONS:+--build-options "${PKG_BUILD_OPTIONS}"} \
+		${_gitrevs:+--source-revisions "${_gitrevs}"} \
+		${_shprovides:+--shlib-provides "${_shprovides}"} \
+		${_shrequires:+--shlib-requires "${_shrequires}"} \
+		${_preserve:+--preserve} \
+		${_tags:+--tags "${tags}"} \
 		--architecture ${arch} \
-		--provides "${_provides}" \
-		--conflicts "${_conflicts}" \
-		--replaces "${_replaces}" \
-		--reverts "${_reverts}" \
-		--mutable-files "${_mutable_files}" \
-		--dependencies "${_deps}" \
-		--config-files "${_conf_files}" \
 		--homepage "${homepage}" \
 		--license "${license}" \
 		--maintainer "${maintainer}" \
 		--desc "${desc}" \
-		--built-with "xbps-src-${XBPS_SRC_VERSION}" \
-		--build-options "${PKG_BUILD_OPTIONS}" \
-		--pkgver "${pkgver}" --tags "${tags}" --quiet \
-		--source-revisions "${_gitrevs}" \
-		--shlib-provides "${_shprovides}" \
-		--shlib-requires "${_shrequires}" \
+		--pkgver "${pkgver}" \
 		--compression ${XBPS_PKG_COMPTYPE:=xz} \
-		${_preserve} ${_sourcerevs} ${PKGDESTDIR}
+		--quiet \
+		${PKGDESTDIR}
 	rval=$?
 
 	rm -f $pkgdir/${binpkg}.lock
