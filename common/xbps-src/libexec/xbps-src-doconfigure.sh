@@ -7,7 +7,7 @@
 #	$2 - cross target [OPTIONAL]
 
 if [ $# -lt 1 -o $# -gt 2 ]; then
-    echo "$(basename $0): invalid number of arguments: pkgname [cross-target]"
+    echo "${0##*/}: invalid number of arguments: pkgname [cross-target]"
     exit 1
 fi
 

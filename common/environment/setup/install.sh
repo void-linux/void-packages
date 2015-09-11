@@ -147,9 +147,9 @@ _vinstall() {
 	fi
 
 	if [ -z "$targetfile" ]; then
-		install -Dm${mode} ${file} "${_destdir}/${targetdir}/$(basename ${file})"
+		install -Dm${mode} ${file} "${_destdir}/${targetdir}/${file##*/}"
 	else
-		install -Dm${mode} ${file} "${_destdir}/${targetdir}/$(basename ${targetfile})"
+		install -Dm${mode} ${file} "${_destdir}/${targetdir}/${targetfile##*/}"
 	fi
 }
 

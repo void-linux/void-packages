@@ -4,7 +4,8 @@ _process_patch() {
 	local _args= _patch= i=$1
 
 	_args="-Np0"
-	_patch=$(basename $i)
+	_patch=${i##*/}
+
 	if [ -f $PATCHESDIR/${_patch}.args ]; then
 		_args=$(cat $PATCHESDIR/${_patch}.args)
 	elif [ -n "$patch_args" ]; then

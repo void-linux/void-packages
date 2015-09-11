@@ -55,7 +55,7 @@ try_mirrors() {
 	local curfile="$1" distfile="$2" dfcount="$3" subdir="$4" f="$5"
 	local filesum cksum basefile mirror path scheme
 	[ -z "$XBPS_DISTFILES_MIRROR" ] && return
-	basefile="$(basename $f)"
+	basefile="${f##*/}"
 	cksum=$(get_cksum $curfile $dfcount)
 	for mirror in $XBPS_DISTFILES_MIRROR; do
 		scheme="file"

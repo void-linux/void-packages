@@ -1,7 +1,7 @@
 # vim: set ts=4 sw=4 et:
 
 bulk_getlink() {
-    local p="$(basename $1)"
+    local p="${1##*/}"
     local target="$(readlink $XBPS_SRCPKGDIR/$p)"
 
     if [ $? -eq 0 -a -n "$target" ]; then

@@ -182,7 +182,7 @@ run_pkg_hooks() {
     eval unset -f hook
     for f in ${XBPS_COMMONDIR}/hooks/${phase}/*.sh; do
         [ ! -r $f ] && continue
-        hookn=$(basename $f)
+        hookn=${f##*/}
         hookn=${hookn%.sh}
         . $f
         run_func hook "$phase hook: $hookn" ${phase}_${hookn}

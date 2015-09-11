@@ -8,7 +8,7 @@ make_debug() {
 	[ -n "$nodebug" ] && return 0
 
 	dname=$(echo "$(dirname $1)"|sed -e "s|${PKGDESTDIR}||g")
-	fname="$(basename $1)"
+	fname="${1##*/}"
 	dbgfile="${dname}/${fname}"
 
 	mkdir -p "${PKGDESTDIR}/usr/lib/debug/${dname}"
@@ -27,7 +27,7 @@ attach_debug() {
 	[ -n "$nodebug" ] && return 0
 
 	dname=$(echo "$(dirname $1)"|sed -e "s|${PKGDESTDIR}||g")
-	fname="$(basename $1)"
+	fname="${1##*/}"
 	dbgfile="${dname}/${fname}"
 
 	$OBJCOPY --add-gnu-debuglink="${PKGDESTDIR}/usr/lib/debug/${dbgfile}" "$1"
@@ -69,7 +69,7 @@ hook() {
 			continue
 		fi
 
-		fname=$(basename "$f")
+		fname=${f##*/}
 		for x in ${nostrip_files}; do
 			if [ "$x" = "$fname" ]; then
 				found=1

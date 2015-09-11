@@ -205,7 +205,7 @@ _EOF
 	if [ -d ${PKGDESTDIR}/usr/share/gconf/schemas ]; then
 		_add_trigger gconf-schemas
 		for f in ${PKGDESTDIR}/usr/share/gconf/schemas/*.schemas; do
-			_schemas="${_schemas} $(basename $f)"
+			_schemas="${_schemas} ${f##*/}"
 		done
 		echo "export gconf_schemas=\"${_schemas}\"" >> $tmpf
 	fi

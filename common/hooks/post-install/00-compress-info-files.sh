@@ -32,7 +32,7 @@ hook() {
 		if [ -h ${PKGDESTDIR}/"$j" ]; then
 			dirat=$(dirname "$j")
 			lnkat=$(readlink ${PKGDESTDIR}/"$j")
-			newlnk=$(basename "$j")
+			newlnk="${j##*/}"
 			rm -f ${PKGDESTDIR}/"$j"
 			cd ${PKGDESTDIR}/"$dirat"
 			ln -s "${lnkat}".gz "${newlnk}".gz

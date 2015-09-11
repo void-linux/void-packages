@@ -13,7 +13,7 @@ collect_sonames() {
 
 	# real pkg
 	find ${_destdir} -type f -name "*.so*" | while read f; do
-		_fname=$(basename "$f")
+		_fname="${f##*/}"
 		case "$(file -bi "$f")" in
 		application/x-sharedlib*)
 			# shared library

@@ -10,7 +10,7 @@
 #   $5 - internal [OPTIONAL]
 
 if [ $# -lt 3 -o $# -gt 5 ]; then
-    echo "$(basename $0): invalid number of arguments: pkgname targetpkg target [cross-target]"
+    echo "${0##*/}: invalid number of arguments: pkgname targetpkg target [cross-target]"
     exit 1
 fi
 
