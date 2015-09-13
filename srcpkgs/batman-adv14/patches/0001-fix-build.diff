@@ -37,7 +37,7 @@ index 2031071..6407369 100644
  	if (hard_iface == primary_if &&
  	    atomic_read(&bat_priv->gw_mode) == BATADV_GW_MODE_SERVER) {
 diff --git compat.h compat.h
-index 3e11f89..4a34066 100644
+index 3e11f89..63feaa9 100644
 --- compat.h
 +++ compat.h
 @@ -266,7 +266,9 @@ static int __batadv_interface_set_mac_addr(x, y)
@@ -51,7 +51,7 @@ index 3e11f89..4a34066 100644
  
  #undef hlist_for_each_entry
  #define hlist_for_each_entry(pos, head, member) \
-@@ -318,4 +320,18 @@ static int __batadv_interface_set_mac_addr(x, y)
+@@ -318,4 +320,33 @@ static int __batadv_interface_set_mac_addr(x, y)
  	})
  #endif /* < KERNEL_VERSION(3, 11, 0) */
  
@@ -68,6 +68,21 @@ index 3e11f89..4a34066 100644
 +#endif /* nested < KERNEL_VERSION(2, 6, 38) */
 +
 +#endif /* < KERNEL_VERSION(3, 17, 0) */
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0)
++
++static inline bool seq_has_overflowed(struct seq_file *m)
++{
++	return m->count == m->size;
++}
++
++#endif /* < KERNEL_VERSION(3, 19, 0) */
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 1, 0)
++
++#define dev_get_iflink(_net_dev) ((_net_dev)->iflink)
++
++#endif /* < KERNEL_VERSION(4, 1, 0) */
 +
  #endif /* _NET_BATMAN_ADV_COMPAT_H_ */
 diff --git debugfs.c debugfs.c
@@ -111,6 +126,95 @@ index f186a55..049a7a2 100644
  #ifdef CONFIG_BATMAN_ADV_NC
  	&batadv_debuginfo_nc_nodes,
  #endif
+diff --git gateway_client.c gateway_client.c
+index 7614af3..04fbfb2 100644
+--- gateway_client.c
++++ gateway_client.c
+@@ -115,16 +115,12 @@ batadv_gw_get_best_gw_node(struct batadv_priv *bat_priv)
+ {
+ 	struct batadv_neigh_node *router;
+ 	struct batadv_gw_node *gw_node, *curr_gw = NULL;
+-	uint32_t max_gw_factor = 0, tmp_gw_factor = 0;
+-	uint32_t gw_divisor;
++	uint64_t max_gw_factor = 0, tmp_gw_factor = 0;
+ 	uint8_t max_tq = 0;
+ 	int down, up;
+ 	uint8_t tq_avg;
+ 	struct batadv_orig_node *orig_node;
+ 
+-	gw_divisor = BATADV_TQ_LOCAL_WINDOW_SIZE * BATADV_TQ_LOCAL_WINDOW_SIZE;
+-	gw_divisor *= 64;
+-
+ 	rcu_read_lock();
+ 	hlist_for_each_entry_rcu(gw_node, &bat_priv->gw.list, list) {
+ 		if (gw_node->deleted)
+@@ -146,7 +142,7 @@ batadv_gw_get_best_gw_node(struct batadv_priv *bat_priv)
+ 						    &down, &up);
+ 
+ 			tmp_gw_factor = tq_avg * tq_avg * down * 100 * 100;
+-			tmp_gw_factor /= gw_divisor;
++			tmp_gw_factor >>= 18;
+ 
+ 			if ((tmp_gw_factor > max_gw_factor) ||
+ 			    ((tmp_gw_factor == max_gw_factor) &&
+@@ -450,16 +446,17 @@ static int batadv_write_buffer_text(struct batadv_priv *bat_priv,
+ 
+ 	curr_gw = batadv_gw_get_selected_gw_node(bat_priv);
+ 
+-	ret = seq_printf(seq, "%s %pM (%3i) %pM [%10s]: %3i - %i%s/%i%s\n",
+-			 (curr_gw == gw_node ? "=>" : "  "),
+-			 gw_node->orig_node->orig,
+-			 router->tq_avg, router->addr,
+-			 router->if_incoming->net_dev->name,
+-			 gw_node->orig_node->gw_flags,
+-			 (down > 2048 ? down / 1024 : down),
+-			 (down > 2048 ? "MBit" : "KBit"),
+-			 (up > 2048 ? up / 1024 : up),
+-			 (up > 2048 ? "MBit" : "KBit"));
++	seq_printf(seq, "%s %pM (%3i) %pM [%10s]: %3i - %i%s/%i%s\n",
++		   (curr_gw == gw_node ? "=>" : "  "),
++		   gw_node->orig_node->orig,
++		   router->tq_avg, router->addr,
++		   router->if_incoming->net_dev->name,
++		   gw_node->orig_node->gw_flags,
++		   (down > 2048 ? down / 1024 : down),
++		   (down > 2048 ? "MBit" : "KBit"),
++		   (up > 2048 ? up / 1024 : up),
++		   (up > 2048 ? "MBit" : "KBit"));
++	ret = seq_has_overflowed(seq) ? -1 : 0;
+ 
+ 	batadv_neigh_node_free_ref(router);
+ 	if (curr_gw)
+diff --git gateway_common.c gateway_common.c
+index 84bb2b1..bb3f667 100644
+--- gateway_common.c
++++ gateway_common.c
+@@ -87,10 +87,10 @@ static bool batadv_parse_gw_bandwidth(struct net_device *net_dev, char *buff,
+ 	if (strlen(buff) > 4) {
+ 		tmp_ptr = buff + strlen(buff) - 4;
+ 
+-		if (strnicmp(tmp_ptr, "mbit", 4) == 0)
++		if (strncasecmp(tmp_ptr, "mbit", 4) == 0)
+ 			multi = 1024;
+ 
+-		if ((strnicmp(tmp_ptr, "kbit", 4) == 0) ||
++		if ((strncasecmp(tmp_ptr, "kbit", 4) == 0) ||
+ 		    (multi > 1))
+ 			*tmp_ptr = '\0';
+ 	}
+@@ -112,10 +112,10 @@ static bool batadv_parse_gw_bandwidth(struct net_device *net_dev, char *buff,
+ 		if (strlen(slash_ptr + 1) > 4) {
+ 			tmp_ptr = slash_ptr + 1 - 4 + strlen(slash_ptr + 1);
+ 
+-			if (strnicmp(tmp_ptr, "mbit", 4) == 0)
++			if (strncasecmp(tmp_ptr, "mbit", 4) == 0)
+ 				multi = 1024;
+ 
+-			if ((strnicmp(tmp_ptr, "kbit", 4) == 0) ||
++			if ((strncasecmp(tmp_ptr, "kbit", 4) == 0) ||
+ 			    (multi > 1))
+ 				*tmp_ptr = '\0';
+ 		}
 diff --git gen-compat-autoconf.sh gen-compat-autoconf.sh
 index 78573e4..c5a3f5d 100755
 --- gen-compat-autoconf.sh
@@ -126,10 +230,33 @@ index 78573e4..c5a3f5d 100755
  gen_config() {
  	KEY="${1}"
 diff --git hard-interface.c hard-interface.c
-index c478e6b..9384ba0 100644
+index c478e6b..01f0a80 100644
 --- hard-interface.c
 +++ hard-interface.c
-@@ -194,9 +194,7 @@ out:
+@@ -83,19 +83,18 @@ static bool batadv_is_on_batman_iface(const struct net_device *net_dev)
+ 		return true;
+ 
+ 	/* no more parents..stop recursion */
+-	if (net_dev->iflink == net_dev->ifindex)
++	if (dev_get_iflink(net_dev) == 0 ||
++	    dev_get_iflink(net_dev) == net_dev->ifindex)
+ 		return false;
+ 
+ 	/* recurse over the parent device */
+-	parent_dev = dev_get_by_index(&init_net, net_dev->iflink);
++	parent_dev = __dev_get_by_index(&init_net, dev_get_iflink(net_dev));
+ 	/* if we got a NULL parent_dev there is something broken.. */
+ 	if (WARN(!parent_dev, "Cannot find parent device"))
+ 		return false;
+ 
+ 	ret = batadv_is_on_batman_iface(parent_dev);
+ 
+-	if (parent_dev)
+-		dev_put(parent_dev);
+ 	return ret;
+ }
+ 
+@@ -194,9 +193,7 @@ out:
  static void batadv_primary_if_update_addr(struct batadv_priv *bat_priv,
  					  struct batadv_hard_iface *oldif)
  {
@@ -139,7 +266,7 @@ index c478e6b..9384ba0 100644
  
  	primary_if = batadv_primary_if_get_selected(bat_priv);
  	if (!primary_if)
-@@ -204,12 +202,6 @@ static void batadv_primary_if_update_addr(struct batadv_priv *bat_priv,
+@@ -204,12 +201,6 @@ static void batadv_primary_if_update_addr(struct batadv_priv *bat_priv,
  
  	batadv_dat_init_own_addr(bat_priv, primary_if);
  
@@ -152,7 +279,7 @@ index c478e6b..9384ba0 100644
  	batadv_bla_update_orig_address(bat_priv, primary_if, oldif);
  out:
  	if (primary_if)
-@@ -600,6 +592,8 @@ batadv_hardif_add_interface(struct net_device *net_dev)
+@@ -600,6 +591,8 @@ batadv_hardif_add_interface(struct net_device *net_dev)
  	/* extra reference for return */
  	atomic_set(&hard_iface->refcount, 2);
  
