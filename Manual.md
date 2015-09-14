@@ -33,6 +33,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [Development packages](#pkgs_development)
 	* [Python packages](#pkgs_python)
 	* [Go packages](#pkgs_go)
+	* [Haskell packages](#pkgs_haskell)
 	* [Notes](#notes)
 	* [Contributing via git](#contributing)
 * [Help](#help)
@@ -1026,6 +1027,22 @@ The following variables influence how Go packages are built:
   will be downloaded with `go get`. Otherwise, a distfile has to be
   provided. This option should only be used with `-git` (or similar)
   packages; using a versioned distfile is preferred.
+
+<a id="pkgs_haskell"></a>
+### Haskell packages
+
+We build Haskell package using `stack` from
+[Stackage](http://www.stackage.org/), generally the LTS versions.
+Haskell templates need to have host dependencies on `ghc` and `stack`,
+and set build style to `haskell-stack`.
+
+The following variables influence how Haskell packages are built:
+
+- `stackage`: The Stackage version used to build the package, e.g.
+  `lts-3.5`.  Alternatively, you can prepare a `stack.yaml`
+  configuration for the project and put it into `files/stack.yaml`.
+- `make_build_args`: This is passed as-is to `stack build ...`, so
+  you can add your `--flag ...` parameters there.
 
 <a id="notes"></a>
 ### Notes
