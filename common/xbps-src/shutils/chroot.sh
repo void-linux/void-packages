@@ -33,7 +33,7 @@ XBPS_SRC_VERSION="$XBPS_SRC_VERSION"
 PATH=/void-packages:/usr/bin:/usr/sbin
 
 exec env -i SHELL=/bin/sh PATH="\$PATH" DISTCC_HOSTS="\$XBPS_DISTCC_HOSTS" DISTCC_DIR="/host/distcc" @@XARCH@@ \
-    CCACHE_DIR="/host/ccache" IN_CHROOT=1 LC_ALL=C LANG=en_US.UTF-8 TERM=linux HOME="/tmp" \
+    CCACHE_DIR="/host/ccache" IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 TERM=linux HOME="/tmp" \
     PS1="[\u@$XBPS_MASTERDIR \W]$ " /bin/bash +h
 _EOF
     if [ -n "$XBPS_ARCH" ]; then
@@ -198,7 +198,7 @@ chroot_handler() {
 
         action="$arg $action"
         env -i PATH="/usr/bin:/usr/sbin:$PATH" SHELL=/bin/sh \
-            HOME=/tmp IN_CHROOT=1 LC_ALL=C LANG=en_US.UTF-8 \
+            HOME=/tmp IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 \
             $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
             $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" \
             /void-packages/xbps-src $action $pkg
