@@ -74,30 +74,6 @@ To enable it:
     $ cd void-packages
     $ echo XBPS_CHROOT_CMD=proot >> etc/conf
 
-### Distfiles mirror(s)
-
-In etc/conf you may optionally define a mirror or a list of mirrors to search for distfiles.
-
-    $ echo 'XBPS_DISTFILES_MIRROR="ftp://192.168.100.5/gentoo/distfiles"' >> etc/conf
-
-If more than one mirror is to be searched, you can either specify multiple URLs separated
-with blanks, or add to the variable like this
-
-    $ echo 'XBPS_DISTFILES_MIRROR+=" http://repo.voidlinux.de/distfiles"' >> etc/conf
-
-Make sure to put the blank after the first double quote in this case.
-
-The mirrors are searched in order for the distfiles to build a package until the
-checksum of the downloaded file matches the one specified in the template.
-
-Ultimately, if no mirror carries the distfile, or in case all downloads failed the
-checksum verification, the original download location is used.
-
-If you use `proot` or `uchroot` for your XBPS_CHROOT_CMD, you may also specify a local path
-using the `file://` prefix or simply an absolute path on your build host (e.g. /mnt/distfiles).
-Mirror locations specified this way are bind mounted inside the chroot environment
-under $XBPS_MASTERDIR and searched for distfiles just the same as remote locations.
-
 ### Quick setup in Void
 
 Clone the `void-packages` git repository, install the bootstrap packages:
@@ -332,6 +308,30 @@ The number of slots for preprocessor jobs is set to 24 in order to have enough p
 The slave 192.168.2.101 has a CPU with 8 cores and the /9 for the number of jobs is a saturating choice.
 The slave 192.168.2.102 is set to run at most 2 compile jobs to keep its load low, even if its CPU has 4 cores.
 The XBPS_MAKEJOBS setting is increased to 16 to account for the possible parallelism (2 + 9 + 2 + some slack).
+
+### Distfiles mirror(s)
+
+In etc/conf you may optionally define a mirror or a list of mirrors to search for distfiles.
+
+    $ echo 'XBPS_DISTFILES_MIRROR="ftp://192.168.100.5/gentoo/distfiles"' >> etc/conf
+
+If more than one mirror is to be searched, you can either specify multiple URLs separated
+with blanks, or add to the variable like this
+
+    $ echo 'XBPS_DISTFILES_MIRROR+=" http://repo.voidlinux.de/distfiles"' >> etc/conf
+
+Make sure to put the blank after the first double quote in this case.
+
+The mirrors are searched in order for the distfiles to build a package until the
+checksum of the downloaded file matches the one specified in the template.
+
+Ultimately, if no mirror carries the distfile, or in case all downloads failed the
+checksum verification, the original download location is used.
+
+If you use `proot` or `uchroot` for your XBPS_CHROOT_CMD, you may also specify a local path
+using the `file://` prefix or simply an absolute path on your build host (e.g. /mnt/distfiles).
+Mirror locations specified this way are bind mounted inside the chroot environment
+under $XBPS_MASTERDIR and searched for distfiles just the same as remote locations.
 
 ### Cross compiling packages for a target architecture
 
