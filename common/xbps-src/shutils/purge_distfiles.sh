@@ -80,7 +80,7 @@ purge_distfiles() {
 		[ -n "${my_hashes[$hash]}" ] && continue
 		inode=$(stat "$file" --printf "%i")
 		echo "Obsolete $hash (inode: $inode)"
-		( IFS="|"; for f in ${inodes[$inode]}; do rm -v "$f"; done )
+		( IFS="|"; for f in ${inodes[$inode]}; do rm -v "$f"; rmdir ${f#/*} 2>/dev/null; done )
 	done
 	echo "Done."
 }
