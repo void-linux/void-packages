@@ -1,14 +1,14 @@
 # Template build file for 'firefox'.
 pkgname=firefox
-version=40.0.3
-revision=3
+version=41.0
+revision=1
 wrksrc="mozilla-release"
 short_desc="Lightweight gecko-based web browser"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 homepage="https://www.mozilla.org/firefox/"
 license="MPL-1.1, GPL-2, LGPL-2.1"
-distfiles="${MOZILLA_SITE}/${pkgname}/releases/${version}/source/${pkgname}-${version}.source.tar.bz2"
-checksum=56ab32bfa070a1d86d356ad14ce74252b38dab9307948de8e4a3a2b7f3f22634
+distfiles="${MOZILLA_SITE}/${pkgname}/releases/${version}/source/${pkgname}-${version}.source.tar.xz"
+checksum=18abb95e93770ab1cc0794349125aacf073eb04fd8b8a93c7a58312c94bf16fd
 
 lib32disabled=yes
 
@@ -21,17 +21,6 @@ makedepends="nss-devel libjpeg-turbo-devel libpng-devel
  libXt-devel libXdamage-devel"
 depends="desktop-file-utils hicolor-icon-theme"
 conflicts="firefox-esr>=0"
-
-if [ "$CROSS_BUILD" ]; then
-	# Make config/system_wrappers/alsa/alsalib.h and pulse/pulse.h find
-	# the required includes. Set system nspr and nss include paths.
-	CFLAGS="-I${XBPS_CROSS_BASE}/usr/include/alsa \
-		-I${XBPS_CROSS_BASE}/usr/include/pulse \
-		-I${XBPS_CROSS_BASE}/usr/include/nspr \
-		-I${XBPS_CROSS_BASE}/usr/include/nss"
-	CXXFLAGS="${CFLAGS}"
-	LDFLAGS="-L${XBPS_CROSS_BASE}/usr/lib"
-fi
 
 pre_configure() {
 	case "$XBPS_TARGET_MACHINE" in
@@ -51,27 +40,38 @@ pre_configure() {
 	[ ! -d xbps-build ] && mkdir -p xbps-build
 }
 do_configure() {
-	if [ "$CROSS_BUILD" ]; then
-		export HOST_CFLAGS="${XBPS_CFLAGS}"
-		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
-		export CFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/nspr -I${XBPS_CROSS_BASE}/usr/include/nss"
-		export CXXFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/nspr -I${XBPS_CROSS_BASE}/usr/include/nss"
-
-		cross_args+=" --target=$XBPS_CROSS_TRIPLET"
-	fi
-
-	export ac_cv_sqlite_secure_delete=yes
-	export ac_cv_sqlite_threadsafe=yes
-	export ac_cv_sqlite_enable_fts3=yes
-	export ac_cv_sqlite_enable_unlock_notify=yes
-	export ac_cv_prog_hostcxx_works=1
+	local cross_args
 
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl) # XXX gold linking with --hash-style=sysv results in unhidden symbols
 		# XXX see https://sourceware.org/ml/binutils/2014-09/msg00230.html
-		cross_args+=" --enable-gold=no"
+		#
+		# XXX disable jemalloc.
+		cross_args+=" --disable-jemalloc --enable-gold=no"
 		;;
 	esac
+
+	if [ "$CROSS_BUILD" ]; then
+		cross_args+=" --target=$XBPS_CROSS_TRIPLET --disable-jemalloc"
+
+		# Make config/system_wrappers/alsa/alsalib.h and pulse/pulse.h find
+		# the required includes. Set system nspr and nss include paths.
+		export HOST_CFLAGS="${XBPS_CFLAGS}"
+		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
+		export CFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/alsa \
+			-I${XBPS_CROSS_BASE}/usr/include/pulse \
+			-I${XBPS_CROSS_BASE}/usr/include/nspr \
+			-I${XBPS_CROSS_BASE}/usr/include/nss"
+		export CXXFLAGS+=" ${CFLAGS}"
+		export LDFLAGS+=" -L${XBPS_CROSS_BASE}/usr/lib"
+
+		export ac_cv_sqlite_secure_delete=yes \
+			ac_cv_sqlite_threadsafe=yes \
+			ac_cv_sqlite_enable_fts3=yes \
+			ac_cv_sqlite_dbstat_vtab=yes \
+			ac_cv_sqlite_enable_unlock_notify=yes \
+			ac_cv_prog_hostcxx_works=1
+	fi
 
 	mkdir -p /usr/lib/firefox
 	export LDFLAGS+=" -Wl,-rpath=/usr/lib/firefox"
@@ -96,7 +96,7 @@ do_configure() {
 		--with-nss-prefix=${XBPS_CROSS_BASE}/usr ${cross_args} \
 		--with-google-api-keyfile="${wrksrc}/google-api-key" \
 		--enable-optimize="$CFLAGS" --disable-strip --disable-install-strip \
-		--disable-static --disable-jemalloc --enable-pie \
+		--disable-static --enable-pie \
 		--disable-profiling --disable-profilelocking
 }
 do_build() {
