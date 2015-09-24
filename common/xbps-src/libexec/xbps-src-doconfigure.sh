@@ -28,7 +28,7 @@ XBPS_CONFIGURE_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_configure
 XBPS_PRECONFIGURE_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_pre_configure_done"
 XBPS_POSTCONFIGURE_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_post_configure_done"
 
-if [ -f "$XBPS_CONFIGURE_DONE" ]; then
+if [ -z "$XBPS_BUILD_FORCEMODE" -a -f $XBPS_CONFIGURE_DONE ]; then
     exit 0
 fi
 
@@ -41,7 +41,7 @@ fi
 run_pkg_hooks pre-configure
 
 # Run pre_configure()
-if [ ! -f $XBPS_PRECONFIGURE_DONE ]; then
+if [ -z "$XBPS_BUILD_FORCEMODE" -a ! -f $XBPS_PRECONFIGURE_DONE ]; then
     if declare -f pre_configure >/dev/null; then
         run_func pre_configure
         touch -f $XBPS_PRECONFIGURE_DONE
@@ -64,7 +64,7 @@ else
 fi
 
 # Run post_configure()
-if [ ! -f $XBPS_POSTCONFIGURE_DONE ]; then
+if [ -z "$XBPS_BUILD_FORCEMODE" -a ! -f $XBPS_POSTCONFIGURE_DONE ]; then
     if declare -f post_configure >/dev/null; then
         run_func post_configure
         touch -f $XBPS_POSTCONFIGURE_DONE

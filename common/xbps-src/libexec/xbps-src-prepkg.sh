@@ -27,7 +27,7 @@ done
 
 XBPS_PREPKG_DONE="${XBPS_STATEDIR}/${PKGNAME}_${XBPS_CROSS_BUILD}_prepkg_done"
 
-if [ -f $XBPS_PREPKG_DONE ]; then
+if [ -z "$XBPS_BUILD_FORCEMODE" -a -f $XBPS_PREPKG_DONE ]; then
     exit 0
 fi
 
