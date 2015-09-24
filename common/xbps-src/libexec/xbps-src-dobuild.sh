@@ -28,7 +28,7 @@ XBPS_BUILD_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_build_done"
 XBPS_PRE_BUILD_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_pre_build_done"
 XBPS_POST_BUILD_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_post_build_done"
 
-if [ -z "$XBPS_BUILD_FORCEMODE" -a -f $XBPS_BUILD_DONE ]; then
+if [ -f $XBPS_BUILD_DONE -a $XBPS_TARGET != "build" ] || [ -f $XBPS_BUILD_DONE -a -z "$XBPS_BUILD_FORCEMODE" ]; then
     exit 0
 fi
 

@@ -28,7 +28,7 @@ XBPS_CONFIGURE_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_configure
 XBPS_PRECONFIGURE_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_pre_configure_done"
 XBPS_POSTCONFIGURE_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_post_configure_done"
 
-if [ -z "$XBPS_BUILD_FORCEMODE" -a -f $XBPS_CONFIGURE_DONE ]; then
+if [ -f $XBPS_CONFIGURE_DONE -a $XBPS_TARGET != "configure" ] || [ -f $XBPS_CONFIGURE_DONE -a -z "$XBPS_BUILD_FORCEMODE" ]; then
     exit 0
 fi
 

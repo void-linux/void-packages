@@ -15,10 +15,12 @@ if [ $# -lt 3 -o $# -gt 5 ]; then
 fi
 
 readonly PKGNAME="$1"
-readonly TARGET_PKG="$2"
-readonly TARGET="$3"
+readonly XBPS_TARGET_PKG="$2"
+readonly XBPS_TARGET="$3"
 readonly XBPS_CROSS_BUILD="$4"
 readonly XBPS_CROSS_PREPARE="$5"
+
+export XBPS_TARGET
 
 for f in $XBPS_SHUTILSDIR/*.sh; do
     . $f
@@ -38,26 +40,26 @@ if [ -z "$XBPS_DEPENDENCY" -a -z "$XBPS_TEMP_MASTERDIR" -a -n "$XBPS_KEEP_ALL" -
     remove_pkg_autodeps
 fi
 # Install dependencies from binary packages
-if [ "$PKGNAME" != "$TARGET_PKG" -o -z "$XBPS_SKIP_DEPS" ]; then
-    install_pkg_deps $PKGNAME $TARGET_PKG pkg $XBPS_CROSS_BUILD $XBPS_CROSS_PREPARE || exit $?
+if [ "$PKGNAME" != "$XBPS_TARGET_PKG" -o -z "$XBPS_SKIP_DEPS" ]; then
+    install_pkg_deps $PKGNAME $XBPS_TARGET_PKG pkg $XBPS_CROSS_BUILD $XBPS_CROSS_PREPARE || exit $?
 fi
 
 # Fetch distfiles after installing required dependencies,
 # because some of them might be required for do_fetch().
 $XBPS_LIBEXECDIR/xbps-src-dofetch.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
-[ "$TARGET" = "fetch" ] && exit 0
+[ "$XBPS_TARGET" = "fetch" ] && exit 0
 
 # Fetch, extract, build and install into the destination directory.
 $XBPS_LIBEXECDIR/xbps-src-doextract.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
-[ "$TARGET" = "extract" ] && exit 0
+[ "$XBPS_TARGET" = "extract" ] && exit 0
 
 # Run configure phase
 $XBPS_LIBEXECDIR/xbps-src-doconfigure.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
-[ "$TARGET" = "configure" ] && exit 0
+[ "$XBPS_TARGET" = "configure" ] && exit 0
 
 # Run build phase
 $XBPS_LIBEXECDIR/xbps-src-dobuild.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
-[ "$TARGET" = "build" ] && exit 0
+[ "$XBPS_TARGET" = "build" ] && exit 0
 
 # Install pkgs into destdir.
 $XBPS_LIBEXECDIR/xbps-src-doinstall.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
@@ -70,7 +72,7 @@ for subpkg in ${subpackages} ${sourcepkg}; do
 done
 
 for subpkg in ${subpackages} ${sourcepkg}; do
-    if [ "$PKGNAME" = "${subpkg}" -a "$TARGET" = "install" ]; then
+    if [ "$PKGNAME" = "${subpkg}" -a "$XBPS_TARGET" = "install" ]; then
         exit 0
     fi
 done
