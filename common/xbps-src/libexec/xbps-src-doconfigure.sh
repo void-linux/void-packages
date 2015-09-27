@@ -20,17 +20,16 @@ done
 
 setup_pkg "$PKGNAME" $XBPS_CROSS_BUILD
 
+XBPS_CONFIGURE_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_configure_done"
+
+if [ -f $XBPS_CONFIGURE_DONE -a -z "$XBPS_BUILD_FORCEMODE" ] ||
+   [ -f $XBPS_CONFIGURE_DONE -a -n "$XBPS_BUILD_FORCEMODE" -a $XBPS_TARGET != "configure" ]; then
+    exit 0
+fi
+
 for f in $XBPS_COMMONDIR/environment/configure/*.sh; do
     source_file "$f"
 done
-
-XBPS_CONFIGURE_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_configure_done"
-XBPS_PRECONFIGURE_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_pre_configure_done"
-XBPS_POSTCONFIGURE_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_post_configure_done"
-
-if [ -f $XBPS_CONFIGURE_DONE -a $XBPS_TARGET != "configure" ] || [ -f $XBPS_CONFIGURE_DONE -a -z "$XBPS_BUILD_FORCEMODE" ]; then
-    exit 0
-fi
 
 cd "$wrksrc" || msg_error "$pkgver: cannot access wrksrc directory [$wrksrc].\n"
 if [ -n "$build_wrksrc" ]; then
@@ -41,11 +40,8 @@ fi
 run_pkg_hooks pre-configure
 
 # Run pre_configure()
-if [ -z "$XBPS_BUILD_FORCEMODE" -a ! -f $XBPS_PRECONFIGURE_DONE ]; then
-    if declare -f pre_configure >/dev/null; then
-        run_func pre_configure
-        touch -f $XBPS_PRECONFIGURE_DONE
-    fi
+if declare -f pre_configure >/dev/null; then
+    run_func pre_configure
 fi
 
 # Run do_configure()
@@ -64,11 +60,8 @@ else
 fi
 
 # Run post_configure()
-if [ -z "$XBPS_BUILD_FORCEMODE" -a ! -f $XBPS_POSTCONFIGURE_DONE ]; then
-    if declare -f post_configure >/dev/null; then
-        run_func post_configure
-        touch -f $XBPS_POSTCONFIGURE_DONE
-    fi
+if declare -f post_configure >/dev/null; then
+    run_func post_configure
 fi
 
 run_pkg_hooks post-configure

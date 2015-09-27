@@ -27,8 +27,6 @@ for f in $XBPS_COMMONDIR/environment/install/*.sh; do
 done
 
 XBPS_INSTALL_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_install_done"
-XBPS_PRE_INSTALL_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_pre_install_done"
-XBPS_POST_INSTALL_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_post_install_done"
 
 cd "$wrksrc" || msg_error "$pkgver: cannot access to wrksrc [$wrksrc]\n"
 if [ -n "$build_wrksrc" ]; then
@@ -42,11 +40,8 @@ if [ "$SUBPKG_MODE"  = "no" ]; then
         run_pkg_hooks pre-install
 
         # Run pre_install()
-        if [ ! -f $XBPS_PRE_INSTALL_DONE ]; then
-            if declare -f pre_install >/dev/null; then
-                run_func pre_install
-                touch -f $XBPS_PRE_INSTALL_DONE
-            fi
+        if declare -f pre_install >/dev/null; then
+            run_func pre_install
         fi
 
         # Run do_install()
@@ -64,13 +59,10 @@ if [ "$SUBPKG_MODE"  = "no" ]; then
         touch -f $XBPS_INSTALL_DONE
 
         # Run post_install()
-        if [ ! -f $XBPS_POST_INSTALL_DONE ]; then
-            cd "$wrksrc"
-            [ -n "$build_wrksrc" ] && cd $build_wrksrc
-            if declare -f post_install >/dev/null; then
-                run_func post_install
-                touch -f $XBPS_POST_INSTALL_DONE
-            fi
+        cd "$wrksrc"
+        [ -n "$build_wrksrc" ] && cd $build_wrksrc
+        if declare -f post_install >/dev/null; then
+            run_func post_install
         fi
     fi
     exit 0

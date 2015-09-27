@@ -20,17 +20,16 @@ done
 
 setup_pkg "$PKGNAME" $XBPS_CROSS_BUILD
 
+XBPS_BUILD_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_build_done"
+
+if [ -f $XBPS_BUILD_DONE -a -z "$XBPS_BUILD_FORCEMODE" ] ||
+   [ -f $XBPS_BUILD_DONE -a -n "$XBPS_BUILD_FORCEMODE" -a $XBPS_TARGET != "build" ]; then
+    exit 0
+fi
+
 for f in $XBPS_COMMONDIR/environment/build/*.sh; do
     source_file "$f"
 done
-
-XBPS_BUILD_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_build_done"
-XBPS_PRE_BUILD_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_pre_build_done"
-XBPS_POST_BUILD_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_post_build_done"
-
-if [ -f $XBPS_BUILD_DONE -a $XBPS_TARGET != "build" ] || [ -f $XBPS_BUILD_DONE -a -z "$XBPS_BUILD_FORCEMODE" ]; then
-    exit 0
-fi
 
 cd "$wrksrc" || msg_error "$pkgver: cannot access wrksrc directory [$wrksrc]\n"
 if [ -n "$build_wrksrc" ]; then
@@ -41,11 +40,8 @@ fi
 run_pkg_hooks pre-build
 
 # Run pre_build()
-if [ -z "$XBPS_BUILD_FORCEMODE" -a ! -f $XBPS_PRE_BUILD_DONE ]; then
-    if declare -f pre_build >/dev/null; then
-        run_func pre_build
-        touch -f $XBPS_PRE_BUILD_DONE
-    fi
+if declare -f pre_build >/dev/null; then
+    run_func pre_build
 fi
 
 # Run do_build()
@@ -65,11 +61,8 @@ fi
 
 
 # Run post_build()
-if [ -z "$XBPS_BUILD_FORCEMODE" -a ! -f $XBPS_POST_BUILD_DONE ]; then
-    if declare -f post_build >/dev/null; then
-        run_func post_build
-        touch -f $XBPS_POST_BUILD_DONE
-    fi
+if declare -f post_build >/dev/null; then
+    run_func post_build
 fi
 
 run_pkg_hooks post-build
