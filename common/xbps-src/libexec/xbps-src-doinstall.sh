@@ -4,6 +4,7 @@
 #
 # Passed arguments:
 #	$1 - pkgname [REQUIRED]
+#   $2 - subpkg mode [REQUIRED]
 #	$2 - cross target [OPTIONAL]
 
 if [ $# -lt 1 -o $# -gt 2 ]; then
@@ -12,7 +13,8 @@ if [ $# -lt 1 -o $# -gt 2 ]; then
 fi
 
 PKGNAME="$1"
-XBPS_CROSS_BUILD="$2"
+SUBPKG_MODE="$2"
+XBPS_CROSS_BUILD="$3"
 
 for f in $XBPS_SHUTILSDIR/*.sh; do
     . $f
@@ -33,21 +35,21 @@ if [ -n "$build_wrksrc" ]; then
     cd $build_wrksrc || msg_error "$pkgver: cannot access to build_wrksrc [$build_wrksrc]\n"
 fi
 
-if [ ! -f $XBPS_INSTALL_DONE ] || [ -f $XBPS_INSTALL_DONE -a -n "$XBPS_BUILD_FORCEMODE" ]; then
-    mkdir -p $XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/$pkgname-$version
+if [ "$SUBPKG_MODE"  = "no" ]; then
+    if [ ! -f $XBPS_INSTALL_DONE ] || [ -f $XBPS_INSTALL_DONE -a -n "$XBPS_BUILD_FORCEMODE" ]; then
+        mkdir -p $XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/$pkgname-$version
 
-    run_pkg_hooks pre-install
+        run_pkg_hooks pre-install
 
-    # Run pre_install()
-    if [ ! -f $XBPS_PRE_INSTALL_DONE ]; then
-        if declare -f pre_install >/dev/null; then
-            run_func pre_install
-            touch -f $XBPS_PRE_INSTALL_DONE
+        # Run pre_install()
+        if [ ! -f $XBPS_PRE_INSTALL_DONE ]; then
+            if declare -f pre_install >/dev/null; then
+                run_func pre_install
+                touch -f $XBPS_PRE_INSTALL_DONE
+            fi
         fi
-    fi
 
-    # Run do_install()
-    if [ ! -f $XBPS_INSTALL_DONE ]; then
+        # Run do_install()
         cd "$wrksrc"
         [ -n "$build_wrksrc" ] && cd $build_wrksrc
         if declare -f do_install >/dev/null; then
@@ -60,15 +62,15 @@ if [ ! -f $XBPS_INSTALL_DONE ] || [ -f $XBPS_INSTALL_DONE -a -n "$XBPS_BUILD_FOR
             run_func do_install
         fi
         touch -f $XBPS_INSTALL_DONE
-    fi
 
-    # Run post_install()
-    if [ ! -f $XBPS_POST_INSTALL_DONE ]; then
-        cd "$wrksrc"
-        [ -n "$build_wrksrc" ] && cd $build_wrksrc
-        if declare -f post_install >/dev/null; then
-            run_func post_install
-            touch -f $XBPS_POST_INSTALL_DONE
+        # Run post_install()
+        if [ ! -f $XBPS_POST_INSTALL_DONE ]; then
+            cd "$wrksrc"
+            [ -n "$build_wrksrc" ] && cd $build_wrksrc
+            if declare -f post_install >/dev/null; then
+                run_func post_install
+                touch -f $XBPS_POST_INSTALL_DONE
+            fi
         fi
     fi
     exit 0

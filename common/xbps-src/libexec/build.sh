@@ -62,10 +62,10 @@ $XBPS_LIBEXECDIR/xbps-src-dobuild.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
 [ "$XBPS_TARGET" = "build" ] && exit 0
 
 # Install pkgs into destdir.
-$XBPS_LIBEXECDIR/xbps-src-doinstall.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
+$XBPS_LIBEXECDIR/xbps-src-doinstall.sh $SOURCEPKG no $XBPS_CROSS_BUILD || exit 1
 
 for subpkg in ${subpackages} ${sourcepkg}; do
-    $XBPS_LIBEXECDIR/xbps-src-doinstall.sh $subpkg $XBPS_CROSS_BUILD || exit 1
+    $XBPS_LIBEXECDIR/xbps-src-doinstall.sh $subpkg yes $XBPS_CROSS_BUILD || exit 1
 done
 for subpkg in ${subpackages} ${sourcepkg}; do
     $XBPS_LIBEXECDIR/xbps-src-prepkg.sh $subpkg $XBPS_CROSS_BUILD || exit 1
