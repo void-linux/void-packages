@@ -37,6 +37,7 @@ if [ "$SUBPKG_MODE"  = "no" ]; then
     if [ ! -f $XBPS_INSTALL_DONE ] || [ -f $XBPS_INSTALL_DONE -a -n "$XBPS_BUILD_FORCEMODE" ]; then
         mkdir -p $XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/$pkgname-$version
 
+        # Run pre-install hooks
         run_pkg_hooks pre-install
 
         # Run pre_install()
@@ -56,14 +57,14 @@ if [ "$SUBPKG_MODE"  = "no" ]; then
             . $XBPS_BUILDSTYLEDIR/${build_style}.sh
             run_func do_install
         fi
-        touch -f $XBPS_INSTALL_DONE
-
         # Run post_install()
         cd "$wrksrc"
         [ -n "$build_wrksrc" ] && cd $build_wrksrc
         if declare -f post_install >/dev/null; then
             run_func post_install
         fi
+
+        touch -f $XBPS_INSTALL_DONE
     fi
     exit 0
 fi
