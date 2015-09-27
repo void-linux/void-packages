@@ -33,13 +33,13 @@ if [ -n "$build_wrksrc" ]; then
     cd $build_wrksrc || msg_error "$pkgver: cannot access to build_wrksrc [$build_wrksrc]\n"
 fi
 
-if [ ! -f $XBPS_INSTALL_DONE -a $XBPS_TARGET != "install" ] || [ ! -f $XBPS_INSTALL_DONE -a -z "$XBPS_BUILD_FORCEMODE" ]; then
+if [ ! -f $XBPS_INSTALL_DONE ] || [ -f $XBPS_INSTALL_DONE -a -n "$XBPS_BUILD_FORCEMODE" ]; then
     mkdir -p $XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/$pkgname-$version
 
     run_pkg_hooks pre-install
 
     # Run pre_install()
-    if [ -z "$XBPS_BUILD_FORCEMODE" -a ! -f $XBPS_PRE_INSTALL_DONE ]; then
+    if [ ! -f $XBPS_PRE_INSTALL_DONE ]; then
         if declare -f pre_install >/dev/null; then
             run_func pre_install
             touch -f $XBPS_PRE_INSTALL_DONE
@@ -47,7 +47,7 @@ if [ ! -f $XBPS_INSTALL_DONE -a $XBPS_TARGET != "install" ] || [ ! -f $XBPS_INST
     fi
 
     # Run do_install()
-    if [ -z "$XBPS_BUILD_FORCEMODE" -a ! -f $XBPS_INSTALL_DONE ]; then
+    if [ ! -f $XBPS_INSTALL_DONE ]; then
         cd "$wrksrc"
         [ -n "$build_wrksrc" ] && cd $build_wrksrc
         if declare -f do_install >/dev/null; then
@@ -63,7 +63,7 @@ if [ ! -f $XBPS_INSTALL_DONE -a $XBPS_TARGET != "install" ] || [ ! -f $XBPS_INST
     fi
 
     # Run post_install()
-    if [ -z "$XBPS_BUILD_FORCEMODE" -a ! -f $XBPS_POST_INSTALL_DONE ]; then
+    if [ ! -f $XBPS_POST_INSTALL_DONE ]; then
         cd "$wrksrc"
         [ -n "$build_wrksrc" ] && cd $build_wrksrc
         if declare -f post_install >/dev/null; then
