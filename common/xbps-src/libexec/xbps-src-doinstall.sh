@@ -7,8 +7,8 @@
 #   $2 - subpkg mode [REQUIRED]
 #	$2 - cross target [OPTIONAL]
 
-if [ $# -lt 1 -o $# -gt 2 ]; then
-    echo "${0##*/}: invalid number of arguments: pkgname [cross-target]"
+if [ $# -lt 2 -o $# -gt 3 ]; then
+    echo "${0##*/}: invalid number of arguments: pkgname subpkg-mode [cross-target]"
     exit 1
 fi
 
