@@ -31,6 +31,8 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [32bit packages](#32bit_pkgs)
 	* [Subpackages](#pkgs_sub)
 	* [Development packages](#pkgs_development)
+	* [Data packages](#pkgs_data)
+	* [Documentation packages](#pkgs_documentation)
 	* [Python packages](#pkgs_python)
 	* [Go packages](#pkgs_go)
 	* [Haskell packages](#pkgs_haskell)
@@ -972,6 +974,42 @@ and most likely it shall depend on its development package.
 If a development package provides a `pkg-config` file, you should verify
 what dependencies the package needs for dynamic or static linking, and add
 the appropriate `development` packages as dependencies.
+
+Development packages for the C and C++ languages usually `vmove` the
+following subset of files from the main package:
+
+    * Header files `usr/include`
+    * Static libraries `usr/lib/*.a`
+    * Shared library symbolic links `usr/lib/*.so`
+    * Cmake rules `usr/lib/cmake`
+    * Package config files `usr/lib/pkgconfig`
+
+<a id="pkgs_data"></a>
+### Data packages
+
+Another common subpackage type is the `-data` subpackage. This subpackage
+type used to split architecture independent, big(ger) or huge amounts
+of data from a package's main and architecture dependent part. It is up
+to you to decide, if a `-data` subpackage makes sense for your package.
+This type is common for games (graphics, sound and music), part libraries (CAD)
+or card material (maps). Data subpackages are almost always `noarch=yes`.
+The main package must then have `depends="${pkgname}-data-${version}_${revision}"`,
+possibly in addition to other, non-automatic depends.
+
+<a id="pkgs_documentation"></a>
+### Documentation packages
+
+Packages intended for user interaction do not always unconditionally require
+their documentation part. A user who does not want to e.g. develop
+with Qt5 will not need to install the (huge) qt5-doc package.
+An expert may not need it or opt to use an online version.
+
+In general a `-doc` package is useful, if the main package can be used both with
+or without documentation and the size of the documentation isn't really small.
+The base package and the `-devel` subpackage should be kept small so that when
+building packages depending on a specific package there is no need to install large
+amounts of documentation for no reason. Thus the size of the documentation part should
+be your guidance to decide whether or not to split off a `-doc` subpackage.
 
 <a id="pkgs_python"></a>
 ### Python packages
