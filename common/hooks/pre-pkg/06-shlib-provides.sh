@@ -3,7 +3,7 @@
 
 collect_sonames() {
 	local _destdir="$1" f _soname _fname _pattern
-	local _pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)*$"
+	local _pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)+$"
 	local _tmpfile="$(mktemp)"
 
 	if [ ! -d ${_destdir} ]; then
@@ -19,10 +19,6 @@ collect_sonames() {
 			# shared library
 			_soname=$(${OBJDUMP} -p "$f"|grep SONAME|awk '{print $2}')
 			if [[ ${_soname} =~ ${_pattern} ]]; then
-				if [ ! -e ${_destdir}/usr/lib/${_fname} -a \
-				     ! -e ${_destdir}/usr/lib32/${_fname} ]; then
-					continue
-				fi
 				echo "${_soname}" >> ${_tmpfile}
 				echo "   SONAME ${_soname} from ${f##${_destdir}}"
 			fi
