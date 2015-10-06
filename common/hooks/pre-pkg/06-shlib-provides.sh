@@ -3,7 +3,8 @@
 
 collect_sonames() {
 	local _destdir="$1" f _soname _fname _pattern
-	local _pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)+$"
+	local _pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)*$"
+	local _versioned_pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)+$"
 	local _tmpfile="$(mktemp)"
 
 	if [ ! -d ${_destdir} ]; then
@@ -18,7 +19,12 @@ collect_sonames() {
 		application/x-sharedlib*)
 			# shared library
 			_soname=$(${OBJDUMP} -p "$f"|grep SONAME|awk '{print $2}')
-			if [[ ${_soname} =~ ${_pattern} ]]; then
+			# Register all versioned sonames, and
+			# unversioned sonames only when in libdir.
+			if [[ ${_soname} =~ ${_versioned_pattern} ]] ||
+			   [[ ${_soname} =~ ${_pattern} &&
+			   	( -e ${_destdir}/usr/lib/${_fname} ||
+				  -e ${_destdir}/usr/lib32/${_fname} ) ]]; then
 				echo "${_soname}" >> ${_tmpfile}
 				echo "   SONAME ${_soname} from ${f##${_destdir}}"
 			fi
