@@ -1,0 +1,113 @@
+# Template file for 'boinc'
+pkgname=boinc
+version=7.6.12
+revision=1
+wrksrc=boinc-client_release-${version%.*}-${version}
+build_style=gnu-configure
+hostmakedepends="automake libtool pkg-config python"
+makedepends="glu-devel libfreeglut-devel libcurl-devel wxWidgets-devel webkitgtk2-devel
+ libjpeg-turbo-devel libnotify-devel sqlite-devel libXmu-devel libXi-devel"
+depends="curl ca-certificates"
+system_accounts="boinc"
+boinc_homedir="/var/lib/boinc"
+boinc_shell="/bin/bash"
+conf_files="/etc/default/boinc-client"
+short_desc="Berkely Infrastructure for Network Computing"
+maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
+license="LGPL-3.0"
+homepage="https://boinc.berkeley.edu/"
+distfiles="https://github.com/BOINC/boinc/archive/client_release/${version%.*}/${version}.tar.gz>boinc-${version}.tar.gz"
+checksum=c396ab46b4ce5d8547e86b51bd66b2ac861602722ffd6953eb17cb75539f9f1b
+conflicts="boinc-nox>=0"
+
+CXXFLAGS="-Wno-redundant-decls"
+pre_configure() {
+	autoreconf -if
+}
+do_configure() {
+	mkdir /tmp/x11
+	mv * /tmp/x11
+	mv /tmp/x11 .
+	mkdir nox
+	cp -ar x11/* nox
+	cd ${wrksrc}/x11
+	LDFLAGS="-lX11" ./configure \
+		${configure_args} \
+		--enable-libraries \
+		--enable-unicode \
+		--enable-shared \
+		--enable-static \
+		--enable-dynamic-client-linkage \
+		--enable-client \
+		--enable-manager \
+		--disable-server \
+		--with-ssl \
+		--with-x \
+		--with-wx-config=/usr/bin/wx-config-3.0 \
+		--with-wxdir=${XBPS_CROSS_BASE}/usr/lib
+	cd ${wrksrc}/nox
+	PKG_CONFIG=/usr/bin/pkg-config ./configure \
+		${configure_args} \
+		--enable-libraries \
+		--enable-unicode \
+		--enable-shared \
+		--enable-static \
+		--enable-dynamic-client-linkage \
+		--enable-client \
+		--disable-manager \
+		--disable-server \
+		--disable-xss \
+		--disable-server \
+		--with-ssl \
+		--without-x \
+		--without-wxdir
+}
+do_build() {
+	cd ${wrksrc}/x11
+	make ${makejobs}
+	cd ${wrksrc}/nox
+	make ${makejobs}
+}
+do_install() {
+	cd ${wrksrc}/x11
+	make ${makejobs} DESTDIR="${DESTDIR}" install
+
+	# Bash completion
+	vinstall ${FILESDIR}/boinc.bash 644 usr/share/bash-completion/completions boinc
+
+	# Desktop
+	vmkdir usr/share/applications
+	vinstall ${FILESDIR}/boinc.desktop 644 usr/share/applications
+	for size in 16 24 32 64 128 256; do
+		vinstall ${FILESDIR}/boinc${size}.png 644 usr/share/icons/hicolor/${size}x${size}/apps boinc.png
+	done
+	vinstall ${FILESDIR}/boinc32.png 644 usr/share/pixmaps boinc.png
+	vsv boinc
+}
+
+boinc-devel_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/include
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
+	}
+}
+boinc-nox_package() {
+	short_desc+=" - no X"
+	conflicts="boinc>=0"
+	pkg_install() {
+		cd ${wrksrc}/nox
+		make ${makejobs} DESTDIR=${PKGDESTDIR} install
+
+		# no devel package - no includes, *.a and *.so
+		rm -rf ${PKGDESTDIR}/usr/include
+		rm -f ${PKGDESTDIR}/usr/lib/*.a
+		rm -f ${PKGDESTDIR}/usr/lib/*.so
+
+		# Bash completion
+		vinstall ${FILESDIR}/boinc.bash 644 usr/share/bash-completion/completions boinc
+		vsv boinc
+	}
+}
