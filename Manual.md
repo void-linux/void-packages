@@ -893,8 +893,11 @@ dependencies must be specified with version comparators, i.e
 - `lib32files` Additional files to be added to the **32bit** package. This expect absolute
 paths separated by blanks, i.e `lib32files="/usr/bin/blah /usr/include/blah."`.
 
-- `lib32mode` If unset, only shared libraries and pkg-config files will be copied to the
-**32bit** package. If set to `full` all files will be copied as is.
+- `lib32symlinks` Makes a symlink of the target filename stored in the `lib32` directory.
+This expects the basename of the target file, i.e `lib32symlinks="foo"`.
+
+- `lib32mode` If unset, only shared/static libraries and pkg-config files will be copied to the
+**32bit** package. If set to `full` all files will be copied to the 32bit package, unmodified.
 
 <a id="pkgs_sub"></a>
 ### Subpackages
