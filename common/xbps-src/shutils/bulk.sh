@@ -67,7 +67,7 @@ bulk_build() {
 }
 
 bulk_update() {
-    local args="$1" pkgs f
+    local args="$1" pkgs f rval
 
     pkgs="$(bulk_build ${args})"
     if [ -z "$pkgs" ]; then
@@ -85,9 +85,9 @@ bulk_update() {
         if [ -n "$CHROOT_READY" -a -z "$IN_CHROOT" ]; then
             chroot_handler pkg $XBPS_TARGET_PKG
         else
-            $XBPS_LIBEXECDIR/build.sh $f $f pkg $XBPS_CROSS_BUILD || return 1
+            $XBPS_LIBEXECDIR/build.sh $f $f pkg $XBPS_CROSS_BUILD
         fi
-        if [ $? -ne 0 ]; then
+        if [ $? -eq 1 ]; then
             msg_error "xbps-src: failed to build $pkgver pkg!\n"
         fi
     done
