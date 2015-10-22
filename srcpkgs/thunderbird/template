@@ -1,27 +1,24 @@
 # Template build file for 'thunderbird'.
 pkgname=thunderbird
 version=38.3.0
-revision=1
+revision=2
 wrksrc="comm-esr${version/.*/}"
 short_desc="Standalone Mail/News reader"
 maintainer="Enno Boland <gottox@voidlinux.eu>"
 homepage="http://www.mozilla.org/thunderbird/"
 license="MPL-1.1, GPL-2, LGPL-2.1"
 distfiles="${MOZILLA_SITE}/${pkgname}/releases/${version}/source/${pkgname}-${version}.source.tar.bz2"
-skip_extraction="stab.h"
-checksum="9f3cb19a5ceabc5e8fa31f782b6d92720a77ef2c2d6c7b63b3d792cde491c961
- 960d82bbfdc88c95f5cb4f2e1c1bf23dae7519b3b7203914d7b3ddbff1ba4c28"
-nocross="http://build.voidlinux.eu/builders/armv7l_builder/builds/10490/steps/shell_3/logs/stdio"
+checksum="9f3cb19a5ceabc5e8fa31f782b6d92720a77ef2c2d6c7b63b3d792cde491c961"
 
 lib32disabled=yes
 
 hostmakedepends="unzip zip pkg-config perl python yasm autoconf"
-makedepends="python-devel nss-devel libjpeg-turbo-devel
- icu-devel pixman-devel sqlite-devel gst-plugins-base1-devel gtk+-devel
- libevent-devel libvpx-devel libXrender-devel
- startup-notification-devel dbus-glib-devel alsa-lib-devel pulseaudio-devel
- hunspell-devel libXcomposite-devel libSM-devel libXScrnSaver-devel
- libXt-devel cairo-devel"
+makedepends="alsa-lib-devel cairo-devel dbus-glib-devel gst-plugins-base1-devel
+ gtk+-devel hunspell-devel icu-devel libSM-devel libXScrnSaver-devel
+ libXcomposite-devel libXdamage-devel libXrender-devel libXt-devel
+ libevent-devel libjpeg-turbo-devel libvpx-devel nss-devel pixman-devel
+ pulseaudio-devel python-devel sqlite-devel startup-notification-devel
+ wireless_tools-devel"
 depends="desktop-file-utils hicolor-icon-theme"
 
 pre_configure() {
@@ -29,6 +26,7 @@ pre_configure() {
 	*-musl)
 		# http://git.alpinelinux.org/cgit/aports/plain/community/firefox/stab.h
 		cp $FILESDIR/stab.h mozilla/toolkit/crashreporter/google-breakpad/src/
+		sed -i "s/__off64_t/off64_t/g" mozilla/toolkit/crashreporter/google-breakpad/src/third_party/lss/linux_syscall_support.h
 		;;
 	esac
 
@@ -36,6 +34,59 @@ pre_configure() {
 	sed -i '/ac_cpp=/s/$CPPFLAGS/& -O2/' configure
 
 	[ ! -d xbps-build ] && mkdir -p xbps-build
+}
+
+do_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		export HOST_CFLAGS="${XBPS_CFLAGS}"
+		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
+		export CFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/nspr -I${XBPS_CROSS_BASE}/usr/include/nss"
+		export CXXFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/nspr -I${XBPS_CROSS_BASE}/usr/include/nss"
+
+		cross_args+=" --target=$XBPS_CROSS_TRIPLET"
+	fi
+
+	export ac_cv_sqlite_secure_delete=yes
+	export ac_cv_sqlite_threadsafe=yes
+	export ac_cv_sqlite_enable_fts3=yes
+	export ac_cv_sqlite_enable_unlock_notify=yes
+	export ac_cv_prog_hostcxx_works=1
+
+	case "$XBPS_TARGET_MACHINE" in
+	*-musl) # XXX gold linking with --hash-style=sysv results in unhidden symbols
+		# XXX see https://sourceware.org/ml/binutils/2014-09/msg00230.html
+		cross_args+=" --enable-gold=no"
+		;;
+	esac
+
+	mkdir -p /usr/lib/thunderbird
+	export LDFLAGS+=" -Wl,-rpath=/usr/lib/thunderbird"
+
+	cd xbps-build
+	# disable --with-system-libvpx for now
+	# disable --enable-gstreamer for now
+	SHELL=/bin/bash ../configure --prefix=/usr --libdir=/usr/lib \
+		--with-system-nspr --with-system-nss --with-system-bz2  \
+		--with-system-jpeg --with-system-zlib --without-system-png \
+		--with-system-libevent --enable-system-cairo  \
+		--enable-system-pixman --enable-system-hunspell --enable-system-sqlite \
+		--enable-system-ffi --enable-startup-notification --disable-gio \
+		--with-pthreads --enable-official-branding --enable-safe-browsing \
+		--disable-skia --disable-debug --disable-gnomevfs --disable-gconf \
+		--disable-crashreporter --disable-updater --disable-xprint --disable-tests \
+		--disable-mochitest --disable-installer --disable-elf-hack \
+		--with-system-icu --enable-pulseaudio --disable-gstreamer \
+		--disable-crashreporter --disable-cpp-exceptions --disable-javaxpcom \
+		--with-nspr-prefix=${XBPS_CROSS_BASE}/usr \
+		--with-nss-prefix=${XBPS_CROSS_BASE}/usr ${cross_args} \
+		--enable-optimize="$CFLAGS" --disable-strip --disable-install-strip \
+		--disable-static --disable-jemalloc --enable-pie \
+		--disable-profiling --disable-profilelocking \
+		--enable-application=mail
+}
+do_build() {
+	cd xbps-build
+	SHELL=/bin/bash make ${makejobs}
 }
 do_configure() {
 	local cross_args
@@ -109,9 +160,9 @@ do_install() {
 	vinstall ${FILESDIR}/vendor.js 644 usr/lib/thunderbird/defaults/pref
 	vinstall ${FILESDIR}/thunderbird.desktop 644 usr/share/applications
 
-	for i in 16x16 22x22 24x24 32x32 48x48 256x256; do
-		vinstall ${wrksrc}/other-licenses/branding/thunderbird/mailicon${i%x*}.png 644 \
-			usr/share/icons/hicolor/${i}/apps thunderbird.png
+	for i in 16 22 24 32 48 256; do
+		vinstall ../other-licenses/branding/thunderbird/mailicon${i}.png 644 \
+			usr/share/icons/hicolor/${i}x${i}/apps thunderbird.png
 	done
 
 	# Use system-provided dictionaries
@@ -120,7 +171,7 @@ do_install() {
 	ln -s /usr/share/hyphen ${DESTDIR}/usr/lib/thunderbird/hyphenation
 
 	# We don't want the development stuff
-	rm -rf ${DESTDIR}/usr/{include,lib/thunderbird-devel,share/idl}
+	rm -r ${DESTDIR}/usr/{include,share/idl}
 
 	# same binaries : usr/lib/thunderbird/{thunderbird-bin,thunderbird}
 	rm -f ${DESTDIR}/usr/lib/thunderbird/thunderbird-bin
