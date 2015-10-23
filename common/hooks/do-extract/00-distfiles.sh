@@ -51,7 +51,9 @@ hook() {
 		*.tar)        cursufx="tar";;
 		*.zip)        cursufx="zip";;
 		*.rpm)        cursufx="rpm";;
-		*.patch)      cursufx="pch";;
+		*.patch)      cursufx="txt";;
+		*.diff)       cursufx="txt";;
+		*.txt)        cursufx="txt";;
 		*) msg_error "$pkgver: unknown distfile suffix for $curfile.\n";;
 		esac
 
@@ -102,6 +104,9 @@ hook() {
 			else
 				msg_error "$pkgver: cannot find rpmextract for extraction.\n"
 			fi
+			;;
+		txt)
+			cp -f $srcdir/$curfile $extractdir
 			;;
 		*)
 			msg_error "$pkgver: cannot guess $curfile extract suffix. ($cursufx)\n"
