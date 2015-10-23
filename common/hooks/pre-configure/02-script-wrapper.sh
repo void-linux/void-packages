@@ -88,6 +88,23 @@ install_wrappers() {
 	done
 }
 
+install_cross_wrappers() {
+	local fname
+
+	for fname in cc gcc; do
+		sed -e "s,@BIN@,/usr/bin/$XBPS_CROSS_TRIPLET-gcc,g" \
+			${XBPS_COMMONDIR}/wrappers/cc > \
+			${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-${fname}
+		chmod 755 ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-${fname}
+	done
+	for fname in c++ g++; do
+		sed -e "s,@BIN@,/usr/bin/$XBPS_CROSS_TRIPLET-g++,g" \
+			${XBPS_COMMONDIR}/wrappers/cc > \
+			${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-${fname}
+		chmod 755 ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-${fname}
+	done
+}
+
 hook() {
 	export PATH="$XBPS_WRAPPERDIR:$PATH"
 
@@ -95,6 +112,7 @@ hook() {
 
 	[ -z "$CROSS_BUILD" ] && return 0
 
+	install_cross_wrappers
 	pkgconfig_wrapper
 	generic_wrapper icu-config
 	generic_wrapper libgcrypt-config
