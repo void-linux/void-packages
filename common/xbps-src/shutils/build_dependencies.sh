@@ -99,6 +99,7 @@ install_pkg_from_repos() {
         # SUCCESS  (0): package installed successfully.
         # ENOENT   (2): package missing in repositories.
         # ENXIO    (6): package depends on invalid dependencies.
+        # EAGAIN  (11): package conflicts.
         # EEXIST  (17): package already installed.
         # ENODEV  (19): package depends on missing dependencies.
         # ENOTSUP (95): no repositories registered.
