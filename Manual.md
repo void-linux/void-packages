@@ -493,6 +493,10 @@ pkgver the resulting package should revert. This field *must* be defined before
 defined in `reverts` must be lesser than the one defined in `version`.
 example: `reverts="2.0_1 2.0_2"`
 
+- `alternatives` A white space separated list of supported alternatives the package provides.
+A list is composed of three components separated by a colon: group, symlink and target.
+i.e `alternatives="vi:/usr/bin/vi:/usr/bin/nvi ex:/usr/bin/ex:/usr/bin/nvi-ex"`.
+
 <a id="repositories"></a>
 #### Repositories
 

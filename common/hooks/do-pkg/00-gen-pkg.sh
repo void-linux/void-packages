@@ -82,6 +82,12 @@ genpkg() {
 			_conf_files="${_conf_files} ${f}"
 		done
 	fi
+	if [ -n "$alternatives" ]; then
+		local _alternatives=
+		for f in ${alternatives}; do
+			_alternatives="${_alternatives} ${f}"
+		done
+	fi
 
 	msg_normal "Creating $binpkg for repository $pkgdir ...\n"
 
@@ -100,6 +106,7 @@ genpkg() {
 		${_gitrevs:+--source-revisions "${_gitrevs}"} \
 		${_shprovides:+--shlib-provides "${_shprovides}"} \
 		${_shrequires:+--shlib-requires "${_shrequires}"} \
+		${_alternatives:+--alternatives "${_alternatives}"} \
 		${_preserve:+--preserve} \
 		${_tags:+--tags "${tags}"} \
 		--architecture ${arch} \
