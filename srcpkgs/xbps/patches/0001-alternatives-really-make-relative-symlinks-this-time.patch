@@ -1,0 +1,136 @@
+From 512122da4cb3c9fd6c5cea26cd7290b0d7f1e620 Mon Sep 17 00:00:00 2001
+From: Juan RP <xtraeme@voidlinux.eu>
+Date: Sat, 31 Oct 2015 14:01:20 +0100
+Subject: [PATCH] alternatives: really make relative symlinks this time.
+
+---
+ NEWS                                 |  2 ++
+ lib/package_alternatives.c           | 15 +++++++++++----
+ tests/xbps/xbps-alternatives/main.sh | 25 ++++++++-----------------
+ 3 files changed, 21 insertions(+), 21 deletions(-)
+
+diff --git a/lib/package_alternatives.c b/lib/package_alternatives.c
+index 958c9f1..b71081e 100644
+--- lib/package_alternatives.c
++++ lib/package_alternatives.c
+@@ -102,23 +102,28 @@ create_symlinks(struct xbps_handle *xhp, xbps_array_t a, const char *grname)
+ 	cnt = xbps_array_count(a);
+ 	for (i = 0; i < cnt; i++) {
+ 		xbps_string_t str;
+-		char *l, *lnk;
+-		const char *tgt;
++		char *l, *lnk, *tgt;
++		const char *tgt0;
+ 		int rv;
+ 
+ 		str = xbps_array_get(a, i);
+ 		l = left(xbps_string_cstring_nocopy(str));
+ 		assert(l);
+-		tgt = right(xbps_string_cstring_nocopy(str));
++		tgt0 = right(xbps_string_cstring_nocopy(str));
+ 		assert(tgt);
+ 		if (l[0] != '/') {
+ 			char *tgt_dup, *tgt_dir;
+-			tgt_dup = strdup(tgt);
++			tgt_dup = strdup(tgt0);
+ 			assert(tgt_dup);
+ 			tgt_dir = dirname(tgt_dup);
+ 			lnk = xbps_xasprintf("%s%s/%s", xhp->rootdir, tgt_dir, l);
+ 			free(tgt_dup);
++			tgt_dup = strdup(tgt0);
++			assert(tgt_dup);
++			tgt = strdup(basename(tgt_dup));
++			free(tgt_dup);
+ 		} else {
++			tgt = strdup(tgt0);
+ 			lnk = xbps_xasprintf("%s%s", xhp->rootdir, l);
+ 		}
+ 		xbps_set_cb_state(xhp, XBPS_STATE_ALTGROUP_LINK_ADDED, 0, NULL,
+@@ -128,10 +133,12 @@ create_symlinks(struct xbps_handle *xhp, xbps_array_t a, const char *grname)
+ 			xbps_dbg_printf(xhp, "failed to create alt symlink '%s'"
+ 			    "for group '%s': %s\n", lnk, grname,
+ 			    strerror(errno));
++			free(tgt);
+ 			free(lnk);
+ 			free(l);
+ 			return rv;
+ 		}
++		free(tgt);
+ 		free(lnk);
+ 		free(l);
+ 	}
+diff --git a/tests/xbps/xbps-alternatives/main.sh b/tests/xbps/xbps-alternatives/main.sh
+index 8d16314..463272c 100644
+--- tests/xbps/xbps-alternatives/main.sh
++++ tests/xbps/xbps-alternatives/main.sh
+@@ -35,9 +35,9 @@ register_one_relative_head() {
+ }
+ register_one_relative_body() {
+ 	mkdir -p repo pkg_A/usr/bin
+-	touch pkg_A/usr/bin/fileA pkg_A/usr/bin/fileB
++	touch pkg_A/usr/bin/fileA
+ 	cd repo
+-	xbps-create -A noarch -n A-1.1_1 -s "A pkg" --alternatives "file:../file:/usr/bin/fileA file2:file2:/usr/bin/fileB" ../pkg_A
++	xbps-create -A noarch -n A-1.1_1 -s "A pkg" --alternatives "file:file:/usr/bin/fileA" ../pkg_A
+ 	atf_check_equal $? 0
+ 	xbps-rindex -d -a $PWD/*.xbps
+ 	atf_check_equal $? 0
+@@ -47,17 +47,8 @@ register_one_relative_body() {
+ 	atf_check_equal $? 0
+ 	rv=1
+ 	if [ -e root/usr/bin/fileA ]; then
+-		lnk=$(readlink root/usr/file)
+-		if [ "$lnk" = "/usr/bin/fileA" ]; then
+-			rv=0
+-		fi
+-		echo "A lnk: $lnk"
+-	fi
+-	atf_check_equal $rv 0
+-	rv=1
+-	if [ -e root/usr/bin/fileB ]; then
+-		lnk=$(readlink root/usr/bin/file2)
+-		if [ "$lnk" = "/usr/bin/fileB" ]; then
++		lnk=$(readlink root/usr/bin/file)
++		if [ "$lnk" = "fileA" ]; then
+ 			rv=0
+ 		fi
+ 		echo "A lnk: $lnk"
+@@ -150,7 +141,7 @@ unregister_one_body() {
+ 	atf_check_equal $? 0
+ 	xbps-remove -r root -yvd A
+ 	rv=1
+-	if [ ! -L root/usr/bin/file -a ! -e root/usr/bin/fileA ]; then
++	if [ ! -e root/usr/bin/file -a ! -e root/usr/bin/fileA ]; then
+ 		rv=0
+ 	fi
+ 	atf_check_equal $rv 0
+@@ -175,7 +166,7 @@ unregister_one_relative_body() {
+ 	atf_check_equal $? 0
+ 	xbps-remove -r root -yvd A
+ 	rv=1
+-	if [ ! -L root/usr/bin/file -a ! -e root/usr/bin/fileA ]; then
++	if [ ! -e root/usr/bin/file -a ! -e root/usr/bin/fileA ]; then
+ 		rv=0
+ 	fi
+ 	atf_check_equal $rv 0
+@@ -211,7 +202,7 @@ unregister_multi_body() {
+ 	atf_check_equal $rv 0
+ 	xbps-remove -r root -yvd A
+ 	rv=1
+-	if [ ! -L root/usr/bin/file -a ! -e root/usr/bin/fileA ]; then
++	if [ ! -e root/usr/bin/file -a ! -e root/usr/bin/fileA ]; then
+ 		rv=0
+ 	fi
+ 	atf_check_equal $rv 0
+@@ -230,7 +221,7 @@ unregister_multi_body() {
+ 
+ 	xbps-remove -r root -yvd B
+ 	rv=1
+-	if [ ! -L root/usr/bin/file -a ! -e root/usr/bin/fileB ]; then
++	if [ ! -e root/usr/bin/file -a ! -e root/usr/bin/fileB ]; then
+ 		rv=0
+ 	fi
+ 	atf_check_equal $rv 0
+-- 
+2.6.2
+
