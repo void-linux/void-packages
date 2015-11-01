@@ -1,7 +1,7 @@
 # Template file for 'Ice'
 pkgname=Ice
 version=3.5.1
-revision=9
+revision=10
 build_wrksrc=cpp
 homepage="http://www.zeroc.com"
 # XXX: other language bindings
@@ -9,11 +9,13 @@ makedepends="zlib-devel bzip2-devel mcpp-devel db-devel expat-devel libressl-dev
 short_desc="The Internet Communications Engine (Ice)"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 license="GPL-2, ICE"
-distfiles="${homepage}/download/Ice/3.5/${pkgname}-${version}.tar.gz"
+distfiles="${homepage}/download/Ice/${version%.*}/${pkgname}-${version}.tar.gz"
 checksum=989e51194c6adadbd156da3288e37bad847b93b3b876502e83033b70493af392
 
-# http://build.voidlinux.eu/builders/armv7l-musl_builder/builds/2792/steps/shell_3/logs/stdio
-nocross=yes
+if [ "$CROSS_BUILD" ]; then
+	# Cross build requires the host's slice2cpp and slice2freeze
+	hostmakedepends+=" Ice"
+fi
 
 do_configure() {
 	sed -i -e "s|^#OPTIMIZE|OPTIMIZE|" config/Make.rules
@@ -21,6 +23,29 @@ do_configure() {
 	sed -i '/^embedded_runpath_prefix*/d' config/Make.rules
 	sed -i -e 's|x)/man/man1|x)/share/man/man1|' config/Make.rules
 	sed -i -e "s|test demo||" Makefile
+
+	# Simple fixes for musl libc instead of a proper patch
+	sed -i -e 's|__GNUC__|__GLIBC__|' src/IceUtil/Exception.cpp
+	sed -i -e 's|PTHREAD_MUTEX_RECURSIVE_NP|PTHREAD_MUTEX_RECURSIVE|' src/IceUtil/RecMutex.cpp
+	sed -i -e 's|sys/poll\.h|poll.h|' src/Ice/*.h
+
+	# Patch to find our $CXX and always use our $CXXFLAGS
+	sed -i config/Make.rules.Linux \
+		-e "s|= g++|= ${CXX}|" \
+		-e "s|ifeq (\$(CXX),g++)|ifeq (\$(CXX),${CXX})|" \
+		-e "/CXXARCHFLAGS\s+=/ s| -m.*|${CXXFLAGS}|" \
+		-e "s|\$(CXX) -shared|${CXX} -shared|" \
+		-e "s|-rdynamic|-rdynamic -Wl,-rpath,\$(libdir)|"
+	# Fix cross building
+	if [ "$CROSS_BUILD" ]; then
+		# Use host's slice2cpp and slice2freeze
+		sed -i config/Make.rules \
+			-e 's|$(SLICE2CPP) $(SLICE2CPPFLAGS)|LD_LIBRARY_PATH=/usr/lib /usr/bin/slice2cpp $(SLICE2CPPFLAGS)|'
+		find . -name Makefile -exec sed -i "{}" \
+			-e 's|^\(\s\)$(SLICE2FREEZE)|\1LD_LIBRARY_PATH=/usr/lib /usr/bin/slice2freeze|' \
+			-e '/SLICE2FREEZECMD\s=/ s|$(SLICE2FREEZE)|LD_LIBRARY_PATH=/usr/lib /usr/bin/slice2freeze|' \
+			\;
+	fi
 }
 
 do_build() {
@@ -29,11 +54,12 @@ do_build() {
 }
 
 do_install() {
-	if [ "$XBPS_MACHINE" = "x86_64" ]; then
-		vmkdir usr/lib
-		cd ${DESTDIR}/usr && ln -s lib lib64
-		cd ${wrksrc}/${build_wrksrc}
-	fi
+	case "$XBPS_MACHINE" in
+		x86_64*)
+			vmkdir usr/lib
+			ln -s lib ${DESTDIR}/usr/lib64
+			;;
+	esac
 	make prefix=${DESTDIR}/usr install
 	[ -h ${DESTDIR}/usr/lib64 ] && rm -f ${DESTDIR}/usr/lib64
 
