@@ -26,7 +26,7 @@ verify_cksum() {
 
 	cksum=$(get_cksum $curfile $dfcount)
 	msg_normal "$pkgver: verifying checksum for distfile '$curfile'... "
-	filesum=$(${XBPS_DIGEST_CMD} $distfile)
+	filesum=$(${XBPS_DIGEST_CMD} "$distfile")
 	if [ "$cksum" != "$filesum" ]; then
 		echo
 		msg_red "SHA256 mismatch for '$curfile:'\n$filesum\n"
@@ -106,6 +106,24 @@ hook() {
 	# Disable trap on ERR; the code is smart enough to report errors and abort.
 	trap - ERR
 
+	# Detect distfiles with obsolete checksum and purge them from the cache
+	for f in ${distfiles}; do
+		curfile=$(basename "${f#*>}")
+		distfile="$srcdir/$curfile"
+		if [ -f "$distfile" ]; then
+			filesum=$(${XBPS_DIGEST_CMD} "$distfile")
+			cksum=$(get_cksum $curfile $dfcount)
+			if [ "$cksum" != "$filesum" ]; then
+				inode=$(stat "$distfile" --printf "%i")
+				msg_warn "$pkgver: wrong checksum found for ${curfile} - purging (inode: ${inode})\n"
+				find ${XBPS_SRCDISTDIR} -inum ${inode} -delete -print
+			fi
+		fi
+		dfcount=$(($dfcount + 1))
+	done
+
+	# Download missing distfiles and verify their checksums
+	dfcount=0
 	for f in ${distfiles}; do
 		curfile=$(basename "${f#*>}")
 		distfile="$srcdir/$curfile"
