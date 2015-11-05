@@ -1,7 +1,8 @@
 # Template file for 'kodi'
 pkgname=kodi
 version=15.2
-revision=1
+revision=2
+patch_args="-Np1"
 _codename="Isengard"
 wrksrc="xbmc-${version}-${_codename}"
 short_desc="A software media player and entertainment hub for digital media"
@@ -13,15 +14,12 @@ checksum=dd8aeb942e6de5d1488e243e1346cff3f6597e21b5131a3ba72ff5cc82037110
 
 lib32disabled=yes
 broken_as_needed=yes
-only_for_archs="i686 x86_64"
-
-provides="xbmc-${version}_${revision}"
-replaces="xbmc>=0"
+only_for_archs="i686 i686-musl x86_64 x86_64-musl"
 
 # XXX add support for afp.
 hostmakedepends="
  automake libtool pkg-config gperf cmake zip unzip nasm yasm python-devel
- swig openjdk-jre gettext-devel libltdl-devel curl"
+ gettext-devel libltdl-devel curl"
 makedepends="
  libudev-devel pcre-devel expat-devel libpng-devel libjpeg-turbo-devel
  libXrandr-devel avahi-libs-devel pulseaudio-devel samba-devel tiff-devel
@@ -39,15 +37,28 @@ depends="libbluray libmad libvorbis libcurl libflac libmodplug libass libmpeg2
  lame librtmp libnfs>=1.9.7 libplist>=1.12"
 depends+=" glxinfo hicolor-icon-theme desktop-file-utils xdpyinfo"
 
+# musl builds need generated addons (no java).
+case "$XBPS_TARGET_MACHINE" in
+	*-musl) _kodi_nojava=yes;;
+	*) hostmakedepends+=" swig openjdk-jre";;
+esac
+
 # XXX http://build.voidlinux.eu/builders/x86_64_builder/builds/10520/steps/shell_3/logs/stdio
 CXXFLAGS="-fpermissive"
 
 pre_configure() {
-	. /etc/profile.d/10_openjdk.sh
-	./bootstrap
+	# Copy generated files to avoid requiring java.
+	if [ -n "${_kodi_nojava}" ]; then
+		$XBPS_FETCH_CMD http://repo.voidlinux.eu/distfiles/kodi-${version}-generated-addons.tar.xz
+		tar xf kodi-${version}-generated-addons.tar.xz -C ${wrksrc}
+		BOOTSTRAP_STANDALONE=1 make JAVA=/bin/true SWIG=/bin/true -f codegenerator.mk
+	else
+		. /etc/profile.d/10_openjdk.sh
+		BOOTSTRAP_STANDALONE=1 make -f codegenerator.mk
+	fi
+	BOOTSTRAP_STANDALONE=1 make -f bootstrap.mk
 }
 do_configure() {
-	. /etc/profile.d/10_openjdk.sh
 	./configure ${configure_args} \
 		--disable-debug --enable-optimizations --enable-gl \
 		--enable-sdl --enable-vdpau --enable-vaapi --enable-joystick \
@@ -57,7 +68,9 @@ do_configure() {
 		--enable-airplay --enable-ffmpeg-libvorbis --enable-udev \
 		--enable-avahi --enable-libbluray \
 		--enable-texturepacker --enable-external-libraries \
-		--with-ffmpeg=shared
+		--with-ffmpeg=shared \
+		ac_cv_path_JAVA_EXE=/bin/true \
+		ac_cv_path_SWIG_EXE=/bin/true
 }
 do_build() {
 	make ${makejobs}
