@@ -1,7 +1,8 @@
 # Template file for 'kodi-rpi'
 pkgname=kodi-rpi
 version=15.2
-revision=1
+revision=2
+patch_args="-Np1"
 _codename="Isengard"
 wrksrc="xbmc-${version}-${_codename}"
 short_desc="A software media player and entertainment hub for digital media (RPi)"
@@ -11,12 +12,12 @@ license="GPL-2"
 distfiles="https://github.com/xbmc/xbmc/archive/${version}-${_codename}.tar.gz"
 checksum=dd8aeb942e6de5d1488e243e1346cff3f6597e21b5131a3ba72ff5cc82037110
 
-only_for_archs="armv6l armv7l"
+only_for_archs="armv6l armv6l-musl armv7l armv7l-musl"
 
 hostmakedepends="
  automake libtool pkg-config gperf cmake zip unzip nasm yasm
- swig gettext-devel libltdl-devel python-devel libmysqlclient-devel
- SDL2_image-devel lzo-devel openjdk-jre"
+ gettext-devel libltdl-devel python-devel libmysqlclient-devel
+ SDL2_image-devel lzo-devel"
 makedepends="
  libudev-devel pcre-devel expat-devel libpng-devel libjpeg-turbo-devel
  avahi-libs-devel alsa-lib-devel samba-devel tiff-devel libmysqlclient-devel
@@ -32,8 +33,13 @@ depends="libmad libogg libcurl libflac libmodplug libass libmpeg2 lame
  librtmp libnfs>=1.9.7 libplist>=1.12 libssh"
 depends+=" hicolor-icon-theme desktop-file-utils"
 
-provides="kodi-${version}_${revision} xbmc-${version}_${revision}"
-replaces="xbmc>=0 kodi>=0"
+# musl builds need generated addons (no java).
+case "$XBPS_MACHINE" in
+	*-musl) _kodi_nojava=yes;;
+	*) hostmakedepends+=" swig openjdk-jre";;
+esac
+
+provides="kodi-${version}_${revision}"
 
 # Create xbmc system user to launch xbmc-standalone.
 system_accounts="xbmc"
@@ -41,22 +47,27 @@ xbmc_homedir="/var/lib/xbmc"
 xbmc_groups="audio,input,video"
 
 pre_configure() {
-	. /etc/profile.d/10_openjdk.sh
-	./bootstrap
-
+	# Copy generated files to avoid requiring java.
+	if [ -n "${_kodi_nojava}" ]; then
+		$XBPS_FETCH_CMD http://repo.voidlinux.eu/distfiles/kodi-${version}-generated-addons.tar.xz
+		tar xf kodi-${version}-generated-addons.tar.xz -C ${wrksrc}
+		BOOTSTRAP_STANDALONE=1 make JAVA=/bin/true SWIG=/bin/true -f codegenerator.mk
+	else
+		. /etc/profile.d/10_openjdk.sh
+		BOOTSTRAP_STANDALONE=1 make -f codegenerator.mk
+	fi
+	BOOTSTRAP_STANDALONE=1 make -f bootstrap.mk
 	# Use cross prefix for python include/libdir.
 	sed -e "s,-L\$ac_python_libdir,-L${XBPS_CROSS_BASE}/usr/lib,g" -i configure
 	sed -e "s,PYTHON_CPPFLAGS=\$python_path,PYTHON_CPPFLAGS=-I${XBPS_CROSS_BASE}/usr/include/python2.7,g" -i configure
 }
 
 do_configure() {
-	. /etc/profile.d/10_openjdk.sh
 	CFLAGS+=" -I${XBPS_CROSS_BASE}/opt/vc/include/ -I${XBPS_CROSS_BASE}/opt/vc/include/IL"
 	CFLAGS+=" -I${XBPS_CROSS_BASE}/opt/vc/include/interface/vcos/pthreads"
 	CFLAGS+=" -I${XBPS_CROSS_BASE}/opt/vc/include/interface/vmcs_host/linux"
-	# XXX http://build.voidlinux.eu/builders/x86_64_builder/builds/10520/steps/shell_3/logs/stdio
 	CXXFLAGS="$CFLAGS -fpermissive"
-	LDFLAGS+=" -L${XBPS_CROSS_BASE}/opt/vc/lib"
+	LDFLAGS+=" -L${XBPS_CROSS_BASE}/opt/vc/lib -Wl,-R/opt/vc/lib"
 
 	export CFLAGS CXXFLAGS LDFLAGS
 
@@ -82,7 +93,10 @@ do_configure() {
 		--enable-libcec \
 		--enable-player=omxplayer \
 		--enable-external-libraries \
-		--with-ffmpeg=shared
+		--with-ffmpeg=shared \
+		ac_cv_path_JAVA_EXE=/bin/true \
+		ac_cv_path_SWIG_EXE=/bin/true
+
 
 	sed -e "s,\$(DVDREAD_CFLAGS),,g;s,AR=ar,AR=$AR,g;s,LD=ld,LD=$LD,g;s,RANLIB=ranlib,RANLIB=$RANLIB,g" -i lib/libdvd/libdvd{nav,read}/Makefile
 }
