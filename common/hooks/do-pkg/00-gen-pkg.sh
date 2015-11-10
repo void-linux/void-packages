@@ -108,7 +108,7 @@ genpkg() {
 		${_shrequires:+--shlib-requires "${_shrequires}"} \
 		${_alternatives:+--alternatives "${_alternatives}"} \
 		${_preserve:+--preserve} \
-		${_tags:+--tags "${tags}"} \
+		${tags:+--tags "${tags}"} \
 		--architecture ${arch} \
 		--homepage "${homepage}" \
 		--license "${license}" \
