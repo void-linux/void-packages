@@ -868,7 +868,7 @@ colon, i.e `system_groups="mygroup:78"` or `system_groups="foo blah:8000"`.
 
 - `system_accounts` This specifies the names of the new **system users/groups** to be created,
 separated by blanks, i.e `system_accounts="foo blah:22"`. Optionally the **uid** and **gid**
-can be specified by delimiting it with a color, i.e `system_accounts="foo:48"`.
+can be specified by delimiting it with a colon, i.e `system_accounts="foo:48"`.
 Additional variables for the **system accounts** can be specified to change its behavior:
 
 	- `<account>_homedir` the home directory for the user. If unset defaults to `/var/empty`.
