@@ -32,16 +32,24 @@ hook() {
 		fi
 	done
 
+	# Forbid empty packages unless build_style=meta
+	if [ "$build_style" != "meta" ]; then
+		if [ "$(find $PKGDESTDIR/* -maxdepth 1 -type d 2>/dev/null)" = "" ]; then
+			msg_red "${pkgver}: PKGDESTDIR is empty and build_style != meta\n"
+			error=1
+		fi
+	fi
+
 	if [ $error -gt 0 ]; then
 		msg_error "${pkgver}: cannot continue with installation!\n"
 	fi
 
 	# Check for missing shlibs and SONAME bumps.
-	if [ ! -f "${PKGDESTDIR}/shlib-provides" ]; then
+	if [ ! -s "${PKGDESTDIR}/shlib-provides" ]; then
 		return 0
 	fi
 
-	for filename in `cat ${PKGDESTDIR}/shlib-provides`; do
+	for filename in $(cat ${PKGDESTDIR}/shlib-provides); do
 		rev=${filename#*.so.}
 		libname=${filename%.so*}
 		_shlib=$(echo "$libname"|sed -E 's|\+|\\+|g')
