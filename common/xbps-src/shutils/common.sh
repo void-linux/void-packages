@@ -449,6 +449,7 @@ setup_pkg() {
 
     if [ -n "$restricted" -a -z "$XBPS_ALLOW_RESTRICTED" ]; then
         msg_red "$pkgver: does not allow redistribution of sources/binaries (restricted license).\n"
+        msg_red "If you really need this software, run 'echo XBPS_ALLOW_RESTRICTED=yes >> etc/conf'\n"
         exit 2
     fi
 
