@@ -30,7 +30,7 @@ verify_cksum() {
 	if [ "$cksum" != "$filesum" ]; then
 		echo
 		msg_red "SHA256 mismatch for '$curfile:'\n$filesum\n"
-		errors=$(($errors + 1))
+		errors=$((errors + 1))
 	else
 		if [ ! -f "$XBPS_SRCDISTDIR/by_sha256/${cksum}_${curfile}" ]; then
 			mkdir -p "$XBPS_SRCDISTDIR/by_sha256"
@@ -94,7 +94,7 @@ try_mirrors() {
 
 hook() {
 	local srcdir="$XBPS_SRCDISTDIR/$pkgname-$version"
-	local dfcount=0 errors=0
+	local dfcount=0 dfgood=0 errors=0
 
 	if [ ! -d "$srcdir" ]; then
 		mkdir -p -m775 "$srcdir"
@@ -113,14 +113,19 @@ hook() {
 		if [ -f "$distfile" ]; then
 			filesum=$(${XBPS_DIGEST_CMD} "$distfile")
 			cksum=$(get_cksum $curfile $dfcount)
-			if [ "$cksum" != "$filesum" ]; then
+			if [ "$cksum" = "$filesum" ]; then
+				dfgood=$((dfgood + 1))
+			else
 				inode=$(stat "$distfile" --printf "%i")
 				msg_warn "$pkgver: wrong checksum found for ${curfile} - purging (inode: ${inode})\n"
 				find ${XBPS_SRCDISTDIR} -inum ${inode} -delete -print
 			fi
 		fi
-		dfcount=$(($dfcount + 1))
+		dfcount=$((dfcount + 1))
 	done
+
+	# We're done, if all distfiles were found and had good checksums
+	[ $dfcount -eq $dfgood ] && return
 
 	# Download missing distfiles and verify their checksums
 	dfcount=0
@@ -153,7 +158,7 @@ hook() {
 		# distfile downloaded, verify sha256 hash.
 		flock -n ${distfile}.part rm -f ${distfile}.part
 		verify_cksum $curfile $distfile $dfcount
-		dfcount=$(($dfcount + 1))
+		dfcount=$((dfcount + 1))
 	done
 
 	if [ $errors -gt 0 ]; then
