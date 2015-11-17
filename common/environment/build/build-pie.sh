@@ -1,1 +1,0 @@
-../configure/build-pie.sh
