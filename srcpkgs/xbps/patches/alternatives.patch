@@ -93,3 +93,135 @@ index e636894..facd290 100644
  			rv=0
  		fi
  		echo "A lnk: $lnk"
+From 93b50bc4dca1bb53d26cb0689d27e3c57f656e46 Mon Sep 17 00:00:00 2001
+From: Juan RP <xtraeme@voidlinux.eu>
+Date: Tue, 17 Nov 2015 16:32:12 +0100
+Subject: [PATCH] alternatives: preserve order while updating pkgs (thanks
+ chris2/duncaen).
+
+---
+ NEWS                                 |  2 ++
+ lib/package_alternatives.c           |  8 ++++-
+ lib/package_remove.c                 |  3 ++
+ tests/xbps/xbps-alternatives/main.sh | 57 ++++++++++++++++++++++++++++++++++++
+ 4 files changed, 69 insertions(+), 1 deletion(-)
+
+--- lib/package_alternatives.c
++++ lib/package_alternatives.c
+@@ -309,6 +309,7 @@ xbps_alternatives_unregister(struct xbps_handle *xhp, xbps_dictionary_t pkgd)
+ 	xbps_dictionary_t alternatives, pkg_alternatives;
+ 	const char *pkgver;
+ 	char *pkgname;
++	bool update = false;
+ 	int rv = 0;
+ 
+ 	assert(xhp);
+@@ -325,6 +326,8 @@ xbps_alternatives_unregister(struct xbps_handle *xhp, xbps_dictionary_t pkgd)
+ 	if ((pkgname = xbps_pkg_name(pkgver)) == NULL)
+ 		return EINVAL;
+ 
++	xbps_dictionary_get_bool(pkgd, "alternatives-update", &update);
++
+ 	allkeys = xbps_dictionary_all_keys(pkg_alternatives);
+ 	for (unsigned int i = 0; i < xbps_array_count(allkeys); i++) {
+ 		xbps_array_t array;
+@@ -347,9 +350,12 @@ xbps_alternatives_unregister(struct xbps_handle *xhp, xbps_dictionary_t pkgd)
+ 			if (rv != 0)
+ 				break;
+ 		}
++
+ 		xbps_set_cb_state(xhp, XBPS_STATE_ALTGROUP_REMOVED, 0, NULL,
+ 		    "%s: unregistered '%s' alternatives group", pkgver, keyname);
+-		xbps_remove_string_from_array(array, pkgname);
++		if (!update)
++			xbps_remove_string_from_array(array, pkgname);
++
+ 		if (xbps_array_count(array) == 0) {
+ 			xbps_dictionary_remove(alternatives, keyname);
+ 		} else {
+--- lib/package_remove.c
++++ lib/package_remove.c
+@@ -319,6 +319,9 @@ xbps_remove_pkg(struct xbps_handle *xhp, const char *pkgver, bool update)
+ 		goto out;
+ 
+ 	/* unregister alternatives */
++	if (update)
++		xbps_dictionary_set_bool(pkgd, "alternatives-update", true);
++
+ 	if ((rv = xbps_alternatives_unregister(xhp, pkgd)) != 0)
+ 		goto out;
+ 
+--- tests/xbps/xbps-alternatives/main.sh
++++ tests/xbps/xbps-alternatives/main.sh
+@@ -373,6 +373,62 @@ set_pkg_group_body() {
+ 
+ }
+ 
++atf_test_case update_pkgs
++
++update_pkgs_head() {
++	atf_set "descr" "xbps-alternatives: preserve order in updates"
++}
++update_pkgs_body() {
++	mkdir -p repo pkg_A/usr/bin pkg_B/usr/bin
++	touch pkg_A/usr/bin/A1 pkg_B/usr/bin/B1
++	cd repo
++	xbps-create -A noarch -n A-1.1_1 -s "A pkg" --alternatives "1:1:/usr/bin/A1" ../pkg_A
++	atf_check_equal $? 0
++	xbps-create -A noarch -n B-1.1_1 -s "B pkg" --alternatives "1:1:/usr/bin/B1" ../pkg_B
++	atf_check_equal $? 0
++	xbps-rindex -d -a $PWD/*.xbps
++	atf_check_equal $? 0
++	cd ..
++
++	xbps-install -r root --repository=repo -ydv A B
++	atf_check_equal $? 0
++
++	rv=1
++	if [ -e root/usr/bin/A1 ]; then
++		lnk=$(readlink -f root/usr/bin/1)
++		if [ "$lnk" = "$PWD/root/usr/bin/A1" ]; then
++			rv=0
++		fi
++		echo "lnk: $lnk"
++	fi
++	atf_check_equal $rv 0
++
++	cd repo
++	xbps-create -A noarch -n A-1.2_1 -s "A pkg" --alternatives "1:1:/usr/bin/A1" ../pkg_A
++	atf_check_equal $? 0
++	xbps-create -A noarch -n B-1.2_1 -s "B pkg" --alternatives "1:1:/usr/bin/B1" ../pkg_B
++	atf_check_equal $? 0
++	xbps-rindex -d -a $PWD/*.xbps
++	atf_check_equal $? 0
++	cd ..
++
++	xbps-alternatives -r root -s B
++	atf_check_equal $? 0
++
++	xbps-install -r root --repository=repo -yuvd
++	atf_check_equal $? 0
++
++	rv=1
++	if [ -e root/usr/bin/B1 ]; then
++		lnk=$(readlink -f root/usr/bin/1)
++		if [ "$lnk" = "$PWD/root/usr/bin/B1" ]; then
++			rv=0
++		fi
++		echo "lnk: $lnk"
++	fi
++	atf_check_equal $rv 0
++}
++
+ atf_init_test_cases() {
+ 	atf_add_test_case register_one
+ 	atf_add_test_case register_one_dangling
+@@ -384,4 +440,5 @@ atf_init_test_cases() {
+ 	atf_add_test_case unregister_multi
+ 	atf_add_test_case set_pkg
+ 	atf_add_test_case set_pkg_group
++	atf_add_test_case update_pkgs
+ }
+-- 
+2.6.3
+
