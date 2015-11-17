@@ -1,16 +1,19 @@
-# Template build file for 'sane'.
+# Template file for 'sane'
 pkgname=sane
-version=1.0.24
-revision=14
+version=1.0.25
+revision=1
 wrksrc="sane-backends-${version}"
+build_pie=yes
 build_style=gnu-configure
+build_options="snmp"
 configure_args="--disable-locking --enable-avahi --disable-latex --enable-ipv6
  --with-docdir=/usr/share/doc/sane --enable-libusb_1_0 --enable-pthread
- --sbindir=/usr/bin"
+ $(vopt_with snmp)"
 hostmakedepends="pkg-config"
 makedepends="avahi-libs-devel libjpeg-turbo-devel tiff-devel libgphoto2-devel
- v4l-utils-devel libusb-devel net-snmp-devel libressl-devel cups-devel"
-depends="net-snmp sane-udev-rules"
+ v4l-utils-devel libusb-devel libressl-devel $(vopt_if snmp net-snmp-devel)"
+depends="$(vopt_if snmp net-snmp)"
+replaces="sane-udev-rules>=0"
 conf_files="
 	/etc/sane.d/abaton.conf
 	/etc/sane.d/agfafocus.conf
@@ -26,15 +29,16 @@ conf_files="
 	/etc/sane.d/coolscan.conf
 	/etc/sane.d/coolscan2.conf
 	/etc/sane.d/coolscan3.conf
+	/etc/sane.d/dc25.conf
 	/etc/sane.d/dc210.conf
 	/etc/sane.d/dc240.conf
-	/etc/sane.d/dc25.conf
 	/etc/sane.d/dell1600n_net.conf
 	/etc/sane.d/dll.conf
 	/etc/sane.d/dmc.conf
 	/etc/sane.d/epjitsu.conf
 	/etc/sane.d/epson.conf
 	/etc/sane.d/epson2.conf
+	/etc/sane.d/epsonds.conf
 	/etc/sane.d/fujitsu.conf
 	/etc/sane.d/genesys.conf
 	/etc/sane.d/gphoto2.conf
@@ -60,6 +64,7 @@ conf_files="
 	/etc/sane.d/net.conf
 	/etc/sane.d/p5.conf
 	/etc/sane.d/pie.conf
+	/etc/sane.d/pieusb.conf
 	/etc/sane.d/pixma.conf
 	/etc/sane.d/plustek.conf
 	/etc/sane.d/plustek_pp.conf
@@ -90,13 +95,16 @@ maintainer="Juan RP <xtraeme@voidlinux.eu>"
 homepage="http://www.sane-project.org/"
 license="GPL-2"
 distfiles="http://ftp.lfs-matrix.net/pub/blfs/conglomeration/sane-backends/sane-backends-${version}.tar.gz"
-checksum=27c7085a54f1505d8b551e6f1e69d30e1ee57328b18429bb2225dabf4c45462d
+checksum=a4d7ba8d62b2dea702ce76be85699940992daf3f44823ddc128812da33dc6e2c
 
-pre_configure() {
-	for f in $(find $wrksrc -type f -name *.[ch]); do
-		sed -e 's,u_char ,unsigned char ,g' -e 's,u_long,unsigned long ,g' -i $f
-	done
-}
+case "$XBPS_TARGET_MACHINE" in
+	# musl provides ioperm but not inb/outb for any arch expect
+	# i386/x32/x86_64 (using bits/io.h included in sys/io.h).
+	# Then, qcam backend is disabled for arm arch.
+	armv[67]l-musl) ;;
+	*) conf_files+=" /etc/sane.d/qcam.conf";;
+esac
+
 post_install() {
 	# fix hp officejets
 	echo "#hpaio" >> ${DESTDIR}/etc/sane.d/dll.conf
@@ -104,34 +112,22 @@ post_install() {
 	vinstall ${FILESDIR}/saned.xinetd 644 etc/xinetd.d saned.conf
 	vinstall ${wrksrc}/tools/sane-backends.pc 644 usr/lib/pkgconfig
 
-	if [ -z "$CROSS_BUILD" ]; then
-		# install udev files
-		vinstall tools/udev/libsane.rules 644 usr/lib/udev/rules.d 49-sane.rules
-		# fix udev rules
-		sed -i 's|NAME="%k", ||g' ${DESTDIR}/usr/lib/udev/rules.d/49-sane.rules
-	fi
+	# generate udev file
+	cd tools
+	mkdir -p udev
+	make udev/libsane.rules
+	# install udev file
+	vinstall udev/libsane.rules 644 usr/lib/udev/rules.d 49-sane.rules
+	# fix udev rules
+	sed -i 's|NAME="%k", ||g' ${DESTDIR}/usr/lib/udev/rules.d/49-sane.rules
 }
 
 libsane_package() {
 	short_desc+=" - runtime shared library"
 	pkg_install() {
-		vmove "usr/lib/libsane.so.*"
+		vmove usr/lib/libsane.so.*
 	}
 }
-
-if [ -z "$CROSS_BUILD" ]; then
-
-sane-udev-rules_package() {
-	short_desc+=" - udev rules"
-	noarch=yes
-	replaces="sane<1.0.24_5"
-	pkg_install() {
-		vmove usr/lib/udev/rules.d
-	}
-}
-
-fi
-
 sane-devel_package() {
 	depends="libsane>=${version}_${revision}"
 	short_desc+=" - development files"
