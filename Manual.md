@@ -449,10 +449,6 @@ Example `skip_extraction="foo-${version}.tar.gz"`.
 
 - `nodebug` If enabled -dbg packages won't be generated even if `XBPS_DEBUG_PKGS` is set.
 
-- `force_debug_pkgs` If enabled binary packages with debugging symbols will be generated
-even if `XBPS_DEBUG_PKGS` is disabled in `void-packages/etc/conf` or in the
-`command line arguments`.
-
 - `conf_files` A list of configuration files the binary package owns; this expects full
 paths, and multiple entries can be separated by blanks, i.e:
 `conf_files="/etc/foo.conf /etc/foo2.conf"`.
