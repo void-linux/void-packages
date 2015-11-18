@@ -50,7 +50,7 @@ genpkg() {
 	local _replaces="$(echo $replaces)"
 	local _reverts="$(echo $reverts)"
 	local _mutable_files="$(echo $mutable_files)"
-	local _conf_files="$(expand_destdir $conf_files)"
+	local _conf_files="$(expand_destdir "$conf_files")"
 	local _alternatives="$(echo $alternatives)"
 	local _tags="$(echo $tags)"
 

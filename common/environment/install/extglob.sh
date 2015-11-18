@@ -1,15 +1,18 @@
 # This provides the extglob function to expand wildcards in the destdir
 
 expand_destdir() {
-	local glob_list= result= glob= file=
+	local result= glob= file=
 
-	for glob; do
-		glob_list+=" $DESTDIR/$glob"
-	done
-	shopt -s extglob
-	for file in $glob_list; do
-		result+=" ${file#$DESTDIR/}"
-	done
-	shopt -u extglob
-	echo $result
+	(
+		set -f
+		for glob in $@; do
+			files=$(echo "${PKGDESTDIR}/${glob}")
+			set +f
+			for file in $files; do
+				result+="${blank}${file#$PKGDESTDIR/}"
+				blank=" "
+			done
+		done
+		echo "$result"
+	)
 }
