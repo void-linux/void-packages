@@ -1,5 +1,7 @@
 # This hook checks for common issues related to void.
 
+source ${XBPS_COMMONDIR}/environment/pkg/extglob.sh
+
 hook() {
 	local error=0 filename= rev= libname= conflictPkg= conflictFile=
 	local conflictRev= ignore= found= mapshlibs=$XBPS_COMMONDIR/shlibs
@@ -25,8 +27,8 @@ hook() {
 	done
 
 	# Check that configuration files really exist.
-	for f in ${conf_files}; do
-		if [ ! -f ${PKGDESTDIR}/${f} ]; then
+	for f in $(expand_destdir ${conf_files}); do
+		if [ ! -f "${PKGDESTDIR}/${f}" ]; then
 			msg_red "${pkgver}: '$f' configuration file not in PKGDESTDIR!\n"
 			error=1
 		fi

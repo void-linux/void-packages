@@ -1,17 +1,6 @@
 # This hook generates a XBPS binary package from an installed package in destdir.
 
-expand_dstdir() {
-	local glob_list= result= glob= file=
-
-	for glob; do
-		glob_list+=" $DESTDIR/$glob"
-	done
-	shopt -s extglob
-	for file in $glob_list; do
-		result+=" ${file#$DESTDIR/}"
-	done
-	shopt -u extglob
-}
+source ${XBPS_COMMONDIR}/environment/pkg/extglob.sh
 
 genpkg() {
 	local pkgdir="$1" arch="$2" desc="$3" pkgver="$4" binpkg="$5"
@@ -63,7 +52,7 @@ genpkg() {
 	local _replaces="$(echo $replaces)"
 	local _reverts="$(echo $reverts)"
 	local _mutable_files="$(echo $mutable_files)"
-	local _conf_files="$(expand_dstdir $conf_files)"
+	local _conf_files="$(expand_destdir $conf_files)"
 	local _alternatives="$(echo $alternatives)"
 	local _tags="$(echo $tags)"
 
