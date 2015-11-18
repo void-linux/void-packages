@@ -1,7 +1,5 @@
 # This hook generates a XBPS binary package from an installed package in destdir.
 
-source ${XBPS_COMMONDIR}/environment/pkg/extglob.sh
-
 genpkg() {
 	local pkgdir="$1" arch="$2" desc="$3" pkgver="$4" binpkg="$5"
 	local _preserve _deps _shprovides _shrequires _gitrevs _provides _conflicts

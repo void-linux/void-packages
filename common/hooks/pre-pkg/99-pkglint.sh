@@ -1,7 +1,5 @@
 # This hook checks for common issues related to void.
 
-source ${XBPS_COMMONDIR}/environment/pkg/extglob.sh
-
 hook() {
 	local error=0 filename= rev= libname= conflictPkg= conflictFile=
 	local conflictRev= ignore= found= mapshlibs=$XBPS_COMMONDIR/shlibs
