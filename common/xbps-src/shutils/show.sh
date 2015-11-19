@@ -86,6 +86,7 @@ show_pkg_build_deps() {
         if [ -z "${_pkgname}" ]; then
             _pkgname="$f"
         fi
+        _pkgname=${_pkgname/-32bit}
         _srcpkg=$(basename $(readlink -f ${XBPS_SRCPKGDIR}/${_pkgname}))
         echo "${_srcpkg}" >> $result
     done
