@@ -3,6 +3,7 @@ if [ "$CROSS_BUILD" ]; then
 	hostmakedepends+=" go-cross-linux"
 fi
 nostrip=yes
+nopie=yes
 
 case "$XBPS_TARGET_MACHINE" in
 	armv6*) export GOARCH=arm; export GOARM=6;;
