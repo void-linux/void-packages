@@ -30,9 +30,7 @@ genpkg() {
 	fi
 	cd $pkgdir
 
-	if [ -n "$preserve" ]; then
-		_preserve="-p"
-	fi
+	_preserve=${preserve:+-p}
 	if [ -s ${PKGDESTDIR}/rdeps ]; then
 		_deps="$(cat ${PKGDESTDIR}/rdeps)"
 	fi
@@ -46,48 +44,15 @@ genpkg() {
 		_gitrevs="$(cat ${XBPS_STATEDIR}/gitrev)"
 	fi
 
-	if [ -n "$provides" ]; then
-		local _provides=
-		for f in ${provides}; do
-			_provides="${_provides} ${f}"
-		done
-	fi
-	if [ -n "$conflicts" ]; then
-		local _conflicts=
-		for f in ${conflicts}; do
-			_conflicts="${_conflicts} ${f}"
-		done
-	fi
-	if [ -n "$replaces" ]; then
-		local _replaces=
-		for f in ${replaces}; do
-			_replaces="${_replaces} ${f}"
-		done
-	fi
-	if [ -n "$reverts" ]; then
-		local _reverts=
-		for f in ${reverts}; do
-			_reverts="${_reverts} ${f}"
-		done
-	fi
-	if [ -n "$mutable_files" ]; then
-		local _mutable_files=
-		for f in ${mutable_files}; do
-			_mutable_files="${_mutable_files} ${f}"
-		done
-	fi
-	if [ -n "$conf_files" ]; then
-		local _conf_files=
-		for f in ${conf_files}; do
-			_conf_files="${_conf_files} ${f}"
-		done
-	fi
-	if [ -n "$alternatives" ]; then
-		local _alternatives=
-		for f in ${alternatives}; do
-			_alternatives="${_alternatives} ${f}"
-		done
-	fi
+	# Stripping whitespaces
+	local _provides="$(echo $provides)"
+	local _conflicts="$(echo $conflicts)"
+	local _replaces="$(echo $replaces)"
+	local _reverts="$(echo $reverts)"
+	local _mutable_files="$(echo $mutable_files)"
+	local _conf_files="$(expand_destdir "$conf_files")"
+	local _alternatives="$(echo $alternatives)"
+	local _tags="$(echo $tags)"
 
 	msg_normal "Creating $binpkg for repository $pkgdir ...\n"
 

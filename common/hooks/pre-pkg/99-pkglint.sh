@@ -25,8 +25,8 @@ hook() {
 	done
 
 	# Check that configuration files really exist.
-	for f in ${conf_files}; do
-		if [ ! -f ${PKGDESTDIR}/${f} ]; then
+	for f in $(expand_destdir "${conf_files}"); do
+		if [ ! -f "${PKGDESTDIR}/${f}" ]; then
 			msg_red "${pkgver}: '$f' configuration file not in PKGDESTDIR!\n"
 			error=1
 		fi
