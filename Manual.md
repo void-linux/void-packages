@@ -450,8 +450,8 @@ Example `skip_extraction="foo-${version}.tar.gz"`.
 - `nodebug` If enabled -dbg packages won't be generated even if `XBPS_DEBUG_PKGS` is set.
 
 - `conf_files` A list of configuration files the binary package owns; this expects full
-paths, and multiple entries can be separated by blanks, i.e:
-`conf_files="/etc/foo.conf /etc/foo2.conf"`.
+paths, wildcards will be extended, and multiple entries can be separated by blanks i.e:
+`conf_files="/etc/foo.conf /etc/foo2.conf /etc/foo/*.conf"`.
 
 - `noarch` If set, the binary package is not architecture specific and can be shared
 by all supported architectures.
