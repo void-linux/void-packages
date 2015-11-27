@@ -4,7 +4,7 @@ CXXFLAGS="-fstack-protector-strong -D_FORTIFY_SOURCE=2 $CXXFLAGS"
 # Enable as-needed and relro by default.
 LDFLAGS="-Wl,--as-needed -Wl,-z,relro $LDFLAGS"
 
-if [ -z "$nopie" ]; then
+if [ -z "$nopie" ] && [ "$XBPS_TARGET_ARCH" != mipsel-musl ]; then
 	_GCCSPECSDIR=${XBPS_COMMONDIR}/environment/configure/gccspecs
 	CFLAGS="-specs=${_GCCSPECSDIR}/hardened-cc1 $CFLAGS"
 	CXXFLAGS="-specs=${_GCCSPECSDIR}/hardened-cc1 $CXXFLAGS"
