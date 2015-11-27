@@ -1,0 +1,230 @@
+--- ./third_party/lss/linux_syscall_support.h.orig
++++ ./third_party/lss/linux_syscall_support.h
+@@ -1127,6 +1127,12 @@
+ #ifndef __NR_fallocate
+ #define __NR_fallocate          285
+ #endif
++
++#undef __NR_pread
++#define __NR_pread __NR_pread64
++#undef __NR_pwrite
++#define __NR_pwrite __NR_pwrite64
++
+ /* End of x86-64 definitions                                                 */
+ #elif defined(__mips__)
+ #if _MIPS_SIM == _MIPS_SIM_ABI32
+--- ./breakpad/src/client/linux/dump_writer_common/ucontext_reader.cc.orig
++++ ./breakpad/src/client/linux/dump_writer_common/ucontext_reader.cc
+@@ -49,7 +49,7 @@
+ }
+ 
+ void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext *uc,
+-                                    const struct _libc_fpstate* fp) {
++                                    const struct _fpstate* fp) {
+   const greg_t* regs = uc->uc_mcontext.gregs;
+ 
+   out->context_flags = MD_CONTEXT_X86_FULL |
+@@ -97,7 +97,7 @@
+ }
+ 
+ void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext *uc,
+-                                    const struct _libc_fpstate* fpregs) {
++                                    const struct _fpstate* fpregs) {
+   const greg_t* regs = uc->uc_mcontext.gregs;
+ 
+   out->context_flags = MD_CONTEXT_AMD64_FULL;
+--- ./breakpad/src/client/linux/dump_writer_common/ucontext_reader.h.orig
++++ ./breakpad/src/client/linux/dump_writer_common/ucontext_reader.h
+@@ -50,7 +50,7 @@
+   //   info: the collection of register structures.
+ #if defined(__i386__) || defined(__x86_64)
+   static void FillCPUContext(RawContextCPU *out, const ucontext *uc,
+-                             const struct _libc_fpstate* fp);
++                             const struct _fpstate* fp);
+ #elif defined(__aarch64__)
+   static void FillCPUContext(RawContextCPU *out, const ucontext *uc,
+                              const struct fpsimd_context* fpregs);
+--- ./breakpad/src/client/linux/minidump_writer/minidump_writer.h.orig
++++ ./breakpad/src/client/linux/minidump_writer/minidump_writer.h
+@@ -48,7 +48,7 @@
+ #if defined(__aarch64__)
+ typedef struct fpsimd_context fpstate_t;
+ #elif !defined(__ARM_EABI__) && !defined(__mips__)
+-typedef struct _libc_fpstate fpstate_t;
++typedef struct _fpstate fpstate_t;
+ #endif
+ 
+ // These entries store a list of memory regions that the client wants included
+--- ./breakpad/src/common/linux/elf_core_dump.h.orig
++++ ./breakpad/src/common/linux/elf_core_dump.h
+@@ -36,6 +36,7 @@
+ #include <elf.h>
+ #include <link.h>
+ #include <stddef.h>
++#include <limits.h>
+ 
+ #include "common/memory_range.h"
+ 
+@@ -51,9 +52,9 @@
+   typedef ElfW(Phdr) Phdr;
+   typedef ElfW(Word) Word;
+   typedef ElfW(Addr) Addr;
+-#if __WORDSIZE == 32
++#if ULONG_MAX == 0xffffffff
+   static const int kClass = ELFCLASS32;
+-#elif __WORDSIZE == 64
++#elif ULONG_MAX == 0xffffffffffffffff
+   static const int kClass = ELFCLASS64;
+ #else
+ #error "Unsupported __WORDSIZE for ElfCoreDump."
+--- ./sandbox/linux/suid/process_util.h.orig
++++ ./sandbox/linux/suid/process_util.h
+@@ -11,6 +11,14 @@
+ #include <stdbool.h>
+ #include <sys/types.h>
+ 
++// Some additional functions
++# define TEMP_FAILURE_RETRY(expression) \
++	(__extension__			\
++	 ({ long int __result;		\
++	  do __result = (long int) (expression); \
++	  while (__result == -1L && errno == EINTR); \
++	  __result; }))
++
+ // This adjusts /proc/process/oom_score_adj so the Linux OOM killer
+ // will prefer certain process types over others. The range for the
+ // adjustment is [-1000, 1000], with [0, 1000] being user accessible.
+--- ./sandbox/linux/seccomp-bpf/trap.cc.orig
++++ ./sandbox/linux/seccomp-bpf/trap.cc
+@@ -156,7 +156,7 @@
+   // most versions of glibc don't include this information in siginfo_t. So,
+   // we need to explicitly copy it into a arch_sigsys structure.
+   struct arch_sigsys sigsys;
+-  memcpy(&sigsys, &info->_sifields, sizeof(sigsys));
++  memcpy(&sigsys, &info->__si_fields, sizeof(sigsys));
+ 
+ #if defined(__mips__)
+   // When indirect syscall (syscall(__NR_foo, ...)) is made on Mips, the
+--- ./net/base/dns_reloader.cc.orig
++++ ./net/base/dns_reloader.cc
+@@ -5,7 +5,7 @@
+ #include "net/base/dns_reloader.h"
+ 
+ #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_OPENBSD) && \
+-    !defined(OS_ANDROID)
++    !defined(OS_ANDROID) && !defined(_GNU_SOURCE)
+ 
+ #include <resolv.h>
+ 
+--- ./net/dns/dns_config_service_posix.cc.orig
++++ ./net/dns/dns_config_service_posix.cc
+@@ -116,7 +116,7 @@
+ ConfigParsePosixResult ReadDnsConfig(DnsConfig* config) {
+   ConfigParsePosixResult result;
+   config->unhandled_options = false;
+-#if defined(OS_OPENBSD)
++#if defined(OS_OPENBSD) || defined(_GNU_SOURCE)
+   // Note: res_ninit in glibc always returns 0 and sets RES_INIT.
+   // res_init behaves the same way.
+   memset(&_res, 0, sizeof(_res));
+--- ./third_party/ffmpeg/libavutil/cpu.c.orig
++++ ./third_party/ffmpeg/libavutil/cpu.c
+@@ -38,7 +38,6 @@
+ #include <sys/param.h>
+ #endif
+ #include <sys/types.h>
+-#include <sys/sysctl.h>
+ #endif
+ #if HAVE_UNISTD_H
+ #include <unistd.h>
+--- ./third_party/WebKit/Source/platform/heap/StackFrameDepth.cpp.orig
++++ ./third_party/WebKit/Source/platform/heap/StackFrameDepth.cpp
+@@ -58,7 +58,7 @@
+     // FIXME: On Mac OSX and Linux, this method cannot estimate stack size
+     // correctly for the main thread.
+ 
+-#if defined(__GLIBC__) || OS(ANDROID) || OS(FREEBSD)
++#if OS(LINUX) || OS(ANDROID) || OS(FREEBSD)
+     // pthread_getattr_np() can fail if the thread is not invoked by
+     // pthread_create() (e.g., the main thread of webkit_unit_tests).
+     // In this case, this method returns 0 and the caller must handle it.
+@@ -105,7 +105,7 @@
+ 
+ void* StackFrameDepth::getStackStart()
+ {
+-#if defined(__GLIBC__) || OS(ANDROID) || OS(FREEBSD)
++#if OS(LINUX) || OS(ANDROID) || OS(FREEBSD)
+     pthread_attr_t attr;
+     int error;
+ #if OS(FREEBSD)
+--- ./chrome/browser/metrics/chrome_browser_main_extra_parts_metrics.cc.orig
++++ ./chrome/browser/metrics/chrome_browser_main_extra_parts_metrics.cc
+@@ -26,7 +26,7 @@
+ #include "ui/events/event_switches.h"
+ #include "ui/gfx/screen.h"
+ 
+-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
++#if defined(__GLIBC__) && !defined(OS_CHROMEOS)
+ #include <gnu/libc-version.h>
+ 
+ #include "base/version.h"
+--- ./chrome/browser/metrics/chrome_browser_main_extra_parts_metrics.cc.orig
++++ ./chrome/browser/metrics/chrome_browser_main_extra_parts_metrics.cc
+@@ -116,7 +116,7 @@
+ }
+ 
+ void RecordLinuxGlibcVersion() {
+-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
++#if defined(__GLIBC__) && !defined(OS_CHROMEOS)
+   Version version(gnu_get_libc_version());
+ 
+   UMALinuxGlibcVersion glibc_version_result = UMA_LINUX_GLIBC_NOT_PARSEABLE;
+@@ -140,7 +140,7 @@
+ #endif
+ }
+ 
+-#if defined(USE_X11) && !defined(OS_CHROMEOS)
++#if defined(__GLIBC__) && defined(USE_X11) && !defined(OS_CHROMEOS)
+ UMALinuxWindowManager GetLinuxWindowManager() {
+   switch (ui::GuessWindowManager()) {
+     case ui::WM_UNKNOWN:
+@@ -239,7 +239,7 @@
+ 
+ void ChromeBrowserMainExtraPartsMetrics::PostBrowserStart() {
+   RecordLinuxGlibcVersion();
+-#if defined(USE_X11) && !defined(OS_CHROMEOS)
++#if defined(__GLIBC__) && defined(USE_X11) && !defined(OS_CHROMEOS)
+   UMA_HISTOGRAM_ENUMERATION("Linux.WindowManager",
+                             GetLinuxWindowManager(),
+                             UMA_LINUX_WINDOW_MANAGER_COUNT);
+--- ./third_party/ffmpeg/libavutil/autorename_libavutil_cpu.c.orig
++++ ./third_party/ffmpeg/libavutil/autorename_libavutil_cpu.c
+@@ -38,7 +38,6 @@
+ #include <sys/param.h>
+ #endif
+ #include <sys/types.h>
+-#include <sys/sysctl.h>
+ #endif
+ #if HAVE_UNISTD_H
+ #include <unistd.h>
+--- ./device/serial/serial_io_handler_posix.cc.orig
++++ ./device/serial/serial_io_handler_posix.cc
+@@ -6,6 +6,7 @@
+ 
+ #include <sys/ioctl.h>
+ #include <termios.h>
++#include <asm-generic/ioctls.h>
+ 
+ #include "base/posix/eintr_wrapper.h"
+ 
+--- ./base/logging.cc
++++ ./base/logging.cc.orig
+@@ -543,7 +543,7 @@
+ }
+ 
+ LogMessage::~LogMessage() {
+-#if !defined(OFFICIAL_BUILD) && !defined(OS_NACL) && !defined(__UCLIBC__)
++#if !defined(OFFICIAL_BUILD) && !defined(OS_NACL) && defined(__GLIBC__)
+   if (severity_ == LOG_FATAL) {
+     // Include a stack trace on a fatal.
+     base::debug::StackTrace trace;
