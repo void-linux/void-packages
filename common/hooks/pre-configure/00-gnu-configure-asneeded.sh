@@ -7,7 +7,7 @@ hook() {
 		return 0
 	fi
 	# http://lists.gnu.org/archive/html/libtool-patches/2004-06/msg00002.html
-	if [ -z "$broken_as_needed" -a "$build_style" = "gnu-configure" ]; then
+	if [ "$build_style" = "gnu-configure" ]; then
 		sed -i "s/^\([ \t]*tmp_sharedflag\)='-shared'/\1='-shared -Wl,--as-needed'/" ${configure_script}
 	fi
 }
