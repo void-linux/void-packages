@@ -13,7 +13,7 @@ purge_distfiles() {
 		exit 1
 	fi
 	#
-	# Scann all templates for their current distfiles and checksums (hashes)
+	# Scan all templates for their current distfiles and checksums (hashes)
 	#
 	declare -A my_hashes
 	templates=(srcpkgs/*/template)
@@ -54,6 +54,10 @@ purge_distfiles() {
 	declare -A inodes
 	distfiles=($XBPS_SRCDISTDIR/*/*)
 	max=${#distfiles[@]}
+	if [ -z "$max" ]; then
+		msg_error "No distfiles files found in '$XBPS_SRCDISTDIR'"
+		exit 1
+	fi
 	cur=0
 	percent=-1
 	for distfile in ${distfiles[@]}; do
@@ -80,7 +84,7 @@ purge_distfiles() {
 		[ -n "${my_hashes[$hash]}" ] && continue
 		inode=$(stat "$file" --printf "%i")
 		echo "Obsolete $hash (inode: $inode)"
-		( IFS="|"; for f in ${inodes[$inode]}; do rm -v "$f"; rmdir ${f#/*} 2>/dev/null; done )
+		( IFS="|"; for f in ${inodes[$inode]}; do rm -v "$f"; rmdir "${f%/*}" 2>/dev/null; done )
 	done
 	echo "Done."
 }
