@@ -411,7 +411,8 @@ setup_pkg() {
     fi
     makejobs="-j$XBPS_MAKEJOBS"
 
-    if [ -n "$noarch" ]; then
+    # strip whitespaces to make "  noarch  " valid too.
+    if [ "${archs// /}" = "noarch" ]; then
         arch="noarch"
     else
         arch="$XBPS_TARGET_MACHINE"
