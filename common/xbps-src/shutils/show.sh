@@ -12,7 +12,9 @@ show_pkg() {
     for i in ${checksum}; do
         [ -n "$i" ] && echo "checksum:	$i"
     done
-    [ -n "$noarch" ] && echo "noarch:		yes"
+    for i in ${archs}; do
+        [ -n "$i" ] && echo "archs:		$i"
+    done
     echo "maintainer:	$maintainer"
     [ -n "$homepage" ] && echo "Upstream URL:	$homepage"
     [ -n "$license" ] && echo "License(s):	$license"

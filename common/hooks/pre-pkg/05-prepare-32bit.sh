@@ -21,7 +21,7 @@ hook() {
 		return
 	fi 
 	# Ignore noarch pkgs.
-	if [ -n "$noarch" ]; then
+	if [ "${archs// /}" = "noarch" ]; then
 		return
 	fi
 	if [ -z "$lib32mode" ]; then
