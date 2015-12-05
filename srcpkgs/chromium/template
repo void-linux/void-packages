@@ -1,21 +1,20 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See http://www.chromium.org/developers/calendar for the latest version
-version=46.0.2490.86
-revision=2
+version=47.0.2526.73
+revision=1
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 homepage="http://www.chromium.org/"
 license="BSD"
 distfiles="https://commondatastorage.googleapis.com/${pkgname}-browser-official/${pkgname}-${version}.tar.xz"
-checksum=ee18d28ac80ff958e8a6c770bfc0d7d770b55452ed91a87f731e1b432a7d1d92
+checksum=6d66d01c8ddff6562ff13d30ed65ef0cdc2888d9e4924be615d576b7eb15f4f5
 
-# XXX musl disabled for now (needs some patches from Alpine)
-only_for_archs="i686 x86_64 x86_64-musl"
+only_for_archs="i686 i686-musl x86_64 x86_64-musl"
 lib32disabled=yes
 nodebug=yes
 
-hostmakedepends="yasm python pkg-config perl gperf bison ninja hwids icu-devel ca-certificates"
+hostmakedepends="yasm python pkg-config perl gperf bison ninja hwids icu-devel"
 makedepends="libpng-devel gtk+-devel nss-devel pciutils-devel
  libXi-devel libgcrypt-devel libgnome-keyring-devel cups-devel elfutils-devel
  libXcomposite-devel speech-dispatcher-devel libXrandr-devel mit-krb5-devel
@@ -31,16 +30,17 @@ if [ -z "$CROSS_BUILD" -a "$XBPS_MACHINE" = "x86_64" ]; then
 	hostmakedepends+=" gcc-c++-multilib"
 fi
 
-pre_configure() {
-	# XXX xtraeme: fix gcc{,-c++}-multilib instead.
-	ldconfig &>/dev/null
 
+pre_configure() {
 	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		# XXX xtraeme: fix gcc{,-c++}-multilib instead.
+		ldconfig &>/dev/null
 		# Download NaCL toolchains
 		python2 build/download_nacl_toolchains.py \
 			--packages nacl_x86_newlib,pnacl_newlib,pnacl_translator \
 			sync --extract
 	fi
+
 	# Remove bundled ICU; its header files appear to get picked up instead of
 	# the system ones, leading to errors during the final link stage
 	# https://groups.google.com/a/chromium.org/d/topic/chromium-packagers/BNGvJc08B6Q
@@ -48,6 +48,9 @@ pre_configure() {
 
 	# https://groups.google.com/a/chromium.org/d/topic/chromium-packagers/9JX1N2nf4PU/discussion
 	touch chrome/test/data/webui/i18n_process_css_test.html
+
+	# https://code.google.com/p/chromium/issues/detail?id=541273
+	sed -i "/'target_name': 'libvpx'/s/libvpx/&_new/" build/linux/unbundle/libvpx.gyp
 }
 
 do_configure() {
@@ -149,15 +152,18 @@ do_configure() {
 	conf+=" -Dfieldtrial_testing_like_official_build=1"
 
 	case "${XBPS_TARGET_MACHINE}" in
-		i686*) conf+=" -Ddisable_nacl=1 -Ddisable_pnacl=1";;
-		x86_64-musl*) conf+=" -Duse_allocator=none -Ddisable_nacl=1 -Ddisable_pnacl=1 -Dtarget_arch=x64";;
-		i686-musl*) conf+=" -Duse_allocator=none -Dtarget_arch=ia32";;
-		arm*) conf+="
-			-Dtarget_arch=arm
-			-Ddisable_pnacl=1
-			-Ddisable_nacl=1
-			-Dv8_use_arm_eabi_hardfloat=true
-			-Darm_float_abi=hard"
+		x86_64-musl*)
+			conf+=" -Ddisable_nacl=1 -Ddisable_pnacl=1"
+			conf+=" -Duse_allocator=none -Dtarget_arch=x64"
+			;;
+		i686-musl*)
+			conf+=" -Ddisable_nacl=1 -Ddisable_pnacl=1"
+			conf+=" -Duse_allocator=none -Dtarget_arch=ia32"
+			;;
+		arm*)
+			conf+=" -Ddisable_nacl=1 -Ddisable_pnacl=1"
+			conf+=" -Dtarget_arch=arm -Dv8_use_arm_eabi_hardfloat=true"
+			conf+=" -Darm_float_abi=hard"
 			if [ "$CROSS_BUILD" ]; then
 				sed -i "s/arm-linux-gnueabihf-/${XBPS_CROSS_TRIPLET}-/g" build/common.gypi
 				conf+=" -Dsysroot=${XBPS_CROSS_BASE}"
@@ -198,10 +204,10 @@ do_install() {
 	vinstall out/Release/chrome_sandbox 4755 usr/lib/${pkgname} chrome-sandbox
 
 	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		cp out/Release/nacl_helper{,_bootstrap} \
-			${DESTDIR}/usr/lib/chromium
+		cp out/Release/nacl_helper{,_bootstrap} ${DESTDIR}/usr/lib/chromium
 		cp out/Release/nacl_irt_x86_64.nexe ${DESTDIR}/usr/lib/chromium
 	fi
+
 	cp out/Release/{*.pak,*.bin} ${DESTDIR}/usr/lib/chromium
 	cp -a out/Release/locales ${DESTDIR}/usr/lib/chromium
 
