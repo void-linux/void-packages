@@ -1,0 +1,94 @@
+From 0c2d823a7955981e88f7cb5b718a7081d97104f0 Mon Sep 17 00:00:00 2001
+From: Peter Stephenson <pws@zsh.org>
+Date: Mon, 7 Dec 2015 14:32:52 +0000
+Subject: [PATCH] 37337: Delay freeing widget until not in use.
+
+diff --git Src/Zle/zle.h Src/Zle/zle.h
+index 2d672de..e9b1428 100644
+--- Src/Zle/zle.h
++++ Src/Zle/zle.h
+@@ -213,6 +213,8 @@ struct widget {
+ #define ZLE_KEEPSUFFIX	(1<<9)	/* DON'T remove added suffix */
+ #define ZLE_NOTCOMMAND  (1<<10)	/* widget should not alter lastcmd */
+ #define ZLE_ISCOMP      (1<<11)	/* usable for new style completion */
++#define WIDGET_INUSE    (1<<12) /* widget is in use */
++#define WIDGET_FREE     (1<<13) /* request to free when no longer in use */
+ 
+ /* thingies */
+ 
+diff --git Src/Zle/zle_main.c Src/Zle/zle_main.c
+index 38427e8..1f0c07d 100644
+--- Src/Zle/zle_main.c
++++ Src/Zle/zle_main.c
+@@ -1344,6 +1344,8 @@ execzlefunc(Thingy func, char **args, int set_bindk)
+ 	    eofsent = 1;
+ 	    ret = 1;
+ 	} else {
++	    int inuse = wflags & WIDGET_INUSE;
++	    w->flags |= WIDGET_INUSE;
+ 	    if(!(wflags & ZLE_KEEPSUFFIX))
+ 		removesuffix();
+ 	    if(!(wflags & ZLE_MENUCMP)) {
+@@ -1367,6 +1369,12 @@ execzlefunc(Thingy func, char **args, int set_bindk)
+ 		ret = w->u.fn(args);
+ 		unqueue_signals();
+ 	    }
++	    if (!inuse) {
++		if (w->flags & WIDGET_FREE)
++		    freewidget(w);
++		else
++		    w->flags &= ~WIDGET_INUSE;
++	    }
+ 	    if (!(wflags & ZLE_NOTCOMMAND))
+ 		lastcmd = wflags;
+ 	}
+@@ -1387,6 +1395,8 @@ execzlefunc(Thingy func, char **args, int set_bindk)
+ 	    int osc = sfcontext, osi = movefd(0);
+ 	    int oxt = isset(XTRACE);
+ 	    LinkList largs = NULL;
++	    int inuse = w->flags & WIDGET_INUSE;
++	    w->flags |= WIDGET_INUSE;
+ 
+ 	    if (*args) {
+ 		largs = newlinklist();
+@@ -1402,8 +1412,15 @@ execzlefunc(Thingy func, char **args, int set_bindk)
+ 	    opts[XTRACE] = oxt;
+ 	    sfcontext = osc;
+ 	    endparamscope();
+-	    lastcmd = w->flags;
+-	    w->flags = 0;
++	    lastcmd = w->flags & ~(WIDGET_INUSE|WIDGET_FREE);
++	    if (inuse) {
++		w->flags &= WIDGET_INUSE|WIDGET_FREE;
++	    } else {
++		if (w->flags & WIDGET_FREE)
++		    freewidget(w);
++		else
++		    w->flags = 0;
++	    }
+ 	    r = 1;
+ 	    redup(osi, 0);
+ 	}
+diff --git Src/Zle/zle_thingy.c Src/Zle/zle_thingy.c
+index 271fd8e..21495b6 100644
+--- Src/Zle/zle_thingy.c
++++ Src/Zle/zle_thingy.c
+@@ -253,9 +253,14 @@ unbindwidget(Thingy t, int override)
+ /* Free a widget. */
+ 
+ /**/
+-static void
++void
+ freewidget(Widget w)
+ {
++    if (w->flags & WIDGET_INUSE) {
++	w->flags |= WIDGET_FREE;
++	return;
++    }
++
+     if (w->flags & WIDGET_NCOMP) {
+ 	zsfree(w->u.comp.wid);
+ 	zsfree(w->u.comp.func);
+-- 
+2.6.3
+
