@@ -1,0 +1,62 @@
+# Template file for 'pjproject'
+# musl-fixes.patch and no-third-party.patch come from Alpine,
+# and this template is heavily based on Alpine's APKBUILD.
+pkgname=pjproject
+version=2.4.5
+revision=1
+build_style=gnu-configure
+configure_args="--enable-shared \
+	--enable-libsamplerate \
+	--with-external-speex \
+	--with-external-gsm \
+	--with-external-srtp \
+	--with-external-pa"
+makedepends="libressl-devel alsa-lib-devel libgsm-devel speex-devel speexdsp-devel
+	portaudio-devel libsrtp-devel libsamplerate-devel"
+short_desc="Open source SIP and media stack"
+maintainer="Christopher Brannon <chris@the-brannons.com>"
+license="GPL-2"
+homepage="http://www.pjsip.org/pjsua.htm"
+distfiles="http://www.pjsip.org/release/${version}/${pkgname}-${version}.tar.bz2"
+checksum=086f5e70dcaee312b66ddc24dac6ef85e6f1fec4eed00ff2915cebe0ee3cdd8d
+
+pre_configure() {
+	# Remove target name from lib names
+	sed -i -e 's/-$(TARGET_NAME)//g' \
+		-e 's/= $(TARGET_NAME).a/= .a/g' \
+		-e 's/-$(LIB_SUFFIX)/$(LIB_SUFFIX)/g' \
+		$(find . -name '*.mak*' -o -name Makefile) || return 1
+
+	# Fix hardcoded prefix and flags
+	sed -i \
+		-e 's/poll@/poll@\nexport PREFIX := @prefix@\n/g' \
+		-e 's!prefix = /usr/local!prefix = $(PREFIX)!' \
+		-e '/PJLIB_CFLAGS/ s/(_CFLAGS)/(_CFLAGS) -fPIC/g' \
+		-e '/PJLIB_UTIL_CFLAGS/ s/(_CFLAGS)/(_CFLAGS) -fPIC/g' \
+		Makefile \
+		build.mak.in || return 1
+
+	# Use libsamplerate instead of bundled resample
+	sed -i -e "s/resample//" third_party/build/Makefile
+	sed -i -e "s#../../third_party/libsamplerate/src/samplerate.h#samplerate.h#" pjmedia/src/pjmedia/resample_libsamplerate.c
+}
+
+do_build() {
+	make dep LD=$CC
+	make -j1 LD=$CC
+}
+
+post_install() {
+	vbin pjsip-apps/bin/pjsua
+}
+
+pjproject-devel_package() {
+	depends="${makedepends} pjproject>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/include
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
+		vmove usr/lib/pkgconfig
+	}
+}
