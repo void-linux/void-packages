@@ -2,13 +2,10 @@
 #
 # This chroot script uses xbps-uchroot(8).
 #
-if [ -n "$XBPS_TEMP_MASTERDIR" ]; then
-	ARGS="-O"
-fi
 readonly MASTERDIR="$1"
 readonly DISTDIR="$2"
 readonly HOSTDIR="$3"
-readonly EXTRA_ARGS="$ARGS $4"
+readonly EXTRA_ARGS="$4"
 readonly CMD="$5"
 shift 5
 
