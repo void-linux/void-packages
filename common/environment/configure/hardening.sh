@@ -10,7 +10,7 @@ case "$XBPS_TARGET_MACHINE" in
 		CXXFLAGS+=" -fno-stack-protector"
 		;;
 	mips-musl|mipsel-musl) # PIE support broken
-		unset nopie
+		nopie=yes
 		;;
 esac
 
