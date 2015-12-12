@@ -98,7 +98,6 @@ chroot_prepare() {
     # Prepare default locale: en_US.UTF-8.
     if [ -z "$XBPS_TEMP_MASTERDIR" -a -s ${XBPS_MASTERDIR}/etc/default/libc-locales ]; then
         echo 'en_US.UTF-8 UTF-8' >> ${XBPS_MASTERDIR}/etc/default/libc-locales
-        $XBPS_RECONFIGURE_CMD -f glibc-locales
     fi
 
     touch -f $XBPS_MASTERDIR/.xbps_chroot_init
