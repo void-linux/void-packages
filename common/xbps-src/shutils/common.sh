@@ -223,7 +223,7 @@ setup_pkg() {
 
     unset_package_funcs
 
-    . $XBPS_CONFIG_FILE 2>/dev/null
+    ( . $XBPS_CONFIG_FILE 2>/dev/null )
 
     if [ -n "$cross" ]; then
         source_file $XBPS_CROSSPFDIR/${cross}.sh
