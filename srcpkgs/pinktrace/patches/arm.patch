@@ -1,0 +1,125 @@
+From fe89eb08d1e70e31d6a9a71fc447d6fa1626b9cd Mon Sep 17 00:00:00 2001
+From: Marvin Schmidt <marv@exherbo.org>
+Date: Thu, 27 Aug 2015 16:02:42 +0000
+Subject: Update syscall table and fix shuffle_scno for ARM
+
+The shuffle_scno function was broken in commit 2ca0b96 due to the
+removal of the ARM_LAST_ORDINARY_SYSCALL definition.
+
+This updates the syscall table and makes the shuffle_scno function
+more readable analogue to the way it was changed in strace
+
+Change-Id: Id2c9bd196d2e1950f87e548bef5c28abcc305aad
+Reviewed-on: https://galileo.mailstation.de/gerrit/3392
+Reviewed-by: Jenkins <philantrop@gmail.com>
+Reviewed-by: Kylie McClain <somasis@exherbo.org>
+---
+ pinktrace/linux/arm/syscallent.h | 29 +++++++++++++++++++++++++++++
+ pinktrace/name.c                 | 40 +++++++++++++++++++++-------------------
+ 2 files changed, 50 insertions(+), 19 deletions(-)
+
+diff --git pinktrace/linux/arm/syscallent.h pinktrace/linux/arm/syscallent.h
+index a6315a4..545f8f5 100644
+--- pinktrace/linux/arm/syscallent.h
++++ pinktrace/linux/arm/syscallent.h
+@@ -378,3 +378,32 @@
+ 	"process_vm_writev", /* 377 */
+ 	"kcmp", /* 378 */
+ 	"finit_module", /* 379 */
++	"sched_setattr", /* 380 */
++	"sched_getattr", /* 381 */
++	"renameat2", /* 382 */
++	"seccomp", /* 383 */
++	"getrandom", /* 384 */
++	"memfd_create", /* 385 */
++	"bpf", /* 386 */
++	"execveat", /* 387 */
++
++#define ARM_FIRST_SHUFFLED_SYSCALL 388
++
++	/* __ARM_NR_cmpxchg (0x000ffff0).
++	 * Remapped by shuffle_scno() to be directly after ordinary syscalls
++	 * in this table.
++	 */
++	"cmpxchg", /* ARM_FIRST_SHUFFLED_SYSCALL */
++
++	/* ARM specific syscalls. Encoded with scno 0x000f00xx.
++	 * Remapped by shuffle_scno() to be directly after __ARM_NR_cmpxchg.
++	 */
++        NULL, /* 0 */
++	"breakpoint", /* 1 */
++	"cacheflush", /* 2 */
++	"usr26", /* 3 */
++	"usr32", /* 4 */
++	"set_tls" /* 5 */
++
++#define ARM_LAST_SPECIAL_SYSCALL 5
++
+diff --git pinktrace/name.c pinktrace/name.c
+index b3e3d13..df3461f 100644
+--- pinktrace/name.c
++++ pinktrace/name.c
+@@ -247,39 +247,41 @@ static const struct xlat addrfams[] = {
+ 	{ 0,		NULL		},
+ };
+ 
+-/* Shuffle syscall numbers so that we don't have huge gaps in syscall table.
+- * The shuffling should be reversible: shuffle_scno(shuffle_scno(n)) == n.
++/*
++ * Shuffle syscall numbers so that we don't have huge gaps in syscall table.
++ * The shuffling should be an involution: shuffle_scno(shuffle_scno(n)) == n.
+  */
+-#if PINK_ARCH_ARM /* So far only ARM needs this */
+-static long shuffle_scno(unsigned long scno)
++#if defined(ARM) || defined(AARCH64) /* So far only 32-bit ARM needs this */
++static long
++shuffle_scno(unsigned long scno)
+ {
+-	if (scno <= ARM_LAST_ORDINARY_SYSCALL)
++	if (scno < ARM_FIRST_SHUFFLED_SYSCALL)
+ 		return scno;
+ 
+ 	/* __ARM_NR_cmpxchg? Swap with LAST_ORDINARY+1 */
+-	if (scno == 0x000ffff0)
+-		return ARM_LAST_ORDINARY_SYSCALL+1;
+-	if (scno == ARM_LAST_ORDINARY_SYSCALL+1)
++	if (scno == ARM_FIRST_SHUFFLED_SYSCALL)
+ 		return 0x000ffff0;
++	if (scno == 0x000ffff0)
++		return ARM_FIRST_SHUFFLED_SYSCALL;
+ 
+-	/* Is it ARM specific syscall?
+-	 * Swap with [LAST_ORDINARY+2, LAST_ORDINARY+2 + LAST_SPECIAL] range.
++#define ARM_SECOND_SHUFFLED_SYSCALL (ARM_FIRST_SHUFFLED_SYSCALL + 1)
++	/*
++	 * Is it ARM specific syscall?
++	 * Swap [0x000f0000, 0x000f0000 + LAST_SPECIAL] range
++	 * with [SECOND_SHUFFLED, SECOND_SHUFFLED + LAST_SPECIAL] range.
+ 	 */
+-	if (scno >= 0x000f0000
+-	 && scno <= 0x000f0000 + ARM_LAST_SPECIAL_SYSCALL
+-	) {
+-		return scno - 0x000f0000 + (ARM_LAST_ORDINARY_SYSCALL+2);
++	if (scno >= 0x000f0000 &&
++	    scno <= 0x000f0000 + ARM_LAST_SPECIAL_SYSCALL) {
++		return scno - 0x000f0000 + ARM_SECOND_SHUFFLED_SYSCALL;
+ 	}
+-	if (/* scno >= ARM_LAST_ORDINARY_SYSCALL+2 - always true */ 1
+-	 && scno <= (ARM_LAST_ORDINARY_SYSCALL+2) + ARM_LAST_SPECIAL_SYSCALL
+-	) {
+-		return scno + 0x000f0000 - (ARM_LAST_ORDINARY_SYSCALL+2);
++	if (scno <= ARM_SECOND_SHUFFLED_SYSCALL + ARM_LAST_SPECIAL_SYSCALL) {
++		return scno + 0x000f0000 - ARM_SECOND_SHUFFLED_SYSCALL;
+ 	}
+ 
+ 	return scno;
+ }
+ #else
+-# define shuffle_scno(scno) (long)(scno)
++# define shuffle_scno(scno) ((long)(scno))
+ #endif
+ 
+ PINK_GCC_ATTR((pure))
+-- 
+cgit v0.11.2
+
