@@ -54,6 +54,7 @@ hook() {
 		*.patch)      cursufx="txt";;
 		*.diff)       cursufx="txt";;
 		*.txt)        cursufx="txt";;
+		*.7z)	      cursufx="7z";;
 		*) msg_error "$pkgver: unknown distfile suffix for $curfile.\n";;
 		esac
 
@@ -107,6 +108,16 @@ hook() {
 			;;
 		txt)
 			cp -f $srcdir/$curfile $extractdir
+			;;
+		7z)
+			if command -v 7z &>/dev/null; then
+				7z x $srcdir/$curfile -o$extractdir
+				if [ $? -ne 0 ]; then
+					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
+				fi
+			else
+				msg_error "$pkgver: cannot find 7z bin for extraction.\n"
+			fi
 			;;
 		*)
 			msg_error "$pkgver: cannot guess $curfile extract suffix. ($cursufx)\n"
