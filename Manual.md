@@ -489,8 +489,14 @@ This appends to the generated file rather than replacing it.
 packages automatically. In the `reverts` field one can define a list of broken
 pkgver the resulting package should revert. This field *must* be defined before
 `version` and `revision` fields in order to work as expected. The versions
-defined in `reverts` must be lesser than the one defined in `version`.
-example: `reverts="2.0_1 2.0_2"`
+defined in `reverts` must be bigger than the one defined in `version`.
+Example:
+
+    ```
+    reverts="2.0_1 2.0_2"
+    version=1.9
+    revision=2
+    ```
 
 - `alternatives` A white space separated list of supported alternatives the package provides.
 A list is composed of three components separated by a colon: group, symlink and target.
