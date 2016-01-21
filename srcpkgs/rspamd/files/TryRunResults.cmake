@@ -19,3 +19,7 @@ set( _CAN_RUN
      "0"
      CACHE STRING "Result from TRY_RUN" FORCE)
 
+	 set( HAVE_ATOMIC_BUILTINS_EXITCODE 
+		 "0"
+		 CACHE STRING "Result from TRY_RUN" FORCE)
+
