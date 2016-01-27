@@ -1,0 +1,814 @@
+diff --git a/lib/_tls_wrap.js b/lib/_tls_wrap.js
+index 5b36906..8128a46 100644
+--- a/lib/_tls_wrap.js
++++ b/lib/_tls_wrap.js
+@@ -165,26 +165,31 @@ function onclienthello(hello) {
+     if (err)
+       return self.destroy(err);
+ 
+-    self._handle.endParser();
+-  });
+-}
+-
+-
+-function oncertcb(info) {
+-  var self = this;
+-  var servername = info.servername;
+-
+-  loadSNI(self, servername, function(err, ctx) {
+-    if (err)
+-      return self.destroy(err);
+-    requestOCSP(self, info, ctx, function(err) {
++    // Servername came from SSL session
++    // NOTE: TLS Session ticket doesn't include servername information
++    //
++    // Another note, From RFC3546:
++    //
++    //   If, on the other hand, the older
++    //   session is resumed, then the server MUST ignore extensions appearing
++    //   in the client hello, and send a server hello containing no
++    //   extensions; in this case the extension functionality negotiated
++    //   during the original session initiation is applied to the resumed
++    //   session.
++    //
++    // Therefore we should account session loading when dealing with servername
++    var servername = session && session.servername || hello.servername;
++    loadSNI(self, servername, function(err, ctx) {
+       if (err)
+         return self.destroy(err);
+-
+-      if (!self._handle)
+-        return self.destroy(new Error('Socket is closed'));
+-
+-      self._handle.certCbDone();
++      requestOCSP(self, hello, ctx, function(err) {
++        if (err)
++          return self.destroy(err);
++
++        if (!self._handle)
++          return self.destroy(new Error('Socket is closed'));
++        self._handle.endParser();
++      });
+     });
+   });
+ }
+@@ -409,18 +414,15 @@ TLSSocket.prototype._init = function(socket, wrap) {
+     ssl.onhandshakestart = onhandshakestart.bind(this);
+     ssl.onhandshakedone = onhandshakedone.bind(this);
+     ssl.onclienthello = onclienthello.bind(this);
+-    ssl.oncertcb = oncertcb.bind(this);
+     ssl.onnewsession = onnewsession.bind(this);
+     ssl.lastHandshakeTime = 0;
+     ssl.handshakes = 0;
+ 
+-    if (this.server) {
+-      if (this.server.listenerCount('resumeSession') > 0 ||
+-          this.server.listenerCount('newSession') > 0) {
+-        ssl.enableSessionCallbacks();
+-      }
+-      if (this.server.listenerCount('OCSPRequest') > 0)
+-        ssl.enableCertCb();
++    if (this.server &&
++        (this.server.listenerCount('resumeSession') > 0 ||
++         this.server.listenerCount('newSession') > 0 ||
++         this.server.listenerCount('OCSPRequest') > 0)) {
++      ssl.enableSessionCallbacks();
+     }
+   } else {
+     ssl.onhandshakestart = function() {};
+@@ -462,7 +464,7 @@ TLSSocket.prototype._init = function(socket, wrap) {
+        options.server._contexts.length)) {
+     assert(typeof options.SNICallback === 'function');
+     this._SNICallback = options.SNICallback;
+-    ssl.enableCertCb();
++    ssl.enableHelloParser();
+   }
+ 
+   if (process.features.tls_npn && options.NPNProtocols)
+diff --git a/src/env.h b/src/env.h
+index ea5e8fe..995f151 100644
+--- a/src/env.h
++++ b/src/env.h
+@@ -56,7 +56,6 @@ namespace node {
+   V(bytes_parsed_string, "bytesParsed")                                       \
+   V(callback_string, "callback")                                              \
+   V(change_string, "change")                                                  \
+-  V(oncertcb_string, "oncertcb")                                              \
+   V(onclose_string, "_onclose")                                               \
+   V(code_string, "code")                                                      \
+   V(compare_string, "compare")                                                \
+diff --git a/src/node_crypto.cc b/src/node_crypto.cc
+index 7911ce9..5cab263 100644
+--- a/src/node_crypto.cc
++++ b/src/node_crypto.cc
+@@ -156,8 +156,6 @@ template int SSLWrap<TLSWrap>::SelectNextProtoCallback(
+ #endif
+ template int SSLWrap<TLSWrap>::TLSExtStatusCallback(SSL* s, void* arg);
+ template void SSLWrap<TLSWrap>::DestroySSL();
+-template int SSLWrap<TLSWrap>::SSLCertCallback(SSL* s, void* arg);
+-template void SSLWrap<TLSWrap>::WaitForCertCb(CertCb cb, void* arg);
+ 
+ 
+ static void crypto_threadid_cb(CRYPTO_THREADID* tid) {
+@@ -511,35 +509,45 @@ int SSL_CTX_get_issuer(SSL_CTX* ctx, X509* cert, X509** issuer) {
+ }
+ 
+ 
++// Read a file that contains our certificate in "PEM" format,
++// possibly followed by a sequence of CA certificates that should be
++// sent to the peer in the Certificate message.
++//
++// Taken from OpenSSL - editted for style.
+ int SSL_CTX_use_certificate_chain(SSL_CTX* ctx,
+-                                  X509* x,
+-                                  STACK_OF(X509)* extra_certs,
++                                  BIO* in,
+                                   X509** cert,
+                                   X509** issuer) {
+-  CHECK_EQ(*issuer, nullptr);
+-  CHECK_EQ(*cert, nullptr);
++  int ret = 0;
++  X509* x = nullptr;
+ 
+-  int ret = SSL_CTX_use_certificate(ctx, x);
++  x = PEM_read_bio_X509_AUX(in, nullptr, CryptoPemCallback, nullptr);
++
++  if (x == nullptr) {
++    SSLerr(SSL_F_SSL_CTX_USE_CERTIFICATE_CHAIN_FILE, ERR_R_PEM_LIB);
++    goto end;
++  }
++
++  ret = SSL_CTX_use_certificate(ctx, x);
+ 
+   if (ret) {
+     // If we could set up our certificate, now proceed to
+     // the CA certificates.
++    X509 *ca;
+     int r;
++    unsigned long err;
+ 
+     if (ctx->extra_certs != nullptr) {
+       sk_X509_pop_free(ctx->extra_certs, X509_free);
+       ctx->extra_certs = nullptr;
+     }
+ 
+-    for (int i = 0; i < sk_X509_num(extra_certs); i++) {
+-      X509* ca = sk_X509_value(extra_certs, i);
+-
+-      // NOTE: Increments reference count on `ca`
+-      r = SSL_CTX_add1_chain_cert(ctx, ca);
++    while ((ca = PEM_read_bio_X509(in, nullptr, CryptoPemCallback, nullptr))) {
++      r = SSL_CTX_add_extra_chain_cert(ctx, ca);
+ 
+       if (!r) {
++        X509_free(ca);
+         ret = 0;
+-        *issuer = nullptr;
+         goto end;
+       }
+       // Note that we must not free r if it was successfully
+@@ -550,9 +558,18 @@ int SSL_CTX_use_certificate_chain(SSL_CTX* ctx,
+       // Find issuer
+       if (*issuer != nullptr || X509_check_issued(ca, x) != X509_V_OK)
+         continue;
+-
+       *issuer = ca;
+     }
++
++    // When the while loop ends, it's usually just EOF.
++    err = ERR_peek_last_error();
++    if (ERR_GET_LIB(err) == ERR_LIB_PEM &&
++        ERR_GET_REASON(err) == PEM_R_NO_START_LINE) {
++      ERR_clear_error();
++    } else  {
++      // some real error
++      ret = 0;
++    }
+   }
+ 
+   // Try getting issuer from a cert store
+@@ -564,88 +581,13 @@ int SSL_CTX_use_certificate_chain(SSL_CTX* ctx,
+       // no need to free `store`
+     } else {
+       // Increment issuer reference count
+-      *issuer = X509_dup(*issuer);
+-      if (*issuer == nullptr) {
+-        ret = 0;
+-        goto end;
+-      }
++      CRYPTO_add(&(*issuer)->references, 1, CRYPTO_LOCK_X509);
+     }
+   }
+ 
+  end:
+-  if (ret && x != nullptr) {
+-    *cert = X509_dup(x);
+-    if (*cert == nullptr)
+-      ret = 0;
+-  }
+-  return ret;
+-}
+-
+-
+-// Read a file that contains our certificate in "PEM" format,
+-// possibly followed by a sequence of CA certificates that should be
+-// sent to the peer in the Certificate message.
+-//
+-// Taken from OpenSSL - edited for style.
+-int SSL_CTX_use_certificate_chain(SSL_CTX* ctx,
+-                                  BIO* in,
+-                                  X509** cert,
+-                                  X509** issuer) {
+-  X509* x = nullptr;
+-
+-  // Just to ensure that `ERR_peek_last_error` below will return only errors
+-  // that we are interested in
+-  ERR_clear_error();
+-
+-  x = PEM_read_bio_X509_AUX(in, nullptr, CryptoPemCallback, nullptr);
+-
+-  if (x == nullptr) {
+-    SSLerr(SSL_F_SSL_CTX_USE_CERTIFICATE_CHAIN_FILE, ERR_R_PEM_LIB);
+-    return 0;
+-  }
+-
+-  X509* extra = nullptr;
+-  int ret = 0;
+-  unsigned long err = 0;
+-
+-  // Read extra certs
+-  STACK_OF(X509)* extra_certs = sk_X509_new_null();
+-  if (extra_certs == nullptr) {
+-    SSLerr(SSL_F_SSL_CTX_USE_CERTIFICATE_CHAIN_FILE, ERR_R_MALLOC_FAILURE);
+-    goto done;
+-  }
+-
+-  while ((extra = PEM_read_bio_X509(in, nullptr, CryptoPemCallback, nullptr))) {
+-    if (sk_X509_push(extra_certs, extra))
+-      continue;
+-
+-    // Failure, free all certs
+-    goto done;
+-  }
+-  extra = nullptr;
+-
+-  // When the while loop ends, it's usually just EOF.
+-  err = ERR_peek_last_error();
+-  if (ERR_GET_LIB(err) == ERR_LIB_PEM &&
+-      ERR_GET_REASON(err) == PEM_R_NO_START_LINE) {
+-    ERR_clear_error();
+-  } else  {
+-    // some real error
+-    goto done;
+-  }
+-
+-  ret = SSL_CTX_use_certificate_chain(ctx, x, extra_certs, cert, issuer);
+-  if (!ret)
+-    goto done;
+-
+- done:
+-  if (extra_certs != nullptr)
+-    sk_X509_pop_free(extra_certs, X509_free);
+-  if (extra != nullptr)
+-    X509_free(extra);
+   if (x != nullptr)
+-    X509_free(x);
+-
++    *cert = x;
+   return ret;
+ }
+ 
+@@ -663,16 +605,6 @@ void SecureContext::SetCert(const FunctionCallbackInfo<Value>& args) {
+   if (!bio)
+     return;
+ 
+-  // Free previous certs
+-  if (sc->issuer_ != nullptr) {
+-    X509_free(sc->issuer_);
+-    sc->issuer_ = nullptr;
+-  }
+-  if (sc->cert_ != nullptr) {
+-    X509_free(sc->cert_);
+-    sc->cert_ = nullptr;
+-  }
+-
+   int rv = SSL_CTX_use_certificate_chain(sc->ctx_,
+                                          bio,
+                                          &sc->cert_,
+@@ -944,7 +876,7 @@ void SecureContext::LoadPKCS12(const FunctionCallbackInfo<Value>& args) {
+   PKCS12* p12 = nullptr;
+   EVP_PKEY* pkey = nullptr;
+   X509* cert = nullptr;
+-  STACK_OF(X509)* extra_certs = nullptr;
++  STACK_OF(X509)* extraCerts = nullptr;
+   char* pass = nullptr;
+   bool ret = false;
+ 
+@@ -969,33 +901,28 @@ void SecureContext::LoadPKCS12(const FunctionCallbackInfo<Value>& args) {
+     pass[passlen] = '\0';
+   }
+ 
+-  // Free previous certs
+-  if (sc->issuer_ != nullptr) {
+-    X509_free(sc->issuer_);
+-    sc->issuer_ = nullptr;
+-  }
+-  if (sc->cert_ != nullptr) {
+-    X509_free(sc->cert_);
+-    sc->cert_ = nullptr;
+-  }
+-
+   if (d2i_PKCS12_bio(in, &p12) &&
+-      PKCS12_parse(p12, pass, &pkey, &cert, &extra_certs) &&
+-      SSL_CTX_use_certificate_chain(sc->ctx_,
+-                                    cert,
+-                                    extra_certs,
+-                                    &sc->cert_,
+-                                    &sc->issuer_) &&
++      PKCS12_parse(p12, pass, &pkey, &cert, &extraCerts) &&
++      SSL_CTX_use_certificate(sc->ctx_, cert) &&
+       SSL_CTX_use_PrivateKey(sc->ctx_, pkey)) {
+-    ret = true;
+-  }
++    // set extra certs
++    while (X509* x509 = sk_X509_pop(extraCerts)) {
++      if (!sc->ca_store_) {
++        sc->ca_store_ = X509_STORE_new();
++        SSL_CTX_set_cert_store(sc->ctx_, sc->ca_store_);
++      }
++
++      X509_STORE_add_cert(sc->ca_store_, x509);
++      SSL_CTX_add_client_CA(sc->ctx_, x509);
++      X509_free(x509);
++    }
+ 
+-  if (pkey != nullptr)
+     EVP_PKEY_free(pkey);
+-  if (cert != nullptr)
+     X509_free(cert);
+-  if (extra_certs != nullptr)
+-    sk_X509_free(extra_certs);
++    sk_X509_free(extraCerts);
++
++    ret = true;
++  }
+ 
+   PKCS12_free(p12);
+   BIO_free_all(in);
+@@ -1050,7 +977,7 @@ void SecureContext::SetTicketKeys(const FunctionCallbackInfo<Value>& args) {
+ void SecureContext::SetFreeListLength(const FunctionCallbackInfo<Value>& args) {
+   SecureContext* wrap = Unwrap<SecureContext>(args.Holder());
+ 
+-  wrap->ctx_->freelist_max_len = args[0]->Int32Value();
++  // wrap->ctx_->freelist_max_len = args[0]->Int32Value();
+ }
+ 
+ 
+@@ -1189,7 +1116,6 @@ void SSLWrap<Base>::AddMethods(Environment* env, Local<FunctionTemplate> t) {
+   env->SetProtoMethod(t, "verifyError", VerifyError);
+   env->SetProtoMethod(t, "getCurrentCipher", GetCurrentCipher);
+   env->SetProtoMethod(t, "endParser", EndParser);
+-  env->SetProtoMethod(t, "certCbDone", CertCbDone);
+   env->SetProtoMethod(t, "renegotiate", Renegotiate);
+   env->SetProtoMethod(t, "shutdownSSL", Shutdown);
+   env->SetProtoMethod(t, "getTLSTicket", GetTLSTicket);
+@@ -2078,122 +2004,6 @@ int SSLWrap<Base>::TLSExtStatusCallback(SSL* s, void* arg) {
+ 
+ 
+ template <class Base>
+-void SSLWrap<Base>::WaitForCertCb(CertCb cb, void* arg) {
+-  cert_cb_ = cb;
+-  cert_cb_arg_ = arg;
+-}
+-
+-
+-template <class Base>
+-int SSLWrap<Base>::SSLCertCallback(SSL* s, void* arg) {
+-  Base* w = static_cast<Base*>(SSL_get_app_data(s));
+-
+-  if (!w->is_server())
+-    return 1;
+-
+-  if (!w->is_waiting_cert_cb())
+-    return 1;
+-
+-  if (w->cert_cb_running_)
+-    return -1;
+-
+-  Environment* env = w->env();
+-  HandleScope handle_scope(env->isolate());
+-  Context::Scope context_scope(env->context());
+-  w->cert_cb_running_ = true;
+-
+-  Local<Object> info = Object::New(env->isolate());
+-
+-  SSL_SESSION* sess = SSL_get_session(s);
+-  if (sess != nullptr) {
+-    if (sess->tlsext_hostname == nullptr) {
+-      info->Set(env->servername_string(), String::Empty(env->isolate()));
+-    } else {
+-      Local<String> servername = OneByteString(env->isolate(),
+-                                               sess->tlsext_hostname,
+-                                               strlen(sess->tlsext_hostname));
+-      info->Set(env->servername_string(), servername);
+-    }
+-    info->Set(env->tls_ticket_string(),
+-              Boolean::New(env->isolate(), sess->tlsext_ticklen != 0));
+-  }
+-  bool ocsp = s->tlsext_status_type == TLSEXT_STATUSTYPE_ocsp;
+-  info->Set(env->ocsp_request_string(), Boolean::New(env->isolate(), ocsp));
+-
+-  Local<Value> argv[] = { info };
+-  w->MakeCallback(env->oncertcb_string(), ARRAY_SIZE(argv), argv);
+-
+-  if (!w->cert_cb_running_)
+-    return 1;
+-
+-  // Performing async action, wait...
+-  return -1;
+-}
+-
+-
+-template <class Base>
+-void SSLWrap<Base>::CertCbDone(const FunctionCallbackInfo<Value>& args) {
+-  Base* w = Unwrap<Base>(args.Holder());
+-  Environment* env = w->env();
+-
+-  CHECK(w->is_waiting_cert_cb() && w->cert_cb_running_);
+-
+-  Local<Object> object = w->object();
+-  Local<Value> ctx = object->Get(env->sni_context_string());
+-  Local<FunctionTemplate> cons = env->secure_context_constructor_template();
+-
+-  // Not an object, probably undefined or null
+-  if (!ctx->IsObject())
+-    goto fire_cb;
+-
+-  if (cons->HasInstance(ctx)) {
+-    SecureContext* sc = Unwrap<SecureContext>(ctx.As<Object>());
+-    w->sni_context_.Reset();
+-    w->sni_context_.Reset(env->isolate(), ctx);
+-
+-    int rv;
+-
+-    // NOTE: reference count is not increased by this API methods
+-    X509* x509 = SSL_CTX_get0_certificate(sc->ctx_);
+-    EVP_PKEY* pkey = SSL_CTX_get0_privatekey(sc->ctx_);
+-    STACK_OF(X509)* chain;
+-
+-    rv = SSL_CTX_get0_chain_certs(sc->ctx_, &chain);
+-    if (rv)
+-      rv = SSL_use_certificate(w->ssl_, x509);
+-    if (rv)
+-      rv = SSL_use_PrivateKey(w->ssl_, pkey);
+-    if (rv && chain != nullptr)
+-      rv = SSL_set1_chain(w->ssl_, chain);
+-    if (!rv) {
+-      unsigned long err = ERR_get_error();
+-      if (!err)
+-        return env->ThrowError("CertCbDone");
+-      return ThrowCryptoError(env, err);
+-    }
+-  } else {
+-    // Failure: incorrect SNI context object
+-    Local<Value> err = Exception::TypeError(env->sni_context_err_string());
+-    w->MakeCallback(env->onerror_string(), 1, &err);
+-    return;
+-  }
+-
+- fire_cb:
+-  CertCb cb;
+-  void* arg;
+-
+-  cb = w->cert_cb_;
+-  arg = w->cert_cb_arg_;
+-
+-  w->cert_cb_running_ = false;
+-  w->cert_cb_ = nullptr;
+-  w->cert_cb_arg_ = nullptr;
+-
+-  cb(arg);
+-}
+-
+-
+-template <class Base>
+ void SSLWrap<Base>::SSLGetter(Local<String> property,
+                         const PropertyCallbackInfo<Value>& info) {
+   HandleScope scope(info.GetIsolate());
+@@ -2299,10 +2109,6 @@ int Connection::HandleSSLError(const char* func,
+     DEBUG_PRINT("[%p] SSL: %s want read\n", ssl_, func);
+     return 0;
+ 
+-  } else if (err == SSL_ERROR_WANT_X509_LOOKUP) {
+-    DEBUG_PRINT("[%p] SSL: %s want x509 lookup\n", ssl_, func);
+-    return 0;
+-
+   } else if (err == SSL_ERROR_ZERO_RETURN) {
+     HandleScope scope(ssl_env()->isolate());
+ 
+@@ -2483,7 +2289,7 @@ inline int VerifyCallback(int preverify_ok, X509_STORE_CTX* ctx) {
+   SSL* ssl = static_cast<SSL*>(
+       X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx()));
+ 
+-  if (SSL_is_server(ssl))
++  if (ssl->server)
+     return 1;
+ 
+   // Client needs to check if the server cert is listed in the
+@@ -2510,7 +2316,7 @@ int Connection::SelectSNIContextCallback_(SSL *s, int *ad, void* arg) {
+ 
+     // Call the SNI callback and use its return value as context
+     if (!conn->sniObject_.IsEmpty()) {
+-      conn->sni_context_.Reset();
++      conn->sniContext_.Reset();
+ 
+       Local<Object> sni_obj = PersistentToLocal(env->isolate(),
+                                                 conn->sniObject_);
+@@ -2526,7 +2332,7 @@ int Connection::SelectSNIContextCallback_(SSL *s, int *ad, void* arg) {
+       Local<FunctionTemplate> secure_context_constructor_template =
+           env->secure_context_constructor_template();
+       if (secure_context_constructor_template->HasInstance(ret)) {
+-        conn->sni_context_.Reset(env->isolate(), ret);
++        conn->sniContext_.Reset(env->isolate(), ret);
+         SecureContext* sc = Unwrap<SecureContext>(ret.As<Object>());
+         InitNPN(sc);
+         SSL_set_SSL_CTX(s, sc->ctx_);
+@@ -2565,8 +2371,6 @@ void Connection::New(const FunctionCallbackInfo<Value>& args) {
+ 
+   InitNPN(sc);
+ 
+-  SSL_set_cert_cb(conn->ssl_, SSLWrap<Connection>::SSLCertCallback, conn);
+-
+ #ifdef SSL_CTRL_SET_TLSEXT_SERVERNAME_CB
+   if (is_server) {
+     SSL_CTX_set_tlsext_servername_callback(sc->ctx_, SelectSNIContextCallback_);
+diff --git a/src/node_crypto.h b/src/node_crypto.h
+index e009fc1..6373fc4 100644
+--- a/src/node_crypto.h
++++ b/src/node_crypto.h
+@@ -179,10 +179,7 @@ class SSLWrap {
+         kind_(kind),
+         next_sess_(nullptr),
+         session_callbacks_(false),
+-        new_session_wait_(false),
+-        cert_cb_(nullptr),
+-        cert_cb_arg_(nullptr),
+-        cert_cb_running_(false) {
++        new_session_wait_(false) {
+     ssl_ = SSL_new(sc->ctx_);
+     env_->isolate()->AdjustAmountOfExternalAllocatedMemory(kExternalSize);
+     CHECK_NE(ssl_, nullptr);
+@@ -199,9 +196,6 @@ class SSLWrap {
+     npn_protos_.Reset();
+     selected_npn_proto_.Reset();
+ #endif
+-#ifdef SSL_CTRL_SET_TLSEXT_SERVERNAME_CB
+-    sni_context_.Reset();
+-#endif
+ #ifdef NODE__HAVE_TLSEXT_STATUS_CB
+     ocsp_response_.Reset();
+ #endif  // NODE__HAVE_TLSEXT_STATUS_CB
+@@ -212,11 +206,8 @@ class SSLWrap {
+   inline bool is_server() const { return kind_ == kServer; }
+   inline bool is_client() const { return kind_ == kClient; }
+   inline bool is_waiting_new_session() const { return new_session_wait_; }
+-  inline bool is_waiting_cert_cb() const { return cert_cb_ != nullptr; }
+ 
+  protected:
+-  typedef void (*CertCb)(void* arg);
+-
+   // Size allocated by OpenSSL: one for SSL structure, one for SSL3_STATE and
+   // some for buffers.
+   // NOTE: Actually it is much more than this
+@@ -244,7 +235,6 @@ class SSLWrap {
+   static void VerifyError(const v8::FunctionCallbackInfo<v8::Value>& args);
+   static void GetCurrentCipher(const v8::FunctionCallbackInfo<v8::Value>& args);
+   static void EndParser(const v8::FunctionCallbackInfo<v8::Value>& args);
+-  static void CertCbDone(const v8::FunctionCallbackInfo<v8::Value>& args);
+   static void Renegotiate(const v8::FunctionCallbackInfo<v8::Value>& args);
+   static void Shutdown(const v8::FunctionCallbackInfo<v8::Value>& args);
+   static void GetTLSTicket(const v8::FunctionCallbackInfo<v8::Value>& args);
+@@ -273,12 +263,10 @@ class SSLWrap {
+                                      void* arg);
+ #endif  // OPENSSL_NPN_NEGOTIATED
+   static int TLSExtStatusCallback(SSL* s, void* arg);
+-  static int SSLCertCallback(SSL* s, void* arg);
+   static void SSLGetter(v8::Local<v8::String> property,
+                         const v8::PropertyCallbackInfo<v8::Value>& info);
+ 
+   void DestroySSL();
+-  void WaitForCertCb(CertCb cb, void* arg);
+ 
+   inline Environment* ssl_env() const {
+     return env_;
+@@ -290,12 +278,6 @@ class SSLWrap {
+   SSL* ssl_;
+   bool session_callbacks_;
+   bool new_session_wait_;
+-
+-  // SSL_set_cert_cb
+-  CertCb cert_cb_;
+-  void* cert_cb_arg_;
+-  bool cert_cb_running_;
+-
+   ClientHelloParser hello_parser_;
+ 
+ #ifdef NODE__HAVE_TLSEXT_STATUS_CB
+@@ -307,10 +289,6 @@ class SSLWrap {
+   v8::Persistent<v8::Value> selected_npn_proto_;
+ #endif  // OPENSSL_NPN_NEGOTIATED
+ 
+-#ifdef SSL_CTRL_SET_TLSEXT_SERVERNAME_CB
+-  v8::Persistent<v8::Value> sni_context_;
+-#endif
+-
+   friend class SecureContext;
+ };
+ 
+@@ -322,6 +300,7 @@ class Connection : public SSLWrap<Connection>, public AsyncWrap {
+   ~Connection() override {
+ #ifdef SSL_CTRL_SET_TLSEXT_SERVERNAME_CB
+     sniObject_.Reset();
++    sniContext_.Reset();
+     servername_.Reset();
+ #endif
+   }
+@@ -336,6 +315,7 @@ class Connection : public SSLWrap<Connection>, public AsyncWrap {
+ 
+ #ifdef SSL_CTRL_SET_TLSEXT_SERVERNAME_CB
+   v8::Persistent<v8::Object> sniObject_;
++  v8::Persistent<v8::Value> sniContext_;
+   v8::Persistent<v8::String> servername_;
+ #endif
+ 
+diff --git a/src/tls_wrap.cc b/src/tls_wrap.cc
+index 1bdd4b7..68c98d5 100644
+--- a/src/tls_wrap.cc
++++ b/src/tls_wrap.cc
+@@ -141,8 +141,6 @@ void TLSWrap::InitSSL() {
+ 
+   InitNPN(sc_);
+ 
+-  SSL_set_cert_cb(ssl_, SSLWrap<TLSWrap>::SSLCertCallback, this);
+-
+   if (is_server()) {
+     SSL_set_accept_state(ssl_);
+   } else if (is_client()) {
+@@ -353,7 +351,6 @@ Local<Value> TLSWrap::GetSSLError(int status, int* err, const char** msg) {
+     case SSL_ERROR_NONE:
+     case SSL_ERROR_WANT_READ:
+     case SSL_ERROR_WANT_WRITE:
+-    case SSL_ERROR_WANT_X509_LOOKUP:
+       break;
+     case SSL_ERROR_ZERO_RETURN:
+       return scope.Escape(env()->zero_return_string());
+@@ -761,6 +758,12 @@ void TLSWrap::EnableSessionCallbacks(
+         "EnableSessionCallbacks after destroySSL");
+   }
+   wrap->enable_session_callbacks();
++  EnableHelloParser(args);
++}
++
++
++void TLSWrap::EnableHelloParser(const FunctionCallbackInfo<Value>& args) {
++  TLSWrap* wrap = Unwrap<TLSWrap>(args.Holder());
+   NodeBIO::FromBIO(wrap->enc_in_)->set_initial(kMaxHelloLength);
+   wrap->hello_parser_.Start(SSLWrap<TLSWrap>::OnClientHello,
+                             OnClientHelloParseEnd,
+@@ -785,12 +788,6 @@ void TLSWrap::DestroySSL(const FunctionCallbackInfo<Value>& args) {
+ }
+ 
+ 
+-void TLSWrap::EnableCertCb(const FunctionCallbackInfo<Value>& args) {
+-  TLSWrap* wrap = Unwrap<TLSWrap>(args.Holder());
+-  wrap->WaitForCertCb(OnClientHelloParseEnd, wrap);
+-}
+-
+-
+ void TLSWrap::OnClientHelloParseEnd(void* arg) {
+   TLSWrap* c = static_cast<TLSWrap*>(arg);
+   c->Cycle();
+@@ -889,8 +886,8 @@ void TLSWrap::Initialize(Local<Object> target,
+   env->SetProtoMethod(t, "start", Start);
+   env->SetProtoMethod(t, "setVerifyMode", SetVerifyMode);
+   env->SetProtoMethod(t, "enableSessionCallbacks", EnableSessionCallbacks);
++  env->SetProtoMethod(t, "enableHelloParser", EnableHelloParser);
+   env->SetProtoMethod(t, "destroySSL", DestroySSL);
+-  env->SetProtoMethod(t, "enableCertCb", EnableCertCb);
+ 
+   StreamBase::AddMethods<TLSWrap>(env, t, StreamBase::kFlagHasWritev);
+   SSLWrap<TLSWrap>::AddMethods(env, t);
+diff --git a/src/tls_wrap.h b/src/tls_wrap.h
+index 31d1952..a4aa3f7 100644
+--- a/src/tls_wrap.h
++++ b/src/tls_wrap.h
+@@ -132,7 +132,7 @@ class TLSWrap : public AsyncWrap,
+   static void SetVerifyMode(const v8::FunctionCallbackInfo<v8::Value>& args);
+   static void EnableSessionCallbacks(
+       const v8::FunctionCallbackInfo<v8::Value>& args);
+-  static void EnableCertCb(
++  static void EnableHelloParser(
+       const v8::FunctionCallbackInfo<v8::Value>& args);
+   static void DestroySSL(const v8::FunctionCallbackInfo<v8::Value>& args);
+ 
+@@ -161,6 +161,10 @@ class TLSWrap : public AsyncWrap,
+   // If true - delivered EOF to the js-land, either after `close_notify`, or
+   // after the `UV_EOF` on socket.
+   bool eof_;
++
++#ifdef SSL_CTRL_SET_TLSEXT_SERVERNAME_CB
++  v8::Persistent<v8::Value> sni_context_;
++#endif  // SSL_CTRL_SET_TLSEXT_SERVERNAME_CB
+ };
+ 
+ }  // namespace node
+diff --git a/test/fixtures/keys/Makefile b/test/fixtures/keys/Makefile
+index 1148e52..1439862 100644
+--- a/test/fixtures/keys/Makefile
++++ b/test/fixtures/keys/Makefile
+@@ -79,14 +79,6 @@ agent1-cert.pem: agent1-csr.pem ca1-cert.pem ca1-key.pem
+ 		-CAcreateserial \
+ 		-out agent1-cert.pem
+ 
+-agent1-pfx.pem: agent1-cert.pem agent1-key.pem ca1-cert.pem
+-	openssl pkcs12 -export \
+-		-in agent1-cert.pem \
+-		-inkey agent1-key.pem \
+-		-certfile ca1-cert.pem \
+-		-out agent1-pfx.pem \
+-		-password pass:sample
+-
+ agent1-verify: agent1-cert.pem ca1-cert.pem
+ 	openssl verify -CAfile ca1-cert.pem agent1-cert.pem
+ 
+diff --git a/test/parallel/test-tls-cnnic-whitelist.js b/test/parallel/test-tls-cnnic-whitelist.js
+index 85e1d90..d639dce 100644
+--- a/test/parallel/test-tls-cnnic-whitelist.js
++++ b/test/parallel/test-tls-cnnic-whitelist.js
+@@ -53,7 +53,10 @@ var testCases = [
+       port: common.PORT,
+       rejectUnauthorized: true
+     },
+-    errorCode: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY'
++    // LibreSSL returns CERT_UNTRUSTED in this case, OpenSSL
++    // returns UNABLE_TO_GET_ISSUER_CERT_LOCALLY.
++    errorCode: 'CERT_UNTRUSTED'
++    //errorCode: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY'
+   }
+ ];
+ 
+diff --git a/test/parallel/test-tls-ocsp-callback.js b/test/parallel/test-tls-ocsp-callback.js
+index e9443f4..64b6a6c 100644
+--- a/test/parallel/test-tls-ocsp-callback.js
++++ b/test/parallel/test-tls-ocsp-callback.js
+@@ -22,7 +22,11 @@ var constants = require('constants');
+ var fs = require('fs');
+ var join = require('path').join;
+ 
+-var pfx = fs.readFileSync(join(common.fixturesDir, 'keys', 'agent1-pfx.pem'));
++test({ response: false }, function() {
++  test({ response: 'hello world' }, function() {
++    test({ ocsp: false });
++  });
++});
+ 
+ function test(testOptions, cb) {
+ 
+@@ -42,13 +46,6 @@ function test(testOptions, cb) {
+   var ocspCount = 0;
+   var ocspResponse;
+ 
+-  if (testOptions.pfx) {
+-    delete options.key;
+-    delete options.cert;
+-    options.pfx = testOptions.pfx;
+-    options.passphrase = testOptions.passphrase;
+-  }
+-
+   var server = tls.createServer(options, function(cleartext) {
+     cleartext.on('error', function(er) {
+       // We're ok with getting ECONNRESET in this test, but it's
+@@ -108,23 +105,3 @@ function test(testOptions, cb) {
+     assert.equal(ocspCount, 1);
+   });
+ }
+-
+-var tests = [
+-  { response: false },
+-  { response: 'hello world' },
+-  { ocsp: false }
+-];
+-
+-if (!common.hasFipsCrypto) {
+-  tests.push({ pfx: pfx, passphrase: 'sample', response: 'hello pfx' });
+-}
+-
+-function runTests(i) {
+-  if (i === tests.length) return;
+-
+-  test(tests[i], common.mustCall(function() {
+-    runTests(i + 1);
+-  }));
+-}
+-
+-runTests(0);
