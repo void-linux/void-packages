@@ -3,7 +3,7 @@
 hook() {
 	: ${configure_script:=./configure}
 
-	if [ ! -f ${configure_script} ]; then
+	if [ ! -f "${configure_script}" ]; then
 		return 0
 	fi
 	# http://lists.gnu.org/archive/html/libtool-patches/2004-06/msg00002.html
