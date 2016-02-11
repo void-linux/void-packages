@@ -14,7 +14,7 @@ KERNEL_SITE="http://www.kernel.org/pub/linux"
 #KERNEL_SITE="http://mirror.be.gbxs.net/pub/linux"
 CPAN_SITE="http://cpan.perl.org/modules/by-module"
 PYPI_SITE="http://pypi.python.org/packages/source"
-MOZILLA_SITE="http://ftp.mozilla.org/pub/mozilla.org"
+MOZILLA_SITE="http://ftp.mozilla.org/pub"
 GNU_SITE="http://ftp.gnu.org/gnu"
 FREEDESKTOP_SITE="http://freedesktop.org/software"
 
