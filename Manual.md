@@ -375,7 +375,7 @@ Example:
   | GNOME_SITE       | http://ftp.gnome.org/pub/GNOME/sources          |
   | GNU_SITE         | http://mirrors.kernel.org/gnu                   |
   | KERNEL_SITE      | http://www.kernel.org/pub/linux                 |
-  | MOZILLA_SITE     | http://ftp.mozilla.org/pub/mozilla.org          |
+  | MOZILLA_SITE     | http://ftp.mozilla.org/pub                      |
   | NONGNU_SITE      | http://download.savannah.nongnu.org/releases    |
   | PYPI_SITE        | http://pypi.python.org/packages/source          |
   | SOURCEFORGE_SITE | http://downloads.sourceforge.net/sourceforge    |
