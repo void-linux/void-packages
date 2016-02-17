@@ -1,123 +1,85 @@
 # Template file for 'lapack'
 pkgname=lapack
-version=3.5.0
-revision=3
-wrksrc="${pkgname}-${version}"
-hostmakedepends="gcc-fortran doxygen"
-replaces="liblapack>=0"
+version=3.6.0
+revision=1
+nocross=yes
+build_style=cmake
+configure_args="
+ -DBUILD_SHARED_LIBS=ON -DCMAKE_SKIP_RPATH=ON -DBUILD_TESTING=OFF
+ -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_Fortran_COMPILER=gfortran
+ -DCMAKE_Fortran_FLAGS=-fPIC -DCBLAS=ON -DLAPACKE=ON -DBUILD_DEPRECATED=ON"
+hostmakedepends="cmake gcc-fortran"
 short_desc="Linear Algebra PACKage"
 maintainer="Alessio Sergi <al3hex@gmail.com>"
 homepage="http://www.netlib.org/lapack/"
 license="3-clause-BSD"
 distfiles="http://www.netlib.org/${pkgname}/${pkgname}-${version}.tgz"
-checksum="9ad8f0d3f3fb5521db49f2dd716463b8fb2b6bc9dc386a9956b8c6144f726352"
+checksum=a9a0082c918fe14e377bbd570057616768dca76cbdc713457d8199aaa233ffc3
 
-pre_build() {
-	cp -f ${FILESDIR}/make.inc.template ${wrksrc}/make.inc
-	cp -f ${FILESDIR}/Doxyfile_man.blas ${wrksrc}/DOCS
-	cp -f ${FILESDIR}/Doxyfile_man.lapack ${wrksrc}/DOCS
+pre_configure() {
+	sed -i 's|/CMAKE/|/cmake/|' CBLAS/CMakeLists.txt
 }
-
-do_build() {
-	export FC=gfortran
-	export FFLAGS=$CFLAGS
-	export FFLAGS_NOOPT=${CFLAGS/-O2/}
-	export OPTS="$FFLAGS -frecursive"
-	export NOOPT="$FFLAGS_NOOPT -O0 -frecursive"
-	export PICOPT="-fPIC"
-
-	# Build the shared blas library
-	make ${makejobs} blaslib OPTS="$OPTS $PICOPT" NOOPT="$NOOPT $PICOPT"
-	mv librefblas.a libblas_pic.a
-
-	mkdir tmp
-	( cd tmp; ar x ../libblas_pic.a )
-	"$FC" -shared -Wl,-soname=libblas.so.${version%%.*} -o libblas.so.${version} tmp/*.o
-	ln -sf libblas.so.${version} libblas.so
-	rm -rf tmp
-
-	# Build the static blas library
-	make cleanlib
-	make ${makejobs} blaslib OPTS="$OPTS" NOOPT="$NOOPT"
-	mv librefblas.a libblas.a
-	make cleanlib
-
-	# Build the shared lapack library
-	make ${makejobs} lapacklib OPTS="$OPTS $PICOPT" NOOPT="$NOOPT $PICOPT"
-	mv liblapack.a liblapack_pic.a
-
-	mkdir tmp
-	( cd tmp; ar x ../liblapack_pic.a )
-	"$FC" -shared -Wl,-soname=liblapack.so.${version%%.*} -o liblapack.so.${version} tmp/*.o -L. -lblas
-	rm -rf tmp
-
-	# Build the static lapack library
-	make cleanlib
-	make ${makejobs} lapacklib OPTS="$OPTS" NOOPT="$NOOPT"
-
-	# Build blas and lapack man pages
-	doxygen DOCS/Doxyfile_man.blas
-	doxygen DOCS/Doxyfile_man.lapack
-}
-
-do_install() {
-	for libname in libblas liblapack; do
-		vinstall ${libname}.a 644 usr/lib ${libname}.a
-		vinstall ${libname}.so.${version} 755 usr/lib ${libname}.so.${version}
-	done
+post_install() {
 	vlicense LICENSE
 }
 
-post_install() {
-	for libname in libblas liblapack; do
-		ln -sf ${libname}.so.${version} ${DESTDIR}/usr/lib/${libname}.so
-		ln -sf ${libname}.so.${version} ${DESTDIR}/usr/lib/${libname}.so.${version%%.*}
-	done
-}
-
 lapack-devel_package() {
-	depends="${sourcepkg}>=${version}_${revision}"
+	depends="blas-devel-${version}_${revision} ${sourcepkg}-${version}_${revision}"
 	short_desc+=" - development files"
 	pkg_install() {
+		vmove usr/lib/cmake/lapack-${version}
+		vmove usr/lib/pkgconfig/lapack.pc
 		vmove usr/lib/liblapack.a
 		vmove usr/lib/liblapack.so
 	}
 }
-
-lapack-doc_package() {
-	noarch=yes
-	depends="${sourcepkg}>=${version}_${revision}"
-	short_desc+=" - documentation"
-	pkg_install() {
-		vmkdir usr/share
-		vcopy ${wrksrc}/DOCS/lapack/man usr/share
-	}
-}
-
 blas_package() {
-	replaces="libBLAS>=0"
-	short_desc+=" - BLAS (Basic Linear Algebra Subprograms) library"
+	short_desc="Basic Linear Algebra Subprograms"
 	pkg_install() {
 		vmove usr/lib/libblas.so.*
-		vlicense ${wrksrc}/LICENSE
+		vlicense LICENSE
 	}
 }
-
 blas-devel_package() {
-	depends="blas>=${version}_${revision}"
-	short_desc+=" - BLAS development files"
+	depends="blas-${version}_${revision}"
+	short_desc="Basic Linear Algebra Subprograms - development files"
 	pkg_install() {
+		vmove usr/lib/pkgconfig/blas.pc
 		vmove usr/lib/libblas.a
 		vmove usr/lib/libblas.so
 	}
 }
-
-blas-doc_package() {
-	noarch=yes
-	depends="blas>=${version}_${revision}"
-	short_desc+=" - BLAS documentation"
+cblas_package() {
+	short_desc="C interface to BLAS"
 	pkg_install() {
-		vmkdir usr/share
-		vcopy ${wrksrc}/DOCS/blas/man usr/share
+		vmove usr/lib/libcblas.so.*
+	}
+}
+cblas-devel_package() {
+	short_desc="C interface to BLAS - development files"
+	depends="blas-devel-${version}_${revision} cblas-${version}_${revision}"
+	pkg_install() {
+		vmove usr/include/cblas*.h
+		vmove usr/lib/cmake/cblas-${version}
+		vmove usr/lib/pkgconfig/cblas.pc
+		vmove usr/lib/libcblas.a
+		vmove usr/lib/libcblas.so
+	}
+}
+lapacke_package() {
+	short_desc="C interface to LAPACK"
+	pkg_install() {
+		vmove usr/lib/liblapacke.so.*
+	}
+}
+lapacke-devel_package() {
+	short_desc="C interface to LAPACK - development files"
+	depends="lapack-devel-${version}_${revision} lapacke-${version}_${revision}"
+	pkg_install() {
+		vmove usr/include/lapacke*.h
+		vmove usr/lib/cmake/lapacke-${version}
+		vmove usr/lib/pkgconfig/lapacke.pc
+		vmove usr/lib/liblapacke.a
+		vmove usr/lib/liblapacke.so
 	}
 }
