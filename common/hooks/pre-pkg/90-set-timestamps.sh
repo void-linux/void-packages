@@ -22,5 +22,5 @@ hook() {
 	fi
 	date=$($GIT_CMD -C ${XBPS_SRCPKGDIR}/${basepkg} log --pretty='%ci' --date=iso -n1 .)
 	msg_normal "$pkgver: setting mtimes to %s\n" "$(date --date "$date")"
-	find $PKGDESTDIR -print0 | xargs -0 touch --date "$date"
+	find $PKGDESTDIR -print0 | xargs -0 touch -h --date "$date"
 }
