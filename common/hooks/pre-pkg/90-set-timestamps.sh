@@ -4,8 +4,8 @@
 hook() {
 	local GIT_CMD date basepkg
 
-	# If XBPS_USE_GIT_COMMIT_DATE is disabled in conf file don't continue.
-	if [ -z $XBPS_USE_GIT_COMMIT_DATE ]; then
+	# If XBPS_USE_BUILD_MTIME is enabled in conf file don't continue.
+	if [ -n "$XBPS_USE_BUILD_MTIME" ]; then
 		return
 	fi
 
