@@ -60,8 +60,6 @@ if [ -z "$CROSS_BUILD" ]; then
 fi
 
 case "$XBPS_TARGET_MACHINE" in
-	i686)	broken=http://build.voidlinux.eu/builders/i686_builder/builds/21068/steps/shell_3/logs/stdio
-		;;
 	*-musl)	# use shipped clucene, because CLucene/analysis/cjk/CJKAnalyzer.h
 		# is missing in the musl clucene-devel files
 		;;
@@ -99,6 +97,7 @@ do_configure() {
 
 	./configure ${configure_args} \
 		--prefix=${_LO_PREFIX} \
+		--exec-prefix=${_LO_PREFIX} \
 		--with-vendor='VoidLinux' \
 		--with-lang='en-US de es fr it pl pt' \
 		--with-help \
@@ -165,45 +164,71 @@ do_build() {
 }
 
 do_install() {
-	local f instbase="${DESTDIR}/${_LO_PREFIX}"
+	local f
+	local INSTDIR=${DESTDIR}${_LO_PREFIX}
 
-	make DESTDIR="${DESTDIR}" distro-pack-install
-	mkdir -p ${instbase}/share/appdata
-	cp -p sysui/desktop/appstream-appdata/*.xml ${instbase}/share/appdata/
+	make DESTDIR="${DESTDIR}" PREFIXDIR="${_LO_PREFIX}" distro-pack-install
 
 	if [ "${_LO_PREFIX}" != "/usr" ]; then
+		# HACK: for unknow reasons the i686 build ignores --prefix and installs in /usr
+		if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
+			# Copy from wrong install path
+			mkdir -p ${INSTDIR}/bin
+			if [ -d ${DESTDIR}/usr/bin ]; then
+				cp -pR ${DESTDIR}/usr/bin/* ${INSTDIR}/bin/
+				rm -rf ${DESTDIR}/usr/bin
+			fi
+			mkdir -p ${INSTDIR}/lib
+			if [ -d ${DESTDIR}/usr/lib ]; then
+				cp -pR ${DESTDIR}/usr/lib/* ${INSTDIR}/lib/
+				rm -rf ${DESTDIR}/usr/lib
+			fi
+			if [ -d ${DESTDIR}/usr/lib32 ]; then
+				cp -pR ${DESTDIR}/usr/lib32/* ${INSTDIR}/lib/
+				rm -rf ${DESTDIR}/usr/lib32
+			fi
+			mkdir -p ${INSTDIR}/share
+			if [ -d ${DESTDIR}/usr/lib32 ]; then
+				cp -pR ${DESTDIR}/usr/share/* ${INSTDIR}/share/
+				rm -rf ${DESTDIR}/usr/share
+			fi
+		fi
+
 		# This symlink is necessary for the desktop menu entries
 		vmkdir usr/bin
 		ln -sf ${_LO_PREFIX}/lib/libreoffice/program/soffice \
 			${DESTDIR}/usr/bin/libreoffice
 
-		if [ -d ${instbase}/share/icons/hicolor/32x32/apps ]; then
+		if [ -d ${INSTDIR}/share/icons/hicolor/32x32/apps ]; then
 			# Icons
 			vmkdir usr/share/pixmaps
-			for f in $(find ${instbase}/share/icons/hicolor/32x32/apps -type f); do
+			for f in $(find ${INSTDIR}/share/icons/hicolor/32x32/apps -type f); do
 				f=${f#${DESTDIR}/}
  				ln -sf $f ${DESTDIR}/usr/share/pixmaps/
 			done
 		fi
 
-		if [ -d ${instbase}/lib/libreoffice/share/xdg ]; then
+		if [ -d ${INSTDIR}/lib/libreoffice/share/xdg ]; then
 			# Desktop menu entries
 			vmkdir usr/share/applications
-			for f in $(find ${instbase}/lib/libreoffice/share/xdg -type f); do
+			for f in $(find ${INSTDIR}/lib/libreoffice/share/xdg -type f); do
 				f=${f#${DESTDIR}/}
 				ln -sf $f ${DESTDIR}/usr/share/applications/libreoffice-$(basename $f)
 			done
 		fi
 
-		if [ -d ${instbase}/share/man/man1 ]; then
+		if [ -d ${INSTDIR}/share/man/man1 ]; then
 			# Manual pages
 			vmkdir usr/share/man/man1
-			for f in $(find ${instbase}/share/man/man1 -type f); do
+			for f in $(find ${INSTDIR}/share/man/man1 -type f); do
 				f=${f#${DESTDIR}/}
  				ln -sf $f ${DESTDIR}/usr/share/man/man1/
 			done
 		fi
 	fi
+
+	mkdir -p ${INSTDIR}/share/appdata
+	cp -p sysui/desktop/appstream-appdata/*.xml ${INSTDIR}/share/appdata/
 
 	# Move bash completion to the right place
 	vmkdir usr/share/bash-completion/completions
