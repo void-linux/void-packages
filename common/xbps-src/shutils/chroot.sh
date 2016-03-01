@@ -198,7 +198,7 @@ chroot_handler() {
         action="$arg $action"
         env -i PATH="/usr/bin:/usr/sbin:$PATH" SHELL=/bin/sh \
             HOME=/tmp IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 \
-            XBPS_COMMIT_TIMESTAMP="$XBPS_COMMIT_TIMESTAMP" \
+            SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
             $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
             $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" \
             /void-packages/xbps-src $action $pkg

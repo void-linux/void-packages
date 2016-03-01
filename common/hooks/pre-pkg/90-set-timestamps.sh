@@ -2,9 +2,9 @@
 #	- sets the timestamps in a package to the commit date
 
 hook() {
-	# If XBPS_COMMIT_TIMESTAMP is set, set mtimes to that timestamp.
-	if [ -n "$XBPS_COMMIT_TIMESTAMP" ]; then
-		msg_normal "$pkgver: setting mtimes to %s\n" "$(date --date "$XBPS_COMMIT_TIMESTAMP")"
-		find $PKGDESTDIR -print0 | xargs -0 touch -h --date "$XBPS_COMMIT_TIMESTAMP"
+	# If SOURCE_DATE_EPOCH is set, set mtimes to that timestamp.
+	if [ -n "$SOURCE_DATE_EPOCH" ]; then
+		msg_normal "$pkgver: setting mtimes to %s\n" "$(date --date "@$SOURCE_DATE_EPOCH")"
+		find $PKGDESTDIR -print0 | xargs -0 touch -h --date "@$SOURCE_DATE_EPOCH"
 	fi
 }
