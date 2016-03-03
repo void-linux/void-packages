@@ -1,1 +1,0 @@
-../configure/timestamp-macros.sh
