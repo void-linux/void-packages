@@ -165,9 +165,9 @@ static const char *help_msg =
 #include <linux/sockios.h>
 
 typedef unsigned long long u64;	/* hack, so we may include kernel's ethtool.h */
-typedef __uint32_t u32;		/* ditto */
-typedef __uint16_t u16;		/* ditto */
-typedef __uint8_t u8;		/* ditto */
+typedef uint32_t u32;		/* ditto */
+typedef uint16_t u16;		/* ditto */
+typedef uint8_t u8;		/* ditto */
 #include <linux/ethtool.h>
 
 struct option longopts[] = {
