@@ -37,6 +37,8 @@ show_pkg() {
         [ -n "$i" ] && echo "conflicts:	$i"
     done
     [ -n "$long_desc" ] && echo "long_desc: $long_desc"
+
+    return 0
 }
 
 show_pkg_deps() {
