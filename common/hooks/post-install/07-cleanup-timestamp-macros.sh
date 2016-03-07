@@ -12,7 +12,10 @@ hook() {
 	# Clean up shell scripts, perl files, pkgconfig files etc.
 	for f in $(grep -r -l -e "$strip" "$PKGDESTDIR" ); do
 		mimetype=$(file --mime-type "$f" | awk '{ print $2 }')
-		if [ "$mimetype" == "text/plain" -o "$mimetype" == "text/x-shellscript" ]; then
+		if [ "$mimetype" == "text/plain" -o \
+		     "$mimetype" == "text/x-makefile" -o \
+		     "$mimetype" == "text/x-shellscript" -o \
+		     "$mimetype" == "application/xml" ]; then
 			sed -i "$f" -e "s;$strip;;"
 			msg_warn "Cleaned up ${f#${PKGDESTDIR}} ...\n"
 		else
