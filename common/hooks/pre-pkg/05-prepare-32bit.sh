@@ -164,7 +164,7 @@ hook() {
 	# Additional symlinks to the native libdir.
 	for f in ${lib32symlinks}; do
 		echo "$pkgver: symlinking $f to the native libdir..."
-		mkdir -p ${destdir32}/usr/lib{,32}
+		mkdir -p ${destdir32}/usr/lib{,32}/$(dirname ${f})
 		ln -sfr ${destdir32}/usr/lib32/$f ${destdir32}/usr/lib/$f
 	done
 	# If it's a development pkg add a dependency to the 64bit pkg.
