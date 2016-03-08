@@ -1,0 +1,87 @@
+2013-08-22  Magnus Granberg <zorry@gentoo.org>
+
+	* gcc/gcc.c (main): Add support for external spec file via the GCC_SPECS env var
+	and move the process of the user specifed specs.
+
+    This allows us to easily control pie/ssp defaults with gcc-config profiles.
+    Original patch by Rob Holland
+    Extended to support multiple entries separated by ':' by Kevin F. Quinn
+    Modified to use getenv instead of poisoned GET_ENVIRONMENT by Ryan Hill
+    Modified to process the GCC_SPECS env var befor DRIVER_SELF_SPECS by Magnus Granberg
+
+--- gcc/gcc.c	2013-02-05 16:55:31.000000000 +0100
++++ gcc/gcc.c	2013-07-26 02:32:14.625089864 +0200
+@@ -6427,6 +6428,48 @@ main (int argc, char **argv)
+     do_option_spec (option_default_specs[i].name,
+ 		    option_default_specs[i].spec);
+ 
++#if !(defined (__MSDOS__) || defined (OS2) || defined (VMS) || defined (WIN32))
++  /* Add specs listed in GCC_SPECS.  Note; in the process of separating
++   * each spec listed, the string is overwritten at token boundaries
++   * (':') with '\0', an effect of strtok_r().
++   */
++  specs_file = getenv ("GCC_SPECS");
++  if (specs_file && (strlen(specs_file) > 0))
++    {
++      char *spec, *saveptr;
++      for (spec=strtok_r(specs_file,":",&saveptr);
++           spec!=NULL;
++           spec=strtok_r(NULL,":",&saveptr))
++        {
++          struct user_specs *user = (struct user_specs *)
++            xmalloc (sizeof (struct user_specs));
++          user->next = (struct user_specs *) 0;
++          user->filename = spec;
++          if (user_specs_tail)
++            user_specs_tail->next = user;
++          else
++            user_specs_head = user;
++          user_specs_tail = user;
++        }
++    }
++#endif
++  /* Process any user specified specs in the order given on the command
++   *     line.  */
++  for (uptr = user_specs_head; uptr; uptr = uptr->next)
++    {
++      char *filename = find_a_file (&startfile_prefixes, uptr->filename,
++        R_OK, true);
++      read_specs (filename ? filename : uptr->filename, false, true);
++    }
++  /* Process any user self specs.  */
++  {
++    struct spec_list *sl;
++    for (sl = specs; sl; sl = sl->next)
++      if (sl->name_len == sizeof "self_spec" - 1
++          && !strcmp (sl->name, "self_spec"))
++        do_self_spec (*sl->ptr_spec);
++  }
++
+   /* Process DRIVER_SELF_SPECS, adding any new options to the end
+      of the command line.  */
+ 
+@@ -6535,24 +6578,6 @@ main (int argc, char **argv)
+ 			      PREFIX_PRIORITY_LAST, 0, 1);
+     }
+ 
+-  /* Process any user specified specs in the order given on the command
+-     line.  */
+-  for (uptr = user_specs_head; uptr; uptr = uptr->next)
+-    {
+-      char *filename = find_a_file (&startfile_prefixes, uptr->filename,
+-				    R_OK, true);
+-      read_specs (filename ? filename : uptr->filename, false, true);
+-    }
+-
+-  /* Process any user self specs.  */
+-  {
+-    struct spec_list *sl;
+-    for (sl = specs; sl; sl = sl->next)
+-      if (sl->name_len == sizeof "self_spec" - 1
+-	  && !strcmp (sl->name, "self_spec"))
+-	do_self_spec (*sl->ptr_spec);
+-  }
+-
+   if (compare_debug)
+     {
+       enum save_temps save;
