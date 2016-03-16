@@ -1077,6 +1077,8 @@ The following variables influence how Go packages are built:
   will be downloaded with `go get`. Otherwise, a distfile has to be
   provided. This option should only be used with `-git` (or similar)
   packages; using a versioned distfile is preferred.
+- `go_build_tags`: An optional, space-separated list of build tags to
+  pass to Go.
 
 <a id="pkgs_haskell"></a>
 ### Haskell packages

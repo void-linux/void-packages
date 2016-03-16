@@ -10,7 +10,7 @@ do_build() {
 	fi
 
 	go_package=${go_package:-$go_import_path}
-	go get -x ${go_package}
+	go get -x -tags "${go_build_tags}" ${go_package}
 }
 
 do_install() {
