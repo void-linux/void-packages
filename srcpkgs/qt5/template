@@ -1,47 +1,91 @@
 # Template file for 'qt5'
 pkgname=qt5
-version=5.5.1
-revision=4
+version=5.6.0
+revision=1
 wrksrc="qt-everywhere-opensource-src-${version}"
 homepage="http://qt.io/"
 short_desc="A cross-platform application and UI framework (QT5)"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 license="GPL-3, LGPL-2.1"
 distfiles="http://download.qt.io/official_releases/qt/${version%.*}/${version}/single/qt-everywhere-opensource-src-${version}.tar.xz"
-checksum=6f028e63d4992be2b4a5526f2ef3bfa2fe28c5c757554b11d9e8d86189652518
+checksum=76a95cf6c1503290f75a641aa25079cd0c5a8fcd7cff07ddebff80a955b07de7
 
 nocross=yes
 hostmakedepends="flex ruby gperf python perl pkg-config"
 makedepends="
  libressl-devel libpng-devel MesaLib-devel libXrender-devel unixodbc-devel
  fontconfig-devel libXi-devel libXv-devel libXinerama-devel libXrandr-devel
- libXcursor-devel dbus-devel glib-devel icu-devel cups-devel libjpeg-turbo-devel
- sqlite-devel alsa-lib-devel tiff-devel libmng-devel libxshmfence-devel
- xcb-util-keysyms-devel xcb-util-image-devel xcb-util-wm-devel libSM-devel
+ libXcursor-devel libXScrnSaver-devel dbus-devel glib-devel icu-devel
+ cups-devel libjpeg-turbo-devel sqlite-devel alsa-lib-devel tiff-devel
+ libmng-devel libxshmfence-devel xcb-util-keysyms-devel
+ xcb-util-image-devel xcb-util-wm-devel libSM-devel
  libXcomposite-devel libwebp-devel libxkbcommon-devel harfbuzz-devel gtk+-devel
  mtdev-devel freetds-devel libmysqlclient-devel postgresql-libs-devel
  pulseaudio-devel libbluetooth-devel gst-plugins-base1-devel libxslt-devel
  pciutils-devel nss-devel libcap-devel libinput-devel libproxy-devel
- libxkbcommon-devel wayland-devel"
+ libxcb-devel libxkbcommon-devel wayland-devel"
 depends="qtchooser"
+replaces="qt5-doc<5.6.0 qt5-quick1<5.6.0 qt5-quick1-devel<5.6.0 qt5-webkit<5.6.0 qt5-webkit-devel<5.6.0"
+
+_move_examples() {
+	if [ -d ${PKGDESTDIR}/usr/share/qt5/examples ]; then
+		# The help files (*.qch) are in qt5-doc
+		find ${PKGDESTDIR}/usr/share/qt5/examples -iname "*.qch" -delete
+		# Copy examples to /destdir/qt5-examples-${version} subpackage
+		mkdir -p /destdir/qt5-examples-${version}/usr/share/qt5
+		cp -pR ${PKGDESTDIR}/usr/share/qt5/examples \
+			/destdir/qt5-examples-${version}/usr/share/qt5
+		rm -rf ${PKGDESTDIR}/usr/share/qt5/examples
+	fi
+}
+
+_install_subpkg() {
+	local module=$1 base
+	cd ${wrksrc}/${module}
+	make INSTALL_ROOT=${PKGDESTDIR} install
+	rm -rf ${PKGDESTDIR}/usr/include
+	rm -rf ${PKGDESTDIR}/usr/lib/cmake
+	rm -rf ${PKGDESTDIR}/usr/lib/qt5/mkspecs
+	rm -rf ${PKGDESTDIR}/usr/lib/pkgconfig
+	rm -f ${PKGDESTDIR}/usr/lib/*.so
+	rm -f ${PKGDESTDIR}/usr/lib/*.prl
+	if [ -d ${PKGDESTDIR}/usr/lib/qt5/bin ]; then
+		vmkdir usr/bin
+		for f in ${PKGDESTDIR}/usr/lib/qt5/bin/*; do
+			base=$(basename $f)
+			ln -sf /usr/lib/qt5/bin/${base} ${PKGDESTDIR}/usr/bin/${base}-qt5
+		done
+	fi
+	_move_examples
+}
+
+_install_devel() {
+	local module=$1
+	cd ${wrksrc}/${module}
+	make INSTALL_ROOT=${PKGDESTDIR} install
+	rm -rf ${PKGDESTDIR}/usr/share
+	rm -rf ${PKGDESTDIR}/usr/lib/qt5/bin
+	rm -rf ${PKGDESTDIR}/usr/lib/qt5/qml
+	rm -rf ${PKGDESTDIR}/usr/lib/qt5/libexec
+	rm -rf ${PKGDESTDIR}/usr/lib/qt5/plugins
+	rm -f ${PKGDESTDIR}/usr/lib/*.so.*
+	# Remove QMAKE_PRL_BUILD_DIR from *.prl files because it is the internal builddir
+	find ${PKGDESTDIR} -iname "*.prl" -exec sed -i "{}" -e "/^QMAKE_PRL_BUILD_DIR/d" \;
+}
 
 pre_configure() {
 	# Compatibility functions res_ninit() and res_nclose() for musl libc
 	cp ${FILESDIR}/resolv_compat.h ${wrksrc}/qtwebengine/src/3rdparty/chromium/net/dns
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
-		# Patch .../linx/*/config.{h,asm} to define HAVE_SYSCTL 0
+		# Patch .../linux/*/config.{h,asm} to define HAVE_SYSCTL 0
 		local config chromium=${wrksrc}/qtwebengine/src/3rdparty/chromium
 		for config in $(find ${chromium}/third_party/ffmpeg/chromium/config -name "config\.*" | grep linux); do
 			sed -i ${config} -e "s;HAVE_SYSCTL 1;HAVE_SYSCTL 0;"
 		done
-		# Define WTF_OS_LINUX_MUSL to 1 to activate the patch qt-musl-pthread_getattr_np.patch
-		sed -i ${chromium}/third_party/WebKit/Source/platform/heap/ThreadState.cpp \
-			-e "/namespace blink/i #define WTF_OS_LINUX_MUSL 1"
 	esac
 }
 do_configure() {
-	export LD_LIBRARY_PATH="${wrksrc}/qtbase/lib:${wrksrc}/qttools/lib:${LD_LIBRARY_PATH}"
 	export LD="$CXX"
 	unset CPP AR AS RANLIB
 	local opts="-confirm-license -opensource \
@@ -56,10 +100,9 @@ do_configure() {
 		-translationdir /usr/share/qt5/translations \
 		-examplesdir /usr/share/qt5/examples \
 		-archdatadir /usr/lib/qt5 \
-		-nomake examples \
 		-accessibility -fontconfig -icu \
 		-openssl-linked -dbus-linked \
-		-no-pch -no-strip -silent -optimized-qmake \
+		-silent -no-pch -no-strip -optimized-qmake \
 		-system-libjpeg -system-libpng -system-zlib \
 		-system-sqlite -system-harfbuzz"
 	case "$XBPS_TARGET_MACHINE" in
@@ -80,526 +123,268 @@ do_build() {
 	make ${makejobs}
 }
 do_install() {
-	# base
-	cd qtbase
+	local f base
+	cd ${wrksrc}/qtbase
 	make INSTALL_ROOT=${DESTDIR} install
 	vlicense LGPL_EXCEPTION.txt
 	vmkdir usr/bin
-	for f in ${PKGDESTDIR}/usr/lib/qt5/bin/*; do
-		ln -s /usr/lib/qt5/bin/$(basename $f) ${DESTDIR}/usr/bin/$(basename $f)-qt5
+	for f in ${DESTDIR}/usr/lib/qt5/bin/*; do
+		base=$(basename $f)
+		ln -sf /usr/lib/qt5/bin/${base} ${PKGDESTDIR}/usr/bin/${base}-qt5
 	done
+	_move_examples
 }
 
 qt5-connectivity-devel_package() {
 	short_desc+=" - Connectivity component (development)"
 	depends="qt5-connectivity-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtconnectivity
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/qml
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtconnectivity
 	}
 }
 qt5-connectivity_package() {
 	short_desc+=" - Connectivity component"
 	pkg_install() {
-		cd ${wrksrc}/qtconnectivity
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/bin
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
+		_install_subpkg qtconnectivity
 	}
 }
 qt5-declarative-devel_package() {
 	short_desc+=" - Declarative component (development)"
 	depends="qt5-declarative-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtdeclarative
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/bin
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/qml
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/plugins
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtdeclarative
 	}
 }
 qt5-declarative_package() {
 	short_desc+=" - Declarative component"
 	pkg_install() {
-		cd ${wrksrc}/qtdeclarative
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.a
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
-		vmkdir usr/bin
-		for f in ${PKGDESTDIR}/usr/lib/qt5/bin/*; do
-			ln -s /usr/lib/qt5/bin/$(basename $f) ${PKGDESTDIR}/usr/bin/$(basename $f)-qt5
-		done
-	}
-}
-qt5-doc_package() {
-	short_desc+=" - Documentation"
-	# This requires qdoc from qtbase and qhelpgenerator from qttools
-	depends="qt5-${version}_${revision} qt5-tools-${version}_${revision}"
-	pkg_install() {
-		cd $wrksrc
-		vmove usr/share/doc
-		# Original (installed) binaries directory
-		local qtbin=/usr/lib/qt5/bin
-		# Temporary binaries directory
-		local tmpbin=$wrksrc/docbuild/bin
-		local tmplib=$wrksrc/docbuild/lib
-		local plugins=$wrksrc/qtbase/plugins
-		mkdir -p $tmpbin/platforms $tmpbin/sqldrivers $tmplib
-		# Install qdoc binary
-		install $wrksrc/qtbase/bin/qdoc $tmpbin/
-		# Install qhelpgenerator binary
-		install $wrksrc/qttools/bin/qhelpgenerator $tmpbin/
-		# Install required plugins below $tmpbin
-		install $plugins/platforms/libqminimal.so $tmpbin/platforms/
-		install $plugins/sqldrivers/libqsqlite.so $tmpbin/sqldrivers/
-		# Install required libraries
-		install $wrksrc/qtbase/lib/*.so* $tmplib
-		install $wrksrc/qttools/lib/*.so* $tmplib
-		# Patch Makefiles to refer to $tmpbin/{qdoc,qhelpgenerator}
-		for m in $(find . -iname "Makefile*" -type f | grep -v "\.orig$"); do
-			mv $m $m.orig
-			sed $m.orig \
-				-e "s;$qtbin/qdoc;$tmpbin/qdoc;g" \
-				-e "s;$qtbin/qhelpgenerator;$tmpbin/qhelpgenerator;g" \
-			> $m
-		done
-		export LD_LIBRARY_PATH="$tmplib:$LD_LIBRARY_PATH"
-		make ${makejobs} docs
-		make INSTALL_ROOT=${PKGDESTDIR} install_docs
-		# Restore original Makefiles just in case...
-		for m in $(find . -iname "Makefile*.orig" -type f); do
-			mv $m ${m%.orig}
-		done
+		_install_subpkg qtdeclarative
 	}
 }
 qt5-enginio-devel_package() {
 	short_desc+=" - Enginio component (development)"
 	depends="qt5-enginio-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtenginio
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/qml
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtenginio
 	}
 }
 qt5-enginio_package() {
 	short_desc+=" - Enginio component"
 	pkg_install() {
-		cd ${wrksrc}/qtenginio
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
+		_install_subpkg qtenginio
+	}
+}
+qt5-examples_package() {
+	short_desc+=" - Examples"
+	depends="qt5-devel-${version}_${revision} qt5-qmake-${version}_${revision}"
+	pkg_install() {
+		# In case any examples are still left in $DESTDIR
+		if [ -d ${DESTDIR}/usr/share/qt5/examples ]; then
+			vmkdir usr/share/qt5
+			cp -pR ${DESTDIR}/usr/share/qt5/examples \
+				${PKGDESTDIR}/usr/share/qt5
+			rm -rf ${DESTDIR}/usr/share/qt5/examples
+		fi
 	}
 }
 qt5-graphicaleffects_package() {
 	short_desc+=" - Graphicaleffects component"
 	pkg_install() {
-		cd ${wrksrc}/qtgraphicaleffects
-		make INSTALL_ROOT=${PKGDESTDIR} install
+		_install_subpkg qtgraphicaleffects
 	}
 }
 qt5-imageformats_package() {
 	short_desc+=" - Plugins for additional image formats"
 	pkg_install() {
-		cd ${wrksrc}/qtimageformats
-		make INSTALL_ROOT=${PKGDESTDIR} install
+		_install_subpkg qtimageformats
 	}
 }
 qt5-location-devel_package() {
 	short_desc+=" - Location component (development)"
 	depends="qt5-location-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtlocation
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/qml
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/plugins
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtlocation
 	}
 }
 qt5-location_package() {
 	short_desc+=" - Location component"
 	pkg_install() {
-		cd ${wrksrc}/qtlocation
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
+		_install_subpkg qtlocation
 	}
 }
 qt5-multimedia-devel_package() {
 	short_desc+=" - Multimedia component (development)"
 	depends="qt5-multimedia-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtmultimedia
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/qml
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/plugins
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtmultimedia
 	}
 }
 qt5-multimedia_package() {
 	short_desc+=" - Multimedia component"
 	pkg_install() {
-		cd ${wrksrc}/qtmultimedia
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
-	}
-}
-qt5-quick1-devel_package() {
-	short_desc+=" - Qt Quick 1 (development)"
-	depends="qt5-quick1-${version}_${revision}
-		qt5-xmlpatterns-devel-${version}_${revision}
-		qt5-devel-${version}_${revision}"
-	pkg_install() {
-		cd ${wrksrc}/qtquick1
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/bin
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/plugins
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/imports
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
-	}
-}
-qt5-quick1_package() {
-	short_desc+=" - Qt Quick 1"
-	pkg_install() {
-		cd ${wrksrc}/qtquick1
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
-		vmkdir usr/bin
-		for f in ${PKGDESTDIR}/usr/lib/qt5/bin/*; do
-			ln -s /usr/lib/qt5/bin/$(basename $f) ${PKGDESTDIR}/usr/bin/$(basename $f)-qt5
-		done
+		_install_subpkg qtmultimedia
 	}
 }
 qt5-quickcontrols_package() {
 	short_desc+=" - Quick UI controls"
 	pkg_install() {
-		cd ${wrksrc}/qtquickcontrols
-		make INSTALL_ROOT=${PKGDESTDIR} install
+		_install_subpkg qtquickcontrols
+	}
+}
+qt5-quickcontrols2_package() {
+	short_desc+=" - Quick UI controls (ver. 2)"
+	pkg_install() {
+		_install_subpkg qtquickcontrols2
 	}
 }
 qt5-script-devel_package() {
 	short_desc+=" - Scriptable classes (development)"
 	depends="qt5-script-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtscript
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtscript
 	}
 }
 qt5-script_package() {
 	short_desc+=" - Scriptable classes"
 	pkg_install() {
-		cd ${wrksrc}/qtscript
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
+		_install_subpkg qtscript
 	}
 }
 qt5-sensors-devel_package() {
 	short_desc+=" - Sensors component (development)"
 	depends="qt5-sensors-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtsensors
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/qml
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/plugins
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtsensors
 	}
 }
 qt5-sensors_package() {
 	short_desc+=" - Sensors component"
 	pkg_install() {
-		cd ${wrksrc}/qtsensors
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
+		_install_subpkg qtsensors
 	}
 }
 qt5-serialport-devel_package() {
 	short_desc+=" - Serialport component (development)"
 	depends="qt5-serialport-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtserialport
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtserialport
 	}
 }
 qt5-serialport_package() {
 	short_desc+=" - Serialport component"
 	pkg_install() {
-		cd ${wrksrc}/qtserialport
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
+		_install_subpkg qtserialport
 	}
 }
 qt5-svg-devel_package() {
 	short_desc+=" - Svg component (development)"
 	depends="qt5-svg-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtsvg
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/plugins
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtsvg
 	}
 }
 qt5-svg_package() {
 	short_desc+=" - Svg component"
 	pkg_install() {
-		cd ${wrksrc}/qtsvg
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
+		_install_subpkg qtsvg
 	}
 }
 qt5-wayland-devel_package() {
 	short_desc+=" - Wayland component (development)"
 	depends="qt5-wayland-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtwayland
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/plugins
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtwayland
 	}
 }
 qt5-wayland_package() {
 	short_desc+=" - Wayland component"
 	pkg_install() {
-		cd ${wrksrc}/qtwayland
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/bin
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
+		_install_subpkg qtwayland
 	}
 }
 qt5-webchannel-devel_package() {
 	short_desc+=" - Webchannel component (development)"
 	depends="qt5-webchannel-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtwebchannel
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/qml
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtwebchannel
 	}
 }
 qt5-webchannel_package() {
 	short_desc+=" - Webchannel component"
 	pkg_install() {
-		cd ${wrksrc}/qtwebchannel
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
+		_install_subpkg qtwebchannel
 	}
 }
 qt5-webengine-devel_package() {
 	short_desc+=" - Webengine component (development)"
 	depends="qt5-webengine-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtwebengine
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/share
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/qml
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/plugins
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/libexec
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtwebengine
 	}
 }
 qt5-webengine_package() {
 	short_desc+=" - Webengine component"
 	pkg_install() {
-		cd ${wrksrc}/qtwebengine
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
-	}
-}
-qt5-webkit-devel_package() {
-	short_desc+=" - WebKit2 component (development)"
-	depends="qt5-webkit-${version}_${revision} qt5-devel-${version}_${revision}"
-	pkg_install() {
-		cd ${wrksrc}/qtwebkit
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/qml
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/libexec
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
-	}
-}
-qt5-webkit_package() {
-	short_desc+=" - WebKit2 component"
-	pkg_install() {
-		cd ${wrksrc}/qtwebkit
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
+		_install_subpkg qtwebengine
 	}
 }
 qt5-websockets-devel_package() {
 	short_desc+=" - Websockets component (development)"
 	depends="qt5-websockets-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtwebsockets
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/qml
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtwebsockets
 	}
 }
 qt5-websockets_package() {
 	short_desc+=" - Websockets component"
 	pkg_install() {
-		cd ${wrksrc}/qtwebsockets
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
+		_install_subpkg qtwebsockets
 	}
 }
 qt5-x11extras-devel_package() {
 	short_desc+=" - X11 extras (development)"
 	depends="qt5-x11extras-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtx11extras
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtx11extras
 	}
 }
 qt5-x11extras_package() {
 	short_desc+=" - X11 extras"
 	pkg_install() {
-		cd ${wrksrc}/qtx11extras
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
+		_install_subpkg qtx11extras
 	}
 }
 qt5-xmlpatterns-devel_package() {
 	short_desc+=" - XML components (development)"
 	depends="qt5-xmlpatterns-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qtxmlpatterns
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/bin
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qtxmlpatterns
 	}
 }
 qt5-xmlpatterns_package() {
 	short_desc+=" - XML components"
 	pkg_install() {
-		cd ${wrksrc}/qtxmlpatterns
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
-		vmkdir usr/bin
-		for f in ${PKGDESTDIR}/usr/lib/qt5/bin/*; do
-			ln -s /usr/lib/qt5/bin/$(basename $f) ${PKGDESTDIR}/usr/bin/$(basename $f)-qt5
-		done
+		_install_subpkg qtxmlpatterns
 	}
 }
 qt5-translations_package() {
 	short_desc+=" - Translations"
 	pkg_install() {
-		cd ${wrksrc}/qttranslations
-		make INSTALL_ROOT=${PKGDESTDIR} install
+		_install_subpkg qttranslations
 	}
 }
 qt5-tools-devel_package() {
 	short_desc+=" - Development tools (development)"
 	depends="qt5-tools-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
-		cd ${wrksrc}/qttools
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/bin
-		rm -r ${PKGDESTDIR}/usr/share
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/plugins
-		rm ${PKGDESTDIR}/usr/lib/*.so.*
+		_install_devel qttools
 	}
 }
 qt5-tools_package() {
 	short_desc+=" - Development tools"
 	depends="qt5-translations desktop-file-utils hicolor-icon-theme"
 	pkg_install() {
-		cd ${wrksrc}/qttools
-		make INSTALL_ROOT=${PKGDESTDIR} install
-		rm -r ${PKGDESTDIR}/usr/include
-		rm -r ${PKGDESTDIR}/usr/lib/cmake
-		rm -r ${PKGDESTDIR}/usr/lib/pkgconfig
-		rm -r ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-		rm ${PKGDESTDIR}/usr/lib/*.a
-		rm ${PKGDESTDIR}/usr/lib/*.so
-		rm ${PKGDESTDIR}/usr/lib/*.prl
+		_install_subpkg qttools
 		# install missing icons and desktop files
 		for icon in src/linguist/linguist/images/icons/linguist-*-32.png ; do
 			size=$(echo $(basename ${icon}) | cut -d- -f2)
@@ -619,10 +404,6 @@ qt5-tools_package() {
 		# install desktop files
 		vmkdir usr/share/applications
 		install -m644 ${FILESDIR}/*.desktop ${PKGDESTDIR}/usr/share/applications
-		vmkdir usr/bin
-		for f in ${PKGDESTDIR}/usr/lib/qt5/bin/*; do
-			ln -s /usr/lib/qt5/bin/$(basename $f) ${PKGDESTDIR}/usr/bin/$(basename $f)-qt5
-		done
 	}
 }
 qt5-devel_package() {
@@ -634,10 +415,12 @@ qt5-devel_package() {
 	short_desc+=" - Development files"
 	pkg_install() {
 		vmove usr/include
-		vmove "usr/lib/*.a"
-		vmove "usr/lib/*.prl"
-		vmove usr/lib/pkgconfig
+		vmove usr/lib/*.a
+		vmove usr/lib/*.prl
 		vmove usr/lib/cmake
+		vmove usr/lib/pkgconfig
+		# Remove QMAKE_PRL_BUILD_DIR from *.prl files because it is the internal builddir
+		find ${PKGDESTDIR} -iname "*.prl" -exec sed -i "{}" -e "/^QMAKE_PRL_BUILD_DIR/d" \;
 	}
 }
 qt5-plugin-gtk_package() {
