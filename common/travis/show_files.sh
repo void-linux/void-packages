@@ -2,7 +2,7 @@
 #
 # show_files.sh
 
-[ "$XLINT" ] && exit 0 
+[ "$ACTION" ] && exit 0 
 
 if [ "$1" != "$2" ]; then
 	arch="-a $2"
