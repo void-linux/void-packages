@@ -600,7 +600,7 @@ Additional install arguments can be specified via `make_install_args`.
 - `perl-ModuleBuild` For packages that use the Perl
 [Module::Build](http://search.cpan.org/~leont/Module-Build-0.4202/lib/Module/Build.pm) method.
 
-- `perl` For packages that use the Perl
+- `perl-module` For packages that use the Perl
 [ExtUtils::MakeMaker](http://perldoc.perl.org/ExtUtils/MakeMaker.html) build method.
 
 - `python-module` For packages that use the Python module build method (setup.py).
