@@ -15,7 +15,7 @@ hook() {
 	: ${pyver:=2.7}
 	shebang="#!/usr/bin/python$pyver"
 	find ${PKGDESTDIR} -type f -print0 | \
-		xargs -0 grep -l -m 1 "^#!.*\([[:space:]]\|/\)python\([[:space:]]\|$\)" -- | while read f; do
+		xargs -0 grep -l -m 1 "^#!.*\([[:space:]]\|/\)python\([[:space:]]\|$\)" -- | while IFS= read -r f; do
 		if [ "$warn" ]; then
 			msg_warn "$pkgname: multiple python versions defined!"
 			msg_warn "$pkgname: using $pyver for shebang"
