@@ -17,17 +17,6 @@ setup_pkg_depends() {
         if [ -z "${_pkgdepname}" ]; then
             _pkgdepname="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
         fi
-        if [ -s ${XBPS_DISTDIR}/etc/virtual ]; then
-            _replacement=$(egrep "^${_pkgdepname:-${_depname}}[[:blank:]]" ${XBPS_DISTDIR}/etc/virtual|cut -d ' ' -f2)
-            if [ -n "${_replacement}" ]; then
-                _depname="${_depname/${_pkgdepname:-${_depname}}/${_replacement}}"
-            fi
-        elif [ -s ${XBPS_DISTDIR}/etc/defaults.virtual ]; then
-            _replacement=$(egrep "^${_pkgdepname:-${_depname}}[[:blank:]]" ${XBPS_DISTDIR}/etc/defaults.virtual|cut -d ' ' -f2)
-            if [ -n "${_replacement}" ]; then
-                _depname="${_depname/${_pkgdepname:-${_depname}}/${_replacement}}"
-            fi
-        fi
         if [ -z "${_pkgdepname}" ]; then
             _pkgdep="${_depname}>=0"
         else
@@ -42,33 +31,11 @@ setup_pkg_depends() {
     done
     for j in ${hostmakedepends}; do
         _depname="${j%\?*}"
-        if [ -s ${XBPS_DISTDIR}/etc/virtual ]; then
-            _replacement=$(egrep "^${_depname}[[:blank:]]" ${XBPS_DISTDIR}/etc/virtual|cut -d ' ' -f2)
-            if [ -n "${_replacement}" ]; then
-                _depname="${_depname/${_depname}/${_replacement}}"
-            fi
-        elif [ -s ${XBPS_DISTDIR}/etc/defaults.virtual ]; then
-            _replacement=$(egrep "^${_depname}[[:blank:]]" ${XBPS_DISTDIR}/etc/defaults.virtual|cut -d ' ' -f2)
-            if [ -n "${_replacement}" ]; then
-                _depname="${_depname/${_depname}/${_replacement}}"
-            fi
-        fi
         _depver=$(srcpkg_get_version ${_depname}) || exit $?
         host_build_depends+=" ${_depname}-${_depver}"
     done
     for j in ${makedepends}; do
         _depname="${j%\?*}"
-        if [ -s ${XBPS_DISTDIR}/etc/virtual ]; then
-            _replacement=$(egrep "^${_depname}[[:blank:]]" ${XBPS_DISTDIR}/etc/virtual|cut -d ' ' -f2)
-            if [ -n "${_replacement}" ]; then
-                _depname="${_depname/${_depname}/${_replacement}}"
-            fi
-        elif [ -s ${XBPS_DISTDIR}/etc/defaults.virtual ]; then
-            _replacement=$(egrep "^${_depname}[[:blank:]]" ${XBPS_DISTDIR}/etc/defaults.virtual|cut -d ' ' -f2)
-            if [ -n "${_replacement}" ]; then
-                _depname="${_depname/${_depname}/${_replacement}}"
-            fi
-        fi
         _depver=$(srcpkg_get_version ${_depname}) || exit $?
         build_depends+=" ${_depname}-${_depver}"
     done

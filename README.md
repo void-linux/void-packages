@@ -118,14 +118,6 @@ Native and cross compiler/linker flags are set per architecture in `common/build
 and `common/cross-profiles` respectively. Ideally those settings are good enough by default,
 and there's no need to set your own unless you know what you are doing.
 
-### Virtual packages
-
-The `etc/defaults.virtual` file contains the default replacements for virtual packages,
-used as dependencies in the source packages tree.
-
-If you want to customize those replacements, copy `etc/defaults.virtual` to `etc/virtual`
-and edit it accordingly to your needs.
-
 ### Directory hierarchy
 
 The following directory hierarchy is used with a default configuration file:
