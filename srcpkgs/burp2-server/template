@@ -1,0 +1,98 @@
+# Template file for 'burp2-server'
+_desc="A network-based backup and restore program"
+
+pkgname=burp2-server
+version=2.0.34
+revision=1
+short_desc="${_desc} - Server"
+maintainer="Pierre Bourgin <pierre.bourgin@free.fr>"
+license="AGPL-3, BSD, GPL-2.1 and LGPL-2.1"
+homepage="http://burp.grke.org/"
+wrksrc="burp-${version}"
+distfiles="https://github.com/grke/burp/archive/${version}.tar.gz>${pkgname}-${version}.tar.gz"
+checksum=e38c2e445c2698debd610655c29b61fe438bfcaccb867b385f9b8b637813bb67
+
+hostmakedepends="automake libtool perl"
+makedepends="
+ libressl-devel zlib-devel librsync-devel ncurses-devel
+ acl-devel uthash yajl-devel"
+
+# unique binary for both client and server: server depends on client package.
+depends="burp2-client-${version}_${revision}"
+
+build_style=gnu-configure
+configure_args="--sysconfdir=/etc/burp --sbindir=/usr/bin"
+# 'install-all': also install config files and scripts
+make_install_target="install-all"
+conf_files="/etc/burp/burp-server.conf"
+
+pre_configure() {
+	autoreconf -fi
+}
+
+post_install() {
+	vsv ${pkgname}
+
+	vdoc "README"
+	vdoc "UPGRADING"
+	vlicense "LICENSE"
+
+	# /usr/sbin/burp_ca is hardcoded in conf files
+	sed -e "s,/usr/sbin/burp_ca,/usr/bin/burp_ca,g" \
+	    -i ${DESTDIR}/etc/burp/burp-server.conf
+
+	# storage folder
+	touch -f ${PKGDESTDIR}/var/spool/burp/.empty_on_purpose
+
+	# files for -doc package
+	_docdir="usr/share/examples/burp-doc"
+	vmkdir "${_docdir}/server"
+	vcopy "configs/server/cron.example" "${_docdir}/server"
+	vcopy "configs/server/out_of_date_report_script" "${_docdir}/server"
+	vcopy "configs/server/offsite-backup" "${_docdir}/server"
+
+	vmkdir "${_docdir}/server/autoupgrade"
+	vcopy "configs/server/autoupgrade/*.script" "${_docdir}/server/autoupgrade"
+
+	vcopy "${DESTDIR}/etc/burp" "${_docdir}"
+
+	vmkdir "${_docdir}/client"
+	vcopy "configs/client/cron.example" "${_docdir}/client"
+	vcopy "configs/client/zfs_script" "${_docdir}/client"
+}
+
+burp2-client_package() {
+	short_desc="${_desc} - client"
+	# openssl binary needed by burp_ca script
+	depends="libressl"
+	conf_files="/etc/burp/burp.conf"
+	# burp2-client (v2.x) does not work with burp-server (v1.x):
+	# give a chance to no break everything by refusing upgrade
+	conflicts="burp-client"
+	pkg_install() {
+		vmove "usr/bin/burp"
+		vmove "usr/bin/burp_ca"
+		vmove "usr/share/man/man8/burp.8"
+		vmove "usr/share/man/man8/burp_ca.8"
+		vmove "etc/burp/CA-client"
+		vmove "etc/burp/burp.conf"
+		vdoc "README"
+		vlicense "LICENSE"
+
+		# /usr/sbin/burp_ca is hardcoded in conf files
+		sed -e "s,/usr/sbin/burp_ca,/usr/bin/burp_ca,g" \
+		    -i ${PKGDESTDIR}/etc/burp/burp.conf
+
+		# burp_ca requires directory CA-client
+		touch -f ${PKGDESTDIR}/etc/burp/CA-client/.empty_on_purpose
+	}
+}
+
+burp2-doc_package() {
+	short_desc="${_desc} - doc and examples"
+	noarch=yes
+	pkg_install() {
+		vmove "usr/share/doc/burp"
+		vmove "usr/share/examples"
+	}
+}
