@@ -9,8 +9,10 @@ hook() {
 		pyver=2.7;;
 	python3.4-*)
 		pyver=3.4;;
+	python3.5-*)
+		pyver=3.5;;
 	*)
-		for i in $python_versions; do
+		for i in $pycompile_version $python_versions; do
 			if [ "$pyver" ]; then
 				warn=1
 				break;
