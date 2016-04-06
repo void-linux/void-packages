@@ -1139,7 +1139,7 @@ a github pull request; see https://help.github.com/articles/fork-a-repo for more
 
 For commit messages please use the following rules:
 
-- If you've imported a new package use `"New package: <version>"`.
+- If you've imported a new package use `"New package: <pkgname>-<version>"`.
 - If you've updated a package use `"<pkgname>: update to <version>."`.
 - If you've removed a package use `"<pkgname>: removed ..."`.
 - If you've modified a package use `"<pkgname>: ..."`.
