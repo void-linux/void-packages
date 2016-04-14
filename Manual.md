@@ -6,6 +6,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 *Table of Contents*  
 
 * [Introduction](#Introduction)
+	* [Quality Requirements](#quality_requirements)
 	* [Package build phases](#buildphase)
 	* [Package naming conventions](#namingconvention)
 		* [Libraries](#libs)
@@ -83,6 +84,24 @@ If everything went fine after running
     
 a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local repository
 `hostdir/binpkgs`.
+
+<a id="quality_requirements"></a>
+### Quality Requirements
+
+Follow this list to determine if a piece of software or other technology may be
+permitted in the Void Linux repository. Exceptions to the list are possible,
+and may be accepted, but are extremely unlikely. If you believe you have an
+exception, start a PR and make an argument for why that particular piece of
+software, while not meeting the below requirements, is a good candidate for
+the Void packages system.
+
+1. System: The software should be installed system-wide, not per-user.
+
+1. Compiled: The software needs to be compiled before being used, even if it is 
+   software that is not needed by the whole system.
+
+1. Required: Another package either within the repository or pending inclusion
+   requires the package.
 
 <a id="buildphase"></a>
 ### Package build phases
