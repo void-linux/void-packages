@@ -1,0 +1,75 @@
+From 851ffb4eea917e2708c912291dea4d133026c0ac Mon Sep 17 00:00:00 2001
+From: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Date: Fri, 20 Nov 2015 12:16:02 -0500
+Subject: [PATCH 2/3] blktap2: Use RING_COPY_REQUEST
+
+Instead of RING_GET_REQUEST. Using a local copy of the
+ring (and also with proper memory barriers) will mean
+we can do not have to worry about the compiler optimizing
+the code and doing a double-fetch in the shared memory space.
+
+This is part of XSA155.
+
+Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+
+---
+v2: Fix compile issues with tapdisk-vbd
+---
+ tools/blktap2/drivers/block-log.c   | 3 ++-
+ tools/blktap2/drivers/tapdisk-vbd.c | 8 ++++----
+ 2 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/tools/blktap2/drivers/block-log.c b/tools/blktap2/drivers/block-log.c
+index 5330cdc..5f3bd35 100644
+--- a/tools/blktap2/drivers/block-log.c
++++ b/tools/blktap2/drivers/block-log.c
+@@ -494,11 +494,12 @@ static int ctl_kick(struct tdlog_state* s, int fd)
+   reqstart = s->bring.req_cons;
+   reqend = s->sring->req_prod;
+ 
++  xen_mb();
+   BDPRINTF("ctl: ring kicked (start = %u, end = %u)", reqstart, reqend);
+ 
+   while (reqstart != reqend) {
+     /* XXX actually submit these! */
+-    memcpy(&req, RING_GET_REQUEST(&s->bring, reqstart), sizeof(req));
++    RING_COPY_REQUEST(&s->bring, reqstart, &req);
+     BDPRINTF("ctl: read request %"PRIu64":%u", req.sector, req.count);
+     s->bring.req_cons = ++reqstart;
+ 
+diff --git a/tools/blktap2/drivers/tapdisk-vbd.c b/tools/blktap2/drivers/tapdisk-vbd.c
+index 6d1d94a..89ef9ed 100644
+--- a/tools/blktap2/drivers/tapdisk-vbd.c
++++ b/tools/blktap2/drivers/tapdisk-vbd.c
+@@ -1555,7 +1555,7 @@ tapdisk_vbd_pull_ring_requests(td_vbd_t *vbd)
+ 	int idx;
+ 	RING_IDX rp, rc;
+ 	td_ring_t *ring;
+-	blkif_request_t *req;
++	blkif_request_t req;
+ 	td_vbd_request_t *vreq;
+ 
+ 	ring = &vbd->ring;
+@@ -1566,16 +1566,16 @@ tapdisk_vbd_pull_ring_requests(td_vbd_t *vbd)
+ 	xen_rmb();
+ 
+ 	for (rc = ring->fe_ring.req_cons; rc != rp; rc++) {
+-		req = RING_GET_REQUEST(&ring->fe_ring, rc);
++		RING_COPY_REQUEST(&ring->fe_ring, rc, &req);
+ 		++ring->fe_ring.req_cons;
+ 
+-		idx  = req->id;
++		idx  = req.id;
+ 		vreq = &vbd->request_list[idx];
+ 
+ 		ASSERT(list_empty(&vreq->next));
+ 		ASSERT(vreq->secs_pending == 0);
+ 
+-		memcpy(&vreq->req, req, sizeof(blkif_request_t));
++		memcpy(&vreq->req, &req, sizeof(blkif_request_t));
+ 		vbd->received++;
+ 		vreq->vbd = vbd;
+ 
+-- 
+2.1.4
+

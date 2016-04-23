@@ -1,0 +1,56 @@
+From 12b11658a9d6a654a1e7acbf2f2d56ce9a396c86 Mon Sep 17 00:00:00 2001
+From: David Vrabel <david.vrabel@citrix.com>
+Date: Fri, 20 Nov 2015 11:59:05 -0500
+Subject: [PATCH 1/3] xen: Add RING_COPY_REQUEST()
+
+Using RING_GET_REQUEST() on a shared ring is easy to use incorrectly
+(i.e., by not considering that the other end may alter the data in the
+shared ring while it is being inspected).  Safe usage of a request
+generally requires taking a local copy.
+
+Provide a RING_COPY_REQUEST() macro to use instead of
+RING_GET_REQUEST() and an open-coded memcpy().  This takes care of
+ensuring that the copy is done correctly regardless of any possible
+compiler optimizations.
+
+Use a volatile source to prevent the compiler from reordering or
+omitting the copy.
+
+This is part of XSA155.
+
+Signed-off-by: David Vrabel <david.vrabel@citrix.com>
+Signed-off-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+---
+v2: Add comment about GCC bug.
+---
+ xen/include/public/io/ring.h | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/xen/include/public/io/ring.h b/xen/include/public/io/ring.h
+index ba9401b..801c0da 100644
+--- a/xen/include/public/io/ring.h
++++ b/xen/include/public/io/ring.h
+@@ -212,6 +212,20 @@ typedef struct __name##_back_ring __name##_back_ring_t
+ #define RING_GET_REQUEST(_r, _idx)                                      \
+     (&((_r)->sring->ring[((_idx) & (RING_SIZE(_r) - 1))].req))
+ 
++/*
++ * Get a local copy of a request.
++ *
++ * Use this in preference to RING_GET_REQUEST() so all processing is
++ * done on a local copy that cannot be modified by the other end.
++ *
++ * Note that https://gcc.gnu.org/bugzilla/show_bug.cgi?id=58145 may cause this
++ * to be ineffective where _req is a struct which consists of only bitfields.
++ */
++#define RING_COPY_REQUEST(_r, _idx, _req) do {				\
++	/* Use volatile to force the copy into _req. */			\
++	*(_req) = *(volatile typeof(_req))RING_GET_REQUEST(_r, _idx);	\
++} while (0)
++
+ #define RING_GET_RESPONSE(_r, _idx)                                     \
+     (&((_r)->sring->ring[((_idx) & (RING_SIZE(_r) - 1))].rsp))
+ 
+-- 
+2.1.0
+

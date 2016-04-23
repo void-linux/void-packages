@@ -1,0 +1,359 @@
+x86: enforce consistent cachability of MMIO mappings
+
+We've been told by Intel that inconsistent cachability between
+multiple mappings of the same page can affect system stability only
+when the affected page is an MMIO one. Since the stale data issue is
+of no relevance to the hypervisor (since all guest memory accesses go
+through proper accessors and validation), handling of RAM pages
+remains unchanged here. Any MMIO mapped by domains however needs to be
+done consistently (all cachable mappings or all uncachable ones), in
+order to avoid Machine Check exceptions. Since converting existing
+cachable mappings to uncachable (at the time an uncachable mapping
+gets established) would in the PV case require tracking all mappings,
+allow MMIO to only get mapped uncachable (UC, UC-, or WC).
+
+This also implies that in the PV case we mustn't use the L1 PTE update
+fast path when cachability flags get altered.
+
+Since in the HVM case at least for now we want to continue honoring
+pinned cachability attributes for pages not mapped by the hypervisor,
+special case handling of r/o MMIO pages (forcing UC) gets added there.
+Arguably the counterpart change to p2m-pt.c may not be necessary, since
+UC- (which already gets enforced there) is probably strict enough.
+
+Note that the shadow code changes include fixing the write protection
+of r/o MMIO ranges: shadow_l1e_remove_flags() and its siblings, other
+than l1e_remove_flags() and alike, return the new PTE (and hence
+ignoring their return values makes them no-ops).
+
+This is CVE-2016-2270 / XSA-154.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+
+--- a/docs/misc/xen-command-line.markdown
++++ b/docs/misc/xen-command-line.markdown
+@@ -1080,6 +1080,15 @@ limit is ignored by Xen.
+ 
+ Specify if the MMConfig space should be enabled.
+ 
++### mmio-relax
++> `= <boolean> | all`
++
++> Default: `false`
++
++By default, domains may not create cached mappings to MMIO regions.
++This option relaxes the check for Domain 0 (or when using `all`, all PV
++domains), to permit the use of cacheable MMIO mappings.
++
+ ### msi
+ > `= <boolean>`
+ 
+--- a/xen/arch/x86/hvm/mtrr.c
++++ b/xen/arch/x86/hvm/mtrr.c
+@@ -807,8 +807,17 @@ int epte_get_entry_emt(struct domain *d,
+     if ( v->domain != d )
+         v = d->vcpu ? d->vcpu[0] : NULL;
+ 
+-    if ( !mfn_valid(mfn_x(mfn)) )
++    if ( !mfn_valid(mfn_x(mfn)) ||
++         rangeset_contains_range(mmio_ro_ranges, mfn_x(mfn),
++                                 mfn_x(mfn) + (1UL << order) - 1) )
++    {
++        *ipat = 1;
+         return MTRR_TYPE_UNCACHABLE;
++    }
++
++    if ( rangeset_overlaps_range(mmio_ro_ranges, mfn_x(mfn),
++                                 mfn_x(mfn) + (1UL << order) - 1) )
++        return -1;
+ 
+     switch ( hvm_get_mem_pinned_cacheattr(d, gfn, order, &type) )
+     {
+--- a/xen/arch/x86/mm/p2m-pt.c
++++ b/xen/arch/x86/mm/p2m-pt.c
+@@ -107,6 +107,8 @@ static unsigned long p2m_type_to_flags(p
+     case p2m_mmio_direct:
+         if ( !rangeset_contains_singleton(mmio_ro_ranges, mfn_x(mfn)) )
+             flags |= _PAGE_RW;
++        else
++            flags |= _PAGE_PWT;
+         return flags | P2M_BASE_FLAGS | _PAGE_PCD;
+     }
+ }
+--- a/xen/arch/x86/mm/shadow/multi.c
++++ b/xen/arch/x86/mm/shadow/multi.c
+@@ -519,6 +519,7 @@ _sh_propagate(struct vcpu *v,
+     gfn_t target_gfn = guest_l1e_get_gfn(guest_entry);
+     u32 pass_thru_flags;
+     u32 gflags, sflags;
++    bool_t mmio_mfn;
+ 
+     /* We don't shadow PAE l3s */
+     ASSERT(GUEST_PAGING_LEVELS > 3 || level != 3);
+@@ -559,7 +560,10 @@ _sh_propagate(struct vcpu *v,
+     // mfn means that we can not usefully shadow anything, and so we
+     // return early.
+     //
+-    if ( !mfn_valid(target_mfn)
++    mmio_mfn = !mfn_valid(target_mfn)
++               || (level == 1
++                   && page_get_owner(mfn_to_page(target_mfn)) == dom_io);
++    if ( mmio_mfn
+          && !(level == 1 && (!shadow_mode_refcounts(d)
+                              || p2mt == p2m_mmio_direct)) )
+     {
+@@ -577,7 +581,7 @@ _sh_propagate(struct vcpu *v,
+                        _PAGE_RW | _PAGE_PRESENT);
+     if ( guest_supports_nx(v) )
+         pass_thru_flags |= _PAGE_NX_BIT;
+-    if ( !shadow_mode_refcounts(d) && !mfn_valid(target_mfn) )
++    if ( level == 1 && !shadow_mode_refcounts(d) && mmio_mfn )
+         pass_thru_flags |= _PAGE_PAT | _PAGE_PCD | _PAGE_PWT;
+     sflags = gflags & pass_thru_flags;
+ 
+@@ -676,10 +680,14 @@ _sh_propagate(struct vcpu *v,
+     }
+ 
+     /* Read-only memory */
+-    if ( p2m_is_readonly(p2mt) ||
+-         (p2mt == p2m_mmio_direct &&
+-          rangeset_contains_singleton(mmio_ro_ranges, mfn_x(target_mfn))) )
++    if ( p2m_is_readonly(p2mt) )
+         sflags &= ~_PAGE_RW;
++    else if ( p2mt == p2m_mmio_direct &&
++              rangeset_contains_singleton(mmio_ro_ranges, mfn_x(target_mfn)) )
++    {
++        sflags &= ~(_PAGE_RW | _PAGE_PAT);
++        sflags |= _PAGE_PCD | _PAGE_PWT;
++    }
+ 
+     // protect guest page tables
+     //
+@@ -1185,22 +1193,28 @@ static int shadow_set_l1e(struct domain
+          && !sh_l1e_is_magic(new_sl1e) )
+     {
+         /* About to install a new reference */
+-        if ( shadow_mode_refcounts(d) ) {
++        if ( shadow_mode_refcounts(d) )
++        {
++#define PAGE_FLIPPABLE (_PAGE_RW | _PAGE_PWT | _PAGE_PCD | _PAGE_PAT)
++            int rc;
++
+             TRACE_SHADOW_PATH_FLAG(TRCE_SFLAG_SHADOW_L1_GET_REF);
+-            switch ( shadow_get_page_from_l1e(new_sl1e, d, new_type) )
++            switch ( rc = shadow_get_page_from_l1e(new_sl1e, d, new_type) )
+             {
+             default:
+                 /* Doesn't look like a pagetable. */
+                 flags |= SHADOW_SET_ERROR;
+                 new_sl1e = shadow_l1e_empty();
+                 break;
+-            case 1:
+-                shadow_l1e_remove_flags(new_sl1e, _PAGE_RW);
++            case PAGE_FLIPPABLE & -PAGE_FLIPPABLE ... PAGE_FLIPPABLE:
++                ASSERT(!(rc & ~PAGE_FLIPPABLE));
++                new_sl1e = shadow_l1e_flip_flags(new_sl1e, rc);
+                 /* fall through */
+             case 0:
+                 shadow_vram_get_l1e(new_sl1e, sl1e, sl1mfn, d);
+                 break;
+             }
++#undef PAGE_FLIPPABLE
+         }
+     }
+ 
+--- a/xen/arch/x86/mm/shadow/types.h
++++ b/xen/arch/x86/mm/shadow/types.h
+@@ -99,6 +99,9 @@ static inline u32 shadow_l4e_get_flags(s
+ static inline shadow_l1e_t
+ shadow_l1e_remove_flags(shadow_l1e_t sl1e, u32 flags)
+ { l1e_remove_flags(sl1e, flags); return sl1e; }
++static inline shadow_l1e_t
++shadow_l1e_flip_flags(shadow_l1e_t sl1e, u32 flags)
++{ l1e_flip_flags(sl1e, flags); return sl1e; }
+ 
+ static inline shadow_l1e_t shadow_l1e_empty(void)
+ { return l1e_empty(); }
+--- a/xen/arch/x86/mm.c
++++ b/xen/arch/x86/mm.c
+@@ -178,6 +178,18 @@ static uint32_t base_disallow_mask;
+       is_pv_domain(d)) ?                                        \
+      L1_DISALLOW_MASK : (L1_DISALLOW_MASK & ~PAGE_CACHE_ATTRS))
+ 
++static s8 __read_mostly opt_mmio_relax;
++static void __init parse_mmio_relax(const char *s)
++{
++    if ( !*s )
++        opt_mmio_relax = 1;
++    else
++        opt_mmio_relax = parse_bool(s);
++    if ( opt_mmio_relax < 0 && strcmp(s, "all") )
++        opt_mmio_relax = 0;
++}
++custom_param("mmio-relax", parse_mmio_relax);
++
+ static void __init init_frametable_chunk(void *start, void *end)
+ {
+     unsigned long s = (unsigned long)start;
+@@ -799,10 +811,7 @@ get_page_from_l1e(
+     if ( !mfn_valid(mfn) ||
+          (real_pg_owner = page_get_owner_and_reference(page)) == dom_io )
+     {
+-#ifndef NDEBUG
+-        const unsigned long *ro_map;
+-        unsigned int seg, bdf;
+-#endif
++        int flip = 0;
+ 
+         /* Only needed the reference to confirm dom_io ownership. */
+         if ( mfn_valid(mfn) )
+@@ -836,24 +845,55 @@ get_page_from_l1e(
+             return -EINVAL;
+         }
+ 
+-        if ( !(l1f & _PAGE_RW) ||
+-             !rangeset_contains_singleton(mmio_ro_ranges, mfn) )
+-            return 0;
++        if ( !rangeset_contains_singleton(mmio_ro_ranges, mfn) )
++        {
++            /* MMIO pages must not be mapped cachable unless requested so. */
++            switch ( opt_mmio_relax )
++            {
++            case 0:
++                break;
++            case 1:
++                if ( is_hardware_domain(l1e_owner) )
++            case -1:
++                    return 0;
++            default:
++                ASSERT_UNREACHABLE();
++            }
++        }
++        else if ( l1f & _PAGE_RW )
++        {
+ #ifndef NDEBUG
+-        if ( !pci_mmcfg_decode(mfn, &seg, &bdf) ||
+-             ((ro_map = pci_get_ro_map(seg)) != NULL &&
+-              test_bit(bdf, ro_map)) )
+-            printk(XENLOG_G_WARNING
+-                   "d%d: Forcing read-only access to MFN %lx\n",
+-                   l1e_owner->domain_id, mfn);
+-        else
+-            rangeset_report_ranges(mmio_ro_ranges, 0, ~0UL,
+-                                   print_mmio_emul_range,
+-                                   &(struct mmio_emul_range_ctxt){
+-                                      .d = l1e_owner,
+-                                      .mfn = mfn });
++            const unsigned long *ro_map;
++            unsigned int seg, bdf;
++
++            if ( !pci_mmcfg_decode(mfn, &seg, &bdf) ||
++                 ((ro_map = pci_get_ro_map(seg)) != NULL &&
++                  test_bit(bdf, ro_map)) )
++                printk(XENLOG_G_WARNING
++                       "d%d: Forcing read-only access to MFN %lx\n",
++                       l1e_owner->domain_id, mfn);
++            else
++                rangeset_report_ranges(mmio_ro_ranges, 0, ~0UL,
++                                       print_mmio_emul_range,
++                                       &(struct mmio_emul_range_ctxt){
++                                           .d = l1e_owner,
++                                           .mfn = mfn });
+ #endif
+-        return 1;
++            flip = _PAGE_RW;
++        }
++
++        switch ( l1f & PAGE_CACHE_ATTRS )
++        {
++        case 0: /* WB */
++            flip |= _PAGE_PWT | _PAGE_PCD;
++            break;
++        case _PAGE_PWT: /* WT */
++        case _PAGE_PWT | _PAGE_PAT: /* WP */
++            flip |= _PAGE_PCD | (l1f & _PAGE_PAT);
++            break;
++        }
++
++        return flip;
+     }
+ 
+     if ( unlikely( (real_pg_owner != pg_owner) &&
+@@ -1243,8 +1283,9 @@ static int alloc_l1_table(struct page_in
+                 goto fail;
+             case 0:
+                 break;
+-            case 1:
+-                l1e_remove_flags(pl1e[i], _PAGE_RW);
++            case _PAGE_RW ... _PAGE_RW | PAGE_CACHE_ATTRS:
++                ASSERT(!(ret & ~(_PAGE_RW | PAGE_CACHE_ATTRS)));
++                l1e_flip_flags(pl1e[i], ret);
+                 break;
+             }
+ 
+@@ -1759,8 +1800,9 @@ static int mod_l1_entry(l1_pgentry_t *pl
+             return -EINVAL;
+         }
+ 
+-        /* Fast path for identical mapping, r/w and presence. */
+-        if ( !l1e_has_changed(ol1e, nl1e, _PAGE_RW | _PAGE_PRESENT) )
++        /* Fast path for identical mapping, r/w, presence, and cachability. */
++        if ( !l1e_has_changed(ol1e, nl1e,
++                              PAGE_CACHE_ATTRS | _PAGE_RW | _PAGE_PRESENT) )
+         {
+             adjust_guest_l1e(nl1e, pt_dom);
+             if ( UPDATE_ENTRY(l1, pl1e, ol1e, nl1e, gl1mfn, pt_vcpu,
+@@ -1783,8 +1825,9 @@ static int mod_l1_entry(l1_pgentry_t *pl
+             return rc;
+         case 0:
+             break;
+-        case 1:
+-            l1e_remove_flags(nl1e, _PAGE_RW);
++        case _PAGE_RW ... _PAGE_RW | PAGE_CACHE_ATTRS:
++            ASSERT(!(rc & ~(_PAGE_RW | PAGE_CACHE_ATTRS)));
++            l1e_flip_flags(nl1e, rc);
+             rc = 0;
+             break;
+         }
+@@ -5000,6 +5043,7 @@ static int ptwr_emulated_update(
+     l1_pgentry_t pte, ol1e, nl1e, *pl1e;
+     struct vcpu *v = current;
+     struct domain *d = v->domain;
++    int ret;
+ 
+     /* Only allow naturally-aligned stores within the original %cr2 page. */
+     if ( unlikely(((addr^ptwr_ctxt->cr2) & PAGE_MASK) || (addr & (bytes-1))) )
+@@ -5047,7 +5091,7 @@ static int ptwr_emulated_update(
+ 
+     /* Check the new PTE. */
+     nl1e = l1e_from_intpte(val);
+-    switch ( get_page_from_l1e(nl1e, d, d) )
++    switch ( ret = get_page_from_l1e(nl1e, d, d) )
+     {
+     default:
+         if ( is_pv_32bit_domain(d) && (bytes == 4) && (unaligned_addr & 4) &&
+@@ -5071,8 +5115,9 @@ static int ptwr_emulated_update(
+         break;
+     case 0:
+         break;
+-    case 1:
+-        l1e_remove_flags(nl1e, _PAGE_RW);
++    case _PAGE_RW ... _PAGE_RW | PAGE_CACHE_ATTRS:
++        ASSERT(!(ret & ~(_PAGE_RW | PAGE_CACHE_ATTRS)));
++        l1e_flip_flags(nl1e, ret);
+         break;
+     }
+ 
+--- a/xen/include/asm-x86/page.h
++++ b/xen/include/asm-x86/page.h
+@@ -157,6 +157,9 @@ static inline l4_pgentry_t l4e_from_padd
+ #define l3e_remove_flags(x, flags) ((x).l3 &= ~put_pte_flags(flags))
+ #define l4e_remove_flags(x, flags) ((x).l4 &= ~put_pte_flags(flags))
+ 
++/* Flip flags in an existing L1 PTE. */
++#define l1e_flip_flags(x, flags)    ((x).l1 ^= put_pte_flags(flags))
++
+ /* Check if a pte's page mapping or significant access flags have changed. */
+ #define l1e_has_changed(x,y,flags) \
+     ( !!(((x).l1 ^ (y).l1) & ((PADDR_MASK&PAGE_MASK)|put_pte_flags(flags))) )
