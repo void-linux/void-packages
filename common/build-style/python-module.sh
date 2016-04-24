@@ -49,5 +49,15 @@ do_install() {
 			python${pyver} setup.py build --build-base=build-${pyver} \
 				install --prefix=/usr --root=${DESTDIR} ${make_install_args}
 		fi
+
+		# Rename unversioned scripts to avoid name conflicts.
+		if [ "$python_versions" != "2.7" -a "$python_versions" != "${python_versions#2.7}" ]; then
+			if [ -d ${DESTDIR}/usr/bin ]; then
+				find ${DESTDIR}/usr/bin -type f ! -name "*[[:digit:]]\.[[:digit:]]" | while IFS= read -r f _; do
+					mv "${f}" "${f}${pyver}"
+					echo "[python-module] Unversioned script renamed to '${f#$DESTDIR}${pyver}'"
+				done
+			fi
+		fi
 	done
 }
