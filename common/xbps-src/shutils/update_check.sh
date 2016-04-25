@@ -41,9 +41,9 @@ update_check() {
                 url="https://launchpad.net/$lpname/+download";;
             *cpan.*)
                 pkgname=${pkgname#perl-};;
-            *pypi.python.org*)
+            *pypi.io*)
                 pkgname=${pkgname#python-}
-                url="https://pypi.python.org/simple/$pkgname";;
+                url="https://pypi.io/simple/$pkgname";;
             *github.com*)
                 githubname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$githubname/tags"
