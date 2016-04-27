@@ -17,15 +17,30 @@ setup_pkg_depends() {
         if [ -z "${_pkgdepname}" ]; then
             _pkgdepname="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
         fi
-        if [ -z "${_pkgdepname}" ]; then
-            _pkgdep="${_depname}>=0"
-        else
-            _pkgdep="${_depname}"
+        if [ -s ${XBPS_DISTDIR}/etc/virtual ]; then
+            _replacement=$(egrep "^${_pkgdepname:-${_depname}}[[:blank:]]" ${XBPS_DISTDIR}/etc/virtual|cut -d ' ' -f2)
+        elif [ -s ${XBPS_DISTDIR}/etc/defaults.virtual ]; then
+            _replacement=$(egrep "^${_pkgdepname:-${_depname}}[[:blank:]]" ${XBPS_DISTDIR}/etc/defaults.virtual|cut -d ' ' -f2)
         fi
-
         if [ "${_rpkgname}" = "virtual" ]; then
-            run_depends+=" virtual?${_pkgdep}"
+            if [ -z "${_replacement}" ]; then
+                msg_error "$pkgver: failed to resolve virtual dependency for '$j' (missing from etc/virtual)\n"
+            fi
+            _pkgdepname="$($XBPS_UHELPER_CMD getpkgdepname ${_replacement} 2>/dev/null)"
+            if [ -z "${_pkgdepname}" ]; then
+                _pkgdepname="$($XBPS_UHELPER_CMD getpkgname ${_replacement} 2>/dev/null)"
+            fi
+            if [ -z "${_pkgdepname}" ]; then
+                _pkgdepname="${_replacement}>=0"
+            fi
+            run_depends+=" ${_depname}?${_pkgdepname}"
+            #echo "Adding dependency virtual:  ${_depname}?${_pkgdepname}"
         else
+            if [ -z "${_pkgdepname}" ]; then
+                _pkgdep="${_depname}>=0"
+            else
+                _pkgdep="${_depname}"
+            fi
             run_depends+=" ${_pkgdep}"
         fi
     done
@@ -144,9 +159,9 @@ srcpkg_get_version() {
     local pkg="$1"
     # Run this in a sub-shell to avoid polluting our env.
     (
-        unset XBPS_BINPKG_EXISTS
-        setup_pkg $pkg || exit $?
-        echo "${version}_${revision}"
+    unset XBPS_BINPKG_EXISTS
+    setup_pkg $pkg || exit $?
+    echo "${version}_${revision}"
     ) || msg_error "$pkgver: failed to transform dependency $pkg\n"
 }
 
@@ -154,9 +169,9 @@ srcpkg_get_pkgver() {
     local pkg="$1"
     # Run this in a sub-shell to avoid polluting our env.
     (
-        unset XBPS_BINPKG_EXISTS
-        setup_pkg $pkg || exit $?
-        echo "${sourcepkg}-${version}_${revision}"
+    unset XBPS_BINPKG_EXISTS
+    setup_pkg $pkg || exit $?
+    echo "${sourcepkg}-${version}_${revision}"
     ) || msg_error "$pkgver: failed to transform dependency $pkg\n"
 }
 
@@ -165,7 +180,7 @@ srcpkg_get_pkgver() {
 #
 install_pkg_deps() {
     local pkg="$1" targetpkg="$2" target="$3" cross="$4" cross_prepare="$5"
-    local rval _realpkg curpkgdepname pkgn iver
+    local rval _realpkg _vpkg _curpkg curpkgdepname pkgn iver
     local i j found rundep repo
 
     local -a host_binpkg_deps binpkg_deps host_missing_deps missing_deps missing_rdeps
@@ -259,10 +274,12 @@ install_pkg_deps() {
     #
     for i in ${run_depends}; do
         _realpkg="${i%\?*}"
-        if [ "${_realpkg}" = "virtual" ]; then
-            # ignore virtual dependencies
-            echo "   [runtime] ${i#*\?}: virtual dependency."
-            continue
+        _curpkg="${_realpkg}"
+        _vpkg="${i#*\?}"
+        if [ "${_realpkg}" != "${_vpkg}" ]; then
+            _realpkg="${_vpkg}"
+        else
+            unset _curpkg
         fi
         pkgn=$($XBPS_UHELPER_CMD getpkgdepname "${_realpkg}")
         if [ -z "$pkgn" ]; then
@@ -282,15 +299,27 @@ install_pkg_deps() {
             set -- ${_props}
             $XBPS_UHELPER_CMD pkgmatch ${1} "${_realpkg}"
             if [ $? -eq 1 ]; then
-                echo "   [runtime] ${_realpkg}: found ($2)"
+                if [ -n "${_curpkg}" ]; then
+                    echo "   [runtime] ${_curpkg}:${_realpkg} (virtual dependency): found $1 ($2)"
+                else
+                    echo "   [runtime] ${_realpkg}: found $1 ($2)"
+                fi
                 shift 2
                 continue
             else
-                echo "   [runtime] ${_realpkg}: not found."
+                if [ -n "${_curpkg}" ]; then
+                    echo "   [runtime] ${_curpkg}:${_realpkg} (virtual dependency): not found."
+                else
+                    echo "   [runtime] ${_realpkg}: not found."
+                fi
             fi
             shift 2
         else
-            echo "   [runtime] ${_realpkg}: not found."
+            if [ -n "${_curpkg}" ]; then
+                echo "   [runtime] ${_curpkg}:${_realpkg} (virtual dependency): not found."
+            else
+                echo "   [runtime] ${_realpkg}: not found."
+            fi
         fi
         missing_rdeps+=("${_realpkg}")
     done
