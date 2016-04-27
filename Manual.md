@@ -472,6 +472,12 @@ Example `skip_extraction="foo-${version}.tar.gz"`.
 paths, wildcards will be extended, and multiple entries can be separated by blanks i.e:
 `conf_files="/etc/foo.conf /etc/foo2.conf /etc/foo/*.conf"`.
 
+- `make_dirs` A list of entries defining directories and permissions to be
+  created at install time. Each entry should be space separated, and will
+  itself contain spaces. `make_dirs="/dir 0750 user group"`. User and group and
+  mode are required on every line, even if they are `755 root root`. By
+  convention, there is only one entry of `dir perms user group` per line.
+
 - `noarch` If set, the binary package is not architecture specific and can be shared
 by all supported architectures.
 
