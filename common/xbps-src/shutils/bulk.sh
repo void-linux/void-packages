@@ -57,7 +57,7 @@ bulk_build() {
 
     if [ "$XBPS_CROSS_BUILD" ]; then
         source ${XBPS_COMMONDIR}/cross-profiles/${XBPS_CROSS_BUILD}.sh
-        export XBPS_ARCH=${XBPS_TARGET_ARCH}
+        export XBPS_ARCH=${XBPS_TARGET_MACHINE}
     fi
     if ! command -v xbps-checkvers &>/dev/null; then
         msg_error "xbps-src: cannot find xbps-checkvers(8) command!\n"

@@ -149,7 +149,7 @@ chroot_sync_repos() {
             $XBPS_MASTERDIR/$XBPS_CROSS_BASE/var/db/xbps/keys
         # Make sure to sync index for remote repositories.
         if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
-            env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH \
+            env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE \
                 xbps-install -r $XBPS_MASTERDIR/$XBPS_CROSS_BASE -S
         fi
     fi

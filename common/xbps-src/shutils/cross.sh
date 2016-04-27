@@ -10,7 +10,7 @@ remove_pkg_cross_deps() {
 
     if [ -z "$XBPS_REMOVE_XCMD" ]; then
         source_file $XBPS_CROSSPFDIR/${XBPS_CROSS_BUILD}.sh
-        XBPS_REMOVE_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_ARCH xbps-remove -r /usr/$XBPS_CROSS_TRIPLET"
+        XBPS_REMOVE_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE xbps-remove -r /usr/$XBPS_CROSS_TRIPLET"
     fi
 
     $XBPS_REMOVE_XCMD -Ryo > $tmplogf 2>&1
@@ -48,7 +48,7 @@ prepare_cross_sysroot() {
     fi
     rm -f $errlog
     # Create top level symlinks in sysroot.
-    XBPS_ARCH=$XBPS_TARGET_ARCH xbps-reconfigure -r $XBPS_CROSS_BASE -f base-directories base-files &>/dev/null
+    XBPS_ARCH=$XBPS_TARGET_MACHINE xbps-reconfigure -r $XBPS_CROSS_BASE -f base-directories base-files &>/dev/null
     # Create a sysroot/include and sysroot/lib symlink just in case.
     ln -s usr/include ${XBPS_CROSS_BASE}/include
     ln -s usr/lib ${XBPS_CROSS_BASE}/lib
