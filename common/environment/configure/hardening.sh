@@ -9,12 +9,16 @@ case "$XBPS_TARGET_MACHINE" in
 		CFLAGS+=" -fno-stack-protector"
 		CXXFLAGS+=" -fno-stack-protector"
 		;;
-	mips*) # PIE support broken
-		nopie=yes
-		;;
 esac
 
 if [ -z "$nopie" ]; then
+	case "$XBPS_TARGET_MACHINE" in
+	mips*)
+		# XXX for some reason the gcc specs does not apply correctly
+		CFLAGS+=" -fPIE"
+		CXXFLAGS+=" -fPIE"
+		;;
+	esac
 	_GCCSPECSDIR=${XBPS_COMMONDIR}/environment/configure/gccspecs
 	CFLAGS="-specs=${_GCCSPECSDIR}/hardened-cc1 $CFLAGS"
 	CXXFLAGS="-specs=${_GCCSPECSDIR}/hardened-cc1 $CXXFLAGS"
