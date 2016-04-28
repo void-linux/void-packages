@@ -24,3 +24,6 @@
 # define __THROW
 # define __NTH(fct)     fct
 #endif
+
+#define __CONCAT(x,y)   x ## y
+#define __STRING(x)     #x
