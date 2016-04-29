@@ -1,38 +1,33 @@
 # Template build file for 'firefox-esr'.
 pkgname=firefox-esr
-version=38.7.1
-revision=4
-wrksrc="mozilla-esr${version%%.*}"
+version=45.1.0
+revision=1
+wrksrc="firefox-${version}esr"
 short_desc="Lightweight gecko-based web browser"
 maintainer="Eivind Uggedal <eivind@uggedal.com>"
 homepage="https://www.mozilla.org/en-US/firefox/organizations/"
 license="MPL-1.1, GPL-2, LGPL-2.1"
-distfiles="${MOZILLA_SITE}/firefox/releases/${version}esr/source/firefox-${version}esr.source.tar.bz2"
-checksum=d0fce46a948610c8231ceaad5da5542bd57af363ff2341d77f2f00955f888f65
+distfiles="${MOZILLA_SITE}/firefox/releases/${version}esr/source/firefox-${version}esr.source.tar.xz"
+checksum=8bdc4a0f6d0ca4f28e888ca0044ba735ddc78302820b5ffcc25cd65064ff40a1
 
 only_for_archs="i686 i686-musl x86_64 x86_64-musl"
 nopie=yes
 lib32disabled=yes
+build_options="gtk3"
+desc_option_gtk3="Build the GTK+3 toolkit UI"
+# XXX enabling gkt3 is a good idea for this ESR release ?
+#build_options_default="gtk3"
 
 hostmakedepends="unzip zip pkg-config perl python yasm"
-makedepends="nss-devel libjpeg-turbo-devel libpng-devel
- icu-devel pixman-devel sqlite-devel gst-plugins-base1-devel gtk+-devel
+makedepends="
+ nss-devel libjpeg-turbo-devel libpng-devel gtk+-devel
+ icu-devel pixman-devel sqlite-devel pulseaudio-devel
  libevent-devel libnotify-devel libvpx-devel libXrender-devel
- startup-notification-devel dbus-glib-devel alsa-lib-devel pulseaudio-devel
+ startup-notification-devel dbus-glib-devel alsa-lib-devel
  hunspell-devel libXcomposite-devel libSM-devel libXScrnSaver-devel
- libXt-devel libXdamage-devel"
-depends="nss>=3.17 desktop-file-utils hicolor-icon-theme"
+ libXt-devel libXdamage-devel  $(vopt_if gtk3 gtk+3-devel)"
+depends="nss>=3.21 desktop-file-utils hicolor-icon-theme"
 conflicts="firefox>=0"
-
-if [ "$CROSS_BUILD" ]; then
-	# Make config/system_wrappers/alsa/alsalib.h and pulse/pulse.h find
-	# the required includes. Set system nspr and nss include paths.
-	CFLAGS="-I${XBPS_CROSS_BASE}/usr/include/alsa \
-		-I${XBPS_CROSS_BASE}/usr/include/pulse \
-		-I${XBPS_CROSS_BASE}/usr/include/nspr \
-		-I${XBPS_CROSS_BASE}/usr/include/nss"
-	CXXFLAGS="${CFLAGS}"
-fi
 
 pre_configure() {
 	case "$XBPS_TARGET_MACHINE" in
@@ -52,50 +47,70 @@ pre_configure() {
 	[ ! -d xbps-build ] && mkdir -p xbps-build
 }
 do_configure() {
-	if [ "$CROSS_BUILD" ]; then
-		export HOST_CFLAGS="${XBPS_CFLAGS}"
-		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
-		export CFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/nspr -I${XBPS_CROSS_BASE}/usr/include/nss"
-		export CXXFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/nspr -I${XBPS_CROSS_BASE}/usr/include/nss"
-
-		cross_args+=" --target=$XBPS_CROSS_TRIPLET"
-	fi
-
-	export ac_cv_sqlite_secure_delete=yes
-	export ac_cv_sqlite_threadsafe=yes
-	export ac_cv_sqlite_enable_fts3=yes
-	export ac_cv_sqlite_enable_unlock_notify=yes
-	export ac_cv_prog_hostcxx_works=1
+	local _args
 
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl) # XXX gold linking with --hash-style=sysv results in unhidden symbols
 		# XXX see https://sourceware.org/ml/binutils/2014-09/msg00230.html
-		cross_args+=" --enable-gold=no"
+		#
+		# XXX disable jemalloc.
+		_args+=" --disable-jemalloc --enable-gold=no"
 		;;
 	esac
+
+	if [ "$CROSS_BUILD" ]; then
+		_args+=" --target=$XBPS_CROSS_TRIPLET --disable-jemalloc"
+
+		# Make config/system_wrappers/alsa/alsalib.h and pulse/pulse.h find
+		# the required includes. Set system nspr and nss include paths.
+		export HOST_CFLAGS="${XBPS_CFLAGS}"
+		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
+		export CFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/alsa \
+			-I${XBPS_CROSS_BASE}/usr/include/pulse \
+			-I${XBPS_CROSS_BASE}/usr/include/nspr \
+			-I${XBPS_CROSS_BASE}/usr/include/nss"
+		export CXXFLAGS+=" ${CFLAGS}"
+		export LDFLAGS+=" -L${XBPS_CROSS_BASE}/usr/lib"
+
+		export ac_cv_sqlite_secure_delete=yes \
+			ac_cv_sqlite_threadsafe=yes \
+			ac_cv_sqlite_enable_fts3=yes \
+			ac_cv_sqlite_dbstat_vtab=yes \
+			ac_cv_sqlite_enable_unlock_notify=yes \
+			ac_cv_prog_hostcxx_works=1
+	fi
 
 	mkdir -p /usr/lib/firefox
 	export LDFLAGS+=" -Wl,-rpath=/usr/lib/firefox"
 
+	if [ "$build_option_gtk3" ]; then
+		_args+=" --enable-default-toolkit=cairo-gtk3"
+	else
+		_args+=" --enable-default-toolkit=cairo-gtk2"
+	fi
+
 	cd xbps-build
+	# XXX build without --system-cairo. See:
+	# - https://github.com/voidlinux/void-packages/issues/2308#issuecomment-135426813
+	# - https://bugs.gentoo.org/show_bug.cgi?id=558150
 	SHELL=/bin/bash ../configure --prefix=/usr --libdir=/usr/lib \
 		--with-system-nspr --with-system-nss --with-system-bz2  \
 		--with-system-jpeg --with-system-zlib --without-system-png \
-		--with-system-libevent --with-system-libvpx --enable-system-cairo  \
+		--with-system-libevent --with-system-libvpx \
 		--enable-system-pixman --enable-system-hunspell --enable-system-sqlite \
 		--enable-system-ffi --enable-startup-notification --disable-gio \
 		--with-pthreads --enable-official-branding --enable-safe-browsing \
 		--disable-skia --disable-debug --disable-gnomevfs --disable-gconf \
 		--disable-crashreporter --disable-updater --disable-xprint --disable-tests \
 		--disable-mochitest --disable-installer --disable-elf-hack \
-		--with-system-icu --enable-pulseaudio --enable-gstreamer=1.0 \
+		--with-system-icu --enable-pulseaudio --disable-gstreamer \
 		--disable-crashreporter --disable-cpp-exceptions --disable-javaxpcom \
 		--with-nspr-prefix=${XBPS_CROSS_BASE}/usr \
-		--with-nss-prefix=${XBPS_CROSS_BASE}/usr ${cross_args} \
+		--with-nss-prefix=${XBPS_CROSS_BASE}/usr \
 		--with-google-api-keyfile="${wrksrc}/google-api-key" \
 		--enable-optimize="$CFLAGS" --disable-strip --disable-install-strip \
-		--disable-static --disable-jemalloc --enable-pie \
-		--disable-profiling --disable-profilelocking
+		--disable-static --enable-pie --disable-profiling \
+		--disable-profilelocking ${_args}
 }
 do_build() {
 	if [ "$SOURCE_DATE_EPOCH" ]; then
