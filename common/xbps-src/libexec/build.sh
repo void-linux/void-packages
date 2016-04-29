@@ -108,7 +108,7 @@ if [ -z "$CHROOT_READY" -a "$PKGNAME" = "base-files" ]; then
         msg_red "Failed to install $PKGNAME into masterdir, see below for errors:\n"
         cat ${_log}
         rm -f ${_log}
-        msg_error "Cannot continue!"
+        msg_error "Cannot continue!\n"
     fi
     rm -f ${_log}
 fi
