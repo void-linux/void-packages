@@ -1,10 +1,12 @@
 # Template file for 'mongodb'
 pkgname=mongodb
 version=3.2.6
-revision=1
+revision=2
+wrksrc="mongodb-src-r${version}"
 hostmakedepends="scons"
 makedepends="boost-devel pcre-devel snappy-devel libressl-devel libpcap-devel
- gperftools-devel libsasl-devel yaml-cpp-devel valgrind-devel"
+ gperftools-devel libsasl-devel yaml-cpp-devel"
+depends="cyrus-sasl-modules"
 conf_files="/etc/mongodb/mongodb.conf"
 system_accounts="mongodb"
 mongodb_homedir="/var/lib/mongodb"
@@ -14,49 +16,33 @@ homepage="http://www.mongodb.org"
 license="AGPL-3"
 distfiles="http://downloads.mongodb.org/src/mongodb-src-r${version}.tar.gz"
 checksum=0415a9b503f62e40d2ba87f555b553757a14fac281d1d6a583d8d880b8720921
+
 make_dirs="
  /var/lib/mongodb 0700 mongodb mongodb
  /var/log/mongodb 0750 mongodb mongodb"
-wrksrc="mongodb-src-r${version}"
-_scons_args="
- --use-system-tcmalloc
- --use-system-pcre
- --use-system-boost
- --use-system-snappy
- --use-system-valgrind
- --use-system-zlib
- --use-system-yaml
- --use-system-intel_decimal128
- --use-sasl-client
- --ssl
- --nostrip
- --disable-warnings-as-errors"
-case "$XBPS_TARGET_MACHINE" in
-	x86_64*|aarch64*)
-		_scons_args+=" --wiredtiger=on --use-system-wiredtiger"
-		makedepends+=" wiredtiger-devel";;
-	*) _scons_args+=" --wiredtiger=off";;
-esac
+
 # ETOOHUGE
 nodebug=1
 
 case "${XBPS_TARGET_MACHINE}" in
+	x86_64*|aarch64*) makedepends+=" wiredtiger-devel";;
 	armv7l-musl) broken="http://build.voidlinux.eu/builders/armv7l-musl_builder/builds/9838/steps/shell_3/logs/stdio";;
 esac
 
 do_configure() {
 	find . -name SConstruct -print0 | xargs -0 sed -i "s/-Werror/-Wno-error/g"
-}
-
-post_configure() {
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl) # Disable strtouq(3)
 		sed -i src/third_party/wiredtiger/build_linux/wiredtiger_config.h \
 			-e "s;#define HAVE_STRTOUQ 1;#undef HAVE_STRTOUQ;"
 	esac
 }
-
 do_build() {
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64*|aarch64*) _scons_args="--wiredtiger=on --use-system-wiredtiger";;
+		i686*) _scons_args="--wiredtiger=off --storageEngine=mmapv1";;
+		*) _scons_args="--wiredtiger=off";;
+	esac
 	scons core tools ${makejobs} \
 		CC=$CC \
 		CFLAGS="$CFLAGS" \
@@ -65,9 +51,19 @@ do_build() {
 		LIBPATH="${XBPS_CROSS_BASE}/usr/lib" \
 		CPPPATH="${XBPS_CROSS_BASE}/usr/include" \
 		--prefix="/usr" \
-		$_scons_args
+		--use-system-pcre \
+		--use-system-boost \
+		--use-system-snappy \
+		--use-system-zlib \
+		--use-system-yaml \
+		--use-system-intel_decimal128 \
+		--use-sasl-client \
+		--ssl \
+		--nostrip \
+		--disable-warnings-as-errors \
+		--allocator=system \
+		${_scons_args}
 }
-
 do_install() {
 	for b in mongos mongod mongosniff mongo mongoperf; do
 		vbin $b
