@@ -472,6 +472,10 @@ Example `skip_extraction="foo-${version}.tar.gz"`.
 paths, wildcards will be extended, and multiple entries can be separated by blanks i.e:
 `conf_files="/etc/foo.conf /etc/foo2.conf /etc/foo/*.conf"`.
 
+- `mutable_files` A list of files the binary package owns, with the expectation 
+  that those files will be changed. These act a lot like `conf_files` but 
+  without the assumption that a human will edit them.
+
 - `make_dirs` A list of entries defining directories and permissions to be
   created at install time. Each entry should be space separated, and will
   itself contain spaces. `make_dirs="/dir 0750 user group"`. User and group and
