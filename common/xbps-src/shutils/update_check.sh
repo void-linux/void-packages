@@ -41,7 +41,7 @@ update_check() {
                 url="https://launchpad.net/$lpname/+download";;
             *cpan.*)
                 pkgname=${pkgname#perl-};;
-            *pypi.io*)
+            *pythonhosted.org*)
                 pkgname=${pkgname#python-}
                 url="https://pypi.io/simple/$pkgname";;
             *github.com*)
