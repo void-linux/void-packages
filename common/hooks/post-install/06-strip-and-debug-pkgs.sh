@@ -99,6 +99,10 @@ hook() {
 					return 1
 				fi
 				echo "   Stripped executable: ${f#$PKGDESTDIR}"
+				if [ -z "$nopie" ]; then
+					msg_red "$pkgver: non-PIE executable found in PIE build: ${f#$PKGDESTDIR}\n"
+					return 1
+				fi
 				attach_debug "$f"
 			fi
 			;;
