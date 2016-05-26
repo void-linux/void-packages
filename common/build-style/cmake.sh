@@ -2,6 +2,7 @@
 # This helper is for templates using cmake.
 #
 do_configure() {
+	local cmake_args=
 	[ ! -d ${cmake_builddir:=build} ] && mkdir -p ${cmake_builddir}
 	cd ${cmake_builddir}
 
@@ -20,19 +21,19 @@ SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 _EOF
-		configure_args+=" -DCMAKE_TOOLCHAIN_FILE=cross_${XBPS_CROSS_TRIPLET}.cmake"
+		cmake_args+=" -DCMAKE_TOOLCHAIN_FILE=cross_${XBPS_CROSS_TRIPLET}.cmake"
 	fi
-	configure_args+=" -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release"
+	cmake_args+=" -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release"
 
 	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
-		configure_args+=" -DCMAKE_INSTALL_LIBDIR=lib32"
+		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=/usr/lib32"
 	else
-		configure_args+=" -DCMAKE_INSTALL_LIBDIR=lib"
+		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=/usr/lib"
 	fi
 
-	configure_args+=" -DCMAKE_INSTALL_SBINDIR=bin"
+	cmake_args+=" -DCMAKE_INSTALL_SBINDIR=/usr/bin"
 
-	cmake ${configure_args} $(echo ${cmake_builddir}|sed \
+	cmake ${cmake_args} ${configure_args} $(echo ${cmake_builddir}|sed \
 		-e 's|[^/]$|/|' -e 's|[^/]*||g' -e 's|/|../|g')
 }
 
