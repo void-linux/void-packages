@@ -1,7 +1,7 @@
 # Template file for 'boost'
 pkgname=boost
 version=1.58.0
-revision=8
+revision=9
 wrksrc="${pkgname}_${version//\./_}"
 hostmakedepends="bzip2-devel"
 makedepends="zlib-devel bzip2-devel icu-devel"
@@ -12,13 +12,12 @@ license="Boost Software License 1.0"
 distfiles="${SOURCEFORGE_SITE}/$pkgname/${pkgname}_${version//\./_}.tar.bz2"
 checksum=fdfc204fc33ec79c99b9a74944c3e54bd78be4f7f15e260c0e2700a36dc7d3e5
 
-nopie=yes
-subpackages="boost-build boost-devel"
+subpackages="boost-build boost-devel boost-jam"
 
 if [ -z "$CROSS_BUILD" ]; then
-	# XXX boost-jam and boost-python subpkgs.
+	# XXX boost-python subpkg.
 	makedepends+=" python-devel"
-	subpackages+=" boost-jam boost-python"
+	subpackages+=" boost-python"
 fi
 
 case "$XBPS_TARGET_MACHINE" in
@@ -30,26 +29,27 @@ case "$XBPS_TARGET_MACHINE" in
 esac
 
 do_build() {
-	if [ "$CROSS_BUILD" ]; then
-		echo "using gcc : ${_toolset#gcc-} : ${XBPS_CROSS_TRIPLET}-g++ ${CXXFLAGS} ;" \
-			> user-config.jam
-	else
-		echo "using gcc : ${_toolset#gcc-} : g++ ${CXXFLAGS} ;" \
-			> user-config.jam
-	fi
-	./bootstrap.sh -prefix=${DESTDIR}/usr
-	./bjam --toolset=${_toolset} ${makejobs} abi=$_abi architecture=$_arch \
+	echo "using gcc : ${_toolset#gcc-} : ${CXX} ${CXXFLAGS} ;" >user-config.jam
+	./bootstrap.sh --prefix=${DESTDIR}/usr
+	(
+	# Rebuild bjam for target
+	cd tools/build/src/engine
+	LIBS="$LDFLAGS" ${wrksrc}/bjam -f build.jam --toolset=cc --toolset-root= -d+2 clean
+	LIBS="$LDFLAGS" ${wrksrc}/bjam -f build.jam --toolset=cc --toolset-root= -d+2
+	)
+	./bjam ${makejobs} \
+		--toolset=${_toolset} abi=${_abi} architecture=${_arch} \
 		--user-config=${wrksrc}/user-config.jam --debug-building
 }
 
 do_install() {
 	# Install bjam
-	if [ -z "$CROSS_BUILD" ]; then
-		vbin bjam
-	fi
+	for _b in tools/build/src/engine/bin.*/*; do
+		vbin ${_b}
+	done
 
 	# Install headers/libs
-	./bjam --prefix=${DESTDIR}/usr abi=$_abi architecture=$_arch \
+	./bjam --prefix=${DESTDIR}/usr abi=${_abi} architecture=${_arch} \
 		--user-config=${wrksrc}/user-config.jam install
 
 	# Install Boost.Build stuff.
@@ -72,6 +72,7 @@ boost-jam_package() {
 	depends="boost-build-${version}_${revision}"
 	pkg_install() {
 		vmove usr/bin/bjam
+		vmove usr/bin/b2
 	}
 }
 boost-python_package() {
