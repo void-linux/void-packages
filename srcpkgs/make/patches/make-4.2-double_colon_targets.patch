@@ -1,0 +1,164 @@
+From 4762480ae9cb8df4878286411f178d32db14eff0 Mon Sep 17 00:00:00 2001
+From: Paul Smith <psmith@gnu.org>
+Date: Tue, 31 May 2016 06:56:51 +0000
+Subject: [SV 47995] Ensure forced double-colon rules work with -j.
+
+The fix for SV 44742 had a side-effect that some double-colon targets
+were skipped.  This happens because the "considered" facility assumed
+that all targets would be visited on each walk through the dependency
+graph: we used a bit for considered and toggled it on each pass; if
+we didn't walk the entire graph on every pass the bit would get out
+of sync.  The new behavior after SV 44742 might return early without
+walking the entire graph.  To fix this I changed the considered value
+to an integer which is monotonically increasing: it is then never
+possible to incorrectly determine that a previous pass through the
+graph already considered the current target.
+
+* filedef.h (struct file): make CONSIDERED an unsigned int.
+* main.c (main): No longer need to reset CONSIDERED.
+* remake.c (update_goal_chain): increment CONSIDERED rather than
+inverting it between 0<->1.
+(update_file_1): Reset CONSIDERED to 0 so it's re-considered.
+(check_dep): Ditto.
+* tests/scripts/features/double_colon: Add a regression test.
+---
+diff --git filedef.h filedef.h
+index 507a027..14b4187 100644
+--- filedef.h
++++ filedef.h
+@@ -58,6 +58,8 @@ struct file
+     FILE_TIMESTAMP last_mtime;  /* File's modtime, if already known.  */
+     FILE_TIMESTAMP mtime_before_update; /* File's modtime before any updating
+                                            has been performed.  */
++    unsigned int considered;    /* equal to 'considered' if file has been
++                                   considered on current scan of goal chain */
+     int command_flags;          /* Flags OR'd in for cmds; see commands.h.  */
+     enum update_status          /* Status of the last attempt to update.  */
+       {
+@@ -96,8 +98,6 @@ struct file
+     unsigned int ignore_vpath:1;/* Nonzero if we threw out VPATH name.  */
+     unsigned int pat_searched:1;/* Nonzero if we already searched for
+                                    pattern-specific variables.  */
+-    unsigned int considered:1;  /* equal to 'considered' if file has been
+-                                   considered on current scan of goal chain */
+     unsigned int no_diag:1;     /* True if the file failed to update and no
+                                    diagnostics has been issued (dontcare). */
+   };
+diff --git main.c main.c
+index 576f2e9..e606488 100644
+--- main.c
++++ main.c
+@@ -2262,10 +2262,6 @@ main (int argc, char **argv, char **envp)
+ 
+             for (i = 0, d = read_files; d != 0; ++i, d = d->next)
+               {
+-                /* Reset the considered flag; we may need to look at the file
+-                   again to print an error.  */
+-                d->file->considered = 0;
+-
+                 if (d->file->updated)
+                   {
+                     /* This makefile was updated.  */
+diff --git remake.c remake.c
+index df1a9e0..5d5d67a 100644
+--- remake.c
++++ remake.c
+@@ -57,8 +57,9 @@ unsigned int commands_started = 0;
+ static struct goaldep *goal_list;
+ static struct dep *goal_dep;
+ 
+-/* Current value for pruning the scan of the goal chain (toggle 0/1).  */
+-static unsigned int considered;
++/* Current value for pruning the scan of the goal chain.
++   All files start with considered == 0.  */
++static unsigned int considered = 0;
+ 
+ static enum update_status update_file (struct file *file, unsigned int depth);
+ static enum update_status update_file_1 (struct file *file, unsigned int depth);
+@@ -90,12 +91,12 @@ update_goal_chain (struct goaldep *goaldeps)
+ 
+   goal_list = rebuilding_makefiles ? goaldeps : NULL;
+ 
+-  /* All files start with the considered bit 0, so the global value is 1.  */
+-  considered = 1;
+-
+ #define MTIME(file) (rebuilding_makefiles ? file_mtime_no_search (file) \
+                      : file_mtime (file))
+ 
++  /* Start a fresh batch of consideration.  */
++  ++considered;
++
+   /* Update all the goals until they are all finished.  */
+ 
+   while (goals != 0)
+@@ -247,10 +248,10 @@ update_goal_chain (struct goaldep *goaldeps)
+             }
+         }
+ 
+-      /* If we reached the end of the dependency graph toggle the considered
+-         flag for the next pass.  */
++      /* If we reached the end of the dependency graph update CONSIDERED
++         for the next pass.  */
+       if (g == 0)
+-        considered = !considered;
++        ++considered;
+     }
+ 
+   if (rebuilding_makefiles)
+@@ -615,8 +616,8 @@ update_file_1 (struct file *file, unsigned int depth)
+             break;
+ 
+           if (!running)
+-            /* The prereq is considered changed if the timestamp has changed while
+-               it was built, OR it doesn't exist.  */
++            /* The prereq is considered changed if the timestamp has changed
++               while it was built, OR it doesn't exist.  */
+             d->changed = ((file_mtime (d->file) != mtime)
+                           || (mtime == NONEXISTENT_MTIME));
+ 
+@@ -650,7 +651,7 @@ update_file_1 (struct file *file, unsigned int depth)
+             /* We may have already considered this file, when we didn't know
+                we'd need to update it.  Force update_file() to consider it and
+                not prune it.  */
+-            d->file->considered = !considered;
++            d->file->considered = 0;
+ 
+             new = update_file (d->file, depth);
+             if (new > dep_status)
+@@ -1087,7 +1088,7 @@ check_dep (struct file *file, unsigned int depth,
+               /* If the target was waiting for a dependency it has to be
+                  reconsidered, as that dependency might have finished.  */
+               if (file->command_state == cs_deps_running)
+-                file->considered = !considered;
++                file->considered = 0;
+ 
+               set_command_state (file, cs_not_started);
+             }
+diff --git tests/scripts/features/double_colon tests/scripts/features/double_colon
+index 80ddb31..58f126f 100644
+--- tests/scripts/features/double_colon
++++ tests/scripts/features/double_colon
+@@ -197,6 +197,21 @@ all:: 3
+ ',
+               '-rs -j2 1 2 root', "all_one\nall_two\nroot\n");
+ 
++# SV 47995 : Parallel double-colon rules with FORCE
++
++run_make_test('
++all:: ; @echo one
++
++all:: joe ; @echo four
++
++joe: FORCE ; touch joe-is-forced
++
++FORCE:
++',
++              '-j5', "one\ntouch joe-is-forced\nfour\n");
++
++unlink('joe-is-forced');
++
+ # This tells the test driver that the perl test script executed properly.
+ 1;
+ 
+--
+cgit v0.9.0.2
