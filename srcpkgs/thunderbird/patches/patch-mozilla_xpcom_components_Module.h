@@ -1,8 +1,6 @@
-$NetBSD: patch-xpcom_components_Module.h,v 1.1 2016/02/06 22:13:22 ryoon Exp $
+$NetBSD: patch-mozilla_xpcom_components_Module.h,v 1.2 2016/04/17 18:33:50 ryoon Exp $
 
-* Workaround for binutils/GNU ld 2.26 from NetBSD/amd64 7.99.26
-
---- mozilla/xpcom/components/Module.h.orig	2016-01-23 23:23:51.000000000 +0000
+--- mozilla/xpcom/components/Module.h.orig	2016-04-07 21:33:35.000000000 +0000
 +++ mozilla/xpcom/components/Module.h
 @@ -125,7 +125,7 @@ struct Module
  #    define NSMODULE_SECTION __declspec(allocate(".kPStaticModules$M"), dllexport)
