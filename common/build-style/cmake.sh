@@ -26,12 +26,12 @@ _EOF
 	cmake_args+=" -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release"
 
 	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
-		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=/usr/lib32"
+		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib32"
 	else
-		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=/usr/lib"
+		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib"
 	fi
 
-	cmake_args+=" -DCMAKE_INSTALL_SBINDIR=/usr/bin"
+	cmake_args+=" -DCMAKE_INSTALL_SBINDIR=bin"
 
 	cmake ${cmake_args} ${configure_args} $(echo ${cmake_builddir}|sed \
 		-e 's|[^/]$|/|' -e 's|[^/]*||g' -e 's|/|../|g')
