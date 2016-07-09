@@ -1,0 +1,362 @@
+From 487aa645d09cd6aa650255aaf83bd76d81455299 Mon Sep 17 00:00:00 2001
+From: Luca Bruno <luca.bruno@coreos.com>
+Date: Mon, 4 Jul 2016 11:40:29 +0200
+Subject: api_service: optionally build systemd-journal support
+
+This introduces a 'sdjournal' tag and corresponding stubs in api_service,
+turning libsystemd headers into a soft-dependency.
+If systemd-journal support is enabled and `sd-journal.h` found at build
+time, api_service will use it for logs retrieval.
+This is enabled by default, but downstream can turn it off via
+`--enable-sdjournal=no`.
+---
+ Makefile.in                  |  2 +-
+ configure.ac                 | 39 +++++++++++++++---
+ rkt/api_service.go           | 66 +-----------------------------
+ rkt/api_service_sdjournal.go | 96 ++++++++++++++++++++++++++++++++++++++++++++
+ rkt/api_service_stub.go      | 27 +++++++++++++
+ rkt/rkt.mk                   |  6 ++-
+ 6 files changed, 162 insertions(+), 74 deletions(-)
+ create mode 100644 rkt/api_service_sdjournal.go
+ create mode 100644 rkt/api_service_stub.go
+
+diff --git a/Makefile.in b/Makefile.in
+index db5636e..995bd1b 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -19,7 +19,7 @@ ABS_GO := @ABS_GO@
+ # [STAGE1] build settings
+
+ # selinux tags for rkt and functional tests
+-RKT_TAGS := -tags "selinux @TPM_TAGS@"
++RKT_TAGS := -tags "selinux @TPM_TAGS@ @SDJOURNAL_TAGS@"
+ # stage1 build mode
+
+ RKT_VERSION := @RKT_VERSION@
+diff --git a/configure.ac b/configure.ac
+index 904e06e..3ec5d14 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -142,6 +142,14 @@ AC_ARG_ENABLE([tpm],
+               [RKT_ENABLE_TPM="${enableval}"],
+               [RKT_ENABLE_TPM="yes"])
+
++## Systemd-journal support on host
++
++AC_ARG_ENABLE([sdjournal],
++              [AS_HELP_STRING([--enable-sdjournal],
++                              [enable systemd-journal features on host, use 'auto' to enable it if the required development files are found, default: 'yes'])],
++              [RKT_ENABLE_SDJOURNAL="${enableval}"],
++              [RKT_ENABLE_SDJOURNAL="yes"])
++
+ ## insecure go
+
+ AC_ARG_ENABLE([insecure-go],
+@@ -573,12 +581,6 @@ AC_CHECK_LIB([c], [fork],
+ # Check whether we can build TPM support code
+ AC_CHECK_HEADER(trousers/tss.h, [HAVE_TPM=yes], [HAVE_TPM=no], [AC_INCLUDES_DEFAULT])
+
+-# Check whether we have libsystemd-journal (needed by the API server)
+-AC_CHECK_HEADER([systemd/sd-journal.h],
+-                           [],
+-                           [AC_MSG_ERROR([*** No development headers for libsystemd-journal found])],
+-                           [AC_INCLUDES_DEFAULT])
+-
+ TPM_TAGS=''
+ AS_CASE([${RKT_ENABLE_TPM}],
+         [no],
+@@ -600,6 +602,30 @@ AS_CASE([${RKT_ENABLE_TPM}],
+         [yes],
+                 [RKT_ADD_FEATURE '+TPM'])
+
++# Check whether we have libsystemd-journal (for go-systemd/sdjournal)
++AC_CHECK_HEADER([systemd/sd-journal.h], [HAVE_SDJOURNAL=yes], [HAVE_SDJOURNAL=no], [AC_INCLUDES_DEFAULT])
++
++SDJOURNAL_TAGS=''
++AS_CASE([${RKT_ENABLE_SDJOURNAL}],
++        [no],
++                dnl nothing to do
++                [:],
++        [auto],
++                [AS_VAR_IF([HAVE_SDJOURNAL],[yes],
++                           [SDJOURNAL_TAGS=sdjournal
++                            RKT_ENABLE_SDJOURNAL=yes],
++                           [RKT_ENABLE_SDJOURNAL=no])],
++        [yes],
++                [AS_VAR_IF([HAVE_SDJOURNAL],[no],
++                           [AC_MSG_ERROR([*** Host systemd-journal support enabled, but could not find required development files])])
++                 SDJOURNAL_TAGS=sdjournal],
++        [AC_MSG_ERROR([*** Invalid value passed to --enable-sdjournal, should be either 'yes', 'no' or 'auto'])])
++AS_CASE([${RKT_ENABLE_SDJOURNAL}],
++        [no],
++                [RKT_ADD_FEATURE '-SDJOURNAL'],
++        [yes],
++                [RKT_ADD_FEATURE '+SDJOURNAL'])
++
+ AC_LANG_POP([C])
+
+ AC_PROG_INSTALL
+@@ -696,6 +722,7 @@ AC_SUBST(RKT_VERSION_LDFLAGS)
+ AC_SUBST(RKT_FEATURES_LDFLAGS)
+
+ AC_SUBST(TPM_TAGS)
++AC_SUBST(SDJOURNAL_TAGS)
+
+ AC_SUBST(RKT_DEFINES_FOR_ENTER)
+
+diff --git a/rkt/api_service.go b/rkt/api_service.go
+index f7eb381..65b4ca2 100644
+--- a/rkt/api_service.go
++++ b/rkt/api_service.go
+@@ -18,7 +18,6 @@ import (
+ 	"encoding/json"
+ 	"errors"
+ 	"fmt"
+-	"io/ioutil"
+ 	"net"
+ 	"os"
+ 	"os/signal"
+@@ -30,7 +29,6 @@ import (
+
+ 	"github.com/appc/spec/schema"
+ 	"github.com/appc/spec/schema/types"
+-	"github.com/coreos/go-systemd/sdjournal"
+ 	"github.com/coreos/rkt/api/v1alpha"
+ 	"github.com/coreos/rkt/common"
+ 	"github.com/coreos/rkt/common/cgroup"
+@@ -744,69 +742,7 @@ func (sw LogsStreamWriter) Write(b []byte) (int, error) {
+ }
+
+ func (s *v1AlphaAPIServer) GetLogs(request *v1alpha.GetLogsRequest, server v1alpha.PublicAPI_GetLogsServer) error {
+-	uuid, err := types.NewUUID(request.PodId)
+-	if err != nil {
+-		return err
+-	}
+-	pod, err := getPod(uuid)
+-	if err != nil {
+-		return err
+-	}
+-	stage1Path := "stage1/rootfs"
+-	if pod.usesOverlay() {
+-		stage1TreeStoreID, err := pod.getStage1TreeStoreID()
+-		if err != nil {
+-			return err
+-		}
+-		stage1Path = fmt.Sprintf("/overlay/%s/upper/", stage1TreeStoreID)
+-	}
+-	path := filepath.Join(getDataDir(), "/pods/run/", request.PodId, stage1Path, "/var/log/journal/")
+-
+-	if _, err := os.Stat(path); os.IsNotExist(err) {
+-		return fmt.Errorf("%s: logging unsupported", uuid.String())
+-	}
+-
+-	jconf := sdjournal.JournalReaderConfig{
+-		Path: path,
+-	}
+-	if request.AppName != "" {
+-		jconf.Matches = []sdjournal.Match{
+-			{
+-				Field: sdjournal.SD_JOURNAL_FIELD_SYSLOG_IDENTIFIER,
+-				Value: request.AppName,
+-			},
+-		}
+-	}
+-	if request.SinceTime != 0 {
+-		t := time.Unix(request.SinceTime, 0)
+-		jconf.Since = -time.Since(t)
+-	}
+-	if request.Lines != 0 {
+-		jconf.NumFromTail = uint64(request.Lines)
+-	}
+-
+-	jr, err := sdjournal.NewJournalReader(jconf)
+-	if err != nil {
+-		return err
+-	}
+-	defer jr.Close()
+-
+-	if request.Follow {
+-		return jr.Follow(nil, LogsStreamWriter{server: server})
+-	}
+-
+-	data, err := ioutil.ReadAll(jr)
+-	if err != nil {
+-		return err
+-	}
+-	// Remove empty lines
+-	lines := make([]string, 0)
+-	for _, v := range strings.Split(string(data), "\n") {
+-		if len(v) > 0 {
+-			lines = append(lines, v)
+-		}
+-	}
+-	return server.Send(&v1alpha.GetLogsResponse{Lines: lines})
++	return s.constrainedGetLogs(request, server)
+ }
+
+ func (s *v1AlphaAPIServer) ListenEvents(request *v1alpha.ListenEventsRequest, server v1alpha.PublicAPI_ListenEventsServer) error {
+diff --git a/rkt/api_service_sdjournal.go b/rkt/api_service_sdjournal.go
+new file mode 100644
+index 0000000..12aabb1
+--- /dev/null
++++ b/rkt/api_service_sdjournal.go
+@@ -0,0 +1,96 @@
++// Copyright 2016 The rkt Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++// +build sdjournal
++
++package main
++
++import (
++	"fmt"
++	"io/ioutil"
++	"os"
++	"path/filepath"
++	"strings"
++	"time"
++
++	"github.com/appc/spec/schema/types"
++	"github.com/coreos/go-systemd/sdjournal"
++	"github.com/coreos/rkt/api/v1alpha"
++)
++
++func (s *v1AlphaAPIServer) constrainedGetLogs(request *v1alpha.GetLogsRequest, server v1alpha.PublicAPI_GetLogsServer) error {
++	uuid, err := types.NewUUID(request.PodId)
++	if err != nil {
++		return err
++	}
++	pod, err := getPod(uuid)
++	if err != nil {
++		return err
++	}
++	stage1Path := "stage1/rootfs"
++	if pod.usesOverlay() {
++		stage1TreeStoreID, err := pod.getStage1TreeStoreID()
++		if err != nil {
++			return err
++		}
++		stage1Path = fmt.Sprintf("/overlay/%s/upper/", stage1TreeStoreID)
++	}
++	path := filepath.Join(getDataDir(), "/pods/run/", request.PodId, stage1Path, "/var/log/journal/")
++
++	if _, err := os.Stat(path); os.IsNotExist(err) {
++		return fmt.Errorf("%s: logging unsupported", uuid.String())
++	}
++
++	jconf := sdjournal.JournalReaderConfig{
++		Path: path,
++	}
++	if request.AppName != "" {
++		jconf.Matches = []sdjournal.Match{
++			{
++				Field: sdjournal.SD_JOURNAL_FIELD_SYSLOG_IDENTIFIER,
++				Value: request.AppName,
++			},
++		}
++	}
++	if request.SinceTime != 0 {
++		t := time.Unix(request.SinceTime, 0)
++		jconf.Since = -time.Since(t)
++	}
++	if request.Lines != 0 {
++		jconf.NumFromTail = uint64(request.Lines)
++	}
++
++	jr, err := sdjournal.NewJournalReader(jconf)
++	if err != nil {
++		return err
++	}
++	defer jr.Close()
++
++	if request.Follow {
++		return jr.Follow(nil, LogsStreamWriter{server: server})
++	}
++
++	data, err := ioutil.ReadAll(jr)
++	if err != nil {
++		return err
++	}
++	// Remove empty lines
++	lines := make([]string, 0)
++	for _, v := range strings.Split(string(data), "\n") {
++		if len(v) > 0 {
++			lines = append(lines, v)
++		}
++	}
++	return server.Send(&v1alpha.GetLogsResponse{Lines: lines})
++}
+diff --git a/rkt/api_service_stub.go b/rkt/api_service_stub.go
+new file mode 100644
+index 0000000..5a1c743
+--- /dev/null
++++ b/rkt/api_service_stub.go
+@@ -0,0 +1,27 @@
++// Copyright 2016 The rkt Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++// +build !sdjournal
++
++package main
++
++import (
++	"fmt"
++
++	"github.com/coreos/rkt/api/v1alpha"
++)
++
++func (s *v1AlphaAPIServer) constrainedGetLogs(request *v1alpha.GetLogsRequest, server v1alpha.PublicAPI_GetLogsServer) error {
++	return fmt.Errorf("rkt built without logging support")
++}
+diff --git a/rkt/rkt.mk b/rkt/rkt.mk
+index 6e9dd73..1d95bc0 100644
+--- a/rkt/rkt.mk
++++ b/rkt/rkt.mk
+@@ -29,18 +29,20 @@ $(BGB_BINARY): $(MK_PATH) | $(TARGET_BINDIR)
+
+ include makelib/build_go_bin.mk
+
++DIST_SRC_FILTER := '_test.go|main.go|_gen.go|_stub.go'
++
+ manpages: GO_ENV += GOARCH=$(GOARCH_FOR_BUILD) CC=$(CC_FOR_BUILD)
+ manpages: | $(GOPATH_TO_CREATE)/src/$(REPO_PATH)
+ 	mkdir -p dist/manpages/
+ 	ls $(GOPATH_TO_CREATE)/src/$(REPO_PATH)/rkt/*.go | \
+-		grep -vE '_test.go|main.go|_gen.go' | \
++		grep -vE $(DIST_SRC_FILTER) | \
+ 		$(GO_ENV) xargs "$(GO)" run $(GOPATH_TO_CREATE)/src/$(REPO_PATH)/rkt/manpages_gen.go
+
+ bash-completion: GO_ENV += GOARCH=$(GOARCH_FOR_BUILD) CC=$(CC_FOR_BUILD)
+ bash-completion: | $(GOPATH_TO_CREATE)/src/$(REPO_PATH)
+ 	mkdir -p dist/bash_completion/
+ 	ls $(GOPATH_TO_CREATE)/src/$(REPO_PATH)/rkt/*.go | \
+-		grep -vE '_test.go|main.go|_gen.go' | \
++		grep -vE $(DIST_SRC_FILTER) | \
+ 		$(GO_ENV) xargs "$(GO)" run $(GOPATH_TO_CREATE)/src/$(REPO_PATH)/rkt/bash_completion_gen.go
+
+ protobuf:
+--
+2.9.0
+
