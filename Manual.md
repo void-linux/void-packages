@@ -40,7 +40,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [Notes](#notes)
 	* [Contributing via git](#contributing)
 * [Help](#help)
-	
+
 
 <a id="Introduction"></a>
 ## Introduction
@@ -81,7 +81,7 @@ in a directory matching `$pkgname`, i.e: `void-packages/srcpkgs/foo/template`.
 If everything went fine after running
 
     $ ./xbps-src pkg <pkgname>
-    
+
 a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local repository
 `hostdir/binpkgs`.
 
@@ -97,7 +97,7 @@ the Void packages system.
 
 1. System: The software should be installed system-wide, not per-user.
 
-1. Compiled: The software needs to be compiled before being used, even if it is 
+1. Compiled: The software needs to be compiled before being used, even if it is
    software that is not needed by the whole system.
 
 1. Required: Another package either within the repository or pending inclusion
@@ -268,7 +268,7 @@ The optional 4th argument can be used to change the `file name`.
 
 	Installs `file` into `usr/share/licenses/<pkgname>` in the pkg
 	`$DESTDIR`. The optional 2nd argument can be used to change the
-	`file name`. Note: Non-`GPL` licenses, `MIT`, `BSD` and `ISC` require the 
+	`file name`. Note: Non-`GPL` licenses, `MIT`, `BSD` and `ISC` require the
 	license file to	be supplied with the binary package.
 
 - *vsv()* `vsv <service>`
@@ -472,8 +472,8 @@ Example `skip_extraction="foo-${version}.tar.gz"`.
 paths, wildcards will be extended, and multiple entries can be separated by blanks i.e:
 `conf_files="/etc/foo.conf /etc/foo2.conf /etc/foo/*.conf"`.
 
-- `mutable_files` A list of files the binary package owns, with the expectation 
-  that those files will be changed. These act a lot like `conf_files` but 
+- `mutable_files` A list of files the binary package owns, with the expectation
+  that those files will be changed. These act a lot like `conf_files` but
   without the assumption that a human will edit them.
 
 - `make_dirs` A list of entries defining directories and permissions to be
@@ -511,7 +511,7 @@ This appends to the generated file rather than replacing it.
 - `shlib_requires` A white space separated list of additional sonames the package requires.
 This appends to the generated file rather than replacing it.
 
-- `nopie` Only needs to be set to something to make active, disables building the package with hardening 
+- `nopie` Only needs to be set to something to make active, disables building the package with hardening
   features (PIE, relro, etc). Not necessary for most packages.
 
 - `reverts` xbps supports a unique feature which allows to downgrade from broken
