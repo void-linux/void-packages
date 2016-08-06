@@ -1,0 +1,76 @@
+From: Jakub Jirutka <jakub@jirutka.cz>
+Date: Thu, 04 Aug 2016 17:53:00 +0200
+Subject: [PATCH] Do not link musl statically
+
+Static linking of rustc on Alpine doesn't work yet.
+
+This patch is ported from
+https://gist.github.com/japaric/52b8816a4c86f5a4699bcc50ebc3e020.
+
+--- a/src/bootstrap/build/sanity.rs
++++ b/src/bootstrap/build/sanity.rs
+@@ -97,26 +91,6 @@
+             panic!("the iOS target is only supported on OSX");
+         }
+ 
+-        // Make sure musl-root is valid if specified
+-        if target.contains("musl") && (target.contains("x86_64") || target.contains("i686")) {
+-            match build.config.musl_root {
+-                Some(ref root) => {
+-                    if fs::metadata(root.join("lib/libc.a")).is_err() {
+-                        panic!("couldn't find libc.a in musl dir: {}",
+-                               root.join("lib").display());
+-                    }
+-                    if fs::metadata(root.join("lib/libunwind.a")).is_err() {
+-                        panic!("couldn't find libunwind.a in musl dir: {}",
+-                               root.join("lib").display());
+-                    }
+-                }
+-                None => {
+-                    panic!("when targeting MUSL the build.musl-root option \
+-                            must be specified in config.toml")
+-                }
+-            }
+-        }
+-
+         if target.contains("msvc") {
+             // There are three builds of cmake on windows: MSVC, MinGW, and
+             // Cygwin. The Cygwin build does not have generators for Visual
+--- a/src/liblibc/src/unix/mod.rs
++++ b/src/liblibc/src/unix/mod.rs
+@@ -187,11 +187,6 @@
+     } else if #[cfg(all(not(stdbuild), feature = "use_std"))] {
+         // cargo build, don't pull in anything extra as the libstd  dep
+         // already pulls in all libs.
+-    } else if #[cfg(any(all(target_env = "musl", not(target_arch = "mips")),
+-                        target_env = "musleabi",
+-                        target_env = "musleabihf"))] {
+-        #[link(name = "c", kind = "static")]
+-        extern {}
+     } else if #[cfg(target_os = "emscripten")] {
+         #[link(name = "c")]
+         extern {}
+--- a/src/librustc_back/target/x86_64_unknown_linux_musl.rs
++++ b/src/librustc_back/target/x86_64_unknown_linux_musl.rs
+@@ -11,7 +11,7 @@
+ use target::Target;
+ 
+ pub fn target() -> Target {
+-    let mut base = super::linux_musl_base::opts();
++    let mut base = super::linux_base::opts();
+     base.cpu = "x86-64".to_string();
+     base.max_atomic_width = 64;
+     base.pre_link_args.push("-m64".to_string());
+--- a/src/libunwind/build.rs
++++ b/src/libunwind/build.rs
+@@ -16,9 +16,7 @@
+     let target = env::var("TARGET").unwrap();
+
+     if target.contains("linux") {
+-        if target.contains("musl") && (target.contains("x86_64") || target.contains("i686")) {
+-            println!("cargo:rustc-link-lib=static=unwind");
+-        } else if !target.contains("android") {
++        if !target.contains("android") {
+             println!("cargo:rustc-link-lib=gcc_s");
+         }
+     } else if target.contains("freebsd") {
