@@ -89,16 +89,22 @@ install_wrappers() {
 }
 
 install_cross_wrappers() {
-	local fname
+	local fname prefix
+
+	if [ -n "$XBPS_CCACHE" ]; then
+		[ -x "/usr/bin/ccache" ] && prefix="/usr/bin/ccache "
+	elif [ -n "$XBPS_DISTCC" ]; then
+		[ -x "/usr/bin/distcc" ] && prefix="/usr/bin/distcc "
+	fi
 
 	for fname in cc gcc; do
-		sed -e "s,@BIN@,/usr/bin/$XBPS_CROSS_TRIPLET-gcc,g" \
+		sed -e "s,@BIN@,${prefix}/usr/bin/$XBPS_CROSS_TRIPLET-gcc,g" \
 			${XBPS_COMMONDIR}/wrappers/cross-cc > \
 			${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-${fname}
 		chmod 755 ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-${fname}
 	done
 	for fname in c++ g++; do
-		sed -e "s,@BIN@,/usr/bin/$XBPS_CROSS_TRIPLET-g++,g" \
+		sed -e "s,@BIN@,${prefix}/usr/bin/$XBPS_CROSS_TRIPLET-g++,g" \
 			${XBPS_COMMONDIR}/wrappers/cross-cc > \
 			${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-${fname}
 		chmod 755 ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-${fname}
