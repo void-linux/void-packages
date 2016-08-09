@@ -1,27 +1,27 @@
 # Template file for 'qt5'
 pkgname=qt5
 version=5.6.1
-revision=1
+revision=2
+_patch=-1
 wrksrc="qt-everywhere-opensource-src-${version}"
 homepage="http://qt.io/"
 short_desc="A cross-platform application and UI framework (QT5)"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 license="GPL-3, LGPL-2.1"
-distfiles="http://download.qt.io/official_releases/qt/${version%.*}/${version}/single/qt-everywhere-opensource-src-${version}.tar.xz"
-checksum=0d3cc75d2368ad988c9ec6bcbed6362dbaa8e03fdfd04e679284f4b9af91e565
+distfiles="http://download.qt.io/official_releases/qt/${version%.*}/${version}${_patch}/single/qt-everywhere-opensource-src-${version}${_patch}.tar.xz"
+checksum=ce08a7eb54661705f55fb283d895a089b267c688fabe017062bd71b9231736db
 
-nocross=yes
 if [ "${XBPS_MACHINE%%-musl}" = i686 ]; then
 	nodebug=yes  # prevent OOM
 fi
-hostmakedepends="flex ruby gperf python perl pkg-config"
+hostmakedepends="flex ruby gperf git python perl pkg-config re2c"
 makedepends="
  libressl-devel libpng-devel MesaLib-devel libXrender-devel unixodbc-devel
  fontconfig-devel libXi-devel libXv-devel libXinerama-devel libXrandr-devel
  libXcursor-devel libXScrnSaver-devel dbus-devel glib-devel icu-devel
  cups-devel libjpeg-turbo-devel sqlite-devel alsa-lib-devel tiff-devel
- libmng-devel libxshmfence-devel xcb-util-keysyms-devel
- xcb-util-image-devel xcb-util-wm-devel libSM-devel
+ libmng-devel libxshmfence-devel libSM-devel xcb-util-keysyms-devel
+ xcb-util-image-devel xcb-util-renderutil-devel xcb-util-wm-devel
  libXcomposite-devel libwebp-devel libxkbcommon-devel harfbuzz-devel gtk+-devel
  mtdev-devel freetds-devel libmysqlclient-devel postgresql-libs-devel
  pulseaudio-devel libbluetooth-devel gst-plugins-base1-devel libxslt-devel
@@ -34,15 +34,21 @@ replaces="qt5-doc<5.6.0 qt5-quick1<5.6.0 qt5-quick1-devel<5.6.0 qt5-webkit<5.6.0
 CFLAGS="-DOPENSSL_NO_SSL3_METHOD"
 CXXFLAGS="-DOPENSSL_NO_SSL3_METHOD"
 
+if [ -n "$CROSS_BUILD" ]; then
+	# Need some devel packages in the host to build qmake, moc, uic, rcc
+	# wayland-devel contains /usr/bin/wayland-scanner
+	hostmakedepends+=" zlib-devel icu-devel wayland-devel"
+fi
+
 _move_examples() {
+	local dest=${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/qt5-examples-${version}
 	if [ -d ${PKGDESTDIR}/usr/share/qt5/examples ]; then
 		# Copy examples to /destdir/qt5-examples-${version} subpackage
-		mkdir -p /destdir/qt5-examples-${version}/usr/share/qt5
-		cp -pR ${PKGDESTDIR}/usr/share/qt5/examples \
-			/destdir/qt5-examples-${version}/usr/share/qt5
+		mkdir -p ${dest}/usr/share/qt5
+		cp -pR ${PKGDESTDIR}/usr/share/qt5/examples ${dest}/usr/share/qt5
 		rm -rf ${PKGDESTDIR}/usr/share/qt5/examples
-		# The help files (*.qch) are in qt5-doc
-		find /destdir/qt5-examples-${version}/usr/share/qt5/examples -iname "*.qch" -delete
+		# The help files (*.qch) are in the qt5-doc package
+		find ${dest}/usr/share/qt5/examples -iname "*.qch" -delete
 	fi
 }
 
@@ -82,6 +88,41 @@ _install_devel() {
 	find ${PKGDESTDIR} -iname "*.prl" -exec sed -i "{}" -e "/^QMAKE_PRL_BUILD_DIR/d" \;
 }
 
+_create_config() {
+	local specs=${wrksrc}/qtbase/mkspecs/devices device="$1" qmake_conf
+
+	mkdir -p ${specs}/${device}
+
+	echo "#" > ${specs}/${device}/qmake.conf
+	echo "# qmake configuration for building with $XBPS_TARGET_MACHINE" >> ${specs}/${device}/qmake.conf
+	echo "#" >> ${specs}/${device}/qmake.conf
+	echo >> ${specs}/${device}/qmake.conf
+	echo "include(../common/linux_device_pre.conf)" >> ${specs}/${device}/qmake.conf
+	echo >> ${specs}/${device}/qmake.conf
+	# Fake distro name to tell we want control
+	echo "DISTRO = arch" >> ${specs}/${device}/qmake.conf
+	# Hard float on armv6, armv7 and aarch64, not on armv5tel
+	case "$XBPS_TARGET_MACHINE" in
+		armv6*|armv7*|aarch64)
+			echo "DISTRO_OPTS += hard-float" >> ${specs}/${device}/qmake.conf
+			;;
+	esac
+	echo "QMAKE_CC = ${CC}" >> ${specs}/${device}/qmake.conf
+	echo "QMAKE_CXX = ${CXX}" >> ${specs}/${device}/qmake.conf
+	echo "QMAKE_LINK = ${CXX}" >> ${specs}/${device}/qmake.conf
+	echo "QMAKE_LINK_SHLIB = ${CXX}" >> ${specs}/${device}/qmake.conf
+	echo "QMAKE_LFLAGS = ${LDFLAGS}" >> ${specs}/${device}/qmake.conf
+	echo "QMAKE_CFLAGS = ${CFLAGS}" >> ${specs}/${device}/qmake.conf
+	echo "QMAKE_CXXFLAGS = ${CXXFLAGS}" >> ${specs}/${device}/qmake.conf
+	# FIXME: is this required?
+	echo "QMAKE_LIBS_OPENGL_ES2 = -lEGL -lGLESv2" >> ${specs}/${device}/qmake.conf
+	echo >> ${specs}/${device}/qmake.conf
+	echo "include(../common/linux_arm_device_post.conf)" >> ${specs}/${device}/qmake.conf
+	echo "load(qt_config)" >> ${specs}/${device}/qmake.conf
+
+	echo '#include "../../linux-g++/qplatformdefs.h"' > ${specs}/${device}/qplatformdefs.h
+}
+
 pre_configure() {
 	# Compatibility functions res_ninit() and res_nclose() for musl libc
 	cp ${FILESDIR}/resolv_compat.h ${wrksrc}/qtwebengine/src/3rdparty/chromium/net/dns
@@ -94,57 +135,174 @@ pre_configure() {
 		done
 	esac
 	# qmake CFLAGS/LDFLAGS
-	sed -i -e '/outpath\/qmake\".*\"\$MAKE\")/s/)/ QMAKE_CFLAGS="$CFLAGS" QMAKE_CXXFLAGS="$CXXFLAGS" QMAKE_LFLAGS="$LDFLAGS" )/' \
-		-e 's/\(setBootstrapVariable\s\+\|EXTRA_C\(XX\)\?FLAGS=.*\)QMAKE_C\(XX\)\?FLAGS_\(DEBUG\|RELEASE\).*/:/' \
-		qtbase/configure
-}
-do_configure() {
-	export LD="$CXX"
-	unset CPP AR AS RANLIB
-	local opts="-confirm-license -opensource \
-		-prefix /usr \
-		-bindir /usr/lib/qt5/bin \
-		-datadir /usr/share/qt5 \
-		-headerdir /usr/include/qt5 \
-		-sysconfdir /etc/xdg \
-		-plugindir /usr/lib/qt5/plugins \
-		-docdir /usr/share/doc/qt5 \
-		-importdir /usr/lib/qt5/imports \
-		-translationdir /usr/share/qt5/translations \
-		-examplesdir /usr/share/qt5/examples \
-		-archdatadir /usr/lib/qt5 \
-		-accessibility -fontconfig -icu \
-		-openssl-linked -dbus-linked \
-		-silent -no-pch -no-strip -optimized-qmake \
-		-system-libjpeg -system-libpng -system-zlib \
-		-system-sqlite -system-harfbuzz -v"
-	case "$XBPS_TARGET_MACHINE" in
-		arm*|*-musl) # -reduce-relocations is experimental; may cause linker errors
-			;;
-		*)	opts+=" -reduce-relocations"
-			;;
-	esac
-
-	if [ "${XBPS_MACHINE%%-musl}" = i686 ]; then
-		LDFLAGS+=" -Wl,--no-keep-memory"  # else OOM on 32-bit
+	sed -i qtbase/configure \
+		-e 's;cd "$0/qmake";cd "$0";' \
+		-e 's;"$outpath" "$MAKE";"$outpath/qmake" "$MAKE";' \
+		-e '/outpath\/qmake.*$MAKE/s;\"$MAKE\"\(.*\);\"$MAKE\" QMAKE_CFLAGS=\"$CFLAGS\" QMAKE_CXXFLAGS=\"$CXXFLAGS\" QMAKE_LFLAGS=\"$LDFLAGS\"\1;' \
+		-e 's;\(setBootstrapVariable\s\+\|EXTRA_C\(XX\)\?FLAGS=.*\)QMAKE_C\(XX\)\?FLAGS_\(DEBUG\|RELEASE\).*;:;'
+	# cross build patches
+	if [ -n "$CROSS_BUILD" ]; then
+		# Patch to skip non-working check for GCC version
+		patch -p0 < ${FILESDIR}/cross-gcc.patch
+		# Patches to fix non-working python scripts host CXX detection
+		patch -p0 < ${FILESDIR}/cross-ninja.patch
 	fi
-
-	QMAKE_CFLAGS="${CFLAGS}" \
-	QMAKE_CXXFLAGS="${CXXFLAGS}" \
-	QMAKE_LFLAGS="${LDFLAGS}" \
-		./configure ${opts}
 }
+
+do_configure() {
+	local opts spec
+
+	opts+=" -confirm-license"
+	opts+=" -opensource"
+	opts+=" -prefix /usr"
+	opts+=" -bindir /usr/lib/qt5/bin"
+	opts+=" -datadir /usr/share/qt5"
+	opts+=" -headerdir /usr/include/qt5"
+	opts+=" -sysconfdir /etc/xdg"
+	opts+=" -plugindir /usr/lib/qt5/plugins"
+	opts+=" -docdir /usr/share/doc/qt5"
+	opts+=" -importdir /usr/lib/qt5/imports"
+	opts+=" -translationdir /usr/share/qt5/translations"
+	opts+=" -examplesdir /usr/share/qt5/examples"
+	opts+=" -archdatadir /usr/lib/qt5"
+	opts+=" -accessibility -fontconfig -icu"
+	opts+=" -openssl-linked"
+	opts+=" -dbus-linked"
+	opts+=" -silent"
+	opts+=" -no-pch"	# For ccache support
+	opts+=" -no-strip"
+	opts+=" -optimized-qmake"
+	opts+=" -system-libjpeg"
+	opts+=" -system-libpng"
+	opts+=" -system-zlib"
+	opts+=" -system-sqlite"
+	opts+=" -system-harfbuzz"
+	# opts+=" -v"		# Enable for verbose configuration tests
+
+	if [ -z "$CROSS_BUILD" ]; then
+		if [ "${XBPS_MACHINE%%-musl}" = i686 ]; then
+			LDFLAGS+=" -Wl,--no-keep-memory"  # else OOM on 32-bit
+		fi
+		unset CPP AR AS RANLIB
+		export LD="${CXX}"
+		export QMAKE_CFLAGS="${CFLAGS}"
+		export QMAKE_CXXFLAGS="${CXXFLAGS}"
+		export QMAKE_LFLAGS="${LDFLAGS}"
+		./configure ${opts}
+	else
+		spec=void-${XBPS_CROSS_TRIPLET}-g++
+		_create_config ${spec}
+		opts+=" -device ${spec}"
+		opts+=" -device-option CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+		opts+=" -opengl es2"
+		opts+=" -sysroot ${XBPS_CROSS_BASE}"
+		opts+=" -hostprefix host"
+		opts+=" -extprefix /usr"
+
+		export CC="$XBPS_CC"
+		export CXX="$XBPS_CXX"
+		export CPP="$XBPS_CPP"
+		export LD="$XBPS_CXX"
+		export CFLAGS="$XBPS_CFLAGS"
+		export CXXFLAGS="$XBPS_CXXFLAGS"
+		export CPPFLAGS="$XBPS_CPPFLAGS"
+		export LDFLAGS="$XBPS_LDFLAGS"
+		export AR="ar"
+		export AS="as"
+		export NM="nm"
+		export OBJDUMP="objdump"
+		export STRIP="strip"
+		export RANLIB="ranlib"
+		./configure ${opts}
+	fi
+}
+
 do_build() {
 	export LD_LIBRARY_PATH="${wrksrc}/qtbase/lib:${wrksrc}/qttools/lib:${LD_LIBRARY_PATH}"
-	export LD="$CXX"
-	unset CPP AR AS RANLIB
-	make ${makejobs}
+	if [ -z "$CROSS_BUILD" ]; then
+		export LD="$CXX"
+		unset CPP AR AS RANLIB
+		make ${makejobs}
+	else
+		export CC="$XBPS_CC"
+		export CXX="$XBPS_CXX"
+		export CPP="$XBPS_CPP"
+		export LD="$XBPS_CXX"
+		export CFLAGS="$XBPS_CFLAGS"
+		export CXXFLAGS="$XBPS_CXXFLAGS"
+		export CPPFLAGS="$XBPS_CPPFLAGS"
+		export LDFLAGS="$XBPS_LDFLAGS"
+		export AR="ar"
+		export AS="as"
+		export NM="nm"
+		export OBJDUMP="objdump"
+		export RANLIB="ranlib"
+		export STRIP="strip"
+		make ${makejobs}
+	fi
 }
+
 do_install() {
 	local f base
+
 	cd ${wrksrc}/qtbase
 	make INSTALL_ROOT=${DESTDIR} install
-	vlicense LGPL_EXCEPTION.txt
+
+	# Remove the host utilities
+	rm -rf ${DESTDIR}/builddir
+
+	if [ -n "$CROSS_BUILD" ]; then
+		#
+		# For some reason qmake and some tools are not built for the target.
+		# Do this manually by patching their Makefiles and installing
+		# the targets to ${DESTDIR}/usr/lib/qt5/bin
+		#
+		vmkdir usr/lib/qt5/bin
+
+		echo ">>> Building qmake or target ${CROSS_BUILD} ..."
+		cd qmake
+		sed Makefile \
+			-e "s;^\(CC\\s*\)=.*;\1= $CC;" \
+			-e "s;^\(CXX\\s*\)=.*;\1= $CXX;" \
+			-e "s;^\(QMAKE_CFLAGS\\s*\)=.*;\1= $CFLAGS;" \
+			-e "s;^\(QMAKE_CXXFLAGS\\s*\)=.*;\1= $CXXFLAGS;" \
+			-e "s;^\(QMAKE_LFLAGS\\s*\)=.*;\1= $LDFLAGS;" \
+			-e "s;.(BUILD_PATH)/bin;${DESTDIR}/usr/lib/qt5/bin;" \
+			> Makefile.target
+		make clean
+		make -f Makefile.target ${makejobs}
+
+		mkdir -p ${wrksrc}/tools
+		cd ${wrksrc}/tools
+
+		# Create a .qmake.conf file for building the tools
+		echo "load(qt_build_config)" > .qmake.conf
+		echo "CONFIG += warning_clean" >> .qmake.conf
+		echo "QT_SOURCE_TREE = ${wrksrc}/qtbase" >> .qmake.conf
+		echo "QT_BUILD_TREE = ${wrksrc}/tools" >> .qmake.conf
+		echo "MODULE_VERSION = ${version}" >> .qmake.conf
+
+		for f in moc rcc uic qlalr qdbuscpp2xml qdbusxml2cpp; do
+			echo ">>> Building ${f} for target ${CROSS_BUILD} ..."
+			mkdir -p ${wrksrc}/tools/${f}
+			cd ${wrksrc}/tools/${f}
+			cp -pR ${wrksrc}/qtbase/src/tools/${f}/* .
+			cp ${FILESDIR}/${f}/${f}.pro .
+			${wrksrc}/qtbase/bin/qmake -o Makefile ${f}.pro
+			sed -i Makefile \
+				-e"s;^\(CFLAGS\\s=.*\);\1 $CFLAGS;" \
+				-e"s;^\(CXXFLAGS\\s=.*\);\1 $CXXFLAGS;"
+			make ${makejobs}
+			# Install the resulting binary
+			vinstall ${wrksrc}/tools/bin/${f} 755 usr/lib/qt5/bin
+		done
+		cd ${wrksrc}/qtbase
+
+		# Install the mkspecs
+		vcopy mkspecs usr/lib/qt5
+	fi
+
+	vlicense ${wrksrc}/LGPL_EXCEPTION.txt
 	vmkdir usr/bin
 	for f in ${DESTDIR}/usr/lib/qt5/bin/*; do
 		base=$(basename $f)
@@ -152,6 +310,7 @@ do_install() {
 	done
 	_move_examples
 }
+
 qt5-3d-devel_package() {
 	short_desc+=" - C++ and QML APIs for 3D graphics (development)"
 	depends="qt5-3d-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -159,18 +318,21 @@ qt5-3d-devel_package() {
 		_install_devel qt3d
 	}
 }
+
 qt5-3d_package() {
 	short_desc+=" - C++ and QML APIs for 3D graphics"
 	pkg_install() {
 		_install_subpkg qt3d
 	}
 }
+
 qt5-canvas3d_package() {
 	short_desc+=" - Canvas 3D component"
 	pkg_install() {
 		_install_subpkg qtcanvas3d
 	}
 }
+
 qt5-connectivity-devel_package() {
 	short_desc+=" - Connectivity component (development)"
 	depends="qt5-connectivity-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -178,12 +340,14 @@ qt5-connectivity-devel_package() {
 		_install_devel qtconnectivity
 	}
 }
+
 qt5-connectivity_package() {
 	short_desc+=" - Connectivity component"
 	pkg_install() {
 		_install_subpkg qtconnectivity
 	}
 }
+
 qt5-declarative-devel_package() {
 	short_desc+=" - Declarative component (development)"
 	depends="qt5-declarative-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -191,12 +355,14 @@ qt5-declarative-devel_package() {
 		_install_devel qtdeclarative
 	}
 }
+
 qt5-declarative_package() {
 	short_desc+=" - Declarative component"
 	pkg_install() {
 		_install_subpkg qtdeclarative
 	}
 }
+
 qt5-enginio-devel_package() {
 	short_desc+=" - Enginio component (development)"
 	depends="qt5-enginio-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -204,12 +370,14 @@ qt5-enginio-devel_package() {
 		_install_devel qtenginio
 	}
 }
+
 qt5-enginio_package() {
 	short_desc+=" - Enginio component"
 	pkg_install() {
 		_install_subpkg qtenginio
 	}
 }
+
 qt5-examples_package() {
 	short_desc+=" - Examples"
 	depends="qt5-devel-${version}_${revision} qt5-qmake-${version}_${revision}"
@@ -223,18 +391,21 @@ qt5-examples_package() {
 		fi
 	}
 }
+
 qt5-graphicaleffects_package() {
 	short_desc+=" - Graphicaleffects component"
 	pkg_install() {
 		_install_subpkg qtgraphicaleffects
 	}
 }
+
 qt5-imageformats_package() {
 	short_desc+=" - Plugins for additional image formats"
 	pkg_install() {
 		_install_subpkg qtimageformats
 	}
 }
+
 qt5-location-devel_package() {
 	short_desc+=" - Location and Positioning components (development)"
 	depends="qt5-location-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -242,12 +413,14 @@ qt5-location-devel_package() {
 		_install_devel qtlocation
 	}
 }
+
 qt5-location_package() {
 	short_desc+=" - Location and Positioning components"
 	pkg_install() {
 		_install_subpkg qtlocation
 	}
 }
+
 qt5-multimedia-devel_package() {
 	short_desc+=" - Multimedia component (development)"
 	depends="qt5-multimedia-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -255,24 +428,28 @@ qt5-multimedia-devel_package() {
 		_install_devel qtmultimedia
 	}
 }
+
 qt5-multimedia_package() {
 	short_desc+=" - Multimedia component"
 	pkg_install() {
 		_install_subpkg qtmultimedia
 	}
 }
+
 qt5-quickcontrols_package() {
 	short_desc+=" - Quick UI controls"
 	pkg_install() {
 		_install_subpkg qtquickcontrols
 	}
 }
+
 qt5-quickcontrols2_package() {
 	short_desc+=" - Quick UI controls (ver. 2)"
 	pkg_install() {
 		_install_subpkg qtquickcontrols2
 	}
 }
+
 qt5-script-devel_package() {
 	short_desc+=" - Scriptable classes (development)"
 	depends="qt5-script-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -280,12 +457,14 @@ qt5-script-devel_package() {
 		_install_devel qtscript
 	}
 }
+
 qt5-script_package() {
 	short_desc+=" - Scriptable classes"
 	pkg_install() {
 		_install_subpkg qtscript
 	}
 }
+
 qt5-sensors-devel_package() {
 	short_desc+=" - Sensors component (development)"
 	depends="qt5-sensors-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -293,12 +472,14 @@ qt5-sensors-devel_package() {
 		_install_devel qtsensors
 	}
 }
+
 qt5-sensors_package() {
 	short_desc+=" - Sensors component"
 	pkg_install() {
 		_install_subpkg qtsensors
 	}
 }
+
 qt5-serialbus-devel_package() {
 	short_desc+=" - Serial bus component (development)"
 	depends="qt5-serialbus-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -306,12 +487,14 @@ qt5-serialbus-devel_package() {
 		_install_devel qtserialbus
 	}
 }
+
 qt5-serialbus_package() {
 	short_desc+=" - Serial bus component"
 	pkg_install() {
 		_install_subpkg qtserialbus
 	}
 }
+
 qt5-serialport-devel_package() {
 	short_desc+=" - Serial port component (development)"
 	depends="qt5-serialport-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -319,12 +502,14 @@ qt5-serialport-devel_package() {
 		_install_devel qtserialport
 	}
 }
+
 qt5-serialport_package() {
 	short_desc+=" - Serial port component"
 	pkg_install() {
 		_install_subpkg qtserialport
 	}
 }
+
 qt5-svg-devel_package() {
 	short_desc+=" - Svg component (development)"
 	depends="qt5-svg-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -332,12 +517,14 @@ qt5-svg-devel_package() {
 		_install_devel qtsvg
 	}
 }
+
 qt5-svg_package() {
 	short_desc+=" - Svg component"
 	pkg_install() {
 		_install_subpkg qtsvg
 	}
 }
+
 qt5-wayland-devel_package() {
 	short_desc+=" - Wayland component (development)"
 	depends="qt5-wayland-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -345,12 +532,14 @@ qt5-wayland-devel_package() {
 		_install_devel qtwayland
 	}
 }
+
 qt5-wayland_package() {
 	short_desc+=" - Wayland component"
 	pkg_install() {
 		_install_subpkg qtwayland
 	}
 }
+
 qt5-webchannel-devel_package() {
 	short_desc+=" - WebChannel component (development)"
 	depends="qt5-webchannel-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -358,12 +547,14 @@ qt5-webchannel-devel_package() {
 		_install_devel qtwebchannel
 	}
 }
+
 qt5-webchannel_package() {
 	short_desc+=" - WebChannel component"
 	pkg_install() {
 		_install_subpkg qtwebchannel
 	}
 }
+
 qt5-webengine-devel_package() {
 	short_desc+=" - WebEngine component (development)"
 	depends="qt5-webengine-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -371,12 +562,14 @@ qt5-webengine-devel_package() {
 		_install_devel qtwebengine
 	}
 }
+
 qt5-webengine_package() {
 	short_desc+=" - WebEngine component"
 	pkg_install() {
 		_install_subpkg qtwebengine
 	}
 }
+
 qt5-websockets-devel_package() {
 	short_desc+=" - WebSockets component (development)"
 	depends="qt5-websockets-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -384,12 +577,14 @@ qt5-websockets-devel_package() {
 		_install_devel qtwebsockets
 	}
 }
+
 qt5-websockets_package() {
 	short_desc+=" - WebSockets component"
 	pkg_install() {
 		_install_subpkg qtwebsockets
 	}
 }
+
 qt5-webview-devel_package() {
 	short_desc+=" - WebView component (development)"
 	depends="qt5-webview-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -397,12 +592,14 @@ qt5-webview-devel_package() {
 		_install_devel qtwebview
 	}
 }
+
 qt5-webview_package() {
 	short_desc+=" - WebView component"
 	pkg_install() {
 		_install_subpkg qtwebview
 	}
 }
+
 qt5-x11extras-devel_package() {
 	short_desc+=" - X11 extras (development)"
 	depends="qt5-x11extras-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -410,12 +607,14 @@ qt5-x11extras-devel_package() {
 		_install_devel qtx11extras
 	}
 }
+
 qt5-x11extras_package() {
 	short_desc+=" - X11 extras"
 	pkg_install() {
 		_install_subpkg qtx11extras
 	}
 }
+
 qt5-xmlpatterns-devel_package() {
 	short_desc+=" - XML components (development)"
 	depends="qt5-xmlpatterns-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -423,18 +622,21 @@ qt5-xmlpatterns-devel_package() {
 		_install_devel qtxmlpatterns
 	}
 }
+
 qt5-xmlpatterns_package() {
 	short_desc+=" - XML components"
 	pkg_install() {
 		_install_subpkg qtxmlpatterns
 	}
 }
+
 qt5-translations_package() {
 	short_desc+=" - Translations"
 	pkg_install() {
 		_install_subpkg qttranslations
 	}
 }
+
 qt5-tools-devel_package() {
 	short_desc+=" - Development tools (development)"
 	depends="qt5-tools-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -442,32 +644,34 @@ qt5-tools-devel_package() {
 		_install_devel qttools
 	}
 }
+
 qt5-tools_package() {
 	short_desc+=" - Development tools"
 	depends="qt5-translations desktop-file-utils hicolor-icon-theme"
 	pkg_install() {
 		_install_subpkg qttools
 		# install missing icons and desktop files
-		for icon in src/linguist/linguist/images/icons/linguist-*-32.png ; do
+		for icon in ${wrksrc}/qttools/src/linguist/linguist/images/icons/linguist-*-32.png ; do
 			size=$(echo $(basename ${icon}) | cut -d- -f2)
 			install -p -D -m644 ${icon} \
 				${PKGDESTDIR}/usr/share/icons/hicolor/${size}x${size}/apps/linguist-qt5.png
 		done
-		install -Dm644 src/assistant/assistant/images/assistant.png \
+		install -Dm644 ${wrksrc}/qttools/src/assistant/assistant/images/assistant.png \
 			${PKGDESTDIR}/usr/share/icons/hicolor/32x32/apps/assistant-qt5.png
-		install -Dm644 src/assistant/assistant/images/assistant-128.png \
+		install -Dm644 ${wrksrc}/qttools/src/assistant/assistant/images/assistant-128.png \
 			${PKGDESTDIR}/usr/share/icons/hicolor/128x128/apps/assistant-qt5.png
-		install -Dm644 src/designer/src/designer/images/designer.png \
+		install -Dm644 ${wrksrc}/qttools/src/designer/src/designer/images/designer.png \
 			${PKGDESTDIR}/usr/share/icons/hicolor/128x128/apps/designer-qt5.png
-		install -Dm644 src/qdbus/qdbusviewer/images/qdbusviewer.png \
+		install -Dm644 ${wrksrc}/qttools/src/qdbus/qdbusviewer/images/qdbusviewer.png \
 			${PKGDESTDIR}/usr/share/icons/hicolor/32x32/apps/qdbusviewer-qt5.png
-		install -Dm644 src/qdbus/qdbusviewer/images/qdbusviewer-128.png \
+		install -Dm644 ${wrksrc}/qttools/src/qdbus/qdbusviewer/images/qdbusviewer-128.png \
 			${PKGDESTDIR}/usr/share/icons/hicolor/128x128/apps/qdbusviewer-qt5.png
 		# install desktop files
 		vmkdir usr/share/applications
 		install -m644 ${FILESDIR}/*.desktop ${PKGDESTDIR}/usr/share/applications
 	}
 }
+
 qt5-devel_package() {
 	depends="zlib-devel libressl-devel>=2.1.4 libXext-devel libXrender-devel
 		fontconfig-devel libglib-devel MesaLib-devel mtdev-devel
@@ -485,42 +689,49 @@ qt5-devel_package() {
 		find ${PKGDESTDIR} -iname "*.prl" -exec sed -i "{}" -e "/^QMAKE_PRL_BUILD_DIR/d" \;
 	}
 }
+
 qt5-plugin-gtk_package() {
 	short_desc+=" - GTK+ theme plugin"
 	pkg_install() {
 		vmove usr/lib/qt5/plugins/platformthemes/libqgtk2.so
 	}
 }
+
 qt5-plugin-odbc_package() {
 	short_desc+=" - ODBC plugin"
 	pkg_install() {
 		vmove usr/lib/qt5/plugins/sqldrivers/libqsqlodbc.so
 	}
 }
+
 qt5-plugin-pgsql_package() {
 	short_desc+=" - PostgreSQL plugin"
 	pkg_install() {
 		vmove usr/lib/qt5/plugins/sqldrivers/libqsqlpsql.so
 	}
 }
+
 qt5-plugin-mysql_package() {
 	short_desc+=" - MySQL plugin"
 	pkg_install() {
 		vmove usr/lib/qt5/plugins/sqldrivers/libqsqlmysql.so
 	}
 }
+
 qt5-plugin-sqlite_package() {
 	short_desc+=" - SQLite plugin"
 	pkg_install() {
 		vmove usr/lib/qt5/plugins/sqldrivers/libqsqlite.so
 	}
 }
+
 qt5-plugin-tds_package() {
 	short_desc+=" - TDS plugin"
 	pkg_install() {
 		vmove usr/lib/qt5/plugins/sqldrivers/libqsqltds.so
 	}
 }
+
 qt5-qmake_package() {
 	short_desc+=" - Qmake Makefile generator tool"
 	pkg_install() {
