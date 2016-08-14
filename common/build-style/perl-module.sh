@@ -14,6 +14,11 @@
 do_configure() {
 	local perlmkf
 
+	local perlprefix=${XBPS_STATEDIR}/perlprefix-${XBPS_TARGET_MACHINE}
+	mkdir -p $perlprefix
+	cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Config"* $perlprefix
+	export PERL5LIB=$perlprefix
+
 	if [ -f ${wrksrc}/Makefile.PL ]; then
 		sed -i "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" ${wrksrc}/Makefile.PL
 	fi
