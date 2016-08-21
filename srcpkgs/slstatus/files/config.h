@@ -27,11 +27,13 @@ static unsigned int update_interval = 1;
 - ram_perc (ram usage in percent) [argument: NULL]
 - ram_total (ram usage in percent) [argument: NULL]
 - ram_used (ram usage in percent) [argument: NULL]
+- run_command (run custom shell command) [argument: command]
 - temp (temperature in degrees) [argument: temperature file]
 - uid (uid of current user) [argument: NULL]
 - username (username of current user) [argument: NULL]
 - vol_perc (alsa volume and mute status in percent) [argument: soundcard]
-- wifi_perc (wifi signal in percent) [argument: wifi card interface name] */
+- wifi_perc (wifi signal in percent) [argument: wifi card interface name]
+- wifi_essid (wifi essid) [argument: wifi card interface name] */
 static const struct arg args[] = {
     /* function     format          argument */
     { cpu_perc,     "cpu %4s | ",   NULL },
