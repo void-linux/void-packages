@@ -1,21 +1,24 @@
 # Template build file for 'firefox'.
 pkgname=firefox
-version=47.0.1
+version=48.0.1
 revision=1
 short_desc="Lightweight gecko-based web browser"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 homepage="https://www.mozilla.org/firefox/"
 license="MPL-1.1, GPL-2, LGPL-2.1"
 distfiles="${MOZILLA_SITE}/${pkgname}/releases/${version}/source/${pkgname}-${version}.source.tar.xz"
-checksum=5ac36c3481dde80ef2e36237badef6cb8ec5fe7e3b5ac1728839477de0cc034c
+checksum=fcc08696dd40e42dc2bc2de99aed9ed9f15ac581364375b6bef2501c06ac5fe7
 
 only_for_archs="i686 i686-musl x86_64 x86_64-musl"
 nopie=yes
 lib32disabled=yes
-build_options="gtk3"
-desc_option_gtk3="Build the GTK+3 toolkit UI"
 
-hostmakedepends="autoconf213 unzip zip pkg-config perl python yasm"
+build_options="gtk3 rust"
+desc_option_gtk3="Build the GTK+3 toolkit UI"
+desc_option_rust="Build rust components"
+
+hostmakedepends="autoconf213 unzip zip pkg-config perl python yasm
+ $(vopt_if rust rust)"
 makedepends="
  nss-devel libjpeg-turbo-devel libpng-devel gtk+-devel
  icu-devel pixman-devel sqlite-devel pulseaudio-devel
@@ -26,11 +29,20 @@ makedepends="
 depends="nss>=3.21 desktop-file-utils hicolor-icon-theme"
 conflicts="firefox-esr>=0"
 
+case "$XBPS_TARGET_MACHINE" in
+	x86_64*) build_options_default="rust" ;;
+esac
+
+post_extract() {
+	[ ! -d "${wrkdrc}/xbps-build" ] && mkdir -p "${wrksrc}/xbps-build"
+}
 pre_configure() {
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
 		$XBPS_FETCH_CMD http://git.alpinelinux.org/cgit/aports/plain/community/firefox-esr/stab.h
 		mv stab.h toolkit/crashreporter/google-breakpad/src/
+		sed -i "s/\(rust_target=x86_64-unknown-linux\)-gnu/\1-musl/" old-configure \
+			build/autoconf/rust.m4
 		;;
 	esac
 
@@ -41,7 +53,6 @@ pre_configure() {
 	# Note: This is for Void Linux use ONLY.
 	_google_api_key="AIzaSyCIFdBA7eQP43R6kXRwTq7j6Mvj1ITze90"
 	echo -n "$_google_api_key" > google-api-key
-	[ ! -d xbps-build ] && mkdir -p xbps-build
 }
 do_configure() {
 	local _args
@@ -49,7 +60,6 @@ do_configure() {
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl) # XXX gold linking with --hash-style=sysv results in unhidden symbols
 		# XXX see https://sourceware.org/ml/binutils/2014-09/msg00230.html
-		#
 		# XXX disable jemalloc.
 		_args+=" --disable-jemalloc --enable-gold=no"
 		;;
@@ -80,34 +90,26 @@ do_configure() {
 	mkdir -p /usr/lib/firefox
 	export LDFLAGS+=" -Wl,-rpath=/usr/lib/firefox"
 
-	if [ "$build_option_gtk3" ]; then
-		_args+=" --enable-default-toolkit=cairo-gtk3"
-	else
-		_args+=" --enable-default-toolkit=cairo-gtk2"
-	fi
-
 	cd xbps-build
 	# XXX build without --system-cairo. See:
 	# - https://github.com/voidlinux/void-packages/issues/2308#issuecomment-135426813
 	# - https://bugs.gentoo.org/show_bug.cgi?id=558150
-	SHELL=/bin/bash ../configure --prefix=/usr --libdir=/usr/lib \
+	SHELL=/bin/bash ../configure --prefix=/usr \
 		--with-system-nspr --with-system-nss --with-system-bz2  \
 		--with-system-jpeg --with-system-zlib --without-system-png \
 		--with-system-libevent --with-system-libvpx \
 		--enable-system-pixman --enable-system-hunspell --enable-system-sqlite \
-		--enable-system-ffi --enable-startup-notification --disable-gio \
+		--enable-system-ffi --enable-startup-notification --enable-gio \
 		--with-pthreads --enable-official-branding --enable-safe-browsing \
-		--disable-debug --disable-gnomevfs --disable-gconf \
-		--disable-crashreporter --disable-updater --disable-xprint --disable-tests \
-		--disable-mochitest --disable-installer --disable-elf-hack \
-		--with-system-icu --enable-pulseaudio --disable-gstreamer \
-		--disable-crashreporter --disable-cpp-exceptions --disable-javaxpcom \
-		--with-nspr-prefix=${XBPS_CROSS_BASE}/usr \
+		--disable-debug --disable-gconf --disable-crashreporter --disable-updater \
+		--disable-tests --disable-elf-hack --with-system-icu --enable-pulseaudio \
+		--disable-crashreporter --with-nspr-prefix=${XBPS_CROSS_BASE}/usr \
 		--with-nss-prefix=${XBPS_CROSS_BASE}/usr \
 		--with-google-api-keyfile="${wrksrc}/google-api-key" \
 		--enable-optimize="$CFLAGS" --disable-strip --disable-install-strip \
-		--disable-static --enable-pie --disable-profiling \
-		--disable-profilelocking ${_args}
+		--enable-pie --disable-profiling $(vopt_enable rust) \
+		--enable-application=browser \
+		--enable-default-toolkit=$(vopt_if gtk3 'cairo-gtk3' 'cairo-gtk2') ${_args}
 }
 do_build() {
 	if [ "$SOURCE_DATE_EPOCH" ]; then
