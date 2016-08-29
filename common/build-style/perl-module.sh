@@ -17,6 +17,7 @@ do_configure() {
 	local perlprefix=${XBPS_STATEDIR}/perlprefix-${XBPS_TARGET_MACHINE}
 	mkdir -p $perlprefix
 	cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Config"* $perlprefix
+	cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Errno.pm" $perlprefix
 	export PERL5LIB=$perlprefix
 
 	if [ -f ${wrksrc}/Makefile.PL ]; then
