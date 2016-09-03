@@ -1,99 +1,77 @@
-Reverting commit https://github.com/GNOME/glib/commit/2fe992b099bfd3fb121a71b7af43e116b2142b5d
-
-musl's does not run ctors in the assumed order that glib-2.46 expects:
-
-- glib_init() should be called before gobject_init_ctor().
+musl does not run ctors in the assumed order that glib-2.46 expects.
+Call g_quark_init() where it is expected to have been called.
 
 
-diff --git glib/glib-init.c glib/glib-init.c
-index e7002e6..24efe9d 100644
---- glib/glib-init.c
-+++ glib/glib-init.c
-@@ -233,7 +233,6 @@ glib_init (void)
+--- glib/gquark.c	2016-08-17 17:20:47.000000000 +0200
++++ glib/gquark.c	2016-08-30 07:49:13.298234757 +0200
+@@ -57,6 +57,9 @@
+ void
+ g_quark_init (void)
  {
-   g_messages_prefixed_init ();
-   g_debug_init ();
--  g_quark_init ();
- }
- 
- #if defined (G_OS_WIN32)
-diff --git glib/glib-init.h glib/glib-init.h
-index b56f7e2..de6be78 100644
---- glib/glib-init.h
-+++ glib/glib-init.h
-@@ -25,8 +25,6 @@
- extern GLogLevelFlags g_log_always_fatal;
- extern GLogLevelFlags g_log_msg_prefix;
- 
- void glib_init (void);
--void g_quark_init (void);
--
- #ifdef G_OS_WIN32
- #include <windows.h>
- 
-diff --git glib/gquark.c glib/gquark.c
-index 9e51a92..d620533 100644
---- glib/gquark.c
-+++ glib/gquark.c
-@@ -40,7 +40,6 @@
- #include "gthread.h"
- #include "gtestutils.h"
- #include "glib_trace.h"
--#include "glib-init.h"
- 
- #define QUARK_BLOCK_SIZE         2048
- #define QUARK_STRING_BLOCK_SIZE (4096 - sizeof (gsize))
-@@ -54,16 +53,6 @@ static gint           quark_seq_id = 0;
- static gchar         *quark_block = NULL;
- static gint           quark_block_offset = 0;
- 
--void
--g_quark_init (void)
--{
--  g_assert (quark_seq_id == 0);
--  quark_ht = g_hash_table_new (g_str_hash, g_str_equal);
--  quarks = g_new (gchar*, QUARK_BLOCK_SIZE);
--  quarks[0] = NULL;
--  quark_seq_id = 1;
--}
--
- /**
-  * SECTION:quarks
-  * @title: Quarks
-@@ -138,9 +127,10 @@ g_quark_try_string (const gchar *string)
++  if (quark_ht)
++    return;
++
+   g_assert (quark_seq_id == 0);
+   quark_ht = g_hash_table_new (g_str_hash, g_str_equal);
+   quarks = g_new (gchar*, QUARK_BLOCK_SIZE);
+@@ -138,9 +141,12 @@
      return 0;
  
    G_LOCK (quark_global);
--  quark = GPOINTER_TO_UINT (g_hash_table_lookup (quark_ht, string));
-+  if (quark_ht)
-+    quark = GPOINTER_TO_UINT (g_hash_table_lookup (quark_ht, string));
++#if !defined(__GLIBC__)
++  g_quark_init ();
++#endif
+   quark = GPOINTER_TO_UINT (g_hash_table_lookup (quark_ht, string));
    G_UNLOCK (quark_global);
--
-+  
+
    return quark;
  }
  
-@@ -179,7 +169,8 @@ quark_from_string (const gchar *string,
- {
-   GQuark quark = 0;
+@@ -209,6 +213,9 @@
+     return 0;
  
--  quark = GPOINTER_TO_UINT (g_hash_table_lookup (quark_ht, string));
-+  if (quark_ht)
-+    quark = GPOINTER_TO_UINT (g_hash_table_lookup (quark_ht, string));
+   G_LOCK (quark_global);
++#if !defined(__GLIBC__)
++  g_quark_init ();
++#endif
+   quark = quark_from_string (string, TRUE);
+   G_UNLOCK (quark_global);
  
-   if (!quark)
+@@ -243,6 +248,9 @@
+     return 0;
+ 
+   G_LOCK (quark_global);
++#if !defined(__GLIBC__)
++  g_quark_init ();
++#endif
+   quark = quark_from_string (string, FALSE);
+   G_UNLOCK (quark_global);
+ 
+@@ -280,6 +286,7 @@
+   GQuark quark;
+   gchar **quarks_new;
+ 
++  g_quark_init ();
+   if (quark_seq_id % QUARK_BLOCK_SIZE == 0)
      {
-@@ -292,6 +283,13 @@ quark_new (gchar *string)
-        */
-       g_atomic_pointer_set (&quarks, quarks_new);
-     }
-+  if (!quark_ht)
-+    {
-+      g_assert (quark_seq_id == 0);
-+      quark_ht = g_hash_table_new (g_str_hash, g_str_equal);
-+      quarks[quark_seq_id] = NULL;
-+      g_atomic_int_inc (&quark_seq_id);
-+    }
+       quarks_new = g_new (gchar*, quark_seq_id + QUARK_BLOCK_SIZE);
+@@ -323,6 +330,9 @@
+     return NULL;
  
-   quark = quark_seq_id;
-   g_atomic_pointer_set (&quarks[quark], string);
+   G_LOCK (quark_global);
++#if !defined(__GLIBC__)
++  g_quark_init ();
++#endif
+   quark = quark_from_string (string, TRUE);
+   result = quarks[quark];
+   G_UNLOCK (quark_global);
+@@ -353,6 +361,9 @@
+     return NULL;
+ 
+   G_LOCK (quark_global);
++#if !defined(__GLIBC__)
++  g_quark_init ();
++#endif
+   quark = quark_from_string (string, FALSE);
+   result = quarks[quark];
+   G_UNLOCK (quark_global);
