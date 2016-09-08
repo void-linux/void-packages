@@ -9,3 +9,7 @@ downgrade to darktable-1.6.9:
 
     # xdowngrade /var/cache/xbps/darktable-1.6.9_2.x86_64.xbps
     # xbps-pkgdb -m hold darktable  
+
+---
+
+INFO: At the moment you need gtk+3-3.20.6_1 for the import dialog to work. 
