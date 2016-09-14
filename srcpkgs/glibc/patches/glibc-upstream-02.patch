@@ -1,0 +1,136 @@
+From 96cd434f66849f0d250869c0da846920b6081425 Mon Sep 17 00:00:00 2001
+From: Florian Weimer <fweimer@redhat.com>
+Date: Tue, 2 Aug 2016 12:24:50 +0200
+Subject: [PATCH 02] malloc: Preserve arena free list/thread count invariant
+ [BZ #20370]
+
+It is necessary to preserve the invariant that if an arena is
+on the free list, it has thread attach count zero.  Otherwise,
+when arena_thread_freeres sees the zero attach count, it will
+add it, and without the invariant, an arena could get pushed
+to the list twice, resulting in a cycle.
+
+One possible execution trace looks like this:
+
+Thread 1 examines free list and observes it as empty.
+Thread 2 exits and adds its arena to the free list,
+  with attached_threads == 0).
+Thread 1 selects this arena in reused_arena (not from the free list).
+Thread 1 increments attached_threads and attaches itself.
+  (The arena remains on the free list.)
+Thread 1 exits, decrements attached_threads,
+  and adds the arena to the free list.
+
+The final step creates a cycle in the usual way (by overwriting the
+next_free member with the former list head, while there is another
+list item pointing to the arena structure).
+
+tst-malloc-thread-exit exhibits this issue, but it was only visible
+with a debugger because the incorrect fix in bug 19243 removed
+the assert from get_free_list.
+
+(cherry picked from commit f88aab5d508c13ae4a88124e65773d7d827cd47b)
+---
+ ChangeLog      |  8 ++++++++
+ malloc/arena.c | 41 ++++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 44 insertions(+), 5 deletions(-)
+
+diff --git a/ChangeLog b/ChangeLog
+index 5dc53ac..a538bea 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -1,3 +1,11 @@
++2016-08-02  Florian Weimer  <fweimer@redhat.com>
++
++	[BZ #20370]
++	* malloc/arena.c (get_free_list): Update comment.  Assert that
++	arenas on the free list have no attached threads.
++	(remove_from_free_list): New function.
++	(reused_arena): Call it.
++
+ 2016-08-04  Florian Weimer  <fweimer@redhat.com>
+ 
+ 	Use sysdep.o from libc.a in static libraries.
+diff --git a/malloc/arena.c b/malloc/arena.c
+index 229783f..4e16593 100644
+--- a/malloc/arena.c
++++ b/malloc/arena.c
+@@ -702,8 +702,7 @@ _int_new_arena (size_t size)
+ }
+ 
+ 
+-/* Remove an arena from free_list.  The arena may be in use because it
+-   was attached concurrently to a thread by reused_arena below.  */
++/* Remove an arena from free_list.  */
+ static mstate
+ get_free_list (void)
+ {
+@@ -718,7 +717,8 @@ get_free_list (void)
+ 	  free_list = result->next_free;
+ 
+ 	  /* The arena will be attached to this thread.  */
+-	  ++result->attached_threads;
++	  assert (result->attached_threads == 0);
++	  result->attached_threads = 1;
+ 
+ 	  detach_arena (replaced_arena);
+ 	}
+@@ -735,6 +735,26 @@ get_free_list (void)
+   return result;
+ }
+ 
++/* Remove the arena from the free list (if it is present).
++   free_list_lock must have been acquired by the caller.  */
++static void
++remove_from_free_list (mstate arena)
++{
++  mstate *previous = &free_list;
++  for (mstate p = free_list; p != NULL; p = p->next_free)
++    {
++      assert (p->attached_threads == 0);
++      if (p == arena)
++	{
++	  /* Remove the requested arena from the list.  */
++	  *previous = p->next_free;
++	  break;
++	}
++      else
++	previous = &p->next_free;
++    }
++}
++
+ /* Lock and return an arena that can be reused for memory allocation.
+    Avoid AVOID_ARENA as we have already failed to allocate memory in
+    it and it is currently locked.  */
+@@ -782,14 +802,25 @@ reused_arena (mstate avoid_arena)
+   (void) mutex_lock (&result->mutex);
+ 
+ out:
+-  /* Attach the arena to the current thread.  Note that we may have
+-     selected an arena which was on free_list.  */
++  /* Attach the arena to the current thread.  */
+   {
+     /* Update the arena thread attachment counters.   */
+     mstate replaced_arena = thread_arena;
+     (void) mutex_lock (&free_list_lock);
+     detach_arena (replaced_arena);
++
++    /* We may have picked up an arena on the free list.  We need to
++       preserve the invariant that no arena on the free list has a
++       positive attached_threads counter (otherwise,
++       arena_thread_freeres cannot use the counter to determine if the
++       arena needs to be put on the free list).  We unconditionally
++       remove the selected arena from the free list.  The caller of
++       reused_arena checked the free list and observed it to be empty,
++       so the list is very short.  */
++    remove_from_free_list (result);
++
+     ++result->attached_threads;
++
+     (void) mutex_unlock (&free_list_lock);
+   }
+ 
+-- 
+2.7.4.GIT
+
+
