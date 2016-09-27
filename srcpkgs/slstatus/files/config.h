@@ -1,15 +1,18 @@
 /* See LICENSE file for copyright and license details. */
 
 /* alsa sound */
-static const char channel[]   = "Master";
+#define ALSA_CHANNEL    "Master"
 
 /* battery */
-static const char batterypath[] = "/sys/class/power_supply/";
-static const char batterynow[]  = "energy_now";
-static const char batteryfull[] = "energy_full_design";
+#define BATTERY_PATH    "/sys/class/power_supply/"
+#define BATTERY_NOW     "energy_now"
+#define BATTERY_FULL    "energy_full_design"
 
-/* bar update interval in seconds (smallest value = 1) */
-static unsigned int update_interval = 1;
+/* how often to update the statusbar (min value == 1) */
+#define UPDATE_INTERVAL 1
+
+/* text to show if no value can be retrieved */
+#define UNKNOWN_STR     "n/a"
 
 /* statusbar
 - battery_perc (battery percentage) [argument: battery name]
@@ -23,6 +26,7 @@ static unsigned int update_interval = 1;
 - gid (gid of current user) [argument: NULL]
 - hostname [argument: NULL]
 - ip (ip address) [argument: interface]
+- load_avg (load average) [argument: NULL]
 - ram_free (ram usage in percent) [argument: NULL]
 - ram_perc (ram usage in percent) [argument: NULL]
 - ram_total (ram usage in percent) [argument: NULL]
@@ -30,15 +34,14 @@ static unsigned int update_interval = 1;
 - run_command (run custom shell command) [argument: command]
 - temp (temperature in degrees) [argument: temperature file]
 - uid (uid of current user) [argument: NULL]
+- uptime (uptime) [argument: NULL]
 - username (username of current user) [argument: NULL]
 - vol_perc (alsa volume and mute status in percent) [argument: soundcard]
 - wifi_perc (wifi signal in percent) [argument: wifi card interface name]
 - wifi_essid (wifi essid) [argument: wifi card interface name] */
 static const struct arg args[] = {
-    /* function     format          argument */
-    { cpu_perc,     "cpu %4s | ",   NULL },
-    { ram_perc,     "ram %3s | ",   NULL },
-    { vol_perc,     "vol %4s | ",   "default" },
-    { disk_perc,    "ssd %3s | ",   "/" },
-    { datetime,     "%s",           "%y-%m-%d %H:%M:%S" },
+	/* function	format			argument */
+	{ cpu_perc, "[ CPU %4s ]",  NULL },
+	{ ram_perc, "[ Mem %3s ]",  NULL },
+	{ datetime, "[ %s ]",       "%F %T" },
 };
