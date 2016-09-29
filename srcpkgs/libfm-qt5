@@ -1,1 +1,0 @@
-pcmanfm-qt
