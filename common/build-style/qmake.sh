@@ -13,7 +13,8 @@ do_configure() {
 do_build() {
 	: ${make_cmd:=make}
 
-	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
+	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target} \
+		CC="$CC" CXX="$CXX" LINK="$CXX"
 }
 
 do_install() {
