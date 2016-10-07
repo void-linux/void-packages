@@ -1,0 +1,76 @@
+From 8f888904d8de9a798e4664caa373ea552366b304 Mon Sep 17 00:00:00 2001
+From: David Smith <dsmith@redhat.com>
+Date: Mon, 23 May 2016 13:56:29 -0500
+Subject: [PATCH] Fix PR20132 by updating the runtime to handle a 'struct inode' change.
+
+* runtime/transport/transport.c (_stp_lock_inode): Use the new inode
+  lock/unlock routines.
+  (_stp_unlock_inode): Ditto.
+* buildrun.cxx (compile_pass): Add autoconf-inode-rwsem test.
+* runtime/linux/autoconf-inode-rwsem.c: New 'autoconf' test.
+---
+ buildrun.cxx                         |    1 +
+ runtime/linux/autoconf-inode-rwsem.c |    5 +++++
+ runtime/transport/transport.c        |    8 ++++++++
+ 3 files changed, 14 insertions(+), 0 deletions(-)
+ create mode 100644 runtime/linux/autoconf-inode-rwsem.c
+
+diff --git a/buildrun.cxx b/buildrun.cxx
+index 8cf4b36..27e2be6 100644
+--- a/buildrun.cxx
++++ b/buildrun.cxx
+@@ -321,6 +321,7 @@ compile_pass (systemtap_session& s)
+   output_autoconf(s, o, "autoconf-generated-compile.c", "STAPCONF_GENERATED_COMPILE", NULL);
+   output_autoconf(s, o, "autoconf-hrtimer-getset-expires.c", "STAPCONF_HRTIMER_GETSET_EXPIRES", NULL);
+   output_autoconf(s, o, "autoconf-inode-private.c", "STAPCONF_INODE_PRIVATE", NULL);
++  output_autoconf(s, o, "autoconf-inode-rwsem.c", "STAPCONF_INODE_RWSEM", NULL);
+   output_autoconf(s, o, "autoconf-constant-tsc.c", "STAPCONF_CONSTANT_TSC", NULL);
+   output_autoconf(s, o, "autoconf-ktime-get-real.c", "STAPCONF_KTIME_GET_REAL", NULL);
+   output_autoconf(s, o, "autoconf-x86-uniregs.c", "STAPCONF_X86_UNIREGS", NULL);
+diff --git a/runtime/linux/autoconf-inode-rwsem.c b/runtime/linux/autoconf-inode-rwsem.c
+new file mode 100644
+index 0000000..8ca4a4a
+--- /dev/null
++++ b/runtime/linux/autoconf-inode-rwsem.c
+@@ -0,0 +1,5 @@
++#include <linux/fs.h>
++
++// check for 4.6 inode patch which changed i_mutex to i_rwsem
++
++struct inode i  __attribute__ ((unused)) = {.i_rwsem=__RWSEM_INITIALIZER(i.i_rwsem)};
+diff --git a/runtime/transport/transport.c b/runtime/transport/transport.c
+index bbc61d2..d19eb1e 100644
+--- a/runtime/transport/transport.c
++++ b/runtime/transport/transport.c
+@@ -490,20 +490,28 @@ err0:
+ 
+ static inline void _stp_lock_inode(struct inode *inode)
+ {
++#ifdef STAPCONF_INODE_RWSEM
++	inode_lock(inode);
++#else
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,16)
+ 	mutex_lock(&inode->i_mutex);
+ #else
+ 	down(&inode->i_sem);
+ #endif
++#endif
+ }
+ 
+ static inline void _stp_unlock_inode(struct inode *inode)
+ {
++#ifdef STAPCONF_INODE_RWSEM
++	inode_unlock(inode);
++#else
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,16)
+ 	mutex_unlock(&inode->i_mutex);
+ #else
+ 	up(&inode->i_sem);
+ #endif
++#endif
+ }
+ 
+ static struct dentry *_stp_lockfile = NULL;
+-- 
+1.7.1
+
