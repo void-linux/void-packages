@@ -3,7 +3,7 @@
 This article contains an exhaustive manual of how to create new source
 packages for XBPS, the `Void Linux` native packaging system.
 
-*Table of Contents*  
+*Table of Contents*
 
 * [Introduction](#Introduction)
 	* [Quality Requirements](#quality_requirements)
@@ -18,6 +18,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [Available variables](#available_vars)
 		* [Mandatory variables](#mandatory_vars)
 		* [Optional variables](#optional_vars)
+		* [About the depends variables](#explain_depends)
 	* [Repositories](#repositories)
 		* [Repositories defined by Branch](#repo_by_branch)
 		* [Package defined repositories](#pkg_defined_repo)
@@ -242,9 +243,9 @@ The optional 4th argument can be used to change the `file name`.
 	Installs `file` as a man page. `vman()` parses the name and
 	determines the section as well as localization. Example mappings:
 
-	`foo.1` -> `${DESTDIR}/usr/share/man/man1/foo.1`  
-	`foo.fr.1` -> `${DESTDIR}/usr/share/man/fr/man1/foo.1`  
-	`foo.1p` -> `${DESTDIR}/usr/share/man/man1/foo.1p`  
+	`foo.1` -> `${DESTDIR}/usr/share/man/man1/foo.1`
+	`foo.fr.1` -> `${DESTDIR}/usr/share/man/fr/man1/foo.1`
+	`foo.1p` -> `${DESTDIR}/usr/share/man/man1/foo.1p`
 
 - *vdoc()* `vdoc <file> [<name>]`
 
@@ -530,6 +531,30 @@ Example:
 - `alternatives` A white space separated list of supported alternatives the package provides.
 A list is composed of three components separated by a colon: group, symlink and target.
 i.e `alternatives="vi:/usr/bin/vi:/usr/bin/nvi ex:/usr/bin/ex:/usr/bin/nvi-ex"`.
+
+<a id="explain_depends"></a>
+#### About the many types of `depends` variable.
+
+So far we have listed three types of `depends`, there are `hostmakedepends`,
+`makedepends`, and plain old `depends`. To understand the difference between
+them, understand this: Void Linux cross compiles for many arches. Sometimes in
+a build process, certain programs must be run, for example `yacc`, or the
+compiler itself for a C program. Those programs get put in `hostmakedepends`.
+When the build runs, those will be installed on the host to help the build
+complete. Please note that anything that is a dependency of `base-devel` will
+already be installed, and should not be listed here.
+
+Then there are those things for which a package either links against or
+includes header files. These are `makedepends`, and regardless of the
+architecture of the build machine, the architecture of the target machine must
+be used. Typically the `makedepends` will be the only one of the three types of
+`depends` to include `-devel` packages, and typically only `-devel` packages.
+
+The final variable, `depends`, is for those things the package needs at
+runtime and without which is unusable, and that xbps can't auto-detect.
+These are not all the packages the package needs at runtime, but only those
+that are not linked against. This variable is most useful for non-compiled
+programs.
 
 <a id="repositories"></a>
 #### Repositories
