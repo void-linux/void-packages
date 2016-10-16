@@ -1,0 +1,84 @@
+--- setup.py.orig	2014-05-19 07:19:40.000000000 +0200
++++ setup.py	2014-06-18 09:50:55.950072020 +0200
+@@ -17,7 +17,7 @@ from distutils.command.install_lib impor
+ from distutils.command.build_scripts import build_scripts
+ from distutils.spawn import find_executable
+ 
+-cross_compiling = "_PYTHON_HOST_PLATFORM" in os.environ
++cross_compiling = ("_PYTHON_HOST_PLATFORM" in os.environ) or ('PYTHONXCPREFIX' in os.environ)
+ 
+ def get_platform():
+     # cross build
+@@ -486,7 +486,7 @@ class PyBuildExt(build_ext):
+                     for directory in reversed(options.dirs):
+                         add_dir_to_list(dir_list, directory)
+ 
+-        if os.path.normpath(sys.base_prefix) != '/usr' \
++        if os.path.normpath(sys.base_prefix) != '/usr' and not cross_compiling \
+                 and not sysconfig.get_config_var('PYTHONFRAMEWORK'):
+             # OSX note: Don't add LIBDIR and INCLUDEDIR to building a framework
+             # (PYTHONFRAMEWORK is set) to avoid # linking problems when
+@@ -549,6 +549,11 @@ class PyBuildExt(build_ext):
+         if host_platform == 'darwin':
+             math_libs = []
+ 
++        # Insert libraries and headers from XBPS_CROSS_BASE
++        if 'XBPS_CROSS_BASE' in os.environ:
++            lib_dirs += [os.environ['XBPS_CROSS_BASE'] + '/usr/lib']
++            inc_dirs += [os.environ['XBPS_CROSS_BASE'] + '/usr/include']
++
+         # XXX Omitted modules: gl, pure, dl, SGI-specific modules
+ 
+         #
+@@ -1852,8 +1857,13 @@ class PyBuildExt(build_ext):
+ 
+                 # Pass empty CFLAGS because we'll just append the resulting
+                 # CFLAGS to Python's; -g or -O2 is to be avoided.
+-                cmd = "cd %s && env CFLAGS='' '%s/configure' %s" \
+-                      % (ffi_builddir, ffi_srcdir, " ".join(config_args))
++                if cross_compiling:
++                    cmd = "cd %s && env CFLAGS='' '%s/configure' --host=%s --build=%s %s" \
++                        % (ffi_builddir, ffi_srcdir, os.environ.get('HOSTARCH'),
++                        os.environ.get('BUILDARCH'), " ".join(config_args))
++                else:
++                    cmd = "cd %s && env CFLAGS='' '%s/configure' %s" \
++                        % (ffi_builddir, ffi_srcdir, " ".join(config_args))
+ 
+                 res = os.system(cmd)
+                 if res or not os.path.exists(ffi_configfile):
+--- Makefile.pre.in.orig	2015-09-13 13:41:23.000000000 +0200
++++ Makefile.pre.in	2015-09-14 17:56:11.792632577 +0200
+@@ -1011,8 +1013,6 @@
+ 			upgrade) ensurepip="--upgrade" ;; \
+ 			install|*) ensurepip="" ;; \
+ 		esac; \
+-		$(RUNSHARED) $(PYTHON_FOR_BUILD) -m ensurepip \
+-			$$ensurepip --root=$(DESTDIR)/ ; \
+ 	fi
+ 
+ altinstall: commoninstall
+@@ -1021,8 +1021,6 @@
+ 			upgrade) ensurepip="--altinstall --upgrade" ;; \
+ 			install|*) ensurepip="--altinstall" ;; \
+ 		esac; \
+-		$(RUNSHARED) $(PYTHON_FOR_BUILD) -m ensurepip \
+-			$$ensurepip --root=$(DESTDIR)/ ; \
+ 	fi
+ 
+ commoninstall:  @FRAMEWORKALTINSTALLFIRST@ \
+@@ -1400,11 +1398,12 @@
+ # Install the dynamically loadable modules
+ # This goes into $(exec_prefix)
+ sharedinstall: sharedmods
++	CC='$(CC)' LDSHARED='$(BLDSHARED)' OPT='$(OPT)' \
+ 	$(RUNSHARED) $(PYTHON_FOR_BUILD) $(srcdir)/setup.py install \
+ 	   	--prefix=$(prefix) \
+-		--install-scripts=$(BINDIR) \
+-		--install-platlib=$(DESTSHARED) \
+-		--root=$(DESTDIR)/
++		--install-scripts=$(DESTDIR)$(BINDIR) \
++		--install-platlib=$(DESTDIR)$(DESTSHARED) \
++		--root=/
+ 	-rm $(DESTDIR)$(DESTSHARED)/_sysconfigdata.py
+ 	-rm -r $(DESTDIR)$(DESTSHARED)/__pycache__
+ 
