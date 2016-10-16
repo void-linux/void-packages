@@ -2,36 +2,23 @@
 #	- rewrites python shebangs with the corresponding python version
 
 hook() {
-	local pyver= shebang= warn= off=
+	local pyver= shebang= off=
 
-	case $pkgname in
-	python-*)
-		pyver=2.7;;
-	python3.4-*)
-		pyver=3.4;;
-	python3.5-*)
-		pyver=3.5;;
-	*)
-		for i in $pycompile_version $python_versions; do
-			if [ "$pyver" ]; then
-				warn=1
-				break;
-			fi
-			pyver=$i
-		done
-		: ${pyver:=2.7}
-		;;
-	esac
+	: ${pyver:=2}
 
-	shebang="#!/usr/bin/python$pyver"
+	if [ -d ${PKGDESTDIR}/usr/lib/python* ]; then
+		pycompile_version="$(find ${PKGDESTDIR}/usr/lib/python* -type d | grep -o '[[:digit:]]\.[[:digit:]]$')"
+	fi
+
+	if [ -n "$pycompile_version" ]; then
+		pyver="$pycompile_version"
+	fi
+
+	shebang="#!/usr/bin/python${pyver%.*}"
 	find ${PKGDESTDIR} -type f -print0 | \
-		xargs -0 grep -H -b -m 1 "^#!.*\([[:space:]]\|/\)python\([[:space:]]\|$\)" -- | while IFS=: read -r f off _; do
+		xargs -0 grep -H -b -m 1 "^#!.*\([[:space:]]\|/\)python\([[:space:]]*\|$\)" -- | while IFS=: read -r f off _; do
 		[ -z "$off" ] &&  continue
-		if [ "$warn" ]; then
-			msg_warn "$pkgver: multiple python versions defined! (using $pyver for shebangs)\n"
-			unset warn
-		fi
-		echo "   Unversioned shebang replaced by '$shebang': ${f#$PKGDESTDIR}"
-		sed -i "1s@.*python@${shebang}@" -- "$f"
+		echo "   Shebang converted to '$shebang': ${f#$PKGDESTDIR}"
+		sed -i "1s@.*python.*@${shebang}@" -- "$f"
 	done
 }

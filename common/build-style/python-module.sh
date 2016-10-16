@@ -3,7 +3,7 @@
 #
 
 do_build() {
-	: ${python_versions:=2.7}
+	: ${python_versions:="2.7 $py3_ver"}
 	local pyver= pysufx=
 
 	for pyver in $python_versions; do
@@ -27,7 +27,7 @@ do_build() {
 }
 
 do_install() {
-	: ${python_versions:=2.7}
+	: ${python_versions:="2.7 $py3_ver"}
 	local pyver= pysufx=
 
 	for pyver in $python_versions; do
@@ -51,13 +51,11 @@ do_install() {
 		fi
 
 		# Rename unversioned scripts to avoid name conflicts.
-		if [ "$python_versions" != "2.7" -a "$python_versions" != "${python_versions#2.7}" ]; then
-			if [ -d ${DESTDIR}/usr/bin ]; then
-				find ${DESTDIR}/usr/bin -type f ! -name "*[[:digit:]]\.[[:digit:]]" | while IFS= read -r f _; do
-					mv "${f}" "${f}${pyver}"
-					echo "[python-module] Unversioned script renamed to '${f#$DESTDIR}${pyver}'"
-				done
-			fi
+		if [ -d ${DESTDIR}/usr/bin ]; then
+			find ${DESTDIR}/usr/bin -type f ! -name "*[[:digit:]]" | while IFS= read -r f _; do
+				mv "${f}" "${f}${pyver%.*}"
+				echo "[python-module] Unversioned script renamed to '${f#$DESTDIR}${pyver%.*}'"
+			done
 		fi
 	done
 }
