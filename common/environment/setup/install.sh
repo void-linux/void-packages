@@ -135,7 +135,7 @@ _vinstall() {
 		return 1
 	fi
 
-	if [ ! -r "$file" ]; then
+	if [ ! -r "${file}" ]; then
 		msg_red "$pkgver: vinstall: cannot find '$file'...\n"
 		return 1
 	fi
@@ -147,9 +147,9 @@ _vinstall() {
 	fi
 
 	if [ -z "$targetfile" ]; then
-		install -Dm${mode} ${file} "${_destdir}/${targetdir}/${file##*/}"
+		install -Dm${mode} "${file}" "${_destdir}/${targetdir}/${file##*/}"
 	else
-		install -Dm${mode} ${file} "${_destdir}/${targetdir}/${targetfile##*/}"
+		install -Dm${mode} "${file}" "${_destdir}/${targetdir}/${targetfile##*/}"
 	fi
 }
 
