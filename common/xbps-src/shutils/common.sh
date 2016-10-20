@@ -211,7 +211,7 @@ get_subpkgs() {
 }
 
 setup_pkg() {
-    local pkg="$1" cross="$2"
+    local pkg="$1" cross="$2" show_broken="$3"
     local basepkg val _vars f dbgflags arch
 
     [ -z "$pkg" ] && return 1
@@ -475,7 +475,7 @@ setup_pkg() {
     if [ "$cross" -a "$nocross" ]; then
         msg_red "$pkgver: cannot be cross compiled, exiting...\n"
         exit 2
-    elif [ "$broken" ]; then
+    elif [ "$broken" -a "z$show_broken" != "zignore-broken" ]; then
         msg_red "$pkgver: cannot be built, it's currently broken; see the build log:\n"
         msg_red "$pkgver: $broken\n"
         exit 2
