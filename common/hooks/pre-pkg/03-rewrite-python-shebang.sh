@@ -11,7 +11,7 @@ hook() {
 	fi
 
 	if [ -d ${PKGDESTDIR}/usr/lib/python* ]; then
-		pyver="$(find ${PKGDESTDIR}/usr/lib/python* -type d | grep -o '[[:digit:]]\.[[:digit:]]$')"
+		pyver="$(find ${PKGDESTDIR}/usr/lib/python* -prune -type d | grep -o '[[:digit:]]\.[[:digit:]]$')"
 	fi
 
 	if [ -n "$pycompile_version" ]; then

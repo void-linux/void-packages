@@ -232,7 +232,7 @@ _EOF
 	# Handle python bytecode archives with pycompile trigger.
 	#
 	if [ -d ${PKGDESTDIR}/usr/lib/python* ]; then
-		pycompile_version="$(find ${PKGDESTDIR}/usr/lib/python* -type d | grep -o '[[:digit:]]\.[[:digit:]]$')"
+		pycompile_version="$(find ${PKGDESTDIR}/usr/lib/python* -prune -type d | grep -o '[[:digit:]]\.[[:digit:]]$')"
 	fi
 
 	if [ -n "${pycompile_dirs}" -o -n "${pycompile_module}" ]; then
