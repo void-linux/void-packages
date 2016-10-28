@@ -464,6 +464,13 @@ setup_pkg() {
         export OBJCOPY="objcopy"
         export NM="nm"
         export READELF="readelf"
+        # Unse cross evironment variables
+        unset CC_target CXX_target CPP_target GCC_target LD_target AR_target AS_target
+        unset RANLIB_target STRIP_target OBJDUMP_target OBJCOPY_target NM_target READELF_target
+        unset CFLAGS_target CXXFLAGS_target CPPFLAGS_target LDFLAGS_target
+        unset CC_host CXX_host CPP_host GCC_host LD_host AR_host AS_host
+        unset RANLIB_host STRIP_host OBJDUMP_host OBJCOPY_host NM_host READELF_host
+        unset CFLAGS_host CXXFLAGS_host CPPFLAGS_host LDFLAGS_host
     fi
 
     set_build_options
