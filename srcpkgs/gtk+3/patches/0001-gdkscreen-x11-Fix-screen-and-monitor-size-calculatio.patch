@@ -1,0 +1,83 @@
+From 0d945f06faee49788191e3e28f797f72959b3583 Mon Sep 17 00:00:00 2001
+From: "Jan Alexander Steffens (heftig)" <jan.steffens@gmail.com>
+Date: Mon, 10 Oct 2016 16:34:28 +0200
+Subject: [PATCH] gdkscreen-x11: Fix screen and monitor size calculation
+
+The monitors are already in scaled pixels, so scaling again when retrieving
+the screen size is wrong.
+
+With GDK_SCALE unset, the initial monitor sizes are unscaled, and when the
+xsettings client sets a scale > 1, the monitor sizes should be updated.
+
+The end result is that the monitor sizes start out wrong, and get
+corrected on the first xrandr event, while the screen size starts out
+right and becomes wrong after the event.
+
+This patch fixes Firefox misplacing menus and popovers when the xrandr
+configuration changes while it is running.
+
+Fix for the X11 side of
+
+https://bugzilla.gnome.org/show_bug.cgi?id=772202
+---
+ gdk/x11/gdkscreen-x11.c | 16 ++++------------
+ 1 file changed, 4 insertions(+), 12 deletions(-)
+
+diff --git a/gdk/x11/gdkscreen-x11.c b/gdk/x11/gdkscreen-x11.c
+index 7738a47adfed1484..28a43a69bedbe955 100644
+--- gdk/x11/gdkscreen-x11.c
++++ gdk/x11/gdkscreen-x11.c
+@@ -49,6 +49,7 @@
+ static void         gdk_x11_screen_dispose     (GObject		  *object);
+ static void         gdk_x11_screen_finalize    (GObject		  *object);
+ static void	    init_randr_support	       (GdkScreen	  *screen);
++static void         process_monitors_change    (GdkScreen         *screen);
+ 
+ enum
+ {
+@@ -82,13 +83,13 @@ gdk_x11_screen_get_display (GdkScreen *screen)
+ gint
+ gdk_x11_screen_get_width (GdkScreen *screen)
+ {
+-  return GDK_X11_SCREEN (screen)->width / GDK_X11_SCREEN (screen)->window_scale;
++  return GDK_X11_SCREEN (screen)->width;
+ }
+ 
+ gint
+ gdk_x11_screen_get_height (GdkScreen *screen)
+ {
+-  return GDK_X11_SCREEN (screen)->height / GDK_X11_SCREEN (screen)->window_scale;
++  return GDK_X11_SCREEN (screen)->height;
+ }
+ 
+ static gint
+@@ -906,10 +907,8 @@ void
+ _gdk_x11_screen_set_window_scale (GdkX11Screen *x11_screen,
+ 				  gint          scale)
+ {
+-  GdkX11Display *x11_display = GDK_X11_DISPLAY (x11_screen->display);
+   GList *toplevels, *l;
+   GdkWindow *root;
+-  int i;
+ 
+   if (x11_screen->window_scale == scale)
+     return;
+@@ -928,14 +927,7 @@ _gdk_x11_screen_set_window_scale (GdkX11Screen *x11_screen,
+       _gdk_x11_window_set_window_scale (window, scale);
+     }
+ 
+-  for (i = 0; i < x11_display->monitors->len; i++)
+-    {
+-      GdkMonitor *monitor = GDK_MONITOR (x11_display->monitors->pdata[i]);
+-
+-      gdk_monitor_set_scale_factor (monitor, scale);
+-    }
+-
+-  g_signal_emit_by_name (GDK_SCREEN (x11_screen), "monitors-changed");
++  process_monitors_change (GDK_SCREEN (x11_screen));
+ }
+ 
+ /*
+-- 
+2.10.1
+
