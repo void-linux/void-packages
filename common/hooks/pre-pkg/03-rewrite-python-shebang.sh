@@ -6,10 +6,6 @@ hook() {
 
 	: ${pyver:=2}
 
-	if [ -n "$py3_ver" ]; then
-		pyver=3
-	fi
-
 	if [ -d ${PKGDESTDIR}/usr/lib/python* ]; then
 		pyver="$(find ${PKGDESTDIR}/usr/lib/python* -prune -type d | grep -o '[[:digit:]]\.[[:digit:]]$')"
 	fi
