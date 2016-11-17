@@ -1,23 +1,26 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See http://www.chromium.org/developers/calendar for the latest version
-version=53.0.2785.143
-revision=3
+version=54.0.2840.100
+revision=1
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 homepage="http://www.chromium.org/"
 license="BSD"
 distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/${pkgname}-${version}.tar.xz"
-checksum=c52a58b79bfb27bb87e4a0a6ff213001485fbc747657b290f75d39ddce07dcc3
-
-# XXX: trigger rebuild
+checksum=e2e7f54a780c93ec2e933af09e1126837e6cf940b57213d39f36d58df10c89df
 
 only_for_archs="i686 x86_64 x86_64-musl"
 lib32disabled=yes
 nodebug=yes
 nopie=yes  # contains tools that are not PIE, enables PIE itself
 
-hostmakedepends="yasm python pkg-config perl gperf bison ninja hwids libatomic-devel"
+build_options="nacl"
+build_options_default=""
+desc_option_nacl="Enabled NaCL support"
+
+hostmakedepends="yasm python pkg-config perl gperf bison ninja hwids
+ libatomic-devel libevent-devel libglib-devel"
 makedepends="libpng-devel gtk+-devel nss-devel pciutils-devel
  libXi-devel libgcrypt-devel libgnome-keyring-devel cups-devel elfutils-devel
  libXcomposite-devel speech-dispatcher-devel libXrandr-devel mit-krb5-devel
@@ -27,12 +30,10 @@ makedepends="libpng-devel gtk+-devel nss-devel pciutils-devel
  libjpeg-turbo-devel libevent-devel json-c-devel harfbuzz-devel
  minizip-devel jsoncpp-devel zlib-devel libcap-devel libXdamage-devel"
 depends="libexif hwids desktop-file-utils hicolor-icon-theme"
-nostrip_files="nacl_irt_x86_64.nexe nacl_irt_x86_32.nexe"
+nostrip_files="$(vopt_if nacl 'nacl_irt_x86_64.nexe nacl_irt_x86_32.nexe')"
 
-if [ -z "$CROSS_BUILD" -a "$XBPS_MACHINE" = "x86_64" ]; then
-	# Is this required?
-	hostmakedepends+=" gcc-multilib"
-fi
+# nacl currently makes problems with GN
+[ "$build_option_nacl" ] && broken=yes
 
 post_extract() {
 	case "${XBPS_TARGET_MACHINE}" in
@@ -42,49 +43,44 @@ post_extract() {
 		done
 		;;
 	esac
-
 }
 pre_configure() {
-	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+	# Use the file at run time instead of effectively compiling it in
+	sed 's|//third_party/usb_ids/usb.ids|/usr/share/hwdata/usb.ids|g' \
+		-i device/usb/BUILD.gn
+
+	# Work around bug in blink in which GCC 6 optimizes away null pointer checks
+	# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=833524
+	# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=68853#c2
+	sed -i '/config("compiler")/ a cflags_cc = [ "-fno-delete-null-pointer-checks" ]' \
+		build/config/linux/BUILD.gn
+}
+do_configure() {
+	local system="" bootstrap_conf="" conf=""
+	export -n CFLAGS CXXFLAGS LDFLAGS
+
+	# bootstrap NaCL toolchain
+	if [ -n "$build_option_nacl" ] && [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
 		# XXX xtraeme: fix gcc{,-c++}-multilib instead.
 		ldconfig &>/dev/null
 		# Download NaCL toolchains
-		python2 build/download_nacl_toolchains.py \
-			--packages nacl_x86_newlib,pnacl_newlib,pnacl_translator \
-			sync --extract
+		python2 nbuild/download_acl_toolchains.py \
+			--packages nacl_x86_newlib,pnacl_newlib,pnacl_translator sync --extract
+		# donwload clang
+		python2 tools/clang/scripts/update.py
+		ln -s /usr/lib/libncursesw.so.6 third_party/llvm-build/Release+Asserts/lib/libtinfo.so.5
 	fi
 
-	# Remove bundled ICU; its header files appear to get picked up instead of
-	# the system ones, leading to errors during the final link stage
-	# https://groups.google.com/a/chromium.org/d/topic/chromium-packagers/BNGvJc08B6Q
-	#find third_party/icu -type f \! -regex '.*\.\(gyp\|gypi\|isolate\)' -delete
-
-	# https://groups.google.com/a/chromium.org/d/topic/chromium-packagers/9JX1N2nf4PU/discussion
-	touch chrome/test/data/webui/i18n_process_css_test.html
-
-	# https://code.google.com/p/chromium/issues/detail?id=541273
-	sed -i "/'target_name': 'libvpx'/s/libvpx/&_new/" build/linux/unbundle/libvpx.gyp
-}
-do_configure() {
-	local conf=""
-
-	export -n CFLAGS CXXFLAGS LDFLAGS
-	if [ "$CROSS_BUILD" ]; then
-		export GYP_CROSSCOMPILE=1
-	fi
-
-	# Google API keys (see http://www.chromium.org/developers/how-tos/api-keys)
-	# Note: These are for Void Linux use ONLY.
-	conf+="
-		-Dgoogle_api_key=AIzaSyCIFdBA7eQP43R6kXRwTq7j6Mvj1ITze90
-		-Dgoogle_default_client_id=858256686058.apps.googleusercontent.com
-		-Dgoogle_default_client_secret=sMVx271L_MAz23TW2ek3AASn"
-
-	# Disable glibc Native Client toolchain.
-	conf+=" -Ddisable_glibc=1"
-
-	# Disable clang for native and host builds.
-	conf+=" -Dclang=0 -Dhost_clang=0"
+	# bootstrap GN
+	bootstrap_conf='
+		use_sysroot=false
+		is_clang=false
+		use_gconf=false
+		treat_warnings_as_errors=false
+		binutils_path="/usr/bin"
+		use_allocator="none"'
+	AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
+		python2 tools/gn/bootstrap/bootstrap.py --gn-gen-args "${bootstrap_conf//	/ }"
 
 	# Use system-provided libraries.
 	# TODO: use_system_hunspell (upstream changes needed).
@@ -92,127 +88,119 @@ do_configure() {
 	# TODO: use_system_libusb (http://crbug.com/266149).
 	# TODO: use_system_ssl (http://crbug.com/58087).
 	# TODO: use_system_sqlite (http://crbug.com/22208).
-	#
 	# XXX xtraeme: broken currently
-	# -Duse_system_opus=1 (needs opus_custom.h)
-	# -Duse_system_protobuf
-	# -Duse_system_v8=1
-	# -Duse_system_zlib=1
-	# -Duse_system_libvpx=1
-	# -Duse_system_re2=1 // breaks with re2-devel-2016.06.01
-	conf+="
-		-Dclang_use_chrome_plugins=0
-		-Dpython_ver=2.7
-		-Dicu_use_data_file_flag=1
-		-Duse_system_bzip2=1
-		-Duse_system_flac=1
-		-Duse_system_harfbuzz=1
-		-Duse_system_jsoncpp=1
-		-Duse_system_libevent=1
-		-Duse_system_libjpeg=1
-		-Duse_system_libpng=1
-		-Duse_system_libxml=1
-		-Duse_system_libxslt=1
-		-Duse_system_minizip=1
-		-Duse_system_nspr=1
-		-Duse_system_snappy=1
-		-Duse_system_speex=1
-		-Duse_system_xdg_utils=1
-		-Duse_system_yasm=1
-		-Duse_system_icu=0
-		-Duse_system_libvpx=0
-		-Duse_cups=1
-		-Duse_pulseaudio=1
-		-Duse_mojo=0
-		-Duse_gconf=0
-		-Duse_sysroot=0
-		-Denable_widevine=1
-		-Denable_hangout_services_extension=1"
+	# use_system_opus=1 (needs opus_custom.h)
+	# use_system_protobuf
+	# use_system_v8=1
+	# use_system_zlib=1
+	# use_system_libvpx=1
+	# use_system_re2=1 // breaks with re2-devel-2016.06.01
+	# libevent
+	# bzip2 jsoncpp nspr minizip xdg_utils snappy speex
+	system="
+		flac
+		harfbuzz-ng
+		libevent
+		libjpeg
+		libpng
+		libxml
+		libxslt
+		snappy
+		yasm"
 
-	if [ "$CROSS_BUILD" ]; then
-		conf+=" -Denable_webrtc=0"
-		conf+=" -Duse_system_libwebp=0"
+	# TODO: is this still broken?
+	[ -z "$CROSS_BUILD" ] && system+=" libwebp"
+
+	# remove build scripts for system provided dependencies
+	for LIB in ${system} libjpeg_turbo; do
+		find -type f -path "*third_party/$LIB/*" \
+			\! -path "*third_party/$LIB/chromium/*" \
+			\! -path "*third_party/$LIB/google/*" \
+			\! -regex '.*\.\(gn\|gni\|isolate\|py\)' \
+			-delete
+	done
+
+	# switch to system provided dependencies
+	python2 build/linux/unbundle/replace_gn_files.py --system-libraries ${system}
+
+	python2 third_party/libaddressinput/chromium/tools/update-strings.py
+
+	# Google API keys (see http://www.chromium.org/developers/how-tos/api-keys)
+	# Note: These are for Void Linux use ONLY.
+	conf+='
+		google_api_key="AIzaSyCIFdBA7eQP43R6kXRwTq7j6Mvj1ITze90"
+		google_default_client_id="858256686058.apps.googleusercontent.com"
+		google_default_client_secret="sMVx271L_MAz23TW2ek3AASn"'
+
+
+	if [ "$build_option_nacl" ] && [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		# Disable glibc Native Client toolchain.
+		conf+=' is_nacl_glibc=false'
+		conf+=' enable_nacl=true enable_nacl_nonsfi=true'
 	else
-		conf+=" -Duse_system_libwebp=1"
+		conf+=' enable_nacl=false enable_nacl_nonsfi=false'
 	fi
 
-	# Use explicit library dependencies instead of dlopen.
-	conf+="
-		-Dlinux_link_cups=1
-		-Dlinux_link_pulseaudio=1
-		-Dlinux_link_gsettings=1
-		-Dlinux_link_libpci=1
-		-Dlinux_link_libspeechd=1
-		-Dlibspeechd_h_prefix=speech-dispatcher/"
+	conf+='
+		is_clang=false
+		is_debug=false
+		remove_webcore_debug_symbols=true
+		symbol_level=0
+		icu_use_data_file=true
+		use_cups=true
+		use_pulseaudio=true
+		use_gconf=false
+		use_sysroot=false
+		use_allocator="none"
+		use_experimental_allocator_shim=false
+		enable_widevine=true
+		enable_hangout_services_extension=true'
 
-	# TODO: use the file at run time instead of effectively compiling it in.
-	conf+=" -Dusb_ids_path=/usr/share/hwdata/usb.ids"
+	# TODO: is this still broken?
+	[ "$CROSS_BUILD" ] && conf+=' enable_webrtc=false'
+
+	# Use explicit library dependencies instead of dlopen.
+	# GN only has "link_pulseaudio", the other options used before are not available atm
+	# linux_link_cups=true
+	# linux_link_gsettings=true
+	# linux_link_libpci=true
+	# linux_link_libspeechd=true
+	# libspeechd_h_prefix=\"speech-dispatcher/\""
+	conf+=' link_pulseaudio=true'
 
 	# Never use bundled binutils/gold binary.
-	conf+=" -Dlinux_use_bundled_binutils=0 -Dlinux_use_bundled_gold=0 -Dlinux_use_gold_flags=1"
+	conf+="
+		binutils_path=\"${XBPS_CROSS_BASE}/usr/bin\"
+		gold_path=\"${XBPS_CROSS_BASE}/usr/bin/ld.gold\"
+		use_gold=true"
 
 	# Always support proprietary codecs.
-	conf+=" -Dproprietary_codecs=1"
-
 	# Enable H.264 support in bundled ffmpeg.
-	conf+=" -Dffmpeg_branding=Chrome"
+	conf+='
+		proprietary_codecs=true
+		ffmpeg_branding="Chrome"'
 
 	# Make sure that -Werror doesn't get added to CFLAGS by the build system.
 	# Depending on GCC version the warnings are different and we don't want
 	# the build to fail because of that.
-	conf+=" -Dwerror="
+	conf+='
+		treat_warnings_as_errors=false
+		fatal_linker_warnings=false'
 
 	# Save space by removing DLOG and DCHECK messages (about 6% reduction).
-	conf+=" -Dlogging_like_official_build=1"
-	conf+=" -Dtracing_like_official_build=1"
-	conf+=" -Dfieldtrial_testing_like_official_build=1"
+	# conf+=" logging_like_official_build=true"
+	conf+=' fieldtrial_testing_like_official_build=true'
 
 	case "${XBPS_TARGET_MACHINE}" in
-		x86_64-musl*)
-			conf+=" -Ddisable_nacl=1 -Ddisable_pnacl=1"
-			conf+=" -Duse_allocator=none -Duse_experimental_allocator_shim=false -Dtarget_arch=x64"
-			;;
-		i686-musl*)
-			conf+=" -Ddisable_nacl=1 -Ddisable_pnacl=1"
-			conf+=" -Duse_allocator=none -Duse_experimental_allocator_shim=false -Dtarget_arch=ia32"
-			;;
-		i686)
-			conf+=" -Ddisable_nacl=1 -Ddisable_pnacl=1"
-			;;
-		arm*)
-			conf+=" -Ddisable_nacl=1 -Ddisable_pnacl=1"
-			conf+=" -Dtarget_arch=arm -Dv8_use_arm_eabi_hardfloat=true"
-			conf+=" -Darm_float_abi=hard"
-			if [ "$CROSS_BUILD" ]; then
-				sed -i "s/arm-linux-gnueabihf-/${XBPS_CROSS_TRIPLET}-/g" build/common.gypi
-				conf+=" -Duse_sysroot=1 -Dsysroot=${XBPS_CROSS_BASE}"
-			fi
-			;;
-	esac
-	case "${XBPS_TARGET_MACHINE}" in
-		armv7*) conf+="
-			-Darmv7=1
-			-Darm_neon=1
-			-Darm_thumb=1
-			-Darm_fpu=neon"
-			CFLAGS=${CFLAGS/vfpv3/neon}
-			;;
-		armv6*)
-			conf+="
-			-Darmv7=0
-			-Darmv6=1
-			-Darm_neon=0
-			-Darm_fpu=vfp
-			-Darm_thumb=0
-			-Dv8_can_use_vfp_instructions=false
-			-Dv8_can_use_vfp2_instructions=true";;
+		x86_64*) conf+=' target_cpu="x64"' ;;
+		i686*) conf+=' target_cpu="x86"' ;;
+		arm*) conf+=' target_cpu="arm"' ;;
+		aarch64*) conf+=' target_cpu="arm64"' ;;
 	esac
 
-	build/linux/unbundle/replace_gyp_files.py ${conf}
-	build/gyp_chromium --depth=. ${conf} -Drelease_extra_cflags="${CFLAGS}"
+	out/Release/gn gen out/Release --args="${conf//	/ }"
 }
 do_build() {
-	export -n CFLAGS CXXFLAGS LDFLAGS
 	ninja -C out/Release ${makejobs} chrome chrome_sandbox chromedriver
 }
 do_install() {
@@ -220,7 +208,7 @@ do_install() {
 	vinstall out/Release/chromedriver 755 usr/lib/${pkgname} chromedriver
 	vinstall out/Release/chrome_sandbox 4755 usr/lib/${pkgname} chrome-sandbox
 
-	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+	if [ "$build_option_nacl" ] && [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
 		cp out/Release/nacl_helper{,_bootstrap} ${DESTDIR}/usr/lib/chromium
 		cp out/Release/nacl_irt_x86_64.nexe ${DESTDIR}/usr/lib/chromium
 	fi
