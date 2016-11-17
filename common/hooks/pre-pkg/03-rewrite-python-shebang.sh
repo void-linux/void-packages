@@ -14,6 +14,10 @@ hook() {
 		pyver="$pycompile_version"
 	fi
 
+	if [ "$python_version" = "3" ]; then
+		pyver="$python_version"
+	fi
+
 	shebang="#!/usr/bin/python${pyver%.*}"
 	find ${PKGDESTDIR} -type f -print0 | \
 		xargs -0 grep -H -b -m 1 "^#!.*\([[:space:]]\|/\)python\([[:space:]]*\|$\)" -- | while IFS=: read -r f off _; do
