@@ -28,3 +28,13 @@ vopt_conflict() {
         msg_error "options '${opt1}' and '${opt2}' conflict\n"
     fi
 }
+
+vopt_onoff() {
+    local opt="$1" prop="$2"
+    if [ "$#" -lt "2" ]; then
+        msg_error "vopt_onoff <build_option> <property>: missing values\n"
+    elif [ "$#" -gt "2" ]; then
+        msg_error "vopt_onoff $opt: $(($# - 2)) excess parameter(s)\n"
+    fi
+    vopt_if "$1" "-D${prop}=ON" "-D${prop}=OFF"
+}

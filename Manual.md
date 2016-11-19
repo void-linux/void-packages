@@ -827,6 +827,11 @@ package accordingly. Additionally, the following functions are available:
 
   Emits an error and exits if both options are set at the same time.
 
+- *vopt_onoff()* `vopt_onoff <option> <property>`
+
+  Outputs `-D<property>=ON` if the option is set, or
+  `-D<property>=OFF` otherwise.
+
 The following example shows how to change a source package that uses GNU
 configure to enable a new build option to support PNG images:
 
