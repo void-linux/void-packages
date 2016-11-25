@@ -795,16 +795,16 @@ The supported build options for a source package can be shown with `xbps-src`:
 
 Build options can be enabled with the `-o` flag of `xbps-src`:
 
-    $ ./xbps-src -o option,option1 foo
+    $ ./xbps-src -o option,option1 <cmd> foo
 
 Build options can be disabled by prefixing them with `~`:
 
-    $ ./xbps-src -o ~option,~option1 foo
+    $ ./xbps-src -o ~option,~option1 <cmd> foo
 
 Both ways can be used together to enable and/or disable multiple options
 at the same time with `xbps-src`:
 
-    $ ./xbps-src -o option,~option1,~option2 foo
+    $ ./xbps-src -o option,~option1,~option2 <cmd> foo
 
 The build options can also be shown for binary packages via `xbps-query(8)`:
 
