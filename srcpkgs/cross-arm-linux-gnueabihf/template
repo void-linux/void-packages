@@ -1,9 +1,9 @@
 # Template build file for 'cross-arm-linux-gnueabihf'
 #
 _binutils_version=2.27
-_gcc_version=4.9.4
+_gcc_version=6.2.1
 _glibc_version=2.24
-_linux_version=3.18.25
+_linux_version=4.1.34
 
 _triplet=arm-linux-gnueabihf
 _fpuflags="--with-arch=armv6 --with-fpu=vfp --with-float=hard"
@@ -11,22 +11,22 @@ _archflags="-march=armv6 -mfpu=vfp -mfloat-abi=hard"
 _sysroot="/usr/${_triplet}"
 
 pkgname=cross-${_triplet}
-version=0.21
-revision=5
+version=0.22
+revision=1
 short_desc="GNU Cross toolchain for the ${_triplet} LE target (binutils/gcc/glibc)"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 homepage="http://www.voidlinux.eu"
 license="Public Domain"
 distfiles="
  ${GNU_SITE}/binutils/binutils-${_binutils_version}.tar.bz2
- ${GNU_SITE}/gcc/gcc-${_gcc_version}/gcc-${_gcc_version}.tar.bz2
+ https://repo.voidlinux.eu/distfiles/gcc-$_gcc_version.tar.xz
  ${GNU_SITE}/glibc/glibc-${_glibc_version}.tar.xz
- ${KERNEL_SITE}/kernel/v3.x/linux-${_linux_version}.tar.xz"
+ ${KERNEL_SITE}/kernel/v4.x/linux-${_linux_version}.tar.xz"
 checksum="
  369737ce51587f92466041a97ab7d2358c6d9e1b6490b3940eb09fb0a9a6ac88
- 6c11d292cd01b294f9f84c9a59c230d80e9e4a47e5c6355f046bb36d4f358092
+ a7addd2d4e42e66c3b56ced8baee5a11ef7fb577e23615a4f43877273eaf9409
  99d4a3e8efd144d71488e478f62587578c0f4e1fa0b4eed47ee3d4975ebeb5d3
- c649874e2856101df7cefe5fdad313ebb2282a939fc1e95cf02222327745ff92"
+ 412316b32b5c7a513ba3ab8e68fc443db4d9423f07b577473089def0ee7406af"
 
 lib32disabled=yes
 nocross=yes
@@ -64,6 +64,8 @@ _linux_headers() {
 }
 
 _binutils_build() {
+	local _args
+
 	[ -f ${wrksrc}/.binutils_build_done ] && return 0
 
 	cd ${wrksrc}
@@ -71,10 +73,15 @@ _binutils_build() {
 	[ ! -d binutils-build ] && mkdir binutils-build
 	cd binutils-build
 
-	../binutils-${_binutils_version}/configure \
-		--prefix=/usr --target=${_triplet} \
-		--with-sysroot=${_sysroot} --disable-nls --disable-shared \
-		--disable-multilib --disable-werror
+	_args="--prefix=/usr"
+	_args+=" --target=${_triplet}"
+	_args+=" --with-sysroot=${_sysroot}"
+	_args+=" --disable-nls"
+	_args+=" --disable-shared"
+	_args+=" --disable-multilib"
+	_args+=" --disable-werror"
+
+	../binutils-${_binutils_version}/configure ${_args}
 
 	make configure-host
 	make ${makejobs}
@@ -84,26 +91,42 @@ _binutils_build() {
 }
 
 _gcc_bootstrap() {
+	local _args
+
 	[ -f ${wrksrc}/.gcc_bootstrap_done ] && return 0
 
 	cd ${wrksrc}/gcc-${_gcc_version}
 	_apply_patch -p0 ${FILESDIR}/libcpp-source_date_epoch.patch
-	_apply_patch -p0 ${FILESDIR}/gcc-spec-env-r1.patch
+	_apply_patch -p0 ${FILESDIR}/fix-cxxflags-passing.patch
 
 	msg_normal "Building cross gcc bootstrap\n"
 
 	[ ! -d ../gcc-bootstrap ] && mkdir ../gcc-bootstrap
 	cd ../gcc-bootstrap
 
+	_args="--prefix=/usr"
+	_args+=" --target=${_triplet}"
+	_args+=" --without-headers"
+	_args+=" --disable-nls"
+	_args+=" --disable-shared"
+	_args+=" --disable-libquadmath"
+	_args+=" --disable-decimal-float"
+	_args+=" --disable-libgomp"
+	_args+=" --disable-libmpx"
+	_args+=" --disable-libmudflap"
+	_args+=" --disable-libssp"
+	_args+=" --disable-libitm"
+	_args+=" --disable-libatomic"
+	_args+=" --disable-threads"
+	_args+=" --enable-languages=c"
+	_args+=" --disable-sjlj-exceptions"
+	_args+=" --disable-multilib"
+	_args+=" --with-gnu-ld"
+	_args+=" --with-gnu-as"
+	_args+=" ${_fpuflags}"
+
 	CFLAGS="-O0 -g0" CXXFLAGS="-O0 -g0" \
-		../gcc-${_gcc_version}/configure --prefix=/usr \
-		--target=${_triplet} --without-headers \
-		--disable-nls --disable-shared --disable-libquadmath \
-		--disable-decimal-float --disable-libgomp --disable-libmudflap \
-		--disable-libssp --disable-libitm --disable-libatomic \
-		--disable-threads --enable-languages=c \
-		--disable-sjlj-exceptions --disable-multilib \
-		--with-gnu-ld --with-gnu-as ${_fpuflags}
+		../gcc-${_gcc_version}/configure ${_args}
 
 	make ${makejobs}
 	make install
@@ -112,6 +135,8 @@ _gcc_bootstrap() {
 }
 
 _glibc_headers() {
+	local _args
+
 	[ -f ${wrksrc}/.glibc_headers_done ] && return 0
 
 	cd ${wrksrc}
@@ -126,11 +151,15 @@ _glibc_headers() {
 	export CC="${_triplet}-gcc" LD="${_triplet}-ld" \
 		AS="${_triplet}-as" CPP="${_triplet}-cpp"
 
-	../glibc-${_glibc_version}/configure \
-		--host=${_triplet} --prefix=/usr \
-		--with-headers=${_sysroot}/usr/include \
-		--config-cache --enable-obsolete-rpc \
-		--enable-kernel=2.6.27 ${_fpuflags}
+	_args="--prefix=/usr"
+	_args+=" --host=${_triplet}"
+	_args+=" --with-headers=${_sysroot}/usr/include"
+	_args+=" --config-cache"
+	_args+=" --enable-obsolete-rpc"
+	_args+=" --enable-kernel=2.6.27"
+	_args+=" ${_fpuflags}"
+
+	../glibc-${_glibc_version}/configure ${_args}
 
 	make -k install-headers cross_compiling=yes \
 		install_root=${_sysroot}
@@ -139,6 +168,8 @@ _glibc_headers() {
 }
 
 _glibc_build() {
+	local _args
+
 	[ -f ${wrksrc}/.glibc_build_done ] && return 0
 
 	cd ${wrksrc}
@@ -154,11 +185,17 @@ _glibc_build() {
 		AS="${_triplet}-as" CPP="${_triplet}-cpp"
 	export CFLAGS="-Os -pipe ${_archflags}"
 
-	../glibc-${_glibc_version}/configure \
-		--host=${_triplet} --prefix=/usr \
-		--with-headers=${_sysroot}/usr/include \
-		--config-cache --disable-profile --enable-obsolete-rpc \
-		--disable-werror --enable-kernel=2.6.27 ${_fpuflags}
+	_args="--prefix=/usr"
+	_args+=" --host=${_triplet}"
+	_args+=" --with-headers=${_sysroot}/usr/include"
+	_args+=" --config-cache"
+	_args+=" --disable-profile"
+	_args+=" --enable-obsolete-rpc"
+	_args+=" --disable-werror"
+	_args+=" --enable-kernel=2.6.27"
+	_args+=" ${_fpuflags}"
+
+	../glibc-${_glibc_version}/configure ${_args}
 
 	make ${makejobs}
 	make install_root=${_sysroot} install
@@ -167,6 +204,8 @@ _glibc_build() {
 }
 
 _gcc_build() {
+	local _args
+
 	[ -f ${wrksrc}/.gcc_build_done ] && return 0
 
 	cd ${wrksrc}
@@ -184,21 +223,39 @@ _gcc_build() {
 			-i ${_sysroot}/lib/libc.so ${_sysroot}/lib/libpthread.so
 		touch .sed_subst_done
 	fi
+	_args="--prefix=/usr"
+	_args+=" --libdir=/usr/lib"
+	_args+=" --libexecdir=/usr/lib"
+	_args+=" --target=${_triplet}"
+	_args+=" --with-sysroot=${_sysroot}"
+	_args+=" --enable-languages=c,c++,lto"
+	_args+=" --with-gnu-as"
+	_args+=" --with-gnu-ld"
+	_args+=" --disable-multilib"
+	_args+=" --disable-werror"
+	_args+=" --disable-nls"
+	_args+=" --disable-sjlj-exceptions"
+	_args+=" --enable-threads=posix"
+	_args+=" --enable-long-longx"
+	_args+=" --enable-shared"
+	_args+=" --enable-linker-build-id"
+	_args+=" --enable-gnu-unique-object"
+	_args+=" --enable-lto"
+	_args+=" --disable-libquadmath"
+	_args+=" --disable-libatomic"
+	_args+=" --disable-libssp"
+	_args+=" --disable-libmpx"
+	_args+=" --disable-libmudflap"
+	_args+=" --disable-libsanitizer"
+	_args+=" --disable-libcilkrts"
+	_args+=" --disable-libitm"
+	_args+=" --disable-libvtv"
+	_args+=" --disable-libstdcxx-pch"
+	_args+=" --enable-libstdcxx-time"
+	_args+=" --with-linker-hash-style=gnu"
+	_args+=" ${_fpuflags}"
 
-	../gcc-${_gcc_version}/configure \
-		--target=${_triplet} --prefix=/usr --libdir=/usr/lib \
-		--libexecdir=/usr/lib --with-sysroot=${_sysroot} \
-		--enable-languages=c,c++,lto \
-		--with-gnu-as --with-gnu-ld --disable-multilib \
-		--disable-werror --disable-nls --disable-sjlj-exceptions \
-		--enable-threads=posix --enable-long-longx \
-		--enable-shared --enable-linker-build-id \
-		--enable-gnu-unique-object --enable-lto \
-		--disable-libquadmath --disable-libatomic \
-		--disable-libssp --disable-libmudflap \
-		--disable-libsanitizer --disable-libcilkrts \
-		--disable-libitm --disable-libvtv --disable-libstdcxx-pch \
-		--enable-libstdcxx-time --with-linker-hash-style=gnu ${_fpuflags}
+	../gcc-${_gcc_version}/configure ${_args}
 
 	make ${makejobs}
 
