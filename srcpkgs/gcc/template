@@ -1,15 +1,16 @@
 # Template build file for 'gcc'
+_majorver=6.2
+_gcjrel=17
+
 pkgname=gcc
-_majorver=4.9
-version=${_majorver}.4
+version=${_majorver}.1
 revision=1
 short_desc="The GNU C Compiler"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 homepage="http://gcc.gnu.org"
 license="GFDL-1.2, GPL-3, LGPL-2.1"
-distfiles="${GNU_SITE}/gcc/gcc-$version/gcc-$version.tar.bz2"
-checksum=6c11d292cd01b294f9f84c9a59c230d80e9e4a47e5c6355f046bb36d4f358092
-_gcjrel=15
+distfiles="https://repo.voidlinux.eu/distfiles/gcc-$version.tar.xz"
+checksum=a7addd2d4e42e66c3b56ced8baee5a11ef7fb577e23615a4f43877273eaf9409
 
 nopie=yes
 lib32disabled=yes
@@ -18,25 +19,24 @@ bootstrap=yes
 if [ "$CHROOT_READY" ]; then
 	hostmakedepends="perl flex"
 fi
-makedepends="zlib-devel libmpc-devel cloog-devel"
-depends="binutils libgcc-devel-${version}_${revision}"
+makedepends="zlib-devel libmpc-devel isl15-devel"
+depends="binutils libgcc-devel-${version}_${revision}
+ libstdc++-devel-${version}_${revision} libssp-devel-${version}_${revision}"
 
 subpackages="libgcc libgomp libgomp-devel libatomic libatomic-devel"
-subpackages+=" libssp libssp-devel gcc-c++"
+subpackages+=" libssp libssp-devel"
 
 if [ -n "$CHROOT_READY" -a -z "$CROSS_BUILD" ]; then
+	# Required by gcj
+	hostmakedepends+=" zip unzip"
 	subpackages+=" gcc-fortran gcc-objc gcc-objc++"
 	subpackages+=" libgfortran-devel libgfortran"
 	subpackages+=" libobjc-devel libobjc"
-
+	subpackages+=" gcc-gcj libgcj-devel libgcj gcc-gcj-jdk-compat"
 	case "$XBPS_TARGET_MACHINE" in
-		*-musl)
-			# XXX disable go and java with musl
+		*-musl)	# Go won't link for musl libc
 			;;
-		*)
-			# Required by gcj
-			hostmakedepends+=" zip unzip"
-			subpackages+=" gcc-go libgo-devel libgo gcc-gcj libgcj-devel libgcj gcc-gcj-jdk-compat"
+		*)	subpackages+=" gcc-go libgo-devel libgo"
 			;;
 	esac
 fi
@@ -74,19 +74,19 @@ case "$XBPS_TARGET_MACHINE" in
 esac
 case "$XBPS_TARGET_MACHINE" in
 	mips*) ;;
+	x86_64*|i686*) subpackages+=" libitm libitm-devel libmpx libmpx-devel";;
 	*) subpackages+=" libitm libitm-devel";;
 esac
 
+# gcc-c++ merged in main pkg
+replaces="gcc-c++>=0"
+
 pre_configure() {
 	case "$XBPS_TARGET_MACHINE" in
-		*-musl) patch -Np1 -i ${FILESDIR}/gcc-4.9.2-musl.diff;;
+		*-musl) patch -Np1 -i ${FILESDIR}/gcc-${version}-musl.diff;;
 	esac
 	# _FORTIFY_SOURCE needs an optimization level.
 	sed -i "/ac_cpp=/s/\$CPPFLAGS/\$CPPFLAGS -O2/" {gcc,libiberty}/configure
-	# As specified in the LFS book, disable installing libiberty.
-	sed -i 's/install_to_$(INSTALL_DEST) //' libiberty/Makefile.in
-	# Do not run fixincludes
-	sed -i 's@\./fixinc\.sh@-c true@' gcc/Makefile.in
 }
 do_configure() {
 	local _langs _args _hash
@@ -118,7 +118,9 @@ do_configure() {
 		export GCC_FOR_TARGET="$CC"
 		export CXX_FOR_TARGET="$CXX"
 
-		_args+=" --disable-multilib --host=$XBPS_CROSS_TRIPLET --with-build-sysroot=${XBPS_CROSS_BASE}"
+		_args+=" --disable-multilib"
+		_args+=" --host=$XBPS_CROSS_TRIPLET"
+		_args+=" --with-build-sysroot=${XBPS_CROSS_BASE}"
 		_args+=" --enable-sjlj-exceptions=no"
 	else
 		if [ -z "$CHROOT_READY" ]; then
@@ -127,15 +129,18 @@ do_configure() {
 			_args+=" --with-mpfr=${XBPS_MASTERDIR}/usr"
 			_args+=" --with-isl=${XBPS_MASTERDIR}/usr"
 			_args+=" --with-mpc=${XBPS_MASTERDIR}/usr"
-			_args+=" --with-cloog=${XBPS_MASTERDIR}/usr"
 			_args+=" --build=${_triplet}"
 		else
+			_langs="c,c++,objc,obj-c++,fortran,lto,java"
 			case "$XBPS_TARGET_MACHINE" in
-				# XXX disable go and java with musl
-				*-musl) _langs="c,c++,objc,obj-c++,fortran,lto";;
-				*) _langs="c,c++,objc,obj-c++,fortran,lto,go,java";;
+				*-musl)	# Linking libgo.so is broken for musl libc
+					;;
+				*)	_langs+=",go"
+					;;
 			esac
-			_args+=" --build=${_triplet} --enable-java-gc=boehm --enable-fast-character"
+			_args+=" --build=${_triplet}"
+			_args+=" --enable-java-gc=boehm"
+			_args+=" --enable-fast-character"
 		fi
 	fi
 
@@ -143,34 +148,60 @@ do_configure() {
 		aarch64*|*-musl) _args+=" --disable-libsanitizer";;
 	esac
 	case "$XBPS_TARGET_MACHINE" in
-		*-musl) _args+=" --disable-symvers libat_cv_have_ifunc=no";;
+		*-musl) _args+=" --disable-symvers"
+			_args+=" libat_cv_have_ifunc=no"
+			;;
 	esac
 
 	export CFLAGS="${CFLAGS/-D_FORTIFY_SOURCE=2/}"
 	export CXXFLAGS="${CXXFLAGS/-D_FORTIFY_SOURCE=2/}"
 
-	CONFIG_SHELL=/bin/bash \
-		./configure --prefix=/usr --mandir=/usr/share/man \
-		--infodir=/usr/share/info --libexecdir=/usr/lib --libdir=/usr/lib \
-		--enable-threads=posix --enable-__cxa_atexit --disable-multilib \
-		--with-system-zlib --enable-shared --enable-lto \
-		--enable-linker-build-id --disable-werror --disable-nls \
-		--enable-checking=release --disable-libstdcxx-pch \
-		--enable-cloog-backend=isl --with-linker-hash-style=$_hash \
-		--enable-languages=${_langs} ${_args}
+	_args+=" --prefix=/usr"
+	_args+=" --mandir=/usr/share/man"
+	_args+=" --infodir=/usr/share/info"
+	_args+=" --libexecdir=/usr/lib"
+	_args+=" --libdir=/usr/lib"
+	_args+=" --enable-threads=posix"
+	_args+=" --enable-__cxa_atexit"
+	_args+=" --disable-multilib"
+	_args+=" --with-system-zlib"
+	_args+=" --enable-shared"
+	_args+=" --enable-lto"
+	_args+=" --enable-vtable-verify"
+	_args+=" --enable-linker-build-id"
+	_args+=" --enable-serial-configure"
+	_args+=" --disable-werror"
+	_args+=" --disable-nls"
+	_args+=" --enable-checking=release"
+	_args+=" --disable-libstdcxx-pch"
+	_args+=" --with-isl"
+	_args+=" --with-linker-hash-style=$_hash"
+	_args+=" --disable-libunwind-exceptions"
+	_args+=" --disable-target-libiberty"
+	_args+=" --with-default-libstdcxx-abi=gcc4-compatible"
+	_args+=" --enable-languages=${_langs}"
+
+	mkdir -p build
+	cd build
+	CONFIG_SHELL=/bin/bash ${wrksrc}/configure ${_args}
 }
 do_build() {
+	if [ -z "$CHROOT_READY" ]; then
+		export LD_LIBRARY_PATH="${XBPS_MASTERDIR}/usr/lib"
+	fi
+	cd build
 	make ${makejobs}
 }
 pre_install() {
 	if [ "$CROSS_BUILD" ]; then
 		# XXX otherwise links to host libpthread
-		for f in $(find ${wrksrc}/${XBPS_CROSS_TRIPLET} -type f -name libtool); do
+		for f in $(find ${wrksrc}/build/${XBPS_CROSS_TRIPLET} -type f -name libtool); do
 			sed -e "s,add_dir=\"-L\$libdir\",add_dir=\"-L${XBPS_CROSS_BASE}\$libdir\",g" -i $f
 		done
 	fi
 }
 do_install() {
+	cd build
 	case "$XBPS_TARGET_MACHINE" in
 	x86_64*|aarch64*)
 		vmkdir usr/lib
@@ -325,7 +356,7 @@ gcc-fortran_package() {
 }
 gcc-objc++_package() {
 	lib32disabled=yes
-	depends="gcc-c++>=${_majorver} gcc-objc>=${_majorver}"
+	depends="gcc-objc>=${_majorver}"
 	short_desc+=" - Objective-C++ support"
 	pkg_install() {
 		vmove usr/lib/gcc/${_triplet}/${_majorver}/cc1objplus
@@ -354,7 +385,7 @@ libgcj-devel_package() {
 		vmove "usr/lib/gcc/${_triplet}/${_majorver}/include/gcj*"
 		vmove "usr/lib/gcc/${_triplet}/${_majorver}/include/jvm*"
 		vmove "usr/lib/gcc/${_triplet}/${_majorver}/include/jawt*"
-		vmove usr/lib/pkgconfig/libgcj-${_majorver}.pc
+		vmove usr/lib/pkgconfig/libgcj-${_majorver%.*}.pc
 	}
 }
 libgcj_package() {
@@ -374,7 +405,10 @@ libgfortran-devel_package() {
 	short_desc+=" - Fortran library - development files"
 	pkg_install() {
 		vmove usr/lib/libgfortran.a
-		vmove usr/lib/gcc/${_triplet}/${_majorver}/libgfortranbegin.a
+		# This does not seem to exist anymore?
+		if [ -f usr/lib/gcc/${_triplet}/${_majorver}/libgfortranbegin.a ]; then
+			vmove usr/lib/gcc/${_triplet}/${_majorver}/libgfortranbegin.a
+		fi
 	}
 }
 libgfortran_package() {
@@ -391,6 +425,7 @@ libgo-devel_package() {
 	pkg_install() {
 		vmove usr/lib/libgo.a
 		vmove usr/lib/libgobegin.a
+		vmove usr/lib/libgo.so
 	}
 }
 libgo_package() {
@@ -529,6 +564,23 @@ libitm_package() {
 		vmove "usr/lib/libitm.so.*"
 	}
 }
+libmpx-devel_package() {
+	depends="libmpx>=${_majorver}"
+	short_desc+=" - Intel MPX support - development files"
+	pkg_install() {
+		vmove usr/lib/libmpx.a
+		vmove usr/lib/libmpx.so
+		vmove usr/lib/libmpxwrappers.so
+		vmove usr/lib/libmpxwrappers.a
+	}
+}
+libmpx_package() {
+	short_desc+=" - Intel MPX support"
+	pkg_install() {
+		vmove usr/lib/libmpx.so.*
+		vmove usr/lib/libmpxwrappers.so.*
+	}
+}
 libsanitizer-devel_package() {
 	depends="libsanitizer>=${_majorver}"
 	short_desc+=" - Sanitizer libraries - development files"
@@ -546,7 +598,7 @@ libsanitizer_package() {
 	}
 }
 libssp-devel_package() {
-	depends="glibc-devel libssp>=${_majorver}"
+	depends="libssp>=${_majorver}"
 	short_desc+=" - SSP (StackSmashingProtection) library - development files"
 	pkg_install() {
 		vmove "usr/lib/libssp*.a"
@@ -574,17 +626,5 @@ libstdc++_package() {
 	pkg_install() {
 		vmove "usr/lib/libstdc++.so*"
 		vlicense ${wrksrc}/COPYING.RUNTIME RUNTIME.LIBRARY.EXCEPTION
-	}
-}
-gcc-c++_package() {
-	lib32disabled=yes
-	depends="gcc>=${_majorver} libstdc++-devel>=${_majorver}"
-	short_desc+=" - C++ support"
-	pkg_install() {
-		for f in g++ c++ ${_triplet}-g++ ${_triplet}-c++; do
-			vmove usr/bin/${f}
-		done
-		vmove usr/lib/gcc/${_triplet}/${_majorver}/cc1plus
-		vmove usr/share/man/man1/g++.1
 	}
 }

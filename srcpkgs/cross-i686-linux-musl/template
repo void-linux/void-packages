@@ -1,30 +1,30 @@
 # Template build file for 'cross-i686-linux-musl'
 #
 _binutils_version=2.27
-_gcc_version=4.9.4
+_gcc_version=6.2.1
 _musl_version=1.1.15
-_linux_version=3.18.25
+_linux_version=4.1.34
 
 _triplet=i686-linux-musl
 _sysroot="/usr/${_triplet}"
 _archflags="-march=i686"
 
 pkgname=cross-${_triplet}
-version=0.21
-revision=5
+version=0.22
+revision=1
 short_desc="Cross toolchain for i686 target (musl)"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 homepage="http://www.voidlinux.eu"
 license="GPL-3, GPL-2, MIT"
 distfiles="
- http://ftp.gnu.org/pub/gnu/binutils/binutils-${_binutils_version}.tar.bz2
- http://ftp.gnu.org/pub/gnu/gcc/gcc-${_gcc_version}/gcc-${_gcc_version}.tar.bz2
- http://www.kernel.org/pub/linux/kernel/v3.x/linux-${_linux_version}.tar.xz
+ ${GNU_SITE}/binutils/binutils-${_binutils_version}.tar.bz2
+ https://repo.voidlinux.eu/distfiles/gcc-$_gcc_version.tar.xz
+ ${KERNEL_SITE}/kernel/v4.x/linux-${_linux_version}.tar.xz
  http://www.musl-libc.org/releases/musl-${_musl_version}.tar.gz"
 checksum="
  369737ce51587f92466041a97ab7d2358c6d9e1b6490b3940eb09fb0a9a6ac88
- 6c11d292cd01b294f9f84c9a59c230d80e9e4a47e5c6355f046bb36d4f358092
- c649874e2856101df7cefe5fdad313ebb2282a939fc1e95cf02222327745ff92
+ a7addd2d4e42e66c3b56ced8baee5a11ef7fb577e23615a4f43877273eaf9409
+ 412316b32b5c7a513ba3ab8e68fc443db4d9423f07b577473089def0ee7406af
  97e447c7ee2a7f613186ec54a93054fe15469fe34d7d323080f7ef38f5ecb0fa"
 
 lib32disabled=yes
@@ -48,6 +48,8 @@ _apply_patch() {
 }
 
 _binutils_build() {
+	local _args
+
 	[ -f ${wrksrc}/.binutils_build_done ] && return 0
 
 	cd ${wrksrc}
@@ -55,11 +57,16 @@ _binutils_build() {
 
 	[ ! -d binutils-build ] && mkdir binutils-build
 	cd binutils-build
+	_args="--prefix=/usr"
+	_args+=" --target=${_triplet}"
+	_args+=" --with-sysroot=${_sysroot}"
+	_args+=" --disable-nls"
+	_args+=" --disable-multilib"
+	_args+=" --disable-werror"
+	_args+=" --disable-shared"
+	_args+=" ${_fpuflags}"
 
-	../binutils-${_binutils_version}/configure \
-		--prefix=/usr --target=${_triplet} --with-sysroot=${_sysroot} \
-		--disable-nls --disable-multilib --disable-werror \
-		--disable-shared ${_fpuflags}
+	../binutils-${_binutils_version}/configure ${_args}
 
 	make configure-host
 	make ${makejobs}
@@ -69,26 +76,40 @@ _binutils_build() {
 }
 
 _gcc_bootstrap() {
+	local _args
+
 	[ -f ${wrksrc}/.gcc_bootstrap_done ] && return 0
 
 	cd ${wrksrc}/gcc-${_gcc_version}
-	_apply_patch -p1 ${FILESDIR}/gcc-4.9.2-musl.diff
+	_apply_patch -p1 ${FILESDIR}/gcc-6.2.1-musl.diff
 	_apply_patch -p0 ${FILESDIR}/libcpp-source_date_epoch.patch
-	_apply_patch -p0 ${FILESDIR}/gcc-spec-env-r1.patch
+	_apply_patch -p0 ${FILESDIR}/fix-cxxflags-passing.patch
 
 	msg_normal "Building cross gcc bootstrap\n"
 
 	[ ! -d ../gcc-bootstrap ] && mkdir ../gcc-bootstrap
 	cd ../gcc-bootstrap
 
+	_args=--prefix=/usr \
+	_args+=" --target=${_triplet}"
+	_args+=" --with-sysroot=${_sysroot}"
+	_args+=" --enable-languages=c"
+	_args+=" --with-newlib"
+	_args+=" --disable-libssp"
+	_args+=" --disable-nls"
+	_args+=" --disable-libquadmath"
+	_args+=" --disable-threads"
+	_args+=" --disable-decimal-float"
+	_args+=" --disable-shared"
+	_args+=" --disable-libmpx"
+	_args+=" --disable-libmudflap"
+	_args+=" --disable-libgomp"
+	_args+=" --disable-libatomic"
+	_args+=" --disable-symvers"
+	_args+=" libat_cv_have_ifunc=no"
+	_args+=" ${_fpuflags}"
 	CFLAGS="-O0 -g0" CXXFLAGS="-O0 -g0" \
-		../gcc-${_gcc_version}/configure --prefix=/usr \
-		--target=${_triplet} --with-sysroot=${_sysroot} \
-		--enable-languages=c --with-newlib --disable-libssp --disable-nls \
-		--disable-libquadmath --disable-threads --disable-decimal-float \
-		--disable-shared --disable-libmudflap --disable-libgomp \
-		--disable-libatomic --disable-symvers \
-		libat_cv_have_ifunc=no ${_fpuflags}
+		../gcc-${_gcc_version}/configure ${_args}
 
 	make ${makejobs}
 	make install
@@ -121,7 +142,7 @@ _musl_build() {
 	msg_normal "Building cross musl libc\n"
 
 	CC="${_triplet}-gcc" CFLAGS="-Os -pipe ${_archflags}" \
-		./configure --prefix=/usr \
+		./configure --prefix=/usr
 
 	make ${makejobs}
 	make DESTDIR=${_sysroot} install
@@ -130,6 +151,7 @@ _musl_build() {
 }
 
 _gcc_build() {
+	local _args
 	[ -f ${wrksrc}/.gcc_build_done ] && return 0
 
 	cd ${wrksrc}
@@ -138,11 +160,21 @@ _gcc_build() {
 	[ ! -d gcc-build ] && mkdir gcc-build
 	cd gcc-build
 
-	../gcc-${_gcc_version}/configure \
-		--target=${_triplet} --with-sysroot=${_sysroot} --prefix=/usr \
-		--enable-languages=c,c++,lto --enable-lto --disable-libsanitizer \
-		--disable-multilib --disable-libmudflap --enable-shared \
-		--disable-symvers libat_cv_have_ifunc=no ${_fpuflags}
+	_args="--target=${_triplet}"
+	_args+=" --with-sysroot=${_sysroot}"
+	_args+=" --prefix=/usr"
+	_args+=" --enable-languages=c,c++,lto"
+	_args+=" --enable-lto"
+	_args+=" --disable-libsanitizer"
+	_args+=" --disable-multilib"
+	_args+=" --disable-libmpx"
+	_args+=" --disable-libmudflap"
+	_args+=" --enable-shared"
+	_args+=" --disable-symvers"
+	_args+=" libat_cv_have_ifunc=no"
+	_args+=" ${_fpuflags}"
+
+	../gcc-${_gcc_version}/configure ${_args}
 
 	make ${makejobs}
 
