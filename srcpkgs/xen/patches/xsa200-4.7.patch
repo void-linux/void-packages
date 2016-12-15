@@ -1,0 +1,55 @@
+From: Jan Beulich <jbeulich@suse.com>
+Subject: x86emul: CMPXCHG8B ignores operand size prefix
+
+Otherwise besides mis-handling the instruction, the comparison failure
+case would result in uninitialized stack data being handed back to the
+guest in rDX:rAX (32 bits leaked for 32-bit guests, 96 bits for 64-bit
+ones).
+
+This is XSA-200.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+
+--- a/tools/tests/x86_emulator/test_x86_emulator.c
++++ b/tools/tests/x86_emulator/test_x86_emulator.c
+@@ -435,6 +435,24 @@ int main(int argc, char **argv)
+         goto fail;
+     printf("okay\n");
+ 
++    printf("%-40s", "Testing cmpxchg8b (%edi) [opsize]...");
++    instr[0] = 0x66; instr[1] = 0x0f; instr[2] = 0xc7; instr[3] = 0x0f;
++    res[0]      = 0x12345678;
++    res[1]      = 0x87654321;
++    regs.eflags = 0x200;
++    regs.eip    = (unsigned long)&instr[0];
++    regs.edi    = (unsigned long)res;
++    rc = x86_emulate(&ctxt, &emulops);
++    if ( (rc != X86EMUL_OKAY) ||
++         (res[0] != 0x12345678) ||
++         (res[1] != 0x87654321) ||
++         (regs.eax != 0x12345678) ||
++         (regs.edx != 0x87654321) ||
++         ((regs.eflags&0x240) != 0x200) ||
++         (regs.eip != (unsigned long)&instr[4]) )
++        goto fail;
++    printf("okay\n");
++
+     printf("%-40s", "Testing movsxbd (%%eax),%%ecx...");
+     instr[0] = 0x0f; instr[1] = 0xbe; instr[2] = 0x08;
+     regs.eflags = 0x200;
+--- a/xen/arch/x86/x86_emulate/x86_emulate.c
++++ b/xen/arch/x86/x86_emulate/x86_emulate.c
+@@ -4775,8 +4775,12 @@ x86_emulate(
+         generate_exception_if((modrm_reg & 7) != 1, EXC_UD, -1);
+         generate_exception_if(ea.type != OP_MEM, EXC_UD, -1);
+         if ( op_bytes == 8 )
++        {
+             host_and_vcpu_must_have(cx16);
+-        op_bytes *= 2;
++            op_bytes = 16;
++        }
++        else
++            op_bytes = 8;
+ 
+         /* Get actual old value. */
+         if ( (rc = ops->read(ea.mem.seg, ea.mem.off, old, op_bytes,
