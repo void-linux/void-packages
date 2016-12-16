@@ -1,7 +1,6 @@
 #
 # This helper is for templates built using Haskell stack.
 #
-# hostmakedepends="ghc stack"
 # make_build_args="stack-build-flags"
 # stackage="lts-X.Y"  # or include a stack.yaml in $FILESDIR
 #
