@@ -1,14 +1,14 @@
 # Template file for 'qt5'
 pkgname=qt5
-version=5.6.2
-revision=9
+version=5.7.1
+revision=1
 wrksrc="qt-everywhere-opensource-src-${version}"
 homepage="http://qt.io/"
 short_desc="A cross-platform application and UI framework (QT5)"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 license="GPL-3, LGPL-2.1"
 distfiles="http://download.qt.io/official_releases/qt/${version%.*}/${version}/single/qt-everywhere-opensource-src-${version}.tar.xz"
-checksum=83e61bfc78bba230770704e828fa4d23fe3bbfdcfa4a8f5db37ce149731d89b3
+checksum=46ebca977deb629c5e69c2545bc5fe13f7e40012e5e2e451695c583bd33502fa
 
 if [ "${XBPS_MACHINE%%-musl}" = i686 ]; then
 	nodebug=yes  # prevent OOM
@@ -19,7 +19,8 @@ makedepends="
  fontconfig-devel libXi-devel libXv-devel libXinerama-devel libXrandr-devel
  libXcursor-devel libXScrnSaver-devel dbus-devel glib-devel icu-devel
  cups-devel libjpeg-turbo-devel sqlite-devel alsa-lib-devel tiff-devel
- libmng-devel libxshmfence-devel libSM-devel xcb-util-keysyms-devel
+ libmng-devel libsrtp-devel libvpx-devel snappy-devel minizip-devel
+ libxshmfence-devel libSM-devel xcb-util-keysyms-devel
  xcb-util-image-devel xcb-util-renderutil-devel xcb-util-wm-devel
  libXcomposite-devel libwebp-devel libxkbcommon-devel harfbuzz-devel gtk+-devel
  mtdev-devel freetds-devel libmysqlclient-devel postgresql-libs-devel
@@ -27,11 +28,14 @@ makedepends="
  pciutils-devel nss-devel libcap-devel libinput-devel libproxy-devel
  libxcb-devel libxkbcommon-devel tslib-devel wayland-devel"
 depends="qtchooser"
-replaces="qt5-doc<5.6.0 qt5-quick1<5.6.0 qt5-quick1-devel<5.6.0 qt5-webkit<5.6.0 qt5-webkit-devel<5.6.0"
+replaces="qt5-doc<5.6.0 qt5-quick1<5.6.0 qt5-quick1-devel<5.6.0 qt5-webkit<5.6.0 qt5-webkit-devel<5.6.0
+ qt5-enginio<5.7.1 qt5-enginio-devel<5.7.1 qt5-plugin-gtk<5.7.1"
 
 # Work around SSLv3_{client,server}_method missing in libressl-2.3.3
 CFLAGS="-DOPENSSL_NO_SSL3_METHOD"
 CXXFLAGS="-DOPENSSL_NO_SSL3_METHOD"
+# Required for musl libc
+LDFLAGS="-pthread"
 
 if [ -n "$CROSS_BUILD" ]; then
 	# Need some devel packages in the host to build qmake, moc, uic, rcc
@@ -40,14 +44,18 @@ if [ -n "$CROSS_BUILD" ]; then
 fi
 
 _cleanup_wrksrc_leak() {
-	# Replace ${wrksrc} in cmake files
-	sed -i ${PKGDESTDIR}/usr/lib/cmake/*/*.cmake \
-		-e "s;${wrksrc}/qtbase/host;/usr/lib/qt5;g" \
-		-e "s;devices/void-${XBPS_CROSS_TRIPLET}-g++;linux-g++;g"
-	# Replace ${wrksrc} in pkgconfig files
-	sed -i ${PKGDESTDIR}/usr/lib/pkgconfig/*.pc \
-		-e "s;${wrksrc}/qtbase/host;/usr/lib/qt5;g" \
-		-e "s;devices/void-${XBPS_CROSS_TRIPLET}-g++;linux-g++;g"
+	if [ -d "${PKGDESTDIR}/usr/lib/cmake" ]; then
+		# Replace ${wrksrc} in cmake files
+		sed -i ${PKGDESTDIR}/usr/lib/cmake/*/*.cmake \
+			-e "s;${wrksrc}/qtbase/host;/usr/lib/qt5;g" \
+			-e "s;devices/void-${XBPS_CROSS_TRIPLET}-g++;linux-g++;g"
+	fi
+	if [ -d "${PKGDESTDIR}/usr/lib/pkgconfig" ]; then
+		# Replace ${wrksrc} in pkgconfig files
+		sed -i ${PKGDESTDIR}/usr/lib/pkgconfig/*.pc \
+			-e "s;${wrksrc}/qtbase/host;/usr/lib/qt5;g" \
+			-e "s;devices/void-${XBPS_CROSS_TRIPLET}-g++;linux-g++;g"
+	fi
 	# Remove QMAKE_PRL_BUILD_DIR from linker hint files
 	find ${PKGDESTDIR} -iname "*.prl" -exec sed -i "{}" \
 		-e "/^QMAKE_PRL_BUILD_DIR/d" \
@@ -208,12 +216,6 @@ do_configure() {
 		if [ "${XBPS_MACHINE%%-musl}" = i686 ]; then
 			LDFLAGS+=" -Wl,--no-keep-memory"  # else OOM on 32-bit
 		fi
-		unset CPP AR AS RANLIB
-		export LD="${CXX}"
-		export QMAKE_CFLAGS="${CFLAGS}"
-		export QMAKE_CXXFLAGS="${CXXFLAGS}"
-		export QMAKE_LFLAGS="${LDFLAGS}"
-		./configure ${opts}
 	else
 		spec=void-${XBPS_CROSS_TRIPLET}-g++
 		_create_config ${spec}
@@ -223,30 +225,29 @@ do_configure() {
 		opts+=" -sysroot ${XBPS_CROSS_BASE}"
 		opts+=" -hostprefix host"
 		opts+=" -extprefix /usr"
-
-		export CC="$XBPS_CC"
-		export CXX="$XBPS_CXX"
-		export CPP="$XBPS_CPP"
-		export LD="$XBPS_CXX"
 		export CFLAGS="$XBPS_CFLAGS"
 		export CXXFLAGS="$XBPS_CXXFLAGS"
 		export CPPFLAGS="$XBPS_CPPFLAGS"
 		export LDFLAGS="$XBPS_LDFLAGS"
-		export AR="ar"
-		export AS="as"
-		export NM="nm"
-		export OBJDUMP="objdump"
-		export STRIP="strip"
-		export RANLIB="ranlib"
-		./configure ${opts}
 	fi
+
+	export CC="$XBPS_CC"
+	export CXX="$XBPS_CXX"
+	export CPP="$XBPS_CPP"
+	export LD="$XBPS_CXX"
+	export AR="ar"
+	export AS="as"
+	export NM="nm"
+	export OBJDUMP="objdump"
+	export STRIP="strip"
+	export RANLIB="ranlib"
+	./configure ${opts}
 }
 
 do_build() {
 	export LD_LIBRARY_PATH="${wrksrc}/qtbase/lib:${wrksrc}/qttools/lib:${LD_LIBRARY_PATH}"
 	if [ -z "$CROSS_BUILD" ]; then
-		export LD="$CXX"
-		unset CPP AR AS RANLIB
+		unset CC CXX LD CPP AR AS RANLIB
 		make ${makejobs}
 	else
 		export CC="$XBPS_CC"
@@ -270,6 +271,9 @@ do_build() {
 do_install() {
 	local f base
 
+	if [ -z "$CROSS_BUILD" ]; then
+		unset CC CXX LD CPP AR AS RANLIB
+	fi
 	cd ${wrksrc}/qtbase
 	make INSTALL_ROOT=${DESTDIR} install
 
@@ -359,6 +363,51 @@ qt5-canvas3d_package() {
 	}
 }
 
+qt5-charts-devel_package() {
+	short_desc+=" - Charts component (development)"
+	depends="qt5-charts-${version}_${revision} qt5-declarative-devel-${version}_${revision}"
+	pkg_install() {
+		_install_devel qtcharts
+	}
+}
+
+qt5-charts_package() {
+	short_desc+=" - Charts component"
+	pkg_install() {
+		_install_subpkg qtcharts
+	}
+}
+
+qt5-gamepad-devel_package() {
+	short_desc+=" - Gamepad component (development)"
+	depends="qt5-gamepad-${version}_${revision} qt5-declarative-devel-${version}_${revision}"
+	pkg_install() {
+		_install_devel qtgamepad
+	}
+}
+
+qt5-gamepad_package() {
+	short_desc+=" - Gamepad component"
+	pkg_install() {
+		_install_subpkg qtgamepad
+	}
+}
+
+qt5-datavis3d-devel_package() {
+	short_desc+=" - 3D data visualization (development)"
+	depends="qt5-datavis3d-${version}_${revision} qt5-declarative-devel-${version}_${revision}"
+	pkg_install() {
+		_install_devel qtdatavis3d
+	}
+}
+
+qt5-datavis3d_package() {
+	short_desc+=" - 3D data visualization"
+	pkg_install() {
+		_install_subpkg qtdatavis3d
+	}
+}
+
 qt5-connectivity-devel_package() {
 	short_desc+=" - Connectivity component (development)"
 	depends="qt5-connectivity-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -386,21 +435,6 @@ qt5-declarative_package() {
 	short_desc+=" - Declarative component"
 	pkg_install() {
 		_install_subpkg qtdeclarative
-	}
-}
-
-qt5-enginio-devel_package() {
-	short_desc+=" - Enginio component (development)"
-	depends="qt5-enginio-${version}_${revision} qt5-devel-${version}_${revision}"
-	pkg_install() {
-		_install_devel qtenginio
-	}
-}
-
-qt5-enginio_package() {
-	short_desc+=" - Enginio component"
-	pkg_install() {
-		_install_subpkg qtenginio
 	}
 }
 
@@ -491,6 +525,21 @@ qt5-script_package() {
 	}
 }
 
+qt5-scxml-devel_package() {
+	short_desc+=" - SCXML model integration (development)"
+	depends="qt5-scxml-${version}_${revision} qt5-devel-${version}_${revision}"
+	pkg_install() {
+		_install_devel qtscxml
+	}
+}
+
+qt5-scxml_package() {
+	short_desc+=" - SCXML model integration"
+	pkg_install() {
+		_install_subpkg qtscxml
+	}
+}
+
 qt5-sensors-devel_package() {
 	short_desc+=" - Sensors component (development)"
 	depends="qt5-sensors-${version}_${revision} qt5-devel-${version}_${revision}"
@@ -548,6 +597,21 @@ qt5-svg_package() {
 	short_desc+=" - Svg component"
 	pkg_install() {
 		_install_subpkg qtsvg
+	}
+}
+
+qt5-virtualkeyboard-devel_package() {
+	short_desc+=" - Virtual keyboard (development)"
+	depends="qt5-virtualkeyboard-${version}_${revision} qt5-declarative-devel-${version}_${revision}"
+	pkg_install() {
+		_install_devel qtvirtualkeyboard
+	}
+}
+
+qt5-virtualkeyboard_package() {
+	short_desc+=" - Virtual keyboard"
+	pkg_install() {
+		_install_subpkg qtvirtualkeyboard
 	}
 }
 
@@ -711,10 +775,10 @@ qt5-devel_package() {
 	depends="zlib-devel libressl-devel>=2.1.4 libXext-devel libXrender-devel
 		fontconfig-devel libglib-devel MesaLib-devel mtdev-devel
 		dbus-devel icu-devel qt5-${version}_${revision}
-		qt5-plugin-gtk-${version}_${revision}
 		qt5-qmake-${version}_${revision}
 		qt5-host-tools-${version}_${revision}"
 	short_desc+=" - Development files"
+	# qt5-enginio-devel is gone
 	pkg_install() {
 		vmove usr/include
 		vmove usr/lib/*.a
@@ -722,13 +786,6 @@ qt5-devel_package() {
 		vmove usr/lib/cmake
 		vmove usr/lib/pkgconfig
 		_cleanup_wrksrc_leak
-	}
-}
-
-qt5-plugin-gtk_package() {
-	short_desc+=" - GTK+ theme plugin"
-	pkg_install() {
-		vmove usr/lib/qt5/plugins/platformthemes/libqgtk2.so
 	}
 }
 
