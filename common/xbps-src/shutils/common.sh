@@ -98,6 +98,7 @@ set_build_options() {
 
     for f in ${build_options}; do
         _pkgname=${pkgname//\-/\_}
+        _pkgname=${_pkgname//\+/\_}
         eval pkgopts="\$XBPS_PKG_OPTIONS_${_pkgname}"
         if [ -z "$pkgopts" -o "$pkgopts" = "" ]; then
             pkgopts=${XBPS_PKG_OPTIONS}
