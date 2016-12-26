@@ -1,7 +1,7 @@
 # Template file for 'apache'
 pkgname=apache
 version=2.4.25
-revision=1
+revision=2
 wrksrc=httpd-${version}
 build_style=gnu-configure
 configure_args="--prefix= --sbindir=/usr/bin --enable-pie --enable-modules=all
@@ -18,9 +18,12 @@ configure_args="--prefix= --sbindir=/usr/bin --enable-pie --enable-modules=all
  --enable-proxy-balancer --enable-ssl --enable-http --enable-speling
  --enable-dav --enable-info --enable-cgi --enable-cgid --enable-dav-fs
  --enable-dav-lock --enable-vhost-alias --enable-imagemap --enable-so
- --enable-rewrite --with-pcre=/usr --enable-layout=XBPS --sysconfdir=/etc/${pkgname}
- --enable-mpms-shared=all"
-hostmakedepends="pkg-config perl"
+ --enable-rewrite --enable-layout=XBPS --sysconfdir=/etc/${pkgname}
+ --enable-mpms-shared=all --with-pcre=${XBPS_CROSS_BASE}/usr
+ --with-z=${XBPS_CROSS_BASE}/usr
+ --with-apr=${XBPS_CROSS_BASE}/usr/bin/apr-1-config
+ --with-apr-util=${XBPS_CROSS_BASE}/usr/bin/apu-1-config"
+hostmakedepends="pkg-config perl apr-util-devel"
 makedepends="zlib-devel libuuid-devel pcre-devel nghttp2-devel
  libressl-devel db-devel gdbm-devel expat-devel libldap-devel apr-util-devel"
 conf_files="
@@ -38,6 +41,16 @@ checksum=f87ec2df1c9fee3e6bfde3c8b855a3ddb7ca1ab20ca877bd0e2b6bf3f05c80b2
 system_accounts="_$pkgname"
 _apache_homedir="/srv/www/$pkgname"
 
+# Do not redefine struct iovec in include/apr_want.h
+CFLAGS="-DAPR_IOVEC_DEFINED=1 -I${XBPS_CROSS_BASE}/usr/include/apr-1"
+
+if [ -n "$CROSS_BUILD" ]; then
+	# FIXME: is sizeof(void*) ever less than sizeof(long)?
+	export ap_cv_void_ptr_lt_long=no
+	# This is missing in cross compiled apr-1-config (?)
+	LDFLAGS="-pthread"
+fi
+
 pre_configure() {
 	# set default user
 	sed -e 's#User daemon#User _apache#' \
@@ -45,6 +58,20 @@ pre_configure() {
 		-i docs/conf/httpd.conf.in
 
 	cat ${FILESDIR}/xbps.layout >> config.layout
+}
+
+post_configure() {
+	if [ -n "$CROSS_BUILD" ]; then
+		# Build gen_test_char using $BUILD_CC
+		sed -i server/Makefile \
+			-e "s;\$(LINK) \$(EXTRA_LDFLAGS) \$(\(gen_test_char\).*;${BUILD_CC} -o \1 \1.c -I${XBPS_CROSS_BASE}/usr/include/apr-1;"
+		# More hacks to make cross compiling work
+		sed -i build/*.mk Makefile */Makefile \
+			-e "s;--mode=compile;& --tag=CC;" \
+			-e "s;--mode=link;& --tag=CC;" \
+			-e "s;-\(L|R\)/usr/lib;-\1${XBPS_CROSS_BASE}/usr/lib;" \
+			-e "s;^\(LIBTOOL =\) /usr/share/apr-1/build/libtool;\1 ${XBPS_CROSS_BASE}/usr/bin/libtool;"
+	fi
 }
 
 post_install() {
