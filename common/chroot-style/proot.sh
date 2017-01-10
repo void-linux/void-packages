@@ -20,7 +20,7 @@ fi
 # proot does not properly return the resultcode. Workaround this
 RESULT=$(mktemp /tmp/proot_result.XXXXXXXXXX)
 
-proot -r $MASTERDIR -w / -b "$RESULT:/.result" -b $DISTDIR:/void-packages \
+PROOT_NO_SECCOMP=1 proot -r $MASTERDIR -w / -b "$RESULT:/.result" -b $DISTDIR:/void-packages \
 	${HOSTDIR:+-b $HOSTDIR:/host} -b /proc:/proc -b /dev:/dev \
 	-b /sys:/sys $EXTRA_ARGS /bin/sh -c '$@; echo $? > /.result' $0 $@
 
