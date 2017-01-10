@@ -1,8 +1,9 @@
 # Template file for 'nim'
 pkgname=nim
-version=0.15.0
+version=0.16.0
 revision=1
-_cversion=0.13.0
+_cversion=0.16.0
+_nimbleversion=0.8.2
 depends="gcc"
 hostmakedepends="ed"
 short_desc="The Nim programming language"
@@ -10,40 +11,62 @@ maintainer="allan <mail@may.mooo.com>"
 license="MIT"
 homepage="http://nim-lang.org/"
 distfiles="https://github.com/nim-lang/Nim/archive/v${version}.tar.gz
- https://github.com/nim-lang/csources/archive/v${_cversion}.tar.gz>csources.tar.gz"
-checksum="fe6648f4f7eca30240a4442c910ac85ac36a888244e8a6f45e6b4cc555056cf1
- fe6aee48c5c2585eea14a7cb338bd3766e3d104a22195a79a53c35c8de371f64"
+ https://github.com/nim-lang/csources/archive/v${_cversion}.tar.gz>csources-${_cversion}.tar.gz
+ https://github.com/nim-lang/nimble/archive/v${_nimbleversion}.tar.gz>nimble-${_nimbleversion}.tar.gz"
+checksum="63b35b35d5976fec9d88e3307adb78d2e3988538e5855d13b7f6e6f89c593f7c
+ e909cea51c2d1f6b04af955db219877ab9f9666741ccc750334597eded80844e
+ 5cfdebdeddf5cf7d32c7b1b047a99d660de4e3a29e29ce7a3216020dc4f301cd"
 build_wrksrc=Nim-$version
 create_wrksrc=yes
 nopie=yes
 
 post_extract() {
 	mv csources-$_cversion $build_wrksrc/csources
+	mkdir $build_wrksrc/dist
+	mv nimble-$_nimbleversion $build_wrksrc/dist/nimble
 }
 
 do_build() {
 	cd csources
-	sh build.sh
+	CFLAGS= sh build.sh
 	cd ..
 
 	bin/nim c koch
 	./koch boot -d:release
 
-	case "$XBPS_TARGET_MACHINE" in
-		arm*)
-			ed config/nim.cfg <<-EDIT
-				,s/^arm.linux.gcc.exe .*/arm.linux.gcc.exe = "$CC"/
-				,s/^arm.linux.gcc.linkerexe .*/arm.linux.gcc.linkerexe = "$CC"/
-				w
-				q
-			EDIT
-			bin/nim c -d:release --os:linux --cpu:arm compiler/nim;;
+	case "$XBPS_TARGET_MACHINE"
+	in aarch64*) _arch=arm64
+	;; arm*) _arch=arm
+	esac
+
+	case "$XBPS_TARGET_MACHINE"
+	in arm*|aarch64*)
+		ed config/nim.cfg <<-EDIT
+			,s/^arm.linux.gcc.exe .*/arm.linux.gcc.exe = "$CC"/
+			,s/^arm.linux.gcc.linkerexe .*/arm.linux.gcc.linkerexe = "$CC"/
+			a
+			arm64.linux.gcc.exe = "$CC"
+			arm64.linux.gcc.linkerexe = "$CC"
+			.
+			w
+			q
+		EDIT
+		bin/nim c -d:release --os:linux --cpu:$_arch --listCmd compiler/nim
+		for _p in \
+			dist/nimble/src/nimble \
+			tools/nimgrep \
+			tools/nimsuggest/nimsuggest
+		do
+			bin/nim c -d:release --os:linux --cpu:$_arch --listCmd $_p
+			mv $_p bin
+		done
+	;; *)
+		./koch tools
 	esac
 }
 
 do_install() {
 	./koch install ${DESTDIR}/usr/lib
-	rm -rf ${DESTDIR}/usr/lib/nim/compiler/nim{,0,1,2,cache}
 
 	if [ "$CROSS_BUILD" ]; then
 		mv compiler/nim ${DESTDIR}/usr/lib/nim/bin/nim
@@ -52,6 +75,11 @@ do_install() {
 	vmkdir usr/bin
 	vmkdir usr/share/nim
 	ln -sf /usr/lib/nim/bin/nim ${DESTDIR}/usr/bin/nim
+	for _f in nimble nimsuggest nimgrep; do
+		chmod 0755 bin/$_f
+		cp bin/$_f ${DESTDIR}/usr/lib/nim/bin
+		ln -sf /usr/lib/nim/bin/$_f ${DESTDIR}/usr/bin/$_f
+	done
 	cp -r doc examples ${DESTDIR}/usr/lib/nim
 	ln -sf /usr/lib/nim/doc ${DESTDIR}/usr/share/nim/doc
 	ln -sf /usr/lib/nim/examples ${DESTDIR}/usr/share/nim/examples
