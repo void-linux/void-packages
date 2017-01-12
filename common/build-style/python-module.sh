@@ -19,9 +19,9 @@ do_build() {
 			env CC="$CC" LDSHARED="$LDSHARED" \
 				PYPREFIX="$PYPREFIX" CFLAGS="$CFLAGS" \
 				LDFLAGS="$LDFLAGS" python${pyver} setup.py \
-					build --build-base=build${pyver//./_} ${make_build_args}
+					build --build-base=build-${pyver} ${make_build_args}
 		else
-			python${pyver} setup.py build --build-base=build${pyver//./_} ${make_build_args}
+			python${pyver} setup.py build --build-base=build-${pyver} ${make_build_args}
 		fi
 	done
 }
@@ -43,10 +43,10 @@ do_install() {
 			env CC="$CC" LDSHARED="$LDSHARED" \
 				PYPREFIX="$PYPREFIX" CFLAGS="$CFLAGS" \
 				LDFLAGS="$LDFLAGS" python${pyver} setup.py \
-					build --build-base=build${pyver//./_} \
+					build --build-base=build-${pyver} \
 					install --prefix=/usr --root=${DESTDIR} ${make_install_args}
 		else
-			python${pyver} setup.py build --build-base=build${pyver//./_} \
+			python${pyver} setup.py build --build-base=build-${pyver} \
 				install --prefix=/usr --root=${DESTDIR} ${make_install_args}
 		fi
 
