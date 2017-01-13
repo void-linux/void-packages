@@ -1,7 +1,7 @@
 # Template file for 'qt'
 pkgname=qt
 version=4.8.7
-revision=14
+revision=15
 _distname=qt-everywhere-opensource-src
 patch_args="-Np1"
 wrksrc=${_distname}-${version}
@@ -11,51 +11,159 @@ maintainer="Juan RP <xtraeme@voidlinux.eu>"
 license="GPL-3, LGPL-2.1"
 distfiles="http://download.qt.io/official_releases/qt/${version%.*}/${version}/${_distname}-${version}.tar.gz"
 checksum=e2882295097e47fe089f8ac741a95fef47e0a73a3f3cdf21b56990638f626ea0
+nocross=yes	# WIP: next step is to remove this line
 
-nocross=yes
-hostmakedepends="sqlite pkg-config"
+hostmakedepends="perl sqlite pkg-config"
 makedepends="
- libressl-devel libpng-devel MesaLib-devel libXrender-devel unixodbc-devel
- fontconfig-devel libXi-devel libXv-devel libXinerama-devel libXrandr-devel
- libXcursor-devel dbus-devel glib-devel icu-devel cups-devel libjpeg-turbo-devel
- sqlite-devel alsa-lib-devel tiff-devel libmng-devel libxshmfence-devel
- libSM-devel gtk+-devel libmysqlclient-devel postgresql-libs-devel
- pulseaudio-devel"
+ MesaLib-devel libressl-devel unixodbc-devel libXv-devel libXinerama-devel
+ libXrandr-devel libXcursor-devel glib-devel icu-devel cups-devel sqlite-devel
+ alsa-lib-devel libmng-devel libSM-devel gtk+-devel libnotify-devel
+ libmysqlclient-devel postgresql-libs-devel pulseaudio-devel"
 depends="qtchooser hicolor-icon-theme icu-libs"
 replaces="qt-qtconfig>=0"
 
-CXXFLAGS="-std=gnu++98 -Wno-deprecated"
+CXXFLAGS="-std=gnu++98 -Wno-deprecated -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
+
+if [ -n "$CROSS_BUILD" ]; then
+	hostmakedepends+=" qt-qmake qt-host-tools"
+	LDFLAGS="-L${XBPS_CROSS_BASE}/usr/lib"
+fi
 
 do_configure() {
-	local _libdir _opts
+	local _opts _spec
 
-	export LD_LIBRARY_PATH="${wrksrc}/lib:${LD_LIBRARY_PATH}"
-	export LD="$CXX"
-
-	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
-		_libdir=lib32
-	else
-		_libdir=lib
-	fi
-
-	# qmake CFLAGS/LDFLAGS
-	sed -i -e '/outpath\/qmake\".*\"\$MAKE\")/s/)/ QMAKE_CFLAGS="$CFLAGS" QMAKE_CXXFLAGS="$CXXFLAGS" QMAKE_LFLAGS="$LDFLAGS" )/' \
-		-e 's/\(setBootstrapVariable\s\+\|EXTRA_C\(XX\)\?FLAGS=.*\)QMAKE_C\(XX\)\?FLAGS_\(DEBUG\|RELEASE\).*/:/' \
-		configure
-
-	_opts="-confirm-license"
+	_opts+=" -confirm-license"
 	_opts+=" -opensource"
 	_opts+=" -prefix /usr"
 	_opts+=" -sysconfdir /etc"
 	_opts+=" -bindir /usr/lib/qt/bin"
 	_opts+=" -datadir /usr/share/qt"
 	_opts+=" -docdir /usr/share/doc/qt"
-	_opts+=" -plugindir /usr/${_libdir}/qt/plugins"
+	_opts+=" -plugindir /usr/lib/qt/plugins"
 	_opts+=" -importdir /usr/lib/qt/imports"
 	_opts+=" -translationdir /usr/share/qt/translations"
+
+	if [ -n "$CROSS_BUILD" ]; then
+		_opts+=" -force-pkg-config"
+		_opts+=" -continue"
+		_opts+=" -xplatform ${CXX}"
+		_opts+=" -exceptions"
+		_opts+=" -make libs"
+		_opts+=" -make tools"
+		_opts+=" -make docs"
+		_opts+=" -make translations"
+		_opts+=" -qt3support"
+		case "$XBPS_TARGET_MACHINE" in
+			armv5tel)
+				_opts+=" -embedded arm"
+				_spec="arm-linux-gnueabi-c++"
+				;;
+			armv6l)
+				_opts+=" -embedded arm"
+				_spec="arm-linux-gnueabihf-c++"
+				;;
+			armv6l-musl)
+				_opts+=" -embedded arm"
+				_spec="arm-linux-musleabihf-c++"
+				;;
+			armv7l)
+				_opts+=" -embedded arm"
+				_spec="armv7l-linux-gnueabihf-c++"
+				;;
+			armv7l-musl)
+				_opts+=" -embedded arm"
+				_spec="armv7l-linux-musleabihf-c++"
+				;;
+			aarch64)
+				_opts+=" -embedded aarch64"
+				_spec="aarch64-linux-gnu-c++"
+				;;
+			aarch64-musl)
+				_opts+=" -embedded aarch64"
+				_spec="aarch64-linux-musl-c++"
+				;;
+			mips-musl)
+				_opts+=" -embedded mips"
+				_spec="mips-linux-musl-c++"
+				;;
+			mipsel-musl)
+				_opts+=" -embedded mips"
+				_spec="mipsel-linux-musl-c++"
+				;;
+			mipselhf-musl)
+				_opts+=" -embedded mips"
+				_spec="mipsel-linux-muslhf-c++"
+				;;
+			*-musl)
+				_opts+=" -embedded arm"
+				_spec="${XBPS_TARGET_MACHINE}-linux-musl-c++"
+				;;
+			*)
+				_opts+=" -embedded arm"
+				_spec="${XBPS_TARGET_MACHINE}-linux-gnu-c++"
+				;;
+		esac
+		mkdir mkspecs/${_spec}
+		cat > mkspecs/${_spec}/qmake.conf << _EOF
+#
+# qmake specification for ${XBPS_TARGET_MACHINE}-linux-gnu-c++
+#
+MAKEFILE_GENERATOR         = UNIX
+TARGET_PLATFORM            = unix
+TEMPLATE                   = app
+CONFIG                     += qt warn_on release incremental link_prl gdb_dwarf_index
+QT                         += core gui
+QMAKE_INCREMENTAL_STYLE    = sublib
+
+include(../common/linux.conf)
+include(../common/gcc-base-unix.conf)
+QMAKE_CC                      = ${CC}
+QMAKE_LINK_C                  = ${CC}
+QMAKE_LINK_C_SHLIB            = ${CC}
+QMAKE_CFLAGS_RELEASE_WITH_DEBUGINFO += -O2 -g
+QMAKE_CXX                     = ${CXX}
+QMAKE_LINK                    = ${CXX}
+QMAKE_LINK_SHLIB              = ${CXX}
+QMAKE_CXXFLAGS_RELEASE_WITH_DEBUGINFO += -O2 -g
+QMAKE_PCH_OUTPUT_EXT          = .gch
+QMAKE_CFLAGS_PRECOMPILE       = -x c-header -c \${QMAKE_PCH_INPUT} -o \${QMAKE_PCH_OUTPUT}
+QMAKE_CFLAGS_USE_PRECOMPILE   = -include \${QMAKE_PCH_OUTPUT_BASE}
+QMAKE_CXXFLAGS_PRECOMPILE     = -x c++-header -c \${QMAKE_PCH_INPUT} -o \${QMAKE_PCH_OUTPUT}
+QMAKE_CXXFLAGS_USE_PRECOMPILE = -include \${QMAKE_PCH_OUTPUT_BASE}
+QMAKE_LFLAGS_RELEASE          += -Wl,-O1 -Wl,-rpath,${wrksrc}/lib
+QMAKE_LFLAGS_NOUNDEF          += -Wl,--no-undefined
+
+load(qt_config)
+_EOF
+		cat > mkspecs/${_spec}/qplatformdefs.h << _EOF
+#include "../linux-g++/qplatformdefs.h"
+_EOF
+
+		# Force enable qfilesystemwatcher_{i,d}notify
+		cat >> src/corelib/io/io.pri << _EOF
+SOURCES += io/qfilesystemwatcher_inotify.cpp io/qfilesystemwatcher_dnotify.cpp
+HEADERS += io/qfilesystemwatcher_inotify_p.h io/qfilesystemwatcher_dnotify_p.h
+_EOF
+
+		# qmake CFLAGS/LDFLAGS
+		sed -i configure \
+			-e '/outpath\/qmake\".*\"\$MAKE\")/s/)/ CC=gcc CXX=g++ LINK=g++ QMAKE_CFLAGS="$XBPS_CFLAGS" QMAKE_CXXFLAGS="$XBPS_CXXFLAGS" QMAKE_LFLAGS="$XBPS_LDFLAGS" )/' \
+			-e 's/\(setBootstrapVariable\s\+\|EXTRA_C\(XX\)\?FLAGS=.*\)QMAKE_C\(XX\)\?FLAGS_\(DEBUG\|RELEASE\).*/:/' \
+			-e 's/5\*\|4\*\|3\.4\*)/6*|&/'
+		export PKG_CONFIG_PATH=${XBPS_CROSS_BASE}/usr/lib/pkgconfig:${XBPS_CROSS_BASE}/usr/share/pkgconfig
+		export PKG_CONFIG_LIBDIR=${XBPS_CROSS_BASE}/usr/lib/pkgconfig
+		export PKG_CONFIG_SYSROOT_DIR=${XBPS_CROSS_BASE}
+
+	else
+		_opts+=" -graphicssystem raster"
+		# qmake CFLAGS/LDFLAGS
+		sed -i -e '/outpath\/qmake\".*\"\$MAKE\")/s/)/ QMAKE_CFLAGS="$CFLAGS" QMAKE_CXXFLAGS="$CXXFLAGS" QMAKE_LFLAGS="$LDFLAGS" )/' \
+			-e 's/\(setBootstrapVariable\s\+\|EXTRA_C\(XX\)\?FLAGS=.*\)QMAKE_C\(XX\)\?FLAGS_\(DEBUG\|RELEASE\).*/:/' \
+			configure
+	fi
+
 	_opts+=" -nomake demos"
 	_opts+=" -nomake examples"
-	_opts+=" -graphicssystem raster"
 	_opts+=" -openssl-linked"
 	_opts+=" -xmlpatterns"
 	_opts+=" -no-webkit"
@@ -71,13 +179,36 @@ do_configure() {
 	_opts+=" -dbus-linked"
 	_opts+=" -v"
 
-	echo "./configure ${_opts}"
+	echo "=== ./configure ${_opts}"
+	export LD_LIBRARY_PATH="${wrksrc}/lib:${LD_LIBRARY_PATH}"
+	export LD="$CXX"
 	export QMAKE_CFLAGS="${CFLAGS}"
 	export QMAKE_CXXFLAGS="${CXXFLAGS}"
-	export QMAKE_LFLAGS="${LDFLAGS}"
+	export QMAKE_LFLAGS="${LDFLAGS} -Wl,-rpath,${wrksrc}/lib"
 	./configure ${_opts}
 }
 do_build() {
+	local _f
+	if [ -n "$CROSS_BUILD" ]; then
+		# Replace binaries for host
+		find -name Makefile\* -exec sed -i "{}" -e"s;/builddir/.*/bin/;/usr/lib/qt/bin/;g" \;
+		# Build qmake for the target
+		echo "=== Building qmake for the target ${XBPS_TARGET_MACHINE}"
+		mv bin/qmake{,-host}
+		sed -i qmake/Makefile \
+			-e"s;^\(CC =\).*;\1 ${CC};" \
+			-e"s;^\(CXX =\).*;\1 ${CXX};" \
+			-e"s;^\(QMAKE_CFLAGS =\).*;\1 ${CFLAGS};" \
+			-e"s;^\(QMAKE_CXXFLAGS =\).*;\1 ${CXXFLAGS};" \
+			-e"s;^\(QMAKE_LFLAGS =\).*;\1 ${LDFLAGS};"
+		cd qmake
+		make clean
+		make ${makejobs}
+		cd ${wrksrc}
+		mv bin/qmake{,-target}
+		mv bin/qmake{-host,}
+		cd ${wrksrc}
+	fi
 	export LD_LIBRARY_PATH="${wrksrc}/lib:${LD_LIBRARY_PATH}"
 	export LD="$CXX"
 	make ${makejobs}
@@ -117,6 +248,12 @@ do_install() {
 
 	# Remove wrong stuff
 	rm -rf ${DESTDIR}/usr/{examples,demos}
+
+	# For a cross build replace qmake with the target binary
+	if [ -f ${wrksrc}/bin/qmake-target ]; then
+		mv ${wrksrc}/bin/qmake-target ${DESTDIR}/usr/lib/qt/bin/qmake
+		ln -s /usr/lib/qt/bin/qmake ${DESTDIR}/usr/bin/qmake-qt4
+	fi
 }
 
 qt-doc_package() {
@@ -154,6 +291,18 @@ qt-designer-devel_package() {
 		vmove usr/lib/libQtDesignerComponents.so
 	}
 }
+qt-host-tools_package() {
+	depends"qt"
+	short_desc+=" - host tools"
+	pkg_install() {
+		for f in lrelease lupdate moc qdbuscpp2xml qdbusxml2cpp qt3to4 \
+			rcc uic uic3; do
+			if [ -f "${DESTDIR}/usr/lib/qt/bin/${f}" ]; then
+				vmove usr/lib/qt/bin/${f}
+			fi
+		done
+	}
+}
 qt-devel-tools_package() {
 	depends="hicolor-icon-theme"
 	short_desc+=" - development tools"
@@ -161,8 +310,10 @@ qt-devel-tools_package() {
 		for f in assistant lconvert linguist pixeltool qcollectiongenerator \
 			qhelpgenerator qhelpconverter xmlpatterns xmlpatternsvalidator \
 			qttracereplay qdoc3 qmlviewer; do
-			vmove usr/bin/${f}-qt4
-			vmove usr/lib/qt/bin/${f}
+			if [ -f "${DESTDIR}/usr/lib/qt/bin/${f}" ]; then
+				vmove usr/bin/${f}-qt4
+				vmove usr/lib/qt/bin/${f}
+			fi
 		done
 		vmove usr/share/icons/hicolor
 		for f in linguist assistant; do
@@ -174,13 +325,14 @@ qt-devel-tools_package() {
 	}
 }
 qt-devel_package() {
-	depends="qt-qmake qt-devel-tools libX11-devel icu-devel qt>=${version}_${revision}"
+	depends="qt-qmake qt-devel-tools qt-host-tools libX11-devel icu-devel qt>=${version}_${revision}"
 	short_desc+=" - development files"
 	pkg_install() {
 		for f in lrelease lupdate moc qdbuscpp2xml qdbusxml2cpp qt3to4 \
 			rcc uic uic3; do
-			vmove usr/bin/${f}-qt4
-			vmove usr/lib/qt/bin/${f}
+			if [ -f "${DESTDIR}/usr/bin/${f}-qt4" ]; then
+				vmove usr/bin/${f}-qt4
+			fi
 		done
 		vmove usr/include
 		vmove "usr/lib/*.a"
