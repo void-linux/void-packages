@@ -541,8 +541,7 @@ them, understand this: Void Linux cross compiles for many arches. Sometimes in
 a build process, certain programs must be run, for example `yacc`, or the
 compiler itself for a C program. Those programs get put in `hostmakedepends`.
 When the build runs, those will be installed on the host to help the build
-complete. Please note that anything that is a dependency of `base-devel` will
-already be installed, and should not be listed here.
+complete.
 
 Then there are those things for which a package either links against or
 includes header files. These are `makedepends`, and regardless of the
@@ -555,6 +554,10 @@ runtime and without which is unusable, and that xbps can't auto-detect.
 These are not all the packages the package needs at runtime, but only those
 that are not linked against. This variable is most useful for non-compiled
 programs.
+
+Finally, as a general rule, if something compiles the exact same way whether or
+not you add a particular package to `makedepends` or `hostmakedepends`, it
+shouldn't be added.
 
 <a id="repositories"></a>
 #### Repositories
