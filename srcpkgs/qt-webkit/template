@@ -21,9 +21,7 @@ checksum="
 conflicts="qt<4.8.7_12"
 
 if [ -n "$CROSS_BUILD" ]; then
-	hostmakedepends+=" qt-devel"
-	configure_args+=" -DCMAKE_SYSTEM_PROCESSOR=${CROSS_BUILD}"
-	broken="https://build.voidlinux.eu/builders/armv7l-musl_builder/builds/162/steps/shell_3/logs/stdio"
+	hostmakedepends+=" qt-devel qt-designer-devel"
 fi
 
 post_extract() {
@@ -39,16 +37,47 @@ do_configure() {
 }
 
 do_build() {
-	local opts="--qt --prefix=/usr --no-webkit2"
+	local opts="--qt --prefix=/usr --no-webkit2 --release"
 	case "$XBPS_TARGET_MACHINE" in
-		i686*)	opts+=" --no-force-sse2" ;;
+	i686*)	# Do not force SSE2 for i686
+		opts+=" --no-force-sse2"
+		;;
+	aarch64*|arm*|mips*)
+		# Disable JIT and assembler
+		opts+=" DEFINES+=ENABLE_JIT=0"
+		opts+=" DEFINES+=ENABLE_YARR_JIT=0"
+		opts+=" DEFINES+=ENABLE_ASSEMBLER=0"
+		;;
 	esac
+	if [ -n "$CROSS_BUILD" ]; then
+		opts+=" --qmakearg=\"CONFIG+=production_build\""
+		opts+=" --qmakearg=\"QMAKE_CC=$CC\""
+		opts+=" --qmakearg=\"QMAKE_CXX=$CXX\""
+		opts+=" --qmakearg=\"QMAKE_LINK=$CXX\""
+		opts+=" --qmakearg=\"QMAKE_LINK_SHARED=$CXX\""
+		opts+=" --qmakearg=\"QMAKE_AR=$AR cru\""
+		opts+=" --qmakearg=\"QMAKE_OBJDUMP=$OBJDUMP\""
+		opts+=" --qmakearg=\"QMAKE_CFLAGS='$CFLAGS'\""
+		opts+=" --qmakearg=\"QMAKE_CFLAGS_RELEASE='$CFLAGS'\""
+		opts+=" --qmakearg=\"QMAKE_CXXFLAGS='$CXXFLAGS'\""
+		opts+=" --qmakearg=\"QMAKE_CXXFLAGS_RELEASE='$CXXFLAGS'\""
+		opts+=" --qmakearg=\"QMAKE_LFLAGS='$LDFLAGS'\""
+		opts+=" --qmakearg=\"QMAKE_LFLAGS_RELEASE='$LDFLAGS'\""
+	fi
 	export QTDIR=/usr
 	export PATH="/usr/lib/qt/bin:$PATH"
+	find -name "Makefile*" -exec sed -i "{}" \
+		-e"s;^\(CC[ ]*=\).*;\1 $CC;" \
+		-e"s;^\(CXX[ ]*=\).*;\1 $CXX;" \
+		-e"s;^\(LINK[ ]*=\).*;\1 $CXX;" \
+		-e"s;^\(CFLAGS[ ]*=\)\(.*\);\1 \2 $CFLAGS;" \
+		-e"s;^\(CXXFLAGS[ ]*=\)\(.*\);\1 \2 $CXXFLAGS;" \
+		-e"s;^\(LFLAGS[ ]*=\)\(.*\);\1 \2 $LDFLAGS;" \
+		\;
 	Tools/Scripts/build-webkit --makeargs="${makejobs}" ${opts}
 	cd ../qt-everywhere-opensource-src-${_qtver}/tools/designer/src/plugins/qwebview
-	qmake CC="$CC" CXX="$CXX" LINK="$CXX"
-	make ${makejobs}
+	qmake QMAKE_CFLAGS="$CFLAGS" QMAKE_CXXFLAGS="$CXXFLAGS" QMAKE_LFLAGS="$LDFLAGS"
+	make ${makejobs} CC="$CC" CXX="$CXX" LINK="$CXX"
 }
 
 do_install() {
