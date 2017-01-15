@@ -35,6 +35,9 @@ _EOF
 
 	cmake ${cmake_args} ${configure_args} $(echo ${cmake_builddir}|sed \
 		-e 's|[^/]$|/|' -e 's|[^/]*||g' -e 's|/|../|g')
+
+	# Replace -isystem with -I for Qt4 and Qt5 packages
+	find -name flags.make -exec sed -i "{}" -e"s;-isystem;-I;g" \;
 }
 
 do_build() {
