@@ -217,16 +217,16 @@ The following functions are defined by `xbps-src` and can be used on any templat
 
 - *vinstall()* `vinstall <file> <mode> <targetdir> [<name>]`
 
-	Installs `file` with the specified `mode` into `targetdir` into the pkg `$DESTDIR`
-The optional 4th argument can be used to change the `file name`.
+	Installs `file` with the specified `mode` into `targetdir` in the pkg `$DESTDIR`.
+	The optional 4th argument can be used to change the `file name`.
 
 - *vcopy()* `vcopy <pattern> <targetdir>`
 
-	Copies recursively all files in `pattern` to `targetdir` into the pkg `$DESTDIR`
+	Copies recursively all files in `pattern` to `targetdir` in the pkg `$DESTDIR`.
 
 - *vmove()* `vmove <pattern>`
 
-	Moves `pattern` to the specified directory in the pkg `$DESTDIR`
+	Moves `pattern` to the specified directory in the pkg `$DESTDIR`.
 
 - *vmkdir()* `vmkdir <directory> [<mode>]`
 
