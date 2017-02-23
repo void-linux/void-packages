@@ -4,7 +4,7 @@ consistency_check_existing () {
     while IFS=" " read -r dep origname deplabel; do
         [ -f "$XBPS_SRCPKGDIR/$dep/template" ] && continue
         case "$deplabel" in
-            makedepends|hostmakedepends)
+            makedepends|hostmakedepends|checkdepends)
                 msg_warn "unsatisfied $deplabel in $origname: $dep does not exist\n";
                 ;;
             *) printf "%s %s %s\n" "$dep" "$origname" "$deplabel" ;;
@@ -16,7 +16,7 @@ consistency_convert_pkgname () {
     local origname= pkgname version= revision=
     while IFS=" " read -r dep origname deplabel; do
         case "$deplabel" in
-            makedepends|hostmakedepends)
+            makedepends|hostmakedepends|checkdepends)
                 printf "%s %s %s\n" "$dep" "$origname" "$deplabel"
                 continue
                 ;;
@@ -41,7 +41,7 @@ consistency_check_smart () {
     local pkgname= depdef= dep=
     while IFS=" " read -r depdef origname deplabel; do
         case "$deplabel" in
-            makedepends|hostmakedepends)
+            makedepends|hostmakedepends|checkdepends)
                 printf "%s %s %s\n" "$depdef" "$origname" "$deplabel"
                 continue
                 ;;
@@ -73,6 +73,7 @@ consistency_check() {
             [ -L "$XBPS_SRCPKGDIR/$XBPS_TARGET_PKG" ] && continue
             [ "$makedepends" ] && printf "%s $pkgname makedepends\n" $makedepends
             [ "$hostmakedepends" ] && printf "%s $pkgname hostmakedepends\n" $hostmakedepends
+            [ "$checkdepends" ] && printf "%s $pkgname checkdepends\n" $checkdepends
         )
     done | grep -v "^virtual?" | sed "s/^[^ ]*?//" | consistency_check_existing | \
         consistency_convert_pkgname | consistency_check_smart

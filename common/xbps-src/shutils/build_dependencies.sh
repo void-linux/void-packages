@@ -49,6 +49,13 @@ setup_pkg_depends() {
         _depver=$(srcpkg_get_version ${_depname}) || exit $?
         host_build_depends+=" ${_depname}-${_depver}"
     done
+    if ! [ -z "$XBPS_CHECK_PKGS" -o "$XBPS_CHECK_PKGS" = "0" -o "$XBPS_CHECK_PKGS" = "no" ]; then
+        for j in ${checkdepends}; do
+            _depname="${j%\?*}"
+            _depver=$(srcpkg_get_version ${_depname}) || exit $?
+            host_check_depends+=" ${_depname}-${_depver}"
+        done
+    fi
     for j in ${makedepends}; do
         _depname="${j%\?*}"
         _depver=$(srcpkg_get_version ${_depname}) || exit $?
@@ -183,7 +190,8 @@ install_pkg_deps() {
     local rval _realpkg _vpkg _curpkg curpkgdepname pkgn iver
     local i j found rundep repo
 
-    local -a host_binpkg_deps binpkg_deps host_missing_deps missing_deps missing_rdeps
+    local -a host_binpkg_deps check_binpkg_deps binpkg_deps
+    local -a host_missing_deps check_missing_deps missing_deps missing_rdeps
 
     [ -z "$pkgname" ] && return 2
 
@@ -195,7 +203,7 @@ install_pkg_deps() {
         msg_normal "$pkgver: building ...\n"
     fi
 
-    if [ -z "$build_depends" -a -z "$host_build_depends" -a -z "$run_depends" ]; then
+    if [ -z "$build_depends" -a -z "$host_build_depends" -a -z "$host_check_depends" -a -z "$run_depends" ]; then
         return 0
     fi
 
@@ -230,6 +238,39 @@ install_pkg_deps() {
         fi
         host_missing_deps+=("${i}")
     done
+
+    #
+    # Host check dependencies.
+    #
+    for i in ${host_check_depends}; do
+        check_pkgdep_matched "$i" version
+        local rval=$?
+        if [ $rval -eq 0 ]; then
+            echo "   [check] ${i}: installed."
+            continue
+        elif [ $rval -eq 1 ]; then
+            _realpkg="$($XBPS_UHELPER_CMD getpkgname $i 2>/dev/null)"
+            iver=$($XBPS_UHELPER_CMD version ${_realpkg})
+            if [ $? -eq 0 -a -n "$iver" ]; then
+                echo "   [check] ${i}: installed $iver (virtualpkg)."
+                continue
+            else
+                echo "   [check] ${i}: unresolved check dependency!"
+                return 1
+            fi
+        else
+            repo=$($XBPS_QUERY_CMD -R -prepository ${i} 2>/dev/null)
+            if [ -n "${repo}" ]; then
+                echo "   [check] ${i}: found ($repo)"
+                check_binpkg_deps+=("${i}")
+                continue
+            else
+                echo "   [check] ${i}: not found."
+            fi
+        fi
+        check_missing_deps+=("${i}")
+    done
+
 
     #
     # Target build dependencies.
@@ -324,7 +365,7 @@ install_pkg_deps() {
         missing_rdeps+=("${_realpkg}")
     done
 
-    # Host missing dependencies, build from srcpkgs.
+    # Missing host dependencies, build from srcpkgs.
     for i in ${host_missing_deps[@]}; do
         # packages not found in repos, install from source.
         (
@@ -336,7 +377,19 @@ install_pkg_deps() {
         host_binpkg_deps+=("$i")
     done
 
-    # Target missing dependencies, build from srcpkgs.
+    # Missing check dependencies, build from srcpkgs.
+    for i in ${check_missing_deps[@]}; do
+        # packages not found in repos, install from source.
+        (
+        curpkgdepname=$($XBPS_UHELPER_CMD getpkgname "$i" 2>/dev/null)
+        setup_pkg $curpkgdepname
+        exec env XBPS_DEPENDENCY=1 XBPS_BINPKG_EXISTS=1 \
+            $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target || exit $?
+        ) || exit $?
+        check_binpkg_deps+=("$i")
+    done
+
+    # Missing target dependencies, build from srcpkgs.
     for i in ${missing_deps[@]}; do
         # packages not found in repos, install from source.
         (
@@ -371,6 +424,11 @@ install_pkg_deps() {
 
     for i in ${host_binpkg_deps[@]}; do
         msg_normal "$pkgver: installing host dependency '$i' ...\n"
+        install_pkg_from_repos "${i}"
+    done
+
+    for i in ${check_binpkg_deps[@]}; do
+        msg_normal "$pkgver: installing check dependency '$i' ...\n"
         install_pkg_from_repos "${i}"
     done
 
