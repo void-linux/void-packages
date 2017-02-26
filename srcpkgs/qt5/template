@@ -1,16 +1,18 @@
 # Template file for 'qt5'
 pkgname=qt5
-version=5.7.1
-revision=4
+version=5.8.0
+revision=1
 wrksrc="qt-everywhere-opensource-src-${version}"
+build_style=gnu-configure
 homepage="http://qt.io/"
 short_desc="A cross-platform application and UI framework (QT5)"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 license="GPL-3, LGPL-2.1"
 distfiles="http://download.qt.io/official_releases/qt/${version%.*}/${version}/single/qt-everywhere-opensource-src-${version}.tar.xz"
-checksum=46ebca977deb629c5e69c2545bc5fe13f7e40012e5e2e451695c583bd33502fa
+checksum=0f4c54386d3dbac0606a936a7145cebb7b94b0ca2d29bc001ea49642984824b6
 
 if [ "${XBPS_MACHINE%%-musl}" = i686 ]; then
+	broken="Hangs forever when running python gyp_qtwebengine; File /usr/lib/python2.7/multiprocessing/process.py, line 258, in _bootstrap"
 	nodebug=yes  # prevent OOM
 fi
 hostmakedepends="flex ruby gperf git python perl pkg-config re2c"
@@ -33,53 +35,50 @@ replaces="qt5-doc<5.6.0 qt5-quick1<5.6.0 qt5-quick1-devel<5.6.0 qt5-webkit<5.6.0
 
 # Work around SSLv3_{client,server}_method missing in libressl-2.3.3
 CFLAGS="-DOPENSSL_NO_SSL3_METHOD"
-CXXFLAGS="-DOPENSSL_NO_SSL3_METHOD"
+CXXFLAGS="-DOPENSSL_NO_SSL3_METHOD -Wno-deprecated-declarations -fno-delete-null-pointer-checks"
 # Required for musl libc
-LDFLAGS="-pthread"
+LDFLAGS="-pthread -fPIE"
 
 case "$XBPS_TARGET_MACHINE" in
-	armv[5-6]*) ;; # Can't cross compile libvpx
-	*) makedepends+=" libvpx-devel"
+	armv[56]*) # Can't cross compile libvpx
+		;;
+	armv7*) # Force use of neon and enable libvpx
+		CXXFLAGS+=" -mfpu=neon"
+		makedepends+=" libvpx-devel"
+		;;
+	*) # Other architectures have libvpx (TODO: mips-* too?)
+		makedepends+=" libvpx-devel"
+		;;
 esac
 
 if [ -n "$CROSS_BUILD" ]; then
 	# Need some devel packages in the host to build qmake, moc, uic, rcc
 	# wayland-devel contains /usr/bin/wayland-scanner
-	hostmakedepends+=" zlib-devel icu-devel wayland-devel"
+	# Cross building ninja does not work, thus use the system ninja
+	hostmakedepends+=" zlib-devel icu-devel wayland-devel ninja"
 fi
 
 _cleanup_wrksrc_leak() {
 	if [ -d "${PKGDESTDIR}/usr/lib/cmake" ]; then
-		# Replace ${wrksrc} in cmake files
+		# Replace references to ${wrksrc} in cmake files
 		sed -i ${PKGDESTDIR}/usr/lib/cmake/*/*.cmake \
 			-e "s;${wrksrc}/qtbase/host;/usr/lib/qt5;g" \
 			-e "s;devices/void-${XBPS_CROSS_TRIPLET}-g++;linux-g++;g"
 	fi
 	if [ -d "${PKGDESTDIR}/usr/lib/pkgconfig" ]; then
-		# Replace ${wrksrc} in pkgconfig files
+		# Replace references to ${wrksrc} in pkgconfig files
 		sed -i ${PKGDESTDIR}/usr/lib/pkgconfig/*.pc \
 			-e "s;${wrksrc}/qtbase/host;/usr/lib/qt5;g" \
 			-e "s;devices/void-${XBPS_CROSS_TRIPLET}-g++;linux-g++;g"
 	fi
-	# Remove QMAKE_PRL_BUILD_DIR from linker hint files
+	# Remove QMAKE_PRL_BUILD_DIR from hint files for static libraries
+	# and replace references to ${wrksrc}
 	find ${PKGDESTDIR} -iname "*.prl" -exec sed -i "{}" \
 		-e "/^QMAKE_PRL_BUILD_DIR/d" \
-		-e "s;-L${wrksrc}/qtbase/lib;/usr/lib;g" \;
+		-e "s;-L${wrksrc}/qtbase/lib;-L/usr/lib;g" \;
 	# Replace ${wrksrc} in project include files
 	find ${PKGDESTDIR} -iname "*.pri" -exec sed -i "{}" \
 		-e "s;${wrksrc}/qtbase;/usr/lib/qt5;g" \;
-}
-
-_move_examples() {
-	local dest=${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/qt5-examples-${version}
-	if [ -d ${PKGDESTDIR}/usr/share/qt5/examples ]; then
-		# Copy examples to /destdir/qt5-examples-${version} subpackage
-		mkdir -p ${dest}/usr/share/qt5
-		cp -pR ${PKGDESTDIR}/usr/share/qt5/examples ${dest}/usr/share/qt5
-		rm -rf ${PKGDESTDIR}/usr/share/qt5/examples
-		# The help files (*.qch) are in the qt5-doc package
-		find ${dest}/usr/share/qt5/examples -iname "*.qch" -delete
-	fi
 }
 
 _install_subpkg() {
@@ -91,16 +90,16 @@ _install_subpkg() {
 	rm -rf ${PKGDESTDIR}/usr/lib/cmake
 	rm -rf ${PKGDESTDIR}/usr/lib/qt5/mkspecs
 	rm -rf ${PKGDESTDIR}/usr/lib/pkgconfig
+	rm -f ${PKGDESTDIR}/usr/lib/*.a
 	rm -f ${PKGDESTDIR}/usr/lib/*.so
 	rm -f ${PKGDESTDIR}/usr/lib/*.prl
 	if [ -d ${PKGDESTDIR}/usr/lib/qt5/bin ]; then
 		vmkdir usr/bin
 		for f in ${PKGDESTDIR}/usr/lib/qt5/bin/*; do
-			base=$(basename $f)
+			base=${f##*/}
 			ln -sf /usr/lib/qt5/bin/${base} ${PKGDESTDIR}/usr/bin/${base}-qt5
 		done
 	fi
-	_move_examples
 }
 
 _install_devel() {
@@ -158,10 +157,6 @@ _create_config() {
 }
 
 pre_configure() {
-	if [ ${XBPS_GCC_VERSION_MAJOR} -gt 5 ]; then
-		CXXFLAGS+=" -fno-delete-null-pointer-checks"
-	fi
-
 	# Compatibility functions res_ninit() and res_nclose() for musl libc
 	cp ${FILESDIR}/resolv_compat.h ${wrksrc}/qtwebengine/src/3rdparty/chromium/net/dns
 	case "$XBPS_TARGET_MACHINE" in
@@ -171,24 +166,40 @@ pre_configure() {
 		for config in $(find ${chromium}/third_party/ffmpeg/chromium/config -name "config\.*" | grep linux); do
 			sed -i ${config} -e "s;HAVE_SYSCTL 1;HAVE_SYSCTL 0;"
 		done
+		# Do not use experimental allocator shim (incompatible with musl libc)
+		sed -i qtwebengine/src/3rdparty/chromium/build/common.gypi \
+			-e"s;\('use_experimental_allocator_shim%':\) 1,;\1 0,;"
 	esac
-	# qmake CFLAGS/LDFLAGS
-	sed -i qtbase/configure \
-		-e 's;cd "$0/qmake";cd "$0";' \
-		-e 's;"$outpath" "$MAKE";"$outpath/qmake" "$MAKE";' \
-		-e '/outpath\/qmake.*$MAKE/s;\"$MAKE\"\(.*\);\"$MAKE\" QMAKE_CFLAGS=\"$CFLAGS\" QMAKE_CXXFLAGS=\"$CXXFLAGS\" QMAKE_LFLAGS=\"$LDFLAGS\"\1;' \
-		-e 's;\(setBootstrapVariable\s\+\|EXTRA_C\(XX\)\?FLAGS=.*\)QMAKE_C\(XX\)\?FLAGS_\(DEBUG\|RELEASE\).*;:;'
-	# cross build patches
+	# Cross build patches
 	if [ -n "$CROSS_BUILD" ]; then
+		# This also sets default {C,CXX,LD}FLAGS for projects built using qmake
+		sed -i -e "s|^\(QMAKE_CFLAGS_RELEASE.*\)|\1 ${XBPS_CFLAGS}|" \
+			qtbase/mkspecs/common/gcc-base.conf
+		sed -i -e "s|^\(QMAKE_LFLAGS_RELEASE.*\)|\1 ${XBPS_LDFLAGS}|" \
+			qtbase/mkspecs/common/g++-unix.conf
 		# Patch to skip non-working check for GCC version
 		patch -p0 < ${FILESDIR}/cross-gcc.patch
-		# Patches to fix non-working python scripts host CXX detection
-		patch -p0 < ${FILESDIR}/cross-ninja.patch
+		# Create symbolic links for private include directories
+		for d in $(ls ${wrksrc}/qtbase/include); do
+			ln -s ${version}/${d}/private qtbase/include/${d}/private
+		done
+		# Copy system ninja to 3rdparty path
+		cp -v /usr/bin/ninja qtwebengine/src/3rdparty/ninja/
+	else
+		# Build qmake using Void {C,LD}FLAGS
+		# This also sets default {C,CXX,LD}FLAGS for projects built using qmake
+		sed -i -e "s|^\(QMAKE_CFLAGS_RELEASE.*\)|\1 ${CFLAGS}|" \
+			qtbase/mkspecs/common/gcc-base.conf
+		sed -i -e "s|^\(QMAKE_LFLAGS_RELEASE.*\)|\1 ${LDFLAGS}|" \
+			qtbase/mkspecs/common/g++-unix.conf
 	fi
+	case "$XBPS_TARGET_MACHINE" in
+		arm*)
+	esac
 }
 
 do_configure() {
-	local opts spec
+	local opts spec dirs dir f
 
 	opts+=" -confirm-license"
 	opts+=" -opensource"
@@ -206,16 +217,17 @@ do_configure() {
 	opts+=" -accessibility -fontconfig -icu"
 	opts+=" -openssl-linked"
 	opts+=" -dbus-linked"
-	opts+=" -silent"
-	opts+=" -no-pch"	# For ccache support
+	opts+=" -no-pch"
 	opts+=" -no-strip"
+	opts+=" -nomake examples"
 	opts+=" -optimized-qmake"
 	opts+=" -system-libjpeg"
 	opts+=" -system-libpng"
 	opts+=" -system-zlib"
 	opts+=" -system-sqlite"
 	opts+=" -system-harfbuzz"
-	opts+=" -v"		# Enable for verbose configuration tests
+	# opts+=" -silent"
+	opts+=" -v"
 
 	if [ -z "$CROSS_BUILD" ]; then
 		if [ "${XBPS_MACHINE%%-musl}" = i686 ]; then
@@ -230,51 +242,19 @@ do_configure() {
 		opts+=" -sysroot ${XBPS_CROSS_BASE}"
 		opts+=" -hostprefix host"
 		opts+=" -extprefix /usr"
-		export CFLAGS="$XBPS_CFLAGS"
-		export CXXFLAGS="$XBPS_CXXFLAGS"
-		export CPPFLAGS="$XBPS_CPPFLAGS"
-		export LDFLAGS="$XBPS_LDFLAGS"
 	fi
 
-	export CC="$XBPS_CC"
-	export CXX="$XBPS_CXX"
-	export CPP="$XBPS_CPP"
-	export LD="$XBPS_CXX"
-	export AR="ar"
-	export AS="as"
-	export NM="nm"
-	export OBJDUMP="objdump"
-	export STRIP="strip"
-	export RANLIB="ranlib"
-	./configure ${opts}
-}
-
-do_build() {
+	CC="cc" CXX="c++" CPP="cpp" LD="c++" AR="ar" AS="as" NM="nm" \
+	OBJDUMP="objdump" STRIP="strip" RANLIB="ranlib" \
+	CFLAGS="$XBPS_CFLAGS" CXXFLAGS="$XBPS_CXXFLAGS" \
+	CPPFLAGS="$XBPS_CPPFLAGS" LDFLAGS="$XBPS_LDFLAGS" \
+	LFLAGS="$XBPS_LDFLAGS" \
+		./configure ${opts}
 	export LD_LIBRARY_PATH="${wrksrc}/qtbase/lib:${wrksrc}/qttools/lib:${LD_LIBRARY_PATH}"
-	if [ -z "$CROSS_BUILD" ]; then
-		unset CC CXX LD CPP AR AS RANLIB
-		make ${makejobs}
-	else
-		export CC="$XBPS_CC"
-		export CXX="$XBPS_CXX"
-		export CPP="$XBPS_CPP"
-		export LD="$XBPS_CXX"
-		export CFLAGS="$XBPS_CFLAGS"
-		export CXXFLAGS="$XBPS_CXXFLAGS"
-		export CPPFLAGS="$XBPS_CPPFLAGS"
-		export LDFLAGS="$XBPS_LDFLAGS"
-		export AR="ar"
-		export AS="as"
-		export NM="nm"
-		export OBJDUMP="objdump"
-		export RANLIB="ranlib"
-		export STRIP="strip"
-		make ${makejobs}
-	fi
 }
 
 do_install() {
-	local f base
+	local f base dirs
 
 	if [ -z "$CROSS_BUILD" ]; then
 		unset CC CXX LD CPP AR AS RANLIB
@@ -287,53 +267,115 @@ do_install() {
 
 	if [ -n "$CROSS_BUILD" ]; then
 		#
-		# For some reason qmake and some tools are not built for the target.
-		# Do this manually by patching their Makefiles and installing
-		# the targets to ${DESTDIR}/usr/lib/qt5/bin
+		# For some reason qmake and several tools are not built for the target
+		# but only for the host. Build them for the target architecture by
+		# replacing or patching their project files (*.pro) and the resulting
+		# Makefiles and eventually install the targets to ${DESTDIR}/usr/lib/qt5/bin
 		#
 		vmkdir usr/lib/qt5/bin
 
-		echo ">>> Building qmake or target ${CROSS_BUILD} ..."
+		# Make a backup of the host tools
+		for f in qtbase qt3d qtdeclarative qtscxml qttools; do
+			mkdir -p ${wrksrc}/host/${f}
+			cp -ar ${wrksrc}/${f}/bin ${wrksrc}/host/${f}
+		done
+
+		msg_normal "Building qmake for target ${CROSS_BUILD} ...\n"
 		cd qmake
 		sed Makefile \
-			-e "s;^\(CC\\s*\)=.*;\1= $CC;" \
-			-e "s;^\(CXX\\s*\)=.*;\1= $CXX;" \
-			-e "s;^\(QMAKE_CFLAGS\\s*\)=.*;\1= $CFLAGS;" \
-			-e "s;^\(QMAKE_CXXFLAGS\\s*\)=.*;\1= $CXXFLAGS;" \
-			-e "s;^\(QMAKE_LFLAGS\\s*\)=.*;\1= $LDFLAGS;" \
-			-e "s;.(BUILD_PATH)/bin;${DESTDIR}/usr/lib/qt5/bin;" \
+			-e "s;^\(CC\\s*=\).*;\1 $CC;" \
+			-e "s;^\(CXX\\s*=\).*;\1 $CXX;" \
+			-e "s;^\(QMAKE_CFLAGS\\s*=\).*;\1 $CFLAGS;" \
+			-e "s;^\(QMAKE_CXXFLAGS\\s*=\).*;\1 $CXXFLAGS;" \
+			-e "s;^\(QMAKE_LFLAGS\\s*=\).*;\1 $LDFLAGS;" \
+			-e "s;\$(BUILD_PATH)/bin;${DESTDIR}/usr/lib/qt5/bin;" \
 			> Makefile.target
 		make clean
 		make -f Makefile.target ${makejobs}
 
-		mkdir -p ${wrksrc}/tools
-		cd ${wrksrc}/tools
+		# Build various tools for the target
+		dirs+=" qtbase/src/tools/qdbuscpp2xml"
+		dirs+=" qtbase/src/tools/qdbusxml2cpp"
+		dirs+=" qtbase/src/tools/qlalr"
+		dirs+=" qtbase/src/tools/moc"
+		dirs+=" qtbase/src/tools/rcc"
+		dirs+=" qtbase/src/tools/uic"
+		dirs+=" qt3d/tools/qgltf"
+		dirs+=" qtdeclarative/src/qmldevtools"
+		dirs+=" qtdeclarative/tools/qmlimportscanner"
+		dirs+=" qtdeclarative/tools/qmlmin"
+		dirs+=" qtdeclarative/tools/qmllint"
+		dirs+=" qtscxml/tools/qscxmlc"
+		dirs+=" qttools/src/linguist/lconvert"
+		dirs+=" qttools/src/linguist/lrelease"
+		dirs+=" qttools/src/linguist/lupdate"
+		dirs+=" qttools/src/qdoc"
+		mkdir -p ${wrksrc}/target/bin
+		for f in ${dirs}; do
+			cd ${wrksrc}/${f}
+			base=${f##*/}
+			msg_normal "Building ${base} for target ${CROSS_BUILD} ...\n"
+			make clean
 
-		# Create a .qmake.conf file for building the tools
-		echo "load(qt_build_config)" > .qmake.conf
-		echo "CONFIG += warning_clean" >> .qmake.conf
-		echo "QT_SOURCE_TREE = ${wrksrc}/qtbase" >> .qmake.conf
-		echo "QT_BUILD_TREE = ${wrksrc}/tools" >> .qmake.conf
-		echo "MODULE_VERSION = ${version}" >> .qmake.conf
+			if [ -f "${FILESDIR}/${base}.pro" ]; then
+				# A specific *.pro file is available, use it.
+				cp ${FILESDIR}/${base}.pro ${base}.pro
+			else
+				# Otherwise strip the option(host_build)
+				sed -i ${base}.pro -e "/option(host_build)/d"
+			fi
+			# Re-create the Makefile
+			${wrksrc}/qtbase/bin/qmake -o Makefile ${base}.pro
 
-		for f in moc rcc uic qlalr qdbuscpp2xml qdbusxml2cpp; do
-			echo ">>> Building ${f} for target ${CROSS_BUILD} ..."
-			mkdir -p ${wrksrc}/tools/${f}
-			cd ${wrksrc}/tools/${f}
-			cp -pR ${wrksrc}/qtbase/src/tools/${f}/* .
-			cp ${FILESDIR}/${f}/${f}.pro .
-			${wrksrc}/qtbase/bin/qmake -o Makefile ${f}.pro
+			# Now patch the Makefile to not use the bootstrap libs and
+			# use the compilers, linker, flags, etc. for the target arch
 			sed -i Makefile \
-				-e"s;^\(CFLAGS\\s=.*\);\1 $CFLAGS;" \
-				-e"s;^\(CXXFLAGS\\s=.*\);\1 $CXXFLAGS;"
+				-e"s; force_bootstrap;;" \
+				-e"s;^\(CC\\s*=\).*;\1 $CC;" \
+				-e"s;^\(CXX\\s*=\).*;\1 $CXX;" \
+				-e"s;^\(LINK\\s*=\).*;\1 $CXX;" \
+				-e"s;^\(CFLAGS\\s*=.*\);\1 $CFLAGS;" \
+				-e"s;^\(CXXFLAGS\\s*=.*\);\1 $CXXFLAGS;" \
+				-e"s;^\(LFLAGS\\s*=.*\);\1 $LDFLAGS;" \
+				-e"s;^\(AR\\s*=\).*;\1 $AR cqs;" \
+				-e"s;^\(RANLIB\\s*=\).*;\1 $RANLIB;"
+			if [ "${base}" != qmldevtools ]; then
+				# Set target destination and name
+				find . -name Makefile -exec sed -i "{}" \
+					-e"s;^\(DESTDIR\\s*=\).*;\1 ${wrksrc}/target/bin/;" \
+					-e"s;^\(TARGET\\s*=\).*;\1 ${wrksrc}/target/bin/${base};" \
+					\;
+			fi
 			make ${makejobs}
-			# Install the resulting binary
-			vinstall ${wrksrc}/tools/bin/${f} 755 usr/lib/qt5/bin
+			# Install the resulting binary, if any
+			if [ "${base}" != qmldevtools ]; then
+				vinstall ${wrksrc}/target/bin/${base} 755 usr/lib/qt5/bin
+			fi
 		done
+
 		cd ${wrksrc}/qtbase
 
 		# Install the mkspecs
 		vcopy mkspecs usr/lib/qt5
+
+		# Restore backup of the host tools
+		for f in qtbase qt3d qtdeclarative qtscxml qttools; do
+			rm -rf ${wrksrc}/${f}/bin
+			cp -pR ${wrksrc}/host/${f}/bin ${wrksrc}/${f}
+		done
+	else
+		msg_normal ">>> Building qmake for host ${XBPS_ARCH} ...\n"
+		cd qmake
+		sed Makefile \
+			-e "s;^\(CC\\s*\)=.*;\1= gcc;" \
+			-e "s;^\(CXX\\s*\)=.*;\1= g++;" \
+			-e "s;^\(QMAKE_CFLAGS\\s*\)=.*;\1= $CFLAGS;" \
+			-e "s;^\(QMAKE_CXXFLAGS\\s*\)=.*;\1= $CXXFLAGS;" \
+			-e "s;^\(QMAKE_LFLAGS\\s*\)=.*;\1= $LDFLAGS;" \
+			-e "s;\$(BUILD_PATH)/bin;${DESTDIR}/usr/lib/qt5/bin;" \
+			> Makefile.host
+		make clean
+		make -f Makefile.host ${makejobs}
 	fi
 
 	vlicense ${wrksrc}/LGPL_EXCEPTION.txt
@@ -342,7 +384,6 @@ do_install() {
 		base=$(basename $f)
 		ln -sf /usr/lib/qt5/bin/${base} ${PKGDESTDIR}/usr/bin/${base}-qt5
 	done
-	_move_examples
 	_cleanup_wrksrc_leak
 }
 
@@ -447,13 +488,18 @@ qt5-examples_package() {
 	short_desc+=" - Examples"
 	depends="qt5-devel-${version}_${revision} qt5-qmake-${version}_${revision}"
 	pkg_install() {
-		# In case any examples are still left in $DESTDIR
-		if [ -d ${DESTDIR}/usr/share/qt5/examples ]; then
-			vmkdir usr/share/qt5
-			cp -pR ${DESTDIR}/usr/share/qt5/examples \
-				${PKGDESTDIR}/usr/share/qt5
-			rm -rf ${DESTDIR}/usr/share/qt5/examples
-		fi
+		local dir mod base=usr/share/qt5/examples
+		vmkdir ${base}
+		vcopy qtbase/examples/examples.pro ${base}/
+		# Copy examples source
+		for dir in $(find ${wrksrc} -maxdepth 2 -type d -name examples); do
+			mod=${dir%/examples}
+			mod=${mod##*/}
+			vcopy ${dir}/* ${base}/
+			if [ -e "${PKGDESTDIR}/${base}/README" ]; then
+				mv ${PKGDESTDIR}/${base}/README{,.${mod}}
+			fi
+		done
 	}
 }
 
@@ -587,6 +633,21 @@ qt5-serialport_package() {
 	short_desc+=" - Serial port component"
 	pkg_install() {
 		_install_subpkg qtserialport
+	}
+}
+
+qt5-speech-devel_package() {
+	short_desc+=" - Speech component (development)"
+	depends="qt5-speech-${version}_${revision} qt5-devel-${version}_${revision}"
+	pkg_install() {
+		_install_devel qtspeech
+	}
+}
+
+qt5-speech_package() {
+	short_desc+=" - Speech component"
+	pkg_install() {
+		_install_subpkg qtspeech
 	}
 }
 
@@ -728,6 +789,8 @@ qt5-xmlpatterns_package() {
 qt5-translations_package() {
 	short_desc+=" - Translations"
 	pkg_install() {
+		sed -i ${wrksrc}/qttranslations/translations/Makefile \
+			-e "s;qttranslations/translations/\(.*\)_wrapper.sh;host/qttools/bin/\1;g"
 		_install_subpkg qttranslations
 	}
 }
@@ -838,5 +901,9 @@ qt5-qmake_package() {
 		# Change -isystem to -I to avoid "#include_next <stdlib.h>" errors
 		sed -i ${PKGDESTDIR}/usr/lib/qt5/mkspecs/common/gcc-base.conf \
 			-e '/^QMAKE_CFLAGS_ISYSTEM/s;-isystem;-I;'
+		# Remove -specs=/builddir/... from conf files
+		sed -i ${PKGDESTDIR}/usr/lib/qt5/mkspecs/common/*.conf \
+			-e "s;-specs=/void-packages/common/environment/configure/gccspecs/hardened-ld ;;g" \
+			-e "s;-specs=/void-packages/common/environment/configure/gccspecs/hardened-cc1 ;;g"
 	}
 }
