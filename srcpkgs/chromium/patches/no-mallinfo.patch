@@ -1,16 +1,16 @@
---- base/trace_event/malloc_dump_provider.cc.orig	2016-11-16 02:19:56.753320143 +0100
-+++ base/trace_event/malloc_dump_provider.cc	2016-11-16 02:13:58.286196506 +0100
-@@ -224,7 +224,7 @@
-   resident_size = all_heap_info.committed_size;
-   allocated_objects_size = all_heap_info.allocated_size;
-   allocated_objects_count = all_heap_info.block_count;
+--- base/trace_event/malloc_dump_provider.cc.orig
++++ base/trace_event/malloc_dump_provider.cc
+@@ -187,7 +187,7 @@
+   resident_size = main_heap_info.committed_size;
+   allocated_objects_size = main_heap_info.allocated_size;
+   allocated_objects_count = main_heap_info.block_count;
 -#else
 +#elif defined(OS_LINUX) && defined(__GLIBC__)
    struct mallinfo info = mallinfo();
    DCHECK_GE(info.arena + info.hblkhd, info.uordblks);
- 
---- content/child/content_child_helpers.cc.orig	2016-05-08 08:05:37.415219394 +0200
-+++ content/child/content_child_helpers.cc	2016-05-08 08:06:27.110142484 +0200
+
+--- content/child/content_child_helpers.cc.orig
++++ content/child/content_child_helpers.cc
 @@ -24,7 +24,7 @@ namespace content {
  // though, this provides only a partial and misleading value.
  // Unfortunately some telemetry benchmark rely on it and these need to
@@ -20,3 +20,64 @@
  size_t GetMemoryUsageKB() {
    struct mallinfo minfo = mallinfo();
    uint64_t mem_usage =
+--- content/renderer/render_thread_impl.cc.orig
++++ content/renderer/render_thread_impl.cc
+@@ -1712,6 +1712,49 @@
+ }
+
+ }  // namespace
++#elif defined(OS_LINUX) && !defined(__GLIBC__)
++namespace {
++
++static size_t GetMallocUsage() {
++  char *line=NULL;
++  size_t n,usage=0;
++  FILE *f = fopen("/proc/self/maps", "r");
++  char *path, *perm;
++  if (f == NULL) {
++    perror("/proc/self/maps");
++    return 0;
++  }
++  path = (char *)malloc(PATH_MAX+16);
++  if (path == NULL)
++    goto out;
++  perm = path + PATH_MAX;
++
++  while (getline(&line, &n, f) >=0) {
++    size_t start,end,offset,inode;
++    int devmaj, devmin, items;
++
++    items = sscanf(line, "%zx-%zx %s %zx %x:%x %zu %s",
++                   &start, &end, perm, &offset,
++                   &devmaj, &devmin, &inode, path);
++
++    if (items < 7)
++      continue;
++
++    if (items < 8)
++      path[0] = '\0';
++
++    if ((strcmp(perm, "rw-p") == 0 && devmaj+devmin == 0)
++        && (path[0] == '\0' || strcmp(path, "[heap]") == 0))
++      usage += end-start;
++  }
++  free(line);
++  free(path);
++out:
++  fclose(f);
++  return usage;
++}
++
++}  // namespace
+ #endif
+
+ void RenderThreadImpl::GetRendererMemoryMetrics(
+@@ -1722,7 +1765,7 @@
+   memory_metrics->partition_alloc_kb =
+       blink_stats.partitionAllocTotalAllocatedBytes / 1024;
+   memory_metrics->blink_gc_kb = blink_stats.blinkGCTotalAllocatedBytes / 1024;
+-#if defined(OS_LINUX) || defined(OS_ANDROID)
++#if (defined(OS_LINUX) && defined(__GLIBC__)) || defined(OS_ANDROID)
+   struct mallinfo minfo = mallinfo();
+ #if defined(USE_TCMALLOC)
+   size_t malloc_usage = minfo.uordblks;
