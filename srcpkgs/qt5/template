@@ -1,7 +1,7 @@
 # Template file for 'qt5'
 pkgname=qt5
 version=5.8.0
-revision=1
+revision=2
 wrksrc="qt-everywhere-opensource-src-${version}"
 build_style=gnu-configure
 homepage="http://qt.io/"
@@ -14,13 +14,14 @@ checksum=0f4c54386d3dbac0606a936a7145cebb7b94b0ca2d29bc001ea49642984824b6
 if [ "${XBPS_MACHINE%%-musl}" = i686 ]; then
 	nodebug=yes  # prevent OOM
 fi
-hostmakedepends="flex ruby gperf git python perl pkg-config re2c"
+hostmakedepends="flex ruby gperf git python perl pkg-config protobuf re2c"
 makedepends="
  libressl-devel libpng-devel MesaLib-devel libXrender-devel unixodbc-devel
  fontconfig-devel libXi-devel libXv-devel libXinerama-devel libXrandr-devel
  libXcursor-devel libXScrnSaver-devel dbus-devel glib-devel icu-devel
  cups-devel libjpeg-turbo-devel sqlite-devel alsa-lib-devel tiff-devel
- libmng-devel libsrtp-devel snappy-devel minizip-devel
+ libmng-devel libevent-devel ffmpeg-devel jsoncpp-devel 
+ libsrtp-devel protobuf-devel snappy-devel minizip-devel
  libxshmfence-devel libSM-devel xcb-util-keysyms-devel
  xcb-util-image-devel xcb-util-renderutil-devel xcb-util-wm-devel
  libXcomposite-devel libwebp-devel libxkbcommon-devel harfbuzz-devel gtk+-devel
@@ -36,13 +37,13 @@ replaces="qt5-doc<5.6.0 qt5-quick1<5.6.0 qt5-quick1-devel<5.6.0 qt5-webkit<5.6.0
 CFLAGS="-DOPENSSL_NO_SSL3_METHOD"
 CXXFLAGS="-DOPENSSL_NO_SSL3_METHOD -Wno-deprecated-declarations -fno-delete-null-pointer-checks"
 # Required for musl libc
-LDFLAGS="-pthread -fPIE"
+LDFLAGS="-pthread -ldl -fPIE"
 
 case "$XBPS_TARGET_MACHINE" in
 	armv5*) # Cannot cross compile libvpx (?)
+		makedepends+=" libvpx-devel"
 		;;
-	armv6*) # Cannot cross compile libvpx and is currently broken
-		broken="Can't build vp8 for qtwebengine/chromium/ffmpeg)"
+	armv6*) # Cannot cross compile libvpx
 		;;
 	armv7*) # Force use of neon and enable libvpx
 		CXXFLAGS+=" -mfpu=neon"
@@ -195,9 +196,8 @@ pre_configure() {
 		sed -i -e "s|^\(QMAKE_LFLAGS_RELEASE.*\)|\1 ${LDFLAGS}|" \
 			qtbase/mkspecs/common/g++-unix.conf
 	fi
-	case "$XBPS_TARGET_MACHINE" in
-		arm*)
-	esac
+    	sed -i qtwebengine/src/3rdparty/chromium/third_party/ffmpeg/ffmpeg.gyp \
+		-e "s|'use_system_ffmpeg%': 0,|'use_system_ffmpeg%': 1,|"
 }
 
 do_configure() {
@@ -900,12 +900,22 @@ qt5-qmake_package() {
 		vmove usr/lib/qt5/bin/qmake
 		vmove usr/lib/qt5/mkspecs
 		vmove usr/bin/qmake-qt5
+
 		# Change -isystem to -I to avoid "#include_next <stdlib.h>" errors
 		sed -i ${PKGDESTDIR}/usr/lib/qt5/mkspecs/common/gcc-base.conf \
 			-e '/^QMAKE_CFLAGS_ISYSTEM/s;-isystem;-I;'
-		# Remove -specs=/builddir/... from conf files
-		sed -i ${PKGDESTDIR}/usr/lib/qt5/mkspecs/common/*.conf \
-			-e "s;-specs=/void-packages/common/environment/configure/gccspecs/hardened-ld ;;g" \
-			-e "s;-specs=/void-packages/common/environment/configure/gccspecs/hardened-cc1 ;;g"
+
+		# Undo changes to mkspecs/common/gcc-base.conf and g++-unix.conf
+		if [ -n "$CROSS_BUILD" ]; then
+			sed -i -e "s|^\(QMAKE_CFLAGS_RELEASE.*\) ${XBPS_CFLAGS}|\1|" \
+				${PKGDESTDIR}/usr/lib/qt5/mkspecs/common/gcc-base.conf
+			sed -i -e "s|^\(QMAKE_LFLAGS_RELEASE.*\) ${XBPS_LDFLAGS}|\1|" \
+				${PKGDESTDIR}/usr/lib/qt5/mkspecs/common/g++-unix.conf
+		else
+			sed -i -e "s|^\(QMAKE_CFLAGS_RELEASE.*\) ${CFLAGS}|\1|" \
+				${PKGDESTDIR}/usr/lib/qt5/mkspecs/common/gcc-base.conf
+			sed -i -e "s|^\(QMAKE_LFLAGS_RELEASE.*\) ${LDFLAGS}|\1|" \
+				${PKGDESTDIR}/usr/lib/qt5/mkspecs/common/g++-unix.conf
+		fi
 	}
 }
