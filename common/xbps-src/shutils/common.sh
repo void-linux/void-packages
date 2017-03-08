@@ -392,6 +392,7 @@ setup_pkg() {
     export CC_FOR_BUILD="cc"
     export CXX_FOR_BUILD="g++"
     export CPP_FOR_BUILD="cpp"
+    export FCC_FOR_BUILD="gfortran"
     export LD_FOR_BUILD="ld"
     export CFLAGS_FOR_BUILD="$XBPS_CFLAGS"
     export CXXFLAGS_FOR_BUILD="$XBPS_CXXFLAGS"
@@ -403,6 +404,7 @@ setup_pkg() {
         export CC="${XBPS_CROSS_TRIPLET}-gcc"
         export CXX="${XBPS_CROSS_TRIPLET}-c++"
         export CPP="${XBPS_CROSS_TRIPLET}-cpp"
+        export FCC="${XBPS_CROSS_TRIPLET}-gfortran"
         export GCC="$CC"
         export LD="${XBPS_CROSS_TRIPLET}-ld"
         export AR="${XBPS_CROSS_TRIPLET}-ar"
@@ -418,6 +420,7 @@ setup_pkg() {
         export CXX_target="$CXX"
         export CPP_target="$CPP"
         export GCC_target="$GCC"
+        export FCC_target="$FCC"
         export LD_target="$LD"
         export AR_target="$AR"
         export AS_target="$AS"
@@ -437,6 +440,7 @@ setup_pkg() {
         export CXX_host="g++"
         export CPP_host="cpp"
         export GCC_host="$CC_host"
+        export FCC_host="gfortran"
         export LD_host="ld"
         export AR_host="ar"
         export AS_host="as"
@@ -456,6 +460,7 @@ setup_pkg() {
         export CXX="g++"
         export CPP="cpp"
         export GCC="$CC"
+        export FCC="gfortran"
         export LD="ld"
         export AR="ar"
         export AS="as"
@@ -466,10 +471,10 @@ setup_pkg() {
         export NM="nm"
         export READELF="readelf"
         # Unse cross evironment variables
-        unset CC_target CXX_target CPP_target GCC_target LD_target AR_target AS_target
+        unset CC_target CXX_target CPP_target GCC_target FCC_target LD_target AR_target AS_target
         unset RANLIB_target STRIP_target OBJDUMP_target OBJCOPY_target NM_target READELF_target
         unset CFLAGS_target CXXFLAGS_target CPPFLAGS_target LDFLAGS_target
-        unset CC_host CXX_host CPP_host GCC_host LD_host AR_host AS_host
+        unset CC_host CXX_host CPP_host GCC_host FCC_host LD_host AR_host AS_host
         unset RANLIB_host STRIP_host OBJDUMP_host OBJCOPY_host NM_host READELF_host
         unset CFLAGS_host CXXFLAGS_host CPPFLAGS_host LDFLAGS_host
     fi
