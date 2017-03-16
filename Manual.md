@@ -42,7 +42,6 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [Contributing via git](#contributing)
 * [Help](#help)
 
-
 <a id="Introduction"></a>
 ## Introduction
 
@@ -499,12 +498,16 @@ default all binaries are stripped.
 sonames in shared libraries.
 
 - `nocross` If set, cross compilation won't be allowed and will exit immediately.
+This should be set to a string describing why it fails, or a link to a travis
+buildlog demonstrating the failure.
 
 - `subpackages` A white space separated list of subpackages (matching `foo_package()`)
 to override the guessed list. Only use this if a specific order of subpackages is required,
 otherwise the default would work in most cases.
 
 - `broken` If set, building the package won't be allowed because its state is currently broken.
+This should be set to a string describing why it is broken, or a link to a travis
+buildlog demonstrating the failure.
 
 - `shlib_provides` A white space separated list of additional sonames the package provides on.
 This appends to the generated file rather than replacing it.
