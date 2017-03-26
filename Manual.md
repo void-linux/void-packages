@@ -501,6 +501,12 @@ sonames in shared libraries.
 This should be set to a string describing why it fails, or a link to a travis
 buildlog demonstrating the failure.
 
+- `restricted` If set, xbps-src will refuse to build the package unless
+`etc/conf` has `XBPS_ALLOW_RESTRICTED=yes`. The primary builders for Void
+Linux do not have this setting, so the primary repositories will not have any
+restricted package. This is useful for packages where the license forbids
+redistribution.
+
 - `subpackages` A white space separated list of subpackages (matching `foo_package()`)
 to override the guessed list. Only use this if a specific order of subpackages is required,
 otherwise the default would work in most cases.
