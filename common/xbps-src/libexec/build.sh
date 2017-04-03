@@ -32,6 +32,9 @@ readonly SOURCEPKG="$sourcepkg"
 show_pkg_build_options
 check_pkg_arch $XBPS_CROSS_BUILD
 
+if [ -z "$XBPS_CROSS_PREPARE" ]; then
+    prepare_cross_sysroot $XBPS_CROSS_BUILD || exit $?
+fi
 if [ -z "$XBPS_DEPENDENCY" -a -z "$XBPS_TEMP_MASTERDIR" -a -n "$XBPS_KEEP_ALL" -a "$XBPS_CHROOT_CMD" = "proot" ]; then
     remove_pkg_autodeps
 fi
@@ -42,7 +45,6 @@ fi
 
 if [ -z "$XBPS_CROSS_PREPARE" ]; then
     install_cross_pkg $XBPS_CROSS_BUILD || exit $?
-    prepare_cross_sysroot $XBPS_CROSS_BUILD || exit $?
 fi
 
 # Fetch distfiles after installing required dependencies,
