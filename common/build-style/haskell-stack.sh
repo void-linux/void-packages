@@ -17,11 +17,12 @@ do_build() {
 			stack init --force --resolver ${stackage}
 	fi
 
-	STACK_ROOT=$wrksrc/.stack stack ${makejobs} build ${make_build_args}
+	STACK_ROOT=$wrksrc/.stack stack --system-ghc ${makejobs} build \
+		${make_build_args}
 }
 
 do_install() {
 	vmkdir usr/bin
-	STACK_ROOT=$wrksrc/.stack stack install ${make_build_args} \
-		--local-bin-path=${DESTDIR}/usr/bin
+	STACK_ROOT=$wrksrc/.stack stack --system-ghc install \
+	       	${make_build_args} --local-bin-path=${DESTDIR}/usr/bin
 }
