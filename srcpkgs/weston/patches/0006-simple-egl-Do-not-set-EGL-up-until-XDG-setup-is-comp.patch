@@ -1,0 +1,168 @@
+From c876b463f62b18da2446ad097d0bdad63d34363d Mon Sep 17 00:00:00 2001
+From: "Miguel A. Vico" <mvicomoya@nvidia.com>
+Date: Mon, 27 Feb 2017 15:31:35 -0800
+Subject: [PATCH 6/7] simple-egl: Do not set EGL up until XDG setup is complete
+X-NVConfidentiality: public
+
+There is nothing that prohibits the underlying EGL_PLATFORM_WAYLAND
+implementation to attach a buffer or commit surfaces right after the
+Wayland EGLSurface has been created.
+
+Since XDG Shell v6 imposes that no buffer attachments or surface commits
+must be done before a configure is complete, Wayland clients shouldn't
+start setting EGL up until XDG setup is complete.
+
+Related bug:
+
+    https://bugs.freedesktop.org/show_bug.cgi?id=98731
+
+Signed-off-by: Miguel A Vico Moya <mvicomoya@nvidia.com>
+---
+ clients/simple-egl.c | 67 +++++++++++++++++++++++++++-------------------------
+ 1 file changed, 35 insertions(+), 32 deletions(-)
+
+diff --git a/clients/simple-egl.c b/clients/simple-egl.c
+index 9b6fa1f2..59311cfc 100644
+--- clients/simple-egl.c
++++ clients/simple-egl.c
+@@ -221,11 +221,32 @@ init_egl(struct display *display, struct window *window)
+ 	if (display->swap_buffers_with_damage)
+ 		printf("has EGL_EXT_buffer_age and %s\n", swap_damage_ext_to_entrypoint[i].extension);
+ 
++	window->egl_surface =
++		weston_platform_create_egl_surface(display->egl.dpy,
++						   display->egl.conf,
++						   window->native, NULL);
++
++	ret = eglMakeCurrent(window->display->egl.dpy, window->egl_surface,
++			     window->egl_surface, window->display->egl.ctx);
++	assert(ret == EGL_TRUE);
++
++	if (!window->frame_sync)
++		eglSwapInterval(display->egl.dpy, 0);
++
+ }
+ 
+ static void
+-fini_egl(struct display *display)
++fini_egl(struct display *display, struct window *window)
+ {
++	/* Required, otherwise segfault in egl_dri2.c: dri2_make_current()
++	 * on eglReleaseThread(). */
++	eglMakeCurrent(window->display->egl.dpy, EGL_NO_SURFACE, EGL_NO_SURFACE,
++		       EGL_NO_CONTEXT);
++
++	weston_platform_destroy_egl_surface(window->display->egl.dpy,
++					    window->egl_surface);
++	wl_egl_window_destroy(window->native);
++
+ 	eglTerminate(display->egl.dpy);
+ 	eglReleaseThread();
+ }
+@@ -360,7 +381,8 @@ handle_ivi_surface_configure(void *data, struct ivi_surface *ivi_surface,
+ {
+ 	struct window *window = data;
+ 
+-	wl_egl_window_resize(window->native, width, height, 0, 0);
++	if (window->native)
++		wl_egl_window_resize(window->native, width, height, 0, 0);
+ 
+ 	window->geometry.width = width;
+ 	window->geometry.height = height;
+@@ -413,7 +435,6 @@ static void
+ create_surface(struct window *window)
+ {
+ 	struct display *display = window->display;
+-	EGLBoolean ret;
+ 
+ 	window->surface = wl_compositor_create_surface(display->compositor);
+ 
+@@ -421,10 +442,6 @@ create_surface(struct window *window)
+ 		wl_egl_window_create(window->surface,
+ 				     window->geometry.width,
+ 				     window->geometry.height);
+-	window->egl_surface =
+-		weston_platform_create_egl_surface(display->egl.dpy,
+-						   display->egl.conf,
+-						   window->native, NULL);
+ 
+ 
+ 	if (display->shell) {
+@@ -435,13 +452,6 @@ create_surface(struct window *window)
+ 		assert(0);
+ 	}
+ 
+-	ret = eglMakeCurrent(window->display->egl.dpy, window->egl_surface,
+-			     window->egl_surface, window->display->egl.ctx);
+-	assert(ret == EGL_TRUE);
+-
+-	if (!window->frame_sync)
+-		eglSwapInterval(display->egl.dpy, 0);
+-
+ 	if (!display->shell)
+ 		return;
+ 
+@@ -452,15 +462,6 @@ create_surface(struct window *window)
+ static void
+ destroy_surface(struct window *window)
+ {
+-	/* Required, otherwise segfault in egl_dri2.c: dri2_make_current()
+-	 * on eglReleaseThread(). */
+-	eglMakeCurrent(window->display->egl.dpy, EGL_NO_SURFACE, EGL_NO_SURFACE,
+-		       EGL_NO_CONTEXT);
+-
+-	weston_platform_destroy_egl_surface(window->display->egl.dpy,
+-					    window->egl_surface);
+-	wl_egl_window_destroy(window->native);
+-
+ 	if (window->xdg_toplevel)
+ 		zxdg_toplevel_v6_destroy(window->xdg_toplevel);
+ 	if (window->xdg_surface)
+@@ -895,9 +896,7 @@ main(int argc, char **argv)
+ 
+ 	wl_display_roundtrip(display.display);
+ 
+-	init_egl(&display, &window);
+ 	create_surface(&window);
+-	init_gl(&window);
+ 
+ 	display.cursor_surface =
+ 		wl_compositor_create_surface(display.compositor);
+@@ -907,23 +906,27 @@ main(int argc, char **argv)
+ 	sigint.sa_flags = SA_RESETHAND;
+ 	sigaction(SIGINT, &sigint, NULL);
+ 
++	/* We must assure XDG setup is complete before setting EGL up */
++	while (running && window.wait_for_configure) {
++		wl_display_dispatch(display.display);
++	}
++
++	init_egl(&display, &window);
++	init_gl(&window);
++
+ 	/* The mainloop here is a little subtle.  Redrawing will cause
+ 	 * EGL to read events so we can just call
+ 	 * wl_display_dispatch_pending() to handle any events that got
+ 	 * queued up as a side effect. */
+ 	while (running && ret != -1) {
+-		if (window.wait_for_configure) {
+-			wl_display_dispatch(display.display);
+-		} else {
+-			wl_display_dispatch_pending(display.display);
+-			redraw(&window, NULL, 0);
+-		}
++		wl_display_dispatch_pending(display.display);
++		redraw(&window, NULL, 0);
+ 	}
+ 
+ 	fprintf(stderr, "simple-egl exiting\n");
+ 
++	fini_egl(&display, &window);
+ 	destroy_surface(&window);
+-	fini_egl(&display);
+ 
+ 	wl_surface_destroy(display.cursor_surface);
+ 	if (display.cursor_theme)
+-- 
+2.11.1
+

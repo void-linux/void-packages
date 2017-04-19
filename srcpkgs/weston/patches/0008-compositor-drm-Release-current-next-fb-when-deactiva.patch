@@ -1,0 +1,53 @@
+From 812868a91f8c9c42167bf3bf2c66f6ec1f049c41 Mon Sep 17 00:00:00 2001
+From: "Miguel A. Vico" <mvicomoya@nvidia.com>
+Date: Tue, 4 Apr 2017 14:39:47 -0700
+Subject: [PATCH] compositor-drm: Release current & next fb when deactivating
+ the session
+X-NVConfidentiality: public
+
+With
+
+     commit 47224cc9312fef05c1a523ea0da0a1aae66f100d
+     Author: Daniel Stone <daniels@collabora.com>
+     Date:   Sat Nov 5 08:04:07 2016 +0000
+
+         compositor-drm: Delete drm_backend_set_modes
+
+we stopped forcing a modeset when restoring the session. The motivation
+was that we would use a stale fb, so better to let the next repaint
+handle it.
+
+However, if drm_output::current != NULL, we won't issue a modeset upon
+repaint.
+
+This change releases both drm_output::current and drm_output::next when
+deactivating the current session. This ensures the very first repaint
+after restoring the session will issue a modeset.
+
+Signed-off-by: Miguel A Vico Moya <mvicomoya@nvidia.com>
+---
+ libweston/compositor-drm.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/libweston/compositor-drm.c b/libweston/compositor-drm.c
+index 0236d196..7283d0ff 100644
+--- libweston/compositor-drm.c
++++ libweston/compositor-drm.c
+@@ -3058,6 +3058,14 @@ session_notify(struct wl_listener *listener, void *data)
+ 		wl_list_for_each(output, &compositor->output_list, base.link) {
+ 			output->base.repaint_needed = 0;
+ 			drmModeSetCursor(b->drm.fd, output->crtc_id, 0, 0, 0);
++			if (output->current != NULL) {
++				drm_output_release_fb(output, output->current);
++				output->current = NULL;
++			}
++			if (output->next != NULL) {
++				drm_output_release_fb(output, output->next);
++				output->next = NULL;
++			}
+ 		}
+ 
+ 		output = container_of(compositor->output_list.next,
+-- 
+2.12.1
+
