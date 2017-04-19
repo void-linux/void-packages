@@ -1,0 +1,112 @@
+# Template file for 'llvm3.9'
+# Only a transitional package until Rust works with LLVM 4.0.
+pkgname=llvm3.9
+version=3.9.1
+revision=2
+wrksrc="llvm-${version}.src"
+lib32disabled=yes
+build_style=cmake
+configure_args="
+ -Wno-dev
+ -DCMAKE_BUILD_TYPE=Release
+ -DLLVM_BUILD_LLVM_DYLIB=ON
+ -DLLVM_LINK_LLVM_DYLIB=OFF
+ -DLLVM_DYLIB_EXPORT_ALL=ON
+ -DLLVM_ENABLE_RTTI=ON
+ -DLLVM_ENABLE_FFI=ON
+ -DLLVM_BUILD_TESTS=OFF
+ -DLLVM_BINUTILS_INCDIR=/usr/include
+ -DCMAKE_INSTALL_DO_STRIP=0"
+nodebug=yes  # while -DLLVM_LINK_LLVM_DYLIB=OFF
+short_desc="Low Level Virtual Machine (3.9.x series)"
+maintainer="Leah Neukirchen <leah@vuxu.org>"
+homepage="http://www.llvm.org"
+license="BSD"
+distfiles="http://www.llvm.org/releases/${version}/llvm-${version}.src.tar.xz"
+checksum=1fd90354b9cf19232e8f168faf2220e79be555df3aa743242700879e8fd329ee
+
+# XXX Investigate ocaml bindings.
+hostmakedepends="groff perl python zlib-devel libffi-devel swig"
+makedepends="python-devel zlib-devel libffi-devel libedit-devel libxml2-devel binutils-devel"
+depends="libllvm3.9"
+conflicts="llvm>=0"
+
+subpackages="libllvm3.9"
+
+post_extract() {
+	# patches
+	cd ${XBPS_BUILDDIR}/llvm-${version}.src
+	for i in ${FILESDIR}/patches/llvm/llvm-*.patch; do
+		msg_normal "Applying $i to llvm\n"
+		patch -sNp1 -i ${i}
+	done
+
+	# https://bugs.freedesktop.org/show_bug.cgi?id=99078
+	patch -RsNp1 -i ${FILESDIR}/patches/llvm/reverse-llvm-AMDGPU-Fix-an-interaction-between-WQM-and-polygon-stippling.patch
+
+	# Move compiler-rt files into the llvm source.
+	if [ -d ${XBPS_BUILDDIR}/compiler-rt-${version}.src ]; then
+		mv ${XBPS_BUILDDIR}/compiler-rt-${version}.src ${wrksrc}/projects/compiler-rt
+	fi
+}
+
+pre_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		msg_normal "Building host tblgen\n"
+		mkdir -p build/HOST
+		cd build/HOST
+		CC="$BUILD_CC" CXX="$BUILD_CXX" CFLAGS="$BUILD_CFLAGS" \
+			CXXFLAGS="$BUILD_CXXFLAGS" LDFLAGS="$BUILD_LDFLAGS" \
+			cmake ../.. -DCMAKE_BUILD_TYPE=Release
+		make ${makejobs} -C utils/TableGen
+		make ${makejobs} -C tools/clang/utils/TableGen
+		configure_args+=" -DLLVM_TABLEGEN=${wrksrc}/build/HOST/bin/llvm-tblgen"
+		configure_args+=" -DCLANG_TABLEGEN=${wrksrc}/build/HOST/bin/clang-tblgen"
+		cd ../..
+	fi
+
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) _arch="X86";;
+		x86_64*) _arch="X86";;
+		arm*) _arch="ARM";;
+		aarch64*) _arch="AArch64";;
+		mips*) _arch="Mips";;
+	esac
+	configure_args+=" -DLLVM_TARGET_ARCH=${_arch}"
+	configure_args+=" -DLLVM_DEFAULT_TARGET_TRIPLE=${XBPS_CROSS_TRIPLET:-$XBPS_TRIPLET}"
+}
+post_configure() {
+	# Don't leak CFLAGS into llvm-config.
+        sed -i -e "s|\(-specs=.*hardened-ld\)||g" -e "s|\(-specs=.*hardened-cc1\)||g" tools/llvm-config/BuildVariables.inc
+}
+
+do_install() {
+	vlicense LICENSE.TXT
+
+	cd build
+	cmake -DCMAKE_INSTALL_PREFIX=${DESTDIR}/usr -P cmake_install.cmake
+
+	# Fix permissions of static libs
+	chmod -x ${DESTDIR}/usr/lib/*.a
+
+	# Required for multilib.
+	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		for _header in llvm-config; do
+			mv ${DESTDIR}/usr/include/llvm/Config/${_header}{,-64}.h
+			vinstall ${FILESDIR}/llvm-Config-${_header}.h 644 \
+				usr/include/llvm/Config ${_header}.h
+		done
+	fi
+
+	# Remove llvm-config-host in cross builds.
+	if [ "$CROSS_BUILD" ]; then
+		rm -f ${DESTDIR}/usr/bin/llvm-config-host
+	fi
+}
+
+libllvm3.9_package() {
+	short_desc+=" - runtime library"
+	pkg_install() {
+		vmove "usr/lib/libLLVM-*.so*"
+	}
+}
