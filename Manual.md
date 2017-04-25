@@ -645,7 +645,10 @@ arguments can be passed in via `configure_args`.
 - `gnu-makefile` For packages that use GNU make, build arguments can be passed in via
 `make_build_args` and install arguments via `make_install_args`. The build
 target can be overridden via `make_build_target` and the install target
-via `make_install_target`.
+via `make_install_target`. This build style tries to compensate for makefiles
+that do not respect environment variables, so well written makefiles, those
+that do such things as append (`+=`) to variables, should have `make_use_env`
+set in the body of the template.
 
 - `go` For programs written in Go that follow the standard package
   structure. The variable `go_import_path` must be set to the package's

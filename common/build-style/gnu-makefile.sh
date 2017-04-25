@@ -4,11 +4,15 @@
 do_build() {
 	: ${make_cmd:=make}
 
-	${make_cmd} \
-		CC="$CC" CXX="$CXX" LD="$LD" AR="$AR" RANLIB="$RANLIB" \
-		CPP="$CPP" AS="$AS" OBJDUMP="$OBJDUMP" CFLAGS="$CFLAGS" \
-		LDFLAGS="$LDFLAGS" \
-		${makejobs} ${make_build_args} ${make_build_target}
+	if [ -z "$make_use_env" ]; then
+		${make_cmd} \
+			CC="$CC" CXX="$CXX" LD="$LD" AR="$AR" RANLIB="$RANLIB" \
+			CPP="$CPP" AS="$AS" OBJDUMP="$OBJDUMP" \
+			CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
+			${makejobs} ${make_build_args} ${make_build_target}
+	else
+		${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
+	fi
 }
 
 do_install() {
