@@ -53,13 +53,17 @@ The `template files` are `GNU bash` shell scripts that must define some required
 `variables` and `functions` that are processed by `xbps-src` (the package builder)
 to generate the resulting binary packages.
 
+By convention, all templates start with a comment briefly explaining what they
+are. In addition, pkgname and version can't have any characters in them that
+would require them to be quoted, so they are not quoted.
+
 A simple `template` example is as follows:
 
 ```
 # Template file for 'foo'
 
-pkgname="foo"
-version="1.0"
+pkgname=foo
+version=1.0
 revision=1
 build_style=gnu-configure
 short_desc="A short description max 72 chars"
