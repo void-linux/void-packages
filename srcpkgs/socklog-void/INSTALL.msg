@@ -8,6 +8,6 @@ Logs reside in /var/log/socklog/*, use svlogtail for simple access.
 
 To access logs as ordinary user, add yourself to group socklog:
 
-    # sudo usermod -a -G socklog <user>
+    $ sudo usermod -a -G socklog $USER
 
 and then re-login to make it effective.

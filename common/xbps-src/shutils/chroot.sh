@@ -1,5 +1,7 @@
 # vim: set ts=4 sw=4 et:
 
+# FIXME: $XBPS_FFLAGS is not set when chroot_init() is run
+# It is set in common/build-profiles/bootstrap.sh but lost somewhere?
 chroot_init() {
     XBPSSRC_CF=$XBPS_MASTERDIR/etc/xbps/xbps-src.conf
 
@@ -15,6 +17,7 @@ _EOF
 XBPS_MASTERDIR=/
 XBPS_CFLAGS="$XBPS_CFLAGS"
 XBPS_CXXFLAGS="$XBPS_CXXFLAGS"
+XBPS_FFLAGS="-fPIC -pipe"
 XBPS_CPPFLAGS="$XBPS_CPPFLAGS"
 XBPS_LDFLAGS="$XBPS_LDFLAGS"
 XBPS_HOSTDIR=/host

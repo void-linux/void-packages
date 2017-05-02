@@ -42,7 +42,6 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [Contributing via git](#contributing)
 * [Help](#help)
 
-
 <a id="Introduction"></a>
 ## Introduction
 
@@ -54,13 +53,17 @@ The `template files` are `GNU bash` shell scripts that must define some required
 `variables` and `functions` that are processed by `xbps-src` (the package builder)
 to generate the resulting binary packages.
 
+By convention, all templates start with a comment briefly explaining what they
+are. In addition, pkgname and version can't have any characters in them that
+would require them to be quoted, so they are not quoted.
+
 A simple `template` example is as follows:
 
 ```
 # Template file for 'foo'
 
-pkgname="foo"
-version="1.0"
+pkgname=foo
+version=1.0
 revision=1
 build_style=gnu-configure
 short_desc="A short description max 72 chars"
@@ -505,12 +508,22 @@ default all binaries are stripped.
 sonames in shared libraries.
 
 - `nocross` If set, cross compilation won't be allowed and will exit immediately.
+This should be set to a string describing why it fails, or a link to a travis
+buildlog demonstrating the failure.
+
+- `restricted` If set, xbps-src will refuse to build the package unless
+`etc/conf` has `XBPS_ALLOW_RESTRICTED=yes`. The primary builders for Void
+Linux do not have this setting, so the primary repositories will not have any
+restricted package. This is useful for packages where the license forbids
+redistribution.
 
 - `subpackages` A white space separated list of subpackages (matching `foo_package()`)
 to override the guessed list. Only use this if a specific order of subpackages is required,
 otherwise the default would work in most cases.
 
 - `broken` If set, building the package won't be allowed because its state is currently broken.
+This should be set to a string describing why it is broken, or a link to a travis
+buildlog demonstrating the failure.
 
 - `shlib_provides` A white space separated list of additional sonames the package provides on.
 This appends to the generated file rather than replacing it.
@@ -642,7 +655,10 @@ arguments can be passed in via `configure_args`.
 - `gnu-makefile` For packages that use GNU make, build arguments can be passed in via
 `make_build_args` and install arguments via `make_install_args`. The build
 target can be overridden via `make_build_target` and the install target
-via `make_install_target`.
+via `make_install_target`. This build style tries to compensate for makefiles
+that do not respect environment variables, so well written makefiles, those
+that do such things as append (`+=`) to variables, should have `make_use_env`
+set in the body of the template.
 
 - `go` For programs written in Go that follow the standard package
   structure. The variable `go_import_path` must be set to the package's

@@ -1,166 +1,92 @@
 # Template build file for 'icecat'.
 pkgname=icecat
-version=45.7.0
+version=52.0.2
 revision=1
 short_desc="GNU version of the Firefox browser"
 maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
 homepage="https://www.gnu.org/software/${pkgname}/"
 license="MPL-1.1, GPL-2, LGPL-2.1"
 distfiles="${GNU_SITE}/${pkgname}/${version}/${pkgname}-${version}-gnu1.tar.bz2"
-checksum=635b2d458b22221dcaff4463ce3ed2983e6fc4981c09170899fd63ea231dc7d6
+checksum=8901a4ab7f2b87d5516c77cbdec6d276cdde64421725d4ed613c1b4f805a4a2b
 
+only_for_archs="i686 i686-musl x86_64 x86_64-musl"
 nopie=yes
 lib32disabled=yes
 
-hostmakedepends="unzip zip pkg-config perl python yasm"
-makedepends="nss-devel libjpeg-turbo-devel icu-devel
- pixman-devel sqlite-devel gst-plugins-base1-devel gtk+-devel
- libevent-devel libnotify-devel libvpx-devel libXrender-devel
- startup-notification-devel dbus-glib-devel alsa-lib-devel pulseaudio-devel
- hunspell-devel libXcomposite-devel libSM-devel libXScrnSaver-devel
- libXt-devel libXdamage-devel"
-depends="desktop-file-utils hicolor-icon-theme"
+hostmakedepends="autoconf213 unzip zip pkg-config perl python yasm"
+makedepends="
+ nss-devel libjpeg-turbo-devel gtk+-devel icu-devel pixman-devel
+ sqlite-devel libevent-devel libnotify-devel libvpx-devel libXrender-devel
+  hunspell-devel libXcomposite-devel libSM-devel libXt-devel libXdamage-devel
+ $(vopt_if alsa alsa-lib-devel) $(vopt_if dbus dbus-glib-devel)
+ $(vopt_if gtk3 gtk+3-devel) $(vopt_if pulseaudio pulseaudio-devel)
+ $(vopt_if startup_notification startup-notification-devel)
+ $(vopt_if xscreensaver libXScrnSaver-devel)"
+depends="nss>=3.27 desktop-file-utils hicolor-icon-theme"
 
-nocross="https://build.voidlinux.eu/builders/armv7l_builder/builds/29602/steps/shell_3/logs/stdio"
+build_options="alsa dbus gtk3 pulseaudio startup_notification xscreensaver"
+build_options_default="alsa dbus gtk3 pulseaudio startup_notification xscreensaver"
 
-# Make config/system_wrappers/alsa/alsalib.h and pulse/pulse.h find
-# the required includes
-CFLAGS+="\
-	-I${XBPS_CROSS_BASE}/usr/include/alsa \
-	-I${XBPS_CROSS_BASE}/usr/include/pulse \
-	-I${XBPS_CROSS_BASE}/usr/include/nspr \
-	-I${XBPS_CROSS_BASE}/usr/include/nss"
-CXXFLAGS="${CFLAGS}"
+desc_option_gtk3="Build the GTK+3 toolkit UI"
 
-if [ ${XBPS_GCC_VERSION_MAJOR} -gt 5 ]; then
-	# Append CFLAGS and CXXFLAGS to set work around code which gcc6 would
-	# otherwise regard as out-of-specification and allow it to produce a
-	# working program.
-	CFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
-	CXXFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
-fi
+# CFLAGS and CXXFLAGS to set work around code which gcc6 would
+# otherwise regard as out-of-specification and allow it to produce a
+# working program.
+CFLAGS="-fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
+CXXFLAGS="-fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
 
-if [ -n "$CROSS_BUILD" ]; then
-	# Void's system-sqlite is compiled with SQLITE_ENABLE_DBSTAT_VTAB,
-	# but the test fails when cross compiling
-	export ac_cv_sqlite_dbstat_vtab=yes
-fi
-
-pre_configure() {
+post_extract() {
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
-		$XBPS_FETCH_CMD http://git.alpinelinux.org/cgit/aports/plain/community/firefox-esr/stab.h
-		mv stab.h toolkit/crashreporter/google-breakpad/src/
+		# fix musl rust triplet
+		sed -i "s/\(x86_64-unknown-linux\)-gnu/\1-musl/" build/moz.configure/rust.configure
+		cp "${FILESDIR}/stab.h" toolkit/crashreporter/google-breakpad/src/
+		;;
+	esac
+	# Google API key (see http://www.chromium.org/developers/how-tos/api-keys)
+	# Note: This is for Void Linux use ONLY.
+	echo -n "AIzaSyCIFdBA7eQP43R6kXRwTq7j6Mvj1ITze90" > google-api-key
+}
+do_build() {
+	cp ${FILESDIR}/mozconfig .mozconfig
+
+	case "$XBPS_TARGET_MACHINE" in
+	*-musl)
+		echo "ac_cv_header_execinfo_h=no" >> .mozconfig
+		echo "ac_add_options --disable-jemalloc" >> .mozconfig
+		echo "ac_add_options --enable-gold=no" >> .mozconfig
 		;;
 	esac
 
-	# configure script misdetects the preprocessor without an optimization level
-	sed -i '/ac_cpp=/s/$CPPFLAGS/& -O2/' configure
-
-	# Google API key (see http://www.chromium.org/developers/how-tos/api-keys)
-	# Note: This is for Void Linux use ONLY.
-	_google_api_key="AIzaSyCIFdBA7eQP43R6kXRwTq7j6Mvj1ITze90"
-	echo -n "$_google_api_key" > google-api-key
-	[ ! -d xbps-build ] && mkdir -p xbps-build
-}
-do_configure() {
-	local _args
-	if [ "$CROSS_BUILD" ]; then
-		export HOST_CFLAGS="${XBPS_CFLAGS}"
-		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
-
-		cross_args+=" --target=$XBPS_CROSS_TRIPLET"
-		export ac_cv_sqlite_secure_delete=yes
-		export ac_cv_sqlite_threadsafe=yes
-		export ac_cv_sqlite_enable_fts3=yes
-		export ac_cv_sqlite_enable_unlock_notify=yes
-		# Fix wrong assignment of (modified) $HOST_CXXFLAGS in js/src/configure
-		sed -i js/src/configure \
-			-e "s;CFLAGS=\"\$HOST_CXXFLAGS\";CFLAGS=\"${XBPS_CXXFLAGS}\";"
-	fi
-	case "$XBPS_TARGET_MACHINE" in
-		*-musl) export ac_cv_header_execinfo_h=no; _args="--disable-gold";;
-		*) _args="--enable-gold";;
-	esac
-
-	export ac_cv_sqlite_secure_delete=yes
-	export ac_cv_sqlite_threadsafe=yes
-	export ac_cv_sqlite_enable_fts3=yes
-	export ac_cv_sqlite_enable_unlock_notify=yes
-	export ac_cv_prog_hostcxx_works=1
+	# echo "ac_cv_sqlite_threadsafe=yes" >> .mozconfig
+	# echo "ac_cv_sqlite_enable_fts3=yes" >> .mozconfig
+	# echo "ac_cv_sqlite_enable_unlock_notify=yes" >> .mozconfig
+	# echo "ac_cv_prog_hostcxx_works=1" >> .mozconfig
 
 	mkdir -p /usr/lib/icecat
 	export LDFLAGS+=" -Wl,-rpath=/usr/lib/icecat"
 
-	# Patch to use /usr/lib/icecat instead of /usr/lib/icecat-${version}
-	sed -i config/baseconfig.mk \
- 		-e 's;$(libdir)/$(MOZ_APP_NAME)-$(MOZ_APP_VERSION);$(libdir)/$(MOZ_APP_NAME);g' \
-		-e 's;$(libdir)/$(MOZ_APP_NAME)-devel-$(MOZ_APP_VERSION);$(libdir)/$(MOZ_APP_NAME)-devel;g'
+	if [ -n "$SOURCE_DATE_EPOCH" ]; then
+		export MOZ_BUILD_DATE=$(date --date "@$SOURCE_DATE_EPOCH" "+%Y%m%d%H%M%S")
+	fi
 
-	cd xbps-build
-	SHELL=/bin/bash ../configure \
-		--prefix=/usr \
-		--libdir=/usr/lib \
-		--with-system-nspr \
-		--with-system-nss \
-		--with-system-jpeg \
-		--with-system-zlib \
-		--with-system-bz2  \
-		--without-system-png \
-		--with-system-libevent \
-		--with-system-libvpx \
-		--with-system-icu \
-		--enable-system-hunspell \
-		--enable-system-sqlite \
-		--enable-system-ffi \
-		--enable-system-cairo  \
-		--enable-system-pixman \
-		--enable-startup-notification \
-		--enable-pulseaudio \
-		--enable-gstreamer=1.0 \
-		--disable-gio \
-		--with-pthreads \
-		--enable-official-branding \
-		--enable-safe-browsing \
-		--enable-url-classifier \
-		--disable-crashreporter \
-		--disable-skia \
-		--disable-debug \
-		--disable-gnomevfs \
-		--disable-gconf \
-		--disable-pie \
-		--disable-profiling \
-		--disable-profilelocking \
-		--disable-installer \
-		--disable-updater \
-		--disable-xprint \
-		--disable-tests \
-		--disable-mochitest \
-		--disable-installer \
-		--disable-static \
-		--disable-jemalloc \
-		--disable-elf-hack \
-		--disable-strip \
-		--disable-install-strip \
-		--disable-cpp-exceptions \
-		--disable-javaxpcom \
-		--with-nspr-prefix="${XBPS_CROSS_BASE}/usr" \
-		--with-nss-prefix="${XBPS_CROSS_BASE}/usr" \
-		--with-google-api-keyfile="${wrksrc}/google-api-key" \
-		--enable-optimize="$CFLAGS" \
-		${_args} ${cross_args}
-}
-do_build() {
-	cd xbps-build
-	SHELL=/bin/bash make ${makejobs}
+        cat >>.mozconfig <<EOF
+ac_add_options --with-google-api-keyfile="${wrksrc}/google-api-key"
+ac_add_options --enable-default-toolkit=cairo-gtk$(vopt_if gtk3 '3' '2')
+ac_add_options $(vopt_enable alsa)
+ac_add_options $(vopt_enable dbus)
+ac_add_options $(vopt_enable dbus necko-wifi)
+ac_add_options $(vopt_enable pulseaudio)
+ac_add_options $(vopt_enable rust)
+ac_add_options $(vopt_enable startup_notification startup-notification)
+EOF
+
+	export MOZ_MAKE_FLAGS="${makejobs}"
+	make -f client.mk build
+
 }
 do_install() {
-	cd xbps-build
-	make DESTDIR=${DESTDIR} install
-
-	# Fix permissions (-rw------- to -rw-r--r--)
-	find ${DESTDIR}/usr/lib/icecat -type f -perm 0600 \
-		-exec chmod 0644 "{}" \;
+	make -f client.mk DESTDIR="${DESTDIR}" install
 
 	vinstall ${FILESDIR}/vendor.js 644 usr/lib/icecat/defaults/pref
 	vinstall ${FILESDIR}/icecat.desktop 644 usr/share/applications

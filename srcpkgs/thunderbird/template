@@ -1,137 +1,120 @@
 # Template build file for 'thunderbird'.
 pkgname=thunderbird
-version=45.7.1
+version=52.1.0
 revision=1
 short_desc="Standalone Mail/News reader"
 maintainer="Enno Boland <gottox@voidlinux.eu>"
 homepage="http://www.mozilla.org/thunderbird/"
 license="MPL-2.0, GPL-2, LGPL-2.1"
 distfiles="${MOZILLA_SITE}/${pkgname}/releases/${version}/source/${pkgname}-${version}.source.tar.xz"
-checksum=5fc7a39c6a1baacfa37d6a52c9384f70c171dd0bb581576d370bdb29c84b9ffb
+checksum=c33ca35b6acd1a0dc0d0f4b1df16745a33144c5d3d3715fe05454a5e9eefd48b
 
+only_for_archs="i686 i686-musl x86_64 x86_64-musl"
 nopie=yes
 lib32disabled=yes
-only_for_archs="i686 i686-musl x86_64 x86_64-musl"
 
-hostmakedepends="unzip zip pkg-config perl python yasm autoconf"
+hostmakedepends="autoconf213 unzip zip pkg-config perl python yasm
+ $(vopt_if rust 'rust cargo')"
 makedepends="
  nss-devel libjpeg-turbo-devel gtk+-devel icu-devel pixman-devel
- sqlite-devel pulseaudio-devel libevent-devel libnotify-devel
- libvpx-devel libXrender-devel startup-notification-devel
- dbus-glib-devel alsa-lib-devel hunspell-devel libXcomposite-devel
- libSM-devel libXScrnSaver-devel libXt-devel libXdamage-devel"
-depends="desktop-file-utils hicolor-icon-theme"
+ sqlite-devel libevent-devel libnotify-devel libvpx-devel libXrender-devel
+  hunspell-devel libXcomposite-devel libSM-devel libXt-devel libXdamage-devel
+ $(vopt_if alsa alsa-lib-devel) $(vopt_if dbus dbus-glib-devel)
+ $(vopt_if gtk3 gtk+3-devel) $(vopt_if pulseaudio pulseaudio-devel)
+ $(vopt_if startup_notification startup-notification-devel)
+ $(vopt_if xscreensaver libXScrnSaver-devel)"
+depends="nss>=3.27 desktop-file-utils hicolor-icon-theme"
 
-if [ "${XBPS_GCC_VERSION_MAJOR}" -gt 5 ]; then
-        # Append CFLAGS and CXXFLAGS to set work around code which gcc6 would
-        # otherwise regard as out-of-specification and allow it to produce a
-        # working program.
-        CFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
-        CXXFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
-fi
+build_options="alsa dbus gtk3 rust pulseaudio startup_notification xscreensaver"
+build_options_default="alsa dbus gtk3 pulseaudio startup_notification xscreensaver"
 
-pre_configure() {
+desc_option_gtk3="Build the GTK+3 toolkit UI"
+desc_option_rust="Build rust components"
+
+case "$XBPS_TARGET_MACHINE" in
+	x86_64*) build_options_default+=" rust" ;;
+esac
+
+post_extract() {
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
-		# http://git.alpinelinux.org/cgit/aports/plain/community/firefox-esr/stab.h
-		cp $FILESDIR/stab.h mozilla/toolkit/crashreporter/google-breakpad/src/
+		# fix musl rust triplet
+		sed -i "s/\(x86_64-unknown-linux\)-gnu/\1-musl/" mozilla/build/moz.configure/rust.configure
+		cp "${FILESDIR}/stab.h" mozilla/toolkit/crashreporter/google-breakpad/src/
 		;;
 	esac
 
-	# configure script misdetects the preprocessor without an optimization level
-	sed -i '/ac_cpp=/s/$CPPFLAGS/& -O2/' configure
-
 	# Google API key (see http://www.chromium.org/developers/how-tos/api-keys)
 	# Note: This is for Void Linux use ONLY.
-	_google_api_key="AIzaSyCIFdBA7eQP43R6kXRwTq7j6Mvj1ITze90"
-	echo -n "$_google_api_key" > google-api-key
-	[ ! -d xbps-build ] && mkdir -p xbps-build
+	echo -n "AIzaSyCIFdBA7eQP43R6kXRwTq7j6Mvj1ITze90" >google-api-key
 }
-do_configure() {
-	local _args
+do_build() {
+	cp "${FILESDIR}/mozconfig" "${wrksrc}/.mozconfig"
 
 	case "$XBPS_TARGET_MACHINE" in
-	*-musl) # XXX gold linking with --hash-style=sysv results in unhidden symbols
-		# XXX see https://sourceware.org/ml/binutils/2014-09/msg00230.html
-		#
-		# XXX disable jemalloc.
-		_args+=" --disable-jemalloc --enable-gold=no"
+	*-musl)
+		echo "ac_add_options --disable-jemalloc" >>.mozconfig
+		echo "ac_add_options --enable-gold=no" >>.mozconfig
 		;;
 	esac
 
 	if [ "$CROSS_BUILD" ]; then
-		_args+=" --target=$XBPS_CROSS_TRIPLET --disable-jemalloc"
-
-		# Make config/system_wrappers/alsa/alsalib.h and pulse/pulse.h find
-		# the required includes. Set system nspr and nss include paths.
 		export HOST_CFLAGS="${XBPS_CFLAGS}"
 		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
-		export CFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/alsa \
-			-I${XBPS_CROSS_BASE}/usr/include/pulse \
-			-I${XBPS_CROSS_BASE}/usr/include/nspr \
-			-I${XBPS_CROSS_BASE}/usr/include/nss"
-		export CXXFLAGS+=" ${CFLAGS}"
-		export LDFLAGS+=" -L${XBPS_CROSS_BASE}/usr/lib"
-
 		export ac_cv_sqlite_secure_delete=yes \
 			ac_cv_sqlite_threadsafe=yes \
 			ac_cv_sqlite_enable_fts3=yes \
 			ac_cv_sqlite_dbstat_vtab=yes \
 			ac_cv_sqlite_enable_unlock_notify=yes \
 			ac_cv_prog_hostcxx_works=1
+		echo "ac_add_options --target=$XBPS_CROSS_TRIPLET" >>.mozconfig
 	fi
 
-	mkdir -p /usr/lib/thunderbird
+	if [ ${XBPS_GCC_VERSION_MAJOR} -gt 5 ]; then
+		# Append CFLAGS and CXXFLAGS to set work around code which gcc6 would
+		# otherwise regard as out-of-specification and allow it to produce a
+		# working program.
+		export CFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
+		export CXXFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
+	fi
+
 	export LDFLAGS+=" -Wl,-rpath=/usr/lib/thunderbird"
 
-	cd xbps-build
-	# XXX build without --system-cairo. See:
-	# - https://github.com/voidlinux/void-packages/issues/2308#issuecomment-135426813
-	# - https://bugs.gentoo.org/show_bug.cgi?id=558150
-	# Use bundled libpng, our does not have the apng patch.
-	SHELL=/bin/bash ../configure --prefix=/usr --libdir=/usr/lib \
-		--enable-application=mail \
-		--with-system-nspr --with-system-nss --with-system-bz2  \
-		--with-system-jpeg --with-system-zlib --without-system-png \
-		--with-system-libevent --with-system-libvpx \
-		--enable-system-pixman --enable-system-hunspell --enable-system-sqlite \
-		--enable-system-ffi --enable-startup-notification --disable-gio \
-		--with-pthreads --enable-official-branding --enable-safe-browsing \
-		--disable-skia --disable-debug --disable-gnomevfs --disable-gconf \
-		--disable-crashreporter --disable-updater --disable-xprint --disable-tests \
-		--disable-mochitest --disable-installer --disable-elf-hack \
-		--with-system-icu --enable-pulseaudio --disable-gstreamer \
-		--disable-cpp-exceptions --disable-javaxpcom \
-		--with-nspr-prefix=${XBPS_CROSS_BASE}/usr \
-		--with-nss-prefix=${XBPS_CROSS_BASE}/usr \
-		--with-google-api-keyfile="${wrksrc}/google-api-key" \
-		--enable-optimize="$CFLAGS" --disable-strip --disable-install-strip \
-		--disable-static --enable-pie --disable-profiling \
-		--disable-profilelocking ${_args}
-}
-do_build() {
 	if [ "$SOURCE_DATE_EPOCH" ]; then
-		mozdate="MOZ_BUILD_DATE=$(date --date "@$SOURCE_DATE_EPOCH" "+%Y%m%d%H%M%S")"
+		export MOZ_BUILD_DATE=$(date --date "@$SOURCE_DATE_EPOCH" "+%Y%m%d%H%M%S")
 	fi
-	cd xbps-build
-	SHELL=/bin/bash make ${mozdate} ${makejobs}
+
+	export MOZ_MAKE_FLAGS="${makejobs}"
+
+	cat <<! >>.mozconfig
+ac_add_options --with-google-api-keyfile="${wrksrc}/google-api-key"
+ac_add_options --enable-default-toolkit=cairo-gtk$(vopt_if gtk3 '3' '2')
+ac_add_options $(vopt_enable alsa)
+ac_add_options $(vopt_enable dbus)
+ac_add_options $(vopt_enable dbus necko-wifi)
+ac_add_options $(vopt_enable pulseaudio)
+ac_add_options $(vopt_enable rust)
+ac_add_options $(vopt_enable startup_notification startup-notification)
+!
+
+	make -f client.mk build
 }
 do_install() {
-	cd xbps-build
-	make DESTDIR=${DESTDIR} install
+	make -f client.mk DESTDIR="$DESTDIR" install
 
 	vinstall ${FILESDIR}/vendor.js 644 usr/lib/thunderbird/defaults/preferences
 	vinstall ${FILESDIR}/thunderbird.desktop 644 usr/share/applications
 
 	for i in 16 22 24 32 48 256; do
-		vinstall ../other-licenses/branding/thunderbird/mailicon${i}.png 644 \
+		vinstall other-licenses/branding/thunderbird/mailicon${i}.png 644 \
 			usr/share/icons/hicolor/${i}x${i}/apps thunderbird.png
+
 	done
 
 	# Use system-provided dictionaries
 	rm -rf ${DESTDIR}/usr/lib/thunderbird/{dictionaries,hyphenation}
-	ln -sf /usr/share/hunspell ${DESTDIR}/usr/lib/thunderbird/dictionaries
-	ln -sf /usr/share/hyphen ${DESTDIR}/usr/lib/thunderbird/hyphenation
+	ln -s /usr/share/hunspell ${DESTDIR}/usr/lib/thunderbird/dictionaries
+	ln -s /usr/share/hyphen ${DESTDIR}/usr/lib/thunderbird/hyphenation
 
 	# We don't want the development stuff
 	rm -rf ${DESTDIR}/usr/{include,lib/thunderbird-devel,share/idl}
