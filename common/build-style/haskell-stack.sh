@@ -8,6 +8,8 @@ do_build() {
 	if [ -f "${FILESDIR}/stack.yaml" ]; then
 		msg_normal "Using stack config in stack.yaml.\n"
 		cp "${FILESDIR}/stack.yaml" .
+	elif [ -z "$stackage" -a -f "stack.yaml" ]; then
+		msg_normal "Using stack.yaml from downloaded source.\n"
 	else
 		if [ -z "$stackage" ]; then
 			msg_error "Stackage version not set in \$stackage.\n"

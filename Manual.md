@@ -1199,8 +1199,10 @@ and set build style to `haskell-stack`.
 The following variables influence how Haskell packages are built:
 
 - `stackage`: The Stackage version used to build the package, e.g.
-  `lts-3.5`.  Alternatively, you can prepare a `stack.yaml`
-  configuration for the project and put it into `files/stack.yaml`.
+  `lts-3.5`. Alternatively:
+  - You can prepare a `stack.yaml` configuration for the project and put it
+    into `files/stack.yaml`.
+  - If a `stack.yaml` file is present in the source files, it will be used
 - `make_build_args`: This is passed as-is to `stack build ...`, so
   you can add your `--flag ...` parameters there.
 
