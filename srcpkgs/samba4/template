@@ -1,0 +1,94 @@
+# Template file for 'samba'
+pkgname=samba4
+version=4.8.2
+revision=1
+build_style=waf
+configure_script=buildtools/bin/waf
+configure_args="--sysconfdir=/etc/samba \
+ --with-configdir=/etc/samba \
+ --localstatedir=/var \
+ --enable-fhs \
+ --with-lockdir=/var/cache/samba \
+ --with-piddir=/var/run/samba \
+ --with-logfilebase=/var/log/samba \
+ --without-pam \
+ --without-systemd \
+ --with-ads \
+ --with-shared-modules=idmap_ad,idmap_rid,idmap_adex,idmap_hash,idmap_tdb2,pdb_tdbsam,pdb_ldap,pdb_ads,pdb_smbpasswd,pdb_wbc_sam,pdb_samba4,auth_unix,auth_wbc,auth_server,auth_netlogond,auth_script,auth_samba4
+ --enable-cups \
+ --without-gettext
+"
+patch_args="-Np1"
+wrksrc="samba-$version"
+short_desc="SMB/CIFS file, print, and login server for Unix"
+maintainer="Enno Boland <gottox@voidlinux.eu>"
+license="GPL-3"
+homepage="http://www.samba.org"
+distfiles="https://download.samba.org/pub/samba/stable/samba-$version.tar.gz"
+checksum=62e552296d49e6ab44bb87d120a288813fa52e42435d53a1f71b77596512bf22
+CFLAGS="-DUSE_SETUIDX=0"
+conflicts="samba>=0"
+provides="samba-${version}_${revision}"
+conf_files="/etc/pam.d/samba /etc/samba/smb.conf"
+make_dirs="/etc/samba/private 0750 root root"
+hostmakedepends="pkg-config perl python rpcgen docbook-xsl"
+makedepends="readline-devel libcap-devel popt-devel e2fsprogs-devel
+ gnutls-devel python-devel libtirpc-devel
+ libldap-devel pam-devel acl-devel avahi-libs-devel tdb-devel talloc-devel cups-devel"
+
+if [ "$CROSS_BUILD" ]; then
+	configure_args+=" --bundled-libraries=!asn1_compile,!compile_et"
+	hostmakedepends+=" heimdal-devel"
+fi
+
+pre_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		configure_args+=" --cross-compile --hostcc=cc --cross-answers=answers.txt"
+		if [ -e $FILESDIR/$XBPS_TARGET_MACHINE.answers ]; then
+			sed "s/@XBPS_TARGET_MACHINE@/${XBPS_TARGET_MACHINE%-musl}/" \
+				$FILESDIR/$XBPS_TARGET_MACHINE.answers > answers.txt
+		fi
+		export PYTHON_CONFIG=$(which python-config)
+		export PATH=$PATH:/usr/libexec/heimdal
+		export SBINDIR=/usr/bin
+	fi
+}
+
+post_install() {
+	mv $DESTDIR/usr/sbin/* $DESTDIR/usr/bin
+	vmkdir etc/samba
+	vinstall ./examples/smb.conf.default 644 etc/samba smb.conf
+	vinstall $FILESDIR/samba.pam 644 etc/pam.d samba
+	vsv nmbd
+	vsv smbd
+	vsv samba
+}
+
+smbclient4_package() {
+	short_desc="SMB/CIFS clients for Unix"
+	pkg_install() {
+		vmove usr/share/man/man1
+
+		# Determine which binaries are client and which are server
+		# by looking at manpage suffix, and vmove the client
+		# binaries.  Ugly.
+		for f in "$PKGDESTDIR"/usr/share/man/man1/*.1; do
+			g=$(basename "${f}" .1)
+			if [ -e "${DESTDIR}/usr/bin/${g}" ]; then
+				vmove usr/bin/${g}
+			fi
+		done
+
+		usr/lib/$pkgname/smbspool_krb5_wrapper
+	}
+}
+
+samba4-devel_package() {
+	depends="libsmbclient>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/pkgconfig
+		vmove usr/lib/*.so
+	}
+}

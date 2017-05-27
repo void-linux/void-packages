@@ -1,0 +1,85 @@
+https://bugzilla.samba.org/show_bug.cgi?id=12776
+
+diff --git a/source3/include/client.h b/source3/include/client.h
+index db8260d..becdf77 100644
+--- ./source3/include/client.h
++++ ./source3/include/client.h
+@@ -61,6 +61,9 @@ struct cli_state {
+ 	char *server_os;
+ 	char *server_domain;
+ 
++	/* is server_os spinstream2? true/false/not-yet-checked(-1) */
++	int is_spinstream2;
++
+ 	char *share;
+ 	char *dev;
+ 
+diff --git a/source3/libsmb/clientgen.c b/source3/libsmb/clientgen.c
+index bc5c1b1..6d6b725 100644
+--- ./source3/libsmb/clientgen.c
++++ ./source3/libsmb/clientgen.c
+@@ -112,6 +112,7 @@ struct cli_state *cli_state_create(TALLOC_CTX *mem_ctx,
+ 	if (!cli->server_os) {
+ 		goto error;
+ 	}
++	cli->is_spinstream2 = -1;
+ 	cli->server_type = talloc_strdup(cli, "");
+ 	if (!cli->server_type) {
+ 		goto error;
+@@ -430,6 +431,24 @@ time_t cli_state_server_time(struct cli_state *cli)
+ 	return t;
+ }
+ 
++bool cli_state_server_is_spinstream2(struct cli_state *cli)
++{
++	int *ret = &cli->is_spinstream2;
++	if (*ret == -1) {
++		if (*cli->server_os == '\0') {
++			DEBUG(1, ("when checking if server is SpinStream2:"
++				  " server_os field is empty (should have"
++				  " been sent in Session Setup protocol"
++				  " response), so ... presuming not"));
++			*ret = 0;
++		}
++		else {
++			*ret = strequal(cli->server_os, "SpinStream2") ? 1 : 0;
++		}
++	}
++	return *ret == 1;
++}
++
+ struct cli_echo_state {
+ 	bool is_smb2;
+ };
+diff --git a/source3/libsmb/clireadwrite.c b/source3/libsmb/clireadwrite.c
+index 3987477..6371bc2 100644
+--- ./source3/libsmb/clireadwrite.c
++++ ./source3/libsmb/clireadwrite.c
+@@ -89,6 +89,13 @@ static size_t cli_write_max_bufsize(struct cli_state *cli,
+ 		useable_space = 0xFFFFFF - data_offset;
+ 	} else if (smb1cli_conn_capabilities(cli->conn) & CAP_LARGE_WRITEX) {
+ 		useable_space = 0x1FFFF - data_offset;
++		if (cli_state_server_is_spinstream2(cli))
++			/*
++			 * SpinStream2 (NetApp OnTAP, up to 8.3.2, at least;
++			 * XXX may need to be more discerning than this)
++			 * can't handle writes > 64k
++			 */
++			useable_space = MIN(useable_space, 64 * 1024);
+ 	} else {
+ 		return min_space;
+ 	}
+diff --git a/source3/libsmb/proto.h b/source3/libsmb/proto.h
+index b453733..e334cc6 100644
+--- ./source3/libsmb/proto.h
++++ ./source3/libsmb/proto.h
+@@ -203,6 +203,7 @@ uint16_t cli_state_set_uid(struct cli_state *cli, uint16_t uid);
+ bool cli_set_case_sensitive(struct cli_state *cli, bool case_sensitive);
+ uint32_t cli_state_available_size(struct cli_state *cli, uint32_t ofs);
+ time_t cli_state_server_time(struct cli_state *cli);
++bool cli_state_server_is_spinstream2(struct cli_state *cli);
+ struct tevent_req *cli_echo_send(TALLOC_CTX *mem_ctx, struct tevent_context *ev,
+ 				 struct cli_state *cli, uint16_t num_echos,
+ 				 DATA_BLOB data);
+
+
