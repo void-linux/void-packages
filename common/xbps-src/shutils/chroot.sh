@@ -148,7 +148,7 @@ chroot_sync_repos() {
     if [ -n "$XBPS_CROSS_BUILD" ]; then
         # Copy host keys to the target rootdir.
         mkdir -p $XBPS_MASTERDIR/$XBPS_CROSS_BASE/var/db/xbps/keys
-        cp -a $XBPS_MASTERDIR/var/db/xbps/keys/*.plist \
+        cp $XBPS_MASTERDIR/var/db/xbps/keys/*.plist \
             $XBPS_MASTERDIR/$XBPS_CROSS_BASE/var/db/xbps/keys
         # Make sure to sync index for remote repositories.
         if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
