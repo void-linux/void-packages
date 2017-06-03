@@ -152,7 +152,7 @@ chroot_sync_repos() {
             $XBPS_MASTERDIR/$XBPS_CROSS_BASE/var/db/xbps/keys
         # Make sure to sync index for remote repositories.
         if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
-            env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE -- \
+            env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE \
                 xbps-install -r $XBPS_MASTERDIR/$XBPS_CROSS_BASE -S
         fi
     fi
@@ -202,7 +202,7 @@ chroot_handler() {
         env -i PATH="/usr/bin:/usr/sbin:$PATH" SHELL=/bin/sh \
             HOME=/tmp IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 \
             SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
-            $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh -- \
+            $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
             $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" \
             /void-packages/xbps-src $action $pkg
         rv=$?
