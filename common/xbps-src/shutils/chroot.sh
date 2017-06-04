@@ -35,7 +35,7 @@ XBPS_SRC_VERSION="$XBPS_SRC_VERSION"
 
 PATH=/void-packages:/usr/bin:/usr/sbin
 
-exec env -i SHELL=/bin/sh PATH="\$PATH" DISTCC_HOSTS="\$XBPS_DISTCC_HOSTS" DISTCC_DIR="/host/distcc" @@XARCH@@ \
+exec env -i -- SHELL=/bin/sh PATH="\$PATH" DISTCC_HOSTS="\$XBPS_DISTCC_HOSTS" DISTCC_DIR="/host/distcc" @@XARCH@@ \
     CCACHE_DIR="/host/ccache" IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 TERM=linux HOME="/tmp" \
     PS1="[\u@$XBPS_MASTERDIR \W]$ " /bin/bash +h
 _EOF
@@ -152,7 +152,7 @@ chroot_sync_repos() {
             $XBPS_MASTERDIR/$XBPS_CROSS_BASE/var/db/xbps/keys
         # Make sure to sync index for remote repositories.
         if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
-            env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE \
+            env -- XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE \
                 xbps-install -r $XBPS_MASTERDIR/$XBPS_CROSS_BASE -S
         fi
     fi
@@ -199,7 +199,7 @@ chroot_handler() {
         [ -n "$XBPS_BINPKG_EXISTS" ] && arg="$arg -E"
 
         action="$arg $action"
-        env -i PATH="/usr/bin:/usr/sbin:$PATH" SHELL=/bin/sh \
+        env -i -- PATH="/usr/bin:/usr/sbin:$PATH" SHELL=/bin/sh \
             HOME=/tmp IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 \
             SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
             $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
