@@ -1,0 +1,161 @@
+From 045e368799cd253ddbf8bdec42ed92e8ebb3ce67 Mon Sep 17 00:00:00 2001
+From: Florian Weimer <fweimer@redhat.com>
+Date: Tue, 28 Feb 2017 17:05:46 +0100
+Subject: [PATCH 02] sunrpc: Avoid use-after-free read access in
+ clntudp_call [BZ #21115]
+
+After commit bc779a1a5b3035133024b21e2f339fe4219fb11c
+(CVE-2016-4429: sunrpc: Do not use alloca in clntudp_call
+[BZ #20112]), ancillary data is stored on the heap,
+but it is accessed after it has been freed.
+
+The test case must be run under a heap debugger such as valgrind
+to observe the invalid access.  A malloc implementation which
+immediately calls munmap on free would catch this bug as well.
+
+(cherry picked from commit d42eed4a044e5e10dfb885cf9891c2518a72a491)
+---
+ ChangeLog              |  8 +++++++
+ NEWS                   |  1 +
+ sunrpc/Makefile        |  3 ++-
+ sunrpc/clnt_udp.c      |  2 +-
+ sunrpc/tst-udp-error.c | 62 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 74 insertions(+), 2 deletions(-)
+ create mode 100644 sunrpc/tst-udp-error.c
+
+diff --git a/ChangeLog b/ChangeLog
+index c88238e..3d781a3 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -1,3 +1,11 @@
++2017-02-27  Florian Weimer  <fweimer@redhat.com>
++
++	[BZ #21115]
++	* sunrpc/clnt_udp.c (clntudp_call): Free ancillary data later.
++	* sunrpc/Makefile (tests): Add tst-udp-error.
++	(tst-udp-error): Link against libc.so explicitly.
++	* sunrpc/tst-udp-error: New file.
++
+ 2017-02-08  Siddhesh Poyarekar  <siddhesh@sourceware.org>
+ 
+ 	[BZ #21109]
+diff --git a/NEWS b/NEWS
+index 325cac7..5ecc565 100644
+--- a/NEWS
++++ b/NEWS
+@@ -10,6 +10,7 @@ Version 2.25.1
+ The following bugs are resolved with this release:
+ 
+   [21109] Tunables broken on big-endian
++  [21115] sunrpc: Use-after-free in error path in clntudp_call
+ 
+ Version 2.25
+ 
+diff --git a/sunrpc/Makefile b/sunrpc/Makefile
+index 0c1e612..daf8a28 100644
+--- a/sunrpc/Makefile
++++ b/sunrpc/Makefile
+@@ -93,7 +93,7 @@ rpcgen-objs = rpc_main.o rpc_hout.o rpc_cout.o rpc_parse.o \
+ extra-objs = $(rpcgen-objs) $(addprefix cross-,$(rpcgen-objs))
+ others += rpcgen
+ 
+-tests = tst-xdrmem tst-xdrmem2 test-rpcent
++tests = tst-xdrmem tst-xdrmem2 test-rpcent tst-udp-error
+ xtests := tst-getmyaddr
+ 
+ ifeq ($(have-thread-library),yes)
+@@ -155,6 +155,7 @@ BUILD_CPPFLAGS += $(sunrpc-CPPFLAGS)
+ $(objpfx)tst-getmyaddr: $(common-objpfx)linkobj/libc.so
+ $(objpfx)tst-xdrmem: $(common-objpfx)linkobj/libc.so
+ $(objpfx)tst-xdrmem2: $(common-objpfx)linkobj/libc.so
++$(objpfx)tst-udp-error: $(common-objpfx)linkobj/libc.so
+ 
+ $(objpfx)rpcgen: $(addprefix $(objpfx),$(rpcgen-objs))
+ 
+diff --git a/sunrpc/clnt_udp.c b/sunrpc/clnt_udp.c
+index 4d9acb1..1de25cb 100644
+--- a/sunrpc/clnt_udp.c
++++ b/sunrpc/clnt_udp.c
+@@ -421,9 +421,9 @@ send_again:
+ 		 cmsg = CMSG_NXTHDR (&msg, cmsg))
+ 	      if (cmsg->cmsg_level == SOL_IP && cmsg->cmsg_type == IP_RECVERR)
+ 		{
+-		  free (cbuf);
+ 		  e = (struct sock_extended_err *) CMSG_DATA(cmsg);
+ 		  cu->cu_error.re_errno = e->ee_errno;
++		  free (cbuf);
+ 		  return (cu->cu_error.re_status = RPC_CANTRECV);
+ 		}
+ 	  free (cbuf);
+diff --git a/sunrpc/tst-udp-error.c b/sunrpc/tst-udp-error.c
+new file mode 100644
+index 0000000..1efc02f
+--- /dev/null
++++ b/sunrpc/tst-udp-error.c
+@@ -0,0 +1,62 @@
++/* Check for use-after-free in clntudp_call (bug 21115).
++   Copyright (C) 2017 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#include <netinet/in.h>
++#include <rpc/clnt.h>
++#include <rpc/svc.h>
++#include <support/check.h>
++#include <support/namespace.h>
++#include <support/xsocket.h>
++#include <unistd.h>
++
++static int
++do_test (void)
++{
++  support_become_root ();
++  support_enter_network_namespace ();
++
++  /* Obtain a likely-unused port number.  */
++  struct sockaddr_in sin =
++    {
++      .sin_family = AF_INET,
++      .sin_addr.s_addr = htonl (INADDR_LOOPBACK),
++    };
++  {
++    int fd = xsocket (AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
++    xbind (fd, (struct sockaddr *) &sin, sizeof (sin));
++    socklen_t sinlen = sizeof (sin);
++    xgetsockname (fd, (struct sockaddr *) &sin, &sinlen);
++    /* Close the socket, so that we will receive an error below.  */
++    close (fd);
++  }
++
++  int sock = RPC_ANYSOCK;
++  CLIENT *clnt = clntudp_create
++    (&sin, 1, 2, (struct timeval) { 1, 0 }, &sock);
++  TEST_VERIFY_EXIT (clnt != NULL);
++  TEST_VERIFY (clnt_call (clnt, 3,
++                          (xdrproc_t) xdr_void, NULL,
++                          (xdrproc_t) xdr_void, NULL,
++                          ((struct timeval) { 3, 0 }))
++               == RPC_CANTRECV);
++  clnt_destroy (clnt);
++
++  return 0;
++}
++
++#include <support/test-driver.c>
+-- 
+2.7.4.GIT
+
+

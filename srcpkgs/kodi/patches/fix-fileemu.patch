@@ -1,16 +1,16 @@
 diff --git a/xbmc/cores/DllLoader/exports/emu_msvcrt.cpp b/xbmc/cores/DllLoader/exports/emu_msvcrt.cpp
-index ae7ccb5..d8fd7fc 100644
+index ab14942..cf9d73d 100644
 --- a/xbmc/cores/DllLoader/exports/emu_msvcrt.cpp
 +++ b/xbmc/cores/DllLoader/exports/emu_msvcrt.cpp
-@@ -49,6 +49,7 @@
+@@ -51,6 +51,7 @@
  #include <fcntl.h>
  #include <time.h>
  #include <signal.h>
 +#include <paths.h>
  #ifdef TARGET_POSIX
  #include "PlatformDefs.h" // for __stat64
- #endif
-@@ -466,13 +467,10 @@ extern "C"
+ #include "XFileUtils.h"
+@@ -476,13 +477,10 @@ extern "C"
      EmuFileObject* o = g_emuFileWrapper.GetFileObjectByDescriptor(fd);
      if (o)
      {
@@ -25,7 +25,7 @@ index ae7ccb5..d8fd7fc 100644
      }
      else if (!IS_STD_DESCRIPTOR(fd))
      {
-@@ -535,7 +533,7 @@ extern "C"
+@@ -545,7 +543,7 @@ extern "C"
          return -1;
        }
        object->mode = iMode;
@@ -34,7 +34,7 @@ index ae7ccb5..d8fd7fc 100644
      }
      delete pFile;
      return -1;
-@@ -1181,8 +1179,8 @@ extern "C"
+@@ -1214,8 +1212,8 @@ extern "C"
    {
      FILE* file = NULL;
  #if defined(TARGET_LINUX) && !defined(TARGET_ANDROID)
@@ -45,7 +45,7 @@ index ae7ccb5..d8fd7fc 100644
      {
        CLog::Log(LOGINFO, "%s - something opened the mount file, let's hope it knows what it's doing", __FUNCTION__);
        return fopen(filename, mode);
-@@ -1572,7 +1570,7 @@ extern "C"
+@@ -1622,7 +1620,7 @@ extern "C"
      int ret;
  
      ret = dll_fgetpos64(stream, &tmpPos);
@@ -54,7 +54,7 @@ index ae7ccb5..d8fd7fc 100644
      *pos = (fpos_t)tmpPos;
  #else
      pos->__pos = (off_t)tmpPos.__pos;
-@@ -1585,8 +1583,9 @@ extern "C"
+@@ -1635,8 +1633,9 @@ extern "C"
      CFile* pFile = g_emuFileWrapper.GetFileXbmcByStream(stream);
      if (pFile != NULL)
      {
@@ -66,7 +66,7 @@ index ae7ccb5..d8fd7fc 100644
  #else
        pos->__pos = pFile->GetPosition();
  #endif
-@@ -1607,8 +1606,9 @@ extern "C"
+@@ -1657,8 +1656,9 @@ extern "C"
      int fd = g_emuFileWrapper.GetDescriptorByStream(stream);
      if (fd >= 0)
      {
@@ -78,7 +78,7 @@ index ae7ccb5..d8fd7fc 100644
  #else
        if (dll_lseeki64(fd, (__off64_t)pos->__pos, SEEK_SET) >= 0)
  #endif
-@@ -1624,7 +1624,7 @@ extern "C"
+@@ -1674,7 +1674,7 @@ extern "C"
      {
        // it might be something else than a file, or the file is not emulated
        // let the operating system handle it
@@ -87,7 +87,7 @@ index ae7ccb5..d8fd7fc 100644
        return fsetpos(stream, pos);
  #else
        return fsetpos64(stream, pos);
-@@ -1640,7 +1640,7 @@ extern "C"
+@@ -1690,7 +1690,7 @@ extern "C"
      if (fd >= 0)
      {
        fpos64_t tmpPos;
@@ -97,10 +97,10 @@ index ae7ccb5..d8fd7fc 100644
  #else
        tmpPos.__pos = (off64_t)(pos->__pos);
 diff --git a/xbmc/cores/DllLoader/exports/emu_msvcrt.h b/xbmc/cores/DllLoader/exports/emu_msvcrt.h
-index ae9b1c4..3b19122 100644
+index 3294d9a..3ce8b24 100644
 --- a/xbmc/cores/DllLoader/exports/emu_msvcrt.h
 +++ b/xbmc/cores/DllLoader/exports/emu_msvcrt.h
-@@ -26,7 +26,7 @@
+@@ -24,7 +24,7 @@
  #define _onexit_t void*
  #endif
  
@@ -110,10 +110,10 @@ index ae9b1c4..3b19122 100644
  typedef int64_t off64_t;
  typedef off64_t __off64_t;
 diff --git a/xbmc/cores/DllLoader/exports/util/EmuFileWrapper.cpp b/xbmc/cores/DllLoader/exports/util/EmuFileWrapper.cpp
-index cf8a060..9110312 100644
+index 8927d41..0e78707 100644
 --- a/xbmc/cores/DllLoader/exports/util/EmuFileWrapper.cpp
 +++ b/xbmc/cores/DllLoader/exports/util/EmuFileWrapper.cpp
-@@ -27,12 +27,7 @@ CEmuFileWrapper g_emuFileWrapper;
+@@ -53,15 +53,7 @@ constexpr bool isValidFilePtr(FILE* f)
  CEmuFileWrapper::CEmuFileWrapper()
  {
    // since we always use dlls we might just initialize it directly
@@ -121,13 +121,16 @@ index cf8a060..9110312 100644
 -  {
 -    memset(&m_files[i], 0, sizeof(EmuFileObject));
 -    m_files[i].used = false;
--    m_files[i].file_emu._file = -1;
+-#if defined(TARGET_WINDOWS) && (_MSC_VER >= 1900)
+-    m_files[i].file_emu._Placeholder = new kodi_iobuf();
+-#endif
+-    FileDescriptor(m_files[i].file_emu)->_file = -1;
 -  }
 +  memset(m_files, 0, sizeof(m_files));
  }
  
  CEmuFileWrapper::~CEmuFileWrapper()
-@@ -43,22 +38,7 @@ void CEmuFileWrapper::CleanUp()
+@@ -73,29 +65,7 @@ void CEmuFileWrapper::CleanUp()
  {
    CSingleLock lock(m_criticalSection);
    for (int i = 0; i < MAX_EMULATED_FILES; i++)
@@ -140,18 +143,25 @@ index cf8a060..9110312 100644
 -      if (m_files[i].file_lock)
 -      {
 -        delete m_files[i].file_lock;
--        m_files[i].file_lock = NULL;
+-        m_files[i].file_lock = nullptr;
 -      }
+-#if !defined(TARGET_WINDOWS)
+-      //Don't memset on Windows as it overwrites our pointer
 -      memset(&m_files[i], 0, sizeof(EmuFileObject));
+-#endif
 -      m_files[i].used = false;
--      m_files[i].file_emu._file = -1;
+-      FileDescriptor(m_files[i].file_emu)->_file = -1;
 -    }
+-#if defined(TARGET_WINDOWS) && (_MSC_VER >= 1900)
+-    delete static_cast<kodi_iobuf*>(m_files[i].file_emu._Placeholder);
+-    m_files[i].file_emu._Placeholder = nullptr;
+-#endif
 -  }
 +    UnRegisterFileObject(&m_files[i], true);
  }
  
  EmuFileObject* CEmuFileWrapper::RegisterFileObject(XFILE::CFile* pFile)
-@@ -69,13 +49,11 @@ EmuFileObject* CEmuFileWrapper::RegisterFileObject(XFILE::CFile* pFile)
+@@ -106,13 +76,11 @@ EmuFileObject* CEmuFileWrapper::RegisterFileObject(XFILE::CFile* pFile)
  
    for (int i = 0; i < MAX_EMULATED_FILES; i++)
    {
@@ -162,11 +172,11 @@ index cf8a060..9110312 100644
        object = &m_files[i];
 -      object->used = true;
        object->file_xbmc = pFile;
--      object->file_emu._file = (i + FILE_WRAPPER_OFFSET);
+-      FileDescriptor(object->file_emu)->_file = (i + FILE_WRAPPER_OFFSET);
        object->file_lock = new CCriticalSection();
        break;
      }
-@@ -84,82 +62,71 @@ EmuFileObject* CEmuFileWrapper::RegisterFileObject(XFILE::CFile* pFile)
+@@ -121,82 +89,70 @@ EmuFileObject* CEmuFileWrapper::RegisterFileObject(XFILE::CFile* pFile)
    return object;
  }
  
@@ -174,49 +184,49 @@ index cf8a060..9110312 100644
 +void CEmuFileWrapper::UnRegisterFileObject(EmuFileObject *object, bool free_file)
  {
 -  int i = fd - FILE_WRAPPER_OFFSET;
--  if (i >= 0 && i < MAX_EMULATED_FILES)
-+  if (object && object->file_xbmc)
-   {
--    if (m_files[i].used)
-+    if (object->file_xbmc && free_file)
-     {
--      CSingleLock lock(m_criticalSection);
--
--      // we assume the emulated function alreay deleted the CFile object
--      if (m_files[i].used)
--      {
--        if (m_files[i].file_lock)
--        {
--          delete m_files[i].file_lock;
--          m_files[i].file_lock = NULL;
--        }
--        memset(&m_files[i], 0, sizeof(EmuFileObject));
--        m_files[i].used = false;
--        m_files[i].file_emu._file = -1;
--      }
-+      object->file_xbmc->Close();
-+      delete object->file_xbmc;
-     }
-+    if (object->file_lock)
-+    {
-+      delete object->file_lock;
-+    }
-+
-+    memset(object, 0, sizeof(*object));
-   }
- }
+-  if (! (i >= 0 && i < MAX_EMULATED_FILES))
++  if (! (object && object->file_xbmc))
+     return;
  
+-  if (!m_files[i].used)
+-    return;
+-
+-  CSingleLock lock(m_criticalSection);
+-
+-  // we assume the emulated function alreay deleted the CFile object
+-  if (m_files[i].file_lock)
++  if (object->file_xbmc && free_file)
+   {
+-    delete m_files[i].file_lock;
+-    m_files[i].file_lock = nullptr;
++    CSingleLock lock(m_criticalSection);
++
++    object->file_xbmc->Close();
++    delete object->file_xbmc;
+   }
+-#if !defined(TARGET_WINDOWS)
+-  //Don't memset on Windows as it overwrites our pointer
+-  memset(&m_files[i], 0, sizeof(EmuFileObject));
+-#endif
+-  m_files[i].used = false;
+-  FileDescriptor(m_files[i].file_emu)->_file = -1;
++  if (object->file_lock)
++    delete object->file_lock;
++
++  memset(object, 0, sizeof(*object));
++}
++
 +void CEmuFileWrapper::UnRegisterFileObjectByDescriptor(int fd)
 +{
 +  CSingleLock lock(m_criticalSection);
 +  UnRegisterFileObject(GetFileObjectByDescriptor(fd), false);
-+}
-+
+ }
+ 
  void CEmuFileWrapper::UnRegisterFileObjectByStream(FILE* stream)
  {
--  if (stream != NULL)
+-  if (isValidFilePtr(stream))
 -  {
--    return UnRegisterFileObjectByDescriptor(stream->_file);
+-    return UnRegisterFileObjectByDescriptor(FileDescriptor(*stream)->_file);
 -  }
 +  CSingleLock lock(m_criticalSection);
 +  UnRegisterFileObject(GetFileObjectByStream(stream), false);
@@ -238,37 +248,32 @@ index cf8a060..9110312 100644
  }
  
  bool CEmuFileWrapper::TryLockFileObjectByDescriptor(int fd)
--{ 
--  int i = fd - FILE_WRAPPER_OFFSET;  
+ {
+-  int i = fd - FILE_WRAPPER_OFFSET;
 -  if (i >= 0 && i < MAX_EMULATED_FILES)
--  { 
--    if (m_files[i].used)
--    {   
--      return m_files[i].file_lock->try_lock();
--    }
-+{
 +  EmuFileObject* object = GetFileObjectByDescriptor(fd);
 +  if (object && object->file_xbmc)
-+  {
+   {
+-    if (m_files[i].used)
+-    {
+-      return m_files[i].file_lock->try_lock();
+-    }
 +    return object->file_lock->try_lock();
    }
-+
    return false;
  }
  
  void CEmuFileWrapper::UnlockFileObjectByDescriptor(int fd)
--{ 
--  int i = fd - FILE_WRAPPER_OFFSET;  
+ {
+-  int i = fd - FILE_WRAPPER_OFFSET;
 -  if (i >= 0 && i < MAX_EMULATED_FILES)
--  { 
--    if (m_files[i].used)
--    {   
--      m_files[i].file_lock->unlock();
--    }
-+{
 +  EmuFileObject* object = GetFileObjectByDescriptor(fd);
 +  if (object && object->file_xbmc)
-+  {
+   {
+-    if (m_files[i].used)
+-    {
+-      m_files[i].file_lock->unlock();
+-    }
 +    object->file_lock->unlock();
    }
  }
@@ -284,18 +289,18 @@ index cf8a060..9110312 100644
      {
        return &m_files[i];
      }
-@@ -167,20 +134,38 @@ EmuFileObject* CEmuFileWrapper::GetFileObjectByDescriptor(int fd)
-   return NULL;
+@@ -204,20 +160,38 @@ EmuFileObject* CEmuFileWrapper::GetFileObjectByDescriptor(int fd)
+   return nullptr;
  }
  
 -EmuFileObject* CEmuFileWrapper::GetFileObjectByStream(FILE* stream)
 +int CEmuFileWrapper::GetDescriptorByFileObject(EmuFileObject *object)
  {
--  if (stream != NULL)
+-  if (isValidFilePtr(stream))
 +  int i = object - m_files;
 +  if (i >= 0 && i < MAX_EMULATED_FILES)
    {
--    return GetFileObjectByDescriptor(stream->_file);
+-    return GetFileObjectByDescriptor(FileDescriptor(*stream)->_file);
 +    return 0x7000000 + i;
    }
 +  return -1;
@@ -311,7 +316,7 @@ index cf8a060..9110312 100644
 +      return object;
 +    }
 +  }
-   return NULL;
+   return nullptr;
  }
  
 +FILE* CEmuFileWrapper::GetStreamByFileObject(EmuFileObject *object)
@@ -321,33 +326,33 @@ index cf8a060..9110312 100644
 +
  XFILE::CFile* CEmuFileWrapper::GetFileXbmcByDescriptor(int fd)
  {
-   EmuFileObject* object = GetFileObjectByDescriptor(fd);
--  if (object != NULL && object->used)
-+  if (object != NULL)
+   auto object = GetFileObjectByDescriptor(fd);
+-  if (object != nullptr && object->used)
++  if (object != nullptr)
    {
      return object->file_xbmc;
    }
-@@ -191,8 +176,8 @@ XFILE::CFile* CEmuFileWrapper::GetFileXbmcByStream(FILE* stream)
+@@ -228,8 +202,8 @@ XFILE::CFile* CEmuFileWrapper::GetFileXbmcByStream(FILE* stream)
  {
-   if (stream != NULL)
+   if (isValidFilePtr(stream))
    {
--    EmuFileObject* object = GetFileObjectByDescriptor(stream->_file);
--    if (object != NULL && object->used)
-+    EmuFileObject* object = GetFileObjectByStream(stream);
-+    if (object != NULL)
+-    auto object = GetFileObjectByDescriptor(FileDescriptor(*stream)->_file);
+-    if (object != nullptr && object->used)
++    auto object = GetFileObjectByStream(stream);
++    if (object != nullptr)
      {
        return object->file_xbmc;
      }
-@@ -202,42 +187,20 @@ XFILE::CFile* CEmuFileWrapper::GetFileXbmcByStream(FILE* stream)
+@@ -239,32 +213,25 @@ XFILE::CFile* CEmuFileWrapper::GetFileXbmcByStream(FILE* stream)
  
  int CEmuFileWrapper::GetDescriptorByStream(FILE* stream)
  {
--  if (stream != NULL)
+-  if (isValidFilePtr(stream))
 -  {
--    int i = stream->_file - FILE_WRAPPER_OFFSET;
+-    int i = FileDescriptor(*stream)->_file - FILE_WRAPPER_OFFSET;
 -    if (i >= 0 && i < MAX_EMULATED_FILES)
 -    {
--      return stream->_file;
+-      return i + FILE_WRAPPER_OFFSET;
 -    }
 -  }
 -  return -1;
@@ -356,40 +361,35 @@ index cf8a060..9110312 100644
  
  FILE* CEmuFileWrapper::GetStreamByDescriptor(int fd)
  {
--  EmuFileObject* object = GetFileObjectByDescriptor(fd);
--  if (object != NULL && object->used)
+-  auto object = GetFileObjectByDescriptor(fd);
+-  if (object != nullptr && object->used)
 -  {
 -    return &object->file_emu;
 -  }
--  return NULL;
+-  return nullptr;
 +  return GetStreamByFileObject(GetFileObjectByDescriptor(fd));
- }
- 
- bool CEmuFileWrapper::DescriptorIsEmulatedFile(int fd)
- {
--  int i = fd - FILE_WRAPPER_OFFSET;
--  if (i >= 0 && i < MAX_EMULATED_FILES)
--  {
--    return true;
--  }
--  return false;
-+  return GetFileObjectByDescriptor(fd) != NULL;
  }
  
  bool CEmuFileWrapper::StreamIsEmulatedFile(FILE* stream)
  {
--  if (stream != NULL)
--  {
--    return DescriptorIsEmulatedFile(stream->_file);
--  }
--  return false;
-+  return GetFileObjectByStream(stream) != NULL;
+   if (isValidFilePtr(stream))
+   {
+-    return DescriptorIsEmulatedFile(FileDescriptor(*stream)->_file);
++    return DescriptorIsEmulatedFile(GetDescriptorByStream(stream));
+   }
+   return false;
  }
++
++bool CEmuFileWrapper::DescriptorIsEmulatedFile(int fd)
++{
++  return GetFileObjectByDescriptor(fd) != NULL;
++}
++
 diff --git a/xbmc/cores/DllLoader/exports/util/EmuFileWrapper.h b/xbmc/cores/DllLoader/exports/util/EmuFileWrapper.h
-index 3d79c7a..1b3e62f 100644
+index 786fa85..311a5cf 100644
 --- a/xbmc/cores/DllLoader/exports/util/EmuFileWrapper.h
 +++ b/xbmc/cores/DllLoader/exports/util/EmuFileWrapper.h
-@@ -27,14 +27,14 @@
+@@ -25,14 +25,14 @@
  #include "system.h"
  #include "threads/CriticalSection.h"
  
@@ -405,28 +405,27 @@ index 3d79c7a..1b3e62f 100644
 +//#endif
  
  #define MAX_EMULATED_FILES    50
--#define FILE_WRAPPER_OFFSET   0x00000100
-+//#define FILE_WRAPPER_OFFSET   0x00000100
+-#define FILE_WRAPPER_OFFSET   0x00000200
++//#define FILE_WRAPPER_OFFSET   0x00000200
  
  namespace XFILE
  {
-@@ -43,11 +43,9 @@ namespace XFILE
+@@ -47,12 +47,9 @@ struct kodi_iobuf {
  
  typedef struct stEmuFileObject
  {
--  bool    used;
 -  FILE    file_emu;
--  XFILE::CFile*  file_xbmc;
-+  XFILE::CFile*     file_xbmc;
+   XFILE::CFile*  file_xbmc;
    CCriticalSection *file_lock;
--  int mode;
-+  int               mode;
+   int mode;
+-  //Stick this last to avoid 3-7 bytes of padding
+-  bool    used;
  } EmuFileObject;
  
  class CEmuFileWrapper
-@@ -62,19 +60,22 @@ public:
+@@ -67,22 +64,22 @@ public:
    void CleanUp();
-   
+ 
    EmuFileObject* RegisterFileObject(XFILE::CFile* pFile);
 +  void UnRegisterFileObject(EmuFileObject*, bool free_file);
    void UnRegisterFileObjectByDescriptor(int fd);
@@ -434,18 +433,19 @@ index 3d79c7a..1b3e62f 100644
    void LockFileObjectByDescriptor(int fd);
    bool TryLockFileObjectByDescriptor(int fd);
    void UnlockFileObjectByDescriptor(int fd);
--  EmuFileObject* GetFileObjectByDescriptor(int fd);  
--  EmuFileObject* GetFileObjectByStream(FILE* stream);  
-+  EmuFileObject* GetFileObjectByDescriptor(int fd);
+   EmuFileObject* GetFileObjectByDescriptor(int fd);
 +  int GetDescriptorByFileObject(EmuFileObject*);
-+  EmuFileObject* GetFileObjectByStream(FILE* stream);
+   EmuFileObject* GetFileObjectByStream(FILE* stream);
 +  FILE* GetStreamByFileObject(EmuFileObject*);
    XFILE::CFile* GetFileXbmcByDescriptor(int fd);
    XFILE::CFile* GetFileXbmcByStream(FILE* stream);
 -  static int GetDescriptorByStream(FILE* stream);
 +  int GetDescriptorByStream(FILE* stream);
    FILE* GetStreamByDescriptor(int fd);
--  static bool DescriptorIsEmulatedFile(int fd);
+-  static constexpr bool DescriptorIsEmulatedFile(int fd)
+-  {
+-    return fd >= FILE_WRAPPER_OFFSET && fd < FILE_WRAPPER_OFFSET + MAX_EMULATED_FILES;
+-  }
 -  static bool StreamIsEmulatedFile(FILE* stream);
 +  bool DescriptorIsEmulatedFile(int fd);
 +  bool StreamIsEmulatedFile(FILE* stream);
@@ -453,7 +453,7 @@ index 3d79c7a..1b3e62f 100644
    EmuFileObject m_files[MAX_EMULATED_FILES];
    CCriticalSection m_criticalSection;
 diff --git a/xbmc/cores/DllLoader/exports/wrapper.c b/xbmc/cores/DllLoader/exports/wrapper.c
-index a9225e5..355da1c 100644
+index e363662..4498c27 100644
 --- a/xbmc/cores/DllLoader/exports/wrapper.c
 +++ b/xbmc/cores/DllLoader/exports/wrapper.c
 @@ -39,7 +39,7 @@

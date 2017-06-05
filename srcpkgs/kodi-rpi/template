@@ -1,16 +1,18 @@
 # Template file for 'kodi-rpi'
 pkgname=kodi-rpi
-version=16.1
-revision=5
+version=17.3
+revision=1
+build_style=cmake
 patch_args="-Np1"
-_codename="Jarvis"
+_codename="Krypton"
 wrksrc="xbmc-${version}-${_codename}"
 short_desc="A software media player and entertainment hub for digital media (RPi)"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 homepage="http://www.kodi.tv/"
 license="GPL-2"
 distfiles="https://github.com/xbmc/xbmc/archive/${version}-${_codename}.tar.gz"
-checksum=7d82c8aff2715c83deecdf10c566e26105bec0473af530a1356d4c747ebdfd10
+checksum=1de8653a3729cefd1baaf09ecde5ace01a1e3a58fbf29d48c1363f2503d331a1
+build_wrksrc=project/cmake
 
 nopie=yes
 only_for_archs="armv6l armv6l-musl armv7l armv7l-musl"
@@ -18,7 +20,7 @@ only_for_archs="armv6l armv6l-musl armv7l armv7l-musl"
 hostmakedepends="
  automake libtool pkg-config gperf cmake zip unzip nasm yasm
  gettext-devel libltdl-devel python-devel libmysqlclient-devel
- SDL2_image-devel lzo-devel swig"
+ SDL2_image-devel lzo-devel"
 makedepends="
  eudev-libudev-devel pcre-devel expat-devel libpng-devel libjpeg-turbo-devel
  avahi-libs-devel alsa-lib-devel samba-devel tiff-devel libmysqlclient-devel
@@ -27,18 +29,33 @@ makedepends="
  libmad-devel fontconfig-devel libsamplerate-devel libmms-devel libcurl-devel ffmpeg-devel
  enca-devel boost-devel libbluetooth-devel yajl-devel libplist-devel librtmp-devel
  tinyxml-devel taglib-devel libcap-devel lame-devel libnfs-devel libxslt-devel libuuid-devel giflib-devel
- libcec-devel libmicrohttpd-devel libcdio-devel python-devel libssh-devel rpi-userland-devel dcadec-devel crossguid"
+ libcec-devel libmicrohttpd-devel libcdio-devel python-devel libssh-devel rpi-userland-devel dcadec-devel crossguid cmake"
+
+# gold broken with musl
+case "$XBPS_MACHINE" in
+       *-musl) configure_args+=" -DENABLE_LDGOLD=Off";;
+esac
+
+configure_args="
+ -DCORE_SYSTEM_NAME=rbpi
+ -DENABLE_OPENGL=OFF
+ -DENABLE_OPENGLES=ON
+ -DENABLE_X11=OFF
+ -DENABLE_INTERNAL_CROSSGUID=OFF
+ -DENABLE_VAAPI=OFF
+ -DENABLE_VDPAU=OFF
+ -DCMAKE_PREFIX_PATH=${XBPS_CROSS_BASE}/opt/vc
+"
+case "$XBPS_TARGET_MACHINE" in
+	armv6*)   configure_args+=" -DWITH_CPU=arm1176jzf-s";;
+	armv7*)   configure_args+=" -DWITH_CPU=cortex-a7";;
+	aarch64*) configure_args+=" -DWITH_CPU=cortex-a53";;
+esac
 
 # The following dependencies are dlopen(3)ed.
 depends="libmad libogg libcurl libflac libmodplug libass libmpeg2 lame
  librtmp libnfs>=1.9.7 libplist>=1.12 libssh"
 depends+=" hicolor-icon-theme desktop-file-utils"
-
-# musl builds need generated addons (no java).
-case "$XBPS_MACHINE" in
-	*-musl) _kodi_nojava=yes;;
-	*) hostmakedepends+=" openjdk-jre";;
-esac
 
 provides="kodi-${version}_${revision}"
 
@@ -48,66 +65,56 @@ xbmc_homedir="/var/lib/xbmc"
 xbmc_groups="audio,input,video"
 
 pre_configure() {
+	find ../.. -type f | \
+		grep "configure\.ac\|Makefile\|cmake\|config\.site" | \
+		xargs sed -i  -e "s;-isystem;-I;g"
+
 	# Copy generated files to avoid requiring java.
-	if [ -n "${_kodi_nojava}" ]; then
-		$XBPS_FETCH_CMD http://repo.voidlinux.eu/distfiles/kodi-${version}-generated-addons.tar.xz
-		tar xf kodi-${version}-generated-addons.tar.xz -C ${wrksrc}
-		BOOTSTRAP_STANDALONE=1 make JAVA=/bin/true -f codegenerator.mk
-	else
-		. /etc/profile.d/10_openjdk.sh
-		BOOTSTRAP_STANDALONE=1 make -f codegenerator.mk
+	mkdir -p build/build/swig
+
+	# THESE FILES MUST BE UPDATED WITH EVERY VERSION BUMP!
+	# (See kodi template)
+	cp -r $FILESDIR/swig.nojava-$version/* -t build/build/swig
+	cp $FILESDIR/CMakeCache.txt.nojava build/CMakeCache.txt
+
+	echo "set(FOUND_SWIG Yes)" > modules/FindSWIG.cmake
+
+	if [ "$CROSS_BUILD" ]; then
+		for i in JsonSchemaBuilder TexturePacker; do
+			cat > modules/Find$i.cmake <<EOF
+				add_executable($i::$i IMPORTED GLOBAL)
+				set_target_properties($i::$i PROPERTIES
+				IMPORTED_LOCATION "\${CORE_SOURCE_DIR}/tools/depends/native/$i/bin/$i")
+				set_target_properties($i::$i PROPERTIES FOLDER Tools)
+EOF
+		done
 	fi
-	BOOTSTRAP_STANDALONE=1 make -f bootstrap.mk
-	# Use cross prefix for python include/libdir.
-	sed -e "s,-L\$ac_python_libdir,-L${XBPS_CROSS_BASE}/usr/lib,g" -i configure
-	sed -e "s,PYTHON_CPPFLAGS=\$python_path,PYTHON_CPPFLAGS=-I${XBPS_CROSS_BASE}/usr/include/python2.7,g" -i configure
 }
 
-do_configure() {
-	# Do not ship version check.
-	rm -rf addons/service.xbmc.versioncheck
-
-	CFLAGS+=" -I${XBPS_CROSS_BASE}/opt/vc/include/ -I${XBPS_CROSS_BASE}/opt/vc/include/IL"
-	CFLAGS+=" -I${XBPS_CROSS_BASE}/opt/vc/include/interface/vcos/pthreads"
-	CFLAGS+=" -I${XBPS_CROSS_BASE}/opt/vc/include/interface/vmcs_host/linux"
-	CXXFLAGS="$CFLAGS -fpermissive"
-	LDFLAGS+=" -L${XBPS_CROSS_BASE}/opt/vc/lib -Wl,-R/opt/vc/lib"
-
-	export CFLAGS CXXFLAGS LDFLAGS
-
-	./configure ${configure_args} \
-		--disable-gl \
-		--disable-sdl \
-		--disable-x11 \
-		--disable-xrandr \
-		--disable-openmax \
-		--disable-joystick \
-		--disable-debug \
-		--disable-crystalhd \
-		--disable-vtbdecoder \
-		--disable-vaapi \
-		--disable-vdpau \
-		--disable-pulse \
- 		--disable-projectm \
-		--disable-optical-drive \
-		--disable-libbluray \
-		--with-platform=raspberry-pi \
-		--enable-gles \
-		--enable-optimizations \
-		--enable-libcec \
-		--enable-player=omxplayer \
-		--enable-external-libraries \
-		--with-ffmpeg=shared \
-		ac_cv_path_JAVA_EXE=/bin/true
-
-
-	sed -e "s,\$(DVDREAD_CFLAGS),,g;s,AR=ar,AR=$AR,g;s,LD=ld,LD=$LD,g;s,RANLIB=ranlib,RANLIB=$RANLIB,g" -i lib/libdvd/libdvd{nav,read}/Makefile
+pre_build() {
+	if [ "$CROSS_BUILD" ]; then
+		for i in JsonSchemaBuilder TexturePacker; do
+			CC= LD= CXX= LDFLAGS= CFLAGS= CXXFLAGS= \
+				make -C ../../tools/depends/native/$i
+		done
+	fi
 }
-do_build() {
-	make ${makejobs}
+
+post_build() {
+	# Rebuild for target
+	if [ "$CROSS_BUILD" ]; then
+		for i in JsonSchemaBuilder TexturePacker; do
+			make -C ../../../tools/depends/native/$i clean all \
+				CC="$CC" CXX="$CXX" LD="$LD" AR="$AR" RANLIB="$RANLIB" \
+				CPP="$CPP" AS="$AS" OBJDUMP="$OBJDUMP" \
+				CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+		done
+	fi
 }
-do_install() {
-	make DESTDIR=${DESTDIR} install
+
+post_install() {
+	# remove unused stuff
 	rm -rf ${DESTDIR}/usr/include
+	find ${DESTDIR}/usr/lib -name "*.cmake" -delete
 	vsv xbmc-standalone
 }

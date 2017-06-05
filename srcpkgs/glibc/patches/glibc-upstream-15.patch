@@ -1,0 +1,89 @@
+From ccb4fd7a657b0fbc4890c98f4586d58a135fc583 Mon Sep 17 00:00:00 2001
+From: Adhemerval Zanella <adhemerval.zanella@linaro.org>
+Date: Tue, 14 Mar 2017 14:16:13 -0300
+Subject: [PATCH 15] Fix i686 memchr overflow calculation (BZ#21182)
+
+This patch fixes the regression added by 23d2770 for final address
+overflow calculation.  The subtraction of the considered size (16)
+at line 120 is at wrong place, for sizes less than 16 subsequent
+overflow check will not take in consideration an invalid size (since
+the subtraction will be negative).  Also, the lea instruction also
+does not raise the carry flag (CF) that is used in subsequent jbe
+to check for overflow.
+
+The fix is to follow x86_64 logic from 3daef2c where the overflow
+is first check and a sub instruction is issued.  In case of resulting
+negative size, CF will be set by the sub instruction and a NULL
+result will be returned.  The patch also add similar tests reported
+in bug report.
+
+Checked on i686-linux-gnu and x86_64-linux-gnu.
+
+	* string/test-memchr.c (do_test): Add BZ#21182 checks for address
+	near end of a page.
+	* sysdeps/i386/i686/multiarch/memchr-sse2.S (__memchr): Fix
+	overflow calculation.
+
+Cherry-pick of 3abeeec5f46ff036bd9df60bb096e20314ccd078.
+---
+ ChangeLog                                 | 8 ++++++++
+ string/test-memchr.c                      | 6 ++++++
+ sysdeps/i386/i686/multiarch/memchr-sse2.S | 2 +-
+ 3 files changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/ChangeLog b/ChangeLog
+index adebc03..ac19e98 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -1,3 +1,11 @@
++2017-05-01  Adhemerval Zanella  <adhemerval.zanella@linaro.org>
++
++	[BZ# 21182]
++	* string/test-memchr.c (do_test): Add BZ#21182 checks for address
++	near end of a page.
++	* sysdeps/i386/i686/multiarch/memchr-sse2.S (__memchr): Fix
++	overflow calculation.
++
+ 2017-04-28  H.J. Lu  <hongjiu.lu@intel.com>
+ 
+ 	[BZ #21396]
+diff --git a/string/test-memchr.c b/string/test-memchr.c
+index d62889f..6431605 100644
+--- a/string/test-memchr.c
++++ b/string/test-memchr.c
+@@ -208,6 +208,12 @@ test_main (void)
+       do_test (0, i, i + 1, i + 1, 0);
+     }
+ 
++  /* BZ#21182 - wrong overflow calculation for i686 implementation
++     with address near end of the page.  */
++  for (i = 2; i < 16; ++i)
++    /* page_size is in fact getpagesize() * 2.  */
++    do_test (page_size / 2 - i, i, i, 1, 0x9B);
++
+   do_random_tests ();
+   return ret;
+ }
+diff --git a/sysdeps/i386/i686/multiarch/memchr-sse2.S b/sysdeps/i386/i686/multiarch/memchr-sse2.S
+index 910679c..e41f324 100644
+--- a/sysdeps/i386/i686/multiarch/memchr-sse2.S
++++ b/sysdeps/i386/i686/multiarch/memchr-sse2.S
+@@ -117,7 +117,6 @@ L(crosscache):
+ 
+ # ifndef USE_AS_RAWMEMCHR
+ 	jnz	L(match_case2_prolog1)
+-	lea	-16(%edx), %edx
+         /* Calculate the last acceptable address and check for possible
+            addition overflow by using satured math:
+            edx = ecx + edx
+@@ -125,6 +124,7 @@ L(crosscache):
+ 	add	%ecx, %edx
+ 	sbb	%eax, %eax
+ 	or	%eax, %edx
++	sub	$16, %edx
+ 	jbe	L(return_null)
+ 	lea	16(%edi), %edi
+ # else
+-- 
+2.7.4.GIT
+
