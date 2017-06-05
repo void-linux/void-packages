@@ -124,6 +124,8 @@ function, which is the directory to be used to compile the `source package`.
 
 - `build` This phase compiles/prepares the `source files` via `make` or any other compatible method.
 
+- `check` This optional phase checks the result of the `build` phase for example by running `make -k check`.
+
 - `install` This phase installs the `package files` into the package destdir `<masterdir>/destdir/<pkgname>-<version>`,
 via `make install` or any other compatible method.
 
@@ -361,6 +363,10 @@ Example `hostmakedepends="foo blah"`.
 will be installed to the master directory. There is no need to specify a version
 because the current version in srcpkgs will always be required.
 Example `makedepends="foo blah"`.
+
+- `checkdepends` The list of dependencies required to run the package checks, i.e.
+the script or make rule specified in the template's `do_check()` function.
+Example `checkdepends="gtest"`.
 
 - `depends` The list of dependencies required to run the package. These dependencies
 are not installed to the master directory, rather are only checked if a binary package

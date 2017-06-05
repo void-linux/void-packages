@@ -64,6 +64,10 @@ $XBPS_LIBEXECDIR/xbps-src-doconfigure.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
 $XBPS_LIBEXECDIR/xbps-src-dobuild.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
 [ "$XBPS_TARGET" = "build" ] && exit 0
 
+# Run check phase
+$XBPS_LIBEXECDIR/xbps-src-docheck.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
+[ "$XBPS_TARGET" = "check" ] && exit 0
+
 # Install pkgs into destdir.
 $XBPS_LIBEXECDIR/xbps-src-doinstall.sh $SOURCEPKG no $XBPS_CROSS_BUILD || exit 1
 
