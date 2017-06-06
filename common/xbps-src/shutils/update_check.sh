@@ -57,6 +57,8 @@ update_check() {
                 url="http://ftp.gnome.org/pub/GNOME/sources/$pkgname/cache.json";;
             *kernel.org/pub/linux/kernel/*)
                 rx=linux-'\K'${version%.*}'[\d.]+(?=\.tar\.xz)';;
+            *cran.r-project.org/src/contrib*)
+                rx='\b\Q'"${pkgname#R-cran-}"'\E_\K\d+(\.\d+)*(-\d+)?(?=\.tar)';;
             esac
         fi
 

@@ -673,6 +673,13 @@ depend on additional packages. This build style does not install
 dependencies to the root directory, and only checks if a binary package is
 available in repositories.
 
+- `R-cran` For packages that are available on The Comprehensive R Archive
+Network (CRAN). The build style requires the `pkgname` to start with
+`R-cran-` and any dashes (`-`) in the CRAN-given version to be replaced
+with the character `r` in the `version` variable. The `distfiles`
+location will automatically be set as well as the package made to depend
+on `R`.
+
 - `ruby-module` For packages that are ruby modules and are installable via `ruby install.rb`.
 Additional install arguments can be specified via `make_install_args`.
 
