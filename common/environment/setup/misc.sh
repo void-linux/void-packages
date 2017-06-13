@@ -15,7 +15,7 @@ CPAN_SITE="http://cpan.perl.org/modules/by-module"
 PYPI_SITE="https://files.pythonhosted.org/packages/source"
 MOZILLA_SITE="http://ftp.mozilla.org/pub"
 GNU_SITE="http://ftp.gnu.org/gnu"
-FREEDESKTOP_SITE="http://freedesktop.org/software"
+FREEDESKTOP_SITE="https://freedesktop.org/software"
 
 # Repetitive sub homepage's with no real project page
 # ie. some gnome and xorg projects. For use in $homepage.
