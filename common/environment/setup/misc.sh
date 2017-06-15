@@ -7,7 +7,7 @@ set -a
 SOURCEFORGE_SITE="http://downloads.sourceforge.net/sourceforge"
 NONGNU_SITE="http://download.savannah.nongnu.org/releases"
 UBUNTU_SITE="http://archive.ubuntu.com/ubuntu/pool"
-XORG_SITE="http://xorg.freedesktop.org/releases/individual"
+XORG_SITE="https://www.x.org/releases/individual"
 DEBIAN_SITE="http://ftp.debian.org/debian/pool"
 GNOME_SITE="http://ftp.gnome.org/pub/GNOME/sources"
 KERNEL_SITE="https://www.kernel.org/pub/linux"
