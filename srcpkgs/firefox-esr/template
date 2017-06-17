@@ -1,52 +1,50 @@
 # Template build file for 'firefox-esr'.
 pkgname=firefox-esr
-version=45.9.0
-revision=3
+version=52.2.0
+revision=1
 wrksrc="firefox-${version}esr"
-short_desc="Lightweight gecko-based web browser"
+short_desc="Mozilla Firefox web browser - Extended Support Release (ESR)"
 maintainer="Eivind Uggedal <eivind@uggedal.com>"
-homepage="https://www.mozilla.org/en-US/firefox/organizations/"
-license="MPL-1.1, GPL-2, LGPL-2.1"
+homepage="https://www.mozilla.org/firefox/"
+license="MPL-2.0, GPL-2, LGPL-2.1"
 distfiles="${MOZILLA_SITE}/firefox/releases/${version}esr/source/firefox-${version}esr.source.tar.xz"
-checksum=2afb02029e115fae65dbe1d9c562cbfeb761a6807338bbd30dbffba616cb2d20
+checksum=a2f180e4109b15d86d58444134996c1d49eb52e7702d89510508fbd7bddb9381
 
 only_for_archs="i686 i686-musl x86_64 x86_64-musl"
 nopie=yes
 lib32disabled=yes
-build_options="gtk3"
-desc_option_gtk3="Build the GTK+3 toolkit UI"
 
-hostmakedepends="unzip zip pkg-config perl python yasm"
+hostmakedepends="autoconf213 unzip zip pkg-config perl python yasm
+ $(vopt_if rust 'rust cargo')"
 makedepends="
- nss-devel libjpeg-turbo-devel libpng-devel gtk+-devel
- icu-devel pixman-devel sqlite-devel pulseaudio-devel
- libevent-devel libnotify-devel libvpx-devel libXrender-devel
- startup-notification-devel dbus-glib-devel alsa-lib-devel
- hunspell-devel libXcomposite-devel libSM-devel libXScrnSaver-devel
- libXt-devel libXdamage-devel $(vopt_if gtk3 gtk+3-devel)"
-depends="nss>=3.21 desktop-file-utils hicolor-icon-theme"
+ nss-devel libjpeg-turbo-devel gtk+-devel icu-devel pixman-devel
+ sqlite-devel libevent-devel libnotify-devel libvpx-devel libXrender-devel
+  hunspell-devel libXcomposite-devel libSM-devel libXt-devel libXdamage-devel
+ $(vopt_if alsa alsa-lib-devel) $(vopt_if dbus dbus-glib-devel)
+ $(vopt_if gtk3 gtk+3-devel) $(vopt_if pulseaudio pulseaudio-devel)
+ $(vopt_if startup_notification startup-notification-devel)
+ $(vopt_if xscreensaver libXScrnSaver-devel)"
+depends="nss>=3.27 desktop-file-utils hicolor-icon-theme"
 conflicts="firefox>=0"
 
-CXXFLAGS="-std=c++11"
+build_options="alsa dbus gtk3 rust pulseaudio startup_notification xscreensaver"
+build_options_default="alsa dbus gtk3 pulseaudio startup_notification xscreensaver"
 
-if [ ${XBPS_GCC_VERSION_MAJOR} -gt 5 ]; then
-	# Append CFLAGS and CXXFLAGS to set work around code which gcc6 would
-	# otherwise regard as out-of-specification and allow it to produce a
-	# working program.
-	CFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
-	CXXFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
-fi
+desc_option_gtk3="Build the GTK+3 toolkit UI"
+desc_option_rust="Build rust components"
 
-pre_configure() {
+case "$XBPS_TARGET_MACHINE" in
+	x86_64*) build_options_default+=" rust";;
+esac
+
+post_extract() {
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
-		$XBPS_FETCH_CMD http://git.alpinelinux.org/cgit/aports/plain/community/firefox-esr/stab.h
-		mv stab.h toolkit/crashreporter/google-breakpad/src/
+		# fix musl rust triplet
+		sed -i "s/\(x86_64-unknown-linux\)-gnu/\1-musl/" build/moz.configure/rust.configure
+		cp "${FILESDIR}/stab.h" toolkit/crashreporter/google-breakpad/src/
 		;;
 	esac
-
-	# configure script misdetects the preprocessor without an optimization level
-	sed -i '/ac_cpp=/s/$CPPFLAGS/& -O2/' configure
 
 	# Google API key (see http://www.chromium.org/developers/how-tos/api-keys)
 	# Note: This is for Void Linux use ONLY.
@@ -55,86 +53,59 @@ pre_configure() {
 	# Mozilla API keys (see https://location.services.mozilla.com/api)
 	# Note: This is for Void Linux use ONLY.
 	echo -n "cd894504-7a2a-4263-abff-ff73ee89ffca" > mozilla-api-key
-
-	[ ! -d xbps-build ] && mkdir -p xbps-build
 }
-do_configure() {
-	local _args
+do_build() {
+	cp "${FILESDIR}/mozconfig" "${wrksrc}/.mozconfig"
 
 	case "$XBPS_TARGET_MACHINE" in
-	*-musl) # XXX gold linking with --hash-style=sysv results in unhidden symbols
-		# XXX see https://sourceware.org/ml/binutils/2014-09/msg00230.html
-		#
-		# XXX disable jemalloc.
-		_args+=" --disable-jemalloc --enable-gold=no"
+	*-musl)
+		echo "ac_add_options --disable-jemalloc" >>.mozconfig
+		echo "ac_add_options --enable-gold=no" >>.mozconfig
 		;;
 	esac
 
 	if [ "$CROSS_BUILD" ]; then
-		_args+=" --target=$XBPS_CROSS_TRIPLET --disable-jemalloc"
-
-		# Make config/system_wrappers/alsa/alsalib.h and pulse/pulse.h find
-		# the required includes. Set system nspr and nss include paths.
 		export HOST_CFLAGS="${XBPS_CFLAGS}"
 		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
-		export CFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/alsa \
-			-I${XBPS_CROSS_BASE}/usr/include/pulse \
-			-I${XBPS_CROSS_BASE}/usr/include/nspr \
-			-I${XBPS_CROSS_BASE}/usr/include/nss"
-		export CXXFLAGS+=" ${CFLAGS}"
-		export LDFLAGS+=" -L${XBPS_CROSS_BASE}/usr/lib"
-
 		export ac_cv_sqlite_secure_delete=yes \
 			ac_cv_sqlite_threadsafe=yes \
 			ac_cv_sqlite_enable_fts3=yes \
 			ac_cv_sqlite_dbstat_vtab=yes \
 			ac_cv_sqlite_enable_unlock_notify=yes \
 			ac_cv_prog_hostcxx_works=1
+		echo "ac_add_options --target=$XBPS_CROSS_TRIPLET" >>.mozconfig
 	fi
 
-	mkdir -p /usr/lib/firefox
+	# Append CFLAGS and CXXFLAGS to set work around code which gcc6 would
+	# otherwise regard as out-of-specification and allow it to produce a
+	# working program.
+	export CFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
+	export CXXFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
+
 	export LDFLAGS+=" -Wl,-rpath=/usr/lib/firefox"
 
-	if [ "$build_option_gtk3" ]; then
-		_args+=" --enable-default-toolkit=cairo-gtk3"
-	else
-		_args+=" --enable-default-toolkit=cairo-gtk2"
+	if [ "$SOURCE_DATE_EPOCH" ]; then
+		export MOZ_BUILD_DATE=$(date --date "@$SOURCE_DATE_EPOCH" "+%Y%m%d%H%M%S")
 	fi
 
-	cd xbps-build
-	# XXX build without --system-cairo. See:
-	# - https://github.com/voidlinux/void-packages/issues/2308#issuecomment-135426813
-	# - https://bugs.gentoo.org/show_bug.cgi?id=558150
-	SHELL=/bin/bash ../configure --prefix=/usr --libdir=/usr/lib \
-		--with-system-nspr --with-system-nss --with-system-bz2  \
-		--with-system-jpeg --with-system-zlib --without-system-png \
-		--with-system-libevent --with-system-libvpx \
-		--enable-system-pixman --enable-system-hunspell --enable-system-sqlite \
-		--enable-system-ffi --enable-startup-notification --disable-gio \
-		--with-pthreads --enable-official-branding --enable-safe-browsing \
-		--disable-skia --disable-debug --disable-gnomevfs --disable-gconf \
-		--disable-crashreporter --disable-updater --disable-xprint --disable-tests \
-		--disable-mochitest --disable-installer --disable-elf-hack \
-		--with-system-icu --enable-pulseaudio --disable-gstreamer \
-		--disable-crashreporter --disable-cpp-exceptions --disable-javaxpcom \
-		--with-nspr-prefix=${XBPS_CROSS_BASE}/usr \
-		--with-nss-prefix=${XBPS_CROSS_BASE}/usr \
-		--with-google-api-keyfile="${wrksrc}/google-api-key" \
-		--with-mozilla-api-keyfile="${wrksrc}/mozilla-api-key" \
-		--enable-optimize="$CFLAGS" --disable-strip --disable-install-strip \
-		--disable-static --enable-pie --disable-profiling \
-		--disable-profilelocking ${_args}
-}
-do_build() {
-	if [ "$SOURCE_DATE_EPOCH" ]; then
-		mozdate="MOZ_BUILD_DATE=$(date --date "@$SOURCE_DATE_EPOCH" "+%Y%m%d%H%M%S")"
-	fi
-	cd xbps-build
-	SHELL=/bin/bash make ${mozdate} ${makejobs}
+	export MOZ_MAKE_FLAGS="${makejobs}"
+
+	cat <<! >>.mozconfig
+ac_add_options --with-google-api-keyfile="${wrksrc}/google-api-key"
+ac_add_options --with-mozilla-api-keyfile="${wrksrc}/mozilla-api-key"
+ac_add_options --enable-default-toolkit=cairo-gtk$(vopt_if gtk3 '3' '2')
+ac_add_options $(vopt_enable alsa)
+ac_add_options $(vopt_enable dbus)
+ac_add_options $(vopt_enable dbus necko-wifi)
+ac_add_options $(vopt_enable pulseaudio)
+ac_add_options $(vopt_enable rust)
+ac_add_options $(vopt_enable startup_notification startup-notification)
+!
+
+	make -f client.mk build
 }
 do_install() {
-	cd xbps-build
-	make DESTDIR=${DESTDIR} install
+	make -f client.mk DESTDIR="$DESTDIR" install
 
 	vinstall ${FILESDIR}/vendor.js 644 usr/lib/firefox/browser/defaults/preferences
 	vinstall ${FILESDIR}/firefox.desktop 644 usr/share/applications
