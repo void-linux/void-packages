@@ -338,7 +338,10 @@ The list of mandatory variables for a template:
 - `license` A string matching any license file available in `/usr/share/licenses`.
 Multiple licenses should be separated by commas, i.e `GPL-3, LGPL-2.1`.
 
-- `maintainer` A string in the form of `name <user@domain>`.
+- `maintainer` A string in the form of `name <user@domain>`.  The
+  email for this field must be a valid email that you can be reached
+  at.  Packages using `users.noreply.github.com` emails will not be
+  accepted.
 
 - `pkgname` A string with the package name, matching `srcpkgs/<pkgname>`.
 
