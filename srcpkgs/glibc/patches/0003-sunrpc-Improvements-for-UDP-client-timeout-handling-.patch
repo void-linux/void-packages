@@ -1,35 +1,16 @@
 From 93cf93e06ce123439e41d3d62790601c313134cb Mon Sep 17 00:00:00 2001
 From: Florian Weimer <fweimer@redhat.com>
 Date: Tue, 28 Feb 2017 17:36:00 +0100
-Subject: [PATCH 03] sunrpc: Improvements for UDP client timeout handling
- [BZ #20257]
+Subject: sunrpc: Improvements for UDP client timeout handling [BZ #20257]
 
 This commit fixes various aspects in the UDP client timeout handling.
 Timeouts are now applied in a more consistent fashion.  Discarded UDP
 packets no longer prevent the timeout from happening at all.
 
 (cherry picked from commit cf0bd2f73bd65beab613865bba567d7787836888)
----
- ChangeLog                    |  23 +++
- NEWS                         |   1 +
- inet/Makefile                |   8 +-
- inet/deadline.c              | 122 +++++++++++++
- inet/net-internal.h          |  89 ++++++++++
- inet/tst-deadline.c          | 188 ++++++++++++++++++++
- sunrpc/Makefile              |  10 +-
- sunrpc/clnt_udp.c            | 127 ++++++++------
- sunrpc/tst-udp-garbage.c     | 104 +++++++++++
- sunrpc/tst-udp-nonblocking.c | 333 +++++++++++++++++++++++++++++++++++
- sunrpc/tst-udp-timeout.c     | 402 +++++++++++++++++++++++++++++++++++++++++++
- 11 files changed, 1348 insertions(+), 59 deletions(-)
- create mode 100644 inet/deadline.c
- create mode 100644 inet/tst-deadline.c
- create mode 100644 sunrpc/tst-udp-garbage.c
- create mode 100644 sunrpc/tst-udp-nonblocking.c
- create mode 100644 sunrpc/tst-udp-timeout.c
 
 diff --git a/ChangeLog b/ChangeLog
-index 3d781a3..510ca42 100644
+index 3d781a354a..510ca42c2b 100644
 --- a/ChangeLog
 +++ b/ChangeLog
 @@ -1,3 +1,26 @@
@@ -60,7 +41,7 @@ index 3d781a3..510ca42 100644
  
  	[BZ #21115]
 diff --git a/NEWS b/NEWS
-index 5ecc565..e7d6668 100644
+index 5ecc565371..e7d6668664 100644
 --- a/NEWS
 +++ b/NEWS
 @@ -11,6 +11,7 @@ The following bugs are resolved with this release:
@@ -72,7 +53,7 @@ index 5ecc565..e7d6668 100644
  Version 2.25
  
 diff --git a/inet/Makefile b/inet/Makefile
-index 010792a..6a7d3e0 100644
+index 010792af8f..6a7d3e0664 100644
 --- a/inet/Makefile
 +++ b/inet/Makefile
 @@ -45,14 +45,18 @@ routines := htonl htons		\
@@ -98,7 +79,7 @@ index 010792a..6a7d3e0 100644
  
 diff --git a/inet/deadline.c b/inet/deadline.c
 new file mode 100644
-index 0000000..c1fa415
+index 0000000000..c1fa415a39
 --- /dev/null
 +++ b/inet/deadline.c
 @@ -0,0 +1,122 @@
@@ -225,7 +206,7 @@ index 0000000..c1fa415
 +  return msec;
 +}
 diff --git a/inet/net-internal.h b/inet/net-internal.h
-index 087597e..2b2632c 100644
+index 087597ed99..2b2632c7ba 100644
 --- a/inet/net-internal.h
 +++ b/inet/net-internal.h
 @@ -20,11 +20,100 @@
@@ -331,7 +312,7 @@ index 087597e..2b2632c 100644
  #endif /* _NET_INTERNAL_H */
 diff --git a/inet/tst-deadline.c b/inet/tst-deadline.c
 new file mode 100644
-index 0000000..ed04345
+index 0000000000..ed04345c35
 --- /dev/null
 +++ b/inet/tst-deadline.c
 @@ -0,0 +1,188 @@
@@ -524,7 +505,7 @@ index 0000000..ed04345
 +
 +#include <support/test-driver.c>
 diff --git a/sunrpc/Makefile b/sunrpc/Makefile
-index daf8a28..7e5d295 100644
+index daf8a28f1a..7e5d2955a0 100644
 --- a/sunrpc/Makefile
 +++ b/sunrpc/Makefile
 @@ -93,11 +93,12 @@ rpcgen-objs = rpc_main.o rpc_hout.o rpc_cout.o rpc_parse.o \
@@ -552,7 +533,7 @@ index daf8a28..7e5d295 100644
 +$(objpfx)tst-udp-garbage: \
 +  $(common-objpfx)linkobj/libc.so $(shared-thread-library)
 diff --git a/sunrpc/clnt_udp.c b/sunrpc/clnt_udp.c
-index 1de25cb..6ce16eb 100644
+index 1de25cb771..6ce16eb298 100644
 --- a/sunrpc/clnt_udp.c
 +++ b/sunrpc/clnt_udp.c
 @@ -55,6 +55,7 @@
@@ -750,7 +731,7 @@ index 1de25cb..6ce16eb 100644
    /*
 diff --git a/sunrpc/tst-udp-garbage.c b/sunrpc/tst-udp-garbage.c
 new file mode 100644
-index 0000000..4abda93
+index 0000000000..4abda93f08
 --- /dev/null
 +++ b/sunrpc/tst-udp-garbage.c
 @@ -0,0 +1,104 @@
@@ -860,7 +841,7 @@ index 0000000..4abda93
 +#include <support/test-driver.c>
 diff --git a/sunrpc/tst-udp-nonblocking.c b/sunrpc/tst-udp-nonblocking.c
 new file mode 100644
-index 0000000..1d6a7f4
+index 0000000000..1d6a7f4b56
 --- /dev/null
 +++ b/sunrpc/tst-udp-nonblocking.c
 @@ -0,0 +1,333 @@
@@ -1199,7 +1180,7 @@ index 0000000..1d6a7f4
 +#include <support/test-driver.c>
 diff --git a/sunrpc/tst-udp-timeout.c b/sunrpc/tst-udp-timeout.c
 new file mode 100644
-index 0000000..db9943a
+index 0000000000..db9943a03e
 --- /dev/null
 +++ b/sunrpc/tst-udp-timeout.c
 @@ -0,0 +1,402 @@
@@ -1606,6 +1587,5 @@ index 0000000..db9943a
 +#define TIMEOUT 25
 +#include <support/test-driver.c>
 -- 
-2.7.4.GIT
-
+2.13.1
 

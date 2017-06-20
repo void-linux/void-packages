@@ -1,0 +1,126 @@
+From 3776f38fcd267c127ba5eb222e2c614c191744aa Mon Sep 17 00:00:00 2001
+From: Siddhesh Poyarekar <siddhesh@sourceware.org>
+Date: Tue, 20 Jun 2017 05:59:17 +0200
+Subject: Ignore and remove LD_HWCAP_MASK for AT_SECURE programs (bug #21209)
+
+The LD_HWCAP_MASK environment variable may alter the selection of
+function variants for some architectures.  For AT_SECURE process it
+means that if an outdated routine has a bug that would otherwise not
+affect newer platforms by default, LD_HWCAP_MASK will allow that bug
+to be exploited.
+
+To be on the safe side, ignore and disable LD_HWCAP_MASK for setuid
+binaries.
+
+	[BZ #21209]
+	* elf/rtld.c (process_envvars): Ignore LD_HWCAP_MASK for
+	AT_SECURE processes.
+	* sysdeps/generic/unsecvars.h: Add LD_HWCAP_MASK.
+	* elf/tst-env-setuid.c (test_parent): Test LD_HWCAP_MASK.
+	(test_child): Likewise.
+	* elf/Makefile (tst-env-setuid-ENV): Add LD_HWCAP_MASK.
+
+(cherry picked from commit 1c1243b6fc33c029488add276e56570a07803bfd)
+
+diff --git a/ChangeLog b/ChangeLog
+index 67ce0aa4de..85f1e0a495 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -1,3 +1,13 @@
++2017-03-07  Siddhesh Poyarekar  <siddhesh@sourceware.org>
++
++	[BZ #21209]
++	* elf/rtld.c (process_envvars): Ignore LD_HWCAP_MASK for
++	AT_SECURE processes.
++	* sysdeps/generic/unsecvars.h: Add LD_HWCAP_MASK.
++	* elf/tst-env-setuid.c (test_parent): Test LD_HWCAP_MASK.
++	(test_child): Likewise.
++	* elf/Makefile (tst-env-setuid-ENV): Add LD_HWCAP_MASK.
++
+ 2017-06-19  Florian Weimer  <fweimer@redhat.com>
+ 
+ 	* elf/rtld.c (audit_list_string): New variable.
+diff --git a/NEWS b/NEWS
+index 29079e8586..7be238c404 100644
+--- a/NEWS
++++ b/NEWS
+@@ -13,6 +13,7 @@ The following bugs are resolved with this release:
+   [21015] Document and fix --enable-bind-now
+   [21109] Tunables broken on big-endian
+   [21115] sunrpc: Use-after-free in error path in clntudp_call
++  [21209] Ignore and remove LD_HWCAP_MASK for AT_SECURE programs
+   [21289] Fix symbol redirect for fts_set
+   [21386] Assertion in fork for distinct parent PID is incorrect
+   [21624] Unsafe alloca allows local attackers to alias stack and heap (CVE-2017-1000366)
+diff --git a/elf/Makefile b/elf/Makefile
+index 61abeb59ee..cc4aeb25b6 100644
+--- a/elf/Makefile
++++ b/elf/Makefile
+@@ -1398,6 +1398,7 @@ $(objpfx)tst-nodelete-dlclose: $(objpfx)tst-nodelete-dlclose-dso.so
+ $(objpfx)tst-nodelete-dlclose.out: $(objpfx)tst-nodelete-dlclose-dso.so \
+ 				   $(objpfx)tst-nodelete-dlclose-plugin.so
+ 
+-tst-env-setuid-ENV = MALLOC_CHECK_=2 MALLOC_MMAP_THRESHOLD_=4096
++tst-env-setuid-ENV = MALLOC_CHECK_=2 MALLOC_MMAP_THRESHOLD_=4096 \
++		     LD_HWCAP_MASK=0xffffffff
+ tst-env-setuid-tunables-ENV = \
+ 	GLIBC_TUNABLES=glibc.malloc.check=2:glibc.malloc.mmap_threshold=4096
+diff --git a/elf/rtld.c b/elf/rtld.c
+index 369724babe..9362a21e73 100644
+--- a/elf/rtld.c
++++ b/elf/rtld.c
+@@ -2534,7 +2534,8 @@ process_envvars (enum mode *modep)
+ 
+ 	case 10:
+ 	  /* Mask for the important hardware capabilities.  */
+-	  if (memcmp (envline, "HWCAP_MASK", 10) == 0)
++	  if (!__libc_enable_secure
++	      && memcmp (envline, "HWCAP_MASK", 10) == 0)
+ 	    GLRO(dl_hwcap_mask) = __strtoul_internal (&envline[11], NULL,
+ 						      0, 0);
+ 	  break;
+diff --git a/elf/tst-env-setuid.c b/elf/tst-env-setuid.c
+index 6ec3fa5874..eec408eb5d 100644
+--- a/elf/tst-env-setuid.c
++++ b/elf/tst-env-setuid.c
+@@ -213,6 +213,12 @@ test_child (void)
+       return 1;
+     }
+ 
++  if (getenv ("LD_HWCAP_MASK") != NULL)
++    {
++      printf ("LD_HWCAP_MASK still set\n");
++      return 1;
++    }
++
+   return 0;
+ }
+ #endif
+@@ -233,6 +239,12 @@ test_parent (void)
+       return 1;
+     }
+ 
++  if (getenv ("LD_HWCAP_MASK") == NULL)
++    {
++      printf ("LD_HWCAP_MASK lost\n");
++      return 1;
++    }
++
+   return 0;
+ }
+ #endif
+diff --git a/sysdeps/generic/unsecvars.h b/sysdeps/generic/unsecvars.h
+index a74083786e..5ea8a4a259 100644
+--- a/sysdeps/generic/unsecvars.h
++++ b/sysdeps/generic/unsecvars.h
+@@ -16,6 +16,7 @@
+   "LD_DEBUG\0"								      \
+   "LD_DEBUG_OUTPUT\0"							      \
+   "LD_DYNAMIC_WEAK\0"							      \
++  "LD_HWCAP_MASK\0"							      \
+   "LD_LIBRARY_PATH\0"							      \
+   "LD_ORIGIN_PATH\0"							      \
+   "LD_PRELOAD\0"							      \
+-- 
+2.13.1
+
