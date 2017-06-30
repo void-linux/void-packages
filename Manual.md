@@ -148,7 +148,7 @@ Libraries are packages which provide shared objects (\*.so) in /usr/lib.
 They should be named like their upstream package name with the following
 exceptions:
 
-- The package is a subpackage of a front end application providing and provides
+- The package is a subpackage of a front end application and provides
 shared objects used by the base package and other third party libraries. In that
 case it should be prefixed with 'lib'. An exception from that rule is: If an
 executable is only used for building that package, it moves to the -devel
@@ -156,7 +156,7 @@ package.
 
 Example: wireshark -> subpkg libwireshark
 
-Libraries have to be split into two sub packages: <name> and <name>-devel.
+Libraries have to be split into two sub packages: `<name>` and `<name>-devel`.
 
 - `<name>` should only contain those parts of a package which are needed to run
 a linked program.
