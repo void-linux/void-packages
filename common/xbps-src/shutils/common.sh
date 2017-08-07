@@ -58,7 +58,7 @@ msg_red_nochroot() {
 
 msg_error() {
     msg_red "$@"
-    exit 1
+    [ -n "$XBPS_INFORMATIVE_RUN" ] || exit 1
 }
 
 msg_warn() {
@@ -94,7 +94,6 @@ set_build_options() {
     if [ -z "$build_options" ]; then
         return 0
     fi
-
 
     for f in ${build_options}; do
         _pkgname=${pkgname//\-/\_}
