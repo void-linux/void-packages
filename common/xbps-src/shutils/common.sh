@@ -75,10 +75,12 @@ msg_warn_nochroot() {
 }
 
 msg_normal() {
-    # normal messages in bold
-    [ -n "$NOCOLORS" ] || printf "\033[1m"
-    printf "=> $@"
-    [ -n "$NOCOLORS" ] || printf "\033[m"
+    if [ -z "$XBPS_QUIET" ]; then
+	    # normal messages in bold
+	    [ -n "$NOCOLORS" ] || printf "\033[1m"
+	    printf "=> $@"
+	    [ -n "$NOCOLORS" ] || printf "\033[m"
+    fi
 }
 
 msg_normal_append() {
