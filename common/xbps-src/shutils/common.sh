@@ -211,7 +211,7 @@ get_subpkgs() {
 }
 
 setup_pkg() {
-    local pkg="$1" cross="$2" show_broken="$3"
+    local pkg="$1" cross="$2" show_problems="$3"
     local basepkg val _vars f dbgflags arch
 
     [ -z "$pkg" ] && return 1
@@ -306,7 +306,7 @@ setup_pkg() {
     esac
 
     # Check if base-chroot is already installed.
-    if [ -z "$bootstrap" ]; then
+    if [ -z "$bootstrap" -a "z$show_problems" != "zignore-problems" ]; then
         check_installed_pkg base-chroot-0.1_1
         if [ $? -ne 0 ]; then
             msg_red "${pkg} is not a bootstrap package and cannot be built without it.\n"
@@ -490,16 +490,16 @@ setup_pkg() {
         wrksrc="$XBPS_BUILDDIR/$wrksrc"
     fi
 
-    if [ "$cross" -a "$nocross" ]; then
+    if [ "$cross" -a "$nocross" -a "z$show_problems" != "zignore-problems" ]; then
         msg_red "$pkgver: cannot be cross compiled, exiting...\n"
         exit 2
-    elif [ "$broken" -a "z$show_broken" != "zignore-broken" ]; then
+    elif [ "$broken" -a "z$show_problems" != "zignore-problems" ]; then
         msg_red "$pkgver: cannot be built, it's currently broken; see the build log:\n"
         msg_red "$pkgver: $broken\n"
         exit 2
     fi
 
-    if [ -n "$restricted" -a -z "$XBPS_ALLOW_RESTRICTED" ]; then
+    if [ -n "$restricted" -a -z "$XBPS_ALLOW_RESTRICTED" -a "z$show_problems" != "zignore-problems" ]; then
         msg_red "$pkgver: does not allow redistribution of sources/binaries (restricted license).\n"
         msg_red "If you really need this software, run 'echo XBPS_ALLOW_RESTRICTED=yes >> etc/conf'\n"
         exit 2
