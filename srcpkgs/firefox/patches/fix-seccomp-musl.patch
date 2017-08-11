@@ -1,0 +1,184 @@
+
+# HG changeset patch
+# User Jed Davis <jld@mozilla.com>
+# Date 1499804607 21600
+# Node ID a8f06d32af317f7db813252afbaae05a13d8863a
+# Parent  5cac7af6804c46f6e74547a0fed3c1cb27abc134
+Bug 1376653 - Loosen restrictions on clone flags for musl. r=gcp
+
+I've made this non-ifdef'ed, and removed currently unused ifdef'ed cases
+for old Android versions, because I'd rather have less code that we're
+not even compile-testing than save a few cycles on a non-critical path.
+
+MozReview-Commit-ID: B4Wn1elyK4f
+
+diff --git security/sandbox/linux/SandboxFilter.cpp security/sandbox/linux/SandboxFilter.cpp
+--- security/sandbox/linux/SandboxFilter.cpp
++++ security/sandbox/linux/SandboxFilter.cpp
+@@ -120,35 +120,29 @@ public:
+   virtual ResultExpr ClonePolicy(ResultExpr failPolicy) const {
+     // Allow use for simple thread creation (pthread_create) only.
+ 
+     // WARNING: s390 and cris pass the flags in the second arg -- see
+     // CLONE_BACKWARDS2 in arch/Kconfig in the kernel source -- but we
+     // don't support seccomp-bpf on those archs yet.
+     Arg<int> flags(0);
+ 
+-    // The glibc source hasn't changed the thread creation clone flags
+-    // since 2004, so this *should* be safe to hard-code.  Bionic's
+-    // value has changed a few times, and has converged on the same one
+-    // as glibc; allow any of them.
+-    static const int flags_common = CLONE_VM | CLONE_FS | CLONE_FILES |
+-      CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM;
+-    static const int flags_modern = flags_common | CLONE_SETTLS |
++    // The exact flags used can vary.  CLONE_DETACHED is used by musl
++    // and by old versions of Android (<= JB 4.2), but it's been
++    // ignored by the kernel since the beginning of the Git history.
++    //
++    // If we ever need to support Android <= KK 4.4 again, SETTLS
++    // and the *TID flags will need to be made optional.
++    static const int flags_required = CLONE_VM | CLONE_FS | CLONE_FILES |
++      CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM | CLONE_SETTLS |
+       CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
++    static const int flags_optional = CLONE_DETACHED;
+ 
+-    // Can't use CASES here because its decltype magic infers const
+-    // int instead of regular int and bizarre voluminous errors issue
+-    // forth from the depths of the standard library implementation.
+-    return Switch(flags)
+-#ifdef ANDROID
+-      .Case(flags_common | CLONE_DETACHED, Allow()) // <= JB 4.2
+-      .Case(flags_common, Allow()) // JB 4.3 or KK 4.4
+-#endif
+-      .Case(flags_modern, Allow()) // Android L or glibc
+-      .Default(failPolicy);
++    return If((flags & ~flags_optional) == flags_required, Allow())
++      .Else(failPolicy);
+   }
+ 
+   virtual ResultExpr PrctlPolicy() const {
+     // Note: this will probably need PR_SET_VMA if/when it's used on
+     // Android without being overridden by an allow-all policy, and
+     // the constant will need to be defined locally.
+     Arg<int> op(0);
+     return Switch(op)
+
+
+# HG changeset patch
+# User Jed Davis <jld@mozilla.com>
+# Date 1499813988 21600
+# Node ID 9b5bb669d1283995fd8d01fe779bd8646cb2cd92
+# Parent  a8f06d32af317f7db813252afbaae05a13d8863a
+Bug 1376653 - Unconditionalize the tkill() polyfill. r=gcp
+
+MozReview-Commit-ID: JzLWCRQ9Keg
+
+diff --git security/sandbox/linux/SandboxFilter.cpp security/sandbox/linux/SandboxFilter.cpp
+--- security/sandbox/linux/SandboxFilter.cpp
++++ security/sandbox/linux/SandboxFilter.cpp
+@@ -87,25 +87,24 @@ protected:
+   typedef const sandbox::arch_seccomp_data& ArgsRef;
+ 
+   static intptr_t BlockedSyscallTrap(ArgsRef aArgs, void *aux) {
+     MOZ_ASSERT(!aux);
+     return -ENOSYS;
+   }
+ 
+ private:
+-#if defined(ANDROID) && ANDROID_VERSION < 16
+   // Bug 1093893: Translate tkill to tgkill for pthread_kill; fixed in
+   // bionic commit 10c8ce59a (in JB and up; API level 16 = Android 4.1).
++  // Bug 1376653: musl also needs this, and security-wise it's harmless.
+   static intptr_t TKillCompatTrap(const sandbox::arch_seccomp_data& aArgs,
+                                   void *aux)
+   {
+     return syscall(__NR_tgkill, getpid(), aArgs.args[0], aArgs.args[1]);
+   }
+-#endif
+ 
+   static intptr_t SetNoNewPrivsTrap(ArgsRef& aArgs, void* aux) {
+     if (gSetSandboxFilter == nullptr) {
+       // Called after BroadcastSetThreadSandbox finished, therefore
+       // not our doing and not expected.
+       return BlockedSyscallTrap(aArgs, nullptr);
+     }
+     // Signal that the filter is already in place.
+@@ -236,21 +235,19 @@ public:
+ 
+       // Send signals within the process (raise(), profiling, etc.)
+     case __NR_tgkill: {
+       Arg<pid_t> tgid(0);
+       return If(tgid == getpid(), Allow())
+         .Else(InvalidSyscall());
+     }
+ 
+-#if defined(ANDROID) && ANDROID_VERSION < 16
+       // Polyfill with tgkill; see above.
+     case __NR_tkill:
+       return Trap(TKillCompatTrap, nullptr);
+-#endif
+ 
+       // Yield
+     case __NR_sched_yield:
+       return Allow();
+ 
+       // Thread creation.
+     case __NR_clone:
+       return ClonePolicy(InvalidSyscall());
+
+
+# HG changeset patch
+# User Jed Davis <jld@mozilla.com>
+# Date 1499814186 21600
+# Node ID f68747fe8a15bc355f6380b760d747d52a9f4d26
+# Parent  9b5bb669d1283995fd8d01fe779bd8646cb2cd92
+Bug 1376653 - Fix handling of architecture differences for getdents. r=gcp
+
+MozReview-Commit-ID: ArGStWwkJAg
+
+diff --git security/sandbox/linux/SandboxFilterUtil.h security/sandbox/linux/SandboxFilterUtil.h
+--- security/sandbox/linux/SandboxFilterUtil.h
++++ security/sandbox/linux/SandboxFilterUtil.h
+@@ -100,34 +100,38 @@ public:
+ #ifdef __NR_stat64
+ #define CASES_FOR_stat   case __NR_stat64
+ #define CASES_FOR_lstat   case __NR_lstat64
+ #define CASES_FOR_fstat   case __NR_fstat64
+ #define CASES_FOR_fstatat   case __NR_fstatat64
+ #define CASES_FOR_statfs   case __NR_statfs64: case __NR_statfs
+ #define CASES_FOR_fstatfs   case __NR_fstatfs64: case __NR_fstatfs
+ #define CASES_FOR_fcntl   case __NR_fcntl64
+-// We're using the 32-bit version on 32-bit desktop for some reason.
+-#define CASES_FOR_getdents   case __NR_getdents64: case __NR_getdents
+ // FIXME: we might not need the compat cases for these on non-Android:
+ #define CASES_FOR_lseek   case __NR_lseek: case __NR__llseek
+ #define CASES_FOR_ftruncate   case __NR_ftruncate: case __NR_ftruncate64
+ #else
+ #define CASES_FOR_stat   case __NR_stat
+ #define CASES_FOR_lstat   case __NR_lstat
+ #define CASES_FOR_fstatat   case __NR_newfstatat
+ #define CASES_FOR_fstat   case __NR_fstat
+ #define CASES_FOR_fstatfs   case __NR_fstatfs
+ #define CASES_FOR_statfs   case __NR_statfs
+ #define CASES_FOR_fcntl   case __NR_fcntl
+-#define CASES_FOR_getdents   case __NR_getdents
+ #define CASES_FOR_lseek   case __NR_lseek
+ #define CASES_FOR_ftruncate   case __NR_ftruncate
+ #endif
+ 
++// getdents is not like the other FS-related syscalls with a "64" variant
++#ifdef __NR_getdents
++#define CASES_FOR_getdents   case __NR_getdents64: case __NR_getdents
++#else
++#define CASES_FOR_getdents   case __NR_getdents64
++#endif
++
+ #ifdef __NR_sigprocmask
+ #define CASES_FOR_sigprocmask   case __NR_sigprocmask: case __NR_rt_sigprocmask
+ #define CASES_FOR_sigaction   case __NR_sigaction: case __NR_rt_sigaction
+ #define CASES_FOR_sigreturn   case __NR_sigreturn: case __NR_rt_sigreturn
+ #else
+ #define CASES_FOR_sigprocmask   case __NR_rt_sigprocmask
+ #define CASES_FOR_sigaction   case __NR_rt_sigaction
+ #define CASES_FOR_sigreturn   case __NR_rt_sigreturn
+
