@@ -1,16 +1,15 @@
 # Template build file for 'gcc'
-_majorver=6.3
-_gcjrel=17
+_majorver=7.2
 
 pkgname=gcc
 version=${_majorver}.0
-revision=5
+revision=1
 short_desc="The GNU C Compiler"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 homepage="http://gcc.gnu.org"
 license="GFDL-1.2, GPL-3, LGPL-2.1"
-distfiles="${GNU_SITE}/gcc/gcc-${version}/gcc-${version}.tar.bz2"
-checksum=f06ae7f3f790fbf0f018f6d40e844451e6bc3b7bc96e128e63b09825c1f8b29f
+distfiles="${GNU_SITE}/gcc/gcc-${version}/gcc-${version}.tar.xz"
+checksum=1cf7adf8ff4b5aa49041c8734bbcf1ad18cc4c94d0029aae0f4e48841088479a
 
 nopie=yes
 lib32disabled=yes
@@ -27,12 +26,9 @@ subpackages="libgcc libgomp libgomp-devel libatomic libatomic-devel"
 subpackages+=" libssp libssp-devel"
 
 if [ -n "$CHROOT_READY" -a -z "$CROSS_BUILD" ]; then
-	# Required by gcj
-	hostmakedepends+=" zip unzip"
 	subpackages+=" gcc-fortran gcc-objc gcc-objc++"
 	subpackages+=" libgfortran-devel libgfortran"
 	subpackages+=" libobjc-devel libobjc"
-	subpackages+=" gcc-gcj libgcj-devel libgcj gcc-gcj-jdk-compat"
 	case "$XBPS_TARGET_MACHINE" in
 		*-musl)	# Go won't link for musl libc
 			;;
@@ -82,11 +78,22 @@ esac
 replaces="gcc-c++>=0"
 
 pre_configure() {
-	case "$XBPS_TARGET_MACHINE" in
-		*-musl) patch -Np1 -i ${FILESDIR}/gcc-${version}-musl.diff;;
-	esac
 	# _FORTIFY_SOURCE needs an optimization level.
 	sed -i "/ac_cpp=/s/\$CPPFLAGS/\$CPPFLAGS -O2/" {gcc,libiberty}/configure
+
+	if [ -n "$nopie" ]; then
+		# Fix configure failures by adding -no-pie when linking conftest.c files
+		find -name configure -exec sed -i {} \
+			-e 's;$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS;& -no-pie;' \
+			\;
+		# Fix linking error for fixincl by adding -no-pie
+		sed -i fixincludes/Makefile.in \
+			-e 's;-o $(FI);-no-pie &;' \
+			-e 's;-o $@;-no-pie &;'
+		# Fix linking error for gotools by adding -no-pie
+		sed -i gotools/Makefile.in \
+			-e 's;LINK = .*;& -no-pie;'
+	fi
 }
 do_configure() {
 	local _langs _args _hash
@@ -131,7 +138,7 @@ do_configure() {
 			_args+=" --with-mpc=${XBPS_MASTERDIR}/usr"
 			_args+=" --build=${_triplet}"
 		else
-			_langs="c,c++,objc,obj-c++,fortran,lto,java"
+			_langs="c,c++,objc,obj-c++,fortran,lto"
 			case "$XBPS_TARGET_MACHINE" in
 				*-musl)	# Linking libgo.so is broken for musl libc
 					;;
@@ -139,7 +146,6 @@ do_configure() {
 					;;
 			esac
 			_args+=" --build=${_triplet}"
-			_args+=" --enable-java-gc=boehm"
 			_args+=" --enable-fast-character"
 		fi
 	fi
@@ -159,7 +165,6 @@ do_configure() {
 
 	export CFLAGS="${CFLAGS/-D_FORTIFY_SOURCE=2/}"
 	export CXXFLAGS="${CXXFLAGS/-D_FORTIFY_SOURCE=2/}"
-	export glibcxx_cv_c99_math_cxx98=yes glibcxx_cv_c99_math_cxx11=yes
 
 	_args+=" --prefix=/usr"
 	_args+=" --mandir=/usr/share/man"
@@ -177,6 +182,8 @@ do_configure() {
 	_args+=" --enable-serial-configure"
 	_args+=" --disable-werror"
 	_args+=" --disable-nls"
+	_args+=" --enable-default-pie"
+	_args+=" --enable-default-ssp"
 	_args+=" --enable-checking=release"
 	_args+=" --disable-libstdcxx-pch"
 	_args+=" --with-isl"
@@ -189,9 +196,9 @@ do_configure() {
 	mkdir -p build
 	cd build
 	CONFIG_SHELL=/bin/bash ${wrksrc}/configure ${_args}
+
 }
 do_build() {
-	export glibcxx_cv_c99_math_cxx98=yes glibcxx_cv_c99_math_cxx11=yes
 	if [ -z "$CHROOT_READY" ]; then
 		export LD_LIBRARY_PATH="${XBPS_MASTERDIR}/usr/lib"
 	fi
@@ -262,73 +269,6 @@ do_install() {
 	esac
 }
 
-gcc-gcj_package() {
-	lib32disabled=yes
-	depends="gcc>=${_majorver} libgcj-devel>=${_majorver}"
-	short_desc+=" - Java compiler frontend"
-	pkg_install() {
-		for f in gcj jv-convert gjarsigner gjar grmic jcf-dump \
-			gtnameserv gcjh gnative2ascii gserialver gkeytool \
-			gij grmiregistry grmid gorbd gcj-dbtool gjavah \
-			gc-analyze gappletviewer rebuild-gcj-db aot-compile; do
-			vmove usr/bin/${f}
-		done
-		for f in gcj jv-convert gjarsigner gjar grmic jcf-dump gjdoc \
-			gtnameserv gcjh gnative2ascii gserialver gkeytool \
-			gij grmiregistry grmid gorbd gcj-dbtool gjavah \
-			gc-analyze gappletviewer rebuild-gcj-db aot-compile; do
-			if [ -f ${DESTDIR}/usr/share/man/man1/${f}.1 ]; then
-				vmove usr/share/man/man1/${f}.1
-			fi
-		done
-		vmove usr/bin/${_triplet}-gcj
-		vmove usr/lib/gcc/${_triplet}/${_majorver}/jc1
-		vmove usr/lib/gcc/${_triplet}/${_majorver}/jvgenmain
-		vmove usr/share/info/gcj.info
-		touch ${PKGDESTDIR}/usr/share/info/dir
-	}
-}
-gcc-gcj-jdk-compat_package() {
-	lib32disabled=yes
-	depends="gcc-gcj fastjar"
-	short_desc+=" - JDK compatiblity layer"
-	pkg_install() {
-		local jvm_dir=$PKGDESTDIR/usr/lib/jvm
-		local jdk_dir=$jvm_dir/java-1.5-gcj
-		local jdk_bin_dir=$jdk_dir/bin
-		local jre_dir=$jdk_dir/jre
-		local jre_bin_dir=$jre_dir/bin
-		local jre_lib_dir=$jre_dir/lib
-
-		local arch=
-		case "$XBPS_TARGET_MACHINE" in
-			i686*) arch=i386 ;;
-			x86_64*) arch=amd64 ;;
-			arm*) arch=arm ;;
-		esac
-
-		mkdir -p $jdk_bin_dir
-		ln -sfr $PKGDESTDIR/usr/bin/gij $jdk_bin_dir/java
-		ln -sfr $PKGDESTDIR/usr/bin/fastjar $jdk_bin_dir/fastjar
-		ln -sfr $PKGDESTDIR/usr/bin/grmic $jdk_bin_dir/rmic
-		ln -sfr $PKGDESTDIR/usr/bin/gjavah $jdk_bin_dir/javah
-		ln -sfr $PKGDESTDIR/usr/bin/ecj1 $jdk_bin_dir/javac
-		ln -sfr $PKGDESTDIR/usr/bin/gappletviewer $jdk_bin_dir/appletviewer
-		ln -sfr $PKGDESTDIR/usr/bin/gjarsigner $jdk_bin_dir/jarsigner
-		ln -sfr $PKGDESTDIR/usr/bin/grmiregistry $jdk_bin_dir/rmiregistry
-		ln -sfr $PKGDESTDIR/usr/bin/gkeytool $jdk_bin_dir/keytool
-
-		mkdir -p $jre_bin_dir $jre_lib_dir/$arch
-		ln -sfr $PKGDESTDIR/usr/bin/gij $jre_bin_dir/java
-		ln -sfr $PKGDESTDIR/usr/bin/grmiregistry $jre_bin_dir/rmiregistry
-		ln -sfr $PKGDESTDIR/usr/bin/gkeytool $jre_bin_dir/keytool
-		ln -sfr $PKGDESTDIR/usr/share/java/libgcj-$gccver.jar $jre_lib_dir/rt.jar
-		ln -sfr $PKGDESTDIR/usr/share/java/libgcj-tools-$gccver.jar $jre_lib_dir/tools.jar
-		ln -sfr $PKGDESTDIR/usr/lib/gcj-$version-$_gcjrel/libjvm.so $jre_lib_dir/$arch
-		ln -sfr $PKGDESTDIR/usr/lib/gcj-$version-$_gcjrel/libjavamath.so $jre_lib_dir/$arch
-		ln -sfr $PKGDESTDIR/usr/lib/gcj-$version-$_gcjrel/classmap.db $jre_lib_dir/$arch
-	}
-}
 gcc-go_package() {
 	lib32disabled=yes
 	depends="gcc>=${_majorver} libgo-devel>=${_majorver}"
@@ -391,35 +331,6 @@ gcc-objc_package() {
 		vmove usr/lib/gcc/${_triplet}/${_majorver}/cc1obj
 	}
 }
-libgcj-devel_package() {
-	short_desc+=" - Java library - development files"
-	pkg_install() {
-		vmove usr/include/c++/${_majorver}/gnu
-		vmove usr/include/c++/${_majorver}/java
-		vmove usr/include/c++/${_majorver}/javax
-		vmove usr/include/c++/${_majorver}/sun
-		vmove usr/include/c++/${_majorver}/gcj
-		vmove usr/include/c++/${_majorver}/org
-		vmove usr/lib/gcc/${_triplet}/${_majorver}/plugin/include/java
-		vmove "usr/lib/gcc/${_triplet}/${_majorver}/include/jni*"
-		vmove "usr/lib/gcc/${_triplet}/${_majorver}/include/gcj*"
-		vmove "usr/lib/gcc/${_triplet}/${_majorver}/include/jvm*"
-		vmove "usr/lib/gcc/${_triplet}/${_majorver}/include/jawt*"
-		vmove usr/lib/pkgconfig/libgcj-${_majorver%.*}.pc
-	}
-}
-libgcj_package() {
-	short_desc+=" - Java libraries"
-	pkg_install() {
-		vmove "usr/lib/libgcj*.so*"
-		vmove "usr/lib/libgij.so*"
-		vmove usr/lib/gcj-${version}-$_gcjrel
-		vmove usr/lib/logging.properties
-		vmove usr/lib/libgcj.spec
-		vmove usr/lib/security/classpath.security
-		vmove usr/share/java
-	}
-}
 libgfortran-devel_package() {
 	depends="libgfortran>=${_majorver}"
 	short_desc+=" - Fortran library - development files"
@@ -444,7 +355,6 @@ libgo-devel_package() {
 	short_desc+=" - Go library - development files"
 	pkg_install() {
 		vmove usr/lib/libgo.a
-		vmove usr/lib/libnetgo.a
 		vmove usr/lib/libgobegin.a
 		vmove usr/lib/libgolibbegin.a
 		vmove usr/lib/libgo.so
