@@ -430,7 +430,7 @@ contains multiple `distfiles`.
 - `only_for_archs` This expects a separated list of architectures where
 the package can be built matching `uname -m` output. Reserved for uses
 where the program really only will ever work on certain architectures, like
-binary distributions or where the program is written in assembly. Example
+binaries sources or when the program is written in assembly. Example
 `only_for_archs="x86_64 armv6l"`.
 
 - `build_style` This specifies the `build method` for a package. Read below to know more
