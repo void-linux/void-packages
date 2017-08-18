@@ -1,26 +1,28 @@
-# Enable SSP and FORITFY_SOURCE=2 by default.
-_CFLAGS=" -fstack-protector-strong -D_FORTIFY_SOURCE=2 ${CFLAGS}"
-_CXXFLAGS="-fstack-protector-strong -D_FORTIFY_SOURCE=2 ${CXXFLAGS}"
-# Enable as-needed and relro by default.
-_LDFLAGS="-Wl,--as-needed ${LDFLAGS}"
-
-case "$XBPS_TARGET_MACHINE" in
-	i686-musl) # SSP currently broken (see https://github.com/voidlinux/void-packages/issues/2902)
-		_CFLAGS+=" -fno-stack-protector"
-		_CXXFLAGS+=" -fno-stack-protector"
-		;;
-esac
+# Enable as-needed by default.
+LDFLAGS="-Wl,--as-needed ${LDFLAGS}"
 
 if [ -z "$nopie" ]; then
-	_GCCSPECSDIR=${XBPS_COMMONDIR}/environment/configure/gccspecs
-	case "$XBPS_TARGET_MACHINE" in
-		mips*) _GCCSPECSFILE=${_GCCSPECSDIR}/hardened-mips-cc1;;
-		*) _GCCSPECSFILE=${_GCCSPECSDIR}/hardened-cc1;;
-	esac
-	CFLAGS="-specs=${_GCCSPECSFILE} ${_CFLAGS}"
-	CXXFLAGS="-specs=${_GCCSPECSFILE} ${_CXXFLAGS}"
-	# We pass -z relro -z now here too, because libtool drops -specs...
-	LDFLAGS="-specs=${_GCCSPECSDIR}/hardened-ld -Wl,-z,relro -Wl,-z,now ${_LDFLAGS}"
+	# Our compilers use --enable-default-pie and --enable-default-ssp,
+	# but the bootstrap host compiler may not, force them.
+	if [ -z "$CHROOT_READY" ]; then
+		CFLAGS="-fstack-protector-strong -D_FORTIFY_SOURCE=2 ${CFLAGS}"
+		CXXFLAGS="-fstack-protector-strong -D_FORTIFY_SOURCE=2 ${CXXFLAGS}"
+		_GCCSPECSDIR=${XBPS_COMMONDIR}/environment/configure/gccspecs
+		case "$XBPS_TARGET_MACHINE" in
+			mips*) _GCCSPECSFILE="${_GCCSPECSDIR}/hardened-mips-cc1" ;;
+			*) _GCCSPECSFILE="${_GCCSPECSDIR}/hardened-cc1" ;;
+		esac
+		CFLAGS="-specs=${_GCCSPECSFILE} ${CFLAGS}"
+		CXXFLAGS="-specs=${_GCCSPECSFILE} ${CXXFLAGS}"
+		LDFLAGS="-specs=${_GCCSPECSDIR}/hardened-ld -Wl,-z,relro -Wl,-z,now ${LDFLAGS}"
+	else
+		# Enable FORITFY_SOURCE=2
+		CFLAGS="-D_FORTIFY_SOURCE=2 ${CFLAGS}"
+		CXXFLAGS="-D_FORTIFY_SOURCE=2 ${CXXFLAGS}"
+		LDFLAGS="-Wl,-z,relro -Wl,-z,now ${LDFLAGS}"
+	fi
+else
+	CFLAGS="-fno-PIE ${CFLAGS}"
+	CXXFLAGS="-fno-PIE ${CFLAGS}"
+	LDFLAGS="-no-pie ${LDFLAGS}"
 fi
-
-unset _CFLAGS _CXXFLAGS _LDFLAGS
