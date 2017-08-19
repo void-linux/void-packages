@@ -1,0 +1,90 @@
+# Template file for 'mozc'
+pkgname=mozc
+version=2.20.2677.102
+revision=1
+hostmakedepends="ninja pkg-config protobuf-devel python qt5-devel"
+makedepends="gtk+-devel ibus-devel libzinnia-devel protobuf-devel qt5-devel"
+depends="tegaki-zinnia-japanese>=0.3"
+maintainer="Matthias von Faber <mvf@gmx.eu>"
+homepage="https://github.com/google/mozc"
+license="3-clause-BSD"
+short_desc="Japanese IME (Open Source version of Google Japanese Input)"
+build_wrksrc="mozc/src"
+create_wrksrc=yes
+distfiles="
+ https://github.com/google/mozc/archive/fc687ac2266c54f0c2f58b4c482486618d68786f.tar.gz
+ https://github.com/bnoordhuis/gyp/archive/4ec6c4e3a94bd04a6da2858163d40b2429b8aad1.tar.gz
+ https://github.com/hiroyuki-komatsu/japanese-usage-dictionary/archive/e5b3425575734c323e1d947009dd74709437b684.tar.gz
+"
+checksum="
+ 04749ecfe9a2a039ccb6aae75baee04a7164682470fb9f272eedff803826a55d
+ 009992eae3393ba7b2d2ba6249dbb3ac44157313f10e8add4d3086aef772c04b
+ 0b6efee0eebac2c1a8eeea333278aa40fcef7846bba9a379962c6e567e7e3dc1
+"
+
+post_extract() {
+	ln -s mozc-* mozc
+
+	# symlink "submodules" into place
+	for _src_dest in gyp japanese-usage-dictionary:japanese_usage_dictionary; do
+		_src=${_src_dest%:*}
+		_dst=mozc/src/third_party/${_src_dest#*:}
+		rmdir $_dst
+		ln -sr $_src-* $_dst
+	done
+}
+
+do_configure() {
+	case "$XBPS_TARGET_MACHINE" in
+		*-musl) sed -i -e 's|PTHREAD_MUTEX_RECURSIVE_NP|PTHREAD_MUTEX_RECURSIVE|g' base/mutex.cc ;;
+	esac
+}
+
+do_build() {
+	GYP_DEFINES="
+	 document_dir=/usr/share/licenses/${pkgname}
+	 use_libprotobuf=1
+	 use_libzinnia=1
+	" python build_mozc.py gyp --target_platform=Linux
+	python build_mozc.py build -c Release \
+	                     server/server.gyp:mozc_server \
+	                     gui/gui.gyp:mozc_tool \
+	                     unix/emacs/emacs.gyp:mozc_emacs_helper \
+	                     unix/ibus/ibus.gyp:ibus_mozc \
+	                     renderer/renderer.gyp:mozc_renderer
+
+	sed -i 's|/usr/libexec/|/usr/lib/ibus-mozc/|g' out_linux/Release/gen/unix/ibus/mozc.xml
+}
+
+do_install() {
+	install -D -m 755 out_linux/Release/mozc_server "${PKGDESTDIR}/usr/lib/mozc/mozc_server"
+	install    -m 755 out_linux/Release/mozc_tool   "${PKGDESTDIR}/usr/lib/mozc/mozc_tool"
+
+	head -n 29 server/mozc_server.cc > LICENSE
+	for i in LICENSE data/installer/*.html; do
+		vlicense "$i"
+	done
+}
+
+ibus-mozc_package() {
+	short_desc="Mozc engine for IBus - Client of the Mozc input method"
+	depends="${sourcepkg}-${version}_${revision} ibus>=1.5.14"
+	pkg_install() {
+		install -D -m 755 out_linux/Release/ibus_mozc "${PKGDESTDIR}/usr/lib/ibus-mozc/ibus-engine-mozc"
+		install -D -m 644 out_linux/Release/gen/unix/ibus/mozc.xml "${PKGDESTDIR}/usr/share/ibus/component/mozc.xml"
+		install -D -m 644 data/images/unix/ime_product_icon_opensource-32.png "${PKGDESTDIR}/usr/share/ibus-mozc/product_icon.png"
+		for i in data/images/unix/ui-*.png; do
+			install -m 644 "$i" "${PKGDESTDIR}/usr/share/ibus-mozc/${i##*/ui-}"
+		done
+		install -D -m 755 out_linux/Release/mozc_renderer "${PKGDESTDIR}/usr/lib/mozc/mozc_renderer"
+	}
+}
+
+emacs-mozc_package() {
+	pkgdesc="Mozc for Emacs"
+	depends="${sourcepkg}-${version}_${revision} emacs"
+	pkg_install() {
+		install -D -m 755 out_linux/Release/mozc_emacs_helper "${PKGDESTDIR}/usr/bin/mozc_emacs_helper"
+		install -D -m 644 unix/emacs/mozc.el "${PKGDESTDIR}/usr/share/emacs/site-lisp/emacs-mozc/mozc.el"
+	}
+}
