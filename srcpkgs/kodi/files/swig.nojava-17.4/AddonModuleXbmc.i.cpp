@@ -9218,7 +9218,7 @@ namespace PythonBindings
 
    // constants
    PyModule_AddStringConstant(module, (char*)"__author__", (char*)"Team Kodi <http://kodi.tv>");
-   PyModule_AddStringConstant(module, (char*)"__date__", (char*)"Fri May 26 08:01:11 GMT 2017");
+   PyModule_AddStringConstant(module, (char*)"__date__", (char*)"Wed Aug 23 05:23:28 GMT 2017");
    PyModule_AddStringConstant(module, (char*)"__version__", (char*)"2.25.0");
    PyModule_AddStringConstant(module, (char*)"__credits__", (char*)"Team Kodi");
    PyModule_AddStringConstant(module, (char*)"__platform__", (char*)"ALL");
