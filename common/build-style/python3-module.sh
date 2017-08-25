@@ -11,10 +11,9 @@ do_build() {
 		LDSHARED="${CC} -shared $LDFLAGS"
 		env CC="$CC" LDSHARED="$LDSHARED" \
 			PYPREFIX="$PYPREFIX" CFLAGS="$CFLAGS" \
-			LDFLAGS="$LDFLAGS" python3 setup.py \
-				build --build-base=build-${py3_ver} ${make_build_args}
+			LDFLAGS="$LDFLAGS" python3 setup.py build ${make_build_args}
 	else
-		python3 setup.py build --build-base=build-${py3_ver} ${make_build_args}
+		python3 setup.py build ${make_build_args}
 	fi
 }
 
@@ -28,10 +27,8 @@ do_install() {
 		env CC="$CC" LDSHARED="$LDSHARED" \
 			PYPREFIX="$PYPREFIX" CFLAGS="$CFLAGS" \
 			LDFLAGS="$LDFLAGS" python3 setup.py \
-				build --build-base=build-${py3_ver} \
 				install --prefix=/usr --root=${DESTDIR} ${make_install_args}
 	else
-		python3 setup.py build --build-base=build-${py3_ver} \
-			install --prefix=/usr --root=${DESTDIR} ${make_install_args}
+		python3 setup.py install --prefix=/usr --root=${DESTDIR} ${make_install_args}
 	fi
 }
