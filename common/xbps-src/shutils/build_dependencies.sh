@@ -365,6 +365,21 @@ install_pkg_deps() {
         missing_rdeps+=("${_realpkg}")
     done
 
+    if [ -n "$XBPS_BUILD_ONLY_ONE_PKG" -a "$XBPS_BUILD_ONLY_ONE_PKG" != "0" -a "$XBPS_BUILD_ONLY_ONE_PKG" != "no" ]; then
+           for i in ${host_missing_deps[@]}; do
+                   msg_error "dep ${i} not found: -1 passed: instructed not to build\n"
+           done
+           for i in ${check_missing_deps[@]}; do
+                   msg_error "dep ${i} not found: -1 passed: instructed not to build\n"
+           done
+           for i in ${missing_rdeps[@]}; do
+                   msg_error "dep ${i} not found: -1 passed: instructed not to build\n"
+           done
+           for i in ${missing_deps[@]}; do
+                   msg_error "dep ${i} not found: -1 passed: instructed not to build\n"
+           done
+    fi
+
     # Missing host dependencies, build from srcpkgs.
     for i in ${host_missing_deps[@]}; do
         # packages not found in repos, install from source.
