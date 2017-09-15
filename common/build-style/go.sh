@@ -3,10 +3,15 @@
 #
 
 do_build() {
+	local path="${GOPATH}/src/${go_import_path}"
 	if [[ "${go_get}" != "yes" ]]; then
-		local path="${GOPATH}/src/${go_import_path}"
 		mkdir -p "$(dirname ${path})"
 		ln -fs $PWD "${path}"
+	fi
+
+	if [[ -x /usr/bin/dep ]]; then
+		cd "${path}"
+		dep ensure
 	fi
 
 	go_package=${go_package:-$go_import_path}
