@@ -9,7 +9,7 @@ do_build() {
 		ln -fs $PWD "${path}"
 	fi
 
-	if [[ -x /usr/bin/dep ]]; then
+	if [ -x /usr/bin/dep ] && [ -f Gopkg.toml ] && [ -f Gopkg.lock ]; then
 		cd "${path}"
 		dep ensure
 	fi
