@@ -21,6 +21,3 @@ wget -q -O - https://github.com/chneukirchen/xtools/archive/master.tar.gz | \
 echo XBPS_CHROOT_CMD=uchroot >> etc/conf
 echo XBPS_MAKEJOBS=4 >> etc/conf
 echo XBPS_ALLOW_RESTRICTED=yes >> etc/conf
-
-/bin/echo -e '\x1b[32mUpdating etc/repos-remote.conf...\x1b[0m'
-sed -i 's#https\?://repo\.voidlinux\.eu#http://198.204.250.219#' etc/repos-remote.conf
