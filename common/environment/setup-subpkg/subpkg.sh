@@ -43,3 +43,6 @@ unset -v binfmts
 
 # xbps-triggers: register-shell
 unset -v register_shell
+
+# deprecated
+unset -v noarch
