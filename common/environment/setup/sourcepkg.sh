@@ -33,3 +33,6 @@ unset -f pre_build do_build post_build
 unset -f pre_check do_check post_check
 unset -f pre_install do_install post_install
 unset -f do_clean
+
+# deprecated
+unset -v only_for_arch

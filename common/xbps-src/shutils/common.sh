@@ -347,6 +347,22 @@ setup_pkg() {
         source_file ${XBPS_SRCPKGDIR}/${basepkg}/template
     fi
 
+    # Backward compatibility to noarch and only_for_archs
+    if [ -n "$only_for_archs" ] && [ -n "$noarch" ]; then
+        msg_error "only_for_archs and noarch can't be used together\n"
+    fi
+    if [ -n "$only_for_archs" ]; then
+        archs="$only_for_archs"
+        unset only_for_archs
+        msg_warn "deprecated property 'only_for_archs'. Use archs=\"$only_for_archs\" instead!\n"
+    fi
+    if [ -n "$noarch" ]; then
+        archs=noarch
+        unset noarch
+        msg_warn "deprecated property 'noarch'. Use archs=noarch instead!\n"
+    fi
+
+
     # Check if required vars weren't set.
     _vars="pkgname version short_desc revision homepage license"
     for f in ${_vars}; do
