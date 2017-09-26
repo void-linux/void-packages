@@ -351,8 +351,8 @@ the generated `binary packages` have been modified.
 
 - `short_desc` A string with a brief description for this package. Max 72 chars.
 
-- `version` A string with the package version. Must not contain dashes and at least
-one digit is required.
+- `version` A string with the package version. Must not contain dashes or underscore
+and at least one digit is required. Shell's variable substition usage is not allowed.
 
 <a id="optional_vars"></a>
 #### Optional variables
