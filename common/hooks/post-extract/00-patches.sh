@@ -20,13 +20,13 @@ _process_patch() {
 	elif [[ $f =~ .bz2$ ]]; then
 		bunzip2 "$wrksrc/${_patch}"
 		_patch=${_patch%%.bz2}
-	elif [[ $f =~ .diff ]]; then
+	elif [[ $f =~ .diff$ ]]; then
 		:
-	elif [[ $f =~ .patch ]]; then
+	elif [[ $f =~ .patch$ ]]; then
 		:
 	else
 		msg_warn "$pkgver: unknown patch type: $i.\n"
-		continue
+		return 0
 	fi
 
 	cd "$wrksrc"
