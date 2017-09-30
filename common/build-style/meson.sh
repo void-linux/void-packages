@@ -32,6 +32,9 @@ needs_exe_wrapper = true
 c_args = ['$(echo ${CFLAGS} | sed -r "s/\s+/','/g")']
 c_link_args = ['$(echo ${LDFLAGS} | sed -r "s/\s+/','/g")']
 
+cpp_args = ['$(echo ${CXXFLAGS} | sed -r "s/\s+/','/g")']
+cpp_link_args = ['$(echo ${LDFLAGS} | sed -r "s/\s+/','/g")']
+
 [host_machine]
 system = 'linux'
 cpu_family = '${XBPS_MACHINE}'
