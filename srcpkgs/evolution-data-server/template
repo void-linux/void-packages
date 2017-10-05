@@ -1,7 +1,7 @@
 # Template file for 'evolution-data-server'
 pkgname=evolution-data-server
 version=3.26.0
-revision=1
+revision=2
 build_style=cmake
 configure_args="-DENABLE_GOOGLE_AUTH=OFF -DENABLE_UOA=OFF"
 hostmakedepends="pkg-config intltool flex glib-devel gperf $(vopt_if gir gobject-introspection)"
@@ -15,7 +15,6 @@ license="GPL-2"
 homepage="https://wiki.gnome.org/Apps/Evolution"
 distfiles="${GNOME_SITE}/$pkgname/${version%.*}/$pkgname-$version.tar.xz"
 checksum=7776ef431e58a07b32e5b678b8df4ae5e85f99003a933dafa6bb73842ccff067
-nocross=yes
 
 build_options="gir"
 if [ -z "$CROSS_BUILD" ]; then
@@ -26,15 +25,23 @@ if [ ! -z "$build_option_gir" ]; then
 	configure_args+=" -DENABLE_INTROSPECTION=ON -DENABLE_VALA_BINDINGS=ON"
 fi
 
+# cmake perfomrms 2 checks using binary runtime, about iconv and sfrtime.
+# musl (1.1.16) does not support "ISO-2022-JP" encoding (see its roadmap),
+# although evolution-data-server is fine with musl.
+# If crossbuild, cmake let disabling runtime checks via specific directives.
+# test iconv-detect.c also generates iconv-detect.h that is required for build.
+# So completly disable test from iconv-detect.c (cmake.patch file) and
+# use a cmake cache file on crossbuild to disable sfrtime running test.
+if [ "$CROSS_BUILD" ]; then
+	configure_args+=" -C disableRuntimeTests.cmake"
+fi
+
 pre_configure() {
-	if [ ! -d "build" ]; then
-		mkdir build
+	mkdir -p build
+	cp ${FILESDIR}/iconv-detect.h ${wrksrc}/build/.
+	if [ "$CROSS_BUILD" ]; then
+		cp ${FILESDIR}/disableRuntimeTests.cmake ${wrksrc}/build/.
 	fi
-	echo '/* This is an auto-generated header, DO NOT EDIT! */' > build/iconv-detect.h
-	echo  >> build/iconv-detect.h
-	echo '#define ICONV_ISO_D_FORMAT "iso-%d-%d"' >> build/iconv-detect.h
-	echo '#define ICONV_ISO_S_FORMAT "iso-%d-%s"' >> build/iconv-detect.h
-	echo '#define ICONV_10646 "iso-10646"' >> build/iconv-detect.h
 }
 post_install() {
 	# Fix broken pkg-config
