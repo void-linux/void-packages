@@ -30,4 +30,4 @@
 
    Happy LyXing
 
-   The Void Linux mantainers		 
+   The Void Linux maintainers		 
