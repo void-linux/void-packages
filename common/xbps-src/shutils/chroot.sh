@@ -118,6 +118,8 @@ chroot_sync_repos() {
     local f=
 
     # Copy xbps configuration files to the masterdir.
+    install -Dm644 ${XBPS_DISTDIR}/etc/xbps.conf \
+        ${XBPS_MASTERDIR}/etc/xbps.d/00-xbps-src.conf
     install -Dm644 ${XBPS_DISTDIR}/etc/repos-local.conf \
         ${XBPS_MASTERDIR}/etc/xbps.d/10-repository-local.conf
     install -Dm644 ${XBPS_DISTDIR}/etc/repos-remote.conf \
