@@ -7,10 +7,6 @@ configure_args="--disable-werror"
 nopie=yes
 nocross=yes
 
-case "$XBPS_TARGET_MACHINE" in
-	i686*) broken="https://build.voidlinux.eu/builders/i686_builder/builds/5125/steps/shell_3/logs/stdio" ;;
-esac
-
 #
 # XXX: mit-krb5-devel nasm firebird3 hamcrest iwyu ogl-math
 # Missing, required libraries are downloaded and built internally
@@ -77,6 +73,9 @@ skip_extraction="
  ${_ooop_templates_md5}-OOOP-templates-pack-${_ooop_templates_ver}.zip
 "
 
+build_options="java"
+desc_option_java="Enable Java support"
+
 if [ -z "$CROSS_BUILD" ]; then
 	# mariadbclient can't currently be cross compiled
 	makedepends+=" libmariadbclient-devel"
@@ -85,18 +84,14 @@ fi
 case "$XBPS_TARGET_MACHINE" in
 	i686*)	# Broken unit tests
 		CXXFLAGS="-DDISABLE_CVE_TESTS=1"
+		makedepends+=" clucene-devel"
 		;;
 	*-musl)	# use shipped clucene, because CLucene/analysis/cjk/CJKAnalyzer.h
 		# is missing in the musl clucene-devel files
 		;;
-	*)	makedepends+=" clucene-devel"
-		;;
-esac
-
-case "$XBPS_TARGET_MACHINE" in
-	*-musl)
-		;;
-	*)	makedepends+=" apache-ant openjdk "
+	*)	build_options_default="java"
+		makedepends+=" apache-ant openjdk "
+		makedepends+=" clucene-devel"
 		;;
 esac
 
@@ -126,6 +121,13 @@ pre_configure() {
 	cp ${FILESDIR}/musl-os_utils_h.patch external/firebird/
 	sed -i external/firebird/UnpackedTarball_firebird.mk \
 		-e's;\(.*external/firebird\)/libc++.patch\(.*\)$;\1/libc++.patch\2\n\1/musl-os_utils_h.patch\2;'
+
+	case "$XBPS_TARGET_MACHINE" in
+		i686*)	# Don't run broken tests
+			sed -i "/CppunitTest_sw_ooxmlexport9/d" sw/Module_sw.mk
+			make_build_args="build-nocheck"
+			;;
+	esac
 }
 
 do_configure() {
@@ -153,18 +155,25 @@ do_configure() {
 	configure_args+=" --with-system-libs"
 	configure_args+=" --with-system-headers"
 	case "$XBPS_TARGET_MACHINE" in
-	*-musl)	configure_args+=" --without-java"
+	i686*|*-musl)
+		# Can't use system clucence
 		configure_args+=" --without-system-clucene"
 		;;
-	*)	configure_args+=" --enable-ext-mariadb-connector"
+	x86_64)	configure_args+=" --enable-ext-mariadb-connector"
 		configure_args+=" --enable-ext-ct2n"
 		configure_args+=" --enable-ext-numbertext"
 		configure_args+=" --enable-ext-nlpsolver"
 		configure_args+=" --enable-ext-languagetool"
-		configure_args+=" --with-jdk-home=/usr/lib/jvm/openjdk"
-		configure_args+=" --without-junit"
 		;;
 	esac
+
+	if [ "$build_option_java" ]; then
+		configure_args+=" --with-java"
+		configure_args+=" --with-jdk-home=/usr/lib/jvm/openjdk"
+		configure_args+=" --without-junit"
+	else
+		configure_args+=" --without-java"
+	fi
 	configure_args+=" --with-tls=nss"
 	# xmlsec1-nss is missing, thus don't use system-xmlsec
 	configure_args+=" --without-system-xmlsec"
