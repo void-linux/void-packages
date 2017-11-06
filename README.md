@@ -66,7 +66,7 @@ proper permissions and owner/group as explained above.
 #### proot(1)
 
 The `proot(1)` utility implements chroot and bind mounts support completely in user space,
-and can be used if your Linux kernel does not have support for namespaces. See http://proot.me
+and can be used if your Linux kernel does not have support for namespaces. See https://proot-me.github.io/.
 for more information.
 
 To enable it:
