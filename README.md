@@ -438,6 +438,35 @@ Once the build has finished, you can specify the path to the local repository to
     # make
     # ./mklive.sh ... -r /path/to/hostdir/binpkgs
 
+### Breaking out of a dependency loop
+
+The package gtk+3 can not be built using *-N* with its default options because
+there is a dependency loop: colord depends on gtk+3 and gtk+3 depends on colord.
+
+The following steps are required to build a temporary gtk+3 without colord and
+later on rebuild gtk+3 with colord enabled, once all dependencies are available:
+
+    $ ./xbps-src -N pkg gtk+3
+
+Break this build with Ctrl+C once you see vala, colord, gtk+3 being looped over.
+
+    $ ./xbps-src -o ~gir,~colord -N pkg gtk+3
+
+Now you have a gtk+3 without colord registered and can build the other dependencies.
+
+    $ ./xbps-src -N pkg gtk+3
+
+Here gtk+3 will not be updated because the package already exists. In the
+next step we force a re-registration of gtk+3 with colord enabled.
+
+    $ ./xbps-src -f pkg gtk+3
+
+Be careful with -f (force) building packages, if your repository contains
+multiple architectures. Force registering noarch packages will break them
+for architectures which already had them registered in their repodata file.
+
+Now you can continue to build packages and their dependencies with *-N*.
+
 ### Contributing
 
 See [Contributing](https://github.com/voidlinux/xbps-packages/blob/master/CONTRIBUTING.md)
