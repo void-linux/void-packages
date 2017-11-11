@@ -130,6 +130,8 @@ hook() {
 	generic_wrapper libmikmod-config
 	generic_wrapper pcre-config
 	generic_wrapper net-snmp-config
+	generic_wrapper wx-config
+	generic_wrapper wx-config-3.0
 	generic_wrapper2 curl-config
 	generic_wrapper2 gpg-error-config
 	generic_wrapper2 libassuan-config
