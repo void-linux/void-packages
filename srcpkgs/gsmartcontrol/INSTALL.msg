@@ -1,6 +1,6 @@
-* gsmartcontrol must be run with high privileges. So its desktop menu
-  requires a running polkit authentication agent. GNOME or KDE DE
-  provide it.  Otherwise, install lxpolkit that is a lightweight
+* gsmartcontrol needs elevated privileges, so its desktop menu entry requires
+  a running polkit authentication agent. Almost all desktop shell environments
+  provide it. You can also use lxpolkit (from lxsession) that is a lightweighti
   polkit auth agent.
 
 * action "options > update Drive Database" does not work since
