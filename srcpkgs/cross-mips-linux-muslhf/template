@@ -1,0 +1,266 @@
+# Template build file for 'cross-mips-linux-muslhf'
+#
+_binutils_version=2.29.1
+_gcc_version=7.2.0
+_musl_version=1.1.18
+_linux_version=4.9.8
+
+_triplet=mips-linux-muslhf
+_fpuflags="--with-float=hard --with-fp"
+_archflags="-march=mips32r2 -mhard-float"
+_sysroot="/usr/${_triplet}"
+
+pkgname=cross-${_triplet}
+version=0.24
+revision=1
+short_desc="Cross toolchain for MIPS32r2 BE hardfloat target (musl)"
+maintainer="hipperson0 <hipperson0@gmail.com>"
+homepage="https://www.voidlinux.eu"
+license="GPL-3, GPL-2, MIT"
+distfiles="
+ ${GNU_SITE}/binutils/binutils-${_binutils_version}.tar.bz2
+ ${GNU_SITE}/gcc/gcc-${_gcc_version}/gcc-${_gcc_version}.tar.xz
+ ${KERNEL_SITE}/kernel/v4.x/linux-${_linux_version}.tar.xz
+ https://www.musl-libc.org/releases/musl-${_musl_version}.tar.gz"
+checksum="
+ 1509dff41369fb70aed23682351b663b56db894034773e6dbf7d5d6071fc55cc
+ 1cf7adf8ff4b5aa49041c8734bbcf1ad18cc4c94d0029aae0f4e48841088479a
+ 150bb7f2dd4849b5d21b8ccd8d05294a48229e1fcb93a22e7b806a79ec0b0e45
+ d017ee5d01aec0c522a1330fdff06b1e428cb409e1db819cc4935d5da4a5a118"
+
+lib32disabled=yes
+nocross=yes
+nopie=yes
+nodebug=yes
+create_wrksrc=yes
+
+hostmakedepends="perl flex"
+makedepends="zlib-devel gmp-devel mpfr-devel libmpc-devel isl15-devel"
+nostrip_files="libcaf_single.a libgcc.a libgcov.a libgcc_eh.a"
+depends="${pkgname}-libc-${version}_${revision}"
+
+_apply_patch() {
+	local args="$1" pname="$(basename $2)"
+
+	if [ ! -f ".${pname}_done" ]; then
+		patch -N $args -i $2
+		touch .${pname}_done
+	fi
+}
+
+_binutils_build() {
+	local _args
+
+	[ -f ${wrksrc}/.binutils_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross binutils bootstrap\n"
+
+	[ ! -d binutils-build ] && mkdir binutils-build
+	cd binutils-build
+
+	_args="--prefix=/usr"
+	_args+=" --target=${_triplet}"
+	_args+=" --with-sysroot=${_sysroot}"
+	_args+=" --disable-nls"
+	_args+=" --disable-multilib"
+	_args+=" --disable-werror"
+	_args+=" --disable-shared"
+	_args+=" --with-system-zlib"
+	_args+=" ${_fpuflags}"
+
+	../binutils-${_binutils_version}/configure ${_args}
+
+	make configure-host && make ${makejobs}
+	make install
+
+	touch ${wrksrc}/.binutils_build_done
+}
+
+_gcc_bootstrap() {
+	local _args
+
+	[ -f ${wrksrc}/.gcc_bootstrap_done ] && return 0
+
+	cd ${wrksrc}/gcc-${_gcc_version}
+	_apply_patch -p0 ${FILESDIR}/fix-cxxflags-passing.patch
+
+	msg_normal "Building cross gcc bootstrap\n"
+
+	[ ! -d ../gcc-bootstrap ] && mkdir ../gcc-bootstrap
+	cd ../gcc-bootstrap
+
+	_args="--prefix=/usr"
+	_args+=" --target=${_triplet}"
+	_args+=" --with-sysroot=${_sysroot}"
+	_args+=" --with-newlib"
+	_args+=" --enable-languages=c"
+	_args+=" --with-newlib"
+	_args+=" --disable-libssp"
+	_args+=" --disable-nls"
+	_args+=" --disable-libquadmath"
+	_args+=" --disable-threads"
+	_args+=" --disable-decimal-float"
+	_args+=" --disable-shared"
+	_args+=" --disable-libmpx"
+	_args+=" --disable-libmudflap"
+	_args+=" --disable-libgomp"
+	_args+=" --disable-libatomic"
+	_args+=" ${_fpuflags}"
+
+	CFLAGS="-O0 -g0" CXXFLAGS="-O0 -g0" \
+		../gcc-${_gcc_version}/configure ${_args}
+
+	make ${makejobs}
+	make install
+
+	touch ${wrksrc}/.gcc_bootstrap_done
+}
+
+_linux_headers() {
+	[ -f ${wrksrc}/.linux_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building Linux API headers\n"
+
+	cd linux-${_linux_version}
+
+	for f in ${XBPS_SRCPKGDIR}/kernel-libc-headers/patches/*.patch; do
+		_apply_patch -p0 $f
+	done
+
+	make ARCH=mips headers_check
+	make ARCH=mips INSTALL_HDR_PATH=${_sysroot}/usr headers_install
+
+	touch ${wrksrc}/.linux_build_done
+}
+
+_musl_build() {
+	[ -f ${wrksrc}/.musl_build_done ] && return 0
+
+	cd ${wrksrc}/musl-${_musl_version}
+	msg_normal "Building cross musl libc\n"
+
+	CC="${_triplet}-gcc" CFLAGS="-Os -pipe ${_archflags}" \
+		./configure --prefix=/usr
+
+	make ${makejobs}
+	make DESTDIR=${_sysroot} install
+
+	touch ${wrksrc}/.musl_build_done
+}
+
+_gcc_build() {
+	local _args
+
+	[ -f ${wrksrc}/.gcc_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross gcc final\n"
+
+	[ ! -d gcc-build ] && mkdir gcc-build
+	cd gcc-build
+
+	_args="--prefix=/usr"
+	_args+=" --target=${_triplet}"
+	_args+=" --with-sysroot=${_sysroot}"
+	_args+=" --libexecdir=/usr/lib"
+	_args+=" --enable-languages=c,c++,fortran,lto"
+	_args+=" --enable-lto"
+	_args+=" --enable-default-pie"
+	_args+=" --enable-default-ssp"
+	_args+=" --disable-libsanitizer"
+	_args+=" --disable-multilib"
+	_args+=" --disable-nls"
+	_args+=" --disable-libquadmath"
+	_args+=" --disable-libmpx"
+	_args+=" --disable-libmudflap"
+	_args+=" --enable-shared"
+	_args+=" ${_fpuflags}"
+
+	../gcc-${_gcc_version}/configure ${_args}
+
+	make ${makejobs}
+
+	touch ${wrksrc}/.gcc_build_done
+}
+
+do_build() {
+	# Ensure we use sane environment
+	unset CC CXX CPP LD AS AR RANLIB OBJDUMP READELF NM
+	unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
+	export CFLAGS="-Os -pipe" CXXFLAGS="-Os -pipe"
+
+	for f in include lib libexec bin sbin; do
+		if [ ! -d ${_sysroot}/usr/${f} ]; then
+			mkdir -p ${_sysroot}/usr/${f}
+		fi
+		if [ ! -h ${_sysroot}/${f} ]; then
+			ln -sfr ${_sysroot}/usr/${f} ${_sysroot}/${f}
+		fi
+	done
+
+	_binutils_build
+	_gcc_bootstrap
+	_linux_headers
+	_musl_build
+	_gcc_build
+}
+
+do_install() {
+	for f in include lib libexec bin sbin; do
+		if [ ! -d ${DESTDIR}/${_sysroot}/usr/${f} ]; then
+			mkdir -p ${DESTDIR}/${_sysroot}/usr/${f}
+		fi
+		if [ ! -h ${DESTDIR}/${_sysroot}/${f} ]; then
+			ln -sfr ${DESTDIR}/${_sysroot}/usr/${f} \
+				${DESTDIR}/${_sysroot}/${f}
+		fi
+	done
+
+	# install linux API headers
+	cd ${wrksrc}/linux-${_linux_version}
+	make ARCH=mips INSTALL_HDR_PATH=${DESTDIR}/${_sysroot}/usr headers_install
+	rm -f $(find ${DESTDIR}/${_sysroot}/usr/include -name .install -or -name ..install.cmd)
+	rm -rf ${DESTDIR}/${_sysroot}/usr/include/drm
+
+	# install cross binutils
+	cd ${wrksrc}/binutils-build
+	make DESTDIR=${DESTDIR} install
+
+	# install cross gcc
+	cd ${wrksrc}/gcc-build
+	make DESTDIR=${DESTDIR} install
+
+	# move libcc1.so* to the sysroot
+	mv ${DESTDIR}/usr/lib/libcc1.so* ${DESTDIR}/${_sysroot}/usr/lib
+
+	# install musl libc for target
+	cd ${wrksrc}/musl-${_musl_version}
+	make DESTDIR=${DESTDIR}/${_sysroot} install
+
+	# Remove useless headers.
+	rm -rf ${DESTDIR}/usr/lib/gcc/${_triplet}/*/include-fixed
+
+	# Make ld-musl.so symlinks relative.
+	ln -sf libc.so ${DESTDIR}/${_sysroot}/usr/lib/ld-musl-mips.so.1
+
+	# Remove unnecessary stuff
+	rm -f ${DESTDIR}/usr/lib*/libiberty.a
+	rm -rf ${DESTDIR}/usr/share
+	rm -rf ${DESTDIR}/${_sysroot}/{etc,var}
+	rm -rf ${DESTDIR}/${_sysroot}/usr/{sbin,share,libexec}
+	rm -f ${DESTDIR}/${_sysroot}/libexec
+	rm -f ${DESTDIR}/${_sysroot}/lib/*.py
+	rm -f ${DESTDIR}/${_sysroot}/{sbin,lib}
+}
+
+cross-mips-linux-muslhf-libc_package() {
+	short_desc+=" - libc files"
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	pkg_install() {
+		vmove ${_sysroot}
+	}
+}

@@ -70,6 +70,12 @@ case "$XBPS_TARGET_MACHINE" in
 		. ${_AUTOCONFCACHEDIR}/mips-linux
 		;;
 
+	mipshf*)	
+		. ${_AUTOCONFCACHEDIR}/endian-big
+		. ${_AUTOCONFCACHEDIR}/mips-common
+		. ${_AUTOCONFCACHEDIR}/mips-linux
+		;;
+
 	mipsel*)
 		. ${_AUTOCONFCACHEDIR}/endian-little
 		. ${_AUTOCONFCACHEDIR}/mips-common
