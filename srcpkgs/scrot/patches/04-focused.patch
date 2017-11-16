@@ -1,0 +1,242 @@
+Description: src/options.c (scrot_parse_option_array): add --focused option.
+             src/main.c (scrot_get_geometry, scrot_nice_clip): new functions
+             src/main.c (scrot_grab_focused): new function to grab currently
+Author: James Cameron <quozl@us.netrek.org>
+Last-Update: 2009-05-19
+Index: src/options.h
+===================================================================
+--- src/options.h
++++ src/options.h
+@@ -32,6 +32,7 @@ struct __scrotoptions
+    int delay;
+    int countdown;
+    int select;
++   int focused;
+    int quality;
+    int border;
+    int multidisp;
+Index: src/options.c
+===================================================================
+--- src/options.c
++++ src/options.c
+@@ -44,13 +44,15 @@ init_parse_options(int argc, char **argv
+ static void
+ scrot_parse_option_array(int argc, char **argv)
+ {
+-   static char stropts[] = "bcd:e:hmq:st:v+:";
++   static char stropts[] = "bcd:e:hmq:st:uv+:";
+    static struct option lopts[] = {
+       /* actions */
+       {"help", 0, 0, 'h'},                  /* okay */
+       {"version", 0, 0, 'v'},               /* okay */
+       {"count", 0, 0, 'c'},
+       {"select", 0, 0, 's'},
++      {"focused", 0, 0, 'u'},
++      {"focussed", 0, 0, 'u'},	/* macquarie dictionary has both spellings */
+       {"border", 0, 0, 'b'},
+       {"multidisp", 0, 0, 'm'},
+       /* toggles */
+@@ -95,6 +97,9 @@ scrot_parse_option_array(int argc, char
+         case 's':
+            opt.select = 1;
+            break;
++        case 'u':
++           opt.focused = 1;
++           break;
+         case '+':
+            opt.debug_level = atoi(optarg);
+            break;
+@@ -231,6 +236,7 @@ show_usage(void)
+            "                            and join them together.\n"
+            "  -s, --select              interactively choose a window or rectangle\n"
+            "                            with the mouse\n"
++           "  -u, --focused             use the currently focused window\n"
+            "  -t, --thumb NUM           generate thumbnail too. NUM is the percentage\n"
+            "                            of the original size for the thumbnail to be,\n"
+            "                            or the geometry in percent, e.g. 50x60 or 80x20.\n"
+Index: src/scrot.h
+===================================================================
+--- src/scrot.h
++++ src/scrot.h
+@@ -72,7 +72,10 @@ void scrot_exec_app(Imlib_Image image, s
+                     char *filename_im, char *filename_thumb);
+ void scrot_do_delay(void);
+ Imlib_Image scrot_sel_and_grab_image(void);
++Imlib_Image scrot_grab_focused(void);
+ void scrot_sel_area(int *x, int *y, int *w, int *h);
++void scrot_nice_clip(int *rx, int *ry, int *rw, int *rh);
++int scrot_get_geometry(Window target, int *rx, int *ry, int *rw, int *rh);
+ Window scrot_get_window(Display *display,Window window,int x,int y);
+ Window scrot_get_client_window(Display * display, Window target);
+ Window scrot_find_window_by_property(Display * display, const Window window,
+Index: src/main.c
+===================================================================
+--- src/main.c
++++ src/main.c
+@@ -48,7 +48,9 @@ main(int argc,
+   }
+ 
+ 
+-  if (opt.select)
++  if (opt.focused)
++    image = scrot_grab_focused();
++  else if (opt.select)
+     image = scrot_sel_and_grab_image();
+   else {
+     scrot_do_delay();
+@@ -171,6 +173,22 @@ scrot_exec_app(Imlib_Image image, struct
+ }
+ 
+ Imlib_Image
++scrot_grab_focused(void)
++{
++  Imlib_Image im = NULL;
++  int rx = 0, ry = 0, rw = 0, rh = 0;
++  Window target = None;
++  int ignored;
++
++  scrot_do_delay();
++  XGetInputFocus(disp, &target, &ignored);
++  if (!scrot_get_geometry(target, &rx, &ry, &rw, &rh)) return NULL;
++  scrot_nice_clip(&rx, &ry, &rw, &rh);
++  im = gib_imlib_create_image_from_drawable(root, 0, rx, ry, rw, rh, 1);
++  return im;
++}
++
++Imlib_Image
+ scrot_sel_and_grab_image(void)
+ {
+   Imlib_Image im = NULL;
+@@ -313,57 +331,10 @@ scrot_sel_and_grab_image(void)
+         rh = 0 - rh;
+       }
+     } else {
+-      Window child;
+-      XWindowAttributes attr;
+-      int stat;
+-
+       /* else it's a window click */
+-      /* get geometry of window and use that */
+-      /* get windowmanager frame of window */
+-      if (target != root) {
+-        unsigned int d, x;
+-        int status;
+-
+-        status = XGetGeometry(disp, target, &root, &x, &x, &d, &d, &d, &d);
+-        if (status != 0) {
+-          Window rt, *children, parent;
+-
+-          for (;;) {
+-            /* Find window manager frame. */
+-            status = XQueryTree(disp, target, &rt, &parent, &children, &d);
+-            if (status && (children != None))
+-              XFree((char *) children);
+-            if (!status || (parent == None) || (parent == rt))
+-              break;
+-            target = parent;
+-          }
+-          /* Get client window. */
+-          if (!opt.border)
+-            target = scrot_get_client_window(disp, target);
+-          XRaiseWindow(disp, target);
+-        }
+-      }
+-      stat = XGetWindowAttributes(disp, target, &attr);
+-      if ((stat == False) || (attr.map_state != IsViewable))
+-        return NULL;
+-      rw = attr.width;
+-      rh = attr.height;
+-      XTranslateCoordinates(disp, target, root, 0, 0, &rx, &ry, &child);
+-    }
+-
+-    /* clip rectangle nicely */
+-    if (rx < 0) {
+-      rw += rx;
+-      rx = 0;
++      if (!scrot_get_geometry(target, &rx, &ry, &rw, &rh)) return NULL;
+     }
+-    if (ry < 0) {
+-      rh += ry;
+-      ry = 0;
+-    }
+-    if ((rx + rw) > scr->width)
+-      rw = scr->width - rx;
+-    if ((ry + rh) > scr->height)
+-      rh = scr->height - ry;
++    scrot_nice_clip(&rx, &ry, &rw, &rh);
+ 
+     XBell(disp, 0);
+     im = gib_imlib_create_image_from_drawable(root, 0, rx, ry, rw, rh, 1);
+@@ -371,6 +342,72 @@ scrot_sel_and_grab_image(void)
+   return im;
+ }
+ 
++/* clip rectangle nicely */
++void
++scrot_nice_clip(int *rx, 
++		int *ry, 
++		int *rw, 
++		int *rh)
++{
++  if (*rx < 0) {
++    *rw += *rx;
++    *rx = 0;
++  }
++  if (*ry < 0) {
++    *rh += *ry;
++    *ry = 0;
++  }
++  if ((*rx + *rw) > scr->width)
++    *rw = scr->width - *rx;
++  if ((*ry + *rh) > scr->height)
++    *rh = scr->height - *ry;
++}
++
++/* get geometry of window and use that */
++int
++scrot_get_geometry(Window target,
++		   int *rx, 
++		   int *ry, 
++		   int *rw, 
++		   int *rh)
++{
++  Window child;
++  XWindowAttributes attr;
++  int stat;
++
++  /* get windowmanager frame of window */
++  if (target != root) {
++    unsigned int d, x;
++    int status;
++    
++    status = XGetGeometry(disp, target, &root, &x, &x, &d, &d, &d, &d);
++    if (status != 0) {
++      Window rt, *children, parent;
++      
++      for (;;) {
++	/* Find window manager frame. */
++	status = XQueryTree(disp, target, &rt, &parent, &children, &d);
++	if (status && (children != None))
++	  XFree((char *) children);
++	if (!status || (parent == None) || (parent == rt))
++	  break;
++	target = parent;
++      }
++      /* Get client window. */
++      if (!opt.border)
++	target = scrot_get_client_window(disp, target);
++      XRaiseWindow(disp, target);
++    }
++  }
++  stat = XGetWindowAttributes(disp, target, &attr);
++  if ((stat == False) || (attr.map_state != IsViewable))
++    return 0;
++  *rw = attr.width;
++  *rh = attr.height;
++  XTranslateCoordinates(disp, target, root, 0, 0, rx, ry, &child);
++  return 1;
++}
++
+ Window
+ scrot_get_window(Display * display,
+                  Window window,
