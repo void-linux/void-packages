@@ -53,4 +53,5 @@ do_install() {
 
 	cd ${cmake_builddir:=build}
 	${make_cmd} DESTDIR=${DESTDIR} ${make_install_args} ${make_install_target}
+	cd ${wrksrc}
 }
