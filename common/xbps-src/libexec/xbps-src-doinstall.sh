@@ -28,10 +28,7 @@ done
 
 XBPS_INSTALL_DONE="${XBPS_STATEDIR}/${sourcepkg}_${XBPS_CROSS_BUILD}_install_done"
 
-cd "$wrksrc" || msg_error "$pkgver: cannot access to wrksrc [$wrksrc]\n"
-if [ -n "$build_wrksrc" ]; then
-    cd $build_wrksrc || msg_error "$pkgver: cannot access to build_wrksrc [$build_wrksrc]\n"
-fi
+ch_wrksrc
 
 if [ "$SUBPKG_MODE"  = "no" ]; then
     if [ ! -f $XBPS_INSTALL_DONE ] || [ -f $XBPS_INSTALL_DONE -a -n "$XBPS_BUILD_FORCEMODE" ]; then
