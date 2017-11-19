@@ -13,6 +13,13 @@ do_build() {
 	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
 }
 
+do_check() {
+	: ${make_cmd:=make}
+	: ${make_check_target:=check}
+
+	${make_cmd} ${make_check_args} ${make_check_target}
+}
+
 do_install() {
 	: ${make_cmd:=make}
 	: ${make_install_target:=install}
