@@ -14,6 +14,17 @@ do_build() {
 }
 
 do_check() {
+	if [ -z "$make_cmd" ] && [ -z "$make_check_target" ]; then 
+		if make -q check 2>/dev/null; then
+			:
+		else
+			if [ $? -eq 2 ]; then
+				msg_warn 'No target to "make check".\n'
+				return 0
+			fi
+		fi
+	fi
+
 	: ${make_cmd:=make}
 	: ${make_check_target:=check}
 
