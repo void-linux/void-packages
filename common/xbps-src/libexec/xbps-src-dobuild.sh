@@ -31,7 +31,7 @@ for f in $XBPS_COMMONDIR/environment/build/*.sh; do
     source_file "$f"
 done
 
-run_step build
+run_step build optional
 
 touch -f $XBPS_BUILD_DONE
 
