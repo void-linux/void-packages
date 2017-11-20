@@ -49,7 +49,7 @@ setup_pkg_depends() {
         _depver=$(srcpkg_get_version ${_depname}) || exit $?
         host_build_depends+=" ${_depname}-${_depver}"
     done
-    if ! [ -z "$XBPS_CHECK_PKGS" -o "$XBPS_CHECK_PKGS" = "0" -o "$XBPS_CHECK_PKGS" = "no" ]; then
+    if [ -n "$XBPS_CHECK_PKGS" ]; then
         for j in ${checkdepends}; do
             _depname="${j%\?*}"
             _depver=$(srcpkg_get_version ${_depname}) || exit $?
@@ -365,7 +365,7 @@ install_pkg_deps() {
         missing_rdeps+=("${_realpkg}")
     done
 
-    if [ -n "$XBPS_BUILD_ONLY_ONE_PKG" -a "$XBPS_BUILD_ONLY_ONE_PKG" != "0" -a "$XBPS_BUILD_ONLY_ONE_PKG" != "no" ]; then
+    if [ -n "$XBPS_BUILD_ONLY_ONE_PKG" ]; then
            for i in ${host_missing_deps[@]}; do
                    msg_error "dep ${i} not found: -1 passed: instructed not to build\n"
            done

@@ -44,7 +44,7 @@ _EOF
     else
         sed -e 's,@@XARCH@@,,g' -i $XBPS_MASTERDIR/bin/xbps-shell
     fi
-    if [ -z "$XBPS_CHECK_PKGS" -o "$XBPS_CHECK_PKGS" = "0" -o "$XBPS_CHECK_PKGS" = "no" ]; then
+    if [ -z "$XBPS_CHECK_PKGS" ]; then
         sed -e 's,@@CHECK@@,,g' -i $XBPS_MASTERDIR/bin/xbps-shell
     else
         sed -e "s,@@CHECK@@,XBPS_CHECK_PKGS=$XBPS_CHECK_PKGS,g" -i $XBPS_MASTERDIR/bin/xbps-shell
@@ -198,8 +198,8 @@ chroot_handler() {
         [ -n "$XBPS_BUILD_FORCEMODE" ] && arg="$arg -f"
         [ -n "$XBPS_MAKEJOBS" ] && arg="$arg -j$XBPS_MAKEJOBS"
         [ -n "$XBPS_DEBUG_PKGS" ] && arg="$arg -g"
-        [ -z "$XBPS_CHECK_PKGS" -o "$XBPS_CHECK_PKGS" = "0" -o "$XBPS_CHECK_PKGS" = "no" ] || arg="$arg -Q"
-        [ -n "$XBPS_BUILD_ONLY_ONE_PKG" -a "$XBPS_BUILD_ONLY_ONE_PKG" != "0" -a "$XBPS_BUILD_ONLY_ONE_PKG" != "no" ] && arg="$arg -1"
+        [ -n "$XBPS_CHECK_PKGS" ] && arg="$arg -Q"
+        [ -n "$XBPS_BUILD_ONLY_ONE_PKG" ] && arg="$arg -1"
         [ -n "$XBPS_QUIET" ] && arg="$arg -q"
         [ -n "$XBPS_SKIP_DEPS" ] && arg="$arg -I"
         [ -n "$XBPS_ALT_REPOSITORY" ] && arg="$arg -r $XBPS_ALT_REPOSITORY"

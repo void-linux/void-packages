@@ -27,7 +27,7 @@ if [ -n "$XBPS_CROSS_BUILD" ]; then
     exit 0
 fi
 
-if [ -z "$XBPS_CHECK_PKGS" -o "$XBPS_CHECK_PKGS" = "0" -o "$XBPS_CHECK_PKGS" = "no" ]; then
+if [ -z "$XBPS_CHECK_PKGS" ]; then
     msg_normal "${pkgname}-${version}_${revision}: skipping check (XBPS_CHECK_PKGS is disabled) ...\n"
     exit 0
 fi
