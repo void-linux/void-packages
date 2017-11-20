@@ -198,7 +198,7 @@ chroot_handler() {
         [ -n "$XBPS_BUILD_FORCEMODE" ] && arg="$arg -f"
         [ -n "$XBPS_MAKEJOBS" ] && arg="$arg -j$XBPS_MAKEJOBS"
         [ -n "$XBPS_DEBUG_PKGS" ] && arg="$arg -g"
-        [ -z "$XBPS_CHECK_PKGS" -o "$XBPS_CHECK_PKGS" = "0" -o "$XBPS_CHECK_PKGS" = "no" ] && arg="$arg -Q"
+        [ -z "$XBPS_CHECK_PKGS" -o "$XBPS_CHECK_PKGS" = "0" -o "$XBPS_CHECK_PKGS" = "no" ] || arg="$arg -Q"
         [ -n "$XBPS_BUILD_ONLY_ONE_PKG" -a "$XBPS_BUILD_ONLY_ONE_PKG" != "0" -a "$XBPS_BUILD_ONLY_ONE_PKG" != "no" ] && arg="$arg -1"
         [ -n "$XBPS_QUIET" ] && arg="$arg -q"
         [ -n "$XBPS_SKIP_DEPS" ] && arg="$arg -I"
