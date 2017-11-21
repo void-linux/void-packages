@@ -24,6 +24,13 @@ do_build() {
 	LD="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" ./Build ${make_build_args}
 }
 
+do_check() {
+	if [ ! -x ./Build ]; then
+		msg_error "$pkgver: cannot find ./Build script!\n"
+	fi
+	./Build test
+}
+
 do_install() {
 	if [ ! -x ./Build ]; then
 		msg_error "$pkgver: cannot find ./Build script!\n"
