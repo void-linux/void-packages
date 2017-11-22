@@ -427,6 +427,8 @@ setup_pkg() {
         fi
     fi
 
+    set_build_options
+
     export CFLAGS="$XBPS_TARGET_CFLAGS $XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
     export CXXFLAGS="$XBPS_TARGET_CXXFLAGS $XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"
     export FFLAGS="$XBPS_TARGET_FFLAGS $XBPS_FFLAGS $XBPS_CROSS_FFLAGS $FFLAGS"
@@ -530,8 +532,6 @@ setup_pkg() {
         unset RANLIB_host STRIP_host OBJDUMP_host OBJCOPY_host NM_host READELF_host
         unset CFLAGS_host CXXFLAGS_host CPPFLAGS_host LDFLAGS_host
     fi
-
-    set_build_options
 
     # Setup some specific package vars.
     if [ -z "$wrksrc" ]; then
