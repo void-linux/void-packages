@@ -1196,6 +1196,12 @@ The following variables influence how Go packages are built:
 - `go_build_tags`: An optional, space-separated list of build tags to
   pass to Go.
 
+Occasionally it is necessary to perform operations from within the Go
+source tree.  This is usually needed by programs using go-bindata or
+otherwise preping some assets.  If possible do this in pre_build().
+The path to the package's source inside `$GOPATH` is available as
+`$GOSRCPATH`.
+
 <a id="pkgs_haskell"></a>
 ### Haskell packages
 
