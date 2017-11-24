@@ -1,5 +1,5 @@
 #
-# This helper is for templates using GNU configure scripts.
+# This helper is for templates using meson.
 #
 do_configure() {
 	: ${meson_cmd:=meson}
