@@ -67,6 +67,14 @@ do_build() {
 	${make_cmd} -C ${meson_builddir} ${makejobs} ${make_build_args} ${make_build_target}
 }
 
+do_check() {
+	: ${make_cmd:=ninja}
+	: ${make_check_target:=test}
+	: ${meson_builddir:=build}
+
+	${make_cmd} -C ${meson_builddir} ${makejobs} ${make_check_args} ${make_check_target}
+}
+
 do_install() {
 	: ${make_cmd:=ninja}
 	: ${make_install_target:=install}
