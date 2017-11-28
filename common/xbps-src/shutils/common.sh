@@ -39,14 +39,16 @@ ch_wrksrc() {
 run_step() {
   local step_name="$1" optional_step="$2" skip_post_hook="$3"
 
+  ch_wrksrc
   run_pkg_hooks "pre-$step_name"
 
-  ch_wrksrc
   # Run pre_* Phase
   if declare -f "pre_$step_name" >/dev/null; then
+    ch_wrksrc
     run_func "pre_$step_name"
   fi
 
+  ch_wrksrc
   # Run do_* Phase
   if declare -f "do_$step_name" >/dev/null; then
     run_func "do_$step_name"
@@ -67,10 +69,12 @@ run_step() {
 
   # Run post_* Phase
   if declare -f "post_$step_name" >/dev/null; then
+    ch_wrksrc
     run_func "post_$step_name"
   fi
 
   if ! [ "$skip_post_hook" ]; then
+    ch_wrksrc
     run_pkg_hooks "post-$step_name"
   fi
 }
