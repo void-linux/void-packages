@@ -24,9 +24,11 @@ show_pkg() {
     for i in ${subpackages}; do
         [ -n "$i" ] && echo "subpackages:	$i"
     done
+    set -f
     for i in ${conf_files}; do
         [ -n "$i" ] && echo "conf_files:	$i"
     done
+    set +f
     for i in ${replaces}; do
         [ -n "$i" ] && echo "replaces:	$i"
     done
