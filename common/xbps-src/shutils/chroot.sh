@@ -82,7 +82,11 @@ chroot_prepare() {
     fi
 
     # Create some required files.
-    [ -f /etc/localtime ] && cp -f /etc/localtime $XBPS_MASTERDIR/etc
+    if [ -f /etc/localtime ]; then
+        cp -f /etc/localtime $XBPS_MASTERDIR/etc
+    elif [ -f /usr/share/zoneinfo/UTC ]; then
+        cp -f /usr/share/zoneinfo/UTC $XBPS_MASTERDIR/etc/localtime
+    fi
 
     for f in dev sys proc host boot; do
         [ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
