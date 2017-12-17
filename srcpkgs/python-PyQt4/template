@@ -16,10 +16,9 @@ license="GPL-3"
 distfiles="${SOURCEFORGE_SITE}/pyqt/PyQt4_gpl_x11-${version}.tar.gz"
 checksum=45d724461ae58b019b9be95076ca07e212eb73084aec9125bb254825c3a05383
 alternatives="pyqt4:pyuic4:/usr/bin/python2-pyuic4"
-nocross="FIXME: Fails to detect the cross Qt4 version details"
 
 if [ -n "$CROSS_BUILD" ]; then
-	hostmakedepends+=" qt-devel"
+	hostmakedepends+=" qt-devel sip phonon-devel python-dbus-devel qt-webkit-devel"
 fi
 
 pre_build() {
@@ -34,13 +33,42 @@ do_build() {
 
 	for pyver in $py2_ver $py3_ver; do
 		cd $wrksrc/pyqt4-$pyver
+
+		if [ -n "$CROSS_BUILD" ]; then
+cat > qtdetail.inc << END
+QMAKE_CC="$CC_host"
+QMAKE_CFLAGS="$CFLAGS_host"
+QMAKE_CXX="$CXX_host"
+QMAKE_CXXFLAGS="$CXXFLAGS_host"
+QMAKE_LINK="$CXX_host"
+QMAKE_LINK_SHLIB=
+QMAKE_LFLAGS=
+END
+
+cat > application.inc << END
+QMAKE_CC="${CC}"
+QMAKE_CFLAGS="${CFLAGS}"
+QMAKE_CXX="${CXX}"
+QMAKE_CXXFLAGS="${CXXFLAGS}"
+QMAKE_LINK="${CXX}"
+QMAKE_LINK_SHLIB="${CXX}"
+QMAKE_LFLAGS="${LDFLAGS}"
+QMAKE_STRIP=""
+END
+
+			# configure-ng.py stops when $XBPS_CROSS_BASE is empty
+			# in a native build; so only set sysroot when cross compiling
+			_sysroot="--sysroot=$XBPS_CROSS_BASE"
+		else
+			_sysroot=""
+		fi
+
 		python${pyver} configure-ng.py --confirm-license --assume-shared \
-			--qmake=/usr/lib/qt/bin/qmake --verbose \
-			CC="${CC}" CFLAGS="${CFLAGS}" CXX="${CXX}" CXXFLAGS="${CXXFLAGS}" \
-			LINK="${CXX}" LINK_SHLIB="${CXX}" LFLAGS="${LDFLAGS}" STRIP=""
+			--qmake=/usr/lib/qt/bin/qmake --verbose $_sysroot \
+			QMAKE_CC="${CC}" QMAKE_CFLAGS="${CFLAGS}" QMAKE_CXX="${CXX}" QMAKE_CXXFLAGS="${CXXFLAGS}" \
+			QMAKE_LINK="${CXX}" QMAKE_LINK_SHLIB="${CXX}" QMAKE_LFLAGS="${LDFLAGS}" QMAKE_STRIP=""
 		find -name Makefile -exec sed -i "{}" \
-			-e "s;^\(CXXFLAGS.*=.*\);& $CXXFLAGS;" \
-			-e "s;^\(LFLAGS.*=.*\);& $LDFLAGS;" \;
+			-e "s;\(\$(INSTALL_ROOT)/usr/\)${XBPS_CROSS_TRIPLET}/;\1;g" \;
 		make ${makejobs}
 	done
 }
@@ -48,13 +76,15 @@ do_install() {
 	# install python-pyqt4
 	make -C pyqt4-${py2_ver} DESTDIR=${DESTDIR} INSTALL_ROOT=${DESTDIR} install
 	# create versioned pyuic4 wrapper
-	sed -i 's,/usr/bin/python2.7,/usr/bin/python2,' ${DESTDIR}/usr/bin/pyuic4
+	sed -i -e 's,/usr/bin/python2.7,/usr/bin/python2,' \
+	 -e "s,${XBPS_CROSS_TRIPLET}/,," ${DESTDIR}/usr/bin/pyuic4
 	mv ${DESTDIR}/usr/bin/{,python2-}pyuic4
 
 	# install python3-pyqt4
 	make -C pyqt4-${py3_ver} DESTDIR=${DESTDIR} INSTALL_ROOT=${DESTDIR} install
 	# create versioned pyuic4 wrapper
-	sed -i 's,/usr/bin/python3[.0-9]*,/usr/bin/python3,' ${DESTDIR}/usr/bin/pyuic4
+	sed -i -e 's,/usr/bin/python3[.0-9]*,/usr/bin/python3,' \
+	 -e "s,${XBPS_CROSS_TRIPLET}/,," ${DESTDIR}/usr/bin/pyuic4
 	mv ${DESTDIR}/usr/bin/{,python3-}pyuic4
 
 	cd pyqt4-${py2_ver}
