@@ -20,9 +20,14 @@ homepage="http://www.riverbankcomputing.co.uk/software/pyqt/intro"
 license="GPL-3"
 distfiles="${SOURCEFORGE_SITE}/pyqt/PyQt5_gpl-${version}.tar.gz"
 checksum=ebd70515b30bbd6098fee29e6271a6696b1183c5530ee30e6ba9aaab195536e8
-# FIXME: Cross fails because make -f qtdetail uses g++ but $CXXFLAGS
-# qtdetail is a host tool and should be compiled as such
-nocross=yes
+
+if [ -n "$CROSS_BUILD" ]; then
+	hostmakedepends+=" python python3 sip python-dbus-devel
+ 	 qt5-tools-devel qt5-connectivity-devel qt5-declarative-devel qt5-location-devel
+	 qt5-multimedia-devel qt5-sensors-devel qt5-serialport-devel qt5-svg-devel
+	 qt5-webchannel-devel qt5-webengine-devel qt5-webkit-devel qt5-websockets-devel
+	 qt5-x11extras-devel qt5-xmlpatterns-devel"
+fi
 
 pre_build() {
 	mkdir -p pyqt5-${py2_ver}
@@ -36,8 +41,36 @@ do_build() {
 
 	for pyver in $py2_ver $py3_ver; do
 		cd $wrksrc/pyqt5-$pyver
-		python${pyver} configure.py --confirm-license --assume-shared \
-			STRIP="" QMAKE_CXXFLAGS="${CXXFLAGS}" QMAKE_LFLAGS="${LDFLAGS}"
+
+		if [ -n "$CROSS_BUILD" ]; then
+cat > qtdetail.inc << END
+QMAKE_CC="$CC_host"
+QMAKE_CFLAGS="$CFLAGS_host"
+QMAKE_CXX="$CXX_host"
+QMAKE_CXXFLAGS="$CXXFLAGS_host"
+QMAKE_LINK="$CXX_host"
+QMAKE_LINK_SHLIB=
+QMAKE_LFLAGS=
+END
+
+			# target opengl features aren’t detected when cross compiling
+			case "$XBPS_TARGET_MACHINE" in
+				arm*|aarch64*) sed -i -e "/self.pyqt_disabled_features = lines\[1:-1\]/a \
+				 \        self.pyqt_disabled_features.append('PyQt_Desktop_OpenGL')" configure.py ;;
+			esac
+
+			# configure.py stops when $XBPS_CROSS_BASE is empty in a
+			# native build; so only set sysroot when cross compiling
+			_sysroot="--sysroot=$XBPS_CROSS_BASE"
+		else
+			unset _sysroot
+		fi
+
+		python${pyver} configure.py --confirm-license --assume-shared $_sysroot \
+			QMAKE_CC="${CC}" QMAKE_CFLAGS="${CFLAGS}" QMAKE_CXX="${CXX}" QMAKE_CXXFLAGS="${CXXFLAGS}" \
+			QMAKE_LINK="${CXX}" QMAKE_LINK_SHLIB="${CXX}" QMAKE_LFLAGS="${LDFLAGS}" QMAKE_STRIP=""
+		find -name Makefile -exec sed -i "{}" \
+			-e "s;\(\$(INSTALL_ROOT)/usr/\)${XBPS_CROSS_TRIPLET}/;\1;g" \;
 		make ${makejobs}
 	done
 }
@@ -45,14 +78,16 @@ do_install() {
 	# install python-pyqt5
 	make -C pyqt5-${py2_ver} DESTDIR=${DESTDIR} INSTALL_ROOT=${DESTDIR} install
 	for f in pylupdate5 pyrcc5 pyuic5; do
-		sed -i 's,/usr/bin/python2.7,/usr/bin/python2,' ${DESTDIR}/usr/bin/${f}
+		sed -i -e 's,/usr/bin/python2.7,/usr/bin/python2,' \
+		 -e "s,${XBPS_CROSS_TRIPLET}/,," ${DESTDIR}/usr/bin/${f}
 		mv ${DESTDIR}/usr/bin/{,python2-}${f}
 	done
 
 	# install python3-pyqt5
 	make -C pyqt5-${py3_ver} DESTDIR=${DESTDIR} INSTALL_ROOT=${DESTDIR} install
 	for f in pylupdate5 pyrcc5 pyuic5; do
-		sed -i 's,/usr/bin/python3[.0-9]*,/usr/bin/python3,' ${DESTDIR}/usr/bin/${f}
+		sed -i -e 's,/usr/bin/python3[.0-9]*,/usr/bin/python3,' \
+		 -e "s,${XBPS_CROSS_TRIPLET}/,," ${DESTDIR}/usr/bin/${f}
 		mv ${DESTDIR}/usr/bin/{,python3-}${f}
 	done
 
@@ -139,10 +174,17 @@ python-PyQt5-opengl_package() {
 	lib32disabled=yes
 	depends="${sourcepkg}-${version}_${revision}"
 	short_desc+=" - opengl module"
+
 	pkg_install() {
 		vmove ${py2_sitelib}/PyQt5/QtOpenGL.so
-		vmove ${py2_sitelib}/PyQt5/_QOpenGLFunctions_2_0.so
+
+		# ‘QOpenGLFunctions’ is missing for arm*/aarch64* (mips* probably, too)
+		# cfgtest__QOpenGLFunctions_2_0.cpp:(.text.startup+0x10): undefined reference to 'QOpenGLFunctions_2_0::QOpenGLFunctions_2_0()'
+		if [ -e "$DESTDIR/${py2_sitelib}/PyQt5/_QOpenGLFunctions_2_0.so" ]; then
+				vmove ${py2_sitelib}/PyQt5/_QOpenGLFunctions_2_0.so
+		fi
 	}
+
 }
 python-PyQt5-location_package() {
 	lib32disabled=yes
@@ -195,13 +237,20 @@ python-PyQt5-svg_package() {
 		vmove ${py2_sitelib}/PyQt5/QtSvg.so
 	}
 }
+
 python-PyQt5-tools_package() {
 	lib32disabled=yes
 	depends="${sourcepkg}-${version}_${revision}"
 	short_desc+=" - designer, help modules"
+
 	pkg_install() {
-		vmove ${py2_sitelib}/PyQt5/QtDesigner.so
 		vmove ${py2_sitelib}/PyQt5/QtHelp.so
+
+		# /usr/lib/gcc/armv7l-linux-musleabihf/7.2.0/../../../../armv7l-linux-musleabihf/bin/ld: cannot find -lQt5Designer
+		# there is no libQt5Designer.so.* in qt5-tools for arm*/aarch64* (mips* probably, too)
+		if [ -e "$DESTDIR/${py2_sitelib}/PyQt5/QtDesigner.so" ]; then
+			vmove ${py2_sitelib}/PyQt5/QtDesigner.so
+		fi
 	}
 }
 python-PyQt5-webchannel_package() {
@@ -298,7 +347,12 @@ python3-PyQt5-opengl_package() {
 	short_desc="${short_desc/Python2/Python3} - opengl module"
 	pkg_install() {
 		vmove ${py3_sitelib}/PyQt5/QtOpenGL.so
-		vmove ${py3_sitelib}/PyQt5/_QOpenGLFunctions_2_0.so
+
+		# ‘QOpenGLFunctions’ is missing for arm*/aarch64* (mips* probably, too)
+		# cfgtest__QOpenGLFunctions_2_0.cpp:(.text.startup+0x10): undefined reference to 'QOpenGLFunctions_2_0::QOpenGLFunctions_2_0()'
+		if [ -e "$DESTDIR/${py3_sitelib}/PyQt5/_QOpenGLFunctions_2_0.so" ]; then
+			vmove ${py3_sitelib}/PyQt5/_QOpenGLFunctions_2_0.so
+		fi
 	}
 }
 python3-PyQt5-location_package() {
@@ -358,9 +412,14 @@ python3-PyQt5-tools_package() {
 	depends="python3-PyQt5-${version}_${revision}"
 	short_desc="${short_desc/Python2/Python3} - designer, help modules"
 	pkg_install() {
-		vmove ${py3_sitelib}/PyQt5/QtDesigner.so
 		vmove ${py3_sitelib}/PyQt5/QtHelp.so
-		vmove usr/lib/qt5/plugins/designer/libpyqt5.so
+
+		# /usr/lib/gcc/armv7l-linux-musleabihf/7.2.0/../../../../armv7l-linux-musleabihf/bin/ld: cannot find -lQt5Designer
+		# there is no libQt5Designer.so.* in qt5-tools for arm*/aarch64* (mips* probably, too)
+		if [ -e "$DESTDIR/${py3_sitelib}/PyQt5/QtDesigner.so" ]; then
+			vmove ${py3_sitelib}/PyQt5/QtDesigner.so
+			vmove usr/lib/qt5/plugins/designer/libpyqt5.so
+		fi
 	}
 }
 python3-PyQt5-webchannel_package() {
