@@ -15,11 +15,8 @@ if ! test -L $HOME/.nix-profile; then
 	fi
 fi
 
-export NIX_PROFILES="/nix/var/nix/profiles/default $HOME/.nix-profile"
-
-for i in $NIX_PROFILES; do
-	export PATH=$i/bin:$PATH
-done
+export PATH=/nix/var/nix/profiles/default/bin:$PATH
+export PATH=$HOME/.nix-profile/bin:$PATH
 
 if [ "$USER" = root -a ! -e $HOME/.nix-channels ]; then
 	echo "http://nixos.org/channels/nixpkgs-unstable nixpkgs" \
