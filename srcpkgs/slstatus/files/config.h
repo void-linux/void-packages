@@ -1,5 +1,11 @@
 /* See LICENSE file for copyright and license details. */
 
+/* interval between updates (in ms) */
+static const int interval = 1000;
+
+/* maximum output string length */
+#define MAXLEN 2048
+
 /* alsa sound */
 #define ALSA_CHANNEL    "Master"
 
