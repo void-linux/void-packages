@@ -130,7 +130,7 @@ _EOF
 		unset info_files
 		for f in $(find ${PKGDESTDIR}/usr/share/info -type f); do
 			j=$(echo $f|sed -e "$fpattern")
-                        [ "$j" = "" ] && continue
+			[ "$j" = "" ] && continue
 			[ "$j" = "/usr/share/info/dir" ] && continue
 			if [ -z "$info_files" ]; then
 				info_files="$j"
@@ -142,7 +142,7 @@ _EOF
 			_add_trigger info-files
 			echo "export info_files=\"${info_files}\"" >> $tmpf
 		fi
-        fi
+	fi
 	#
 	# Handle files in hwdb directory
 	#
@@ -198,7 +198,7 @@ _EOF
 			_add_trigger gtk-icon-cache
 		fi
 	fi
-        #
+	#
 	# Handle .desktop files in /usr/share/applications with
 	# desktop-file-utils.
 	#
