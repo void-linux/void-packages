@@ -1,10 +1,13 @@
 # Template file for 'crystal'
 pkgname=crystal
 version=0.24.1
-revision=2
+revision=3
 _shardsversion=0.7.2
-hostmakedepends="crystal-bin git llvm"
-makedepends="libxml2-devel libyaml-devel"
+_bootstrapversion=0.24.1
+_bootstraprevision=2
+hostmakedepends="$(vopt_if binary_bootstrap "" crystal) git llvm"
+makedepends="gc-devel libatomic_ops pcre-devel libevent-devel libyaml-devel
+ libxml2-devel"
 depends="gc-devel libatomic_ops pcre-devel libevent-devel libyaml-devel
  libxml2-devel gmp-devel libressl-devel llvm gcc"
 checkdepends="readline-devel libyaml-devel gmp-devel libressl-devel"
@@ -13,12 +16,25 @@ maintainer="lvmbdv <ata.kuyumcu@protonmail.com>"
 license="Apache-2.0"
 homepage="https://crystal-lang.org/"
 distfiles="https://github.com/crystal-lang/crystal/archive/v${version}.tar.gz
-https://github.com/crystal-lang/shards/archive/v${_shardsversion}.tar.gz"
+https://github.com/crystal-lang/shards/archive/v${_shardsversion}.tar.gz
+$(vopt_if binary_bootstrap https://github.com/crystal-lang/crystal/releases/download/v${_bootstrapversion}/crystal-${_bootstrapversion}-${_bootstraprevision}-linux-${XBPS_TARGET_MACHINE}.tar.gz)"
 checksum="4999a4d2a9ffc7bfbea8351b97057c3a135c2091cbd518e5c22ea7f5392b67d8
-97a3681e74d2fdcba0575f6906f4ba0aefc709a2eb672c7289c63176ff4f3be2"
-conflicts="crystal-bin"
+97a3681e74d2fdcba0575f6906f4ba0aefc709a2eb672c7289c63176ff4f3be2
+$(vopt_if binary_bootstrap b75df8522f2302270b48e6b77812a0cb0086e338cdf884227e0076afbf83aca7)"
 nocross="FIXME: someone needs to sort out the llvm --cxxflags for cross building"
 _crystalflags="--release --no-debug --progress"
+
+build_options="binary_bootstrap"
+build_options_default="binary_bootstrap"
+desc_option_oracle_bootstrap="Bootstrap using precompiled binaries"
+
+do_extract() {
+	mkdir -p ${wrksrc}/{shards,$(vopt_if binary_bootstrap bootstrap)}
+
+	tar xfz ${XBPS_SRCDISTDIR}/${pkgname}-${version}/v${version}.tar.gz --strip-components=1 -C ${wrksrc}
+	tar xfz ${XBPS_SRCDISTDIR}/${pkgname}-${version}/v${_shardsversion}.tar.gz --strip-components=1 -C ${wrksrc}/shards
+	$(vopt_if binary_bootstrap "tar xfz ${XBPS_SRCDISTDIR}/${pkgname}-${version}/crystal-${_bootstrapversion}-${_bootstraprevision}-linux-${XBPS_TARGET_MACHINE}.tar.gz --strip-components=1 -C ${wrksrc}/bootstrap")
+}
 
 post_extract() {
 	# Check for libtls to determine if libssl is coming from LibreSSL, as suggested by Vaelatern
@@ -26,8 +42,6 @@ post_extract() {
 	sed -i 's/OPENSSL_102 = .*/OPENSSL_102 = {{ `command -v pkg-config > \/dev\/null \&\& pkg-config --atleast-version=1.0.2 libcrypto \&\& pkg-config --exists libtls || printf succ`.stringify == "succ" }}/' ${wrksrc}/src/openssl/lib_crypto.cr
 	sed -i 's/OPENSSL_110 = .*/OPENSSL_110 = {{ `command -v pkg-config > \/dev\/null \&\& pkg-config --atleast-version=1.1.0 libssl \&\& pkg-config --exists libtls || printf succ`.stringify == "succ" }}/' ${wrksrc}/src/openssl/lib_ssl.cr
 	sed -i 's/OPENSSL_110 = .*/OPENSSL_110 = {{ `command -v pkg-config > \/dev\/null \&\& pkg-config --atleast-version=1.1.0 libcrypto \&\& pkg-config --exists libtls || printf succ`.stringify == "succ" }}/' ${wrksrc}/src/openssl/lib_crypto.cr
-
-	sed -i 's/exec crystal/exec crystal-bin/' ${wrksrc}/bin/crystal
 }
 
 do_build() {
@@ -37,10 +51,11 @@ do_build() {
 	make ${makejobs} release=1 FLAGS="${_crystalflags}" \
 		CRYSTAL_CONFIG_PATH="lib:/usr/lib/crystal" \
 		CRYSTAL_CONFIG_VERSION="${version}" \
-		CRYSTAL_CACHE_DIR="/tmp/crystal"
+		CRYSTAL_CACHE_DIR="/tmp/crystal" \
+		$(vopt_if binary_bootstrap PATH="${wrksrc}/bootstrap/bin:$PATH")
 	make ${makejobs} docs CRYSTAL_CACHE_DIR="/tmp/crystal"
 
-	cd ${XBPS_BUILDDIR}/shards-${_shardsversion}/
+	cd shards
 	${wrksrc}/bin/crystal build ${_crystalflags} -o bin/shards src/shards.cr
 }
 
@@ -50,7 +65,7 @@ do_check() {
 		CRYSTAL_CACHE_DIR="/tmp/crystal" \
 		PATH=".build:$PATH"
 
-	cd ${XBPS_BUILDDIR}/shards-${_shardsversion}/
+	cd shards
 	make test CRYSTAL_BIN="${wrksrc}/bin/crystal"
 }
 
@@ -71,6 +86,6 @@ do_install() {
 	vbin .build/crystal crystal
 	vlicense LICENSE
 	vman man/crystal.1
-	vbin ${XBPS_BUILDDIR}/shards-${_shardsversion}/bin/shards
-	cp ${XBPS_BUILDDIR}/shards-${_shardsversion}/LICENSE ${DESTDIR}/usr/share/licenses/shards
+	vbin shards/bin/shards
+	cp shards/LICENSE ${DESTDIR}/usr/share/licenses/shards
 }
