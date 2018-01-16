@@ -188,7 +188,7 @@ srcpkg_get_pkgver() {
 install_pkg_deps() {
     local pkg="$1" targetpkg="$2" target="$3" cross="$4" cross_prepare="$5"
     local rval _realpkg _vpkg _curpkg curpkgdepname pkgn iver
-    local i j found rundep repo
+    local i j found rundep repo style
 
     local -a host_binpkg_deps check_binpkg_deps binpkg_deps
     local -a host_missing_deps check_missing_deps missing_deps missing_rdeps
@@ -197,10 +197,12 @@ install_pkg_deps() {
 
     setup_pkg_depends
 
+    [ -n "$build_style" ] && style=" [$build_style]"
+
     if [ "$pkg" != "$targetpkg" ]; then
-        msg_normal "$pkgver: building (dependency of $targetpkg) ...\n"
+        msg_normal "$pkgver: building${style} (dependency of $targetpkg) ...\n"
     else
-        msg_normal "$pkgver: building ...\n"
+        msg_normal "$pkgver: building${style} ...\n"
     fi
 
     if [ -z "$build_depends" -a -z "$host_build_depends" -a -z "$host_check_depends" -a -z "$run_depends" ]; then
@@ -434,7 +436,7 @@ install_pkg_deps() {
     done
 
     if [ "$pkg" != "$targetpkg" ]; then
-        msg_normal "$pkg: building (dependency of $targetpkg) ...\n"
+        msg_normal "$pkg: building${style} (dependency of $targetpkg) ...\n"
     fi
 
     for i in ${host_binpkg_deps[@]}; do
