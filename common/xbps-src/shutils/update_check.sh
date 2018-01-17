@@ -48,6 +48,10 @@ update_check() {
                 githubname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$githubname/tags"
                 rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
+            *gitlab.com*)
+                gitlabname="$(printf %s "$url" | cut -d/ -f4,5)"
+                url="https://gitlab.com/$gitlabname/tags"
+                rx='href="/\Q'$gitlabname'\E/repository/[^\d\.]*\K[\d\.]+(?=/archive\.tar\.gz")';;
             *bitbucket.org*)
                 bbname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://bitbucket.org/$bbname/downloads"
