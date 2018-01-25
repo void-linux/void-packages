@@ -49,7 +49,7 @@ remove_pkg_autodeps() {
 
     remove_pkg_cross_deps
     $XBPS_RECONFIGURE_CMD -a >> $tmplogf 2>&1
-    $XBPS_REMOVE_CMD -Ryod >> $tmplogf 2>&1
+    echo yes | $XBPS_REMOVE_CMD -Ryod >> $tmplogf 2>&1
     rval=$?
 
     if [ $rval -ne 0 ]; then
