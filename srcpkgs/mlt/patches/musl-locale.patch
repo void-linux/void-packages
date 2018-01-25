@@ -3,13 +3,69 @@ then strtod_l() would not exist. It exists with musl libc as well.
 
 Also don't assume locale_t == char* if __GLIBC__ isn't defined.
 
---- src/framework/mlt_property.c	2017-01-20 21:18:26.246774282 +0100
-+++ src/framework/mlt_property.c	2017-01-20 21:38:19.680752910 +0100
-@@ -278,27 +278,10 @@
+--- src/framework/mlt_properties.c	2018-01-23 07:41:00.000000000 +0100
++++ src/framework/mlt_properties.c	2018-01-25 17:49:25.604808390 +0100
+@@ -141,15 +141,9 @@ int mlt_properties_set_lcnumeric( mlt_pr
+ 	{
+ 		property_list *list = self->local;
+ 
+-#if defined(__GLIBC__) || defined(__APPLE__)
+ 		if ( list->locale )
+ 			freelocale( list->locale );
+ 		list->locale = newlocale( LC_NUMERIC_MASK, locale, NULL );
+-#else
+-
+-		free( list->locale );
+-		list->locale = strdup( locale );
+-#endif
+ 	}
+ 	else
+ 		error = 1;
+@@ -181,7 +175,7 @@ const char* mlt_properties_get_lcnumeric
+ #elif defined(__GLIBC__)
+         result = list->locale->__names[ LC_NUMERIC ];
+ #else
+-		result = list->locale;
++		result = "C";
+ #endif
+ #if defined(_WIN32)
+ 		if ( result )
+@@ -713,12 +707,10 @@ int mlt_properties_set( mlt_properties s
+ 			// Determine the value
+ 			if ( isdigit( id[ 0 ] ) )
+ 			{
+-#if defined(__GLIBC__) || defined(__APPLE__)
+ 				property_list *list = self->local;
+ 				if ( list->locale )
+ 					current = strtod_l( id, NULL, list->locale );
+                 else
+-#endif
+ 					current = strtod( id, NULL );
+ 			}
+ 			else
+@@ -1404,14 +1396,9 @@ void mlt_properties_close( mlt_propertie
+ 				free( list->name[ index ] );
+ 			}
+ 
+-#if defined(__GLIBC__) || defined(__APPLE__)
+ 			// Cleanup locale
+ 			if ( list->locale )
+ 				freelocale( list->locale );
+-#else
+-
+-			free( list->locale );
+-#endif
+ 
+ 			// Clear up the list
+ 			pthread_mutex_destroy( &list->mutex );
+
+--- src/framework/mlt_property.c	2018-01-23 07:41:00.000000000 +0100
++++ src/framework/mlt_property.c	2018-01-25 17:45:17.343812836 +0100
+@@ -278,27 +278,10 @@ static int time_clock_to_frames( mlt_pro
  	s = copy;
  	pos = strrchr( s, ':' );
  
--#if !defined(__GLIBC__) && !defined(__APPLE__)
+-#if !defined(__GLIBC__) && !defined(__APPLE__) && !defined(_WIN32)
 -	char *orig_localename = NULL;
 -	if ( locale )
 -	{
@@ -33,7 +89,7 @@ Also don't assume locale_t == char* if __GLIBC__ isn't defined.
  			seconds = strtod( pos + 1, NULL );
  		*pos = 0;
  		pos = strrchr( s, ':' );
-@@ -312,23 +295,12 @@
+@@ -312,23 +295,12 @@ static int time_clock_to_frames( mlt_pro
  		}
  	}
  	else {
@@ -45,7 +101,7 @@ Also don't assume locale_t == char* if __GLIBC__ isn't defined.
  			seconds = strtod( s, NULL );
  	}
  
--#if !defined(__GLIBC__) && !defined(__APPLE__)
+-#if !defined(__GLIBC__) && !defined(__APPLE__) && !defined(_WIN32)
 -	if ( locale ) {
 -		// Restore the current locale
 -		setlocale( LC_NUMERIC, orig_localename );
@@ -56,8 +112,17 @@ Also don't assume locale_t == char* if __GLIBC__ isn't defined.
 -
  	free( copy );
  
- 	return lrint( fps * ( (hours * 3600) + (minutes * 60) + seconds ) );
-@@ -489,37 +461,13 @@
+ 	return floor( fps * hours * 3600 ) + floor( fps * minutes * 60 ) + lrint( fps * seconds );
+@@ -407,7 +379,7 @@ static int time_code_to_frames( mlt_prop
+ static int mlt_property_atoi( mlt_property self, double fps, locale_t locale )
+ {
+ 	const char *value = self->prop_string;
+-	
++
+ 	// Parse a hex color value as #RRGGBB or #AARRGGBB.
+ 	if ( value[0] == '#' )
+ 	{
+@@ -489,37 +461,13 @@ static double mlt_property_atof( mlt_pro
  		char *end = NULL;
  		double result;
  
@@ -65,7 +130,7 @@ Also don't assume locale_t == char* if __GLIBC__ isn't defined.
  		if ( locale )
  			result = strtod_l( value, &end, locale );
  		else
--#else
+-#elif !defined(_WIN32)
 -		char *orig_localename = NULL;
 -		if ( locale ) {
 -			// Protect damaging the global locale from a temporary locale on another thread.
@@ -83,7 +148,7 @@ Also don't assume locale_t == char* if __GLIBC__ isn't defined.
  		if ( end && end[0] == '%' )
  			result /= 100.0;
  
--#if !defined(__GLIBC__) && !defined(__APPLE__)
+-#if !defined(__GLIBC__) && !defined(__APPLE__) && !defined(_WIN32)
 -		if ( locale ) {
 -			// Restore the current locale
 -			setlocale( LC_NUMERIC, orig_localename );
@@ -95,15 +160,17 @@ Also don't assume locale_t == char* if __GLIBC__ isn't defined.
  		return result;
  	}
  }
-@@ -1027,35 +975,10 @@
+@@ -1030,36 +978,11 @@ static int is_property_numeric( mlt_prop
+ 	{
  		double temp;
  		char *p = NULL;
- 		
+-		
 -#if defined(__GLIBC__) || defined(__APPLE__)
++
  		if ( locale )
  			temp = strtod_l( self->prop_string, &p, locale );
  		else
--#else
+-#elif !defined(_WIN32)
 -		char *orig_localename = NULL;
 -		if ( locale ) {
 -			// Protect damaging the global locale from a temporary locale on another thread.
@@ -119,7 +186,7 @@ Also don't assume locale_t == char* if __GLIBC__ isn't defined.
 -
 -		temp = strtod( self->prop_string, &p );
 -
--#if !defined(__GLIBC__) && !defined(__APPLE__)
+-#if !defined(__GLIBC__) && !defined(__APPLE__) && !defined(_WIN32)
 -		if ( locale ) {
 -			// Restore the current locale
 -			setlocale( LC_NUMERIC, orig_localename );
@@ -128,15 +195,15 @@ Also don't assume locale_t == char* if __GLIBC__ isn't defined.
 -		}
 -#endif
 -
-+		    temp = strtod( self->prop_string, &p );
++		  temp = strtod( self->prop_string, &p );
  		result = ( p != self->prop_string );
  	}
  	return result;
-@@ -1531,28 +1454,12 @@
+@@ -1535,28 +1458,12 @@ mlt_rect mlt_property_get_rect( mlt_prop
  		char *p = NULL;
  		int count = 0;
  
--#if !defined(__GLIBC__) && !defined(__APPLE__)
+-#if !defined(__GLIBC__) && !defined(__APPLE__) && !defined(_WIN32)
 -		char *orig_localename = NULL;
 -		if ( locale ) {
 -			// Protect damaging the global locale from a temporary locale on another thread.
@@ -161,12 +228,12 @@ Also don't assume locale_t == char* if __GLIBC__ isn't defined.
  				temp = strtod( value, &p );
  			if ( p != value )
  			{
-@@ -1582,15 +1489,6 @@
+@@ -1586,15 +1493,6 @@ mlt_rect mlt_property_get_rect( mlt_prop
  			value = p;
  			count ++;
  		}
 -
--#if !defined(__GLIBC__) && !defined(__APPLE__)
+-#if !defined(__GLIBC__) && !defined(__APPLE__) && !defined(_WIN32)
 -		if ( locale ) {
 -			// Restore the current locale
 -			setlocale( LC_NUMERIC, orig_localename );
@@ -177,58 +244,20 @@ Also don't assume locale_t == char* if __GLIBC__ isn't defined.
      }
  	return rect;
  }
---- src/framework/mlt_properties.c	2017-01-20 21:18:26.246774282 +0100
-+++ src/framework/mlt_properties.c	2017-01-20 21:38:19.679752910 +0100
-@@ -140,15 +140,9 @@
- 	{
- 		property_list *list = self->local;
- 
--#if defined(__GLIBC__) || defined(__APPLE__)
- 		if ( list->locale )
- 			freelocale( list->locale );
- 		list->locale = newlocale( LC_NUMERIC_MASK, locale, NULL );
--#else
--
--		free( list->locale );
--		list->locale = strdup( locale );
--#endif
- 	}
- 	else
- 		error = 1;
-@@ -178,7 +172,7 @@
- #elif defined(__GLIBC__)
-         result = list->locale->__names[ LC_NUMERIC ];
- #else
--		result = list->locale;
-+		result = "C";
+
+--- src/framework/mlt_property.h	2018-01-23 07:41:00.000000000 +0100
++++ src/framework/mlt_property.h	2018-01-25 18:01:15.393795679 +0100
+@@ -30,13 +30,7 @@
+ #include <sys/param.h>
  #endif
- #if defined(_WIN32)
- 		if ( result )
-@@ -714,12 +708,10 @@
- 			// Determine the value
- 			if ( isdigit( id[ 0 ] ) )
- 			{
--#if defined(__GLIBC__) || defined(__APPLE__)
- 				property_list *list = self->local;
- 				if ( list->locale )
- 					current = strtod_l( id, NULL, list->locale );
-                 else
--#endif
- 					current = strtod( id, NULL );
- 			}
- 			else
-@@ -1410,14 +1402,9 @@
- 				free( list->name[ index ] );
- 			}
- 
--#if defined(__GLIBC__) || defined(__APPLE__)
- 			// Cleanup locale
- 			if ( list->locale )
- 				freelocale( list->locale );
+
+-#if defined(__GLIBC__) && !defined(__APPLE__)
+ #  include <locale.h>
+-#elif defined(__APPLE__) || (__FreeBSD_version >= 900506)
+-#  include <xlocale.h>
 -#else
--
--			free( list->locale );
+-typedef char* locale_t;
 -#endif
  
- 			// Clear up the list
- 			pthread_mutex_destroy( &list->mutex );
+ extern mlt_property mlt_property_init( );
+ extern int mlt_property_set_int( mlt_property self, int value );
