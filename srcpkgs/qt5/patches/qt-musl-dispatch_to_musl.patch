@@ -1,0 +1,109 @@
+--- qtwebengine/src/3rdparty/chromium/base/allocator/allocator_shim_default_dispatch_to_glibc.cc	2017-09-19 18:15:15.000000000 +0200
++++ qtwebengine/src/3rdparty/chromium/base/allocator/allocator_shim_default_dispatch_to_glibc.cc	2017-10-09 19:35:11.762384809 +0200
+@@ -6,6 +6,7 @@
+ 
+ #include <malloc.h>
+ 
++#if defined(__GLIBC__)
+ // This translation unit defines a default dispatch for the allocator shim which
+ // routes allocations to libc functions.
+ // The code here is strongly inspired from tcmalloc's libc_override_glibc.h.
+@@ -59,3 +60,98 @@
+     &GlibcGetSizeEstimate, /* get_size_estimate_function */
+     nullptr,               /* next */
+ };
++
++#else // defined(__GLIBC__)
++
++#include <dlfcn.h>
++
++extern "C" {
++// Declare function pointers to the memory functions
++typedef void* (*t_libc_malloc)(size_t size);
++typedef void* (*t_libc_calloc)(size_t n, size_t size);
++typedef void* (*t_libc_realloc)(void* address, size_t size);
++typedef void* (*t_libc_memalign)(size_t alignment, size_t size);
++typedef void (*t_libc_free)(void* ptr);
++typedef size_t (*t_libc_malloc_usable_size)(void* ptr);
++
++// Static instances of pointers to libc.so dl symbols
++static t_libc_malloc libc_malloc = NULL;
++static t_libc_calloc libc_calloc = NULL;
++static t_libc_realloc libc_realloc = NULL;
++static t_libc_memalign libc_memalign = NULL;
++static t_libc_free libc_free = NULL;
++static t_libc_malloc_usable_size libc_malloc_usable_size = NULL;
++
++// resolve the symbols in libc.so
++void musl_libc_memory_init(void)
++{
++  void* libc = dlopen("libc", RTLD_LAZY);
++  if (!libc)
++    libc = dlopen("libc.so", RTLD_LAZY);
++  if (!libc)
++    libc = dlopen("libc.so.6", RTLD_LAZY);
++  libc_malloc = (t_libc_malloc) dlsym(libc, "malloc");
++  libc_calloc = (t_libc_calloc) dlsym(libc, "calloc");
++  libc_realloc = (t_libc_realloc) dlsym(libc, "realloc");
++  libc_memalign = (t_libc_memalign) dlsym(libc, "memalign");
++  libc_free = (t_libc_free) dlsym(libc, "free");
++  libc_malloc_usable_size = (t_libc_malloc_usable_size) dlsym(libc, "malloc_usable_size");
++  dlclose(libc);
++}
++}  // extern "C"
++
++namespace {
++
++using base::allocator::AllocatorDispatch;
++
++void* MuslMalloc(const AllocatorDispatch*, size_t size, void* context) {
++  if (!libc_malloc)
++    musl_libc_memory_init();
++  return (*libc_malloc)(size);
++}
++
++void* MuslCalloc(const AllocatorDispatch*, size_t n, size_t size, void* context) {
++  if (!libc_calloc)
++    musl_libc_memory_init();
++  return (*libc_calloc)(n, size);
++}
++
++void* MuslRealloc(const AllocatorDispatch*, void* address, size_t size, void* context) {
++  if (!libc_realloc)
++    musl_libc_memory_init();
++  return (*libc_realloc)(address, size);
++}
++
++void* MuslMemalign(const AllocatorDispatch*, size_t alignment, size_t size, void* context) {
++  if (!libc_memalign)
++    musl_libc_memory_init();
++  return (*libc_memalign)(alignment, size);
++}
++
++void MuslFree(const AllocatorDispatch*, void* address, void* context) {
++  if (!libc_free)
++    musl_libc_memory_init();
++  (*libc_free)(address);
++}
++
++size_t MuslGetSizeEstimate(const AllocatorDispatch*, void* address, void* context) {
++  // TODO(siggi, primiano): malloc_usable_size may need redirection in the
++  //     presence of interposing shims that divert allocations.
++  if (!libc_malloc_usable_size)
++    musl_libc_memory_init();
++  return (*libc_malloc_usable_size)(address);
++}
++
++}  // namespace
++
++const AllocatorDispatch AllocatorDispatch::default_dispatch = {
++    &MuslMalloc,           /* alloc_function */
++    &MuslCalloc,           /* alloc_zero_initialized_function */
++    &MuslMemalign,         /* alloc_aligned_function */
++    &MuslRealloc,          /* realloc_function */
++    &MuslFree,             /* free_function */
++    &MuslGetSizeEstimate,  /* get_size_estimate_function */
++    nullptr,               /* next */
++};
++
++#endif

@@ -20,4 +20,8 @@ HEADERS += \
 OTHER_FILES += \
     lalr.g
 
+DEFINES += \
+    QT_NO_FOREACH
+
+QMAKE_TARGET_DESCRIPTION = "Qt Look Ahead LR Parser"
 load(qt_tool)
