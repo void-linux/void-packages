@@ -8,14 +8,15 @@ __python3="/usr/bin/python3"
 python_version="2"
 
 if [ -x ${__python2} ]; then
-  py2_ver="$(${__python2} -c 'import sys; print(sys.version[:3])')"
-  py2_lib="$(${__python2} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib(0, 1))')"
-  py2_sitelib="$(${__python2} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-  py2_inc="$(${__python2} -c 'from distutils.sysconfig import get_python_inc; print(get_python_inc())')"
+  py2_ver="2.7"
+  py2_lib="/usr/lib/python${py2_ver}"
+  py2_sitelib="${py2_lib}/site-packages"
+  py2_inc="/usr/include/python${py2_ver}"
 fi
 if [ -x ${__python3} ]; then
-  py3_ver="$(${__python3} -c 'import sys; print(sys.version[:3])')"
-  py3_lib="$(${__python3} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib(0, 1))')"
-  py3_sitelib="$(${__python3} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-  py3_inc="$(${__python3} -c 'from distutils.sysconfig import get_python_inc; print(get_python_inc())')"
+  py3_ver="3.6"
+  py3_abiver="m"
+  py3_lib="/usr/lib/python${py3_ver}"
+  py3_sitelib="${py3_lib}/site-packages"
+  py3_inc="/usr/include/python${py3_ver}${py3_abiver}"
 fi
