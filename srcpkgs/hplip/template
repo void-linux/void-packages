@@ -1,14 +1,27 @@
 # Template file for 'hplip'
 pkgname=hplip
 version=3.17.11
-revision=1
-configure_args="--enable-qt5 --disable-qt4"
-#XXX: pyqt pkgs for python gui
+revision=2
+build_style=gnu-configure
+configure_args="
+ --enable-gui-build
+ --disable-qt4
+ --enable-qt5
+ --disable-foomatic-rip-hplip-install
+ --enable-foomatic-ppd-install
+ --enable-hpcups-install
+ --enable-new-hpcups
+ --enable-cups-ppd-install
+ --enable-cups-drv-install
+ --enable-hpijs-install
+ --enable-foomatic-drv-install
+ --enable-pp-build
+ --with-mimedir=/usr/share/cups/mime"
 hostmakedepends="pkg-config automake libtool python"
 makedepends="libressl-devel python-devel libxml2-python cups-devel sane-devel
  ghostscript-devel net-snmp-devel libusb-devel libjpeg-turbo-devel dbus-devel"
-depends="python-gobject2 python-dbus $(vopt_if gui python-PyQt5-dbus)
- foomatic-db foomatic-db-engine desktop-file-utils"
+depends="python-gobject2 python-dbus desktop-file-utils
+ foomatic-db foomatic-db-engine"
 conf_files="/etc/hp/hplip.conf"
 make_dirs="/var/lib/hp 0755 root root"
 pycompile_dirs="usr/share/hplip"
@@ -18,34 +31,15 @@ homepage="https://developers.hp.com/hp-linux-imaging-and-printing"
 license="GPL-2"
 distfiles="${SOURCEFORGE_SITE}/hplip/hplip/${version}/hplip-${version}.tar.gz"
 checksum=2f91be9489a50e4c929b2b9d3c72c09905c1195f9b360568b07fcbde4f3faa75
-
-build_options="gui"
-desc_option_gui="Build with Qt5 gui support"
+conflicts="hplip-gui"
 
 CFLAGS="-I${XBPS_CROSS_BASE}/usr/include/libusb-1.0 -I${XBPS_CROSS_BASE}/usr/include/python2.7"
 
-do_configure() {
+pre_configure() {
 	libtoolize -f
 	autoreconf -fi || true
-
-	# do not install systemd service file
-	sed -i '/[[:space:]]install-dist_rulessystemDATA/s,install-dist_rulessystemDATA,,' Makefile.in
-
-	./configure ${configure_args} $(vopt_enable gui gui-build) \
-		--disable-foomatic-rip-hplip-install \
-		--enable-foomatic-ppd-install \
-		--enable-hpcups-install \
-		--enable-new-hpcups \
-		--enable-cups-ppd-install \
-		--enable-cups-drv-install \
-		--enable-hpijs-install \
-		--enable-foomatic-drv-install \
-		--enable-pp-build \
-		--with-mimedir=/usr/share/cups/mime
 }
-do_build() {
-	make ${makejobs} all
-}
+
 do_install() {
 	# remove wildcard install of ppd files to avoid errors when overwriting
 	sed -i Makefile -e "s;ppd/hpcups/\\*.ppd.gz;;g"
@@ -57,4 +51,29 @@ do_install() {
 	# remove HAL .fdi file because HAL is no longer used
 	rm -rf ${DESTDIR}/usr/share/hal
 	rm -rf ${DESTDIR}/var
+	# remove systemd service file
+	rm -rf ${DESTDIR}/usr/lib/systemd
+	# save gui-version of hplip.conf
+	cp -p ${DESTDIR}/etc/hp/hplip.conf /tmp/hplip.conf
+	# adjust values to non-gui version
+	sed -i ${PKGDESTDIR}/etc/hp/hplip.conf \
+	 -e "s/\(gui-build=\).*/\1no/" \
+	 -e "s/\(ui-toolkit=\).*/\1no/" \
+	 -e "s/\(qt5=\).*/\1no/"
+}
+
+hplip-gui_package() {
+	depends="python-gobject2 python-dbus desktop-file-utils
+	 foomatic-db foomatic-db-engine python-PyQt5-dbus"
+	short_desc+=" (with GUI)"
+	conflicts="hplip"
+	pkg_install() {
+		vmove usr/bin/hp-toolbox
+		vmove usr/share/applications
+		vmove usr/share/hplip/ui5
+		vmove usr/share/hplip/data/images
+		cp -a ${DESTDIR}/. ${PKGDESTDIR}/
+		# restore gui-version of hplip.conf
+		mv /tmp/hplip.conf ${PKGDESTDIR}/etc/hp/
+	}
 }
