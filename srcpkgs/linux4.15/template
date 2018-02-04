@@ -1,0 +1,294 @@
+# Template file for 'linux4.15'
+pkgname=linux4.15
+version=4.15.1
+revision=1
+patch_args="-Np1"
+wrksrc="linux-${version}"
+maintainer="Juan RP <xtraeme@voidlinux.eu>"
+homepage="http://www.kernel.org"
+license="GPL-2"
+short_desc="The Linux kernel and modules (${version%.*} series)"
+distfiles="https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-${version}.tar.xz"
+checksum=986ecdd9060b81ca10d1ab64e41fdd707b69fe4b3560f36951bcc58a79d1afdf
+
+nodebug=yes  # -dbg package is generated below manually
+nostrip=yes
+noverifyrdeps=yes
+noshlibprovides=yes
+preserve=yes
+
+only_for_archs="i686 i686-musl x86_64 x86_64-musl armv5tel armv5tel-musl armv7l armv7l-musl aarch64 aarch64-musl"
+hostmakedepends="bc elfutils-devel kmod libressl-devel perl uboot-mkimage gmp-devel libmpc-devel"
+
+_kernver="${version}_${revision}"
+triggers="kernel-hooks"
+kernel_hooks_version="${_kernver}"
+
+# These files could be modified when an external module is built.
+mutable_files="
+ /usr/lib/modules/${_kernver}/modules.builtin.bin
+ /usr/lib/modules/${_kernver}/modules.softdep
+ /usr/lib/modules/${_kernver}/modules.dep
+ /usr/lib/modules/${_kernver}/modules.dep.bin
+ /usr/lib/modules/${_kernver}/modules.symbols
+ /usr/lib/modules/${_kernver}/modules.symbols.bin
+ /usr/lib/modules/${_kernver}/modules.alias
+ /usr/lib/modules/${_kernver}/modules.alias.bin
+ /usr/lib/modules/${_kernver}/modules.devname"
+
+do_configure() {
+	# 4.15 misses Documentation/DocBook. We ship the directory from 4.12 here.
+	cp -a $FILESDIR/DocBook -t Documentation
+
+	# If there's a file called <arch>-dotconfig, use it to
+	# configure the kernel; otherwise use arch defaults and all stuff
+	# as modules (defconfig+allmodconfig).
+	local arch _args
+
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) arch=i386;;
+		x86_64*) arch=x86_64;;
+		armv5*|armv7*) arch=arm;;
+		aarch64*) arch=arm64;;
+	esac
+
+	if [ "$CROSS_BUILD" ]; then
+		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+
+	if [ -f ${FILESDIR}/${arch}-dotconfig-custom ]; then
+		msg_normal "Detected a custom .config file for your arch, using it.\n"
+		cp -f ${FILESDIR}/${arch}-dotconfig-custom .config
+		make ${makejobs} ARCH=$arch ${_args} oldconfig
+	elif [ -f ${FILESDIR}/${arch}-dotconfig ]; then
+		msg_normal "Detected a .config file for your arch, using it.\n"
+		cp -f ${FILESDIR}/${arch}-dotconfig .config
+		make ${makejobs} ARCH=$arch ${_args} oldconfig
+	elif [ -f ${FILESDIR}/${XBPS_TARGET_MACHINE%%-musl}-dotconfig ]; then
+		msg_normal "Detected a .config file for your cpu family, using it.\n"
+		cp -f ${FILESDIR}/${XBPS_TARGET_MACHINE%%-musl}-dotconfig .config
+		make ${makejobs} ARCH=$arch ${_args} oldconfig
+	else
+		msg_normal "Defaulting to 'defconfig and allmodconfig'.\n"
+		make ${makejobs} ARCH=$arch ${_args} defconfig
+		make ${makejobs} ARCH=$arch ${_args} allmodconfig
+	fi
+	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
+	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
+}
+do_build() {
+	local arch _cross _args
+
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) _args="bzImage modules"; arch=i386;;
+		x86_64*) _args="bzImage modules"; arch=x86_64;;
+		armv5*|armv7*) _args="zImage modules dtbs"; arch=arm;;
+		aarch64*) _args="Image modules dtbs"; arch=arm64;;
+	esac
+	if [ "$CROSS_BUILD" ]; then
+		_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+	if [ "${_patchver}" ]; then
+		_version="EXTRAVERSION=${_patchver}"
+	fi
+	export LDFLAGS=
+	make ARCH=$arch ${_version} ${_cross} ${makejobs} prepare
+	make ARCH=$arch ${_version} ${_cross} ${makejobs} ${_args}
+}
+do_install() {
+	local arch subarch _args hdrdest
+
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) arch=x86; subarch=i386;;
+		x86_64*) arch=x86; subarch=x86_64;;
+		armv5*|armv7*) arch=arm;;
+		aarch64*) arch=arm64;;
+	esac
+
+	# Run depmod after compressing modules.
+	sed -i '2iexit 0' scripts/depmod.sh
+
+	# Install kernel, firmware and modules
+	make ${makejobs} INSTALL_MOD_PATH=${DESTDIR} modules_install
+
+	hdrdest=${DESTDIR}/usr/src/kernel-headers-${_kernver}
+
+	vinstall .config 644 boot config-${_kernver}
+	vinstall System.map 644 boot System.map-${_kernver}
+
+	case "$arch" in
+		x86)
+			vinstall arch/x86/boot/bzImage 644 boot vmlinuz-${_kernver}
+			;;
+		arm)
+			vinstall arch/arm/boot/zImage 644 boot
+			vmkdir boot/dtbs
+			cp arch/arm/boot/dts/*.dtb ${DESTDIR}/boot/dtbs
+			;;
+		arm64)
+			vinstall arch/arm64/boot/Image 644 boot vmlinux-${_kernver}
+			vmkdir boot/dtbs
+			cp arch/arm64/boot/dts/*/*.dtb ${DESTDIR}/boot/dtbs
+			;;
+	esac
+
+	# Switch to /usr.
+	vmkdir usr
+	mv ${DESTDIR}/lib ${DESTDIR}/usr
+
+	cd ${DESTDIR}/usr/lib/modules/${_kernver}
+	rm -f source build
+	ln -sf ../../../src/kernel-headers-${_kernver} build
+
+	cd ${wrksrc}
+	# Install required headers to build external modules
+	install -Dm644 Makefile ${hdrdest}/Makefile
+	install -Dm644 kernel/Makefile ${hdrdest}/kernel/Makefile
+	install -Dm644 .config ${hdrdest}/.config
+	mkdir -p ${hdrdest}/include
+	# Remove firmware stuff provided by the "linux-firmware" pkg.
+	rm -rf ${DESTDIR}/usr/lib/firmware
+
+	for i in acpi asm-generic config crypto drm generated linux math-emu \
+		media net pcmcia scsi sound trace uapi video xen; do
+		if [ -d include/$i ]; then
+			cp -a include/$i ${hdrdest}/include
+		fi
+	done
+
+	cd ${wrksrc}
+	mkdir -p ${hdrdest}/arch/${arch}
+	cp -a arch/${arch}/include ${hdrdest}/arch/${arch}
+
+	# Copy files necessary for later builds, like nvidia and vmware
+	cp Module.symvers ${hdrdest}
+	cp -a scripts ${hdrdest}
+
+	mkdir -p ${hdrdest}/arch/${arch}/kernel
+	cp arch/${arch}/Makefile ${hdrdest}/arch/${arch}
+	if [ "$subarch" = "i386" ]; then
+		mkdir -p ${hdrdest}/arch/x86
+		cp arch/x86/Makefile_32.cpu ${hdrdest}/arch/x86
+	fi
+	if [ "$arch" = "x86" ]; then
+		mkdir -p ${hdrdest}/arch/x86/kernel
+		cp arch/x86/kernel/asm-offsets.s ${hdrdest}/arch/x86/kernel
+	fi
+
+	# add headers for lirc package
+	# pci
+	for i in bt8xx cx88 saa7134; do
+		mkdir -p ${hdrdest}/drivers/media/pci/${i}
+		cp -a drivers/media/pci/${i}/*.h ${hdrdest}/drivers/media/pci/${i}
+	done
+	# usb
+	for i in cpia2 em28xx pwc; do
+		mkdir -p ${hdrdest}/drivers/media/usb/${i}
+		cp -a drivers/media/usb/${i}/*.h ${hdrdest}/drivers/media/usb/${i}
+	done
+	# i2c
+	mkdir -p ${hdrdest}/drivers/media/i2c
+	cp drivers/media/i2c/*.h ${hdrdest}/drivers/media/i2c
+	for i in cx25840; do
+		mkdir -p ${hdrdest}/drivers/media/i2c/${i}
+		cp -a drivers/media/i2c/${i}/*.h ${hdrdest}/drivers/media/i2c/${i}
+	done
+
+	# Add docbook makefile
+	install -Dm644 Documentation/DocBook/Makefile \
+		${hdrdest}/Documentation/DocBook/Makefile
+
+	# Add md headers
+	mkdir -p ${hdrdest}/drivers/md
+	cp drivers/md/*.h ${hdrdest}/drivers/md
+
+	# Add inotify.h
+	mkdir -p ${hdrdest}/include/linux
+	cp include/linux/inotify.h ${hdrdest}/include/linux
+
+	# Add wireless headers
+	mkdir -p ${hdrdest}/net/mac80211/
+	cp net/mac80211/*.h ${hdrdest}/net/mac80211
+
+	# add dvb headers for external modules
+	mkdir -p ${hdrdest}/drivers/media/dvb-core
+	cp drivers/media/dvb-core/*.h ${hdrdest}/drivers/media/dvb-core/
+	mkdir -p ${hdrdest}/include/config/dvb/
+	cp include/config/dvb/*.h ${hdrdest}/include/config/dvb/
+
+	# add dvb headers for http://mcentral.de/hg/~mrec/em28xx-new
+	mkdir -p ${hdrdest}/drivers/media/dvb-frontends
+	cp drivers/media/dvb-frontends/lgdt330x.h \
+		${hdrdest}/drivers/media/dvb-frontends/
+	cp drivers/media/i2c/msp3400-driver.h ${hdrdest}/drivers/media/i2c/
+
+	# add dvb headers
+	mkdir -p ${hdrdest}/drivers/media/usb/dvb-usb
+	cp drivers/media/usb/dvb-usb/*.h ${hdrdest}/drivers/media/usb/dvb-usb/
+	mkdir -p ${hdrdest}/drivers/media/dvb-frontends
+	cp drivers/media/dvb-frontends/*.h ${hdrdest}/drivers/media/dvb-frontends/
+	mkdir -p ${hdrdest}/drivers/media/tuners
+	cp drivers/media/tuners/*.h ${hdrdest}/drivers/media/tuners/
+
+	# Add xfs and shmem for aufs building
+	mkdir -p ${hdrdest}/fs/xfs/libxfs
+	mkdir -p ${hdrdest}/mm
+	cp fs/xfs/libxfs/xfs_sb.h ${hdrdest}/fs/xfs/libxfs/xfs_sb.h
+
+	# Add objtool binary, needed to build external modules with dkms
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64*)
+			mkdir -p ${hdrdest}/tools/objtool
+			cp tools/objtool/objtool ${hdrdest}/tools/objtool
+			;;
+	esac
+
+	# Copy in Kconfig files
+	for i in $(find . -name "Kconfig*"); do
+		mkdir -p ${hdrdest}/$(echo $i | sed 's|/Kconfig.*||')
+		cp $i ${hdrdest}/$i
+	done
+
+	# Remove unneeded architectures
+	case "$arch" in
+		i386|x86_64) _args="arm*";;
+		arm|arm64) _args="x86*";;
+	esac
+	for arch in alpha avr32 blackfin cris frv h8300 \
+		ia64 m* p* s* um v850 xtensa ${_args}; do
+		rm -rf ${hdrdest}/arch/${arch}
+	done
+
+	# Extract debugging symbols
+	msg_normal "$pkgver: extracting debug info, please wait...\n"
+	install -Dm644 vmlinux ${DESTDIR}/usr/lib/debug/boot/vmlinux-${_kernver}
+	(
+	cd ${DESTDIR}
+	export DESTDIR
+	find ./ -name '*.ko' -print0 | \
+		xargs -0r -n1 -P ${XBPS_MAKEJOBS} ${FILESDIR}/mv-debug
+	)
+	# ... and run depmod again.
+	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
+}
+linux4.15-headers_package() {
+	preserve=yes
+	nostrip=yes
+	noshlibprovides=yes
+	short_desc+=" - source headers for 3rd party modules"
+	pkg_install() {
+		vmove usr/src
+		vmove usr/lib/modules/${_kernver}/build
+	}
+}
+linux4.15-dbg_package() {
+	preserve=yes
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	repository=debug
+	short_desc+=" - debugging symbols"
+	pkg_install() {
+		vmove usr/lib/debug
+	}
+}
