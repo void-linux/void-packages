@@ -1,0 +1,578 @@
+diff --git Telegram/Resources/qrc/telegram_linux.qrc Telegram/Resources/qrc/telegram_linux.qrc
+index 0554fa17..3ea02740 100644
+--- Telegram/Resources/qrc/telegram_linux.qrc
++++ Telegram/Resources/qrc/telegram_linux.qrc
+@@ -1,5 +1,4 @@
+ <RCC>
+   <qresource prefix="/qt">
+-    <file alias="etc/qt.conf">../etc/qt_linux.conf</file>
+   </qresource>
+ </RCC>
+diff --git Telegram/SourceFiles/core/launcher.cpp Telegram/SourceFiles/core/launcher.cpp
+index bf21d14d..6b63016e 100644
+--- Telegram/SourceFiles/core/launcher.cpp
++++ Telegram/SourceFiles/core/launcher.cpp
+@@ -44,9 +44,10 @@ void Launcher::init() {
+ 
+ 	QCoreApplication::setApplicationName(qsl("TelegramDesktop"));
+ 
+-#ifndef OS_MAC_OLD
++#if !defined(Q_OS_MAC) && QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
++	// Retina display support is working fine, others are not.
+ 	QCoreApplication::setAttribute(Qt::AA_DisableHighDpiScaling, true);
+-#endif // OS_MAC_OLD
++#endif // not defined Q_OS_MAC and QT_VERSION >= 5.6.0
+ 
+ 	initHook();
+ }
+@@ -64,6 +65,13 @@ int Launcher::exec() {
+ 	Logs::start(this); // must be started before Platform is started
+ 	Platform::start(); // must be started before QApplication is created
+ 
++	// I don't know why path is not in QT_PLUGIN_PATH by default
++	QCoreApplication::addLibraryPath("/usr/lib/qt5/plugins");
++	// without this Telegram doesn't start on Ubuntu 17.04 due GTK errors
++	setenv("QT_STYLE_OVERRIDE", "qwerty", false);
++	// Telegram doesn't start when extraordinary theme is set, see launchpad.net/bugs/1680943
++	unsetenv("QT_QPA_PLATFORMTHEME");
++
+ 	auto result = executeApplication();
+ 
+ 	DEBUG_LOG(("Telegram finished, result: %1").arg(result));
+diff --git Telegram/SourceFiles/platform/linux/linux_libs.h Telegram/SourceFiles/platform/linux/linux_libs.h
+index e9e349be..d82963fa 100644
+--- Telegram/SourceFiles/platform/linux/linux_libs.h
++++ Telegram/SourceFiles/platform/linux/linux_libs.h
+@@ -30,7 +30,7 @@ extern "C" {
+ } // extern "C"
+ 
+ #ifndef TDESKTOP_DISABLE_UNITY_INTEGRATION
+-#include <unity/unity/unity.h>
++typedef void UnityLauncherEntry;
+ #endif // !TDESKTOP_DISABLE_UNITY_INTEGRATION
+ #endif // !TDESKTOP_DISABLE_GTK_INTEGRATION
+ 
+diff --git Telegram/SourceFiles/qt_functions.cpp Telegram/SourceFiles/qt_functions.cpp
+new file mode 100644
+index 00000000..4a722b8d
+--- /dev/null
++++ Telegram/SourceFiles/qt_functions.cpp
+@@ -0,0 +1,94 @@
++/****************************************************************************
++**
++** Copyright (C) 2015 The Qt Company Ltd.
++** Contact: http://www.qt.io/licensing/
++**
++** This file contains some parts of the Qt Toolkit.
++**
++** $QT_BEGIN_LICENSE:LGPL21$
++** Commercial License Usage
++** Licensees holding valid commercial Qt licenses may use this file in
++** accordance with the commercial license agreement provided with the
++** Software or, alternatively, in accordance with the terms contained in
++** a written agreement between you and The Qt Company. For licensing terms
++** and conditions see http://www.qt.io/terms-conditions. For further
++** information use the contact form at http://www.qt.io/contact-us.
++**
++** GNU Lesser General Public License Usage
++** Alternatively, this file may be used under the terms of the GNU Lesser
++** General Public License version 2.1 or version 3 as published by the Free
++** Software Foundation and appearing in the file LICENSE.LGPLv21 and
++** LICENSE.LGPLv3 included in the packaging of this file. Please review the
++** following information to ensure the GNU Lesser General Public License
++** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
++** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
++**
++** As a special exception, The Qt Company gives you certain additional
++** rights. These rights are described in The Qt Company LGPL Exception
++** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
++**
++** $QT_END_LICENSE$
++**
++****************************************************************************/
++
++/* TODO: find a dynamic library with these symbols. */
++
++/* Debian maintainer: this function is taken from qfiledialog.cpp */
++/*
++    Makes a list of filters from ;;-separated text.
++    Used by the mac and windows implementations
++*/
++QStringList qt_make_filter_list(const QString &filter)
++{
++    QString f(filter);
++
++    if (f.isEmpty())
++        return QStringList();
++
++    QString sep(QLatin1String(";;"));
++    int i = f.indexOf(sep, 0);
++    if (i == -1) {
++        if (f.indexOf(QLatin1Char('\n'), 0) != -1) {
++            sep = QLatin1Char('\n');
++            i = f.indexOf(sep, 0);
++        }
++    }
++
++    return f.split(sep);
++}
++
++/* Debian maintainer: this constructor is taken from qtextengine.cpp for TextPainter::drawLine */
++QTextItemInt::QTextItemInt(const QGlyphLayout &g, QFont *font, const QChar *chars_, int numChars, QFontEngine *fe, const QTextCharFormat &format)
++    : flags(0), justified(false), underlineStyle(QTextCharFormat::NoUnderline), charFormat(format),
++      num_chars(numChars), chars(chars_), logClusters(0), f(font),  glyphs(g), fontEngine(fe)
++{
++}
++
++/* Debian maintainer: this method is also taken from qtextengine.cpp */
++// Fix up flags and underlineStyle with given info
++void QTextItemInt::initWithScriptItem(const QScriptItem &si)
++{
++    // explicitly initialize flags so that initFontAttributes can be called
++    // multiple times on the same TextItem
++    flags = 0;
++    if (si.analysis.bidiLevel %2)
++        flags |= QTextItem::RightToLeft;
++    ascent = si.ascent;
++    descent = si.descent;
++
++    if (charFormat.hasProperty(QTextFormat::TextUnderlineStyle)) {
++        underlineStyle = charFormat.underlineStyle();
++    } else if (charFormat.boolProperty(QTextFormat::FontUnderline)
++               || f->d->underline) {
++        underlineStyle = QTextCharFormat::SingleUnderline;
++    }
++
++    // compat
++    if (underlineStyle == QTextCharFormat::SingleUnderline)
++        flags |= QTextItem::Underline;
++
++    if (f->d->overline || charFormat.fontOverline())
++        flags |= QTextItem::Overline;
++    if (f->d->strikeOut || charFormat.fontStrikeOut())
++        flags |= QTextItem::StrikeOut;
++}
+diff --git Telegram/SourceFiles/qt_static_plugins.cpp Telegram/SourceFiles/qt_static_plugins.cpp
+index b975c7a8..f2f876b3 100644
+--- Telegram/SourceFiles/qt_static_plugins.cpp
++++ Telegram/SourceFiles/qt_static_plugins.cpp
+@@ -28,13 +28,4 @@ Q_IMPORT_PLUGIN(QWebpPlugin)
+ Q_IMPORT_PLUGIN(QCocoaIntegrationPlugin)
+ Q_IMPORT_PLUGIN(QGenericEnginePlugin)
+ #elif defined Q_OS_LINUX // Q_OS_WIN | Q_OS_MAC
+-Q_IMPORT_PLUGIN(QWebpPlugin)
+-Q_IMPORT_PLUGIN(QXcbIntegrationPlugin)
+-Q_IMPORT_PLUGIN(QConnmanEnginePlugin)
+-Q_IMPORT_PLUGIN(QGenericEnginePlugin)
+-Q_IMPORT_PLUGIN(QNetworkManagerEnginePlugin)
+-Q_IMPORT_PLUGIN(QComposePlatformInputContextPlugin)
+-Q_IMPORT_PLUGIN(QIbusPlatformInputContextPlugin)
+-Q_IMPORT_PLUGIN(QFcitxPlatformInputContextPlugin)
+-Q_IMPORT_PLUGIN(QHimePlatformInputContextPlugin)
+ #endif // Q_OS_WIN | Q_OS_MAC | Q_OS_LINUX
+diff --git Telegram/SourceFiles/ui/text/text.cpp Telegram/SourceFiles/ui/text/text.cpp
+index 7d34a19b..a4b3d31a 100644
+--- Telegram/SourceFiles/ui/text/text.cpp
++++ Telegram/SourceFiles/ui/text/text.cpp
+@@ -1707,11 +1707,11 @@ private:
+ 		if (item == -1)
+ 			return;
+ 
+-#ifdef OS_MAC_OLD
++#if defined(OS_MAC_OLD) || QT_VERSION < QT_VERSION_CHECK(5, 6, 0)
+ 		auto end = _e->findItem(line.from + line.length - 1);
+-#else // OS_MAC_OLD
++#else
+ 		auto end = _e->findItem(line.from + line.length - 1, item);
+-#endif // OS_MAC_OLD
++#endif
+ 
+ 		auto blockIndex = _lineStartBlock;
+ 		auto currentBlock = _t->_blocks[blockIndex].get();
+diff --git Telegram/SourceFiles/ui/text/text_block.cpp Telegram/SourceFiles/ui/text/text_block.cpp
+index a10b5393..4e1eb62d 100644
+--- Telegram/SourceFiles/ui/text/text_block.cpp
++++ Telegram/SourceFiles/ui/text/text_block.cpp
+@@ -333,6 +333,9 @@ TextBlock::TextBlock(const style::font &font, const QString &str, QFixed minResi
+ 
+ 		QStackTextEngine engine(part, blockFont->f);
+ 		BlockParser parser(&engine, this, minResizeWidth, _from, part);
++		QTextLayout layout(part, blockFont->f);
++		layout.beginLayout();
++		layout.createLine();
+ 
+ 		CrashReports::ClearAnnotationRef("CrashString");
+ 	}
+diff --git Telegram/SourceFiles/ui/twidget.cpp Telegram/SourceFiles/ui/twidget.cpp
+index dacb848a..f64c9b66 100644
+--- Telegram/SourceFiles/ui/twidget.cpp
++++ Telegram/SourceFiles/ui/twidget.cpp
+@@ -248,9 +248,9 @@ void sendSynteticMouseEvent(QWidget *widget, QEvent::Type type, Qt::MouseButton
+ 			, button
+ 			, QGuiApplication::mouseButtons() | button
+ 			, QGuiApplication::keyboardModifiers()
+-#ifndef OS_MAC_OLD
++#if !defined(OS_MAC_OLD) && QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
+ 			, Qt::MouseEventSynthesizedByApplication
+-#endif // OS_MAC_OLD
++#endif
+ 		);
+ 		ev.setTimestamp(getms());
+ 		QGuiApplication::sendEvent(windowHandle, &ev);
+diff --git Telegram/gyp/PrecompiledHeader.cmake Telegram/gyp/PrecompiledHeader.cmake
+index 5d6830e9..c3f08d3f 100644
+--- Telegram/gyp/PrecompiledHeader.cmake
++++ Telegram/gyp/PrecompiledHeader.cmake
+@@ -112,7 +112,7 @@ function(add_precompiled_header _target _input)
+       set(_compiler_FLAGS "@${_pch_c_flags_file}")
+       add_custom_command(
+         OUTPUT "${_output_c}"
+-        COMMAND "${CMAKE_C_COMPILER}" ${_compiler_FLAGS} -x c-header -o "${_output_c}" -c "${_pchfile}"
++        COMMAND "${CMAKE_C_COMPILER}" "$(C_DEFINES)" "$(C_INCLUDES)" "$(C_FLAGS)" -x c-header -o "${_output_c}" -c "${_pchfile}"
+         DEPENDS "${_pchfile}" "${_pch_c_flags_file}"
+         IMPLICIT_DEPENDS C "${_pch_header}"
+         COMMENT "Precompiling ${_name} for ${_target} (C)")
+@@ -123,7 +123,7 @@ function(add_precompiled_header _target _input)
+       set(_compiler_FLAGS "@${_pch_cpp_flags_file}")
+       add_custom_command(
+         OUTPUT "${_output_cxx}"
+-        COMMAND "${CMAKE_CXX_COMPILER}" ${_compiler_FLAGS} -x c++-header -o "${_output_cxx}" -c "${_pchfile}"
++        COMMAND "${CMAKE_CXX_COMPILER}" "$(CXX_DEFINES)" "$(CXX_INCLUDES)" "$(CXX_FLAGS)" -x c++-header -o "${_output_cxx}" -c "${_pchfile}"
+         DEPENDS "${_pchfile}" "${_pch_cpp_flags_file}"
+         IMPLICIT_DEPENDS CXX "${_pch_header}"
+         COMMENT "Precompiling ${_name} for ${_target} (C++)")
+diff --git Telegram/gyp/Telegram.gyp Telegram/gyp/Telegram.gyp
+index 84a06153..fd7ca47f 100644
+--- Telegram/gyp/Telegram.gyp
++++ Telegram/gyp/Telegram.gyp
+@@ -82,13 +82,11 @@
+       'codegen.gyp:codegen_numbers',
+       'codegen.gyp:codegen_style',
+       'tests/tests.gyp:tests',
+-      'utils.gyp:Updater',
+       '../ThirdParty/libtgvoip/libtgvoip.gyp:libtgvoip',
+       'crl.gyp:crl',
+     ],
+ 
+     'defines': [
+-      'AL_LIBTYPE_STATIC',
+       'AL_ALEXT_PROTOTYPES',
+       'TGVOIP_USE_CXX11_LIB',
+       '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
+@@ -97,15 +95,7 @@
+     'include_dirs': [
+       '<(src_loc)',
+       '<(SHARED_INTERMEDIATE_DIR)',
+-      '<(libs_loc)/breakpad/src',
+-      '<(libs_loc)/lzma/C',
+-      '<(libs_loc)/zlib',
+-      '<(libs_loc)/ffmpeg',
+-      '<(libs_loc)/openal-soft/include',
+-      '<(libs_loc)/opus/include',
+-      '<(libs_loc)/range-v3/include',
+-      '<(minizip_loc)',
+-      '<(sp_media_key_tap_loc)',
++      '/usr/include/minizip',
+       '<(emoji_suggestions_loc)',
+       '<(submodules_loc)/GSL/include',
+       '<(submodules_loc)/variant/include',
+diff --git Telegram/gyp/linux_glibc_wraps.gyp Telegram/gyp/linux_glibc_wraps.gyp
+index 07a8276f..99ac4cac 100644
+--- Telegram/gyp/linux_glibc_wraps.gyp
++++ Telegram/gyp/linux_glibc_wraps.gyp
+@@ -27,7 +27,7 @@
+     'sources': [
+       '../SourceFiles/platform/linux/linux_glibc_wraps.c',
+     ],
+-    'conditions': [[ '"<!(uname -p)" == "x86_64"', {
++    'conditions': [[ '"<!(uname -m)" == "x86_64"', {
+       'sources': [
+         '../SourceFiles/platform/linux/linux_glibc_wraps_64.c',
+       ],
+diff --git Telegram/gyp/qt.gypi Telegram/gyp/qt.gypi
+index dea127a3..62c95e68 100644
+--- Telegram/gyp/qt.gypi
++++ Telegram/gyp/qt.gypi
+@@ -27,25 +27,21 @@
+               [ 'build_macold', {
+                 'qt_version%': '5.3.2',
+               }, {
+-                'qt_version%': '5.6.2',
++                'qt_version%': '<!(echo /usr/include/qt5/QtCore/*/ | sed -r "s/([^/]+\/){4}//; s/\///g")',
+               }]
+             ],
+           },
+           'qt_libs': [
+-            'qwebp',
+-            'Qt5PrintSupport',
+-            'Qt5PlatformSupport',
+             'Qt5Network',
+             'Qt5Widgets',
+             'Qt5Gui',
+-            'qtharfbuzzng',
+           ],
+           'qt_version%': '<(qt_version)',
+           'conditions': [
+             [ 'build_macold', {
+               'linux_path_qt%': '/usr/local/macold/Qt-<(qt_version)',
+             }, {
+-              'linux_path_qt%': '/usr/local/tdesktop/Qt-<(qt_version)',
++              'linux_path_qt%': '/usr/lib/qt5',
+             }]
+           ]
+         },
+@@ -85,32 +81,13 @@
+             ],
+           }],
+           [ 'build_linux', {
+-            'qt_lib_prefix': 'lib',
+-            'qt_lib_debug_postfix': '.a',
+-            'qt_lib_release_postfix': '.a',
++            'qt_lib_prefix': '',
++            'qt_lib_debug_postfix': '',
++            'qt_lib_release_postfix': '',
+             'qt_libs': [
+-              'qxcb',
+-              'Qt5XcbQpa',
+-              'qconnmanbearer',
+-              'qgenericbearer',
+-              'qnmbearer',
+               '<@(qt_libs)',
+               'Qt5DBus',
+               'Qt5Core',
+-              'qtpcre',
+-              'Xi',
+-              'Xext',
+-              'Xfixes',
+-              'SM',
+-              'ICE',
+-              'fontconfig',
+-              'expat',
+-              'freetype',
+-              'z',
+-              'xcb-shm',
+-              'xcb-xfixes',
+-              'xcb-render',
+-              'xcb-static',
+             ],
+           }],
+         ],
+@@ -140,11 +117,6 @@
+     # '<!@(python <(DEPTH)/list_sources.py [sources] <(qt_moc_list_sources_arg))'
+     # where [sources] contains all your source files
+     'qt_moc_list_sources_arg': '--moc-prefix SHARED_INTERMEDIATE_DIR/<(_target_name)/moc/moc_',
+-
+-    'linux_path_xkbcommon%': '/usr/local',
+-    'linux_lib_ssl%': '/usr/local/ssl/lib/libssl.a',
+-    'linux_lib_crypto%': '/usr/local/ssl/lib/libcrypto.a',
+-    'linux_lib_icu%': 'libicutu.a libicui18n.a libicuuc.a libicudata.a',
+   },
+ 
+   'configurations': {
+@@ -193,14 +165,14 @@
+   },
+ 
+   'include_dirs': [
+-    '<(qt_loc)/include',
+-    '<(qt_loc)/include/QtCore',
+-    '<(qt_loc)/include/QtGui',
+-    '<(qt_loc)/include/QtDBus',
+-    '<(qt_loc)/include/QtCore/<(qt_version)',
+-    '<(qt_loc)/include/QtGui/<(qt_version)',
+-    '<(qt_loc)/include/QtCore/<(qt_version)/QtCore',
+-    '<(qt_loc)/include/QtGui/<(qt_version)/QtGui',
++    '/usr/include/qt5',
++    '/usr/include/qt5/QtCore',
++    '/usr/include/qt5/QtGui',
++    '/usr/include/qt5/QtDBus',
++    '/usr/include/qt5/QtCore/<(qt_version)',
++    '/usr/include/qt5/QtGui/<(qt_version)',
++    '/usr/include/qt5/QtCore/<(qt_version)/QtCore',
++    '/usr/include/qt5/QtGui/<(qt_version)/QtGui',
+   ],
+   'library_dirs': [
+     '<(qt_loc)/lib',
+@@ -225,17 +197,10 @@
+       ],
+       'libraries': [
+         '<(PRODUCT_DIR)/obj.target/liblinux_glibc_wraps.a',
+-        '<(linux_path_xkbcommon)/lib/libxkbcommon.a',
+         '<@(qt_libs_release)',
+-        '<(linux_lib_ssl)',
+-        '<(linux_lib_crypto)',
+-        '<!@(python -c "for s in \'<(linux_lib_icu)\'.split(\' \'): print(s)")',
+-        '-lxcb',
++        '-lcrypto',
+         '-lX11',
+-        '-lX11-xcb',
+-        '-ldbus-1',
+         '-ldl',
+-        '-lgthread-2.0',
+         '-lglib-2.0',
+         '-lpthread',
+       ],
+@@ -243,7 +208,6 @@
+         '<(qt_loc)/mkspecs/linux-g++',
+       ],
+       'ldflags': [
+-        '-static-libstdc++',
+         '-pthread',
+         '-rdynamic',
+       ],
+diff --git Telegram/gyp/qt_moc.gypi Telegram/gyp/qt_moc.gypi
+index fae668dc..99e184a3 100644
+--- Telegram/gyp/qt_moc.gypi
++++ Telegram/gyp/qt_moc.gypi
+@@ -25,7 +25,7 @@
+       '<(SHARED_INTERMEDIATE_DIR)/<(_target_name)/moc/moc_<(RULE_INPUT_ROOT).cpp',
+     ],
+     'action': [
+-      '<(qt_loc)/bin/moc<(exe_ext)',
++      '/usr/bin/moc',
+ 
+       # Silence "Note: No relevant classes found. No output generated."
+       '--no-notes',
+diff --git Telegram/gyp/qt_rcc.gypi Telegram/gyp/qt_rcc.gypi
+index eebc6967..19a346fe 100644
+--- Telegram/gyp/qt_rcc.gypi
++++ Telegram/gyp/qt_rcc.gypi
+@@ -28,7 +28,7 @@
+       '<(SHARED_INTERMEDIATE_DIR)/<(_target_name)/qrc/qrc_<(RULE_INPUT_ROOT).cpp',
+     ],
+     'action': [
+-      '<(qt_loc)/bin/rcc<(exe_ext)',
++      '/usr/bin/rcc',
+       '-name', '<(RULE_INPUT_ROOT)',
+       '-no-compress',
+       '<(RULE_INPUT_PATH)',
+diff --git Telegram/gyp/settings_linux.gypi Telegram/gyp/settings_linux.gypi
+index b93bace4..0fcdfd56 100644
+--- Telegram/gyp/settings_linux.gypi
++++ Telegram/gyp/settings_linux.gypi
+@@ -24,7 +24,6 @@
+         'linux_common_flags': [
+           '-pipe',
+           '-Wall',
+-          '-Werror',
+           '-W',
+           '-fPIC',
+           '-Wno-unused-variable',
+@@ -38,7 +37,7 @@
+         ],
+       },
+       'conditions': [
+-        [ '"<!(uname -p)" == "x86_64"', {
++        [ '"<!(uname -m)" == "x86_64"', {
+           'defines': [
+             'Q_OS_LINUX64',
+           ],
+@@ -60,7 +59,6 @@
+       ],
+       'defines': [
+         '_REENTRANT',
+-        'QT_STATICPLUGIN',
+         'QT_PLUGIN',
+       ],
+       'cflags_c': [
+diff --git Telegram/gyp/telegram_linux.gypi Telegram/gyp/telegram_linux.gypi
+index f6918c22..50f0d8c7 100644
+--- Telegram/gyp/telegram_linux.gypi
++++ Telegram/gyp/telegram_linux.gypi
+@@ -33,10 +33,11 @@
+       'linux_path_va%': '/usr/local',
+       'linux_path_vdpau%': '/usr/local',
+       'linux_path_breakpad%': '/usr/local',
+-      'linux_path_opus_include%': '<(libs_loc)/opus/include',
++      'linux_path_opus_include%': '/usr/include/opus',
+       'linux_path_range%': '/usr/local',
+     },
+     'include_dirs': [
++      '/usr/include/openssl-1.0',
+       '/usr/local/include',
+       '<(linux_path_ffmpeg)/include',
+       '<(linux_path_openal)/include',
+@@ -45,6 +46,7 @@
+       '<(linux_path_range)/include',
+     ],
+     'library_dirs': [
++      '/usr/lib/openssl-1.0',
+       '/usr/local/lib',
+       '<(linux_path_ffmpeg)/lib',
+       '<(linux_path_openal)/lib',
+@@ -53,25 +55,15 @@
+       '<(linux_path_breakpad)/lib',
+     ],
+     'libraries': [
+-      'breakpad_client',
+-      'composeplatforminputcontextplugin',
+-      'ibusplatforminputcontextplugin',
+-      'fcitxplatforminputcontextplugin',
+-      'himeplatforminputcontextplugin',
+-      'liblzma.a',
+-      'libopenal.a',
+-      'libavformat.a',
+-      'libavcodec.a',
+-      'libswresample.a',
+-      'libswscale.a',
+-      'libavutil.a',
+-      'libopus.a',
+-      'libva-x11.a',
+-      'libva-drm.a',
+-      'libva.a',
+-      'libvdpau.a',
+-      'libdrm.a',
+-      'libz.a',
++      'openal',
++      'avformat',
++      'avcodec',
++      'swresample',
++      'swscale',
++      'avutil',
++      'minizip',
++      'opus',
++      'z',
+ #      '<!(pkg-config 2> /dev/null --libs <@(pkgconfig_libs))',
+     ],
+     'cflags_cc': [
+@@ -99,7 +91,7 @@
+       },
+     },
+     'conditions': [
+-      [ '"<!(uname -p)" == "x86_64"', {
++      [ '"<!(uname -m)" == "x86_64"', {
+         # 32 bit version can't be linked with debug info or LTO,
+         # virtual memory exhausted :(
+         'cflags_c': [ '-g' ],
+@@ -118,10 +110,8 @@
+         ],
+       }], ['not_need_gtk!="True"', {
+         'cflags_cc': [
+-          '<!(pkg-config 2> /dev/null --cflags appindicator-0.1)',
+-          '<!(pkg-config 2> /dev/null --cflags gtk+-2.0)',
+-          '<!(pkg-config 2> /dev/null --cflags glib-2.0)',
+-          '<!(pkg-config 2> /dev/null --cflags dee-1.0)',
++          '<!(pkg-config 2> /dev/null --cflags appindicator3-0.1)',
++          '<!(pkg-config 2> /dev/null --cflags gtk+-3.0)',
+         ],
+       }]
+     ],
+diff --git Telegram/gyp/telegram_sources.txt Telegram/gyp/telegram_sources.txt
+index 5d2f627e..defd475d 100644
+--- Telegram/gyp/telegram_sources.txt
++++ Telegram/gyp/telegram_sources.txt
+@@ -713,14 +713,7 @@
+ <(emoji_suggestions_loc)/emoji_suggestions.cpp
+ <(emoji_suggestions_loc)/emoji_suggestions.h
+ 
+-platforms: !win
+-<(minizip_loc)/crypt.h
+-<(minizip_loc)/ioapi.c
+-<(minizip_loc)/ioapi.h
+-<(minizip_loc)/zip.c
+-<(minizip_loc)/zip.h
+-<(minizip_loc)/unzip.c
+-<(minizip_loc)/unzip.h
++<(src_loc)/qt_functions.cpp
+ 
+ platforms: mac
+ <(sp_media_key_tap_loc)/SPMediaKeyTap.m
