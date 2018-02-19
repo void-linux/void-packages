@@ -1,0 +1,316 @@
+https://pagure.io/volume_key/c/ecef526a51c5a276681472fd6df239570c9ce518.patch
+
+--- lib/volume_luks.c
++++ lib/volume_luks.c
+@@ -61,17 +61,13 @@ my_strerror (int err_no)
+ }
+ 
+ /* Set ERROR based on libcryptsetup error state after returning RES.
+-   Use CODE. */
++   Use CODE and LAST_LOG_ENTRY. */
+ static void
+-error_from_cryptsetup (GError **error, LIBVKError code, int res)
++error_from_cryptsetup (GError **error, LIBVKError code, int res,
++		       char *last_log_entry)
+ {
+-  /* It's not possible to get the error message length from libcryptsetup, just
+-     guess. */
+-  char crypt_msg[4096];
+-
+-  crypt_get_error (crypt_msg, sizeof (crypt_msg));
+-  if (crypt_msg[0] != '\0')
+-    g_set_error (error, LIBVK_ERROR, code, "%s", crypt_msg);
++  if (last_log_entry != NULL && last_log_entry[0] != '\0')
++    g_set_error (error, LIBVK_ERROR, code, "%s", last_log_entry);
+   else
+     {
+       char *s;
+@@ -82,17 +78,33 @@ error_from_cryptsetup (GError **error, LIBVKError code, int res)
+     }
+ }
+ 
++static void
++record_cryptsetup_log_entry (int level, const char *msg, void *usrptr)
++{
++  char **last_log_entry = usrptr;
++
++  if (level == CRYPT_LOG_ERROR)
++    {
++      g_free (*last_log_entry);
++      *last_log_entry = g_strdup (msg);
++    }
++}
++
+ /* Open volume PATH and load its header.
++   Set up *LAST_LOG_ENTRY to be updated to the last logged message for the
++   device.  The caller must g_free(*LAST_LOG_ENTRY) after closing the device.
+    Return the volume, or NULL on error. */
+ static struct crypt_device *
+-open_crypt_device (const char *path, GError **error)
++open_crypt_device (const char *path, char **last_log_entry, GError **error)
+ {
+   struct crypt_device *cd;
+   int r;
+ 
++  *last_log_entry = NULL;
+   r = crypt_init (&cd, path);
+   if (r < 0)
+     goto err;
++  crypt_set_log_callback(cd, record_cryptsetup_log_entry, last_log_entry);
+   r = crypt_load (cd, CRYPT_LUKS1, NULL);
+   if (r < 0)
+     goto err_cd;
+@@ -101,9 +113,12 @@ open_crypt_device (const char *path, GError **error)
+  err_cd:
+   crypt_free (cd);
+  err:
+-  error_from_cryptsetup (error, LIBVK_ERROR_VOLUME_UNKNOWN_FORMAT, r);
++  error_from_cryptsetup (error, LIBVK_ERROR_VOLUME_UNKNOWN_FORMAT, r,
++			 *last_log_entry);
+   g_prefix_error (error, _("Error getting information about volume `%s': "),
+ 		  path);
++  g_free (*last_log_entry);
++  *last_log_entry = NULL;
+   return NULL;
+ }
+ 
+@@ -173,10 +188,11 @@ luks_volume_open (struct libvk_volume *vol, const char *path, GError **error)
+ {
+   struct luks_volume *luks;
+   struct crypt_device *cd;
++  char *last_log_entry;
+   const char *uuid;
+ 
+   (void)vol;
+-  cd = open_crypt_device (path, error);
++  cd = open_crypt_device (path, &last_log_entry, error);
+   if (cd == NULL)
+     return NULL;
+   /* A bit of paranoia */
+@@ -187,6 +203,7 @@ luks_volume_open (struct libvk_volume *vol, const char *path, GError **error)
+ 		   _("UUID mismatch between libblkid and libcryptsetup: `%s' "
+ 		     "vs. `%s'"), vol->uuid, uuid);
+       crypt_free (cd);
++      g_free (last_log_entry);
+       return NULL;
+     }
+ 
+@@ -195,6 +212,7 @@ luks_volume_open (struct libvk_volume *vol, const char *path, GError **error)
+   luks->cipher_mode = g_strdup (crypt_get_cipher_mode (cd));
+   luks->key_bytes = crypt_get_volume_key_size (cd);
+   crypt_free (cd);
++  g_free (last_log_entry);
+ 
+   luks->key = NULL;
+   luks->passphrase = NULL;
+@@ -256,7 +274,7 @@ luks_get_secret (struct libvk_volume *vol, enum libvk_secret secret_type,
+ 		 const struct libvk_ui *ui, GError **error)
+ {
+   struct crypt_device *cd;
+-  char *passphrase;
++  char *last_log_entry, *passphrase;
+   void *key;
+   size_t key_length;
+   int slot;
+@@ -276,7 +294,7 @@ luks_get_secret (struct libvk_volume *vol, enum libvk_secret secret_type,
+ 		   _("Encryption information type unsupported in LUKS"));
+       goto err;
+     }
+-  cd = open_crypt_device (vol->path, error);
++  cd = open_crypt_device (vol->path, &last_log_entry, error);
+   if (cd == NULL)
+     goto err;
+   key_length = crypt_get_volume_key_size (cd);
+@@ -303,7 +321,7 @@ luks_get_secret (struct libvk_volume *vol, enum libvk_secret secret_type,
+       g_free_passphrase (passphrase);
+       if (r != -EPERM)
+ 	{
+-	  error_from_cryptsetup (error, LIBVK_ERROR_FAILED, r);
++	  error_from_cryptsetup (error, LIBVK_ERROR_FAILED, r, last_log_entry);
+ 	  g_prefix_error (error, _("Error getting LUKS data encryption key: "));
+ 	  goto err_prompt;
+ 	}
+@@ -322,12 +340,14 @@ luks_get_secret (struct libvk_volume *vol, enum libvk_secret secret_type,
+   vol->v.luks->passphrase_slot = slot;
+   g_free (prompt);
+   crypt_free (cd);
++  g_free (last_log_entry);
+   return 0;
+ 
+  err_prompt:
+   g_free (prompt);
+   g_free_key (key, key_length);
+   crypt_free (cd);
++  g_free (last_log_entry);
+  err:
+   return -1;
+ }
+@@ -383,11 +403,12 @@ luks_load_packet (struct libvk_volume *vol, const struct libvk_volume *packet,
+   if (packet->v.luks->key != NULL)
+     {
+       struct crypt_device *cd;
++      char *last_log_entry;
+       int r;
+ 
+       g_return_val_if_fail (vol->v.luks->key_bytes == packet->v.luks->key_bytes,
+ 			    -1);
+-      cd = open_crypt_device (vol->path, error);
++      cd = open_crypt_device (vol->path, &last_log_entry, error);
+       if (cd == NULL)
+ 	return -1;
+       r = crypt_volume_key_verify (cd, packet->v.luks->key,
+@@ -395,21 +416,25 @@ luks_load_packet (struct libvk_volume *vol, const struct libvk_volume *packet,
+       crypt_free (cd);
+       if (r < 0)
+ 	{
+-	  error_from_cryptsetup (error, LIBVK_ERROR_PACKET_VOLUME_MISMATCH, r);
++	  error_from_cryptsetup (error, LIBVK_ERROR_PACKET_VOLUME_MISMATCH, r,
++				 last_log_entry);
+ 	  g_prefix_error (error, _("LUKS data encryption key in packet is "
+ 				   "invalid: "));
++	  g_free (last_log_entry);
+ 	  return -1;
+ 	}
++      g_free (last_log_entry);
+       luks_replace_key (vol, packet->v.luks->key);
+     }
+   if (packet->v.luks->passphrase != NULL)
+     {
+       struct crypt_device *cd;
++      char *last_log_entry;
+       void *key;
+       size_t key_size;
+       int r;
+ 
+-      cd = open_crypt_device (vol->path, error);
++      cd = open_crypt_device (vol->path, &last_log_entry, error);
+       if (cd == NULL)
+ 	return -1;
+       key_size = crypt_get_volume_key_size (cd);
+@@ -420,10 +445,13 @@ luks_load_packet (struct libvk_volume *vol, const struct libvk_volume *packet,
+       crypt_free (cd);
+       if (r < 0)
+ 	{
+-	  error_from_cryptsetup (error, LIBVK_ERROR_PACKET_VOLUME_MISMATCH, r);
++	  error_from_cryptsetup (error, LIBVK_ERROR_PACKET_VOLUME_MISMATCH, r,
++				 last_log_entry);
+ 	  g_prefix_error (error, _("LUKS passphrase in packet is invalid: "));
++	  g_free (last_log_entry);
+ 	  return -1;
+ 	}
++      g_free (last_log_entry);
+       luks_replace_passphrase (vol, packet->v.luks->passphrase);
+       vol->v.luks->passphrase_slot = r;
+       if (packet->v.luks->key == NULL)
+@@ -446,7 +474,7 @@ luks_apply_secret (struct libvk_volume *vol, const struct libvk_volume *packet,
+ 		   GError **error)
+ {
+   struct crypt_device *cd;
+-  char *prompt, *prompt2, *error_prompt, *passphrase;
++  char *last_log_entry, *prompt, *prompt2, *error_prompt, *passphrase;
+   unsigned failed;
+   int res;
+ 
+@@ -498,7 +526,7 @@ luks_apply_secret (struct libvk_volume *vol, const struct libvk_volume *packet,
+   goto err_prompts;
+ 
+  got_passphrase:
+-  cd = open_crypt_device (vol->path, error);
++  cd = open_crypt_device (vol->path, &last_log_entry, error);
+   if (cd == NULL)
+     goto err_passphrase;
+   res = crypt_keyslot_add_by_volume_key (cd, CRYPT_ANY_SLOT,
+@@ -508,10 +536,12 @@ luks_apply_secret (struct libvk_volume *vol, const struct libvk_volume *packet,
+   crypt_free (cd);
+   if (res < 0)
+     {
+-      error_from_cryptsetup (error, LIBVK_ERROR_FAILED, res);
++      error_from_cryptsetup (error, LIBVK_ERROR_FAILED, res, last_log_entry);
+       g_prefix_error (error, _("Error adding a LUKS passphrase"));
++      g_free (last_log_entry);
+       goto err_passphrase;
+     }
++  g_free (last_log_entry);
+ 
+   g_return_val_if_fail (vol->v.luks->key_bytes == packet->v.luks->key_bytes,
+ 			-1);
+@@ -542,6 +572,7 @@ luks_add_secret (struct libvk_volume *vol, enum libvk_secret secret_type,
+ 		 const void *secret, size_t size, GError **error)
+ {
+   struct crypt_device *cd;
++  char *last_log_entry;
+   int res;
+ 
+   if (secret_type != LIBVK_SECRET_PASSPHRASE)
+@@ -562,7 +593,7 @@ luks_add_secret (struct libvk_volume *vol, enum libvk_secret secret_type,
+ 		   _("The passphrase must be a string"));
+       return -1;
+     }
+-  cd = open_crypt_device (vol->path, error);
++  cd = open_crypt_device (vol->path, &last_log_entry, error);
+   if (cd == NULL)
+     return -1;
+   res = crypt_keyslot_add_by_volume_key (cd, CRYPT_ANY_SLOT, vol->v.luks->key,
+@@ -570,10 +601,12 @@ luks_add_secret (struct libvk_volume *vol, enum libvk_secret secret_type,
+   crypt_free (cd);
+   if (res < 0)
+     {
+-      error_from_cryptsetup (error, LIBVK_ERROR_FAILED, res);
++      error_from_cryptsetup (error, LIBVK_ERROR_FAILED, res, last_log_entry);
+       g_prefix_error (error, _("Error adding a LUKS passphrase"));
++      g_free (last_log_entry);
+       return -1;
+     }
++  g_free (last_log_entry);
+ 
+   luks_replace_passphrase (vol, secret);
+   vol->v.luks->passphrase_slot = res;
+@@ -823,12 +856,13 @@ luks_open_with_packet (struct libvk_volume *vol,
+ 		       GError **error)
+ {
+   struct crypt_device *cd;
++  char *last_log_entry;
+   void *to_free;
+   const void *key;
+   int r;
+   size_t key_size;
+ 
+-  cd = open_crypt_device (vol->path, error);
++  cd = open_crypt_device (vol->path, &last_log_entry, error);
+   if (cd == NULL)
+     goto err;
+   if (packet->v.luks->key != NULL)
+@@ -846,7 +880,7 @@ luks_open_with_packet (struct libvk_volume *vol,
+ 				strlen (packet->v.luks->passphrase));
+       if (r < 0)
+ 	{
+-	  error_from_cryptsetup (error, LIBVK_ERROR_FAILED, r);
++	  error_from_cryptsetup (error, LIBVK_ERROR_FAILED, r, last_log_entry);
+ 	  g_prefix_error (error, _("Error getting LUKS data encryption key: "));
+ 	  goto err_to_free;
+ 	}
+@@ -862,7 +896,7 @@ luks_open_with_packet (struct libvk_volume *vol,
+   r = crypt_activate_by_volume_key (cd, name, key, key_size, 0);
+   if (r < 0)
+     {
+-      error_from_cryptsetup (error, LIBVK_ERROR_FAILED, r);
++      error_from_cryptsetup (error, LIBVK_ERROR_FAILED, r, last_log_entry);
+       g_prefix_error (error, _("Error opening LUKS volume: "));
+       goto err_to_free;
+     }
+@@ -870,6 +904,7 @@ luks_open_with_packet (struct libvk_volume *vol,
+   if (to_free != NULL)
+     g_free_key (to_free, key_size);
+   crypt_free (cd);
++  g_free (last_log_entry);
+   return 0;
+ 
+  err_to_free:
+@@ -877,6 +912,7 @@ luks_open_with_packet (struct libvk_volume *vol,
+     g_free_key (to_free, key_size);
+  err_cd:
+   crypt_free (cd);
++  g_free (last_log_entry);
+  err:
+   return -1;
+ }
