@@ -108,7 +108,7 @@ chroot_prepare() {
     ln -sf /dev/null $XBPS_MASTERDIR/etc/xbps.d/00-repository-main.conf
 
     # Prepare default locale: en_US.UTF-8.
-    if [ -z "$XBPS_TEMP_MASTERDIR" -a -s ${XBPS_MASTERDIR}/etc/default/libc-locales ]; then
+    if [ -s ${XBPS_MASTERDIR}/etc/default/libc-locales ]; then
         echo 'en_US.UTF-8 UTF-8' >> ${XBPS_MASTERDIR}/etc/default/libc-locales
     fi
 
