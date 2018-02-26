@@ -25,6 +25,8 @@ do_configure() {
 	fi
 	export PERL5LIB=$perlprefix
 
+	sed -i "s#^ccflags=.*#ccflags='$CFLAGS'#" "$perlprefix/Config"*.p?
+
 	if [ -f ${wrksrc}/Makefile.PL ]; then
 		sed -i "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" ${wrksrc}/Makefile.PL
 	fi
