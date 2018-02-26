@@ -16,7 +16,7 @@ do_configure() {
 
 	local perlprefix=${XBPS_STATEDIR}/perlprefix-${XBPS_TARGET_MACHINE}
 	mkdir -p $perlprefix
-	if [ -d "XBPS_CROSS_BASE/usr/lib/perl5/core_perl" ]; then
+	if [ -d "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl" ]; then
 		cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Config"*.p? $perlprefix
 		cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Errno.pm" $perlprefix
 	else
@@ -24,8 +24,6 @@ do_configure() {
 		cp "/usr/lib/perl5/core_perl/Errno.pm" $perlprefix
 	fi
 	export PERL5LIB=$perlprefix
-
-	sed -i "s#^ccflags=.*#ccflags='$CFLAGS'#" "$perlprefix/Config"*.p?
 
 	if [ -f ${wrksrc}/Makefile.PL ]; then
 		sed -i "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" ${wrksrc}/Makefile.PL
