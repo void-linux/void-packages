@@ -419,6 +419,13 @@ Example:
 separated by blanks. Please note that the order must be the same than
 was used in `${distfiles}`. Example `checksum="kkas00xjkjas"`
 
+If a distfile changes its checksum for every download because it is packaged
+on the fly on the server, like e.g. snapshot tarballs from any of the
+`https://*.googlesource.com/` sites, the checksum of the `archive contents`
+can be specified by prepending a commercial at (@).
+For tarballs you can find the contents checksum by using the command
+`tar xf <tarball.ext> --to-stdout | sha256sum`.
+
 - `wrksrc` The directory name where the package sources are extracted, by default
 set to `${pkgname}-${version}`.
 
