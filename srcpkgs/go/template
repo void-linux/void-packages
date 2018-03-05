@@ -1,121 +1,51 @@
 # Template file for 'go'
 pkgname=go
-_bootstrap_version=1.4.2
 version=1.10
-revision=1
-wrksrc=go
-hostmakedepends="git ca-certificates"
+revision=2
+create_wrksrc=yes
+build_wrksrc=go
+hostmakedepends="go1.4-bootstrap"
 short_desc="The Go Programming Language"
-maintainer="Orphaned <orphan@voidlinux.eu>"
+maintainer="Michael Gehring <mg@ebfe.org>"
 homepage="http://golang.org/"
-license="BSD"
-distfiles="https://golang.org/dl/go${_bootstrap_version}.src.tar.gz
- https://golang.org/dl/go${version}.src.tar.gz"
-checksum="299a6fd8f8adfdce15bc06bde926e7b252ae8e24dd5b16b7d8791ed79e7b5e9b
- f3de49289405fda5fd1483a8fe6bd2fa5469e005fd567df64485c4fa000c7f24"
+license="3-clause-BSD"
+distfiles="https://golang.org/dl/go${version}.src.tar.gz"
+checksum="f3de49289405fda5fd1483a8fe6bd2fa5469e005fd567df64485c4fa000c7f24"
 
 nostrip=yes
 noverifyrdeps=yes
 
-# https://github.com/voidlinux/xbps/issues/258
-hostmakedepends+=" wget"
-XBPS_FETCH_CMD=wget
-
-_go_targetarch() {
-	local hostarch targetarch
-
-	case "$XBPS_MACHINE" in
-		arm*) export hostarch=arm;;
-		i686*) export hostarch=386;;
-		x86_64*) export hostarch=amd64;;
-	esac
-	case "$XBPS_TARGET_MACHINE" in
-		aarch64*) targetarch=arm64;;
-		arm*) targetarch=arm;;
-		i686*) targetarch=386;;
-		x86_64*) targetarch=amd64;;
-		*) targetarch=$hostarch;;
-	esac
-	echo $targetarch
-}
-
-do_extract() {
-	rm -rf "${XBPS_BUILDDIR}/go_bootstrap"
-	mkdir "${XBPS_BUILDDIR}/go_bootstrap"
-	tar -xf "${XBPS_SRCDISTDIR}/${pkgname}-${version}/go${_bootstrap_version}.src.tar.gz" \
-		-C "${XBPS_BUILDDIR}/go_bootstrap" --strip-components=1
-
-	tar -xf "${XBPS_SRCDISTDIR}/${pkgname}-${version}/go${version}.src.tar.gz" \
-		-C "${XBPS_BUILDDIR}/go" --strip-components=1
-
-	# Fix gcc6 warnings regarding signed shift left
-	sed -i ${XBPS_BUILDDIR}/go_bootstrap/src/cmd/6c/txt.c \
-		-e's;f->vconst |= (vlong)~0 << 32;f->vconst = (vlong)(~0ull << 32);'
-	sed -i ${XBPS_BUILDDIR}/go_bootstrap/src/cmd/8g/ggen.c \
-		-e's;-1LL<<(t->width\*8-1);~0ULL<<(t->width*8-1);'
-
-	# Disable gcc7 fallthrough warnings
-	sed -i ${XBPS_BUILDDIR}/go_bootstrap/src/make.bash \
-		-e's;-Werror;-Werror -Wimplicit-fallthrough=0;'
-	sed -i ${XBPS_BUILDDIR}/go_bootstrap/src/cmd/dist/build.c \
-		-e's;"-Werror",;"-Werror", "-Wimplicit-fallthrough=0",;'
-}
+case "${XBPS_TARGET_MACHINE}" in
+	aarch64*) _goarch=arm64 ;;
+	arm*) _goarch=arm ;;
+	i686*) _goarch=386 ;;
+	x86_64*) _goarch=amd64 ;;
+	*) _goarch=${XBPS_TARGET_MACHINE} ;;
+esac
 
 do_build() {
 	unset GCC CC CXX LD CFLAGS
+	# FIXME: work around leaking go build-style vars when built as a
+	# dependency
+	unset CGO_CXXFLAGS CGO_CFLAGS CGO_ENABLED
 
-	local targetarch=$(_go_targetarch)
+
 	export GOCACHE=off
 	export GOROOT=$PWD
 	export GOROOT_FINAL="/usr/lib/go"
-	export GOOS=
-	export GOARCH=
-	export GOPATH="${XBPS_BUILDDIR}/go_gopath"
-	export GOROOT_BOOTSTRAP="${XBPS_BUILDDIR}/go_bootstrap"
-	mkdir -p $GOPATH/src
+	export GOROOT_BOOTSTRAP="/usr/lib/go1.4"
+	export GOARCH=${_goarch}
 
-	cd "${XBPS_BUILDDIR}/go_bootstrap/src"
-	# Disable cgo when building the bootstrap compiler because Go
-	# 1.4.2 won't build otherwise with new binutils. See
-	# https://github.com/golang/go/issues/13896
-	CGO_ENABLED=0 ./make.bash
+	cd "src"
 
-	cd "${XBPS_BUILDDIR}/go/src"
-
-	GOOS=linux
-	GOARCH=arm
-	bash make.bash --no-clean
-	GOOS=linux
-	GOARCH=arm64
-	bash make.bash --no-clean
-	for os in darwin freebsd linux windows; do
-		for arch in 386 amd64; do
-			GOARCH=$arch
-			GOOS=$os
-			bash make.bash --no-clean
-		done
-	done
-
-	GOOS=linux
-	GOARCH=$targetarch
-
-	git clone https://go.googlesource.com/tools \
-		-b release-branch.go$(echo "${version}" | cut -d "." -f "1-2") \
-		$GOPATH/src/golang.org/x/tools
-
-	$GOROOT/bin/go install golang.org/x/tools/cmd/godoc
+	bash make.bash --no-clean -v
 }
 
 do_install() {
 	local bindir
 
 	if [ "$CROSS_BUILD" ]; then
-		case "$XBPS_TARGET_MACHINE" in
-			aarch64*) bindir=bin/linux_arm64;;
-			arm*) bindir=bin/linux_arm;;
-			i686*) bindir=bin/linux_386;;
-			x86_64*) bindir=bin/linux_amd64;;
-		esac
+		bindir=bin/linux_${_goarch}
 	else
 		bindir=bin
 	fi
@@ -127,7 +57,6 @@ do_install() {
 	cp -a pkg src lib ${DESTDIR}/usr/lib/go
 	cp -r doc misc -t ${DESTDIR}/usr/share/go
 	ln -s /usr/share/go/doc ${DESTDIR}/usr/lib/go/doc
-	vlicense LICENSE
 
 	# This is to make go get code.google.com/p/go-tour/gotour and
 	# then running the gotour executable work out of the box.
@@ -142,70 +71,9 @@ do_install() {
 	# a symlink, usr/lib/go/misc -> /usr/share/go/misc
 	ln -sfr ${DESTDIR}/usr/share/go/misc ${DESTDIR}/usr/lib/go/misc
 
-	# For godoc
-	vbin ${XBPS_BUILDDIR}/go_gopath/${bindir}/godoc
-	vinstall favicon.ico 644 usr/lib/go
-
 	rm -f ${DESTDIR}/usr/share/go/doc/articles/wiki/get.bin
 	rm -f ${DESTDIR}/usr/lib/go/pkg/tool/*/api
-	rm -rf "${XBPS_BUILDDIR}/go_bootstrap"
-}
+	rm -rf ${DESTDIR}/usr/lib/go/pkg/bootstrap
 
-go-cross-linux_package() {
-	nostrip=yes
-	noverifyrdeps=yes
-	depends="${sourcepkg}-${version}_${revision}"
-	short_desc+=" - Cross compilers for Linux"
-	pkg_install() {
-		local targetarch=$(_go_targetarch)
-		mkdir -p $PKGDESTDIR/usr/lib/go/pkg/tool/
-		cd ${DESTDIR}/usr/lib/go/pkg/tool/
-		for i in linux_*; do
-			if [ "$i" != "linux_${targetarch}" ]; then
-				mv "$i" $PKGDESTDIR/usr/lib/go/pkg/tool/
-			fi
-		done
-
-		mkdir -p $PKGDESTDIR/usr/lib/go/pkg/
-		cd ${DESTDIR}/usr/lib/go/pkg/
-		for i in linux_*; do
-			if [ "$i" != "linux_${targetarch}" ]; then
-				mv "$i" $PKGDESTDIR/usr/lib/go/pkg/
-			fi
-		done
-	}
-}
-
-go-cross-darwin_package() {
-	nostrip=yes
-	noverifyrdeps=yes
-	depends="${sourcepkg}-${version}_${revision}"
-	short_desc+=" - Cross compilers for Darwin"
-	pkg_install() {
-		vmove "usr/lib/go/pkg/tool/darwin_*"
-		vmove "usr/lib/go/pkg/darwin_*"
-	}
-}
-
-go-cross-freebsd_package() {
-	nostrip=yes
-	noverifyrdeps=yes
-	depends="${sourcepkg}-${version}_${revision}"
-	short_desc+=" - Cross compilers for FreeBSD"
-	pkg_install() {
-		vmove "usr/lib/go/pkg/tool/freebsd_*"
-		vmove "usr/lib/go/pkg/freebsd_*"
-	}
-}
-
-
-go-cross-windows_package() {
-	nostrip=yes
-	noverifyrdeps=yes
-	depends="${sourcepkg}-${version}_${revision}"
-	short_desc+=" - Cross compilers for Windows"
-	pkg_install() {
-		vmove "usr/lib/go/pkg/tool/windows_*"
-		vmove "usr/lib/go/pkg/windows_*"
-	}
+	vlicense LICENSE
 }
