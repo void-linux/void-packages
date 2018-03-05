@@ -51,6 +51,7 @@ create_debug_pkg() {
 		msg_red "$pkgver: failed to create debug pkg\n"
 		return 1
 	fi
+	printf "${pkgver} " >> ${_destdir}/rdeps
 	rmdir --ignore-fail-on-non-empty "${PKGDESTDIR}/usr/lib" 2>/dev/null
 	return 0
 }
