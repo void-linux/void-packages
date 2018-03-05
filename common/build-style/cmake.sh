@@ -50,6 +50,8 @@ do_build() {
 }
 
 do_check() {
+	cd ${cmake_builddir:=build}
+
 	if [ -z "$make_cmd" ] && [ -z "$make_check_target" ]; then
 		if make -q test 2>/dev/null; then
 			:
