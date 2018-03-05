@@ -1,5 +1,5 @@
 #
-# This helper is for templates using Qt4/Qt5 qmake.
+# This helper is for templates using scons.
 #
 do_build() {
 	: ${make_cmd:=scons}
