@@ -1,0 +1,169 @@
+Based on:
+- https://github.com/python/cpython/pull/4930
+- https://github.com/python/cpython/pull/5859
+
+--- Lib/test/test_ssl.py.orig
++++ Lib/test/test_ssl.py
+@@ -29,6 +29,12 @@
+ PROTOCOLS = sorted(ssl._PROTOCOL_NAMES)
+ HOST = support.HOST
+ IS_LIBRESSL = ssl.OPENSSL_VERSION.startswith('LibreSSL')
++if IS_LIBRESSL:
++    LIBRESSL_VERSION = tuple(
++        int(s) for s in ssl.OPENSSL_VERSION.rsplit(' ')[-1].split('.')
++    )
++else:
++    LIBRESSL_VERSION = ()
+ IS_OPENSSL_1_1 = not IS_LIBRESSL and ssl.OPENSSL_VERSION_INFO >= (1, 1, 0)
+ 
+ 
+@@ -3392,6 +3398,8 @@ def test_selected_npn_protocol(self):
+                                        chatty=True, connectionchatty=True)
+             self.assertIs(stats['client_npn_protocol'], None)
+ 
++        @unittest.skipIf(IS_LIBRESSL and LIBRESSL_VERSION >= (2, 6, 1),
++                         "LibreSSL 2.6.1+ has broken NPN support")
+         @unittest.skipUnless(ssl.HAS_NPN, "NPN support needed for this test")
+         def test_npn_protocols(self):
+             server_protocols = ['http/1.1', 'spdy/2']
+--- Tools/ssl/multissltests.py.orig
++++ Tools/ssl/multissltests.py
+@@ -47,7 +47,7 @@
+ 
+ OPENSSL_RECENT_VERSIONS = [
+      "1.0.2",
+-     "1.0.2m",
++     "1.0.2n",
+      "1.1.0g",
+ ]
+ 
+@@ -57,8 +57,8 @@
+ ]
+ 
+ LIBRESSL_RECENT_VERSIONS = [
+-    "2.5.3",
+     "2.5.5",
++    "2.6.4",
+ ]
+ 
+ # store files in ../multissl
+--- Modules/_ssl.c.orig
++++ Modules/_ssl.c
+@@ -125,6 +125,19 @@ struct py_ssl_library_code {
+ # define HAVE_ALPN
+ #endif
+ 
++/* We cannot rely on OPENSSL_NO_NEXTPROTONEG because LibreSSL 2.6.1 dropped
++ * NPN support but did not set OPENSSL_NO_NEXTPROTONEG for compatibility
++ * reasons. The check for TLSEXT_TYPE_next_proto_neg works with
++ * OpenSSL 1.0.1+ and LibreSSL.
++ */
++#ifdef OPENSSL_NO_NEXTPROTONEG
++# define HAVE_NPN 0
++#elif defined(TLSEXT_TYPE_next_proto_neg)
++# define HAVE_NPN 1
++#else
++# define HAVE_NPN 0
++#endif
++
+ #ifndef INVALID_SOCKET /* MS defines this */
+ #define INVALID_SOCKET (-1)
+ #endif
+@@ -279,7 +292,7 @@ static unsigned int _ssl_locks_count = 0;
+ typedef struct {
+     PyObject_HEAD
+     SSL_CTX *ctx;
+-#if defined(OPENSSL_NPN_NEGOTIATED) && !defined(OPENSSL_NO_NEXTPROTONEG)
++#if HAVE_NPN
+     unsigned char *npn_protocols;
+     int npn_protocols_len;
+ #endif
+@@ -1738,7 +1751,7 @@ _ssl__SSLSocket_version_impl(PySSLSocket *self)
+     return PyUnicode_FromString(version);
+ }
+ 
+-#if defined(OPENSSL_NPN_NEGOTIATED) && !defined(OPENSSL_NO_NEXTPROTONEG)
++#if HAVE_NPN
+ /*[clinic input]
+ _ssl._SSLSocket.selected_npn_protocol
+ [clinic start generated code]*/
+@@ -2691,7 +2704,7 @@ _ssl__SSLContext_impl(PyTypeObject *type, int proto_version)
+         return NULL;
+     }
+     self->ctx = ctx;
+-#if defined(OPENSSL_NPN_NEGOTIATED) && !defined(OPENSSL_NO_NEXTPROTONEG)
++#if HAVE_NPN
+     self->npn_protocols = NULL;
+ #endif
+ #ifdef HAVE_ALPN
+@@ -2826,7 +2839,7 @@ context_dealloc(PySSLContext *self)
+     PyObject_GC_UnTrack(self);
+     context_clear(self);
+     SSL_CTX_free(self->ctx);
+-#if defined(OPENSSL_NPN_NEGOTIATED) && !defined(OPENSSL_NO_NEXTPROTONEG)
++#if HAVE_NPN
+     PyMem_FREE(self->npn_protocols);
+ #endif
+ #ifdef HAVE_ALPN
+@@ -2904,7 +2917,7 @@ _ssl__SSLContext_get_ciphers_impl(PySSLContext *self)
+ #endif
+ 
+ 
+-#if defined(OPENSSL_NPN_NEGOTIATED) && !defined(OPENSSL_NO_NEXTPROTONEG) || defined(HAVE_ALPN)
++#if HAVE_NPN || defined(HAVE_ALPN)
+ static int
+ do_protocol_selection(int alpn, unsigned char **out, unsigned char *outlen,
+                       const unsigned char *server_protocols, unsigned int server_protocols_len,
+@@ -2930,7 +2943,7 @@ do_protocol_selection(int alpn, unsigned char **out, unsigned char *outlen,
+ }
+ #endif
+ 
+-#if defined(OPENSSL_NPN_NEGOTIATED) && !defined(OPENSSL_NO_NEXTPROTONEG)
++#if HAVE_NPN
+ /* this callback gets passed to SSL_CTX_set_next_protos_advertise_cb */
+ static int
+ _advertiseNPN_cb(SSL *s,
+@@ -2973,7 +2986,7 @@ _ssl__SSLContext__set_npn_protocols_impl(PySSLContext *self,
+                                          Py_buffer *protos)
+ /*[clinic end generated code: output=72b002c3324390c6 input=319fcb66abf95bd7]*/
+ {
+-#if defined(OPENSSL_NPN_NEGOTIATED) && !defined(OPENSSL_NO_NEXTPROTONEG)
++#if HAVE_NPN
+     PyMem_Free(self->npn_protocols);
+     self->npn_protocols = PyMem_Malloc(protos->len);
+     if (self->npn_protocols == NULL)
+@@ -5443,7 +5456,7 @@ PyInit__ssl(void)
+     Py_INCREF(r);
+     PyModule_AddObject(m, "HAS_ECDH", r);
+ 
+-#if defined(OPENSSL_NPN_NEGOTIATED) && !defined(OPENSSL_NO_NEXTPROTONEG)
++#if HAVE_NPN
+     r = Py_True;
+ #else
+     r = Py_False;
+--- Modules/clinic/_ssl.c.h.orig
++++ Modules/clinic/_ssl.c.h
+@@ -132,7 +132,7 @@ _ssl__SSLSocket_version(PySSLSocket *self, PyObject *Py_UNUSED(ignored))
+     return _ssl__SSLSocket_version_impl(self);
+ }
+ 
+-#if (defined(OPENSSL_NPN_NEGOTIATED) && !defined(OPENSSL_NO_NEXTPROTONEG))
++#if HAVE_NPN
+ 
+ PyDoc_STRVAR(_ssl__SSLSocket_selected_npn_protocol__doc__,
+ "selected_npn_protocol($self, /)\n"
+@@ -151,7 +151,7 @@ _ssl__SSLSocket_selected_npn_protocol(PySSLSocket *self, PyObject *Py_UNUSED(ign
+     return _ssl__SSLSocket_selected_npn_protocol_impl(self);
+ }
+ 
+-#endif /* (defined(OPENSSL_NPN_NEGOTIATED) && !defined(OPENSSL_NO_NEXTPROTONEG)) */
++#endif /* HAVE_NPN */
+ 
+ #if defined(HAVE_ALPN)
+ 
+@@ -1168,4 +1168,4 @@ _ssl_enum_crls(PyObject *module, PyObject **args, Py_ssize_t nargs, PyObject *kw
+ #ifndef _SSL_ENUM_CRLS_METHODDEF
+     #define _SSL_ENUM_CRLS_METHODDEF
+ #endif /* !defined(_SSL_ENUM_CRLS_METHODDEF) */
+-/*[clinic end generated code: output=a8b184655068c238 input=a9049054013a1b77]*/
++/*[clinic end generated code: output=3d801e1145e7a94e input=a9049054013a1b77]*/
