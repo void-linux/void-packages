@@ -14,6 +14,6 @@ if [ -z "${SOURCE_DATE_EPOCH}" -a -n "$IN_CHROOT" ]; then
 	if $GIT_CMD -C ${XBPS_SRCPKGDIR}/${basepkg} status -u normal --porcelain template | grep "^?? " &> /dev/null; then
 		export SOURCE_DATE_EPOCH="$(stat -c %Y ${XBPS_SRCPKGDIR}/${basepkg}/template)"
 	else
-		export SOURCE_DATE_EPOCH="$($GIT_CMD -C ${XBPS_SRCPKGDIR}/${basepkg} log --pretty='%ct' -n1 .)"
+		export SOURCE_DATE_EPOCH="$($GIT_CMD log --pretty='%ct' -n1 HEAD)"
 	fi
 fi
