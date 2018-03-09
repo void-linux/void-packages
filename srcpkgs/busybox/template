@@ -1,7 +1,7 @@
 # Build template for 'busybox'.
 pkgname=busybox
 version=1.28.1
-revision=1
+revision=2
 hostmakedepends="perl"
 checkdepends="zip"
 short_desc="The Swiss Army Knife of Embedded Linux"
@@ -26,14 +26,7 @@ do_configure() {
 	local t
 	for t in busybox busybox-static; do
 		mkdir -p $t
-		make -C $t KBUILD_SRC=${wrksrc}/src -f ${wrksrc}/src/Makefile defconfig
 		cp -f ${FILESDIR}/${t}.dotconfig ${t}/.config
-
-		if [ "$t" = busybox-static ]; then
-			sed -e '/CONFIG_STATIC/ s/.*/CONFIG_STATIC=y/' \
-				-e '/CONFIG_PIE/ s/.*/# CONFIG_PIE is not set/' \
-				-i "$t"/.config
-		fi
 
 		case "$XBPS_TARGET_MACHINE" in
 		*-musl) sed -i -e /CONFIG_FEATURE_VI_REGEX_SEARCH/s/y/n/ \
@@ -42,24 +35,22 @@ do_configure() {
 		esac
 
 		if [ "$CROSS_BUILD" ]; then
-			sed -e \
+			sed -i -e \
 				"s,\(CONFIG_CROSS_COMPILER_PREFIX\).*,\1=\"${XBPS_CROSS_TRIPLET}-\",g" \
-				-i ${t}/.config
+				${t}/.config
 		fi
-		make -C $t prepare ${makejobs}
+		make -C $t KBUILD_SRC=${wrksrc}/src -f ${wrksrc}/src/Makefile prepare ${makejobs}
 	done
+	sed -i -e '/CONFIG_STATIC/ s/.*/CONFIG_STATIC=y/' busybox-static/.config
 	if [ "$SOURCE_DATE_EPOCH" ]; then
 		# rewrite date with the one from the date wrapper.
 		d=$(date +"%F %T %Z")
 		sed -i "s/\(#define AUTOCONF_TIMESTAMP\).*/\1 \"$d\"/" */include/autoconf.h
 	fi
 }
-
 do_build() {
-	local t
-	for t in busybox busybox-static; do
-		make -C $t SKIP_STRIP=y ${makejobs}
-	done
+	make -C busybox SKIP_STRIP=y ${makejobs}
+	make -C busybox-static SKIP_STRIP=y ${makejobs}
 }
 do_check() {
 	# Copy the testsuite into the busybox and it's static counterpart
@@ -72,14 +63,16 @@ do_check() {
 	cp src/scripts/echo.c busybox-static/scripts
 
 	# Run testsuite for busybox
+	(
 	cd busybox/testsuite
 	SKIP_KNOWN_BUGS=yes ./runtest -v
+	)
 
-	cd ../../
-
-	# run testsuite for busybox-static
+	# Run testsuite for busybox-static
+	(
 	cd busybox-static/testsuite
 	SKIP_KNOWN_BUGS=yes ./runtest -v
+	)
 }
 do_install() {
 	vbin busybox/busybox_unstripped busybox
