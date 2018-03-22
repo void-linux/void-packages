@@ -1,24 +1,26 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See http://www.chromium.org/developers/calendar for the latest version
-version=63.0.3239.84
+version=65.0.3325.181
 revision=1
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
 homepage="http://www.chromium.org/"
 license="BSD"
 distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/${pkgname}-${version}.tar.xz"
-checksum=6de2754dfc333675ae6a67ae13c95666009b35c84f847b058edbf312e42fa3af
+checksum=93666448c6b96ec83e6a35a64cff40db4eb92a154fe1db4e7dab4761d0e38687
 
 only_for_archs="i686 x86_64 x86_64-musl"
 lib32disabled=yes
 nodebug=yes
 nopie=yes  # contains tools that are not PIE, enables PIE itself
 
-build_options="nacl"
+build_options="nacl clang"
+build_options_default="clang"
 desc_option_nacl="Enable NaCL support"
+desc_option_clang="Use clang to build"
 
-hostmakedepends="yasm python pkg-config perl gperf bison ninja nodejs hwids
+hostmakedepends="$(vopt_if clang clang) yasm python pkg-config perl gperf bison ninja nodejs hwids
  libatomic-devel libevent-devel libglib-devel"
 makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
  libXi-devel libgcrypt-devel libgnome-keyring-devel cups-devel elfutils-devel
@@ -27,7 +29,8 @@ makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
  libxml2-devel libxslt-devel pulseaudio-devel nss-devel libexif-devel
  libXcursor-devel libflac-devel speex-devel libmtp-devel libwebp-devel
  libjpeg-turbo-devel libevent-devel json-c-devel harfbuzz-devel
- minizip-devel jsoncpp-devel zlib-devel libcap-devel libXdamage-devel"
+ minizip-devel jsoncpp-devel zlib-devel libcap-devel libXdamage-devel
+ re2-devel fontconfig-devel freetype-devel harfbuzz-devel opus-devel"
 depends="libexif hwids desktop-file-utils hicolor-icon-theme"
 nostrip_files="$(vopt_if nacl 'nacl_irt_x86_64.nexe nacl_irt_x86_32.nexe')"
 
@@ -50,19 +53,26 @@ post_extract() {
 	sed 's|//third_party/usb_ids/usb.ids|/usr/share/hwdata/usb.ids|g' \
 		-i device/usb/BUILD.gn
 
-	# Work around bug in blink in which GCC 6 optimizes away null pointer checks
-	# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=833524
-	# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=68853#c2
-	sed -i '/config("compiler")/ a cflags_cc = [ "-fno-delete-null-pointer-checks" ]' \
-		build/config/linux/BUILD.gn
-
 	# use system nodejs
 	mkdir -p third_party/node/linux/node-linux-x64/bin
 	ln -sf /usr/bin/node third_party/node/linux/node-linux-x64/bin/node
+
+	if [ -z "$build_option_clang" ]; then
+		# Work around bug in blink in which GCC 6 optimizes away null pointer checks
+		# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=833524
+		# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=68853#c2
+		sed -i '/config("compiler")/ a cflags_cc = [ "-fno-delete-null-pointer-checks" ]' \
+			build/config/linux/BUILD.gn
+	fi
 }
 do_configure() {
 	local system="" bootstrap_conf="" conf=""
 	export -n CFLAGS CXXFLAGS LDFLAGS
+
+	if [ -n "$build_option_clang" ]; then
+		export CC=clang
+		export CXX=clang++
+	fi
 
 	# Use system-provided libraries.
 	# TODO: use_system_hunspell (upstream changes needed).
@@ -71,16 +81,18 @@ do_configure() {
 	# TODO: use_system_ssl (http://crbug.com/58087).
 	# TODO: use_system_sqlite (http://crbug.com/22208).
 	# XXX xtraeme: broken currently
-	# use_system_opus=1 (needs opus_custom.h)
 	# use_system_protobuf
 	# use_system_v8=1
 	# use_system_zlib=1
 	# use_system_libvpx=1
-	# use_system_re2=1 // breaks with re2-devel-2016.06.01
 	# bzip2 jsoncpp minizip xdg_utils speex
-	# harfbuzz-ng (https://crbug.com/768938)
 	system="
 		flac
+		fontconfig
+		freetype
+		harfbuzz-ng
+		opus
+		re2
 		libevent
 		libjpeg
 		libpng
@@ -97,6 +109,9 @@ do_configure() {
 		find -type f -path "*third_party/$LIB/*" \
 			\! -path "*third_party/$LIB/chromium/*" \
 			\! -path "*third_party/$LIB/google/*" \
+			\! -path './base/third_party/icu/*' \
+			\! -path './third_party/pdfium/third_party/freetype/include/pstables.h' \
+			\! -path './third_party/yasm/run_yasm.py' \
 			\! -regex '.*\.\(gn\|gni\|isolate\|py\)' \
 			-delete
 	done
@@ -119,12 +134,11 @@ do_configure() {
 	fi
 
 	# bootstrap GN
-	bootstrap_conf='
-		is_clang=false
+	bootstrap_conf="is_clang=$(vopt_if clang true false)"
+	bootstrap_conf+='
 		treat_warnings_as_errors=false
 		binutils_path="/usr/bin"
 		gold_path="/usr/bin/ld.gold"
-		use_gconf=false
 		use_sysroot=false
 		use_allocator="none"
 		use_allocator_shim=false'
@@ -155,16 +169,17 @@ do_configure() {
 		conf+=' enable_nacl=false enable_nacl_nonsfi=false'
 	fi
 
-	conf+='
-		is_clang=false
-		is_debug=false
+	conf+=" is_clang=$(vopt_if clang true false)"
+	conf+=' is_debug=false
+		clang_use_chrome_plugins=false
+		custom_toolchain="//build/toolchain/linux/unbundle:default"
+		host_toolchain="//build/toolchain/linux/unbundle:default"
 		remove_webcore_debug_symbols=true
 		symbol_level=0
 		icu_use_data_file=true
 		use_allocator="none"
 		use_allocator_shim=false
 		use_cups=true
-		use_gconf=false
 		use_pulseaudio=true
 		use_sysroot=false
 		use_system_harfbuzz=true
@@ -187,7 +202,10 @@ do_configure() {
 	# Never use bundled binutils/gold binary.
 	conf+="
 		binutils_path=\"${XBPS_CROSS_BASE}/usr/bin\"
-		gold_path=\"${XBPS_CROSS_BASE}/usr/bin/ld.gold\""
+		gold_path=\"${XBPS_CROSS_BASE}/usr/bin/ld.gold\"
+		linux_use_bundled_binutils=false
+		use_custom_libcxx=false
+		use_lld=false"
 
 	# XXX: gold broken with musl
 	case "${XBPS_TARGET_MACHINE}" in
