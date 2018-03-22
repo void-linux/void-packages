@@ -1,0 +1,70 @@
+--- ./sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
++++ ./sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
+@@ -114,23 +114,13 @@
+ // CLONE_VM, nor CLONE_THREAD, which includes all fork() implementations.
+ ResultExpr RestrictCloneToThreadsAndEPERMFork() {
+   const Arg<unsigned long> flags(0);
++  const int required = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND |
++                       CLONE_THREAD | CLONE_SYSVSEM;
++  const int safe = CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID |
++                   CLONE_DETACHED;
++  const BoolExpr thread_clone_ok = (flags&~safe)==required;
+ 
+-  // TODO(mdempsky): Extend DSL to support (flags & ~mask1) == mask2.
+-  const uint64_t kAndroidCloneMask = CLONE_VM | CLONE_FS | CLONE_FILES |
+-                                     CLONE_SIGHAND | CLONE_THREAD |
+-                                     CLONE_SYSVSEM;
+-  const uint64_t kObsoleteAndroidCloneMask = kAndroidCloneMask | CLONE_DETACHED;
+-
+-  const uint64_t kGlibcPthreadFlags =
+-      CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD |
+-      CLONE_SYSVSEM | CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
+-  const BoolExpr glibc_test = flags == kGlibcPthreadFlags;
+-
+-  const BoolExpr android_test =
+-      AnyOf(flags == kAndroidCloneMask, flags == kObsoleteAndroidCloneMask,
+-            flags == kGlibcPthreadFlags);
+-
+-  return If(IsAndroid() ? android_test : glibc_test, Allow())
++  return If(thread_clone_ok, Allow())
+       .ElseIf((flags & (CLONE_VM | CLONE_THREAD)) == 0, Error(EPERM))
+       .Else(CrashSIGSYSClone());
+ }
+--- ./sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc.orig
++++ ./sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
+@@ -494,6 +494,7 @@
+     case __NR_mlock:
+     case __NR_munlock:
+     case __NR_munmap:
++    case __NR_mremap:
+       return true;
+     case __NR_madvise:
+     case __NR_mincore:
+@@ -509,7 +510,6 @@
+     case __NR_modify_ldt:
+ #endif
+     case __NR_mprotect:
+-    case __NR_mremap:
+     case __NR_msync:
+     case __NR_munlockall:
+     case __NR_readahead:
+diff --git a/sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc b/sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
+index 80f02c0..21fbe21 100644
+--- sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
++++ sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
+@@ -373,6 +373,7 @@ bool SyscallSets::IsAllowedProcessStartOrDeath(int sysno) {
+ #if defined(__i386__)
+     case __NR_waitpid:
+ #endif
++    case __NR_set_tid_address:
+       return true;
+     case __NR_clone:  // Should be parameter-restricted.
+     case __NR_setns:  // Privileged.
+@@ -385,7 +386,6 @@ bool SyscallSets::IsAllowedProcessStartOrDeath(int sysno) {
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__)
+     case __NR_set_thread_area:
+ #endif
+-    case __NR_set_tid_address:
+     case __NR_unshare:
+ #if !defined(__mips__) && !defined(__aarch64__)
+     case __NR_vfork:
