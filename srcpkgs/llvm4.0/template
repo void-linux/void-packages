@@ -1,0 +1,93 @@
+# Template file for 'llvm4.0'
+pkgname=llvm4.0
+version=4.0.1
+revision=1
+wrksrc="llvm-${version}.src"
+lib32disabled=yes
+build_style=cmake
+configure_args="
+ -DCMAKE_BUILD_TYPE=Release
+ -DLLVM_INSTALL_UTILS=ON
+ -DLLVM_BUILD_LLVM_DYLIB=ON
+ -DLLVM_LINK_LLVM_DYLIB=ON
+ -DLLVM_ENABLE_RTTI=ON
+ -DLLVM_ENABLE_FFI=ON
+ -DLLVM_BINUTILS_INCDIR=/usr/include"
+short_desc="Low Level Virtual Machine"
+maintainer="Juan RP <xtraeme@voidlinux.eu>"
+homepage="http://www.llvm.org"
+license="BSD"
+distfiles="http://www.llvm.org/releases/${version}/llvm-${version}.src.tar.xz"
+checksum="da783db1f82d516791179fe103c71706046561f7972b18f0049242dee6712b51"
+
+# XXX Investigate ocaml bindings.
+hostmakedepends="groff perl python zlib-devel libffi-devel swig"
+makedepends="python-devel zlib-devel libffi-devel libedit-devel libxml2-devel binutils-devel"
+depends="libllvm4.0"
+conflicts="llvm3.9>=0 llvm>=0"
+
+post_extract() {
+	# patches
+	cd ${XBPS_BUILDDIR}/llvm-${version}.src
+	for i in ${FILESDIR}/patches/llvm/llvm-*.patch; do
+		msg_normal "Applying $i to llvm\n"
+		patch -sNp1 -i ${i}
+	done
+}
+
+pre_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		msg_normal "Building host tblgen\n"
+		mkdir -p build/HOST
+		cd build/HOST
+		CC="$BUILD_CC" CXX="$BUILD_CXX" CFLAGS="$BUILD_CFLAGS" \
+			CXXFLAGS="$BUILD_CXXFLAGS" LDFLAGS="$BUILD_LDFLAGS" \
+			cmake ../.. -DCMAKE_BUILD_TYPE=Release
+		make ${makejobs} -C utils/TableGen
+		make ${makejobs} -C tools/clang/utils/TableGen
+		configure_args+=" -DLLVM_TABLEGEN=${wrksrc}/build/HOST/bin/llvm-tblgen"
+		configure_args+=" -DCLANG_TABLEGEN=${wrksrc}/build/HOST/bin/clang-tblgen"
+		cd ../..
+	fi
+
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) _arch="X86";;
+		x86_64*) _arch="X86";;
+		arm*) _arch="ARM";;
+		aarch64*) _arch="AArch64";;
+		mips*) _arch="Mips";;
+	esac
+	configure_args+=" -DLLVM_TARGET_ARCH=${_arch}"
+	configure_args+=" -DLLVM_DEFAULT_TARGET_TRIPLE=${XBPS_CROSS_TRIPLET:-$XBPS_TRIPLET}"
+}
+
+do_install() {
+	vlicense LICENSE.TXT
+
+	cd build
+	cmake -DCMAKE_INSTALL_PREFIX=${DESTDIR}/usr -P cmake_install.cmake
+
+	# Fix permissions of static libs
+	chmod -x ${DESTDIR}/usr/lib/*.a
+
+	# Required for multilib.
+	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		for _header in llvm-config; do
+			mv ${DESTDIR}/usr/include/llvm/Config/${_header}{,-64}.h
+			vinstall ${FILESDIR}/llvm-Config-${_header}.h 644 \
+				usr/include/llvm/Config ${_header}.h
+		done
+	fi
+
+	# Remove llvm-config-host in cross builds.
+	if [ "$CROSS_BUILD" ]; then
+		rm -f ${DESTDIR}/usr/bin/llvm-config-host
+	fi
+}
+
+libllvm4.0_package() {
+	short_desc+=" - runtime library"
+	pkg_install() {
+		vmove "usr/lib/libLLVM-*.so*"
+	}
+}
