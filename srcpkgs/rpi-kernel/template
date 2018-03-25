@@ -26,8 +26,8 @@ nostrip=yes
 noverifyrdeps=yes
 noshlibprovides=yes
 
-# RPi and RPi2
-only_for_archs="armv6l armv6l-musl armv7l armv7l-musl"
+# RPi, RPi2, RPi3
+only_for_archs="armv6l armv6l-musl armv7l armv7l-musl aarch64 aarch64-musl"
 hostmakedepends="perl kmod uboot-mkimage libressl bc"
 makedepends="ncurses-devel"
 triggers="kernel-hooks"
@@ -53,6 +53,13 @@ do_configure() {
 
 	# Use upstream default configuration, no need to maintain ours.
 	case "$XBPS_TARGET_MACHINE" in
+	aarch64*)
+		echo "CONFIG_CONNECTOR=y" >> arch/arm64/configs/bcmrpi3_defconfig
+		echo "CONFIG_PROC_EVENTS=y" >> arch/arm64/configs/bcmrpi3_defconfig
+		echo "CONFIG_F2FS_FS_SECURITY=y" >> arch/arm64/configs/bcmrpi3_defconfig
+		echo "CONFIG_CGROUP_PIDS=y" >> arch/arm64/configs/bcmrpi3_defconfig
+		make ${makejobs} ${_args} ARCH=arm64 bcmrpi3_defconfig
+		;;
 	armv7l*)
 		echo "CONFIG_USER_NS=y" >> arch/arm/configs/bcm2709_defconfig
 		echo "CONFIG_CONNECTOR=y" >> arch/arm/configs/bcm2709_defconfig
@@ -78,24 +85,56 @@ do_build() {
 	if [ "$CROSS_BUILD" ]; then
 		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
 	fi
-	make ${makejobs} ${_args} ARCH=arm prepare
-	make ${makejobs} ${_args} ARCH=arm zImage modules dtbs
+
+	case "$XBPS_TARGET_MACHINE" in
+	arm*)
+		_arch=arm
+		_targets="zImage modules dtbs"
+		;;
+	aarch64*)
+		unset LDFLAGS
+		_arch=arm64
+		_targets="Image modules dtbs"
+		;;
+	esac
+
+	make ${makejobs} ${_args} ARCH=${_arch} prepare
+	make ${makejobs} ${_args} ARCH=${_arch} ${_targets}
 }
 do_install() {
+	case "$XBPS_TARGET_MACHINE" in
+	arm*)
+		_arch="arm"
+	;;
+	aarch64*)
+		_arch="arm64"
+	;;
+	esac
+
 	local hdrdest
 
 	# Run depmod after compressing modules.
 	sed -i '2iexit 0' scripts/depmod.sh
 
 	# Install kernel, firmware and modules
-	make ${makejobs} ARCH=arm INSTALL_MOD_PATH=${DESTDIR} modules_install
+	make ${makejobs} ARCH=${_arch} INSTALL_MOD_PATH=${DESTDIR} modules_install
 
 	# Install device tree blobs
-	make ${makejobs} ARCH=arm INSTALL_DTBS_PATH=${DESTDIR}/boot dtbs_install
+	make ${makejobs} ARCH=${_arch} INSTALL_DTBS_PATH=${DESTDIR}/boot dtbs_install
+
+	#move rpi3's dtb that ended up in /boot/broadcom
+	case "$XBPS_TARGET_MACHINE" in
+	aarch64*)
+		mv ${DESTDIR}/boot/broadcom/bcm2710-rpi-3-b.dtb ${DESTDIR}/boot
+		;;
+	esac
 
 	vmkdir boot
 	# Generate kernel.img and install it to destdir.
 	case "$XBPS_TARGET_MACHINE" in
+	aarch64*)
+		cp arch/arm64/boot/Image ${DESTDIR}/boot/kernel8.img
+		;;
 	armv7l*)
 		cp arch/arm/boot/zImage ${DESTDIR}/boot/kernel7.img
 		;;
@@ -138,12 +177,12 @@ do_install() {
 	chmod og-w -R ${hdrdest}/scripts
 
 	# copy arch includes for external modules
-	mkdir -p ${hdrdest}/arch/arm
-	cp -a arch/arm/include ${hdrdest}/arch/arm
+	mkdir -p ${hdrdest}/arch/${_arch}
+	cp -a arch/${_arch}/include ${hdrdest}/arch/${_arch}
 
-	mkdir -p ${hdrdest}/arch/arm/kernel
-	cp arch/arm/Makefile ${hdrdest}/arch/arm
-	cp arch/arm/kernel/asm-offsets.s ${hdrdest}/arch/arm/kernel
+	mkdir -p ${hdrdest}/arch/${arch}/kernel
+	cp arch/${_arch}/Makefile ${hdrdest}/arch/${_arch}
+	cp arch/${_arch}/kernel/asm-offsets.s ${hdrdest}/arch/${_arch}/kernel
 
 	# Add md headers
 	mkdir -p ${hdrdest}/drivers/md
@@ -168,8 +207,8 @@ do_install() {
 	done
 
 	# Remove unneeded architectures
-	for arch in alpha arm26 avr32 blackfin cris frv h8300 \
-		ia64 m* p* s* um v850 x86 xtensa; do
+	for arch in alpha arc avr32 blackfin c6x cris frv h8300 \
+		hexagon ia64 m* n* p* s* um v850 x86 xtensa; do
 		rm -rf ${hdrdest}/arch/${arch}
 	done
 
