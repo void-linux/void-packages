@@ -1,0 +1,91 @@
+# Template file for 'python3-tkinter'.
+#
+# THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/python3"; IT IS SPLITTED TO AVOID
+# A CYCLIC DEPENDENCY: python3 -> tk -> libX11 -> libxcb -> xcb-proto -> python3
+#
+
+_desc="Interpreted, interactive, object-oriented programming language"
+
+pkgname=python3-tkinter
+version=3.6.4
+revision=4
+wrksrc="Python-${version}"
+hostmakedepends="pkg-config"
+pycompile_dirs="
+ usr/lib/python${version%.*}/tkinter
+ usr/lib/python${version%.*}/turtledemo
+ usr/lib/python${version%.*}/turtle.py"
+makedepends="libffi-devel readline-devel gdbm-devel libressl-devel expat-devel
+ sqlite-devel bzip2-devel zlib-devel tk-devel"
+short_desc="${_desc} - GUI toolkit for Python3"
+maintainer="Juan RP <xtraeme@voidlinux.eu>"
+homepage="https://www.python.org"
+license="PSF-2"
+distfiles="https://www.python.org/ftp/python/${version}/Python-${version}.tar.xz"
+checksum=159b932bf56aeaa76fd66e7420522d8c8853d486b8567c459b84fe2ed13bcaba
+
+pre_configure() {
+	# Ensure that internal copies of zlib, expat and libffi are not used.
+	rm -r Modules/zlib
+	rm -r Modules/expat
+	rm -r Modules/_ctypes/{darwin,libffi}*
+}
+do_configure() {
+	local _args
+	unset GCC CC CXX CPP LD AR AS RANLIB
+	if [ "$CROSS_BUILD" ]; then
+		mkdir -p host-build
+		cd host-build
+		env -i PATH=$PATH CFLAGS=-Os ../configure
+		env -i PATH=$PATH make ${makejobs} python
+		mkdir -p ../hostpython
+		mv python ../hostpython
+		cd ..
+		patch -Np0 -i ${FILESDIR}/cross.patch
+		_args="--build=${XBPS_MACHINE%%-musl}"
+	fi
+	./configure ${configure_args} ${_args} \
+		--enable-shared --enable-ipv6 --enable-loadable-sqlite-extensions \
+		--with-threads --with-computed-gotos --with-dbmliborder=gdbm:ndbm \
+		--with-system-expat --with-system-ffi --without-ensurepip
+}
+do_build() {
+	export PATH="$PATH:$wrksrc/hostpython"
+	make ${makejobs}
+}
+do_install() {
+	export PATH="$PATH:$wrksrc/hostpython"
+	make DESTDIR=${wrksrc}/${pkgname}-${version}-install altinstall
+	vlicense LICENSE
+
+	# We only care for the idle and tkinter modules.
+	vmkdir usr/bin
+	vmkdir usr/lib/python${version%.*}/lib-dynload
+	if [ -e ${wrksrc}/${pkgname}-${version}-install/usr/lib32 ]; then
+		_libdir=lib32
+	else
+		_libdir=lib
+	fi
+	mv ${wrksrc}/${pkgname}-${version}-install/usr/bin/idle${version%.*} \
+		${DESTDIR}/usr/bin/idle${version%.*}
+	for lib in idlelib tkinter turtledemo turtle.py; do
+		mv ${wrksrc}/${pkgname}-${version}-install/usr/lib/python${version%.*}/${lib} \
+			${DESTDIR}/usr/lib/python${version%.*}/
+	done
+	mv ${wrksrc}/${pkgname}-${version}-install/usr/${_libdir}/python${version%.*}/lib-dynload/_tkinter.cpython-*m*.so \
+		${DESTDIR}/usr/lib/python${version%.*}/lib-dynload/
+	ln -sf idle${version%.*} ${DESTDIR}/usr/bin/idle3
+}
+
+idle-python3_package() {
+	noarch=yes
+	short_desc="${_desc} - IDE for Python3 using Tkinter"
+	pycompile_dirs="usr/lib/python${version%.*}/idlelib"
+	depends="${sourcepkg}-${version}_${revision}"
+	pkg_install() {
+		vmove usr/bin/idle3*
+		vmove usr/lib/python${version%.*}/idlelib
+		vinstall ${FILESDIR}/idle3.xpm 644 usr/share/pixmaps
+		vinstall ${FILESDIR}/idle3.desktop 644 usr/share/applications
+	}
+}
