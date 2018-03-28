@@ -80,9 +80,18 @@ run_step() {
 }
 
 error_func() {
-    if [ -n "$1" -a -n "$2" ]; then
-        msg_red "$pkgver: failed to run $1() at line $2.\n"
-    fi
+    local err=$?
+    local src=
+    local i=
+    [ -n "$1" -a -n "$2" ] || exit 1;
+
+    msg_red "$pkgver: $1: '${BASH_COMMAND}' exited with $err\n"
+    for ((i=1;i<${#FUNCNAME[@]};i++)); do
+        src=${BASH_SOURCE[$i]}
+        src=${src#$XBPS_DISTDIR/}
+        msg_red "  in ${FUNCNAME[$i]}() at $src:${BASH_LINENO[$i-1]}\n"
+        [ "${FUNCNAME[$i]}" = "$1" ] && break;
+    done
     exit 1
 }
 
