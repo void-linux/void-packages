@@ -530,7 +530,7 @@ their reverse dependencies. You need to specify all dependencies in the `depends
 need to set this.
 
 - `skiprdeps` If set, contains the list of filenames specified by their absolute path in
-the `$DESTDIR` which will not be scanned for reverse dependencies. This may be useful to
+the `$DESTDIR` which will not be scanned for runtime dependencies. This may be useful to
 skip files which are not meant to be run or loaded on the host but are to be sent to some
 target device or emulation.
 
