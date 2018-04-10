@@ -47,7 +47,7 @@ store_pkgdestdir_rundeps() {
 }
 
 hook() {
-    local depsftmp f j tmplf mapshlibs sorequires _curdep
+    local depsftmp f lf j tmplf mapshlibs sorequires _curdep
 
     # Disable trap on ERR, xbps-uhelper cmd might return error... but not something
     # to be worried about because if there are broken shlibs this hook returns
@@ -68,6 +68,11 @@ hook() {
     exec 3<&0 # save stdin
     exec < $depsftmp
     while read f; do
+        lf=${f#${DESTDIR}}
+	if [ "${skiprdeps/${lf}/}" != "${skiprdeps}" ]; then
+		msg_normal "Skipping dependency scan for ${lf}\n"
+		continue
+	fi
         case "$(file -bi "$f")" in
             application/x-executable*|application/x-sharedlib*)
                 for nlib in $($OBJDUMP -p "$f"|grep NEEDED|awk '{print $2}'); do

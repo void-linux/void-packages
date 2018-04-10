@@ -9,7 +9,7 @@ unset -v depends run_depends replaces provides conflicts tags
 unset -v nostrip nostrip_files
 
 # hooks/pre-pkg/04-generate-runtime-deps
-unset -v noverifyrdeps allow_unknown_shlibs shlib_requires
+unset -v noverifyrdeps skiprdeps allow_unknown_shlibs shlib_requires
 
 # hooks/pre-pkg/06-prepare-32bit
 unset -v lib32depends lib32disabled lib32files lib32mode lib32symlinks
