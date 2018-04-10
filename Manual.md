@@ -525,6 +525,15 @@ default all binaries are stripped.
 - `noshlibprovides` If set, the ELF binaries won't be inspected to collect the provided
 sonames in shared libraries.
 
+- `noverifyrdeps` If set, the ELF binaries and shared libaries won't be inspected to collect
+their reverse dependencies. You need to specify all dependencies in the `depends` when you
+need to set this.
+
+- `skiprdeps` If set, contains the list of filenames specified by their absolute path in
+the `$DESTDIR` which will not be scanned for reverse dependencies. This may be useful to
+skip files which are not meant to be run or loaded on the host but are to be sent to some
+target device or emulation.
+
 - `nocross` If set, cross compilation won't be allowed and will exit immediately.
 This should be set to a string describing why it fails, or a link to a travis
 buildlog demonstrating the failure.
