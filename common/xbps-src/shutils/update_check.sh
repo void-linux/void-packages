@@ -75,6 +75,7 @@ update_check() {
         curl -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$url" |
             grep -Po -i "$rx"
     done |
+    tr _ . |
     sort -Vu |
     { 
         grep . || echo "NO VERSION found for $original_pkgname" 1>&2
