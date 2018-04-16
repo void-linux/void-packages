@@ -74,7 +74,7 @@ hook() {
 		continue
 	fi
         case "$(file -bi "$f")" in
-            application/x-executable*|application/x-sharedlib*)
+            application/x-*executable*|application/x-sharedlib*)
                 for nlib in $($OBJDUMP -p "$f"|grep NEEDED|awk '{print $2}'); do
                     if [ -z "$verify_deps" ]; then
                         verify_deps="$nlib"

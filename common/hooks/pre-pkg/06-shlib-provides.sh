@@ -16,7 +16,7 @@ collect_sonames() {
 	find ${_destdir} -type f -name "*.so*" | while read f; do
 		_fname="${f##*/}"
 		case "$(file -bi "$f")" in
-		application/x-sharedlib*)
+		application/x-sharedlib*|application/x-pie-executable)
 			# shared library
 			_soname=$(${OBJDUMP} -p "$f"|grep SONAME|awk '{print $2}')
 			# Register all versioned sonames, and

@@ -114,7 +114,7 @@ hook() {
 				attach_debug "$f"
 			fi
 			;;
-		application/x-sharedlib*)
+		application/x-sharedlib*|application/x-pie-executable*)
 			chmod +w "$f"
 			# shared library
 			make_debug "$f"
