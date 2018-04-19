@@ -1,1 +1,1 @@
-/usr/share/riot-desktop/dist/electron /usr/share/riot-desktop/electron_app
+/usr/share/riot-desktop/dist/electron /usr/share/riot-desktop/electron_app "$@"
