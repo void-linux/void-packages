@@ -212,8 +212,8 @@ the package name should contain them too; if it doesn't, the package name
 is lowercase.
 
 Programs can be split into program packages and library packages. The program
-package should be named as describe above. The library package should be prefix
-with "lib" (see section `Libraries`)
+package should be named as described above. The library package should be
+prefixed with "lib" (see section `Libraries`)
 
 <a id="global_funcs"></a>
 ### Global functions
