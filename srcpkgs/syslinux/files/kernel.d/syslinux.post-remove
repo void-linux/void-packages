@@ -1,0 +1,54 @@
+#!/bin/sh
+#
+# Kernel hook for SYSLINUX.
+#
+# Arguments passed to this script: $1 pkgname, $2 version.
+#
+PKGNAME="$1"
+VERSION="$2"
+CFGFILE="$ROOTDIR/boot/syslinux/syslinux.cfg"
+
+LABELVOID_LINENUMBER=$(
+  grep -nwm 1 'LABEL void' "$CFGFILE" |
+  awk '{print ($0+0)}')
+LABELVOIDFALLBACK_LINENUMBER=$(
+  grep -nwm 1 'LABEL voidfallback' "$CFGFILE" |
+  awk '{print ($0+0)}')
+
+VOID_KERNEL_LINENUMBER=$(
+  tail -n +"$LABELVOID_LINENUMBER" "$CFGFILE" |
+  grep -Enwm 1 'LINUX|KERNEL' |
+  awk '{print ($0+offset)}' offset="$((LABELVOID_LINENUMBER-1))")
+VOID_INITRD_LINENUMBER=$(
+  tail -n +"$LABELVOID_LINENUMBER" "$CFGFILE" |
+  grep -nwim 1 'INITRD' |
+  awk '{print ($0+offset)}' offset="$((LABELVOID_LINENUMBER-1))")
+VOIDFALLBACK_KERNEL_LINENUMBER=$(
+  tail -n +"$LABELVOIDFALLBACK_LINENUMBER" "$CFGFILE" |
+  grep -Enwm 1 'LINUX|KERNEL' |
+  awk '{print ($0+offset)}' offset="$((LABELVOIDFALLBACK_LINENUMBER-1))")
+
+#only use LINUX|KERNEL line to parse old kernel version
+OLD_VERSION=$(
+  sed -n "${VOID_KERNEL_LINENUMBER}p" "$CFGFILE" |
+  awk '{print $2}' |
+  awk 'BEGIN{FS="-"}{print $2}')
+OLD_FALLBACKVERSION=$(
+  sed -n "${VOIDFALLBACK_KERNEL_LINENUMBER}p" "$CFGFILE" |
+  awk '{print $2}' |
+  awk 'BEGIN{FS="-"}{print $2}')
+
+if [ -f "$CFGFILE" ]; then
+  if [ -f "$ROOTDIR/boot/vmlinuz-$OLD_VERSION" ]; then
+  #do nothing
+  exit 0
+  else
+    sed -i "${VOID_KERNEL_LINENUMBER}s/$OLD_VERSION/$OLD_FALLBACKVERSION/" \
+    "$CFGFILE"
+    sed -i "${VOID_INITRD_LINENUMBER}s/$OLD_VERSION/$OLD_FALLBACKVERSION/" \
+    "$CFGFILE"
+    echo "Syslinux: Revert Kernel entry $OLD_VERSION to $OLD_FALLBACKVERSION"
+  fi
+fi
+
+exit 0
