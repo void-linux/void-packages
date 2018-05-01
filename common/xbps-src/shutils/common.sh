@@ -555,6 +555,7 @@ setup_pkg() {
 
     if [ "$cross" -a "$nocross" -a "z$show_problems" != "zignore-problems" ]; then
         msg_red "$pkgver: cannot be cross compiled, exiting...\n"
+        msg_red "$pkgver: $nocross\n"
         exit 2
     elif [ "$broken" -a "z$show_problems" != "zignore-problems" ]; then
         msg_red "$pkgver: cannot be built, it's currently broken; see the build log:\n"
