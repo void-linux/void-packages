@@ -29,12 +29,12 @@ vopt_conflict() {
     fi
 }
 
-vopt_onoff() {
+vopt_bool() {
     local opt="$1" prop="$2"
     if [ "$#" -lt "2" ]; then
-        msg_error "vopt_onoff <build_option> <property>: missing values\n"
+        msg_error "vopt_bool <build_option> <property>: missing values\n"
     elif [ "$#" -gt "2" ]; then
-        msg_error "vopt_onoff $opt: $(($# - 2)) excess parameter(s)\n"
+        msg_error "vopt_bool $opt: $(($# - 2)) excess parameter(s)\n"
     fi
-    vopt_if "$1" "-D${prop}=ON" "-D${prop}=OFF"
+    vopt_if "$1" "-D${prop}=true" "-D${prop}=false"
 }
