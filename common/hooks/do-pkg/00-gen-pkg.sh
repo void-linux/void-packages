@@ -74,6 +74,7 @@ genpkg() {
 		${_alternatives:+--alternatives "${_alternatives}"} \
 		${_preserve:+--preserve} \
 		${tags:+--tags "${tags}"} \
+		${changelog:+--changelog "${changelog}"} \
 		--architecture ${arch} \
 		--homepage "${homepage}" \
 		--license "${license}" \
