@@ -15,7 +15,6 @@ show_pkg() {
     [ -n "$noarch" ] && echo "noarch:		yes"
     echo "maintainer:	$maintainer"
     [ -n "$homepage" ] && echo "Upstream URL:	$homepage"
-    [ -n "$changelog" ] && echo "Changelog URL:	$changelog"
     [ -n "$license" ] && echo "License(s):	$license"
     [ -n "$build_style" ] && echo "build_style:	$build_style"
     for i in ${configure_args}; do
