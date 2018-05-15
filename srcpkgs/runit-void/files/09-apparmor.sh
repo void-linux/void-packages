@@ -4,7 +4,7 @@
 [ ! -d /sys/kernel/security/apparmor ] && return
 
 # Load config
-[ -r /etc/rc.apparmor ] && . /etc/rc.apparmor
+[ -r /etc/default/apparmor ] && . /etc/default/apparmor
 
 # Proceed to load profiles depending on user settings
 msg "Loading AppArmor profiles..."
