@@ -1,0 +1,100 @@
+# Template file for 'zabbix'
+pkgname=zabbix
+version=3.4.9
+revision=1
+build_style=gnu-configure
+configure_args="--with-libxml2 --with-gnutls --with-libcurl --with-net-snmp
+ --with-mysql --enable-server --enable-ipv6 --with-ssh2 --enable-agent
+ --enable-proxy"
+hostmakedepends="pkg-config"
+makedepends="gnutls-devel libcurl-devel libevent-devel libmysqlclient-devel
+ libxml2-devel net-snmp-devel pcre-devel"
+depends="fping mysql"
+short_desc="IT Infrastructure components availability and performance monitoring"
+maintainer="maxice8 <thinkabit.ukim@gmail.com>"
+license="GPL-2.0-or-later"
+homepage="https://www.zabbix.com"
+distfiles="${SOURCEFORGE_SITE}/zabbix/zabbix-${version}.tar.gz"
+checksum=31582c712527ecd67ffd3ecc840c5ed308f46aa0aeb6e6b9cfa2ca079eda1f64
+conf_files="/etc/zabbix_server.conf"
+system_accounts="_zabbix_server"
+system_groups=_zabbix_server
+make_dirs="/var/run/zabbix-server 0750 _zabbix_server _zabbix_server
+ /var/log/zabbix-server 0750 _zabbix_server _zabbix_server"
+
+if [ "$CROSS_BUILD" ]; then
+	# configure scripts is bad at checking, problably runs code instead of
+	# using pkg-config files
+	hostmakedepends+=" libssh2-devel libevent-devel gnutls-devel pcre-devel"
+fi
+
+pre_install() {
+	for file in server agentd proxy; do
+		sed -i conf/zabbix_${file}.conf \
+			-e "s|# SNMPTrapperFile=/tmp|SNMPTrapperFile=/var/log/zabbix-${file}|" \
+			-e "s|# PidFile=/tmp|PidFile=/var/run/zabbix-${file}|" \
+			-e "s|LogFile=/tmp|LogFile=/var/log/zabbix-${file}|"
+	done
+	sed -i conf/zabbix_server.conf -e "s|# DBSocket=.*|DBSocket=/run/mysqld/mysqld.sock|"
+}
+
+post_install() {
+	vsv zabbix-server
+
+	vinstall database/mysql/schema.sql 755 usr/share/zabbix/mysql
+	vinstall database/mysql/data.sql 755 usr/share/zabbix/mysql
+	vinstall database/mysql/images.sql 755 usr/share/zabbix/mysql
+
+	vmkdir usr/share/webapps/zabbix
+	cp -a frontends/php/* "${DESTDIR}/usr/share/webapps/zabbix"
+}
+
+zabbix-agent_package() {
+	make_dirs="/var/run/zabbix-agentd 0750 _zabbix_agent _zabbix_agent
+	 /var/log/zabbix-agentd 0750 _zabbix_agent _zabbix_agent"
+	system_accounts="_zabbix_agent"
+	system_groups=_zabbix_agent
+	short_desc="Zabbix Network Monitoring Agent"
+	conf_files="/etc/zabbix_agentd.conf"
+	pkg_install() {
+		vmove usr/bin/zabbix_agentd
+		vmove usr/share/man/man8/zabbix_agentd.8
+		vmove etc/zabbix_agentd.conf
+		vsv zabbix-agent
+	}
+}
+
+zabbix-utils_package() {
+	depends="zabbix"
+	short_desc="Zabbix client utilities"
+	pkg_install() {
+		vmove usr/bin/zabbix_get
+		vmove usr/bin/zabbix_sender
+		vmove usr/share/man/man1/zabbix_sender.1
+		vmove usr/share/man/man1/zabbix_get.1
+	}
+}
+
+zabbix-proxy_package() {
+	system_accounts="_zabbix_proxy"
+	system_groups=_zabbix_proxy
+	make_dirs="/var/run/zabbix-proxy 0750 _zabbix_proxy _zabbix_proxy
+	 /var/log/zabbix-proxy 0750 _zabbix_proxy _zabbix_proxy"
+	depends="zabbix"
+	short_desc="Zabbix Network Monitoring Proxy"
+	conf_files="/etc/zabbix_proxy.conf"
+	pkg_install() {
+		vmove usr/bin/zabbix_proxy
+		vmove usr/share/man/man8/zabbix_proxy.8
+		vmove etc/zabbix_proxy.conf
+		vsv zabbix-proxy
+	}
+}
+
+zabbix-frontend-php_package() {
+	depends="zabbix php-gd php-mysql"
+	short_desc="Zabbix Networking Monitoring PHP Frontend"
+	pkg_install() {
+		vmove usr/share/webapps
+	}
+}
