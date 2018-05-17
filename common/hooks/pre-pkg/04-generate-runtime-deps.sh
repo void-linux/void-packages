@@ -47,7 +47,7 @@ store_pkgdestdir_rundeps() {
 }
 
 hook() {
-    local depsftmp f lf j tmplf mapshlibs sorequires _curdep
+    local depsftmp f lf j mapshlibs sorequires _curdep
 
     # Disable trap on ERR, xbps-uhelper cmd might return error... but not something
     # to be worried about because if there are broken shlibs this hook returns
@@ -55,7 +55,6 @@ hook() {
     trap - ERR
 
     mapshlibs=$XBPS_COMMONDIR/shlibs
-    tmplf=$XBPS_SRCPKGDIR/$pkgname/template
 
     if [ -n "$noarch" -o -n "$noverifyrdeps" ]; then
         store_pkgdestdir_rundeps
