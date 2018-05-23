@@ -48,9 +48,9 @@ update_check() {
                 githubname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$githubname/tags"
                 rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
-            *gitlab.com*)
-                gitlabname="$(printf %s "$url" | cut -d/ -f4,5)"
-                url="https://gitlab.com/$gitlabname/tags"
+            *gitlab.com*|*gitlab.gnome.org*)
+                gitlaburl="$(printf %s "$url" | cut -d/ -f1-5)"
+                url="$gitlaburl/tags"
                 rx='/archive/[^/]+/\Q'"$pkgname"'\E-v?\K[\d\.]+(?=\.tar\.gz")';;
             *bitbucket.org*)
                 bbname="$(printf %s "$url" | cut -d/ -f4,5)"
