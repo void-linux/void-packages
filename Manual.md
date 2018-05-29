@@ -61,7 +61,6 @@ A simple `template` example is as follows:
 
 ```
 # Template file for 'foo'
-
 pkgname=foo
 version=1.0
 revision=1
@@ -1043,9 +1042,8 @@ with this naming: `<subpkgname>_package()`, i.e:
 
 ```
 # Template file for 'foo'
-
-pkgname="foo"
-version="1.0"
+pkgname=foo
+version=1.0
 revision=1
 build_style=gnu-configure
 short_desc="A short description max 72 chars"
@@ -1061,8 +1059,8 @@ foo-devel_package() {
 	depends="${sourcepkg}>=${version}_${revision}"
 	pkg_install() {
 		vmove usr/include
-		vmove usr/lib/*.a
-		vmove usr/lib/*.so
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
 		vmove usr/lib/pkgconfig
 	}
 }
