@@ -1,0 +1,108 @@
+# Template file for 'apparmor'
+pkgname=apparmor
+version=2.13.0
+revision=1
+_short_ver=${version%\.*}
+wrksrc="${pkgname}-v${_short_ver}"
+configure_args="--prefix=/usr --with-perl --with-python"
+patch_args="-Np1"
+hostmakedepends="bison flex autoconf automake libtool"
+makedepends="perl python3-devel swig"
+depends="runit-void-apparmor python3 libapparmor"
+only_for_archs="x86_64 i686"
+short_desc="Mandatory access control to restrict programs"
+maintainer="Olivier Mauras <olivier@mauras.ch>"
+license="GPL-3"
+homepage="https://gitlab.com/apparmor/apparmor"
+distfiles="https://gitlab.com/apparmor/apparmor/-/archive/v${_short_ver}/apparmor-v${_short_ver}.tar.gz"
+checksum="fdafa0b71cbf574cce76a1ea1542b4540fa1c1040f80d0f0866fc0056ec37747"
+
+pre_build() {
+	# Replace release profiles by our owns
+	cd ${wrksrc}
+
+	# Put in place our own profiles
+	cp ${FILESDIR}/profiles/* profiles/apparmor.d/
+	mv profiles/apparmor.d/bin.ping profiles/apparmor/profiles/extras/
+}
+
+do_build() {
+	cd ${wrksrc}/libraries/libapparmor
+	NOCONFIGURE=1 ./autogen.sh
+	./configure ${configure_args}
+	make ${makejobs}
+
+	export CFLAGS+="-fPIC"
+	export LDFLAGS+="-fPIE -pie"
+
+	cd ${wrksrc}/binutils
+	make ${makejobs}
+
+	cd ${wrksrc}/utils
+	make ${makejobs}
+
+	cd ${wrksrc}/parser
+	sed -i 's#$(DESTDIR)/sbin#$(DESTDIR)/usr/bin#g' Makefile
+	sed -i 's#${DESTDIR}/lib#${DESTDIR}/usr/lib#g' Makefile
+	make ${makejobs}
+
+	cd ${wrksrc}/profiles
+	make ${makejobs}
+}
+
+do_install() {
+	cd ${wrksrc}/libraries/libapparmor
+	make DESTDIR=${DESTDIR} install
+
+	cd ${wrksrc}/binutils
+	make DESTDIR=${DESTDIR} install
+
+	cd ${wrksrc}/utils
+	make DESTDIR=${DESTDIR} BINDIR=${DESTDIR}/usr/bin install
+
+	cd ${wrksrc}/parser
+	make DESTDIR=${DESTDIR} install
+
+	cd ${wrksrc}/profiles
+	make DESTDIR=${DESTDIR} install
+}
+
+post_install() {
+	# Put Vim syntax in the correct place
+	mkdir -p ${DESTDIR}/usr/share/vim/vim80/syntax/
+	mv ${DESTDIR}/usr/share/apparmor/apparmor.vim ${DESTDIR}/usr/share/vim/vim80/syntax/
+
+	# We want to keep this empty directory
+	touch ${DESTDIR}/etc/apparmor.d/disable/.empty
+}
+
+apparmor-vim_package() {
+	short_desc+=" - Vim syntax"
+	depends="vim"
+	pkg_install() {
+		vmove usr/share/vim/vim80/syntax/apparmor.vim
+		vmove usr/share/man/man5/apparmor.vim.5
+	}
+}
+
+libapparmor_package() {
+	short_desc+=" - Library"
+	pkg_install() {
+		vmove "usr/lib/libapparmor.so*"
+		vmove usr/lib/perl5
+		vmove "usr/lib/python3.6/site-packages/LibAppArmor*"
+		vmove usr/share/man/man2
+		vmove usr/share/man/man3
+	}
+}
+
+libapparmor-devel_package() {
+	short_desc+=" - Library development files"
+	depends="${sourcepkg}-${version}_${revision}"
+	pkg_install() {
+		vmove usr/include/
+		vmove "usr/lib/*.a"
+		vmove usr/lib/pkgconfig
+	}
+}
+
