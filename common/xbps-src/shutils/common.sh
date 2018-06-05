@@ -255,7 +255,7 @@ run_pkg_hooks() {
 unset_package_funcs() {
     local f
 
-    for f in $(typeset -F|grep -E '_package$' || :); do
+    for f in $(typeset -F|grep -E '_package$'); do
         eval unset -f $f
     done
 }
@@ -263,7 +263,7 @@ unset_package_funcs() {
 get_subpkgs() {
     local args list
 
-    args="$(typeset -F|grep -E '_package$' || :)"
+    args="$(typeset -F|grep -E '_package$')"
     set -- ${args}
     while [ $# -gt 0 ]; do
         list+=" ${3%_package}"; shift 3
