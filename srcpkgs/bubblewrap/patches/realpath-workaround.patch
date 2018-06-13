@@ -1,19 +1,46 @@
-Musl realpath() implementation currently depends on /proc which is
-not available when setting up pivot root. For the time being just
-fallback to given path if realpath() fails. If there was symlinks
-that would have required normalizing the following parse_mountinfo()
-will fail.
-
-diff --git bind-mount.c bind-mount.c
-index 7d3543f..c33b701 100644
---- bind-mount.c
+add normpath(), originally written for xbps.
+diff --git bind-mount.c.orig bind-mount.c
+index 045fa0e..d05b540 100644
+--- bind-mount.c.orig
 +++ bind-mount.c
-@@ -397,7 +397,7 @@ bind_mount (int           proc_fd,
+@@ -23,6 +23,28 @@
+ #include "utils.h"
+ #include "bind-mount.h"
+ 
++#ifndef __GLIBC__
++static char *
++normpath(char *path)
++{
++  char *seg = NULL, *p = NULL;
++
++  for (p = path, seg = NULL; *p; p++) {
++    if (strncmp(p, "/../", 4) == 0 || strncmp(p, "/..", 4) == 0) {
++      memmove(seg ? seg : p, p+3, strlen(p+3) + 1);
++      return normpath(path);
++    } else if (strncmp(p, "/./", 3) == 0 || strncmp(p, "/.", 3) == 0) {
++      memmove(p, p+2, strlen(p+2) + 1);
++    } else if (strncmp(p, "//", 2) == 0 || strncmp(p, "/", 2) == 0) {
++      memmove(p, p+1, strlen(p+1) + 1);
++    }
++    if (*p == '/')
++      seg = p;
++  }
++  return path;
++}
++#endif
++
+ static char *
+ skip_token (char *line, bool eat_whitespace)
+ {
+@@ -397,7 +419,11 @@ bind_mount (int           proc_fd,
       path, so to find it in the mount table we need to do that too. */
    resolved_dest = realpath (dest, NULL);
    if (resolved_dest == NULL)
--    return 2;
-+    resolved_dest = strdup (dest);
-
++#ifdef __GLIBC__
+     return 2;
++#else
++    resolved_dest = normpath(strdup(dest));
++#endif
+ 
    mount_tab = parse_mountinfo (proc_fd, resolved_dest);
    if (mount_tab[0].mountpoint == NULL)
