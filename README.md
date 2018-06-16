@@ -79,7 +79,7 @@ To enable it:
 Clone the `void-packages` git repository, install the bootstrap packages:
 
 ```
-$ git clone git://github.com/voidlinux/void-packages.git
+$ git clone git://github.com/void-linux/void-packages.git
 $ cd void-packages
 $ ./xbps-src binary-bootstrap
 ```
@@ -363,7 +363,7 @@ If your system does not support `user namespaces`, a privileged group is require
 
 Clone the `void-packages` git repository:
 
-    $ git clone git://github.com/voidlinux/void-packages
+    $ git clone git://github.com/void-linux/void-packages
 
 and `xbps-src` should be fully functional; just start the `bootstrap` process, i.e:
 
@@ -440,7 +440,7 @@ Once the build has finished, you can specify the path to the local repository to
 
 ### Contributing
 
-See [Contributing](https://github.com/voidlinux/xbps-packages/blob/master/CONTRIBUTING.md)
+See [Contributing](https://github.com/void-linux/xbps-packages/blob/master/CONTRIBUTING.md)
 for a general overview of how to contribute and the
-[Manual](https://github.com/voidlinux/xbps-packages/blob/master/Manual.md)
+[Manual](https://github.com/void-linux/xbps-packages/blob/master/Manual.md)
 for details of how to create source packages.
