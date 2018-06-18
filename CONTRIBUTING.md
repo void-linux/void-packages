@@ -99,3 +99,10 @@ you're sure you don't want your changes to be included.
 
 Once the reviewers have merged the pull request, our [build server](http://build.voidlinux.eu) is automatically triggered and builds
 all packages from this pull request for all supported platforms. Once it is finished, the packages are available to all Void Linux users.
+
+## Constrained Packages
+
+We keep lists of packages that need special attention on updates in `common/constraints/`.
+As an example packages that are known to break on updates will be listed there.
+When you make changes to templates other than your own, **please make the maintainer aware** of them.
+One way to do this is by mentioning the maintainer in your pull request.
