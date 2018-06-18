@@ -61,7 +61,7 @@ packages should also be part of the same pull request.
 
 When you make changes to your pull request, please *do not close and reopen your pull request*. Instead, just forcibly git push, overwriting any old commits. Closing and opening your pull requests repeatedly spams the Void maintainers.
 
-##### Travis
+#### Travis
 
 Once you have started a pull request, you will get instant feedback from Travis. It will check if the templates you have changed
 comply with the our guidelines. At the moment not all packages comply to the rules, so if you update a package, it may happen, that Travis
