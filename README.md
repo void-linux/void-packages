@@ -440,7 +440,7 @@ Once the build has finished, you can specify the path to the local repository to
 
 ### Contributing
 
-See [Contributing](https://github.com/void-linux/xbps-packages/blob/master/CONTRIBUTING.md)
+See [Contributing](https://github.com/void-linux/void-packages/blob/master/CONTRIBUTING.md)
 for a general overview of how to contribute and the
-[Manual](https://github.com/void-linux/xbps-packages/blob/master/Manual.md)
+[Manual](https://github.com/void-linux/void-packages/blob/master/Manual.md)
 for details of how to create source packages.
