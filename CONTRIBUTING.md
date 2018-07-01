@@ -7,9 +7,9 @@ This document describes how you as a contributor can help adding packages, corre
 ## Getting your packages into Void by yourself
 
 If you really want to get a package into Void Linux we recommend you to package it yourself.
-We provide a [comprehensive Manual](https://github.com/voidlinux/void-packages/blob/master/Manual.md)
+We provide a [comprehensive Manual](https://github.com/void-linux/void-packages/blob/master/Manual.md)
 on how you can create new packages. Also there's a
-[manual about xbps-src](https://github.com/voidlinux/void-packages/blob/master/README.md) which is used
+[manual about xbps-src](https://github.com/void-linux/void-packages/blob/master/README.md) which is used
 to build package files from templates.
 
 For this guide, we assume you have basic knowledge about [git](http://git-scm.org) and a [GitHub Account](http://github.com)
@@ -21,7 +21,7 @@ as specific git- or svn-revisions anymore.
 
 templates must be placed in `void-packages/srcpkgs/<pkgname>/template` where `pkgname` is the same as the pkgname variable in the template.
 
-For deeper insights on the contents of template files consider reading the [manual](https://github.com/voidlinux/void-packages/blob/master/Manual.md)
+For deeper insights on the contents of template files consider reading the [manual](https://github.com/void-linux/void-packages/blob/master/Manual.md)
 
 There's a helper tool for creating new packages in the [xtools](https://github.com/chneukirchen/xtools) package:
 
@@ -33,18 +33,18 @@ There's a helper tool for creating new packages in the [xtools](https://github.c
 Once you have built your template files there are certain rules on how the commit should be named.
 
 * Use the following for newly added packages: ```New package: <pkgname>-<version>```
-  [Example](https://github.com/voidlinux/void-packages/commit/176d9655429188aac10cd229827f99b72982ab10)
+  [Example](https://github.com/void-linux/void-packages/commit/176d9655429188aac10cd229827f99b72982ab10)
 
 * Use the following if you update a package: ```<pkgname>: update to <version>.```
-  [Example](https://github.com/voidlinux/void-packages/commit/b6b82dcbd4aeea5fc37a32e4b6a8dd8bd980d5a3)
+  [Example](https://github.com/void-linux/void-packages/commit/b6b82dcbd4aeea5fc37a32e4b6a8dd8bd980d5a3)
 
 * If you changed something on the template without a version change use ```<pkgname>: <reason>```
-  [Example](https://github.com/voidlinux/void-packages/commit/8b68d6bf1eb997cd5e7c095acd040e2c5379c91d)
+  [Example](https://github.com/void-linux/void-packages/commit/8b68d6bf1eb997cd5e7c095acd040e2c5379c91d)
 
 If you want to describe your changes in more detail, make an empty line and add the description afterwards.
-[Example](https://github.com/voidlinux/void-packages/commit/f1c45a502086ba1952f23ace9084a870ce437bc6)
+[Example](https://github.com/void-linux/void-packages/commit/f1c45a502086ba1952f23ace9084a870ce437bc6)
 
-This is also described in the [manual](https://github.com/voidlinux/void-packages/blob/master/Manual.md) in deeper detail.
+This is also described in the [manual](https://github.com/void-linux/void-packages/blob/master/Manual.md) in deeper detail.
 
 There's a helper tool for committing packages in the [xtools](https://github.com/chneukirchen/xtools) package:
 
@@ -61,7 +61,7 @@ packages should also be part of the same pull request.
 
 When you make changes to your pull request, please *do not close and reopen your pull request*. Instead, just forcibly git push, overwriting any old commits. Closing and opening your pull requests repeatedly spams the Void maintainers.
 
-##### Travis
+#### Travis
 
 Once you have started a pull request, you will get instant feedback from Travis. It will check if the templates you have changed
 comply with the our guidelines. At the moment not all packages comply to the rules, so if you update a package, it may happen, that Travis
