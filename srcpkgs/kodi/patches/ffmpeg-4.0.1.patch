@@ -1,0 +1,345 @@
+--- xbmc-17.6-Krypton/xbmc/cores/AudioEngine/Encoders/AEEncoderFFmpeg.h	2017-11-14 17:55:01.000000000 +0100
++++ xbmc-17.6-Krypton/xbmc/cores/AudioEngine/Encoders/AEEncoderFFmpeg.h	2018-07-02 20:54:54.388785087 +0200
+@@ -56,7 +56,7 @@
+   SwrContext *m_SwrCtx;
+   CAEChannelInfo m_Layout;
+   AVPacket m_Pkt;
+-  uint8_t m_Buffer[8 + FF_MIN_BUFFER_SIZE];
++  uint8_t m_Buffer[8 + AV_INPUT_BUFFER_MIN_SIZE];
+   int m_BufferSize;
+   int m_OutputSize;
+   double m_OutputRatio;
+--- xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDCodecs/Audio/DVDAudioCodecFFmpeg.cpp	2017-11-14 17:55:01.000000000 +0100
++++ xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDCodecs/Audio/DVDAudioCodecFFmpeg.cpp	2018-07-02 21:13:08.856841550 +0200
+@@ -82,8 +82,8 @@
+   m_pCodecContext->debug = 0;
+   m_pCodecContext->workaround_bugs = 1;
+ 
+-  if (pCodec->capabilities & CODEC_CAP_TRUNCATED)
+-    m_pCodecContext->flags |= CODEC_FLAG_TRUNCATED;
++  if (pCodec->capabilities & AV_CODEC_CAP_TRUNCATED)
++    m_pCodecContext->flags |= AV_CODEC_FLAG_TRUNCATED;
+ 
+   m_matrixEncoding = AV_MATRIX_ENCODING_NONE;
+   m_channels = 0;
+@@ -98,7 +98,7 @@
+ 
+   if( hints.extradata && hints.extrasize > 0 )
+   {
+-    m_pCodecContext->extradata = (uint8_t*)av_mallocz(hints.extrasize + FF_INPUT_BUFFER_PADDING_SIZE);
++    m_pCodecContext->extradata = (uint8_t*)av_mallocz(hints.extrasize + AV_INPUT_BUFFER_PADDING_SIZE);
+     if(m_pCodecContext->extradata)
+     {
+       m_pCodecContext->extradata_size = hints.extrasize;
+--- xbmc-17.6-Krypton/xbmc/cores/AudioEngine/Engines/ActiveAE/ActiveAEFilter.cpp	2017-11-14 17:55:01.000000000 +0100
++++ xbmc-17.6-Krypton/xbmc/cores/AudioEngine/Engines/ActiveAE/ActiveAEFilter.cpp	2018-07-02 21:06:40.206821500 +0200
+@@ -91,7 +91,13 @@
+     return false;
+   }
+ 
++#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(7,0,0)
++  const
++#endif
+   AVFilter* srcFilter = avfilter_get_by_name("abuffer");
++#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(7,0,0)
++  const
++#endif
+   AVFilter* outFilter = avfilter_get_by_name("abuffersink");
+ 
+   std::string args = StringUtils::Format("time_base=1/%d:sample_rate=%d:sample_fmt=%s:channel_layout=0x%" PRIx64,
+@@ -121,6 +127,9 @@
+ 
+ bool CActiveAEFilter::CreateAtempoFilter()
+ {
++#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(7,0,0)
++  const
++#endif
+   AVFilter *atempo;
+ 
+   atempo = avfilter_get_by_name("atempo");
+--- xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDCodecs/Overlay/DVDOverlayCodecFFmpeg.cpp	2017-11-14 17:55:01.000000000 +0100
++++ xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDCodecs/Overlay/DVDOverlayCodecFFmpeg.cpp	2018-07-02 21:22:36.309870824 +0200
+@@ -73,7 +73,7 @@
+   if( hints.extradata && hints.extrasize > 0 )
+   {
+     m_pCodecContext->extradata_size = hints.extrasize;
+-    m_pCodecContext->extradata = (uint8_t*)av_mallocz(hints.extrasize + FF_INPUT_BUFFER_PADDING_SIZE);
++    m_pCodecContext->extradata = (uint8_t*)av_mallocz(hints.extrasize + AV_INPUT_BUFFER_PADDING_SIZE);
+     memcpy(m_pCodecContext->extradata, hints.extradata, hints.extrasize);
+ 
+     // start parsing of extra data - create a copy to be safe and make it zero-terminating to avoid access violations!
+--- xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDDemuxers/DVDDemuxUtils.cpp	2017-11-14 17:55:01.000000000 +0100
++++ xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDDemuxers/DVDDemuxUtils.cpp	2018-07-02 21:23:35.419873874 +0200
+@@ -68,7 +68,7 @@
+         * Note, if the first 23 bits of the additional bytes are not 0 then damaged
+         * MPEG bitstreams could cause overread and segfault
+         */
+-      pPacket->pData =(uint8_t*)_aligned_malloc(iDataSize + FF_INPUT_BUFFER_PADDING_SIZE, 16);
++      pPacket->pData =(uint8_t*)_aligned_malloc(iDataSize + AV_INPUT_BUFFER_PADDING_SIZE, 16);
+       if (!pPacket->pData)
+       {
+         FreeDemuxPacket(pPacket);
+@@ -76,7 +76,7 @@
+       }
+ 
+       // reset the last 8 bytes to 0;
+-      memset(pPacket->pData + iDataSize, 0, FF_INPUT_BUFFER_PADDING_SIZE);
++      memset(pPacket->pData + iDataSize, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+     }
+ 
+     // setup defaults
+--- xbmc-17.6-Krypton/xbmc/utils/BitstreamConverter.cpp	2017-11-14 17:55:01.000000000 +0100
++++ xbmc-17.6-Krypton/xbmc/utils/BitstreamConverter.cpp	2018-07-02 21:26:49.852883905 +0200
+@@ -686,13 +686,13 @@
+     unit_size = extradata[0] << 8 | extradata[1];
+     total_size += unit_size + 4;
+ 
+-    if (total_size > INT_MAX - FF_INPUT_BUFFER_PADDING_SIZE ||
++    if (total_size > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE ||
+       (extradata + 2 + unit_size) > ((uint8_t*)in_extradata + in_extrasize))
+     {
+       av_free(out);
+       return false;
+     }
+-    tmp = av_realloc(out, total_size + FF_INPUT_BUFFER_PADDING_SIZE);
++    tmp = av_realloc(out, total_size + AV_INPUT_BUFFER_PADDING_SIZE);
+     if (!tmp)
+     {
+       av_free(out);
+@@ -713,7 +713,7 @@
+   }
+ 
+   if (out)
+-    memset(out + total_size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
++    memset(out + total_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+ 
+   if (!sps_seen)
+       CLog::Log(LOGDEBUG, "SPS NALU missing or invalid. The resulting stream may not play");
+@@ -776,13 +776,13 @@
+       }
+       total_size += unit_size + 4;
+ 
+-      if (total_size > INT_MAX - FF_INPUT_BUFFER_PADDING_SIZE ||
++      if (total_size > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE ||
+         (extradata + unit_size) > ((uint8_t*)in_extradata + in_extrasize))
+       {
+         av_free(out);
+         return false;
+       }
+-      tmp = av_realloc(out, total_size + FF_INPUT_BUFFER_PADDING_SIZE);
++      tmp = av_realloc(out, total_size + AV_INPUT_BUFFER_PADDING_SIZE);
+       if (!tmp)
+       {
+         av_free(out);
+@@ -796,7 +796,7 @@
+   }
+ 
+   if (out)
+-    memset(out + total_size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
++    memset(out + total_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+ 
+   if (!sps_seen)
+       CLog::Log(LOGDEBUG, "SPS NALU missing or invalid. The resulting stream may not play");
+--- xbmc-17.6-Krypton/xbmc/guilib/FFmpegImage.cpp	2017-11-14 17:55:01.000000000 +0100
++++ xbmc-17.6-Krypton/xbmc/guilib/FFmpegImage.cpp	2018-07-02 21:29:40.403892703 +0200
+@@ -551,7 +551,7 @@
+   tdm.avOutctx->time_base.num = 1;
+   tdm.avOutctx->time_base.den = 1;
+   tdm.avOutctx->pix_fmt = jpg_output ? AV_PIX_FMT_YUVJ420P : AV_PIX_FMT_RGBA;
+-  tdm.avOutctx->flags = CODEC_FLAG_QSCALE;
++  tdm.avOutctx->flags = AV_CODEC_FLAG_QSCALE;
+   tdm.avOutctx->mb_lmin = tdm.avOutctx->qmin * FF_QP2LAMBDA;
+   tdm.avOutctx->mb_lmax = tdm.avOutctx->qmax * FF_QP2LAMBDA;
+   tdm.avOutctx->global_quality = tdm.avOutctx->qmin * FF_QP2LAMBDA;
+--- xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDDemuxers/DVDDemuxClient.cpp	2017-11-14 17:55:01.000000000 +0100
++++ xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDDemuxers/DVDDemuxClient.cpp	2018-07-02 21:32:30.151901460 +0200
+@@ -25,7 +25,7 @@
+ #include "settings/Settings.h"
+ #include "../DVDClock.h"
+ 
+-#define FF_MAX_EXTRADATA_SIZE ((1 << 28) - FF_INPUT_BUFFER_PADDING_SIZE)
++#define AV_MAX_EXTRADATA_SIZE ((1 << 28) - AV_INPUT_BUFFER_PADDING_SIZE)
+ 
+ 
+ class CDemuxStreamClientInternal
+@@ -172,16 +172,16 @@
+   if (stream->m_parser_split && stream->m_parser->parser->split)
+   {
+     int len = stream->m_parser->parser->split(stream->m_context, pkt->pData, pkt->iSize);
+-    if (len > 0 && len < FF_MAX_EXTRADATA_SIZE)
++    if (len > 0 && len < AV_MAX_EXTRADATA_SIZE)
+     {
+       if (st->ExtraData)
+         delete[] (uint8_t*)st->ExtraData;
+       st->changes++;
+       st->disabled = false;
+       st->ExtraSize = len;
+-      st->ExtraData = new uint8_t[len+FF_INPUT_BUFFER_PADDING_SIZE];
++      st->ExtraData = new uint8_t[len+AV_INPUT_BUFFER_PADDING_SIZE];
+       memcpy(st->ExtraData, pkt->pData, len);
+-      memset((uint8_t*)st->ExtraData + len, 0 , FF_INPUT_BUFFER_PADDING_SIZE);
++      memset((uint8_t*)st->ExtraData + len, 0 , AV_INPUT_BUFFER_PADDING_SIZE);
+       stream->m_parser_split = false;
+     }
+   }
+--- xbmc-17.6-Krypton/xbmc/cores/omxplayer/OMXAudioCodecOMX.cpp	2017-11-14 17:55:01.000000000 +0100
++++ xbmc-17.6-Krypton/xbmc/cores/omxplayer/OMXAudioCodecOMX.cpp	2018-07-02 21:39:23.350922777 +0200
+@@ -86,8 +86,8 @@
+   m_pCodecContext->debug = 0;
+   m_pCodecContext->workaround_bugs = 1;
+ 
+-  if (pCodec->capabilities & CODEC_CAP_TRUNCATED)
+-    m_pCodecContext->flags |= CODEC_FLAG_TRUNCATED;
++  if (pCodec->capabilities & AV_CODEC_CAP_TRUNCATED)
++    m_pCodecContext->flags |= AV_CODEC_FLAG_TRUNCATED;
+ 
+   m_channels = 0;
+   m_pCodecContext->channels = hints.channels;
+@@ -110,7 +110,7 @@
+ 
+   if( hints.extradata && hints.extrasize > 0 )
+   {
+-    m_pCodecContext->extradata = (uint8_t*)av_mallocz(hints.extrasize + FF_INPUT_BUFFER_PADDING_SIZE);
++    m_pCodecContext->extradata = (uint8_t*)av_mallocz(hints.extrasize + AV_INPUT_BUFFER_PADDING_SIZE);
+     if(m_pCodecContext->extradata)
+     {
+       m_pCodecContext->extradata_size = hints.extrasize;
+@@ -222,7 +222,7 @@
+ 
+   if (m_iBufferOutputAlloced < m_iBufferOutputUsed + outputSize)
+   {
+-     m_pBufferOutput = (BYTE*)av_realloc(m_pBufferOutput, m_iBufferOutputUsed + outputSize + FF_INPUT_BUFFER_PADDING_SIZE);
++     m_pBufferOutput = (BYTE*)av_realloc(m_pBufferOutput, m_iBufferOutputUsed + outputSize + AV_INPUT_BUFFER_PADDING_SIZE);
+      m_iBufferOutputAlloced = m_iBufferOutputUsed + outputSize;
+   }
+ 
+
+--- xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecFFmpeg.cpp.orig	2018-07-03 03:58:00.987120857 +0200
++++ xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecFFmpeg.cpp	2018-07-03 04:00:22.013863754 +0200
+@@ -382,16 +382,6 @@
+   else
+     m_decoderState = STATE_SW_SINGLE;
+ 
+-#if defined(TARGET_DARWIN_IOS)
+-  // ffmpeg with enabled neon will crash and burn if this is enabled
+-  m_pCodecContext->flags &= CODEC_FLAG_EMU_EDGE;
+-#else
+-  if (pCodec->id != AV_CODEC_ID_H264 && pCodec->capabilities & CODEC_CAP_DR1
+-      && pCodec->id != AV_CODEC_ID_VP8
+-     )
+-    m_pCodecContext->flags |= CODEC_FLAG_EMU_EDGE;
+-#endif
+-
+   // if we don't do this, then some codecs seem to fail.
+   m_pCodecContext->coded_height = hints.height;
+   m_pCodecContext->coded_width = hints.width;
+@@ -882,23 +872,7 @@
+   else
+     pDvdVideoPicture->color_range = 0;
+ 
+-  int qscale_type;
+-  pDvdVideoPicture->qp_table = av_frame_get_qp_table(m_pFrame, &pDvdVideoPicture->qstride, &qscale_type);
+-
+-  switch (qscale_type)
+-  {
+-  case FF_QSCALE_TYPE_MPEG1:
+-    pDvdVideoPicture->qscale_type = DVP_QSCALE_MPEG1;
+-    break;
+-  case FF_QSCALE_TYPE_MPEG2:
+-    pDvdVideoPicture->qscale_type = DVP_QSCALE_MPEG2;
+-    break;
+-  case FF_QSCALE_TYPE_H264:
+-    pDvdVideoPicture->qscale_type = DVP_QSCALE_H264;
+-    break;
+-  default:
+-    pDvdVideoPicture->qscale_type = DVP_QSCALE_UNKNOWN;
+-  }
++  pDvdVideoPicture->qp_table = av_frame_get_qp_table(m_pFrame, &pDvdVideoPicture->qstride, &pDvdVideoPicture->qscale_type);
+ 
+   if (pDvdVideoPicture->iRepeatPicture)
+     pDvdVideoPicture->dts = DVD_NOPTS_VALUE;
+@@ -989,7 +963,13 @@
+     return -1;
+   }
+ 
++#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(7,0,0)
++  const
++#endif
+   AVFilter* srcFilter = avfilter_get_by_name("buffer");
++#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(7,0,0)
++  const
++#endif
+   AVFilter* outFilter = avfilter_get_by_name("buffersink"); // should be last filter in the graph for now
+ 
+   std::string args = StringUtils::Format("%d:%d:%d:%d:%d:%d:%d",
+
+--- xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecFFmpeg.cpp.orig	2018-07-03 04:09:57.457702946 +0200
++++ xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecFFmpeg.cpp	2018-07-03 04:10:31.769395588 +0200
+@@ -390,7 +390,7 @@
+   if( hints.extradata && hints.extrasize > 0 )
+   {
+     m_pCodecContext->extradata_size = hints.extrasize;
+-    m_pCodecContext->extradata = (uint8_t*)av_mallocz(hints.extrasize + FF_INPUT_BUFFER_PADDING_SIZE);
++    m_pCodecContext->extradata = (uint8_t*)av_mallocz(hints.extrasize + AV_INPUT_BUFFER_PADDING_SIZE);
+     memcpy(m_pCodecContext->extradata, hints.extradata, hints.extrasize);
+   }
+
+--- xbmc-17.6-Krypton/xbmc/cdrip/EncoderFFmpeg.cpp.orig	2018-07-03 04:15:20.761822331 +0200
++++ xbmc-17.6-Krypton/xbmc/cdrip/EncoderFFmpeg.cpp	2018-07-03 04:16:14.960339734 +0200
+@@ -119,8 +119,8 @@
+ 
+   if(m_Format->oformat->flags & AVFMT_GLOBALHEADER)
+   {
+-    m_CodecCtx->flags |= CODEC_FLAG_GLOBAL_HEADER;
+-    m_Format->flags   |= CODEC_FLAG_GLOBAL_HEADER;
++    m_CodecCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
++    m_Format->flags   |= AV_CODEC_FLAG_GLOBAL_HEADER;
+   }
+ 
+   switch(m_iInBitsPerSample)
+
+--- xbmc-17.6-Krypton/xbmc/cores/AudioEngine/Engines/ActiveAE/ActiveAE.cpp.orig	2018-07-03 04:22:26.222041472 +0200
++++ xbmc-17.6-Krypton/xbmc/cores/AudioEngine/Engines/ActiveAE/ActiveAE.cpp	2018-07-03 04:22:44.318880987 +0200
+@@ -2955,7 +2955,7 @@
+   int fileSize = sound->GetFileSize();
+ 
+   fmt_ctx = avformat_alloc_context();
+-  unsigned char* buffer = (unsigned char*)av_malloc(SOUNDBUFFER_SIZE+FF_INPUT_BUFFER_PADDING_SIZE);
++  unsigned char* buffer = (unsigned char*)av_malloc(SOUNDBUFFER_SIZE+AV_INPUT_BUFFER_PADDING_SIZE);
+   io_ctx = avio_alloc_context(buffer, SOUNDBUFFER_SIZE, 0,
+                                             sound, CActiveAESound::Read, NULL, CActiveAESound::Seek);
+   io_ctx->max_packet_size = sound->GetChunkSize();
+
+--- xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDDemuxers/DVDDemuxFFmpeg.cpp.orig	2018-07-03 04:29:28.402298801 +0200
++++ xbmc-17.6-Krypton/xbmc/cores/VideoPlayer/DVDDemuxers/DVDDemuxFFmpeg.cpp	2018-07-03 04:30:42.334643983 +0200
+@@ -78,7 +78,7 @@
+   {}
+ };
+ 
+-#define FF_MAX_EXTRADATA_SIZE ((1 << 28) - FF_INPUT_BUFFER_PADDING_SIZE)
++#define AV_MAX_EXTRADATA_SIZE ((1 << 28) - AV_INPUT_BUFFER_PADDING_SIZE)
+ 
+ std::string CDemuxStreamAudioFFmpeg::GetStreamName()
+ {
+@@ -1876,17 +1876,17 @@
+   if(st->parser && st->parser->parser->split && !st->codec->extradata)
+   {
+     int i = st->parser->parser->split(st->codec, pkt->data, pkt->size);
+-    if (i > 0 && i < FF_MAX_EXTRADATA_SIZE)
++    if (i > 0 && i < AV_MAX_EXTRADATA_SIZE)
+     {
+       // Found extradata, fill it in. This will cause
+       // a new stream to be created and used.
+       st->codec->extradata_size = i;
+-      st->codec->extradata = (uint8_t*)av_malloc(st->codec->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE);
++      st->codec->extradata = (uint8_t*)av_malloc(st->codec->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+       if (st->codec->extradata)
+       {
+         CLog::Log(LOGDEBUG, "CDVDDemuxFFmpeg::Read() fetching extradata, extradata_size(%d)", st->codec->extradata_size);
+         memcpy(st->codec->extradata, pkt->data, st->codec->extradata_size);
+-        memset(st->codec->extradata + i, 0, FF_INPUT_BUFFER_PADDING_SIZE);
++        memset(st->codec->extradata + i, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+       }
+       else
+       {
+
