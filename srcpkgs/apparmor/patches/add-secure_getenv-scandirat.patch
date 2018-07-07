@@ -1,0 +1,186 @@
+Source: Alpine Linux
+Upstream: Unknown
+Reason: Fixes compilation with musl libc
+---
+
+diff --git a/libraries/libapparmor/configure.ac b/libraries/libapparmor/configure.ac
+index 479ba6d..979ed91 100644
+--- a/libraries/libapparmor/configure.ac
++++ b/libraries/libapparmor/configure.ac
+@@ -81,7 +81,7 @@ AM_CONDITIONAL(HAVE_RUBY, test x$with_ruby = xyes)
+ AC_HEADER_STDC
+ AC_CHECK_HEADERS(unistd.h stdint.h syslog.h)
+ 
+-AC_CHECK_FUNCS([asprintf __secure_getenv secure_getenv])
++AC_CHECK_FUNCS([asprintf __secure_getenv secure_getenv scandirat reallocarray])
+ 
+ AM_PROG_CC_C_O
+ AC_C_CONST
+diff --git a/libraries/libapparmor/src/Makefile.am b/libraries/libapparmor/src/Makefile.am
+index b9721fd..ed91a3c 100644
+--- a/libraries/libapparmor/src/Makefile.am
++++ b/libraries/libapparmor/src/Makefile.am
+@@ -46,9 +46,9 @@ af_protos.h: /usr/include/netinet/in.h
+ 	 LC_ALL=C  sed  -n -e "/IPPROTO_MAX/d"  -e "s/^\#define[ \\t]\\+IPPROTO_\\([A-Z0-9_]\\+\\)\\(.*\\)$$/AA_GEN_PROTO_ENT(\\UIPPROTO_\\1, \"\\L\\1\")/p" $< > $@
+ 
+ lib_LTLIBRARIES = libapparmor.la
+-noinst_HEADERS = grammar.h parser.h scanner.h af_protos.h private.h PMurHash.h
++noinst_HEADERS = grammar.h parser.h scanner.h af_protos.h secure_getenv.h scandirat.h private.h PMurHash.c
+ 
+-libapparmor_la_SOURCES = grammar.y libaalogparse.c kernel.c scanner.c private.c features.c kernel_interface.c policy_cache.c PMurHash.c
++libapparmor_la_SOURCES = grammar.y libaalogparse.c kernel.c scanner.c secure_getenv.c scandirat.c private.c features.c kernel_interface.c policy_cache.c PMurHash.c
+ libapparmor_la_LDFLAGS = -version-info $(AA_LIB_CURRENT):$(AA_LIB_REVISION):$(AA_LIB_AGE) -XCClinker -dynamic -pthread \
+ 	-Wl,--version-script=$(top_srcdir)/src/libapparmor.map
+ 
+diff --git a/libraries/libapparmor/src/private.c b/libraries/libapparmor/src/private.c
+index bece09d..dd0e815 100644
+--- a/libraries/libapparmor/src/private.c
++++ b/libraries/libapparmor/src/private.c
+@@ -39,10 +39,26 @@
+  #ifdef HAVE___SECURE_GETENV
+   #define secure_getenv __secure_getenv
+  #else
+-  #error neither secure_getenv nor __secure_getenv is available
++  #include "secure_getenv.h"
+  #endif
+ #endif
+ 
++#ifndef HAVE_SCANDIRAT
++#include "scandirat.h"
++#endif
++
++
++/*
++ * Allow libapparmor to build on older glibcs and other libcs that do
++ * not support reallocarray.
++ */
++#ifndef HAVE_REALLOCARRY
++void *reallocarray(void *ptr, size_t nmemb, size_t size)
++{
++	return realloc(ptr, nmemb * size);
++}
++#endif
++
+ struct ignored_suffix_t {
+ 	const char * text;
+ 	int len;
+diff --git a/libraries/libapparmor/src/scandirat.c b/libraries/libapparmor/src/scandirat.c
+new file mode 100644
+index 0000000..c293014
+--- /dev/null
++++ b/libraries/libapparmor/src/scandirat.c
+@@ -0,0 +1,62 @@
++#include <dirent.h>
++#include <string.h>
++#include <stdlib.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <inttypes.h>
++#include <errno.h>
++
++#include "scandirat.h"
++
++#ifndef HAVE_SCANDIRAT
++
++int scandirat(int dir_fd, const char *dirp, struct dirent ***namelist,
++	int (*filter)(const struct dirent *),
++	int (*compar)(const struct dirent **, const struct dirent **))
++{
++	int fd;
++	DIR *d;
++	struct dirent *de, **names=0, **tmp;
++	size_t cnt=0, len=0;
++	int old_errno = errno;
++
++
++	fd = openat(dir_fd, dirp, O_RDONLY|O_CLOEXEC);
++	if (fd == -1) return -1;
++
++	d = fdopendir(fd);
++
++	if (!d) {
++		close(fd);
++		return -1;
++	}
++
++	while ((errno=0), (de = readdir(d))) {
++		if (filter && !filter(de)) continue;
++		if (cnt >= len) {
++			len = 2*len+1;
++			if (len > SIZE_MAX/sizeof *names) break;
++			tmp = realloc(names, len * sizeof *names);
++			if (!tmp) break;
++			names = tmp;
++		}
++		names[cnt] = malloc(de->d_reclen);
++		if (!names[cnt]) break;
++		memcpy(names[cnt++], de, de->d_reclen);
++	}
++
++	closedir(d);
++
++	if (errno) {
++		if (names) while (cnt-->0) free(names[cnt]);
++		free(names);
++		return -1;
++	}
++	errno = old_errno;
++
++	if (compar) qsort(names, cnt, sizeof *names, (int (*)(const void *, const void *))compar);
++	*namelist = names;
++	return cnt;
++}
++
++#endif
+diff --git a/libraries/libapparmor/src/scandirat.h b/libraries/libapparmor/src/scandirat.h
+new file mode 100644
+index 0000000..a1c5dfe
+--- /dev/null
++++ b/libraries/libapparmor/src/scandirat.h
+@@ -0,0 +1,12 @@
++#ifndef LIBAPPARMOR_SCANDIRAT_H
++#define LIBAPPARMOR_SCANDIRAT_H
++
++#include <dirent.h>
++
++#ifndef HAVE_SCANDIRAT
++int scandirat(int dir_fd, const char *dirp, struct dirent ***namelist,
++	int (*filter)(const struct dirent *),
++	int (*compar)(const struct dirent **, const struct dirent **));
++#endif
++
++#endif
+diff --git a/libraries/libapparmor/src/secure_getenv.c b/libraries/libapparmor/src/secure_getenv.c
+new file mode 100644
+index 0000000..f6894cd
+--- /dev/null
++++ b/libraries/libapparmor/src/secure_getenv.c
+@@ -0,0 +1,14 @@
++#include <stdlib.h>
++#include <sys/auxv.h>
++
++#include "secure_getenv.h"
++
++#ifndef HAVE_SECURE_GETENV
++char *secure_getenv(const char *name)
++{
++	if (!getauxval(AT_SECURE)) {
++		return getenv(name);
++	}
++	return NULL;
++}
++#endif
+diff --git a/libraries/libapparmor/src/secure_getenv.h b/libraries/libapparmor/src/secure_getenv.h
+new file mode 100644
+index 0000000..b6269a8
+--- /dev/null
++++ b/libraries/libapparmor/src/secure_getenv.h
+@@ -0,0 +1,8 @@
++#ifndef LIBAPPARMOR_SECURE_GETENV_H
++#define LIBAPPARMOR_SECURE_GETENV_H
++
++#ifndef HAVE_SECURE_GETENV
++char *secure_getenv(const char *name);
++#endif
++
++#endif
