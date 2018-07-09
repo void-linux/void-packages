@@ -1,0 +1,93 @@
+# Template file for 'Slic3r'
+pkgname=Slic3r
+version=1.3.0
+revision=1
+build_style=perl-ModuleBuild
+#hostmakedepends="perl cpanminus perl-Capture-Tiny perl-ExtUtils-CppGuess
+#perl-Class-Accessor boost-devel perl-Wx perl-Wx-GLCanvas libXmu-devel
+#libfreeglut-devel perl-OpenGL perl-Net-SSLeay perl-Moo"
+hostmakedepends="perl cpanminus perl-Capture-Tiny perl-ExtUtils-CppGuess
+perl-Class-Accessor perl-Wx perl-Wx-GLCanvas perl-OpenGL perl-Net-SSLeay 
+perl-Moo"
+makedepends="perl boost-devel libXmu-devel libfreeglut-devel"
+depends="perl perl-Moo perl-Wx perl-Wx-GLCanvas perl-Class-Accessor
+perl-OpenGL"
+#nocross="perl-Wx can't find headers in wxWidgets-devel"
+short_desc="Open Source toolpath generator for 3D printers"
+maintainer="Jasper Chan <jasperchan515@gmail.com>"
+license=AGPL-3.0
+homepage="https://github.com/slic3r/Slic3r/"
+distfiles="https://github.com/slic3r/Slic3r/archive/${version}.tar.gz>Slic3r.tar.gz"
+checksum=4fb351c1ae25c213cc6f17022eb62e2f0ce9678c0439916cb536d5cb3503da31
+
+pre_configure() {
+	# MakeMaker fails 2 tests every time
+	cpanm --notest ExtUtils::MakeMaker
+
+	# Slic3r tests fail without local::lib
+	cpanm --notest local::lib
+
+	if [ "$(uname -m)" != "$XBPS_TARGET_MACHINE" ]; then
+		echo "Cross compilation detected, disabling tests..."
+		configure_args+=" --notest"
+	fi
+}
+
+#do_configure builds the backend
+
+do_build() {
+	# Socket fails 2 tests every time
+	cpanm --force Socket
+
+	# build the gui
+	perl Build.PL --gui
+}
+
+do_install() {
+	# ./Build script isn't found by do_install,
+	# forcing it to run by symlinking fails with
+	# ld: unrecognized option '-Wl,-z,-relro'
+	#
+	# Instead, I'm basing this script on the aur pkgbuild file
+	# https://aur.archlinux.org/cgit/aur.git/tree/PKGBUILD?h=slic3r
+
+	vmkdir /usr/lib/perl5/vendor_perl/
+	# This script should go into /usr/bin/
+	#vinstall slic3r.pl 755 /usr/lib/perl5/vendor_perl/
+
+	# Install utils, this is skipped in the aur pkgbuild file and I'm not sure why
+	for file in utils/*.pl; do
+		vbin "$file" "${file//.pl}"
+	done
+
+	for file in utils/post-processing/*.pl; do
+		vbin "$file" "${file//.pl}"
+	done
+
+	# ZSH autocompletion
+	vmkdir /usr/share/zsh/site-functions/
+	vinstall utils/zsh/functions/_slic3r 644 /usr/share/zsh/site-functions/
+
+	# Icons " current Build.PL is not really geared for installation "
+	vmkdir /usr/bin/var/
+	for file in var/*; do
+		vinstall "$file" 644 /usr/bin/var/
+	done
+
+	# Desktop icon
+	vmkdir /usr/share/applications/
+	vinstall package/linux/slic3r.desktop.in 644 /usr/share/applications/ slic3r.desktop
+
+	# Here the aur pkgbuild file just runs the Build script inside xs, but again that
+	# fails so I'm going to try and install things manually
+
+	vbin slic3r.pl Slic3r
+
+	vcopy lib/* /usr/lib/perl5/vendor_perl/
+	vcopy xs/blib/lib/* /usr/lib/perl5/vendor_perl/
+	vcopy xs/blib/arch/* /usr/lib/perl5/vendor_perl/
+}
+
+post_install() {
+	vlicense LICENSE
+}
