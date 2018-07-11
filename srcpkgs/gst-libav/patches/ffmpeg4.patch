@@ -1,0 +1,661 @@
+source: https://gitlab.collabora.com/nicolas/gst-ffmpeg/commit/b529e05a6ad5a8226d2fcbdcc2cde1be09e5ecba
+
+From b529e05a6ad5a8226d2fcbdcc2cde1be09e5ecba Mon Sep 17 00:00:00 2001
+From: Nicolas Dufresne <nicolas.dufresne@collabora.com>
+Date: Fri, 27 Apr 2018 16:06:28 -0400
+Subject: [PATCH] WIP: Port to FFMPEG 4.X
+
+---
+ ext/libav/gstav.c         |  4 ++--
+ ext/libav/gstavauddec.c   | 20 ++++++++++----------
+ ext/libav/gstavaudenc.c   |  7 +++----
+ ext/libav/gstavcfg.c      | 59 ++++++++++++++++++++++++++++++++++++++---------------------
+ ext/libav/gstavcodecmap.c | 29 +++++++++++++++--------------
+ ext/libav/gstavcodecmap.h |  2 +-
+ ext/libav/gstavscale.c    |  4 ++--
+ ext/libav/gstavviddec.c   | 33 +++++++++++++++------------------
+ ext/libav/gstavvidenc.c   | 40 ++++++++++++++++++++++------------------
+ 9 files changed, 108 insertions(+), 90 deletions(-)
+
+diff --git a/ext/libav/gstav.c b/ext/libav/gstav.c
+index 0b9da42..10d8423 100644
+--- a/ext/libav/gstav.c
++++ b/ext/libav/gstav.c
+@@ -30,7 +30,7 @@
+ 
+ #include <libavcodec/avcodec.h>
+ #include <libavformat/avformat.h>
+-#include <libavfilter/avfiltergraph.h>
++//#include <libavfilter/avfiltergraph.h>
+ 
+ #include "gstav.h"
+ #include "gstavutils.h"
+@@ -158,7 +158,7 @@ plugin_init (GstPlugin * plugin)
+   gst_ffmpeg_init_pix_fmt_info ();
+ 
+   av_register_all ();
+-  avfilter_register_all ();
++  //avfilter_register_all ();
+ 
+   gst_ffmpegaudenc_register (plugin);
+   gst_ffmpegvidenc_register (plugin);
+diff --git a/ext/libav/gstavauddec.c b/ext/libav/gstavauddec.c
+index 9aa45e3..fd25efd 100644
+--- a/ext/libav/gstavauddec.c
++++ b/ext/libav/gstavauddec.c
+@@ -283,7 +283,7 @@ gst_ffmpegauddec_propose_allocation (GstAudioDecoder * decoder,
+   gst_allocation_params_init (&params);
+   params.flags = GST_MEMORY_FLAG_ZERO_PADDED;
+   params.align = 15;
+-  params.padding = FF_INPUT_BUFFER_PADDING_SIZE;
++  params.padding = AV_INPUT_BUFFER_PADDING_SIZE;
+   /* we would like to have some padding so that we don't have to
+    * memcpy. We don't suggest an allocator. */
+   gst_query_add_allocation_param (query, NULL, &params);
+@@ -665,7 +665,7 @@ gst_ffmpegauddec_drain (GstFFMpegAudDec * ffmpegdec)
+ 
+   oclass = (GstFFMpegAudDecClass *) (G_OBJECT_GET_CLASS (ffmpegdec));
+ 
+-  if (oclass->in_plugin->capabilities & CODEC_CAP_DELAY) {
++  if (oclass->in_plugin->capabilities & AV_CODEC_CAP_DELAY) {
+     gint have_data, len;
+ 
+     GST_LOG_OBJECT (ffmpegdec,
+@@ -744,10 +744,10 @@ gst_ffmpegauddec_handle_frame (GstAudioDecoder * decoder, GstBuffer * inbuf)
+   bsize = map.size;
+ 
+   if (bsize > 0 && (!GST_MEMORY_IS_ZERO_PADDED (map.memory)
+-          || (map.maxsize - map.size) < FF_INPUT_BUFFER_PADDING_SIZE)) {
++          || (map.maxsize - map.size) < AV_INPUT_BUFFER_PADDING_SIZE)) {
+     /* add padding */
+-    if (ffmpegdec->padded_size < bsize + FF_INPUT_BUFFER_PADDING_SIZE) {
+-      ffmpegdec->padded_size = bsize + FF_INPUT_BUFFER_PADDING_SIZE;
++    if (ffmpegdec->padded_size < bsize + AV_INPUT_BUFFER_PADDING_SIZE) {
++      ffmpegdec->padded_size = bsize + AV_INPUT_BUFFER_PADDING_SIZE;
+       ffmpegdec->padded = g_realloc (ffmpegdec->padded, ffmpegdec->padded_size);
+       GST_LOG_OBJECT (ffmpegdec, "resized padding buffer to %d",
+           ffmpegdec->padded_size);
+@@ -755,7 +755,7 @@ gst_ffmpegauddec_handle_frame (GstAudioDecoder * decoder, GstBuffer * inbuf)
+     GST_CAT_TRACE_OBJECT (CAT_PERFORMANCE, ffmpegdec,
+         "Copy input to add padding");
+     memcpy (ffmpegdec->padded, bdata, bsize);
+-    memset (ffmpegdec->padded + bsize, 0, FF_INPUT_BUFFER_PADDING_SIZE);
++    memset (ffmpegdec->padded + bsize, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+ 
+     bdata = ffmpegdec->padded;
+     do_padding = TRUE;
+@@ -764,7 +764,7 @@ gst_ffmpegauddec_handle_frame (GstAudioDecoder * decoder, GstBuffer * inbuf)
+   }
+ 
+   do {
+-    guint8 tmp_padding[FF_INPUT_BUFFER_PADDING_SIZE];
++    guint8 tmp_padding[AV_INPUT_BUFFER_PADDING_SIZE];
+ 
+     data = bdata;
+     size = bsize;
+@@ -773,15 +773,15 @@ gst_ffmpegauddec_handle_frame (GstAudioDecoder * decoder, GstBuffer * inbuf)
+       /* add temporary padding */
+       GST_CAT_TRACE_OBJECT (CAT_PERFORMANCE, ffmpegdec,
+           "Add temporary input padding");
+-      memcpy (tmp_padding, data + size, FF_INPUT_BUFFER_PADDING_SIZE);
+-      memset (data + size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
++      memcpy (tmp_padding, data + size, AV_INPUT_BUFFER_PADDING_SIZE);
++      memset (data + size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+     }
+ 
+     /* decode a frame of audio now */
+     len = gst_ffmpegauddec_frame (ffmpegdec, data, size, &have_data, &ret);
+ 
+     if (do_padding) {
+-      memcpy (data + size, tmp_padding, FF_INPUT_BUFFER_PADDING_SIZE);
++      memcpy (data + size, tmp_padding, AV_INPUT_BUFFER_PADDING_SIZE);
+     }
+ 
+     if (ret != GST_FLOW_OK) {
+diff --git a/ext/libav/gstavaudenc.c b/ext/libav/gstavaudenc.c
+index 6ffbc3e..2a82273 100644
+--- a/ext/libav/gstavaudenc.c
++++ b/ext/libav/gstavaudenc.c
+@@ -283,7 +283,6 @@ gst_ffmpegaudenc_set_format (GstAudioEncoder * encoder, GstAudioInfo * info)
+   }
+ 
+   /* some other defaults */
+-  ffmpegaudenc->context->rc_strategy = 2;
+   ffmpegaudenc->context->b_frame_strategy = 0;
+   ffmpegaudenc->context->coder_type = 0;
+   ffmpegaudenc->context->context_model = 0;
+@@ -330,7 +329,7 @@ gst_ffmpegaudenc_set_format (GstAudioEncoder * encoder, GstAudioInfo * info)
+             oclass->in_plugin) < 0)
+       GST_DEBUG_OBJECT (ffmpegaudenc, "Failed to set context defaults");
+ 
+-    if ((oclass->in_plugin->capabilities & CODEC_CAP_EXPERIMENTAL) &&
++    if ((oclass->in_plugin->capabilities & AV_CODEC_CAP_EXPERIMENTAL) &&
+         ffmpegaudenc->compliance != GST_FFMPEG_EXPERIMENTAL) {
+       GST_ELEMENT_ERROR (ffmpegaudenc, LIBRARY, SETTINGS,
+           ("Codec is experimental, but settings don't allow encoders to "
+@@ -602,7 +601,7 @@ gst_ffmpegaudenc_encode_audio (GstFFMpegAudEnc * ffmpegaudenc,
+         pkt->size, 0, pkt->size, pkt, gst_ffmpegaudenc_free_avpacket);
+ 
+     codec = ffmpegaudenc->context->codec;
+-    if ((codec->capabilities & CODEC_CAP_VARIABLE_FRAME_SIZE) || !buffer) {
++    if ((codec->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE) || !buffer) {
+       /* FIXME: Not really correct, as -1 means "all the samples we got
+          given so far", which may not be true depending on the codec,
+          but we have no way to know AFAICT */
+@@ -626,7 +625,7 @@ gst_ffmpegaudenc_drain (GstFFMpegAudEnc * ffmpegaudenc)
+ 
+   oclass = (GstFFMpegAudEncClass *) (G_OBJECT_GET_CLASS (ffmpegaudenc));
+ 
+-  if (oclass->in_plugin->capabilities & CODEC_CAP_DELAY) {
++  if (oclass->in_plugin->capabilities & AV_CODEC_CAP_DELAY) {
+     gint have_data, try = 0;
+ 
+     GST_LOG_OBJECT (ffmpegaudenc,
+diff --git a/ext/libav/gstavcfg.c b/ext/libav/gstavcfg.c
+index a1863fd..408e08e 100644
+--- a/ext/libav/gstavcfg.c
++++ b/ext/libav/gstavcfg.c
+@@ -42,9 +42,9 @@ gst_ffmpeg_pass_get_type (void)
+   if (!ffmpeg_pass_type) {
+     static const GEnumValue ffmpeg_passes[] = {
+       {0, "Constant Bitrate Encoding", "cbr"},
+-      {CODEC_FLAG_QSCALE, "Constant Quantizer", "quant"},
+-      {CODEC_FLAG_PASS1, "VBR Encoding - Pass 1", "pass1"},
+-      {CODEC_FLAG_PASS2, "VBR Encoding - Pass 2", "pass2"},
++      {AV_CODEC_FLAG_QSCALE, "Constant Quantizer", "quant"},
++      {AV_CODEC_FLAG_PASS1, "VBR Encoding - Pass 1", "pass1"},
++      {AV_CODEC_FLAG_PASS2, "VBR Encoding - Pass 2", "pass2"},
+       {0, NULL, NULL},
+     };
+ 
+@@ -66,7 +66,7 @@ gst_ffmpeg_lim_pass_get_type (void)
+   if (!ffmpeg_lim_pass_type) {
+     static const GEnumValue ffmpeg_lim_passes[] = {
+       {0, "Constant Bitrate Encoding", "cbr"},
+-      {CODEC_FLAG_QSCALE, "Constant Quantizer", "quant"},
++      {AV_CODEC_FLAG_QSCALE, "Constant Quantizer", "quant"},
+       {0, NULL, NULL},
+     };
+ 
+@@ -121,9 +121,9 @@ gst_ffmpeg_mb_cmp_get_type (void)
+       {FF_CMP_VSSE, "VSSE", "vsse"},
+ #if 0
+ /* economize a bit for now */
+-      {FF_CMP_NSSE, "NSSE", "nsse"},
+-      {FF_CMP_W53, "W53", "w53"},
+-      {FF_CMP_W97, "W97", "w97"},
++      {AV_CMP_NSSE, "NSSE", "nsse"},
++      {AV_CMP_W53, "W53", "w53"},
++      {AV_CMP_W97, "W97", "w97"},
+ #endif
+       {0, NULL, NULL},
+     };
+@@ -260,21 +260,22 @@ gst_ffmpeg_flags_get_type (void)
+   /* FIXME: This needs some serious resyncing with avcodec.h */
+   if (!ffmpeg_flags_type) {
+     static const GFlagsValue ffmpeg_flags[] = {
+-      {CODEC_FLAG_QSCALE, "Use fixed qscale", "qscale"},
+-      {CODEC_FLAG_4MV, "Allow 4 MV per MB", "4mv"},
+-      {CODEC_FLAG_QPEL, "Quartel Pel Motion Compensation", "qpel"},
+-      {CODEC_FLAG_GMC, "GMC", "gmc"},
+-      {CODEC_FLAG_MV0, "Always try a MB with MV (0,0)", "mv0"},
+-      {CODEC_FLAG_LOOP_FILTER, "Loop filter", "loop-filter"},
+-      {CODEC_FLAG_GRAY, "Only decode/encode grayscale", "gray"},
+-      {CODEC_FLAG_NORMALIZE_AQP,
+-          "Normalize Adaptive Quantization (masking, etc)", "aqp"},
+-      {CODEC_FLAG_GLOBAL_HEADER,
++      {AV_CODEC_FLAG_QSCALE, "Use fixed qscale", "qscale"},
++      {AV_CODEC_FLAG_4MV, "Allow 4 MV per MB", "4mv"},
++      {AV_CODEC_FLAG_QPEL, "Quartel Pel Motion Compensation", "qpel"},
++      //{AV_CODEC_FLAG_GMC, "GMC", "gmc"},
++      //{AV_CODEC_FLAG_MV0, "Always try a MB with MV (0,0)", "mv0"},
++      {AV_CODEC_FLAG_LOOP_FILTER, "Loop filter", "loop-filter"},
++      {AV_CODEC_FLAG_GRAY, "Only decode/encode grayscale", "gray"},
++      //{AV_CODEC_FLAG_NORMALIZE_AQP,
++      //    "Normalize Adaptive Quantization (masking, etc)", "aqp"},
++      {AV_CODEC_FLAG_GLOBAL_HEADER,
+             "Global headers in extradata instead of every keyframe",
+           "global-headers"},
+-      {CODEC_FLAG_AC_PRED, "H263 Advanced Intra Coding / MPEG4 AC prediction",
++      {AV_CODEC_FLAG_AC_PRED,
++            "H263 Advanced Intra Coding / MPEG4 AC prediction",
+           "aic"},
+-      {CODEC_FLAG_CLOSED_GOP, "Closed GOP", "closedgop"},
++      {AV_CODEC_FLAG_CLOSED_GOP, "Closed GOP", "closedgop"},
+       {0, NULL, NULL},
+     };
+ 
+@@ -487,31 +488,39 @@ gst_ffmpeg_cfg_init (void)
+       G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+   gst_ffmpeg_add_pspec (pspec, config.qblur, FALSE, mpeg, NULL);
+ 
++#if 0
+   pspec = g_param_spec_float ("rc-qsquish", "Ratecontrol Limiting Method",
+       "0 means limit by clipping, otherwise use nice continuous function",
+       0, 99.0f, 1.0f, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+   gst_ffmpeg_add_pspec (pspec, config.rc_qsquish, FALSE, mpeg, NULL);
++#endif
+ 
++#if 0
+   pspec = g_param_spec_float ("rc-qmod-amp", "Ratecontrol Mod",
+       "Ratecontrol Mod", 0, 99.0f, 0,
+       G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+   gst_ffmpeg_add_pspec (pspec, config.rc_qmod_amp, FALSE, mpeg, NULL);
++#endif
+ 
++#if 0
+   pspec = g_param_spec_int ("rc-qmod-freq", "Ratecontrol Freq",
+       "Ratecontrol Freq", 0, 0, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+   gst_ffmpeg_add_pspec (pspec, config.rc_qmod_freq, FALSE, mpeg, NULL);
++#endif
+ 
+   pspec = g_param_spec_int ("rc-buffer-size", "Ratecontrol Buffer Size",
+       "Decoder bitstream buffer size", 0, G_MAXINT, 0,
+       G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+   gst_ffmpeg_add_pspec (pspec, config.rc_buffer_size, FALSE, mpeg, NULL);
+ 
++#if 0
+   pspec =
+       g_param_spec_float ("rc-buffer-aggressivity",
+       "Ratecontrol Buffer Aggressivity", "Ratecontrol Buffer Aggressivity", 0,
+       99.0f, 1.0f, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+   gst_ffmpeg_add_pspec (pspec, config.rc_buffer_aggressivity, FALSE, mpeg,
+       NULL);
++#endif
+ 
+ #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT (57, 3, 0)
+   pspec = g_param_spec_int ("rc-max-rate", "Ratecontrol Maximum Bitrate",
+@@ -529,17 +538,21 @@ gst_ffmpeg_cfg_init (void)
+       G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+   gst_ffmpeg_add_pspec (pspec, config.rc_min_rate, FALSE, mpeg, NULL);
+ 
++#if 0
+   pspec =
+       g_param_spec_float ("rc-initial-cplx",
+       "Initial Complexity for Pass 1 Ratecontrol",
+       "Initial Complexity for Pass 1 Ratecontrol", 0, 9999999.0f, 0,
+       G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+   gst_ffmpeg_add_pspec (pspec, config.rc_initial_cplx, FALSE, mpeg, NULL);
++#endif
+ 
++#if 0
+   pspec = g_param_spec_string ("rc-eq", "Ratecontrol Equation",
+       "Ratecontrol Equation", "tex^qComp",
+       G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+   gst_ffmpeg_add_pspec (pspec, config.rc_eq, FALSE, mpeg, NULL);
++#endif
+ 
+   pspec = g_param_spec_float ("b-quant-factor", "B-Quantizer Factor",
+       "Factor in B-Frame Quantizer Computation",
+@@ -630,19 +643,23 @@ gst_ffmpeg_cfg_init (void)
+       0, 16000, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+   gst_ffmpeg_add_pspec (pspec, config.me_range, FALSE, mpeg, NULL);
+ 
++#if 0
+   pspec = g_param_spec_int ("intra-quant-bias",
+       "Intra Quantizer Bias",
+       "Intra Quantizer Bias",
+-      -1000000, 1000000, FF_DEFAULT_QUANT_BIAS,
++      -1000000, 1000000, AV_DEFAULT_QUANT_BIAS,
+       G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+   gst_ffmpeg_add_pspec (pspec, config.intra_quant_bias, FALSE, mpeg, NULL);
++#endif
+ 
++#if 0
+   pspec = g_param_spec_int ("inter-quant-bias",
+       "Inter Quantizer Bias",
+       "Inter Quantizer Bias",
+-      -1000000, 1000000, FF_DEFAULT_QUANT_BIAS,
++      -1000000, 1000000, AV_DEFAULT_QUANT_BIAS,
+       G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+   gst_ffmpeg_add_pspec (pspec, config.inter_quant_bias, FALSE, mpeg, NULL);
++#endif
+ 
+   pspec = g_param_spec_int ("noise-reduction",
+       "Noise Reduction",
+diff --git a/ext/libav/gstavcodecmap.c b/ext/libav/gstavcodecmap.c
+index 9a72033..6b66bb9 100644
+--- a/ext/libav/gstavcodecmap.c
++++ b/ext/libav/gstavcodecmap.c
+@@ -825,10 +825,10 @@ gst_ffmpeg_codecid_to_caps (enum AVCodecID codec_id,
+       if (encode && context) {
+ 
+         gst_caps_set_simple (caps,
+-            "annex-f", G_TYPE_BOOLEAN, context->flags & CODEC_FLAG_4MV,
+-            "annex-j", G_TYPE_BOOLEAN, context->flags & CODEC_FLAG_LOOP_FILTER,
+-            "annex-i", G_TYPE_BOOLEAN, context->flags & CODEC_FLAG_AC_PRED,
+-            "annex-t", G_TYPE_BOOLEAN, context->flags & CODEC_FLAG_AC_PRED,
++            "annex-f", G_TYPE_BOOLEAN, context->flags & AV_CODEC_FLAG_4MV,
++            "annex-j", G_TYPE_BOOLEAN, context->flags & AV_CODEC_FLAG_LOOP_FILTER,
++            "annex-i", G_TYPE_BOOLEAN, context->flags & AV_CODEC_FLAG_AC_PRED,
++            "annex-t", G_TYPE_BOOLEAN, context->flags & AV_CODEC_FLAG_AC_PRED,
+             NULL);
+       }
+       break;
+@@ -3181,7 +3181,7 @@ gst_ffmpeg_caps_with_codecid (enum AVCodecID codec_id,
+        * as is, as that is what most players do. */
+       context->extradata =
+           av_mallocz (GST_ROUND_UP_16 (size * 2 +
+-              FF_INPUT_BUFFER_PADDING_SIZE));
++              AV_INPUT_BUFFER_PADDING_SIZE));
+       copy_config (context->extradata, data, size, &extrasize);
+       GST_DEBUG ("escaped size: %d", extrasize);
+       context->extradata_size = extrasize;
+@@ -3192,7 +3192,7 @@ gst_ffmpeg_caps_with_codecid (enum AVCodecID codec_id,
+       GST_DEBUG ("copy codec_data");
+       context->extradata =
+           av_mallocz (GST_ROUND_UP_16 (map.size +
+-              FF_INPUT_BUFFER_PADDING_SIZE));
++              AV_INPUT_BUFFER_PADDING_SIZE));
+       memcpy (context->extradata, map.data, map.size);
+       context->extradata_size = map.size;
+     }
+@@ -3216,7 +3216,7 @@ gst_ffmpeg_caps_with_codecid (enum AVCodecID codec_id,
+     {
+       const gchar *mime = gst_structure_get_name (str);
+ 
+-      context->flags |= CODEC_FLAG_4MV;
++      context->flags |= AV_CODEC_FLAG_4MV;
+ 
+       if (!strcmp (mime, "video/x-divx"))
+         context->codec_tag = GST_MAKE_FOURCC ('D', 'I', 'V', 'X');
+@@ -3228,7 +3228,8 @@ gst_ffmpeg_caps_with_codecid (enum AVCodecID codec_id,
+         profile = gst_structure_get_string (str, "profile");
+         if (profile) {
+           if (g_strcmp0 (profile, "advanced-simple") == 0)
+-            context->flags |= CODEC_FLAG_GMC | CODEC_FLAG_QPEL;
++            context->flags |= AV_CODEC_FLAG_QPEL;
++            /* FIXME use the "gmc" private option of the libxvid encoder */
+         }
+       }
+       break;
+@@ -3334,18 +3335,18 @@ gst_ffmpeg_caps_with_codecid (enum AVCodecID codec_id,
+       gboolean val;
+ 
+       if (!gst_structure_get_boolean (str, "annex-f", &val) || val)
+-        context->flags |= CODEC_FLAG_4MV;
++        context->flags |= AV_CODEC_FLAG_4MV;
+       else
+-        context->flags &= ~CODEC_FLAG_4MV;
++        context->flags &= ~AV_CODEC_FLAG_4MV;
+       if ((!gst_structure_get_boolean (str, "annex-i", &val) || val) &&
+           (!gst_structure_get_boolean (str, "annex-t", &val) || val))
+-        context->flags |= CODEC_FLAG_AC_PRED;
++        context->flags |= AV_CODEC_FLAG_AC_PRED;
+       else
+-        context->flags &= ~CODEC_FLAG_AC_PRED;
++        context->flags &= ~AV_CODEC_FLAG_AC_PRED;
+       if (!gst_structure_get_boolean (str, "annex-j", &val) || val)
+-        context->flags |= CODEC_FLAG_LOOP_FILTER;
++        context->flags |= AV_CODEC_FLAG_LOOP_FILTER;
+       else
+-        context->flags &= ~CODEC_FLAG_LOOP_FILTER;
++        context->flags &= ~AV_CODEC_FLAG_LOOP_FILTER;
+       break;
+     }
+     case AV_CODEC_ID_ADPCM_G726:
+diff --git a/ext/libav/gstavcodecmap.h b/ext/libav/gstavcodecmap.h
+index 9575e77..14cdfce 100644
+--- a/ext/libav/gstavcodecmap.h
++++ b/ext/libav/gstavcodecmap.h
+@@ -155,7 +155,7 @@ gst_ffmpeg_formatid_to_caps (const gchar *format_name);
+ 
+ /*
+  * _formatid_get_codecids () can be used to get the codecIDs
+- * (CODEC_ID_NONE-terminated list) that fit that specific
++ * (AV_CODEC_ID_NONE-terminated list) that fit that specific
+  * output format.
+  */
+ 
+diff --git a/ext/libav/gstavviddec.c b/ext/libav/gstavviddec.c
+index f9c6096..0ed4b23 100644
+--- a/ext/libav/gstavviddec.c
++++ b/ext/libav/gstavviddec.c
+@@ -237,7 +237,7 @@ gst_ffmpegviddec_class_init (GstFFMpegVidDecClass * klass)
+           DEFAULT_OUTPUT_CORRUPT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+ 
+   caps = klass->in_plugin->capabilities;
+-  if (caps & (CODEC_CAP_FRAME_THREADS | CODEC_CAP_SLICE_THREADS)) {
++  if (caps & (AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_SLICE_THREADS)) {
+     g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_MAX_THREADS,
+         g_param_spec_int ("max-threads", "Maximum decode threads",
+             "Maximum number of worker threads to spawn. (0 = auto)",
+@@ -365,7 +365,7 @@ gst_ffmpegviddec_open (GstFFMpegVidDec * ffmpegdec)
+       oclass->in_plugin->name, oclass->in_plugin->id);
+ 
+   gst_ffmpegviddec_context_set_flags (ffmpegdec->context,
+-      CODEC_FLAG_OUTPUT_CORRUPT, ffmpegdec->output_corrupt);
++      AV_CODEC_FLAG_OUTPUT_CORRUPT, ffmpegdec->output_corrupt);
+ 
+   return TRUE;
+ 
+@@ -495,7 +495,7 @@ gst_ffmpegviddec_set_format (GstVideoDecoder * decoder,
+     gboolean is_live;
+ 
+     if (ffmpegdec->max_threads == 0) {
+-      if (!(oclass->in_plugin->capabilities & CODEC_CAP_AUTO_THREADS))
++      if (!(oclass->in_plugin->capabilities & AV_CODEC_CAP_AUTO_THREADS))
+         ffmpegdec->context->thread_count = gst_ffmpeg_auto_max_threads ();
+       else
+         ffmpegdec->context->thread_count = 0;
+@@ -624,10 +624,7 @@ gst_ffmpegvideodec_prepare_dr_pool (GstFFMpegVidDec * ffmpegdec,
+   avcodec_align_dimensions2 (ffmpegdec->context, &width, &height,
+       linesize_align);
+ 
+-  if (ffmpegdec->context->flags & CODEC_FLAG_EMU_EDGE)
+-    edge = 0;
+-  else
+-    edge = avcodec_get_edge_width ();
++  edge = 0;
+ 
+   /* increase the size for the padding */
+   width += edge << 1;
+@@ -732,7 +729,7 @@ gst_ffmpegviddec_can_direct_render (GstFFMpegVidDec * ffmpegdec)
+     return FALSE;
+ 
+   oclass = (GstFFMpegVidDecClass *) (G_OBJECT_GET_CLASS (ffmpegdec));
+-  return ((oclass->in_plugin->capabilities & CODEC_CAP_DR1) == CODEC_CAP_DR1);
++  return ((oclass->in_plugin->capabilities & AV_CODEC_CAP_DR1) == AV_CODEC_CAP_DR1);
+ }
+ 
+ /* called when ffmpeg wants us to allocate a buffer to write the decoded frame
+@@ -1769,7 +1766,7 @@ gst_ffmpegviddec_drain (GstVideoDecoder * decoder)
+ 
+   oclass = (GstFFMpegVidDecClass *) (G_OBJECT_GET_CLASS (ffmpegdec));
+ 
+-  if (oclass->in_plugin->capabilities & CODEC_CAP_DELAY) {
++  if (oclass->in_plugin->capabilities & AV_CODEC_CAP_DELAY) {
+     gint have_data, len;
+     GstFlowReturn ret;
+ 
+@@ -1815,10 +1812,10 @@ gst_ffmpegviddec_handle_frame (GstVideoDecoder * decoder,
+   bsize = minfo.size;
+ 
+   if (bsize > 0 && (!GST_MEMORY_IS_ZERO_PADDED (minfo.memory)
+-          || (minfo.maxsize - minfo.size) < FF_INPUT_BUFFER_PADDING_SIZE)) {
++          || (minfo.maxsize - minfo.size) < AV_INPUT_BUFFER_PADDING_SIZE)) {
+     /* add padding */
+-    if (ffmpegdec->padded_size < bsize + FF_INPUT_BUFFER_PADDING_SIZE) {
+-      ffmpegdec->padded_size = bsize + FF_INPUT_BUFFER_PADDING_SIZE;
++    if (ffmpegdec->padded_size < bsize + AV_INPUT_BUFFER_PADDING_SIZE) {
++      ffmpegdec->padded_size = bsize + AV_INPUT_BUFFER_PADDING_SIZE;
+       ffmpegdec->padded = g_realloc (ffmpegdec->padded, ffmpegdec->padded_size);
+       GST_LOG_OBJECT (ffmpegdec, "resized padding buffer to %d",
+           ffmpegdec->padded_size);
+@@ -1826,7 +1823,7 @@ gst_ffmpegviddec_handle_frame (GstVideoDecoder * decoder,
+     GST_CAT_TRACE_OBJECT (CAT_PERFORMANCE, ffmpegdec,
+         "Copy input to add padding");
+     memcpy (ffmpegdec->padded, bdata, bsize);
+-    memset (ffmpegdec->padded + bsize, 0, FF_INPUT_BUFFER_PADDING_SIZE);
++    memset (ffmpegdec->padded + bsize, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+ 
+     bdata = ffmpegdec->padded;
+     do_padding = TRUE;
+@@ -1835,7 +1832,7 @@ gst_ffmpegviddec_handle_frame (GstVideoDecoder * decoder,
+   }
+ 
+   do {
+-    guint8 tmp_padding[FF_INPUT_BUFFER_PADDING_SIZE];
++    guint8 tmp_padding[AV_INPUT_BUFFER_PADDING_SIZE];
+ 
+     /* parse, if at all possible */
+     data = bdata;
+@@ -1845,8 +1842,8 @@ gst_ffmpegviddec_handle_frame (GstVideoDecoder * decoder,
+       /* add temporary padding */
+       GST_CAT_TRACE_OBJECT (CAT_PERFORMANCE, ffmpegdec,
+           "Add temporary input padding");
+-      memcpy (tmp_padding, data + size, FF_INPUT_BUFFER_PADDING_SIZE);
+-      memset (data + size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
++      memcpy (tmp_padding, data + size, AV_INPUT_BUFFER_PADDING_SIZE);
++      memset (data + size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+     }
+ 
+     /* decode a frame of audio/video now */
+@@ -1862,7 +1859,7 @@ gst_ffmpegviddec_handle_frame (GstVideoDecoder * decoder,
+     }
+ 
+     if (do_padding) {
+-      memcpy (data + size, tmp_padding, FF_INPUT_BUFFER_PADDING_SIZE);
++      memcpy (data + size, tmp_padding, AV_INPUT_BUFFER_PADDING_SIZE);
+     }
+ 
+     if (len == 0 && have_data == 0) {
+@@ -2143,7 +2140,7 @@ gst_ffmpegviddec_propose_allocation (GstVideoDecoder * decoder,
+   gst_allocation_params_init (&params);
+   params.flags = GST_MEMORY_FLAG_ZERO_PADDED;
+   params.align = DEFAULT_STRIDE_ALIGN;
+-  params.padding = FF_INPUT_BUFFER_PADDING_SIZE;
++  params.padding = AV_INPUT_BUFFER_PADDING_SIZE;
+   /* we would like to have some padding so that we don't have to
+    * memcpy. We don't suggest an allocator. */
+   gst_query_add_allocation_param (query, NULL, &params);
+diff --git a/ext/libav/gstavvidenc.c b/ext/libav/gstavvidenc.c
+index 36143f5..22e5cae 100644
+--- a/ext/libav/gstavvidenc.c
++++ b/ext/libav/gstavvidenc.c
+@@ -68,18 +68,19 @@ enum
+   PROP_CFG_BASE,
+ };
+ 
++#if 0
+ #define GST_TYPE_ME_METHOD (gst_ffmpegvidenc_me_method_get_type())
+ static GType
+ gst_ffmpegvidenc_me_method_get_type (void)
+ {
+   static GType ffmpegenc_me_method_type = 0;
+   static GEnumValue ffmpegenc_me_methods[] = {
+-    {ME_ZERO, "None (Very low quality)", "zero"},
+-    {ME_FULL, "Full (Slow, unmaintained)", "full"},
+-    {ME_LOG, "Logarithmic (Low quality, unmaintained)", "logarithmic"},
+-    {ME_PHODS, "phods (Low quality, unmaintained)", "phods"},
+-    {ME_EPZS, "EPZS (Best quality, Fast)", "epzs"},
+-    {ME_X1, "X1 (Experimental)", "x1"},
++    {FF_CMP_ZERO, "None (Very low quality)", "zero"},
++    {FF_CMP_FULL, "Full (Slow, unmaintained)", "full"},
++    {FF_CMP_LOG, "Logarithmic (Low quality, unmaintained)", "logarithmic"},
++    {FF_CMP_PHODS, "phods (Low quality, unmaintained)", "phods"},
++    {FF_CMP_EPZS, "EPZS (Best quality, Fast)", "epzs"},
++    {FF_CMP_X1, "X1 (Experimental)", "x1"},
+     {0, NULL, NULL},
+   };
+   if (!ffmpegenc_me_method_type) {
+@@ -88,6 +89,7 @@ gst_ffmpegvidenc_me_method_get_type (void)
+   }
+   return ffmpegenc_me_method_type;
+ }
++#endif
+ 
+ /* A number of function prototypes are given so we can refer to them later. */
+ static void gst_ffmpegvidenc_class_init (GstFFMpegVidEncClass * klass);
+@@ -201,10 +203,12 @@ gst_ffmpegvidenc_class_init (GstFFMpegVidEncClass * klass)
+       g_param_spec_int ("gop-size", "GOP Size",
+           "Number of frames within one GOP", 0, G_MAXINT,
+           DEFAULT_VIDEO_GOP_SIZE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
++#if 0
+   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_ME_METHOD,
+       g_param_spec_enum ("me-method", "ME Method", "Motion Estimation Method",
+-          GST_TYPE_ME_METHOD, ME_EPZS,
++          GST_TYPE_ME_METHOD, FF_CMP_EPZS,
+           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
++#endif
+ 
+   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_BUFSIZE,
+       g_param_spec_int ("buffer-size", "Buffer Size",
+@@ -216,7 +220,7 @@ gst_ffmpegvidenc_class_init (GstFFMpegVidEncClass * klass)
+           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+ 
+   caps = klass->in_plugin->capabilities;
+-  if (caps & (CODEC_CAP_FRAME_THREADS | CODEC_CAP_SLICE_THREADS)) {
++  if (caps & (AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_SLICE_THREADS)) {
+     g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_MAX_THREADS,
+         g_param_spec_int ("max-threads", "Maximum encode threads",
+             "Maximum number of worker threads to spawn. (0 = auto)",
+@@ -259,7 +263,7 @@ gst_ffmpegvidenc_init (GstFFMpegVidEnc * ffmpegenc)
+   ffmpegenc->file = NULL;
+ 
+   ffmpegenc->bitrate = DEFAULT_VIDEO_BITRATE;
+-  ffmpegenc->me_method = ME_EPZS;
++  //ffmpegenc->me_method = FF_CMP_EPZS;
+   ffmpegenc->buffer_size = 512 * 1024;
+   ffmpegenc->gop_size = DEFAULT_VIDEO_GOP_SIZE;
+   ffmpegenc->rtp_payload_size = 0;
+@@ -321,12 +325,12 @@ gst_ffmpegvidenc_set_format (GstVideoEncoder * encoder,
+   ffmpegenc->context->bit_rate = ffmpegenc->bitrate;
+   ffmpegenc->context->bit_rate_tolerance = ffmpegenc->bitrate;
+   ffmpegenc->context->gop_size = ffmpegenc->gop_size;
+-  ffmpegenc->context->me_method = ffmpegenc->me_method;
++  //ffmpegenc->context->me_method = ffmpegenc->me_method;
+   GST_DEBUG_OBJECT (ffmpegenc, "Setting avcontext to bitrate %d, gop_size %d",
+       ffmpegenc->bitrate, ffmpegenc->gop_size);
+ 
+   if (ffmpegenc->max_threads == 0) {
+-    if (!(oclass->in_plugin->capabilities & CODEC_CAP_AUTO_THREADS))
++    if (!(oclass->in_plugin->capabilities & AV_CODEC_CAP_AUTO_THREADS))
+       ffmpegenc->context->thread_count = gst_ffmpeg_auto_max_threads ();
+     else
+       ffmpegenc->context->thread_count = 0;
+@@ -343,16 +347,16 @@ gst_ffmpegvidenc_set_format (GstVideoEncoder * encoder,
+   gst_ffmpeg_cfg_fill_context (ffmpegenc, ffmpegenc->context);
+ 
+   /* then handle some special cases */
+-  ffmpegenc->context->lmin = (ffmpegenc->lmin * FF_QP2LAMBDA + 0.5);
+-  ffmpegenc->context->lmax = (ffmpegenc->lmax * FF_QP2LAMBDA + 0.5);
++  ffmpegenc->context->qmin = (ffmpegenc->lmin * FF_QP2LAMBDA + 0.5);
++  ffmpegenc->context->qmax = (ffmpegenc->lmax * FF_QP2LAMBDA + 0.5);
+ 
+   if (ffmpegenc->interlaced) {
+     ffmpegenc->context->flags |=
+-        CODEC_FLAG_INTERLACED_DCT | CODEC_FLAG_INTERLACED_ME;
++        AV_CODEC_FLAG_INTERLACED_DCT | AV_CODEC_FLAG_INTERLACED_ME;
+   }
+ 
+   /* some other defaults */
+-  ffmpegenc->context->rc_strategy = 2;
++  //ffmpegenc->context->rc_strategy = 2;
+   ffmpegenc->context->b_frame_strategy = 0;
+   ffmpegenc->context->coder_type = 0;
+   ffmpegenc->context->context_model = 0;
+@@ -362,18 +366,18 @@ gst_ffmpegvidenc_set_format (GstVideoEncoder * encoder,
+   ffmpegenc->context->flags |= ffmpegenc->pass;
+   switch (ffmpegenc->pass) {
+       /* some additional action depends on type of pass */
+-    case CODEC_FLAG_QSCALE:
++    case AV_CODEC_FLAG_QSCALE:
+       ffmpegenc->context->global_quality
+           = ffmpegenc->picture->quality = FF_QP2LAMBDA * ffmpegenc->quantizer;
+       break;
+-    case CODEC_FLAG_PASS1:     /* need to prepare a stats file */
++    case AV_CODEC_FLAG_PASS1:     /* need to prepare a stats file */
+       /* we don't close when changing caps, fingers crossed */
+       if (!ffmpegenc->file)
+         ffmpegenc->file = g_fopen (ffmpegenc->filename, "w");
+       if (!ffmpegenc->file)
+         goto open_file_err;
+       break;
+-    case CODEC_FLAG_PASS2:
++    case AV_CODEC_FLAG_PASS2:
+     {                           /* need to read the whole stats file ! */
+       gsize size;
+ 
+
+

@@ -1,0 +1,199 @@
+Patch has been taken from Arch Linux with some minor modifications for
+needed to build android-tools with musl libc.
+
+diff -upr core.orig/adb/client/usb_libusb.cpp core/adb/client/usb_libusb.cpp
+--- core.orig/adb/client/usb_libusb.cpp	2017-11-29 19:11:44.000000000 +0100
++++ core/adb/client/usb_libusb.cpp	2018-02-25 10:35:06.661418453 +0100
+@@ -21,6 +21,7 @@
+ #include <stdint.h>
+ 
+ #include <atomic>
++#include <condition_variable>
+ #include <chrono>
+ #include <memory>
+ #include <mutex>
+@@ -28,7 +29,7 @@
+ #include <thread>
+ #include <unordered_map>
+ 
+-#include <libusb/libusb.h>
++#include <libusb-1.0/libusb.h>
+ 
+ #include <android-base/file.h>
+ #include <android-base/logging.h>
+diff -upr core.orig/adb/diagnose_usb.cpp core/adb/diagnose_usb.cpp
+--- core.orig/adb/diagnose_usb.cpp	2017-11-29 19:11:44.000000000 +0100
++++ core/adb/diagnose_usb.cpp	2018-02-25 10:35:06.658085109 +0100
+@@ -45,9 +45,7 @@ static std::string GetUdevProblem() {
+         return "";
+     }
+ 
+-    // getgroups(2) indicates that the GNU group_member(3) may not check the egid so we check it
+-    // additionally just to be sure.
+-    if (group_member(plugdev_group->gr_gid) || getegid() == plugdev_group->gr_gid) {
++    if (getegid() == plugdev_group->gr_gid) {
+         // The user is in plugdev so the problem is likely with the udev rules.
+         return "user in plugdev group; are your udev rules wrong?";
+     }
+diff -upr core.orig/adb/sysdeps/posix/network.cpp core/adb/sysdeps/posix/network.cpp
+--- core.orig/adb/sysdeps/posix/network.cpp	2017-11-29 19:11:44.000000000 +0100
++++ core/adb/sysdeps/posix/network.cpp	2018-02-25 10:35:06.661418453 +0100
+@@ -21,6 +21,7 @@
+ #include <sys/socket.h>
+ 
+ #include <string>
++#include <string.h>
+ 
+ #include "adb_unique_fd.h"
+ 
+diff -upr core.orig/base/errors_unix.cpp core/base/errors_unix.cpp
+--- core.orig/base/errors_unix.cpp	2017-11-29 19:11:44.000000000 +0100
++++ core/base/errors_unix.cpp	2018-02-25 10:35:06.654751766 +0100
+@@ -17,6 +17,7 @@
+ #include "android-base/errors.h"
+ 
+ #include <errno.h>
++#include <string.h>
+ 
+ namespace android {
+ namespace base {
+diff -upr core.orig/base/file.cpp core/base/file.cpp
+--- core.orig/base/file.cpp	2017-11-29 19:11:44.000000000 +0100
++++ core/base/file.cpp	2018-02-25 10:35:06.654751766 +0100
+@@ -22,6 +22,7 @@
+ #include <sys/stat.h>
+ #include <sys/types.h>
+ #include <unistd.h>
++#include <string.h>
+ 
+ #include <memory>
+ #include <mutex>
+diff -upr core.orig/base/logging.cpp core/base/logging.cpp
+--- core.orig/base/logging.cpp	2017-11-29 19:11:44.000000000 +0100
++++ core/base/logging.cpp	2018-02-25 10:35:06.654751766 +0100
+@@ -23,6 +23,7 @@
+ #include <fcntl.h>
+ #include <libgen.h>
+ #include <time.h>
++#include <string.h>
+ 
+ // For getprogname(3) or program_invocation_short_name.
+ #if defined(__ANDROID__) || defined(__APPLE__)
+@@ -89,7 +90,7 @@ static thread_id GetThreadId() {
+ }
+ 
+ namespace {
+-#if defined(__GLIBC__)
++#if defined(__linux__)
+ const char* getprogname() {
+   return program_invocation_short_name;
+ }
+diff -upr core.orig/fastboot/fs.cpp core/fastboot/fs.cpp
+--- core.orig/fastboot/fs.cpp	2017-11-29 19:11:44.000000000 +0100
++++ core/fastboot/fs.cpp	2018-02-25 10:35:06.651418422 +0100
+@@ -108,7 +108,7 @@ static int generate_ext4_image(const cha
+     static constexpr int block_size = 4096;
+     const std::string exec_dir = android::base::GetExecutableDirectory();
+ 
+-    const std::string mke2fs_path = exec_dir + "/mke2fs";
++    const std::string mke2fs_path = exec_dir + "/mke2fs.android";
+     std::vector<const char*> mke2fs_args = {mke2fs_path.c_str(), "-t", "ext4", "-b"};
+ 
+     std::string block_size_str = std::to_string(block_size);
+diff -upr core.orig/fastboot/socket.cpp core/fastboot/socket.cpp
+--- core.orig/fastboot/socket.cpp	2017-11-29 19:11:44.000000000 +0100
++++ core/fastboot/socket.cpp	2018-02-25 10:35:06.651418422 +0100
+@@ -28,6 +28,8 @@
+ 
+ #include "socket.h"
+ 
++#include <sys/select.h>
++
+ #include <android-base/errors.h>
+ #include <android-base/stringprintf.h>
+ 
+diff -upr core.orig/libsparse/sparse_read.cpp core/libsparse/sparse_read.cpp
+--- core.orig/libsparse/sparse_read.cpp	2017-11-29 19:11:44.000000000 +0100
++++ core/libsparse/sparse_read.cpp	2018-02-25 10:35:06.621418331 +0100
+@@ -26,6 +26,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string>
++#include <string.h>
+ #include <unistd.h>
+ 
+ #include <sparse/sparse.h>
+diff -upr selinux.orig/libsepol/src/private.h selinux/libsepol/src/private.h
+--- selinux.orig/libsepol/src/private.h	2017-08-13 09:34:17.000000000 +0200
++++ selinux/libsepol/src/private.h	2018-02-25 10:36:31.765008355 +0100
+@@ -14,7 +14,7 @@
+ #endif
+ 
+ #include <errno.h>
+-#include <dso.h>
++#include "dso.h"
+ 
+ #ifdef __APPLE__
+ #define __BYTE_ORDER  BYTE_ORDER
+diff -upr selinux.orig/libsepol/src/util.c selinux/libsepol/src/util.c
+--- selinux.orig/libsepol/src/util.c	2017-08-13 09:34:17.000000000 +0200
++++ selinux/libsepol/src/util.c	2018-02-25 10:36:31.765008355 +0100
+@@ -27,7 +27,7 @@
+ #include <sepol/policydb/flask_types.h>
+ #include <sepol/policydb/policydb.h>
+ #include <sepol/policydb/util.h>
+-#include <dso.h>
++#include "dso.h"
+ 
+ struct val_to_name {
+ 	unsigned int val;
+diff -upr e2fsprogs.orig/contrib/android/perms.c e2fsprogs/contrib/android/perms.c
+--- e2fsprogs.orig/contrib/android/perms.c	2017-11-29 00:28:33.000000000 +0100
++++ e2fsprogs/contrib/android/perms.c	2018-02-25 10:37:13.048466147 +0100
+@@ -5,6 +5,7 @@
+ #include "support/nls-enable.h"
+ #include <time.h>
+ #include <sys/stat.h>
++#include "private/android_filesystem_capability.h"
+ 
+ #ifndef XATTR_SELINUX_SUFFIX
+ # define XATTR_SELINUX_SUFFIX  "selinux"
+diff -upr e2fsprogs.orig/lib/ext2fs/bitops.h e2fsprogs/lib/ext2fs/bitops.h
+--- e2fsprogs.orig/lib/ext2fs/bitops.h	2017-11-29 00:28:33.000000000 +0100
++++ e2fsprogs/lib/ext2fs/bitops.h	2018-02-25 10:37:13.028466087 +0100
+@@ -233,11 +233,11 @@ extern errcode_t ext2fs_find_first_set_g
+ #if (__STDC_VERSION__ >= 199901L)
+ #define _INLINE_ extern inline
+ #else
+-#define _INLINE_ inline
++#define _INLINE_ static inline
+ #endif
+ #else /* !INCLUDE_INLINE FUNCS */
+ #if (__STDC_VERSION__ >= 199901L)
+-#define _INLINE_ inline
++#define _INLINE_ static inline
+ #else /* not C99 */
+ #ifdef __GNUC__
+ #define _INLINE_ extern __inline__
+diff -upr e2fsprogs.orig/lib/ext2fs/ext2fs.h e2fsprogs/lib/ext2fs/ext2fs.h
+--- e2fsprogs.orig/lib/ext2fs/ext2fs.h	2017-11-29 00:28:33.000000000 +0100
++++ e2fsprogs/lib/ext2fs/ext2fs.h	2018-02-25 10:37:13.028466087 +0100
+@@ -53,9 +53,7 @@ extern "C" {
+  */
+ #define EXT2_LIB_CURRENT_REV	EXT2_DYNAMIC_REV
+ 
+-#ifdef HAVE_SYS_TYPES_H
+ #include <sys/types.h>
+-#endif
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+@@ -1736,7 +1734,7 @@ extern const struct ext2_inode *ext2fs_c
+ #define _INLINE_ extern
+ #else
+ #if (__STDC_VERSION__ >= 199901L)
+-#define _INLINE_ inline
++#define _INLINE_ static inline
+ #else
+ #ifdef __GNUC__
+ #define _INLINE_ extern __inline__

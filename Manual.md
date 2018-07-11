@@ -1275,7 +1275,7 @@ You can now make your own commits to the `forked` repository:
 To keep your forked repository always up to date, setup the `upstream` remote
 to pull in new changes:
 
-    $ git remote add upstream git://github.com/voidlinux/void-packages.git
+    $ git remote add upstream git://github.com/void-linux/void-packages.git
     $ git pull upstream master
 
 Once you've made changes to your `forked` repository you can submit

@@ -1,0 +1,157 @@
+From 7f6929b49c25ca475a08f87e8b52aa1642d109dd Mon Sep 17 00:00:00 2001
+From: Felix Matouschek <felix@matouschek.org>
+Date: Sat, 11 Nov 2017 10:13:06 +0100
+Subject: [PATCH] Make QtAV build with newer versions of FFmpeg
+
+Some defines changed their name in newer versions of FFmpeg, this
+patch uses preprocessor instructions in AVCompat.h to use the
+correct define names. Also filter names retrieved by
+'avfilter_get_by_name' should be used as const variables in
+libavfilter versions starting at 7.0.0.
+---
+ src/AVMuxer.cpp                          |  2 +-
+ src/QtAV/private/AVCompat.h              | 12 ++++++++++++
+ src/codec/audio/AudioEncoderFFmpeg.cpp   |  4 ++--
+ src/codec/video/VideoEncoderFFmpeg.cpp   |  2 +-
+ src/filter/LibAVFilter.cpp               |  8 +++++++-
+ src/subtitle/SubtitleProcessorFFmpeg.cpp |  2 +-
+ 6 files changed, 24 insertions(+), 6 deletions(-)
+
+diff --git a/src/AVMuxer.cpp b/src/AVMuxer.cpp
+index 2f0b40d05..d2eb3dde8 100644
+--- a/src/AVMuxer.cpp
++++ b/src/AVMuxer.cpp
+@@ -124,7 +124,7 @@ AVStream *AVMuxer::Private::addStream(AVFormatContext* ctx, const QString &codec
+     c->time_base = s->time_base;
+     /* Some formats want stream headers to be separate. */
+     if (ctx->oformat->flags & AVFMT_GLOBALHEADER)
+-        c->flags |= CODEC_FLAG_GLOBAL_HEADER;
++        c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+     // expose avctx to encoder and set properties in encoder?
+     // list codecs for a given format in ui
+     return s;
+diff --git a/src/QtAV/private/AVCompat.h b/src/QtAV/private/AVCompat.h
+index e387868a8..6c38596d1 100644
+--- a/src/QtAV/private/AVCompat.h
++++ b/src/QtAV/private/AVCompat.h
+@@ -456,3 +456,15 @@ const char *get_codec_long_name(AVCodecID id);
+      } } while(0)
+ 
+ #endif //QTAV_COMPAT_H
++
++#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(56,33,0)
++#define AV_CODEC_FLAG_GLOBAL_HEADER CODEC_FLAG_GLOBAL_HEADER
++#endif
++
++#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(56,56,100)
++#define AV_INPUT_BUFFER_MIN_SIZE FF_MIN_BUFFER_SIZE
++#endif
++
++#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(56,56,100)
++#define AV_INPUT_BUFFER_PADDING_SIZE FF_INPUT_BUFFER_PADDING_SIZE
++#endif
+diff --git a/src/codec/audio/AudioEncoderFFmpeg.cpp b/src/codec/audio/AudioEncoderFFmpeg.cpp
+index a74f4f31d..3811e11a6 100644
+--- a/src/codec/audio/AudioEncoderFFmpeg.cpp
++++ b/src/codec/audio/AudioEncoderFFmpeg.cpp
+@@ -151,8 +151,8 @@ bool AudioEncoderFFmpegPrivate::open()
+     } else {
+         buffer_size = frame_size*format_used.bytesPerSample()*format_used.channels()*2+200;
+     }
+-    if (buffer_size < FF_MIN_BUFFER_SIZE)
+-        buffer_size = FF_MIN_BUFFER_SIZE;
++    if (buffer_size < AV_INPUT_BUFFER_MIN_SIZE)
++        buffer_size = AV_INPUT_BUFFER_MIN_SIZE;
+     buffer.resize(buffer_size);
+     return true;
+ }
+diff --git a/src/codec/video/VideoEncoderFFmpeg.cpp b/src/codec/video/VideoEncoderFFmpeg.cpp
+index 7c5ed42d0..671efa7d3 100644
+--- a/src/codec/video/VideoEncoderFFmpeg.cpp
++++ b/src/codec/video/VideoEncoderFFmpeg.cpp
+@@ -245,7 +245,7 @@ bool VideoEncoderFFmpegPrivate::open()
+     applyOptionsForContext();
+     AV_ENSURE_OK(avcodec_open2(avctx, codec, &dict), false);
+     // from mpv ao_lavc
+-    const int buffer_size = qMax<int>(qMax<int>(width*height*6+200, FF_MIN_BUFFER_SIZE), sizeof(AVPicture));//??
++    const int buffer_size = qMax<int>(qMax<int>(width*height*6+200, AV_INPUT_BUFFER_MIN_SIZE), sizeof(AVPicture));//??
+     buffer.resize(buffer_size);
+     return true;
+ }
+diff --git a/src/filter/LibAVFilter.cpp b/src/filter/LibAVFilter.cpp
+index 191512040..8993a91f7 100644
+--- a/src/filter/LibAVFilter.cpp
++++ b/src/filter/LibAVFilter.cpp
+@@ -120,7 +120,10 @@ class LibAVFilter::Private
+         // pixel_aspect==sar, pixel_aspect is more compatible
+         QString buffersrc_args = args;
+         qDebug("buffersrc_args=%s", buffersrc_args.toUtf8().constData());
+-        AVFilter *buffersrc  = avfilter_get_by_name(video ? "buffer" : "abuffer");
++#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(7,0,0)
++        const
++#endif
++        AVFilter *buffersrc = avfilter_get_by_name(video ? "buffer" : "abuffer");
+         Q_ASSERT(buffersrc);
+         AV_ENSURE_OK(avfilter_graph_create_filter(&in_filter_ctx,
+                                                buffersrc,
+@@ -128,6 +131,9 @@ class LibAVFilter::Private
+                                                filter_graph)
+                      , false);
+         /* buffer video sink: to terminate the filter chain. */
++#if LIBAVFILTER_VERSION_INT >= AV_VERSION_INT(7,0,0)
++        const
++#endif
+         AVFilter *buffersink = avfilter_get_by_name(video ? "buffersink" : "abuffersink");
+         Q_ASSERT(buffersink);
+         AV_ENSURE_OK(avfilter_graph_create_filter(&out_filter_ctx, buffersink, "out",
+diff --git a/src/subtitle/SubtitleProcessorFFmpeg.cpp b/src/subtitle/SubtitleProcessorFFmpeg.cpp
+index 30ee9367c..1755c3816 100644
+--- a/src/subtitle/SubtitleProcessorFFmpeg.cpp
++++ b/src/subtitle/SubtitleProcessorFFmpeg.cpp
+@@ -249,7 +249,7 @@ bool SubtitleProcessorFFmpeg::processHeader(const QByteArray &codec, const QByte
+     codec_ctx->time_base.den = 1000;
+     if (!data.isEmpty()) {
+         av_free(codec_ctx->extradata);
+-        codec_ctx->extradata = (uint8_t*)av_mallocz(data.size() + FF_INPUT_BUFFER_PADDING_SIZE);
++        codec_ctx->extradata = (uint8_t*)av_mallocz(data.size() + AV_INPUT_BUFFER_PADDING_SIZE);
+         if (!codec_ctx->extradata)
+             return false;
+         codec_ctx->extradata_size = data.size();
+
+From 1633f2962e195eb2a013072e694a2e1c701613a8 Mon Sep 17 00:00:00 2001
+From: 0xFelix <evostar@gmx.de>
+Date: Tue, 12 Dec 2017 13:24:34 +0100
+Subject: [PATCH] Remove usage of deprecated avfiltergraph.h header
+
+avfiltergraph.h was replaced by avfilter.h in libavfilter version
+3.8.0+ so only include it when the used libavfilter version
+is older than 3.8.0
+---
+ src/QtAV/private/AVCompat.h | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/QtAV/private/AVCompat.h b/src/QtAV/private/AVCompat.h
+index 6c38596d1..944cfd7de 100644
+--- a/src/QtAV/private/AVCompat.h
++++ b/src/QtAV/private/AVCompat.h
+@@ -59,6 +59,7 @@ extern "C"
+ #include <libavutil/parseutils.h>
+ #include <libavutil/pixdesc.h>
+ #include <libavutil/avstring.h>
++#include <libavfilter/version.h>
+ 
+ #if !FFMPEG_MODULE_CHECK(LIBAVUTIL, 51, 73, 101)
+ #include <libavutil/channel_layout.h>
+@@ -79,8 +80,11 @@ extern "C"
+ #endif //QTAV_HAVE(AVRESAMPLE)
+ 
+ #if QTAV_HAVE(AVFILTER)
++#if LIBAVFILTER_VERSION_INT < AV_VERSION_INT(3,8,0)
+ #include <libavfilter/avfiltergraph.h> /*code is here for old version*/
++#else
+ #include <libavfilter/avfilter.h>
++#endif
+ #include <libavfilter/buffersink.h>
+ #include <libavfilter/buffersrc.h>
+ #endif //QTAV_HAVE(AVFILTER)
+

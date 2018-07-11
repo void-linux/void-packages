@@ -1,7 +1,7 @@
 #!/bin/sh
 
-TRAVIS_PROTO=http
-TRAVIS_MIRROR=198.204.250.219
+TRAVIS_PROTO=https
+TRAVIS_MIRROR=repo2.voidlinux.eu
 
 for _i in etc/repos-remote.conf etc/defaults.conf etc/repos-remote-x86_64.conf ; do
     printf '\x1b[32mUpdating %s...\x1b[0m\n' $_i
