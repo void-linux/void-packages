@@ -19,6 +19,7 @@ option(BUILD_TESTS "Build all available test suites" OFF)
 option(ENABLE_CRASH_REPORTS "Enable crash reports" ON)
 option(ENABLE_GTK_INTEGRATION "Enable GTK integration" ON)
 option(ENABLE_64BIT "Enable 64bit build" OFF)
+option(USE_LIBATOMIC "Link Statically against libatomic.a" OFF)
 
 find_package(LibLZMA REQUIRED)
 find_package(OpenAL REQUIRED)
@@ -168,6 +169,10 @@ else()
 		TDESKTOP_DISABLE_CRASH_REPORTS
 	)
 endif()
+
+if(USE_LIBATOMIC)
+	list(APPEND TELEGRAM_LINK_LIBRARIES libatomic.a)
+endif(USE_LIBATOMIC)
 
 if(ENABLE_GTK_INTEGRATION)
 	pkg_check_modules(APPINDICATOR REQUIRED appindicator3-0.1)
