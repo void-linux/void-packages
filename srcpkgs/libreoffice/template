@@ -2,7 +2,7 @@
 # Template file for 'libreoffice'
 pkgname=libreoffice
 version=6.0.4.2
-revision=1
+revision=2
 build_style=meta
 make_build_args="build-nocheck"
 nocross=yes
@@ -28,11 +28,14 @@ depends+=" libreoffice-common>=${version}_${revision}"
 depends+=" libreoffice-base>=${version}_${revision}"
 depends+=" libreoffice-calc>=${version}_${revision}"
 depends+=" libreoffice-draw>=${version}_${revision}"
+depends+=" libreoffice-fonts>=${version}_${revision}"
+depends+=" libreoffice-firebird>=${version}_${revision}"
 depends+=" libreoffice-gnome>=${version}_${revision}"
 depends+=" libreoffice-impress>=${version}_${revision}"
 depends+=" libreoffice-math>=${version}_${revision}"
 depends+=" libreoffice-postgresql>=${version}_${revision}"
 depends+=" libreoffice-writer>=${version}_${revision}"
+depends+=" libreoffice-xtensions>=${version}_${revision}"
 # Add the previously installed default languages as well
 depends+=" libreoffice-i18n-en-US>=${version}_${revision}"
 depends+=" libreoffice-i18n-de>=${version}_${revision}"
@@ -62,6 +65,8 @@ _baseurl="http://download.documentfoundation.org/${pkgname}/src/${version%.*}"
 _addurl="http://dev-www.libreoffice.org/src"
 _exturl="http://dev-www.libreoffice.org/extern"
 
+# Additional distfiles and checksums can be found in
+# the file 'download.lst' after configure was run.
 distfiles="
  ${_baseurl}/${pkgname}-${version}.tar.xz
  ${_baseurl}/${pkgname}-dictionaries-${version}.tar.xz
@@ -273,6 +278,8 @@ case "$XBPS_TARGET_MACHINE" in
 		;;
 esac
 
+CXXFLAGS+=" -DGLM_ENABLE_EXPERIMENTAL"
+
 # Move files listed in a <name>_list.txt into $PKGDESTDIR
 _split() {
 	local list file dir destdir
@@ -286,6 +293,13 @@ _split() {
 			mv ${destdir}/${file} ${PKGDESTDIR}/${dir}/
 		done
 	done
+	# Move appdata file, if any
+	file=usr/share/appdata/libreoffice-${1}.appdata.xml
+	if [ -f ${destdir}/${file} ]; then
+		dir="${file%/*}"
+		! [ -d "${PKGDESTDIR}/${dir}" ] && vmkdir "${dir}"
+		mv ${destdir}/${file} ${PKGDESTDIR}/${dir}/
+	fi
 }
 
 _languages=""
@@ -503,11 +517,10 @@ do_configure() {
 	opts+=" --with-tls=nss"
 	# xmlsec1-nss is missing, thus don't use system-xmlsec
 	opts+=" --without-system-xmlsec"
+	opts+=" --without-system-firebird"
 	opts+=" --without-system-libzmf"
 	opts+=" --without-system-libstaroffice"
 	opts+=" --without-system-mysql-cppconn"
-	# without firebird-sdbc (as it is not packaged correctly)
-	opts+=" --disable-firebird-sdbc"
 	opts+=" --without-system-libtommath"
 	opts+=" --without-system-jfreereport"
 	opts+=" --without-system-apache-commons"
@@ -532,7 +545,7 @@ do_build() {
 }
 
 do_install() {
-	make DESTDIR="${DESTDIR}/all" PREFIXDIR="/usr" distro-pack-install
+	make DESTDIR="${DESTDIR}/all" PREFIXDIR=/usr distro-pack-install
 
 	# Remove useless directory usr/lib32
 	rm -rf ${DESTDIR}/usr/lib32
@@ -570,6 +583,31 @@ libreoffice-draw_package() {
 	noverifyrdeps=yes
 	pkg_install() {
 		_split draw
+	}
+}
+
+libreoffice-firebird_package() {
+	short_desc+=" - Connector for Firebird SDBC"
+	noverifyrdeps=yes
+	pkg_install() {
+		vmkdir usr/lib/libreoffice/program
+		for f in libEngine12.so libfbclient.so.2 libfirebird_sdbclo.so; do
+			mv ${DESTDIR}/all/usr/lib/libreoffice/program/${f} \
+				${PKGDESTDIR}/usr/lib/libreoffice/program/
+		done
+		vmkdir usr/lib/libreoffice/share
+		mv ${DESTDIR}/all/usr/lib/libreoffice/share/firebird \
+			${PKGDESTDIR}/usr/lib/libreoffice/share/
+	}
+}
+
+libreoffice-fonts_package() {
+	short_desc+=" - Fonts"
+	noarch=yes
+	pkg_install() {
+		vmkdir usr/lib/libreoffice/share
+		mv ${DESTDIR}/all/usr/lib/libreoffice/share/fonts \
+			${PKGDESTDIR}/usr/lib/libreoffice/share/
 	}
 }
 
@@ -623,7 +661,24 @@ libreoffice-writer_package() {
 	noverifyrdeps=yes
 	pkg_install() {
 		_split writer
-		# Remove any remains from not packaged files
-		rm -rf ${DESTDIR}/all
+	}
+}
+
+# Use a name which makes this catch-all subpackage the last one
+libreoffice-xtensions_package() {
+	short_desc+=" - Extensions"
+	depends="libreoffice-common>=${version}_${revision}"
+	noverifyrdeps=yes
+	pkg_install() {
+		# Remove empty files
+		find ${DESTDIR}/all -size 0 -delete
+		# Remove useless files
+		for f in segments.gen segments_3 _0.cfs help.tree help.key_ help.db_; do
+			find ${DESTDIR}/all -name "${f}" -delete
+		done
+		# Move the remaining files to this subpackage
+		vmkdir usr
+		mv -v ${DESTDIR}/all/usr/* ${PKGDESTDIR}/usr/
+		rm -rvf ${DESTDIR}/all
 	}
 }
