@@ -63,7 +63,7 @@ update_check() {
                 rx=linux-'\K'${version%.*}'[\d.]+(?=\.tar\.xz)';;
             *cran.r-project.org/src/contrib*)
                 rx='\b\Q'"${pkgname#R-cran-}"'\E_\K\d+(\.\d+)*(-\d+)?(?=\.tar)';;
-            *download.kde.org/stable/applications*|*download.kde.org/stable/frameworks*)
+            *download.kde.org/stable/applications*|*download.kde.org/stable/frameworks*|*download.kde.org/stable/plasma*)
                 url="${url%%${version%.*}*}"
                 rx='href="\K[\d\.]+(?=/")';;
             esac
