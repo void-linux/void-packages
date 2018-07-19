@@ -1,0 +1,58 @@
+From 2278446e2b7cd33ad894b32e7eb63afc7db6c86e Mon Sep 17 00:00:00 2001
+From: Mathias Nyman <mathias.nyman@linux.intel.com>
+Date: Mon, 14 May 2018 11:57:23 +0300
+Subject: [PATCH] xhci: Fix USB3 NULL pointer dereference at logical
+ disconnect.
+
+Hub driver will try to disable a USB3 device twice at logical disconnect,
+racing with xhci_free_dev() callback from the first port disable.
+
+This can be triggered with "udisksctl power-off --block-device <disk>"
+or by writing "1" to the "remove" sysfs file for a USB3 device
+in 4.17-rc4.
+
+USB3 devices don't have a similar disabled link state as USB2 devices,
+and use a U3 suspended link state instead. In this state the port
+is still enabled and connected.
+
+hub_port_connect() first disconnects the device, then later it notices
+that device is still enabled (due to U3 states) it will try to disable
+the port again (set to U3).
+
+The xhci_free_dev() called during device disable is async, so checking
+for existing xhci->devs[i] when setting link state to U3 the second time
+was successful, even if device was being freed.
+
+The regression was caused by, and whole thing revealed by,
+Commit 44a182b9d177 ("xhci: Fix use-after-free in xhci_free_virt_device")
+which sets xhci->devs[i]->udev to NULL before xhci_virt_dev() returned.
+and causes a NULL pointer dereference the second time we try to set U3.
+
+Fix this by checking xhci->devs[i]->udev exists before setting link state.
+
+The original patch went to stable so this fix needs to be applied there as
+well.
+
+Fixes: 44a182b9d177 ("xhci: Fix use-after-free in xhci_free_virt_device")
+Cc: <stable@vger.kernel.org>
+Reported-by: Jordan Glover <Golden_Miller83@protonmail.ch>
+Tested-by: Jordan Glover <Golden_Miller83@protonmail.ch>
+Signed-off-by: Mathias Nyman <mathias.nyman@linux.intel.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/usb/host/xhci-hub.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/usb/host/xhci-hub.c b/drivers/usb/host/xhci-hub.c
+index 72ebbc908e19f..32cd52ca8318b 100644
+--- a/drivers/usb/host/xhci-hub.c
++++ b/drivers/usb/host/xhci-hub.c
+@@ -354,7 +354,7 @@ int xhci_find_slot_id_by_port(struct usb_hcd *hcd, struct xhci_hcd *xhci,
+ 
+ 	slot_id = 0;
+ 	for (i = 0; i < MAX_HC_SLOTS; i++) {
+-		if (!xhci->devs[i])
++		if (!xhci->devs[i] || !xhci->devs[i]->udev)
+ 			continue;
+ 		speed = xhci->devs[i]->udev->speed;
+ 		if (((speed >= USB_SPEED_SUPER) == (hcd->speed >= HCD_USB3))
