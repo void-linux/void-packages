@@ -1,0 +1,7 @@
+# Cross build profile for powerpc64 GNU.
+
+XBPS_TARGET_MACHINE="ppc64"
+XBPS_CROSS_TRIPLET="powerpc64-linux-gnu"
+XBPS_CROSS_CFLAGS="-mcpu=powerpc64"
+XBPS_CROSS_CXXFLAGS="$XBPS_CROSS_CFLAGS"
+XBPS_CROSS_FFLAGS=""
