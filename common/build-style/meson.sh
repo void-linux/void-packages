@@ -8,10 +8,23 @@ do_configure() {
 
 	if [ "$CROSS_BUILD" ]; then
 		_MESON_TARGET_ENDIAN=little
-		_MESON_TARGET_CPU=${XBPS_TARGET_MACHINE}
+		# drop the -musl suffix to the target cpu, meson doesn't recognize it
+		_MESON_TARGET_CPU=${XBPS_TARGET_MACHINE/-musl/}
 		case "$XBPS_TARGET_MACHINE" in
 			mips|mips-musl|mipshf-musl)
 				_MESON_TARGET_ENDIAN=big
+				_MESON_CPU_FAMILY=mips
+				;;
+			armv*)
+				_MESON_CPU_FAMILY=arm
+				;;
+			i686*)
+				_MESON_CPU_FAMILY=x86
+				;;
+			*)
+				# if we reached here that means that the cpu and cpu_family
+				# are the same like 'x86_64' and 'aarch64'
+				_MESON_CPU_FAMILY=${_MESON_TARGET_CPU}
 				;;
 		esac
 
@@ -37,13 +50,7 @@ cpp_link_args = ['$(echo ${LDFLAGS} | sed -r "s/\s+/','/g")']
 
 [host_machine]
 system = 'linux'
-cpu_family = '${XBPS_MACHINE}'
-cpu = '${XBPS_MACHINE}'
-endian = 'little'
-
-[target_machine]
-system = 'linux'
-cpu_family = '${_MESON_TARGET_CPU}'
+cpu_family = '${_MESON_CPU_FAMILY}'
 cpu = '${_MESON_TARGET_CPU}'
 endian = '${_MESON_TARGET_ENDIAN}'
 EOF
