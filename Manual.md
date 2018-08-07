@@ -245,11 +245,13 @@ The following functions are defined by `xbps-src` and can be used on any templat
 - *vman()* `vman <file> [<name>]`
 
 	Installs `file` as a man page. `vman()` parses the name and
-	determines the section as well as localization. Example mappings:
+	determines the section as well as localization. Also transparently
+	converts gzipped (.gz) manpages into plaintext. Example mappings:
 
 	`foo.1` -> `${DESTDIR}/usr/share/man/man1/foo.1`
 	`foo.fr.1` -> `${DESTDIR}/usr/share/man/fr/man1/foo.1`
 	`foo.1p` -> `${DESTDIR}/usr/share/man/man1/foo.1p`
+	`foo.1.gz` -> `${DESTDIR}/usr/share/man/man1/foo.1`
 
 - *vdoc()* `vdoc <file> [<name>]`
 
