@@ -1,72 +1,348 @@
-From 302434688d925134065498b4a5574f6ee6bfb9fd Mon Sep 17 00:00:00 2001
+From 2f498f3d140ab5152bd784df2be7af7d9c5e63ed Mon Sep 17 00:00:00 2001
 From: Florian Weimer <fweimer@redhat.com>
-Date: Thu, 10 Aug 2017 09:10:36 +0200
-Subject: [PATCH 06] nss: Call __resolv_context_put before early return in
- get*_r [BZ #21932]
+Date: Tue, 14 Aug 2018 10:57:48 +0200
+Subject: [PATCH 06] nss_files: Fix file stream leak in aliases lookup [BZ
+ #23521]
 
-This corrects an oversight introduced in commit
-352f4ff9a268b81ef5d4b2413f582565806e4790 (resolv: Introduce struct
-resolv_context).
+In order to get a clean test case, it was necessary to fix partially
+fixed bug 23522 as well.
 
-(cherry picked from commit 3016149819268b14660f791b971910ccc2cc13e5)
+(cherry picked from commit e95c6f61920a0f9237cfb292fa44ad500e1df09b)
 ---
- ChangeLog         |  6 ++++++
- NEWS              |  1 +
- nss/getXXbyYY_r.c | 10 +++++++++-
- 3 files changed, 16 insertions(+), 1 deletion(-)
+ ChangeLog                      |  13 ++
+ NEWS                           |   1 +
+ nss/Makefile                   |   3 +
+ nss/nss_files/files-alias.c    |   9 ++
+ nss/tst-nss-files-alias-leak.c | 237 +++++++++++++++++++++++++++++++++
+ 5 files changed, 263 insertions(+)
+ create mode 100644 nss/tst-nss-files-alias-leak.c
 
 diff --git a/ChangeLog b/ChangeLog
-index 459062cc20..3127648626 100644
+index 0cbfb504f4..d900e1eba1 100644
 --- a/ChangeLog
 +++ b/ChangeLog
-@@ -1,3 +1,9 @@
-+2017-08-09  Florian Weimer  <fweimer@redhat.com>
+@@ -1,3 +1,16 @@
++2018-08-14  Florian Weimer  <fweimer@redhat.com>
 +
-+	[BZ #21932]
-+	* nss/getXXbyYY_r.c (REENTRANT_NAME): Call __resolv_context_put
-+	before early return.
++	[BZ #23521]
++	[BZ #23522]
++	* nss/nss_files/files-alias.c (get_next_alias): During :include:
++	processing, bail out if no room, and close the stream before
++	returning ERANGE.
++	* nss/Makefile (tests): Add tst-nss-files-alias-leak.
++	(tst-nss-files-alias-leak): Link with libdl.
++	(tst-nss-files-alias-leak.out): Depend on nss_files.
 +
- 2017-08-09  Adhemerval Zanella  <adhemerval.zanella@linaro.org>
++	* nss/tst-nss-files-alias-leak.c: New file.
++
+ 2018-08-14  Florian Weimer  <fweimer@redhat.com>
  
- 	[BZ #21780]
+ 	* nscd/nscd_conf.c (nscd_parse_file): Deallocate old storage for
 diff --git a/NEWS b/NEWS
-index 9a64579658..ec6cf34122 100644
+index b733755ff6..873cf8f64f 100644
 --- a/NEWS
 +++ b/NEWS
-@@ -10,6 +10,7 @@ Version 2.26.1
+@@ -10,6 +10,7 @@ Version 2.28.1
  The following bugs are resolved with this release:
  
-   [21885] getaddrinfo: Release resolver context on error in gethosts
-+  [21932] Unpaired __resolv_context_get in generic get*_r implementation
+   [23497] readdir64@GLIBC_2.1 cannot parse the kernel directory stream
++  [23521] nss_files aliases database file stream leak
+ 
  
- Version 2.26
+ Version 2.28
+diff --git a/nss/Makefile b/nss/Makefile
+index 66fac7f5b8..5209fc0456 100644
+--- a/nss/Makefile
++++ b/nss/Makefile
+@@ -65,6 +65,7 @@ ifeq (yes,$(build-shared))
+ tests += tst-nss-files-hosts-erange
+ tests += tst-nss-files-hosts-multi
+ tests += tst-nss-files-hosts-getent
++tests += tst-nss-files-alias-leak
+ endif
  
-diff --git a/nss/getXXbyYY_r.c b/nss/getXXbyYY_r.c
-index 6c547ea1ca..bce80e05dd 100644
---- a/nss/getXXbyYY_r.c
-+++ b/nss/getXXbyYY_r.c
-@@ -234,6 +234,9 @@ INTERNAL (REENTRANT_NAME) (ADD_PARAMS, LOOKUP_TYPE *resbuf, char *buffer,
- 				      H_ERRNO_VAR_P))
-     {
-     case -1:
-+# ifdef NEED__RES
-+      __resolv_context_put (res_ctx);
-+# endif
-       return errno;
-     case 1:
- #ifdef NEED_H_ERRNO
-@@ -253,7 +256,12 @@ INTERNAL (REENTRANT_NAME) (ADD_PARAMS, LOOKUP_TYPE *resbuf, char *buffer,
-       nscd_status = NSCD_NAME (ADD_VARIABLES, resbuf, buffer, buflen, result
- 			       H_ERRNO_VAR);
-       if (nscd_status >= 0)
--	return nscd_status;
-+	{
-+# ifdef NEED__RES
-+	  __resolv_context_put (res_ctx);
-+# endif
-+	  return nscd_status;
-+	}
-     }
- #endif
+ # If we have a thread library then we can test cancellation against
+@@ -171,3 +172,5 @@ endif
+ $(objpfx)tst-nss-files-hosts-erange: $(libdl)
+ $(objpfx)tst-nss-files-hosts-multi: $(libdl)
+ $(objpfx)tst-nss-files-hosts-getent: $(libdl)
++$(objpfx)tst-nss-files-alias-leak: $(libdl)
++$(objpfx)tst-nss-files-alias-leak.out: $(objpfx)/libnss_files.so
+diff --git a/nss/nss_files/files-alias.c b/nss/nss_files/files-alias.c
+index cfd34b66b9..35b0bfc5d2 100644
+--- a/nss/nss_files/files-alias.c
++++ b/nss/nss_files/files-alias.c
+@@ -221,6 +221,13 @@ get_next_alias (FILE *stream, const char *match, struct aliasent *result,
+ 			{
+ 			  while (! feof_unlocked (listfile))
+ 			    {
++			      if (room_left < 2)
++				{
++				  free (old_line);
++				  fclose (listfile);
++				  goto no_more_room;
++				}
++
+ 			      first_unused[room_left - 1] = '\xff';
+ 			      line = fgets_unlocked (first_unused, room_left,
+ 						     listfile);
+@@ -229,6 +236,7 @@ get_next_alias (FILE *stream, const char *match, struct aliasent *result,
+ 			      if (first_unused[room_left - 1] != '\xff')
+ 				{
+ 				  free (old_line);
++				  fclose (listfile);
+ 				  goto no_more_room;
+ 				}
  
+@@ -256,6 +264,7 @@ get_next_alias (FILE *stream, const char *match, struct aliasent *result,
+ 						       + __alignof__ (char *)))
+ 					{
+ 					  free (old_line);
++					  fclose (listfile);
+ 					  goto no_more_room;
+ 					}
+ 				      room_left -= ((first_unused - cp)
+diff --git a/nss/tst-nss-files-alias-leak.c b/nss/tst-nss-files-alias-leak.c
+new file mode 100644
+index 0000000000..26d38e2dba
+--- /dev/null
++++ b/nss/tst-nss-files-alias-leak.c
+@@ -0,0 +1,237 @@
++/* Check for file descriptor leak in alias :include: processing (bug 23521).
++   Copyright (C) 2018 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#include <aliases.h>
++#include <array_length.h>
++#include <dlfcn.h>
++#include <errno.h>
++#include <gnu/lib-names.h>
++#include <nss.h>
++#include <stdlib.h>
++#include <string.h>
++#include <support/check.h>
++#include <support/namespace.h>
++#include <support/support.h>
++#include <support/temp_file.h>
++#include <support/test-driver.h>
++#include <support/xstdio.h>
++#include <support/xunistd.h>
++
++static struct support_chroot *chroot_env;
++
++/* Number of the aliases for the "many" user.  This must be large
++   enough to trigger reallocation for the pointer array, but result in
++   answers below the maximum size tried in do_test.  */
++enum { many_aliases = 30 };
++
++static void
++prepare (int argc, char **argv)
++{
++  chroot_env = support_chroot_create
++    ((struct support_chroot_configuration) { } );
++
++  char *path = xasprintf ("%s/etc/aliases", chroot_env->path_chroot);
++  add_temp_file (path);
++  support_write_file_string
++    (path,
++     "user1: :include:/etc/aliases.user1\n"
++     "user2: :include:/etc/aliases.user2\n"
++     "comment: comment1, :include:/etc/aliases.comment\n"
++     "many: :include:/etc/aliases.many\n");
++  free (path);
++
++  path = xasprintf ("%s/etc/aliases.user1", chroot_env->path_chroot);
++  add_temp_file (path);
++  support_write_file_string (path, "alias1\n");
++  free (path);
++
++  path = xasprintf ("%s/etc/aliases.user2", chroot_env->path_chroot);
++  add_temp_file (path);
++  support_write_file_string (path, "alias1a, alias2\n");
++  free (path);
++
++  path = xasprintf ("%s/etc/aliases.comment", chroot_env->path_chroot);
++  add_temp_file (path);
++  support_write_file_string
++    (path,
++     /* The line must be longer than the line with the :include:
++        directive in /etc/aliases.  */
++     "# Long line.  ##############################################\n"
++     "comment2\n");
++  free (path);
++
++  path = xasprintf ("%s/etc/aliases.many", chroot_env->path_chroot);
++  add_temp_file (path);
++  FILE *fp = xfopen (path, "w");
++  for (int i = 0; i < many_aliases; ++i)
++    fprintf (fp, "a%d\n", i);
++  TEST_VERIFY_EXIT (! ferror (fp));
++  xfclose (fp);
++  free (path);
++}
++
++/* The names of the users to test.  */
++static const char *users[] = { "user1", "user2", "comment", "many" };
++
++static void
++check_aliases (int id, const struct aliasent *e)
++{
++  TEST_VERIFY_EXIT (id >= 0 || id < array_length (users));
++  const char *name = users[id];
++  TEST_COMPARE_BLOB (e->alias_name, strlen (e->alias_name),
++                     name, strlen (name));
++
++  switch (id)
++    {
++    case 0:
++      TEST_COMPARE (e->alias_members_len, 1);
++      TEST_COMPARE_BLOB (e->alias_members[0], strlen (e->alias_members[0]),
++                         "alias1", strlen ("alias1"));
++      break;
++
++    case 1:
++      TEST_COMPARE (e->alias_members_len, 2);
++      TEST_COMPARE_BLOB (e->alias_members[0], strlen (e->alias_members[0]),
++                         "alias1a", strlen ("alias1a"));
++      TEST_COMPARE_BLOB (e->alias_members[1], strlen (e->alias_members[1]),
++                         "alias2", strlen ("alias2"));
++      break;
++
++    case 2:
++      TEST_COMPARE (e->alias_members_len, 2);
++      TEST_COMPARE_BLOB (e->alias_members[0], strlen (e->alias_members[0]),
++                         "comment1", strlen ("comment1"));
++      TEST_COMPARE_BLOB (e->alias_members[1], strlen (e->alias_members[1]),
++                         "comment2", strlen ("comment2"));
++      break;
++
++    case 3:
++      TEST_COMPARE (e->alias_members_len, many_aliases);
++      for (int i = 0; i < e->alias_members_len; ++i)
++        {
++          char alias[30];
++          int len = snprintf (alias, sizeof (alias), "a%d", i);
++          TEST_VERIFY_EXIT (len > 0);
++          TEST_COMPARE_BLOB (e->alias_members[i], strlen (e->alias_members[i]),
++                             alias, len);
++        }
++      break;
++    }
++}
++
++static int
++do_test (void)
++{
++  /* Make sure we don't try to load the module in the chroot.  */
++  if (dlopen (LIBNSS_FILES_SO, RTLD_NOW) == NULL)
++    FAIL_EXIT1 ("could not load " LIBNSS_FILES_SO ": %s", dlerror ());
++
++  /* Some of these descriptors will become unavailable if there is a
++     file descriptor leak.  10 is chosen somewhat arbitrarily.  The
++     array must be longer than the number of files opened by nss_files
++     at the same time (currently that number is 2).  */
++  int next_descriptors[10];
++  for (size_t i = 0; i < array_length (next_descriptors); ++i)
++    {
++      next_descriptors[i] = dup (0);
++      TEST_VERIFY_EXIT (next_descriptors[i] > 0);
++    }
++  for (size_t i = 0; i < array_length (next_descriptors); ++i)
++    xclose (next_descriptors[i]);
++
++  support_become_root ();
++  if (!support_can_chroot ())
++    return EXIT_UNSUPPORTED;
++
++  __nss_configure_lookup ("aliases", "files");
++
++  xchroot (chroot_env->path_chroot);
++
++  /* Attempt various buffer sizes.  If the operation succeeds, we
++     expect correct data.  */
++  for (int id = 0; id < array_length (users); ++id)
++    {
++      bool found = false;
++      for (size_t size = 1; size <= 1000; ++size)
++        {
++          void *buffer = malloc (size);
++          struct aliasent result;
++          struct aliasent *res;
++          errno = EINVAL;
++          int ret = getaliasbyname_r (users[id], &result, buffer, size, &res);
++          if (ret == 0)
++            {
++              if (res != NULL)
++                {
++                  found = true;
++                  check_aliases (id, res);
++                }
++              else
++                {
++                  support_record_failure ();
++                  printf ("error: failed lookup for user \"%s\", size %zu\n",
++                          users[id], size);
++                }
++            }
++          else if (ret != ERANGE)
++            {
++              support_record_failure ();
++              printf ("error: invalid return code %d (user \%s\", size %zu)\n",
++                      ret, users[id], size);
++            }
++          free (buffer);
++
++          /* Make sure that we did not have a file descriptor leak.  */
++          for (size_t i = 0; i < array_length (next_descriptors); ++i)
++            {
++              int new_fd = dup (0);
++              if (new_fd != next_descriptors[i])
++                {
++                  support_record_failure ();
++                  printf ("error: descriptor %d at index %zu leaked"
++                          " (user \"%s\", size %zu)\n",
++                          next_descriptors[i], i, users[id], size);
++
++                  /* Close unexpected descriptor, the leak probing
++                     descriptors, and the leaked descriptor
++                     next_descriptors[i].  */
++                  xclose (new_fd);
++                  for (size_t j = 0; j <= i; ++j)
++                    xclose (next_descriptors[j]);
++                  goto next_size;
++                }
++            }
++          for (size_t i = 0; i < array_length (next_descriptors); ++i)
++            xclose (next_descriptors[i]);
++
++        next_size:
++          ;
++        }
++      if (!found)
++        {
++          support_record_failure ();
++          printf ("error: user %s not found\n", users[id]);
++        }
++    }
++
++  support_chroot_free (chroot_env);
++  return 0;
++}
++
++#define PREPARE prepare
++#include <support/test-driver.c>
 
