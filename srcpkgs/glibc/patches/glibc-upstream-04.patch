@@ -1,92 +1,45 @@
-From 799859f6635d68487ea2472bd79d96a7639a1ab1 Mon Sep 17 00:00:00 2001
-From: "H.J. Lu" <hjl.tools@gmail.com>
-Date: Sun, 6 Aug 2017 10:44:30 -0700
-Subject: [PATCH 04] x86-64: Use _dl_runtime_resolve_opt only with AVX512F
- [BZ #21871]
+From d05b05d1570ba3ae354a2f5a3cfeefb373b09979 Mon Sep 17 00:00:00 2001
+From: Florian Weimer <fweimer@redhat.com>
+Date: Mon, 13 Aug 2018 14:28:07 +0200
+Subject: [PATCH 04] error, error_at_line: Add missing va_end calls
 
-On AVX machines with XGETBV (ECX == 1) like Skylake processors,
-
-(gdb) disass _dl_runtime_resolve_avx_opt
-Dump of assembler code for function _dl_runtime_resolve_avx_opt:
-   0x0000000000015890 <+0>:	push   %rax
-   0x0000000000015891 <+1>:	push   %rcx
-   0x0000000000015892 <+2>:	push   %rdx
-   0x0000000000015893 <+3>:	mov    $0x1,%ecx
-   0x0000000000015898 <+8>:	xgetbv
-   0x000000000001589b <+11>:	mov    %eax,%r11d
-   0x000000000001589e <+14>:	pop    %rdx
-   0x000000000001589f <+15>:	pop    %rcx
-   0x00000000000158a0 <+16>:	pop    %rax
-   0x00000000000158a1 <+17>:	and    $0x4,%r11d
-   0x00000000000158a5 <+21>:	bnd je 0x16200 <_dl_runtime_resolve_sse_vex>
-End of assembler dump.
-
-is slower than:
-
-(gdb) disass _dl_runtime_resolve_avx_slow
-Dump of assembler code for function _dl_runtime_resolve_avx_slow:
-   0x0000000000015850 <+0>:	vorpd  %ymm0,%ymm1,%ymm8
-   0x0000000000015854 <+4>:	vorpd  %ymm2,%ymm3,%ymm9
-   0x0000000000015858 <+8>:	vorpd  %ymm4,%ymm5,%ymm10
-   0x000000000001585c <+12>:	vorpd  %ymm6,%ymm7,%ymm11
-   0x0000000000015860 <+16>:	vorpd  %ymm8,%ymm9,%ymm9
-   0x0000000000015865 <+21>:	vorpd  %ymm10,%ymm11,%ymm10
-   0x000000000001586a <+26>:	vpcmpeqd %xmm8,%xmm8,%xmm8
-   0x000000000001586f <+31>:	vorpd  %ymm9,%ymm10,%ymm10
-   0x0000000000015874 <+36>:	vptest %ymm10,%ymm8
-   0x0000000000015879 <+41>:	bnd jae 0x158b0 <_dl_runtime_resolve_avx>
-   0x000000000001587c <+44>:	vzeroupper
-   0x000000000001587f <+47>:	bnd jmpq 0x16200 <_dl_runtime_resolve_sse_vex>
-End of assembler dump.
-(gdb)
-
-since xgetbv takes much more cycles than single cycle operations like
-vpord/vvpcmpeq/ptest.  _dl_runtime_resolve_opt should be used only with
-AVX512 where AVX512 instructions lead to lower CPU frequency on Skylake
-server.
-
-	[BZ #21871]
-	* sysdeps/x86/cpu-features.c (init_cpu_features): Set
-	bit_arch_Use_dl_runtime_resolve_opt only with AVX512F.
-
-(cherry picked from commit d2cf37c0a2a375cf2fde69f1afbcc49e45368fc4)
+(cherry picked from commit b7b52b9dec337a08a89bc67638773be652eba332)
 ---
- ChangeLog                  | 6 ++++++
- sysdeps/x86/cpu-features.c | 7 +++++--
- 2 files changed, 11 insertions(+), 2 deletions(-)
+ ChangeLog    | 5 +++++
+ misc/error.c | 2 ++
+ 2 files changed, 7 insertions(+)
 
 diff --git a/ChangeLog b/ChangeLog
-index 4357ad1eb8..764c827161 100644
+index f32ed3e74c..cc918e96a3 100644
 --- a/ChangeLog
 +++ b/ChangeLog
-@@ -1,3 +1,9 @@
-+2017-08-06  H.J. Lu  <hongjiu.lu@intel.com>
+@@ -1,3 +1,8 @@
++2018-08-13  Florian Weimer  <fweimer@redhat.com>
 +
-+	[BZ #21871]
-+	* sysdeps/x86/cpu-features.c (init_cpu_features): Set
-+	bit_arch_Use_dl_runtime_resolve_opt only with AVX512F.
++	* misc/error.c (error): Add missing va_end call.
++	(error_at_line): Likewise.
 +
- 2017-08-03  Aurelien Jarno  <aurelien@aurel32.net>
+ 2018-08-10  Florian Weimer  <fweimer@redhat.com>
  
- 	* stdlib/getentropy.c (getentropy): Change return type to int.
-diff --git a/sysdeps/x86/cpu-features.c b/sysdeps/x86/cpu-features.c
-index 1d087ea732..6f900840d4 100644
---- a/sysdeps/x86/cpu-features.c
-+++ b/sysdeps/x86/cpu-features.c
-@@ -244,10 +244,13 @@ init_cpu_features (struct cpu_features *cpu_features)
- 	  |= bit_arch_Prefer_No_AVX512;
+ 	[BZ #23497]
+diff --git a/misc/error.c b/misc/error.c
+index b4e8b6c938..03378e2f2a 100644
+--- a/misc/error.c
++++ b/misc/error.c
+@@ -319,6 +319,7 @@ error (int status, int errnum, const char *message, ...)
  
-       /* To avoid SSE transition penalty, use _dl_runtime_resolve_slow.
--         If XGETBV suports ECX == 1, use _dl_runtime_resolve_opt.  */
-+         If XGETBV suports ECX == 1, use _dl_runtime_resolve_opt.
-+	 Use _dl_runtime_resolve_opt only with AVX512F since it is
-+	 slower than _dl_runtime_resolve_slow with AVX.  */
-       cpu_features->feature[index_arch_Use_dl_runtime_resolve_slow]
- 	|= bit_arch_Use_dl_runtime_resolve_slow;
--      if (cpu_features->max_cpuid >= 0xd)
-+      if (CPU_FEATURES_ARCH_P (cpu_features, AVX512F_Usable)
-+	  && cpu_features->max_cpuid >= 0xd)
- 	{
- 	  unsigned int eax;
+   va_start (args, message);
+   error_tail (status, errnum, message, args);
++  va_end (args);
  
+ #ifdef _LIBC
+   _IO_funlockfile (stderr);
+@@ -390,6 +391,7 @@ error_at_line (int status, int errnum, const char *file_name,
+ 
+   va_start (args, message);
+   error_tail (status, errnum, message, args);
++  va_end (args);
+ 
+ #ifdef _LIBC
+   _IO_funlockfile (stderr);
 

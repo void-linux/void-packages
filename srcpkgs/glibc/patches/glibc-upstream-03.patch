@@ -1,45 +1,299 @@
-From a4e5aa1a443cfad09bc98f9bb527995371a53a88 Mon Sep 17 00:00:00 2001
-From: Aurelien Jarno <aurelien@aurel32.net>
-Date: Thu, 3 Aug 2017 22:35:48 +0000
-Subject: [PATCH 03] Fix the return type of the getentropy stub
+From 4b25485f03158959cff45379eecc1d73c7dcdd11 Mon Sep 17 00:00:00 2001
+From: Florian Weimer <fweimer@redhat.com>
+Date: Fri, 10 Aug 2018 11:19:26 +0200
+Subject: [PATCH 03] Linux: Rewrite __old_getdents64 [BZ #23497]
 
-The return type of the getentropy stub is wrongly defined as ssize_t,
-while both the <sys/random.h> header and the Linux implementation
-define it as int. This patch fixes that.
+Commit 298d0e3129c0b5137f4989275b13fe30d0733c4d ("Consolidate Linux
+getdents{64} implementation") broke the implementation because it does
+not take into account struct offset differences.
 
-Changelog:
-	* stdlib/getentropy.c (getentropy): Change return type to int.
-(cherry picked from commit 2b34e2716f1e84b2c3457ffc868c3dc775b55845)
+The new implementation is close to the old one, before the
+consolidation, but has been cleaned up slightly.
+
+(cherry picked from commit 690652882b499defb3d950dfeff8fe421d13cab5)
 ---
- ChangeLog           | 4 ++++
- stdlib/getentropy.c | 2 +-
- 2 files changed, 5 insertions(+), 1 deletion(-)
+ ChangeLog                                     |  11 ++
+ NEWS                                          |   7 ++
+ sysdeps/unix/sysv/linux/Makefile              |   1 +
+ sysdeps/unix/sysv/linux/getdents64.c          |  89 ++++++++++----
+ .../unix/sysv/linux/tst-readdir64-compat.c    | 111 ++++++++++++++++++
+ 5 files changed, 194 insertions(+), 25 deletions(-)
+ create mode 100644 sysdeps/unix/sysv/linux/tst-readdir64-compat.c
 
 diff --git a/ChangeLog b/ChangeLog
-index 3478699b10..4357ad1eb8 100644
+index dbcc56667b..f32ed3e74c 100644
 --- a/ChangeLog
 +++ b/ChangeLog
-@@ -1,5 +1,9 @@
- 2017-08-03  Aurelien Jarno  <aurelien@aurel32.net>
- 
-+	* stdlib/getentropy.c (getentropy): Change return type to int.
+@@ -1,3 +1,14 @@
++2018-08-10  Florian Weimer  <fweimer@redhat.com>
 +
-+2017-08-03  Aurelien Jarno  <aurelien@aurel32.net>
++	[BZ #23497]
++	* sysdeps/unix/sysv/linux/getdents64.c (handle_overflow): New
++	function.
++	(__old_getdents64): Use getdents64.  Convert entries without
++	moving them.
++	* sysdeps/unix/sysv/linux/tst-readdir64-compat.c: New file.
++	* sysdeps/unix/sysv/linux/Makefile (tests-internal): Add
++	tst-readdir64-compat.
 +
- 	* sysdeps/i386/i686/fpu/multiarch/libm-test-ulps: Regenerated.
+ 2018-08-08  Samuel Thibault  <samuel.thibault@ens-lyon.org>
  
- 2017-08-03  Florian Weimer  <fweimer@redhat.com>
-diff --git a/stdlib/getentropy.c b/stdlib/getentropy.c
-index a71d4cd8f5..a88bbf8de3 100644
---- a/stdlib/getentropy.c
-+++ b/stdlib/getentropy.c
-@@ -21,7 +21,7 @@
+ 	* htl/Versions (__pthread_getspecific, __pthread_setspecific): Add
+diff --git a/NEWS b/NEWS
+index 154ab22d7c..b733755ff6 100644
+--- a/NEWS
++++ b/NEWS
+@@ -5,6 +5,13 @@ See the end for copying conditions.
+ Please send GNU C library bug reports via <https://sourceware.org/bugzilla/>
+ using `glibc' in the "product" field.
+ 
++Version 2.28.1
++
++The following bugs are resolved with this release:
++
++  [23497] readdir64@GLIBC_2.1 cannot parse the kernel directory stream
++
++
+ Version 2.28
  
- /* Write LENGTH bytes of randomness starting at BUFFER.  Return 0 on
-    success and -1 on failure.  */
--ssize_t
-+int
- getentropy (void *buffer, size_t length)
+ Major new features:
+diff --git a/sysdeps/unix/sysv/linux/Makefile b/sysdeps/unix/sysv/linux/Makefile
+index f71cc39c7e..773aaea0e9 100644
+--- a/sysdeps/unix/sysv/linux/Makefile
++++ b/sysdeps/unix/sysv/linux/Makefile
+@@ -161,6 +161,7 @@ inhibit-glue = yes
+ 
+ ifeq ($(subdir),dirent)
+ sysdep_routines += getdirentries getdirentries64
++tests-internal += tst-readdir64-compat
+ endif
+ 
+ ifeq ($(subdir),nis)
+diff --git a/sysdeps/unix/sysv/linux/getdents64.c b/sysdeps/unix/sysv/linux/getdents64.c
+index 3bde0cf4f0..bc140b5a7f 100644
+--- a/sysdeps/unix/sysv/linux/getdents64.c
++++ b/sysdeps/unix/sysv/linux/getdents64.c
+@@ -33,41 +33,80 @@ strong_alias (__getdents64, __getdents)
+ # include <shlib-compat.h>
+ 
+ # if SHLIB_COMPAT(libc, GLIBC_2_1, GLIBC_2_2)
+-# include <olddirent.h>
++#  include <olddirent.h>
++#  include <unistd.h>
+ 
+-/* kernel definition of as of 3.2.  */
+-struct compat_linux_dirent
++static ssize_t
++handle_overflow (int fd, __off64_t offset, ssize_t count)
  {
-   __set_errno (ENOSYS);
+-  /* Both d_ino and d_off are compat_ulong_t which are defined in all
+-     architectures as 'u32'.  */
+-  uint32_t        d_ino;
+-  uint32_t        d_off;
+-  unsigned short  d_reclen;
+-  char            d_name[1];
+-};
++  /* If this is the first entry in the buffer, we can report the
++     error.  */
++  if (count == 0)
++    {
++      __set_errno (EOVERFLOW);
++      return -1;
++    }
++
++  /* Otherwise, seek to the overflowing entry, so that the next call
++     will report the error, and return the data read so far..  */
++  if (__lseek64 (fd, offset, SEEK_SET) != 0)
++    return -1;
++  return count;
++}
+ 
+ ssize_t
+ __old_getdents64 (int fd, char *buf, size_t nbytes)
+ {
+-  ssize_t retval = INLINE_SYSCALL_CALL (getdents, fd, buf, nbytes);
++  /* We do not move the individual directory entries.  This is only
++     possible if the target type (struct __old_dirent64) is smaller
++     than the source type.  */
++  _Static_assert (offsetof (struct __old_dirent64, d_name)
++		  <= offsetof (struct dirent64, d_name),
++		  "__old_dirent64 is larger than dirent64");
++  _Static_assert (__alignof__ (struct __old_dirent64)
++		  <= __alignof__ (struct dirent64),
++		  "alignment of __old_dirent64 is larger than dirent64");
+ 
+-  /* The kernel added the d_type value after the name.  Change this now.  */
+-  if (retval != -1)
++  ssize_t retval = INLINE_SYSCALL_CALL (getdents64, fd, buf, nbytes);
++  if (retval > 0)
+     {
+-      union
+-      {
+-	struct compat_linux_dirent k;
+-	struct dirent u;
+-      } *kbuf = (void *) buf;
+-
+-      while ((char *) kbuf < buf + retval)
++      char *p = buf;
++      char *end = buf + retval;
++      while (p < end)
+ 	{
+-	  char d_type = *((char *) kbuf + kbuf->k.d_reclen - 1);
+-	  memmove (kbuf->u.d_name, kbuf->k.d_name,
+-		   strlen (kbuf->k.d_name) + 1);
+-	  kbuf->u.d_type = d_type;
++	  struct dirent64 *source = (struct dirent64 *) p;
++
++	  /* Copy out the fixed-size data.  */
++	  __ino_t ino = source->d_ino;
++	  __off64_t offset = source->d_off;
++	  unsigned int reclen = source->d_reclen;
++	  unsigned char type = source->d_type;
++
++	  /* Check for ino_t overflow.  */
++	  if (__glibc_unlikely (ino != source->d_ino))
++	    return handle_overflow (fd, offset, p - buf);
++
++	  /* Convert to the target layout.  Use a separate struct and
++	     memcpy to side-step aliasing issues.  */
++	  struct __old_dirent64 result;
++	  result.d_ino = ino;
++	  result.d_off = offset;
++	  result.d_reclen = reclen;
++	  result.d_type = type;
++
++	  /* Write the fixed-sized part of the result to the
++	     buffer.  */
++	  size_t result_name_offset = offsetof (struct __old_dirent64, d_name);
++	  memcpy (p, &result, result_name_offset);
++
++	  /* Adjust the position of the name if necessary.  Copy
++	     everything until the end of the record, including the
++	     terminating NUL byte.  */
++	  if (result_name_offset != offsetof (struct dirent64, d_name))
++	    memmove (p + result_name_offset, source->d_name,
++		     reclen - offsetof (struct dirent64, d_name));
+ 
+-	  kbuf = (void *) ((char *) kbuf + kbuf->k.d_reclen);
++	  p += reclen;
+ 	}
+      }
+   return retval;
+diff --git a/sysdeps/unix/sysv/linux/tst-readdir64-compat.c b/sysdeps/unix/sysv/linux/tst-readdir64-compat.c
+new file mode 100644
+index 0000000000..43c4a8477c
+--- /dev/null
++++ b/sysdeps/unix/sysv/linux/tst-readdir64-compat.c
+@@ -0,0 +1,111 @@
++/* Test readdir64 compatibility symbol.
++   Copyright (C) 2018 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#include <dirent.h>
++#include <dlfcn.h>
++#include <errno.h>
++#include <shlib-compat.h>
++#include <stdbool.h>
++#include <stdio.h>
++#include <string.h>
++#include <support/check.h>
++
++/* Copied from <olddirent.h>.  */
++struct __old_dirent64
++  {
++    __ino_t d_ino;
++    __off64_t d_off;
++    unsigned short int d_reclen;
++    unsigned char d_type;
++    char d_name[256];
++  };
++
++typedef struct __old_dirent64 *(*compat_readdir64_type) (DIR *);
++
++#if TEST_COMPAT (libc, GLIBC_2_1, GLIBC_2_2)
++struct __old_dirent64 *compat_readdir64 (DIR *);
++compat_symbol_reference (libc, compat_readdir64, readdir64, GLIBC_2_1);
++#endif
++
++static int
++do_test (void)
++{
++#if TEST_COMPAT (libc, GLIBC_2_1, GLIBC_2_2)
++
++  /* Directory stream using the non-compat readdir64 symbol.  The test
++     checks against this.  */
++  DIR *dir_reference = opendir (".");
++  TEST_VERIFY_EXIT (dir_reference != NULL);
++  DIR *dir_test = opendir (".");
++  TEST_VERIFY_EXIT (dir_test != NULL);
++
++  /* This loop assumes that the enumeration order is consistent for
++     two different handles.  Nothing should write to the current
++     directory (in the source tree) while this test runs, so there
++     should not be any difference due to races.  */
++  size_t count = 0;
++  while (true)
++    {
++      errno = 0;
++      struct dirent64 *entry_reference = readdir64 (dir_reference);
++      if (entry_reference == NULL && errno != 0)
++        FAIL_EXIT1 ("readdir64 entry %zu: %m\n", count);
++      struct __old_dirent64 *entry_test = compat_readdir64 (dir_test);
++      if (entry_reference == NULL)
++        {
++          if (errno == EOVERFLOW)
++            {
++              TEST_VERIFY (entry_reference->d_ino
++                           != (__ino_t) entry_reference->d_ino);
++              printf ("info: inode number overflow at entry %zu\n", count);
++              break;
++            }
++          if (errno != 0)
++            FAIL_EXIT1 ("compat readdir64 entry %zu: %m\n", count);
++        }
++
++      /* Check that both streams end at the same time.  */
++      if (entry_reference == NULL)
++        {
++          TEST_VERIFY (entry_test == NULL);
++          break;
++        }
++      else
++        TEST_VERIFY_EXIT (entry_test != NULL);
++
++      /* Check that the entries are the same.  */
++      TEST_COMPARE_BLOB (entry_reference->d_name,
++                         strlen (entry_reference->d_name),
++                         entry_test->d_name, strlen (entry_test->d_name));
++      TEST_COMPARE (entry_reference->d_ino, entry_test->d_ino);
++      TEST_COMPARE (entry_reference->d_off, entry_test->d_off);
++      TEST_COMPARE (entry_reference->d_type, entry_test->d_type);
++      TEST_COMPARE (entry_reference->d_reclen, entry_test->d_reclen);
++
++      ++count;
++    }
++  printf ("info: %zu directory entries found\n", count);
++  TEST_VERIFY (count >= 3);     /* ".", "..", and some source files.  */
++
++  TEST_COMPARE (closedir (dir_test), 0);
++  TEST_COMPARE (closedir (dir_reference), 0);
++#endif
++  return 0;
++}
++
++#include <support/test-driver.c>
 
