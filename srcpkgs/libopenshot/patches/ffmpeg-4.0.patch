@@ -1,0 +1,101 @@
+--- src/FFmpegWriter.cpp
++++ src/FFmpegWriter.cpp
+@@ -544,8 +544,10 @@
+ {
+ 	if (info.has_audio && audio_codec && AV_GET_CODEC_TYPE(audio_st) == AVMEDIA_TYPE_AUDIO && AV_GET_CODEC_ATTRIBUTES(audio_st, audio_codec)->frame_size <= 1)
+ 		return;
++#ifdef AVFMT_RAWPICTURE
+ 	if (info.has_video && video_codec && AV_GET_CODEC_TYPE(video_st) == AVMEDIA_TYPE_VIDEO && (oc->oformat->flags & AVFMT_RAWPICTURE) && AV_FIND_DECODER_CODEC_ID(video_st) == AV_CODEC_ID_RAWVIDEO)
+ 		return;
++#endif
+ 
+     int error_code = 0;
+     int stop_encoding = 1;
+@@ -958,7 +960,11 @@
+         if (strcmp(fmt->name, "gif") != 0)
+ 			// If not GIF format, skip the encoding process
+ 			// Set raw picture flag (so we don't encode this video)
++#ifdef AVFMT_RAWPICTURE
+ 			oc->oformat->flags |= AVFMT_RAWPICTURE;
++#else
++			((void)0);
++#endif
+         } else {
+         	// Set the default codec
+         	c->pix_fmt = PIX_FMT_YUV420P;
+@@ -966,7 +972,9 @@
+     }
+ 
+ 	AV_COPY_PARAMS_FROM_CONTEXT(st, c);
++#ifdef AVFMT_RAWPICTURE
+ 	ZmqLogger::Instance()->AppendDebugMethod("FFmpegWriter::add_video_stream (" + (string)fmt->name + " : " + (string)av_get_pix_fmt_name(c->pix_fmt) + ")", "c->codec_id", c->codec_id, "c->bit_rate", c->bit_rate, "c->pix_fmt", c->pix_fmt, "oc->oformat->flags", oc->oformat->flags, "AVFMT_RAWPICTURE", AVFMT_RAWPICTURE, "", -1);
++#endif
+ 
+ 	return st;
+ }
+@@ -1519,9 +1527,13 @@
+ // write video frame
+ bool FFmpegWriter::write_video_packet(std::shared_ptr<Frame> frame, AVFrame* frame_final)
+ {
++#ifdef AVFMT_RAWPICTURE
+ 	ZmqLogger::Instance()->AppendDebugMethod("FFmpegWriter::write_video_packet", "frame->number", frame->number, "oc->oformat->flags & AVFMT_RAWPICTURE", oc->oformat->flags & AVFMT_RAWPICTURE, "", -1, "", -1, "", -1, "", -1);
+ 
+ 	if (oc->oformat->flags & AVFMT_RAWPICTURE) {
++#else
++	if (0) {
++#endif
+ 		// Raw video case.
+ 		AVPacket pkt;
+ 		av_init_packet(&pkt);
+
+--- src/FFmpegReader.cpp
++++ src/FFmpegReader.cpp
+@@ -978,7 +978,7 @@ void FFmpegReader::ProcessAudioPacket(int64_t requested_frame, int64_t target_fr
+ 	int data_size = 0;
+ 
+ 	// re-initialize buffer size (it gets changed in the avcodec_decode_audio2 method call)
+-	int buf_size = AVCODEC_MAX_AUDIO_FRAME_SIZE + FF_INPUT_BUFFER_PADDING_SIZE;
++	int buf_size = AVCODEC_MAX_AUDIO_FRAME_SIZE + AV_INPUT_BUFFER_PADDING_SIZE;
+ 	#pragma omp critical (ProcessAudioPacket)
+ 	{
+ 	#if IS_FFMPEG_3_2
+@@ -1083,7 +1083,7 @@ void FFmpegReader::ProcessAudioPacket(int64_t requested_frame, int64_t target_fr
+ 
+ 
+ 	// Allocate audio buffer
+-	int16_t *audio_buf = new int16_t[AVCODEC_MAX_AUDIO_FRAME_SIZE + FF_INPUT_BUFFER_PADDING_SIZE];
++	int16_t *audio_buf = new int16_t[AVCODEC_MAX_AUDIO_FRAME_SIZE + AV_INPUT_BUFFER_PADDING_SIZE];
+ 
+ 	ZmqLogger::Instance()->AppendDebugMethod("FFmpegReader::ProcessAudioPacket (ReSample)", "packet_samples", packet_samples, "info.channels", info.channels, "info.sample_rate", info.sample_rate, "aCodecCtx->sample_fmt", AV_GET_SAMPLE_FORMAT(aStream, aCodecCtx), "AV_SAMPLE_FMT_S16", AV_SAMPLE_FMT_S16, "", -1);
+ 
+--- src/FFmpegWriter.cpp
++++ src/FFmpegWriter.cpp
+@@ -1064,7 +1064,7 @@ void FFmpegWriter::open_audio(AVFormatContext *oc, AVStream *st)
+ 		av_dict_set(&st->metadata, iter->first.c_str(), iter->second.c_str(), 0);
+ 	}
+ 
+-	ZmqLogger::Instance()->AppendDebugMethod("FFmpegWriter::open_audio", "audio_codec->thread_count", audio_codec->thread_count, "audio_input_frame_size", audio_input_frame_size, "buffer_size", AVCODEC_MAX_AUDIO_FRAME_SIZE + FF_INPUT_BUFFER_PADDING_SIZE, "", -1, "", -1, "", -1);
++	ZmqLogger::Instance()->AppendDebugMethod("FFmpegWriter::open_audio", "audio_codec->thread_count", audio_codec->thread_count, "audio_input_frame_size", audio_input_frame_size, "buffer_size", AVCODEC_MAX_AUDIO_FRAME_SIZE + AV_INPUT_BUFFER_PADDING_SIZE, "", -1, "", -1, "", -1);
+ 
+ }
+ 
+--- src/FFmpegWriter.cpp
++++ src/FFmpegWriter.cpp
+@@ -883,7 +883,7 @@ AVStream* FFmpegWriter::add_audio_stream()
+ 
+ 	// some formats want stream headers to be separate
+ 	if (oc->oformat->flags & AVFMT_GLOBALHEADER)
+-		c->flags |= CODEC_FLAG_GLOBAL_HEADER;
++		c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+ 
+ 	AV_COPY_PARAMS_FROM_CONTEXT(st, c);
+ 	ZmqLogger::Instance()->AppendDebugMethod("FFmpegWriter::add_audio_stream", "c->codec_id", c->codec_id, "c->bit_rate", c->bit_rate, "c->channels", c->channels, "c->sample_fmt", c->sample_fmt, "c->channel_layout", c->channel_layout, "c->sample_rate", c->sample_rate);
+@@ -955,7 +955,7 @@ AVStream* FFmpegWriter::add_video_stream()
+ 		c->mb_decision = 2;
+ 	// some formats want stream headers to be separate
+ 	if (oc->oformat->flags & AVFMT_GLOBALHEADER)
+-		c->flags |= CODEC_FLAG_GLOBAL_HEADER;
++		c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+ 
+ 	// Find all supported pixel formats for this codec
+     const PixelFormat* supported_pixel_formats = codec->pix_fmts;
