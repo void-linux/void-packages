@@ -60,6 +60,11 @@ EOF
 		# compiling, we need to set those to the host versions.
 		export CC=${CC_host} CXX=${CXX_host}
 
+		# Meson tries to use CFLAGS and CPPFLAGS when compiling under
+		# native: true, so we use XBPS_CFLAGS and XBPS_CPPFLAGS which
+		# are set to (C|CXX)FLAGS_host
+		export CFLAGS=${CFLAGS_host} CXXFLAGS=${CXXFLAGS_host}
+
 		unset _MESON_TARGET_CPU _MESON_TARGET_ENDIAN
 	fi
 
