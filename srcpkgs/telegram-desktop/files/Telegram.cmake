@@ -18,7 +18,6 @@ list(APPEND CMAKE_MODULE_PATH
 option(BUILD_TESTS "Build all available test suites" OFF)
 option(ENABLE_CRASH_REPORTS "Enable crash reports" ON)
 option(ENABLE_GTK_INTEGRATION "Enable GTK integration" ON)
-option(ENABLE_64BIT "Enable 64bit build" OFF)
 option(USE_LIBATOMIC "Link Statically against libatomic.a" OFF)
 
 find_package(LibLZMA REQUIRED)
@@ -190,7 +189,7 @@ else()
 	)
 endif()
 
-if(ENABLE_64BIT)
+if("${CMAKE_SIZEOF_VOID_P}" STREQUAL "8")
 	list(APPEND TELEGRAM_COMPILE_DEFINITIONS
 		 Q_OS_LINUX64
 	)
@@ -217,4 +216,4 @@ if(BUILD_TESTS)
 endif()
 
 install(TARGETS Telegram RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES ${CMAKE_SOURCE_DIR}/../lib/xdg/telegram-desktop.desktop DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
+install(FILES ${CMAKE_SOURCE_DIR}/../lib/xdg/telegramdesktop.desktop DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
