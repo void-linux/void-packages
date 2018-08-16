@@ -75,7 +75,7 @@ update_check() {
         if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
             echo "fetching $url" 1>&2
         fi
-        curl -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$url" |
+        curl -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain' -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$url" |
             grep -Po -i "$rx"
     done |
     tr _ . |
