@@ -47,7 +47,7 @@ update_check() {
             *github.com*)
                 githubname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$githubname/tags"
-                rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
+                rx='">(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=</li>)';;
             *gitlab.com*|*gitlab.gnome.org*)
                 gitlaburl="$(printf %s "$url" | cut -d/ -f1-5)"
                 url="$gitlaburl/tags"
