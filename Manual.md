@@ -587,6 +587,13 @@ It is used in the `x11-fonts` xbps-trigger to rebuild the font cache during inst
 of the package.  
 i.e `font_dirs="/usr/share/fonts/TTF /usr/share/fonts/X11/misc"`
 
+- `dkms_modules` A white space separated list of Dynamic Kernel Module Support (dkms) modules
+that will be installed and removed by the `dkms` xbps-trigger with the install/removal of the
+package.  
+The format is a white space separated pair of strings that represent the name of the module,
+most of the time `pkgname`, and the version of the module, most of the time `version`.
+i.e `dkms_modules="$pkgname $version zfs 4.14"`
+
 <a id="explain_depends"></a>
 #### About the many types of `depends` variable.
 
