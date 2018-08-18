@@ -22,7 +22,7 @@ def compile(sources, cflags)
       lang_flags = '-std=gnu11 $CFLAGS $CPPFLAGS'
     when '.cpp', '.cc'
       cc = 'cxx'
-      lang_flags = '-std=gnu++14 $CXXFLAGS $CPPFLAGS'
+      lang_flags = '-std=gnu++17 $CXXFLAGS $CPPFLAGS'
     else
         raise "Unknown extension #{ext}"
     end
@@ -133,17 +133,17 @@ logfiles = %w(
 liblog = compile(expand('core/liblog', logfiles), '-DLIBLOG_LOG_TAG=1006 -D_XOPEN_SOURCE=700 -DFAKE_LOG_DEVICE=1 -Icore/log/include -Icore/include')
 
 cutilsfiles = %w(
-  load_file.c
-  socket_local_client_unix.c
-  socket_network_client_unix.c
-  socket_local_server_unix.c
+  load_file.cpp
+  socket_local_client_unix.cpp
+  socket_network_client_unix.cpp
+  socket_local_server_unix.cpp
   sockets_unix.cpp
-  socket_inaddr_any_server_unix.c
+  socket_inaddr_any_server_unix.cpp
   sockets.cpp
   android_get_control_file.cpp
-  threads.c
+  threads.cpp
   fs_config.cpp
-  canned_fs_config.c
+  canned_fs_config.cpp
 )
 libcutils = compile(expand('core/libcutils', cutilsfiles), '-D_GNU_SOURCE -Icore/libcutils/include -Icore/include')
 
@@ -176,8 +176,8 @@ fastbootfiles = %w(
   tcp.cpp
   udp.cpp
 )
-libfastboot = compile(expand('core/fastboot', fastbootfiles), '-DFASTBOOT_VERSION="\"$PKGVER\"" -D_GNU_SOURCE -D_XOPEN_SOURCE=700 -DUSE_F2FS -Icore/base/include -Icore/include -Icore/adb -Icore/libsparse/include -Icore/mkbootimg -Iextras/ext4_utils/include -Iextras/f2fs_utils -Icore/libziparchive/include')
-
+libfastboot = compile(expand("core/fastboot", fastbootfiles), '-DFASTBOOT_VERSION="\"$PKGVER\"" -D_GNU_SOURCE -D_XOPEN_SOURCE=700 -DUSE_F2FS -Icore/base/include -Icore/include -Icore/adb -Icore/libsparse/include -Icore/mkbootimg -Iextras/ext4_utils/include -Iextras/f2fs_utils -Icore/libziparchive/include -Icore/mkbootimg/include/bootimg')
+	
 sparsefiles = %w(
   backed_block.c
   output_file.c
@@ -189,11 +189,8 @@ sparsefiles = %w(
 libsparse = compile(expand('core/libsparse', sparsefiles), '-Icore/libsparse/include -Icore/base/include')
 
 f2fsfiles = %w(
-  f2fs_utils.c
-  f2fs_ioutils.c
-  f2fs_dlutils.c
 )
-f2fs = compile(expand('extras/f2fs_utils', f2fsfiles), '-Iextras/f2fs_utils -If2fs-tools/include -If2fs-tools/mkfs -Icore/libsparse/include -Iselinux/libselinux/include')
+f2fs = compile(expand("extras/f2fs_utils", f2fsfiles), "-DHAVE_LINUX_TYPES_H -If2fs-tools/include -Icore/liblog/include")
 
 zipfiles = %w(
   zip_archive.cc
@@ -206,16 +203,8 @@ utilfiles = %w(
 libutil = compile(expand('core/libutils', utilfiles), '-Icore/include')
 
 ext4files = %w(
-  make_ext4fs.c
-  ext4fixup.c
   ext4_utils.c
-  allocate.c
-  contents.c
-  extent.c
-  indirect.c
-  sha1.c
   wipe.c
-  crc16.c
   ext4_sb.c
 )
 libext4 = compile(expand('extras/ext4_utils', ext4files), '-D_GNU_SOURCE -Icore/libsparse/include -Icore/include -Iselinux/libselinux/include -Iextras/ext4_utils/include')
@@ -332,6 +321,7 @@ libext2fsfiles = %w(
   lib/ext2fs/get_num_dirs.c
   lib/ext2fs/getsectsize.c
   lib/ext2fs/getsize.c
+  lib/ext2fs/hashmap.c
   lib/ext2fs/i_block.c
   lib/ext2fs/ind_block.c
   lib/ext2fs/initialize.c
@@ -356,6 +346,7 @@ libext2fsfiles = %w(
   lib/ext2fs/read_bb_file.c
   lib/ext2fs/res_gdt.c
   lib/ext2fs/rw_bitmaps.c
+  lib/ext2fs/sha512.c
   lib/ext2fs/sparse_io.c
   lib/ext2fs/symlink.c
   lib/ext2fs/undo_io.c
@@ -378,7 +369,7 @@ libext2fsfiles = %w(
   lib/uuid/unparse.c
   misc/create_inode.c
 )
-libext2fs = compile(expand('e2fsprogs', libext2fsfiles), '-Ie2fsprogs/lib -Icore/libsparse/include')
+libext2fs = compile(expand("e2fsprogs", libext2fsfiles), "-Ie2fsprogs/lib -Ie2fsprogs/lib/ext2fs -Icore/libsparse/include")
 
 
 mke2fsfiles = %w(
@@ -396,13 +387,12 @@ e2fsdroidfiles = %w(
   contrib/android/e2fsdroid.c
   contrib/android/basefs_allocator.c
   contrib/android/block_range.c
-  contrib/android/hashmap.c
   contrib/android/base_fs.c
   contrib/android/fsmap.c
   contrib/android/block_list.c
   contrib/android/perms.c
 )
-e2fsdroid = compile(expand('e2fsprogs', e2fsdroidfiles), '-Ie2fsprogs/lib -Iselinux/libselinux/include -Icore/libcutils/include -Ie2fsprogs/misc')
+e2fsdroid = compile(expand("e2fsprogs", e2fsdroidfiles), "-Ie2fsprogs/lib -Ie2fsprogs/lib/ext2fs -Iselinux/libselinux/include -Icore/libcutils/include -Ie2fsprogs/misc")
 
 link('e2fsdroid', e2fsdroid + libext2fs + libsparse + libbase + libzip + liblog + libutil + libselinux + libsepol + libcutils, '-lz -lpthread -lpcre2-8')
 

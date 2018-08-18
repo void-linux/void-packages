@@ -1,43 +1,79 @@
 # Template file for 'qbittorrent'
 pkgname=qbittorrent
-version=4.1.1
+version=4.1.2
 revision=2
+create_wrksrc=yes
 build_style=qmake
 hostmakedepends="automake libtool pkg-config qt5-host-tools qt5-tools"
 makedepends="libtorrent-rasterbar-devel qt5-declarative-devel qt5-svg-devel"
 depends="qt5-svg"
 short_desc="Free software alternative to µtorrent"
 maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
-license="GPL-2"
+license="GPL-2.0-or-later"
 homepage="http://www.qbittorrent.org/"
 distfiles="${SOURCEFORGE_SITE}/${pkgname}/${pkgname}-${version}.tar.xz"
-checksum=8edc7a7fff8aa45e7bf763c91f30e064e1d7acd3f6efecb12fee420b75457ee7
+checksum=e0165bd427820c64bce596ef952d80058ea8cd7294d3c84bc723d79cd9e2f9c7
 
-if [ -n "$CROSS_BUILD" ]; then
+if [ "$CROSS_BUILD" ]; then
 	hostmakedepends+=" qt5-declarative-devel qt5-svg-devel"
 fi
 
-build_options="gui webui"
-desc_option_gui="Enable the graphical user interface"
-desc_option_webui="Enable the web user interface"
-build_options_default="gui"
-
-pre_configure() {
-	local conf="--prefix=/usr"
-	conf+=" --disable-systemd"
-	conf+=" --with-boost=${XBPS_CROSS_BASE}/usr"
-	conf+=" --with-boost-libdir=${XBPS_CROSS_BASE}/usr/lib"
-	if [ -n "$CROSS_BUILD" ]; then
-		conf+=" --host=${XBPS_CROSS_TRIPLET}"
-	fi
-	./bootstrap.sh
-	./configure ${conf} $(vopt_enable gui) $(vopt_enable webui)
+do_extract() {
+	local n=${pkgname}-${version}
+	mkdir build-nox build-x11
+	tar xf ${XBPS_SRCDISTDIR}/${n}/${n}.tar.xz --strip-components=1 -C build-x11
+	tar xf ${XBPS_SRCDISTDIR}/${n}/${n}.tar.xz --strip-components=1 -C build-nox
 }
 
-post_configure() {
-	sed -i src/Makefile \
-		-e "s;^\(CC\\s*=\) .*;\1 $CC;" \
-		-e "s;^\(CXX\\s*=\) .*;\1 $CXX;" \
-		-e "s;^\(LINK\\s*=\) .*;\1 $CXX;" \
-		-e "s;@g++ ;@$CXX ;"
+do_configure() {
+	local opts="--prefix=/usr" build opts
+	opts+=" --disable-systemd"
+	opts+=" --with-boost=${XBPS_CROSS_BASE}/usr"
+	opts+=" --with-boost-libdir=${XBPS_CROSS_BASE}/usr/lib"
+	if [ "$CROSS_BUILD" ]; then
+		opts+=" --host=${XBPS_CROSS_TRIPLET}"
+	fi
+	for f in build-x11:--enable-gui:--disable-webui \
+		build-nox:--disable-gui:--enable-webui; do
+		build=${f%%:*}
+		f=${f#*:}
+		opts+=" ${f/:/ }"
+		cd ${wrksrc}/${build}
+		./bootstrap.sh
+		./configure ${opts}
+		qmake-qt5 ${configure_args} \
+			PREFIX=/usr \
+			LIB=/usr/lib \
+			QMAKE_CC=$CC QMAKE_CXX=$CXX QMAKE_LINK=$CXX \
+			QMAKE_CFLAGS="${CFLAGS}" \
+			QMAKE_CXXFLAGS="${CXXFLAGS}" \
+			QMAKE_LFLAGS="${LDFLAGS}"
+		sed -i src/Makefile \
+			-e "s;^\(CC\\s*=\) .*;\1 $CC;" \
+			-e "s;^\(CXX\\s*=\) .*;\1 $CXX;" \
+			-e "s;^\(LINK\\s*=\) .*;\1 $CXX;" \
+			-e "s;@g++ ;@$CXX ;"
+	done
+	# Install the desktop file
+	vinstall dist/unix/qbittorrent.desktop 644 usr/share/applications
+}
+
+do_build() {
+	cd ${wrksrc}/build-x11
+	make ${makejobs}
+	cd ${wrksrc}/build-nox
+	make ${makejobs}
+}
+
+do_install() {
+	cd ${wrksrc}/build-x11
+	make ${makejobs} INSTALL_ROOT=${DESTDIR} install
+}
+
+qbittorrent-nox_package() {
+	short_desc+=" - no X11"
+	pkg_install() {
+		cd ${wrksrc}/build-nox
+		make ${makejobs} INSTALL_ROOT=${PKGDESTDIR} install
+	}
 }
