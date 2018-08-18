@@ -38,6 +38,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [Python packages](#pkgs_python)
 	* [Go packages](#pkgs_go)
 	* [Haskell packages](#pkgs_haskell)
+	* [Font packages](#pkgs_font)
 	* [Notes](#notes)
 	* [Contributing via git](#contributing)
 * [Help](#help)
@@ -579,6 +580,12 @@ Example:
 - `alternatives` A white space separated list of supported alternatives the package provides.
 A list is composed of three components separated by a colon: group, symlink and target.
 i.e `alternatives="vi:/usr/bin/vi:/usr/bin/nvi ex:/usr/bin/ex:/usr/bin/nvi-ex"`.
+
+- `font_dirs` A white space separated list of directories specified by an absolute path where a
+font package installs its fonts.  
+It is used in the `x11-fonts` xbps-trigger to rebuild the font cache during install/removal
+of the package.  
+i.e `font_dirs="/usr/share/fonts/TTF /usr/share/fonts/X11/misc"`
 
 <a id="explain_depends"></a>
 #### About the many types of `depends` variable.
@@ -1241,6 +1248,18 @@ The following variables influence how Haskell packages are built:
   - If a `stack.yaml` file is present in the source files, it will be used
 - `make_build_args`: This is passed as-is to `stack build ...`, so
   you can add your `--flag ...` parameters there.
+
+<a id="pkgs_font"></a>
+### Font packages
+
+Font packages are very straightforward to write, they are always set with the
+following variables:
+
+- `noarch=yes`: fonts don't install arch specific files.
+- `depends="font-util"`: because they are required for regenerating the font
+cache during the install/removal of the package
+- `font_dirs`: which should be set to the directory where the package
+installs its fonts
 
 <a id="notes"></a>
 ### Notes
