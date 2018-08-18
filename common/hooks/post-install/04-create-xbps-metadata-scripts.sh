@@ -243,6 +243,13 @@ _EOF
 		_add_trigger gsettings-schemas
 	fi
 	#
+	# Handle gdk-pixbuf loadable modules in /usr/lib/gdk-pixbuf-2.0/2.10.0/loaders
+	# with gdk-pixbuf-loaders
+	#
+	if [ -d ${PKGDESTDIR}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders ]; then
+		_add_trigger gdk-pixbuf-loaders
+	fi
+	#
 	# Handle mime database in /usr/share/mime with update-mime-database.
 	#
 	if [ -d ${PKGDESTDIR}/usr/share/mime ]; then
