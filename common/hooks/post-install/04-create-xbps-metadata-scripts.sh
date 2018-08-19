@@ -222,6 +222,20 @@ _EOF
 		_add_trigger gio-modules
 	fi
 	#
+	# Handle gtk immodules in /usr/lib/gtk-2.0/2.10.0/immodules with
+	# gtk-immodules
+	#
+	if [ -d ${PKGDESTDIR}/usr/lib/gtk-2.0/2.10.0/immodules ]; then
+		_add_trigger gtk-immodules
+	fi
+	#
+	# Handle gtk3 immodules in /usr/lib/gtk-3.0/3.0.0/immodules with
+	# gtk3-immodules
+	#
+	if [ -d ${PKGDESTDIR}/usr/lib/gtk-3.0/3.0.0/immodules ]; then
+		_add_trigger gtk3-immodules
+	fi
+	#
 	# Handle gsettings schemas in /usr/share/glib-2.0/schemas with
 	# gsettings-schemas.
 	#
