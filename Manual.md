@@ -745,6 +745,10 @@ be passed in via `make_build_args` and install arguments via `make_install_args`
 target can be overridden via `make_build_target` and the install target
 via `make_install_target`.
 
+- `meson` For packages that use the Meson Build system, configuration options can be passed
+via `configure_args`, the meson command can be overriden by `meson_cmd` and the location of
+the out of source build by `meson_builddir`
+
 For packages that use the Python module build method (`setup.py`), you
 can choose one of the following:
 
