@@ -597,10 +597,10 @@ i.e `dkms_modules="$pkgname $version zfs 4.14"`
 <a id="explain_depends"></a>
 #### About the many types of `depends` variable.
 
-So far we have listed three types of `depends`, there are `hostmakedepends`,
-`makedepends`, and plain old `depends`. To understand the difference between
-them, understand this: Void Linux cross compiles for many arches. Sometimes in
-a build process, certain programs must be run, for example `yacc`, or the
+So far we have listed four types of `depends`, there are `hostmakedepends`,
+`makedepends`, `checkdepends` and plain old `depends`.To understand the difference
+between them, understand this: Void Linux cross compiles for many arches.
+Sometimes in a build process, certain programs must be run, for example `yacc`, or the
 compiler itself for a C program. Those programs get put in `hostmakedepends`.
 When the build runs, those will be installed on the host to help the build
 complete.
@@ -610,6 +610,11 @@ includes header files. These are `makedepends`, and regardless of the
 architecture of the build machine, the architecture of the target machine must
 be used. Typically the `makedepends` will be the only one of the three types of
 `depends` to include `-devel` packages, and typically only `-devel` packages.
+
+Then there are those things that are required for a package to run its testsuite
+`dejagnu` or libraries it must link to when building test binaries like `cmocka`.
+These are `checkdepends` and they are installed like they are part of `makedepends`.
+the difference is that they are only installed when `XBPS_CHECK_PKGS` is defined.
 
 The final variable, `depends`, is for those things the package needs at
 runtime and without which is unusable, and that xbps can't auto-detect.
