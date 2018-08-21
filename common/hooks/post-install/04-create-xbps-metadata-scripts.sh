@@ -148,7 +148,7 @@ _EOF
 	#
 	if [ -d "${PKGDESTDIR}/usr/lib/udev/hwdb.d" ]; then
 		_add_trigger hwdb.d-dir
-    fi
+	fi
 	#
 	# (Un)Register a shell in /etc/shells.
 	#
