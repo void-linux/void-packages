@@ -272,6 +272,15 @@ _EOF
 		fi
 		_add_trigger pycompile
 	fi
+	#
+	# Handle appdata metadata with AppStream
+	#
+	for f in ${PKGDESTDIR}/usr/share/appdata/*.xml ${PKGDESTDIR}/usr/share/app-info/*.xml ${PKGDESTDIR}/var/lib/app-info/*.xml ${PKGDESTDIR}/var/cache/app-info/*.xml; do
+		if [ -f "${f}" ]; then
+			_add_trigger appstream-cache
+			break
+		fi
+	done
 
 	# End of trigger var exports.
 	echo >> $tmpf
