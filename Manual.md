@@ -596,7 +596,7 @@ i.e `dkms_modules="$pkgname $version zfs 4.14"`
 
 - `register_shell` A white space separated list of shells defined by absolute path to be
 registered into the system shells database. It is used by the `register-shell` trigger.
-i.e `register_shell="/bin/tcsh /bin/csh"
+i.e `register_shell="/bin/tcsh /bin/csh"`
 
 <a id="explain_depends"></a>
 #### About the many types of `depends` variable.
