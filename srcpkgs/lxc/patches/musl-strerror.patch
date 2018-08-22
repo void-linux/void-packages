@@ -1,0 +1,97 @@
+diff --git configure.ac configure.ac
+index 19d9ea22..b2b2f71c 100644
+--- configure.ac
++++ configure.ac
+@@ -619,6 +619,12 @@ AC_HEADER_MAJOR
+ # Check for some syscalls functions
+ AC_CHECK_FUNCS([setns pivot_root sethostname unshare rand_r confstr faccessat gettid memfd_create])
+ 
++# Check for strerror_r() support. Defines:
++# - HAVE_STRERROR_R if available
++# - HAVE_DECL_STRERROR_R if defined
++# - STRERROR_R_CHAR_P if it returns char *
++AC_FUNC_STRERROR_R
++
+ # Check for some functions
+ AC_CHECK_LIB(pthread, main)
+ AC_CHECK_FUNCS(statvfs)
+@@ -676,6 +682,11 @@ if test "x$enable_werror" = "xyes"; then
+ 	CFLAGS="$CFLAGS -Werror -Wvla -std=gnu11"
+ fi
+ 
++AC_ARG_ENABLE([thread-safety],
++	[AC_HELP_STRING([--enable-thread-safety], [enforce thread-safety otherwise fail the build [default=yes]])],
++	[], [enable_thread_safety=yes])
++AM_CONDITIONAL([ENFORCE_THREAD_SAFETY], [test "x$enable_thread_safety" = "xyes"])
++
+ # Files requiring some variable expansion
+ AC_CONFIG_FILES([
+ 	Makefile
+@@ -919,4 +930,7 @@ Debugging:
+ 
+ Paths:
+  - Logs in configpath: $enable_configpath_log
++
++Thread-safety:
++ - enforce: $enable_thread_safety
+ EOF
+diff --git src/lxc/log.h src/lxc/log.h
+index 4654fd91..a7f72b4c 100644
+--- src/lxc/log.h
++++ src/lxc/log.h
+@@ -327,22 +327,40 @@ ATTR_UNUSED static inline void LXC_##LEVEL(struct lxc_log_locinfo* locinfo,	\
+ /*
+  * Helper macro to define errno string.
+  */
+-#if (_POSIX_C_SOURCE >= 200112L || _XOPEN_SOURCE >= 600) && !defined(_GNU_SOURCE) || IS_BIONIC
+-#define lxc_log_strerror_r                                               \
+-	char errno_buf[MAXPATHLEN / 2] = {"Failed to get errno string"}; \
+-	char *ptr = errno_buf;                                           \
+-	{                                                                \
+-		(void)strerror_r(errno, errno_buf, sizeof(errno_buf));   \
+-	}
++#if HAVE_STRERROR_R
++	#ifndef HAVE_DECL_STRERROR_R
++		#ifdef STRERROR_R_CHAR_P
++			char *strerror_r(int errnum, char *buf, size_t buflen);
++		#else
++			int strerror_r(int errnum, char *buf, size_t buflen);
++		#endif
++	#endif
++
++	#ifdef STRERROR_R_CHAR_P
++		#define lxc_log_strerror_r                                               \
++			char errno_buf[MAXPATHLEN / 2] = {"Failed to get errno string"}; \
++			char *ptr = NULL;                                                \
++			{                                                                \
++				ptr = strerror_r(errno, errno_buf, sizeof(errno_buf));   \
++				if (!ptr)                                                \
++					ptr = errno_buf;                                 \
++			}
++	#else
++		#define lxc_log_strerror_r                                               \
++			char errno_buf[MAXPATHLEN / 2] = {"Failed to get errno string"}; \
++			char *ptr = errno_buf;                                           \
++			{                                                                \
++				(void)strerror_r(errno, errno_buf, sizeof(errno_buf));   \
++			}
++	#endif
++#elif ENFORCE_THREAD_SAFETY
++	#error ENFORCE_THREAD_SAFETY was set but cannot be guaranteed
+ #else
+-#define lxc_log_strerror_r                                               \
+-	char errno_buf[MAXPATHLEN / 2] = {"Failed to get errno string"}; \
+-	char *ptr;                                                       \
+-	{                                                                \
+-		ptr = strerror_r(errno, errno_buf, sizeof(errno_buf));   \
+-		if (!ptr)                                                \
+-			ptr = errno_buf;                                 \
+-	}
++	#define lxc_log_strerror_r             \
++		char *ptr = NULL;              \
++		{                              \
++			ptr = strerror(errno); \
++		}
+ #endif
+ 
+ /*
