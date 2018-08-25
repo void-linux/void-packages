@@ -148,7 +148,7 @@ _EOF
 	#
 	if [ -d "${PKGDESTDIR}/usr/lib/udev/hwdb.d" ]; then
 		_add_trigger hwdb.d-dir
-    fi
+	fi
 	#
 	# (Un)Register a shell in /etc/shells.
 	#
@@ -222,11 +222,32 @@ _EOF
 		_add_trigger gio-modules
 	fi
 	#
+	# Handle gtk immodules in /usr/lib/gtk-2.0/2.10.0/immodules with
+	# gtk-immodules
+	#
+	if [ -d ${PKGDESTDIR}/usr/lib/gtk-2.0/2.10.0/immodules ]; then
+		_add_trigger gtk-immodules
+	fi
+	#
+	# Handle gtk3 immodules in /usr/lib/gtk-3.0/3.0.0/immodules with
+	# gtk3-immodules
+	#
+	if [ -d ${PKGDESTDIR}/usr/lib/gtk-3.0/3.0.0/immodules ]; then
+		_add_trigger gtk3-immodules
+	fi
+	#
 	# Handle gsettings schemas in /usr/share/glib-2.0/schemas with
 	# gsettings-schemas.
 	#
 	if [ -d ${PKGDESTDIR}/usr/share/glib-2.0/schemas ]; then
 		_add_trigger gsettings-schemas
+	fi
+	#
+	# Handle gdk-pixbuf loadable modules in /usr/lib/gdk-pixbuf-2.0/2.10.0/loaders
+	# with gdk-pixbuf-loaders
+	#
+	if [ -d ${PKGDESTDIR}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders ]; then
+		_add_trigger gdk-pixbuf-loaders
 	fi
 	#
 	# Handle mime database in /usr/share/mime with update-mime-database.
