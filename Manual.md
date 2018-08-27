@@ -598,6 +598,10 @@ i.e `dkms_modules="$pkgname $version zfs 4.14"`
 registered into the system shells database. It is used by the `register-shell` trigger.
 i.e `register_shell="/bin/tcsh /bin/csh"`
 
+- `tags` A white space separated list of tags (categories) that are registered into the
+package metadata and can be queried with `xbps-query` by users.
+i.e for qutebrowser `tags="browser chromium-based qt5 python3"`
+
 <a id="explain_depends"></a>
 #### About the many types of `depends` variable.
 
