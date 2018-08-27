@@ -607,6 +607,12 @@ that contain Makefile.PL files that need to be processes for the package to work
 used in the perl-module build_style and has no use outside of it.
 Example: `perl_configure_dirs="blob/bob foo/blah"`
 
+- `preserve` If set, files owned by the package in the system are not removed when
+the package is updated, reinstalled or removed. This is mostly useful for kernel packages
+that shouldn't remove the kernel files when they are removed in case it might break the
+user's booting and module loading. Otherwise in the majority of cases it should not be
+used.
+
 <a id="explain_depends"></a>
 #### About the many types of `depends` variable.
 
