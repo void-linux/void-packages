@@ -1,0 +1,186 @@
+From 420f81563a6ff3e695f7643a1bcbbc332b9f7132 Mon Sep 17 00:00:00 2001
+From: Saverio Miroddi <saverio.pub2@gmail.com>
+Date: Tue, 31 Oct 2017 20:59:05 +0100
+Subject: [PATCH] Current pinning patch
+
+Changes 2017/10/31:
+
+- Fix: the MAX_VCPUS was arbitrary; it's now set to CPU_SETSIZE
+- Fix: the allowed vcpus were equated to the cores number, without accounting sockets and threads
+- Change: removed all the debug information, and a now unneded warning
+- Change: cleaned spacing
+---
+ cpus.c          | 12 +++++++++++
+ qemu-options.hx | 10 ++++++++++
+ vl.c            | 62 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 84 insertions(+)
+
+diff --git cpus.c cpus.c
+index 38eba8bff33..1ff63e0d847 100644
+--- cpus.c
++++ cpus.c
+@@ -57,6 +57,9 @@
+ #ifdef CONFIG_LINUX
+ 
+ #include <sys/prctl.h>
++#include <unistd.h>
++#include <stdint.h>
++#include <inttypes.h>
+ 
+ #ifndef PR_MCE_KILL
+ #define PR_MCE_KILL 33
+@@ -1919,9 +1922,11 @@ static void qemu_hax_start_vcpu(CPUState *cpu)
+ #endif
+ }
+ 
++extern int vcpu_affinity[];
+ static void qemu_kvm_start_vcpu(CPUState *cpu)
+ {
+     char thread_name[VCPU_THREAD_NAME_SIZE];
++    cpu_set_t cpuset;
+ 
+     cpu->thread = g_malloc0(sizeof(QemuThread));
+     cpu->halt_cond = g_malloc0(sizeof(QemuCond));
+@@ -1930,6 +1935,13 @@ static void qemu_kvm_start_vcpu(CPUState *cpu)
+              cpu->cpu_index);
+     qemu_thread_create(cpu->thread, thread_name, qemu_kvm_cpu_thread_fn,
+                        cpu, QEMU_THREAD_JOINABLE);
++
++    if (vcpu_affinity[cpu->cpu_index] != -1) {
++      CPU_ZERO(&cpuset);
++      CPU_SET(vcpu_affinity[cpu->cpu_index], &cpuset);
++      pthread_setaffinity_np((cpu->thread)->thread, sizeof(cpu_set_t), &cpuset);
++    }
++
+ }
+ 
+ static void qemu_hvf_start_vcpu(CPUState *cpu)
+diff --git qemu-options.hx qemu-options.hx
+index ca4e412f2f8..9dd6dcd93cf 100644
+--- qemu-options.hx
++++ qemu-options.hx
+@@ -169,6 +169,16 @@ given, the total number of CPUs @var{n} can be omitted. @var{maxcpus}
+ specifies the maximum number of hotpluggable CPUs.
+ ETEXI
+ 
++DEF("vcpu", HAS_ARG, QEMU_OPTION_vcpu,
++    "-vcpu [vcpunum=]n[,affinity=affinity]\n"
++    "-vcpu [vcpunum=]n[,affinity=affinity]\n", QEMU_ARCH_ALL)
++STEXI
++@item -vcpu [vcpunum=]@var{n}[,affinity=@var{affinity}]
++@itemx -vcpu [vcpunum=]@var{n}[,affinity=@var{affinity}]
++@findex -vcpu
++VCPU Affinity. If specified, specify for all the CPUs.
++ETEXI
++
+ DEF("numa", HAS_ARG, QEMU_OPTION_numa,
+     "-numa node[,mem=size][,cpus=firstcpu[-lastcpu]][,nodeid=node]\n"
+     "-numa node[,memdev=id][,cpus=firstcpu[-lastcpu]][,nodeid=node]\n"
+diff --git vl.c vl.c
+index fce1fd12d8b..4e6110c5a71 100644
+--- vl.c
++++ vl.c
+@@ -135,6 +135,7 @@ int main(int argc, char **argv)
+ #define MAX_VIRTIO_CONSOLES 1
+ #define MAX_SCLP_CONSOLES 1
+ 
++#define MAX_VCPUS CPU_SETSIZE
+ static const char *data_dir[16];
+ static int data_dir_idx;
+ const char *bios_name = NULL;
+@@ -164,6 +165,8 @@ int smp_cpus;
+ unsigned int max_cpus;
+ int smp_cores = 1;
+ int smp_threads = 1;
++int vcpu_affinity[MAX_VCPUS];
++int num_affinity = 0;
+ int acpi_enabled = 1;
+ int no_hpet = 0;
+ int fd_bootchk = 1;
+@@ -1290,6 +1293,57 @@ static QemuOptsList qemu_smp_opts = {
+     },
+ };
+ 
++static QemuOptsList qemu_vcpu_opts = {
++    .name = "vcpu-opts",
++    .implied_opt_name = "vcpunum",
++    .head = QTAILQ_HEAD_INITIALIZER(qemu_vcpu_opts.head),
++    .desc = {
++        {
++            .name = "vcpunum",
++            .type = QEMU_OPT_NUMBER,
++        }, {
++            .name = "affinity",
++            .type = QEMU_OPT_NUMBER,
++        },
++        { /*End of list */ }
++    },
++};
++
++static int parse_vcpu(void *opaque, QemuOpts *opts, Error **errp)
++{
++    if (opts) {
++      unsigned vcpu = qemu_opt_get_number(opts, "vcpunum", 0);
++      unsigned affinity = qemu_opt_get_number(opts,"affinity", 0);
++
++      if (vcpu < smp_cpus * smp_cores * smp_threads) {
++        if (vcpu_affinity[vcpu] == -1) {
++          vcpu_affinity[vcpu] = affinity;
++        }
++        else {
++          error_report("Duplicate affinity statement for vcpu %d\n", vcpu);
++          return -1;
++        }
++        num_affinity += 1;
++      }
++      else {
++        error_report("VCPU %d is more than allowed %d VCPUs in the system\n", vcpu, smp_cores);
++        return -1;
++      }
++    }
++    return 0;
++}
++
++static void parse_vcpu_opts(MachineClass *mc)
++{
++    int i;
++    for (i = 0; i < MAX_VCPUS; i++)
++      vcpu_affinity[i] = -1;
++
++    if (qemu_opts_foreach(qemu_find_opts("vcpu-opts"), parse_vcpu, NULL, NULL)) {
++        exit(1);
++    }
++}
++
+ static void smp_parse(QemuOpts *opts)
+ {
+     if (opts) {
+@@ -3092,6 +3146,7 @@ int main(int argc, char **argv, char **envp)
+     qemu_add_opts(&qemu_accel_opts);
+     qemu_add_opts(&qemu_mem_opts);
+     qemu_add_opts(&qemu_smp_opts);
++    qemu_add_opts(&qemu_vcpu_opts);
+     qemu_add_opts(&qemu_boot_opts);
+     qemu_add_opts(&qemu_sandbox_opts);
+     qemu_add_opts(&qemu_add_fd_opts);
+@@ -3771,6 +3826,12 @@ int main(int argc, char **argv, char **envp)
+                     exit(1);
+                 }
+                 break;
++            case QEMU_OPTION_vcpu:
++                if (!qemu_opts_parse_noisily(qemu_find_opts("vcpu-opts"),
++                                             optarg, true)) {
++                    exit(1);
++                }
++                break;
+             case QEMU_OPTION_vnc:
+                 vnc_parse(optarg, &error_fatal);
+                 break;
+@@ -4211,6 +4272,7 @@ int main(int argc, char **argv, char **envp)
+         exit(1);
+     }
+ 
++    parse_vcpu_opts(machine_class);
+     /*
+      * Get the default machine options from the machine if it is not already
+      * specified either by the configuration file or by the command line.
