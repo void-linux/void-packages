@@ -391,6 +391,19 @@ or `foo-1.0_1` to match an exact version. If version comparator is not
 defined (just a package name), the version comparator is automatically set to `>=0`.
 Example: `conflicts="foo blah>=0.42.3"`.
 
+- `replaces` AN optional list of packages that are replaced with this package.
+Replaces can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
+or `foo-1.0_1` to match an exact version. If version comparator is not
+defined (just a package name), the version comparator is automatically set to `>=0`.
+Example `replaces="foo blah>=0.42.3"`.
+
+> NOTE: replaces has a quirk in that it doesn't consider new packages that replaces=
+> a installed package if the package that uses replaces= is not installed. This makes
+> it unsuitable for transitioning users from a package to another
+>
+> i.e: user has foo-1.0 installed, package bar-1.1 is provided that replaces="foo>=0"
+> xbps will never consider installing bar-1.1 to replace foo-1.0
+
 - `distfiles` The full URL to the `upstream` source distribution files. Multiple files
 can be separated by whitespaces. The files must end in `.tar.lzma`, `.tar.xz`,
 `.txz`, `.tar.bz2`, `.tbz`, `.tar.gz`, `.tgz`, `.gz`, `.bz2`, `.tar` or
