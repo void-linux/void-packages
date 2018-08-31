@@ -63,6 +63,7 @@ remove_pkg_autodeps() {
 remove_pkg_wrksrc() {
     if [ -d "$wrksrc" ]; then
         msg_normal "$pkgver: cleaning build directory...\n"
+        chmod -R +wX $wrksrc # Needed to delete Go Modules
         rm -rf $wrksrc
     fi
 }
