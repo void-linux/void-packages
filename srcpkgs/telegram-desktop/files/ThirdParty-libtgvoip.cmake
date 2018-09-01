@@ -14,6 +14,7 @@ file(GLOB TGVOIP_SOURCE_FILES
 	os/posix/*.cpp
 )
 file(GLOB TGVOIP_EXTRA_FILES
+	audio/AudioIOCallback.cpp
 	BufferInputStream.cpp
 	BufferOutputStream.cpp
 	BufferPool.cpp
@@ -30,7 +31,7 @@ else()
 		os/linux/PulseAudioLoader.cpp
 	)
 	list(REMOVE_ITEM TGVOIP_SOURCE_FILES ${PULSEAUDIO_SOURCE_FILES})
-	list(APPEND TGVOIP_COMPILE_DEFINITIONS TGVOIP_DISABLE_PULSEAUDIO)
+	list(APPEND TGVOIP_COMPILE_DEFINITIONS WITHOUT_PULSE)
 endif()
 
 add_library(${PROJECT_NAME} STATIC ${TGVOIP_SOURCE_FILES} $<TARGET_OBJECTS:webrtc>)
