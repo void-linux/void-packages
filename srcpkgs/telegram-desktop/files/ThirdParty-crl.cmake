@@ -7,6 +7,8 @@ file(GLOB CRL_SOURCE_FILES
 	src/crl/dispatch/*.cpp
 	src/crl/qt/*.cpp
 	src/crl/winapi/*.cpp
+	src/crl/linux/*.cpp
+	src/crl/crl_time.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${CRL_SOURCE_FILES})
