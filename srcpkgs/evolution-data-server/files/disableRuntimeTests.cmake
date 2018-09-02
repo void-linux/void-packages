@@ -19,6 +19,9 @@
 set( _correct_iconv_EXITCODE 
      0
      CACHE INTERNAL "Result from TRY_RUN" FORCE)
+set(_correct_iconv_EXITCODE__TRYRUN_OUTPUT
+     0
+     CACHE INTERNAL "Result from TRY_RUN" FORCE)
 
 
 # HAVE_LKSTRFTIME_EXITCODE
@@ -34,6 +37,9 @@ set( _correct_iconv_EXITCODE
 #                 [1]	/builddir/evolution-data-server-3.26.0/CMakeLists.txt
 
 set( HAVE_LKSTRFTIME_EXITCODE 
+     0
+     CACHE INTERNAL "Result from TRY_RUN" FORCE)
+set( HAVE_LKSTRFTIME_EXITCODE__TRYRUN_OUTPUT
      0
      CACHE INTERNAL "Result from TRY_RUN" FORCE)
 
