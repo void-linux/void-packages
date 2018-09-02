@@ -602,6 +602,11 @@ i.e `register_shell="/bin/tcsh /bin/csh"`
 package metadata and can be queried with `xbps-query` by users.
 i.e for qutebrowser `tags="browser chromium-based qt5 python3"`
 
+- `perl_configure_dirs` A white space separate list of directories relative to `wrksrc`
+that contain Makefile.PL files that need to be processes for the package to work. It is
+used in the perl-module build_style and has no use outside of it.
+i.e `perl_configure_dirs="blob/bob foo/blah"`
+
 <a id="explain_depends"></a>
 #### About the many types of `depends` variable.
 
