@@ -1,7 +1,7 @@
 #!/bin/sh
 
-TRAVIS_PROTO=https
-TRAVIS_MIRROR=beta.de.repo.voidlinux.org
+TRAVIS_PROTO=http
+TRAVIS_MIRROR=alpha.us.repo.voidlinux.org
 
 for _i in etc/repos-remote.conf etc/defaults.conf etc/repos-remote-x86_64.conf ; do
     printf '\x1b[32mUpdating %s...\x1b[0m\n' $_i
@@ -11,5 +11,5 @@ for _i in etc/repos-remote.conf etc/defaults.conf etc/repos-remote-x86_64.conf ;
     sed -i "s:https:$TRAVIS_PROTO:g" $_i
 
     # Now set the mirror
-    sed -i "s:repo\.voidlinux\.eu:$TRAVIS_MIRROR:g" $_i
+    sed -i "s:alpha\.de\.repo\.voidlinux\.org:$TRAVIS_MIRROR:g" $_i
 done
