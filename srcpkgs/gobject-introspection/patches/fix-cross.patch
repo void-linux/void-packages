@@ -1,0 +1,193 @@
+diff --git a/gir/meson.build b/gir/meson.build
+index 607bbc4..1831423 100644
+--- a/gir/meson.build
++++ b/gir/meson.build
+@@ -422,7 +422,7 @@ foreach gir : gir_files
+     input: gir,
+     output: '@BASENAME@.typelib',
+     depends: [gobject_gir, ],
+-    command: [gircompiler, '-o', '@OUTPUT@', '@INPUT@',
++    command: [gircompiler_native, '-o', '@OUTPUT@', '@INPUT@',
+               '--includedir', meson.current_build_dir(),
+               '--includedir', meson.current_source_dir(),
+     ],
+diff --git a/girepository/cmph/meson.build b/girepository/cmph/meson.build
+index 368afc7..f213f38 100644
+--- a/girepository/cmph/meson.build
++++ b/girepository/cmph/meson.build
+@@ -48,3 +48,17 @@ cmph_test = executable('cmph-bdz-test', '../cmph-bdz-test.c',
+ )
+ 
+ test('cmph-bdz-test', cmph_test)
++
++if meson.is_cross_build()
++  cmph_native = static_library('cmph-native',
++    sources: cmph_sources,
++    c_args: gi_hidden_visibility_cflags,
++    dependencies: cmph_deps,
++    native: true,
++  )
++
++  cmph_dep_native = declare_dependency(
++    link_with: cmph_native,
++    include_directories: include_directories('.'),
++  )
++endif
+diff --git a/girepository/meson.build b/girepository/meson.build
+index 6a8c5b5..7702896 100644
+--- a/girepository/meson.build
++++ b/girepository/meson.build
+@@ -160,3 +160,59 @@ if giounix_dep.found()
+   executable('gi-dump-types', 'gi-dump-types.c',
+     dependencies: [girepo_dep, giounix_dep])
+ endif
++
++if meson.is_cross_build()
++  girepo_gthash_lib_native = static_library('girepository-gthash-native',
++    sources: 'gthash.c',
++    include_directories : configinc,
++    c_args: gi_hidden_visibility_cflags,
++    dependencies: [
++      cmph_dep_native,
++      glib_dep_native,
++      gmodule_dep_native,
++    ],
++    native: true,
++  )
++
++  girepo_gthash_dep_native = declare_dependency(
++    link_with: girepo_gthash_lib_native,
++    dependencies: [glib_dep_native, gmodule_dep_native],
++    include_directories: include_directories('.'),
++  )
++
++  girepo_internals_lib_native = static_library('girepository-internals-native',
++    sources: [
++      'girmodule.c',
++      'girnode.c',
++      'giroffsets.c',
++      'girparser.c',
++      'girwriter.c',
++    ],
++    c_args: gi_hidden_visibility_cflags,
++    include_directories : configinc,
++    dependencies: [girepo_gthash_dep_native, libffi_dep_native],
++    native: true,
++  )
++
++  girepo_internals_dep_native = declare_dependency(
++    link_with: girepo_internals_lib_native,
++    dependencies: libffi_dep_native,
++    include_directories: include_directories('.'),
++  )
++
++  girepo_lib_native = shared_library('girepository-1.0-native',
++    sources: girepo_sources,
++    include_directories : configinc,
++    c_args: gi_hidden_visibility_cflags + ['-DG_IREPOSITORY_COMPILATION'],
++    dependencies: [glib_dep_native, gobject_dep_native, gmodule_dep_native,
++                   gio_dep_native, girepo_internals_dep_native],
++    version: '1.0.0',
++    native: true,
++  )
++
++  girepo_dep_native = declare_dependency(
++    link_with: girepo_lib_native,
++    dependencies: [glib_dep_native, gobject_dep_native, gio_dep_native, gmodule_dep_native],
++    include_directories: include_directories('.'),
++  )
++endif
+diff --git a/meson.build b/meson.build
+index 7ec9532..4cd6277 100644
+--- a/meson.build
++++ b/meson.build
+@@ -70,9 +70,24 @@ else
+   giounix_dep = dependency('', required : false)
+   # XXX: Autotools doesn't build girs for gio-win32-2.0, but maybe we should?
+ endif
++
+ libffi_dep = dependency('libffi',
+   fallback : ['libffi', 'ffi_dep'])
+ 
++if meson.is_cross_build()
++  glib_dep_native = dependency('glib-2.0', version : glib_version,
++    fallback: ['glib', 'libglib_dep'], native: true)
++  gobject_dep_native = dependency('gobject-2.0', version : glib_version,
++    fallback: ['glib', 'libgobject_dep'], native: true)
++  gio_dep_native = dependency('gio-2.0', version : glib_version,
++    fallback: ['glib', 'libgio_dep'], native: true)
++  gmodule_dep_native = dependency('gmodule-2.0', version : glib_version,
++    fallback: ['glib', 'libgmodule_dep'], native: true)
++
++  libffi_dep_native = dependency('libffi',
++    fallback : ['libffi', 'ffi_dep'], native: true)
++endif
++
+ subdir('girepository')
+ subdir('tools')
+ subdir('giscanner')
+diff --git a/tools/fix-cross.patch b/tools/fix-cross.patch
+new file mode 100644
+index 0000000..aa1088f
+--- /dev/null
++++ b/tools/fix-cross.patch
+@@ -0,0 +1,24 @@
++diff --git a/tools/meson.build b/tools/meson.build
++index 912eb6b..b7a2e57 100644
++--- a/tools/meson.build
+++++ b/tools/meson.build
++@@ -44,6 +44,7 @@ gircompiler = executable('g-ir-compiler', 'compiler.c',
++     girepo_dep,
++   ],
++   install: true,
+++  native: true,
++ )
++ 
++ girgenerate = executable('g-ir-generate', 'generate.c',
++@@ -52,9 +53,11 @@ girgenerate = executable('g-ir-generate', 'generate.c',
++     girepo_dep,
++   ],
++   install: true,
+++  native: true,
++ )
++ 
++ girinspect = executable('g-ir-inspect', 'g-ir-inspect.c',
++   dependencies: girepo_dep,
++   install: true,
+++  native: true,
++ )
+diff --git a/tools/meson.build b/tools/meson.build
+index 912eb6b..a5b6c5e 100644
+--- a/tools/meson.build
++++ b/tools/meson.build
+@@ -58,3 +58,30 @@ girinspect = executable('g-ir-inspect', 'g-ir-inspect.c',
+   dependencies: girepo_dep,
+   install: true,
+ )
++
++if meson.is_cross_build()
++	gircompiler_native = executable('g-ir-compiler-native', 'compiler.c',
++	  dependencies: [
++		girepo_internals_dep_native,
++		girepo_dep_native,
++	  ],
++	  native: true,
++	)
++
++	girgenerate_native = executable('g-ir-generate-native', 'generate.c',
++	  dependencies: [
++		girepo_internals_dep_native,
++		girepo_dep_native,
++	  ],
++	  native: true,
++	)
++
++	girinspect_native = executable('g-ir-inspect-native', 'g-ir-inspect.c',
++	  dependencies: girepo_dep_native,
++	  native: true,
++	)
++else
++	gircompiler_native = gircompiler
++	girgenerate_native = girgenerate
++	girinspect_native = girinspect
++endif
