@@ -532,7 +532,7 @@ sonames in shared libraries.
 their reverse dependencies. You need to specify all dependencies in the `depends` when you
 need to set this.
 
-- `skiprdeps` If set, contains the list of filenames specified by their absolute path in
+- `skiprdeps` White space separated list of filenames specified by their absolute path in
 the `$DESTDIR` which will not be scanned for runtime dependencies. This may be useful to
 skip files which are not meant to be run or loaded on the host but are to be sent to some
 target device or emulation.
