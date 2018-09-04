@@ -16,12 +16,14 @@ do_configure() {
 		_ccflags=$(sed -n "s;^ccflags='\(.*\)';\1;p" $_conf)
 		_lddlflags=$(sed -n "s;^lddlflags='\(.*\)';\1;p" $_conf)
 		_ldflags=$(sed -n "s;^ldflags='\(.*\)';\1;p" $_conf)
+		_archlibexp=$(sed -n "s;^archlibexp='\(.*\)';\1;p" $_conf)
 
 		PERL_MM_USE_DEFAULT=1 PERL_MM_OPT="INSTALLDIRS=vendor DESTDIR='$DESTDIR'" \
 			PERL_MB_OPT="--installdirs vendor --destdir '$DESTDIR'" \
 			LD="$CC" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
 			perl Build.PL --config optimize="$_optimize" --config ccflags="$_ccflags" \
 			--config lddlflags="$_lddlflags" --config ldflags="$_ldflags" \
+			--config archlibexp="${XBPS_CROSS_BASE}${_archlibexp}" \
 			${configure_args} INSTALLDIRS=vendor
 	else
 		msg_error "$pkgver: cannot find Build.PL for perl module!\n"
