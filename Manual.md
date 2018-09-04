@@ -496,25 +496,25 @@ and `XBPS_MAKEJOBS` has no effect.
 - `keep_libtool_archives` If enabled the `GNU Libtool` archives won't be removed. By default those
 files are always removed automatically.
 
-- `skip_extraction` A list of filenames that should not be extracted in the `extract` phase.
-This must match the basename of any url defined in `${distfiles}`.
+- `skip_extraction` White space separated list of filenames that should not be extracted in
+the `extract` phase. This must match the basename of any url defined in `${distfiles}`.
 Example `skip_extraction="foo-${version}.tar.gz"`.
 
 - `nodebug` If enabled -dbg packages won't be generated even if `XBPS_DEBUG_PKGS` is set.
 
-- `conf_files` A list of configuration files the binary package owns; this expects full
-paths, wildcards will be extended, and multiple entries can be separated by blanks i.e:
-`conf_files="/etc/foo.conf /etc/foo2.conf /etc/foo/*.conf"`.
+- `conf_files` White space separated list of configuration files the binary package owns;
+this expects full paths, wildcards will be extended.
+i.e: `conf_files="/etc/foo.conf /etc/foo2.conf /etc/foo/*.conf"`.
 
-- `mutable_files` A list of files the binary package owns, with the expectation
-  that those files will be changed. These act a lot like `conf_files` but
-  without the assumption that a human will edit them.
+- `mutable_files` White space separated list of files the binary package owns, with the
+expectation that those files will be changed. These act a lot like `conf_files` but without
+the assumption that a human will edit them.
 
-- `make_dirs` A list of entries defining directories and permissions to be
-  created at install time. Each entry should be space separated, and will
-  itself contain spaces. `make_dirs="/dir 0750 user group"`. User and group and
-  mode are required on every line, even if they are `755 root root`. By
-  convention, there is only one entry of `dir perms user group` per line.
+- `make_dirs` White space separated list of entries defining directories and
+permissions to be created at install time. Each entry will itself contain spaces.
+`make_dirs="/dir 0750 user group"`. User and group and mode are required on every line,
+even if they are `755 root root`. By convention, there is only one entry of
+`dir perms user group` per line.
 
 - `noarch` If set, the binary package is not architecture specific and can be shared
 by all supported architectures.
@@ -547,7 +547,7 @@ Linux do not have this setting, so the primary repositories will not have any
 restricted package. This is useful for packages where the license forbids
 redistribution.
 
-- `subpackages` A white space separated list of subpackages (matching `foo_package()`)
+- `subpackages` White space separated list of subpackages (matching `foo_package()`)
 to override the guessed list. Only use this if a specific order of subpackages is required,
 otherwise the default would work in most cases.
 
@@ -555,10 +555,10 @@ otherwise the default would work in most cases.
 This should be set to a string describing why it is broken, or a link to a travis
 buildlog demonstrating the failure.
 
-- `shlib_provides` A white space separated list of additional sonames the package provides on.
+- `shlib_provides` White space separated list of additional sonames the package provides on.
 This appends to the generated file rather than replacing it.
 
-- `shlib_requires` A white space separated list of additional sonames the package requires.
+- `shlib_requires` White space separated list of additional sonames the package requires.
 This appends to the generated file rather than replacing it.
 
 - `nopie` Only needs to be set to something to make active, disables building the package with hardening
@@ -577,32 +577,32 @@ Example:
     revision=2
     ```
 
-- `alternatives` A white space separated list of supported alternatives the package provides.
+- `alternatives` White space separated list of supported alternatives the package provides.
 A list is composed of three components separated by a colon: group, symlink and target.
 i.e `alternatives="vi:/usr/bin/vi:/usr/bin/nvi ex:/usr/bin/ex:/usr/bin/nvi-ex"`.
 
-- `font_dirs` A white space separated list of directories specified by an absolute path where a
+- `font_dirs` White space separated list of directories specified by an absolute path where a
 font package installs its fonts.  
 It is used in the `x11-fonts` xbps-trigger to rebuild the font cache during install/removal
 of the package.  
 i.e `font_dirs="/usr/share/fonts/TTF /usr/share/fonts/X11/misc"`
 
-- `dkms_modules` A white space separated list of Dynamic Kernel Module Support (dkms) modules
+- `dkms_modules` White space separated list of Dynamic Kernel Module Support (dkms) modules
 that will be installed and removed by the `dkms` xbps-trigger with the install/removal of the
 package.  
 The format is a white space separated pair of strings that represent the name of the module,
 most of the time `pkgname`, and the version of the module, most of the time `version`.
 i.e `dkms_modules="$pkgname $version zfs 4.14"`
 
-- `register_shell` A white space separated list of shells defined by absolute path to be
+- `register_shell` White space separated list of shells defined by absolute path to be
 registered into the system shells database. It is used by the `register-shell` trigger.
 i.e `register_shell="/bin/tcsh /bin/csh"`
 
-- `tags` A white space separated list of tags (categories) that are registered into the
+- `tags` White space separated list of tags (categories) that are registered into the
 package metadata and can be queried with `xbps-query` by users.
 i.e for qutebrowser `tags="browser chromium-based qt5 python3"`
 
-- `perl_configure_dirs` A white space separate list of directories relative to `wrksrc`
+- `perl_configure_dirs` White space separated list of directories relative to `wrksrc`
 that contain Makefile.PL files that need to be processes for the package to work. It is
 used in the perl-module build_style and has no use outside of it.
 i.e `perl_configure_dirs="blob/bob foo/blah"`
@@ -1245,7 +1245,7 @@ The following variables influence how Go packages are built:
   distfile, as it would be used with `go get`. For example, GitHub's
   `hub` program has the import path `github.com/github/hub`. This
   variable is required.
-- `go_package`: A space-separated list of import paths of the packages
+- `go_package`: Space-separated list of import paths of the packages
   that should be built. Defaults to `go_import_path`.
 - `go_get`: If set to yes, the package specified via `go_import_path`
   will be downloaded with `go get`. Otherwise, a distfile has to be
