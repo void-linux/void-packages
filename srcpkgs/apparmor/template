@@ -1,12 +1,13 @@
 # Template file for 'apparmor'
 pkgname=apparmor
 version=2.13.0
-revision=6
+revision=7
+build_style=gnu-configure
 _short_ver=${version%\.*}
 wrksrc="${pkgname}-v${_short_ver}"
-configure_args="--prefix=/usr --with-perl --with-python"
+build_wrksrc="libraries/libapparmor"
 patch_args="-Np1"
-hostmakedepends="bison flex autoconf automake libtool swig"
+hostmakedepends="bison flex autoconf automake libtool swig python3"
 makedepends="perl python3-devel"
 depends="runit-void-apparmor python3 libapparmor"
 short_desc="Mandatory access control to restrict programs"
@@ -15,11 +16,19 @@ license="GPL-2.0-only, LGPL-2.1-only"
 homepage="https://gitlab.com/apparmor/apparmor"
 distfiles="https://gitlab.com/apparmor/apparmor/-/archive/v${_short_ver}/apparmor-v${_short_ver}.tar.gz"
 checksum=fdafa0b71cbf574cce76a1ea1542b4540fa1c1040f80d0f0866fc0056ec37747
-nocross="requires running programs on the host"
 conf_files="/etc/apparmor.d/local/*"
+make_dirs="/etc/apparmor.d/disable 0755 root root"
+
+if [ -z "$CROSS_BUILD" ]; then
+	configure_args="--with-perl --with-python"
+fi
+
+pre_configure() {
+	NOCONFIGURE=1 ./autogen.sh
+}
 
 pre_build() {
-	# Replace release profiles by our owns
+	# Replace release profiles with our own
 	cd ${wrksrc}
 
 	# Put in place our own profiles
@@ -27,15 +36,7 @@ pre_build() {
 	mv profiles/apparmor.d/bin.ping profiles/apparmor/profiles/extras/
 }
 
-do_build() {
-	cd ${wrksrc}/libraries/libapparmor
-	NOCONFIGURE=1 ./autogen.sh
-	./configure ${configure_args}
-	make ${makejobs}
-
-	export CFLAGS+=" -fPIC"
-	export LDFLAGS+=" -fPIE -pie"
-
+post_build() {
 	cd ${wrksrc}/binutils
 	make ${makejobs}
 
@@ -51,10 +52,7 @@ do_build() {
 	make ${makejobs}
 }
 
-do_install() {
-	cd ${wrksrc}/libraries/libapparmor
-	make DESTDIR=${DESTDIR} install
-
+post_install() {
 	cd ${wrksrc}/binutils
 	make DESTDIR=${DESTDIR} install
 
@@ -66,15 +64,15 @@ do_install() {
 
 	cd ${wrksrc}/profiles
 	make DESTDIR=${DESTDIR} install
-}
 
-post_install() {
 	# Put Vim syntax in the correct place
 	mkdir -p ${DESTDIR}/usr/share/vim/vim80/syntax/
 	mv ${DESTDIR}/usr/share/apparmor/apparmor.vim ${DESTDIR}/usr/share/vim/vim80/syntax/
 
-	# We want to keep this empty directory
-	touch ${DESTDIR}/etc/apparmor.d/disable/.empty
+	# requires perl bindings not generated when cross-compiling
+	if [ "$CROSS_BUILD" ]; then
+		rm -f ${DESTDIR}/usr/bin/aa-notify
+	fi
 }
 
 apparmor-vim_package() {
@@ -91,8 +89,10 @@ libapparmor_package() {
 	short_desc+=" - Library"
 	pkg_install() {
 		vmove "usr/lib/libapparmor.so*"
-		vmove usr/lib/perl5
-		vmove "usr/lib/python3.6/site-packages/LibAppArmor*"
+		if [ -z "$CROSS_BUILD" ]; then
+			vmove usr/lib/perl5
+			vmove "${py3_sitelib}/LibAppArmor*"
+		fi
 		vmove usr/share/man/man2
 		vmove usr/share/man/man3
 	}
@@ -104,6 +104,7 @@ libapparmor-devel_package() {
 	pkg_install() {
 		vmove usr/include/
 		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
 		vmove usr/lib/pkgconfig
 	}
 }
