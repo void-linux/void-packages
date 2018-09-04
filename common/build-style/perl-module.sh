@@ -19,6 +19,10 @@ do_configure() {
 	if [ -d "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl" ]; then
 		cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Config"*.p? $perlprefix
 		cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Errno.pm" $perlprefix
+		sed -i -e "s;archlibexp => '\(.*\)';archlibexp => '${XBPS_CROSS_BASE}\1';" \
+			${perlprefix}/Config.pm
+		sed -i -e "s;^archlibexp='\(.*\)';archlibexp='${XBPS_CROSS_BASE}\1';" \
+			${perlprefix}/Config_heavy.pl
 	else
 		cp "/usr/lib/perl5/core_perl/Config"*.p? $perlprefix
 		cp "/usr/lib/perl5/core_perl/Errno.pm" $perlprefix
@@ -58,7 +62,6 @@ do_configure() {
 			msg_error "*** ERROR: couldn't find $perlmkf, aborting **\n"
 		fi
 	done
-
 }
 
 do_build() {
