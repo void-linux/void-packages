@@ -80,7 +80,7 @@ generated with the definitions specified on it.
 
 Don't worry if anything is not clear as it should be. The reserved `variables`
 and `functions` will be explained later. This `template` file should be created
-in a directory matching `$pkgname`, i.e: `void-packages/srcpkgs/foo/template`.
+in a directory matching `$pkgname`, Example: `void-packages/srcpkgs/foo/template`.
 
 If everything went fine after running
 
@@ -287,7 +287,7 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	For further information on how to create a new service directory see
 	[The corresponding section the FAQ](http://smarden.org/runit/faq.html#create).
 
-> Shell wildcards must be properly quoted, i.e `vmove "usr/lib/*.a"`.
+> Shell wildcards must be properly quoted, Example: `vmove "usr/lib/*.a"`.
 
 <a id="global_vars"></a>
 ### Global variables
@@ -338,7 +338,7 @@ The list of mandatory variables for a template:
 - `homepage` A string pointing to the `upstream` homepage.
 
 - `license` A string matching any license file available in `/usr/share/licenses`.
-Multiple licenses should be separated by commas, i.e `GPL-3, LGPL-2.1`.
+Multiple licenses should be separated by commas, Example: `GPL-3, LGPL-2.1`.
 
 - `maintainer` A string in the form of `name <user@domain>`.  The
   email for this field must be a valid email that you can be reached
@@ -362,16 +362,16 @@ and at least one digit is required. Shell's variable substition usage is not all
 - `hostmakedepends` The list of `host` dependencies required to build the package, and
 that will be installed to the master directory. There is no need to specify a version
 because the current version in srcpkgs will always be required.
-Example `hostmakedepends="foo blah"`.
+Example: `hostmakedepends="foo blah"`.
 
 - `makedepends` The list of `target` dependencies required to build the package, and that
 will be installed to the master directory. There is no need to specify a version
 because the current version in srcpkgs will always be required.
-Example `makedepends="foo blah"`.
+Example: `makedepends="foo blah"`.
 
 - `checkdepends` The list of dependencies required to run the package checks, i.e.
 the script or make rule specified in the template's `do_check()` function.
-Example `checkdepends="gtest"`.
+Example: `checkdepends="gtest"`.
 
 - `depends` The list of dependencies required to run the package. These dependencies
 are not installed to the master directory, rather are only checked if a binary package
@@ -379,7 +379,7 @@ in the local repository exists to satisfy the required version. Dependencies
 can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
 or `foo-1.0_1` to match an exact version. If version comparator is not
 defined (just a package name), the version comparator is automatically set to `>=0`.
-Example `depends="foo blah>=1.0"`. See the `Runtime dependencies` section for more information.
+Example: `depends="foo blah>=1.0"`. See the `Runtime dependencies` section for more information.
 
 - `bootstrap` If enabled the source package is considered to be part of the `bootstrap`
 process and required to be able to build packages in the chroot. Only a
@@ -389,7 +389,7 @@ small number of packages must set this property.
 Conflicts can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
 or `foo-1.0_1` to match an exact version. If version comparator is not
 defined (just a package name), the version comparator is automatically set to `>=0`.
-Example `conflicts="foo blah>=0.42.3"`.
+Example: `conflicts="foo blah>=0.42.3"`.
 
 - `distfiles` The full URL to the `upstream` source distribution files. Multiple files
 can be separated by whitespaces. The files must end in `.tar.lzma`, `.tar.xz`,
@@ -420,7 +420,7 @@ Example:
 
 - `checksum` The `sha256` digests matching `${distfiles}`. Multiple files can be
 separated by blanks. Please note that the order must be the same than
-was used in `${distfiles}`. Example `checksum="kkas00xjkjas"`
+was used in `${distfiles}`. Example: `checksum="kkas00xjkjas"`
 
 If a distfile changes its checksum for every download because it is packaged
 on the fly on the server, like e.g. snapshot tarballs from any of the
@@ -440,7 +440,7 @@ contains multiple `distfiles`.
 - `only_for_archs` This expects a separated list of architectures where
 the package can be built matching `uname -m` output. Reserved for uses
 where the program really only will ever work on certain architectures, like
-binaries sources or when the program is written in assembly. Example
+binaries sources or when the program is written in assembly. Example:
 `only_for_archs="x86_64 armv6l"`.
 
 - `build_style` This specifies the `build method` for a package. Read below to know more
@@ -498,13 +498,13 @@ files are always removed automatically.
 
 - `skip_extraction` A list of filenames that should not be extracted in the `extract` phase.
 This must match the basename of any url defined in `${distfiles}`.
-Example `skip_extraction="foo-${version}.tar.gz"`.
+Example: `skip_extraction="foo-${version}.tar.gz"`.
 
 - `nodebug` If enabled -dbg packages won't be generated even if `XBPS_DEBUG_PKGS` is set.
 
 - `conf_files` A list of configuration files the binary package owns; this expects full
-paths, wildcards will be extended, and multiple entries can be separated by blanks i.e:
-`conf_files="/etc/foo.conf /etc/foo2.conf /etc/foo/*.conf"`.
+paths, wildcards will be extended, and multiple entries can be separated by blanks.
+Example: `conf_files="/etc/foo.conf /etc/foo2.conf /etc/foo/*.conf"`.
 
 - `mutable_files` A list of files the binary package owns, with the expectation
   that those files will be changed. These act a lot like `conf_files` but
@@ -579,33 +579,33 @@ Example:
 
 - `alternatives` A white space separated list of supported alternatives the package provides.
 A list is composed of three components separated by a colon: group, symlink and target.
-i.e `alternatives="vi:/usr/bin/vi:/usr/bin/nvi ex:/usr/bin/ex:/usr/bin/nvi-ex"`.
+Example: `alternatives="vi:/usr/bin/vi:/usr/bin/nvi ex:/usr/bin/ex:/usr/bin/nvi-ex"`.
 
 - `font_dirs` A white space separated list of directories specified by an absolute path where a
 font package installs its fonts.  
 It is used in the `x11-fonts` xbps-trigger to rebuild the font cache during install/removal
 of the package.  
-i.e `font_dirs="/usr/share/fonts/TTF /usr/share/fonts/X11/misc"`
+Example: `font_dirs="/usr/share/fonts/TTF /usr/share/fonts/X11/misc"`
 
 - `dkms_modules` A white space separated list of Dynamic Kernel Module Support (dkms) modules
 that will be installed and removed by the `dkms` xbps-trigger with the install/removal of the
 package.  
 The format is a white space separated pair of strings that represent the name of the module,
 most of the time `pkgname`, and the version of the module, most of the time `version`.
-i.e `dkms_modules="$pkgname $version zfs 4.14"`
+Example: `dkms_modules="$pkgname $version zfs 4.14"`
 
 - `register_shell` A white space separated list of shells defined by absolute path to be
 registered into the system shells database. It is used by the `register-shell` trigger.
-i.e `register_shell="/bin/tcsh /bin/csh"`
+Example: `register_shell="/bin/tcsh /bin/csh"`
 
 - `tags` A white space separated list of tags (categories) that are registered into the
 package metadata and can be queried with `xbps-query` by users.
-i.e for qutebrowser `tags="browser chromium-based qt5 python3"`
+Example for qutebrowser: `tags="browser chromium-based qt5 python3"`
 
 - `perl_configure_dirs` A white space separate list of directories relative to `wrksrc`
 that contain Makefile.PL files that need to be processes for the package to work. It is
 used in the perl-module build_style and has no use outside of it.
-i.e `perl_configure_dirs="blob/bob foo/blah"`
+Example: `perl_configure_dirs="blob/bob foo/blah"`
 
 <a id="explain_depends"></a>
 #### About the many types of `depends` variable.
@@ -780,7 +780,7 @@ can choose one of the following:
 `do_install()` function and optionally more phases via `do_xxx()` functions.
 
 Environment variables for a specific `build_style` can be declared in a filename
-matching the `build_style` name, i.e:
+matching the `build_style` name, Example:
 
     `common/environment/build-style/gnu-configure.sh`
 
@@ -920,7 +920,7 @@ Permanent global package build options can be set via `XBPS_PKG_OPTIONS` variabl
 `XBPS_PKG_OPTIONS_<pkgname>`.
 
 > NOTE: if `pkgname` contains `dashes`, those should be replaced by `underscores`
-i.e `XBPS_PKG_OPTIONS_xorg_server=opt`.
+Example: `XBPS_PKG_OPTIONS_xorg_server=opt`.
 
 The list of supported package build options and its description is defined in the
 `common/options.description` file.
@@ -1054,16 +1054,16 @@ there are some variables that can change the behavior:
 
 - `lib32depends` If this variable is set, dependencies listed here will be used rather than
 those detected automatically by `xbps-src` and **depends**. Please note that
-dependencies must be specified with version comparators, i.e
+dependencies must be specified with version comparators, Example:
 `lib32depends="foo>=0 blah<2.0"`.
 
 - `lib32disabled` If this variable is set, no 32bit package will be built.
 
 - `lib32files` Additional files to be added to the **32bit** package. This expect absolute
-paths separated by blanks, i.e `lib32files="/usr/bin/blah /usr/include/blah."`.
+paths separated by blanks, Example: `lib32files="/usr/bin/blah /usr/include/blah."`.
 
 - `lib32symlinks` Makes a symlink of the target filename stored in the `lib32` directory.
-This expects the basename of the target file, i.e `lib32symlinks="foo"`.
+This expects the basename of the target file, Example: `lib32symlinks="foo"`.
 
 - `lib32mode` If unset, only shared/static libraries and pkg-config files will be copied to the
 **32bit** package. If set to `full` all files will be copied to the 32bit package, unmodified.
@@ -1076,7 +1076,7 @@ simple tweaks multiple binary packages can be generated from a single
 template/build, this is called `subpackages`.
 
 To create additional `subpackages` the `template` must define a new function
-with this naming: `<subpkgname>_package()`, i.e:
+with this naming: `<subpkgname>_package()`, Example:
 
 ```
 # Template file for 'foo'
@@ -1105,7 +1105,7 @@ foo-devel_package() {
 ```
 
 All subpackages need an additional symlink to the `main` pkg, otherwise dependencies
-requiring those packages won't find its `template` i.e:
+requiring those packages won't find its `template` Example:
 
 ```
  /srcpkgs
@@ -1199,11 +1199,11 @@ at post-install time:
 - `pycompile_module`: this variable expects the python modules that should be `byte-compiled`
 at post-install time. Python modules are those that are installed into the `site-packages`
 prefix: `usr/lib/pythonX.X/site-packages`. Multiple python modules may be specified separated
-by blanks, i.e `pycompile_module="foo blah"`.
+by blanks, Example: `pycompile_module="foo blah"`.
 
 - `pycompile_dirs`: this variable expects the python directories that should be `byte-compiled`
 recursively by the target python version. This differs from `pycompile_module` in that any
-path may be specified, i.e `pycompile_dirs="usr/share/foo"`.
+path may be specified, Example: `pycompile_dirs="usr/share/foo"`.
 
 - `pycompile_version`: this variable expects the python version that is used to
 byte-compile the python code (it generates the `.py[co]` files at post-install time).
