@@ -1,0 +1,1137 @@
+diff --git audio/audio.c audio/audio.c
+index 6eccdb17ee..4eb190a18f 100644
+--- audio/audio.c
++++ audio/audio.c
+@@ -2097,3 +2097,8 @@ void AUD_set_volume_in (SWVoiceIn *sw, int mute, uint8_t lvol, uint8_t rvol)
+         }
+     }
+ }
++
++int64_t audio_get_timer_ticks(void)
++{
++    return conf.period.ticks;
++}
+diff --git audio/audio_int.h audio/audio_int.h
+index 244b454012..19ba2d7aa4 100644
+--- audio/audio_int.h
++++ audio/audio_int.h
+@@ -210,6 +210,8 @@ extern const struct mixeng_volume nominal_volume;
+ void audio_driver_register(audio_driver *drv);
+ audio_driver *audio_driver_lookup(const char *name);
+ 
++int64_t audio_get_timer_ticks(void);
++
+ void audio_pcm_init_info (struct audio_pcm_info *info, struct audsettings *as);
+ void audio_pcm_info_clear_buf (struct audio_pcm_info *info, void *buf, int len);
+ 
+diff --git audio/paaudio.c audio/paaudio.c
+index 949769774d..cfa200fa96 100644
+--- audio/paaudio.c
++++ audio/paaudio.c
+@@ -1,16 +1,22 @@
+ /* public domain */
+ #include "qemu/osdep.h"
+-#include "qemu-common.h"
++#include "qemu/timer.h"
+ #include "audio.h"
+ 
+ #include <pulse/pulseaudio.h>
+ 
+ #define AUDIO_CAP "pulseaudio"
++#define DEBUG
+ #include "audio_int.h"
+-#include "audio_pt_int.h"
+ 
+ typedef struct {
+-    int samples;
++    int buffer_size_out;
++    int buffer_size_in;
++    int tlength;
++    int fragsize;
++    int maxlength_in;
++    int adjust_latency_out;
++    int adjust_latency_in;
+     char *server;
+     char *sink;
+     char *source;
+@@ -24,28 +30,18 @@ typedef struct {
+ 
+ typedef struct {
+     HWVoiceOut hw;
+-    int done;
+-    int live;
+-    int decr;
+-    int rpos;
+     pa_stream *stream;
+-    void *pcm_buf;
+-    struct audio_pt pt;
+     paaudio *g;
++    pa_sample_spec ss;
++    pa_buffer_attr ba;
+ } PAVoiceOut;
+ 
+ typedef struct {
+     HWVoiceIn hw;
+-    int done;
+-    int dead;
+-    int incr;
+-    int wpos;
+     pa_stream *stream;
+-    void *pcm_buf;
+-    struct audio_pt pt;
+-    const void *read_data;
+-    size_t read_index, read_length;
+     paaudio *g;
++    pa_sample_spec ss;
++    pa_buffer_attr ba;
+ } PAVoiceIn;
+ 
+ static void qpa_audio_fini(void *opaque);
+@@ -89,7 +85,7 @@ static inline int PA_STREAM_IS_GOOD(pa_stream_state_t x)
+             }                                                   \
+             goto label;                                         \
+         }                                                       \
+-    } while (0)
++    } while (0);
+ 
+ #define CHECK_DEAD_GOTO(c, stream, rerror, label)                       \
+     do {                                                                \
+@@ -107,184 +103,61 @@ static inline int PA_STREAM_IS_GOOD(pa_stream_state_t x)
+             }                                                           \
+             goto label;                                                 \
+         }                                                               \
+-    } while (0)
+-
+-static int qpa_simple_read (PAVoiceIn *p, void *data, size_t length, int *rerror)
+-{
+-    paaudio *g = p->g;
+-
+-    pa_threaded_mainloop_lock (g->mainloop);
+-
+-    CHECK_DEAD_GOTO (g, p->stream, rerror, unlock_and_fail);
+-
+-    while (length > 0) {
+-        size_t l;
+-
+-        while (!p->read_data) {
+-            int r;
+-
+-            r = pa_stream_peek (p->stream, &p->read_data, &p->read_length);
+-            CHECK_SUCCESS_GOTO (g, rerror, r == 0, unlock_and_fail);
+-
+-            if (!p->read_data) {
+-                pa_threaded_mainloop_wait (g->mainloop);
+-                CHECK_DEAD_GOTO (g, p->stream, rerror, unlock_and_fail);
+-            } else {
+-                p->read_index = 0;
+-            }
+-        }
+-
+-        l = p->read_length < length ? p->read_length : length;
+-        memcpy (data, (const uint8_t *) p->read_data+p->read_index, l);
+-
+-        data = (uint8_t *) data + l;
+-        length -= l;
+-
+-        p->read_index += l;
+-        p->read_length -= l;
+-
+-        if (!p->read_length) {
+-            int r;
+-
+-            r = pa_stream_drop (p->stream);
+-            p->read_data = NULL;
+-            p->read_length = 0;
+-            p->read_index = 0;
+-
+-            CHECK_SUCCESS_GOTO (g, rerror, r == 0, unlock_and_fail);
+-        }
+-    }
+-
+-    pa_threaded_mainloop_unlock (g->mainloop);
+-    return 0;
++    } while (0);
+ 
+-unlock_and_fail:
+-    pa_threaded_mainloop_unlock (g->mainloop);
+-    return -1;
+-}
+-
+-static int qpa_simple_write (PAVoiceOut *p, const void *data, size_t length, int *rerror)
++static int qpa_run_out(HWVoiceOut *hw, int live)
+ {
+-    paaudio *g = p->g;
+-
+-    pa_threaded_mainloop_lock (g->mainloop);
+-
+-    CHECK_DEAD_GOTO (g, p->stream, rerror, unlock_and_fail);
+-
+-    while (length > 0) {
+-        size_t l;
+-        int r;
+-
+-        while (!(l = pa_stream_writable_size (p->stream))) {
+-            pa_threaded_mainloop_wait (g->mainloop);
+-            CHECK_DEAD_GOTO (g, p->stream, rerror, unlock_and_fail);
+-        }
+-
+-        CHECK_SUCCESS_GOTO (g, rerror, l != (size_t) -1, unlock_and_fail);
+-
+-        if (l > length) {
+-            l = length;
+-        }
+-
+-        r = pa_stream_write (p->stream, data, l, NULL, 0LL, PA_SEEK_RELATIVE);
+-        CHECK_SUCCESS_GOTO (g, rerror, r >= 0, unlock_and_fail);
+-
+-        data = (const uint8_t *) data + l;
+-        length -= l;
+-    }
+-
+-    pa_threaded_mainloop_unlock (g->mainloop);
+-    return 0;
+-
+-unlock_and_fail:
+-    pa_threaded_mainloop_unlock (g->mainloop);
+-    return -1;
+-}
+-
+-static void *qpa_thread_out (void *arg)
+-{
+-    PAVoiceOut *pa = arg;
+-    HWVoiceOut *hw = &pa->hw;
+-
+-    if (audio_pt_lock(&pa->pt, __func__)) {
+-        return NULL;
+-    }
++    PAVoiceOut *pa = (PAVoiceOut *) hw;
++    int rpos, decr, samples;
++    size_t avail_bytes, max_bytes;
++    struct st_sample *src;
++    void *pa_dst;
++    int error = 0;
++    int *rerror = &error;
++    int r;
+ 
+-    for (;;) {
+-        int decr, to_mix, rpos;
++    decr = 0;
++    rpos = hw->rpos;
+ 
+-        for (;;) {
+-            if (pa->done) {
+-                goto exit;
+-            }
++    pa_threaded_mainloop_lock(pa->g->mainloop);
++    CHECK_DEAD_GOTO(pa->g, pa->stream, rerror, fail);
+ 
+-            if (pa->live > 0) {
+-                break;
+-            }
++    avail_bytes = (size_t) live << hw->info.shift;
+ 
+-            if (audio_pt_wait(&pa->pt, __func__)) {
+-                goto exit;
+-            }
+-        }
++    max_bytes = pa_stream_writable_size(pa->stream);
++    CHECK_SUCCESS_GOTO(pa->g, rerror, max_bytes != -1, fail);
+ 
+-        decr = to_mix = audio_MIN (pa->live, pa->g->conf.samples >> 2);
+-        rpos = pa->rpos;
++    samples = (int)(audio_MIN(avail_bytes, max_bytes)) >> hw->info.shift;
++    while (samples) {
++        int convert_samples = audio_MIN(samples, hw->samples - rpos);
++        size_t b_wanted = (size_t) convert_samples << hw->info.shift;
++        size_t b_effective = b_wanted;
+ 
+-        if (audio_pt_unlock(&pa->pt, __func__)) {
+-            return NULL;
+-        }
++        r = pa_stream_begin_write(pa->stream, &pa_dst, &b_effective);
++        CHECK_SUCCESS_GOTO(pa->g, rerror, r == 0, fail);
++        CHECK_SUCCESS_GOTO(pa->g, (int *)0, b_effective == b_wanted, fail);
+ 
+-        while (to_mix) {
+-            int error;
+-            int chunk = audio_MIN (to_mix, hw->samples - rpos);
+-            struct st_sample *src = hw->mix_buf + rpos;
++        src = hw->mix_buf + rpos;
++        hw->clip(pa_dst, src, convert_samples);
+ 
+-            hw->clip (pa->pcm_buf, src, chunk);
+-
+-            if (qpa_simple_write (pa, pa->pcm_buf,
+-                                  chunk << hw->info.shift, &error) < 0) {
+-                qpa_logerr (error, "pa_simple_write failed\n");
+-                return NULL;
+-            }
++        r = pa_stream_write(pa->stream, pa_dst, b_effective,
++                            NULL, 0LL, PA_SEEK_RELATIVE);
++        CHECK_SUCCESS_GOTO(pa->g, rerror, r >= 0, fail);
+ 
+-            rpos = (rpos + chunk) % hw->samples;
+-            to_mix -= chunk;
+-        }
+-
+-        if (audio_pt_lock(&pa->pt, __func__)) {
+-            return NULL;
+-        }
+-
+-        pa->rpos = rpos;
+-        pa->live -= decr;
+-        pa->decr += decr;
++        rpos = (rpos + convert_samples) % hw->samples;
++        samples -= convert_samples;
++        decr += convert_samples;
+     }
+ 
+- exit:
+-    audio_pt_unlock(&pa->pt, __func__);
+-    return NULL;
+-}
+-
+-static int qpa_run_out (HWVoiceOut *hw, int live)
+-{
+-    int decr;
+-    PAVoiceOut *pa = (PAVoiceOut *) hw;
+-
+-    if (audio_pt_lock(&pa->pt, __func__)) {
+-        return 0;
+-    }
++    bail:
++    pa_threaded_mainloop_unlock(pa->g->mainloop);
+ 
+-    decr = audio_MIN (live, pa->decr);
+-    pa->decr -= decr;
+-    pa->live = live - decr;
+-    hw->rpos = pa->rpos;
+-    if (pa->live > 0) {
+-        audio_pt_unlock_and_signal(&pa->pt, __func__);
+-    }
+-    else {
+-        audio_pt_unlock(&pa->pt, __func__);
+-    }
++    hw->rpos = rpos;
+     return decr;
++
++fail:
++    qpa_logerr(error, "qpa_run_out failed\n");
++    goto bail;
+ }
+ 
+ static int qpa_write (SWVoiceOut *sw, void *buf, int len)
+@@ -292,92 +165,68 @@ static int qpa_write (SWVoiceOut *sw, void *buf, int len)
+     return audio_pcm_sw_write (sw, buf, len);
+ }
+ 
+-/* capture */
+-static void *qpa_thread_in (void *arg)
++static int qpa_run_in(HWVoiceIn *hw)
+ {
+-    PAVoiceIn *pa = arg;
+-    HWVoiceIn *hw = &pa->hw;
++    PAVoiceIn *pa = (PAVoiceIn *) hw;
++    int wpos, incr;
++    char *pa_src;
++    int error = 0;
++    int *rerror = &error;
++    int r;
++    size_t pa_avail;
++    incr = 0;
++    wpos = hw->wpos;
+ 
+-    if (audio_pt_lock(&pa->pt, __func__)) {
+-        return NULL;
+-    }
++    pa_threaded_mainloop_lock(pa->g->mainloop);
++    CHECK_DEAD_GOTO(pa->g, pa->stream, rerror, fail);
+ 
+-    for (;;) {
+-        int incr, to_grab, wpos;
++    size_t bytes_wanted = ((unsigned int)
++            (hw->samples - audio_pcm_hw_get_live_in(hw)) << hw->info.shift);
+ 
+-        for (;;) {
+-            if (pa->done) {
+-                goto exit;
+-            }
++    if (bytes_wanted == 0) {
++        /* no room */
++        goto bail;
++    }
+ 
+-            if (pa->dead > 0) {
+-                break;
+-            }
++    size_t bytes_avail = pa_stream_readable_size(pa->stream);
+ 
+-            if (audio_pt_wait(&pa->pt, __func__)) {
+-                goto exit;
+-            }
+-        }
++    if (bytes_wanted > bytes_avail) {
++        bytes_wanted = bytes_avail;
++    }
+ 
+-        incr = to_grab = audio_MIN (pa->dead, pa->g->conf.samples >> 2);
+-        wpos = pa->wpos;
++    while (bytes_wanted) {
++        r = pa_stream_peek(pa->stream, (const void **)&pa_src, &pa_avail);
++        CHECK_SUCCESS_GOTO(pa->g, rerror, r == 0, fail);
+ 
+-        if (audio_pt_unlock(&pa->pt, __func__)) {
+-            return NULL;
++        if (pa_avail == 0 || pa_avail > bytes_wanted) {
++            break;
+         }
+ 
+-        while (to_grab) {
+-            int error;
+-            int chunk = audio_MIN (to_grab, hw->samples - wpos);
+-            void *buf = advance (pa->pcm_buf, wpos);
++        bytes_wanted -= pa_avail;
+ 
+-            if (qpa_simple_read (pa, buf,
+-                                 chunk << hw->info.shift, &error) < 0) {
+-                qpa_logerr (error, "pa_simple_read failed\n");
+-                return NULL;
+-            }
+-
+-            hw->conv (hw->conv_buf + wpos, buf, chunk);
++        while (pa_avail) {
++            int chunk = audio_MIN(
++                    (int)(pa_avail >> hw->info.shift), hw->samples - wpos);
++            hw->conv(hw->conv_buf + wpos, pa_src, chunk);
+             wpos = (wpos + chunk) % hw->samples;
+-            to_grab -= chunk;
+-        }
+-
+-        if (audio_pt_lock(&pa->pt, __func__)) {
+-            return NULL;
++            pa_src += chunk << hw->info.shift;
++            pa_avail -= chunk << hw->info.shift;
++            incr += chunk;
+         }
+ 
+-        pa->wpos = wpos;
+-        pa->dead -= incr;
+-        pa->incr += incr;
++        r = pa_stream_drop(pa->stream);
++        CHECK_SUCCESS_GOTO(pa->g, rerror, r == 0, fail);
+     }
+ 
+- exit:
+-    audio_pt_unlock(&pa->pt, __func__);
+-    return NULL;
+-}
+-
+-static int qpa_run_in (HWVoiceIn *hw)
+-{
+-    int live, incr, dead;
+-    PAVoiceIn *pa = (PAVoiceIn *) hw;
+-
+-    if (audio_pt_lock(&pa->pt, __func__)) {
+-        return 0;
+-    }
++bail:
++    pa_threaded_mainloop_unlock(pa->g->mainloop);
+ 
+-    live = audio_pcm_hw_get_live_in (hw);
+-    dead = hw->samples - live;
+-    incr = audio_MIN (dead, pa->incr);
+-    pa->incr -= incr;
+-    pa->dead = dead - incr;
+-    hw->wpos = pa->wpos;
+-    if (pa->dead > 0) {
+-        audio_pt_unlock_and_signal(&pa->pt, __func__);
+-    }
+-    else {
+-        audio_pt_unlock(&pa->pt, __func__);
+-    }
++    hw->wpos = wpos;
+     return incr;
++
++fail:
++    qpa_logerr(error, "qpa_run_in failed\n");
++    goto bail;
+ }
+ 
+ static int qpa_read (SWVoiceIn *sw, void *buf, int len)
+@@ -470,13 +319,6 @@ static void stream_state_cb (pa_stream *s, void * userdata)
+     }
+ }
+ 
+-static void stream_request_cb (pa_stream *s, size_t length, void *userdata)
+-{
+-    paaudio *g = userdata;
+-
+-    pa_threaded_mainloop_signal (g->mainloop, 0);
+-}
+-
+ static pa_stream *qpa_simple_new (
+         paaudio *g,
+         const char *name,
+@@ -498,23 +340,17 @@ static pa_stream *qpa_simple_new (
+     }
+ 
+     pa_stream_set_state_callback (stream, stream_state_cb, g);
+-    pa_stream_set_read_callback (stream, stream_request_cb, g);
+-    pa_stream_set_write_callback (stream, stream_request_cb, g);
+ 
+     if (dir == PA_STREAM_PLAYBACK) {
+-        r = pa_stream_connect_playback (stream, dev, attr,
+-                                        PA_STREAM_INTERPOLATE_TIMING
+-#ifdef PA_STREAM_ADJUST_LATENCY
+-                                        |PA_STREAM_ADJUST_LATENCY
+-#endif
+-                                        |PA_STREAM_AUTO_TIMING_UPDATE, NULL, NULL);
++        r = pa_stream_connect_playback(stream, dev, attr,
++                PA_STREAM_INTERPOLATE_TIMING
++                | (g->conf.adjust_latency_out ? PA_STREAM_ADJUST_LATENCY : 0)
++                | PA_STREAM_AUTO_TIMING_UPDATE, NULL, NULL);
+     } else {
+-        r = pa_stream_connect_record (stream, dev, attr,
+-                                      PA_STREAM_INTERPOLATE_TIMING
+-#ifdef PA_STREAM_ADJUST_LATENCY
+-                                      |PA_STREAM_ADJUST_LATENCY
+-#endif
+-                                      |PA_STREAM_AUTO_TIMING_UPDATE);
++        r = pa_stream_connect_record(stream, dev, attr,
++                PA_STREAM_INTERPOLATE_TIMING
++                | (g->conf.adjust_latency_in ? PA_STREAM_ADJUST_LATENCY : 0)
++                | PA_STREAM_AUTO_TIMING_UPDATE);
+     }
+ 
+     if (r < 0) {
+@@ -541,165 +377,167 @@ static int qpa_init_out(HWVoiceOut *hw, struct audsettings *as,
+                         void *drv_opaque)
+ {
+     int error;
+-    pa_sample_spec ss;
+-    pa_buffer_attr ba;
+     struct audsettings obt_as = *as;
+     PAVoiceOut *pa = (PAVoiceOut *) hw;
+     paaudio *g = pa->g = drv_opaque;
+ 
+-    ss.format = audfmt_to_pa (as->fmt, as->endianness);
+-    ss.channels = as->nchannels;
+-    ss.rate = as->freq;
+-
+-    /*
+-     * qemu audio tick runs at 100 Hz (by default), so processing
+-     * data chunks worth 10 ms of sound should be a good fit.
+-     */
+-    ba.tlength = pa_usec_to_bytes (10 * 1000, &ss);
+-    ba.minreq = pa_usec_to_bytes (5 * 1000, &ss);
+-    ba.maxlength = -1;
+-    ba.prebuf = -1;
+-
+-    obt_as.fmt = pa_to_audfmt (ss.format, &obt_as.endianness);
+-
+-    pa->stream = qpa_simple_new (
+-        g,
+-        "qemu",
+-        PA_STREAM_PLAYBACK,
+-        g->conf.sink,
+-        &ss,
+-        NULL,                   /* channel map */
+-        &ba,                    /* buffering attributes */
+-        &error
+-        );
++    int64_t timer_tick_duration =
++        audio_MAX(audio_get_timer_ticks(), 1 * SCALE_MS);
++    int64_t frames_per_tick_x1000 =
++        ((timer_tick_duration * as->freq * 1000LL) / NANOSECONDS_PER_SECOND);
++
++    int64_t tlength = g->conf.tlength;
++    if (tlength == 0) {
++        tlength = (frames_per_tick_x1000) / 400;
++    }
++    int64_t buflen = g->conf.buffer_size_out;
++    if (buflen == 0) {
++        buflen = frames_per_tick_x1000  / 400;
++    }
++
++    ldebug("tick duration: %.2f ms (%.3f frames)\n",
++           ((float)timer_tick_duration) / SCALE_MS,
++           (float)frames_per_tick_x1000 / 1000.0f);
++
++    ldebug("OUT internal buffer: %.2f ms (%"PRId64" frames)\n",
++           buflen * (1000.0f / as->freq),
++           buflen);
++
++    ldebug("OUT tlength: %.2f ms (%"PRId64" frames)\n",
++           tlength * (1000.0f / as->freq),
++           tlength);
++
++    ldebug("OUT adjust latency: %s\n",
++           g->conf.adjust_latency_out ? "yes" : "no");
++
++    pa->ss.format = audfmt_to_pa(as->fmt, as->endianness);
++    pa->ss.channels = as->nchannels;
++    pa->ss.rate = as->freq;
++
++    pa->ba.tlength = tlength * pa_frame_size(&pa->ss);
++    pa->ba.maxlength = -1;
++    pa->ba.minreq = -1;
++    pa->ba.prebuf = -1;
++
++    obt_as.fmt = pa_to_audfmt(pa->ss.format, &obt_as.endianness);
++
++    pa->stream = qpa_simple_new(
++            g,
++            "qemu",
++            PA_STREAM_PLAYBACK,
++            g->conf.sink,
++            &pa->ss,
++            NULL,                   /* channel map */
++            &pa->ba,                /* buffering attributes */
++            &error
++    );
+     if (!pa->stream) {
+         qpa_logerr (error, "pa_simple_new for playback failed\n");
+         goto fail1;
+     }
+ 
+-    audio_pcm_init_info (&hw->info, &obt_as);
+-    hw->samples = g->conf.samples;
+-    pa->pcm_buf = audio_calloc(__func__, hw->samples, 1 << hw->info.shift);
+-    pa->rpos = hw->rpos;
+-    if (!pa->pcm_buf) {
+-        dolog ("Could not allocate buffer (%d bytes)\n",
+-               hw->samples << hw->info.shift);
+-        goto fail2;
+-    }
+-
+-    if (audio_pt_init(&pa->pt, qpa_thread_out, hw, AUDIO_CAP, __func__)) {
+-        goto fail3;
+-    }
++    audio_pcm_init_info(&hw->info, &obt_as);
++    hw->samples = buflen;
+ 
+     return 0;
+ 
+- fail3:
+-    g_free (pa->pcm_buf);
+-    pa->pcm_buf = NULL;
+- fail2:
+-    if (pa->stream) {
+-        pa_stream_unref (pa->stream);
+-        pa->stream = NULL;
+-    }
+- fail1:
++fail1:
+     return -1;
+ }
+ 
+ static int qpa_init_in(HWVoiceIn *hw, struct audsettings *as, void *drv_opaque)
+ {
+     int error;
+-    pa_sample_spec ss;
+     struct audsettings obt_as = *as;
+     PAVoiceIn *pa = (PAVoiceIn *) hw;
+     paaudio *g = pa->g = drv_opaque;
+ 
+-    ss.format = audfmt_to_pa (as->fmt, as->endianness);
+-    ss.channels = as->nchannels;
+-    ss.rate = as->freq;
+-
+-    obt_as.fmt = pa_to_audfmt (ss.format, &obt_as.endianness);
+-
+-    pa->stream = qpa_simple_new (
+-        g,
+-        "qemu",
+-        PA_STREAM_RECORD,
+-        g->conf.source,
+-        &ss,
+-        NULL,                   /* channel map */
+-        NULL,                   /* buffering attributes */
+-        &error
+-        );
++    int64_t timer_tick_duration =
++        audio_MAX(audio_get_timer_ticks(), 1 * SCALE_MS);
++    int64_t frames_per_tick_x1000 =
++        ((timer_tick_duration * as->freq * 1000LL) / NANOSECONDS_PER_SECOND);
++
++    int64_t fragsize = g->conf.fragsize;
++    if (fragsize == 0) {
++        fragsize = frames_per_tick_x1000 / 1000;
++    }
++    int64_t buflen = g->conf.buffer_size_in;
++    if (buflen == 0) {
++        buflen = frames_per_tick_x1000  / 400;
++    }
++    int64_t maxlength = g->conf.maxlength_in;
++    if (maxlength == 0) {
++        maxlength = fragsize * 2;
++    }
++
++    ldebug("IN internal buffer: %.2f ms (%"PRId64" frames)\n",
++           buflen * (1000.0f / as->freq),
++           buflen);
++
++    ldebug("IN fragsize: %.2f ms (%"PRId64" frames)\n",
++           fragsize * (1000.0f / as->freq),
++           fragsize);
++
++    ldebug("IN maxlength: %.2f ms (%"PRId64" frames)\n",
++           maxlength * (1000.0f / as->freq),
++           maxlength);
++
++    ldebug("IN adjust latency: %s\n",
++           g->conf.adjust_latency_in ? "yes" : "no");
++
++    pa->ss.format = audfmt_to_pa(as->fmt, as->endianness);
++    pa->ss.channels = as->nchannels;
++    pa->ss.rate = as->freq;
++
++    pa->ba.fragsize = fragsize * pa_frame_size(&pa->ss);
++    pa->ba.maxlength = maxlength * pa_frame_size(&pa->ss);
++    pa->ba.minreq = -1;
++    pa->ba.prebuf = -1;
++
++    obt_as.fmt = pa_to_audfmt(pa->ss.format, &obt_as.endianness);
++
++    pa->stream = qpa_simple_new(
++            g,
++            "qemu",
++            PA_STREAM_RECORD,
++            g->conf.source,
++            &pa->ss,
++            NULL,                   /* channel map */
++            &pa->ba,                /* buffering attributes */
++            &error
++    );
+     if (!pa->stream) {
+         qpa_logerr (error, "pa_simple_new for capture failed\n");
+         goto fail1;
+     }
+ 
+-    audio_pcm_init_info (&hw->info, &obt_as);
+-    hw->samples = g->conf.samples;
+-    pa->pcm_buf = audio_calloc(__func__, hw->samples, 1 << hw->info.shift);
+-    pa->wpos = hw->wpos;
+-    if (!pa->pcm_buf) {
+-        dolog ("Could not allocate buffer (%d bytes)\n",
+-               hw->samples << hw->info.shift);
+-        goto fail2;
+-    }
+-
+-    if (audio_pt_init(&pa->pt, qpa_thread_in, hw, AUDIO_CAP, __func__)) {
+-        goto fail3;
+-    }
++    audio_pcm_init_info(&hw->info, &obt_as);
++    hw->samples = buflen;
+ 
+     return 0;
+ 
+- fail3:
+-    g_free (pa->pcm_buf);
+-    pa->pcm_buf = NULL;
+- fail2:
+-    if (pa->stream) {
+-        pa_stream_unref (pa->stream);
+-        pa->stream = NULL;
+-    }
+- fail1:
++    fail1:
+     return -1;
+ }
+ 
+ static void qpa_fini_out (HWVoiceOut *hw)
+ {
+-    void *ret;
+     PAVoiceOut *pa = (PAVoiceOut *) hw;
+ 
+-    audio_pt_lock(&pa->pt, __func__);
+-    pa->done = 1;
+-    audio_pt_unlock_and_signal(&pa->pt, __func__);
+-    audio_pt_join(&pa->pt, &ret, __func__);
+-
+     if (pa->stream) {
+         pa_stream_unref (pa->stream);
+         pa->stream = NULL;
+     }
+-
+-    audio_pt_fini(&pa->pt, __func__);
+-    g_free (pa->pcm_buf);
+-    pa->pcm_buf = NULL;
+ }
+ 
+ static void qpa_fini_in (HWVoiceIn *hw)
+ {
+-    void *ret;
+     PAVoiceIn *pa = (PAVoiceIn *) hw;
+ 
+-    audio_pt_lock(&pa->pt, __func__);
+-    pa->done = 1;
+-    audio_pt_unlock_and_signal(&pa->pt, __func__);
+-    audio_pt_join(&pa->pt, &ret, __func__);
+-
+     if (pa->stream) {
+         pa_stream_unref (pa->stream);
+         pa->stream = NULL;
+     }
+-
+-    audio_pt_fini(&pa->pt, __func__);
+-    g_free (pa->pcm_buf);
+-    pa->pcm_buf = NULL;
+ }
+ 
+ static int qpa_ctl_out (HWVoiceOut *hw, int cmd, ...)
+@@ -809,7 +647,8 @@ static int qpa_ctl_in (HWVoiceIn *hw, int cmd, ...)
+ 
+ /* common */
+ static PAConf glob_conf = {
+-    .samples = 4096,
++        .adjust_latency_out = 0,
++        .adjust_latency_in = 1,
+ };
+ 
+ static void *qpa_audio_init (void)
+@@ -897,10 +736,46 @@ static void qpa_audio_fini (void *opaque)
+ 
+ struct audio_option qpa_options[] = {
+     {
+-        .name  = "SAMPLES",
++        .name  = "BUFFER_SIZE_OUT",
++        .tag   = AUD_OPT_INT,
++        .valp  = &glob_conf.buffer_size_out,
++        .descr = "internal buffer size in frames for playback device"
++    },
++    {
++        .name  = "BUFFER_SIZE_IN",
++        .tag   = AUD_OPT_INT,
++        .valp  = &glob_conf.buffer_size_in,
++        .descr = "internal buffer size in frames for recording device"
++    },
++    {
++        .name  = "TLENGTH",
+         .tag   = AUD_OPT_INT,
+-        .valp  = &glob_conf.samples,
+-        .descr = "buffer size in samples"
++        .valp  = &glob_conf.tlength,
++        .descr = "playback buffer target length in frames"
++    },
++    {
++        .name  = "FRAGSIZE",
++        .tag   = AUD_OPT_INT,
++        .valp  = &glob_conf.fragsize,
++        .descr = "fragment length of recording device in frames"
++    },
++    {
++        .name  = "MAXLENGTH_IN",
++        .tag   = AUD_OPT_INT,
++        .valp  = &glob_conf.maxlength_in,
++        .descr = "maximum length of PA recording buffer in frames"
++    },
++    {
++        .name  = "ADJUST_LATENCY_OUT",
++        .tag   = AUD_OPT_BOOL,
++        .valp  = &glob_conf.adjust_latency_out,
++        .descr = "instruct PA to adjust latency for playback device"
++    },
++    {
++        .name  = "ADJUST_LATENCY_IN",
++        .tag   = AUD_OPT_BOOL,
++        .valp  = &glob_conf.adjust_latency_in,
++        .descr = "instruct PA to adjust latency for recording device"
+     },
+     {
+         .name  = "SERVER",
+diff --git hw/audio/hda-codec.c hw/audio/hda-codec.c
+index e8aa7842e6..e68830490f 100644
+--- hw/audio/hda-codec.c
++++ hw/audio/hda-codec.c
+@@ -18,6 +18,7 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#include "qemu/atomic.h"
+ #include "hw/hw.h"
+ #include "hw/pci/pci.h"
+ #include "intel-hda.h"
+@@ -126,6 +127,11 @@ static void hda_codec_parse_fmt(uint32_t format, struct audsettings *as)
+ #define   PARAM nomixemu
+ #include  "hda-codec-common.h"
+ 
++#define HDA_TIMER_TICKS (SCALE_MS)
++#define MAX_CORR (SCALE_US * 100)
++#define B_SIZE sizeof(st->buf)
++#define B_MASK (sizeof(st->buf) - 1)
++
+ /* -------------------------------------------------------------------------- */
+ 
+ static const char *fmt2name[] = {
+@@ -154,8 +160,13 @@ struct HDAAudioStream {
+         SWVoiceIn *in;
+         SWVoiceOut *out;
+     } voice;
+-    uint8_t buf[HDA_BUFFER_SIZE];
+-    uint32_t bpos;
++    uint8_t compat_buf[HDA_BUFFER_SIZE];
++    uint32_t compat_bpos;
++    uint8_t buf[8192]; /* size must be power of two */
++    int64_t rpos;
++    int64_t wpos;
++    QEMUTimer *buft;
++    int64_t buft_start;
+ };
+ 
+ #define TYPE_HDA_AUDIO "hda-audio"
+@@ -176,53 +187,146 @@ struct HDAAudioState {
+     bool     mixer;
+ };
+ 
++static inline int64_t hda_bytes_per_second(HDAAudioStream *st)
++{
++    return 2 * st->as.nchannels * st->as.freq;
++}
++
++static inline void hda_timer_sync_adjust(HDAAudioStream *st, int64_t target_pos)
++{
++    int64_t corr =
++        NANOSECONDS_PER_SECOND * target_pos / hda_bytes_per_second(st);
++    if (corr > MAX_CORR) {
++        corr = MAX_CORR;
++    } else if (corr < -MAX_CORR) {
++        corr = -MAX_CORR;
++    }
++    atomic_fetch_add(&st->buft_start, corr);
++}
++
++static void hda_audio_input_timer(void *opaque)
++{
++    HDAAudioStream *st = opaque;
++
++    int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++
++    int64_t buft_start = atomic_fetch_add(&st->buft_start, 0);
++    int64_t wpos = atomic_fetch_add(&st->wpos, 0);
++    int64_t rpos = atomic_fetch_add(&st->rpos, 0);
++
++    int64_t wanted_rpos = hda_bytes_per_second(st) * (now - buft_start)
++                          / NANOSECONDS_PER_SECOND;
++    wanted_rpos &= -4; /* IMPORTANT! clip to frames */
++
++    if (wanted_rpos <= rpos) {
++        /* we already transmitted the data */
++        goto out_timer;
++    }
++
++    int64_t to_transfer = audio_MIN(wpos - rpos, wanted_rpos - rpos);
++    while (to_transfer) {
++        uint32_t start = (rpos & B_MASK);
++        uint32_t chunk = audio_MIN(B_SIZE - start, to_transfer);
++        int rc = hda_codec_xfer(
++                &st->state->hda, st->stream, false, st->buf + start, chunk);
++        if (!rc) {
++            break;
++        }
++        rpos += chunk;
++        to_transfer -= chunk;
++        atomic_fetch_add(&st->rpos, chunk);
++    }
++
++out_timer:
++
++    if (st->running) {
++        timer_mod_anticipate_ns(st->buft, now + HDA_TIMER_TICKS);
++    }
++}
++
+ static void hda_audio_input_cb(void *opaque, int avail)
+ {
+     HDAAudioStream *st = opaque;
+-    int recv = 0;
+-    int len;
+-    bool rc;
+-
+-    while (avail - recv >= sizeof(st->buf)) {
+-        if (st->bpos != sizeof(st->buf)) {
+-            len = AUD_read(st->voice.in, st->buf + st->bpos,
+-                           sizeof(st->buf) - st->bpos);
+-            st->bpos += len;
+-            recv += len;
+-            if (st->bpos != sizeof(st->buf)) {
+-                break;
+-            }
++
++    int64_t wpos = atomic_fetch_add(&st->wpos, 0);
++    int64_t rpos = atomic_fetch_add(&st->rpos, 0);
++
++    int64_t to_transfer = audio_MIN(B_SIZE - (wpos - rpos), avail);
++
++    hda_timer_sync_adjust(st, -((wpos - rpos) + to_transfer - (B_SIZE >> 1)));
++
++    while (to_transfer) {
++        uint32_t start = (uint32_t) (wpos & B_MASK);
++        uint32_t chunk = (uint32_t) audio_MIN(B_SIZE - start, to_transfer);
++        uint32_t read = AUD_read(st->voice.in, st->buf + start, chunk);
++        wpos += read;
++        to_transfer -= read;
++        atomic_fetch_add(&st->wpos, read);
++        if (chunk != read) {
++            break;
+         }
+-        rc = hda_codec_xfer(&st->state->hda, st->stream, false,
+-                            st->buf, sizeof(st->buf));
++    }
++}
++
++static void hda_audio_output_timer(void *opaque)
++{
++    HDAAudioStream *st = opaque;
++
++    int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++
++    int64_t buft_start = atomic_fetch_add(&st->buft_start, 0);
++    int64_t wpos = atomic_fetch_add(&st->wpos, 0);
++    int64_t rpos = atomic_fetch_add(&st->rpos, 0);
++
++    int64_t wanted_wpos = hda_bytes_per_second(st) * (now - buft_start)
++                          / NANOSECONDS_PER_SECOND;
++    wanted_wpos &= -4; /* IMPORTANT! clip to frames */
++
++    if (wanted_wpos <= wpos) {
++        /* we already received the data */
++        goto out_timer;
++    }
++
++    int64_t to_transfer = audio_MIN(B_SIZE - (wpos - rpos), wanted_wpos - wpos);
++    while (to_transfer) {
++        uint32_t start = (wpos & B_MASK);
++        uint32_t chunk = audio_MIN(B_SIZE - start, to_transfer);
++        int rc = hda_codec_xfer(
++                &st->state->hda, st->stream, true, st->buf + start, chunk);
+         if (!rc) {
+             break;
+         }
+-        st->bpos = 0;
++        wpos += chunk;
++        to_transfer -= chunk;
++        atomic_fetch_add(&st->wpos, chunk);
++    }
++
++out_timer:
++
++    if (st->running) {
++        timer_mod_anticipate_ns(st->buft, now + HDA_TIMER_TICKS);
+     }
+ }
+ 
+ static void hda_audio_output_cb(void *opaque, int avail)
+ {
+     HDAAudioStream *st = opaque;
+-    int sent = 0;
+-    int len;
+-    bool rc;
+-
+-    while (avail - sent >= sizeof(st->buf)) {
+-        if (st->bpos == sizeof(st->buf)) {
+-            rc = hda_codec_xfer(&st->state->hda, st->stream, true,
+-                                st->buf, sizeof(st->buf));
+-            if (!rc) {
+-                break;
+-            }
+-            st->bpos = 0;
+-        }
+-        len = AUD_write(st->voice.out, st->buf + st->bpos,
+-                        sizeof(st->buf) - st->bpos);
+-        st->bpos += len;
+-        sent += len;
+-        if (st->bpos != sizeof(st->buf)) {
++
++    int64_t wpos = atomic_fetch_add(&st->wpos, 0);
++    int64_t rpos = atomic_fetch_add(&st->rpos, 0);
++
++    int64_t to_transfer = audio_MIN(wpos - rpos, avail);
++
++    hda_timer_sync_adjust(st, (wpos - rpos) - to_transfer - (B_SIZE >> 1));
++
++    while (to_transfer) {
++        uint32_t start = (uint32_t) (rpos & B_MASK);
++        uint32_t chunk = (uint32_t) audio_MIN(B_SIZE - start, to_transfer);
++        uint32_t written = AUD_write(st->voice.out, st->buf + start, chunk);
++        rpos += written;
++        to_transfer -= written;
++        atomic_fetch_add(&st->rpos, written);
++        if (chunk != written) {
+             break;
+         }
+     }
+@@ -239,6 +343,15 @@ static void hda_audio_set_running(HDAAudioStream *st, bool running)
+     st->running = running;
+     dprint(st->state, 1, "%s: %s (stream %d)\n", st->node->name,
+            st->running ? "on" : "off", st->stream);
++    if (running) {
++        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++        st->rpos = 0;
++        st->wpos = 0;
++        st->buft_start = now;
++        timer_mod_anticipate_ns(st->buft, now + HDA_TIMER_TICKS);
++    } else {
++        timer_del(st->buft);
++    }
+     if (st->output) {
+         AUD_set_active_out(st->voice.out, st->running);
+     } else {
+@@ -286,10 +399,12 @@ static void hda_audio_setup(HDAAudioStream *st)
+         st->voice.out = AUD_open_out(&st->state->card, st->voice.out,
+                                      st->node->name, st,
+                                      hda_audio_output_cb, &st->as);
++        st->buft = timer_new_ns(QEMU_CLOCK_VIRTUAL, hda_audio_output_timer, st);
+     } else {
+         st->voice.in = AUD_open_in(&st->state->card, st->voice.in,
+                                    st->node->name, st,
+                                    hda_audio_input_cb, &st->as);
++        st->buft = timer_new_ns(QEMU_CLOCK_VIRTUAL, hda_audio_input_timer, st);
+     }
+ }
+ 
+@@ -505,7 +620,6 @@ static int hda_audio_init(HDACodecDevice *hda, const struct desc_codec *desc)
+                 /* unmute output by default */
+                 st->gain_left = QEMU_HDA_AMP_STEPS;
+                 st->gain_right = QEMU_HDA_AMP_STEPS;
+-                st->bpos = sizeof(st->buf);
+                 st->output = true;
+             } else {
+                 st->output = false;
+@@ -532,6 +646,7 @@ static void hda_audio_exit(HDACodecDevice *hda)
+         if (st->node == NULL) {
+             continue;
+         }
++        timer_del(st->buft);
+         if (st->output) {
+             AUD_close_out(&a->card, st->voice.out);
+         } else {
+@@ -592,8 +707,8 @@ static const VMStateDescription vmstate_hda_audio_stream = {
+         VMSTATE_UINT32(gain_right, HDAAudioStream),
+         VMSTATE_BOOL(mute_left, HDAAudioStream),
+         VMSTATE_BOOL(mute_right, HDAAudioStream),
+-        VMSTATE_UINT32(bpos, HDAAudioStream),
+-        VMSTATE_BUFFER(buf, HDAAudioStream),
++        VMSTATE_UINT32(compat_bpos, HDAAudioStream),
++        VMSTATE_BUFFER(compat_buf, HDAAudioStream),
+         VMSTATE_END_OF_LIST()
+     }
+ };
+diff --git hw/audio/intel-hda.c hw/audio/intel-hda.c
+index 948268afd8..23a2cf6484 100644
+--- hw/audio/intel-hda.c
++++ hw/audio/intel-hda.c
+@@ -407,13 +407,6 @@ static bool intel_hda_xfer(HDACodecDevice *dev, uint32_t stnr, bool output,
+     if (st->bpl == NULL) {
+         return false;
+     }
+-    if (st->ctl & (1 << 26)) {
+-        /*
+-         * Wait with the next DMA xfer until the guest
+-         * has acked the buffer completion interrupt
+-         */
+-        return false;
+-    }
+ 
+     left = len;
+     s = st->bentries;
