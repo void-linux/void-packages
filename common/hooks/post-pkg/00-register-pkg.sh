@@ -7,16 +7,7 @@ registerpkg() {
 		msg_error "Unexistent binary package ${repo}/${pkg}!\n"
 	fi
 
-	msg_normal "Registering ${pkg} into ${repo} ...\n"
-	if [ -n "${arch}" ]; then
-		XBPS_TARGET_ARCH=${arch} $XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${repo}/${pkg}
-	else
-		if [ -n "$XBPS_CROSS_BUILD" ]; then
-			$XBPS_RINDEX_XCMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${repo}/${pkg}
-		else
-			$XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${repo}/${pkg}
-		fi
-	fi
+	printf "%s:%s:%s\n" "${arch}" "${repo}" "${pkg}" >> "${XBPS_STATEDIR}/.${sourcepkg}_register_pkg"
 }
 
 hook() {

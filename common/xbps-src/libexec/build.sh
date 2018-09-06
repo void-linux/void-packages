@@ -84,10 +84,31 @@ for subpkg in ${subpackages} ${sourcepkg}; do
     fi
 done
 
+# Clean list of preregistered packages
+printf "" > ${XBPS_STATEDIR}/.${sourcepkg}_register_pkg
 # If install went ok generate the binpkgs.
 for subpkg in ${subpackages} ${sourcepkg}; do
     $XBPS_LIBEXECDIR/xbps-src-dopkg.sh $subpkg "$XBPS_REPOSITORY" "$XBPS_CROSS_BUILD" || exit 1
 done
+
+# Registering packages at once per repository. This makes sure that staging is
+# triggered for all new packages if any of them introduces inconsistencies.
+cut -d: -f 1,2 ${XBPS_STATEDIR}/.${sourcepkg}_register_pkg | sort -u | \
+    while IFS=: read -r arch repo; do
+        paths=$(grep "^$arch:$repo:" "${XBPS_STATEDIR}/.${sourcepkg}_register_pkg" | \
+            cut -f 2,3 | tr ':' '/')
+        if [ -n "${arch}" ]; then
+            msg_normal "Registering new packages to $repo ($arch)\n"
+            XBPS_TARGET_ARCH=${arch} $XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+        else
+            msg_normal "Registering new packages to $repo\n"
+            if [ -n "$XBPS_CROSS_BUILD" ]; then
+                $XBPS_RINDEX_XCMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+            else
+                $XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+            fi
+        fi
+    done
 
 # pkg cleanup
 if declare -f do_clean >/dev/null; then
