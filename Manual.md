@@ -1032,8 +1032,8 @@ by blanks. Optionally the **gid** can be specified by delimiting it with a
 colon, i.e `system_groups="mygroup:78"` or `system_groups="foo blah:8000"`.
 
 - `system_accounts` This specifies the names of the new **system users/groups** to be created,
-separated by blanks, i.e `system_accounts="foo blah:22"`. Optionally the **uid** and **gid**
-can be specified by delimiting it with a colon, i.e `system_accounts="foo:48"`.
+separated by blanks, i.e `system_accounts="_foo _blah:22"`. Optionally the **uid** and **gid**
+can be specified by delimiting it with a colon, i.e `system_accounts="_foo:48"`.
 Additional variables for the **system accounts** can be specified to change its behavior:
 
 	- `<account>_homedir` the home directory for the user. If unset defaults to `/var/empty`.
@@ -1045,6 +1045,12 @@ Additional variables for the **system accounts** can be specified to change its 
 The **system user** is created by using a dynamically allocated **uid/gid** in your system
 and it's created as a `system account`, unless the **uid** is set. A new group will be created for the
 specified `system account` and used exclusively for this purpose.
+
+System accounts must be prefixed with an underscore to prevent clashing with names of user
+accounts.
+
+> NOTE: The underscore policy does not apply to old packages, due to the inevitable breakage of
+> changing the username only new packages should follow it.
 
 <a id="32bit_pkgs"></a>
 ### 32bit packages
