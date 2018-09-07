@@ -96,7 +96,7 @@ done
 cut -d: -f 1,2 ${XBPS_STATEDIR}/.${sourcepkg}_register_pkg | sort -u | \
     while IFS=: read -r arch repo; do
         paths=$(grep "^$arch:$repo:" "${XBPS_STATEDIR}/.${sourcepkg}_register_pkg" | \
-            cut -f 2,3 | tr ':' '/')
+            cut -d : -f 2,3 | tr ':' '/')
         if [ -n "${arch}" ]; then
             msg_normal "Registering new packages to $repo ($arch)\n"
             XBPS_TARGET_ARCH=${arch} $XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
