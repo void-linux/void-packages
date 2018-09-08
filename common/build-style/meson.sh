@@ -65,7 +65,7 @@ EOF
 		# are set to (C|CXX)FLAGS_host
 		export CFLAGS=${CFLAGS_host} CXXFLAGS=${CXXFLAGS_host}
 
-		unset _MESON_TARGET_CPU _MESON_TARGET_ENDIAN
+		unset _MESON_CPU_FAMILY _MESON_TARGET_CPU _MESON_TARGET_ENDIAN
 	fi
 
 	${meson_cmd} --prefix=/usr --buildtype=plain ${configure_args} . ${meson_builddir}
