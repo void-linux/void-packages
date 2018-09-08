@@ -3,6 +3,12 @@
 #
 do_configure() {
 	qbs-setup-qt /usr/lib/qt5/bin/qmake qt5
+
+	if [ "$XBPS_CROSS_TRIPLET" ]; then
+		qbs setup-toolchains /usr/bin/$CC cc
+		qbs config profiles.qt5.sysroot /usr/$XBPS_CROSS_TRIPLET
+	fi
+
 	qbs-config defaultProfile qt5
 
 	# In theory qbs supports generating makefiles, however most projects
