@@ -11,4 +11,4 @@ Don't forget to generate the Secret Key:
    C. Enter the hash of a password:
       $ echo -n "foo" | sha1sum | cut -d' ' -f1 >/etc/munge/munge.key
 
-The Key-File must owned by munge with the permission 700
+The Key-File must owned by munge with the permission 600
