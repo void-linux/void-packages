@@ -1,0 +1,93 @@
+Source: Cogitri
+Upstream: No
+Reason: fixes cross-compilation by running generators against the host system and compiling them against it too.
+
+--- gdk-pixbuf/meson.build
++++ gdk-pixbuf/meson.build
+@@ -291,11 +291,16 @@ foreach bin: gdkpixbuf_bin
+   set_variable(bin_name.underscorify(), bin)
+ endforeach
+ 
++if meson.is_cross_build()
++  gdk_pixbuf_query_loaders = find_program('gdk-pixbuf-query-loaders', native: true)
++endif
++
+ # The 'loaders.cache' used for testing, so we don't accidentally
+ # load the installed cache; we always build it by default
+ loaders_cache = custom_target('loaders.cache',
+                               output: 'loaders.cache',
+                               capture: true,
++                              depends: gdkpixbuf,
+                               command: [
+                                 gdk_pixbuf_query_loaders,
+                                 dynamic_loaders,
+--- meson.build
++++ meson.build
+@@ -212,6 +212,15 @@ endif
+ 
+ gdk_pixbuf_deps = [ mathlib_dep, gobject_dep, gmodule_dep, gio_dep, shared_mime_dep, medialib_dep ]
+ 
++# cross deps
++if meson.is_cross_build()
++  gobject_dep_native = dependency('gobject-2.0', version: glib_req_version, native: true)
++  gmodule_dep_native = dependency('gmodule-no-export-2.0', native: true)
++  gio_dep_native = dependency('gio-2.0', native: true)
++  gdk_pixbuf_dep_native = dependency('gdk-pixbuf-2.0', native: true)
++  native_deps = [ gobject_dep_native, gmodule_dep_native, gio_dep_native, gdk_pixbuf_dep_native ]
++endif
++
+ # Check if we can build shared modules
+ build_modules = gmodule_dep.get_pkgconfig_variable('gmodule_supported') == 'true'
+ gdk_pixbuf_conf.set('USE_GMODULE', build_modules)
+@@ -396,7 +405,6 @@ endif
+ # i18n
+ subdir('po')
+ 
+-subdir('tests')
+ subdir('thumbnailer')
+ 
+ # Documentation
+--- thumbnailer/meson.build
++++ thumbnailer/meson.build
+@@ -6,7 +6,36 @@ executable('gdk-pixbuf-thumbnailer',
+            ],
+            dependencies: gdk_pixbuf_deps + [ gdkpixbuf_dep ],
+            install: true)
++if meson.is_cross_build()
++cc = meson.get_compiler('c')
+ 
++gdk_pixbuf_print_mime_types = executable('gdk-pixbuf-print-mime-types',
++                                         'gdk-pixbuf-print-mime-types.c',
++                                         c_args: common_cflags,
++                                         dependencies: native_deps,
++                                         native: true,
++                                         include_directories: include_directories('..'))
++
++custom_target('thumbnailer',
++              input: 'gdk-pixbuf-thumbnailer.thumbnailer.in',
++              output: 'gdk-pixbuf-thumbnailer.thumbnailer',
++              command: [
++                gen_thumbnailer,
++                '--printer=@0@'.format('/usr/bin/gdk-pixbuf-thumbnailer'),
++                '--pixdata=@0@'.format('/usr/bin/gdk-pixbuf-pixdata'),
++                '--loaders=@0@'.format('/usr/bin/gdk-pixbuf-query-loaders'),
++                '--bindir=@0@'.format(gdk_pixbuf_bindir),
++                '@INPUT@',
++                '@OUTPUT@',
++              ],
++              depends: [
++                gdk_pixbuf_print_mime_types,
++                gdk_pixbuf_pixdata,
++                loaders_cache,
++              ],
++              install: true,
++              install_dir: join_paths(gdk_pixbuf_datadir, 'thumbnailers'))
++else
+ gdk_pixbuf_print_mime_types = executable('gdk-pixbuf-print-mime-types',
+                                          'gdk-pixbuf-print-mime-types.c',
+                                          c_args: common_cflags,
+@@ -31,3 +60,4 @@ custom_target('thumbnailer',
+               ],
+               install: true,
+               install_dir: join_paths(gdk_pixbuf_datadir, 'thumbnailers'))
++endif
