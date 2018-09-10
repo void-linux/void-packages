@@ -35,6 +35,7 @@ do_configure() {
 c = '${CC}'
 cpp = '${CXX}'
 ar = '${AR}'
+nm = '${NM}'
 ld = '${LD}'
 strip = '${STRIP}'
 readelf = '${READELF}'
@@ -56,14 +57,15 @@ endian = '${_MESON_TARGET_ENDIAN}'
 EOF
 		configure_args+=" --cross-file=${meson_crossfile}"
 
-		# Meson tries to compile natively with CC, CXX, so when cross
-		# compiling, we need to set those to the host versions.
-		export CC=${CC_host} CXX=${CXX_host}
+		# Meson tries to compile natively with CC, CXX, LD, AR 
+		# so when cross compiling, we need to set those to the 
+		# host versions.
+		export CC=${CC_host} CXX=${CXX_host} LD=${LD_host} AR=${AR_host}
 
-		# Meson tries to use CFLAGS and CPPFLAGS when compiling under
-		# native: true, so we use XBPS_CFLAGS and XBPS_CPPFLAGS which
-		# are set to (C|CXX)FLAGS_host
-		export CFLAGS=${CFLAGS_host} CXXFLAGS=${CXXFLAGS_host}
+		# Meson tries to use CFLAGS, CXXFLAGS, CPPFLAGS and LDFLAGS when compiling under
+		# native: true, so we use XBPS_CFLAGS, XBPS_CXXFLAGS, XBPS_CPPFLAGS and XBPS_LDFLAGS
+		# which are set to (C|CXX|CPP|LD)FLAGS_host
+		export CFLAGS=${CFLAGS_host} CXXFLAGS=${CXXFLAGS_host} CPPFLAGS=${CPPFLAGS_host} LDFLAGS=${LDFLAGS_host}
 
 		# Meson tries to use our wrapped cross-only pkg-config to find
 		# libraries even when 'native: true' (build against the host platform)
