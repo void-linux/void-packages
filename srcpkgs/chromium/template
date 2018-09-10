@@ -1,23 +1,21 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See http://www.chromium.org/developers/calendar for the latest version
-version=66.0.3359.170
-revision=2
+version=69.0.3497.100
+revision=1
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
-maintainer="Juan RP <xtraeme@voidlinux.eu>"
-homepage="http://www.chromium.org/"
-license="BSD"
+maintainer="Rasmus Thomsen <rasmus.thomsen@protonmail.com>"
+homepage="https://www.chromium.org/"
+license="BSD-3-Clause"
 distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/${pkgname}-${version}.tar.xz"
-checksum=864da6649d19387698e3a89321042193708b2d9f56b3a778fb552166374871de
+checksum=e3391560e73e25fb4afc3f2dd5616607e2dbfc58aa88251a2c5d6b7096fe9e35
 
 only_for_archs="i686 x86_64 x86_64-musl"
 lib32disabled=yes
 nodebug=yes
 nopie=yes  # contains tools that are not PIE, enables PIE itself
 
-build_options="nacl clang"
-build_options_default="clang"
-desc_option_nacl="Enable NaCL support"
+build_options="clang"
 desc_option_clang="Use clang to build"
 
 hostmakedepends="$(vopt_if clang clang) yasm python pkg-config perl gperf bison ninja nodejs hwids
@@ -30,14 +28,9 @@ makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
  libXcursor-devel libflac-devel speex-devel libmtp-devel libwebp-devel
  libjpeg-turbo-devel libevent-devel json-c-devel harfbuzz-devel
  minizip-devel jsoncpp-devel zlib-devel libcap-devel libXdamage-devel
- re2-devel fontconfig-devel freetype-devel harfbuzz-devel opus-devel"
+ re2-devel fontconfig-devel freetype-devel harfbuzz-devel opus-devel
+ ffmpeg-devel"
 depends="libexif hwids desktop-file-utils hicolor-icon-theme"
-nostrip_files="$(vopt_if nacl 'nacl_irt_x86_64.nexe nacl_irt_x86_32.nexe')"
-
-# nacl currently makes problems with GN
-if [ -n "$build_option_nacl" ]; then
-	broken=yes
-fi
 
 post_extract() {
 	case "${XBPS_TARGET_MACHINE}" in
@@ -69,7 +62,7 @@ do_configure() {
 	local system="" bootstrap_conf="" conf=""
 	export -n CFLAGS CXXFLAGS LDFLAGS
 
-	if [ -n "$build_option_clang" ]; then
+	if [ "$build_option_clang" ]; then
 		export CC=clang
 		export CXX=clang++
 	fi
@@ -80,6 +73,7 @@ do_configure() {
 	# TODO: use_system_libusb (http://crbug.com/266149).
 	# TODO: use_system_ssl (http://crbug.com/58087).
 	# TODO: use_system_sqlite (http://crbug.com/22208).
+	# TODO: use_system_icu (segfaults)
 	# XXX xtraeme: broken currently
 	# use_system_protobuf
 	# use_system_v8=1
@@ -87,19 +81,21 @@ do_configure() {
 	# use_system_libvpx=1
 	# bzip2 jsoncpp minizip xdg_utils speex
 	system="
+		ffmpeg
 		flac
 		fontconfig
-		freetype
 		harfbuzz-ng
-		opus
-		re2
+		libdrm
 		libevent
 		libjpeg
 		libpng
 		libxml
 		libxslt
+		opus
+		re2
 		snappy
-		yasm"
+		yasm
+	"
 
 	# TODO: is this still broken?
 	[ -z "$CROSS_BUILD" ] && system+=" libwebp"
@@ -121,37 +117,21 @@ do_configure() {
 
 	python2 third_party/libaddressinput/chromium/tools/update-strings.py
 
-	# bootstrap NaCL toolchain
-	if [ -n "$build_option_nacl" ] && [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		# XXX xtraeme: fix gcc{,-c++}-multilib instead.
-		ldconfig &>/dev/null
-		# Download NaCL toolchains
-		python2 nbuild/download_acl_toolchains.py \
-			--packages nacl_x86_newlib,pnacl_newlib,pnacl_translator sync --extract
-		# donwload clang
-		python2 tools/clang/scripts/update.py
-		ln -s /usr/lib/libncursesw.so.6 third_party/llvm-build/Release+Asserts/lib/libtinfo.so.5
-	fi
-
-	# bootstrap GN
 	bootstrap_conf="is_clang=$(vopt_if clang true false)"
-	bootstrap_conf+='
-		treat_warnings_as_errors=false
-		binutils_path="/usr/bin"
-		gold_path="/usr/bin/ld.gold"
-		use_sysroot=false
-		use_allocator="none"
-		use_allocator_shim=false'
+
+	bootstrap_conf+=' treat_warnings_as_errors=false binutils_path="/usr/bin"'
+	bootstrap_conf+=' gold_path="/usr/bin/ld.gold" use_sysroot=false'
+	bootstrap_conf+=' use_allocator="none" use_allocator_shim=false'
 
 	# XXX: gold broken with musl
 	case "${XBPS_TARGET_MACHINE}" in
-	*-musl) bootstrap_conf+=' use_gold=false' ;;
-	*) bootstrap_conf+=' use_gold=true' ;;
+		*-musl) bootstrap_conf+=' use_gold=false' ;;
+		*) bootstrap_conf+=' use_gold=true' ;;
 	esac
 
 	AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
-		python2 tools/gn/bootstrap/bootstrap.py -s -v --no-clean \
-			--gn-gen-args "${bootstrap_conf//	/ }"
+		python2 tools/gn/bootstrap/bootstrap.py -v \
+			--gn-gen-args "${bootstrap_conf}"
 
 	# Google API keys (see http://www.chromium.org/developers/how-tos/api-keys)
 	# Note: These are for Void Linux use ONLY.
@@ -161,13 +141,7 @@ do_configure() {
 		google_default_client_secret="_ozIx2D-DKm_se_2NPwV4l5b"'
 
 
-	if [ "$build_option_nacl" ] && [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		# Disable glibc Native Client toolchain.
-		conf+=' is_nacl_glibc=false'
-		conf+=' enable_nacl=true enable_nacl_nonsfi=true'
-	else
-		conf+=' enable_nacl=false enable_nacl_nonsfi=false'
-	fi
+	conf+=' enable_nacl=false enable_nacl_nonsfi=false'
 
 	conf+=" is_clang=$(vopt_if clang true false)"
 	conf+=' is_debug=false
@@ -184,11 +158,7 @@ do_configure() {
 		use_sysroot=false
 		use_system_harfbuzz=true
 		enable_widevine=true
-		enable_hangout_services_extension=true
-		enable_swiftshader=false' # needs clang?
-
-	# TODO: is this still broken?
-	[ "$CROSS_BUILD" ] && conf+=' enable_webrtc=false'
+		enable_hangout_services_extension=true'
 
 	# Use explicit library dependencies instead of dlopen.
 	# GN only has "link_pulseaudio", the other options used before are not available atm
@@ -246,11 +216,6 @@ do_install() {
 	vinstall out/Release/chrome 755 usr/lib/${pkgname} ${pkgname}
 	vinstall out/Release/chromedriver 755 usr/lib/${pkgname} chromedriver
 	vinstall out/Release/chrome_sandbox 4755 usr/lib/${pkgname} chrome-sandbox
-
-	if [ "$build_option_nacl" ] && [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		cp out/Release/nacl_helper{,_bootstrap} ${DESTDIR}/usr/lib/chromium
-		cp out/Release/nacl_irt_x86_64.nexe ${DESTDIR}/usr/lib/chromium
-	fi
 
 	cp out/Release/{*.pak,*.bin} ${DESTDIR}/usr/lib/chromium
 	cp -a out/Release/locales ${DESTDIR}/usr/lib/chromium
