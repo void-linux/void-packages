@@ -74,6 +74,10 @@ EOF
 		unset _MESON_CPU_FAMILY _MESON_TARGET_CPU _MESON_TARGET_ENDIAN
 	fi
 
+	# Enable meson Unity builds
+	# https://mesonbuild.com/Unity-builds.html
+	configure_args+=" --unity on"
+
 	${meson_cmd} --prefix=/usr --buildtype=plain ${configure_args} . ${meson_builddir}
 }
 
