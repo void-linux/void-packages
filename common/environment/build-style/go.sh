@@ -17,4 +17,7 @@ export CGO_CPPFLAGS="$CPPFLAGS"
 export CGO_CXXFLAGS="$CXXFLAGS"
 export CGO_LDFLAGS="$LDFLAGS"
 export CGO_ENABLED=1
-export GOCACHE="${XBPS_HOSTDIR}/gocache"
+case "$XBPS_TARGET_MACHINE" in
+	*-musl) export GOCACHE="${XBPS_HOSTDIR}/gocache-muslc" ;;
+	*)	export GOCACHE="${XBPS_HOSTDIR}/gocache-glibc" ;;
+esac
