@@ -1,7 +1,7 @@
 # Template file for 'wpa_supplicant'
 pkgname=wpa_supplicant
 version=2.6
-revision=9
+revision=10
 build_wrksrc=$pkgname
 short_desc="WPA/WPA2/IEEE 802.1X Supplicant"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
@@ -11,13 +11,26 @@ distfiles="http://w1.fi/releases/$pkgname-$version.tar.gz"
 checksum=b4936d34c4e6cdd44954beba74296d964bc2c9668ecaa5255e499636fe2b1450
 
 hostmakedepends="pkg-config"
-makedepends="libnl3-devel libressl-devel dbus-devel readline-devel"
+makedepends="libnl3-devel libressl-devel $(vopt_if dbus dbus-devel) $(vopt_if readline readline-devel)"
+build_options="dbus readline"
+build_options_default="dbus readline"
 conf_files="/etc/${pkgname}/${pkgname}.conf"
 
 pre_build() {
 	sed -i 's|/usr/local|$(PREFIX)|g' Makefile
 	cp -f ${FILESDIR}/config .config
-	sed -i 's, -u, -uq,' dbus/*.service.in
+
+	if [ "$build_option_dbus" ]; then
+		sed -i 's, -u, -uq,' dbus/*.service.in
+	else
+		sed -i 's|#\{0,1\}\(CONFIG_CTRL_IFACE_DBUS\)=\(.*\)|\1=|' .config
+		sed -i 's|#\{0,1\}\(CONFIG_CTRL_IFACE_DBUS_NEW\)=\(.*\)|\1=|' .config
+		sed -i 's|#\{0,1\}\(CONFIG_CTRL_IFACE_DBUS_INTRO\)=\(.*\)|\1=|' .config
+	fi
+
+	if [ "$build_option_readline" ]; then
+		sed -i 's|#\{0,1\}\(CONFIG_READLINE\)=\(.*\)|\1=y|' .config
+	fi
 }
 do_build() {
 	export CFLAGS+=" $(pkg-config --cflags libnl-3.0) $CPPFLAGS"
@@ -26,17 +39,22 @@ do_build() {
 do_install() {
 	make PREFIX=/usr BINDIR=/usr/bin DESTDIR=${DESTDIR} install
 
+	if [ "$build_option_dbus" ]; then
+		install -d ${DESTDIR}/usr/share/dbus-1/system-services
+		install -m644 dbus/*.service ${DESTDIR}/usr/share/dbus-1/system-services/
+		vinstall dbus/dbus-${pkgname}.conf 644 etc/dbus-1/system.d ${pkgname}.conf
+	fi
+
 	vinstall ${FILESDIR}/${pkgname}.conf 640 etc/$pkgname
 	vsconf wpa_supplicant.conf
 
 	for d in doc/docbook/*.[58]; do
 		vman $d
 	done
-	install -d ${DESTDIR}/usr/share/dbus-1/system-services
-	install -m644 dbus/*.service ${DESTDIR}/usr/share/dbus-1/system-services/
-	vinstall dbus/dbus-${pkgname}.conf 644 etc/dbus-1/system.d ${pkgname}.conf
 
 	rm ${DESTDIR}/usr/share/man/man8/wpa_gui.8
+	rm ${DESTDIR}/usr/share/man/man8/wpa_priv.8
+	rm ${DESTDIR}/usr/share/man/man8/eapol_test.8
 
 	vlicense README
 	vsv wpa_supplicant
