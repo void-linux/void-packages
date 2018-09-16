@@ -34,7 +34,7 @@ do_configure() {
 [binaries]
 c = '${CC}'
 cpp = '${CXX}'
-ar = '${AR}'
+ar = '${XBPS_CROSS_TRIPLET}-gcc-ar'
 nm = '${NM}'
 ld = '${LD}'
 strip = '${STRIP}'
@@ -76,7 +76,12 @@ EOF
 		unset _MESON_CPU_FAMILY _MESON_TARGET_CPU _MESON_TARGET_ENDIAN
 	fi
 
-	${meson_cmd} --prefix=/usr --buildtype=plain ${configure_args} . ${meson_builddir}
+	# The binutils ar cannot perform LTO on static libraries so we have to use
+	# the gcc-ar wrapper that that calls the correct plugin
+	# https://github.com/mesonbuild/meson/issues/1646
+	export AR="gcc-ar"
+
+	${meson_cmd} --prefix=/usr -Db_lto=true --buildtype=plain ${configure_args} . ${meson_builddir}
 }
 
 do_build() {
