@@ -734,6 +734,10 @@ The current list of available `build_style` scripts is the following:
 `do_configure()`, `do_build()`, etc., and may overwrite default `do_fetch()` and
 `do_extract()` that fetch and extract files defined in `distfiles` variable.
 
+- `cargo` For packages written in rust that use Cargo for building.
+Configuration arguments (such as `--features`) can be defined in the variable
+`configure_args` and are passed to cargo during `do_build`.
+
 - `cmake` For packages that use the CMake build system, configuration arguments
 can be passed in via `configure_args`. The `cmake_builddir` variable may be
 defined to specify the directory for building under `build_wrksrc` instead of
