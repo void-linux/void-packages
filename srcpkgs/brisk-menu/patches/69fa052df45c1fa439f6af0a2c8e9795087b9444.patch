@@ -1,0 +1,185 @@
+From 3cab9d1fc7b2ca500c7d3276e17b256f395e0126 Mon Sep 17 00:00:00 2001
+From: Mike Gabriel <mike.gabriel@das-netzwerkteam.de>
+Date: Fri, 19 Jan 2018 22:57:26 +0100
+Subject: [PATCH 1/2] Reliably fix parallel builds of brisk-menu.
+
+  - Move brisk-glue .xml files to data/ and ...
+  - process them in an earlier stage of the build
+
+ Fixes solus-project/brisk-menu#73.
+---
+ data/meson.build                              | 16 ++++++++
+ .../org.gnome.SessionManager.xml              |  0
+ .../session => data}/org.mate.ScreenSaver.xml |  0
+ src/frontend/meson.build                      |  1 +
+ src/meson.build                               | 28 +++++++++++--
+ src/session/meson.build                       | 40 -------------------
+ 6 files changed, 42 insertions(+), 43 deletions(-)
+ rename {src/session => data}/org.gnome.SessionManager.xml (100%)
+ rename {src/session => data}/org.mate.ScreenSaver.xml (100%)
+ delete mode 100644 src/session/meson.build
+
+diff --git data/meson.build data/meson.build
+index 609ff27..aa450e8 100644
+--- data/meson.build
++++ data/meson.build
+@@ -12,6 +12,22 @@ brisk_resources = gnome.compile_resources(
+     ],
+ )
+ 
++# libsaver_glue provides dbus code for the MATE screensaver
++libsaver_glue = gnome.gdbus_codegen(
++    'libsaver-glue',
++    'org.mate.ScreenSaver.xml',
++    interface_prefix : 'org.mate.',
++    namespace : 'Mate',
++)
++
++# libsession_glue provides dbus code for the MATE/GNOME session
++libsession_glue = gnome.gdbus_codegen(
++    'libsession-glue',
++    'org.gnome.SessionManager.xml',
++    interface_prefix : 'org.gnome.',
++    namespace : 'Gnome',
++)
++
+ icons = [
+     'brisk_system-log-out-symbolic.svg',
+ ]
+diff --git src/session/org.gnome.SessionManager.xml data/org.gnome.SessionManager.xml
+similarity index 100%
+rename from src/session/org.gnome.SessionManager.xml
+rename to data/org.gnome.SessionManager.xml
+diff --git src/session/org.mate.ScreenSaver.xml data/org.mate.ScreenSaver.xml
+similarity index 100%
+rename from src/session/org.mate.ScreenSaver.xml
+rename to data/org.mate.ScreenSaver.xml
+diff --git src/frontend/meson.build src/frontend/meson.build
+index 624b590..31e2f17 100644
+--- src/frontend/meson.build
++++ src/frontend/meson.build
+@@ -30,6 +30,7 @@ libfrontend_dependencies = [
+ 
+ libfrontend_includes = [
+     include_directories('.'),
++    include_directories('../../data'),
+ ]
+ 
+ # Contains the main Brisk UI (Windowed)
+diff --git src/meson.build src/meson.build
+index 7c26b57..0f29a58 100644
+--- src/meson.build
++++ src/meson.build
+@@ -18,15 +18,37 @@ link_libresources = declare_dependency(
+     ],
+ )
+ 
++# Build the Cs into a simple static library and control compiler noise
++libsession_stub = static_library(
++    'brisk-glue',
++    sources: [
++        libsaver_glue,
++        libsession_glue,
++    ],
++    c_args: [
++        '-Wno-unused-parameter',
++    ],
++    dependencies: dep_gio_unix,
++    install: false,
++)
++
++# Allow linking to the stub
++link_libsession_stub = declare_dependency(
++    link_with: libsession_stub,
++    dependencies: [
++        dep_gio_unix,
++    ],
++    include_directories: [
++        include_directories('.'),
++    ],
++)
++
+ # Build common library (currently just keybinder really.)
+ subdir('lib')
+ 
+ # Build the backend component
+ subdir('backend')
+ 
+-# Build session glue to help the frontend out
+-subdir('session')
+-
+ # Now build our main UI
+ subdir('frontend')
+ 
+diff --git src/session/meson.build src/session/meson.build
+deleted file mode 100644
+index 5b38bdc..0000000
+--- src/session/meson.build
++++ /dev/null
+@@ -1,40 +0,0 @@
+-# libsaver_glue provides dbus code for the MATE screensaver
+-libsaver_glue = gnome.gdbus_codegen(
+-    'libsaver-glue',
+-    'org.mate.ScreenSaver.xml',
+-    interface_prefix : 'org.mate.',
+-    namespace : 'Mate',
+-)
+-
+-# libsession_glue provides dbus code for the MATE/GNOME session
+-libsession_glue = gnome.gdbus_codegen(
+-    'libsession-glue',
+-    'org.gnome.SessionManager.xml',
+-    interface_prefix : 'org.gnome.',
+-    namespace : 'Gnome',
+-)
+-
+-# Build the Cs into a simple static library and control compiler noise
+-libsession_stub = static_library(
+-    'brisk-glue',
+-    sources: [
+-        libsaver_glue,
+-        libsession_glue,
+-    ],
+-    c_args: [
+-        '-Wno-unused-parameter',
+-    ],
+-    dependencies: dep_gio_unix,
+-    install: false,
+-)
+-
+-# Allow linking to the stub
+-link_libsession_stub = declare_dependency(
+-    link_with: libsession_stub,
+-    dependencies: [
+-        dep_gio_unix,
+-    ],
+-    include_directories: [
+-        include_directories('.'),
+-    ],
+-)
+
+From 2309dab7ee5cce419c02038092a075096a89ff88 Mon Sep 17 00:00:00 2001
+From: Mike Gabriel <mike.gabriel@das-netzwerkteam.de>
+Date: Fri, 19 Jan 2018 23:01:46 +0100
+Subject: [PATCH 2/2] src/mesa.build: Fix build against GLib << 2.51.3.
+
+  - This patch is not hurting builds against newer GLib versions.
+  - For details, see https://github.com/mesonbuild/meson/issues/1387
+---
+ src/meson.build | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git src/meson.build src/meson.build
+index 0f29a58..7d8ca3f 100644
+--- src/meson.build
++++ src/meson.build
+@@ -30,6 +30,9 @@ libsession_stub = static_library(
+     ],
+     dependencies: dep_gio_unix,
+     install: false,
++    include_directories: [
++        include_directories('..'),
++    ],
+ )
+ 
+ # Allow linking to the stub
