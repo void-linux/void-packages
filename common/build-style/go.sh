@@ -3,6 +3,11 @@
 #
 
 do_configure() {
+	# $go_import_path must be set, or we can't link $PWD into $GOSRCPATH
+	if [ -z "$go_import_path" ]; then
+		msg_error "\"\$go_import_path\" not set on $pkgname template.\n"
+	fi
+
 	# This isn't really configuration, but its needed by packages
 	# that do unusual things with the build where the expect to be
 	# able to cd into the $GOSRCPATH
