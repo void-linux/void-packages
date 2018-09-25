@@ -469,9 +469,7 @@ binaries sources or when the program is written in assembly. Example:
 `only_for_archs="x86_64 armv6l"`.
 
 - `build_style` This specifies the `build method` for a package. Read below to know more
-about the available package `build methods`. If `build_style` is not set,
-the package must define at least a `do_install()` function, and optionally
-more build phases as such `do_configure()`, `do_build()`, etc.
+about the available package `build methods` or effect of leaving this not set.
 
 - `configure_script` The name of the `configure` script to execute at the `configure` phase if
 `${build_style}` is set to `configure` or `gnu-configure` build methods.
@@ -731,6 +729,11 @@ to execute a `build_style` script must be defined via `$hostmakedepends`.
 
 The current list of available `build_style` scripts is the following:
 
+- If `build_style` is not set, the template must (at least) define
+`do_install()` function and optionally more build phases such as
+`do_configure()`, `do_build()`, etc., and may overwrite default `do_fetch()` and
+`do_extract()` that fetch and extract files defined in `distfiles` variable.
+
 - `cmake` For packages that use the CMake build system, configuration arguments
 can be passed in via `configure_args`. The `cmake_builddir` variable may be
 defined to specify the directory for building under `build_wrksrc` instead of
@@ -806,9 +809,6 @@ can choose one of the following:
 - `python2-module` to build Python 2.x only modules
 
 - `python3-module` to build Python 3.x only modules
-
-> If `build_style` is not set, the template must (at least) define a
-`do_install()` function and optionally more phases via `do_xxx()` functions.
 
 Environment variables for a specific `build_style` can be declared in a filename
 matching the `build_style` name, Example:
