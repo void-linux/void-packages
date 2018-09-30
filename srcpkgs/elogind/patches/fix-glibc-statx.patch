@@ -1,0 +1,77 @@
+Fix glibc >= 2.28 statx
+
+diff --git a/meson.build b/meson.build
+index 98a73a1..bd1b249 100644
+--- meson.build
++++ meson.build
+@@ -534,8 +534,7 @@ decl_headers = '''
+ #include <uchar.h>
+ #include <linux/ethtool.h>
+ #include <linux/fib_rules.h>
+-//#include <linux/stat.h>
+-//#include <sys/stat.h>
++#include <sys/stat.h>
+ '''
+ # FIXME: key_serial_t is only defined in keyutils.h, this is bound to fail
+ 
+@@ -549,9 +548,24 @@ foreach decl : ['char16_t',
+ 
+         # We get -1 if the size cannot be determined
+         have = cc.sizeof(decl, prefix : decl_headers) > 0
++		have = cc.sizeof(decl, prefix : decl_headers, args : '-D_GNU_SOURCE') > 0
++
++        if decl == 'struct statx'
++                if have
++                        want_linux_stat_h = false
++                else
++                        have = cc.sizeof(decl,
++                                         prefix : decl_headers + '#include <linux/stat.h>',
++                                         args : '-D_GNU_SOURCE') > 0
++                        want_linux_stat_h = have
++                endif
++        endif
++
+         conf.set10('HAVE_' + decl.underscorify().to_upper(), have)
+ endforeach
+ 
++conf.set10('WANT_LINUX_STAT_H', want_linux_stat_h)
++
+ foreach decl : [['IFLA_INET6_ADDR_GEN_MODE',         'linux/if_link.h'],
+                 ['IN6_ADDR_GEN_MODE_STABLE_PRIVACY', 'linux/if_link.h'],
+                 ['IFLA_VRF_TABLE',                   'linux/if_link.h'],
+diff --git a/src/basic/missing.h b/src/basic/missing.h
+index 3708742..e909973 100644
+--- src/basic/missing.h
++++ src/basic/missing.h
+@@ -34,7 +34,6 @@
+ #include <linux/neighbour.h>
+ #include <linux/oom.h>
+ #include <linux/rtnetlink.h>
+-//#include <linux/stat.h>
+ #include <net/ethernet.h>
+ #include <stdlib.h>
+ #include <sys/resource.h>
+@@ -44,6 +43,10 @@
+ #include <uchar.h>
+ #include <unistd.h>
+ 
++#if WANT_LINUX_STAT_H
++#include <linux/stat.h>
++#endif
++
+ /// Additional includes needed by elogind
+ #include "musl_missing.h"
+ 
+diff --git a/src/basic/xattr-util.c b/src/basic/xattr-util.c
+index dc4e802..29e3152 100644
+--- src/basic/xattr-util.c
++++ src/basic/xattr-util.c
+@@ -20,7 +20,6 @@
+ 
+ #include <errno.h>
+ #include <fcntl.h>
+-//#include <linux/stat.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <string.h>
+
