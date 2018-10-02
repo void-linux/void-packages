@@ -1,0 +1,255 @@
+Source: Upstream/moneromooo-monero
+Upstream: merged into master
+Reason: fixes the burning bug described in https://getmonero.org/2018/09/25/a-post-mortum-of-the-burning-bug.html
+
+From 45683ee02c39f6e57f1f5e1065f4295292a0d8cf Mon Sep 17 00:00:00 2001
+From: moneromooo-monero <moneromooo-monero@users.noreply.github.com>
+Date: Thu, 2 Aug 2018 16:17:22 +0000
+Subject: [PATCH 4357/4359] epee: fix invalid memory write reading an array
+ entry
+
+Reported by Lilith Wyatt at Talos.
+
+Since this is not needed in normal operation, I just let this
+error out.
+---
+ contrib/epee/include/storages/portable_storage_from_bin.h | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/contrib/epee/include/storages/portable_storage_from_bin.h b/contrib/epee/include/storages/portable_storage_from_bin.h
+index 44a80cb2..f9cc22d2 100644
+--- contrib/epee/include/storages/portable_storage_from_bin.h
++++ contrib/epee/include/storages/portable_storage_from_bin.h
+@@ -59,6 +59,7 @@ namespace epee
+       storage_entry load_storage_entry();
+       void read(section& sec);
+       void read(std::string& str);
++      void read(array_entry &ae);
+     private:
+       struct recursuion_limitation_guard
+       {
+@@ -114,6 +115,7 @@ namespace epee
+     void throwable_buffer_reader::read(t_pod_type& pod_val)
+     {
+       RECURSION_LIMITATION();
++      static_assert(std::is_pod<t_pod_type>::value, "POD type expected");
+       read(&pod_val, sizeof(pod_val));
+     }
+     
+@@ -277,5 +279,11 @@ namespace epee
+       m_ptr+=len;
+       m_count -= len;
+     }
++    inline
++    void throwable_buffer_reader::read(array_entry &ae)
++    {
++      RECURSION_LIMITATION();
++      CHECK_AND_ASSERT_THROW_MES(false, "Reading array entry is not supported");
++    }
+   }
+ }
+-- 
+2.19.0
+
+From bf9a0f4c656ab989c388017387267e8df77949a1 Mon Sep 17 00:00:00 2001
+From: moneromooo-monero <moneromooo-monero@users.noreply.github.com>
+Date: Sun, 5 Aug 2018 08:42:52 +0000
+Subject: [PATCH 4358/4359] epee: fix stack overflow on crafted input
+
+---
+ .../include/storages/portable_storage_from_json.h   | 13 ++++++++-----
+ 1 file changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/contrib/epee/include/storages/portable_storage_from_json.h b/contrib/epee/include/storages/portable_storage_from_json.h
+index 727f3655..5b2eafa9 100644
+--- contrib/epee/include/storages/portable_storage_from_json.h
++++ contrib/epee/include/storages/portable_storage_from_json.h
+@@ -30,6 +30,8 @@
+ #include "parserse_base_utils.h"
+ #include "file_io_utils.h"
+ 
++#define EPEE_JSON_RECURSION_LIMIT_INTERNAL 100
++
+ namespace epee
+ {
+   using namespace misc_utils::parse;
+@@ -44,8 +46,9 @@ namespace epee
+         ASSERT_MES_AND_THROW("json parse error");
+       }*/
+       template<class t_storage>
+-      inline void run_handler(typename t_storage::hsection current_section, std::string::const_iterator& sec_buf_begin, std::string::const_iterator buf_end, t_storage& stg)
++      inline void run_handler(typename t_storage::hsection current_section, std::string::const_iterator& sec_buf_begin, std::string::const_iterator buf_end, t_storage& stg, unsigned int recursion)
+       {
++        CHECK_AND_ASSERT_THROW_MES(recursion < EPEE_JSON_RECURSION_LIMIT_INTERNAL, "Wrong JSON data: recursion limitation (" << EPEE_JSON_RECURSION_LIMIT_INTERNAL << ") exceeded");
+ 
+         std::string::const_iterator sub_element_start;
+         std::string name;        
+@@ -157,7 +160,7 @@ namespace epee
+               //sub section here
+               typename t_storage::hsection new_sec = stg.open_section(name, current_section, true);
+               CHECK_AND_ASSERT_THROW_MES(new_sec, "Failed to insert new section in json: " << std::string(it, buf_end));
+-              run_handler(new_sec, it, buf_end, stg);
++              run_handler(new_sec, it, buf_end, stg, recursion + 1);
+               state = match_state_wonder_after_value;
+             }else if(*it == '[')
+             {//array of something
+@@ -186,7 +189,7 @@ namespace epee
+               typename t_storage::hsection new_sec = nullptr;
+               h_array = stg.insert_first_section(name, new_sec, current_section);
+               CHECK_AND_ASSERT_THROW_MES(h_array&&new_sec, "failed to create new section");
+-              run_handler(new_sec, it, buf_end, stg);
++              run_handler(new_sec, it, buf_end, stg, recursion + 1);
+               state = match_state_array_after_value;
+               array_md = array_mode_sections;
+             }else if(*it == '"')
+@@ -260,7 +263,7 @@ namespace epee
+                 typename t_storage::hsection new_sec = NULL;
+                 bool res = stg.insert_next_section(h_array, new_sec);
+                 CHECK_AND_ASSERT_THROW_MES(res&&new_sec, "failed to insert next section");
+-                run_handler(new_sec, it, buf_end, stg);
++                run_handler(new_sec, it, buf_end, stg, recursion + 1);
+                 state = match_state_array_after_value;
+               }else CHECK_ISSPACE();
+               break;
+@@ -362,7 +365,7 @@ namespace epee
+         std::string::const_iterator sec_buf_begin  = buff_json.begin();
+         try
+         {
+-          run_handler(nullptr, sec_buf_begin, buff_json.end(), stg);
++          run_handler(nullptr, sec_buf_begin, buff_json.end(), stg, 0);
+           return true;
+         }
+         catch(const std::exception& ex)
+-- 
+2.19.0
+
+From e350cc5ad557eba67790551f96bbbcfc97173480 Mon Sep 17 00:00:00 2001
+From: moneromooo-monero <moneromooo-monero@users.noreply.github.com>
+Date: Wed, 19 Sep 2018 09:08:02 +0000
+Subject: [PATCH 4359/4359] wallet2: fix duplicate output making it to the RPC
+
+---
+ src/wallet/wallet2.cpp | 41 +++++++++++++++++++++++++++++++++--------
+ 1 file changed, 33 insertions(+), 8 deletions(-)
+
+diff --git a/src/wallet/wallet2.cpp b/src/wallet/wallet2.cpp
+index 00b40fef..75178845 100644
+--- src/wallet/wallet2.cpp
++++ src/wallet/wallet2.cpp
+@@ -1344,6 +1344,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+   size_t pk_index = 0;
+   std::vector<tx_scan_info_t> tx_scan_info(tx.vout.size());
+   std::deque<bool> output_found(tx.vout.size(), false);
++  uint64_t total_received_1 = 0;
+   while (!tx.vout.empty())
+   {
+     // if tx.vout is not empty, we loop through all tx pubkeys
+@@ -1518,6 +1519,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+             + ", m_transfers.size() is " + boost::lexical_cast<std::string>(m_transfers.size()));
+         if (kit == m_pub_keys.end())
+         {
++          uint64_t amount = tx.vout[o].amount ? tx.vout[o].amount : tx_scan_info[o].amount;
+           if (!pool)
+           {
+ 	    m_transfers.push_back(boost::value_initialized<transfer_details>());
+@@ -1530,14 +1532,13 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+             td.m_key_image = tx_scan_info[o].ki;
+             td.m_key_image_known = !m_watch_only && !m_multisig;
+             td.m_key_image_partial = m_multisig;
+-            td.m_amount = tx.vout[o].amount;
++            td.m_amount = amount;
+             td.m_pk_index = pk_index - 1;
+             td.m_subaddr_index = tx_scan_info[o].received->index;
+             expand_subaddresses(tx_scan_info[o].received->index);
+-            if (td.m_amount == 0)
++            if (tx.vout[o].amount == 0)
+             {
+               td.m_mask = tx_scan_info[o].mask;
+-              td.m_amount = tx_scan_info[o].amount;
+               td.m_rct = true;
+             }
+             else if (miner_tx && tx.version == 2)
+@@ -1565,6 +1566,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+ 	    if (0 != m_callback)
+ 	      m_callback->on_money_received(height, txid, tx, td.m_amount, td.m_subaddr_index);
+           }
++          total_received_1 += amount;
+         }
+ 	else if (m_transfers[kit->second].m_spent || m_transfers[kit->second].amount() >= tx_scan_info[o].amount)
+         {
+@@ -1572,6 +1574,9 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+               << " from received " << print_money(tx_scan_info[o].amount) << " output already exists with "
+               << (m_transfers[kit->second].m_spent ? "spent" : "unspent") << " "
+               << print_money(m_transfers[kit->second].amount()) << " in tx " << m_transfers[kit->second].m_txid << ", received output ignored");
++          THROW_WALLET_EXCEPTION_IF(tx_money_got_in_outs[tx_scan_info[o].received->index] < tx_scan_info[o].amount,
++              error::wallet_internal_error, "Unexpected values of new and old outputs");
++          tx_money_got_in_outs[tx_scan_info[o].received->index] -= tx_scan_info[o].amount;
+         }
+         else
+         {
+@@ -1579,8 +1584,14 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+               << " from received " << print_money(tx_scan_info[o].amount) << " output already exists with "
+               << print_money(m_transfers[kit->second].amount()) << ", replacing with new output");
+           // The new larger output replaced a previous smaller one
+-          tx_money_got_in_outs[tx_scan_info[o].received->index] -= tx_scan_info[o].amount;
+-
++          THROW_WALLET_EXCEPTION_IF(tx_money_got_in_outs[tx_scan_info[o].received->index] < tx_scan_info[o].amount,
++              error::wallet_internal_error, "Unexpected values of new and old outputs");
++          THROW_WALLET_EXCEPTION_IF(m_transfers[kit->second].amount() > tx_scan_info[o].amount,
++              error::wallet_internal_error, "Unexpected values of new and old outputs");
++          tx_money_got_in_outs[tx_scan_info[o].received->index] -= m_transfers[kit->second].amount();
++
++          uint64_t amount = tx.vout[o].amount ? tx.vout[o].amount : tx_scan_info[o].amount;
++          uint64_t extra_amount = amount - m_transfers[kit->second].amount();
+           if (!pool)
+           {
+             transfer_details &td = m_transfers[kit->second];
+@@ -1589,14 +1600,13 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+ 	    td.m_global_output_index = o_indices[o];
+ 	    td.m_tx = (const cryptonote::transaction_prefix&)tx;
+ 	    td.m_txid = txid;
+-            td.m_amount = tx.vout[o].amount;
++            td.m_amount = amount;
+             td.m_pk_index = pk_index - 1;
+             td.m_subaddr_index = tx_scan_info[o].received->index;
+             expand_subaddresses(tx_scan_info[o].received->index);
+-            if (td.m_amount == 0)
++            if (tx.vout[o].amount == 0)
+             {
+               td.m_mask = tx_scan_info[o].mask;
+-              td.m_amount = tx_scan_info[o].amount;
+               td.m_rct = true;
+             }
+             else if (miner_tx && tx.version == 2)
+@@ -1623,6 +1633,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+ 	    if (0 != m_callback)
+ 	      m_callback->on_money_received(height, txid, tx, td.m_amount, td.m_subaddr_index);
+           }
++          total_received_1 += extra_amount;
+         }
+       }
+     }
+@@ -1744,6 +1755,20 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+       }
+     }
+ 
++    uint64_t total_received_2 = 0;
++    for (const auto& i : tx_money_got_in_outs)
++      total_received_2 += i.second;
++    if (total_received_1 != total_received_2)
++    {
++      const el::Level level = el::Level::Warning;
++      MCLOG_RED(level, "global", "**********************************************************************");
++      MCLOG_RED(level, "global", "Consistency failure in amounts received");
++      MCLOG_RED(level, "global", "Check transaction " << txid);
++      MCLOG_RED(level, "global", "**********************************************************************");
++      exit(1);
++      return;
++    }
++
+     for (const auto& i : tx_money_got_in_outs)
+     {
+       payment_details payment;
+-- 
+2.19.0
+
