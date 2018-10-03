@@ -12,14 +12,6 @@
 hook() {
 	local destdir32=${XBPS_DESTDIR}/${pkgname}-32bit-${version}
 
-	# Do not build 32bit pkgs for:
-	#	- perl modules
-	#	- python modules
-	#	- ruby modules
-	if [[ $build_style =~ (perl|python|ruby) ]]; then
-		return
-	fi
-
 	# By default always enabled unless "lib32disabled" is set.
 	if [ -n "$lib32disabled" ]; then
 		return
