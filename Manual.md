@@ -1731,6 +1731,10 @@ the installed files (`./xbps-src show-files pkg`) before pushing new updates.
 - Make sure that binaries are not stripped by the software, let xbps-src do this;
 otherwise the `debug` packages won't have debugging symbols.
 
+- If your package needs `glib`, then `libglib-devel` should be added to makedepends.
+Only add `glib-devel` to `hostmakedepends` if one of its tools (e.g. glib-compile-schemas)
+are required for that build
+
 <a id="contributing"></a>
 ### Contributing via git
 
