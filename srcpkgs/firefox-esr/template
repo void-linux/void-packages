@@ -3,47 +3,38 @@
 # THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/firefox-esr-i18n".
 #
 pkgname=firefox-esr
-version=52.9.0
-revision=5
-wrksrc="firefox-${version}esr"
+version=60.2.2
+revision=1
+wrksrc="firefox-${version}"
 short_desc="Mozilla Firefox web browser - Extended Support Release (ESR)"
 maintainer="Eivind Uggedal <eivind@uggedal.com>"
 homepage="https://www.mozilla.org/firefox/organizations/"
 license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
-distfiles="${MOZILLA_SITE}/firefox/releases/${version}esr/source/firefox-${version}esr.source.tar.xz
- https://aur.archlinux.org/cgit/aur.git/plain/ffmpeg4.patch.gz?h=firefox-esr52>ffmpeg4.patch.gz"
-checksum="c01d09658c53c1b3a496e353a24dad03b26b81d3b1d099abc26a06f81c199dd6
- 2a285e0c31968e3fe9b65a585838b46f9342ff0a369e786a729b4c3886617034"
+distfiles="${MOZILLA_SITE}/firefox/releases/${version}esr/source/firefox-${version}esr.source.tar.xz"
+checksum=8f27ac9ebf253a87d161147b6ec7a56d486db2428565a2e97324c3bb55f684d2
 
+only_for_archs="i686 i686-musl x86_64 x86_64-musl"
 lib32disabled=yes
-hostmakedepends="autoconf213 unzip zip pkg-config perl python yasm
- $(vopt_if rust cargo)"
-makedepends="
- libatomic-devel nss-devel gtk+-devel
- sqlite-devel libevent-devel libnotify-devel libvpx-devel
- hunspell-devel libXcomposite-devel libSM-devel libXt-devel
- $(vopt_if alsa alsa-lib-devel) $(vopt_if dbus dbus-glib-devel)
- $(vopt_if gtk3 gtk+3-devel) $(vopt_if pulseaudio pulseaudio-devel)
+
+hostmakedepends="autoconf213 unzip zip pkg-config perl python3 yasm rust cargo
+ llvm clang"
+makedepends="nss-devel libjpeg-turbo-devel gtk+-devel gtk+3-devel icu-devel
+ pixman-devel sqlite-devel libevent-devel libnotify-devel libvpx-devel
+ libXrender-devel libXcomposite-devel libSM-devel libXt-devel
+ libXdamage-devel $(vopt_if alsa alsa-lib-devel)
+ $(vopt_if dbus dbus-glib-devel) $(vopt_if pulseaudio pulseaudio-devel)
  $(vopt_if startup_notification startup-notification-devel)
- $(vopt_if xscreensaver libXScrnSaver-devel)"
-depends="nss>=3.27 desktop-file-utils hicolor-icon-theme"
+ $(vopt_if xscreensaver libXScrnSaver-devel)
+ $(vopt_if sndio sndio-devel)"
+depends="nss>=3.37.3 desktop-file-utils hicolor-icon-theme"
 conflicts="firefox>=0"
 
-build_options="alsa dbus gtk3 rust pulseaudio startup_notification xscreensaver"
-build_options_default="alsa dbus gtk3 pulseaudio startup_notification xscreensaver"
-desc_option_rust="Build rust components"
-
-case "$XBPS_TARGET_MACHINE" in
-	i686|x86_64*) build_options_default+=" rust";;
-esac
+build_options="alsa dbus pulseaudio startup_notification xscreensaver sndio"
+build_options_default="alsa dbus pulseaudio startup_notification xscreensaver sndio"
 
 post_extract() {
-	patch -Np0 -i ../ffmpeg4.patch
-
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
-		# fix musl rust triplet
-		sed -i "s/\(x86_64-unknown-linux\)-gnu/\1-musl/" build/moz.configure/rust.configure
 		cp "${FILESDIR}/stab.h" toolkit/crashreporter/google-breakpad/src/
 		;;
 	esac
@@ -62,10 +53,15 @@ do_build() {
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
 		echo "ac_add_options --disable-jemalloc" >>.mozconfig
-		echo "ac_add_options --enable-gold=no" >>.mozconfig
+		echo "ac_add_options --disable-gold" >>.mozconfig
+		echo "ac_add_options --enable-release" >>.mozconfig
 		;;
-	arm*|aarch64*)
-		echo "ac_add_options --enable-gold=no" >>.mozconfig
+	esac
+
+	case "$XBPS_TARGET_MACHINE" in
+	x86_64-musl|i686-musl)
+		echo "ac_add_options --host=${XBPS_TRIPLET}" >>.mozconfig
+		echo "ac_add_options --target=${XBPS_TRIPLET}" >>.mozconfig
 		;;
 	esac
 
@@ -81,11 +77,12 @@ do_build() {
 		echo "ac_add_options --target=$XBPS_CROSS_TRIPLET" >>.mozconfig
 	fi
 
-	# Append CFLAGS and CXXFLAGS to set work around code which gcc6 would
-	# otherwise regard as out-of-specification and allow it to produce a
-	# working program.
-	export CFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
-	export CXXFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
+	case "$XBPS_TARGET_MACHINE" in
+	i686*)
+		export CFLAGS+=" -D_FILE_OFFSET_BITS=64"
+		export CXXFLAGS+=" -D_FILE_OFFSET_BITS=64"
+		;;
+	esac
 
 	export LDFLAGS+=" -Wl,-rpath=/usr/lib/firefox"
 
@@ -98,32 +95,27 @@ do_build() {
 	cat <<! >>.mozconfig
 ac_add_options --with-google-api-keyfile="${wrksrc}/google-api-key"
 ac_add_options --with-mozilla-api-keyfile="${wrksrc}/mozilla-api-key"
-ac_add_options --enable-default-toolkit=cairo-gtk$(vopt_if gtk3 '3' '2')
 ac_add_options $(vopt_enable alsa)
+ac_add_options $(vopt_enable sndio)
 ac_add_options $(vopt_enable dbus)
 ac_add_options $(vopt_enable dbus necko-wifi)
 ac_add_options $(vopt_enable pulseaudio)
-ac_add_options $(vopt_enable rust)
 ac_add_options $(vopt_enable startup_notification startup-notification)
 !
 
-	make -f client.mk build
+	rm -f old-configure
+	./mach build
 }
 do_install() {
-	make -f client.mk DESTDIR="$DESTDIR" install
+	DESTDIR="$DESTDIR" ./mach install
 
 	vinstall ${FILESDIR}/vendor.js 644 usr/lib/firefox/browser/defaults/preferences
 	vinstall ${FILESDIR}/firefox.desktop 644 usr/share/applications
 
-	for i in 16x16 22x22 24x24 32x32 48x48 256x256; do
+	for i in 16x16 22x22 24x24 32x32 48x48 128x128 256x256; do
 		vinstall ${wrksrc}/browser/branding/official/default${i%x*}.png 644 \
 			usr/share/icons/hicolor/${i}/apps firefox.png
 	done
-
-	# Use system-provided dictionaries
-	rm -rf ${DESTDIR}/usr/lib/firefox/{dictionaries,hyphenation}
-	ln -s /usr/share/hunspell ${DESTDIR}/usr/lib/firefox/dictionaries
-	ln -s /usr/share/hyphen ${DESTDIR}/usr/lib/firefox/hyphenation
 
 	# We don't want the development stuff
 	rm -rf ${DESTDIR}/usr/{include,lib/firefox-devel,share/idl}
