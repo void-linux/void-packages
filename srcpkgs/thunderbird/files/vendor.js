@@ -1,5 +1,5 @@
 // Use LANG environment variable to choose locale
-pref("intl.locale.matchOS", true);
+pref("intl.locale.requested", "");
 
 // Disable default mailer checking.
 pref("mail.shell.checkDefaultMail", false);
