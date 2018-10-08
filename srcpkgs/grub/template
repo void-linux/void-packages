@@ -14,16 +14,27 @@ homepage="https://www.gnu.org/software/grub/"
 distfiles="${GNU_SITE}/grub/grub-${version}.tar.xz"
 checksum=810b3798d316394f94096ec2797909dbf23c858e48f7b3830826b8daa06b7b0f
 
-only_for_archs="i686 i686-musl x86_64 x86_64-musl"
+only_for_archs="i686 i686-musl x86_64 x86_64-musl aarch64 aarch64-musl"
 nopie=yes
 
-subpackages="grub-utils grub-i386-efi"
+subpackages="grub-utils"
+# _SUPPLEMENTARY_BUILDS is a list of <TARGET>-<PLATFORN> version of grub to build
 case "$XBPS_TARGET_MACHINE" in
-	x86_64*) subpackages+=" grub-x86_64-efi"
-		_GRUBX64=1
+	x86_64*)
+		_NATIVE_PLATFORM=pc
+		_SUPPLEMENTARY_BUILDS="i386-efi x86_64-efi"
+		subpackages+=" grub-i386-efi grub-x86_64-efi"
 		;;
-	i686*)	CFLAGS="-D_FILE_OFFSET_BITS=64"
+	i686*)
+		CFLAGS="-D_FILE_OFFSET_BITS=64"
 		configure_args+=" ac_cv_sizeof_off_t=8"
+		_NATIVE_PLATFORM=pc
+		_SUPPLEMENTARY_BUILDS="i386-efi"
+		subpackages+=" grub-i386-efi"
+		;;
+	aarch64*)
+		_NATIVE_PLATFORM=efi
+		subpackages+=" grub-arm64-efi"
 		;;
 esac
 
@@ -42,69 +53,69 @@ do_configure() {
 	# fix unifont.bdf location so grub-mkfont can create *.pf2 files
 	sed -i 's|/usr/share/fonts/unifont|/usr/share/fonts/misc|' configure
 
-	# build BIOS version
-	mkdir $wrksrc/bios_build
-	cd $wrksrc/bios_build
-	../configure ${configure_args} --with-platform=pc
-
-	# build i386 EFI version
-	mkdir $wrksrc/efi_i386_build
-	cd $wrksrc/efi_i386_build
-	../configure ${configure_args} --with-platform=efi \
-		--target=i386 --disable-efiemu --libdir=/usr/lib
-
-	if [ -n "${_GRUBX64}" ]; then
-		mkdir $wrksrc/efi_build
-		cd $wrksrc/efi_build
-		../configure ${configure_args} --with-platform=efi \
-			--target="x86_64" --disable-efiemu
+	# build tools
+	_configure_args=${configure_args}
+	if [ -n "${_NATIVE_PLATFORM}" ]; then
+		_configure_args="--with-platform=${_NATIVE_PLATFORM} ${_configure_args}"
 	fi
+	msg_normal "Configuring grub tools...\n"
+	mkdir $wrksrc/build
+	cd $wrksrc/build
+	../configure --host=${XBPS_TARGET_MACHINE} ${_configure_args}
+
+	for _SUPP_BUILD in ${_SUPPLEMENTARY_BUILDS}; do
+		_TARGET=${_SUPP_BUILD%%-*}
+		_PLATFORM=${_SUPP_BUILD##*-}
+		msg_normal "Configuring ${_TARGET} ${_PLATFORM} grub...\n"
+		mkdir $wrksrc/${_PLATFORM}_${_TARGET}_build
+		cd $wrksrc/${_PLATFORM}_${_TARGET}_build
+		../configure --host=${XBPS_TARGET_MACHINE} --target=${_TARGET} --with-platform=${_PLATFORM} ${configure_args} \
+			--disable-efiemu \
+			--libdir=/usr/lib
+	done
 }
 
 do_build() {
 	# XXX remove the strip wrapper
 	rm ${XBPS_WRAPPERDIR}/strip
 
-	msg_normal "Building BIOS grub...\n"
-	cd $wrksrc/bios_build
-	make ${makejobs}
+	msg_normal "Building grub tools...\n"
+	cd $wrksrc/build
+	make ${makejobs} &> make.log || tail -n100 make.log
 
-	msg_normal "Building i386 EFI grub...\n"
-	cd $wrksrc/efi_i386_build
-	make ${makejobs}
-
-	if [ -n "${_GRUBX64}" ]; then
-		msg_normal "Building EFI grub...\n"
-		cd $wrksrc/efi_build
-		make ${makejobs}
-	fi
+	for _SUPP_BUILD in ${_SUPPLEMENTARY_BUILDS}; do
+		_TARGET=${_SUPP_BUILD%%-*}
+		_PLATFORM=${_SUPP_BUILD##*-}
+		msg_normal "Building ${_TARGET} ${_PLATFORM} grub...\n"
+		cd $wrksrc/${_PLATFORM}_${_TARGET}_build
+		make ${makejobs} &> make.log || tail -n100 make.log
+	done
 }
 
 do_install() {
 	# XXX remove the strip wrapper
 	rm ${XBPS_WRAPPERDIR}/strip
 
-	if [ -n "${_GRUBX64}" ]; then
-		cd $wrksrc/efi_build
-		make DESTDIR=$DESTDIR/efi install
+	for _SUPP_BUILD in ${_SUPPLEMENTARY_BUILDS}; do
+		_TARGET=${_SUPP_BUILD%%-*}
+		_GRUB_TARGET=${_TARGET}
+		case "${_GRUB_TARGET}" in
+		aarch64*)
+			_GRUB_TARGET=arm64
+			;;
+		esac
+		_PLATFORM=${_SUPP_BUILD##*-}
+		cd $wrksrc/${_PLATFORM}_${_TARGET}_build
+		make DESTDIR=$DESTDIR/${_PLATFORM}_${_TARGET} install
 		# Remove non-platform specific files
-		rm -rf ${DESTDIR}/efi/{boot,etc,usr/{share,bin}}
-		rm -f ${DESTDIR}/efi/usr/lib/grub/x86_64-efi/x86_64-*
-		rm -f ${DESTDIR}/efi/usr/lib/grub/x86_64-efi/*.{module,image}
-		cp -r ${DESTDIR}/efi/* ${DESTDIR}
-		rm -rf ${DESTDIR}/efi
-	fi
+		rm -rf ${DESTDIR}/${_PLATFORM}_${_TARGET}/{boot,etc,usr/{share,bin}}
+		rm -f ${DESTDIR}/${_PLATFORM}_${_TARGET}/usr/lib/grub/${_GRUB_TARGET}-${_PLATFORM}/${_GRUB_TARGET}-*
+		rm -f ${DESTDIR}/${_PLATFORM}_${_TARGET}/usr/lib/grub/${_GRUB_TARGET}-${_PLATFORM}/*.{module,image}
+		cp -r ${DESTDIR}/${_PLATFORM}_${_TARGET}/* ${DESTDIR}
+		rm -rf ${DESTDIR}/${_PLATFORM}_${_TARGET}
+	done
 
-	cd $wrksrc/efi_i386_build
-	make DESTDIR=$DESTDIR/efi_i386 install
-	# Remove non-platform specific files
-	rm -rf ${DESTDIR}/efi_i386/{boot,etc,usr/{share,bin}}
-	rm -f ${DESTDIR}/efi_i386/usr/lib/grub/i386-efi/i386-*
-	rm -f ${DESTDIR}/efi_i386/usr/lib/grub/i386-efi/*.{module,image}
-	cp -r ${DESTDIR}/efi_i386/* ${DESTDIR}
-	rm -rf ${DESTDIR}/efi_i386
-
-	cd $wrksrc/bios_build
+	cd $wrksrc/build
 	make DESTDIR=$DESTDIR install
 
 	# Required to compress info files.
@@ -155,5 +166,13 @@ grub-i386-efi_package() {
 	short_desc+=" - i386 EFI support"
 	pkg_install() {
 		vmove usr/lib/grub/i386-efi
+	}
+}
+grub-arm64-efi_package() {
+	noarch=yes
+	depends="grub>=$version dosfstools efibootmgr"
+	short_desc+=" - arm64 EFI support"
+	pkg_install() {
+		vmove usr/lib/grub/arm64-efi
 	}
 }
