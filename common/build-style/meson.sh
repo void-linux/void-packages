@@ -81,7 +81,25 @@ EOF
 	# https://github.com/mesonbuild/meson/issues/1646
 	export AR="gcc-ar"
 
-	${meson_cmd} --prefix=/usr -Db_lto=true --buildtype=plain ${configure_args} . ${meson_builddir}
+	${meson_cmd} \
+		--prefix=/usr \
+		--libdir=/usr/lib \
+		--libexecdir=/usr/libexec \
+		--bindir=/usr/bin \
+		--sbindir=/usr/bin \
+		--includedir=/usr/include \
+		--datadir=/usr/share \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localedir=/usr/share/locale \
+		--sysconfdir=/etc \
+		--localstatedir=/var \
+		--sharedstatedir=/var/lib \
+		--buildtype=plain \
+		--auto-features=enabled \
+		--wrap-mode=nodownload \
+		-Db_lto=true -Db_ndebug=true \
+		${configure_args} . ${meson_builddir}
 }
 
 do_build() {
