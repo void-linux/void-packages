@@ -522,6 +522,10 @@ setup_pkg() {
         export CXXFLAGS_host="$XBPS_CXXFLAGS"
         export CPPFLAGS_host="$XBPS_CPPFLAGS"
         export LDFLAGS_host="$XBPS_LDFLAGS"
+        # Rust flags which are passed to rustc
+        export RUSTFLAGS="$XBPS_CROSS_RUSTFLAGS"
+        # Rust target, which differs from our triplets
+        export RUST_TARGET="$XBPS_CROSS_RUST_TARGET"
     else
         export CC="cc"
         export CXX="g++"
@@ -537,6 +541,7 @@ setup_pkg() {
         export OBJCOPY="objcopy"
         export NM="nm"
         export READELF="readelf"
+        export RUST_TARGET="$XBPS_RUST_TARGET"
         # Unse cross evironment variables
         unset CC_target CXX_target CPP_target GCC_target FC_target LD_target AR_target AS_target
         unset RANLIB_target STRIP_target OBJDUMP_target OBJCOPY_target NM_target READELF_target
