@@ -342,7 +342,7 @@ as part of the source package.
 set to `<masterdir>/builddir`. The package `wrksrc` is always stored
 in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
-- `XBPS_MACHINE` The machine architecture as returned by `uname -m`.
+- `XBPS_MACHINE` The host machine architecture as returned by `uname -m`.
 
 - `XBPS_SRCDISTDIR` Full path to where the `source distfiles` are stored, i.e `$XBPS_HOSTDIR/sources`.
 
@@ -351,6 +351,10 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 - `XBPS_TARGET_MACHINE` The target machine architecture when cross compiling a package.
 
 - `XBPS_FETCH_CMD` The utility to fetch files from `ftp`, `http` of `https` servers.
+
+- `XBPS_TRIPLET` The host machine GNU type triplet as returned by `gcc -dumpmachine`.
+
+- `XBPS_CROSS_TRIPLET` The target machine GNU type triplet, only available when cross-compiling.
 
 <a id="available_vars"></a>
 ### Available variables
