@@ -7,6 +7,9 @@ packages for XBPS, the `Void Linux` native packaging system.
 
 * [Introduction](#Introduction)
 	* [Quality Requirements](#quality_requirements)
+	* [Cross compilation](#cross_compilation)
+		* [Cross terminology](#cross_terminology)
+		* [Cross setup](#cross_setup)
 	* [Package build phases](#buildphase)
 	* [Package naming conventions](#namingconvention)
 		* [Libraries](#libs)
@@ -131,6 +134,114 @@ the Void packages system.
 
 1. Required: Another package either within the repository or pending inclusion
    requires the package.
+
+<a id="cross_compilation"></a>
+### Cross compilation
+
+Void Linux places high emphasis on being able to cross compile the packages
+in its repository.
+
+In the context of Void Linux cross compilation is compiling software from one
+CPU architecture to another, e.g. compile from a x86_64 system to aarch64.
+
+To help with cross compilation xbps-src employs a sizeable amount of complexity
+to make cross compiling as easy as running `./xbps-src -a <arch> pkg <pkgname>`
+for the user.
+
+<a id="cross_terminology"></a>
+#### Terminology
+
+The Void Linux cross compilation framework has specific terminology for various
+concepts that may or not match what other projects use.
+
+The following is a list of terminology used:
+
+- `Native`: A compilation that is from and to the same architecture. Compiling
+from x86_64 to x86_64 is native.
+
+- `Cross`: A compilation that is from one architecture to another. Compiling
+from x86_64 to aarch64 is cross.
+
+- `Host`: The machine on which we are compiling the program, taking the `Cross`
+example x86_64 would be the host.
+
+> NOTE: Most projects refer to this as 'build'
+
+- `Target`: The machine for which we are compiling the program, taking the
+`Cross` example aarch64 would be the target.
+
+> NOTE: Most projects refer to this as 'host'
+
+<a id="cross_setup"></a>
+#### Cross setup
+
+Cross compiling requires some changes in the environment from variables being
+set to wrappers being made and packages being installed in specific locations.
+
+xbps-src sources common/cross-profiles/<arch>.sh which sets some important
+variables, among them:
+
+- `XBPS_TARGET_MACHINE` which is the name of the architecture according to
+xbps-src, e.g. `x86_64-musl`.
+
+- `XBPS_CROSS_TRIPLET` which is the GNU triplet which can be acquired by
+running `gcc -dumpmachine`. e.g. `x86_64-unknown-linux-gnu`
+
+xbps-src install packages from `makedepends` and `checkdepends` to
+`/usr/$XBPS_CROSS_TRIPLET`, that path is stored in `XBPS_CROSS_BASE`.
+
+xbps-src creates a wrapper for some compilation related programs, such as
+pkg-config. The pkg-config wrapper forces pkg-config to search for pc files
+(which are used to find dependencies) in XBPS_CROSS_BASE.
+
+xbps-src also performs build-style specific initialization:
+
+For `gnu-configure` it passes:
+
+- `--host=$XBPS_CROSS_TRIPLET`
+- `--with-sysroot=$XBPS_CROSS_BASE`
+- `--with-libtool-sysroot=$XBPS_CROSS_BASE`
+
+To the `./configure` script.
+
+For `cmake` it creates a cmake definitions file called
+`cross_$XBPS_CROSS_TRIPLET.cmake` that defines:
+
+- `CMAKE_CROSS_COMPILING` to TRUE.
+- `FIND_ROOT_PATH` to `$XBPS_CROSS_BASE`.
+- `CMAKE_C_COMPILER` to `$CC`.
+- `CMAKE_CXX_COMPILER` to `$CXX`.
+- `CMAKE_SYSTEM_PROCESSOR` to the processor family of the target.
+- `CMAKE_FIND_ROOT_PATH` to `$XBPS_CROSS_BASE`.
+- `CMAKE_FIND_ROOT_PATH_MODE_PROGRAM` to NEVER.
+- `CMAKE_FIND_ROOT_PATH_MODE_LIBRARY` to ONLY.
+- `CMAKE_FIND_ROOT_PATH_MODE_INCLUDE` to ONLY.
+
+It then passes the cmake definitions file to cmake itself with the
+`-DCMAKE_TOOLCHAIN_FILE` configure option.
+
+For `go` it sets `GOARCH` to the cpu family being used, if arm is being used it
+also sets `GOARM` to the arm version.
+
+For `meson` it creates a crossfile, which contains:
+
+- the path, absolute or relative, of the following binaries:
+	- cc
+	- c++
+	- ar
+	- nm
+	- ld
+	- strip
+	- readelf
+	- pkgconfig
+
+- The CFLAGS and LDFLAGS for both C and CXX.
+
+- The following information of the target machine:
+	- The target system, linux in most cases.
+	- The family of the cpu architecture.
+	- The name of the architecture.
+	- The endianness, either big or little.
 
 <a id="buildphase"></a>
 ### Package build phases
