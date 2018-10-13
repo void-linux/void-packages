@@ -356,6 +356,8 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_CROSS_TRIPLET` The target machine GNU type triplet, only available when cross-compiling.
 
+- `XBPS_CROSS_BASE` Full path to where dependencies for cross compilation are installed.
+
 <a id="available_vars"></a>
 ### Available variables
 
