@@ -67,6 +67,14 @@ _vman() {
 		suffix=${target##*.}
 	fi
 
+	if [[ $suffix == bz2 ]]
+	then
+		bunzip2 "$file"
+		file="${file:0:-4}"
+		target="${target:0:-4}"
+		suffix=${target##*.}
+	fi
+
 	if  [[ $target =~ (.*)\.([a-z][a-z](_[A-Z][A-Z])?)\.(.*) ]]
 	then
 		name=${BASH_REMATCH[1]}.${BASH_REMATCH[4]}
