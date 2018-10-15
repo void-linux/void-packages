@@ -1,7 +1,7 @@
 hostmakedepends+=" cargo"
 
 if [ "$CROSS_BUILD" ]; then
-	makedepends+=" rust"
+	makedepends+=" rust-std"
 fi
 
 # Use the config we set in do_configure
