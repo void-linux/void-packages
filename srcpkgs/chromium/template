@@ -1,22 +1,23 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See http://www.chromium.org/developers/calendar for the latest version
-version=69.0.3497.100
+version=70.0.3538.67
 revision=1
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
 maintainer="Rasmus Thomsen <rasmus.thomsen@protonmail.com>"
 homepage="https://www.chromium.org/"
 license="BSD-3-Clause"
 distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/${pkgname}-${version}.tar.xz"
-checksum=e3391560e73e25fb4afc3f2dd5616607e2dbfc58aa88251a2c5d6b7096fe9e35
+checksum=e956c2031f634300ada8c09e0777f0c560f4798963f144edaaec8d43e1e30e37
 
 only_for_archs="i686 x86_64 x86_64-musl"
 lib32disabled=yes
 nodebug=yes
 nopie=yes  # contains tools that are not PIE, enables PIE itself
 
-build_options="clang"
+build_options="clang jumbo_build"
 desc_option_clang="Use clang to build"
+desc_option_jumbo_build="Do a jumbo build, needs way more RAM but builds way faster"
 
 hostmakedepends="$(vopt_if clang clang) yasm python pkg-config perl gperf bison ninja nodejs hwids
  libatomic-devel libevent-devel libglib-devel"
@@ -32,15 +33,26 @@ makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
  ffmpeg-devel"
 depends="libexif hwids desktop-file-utils hicolor-icon-theme"
 
+build_options_default="jumbo_build"
+
+# Chromium's VAAPI stuff doesn't build on i686
+if [ "${XBPS_TARGET_MACHINE}" != "i686" ]; then
+	makedepends+=" libva-devel"
+fi
+
 post_extract() {
 	case "${XBPS_TARGET_MACHINE}" in
 	*-musl)
-		for f in ${FILESDIR}/musl-patches/*.patch; do
+		for f in "${FILESDIR}"/musl-patches/*.patch; do
 			echo "Applying $f"
 			patch -Np0 -i "$f"
 		done
 		;;
 	esac
+
+	if [ "${XBPS_TARGET_MACHINE}" != "i686" ]; then
+		patch -Np0 -i "${FILESDIR}"/chromium-enable-vaapi.patch
+	fi
 
 	# Use the file at run time instead of effectively compiling it in
 	sed 's|//third_party/usb_ids/usb.ids|/usr/share/hwdata/usb.ids|g' \
@@ -59,7 +71,7 @@ post_extract() {
 	fi
 }
 do_configure() {
-	local system="" bootstrap_conf="" conf=""
+	local system="" conf=()
 	export -n CFLAGS CXXFLAGS LDFLAGS
 
 	if [ "$build_option_clang" ]; then
@@ -89,6 +101,7 @@ do_configure() {
 		libevent
 		libjpeg
 		libpng
+		libwebp
 		libxml
 		libxslt
 		opus
@@ -97,10 +110,9 @@ do_configure() {
 		yasm
 	"
 
-	# TODO: is this still broken?
-	[ -z "$CROSS_BUILD" ] && system+=" libwebp"
-
-	# remove build scripts for system provided dependencies
+	# remove build scripts for system provided dependencies - basically does the
+	# same as the bundeled script to remove bundeled libs, but this way we don't
+	# have to list the remaining libs
 	for LIB in ${system} libjpeg_turbo; do
 		find -type f -path "*third_party/$LIB/*" \
 			\! -path "*third_party/$LIB/chromium/*" \
@@ -117,48 +129,45 @@ do_configure() {
 
 	python2 third_party/libaddressinput/chromium/tools/update-strings.py
 
-	bootstrap_conf="is_clang=$(vopt_if clang true false)"
-
-	bootstrap_conf+=' treat_warnings_as_errors=false binutils_path="/usr/bin"'
-	bootstrap_conf+=' gold_path="/usr/bin/ld.gold" use_sysroot=false'
-	bootstrap_conf+=' use_allocator="none" use_allocator_shim=false'
-
-	# XXX: gold broken with musl
-	case "${XBPS_TARGET_MACHINE}" in
-		*-musl) bootstrap_conf+=' use_gold=false' ;;
-		*) bootstrap_conf+=' use_gold=true' ;;
-	esac
-
-	AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
-		python2 tools/gn/bootstrap/bootstrap.py -s -v \
-			--gn-gen-args "${bootstrap_conf}"
-
 	# Google API keys (see http://www.chromium.org/developers/how-tos/api-keys)
 	# Note: These are for Void Linux use ONLY.
-	conf+='
-		google_api_key="AIzaSyA9gWazKaHaNIPPg2hrMj6_ZSG8AFmq738"
-		google_default_client_id="126659149423-hoo6ickbk3p1u2qjsdsp0ddciurfvb4t.apps.googleusercontent.com"
-		google_default_client_secret="_ozIx2D-DKm_se_2NPwV4l5b"'
+	conf+=(
+		'google_api_key="AIzaSyA9gWazKaHaNIPPg2hrMj6_ZSG8AFmq738"'
+		'google_default_client_id="126659149423-hoo6ickbk3p1u2qjsdsp0ddciurfvb4t.apps.googleusercontent.com"'
+		'google_default_client_secret="_ozIx2D-DKm_se_2NPwV4l5b"'
+	)
 
+	conf+=(
+		'enable_nacl=false'
+		'enable_nacl_nonsfi=false'
+		"is_clang=$(vopt_if clang true false)"
+		'is_debug=false'
+		'clang_use_chrome_plugins=false'
+		'custom_toolchain="//build/toolchain/linux/unbundle:default"'
+		'host_toolchain="//build/toolchain/linux/unbundle:default"'
+		'remove_webcore_debug_symbols=true'
+		'symbol_level=0'
+		'icu_use_data_file=true'
+		'use_allocator="none"'
+		'use_allocator_shim=false'
+		'use_cups=true'
+		'use_pulseaudio=true'
+		'use_sysroot=false'
+		'use_system_harfbuzz=true'
+		'enable_widevine=true'
+		'enable_hangout_services_extension=true'
+		'is_desktop_linux=true'
+	)
 
-	conf+=' enable_nacl=false enable_nacl_nonsfi=false'
+	#  Jumbo/Unity builds: https://chromium.googlesource.com/chromium/src/+/master/docs/jumbo.md
+	conf+=( "use_jumbo_build=$(vopt_if jumbo_build true false)" )
 
-	conf+=" is_clang=$(vopt_if clang true false)"
-	conf+=' is_debug=false
-		clang_use_chrome_plugins=false
-		custom_toolchain="//build/toolchain/linux/unbundle:default"
-		host_toolchain="//build/toolchain/linux/unbundle:default"
-		remove_webcore_debug_symbols=true
-		symbol_level=0
-		icu_use_data_file=true
-		use_allocator="none"
-		use_allocator_shim=false
-		use_cups=true
-		use_pulseaudio=true
-		use_sysroot=false
-		use_system_harfbuzz=true
-		enable_widevine=true
-		enable_hangout_services_extension=true'
+	# Enable VAAPI. Doesn't compile on i686
+	if [ "${XBPS_TARGET_MACHINE}" != "i686" ]; then
+		conf+=(
+			'use_vaapi=true'
+		)
+	fi
 
 	# Use explicit library dependencies instead of dlopen.
 	# GN only has "link_pulseaudio", the other options used before are not available atm
@@ -167,55 +176,61 @@ do_configure() {
 	# linux_link_libpci=true
 	# linux_link_libspeechd=true
 	# libspeechd_h_prefix=\"speech-dispatcher/\""
-	conf+=' link_pulseaudio=true'
+	conf+=( 'link_pulseaudio=true' )
 
 	# Never use bundled binutils/gold binary.
-	conf+="
-		binutils_path=\"${XBPS_CROSS_BASE}/usr/bin\"
-		gold_path=\"${XBPS_CROSS_BASE}/usr/bin/ld.gold\"
-		linux_use_bundled_binutils=false
-		use_custom_libcxx=false
-		use_lld=false"
+	conf+=(
+		"binutils_path=\"${XBPS_CROSS_BASE}/usr/bin\""
+		"gold_path=\"${XBPS_CROSS_BASE}/usr/bin/ld.gold\""
+		'linux_use_bundled_binutils=false'
+		'use_custom_libcxx=false'
+		'use_lld=false'
+	)
 
 	# XXX: gold broken with musl
 	case "${XBPS_TARGET_MACHINE}" in
-	*-musl) conf+=' use_gold=false' ;;
-	*) conf+=' use_gold=true' ;;
+	*-musl) conf+=( 'use_gold=false' ) ;;
+	*) conf+=( 'use_gold=true' ) ;;
 	esac
 
 	# Always support proprietary codecs.
 	# Enable H.264 support in bundled ffmpeg.
-	conf+='
-		proprietary_codecs=true
-		ffmpeg_branding="Chrome"'
+	conf+=(
+		'proprietary_codecs=true'
+		'ffmpeg_branding="Chrome"'
+	)
 
 	# Make sure that -Werror doesn't get added to CFLAGS by the build system.
 	# Depending on GCC version the warnings are different and we don't want
 	# the build to fail because of that.
-	conf+='
-		treat_warnings_as_errors=false
-		fatal_linker_warnings=false'
+	conf+=(
+		'treat_warnings_as_errors=false'
+		'fatal_linker_warnings=false'
+	)
 
 	# Save space by removing DLOG and DCHECK messages (about 6% reduction).
 	# conf+=" logging_like_official_build=true"
-	conf+=' fieldtrial_testing_like_official_build=true'
+	conf+=( fieldtrial_testing_like_official_build=true )
 
 	case "${XBPS_TARGET_MACHINE}" in
-		x86_64*) conf+=' target_cpu="x64"' ;;
-		i686*) conf+=' target_cpu="x86"' ;;
-		arm*) conf+=' target_cpu="arm"' ;;
-		aarch64*) conf+=' target_cpu="arm64"' ;;
+		x86_64*) conf+=( 'target_cpu="x64"' ) ;;
+		i686*) conf+=( 'target_cpu="x86"' ) ;;
+		arm*) conf+=( 'target_cpu="arm"' ) ;;
+		aarch64*) conf+=( 'target_cpu="arm64"' ) ;;
 	esac
 
-	out/Release/gn gen out/Release --args="${conf//	/ }"
+	AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
+	python2 tools/gn/bootstrap/bootstrap.py -s -v \
+		--gn-gen-args "${conf[*]}"
+
+	out/Release/gn gen out/Release --args="${conf[*]}"
 }
 do_build() {
-	ninja -C out/Release ${makejobs} chrome chrome_sandbox chromedriver
+	ninja -C out/Release ${makejobs} chrome chromedriver mksnapshot
 }
 do_install() {
 	vinstall out/Release/chrome 755 usr/lib/${pkgname} ${pkgname}
 	vinstall out/Release/chromedriver 755 usr/lib/${pkgname} chromedriver
-	vinstall out/Release/chrome_sandbox 4755 usr/lib/${pkgname} chrome-sandbox
 
 	cp out/Release/{*.pak,*.bin} ${DESTDIR}/usr/lib/chromium
 	cp -a out/Release/locales ${DESTDIR}/usr/lib/chromium
