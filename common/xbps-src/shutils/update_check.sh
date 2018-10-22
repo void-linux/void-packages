@@ -46,8 +46,8 @@ update_check() {
                 url="https://pypi.org/simple/$pkgname";;
             *github.com*)
                 githubname="$(printf %s "$url" | cut -d/ -f4,5)"
-                url="https://github.com/$githubname/tags"
-                rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
+                url="https://github.com/$githubname/releases/latest"
+                rx='\Q'"$githubname"'\E/releases/tag/v?\K[\d\.]+(?=)';;
             *gitlab.com*|*gitlab.gnome.org*)
                 gitlaburl="$(printf %s "$url" | cut -d/ -f1-5)"
                 url="$gitlaburl/tags"
