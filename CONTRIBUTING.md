@@ -4,7 +4,6 @@ void-packages is the backbone of the Void Linux distribution. It contains all de
 
 This document describes how you as a contributor can help adding packages, correcting bugs and adding features to void-packages.
 
-## Getting your packages into Void by yourself
 
 If you really want to get a package into Void Linux we recommend you to package it yourself.
 We provide a [comprehensive Manual](https://github.com/void-linux/void-packages/blob/master/Manual.md)
