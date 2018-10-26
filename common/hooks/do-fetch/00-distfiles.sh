@@ -43,6 +43,7 @@ contents_cksum() {
 	*.diff)       cursufx="txt";;
 	*.txt)        cursufx="txt";;
 	*.7z)	      cursufx="7z";;
+	*.gem)	      cursufx="gem";;
 	*) msg_error "$pkgver: unknown distfile suffix for $curfile.\n";;
 	esac
 
@@ -91,6 +92,9 @@ contents_cksum() {
 		else
 			msg_error "$pkgver: cannot find 7z bin for extraction.\n"
 		fi
+		;;
+	gem)
+		cksum=$(tar -xf "$curfile" data.tar.gz --to-stdout | tar -xzO | sha256sum | awk '{print $1}')
 		;;
 	*)
 		msg_error "$pkgver: cannot guess $curfile extract suffix. ($cursufx)\n"
