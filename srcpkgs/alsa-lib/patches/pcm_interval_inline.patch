@@ -1,0 +1,71 @@
+From b420056604f06117c967b65d43d01536c5ffcbc9 Mon Sep 17 00:00:00 2001
+From: Timo Wischer <twischer@de.adit-jv.com>
+Date: Thu, 18 Oct 2018 13:33:24 +0200
+Subject: [PATCH] pcm: interval: Interpret (x x+1] correctly and return x+1
+
+Without this change an interval of (x x+1] will be interpreted as an
+empty interval but the right value would be x+1.
+This leads to a failing snd_pcm_hw_params() call which returns -EINVAL.
+
+An example issue log is given in the following:
+snd_pcm_hw_params failed with err -22 (Invalid argument)
+ACCESS: MMAP_NONINTERLEAVED
+FORMAT: S16_LE
+SUBFORMAT: STD
+SAMPLE_BITS: 16
+FRAME_BITS: 16
+CHANNELS: 1
+RATE: 16000
+PERIOD_TIME: (15999 16000]
+PERIOD_SIZE: (255 256]
+PERIOD_BYTES: (510 512]
+PERIODS: [2 3)
+BUFFER_TIME: 32000
+BUFFER_SIZE: 512
+BUFFER_BYTES: 1024
+
+In case of (x x+1) we have to interpret it anyway as a single value of x to
+compensate rounding issues.
+For example the period size will result in an interval of (352 353) when
+the period time is 16ms and the sample rate 22050 Hz
+(16ms * 22,05 kHz = 352,8 frames). But 352 has to be chosen to allow a
+buffer size of 705 (32ms * 22,05 kHz = 705,6 frames) which has to be >= 2x
+period size to avoid Xruns. The buffer size will not end up with an
+interval of (705 706) simular to the period size because
+snd_pcm_rate_hw_refine_cchange() calls snd_interval_floor() for the buffer
+size. Therefore this value will be interpreted as an integer interval
+instead of a real interval further on.
+
+This issue seems to exist since the change of 9bb985c38 ("pcm:
+snd_interval_refine_first/last: exclude value only if also excluded
+before")
+
+Signed-off-by: Timo Wischer <twischer@de.adit-jv.com>
+Signed-off-by: Jaroslav Kysela <perex@perex.cz>
+---
+ src/pcm/interval_inline.h | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/pcm/interval_inline.h b/src/pcm/interval_inline.h
+index a68e292..d9a30b2 100644
+--- src/pcm/interval_inline.h
++++ src/pcm/interval_inline.h
+@@ -51,12 +51,14 @@ INTERVAL_INLINE int snd_interval_single(const snd_interval_t *i)
+ {
+ 	assert(!snd_interval_empty(i));
+ 	return (i->min == i->max || 
+-		(i->min + 1 == i->max && i->openmax));
++		(i->min + 1 == i->max && (i->openmin || i->openmax)));
+ }
+ 
+ INTERVAL_INLINE int snd_interval_value(const snd_interval_t *i)
+ {
+ 	assert(snd_interval_single(i));
++	if (i->openmin && !i->openmax)
++		return i->max;
+ 	return i->min;
+ }
+ 
+-- 
+1.7.11.7
+
