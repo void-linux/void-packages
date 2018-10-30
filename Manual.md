@@ -781,6 +781,11 @@ with the character `r` in the `version` variable. The `distfiles`
 location will automatically be set as well as the package made to depend
 on `R`.
 
+- `gem` For packages that are installed using gems from [RubyGems](https://rubygems.org/).
+The gem command can be overridden by `gem_cmd`. `noarch` is set unconditionally and `distfiles`
+is set by the build style if the template does not do so. If your gem provides extensions which
+must be compiled consider using the `gemspec` build style instead.
+
 - `ruby-module` For packages that are ruby modules and are installable via `ruby install.rb`.
 Additional install arguments can be specified via `make_install_args`.
 
