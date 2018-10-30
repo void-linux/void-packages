@@ -781,6 +781,12 @@ with the character `r` in the `version` variable. The `distfiles`
 location will automatically be set as well as the package made to depend
 on `R`.
 
+- `gemspec` For packages that use
+[gemspec](https://guides.rubygems.org/specification-reference/) files for building a ruby
+gem and then installing it. The gem command can be overridden by `gem_cmd`. `configure_args`
+can be used to pass arguments during compilation. If your package does not make use of compiled
+extensions consider using the `gem` build style instead.
+
 - `gem` For packages that are installed using gems from [RubyGems](https://rubygems.org/).
 The gem command can be overridden by `gem_cmd`. `noarch` is set unconditionally and `distfiles`
 is set by the build style if the template does not do so. If your gem provides extensions which
