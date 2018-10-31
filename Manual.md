@@ -93,7 +93,7 @@ revision=1
 build_style=gnu-configure
 short_desc="A short description max 72 chars"
 maintainer="name <email>"
-license="GPL-3"
+license="GPL-3.0-or-later"
 homepage="http://www.foo.org"
 distfiles="http://www.foo.org/foo-${version}.tar.gz"
 checksum="fea0a94d4b605894f3e2d5572e3f96e4413bcad3a085aae7367c2cf07908b2ff"
@@ -364,8 +364,8 @@ The list of mandatory variables for a template:
 
 - `homepage` A string pointing to the `upstream` homepage.
 
-- `license` A string matching any license file available in `/usr/share/licenses`.
-Multiple licenses should be separated by commas, Example: `GPL-3, LGPL-2.1`.
+- `license` A string matching the license's [SPDX Short identifier](https://spdx.org/licenses)
+Multiple licenses should be separated by commas, Example: `GPL-3.0-or-later, LGPL-2.1-only`.
 
 - `maintainer` A string in the form of `name <user@domain>`.  The
   email for this field must be a valid email that you can be reached
@@ -1129,7 +1129,7 @@ revision=1
 build_style=gnu-configure
 short_desc="A short description max 72 chars"
 maintainer="name <email>"
-license="GPL-3"
+license="GPL-3.0-or-later"
 homepage="http://www.foo.org"
 distfiles="http://www.foo.org/foo-${version}.tar.gz"
 checksum="fea0a94d4b605894f3e2d5572e3f96e4413bcad3a085aae7367c2cf07908b2ff"
