@@ -1,7 +1,7 @@
 # Template file for 'busybox'
 pkgname=busybox
-version=1.29.3
-revision=2
+version=1.30.1
+revision=1
 hostmakedepends="perl"
 checkdepends="zip"
 short_desc="Swiss Army Knife of Embedded Linux"
@@ -9,24 +9,38 @@ maintainer="Juan RP <xtraeme@voidlinux.org>"
 license="GPL-2.0-only"
 homepage="http://www.busybox.net"
 distfiles="${homepage}/downloads/busybox-${version}.tar.bz2"
-checksum=97648636e579462296478e0218e65e4bc1e9cd69089a3b1aeb810bff7621efb7
+checksum=3d1d04a4dbd34048f4794815a5c48ebb9eb53c5277e09ffffc060323b95dfbdc
 
-alternatives="
+_alternatives_common="
  awk:awk:/usr/bin/busybox
  hostname:hostname:/usr/bin/busybox
  sh:sh:/usr/bin/busybox
+ vi:vi:/usr/bin/busybox
+ logger:logger:/usr/bin/busybox"
+
+alternatives="
+ ${_alternatives_common}
  ntpd:ntpd:/usr/bin/busybox
- ntpd:ntpd:/etc/sv/busybox-ntpd
- vi:vi:/usr/bin/busybox"
+ ntpd:ntpd:/etc/sv/busybox-ntpd"
+
+_patch_config() {
+	local t="$1"
+	shift
+	while [ "$1" ]; do
+		local p="$1"
+		shift
+		patch "${t}/.config" <"${FILESDIR}/dotconfig.d/${p}.patch"
+	done
+}
 
 do_configure() {
 	mkdir -p src
 	mv * src || true
 
 	local t
-	for t in busybox busybox-static; do
+	for t in busybox busybox-static busybox-core busybox-huge; do
 		mkdir -p $t
-		cp -f ${FILESDIR}/${t}.dotconfig ${t}/.config
+		cp -f ${FILESDIR}/dotconfig ${t}/.config
 
 		case "$XBPS_TARGET_MACHINE" in
 		*-musl) sed -i -e /CONFIG_FEATURE_VI_REGEX_SEARCH/s/y/n/ \
@@ -39,9 +53,16 @@ do_configure() {
 				"s,\(CONFIG_CROSS_COMPILER_PREFIX\).*,\1=\"${XBPS_CROSS_TRIPLET}-\",g" \
 				${t}/.config
 		fi
-		make -C $t KBUILD_SRC=${wrksrc}/src -f ${wrksrc}/src/Makefile prepare ${makejobs}
 	done
-	sed -i -e '/CONFIG_STATIC/ s/.*/CONFIG_STATIC=y/' busybox-static/.config
+
+	_patch_config busybox udhcpc ntpd
+	_patch_config busybox-static udhcpc ntpd static
+	_patch_config busybox-huge udhcpc ntpd httpd mdev sysklogd
+
+	for t in busybox-core busybox busybox-static busybox-huge; do
+		make -C "${t}" KBUILD_SRC="${wrksrc}/src" -f "${wrksrc}/src/Makefile" prepare "${makejobs}"
+	done
+
 	if [ "$SOURCE_DATE_EPOCH" ]; then
 		# rewrite date with the one from the date wrapper.
 		d=$(date +"%F %T %Z")
@@ -50,31 +71,23 @@ do_configure() {
 }
 
 do_build() {
-	make -C busybox SKIP_STRIP=y ${makejobs}
-	make -C busybox-static SKIP_STRIP=y ${makejobs}
+	for t in busybox-core busybox busybox-static busybox-huge; do
+		make -C "${t}" SKIP_STRIP=y "${makejobs}"
+	done
 }
 
 do_check() {
-	# Copy the testsuite into the busybox and it's static counterpart
-	# directory
-	cp -r src/testsuite busybox
-	cp -r src/testsuite busybox-static
-
-	# This is required by the testsuite
-	cp src/scripts/echo.c busybox/scripts
-	cp src/scripts/echo.c busybox-static/scripts
-
-	# Run testsuite for busybox
-	(
-	cd busybox/testsuite
-	SKIP_KNOWN_BUGS=yes ./runtest -v
-	)
-
-	# Run testsuite for busybox-static
-	(
-	cd busybox-static/testsuite
-	SKIP_KNOWN_BUGS=yes ./runtest -v
-	)
+	for t in busybox-core busybox busybox-static busybox-huge; do
+		# Copy the testsuite over
+		cp -r src/testsuite "${t}"
+		# Required by the testsuite
+		cp src/scripts/echo.c "${t}/scripts"
+		# Run the testsuite
+		(
+		cd "${t}"
+		SKIP_KNOWN_BUGS=yes ./runtest -v
+		)
+	done
 }
 
 do_install() {
@@ -83,9 +96,30 @@ do_install() {
 	vsv busybox-ntpd
 }
 
+busybox-core_package() {
+	short_desc+=" (essential applets)"
+	conflicts="busybox>=0 busybox-huge>=0"
+	alternatives="${_alternatives_common}"
+	pkg_install() {
+		vbin busybox-core/busybox_unstripped busybox
+		vman busybox-core/docs/busybox.1
+	}
+}
+
 busybox-static_package() {
 	short_desc+=" (statically linked)"
 	pkg_install() {
 		vbin busybox-static/busybox busybox.static
+	}
+}
+
+busybox-huge_package() {
+	short_desc+=" (extra applets)"
+	conflicts="busybox>=0 busybox-core>=0"
+	pkg_install() {
+		vbin busybox-huge/busybox_unstripped busybox
+		vman busybox-huge/docs/busybox.1
+		vsv busybox-syslogd
+		vsv busybox-klogd
 	}
 }
