@@ -803,6 +803,9 @@ Additional install arguments can be specified via `make_install_args`.
 - `perl-module` For packages that use the Perl
 [ExtUtils::MakeMaker](http://perldoc.perl.org/ExtUtils/MakeMaker.html) build method.
 
+- `perl6-dist` For packages that use the Rakudo Perl 6
+`perl6-install-dist` build method with rakudo.
+
 - `waf3` For packages that use the Python3 `waf` build method with python3.
 
 - `waf` For packages that use the Python `waf` method with python2.
