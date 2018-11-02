@@ -146,9 +146,11 @@ do_install() {
 	find ${DESTDIR}/${_GEMDIR}/extensions \( -name mkmf.log -o -name gem_make.out \) -delete
 
 	# Place manpages in usr/share/man/man[0-9]
-	find ${_INSTDIR}/man -type f -name '*.[0-8n]' | while read -r m; do
-		vman ${m}
-	done
+	if [ -d ${_INSTDIR}/man ]; then
+		find ${_INSTDIR}/man -type f -name '*.[0-8n]' | while read -r m; do
+			vman ${m}
+		done
+	fi
 
 	rm -rf "${_INSTDIR}/man"
 
@@ -162,10 +164,12 @@ do_install() {
 	rm -rf ${_INSTDIR}/bin
 
 	# Place conf files in their places
-	find ${_INSTDIR}/etc -type f | while read -r c; do
-		vmkdir $(dirname ${c})
-		mv ${c} "${DESTDIR}/${c##*${_INSTDIR}/etc/}/"
-	done
+	if [ -d ${_INSTDIR}/etc ]; then
+		find ${_INSTDIR}/etc -type f | while read -r c; do
+			vmkdir $(dirname ${c})
+			mv ${c} "${DESTDIR}/${c##*${_INSTDIR}/etc/}/"
+		done
+	fi
 
 	rm -rf ${_INSTDIR}/etc
 
