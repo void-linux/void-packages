@@ -3,12 +3,11 @@
 #
 
 do_configure() {
-	mkdir -p .cargo
+	mkdir -p ${HOME}/.cargo
 	# respect makejobs, do cross stuff
-	cat > .cargo/config <<EOF
+	cat > ${HOME}/.cargo/config <<EOF
 [build]
 jobs = ${makejobs#*j}
-target = "${RUST_TARGET}"
 
 [target.${RUST_TARGET}]
 linker = "${CC}"
@@ -18,7 +17,7 @@ EOF
 do_build() {
 	: ${make_cmd:=cargo}
 
-	${make_cmd} build --release ${configure_args}
+	${make_cmd} build --release --target ${RUST_TARGET} ${configure_args}
 }
 
 do_check() {
@@ -30,6 +29,7 @@ do_check() {
 do_install() {
 	: ${make_cmd:=cargo}
 
-	${make_cmd} install --root="${DESTDIR}/usr" ${make_install_args}
+	${make_cmd} install --path . --target ${RUST_TARGET} --root="${DESTDIR}/usr" \
+		${make_install_args}
 	rm "${DESTDIR}"/usr/.crates.toml
 }
