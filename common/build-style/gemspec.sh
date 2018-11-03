@@ -32,29 +32,44 @@ do_build() {
 	sed -i 's|`git ls-files -z`|`find . -type f -print0 \| sed -e "s@\\\\./@@g"`|g' $gemspec
 
 	if [ "$CROSS_BUILD" ]; then
-		# Create a .extconf file that forces the Makefile to use our environment
-		# this allows us to cross-compile like it is done with meson cross-files
-		cat>append<<EOF
-RbConfig::MAKEFILE_CONFIG['CPPFLAGS'] = ENV['CPPFLAGS'] if ENV['CPPFLAGS']
+
+		local _TARGET_PLATFORM
+
+		_TARGET_PLATFORM="$(ruby -r \
+			$(find ${XBPS_CROSS_BASE}/usr/lib/ruby -iname rbconfig.rb) \
+			-e 'puts RbConfig::CONFIG["arch"]' 2>/dev/null)"
+
+		# Patch all instances of extconf that use create_makefile
+		for f in $(find . -type f -name 'extconf.rb'); do
+			if [ ! -f ${f}.orig ]; then
+				# Create a .extconf file that forces the Makefile to use our environment
+				# this allows us to cross-compile like it is done with meson cross-files
+				cat<<EOF>append
 \$CPPFLAGS = ENV['CPPFLAGS'] if ENV['CPPFLAGS']
 RbConfig::MAKEFILE_CONFIG['CC'] = ENV['CC'] if ENV['CC']
 RbConfig::MAKEFILE_CONFIG['CXX'] = ENV['CXX'] if ENV['CXX']
 RbConfig::MAKEFILE_CONFIG['LD'] = ENV['LD'] if ENV['LD']
 RbConfig::MAKEFILE_CONFIG['CFLAGS'] = ENV['CFLAGS'] if ENV['CFLAGS']
+RbConfig::MAKEFILE_CONFIG['CPPFLAGS'] = ENV['CPPFLAGS'] if ENV['CPPFLAGS']
 RbConfig::MAKEFILE_CONFIG['CXXFLAGS'] = ENV['CXXFLAGS'] if ENV['CXXFLAGS']
-RbConfig::MAKEFILE_CONFIG['AR'] = ENV['AR'] if ENV['AR']
-RbConfig::MAKEFILE_CONFIG['RANLIB'] = ENV['RANLIB'] if ENV['RANLIB']
+EOF
+				cat $f > append2
+				# Use sed and enable verbose mode
+				cat<<EOF>>append2
+system("sed -i 's|^V =.*|V = 1|' Makefile")
+system("sed -i 's|^CFLAGS.*|CFLAGS = \$(CCDLFLAGS) ${VOID_TARGET_CFLAGS} \$(ARCH_FLAG)|' Makefile")
+system("sed -i 's|^topdir.*|topdir = ${XBPS_CROSS_BASE}/usr/include/ruby-\$(ruby_version)|' Makefile")
+system("sed -i 's|^hdrdir.*|hdrdir = ${XBPS_CROSS_BASE}/usr/include/ruby-\$(ruby_version)|' Makefile")
+system("sed -i 's|^arch_hdrdir.*|arch_hdrdir = ${XBPS_CROSS_BASE}/usr/include/ruby-\$(ruby_version)/\$(arch)|' Makefile")
+system("sed -i 's|^arch =.*|arch = ${_TARGET_PLATFORM}|' Makefile")
+system("sed -i 's|^dldflags =.*|dldflags = ${LDFLAGS}|' Makefile")
 EOF
 
-		# Patch all instances of extconf that use create_makefile
-		for f in $(find . -type f -name 'extconf.rb'); do
-			if [ ! -f ${f}.orig ]; then
-				# Ignore extconf files that do not create makefiles
-				grep -q create_makefile $f || continue
 				# Create a backup which we will restore later
 				cp $f ${f}.orig
+
 				# Patch extconf.rb for cross compile
-				cat append ${f}.orig >> $f
+				cat append append2 > $f
 			fi
 		done
 	fi
@@ -81,39 +96,19 @@ EOF
 do_install() {
 	: ${gem_cmd:=gem}
 
-	local _GEMDIR _INSTDIR _TARGET_PLATFORM _HOST_PLATFORM _HOST_EXT_DIR _TARGET_EXT_DIR
+	local _GEMDIR _INSTDIR
 
 	_GEMDIR=$($gem_cmd env gemdir)
 	_INSTDIR=${DESTDIR}/${_GEMDIR}/gems/${pkgname#ruby-}-${version}
 
-	if [ "$CROSS_BUILD" ]; then
-		# Convert to the platforms used in our ruby packages
-		case "$XBPS_TARGET_MACHINE" in
-			x86_64) _TARGET_PLATFORM=x86_64-linux ;;
-			x86_64-musl) _TARGET_PLATFORM=x86_64-linux-musl ;;
-			i686) _TARGET_PLATFORM=i686-linux ;;
-			i686-musl) _TARGET_PLATFORM=i686-linux-musl ;;
-			armv7l|armv7hf) _TARGET_PLATFORM=armv7l-linux-eabihf ;;
-			armv6l|armv6hf) _TARGET_PLATFORM=arm-linux-eabihf ;;
-			armv7l-musl|armv7hf-musl) _TARGET_PLATFORM=armv7l-linux-musleabihf ;;
-			armv6l-musl|armv6hf-musl) _TARGET_PLATFORM=arm-linux-musleabihf ;;
-			aarch64) _TARGET_PLATFORM=aarch64-linux ;;
-			aarch64-musl) _TARGET_PLATFORM=aarch64-linux-musl ;;
-		esac
-
-		case "$XBPS_MACHINE" in
-			x86_64) _HOST_PLATFORM=x86_64-linux ;;
-			x86_64-musl) _HOST_PLATFORM=x86_64-linux-musl ;;
-			i686) _HOST_PLATFORM=i686-linux ;;
-			i686-musl) _HOST_PLATFORM=i686-linux-musl ;;
-			armv7l|armv7hf) _HOST_PLATFORM=armv7l-linux-eabihf ;;
-			armv6l|armv6hf) _HOST_PLATFORM=arm-linux-eabihf ;;
-			armv7l-musl|armv7hf-musl) _HOST_PLATFORM=armv7l-linux-musleabihf ;;
-			armv6l-musl|armv6hf-musl) _HOST_PLATFORM=arm-linux-musleabihf ;;
-			aarch64) _HOST_PLATFORM=aarch64-linux ;;
-			aarch64-musl) _HOST_PLATFORM=aarch64-linux-musl ;;
-		esac
-	fi
+	# Ruby is very eager to add CFLAGS everywhere there is a compilation
+	# but we do both cross compilation of the modules and host compilation
+	# for checks, so unset CFLAGS and keep it in a separate value.
+	# We will manually pass CFLAGS as VOID_TAGET_CFLAGS to cross-compilation
+	# And ruby will use rbconfig.rb to get the proper CFLAGS for host compilation
+	VOID_TARGET_CFLAGS="$CFLAGS"
+	export VOID_TARGET_CFLAGS
+	unset CFLAGS
 
 	$gem_cmd install \
 		--local \
@@ -174,18 +169,20 @@ do_install() {
 	rm -rf ${_INSTDIR}/etc
 
 	if [ "$CROSS_BUILD" ]; then
+
+		local _TARGET_PLATFORM _TARGET_EXT_DIR
+		
+		# Get arch of the target and host platform by reading the rbconfig.rb
+		# of the cross ruby
+		_TARGET_PLATFORM="$(ruby -r \
+			$(find ${XBPS_CROSS_BASE}/usr/lib/ruby -iname rbconfig.rb) \
+			-e 'puts RbConfig::CONFIG["arch"]' 2>/dev/null)"
+
 		# Path to the extensions on a package, ruby installs against the platform
 		# of the host, so we have to move them to the correct place
-		_HOST_EXT_DIR="${DESTDIR}/${_GEMDIR}/extensions/${_HOST_PLATFORM}"
 		_TARGET_EXT_DIR="${DESTDIR}/${_GEMDIR}/extensions/${_TARGET_PLATFORM}"
 
-		if [ -d ${_HOST_EXT_DIR} ]; then
-			mv ${_HOST_EXT_DIR} ${_TARGET_EXT_DIR}
-		fi
-
-		# Fix Makefile locations to point to the correct platform
-		for f in $(find ${DESTDIR}/${_GEMDIR} -type f -name 'Makefile'); do
-			sed -i "s|${_HOST_PLATFORM}|${_TARGET_PLATFORM}|g" $f
-		done
+		find ${DESTDIR}/${_GEMDIR}/extensions -maxdepth 1 -type d \
+			-exec mv '{}' ${_TARGET_EXT_DIR} \;
 	fi
 }
