@@ -66,6 +66,9 @@ update_check() {
             *download.kde.org/stable/applications*|*download.kde.org/stable/frameworks*|*download.kde.org/stable/plasma*)
                 url="${url%%${version%.*}*}"
                 rx='href="\K[\d\.]+(?=/")';;
+            *rubygems.org*)
+                url="https://rubygems.org/gems/${pkgname#ruby-}"
+                rx='versions/\K[\d\.]+' ;;
             esac
         fi
 
