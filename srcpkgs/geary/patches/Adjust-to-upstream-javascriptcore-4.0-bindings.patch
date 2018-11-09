@@ -1,0 +1,185 @@
+From: Rico Tzschichholz <ricotz@ubuntu.com>
+Date: Mon, 23 Apr 2018 19:56:18 +0200
+Subject: Adjust to upstream javascriptcore-4.0 bindings
+
+---
+ .../conversation-viewer/conversation-web-view.vala |  2 +-
+ src/client/util/util-webkit.vala                   | 10 ++++----
+ src/client/web-process/web-process-extension.vala  | 17 +++++-------
+ src/engine/util/util-js.vala                       | 30 +++++++++++++++-------
+ 4 files changed, 33 insertions(+), 26 deletions(-)
+
+diff --git a/src/client/conversation-viewer/conversation-web-view.vala b/src/client/conversation-viewer/conversation-web-view.vala
+index 3d2ac5f..ef69f44 100644
+--- a/src/client/conversation-viewer/conversation-web-view.vala
++++ b/src/client/conversation-viewer/conversation-web-view.vala
+@@ -183,7 +183,7 @@ public class ConversationWebView : ClientWebView {
+ 
+     private void on_deceptive_link_clicked(WebKit.JavascriptResult result) {
+         try {
+-            JS.GlobalContext context = result.get_global_context();
++            unowned JS.GlobalContext context = result.get_global_context();
+             JS.Object details = WebKitUtil.to_object(result);
+ 
+             uint reason = (uint) Geary.JS.to_number(
+diff --git a/src/client/util/util-webkit.vala b/src/client/util/util-webkit.vala
+index 319e28a..cba9eaf 100644
+--- a/src/client/util/util-webkit.vala
++++ b/src/client/util/util-webkit.vala
+@@ -18,8 +18,8 @@ namespace WebKitUtil {
+      */
+     public bool to_bool(WebKit.JavascriptResult result)
+         throws Geary.JS.Error {
+-        JS.GlobalContext context = result.get_global_context();
+-        JS.Value value = result.get_value();
++        unowned JS.GlobalContext context = result.get_global_context();
++        unowned JS.Value value = result.get_value();
+         if (!value.is_boolean(context)) {
+             throw new Geary.JS.Error.TYPE("Result is not a JS Boolean object");
+         }
+@@ -59,12 +59,12 @@ namespace WebKitUtil {
+      */
+     public string as_string(WebKit.JavascriptResult result)
+         throws Geary.JS.Error {
+-        JS.GlobalContext context = result.get_global_context();
+-        JS.Value js_str_value = result.get_value();
++        unowned JS.GlobalContext context = result.get_global_context();
++        unowned JS.Value js_str_value = result.get_value();
+         JS.Value? err = null;
+         JS.String js_str = js_str_value.to_string_copy(context, out err);
+         Geary.JS.check_exception(context, err);
+-        return Geary.JS.to_string_released(js_str);
++        return Geary.JS.to_string_released((owned) js_str);
+     }
+ 
+     /**
+diff --git a/src/client/web-process/web-process-extension.vala b/src/client/web-process/web-process-extension.vala
+index ee89139..1f478a6 100644
+--- a/src/client/web-process/web-process-extension.vala
++++ b/src/client/web-process/web-process-extension.vala
+@@ -87,10 +87,9 @@ public class GearyWebExtension : Object {
+         bool should_load = false;
+         WebKit.Frame frame = page.get_main_frame();
+         // Explicit cast fixes build on s390x/ppc64. Bug 783882
+-        JS.GlobalContext context = (JS.GlobalContext)
+-            frame.get_javascript_global_context();
++        unowned JS.GlobalContext context = frame.get_javascript_global_context();
+         try {
+-            JS.Value ret = execute_script(
++            unowned JS.Value ret = execute_script(
+                 context, "geary.allowRemoteImages", int.parse("__LINE__")
+             );
+             should_load = ret.to_boolean(context);
+@@ -106,8 +105,7 @@ public class GearyWebExtension : Object {
+     private void remote_image_load_blocked(WebKit.WebPage page) {
+         WebKit.Frame frame = page.get_main_frame();
+         // Explicit cast fixes build on s390x/ppc64. Bug 783882
+-        JS.GlobalContext context = (JS.GlobalContext)
+-            frame.get_javascript_global_context();
++        unowned JS.GlobalContext context = frame.get_javascript_global_context();
+         try {
+             execute_script(
+                 context, "geary.remoteImageLoadBlocked();", int.parse("__LINE__")
+@@ -123,8 +121,7 @@ public class GearyWebExtension : Object {
+     private void selection_changed(WebKit.WebPage page) {
+         WebKit.Frame frame = page.get_main_frame();
+         // Explicit cast fixes build on s390x/ppc64. Bug 783882
+-        JS.GlobalContext context = (JS.GlobalContext)
+-            frame.get_javascript_global_context();
++        unowned JS.GlobalContext context = frame.get_javascript_global_context();
+         try {
+             execute_script(
+                 context, "geary.selectionChanged();", int.parse("__LINE__")
+@@ -136,20 +133,18 @@ public class GearyWebExtension : Object {
+ 
+     // Return type is nullable as a workaround for Bug 778046, it will
+     // never actually be null.
+-    private JS.Value? execute_script(JS.Context context, string script, int line)
++    private unowned JS.Value? execute_script(JS.Context context, string script, int line)
+     throws Geary.JS.Error {
+         JS.String js_script = new JS.String.create_with_utf8_cstring(script);
+         JS.String js_source = new JS.String.create_with_utf8_cstring("__FILE__");
+         JS.Value? err = null;
+         try {
+-            JS.Value ret = context.evaluate_script(
++            unowned JS.Value ret = context.evaluate_script(
+                 js_script, null, js_source, line, out err
+             );
+             Geary.JS.check_exception(context, err);
+             return ret;
+         } finally {
+-            js_script.release();
+-            js_source.release();
+         }
+     }
+ 
+diff --git a/src/engine/util/util-js.vala b/src/engine/util/util-js.vala
+index 4d22429..ea955e9 100644
+--- a/src/engine/util/util-js.vala
++++ b/src/engine/util/util-js.vala
+@@ -10,6 +10,16 @@
+  */
+ namespace Geary.JS {
+ 
++#if !VALA_0_42
++    // Workaround broken version of this in the vala bindings. See Bug
++    // 788113.
++    [CCode (cname = "JSStringGetUTF8CString")]
++    private extern size_t js_string_get_utf8_cstring(
++        global::JS.String js,
++        [CCode (array_length_type = "gsize")] char[] buffer
++    );
++#endif
++
+     /**
+      * Errors produced by functions in {@link Geary.JS}.
+      */
+@@ -72,7 +82,7 @@ namespace Geary.JS {
+         global::JS.String js_str = value.to_string_copy(context, out err);
+         Geary.JS.check_exception(context, err);
+ 
+-        return Geary.JS.to_string_released(js_str);
++        return Geary.JS.to_string_released((owned) js_str);
+     }
+ 
+     /**
+@@ -101,12 +111,15 @@ namespace Geary.JS {
+     /**
+      * Returns a JSC {@link JS.String} as a Vala {@link string}.
+      */
+-    public inline string to_string_released(global::JS.String js) {
+-        int len = js.get_maximum_utf8_cstring_size();
+-        string str = string.nfill(len, 0);
+-        js.get_utf8_cstring(str, len);
+-        js.release();
+-        return str;
++    public inline string to_string_released(owned global::JS.String js) {
++        size_t len = js.get_maximum_utf8_cstring_size();
++        uint8[] str = new uint8[len];
++#if VALA_0_42
++        js.get_utf8_cstring(str);
++#else
++        js_string_get_utf8_cstring(js, (char[]) str);
++#endif
++        return (string) str;
+     }
+ 
+     /**
+@@ -128,7 +141,6 @@ namespace Geary.JS {
+         try {
+             Geary.JS.check_exception(context, err);
+         } finally {
+-            js_name.release();
+         }
+         return prop;
+     }
+@@ -157,7 +169,7 @@ namespace Geary.JS {
+ 
+             throw new Error.EXCEPTION(
+                 "JS exception thrown [%s]: %s"
+-                .printf(err_type.to_string(), to_string_released(err_str))
++                .printf(err_type.to_string(), to_string_released((owned) err_str))
+             );
+         }
+     }
+
