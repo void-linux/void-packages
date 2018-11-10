@@ -1,35 +1,37 @@
 # Template file for 'icecat'
 pkgname=icecat
-version=52.6.0
-revision=4
+version=60.3.0
+revision=1
 short_desc="GNU version of the Firefox browser"
 maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
 homepage="https://www.gnu.org/software/${pkgname}/"
 license="MPL-1.1, GPL-2, LGPL-2.1"
 distfiles="${GNU_SITE}/${pkgname}/${version}/${pkgname}-${version}-gnu1.tar.bz2"
-checksum=0a0cf3acb2067e0580204b44bb5a02fab2033c6bbf7c0b47522a3c4c1f29d625
+checksum=6145327092b4b195a4f63d0e86f4857eeba5607ffeb69b6f3bceb36e89a19645
 
 lib32disabled=yes
+nocross="rustc error[E0463]: can't find crate for 'std'"
 
-hostmakedepends="autoconf213 unzip zip pkg-config perl python yasm rust cargo"
-makedepends="
- libatomic-devel nss-devel gtk+-devel sqlite-devel libevent-devel
- libnotify-devel libvpx-devel hunspell-devel libXt-devel
- $(vopt_if alsa alsa-lib-devel) $(vopt_if dbus dbus-glib-devel)
- $(vopt_if gtk3 gtk+3-devel) $(vopt_if pulseaudio pulseaudio-devel)
- $(vopt_if startup_notification startup-notification-devel)
- $(vopt_if xscreensaver libXScrnSaver-devel)"
-depends="nss>=3.29 desktop-file-utils hicolor-icon-theme"
+hostmakedepends="autoconf213 cargo cbindgen clang llvm nodejs perl pkg-config
+ python unzip yasm zip"
+makedepends="gtk+-devel hunspell-devel libXt-devel libatomic-devel
+ libevent-devel libnotify-devel libvpx-devel nss-devel rust-std sqlite-devel
+ $(vopt_if alsa 'alsa-lib-devel') $(vopt_if dbus 'dbus-glib-devel')
+ $(vopt_if gtk3 'gtk+3-devel') $(vopt_if pulseaudio 'pulseaudio-devel')
+ $(vopt_if startup_notification 'startup-notification-devel')
+ $(vopt_if xscreensaver 'libXScrnSaver-devel')"
+depends="desktop-file-utils hicolor-icon-theme nss>=3.19"
 
 build_options="alsa dbus gtk3 pulseaudio startup_notification xscreensaver"
 build_options_default="alsa dbus gtk3 pulseaudio startup_notification xscreensaver"
 
+CXXFLAGS="-Wno-class-memaccess -Wno-unused-function"
+
 post_extract() {
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
-		# fix musl rust triplet
-		sed -i "s/\(x86_64-unknown-linux\)-gnu/\1-musl/" build/moz.configure/rust.configure
 		cp "${FILESDIR}/stab.h" toolkit/crashreporter/google-breakpad/src/
+		patch -Np0 -i ${FILESDIR}/musl-cmsghdr.patch
 		;;
 	esac
 	# Google API key (see http://www.chromium.org/developers/how-tos/api-keys)
@@ -37,16 +39,22 @@ post_extract() {
 	echo -n "AIzaSyCIFdBA7eQP43R6kXRwTq7j6Mvj1ITze90" > google-api-key
 }
 do_build() {
+	local triplet
 	cp ${FILESDIR}/mozconfig .mozconfig
+
+	if [ "$CROSS_BUILD" ]; then
+		echo "ac_add_options --host=${XBPS_CROSS_TRIPLET}" >>.mozconfig
+		echo "ac_add_options --target=${XBPS_CROSS_TRIPLET}" >>.mozconfig
+	else
+		echo "ac_add_options --host=${XBPS_TRIPLET}" >>.mozconfig
+		echo "ac_add_options --target=${XBPS_TRIPLET}" >>.mozconfig
+	fi
 
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
-		echo "ac_cv_header_execinfo_h=no" >> .mozconfig
-		echo "ac_add_options --disable-jemalloc" >> .mozconfig
-		echo "ac_add_options --enable-gold=no" >> .mozconfig
-		;;
-	arm*|aarch*)
-		echo "ac_add_options --enable-gold=no" >> .mozconfig
+		echo "ac_add_options --disable-jemalloc" >>.mozconfig
+		echo "ac_add_options --disable-gold" >>.mozconfig
+		echo "ac_add_options --enable-release" >>.mozconfig
 		;;
 	esac
 
@@ -62,34 +70,34 @@ do_build() {
 		echo "ac_add_options --target=$XBPS_CROSS_TRIPLET" >>.mozconfig
 	fi
 
-	mkdir -p /usr/lib/icecat
+	case "$XBPS_TARGET_MACHINE" in
+	i686*)
+		export CFLAGS+=" -D_FILE_OFFSET_BITS=64"
+		export CXXFLAGS+=" -D_FILE_OFFSET_BITS=64"
+		;;
+	esac
+
 	export LDFLAGS+=" -Wl,-rpath=/usr/lib/icecat"
 
-	if [ "$SOURCE_DATE_EPOCH" ]; then
-		export MOZ_BUILD_DATE=$(date --date "@$SOURCE_DATE_EPOCH" "+%Y%m%d%H%M%S")
-	fi
+	export MOZ_BUILD_DATE=$(date --date "@$SOURCE_DATE_EPOCH" "+%Y%m%d%H%M%S")
+	export MOZ_MAKE_FLAGS="${makejobs}"
 
 	cat >>.mozconfig <<EOF
 ac_add_options --with-google-api-keyfile="${wrksrc}/google-api-key"
-ac_add_options --enable-default-toolkit=cairo-gtk$(vopt_if gtk3 '3' '2')
 ac_add_options $(vopt_enable alsa)
 ac_add_options $(vopt_enable dbus)
 ac_add_options $(vopt_enable dbus necko-wifi)
 ac_add_options $(vopt_enable pulseaudio)
-ac_add_options $(vopt_enable rust)
 ac_add_options $(vopt_enable startup_notification startup-notification)
 EOF
 
-	export MOZ_MAKE_FLAGS="${makejobs}"
-	make -f client.mk build
-
+	./mach build
 }
 do_install() {
-	make -f client.mk DESTDIR="${DESTDIR}" install
+	DESTDIR="${DESTDIR}" ./mach install
 
 	vinstall ${FILESDIR}/vendor.js 644 usr/lib/icecat/defaults/pref
 	vinstall ${FILESDIR}/icecat.desktop 644 usr/share/applications
-	vinstall ${FILESDIR}/icecat-safe.desktop 644 usr/share/applications
 
 	for i in 16x16 22x22 24x24 32x32 48x48 256x256; do
 		vinstall ${wrksrc}/browser/branding/official/default${i%x*}.png 644 \
