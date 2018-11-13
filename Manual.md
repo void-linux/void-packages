@@ -1368,11 +1368,28 @@ common/shlibs.
 generally those packages are the same but have been split as to avoid
 cyclic dependencies. Make sure that the package you're removing is not
 the source of those patches/files.
+- Replace the package template with the following:
 
-For the one doing the merge of the removal:
+```
+# Template file for '$pkgname'
+pkgname=$pkgname
+version=$version
+revision=$((revision + 1))
+noarch=yes
+build_style=meta
+short_desc="${short_desc} (removed package)"
+license="metapackage"
+homepage="${homepage}"
+```
 
-- Remove the package from the repository index or contact a team member
-that can do so.
+- Add (or replace) the INSTALL.msg with the following:
+
+```
+$pkgname is no longer provided by Void Linux, and will be fully removed from the repos on $(date -d '+3 months' '+%d/%m/%Y')
+```
+
+- After the specified time remove the package from the repository index
+or contact a team member that can do so.
 
 <a id="xbps_triggers"></a>
 ### XBPS Triggers
