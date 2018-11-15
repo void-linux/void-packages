@@ -83,6 +83,8 @@ EOF
 		fi
 	done
 
+	sed 's|~>|>=|g' -i $gemspec
+
 	$gem_cmd build --verbose ${gemspec}
 
 	if [ "$CROSS_BUILD" ]; then
