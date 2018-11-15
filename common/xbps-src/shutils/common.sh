@@ -350,7 +350,13 @@ setup_pkg() {
     fi
 
     # Check if required vars weren't set.
-    _vars="pkgname version short_desc revision homepage license"
+    _vars="pkgname version short_desc revision homepage"
+
+    # Only require license to be set when building metapackages
+    if [ "$build_style" != "meta" ]; then
+        _vars+=" license"
+    fi
+
     for f in ${_vars}; do
         eval val="\$$f"
         if [ -z "$val" -o -z "$f" ]; then
