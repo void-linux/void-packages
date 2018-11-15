@@ -61,4 +61,8 @@ do_install() {
 	fi
 
 	rm -rf ${_INSTDIR}/etc
+
+	# Ignore the ~> operator, replace it with >=
+	sed 's|~>|>=|g' \
+		-i ${DESTDIR}/${_GEMDIR}/specifications/${pkgname#ruby-}-${version}.gemspec
 }
