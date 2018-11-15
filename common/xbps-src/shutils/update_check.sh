@@ -68,7 +68,7 @@ update_check() {
                 rx='href="\K[\d\.]+(?=/")';;
             *rubygems.org*)
                 url="https://rubygems.org/gems/${pkgname#ruby-}"
-                rx='versions/\K[\d\.]+' ;;
+                rx='href="/gems/'${pkgname#ruby-}'/versions/\K[\d\.]*(?=")' ;;
             esac
         fi
 
