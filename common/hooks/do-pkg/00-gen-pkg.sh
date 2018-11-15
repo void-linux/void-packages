@@ -74,9 +74,9 @@ genpkg() {
 		${_alternatives:+--alternatives "${_alternatives}"} \
 		${_preserve:+--preserve} \
 		${tags:+--tags "${tags}"} \
+		${license:+--license "${license}"} \
 		--architecture ${arch} \
 		--homepage "${homepage}" \
-		--license "${license}" \
 		--maintainer "${maintainer}" \
 		--desc "${desc}" \
 		--pkgver "${pkgver}" \
