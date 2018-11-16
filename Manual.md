@@ -772,7 +772,9 @@ set in the body of the template.
 - `meta` For `meta-packages`, i.e packages that only install local files or simply
 depend on additional packages. This build style does not install
 dependencies to the root directory, and only checks if a binary package is
-available in repositories.
+available in repositories. If your meta-package doesn't include any files
+which thus have and require no license, then you should also set
+`license="metapackage"`.
 
 - `R-cran` For packages that are available on The Comprehensive R Archive
 Network (CRAN). The build style requires the `pkgname` to start with
