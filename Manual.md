@@ -304,11 +304,13 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	`$DESTDIR`. The optional 2nd argument can be used to change the
 	`file name`.
 
-- *vlicense()* `vlicense <file> [<name>]`
+- <a id="vlicense"></a>
+ *vlicense()* `vlicense <file> [<name>]`
 
 	Installs `file` into `usr/share/licenses/<pkgname>` in the pkg
 	`$DESTDIR`. The optional 2nd argument can be used to change the
-	`file name`. Note: Non-`GPL` licenses, `MIT`, `BSD` and `ISC` require the
+	`file name`. Note: Custom licenses,
+	non-`GPL` licenses, `MIT`, `BSD` and `ISC` require the
 	license file to	be supplied with the binary package.
 
 - *vsv()* `vsv <service>`
@@ -386,8 +388,9 @@ The list of mandatory variables for a template:
 
 - `homepage` A string pointing to the `upstream` homepage.
 
-- `license` A string matching the license's [SPDX Short identifier](https://spdx.org/licenses)
-Multiple licenses should be separated by commas, Example: `GPL-3.0-or-later, LGPL-2.1-only`.
+- `license` A string matching the license's [SPDX Short identifier](https://spdx.org/licenses),
+or string prefixed with `custom:` for licenses not listed there (see [vlicense](#vlicense)).
+Multiple licenses should be separated by commas, Example: `GPL-3.0-or-later, custom:Hugware`.
 
 - `maintainer` A string in the form of `name <user@domain>`.  The
   email for this field must be a valid email that you can be reached
@@ -626,14 +629,14 @@ A list is composed of three components separated by a colon: group, symlink and 
 Example: `alternatives="vi:/usr/bin/vi:/usr/bin/nvi ex:/usr/bin/ex:/usr/bin/nvi-ex"`.
 
 - `font_dirs` A white space separated list of directories specified by an absolute path where a
-font package installs its fonts.  
+font package installs its fonts.
 It is used in the `x11-fonts` xbps-trigger to rebuild the font cache during install/removal
-of the package.  
+of the package.
 Example: `font_dirs="/usr/share/fonts/TTF /usr/share/fonts/X11/misc"`
 
 - `dkms_modules` A white space separated list of Dynamic Kernel Module Support (dkms) modules
 that will be installed and removed by the `dkms` xbps-trigger with the install/removal of the
-package.  
+package.
 The format is a white space separated pair of strings that represent the name of the module,
 most of the time `pkgname`, and the version of the module, most of the time `version`.
 Example: `dkms_modules="$pkgname $version zfs 4.14"`
@@ -1205,7 +1208,7 @@ of `mkdir -p`.
 ```sh
 #!/bin/sh
 install -d -m0700 /run/foo
-exec foo 
+exec foo
 ```
 
 ```sh
