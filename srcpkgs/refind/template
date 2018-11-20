@@ -1,8 +1,7 @@
 # Template file for 'refind'
 pkgname=refind
-version=0.11.3
+version=0.11.4
 revision=1
-only_for_archs="i686 x86_64 x86_64-musl"
 makedepends="gnu-efi-libs git"
 depends="bash dosfstools efibootmgr"
 short_desc="An EFI boot manager utility"
@@ -10,15 +9,38 @@ maintainer="Julio Galvan <juliogalvan@protonmail.com>"
 license="GPL-3.0-only, BSD-3-Clause"
 homepage="https://sourceforge.net/projects/refind/"
 distfiles="${SOURCEFORGE_SITE}/refind/refind-src-${version}.tar.gz"
-checksum=6398ebd5c80382ada4819b5874cb7ca34df6c820f1872e7ba99f929caef2018f
+checksum=39baf140603951da098238c1cbf4176fdd7d4a45fab0399e9985ad7368034dae
+
+case "$XBPS_TARGET_MACHINE" in
+	x86_64|i686|aarch64) ;;
+	*-musl) broken="requires patching on musl arches" ;;
+	*) broken="${XBPS_TARGET_MACHINE} is unsupported" ;;
+esac
 
 post_extract() {
 	sed 's|RefindDir=\"\$ThisDir/refind\"|RefindDir="/usr/share/refind"|g' -i refind-install
+
+	# Patch paths to libaries and includes for cross-compiling
+	sed -e "s|^EFIINC.*|EFIINC = ${XBPS_CROSS_BASE}/usr/include/efi|" \
+		-e "s|^GNUEFILIB.*|GNUEFILIB = ${XBPS_CROSS_BASE}/usr/lib|" \
+		-e "s|^EFILIB.*|EFILIB = ${XBPS_CROSS_BASE}/usr/lib|" \
+		-e "s|^EFICRT0.*|EFICRT0 = ${XBPS_CROSS_BASE}/usr/lib|" \
+		-i Make.common
 }
 
 do_build() {
 	unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
-	make all_gnuefi
+
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) _ARCH="ia32";;
+		*) _ARCH="${XBPS_TARGET_MACHINE%-musl}";;
+	esac
+
+	if [ "$CROSS_BUILD" ]; then
+		export CROSS_COMPILE="${XBPS_CROSS_TRIPLET}-"
+	fi
+
+	make ARCH=${_ARCH} gnuefi fs_gnuefi
 }
 
 do_install() {
@@ -26,6 +48,7 @@ do_install() {
 	case "$XBPS_TARGET_MACHINE" in
 		i686*) _EFI_ARCH="ia32";;
 		x86_64*) _EFI_ARCH="x64";;
+		aarch64*) _EFI_ARCH="aa64";;
 	esac
 
 	vbin mkrlconf
