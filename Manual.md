@@ -1719,8 +1719,9 @@ anything unless it is defined.
 The system-accounts trigger is responsible for creating and disabling system accounts
 and groups.
 
-During removal it will disable the account by setting the Shell to /bin/false and appending
-' - for uninstalled package $pkgname' to the Description.
+During removal it will disable the account by setting the Shell to /bin/false,
+Home to /var/empty, and appending ' - for uninstalled package $pkgname' to the
+Description.
 Example: `transmission unprivileged user - for uninstalled package transmission`
 
 This trigger can only be used by using the `system_accounts` variable.
