@@ -1,0 +1,52 @@
+From a12d5d40fd7aed5fa10fc444dcb819947b72b315 Mon Sep 17 00:00:00 2001
+From: Istvan Kurucsai <pistukem@gmail.com>
+Date: Tue, 16 Jan 2018 14:48:16 +0100
+Subject: [PATCH v2 1] malloc: Additional checks for unsorted bin integrity
+ I.
+
+Ensure the following properties of chunks encountered during binning:
+- victim chunk has reasonable size
+- next chunk has reasonable size
+- next->prev_size == victim->size
+- valid double linked list
+- PREV_INUSE of next chunk is unset
+
+    * malloc/malloc.c (_int_malloc): Additional binning code checks.
+
+(cherry picked from commit b90ddd08f6dd688e651df9ee89ca3a69ff88cd0c)
+---
+ malloc/malloc.c | 19 +++++++++++++++----
+ 1 file changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/malloc/malloc.c b/malloc/malloc.c
+index 7c8bf8413c..47795601c8 100644
+--- a/malloc/malloc.c
++++ b/malloc/malloc.c
+@@ -3716,11 +3716,22 @@ _int_malloc (mstate av, size_t bytes)
+       while ((victim = unsorted_chunks (av)->bk) != unsorted_chunks (av))
+         {
+           bck = victim->bk;
+-          if (__builtin_expect (chunksize_nomask (victim) <= 2 * SIZE_SZ, 0)
+-              || __builtin_expect (chunksize_nomask (victim)
+-				   > av->system_mem, 0))
+-            malloc_printerr ("malloc(): memory corruption");
+           size = chunksize (victim);
++          mchunkptr next = chunk_at_offset (victim, size);
++
++          if (__glibc_unlikely (size <= 2 * SIZE_SZ)
++              || __glibc_unlikely (size > av->system_mem))
++            malloc_printerr ("malloc(): invalid size (unsorted)");
++          if (__glibc_unlikely (chunksize_nomask (next) < 2 * SIZE_SZ)
++              || __glibc_unlikely (chunksize_nomask (next) > av->system_mem))
++            malloc_printerr ("malloc(): invalid next size (unsorted)");
++          if (__glibc_unlikely ((prev_size (next) & ~(SIZE_BITS)) != size))
++            malloc_printerr ("malloc(): mismatching next->prev_size (unsorted)");
++          if (__glibc_unlikely (bck->fd != victim)
++              || __glibc_unlikely (victim->fd != unsorted_chunks (av)))
++            malloc_printerr ("malloc(): unsorted double linked list corrupted");
++          if (__glibc_unlikely (prev_inuse(next)))
++            malloc_printerr ("malloc(): invalid next->prev_inuse (unsorted)");
+ 
+           /*
+              If a small request, try to use last remainder if it is the
+

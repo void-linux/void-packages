@@ -1,0 +1,291 @@
+From b8dd0f42780a3133c02f064a2c0c5c4e7ab61aaa Mon Sep 17 00:00:00 2001
+From: DJ Delorie <dj@delorie.com>
+Date: Tue, 20 Nov 2018 13:24:09 -0500
+Subject: [PATCH 50] malloc: tcache double free check
+
+* malloc/malloc.c (tcache_entry): Add key field.
+(tcache_put): Set it.
+(tcache_get): Likewise.
+(_int_free): Check for double free in tcache.
+* malloc/tst-tcfree1.c: New.
+* malloc/tst-tcfree2.c: New.
+* malloc/Makefile: Run the new tests.
+* manual/probes.texi: Document memory_tcache_double_free probe.
+
+* dlfcn/dlerror.c (check_free): Prevent double frees.
+
+(cherry picked from commit bcdaad21d4635931d1bd3b54a7894276925d081d)
+
+malloc: tcache: Validate tc_idx before checking for double-frees [BZ #23907]
+
+The previous check could read beyond the end of the tcache entry
+array.  If the e->key == tcache cookie check happened to pass, this
+would result in crashes.
+
+(cherry picked from commit affec03b713c82c43a5b025dddc21bde3334f41e)
+---
+ ChangeLog            | 20 ++++++++++++++++++
+ dlfcn/dlerror.c      |  5 ++++-
+ malloc/Makefile      |  1 +
+ malloc/malloc.c      | 40 ++++++++++++++++++++++++++++++------
+ malloc/tst-tcfree1.c | 42 ++++++++++++++++++++++++++++++++++++++
+ malloc/tst-tcfree2.c | 48 ++++++++++++++++++++++++++++++++++++++++++++
+ manual/probes.texi   | 12 +++++++++++
+ 7 files changed, 161 insertions(+), 7 deletions(-)
+ create mode 100644 malloc/tst-tcfree1.c
+ create mode 100644 malloc/tst-tcfree2.c
+
+diff --git a/ChangeLog b/ChangeLog
+index a997003664..bc62a59c2b 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -1,3 +1,23 @@
++2018-11-26  Florian Weimer  <fweimer@redhat.com>
++
++	[BZ #23907]
++	* malloc/malloc.c (_int_free): Validate tc_idx before checking for
++	double-frees.
++
++
++2018-11-20  DJ Delorie  <dj@redhat.com>
++
++	* malloc/malloc.c (tcache_entry): Add key field.
++	(tcache_put): Set it.
++	(tcache_get): Likewise.
++	(_int_free): Check for double free in tcache.
++	* malloc/tst-tcfree1.c: New.
++	* malloc/tst-tcfree2.c: New.
++	* malloc/Makefile: Run the new tests.
++	* manual/probes.texi: Document memory_tcache_double_free probe.
++
++	* dlfcn/dlerror.c (check_free): Prevent double frees.
++
+ 2018-11-27  Florian Weimer  <fweimer@redhat.com>
+ 
+ 	[BZ #23927]
+diff --git a/dlfcn/dlerror.c b/dlfcn/dlerror.c
+index 33574faab6..96bf925333 100644
+--- a/dlfcn/dlerror.c
++++ b/dlfcn/dlerror.c
+@@ -198,7 +198,10 @@ check_free (struct dl_action_result *rec)
+       Dl_info info;
+       if (_dl_addr (check_free, &info, &map, NULL) != 0 && map->l_ns == 0)
+ #endif
+-	free ((char *) rec->errstring);
++	{
++	  free ((char *) rec->errstring);
++	  rec->errstring = NULL;
++	}
+     }
+ }
+ 
+diff --git a/malloc/Makefile b/malloc/Makefile
+index 7d54bad866..e6dfbfc14c 100644
+--- a/malloc/Makefile
++++ b/malloc/Makefile
+@@ -38,6 +38,7 @@ tests := mallocbug tst-malloc tst-valloc tst-calloc tst-obstack \
+ 	 tst-malloc_info \
+ 	 tst-malloc-too-large \
+ 	 tst-malloc-stats-cancellation \
++	 tst-tcfree1 tst-tcfree2 \
+ 
+ tests-static := \
+ 	 tst-interpose-static-nothread \
+diff --git a/malloc/malloc.c b/malloc/malloc.c
+index 47795601c8..dad0e73735 100644
+--- a/malloc/malloc.c
++++ b/malloc/malloc.c
+@@ -2888,6 +2888,8 @@ mremap_chunk (mchunkptr p, size_t new_size)
+ typedef struct tcache_entry
+ {
+   struct tcache_entry *next;
++  /* This field exists to detect double frees.  */
++  struct tcache_perthread_struct *key;
+ } tcache_entry;
+ 
+ /* There is one of these for each thread, which contains the
+@@ -2911,6 +2913,11 @@ tcache_put (mchunkptr chunk, size_t tc_idx)
+ {
+   tcache_entry *e = (tcache_entry *) chunk2mem (chunk);
+   assert (tc_idx < TCACHE_MAX_BINS);
++
++  /* Mark this chunk as "in the tcache" so the test in _int_free will
++     detect a double free.  */
++  e->key = tcache;
++
+   e->next = tcache->entries[tc_idx];
+   tcache->entries[tc_idx] = e;
+   ++(tcache->counts[tc_idx]);
+@@ -2926,6 +2933,7 @@ tcache_get (size_t tc_idx)
+   assert (tcache->entries[tc_idx] > 0);
+   tcache->entries[tc_idx] = e->next;
+   --(tcache->counts[tc_idx]);
++  e->key = NULL;
+   return (void *) e;
+ }
+ 
+@@ -4165,13 +4173,33 @@ _int_free (mstate av, mchunkptr p, int have_lock)
+ #if USE_TCACHE
+   {
+     size_t tc_idx = csize2tidx (size);
+-
+-    if (tcache
+-	&& tc_idx < mp_.tcache_bins
+-	&& tcache->counts[tc_idx] < mp_.tcache_count)
++    if (tcache != NULL && tc_idx < mp_.tcache_bins)
+       {
+-	tcache_put (p, tc_idx);
+-	return;
++	/* Check to see if it's already in the tcache.  */
++	tcache_entry *e = (tcache_entry *) chunk2mem (p);
++
++	/* This test succeeds on double free.  However, we don't 100%
++	   trust it (it also matches random payload data at a 1 in
++	   2^<size_t> chance), so verify it's not an unlikely
++	   coincidence before aborting.  */
++	if (__glibc_unlikely (e->key == tcache))
++	  {
++	    tcache_entry *tmp;
++	    LIBC_PROBE (memory_tcache_double_free, 2, e, tc_idx);
++	    for (tmp = tcache->entries[tc_idx];
++		 tmp;
++		 tmp = tmp->next)
++	      if (tmp == e)
++		malloc_printerr ("free(): double free detected in tcache 2");
++	    /* If we get here, it was a coincidence.  We've wasted a
++	       few cycles, but don't abort.  */
++	  }
++
++	if (tcache->counts[tc_idx] < mp_.tcache_count)
++	  {
++	    tcache_put (p, tc_idx);
++	    return;
++	  }
+       }
+   }
+ #endif
+diff --git a/malloc/tst-tcfree1.c b/malloc/tst-tcfree1.c
+new file mode 100644
+index 0000000000..bc29375ce7
+--- /dev/null
++++ b/malloc/tst-tcfree1.c
+@@ -0,0 +1,42 @@
++/* Test that malloc tcache catches double free.
++   Copyright (C) 2018 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#include <errno.h>
++#include <error.h>
++#include <limits.h>
++#include <malloc.h>
++#include <stdlib.h>
++#include <stdio.h>
++#include <sys/signal.h>
++
++static int
++do_test (void)
++{
++  /* Do one allocation of any size that fits in tcache.  */
++  char * volatile x = malloc (32);
++
++  free (x); // puts in tcache
++  free (x); // should abort
++
++  printf("FAIL: tcache double free not detected\n");
++  return 1;
++}
++
++#define TEST_FUNCTION do_test
++#define EXPECTED_SIGNAL SIGABRT
++#include <support/test-driver.c>
+diff --git a/malloc/tst-tcfree2.c b/malloc/tst-tcfree2.c
+new file mode 100644
+index 0000000000..17f06bacd4
+--- /dev/null
++++ b/malloc/tst-tcfree2.c
+@@ -0,0 +1,48 @@
++/* Test that malloc tcache catches double free.
++   Copyright (C) 2018 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#include <errno.h>
++#include <error.h>
++#include <limits.h>
++#include <malloc.h>
++#include <stdlib.h>
++#include <stdio.h>
++#include <sys/signal.h>
++
++static int
++do_test (void)
++{
++  char * volatile ptrs[20];
++  int i;
++
++  /* Allocate enough small chunks so that when we free them all, the tcache
++     is full, and the first one we freed is at the end of its linked list.  */
++#define COUNT 20
++  for (i=0; i<COUNT; i++)
++    ptrs[i] = malloc (20);
++  for (i=0; i<COUNT; i++)
++    free (ptrs[i]);
++  free (ptrs[0]);
++
++  printf("FAIL: tcache double free\n");
++  return 1;
++}
++
++#define TEST_FUNCTION do_test
++#define EXPECTED_SIGNAL SIGABRT
++#include <support/test-driver.c>
+diff --git a/manual/probes.texi b/manual/probes.texi
+index ab2a3102bb..0ea560ed78 100644
+--- a/manual/probes.texi
++++ b/manual/probes.texi
+@@ -243,6 +243,18 @@ This probe is triggered when the
+ value of this tunable.
+ @end deftp
+ 
++@deftp Probe memory_tcache_double_free (void *@var{$arg1}, int @var{$arg2})
++This probe is triggered when @code{free} determines that the memory
++being freed has probably already been freed, and resides in the
++per-thread cache.  Note that there is an extremely unlikely chance
++that this probe will trigger due to random payload data remaining in
++the allocated memory matching the key used to detect double frees.
++This probe actually indicates that an expensive linear search of the
++tcache, looking for a double free, has happened.  Argument @var{$arg1}
++is the memory location as passed to @code{free}, Argument @var{$arg2}
++is the tcache bin it resides in.
++@end deftp
++
+ @node Mathematical Function Probes
+ @section Mathematical Function Probes
+ 
