@@ -1,0 +1,153 @@
+From 7d174f53539bfbfa9cdfa41ead605573d3f219eb Mon Sep 17 00:00:00 2001
+From: Florian Weimer <fweimer@redhat.com>
+Date: Tue, 28 Aug 2018 13:19:27 +0200
+Subject: [PATCH 41] nscd: Fix use-after-free in addgetnetgrentX [BZ #23520]
+
+addinnetgrX may use the heap-allocated buffer, so free the buffer
+in this function.
+
+(cherry picked from commit 745664bd798ec8fd50438605948eea594179fba1)
+---
+ ChangeLog            | 12 ++++++++++++
+ nscd/netgroupcache.c | 42 +++++++++++++++++++++++++++++-------------
+ 2 files changed, 41 insertions(+), 13 deletions(-)
+
+diff --git a/ChangeLog b/ChangeLog
+index e81991066e..79d303e7b6 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -1,3 +1,15 @@
++2018-08-28  Florian Weimer  <fweimer@redhat.com>
++
++	[BZ #23520]
++	nscd: Fix use-after-free in addgetnetgrentX and its callers.
++	* nscd/netgroupcache.c
++	(addgetnetgrentX): Add tofreep parameter.  Do not free
++	heap-allocated buffer.
++	(addinnetgrX): Free buffer allocated bt addgetnetgrentX.
++	(addgetnetgrentX_ignore): New function.
++	(addgetnetgrent): Call it.
++	(readdgetnetgrent): Likewise.
++
+ 2018-08-16  DJ Delorie  <dj@delorie.com>
+ 
+ 	* malloc/malloc.c (_int_free): Check for corrupt prev_size vs size.
+diff --git a/nscd/netgroupcache.c b/nscd/netgroupcache.c
+index 2b35389cc8..87059fb280 100644
+--- a/nscd/netgroupcache.c
++++ b/nscd/netgroupcache.c
+@@ -113,7 +113,8 @@ do_notfound (struct database_dyn *db, int fd, request_header *req,
+ static time_t
+ addgetnetgrentX (struct database_dyn *db, int fd, request_header *req,
+ 		 const char *key, uid_t uid, struct hashentry *he,
+-		 struct datahead *dh, struct dataset **resultp)
++		 struct datahead *dh, struct dataset **resultp,
++		 void **tofreep)
+ {
+   if (__glibc_unlikely (debug_level > 0))
+     {
+@@ -139,6 +140,7 @@ addgetnetgrentX (struct database_dyn *db, int fd, request_header *req,
+   size_t group_len = strlen (key) + 1;
+   struct name_list *first_needed
+     = alloca (sizeof (struct name_list) + group_len);
++  *tofreep = NULL;
+ 
+   if (netgroup_database == NULL
+       && __nss_database_lookup ("netgroup", NULL, NULL, &netgroup_database))
+@@ -151,6 +153,7 @@ addgetnetgrentX (struct database_dyn *db, int fd, request_header *req,
+ 
+   memset (&data, '\0', sizeof (data));
+   buffer = xmalloc (buflen);
++  *tofreep = buffer;
+   first_needed->next = first_needed;
+   memcpy (first_needed->name, key, group_len);
+   data.needed_groups = first_needed;
+@@ -439,8 +442,6 @@ addgetnetgrentX (struct database_dyn *db, int fd, request_header *req,
+     }
+ 
+  out:
+-  free (buffer);
+-
+   *resultp = dataset;
+ 
+   return timeout;
+@@ -477,8 +478,12 @@ addinnetgrX (struct database_dyn *db, int fd, request_header *req,
+ 							    group, group_len,
+ 							    db, uid);
+   time_t timeout;
++  void *tofree;
+   if (result != NULL)
+-    timeout = result->head.timeout;
++    {
++      timeout = result->head.timeout;
++      tofree = NULL;
++    }
+   else
+     {
+       request_header req_get =
+@@ -487,7 +492,7 @@ addinnetgrX (struct database_dyn *db, int fd, request_header *req,
+ 	  .key_len = group_len
+ 	};
+       timeout = addgetnetgrentX (db, -1, &req_get, group, uid, NULL, NULL,
+-				 &result);
++				 &result, &tofree);
+     }
+ 
+   struct indataset
+@@ -560,7 +565,7 @@ addinnetgrX (struct database_dyn *db, int fd, request_header *req,
+       ++dh->nreloads;
+       if (cacheable)
+         pthread_rwlock_unlock (&db->lock);
+-      return timeout;
++      goto out;
+     }
+ 
+   if (he == NULL)
+@@ -596,17 +601,30 @@ addinnetgrX (struct database_dyn *db, int fd, request_header *req,
+ 	dh->usable = false;
+     }
+ 
++ out:
++  free (tofree);
+   return timeout;
+ }
+ 
+ 
++static time_t
++addgetnetgrentX_ignore (struct database_dyn *db, int fd, request_header *req,
++			const char *key, uid_t uid, struct hashentry *he,
++			struct datahead *dh)
++{
++  struct dataset *ignore;
++  void *tofree;
++  time_t timeout = addgetnetgrentX (db, fd, req, key, uid, he, dh,
++				    &ignore, &tofree);
++  free (tofree);
++  return timeout;
++}
++
+ void
+ addgetnetgrent (struct database_dyn *db, int fd, request_header *req,
+ 		void *key, uid_t uid)
+ {
+-  struct dataset *ignore;
+-
+-  addgetnetgrentX (db, fd, req, key, uid, NULL, NULL, &ignore);
++  addgetnetgrentX_ignore (db, fd, req, key, uid, NULL, NULL);
+ }
+ 
+ 
+@@ -619,10 +637,8 @@ readdgetnetgrent (struct database_dyn *db, struct hashentry *he,
+       .type = GETNETGRENT,
+       .key_len = he->len
+     };
+-  struct dataset *ignore;
+-
+-  return addgetnetgrentX (db, -1, &req, db->data + he->key, he->owner, he, dh,
+-			  &ignore);
++  return addgetnetgrentX_ignore
++    (db, -1, &req, db->data + he->key, he->owner, he, dh);
+ }
+ 
+ 
+

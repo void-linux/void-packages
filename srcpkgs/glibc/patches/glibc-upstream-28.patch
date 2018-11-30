@@ -1,0 +1,75 @@
+From d0b6db4acfba1f48b24da2c9b2a1530f6dd71503 Mon Sep 17 00:00:00 2001
+From: Stefan Liebler <stli@linux.ibm.com>
+Date: Thu, 30 Aug 2018 08:44:32 +0200
+Subject: [PATCH 28] Test stdlib/test-bz22786 exits now with unsupported if
+ malloc fails.
+
+The test tries to allocate more than 2^31 bytes which will always fail on s390
+as it has maximum 2^31bit of memory.
+Before commit 6c3a8a9d868a8deddf0d6dcc785b6d120de90523, this test returned
+unsupported if malloc fails.  This patch re enables this behaviour.
+
+Furthermore support_delete_temp_files() failed to remove the temp directory
+in this case as it is not empty due to the created symlink.
+Thus the creation of the symlink is moved behind malloc.
+
+Reviewed-by: Carlos O'Donell <carlos@redhat.com>
+
+ChangeLog:
+
+	* stdlib/test-bz22786.c (do_test): Return EXIT_UNSUPPORTED
+	if malloc fails.
+
+(cherry picked from commit 3bad2358d67d371497079bba4f8eca9c0096f4e2)
+---
+ ChangeLog             |  5 +++++
+ stdlib/test-bz22786.c | 15 ++++++++++++---
+ 2 files changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/ChangeLog b/ChangeLog
+index 43cc1fbc32..645e6607b2 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -1,3 +1,8 @@
++2018-08-30  Stefan Liebler  <stli@linux.ibm.com>
++
++	* stdlib/test-bz22786.c (do_test): Return EXIT_UNSUPPORTED
++	if malloc fails.
++
+ 2018-08-24  Paul Pluzhnikov  <ppluzhnikov@google.com>
+ 
+         [BZ #23400]
+diff --git a/stdlib/test-bz22786.c b/stdlib/test-bz22786.c
+index d1aa69106c..777bf9180f 100644
+--- a/stdlib/test-bz22786.c
++++ b/stdlib/test-bz22786.c
+@@ -39,16 +39,25 @@ do_test (void)
+   const char *lnk = xasprintf ("%s/symlink", dir);
+   const size_t path_len = (size_t) INT_MAX + strlen (lnk) + 1;
+ 
+-  TEST_VERIFY_EXIT (symlink (".", lnk) == 0);
+-
+   DIAG_PUSH_NEEDS_COMMENT;
+ #if __GNUC_PREREQ (7, 0)
+   /* GCC 7 warns about too-large allocations; here we need such
+      allocation to succeed for the test to work.  */
+   DIAG_IGNORE_NEEDS_COMMENT (7, "-Walloc-size-larger-than=");
+ #endif
+-  char *path = xmalloc (path_len);
++  char *path = malloc (path_len);
+   DIAG_POP_NEEDS_COMMENT;
++  if (path == NULL)
++    {
++      printf ("malloc (%zu): %m\n", path_len);
++      /* On 31-bit s390 the malloc will always fail as we do not have
++	 so much memory, and we want to mark the test unsupported.
++	 Likewise on systems with little physical memory the test will
++	 fail and should be unsupported.  */
++      return EXIT_UNSUPPORTED;
++    }
++
++  TEST_VERIFY_EXIT (symlink (".", lnk) == 0);
+ 
+   /* Construct very long path = "/tmp/bz22786.XXXX/symlink/aaaa....."  */
+   char *p = mempcpy (path, lnk, strlen (lnk));
+
