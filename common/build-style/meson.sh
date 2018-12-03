@@ -44,10 +44,10 @@ pkgconfig = 'pkg-config'
 [properties]
 needs_exe_wrapper = true
 c_args = ['$(echo ${CFLAGS} | sed -r "s/\s+/','/g")']
-c_link_args = ['$(echo ${LDFLAGS} | sed -r "s/\s+/','/g")']
+c_link_args = ['$(echo ${LDFLAGS} | sed -r "s/\s+/','/g" | sed "s|'-Wl,--as-needed',||")']
 
 cpp_args = ['$(echo ${CXXFLAGS} | sed -r "s/\s+/','/g")']
-cpp_link_args = ['$(echo ${LDFLAGS} | sed -r "s/\s+/','/g")']
+cpp_link_args = ['$(echo ${LDFLAGS} | sed -r "s/\s+/','/g" | sed "s|'-Wl,--as-needed',||")']
 
 [host_machine]
 system = 'linux'
@@ -99,6 +99,7 @@ EOF
 		--auto-features=enabled \
 		--wrap-mode=nodownload \
 		-Db_lto=true -Db_ndebug=true \
+		-Db_asneeded=true \
 		${configure_args} . ${meson_builddir}
 }
 
