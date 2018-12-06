@@ -13,10 +13,12 @@ hook() {
 			error=1
 		fi
 	done
+
 	if [ -d ${PKGDESTDIR}/usr/sbin ]; then
 		msg_red "${pkgver}: /usr/sbin directory is not allowed, use /usr/bin.\n"
 		error=1
 	fi
+	
 	for f in sys dev home root run var/run tmp usr/lib64 usr/local; do
 		if [ -d ${PKGDESTDIR}/${f} ]; then
 			msg_red "${pkgver}: /${f} directory is not allowed, remove it!\n"
@@ -36,6 +38,28 @@ hook() {
 	# should be on usr/share/bash-completion/completions
 	if [ -d ${PKGDESTDIR}/etc/bash_completion.d ]; then
 		msg_red "${pkgver}: /etc/bash_completion.d is forbidden. Use /usr/share/bash-completion/completions\n"
+		error=1
+	fi
+
+	# Prevent packages from installing to these paths in etc, they should use
+	# their equivalent in usr/lib
+	for f in udev/{rules.d,hwdb.d} modprobe.d sysctl.d; do
+		if [ -d ${PKGDESTDIR}/etc/${f} ]; then
+			msg_red "${pkgver}: /etc/${f} is forbidden. Use /usr/lib/${f}\n"
+			error=1
+		fi
+	done
+
+	# Likewise with the comment above but for usr/share
+	for f in X11/xorg.conf.d gconf/schemas; do
+		if [ -d ${PKGDESTDIR}/etc/${f} ]; then
+			msg_red "${pkgver}: /etc/${f} is forbidden. Use /usr/share/${f}\n"
+			error=1
+		fi
+	done
+
+	if [ -d ${PKGDESTDIR}/etc/dracut.conf.d ]; then
+		msg_red "${pkgver}: /etc/dracut.conf.d is forbidden. Use /usr/lib/dracut/dracut.conf.d\n"
 		error=1
 	fi
 
