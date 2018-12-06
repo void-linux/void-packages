@@ -8,7 +8,7 @@ add_custom_command(
 		${GENERATED_DIR}/scheme.h
 		${GENERATED_DIR}/scheme.cpp
 	COMMAND python ${TELEGRAM_SOURCES_DIR}/codegen/scheme/codegen_scheme.py -o${GENERATED_DIR} ${TELEGRAM_RESOURCES_DIR}/scheme.tl
-	DEPENDS ${CMAKE_SOURCE_DIR}/Resources/scheme.tl
+	DEPENDS ${TELEGRAM_RESOURCES_DIR}/scheme.tl
 	COMMENT "Codegen scheme.tl"
 )
 list(APPEND TELEGRAM_GENERATED_SOURCES
