@@ -19,7 +19,7 @@ option(BUILD_TESTS "Build all available test suites" OFF)
 option(ENABLE_CRASH_REPORTS "Enable crash reports" ON)
 option(ENABLE_GTK_INTEGRATION "Enable GTK integration" ON)
 option(USE_LIBATOMIC "Link Statically against libatomic.a" OFF)
-option(USE_CUSTOM_API_ID "Use a custom Telegram API ID" OFF)
+option(ENABLE_OPENAL_EFFECTS "Enable OpenAL effects" ON)
 
 find_package(LibLZMA REQUIRED)
 find_package(OpenAL REQUIRED)
@@ -71,8 +71,12 @@ set_property(SOURCE ${TELEGRAM_GENERATED_SOURCES} PROPERTY SKIP_AUTOMOC ON)
 
 set(QRC_FILES
 	Resources/qrc/telegram.qrc
-	Resources/qrc/telegram_emoji.qrc
-	Resources/qrc/telegram_emoji_large.qrc
+	Resources/qrc/telegram_emoji_1.qrc
+	Resources/qrc/telegram_emoji_2.qrc
+	Resources/qrc/telegram_emoji_3.qrc
+	Resources/qrc/telegram_emoji_4.qrc
+	Resources/qrc/telegram_emoji_5.qrc
+
 	# This only disables system plugin search path
 	# We do not want this behavior for system build
 	# Resources/qrc/telegram_linux.qrc
@@ -98,7 +102,7 @@ file(GLOB FLAT_SOURCE_FILES
 	SourceFiles/settings/*.cpp
 	SourceFiles/storage/*.cpp
 	SourceFiles/storage/cache/*.cpp
-  SourceFiles/support/*cpp
+	SourceFiles/support/*cpp
 	${THIRD_PARTY_DIR}/emoji_suggestions/*.cpp
 )
 file(GLOB FLAT_EXTRA_FILES
@@ -197,9 +201,13 @@ else()
 	)
 endif()
 
-if(USE_CUSTOM_API_ID)
+if(ENABLE_OPENAL_EFFECTS)
 	list(APPEND TELEGRAM_COMPILE_DEFINITIONS
-		CUSTOM_API_ID
+		AL_ALEXT_PROTOTYPES
+	)
+else()
+	list(APPEND TELEGRAM_COMPILE_DEFINITIONS
+		TDESKTOP_DISABLE_OPENAL_EFFECTS
 	)
 endif()
 
