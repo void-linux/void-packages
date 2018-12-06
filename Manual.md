@@ -1211,8 +1211,11 @@ following subset of files from the main package:
     * Header files `usr/include`
     * Static libraries `usr/lib/*.a`
     * Shared library symbolic links `usr/lib/*.so`
-    * Cmake rules `usr/lib/cmake`
-    * Package config files `usr/lib/pkgconfig`
+    * Cmake rules `usr/lib/cmake` `usr/share/cmake`
+    * Package config files `usr/lib/pkgconfig` `usr/share/pkgconfig`
+    * Autoconf macros `usr/share/aclocal`
+    * Gobject introspection XML files `usr/share/gir-1.0`
+    * Vala bindings `usr/share/vala`
 
 <a id="pkgs_data"></a>
 ### Data packages
