@@ -32,6 +32,13 @@ hook() {
 		fi
 	done
 
+	# Check for bash completions in etc/bash_completion.d
+	# should be on usr/share/bash-completion/completions
+	if [ -d ${PKGDESTDIR}/etc/bash_completion.d ]; then
+		msg_red "${pkgver}: /etc/bash_completion.d is forbidden. Use /usr/share/bash-completion/completions\n"
+		error=1
+	fi
+
 	# Forbid empty packages unless build_style=meta
 	if [ "$build_style" != "meta" ]; then
 		if [ "$(find $PKGDESTDIR/* -maxdepth 1 -type d 2>/dev/null)" = "" ]; then
