@@ -48,7 +48,7 @@ update_check() {
                 githubname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$githubname/tags"
                 rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
-            *gitlab.com*|*gitlab.gnome.org*)
+            *gitlab.com*|*gitlab.gnome.org*|*gitlab.freedesktop.org*)
                 gitlaburl="$(printf %s "$url" | cut -d/ -f1-5)"
                 url="$gitlaburl/tags"
                 rx='/archive/[^/]+/\Q'"$pkgname"'\E-v?\K[\d\.]+(?=\.tar\.gz")';;
@@ -83,7 +83,7 @@ update_check() {
     done |
     tr _ . |
     sort -Vu |
-    { 
+    {
         grep . || echo "NO VERSION found for $original_pkgname" 1>&2
     } |
     while IFS= read -r found_version; do
