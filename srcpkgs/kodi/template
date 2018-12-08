@@ -2,21 +2,21 @@
 pkgname=kodi
 version=17.6
 revision=4
-build_style=cmake
-configure_args="-DENABLE_INTERNAL_CROSSGUID=OFF"
-patch_args="-Np1"
 _codename="Krypton"
 wrksrc="xbmc-${version}-${_codename}"
+build_wrksrc=project/cmake
+build_style=cmake
+configure_args="-DENABLE_INTERNAL_CROSSGUID=OFF"
 short_desc="A software media player and entertainment hub for digital media"
 maintainer="Juan RP <xtraeme@voidlinux.eu>"
-homepage="http://www.kodi.tv/"
 license="GPL-2"
+homepage="http://www.kodi.tv/"
 distfiles="https://github.com/xbmc/xbmc/archive/${version}-${_codename}.tar.gz"
 checksum=c8312fe92e5bab1cdac1da93d60baed88fa1574146c50c44e3c86d01671c2b1d
-build_wrksrc=project/cmake
+patch_args="-Np1"
 
 lib32disabled=yes
-only_for_archs="i686 i686-musl x86_64 x86_64-musl"
+only_for_archs="i686 i686-musl x86_64 x86_64-musl aarch64 aarch64-musl"
 
 hostmakedepends="
  automake libtool pkg-config gperf cmake zip unzip nasm yasm python-devel
@@ -39,6 +39,15 @@ depends="libbluray libmad libvorbis libcurl libflac libmodplug libass libmpeg2
  lame librtmp libnfs>=1.9.7 libplist>=1.12"
 depends+=" glxinfo hicolor-icon-theme desktop-file-utils xdpyinfo"
 
+case "$XBPS_TARGET_MACHINE" in
+	aarch64*)
+		hostmakedepends+=" libmysqlclient-devel SDL2_image-devel lzo-devel";
+		makedepends+=" python-devel ffmpeg-devel";
+		configure_args+=" -DENABLE_LDGOLD=Off -DWITH_FFMPEG=/usr -DENABLE_VAAPI=OFF";
+		_kodi_nojava=yes
+		;;
+esac
+
 # musl builds need generated addons (no java).
 # gold broken with musl
 case "$XBPS_MACHINE" in
@@ -47,6 +56,12 @@ case "$XBPS_MACHINE" in
 esac
 
 pre_configure() {
+	if [ "$CROSS_BUILD" ]; then
+	find ../.. -type f | \
+		grep "configure\.ac\|Makefile\|cmake\|config\.site" | \
+		xargs sed -i  -e "s;-isystem;-I;g"
+	fi
+
 	# Copy generated files to avoid requiring java.
 	if [ "${_kodi_nojava}" ]; then
 		mkdir -p build/build/swig
@@ -58,6 +73,38 @@ pre_configure() {
 		echo "set(FOUND_SWIG Yes)" > modules/FindSWIG.cmake
 	else
 		. /etc/profile.d/10_openjdk.sh
+	fi
+
+	if [ "$CROSS_BUILD" ]; then
+		for i in JsonSchemaBuilder TexturePacker; do
+			cat > modules/Find$i.cmake <<EOF
+				add_executable($i::$i IMPORTED GLOBAL)
+				set_target_properties($i::$i PROPERTIES
+				IMPORTED_LOCATION "\${CORE_SOURCE_DIR}/tools/depends/native/$i/bin/$i")
+				set_target_properties($i::$i PROPERTIES FOLDER Tools)
+EOF
+		done
+	fi
+}
+
+pre_build() {
+	if [ "$CROSS_BUILD" ]; then
+		for i in JsonSchemaBuilder TexturePacker; do
+			CC= LD= CXX= LDFLAGS= CFLAGS= CXXFLAGS= \
+				make -C ../../tools/depends/native/$i
+		done
+	fi
+}
+
+post_build() {
+	# Rebuild for target
+	if [ "$CROSS_BUILD" ]; then
+		for i in JsonSchemaBuilder TexturePacker; do
+			make -C ../../tools/depends/native/$i clean all \
+				CC="$CC" CXX="$CXX" LD="$LD" AR="$AR" RANLIB="$RANLIB" \
+				CPP="$CPP" AS="$AS" OBJDUMP="$OBJDUMP" \
+				CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+		done
 	fi
 }
 
