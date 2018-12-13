@@ -1,7 +1,7 @@
 # vim: set ts=4 sw=4 et:
 #
 # This hook executes the following tasks:
-#	- Looks on non -devel packages for files that should be in the -devel package
+#   - Looks on non -devel packages for files that should be in the -devel package
 #   - Searches for solinks (.so) and archives (.a) on usr/lib
 #   - Searches for executables in usr/bin that end with -config and a respective manpage
 
@@ -49,7 +49,7 @@ hook() {
                 msg_warn "usr/share/gtk-doc should be in -devel package\n"
                 ;;
             /usr/lib/qt5/mkspecs)
-                msg_warn "usr/lib/qt5/mkspecs should bein -devel package\n"
+                msg_warn "usr/lib/qt5/mkspecs should be in -devel package\n"
                 ;;
         esac
 
