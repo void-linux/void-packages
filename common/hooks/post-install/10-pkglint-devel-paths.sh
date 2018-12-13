@@ -62,7 +62,7 @@ hook() {
         fi
 
         if [ -d $PKGDESTDIR/usr/bin ]; then
-            for x in $(find $PKGDESTDIR/usr/bin -type f -perm +111 -iname '*-config'); do
+            for x in $(find $PKGDESTDIR/usr/bin -type f -executable -iname '*-config'); do
                 msg_warn "${x#$PKGDESTDIR\/} should be in -devel package\n"
             done
         fi
