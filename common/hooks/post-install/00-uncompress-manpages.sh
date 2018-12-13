@@ -3,10 +3,6 @@
 hook() {
 	local f lnkat mandir=${PKGDESTDIR}/usr/share/man
 
-	if [ -d ${PKGDESTDIR}/usr/man ]; then
-		msg_error "${pkgver}: /usr/man directory is not allowed, use /usr/share/man.\n"
-	fi
-
 	if [ ! -d $mandir ] ||
 	   [ -z "$(find $mandir -regex '.*\.\(gz\|bz2\)' -print -quit)" ]; then
 		return 0
