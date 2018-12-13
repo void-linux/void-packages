@@ -37,7 +37,7 @@ hook() {
 	# Check for bash completions in etc/bash_completion.d
 	# should be on usr/share/bash-completion/completions
 	if [ -d ${PKGDESTDIR}/etc/bash_completion.d ]; then
-		msg_red "${pkgver}: /etc/bash_completion.d is forbidden. Use /usr/share/bash-completion/completions\n"
+		msg_red "${pkgver}: /etc/bash_completion.d is forbidden. Use /usr/share/bash-completion/completions.\n"
 		error=1
 	fi
 
@@ -45,7 +45,7 @@ hook() {
 	# their equivalent in usr/lib
 	for f in udev/{rules.d,hwdb.d} modprobe.d sysctl.d; do
 		if [ -d ${PKGDESTDIR}/etc/${f} ]; then
-			msg_red "${pkgver}: /etc/${f} is forbidden. Use /usr/lib/${f}\n"
+			msg_red "${pkgver}: /etc/${f} is forbidden. Use /usr/lib/${f}.\n"
 			error=1
 		fi
 	done
@@ -53,13 +53,28 @@ hook() {
 	# Likewise with the comment above but for usr/share
 	for f in X11/xorg.conf.d gconf/schemas; do
 		if [ -d ${PKGDESTDIR}/etc/${f} ]; then
-			msg_red "${pkgver}: /etc/${f} is forbidden. Use /usr/share/${f}\n"
+			msg_red "${pkgver}: /etc/${f} is forbidden. Use /usr/share/${f}.\n"
 			error=1
 		fi
 	done
 
 	if [ -d ${PKGDESTDIR}/etc/dracut.conf.d ]; then
-		msg_red "${pkgver}: /etc/dracut.conf.d is forbidden. Use /usr/lib/dracut/dracut.conf.d\n"
+		msg_red "${pkgver}: /etc/dracut.conf.d is forbidden. Use /usr/lib/dracut/dracut.conf.d.\n"
+		error=1
+	fi
+
+	if [ -d ${PKGDESTDIR}/usr/man ]; then
+		msg_red "${pkgver}: /usr/man is forbidden, use /usr/share/man.\n"
+		error=1
+	fi
+
+	if [ -d ${PKGDESTDIR}/usr/doc ]; then
+		msg_red "${pkgver}: /usr/doc is forbidden. Use /usr/share/doc.\n"
+		error=1
+	fi
+
+	if [ -d ${PKGDESTDIR}/usr/dict ]; then
+		msg_red "${pkgver}: /usr/dict is forbidden. Use /usr/share/dict.\n"
 		error=1
 	fi
 
