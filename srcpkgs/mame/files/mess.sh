@@ -1,7 +1,7 @@
 #!/bin/sh
 
 exec_mess() {
-  /usr/share/mame/mess \
+  /usr/libexec/mame/mess \
     -artpath "$HOME/.mess/artwork;artwork" \
     -ctrlrpath "$HOME/.mess/ctrlr;ctrlr" \
     -inipath $HOME/.mess/ini \
@@ -41,5 +41,5 @@ elif [ ! -e $HOME/.mess ]; then
   cd $HOME/.mess && exec_mess
 else
   cd /usr/share/mame
-  ./mame "$@"
+  /usr/libexec/mame/mess "$@"
 fi
