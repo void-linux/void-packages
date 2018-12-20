@@ -1324,6 +1324,10 @@ The following variables influence how Go packages are built:
   packages; using a versioned distfile is preferred.
 - `go_build_tags`: An optional, space-separated list of build tags to
   pass to Go.
+- `go_mod_mode`: The module download mode to use. May be `off` to ignore
+  any go.mod files, `default` to use Go's default behavior, or anything
+  accepted by `go build -mod MODE`.  Defaults to `vendor` if there's
+  a vendor directory, otherwise `default`.
 
 Occasionally it is necessary to perform operations from within the Go
 source tree.  This is usually needed by programs using go-bindata or
