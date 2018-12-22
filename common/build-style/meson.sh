@@ -18,6 +18,10 @@ do_configure() {
 			armv*)
 				_MESON_CPU_FAMILY=arm
 				;;
+			ppc|ppc-musl)
+				_MESON_TARGET_ENDIAN=big
+				_MESON_CPU_FAMILY=ppc
+				;;
 			i686*)
 				_MESON_CPU_FAMILY=x86
 				;;
