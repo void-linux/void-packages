@@ -70,7 +70,7 @@ case "$XBPS_TARGET_MACHINE" in
 		. ${_AUTOCONFCACHEDIR}/mips-linux
 		;;
 
-	mipshf*)	
+	mipshf*)
 		. ${_AUTOCONFCACHEDIR}/endian-big
 		. ${_AUTOCONFCACHEDIR}/mips-common
 		. ${_AUTOCONFCACHEDIR}/mips-linux
@@ -81,6 +81,14 @@ case "$XBPS_TARGET_MACHINE" in
 		. ${_AUTOCONFCACHEDIR}/mips-common
 		. ${_AUTOCONFCACHEDIR}/mips-linux
 		;;
+
+
+	ppc|ppc-musl)
+		. ${_AUTOCONFCACHEDIR}/endian-big
+                . ${_AUTOCONFCACHEDIR}/ppc-common
+                . ${_AUTOCONFCACHEDIR}/ppc-linux
+		;;
+
 
 	x86_64*)
 		. ${_AUTOCONFCACHEDIR}/endian-little
