@@ -358,6 +358,11 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_CROSS_BASE` Full path to where cross-compile dependencies are installed, varies according to the target architecture triplet. i.e `aarch64` -> `aarch64-unknown-linux-gnu`.
 
+- `XBPS_GCC_VERSION` current version of GCC in the repos in major.minor.build format.
+
+> NOTE: a variable is declared for each version component of `XBPS_GCC_VERSION`.  
+Example: `XBPS_GCC_VERSION_MAJOR` `XBPS_GCC_VERSION_MINOR` `XBPS_GCC_VERSION_BUILD`
+
 <a id="available_vars"></a>
 ### Available variables
 
