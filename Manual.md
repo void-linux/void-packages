@@ -354,6 +354,8 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_FETCH_CMD` The utility to fetch files from `ftp`, `http` of `https` servers.
 
+- `XBPS_WRAPPERDIR` Full path to where xbps-src's wrappers for utilities are stored.
+
 <a id="available_vars"></a>
 ### Available variables
 
