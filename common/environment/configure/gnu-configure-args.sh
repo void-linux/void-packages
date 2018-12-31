@@ -87,6 +87,20 @@ case "$XBPS_TARGET_MACHINE" in
 		. ${_AUTOCONFCACHEDIR}/x86_64-linux
 		;;
 
+	ppc64le*)
+		. ${_AUTOCONFCACHEDIR}/endian-little
+		. ${_AUTOCONFCACHEDIR}/powerpc-common
+		. ${_AUTOCONFCACHEDIR}/powerpc-linux
+		. ${_AUTOCONFCACHEDIR}/powerpc64-linux
+		;;
+
+	ppc64*)
+		. ${_AUTOCONFCACHEDIR}/endian-big
+		. ${_AUTOCONFCACHEDIR}/powerpc-common
+		. ${_AUTOCONFCACHEDIR}/powerpc-linux
+		. ${_AUTOCONFCACHEDIR}/powerpc64-linux
+		;;
+
 	*) ;;
 esac
 

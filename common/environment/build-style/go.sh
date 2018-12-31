@@ -8,6 +8,8 @@ case "$XBPS_TARGET_MACHINE" in
 	armv7*) export GOARCH=arm; export GOARM=7;;
 	i686*) export GOARCH=386;;
 	x86_64*) export GOARCH=amd64;;
+	ppc64le*) export GOARCH=ppc64le;;
+	ppc64*) export GOARCH=ppc64;;
 esac
 
 export GOPATH="${wrksrc}/_build-${pkgname}-xbps"
