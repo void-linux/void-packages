@@ -21,6 +21,13 @@ do_configure() {
 			i686*)
 				_MESON_CPU_FAMILY=x86
 				;;
+			ppc64le)
+				_MESON_CPU_FAMILY=ppc64
+				;;
+			ppc64)
+				_MESON_TARGET_ENDIAN=big
+				_MESON_CPU_FAMILY=ppc64
+				;;
 			*)
 				# if we reached here that means that the cpu and cpu_family
 				# are the same like 'x86_64' and 'aarch64'
