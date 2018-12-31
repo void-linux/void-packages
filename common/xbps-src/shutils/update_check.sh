@@ -5,6 +5,7 @@ update_check() {
     local update_override=$XBPS_SRCPKGDIR/$XBPS_TARGET_PKG/update
     local original_pkgname=$pkgname
     local urlpfx urlsfx
+    local -A fetchedurls
 
     if [ -r $update_override ]; then
         . $update_override
@@ -138,11 +139,19 @@ update_check() {
         rx=${pattern:-$rx}
         rx=${rx:-'(?<!-)\b\Q'"$pkgname"'\E[-_]?((src|source)[-_])?\K([^-/_\s]*?\d[^-/_\s]*?)(?=(?:[-_.](?:src|source|orig))?\.(?:[jt]ar|shar|t[bglx]z|tbz2|zip))\b'}
 
+        if [ "${fetchedurls[$url]}" ]; then
+            if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
+                echo "already fetched $url" 1>&2
+            fi
+            continue
+        fi
+
         if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
             echo "fetching $url" 1>&2
         fi
         curl -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml' -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$url" |
             grep -Po -i "$rx"
+        fetchedurls[$url]=yes
     done |
     tr _ . |
     sort -Vu |
