@@ -1,0 +1,242 @@
+From 9d104c0d62605ee6aaf3f13b3ad0215b1dd665f9 Mon Sep 17 00:00:00 2001
+From: Nathan Owens <ndowens04@gmail.com>
+Date: Mon, 31 Dec 2018 20:21:45 -0600
+Subject: [PATCH] Fix memory leak
+
+---
+ src/auth.c        | 33 +++++++++++++++++++++++----------
+ src/hash.c        |  2 ++
+ src/stanza.c      | 30 +++++++++++++++++++++++-------
+ tests/test_hash.c | 11 ++++++-----
+ 4 files changed, 54 insertions(+), 22 deletions(-)
+
+diff --git a/src/auth.c b/src/auth.c
+index 0f09023..6872b83 100644
+--- src/auth.c
++++ src/auth.c
+@@ -219,6 +219,7 @@ static int _handle_features(xmpp_conn_t * const conn,
+ 			    void * const userdata)
+ {
+     xmpp_stanza_t *child, *mech;
++    const char *ns;
+     char *text;
+ 
+     /* remove the handler that detects missing stream:features */
+@@ -228,8 +229,10 @@ static int _handle_features(xmpp_conn_t * const conn,
+     if (!conn->secured) {
+         if (!conn->tls_disabled) {
+             child = xmpp_stanza_get_child_by_name(stanza, "starttls");
+-            if (child && (strcmp(xmpp_stanza_get_ns(child), XMPP_NS_TLS) == 0))
+-                conn->tls_support = 1;
++            if (child) {
++                ns = xmpp_stanza_get_ns(child);
++                conn->tls_support = ns != NULL && strcmp(ns, XMPP_NS_TLS) == 0;
++            }
+         } else {
+             conn->tls_support = 0;
+         }
+@@ -237,11 +240,15 @@ static int _handle_features(xmpp_conn_t * const conn,
+ 
+     /* check for SASL */
+     child = xmpp_stanza_get_child_by_name(stanza, "mechanisms");
+-    if (child && (strcmp(xmpp_stanza_get_ns(child), XMPP_NS_SASL) == 0)) {
++    ns = child ? xmpp_stanza_get_ns(child) : NULL;
++    if (child && ns && strcmp(ns, XMPP_NS_SASL) == 0) {
+ 	for (mech = xmpp_stanza_get_children(child); mech;
+ 	     mech = xmpp_stanza_get_next(mech)) {
+ 	    if (xmpp_stanza_get_name(mech) && strcmp(xmpp_stanza_get_name(mech), "mechanism") == 0) {
+ 		text = xmpp_stanza_get_text(mech);
++                if (text == NULL)
++                    continue;
++
+ 		if (strcasecmp(text, "PLAIN") == 0)
+ 		    conn->sasl_support |= SASL_MASK_PLAIN;
+ 		else if (strcasecmp(text, "DIGEST-MD5") == 0)
+@@ -871,7 +878,8 @@ static int _handle_features_sasl(xmpp_conn_t * const conn,
+ 				 xmpp_stanza_t * const stanza,
+ 				 void * const userdata)
+ {
+-    xmpp_stanza_t *bind, *session, *iq, *res, *text;
++    xmpp_stanza_t *bind, *session, *iq, *res, *text, *opt;
++    const char *ns;
+     char *resource;
+ 
+     /* remove missing features handler */
+@@ -880,16 +888,21 @@ static int _handle_features_sasl(xmpp_conn_t * const conn,
+     /* we are expecting <bind/> and <session/> since this is a
+        XMPP style connection */
+ 
++    /* check whether resource binding is required */
+     bind = xmpp_stanza_get_child_by_name(stanza, "bind");
+-    if (bind && strcmp(xmpp_stanza_get_ns(bind), XMPP_NS_BIND) == 0) {
+-	/* resource binding is required */
+-	conn->bind_required = 1;
++    if (bind) {
++        ns = xmpp_stanza_get_ns(bind);
++	conn->bind_required = ns != NULL && strcmp(ns, XMPP_NS_BIND) == 0;
+     }
+ 
++    /* check whether session establishment is required */
+     session = xmpp_stanza_get_child_by_name(stanza, "session");
+-    if (session && strcmp(xmpp_stanza_get_ns(session), XMPP_NS_SESSION) == 0) {
+-	/* session establishment required */
+-	conn->session_required = 1;
++    if (session) {
++        ns = xmpp_stanza_get_ns(session);
++        opt = xmpp_stanza_get_child_by_name(session, "optional");
++	if (!opt)
++            conn->session_required = ns != NULL &&
++                                     strcmp(ns, XMPP_NS_SESSION) == 0;
+     }
+ 
+     /* if bind is required, go ahead and start it */
+diff --git a/src/hash.c b/src/hash.c
+index a524f5b..dc9dd2c 100644
+--- src/hash.c
++++ src/hash.c
+@@ -163,6 +163,8 @@ int hash_add(hash_t *table, const char * const key, void *data)
+       entry->next = table->entries[table_index];
+       table->entries[table_index] = entry;
+       table->num_keys++;
++   } else {
++      if (table->free) table->free(ctx, entry->value);
+    }
+ 
+    entry->value = data;
+diff --git a/src/stanza.c b/src/stanza.c
+index 8e45f23..32584d4 100644
+--- src/stanza.c
++++ src/stanza.c
+@@ -344,10 +344,16 @@ static int _render_stanza_recursive(xmpp_stanza_t *stanza,
+                 }
+                 tmp = _escape_xml(stanza->ctx,
+                     (char *)hash_get(stanza->attributes, key));
+-                if (tmp == NULL) return XMPP_EMEM;
++                if (tmp == NULL) {
++                    hash_iter_release(iter);
++                    return XMPP_EMEM;
++                }
+                 ret = xmpp_snprintf(ptr, left, " %s=\"%s\"", key, tmp);
+                 xmpp_free(stanza->ctx, tmp);
+-                if (ret < 0) return XMPP_EMEM;
++                if (ret < 0) {
++                    hash_iter_release(iter);
++                    return XMPP_EMEM;
++                }
+                 _render_update(&written, buflen, ret, &left, &ptr);
+             }
+             hash_iter_release(iter);
+@@ -421,7 +427,12 @@ int xmpp_stanza_to_text(xmpp_stanza_t *stanza,
+     }
+ 
+     ret = _render_stanza_recursive(stanza, buffer, length);
+-    if (ret < 0) return ret;
++    if (ret < 0) {
++        xmpp_free(stanza->ctx, buffer);
++        *buf = NULL;
++        *buflen = 0;
++        return ret;
++    }
+ 
+     if ((size_t)ret > length - 1) {
+         tmp = xmpp_realloc(stanza->ctx, buffer, ret + 1);
+@@ -435,7 +446,12 @@ int xmpp_stanza_to_text(xmpp_stanza_t *stanza,
+         buffer = tmp;
+ 
+         ret = _render_stanza_recursive(stanza, buffer, length);
+-        if ((size_t)ret > length - 1) return XMPP_EMEM;
++        if ((size_t)ret > length - 1) {
++            xmpp_free(stanza->ctx, buffer);
++            *buf = NULL;
++            *buflen = 0;
++            return XMPP_EMEM;
++        }
+     }
+     
+     buffer[length - 1] = 0;
+@@ -573,7 +589,6 @@ int xmpp_stanza_set_attribute(xmpp_stanza_t * const stanza,
+ 
+     val = xmpp_strdup(stanza->ctx, value);
+     if (!val) {
+-        hash_release(stanza->attributes);
+         return XMPP_EMEM;
+     }
+ 
+@@ -809,10 +824,11 @@ xmpp_stanza_t *xmpp_stanza_get_child_by_ns(xmpp_stanza_t * const stanza,
+                                            const char * const ns)
+ {
+     xmpp_stanza_t *child;
++    const char *child_ns;
+ 
+     for (child = stanza->children; child; child = child->next) {
+-        if (xmpp_stanza_get_ns(child) &&
+-            strcmp(ns, xmpp_stanza_get_ns(child)) == 0)
++        child_ns = xmpp_stanza_get_ns(child);
++        if (child_ns && strcmp(ns, child_ns) == 0)
+             break;
+     }
+     
+diff --git a/tests/test_hash.c b/tests/test_hash.c
+index 6910794..d9f95f8 100644
+--- tests/test_hash.c
++++ tests/test_hash.c
+@@ -16,18 +16,19 @@
+ #include "strophe.h"
+ #include "common.h"
+ #include "hash.h"
++#include "test.h"
+ 
+ #define TABLESIZE 100
+ #define TESTSIZE 500
+ 
+ /* static test data */
+-const int nkeys = 5;
+ const char *keys[] = {
+   "foo", "bar", "baz", "quux", "xyzzy"
+ };
+ const char *values[] = {
+   "wuzzle", "mug", "canonical", "rosebud", "lottery"
+ };
++const int nkeys = ARRAY_SIZE(keys);
+ 
+ int main(int argc, char **argv)
+ {
+@@ -58,7 +59,7 @@ int main(int argc, char **argv)
+     }
+ 
+     /* allocate a hash table */
+-    table = hash_new(ctx, TABLESIZE, NULL);
++    table = hash_new(ctx, TABLESIZE, xmpp_free);
+     if (table == NULL) {
+ 	/* table allocation failed! */
+ 	return 1;
+@@ -66,7 +67,7 @@ int main(int argc, char **argv)
+ 
+     /* test insertion */
+     for (i = 0; i < nkeys; i++) {
+-	err = hash_add(table, keys[i], (void*)values[i]);
++	err = hash_add(table, keys[i], xmpp_strdup(ctx, values[i]));
+ 	if (err) return err;
+     }
+ 
+@@ -78,7 +79,7 @@ int main(int argc, char **argv)
+ 
+     /* test replacing old values */
+     for (i = 0; i < nkeys; i++) {
+-        err = hash_add(table, keys[0], (void*)values[i]);
++        err = hash_add(table, keys[0], xmpp_strdup(ctx, values[i]));
+         if (err) return err;
+         if (hash_num_keys(table) != nkeys) return 1;
+         result = hash_get(table, keys[0]);
+@@ -86,7 +87,7 @@ int main(int argc, char **argv)
+         if (strcmp(result, values[i]) != 0) return 1;
+     }
+     /* restore value for the 1st key */
+-    hash_add(table, keys[0], (void*)values[0]);
++    hash_add(table, keys[0], xmpp_strdup(ctx, values[0]));
+ 
+     /* test cloning */
+     clone = hash_clone(table);
+-- 
+2.20.1
+
