@@ -3,9 +3,9 @@ Upstream: https://github.com/mono/mono/issues/7167
 Reason: reverts replacing condition variables with a semaphore in the threading code
  which caused a severe regression that introduced a 5-60 second hang while compiling code
 
-From ecd1658935128e700962ff440dd460c31403bec7 Mon Sep 17 00:00:00 2001
+From 24bc6365883d17809b9015849d79a623336b00df Mon Sep 17 00:00:00 2001
 From: Helmut Pozimski <helmut@pozimski.eu>
-Date: Tue, 9 Oct 2018 12:46:03 +0200
+Date: Tue, 1 Jan 2019 09:17:59 +0100
 Subject: [PATCH] Revert "[threadpool] Replace parked_threads condition
  variable by a semaphore (#6222)"
 
@@ -15,7 +15,7 @@ This reverts commit 5f5c5e97a08f7086d7c18af37352c4a03dc4c0d1.
  1 file changed, 52 insertions(+), 47 deletions(-)
 
 diff --git a/mono/metadata/threadpool-worker-default.c b/mono/metadata/threadpool-worker-default.c
-index 33870a6de15..c5e8529a67f 100644
+index 96372a15f30..59f33cba149 100644
 --- mono/metadata/threadpool-worker-default.c
 +++ mono/metadata/threadpool-worker-default.c
 @@ -131,8 +131,9 @@ typedef struct {
@@ -81,7 +81,7 @@ index 33870a6de15..c5e8529a67f 100644
  {
  	gboolean timeout = FALSE;
  	gboolean interrupted = FALSE;
--	gint32 old, new;
+-	gint32 old, new_;
  
  	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_THREADPOOL, "[%p] worker parking",
  		GUINT_TO_POINTER (MONO_NATIVE_THREAD_ID_TO_UINT (mono_native_thread_id_get ())));
@@ -113,8 +113,8 @@ index 33870a6de15..c5e8529a67f 100644
 -			g_assert (old >= G_MININT32);
 +		worker.parked_threads_count += 1;
  
--			new = old + 1;
--		} while (mono_atomic_cas_i32 (&worker.parked_threads_count, new, old) != old);
+-			new_ = old + 1;
+-		} while (mono_atomic_cas_i32 (&worker.parked_threads_count, new_, old) != old);
 +		mono_thread_info_install_interrupt (worker_wait_interrupt, NULL, &interrupted);
 +		if (interrupted)
 +			goto done;
@@ -140,8 +140,8 @@ index 33870a6de15..c5e8529a67f 100644
 -				g_assert (old > G_MININT32);
 +		mono_thread_info_uninstall_interrupt (&interrupted);
  
--				new = old - 1;
--			} while (mono_atomic_cas_i32 (&worker.parked_threads_count, new, old) != old);
+-				new_ = old - 1;
+-			} while (mono_atomic_cas_i32 (&worker.parked_threads_count, new_, old) != old);
 -		}
 +done:
 +		worker.parked_threads_count -= 1;
@@ -162,7 +162,7 @@ index 33870a6de15..c5e8529a67f 100644
  worker_try_unpark (void)
  {
 -	gboolean res = TRUE;
--	gint32 old, new;
+-	gint32 old, new_;
 +	gboolean res = FALSE;
  
  	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_THREADPOOL, "[%p] try unpark worker",
@@ -177,8 +177,8 @@ index 33870a6de15..c5e8529a67f 100644
 -			break;
 -		}
 -
--		new = old - 1;
--	} while (mono_atomic_cas_i32 (&worker.parked_threads_count, new, old) != old);
+-		new_ = old - 1;
+-	} while (mono_atomic_cas_i32 (&worker.parked_threads_count, new_, old) != old);
 -
 -	if (res)
 -		mono_coop_sem_post (&worker.parked_threads_sem);
@@ -192,5 +192,5 @@ index 33870a6de15..c5e8529a67f 100644
  	mono_trace (G_LOG_LEVEL_DEBUG, MONO_TRACE_THREADPOOL, "[%p] try unpark worker, success? %s",
  		GUINT_TO_POINTER (MONO_NATIVE_THREAD_ID_TO_UINT (mono_native_thread_id_get ())), res ? "yes" : "no");
 -- 
-2.19.1
+2.20.1
 
