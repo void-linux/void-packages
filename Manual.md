@@ -554,6 +554,9 @@ by all supported architectures.
 - `nostrip` If set, the ELF binaries with debugging symbols won't be stripped. By
 default all binaries are stripped.
 
+- `nostrip_files` White-space separated list of ELF binaries that won't be stripped of
+debugging symbols.
+
 - `noshlibprovides` If set, the ELF binaries won't be inspected to collect the provided
 sonames in shared libraries.
 
