@@ -1265,7 +1265,9 @@ at post-install time:
 - `pycompile_module`: this variable expects the python modules that should be `byte-compiled`
 at post-install time. Python modules are those that are installed into the `site-packages`
 prefix: `usr/lib/pythonX.X/site-packages`. Multiple python modules may be specified separated
-by blanks, Example: `pycompile_module="foo blah"`.
+by blanks, Example: `pycompile_module="foo blah"`. If a python module installs a file into
+`site-packages` rather than a directory, use the name of the file, Example:
+`pycompile_module="fnord.py"`.
 
 - `pycompile_dirs`: this variable expects the python directories that should be `byte-compiled`
 recursively by the target python version. This differs from `pycompile_module` in that any
