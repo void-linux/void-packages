@@ -13,7 +13,7 @@ do_configure() {
 			aarch64*) _CMAKE_SYSTEM_PROCESSOR=aarch64 ;;
 			arm*) _CMAKE_SYSTEM_PROCESSOR=arm ;;
 			mips*) _CMAKE_SYSTEM_PROCESSOR=mips ;;
-			ppc64le*) _CMAKE_SYSTEM_PROCESSIR=ppc64le ;;
+			ppc64le*) _CMAKE_SYSTEM_PROCESSOR=ppc64le ;;
 			ppc64*) _CMAKE_SYSTEM_PROCESSOR=ppc64 ;;
 			*) _CMAKE_SYSTEM_PROCESSOR=generic ;;
 		esac
