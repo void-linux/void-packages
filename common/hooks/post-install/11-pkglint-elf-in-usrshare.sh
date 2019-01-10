@@ -11,12 +11,13 @@ hook() {
     fi
 
     # Find all binaries in /usr/share and add them to the pool
-    for f in $(find $PKGDESTDIR/usr/share -type f); do
+    while read -r f; do
         case "$(file -bi "$f")" in
+            # Note application/x-executable is missing which is present in most Electron apps
             application/x-sharedlib*|application/x-pie-executable*)
                 matches+=" ${f#$PKGDESTDIR}" ;;
         esac
-    done
+    done < <(find $PKGDESTDIR/usr/share -type f)
 
     if [ -z "$matches" ]; then
         return 0
