@@ -3,20 +3,20 @@
 # THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/firefox-i18n".
 #
 pkgname=firefox
-version=64.0
+version=64.0.2
 revision=1
 short_desc="Mozilla Firefox web browser"
 maintainer="Juan RP <xtraeme@voidlinux.org>"
 license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
 homepage="https://www.mozilla.org/firefox/"
 distfiles="${MOZILLA_SITE}/${pkgname}/releases/${version}/source/${pkgname}-${version}.source.tar.xz"
-checksum=da40f2f8f1cbf0ddb3454aa9f65bb1a2b2043ca9b1724aecd016337be77d537f
+checksum=34cf115a4eeb4d73f7199396bb3a5d5843c8c455eae4213bf451c4db88768f1f
 
 only_for_archs="i686 i686-musl x86_64 x86_64-musl"
 lib32disabled=yes
 
 hostmakedepends="autoconf213 unzip zip pkg-config perl python3 yasm rust cargo
- llvm clang nodejs cbindgen"
+ llvm clang nodejs cbindgen $(vopt_if pgo 'xauth xrandr xf86-video-dummy xorg-server-xvfb')"
 makedepends="nss-devel libjpeg-turbo-devel gtk+-devel gtk+3-devel icu-devel
  pixman-devel sqlite-devel libevent-devel libnotify-devel libvpx-devel
  libXrender-devel libXcomposite-devel libSM-devel libXt-devel
@@ -28,8 +28,11 @@ makedepends="nss-devel libjpeg-turbo-devel gtk+-devel gtk+3-devel icu-devel
 depends="nss>=3.37.3 desktop-file-utils hicolor-icon-theme"
 conflicts="firefox-esr>=0"
 
-build_options="alsa dbus pulseaudio startup_notification xscreensaver sndio"
+build_options="alsa dbus pulseaudio startup_notification xscreensaver sndio pgo wayland"
+# Wayland is still pretty much broken.
 build_options_default="alsa dbus pulseaudio startup_notification xscreensaver sndio"
+
+desc_option_pgo="Enable PGO and LTO optimizations"
 
 post_extract() {
 	case "$XBPS_TARGET_MACHINE" in
@@ -47,6 +50,12 @@ post_extract() {
 	echo -n "cd894504-7a2a-4263-abff-ff73ee89ffca" > mozilla-api-key
 }
 do_build() {
+	if [ "$build_option_pgo" ]; then
+	   export AR="gcc-ar"
+	   export NM="gcc-nm"
+	   export RANLIB="gcc-ranlib"
+	fi
+
 	cp "${FILESDIR}/mozconfig" "${wrksrc}/.mozconfig"
 
 	case "$XBPS_TARGET_MACHINE" in
@@ -98,16 +107,25 @@ do_build() {
 	cat <<! >>.mozconfig
 ac_add_options --with-google-api-keyfile="${wrksrc}/google-api-key"
 ac_add_options --with-mozilla-api-keyfile="${wrksrc}/mozilla-api-key"
+ac_add_options $(vopt_if wayland '--enable-default-toolkit=cairo-gtk3-wayland' '--enable-default-toolkit=cairo-gtk3')
 ac_add_options $(vopt_enable alsa)
 ac_add_options $(vopt_enable sndio)
 ac_add_options $(vopt_enable dbus)
 ac_add_options $(vopt_enable dbus necko-wifi)
 ac_add_options $(vopt_enable pulseaudio)
 ac_add_options $(vopt_enable startup_notification startup-notification)
+ac_add_options $(vopt_enable pgo tests)
+$(vopt_if pgo 'ac_add_options MOZ_PGO=1')
+ac_add_options $(vopt_enable pgo lto)
 !
 
 	rm -f old-configure
-	./mach build
+
+	if [ "$build_option_pgo" ]; then
+		GDK_BACKEND=x11 xvfb-run.sh ./mach build
+	else
+		./mach build
+	fi
 }
 do_install() {
 	DESTDIR="$DESTDIR" ./mach install
