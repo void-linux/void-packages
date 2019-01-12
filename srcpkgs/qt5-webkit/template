@@ -1,39 +1,59 @@
 # Template file for 'qt5-webkit'
 pkgname=qt5-webkit
-version=5.212.0
-revision=1
-wrksrc=qtwebkit-everywhere-src-${version%.0}
-build_style=cmake
-configure_args="-DPORT=Qt -DUSE_LD_GOLD=OFF"
+version=5.9.0
+revision=5
+wrksrc=qtwebkit-opensource-src-${version}
 hostmakedepends="bison flex gperf perl python ruby pkg-config"
-makedepends="libwebp-devel libxslt-devel libXcomposite-devel sqlite-devel
- libjpeg-turbo-devel gst-plugins-base1-devel qt5-declarative-devel
- qt5-location-devel qt5-sensors-devel qt5-webchannel-devel hyphen-devel"
-short_desc="Cross-platform application and UI framework (Qt5) - WebKit2 component"
+makedepends="libwebp-devel libxslt-devel libXcomposite-devel sqlite-devel libjpeg-turbo-devel
+ gst-plugins-base1-devel qt5-declarative-devel qt5-location-devel
+ qt5-sensors-devel qt5-webchannel-devel"
+short_desc="A cross-platform application and UI framework (Qt5) - WebKit2 component"
 maintainer="Juan RP <xtraeme@voidlinux.org>"
-license="LGPL-2.1-or-later"
+license="GPL-3, LGPL-2.1"
 homepage="https://www.qt.io/"
-distfiles="http://download.qt.io/snapshots/ci/qtwebkit/${version%.0}/latest/src/submodules/${wrksrc}.tar.xz"
-checksum=283b907ea324a2c734e3983c73fc27dbd8b33e2383c583de41842ee84d648a3e
+distfiles="https://download.qt.io/community_releases/${version%.*}/${version}-final/qtwebkit-opensource-src-${version}.tar.xz"
+checksum=8dad193b740055a998312e04a040f2e32a923c0823b2d239b24eab08276a4e04
 
+CXXFLAGS="-std=c++11 -fno-delete-null-pointer-checks"
+LDFLAGS="-ldl"
 if [ -n "$CROSS_BUILD" ]; then
 	hostmakedepends+=" qt5-host-tools qt5-declarative-devel libjpeg-turbo-devel"
 fi
 
-# no JIT on ppc64, also other build workarounds
-case "$XBPS_TARGET_MACHINE" in
-	ppc64*)
-		configure_args+=" -DENABLE_JIT=OFF -DUSE_SYSTEM_MALLOC=ON -DENABLE_ALLINONE_BUILD=OFF"
-		;;
-	*) ;;
-esac
+do_configure() {
+	mkdir -p build
+	cd build
+	# Generate headers
+	syncqt.pl-qt5 -version ${version} ${wrksrc}/Source/sync.profile
+	# Patch to enable video
+	sed -i ${wrksrc}/Tools/qmake/mkspecs/features/features.pri \
+		-e"s;\(ENABLE_VIDEO\)=0;\1=1;" \
+		-e"s;\(ENABLE_WEB_AUDIO\)=0;\1=1;"
+	# Patch for QtWebProcess LFLAGS
+	sed -i ${wrksrc}/Source/WebKit2/WebProcess.pro \
+		-e"/TARGET = QtWebProcess/i QMAKE_LFLAGS = $LDFLAGS"
+	qmake PREFIX=/usr LIB=/usr/lib QMAKE_LFLAGS_USE_GOLD= ${wrksrc}
+}
+do_build() {
+	cd build
+	make ${makejobs} CC=$CC CXX=$CXX LINK=$CXX LD=$CXX \
+		AR="$AR cru" RANLIB=$RANLIB
+}
+do_install() {
+	cd build
+	make PREFIX=/usr INSTALL_ROOT=${DESTDIR} install
+	# QMAKE_PRL_BUILD_DIR contains a reference to the build dir; drop it
+	find ${DESTDIR}/usr/lib -type f -name '*.prl' -exec \
+		sed -i "{}" -e "/^QMAKE_PRL_BUILD_DIR/d" \;
+}
 
 qt5-webkit-devel_package() {
-	short_desc+=" - development files"
-	depends="qt5-devel ${sourcepkg}>=${version}_${revision}"
+	short_desc+=" (development)"
+	depends="${sourcepkg}>=${version}_${revision}"
 	pkg_install() {
 		vmove usr/include
 		vmove usr/lib/*.so
+		vmove usr/lib/*.prl
 		vmove usr/lib/pkgconfig
 	}
 }
