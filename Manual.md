@@ -314,6 +314,16 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	For further information on how to create a new service directory see
 	[The corresponding section the FAQ](http://smarden.org/runit/faq.html#create).
 
+- *vsed()* `vsed -i <file> -e <regex>`
+
+	Wrapper around sed that checks sha256sum of a file before and after running
+	the sed command to detect cases in which the sed call didn't change anything.
+	Takes any arbitrary amount of files and regexes by calling `-i file` and
+	`-e regex` repeatedly, at least one file and one regex must be specified.
+
+	Note that vsed will call the sed command for every regex specified against
+	every file specified, in the order that they are given.
+
 > Shell wildcards must be properly quoted, Example: `vmove "usr/lib/*.a"`.
 
 <a id="global_vars"></a>
