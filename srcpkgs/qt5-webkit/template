@@ -1,51 +1,47 @@
 # Template file for 'qt5-webkit'
 pkgname=qt5-webkit
-reverts="5.212.0_1"
-version=5.9.0
-revision=6
-wrksrc=qtwebkit-opensource-src-${version}
-hostmakedepends="bison flex gperf perl python ruby pkg-config"
-makedepends="libwebp-devel libxslt-devel libXcomposite-devel sqlite-devel libjpeg-turbo-devel
- gst-plugins-base1-devel qt5-declarative-devel qt5-location-devel
- qt5-sensors-devel qt5-webchannel-devel"
+version=5.212.0
+revision=2
+_v=${version%.*}
+wrksrc=qtwebkit-everywhere-src-${_v}
+build_style=cmake
+configure_args="-DPORT=Qt -DUSE_LD_GOLD=OFF"
+hostmakedepends="flex gperf perl pkg-config python qt5-qmake ruby"
+makedepends="libwebp-devel libxslt-devel libXcomposite-devel sqlite-devel
+ libjpeg-turbo-devel gst-plugins-base1-devel qt5-declarative-devel
+ qt5-location-devel qt5-sensors-devel qt5-webchannel-devel hyphen-devel
+ ruby-devel"
 short_desc="A cross-platform application and UI framework (Qt5) - WebKit2 component"
 maintainer="Juan RP <xtraeme@voidlinux.org>"
-license="GPL-3, LGPL-2.1"
+license="LGPL-2.1-or-later"
 homepage="https://www.qt.io/"
-distfiles="https://download.qt.io/community_releases/${version%.*}/${version}-final/qtwebkit-opensource-src-${version}.tar.xz"
-checksum=8dad193b740055a998312e04a040f2e32a923c0823b2d239b24eab08276a4e04
+distfiles="https://download.qt.io/snapshots/ci/qtwebkit/${_v}/latest/src/submodules/qtwebkit-everywhere-src-${_v}.tar.xz"
+checksum=283b907ea324a2c734e3983c73fc27dbd8b33e2383c583de41842ee84d648a3e
 
-CXXFLAGS="-std=c++11 -fno-delete-null-pointer-checks"
-LDFLAGS="-ldl"
+CPPFLAGS="-I${XBPS_CROSS_BASE}/usr/include"
+CXXFLAGS="-fpermissive -Wno-class-memaccess"
+
 if [ -n "$CROSS_BUILD" ]; then
-	hostmakedepends+=" qt5-host-tools qt5-declarative-devel libjpeg-turbo-devel"
+	hostmakedepends+=" qt5-host-tools qt5-declarative-devel ruby-devel"
+	configure_args+=" -DRUBY_CONFIG_INCLUDE_DIR=${XBPS_CROSS_BASE}/usr/include/ruby-*"
 fi
 
-do_configure() {
-	mkdir -p build
-	cd build
-	# Generate headers
-	syncqt.pl-qt5 -version ${version} ${wrksrc}/Source/sync.profile
-	# Patch to enable video
-	sed -i ${wrksrc}/Tools/qmake/mkspecs/features/features.pri \
-		-e"s;\(ENABLE_VIDEO\)=0;\1=1;" \
-		-e"s;\(ENABLE_WEB_AUDIO\)=0;\1=1;"
-	# Patch for QtWebProcess LFLAGS
-	sed -i ${wrksrc}/Source/WebKit2/WebProcess.pro \
-		-e"/TARGET = QtWebProcess/i QMAKE_LFLAGS = $LDFLAGS"
-	qmake PREFIX=/usr LIB=/usr/lib QMAKE_LFLAGS_USE_GOLD= ${wrksrc}
-}
-do_build() {
-	cd build
-	make ${makejobs} CC=$CC CXX=$CXX LINK=$CXX LD=$CXX \
-		AR="$AR cru" RANLIB=$RANLIB
-}
-do_install() {
-	cd build
-	make PREFIX=/usr INSTALL_ROOT=${DESTDIR} install
-	# QMAKE_PRL_BUILD_DIR contains a reference to the build dir; drop it
-	find ${DESTDIR}/usr/lib -type f -name '*.prl' -exec \
-		sed -i "{}" -e "/^QMAKE_PRL_BUILD_DIR/d" \;
+case "$XBPS_TARGET_MACHINE" in
+	armv6*)	# Need libatomic for __atomic_fetch_add_8 etc.
+		makedepends+=" libatomic-devel"
+		LIBS+=" -latomic"
+		;;
+	ppc64*)	# no JIT on ppc64 and other build workarounds
+		configure_args+=" ENABLE_JIT=OFF USE_SYSTEM_MALLOC=ON ENABLE_ALLINONE_BUILD=OFF"
+		;;
+esac
+
+pre_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		# XXX: disable failing check for private headers and assume they are available
+		sed -i Source/cmake/OptionsQt.cmake \
+			-e 's;check_cxx_source_compiles("${INCLUDE_TEST_SOURCE}" \(Qt5${_qt_component}_PRIVATE_HEADER_FOUND\));set(\1 1);'
+	fi
 }
 
 qt5-webkit-devel_package() {
@@ -54,7 +50,8 @@ qt5-webkit-devel_package() {
 	pkg_install() {
 		vmove usr/include
 		vmove usr/lib/*.so
-		vmove usr/lib/*.prl
+		vmove usr/lib/cmake
 		vmove usr/lib/pkgconfig
+		vmove usr/lib/qt5/mkspecs
 	}
 }
