@@ -310,7 +310,8 @@ The following functions are defined by `xbps-src` and can be used on any templat
 
 	Installs `service` from `${FILESDIR}` to /etc/sv. The service must
 	be a directory containing at least a run script. Note the `supervise`
-	symlink will be created automatically by `vsv`.
+	symlink will be created automatically by `vsv` and that the run script
+	is automatically made executable by this function.
 	For further information on how to create a new service directory see
 	[The corresponding section the FAQ](http://smarden.org/runit/faq.html#create).
 
