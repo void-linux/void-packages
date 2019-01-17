@@ -42,7 +42,7 @@ _EOF
 	fi
 	cmake_args+=" -DCMAKE_INSTALL_PREFIX=/usr"
 
-	if [ -n "$XBPS_DEBUG_PKGS" ]; then
+	if [ -n "$XBPS_DEBUG_PKGS"] && [ -z $nodebug ]; then
 		cmake_args+=" -DCMAKE_BUILD_TYPE=RelWithDebInfo"
 	else
 		cmake_args+=" -DCMAKE_BUILD_TYPE=Release"
