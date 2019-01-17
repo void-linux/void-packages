@@ -47,6 +47,7 @@ ld = '${LD}'
 strip = '${STRIP}'
 readelf = '${READELF}'
 pkgconfig = 'pkg-config'
+rust = 'rustc'
 
 [properties]
 needs_exe_wrapper = true
@@ -63,6 +64,17 @@ cpu = '${_MESON_TARGET_CPU}'
 endian = '${_MESON_TARGET_ENDIAN}'
 EOF
 		configure_args+=" --cross-file=${meson_crossfile}"
+
+		# Fix building Rust apps
+		mkdir -p .cargo
+		cat > .cargo/config <<EOF
+[build]
+jobs = ${makejobs#*j}
+target = "${RUST_TARGET}"
+
+[target.${RUST_TARGET}]
+linker = "${CC}"
+EOF
 
 		# Meson tries to compile natively with CC, CXX, LD, AR 
 		# so when cross compiling, we need to set those to the 
