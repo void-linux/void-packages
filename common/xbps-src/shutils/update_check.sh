@@ -43,6 +43,7 @@ update_check() {
                 pkgname=${pkgname#perl-};;
             *pythonhosted.org*)
                 pkgname=${pkgname#python-}
+                pkgname=${pkgname#python3-}
                 url="https://pypi.org/simple/$pkgname";;
             *github.com*)
                 githubname="$(printf %s "$url" | cut -d/ -f4,5)"

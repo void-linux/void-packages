@@ -310,9 +310,20 @@ The following functions are defined by `xbps-src` and can be used on any templat
 
 	Installs `service` from `${FILESDIR}` to /etc/sv. The service must
 	be a directory containing at least a run script. Note the `supervise`
-	symlink will be created automatically by `vsv`.
+	symlink will be created automatically by `vsv` and that the run script
+	is automatically made executable by this function.
 	For further information on how to create a new service directory see
 	[The corresponding section the FAQ](http://smarden.org/runit/faq.html#create).
+
+- *vsed()* `vsed -i <file> -e <regex>`
+
+	Wrapper around sed that checks sha256sum of a file before and after running
+	the sed command to detect cases in which the sed call didn't change anything.
+	Takes any arbitrary amount of files and regexes by calling `-i file` and
+	`-e regex` repeatedly, at least one file and one regex must be specified.
+
+	Note that vsed will call the sed command for every regex specified against
+	every file specified, in the order that they are given.
 
 > Shell wildcards must be properly quoted, Example: `vmove "usr/lib/*.a"`.
 
@@ -553,6 +564,9 @@ by all supported architectures.
 
 - `nostrip` If set, the ELF binaries with debugging symbols won't be stripped. By
 default all binaries are stripped.
+
+- `nostrip_files` White-space separated list of ELF binaries that won't be stripped of
+debugging symbols.
 
 - `noshlibprovides` If set, the ELF binaries won't be inspected to collect the provided
 sonames in shared libraries.
@@ -1265,7 +1279,9 @@ at post-install time:
 - `pycompile_module`: this variable expects the python modules that should be `byte-compiled`
 at post-install time. Python modules are those that are installed into the `site-packages`
 prefix: `usr/lib/pythonX.X/site-packages`. Multiple python modules may be specified separated
-by blanks, Example: `pycompile_module="foo blah"`.
+by blanks, Example: `pycompile_module="foo blah"`. If a python module installs a file into
+`site-packages` rather than a directory, use the name of the file, Example:
+`pycompile_module="fnord.py"`.
 
 - `pycompile_dirs`: this variable expects the python directories that should be `byte-compiled`
 recursively by the target python version. This differs from `pycompile_module` in that any
@@ -1319,6 +1335,10 @@ The following variables influence how Go packages are built:
   packages; using a versioned distfile is preferred.
 - `go_build_tags`: An optional, space-separated list of build tags to
   pass to Go.
+- `go_mod_mode`: The module download mode to use. May be `off` to ignore
+  any go.mod files, `default` to use Go's default behavior, or anything
+  accepted by `go build -mod MODE`.  Defaults to `vendor` if there's
+  a vendor directory, otherwise `default`.
 
 Occasionally it is necessary to perform operations from within the Go
 source tree.  This is usually needed by programs using go-bindata or
@@ -1710,8 +1730,9 @@ anything unless it is defined.
 The system-accounts trigger is responsible for creating and disabling system accounts
 and groups.
 
-During removal it will disable the account by setting the Shell to /bin/false and appending
-' - for uninstalled package $pkgname' to the Description.
+During removal it will disable the account by setting the Shell to /bin/false,
+Home to /var/empty, and appending ' - for uninstalled package $pkgname' to the
+Description.
 Example: `transmission unprivileged user - for uninstalled package transmission`
 
 This trigger can only be used by using the `system_accounts` variable.

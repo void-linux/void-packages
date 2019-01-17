@@ -9,7 +9,7 @@ pkgname=gcc
 version=${_majorver}.0
 revision=8
 short_desc="The GNU C Compiler"
-maintainer="Juan RP <xtraeme@voidlinux.eu>"
+maintainer="Juan RP <xtraeme@voidlinux.org>"
 homepage="http://gcc.gnu.org"
 license="GFDL-1.2-or-later, GPL-3.0-or-later, LGPL-2.1-or-later"
 # *-musl builders have issues fetching https://ftp.gnu.org/gnu/mpc/mpc-1.1.0.tar.gz
@@ -96,6 +96,9 @@ case "$XBPS_TARGET_MACHINE" in
 	armv7l-musl) _triplet="armv7l-linux-musleabihf";;
 	aarch64) _triplet="aarch64-linux-gnu";;
 	aarch64-musl) _triplet="aarch64-linux-musl";;
+	ppc64le) _triplet="powerpc64le-linux-gnu";;
+	ppc64le-musl) _triplet="powerpc64le-linux-musl";;
+	ppc64-musl) _triplet="powerpc64-linux-musl";;
 	mips-musl) _triplet="mips-linux-musl";;
 	mipshf-musl) _triplet="mips-linux-muslhf";;
 	mipsel-musl) _triplet="mipsel-linux-musl";;
@@ -111,6 +114,9 @@ case "$XBPS_TARGET_MACHINE" in
 	i686*|x86_64*)
 		subpackages+=" libquadmath libquadmath-devel"
 		subpackages+=" libvtv libvtv-devel"
+		;;
+	ppc64le)
+		subpackages+=" libquadmath libquadmath-devel"
 		;;
 esac
 case "$XBPS_TARGET_MACHINE" in
@@ -169,10 +175,30 @@ do_configure() {
 			_args+=" --with-arch=armv8-a"
 			sed -i '/m64=/s/lib64/lib/' gcc/config/aarch64/t-aarch64-linux
 			;;
+		ppc64le*) # use lib not lib64 by default
+			_args+=" --with-cpu=powerpc64le --with-abi=elfv2"
+			sed -i '/OSDIRNAMES/s/lib64/lib/' gcc/config/rs6000/t-linux
+			sed -i '/m64=/s/lib64/lib/' gcc/config/rs6000/t-linux64
+			sed -i 's/lib64/lib/' gcc/config/rs6000/linux64.h
+			;;
+		ppc64*) # use lib not lib64 by default
+			_args+=" --with-cpu=powerpc64 --with-abi=elfv2"
+			sed -i '/OSDIRNAMES/s/lib64/lib/' gcc/config/rs6000/t-linux
+			sed -i '/m64=/s/lib64/lib/' gcc/config/rs6000/t-linux64
+			sed -i 's/lib64/lib/' gcc/config/rs6000/linux64.h
+			;;
 		x86_64*) # use lib not lib64 by default
 			sed -i '/m64=/s/lib64/lib/' gcc/config/i386/t-linux64
 			sed -i 's/lib64/lib/' gcc/config/i386/linux64.h
 			;;
+	esac
+
+	# fix: unknown long double size, cannot define BFP_FMT
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64le-musl|ppc64-musl)
+			_args+=" --enable-decimal-float=no --disable-libquadmath --enable-secureplt"
+		;;
+		*) ;;
 	esac
 
 	if [ -z "$CHROOT_READY" -o -n "$CROSS_BUILD" ]; then
@@ -216,6 +242,11 @@ do_configure() {
 			;;
 	esac
 
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*) _args+=" --disable-vtable-verify";;
+		*) _args+=" --enable-vtable-verify";;
+	esac
+
 	export CFLAGS="${CFLAGS/-D_FORTIFY_SOURCE=2/}"
 	export CXXFLAGS="${CXXFLAGS/-D_FORTIFY_SOURCE=2/}"
 
@@ -236,9 +267,7 @@ do_configure() {
 	_args+=" --enable-shared"
 	_args+=" --enable-lto"
 	_args+=" --enable-plugins"
-	_args+=" --enable-vtable-verify"
 	_args+=" --enable-linker-build-id"
-	_args+=" --enable-serial-configure"
 	_args+=" --disable-werror"
 	_args+=" --disable-nls"
 	_args+=" --enable-default-pie"
@@ -249,6 +278,12 @@ do_configure() {
 	_args+=" --with-linker-hash-style=$_hash"
 	_args+=" --disable-libunwind-exceptions"
 	_args+=" --disable-target-libiberty"
+
+	# --enable-serial-configure is broken when cross-compiling for
+	# some targets because it introduces make rule dependency cycles
+	if [ ! "$CROSS_BUILD" ]; then
+		_args+=" --enable-serial-configure"
+	fi
 
 	mkdir -p build
 	cd build
@@ -298,7 +333,7 @@ pre_install() {
 do_install() {
 	cd build
 	case "$XBPS_TARGET_MACHINE" in
-	x86_64*|aarch64*)
+	x86_64*|aarch64*|ppc64*)
 		vmkdir usr/lib
 		ln -sfr ${DESTDIR}/usr/lib ${DESTDIR}/usr/lib64
 		;;
@@ -344,7 +379,7 @@ do_install() {
 	done
 
 	case "$XBPS_TARGET_MACHINE" in
-		i686*|x86_64*) ;;
+		i686*|x86_64*|ppc64le) ;;
 		*) rm -f ${DESTDIR}/usr/share/info/libquadmath.info;;
 	esac
 }
