@@ -851,7 +851,7 @@ can choose one of the following:
 - `python3-module` to build Python 3.x only modules
 
 Environment variables for a specific `build_style` can be declared in a filename
-ending with .sh, in a directory matching the build_style name, Example:
+ending with .sh, in a directory matching the `build_style` name, Example:
 
     `common/environment/build-style/gnu-configure/gnu-configure.sh`
 
