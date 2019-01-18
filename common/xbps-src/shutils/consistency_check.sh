@@ -56,7 +56,7 @@ consistency_check_smart () {
         (
             XBPS_TARGET_PKG=$dep
             read_pkg
-            xbps-uhelper pkgmatch "$depdef" "${pkgname}-${version}_${revision}" && continue
+            xbps-uhelper pkgmatch "$depdef" "${pkgname}-${version}_${revision}" && return
             msg_red "unsatisfied $deplabel in $origname: $dep is $version, but required is $depdef\n";
         )
     done
@@ -70,7 +70,7 @@ consistency_check() {
             read_pkg
             [ "$depends" ] && printf "%s $pkgname depends\n" $depends
             [ "$conflicts" ] && printf "%s $pkgname conflicts\n" $conflicts
-            [ -L "$XBPS_SRCPKGDIR/$XBPS_TARGET_PKG" ] && continue
+            [ -L "$XBPS_SRCPKGDIR/$XBPS_TARGET_PKG" ] && return
             [ "$makedepends" ] && printf "%s $pkgname makedepends\n" $makedepends
             [ "$hostmakedepends" ] && printf "%s $pkgname hostmakedepends\n" $hostmakedepends
             [ "$checkdepends" ] && printf "%s $pkgname checkdepends\n" $checkdepends
