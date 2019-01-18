@@ -42,7 +42,10 @@ if [ "$sourcepkg" != "$PKGNAME" ]; then
     pkgname=$PKGNAME
 fi
 
-source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
+# Source all files under the build-style directory
+for f in $XBPS_COMMONDIR/environment/build-style/${build_style}/*.sh; do
+    source_file $f
+done
 setup_pkg_depends $pkgname
 run_pkg_hooks pre-pkg
 

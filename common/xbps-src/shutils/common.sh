@@ -578,5 +578,7 @@ setup_pkg() {
         mkdir -p $XBPS_WRAPPERDIR
     fi
 
-    source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
+    for f in $XBPS_COMMONDIR/environment/build-style/${build_style}/*.sh; do
+        source_file $f
+    done
 }
