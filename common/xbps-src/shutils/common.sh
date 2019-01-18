@@ -326,9 +326,6 @@ setup_pkg() {
     export XBPS_INSTALL_XCMD XBPS_QUERY_XCMD XBPS_RECONFIGURE_XCMD \
         XBPS_REMOVE_XCMD XBPS_RINDEX_XCMD XBPS_UHELPER_XCMD
 
-    export XBPS_GCC_VERSION_MAJOR XBPS_GCC_VERSION_MINOR XBPS_GCC_VERSION_BUILD \
-        XBPS_GCC_VERSION
-
     # Source all sourcepkg environment setup snippets.
     # Source all subpkg environment setup snippets.
     for f in ${XBPS_COMMONDIR}/environment/setup-subpkg/*.sh; do
