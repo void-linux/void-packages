@@ -2,18 +2,6 @@
 # This helper is for building rust projects which use cargo for building
 #
 
-do_configure() {
-	mkdir -p ${HOME}/.cargo
-	# respect makejobs, do cross stuff
-	cat > ${HOME}/.cargo/config <<EOF
-[build]
-jobs = ${makejobs#*j}
-
-[target.${RUST_TARGET}]
-linker = "${CC}"
-EOF
-}
-
 do_build() {
 	: ${make_cmd:=cargo}
 
