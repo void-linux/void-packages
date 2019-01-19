@@ -539,7 +539,7 @@ setup_pkg() {
         export NM="nm"
         export READELF="readelf"
         export RUST_TARGET="$XBPS_RUST_TARGET"
-        # Unse cross evironment variables
+        # Unset cross evironment variables
         unset CC_target CXX_target CPP_target GCC_target FC_target LD_target AR_target AS_target
         unset RANLIB_target STRIP_target OBJDUMP_target OBJCOPY_target NM_target READELF_target
         unset CFLAGS_target CXXFLAGS_target CPPFLAGS_target LDFLAGS_target
