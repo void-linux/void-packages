@@ -528,6 +528,7 @@ setup_pkg() {
         export RUSTFLAGS="$XBPS_CROSS_RUSTFLAGS"
         # Rust target, which differs from our triplets
         export RUST_TARGET="$XBPS_CROSS_RUST_TARGET"
+
         # Define equivalent of TOML config in environment
         # [target.${RUST_TARGET}]
         # linker = ${CC}
@@ -535,6 +536,11 @@ setup_pkg() {
         _XBPS_CROSS_RUST_TARGET_ENV="${_XBPS_CROSS_RUST_TARGET_ENV//-/_}"
         export CARGO_TARGET_${_XBPS_CROSS_RUST_TARGET_ENV}_LINKER="$CC"
         unset _XBPS_CROSS_RUST_TARGET_ENV
+
+        # Define equivalent of TOML config in environment
+        # [build]
+        # target = ${RUST_TARGET}
+        export CARGO_BUILD_TARGET="$RUST_TARGET"
     else
         export CC="cc"
         export CXX="g++"
