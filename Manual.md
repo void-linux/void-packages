@@ -369,6 +369,8 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_CROSS_BASE` Full path to where cross-compile dependencies are installed, varies according to the target architecture triplet. i.e `aarch64` -> `aarch64-unknown-linux-gnu`.
 
+- `XBPS_RUST_TARGET` The target architecture triplet used by `rustc` and `cargo`.
+
 <a id="available_vars"></a>
 ### Available variables
 
