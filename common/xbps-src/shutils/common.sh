@@ -468,6 +468,20 @@ setup_pkg() {
     # jobs = $XBPS_MAKEJOBS
     export CARGO_BUILD_JOBS="$XBPS_MAKEJOBS"
 
+    # For cross-compiling rust -sys crates
+    export PKG_CONFIG_ALLOW_CROSS=1
+
+    # libgit2-sys
+    export LIBGIT2_SYS_USE_PKG_CONFIG=1
+
+    # gettext-rs
+    export GETTEXT_BIN_DIR=/usr/bin
+    export GETTEXT_LIB_DIR="${XBPS_CROSS_BASE}/usr/lib/gettext"
+    export GETTEXT_INCLUDE_DIR="${XBPS_CROSS_BASE}/usr/include"
+
+    # libssh2-sys
+    export LIBSSH2_SYS_USE_PKG_CONFIG=1 
+
     if [ -n "$cross" ]; then
         # Regular tools names
         export CC="${XBPS_CROSS_TRIPLET}-gcc"
