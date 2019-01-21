@@ -17,6 +17,9 @@ show_pkg() {
     [ -n "$homepage" ] && echo "Upstream URL:	$homepage"
     [ -n "$license" ] && echo "License(s):	$license"
     [ -n "$build_style" ] && echo "build_style:	$build_style"
+    for i in $build_helper; do
+        [ -n "$i" ] && echo "build_helper:  $i"
+    done
     for i in ${configure_args}; do
         [ -n "$i" ] && echo "configure_args:	$i"
     done
