@@ -658,6 +658,8 @@ that shouldn't remove the kernel files when they are removed in case it might br
 user's booting and module loading. Otherwise in the majority of cases it should not be
 used.
 
+- `fetch_cmd` Executable to be used to fetch URLs in `distfiles` during the `do_fetch` phase.
+
 <a id="explain_depends"></a>
 #### About the many types of `depends` variable.
 
