@@ -463,11 +463,6 @@ setup_pkg() {
     export LDFLAGS_FOR_BUILD="$XBPS_LDFLAGS"
     export FFLAGS_FOR_BUILD="$XBPS_FFLAGS"
 
-    # Define equivalent of TOML config in environment
-    # [build]
-    # jobs = $XBPS_MAKEJOBS
-    export CARGO_BUILD_JOBS="$XBPS_MAKEJOBS"
-
     if [ -n "$cross" ]; then
         # Regular tools names
         export CC="${XBPS_CROSS_TRIPLET}-gcc"
@@ -528,19 +523,6 @@ setup_pkg() {
         export RUSTFLAGS="$XBPS_CROSS_RUSTFLAGS"
         # Rust target, which differs from our triplets
         export RUST_TARGET="$XBPS_CROSS_RUST_TARGET"
-
-        # Define equivalent of TOML config in environment
-        # [target.${RUST_TARGET}]
-        # linker = ${CC}
-        _XBPS_CROSS_RUST_TARGET_ENV="${XBPS_CROSS_RUST_TARGET^^}"
-        _XBPS_CROSS_RUST_TARGET_ENV="${_XBPS_CROSS_RUST_TARGET_ENV//-/_}"
-        export CARGO_TARGET_${_XBPS_CROSS_RUST_TARGET_ENV}_LINKER="$CC"
-        unset _XBPS_CROSS_RUST_TARGET_ENV
-
-        # Define equivalent of TOML config in environment
-        # [build]
-        # target = ${RUST_TARGET}
-        export CARGO_BUILD_TARGET="$RUST_TARGET"
     else
         export CC="cc"
         export CXX="g++"
