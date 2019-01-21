@@ -597,4 +597,12 @@ setup_pkg() {
     fi
 
     source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
+
+    # Source all build-class files that are defined
+    for f in $build_helper; do
+        if [ ! -r $XBPS_BUILDHELPERDIR/${f}.sh ];  then
+            msg_error "$pkgver: cannot find build helper $XBPS_BUILDHELPERDIR/${f}.sh!\n"
+        fi
+        . $XBPS_BUILDHELPERDIR/${f}.sh
+    done
 }
