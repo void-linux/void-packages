@@ -51,7 +51,7 @@ ld = '${LD}'
 strip = '${STRIP}'
 readelf = '${READELF}'
 pkgconfig = 'pkg-config'
-rustc = 'rustc'
+rust = 'rustc'
 
 [properties]
 needs_exe_wrapper = true
