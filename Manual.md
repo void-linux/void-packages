@@ -490,6 +490,9 @@ binaries sources or when the program is written in assembly. Example:
 - `build_style` This specifies the `build method` for a package. Read below to know more
 about the available package `build methods` or effect of leaving this not set.
 
+- `build_helper` Whitespace-separated list of files in `common/build-helper` to be
+sourced and its variables be made available on the template. i.e. `build_helper="rust"`.
+
 - `configure_script` The name of the `configure` script to execute at the `configure` phase if
 `${build_style}` is set to `configure` or `gnu-configure` build methods.
 By default set to `./configure`.
