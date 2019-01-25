@@ -199,6 +199,10 @@ install_pkg_deps() {
 
     [ -n "$build_style" ] && style=" [$build_style]"
 
+    for s in $build_helper; do
+        style+=" [$s]"
+    done
+
     if [ "$pkg" != "$targetpkg" ]; then
         msg_normal "$pkgver: building${style} (dependency of $targetpkg) ...\n"
     else
