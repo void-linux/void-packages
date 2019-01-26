@@ -58,15 +58,14 @@ show_avail() {
     check_pkg_arch "$XBPS_CROSS_BUILD" 2>/dev/null
 }
 
-show_pkg_build_deps() {
+show_pkg_build_depends() {
     local f x _pkgname _srcpkg _dep found result
-
-    setup_pkg_depends
+    local _deps="$1"
 
     result=$(mktemp || exit 1)
 
     # build time deps
-    for f in ${host_build_depends} ${build_depends} ${run_depends}; do
+    for f in ${_deps}; do
         # ignore virtual deps
         local _rpkg="${f%\?*}"
         local _vpkg="${f#*\?}"
@@ -105,6 +104,20 @@ show_pkg_build_deps() {
     rm -f $result
 }
 
+show_pkg_build_deps() {
+    setup_pkg_depends
+    show_pkg_build_depends "${host_build_depends} ${build_depends} ${run_depends}"
+}
+
+show_pkg_hostmakedepends() {
+    setup_pkg_depends
+    show_pkg_build_depends "${host_build_depends}"
+}
+
+show_pkg_makedepends() {
+    setup_pkg_depends
+    show_pkg_build_depends "${build_depends}"
+}
 
 show_pkg_build_options() {
     local f opt desc
