@@ -39,6 +39,19 @@ do_configure() {
 				;;
 		esac
 
+		# Check if we are compiling from x86_64 to i686 and disable
+		# the need_exe_wrapper, remeber that glibc and musl binaries
+		# can't be run against eachother, so don't match with globs
+		_NEEDS_EXE_WRAPPER=true
+
+		if [ "$XBPS_TARGET_MACHINE" = 'i686' ] && [ "$XBPS_MACHINE" = 'x86_64' ]; then
+			_NEEDS_EXE_WRAPPER=false
+		fi
+
+		if [ "$XBPS_TARGET_MACHINE" = 'i686-musl' ] && [ "$XBPS_MACHINE" = 'x86_64-musl' ]; then
+			_NEEDS_EXE_WRAPPER=false
+		fi
+
 		# Record cross-compiling information in cross file.
 		# CFLAGS and LDFLAGS must be set as c_args and c_link_args.
 		cat > ${meson_crossfile} <<EOF
@@ -54,7 +67,7 @@ pkgconfig = 'pkg-config'
 rust = 'rustc'
 
 [properties]
-needs_exe_wrapper = true
+needs_exe_wrapper = ${_NEEDS_EXE_WRAPPER}
 c_args = ['$(echo ${CFLAGS} | sed -r "s/\s+/','/g")']
 c_link_args = ['$(echo ${LDFLAGS} | sed -r "s/\s+/','/g")']
 
