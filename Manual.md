@@ -938,6 +938,17 @@ still be passed in if it's a GNU configure script.
 > A function defined in a template has preference over the same function
 defined by a `build_style` script.
 
+Current working directory for functions is set as follows:
+
+- For pre_fetch, pre_extract, do_clean: `<masterdir>`.
+
+- For do_fetch, post_fetch: `XBPS_BUILDDIR`.
+
+- For do_extract, post_extract: `wrksrc`.
+
+- For pre_configure through post_install: `build_wrksrc`
+if it is defined, otherwise `wrksrc`.
+
 <a id="build_options"></a>
 ### Build options
 
