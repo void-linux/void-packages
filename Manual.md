@@ -880,7 +880,13 @@ for compiling cargo -sys crates.
 The following functions can be defined to change the behavior of how the
 package is downloaded, compiled and installed.
 
+- `pre_fetch()` Actions to execute before `do_fetch()`.
+
 - `do_fetch()` if defined and `distfiles` is not set, use it to fetch the required sources.
+
+- `post_fetch()` Actions to execute after `do_fetch()`.
+
+- `pre_extract()` Actions to execute after `post_fetch()`.
 
 - `do_extract()` if defined and `distfiles` is not set, use it to extract the required sources.
 
