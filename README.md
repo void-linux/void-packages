@@ -114,6 +114,17 @@ those defined in `etc/defaults.conf`, set them on `etc/conf` instead i.e:
     $ echo 'XBPS_CFLAGS="your flags here"' >> etc/conf
     $ echo 'XBPS_LDFLAGS="your flags here"' >> etc/conf
 
+Some common options:
+
+- `XBPS_CFLAGS`, `XBPS_CXXFLAGS`, `XBPS_LDFLAGS`: define common compiler flags
+   to use when building packages.
+- `XBPS_ALLOW_RESTRICTED`: allow xbps-src to build packages that are flagged
+   as restricted. This is disabled by default.
+- `XBPS_CHECK_PKGS`: run the (optional) `do_check()` function of packages which
+   runs tests on the package after building. This is disabled by default.
+- `XBPS_MAKEJOBS`: allow parallel builds of packages that use make or similar
+   tools.
+
 Native and cross compiler/linker flags are set per architecture in `common/build-profiles`
 and `common/cross-profiles` respectively. Ideally those settings are good enough by default,
 and there's no need to set your own unless you know what you are doing.
