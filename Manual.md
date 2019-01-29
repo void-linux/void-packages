@@ -874,6 +874,9 @@ The current list of available `build_helper` scripts is the following:
 - `rust` specifies environment variables required for cross-compiling crates via cargo and
 for compiling cargo -sys crates.
 
+- `gir` specifies dependencies for native and cross builds to deal with
+GObject Introspection
+
 <a id="functions"></a>
 ### Functions
 
