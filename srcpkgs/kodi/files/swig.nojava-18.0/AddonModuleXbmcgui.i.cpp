@@ -1,24 +1,11 @@
 
 
 /*
- *      Copyright (C) 2005-2013 Team XBMC
- *      http://xbmc.org
+ *  Copyright (C) 2005-2018 Team Kodi
+ *  This file is part of Kodi - https://kodi.tv
  *
- *  This Program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2, or (at your option)
- *  any later version.
- *
- *  This Program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
- *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
- *  http://www.gnu.org/copyleft/gpl.html
- *
+ *  SPDX-License-Identifier: GPL-2.0-or-later
+ *  See LICENSES/README.md for more information.
  */
 
 // ************************************************************************
@@ -36,6 +23,10 @@
 #include "interfaces/python/PyContext.h"
 
 
+#if defined(TARGET_WINDOWS)
+#  include <windows.h>
+#endif
+
 #include "interfaces/legacy/Dialog.h"
 #include "interfaces/legacy/ModuleXbmcgui.h"
 #include "interfaces/legacy/Control.h"
@@ -43,12 +34,13 @@
 #include "interfaces/legacy/WindowDialog.h"
 #include "interfaces/legacy/Dialog.h"
 #include "interfaces/legacy/WindowXML.h"
+#include "input/actions/ActionIDs.h"
 #include "input/Key.h"
 
 using namespace XBMCAddon;
 using namespace xbmcgui;
 
-#if defined(__GNUG__) && (__GNUC__>4) || (__GNUC__==4 && __GNUC_MINOR__>=2)
+#if defined(__GNUG__)
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #endif
 
@@ -173,20 +165,20 @@ namespace PythonBindings
   //=========================================================================
 
   //=========================================================================
-  // These variables define the type XBMCAddon::xbmc::InfoTagVideo from another module 
+  // These variables define the type XBMCAddon::xbmc::InfoTagVideo from another module
   extern TypeInfo TyXBMCAddon_xbmc_InfoTagVideo_Type;
   //=========================================================================
 
   //=========================================================================
-  // These variables define the type xbmc::InfoTagMusic from another module 
+  // These variables define the type xbmc::InfoTagMusic from another module
   extern TypeInfo Tyxbmc_InfoTagMusic_Type;
   //=========================================================================
 
 
 
   //=========================================================================
-  // This class is the Director for XBMCAddon::xbmcgui::Window. 
-  // It provides the "reverse bridge" from C++ to Python to support 
+  // This class is the Director for XBMCAddon::xbmcgui::Window.
+  // It provides the "reverse bridge" from C++ to Python to support
   // cross-language polymorphism.
   //=========================================================================
   class XBMCAddon_xbmcgui_Window_Director : public Director, public XBMCAddon::xbmcgui::Window
@@ -200,7 +192,8 @@ namespace PythonBindings
         PyObject* pyaction = NULL;
         pyaction = makePythonInstance(action,true);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onAction",(char*)"(O)", pyaction );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onAction"),const_cast<char*>("(O)"), pyaction );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -210,7 +203,8 @@ namespace PythonBindings
         PyObject* pycontrol = NULL;
         pycontrol = makePythonInstance(control,true);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onControl",(char*)"(O)", pycontrol );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onControl"),const_cast<char*>("(O)"), pycontrol );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -218,9 +212,10 @@ namespace PythonBindings
       virtual void  onClick(  int  controlId  )
       { 
         PyObject* pycontrolId = NULL;
-        pycontrolId = Py_BuildValue((char*)"i", controlId);
+        pycontrolId = Py_BuildValue("i", controlId);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onClick",(char*)"(O)", pycontrolId );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onClick"),const_cast<char*>("(O)"), pycontrolId );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -228,9 +223,10 @@ namespace PythonBindings
       virtual void  onDoubleClick(  int  controlId  )
       { 
         PyObject* pycontrolId = NULL;
-        pycontrolId = Py_BuildValue((char*)"i", controlId);
+        pycontrolId = Py_BuildValue("i", controlId);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onDoubleClick",(char*)"(O)", pycontrolId );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onDoubleClick"),const_cast<char*>("(O)"), pycontrolId );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -238,9 +234,10 @@ namespace PythonBindings
       virtual void  onFocus(  int  controlId  )
       { 
         PyObject* pycontrolId = NULL;
-        pycontrolId = Py_BuildValue((char*)"i", controlId);
+        pycontrolId = Py_BuildValue("i", controlId);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onFocus",(char*)"(O)", pycontrolId );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onFocus"),const_cast<char*>("(O)"), pycontrolId );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -248,7 +245,8 @@ namespace PythonBindings
       virtual void  onInit(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onInit",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onInit"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -256,8 +254,8 @@ namespace PythonBindings
   };
 
   //=========================================================================
-  // This class is the Director for XBMCAddon::xbmcgui::WindowDialog. 
-  // It provides the "reverse bridge" from C++ to Python to support 
+  // This class is the Director for XBMCAddon::xbmcgui::WindowDialog.
+  // It provides the "reverse bridge" from C++ to Python to support
   // cross-language polymorphism.
   //=========================================================================
   class XBMCAddon_xbmcgui_WindowDialog_Director : public Director, public XBMCAddon::xbmcgui::WindowDialog
@@ -271,7 +269,8 @@ namespace PythonBindings
         PyObject* pyaction = NULL;
         pyaction = makePythonInstance(action,true);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onAction",(char*)"(O)", pyaction );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onAction"),const_cast<char*>("(O)"), pyaction );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -281,7 +280,8 @@ namespace PythonBindings
         PyObject* pycontrol = NULL;
         pycontrol = makePythonInstance(control,true);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onControl",(char*)"(O)", pycontrol );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onControl"),const_cast<char*>("(O)"), pycontrol );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -289,9 +289,10 @@ namespace PythonBindings
       virtual void  onClick(  int  controlId  )
       { 
         PyObject* pycontrolId = NULL;
-        pycontrolId = Py_BuildValue((char*)"i", controlId);
+        pycontrolId = Py_BuildValue("i", controlId);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onClick",(char*)"(O)", pycontrolId );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onClick"),const_cast<char*>("(O)"), pycontrolId );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -299,9 +300,10 @@ namespace PythonBindings
       virtual void  onDoubleClick(  int  controlId  )
       { 
         PyObject* pycontrolId = NULL;
-        pycontrolId = Py_BuildValue((char*)"i", controlId);
+        pycontrolId = Py_BuildValue("i", controlId);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onDoubleClick",(char*)"(O)", pycontrolId );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onDoubleClick"),const_cast<char*>("(O)"), pycontrolId );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -309,9 +311,10 @@ namespace PythonBindings
       virtual void  onFocus(  int  controlId  )
       { 
         PyObject* pycontrolId = NULL;
-        pycontrolId = Py_BuildValue((char*)"i", controlId);
+        pycontrolId = Py_BuildValue("i", controlId);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onFocus",(char*)"(O)", pycontrolId );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onFocus"),const_cast<char*>("(O)"), pycontrolId );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -319,7 +322,8 @@ namespace PythonBindings
       virtual void  onInit(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onInit",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onInit"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -327,22 +331,23 @@ namespace PythonBindings
   };
 
   //=========================================================================
-  // This class is the Director for XBMCAddon::xbmcgui::WindowXML. 
-  // It provides the "reverse bridge" from C++ to Python to support 
+  // This class is the Director for XBMCAddon::xbmcgui::WindowXML.
+  // It provides the "reverse bridge" from C++ to Python to support
   // cross-language polymorphism.
   //=========================================================================
   class XBMCAddon_xbmcgui_WindowXML_Director : public Director, public XBMCAddon::xbmcgui::WindowXML
   {
     public:
 
-      inline XBMCAddon_xbmcgui_WindowXML_Director(XBMCAddon::String const & xmlFilename, XBMCAddon::String const & scriptPath, XBMCAddon::String const & defaultSkin, XBMCAddon::String const & defaultRes ) : XBMCAddon::xbmcgui::WindowXML( xmlFilename,  scriptPath,  defaultSkin,  defaultRes ) { } 
+      inline XBMCAddon_xbmcgui_WindowXML_Director(XBMCAddon::String const & xmlFilename, XBMCAddon::String const & scriptPath, XBMCAddon::String const & defaultSkin, XBMCAddon::String const & defaultRes, bool  isMedia ) : XBMCAddon::xbmcgui::WindowXML( xmlFilename,  scriptPath,  defaultSkin,  defaultRes,  isMedia ) { } 
 
       virtual void  onAction(  XBMCAddon::xbmcgui::Action * action  )
       { 
         PyObject* pyaction = NULL;
         pyaction = makePythonInstance(action,true);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onAction",(char*)"(O)", pyaction );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onAction"),const_cast<char*>("(O)"), pyaction );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -352,7 +357,8 @@ namespace PythonBindings
         PyObject* pycontrol = NULL;
         pycontrol = makePythonInstance(control,true);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onControl",(char*)"(O)", pycontrol );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onControl"),const_cast<char*>("(O)"), pycontrol );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -360,9 +366,10 @@ namespace PythonBindings
       virtual void  onClick(  int  controlId  )
       { 
         PyObject* pycontrolId = NULL;
-        pycontrolId = Py_BuildValue((char*)"i", controlId);
+        pycontrolId = Py_BuildValue("i", controlId);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onClick",(char*)"(O)", pycontrolId );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onClick"),const_cast<char*>("(O)"), pycontrolId );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -370,9 +377,10 @@ namespace PythonBindings
       virtual void  onDoubleClick(  int  controlId  )
       { 
         PyObject* pycontrolId = NULL;
-        pycontrolId = Py_BuildValue((char*)"i", controlId);
+        pycontrolId = Py_BuildValue("i", controlId);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onDoubleClick",(char*)"(O)", pycontrolId );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onDoubleClick"),const_cast<char*>("(O)"), pycontrolId );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -380,9 +388,10 @@ namespace PythonBindings
       virtual void  onFocus(  int  controlId  )
       { 
         PyObject* pycontrolId = NULL;
-        pycontrolId = Py_BuildValue((char*)"i", controlId);
+        pycontrolId = Py_BuildValue("i", controlId);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onFocus",(char*)"(O)", pycontrolId );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onFocus"),const_cast<char*>("(O)"), pycontrolId );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -390,7 +399,8 @@ namespace PythonBindings
       virtual void  onInit(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onInit",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onInit"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -398,8 +408,8 @@ namespace PythonBindings
   };
 
   //=========================================================================
-  // This class is the Director for XBMCAddon::xbmcgui::WindowXMLDialog. 
-  // It provides the "reverse bridge" from C++ to Python to support 
+  // This class is the Director for XBMCAddon::xbmcgui::WindowXMLDialog.
+  // It provides the "reverse bridge" from C++ to Python to support
   // cross-language polymorphism.
   //=========================================================================
   class XBMCAddon_xbmcgui_WindowXMLDialog_Director : public Director, public XBMCAddon::xbmcgui::WindowXMLDialog
@@ -413,7 +423,8 @@ namespace PythonBindings
         PyObject* pyaction = NULL;
         pyaction = makePythonInstance(action,true);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onAction",(char*)"(O)", pyaction );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onAction"),const_cast<char*>("(O)"), pyaction );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -423,7 +434,8 @@ namespace PythonBindings
         PyObject* pycontrol = NULL;
         pycontrol = makePythonInstance(control,true);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onControl",(char*)"(O)", pycontrol );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onControl"),const_cast<char*>("(O)"), pycontrol );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -431,9 +443,10 @@ namespace PythonBindings
       virtual void  onClick(  int  controlId  )
       { 
         PyObject* pycontrolId = NULL;
-        pycontrolId = Py_BuildValue((char*)"i", controlId);
+        pycontrolId = Py_BuildValue("i", controlId);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onClick",(char*)"(O)", pycontrolId );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onClick"),const_cast<char*>("(O)"), pycontrolId );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -441,9 +454,10 @@ namespace PythonBindings
       virtual void  onDoubleClick(  int  controlId  )
       { 
         PyObject* pycontrolId = NULL;
-        pycontrolId = Py_BuildValue((char*)"i", controlId);
+        pycontrolId = Py_BuildValue("i", controlId);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onDoubleClick",(char*)"(O)", pycontrolId );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onDoubleClick"),const_cast<char*>("(O)"), pycontrolId );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -451,9 +465,10 @@ namespace PythonBindings
       virtual void  onFocus(  int  controlId  )
       { 
         PyObject* pycontrolId = NULL;
-        pycontrolId = Py_BuildValue((char*)"i", controlId);
+        pycontrolId = Py_BuildValue("i", controlId);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onFocus",(char*)"(O)", pycontrolId );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onFocus"),const_cast<char*>("(O)"), pycontrolId );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -461,7 +476,8 @@ namespace PythonBindings
       virtual void  onInit(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onInit",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onInit"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -476,17 +492,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (long )XBMCAddon::xbmcgui::getCurrentWindowId(  );
+      apiResult = XBMCAddon::xbmcgui::getCurrentWindowId(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -514,17 +530,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (long )XBMCAddon::xbmcgui::getCurrentWindowDialogId(  );
+      apiResult = XBMCAddon::xbmcgui::getCurrentWindowDialogId(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -533,6 +549,82 @@ namespace PythonBindings
     {
       CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"XBMCAddon::xbmcgui::getCurrentWindowDialogId\"");
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::getCurrentWindowDialogId\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    result = PyInt_FromLong(apiResult);
+
+    return result; 
+  } 
+
+  static PyObject* xbmcgui_getScreenHeight (PyObject* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+    long  apiResult;
+    try
+    {
+
+      XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
+      apiResult = XBMCAddon::xbmcgui::getScreenHeight(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"XBMCAddon::xbmcgui::getScreenHeight\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::getScreenHeight\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    result = PyInt_FromLong(apiResult);
+
+    return result; 
+  } 
+
+  static PyObject* xbmcgui_getScreenWidth (PyObject* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+    long  apiResult;
+    try
+    {
+
+      XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
+      apiResult = XBMCAddon::xbmcgui::getScreenWidth(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"XBMCAddon::xbmcgui::getScreenWidth\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::getScreenWidth\""); 
       return NULL; 
     }
 
@@ -554,28 +646,31 @@ namespace PythonBindings
           "iconImage",
           "thumbnailImage",
           "path",
+          "offscreen",
           NULL};
-         
+
     std::string  label  = XBMCAddon::emptyString;
-    PyObject* pylabel = NULL;         
+    PyObject* pylabel = NULL;
     std::string  label2  = XBMCAddon::emptyString;
-    PyObject* pylabel2 = NULL;         
+    PyObject* pylabel2 = NULL;
     std::string  iconImage  = XBMCAddon::emptyString;
-    PyObject* pyiconImage = NULL;         
+    PyObject* pyiconImage = NULL;
     std::string  thumbnailImage  = XBMCAddon::emptyString;
-    PyObject* pythumbnailImage = NULL;         
+    PyObject* pythumbnailImage = NULL;
     std::string  path  = XBMCAddon::emptyString;
     PyObject* pypath = NULL;
+    bool  offscreen  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|OOOOO",
-       (char**)keywords,
+       "|OOOOOb",
+       const_cast<char**>(keywords),
          &pylabel,
          &pylabel2,
          &pyiconImage,
          &pythumbnailImage,
-         &pypath
+         &pypath,
+         &offscreen
        ))
     {
       return NULL;
@@ -591,17 +686,17 @@ namespace PythonBindings
       if (pypath) PyXBMCGetUnicodeString(path,pypath,false,"path","ListItem"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::ListItem *)new XBMCAddon::xbmcgui::ListItem(  label,  label2,  iconImage,  thumbnailImage,  path  );
+      apiResult = new XBMCAddon::xbmcgui::ListItem(  label,  label2,  iconImage,  thumbnailImage,  path,  offscreen  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -624,21 +719,21 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_getLabel (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getLabel","XBMCAddon::xbmcgui::ListItem"))-> getLabel(  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getLabel","XBMCAddon::xbmcgui::ListItem"))-> getLabel(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -661,21 +756,21 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_getLabel2 (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getLabel2","XBMCAddon::xbmcgui::ListItem"))-> getLabel2(  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getLabel2","XBMCAddon::xbmcgui::ListItem"))-> getLabel2(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -702,14 +797,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "label",
           NULL};
-         
+
     std::string  label ;
     PyObject* pylabel = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pylabel
        ))
     {
@@ -725,13 +820,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -759,14 +854,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "label",
           NULL};
-         
+
     std::string  label ;
     PyObject* pylabel = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pylabel
        ))
     {
@@ -782,13 +877,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -816,14 +911,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "iconImage",
           NULL};
-         
+
     std::string  iconImage ;
     PyObject* pyiconImage = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pyiconImage
        ))
     {
@@ -839,13 +934,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -873,14 +968,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "thumbFilename",
           NULL};
-         
+
     std::string  thumbFilename ;
     PyObject* pythumbFilename = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pythumbFilename
        ))
     {
@@ -896,13 +991,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -930,14 +1025,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "dictionary",
           NULL};
-         
+
     XBMCAddon::Dictionary< XBMCAddon::StringOrInt  >  dictionary ;
     PyObject* pydictionary = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pydictionary
        ))
     {
@@ -965,13 +1060,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -992,22 +1087,81 @@ namespace PythonBindings
     return result; 
   } 
 
+  static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_setIsFolder (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+
+    static const char *keywords[] = {
+          "isFolder",
+          NULL};
+
+    bool  isFolder ;
+    if (!PyArg_ParseTupleAndKeywords(
+       args,
+       kwds,
+       "b",
+       const_cast<char**>(keywords),
+         &isFolder
+       ))
+    {
+      return NULL;
+    }
+
+
+    try
+    {
+
+      ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"setIsFolder","XBMCAddon::xbmcgui::ListItem"))-> setIsFolder(  isFolder  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"setIsFolder\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"setIsFolder\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    Py_INCREF(Py_None);
+    result = Py_None;
+
+    return result; 
+  } 
+
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_setUniqueIDs (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
 
     static const char *keywords[] = {
           "dictionary",
+          "defaultrating",
           NULL};
-         
+
     XBMCAddon::Dictionary< XBMCAddon::StringOrInt  >  dictionary ;
     PyObject* pydictionary = NULL;
+    std::string  defaultrating  = "";
+    PyObject* pydefaultrating = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
-         &pydictionary
+       "O|O",
+       const_cast<char**>(keywords),
+         &pydictionary,
+         &pydefaultrating
        ))
     {
       return NULL;
@@ -1029,18 +1183,19 @@ namespace PythonBindings
         dictionary[key] = value;
       }
     } 
+      if (pydefaultrating) PyXBMCGetUnicodeString(defaultrating,pydefaultrating,false,"defaultrating","setUniqueIDs"); 
 
-      ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"setUniqueIDs","XBMCAddon::xbmcgui::ListItem"))-> setUniqueIDs(  dictionary  );
+      ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"setUniqueIDs","XBMCAddon::xbmcgui::ListItem"))-> setUniqueIDs(  dictionary,  defaultrating  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1071,17 +1226,17 @@ namespace PythonBindings
           "votes",
           "defaultt",
           NULL};
-         
+
     std::string  type ;
-    PyObject* pytype = NULL;         
-    float  rating ;         
-    int  votes  = 0;         
+    PyObject* pytype = NULL;
+    float  rating ;
+    int  votes  = 0;
     bool  defaultt  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"Of|ib",
-       (char**)keywords,
+       "Of|ib",
+       const_cast<char**>(keywords),
          &pytype,
          &rating,
          &votes,
@@ -1100,13 +1255,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1127,6 +1282,66 @@ namespace PythonBindings
     return result; 
   } 
 
+  static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_addSeason (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+
+    static const char *keywords[] = {
+          "number",
+          "name",
+          NULL};
+
+    int  number ;
+    std::string  name  = "";
+    PyObject* pyname = NULL;
+    if (!PyArg_ParseTupleAndKeywords(
+       args,
+       kwds,
+       "i|O",
+       const_cast<char**>(keywords),
+         &number,
+         &pyname
+       ))
+    {
+      return NULL;
+    }
+
+
+    try
+    {
+      if (pyname) PyXBMCGetUnicodeString(name,pyname,false,"name","addSeason"); 
+
+      ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"addSeason","XBMCAddon::xbmcgui::ListItem"))-> addSeason(  number,  name  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"addSeason\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"addSeason\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    Py_INCREF(Py_None);
+    result = Py_None;
+
+    return result; 
+  } 
+
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_getArt (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
@@ -1134,34 +1349,34 @@ namespace PythonBindings
     static const char *keywords[] = {
           "key",
           NULL};
-         
-    char * key ;
+
+    char * key  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &key
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getArt","XBMCAddon::xbmcgui::ListItem"))-> getArt(  key  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getArt","XBMCAddon::xbmcgui::ListItem"))-> getArt(  key  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1188,34 +1403,34 @@ namespace PythonBindings
     static const char *keywords[] = {
           "key",
           NULL};
-         
-    char * key ;
+
+    char * key  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &key
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getUniqueID","XBMCAddon::xbmcgui::ListItem"))-> getUniqueID(  key  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getUniqueID","XBMCAddon::xbmcgui::ListItem"))-> getUniqueID(  key  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1242,13 +1457,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "key",
           NULL};
-         
-    char * key ;
+
+    char * key  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &key
        ))
     {
@@ -1259,17 +1474,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (float )((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getRating","XBMCAddon::xbmcgui::ListItem"))-> getRating(  key  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getRating","XBMCAddon::xbmcgui::ListItem"))-> getRating(  key  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1284,7 +1499,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"f", apiResult);
+    result = Py_BuildValue("f", apiResult);
 
     return result; 
   } 
@@ -1296,13 +1511,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "key",
           NULL};
-         
-    char * key ;
+
+    char * key  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &key
        ))
     {
@@ -1313,17 +1528,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getVotes","XBMCAddon::xbmcgui::ListItem"))-> getVotes(  key  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getVotes","XBMCAddon::xbmcgui::ListItem"))-> getVotes(  key  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1338,7 +1553,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -1350,13 +1565,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "selected",
           NULL};
-         
+
     bool  selected ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"b",
-       (char**)keywords,
+       "b",
+       const_cast<char**>(keywords),
          &selected
        ))
     {
@@ -1371,13 +1586,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1405,17 +1620,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"isSelected","XBMCAddon::xbmcgui::ListItem"))-> isSelected(  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"isSelected","XBMCAddon::xbmcgui::ListItem"))-> isSelected(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1430,7 +1645,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -1443,15 +1658,15 @@ namespace PythonBindings
           "type",
           "infoLabels",
           NULL};
-         
-    char * type ;         
+
+    char * type  = nullptr;
     XBMCAddon::Dictionary< XBMCAddon::xbmcgui::InfoLabelValue  >  infoLabels ;
     PyObject* pyinfoLabels = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"sO",
-       (char**)keywords,
+       "sO",
+       const_cast<char**>(keywords),
          &type,
          &pyinfoLabels
        ))
@@ -1481,7 +1696,7 @@ namespace PythonBindings
         if (pyentry_1) PyXBMCGetUnicodeString(entry0_1,pyentry_1,PyInt_Check(pyentry_1) || PyLong_Check(pyentry_1) || PyFloat_Check(pyentry_1),"entry0_1","setInfo");
         value.former() = entry0_1;
       }
-      catch (XBMCAddon::WrongTypeException wte)
+      catch (const XBMCAddon::WrongTypeException&)
       {
         try
         {
@@ -1495,8 +1710,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry2 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pyentry_1) : PyList_Size(pyentry_1));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pyentry_1) : PyList_Size(pyentry_1));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry2 = (isTuple ? PyTuple_GetItem(pyentry_1, i) : PyList_GetItem(pyentry_1, i));
         Alternative< XBMCAddon::StringOrInt ,Tuple< XBMCAddon::String ,XBMCAddon::StringOrInt  >  >  entry2;
@@ -1510,7 +1725,7 @@ namespace PythonBindings
         if (pyentry_3) PyXBMCGetUnicodeString(entry0_3,pyentry_3,PyInt_Check(pyentry_3) || PyLong_Check(pyentry_3) || PyFloat_Check(pyentry_3),"entry0_3","setInfo");
         entry2.former() = entry0_3;
       }
-      catch (XBMCAddon::WrongTypeException wte)
+      catch (const XBMCAddon::WrongTypeException&)
       {
         try
         {
@@ -1521,7 +1736,7 @@ namespace PythonBindings
       bool isTuple = PyObject_TypeCheck(pyentry_3,&PyTuple_Type);
       if (!isTuple && !PyObject_TypeCheck(pyentry_3,&PyList_Type))
         throw WrongTypeException("The parameter \"entry1_3\" must be either a Tuple or a List.");
-      int vecSize = (isTuple ? PyTuple_Size(pyentry_3) : PyList_Size(pyentry_3));
+      auto vecSize = (isTuple ? PyTuple_Size(pyentry_3) : PyList_Size(pyentry_3));
 
       if (vecSize > 0)
       {
@@ -1545,9 +1760,9 @@ namespace PythonBindings
 
           entry2.later() = entry1_3;
         }
-        catch (XBMCAddon::WrongTypeException wte2)
+        catch (const XBMCAddon::WrongTypeException&)
         {
-          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a " 
+          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a "
                                               "std::string or a "
                                               "Tuple<(XBMCAddon::String,XBMCAddon::StringOrInt)>" );
         }
@@ -1559,9 +1774,9 @@ namespace PythonBindings
 
           value.later() = entry1_1;
         }
-        catch (XBMCAddon::WrongTypeException wte2)
+        catch (const XBMCAddon::WrongTypeException&)
         {
-          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a " 
+          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a "
                                               "std::string or a "
                                               "std::vector<(XBMCAddon::xbmcgui::InfoLabelStringOrTuple)>" );
         }
@@ -1575,13 +1790,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1609,14 +1824,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "actors",
           NULL};
-         
+
     std::vector< XBMCAddon::Properties  >  actors ;
     PyObject* pyactors = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pyactors
        ))
     {
@@ -1635,8 +1850,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pyactors) : PyList_Size(pyactors));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pyactors) : PyList_Size(pyactors));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pyactors, i) : PyList_GetItem(pyactors, i));
         XBMCAddon::Dictionary< XBMCAddon::StringOrInt  >  entry1;
@@ -1662,13 +1877,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1689,6 +1904,174 @@ namespace PythonBindings
     return result; 
   } 
 
+  static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_setAvailableFanart (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+
+    static const char *keywords[] = {
+          "images",
+          NULL};
+
+    std::vector< XBMCAddon::Properties  >  images ;
+    PyObject* pyimages = NULL;
+    if (!PyArg_ParseTupleAndKeywords(
+       args,
+       kwds,
+       "O",
+       const_cast<char**>(keywords),
+         &pyimages
+       ))
+    {
+      return NULL;
+    }
+
+
+    try
+    {
+      
+    if (pyimages)
+    {
+      bool isTuple = PyObject_TypeCheck(pyimages,&PyTuple_Type);
+      if (!isTuple && !PyObject_TypeCheck(pyimages,&PyList_Type))
+        throw WrongTypeException("The parameter \"images\" must be either a Tuple or a List.");
+
+      
+      PyObject *pyentry1 = NULL;
+      auto vecSize = (isTuple ? PyTuple_Size(pyimages) : PyList_Size(pyimages));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
+      {
+        pyentry1 = (isTuple ? PyTuple_GetItem(pyimages, i) : PyList_GetItem(pyimages, i));
+        XBMCAddon::Dictionary< XBMCAddon::StringOrInt  >  entry1;
+        
+    {
+      PyObject *pykey, *pyvalue;
+      Py_ssize_t pos = 0;
+      while(PyDict_Next(pyentry1, &pos, &pykey, &pyvalue))
+      {
+        std::string key;
+        PyXBMCGetUnicodeString(key,pykey,false,"entry1","setAvailableFanart");
+        std::string  value;
+        if (pyvalue) PyXBMCGetUnicodeString(value,pyvalue,PyInt_Check(pyvalue) || PyLong_Check(pyvalue) || PyFloat_Check(pyvalue),"value","setAvailableFanart");
+        entry1[key] = value;
+      }
+    }
+        images.push_back(entry1);
+      }
+    }
+ 
+
+      ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"setAvailableFanart","XBMCAddon::xbmcgui::ListItem"))-> setAvailableFanart(  images  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"setAvailableFanart\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"setAvailableFanart\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    Py_INCREF(Py_None);
+    result = Py_None;
+
+    return result; 
+  } 
+
+  static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_addAvailableArtwork (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+
+    static const char *keywords[] = {
+          "url",
+          "art_type",
+          "referrer",
+          "cache",
+          "post",
+          "isgz",
+          "season",
+          NULL};
+
+    std::string  url ;
+    PyObject* pyurl = NULL;
+    std::string  art_type  = "";
+    PyObject* pyart_type = NULL;
+    std::string  referrer  = "";
+    PyObject* pyreferrer = NULL;
+    std::string  cache  = "";
+    PyObject* pycache = NULL;
+    bool  post  = false;
+    bool  isgz  = false;
+    int  season  = -1;
+    if (!PyArg_ParseTupleAndKeywords(
+       args,
+       kwds,
+       "O|OOObbi",
+       const_cast<char**>(keywords),
+         &pyurl,
+         &pyart_type,
+         &pyreferrer,
+         &pycache,
+         &post,
+         &isgz,
+         &season
+       ))
+    {
+      return NULL;
+    }
+
+
+    try
+    {
+      if (pyurl) PyXBMCGetUnicodeString(url,pyurl,false,"url","addAvailableArtwork"); 
+      if (pyart_type) PyXBMCGetUnicodeString(art_type,pyart_type,false,"art_type","addAvailableArtwork"); 
+      if (pyreferrer) PyXBMCGetUnicodeString(referrer,pyreferrer,false,"referrer","addAvailableArtwork"); 
+      if (pycache) PyXBMCGetUnicodeString(cache,pycache,false,"cache","addAvailableArtwork"); 
+
+      ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"addAvailableArtwork","XBMCAddon::xbmcgui::ListItem"))-> addAvailableArtwork(  url,  art_type,  referrer,  cache,  post,  isgz,  season  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"addAvailableArtwork\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"addAvailableArtwork\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    Py_INCREF(Py_None);
+    result = Py_None;
+
+    return result; 
+  } 
+
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_addStreamInfo (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
@@ -1697,15 +2080,15 @@ namespace PythonBindings
           "cType",
           "dictionary",
           NULL};
-         
-    char * cType ;         
+
+    char * cType  = nullptr;
     XBMCAddon::Dictionary< XBMCAddon::StringOrInt  >  dictionary ;
     PyObject* pydictionary = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"sO",
-       (char**)keywords,
+       "sO",
+       const_cast<char**>(keywords),
          &cType,
          &pydictionary
        ))
@@ -1734,13 +2117,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1769,15 +2152,15 @@ namespace PythonBindings
           "items",
           "replaceItems",
           NULL};
-         
+
     std::vector< Tuple< XBMCAddon::String ,XBMCAddon::String  >  >  items ;
-    PyObject* pyitems = NULL;         
+    PyObject* pyitems = NULL;
     bool  replaceItems  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O|b",
-       (char**)keywords,
+       "O|b",
+       const_cast<char**>(keywords),
          &pyitems,
          &replaceItems
        ))
@@ -1797,8 +2180,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pyitems) : PyList_Size(pyitems));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pyitems) : PyList_Size(pyitems));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pyitems, i) : PyList_GetItem(pyitems, i));
         Tuple< XBMCAddon::String ,XBMCAddon::String  >  entry1;
@@ -1808,7 +2191,7 @@ namespace PythonBindings
       bool isTuple = PyObject_TypeCheck(pyentry1,&PyTuple_Type);
       if (!isTuple && !PyObject_TypeCheck(pyentry1,&PyList_Type))
         throw WrongTypeException("The parameter \"entry1\" must be either a Tuple or a List.");
-      int vecSize = (isTuple ? PyTuple_Size(pyentry1) : PyList_Size(pyentry1));
+      auto vecSize = (isTuple ? PyTuple_Size(pyentry1) : PyList_Size(pyentry1));
 
       if (vecSize > 0)
       {
@@ -1839,13 +2222,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1874,15 +2257,15 @@ namespace PythonBindings
           "key",
           "value",
           NULL};
-         
-    char * key ;         
+
+    char * key  = nullptr;
     std::string  value ;
     PyObject* pyvalue = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"sO",
-       (char**)keywords,
+       "sO",
+       const_cast<char**>(keywords),
          &key,
          &pyvalue
        ))
@@ -1899,13 +2282,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1926,6 +2309,75 @@ namespace PythonBindings
     return result; 
   } 
 
+  static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_setProperties (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+
+    static const char *keywords[] = {
+          "dictionary",
+          NULL};
+
+    XBMCAddon::Dictionary< XBMCAddon::StringOrInt  >  dictionary ;
+    PyObject* pydictionary = NULL;
+    if (!PyArg_ParseTupleAndKeywords(
+       args,
+       kwds,
+       "O",
+       const_cast<char**>(keywords),
+         &pydictionary
+       ))
+    {
+      return NULL;
+    }
+
+
+    try
+    {
+      
+    {
+      PyObject *pykey, *pyvalue;
+      Py_ssize_t pos = 0;
+      while(PyDict_Next(pydictionary, &pos, &pykey, &pyvalue))
+      {
+        std::string key;
+        PyXBMCGetUnicodeString(key,pykey,false,"dictionary","setProperties");
+        std::string  value;
+        if (pyvalue) PyXBMCGetUnicodeString(value,pyvalue,PyInt_Check(pyvalue) || PyLong_Check(pyvalue) || PyFloat_Check(pyvalue),"value","setProperties");
+        dictionary[key] = value;
+      }
+    } 
+
+      ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"setProperties","XBMCAddon::xbmcgui::ListItem"))-> setProperties(  dictionary  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"setProperties\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"setProperties\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    Py_INCREF(Py_None);
+    result = Py_None;
+
+    return result; 
+  } 
+
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_getProperty (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
@@ -1933,34 +2385,34 @@ namespace PythonBindings
     static const char *keywords[] = {
           "key",
           NULL};
-         
-    char * key ;
+
+    char * key  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &key
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getProperty","XBMCAddon::xbmcgui::ListItem"))-> getProperty(  key  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getProperty","XBMCAddon::xbmcgui::ListItem"))-> getProperty(  key  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1987,14 +2439,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "path",
           NULL};
-         
+
     std::string  path ;
     PyObject* pypath = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypath
        ))
     {
@@ -2010,13 +2462,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2044,14 +2496,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "mimetype",
           NULL};
-         
+
     std::string  mimetype ;
     PyObject* pymimetype = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pymimetype
        ))
     {
@@ -2067,13 +2519,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2101,13 +2553,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "enable",
           NULL};
-         
+
     bool  enable ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"b",
-       (char**)keywords,
+       "b",
+       const_cast<char**>(keywords),
          &enable
        ))
     {
@@ -2122,13 +2574,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2156,14 +2608,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "subtitleFiles",
           NULL};
-         
+
     std::vector< XBMCAddon::String  >  subtitleFiles ;
     PyObject* pysubtitleFiles = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pysubtitleFiles
        ))
     {
@@ -2182,8 +2634,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pysubtitleFiles) : PyList_Size(pysubtitleFiles));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pysubtitleFiles) : PyList_Size(pysubtitleFiles));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pysubtitleFiles, i) : PyList_GetItem(pysubtitleFiles, i));
         std::string  entry1;
@@ -2197,13 +2649,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2227,21 +2679,21 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_getdescription (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getdescription","XBMCAddon::xbmcgui::ListItem"))-> getdescription(  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getdescription","XBMCAddon::xbmcgui::ListItem"))-> getdescription(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2264,21 +2716,21 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_getduration (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getduration","XBMCAddon::xbmcgui::ListItem"))-> getduration(  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getduration","XBMCAddon::xbmcgui::ListItem"))-> getduration(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2301,21 +2753,21 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_getfilename (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getfilename","XBMCAddon::xbmcgui::ListItem"))-> getfilename(  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getfilename","XBMCAddon::xbmcgui::ListItem"))-> getfilename(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2338,21 +2790,21 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ListItem_getPath (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getPath","XBMCAddon::xbmcgui::ListItem"))-> getPath(  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getPath","XBMCAddon::xbmcgui::ListItem"))-> getPath(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2379,17 +2831,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (xbmc::InfoTagVideo *)((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getVideoInfoTag","XBMCAddon::xbmcgui::ListItem"))-> getVideoInfoTag(  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getVideoInfoTag","XBMCAddon::xbmcgui::ListItem"))-> getVideoInfoTag(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2416,17 +2868,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (xbmc::InfoTagMusic *)((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getMusicInfoTag","XBMCAddon::xbmcgui::ListItem"))-> getMusicInfoTag(  );
+      apiResult = ((XBMCAddon::xbmcgui::ListItem*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ListItem_Type,"getMusicInfoTag","XBMCAddon::xbmcgui::ListItem"))-> getMusicInfoTag(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2454,13 +2906,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "actionId",
           NULL};
-         
+
     int  actionId ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &actionId
        ))
     {
@@ -2471,17 +2923,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"canAcceptMessages","XBMCAddon::xbmcgui::Control"))-> canAcceptMessages(  actionId  );
+      apiResult = ((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"canAcceptMessages","XBMCAddon::xbmcgui::Control"))-> canAcceptMessages(  actionId  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2496,7 +2948,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -2508,17 +2960,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"getId","XBMCAddon::xbmcgui::Control"))-> getId(  );
+      apiResult = ((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"getId","XBMCAddon::xbmcgui::Control"))-> getId(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2533,7 +2985,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -2548,17 +3000,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (std::vector< int  > )((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"getPosition","XBMCAddon::xbmcgui::Control"))-> getPosition(  );
+      apiResult = ((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"getPosition","XBMCAddon::xbmcgui::Control"))-> getPosition(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2580,7 +3032,7 @@ namespace PythonBindings
       {
         int & entry1 = *iter;
         PyObject* pyentry1;
-        pyentry1 = Py_BuildValue((char*)"i", entry1);
+        pyentry1 = Py_BuildValue("i", entry1);
         PyList_Append(result, pyentry1);
         Py_DECREF(pyentry1);
       }
@@ -2597,17 +3049,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"getX","XBMCAddon::xbmcgui::Control"))-> getX(  );
+      apiResult = ((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"getX","XBMCAddon::xbmcgui::Control"))-> getX(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2622,7 +3074,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -2634,17 +3086,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"getY","XBMCAddon::xbmcgui::Control"))-> getY(  );
+      apiResult = ((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"getY","XBMCAddon::xbmcgui::Control"))-> getY(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2659,7 +3111,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -2671,17 +3123,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"getHeight","XBMCAddon::xbmcgui::Control"))-> getHeight(  );
+      apiResult = ((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"getHeight","XBMCAddon::xbmcgui::Control"))-> getHeight(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2696,7 +3148,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -2708,17 +3160,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"getWidth","XBMCAddon::xbmcgui::Control"))-> getWidth(  );
+      apiResult = ((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"getWidth","XBMCAddon::xbmcgui::Control"))-> getWidth(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2733,7 +3185,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -2745,13 +3197,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "enabled",
           NULL};
-         
+
     bool  enabled ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"b",
-       (char**)keywords,
+       "b",
+       const_cast<char**>(keywords),
          &enabled
        ))
     {
@@ -2766,13 +3218,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2800,13 +3252,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "visible",
           NULL};
-         
+
     bool  visible ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"b",
-       (char**)keywords,
+       "b",
+       const_cast<char**>(keywords),
          &visible
        ))
     {
@@ -2821,13 +3273,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2848,6 +3300,43 @@ namespace PythonBindings
     return result; 
   } 
 
+  static PyObject* xbmcgui_XBMCAddon_xbmcgui_Control_isVisible (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+    bool  apiResult;
+    try
+    {
+
+      apiResult = ((XBMCAddon::xbmcgui::Control*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Control_Type,"isVisible","XBMCAddon::xbmcgui::Control"))-> isVisible(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"isVisible\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"isVisible\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    result = Py_BuildValue("b", apiResult);
+
+    return result; 
+  } 
+
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_Control_setVisibleCondition (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
@@ -2856,14 +3345,14 @@ namespace PythonBindings
           "visible",
           "allowHiddenFocus",
           NULL};
-         
-    char * visible ;         
+
+    char * visible  = nullptr;
     bool  allowHiddenFocus  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s|b",
-       (char**)keywords,
+       "s|b",
+       const_cast<char**>(keywords),
          &visible,
          &allowHiddenFocus
        ))
@@ -2879,13 +3368,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2913,13 +3402,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "enable",
           NULL};
-         
-    char * enable ;
+
+    char * enable  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &enable
        ))
     {
@@ -2934,13 +3423,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2968,14 +3457,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "eventAttr",
           NULL};
-         
+
     std::vector< Tuple< XBMCAddon::String ,XBMCAddon::String  >  >  eventAttr ;
     PyObject* pyeventAttr = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pyeventAttr
        ))
     {
@@ -2994,8 +3483,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pyeventAttr) : PyList_Size(pyeventAttr));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pyeventAttr) : PyList_Size(pyeventAttr));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pyeventAttr, i) : PyList_GetItem(pyeventAttr, i));
         Tuple< XBMCAddon::String ,XBMCAddon::String  >  entry1;
@@ -3005,7 +3494,7 @@ namespace PythonBindings
       bool isTuple = PyObject_TypeCheck(pyentry1,&PyTuple_Type);
       if (!isTuple && !PyObject_TypeCheck(pyentry1,&PyList_Type))
         throw WrongTypeException("The parameter \"entry1\" must be either a Tuple or a List.");
-      int vecSize = (isTuple ? PyTuple_Size(pyentry1) : PyList_Size(pyentry1));
+      auto vecSize = (isTuple ? PyTuple_Size(pyentry1) : PyList_Size(pyentry1));
 
       if (vecSize > 0)
       {
@@ -3036,13 +3525,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3071,14 +3560,14 @@ namespace PythonBindings
           "x",
           "y",
           NULL};
-         
-    long  x ;         
+
+    long  x ;
     long  y ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"ll",
-       (char**)keywords,
+       "ll",
+       const_cast<char**>(keywords),
          &x,
          &y
        ))
@@ -3094,13 +3583,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3128,13 +3617,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "width",
           NULL};
-         
+
     long  width ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"l",
-       (char**)keywords,
+       "l",
+       const_cast<char**>(keywords),
          &width
        ))
     {
@@ -3149,13 +3638,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3183,13 +3672,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "height",
           NULL};
-         
+
     long  height ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"l",
-       (char**)keywords,
+       "l",
+       const_cast<char**>(keywords),
          &height
        ))
     {
@@ -3204,13 +3693,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3241,20 +3730,20 @@ namespace PythonBindings
           "left",
           "right",
           NULL};
-         
-    XBMCAddon::xbmcgui::Control * up ;
-    PyObject* pyup = NULL;         
-    XBMCAddon::xbmcgui::Control * down ;
-    PyObject* pydown = NULL;         
-    XBMCAddon::xbmcgui::Control * left ;
-    PyObject* pyleft = NULL;         
-    XBMCAddon::xbmcgui::Control * right ;
+
+    XBMCAddon::xbmcgui::Control * up  = nullptr;
+    PyObject* pyup = NULL;
+    XBMCAddon::xbmcgui::Control * down  = nullptr;
+    PyObject* pydown = NULL;
+    XBMCAddon::xbmcgui::Control * left  = nullptr;
+    PyObject* pyleft = NULL;
+    XBMCAddon::xbmcgui::Control * right  = nullptr;
     PyObject* pyright = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"OOOO",
-       (char**)keywords,
+       "OOOO",
+       const_cast<char**>(keywords),
          &pyup,
          &pydown,
          &pyleft,
@@ -3276,13 +3765,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3310,14 +3799,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "up",
           NULL};
-         
-    XBMCAddon::xbmcgui::Control * up ;
+
+    XBMCAddon::xbmcgui::Control * up  = nullptr;
     PyObject* pyup = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pyup
        ))
     {
@@ -3333,13 +3822,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3367,14 +3856,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "control",
           NULL};
-         
-    XBMCAddon::xbmcgui::Control * control ;
+
+    XBMCAddon::xbmcgui::Control * control  = nullptr;
     PyObject* pycontrol = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pycontrol
        ))
     {
@@ -3390,13 +3879,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3424,14 +3913,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "control",
           NULL};
-         
-    XBMCAddon::xbmcgui::Control * control ;
+
+    XBMCAddon::xbmcgui::Control * control  = nullptr;
     PyObject* pycontrol = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pycontrol
        ))
     {
@@ -3447,13 +3936,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3481,14 +3970,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "control",
           NULL};
-         
-    XBMCAddon::xbmcgui::Control * control ;
+
+    XBMCAddon::xbmcgui::Control * control  = nullptr;
     PyObject* pycontrol = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pycontrol
        ))
     {
@@ -3504,13 +3993,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3543,18 +4032,18 @@ namespace PythonBindings
           "upDisabled",
           "downDisabled",
           NULL};
-         
-    char * up ;         
-    char * down ;         
-    char * upFocus ;         
-    char * downFocus ;         
-    char * upDisabled ;         
-    char * downDisabled ;
+
+    char * up  = nullptr;
+    char * down  = nullptr;
+    char * upFocus  = nullptr;
+    char * downFocus  = nullptr;
+    char * upDisabled  = nullptr;
+    char * downDisabled  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"ssssss",
-       (char**)keywords,
+       "ssssss",
+       const_cast<char**>(keywords),
          &up,
          &down,
          &upFocus,
@@ -3574,13 +4063,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3619,24 +4108,24 @@ namespace PythonBindings
           "hasPath",
           "angle",
           NULL};
-         
-    long  x ;         
-    long  y ;         
-    long  width ;         
-    long  height ;         
+
+    long  x ;
+    long  y ;
+    long  width ;
+    long  height ;
     std::string  label ;
-    PyObject* pylabel = NULL;         
-    char * font  = NULL;         
-    char * textColor  = NULL;         
-    char * disabledColor  = NULL;         
-    long  alignment  = XBFONT_LEFT;         
-    bool  hasPath  = false;         
+    PyObject* pylabel = NULL;
+    char * font  = NULL;
+    char * textColor  = NULL;
+    char * disabledColor  = NULL;
+    long  alignment  = XBFONT_LEFT;
+    bool  hasPath  = false;
     long  angle  = 0;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"llllO|ssslbl",
-       (char**)keywords,
+       "llllO|ssslbl",
+       const_cast<char**>(keywords),
          &x,
          &y,
          &width,
@@ -3659,17 +4148,17 @@ namespace PythonBindings
       if (pylabel) PyXBMCGetUnicodeString(label,pylabel,false,"label","ControlLabel"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::ControlLabel *)new XBMCAddon::xbmcgui::ControlLabel(  x,  y,  width,  height,  label,  font,  textColor,  disabledColor,  alignment,  hasPath,  angle  );
+      apiResult = new XBMCAddon::xbmcgui::ControlLabel(  x,  y,  width,  height,  label,  font,  textColor,  disabledColor,  alignment,  hasPath,  angle  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3692,21 +4181,21 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ControlLabel_getLabel (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ControlLabel*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlLabel_Type,"getLabel","XBMCAddon::xbmcgui::ControlLabel"))-> getLabel(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlLabel*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlLabel_Type,"getLabel","XBMCAddon::xbmcgui::ControlLabel"))-> getLabel(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3739,21 +4228,21 @@ namespace PythonBindings
           "focusedColor",
           "label2",
           NULL};
-         
+
     std::string  label  = XBMCAddon::emptyString;
-    PyObject* pylabel = NULL;         
-    char * font  = NULL;         
-    char * textColor  = NULL;         
-    char * disabledColor  = NULL;         
-    char * shadowColor  = NULL;         
-    char * focusedColor  = NULL;         
+    PyObject* pylabel = NULL;
+    char * font  = NULL;
+    char * textColor  = NULL;
+    char * disabledColor  = NULL;
+    char * shadowColor  = NULL;
+    char * focusedColor  = NULL;
     std::string  label2  = XBMCAddon::emptyString;
     PyObject* pylabel2 = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|OsssssO",
-       (char**)keywords,
+       "|OsssssO",
+       const_cast<char**>(keywords),
          &pylabel,
          &font,
          &textColor,
@@ -3776,13 +4265,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3821,25 +4310,25 @@ namespace PythonBindings
           "noFocusTexture",
           "isPassword",
           NULL};
-         
-    long  x ;         
-    long  y ;         
-    long  width ;         
-    long  height ;         
+
+    long  x ;
+    long  y ;
+    long  width ;
+    long  height ;
     std::string  label ;
-    PyObject* pylabel = NULL;         
-    char * font  = NULL;         
-    char * textColor  = NULL;         
-    char * disabledColor  = NULL;         
-    long  _alignment  = XBFONT_LEFT;         
-    char * focusTexture  = NULL;         
-    char * noFocusTexture  = NULL;         
+    PyObject* pylabel = NULL;
+    char * font  = NULL;
+    char * textColor  = NULL;
+    char * disabledColor  = NULL;
+    long  _alignment  = XBFONT_LEFT;
+    char * focusTexture  = NULL;
+    char * noFocusTexture  = NULL;
     bool  isPassword  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"llllO|ssslssb",
-       (char**)keywords,
+       "llllO|ssslssb",
+       const_cast<char**>(keywords),
          &x,
          &y,
          &width,
@@ -3863,17 +4352,17 @@ namespace PythonBindings
       if (pylabel) PyXBMCGetUnicodeString(label,pylabel,false,"label","ControlEdit"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::ControlEdit *)new XBMCAddon::xbmcgui::ControlEdit(  x,  y,  width,  height,  label,  font,  textColor,  disabledColor,  _alignment,  focusTexture,  noFocusTexture,  isPassword  );
+      apiResult = new XBMCAddon::xbmcgui::ControlEdit(  x,  y,  width,  height,  label,  font,  textColor,  disabledColor,  _alignment,  focusTexture,  noFocusTexture,  isPassword  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3906,21 +4395,21 @@ namespace PythonBindings
           "focusedColor",
           "label2",
           NULL};
-         
+
     std::string  label  = XBMCAddon::emptyString;
-    PyObject* pylabel = NULL;         
-    char * font  = NULL;         
-    char * textColor  = NULL;         
-    char * disabledColor  = NULL;         
-    char * shadowColor  = NULL;         
-    char * focusedColor  = NULL;         
+    PyObject* pylabel = NULL;
+    char * font  = NULL;
+    char * textColor  = NULL;
+    char * disabledColor  = NULL;
+    char * shadowColor  = NULL;
+    char * focusedColor  = NULL;
     std::string  label2  = XBMCAddon::emptyString;
     PyObject* pylabel2 = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|OsssssO",
-       (char**)keywords,
+       "|OsssssO",
+       const_cast<char**>(keywords),
          &pylabel,
          &font,
          &textColor,
@@ -3943,13 +4432,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3973,21 +4462,21 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ControlEdit_getLabel (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ControlEdit*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlEdit_Type,"getLabel","XBMCAddon::xbmcgui::ControlEdit"))-> getLabel(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlEdit*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlEdit_Type,"getLabel","XBMCAddon::xbmcgui::ControlEdit"))-> getLabel(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4014,14 +4503,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "text",
           NULL};
-         
+
     std::string  text ;
     PyObject* pytext = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pytext
        ))
     {
@@ -4037,13 +4526,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4067,21 +4556,21 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ControlEdit_getText (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ControlEdit*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlEdit_Type,"getText","XBMCAddon::xbmcgui::ControlEdit"))-> getText(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlEdit*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlEdit_Type,"getText","XBMCAddon::xbmcgui::ControlEdit"))-> getText(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4097,6 +4586,66 @@ namespace PythonBindings
 
     // transform the result
     result = PyString_FromStringAndSize(apiResult.c_str(), apiResult.length());
+
+    return result; 
+  } 
+
+  static PyObject* xbmcgui_XBMCAddon_xbmcgui_ControlEdit_setType (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+
+    static const char *keywords[] = {
+          "type",
+          "heading",
+          NULL};
+
+    int  type ;
+    std::string  heading ;
+    PyObject* pyheading = NULL;
+    if (!PyArg_ParseTupleAndKeywords(
+       args,
+       kwds,
+       "iO",
+       const_cast<char**>(keywords),
+         &type,
+         &pyheading
+       ))
+    {
+      return NULL;
+    }
+
+
+    try
+    {
+      if (pyheading) PyXBMCGetUnicodeString(heading,pyheading,false,"heading","setType"); 
+
+      ((XBMCAddon::xbmcgui::ControlEdit*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlEdit_Type,"setType","XBMCAddon::xbmcgui::ControlEdit"))-> setType(  type,  heading  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"setType\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"setType\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    Py_INCREF(Py_None);
+    result = Py_None;
 
     return result; 
   } 
@@ -4123,28 +4672,28 @@ namespace PythonBindings
           "_space",
           "_alignmentY",
           NULL};
-         
-    long  x ;         
-    long  y ;         
-    long  width ;         
-    long  height ;         
-    char * font  = NULL;         
-    char * textColor  = NULL;         
-    char * buttonTexture  = NULL;         
-    char * buttonFocusTexture  = NULL;         
-    char * selectedColor  = NULL;         
-    long  _imageWidth  = 10;         
-    long  _imageHeight  = 10;         
-    long  _itemTextXOffset  = 10;         
-    long  _itemTextYOffset  = 2;         
-    long  _itemHeight  = 27;         
-    long  _space  = 2;         
+
+    long  x ;
+    long  y ;
+    long  width ;
+    long  height ;
+    char * font  = NULL;
+    char * textColor  = NULL;
+    char * buttonTexture  = NULL;
+    char * buttonFocusTexture  = NULL;
+    char * selectedColor  = NULL;
+    long  _imageWidth  = 10;
+    long  _imageHeight  = 10;
+    long  _itemTextXOffset  = 10;
+    long  _itemTextYOffset  = 2;
+    long  _itemHeight  = 27;
+    long  _space  = 2;
     long  _alignmentY  = XBFONT_CENTER_Y;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"llll|ssssslllllll",
-       (char**)keywords,
+       "llll|ssssslllllll",
+       const_cast<char**>(keywords),
          &x,
          &y,
          &width,
@@ -4171,17 +4720,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::ControlList *)new XBMCAddon::xbmcgui::ControlList(  x,  y,  width,  height,  font,  textColor,  buttonTexture,  buttonFocusTexture,  selectedColor,  _imageWidth,  _imageHeight,  _itemTextXOffset,  _itemTextYOffset,  _itemHeight,  _space,  _alignmentY  );
+      apiResult = new XBMCAddon::xbmcgui::ControlList(  x,  y,  width,  height,  font,  textColor,  buttonTexture,  buttonFocusTexture,  selectedColor,  _imageWidth,  _imageHeight,  _itemTextXOffset,  _itemTextYOffset,  _itemHeight,  _space,  _alignmentY  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4209,15 +4758,15 @@ namespace PythonBindings
           "item",
           "sendMessage",
           NULL};
-         
+
     Alternative< XBMCAddon::String ,XBMCAddon::xbmcgui::ListItem const * >  item ;
-    PyObject* pyitem = NULL;         
+    PyObject* pyitem = NULL;
     bool  sendMessage  = true;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O|b",
-       (char**)keywords,
+       "O|b",
+       const_cast<char**>(keywords),
          &pyitem,
          &sendMessage
        ))
@@ -4238,7 +4787,7 @@ namespace PythonBindings
         if (pyentry_1) PyXBMCGetUnicodeString(entry0_1,pyentry_1,false,"entry0_1","addItem");
         item.former() = entry0_1;
       }
-      catch (XBMCAddon::WrongTypeException wte)
+      catch (const XBMCAddon::WrongTypeException&)
       {
         try
         {
@@ -4246,9 +4795,9 @@ namespace PythonBindings
           entry1_1 = (XBMCAddon::xbmcgui::ListItem *)retrieveApiInstance(pyentry_1,"p.XBMCAddon::xbmcgui::ListItem","XBMCAddon::xbmcgui::","addItem");
           item.later() = entry1_1;
         }
-        catch (XBMCAddon::WrongTypeException wte2)
+        catch (const XBMCAddon::WrongTypeException&)
         {
-          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a " 
+          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a "
                                               "std::string or a "
                                               "p.XBMCAddon::xbmcgui::ListItem" );
         }
@@ -4259,13 +4808,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4293,14 +4842,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "items",
           NULL};
-         
+
     std::vector< Alternative< XBMCAddon::String ,XBMCAddon::xbmcgui::ListItem const * >  >  items ;
     PyObject* pyitems = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pyitems
        ))
     {
@@ -4319,8 +4868,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pyitems) : PyList_Size(pyitems));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pyitems) : PyList_Size(pyitems));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pyitems, i) : PyList_GetItem(pyitems, i));
         Alternative< XBMCAddon::String ,XBMCAddon::xbmcgui::ListItem const * >  entry1;
@@ -4334,7 +4883,7 @@ namespace PythonBindings
         if (pyentry_2) PyXBMCGetUnicodeString(entry0_2,pyentry_2,false,"entry0_2","addItems");
         entry1.former() = entry0_2;
       }
-      catch (XBMCAddon::WrongTypeException wte)
+      catch (const XBMCAddon::WrongTypeException&)
       {
         try
         {
@@ -4342,9 +4891,9 @@ namespace PythonBindings
           entry1_2 = (XBMCAddon::xbmcgui::ListItem *)retrieveApiInstance(pyentry_2,"p.XBMCAddon::xbmcgui::ListItem","XBMCAddon::xbmcgui::","addItems");
           entry1.later() = entry1_2;
         }
-        catch (XBMCAddon::WrongTypeException wte2)
+        catch (const XBMCAddon::WrongTypeException&)
         {
-          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a " 
+          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a "
                                               "std::string or a "
                                               "p.XBMCAddon::xbmcgui::ListItem" );
         }
@@ -4359,13 +4908,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4393,13 +4942,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "item",
           NULL};
-         
+
     long  item ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"l",
-       (char**)keywords,
+       "l",
+       const_cast<char**>(keywords),
          &item
        ))
     {
@@ -4414,13 +4963,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4448,13 +4997,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "index",
           NULL};
-         
+
     int  index ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &index
        ))
     {
@@ -4469,13 +5018,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4507,13 +5056,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4541,17 +5090,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (XBMCAddon::xbmcgui::Control *)((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"getSpinControl","XBMCAddon::xbmcgui::ControlList"))-> getSpinControl(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"getSpinControl","XBMCAddon::xbmcgui::ControlList"))-> getSpinControl(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4578,17 +5127,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long )((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"getSelectedPosition","XBMCAddon::xbmcgui::ControlList"))-> getSelectedPosition(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"getSelectedPosition","XBMCAddon::xbmcgui::ControlList"))-> getSelectedPosition(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4615,17 +5164,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (XBMCAddon::xbmcgui::ListItem *)((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"getSelectedItem","XBMCAddon::xbmcgui::ControlList"))-> getSelectedItem(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"getSelectedItem","XBMCAddon::xbmcgui::ControlList"))-> getSelectedItem(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4653,14 +5202,14 @@ namespace PythonBindings
           "imageWidth",
           "imageHeight",
           NULL};
-         
-    long  imageWidth ;         
+
+    long  imageWidth ;
     long  imageHeight ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"ll",
-       (char**)keywords,
+       "ll",
+       const_cast<char**>(keywords),
          &imageWidth,
          &imageHeight
        ))
@@ -4676,13 +5225,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4710,13 +5259,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "height",
           NULL};
-         
+
     long  height ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"l",
-       (char**)keywords,
+       "l",
+       const_cast<char**>(keywords),
          &height
        ))
     {
@@ -4731,13 +5280,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4765,13 +5314,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "space",
           NULL};
-         
+
     int  space ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &space
        ))
     {
@@ -4786,13 +5335,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4820,13 +5369,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "visible",
           NULL};
-         
+
     bool  visible ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"b",
-       (char**)keywords,
+       "b",
+       const_cast<char**>(keywords),
          &visible
        ))
     {
@@ -4841,13 +5390,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4875,17 +5424,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long )((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"size","XBMCAddon::xbmcgui::ControlList"))-> size(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"size","XBMCAddon::xbmcgui::ControlList"))-> size(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4912,17 +5461,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long )((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"getItemHeight","XBMCAddon::xbmcgui::ControlList"))-> getItemHeight(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"getItemHeight","XBMCAddon::xbmcgui::ControlList"))-> getItemHeight(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4949,17 +5498,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long )((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"getSpace","XBMCAddon::xbmcgui::ControlList"))-> getSpace(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"getSpace","XBMCAddon::xbmcgui::ControlList"))-> getSpace(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4986,13 +5535,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "index",
           NULL};
-         
+
     int  index ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &index
        ))
     {
@@ -5003,17 +5552,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (XBMCAddon::xbmcgui::ListItem *)((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"getListItem","XBMCAddon::xbmcgui::ControlList"))-> getListItem(  index  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlList_Type,"getListItem","XBMCAddon::xbmcgui::ControlList"))-> getListItem(  index  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5040,14 +5589,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "items",
           NULL};
-         
-    std::vector< XBMCAddon::xbmcgui::ListItem * > * items ;
+
+    std::vector< XBMCAddon::xbmcgui::ListItem * > * items  = nullptr;
     PyObject* pyitems = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pyitems
        ))
     {
@@ -5066,8 +5615,8 @@ namespace PythonBindings
 
       items = new std::vector<XBMCAddon::xbmcgui::ListItem *>();
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pyitems) : PyList_Size(pyitems));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pyitems) : PyList_Size(pyitems));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pyitems, i) : PyList_GetItem(pyitems, i));
         XBMCAddon::xbmcgui::ListItem * entry1;
@@ -5081,13 +5630,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5121,19 +5670,19 @@ namespace PythonBindings
           "textColor",
           "_alignment",
           NULL};
-         
-    long  x ;         
-    long  y ;         
-    long  width ;         
-    long  height ;         
-    char * font  = NULL;         
-    char * textColor  = NULL;         
+
+    long  x ;
+    long  y ;
+    long  width ;
+    long  height ;
+    char * font  = NULL;
+    char * textColor  = NULL;
     long  _alignment  = XBFONT_LEFT;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"llll|ssl",
-       (char**)keywords,
+       "llll|ssl",
+       const_cast<char**>(keywords),
          &x,
          &y,
          &width,
@@ -5151,17 +5700,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::ControlFadeLabel *)new XBMCAddon::xbmcgui::ControlFadeLabel(  x,  y,  width,  height,  font,  textColor,  _alignment  );
+      apiResult = new XBMCAddon::xbmcgui::ControlFadeLabel(  x,  y,  width,  height,  font,  textColor,  _alignment  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5188,14 +5737,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "label",
           NULL};
-         
+
     std::string  label ;
     PyObject* pylabel = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pylabel
        ))
     {
@@ -5211,13 +5760,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5245,13 +5794,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "scroll",
           NULL};
-         
+
     bool  scroll ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"b",
-       (char**)keywords,
+       "b",
+       const_cast<char**>(keywords),
          &scroll
        ))
     {
@@ -5266,13 +5815,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5304,13 +5853,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5343,18 +5892,18 @@ namespace PythonBindings
           "font",
           "textColor",
           NULL};
-         
-    long  x ;         
-    long  y ;         
-    long  width ;         
-    long  height ;         
-    char * font  = NULL;         
+
+    long  x ;
+    long  y ;
+    long  width ;
+    long  height ;
+    char * font  = NULL;
     char * textColor  = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"llll|ss",
-       (char**)keywords,
+       "llll|ss",
+       const_cast<char**>(keywords),
          &x,
          &y,
          &width,
@@ -5371,17 +5920,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::ControlTextBox *)new XBMCAddon::xbmcgui::ControlTextBox(  x,  y,  width,  height,  font,  textColor  );
+      apiResult = new XBMCAddon::xbmcgui::ControlTextBox(  x,  y,  width,  height,  font,  textColor  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5408,14 +5957,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "text",
           NULL};
-         
+
     std::string  text ;
     PyObject* pytext = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pytext
        ))
     {
@@ -5431,13 +5980,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5461,21 +6010,21 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ControlTextBox_getText (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ControlTextBox*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlTextBox_Type,"getText","XBMCAddon::xbmcgui::ControlTextBox"))-> getText(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlTextBox*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlTextBox_Type,"getText","XBMCAddon::xbmcgui::ControlTextBox"))-> getText(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5506,13 +6055,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5540,13 +6089,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "id",
           NULL};
-         
+
     long  id ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"l",
-       (char**)keywords,
+       "l",
+       const_cast<char**>(keywords),
          &id
        ))
     {
@@ -5561,13 +6110,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5597,15 +6146,15 @@ namespace PythonBindings
           "time",
           "repeat",
           NULL};
-         
-    int  delay ;         
-    int  time ;         
+
+    int  delay ;
+    int  time ;
     int  repeat ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"iii",
-       (char**)keywords,
+       "iii",
+       const_cast<char**>(keywords),
          &delay,
          &time,
          &repeat
@@ -5622,13 +6171,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5662,19 +6211,19 @@ namespace PythonBindings
           "aspectRatio",
           "colorDiffuse",
           NULL};
-         
-    long  x ;         
-    long  y ;         
-    long  width ;         
-    long  height ;         
-    char * filename ;         
-    long  aspectRatio  = 0;         
+
+    long  x ;
+    long  y ;
+    long  width ;
+    long  height ;
+    char * filename  = nullptr;
+    long  aspectRatio  = 0;
     char * colorDiffuse  = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"lllls|ls",
-       (char**)keywords,
+       "lllls|ls",
+       const_cast<char**>(keywords),
          &x,
          &y,
          &width,
@@ -5692,17 +6241,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::ControlImage *)new XBMCAddon::xbmcgui::ControlImage(  x,  y,  width,  height,  filename,  aspectRatio,  colorDiffuse  );
+      apiResult = new XBMCAddon::xbmcgui::ControlImage(  x,  y,  width,  height,  filename,  aspectRatio,  colorDiffuse  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5730,14 +6279,14 @@ namespace PythonBindings
           "imageFilename",
           "useCache",
           NULL};
-         
-    char * imageFilename ;         
+
+    char * imageFilename  = nullptr;
     bool  useCache  = true;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s|b",
-       (char**)keywords,
+       "s|b",
+       const_cast<char**>(keywords),
          &imageFilename,
          &useCache
        ))
@@ -5753,13 +6302,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5787,13 +6336,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "hexString",
           NULL};
-         
-    char * hexString ;
+
+    char * hexString  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &hexString
        ))
     {
@@ -5808,13 +6357,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5850,21 +6399,21 @@ namespace PythonBindings
           "textureright",
           "textureoverlay",
           NULL};
-         
-    long  x ;         
-    long  y ;         
-    long  width ;         
-    long  height ;         
-    char * texturebg  = NULL;         
-    char * textureleft  = NULL;         
-    char * texturemid  = NULL;         
-    char * textureright  = NULL;         
+
+    long  x ;
+    long  y ;
+    long  width ;
+    long  height ;
+    char * texturebg  = NULL;
+    char * textureleft  = NULL;
+    char * texturemid  = NULL;
+    char * textureright  = NULL;
     char * textureoverlay  = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"llll|sssss",
-       (char**)keywords,
+       "llll|sssss",
+       const_cast<char**>(keywords),
          &x,
          &y,
          &width,
@@ -5884,17 +6433,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::ControlProgress *)new XBMCAddon::xbmcgui::ControlProgress(  x,  y,  width,  height,  texturebg,  textureleft,  texturemid,  textureright,  textureoverlay  );
+      apiResult = new XBMCAddon::xbmcgui::ControlProgress(  x,  y,  width,  height,  texturebg,  textureleft,  texturemid,  textureright,  textureoverlay  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5921,13 +6470,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "pct",
           NULL};
-         
+
     float  pct ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"f",
-       (char**)keywords,
+       "f",
+       const_cast<char**>(keywords),
          &pct
        ))
     {
@@ -5942,13 +6491,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5976,17 +6525,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (float )((XBMCAddon::xbmcgui::ControlProgress*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlProgress_Type,"getPercent","XBMCAddon::xbmcgui::ControlProgress"))-> getPercent(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlProgress*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlProgress_Type,"getPercent","XBMCAddon::xbmcgui::ControlProgress"))-> getPercent(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6001,7 +6550,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"f", apiResult);
+    result = Py_BuildValue("f", apiResult);
 
     return result; 
   } 
@@ -6028,29 +6577,29 @@ namespace PythonBindings
           "shadowColor",
           "focusedColor",
           NULL};
-         
-    long  x ;         
-    long  y ;         
-    long  width ;         
-    long  height ;         
+
+    long  x ;
+    long  y ;
+    long  width ;
+    long  height ;
     std::string  label ;
-    PyObject* pylabel = NULL;         
-    char * focusTexture  = NULL;         
-    char * noFocusTexture  = NULL;         
-    long  textOffsetX  = 10;         
-    long  textOffsetY  = 2;         
-    long  alignment  = (XBFONT_LEFT|XBFONT_CENTER_Y);         
-    char * font  = NULL;         
-    char * textColor  = NULL;         
-    char * disabledColor  = NULL;         
-    long  angle  = 0;         
-    char * shadowColor  = NULL;         
+    PyObject* pylabel = NULL;
+    char * focusTexture  = NULL;
+    char * noFocusTexture  = NULL;
+    long  textOffsetX  = 10;
+    long  textOffsetY  = 2;
+    long  alignment  = (XBFONT_LEFT|XBFONT_CENTER_Y);
+    char * font  = NULL;
+    char * textColor  = NULL;
+    char * disabledColor  = NULL;
+    long  angle  = 0;
+    char * shadowColor  = NULL;
     char * focusedColor  = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"llllO|sslllssslss",
-       (char**)keywords,
+       "llllO|sslllssslss",
+       const_cast<char**>(keywords),
          &x,
          &y,
          &width,
@@ -6078,17 +6627,17 @@ namespace PythonBindings
       if (pylabel) PyXBMCGetUnicodeString(label,pylabel,false,"label","ControlButton"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::ControlButton *)new XBMCAddon::xbmcgui::ControlButton(  x,  y,  width,  height,  label,  focusTexture,  noFocusTexture,  textOffsetX,  textOffsetY,  alignment,  font,  textColor,  disabledColor,  angle,  shadowColor,  focusedColor  );
+      apiResult = new XBMCAddon::xbmcgui::ControlButton(  x,  y,  width,  height,  label,  focusTexture,  noFocusTexture,  textOffsetX,  textOffsetY,  alignment,  font,  textColor,  disabledColor,  angle,  shadowColor,  focusedColor  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6121,21 +6670,21 @@ namespace PythonBindings
           "focusedColor",
           "label2",
           NULL};
-         
+
     std::string  label  = XBMCAddon::emptyString;
-    PyObject* pylabel = NULL;         
-    char * font  = NULL;         
-    char * textColor  = NULL;         
-    char * disabledColor  = NULL;         
-    char * shadowColor  = NULL;         
-    char * focusedColor  = NULL;         
+    PyObject* pylabel = NULL;
+    char * font  = NULL;
+    char * textColor  = NULL;
+    char * disabledColor  = NULL;
+    char * shadowColor  = NULL;
+    char * focusedColor  = NULL;
     std::string  label2  = XBMCAddon::emptyString;
     PyObject* pylabel2 = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|OsssssO",
-       (char**)keywords,
+       "|OsssssO",
+       const_cast<char**>(keywords),
          &pylabel,
          &font,
          &textColor,
@@ -6158,13 +6707,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6192,13 +6741,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "color",
           NULL};
-         
-    char * color ;
+
+    char * color  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &color
        ))
     {
@@ -6213,13 +6762,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6243,21 +6792,21 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ControlButton_getLabel (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ControlButton*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlButton_Type,"getLabel","XBMCAddon::xbmcgui::ControlButton"))-> getLabel(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlButton*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlButton_Type,"getLabel","XBMCAddon::xbmcgui::ControlButton"))-> getLabel(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6280,21 +6829,21 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_ControlButton_getLabel2 (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::ControlButton*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlButton_Type,"getLabel2","XBMCAddon::xbmcgui::ControlButton"))-> getLabel2(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlButton*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlButton_Type,"getLabel2","XBMCAddon::xbmcgui::ControlButton"))-> getLabel2(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6324,16 +6873,16 @@ namespace PythonBindings
           "width",
           "height",
           NULL};
-         
-    long  x ;         
-    long  y ;         
-    long  width ;         
+
+    long  x ;
+    long  y ;
+    long  width ;
     long  height ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"llll",
-       (char**)keywords,
+       "llll",
+       const_cast<char**>(keywords),
          &x,
          &y,
          &width,
@@ -6348,17 +6897,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::ControlGroup *)new XBMCAddon::xbmcgui::ControlGroup(  x,  y,  width,  height  );
+      apiResult = new XBMCAddon::xbmcgui::ControlGroup(  x,  y,  width,  height  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6406,35 +6955,35 @@ namespace PythonBindings
           "disabledOnTexture",
           "disabledOffTexture",
           NULL};
-         
-    long  x ;         
-    long  y ;         
-    long  width ;         
-    long  height ;         
+
+    long  x ;
+    long  y ;
+    long  width ;
+    long  height ;
     std::string  label ;
-    PyObject* pylabel = NULL;         
-    char * focusOnTexture  = NULL;         
-    char * noFocusOnTexture  = NULL;         
-    char * focusOffTexture  = NULL;         
-    char * noFocusOffTexture  = NULL;         
-    char * focusTexture  = NULL;         
-    char * noFocusTexture  = NULL;         
-    long  textOffsetX  = 10;         
-    long  textOffsetY  = 2;         
-    long  _alignment  = (XBFONT_LEFT|XBFONT_CENTER_Y);         
-    char * font  = NULL;         
-    char * textColor  = NULL;         
-    char * disabledColor  = NULL;         
-    long  angle  = 0;         
-    char * shadowColor  = NULL;         
-    char * focusedColor  = NULL;         
-    char * disabledOnTexture  = NULL;         
+    PyObject* pylabel = NULL;
+    char * focusOnTexture  = NULL;
+    char * noFocusOnTexture  = NULL;
+    char * focusOffTexture  = NULL;
+    char * noFocusOffTexture  = NULL;
+    char * focusTexture  = NULL;
+    char * noFocusTexture  = NULL;
+    long  textOffsetX  = 10;
+    long  textOffsetY  = 2;
+    long  _alignment  = (XBFONT_LEFT|XBFONT_CENTER_Y);
+    char * font  = NULL;
+    char * textColor  = NULL;
+    char * disabledColor  = NULL;
+    long  angle  = 0;
+    char * shadowColor  = NULL;
+    char * focusedColor  = NULL;
+    char * disabledOnTexture  = NULL;
     char * disabledOffTexture  = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"llllO|sssssslllssslssss",
-       (char**)keywords,
+       "llllO|sssssslllssslssss",
+       const_cast<char**>(keywords),
          &x,
          &y,
          &width,
@@ -6468,17 +7017,17 @@ namespace PythonBindings
       if (pylabel) PyXBMCGetUnicodeString(label,pylabel,false,"label","ControlRadioButton"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::ControlRadioButton *)new XBMCAddon::xbmcgui::ControlRadioButton(  x,  y,  width,  height,  label,  focusOnTexture,  noFocusOnTexture,  focusOffTexture,  noFocusOffTexture,  focusTexture,  noFocusTexture,  textOffsetX,  textOffsetY,  _alignment,  font,  textColor,  disabledColor,  angle,  shadowColor,  focusedColor,  disabledOnTexture,  disabledOffTexture  );
+      apiResult = new XBMCAddon::xbmcgui::ControlRadioButton(  x,  y,  width,  height,  label,  focusOnTexture,  noFocusOnTexture,  focusOffTexture,  noFocusOffTexture,  focusTexture,  noFocusTexture,  textOffsetX,  textOffsetY,  _alignment,  font,  textColor,  disabledColor,  angle,  shadowColor,  focusedColor,  disabledOnTexture,  disabledOffTexture  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6505,13 +7054,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "selected",
           NULL};
-         
+
     bool  selected ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"b",
-       (char**)keywords,
+       "b",
+       const_cast<char**>(keywords),
          &selected
        ))
     {
@@ -6526,13 +7075,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6560,17 +7109,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmcgui::ControlRadioButton*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlRadioButton_Type,"isSelected","XBMCAddon::xbmcgui::ControlRadioButton"))-> isSelected(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlRadioButton*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlRadioButton_Type,"isSelected","XBMCAddon::xbmcgui::ControlRadioButton"))-> isSelected(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6585,7 +7134,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -6603,21 +7152,21 @@ namespace PythonBindings
           "focusedColor",
           "label2",
           NULL};
-         
+
     std::string  label  = XBMCAddon::emptyString;
-    PyObject* pylabel = NULL;         
-    char * font  = NULL;         
-    char * textColor  = NULL;         
-    char * disabledColor  = NULL;         
-    char * shadowColor  = NULL;         
-    char * focusedColor  = NULL;         
+    PyObject* pylabel = NULL;
+    char * font  = NULL;
+    char * textColor  = NULL;
+    char * disabledColor  = NULL;
+    char * shadowColor  = NULL;
+    char * focusedColor  = NULL;
     std::string  label2  = XBMCAddon::emptyString;
     PyObject* pylabel2 = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|OsssssO",
-       (char**)keywords,
+       "|OsssssO",
+       const_cast<char**>(keywords),
          &pylabel,
          &font,
          &textColor,
@@ -6640,13 +7189,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6677,16 +7226,16 @@ namespace PythonBindings
           "width",
           "height",
           NULL};
-         
-    long  x ;         
-    long  y ;         
-    long  width ;         
+
+    long  x ;
+    long  y ;
+    long  width ;
     long  height ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"llll",
-       (char**)keywords,
+       "llll",
+       const_cast<char**>(keywords),
          &x,
          &y,
          &width,
@@ -6704,13 +7253,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6745,20 +7294,20 @@ namespace PythonBindings
           "texturefocus",
           "orientation",
           NULL};
-         
-    long  x ;         
-    long  y ;         
-    long  width ;         
-    long  height ;         
-    char * textureback  = NULL;         
-    char * texture  = NULL;         
-    char * texturefocus  = NULL;         
+
+    long  x ;
+    long  y ;
+    long  width ;
+    long  height ;
+    char * textureback  = NULL;
+    char * texture  = NULL;
+    char * texturefocus  = NULL;
     int  orientation  = 1;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"llll|sssi",
-       (char**)keywords,
+       "llll|sssi",
+       const_cast<char**>(keywords),
          &x,
          &y,
          &width,
@@ -6777,17 +7326,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::ControlSlider *)new XBMCAddon::xbmcgui::ControlSlider(  x,  y,  width,  height,  textureback,  texture,  texturefocus,  orientation  );
+      apiResult = new XBMCAddon::xbmcgui::ControlSlider(  x,  y,  width,  height,  textureback,  texture,  texturefocus,  orientation  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6814,17 +7363,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (float )((XBMCAddon::xbmcgui::ControlSlider*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlSlider_Type,"getPercent","XBMCAddon::xbmcgui::ControlSlider"))-> getPercent(  );
+      apiResult = ((XBMCAddon::xbmcgui::ControlSlider*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlSlider_Type,"getPercent","XBMCAddon::xbmcgui::ControlSlider"))-> getPercent(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6839,7 +7388,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"f", apiResult);
+    result = Py_BuildValue("f", apiResult);
 
     return result; 
   } 
@@ -6851,13 +7400,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "pct",
           NULL};
-         
+
     float  pct ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"f",
-       (char**)keywords,
+       "f",
+       const_cast<char**>(keywords),
          &pct
        ))
     {
@@ -6872,13 +7421,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6899,6 +7448,208 @@ namespace PythonBindings
     return result; 
   } 
 
+  static PyObject* xbmcgui_XBMCAddon_xbmcgui_ControlSlider_getInt (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+    int  apiResult;
+    try
+    {
+
+      apiResult = ((XBMCAddon::xbmcgui::ControlSlider*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlSlider_Type,"getInt","XBMCAddon::xbmcgui::ControlSlider"))-> getInt(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"getInt\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"getInt\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    result = Py_BuildValue("i", apiResult);
+
+    return result; 
+  } 
+
+  static PyObject* xbmcgui_XBMCAddon_xbmcgui_ControlSlider_setInt (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+
+    static const char *keywords[] = {
+          "value",
+          "min",
+          "delta",
+          "max",
+          NULL};
+
+    int  value ;
+    int  min ;
+    int  delta ;
+    int  max ;
+    if (!PyArg_ParseTupleAndKeywords(
+       args,
+       kwds,
+       "iiii",
+       const_cast<char**>(keywords),
+         &value,
+         &min,
+         &delta,
+         &max
+       ))
+    {
+      return NULL;
+    }
+
+
+    try
+    {
+
+      ((XBMCAddon::xbmcgui::ControlSlider*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlSlider_Type,"setInt","XBMCAddon::xbmcgui::ControlSlider"))-> setInt(  value,  min,  delta,  max  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"setInt\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"setInt\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    Py_INCREF(Py_None);
+    result = Py_None;
+
+    return result; 
+  } 
+
+  static PyObject* xbmcgui_XBMCAddon_xbmcgui_ControlSlider_getFloat (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+    float  apiResult;
+    try
+    {
+
+      apiResult = ((XBMCAddon::xbmcgui::ControlSlider*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlSlider_Type,"getFloat","XBMCAddon::xbmcgui::ControlSlider"))-> getFloat(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"getFloat\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"getFloat\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    result = Py_BuildValue("f", apiResult);
+
+    return result; 
+  } 
+
+  static PyObject* xbmcgui_XBMCAddon_xbmcgui_ControlSlider_setFloat (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+
+    static const char *keywords[] = {
+          "value",
+          "min",
+          "delta",
+          "max",
+          NULL};
+
+    float  value ;
+    float  min ;
+    float  delta ;
+    float  max ;
+    if (!PyArg_ParseTupleAndKeywords(
+       args,
+       kwds,
+       "ffff",
+       const_cast<char**>(keywords),
+         &value,
+         &min,
+         &delta,
+         &max
+       ))
+    {
+      return NULL;
+    }
+
+
+    try
+    {
+
+      ((XBMCAddon::xbmcgui::ControlSlider*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_ControlSlider_Type,"setFloat","XBMCAddon::xbmcgui::ControlSlider"))-> setFloat(  value,  min,  delta,  max  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"setFloat\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"setFloat\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    Py_INCREF(Py_None);
+    result = Py_None;
+
+    return result; 
+  } 
+
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_Dialog_New (PyTypeObject* pytype  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
@@ -6907,17 +7658,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::Dialog *)new XBMCAddon::xbmcgui::Dialog(  );
+      apiResult = new XBMCAddon::xbmcgui::Dialog(  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6950,25 +7701,25 @@ namespace PythonBindings
           "yeslabel",
           "autoclose",
           NULL};
-         
+
     std::string  heading ;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::string  line1 ;
-    PyObject* pyline1 = NULL;         
+    PyObject* pyline1 = NULL;
     std::string  line2  = XBMCAddon::emptyString;
-    PyObject* pyline2 = NULL;         
+    PyObject* pyline2 = NULL;
     std::string  line3  = XBMCAddon::emptyString;
-    PyObject* pyline3 = NULL;         
+    PyObject* pyline3 = NULL;
     std::string  nolabel  = XBMCAddon::emptyString;
-    PyObject* pynolabel = NULL;         
+    PyObject* pynolabel = NULL;
     std::string  yeslabel  = XBMCAddon::emptyString;
-    PyObject* pyyeslabel = NULL;         
+    PyObject* pyyeslabel = NULL;
     int  autoclose  = 0;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"OO|OOOOi",
-       (char**)keywords,
+       "OO|OOOOi",
+       const_cast<char**>(keywords),
          &pyheading,
          &pyline1,
          &pyline2,
@@ -6991,17 +7742,17 @@ namespace PythonBindings
       if (pynolabel) PyXBMCGetUnicodeString(nolabel,pynolabel,false,"nolabel","yesno"); 
       if (pyyeslabel) PyXBMCGetUnicodeString(yeslabel,pyyeslabel,false,"yeslabel","yesno"); 
 
-      apiResult = (bool )((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"yesno","XBMCAddon::xbmcgui::Dialog"))-> yesno(  heading,  line1,  line2,  line3,  nolabel,  yeslabel,  autoclose  );
+      apiResult = ((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"yesno","XBMCAddon::xbmcgui::Dialog"))-> yesno(  heading,  line1,  line2,  line3,  nolabel,  yeslabel,  autoclose  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7016,7 +7767,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -7028,14 +7779,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "item",
           NULL};
-         
-    XBMCAddon::xbmcgui::ListItem * item ;
+
+    XBMCAddon::xbmcgui::ListItem * item  = nullptr;
     PyObject* pyitem = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pyitem
        ))
     {
@@ -7047,17 +7798,17 @@ namespace PythonBindings
     {
       item = (XBMCAddon::xbmcgui::ListItem *)retrieveApiInstance(pyitem,"p.XBMCAddon::xbmcgui::ListItem","XBMCAddon::xbmcgui::","info"); 
 
-      apiResult = (bool )((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"info","XBMCAddon::xbmcgui::Dialog"))-> info(  item  );
+      apiResult = ((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"info","XBMCAddon::xbmcgui::Dialog"))-> info(  item  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7072,7 +7823,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -7088,19 +7839,19 @@ namespace PythonBindings
           "preselect",
           "useDetails",
           NULL};
-         
+
     std::string  heading ;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::vector< Alternative< XBMCAddon::String ,XBMCAddon::xbmcgui::ListItem const * >  >  list ;
-    PyObject* pylist = NULL;         
-    int  autoclose  = 0;         
-    int  preselect  = -1;         
+    PyObject* pylist = NULL;
+    int  autoclose  = 0;
+    int  preselect  = -1;
     bool  useDetails  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"OO|iib",
-       (char**)keywords,
+       "OO|iib",
+       const_cast<char**>(keywords),
          &pyheading,
          &pylist,
          &autoclose,
@@ -7124,8 +7875,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pylist) : PyList_Size(pylist));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pylist) : PyList_Size(pylist));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pylist, i) : PyList_GetItem(pylist, i));
         Alternative< XBMCAddon::String ,XBMCAddon::xbmcgui::ListItem const * >  entry1;
@@ -7139,7 +7890,7 @@ namespace PythonBindings
         if (pyentry_2) PyXBMCGetUnicodeString(entry0_2,pyentry_2,false,"entry0_2","select");
         entry1.former() = entry0_2;
       }
-      catch (XBMCAddon::WrongTypeException wte)
+      catch (const XBMCAddon::WrongTypeException&)
       {
         try
         {
@@ -7147,9 +7898,9 @@ namespace PythonBindings
           entry1_2 = (XBMCAddon::xbmcgui::ListItem *)retrieveApiInstance(pyentry_2,"p.XBMCAddon::xbmcgui::ListItem","XBMCAddon::xbmcgui::","select");
           entry1.later() = entry1_2;
         }
-        catch (XBMCAddon::WrongTypeException wte2)
+        catch (const XBMCAddon::WrongTypeException&)
         {
-          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a " 
+          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a "
                                               "std::string or a "
                                               "p.XBMCAddon::xbmcgui::ListItem" );
         }
@@ -7160,17 +7911,17 @@ namespace PythonBindings
     }
  
 
-      apiResult = (int )((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"select","XBMCAddon::xbmcgui::Dialog"))-> select(  heading,  list,  autoclose,  preselect,  useDetails  );
+      apiResult = ((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"select","XBMCAddon::xbmcgui::Dialog"))-> select(  heading,  list,  autoclose,  preselect,  useDetails  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7185,7 +7936,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -7197,14 +7948,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "list",
           NULL};
-         
+
     std::vector< XBMCAddon::String  >  list ;
     PyObject* pylist = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pylist
        ))
     {
@@ -7223,8 +7974,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pylist) : PyList_Size(pylist));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pylist) : PyList_Size(pylist));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pylist, i) : PyList_GetItem(pylist, i));
         std::string  entry1;
@@ -7234,17 +7985,17 @@ namespace PythonBindings
     }
  
 
-      apiResult = (int )((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"contextmenu","XBMCAddon::xbmcgui::Dialog"))-> contextmenu(  list  );
+      apiResult = ((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"contextmenu","XBMCAddon::xbmcgui::Dialog"))-> contextmenu(  list  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7259,7 +8010,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -7275,20 +8026,20 @@ namespace PythonBindings
           "preselect",
           "useDetails",
           NULL};
-         
+
     std::string  heading ;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::vector< Alternative< XBMCAddon::String ,XBMCAddon::xbmcgui::ListItem const * >  >  options ;
-    PyObject* pyoptions = NULL;         
-    int  autoclose  = 0;         
+    PyObject* pyoptions = NULL;
+    int  autoclose  = 0;
     std::vector< int  >  preselect  = std::vector< int >();
-    PyObject* pypreselect = NULL;         
+    PyObject* pypreselect = NULL;
     bool  useDetails  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"OO|iOb",
-       (char**)keywords,
+       "OO|iOb",
+       const_cast<char**>(keywords),
          &pyheading,
          &pyoptions,
          &autoclose,
@@ -7312,8 +8063,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pyoptions) : PyList_Size(pyoptions));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pyoptions) : PyList_Size(pyoptions));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pyoptions, i) : PyList_GetItem(pyoptions, i));
         Alternative< XBMCAddon::String ,XBMCAddon::xbmcgui::ListItem const * >  entry1;
@@ -7327,7 +8078,7 @@ namespace PythonBindings
         if (pyentry_2) PyXBMCGetUnicodeString(entry0_2,pyentry_2,false,"entry0_2","multiselect");
         entry1.former() = entry0_2;
       }
-      catch (XBMCAddon::WrongTypeException wte)
+      catch (const XBMCAddon::WrongTypeException&)
       {
         try
         {
@@ -7335,9 +8086,9 @@ namespace PythonBindings
           entry1_2 = (XBMCAddon::xbmcgui::ListItem *)retrieveApiInstance(pyentry_2,"p.XBMCAddon::xbmcgui::ListItem","XBMCAddon::xbmcgui::","multiselect");
           entry1.later() = entry1_2;
         }
-        catch (XBMCAddon::WrongTypeException wte2)
+        catch (const XBMCAddon::WrongTypeException&)
         {
-          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a " 
+          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a "
                                               "std::string or a "
                                               "p.XBMCAddon::xbmcgui::ListItem" );
         }
@@ -7356,8 +8107,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pypreselect) : PyList_Size(pypreselect));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pypreselect) : PyList_Size(pypreselect));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pypreselect, i) : PyList_GetItem(pypreselect, i));
         int  entry1;
@@ -7367,17 +8118,17 @@ namespace PythonBindings
     }
  
 
-      apiResult = (std::unique_ptr< std::vector< int  >  > )((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"multiselect","XBMCAddon::xbmcgui::Dialog"))-> multiselect(  heading,  options,  autoclose,  preselect,  useDetails  );
+      apiResult = ((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"multiselect","XBMCAddon::xbmcgui::Dialog"))-> multiselect(  heading,  options,  autoclose,  preselect,  useDetails  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7396,7 +8147,7 @@ namespace PythonBindings
     std::vector< int  > * entry1 = apiResult.get();
     
     if (entry1 != NULL)
-    { 
+    {
 
       result = PyList_New(0);
 
@@ -7404,7 +8155,7 @@ namespace PythonBindings
       {
         int & entry2 = *iter;
         PyObject* pyentry2;
-        pyentry2 = Py_BuildValue((char*)"i", entry2);
+        pyentry2 = Py_BuildValue("i", entry2);
         PyList_Append(result, pyentry2);
         Py_DECREF(pyentry2);
       }
@@ -7427,20 +8178,20 @@ namespace PythonBindings
           "line2",
           "line3",
           NULL};
-         
+
     std::string  heading ;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::string  line1 ;
-    PyObject* pyline1 = NULL;         
+    PyObject* pyline1 = NULL;
     std::string  line2  = XBMCAddon::emptyString;
-    PyObject* pyline2 = NULL;         
+    PyObject* pyline2 = NULL;
     std::string  line3  = XBMCAddon::emptyString;
     PyObject* pyline3 = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"OO|OO",
-       (char**)keywords,
+       "OO|OO",
+       const_cast<char**>(keywords),
          &pyheading,
          &pyline1,
          &pyline2,
@@ -7458,17 +8209,17 @@ namespace PythonBindings
       if (pyline2) PyXBMCGetUnicodeString(line2,pyline2,false,"line2","ok"); 
       if (pyline3) PyXBMCGetUnicodeString(line3,pyline3,false,"line3","ok"); 
 
-      apiResult = (bool )((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"ok","XBMCAddon::xbmcgui::Dialog"))-> ok(  heading,  line1,  line2,  line3  );
+      apiResult = ((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"ok","XBMCAddon::xbmcgui::Dialog"))-> ok(  heading,  line1,  line2,  line3  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7483,7 +8234,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -7495,19 +8246,22 @@ namespace PythonBindings
     static const char *keywords[] = {
           "heading",
           "text",
+          "usemono",
           NULL};
-         
+
     std::string  heading ;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::string  text ;
     PyObject* pytext = NULL;
+    bool  usemono  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"OO",
-       (char**)keywords,
+       "OO|b",
+       const_cast<char**>(keywords),
          &pyheading,
-         &pytext
+         &pytext,
+         &usemono
        ))
     {
       return NULL;
@@ -7519,17 +8273,17 @@ namespace PythonBindings
       if (pyheading) PyXBMCGetUnicodeString(heading,pyheading,false,"heading","textviewer"); 
       if (pytext) PyXBMCGetUnicodeString(text,pytext,false,"text","textviewer"); 
 
-      ((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"textviewer","XBMCAddon::xbmcgui::Dialog"))-> textviewer(  heading,  text  );
+      ((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"textviewer","XBMCAddon::xbmcgui::Dialog"))-> textviewer(  heading,  text,  usemono  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7564,24 +8318,24 @@ namespace PythonBindings
           "defaultt",
           "enableMultiple",
           NULL};
-         
-    int  type ;         
+
+    int  type ;
     std::string  heading ;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::string  shares ;
-    PyObject* pyshares = NULL;         
+    PyObject* pyshares = NULL;
     std::string  mask  = XBMCAddon::emptyString;
-    PyObject* pymask = NULL;         
-    bool  useThumbs  = false;         
-    bool  treatAsFolder  = false;         
+    PyObject* pymask = NULL;
+    bool  useThumbs  = false;
+    bool  treatAsFolder  = false;
     std::string  defaultt  = XBMCAddon::emptyString;
-    PyObject* pydefaultt = NULL;         
+    PyObject* pydefaultt = NULL;
     bool  enableMultiple  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"iOO|ObbOb",
-       (char**)keywords,
+       "iOO|ObbOb",
+       const_cast<char**>(keywords),
          &type,
          &pyheading,
          &pyshares,
@@ -7603,17 +8357,17 @@ namespace PythonBindings
       if (pymask) PyXBMCGetUnicodeString(mask,pymask,false,"mask","browse"); 
       if (pydefaultt) PyXBMCGetUnicodeString(defaultt,pydefaultt,false,"defaultt","browse"); 
 
-      apiResult = (Alternative< XBMCAddon::String ,std::vector< XBMCAddon::String  >  > )((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"browse","XBMCAddon::xbmcgui::Dialog"))-> browse(  type,  heading,  shares,  mask,  useThumbs,  treatAsFolder,  defaultt,  enableMultiple  );
+      apiResult = ((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"browse","XBMCAddon::xbmcgui::Dialog"))-> browse(  type,  heading,  shares,  mask,  useThumbs,  treatAsFolder,  defaultt,  enableMultiple  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7681,23 +8435,23 @@ namespace PythonBindings
           "treatAsFolder",
           "defaultt",
           NULL};
-         
-    int  type ;         
+
+    int  type ;
     std::string  heading ;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::string  shares ;
-    PyObject* pyshares = NULL;         
+    PyObject* pyshares = NULL;
     std::string  mask  = XBMCAddon::emptyString;
-    PyObject* pymask = NULL;         
-    bool  useThumbs  = false;         
-    bool  treatAsFolder  = false;         
+    PyObject* pymask = NULL;
+    bool  useThumbs  = false;
+    bool  treatAsFolder  = false;
     std::string  defaultt  = XBMCAddon::emptyString;
     PyObject* pydefaultt = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"iOO|ObbO",
-       (char**)keywords,
+       "iOO|ObbO",
+       const_cast<char**>(keywords),
          &type,
          &pyheading,
          &pyshares,
@@ -7710,7 +8464,7 @@ namespace PythonBindings
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
       if (pyheading) PyXBMCGetUnicodeString(heading,pyheading,false,"heading","browseSingle"); 
@@ -7718,17 +8472,17 @@ namespace PythonBindings
       if (pymask) PyXBMCGetUnicodeString(mask,pymask,false,"mask","browseSingle"); 
       if (pydefaultt) PyXBMCGetUnicodeString(defaultt,pydefaultt,false,"defaultt","browseSingle"); 
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"browseSingle","XBMCAddon::xbmcgui::Dialog"))-> browseSingle(  type,  heading,  shares,  mask,  useThumbs,  treatAsFolder,  defaultt  );
+      apiResult = ((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"browseSingle","XBMCAddon::xbmcgui::Dialog"))-> browseSingle(  type,  heading,  shares,  mask,  useThumbs,  treatAsFolder,  defaultt  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7761,23 +8515,23 @@ namespace PythonBindings
           "treatAsFolder",
           "defaultt",
           NULL};
-         
-    int  type ;         
+
+    int  type ;
     std::string  heading ;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::string  shares ;
-    PyObject* pyshares = NULL;         
+    PyObject* pyshares = NULL;
     std::string  mask  = XBMCAddon::emptyString;
-    PyObject* pymask = NULL;         
-    bool  useThumbs  = false;         
-    bool  treatAsFolder  = false;         
+    PyObject* pymask = NULL;
+    bool  useThumbs  = false;
+    bool  treatAsFolder  = false;
     std::string  defaultt  = XBMCAddon::emptyString;
     PyObject* pydefaultt = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"iOO|ObbO",
-       (char**)keywords,
+       "iOO|ObbO",
+       const_cast<char**>(keywords),
          &type,
          &pyheading,
          &pyshares,
@@ -7798,17 +8552,17 @@ namespace PythonBindings
       if (pymask) PyXBMCGetUnicodeString(mask,pymask,false,"mask","browseMultiple"); 
       if (pydefaultt) PyXBMCGetUnicodeString(defaultt,pydefaultt,false,"defaultt","browseMultiple"); 
 
-      apiResult = (std::vector< XBMCAddon::String  > )((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"browseMultiple","XBMCAddon::xbmcgui::Dialog"))-> browseMultiple(  type,  heading,  shares,  mask,  useThumbs,  treatAsFolder,  defaultt  );
+      apiResult = ((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"browseMultiple","XBMCAddon::xbmcgui::Dialog"))-> browseMultiple(  type,  heading,  shares,  mask,  useThumbs,  treatAsFolder,  defaultt  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7849,17 +8603,17 @@ namespace PythonBindings
           "heading",
           "defaultt",
           NULL};
-         
-    int  type ;         
+
+    int  type ;
     std::string  heading ;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::string  defaultt  = XBMCAddon::emptyString;
     PyObject* pydefaultt = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"iO|O",
-       (char**)keywords,
+       "iO|O",
+       const_cast<char**>(keywords),
          &type,
          &pyheading,
          &pydefaultt
@@ -7868,23 +8622,23 @@ namespace PythonBindings
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
       if (pyheading) PyXBMCGetUnicodeString(heading,pyheading,false,"heading","numeric"); 
       if (pydefaultt) PyXBMCGetUnicodeString(defaultt,pydefaultt,false,"defaultt","numeric"); 
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"numeric","XBMCAddon::xbmcgui::Dialog"))-> numeric(  type,  heading,  defaultt  );
+      apiResult = ((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"numeric","XBMCAddon::xbmcgui::Dialog"))-> numeric(  type,  heading,  defaultt  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7915,20 +8669,20 @@ namespace PythonBindings
           "time",
           "sound",
           NULL};
-         
+
     std::string  heading ;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::string  message ;
-    PyObject* pymessage = NULL;         
+    PyObject* pymessage = NULL;
     std::string  icon  = XBMCAddon::emptyString;
-    PyObject* pyicon = NULL;         
-    int  time  = 0;         
+    PyObject* pyicon = NULL;
+    int  time  = 0;
     bool  sound  = true;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"OO|Oib",
-       (char**)keywords,
+       "OO|Oib",
+       const_cast<char**>(keywords),
          &pyheading,
          &pymessage,
          &pyicon,
@@ -7950,13 +8704,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7988,19 +8742,19 @@ namespace PythonBindings
           "option",
           "autoclose",
           NULL};
-         
+
     std::string  heading ;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::string  defaultt  = XBMCAddon::emptyString;
-    PyObject* pydefaultt = NULL;         
-    int  type  = 0;         
-    int  option  = 0;         
+    PyObject* pydefaultt = NULL;
+    int  type  = 0;
+    int  option  = 0;
     int  autoclose  = 0;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O|Oiii",
-       (char**)keywords,
+       "O|Oiii",
+       const_cast<char**>(keywords),
          &pyheading,
          &pydefaultt,
          &type,
@@ -8011,23 +8765,23 @@ namespace PythonBindings
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
       if (pyheading) PyXBMCGetUnicodeString(heading,pyheading,false,"heading","input"); 
       if (pydefaultt) PyXBMCGetUnicodeString(defaultt,pydefaultt,false,"defaultt","input"); 
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"input","XBMCAddon::xbmcgui::Dialog"))-> input(  heading,  defaultt,  type,  option,  autoclose  );
+      apiResult = ((XBMCAddon::xbmcgui::Dialog*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Dialog_Type,"input","XBMCAddon::xbmcgui::Dialog"))-> input(  heading,  defaultt,  type,  option,  autoclose  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8055,17 +8809,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::DialogProgress *)new XBMCAddon::xbmcgui::DialogProgress(  );
+      apiResult = new XBMCAddon::xbmcgui::DialogProgress(  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8095,20 +8849,20 @@ namespace PythonBindings
           "line2",
           "line3",
           NULL};
-         
+
     std::string  heading ;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::string  line1  = XBMCAddon::emptyString;
-    PyObject* pyline1 = NULL;         
+    PyObject* pyline1 = NULL;
     std::string  line2  = XBMCAddon::emptyString;
-    PyObject* pyline2 = NULL;         
+    PyObject* pyline2 = NULL;
     std::string  line3  = XBMCAddon::emptyString;
     PyObject* pyline3 = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O|OOO",
-       (char**)keywords,
+       "O|OOO",
+       const_cast<char**>(keywords),
          &pyheading,
          &pyline1,
          &pyline2,
@@ -8130,13 +8884,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8167,19 +8921,19 @@ namespace PythonBindings
           "line2",
           "line3",
           NULL};
-         
-    int  percent ;         
+
+    int  percent ;
     std::string  line1  = XBMCAddon::emptyString;
-    PyObject* pyline1 = NULL;         
+    PyObject* pyline1 = NULL;
     std::string  line2  = XBMCAddon::emptyString;
-    PyObject* pyline2 = NULL;         
+    PyObject* pyline2 = NULL;
     std::string  line3  = XBMCAddon::emptyString;
     PyObject* pyline3 = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i|OOO",
-       (char**)keywords,
+       "i|OOO",
+       const_cast<char**>(keywords),
          &percent,
          &pyline1,
          &pyline2,
@@ -8200,13 +8954,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8238,13 +8992,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8272,17 +9026,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmcgui::DialogProgress*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_DialogProgress_Type,"iscanceled","XBMCAddon::xbmcgui::DialogProgress"))-> iscanceled(  );
+      apiResult = ((XBMCAddon::xbmcgui::DialogProgress*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_DialogProgress_Type,"iscanceled","XBMCAddon::xbmcgui::DialogProgress"))-> iscanceled(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8297,7 +9051,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -8310,17 +9064,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::DialogBusy *)new XBMCAddon::xbmcgui::DialogBusy(  );
+      apiResult = new XBMCAddon::xbmcgui::DialogBusy(  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8351,13 +9105,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8385,13 +9139,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "percent",
           NULL};
-         
+
     int  percent ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &percent
        ))
     {
@@ -8406,13 +9160,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8444,13 +9198,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8478,17 +9232,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmcgui::DialogBusy*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_DialogBusy_Type,"iscanceled","XBMCAddon::xbmcgui::DialogBusy"))-> iscanceled(  );
+      apiResult = ((XBMCAddon::xbmcgui::DialogBusy*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_DialogBusy_Type,"iscanceled","XBMCAddon::xbmcgui::DialogBusy"))-> iscanceled(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8503,7 +9257,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -8516,17 +9270,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::DialogProgressBG *)new XBMCAddon::xbmcgui::DialogProgressBG(  );
+      apiResult = new XBMCAddon::xbmcgui::DialogProgressBG(  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8554,16 +9308,16 @@ namespace PythonBindings
           "heading",
           "message",
           NULL};
-         
+
     std::string  heading ;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::string  message  = XBMCAddon::emptyString;
     PyObject* pymessage = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O|O",
-       (char**)keywords,
+       "O|O",
+       const_cast<char**>(keywords),
          &pyheading,
          &pymessage
        ))
@@ -8581,13 +9335,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8617,17 +9371,17 @@ namespace PythonBindings
           "heading",
           "message",
           NULL};
-         
-    int  percent  = 0;         
+
+    int  percent  = 0;
     std::string  heading  = XBMCAddon::emptyString;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     std::string  message  = XBMCAddon::emptyString;
     PyObject* pymessage = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|iOO",
-       (char**)keywords,
+       "|iOO",
+       const_cast<char**>(keywords),
          &percent,
          &pyheading,
          &pymessage
@@ -8646,13 +9400,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8684,13 +9438,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8718,17 +9472,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmcgui::DialogProgressBG*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_DialogProgressBG_Type,"isFinished","XBMCAddon::xbmcgui::DialogProgressBG"))-> isFinished(  );
+      apiResult = ((XBMCAddon::xbmcgui::DialogProgressBG*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_DialogProgressBG_Type,"isFinished","XBMCAddon::xbmcgui::DialogProgressBG"))-> isFinished(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8743,7 +9497,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -8756,17 +9510,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::Action *)new XBMCAddon::xbmcgui::Action(  );
+      apiResult = new XBMCAddon::xbmcgui::Action(  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8793,17 +9547,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long )((XBMCAddon::xbmcgui::Action*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Action_Type,"getId","XBMCAddon::xbmcgui::Action"))-> getId(  );
+      apiResult = ((XBMCAddon::xbmcgui::Action*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Action_Type,"getId","XBMCAddon::xbmcgui::Action"))-> getId(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8830,17 +9584,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long )((XBMCAddon::xbmcgui::Action*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Action_Type,"getButtonCode","XBMCAddon::xbmcgui::Action"))-> getButtonCode(  );
+      apiResult = ((XBMCAddon::xbmcgui::Action*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Action_Type,"getButtonCode","XBMCAddon::xbmcgui::Action"))-> getButtonCode(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8867,17 +9621,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (float )((XBMCAddon::xbmcgui::Action*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Action_Type,"getAmount1","XBMCAddon::xbmcgui::Action"))-> getAmount1(  );
+      apiResult = ((XBMCAddon::xbmcgui::Action*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Action_Type,"getAmount1","XBMCAddon::xbmcgui::Action"))-> getAmount1(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8892,7 +9646,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"f", apiResult);
+    result = Py_BuildValue("f", apiResult);
 
     return result; 
   } 
@@ -8904,17 +9658,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (float )((XBMCAddon::xbmcgui::Action*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Action_Type,"getAmount2","XBMCAddon::xbmcgui::Action"))-> getAmount2(  );
+      apiResult = ((XBMCAddon::xbmcgui::Action*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Action_Type,"getAmount2","XBMCAddon::xbmcgui::Action"))-> getAmount2(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8929,7 +9683,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"f", apiResult);
+    result = Py_BuildValue("f", apiResult);
 
     return result; 
   } 
@@ -8937,12 +9691,12 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_Window_New (PyTypeObject* pytype  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-         
+
     int  existingWindowId  = -1;
     if (!PyArg_ParseTuple(
        args,
        
-       (char*)"|i",
+       "|i",
        
          &existingWindowId
        ))
@@ -8955,17 +9709,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::Window *)(&(TyXBMCAddon_xbmcgui_Window_Type.pythonType) != pytype) ? new XBMCAddon_xbmcgui_Window_Director( existingWindowId ) : new XBMCAddon::xbmcgui::Window(  existingWindowId  );
+      apiResult = (&(TyXBMCAddon_xbmcgui_Window_Type.pythonType) != pytype) ? new XBMCAddon_xbmcgui_Window_Director( existingWindowId ) : new XBMCAddon::xbmcgui::Window(  existingWindowId  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8981,7 +9735,7 @@ namespace PythonBindings
 
     // transform the result
     result = makePythonInstance(apiResult,pytype,false);
-    if (&(TyXBMCAddon_xbmcgui_Window_Type.pythonType) != pytype) 
+    if (&(TyXBMCAddon_xbmcgui_Window_Type.pythonType) != pytype)
       ((XBMCAddon_xbmcgui_Window_Director*)apiResult)->setPyObjectForDirector(result);
 
     return result; 
@@ -8994,14 +9748,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "action",
           NULL};
-         
-    XBMCAddon::xbmcgui::Action * action ;
+
+    XBMCAddon::xbmcgui::Action * action  = nullptr;
     PyObject* pyaction = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pyaction
        ))
     {
@@ -9013,18 +9767,18 @@ namespace PythonBindings
     {
       action = (XBMCAddon::xbmcgui::Action *)retrieveApiInstance(pyaction,"p.XBMCAddon::xbmcgui::Action","XBMCAddon::xbmcgui::","onAction"); 
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"onAction","XBMCAddon::xbmcgui::Window"))-> XBMCAddon::xbmcgui::Window::onAction(  action  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9052,14 +9806,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "control",
           NULL};
-         
-    XBMCAddon::xbmcgui::Control * control ;
+
+    XBMCAddon::xbmcgui::Control * control  = nullptr;
     PyObject* pycontrol = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pycontrol
        ))
     {
@@ -9071,18 +9825,18 @@ namespace PythonBindings
     {
       control = (XBMCAddon::xbmcgui::Control *)retrieveApiInstance(pycontrol,"p.XBMCAddon::xbmcgui::Control","XBMCAddon::xbmcgui::","onControl"); 
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"onControl","XBMCAddon::xbmcgui::Window"))-> XBMCAddon::xbmcgui::Window::onControl(  control  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9110,13 +9864,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "controlId",
           NULL};
-         
+
     int  controlId ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &controlId
        ))
     {
@@ -9127,18 +9881,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"onClick","XBMCAddon::xbmcgui::Window"))-> XBMCAddon::xbmcgui::Window::onClick(  controlId  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9166,13 +9920,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "controlId",
           NULL};
-         
+
     int  controlId ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &controlId
        ))
     {
@@ -9183,18 +9937,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"onDoubleClick","XBMCAddon::xbmcgui::Window"))-> XBMCAddon::xbmcgui::Window::onDoubleClick(  controlId  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9222,13 +9976,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "controlId",
           NULL};
-         
+
     int  controlId ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &controlId
        ))
     {
@@ -9239,18 +9993,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"onFocus","XBMCAddon::xbmcgui::Window"))-> XBMCAddon::xbmcgui::Window::onFocus(  controlId  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9278,18 +10032,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"onInit","XBMCAddon::xbmcgui::Window"))-> XBMCAddon::xbmcgui::Window::onInit(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9321,13 +10075,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9355,14 +10109,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "pControl",
           NULL};
-         
-    XBMCAddon::xbmcgui::Control * pControl ;
+
+    XBMCAddon::xbmcgui::Control * pControl  = nullptr;
     PyObject* pypControl = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypControl
        ))
     {
@@ -9378,13 +10132,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9412,13 +10166,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "iControlId",
           NULL};
-         
+
     int  iControlId ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &iControlId
        ))
     {
@@ -9433,13 +10187,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9467,17 +10221,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (XBMCAddon::xbmcgui::Control *)((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getFocus","XBMCAddon::xbmcgui::Window"))-> getFocus(  );
+      apiResult = ((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getFocus","XBMCAddon::xbmcgui::Window"))-> getFocus(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9504,17 +10258,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long )((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getFocusId","XBMCAddon::xbmcgui::Window"))-> getFocusId(  );
+      apiResult = ((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getFocusId","XBMCAddon::xbmcgui::Window"))-> getFocusId(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9541,14 +10295,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "pControl",
           NULL};
-         
-    XBMCAddon::xbmcgui::Control * pControl ;
+
+    XBMCAddon::xbmcgui::Control * pControl  = nullptr;
     PyObject* pypControl = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypControl
        ))
     {
@@ -9564,13 +10318,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9598,14 +10352,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "pControls",
           NULL};
-         
+
     std::vector< XBMCAddon::xbmcgui::Control * >  pControls ;
     PyObject* pypControls = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypControls
        ))
     {
@@ -9624,8 +10378,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pypControls) : PyList_Size(pypControls));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pypControls) : PyList_Size(pypControls));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pypControls, i) : PyList_GetItem(pypControls, i));
         XBMCAddon::xbmcgui::Control * entry1;
@@ -9639,13 +10393,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9673,17 +10427,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long )((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getHeight","XBMCAddon::xbmcgui::Window"))-> getHeight(  );
+      apiResult = ((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getHeight","XBMCAddon::xbmcgui::Window"))-> getHeight(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9710,17 +10464,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long )((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getWidth","XBMCAddon::xbmcgui::Window"))-> getWidth(  );
+      apiResult = ((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getWidth","XBMCAddon::xbmcgui::Window"))-> getWidth(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9747,17 +10501,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long )((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getResolution","XBMCAddon::xbmcgui::Window"))-> getResolution(  );
+      apiResult = ((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getResolution","XBMCAddon::xbmcgui::Window"))-> getResolution(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9784,13 +10538,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "res",
           NULL};
-         
+
     long  res ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"l",
-       (char**)keywords,
+       "l",
+       const_cast<char**>(keywords),
          &res
        ))
     {
@@ -9805,13 +10559,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9840,15 +10594,15 @@ namespace PythonBindings
           "key",
           "value",
           NULL};
-         
-    char * key ;         
+
+    char * key  = nullptr;
     std::string  value ;
     PyObject* pyvalue = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"sO",
-       (char**)keywords,
+       "sO",
+       const_cast<char**>(keywords),
          &key,
          &pyvalue
        ))
@@ -9865,13 +10619,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9899,34 +10653,34 @@ namespace PythonBindings
     static const char *keywords[] = {
           "key",
           NULL};
-         
-    char * key ;
+
+    char * key  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &key
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getProperty","XBMCAddon::xbmcgui::Window"))-> getProperty(  key  );
+      apiResult = ((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getProperty","XBMCAddon::xbmcgui::Window"))-> getProperty(  key  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -9953,13 +10707,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "key",
           NULL};
-         
-    char * key ;
+
+    char * key  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &key
        ))
     {
@@ -9974,13 +10728,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10012,13 +10766,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10050,13 +10804,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10088,13 +10842,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10122,14 +10876,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "pControl",
           NULL};
-         
-    XBMCAddon::xbmcgui::Control * pControl ;
+
+    XBMCAddon::xbmcgui::Control * pControl  = nullptr;
     PyObject* pypControl = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypControl
        ))
     {
@@ -10145,13 +10899,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10179,14 +10933,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "pControls",
           NULL};
-         
+
     std::vector< XBMCAddon::xbmcgui::Control * >  pControls ;
     PyObject* pypControls = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypControls
        ))
     {
@@ -10205,8 +10959,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pypControls) : PyList_Size(pypControls));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pypControls) : PyList_Size(pypControls));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pypControls, i) : PyList_GetItem(pypControls, i));
         XBMCAddon::xbmcgui::Control * entry1;
@@ -10220,13 +10974,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10254,13 +11008,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "iControlId",
           NULL};
-         
+
     int  iControlId ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &iControlId
        ))
     {
@@ -10271,17 +11025,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (XBMCAddon::xbmcgui::Control *)((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getControl","XBMCAddon::xbmcgui::Window"))-> getControl(  iControlId  );
+      apiResult = ((XBMCAddon::xbmcgui::Window*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_Window_Type,"getControl","XBMCAddon::xbmcgui::Window"))-> getControl(  iControlId  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10309,17 +11063,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::WindowDialog *)(&(TyXBMCAddon_xbmcgui_WindowDialog_Type.pythonType) != pytype) ? new XBMCAddon_xbmcgui_WindowDialog_Director() : new XBMCAddon::xbmcgui::WindowDialog(  );
+      apiResult = (&(TyXBMCAddon_xbmcgui_WindowDialog_Type.pythonType) != pytype) ? new XBMCAddon_xbmcgui_WindowDialog_Director() : new XBMCAddon::xbmcgui::WindowDialog(  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10335,7 +11089,7 @@ namespace PythonBindings
 
     // transform the result
     result = makePythonInstance(apiResult,pytype,false);
-    if (&(TyXBMCAddon_xbmcgui_WindowDialog_Type.pythonType) != pytype) 
+    if (&(TyXBMCAddon_xbmcgui_WindowDialog_Type.pythonType) != pytype)
       ((XBMCAddon_xbmcgui_WindowDialog_Director*)apiResult)->setPyObjectForDirector(result);
 
     return result; 
@@ -10344,24 +11098,26 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_WindowXML_New (PyTypeObject* pytype  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-         
+
     std::string  xmlFilename ;
-    PyObject* pyxmlFilename = NULL;         
+    PyObject* pyxmlFilename = NULL;
     std::string  scriptPath ;
-    PyObject* pyscriptPath = NULL;         
+    PyObject* pyscriptPath = NULL;
     std::string  defaultSkin  = "Default";
-    PyObject* pydefaultSkin = NULL;         
+    PyObject* pydefaultSkin = NULL;
     std::string  defaultRes  = "720p";
     PyObject* pydefaultRes = NULL;
+    bool  isMedia  = false;
     if (!PyArg_ParseTuple(
        args,
        
-       (char*)"OO|OO",
+       "OO|OOb",
        
          &pyxmlFilename,
          &pyscriptPath,
          &pydefaultSkin,
-         &pydefaultRes
+         &pydefaultRes,
+         &isMedia
        ))
     {
       return NULL;
@@ -10376,17 +11132,17 @@ namespace PythonBindings
       if (pydefaultRes) PyXBMCGetUnicodeString(defaultRes,pydefaultRes,false,"defaultRes","WindowXML"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::WindowXML *)(&(TyXBMCAddon_xbmcgui_WindowXML_Type.pythonType) != pytype) ? new XBMCAddon_xbmcgui_WindowXML_Director( xmlFilename,  scriptPath,  defaultSkin,  defaultRes ) : new XBMCAddon::xbmcgui::WindowXML(  xmlFilename,  scriptPath,  defaultSkin,  defaultRes  );
+      apiResult = (&(TyXBMCAddon_xbmcgui_WindowXML_Type.pythonType) != pytype) ? new XBMCAddon_xbmcgui_WindowXML_Director( xmlFilename,  scriptPath,  defaultSkin,  defaultRes,  isMedia ) : new XBMCAddon::xbmcgui::WindowXML(  xmlFilename,  scriptPath,  defaultSkin,  defaultRes,  isMedia  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10402,7 +11158,7 @@ namespace PythonBindings
 
     // transform the result
     result = makePythonInstance(apiResult,pytype,false);
-    if (&(TyXBMCAddon_xbmcgui_WindowXML_Type.pythonType) != pytype) 
+    if (&(TyXBMCAddon_xbmcgui_WindowXML_Type.pythonType) != pytype)
       ((XBMCAddon_xbmcgui_WindowXML_Director*)apiResult)->setPyObjectForDirector(result);
 
     return result; 
@@ -10416,15 +11172,15 @@ namespace PythonBindings
           "item",
           "position",
           NULL};
-         
+
     Alternative< XBMCAddon::String ,XBMCAddon::xbmcgui::ListItem const * >  item ;
-    PyObject* pyitem = NULL;         
+    PyObject* pyitem = NULL;
     int  position  = INT_MAX;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O|i",
-       (char**)keywords,
+       "O|i",
+       const_cast<char**>(keywords),
          &pyitem,
          &position
        ))
@@ -10445,7 +11201,7 @@ namespace PythonBindings
         if (pyentry_1) PyXBMCGetUnicodeString(entry0_1,pyentry_1,false,"entry0_1","addItem");
         item.former() = entry0_1;
       }
-      catch (XBMCAddon::WrongTypeException wte)
+      catch (const XBMCAddon::WrongTypeException&)
       {
         try
         {
@@ -10453,9 +11209,9 @@ namespace PythonBindings
           entry1_1 = (XBMCAddon::xbmcgui::ListItem *)retrieveApiInstance(pyentry_1,"p.XBMCAddon::xbmcgui::ListItem","XBMCAddon::xbmcgui::","addItem");
           item.later() = entry1_1;
         }
-        catch (XBMCAddon::WrongTypeException wte2)
+        catch (const XBMCAddon::WrongTypeException&)
         {
-          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a " 
+          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a "
                                               "std::string or a "
                                               "p.XBMCAddon::xbmcgui::ListItem" );
         }
@@ -10466,13 +11222,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10500,14 +11256,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "items",
           NULL};
-         
+
     std::vector< Alternative< XBMCAddon::String ,XBMCAddon::xbmcgui::ListItem const * >  >  items ;
     PyObject* pyitems = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pyitems
        ))
     {
@@ -10526,8 +11282,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pyitems) : PyList_Size(pyitems));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pyitems) : PyList_Size(pyitems));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pyitems, i) : PyList_GetItem(pyitems, i));
         Alternative< XBMCAddon::String ,XBMCAddon::xbmcgui::ListItem const * >  entry1;
@@ -10541,7 +11297,7 @@ namespace PythonBindings
         if (pyentry_2) PyXBMCGetUnicodeString(entry0_2,pyentry_2,false,"entry0_2","addItems");
         entry1.former() = entry0_2;
       }
-      catch (XBMCAddon::WrongTypeException wte)
+      catch (const XBMCAddon::WrongTypeException&)
       {
         try
         {
@@ -10549,9 +11305,9 @@ namespace PythonBindings
           entry1_2 = (XBMCAddon::xbmcgui::ListItem *)retrieveApiInstance(pyentry_2,"p.XBMCAddon::xbmcgui::ListItem","XBMCAddon::xbmcgui::","addItems");
           entry1.later() = entry1_2;
         }
-        catch (XBMCAddon::WrongTypeException wte2)
+        catch (const XBMCAddon::WrongTypeException&)
         {
-          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a " 
+          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a "
                                               "std::string or a "
                                               "p.XBMCAddon::xbmcgui::ListItem" );
         }
@@ -10566,13 +11322,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10600,13 +11356,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "position",
           NULL};
-         
+
     int  position ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &position
        ))
     {
@@ -10621,13 +11377,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10655,17 +11411,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmcgui::WindowXML*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_WindowXML_Type,"getCurrentListPosition","XBMCAddon::xbmcgui::WindowXML"))-> getCurrentListPosition(  );
+      apiResult = ((XBMCAddon::xbmcgui::WindowXML*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_WindowXML_Type,"getCurrentListPosition","XBMCAddon::xbmcgui::WindowXML"))-> getCurrentListPosition(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10680,7 +11436,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -10692,13 +11448,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "position",
           NULL};
-         
+
     int  position ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &position
        ))
     {
@@ -10713,13 +11469,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10747,13 +11503,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "position",
           NULL};
-         
+
     int  position ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &position
        ))
     {
@@ -10764,17 +11520,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (XBMCAddon::xbmcgui::ListItem *)((XBMCAddon::xbmcgui::WindowXML*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_WindowXML_Type,"getListItem","XBMCAddon::xbmcgui::WindowXML"))-> getListItem(  position  );
+      apiResult = ((XBMCAddon::xbmcgui::WindowXML*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_WindowXML_Type,"getListItem","XBMCAddon::xbmcgui::WindowXML"))-> getListItem(  position  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10801,17 +11557,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmcgui::WindowXML*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_WindowXML_Type,"getListSize","XBMCAddon::xbmcgui::WindowXML"))-> getListSize(  );
+      apiResult = ((XBMCAddon::xbmcgui::WindowXML*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_WindowXML_Type,"getListSize","XBMCAddon::xbmcgui::WindowXML"))-> getListSize(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10826,7 +11582,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -10842,13 +11598,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10877,16 +11633,16 @@ namespace PythonBindings
           "strProperty",
           "strValue",
           NULL};
-         
+
     std::string  strProperty ;
-    PyObject* pystrProperty = NULL;         
+    PyObject* pystrProperty = NULL;
     std::string  strValue ;
     PyObject* pystrValue = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"OO",
-       (char**)keywords,
+       "OO",
+       const_cast<char**>(keywords),
          &pystrProperty,
          &pystrValue
        ))
@@ -10904,13 +11660,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10931,6 +11687,63 @@ namespace PythonBindings
     return result; 
   } 
 
+  static PyObject* xbmcgui_XBMCAddon_xbmcgui_WindowXML_setContent (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+
+    static const char *keywords[] = {
+          "strValue",
+          NULL};
+
+    std::string  strValue ;
+    PyObject* pystrValue = NULL;
+    if (!PyArg_ParseTupleAndKeywords(
+       args,
+       kwds,
+       "O",
+       const_cast<char**>(keywords),
+         &pystrValue
+       ))
+    {
+      return NULL;
+    }
+
+
+    try
+    {
+      if (pystrValue) PyXBMCGetUnicodeString(strValue,pystrValue,false,"strValue","setContent"); 
+
+      ((XBMCAddon::xbmcgui::WindowXML*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_WindowXML_Type,"setContent","XBMCAddon::xbmcgui::WindowXML"))-> setContent(  strValue  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"setContent\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"setContent\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    Py_INCREF(Py_None);
+    result = Py_None;
+
+    return result; 
+  } 
+
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_WindowXML_getCurrentContainerId (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
@@ -10938,17 +11751,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmcgui::WindowXML*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_WindowXML_Type,"getCurrentContainerId","XBMCAddon::xbmcgui::WindowXML"))-> getCurrentContainerId(  );
+      apiResult = ((XBMCAddon::xbmcgui::WindowXML*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcgui_WindowXML_Type,"getCurrentContainerId","XBMCAddon::xbmcgui::WindowXML"))-> getCurrentContainerId(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -10963,7 +11776,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -10971,19 +11784,19 @@ namespace PythonBindings
   static PyObject* xbmcgui_XBMCAddon_xbmcgui_WindowXMLDialog_New (PyTypeObject* pytype  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-         
+
     std::string  xmlFilename ;
-    PyObject* pyxmlFilename = NULL;         
+    PyObject* pyxmlFilename = NULL;
     std::string  scriptPath ;
-    PyObject* pyscriptPath = NULL;         
+    PyObject* pyscriptPath = NULL;
     std::string  defaultSkin  = "Default";
-    PyObject* pydefaultSkin = NULL;         
+    PyObject* pydefaultSkin = NULL;
     std::string  defaultRes  = "720p";
     PyObject* pydefaultRes = NULL;
     if (!PyArg_ParseTuple(
        args,
        
-       (char*)"OO|OO",
+       "OO|OO",
        
          &pyxmlFilename,
          &pyscriptPath,
@@ -11003,17 +11816,17 @@ namespace PythonBindings
       if (pydefaultRes) PyXBMCGetUnicodeString(defaultRes,pydefaultRes,false,"defaultRes","WindowXMLDialog"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcgui::WindowXMLDialog *)(&(TyXBMCAddon_xbmcgui_WindowXMLDialog_Type.pythonType) != pytype) ? new XBMCAddon_xbmcgui_WindowXMLDialog_Director( xmlFilename,  scriptPath,  defaultSkin,  defaultRes ) : new XBMCAddon::xbmcgui::WindowXMLDialog(  xmlFilename,  scriptPath,  defaultSkin,  defaultRes  );
+      apiResult = (&(TyXBMCAddon_xbmcgui_WindowXMLDialog_Type.pythonType) != pytype) ? new XBMCAddon_xbmcgui_WindowXMLDialog_Director( xmlFilename,  scriptPath,  defaultSkin,  defaultRes ) : new XBMCAddon::xbmcgui::WindowXMLDialog(  xmlFilename,  scriptPath,  defaultSkin,  defaultRes  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -11029,7 +11842,7 @@ namespace PythonBindings
 
     // transform the result
     result = makePythonInstance(apiResult,pytype,false);
-    if (&(TyXBMCAddon_xbmcgui_WindowXMLDialog_Type.pythonType) != pytype) 
+    if (&(TyXBMCAddon_xbmcgui_WindowXMLDialog_Type.pythonType) != pytype)
       ((XBMCAddon_xbmcgui_WindowXMLDialog_Director*)apiResult)->setPyObjectForDirector(result);
 
     return result; 
@@ -11048,12 +11861,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11063,7 +11876,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::ListItem\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_Control_Dealloc (PyHolder* self  )
@@ -11079,12 +11892,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11094,7 +11907,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::Control\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_ControlSpin_Dealloc (PyHolder* self  )
@@ -11110,12 +11923,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11125,7 +11938,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::ControlSpin\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_ControlLabel_Dealloc (PyHolder* self  )
@@ -11141,12 +11954,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11156,7 +11969,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::ControlLabel\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_ControlEdit_Dealloc (PyHolder* self  )
@@ -11172,12 +11985,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11187,7 +12000,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::ControlEdit\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_ControlList_Dealloc (PyHolder* self  )
@@ -11203,12 +12016,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11218,7 +12031,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::ControlList\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_ControlFadeLabel_Dealloc (PyHolder* self  )
@@ -11234,12 +12047,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11249,7 +12062,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::ControlFadeLabel\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_ControlTextBox_Dealloc (PyHolder* self  )
@@ -11265,12 +12078,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11280,7 +12093,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::ControlTextBox\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_ControlImage_Dealloc (PyHolder* self  )
@@ -11296,12 +12109,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11311,7 +12124,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::ControlImage\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_ControlProgress_Dealloc (PyHolder* self  )
@@ -11327,12 +12140,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11342,7 +12155,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::ControlProgress\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_ControlButton_Dealloc (PyHolder* self  )
@@ -11358,12 +12171,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11373,7 +12186,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::ControlButton\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_ControlGroup_Dealloc (PyHolder* self  )
@@ -11389,12 +12202,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11404,7 +12217,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::ControlGroup\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_ControlRadioButton_Dealloc (PyHolder* self  )
@@ -11420,12 +12233,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11435,7 +12248,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::ControlRadioButton\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_ControlSlider_Dealloc (PyHolder* self  )
@@ -11451,12 +12264,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11466,7 +12279,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::ControlSlider\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_Dialog_Dealloc (PyHolder* self  )
@@ -11482,12 +12295,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11497,7 +12310,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::Dialog\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_DialogProgress_Dealloc (PyHolder* self  )
@@ -11513,12 +12326,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11528,7 +12341,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::DialogProgress\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_DialogBusy_Dealloc (PyHolder* self  )
@@ -11544,12 +12357,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11559,7 +12372,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::DialogBusy\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_DialogProgressBG_Dealloc (PyHolder* self  )
@@ -11575,12 +12388,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11590,7 +12403,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::DialogProgressBG\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_Action_Dealloc (PyHolder* self  )
@@ -11606,12 +12419,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11621,7 +12434,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::Action\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_Window_Dealloc (PyHolder* self  )
@@ -11637,12 +12450,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11652,7 +12465,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::Window\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_WindowDialog_Dealloc (PyHolder* self  )
@@ -11668,12 +12481,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11683,7 +12496,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::WindowDialog\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_WindowXML_Dealloc (PyHolder* self  )
@@ -11699,12 +12512,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11714,7 +12527,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::WindowXML\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcgui_XBMCAddon_xbmcgui_WindowXMLDialog_Dealloc (PyHolder* self  )
@@ -11730,12 +12543,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -11745,46 +12558,51 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcgui::WindowXMLDialog\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::ListItem
+  // Python extension for the Api class XBMCAddon::xbmcgui::ListItem
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_ListItem_methods[] = { 
-    {(char*)"getLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getLabel2", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getLabel2, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setLabel2", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setLabel2, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setIconImage", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setIconImage, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setThumbnailImage", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setThumbnailImage, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setArt", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setArt, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setUniqueIDs", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setUniqueIDs, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setRating", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setRating, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getArt", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getArt, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getUniqueID", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getUniqueID, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getRating", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getRating, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getVotes", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getVotes, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"select", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_select, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"isSelected", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_isSelected, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setInfo", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setInfo, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setCast", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setCast, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"addStreamInfo", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_addStreamInfo, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"addContextMenuItems", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_addContextMenuItems, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setProperty", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getProperty", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setPath", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setPath, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setMimeType", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setMimeType, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setContentLookup", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setContentLookup, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setSubtitles", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setSubtitles, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getdescription", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getdescription, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getduration", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getduration, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getfilename", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getfilename, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getPath", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getPath, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getVideoInfoTag", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getVideoInfoTag, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getMusicInfoTag", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getMusicInfoTag, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getLabel2", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getLabel2, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setLabel2", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setLabel2, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setIconImage", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setIconImage, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setThumbnailImage", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setThumbnailImage, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setArt", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setArt, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setIsFolder", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setIsFolder, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setUniqueIDs", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setUniqueIDs, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setRating", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setRating, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addSeason", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_addSeason, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getArt", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getArt, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getUniqueID", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getUniqueID, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getRating", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getRating, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getVotes", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getVotes, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"select", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_select, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"isSelected", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_isSelected, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setInfo", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setInfo, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setCast", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setCast, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setAvailableFanart", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setAvailableFanart, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addAvailableArtwork", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_addAvailableArtwork, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addStreamInfo", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_addStreamInfo, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addContextMenuItems", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_addContextMenuItems, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setProperty", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setProperties", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setProperties, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getProperty", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setPath", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setPath, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setMimeType", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setMimeType, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setContentLookup", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setContentLookup, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setSubtitles", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_setSubtitles, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getdescription", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getdescription, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getduration", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getduration, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getfilename", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getfilename, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPath", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getPath, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getVideoInfoTag", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getVideoInfoTag, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getMusicInfoTag", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ListItem_getMusicInfoTag, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -11796,7 +12614,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_ListItem_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.ListItem";
+    pythonType.tp_name = "xbmcgui.ListItem";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_ListItem_Dealloc; 
 
@@ -11822,30 +12640,31 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::Control
+  // Python extension for the Api class XBMCAddon::xbmcgui::Control
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_Control_methods[] = { 
-    {(char*)"canAcceptMessages", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_canAcceptMessages, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getId", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_getId, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getPosition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_getPosition, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getX", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_getX, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getY", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_getY, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getHeight", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_getHeight, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getWidth", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_getWidth, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setEnabled", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setEnabled, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setVisible", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setVisible, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setVisibleCondition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setVisibleCondition, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setEnableCondition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setEnableCondition, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setAnimations", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setAnimations, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setPosition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setPosition, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setWidth", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setWidth, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setHeight", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setHeight, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setNavigation", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setNavigation, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"controlUp", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_controlUp, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"controlDown", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_controlDown, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"controlLeft", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_controlLeft, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"controlRight", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_controlRight, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"canAcceptMessages", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_canAcceptMessages, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getId", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_getId, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPosition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_getPosition, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getX", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_getX, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getY", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_getY, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getHeight", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_getHeight, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getWidth", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_getWidth, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setEnabled", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setEnabled, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setVisible", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setVisible, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"isVisible", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_isVisible, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setVisibleCondition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setVisibleCondition, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setEnableCondition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setEnableCondition, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setAnimations", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setAnimations, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setPosition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setPosition, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setWidth", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setWidth, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setHeight", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setHeight, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setNavigation", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_setNavigation, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"controlUp", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_controlUp, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"controlDown", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_controlDown, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"controlLeft", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_controlLeft, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"controlRight", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Control_controlRight, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -11857,7 +12676,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_Control_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.Control";
+    pythonType.tp_name = "xbmcgui.Control";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_Control_Dealloc; 
     pythonType.tp_compare=xbmcgui_XBMCAddon_xbmcgui_Control_cmp;
@@ -11877,11 +12696,11 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::ControlSpin
+  // Python extension for the Api class XBMCAddon::xbmcgui::ControlSpin
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_ControlSpin_methods[] = { 
-    {(char*)"setTextures", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlSpin_setTextures, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setTextures", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlSpin_setTextures, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -11893,7 +12712,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_ControlSpin_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.ControlSpin";
+    pythonType.tp_name = "xbmcgui.ControlSpin";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_ControlSpin_Dealloc; 
 
@@ -11914,12 +12733,12 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::ControlLabel
+  // Python extension for the Api class XBMCAddon::xbmcgui::ControlLabel
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_ControlLabel_methods[] = { 
-    {(char*)"getLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlLabel_getLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlLabel_setLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlLabel_getLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlLabel_setLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -11931,7 +12750,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_ControlLabel_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.ControlLabel";
+    pythonType.tp_name = "xbmcgui.ControlLabel";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_ControlLabel_Dealloc; 
 
@@ -11954,14 +12773,15 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::ControlEdit
+  // Python extension for the Api class XBMCAddon::xbmcgui::ControlEdit
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_ControlEdit_methods[] = { 
-    {(char*)"setLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlEdit_setLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlEdit_getLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setText", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlEdit_setText, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getText", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlEdit_getText, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlEdit_setLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlEdit_getLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setText", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlEdit_setText, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getText", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlEdit_getText, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setType", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlEdit_setType, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -11973,7 +12793,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_ControlEdit_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.ControlEdit";
+    pythonType.tp_name = "xbmcgui.ControlEdit";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_ControlEdit_Dealloc; 
 
@@ -11996,27 +12816,27 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::ControlList
+  // Python extension for the Api class XBMCAddon::xbmcgui::ControlList
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_ControlList_methods[] = { 
-    {(char*)"addItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_addItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"addItems", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_addItems, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"selectItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_selectItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"removeItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_removeItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"reset", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_reset, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getSpinControl", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_getSpinControl, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getSelectedPosition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_getSelectedPosition, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getSelectedItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_getSelectedItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setImageDimensions", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_setImageDimensions, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setItemHeight", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_setItemHeight, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setSpace", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_setSpace, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setPageControlVisible", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_setPageControlVisible, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"size", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_size, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getItemHeight", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_getItemHeight, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getSpace", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_getSpace, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getListItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_getListItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setStaticContent", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_setStaticContent, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_addItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addItems", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_addItems, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"selectItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_selectItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"removeItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_removeItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"reset", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_reset, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getSpinControl", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_getSpinControl, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getSelectedPosition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_getSelectedPosition, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getSelectedItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_getSelectedItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setImageDimensions", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_setImageDimensions, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setItemHeight", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_setItemHeight, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setSpace", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_setSpace, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setPageControlVisible", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_setPageControlVisible, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"size", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_size, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getItemHeight", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_getItemHeight, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getSpace", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_getSpace, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getListItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_getListItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setStaticContent", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlList_setStaticContent, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12028,7 +12848,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_ControlList_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.ControlList";
+    pythonType.tp_name = "xbmcgui.ControlList";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_ControlList_Dealloc; 
 
@@ -12051,13 +12871,13 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::ControlFadeLabel
+  // Python extension for the Api class XBMCAddon::xbmcgui::ControlFadeLabel
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_ControlFadeLabel_methods[] = { 
-    {(char*)"addLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlFadeLabel_addLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setScrolling", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlFadeLabel_setScrolling, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"reset", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlFadeLabel_reset, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlFadeLabel_addLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setScrolling", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlFadeLabel_setScrolling, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"reset", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlFadeLabel_reset, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12069,7 +12889,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_ControlFadeLabel_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.ControlFadeLabel";
+    pythonType.tp_name = "xbmcgui.ControlFadeLabel";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_ControlFadeLabel_Dealloc; 
 
@@ -12092,15 +12912,15 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::ControlTextBox
+  // Python extension for the Api class XBMCAddon::xbmcgui::ControlTextBox
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_ControlTextBox_methods[] = { 
-    {(char*)"setText", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlTextBox_setText, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getText", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlTextBox_getText, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"reset", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlTextBox_reset, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"scroll", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlTextBox_scroll, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"autoScroll", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlTextBox_autoScroll, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setText", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlTextBox_setText, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getText", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlTextBox_getText, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"reset", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlTextBox_reset, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"scroll", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlTextBox_scroll, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"autoScroll", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlTextBox_autoScroll, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12112,7 +12932,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_ControlTextBox_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.ControlTextBox";
+    pythonType.tp_name = "xbmcgui.ControlTextBox";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_ControlTextBox_Dealloc; 
 
@@ -12135,12 +12955,12 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::ControlImage
+  // Python extension for the Api class XBMCAddon::xbmcgui::ControlImage
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_ControlImage_methods[] = { 
-    {(char*)"setImage", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlImage_setImage, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setColorDiffuse", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlImage_setColorDiffuse, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setImage", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlImage_setImage, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setColorDiffuse", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlImage_setColorDiffuse, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12152,7 +12972,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_ControlImage_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.ControlImage";
+    pythonType.tp_name = "xbmcgui.ControlImage";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_ControlImage_Dealloc; 
 
@@ -12175,12 +12995,12 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::ControlProgress
+  // Python extension for the Api class XBMCAddon::xbmcgui::ControlProgress
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_ControlProgress_methods[] = { 
-    {(char*)"setPercent", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlProgress_setPercent, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getPercent", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlProgress_getPercent, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setPercent", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlProgress_setPercent, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPercent", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlProgress_getPercent, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12192,7 +13012,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_ControlProgress_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.ControlProgress";
+    pythonType.tp_name = "xbmcgui.ControlProgress";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_ControlProgress_Dealloc; 
 
@@ -12215,14 +13035,14 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::ControlButton
+  // Python extension for the Api class XBMCAddon::xbmcgui::ControlButton
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_ControlButton_methods[] = { 
-    {(char*)"setLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlButton_setLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setDisabledColor", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlButton_setDisabledColor, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlButton_getLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getLabel2", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlButton_getLabel2, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlButton_setLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setDisabledColor", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlButton_setDisabledColor, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlButton_getLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getLabel2", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlButton_getLabel2, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12234,7 +13054,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_ControlButton_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.ControlButton";
+    pythonType.tp_name = "xbmcgui.ControlButton";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_ControlButton_Dealloc; 
 
@@ -12257,7 +13077,7 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::ControlGroup
+  // Python extension for the Api class XBMCAddon::xbmcgui::ControlGroup
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_ControlGroup_methods[] = { 
@@ -12272,7 +13092,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_ControlGroup_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.ControlGroup";
+    pythonType.tp_name = "xbmcgui.ControlGroup";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_ControlGroup_Dealloc; 
 
@@ -12295,14 +13115,14 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::ControlRadioButton
+  // Python extension for the Api class XBMCAddon::xbmcgui::ControlRadioButton
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_ControlRadioButton_methods[] = { 
-    {(char*)"setSelected", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlRadioButton_setSelected, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"isSelected", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlRadioButton_isSelected, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlRadioButton_setLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setRadioDimension", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlRadioButton_setRadioDimension, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setSelected", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlRadioButton_setSelected, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"isSelected", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlRadioButton_isSelected, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setLabel", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlRadioButton_setLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setRadioDimension", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlRadioButton_setRadioDimension, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12314,7 +13134,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_ControlRadioButton_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.ControlRadioButton";
+    pythonType.tp_name = "xbmcgui.ControlRadioButton";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_ControlRadioButton_Dealloc; 
 
@@ -12337,12 +13157,16 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::ControlSlider
+  // Python extension for the Api class XBMCAddon::xbmcgui::ControlSlider
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_ControlSlider_methods[] = { 
-    {(char*)"getPercent", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlSlider_getPercent, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setPercent", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlSlider_setPercent, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPercent", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlSlider_getPercent, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setPercent", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlSlider_setPercent, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getInt", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlSlider_getInt, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setInt", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlSlider_setInt, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getFloat", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlSlider_getFloat, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setFloat", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_ControlSlider_setFloat, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12354,7 +13178,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_ControlSlider_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.ControlSlider";
+    pythonType.tp_name = "xbmcgui.ControlSlider";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_ControlSlider_Dealloc; 
 
@@ -12377,23 +13201,23 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::Dialog
+  // Python extension for the Api class XBMCAddon::xbmcgui::Dialog
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_Dialog_methods[] = { 
-    {(char*)"yesno", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_yesno, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"info", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_info, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"select", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_select, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"contextmenu", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_contextmenu, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"multiselect", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_multiselect, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"ok", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_ok, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"textviewer", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_textviewer, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"browse", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_browse, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"browseSingle", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_browseSingle, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"browseMultiple", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_browseMultiple, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"numeric", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_numeric, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"notification", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_notification, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"input", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_input, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"yesno", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_yesno, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"info", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_info, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"select", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_select, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"contextmenu", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_contextmenu, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"multiselect", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_multiselect, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"ok", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_ok, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"textviewer", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_textviewer, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"browse", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_browse, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"browseSingle", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_browseSingle, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"browseMultiple", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_browseMultiple, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"numeric", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_numeric, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"notification", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_notification, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"input", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Dialog_input, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12405,7 +13229,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_Dialog_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.Dialog";
+    pythonType.tp_name = "xbmcgui.Dialog";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_Dialog_Dealloc; 
 
@@ -12426,14 +13250,14 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::DialogProgress
+  // Python extension for the Api class XBMCAddon::xbmcgui::DialogProgress
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_DialogProgress_methods[] = { 
-    {(char*)"create", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgress_create, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"update", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgress_update, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"close", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgress_close, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"iscanceled", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgress_iscanceled, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"create", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgress_create, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"update", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgress_update, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"close", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgress_close, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"iscanceled", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgress_iscanceled, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12445,7 +13269,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_DialogProgress_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.DialogProgress";
+    pythonType.tp_name = "xbmcgui.DialogProgress";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_DialogProgress_Dealloc; 
 
@@ -12466,14 +13290,14 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::DialogBusy
+  // Python extension for the Api class XBMCAddon::xbmcgui::DialogBusy
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_DialogBusy_methods[] = { 
-    {(char*)"create", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogBusy_create, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"update", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogBusy_update, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"close", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogBusy_close, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"iscanceled", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogBusy_iscanceled, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"create", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogBusy_create, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"update", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogBusy_update, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"close", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogBusy_close, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"iscanceled", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogBusy_iscanceled, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12485,7 +13309,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_DialogBusy_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.DialogBusy";
+    pythonType.tp_name = "xbmcgui.DialogBusy";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_DialogBusy_Dealloc; 
 
@@ -12506,14 +13330,14 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::DialogProgressBG
+  // Python extension for the Api class XBMCAddon::xbmcgui::DialogProgressBG
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_DialogProgressBG_methods[] = { 
-    {(char*)"create", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgressBG_create, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"update", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgressBG_update, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"close", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgressBG_close, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"isFinished", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgressBG_isFinished, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"create", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgressBG_create, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"update", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgressBG_update, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"close", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgressBG_close, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"isFinished", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_DialogProgressBG_isFinished, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12525,7 +13349,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_DialogProgressBG_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.DialogProgressBG";
+    pythonType.tp_name = "xbmcgui.DialogProgressBG";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_DialogProgressBG_Dealloc; 
 
@@ -12581,14 +13405,14 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::Action
+  // Python extension for the Api class XBMCAddon::xbmcgui::Action
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_Action_methods[] = { 
-    {(char*)"getId", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Action_getId, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getButtonCode", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Action_getButtonCode, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getAmount1", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Action_getAmount1, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getAmount2", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Action_getAmount2, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getId", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Action_getId, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getButtonCode", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Action_getButtonCode, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getAmount1", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Action_getAmount1, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getAmount2", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Action_getAmount2, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12600,7 +13424,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_Action_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.Action";
+    pythonType.tp_name = "xbmcgui.Action";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_Action_Dealloc; 
     pythonType.tp_richcompare=(richcmpfunc)xbmcgui_XBMCAddon_xbmcgui_Action_rcmp;
@@ -12622,36 +13446,36 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::Window
+  // Python extension for the Api class XBMCAddon::xbmcgui::Window
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_Window_methods[] = { 
-    {(char*)"onAction", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_onAction, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onControl", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_onControl, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onClick", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_onClick, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onDoubleClick", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_onDoubleClick, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onFocus", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_onFocus, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onInit", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_onInit, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"show", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_show, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setFocus", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_setFocus, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setFocusId", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_setFocusId, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getFocus", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getFocus, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getFocusId", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getFocusId, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"removeControl", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_removeControl, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"removeControls", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_removeControls, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getHeight", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getHeight, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getWidth", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getWidth, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getResolution", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getResolution, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setCoordinateResolution", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_setCoordinateResolution, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setProperty", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_setProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getProperty", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"clearProperty", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_clearProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"clearProperties", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_clearProperties, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"close", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_close, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"doModal", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_doModal, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"addControl", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_addControl, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"addControls", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_addControls, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getControl", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getControl, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onAction", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_onAction, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onControl", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_onControl, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onClick", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_onClick, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onDoubleClick", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_onDoubleClick, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onFocus", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_onFocus, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onInit", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_onInit, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"show", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_show, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setFocus", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_setFocus, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setFocusId", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_setFocusId, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getFocus", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getFocus, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getFocusId", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getFocusId, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"removeControl", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_removeControl, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"removeControls", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_removeControls, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getHeight", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getHeight, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getWidth", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getWidth, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getResolution", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getResolution, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setCoordinateResolution", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_setCoordinateResolution, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setProperty", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_setProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getProperty", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"clearProperty", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_clearProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"clearProperties", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_clearProperties, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"close", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_close, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"doModal", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_doModal, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addControl", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_addControl, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addControls", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_addControls, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getControl", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_Window_getControl, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12663,7 +13487,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_Window_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.Window";
+    pythonType.tp_name = "xbmcgui.Window";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_Window_Dealloc; 
 
@@ -12684,7 +13508,7 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::WindowDialog
+  // Python extension for the Api class XBMCAddon::xbmcgui::WindowDialog
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_WindowDialog_methods[] = { 
@@ -12699,7 +13523,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_WindowDialog_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.WindowDialog";
+    pythonType.tp_name = "xbmcgui.WindowDialog";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_WindowDialog_Dealloc; 
 
@@ -12722,20 +13546,21 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::WindowXML
+  // Python extension for the Api class XBMCAddon::xbmcgui::WindowXML
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_WindowXML_methods[] = { 
-    {(char*)"addItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_addItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"addItems", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_addItems, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"removeItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_removeItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getCurrentListPosition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_getCurrentListPosition, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setCurrentListPosition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_setCurrentListPosition, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getListItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_getListItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getListSize", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_getListSize, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"clearList", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_clearList, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setContainerProperty", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_setContainerProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getCurrentContainerId", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_getCurrentContainerId, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_addItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addItems", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_addItems, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"removeItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_removeItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getCurrentListPosition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_getCurrentListPosition, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setCurrentListPosition", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_setCurrentListPosition, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getListItem", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_getListItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getListSize", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_getListSize, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"clearList", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_clearList, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setContainerProperty", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_setContainerProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setContent", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_setContent, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getCurrentContainerId", (PyCFunction)xbmcgui_XBMCAddon_xbmcgui_WindowXML_getCurrentContainerId, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -12747,7 +13572,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_WindowXML_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.WindowXML";
+    pythonType.tp_name = "xbmcgui.WindowXML";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_WindowXML_Dealloc; 
 
@@ -12770,7 +13595,7 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcgui::WindowXMLDialog
+  // Python extension for the Api class XBMCAddon::xbmcgui::WindowXMLDialog
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcgui_WindowXMLDialog_methods[] = { 
@@ -12785,7 +13610,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcgui_WindowXMLDialog_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcgui.WindowXMLDialog";
+    pythonType.tp_name = "xbmcgui.WindowXMLDialog";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcgui_XBMCAddon_xbmcgui_WindowXMLDialog_Dealloc; 
 
@@ -12808,12 +13633,14 @@ namespace PythonBindings
 
 
   static PyMethodDef xbmcgui_methods[] = { 
-    {(char*)"getCurrentWindowId", (PyCFunction)xbmcgui_getCurrentWindowId, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getCurrentWindowDialogId", (PyCFunction)xbmcgui_getCurrentWindowDialogId, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getCurrentWindowId", (PyCFunction)xbmcgui_getCurrentWindowId, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getCurrentWindowDialogId", (PyCFunction)xbmcgui_getCurrentWindowDialogId, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getScreenHeight", (PyCFunction)xbmcgui_getScreenHeight, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getScreenWidth", (PyCFunction)xbmcgui_getScreenWidth, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
-  // This is the call that will call all of the other initializes 
+  // This is the call that will call all of the other initializes
   //  for all of the classes in this module
   static void initTypes()
   {
@@ -12926,40 +13753,40 @@ namespace PythonBindings
     Py_INCREF(&(TyXBMCAddon_xbmcgui_WindowXML_Type.pythonType));
     Py_INCREF(&(TyXBMCAddon_xbmcgui_WindowXMLDialog_Type.pythonType));
 
-    module = Py_InitModule((char*)"xbmcgui", xbmcgui_methods);
+    module = Py_InitModule("xbmcgui", xbmcgui_methods);
     if (module == NULL) return;
 
 
-    PyModule_AddObject(module, (char*)"ListItem", (PyObject*)(&(TyXBMCAddon_xbmcgui_ListItem_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"Control", (PyObject*)(&(TyXBMCAddon_xbmcgui_Control_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"ControlSpin", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlSpin_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"ControlLabel", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlLabel_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"ControlEdit", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlEdit_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"ControlList", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlList_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"ControlFadeLabel", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlFadeLabel_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"ControlTextBox", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlTextBox_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"ControlImage", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlImage_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"ControlProgress", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlProgress_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"ControlButton", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlButton_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"ControlGroup", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlGroup_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"ControlRadioButton", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlRadioButton_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"ControlSlider", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlSlider_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"Dialog", (PyObject*)(&(TyXBMCAddon_xbmcgui_Dialog_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"DialogProgress", (PyObject*)(&(TyXBMCAddon_xbmcgui_DialogProgress_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"DialogBusy", (PyObject*)(&(TyXBMCAddon_xbmcgui_DialogBusy_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"DialogProgressBG", (PyObject*)(&(TyXBMCAddon_xbmcgui_DialogProgressBG_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"Action", (PyObject*)(&(TyXBMCAddon_xbmcgui_Action_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"Window", (PyObject*)(&(TyXBMCAddon_xbmcgui_Window_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"WindowDialog", (PyObject*)(&(TyXBMCAddon_xbmcgui_WindowDialog_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"WindowXML", (PyObject*)(&(TyXBMCAddon_xbmcgui_WindowXML_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"WindowXMLDialog", (PyObject*)(&(TyXBMCAddon_xbmcgui_WindowXMLDialog_Type.pythonType)));
+    PyModule_AddObject(module, "ListItem", (PyObject*)(&(TyXBMCAddon_xbmcgui_ListItem_Type.pythonType)));
+    PyModule_AddObject(module, "Control", (PyObject*)(&(TyXBMCAddon_xbmcgui_Control_Type.pythonType)));
+    PyModule_AddObject(module, "ControlSpin", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlSpin_Type.pythonType)));
+    PyModule_AddObject(module, "ControlLabel", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlLabel_Type.pythonType)));
+    PyModule_AddObject(module, "ControlEdit", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlEdit_Type.pythonType)));
+    PyModule_AddObject(module, "ControlList", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlList_Type.pythonType)));
+    PyModule_AddObject(module, "ControlFadeLabel", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlFadeLabel_Type.pythonType)));
+    PyModule_AddObject(module, "ControlTextBox", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlTextBox_Type.pythonType)));
+    PyModule_AddObject(module, "ControlImage", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlImage_Type.pythonType)));
+    PyModule_AddObject(module, "ControlProgress", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlProgress_Type.pythonType)));
+    PyModule_AddObject(module, "ControlButton", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlButton_Type.pythonType)));
+    PyModule_AddObject(module, "ControlGroup", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlGroup_Type.pythonType)));
+    PyModule_AddObject(module, "ControlRadioButton", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlRadioButton_Type.pythonType)));
+    PyModule_AddObject(module, "ControlSlider", (PyObject*)(&(TyXBMCAddon_xbmcgui_ControlSlider_Type.pythonType)));
+    PyModule_AddObject(module, "Dialog", (PyObject*)(&(TyXBMCAddon_xbmcgui_Dialog_Type.pythonType)));
+    PyModule_AddObject(module, "DialogProgress", (PyObject*)(&(TyXBMCAddon_xbmcgui_DialogProgress_Type.pythonType)));
+    PyModule_AddObject(module, "DialogBusy", (PyObject*)(&(TyXBMCAddon_xbmcgui_DialogBusy_Type.pythonType)));
+    PyModule_AddObject(module, "DialogProgressBG", (PyObject*)(&(TyXBMCAddon_xbmcgui_DialogProgressBG_Type.pythonType)));
+    PyModule_AddObject(module, "Action", (PyObject*)(&(TyXBMCAddon_xbmcgui_Action_Type.pythonType)));
+    PyModule_AddObject(module, "Window", (PyObject*)(&(TyXBMCAddon_xbmcgui_Window_Type.pythonType)));
+    PyModule_AddObject(module, "WindowDialog", (PyObject*)(&(TyXBMCAddon_xbmcgui_WindowDialog_Type.pythonType)));
+    PyModule_AddObject(module, "WindowXML", (PyObject*)(&(TyXBMCAddon_xbmcgui_WindowXML_Type.pythonType)));
+    PyModule_AddObject(module, "WindowXMLDialog", (PyObject*)(&(TyXBMCAddon_xbmcgui_WindowXMLDialog_Type.pythonType)));
 
    // constants
-   PyModule_AddStringConstant(module, (char*)"__author__", (char*)"Team Kodi <http://kodi.tv>");
-   PyModule_AddStringConstant(module, (char*)"__date__", (char*)"Wed Nov 15 19:05:14 GMT 2017");
-   PyModule_AddStringConstant(module, (char*)"__version__", (char*)"2.25.0");
-   PyModule_AddStringConstant(module, (char*)"__credits__", (char*)"Team Kodi");
-   PyModule_AddStringConstant(module, (char*)"__platform__", (char*)"ALL");
+   PyModule_AddStringConstant(module, "__author__", "Team Kodi <http://kodi.tv>");
+   PyModule_AddStringConstant(module, "__date__", "Wed Jan 30 17:54:23 GMT 2019");
+   PyModule_AddStringConstant(module, "__version__", "2.26.0");
+   PyModule_AddStringConstant(module, "__credits__", "Team Kodi");
+   PyModule_AddStringConstant(module, "__platform__", "ALL");
 
    // need to handle constants
 
@@ -12970,6 +13797,14 @@ namespace PythonBindings
    PyModule_AddIntConstant(module,"ICON_OVERLAY_UNWATCHED",CGUIListItem::ICON_OVERLAY_UNWATCHED); 
    PyModule_AddIntConstant(module,"ICON_OVERLAY_WATCHED",CGUIListItem::ICON_OVERLAY_WATCHED); 
    PyModule_AddIntConstant(module,"ICON_OVERLAY_HD",CGUIListItem::ICON_OVERLAY_HD); 
+   PyModule_AddIntConstant(module,"INPUT_TYPE_TEXT",CGUIEditControl::INPUT_TYPE_TEXT); 
+   PyModule_AddIntConstant(module,"INPUT_TYPE_NUMBER",CGUIEditControl::INPUT_TYPE_NUMBER); 
+   PyModule_AddIntConstant(module,"INPUT_TYPE_DATE",CGUIEditControl::INPUT_TYPE_DATE); 
+   PyModule_AddIntConstant(module,"INPUT_TYPE_TIME",CGUIEditControl::INPUT_TYPE_TIME); 
+   PyModule_AddIntConstant(module,"INPUT_TYPE_IPADDRESS",CGUIEditControl::INPUT_TYPE_IPADDRESS); 
+   PyModule_AddIntConstant(module,"INPUT_TYPE_PASSWORD",CGUIEditControl::INPUT_TYPE_PASSWORD); 
+   PyModule_AddIntConstant(module,"INPUT_TYPE_PASSWORD_MD5",CGUIEditControl::INPUT_TYPE_PASSWORD_MD5); 
+   PyModule_AddIntConstant(module,"INPUT_TYPE_SECONDS",CGUIEditControl::INPUT_TYPE_SECONDS); 
    PyModule_AddStringConstant(module,"NOTIFICATION_INFO",getNOTIFICATION_INFO()); 
    PyModule_AddStringConstant(module,"NOTIFICATION_WARNING",getNOTIFICATION_WARNING()); 
    PyModule_AddStringConstant(module,"NOTIFICATION_ERROR",getNOTIFICATION_ERROR()); 
@@ -12993,83 +13828,6 @@ namespace PythonBindings
    PyModule_AddIntConstant(module,"INPUT_PASSWORD",5); 
    PyModule_AddIntConstant(module,"PASSWORD_VERIFY",1); 
    PyModule_AddIntConstant(module,"ALPHANUM_HIDE_INPUT",2); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_A",256); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_B",257); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_X",258); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_Y",259); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_BLACK",260); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_WHITE",261); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_TRIGGER",262); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_TRIGGER",263); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_THUMB_STICK",264); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_THUMB_STICK",265); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_THUMB_STICK_UP",266); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_THUMB_STICK_DOWN",267); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_THUMB_STICK_LEFT",268); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_THUMB_STICK_RIGHT",269); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_DPAD_UP",270); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_DPAD_DOWN",271); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_DPAD_LEFT",272); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_DPAD_RIGHT",273); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_START",274); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_BACK",275); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_THUMB_BUTTON",276); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_THUMB_BUTTON",277); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_ANALOG_TRIGGER",278); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_ANALOG_TRIGGER",279); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_THUMB_STICK_UP",280); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_THUMB_STICK_DOWN",281); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_THUMB_STICK_LEFT",282); 
-   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_THUMB_STICK_RIGHT",283); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_A",284); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_B",285); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_X",286); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_Y",287); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_LEFT_SHOULDER",288); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_RIGHT_SHOULDER",289); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_LEFT_TRIGGER",290); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_RIGHT_TRIGGER",291); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_LEFT_STICK_BUTTON",292); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_RIGHT_STICK_BUTTON",293); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_RIGHT_THUMB_STICK_UP",294); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_RIGHT_THUMB_STICK_DOWN",295); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_RIGHT_THUMB_STICK_LEFT",296); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_RIGHT_THUMB_STICK_RIGHT",297); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_DPAD_UP",298); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_DPAD_DOWN",299); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_DPAD_LEFT",300); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_DPAD_RIGHT",301); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_START",302); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_BACK",303); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_LEFT_THUMB_STICK_UP",304); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_LEFT_THUMB_STICK_DOWN",305); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_LEFT_THUMB_STICK_LEFT",306); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_LEFT_THUMB_STICK_RIGHT",307); 
-   PyModule_AddIntConstant(module,"KEY_JOYSTICK_BUTTON_GUIDE",308); 
-   PyModule_AddIntConstant(module,"KEY_VKEY",0xF000); 
-   PyModule_AddIntConstant(module,"KEY_ASCII",0xF100); 
-   PyModule_AddIntConstant(module,"KEY_UNICODE",0xF200); 
-   PyModule_AddIntConstant(module,"KEY_VMOUSE",0xEFFF); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_START",0xE000); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_CLICK",0xE000); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_RIGHTCLICK",0xE001); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_MIDDLECLICK",0xE002); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_DOUBLE_CLICK",0xE010); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_LONG_CLICK",0xE020); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_WHEEL_UP",0xE101); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_WHEEL_DOWN",0xE102); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_MOVE",0xE103); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_DRAG",0xE104); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_DRAG_START",0xE105); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_DRAG_END",0xE106); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_RDRAG",0xE107); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_RDRAG_START",0xE108); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_RDRAG_END",0xE109); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_NOOP",0xEFFF); 
-   PyModule_AddIntConstant(module,"KEY_MOUSE_END",0xEFFF); 
-   PyModule_AddIntConstant(module,"KEY_APPCOMMAND",0xD000); 
-   PyModule_AddIntConstant(module,"KEY_TOUCH",0xF000); 
-   PyModule_AddIntConstant(module,"KEY_INVALID",0xFFFF); 
    PyModule_AddIntConstant(module,"ACTION_NONE",0); 
    PyModule_AddIntConstant(module,"ACTION_MOVE_LEFT",1); 
    PyModule_AddIntConstant(module,"ACTION_MOVE_RIGHT",2); 
@@ -13097,6 +13855,7 @@ namespace PythonBindings
    PyModule_AddIntConstant(module,"ACTION_SHOW_OSD",24); 
    PyModule_AddIntConstant(module,"ACTION_SHOW_SUBTITLES",25); 
    PyModule_AddIntConstant(module,"ACTION_NEXT_SUBTITLE",26); 
+   PyModule_AddIntConstant(module,"ACTION_BROWSE_SUBTITLE",247); 
    PyModule_AddIntConstant(module,"ACTION_PLAYER_DEBUG",27); 
    PyModule_AddIntConstant(module,"ACTION_NEXT_PICTURE",28); 
    PyModule_AddIntConstant(module,"ACTION_PREV_PICTURE",29); 
@@ -13138,8 +13897,9 @@ namespace PythonBindings
    PyModule_AddIntConstant(module,"REMOTE_7",65); 
    PyModule_AddIntConstant(module,"REMOTE_8",66); 
    PyModule_AddIntConstant(module,"REMOTE_9",67); 
-   PyModule_AddIntConstant(module,"ACTION_PLAY",68); 
    PyModule_AddIntConstant(module,"ACTION_PLAYER_PROCESS_INFO",69); 
+   PyModule_AddIntConstant(module,"ACTION_PLAYER_PROGRAM_SELECT",70); 
+   PyModule_AddIntConstant(module,"ACTION_PLAYER_RESOLUTION_SELECT",71); 
    PyModule_AddIntConstant(module,"ACTION_SMALL_STEP_BACK",76); 
    PyModule_AddIntConstant(module,"ACTION_PLAYER_FORWARD",77); 
    PyModule_AddIntConstant(module,"ACTION_PLAYER_REWIND",78); 
@@ -13239,6 +13999,7 @@ namespace PythonBindings
    PyModule_AddIntConstant(module,"ACTION_PVR_PLAY_TV",189); 
    PyModule_AddIntConstant(module,"ACTION_PVR_PLAY_RADIO",190); 
    PyModule_AddIntConstant(module,"ACTION_PVR_SHOW_TIMER_RULE",191); 
+   PyModule_AddIntConstant(module,"ACTION_CHANNEL_NUMBER_SEP",192); 
    PyModule_AddIntConstant(module,"ACTION_TOGGLE_FULLSCREEN",199); 
    PyModule_AddIntConstant(module,"ACTION_TOGGLE_WATCHED",200); 
    PyModule_AddIntConstant(module,"ACTION_SCAN_ITEM",201); 
@@ -13271,6 +14032,11 @@ namespace PythonBindings
    PyModule_AddIntConstant(module,"ACTION_INPUT_TEXT",244); 
    PyModule_AddIntConstant(module,"ACTION_VOLUME_SET",245); 
    PyModule_AddIntConstant(module,"ACTION_TOGGLE_COMMSKIP",246); 
+   PyModule_AddIntConstant(module,"ACTION_PLAYER_RESET",248); 
+   PyModule_AddIntConstant(module,"ACTION_TOGGLE_FONT",249); 
+   PyModule_AddIntConstant(module,"ACTION_VIDEO_NEXT_STREAM",250); 
+   PyModule_AddIntConstant(module,"ACTION_QUEUE_ITEM_NEXT",251); 
+   PyModule_AddIntConstant(module,"ACTION_VOICE_RECOGNIZE",300); 
    PyModule_AddIntConstant(module,"ACTION_TOUCH_TAP",401); 
    PyModule_AddIntConstant(module,"ACTION_TOUCH_TAP_TEN",410); 
    PyModule_AddIntConstant(module,"ACTION_TOUCH_LONGPRESS",411); 
@@ -13280,6 +14046,7 @@ namespace PythonBindings
    PyModule_AddIntConstant(module,"ACTION_GESTURE_ZOOM",502); 
    PyModule_AddIntConstant(module,"ACTION_GESTURE_ROTATE",503); 
    PyModule_AddIntConstant(module,"ACTION_GESTURE_PAN",504); 
+   PyModule_AddIntConstant(module,"ACTION_GESTURE_ABORT",505); 
    PyModule_AddIntConstant(module,"ACTION_GESTURE_SWIPE_LEFT",511); 
    PyModule_AddIntConstant(module,"ACTION_GESTURE_SWIPE_LEFT_TEN",520); 
    PyModule_AddIntConstant(module,"ACTION_GESTURE_SWIPE_RIGHT",521); 
@@ -13289,10 +14056,63 @@ namespace PythonBindings
    PyModule_AddIntConstant(module,"ACTION_GESTURE_SWIPE_DOWN",541); 
    PyModule_AddIntConstant(module,"ACTION_GESTURE_SWIPE_DOWN_TEN",550); 
    PyModule_AddIntConstant(module,"ACTION_GESTURE_END",599); 
-   PyModule_AddIntConstant(module,"ACTION_ANALOG_MOVE_X",601); 
-   PyModule_AddIntConstant(module,"ACTION_ANALOG_MOVE_Y",602); 
+   PyModule_AddIntConstant(module,"ACTION_ANALOG_MOVE_X_LEFT",601); 
+   PyModule_AddIntConstant(module,"ACTION_ANALOG_MOVE_X_RIGHT",602); 
+   PyModule_AddIntConstant(module,"ACTION_ANALOG_MOVE_Y_UP",603); 
+   PyModule_AddIntConstant(module,"ACTION_ANALOG_MOVE_Y_DOWN",604); 
    PyModule_AddIntConstant(module,"ACTION_ERROR",998); 
    PyModule_AddIntConstant(module,"ACTION_NOOP",999); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_A",256); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_B",257); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_X",258); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_Y",259); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_BLACK",260); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_WHITE",261); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_TRIGGER",262); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_TRIGGER",263); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_THUMB_STICK",264); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_THUMB_STICK",265); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_THUMB_STICK_UP",266); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_THUMB_STICK_DOWN",267); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_THUMB_STICK_LEFT",268); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_THUMB_STICK_RIGHT",269); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_DPAD_UP",270); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_DPAD_DOWN",271); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_DPAD_LEFT",272); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_DPAD_RIGHT",273); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_START",274); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_BACK",275); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_THUMB_BUTTON",276); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_THUMB_BUTTON",277); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_ANALOG_TRIGGER",278); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_RIGHT_ANALOG_TRIGGER",279); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_THUMB_STICK_UP",280); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_THUMB_STICK_DOWN",281); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_THUMB_STICK_LEFT",282); 
+   PyModule_AddIntConstant(module,"KEY_BUTTON_LEFT_THUMB_STICK_RIGHT",283); 
+   PyModule_AddIntConstant(module,"KEY_VKEY",0xF000); 
+   PyModule_AddIntConstant(module,"KEY_ASCII",0xF100); 
+   PyModule_AddIntConstant(module,"KEY_UNICODE",0xF200); 
+   PyModule_AddIntConstant(module,"KEY_VMOUSE",0xEFFF); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_START",0xE000); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_CLICK",0xE000); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_RIGHTCLICK",0xE001); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_MIDDLECLICK",0xE002); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_DOUBLE_CLICK",0xE010); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_LONG_CLICK",0xE020); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_WHEEL_UP",0xE101); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_WHEEL_DOWN",0xE102); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_MOVE",0xE103); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_DRAG",0xE104); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_DRAG_START",0xE105); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_DRAG_END",0xE106); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_RDRAG",0xE107); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_RDRAG_START",0xE108); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_RDRAG_END",0xE109); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_NOOP",0xEFFF); 
+   PyModule_AddIntConstant(module,"KEY_MOUSE_END",0xEFFF); 
+   PyModule_AddIntConstant(module,"KEY_APPCOMMAND",0xD000); 
+   PyModule_AddIntConstant(module,"KEY_INVALID",0xFFFF); 
    PyModule_AddIntConstant(module,"ICON_TYPE_NONE",101); 
    PyModule_AddIntConstant(module,"ICON_TYPE_PROGRAMS",102); 
    PyModule_AddIntConstant(module,"ICON_TYPE_MUSIC",103); 

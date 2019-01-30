@@ -1,24 +1,11 @@
 
 
 /*
- *      Copyright (C) 2005-2013 Team XBMC
- *      http://xbmc.org
+ *  Copyright (C) 2005-2018 Team Kodi
+ *  This file is part of Kodi - https://kodi.tv
  *
- *  This Program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2, or (at your option)
- *  any later version.
- *
- *  This Program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
- *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
- *  http://www.gnu.org/copyleft/gpl.html
- *
+ *  SPDX-License-Identifier: GPL-2.0-or-later
+ *  See LICENSES/README.md for more information.
  */
 
 // ************************************************************************
@@ -36,6 +23,10 @@
 #include "interfaces/python/PyContext.h"
 
 
+#if defined(TARGET_WINDOWS)
+#  include <windows.h>
+#endif
+
 #include "interfaces/legacy/Player.h"
 #include "interfaces/legacy/RenderCapture.h"
 #include "interfaces/legacy/Keyboard.h"
@@ -45,7 +36,7 @@
 using namespace XBMCAddon;
 using namespace xbmc;
 
-#if defined(__GNUG__) && (__GNUC__>4) || (__GNUC__==4 && __GNUC_MINOR__>=2)
+#if defined(__GNUG__)
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #endif
 
@@ -94,20 +85,20 @@ namespace PythonBindings
   //=========================================================================
 
   //=========================================================================
-  // These variables define the type XBMCAddon::xbmcgui::ListItem from another module 
+  // These variables define the type XBMCAddon::xbmcgui::ListItem from another module
   extern TypeInfo TyXBMCAddon_xbmcgui_ListItem_Type;
   //=========================================================================
 
   //=========================================================================
-  // These variables define the type XBMCAddon::xbmc::PlayListItem from another module 
+  // These variables define the type XBMCAddon::xbmc::PlayListItem from another module
   extern TypeInfo TyXBMCAddon_xbmc_PlayListItem_Type;
   //=========================================================================
 
 
 
   //=========================================================================
-  // This class is the Director for XBMCAddon::xbmc::Player. 
-  // It provides the "reverse bridge" from C++ to Python to support 
+  // This class is the Director for XBMCAddon::xbmc::Player.
+  // It provides the "reverse bridge" from C++ to Python to support
   // cross-language polymorphism.
   //=========================================================================
   class XBMCAddon_xbmc_Player_Director : public Director, public XBMCAddon::xbmc::Player
@@ -119,7 +110,26 @@ namespace PythonBindings
       virtual void  onPlayBackStarted(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onPlayBackStarted",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onPlayBackStarted"),const_cast<char*>("()"));
+        if (PyErr_Occurred())
+          throw PythonBindings::PythonToCppException();
+      }
+
+      virtual void  onAVStarted(  )
+      { 
+        XBMCAddon::Python::PyContext pyContext;
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onAVStarted"),const_cast<char*>("()"));
+        if (PyErr_Occurred())
+          throw PythonBindings::PythonToCppException();
+      }
+
+      virtual void  onAVChange(  )
+      { 
+        XBMCAddon::Python::PyContext pyContext;
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onAVChange"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -127,7 +137,8 @@ namespace PythonBindings
       virtual void  onPlayBackEnded(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onPlayBackEnded",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onPlayBackEnded"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -135,7 +146,17 @@ namespace PythonBindings
       virtual void  onPlayBackStopped(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onPlayBackStopped",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onPlayBackStopped"),const_cast<char*>("()"));
+        if (PyErr_Occurred())
+          throw PythonBindings::PythonToCppException();
+      }
+
+      virtual void  onPlayBackError(  )
+      { 
+        XBMCAddon::Python::PyContext pyContext;
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onPlayBackError"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -143,7 +164,8 @@ namespace PythonBindings
       virtual void  onPlayBackPaused(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onPlayBackPaused",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onPlayBackPaused"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -151,7 +173,8 @@ namespace PythonBindings
       virtual void  onPlayBackResumed(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onPlayBackResumed",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onPlayBackResumed"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -159,7 +182,8 @@ namespace PythonBindings
       virtual void  onQueueNextItem(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onQueueNextItem",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onQueueNextItem"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -167,9 +191,10 @@ namespace PythonBindings
       virtual void  onPlayBackSpeedChanged(  int  speed  )
       { 
         PyObject* pyspeed = NULL;
-        pyspeed = Py_BuildValue((char*)"i", speed);
+        pyspeed = Py_BuildValue("i", speed);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onPlayBackSpeedChanged",(char*)"(O)", pyspeed );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onPlayBackSpeedChanged"),const_cast<char*>("(O)"), pyspeed );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -177,11 +202,12 @@ namespace PythonBindings
       virtual void  onPlayBackSeek(  int  time,  int  seekOffset  )
       { 
         PyObject* pytime = NULL;
-        pytime = Py_BuildValue((char*)"i", time);
+        pytime = Py_BuildValue("i", time);
         PyObject* pyseekOffset = NULL;
-        pyseekOffset = Py_BuildValue((char*)"i", seekOffset);
+        pyseekOffset = Py_BuildValue("i", seekOffset);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onPlayBackSeek",(char*)"(OO)", pytime , pyseekOffset );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onPlayBackSeek"),const_cast<char*>("(OO)"), pytime , pyseekOffset );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -189,9 +215,10 @@ namespace PythonBindings
       virtual void  onPlayBackSeekChapter(  int  chapter  )
       { 
         PyObject* pychapter = NULL;
-        pychapter = Py_BuildValue((char*)"i", chapter);
+        pychapter = Py_BuildValue("i", chapter);
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onPlayBackSeekChapter",(char*)"(O)", pychapter );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onPlayBackSeekChapter"),const_cast<char*>("(O)"), pychapter );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -199,8 +226,8 @@ namespace PythonBindings
   };
 
   //=========================================================================
-  // This class is the Director for XBMCAddon::xbmc::Monitor. 
-  // It provides the "reverse bridge" from C++ to Python to support 
+  // This class is the Director for XBMCAddon::xbmc::Monitor.
+  // It provides the "reverse bridge" from C++ to Python to support
   // cross-language polymorphism.
   //=========================================================================
   class XBMCAddon_xbmc_Monitor_Director : public Director, public XBMCAddon::xbmc::Monitor
@@ -212,7 +239,8 @@ namespace PythonBindings
       virtual void  onSettingsChanged(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onSettingsChanged",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onSettingsChanged"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -220,7 +248,8 @@ namespace PythonBindings
       virtual void  onScreensaverActivated(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onScreensaverActivated",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onScreensaverActivated"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -228,7 +257,8 @@ namespace PythonBindings
       virtual void  onScreensaverDeactivated(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onScreensaverDeactivated",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onScreensaverDeactivated"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -236,7 +266,8 @@ namespace PythonBindings
       virtual void  onDPMSActivated(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onDPMSActivated",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onDPMSActivated"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -244,7 +275,8 @@ namespace PythonBindings
       virtual void  onDPMSDeactivated(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onDPMSDeactivated",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onDPMSDeactivated"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -254,7 +286,8 @@ namespace PythonBindings
         PyObject* pylibrary = NULL;
         pylibrary = PyString_FromStringAndSize(library.c_str(), library.length());
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onScanStarted",(char*)"(O)", pylibrary );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onScanStarted"),const_cast<char*>("(O)"), pylibrary );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -264,7 +297,8 @@ namespace PythonBindings
         PyObject* pylibrary = NULL;
         pylibrary = PyString_FromStringAndSize(library.c_str(), library.length());
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onScanFinished",(char*)"(O)", pylibrary );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onScanFinished"),const_cast<char*>("(O)"), pylibrary );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -274,7 +308,8 @@ namespace PythonBindings
         PyObject* pydatabase = NULL;
         pydatabase = PyString_FromStringAndSize(database.c_str(), database.length());
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onDatabaseScanStarted",(char*)"(O)", pydatabase );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onDatabaseScanStarted"),const_cast<char*>("(O)"), pydatabase );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -284,7 +319,8 @@ namespace PythonBindings
         PyObject* pydatabase = NULL;
         pydatabase = PyString_FromStringAndSize(database.c_str(), database.length());
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onDatabaseUpdated",(char*)"(O)", pydatabase );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onDatabaseUpdated"),const_cast<char*>("(O)"), pydatabase );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -294,7 +330,8 @@ namespace PythonBindings
         PyObject* pylibrary = NULL;
         pylibrary = PyString_FromStringAndSize(library.c_str(), library.length());
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onCleanStarted",(char*)"(O)", pylibrary );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onCleanStarted"),const_cast<char*>("(O)"), pylibrary );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -304,7 +341,8 @@ namespace PythonBindings
         PyObject* pylibrary = NULL;
         pylibrary = PyString_FromStringAndSize(library.c_str(), library.length());
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onCleanFinished",(char*)"(O)", pylibrary );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onCleanFinished"),const_cast<char*>("(O)"), pylibrary );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -312,7 +350,8 @@ namespace PythonBindings
       virtual void  onAbortRequested(  )
       { 
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onAbortRequested",(char*)"()");
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onAbortRequested"),const_cast<char*>("()"));
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -326,7 +365,8 @@ namespace PythonBindings
         PyObject* pydata = NULL;
         pydata = PyString_FromStringAndSize(data.c_str(), data.length());
         XBMCAddon::Python::PyContext pyContext;
-        PyObject_CallMethod(self,(char*)"onNotification",(char*)"(OOO)", pysender , pymethod , pydata );
+        //! @bug libpython < 3.4 isn't const correct
+        PyObject_CallMethod(self,const_cast<char*>("onNotification"),const_cast<char*>("(OOO)"), pysender , pymethod , pydata );
         if (PyErr_Occurred())
           throw PythonBindings::PythonToCppException();
       }
@@ -341,14 +381,14 @@ namespace PythonBindings
           "msg",
           "level",
           NULL};
-         
-    char * msg ;         
+
+    char * msg  = nullptr;
     int  level  = lLOGDEBUG;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s|i",
-       (char**)keywords,
+       "s|i",
+       const_cast<char**>(keywords),
          &msg,
          &level
        ))
@@ -365,13 +405,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -404,13 +444,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -443,13 +483,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -477,13 +517,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "script",
           NULL};
-         
-    char * script ;
+
+    char * script  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &script
        ))
     {
@@ -499,13 +539,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -534,14 +574,14 @@ namespace PythonBindings
           "function",
           "wait",
           NULL};
-         
-    char * function ;         
+
+    char * function  = nullptr;
     bool  wait  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s|b",
-       (char**)keywords,
+       "s|b",
+       const_cast<char**>(keywords),
          &function,
          &wait
        ))
@@ -558,13 +598,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -592,35 +632,35 @@ namespace PythonBindings
     static const char *keywords[] = {
           "jsonrpccommand",
           NULL};
-         
-    char * jsonrpccommand ;
+
+    char * jsonrpccommand  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &jsonrpccommand
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::executeJSONRPC(  jsonrpccommand  );
+      apiResult = XBMCAddon::xbmc::executeJSONRPC(  jsonrpccommand  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -647,13 +687,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "timemillis",
           NULL};
-         
+
     long  timemillis ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"l",
-       (char**)keywords,
+       "l",
+       const_cast<char**>(keywords),
          &timemillis
        ))
     {
@@ -669,13 +709,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -703,35 +743,35 @@ namespace PythonBindings
     static const char *keywords[] = {
           "id",
           NULL};
-         
+
     int  id ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &id
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::getLocalizedString(  id  );
+      apiResult = XBMCAddon::xbmc::getLocalizedString(  id  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -754,22 +794,22 @@ namespace PythonBindings
   static PyObject* xbmc_getSkinDir (PyObject* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::getSkinDir(  );
+      apiResult = XBMCAddon::xbmc::getSkinDir(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -797,14 +837,14 @@ namespace PythonBindings
           "format",
           "region",
           NULL};
-         
-    int  format  = CLangCodeExpander::ENGLISH_NAME;         
+
+    int  format  = CLangCodeExpander::ENGLISH_NAME;
     bool  region  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|ib",
-       (char**)keywords,
+       "|ib",
+       const_cast<char**>(keywords),
          &format,
          &region
        ))
@@ -812,22 +852,22 @@ namespace PythonBindings
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::getLanguage(  format,  region  );
+      apiResult = XBMCAddon::xbmc::getLanguage(  format,  region  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -850,22 +890,22 @@ namespace PythonBindings
   static PyObject* xbmc_getIPAddress (PyObject* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::getIPAddress(  );
+      apiResult = XBMCAddon::xbmc::getIPAddress(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -893,17 +933,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (long )XBMCAddon::xbmc::getDVDState(  );
+      apiResult = XBMCAddon::xbmc::getDVDState(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -931,17 +971,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (long )XBMCAddon::xbmc::getFreeMem(  );
+      apiResult = XBMCAddon::xbmc::getFreeMem(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -968,35 +1008,35 @@ namespace PythonBindings
     static const char *keywords[] = {
           "cLine",
           NULL};
-         
-    char * cLine ;
+
+    char * cLine  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &cLine
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::getInfoLabel(  cLine  );
+      apiResult = XBMCAddon::xbmc::getInfoLabel(  cLine  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1023,35 +1063,35 @@ namespace PythonBindings
     static const char *keywords[] = {
           "infotag",
           NULL};
-         
-    char * infotag ;
+
+    char * infotag  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &infotag
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::getInfoImage(  infotag  );
+      apiResult = XBMCAddon::xbmc::getInfoImage(  infotag  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1079,14 +1119,14 @@ namespace PythonBindings
           "filename",
           "useCached",
           NULL};
-         
-    char * filename ;         
+
+    char * filename  = nullptr;
     bool  useCached  = true;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s|b",
-       (char**)keywords,
+       "s|b",
+       const_cast<char**>(keywords),
          &filename,
          &useCached
        ))
@@ -1103,13 +1143,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1142,13 +1182,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1176,13 +1216,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "yesNo",
           NULL};
-         
+
     bool  yesNo ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"b",
-       (char**)keywords,
+       "b",
+       const_cast<char**>(keywords),
          &yesNo
        ))
     {
@@ -1198,13 +1238,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1232,13 +1272,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "condition",
           NULL};
-         
-    char * condition ;
+
+    char * condition  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &condition
        ))
     {
@@ -1250,17 +1290,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (bool )XBMCAddon::xbmc::getCondVisibility(  condition  );
+      apiResult = XBMCAddon::xbmc::getCondVisibility(  condition  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1275,7 +1315,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -1288,17 +1328,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (int )XBMCAddon::xbmc::getGlobalIdleTime(  );
+      apiResult = XBMCAddon::xbmc::getGlobalIdleTime(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1313,7 +1353,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -1325,37 +1365,37 @@ namespace PythonBindings
     static const char *keywords[] = {
           "path",
           NULL};
-         
+
     std::string  path ;
     PyObject* pypath = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypath
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
       if (pypath) PyXBMCGetUnicodeString(path,pypath,false,"path","XBMCAddon::xbmc::getCacheThumbName"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::getCacheThumbName(  path  );
+      apiResult = XBMCAddon::xbmc::getCacheThumbName(  path  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1383,15 +1423,15 @@ namespace PythonBindings
           "filename",
           "fatX",
           NULL};
-         
+
     std::string  filename ;
-    PyObject* pyfilename = NULL;         
+    PyObject* pyfilename = NULL;
     bool  fatX  = true;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O|b",
-       (char**)keywords,
+       "O|b",
+       const_cast<char**>(keywords),
          &pyfilename,
          &fatX
        ))
@@ -1399,23 +1439,23 @@ namespace PythonBindings
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
       if (pyfilename) PyXBMCGetUnicodeString(filename,pyfilename,false,"filename","XBMCAddon::xbmc::makeLegalFilename"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::makeLegalFilename(  filename,  fatX  );
+      apiResult = XBMCAddon::xbmc::makeLegalFilename(  filename,  fatX  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1442,37 +1482,37 @@ namespace PythonBindings
     static const char *keywords[] = {
           "path",
           NULL};
-         
+
     std::string  path ;
     PyObject* pypath = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypath
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
       if (pypath) PyXBMCGetUnicodeString(path,pypath,false,"path","XBMCAddon::xbmc::translatePath"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::translatePath(  path  );
+      apiResult = XBMCAddon::xbmc::translatePath(  path  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1500,15 +1540,15 @@ namespace PythonBindings
           "path",
           "usefoldername",
           NULL};
-         
+
     std::string  path ;
-    PyObject* pypath = NULL;         
+    PyObject* pypath = NULL;
     bool  usefoldername  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O|b",
-       (char**)keywords,
+       "O|b",
+       const_cast<char**>(keywords),
          &pypath,
          &usefoldername
        ))
@@ -1522,17 +1562,17 @@ namespace PythonBindings
       if (pypath) PyXBMCGetUnicodeString(path,pypath,false,"path","XBMCAddon::xbmc::getCleanMovieTitle"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (Tuple< XBMCAddon::String ,XBMCAddon::String  > )XBMCAddon::xbmc::getCleanMovieTitle(  path,  usefoldername  );
+      apiResult = XBMCAddon::xbmc::getCleanMovieTitle(  path,  usefoldername  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1584,37 +1624,37 @@ namespace PythonBindings
     static const char *keywords[] = {
           "path",
           NULL};
-         
+
     std::string  path ;
     PyObject* pypath = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypath
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
       if (pypath) PyXBMCGetUnicodeString(path,pypath,false,"path","XBMCAddon::xbmc::validatePath"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::validatePath(  path  );
+      apiResult = XBMCAddon::xbmc::validatePath(  path  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1641,35 +1681,35 @@ namespace PythonBindings
     static const char *keywords[] = {
           "id",
           NULL};
-         
-    char * id ;
+
+    char * id  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &id
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::getRegion(  id  );
+      apiResult = XBMCAddon::xbmc::getRegion(  id  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1696,35 +1736,35 @@ namespace PythonBindings
     static const char *keywords[] = {
           "mediaType",
           NULL};
-         
-    char * mediaType ;
+
+    char * mediaType  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &mediaType
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::getSupportedMedia(  mediaType  );
+      apiResult = XBMCAddon::xbmc::getSupportedMedia(  mediaType  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1751,13 +1791,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "image",
           NULL};
-         
-    char * image ;
+
+    char * image  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &image
        ))
     {
@@ -1769,17 +1809,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (bool )XBMCAddon::xbmc::skinHasImage(  image  );
+      apiResult = XBMCAddon::xbmc::skinHasImage(  image  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1794,7 +1834,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -1808,15 +1848,15 @@ namespace PythonBindings
           "bStart",
           "bWait",
           NULL};
-         
-    int  iTyp ;         
-    bool  bStart ;         
+
+    int  iTyp ;
+    bool  bStart ;
     bool  bWait  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"ib|b",
-       (char**)keywords,
+       "ib|b",
+       const_cast<char**>(keywords),
          &iTyp,
          &bStart,
          &bWait
@@ -1830,17 +1870,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (bool )XBMCAddon::xbmc::startServer(  iTyp,  bStart,  bWait  );
+      apiResult = XBMCAddon::xbmc::startServer(  iTyp,  bStart,  bWait  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1855,7 +1895,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -1872,13 +1912,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1911,13 +1951,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1941,22 +1981,22 @@ namespace PythonBindings
   static PyObject* xbmc_getUserAgent (PyObject* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::getUserAgent(  );
+      apiResult = XBMCAddon::xbmc::getUserAgent(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1984,14 +2024,14 @@ namespace PythonBindings
           "language",
           "format",
           NULL};
-         
-    char * language ;         
+
+    char * language  = nullptr;
     int  format ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"si",
-       (char**)keywords,
+       "si",
+       const_cast<char**>(keywords),
          &language,
          &format
        ))
@@ -1999,22 +2039,22 @@ namespace PythonBindings
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmc::convertLanguage(  language,  format  );
+      apiResult = XBMCAddon::xbmc::convertLanguage(  language,  format  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2037,12 +2077,12 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_Player_New (PyTypeObject* pytype  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-         
+
     int  playerCore  = 0;
     if (!PyArg_ParseTuple(
        args,
        
-       (char*)"|i",
+       "|i",
        
          &playerCore
        ))
@@ -2055,17 +2095,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmc::Player *)(&(TyXBMCAddon_xbmc_Player_Type.pythonType) != pytype) ? new XBMCAddon_xbmc_Player_Director( playerCore ) : new XBMCAddon::xbmc::Player(  playerCore  );
+      apiResult = (&(TyXBMCAddon_xbmc_Player_Type.pythonType) != pytype) ? new XBMCAddon_xbmc_Player_Director( playerCore ) : new XBMCAddon::xbmc::Player(  playerCore  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2081,7 +2121,7 @@ namespace PythonBindings
 
     // transform the result
     result = makePythonInstance(apiResult,pytype,false);
-    if (&(TyXBMCAddon_xbmc_Player_Type.pythonType) != pytype) 
+    if (&(TyXBMCAddon_xbmc_Player_Type.pythonType) != pytype)
       ((XBMCAddon_xbmc_Player_Director*)apiResult)->setPyObjectForDirector(result);
 
     return result; 
@@ -2097,18 +2137,18 @@ namespace PythonBindings
           "windowed",
           "startpos",
           NULL};
-         
+
     Alternative< XBMCAddon::String ,PlayList const * >  item  = Player::defaultPlayParameter;
-    PyObject* pyitem = NULL;         
+    PyObject* pyitem = NULL;
     XBMCAddon::xbmcgui::ListItem * listitem  = NULL;
-    PyObject* pylistitem = NULL;         
-    bool  windowed  = false;         
+    PyObject* pylistitem = NULL;
+    bool  windowed  = false;
     int  startpos  = -1;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|OObi",
-       (char**)keywords,
+       "|OObi",
+       const_cast<char**>(keywords),
          &pyitem,
          &pylistitem,
          &windowed,
@@ -2131,7 +2171,7 @@ namespace PythonBindings
         if (pyentry_1) PyXBMCGetUnicodeString(entry0_1,pyentry_1,false,"entry0_1","play");
         item.former() = entry0_1;
       }
-      catch (XBMCAddon::WrongTypeException wte)
+      catch (const XBMCAddon::WrongTypeException&)
       {
         try
         {
@@ -2139,9 +2179,9 @@ namespace PythonBindings
           entry1_1 = (PlayList *)retrieveApiInstance(pyentry_1,"p.PlayList","XBMCAddon::xbmc::","play");
           item.later() = entry1_1;
         }
-        catch (XBMCAddon::WrongTypeException wte2)
+        catch (const XBMCAddon::WrongTypeException&)
         {
-          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a " 
+          throw XBMCAddon::WrongTypeException("Failed to convert to input type to either a "
                                               "std::string or a "
                                               "p.PlayList" );
         }
@@ -2153,13 +2193,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2191,13 +2231,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2229,13 +2269,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2267,13 +2307,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2305,13 +2345,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2339,13 +2379,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "selected",
           NULL};
-         
+
     int  selected ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &selected
        ))
     {
@@ -2360,13 +2400,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2394,18 +2434,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"onPlayBackStarted","XBMCAddon::xbmc::Player"))-> XBMCAddon::xbmc::Player::onPlayBackStarted(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2426,6 +2466,84 @@ namespace PythonBindings
     return result; 
   } 
 
+  static PyObject* xbmc_XBMCAddon_xbmc_Player_onAVStarted (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+
+    try
+    {
+
+      // This is a director call coming from python so it explicitly calls the base class method.
+      ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"onAVStarted","XBMCAddon::xbmc::Player"))-> XBMCAddon::xbmc::Player::onAVStarted(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"onAVStarted\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"onAVStarted\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    Py_INCREF(Py_None);
+    result = Py_None;
+
+    return result; 
+  } 
+
+  static PyObject* xbmc_XBMCAddon_xbmc_Player_onAVChange (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+
+    try
+    {
+
+      // This is a director call coming from python so it explicitly calls the base class method.
+      ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"onAVChange","XBMCAddon::xbmc::Player"))-> XBMCAddon::xbmc::Player::onAVChange(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"onAVChange\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"onAVChange\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    Py_INCREF(Py_None);
+    result = Py_None;
+
+    return result; 
+  } 
+
   static PyObject* xbmc_XBMCAddon_xbmc_Player_onPlayBackEnded (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
@@ -2433,18 +2551,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"onPlayBackEnded","XBMCAddon::xbmc::Player"))-> XBMCAddon::xbmc::Player::onPlayBackEnded(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2472,18 +2590,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"onPlayBackStopped","XBMCAddon::xbmc::Player"))-> XBMCAddon::xbmc::Player::onPlayBackStopped(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2504,6 +2622,45 @@ namespace PythonBindings
     return result; 
   } 
 
+  static PyObject* xbmc_XBMCAddon_xbmc_Player_onPlayBackError (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+
+    try
+    {
+
+      // This is a director call coming from python so it explicitly calls the base class method.
+      ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"onPlayBackError","XBMCAddon::xbmc::Player"))-> XBMCAddon::xbmc::Player::onPlayBackError(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"onPlayBackError\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"onPlayBackError\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    Py_INCREF(Py_None);
+    result = Py_None;
+
+    return result; 
+  } 
+
   static PyObject* xbmc_XBMCAddon_xbmc_Player_onPlayBackPaused (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
@@ -2511,18 +2668,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"onPlayBackPaused","XBMCAddon::xbmc::Player"))-> XBMCAddon::xbmc::Player::onPlayBackPaused(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2550,18 +2707,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"onPlayBackResumed","XBMCAddon::xbmc::Player"))-> XBMCAddon::xbmc::Player::onPlayBackResumed(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2589,18 +2746,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"onQueueNextItem","XBMCAddon::xbmc::Player"))-> XBMCAddon::xbmc::Player::onQueueNextItem(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2628,13 +2785,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "speed",
           NULL};
-         
+
     int  speed ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &speed
        ))
     {
@@ -2645,18 +2802,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"onPlayBackSpeedChanged","XBMCAddon::xbmc::Player"))-> XBMCAddon::xbmc::Player::onPlayBackSpeedChanged(  speed  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2685,14 +2842,14 @@ namespace PythonBindings
           "time",
           "seekOffset",
           NULL};
-         
-    int  time ;         
+
+    int  time ;
     int  seekOffset ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"ii",
-       (char**)keywords,
+       "ii",
+       const_cast<char**>(keywords),
          &time,
          &seekOffset
        ))
@@ -2704,18 +2861,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"onPlayBackSeek","XBMCAddon::xbmc::Player"))-> XBMCAddon::xbmc::Player::onPlayBackSeek(  time,  seekOffset  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2743,13 +2900,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "chapter",
           NULL};
-         
+
     int  chapter ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &chapter
        ))
     {
@@ -2760,18 +2917,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"onPlayBackSeekChapter","XBMCAddon::xbmc::Player"))-> XBMCAddon::xbmc::Player::onPlayBackSeekChapter(  chapter  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2799,17 +2956,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"isPlaying","XBMCAddon::xbmc::Player"))-> isPlaying(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"isPlaying","XBMCAddon::xbmc::Player"))-> isPlaying(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2824,7 +2981,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -2836,17 +2993,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"isPlayingAudio","XBMCAddon::xbmc::Player"))-> isPlayingAudio(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"isPlayingAudio","XBMCAddon::xbmc::Player"))-> isPlayingAudio(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2861,7 +3018,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -2873,17 +3030,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"isPlayingVideo","XBMCAddon::xbmc::Player"))-> isPlayingVideo(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"isPlayingVideo","XBMCAddon::xbmc::Player"))-> isPlayingVideo(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2898,7 +3055,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -2910,17 +3067,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"isPlayingRDS","XBMCAddon::xbmc::Player"))-> isPlayingRDS(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"isPlayingRDS","XBMCAddon::xbmc::Player"))-> isPlayingRDS(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2935,7 +3092,44 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
+
+    return result; 
+  } 
+
+  static PyObject* xbmc_XBMCAddon_xbmc_Player_isExternalPlayer (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+    bool  apiResult;
+    try
+    {
+
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"isExternalPlayer","XBMCAddon::xbmc::Player"))-> isExternalPlayer(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"isExternalPlayer\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"isExternalPlayer\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -2943,21 +3137,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_Player_getPlayingFile (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getPlayingFile","XBMCAddon::xbmc::Player"))-> getPlayingFile(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getPlayingFile","XBMCAddon::xbmc::Player"))-> getPlayingFile(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -2984,17 +3178,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (double )((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getTime","XBMCAddon::xbmc::Player"))-> getTime(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getTime","XBMCAddon::xbmc::Player"))-> getTime(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3021,13 +3215,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "seekTime",
           NULL};
-         
+
     double  seekTime ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"d",
-       (char**)keywords,
+       "d",
+       const_cast<char**>(keywords),
          &seekTime
        ))
     {
@@ -3042,13 +3236,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3076,13 +3270,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "subtitleFile",
           NULL};
-         
-    char * subtitleFile ;
+
+    char * subtitleFile  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &subtitleFile
        ))
     {
@@ -3097,13 +3291,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3131,13 +3325,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "bVisible",
           NULL};
-         
+
     bool  bVisible ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"b",
-       (char**)keywords,
+       "b",
+       const_cast<char**>(keywords),
          &bVisible
        ))
     {
@@ -3152,13 +3346,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3182,21 +3376,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_Player_getSubtitles (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getSubtitles","XBMCAddon::xbmc::Player"))-> getSubtitles(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getSubtitles","XBMCAddon::xbmc::Player"))-> getSubtitles(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3223,17 +3417,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (std::vector< XBMCAddon::String  > )((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getAvailableSubtitleStreams","XBMCAddon::xbmc::Player"))-> getAvailableSubtitleStreams(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getAvailableSubtitleStreams","XBMCAddon::xbmc::Player"))-> getAvailableSubtitleStreams(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3272,13 +3466,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "iStream",
           NULL};
-         
+
     int  iStream ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &iStream
        ))
     {
@@ -3293,13 +3487,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3320,6 +3514,63 @@ namespace PythonBindings
     return result; 
   } 
 
+  static PyObject* xbmc_XBMCAddon_xbmc_Player_updateInfoTag (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+
+    static const char *keywords[] = {
+          "item",
+          NULL};
+
+    XBMCAddon::xbmcgui::ListItem * item  = nullptr;
+    PyObject* pyitem = NULL;
+    if (!PyArg_ParseTupleAndKeywords(
+       args,
+       kwds,
+       "O",
+       const_cast<char**>(keywords),
+         &pyitem
+       ))
+    {
+      return NULL;
+    }
+
+
+    try
+    {
+      item = (XBMCAddon::xbmcgui::ListItem *)retrieveApiInstance(pyitem,"p.XBMCAddon::xbmcgui::ListItem","XBMCAddon::xbmc::","updateInfoTag"); 
+
+      ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"updateInfoTag","XBMCAddon::xbmc::Player"))-> updateInfoTag(  item  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"updateInfoTag\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"updateInfoTag\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    Py_INCREF(Py_None);
+    result = Py_None;
+
+    return result; 
+  } 
+
   static PyObject* xbmc_XBMCAddon_xbmc_Player_getVideoInfoTag (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
@@ -3327,17 +3578,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (InfoTagVideo *)((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getVideoInfoTag","XBMCAddon::xbmc::Player"))-> getVideoInfoTag(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getVideoInfoTag","XBMCAddon::xbmc::Player"))-> getVideoInfoTag(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3364,17 +3615,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (InfoTagMusic *)((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getMusicInfoTag","XBMCAddon::xbmc::Player"))-> getMusicInfoTag(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getMusicInfoTag","XBMCAddon::xbmc::Player"))-> getMusicInfoTag(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3401,17 +3652,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (InfoTagRadioRDS *)((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getRadioRDSInfoTag","XBMCAddon::xbmc::Player"))-> getRadioRDSInfoTag(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getRadioRDSInfoTag","XBMCAddon::xbmc::Player"))-> getRadioRDSInfoTag(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3438,17 +3689,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (double )((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getTotalTime","XBMCAddon::xbmc::Player"))-> getTotalTime(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getTotalTime","XBMCAddon::xbmc::Player"))-> getTotalTime(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3475,17 +3726,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (std::vector< XBMCAddon::String  > )((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getAvailableAudioStreams","XBMCAddon::xbmc::Player"))-> getAvailableAudioStreams(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getAvailableAudioStreams","XBMCAddon::xbmc::Player"))-> getAvailableAudioStreams(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3524,13 +3775,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "iStream",
           NULL};
-         
+
     int  iStream ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &iStream
        ))
     {
@@ -3545,13 +3796,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3579,17 +3830,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (std::vector< XBMCAddon::String  > )((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getAvailableVideoStreams","XBMCAddon::xbmc::Player"))-> getAvailableVideoStreams(  );
+      apiResult = ((XBMCAddon::xbmc::Player*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Player_Type,"getAvailableVideoStreams","XBMCAddon::xbmc::Player"))-> getAvailableVideoStreams(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3628,13 +3879,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "iStream",
           NULL};
-         
+
     int  iStream ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i",
-       (char**)keywords,
+       "i",
+       const_cast<char**>(keywords),
          &iStream
        ))
     {
@@ -3649,13 +3900,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3684,17 +3935,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmc::RenderCapture *)new XBMCAddon::xbmc::RenderCapture(  );
+      apiResult = new XBMCAddon::xbmc::RenderCapture(  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3721,17 +3972,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::RenderCapture*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_RenderCapture_Type,"getWidth","XBMCAddon::xbmc::RenderCapture"))-> getWidth(  );
+      apiResult = ((XBMCAddon::xbmc::RenderCapture*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_RenderCapture_Type,"getWidth","XBMCAddon::xbmc::RenderCapture"))-> getWidth(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3746,7 +3997,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -3758,17 +4009,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::RenderCapture*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_RenderCapture_Type,"getHeight","XBMCAddon::xbmc::RenderCapture"))-> getHeight(  );
+      apiResult = ((XBMCAddon::xbmc::RenderCapture*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_RenderCapture_Type,"getHeight","XBMCAddon::xbmc::RenderCapture"))-> getHeight(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3783,7 +4034,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -3795,17 +4046,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (float )((XBMCAddon::xbmc::RenderCapture*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_RenderCapture_Type,"getAspectRatio","XBMCAddon::xbmc::RenderCapture"))-> getAspectRatio(  );
+      apiResult = ((XBMCAddon::xbmc::RenderCapture*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_RenderCapture_Type,"getAspectRatio","XBMCAddon::xbmc::RenderCapture"))-> getAspectRatio(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3820,7 +4071,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"f", apiResult);
+    result = Py_BuildValue("f", apiResult);
 
     return result; 
   } 
@@ -3828,21 +4079,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_RenderCapture_getImageFormat (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    char * apiResult;
+    char const * apiResult;
     try
     {
 
-      apiResult = (char *)((XBMCAddon::xbmc::RenderCapture*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_RenderCapture_Type,"getImageFormat","XBMCAddon::xbmc::RenderCapture"))-> getImageFormat(  );
+      apiResult = ((XBMCAddon::xbmc::RenderCapture*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_RenderCapture_Type,"getImageFormat","XBMCAddon::xbmc::RenderCapture"))-> getImageFormat(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3869,13 +4120,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "msecs",
           NULL};
-         
+
     unsigned int  msecs  = 0;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|I",
-       (char**)keywords,
+       "|I",
+       const_cast<char**>(keywords),
          &msecs
        ))
     {
@@ -3886,17 +4137,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (XbmcCommons::Buffer )((XBMCAddon::xbmc::RenderCapture*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_RenderCapture_Type,"getImage","XBMCAddon::xbmc::RenderCapture"))-> getImage(  msecs  );
+      apiResult = ((XBMCAddon::xbmc::RenderCapture*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_RenderCapture_Type,"getImage","XBMCAddon::xbmc::RenderCapture"))-> getImage(  msecs  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3924,14 +4175,14 @@ namespace PythonBindings
           "width",
           "height",
           NULL};
-         
-    int  width ;         
+
+    int  width ;
     int  height ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"ii",
-       (char**)keywords,
+       "ii",
+       const_cast<char**>(keywords),
          &width,
          &height
        ))
@@ -3947,13 +4198,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -3982,17 +4233,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmc::InfoTagMusic *)new XBMCAddon::xbmc::InfoTagMusic(  );
+      apiResult = new XBMCAddon::xbmc::InfoTagMusic(  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4012,24 +4263,61 @@ namespace PythonBindings
     return result; 
   } 
 
-  static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getURL (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getDbId (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    int  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getURL","XBMCAddon::xbmc::InfoTagMusic"))-> getURL(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getDbId","XBMCAddon::xbmc::InfoTagMusic"))-> getDbId(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"getDbId\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"getDbId\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    result = Py_BuildValue("i", apiResult);
+
+    return result; 
+  } 
+
+  static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getURL (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+    XBMCAddon::String  apiResult;
+    try
+    {
+
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getURL","XBMCAddon::xbmc::InfoTagMusic"))-> getURL(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4052,21 +4340,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getTitle (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getTitle","XBMCAddon::xbmc::InfoTagMusic"))-> getTitle(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getTitle","XBMCAddon::xbmc::InfoTagMusic"))-> getTitle(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4086,24 +4374,61 @@ namespace PythonBindings
     return result; 
   } 
 
-  static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getArtist (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getMediaType (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getArtist","XBMCAddon::xbmc::InfoTagMusic"))-> getArtist(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getMediaType","XBMCAddon::xbmc::InfoTagMusic"))-> getMediaType(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"getMediaType\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"getMediaType\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    result = PyString_FromStringAndSize(apiResult.c_str(), apiResult.length());
+
+    return result; 
+  } 
+
+  static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getArtist (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+    XBMCAddon::String  apiResult;
+    try
+    {
+
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getArtist","XBMCAddon::xbmc::InfoTagMusic"))-> getArtist(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4126,21 +4451,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getAlbum (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getAlbum","XBMCAddon::xbmc::InfoTagMusic"))-> getAlbum(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getAlbum","XBMCAddon::xbmc::InfoTagMusic"))-> getAlbum(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4163,21 +4488,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getAlbumArtist (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getAlbumArtist","XBMCAddon::xbmc::InfoTagMusic"))-> getAlbumArtist(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getAlbumArtist","XBMCAddon::xbmc::InfoTagMusic"))-> getAlbumArtist(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4200,21 +4525,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getGenre (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getGenre","XBMCAddon::xbmc::InfoTagMusic"))-> getGenre(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getGenre","XBMCAddon::xbmc::InfoTagMusic"))-> getGenre(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4241,17 +4566,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getDuration","XBMCAddon::xbmc::InfoTagMusic"))-> getDuration(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getDuration","XBMCAddon::xbmc::InfoTagMusic"))-> getDuration(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4266,7 +4591,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -4278,17 +4603,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getRating","XBMCAddon::xbmc::InfoTagMusic"))-> getRating(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getRating","XBMCAddon::xbmc::InfoTagMusic"))-> getRating(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4303,7 +4628,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -4315,17 +4640,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getUserRating","XBMCAddon::xbmc::InfoTagMusic"))-> getUserRating(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getUserRating","XBMCAddon::xbmc::InfoTagMusic"))-> getUserRating(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4340,7 +4665,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -4352,17 +4677,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getTrack","XBMCAddon::xbmc::InfoTagMusic"))-> getTrack(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getTrack","XBMCAddon::xbmc::InfoTagMusic"))-> getTrack(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4377,7 +4702,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -4389,17 +4714,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getDisc","XBMCAddon::xbmc::InfoTagMusic"))-> getDisc(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getDisc","XBMCAddon::xbmc::InfoTagMusic"))-> getDisc(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4414,7 +4739,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -4422,21 +4747,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getReleaseDate (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getReleaseDate","XBMCAddon::xbmc::InfoTagMusic"))-> getReleaseDate(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getReleaseDate","XBMCAddon::xbmc::InfoTagMusic"))-> getReleaseDate(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4463,17 +4788,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getListeners","XBMCAddon::xbmc::InfoTagMusic"))-> getListeners(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getListeners","XBMCAddon::xbmc::InfoTagMusic"))-> getListeners(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4488,7 +4813,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -4500,17 +4825,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getPlayCount","XBMCAddon::xbmc::InfoTagMusic"))-> getPlayCount(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getPlayCount","XBMCAddon::xbmc::InfoTagMusic"))-> getPlayCount(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4525,7 +4850,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -4533,21 +4858,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getLastPlayed (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getLastPlayed","XBMCAddon::xbmc::InfoTagMusic"))-> getLastPlayed(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getLastPlayed","XBMCAddon::xbmc::InfoTagMusic"))-> getLastPlayed(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4570,21 +4895,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getComment (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getComment","XBMCAddon::xbmc::InfoTagMusic"))-> getComment(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getComment","XBMCAddon::xbmc::InfoTagMusic"))-> getComment(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4607,21 +4932,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagMusic_getLyrics (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getLyrics","XBMCAddon::xbmc::InfoTagMusic"))-> getLyrics(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagMusic*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagMusic_Type,"getLyrics","XBMCAddon::xbmc::InfoTagMusic"))-> getLyrics(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4649,17 +4974,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmc::InfoTagRadioRDS *)new XBMCAddon::xbmc::InfoTagRadioRDS(  );
+      apiResult = new XBMCAddon::xbmc::InfoTagRadioRDS(  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4682,21 +5007,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getTitle (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getTitle","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getTitle(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getTitle","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getTitle(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4719,21 +5044,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getBand (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getBand","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getBand(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getBand","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getBand(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4756,21 +5081,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getArtist (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getArtist","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getArtist(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getArtist","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getArtist(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4793,21 +5118,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getComposer (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getComposer","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getComposer(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getComposer","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getComposer(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4830,21 +5155,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getConductor (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getConductor","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getConductor(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getConductor","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getConductor(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4867,21 +5192,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getAlbum (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getAlbum","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getAlbum(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getAlbum","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getAlbum(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4904,21 +5229,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getComment (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getComment","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getComment(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getComment","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getComment(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4945,17 +5270,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getAlbumTrackNumber","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getAlbumTrackNumber(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getAlbumTrackNumber","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getAlbumTrackNumber(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -4970,7 +5295,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -4978,21 +5303,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoNews (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoNews","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoNews(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoNews","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoNews(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5015,21 +5340,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoNewsLocal (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoNewsLocal","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoNewsLocal(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoNewsLocal","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoNewsLocal(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5052,21 +5377,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoSport (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoSport","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoSport(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoSport","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoSport(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5089,21 +5414,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoStock (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoStock","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoStock(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoStock","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoStock(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5126,21 +5451,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoWeather (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoWeather","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoWeather(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoWeather","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoWeather(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5163,21 +5488,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoHoroscope (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoHoroscope","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoHoroscope(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoHoroscope","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoHoroscope(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5200,21 +5525,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoCinema (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoCinema","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoCinema(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoCinema","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoCinema(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5237,21 +5562,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoLottery (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoLottery","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoLottery(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoLottery","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoLottery(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5274,21 +5599,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoOther (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoOther","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoOther(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getInfoOther","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getInfoOther(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5311,21 +5636,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getEditorialStaff (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getEditorialStaff","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getEditorialStaff(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getEditorialStaff","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getEditorialStaff(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5348,21 +5673,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgStation (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getProgStation","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getProgStation(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getProgStation","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getProgStation(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5385,21 +5710,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgStyle (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getProgStyle","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getProgStyle(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getProgStyle","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getProgStyle(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5422,21 +5747,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgHost (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getProgHost","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getProgHost(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getProgHost","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getProgHost(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5459,21 +5784,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgWebsite (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getProgWebsite","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getProgWebsite(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getProgWebsite","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getProgWebsite(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5496,21 +5821,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgNow (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getProgNow","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getProgNow(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getProgNow","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getProgNow(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5533,21 +5858,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgNext (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getProgNext","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getProgNext(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getProgNext","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getProgNext(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5570,21 +5895,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getPhoneHotline (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getPhoneHotline","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getPhoneHotline(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getPhoneHotline","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getPhoneHotline(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5607,21 +5932,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getEMailHotline (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getEMailHotline","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getEMailHotline(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getEMailHotline","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getEMailHotline(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5644,21 +5969,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getPhoneStudio (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getPhoneStudio","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getPhoneStudio(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getPhoneStudio","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getPhoneStudio(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5681,21 +6006,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getEMailStudio (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getEMailStudio","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getEMailStudio(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getEMailStudio","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getEMailStudio(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5718,21 +6043,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getSMSStudio (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getSMSStudio","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getSMSStudio(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagRadioRDS*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagRadioRDS_Type,"getSMSStudio","XBMCAddon::xbmc::InfoTagRadioRDS"))-> getSMSStudio(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5760,17 +6085,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmc::InfoTagVideo *)new XBMCAddon::xbmc::InfoTagVideo(  );
+      apiResult = new XBMCAddon::xbmc::InfoTagVideo(  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5797,17 +6122,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getDbId","XBMCAddon::xbmc::InfoTagVideo"))-> getDbId(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getDbId","XBMCAddon::xbmc::InfoTagVideo"))-> getDbId(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5822,7 +6147,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -5830,21 +6155,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getDirector (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getDirector","XBMCAddon::xbmc::InfoTagVideo"))-> getDirector(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getDirector","XBMCAddon::xbmc::InfoTagVideo"))-> getDirector(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5867,21 +6192,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getWritingCredits (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getWritingCredits","XBMCAddon::xbmc::InfoTagVideo"))-> getWritingCredits(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getWritingCredits","XBMCAddon::xbmc::InfoTagVideo"))-> getWritingCredits(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5904,21 +6229,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getGenre (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getGenre","XBMCAddon::xbmc::InfoTagVideo"))-> getGenre(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getGenre","XBMCAddon::xbmc::InfoTagVideo"))-> getGenre(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5941,21 +6266,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getTagLine (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getTagLine","XBMCAddon::xbmc::InfoTagVideo"))-> getTagLine(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getTagLine","XBMCAddon::xbmc::InfoTagVideo"))-> getTagLine(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -5978,21 +6303,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getPlotOutline (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getPlotOutline","XBMCAddon::xbmc::InfoTagVideo"))-> getPlotOutline(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getPlotOutline","XBMCAddon::xbmc::InfoTagVideo"))-> getPlotOutline(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6015,21 +6340,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getPlot (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getPlot","XBMCAddon::xbmc::InfoTagVideo"))-> getPlot(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getPlot","XBMCAddon::xbmc::InfoTagVideo"))-> getPlot(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6052,21 +6377,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getPictureURL (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getPictureURL","XBMCAddon::xbmc::InfoTagVideo"))-> getPictureURL(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getPictureURL","XBMCAddon::xbmc::InfoTagVideo"))-> getPictureURL(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6089,21 +6414,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getTitle (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getTitle","XBMCAddon::xbmc::InfoTagVideo"))-> getTitle(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getTitle","XBMCAddon::xbmc::InfoTagVideo"))-> getTitle(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6126,21 +6451,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getTVShowTitle (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getTVShowTitle","XBMCAddon::xbmc::InfoTagVideo"))-> getTVShowTitle(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getTVShowTitle","XBMCAddon::xbmc::InfoTagVideo"))-> getTVShowTitle(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6163,21 +6488,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getMediaType (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getMediaType","XBMCAddon::xbmc::InfoTagVideo"))-> getMediaType(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getMediaType","XBMCAddon::xbmc::InfoTagVideo"))-> getMediaType(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6200,21 +6525,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getVotes (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getVotes","XBMCAddon::xbmc::InfoTagVideo"))-> getVotes(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getVotes","XBMCAddon::xbmc::InfoTagVideo"))-> getVotes(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6237,21 +6562,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getCast (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getCast","XBMCAddon::xbmc::InfoTagVideo"))-> getCast(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getCast","XBMCAddon::xbmc::InfoTagVideo"))-> getCast(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6274,21 +6599,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getFile (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getFile","XBMCAddon::xbmc::InfoTagVideo"))-> getFile(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getFile","XBMCAddon::xbmc::InfoTagVideo"))-> getFile(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6311,21 +6636,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getPath (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getPath","XBMCAddon::xbmc::InfoTagVideo"))-> getPath(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getPath","XBMCAddon::xbmc::InfoTagVideo"))-> getPath(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6348,21 +6673,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getIMDBNumber (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getIMDBNumber","XBMCAddon::xbmc::InfoTagVideo"))-> getIMDBNumber(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getIMDBNumber","XBMCAddon::xbmc::InfoTagVideo"))-> getIMDBNumber(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6389,17 +6714,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getSeason","XBMCAddon::xbmc::InfoTagVideo"))-> getSeason(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getSeason","XBMCAddon::xbmc::InfoTagVideo"))-> getSeason(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6414,7 +6739,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -6426,17 +6751,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getEpisode","XBMCAddon::xbmc::InfoTagVideo"))-> getEpisode(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getEpisode","XBMCAddon::xbmc::InfoTagVideo"))-> getEpisode(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6451,7 +6776,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -6463,17 +6788,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getYear","XBMCAddon::xbmc::InfoTagVideo"))-> getYear(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getYear","XBMCAddon::xbmc::InfoTagVideo"))-> getYear(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6488,7 +6813,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -6500,17 +6825,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (double )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getRating","XBMCAddon::xbmc::InfoTagVideo"))-> getRating(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getRating","XBMCAddon::xbmc::InfoTagVideo"))-> getRating(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6537,17 +6862,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getUserRating","XBMCAddon::xbmc::InfoTagVideo"))-> getUserRating(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getUserRating","XBMCAddon::xbmc::InfoTagVideo"))-> getUserRating(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6562,7 +6887,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -6574,17 +6899,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getPlayCount","XBMCAddon::xbmc::InfoTagVideo"))-> getPlayCount(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getPlayCount","XBMCAddon::xbmc::InfoTagVideo"))-> getPlayCount(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6599,7 +6924,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -6607,21 +6932,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getLastPlayed (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getLastPlayed","XBMCAddon::xbmc::InfoTagVideo"))-> getLastPlayed(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getLastPlayed","XBMCAddon::xbmc::InfoTagVideo"))-> getLastPlayed(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6644,21 +6969,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getOriginalTitle (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getOriginalTitle","XBMCAddon::xbmc::InfoTagVideo"))-> getOriginalTitle(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getOriginalTitle","XBMCAddon::xbmc::InfoTagVideo"))-> getOriginalTitle(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6681,21 +7006,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getPremiered (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getPremiered","XBMCAddon::xbmc::InfoTagVideo"))-> getPremiered(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getPremiered","XBMCAddon::xbmc::InfoTagVideo"))-> getPremiered(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6718,21 +7043,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getFirstAired (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getFirstAired","XBMCAddon::xbmc::InfoTagVideo"))-> getFirstAired(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getFirstAired","XBMCAddon::xbmc::InfoTagVideo"))-> getFirstAired(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6755,21 +7080,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getTrailer (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getTrailer","XBMCAddon::xbmc::InfoTagVideo"))-> getTrailer(  );
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getTrailer","XBMCAddon::xbmc::InfoTagVideo"))-> getTrailer(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6789,19 +7114,179 @@ namespace PythonBindings
     return result; 
   } 
 
+  static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getArtist (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+    std::vector< std::string  >  apiResult;
+    try
+    {
+
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getArtist","XBMCAddon::xbmc::InfoTagVideo"))-> getArtist(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"getArtist\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"getArtist\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    
+      result = PyList_New(0);
+
+      for (std::vector<std::string >::iterator iter = apiResult.begin(); iter != apiResult.end(); ++iter)
+      {
+        std::string & entry1 = *iter;
+        PyObject* pyentry1;
+        pyentry1 = PyString_FromStringAndSize(entry1.c_str(), entry1.length());
+        PyList_Append(result, pyentry1);
+        Py_DECREF(pyentry1);
+      }
+
+
+
+    return result; 
+  } 
+
+  static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getAlbum (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+    XBMCAddon::String  apiResult;
+    try
+    {
+
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getAlbum","XBMCAddon::xbmc::InfoTagVideo"))-> getAlbum(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"getAlbum\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"getAlbum\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    result = PyString_FromStringAndSize(apiResult.c_str(), apiResult.length());
+
+    return result; 
+  } 
+
+  static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getTrack (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+    int  apiResult;
+    try
+    {
+
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getTrack","XBMCAddon::xbmc::InfoTagVideo"))-> getTrack(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"getTrack\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"getTrack\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    result = Py_BuildValue("i", apiResult);
+
+    return result; 
+  } 
+
+  static PyObject* xbmc_XBMCAddon_xbmc_InfoTagVideo_getDuration (PyHolder* self  , PyObject *args, PyObject *kwds  )
+  {
+    XBMC_TRACE;
+    unsigned int  apiResult;
+    try
+    {
+
+      apiResult = ((XBMCAddon::xbmc::InfoTagVideo*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_InfoTagVideo_Type,"getDuration","XBMCAddon::xbmc::InfoTagVideo"))-> getDuration(  );
+
+    }
+    catch (const XBMCAddon::WrongTypeException& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (const XbmcCommons::Exception& e)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
+      PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
+      return NULL; 
+    }
+    catch (...)
+    {
+      CLog::Log(LOGERROR,"EXCEPTION: Unknown exception thrown from the call \"getDuration\"");
+      PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"getDuration\""); 
+      return NULL; 
+    }
+
+    PyObject* result = Py_None;
+
+    // transform the result
+    result = Py_BuildValue("I", apiResult);
+
+    return result; 
+  } 
+
   static PyObject* xbmc_XBMCAddon_xbmc_Keyboard_New (PyTypeObject* pytype  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-         
+
     std::string  line  = XBMCAddon::emptyString;
-    PyObject* pyline = NULL;         
+    PyObject* pyline = NULL;
     std::string  heading  = XBMCAddon::emptyString;
-    PyObject* pyheading = NULL;         
+    PyObject* pyheading = NULL;
     bool  hidden  = false;
     if (!PyArg_ParseTuple(
        args,
        
-       (char*)"|OOb",
+       "|OOb",
        
          &pyline,
          &pyheading,
@@ -6818,17 +7303,17 @@ namespace PythonBindings
       if (pyheading) PyXBMCGetUnicodeString(heading,pyheading,false,"heading","Keyboard"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmc::Keyboard *)new XBMCAddon::xbmc::Keyboard(  line,  heading,  hidden  );
+      apiResult = new XBMCAddon::xbmc::Keyboard(  line,  heading,  hidden  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6855,13 +7340,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "autoclose",
           NULL};
-         
+
     int  autoclose  = 0;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|i",
-       (char**)keywords,
+       "|i",
+       const_cast<char**>(keywords),
          &autoclose
        ))
     {
@@ -6876,13 +7361,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6910,14 +7395,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "line",
           NULL};
-         
+
     std::string  line  = XBMCAddon::emptyString;
     PyObject* pyline = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|O",
-       (char**)keywords,
+       "|O",
+       const_cast<char**>(keywords),
          &pyline
        ))
     {
@@ -6933,13 +7418,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -6967,13 +7452,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "hidden",
           NULL};
-         
+
     bool  hidden  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|b",
-       (char**)keywords,
+       "|b",
+       const_cast<char**>(keywords),
          &hidden
        ))
     {
@@ -6988,13 +7473,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7022,14 +7507,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "heading",
           NULL};
-         
+
     std::string  heading ;
     PyObject* pyheading = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pyheading
        ))
     {
@@ -7045,13 +7530,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7075,21 +7560,21 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_Keyboard_getText (PyHolder* self  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmc::Keyboard*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Keyboard_Type,"getText","XBMCAddon::xbmc::Keyboard"))-> getText(  );
+      apiResult = ((XBMCAddon::xbmc::Keyboard*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Keyboard_Type,"getText","XBMCAddon::xbmc::Keyboard"))-> getText(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7116,17 +7601,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmc::Keyboard*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Keyboard_Type,"isConfirmed","XBMCAddon::xbmc::Keyboard"))-> isConfirmed(  );
+      apiResult = ((XBMCAddon::xbmc::Keyboard*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Keyboard_Type,"isConfirmed","XBMCAddon::xbmc::Keyboard"))-> isConfirmed(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7141,7 +7626,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -7149,12 +7634,12 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_PlayList_New (PyTypeObject* pytype  , PyObject *args, PyObject *kwds  )
   {
     XBMC_TRACE;
-         
+
     int  playList ;
     if (!PyArg_ParseTuple(
        args,
        
-       (char*)"i",
+       "i",
        
          &playList
        ))
@@ -7167,17 +7652,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmc::PlayList *)new XBMCAddon::xbmc::PlayList(  playList  );
+      apiResult = new XBMCAddon::xbmc::PlayList(  playList  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7204,17 +7689,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::PlayList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_PlayList_Type,"getPlayListId","XBMCAddon::xbmc::PlayList"))-> getPlayListId(  );
+      apiResult = ((XBMCAddon::xbmc::PlayList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_PlayList_Type,"getPlayListId","XBMCAddon::xbmc::PlayList"))-> getPlayListId(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7229,7 +7714,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -7243,17 +7728,17 @@ namespace PythonBindings
           "listitem",
           "index",
           NULL};
-         
+
     std::string  url ;
-    PyObject* pyurl = NULL;         
+    PyObject* pyurl = NULL;
     XBMCAddon::xbmcgui::ListItem * listitem  = NULL;
-    PyObject* pylistitem = NULL;         
+    PyObject* pylistitem = NULL;
     int  index  = -1;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O|Oi",
-       (char**)keywords,
+       "O|Oi",
+       const_cast<char**>(keywords),
          &pyurl,
          &pylistitem,
          &index
@@ -7272,13 +7757,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7306,13 +7791,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "filename",
           NULL};
-         
-    char * filename ;
+
+    char * filename  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &filename
        ))
     {
@@ -7323,17 +7808,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmc::PlayList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_PlayList_Type,"load","XBMCAddon::xbmc::PlayList"))-> load(  filename  );
+      apiResult = ((XBMCAddon::xbmc::PlayList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_PlayList_Type,"load","XBMCAddon::xbmc::PlayList"))-> load(  filename  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7348,7 +7833,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -7360,13 +7845,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "filename",
           NULL};
-         
-    char * filename ;
+
+    char * filename  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"s",
-       (char**)keywords,
+       "s",
+       const_cast<char**>(keywords),
          &filename
        ))
     {
@@ -7381,13 +7866,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7419,13 +7904,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7453,17 +7938,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::PlayList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_PlayList_Type,"size","XBMCAddon::xbmc::PlayList"))-> size(  );
+      apiResult = ((XBMCAddon::xbmc::PlayList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_PlayList_Type,"size","XBMCAddon::xbmc::PlayList"))-> size(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7478,7 +7963,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -7494,13 +7979,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7532,13 +8017,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7566,17 +8051,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (int )((XBMCAddon::xbmc::PlayList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_PlayList_Type,"getposition","XBMCAddon::xbmc::PlayList"))-> getposition(  );
+      apiResult = ((XBMCAddon::xbmc::PlayList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_PlayList_Type,"getposition","XBMCAddon::xbmc::PlayList"))-> getposition(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7591,7 +8076,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"i", apiResult);
+    result = Py_BuildValue("i", apiResult);
 
     return result; 
   } 
@@ -7599,23 +8084,23 @@ namespace PythonBindings
   static PyObject* xbmc_XBMCAddon_xbmc_PlayList_operatorIndex_ (PyHolder* self , PyObject* pyi )
   {
     XBMC_TRACE;
-         
+
     long  i ;    XBMCAddon::xbmcgui::ListItem * apiResult;
     try
     {
       i = PyInt_AsLong(pyi); 
 
-      apiResult = (XBMCAddon::xbmcgui::ListItem *)((XBMCAddon::xbmc::PlayList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_PlayList_Type,"operator []","XBMCAddon::xbmc::PlayList"))-> operator [](  i  );
+      apiResult = ((XBMCAddon::xbmc::PlayList*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_PlayList_Type,"operator []","XBMCAddon::xbmc::PlayList"))-> operator [](  i  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7643,17 +8128,17 @@ namespace PythonBindings
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmc::Monitor *)(&(TyXBMCAddon_xbmc_Monitor_Type.pythonType) != pytype) ? new XBMCAddon_xbmc_Monitor_Director() : new XBMCAddon::xbmc::Monitor(  );
+      apiResult = (&(TyXBMCAddon_xbmc_Monitor_Type.pythonType) != pytype) ? new XBMCAddon_xbmc_Monitor_Director() : new XBMCAddon::xbmc::Monitor(  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7669,7 +8154,7 @@ namespace PythonBindings
 
     // transform the result
     result = makePythonInstance(apiResult,pytype,false);
-    if (&(TyXBMCAddon_xbmc_Monitor_Type.pythonType) != pytype) 
+    if (&(TyXBMCAddon_xbmc_Monitor_Type.pythonType) != pytype)
       ((XBMCAddon_xbmc_Monitor_Director*)apiResult)->setPyObjectForDirector(result);
 
     return result; 
@@ -7682,18 +8167,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"onSettingsChanged","XBMCAddon::xbmc::Monitor"))-> XBMCAddon::xbmc::Monitor::onSettingsChanged(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7721,18 +8206,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"onScreensaverActivated","XBMCAddon::xbmc::Monitor"))-> XBMCAddon::xbmc::Monitor::onScreensaverActivated(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7760,18 +8245,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"onScreensaverDeactivated","XBMCAddon::xbmc::Monitor"))-> XBMCAddon::xbmc::Monitor::onScreensaverDeactivated(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7799,18 +8284,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"onDPMSActivated","XBMCAddon::xbmc::Monitor"))-> XBMCAddon::xbmc::Monitor::onDPMSActivated(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7838,18 +8323,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"onDPMSDeactivated","XBMCAddon::xbmc::Monitor"))-> XBMCAddon::xbmc::Monitor::onDPMSDeactivated(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7877,14 +8362,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "library",
           NULL};
-         
+
     std::string  library ;
     PyObject* pylibrary = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pylibrary
        ))
     {
@@ -7896,18 +8381,18 @@ namespace PythonBindings
     {
       if (pylibrary) PyXBMCGetUnicodeString(library,pylibrary,false,"library","onScanStarted"); 
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"onScanStarted","XBMCAddon::xbmc::Monitor"))-> XBMCAddon::xbmc::Monitor::onScanStarted(  library  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7935,14 +8420,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "library",
           NULL};
-         
+
     std::string  library ;
     PyObject* pylibrary = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pylibrary
        ))
     {
@@ -7954,18 +8439,18 @@ namespace PythonBindings
     {
       if (pylibrary) PyXBMCGetUnicodeString(library,pylibrary,false,"library","onScanFinished"); 
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"onScanFinished","XBMCAddon::xbmc::Monitor"))-> XBMCAddon::xbmc::Monitor::onScanFinished(  library  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -7993,14 +8478,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "database",
           NULL};
-         
+
     std::string  database ;
     PyObject* pydatabase = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pydatabase
        ))
     {
@@ -8012,18 +8497,18 @@ namespace PythonBindings
     {
       if (pydatabase) PyXBMCGetUnicodeString(database,pydatabase,false,"database","onDatabaseScanStarted"); 
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"onDatabaseScanStarted","XBMCAddon::xbmc::Monitor"))-> XBMCAddon::xbmc::Monitor::onDatabaseScanStarted(  database  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8051,14 +8536,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "database",
           NULL};
-         
+
     std::string  database ;
     PyObject* pydatabase = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pydatabase
        ))
     {
@@ -8070,18 +8555,18 @@ namespace PythonBindings
     {
       if (pydatabase) PyXBMCGetUnicodeString(database,pydatabase,false,"database","onDatabaseUpdated"); 
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"onDatabaseUpdated","XBMCAddon::xbmc::Monitor"))-> XBMCAddon::xbmc::Monitor::onDatabaseUpdated(  database  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8109,14 +8594,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "library",
           NULL};
-         
+
     std::string  library ;
     PyObject* pylibrary = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pylibrary
        ))
     {
@@ -8128,18 +8613,18 @@ namespace PythonBindings
     {
       if (pylibrary) PyXBMCGetUnicodeString(library,pylibrary,false,"library","onCleanStarted"); 
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"onCleanStarted","XBMCAddon::xbmc::Monitor"))-> XBMCAddon::xbmc::Monitor::onCleanStarted(  library  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8167,14 +8652,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "library",
           NULL};
-         
+
     std::string  library ;
     PyObject* pylibrary = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pylibrary
        ))
     {
@@ -8186,18 +8671,18 @@ namespace PythonBindings
     {
       if (pylibrary) PyXBMCGetUnicodeString(library,pylibrary,false,"library","onCleanFinished"); 
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"onCleanFinished","XBMCAddon::xbmc::Monitor"))-> XBMCAddon::xbmc::Monitor::onCleanFinished(  library  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8225,18 +8710,18 @@ namespace PythonBindings
     try
     {
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"onAbortRequested","XBMCAddon::xbmc::Monitor"))-> XBMCAddon::xbmc::Monitor::onAbortRequested(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8266,18 +8751,18 @@ namespace PythonBindings
           "method",
           "data",
           NULL};
-         
+
     std::string  sender ;
-    PyObject* pysender = NULL;         
+    PyObject* pysender = NULL;
     std::string  method ;
-    PyObject* pymethod = NULL;         
+    PyObject* pymethod = NULL;
     std::string  data ;
     PyObject* pydata = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"OOO",
-       (char**)keywords,
+       "OOO",
+       const_cast<char**>(keywords),
          &pysender,
          &pymethod,
          &pydata
@@ -8293,18 +8778,18 @@ namespace PythonBindings
       if (pymethod) PyXBMCGetUnicodeString(method,pymethod,false,"method","onNotification"); 
       if (pydata) PyXBMCGetUnicodeString(data,pydata,false,"data","onNotification"); 
 
-      // This is a director call comming from python so it explcitly calls the base class method.
+      // This is a director call coming from python so it explicitly calls the base class method.
       ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"onNotification","XBMCAddon::xbmc::Monitor"))-> XBMCAddon::xbmc::Monitor::onNotification(  sender,  method,  data  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8332,13 +8817,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "timeout",
           NULL};
-         
+
     double  timeout  = -1;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|d",
-       (char**)keywords,
+       "|d",
+       const_cast<char**>(keywords),
          &timeout
        ))
     {
@@ -8349,17 +8834,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"waitForAbort","XBMCAddon::xbmc::Monitor"))-> waitForAbort(  timeout  );
+      apiResult = ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"waitForAbort","XBMCAddon::xbmc::Monitor"))-> waitForAbort(  timeout  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8374,7 +8859,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -8386,17 +8871,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (bool )((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"abortRequested","XBMCAddon::xbmc::Monitor"))-> abortRequested(  );
+      apiResult = ((XBMCAddon::xbmc::Monitor*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmc_Monitor_Type,"abortRequested","XBMCAddon::xbmc::Monitor"))-> abortRequested(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -8411,7 +8896,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -8429,12 +8914,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -8444,7 +8929,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmc::Player\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmc_XBMCAddon_xbmc_RenderCapture_Dealloc (PyHolder* self  )
@@ -8460,12 +8945,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -8475,7 +8960,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmc::RenderCapture\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmc_XBMCAddon_xbmc_InfoTagMusic_Dealloc (PyHolder* self  )
@@ -8491,12 +8976,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -8506,7 +8991,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmc::InfoTagMusic\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_Dealloc (PyHolder* self  )
@@ -8522,12 +9007,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -8537,7 +9022,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmc::InfoTagRadioRDS\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmc_XBMCAddon_xbmc_InfoTagVideo_Dealloc (PyHolder* self  )
@@ -8553,12 +9038,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -8568,7 +9053,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmc::InfoTagVideo\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmc_XBMCAddon_xbmc_Keyboard_Dealloc (PyHolder* self  )
@@ -8584,12 +9069,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -8599,7 +9084,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmc::Keyboard\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmc_XBMCAddon_xbmc_PlayList_Dealloc (PyHolder* self  )
@@ -8615,12 +9100,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -8630,7 +9115,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmc::PlayList\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmc_XBMCAddon_xbmc_Monitor_Dealloc (PyHolder* self  )
@@ -8646,12 +9131,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -8661,50 +9146,55 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmc::Monitor\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmc::Player
+  // Python extension for the Api class XBMCAddon::xbmc::Player
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmc_Player_methods[] = { 
-    {(char*)"play", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_play, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"stop", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_stop, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"pause", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_pause, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"playnext", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_playnext, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"playprevious", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_playprevious, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"playselected", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_playselected, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onPlayBackStarted", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackStarted, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onPlayBackEnded", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackEnded, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onPlayBackStopped", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackStopped, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onPlayBackPaused", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackPaused, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onPlayBackResumed", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackResumed, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onQueueNextItem", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onQueueNextItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onPlayBackSpeedChanged", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackSpeedChanged, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onPlayBackSeek", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackSeek, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onPlayBackSeekChapter", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackSeekChapter, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"isPlaying", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_isPlaying, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"isPlayingAudio", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_isPlayingAudio, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"isPlayingVideo", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_isPlayingVideo, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"isPlayingRDS", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_isPlayingRDS, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getPlayingFile", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getPlayingFile, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getTime", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getTime, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"seekTime", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_seekTime, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setSubtitles", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_setSubtitles, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"showSubtitles", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_showSubtitles, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getSubtitles", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getSubtitles, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getAvailableSubtitleStreams", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getAvailableSubtitleStreams, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setSubtitleStream", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_setSubtitleStream, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getVideoInfoTag", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getVideoInfoTag, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getMusicInfoTag", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getMusicInfoTag, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getRadioRDSInfoTag", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getRadioRDSInfoTag, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getTotalTime", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getTotalTime, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getAvailableAudioStreams", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getAvailableAudioStreams, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setAudioStream", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_setAudioStream, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getAvailableVideoStreams", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getAvailableVideoStreams, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setVideoStream", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_setVideoStream, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"play", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_play, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"stop", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_stop, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"pause", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_pause, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"playnext", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_playnext, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"playprevious", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_playprevious, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"playselected", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_playselected, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onPlayBackStarted", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackStarted, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onAVStarted", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onAVStarted, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onAVChange", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onAVChange, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onPlayBackEnded", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackEnded, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onPlayBackStopped", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackStopped, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onPlayBackError", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackError, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onPlayBackPaused", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackPaused, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onPlayBackResumed", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackResumed, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onQueueNextItem", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onQueueNextItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onPlayBackSpeedChanged", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackSpeedChanged, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onPlayBackSeek", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackSeek, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onPlayBackSeekChapter", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_onPlayBackSeekChapter, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"isPlaying", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_isPlaying, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"isPlayingAudio", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_isPlayingAudio, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"isPlayingVideo", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_isPlayingVideo, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"isPlayingRDS", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_isPlayingRDS, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"isExternalPlayer", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_isExternalPlayer, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPlayingFile", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getPlayingFile, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getTime", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getTime, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"seekTime", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_seekTime, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setSubtitles", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_setSubtitles, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"showSubtitles", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_showSubtitles, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getSubtitles", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getSubtitles, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getAvailableSubtitleStreams", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getAvailableSubtitleStreams, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setSubtitleStream", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_setSubtitleStream, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"updateInfoTag", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_updateInfoTag, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getVideoInfoTag", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getVideoInfoTag, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getMusicInfoTag", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getMusicInfoTag, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getRadioRDSInfoTag", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getRadioRDSInfoTag, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getTotalTime", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getTotalTime, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getAvailableAudioStreams", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getAvailableAudioStreams, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setAudioStream", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_setAudioStream, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getAvailableVideoStreams", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_getAvailableVideoStreams, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setVideoStream", (PyCFunction)xbmc_XBMCAddon_xbmc_Player_setVideoStream, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -8716,7 +9206,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmc_Player_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmc.Player";
+    pythonType.tp_name = "xbmc.Player";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmc_XBMCAddon_xbmc_Player_Dealloc; 
 
@@ -8737,16 +9227,16 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmc::RenderCapture
+  // Python extension for the Api class XBMCAddon::xbmc::RenderCapture
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmc_RenderCapture_methods[] = { 
-    {(char*)"getWidth", (PyCFunction)xbmc_XBMCAddon_xbmc_RenderCapture_getWidth, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getHeight", (PyCFunction)xbmc_XBMCAddon_xbmc_RenderCapture_getHeight, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getAspectRatio", (PyCFunction)xbmc_XBMCAddon_xbmc_RenderCapture_getAspectRatio, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getImageFormat", (PyCFunction)xbmc_XBMCAddon_xbmc_RenderCapture_getImageFormat, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getImage", (PyCFunction)xbmc_XBMCAddon_xbmc_RenderCapture_getImage, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"capture", (PyCFunction)xbmc_XBMCAddon_xbmc_RenderCapture_capture, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getWidth", (PyCFunction)xbmc_XBMCAddon_xbmc_RenderCapture_getWidth, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getHeight", (PyCFunction)xbmc_XBMCAddon_xbmc_RenderCapture_getHeight, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getAspectRatio", (PyCFunction)xbmc_XBMCAddon_xbmc_RenderCapture_getAspectRatio, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getImageFormat", (PyCFunction)xbmc_XBMCAddon_xbmc_RenderCapture_getImageFormat, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getImage", (PyCFunction)xbmc_XBMCAddon_xbmc_RenderCapture_getImage, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"capture", (PyCFunction)xbmc_XBMCAddon_xbmc_RenderCapture_capture, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -8758,7 +9248,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmc_RenderCapture_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmc.RenderCapture";
+    pythonType.tp_name = "xbmc.RenderCapture";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmc_XBMCAddon_xbmc_RenderCapture_Dealloc; 
 
@@ -8779,27 +9269,29 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmc::InfoTagMusic
+  // Python extension for the Api class XBMCAddon::xbmc::InfoTagMusic
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmc_InfoTagMusic_methods[] = { 
-    {(char*)"getURL", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getURL, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getTitle", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getTitle, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getArtist", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getArtist, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getAlbum", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getAlbum, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getAlbumArtist", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getAlbumArtist, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getGenre", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getGenre, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getDuration", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getDuration, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getRating", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getRating, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getUserRating", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getUserRating, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getTrack", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getTrack, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getDisc", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getDisc, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getReleaseDate", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getReleaseDate, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getListeners", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getListeners, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getPlayCount", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getPlayCount, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getLastPlayed", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getLastPlayed, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getComment", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getComment, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getLyrics", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getLyrics, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getDbId", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getDbId, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getURL", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getURL, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getTitle", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getTitle, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getMediaType", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getMediaType, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getArtist", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getArtist, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getAlbum", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getAlbum, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getAlbumArtist", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getAlbumArtist, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getGenre", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getGenre, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getDuration", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getDuration, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getRating", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getRating, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getUserRating", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getUserRating, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getTrack", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getTrack, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getDisc", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getDisc, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getReleaseDate", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getReleaseDate, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getListeners", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getListeners, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPlayCount", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getPlayCount, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getLastPlayed", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getLastPlayed, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getComment", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getComment, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getLyrics", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagMusic_getLyrics, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -8811,7 +9303,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmc_InfoTagMusic_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmc.InfoTagMusic";
+    pythonType.tp_name = "xbmc.InfoTagMusic";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmc_XBMCAddon_xbmc_InfoTagMusic_Dealloc; 
 
@@ -8832,39 +9324,39 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmc::InfoTagRadioRDS
+  // Python extension for the Api class XBMCAddon::xbmc::InfoTagRadioRDS
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmc_InfoTagRadioRDS_methods[] = { 
-    {(char*)"getTitle", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getTitle, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getBand", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getBand, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getArtist", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getArtist, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getComposer", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getComposer, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getConductor", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getConductor, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getAlbum", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getAlbum, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getComment", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getComment, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getAlbumTrackNumber", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getAlbumTrackNumber, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getInfoNews", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoNews, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getInfoNewsLocal", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoNewsLocal, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getInfoSport", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoSport, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getInfoStock", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoStock, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getInfoWeather", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoWeather, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getInfoHoroscope", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoHoroscope, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getInfoCinema", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoCinema, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getInfoLottery", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoLottery, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getInfoOther", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoOther, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getEditorialStaff", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getEditorialStaff, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getProgStation", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgStation, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getProgStyle", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgStyle, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getProgHost", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgHost, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getProgWebsite", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgWebsite, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getProgNow", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgNow, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getProgNext", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgNext, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getPhoneHotline", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getPhoneHotline, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getEMailHotline", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getEMailHotline, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getPhoneStudio", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getPhoneStudio, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getEMailStudio", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getEMailStudio, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getSMSStudio", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getSMSStudio, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getTitle", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getTitle, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getBand", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getBand, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getArtist", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getArtist, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getComposer", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getComposer, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getConductor", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getConductor, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getAlbum", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getAlbum, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getComment", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getComment, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getAlbumTrackNumber", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getAlbumTrackNumber, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getInfoNews", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoNews, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getInfoNewsLocal", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoNewsLocal, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getInfoSport", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoSport, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getInfoStock", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoStock, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getInfoWeather", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoWeather, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getInfoHoroscope", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoHoroscope, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getInfoCinema", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoCinema, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getInfoLottery", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoLottery, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getInfoOther", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getInfoOther, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getEditorialStaff", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getEditorialStaff, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getProgStation", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgStation, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getProgStyle", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgStyle, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getProgHost", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgHost, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getProgWebsite", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgWebsite, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getProgNow", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgNow, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getProgNext", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getProgNext, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPhoneHotline", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getPhoneHotline, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getEMailHotline", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getEMailHotline, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPhoneStudio", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getPhoneStudio, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getEMailStudio", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getEMailStudio, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getSMSStudio", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_getSMSStudio, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -8876,7 +9368,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmc_InfoTagRadioRDS_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmc.InfoTagRadioRDS";
+    pythonType.tp_name = "xbmc.InfoTagRadioRDS";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmc_XBMCAddon_xbmc_InfoTagRadioRDS_Dealloc; 
 
@@ -8897,37 +9389,41 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmc::InfoTagVideo
+  // Python extension for the Api class XBMCAddon::xbmc::InfoTagVideo
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmc_InfoTagVideo_methods[] = { 
-    {(char*)"getDbId", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getDbId, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getDirector", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getDirector, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getWritingCredits", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getWritingCredits, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getGenre", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getGenre, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getTagLine", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getTagLine, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getPlotOutline", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getPlotOutline, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getPlot", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getPlot, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getPictureURL", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getPictureURL, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getTitle", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getTitle, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getTVShowTitle", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getTVShowTitle, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getMediaType", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getMediaType, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getVotes", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getVotes, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getCast", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getCast, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getFile", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getFile, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getPath", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getPath, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getIMDBNumber", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getIMDBNumber, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getSeason", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getSeason, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getEpisode", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getEpisode, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getYear", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getYear, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getRating", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getRating, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getUserRating", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getUserRating, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getPlayCount", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getPlayCount, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getLastPlayed", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getLastPlayed, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getOriginalTitle", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getOriginalTitle, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getPremiered", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getPremiered, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getFirstAired", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getFirstAired, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getTrailer", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getTrailer, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getDbId", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getDbId, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getDirector", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getDirector, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getWritingCredits", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getWritingCredits, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getGenre", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getGenre, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getTagLine", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getTagLine, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPlotOutline", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getPlotOutline, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPlot", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getPlot, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPictureURL", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getPictureURL, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getTitle", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getTitle, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getTVShowTitle", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getTVShowTitle, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getMediaType", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getMediaType, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getVotes", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getVotes, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getCast", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getCast, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getFile", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getFile, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPath", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getPath, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getIMDBNumber", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getIMDBNumber, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getSeason", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getSeason, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getEpisode", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getEpisode, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getYear", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getYear, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getRating", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getRating, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getUserRating", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getUserRating, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPlayCount", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getPlayCount, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getLastPlayed", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getLastPlayed, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getOriginalTitle", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getOriginalTitle, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPremiered", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getPremiered, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getFirstAired", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getFirstAired, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getTrailer", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getTrailer, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getArtist", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getArtist, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getAlbum", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getAlbum, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getTrack", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getTrack, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getDuration", (PyCFunction)xbmc_XBMCAddon_xbmc_InfoTagVideo_getDuration, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -8939,7 +9435,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmc_InfoTagVideo_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmc.InfoTagVideo";
+    pythonType.tp_name = "xbmc.InfoTagVideo";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmc_XBMCAddon_xbmc_InfoTagVideo_Dealloc; 
 
@@ -8960,16 +9456,16 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmc::Keyboard
+  // Python extension for the Api class XBMCAddon::xbmc::Keyboard
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmc_Keyboard_methods[] = { 
-    {(char*)"doModal", (PyCFunction)xbmc_XBMCAddon_xbmc_Keyboard_doModal, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setDefault", (PyCFunction)xbmc_XBMCAddon_xbmc_Keyboard_setDefault, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setHiddenInput", (PyCFunction)xbmc_XBMCAddon_xbmc_Keyboard_setHiddenInput, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setHeading", (PyCFunction)xbmc_XBMCAddon_xbmc_Keyboard_setHeading, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getText", (PyCFunction)xbmc_XBMCAddon_xbmc_Keyboard_getText, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"isConfirmed", (PyCFunction)xbmc_XBMCAddon_xbmc_Keyboard_isConfirmed, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"doModal", (PyCFunction)xbmc_XBMCAddon_xbmc_Keyboard_doModal, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setDefault", (PyCFunction)xbmc_XBMCAddon_xbmc_Keyboard_setDefault, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setHiddenInput", (PyCFunction)xbmc_XBMCAddon_xbmc_Keyboard_setHiddenInput, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setHeading", (PyCFunction)xbmc_XBMCAddon_xbmc_Keyboard_setHeading, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getText", (PyCFunction)xbmc_XBMCAddon_xbmc_Keyboard_getText, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"isConfirmed", (PyCFunction)xbmc_XBMCAddon_xbmc_Keyboard_isConfirmed, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -8981,7 +9477,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmc_Keyboard_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmc.Keyboard";
+    pythonType.tp_name = "xbmc.Keyboard";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmc_XBMCAddon_xbmc_Keyboard_Dealloc; 
 
@@ -9016,19 +9512,19 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmc::PlayList
+  // Python extension for the Api class XBMCAddon::xbmc::PlayList
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmc_PlayList_methods[] = { 
-    {(char*)"getPlayListId", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_getPlayListId, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"add", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_add, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"load", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_load, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"remove", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_remove, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"clear", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_clear, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"size", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_size, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"shuffle", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_shuffle, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"unshuffle", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_unshuffle, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getposition", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_getposition, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getPlayListId", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_getPlayListId, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"add", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_add, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"load", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_load, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"remove", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_remove, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"clear", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_clear, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"size", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_size, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"shuffle", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_shuffle, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"unshuffle", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_unshuffle, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getposition", (PyCFunction)xbmc_XBMCAddon_xbmc_PlayList_getposition, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -9040,7 +9536,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmc_PlayList_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmc.PlayList";
+    pythonType.tp_name = "xbmc.PlayList";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmc_XBMCAddon_xbmc_PlayList_Dealloc; 
 
@@ -9063,25 +9559,25 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmc::Monitor
+  // Python extension for the Api class XBMCAddon::xbmc::Monitor
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmc_Monitor_methods[] = { 
-    {(char*)"onSettingsChanged", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onSettingsChanged, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onScreensaverActivated", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onScreensaverActivated, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onScreensaverDeactivated", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onScreensaverDeactivated, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onDPMSActivated", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onDPMSActivated, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onDPMSDeactivated", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onDPMSDeactivated, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onScanStarted", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onScanStarted, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onScanFinished", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onScanFinished, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onDatabaseScanStarted", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onDatabaseScanStarted, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onDatabaseUpdated", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onDatabaseUpdated, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onCleanStarted", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onCleanStarted, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onCleanFinished", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onCleanFinished, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onAbortRequested", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onAbortRequested, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"onNotification", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onNotification, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"waitForAbort", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_waitForAbort, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"abortRequested", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_abortRequested, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onSettingsChanged", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onSettingsChanged, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onScreensaverActivated", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onScreensaverActivated, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onScreensaverDeactivated", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onScreensaverDeactivated, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onDPMSActivated", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onDPMSActivated, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onDPMSDeactivated", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onDPMSDeactivated, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onScanStarted", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onScanStarted, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onScanFinished", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onScanFinished, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onDatabaseScanStarted", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onDatabaseScanStarted, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onDatabaseUpdated", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onDatabaseUpdated, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onCleanStarted", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onCleanStarted, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onCleanFinished", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onCleanFinished, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onAbortRequested", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onAbortRequested, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"onNotification", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_onNotification, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"waitForAbort", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_waitForAbort, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"abortRequested", (PyCFunction)xbmc_XBMCAddon_xbmc_Monitor_abortRequested, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -9093,7 +9589,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmc_Monitor_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmc.Monitor";
+    pythonType.tp_name = "xbmc.Monitor";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmc_XBMCAddon_xbmc_Monitor_Dealloc; 
 
@@ -9114,43 +9610,43 @@ namespace PythonBindings
 
 
   static PyMethodDef xbmc_methods[] = { 
-    {(char*)"log", (PyCFunction)xbmc_log, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"shutdown", (PyCFunction)xbmc_shutdown, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"restart", (PyCFunction)xbmc_restart, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"executescript", (PyCFunction)xbmc_executescript, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"executebuiltin", (PyCFunction)xbmc_executebuiltin, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"executeJSONRPC", (PyCFunction)xbmc_executeJSONRPC, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"sleep", (PyCFunction)xbmc_sleep, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getLocalizedString", (PyCFunction)xbmc_getLocalizedString, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getSkinDir", (PyCFunction)xbmc_getSkinDir, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getLanguage", (PyCFunction)xbmc_getLanguage, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getIPAddress", (PyCFunction)xbmc_getIPAddress, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getDVDState", (PyCFunction)xbmc_getDVDState, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getFreeMem", (PyCFunction)xbmc_getFreeMem, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getInfoLabel", (PyCFunction)xbmc_getInfoLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getInfoImage", (PyCFunction)xbmc_getInfoImage, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"playSFX", (PyCFunction)xbmc_playSFX, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"stopSFX", (PyCFunction)xbmc_stopSFX, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"enableNavSounds", (PyCFunction)xbmc_enableNavSounds, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getCondVisibility", (PyCFunction)xbmc_getCondVisibility, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getGlobalIdleTime", (PyCFunction)xbmc_getGlobalIdleTime, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getCacheThumbName", (PyCFunction)xbmc_getCacheThumbName, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"makeLegalFilename", (PyCFunction)xbmc_makeLegalFilename, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"translatePath", (PyCFunction)xbmc_translatePath, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getCleanMovieTitle", (PyCFunction)xbmc_getCleanMovieTitle, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"validatePath", (PyCFunction)xbmc_validatePath, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getRegion", (PyCFunction)xbmc_getRegion, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getSupportedMedia", (PyCFunction)xbmc_getSupportedMedia, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"skinHasImage", (PyCFunction)xbmc_skinHasImage, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"startServer", (PyCFunction)xbmc_startServer, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"audioSuspend", (PyCFunction)xbmc_audioSuspend, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"audioResume", (PyCFunction)xbmc_audioResume, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getUserAgent", (PyCFunction)xbmc_getUserAgent, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"convertLanguage", (PyCFunction)xbmc_convertLanguage, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"log", (PyCFunction)xbmc_log, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"shutdown", (PyCFunction)xbmc_shutdown, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"restart", (PyCFunction)xbmc_restart, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"executescript", (PyCFunction)xbmc_executescript, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"executebuiltin", (PyCFunction)xbmc_executebuiltin, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"executeJSONRPC", (PyCFunction)xbmc_executeJSONRPC, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"sleep", (PyCFunction)xbmc_sleep, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getLocalizedString", (PyCFunction)xbmc_getLocalizedString, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getSkinDir", (PyCFunction)xbmc_getSkinDir, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getLanguage", (PyCFunction)xbmc_getLanguage, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getIPAddress", (PyCFunction)xbmc_getIPAddress, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getDVDState", (PyCFunction)xbmc_getDVDState, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getFreeMem", (PyCFunction)xbmc_getFreeMem, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getInfoLabel", (PyCFunction)xbmc_getInfoLabel, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getInfoImage", (PyCFunction)xbmc_getInfoImage, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"playSFX", (PyCFunction)xbmc_playSFX, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"stopSFX", (PyCFunction)xbmc_stopSFX, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"enableNavSounds", (PyCFunction)xbmc_enableNavSounds, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getCondVisibility", (PyCFunction)xbmc_getCondVisibility, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getGlobalIdleTime", (PyCFunction)xbmc_getGlobalIdleTime, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getCacheThumbName", (PyCFunction)xbmc_getCacheThumbName, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"makeLegalFilename", (PyCFunction)xbmc_makeLegalFilename, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"translatePath", (PyCFunction)xbmc_translatePath, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getCleanMovieTitle", (PyCFunction)xbmc_getCleanMovieTitle, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"validatePath", (PyCFunction)xbmc_validatePath, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getRegion", (PyCFunction)xbmc_getRegion, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getSupportedMedia", (PyCFunction)xbmc_getSupportedMedia, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"skinHasImage", (PyCFunction)xbmc_skinHasImage, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"startServer", (PyCFunction)xbmc_startServer, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"audioSuspend", (PyCFunction)xbmc_audioSuspend, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"audioResume", (PyCFunction)xbmc_audioResume, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getUserAgent", (PyCFunction)xbmc_getUserAgent, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"convertLanguage", (PyCFunction)xbmc_convertLanguage, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
-  // This is the call that will call all of the other initializes 
+  // This is the call that will call all of the other initializes
   //  for all of the classes in this module
   static void initTypes()
   {
@@ -9203,25 +9699,25 @@ namespace PythonBindings
     Py_INCREF(&(TyXBMCAddon_xbmc_PlayList_Type.pythonType));
     Py_INCREF(&(TyXBMCAddon_xbmc_Monitor_Type.pythonType));
 
-    module = Py_InitModule((char*)"xbmc", xbmc_methods);
+    module = Py_InitModule("xbmc", xbmc_methods);
     if (module == NULL) return;
 
 
-    PyModule_AddObject(module, (char*)"Player", (PyObject*)(&(TyXBMCAddon_xbmc_Player_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"RenderCapture", (PyObject*)(&(TyXBMCAddon_xbmc_RenderCapture_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"InfoTagMusic", (PyObject*)(&(TyXBMCAddon_xbmc_InfoTagMusic_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"InfoTagRadioRDS", (PyObject*)(&(TyXBMCAddon_xbmc_InfoTagRadioRDS_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"InfoTagVideo", (PyObject*)(&(TyXBMCAddon_xbmc_InfoTagVideo_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"Keyboard", (PyObject*)(&(TyXBMCAddon_xbmc_Keyboard_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"PlayList", (PyObject*)(&(TyXBMCAddon_xbmc_PlayList_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"Monitor", (PyObject*)(&(TyXBMCAddon_xbmc_Monitor_Type.pythonType)));
+    PyModule_AddObject(module, "Player", (PyObject*)(&(TyXBMCAddon_xbmc_Player_Type.pythonType)));
+    PyModule_AddObject(module, "RenderCapture", (PyObject*)(&(TyXBMCAddon_xbmc_RenderCapture_Type.pythonType)));
+    PyModule_AddObject(module, "InfoTagMusic", (PyObject*)(&(TyXBMCAddon_xbmc_InfoTagMusic_Type.pythonType)));
+    PyModule_AddObject(module, "InfoTagRadioRDS", (PyObject*)(&(TyXBMCAddon_xbmc_InfoTagRadioRDS_Type.pythonType)));
+    PyModule_AddObject(module, "InfoTagVideo", (PyObject*)(&(TyXBMCAddon_xbmc_InfoTagVideo_Type.pythonType)));
+    PyModule_AddObject(module, "Keyboard", (PyObject*)(&(TyXBMCAddon_xbmc_Keyboard_Type.pythonType)));
+    PyModule_AddObject(module, "PlayList", (PyObject*)(&(TyXBMCAddon_xbmc_PlayList_Type.pythonType)));
+    PyModule_AddObject(module, "Monitor", (PyObject*)(&(TyXBMCAddon_xbmc_Monitor_Type.pythonType)));
 
    // constants
-   PyModule_AddStringConstant(module, (char*)"__author__", (char*)"Team Kodi <http://kodi.tv>");
-   PyModule_AddStringConstant(module, (char*)"__date__", (char*)"Wed Nov 15 19:05:12 GMT 2017");
-   PyModule_AddStringConstant(module, (char*)"__version__", (char*)"2.25.0");
-   PyModule_AddStringConstant(module, (char*)"__credits__", (char*)"Team Kodi");
-   PyModule_AddStringConstant(module, (char*)"__platform__", (char*)"ALL");
+   PyModule_AddStringConstant(module, "__author__", "Team Kodi <http://kodi.tv>");
+   PyModule_AddStringConstant(module, "__date__", "Wed Jan 30 17:54:21 GMT 2019");
+   PyModule_AddStringConstant(module, "__version__", "2.26.0");
+   PyModule_AddStringConstant(module, "__credits__", "Team Kodi");
+   PyModule_AddStringConstant(module, "__platform__", "ALL");
 
    // need to handle constants
 

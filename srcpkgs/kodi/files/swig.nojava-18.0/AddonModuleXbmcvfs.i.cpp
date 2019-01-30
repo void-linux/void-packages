@@ -1,24 +1,11 @@
 
 
 /*
- *      Copyright (C) 2005-2013 Team XBMC
- *      http://xbmc.org
+ *  Copyright (C) 2005-2018 Team Kodi
+ *  This file is part of Kodi - https://kodi.tv
  *
- *  This Program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2, or (at your option)
- *  any later version.
- *
- *  This Program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
- *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
- *  http://www.gnu.org/copyleft/gpl.html
- *
+ *  SPDX-License-Identifier: GPL-2.0-or-later
+ *  See LICENSES/README.md for more information.
  */
 
 // ************************************************************************
@@ -36,6 +23,10 @@
 #include "interfaces/python/PyContext.h"
 
 
+#if defined(TARGET_WINDOWS)
+#  include <windows.h>
+#endif
+
 #include "interfaces/legacy/ModuleXbmcvfs.h"
 #include "interfaces/legacy/File.h"
 #include "interfaces/legacy/Stat.h"
@@ -44,7 +35,7 @@
 using namespace XBMCAddon;
 using namespace xbmcvfs;
 
-#if defined(__GNUG__) && (__GNUC__>4) || (__GNUC__==4 && __GNUC_MINOR__>=2)
+#if defined(__GNUG__)
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #endif
 
@@ -73,15 +64,15 @@ namespace PythonBindings
           "filepath",
           "mode",
           NULL};
-         
+
     std::string  filepath ;
-    PyObject* pyfilepath = NULL;         
+    PyObject* pyfilepath = NULL;
     char * mode  = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O|s",
-       (char**)keywords,
+       "O|s",
+       const_cast<char**>(keywords),
          &pyfilepath,
          &mode
        ))
@@ -95,17 +86,17 @@ namespace PythonBindings
       if (pyfilepath) PyXBMCGetUnicodeString(filepath,pyfilepath,false,"filepath","File"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcvfs::File *)new XBMCAddon::xbmcvfs::File(  filepath,  mode  );
+      apiResult = new XBMCAddon::xbmcvfs::File(  filepath,  mode  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -132,34 +123,34 @@ namespace PythonBindings
     static const char *keywords[] = {
           "numBytes",
           NULL};
-         
+
     unsigned long  numBytes  = 0;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|k",
-       (char**)keywords,
+       "|k",
+       const_cast<char**>(keywords),
          &numBytes
        ))
     {
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
-      apiResult = (std::string )((XBMCAddon::xbmcvfs::File*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_File_Type,"read","XBMCAddon::xbmcvfs::File"))-> read(  numBytes  );
+      apiResult = ((XBMCAddon::xbmcvfs::File*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_File_Type,"read","XBMCAddon::xbmcvfs::File"))-> read(  numBytes  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -186,13 +177,13 @@ namespace PythonBindings
     static const char *keywords[] = {
           "numBytes",
           NULL};
-         
+
     unsigned long  numBytes  = 0;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"|k",
-       (char**)keywords,
+       "|k",
+       const_cast<char**>(keywords),
          &numBytes
        ))
     {
@@ -203,17 +194,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (XbmcCommons::Buffer )((XBMCAddon::xbmcvfs::File*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_File_Type,"readBytes","XBMCAddon::xbmcvfs::File"))-> readBytes(  numBytes  );
+      apiResult = ((XBMCAddon::xbmcvfs::File*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_File_Type,"readBytes","XBMCAddon::xbmcvfs::File"))-> readBytes(  numBytes  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -240,14 +231,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "buffer",
           NULL};
-         
+
     XbmcCommons::Buffer  buffer ;
     PyObject* pybuffer = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pybuffer
        ))
     {
@@ -276,17 +267,17 @@ namespace PythonBindings
     else
       throw XBMCAddon::WrongTypeException("argument \"%s\" for \"%s\" must be a string or a bytearray", "buffer", "write"); 
 
-      apiResult = (bool )((XBMCAddon::xbmcvfs::File*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_File_Type,"write","XBMCAddon::xbmcvfs::File"))-> write(  buffer  );
+      apiResult = ((XBMCAddon::xbmcvfs::File*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_File_Type,"write","XBMCAddon::xbmcvfs::File"))-> write(  buffer  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -301,7 +292,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -313,17 +304,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long long )((XBMCAddon::xbmcvfs::File*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_File_Type,"size","XBMCAddon::xbmcvfs::File"))-> size(  );
+      apiResult = ((XBMCAddon::xbmcvfs::File*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_File_Type,"size","XBMCAddon::xbmcvfs::File"))-> size(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -338,7 +329,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"L", apiResult);
+    result = Py_BuildValue("L", apiResult);
 
     return result; 
   } 
@@ -351,14 +342,14 @@ namespace PythonBindings
           "seekBytes",
           "iWhence",
           NULL};
-         
-    long long  seekBytes ;         
+
+    long long  seekBytes ;
     int  iWhence ;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"Li",
-       (char**)keywords,
+       "Li",
+       const_cast<char**>(keywords),
          &seekBytes,
          &iWhence
        ))
@@ -370,17 +361,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long long )((XBMCAddon::xbmcvfs::File*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_File_Type,"seek","XBMCAddon::xbmcvfs::File"))-> seek(  seekBytes,  iWhence  );
+      apiResult = ((XBMCAddon::xbmcvfs::File*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_File_Type,"seek","XBMCAddon::xbmcvfs::File"))-> seek(  seekBytes,  iWhence  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -395,7 +386,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"L", apiResult);
+    result = Py_BuildValue("L", apiResult);
 
     return result; 
   } 
@@ -411,13 +402,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -445,14 +436,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "path",
           NULL};
-         
+
     std::string  path ;
     PyObject* pypath = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypath
        ))
     {
@@ -465,17 +456,17 @@ namespace PythonBindings
       if (pypath) PyXBMCGetUnicodeString(path,pypath,false,"path","Stat"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (XBMCAddon::xbmcvfs::Stat *)new XBMCAddon::xbmcvfs::Stat(  path  );
+      apiResult = new XBMCAddon::xbmcvfs::Stat(  path  );
       prepareForReturn(apiResult);
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -502,17 +493,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long long )((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_mode","XBMCAddon::xbmcvfs::Stat"))-> st_mode(  );
+      apiResult = ((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_mode","XBMCAddon::xbmcvfs::Stat"))-> st_mode(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -527,7 +518,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"L", apiResult);
+    result = Py_BuildValue("L", apiResult);
 
     return result; 
   } 
@@ -539,17 +530,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long long )((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_ino","XBMCAddon::xbmcvfs::Stat"))-> st_ino(  );
+      apiResult = ((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_ino","XBMCAddon::xbmcvfs::Stat"))-> st_ino(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -564,7 +555,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"L", apiResult);
+    result = Py_BuildValue("L", apiResult);
 
     return result; 
   } 
@@ -576,17 +567,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long long )((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_dev","XBMCAddon::xbmcvfs::Stat"))-> st_dev(  );
+      apiResult = ((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_dev","XBMCAddon::xbmcvfs::Stat"))-> st_dev(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -601,7 +592,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"L", apiResult);
+    result = Py_BuildValue("L", apiResult);
 
     return result; 
   } 
@@ -613,17 +604,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long long )((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_nlink","XBMCAddon::xbmcvfs::Stat"))-> st_nlink(  );
+      apiResult = ((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_nlink","XBMCAddon::xbmcvfs::Stat"))-> st_nlink(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -638,7 +629,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"L", apiResult);
+    result = Py_BuildValue("L", apiResult);
 
     return result; 
   } 
@@ -650,17 +641,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long long )((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_uid","XBMCAddon::xbmcvfs::Stat"))-> st_uid(  );
+      apiResult = ((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_uid","XBMCAddon::xbmcvfs::Stat"))-> st_uid(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -675,7 +666,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"L", apiResult);
+    result = Py_BuildValue("L", apiResult);
 
     return result; 
   } 
@@ -687,17 +678,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long long )((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_gid","XBMCAddon::xbmcvfs::Stat"))-> st_gid(  );
+      apiResult = ((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_gid","XBMCAddon::xbmcvfs::Stat"))-> st_gid(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -712,7 +703,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"L", apiResult);
+    result = Py_BuildValue("L", apiResult);
 
     return result; 
   } 
@@ -724,17 +715,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long long )((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_size","XBMCAddon::xbmcvfs::Stat"))-> st_size(  );
+      apiResult = ((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"st_size","XBMCAddon::xbmcvfs::Stat"))-> st_size(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -749,7 +740,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"L", apiResult);
+    result = Py_BuildValue("L", apiResult);
 
     return result; 
   } 
@@ -761,17 +752,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long long )((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"atime","XBMCAddon::xbmcvfs::Stat"))-> atime(  );
+      apiResult = ((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"atime","XBMCAddon::xbmcvfs::Stat"))-> atime(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -786,7 +777,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"L", apiResult);
+    result = Py_BuildValue("L", apiResult);
 
     return result; 
   } 
@@ -798,17 +789,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long long )((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"mtime","XBMCAddon::xbmcvfs::Stat"))-> mtime(  );
+      apiResult = ((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"mtime","XBMCAddon::xbmcvfs::Stat"))-> mtime(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -823,7 +814,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"L", apiResult);
+    result = Py_BuildValue("L", apiResult);
 
     return result; 
   } 
@@ -835,17 +826,17 @@ namespace PythonBindings
     try
     {
 
-      apiResult = (long long )((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"ctime","XBMCAddon::xbmcvfs::Stat"))-> ctime(  );
+      apiResult = ((XBMCAddon::xbmcvfs::Stat*)retrieveApiInstance((PyObject*)self,&TyXBMCAddon_xbmcvfs_Stat_Type,"ctime","XBMCAddon::xbmcvfs::Stat"))-> ctime(  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -860,7 +851,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"L", apiResult);
+    result = Py_BuildValue("L", apiResult);
 
     return result; 
   } 
@@ -871,20 +862,20 @@ namespace PythonBindings
 
     static const char *keywords[] = {
           "strSource",
-          "strDestnation",
+          "strDestination",
           NULL};
-         
+
     std::string  strSource ;
-    PyObject* pystrSource = NULL;         
-    std::string  strDestnation ;
-    PyObject* pystrDestnation = NULL;
+    PyObject* pystrSource = NULL;
+    std::string  strDestination ;
+    PyObject* pystrDestination = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"OO",
-       (char**)keywords,
+       "OO",
+       const_cast<char**>(keywords),
          &pystrSource,
-         &pystrDestnation
+         &pystrDestination
        ))
     {
       return NULL;
@@ -894,20 +885,20 @@ namespace PythonBindings
     try
     {
       if (pystrSource) PyXBMCGetUnicodeString(strSource,pystrSource,false,"strSource","XBMCAddon::xbmcvfs::copy"); 
-      if (pystrDestnation) PyXBMCGetUnicodeString(strDestnation,pystrDestnation,false,"strDestnation","XBMCAddon::xbmcvfs::copy"); 
+      if (pystrDestination) PyXBMCGetUnicodeString(strDestination,pystrDestination,false,"strDestination","XBMCAddon::xbmcvfs::copy"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (bool )XBMCAddon::xbmcvfs::copy(  strSource,  strDestnation  );
+      apiResult = XBMCAddon::xbmcvfs::copy(  strSource,  strDestination  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -922,7 +913,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -934,14 +925,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "file",
           NULL};
-         
+
     std::string  file ;
     PyObject* pyfile = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pyfile
        ))
     {
@@ -954,17 +945,17 @@ namespace PythonBindings
       if (pyfile) PyXBMCGetUnicodeString(file,pyfile,false,"file","XBMCAddon::xbmcvfs::deleteFile"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (bool )XBMCAddon::xbmcvfs::deleteFile(  file  );
+      apiResult = XBMCAddon::xbmcvfs::deleteFile(  file  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -979,7 +970,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -992,16 +983,16 @@ namespace PythonBindings
           "file",
           "newFile",
           NULL};
-         
+
     std::string  file ;
-    PyObject* pyfile = NULL;         
+    PyObject* pyfile = NULL;
     std::string  newFile ;
     PyObject* pynewFile = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"OO",
-       (char**)keywords,
+       "OO",
+       const_cast<char**>(keywords),
          &pyfile,
          &pynewFile
        ))
@@ -1016,17 +1007,17 @@ namespace PythonBindings
       if (pynewFile) PyXBMCGetUnicodeString(newFile,pynewFile,false,"newFile","XBMCAddon::xbmcvfs::rename"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (bool )XBMCAddon::xbmcvfs::rename(  file,  newFile  );
+      apiResult = XBMCAddon::xbmcvfs::rename(  file,  newFile  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1041,7 +1032,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -1053,14 +1044,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "path",
           NULL};
-         
+
     std::string  path ;
     PyObject* pypath = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypath
        ))
     {
@@ -1073,17 +1064,17 @@ namespace PythonBindings
       if (pypath) PyXBMCGetUnicodeString(path,pypath,false,"path","XBMCAddon::xbmcvfs::exists"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (bool )XBMCAddon::xbmcvfs::exists(  path  );
+      apiResult = XBMCAddon::xbmcvfs::exists(  path  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1098,7 +1089,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -1110,14 +1101,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "path",
           NULL};
-         
+
     std::string  path ;
     PyObject* pypath = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypath
        ))
     {
@@ -1130,17 +1121,17 @@ namespace PythonBindings
       if (pypath) PyXBMCGetUnicodeString(path,pypath,false,"path","XBMCAddon::xbmcvfs::mkdir"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (bool )XBMCAddon::xbmcvfs::mkdir(  path  );
+      apiResult = XBMCAddon::xbmcvfs::mkdir(  path  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1155,7 +1146,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -1167,14 +1158,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "path",
           NULL};
-         
+
     std::string  path ;
     PyObject* pypath = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypath
        ))
     {
@@ -1187,17 +1178,17 @@ namespace PythonBindings
       if (pypath) PyXBMCGetUnicodeString(path,pypath,false,"path","XBMCAddon::xbmcvfs::mkdirs"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (bool )XBMCAddon::xbmcvfs::mkdirs(  path  );
+      apiResult = XBMCAddon::xbmcvfs::mkdirs(  path  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1212,7 +1203,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -1225,15 +1216,15 @@ namespace PythonBindings
           "path",
           "force",
           NULL};
-         
+
     std::string  path ;
-    PyObject* pypath = NULL;         
+    PyObject* pypath = NULL;
     bool  force  = false;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O|b",
-       (char**)keywords,
+       "O|b",
+       const_cast<char**>(keywords),
          &pypath,
          &force
        ))
@@ -1247,17 +1238,17 @@ namespace PythonBindings
       if (pypath) PyXBMCGetUnicodeString(path,pypath,false,"path","XBMCAddon::xbmcvfs::rmdir"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (bool )XBMCAddon::xbmcvfs::rmdir(  path,  force  );
+      apiResult = XBMCAddon::xbmcvfs::rmdir(  path,  force  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1272,7 +1263,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -1284,14 +1275,14 @@ namespace PythonBindings
     static const char *keywords[] = {
           "path",
           NULL};
-         
+
     std::string  path ;
     PyObject* pypath = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"O",
-       (char**)keywords,
+       "O",
+       const_cast<char**>(keywords),
          &pypath
        ))
     {
@@ -1304,17 +1295,17 @@ namespace PythonBindings
       if (pypath) PyXBMCGetUnicodeString(path,pypath,false,"path","XBMCAddon::xbmcvfs::listdir"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (Tuple< std::vector< XBMCAddon::String  > ,std::vector< XBMCAddon::String  >  > )XBMCAddon::xbmcvfs::listdir(  path  );
+      apiResult = XBMCAddon::xbmcvfs::listdir(  path  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -1396,12 +1387,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -1411,7 +1402,7 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcvfs::File\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   static void xbmcvfs_XBMCAddon_xbmcvfs_Stat_Dealloc (PyHolder* self  )
@@ -1427,12 +1418,12 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
     }
@@ -1442,21 +1433,21 @@ namespace PythonBindings
       PyErr_SetString(PyExc_RuntimeError, "Unknown exception thrown from the call \"XBMCAddon::xbmcvfs::Stat\""); 
     }
 
-    self->ob_type->tp_free((PyObject*)self); 
+    self->ob_type->tp_free((PyObject*)self);
     
   } 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcvfs::File
+  // Python extension for the Api class XBMCAddon::xbmcvfs::File
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcvfs_File_methods[] = { 
-    {(char*)"read", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_File_read, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"readBytes", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_File_readBytes, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"write", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_File_write, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"size", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_File_size, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"seek", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_File_seek, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"close", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_File_close, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"read", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_File_read, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"readBytes", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_File_readBytes, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"write", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_File_write, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"size", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_File_size, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"seek", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_File_seek, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"close", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_File_close, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -1468,7 +1459,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcvfs_File_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcvfs.File";
+    pythonType.tp_name = "xbmcvfs.File";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcvfs_XBMCAddon_xbmcvfs_File_Dealloc; 
 
@@ -1489,20 +1480,20 @@ namespace PythonBindings
 
   //=========================================================================
   // This section contains the initialization for the
-  // Python extention for the Api class XBMCAddon::xbmcvfs::Stat
+  // Python extension for the Api class XBMCAddon::xbmcvfs::Stat
   //=========================================================================
   // All of the methods on this class
   static PyMethodDef XBMCAddon_xbmcvfs_Stat_methods[] = { 
-    {(char*)"st_mode", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_mode, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"st_ino", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_ino, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"st_dev", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_dev, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"st_nlink", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_nlink, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"st_uid", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_uid, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"st_gid", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_gid, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"st_size", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_size, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"st_atime", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_atime, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"st_mtime", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_mtime, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"st_ctime", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_ctime, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"st_mode", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_mode, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"st_ino", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_ino, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"st_dev", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_dev, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"st_nlink", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_nlink, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"st_uid", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_uid, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"st_gid", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_gid, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"st_size", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_size, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"st_atime", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_atime, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"st_mtime", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_mtime, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"st_ctime", (PyCFunction)xbmcvfs_XBMCAddon_xbmcvfs_Stat_st_ctime, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
@@ -1514,7 +1505,7 @@ namespace PythonBindings
 
 
     PyTypeObject& pythonType = TyXBMCAddon_xbmcvfs_Stat_Type.pythonType;
-    pythonType.tp_name = (char*)"xbmcvfs.Stat";
+    pythonType.tp_name = "xbmcvfs.Stat";
     pythonType.tp_basicsize = sizeof(PyHolder);
     pythonType.tp_dealloc = (destructor)xbmcvfs_XBMCAddon_xbmcvfs_Stat_Dealloc; 
 
@@ -1535,18 +1526,18 @@ namespace PythonBindings
 
 
   static PyMethodDef xbmcvfs_methods[] = { 
-    {(char*)"copy", (PyCFunction)xbmcvfs_copy, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"delete", (PyCFunction)xbmcvfs_delete, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"rename", (PyCFunction)xbmcvfs_rename, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"exists", (PyCFunction)xbmcvfs_exists, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"mkdir", (PyCFunction)xbmcvfs_mkdir, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"mkdirs", (PyCFunction)xbmcvfs_mkdirs, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"rmdir", (PyCFunction)xbmcvfs_rmdir, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"listdir", (PyCFunction)xbmcvfs_listdir, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"copy", (PyCFunction)xbmcvfs_copy, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"delete", (PyCFunction)xbmcvfs_delete, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"rename", (PyCFunction)xbmcvfs_rename, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"exists", (PyCFunction)xbmcvfs_exists, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"mkdir", (PyCFunction)xbmcvfs_mkdir, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"mkdirs", (PyCFunction)xbmcvfs_mkdirs, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"rmdir", (PyCFunction)xbmcvfs_rmdir, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"listdir", (PyCFunction)xbmcvfs_listdir, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
-  // This is the call that will call all of the other initializes 
+  // This is the call that will call all of the other initializes
   //  for all of the classes in this module
   static void initTypes()
   {
@@ -1575,19 +1566,19 @@ namespace PythonBindings
     Py_INCREF(&(TyXBMCAddon_xbmcvfs_File_Type.pythonType));
     Py_INCREF(&(TyXBMCAddon_xbmcvfs_Stat_Type.pythonType));
 
-    module = Py_InitModule((char*)"xbmcvfs", xbmcvfs_methods);
+    module = Py_InitModule("xbmcvfs", xbmcvfs_methods);
     if (module == NULL) return;
 
 
-    PyModule_AddObject(module, (char*)"File", (PyObject*)(&(TyXBMCAddon_xbmcvfs_File_Type.pythonType)));
-    PyModule_AddObject(module, (char*)"Stat", (PyObject*)(&(TyXBMCAddon_xbmcvfs_Stat_Type.pythonType)));
+    PyModule_AddObject(module, "File", (PyObject*)(&(TyXBMCAddon_xbmcvfs_File_Type.pythonType)));
+    PyModule_AddObject(module, "Stat", (PyObject*)(&(TyXBMCAddon_xbmcvfs_Stat_Type.pythonType)));
 
    // constants
-   PyModule_AddStringConstant(module, (char*)"__author__", (char*)"Team Kodi <http://kodi.tv>");
-   PyModule_AddStringConstant(module, (char*)"__date__", (char*)"Wed Nov 15 19:05:19 GMT 2017");
-   PyModule_AddStringConstant(module, (char*)"__version__", (char*)"2.25.0");
-   PyModule_AddStringConstant(module, (char*)"__credits__", (char*)"Team Kodi");
-   PyModule_AddStringConstant(module, (char*)"__platform__", (char*)"ALL");
+   PyModule_AddStringConstant(module, "__author__", "Team Kodi <http://kodi.tv>");
+   PyModule_AddStringConstant(module, "__date__", "Wed Jan 30 17:54:26 GMT 2019");
+   PyModule_AddStringConstant(module, "__version__", "2.26.0");
+   PyModule_AddStringConstant(module, "__credits__", "Team Kodi");
+   PyModule_AddStringConstant(module, "__platform__", "ALL");
 
    // need to handle constants
 
