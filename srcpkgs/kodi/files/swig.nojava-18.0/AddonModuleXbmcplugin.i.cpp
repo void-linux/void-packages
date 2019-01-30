@@ -1,24 +1,11 @@
 
 
 /*
- *      Copyright (C) 2005-2013 Team XBMC
- *      http://xbmc.org
+ *  Copyright (C) 2005-2018 Team Kodi
+ *  This file is part of Kodi - https://kodi.tv
  *
- *  This Program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2, or (at your option)
- *  any later version.
- *
- *  This Program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
- *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
- *  http://www.gnu.org/copyleft/gpl.html
- *
+ *  SPDX-License-Identifier: GPL-2.0-or-later
+ *  See LICENSES/README.md for more information.
  */
 
 // ************************************************************************
@@ -36,12 +23,16 @@
 #include "interfaces/python/PyContext.h"
 
 
+#if defined(TARGET_WINDOWS)
+#  include <windows.h>
+#endif
+
 #include "interfaces/legacy/ModuleXbmcplugin.h"
 
 using namespace XBMCAddon;
 using namespace xbmcplugin;
 
-#if defined(__GNUG__) && (__GNUC__>4) || (__GNUC__==4 && __GNUC_MINOR__>=2)
+#if defined(__GNUG__)
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #endif
 
@@ -51,7 +42,7 @@ namespace PythonBindings
 {
 
   //=========================================================================
-  // These variables define the type XBMCAddon::xbmcgui::ListItem from another module 
+  // These variables define the type XBMCAddon::xbmcgui::ListItem from another module
   extern TypeInfo TyXBMCAddon_xbmcgui_ListItem_Type;
   //=========================================================================
 
@@ -68,19 +59,19 @@ namespace PythonBindings
           "isFolder",
           "totalItems",
           NULL};
-         
-    int  handle ;         
+
+    int  handle ;
     std::string  url ;
-    PyObject* pyurl = NULL;         
-    XBMCAddon::xbmcgui::ListItem * listitem ;
-    PyObject* pylistitem = NULL;         
-    bool  isFolder  = false;         
+    PyObject* pyurl = NULL;
+    XBMCAddon::xbmcgui::ListItem * listitem  = nullptr;
+    PyObject* pylistitem = NULL;
+    bool  isFolder  = false;
     int  totalItems  = 0;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"iOO|bi",
-       (char**)keywords,
+       "iOO|bi",
+       const_cast<char**>(keywords),
          &handle,
          &pyurl,
          &pylistitem,
@@ -98,17 +89,17 @@ namespace PythonBindings
       listitem = (XBMCAddon::xbmcgui::ListItem *)retrieveApiInstance(pylistitem,"p.XBMCAddon::xbmcgui::ListItem","XBMCAddon::xbmcplugin::","XBMCAddon::xbmcplugin::addDirectoryItem"); 
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (bool )XBMCAddon::xbmcplugin::addDirectoryItem(  handle,  url,  listitem,  isFolder,  totalItems  );
+      apiResult = XBMCAddon::xbmcplugin::addDirectoryItem(  handle,  url,  listitem,  isFolder,  totalItems  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -123,7 +114,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -137,16 +128,16 @@ namespace PythonBindings
           "items",
           "totalItems",
           NULL};
-         
-    int  handle ;         
+
+    int  handle ;
     std::vector< Tuple< XBMCAddon::String ,XBMCAddon::xbmcgui::ListItem const *,bool  >  >  items ;
-    PyObject* pyitems = NULL;         
+    PyObject* pyitems = NULL;
     int  totalItems  = 0;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"iO|i",
-       (char**)keywords,
+       "iO|i",
+       const_cast<char**>(keywords),
          &handle,
          &pyitems,
          &totalItems
@@ -167,8 +158,8 @@ namespace PythonBindings
 
       
       PyObject *pyentry1 = NULL;
-      int vecSize = (isTuple ? PyTuple_Size(pyitems) : PyList_Size(pyitems));
-      for(int i = 0; i < vecSize; i++)
+      auto vecSize = (isTuple ? PyTuple_Size(pyitems) : PyList_Size(pyitems));
+      for(Py_ssize_t i = 0; i < vecSize; i++)
       {
         pyentry1 = (isTuple ? PyTuple_GetItem(pyitems, i) : PyList_GetItem(pyitems, i));
         Tuple< XBMCAddon::String ,XBMCAddon::xbmcgui::ListItem const *,bool  >  entry1;
@@ -178,7 +169,7 @@ namespace PythonBindings
       bool isTuple = PyObject_TypeCheck(pyentry1,&PyTuple_Type);
       if (!isTuple && !PyObject_TypeCheck(pyentry1,&PyList_Type))
         throw WrongTypeException("The parameter \"entry1\" must be either a Tuple or a List.");
-      int vecSize = (isTuple ? PyTuple_Size(pyentry1) : PyList_Size(pyentry1));
+      auto vecSize = (isTuple ? PyTuple_Size(pyentry1) : PyList_Size(pyentry1));
 
       if (vecSize > 0)
       {
@@ -215,17 +206,17 @@ namespace PythonBindings
  
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (bool )XBMCAddon::xbmcplugin::addDirectoryItems(  handle,  items,  totalItems  );
+      apiResult = XBMCAddon::xbmcplugin::addDirectoryItems(  handle,  items,  totalItems  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -240,7 +231,7 @@ namespace PythonBindings
     PyObject* result = Py_None;
 
     // transform the result
-    result = Py_BuildValue((char*)"b", apiResult);
+    result = Py_BuildValue("b", apiResult);
 
     return result; 
   } 
@@ -255,16 +246,16 @@ namespace PythonBindings
           "updateListing",
           "cacheToDisc",
           NULL};
-         
-    int  handle ;         
-    bool  succeeded  = true;         
-    bool  updateListing  = false;         
+
+    int  handle ;
+    bool  succeeded  = true;
+    bool  updateListing  = false;
     bool  cacheToDisc  = true;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i|bbb",
-       (char**)keywords,
+       "i|bbb",
+       const_cast<char**>(keywords),
          &handle,
          &succeeded,
          &updateListing,
@@ -283,13 +274,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -319,16 +310,16 @@ namespace PythonBindings
           "succeeded",
           "listitem",
           NULL};
-         
-    int  handle ;         
-    bool  succeeded ;         
-    XBMCAddon::xbmcgui::ListItem * listitem ;
+
+    int  handle ;
+    bool  succeeded ;
+    XBMCAddon::xbmcgui::ListItem * listitem  = nullptr;
     PyObject* pylistitem = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"ibO",
-       (char**)keywords,
+       "ibO",
+       const_cast<char**>(keywords),
          &handle,
          &succeeded,
          &pylistitem
@@ -347,13 +338,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -383,16 +374,16 @@ namespace PythonBindings
           "sortMethod",
           "label2Mask",
           NULL};
-         
-    int  handle ;         
-    int  sortMethod ;         
+
+    int  handle ;
+    int  sortMethod ;
     std::string  label2Mask  = XBMCAddon::emptyString;
     PyObject* pylabel2Mask = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"ii|O",
-       (char**)keywords,
+       "ii|O",
+       const_cast<char**>(keywords),
          &handle,
          &sortMethod,
          &pylabel2Mask
@@ -411,13 +402,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -446,14 +437,14 @@ namespace PythonBindings
           "handle",
           "id",
           NULL};
-         
-    int  handle ;         
-    char * id ;
+
+    int  handle ;
+    char * id  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"is",
-       (char**)keywords,
+       "is",
+       const_cast<char**>(keywords),
          &handle,
          &id
        ))
@@ -461,22 +452,22 @@ namespace PythonBindings
       return NULL;
     }
 
-    std::string  apiResult;
+    XBMCAddon::String  apiResult;
     try
     {
 
       XBMCAddon::SetLanguageHookGuard slhg(XBMCAddon::Python::PythonLanguageHook::GetIfExists(PyThreadState_Get()->interp).get());
-      apiResult = (std::string )XBMCAddon::xbmcplugin::getSetting(  handle,  id  );
+      apiResult = XBMCAddon::xbmcplugin::getSetting(  handle,  id  );
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -505,17 +496,17 @@ namespace PythonBindings
           "id",
           "value",
           NULL};
-         
-    int  handle ;         
+
+    int  handle ;
     std::string  id ;
-    PyObject* pyid = NULL;         
+    PyObject* pyid = NULL;
     std::string  value ;
     PyObject* pyvalue = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"iOO",
-       (char**)keywords,
+       "iOO",
+       const_cast<char**>(keywords),
          &handle,
          &pyid,
          &pyvalue
@@ -535,13 +526,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -570,14 +561,14 @@ namespace PythonBindings
           "handle",
           "content",
           NULL};
-         
-    int  handle ;         
-    char * content ;
+
+    int  handle ;
+    char * content  = nullptr;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"is",
-       (char**)keywords,
+       "is",
+       const_cast<char**>(keywords),
          &handle,
          &content
        ))
@@ -594,13 +585,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -629,15 +620,15 @@ namespace PythonBindings
           "handle",
           "category",
           NULL};
-         
-    int  handle ;         
+
+    int  handle ;
     std::string  category ;
     PyObject* pycategory = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"iO",
-       (char**)keywords,
+       "iO",
+       const_cast<char**>(keywords),
          &handle,
          &pycategory
        ))
@@ -655,13 +646,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -693,17 +684,17 @@ namespace PythonBindings
           "color2",
           "color3",
           NULL};
-         
-    int  handle ;         
-    char * image  = NULL;         
-    char * color1  = NULL;         
-    char * color2  = NULL;         
+
+    int  handle ;
+    char * image  = NULL;
+    char * color1  = NULL;
+    char * color2  = NULL;
     char * color3  = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"i|ssss",
-       (char**)keywords,
+       "i|ssss",
+       const_cast<char**>(keywords),
          &handle,
          &image,
          &color1,
@@ -723,13 +714,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -759,16 +750,16 @@ namespace PythonBindings
           "key",
           "value",
           NULL};
-         
-    int  handle ;         
-    char * key ;         
+
+    int  handle ;
+    char * key  = nullptr;
     std::string  value ;
     PyObject* pyvalue = NULL;
     if (!PyArg_ParseTupleAndKeywords(
        args,
        kwds,
-       (char*)"isO",
-       (char**)keywords,
+       "isO",
+       const_cast<char**>(keywords),
          &handle,
          &key,
          &pyvalue
@@ -787,13 +778,13 @@ namespace PythonBindings
 
     }
     catch (const XBMCAddon::WrongTypeException& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_TypeError, e.GetMessage()); 
       return NULL; 
     }
     catch (const XbmcCommons::Exception& e)
-    { 
+    {
       CLog::Log(LOGERROR,"EXCEPTION: %s",e.GetMessage());
       PyErr_SetString(PyExc_RuntimeError, e.GetMessage()); 
       return NULL; 
@@ -816,21 +807,21 @@ namespace PythonBindings
 
 
   static PyMethodDef xbmcplugin_methods[] = { 
-    {(char*)"addDirectoryItem", (PyCFunction)xbmcplugin_addDirectoryItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"addDirectoryItems", (PyCFunction)xbmcplugin_addDirectoryItems, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"endOfDirectory", (PyCFunction)xbmcplugin_endOfDirectory, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setResolvedUrl", (PyCFunction)xbmcplugin_setResolvedUrl, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"addSortMethod", (PyCFunction)xbmcplugin_addSortMethod, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"getSetting", (PyCFunction)xbmcplugin_getSetting, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setSetting", (PyCFunction)xbmcplugin_setSetting, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setContent", (PyCFunction)xbmcplugin_setContent, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setPluginCategory", (PyCFunction)xbmcplugin_setPluginCategory, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setPluginFanart", (PyCFunction)xbmcplugin_setPluginFanart, METH_VARARGS|METH_KEYWORDS, NULL }, 
-    {(char*)"setProperty", (PyCFunction)xbmcplugin_setProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addDirectoryItem", (PyCFunction)xbmcplugin_addDirectoryItem, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addDirectoryItems", (PyCFunction)xbmcplugin_addDirectoryItems, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"endOfDirectory", (PyCFunction)xbmcplugin_endOfDirectory, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setResolvedUrl", (PyCFunction)xbmcplugin_setResolvedUrl, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"addSortMethod", (PyCFunction)xbmcplugin_addSortMethod, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"getSetting", (PyCFunction)xbmcplugin_getSetting, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setSetting", (PyCFunction)xbmcplugin_setSetting, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setContent", (PyCFunction)xbmcplugin_setContent, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setPluginCategory", (PyCFunction)xbmcplugin_setPluginCategory, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setPluginFanart", (PyCFunction)xbmcplugin_setPluginFanart, METH_VARARGS|METH_KEYWORDS, NULL }, 
+    {"setProperty", (PyCFunction)xbmcplugin_setProperty, METH_VARARGS|METH_KEYWORDS, NULL }, 
     {NULL, NULL, 0, NULL}
   };
 
-  // This is the call that will call all of the other initializes 
+  // This is the call that will call all of the other initializes
   //  for all of the classes in this module
   static void initTypes()
   {
@@ -851,17 +842,17 @@ namespace PythonBindings
 
 
 
-    module = Py_InitModule((char*)"xbmcplugin", xbmcplugin_methods);
+    module = Py_InitModule("xbmcplugin", xbmcplugin_methods);
     if (module == NULL) return;
 
 
 
    // constants
-   PyModule_AddStringConstant(module, (char*)"__author__", (char*)"Team Kodi <http://kodi.tv>");
-   PyModule_AddStringConstant(module, (char*)"__date__", (char*)"Wed Nov 15 19:05:17 GMT 2017");
-   PyModule_AddStringConstant(module, (char*)"__version__", (char*)"2.25.0");
-   PyModule_AddStringConstant(module, (char*)"__credits__", (char*)"Team Kodi");
-   PyModule_AddStringConstant(module, (char*)"__platform__", (char*)"ALL");
+   PyModule_AddStringConstant(module, "__author__", "Team Kodi <http://kodi.tv>");
+   PyModule_AddStringConstant(module, "__date__", "Wed Jan 30 17:54:26 GMT 2019");
+   PyModule_AddStringConstant(module, "__version__", "2.26.0");
+   PyModule_AddStringConstant(module, "__credits__", "Team Kodi");
+   PyModule_AddStringConstant(module, "__platform__", "ALL");
 
    // need to handle constants
 
