@@ -9,6 +9,10 @@ _jdk_update=202
 _jdk_build=00
 _main_ver=${_java_ver}u${_jdk_update}
 _openjdk_version="openjdk-1.8.0_${_jdk_update}"
+_bootstrap_jdk_update=202
+_bootstrap_jdk_build=08
+_bootstrap_openjdk_version="jdk8u${_bootstrap_jdk_update}-b${_bootstrap_jdk_build}"
+_bootstrap_openjdk_date="2019-01-29-11-31"
 
 pkgname=openjdk
 version="${_java_ver}u${_jdk_update}b${_jdk_build}"
@@ -23,15 +27,9 @@ configure_args="
  --with-build-number=b${_jdk_build}
  --with-milestone=fcs
  --enable-unlimited-crypto
- --with-zlib=system
- $(vopt_if oracle_bootstrap --with-boot-jdk=/usr/lib/jvm/oracle-jdk \
-			    --with-boot-jdk=/usr/lib/jvm/openjdk)"
+ --with-zlib=system"
 make_build_args="DEBUG_BINARIES=true docs all"
 hostmakedepends="pkg-config cpio unzip zip ca-certificates libressl"
-case "$XBPS_MACHINE" in
-	arm*) hostmakedepends+=" $(vopt_if oracle_bootstrap oracle-jdk-arm openjdk)";;
-	*) hostmakedepends+=" $(vopt_if oracle_bootstrap oracle-jdk openjdk)";;
-esac
 makedepends="libXrender-devel libXtst-devel libXt-devel
  libjpeg-turbo-devel cups-devel freetype-devel alsa-lib-devel"
 case "$XBPS_TARGET_MACHINE" in
@@ -67,9 +65,47 @@ checksum="ddc0b51b9887066e9a3e574cd22c715a4cd32c4ef919f1df73854102380496ee
 # Build is still parallel, but don't use -jN.
 disable_parallel_build=yes
 
-build_options="oracle_bootstrap"
-build_options_default="oracle_bootstrap"
+build_options="oracle_bootstrap cross_bootstrap"
 desc_option_oracle_bootstrap="Bootstrap using Oracle JDK"
+desc_option_cross_bootstrap="Bootstrap using host OpenJDK"
+
+case "$XBPS_MACHINE" in
+	i686|x86_64|armv6l|armv7l|aarch64)
+		build_options_default="oracle_bootstrap"
+		;;
+	*-musl)
+		if [ "$CROSS_BUILD" ]; then
+			build_options_default="cross_bootstrap"
+		else
+			broken="No prebuilt bootstrap compiler on musl"
+		fi
+		;;
+	arm*|mips*|i686*)
+		if [ "$CROSS_BUILD" ]; then
+			build_options_default="cross_bootstrap"
+		else
+			broken="No prebuilt bootstrap compiler on this architecture"
+		fi
+		;;
+	*) ;;
+esac
+
+case "$XBPS_MACHINE" in
+	x86_64*) _native_arch="x64";;
+	*) _native_arch="${XBPS_MACHINE}";;
+esac
+
+if [ ! "$build_option_oracle_bootstrap" ] && [ ! "$build_option_cross_bootstrap" ]; then
+	distfiles+="
+	 https://github.com/AdoptOpenJDK/openjdk8-binaries/releases/download/jdk8u-${_bootstrap_openjdk_date}/OpenJDK8U-jdk_${_native_arch}_linux_hotspot_${_bootstrap_openjdk_date}.tar.gz"
+	checksum+="
+	 2b7005bbdb7366e34911467737d8daf013fa65006faa6c28ff9b73841ddd79ea"
+	configure_args+=" --with-boot-jdk=${XBPS_BUILDDIR}/${_bootstrap_openjdk_version}"
+else
+	hostmakedepends+=" $(vopt_if oracle_bootstrap oracle-jdk openjdk)"
+	configure_args+=" $(vopt_if oracle_bootstrap --with-boot-jdk=/usr/lib/jvm/oracle-jdk \
+	 --with-boot-jdk=/usr/lib/jvm/openjdk)"
+fi
 
 alternatives="
  java:/usr/bin/java:/usr/lib/jvm/openjdk/bin/java
