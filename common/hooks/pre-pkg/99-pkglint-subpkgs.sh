@@ -40,5 +40,5 @@ hook() {
     done
 
     grep -q "^$pkgname" <<< "$matches" &&
-        msg_warn "$pkgname is sourcepkg but is in subpackages=.\n"
+        msg_warn "$pkgname is sourcepkg but is in subpackages=.\n" || :
 }
