@@ -11,6 +11,6 @@ hook() {
 		filename="${file##*/}"
 		modulename="${filename%%.*}"
 		msg_warn "${pkgver}: renamed '${filename}' to '${modulename}.so'.\n"
-		mv ${file} ${file%/*}${modulename}.so
+		mv ${file} ${file%/*}/${modulename}.so
 	done
 }
