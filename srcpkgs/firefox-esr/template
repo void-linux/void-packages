@@ -3,47 +3,43 @@
 # THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/firefox-esr-i18n".
 #
 pkgname=firefox-esr
-version=52.9.0
-revision=5
-wrksrc="firefox-${version}esr"
+version=60.5.0
+revision=1
+build_helper="rust"
+wrksrc="firefox-${version}"
 short_desc="Mozilla Firefox web browser - Extended Support Release (ESR)"
 maintainer="Eivind Uggedal <eivind@uggedal.com>"
 license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
 homepage="https://www.mozilla.org/firefox/organizations/"
-distfiles="${MOZILLA_SITE}/firefox/releases/${version}esr/source/firefox-${version}esr.source.tar.xz
- https://aur.archlinux.org/cgit/aur.git/plain/ffmpeg4.patch.gz?h=firefox-esr52>ffmpeg4.patch.gz"
-checksum="c01d09658c53c1b3a496e353a24dad03b26b81d3b1d099abc26a06f81c199dd6
- 2a285e0c31968e3fe9b65a585838b46f9342ff0a369e786a729b4c3886617034"
+distfiles="${MOZILLA_SITE}/firefox/releases/${version}esr/source/firefox-${version}esr.source.tar.xz"
+checksum=1a1f69ee87092637f75aef7f3fa588b0eef0b2c8bcc160094a036450c49c4025
 
 lib32disabled=yes
 hostmakedepends="autoconf213 unzip zip pkg-config perl python yasm
- $(vopt_if rust cargo)"
-makedepends="
- libatomic-devel nss-devel gtk+-devel
- sqlite-devel libevent-devel libnotify-devel libvpx-devel
- hunspell-devel libXcomposite-devel libSM-devel libXt-devel
- $(vopt_if alsa alsa-lib-devel) $(vopt_if dbus dbus-glib-devel)
- $(vopt_if gtk3 gtk+3-devel) $(vopt_if pulseaudio pulseaudio-devel)
+ cargo llvm clang rust cbindgen python"
+makedepends="nss-devel libjpeg-turbo-devel gtk+-devel gtk+3-devel icu-devel
+ pixman-devel sqlite-devel libevent-devel libnotify-devel libvpx-devel
+ libXrender-devel libXcomposite-devel libSM-devel libXt-devel rust-std
+ libXdamage-devel rust-std $(vopt_if alsa alsa-lib-devel)
+ $(vopt_if dbus dbus-glib-devel) $(vopt_if pulseaudio pulseaudio-devel)
  $(vopt_if startup_notification startup-notification-devel)
- $(vopt_if xscreensaver libXScrnSaver-devel)"
-depends="nss>=3.27 desktop-file-utils hicolor-icon-theme"
+ $(vopt_if xscreensaver libXScrnSaver-devel) $(vopt_if sndio sndio-devel)"
+depends="nss>=3.37.3 desktop-file-utils hicolor-icon-theme"
 conflicts="firefox>=0"
 
-build_options="alsa dbus gtk3 rust pulseaudio startup_notification xscreensaver"
-build_options_default="alsa dbus gtk3 pulseaudio startup_notification xscreensaver"
-desc_option_rust="Build rust components"
+build_options="alsa dbus gtk3 pulseaudio startup_notification xscreensaver sndio"
+build_options_default="alsa dbus gtk3 pulseaudio startup_notification xscreensaver sndio"
 
-case "$XBPS_TARGET_MACHINE" in
-	i686|x86_64*) build_options_default+=" rust";;
+case $XBPS_TARGET_MACHINE in
+	armv6*)
+		broken="required NEON extensions are not supported on armv6"
+		;;
 esac
 
-post_extract() {
-	patch -Np0 -i ../ffmpeg4.patch
 
+post_extract() {
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
-		# fix musl rust triplet
-		sed -i "s/\(x86_64-unknown-linux\)-gnu/\1-musl/" build/moz.configure/rust.configure
 		cp "${FILESDIR}/stab.h" toolkit/crashreporter/google-breakpad/src/
 		;;
 	esac
@@ -60,21 +56,28 @@ do_build() {
 	cp "${FILESDIR}/mozconfig" "${wrksrc}/.mozconfig"
 
 	case "$XBPS_TARGET_MACHINE" in
-		ppc64*) ;;
-		*) echo "ac_add_options --disable-elf-hack" >>.mozconfig;;
+	       *-musl)
+		echo "ac_add_options --disable-jemalloc" >>.mozconfig
+		echo "ac_add_options --disable-gold" >>.mozconfig
+		echo "ac_add_options --enable-release" >>.mozconfig
+		;;
 	esac
 
 	case "$XBPS_TARGET_MACHINE" in
-	*-musl)
-		echo "ac_add_options --disable-jemalloc" >>.mozconfig
-		echo "ac_add_options --enable-gold=no" >>.mozconfig
-		;;
-	arm*|aarch64*)
-		echo "ac_add_options --enable-gold=no" >>.mozconfig
+	arm*|x86_64*|i686*)
+		echo "ac_add_options --disable-elf-hack" >>.mozconfig
 		;;
 	esac
 
 	if [ "$CROSS_BUILD" ]; then
+		BINDGEN_INCLUDE_FLAGS=$( $CPP -x c++ -v /dev/null -o /dev/null 2>&1 | \
+			sed -n '/#include <...> search starts here:/,/End of search list./p' | \
+			sed '1,1d;$d' | sed  's/^ /-I/' | paste -s )
+
+		export BINDGEN_CFLAGS="--target=$XBPS_CROSS_TRIPLET \
+			--sysroot=${XBPS_CROSS_BASE} ${BINDGEN_INCLUDE_FLAGS}"
+		export HOST_CC=cc
+		export TARGET_CC="${CC}"
 		export HOST_CFLAGS="${XBPS_CFLAGS}"
 		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
 		export ac_cv_sqlite_secure_delete=yes \
@@ -83,14 +86,38 @@ do_build() {
 			ac_cv_sqlite_dbstat_vtab=yes \
 			ac_cv_sqlite_enable_unlock_notify=yes \
 			ac_cv_prog_hostcxx_works=1
+
+		case "$XBPS_TARGET_MACHINE" in
+			*-musl) _host_triplet=${XBPS_MACHINE%-musl}-unknown-linux-musl;;
+			*) _host_triplet=${XBPS_MACHINE}-unknwon-linux-gnu;;
+		esac
+
 		echo "ac_add_options --target=$XBPS_CROSS_TRIPLET" >>.mozconfig
+		echo "ac_add_options --host=$_host_triplet" >>.mozconfig
+	else
+		echo "ac_add_options --target=$XBPS_TRIPLET" >>.mozconfig
+		echo "ac_add_options --host=$XBPS_TRIPLET" >>.mozconfig
 	fi
 
-	# Append CFLAGS and CXXFLAGS to set work around code which gcc6 would
-	# otherwise regard as out-of-specification and allow it to produce a
-	# working program.
-	export CFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
-	export CXXFLAGS+=" -fno-delete-null-pointer-checks -fno-lifetime-dse -fno-schedule-insns2"
+	mkdir -p third_party/rust/libloading/.deps
+
+	case "$XBPS_TARGET_MACHINE" in
+	i686*)
+		export CFLAGS+=" -D_FILE_OFFSET_BITS=64"
+		export CXXFLAGS+=" -D_FILE_OFFSET_BITS=64"
+		;;
+	armv7*)
+		export CFLAGS+=" -mfpu=neon -Wno-psabi"
+		export CXXFLAGS+=" -mfpu=neon -Wno-psabi"
+		;;
+	esac
+
+	case "$XBPS_MACHINE" in
+		i686*)
+		# ENOMEM
+		echo "ac_add_options --disable-debug-symbols" >>.mozconfig
+		;;
+	esac
 
 	export LDFLAGS+=" -Wl,-rpath=/usr/lib/firefox"
 
@@ -99,36 +126,35 @@ do_build() {
 	fi
 
 	export MOZ_MAKE_FLAGS="${makejobs}"
+	export MOZ_NOSPAM=1
+        export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
+
+	export AS=$CC
 
 	cat <<! >>.mozconfig
 ac_add_options --with-google-api-keyfile="${wrksrc}/google-api-key"
 ac_add_options --with-mozilla-api-keyfile="${wrksrc}/mozilla-api-key"
-ac_add_options --enable-default-toolkit=cairo-gtk$(vopt_if gtk3 '3' '2')
 ac_add_options $(vopt_enable alsa)
+ac_add_options $(vopt_enable sndio)
 ac_add_options $(vopt_enable dbus)
 ac_add_options $(vopt_enable dbus necko-wifi)
 ac_add_options $(vopt_enable pulseaudio)
-ac_add_options $(vopt_enable rust)
 ac_add_options $(vopt_enable startup_notification startup-notification)
 !
 
-	make -f client.mk build
+	rm -f old-configure
+	./mach build
 }
 do_install() {
-	make -f client.mk DESTDIR="$DESTDIR" install
+	DESTDIR="$DESTDIR" ./mach install
 
 	vinstall ${FILESDIR}/vendor.js 644 usr/lib/firefox/browser/defaults/preferences
-	vinstall ${FILESDIR}/firefox.desktop 644 usr/share/applications
+	vinstall taskcluster/docker/firefox-snap/firefox.desktop 644 usr/share/applications
 
-	for i in 16x16 22x22 24x24 32x32 48x48 256x256; do
+	for i in 16x16 22x22 24x24 32x32 48x48 128x128 256x256; do
 		vinstall ${wrksrc}/browser/branding/official/default${i%x*}.png 644 \
 			usr/share/icons/hicolor/${i}/apps firefox.png
 	done
-
-	# Use system-provided dictionaries
-	rm -rf ${DESTDIR}/usr/lib/firefox/{dictionaries,hyphenation}
-	ln -s /usr/share/hunspell ${DESTDIR}/usr/lib/firefox/dictionaries
-	ln -s /usr/share/hyphen ${DESTDIR}/usr/lib/firefox/hyphenation
 
 	# We don't want the development stuff
 	rm -rf ${DESTDIR}/usr/{include,lib/firefox-devel,share/idl}
