@@ -1,9 +1,10 @@
 # Template file for 'wine'
 pkgname=wine
 version=4.0
-revision=1
+revision=2
 build_style=gnu-configure
-configure_args="--without-gstreamer"
+nocross=yes
+configure_args="--without-gstreamer --with-x"
 short_desc="Run Microsoft Windows applications"
 maintainer="Andrea Brancaleoni <abc@pompel.me>"
 license="LGPL-2.1-or-later"
@@ -13,8 +14,10 @@ checksum=6736cdee95b2b8bb021ec0c19497ed8cad5ae2c8bfdb7ab5dc687ff92a480d4d
 
 nopie_files="/usr/bin/wine"
 
-lib32mode=full
-only_for_archs=i686
+only_for_archs="i686 x86_64"
+if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
+	lib32mode=full
+fi
 
 hostmakedepends="pkg-config flex prelink"
 makedepends="gettext-devel lcms2-devel zlib-devel ncurses-devel
@@ -25,12 +28,57 @@ makedepends="gettext-devel lcms2-devel zlib-devel ncurses-devel
  libxslt-devel glib-devel freetype-devel pulseaudio-devel
  mpg123-devel libgsm-devel libopenal-devel giflib-devel libpng-devel
  v4l-utils-devel fontconfig-devel gnutls-devel dbus-devel sane-devel
- libpcap-devel cups-devel ocl-icd-devel vulkan-loader vkd3d-devel"
+ libpcap-devel cups-devel ocl-icd-devel vulkan-loader vkd3d-devel mit-krb5-devel
+ SDL2-devel"
 depends="libXi libXinerama libXcomposite libXcursor libOSMesa
  desktop-file-utils hicolor-icon-theme liberation-fonts-ttf
- gnutls"
+ gnutls freetype mit-krb5-libs"
 
 binfmts="/usr/bin/wine --magic MZ"
+
+if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+	nopie_files+=" /usr/bin/winegcc /usr/bin/wine64 /usr/bin/widl /usr/bin/winebuild /usr/bin/winedump
+			/usr/bin/wrc /usr/bin/wineserver /usr/bin/wmc"
+	makedepends+=" gettext-devel-32bit lcms2-devel-32bit zlib-devel-32bit
+		ncurses-devel-32bit glu-devel-32bit libSM-devel-32bit libXext-devel-32bit
+		libX11-devel-32bit libXpm-devel-32bit libXinerama-devel-32bit
+		libXcomposite-devel-32bit libXmu-devel-32bit libXxf86vm-devel-32bit
+		libXcursor-devel-32bit libXrandr-devel-32bit libXdamage-devel-32bit
+		libXi-devel-32bit libldap-devel-32bit alsa-lib-devel-32bit libgphoto2-devel-32bit
+		libxml2-devel-32bit libxslt-devel-32bit freetype-devel-32bit
+		pulseaudio-devel-32bit mpg123-devel-32bit libgsm-devel-32bit libopenal-devel-32bit
+		giflib-devel-32bit libpng-devel-32bit fontconfig-devel-32bit gnutls-devel-32bit
+		dbus-devel-32bit sane-devel-32bit libpcap-devel-32bit
+		cups-devel-32bit ocl-icd-devel-32bit gcc-multilib vulkan-loader-32bit mit-krb5-devel-32bit
+		SDL2-devel-32bit"
+	depends+=" freetype-32bit libXi-32bit libXinerama-32bit
+			libXcomposite-32bit libXcursor-32bit
+			libOSMesa-32bit gnutls-32bit mit-krb5-libs-32bit"
+	WINE="$XBPS_BUILDDIR/wine-$version"
+	WINE64="$WINE/../wine64/"
+	WINE32="$WINE/../wine32/"
+	pre_configure() {
+		mkdir -p "$WINE64" "$WINE32"
+	}
+	do_configure() {
+		cd "$WINE64"
+		"$WINE"/configure --libdir="/usr/lib" --enable-win64 ${configure_args}
+		cd "$WINE32"
+		"$WINE"/configure --libdir="/usr/lib32" --with-wine64="$WINE64" ${configure_args}
+	}
+	do_build() {
+		cd "$WINE64"
+		make ${makejobs}
+		cd "$WINE32"
+		make ${makejobs}
+	}
+	do_install() {
+		cd "$WINE32"
+		make install DESTDIR="${DESTDIR}"
+		cd "$WINE64"
+		make install DESTDIR="${DESTDIR}"
+	}
+fi
 
 post_install() {
 	# Font aliasing settings for Win32 applications
@@ -40,12 +88,18 @@ post_install() {
 }
 
 libwine_package() {
-	lib32mode=full
+	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
+		lib32mode=full
+	fi
 	short_desc+=" - Runtime library"
 	replaces="libwine-unstable>=0"
 	pkg_install() {
-		vmove "usr/lib/*.so.*"
+		vmove "usr/lib/*.so*"
 		vmove usr/lib/wine
+		if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+			vmove "usr/lib32/*.so*"
+			vmove usr/lib32/wine
+		fi
 	}
 }
 wine-devel_package() {
@@ -54,6 +108,5 @@ wine-devel_package() {
 	replaces="wine-unstable-devel>=0"
 	pkg_install() {
 		vmove usr/include
-		vmove "usr/lib/*.so"
 	}
 }
