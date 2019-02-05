@@ -78,6 +78,21 @@ _EOF
 	ln -sf ${XBPS_CROSS_TRIPLET}-pkg-config ${XBPS_WRAPPERDIR}/pkg-config
 }
 
+vapigen_wrapper() {
+	if [ ! -x /usr/bin/vapigen ]; then
+		return 0
+	fi
+	[ -x ${XBPS_WRAPPERDIR}/vapigen ] && return 0
+	cat >>${XBPS_WRAPPERDIR}/vapigen<<_EOF
+#!/bin/sh
+exec /usr/bin/vapigen \\
+	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala/vapi \\
+	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-0.42/vapi \\
+	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0 "\$@"
+_EOF
+	chmod 755 ${XBPS_WRAPPERDIR}/vapigen
+}
+
 install_wrappers() {
 	local fname
 
@@ -120,6 +135,7 @@ hook() {
 
 	install_cross_wrappers
 	pkgconfig_wrapper
+	vapigen_wrapper
 	generic_wrapper icu-config
 	generic_wrapper libgcrypt-config
 	generic_wrapper freetype-config
