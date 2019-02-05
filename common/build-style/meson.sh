@@ -114,6 +114,7 @@ EOF
 		--auto-features=enabled \
 		--wrap-mode=nodownload \
 		-Db_lto=true -Db_ndebug=true \
+		-Db_staticpic=true -Db_pie=true \
 		${configure_args} . ${meson_builddir}
 }
 
