@@ -94,6 +94,22 @@ _EOF
 	ln -sf vapigen ${XBPS_WRAPPERDIR}/vapigen-0.42
 }
 
+valac_wrapper() {
+	if [ ! -x /usr/bin/valac ]; then
+		return 0
+	fi
+	[ -x ${XBPS_WRAPPERDIR}/valac ] && return 0
+	cat >>${XBPS_WRAPPERDIR}/valac<<_EOF
+#!/bin/sh
+exec /usr/bin/valac \\
+	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala/vapi \\
+	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-0.42/vapi \\
+	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0 "\$@"
+_EOF
+	chmod 755 ${XBPS_WRAPPERDIR}/valac
+	ln -sf valac ${XBPS_WRAPPERDIR}/valac-0.42
+}
+
 install_wrappers() {
 	local fname
 
@@ -137,6 +153,7 @@ hook() {
 	install_cross_wrappers
 	pkgconfig_wrapper
 	vapigen_wrapper
+	valac_wrapper
 	generic_wrapper icu-config
 	generic_wrapper libgcrypt-config
 	generic_wrapper freetype-config
