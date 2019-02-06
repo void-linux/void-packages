@@ -1,7 +1,7 @@
 # Template file for 'linux4.20'
 pkgname=linux4.20
 version=4.20.7
-revision=3
+revision=4
 wrksrc="linux-${version}"
 short_desc="The Linux kernel and modules (${version%.*} series)"
 maintainer="Helmut Pozimski <helmut@pozimski.eu>"
@@ -153,6 +153,14 @@ do_install() {
 	install -Dm644 Makefile ${hdrdest}/Makefile
 	install -Dm644 kernel/Makefile ${hdrdest}/kernel/Makefile
 	install -Dm644 .config ${hdrdest}/.config
+	for file in $(find . -name Kconfig\*); do
+		mkdir -p ${hdrdest}/$(dirname $file)
+		install -Dm644 $file ${hdrdest}/${file}
+	done
+	for file in $(find arch/${subarch:-$arch} -name module.lds -o -name Kbuild.platforms -o -name Platform); do
+		mkdir -p ${hdrdest}/$(dirname $file)
+		install -Dm644 $file ${hdrdest}/${file}
+	done
 	mkdir -p ${hdrdest}/include
 	# Remove firmware stuff provided by the "linux-firmware" pkg.
 	rm -rf ${DESTDIR}/usr/lib/firmware
@@ -168,9 +176,20 @@ do_install() {
 	mkdir -p ${hdrdest}/arch/${arch}
 	cp -a arch/${arch}/include ${hdrdest}/arch/${arch}
 
+	# Remove helper binaries built for host,
+	# if generated files from the scripts/ directory need to be included,
+	# they need to be copied to ${hdrdest} before this step
+	if [ "$CROSS_BUILD" ]; then
+		make ${makejobs} ARCH=${subarch:-$arch} _mrproper_scripts
+	fi
+
 	# Copy files necessary for later builds, like nvidia and vmware
 	cp Module.symvers ${hdrdest}
 	cp -a scripts ${hdrdest}
+	mkdir -p ${hdrdest}/security/selinux
+	cp -a security/selinux/include ${hdrdest}/security/selinux
+	mkdir -p ${hdrdest}/tools/include
+	cp -a tools/include/tools ${hdrdest}/tools/include
 
 	mkdir -p ${hdrdest}/arch/${arch}/kernel
 	cp arch/${arch}/Makefile ${hdrdest}/arch/${arch}
@@ -181,6 +200,9 @@ do_install() {
 	if [ "$arch" = "x86" ]; then
 		mkdir -p ${hdrdest}/arch/x86/kernel
 		cp arch/x86/kernel/asm-offsets.s ${hdrdest}/arch/x86/kernel
+	elif [ "$arch" = "arm64" ]; then
+		mkdir -p ${hdrdest}/arch/arm64/kernel
+		cp -a arch/arm64/kernel/vdso ${hdrdest}/arch/arm64/kernel/
 	fi
 
 	# add headers for lirc package
@@ -249,12 +271,6 @@ do_install() {
 			;;
 	esac
 
-	# Copy in Kconfig files
-	for i in $(find . -name "Kconfig*"); do
-		mkdir -p ${hdrdest}/$(echo $i | sed 's|/Kconfig.*||')
-		cp $i ${hdrdest}/$i
-	done
-
 	# Remove unneeded architectures
 	case "$arch" in
 		i386|x86_64) _args="arm* p*";;
@@ -265,6 +281,9 @@ do_install() {
 		ia64 m* s* um v850 xtensa ${_args}; do
 		rm -rf ${hdrdest}/arch/${arch}
 	done
+	# Keep arch/x86/ras/Kconfig as it is needed by drivers/ras/Kconfig
+	mkdir -p ${hdrdest}/arch/x86/ras
+	cp -a arch/x86/ras/Kconfig ${hdrdest}/arch/x86/ras/Kconfig
 
 	# Extract debugging symbols
 	msg_normal "$pkgver: extracting debug info, please wait...\n"
