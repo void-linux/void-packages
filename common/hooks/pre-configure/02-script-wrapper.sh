@@ -91,6 +91,7 @@ exec /usr/bin/vapigen \\
 	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0 "\$@"
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/vapigen
+	ln -sf vapigen ${XBPS_WRAPPERDIR}/vapigen-0.42
 }
 
 install_wrappers() {
