@@ -76,6 +76,50 @@ if [ "$CROSS_BUILD" ]; then
 	fi
 fi
 
+_bootstrap_gn() {
+	# Bootstrap gn (generate ninja)
+	_msg_cross "Bootstrapping 'gn'"
+	cd ${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn
+	conf='is_clang=false'
+	conf+=' treat_warnings_as_errors=false'
+	conf+=' enable_remoting=false'
+	conf+=' enable_nacl=false'
+	conf+=' use_cups=false'
+	conf+=' use_gconf=false'
+	conf+=' use_gio=false'
+	conf+=' use_gnome_keyring=false'
+	conf+=' use_gtk=false'
+	conf+=' use_kerberos=false'
+	conf+=' linux_use_bundled_binutils=false'
+	conf+=' binutils_path="/usr/bin"'
+	conf+=' use_gold=false'
+	conf+=' use_sysroot=false'
+	conf+=' use_allocator="none"'
+	conf+=' is_android=false'
+
+	sed -i ${wrksrc}/qtwebengine/src/core/config/linux.pri \
+		-e "/equals(MARMV/s;true;false;"
+	case "$XBPS_TARGET_MACHINE" in
+		armv[56]*) conf+=' arm_use_neon=false arm_optionally_use_neon=false';;
+		armv7*)    conf+=' arm_use_neon=true arm_optionally_use_neon=false';;
+		aarch64*)  conf+=' arm_use_neon=true arm_optionally_use_neon=false';;
+	esac
+
+	AR="$AR_host" CC="$CC_host" CXX="$CXX_host" LD="$CXX_host" \
+	CFLAGS="$CFLAGS_host" CXXFLAGS="$CXXFLAGS_host" LDFLAGS="$LDFLAGS_host" \
+	PKGCONFIG=/usr/bin/pkgconfig PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/share/pkgconfig" \
+		python2 bootstrap/bootstrap.py -n --gn-gen-args "${conf}"
+	cd ${wrksrc}
+
+	mkdir -p ${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn/out/Release
+	cp -p ${wrksrc}/qtwebengine/src/3rdparty/chromium/out/Release/gn \
+		${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn/out/Release/
+
+	# Remove gn from SUBDIRS for qtwebengine/src/buildtools
+	sed -i ${wrksrc}/qtwebengine/src/buildtools/buildtools.pro \
+		-e"/gn.file = gn.pro/,+3d"
+}
+
 _cleanup_wrksrc_leak() {
 	if [ -d "${PKGDESTDIR}/usr/lib/cmake" ]; then
 		# Replace references to ${wrksrc} in cmake files
@@ -242,47 +286,9 @@ do_configure() {
 			ln -sfv ${version}/${d}/private qtbase/include/${d}/private
 		done
 
-		# Bootstrap gn (generate ninja)
-		_msg_cross "Bootstrapping 'gn'"
-		cd ${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn
-		conf='is_clang=false'
-		conf+=' treat_warnings_as_errors=false'
-		conf+=' enable_remoting=false'
-		conf+=' enable_nacl=false'
-		conf+=' use_cups=false'
-		conf+=' use_gconf=false'
-		conf+=' use_gio=false'
-		conf+=' use_gnome_keyring=false'
-		conf+=' use_gtk=false'
-		conf+=' use_kerberos=false'
-		conf+=' linux_use_bundled_binutils=false'
-		conf+=' binutils_path="/usr/bin"'
-		conf+=' use_gold=false'
-		conf+=' use_sysroot=false'
-		conf+=' use_allocator="none"'
-		conf+=' is_android=false'
-
-		sed -i ${wrksrc}/qtwebengine/src/core/config/linux.pri \
-			-e "/equals(MARMV/s;true;false;"
-		case "$XBPS_TARGET_MACHINE" in
-			armv[56]*) conf+=' arm_use_neon=false arm_optionally_use_neon=false';;
-			armv7*)    conf+=' arm_use_neon=true arm_optionally_use_neon=false';;
-			aarch64*)  conf+=' arm_use_neon=true arm_optionally_use_neon=false';;
-		esac
-
-		AR="$AR_host" CC="$CC_host" CXX="$CXX_host" LD="$CXX_host" \
-		CFLAGS="$CFLAGS_host" CXXFLAGS="$CXXFLAGS_host" LDFLAGS="$LDFLAGS_host" \
-		PKGCONFIG=/usr/bin/pkgconfig PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/share/pkgconfig" \
-			python2 bootstrap/bootstrap.py -n --gn-gen-args "${conf}"
-		cd ${wrksrc}
-
-		mkdir -p ${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn/out/Release
-		cp -p ${wrksrc}/qtwebengine/src/3rdparty/chromium/out/Release/gn \
-			${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn/out/Release/
-
-		# Remove gn from SUBDIRS for qtwebengine/src/buildtools
-		sed -i ${wrksrc}/qtwebengine/src/buildtools/buildtools.pro \
-			-e"/gn.file = gn.pro/,+3d"
+		if [ "$build_option_webengine" ]; then
+			_bootstrap_gn
+		fi
 
 		case "$XBPS_TARGET_MACHINE" in
 		mips*)	# sgidefs.h is in /usr/include/asm
@@ -299,7 +305,6 @@ do_configure() {
 			# Assume that RGBA order is correct for big endian CPUs
 			sed -i qtwebengine/src/3rdparty/chromium/skia/config/SkUserConfig.h \
 				-e '/#error Read the comment at this location/d'
-
 			;;
 		esac
 	else
@@ -346,20 +351,22 @@ do_configure() {
 	opts+=" -system-sqlite"
 	opts+=" -system-harfbuzz"
 	# Rely on auto detection (fails if forced for cross builds)
-	# opts+=" -webengine-alsa"
-	opts+=" -no-webengine-embedded-build"
-	opts+=" -webengine-icu"
-	opts+=" -webengine-ffmpeg"
-	opts+=" -webengine-opus"
-	opts+=" -webengine-webp"
-	opts+=" -webengine-pepper-plugins"
-	opts+=" -webengine-printing-and-pdf"
-	opts+=" -webengine-proprietary-codecs"
-	opts+=" -webengine-pulseaudio"
-	opts+=" -webengine-spellchecker"
-	opts+=" -webengine-webrtc"
-	opts+=" -webengine-geolocation"
-	opts+=" -webengine-v8-snapshot"
+	if [ "$build_option_webengine" ]; then
+		# opts+=" -webengine-alsa"
+		opts+=" -no-webengine-embedded-build"
+		opts+=" -webengine-icu"
+		opts+=" -webengine-ffmpeg"
+		opts+=" -webengine-opus"
+		opts+=" -webengine-webp"
+		opts+=" -webengine-pepper-plugins"
+		opts+=" -webengine-printing-and-pdf"
+		opts+=" -webengine-proprietary-codecs"
+		opts+=" -webengine-pulseaudio"
+		opts+=" -webengine-spellchecker"
+		opts+=" -webengine-webrtc"
+		opts+=" -webengine-geolocation"
+		opts+=" -webengine-v8-snapshot"
+	fi
 	opts+=" -silent"
 	# opts+=" -v"
 
@@ -379,8 +386,10 @@ do_configure() {
 		opts+=" -extprefix /usr"
 		case "$XBPS_TARGET_MACHINE" in
 		arm*|mips*)
-			# V8 snapshot can't be built with a 64 bit host compiler
-			opts+=" -no-webengine-v8-snapshot"
+			if [ "$build_option_webengine" ]; then
+				# V8 snapshot can't be built with a 64 bit host compiler
+				opts+=" -no-webengine-v8-snapshot"
+			fi
 			;;
 		esac
 
