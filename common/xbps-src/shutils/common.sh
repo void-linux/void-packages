@@ -313,6 +313,7 @@ setup_pkg() {
         export XBPS_TARGET_MACHINE=${XBPS_ARCH:-$XBPS_MACHINE}
         unset XBPS_CROSS_BASE XBPS_CROSS_LDFLAGS XBPS_CROSS_FFLAGS
         unset XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_CPPFLAGS
+        unset XBPS_CROSS_RUSTFLAGS XBPS_CROSS_RUST_TARGET
 
         XBPS_INSTALL_XCMD="$XBPS_INSTALL_CMD"
         XBPS_QUERY_XCMD="$XBPS_QUERY_CMD"
@@ -546,6 +547,7 @@ setup_pkg() {
         unset CC_host CXX_host CPP_host GCC_host FC_host LD_host AR_host AS_host
         unset RANLIB_host STRIP_host OBJDUMP_host OBJCOPY_host NM_host READELF_host
         unset CFLAGS_host CXXFLAGS_host CPPFLAGS_host LDFLAGS_host
+        unset RUSTFLAGS
     fi
 
     # Setup some specific package vars.

@@ -16,6 +16,8 @@ if [ "$CROSS_BUILD" ]; then
 	# [build]
 	# target = ${RUST_TARGET}
 	export CARGO_BUILD_TARGET="$RUST_TARGET"
+else
+	unset CARGO_BUILD_TARGET
 fi
 
 # For cross-compiling rust -sys crates
