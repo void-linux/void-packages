@@ -15,6 +15,7 @@ do_configure() {
 			mips*) _CMAKE_SYSTEM_PROCESSOR=mips ;;
 			ppc64le*) _CMAKE_SYSTEM_PROCESSOR=ppc64le ;;
 			ppc64*) _CMAKE_SYSTEM_PROCESSOR=ppc64 ;;
+			ppc*) _CMAKE_SYSTEM_PROCESSOR=powerpc ;;
 			*) _CMAKE_SYSTEM_PROCESSOR=generic ;;
 		esac
 		if [ -x "${XBPS_CROSS_BASE}/usr/bin/wx-config-gtk3" ]; then
