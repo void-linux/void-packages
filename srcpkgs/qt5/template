@@ -1,7 +1,7 @@
 # Template file for 'qt5'
 pkgname=qt5
 version=5.11.3
-revision=3
+revision=5
 wrksrc="qt-everywhere-src-${version}"
 build_style=gnu-configure
 hostmakedepends="cmake clang flex git glib-devel gperf ninja pkg-config
@@ -10,25 +10,52 @@ makedepends="SDL2-devel Vulkan-Headers alsa-lib-devel double-conversion-devel
  eudev-libudev-devel ffmpeg-devel freetds-devel glib-devel gst-plugins-base1-devel
  gtk+3-devel icu-devel jsoncpp-devel libXv-devel libbluetooth-devel libcap-devel
  libevent-devel libinput-devel libmng-devel libmysqlclient-devel libproxy-devel
- libvpx-devel libwebp-devel libxslt-devel minizip-devel nss-devel
+ libvpx5-devel libwebp-devel libxslt-devel minizip-devel nss-devel
  opus-devel pciutils-devel pcre2-devel postgresql-libs-devel
  protobuf-devel pulseaudio-devel snappy-devel tslib-devel
  unixodbc-devel xcb-util-image-devel xcb-util-keysyms-devel
  xcb-util-renderutil-devel xcb-util-wm-devel"
 depends="qtchooser"
-replaces="qt5-doc<5.6.0 qt5-quick1<5.6.0 qt5-quick1-devel<5.6.0 qt5-webkit<5.6.0 qt5-webkit-devel<5.6.0
- qt5-enginio<5.7.1 qt5-enginio-devel<5.7.1 qt5-plugin-gtk<5.7.1"
-homepage="https://qt.io/"
 short_desc="Cross-platform application and UI framework (QT5)"
 maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
 license="GPL-3.0-or-later, LGPL-2.1-or-later"
+homepage="https://qt.io/"
 distfiles="http://download.qt.io/official_releases/qt/${version%.*}/${version}/single/qt-everywhere-src-${version}.tar.xz"
 checksum=859417642713cee2493ee3646a7fee782c9f1db39e41d7bb1322bba0c5f0ff4d
+replaces="qt5-doc<5.6.0 qt5-quick1<5.6.0 qt5-quick1-devel<5.6.0 qt5-webkit<5.6.0 qt5-webkit-devel<5.6.0
+ qt5-enginio<5.7.1 qt5-enginio-devel<5.7.1 qt5-plugin-gtk<5.7.1"
+
+build_options="webengine"
+desc_option_webengine="Build Chromium-based WebEngine component"
 
 case "$XBPS_TARGET_MACHINE" in
-	armv5tel*) broken="qtwebengine use VSM assembler commands";;
-	mips*) broken="qtwebengine fails to build";;
+	x86_64*|i686*|ppc64le*) build_options_default="webengine";;
+	armv5tel*) ;; # qtwebengine uses VSM assembler commands
+	arm*|aarch64*) build_options_default="webengine";;
+	*) ;; # assume no webengine
 esac
+
+subpackages="qt5-3d qt5-3d-devel qt5-canvas3d qt5-charts qt5-charts-devel
+ qt5-connectivity qt5-connectivity-devel qt5-datavis3d qt5-datavis3d-devel
+ qt5-declarative qt5-declarative-devel qt5-devel qt5-examples qt5-gamepad
+ qt5-gamepad-devel qt5-graphicaleffects qt5-host-tools qt5-imageformats
+ qt5-location qt5-location-devel qt5-multimedia qt5-multimedia-devel
+ qt5-networkauth qt5-networkauth-devel qt5-plugin-mysql qt5-plugin-odbc
+ qt5-plugin-pgsql qt5-plugin-sqlite qt5-plugin-tds qt5-purchasing
+ qt5-purchasing-devel qt5-qmake qt5-quickcontrols qt5-quickcontrols2
+ qt5-quickcontrols2-devel qt5-remoteobjects qt5-remoteobjects-devel
+ qt5-script qt5-script-devel qt5-scxml qt5-scxml-devel qt5-sensors
+ qt5-sensors-devel qt5-serialbus qt5-serialbus-devel qt5-serialport
+ qt5-serialport-devel qt5-speech qt5-speech-devel qt5-svg qt5-svg-devel
+ qt5-tools qt5-tools-devel qt5-translations qt5-virtualkeyboard
+ qt5-virtualkeyboard-devel qt5-wayland qt5-wayland-devel qt5-webchannel
+ qt5-webchannel-devel qt5-webglplugin qt5-webglplugin-devel qt5-websockets
+ qt5-websockets-devel qt5-webview qt5-webview-devel qt5-x11extras
+ qt5-x11extras-devel qt5-xmlpatterns qt5-xmlpatterns-devel"
+
+if [ "$build_option_webengine" ]; then
+	subpackages+=" qt5-webengine qt5-webengine-devel"
+fi
 
 if [ "${XBPS_MACHINE%%-musl}" = i686 ]; then
 	nodebug=yes  # prevent OOM
@@ -37,15 +64,61 @@ fi
 CFLAGS="-DOPENSSL_NO_PSK -DOPENSSL_NO_NEXTPROTONEG"
 CXXFLAGS="${CFLAGS} -Wno-deprecated-declarations -Wno-class-memaccess -Wno-packed-not-aligned"
 # Required for musl libc
-LDFLAGS="-pthread -ldl -fPIE"
+LDFLAGS="-pthread -ldl -fPIE -Wl,-z,stack-size=2097152"
 
 if [ "$CROSS_BUILD" ]; then
 	# Need some devel packages in the host to build qmake, moc, uic, rcc
 	# wayland-devel contains /usr/bin/wayland-scanner
 	hostmakedepends+=" icu-devel wayland-devel zlib-devel"
 	# Cross building qtwebengine requires some more host packages
-	hostmakedepends+=" nss-devel libevent-devel"
+	if [ "$build_option_webengine" ]; then
+		hostmakedepends+=" nss-devel libevent-devel"
+	fi
 fi
+
+_bootstrap_gn() {
+	# Bootstrap gn (generate ninja)
+	_msg_cross "Bootstrapping 'gn'"
+	cd ${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn
+	conf='is_clang=false'
+	conf+=' treat_warnings_as_errors=false'
+	conf+=' enable_remoting=false'
+	conf+=' enable_nacl=false'
+	conf+=' use_cups=false'
+	conf+=' use_gconf=false'
+	conf+=' use_gio=false'
+	conf+=' use_gnome_keyring=false'
+	conf+=' use_gtk=false'
+	conf+=' use_kerberos=false'
+	conf+=' linux_use_bundled_binutils=false'
+	conf+=' binutils_path="/usr/bin"'
+	conf+=' use_gold=false'
+	conf+=' use_sysroot=false'
+	conf+=' use_allocator="none"'
+	conf+=' is_android=false'
+
+	sed -i ${wrksrc}/qtwebengine/src/core/config/linux.pri \
+		-e "/equals(MARMV/s;true;false;"
+	case "$XBPS_TARGET_MACHINE" in
+		armv[56]*) conf+=' arm_use_neon=false arm_optionally_use_neon=false';;
+		armv7*)    conf+=' arm_use_neon=true arm_optionally_use_neon=false';;
+		aarch64*)  conf+=' arm_use_neon=true arm_optionally_use_neon=false';;
+	esac
+
+	AR="$AR_host" CC="$CC_host" CXX="$CXX_host" LD="$CXX_host" \
+	CFLAGS="$CFLAGS_host" CXXFLAGS="$CXXFLAGS_host" LDFLAGS="$LDFLAGS_host" \
+	PKGCONFIG=/usr/bin/pkgconfig PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/share/pkgconfig" \
+		python2 bootstrap/bootstrap.py -n --gn-gen-args "${conf}"
+	cd ${wrksrc}
+
+	mkdir -p ${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn/out/Release
+	cp -p ${wrksrc}/qtwebengine/src/3rdparty/chromium/out/Release/gn \
+		${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn/out/Release/
+
+	# Remove gn from SUBDIRS for qtwebengine/src/buildtools
+	sed -i ${wrksrc}/qtwebengine/src/buildtools/buildtools.pro \
+		-e"/gn.file = gn.pro/,+3d"
+}
 
 _cleanup_wrksrc_leak() {
 	if [ -d "${PKGDESTDIR}/usr/lib/cmake" ]; then
@@ -180,6 +253,9 @@ do_configure() {
 			qtwebengine/src/3rdparty/chromium/third_party/pdfium/third_party/base/allocator/partition_allocator/spin_lock.cc \
 			-e 's;"yield";"nop";'
 		;;
+	ppc64le*) # enable webengine but not on BE ppc64 for now
+		sed -i qtwebengine/mkspecs/features/platform.prf -e 's;#ppc64le;;'
+		;;
 	esac
 
 	case "$XBPS_TARGET_MACHINE" in
@@ -210,47 +286,9 @@ do_configure() {
 			ln -sfv ${version}/${d}/private qtbase/include/${d}/private
 		done
 
-		# Bootstrap gn (generate ninja)
-		_msg_cross "Bootstrapping 'gn'"
-		cd ${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn
-		conf='is_clang=false'
-		conf+=' treat_warnings_as_errors=false'
-		conf+=' enable_remoting=false'
-		conf+=' enable_nacl=false'
-		conf+=' use_cups=false'
-		conf+=' use_gconf=false'
-		conf+=' use_gio=false'
-		conf+=' use_gnome_keyring=false'
-		conf+=' use_gtk=false'
-		conf+=' use_kerberos=false'
-		conf+=' linux_use_bundled_binutils=false'
-		conf+=' binutils_path="/usr/bin"'
-		conf+=' use_gold=false'
-		conf+=' use_sysroot=false'
-		conf+=' use_allocator="none"'
-		conf+=' is_android=false'
-
-		sed -i ${wrksrc}/qtwebengine/src/core/config/linux.pri \
-			-e "/equals(MARMV/s;true;false;"
-		case "$XBPS_TARGET_MACHINE" in
-			armv[56]*) conf+=' arm_use_neon=false arm_optionally_use_neon=false';;
-			armv7*)    conf+=' arm_use_neon=true arm_optionally_use_neon=false';;
-			aarch64*)  conf+=' arm_use_neon=true arm_optionally_use_neon=false';;
-		esac
-
-		AR="$AR_host" CC="$CC_host" CXX="$CXX_host" LD="$CXX_host" \
-		CFLAGS="$CFLAGS_host" CXXFLAGS="$CXXFLAGS_host" LDFLAGS="$LDFLAGS_host" \
-		PKGCONFIG=/usr/bin/pkgconfig PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/share/pkgconfig" \
-			python2 bootstrap/bootstrap.py -n --gn-gen-args "${conf}"
-		cd ${wrksrc}
-
-		mkdir -p ${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn/out/Release
-		cp -p ${wrksrc}/qtwebengine/src/3rdparty/chromium/out/Release/gn \
-			${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn/out/Release/
-
-		# Remove gn from SUBDIRS for qtwebengine/src/buildtools
-		sed -i ${wrksrc}/qtwebengine/src/buildtools/buildtools.pro \
-			-e"/gn.file = gn.pro/,+3d"
+		if [ "$build_option_webengine" ]; then
+			_bootstrap_gn
+		fi
 
 		case "$XBPS_TARGET_MACHINE" in
 		mips*)	# sgidefs.h is in /usr/include/asm
@@ -267,7 +305,6 @@ do_configure() {
 			# Assume that RGBA order is correct for big endian CPUs
 			sed -i qtwebengine/src/3rdparty/chromium/skia/config/SkUserConfig.h \
 				-e '/#error Read the comment at this location/d'
-
 			;;
 		esac
 	else
@@ -314,22 +351,29 @@ do_configure() {
 	opts+=" -system-sqlite"
 	opts+=" -system-harfbuzz"
 	# Rely on auto detection (fails if forced for cross builds)
-	# opts+=" -webengine-alsa"
-	opts+=" -no-webengine-embedded-build"
-	opts+=" -webengine-icu"
-	opts+=" -webengine-ffmpeg"
-	opts+=" -webengine-opus"
-	opts+=" -webengine-webp"
-	opts+=" -webengine-pepper-plugins"
-	opts+=" -webengine-printing-and-pdf"
-	opts+=" -webengine-proprietary-codecs"
-	opts+=" -webengine-pulseaudio"
-	opts+=" -webengine-spellchecker"
-	opts+=" -webengine-webrtc"
-	opts+=" -webengine-geolocation"
-	opts+=" -webengine-v8-snapshot"
+	if [ "$build_option_webengine" ]; then
+		# opts+=" -webengine-alsa"
+		opts+=" -no-webengine-embedded-build"
+		opts+=" -webengine-icu"
+		opts+=" -webengine-ffmpeg"
+		opts+=" -webengine-opus"
+		opts+=" -webengine-webp"
+		opts+=" -webengine-pepper-plugins"
+		opts+=" -webengine-printing-and-pdf"
+		opts+=" -webengine-proprietary-codecs"
+		opts+=" -webengine-pulseaudio"
+		opts+=" -webengine-spellchecker"
+		opts+=" -webengine-webrtc"
+		opts+=" -webengine-geolocation"
+		opts+=" -webengine-v8-snapshot"
+	fi
 	opts+=" -silent"
 	# opts+=" -v"
+
+	# make sure to disable webengine on platforms that we don't build it for
+	if [ -z "$build_option_webengine" ]; then
+		opts+=" -skip qtwebengine"
+	fi
 
 	LDFLAGS+=" -Wl,--no-keep-memory"  # needs more than 8GB RAM else
 	if [ -n "$CROSS_BUILD" ]; then
@@ -342,8 +386,10 @@ do_configure() {
 		opts+=" -extprefix /usr"
 		case "$XBPS_TARGET_MACHINE" in
 		arm*|mips*)
-			# V8 snapshot can't be built with a 64 bit host compiler
-			opts+=" -no-webengine-v8-snapshot"
+			if [ "$build_option_webengine" ]; then
+				# V8 snapshot can't be built with a 64 bit host compiler
+				opts+=" -no-webengine-v8-snapshot"
+			fi
 			;;
 		esac
 

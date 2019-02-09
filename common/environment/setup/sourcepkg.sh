@@ -3,11 +3,16 @@
 
 ## VARIABLES
 unset -v pkgname version revision short_desc homepage license maintainer
-unset -v only_for_archs distfiles checksum build_style nocross broken
+unset -v only_for_archs distfiles checksum build_style build_helper nocross broken
 unset -v configure_script configure_args wrksrc build_wrksrc create_wrksrc
 unset -v make_build_args make_check_args make_install_args
 unset -v make_build_target make_check_target make_install_target
-unset -v make_cmd python_version stackage
+unset -v make_cmd meson_cmd gem_cmd fetch_cmd
+unset -v python_version stackage
+unset -v cmake_builddir meson_builddir
+unset -v meson_crossfile
+unset -v gemspec
+unset -v go_import_path go_package go_mod_mode
 unset -v patch_args disable_parallel_build keep_libtool_archives make_use_env
 unset -v reverts subpackages makedepends hostmakedepends checkdepends depends restricted
 unset -v nopie build_options build_options_default bootstrap repository reverts

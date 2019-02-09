@@ -313,6 +313,7 @@ setup_pkg() {
         export XBPS_TARGET_MACHINE=${XBPS_ARCH:-$XBPS_MACHINE}
         unset XBPS_CROSS_BASE XBPS_CROSS_LDFLAGS XBPS_CROSS_FFLAGS
         unset XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_CPPFLAGS
+        unset XBPS_CROSS_RUSTFLAGS XBPS_CROSS_RUST_TARGET
 
         XBPS_INSTALL_XCMD="$XBPS_INSTALL_CMD"
         XBPS_QUERY_XCMD="$XBPS_QUERY_CMD"
@@ -325,9 +326,6 @@ setup_pkg() {
 
     export XBPS_INSTALL_XCMD XBPS_QUERY_XCMD XBPS_RECONFIGURE_XCMD \
         XBPS_REMOVE_XCMD XBPS_RINDEX_XCMD XBPS_UHELPER_XCMD
-
-    export XBPS_GCC_VERSION_MAJOR XBPS_GCC_VERSION_MINOR XBPS_GCC_VERSION_BUILD \
-        XBPS_GCC_VERSION
 
     # Source all sourcepkg environment setup snippets.
     # Source all subpkg environment setup snippets.
@@ -542,13 +540,14 @@ setup_pkg() {
         export NM="nm"
         export READELF="readelf"
         export RUST_TARGET="$XBPS_RUST_TARGET"
-        # Unse cross evironment variables
+        # Unset cross evironment variables
         unset CC_target CXX_target CPP_target GCC_target FC_target LD_target AR_target AS_target
         unset RANLIB_target STRIP_target OBJDUMP_target OBJCOPY_target NM_target READELF_target
         unset CFLAGS_target CXXFLAGS_target CPPFLAGS_target LDFLAGS_target
         unset CC_host CXX_host CPP_host GCC_host FC_host LD_host AR_host AS_host
         unset RANLIB_host STRIP_host OBJDUMP_host OBJCOPY_host NM_host READELF_host
         unset CFLAGS_host CXXFLAGS_host CPPFLAGS_host LDFLAGS_host
+        unset RUSTFLAGS
     fi
 
     # Setup some specific package vars.
@@ -582,4 +581,12 @@ setup_pkg() {
     fi
 
     source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
+
+    # Source all build-class files that are defined
+    for f in $build_helper; do
+        if [ ! -r $XBPS_BUILDHELPERDIR/${f}.sh ];  then
+            msg_error "$pkgver: cannot find build helper $XBPS_BUILDHELPERDIR/${f}.sh!\n"
+        fi
+        . $XBPS_BUILDHELPERDIR/${f}.sh
+    done
 }

@@ -1,0 +1,190 @@
+Subject: Fix luajit 2.1 FTBFS
+Origin: Upstream
+Forwarded: Not-needed
+Last-Update:
+Bug: 873327
+Acked-by: Gunnar Wolf <gwolf@debian.org>
+Applied-upstream: yes
+
+Index: libaegisub/lua/modules/lpeg.c
+===================================================================
+--- libaegisub/lua/modules/lpeg.c
++++ libaegisub/lua/modules/lpeg.c
+@@ -2334,7 +2334,7 @@ static int matchl (lua_State *L) {
+ }
+ 
+ 
+-static struct luaL_reg pattreg[] = {
++static struct luaL_Reg pattreg[] = {
+   {"match", matchl},
+   {"print", printpat_l},
+   {"locale", locale_l},
+@@ -2360,7 +2360,7 @@ static struct luaL_reg pattreg[] = {
+ };
+ 
+ 
+-static struct luaL_reg metapattreg[] = {
++static struct luaL_Reg metapattreg[] = {
+   {"__add", union_l},
+   {"__pow", star_l},
+   {"__sub", diff_l},
+Index: vendor/luabins/AUTHORS
+===================================================================
+--- vendor/luabins/AUTHORS
++++ vendor/luabins/AUTHORS
+@@ -2,3 +2,4 @@ Luabins authors:
+ ----------------
+ 
+ Alexander Gladysh <agladysh@gmail.com>
++hanxi <hanxi@gmail.com>
+Index: vendor/luabins/README.md
+===================================================================
+--- vendor/luabins/README.md
++++ vendor/luabins/README.md
+@@ -4,6 +4,8 @@ luabins — Lua Binary Serialization Lib
+ Allows to save tuples of primitive Lua types into binary chunks
+ and to load saved data back.
+ 
++NB: You may be better off with luatexts: https://github.com/agladysh/luatexts.
++
+ On serialization
+ ----------------
+ 
+Index: vendor/luabins/src/luabins.c
+===================================================================
+--- vendor/luabins/src/luabins.c
++++ vendor/luabins/src/luabins.c
+@@ -54,7 +54,7 @@ static int l_load(lua_State * L)
+ }
+ 
+ /* luabins Lua module API */
+-static const struct luaL_reg R[] =
++static const struct luaL_Reg R[] =
+ {
+   { "save", l_save },
+   { "load", l_load },
+Index: vendor/luabins/src/luaheaders.h
+===================================================================
+--- vendor/luabins/src/luaheaders.h
++++ vendor/luabins/src/luaheaders.h
+@@ -7,6 +7,16 @@ extern "C" {
+ 
+ #include <lua.h>
+ #include <lauxlib.h>
++
++#if !defined LUA_VERSION_NUM
++#define luaL_Reg luaL_reg
++#endif
++
++#if LUA_VERSION_NUM > 501
++#define luaL_register(L,n,R) (luaL_newlib(L,R))
++#define lua_objlen(L,i) lua_rawlen(L, (i))
++#endif
++
+ #if defined (__cplusplus) && !defined (LUABINS_LUABUILTASCPP)
+ }
+ #endif
+Index: vendor/luabins/src/luainternals.h
+===================================================================
+--- vendor/luabins/src/luainternals.h
++++ vendor/luabins/src/luainternals.h
+@@ -7,6 +7,24 @@
+ #ifndef LUABINS_LUAINTERNALS_H_INCLUDED_
+ #define LUABINS_LUAINTERNALS_H_INCLUDED_
+ 
++#ifndef LUAI_BITSINT
++/*
++* LUAI_BITSINT defines the number of bits in an int.
++*  CHANGE here if Lua cannot automatically detect the number of bits of
++*  your machine. Probably you do not need to change this.
++*
++* avoid overflows in comparison */
++#if INT_MAX-20 < 32760
++#define LUAI_BITSINT    16
++#elif INT_MAX > 2147483640L
++/* int has at least 32 bits */
++#define LUAI_BITSINT    32
++#else
++#error "you must define LUA_BITSINT with number of bits in an integer"
++#endif
++
++#endif // ifndef LUAI_BITSINT
++
+ /*
+ * BEGIN COPY-PASTE FROM Lua 5.1.4 luaconf.h
+ * WARNING: If your Lua config differs, fix this!
+@@ -38,7 +56,6 @@ int luaO_log2 (unsigned int x);
+ /*
+ ** max size of array part is 2^MAXBITS
+ */
+-#define LUAI_BITSINT 32
+ #if LUAI_BITSINT > 26
+ #define MAXBITS		26
+ #else
+Index: vendor/luabins/src/lualess.c
+===================================================================
+--- /dev/null
++++ vendor/luabins/src/lualess.c
+@@ -0,0 +1,32 @@
++/*
++* lualess.h
++* Lua-related definitions for lua-less builds (based on Lua manual)
++* See copyright notice in luabins.h
++*/
++
++#include <stdlib.h>
++
++/*
++* lua_Alloc-compatible allocator to use in Lua-less applications
++* with lbs_SaveBuffer. Based on sample code from Lua 5.1 manual.
++*/
++void * lbs_simplealloc(
++    void * ud,
++    void * ptr,
++    size_t osize,
++    size_t nsize
++  )
++{
++  (void) ud;
++  (void) osize;  /* not used */
++
++  if (nsize == 0)
++  {
++    free(ptr);
++    return NULL;
++  }
++  else
++  {
++    return realloc(ptr, nsize);
++  }
++}
+Index: vendor/luabins/test/test.lua
+===================================================================
+--- vendor/luabins/test/test.lua
++++ vendor/luabins/test/test.lua
+@@ -6,6 +6,8 @@
+ 
+ package.cpath = "./?.so;"..package.cpath
+ 
++local pack = pack or table.pack
++local unpack = unpack or table.unpack
+ local randomseed = 1235134892
+ --local randomseed = os.time()
+ 
+@@ -145,6 +147,7 @@ end
+ -- Test helper functions
+ -- ----------------------------------------------------------------------------
+ 
++luabins = require 'luabins'
+ local luabins_local = require 'luabins'
+ assert(luabins_local == luabins)
+ 
+@@ -281,7 +284,7 @@ check_fail_save(
+     "can't save: unsupported type detected",
+     coroutine.create(function() end)
+   )
+-check_fail_save("can't save: unsupported type detected", newproxy())
++check_fail_save("can't save: unsupported type detected", function()end)
+ 
+ print("---> basic table tests")
+ 

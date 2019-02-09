@@ -1,7 +1,3 @@
-Add sub{u,g}ids for root to create unprivileged containers:
-
-	$ echo "root:1000000:65536" | sudo tee -a /etc/subuid /etc/subgid
-
 Start lxd service:
 
 	$ sudo ln -s /etc/sv/lxd /var/service

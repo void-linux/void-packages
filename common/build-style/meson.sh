@@ -18,6 +18,10 @@ do_configure() {
 			armv*)
 				_MESON_CPU_FAMILY=arm
 				;;
+			ppc|ppc-musl)
+				_MESON_TARGET_ENDIAN=big
+				_MESON_CPU_FAMILY=ppc
+				;;
 			i686*)
 				_MESON_CPU_FAMILY=x86
 				;;
@@ -47,6 +51,10 @@ ld = '${LD}'
 strip = '${STRIP}'
 readelf = '${READELF}'
 pkgconfig = 'pkg-config'
+rust = 'rustc'
+g-ir-scanner = '${XBPS_CROSS_BASE}/usr/bin/g-ir-scanner'
+g-ir-compiler = '${XBPS_CROSS_BASE}/usr/bin/g-ir-compiler'
+g-ir-generate = '${XBPS_CROSS_BASE}/usr/bin/g-ir-generate'
 
 [properties]
 needs_exe_wrapper = true
@@ -106,6 +114,7 @@ EOF
 		--auto-features=enabled \
 		--wrap-mode=nodownload \
 		-Db_lto=true -Db_ndebug=true \
+		-Db_staticpic=true \
 		${configure_args} . ${meson_builddir}
 }
 

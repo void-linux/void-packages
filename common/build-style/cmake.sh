@@ -15,6 +15,7 @@ do_configure() {
 			mips*) _CMAKE_SYSTEM_PROCESSOR=mips ;;
 			ppc64le*) _CMAKE_SYSTEM_PROCESSOR=ppc64le ;;
 			ppc64*) _CMAKE_SYSTEM_PROCESSOR=ppc64 ;;
+			ppc*) _CMAKE_SYSTEM_PROCESSOR=powerpc ;;
 			*) _CMAKE_SYSTEM_PROCESSOR=generic ;;
 		esac
 		if [ -x "${XBPS_CROSS_BASE}/usr/bin/wx-config-gtk3" ]; then
@@ -42,7 +43,7 @@ _EOF
 	fi
 	cmake_args+=" -DCMAKE_INSTALL_PREFIX=/usr"
 
-	if [ -n "$XBPS_DEBUG_PKGS" ]; then
+	if [ -n "$XBPS_DEBUG_PKGS" ] && [ -z $nodebug ]; then
 		cmake_args+=" -DCMAKE_BUILD_TYPE=RelWithDebInfo"
 	else
 		cmake_args+=" -DCMAKE_BUILD_TYPE=Release"

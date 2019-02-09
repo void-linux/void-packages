@@ -3,23 +3,23 @@
 # THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/firefox-i18n".
 #
 pkgname=firefox
-version=64.0
-revision=1
+version=65.0
+revision=2
+build_helper="rust"
 short_desc="Mozilla Firefox web browser"
 maintainer="Juan RP <xtraeme@voidlinux.org>"
 license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
 homepage="https://www.mozilla.org/firefox/"
 distfiles="${MOZILLA_SITE}/${pkgname}/releases/${version}/source/${pkgname}-${version}.source.tar.xz"
-checksum=da40f2f8f1cbf0ddb3454aa9f65bb1a2b2043ca9b1724aecd016337be77d537f
+checksum=75b1b14605d63e8c83b60e0a4020cdb75b8671fb646959da865cbead0c2b466d
 
-only_for_archs="i686 i686-musl x86_64 x86_64-musl"
 lib32disabled=yes
 
 hostmakedepends="autoconf213 unzip zip pkg-config perl python3 yasm rust cargo
- llvm clang nodejs cbindgen"
+ llvm clang nodejs cbindgen python"
 makedepends="nss-devel libjpeg-turbo-devel gtk+-devel gtk+3-devel icu-devel
- pixman-devel sqlite-devel libevent-devel libnotify-devel libvpx-devel
- libXrender-devel libXcomposite-devel libSM-devel libXt-devel
+ pixman-devel sqlite-devel libevent-devel libnotify-devel libvpx5-devel
+ libXrender-devel libXcomposite-devel libSM-devel libXt-devel rust-std
  libXdamage-devel $(vopt_if alsa alsa-lib-devel)
  $(vopt_if dbus dbus-glib-devel) $(vopt_if pulseaudio pulseaudio-devel)
  $(vopt_if startup_notification startup-notification-devel)
@@ -28,8 +28,14 @@ makedepends="nss-devel libjpeg-turbo-devel gtk+-devel gtk+3-devel icu-devel
 depends="nss>=3.37.3 desktop-file-utils hicolor-icon-theme"
 conflicts="firefox-esr>=0"
 
-build_options="alsa dbus pulseaudio startup_notification xscreensaver sndio"
-build_options_default="alsa dbus pulseaudio startup_notification xscreensaver sndio"
+build_options="alsa dbus pulseaudio startup_notification xscreensaver sndio wayland"
+build_options_default="alsa dbus pulseaudio startup_notification xscreensaver sndio wayland"
+
+case $XBPS_TARGET_MACHINE in
+	armv6*)
+		broken="required NEON extensions are not suppored on armv6"
+		;;
+esac
 
 post_extract() {
 	case "$XBPS_TARGET_MACHINE" in
@@ -58,13 +64,20 @@ do_build() {
 	esac
 
 	case "$XBPS_TARGET_MACHINE" in
-	x86_64-musl|i686-musl)
-		echo "ac_add_options --host=${XBPS_TRIPLET}" >>.mozconfig
-		echo "ac_add_options --target=${XBPS_TRIPLET}" >>.mozconfig
+	x86_64*|i686*|arm*)
+		echo "ac_add_options --disable-elf-hack" >>.mozconfig
 		;;
 	esac
 
 	if [ "$CROSS_BUILD" ]; then
+		BINDGEN_INCLUDE_FLAGS=$( $CPP -x c++ -v /dev/null -o /dev/null 2>&1 | \
+			sed -n '/#include <...> search starts here:/,/End of search list./p' | \
+			sed '1,1d;$d' | sed  's/^ /-I/' | paste -s )
+
+		export BINDGEN_CFLAGS="--target=$XBPS_CROSS_TRIPLET \
+			--sysroot=${XBPS_CROSS_BASE} ${BINDGEN_INCLUDE_FLAGS}"
+		export HOST_CC=cc
+		export TARGET_CC="${CC}"
 		export HOST_CFLAGS="${XBPS_CFLAGS}"
 		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
 		export ac_cv_sqlite_secure_delete=yes \
@@ -73,13 +86,36 @@ do_build() {
 			ac_cv_sqlite_dbstat_vtab=yes \
 			ac_cv_sqlite_enable_unlock_notify=yes \
 			ac_cv_prog_hostcxx_works=1
+
+		case "$XBPS_TARGET_MACHINE" in
+			*-musl) _host_triplet=${XBPS_MACHINE%-musl}-unknown-linux-musl;;
+			*) _host_triplet=${XBPS_MACHINE}-unknwon-linux-gnu;;
+		esac
+
 		echo "ac_add_options --target=$XBPS_CROSS_TRIPLET" >>.mozconfig
+		echo "ac_add_options --host=$_host_triplet" >>.mozconfig
+	else
+		echo "ac_add_options --target=$XBPS_TRIPLET" >>.mozconfig
+		echo "ac_add_options --host=$XBPS_TRIPLET" >>.mozconfig
 	fi
+
+	mkdir -p third_party/rust/libloading/.deps
 
 	case "$XBPS_TARGET_MACHINE" in
 	i686*)
 		export CFLAGS+=" -D_FILE_OFFSET_BITS=64"
 		export CXXFLAGS+=" -D_FILE_OFFSET_BITS=64"
+		;;
+	armv7*)
+		export CFLAGS+=" -mfpu=neon -Wno-psabi"
+		export CXXFLAGS+=" -mfpu=neon -Wno-psabi"
+		;;
+	esac
+
+	case "$XBPS_MACHINE" in
+	i686*)
+		# ENOMEM
+		echo "ac_add_options --disable-debug-symbols" >>.mozconfig
 		;;
 	esac
 
@@ -104,6 +140,7 @@ ac_add_options $(vopt_enable dbus)
 ac_add_options $(vopt_enable dbus necko-wifi)
 ac_add_options $(vopt_enable pulseaudio)
 ac_add_options $(vopt_enable startup_notification startup-notification)
+ac_add_options --enable-default-toolkit=$(vopt_if wayland 'cairo-gtk3-wayland' 'cairo-gtk3')
 !
 
 	rm -f old-configure
@@ -125,4 +162,10 @@ do_install() {
 
 	# https://bugzilla.mozilla.org/show_bug.cgi?id=658850
 	ln -sf firefox ${DESTDIR}/usr/lib/firefox/firefox-bin
+
+	vbin ${FILESDIR}/firefox-x11
+	vbin ${FILESDIR}/firefox-wayland
+
+	# Default to x11 for now, FF wayland is somewhat broken
+	ln -sf /usr/bin/firefox-x11 ${DESTDIR}/usr/bin/firefox
 }

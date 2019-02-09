@@ -33,7 +33,7 @@ do_build() {
 			# default behavior.
 			go_mod_mode=
 		fi
-		go build -o "${GOPATH}/bin/$(basename ${go_package})" -mod="${go_mod_mode}" -x -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
+		go install -mod="${go_mod_mode}" -x -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
 	else
 		# Otherwise, build using GOPATH
 		go get -x -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}

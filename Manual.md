@@ -24,6 +24,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 		* [Package defined repositories](#pkg_defined_repo)
 	* [Checking for new upstream releases](#updates)
 	* [Build style scripts](#build_scripts)
+	* [Build helper scripts](#build_helper)
 	* [Functions](#functions)
 	* [Build options](#build_options)
 		* [Runtime dependencies](#deps_runtime)
@@ -355,7 +356,7 @@ as part of the source package.
 set to `<masterdir>/builddir`. The package `wrksrc` is always stored
 in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
-- `XBPS_MACHINE` The machine architecture as returned by `uname -m`.
+- `XBPS_MACHINE` The machine architecture as returned by `xbps-uhelper arch`.
 
 - `XBPS_SRCDISTDIR` Full path to where the `source distfiles` are stored, i.e `$XBPS_HOSTDIR/sources`.
 
@@ -368,6 +369,8 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 - `XBPS_WRAPPERDIR` Full path to where xbps-src's wrappers for utilities are stored.
 
 - `XBPS_CROSS_BASE` Full path to where cross-compile dependencies are installed, varies according to the target architecture triplet. i.e `aarch64` -> `aarch64-unknown-linux-gnu`.
+
+- `XBPS_RUST_TARGET` The target architecture triplet used by `rustc` and `cargo`.
 
 <a id="available_vars"></a>
 ### Available variables
@@ -487,6 +490,9 @@ binaries sources or when the program is written in assembly. Example:
 
 - `build_style` This specifies the `build method` for a package. Read below to know more
 about the available package `build methods` or effect of leaving this not set.
+
+- `build_helper` Whitespace-separated list of files in `common/build-helper` to be
+sourced and its variables be made available on the template. i.e. `build_helper="rust"`.
 
 - `configure_script` The name of the `configure` script to execute at the `configure` phase if
 `${build_style}` is set to `configure` or `gnu-configure` build methods.
@@ -655,6 +661,8 @@ the package is updated, reinstalled or removed. This is mostly useful for kernel
 that shouldn't remove the kernel files when they are removed in case it might break the
 user's booting and module loading. Otherwise in the majority of cases it should not be
 used.
+
+- `fetch_cmd` Executable to be used to fetch URLs in `distfiles` during the `do_fetch` phase.
 
 <a id="explain_depends"></a>
 #### About the many types of `depends` variable.
@@ -854,6 +862,20 @@ Environment variables for a specific `build_style` can be declared in a filename
 matching the `build_style` name, Example:
 
     `common/environment/build-style/gnu-configure.sh`
+
+<a id="build_helper"></a>
+### build helper scripts
+
+The `build_helper` variable specifies shell snippets to be sourced that will create a
+suitable environment for working with certain sets of packages.
+
+The current list of available `build_helper` scripts is the following:
+
+- `rust` specifies environment variables required for cross-compiling crates via cargo and
+for compiling cargo -sys crates.
+
+- `gir` specifies dependencies for native and cross builds to deal with
+GObject Introspection
 
 <a id="functions"></a>
 ### Functions
