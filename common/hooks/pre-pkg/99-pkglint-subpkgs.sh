@@ -35,10 +35,10 @@ hook() {
         | tr " " "\n" | sort)"
 
     for s in $subpkgs; do
-        grep -q "^$s" <<< "$matches" ||
+        grep -q "^$s$" <<< "$matches" ||
             msg_warn "${s}_package() defined but will never be built.\n"
     done
 
-    grep -q "^$pkgname" <<< "$matches" &&
+    grep -q "^$pkgname$" <<< "$matches" &&
         msg_warn "$pkgname is sourcepkg but is in subpackages=.\n" || :
 }
