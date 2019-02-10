@@ -1,0 +1,289 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 45682b44..00018bfb 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -7,7 +7,8 @@ cmake_policy(SET CMP0054 NEW)
+ 
+ project(cryfs)
+ 
+-include(cmake-utils/utils.cmake)
++list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake-utils)
++include(utils)
+ 
+ require_gcc_version(5.0)
+ require_clang_version(4.0)
+diff --git a/README.md b/README.md
+index 1309fc0d..41a99aef 100644
+--- a/README.md
++++ b/README.md
+@@ -56,14 +56,15 @@ Requirements
+   - libFUSE version >= 2.8.6 (including development headers), on Mac OS X instead install osxfuse from https://osxfuse.github.io/
+   - Python >= 2.7
+   - OpenMP
++  - Libunwind
+ 
+ You can use the following commands to install these requirements
+ 
+         # Ubuntu
+-        $ sudo apt-get install git g++ cmake make libcurl4-openssl-dev libboost-filesystem-dev libboost-system-dev libboost-chrono-dev libboost-program-options-dev libboost-thread-dev libssl-dev libfuse-dev python
++        $ sudo apt install git g++ cmake make libcurl4-openssl-dev libboost-filesystem-dev libboost-system-dev libboost-chrono-dev libboost-program-options-dev libboost-thread-dev libssl-dev libfuse-dev python libunwind-dev
+ 
+         # Fedora
+-        sudo dnf install git gcc-c++ cmake make libcurl-devel boost-devel boost-static openssl-devel fuse-devel python
++        sudo dnf install git gcc-c++ cmake make libcurl-devel boost-devel boost-static openssl-devel fuse-devel python libunwind-devel
+ 
+         # Macintosh
+         brew install cmake boost openssl libomp
+diff --git a/cmake-utils/FindLibunwind.cmake b/cmake-utils/FindLibunwind.cmake
+new file mode 100644
+index 00000000..a41f7dd6
+--- /dev/null
++++ b/cmake-utils/FindLibunwind.cmake
+@@ -0,0 +1,44 @@
++# Taken from https://github.com/monero-project/monero/blob/31bdf7bd113c2576fe579ef3a25a2d8fef419ffc/cmake/FindLibunwind.cmake
++# modifications:
++# - remove linkage against gcc_eh because it was causing segfaults in various of our unit tests
++
++# - Try to find libunwind
++# Once done this will define
++#
++#  LIBUNWIND_FOUND - system has libunwind
++#  LIBUNWIND_INCLUDE_DIR - the libunwind include directory
++#  LIBUNWIND_LIBRARIES - Link these to use libunwind
++#  LIBUNWIND_DEFINITIONS - Compiler switches required for using libunwind
++
++# Copyright (c) 2006, Alexander Dymo, <adymo@kdevelop.org>
++#
++# Redistribution and use is allowed according to the terms of the BSD license.
++# For details see the accompanying COPYING-CMAKE-SCRIPTS file.
++
++find_path(LIBUNWIND_INCLUDE_DIR libunwind.h
++        /usr/include
++        /usr/local/include
++        )
++
++find_library(LIBUNWIND_LIBRARIES NAMES unwind )
++if(NOT LIBUNWIND_LIBRARIES STREQUAL "LIBUNWIND_LIBRARIES-NOTFOUND")
++    if (CMAKE_COMPILER_IS_GNUCC)
++        set(LIBUNWIND_LIBRARIES "${LIBUNWIND_LIBRARIES}")
++    endif()
++endif()
++
++# some versions of libunwind need liblzma, and we don't use pkg-config
++# so we just look whether liblzma is installed, and add it if it is.
++# It might not be actually needed, but doesn't hurt if it is not.
++# We don't need any headers, just the lib, as it's privately needed.
++message(STATUS "looking for liblzma")
++find_library(LIBLZMA_LIBRARIES lzma )
++if(NOT LIBLZMA_LIBRARIES STREQUAL "LIBLZMA_LIBRARIES-NOTFOUND")
++    message(STATUS "liblzma found")
++    set(LIBUNWIND_LIBRARIES "${LIBUNWIND_LIBRARIES};${LIBLZMA_LIBRARIES}")
++endif()
++
++include(FindPackageHandleStandardArgs)
++find_package_handle_standard_args(Libunwind "Could not find libunwind" LIBUNWIND_INCLUDE_DIR LIBUNWIND_LIBRARIES)
++# show the LIBUNWIND_INCLUDE_DIR and LIBUNWIND_LIBRARIES variables only in the advanced view
++mark_as_advanced(LIBUNWIND_INCLUDE_DIR LIBUNWIND_LIBRARIES )
+\ No newline at end of file
+diff --git a/src/cpp-utils/CMakeLists.txt b/src/cpp-utils/CMakeLists.txt
+index 500e6ec1..5f26cfcd 100644
+--- a/src/cpp-utils/CMakeLists.txt
++++ b/src/cpp-utils/CMakeLists.txt
+@@ -60,13 +60,13 @@ set(SOURCES
+ 
+ add_library(${PROJECT_NAME} STATIC ${SOURCES})
+ 
+-
+ if(NOT MSVC)
+-  find_package(Backtrace REQUIRED)
+-  target_include_directories(${PROJECT_NAME} PUBLIC ${Backtrace_INCLUDE_DIRS})
+-  target_link_libraries(${PROJECT_NAME} PUBLIC ${Backtrace_LIBRARIES})
++    find_package(Libunwind REQUIRED)
++    target_include_directories(${PROJECT_NAME} PRIVATE ${LIBUNWIND_INCLUDE_DIR})
++    target_link_libraries(${PROJECT_NAME} PRIVATE ${LIBUNWIND_LIBRARIES})
++    target_compile_definitions(${PROJECT_NAME} PRIVATE ${LIBUNWIND_DEFINITIONS})
+ else()
+-  target_link_libraries(${PROJECT_NAME} PUBLIC DbgHelp)
++    target_link_libraries(${PROJECT_NAME} PUBLIC DbgHelp)
+ endif()
+ 
+ if (NOT MSVC)
+diff --git a/src/cpp-utils/assert/backtrace_nonwindows.cpp b/src/cpp-utils/assert/backtrace_nonwindows.cpp
+index 8e26df5a..acec6973 100644
+--- a/src/cpp-utils/assert/backtrace_nonwindows.cpp
++++ b/src/cpp-utils/assert/backtrace_nonwindows.cpp
+@@ -1,17 +1,14 @@
+ #if !defined(_MSC_VER)
+ 
+-#include "backtrace.h"
+-#include <execinfo.h>
+ #include <csignal>
+-#include <iostream>
+-#include <unistd.h>
+ #include <cxxabi.h>
+-#include <string>
+ #include <sstream>
+-#include <string>
+-#include <dlfcn.h>
++
+ #include "../logging/logging.h"
+ 
++#define UNW_LOCAL_ONLY
++#include <libunwind.h>
++
+ // TODO Add file and line number on non-windows
+ 
+ using std::string;
+@@ -29,7 +26,12 @@ namespace {
+             demangledName = abi::__cxa_demangle(mangledName.c_str(), NULL, NULL, &status);
+             if (status == 0) {
+                 result = demangledName;
++            } else if (status == -2) {
++                // mangledName was not a c++ mangled name, probably because it's a C name like for static
++                // initialization or stuff. Let's just return the name instead.
++                result = mangledName;
+             } else {
++                // other error
+                 result = "[demangling error " + std::to_string(status) + "]" + mangledName;
+             }
+             free(demangledName);
+@@ -40,46 +42,55 @@ namespace {
+         }
+     }
+ 
+-    void pretty_print(std::ostream& str, const void *addr) {
+-        Dl_info info;
+-        if (0 == dladdr(addr, &info)) {
+-            str << "[failed parsing line]";
++    void pretty_print(std::ostringstream& str, unw_cursor_t* cursor) {
++        constexpr unsigned int MAXNAMELEN=256;
++        char name[MAXNAMELEN];
++        unw_word_t offp = 0, ip = 0;
++
++        int status = unw_get_reg(cursor, UNW_REG_IP, &ip);
++        if (0 != status) {
++            str << "[unw_get_reg error: " << status << "]: ";
+         } else {
+-            if (nullptr == info.dli_fname) {
+-                str << "[no dli_fname]";
+-            } else {
+-                str << info.dli_fname;
+-            }
+-            str << ":" << std::hex << info.dli_fbase << " ";
+-            if (nullptr == info.dli_sname) {
+-                str << "[no symbol name]";
+-            } else if (info.dli_sname[0] == '_') {
+-                // is a mangled name
+-                str << demangle(info.dli_sname);
+-            } else {
+-                // is not a mangled name
+-                str << info.dli_sname;
+-            }
+-            str << " : " << std::hex << info.dli_saddr;
++            str << "0x" << std::hex << ip << ": ";
+         }
+-    }
+ 
+-    string backtrace_to_string(void *array[], size_t size) {
+-        ostringstream result;
+-        for (size_t i = 0; i < size; ++i) {
+-            result << "#" << std::dec << i << " ";
+-            pretty_print(result, array[i]);
+-            result << "\n";
++        status = unw_get_proc_name(cursor, name, MAXNAMELEN, &offp);
++        if (0 != status) {
++            str << "[unw_get_proc_name error: " << status << "]";
++        } else {
++            str << demangle(name);
+         }
+-        return result.str();
++        str << " +0x" << std::hex << offp;
+     }
+ }
+ 
+ 	string backtrace() {
+-		constexpr unsigned int MAX_SIZE = 100;
+-		void *array[MAX_SIZE];
+-		size_t size = ::backtrace(array, MAX_SIZE);
+-		return backtrace_to_string(array, size);
++        std::ostringstream result;
++
++        unw_context_t uc;
++        int status = unw_getcontext(&uc);
++        if (0 != status) {
++            return "[unw_getcontext error: " + std::to_string(status) + "]";
++        }
++
++        unw_cursor_t cursor;
++        status = unw_init_local(&cursor, &uc);
++        if (0 != status) {
++            return "[unw_init_local error: " + std::to_string(status) + "]";
++        }
++
++
++        size_t line = 0;
++        while ((status = unw_step(&cursor)) > 0) {
++            result << "#" << std::dec << (line++) << " ";
++            pretty_print(result, &cursor);
++            result << "\n";
++        }
++        if (status != 0) {
++            result << "[unw_step error :" << status << "]";
++        }
++
++        return result.str();
+ 	}
+ 
+ namespace {
+diff --git a/test/cpp-utils/assert/backtrace_test.cpp b/test/cpp-utils/assert/backtrace_test.cpp
+index 769ae8a2..f8335501 100644
+--- a/test/cpp-utils/assert/backtrace_test.cpp
++++ b/test/cpp-utils/assert/backtrace_test.cpp
+@@ -25,11 +25,6 @@ TEST(BacktraceTest, ContainsBacktrace) {
+ }
+ 
+ #if !(defined(_MSC_VER) && defined(NDEBUG))
+-TEST(BacktraceTest, ContainsExecutableName) {
+-    string backtrace = cpputils::backtrace();
+-    EXPECT_THAT(backtrace, HasSubstr("cpp-utils-test"));
+-}
+-
+ TEST(BacktraceTest, ContainsTopLevelLine) {
+     string backtrace = cpputils::backtrace();
+     EXPECT_THAT(backtrace, HasSubstr("BacktraceTest"));
+@@ -86,22 +81,22 @@ TEST(BacktraceTest, DoesntCrashOnCaughtException) {
+ #if !(defined(_MSC_VER) && defined(NDEBUG))
+ TEST(BacktraceTest, ShowBacktraceOnNullptrAccess) {
+ 	auto output = call_process_exiting_with_nullptr_violation();
+-	EXPECT_THAT(output, HasSubstr("cpp-utils-test_exit_signal"));
++	EXPECT_THAT(output, HasSubstr("cpputils::(anonymous namespace)::sigsegv_handler(int)"));
+ }
+ 
+ TEST(BacktraceTest, ShowBacktraceOnSigSegv) {
+ 	auto output = call_process_exiting_with_sigsegv();
+-	EXPECT_THAT(output, HasSubstr("cpp-utils-test_exit_signal"));
++	EXPECT_THAT(output, HasSubstr("cpputils::(anonymous namespace)::sigsegv_handler(int)"));
+ }
+ 
+ TEST(BacktraceTest, ShowBacktraceOnUnhandledException) {
+ 	auto output = call_process_exiting_with_exception("my_exception_message");
+-	EXPECT_THAT(output, HasSubstr("cpp-utils-test_exit_signal"));
++	EXPECT_THAT(output, HasSubstr("cpputils::(anonymous namespace)::sigabrt_handler(int)"));
+ }
+ 
+ TEST(BacktraceTest, ShowBacktraceOnSigIll) {
+ 	auto output = call_process_exiting_with_sigill();
+-	EXPECT_THAT(output, HasSubstr("cpp-utils-test_exit_signal"));
++	EXPECT_THAT(output, HasSubstr("cpputils::(anonymous namespace)::sigill_handler(int)"));
+ }
+ #else
+ TEST(BacktraceTest, ShowBacktraceOnNullptrAccess) {
+@@ -128,7 +123,7 @@ TEST(BacktraceTest, ShowBacktraceOnSigIll) {
+ #if !defined(_MSC_VER)
+ TEST(BacktraceTest, ShowBacktraceOnSigAbrt) {
+ 	auto output = call_process_exiting_with_sigabrt();
+-	EXPECT_THAT(output, HasSubstr("cpp-utils-test_exit_signal"));
++	EXPECT_THAT(output, HasSubstr("cpputils::(anonymous namespace)::sigabrt_handler(int)"));
+ }
+ 
+ TEST(BacktraceTest, ShowBacktraceOnSigAbrt_ShowsCorrectSignalName) {
