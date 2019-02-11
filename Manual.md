@@ -356,7 +356,7 @@ as part of the source package.
 set to `<masterdir>/builddir`. The package `wrksrc` is always stored
 in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
-- `XBPS_MACHINE` The machine architecture as returned by `uname -m`.
+- `XBPS_MACHINE` The machine architecture as returned by `xbps-uhelper arch`.
 
 - `XBPS_SRCDISTDIR` Full path to where the `source distfiles` are stored, i.e `$XBPS_HOSTDIR/sources`.
 
