@@ -668,6 +668,21 @@ used.
 
 - `fetch_cmd` Executable to be used to fetch URLs in `distfiles` during the `do_fetch` phase.
 
+- `archs` Whitespace separated list of architectures that a package can be
+built for.
+Examples:
+
+	```
+	# Build package only for musl architectures
+	archs="*-musl"
+	# Build package for x86_64-musl and any non-musl architecture
+	archs="x86_64-musl ~*-musl"
+	# Default value (all arches)
+	archs="*"
+	# Packages that do not depend on architecture-specific objects
+	archs=noarch
+	```
+
 <a id="explain_depends"></a>
 #### About the many types of `depends` variable.
 
