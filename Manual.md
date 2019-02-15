@@ -488,6 +488,8 @@ where the program really only will ever work on certain architectures, like
 binaries sources or when the program is written in assembly. Example:
 `only_for_archs="x86_64 armv6l"`.
 
+> NOTE: `only_for_archs` is deprecated and must be replaced by `archs=`
+
 - `build_style` This specifies the `build method` for a package. Read below to know more
 about the available package `build methods` or effect of leaving this not set.
 
@@ -564,6 +566,8 @@ Example: `conf_files="/etc/foo.conf /etc/foo2.conf /etc/foo/*.conf"`.
 
 - `noarch` If set, the binary package is not architecture specific and can be shared
 by all supported architectures.
+
+> NOTE: `noarch` is deprecated and must be replaced by `archs=`
 
 - `repository` Defines the repository in which the package will be placed. See
   *Repositories* for a list of valid repositories.
