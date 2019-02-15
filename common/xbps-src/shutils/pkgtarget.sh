@@ -3,7 +3,7 @@
 check_pkg_arch() {
     local cross="$1" _arch f match nonegation
 
-    if [ -n "$archs" -o "${archs// /}" != "noarch" ]; then
+    if [ -n "$archs" -a "${archs// /}" != "noarch" ]; then
         if [ -n "$cross" ]; then
             _arch="$XBPS_TARGET_MACHINE"
         elif [ -n "$XBPS_ARCH" ]; then
