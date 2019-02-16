@@ -1,7 +1,7 @@
 lib32disabled=yes
 hostmakedepends+=" ruby"
 depends+=" ruby"
-noarch=yes
+archs=noarch
 
 # default to rubygems
 if [ -z "$distfiles" ]; then
