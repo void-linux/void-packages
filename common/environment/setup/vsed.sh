@@ -6,23 +6,41 @@
 # call.
 
 vsed() {
-	local files=() regexes=() OPTIND
+	local files=() regexes=() OPTIND OPTSTRING="ie:" has_inline=
 
-	while getopts ":i:e:" opt; do
+	eval set -- $(getopt -s bash "$OPTSTRING" "$@");
+
+	while getopts "$OPTSTRING" opt; do
 		case $opt in
-			i) files+=("$OPTARG") ;;
+			i) has_inline=1 ;;
 			e) regexes+=("$OPTARG") ;;
 			*) ;;
 		esac
 	done
 
-	if [ ${#files[@]} -eq 0 ]; then
-		msg_red "$pkgver: vsed: no files specified with -i.\n"
+	if ! [ "$has_inline" ]; then
+		msg_red "$pkgver: vsed: you must specify -i.\n"
 		return 1
 	fi
 
+	shift $(($OPTIND - 1))
+
+	if [ ${#regexes[@]} -eq 0 ] && [ $# -ge 2 ]; then
+		regexes+=("$1")
+		shift
+	fi
+
 	if [ ${#regexes[@]} -eq 0 ]; then
-		msg_red "$pkgver: vsed: no regexes specified with -e.\n"
+		msg_red "$pkgver: vsed: no regexes specified.\n"
+		return 1
+	fi
+
+	for i; do
+		files+=("$i")
+	done
+
+	if [ ${#files[@]} -eq 0 ]; then
+		msg_red "$pkgver: vsed: no files specified.\n"
 		return 1
 	fi
 
