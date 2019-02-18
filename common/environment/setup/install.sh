@@ -13,7 +13,7 @@ _noglob_helper() {
 }
 
 # Apply _noglob to v* commands
-for cmd in vinstall vcopy vmove vmkdir vbin vman vdoc vconf vsconf vlicense vsv; do
+for cmd in vinstall vcopy vmove vmkdir vbin vman vdoc vconf vsconf vlicense vsv vsed; do
        alias ${cmd}="set -f; _noglob_helper _${cmd}"
 done
 
