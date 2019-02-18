@@ -5,12 +5,33 @@
 # make it execute arbirtrary commands via passing '; cmd' to a vsed
 # call.
 
-vsed() {
+# This provides the extglob function to expand wildcards in the wrksrc
+expand_wrksrc() {
+	local result= glob= file=
+
+	(
+		set -f
+		for glob in $@; do
+			files=$(echo "${wrksrc}/${glob}")
+			set +f
+			for file in $files; do
+				result+="${blank}${file#$wrksrc/}"
+				blank=" "
+			done
+		done
+		echo "$result"
+	)
+}
+
+_vsed() {
 	local files=() regexes=() OPTIND
 
 	while getopts ":i:e:" opt; do
 		case $opt in
-			i) files+=("$OPTARG") ;;
+			i) 
+				for f in $(expand_wrksrc "$OPTARG"); do
+					files+=("$f")
+				done ;;
 			e) regexes+=("$OPTARG") ;;
 			*) ;;
 		esac
