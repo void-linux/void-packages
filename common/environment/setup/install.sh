@@ -209,10 +209,6 @@ _vmove() {
 		break
 	done
 
-	if [ "$files" = "all" ]; then
-		files="*"
-	fi
-
 	if [ -n "$XBPS_PKGDESTDIR" ]; then
 		_pkgdestdir="$PKGDESTDIR"
 		_destdir="$DESTDIR"
