@@ -20,6 +20,10 @@ binary-bootstrap [arch]
     from this architecture, and its required xbps utilities. The <masterdir>
     will be initialized for chroot operations.
 
+binary-bootstrap-host
+    Install bootstrap packages from host repositories onto the host itself.
+    This can be used combined with chroot-style none
+
 bootstrap
     Build and install from source the bootstrap packages into <masterdir>.
 
@@ -319,6 +323,46 @@ install_bbootstrap() {
     chroot_prepare $XBPS_TARGET_PKG || msg_error "Failed to initialize chroot!\n"
     chroot_check
     chroot_handler clean
+}
+
+install_bbootstrap_host() {
+  if [ -z "${XBPS_ALLOW_CHROOT_BREAKOUT}" -o "${XBPS_ALLOW_CHROOT_BREAKOUT}" != "yes" ]; then
+    msg_red "You're trying to install bootstrap packages on your host, this may not be what you want\n"
+    msg_red "If you're sure about this run 'echo XBPS_ALLOW_CHROOT_BREAKOUT=yes >> etc/conf'\n"
+    exit 1;
+  fi
+
+  msg_normal "Installing bootstrap on host from binary package repositories...\n";
+  # Grab all requirements from base-chroot and filter out conflicting packages
+  local packages="$(xbps-query -Rx base-chroot | sed 's:>=.*::' | grep -vf <(xbps-query -l | awk '$1 == "ii" {sub(/-[^-]+$/,"",$2);print "^\\(chroot-\\)\\?"$2"$"}'))";
+  # Install non-conflicting packages
+  xbps-install -Sy ${packages};
+  msg_normal "Installed bootstrap successfully!\n"
+  if [ -d "$XBPS_MASTERDIR" ]; then
+    # builddir and destdir, may be removed if empty
+    [ -d "${XBPS_MASTERDIR}/builddir" ] && rmdir "${XBPS_MASTERDIR}/builddir";
+    [ -d "${XBPS_MASTERDIR}/destdir" ] && rmdir "${XBPS_MASTERDIR}/destdir";
+
+    rmdir "$XBPS_MASTERDIR" &>/dev/null;
+    if [ $? -ne 0 ]; then
+      ls -lisah $XBPS_MASTERDIR;
+      msg_error "Failed to remove masterdir is it not empty?\n"
+    fi
+  fi
+
+  ln -s / $XBPS_MASTERDIR &>/dev/null;
+  if [ $? -ne 0 ]; then
+    msg_error "Failed to symlink masterdir to / does the directory still exist?\n"
+  fi
+
+  msg_normal "Symlinked masterdir to root\n"
+
+  # Tell xbps-src we bootstrapped this manually without installing base-chroot
+  touch $XBPS_MASTERDIR/.xbps_manual_boostrap;
+
+  chroot_prepare || msg_error "Failed to initialize chroot!\n"
+  chroot_check
+  chroot_handler clean
 }
 
 reconfigure_bootstrap_pkgs() {
@@ -663,6 +707,9 @@ reconfigure_bootstrap_pkgs
 case "$XBPS_TARGET" in
     binary-bootstrap)
         install_bbootstrap ${XBPS_TARGET_PKG:=$XBPS_MACHINE}
+        ;;
+    binary-bootstrap-host)
+        install_bbootstrap_host;
         ;;
     bootstrap)
         # bootstrap from sources

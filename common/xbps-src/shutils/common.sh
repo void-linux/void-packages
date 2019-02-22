@@ -383,7 +383,7 @@ setup_pkg() {
     esac
 
     # Check if base-chroot is already installed.
-    if [ -z "$bootstrap" -a "z$show_problems" != "zignore-problems" ]; then
+    if [ -z "$bootstrap" -a "z$show_problems" != "zignore-problems" -a ! -f "${XBPS_MASTERDIR}/.xbps_manual_boostrap" ]; then
         check_installed_pkg base-chroot-0.1_1
         if [ $? -ne 0 ]; then
             msg_red "${pkg} is not a bootstrap package and cannot be built without it.\n"
