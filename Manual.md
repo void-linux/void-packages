@@ -146,6 +146,9 @@ the `distfiles` variable or `do_fetch()` function.
 - `extract` This phase extracts the `distfiles` files into `$wrksrc` or executes the `do_extract()`
 function, which is the directory to be used to compile the `source package`.
 
+- `patch` This phase applies all patches in the patches directory of the package and
+can be used to perform other operations before configuring the package.
+
 - `configure` This phase executes the `configuration` of a `source package`, i.e `GNU configure scripts`.
 
 - `build` This phase compiles/prepares the `source files` via `make` or any other compatible method.
@@ -535,7 +538,7 @@ if `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
 build methods. By default set to `install`.
 
 - `patch_args` The arguments to be passed in to the `patch(1)` command when applying
-patches to the package sources after `do_extract()`. Patches are stored in
+patches to the package sources during `do_patch()`. Patches are stored in
 `srcpkgs/<pkgname>/patches` and must be in `-p0` format. By default set to `-Np0`.
 
 - `disable_parallel_build` If set the package won't be built in parallel
@@ -914,7 +917,13 @@ package is downloaded, compiled and installed.
 
 - `post_extract()` Actions to execute after `do_extract()`.
 
-- `pre_configure()` Actions to execute after `post_extract()`.
+- `pre_patch()` Actions to execute after `post_extract()`.
+
+- `do_patch()` if defined use it to prepare the build environment and run hooks to apply patches.
+
+- `post_patch()` Actions to execute after `do_patch()`.
+
+- `pre_configure()` Actions to execute after `post_patch()`.
 
 - `do_configure()` Actions to execute to configure the package; `${configure_args}` should
 still be passed in if it's a GNU configure script.
@@ -944,7 +953,7 @@ Current working directory for functions is set as follows:
 
 - For do_fetch, post_fetch: `XBPS_BUILDDIR`.
 
-- For do_extract, post_extract: `wrksrc`.
+- For do_extract, post_extract, pre_patch, do_patch, post_patch: `wrksrc`.
 
 - For pre_configure through post_install: `build_wrksrc`
 if it is defined, otherwise `wrksrc`.
