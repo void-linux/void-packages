@@ -1,9 +1,7 @@
 #
 # This helper is for templates using meson.
 #
-do_configure() {
-	: ${meson_cmd:=meson}
-	: ${meson_builddir:=build}
+do_patch() {
 	: ${meson_crossfile:=xbps_meson.cross}
 
 	if [ "$CROSS_BUILD" ]; then
@@ -71,6 +69,16 @@ cpu_family = '${_MESON_CPU_FAMILY}'
 cpu = '${_MESON_TARGET_CPU}'
 endian = '${_MESON_TARGET_ENDIAN}'
 EOF
+
+		unset _MESON_CPU_FAMILY _MESON_TARGET_CPU _MESON_TARGET_ENDIAN
+	fi
+}
+
+do_configure() {
+	: ${meson_cmd:=meson}
+	: ${meson_builddir:=build}
+
+	if [ "$CROSS_BUILD" ]; then
 		configure_args+=" --cross-file=${meson_crossfile}"
 
 		# Meson tries to compile natively with CC, CXX, LD, AR 
@@ -88,8 +96,6 @@ EOF
 		# is set, so set the PKG_CONFIG variable to tell Meson which pkg-config
 		# it should use when searching for stuff in the build machine
 		export PKG_CONFIG="/usr/bin/pkg-config"
-
-		unset _MESON_CPU_FAMILY _MESON_TARGET_CPU _MESON_TARGET_ENDIAN
 	fi
 
 	# The binutils ar cannot perform LTO on static libraries so we have to use
