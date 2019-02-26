@@ -1,119 +1,51 @@
-diff --git pal/shared/gpuopen/CMakeLists.txt pal/shared/gpuopen/CMakeLists.txt
-index 592d556..8b73198 100644
---- pal/shared/gpuopen/CMakeLists.txt
-+++ pal/shared/gpuopen/CMakeLists.txt
-@@ -179,6 +179,10 @@ if(UNIX)
-         src/posix/ddPosixSocket.cpp
-         src/socketMsgTransport.cpp
-     )
-+    check_symbol_exists(seed48_r stdlib.h HAVE_RAND48)
-+    if(NOT HAVE_RAND48)
-+	    target_sources(gpuopen PRIVATE src/posix/ddRand48.c)
-+    endif()
- endif()
- 
- ### Helper Classes ###
+From a9dc984a35f0f522e3a1ec0d310facb3246a5d0f Mon Sep 17 00:00:00 2001
+From: John Zimmermann <johnz@posteo.net>
+Date: Fri, 25 Jan 2019 13:47:21 +0000
+Subject: [PATCH] Fix Compilation against Musl libc
+
 diff --git pal/shared/gpuopen/inc/posix/ddPosixPlatform.h pal/shared/gpuopen/inc/posix/ddPosixPlatform.h
-index 2eed863..2aa57d0 100644
+index df54bfe..55d707c 100644
 --- pal/shared/gpuopen/inc/posix/ddPosixPlatform.h
 +++ pal/shared/gpuopen/inc/posix/ddPosixPlatform.h
-@@ -53,6 +53,10 @@ static_assert(false, "Unknown platform detected")
- 
- #define DD_RESTRICT __restrict__
- 
+@@ -72,6 +72,9 @@ static_assert(false, "Unknown platform detected")
+ #else
+ #define DD_AXIOMATICALLY_CANNOT_HAPPEN(expr) ((expr) ? DD_UNUSED(0) : __builtin_unreachable())
+ #endif
 +#if defined(__linux__) && !defined(__GLIBC__)
-+#include "ddRand48.h"
++#include "rand48_r.h"
 +#endif
-+
+ 
  namespace DevDriver
  {
-     namespace Platform
-diff --git pal/shared/gpuopen/inc/posix/ddRand48.h pal/shared/gpuopen/inc/posix/ddRand48.h
-new file mode 100644
-index 0000000..5c1b628
---- /dev/null
-+++ pal/shared/gpuopen/inc/posix/ddRand48.h
-@@ -0,0 +1,26 @@
-+#ifndef RAND48_H
-+#define RAND48_H
-+#ifdef __cplusplus
-+extern "C" {
-+#endif
-+#include <stdlib.h>
-+#include <inttypes.h>
-+#include <string.h>
-+#include <stdint.h>
-+
-+struct drand48_data {
-+  unsigned short __x[3];
-+  unsigned short __old_x[3];
-+  unsigned short __c;
-+  unsigned short __init;
-+  long long __a;
-+};
-+
-+uint64_t __rand48_step(unsigned short *xi, unsigned short *lc);
-+int jrand48_r(unsigned short s[3], struct drand48_data *buffer, long *result);
-+int mrand48_r(struct drand48_data *buffer,long *result);
-+int seed48_r(unsigned short *s, struct drand48_data *buffer);
-+#ifdef __cplusplus
-+}
-+#endif
-+#endif
-diff --git pal/shared/gpuopen/src/posix/ddPosixSocket.cpp pal/shared/gpuopen/src/posix/ddPosixSocket.cpp
-index d788c5f..42b2bc8 100644
---- pal/shared/gpuopen/src/posix/ddPosixSocket.cpp
-+++ pal/shared/gpuopen/src/posix/ddPosixSocket.cpp
-@@ -34,7 +34,7 @@
+
+--- pal/shared/gpuopen/src/posix/ddPosixSocket.cpp	2019-03-01 15:31:04.000000000 +0100
++++ -	2019-03-04 15:42:00.789284605 +0100
+@@ -34,12 +34,12 @@
  #include <sys/types.h>
  #include <sys/socket.h>
  #include <sys/un.h>
--#include <sys/unistd.h>
-+#include <unistd.h>
- #include <sys/fcntl.h>
+-#include <sys/fcntl.h>
  #include <netinet/in.h>
  #include <netinet/tcp.h>
-diff --git pal/shared/gpuopen/src/posix/ddRand48.c pal/shared/gpuopen/src/posix/ddRand48.c
-new file mode 100644
-index 0000000..c600dce
---- /dev/null
-+++ pal/shared/gpuopen/src/posix/ddRand48.c
-@@ -0,0 +1,38 @@
-+#include <posix/ddRand48.h>
-+
-+uint64_t __rand48_step(unsigned short *xi, unsigned short *lc)
-+{
-+        uint64_t a, x;
-+        x = xi[0] | xi[1]+0U<<16 | xi[2]+0ULL<<32;
-+        a = lc[0] | lc[1]+0U<<16 | lc[2]+0ULL<<32;
-+        x = a*x + lc[3];
-+        xi[0] = x;
-+        xi[1] = x>>16;
-+        xi[2] = x>>32;
-+        return x & 0xffffffffffffull;
-+}
-+
-+
-+int jrand48_r(unsigned short s[3], struct drand48_data *buffer, long *result)
-+{
-+        *result = (int32_t)(__rand48_step(s, buffer->__x+3) >> 16);
-+        return 0;
-+}
-+
-+int mrand48_r(struct drand48_data *buffer,long *result)
-+{
-+        *result = jrand48_r(buffer->__x,buffer,result);
-+        return 0;
-+}
-+
-+
-+int seed48_r(unsigned short *s, struct drand48_data *buffer)
-+{
-+        memcpy(buffer->__old_x, buffer->__x, sizeof buffer->__x);
-+        memcpy(buffer->__x, s, sizeof buffer->__x);
-+        buffer->__c = 0;
-+        buffer->__init = 1;
-+        buffer->__a = 0;
-+        return 0;
-+}
-+
+ #include <netdb.h>
+ #include <arpa/inet.h>
+ 
++#include <fcntl.h>
+ #include <unistd.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ 
+--- pal/shared/gpuopen/CMakeLists.txt	2019-03-04 16:34:47.139749973 +0100
++++ -	2019-03-04 17:31:07.508510970 +0100
+@@ -119,7 +119,10 @@
+     set(THREADS_PREFER_PTHREAD_FLAG ON)
+     find_package(Threads REQUIRED)
+     target_link_libraries(${GPUOPEN_LIB_NAME} Threads::Threads)
+-
++    check_symbol_exists(seed48_r stdlib.h HAVE_RAND48)
++    if(NOT HAVE_RAND48)
++        target_link_libraries(${GPUOPEN_LIB_NAME} rand48_r)
++    endif()
+     if(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|(Apple)?Clang)$")
+         target_compile_options(${GPUOPEN_LIB_NAME} PRIVATE
+             -fno-exceptions
