@@ -56,6 +56,10 @@ $XBPS_LIBEXECDIR/xbps-src-dofetch.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
 $XBPS_LIBEXECDIR/xbps-src-doextract.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
 [ "$XBPS_TARGET" = "extract" ] && exit 0
 
+# Run patch phrase
+$XBPS_LIBEXECDIR/xbps-src-dopatch.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
+[ "$XBPS_TARGET" = "patch" ] && exit 0
+
 # Run configure phase
 $XBPS_LIBEXECDIR/xbps-src-doconfigure.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
 [ "$XBPS_TARGET" = "configure" ] && exit 0
