@@ -35,4 +35,4 @@ unset -f pre_install do_install post_install
 unset -f do_clean
 
 # deprecated
-unset -v only_for_arch
+unset -v only_for_archs
