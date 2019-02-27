@@ -48,6 +48,14 @@ if [ "$sourcepkg" != "$PKGNAME" ]; then
         archs="$only_for_archs"
         unset only_for_archs
     fi
+
+    # Special rules and contitions for -devel packages
+    if [ "${pkgname##*-}" = "devel" ]; then
+        # No depends=, add the sourcepkg, this covers most of the cases.
+        if [ -z "$depends" ]; then
+            depends="${sourcepkg}-${version}_${revision}"
+        fi
+    fi
 fi
 
 source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
