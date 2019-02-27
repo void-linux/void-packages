@@ -43,6 +43,14 @@ if [ "$sourcepkg" != "$PKGNAME" ]; then
         archs="$only_for_archs"
         unset only_for_archs
     fi
+
+    # Special rules and contitions for -devel packages
+    if [ "${pkgname##*-}" = "devel" ]; then
+        # No short_desc, add '- development files' to the description.
+        if ! type ${PKGNAME}_package | grep -Eq 'short_desc[+]?='; then
+            short_desc+=" - development files"
+        fi
+    fi
 fi
 
 if [ -s $XBPS_MASTERDIR/.xbps_chroot_init ]; then
