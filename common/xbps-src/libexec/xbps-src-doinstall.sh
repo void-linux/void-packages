@@ -62,6 +62,11 @@ if [ ! -f $XBPS_SUBPKG_INSTALL_DONE ]; then
             unset only_for_archs
         fi
 
+        # If we are on a -devel package and have no pkg_install use devel_pkg_install
+        if [ "${pkgname##*-}" = "devel" ] && ! type pkg_install >/dev/null 2>&1; then
+            pkg_install() { devel_pkg_install ; }
+        fi
+
         source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
 
         install -d $PKGDESTDIR
