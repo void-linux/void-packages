@@ -77,6 +77,7 @@ EOF
 do_configure() {
 	: ${meson_cmd:=meson}
 	: ${meson_builddir:=build}
+	: ${meson_crossfile:=xbps_meson.cross}
 
 	if [ "$CROSS_BUILD" ]; then
 		configure_args+=" --cross-file=${meson_crossfile}"
