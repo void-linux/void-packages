@@ -3,12 +3,6 @@
 #
 
 do_configure() {
-	# $go_import_path must be set, or we can't link $PWD into $GOSRCPATH
-	# nor build from modules
-	if [ -z "$go_import_path" ]; then
-		msg_error "\"\$go_import_path\" not set on $pkgname template.\n"
-	fi
-
 	# This isn't really configuration, but its needed by packages
 	# that do unusual things with the build where the expect to be
 	# able to cd into the $GOSRCPATH
@@ -16,8 +10,7 @@ do_configure() {
 		# Skip GOPATH symlink for Go modules
 		msg_normal "Building $pkgname using Go modules.\n"
 	elif [[ "${go_get}" != "yes" ]]; then
-		mkdir -p "$(dirname ${GOSRCPATH})"
-		ln -fs $PWD "${GOSRCPATH}"
+		go:make-gopath
 	fi
 }
 
