@@ -40,7 +40,7 @@ if declare -f pre_patch >/dev/null; then
     run_func pre_patch
 fi
 
-# If template defines do_patch() use it rather than the hooks.
+# If template defines do_patch() use it rather than the build-style.
 if declare -f do_patch >/dev/null; then
     run_func do_patch
 else
@@ -49,16 +49,15 @@ else
             msg_error "$pkgver: cannot find build helper $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
         fi
         . $XBPS_BUILDSTYLEDIR/${build_style}.sh
-    fi
-    # If the build_style script declares do_patch(), use it rather than hooks.
-    if declare -f do_patch >/dev/null; then
-        run_func do_patch
-    else
-        # Run do-patch hooks
-        run_pkg_hooks "do-patch"
+
+        if declare -f do_patch >/dev/null; then
+            run_func do_patch
+        fi
     fi
 fi
 
+# Run do-patch hooks
+run_pkg_hooks "do-patch"
 
 # If template defines post_patch(), use it.
 if declare -f post_patch >/dev/null; then
