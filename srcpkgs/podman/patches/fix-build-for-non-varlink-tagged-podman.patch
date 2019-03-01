@@ -1,0 +1,108 @@
+From ffefbda6943028119d43e1f5f9e4e9fb541f5e89 Mon Sep 17 00:00:00 2001
+From: Matthew Heon <matthew.heon@pm.me>
+Date: Wed, 27 Feb 2019 10:16:45 -0500
+Subject: [PATCH] Fix build for non-Varlink-tagged Podman
+
+Fixes #2459
+
+Signed-off-by: Matthew Heon <matthew.heon@pm.me>
+---
+ cmd/podman/rmi.go             | 19 +++----------------
+ pkg/adapter/runtime.go        |  8 ++++++++
+ pkg/adapter/runtime_remote.go | 12 ++++++++++++
+ 3 files changed, 23 insertions(+), 16 deletions(-)
+
+diff --git ./cmd/podman/rmi.go ./cmd/podman/rmi.go
+index 0963b1328..e5bb9b486 100644
+--- ./cmd/podman/rmi.go
++++ ./cmd/podman/rmi.go
+@@ -5,8 +5,6 @@ import (
+ 	"os"
+ 
+ 	"github.com/containers/libpod/cmd/podman/cliconfig"
+-	"github.com/containers/libpod/cmd/podman/varlink"
+-	"github.com/containers/libpod/libpod/image"
+ 	"github.com/containers/libpod/pkg/adapter"
+ 	"github.com/containers/storage"
+ 	"github.com/pkg/errors"
+@@ -31,17 +29,6 @@ var (
+ 	}
+ )
+ 
+-func imageNotFound(err error) bool {
+-	if errors.Cause(err) == image.ErrNoSuchImage {
+-		return true
+-	}
+-	switch err.(type) {
+-	case *iopodman.ImageNotFound:
+-		return true
+-	}
+-	return false
+-}
+-
+ func init() {
+ 	rmiCommand.Command = _rmiCommand
+ 	rmiCommand.SetUsageTemplate(UsageTemplate())
+@@ -80,7 +67,7 @@ func rmiCmd(c *cliconfig.RmiValues) error {
+ 			if errors.Cause(err) == storage.ErrImageUsedByContainer {
+ 				fmt.Printf("A container associated with containers/storage, i.e. via Buildah, CRI-O, etc., may be associated with this image: %-12.12s\n", img.ID())
+ 			}
+-			if !imageNotFound(err) {
++			if !adapter.IsImageNotFound(err) {
+ 				failureCnt++
+ 			}
+ 			if lastError != nil {
+@@ -135,7 +122,7 @@ func rmiCmd(c *cliconfig.RmiValues) error {
+ 			newImage, err := runtime.NewImageFromLocal(i)
+ 			if err != nil {
+ 				if lastError != nil {
+-					if !imageNotFound(lastError) {
++					if !adapter.IsImageNotFound(lastError) {
+ 						failureCnt++
+ 					}
+ 					fmt.Fprintln(os.Stderr, lastError)
+@@ -147,7 +134,7 @@ func rmiCmd(c *cliconfig.RmiValues) error {
+ 		}
+ 	}
+ 
+-	if imageNotFound(lastError) && failureCnt == 0 {
++	if adapter.IsImageNotFound(lastError) && failureCnt == 0 {
+ 		exitCode = 1
+ 	}
+ 
+diff --git ./pkg/adapter/runtime.go ./pkg/adapter/runtime.go
+index 4f5b98dbb..8624981b1 100644
+--- ./pkg/adapter/runtime.go
++++ ./pkg/adapter/runtime.go
+@@ -333,3 +333,11 @@ func (r *LocalRuntime) LoadImage(ctx context.Context, name string, cli *cliconfi
+ 	}
+ 	return r.Runtime.LoadImage(ctx, name, cli.Input, writer, cli.SignaturePolicy)
+ }
++
++// IsImageNotFound checks if the error indicates that no image was found.
++func IsImageNotFound(err error) bool {
++	if errors.Cause(err) == image.ErrNoSuchImage {
++		return true
++	}
++	return false
++}
+diff --git ./pkg/adapter/runtime_remote.go ./pkg/adapter/runtime_remote.go
+index ca2fad852..29b43e9b0 100644
+--- ./pkg/adapter/runtime_remote.go
++++ ./pkg/adapter/runtime_remote.go
+@@ -796,3 +796,15 @@ func (r *LocalRuntime) LoadImage(ctx context.Context, name string, cli *cliconfi
+ 	}
+ 	return names, nil
+ }
++
++// IsImageNotFound checks if the error indicates that no image was found.
++func IsImageNotFound(err error) bool {
++	if errors.Cause(err) == image.ErrNoSuchImage {
++		return true
++	}
++	switch err.(type) {
++	case *iopodman.ImageNotFound:
++		return true
++	}
++	return false
++}
