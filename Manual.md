@@ -31,6 +31,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [INSTALL and REMOVE files](#install_remove_files)
 	* [INSTALL.msg and REMOVE.msg files](#install_remove_files_msg)
 	* [Creating system accounts/groups at runtime](#runtime_account_creation)
+	* [Writing runit services](#writing_runit_services)
 	* [32bit packages](#32bit_pkgs)
 	* [Subpackages](#pkgs_sub)
 	* [Development packages](#pkgs_development)
@@ -1189,6 +1190,45 @@ accounts.
 
 > NOTE: The underscore policy does not apply to old packages, due to the inevitable breakage of
 > changing the username only new packages should follow it.
+
+<a id="writing_runit_services"></a>
+### Writing runit services
+
+Void Linux uses [runit](http://smarden.org/runit/) for booting and supervision of services.
+
+Most information about how to write them can be found in their
+[FAQ](http://smarden.org/runit/faq.html#create). The following are guidelines specific to
+Void Linux on how to write services.
+
+If the service daemon supports CLI flags, consider adding support for changing it via the
+`OPTS` variable by reading a file called `conf` in the same directory as the daemon.
+
+```sh
+#!/bin/sh
+[ -r conf ] && . ./conf
+exec daemon ${OPTS:- --flag-enabled-by-default}
+```
+
+If the service requires the creation of a directory under `/run` or its link `/var/run`
+for storing runtime information (like Pidfiles) write it into the service file. It
+is advised to use `install` if you need to create it with specific permissions instead
+of `mkdir -p`.
+
+```sh
+#!/bin/sh
+install -d -m0700 /run/foo
+exec foo 
+```
+
+```sh
+#!/bin/sh
+install -d -m0700 -o bar -g bar /run/bar
+exec bar
+```
+
+If the service requires directories in parts of the system that are not generally in
+temporary filesystems. Then use the `make_dirs` variable in the template to create
+those directories when the package is installed.
 
 <a id="32bit_pkgs"></a>
 ### 32bit packages
