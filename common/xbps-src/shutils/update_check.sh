@@ -33,7 +33,7 @@ update_check() {
             case "$url" in
             *sourceforge.net/sourceforge*)
                 sfname="$(printf %s "$url" | cut -d/ -f5)"
-                url="http://sourceforge.net/projects/$sfname/rss?limit=200";;
+                url="https://sourceforge.net/projects/$sfname/rss?limit=200";;
             *code.google.com*|*googlecode*)
                 url="http://code.google.com/p/$pkgname/downloads/list";;
             *launchpad.net*)

@@ -146,6 +146,9 @@ the `distfiles` variable or `do_fetch()` function.
 - `extract` This phase extracts the `distfiles` files into `$wrksrc` or executes the `do_extract()`
 function, which is the directory to be used to compile the `source package`.
 
+- `patch` This phase applies all patches in the patches directory of the package and
+can be used to perform other operations before configuring the package.
+
 - `configure` This phase executes the `configuration` of a `source package`, i.e `GNU configure scripts`.
 
 - `build` This phase compiles/prepares the `source files` via `make` or any other compatible method.
@@ -535,7 +538,7 @@ if `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
 build methods. By default set to `install`.
 
 - `patch_args` The arguments to be passed in to the `patch(1)` command when applying
-patches to the package sources after `do_extract()`. Patches are stored in
+patches to the package sources during `do_patch()`. Patches are stored in
 `srcpkgs/<pkgname>/patches` and must be in `-p0` format. By default set to `-Np0`.
 
 - `disable_parallel_build` If set the package won't be built in parallel
@@ -567,7 +570,7 @@ Example: `conf_files="/etc/foo.conf /etc/foo2.conf /etc/foo/*.conf"`.
 - `noarch` If set, the binary package is not architecture specific and can be shared
 by all supported architectures.
 
-> NOTE: `noarch` is deprecated and must be replaced by `archs=`
+> NOTE: `noarch` is deprecated and must be replaced by `archs=noarch`
 
 - `repository` Defines the repository in which the package will be placed. See
   *Repositories* for a list of valid repositories.
@@ -835,9 +838,9 @@ can be used to pass arguments during compilation. If your package does not make 
 extensions consider using the `gem` build style instead.
 
 - `gem` For packages that are installed using gems from [RubyGems](https://rubygems.org/).
-The gem command can be overridden by `gem_cmd`. `noarch` is set unconditionally and `distfiles`
-is set by the build style if the template does not do so. If your gem provides extensions which
-must be compiled consider using the `gemspec` build style instead.
+The gem command can be overridden by `gem_cmd`. `archs` is set to `noarch` unconditionally
+and `distfiles` is set by the build style if the template does not do so. If your gem
+provides extensions which must be compiled consider using the `gemspec` build style instead.
 
 - `ruby-module` For packages that are ruby modules and are installable via `ruby install.rb`.
 Additional install arguments can be specified via `make_install_args`.
@@ -902,13 +905,25 @@ GObject Introspection
 The following functions can be defined to change the behavior of how the
 package is downloaded, compiled and installed.
 
+- `pre_fetch()` Actions to execute before `do_fetch()`.
+
 - `do_fetch()` if defined and `distfiles` is not set, use it to fetch the required sources.
+
+- `post_fetch()` Actions to execute after `do_fetch()`.
+
+- `pre_extract()` Actions to execute after `post_fetch()`.
 
 - `do_extract()` if defined and `distfiles` is not set, use it to extract the required sources.
 
 - `post_extract()` Actions to execute after `do_extract()`.
 
-- `pre_configure()` Actions to execute after `post_extract()`.
+- `pre_patch()` Actions to execute after `post_extract()`.
+
+- `do_patch()` if defined use it to prepare the build environment and run hooks to apply patches.
+
+- `post_patch()` Actions to execute after `do_patch()`.
+
+- `pre_configure()` Actions to execute after `post_patch()`.
 
 - `do_configure()` Actions to execute to configure the package; `${configure_args}` should
 still be passed in if it's a GNU configure script.
@@ -931,6 +946,17 @@ still be passed in if it's a GNU configure script.
 
 > A function defined in a template has preference over the same function
 defined by a `build_style` script.
+
+Current working directory for functions is set as follows:
+
+- For pre_fetch, pre_extract, do_clean: `<masterdir>`.
+
+- For do_fetch, post_fetch: `XBPS_BUILDDIR`.
+
+- For do_extract, post_extract, pre_patch, do_patch, post_patch: `wrksrc`.
+
+- For pre_configure through post_install: `build_wrksrc`
+if it is defined, otherwise `wrksrc`.
 
 <a id="build_options"></a>
 ### Build options
@@ -1284,7 +1310,7 @@ type used to split architecture independent, big(ger) or huge amounts
 of data from a package's main and architecture dependent part. It is up
 to you to decide, if a `-data` subpackage makes sense for your package.
 This type is common for games (graphics, sound and music), part libraries (CAD)
-or card material (maps). Data subpackages are almost always `noarch=yes`.
+or card material (maps). Data subpackages are almost always `archs=noarch`.
 The main package must then have `depends="${pkgname}-data-${version}_${revision}"`,
 possibly in addition to other, non-automatic depends.
 
@@ -1411,7 +1437,7 @@ The following variables influence how Haskell packages are built:
 Font packages are very straightforward to write, they are always set with the
 following variables:
 
-- `noarch=yes`: Font packages don't install arch specific files.
+- `archs=noarch`: Font packages don't install arch specific files.
 - `depends="font-util"`: because they are required for regenerating the font
 cache during the install/removal of the package
 - `font_dirs`: which should be set to the directory where the package
@@ -1448,7 +1474,7 @@ the source of those patches/files.
 pkgname=$pkgname
 version=$version
 revision=$((revision + 1))
-noarch=yes
+archs=noarch
 build_style=meta
 short_desc="${short_desc} (removed package)"
 license="metapackage"

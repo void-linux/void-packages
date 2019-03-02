@@ -28,6 +28,7 @@ unset -v nodebug
 ## FUNCTIONS
 unset -f pre_fetch do_fetch post_fetch
 unset -f pre_extract do_extract post_extract
+unset -f pre_patch do_patch post_patch
 unset -f pre_configure do_configure post_configure
 unset -f pre_build do_build post_build
 unset -f pre_check do_check post_check
@@ -35,4 +36,4 @@ unset -f pre_install do_install post_install
 unset -f do_clean
 
 # deprecated
-unset -v only_for_arch
+unset -v only_for_archs
