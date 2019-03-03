@@ -67,6 +67,9 @@ run_step() {
     msg_error "$pkgver: cannot find do_$step_name()!\n"
   fi
 
+  # Run do_ phase hooks
+  run_pkg_hooks "do-$step_name"
+
   # Run post_* Phase
   if declare -f "post_$step_name" >/dev/null; then
     ch_wrksrc
