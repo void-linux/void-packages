@@ -1,4 +1,3 @@
-We also provide radicale 2.x.x
 If you want to switch from 1.x.x, there are couple steps:
 
 - Disabling the radicale 1.x service
