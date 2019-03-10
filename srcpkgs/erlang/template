@@ -1,25 +1,30 @@
 # Template file for 'erlang'
 pkgname=erlang
-version=20.1
+version=21.2.6
 revision=1
-wrksrc=otp_src_${version}
+create_wrksrc=yes
+build_wrksrc="otp-OTP-${version}"
 build_style=gnu-configure
 configure_args="$(vopt_if x11 --with-wx-config=wx-config-3.0)"
-hostmakedepends="perl libxslt"
+make_install_target="install install-docs"
+hostmakedepends="perl libxslt autoconf"
 makedepends="ncurses-devel unixodbc-devel libressl-devel zlib-devel
  $(vopt_if x11 'wxWidgets-devel glu-devel')"
 short_desc="Concurrent functional programming language developed by Ericsson"
 maintainer="Leah Neukirchen <leah@vuxu.org>"
 license="Apache-2.0"
 homepage="http://www.erlang.org/"
-distfiles="http://www.erlang.org/download/otp_src_${version}.tar.gz
- http://www.erlang.org/download/otp_doc_man_${version}.tar.gz"
-checksum="900d35eb563607785a8e27f4b4c03cf6c98b4596028c5d6958569ddde5d4ddbf
- 05ccf82ff85316e2eb1bebf1a1741dfac1ee450ed49cf0be365f9d4fec6d7b46"
+distfiles="https://github.com/erlang/otp/archive/OTP-${version}.tar.gz"
+checksum=aa0b95031e7c01af8a7042a00974ab16ed8fec305a68d7dbaa4185e5d58ef4d5
 
 build_options="x11"
 
+case "$XBPS_TARGET_MACHINE" in
+	x86_64-musl) broken="dlvsym not available" ;;
+esac
+
 pre_configure() {
+	./otp_build autoconf
 	if [ "$CROSS_BUILD" ]; then
 		# Build the bootstrap compiler for the host platform.
 		env - PATH=/usr/bin:/usr/sbin ./configure --enable-bootstrap-only
@@ -28,14 +33,34 @@ pre_configure() {
 		export erl_xcomp_sysroot=/usr/${XBPS_CROSS_TRIPLET}
 	fi
 }
+
 post_configure() {
-	sed -i '/LDFLAGS =/s/=/+=/' lib/odbc/c_src/*/Makefile
+	vsed -i -e '/LDFLAGS =/s/=/+=/' lib/odbc/c_src/*/Makefile
 }
+
 post_install() {
-	vmkdir usr/share/man
-	vmkdir usr/lib/erlang/man
-	vcopy ../man/man1 usr/share/man
-	vcopy ../man/man3 usr/lib/erlang/man
-	vcopy ../man/man4 usr/lib/erlang/man
-	vcopy ../man/man7 usr/lib/erlang/man
+	# Remove PR template and PDF documentation
+	rm ${DESTDIR}/usr/lib/erlang/PR.template
+	find ${DESTDIR}/usr/lib/erlang -path '*/doc/pdf' -type d -print0 | xargs -0 rm -rf
+	find ${DESTDIR}/usr/lib/erlang -iname '*.pdf' -delete
+	# Make section 1 pages available outside erlang
+	vmkdir usr/share/man/man1
+	local manprefix=/usr/lib/erlang/man/man1
+	for i in $(find ${DESTDIR}${manprefix} -type f)
+	do
+		ln -sf ${manprefix}/${i##*/} ${DESTDIR}/usr/share/man/man1
+	done
+}
+
+erlang-doc_package() {
+	short_desc="Erlang programming language documentation and examples"
+	depends="${sourcepkg}-${version}_${revision}"
+	archs=noarch
+	pkg_install() {
+		vmove usr/lib/erlang/doc
+		for i in $(cd ${DESTDIR}; find usr/lib/erlang -type d \( -path '*/examples' -o -path '*/doc/html' \))
+		do
+			vmove "$i"
+		done
+	}
 }

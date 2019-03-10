@@ -1,32 +1,47 @@
 # Template file for 'ppsspp'
 pkgname=ppsspp
-version=1.4.2
+version=1.7.5
 revision=1
-build_wrksrc="${pkgname}-${version}"
+create_wrksrc=yes
+build_wrksrc="ppsspp-${version}"
 build_style=cmake
-configure_args="-DHEADLESS=1 -DUSE_SYSTEM_FFMPEG=1"
-hostmakedepends="pkg-config"
-makedepends="zlib-devel glew-devel SDL2-devel ffmpeg-devel"
+configure_args="-DHEADLESS=1 -DUSE_SYSTEM_FFMPEG=1 -DUNITTEST=ON
+ -DUSING_QT_UI=$(vopt_if qt ON OFF)"
+hostmakedepends="pkg-config $(vopt_if qt qt5-host-tools)"
+makedepends="zlib-devel glew-devel ffmpeg-devel libzip-devel
+ snappy-devel rapidjson
+ $(vopt_if sdl2 SDL2-devel) $(vopt_if wayland wayland-devel)
+ $(vopt_if qt 'qt5-devel qt5-multimedia-devel')"
 depends="desktop-file-utils"
 short_desc="A fast and portable PSP emulator"
-maintainer="Juan RP <xtraeme@voidlinux.eu>"
-license="GPL-2"
-homepage="http://www.ppsspp.org/"
-create_wrksrc=yes
+maintainer="John <johnz@posteo.net>"
+license="GPL-2.0-or-later"
+homepage="https://www.ppsspp.org/"
 distfiles="
  https://github.com/hrydgard/ppsspp/archive/v${version}.tar.gz
- https://github.com/hrydgard/ppsspp-lang/archive/7b31a30fd0.tar.gz
- https://github.com/hrydgard/glslang/archive/136b1e2d5d.tar.gz
- https://github.com/Kingcom/tinyformat/archive/b7f5a22753.tar.gz
- https://github.com/KhronosGroup/SPIRV-Cross/archive/90966d50f5.tar.gz
- https://github.com/Kingcom/armips/archive/07853e5.tar.gz"
-checksum="5877b68a1333315ed7c7521dacd045aa6f92337f7063e58fb7124dbb1ae50b54
- c27ed60ef2e0c185cb82f40b30c2837c31913209344bfc28a0b1fb2e47c8bdcd
- 66beae370a64a5eb6f45cf8ce4b21565930dbfecc44c794be282c9dcb161a624
- 9db9bc16e9fafede493b5890b935a57ee6e5e284a9d6e8fa6d9329790a96b8c6
- 282d1f17bd3003162dd945b8ba5c5a10cb5738a7750949a8200ff6555f10ff28
- d0d7a9d9e4995ec8b7b4323b3bc737b6d7a28f9d0cb6967eb201ed454b17d1a2"
-nocross=yes
+ https://github.com/hrydgard/ppsspp-lang/archive/67c189c.tar.gz
+ https://github.com/hrydgard/glslang/archive/29619b2.tar.gz
+ https://github.com/KhronosGroup/SPIRV-Cross/archive/be7425e.tar.gz
+ https://github.com/Kingcom/armips/archive/9efe336.tar.gz
+ https://github.com/discordapp/discord-rpc/archive/3d3ae7129d17643bc706da0a2eea85aafd10ab3a.tar.gz"
+checksum="85506e2db4e12e584fa3fc7aefe9ece039614ef2989ede8ff5489bfc04476842
+ 929c097211cd78042c37e9c6ada170ce87968dfdf7c0d695ea4c9b6fb1726478
+ 5125620520d25f9a39c6d62dfcd3e087fd610dc5d163ddff6377365011c8b13f
+ 21afa0e32dd2d75ee51c4f5c0d16330a9d80d435d6ac9900d0c13bffdfd7b682
+ 73b366f30e8f3863501723e13eb5dcaf6d424b80382d17c27635567b79705ca3
+ 20fe5dbd7a64f7a8fdbaeb81f8dd485df61121c5054e0f7f917c6193f209ff2e"
+
+# ppsspp always tries to compile x86 unittest
+# https://gist.github.com/Johnnynator/e18d59274451cff890b7235009d2e93d
+case $XBPS_TARGET_MACHINE in
+	x86_64* | i686*) configure_args+=" -DUNITTEST=ON";;
+	armv[67]*) broken="SDL2 is not build against x11";;
+	ppc64*) broken="No JIT support";;
+	*) configure_args+=" -DUNITTEST=OFF";;
+esac
+
+build_options="wayland qt sdl2"
+build_options_default="sdl2"
 
 pre_configure() {
 	# copy submodules to right location
@@ -34,7 +49,8 @@ pre_configure() {
 	cp -rup ${wrksrc}/armips-*/* ${wrksrc}/${pkgname}-${version}/ext/armips
 	cp -rup ${wrksrc}/glslang-*/* ${wrksrc}/${pkgname}-${version}/ext/glslang
 	cp -rup ${wrksrc}/SPIRV-Cross-*/* ${wrksrc}/${pkgname}-${version}/ext/SPIRV-Cross
-	cp -rup ${wrksrc}/tinyformat-*/* ${wrksrc}/${pkgname}-${version}/ext/armips/ext/tinyformat
+	cp -rup ${wrksrc}/discord-rpc-*/* ${wrksrc}/${pkgname}-${version}/ext/discord-rpc
+
 	# disable git versioning
 	sed 's|find_package(Git)|# &|' -i ${wrksrc}/${pkgname}-${version}/git-version.cmake
 	rm -rf ${pkgname}-${version}/build
@@ -44,11 +60,16 @@ do_install() {
 	vlicense LICENSE.TXT
 	vinstall icons/icon.svg 644 usr/share/pixmaps ppsspp.svg
 	vinstall Qt/PPSSPP.desktop 644 usr/share/applications
-	vbin build/PPSSPPSDL ppsspp-sdl
 	vbin build/PPSSPPHeadless ppsspp-headless
 	vmkdir usr/share/ppsspp
 	vcopy build/assets usr/share/ppsspp/
 
-	sed -e 's,^Exec=.*,Exec=/usr/bin/ppsspp-sdl,' -i $DESTDIR/usr/share/applications/PPSSPP.desktop
+	if [ $build_option_sdl2 ]; then
+		vbin build/PPSSPPSDL ppsspp-sdl
+		sed -e 's,^Exec=.*,Exec=/usr/bin/ppsspp-sdl,' -i $DESTDIR/usr/share/applications/PPSSPP.desktop
+	elif [ $build_option_qt ] ;then
+		vbin build/PPSSPPQt ppsspp-qt
+		sed -e 's,^Exec=.*,Exec=/usr/bin/ppsspp-qt,' -i $DESTDIR/usr/share/applications/PPSSPP.desktop
+	fi
 	sed -e 's,^Icon=.*,Icon=/usr/share/pixmaps/ppsspp.svg,' -i $DESTDIR/usr/share/applications/PPSSPP.desktop
 }

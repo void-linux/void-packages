@@ -51,6 +51,7 @@ create_debug_pkg() {
 		msg_red "$pkgver: failed to create debug pkg\n"
 		return 1
 	fi
+	printf "${pkgver} " >> ${_destdir}/rdeps
 	rmdir --ignore-fail-on-non-empty "${PKGDESTDIR}/usr/lib" 2>/dev/null
 	return 0
 }
@@ -58,7 +59,7 @@ create_debug_pkg() {
 hook() {
 	local fname= x= f= _soname= STRIPCMD=
 
-	if [ -n "$nostrip" -o -n "$noarch" ]; then
+	if [ -n "$nostrip" -o "${archs// /}" = "noarch" ]; then
 		return 0
 	fi
 
@@ -99,14 +100,21 @@ hook() {
 					return 1
 				fi
 				echo "   Stripped executable: ${f#$PKGDESTDIR}"
-				if [ -z "$nopie" ]; then
+				unset nopie_found
+				for x in ${nopie_files}; do
+					if [ "$x" = "${f#$PKGDESTDIR}" ]; then
+						nopie_found=1
+						break
+					fi
+				done
+				if [ -z "$nopie" ] && [ -z "$nopie_found" ]; then
 					msg_red "$pkgver: non-PIE executable found in PIE build: ${f#$PKGDESTDIR}\n"
 					return 1
 				fi
 				attach_debug "$f"
 			fi
 			;;
-		application/x-sharedlib*)
+		application/x-sharedlib*|application/x-pie-executable*)
 			chmod +w "$f"
 			# shared library
 			make_debug "$f"

@@ -41,13 +41,13 @@ store_pkgdestdir_rundeps() {
                      -z "$($XBPS_UHELPER_CMD getpkgname ${_curdep} 2>/dev/null)" ]; then
                     _curdep="${_curdep}>=0"
                 fi
-                printf "${_curdep} " >> ${PKGDESTDIR}/rdeps
+                printf -- "${_curdep} " >> ${PKGDESTDIR}/rdeps
             done
         fi
 }
 
 hook() {
-    local depsftmp f j tmplf mapshlibs sorequires _curdep
+    local depsftmp f lf j mapshlibs sorequires _curdep
 
     # Disable trap on ERR, xbps-uhelper cmd might return error... but not something
     # to be worried about because if there are broken shlibs this hook returns
@@ -55,9 +55,8 @@ hook() {
     trap - ERR
 
     mapshlibs=$XBPS_COMMONDIR/shlibs
-    tmplf=$XBPS_SRCPKGDIR/$pkgname/template
 
-    if [ -n "$noarch" -o -n "$noverifyrdeps" ]; then
+    if [ "${archs// /}" = "noarch" -o -n "$noverifyrdeps" ]; then
         store_pkgdestdir_rundeps
         return 0
     fi
@@ -68,8 +67,13 @@ hook() {
     exec 3<&0 # save stdin
     exec < $depsftmp
     while read f; do
+        lf=${f#${PKGDESTDIR}}
+	if [ "${skiprdeps/${lf}/}" != "${skiprdeps}" ]; then
+		msg_normal "Skipping dependency scan for ${lf}\n"
+		continue
+	fi
         case "$(file -bi "$f")" in
-            application/x-executable*|application/x-sharedlib*)
+            application/x-*executable*|application/x-sharedlib*)
                 for nlib in $($OBJDUMP -p "$f"|grep NEEDED|awk '{print $2}'); do
                     if [ -z "$verify_deps" ]; then
                         verify_deps="$nlib"

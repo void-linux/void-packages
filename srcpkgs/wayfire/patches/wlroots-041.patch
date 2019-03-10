@@ -1,0 +1,92 @@
+From 76a7bc32f4c2960a6e55436a79983cc4c5cef611 Mon Sep 17 00:00:00 2001
+From: Greg V <greg@unrelenting.technology>
+Date: Sat, 23 Feb 2019 23:42:46 +0300
+Subject: [PATCH] Track wlroots: new drag'n'drop handling
+
+---
+ src/core/seat/input-manager.hpp |  5 +++--
+ src/core/seat/seat.cpp          | 38 +++++++++++++++++++++++++++------
+ 2 files changed, 34 insertions(+), 9 deletions(-)
+
+diff --git a/src/core/seat/input-manager.hpp b/src/core/seat/input-manager.hpp
+index 6585d29..9d5a7b0 100644
+--- src/core/seat/input-manager.hpp
++++ src/core/seat/input-manager.hpp
+@@ -62,8 +62,9 @@ class input_manager
+         wayfire_grab_interface active_grab = nullptr;
+         bool session_active = true;
+ 
+-        wl_listener input_device_created, new_drag_icon, request_set_cursor,
+-                    request_set_selection, request_set_primary_selection;
++        wl_listener input_device_created, request_start_drag, start_drag,
++                    request_set_cursor, request_set_selection,
++                    request_set_primary_selection;
+ 
+ 
+         signal_callback_t config_updated;
+diff --git a/src/core/seat/seat.cpp b/src/core/seat/seat.cpp
+index b00866b..fbcd254 100644
+--- src/core/seat/seat.cpp
++++ src/core/seat/seat.cpp
+@@ -56,8 +56,8 @@ wf_drag_icon::wf_drag_icon(wlr_drag_icon *ic)
+ 
+ wf_point wf_drag_icon::get_output_position()
+ {
+-    auto pos = icon->is_pointer ?
+-        core->get_cursor_position() : core->get_touch_position(icon->touch_id);
++    auto pos = icon->drag->grab_type == WLR_DRAG_GRAB_KEYBOARD_TOUCH ?
++        core->get_touch_position(icon->drag->touch_id) : core->get_cursor_position();
+ 
+     GetTuple(x, y, pos);
+ 
+@@ -97,11 +97,32 @@ void wf_drag_icon::damage(const wlr_box& box)
+     });
+ }
+ 
+-static void handle_new_drag_icon_cb(wl_listener*, void *data)
++static void handle_request_start_drag_cb(wl_listener*, void *data)
+ {
+-    auto di = static_cast<wlr_drag_icon*> (data);
++    auto ev = static_cast<wlr_seat_request_start_drag_event*> (data);
++    auto seat = core->get_current_seat();
+ 
+-    auto icon = std::unique_ptr<wf_drag_icon>(new wf_drag_icon(di));
++    if (wlr_seat_validate_pointer_grab_serial(seat, ev->origin, ev->serial)) {
++        wlr_seat_start_pointer_drag(seat, ev->drag, ev->serial);
++        return;
++    }
++
++    struct wlr_touch_point *point;
++    if (wlr_seat_validate_touch_grab_serial(seat, ev->origin, ev->serial, &point)) {
++        wlr_seat_start_touch_drag(seat, ev->drag, ev->serial, point);
++        return;
++    }
++
++    log_debug("Ignoring start_drag request: "
++            "could not validate pointer or touch serial %" PRIu32, ev->serial);
++    wlr_data_source_destroy(ev->drag->source);
++}
++
++static void handle_start_drag_cb(wl_listener*, void *data)
++{
++    auto d = static_cast<wlr_drag*> (data);
++
++    auto icon = std::unique_ptr<wf_drag_icon>(new wf_drag_icon(d->icon));
+     core->input->drag_icons.push_back(std::move(icon));
+ }
+ 
+@@ -139,8 +160,11 @@ void input_manager::create_seat()
+     request_set_cursor.notify = handle_request_set_cursor;
+     wl_signal_add(&seat->events.request_set_cursor, &request_set_cursor);
+ 
+-    new_drag_icon.notify      = handle_new_drag_icon_cb;
+-    wl_signal_add(&seat->events.new_drag_icon, &new_drag_icon);
++    request_start_drag.notify = handle_request_start_drag_cb;
++    wl_signal_add(&seat->events.request_start_drag, &request_start_drag);
++
++    start_drag.notify         = handle_start_drag_cb;
++    wl_signal_add(&seat->events.start_drag, &start_drag);
+ 
+     request_set_selection.notify = handle_request_set_selection_cb;
+     wl_signal_add(&seat->events.request_set_selection, &request_set_selection);
+

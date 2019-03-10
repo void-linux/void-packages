@@ -27,10 +27,74 @@ run_func() {
     set +E
 }
 
-error_func() {
-    if [ -n "$1" -a -n "$2" ]; then
-        msg_red "$pkgver: failed to run $1() at line $2.\n"
+ch_wrksrc() {
+  cd "$wrksrc" || msg_error "$pkgver: cannot access wrksrc directory [$wrksrc]\n"
+  if [ -n "$build_wrksrc" ]; then
+    cd $build_wrksrc || \
+        msg_error "$pkgver: cannot access build_wrksrc directory [$build_wrksrc]\n"
+  fi
+}
+
+# runs {pre,do,post}_X tripplets
+run_step() {
+  local step_name="$1" optional_step="$2" skip_post_hook="$3"
+
+  ch_wrksrc
+  run_pkg_hooks "pre-$step_name"
+
+  # Run pre_* Phase
+  if declare -f "pre_$step_name" >/dev/null; then
+    ch_wrksrc
+    run_func "pre_$step_name"
+  fi
+
+  ch_wrksrc
+  # Run do_* Phase
+  if declare -f "do_$step_name" >/dev/null; then
+    run_func "do_$step_name"
+  elif [ -n "$build_style" ]; then
+    if [ -r $XBPS_BUILDSTYLEDIR/${build_style}.sh ]; then
+      . $XBPS_BUILDSTYLEDIR/${build_style}.sh
+      if declare -f "do_$step_name" >/dev/null; then
+        run_func "do_$step_name"
+      elif [ ! "$optional_step" ]; then
+        msg_error "$pkgver: cannot find do_$step_name() in $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
+      fi
+    else
+      msg_error "$pkgver: cannot find build helper $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
     fi
+  elif [ ! "$optional_step" ]; then
+    msg_error "$pkgver: cannot find do_$step_name()!\n"
+  fi
+
+  # Run do_ phase hooks
+  run_pkg_hooks "do-$step_name"
+
+  # Run post_* Phase
+  if declare -f "post_$step_name" >/dev/null; then
+    ch_wrksrc
+    run_func "post_$step_name"
+  fi
+
+  if ! [ "$skip_post_hook" ]; then
+    ch_wrksrc
+    run_pkg_hooks "post-$step_name"
+  fi
+}
+
+error_func() {
+    local err=$?
+    local src=
+    local i=
+    [ -n "$1" -a -n "$2" ] || exit 1;
+
+    msg_red "$pkgver: $1: '${BASH_COMMAND}' exited with $err\n"
+    for ((i=1;i<${#FUNCNAME[@]};i++)); do
+        src=${BASH_SOURCE[$i]}
+        src=${src#$XBPS_DISTDIR/}
+        msg_red "  in ${FUNCNAME[$i]}() at $src:${BASH_LINENO[$i-1]}\n"
+        [ "${FUNCNAME[$i]}" = "$1" ] && break;
+    done
     exit 1
 }
 
@@ -225,7 +289,7 @@ setup_pkg() {
 
     unset_package_funcs
 
-    ( . $XBPS_CONFIG_FILE 2>/dev/null )
+    . $XBPS_CONFIG_FILE 2>/dev/null
 
     if [ -n "$cross" ]; then
         source_file $XBPS_CROSSPFDIR/${cross}.sh
@@ -252,6 +316,7 @@ setup_pkg() {
         export XBPS_TARGET_MACHINE=${XBPS_ARCH:-$XBPS_MACHINE}
         unset XBPS_CROSS_BASE XBPS_CROSS_LDFLAGS XBPS_CROSS_FFLAGS
         unset XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_CPPFLAGS
+        unset XBPS_CROSS_RUSTFLAGS XBPS_CROSS_RUST_TARGET
 
         XBPS_INSTALL_XCMD="$XBPS_INSTALL_CMD"
         XBPS_QUERY_XCMD="$XBPS_QUERY_CMD"
@@ -264,9 +329,6 @@ setup_pkg() {
 
     export XBPS_INSTALL_XCMD XBPS_QUERY_XCMD XBPS_RECONFIGURE_XCMD \
         XBPS_REMOVE_XCMD XBPS_RINDEX_XCMD XBPS_UHELPER_XCMD
-
-    export XBPS_GCC_VERSION_MAJOR XBPS_GCC_VERSION_MINOR XBPS_GCC_VERSION_BUILD \
-        XBPS_GCC_VERSION
 
     # Source all sourcepkg environment setup snippets.
     # Source all subpkg environment setup snippets.
@@ -287,6 +349,22 @@ setup_pkg() {
         unset CROSS_BUILD
         source_file ${XBPS_SRCPKGDIR}/${basepkg}/template
     fi
+
+    # Backward compatibility to noarch and only_for_archs
+    if [ -n "$only_for_archs" ] && [ -n "$noarch" ]; then
+        msg_error "only_for_archs and noarch can't be used together\n"
+    fi
+    if [ -n "$only_for_archs" ]; then
+        archs="$only_for_archs"
+        unset only_for_archs
+        msg_warn "deprecated property 'only_for_archs'. Use archs=\"$only_for_archs\" instead!\n"
+    fi
+    if [ -n "$noarch" ]; then
+        archs=noarch
+        unset noarch
+        msg_warn "deprecated property 'noarch'. Use archs=noarch instead!\n"
+    fi
+
 
     # Check if required vars weren't set.
     _vars="pkgname version short_desc revision homepage license"
@@ -352,7 +430,8 @@ setup_pkg() {
     fi
     makejobs="-j$XBPS_MAKEJOBS"
 
-    if [ -n "$noarch" ]; then
+    # strip whitespaces to make "  noarch  " valid too.
+    if [ "${archs// /}" = "noarch" ]; then
         arch="noarch"
     else
         arch="$XBPS_TARGET_MACHINE"
@@ -378,6 +457,8 @@ setup_pkg() {
             source_file ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
         fi
     fi
+
+    set_build_options
 
     export CFLAGS="$XBPS_TARGET_CFLAGS $XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
     export CXXFLAGS="$XBPS_TARGET_CXXFLAGS $XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"
@@ -459,6 +540,10 @@ setup_pkg() {
         export CXXFLAGS_host="$XBPS_CXXFLAGS"
         export CPPFLAGS_host="$XBPS_CPPFLAGS"
         export LDFLAGS_host="$XBPS_LDFLAGS"
+        # Rust flags which are passed to rustc
+        export RUSTFLAGS="$XBPS_CROSS_RUSTFLAGS"
+        # Rust target, which differs from our triplets
+        export RUST_TARGET="$XBPS_CROSS_RUST_TARGET"
     else
         export CC="cc"
         export CXX="g++"
@@ -474,16 +559,16 @@ setup_pkg() {
         export OBJCOPY="objcopy"
         export NM="nm"
         export READELF="readelf"
-        # Unse cross evironment variables
+        export RUST_TARGET="$XBPS_RUST_TARGET"
+        # Unset cross evironment variables
         unset CC_target CXX_target CPP_target GCC_target FC_target LD_target AR_target AS_target
         unset RANLIB_target STRIP_target OBJDUMP_target OBJCOPY_target NM_target READELF_target
         unset CFLAGS_target CXXFLAGS_target CPPFLAGS_target LDFLAGS_target
         unset CC_host CXX_host CPP_host GCC_host FC_host LD_host AR_host AS_host
         unset RANLIB_host STRIP_host OBJDUMP_host OBJCOPY_host NM_host READELF_host
         unset CFLAGS_host CXXFLAGS_host CPPFLAGS_host LDFLAGS_host
+        unset RUSTFLAGS
     fi
-
-    set_build_options
 
     # Setup some specific package vars.
     if [ -z "$wrksrc" ]; then
@@ -494,6 +579,7 @@ setup_pkg() {
 
     if [ "$cross" -a "$nocross" -a "z$show_problems" != "zignore-problems" ]; then
         msg_red "$pkgver: cannot be cross compiled, exiting...\n"
+        msg_red "$pkgver: $nocross\n"
         exit 2
     elif [ "$broken" -a "z$show_problems" != "zignore-problems" ]; then
         msg_red "$pkgver: cannot be built, it's currently broken; see the build log:\n"
@@ -515,4 +601,12 @@ setup_pkg() {
     fi
 
     source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
+
+    # Source all build-helper files that are defined
+    for f in $build_helper; do
+        if [ ! -r $XBPS_BUILDHELPERDIR/${f}.sh ];  then
+            msg_error "$pkgver: cannot find build helper $XBPS_BUILDHELPERDIR/${f}.sh!\n"
+        fi
+        . $XBPS_BUILDHELPERDIR/${f}.sh
+    done
 }

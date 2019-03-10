@@ -21,3 +21,12 @@
     		 		 
   WARNING: To avoid messing up your TeXLive installation, DON'T use
   the installation scripts in /opt/texlive-installer.
+
+=====================================================================
+
+  As TeXLive 2018 has been released, you may need to change the
+  repository to the historic 2017 repository:
+
+      tlmgr option repository \
+              ftp://ftp.tug.org/texlive/historic/2017/tlnet-final/
+

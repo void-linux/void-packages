@@ -1,0 +1,81 @@
+From f139dafa59172d40543f2ec469a035d3de9fdc6a Mon Sep 17 00:00:00 2001
+From: Haihao Xiang <haihao.xiang@intel.com>
+Date: Fri, 7 Dec 2018 13:31:43 +0800
+Subject: [PATCH] Check the interface from libva first
+
+And bump libva dependency to 1.4.0
+
+This fixes https://github.com/intel/intel-vaapi-driver/issues/419
+
+Signed-off-by: Haihao Xiang <haihao.xiang@intel.com>
+---
+ configure.ac              |  2 +-
+ src/i965_output_wayland.c | 27 ++++++++++++++++-----------
+ 2 files changed, 17 insertions(+), 12 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index 6cde1a3a..a0b462fb 100644
+--- configure.ac
++++ configure.ac
+@@ -10,7 +10,7 @@ m4_append([intel_vaapi_driver_version], intel_vaapi_driver_pre_version, [.pre])
+ ])
+ 
+ # libva minimum version requirement
+-m4_define([va_api_version], [1.1.0])
++m4_define([va_api_version], [1.4.0])
+ 
+ # libdrm minimum version requirement
+ m4_define([libdrm_version], [2.4.52])
+diff --git a/src/i965_output_wayland.c b/src/i965_output_wayland.c
+index 122db953..a637552e 100644
+--- src/i965_output_wayland.c
++++ src/i965_output_wayland.c
+@@ -397,6 +397,7 @@ i965_output_wayland_init(VADriverContextP ctx)
+     struct i965_driver_data * const i965 = i965_driver_data(ctx);
+     struct dso_handle *dso_handle;
+     struct wl_vtable *wl_vtable;
++    struct VADriverVTableWayland * const vtable = ctx->vtable_wayland;
+ 
+     static const struct dso_symbol libegl_symbols[] = {
+         {
+@@ -465,25 +466,29 @@ i965_output_wayland_init(VADriverContextP ctx)
+     if (!i965->wl_output)
+         goto error;
+ 
+-    i965->wl_output->libegl_handle = dso_open(LIBEGL_NAME);
+-    if (!i965->wl_output->libegl_handle) {
+-        i965->wl_output->libegl_handle = dso_open(LIBEGL_NAME_FALLBACK);
+-        if (!i965->wl_output->libegl_handle)
++    wl_vtable = &i965->wl_output->vtable;
++
++    if (vtable->wl_interface)
++        wl_vtable->drm_interface = vtable->wl_interface;
++    else {
++        i965->wl_output->libegl_handle = dso_open(LIBEGL_NAME);
++        if (!i965->wl_output->libegl_handle) {
++            i965->wl_output->libegl_handle = dso_open(LIBEGL_NAME_FALLBACK);
++            if (!i965->wl_output->libegl_handle)
++                goto error;
++        }
++
++        dso_handle = i965->wl_output->libegl_handle;
++        if (!dso_get_symbols(dso_handle, wl_vtable, sizeof(*wl_vtable),
++                             libegl_symbols))
+             goto error;
+     }
+ 
+-    dso_handle = i965->wl_output->libegl_handle;
+-    wl_vtable  = &i965->wl_output->vtable;
+-    if (!dso_get_symbols(dso_handle, wl_vtable, sizeof(*wl_vtable),
+-                         libegl_symbols))
+-        goto error;
+-
+     i965->wl_output->libwl_client_handle = dso_open(LIBWAYLAND_CLIENT_NAME);
+     if (!i965->wl_output->libwl_client_handle)
+         goto error;
+ 
+     dso_handle = i965->wl_output->libwl_client_handle;
+-    wl_vtable  = &i965->wl_output->vtable;
+     if (!dso_get_symbols(dso_handle, wl_vtable, sizeof(*wl_vtable),
+                          libwl_client_symbols))
+         goto error;

@@ -27,7 +27,7 @@ if [ -n "$XBPS_CROSS_BUILD" ]; then
     exit 0
 fi
 
-if [ -z "$XBPS_CHECK_PKGS" -o "$XBPS_CHECK_PKGS" = "0" -o "$XBPS_CHECK_PKGS" = "no" ]; then
+if [ -z "$XBPS_CHECK_PKGS" ]; then
     msg_normal "${pkgname}-${version}_${revision}: skipping check (XBPS_CHECK_PKGS is disabled) ...\n"
     exit 0
 fi
@@ -36,18 +36,7 @@ for f in $XBPS_COMMONDIR/environment/check/*.sh; do
     source_file "$f"
 done
 
-cd "$wrksrc" || msg_error "$pkgver: cannot access wrksrc directory [$wrksrc]\n"
-if [ -n "$build_wrksrc" ]; then
-    cd $build_wrksrc || \
-        msg_error "$pkgver: cannot access build_wrksrc directory [$build_wrksrc]\n"
-fi
-
-# Run do_check() if the function is defined
-if declare -f do_check > /dev/null; then
-    run_func do_check
-else
-    msg_normal "${pkgname}-${version}_${revision}: template does not have do_check() ...\n"
-fi
+run_step check optional
 
 touch -f $XBPS_CHECK_DONE
 

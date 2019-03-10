@@ -1,30 +1,29 @@
 # Template file for 'mame'
 pkgname=mame
-version=0190
+version=0207
 revision=1
 wrksrc="mame-mame${version}"
+short_desc="Multiple Arcade Machine Emulator"
+maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
+license="GPL-2.0-or-later"
 homepage="http://mamedev.org"
 distfiles="https://github.com/mamedev/mame/archive/mame${version}.tar.gz"
-short_desc="The Multiple Arcade Machine Emulator"
-maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
-license="GPL-2"
-checksum=ea9604a5c586f1a0fa3ca431e6fb35f39b71eb1a6f0464b4dd7fc6379231ed74
+checksum=69c29533d2128345c59fbf23fabc3af696322a77a6c1d7a7bd7f5a2ee57adafb
 
-hostmakedepends="perl pkg-config python automoc4"
-makedepends="libstdc++-devel SDL2_ttf-devel $(vopt_if qt qt5-devel) lua-devel
-libjpeg-turbo-devel libflac-devel libuv-devel sqlite-devel portaudio-devel portmidi-devel"
+hostmakedepends="perl pkg-config python"
+makedepends="SDL2_ttf-devel glm libjpeg-turbo-devel libutf8proc-devel
+ libuv-devel lua-devel portaudio-devel portmidi-devel rapidjson
+ $(vopt_if qt 'qt5-devel')"
 depends="liberation-fonts-ttf"
 nocross=yes
+nodebug=yes
 replaces="sdlmame>=0 sdlmess>=0"
 
+CFLAGS="-I${XBPS_CROSS_BASE}/usr/include/lua5.3 -I${XBPS_CROSS_BASE}/usr/include/libutf8proc"
+CXXFLAGS="${CFLAGS}"
 case "$XBPS_TARGET_MACHINE" in
-	i686*)	# was: nodebug=yes
-		broken="https://build.voidlinux.eu/builders/i686_builder/builds/2964/steps/shell_3/logs/stdio"
-		;;
+	*-musl)	CXXFLAGS+=" -DBX_CRT_MUSL=1" ;;
 esac
-
-CXXFLAGS="-I${XBPS_CROSS_BASE}/usr/include/lua5.3"
-LDFLAGS="-Wl,-fuse-ld=gold"
 
 build_options="qt"
 if [ -z "$CROSS_BUILD" ]; then
@@ -34,14 +33,10 @@ fi
 do_build() {
 	local opts="REGENIE=1"
 	opts+=" TARGETOS=linux"
-	case "$XBPS_TARGET_MACHINE" in
-		x86_64*|aarch64*) opts+=" PTR64=1" ;;
-	esac
 	opts+=" NOWERROR=1"
-	opts+=" TOOLS=1"
-	opts+=" VERBOSE=1"
 	opts+=" OPTIMIZE=3"
-	opts+=" PRECOMPILE=0"
+	opts+=" TOOLS=1"
+	opts+=" LTO=0"
 	opts+=" USE_SYSTEM_LIB_EXPAT=1"
 	opts+=" USE_SYSTEM_LIB_ZLIB=1"
 	opts+=" USE_SYSTEM_LIB_JPEG=1"
@@ -50,44 +45,55 @@ do_build() {
 	opts+=" USE_SYSTEM_LIB_SQLITE3=1"
 	opts+=" USE_SYSTEM_LIB_PORTMIDI=1"
 	opts+=" USE_SYSTEM_LIB_PORTAUDIO=1"
-	opts+=" USE_SYSTEM_LIB_UV=1"
-	opts+=" USE_SYSTEM_LIB_SDL2=1"
-	if [ "$build_option_qt" ]; then
-		opts+=" USE_QTDEBUG=1"
-	fi
-	if [ "${CROSS_BUILD}" ]; then
-		# Doesn't work yet
-		opts+=" CROSS_BUILD=1 OVERRIDE_CC=${CC} OVERRIDE_CXX=${CXX} OVERRIDE_LD=${CC}"
-	fi
+	opts+=" USE_SYSTEM_LIB_UTF8PROC=1"
+	opts+=" USE_SYSTEM_LIB_GLM=1"
+	opts+=" USE_SYSTEM_LIB_RAPIDJSON=1"
+	[ "$build_option_qt" ] && opts+=" USE_QTDEBUG=1"
 	case "$XBPS_TARGET_MACHINE" in
 		i686*)	# Overcome linker memory exhaustion
 			opts+=" SYMBOLS=0"
 			;;
+		x86_64*|aarch64*|ppc64*)
+			opts+=" PTR64=1"
+			;;
 	esac
+	if [ "${CROSS_BUILD}" ]; then
+		# Doesn't work yet
+		opts+=" CROSS_BUILD=1 TOOLCHAIN=${XBPS_CROSS_TRIPLET}"
+		opts+=" OVERRIDE_CC=gcc OVERRIDE_CXX=g++ OVERRIDE_LD=g++"
+	fi
 	make ${opts} ${makejobs}
 }
+
 do_install() {
 	local f
 
 	# Install the mame script
-	vbin ${FILESDIR}/${pkgname}.sh ${pkgname}
+	vbin ${FILESDIR}/mame.sh mame
+
+	# If mess is a separate binary, also install the mess script
+	if [ "${XBPS_TARGET_MACHINE%-musl}" != "x86_64" ]; then
+		vbin ${FILESDIR}/mess.sh mess
+	fi
 
 	# Install the main application(s)
 	for f in mame mame64 mamearcade mamearcade64; do
 		if [ -r ${f} ]; then
-			vinstall ${f} 755 usr/share/${pkgname} mame
+			vinstall ${f} 755 usr/libexec/${pkgname} mame
+			break
 		fi
 	done
 	for f in mess mess64; do
 		if [ -r ${f} ]; then
-			vinstall ${f} 755 usr/share/${pkgname} mess
+			vinstall ${f} 755 usr/libexec/${pkgname} mess
+			break
 		fi
 	done
 
 	# Install the tools
 	for f in chdman jedutil regrep pngcmp romcmp src2html srcclean \
 		ldverify ldresample unidasm castool floptool imgtool; do
-		vinstall ${f} 755 usr/share/${pkgname}
+		vbin ${f}
 		if [ -f docs/man/${f}.1 ]; then
 			vman docs/man/${f}.1
 		fi

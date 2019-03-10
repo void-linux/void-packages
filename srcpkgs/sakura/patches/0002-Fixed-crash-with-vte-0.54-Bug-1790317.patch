@@ -1,0 +1,69 @@
+From: Egmont Kobingler <egmont@gmail.com>
+Date: Thu, 27 Sep 2018 16:21:28 +0200
+Subject: * Bug #1790317 fixed: Crash with vte 0.54
+
+---
+ src/sakura.c | 29 +++--------------------------
+ 1 file changed, 3 insertions(+), 26 deletions(-)
+
+diff --git a/src/sakura.c b/src/sakura.c
+index e72a9aa..5eab95a 100644
+--- a/src/sakura.c
++++ b/src/sakura.c
+@@ -339,6 +339,7 @@ struct terminal {
+ 	bool label_set_byuser;
+ 	GtkBorder padding;   /* inner-property data */
+ 	int colorset;
++	gulong exit_handler_id;
+ };
+ 
+ 
+@@ -984,31 +985,6 @@ sakura_eof (GtkWidget *widget, void *data)
+ 	if (npages==1) {
+ 		sakura_config_done();
+ 	}
+-
+-	/* Workaround for libvte strange behaviour. There is not child-exited signal for
+-	   the last terminal, so we need to kill it here.  Check with libvte authors about
+-	   child-exited/eof signals */
+-	if (gtk_notebook_get_current_page(GTK_NOTEBOOK(sakura.notebook))==0) {
+-
+-		term = sakura_get_page_term(sakura, 0);
+-
+-		if (option_hold==TRUE) {
+-			SAY("hold option has been activated");
+-			return;
+-		}
+-
+-        //SAY("waiting for terminal pid (in eof) %d", term->pid);
+-        //waitpid(term->pid, &status, WNOHANG);
+-	/* TODO: check wait return */
+-		/* Child should be automatically reaped because we don't use G_SPAWN_DO_NOT_REAP_CHILD flag */
+-		g_spawn_close_pid(term->pid);
+-
+-		sakura_del_tab(0);
+-
+-		npages = gtk_notebook_get_n_pages(GTK_NOTEBOOK(sakura.notebook));
+-		if (npages==0)
+-			sakura_destroy();
+-	}	
+ }
+ 
+ /* This handler is called when window title changes, and is used to change window and notebook pages titles */
+@@ -3167,7 +3143,7 @@ sakura_add_tab()
+ 	g_signal_connect(G_OBJECT(term->vte), "bell", G_CALLBACK(sakura_beep), NULL);
+ 	g_signal_connect(G_OBJECT(term->vte), "increase-font-size", G_CALLBACK(sakura_increase_font), NULL);
+ 	g_signal_connect(G_OBJECT(term->vte), "decrease-font-size", G_CALLBACK(sakura_decrease_font), NULL);
+-	g_signal_connect(G_OBJECT(term->vte), "child-exited", G_CALLBACK(sakura_child_exited), NULL);
++	term->exit_handler_id = g_signal_connect(G_OBJECT(term->vte), "child-exited", G_CALLBACK(sakura_child_exited), NULL);
+ 	g_signal_connect(G_OBJECT(term->vte), "eof", G_CALLBACK(sakura_eof), NULL);
+ 	g_signal_connect(G_OBJECT(term->vte), "window-title-changed", G_CALLBACK(sakura_title_changed), NULL);
+ 	g_signal_connect_swapped(G_OBJECT(term->vte), "button-press-event", G_CALLBACK(sakura_button_press), sakura.menu);
+@@ -3366,6 +3342,7 @@ sakura_del_tab(gint page)
+ 	}
+ 
+ 	gtk_widget_hide(term->hbox);
++	g_signal_handler_disconnect (term->vte, term->exit_handler_id);
+ 	gtk_notebook_remove_page(GTK_NOTEBOOK(sakura.notebook), page);
+ 
+ 	/* Find the next page, if it exists, and grab focus */

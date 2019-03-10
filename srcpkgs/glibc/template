@@ -1,14 +1,14 @@
 # Template file for 'glibc'
 pkgname=glibc
-version=2.26
+version=2.29
 revision=2
 bootstrap=yes
-short_desc="The GNU C library"
-maintainer="Juan RP <xtraeme@voidlinux.eu>"
+short_desc="GNU C library"
+maintainer="Juan RP <xtraeme@voidlinux.org>"
+license="GPL-2.0-or-later, LGPL-2.1-or-later, BSD-3-Clause"
 homepage="http://www.gnu.org/software/libc"
-license="GPL-2, LGPL-2.1, BSD"
 distfiles="${GNU_SITE}/glibc/glibc-${version}.tar.xz"
-checksum=e54e0a934cd2bc94429be79da5e9385898d2306b9eaf3c92d5a77af96190f6bd
+checksum=f3eeb8d57e25ca9fc13c2af3dae97754f9f643bc69229546828e3a240e2af04b
 patch_args="-Np1"
 # Do not strip these files, objcopy errors out.
 nostrip_files="
@@ -48,13 +48,13 @@ conf_files="
 	/etc/gai.conf
 	/etc/ld.so.conf"
 if [ "$CHROOT_READY" ]; then
-	hostmakedepends="bison perl"
+	hostmakedepends="bison perl python3"
 fi
 makedepends="kernel-libc-headers"
 lib32files="/usr/lib/gconv/gconv-modules"
 lib32symlinks="ld-linux.so.2"
 # There's no point in building this for musl.
-only_for_archs="i686 x86_64 armv5tel armv6l armv7l aarch64"
+archs="~*-musl"
 nopie=yes
 
 do_configure() {
@@ -102,11 +102,12 @@ do_configure() {
 		--libdir=${_libdir} --libexecdir=${_libdir} \
 		--enable-add-ons=libidn --enable-obsolete-rpc \
 		--enable-multi-arch --enable-bind-now \
-		--disable-profile --enable-kernel=2.6.32 \
+		--disable-profile --enable-kernel=3.2.0 \
 		--enable-stack-guard-randomization \
 		--without-selinux --without-cvs --without-gd \
-		--disable-lock-elision \
+		--disable-lock-elision --enable-obsolete-nsl \
 		--enable-stack-protector=strong \
+		--disable-werror \
 		libc_cv_rootsbindir=/usr/bin \
 		libc_cv_rtlddir=${_libdir} libc_cv_slibdir=${_libdir}
 }
@@ -141,12 +142,18 @@ do_install() {
 	# ldd is a bash script, so make it run as such.
 	replace_interpreter bash ${DESTDIR}/usr/bin/ldd
 
-	# On x86_64, add dynamic linker's 32bit version to ldd.
-	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		rtldlist="/lib/ld-linux.so.2 /lib/ld-linux-x86-64.so.2"
+	rtldlist=""
+	# On x86_64, add dynamic linker's 32bit version to ldd,
+	# on ppc64 substitute with our own dynamic linker path
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64) rtldlist="/lib/ld-linux.so.2 /lib/ld-linux-x86-64.so.2";;
+		ppc64le) rtldlist="/lib/ld64.so.2";;
+	esac
+	if [ -n "$rtldlist" ]; then
 		sed -i "s|^RTLDLIST.*$|RTLDLIST=\"$rtldlist\"|" \
 			${DESTDIR}/usr/bin/ldd
 	fi
+
 	install -d ${DESTDIR}/etc/ld.so.conf.d
 	echo "/usr/local/lib" > ${DESTDIR}/etc/ld.so.conf.d/usr_local.conf
 	chmod 644 ${DESTDIR}/etc/ld.so.conf.d/usr_local.conf
@@ -179,7 +186,7 @@ glibc-devel_package() {
 	}
 }
 glibc-locales_package() {
-	noarch=yes
+	archs="noarch"
 	conf_files="/etc/default/libc-locales"
 	short_desc+=" - locale data files"
 	pkg_install() {

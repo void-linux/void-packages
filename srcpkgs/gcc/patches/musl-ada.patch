@@ -1,0 +1,215 @@
+diff --git a/gcc/ada/adaint.c b/gcc/ada/adaint.c
+index 3b0aea9..ee0bb69 100644
+--- gcc/ada/adaint.c
++++ gcc/ada/adaint.c
+@@ -76,6 +76,11 @@
+ #include <sys/param.h>
+ #include <sys/pstat.h>
+ #endif
++ 
++#if defined (linux)
++#define _GNU_SOURCE 1
++#include <sched.h>
++#endif
+ 
+ #ifdef __PikeOS__
+ #define __BSD_VISIBLE 1
+@@ -3255,7 +3260,6 @@ __gnat_lwp_self (void)
+ #endif
+ 
+ #if defined (__linux__)
+-#include <sched.h>
+ 
+ /* glibc versions earlier than 2.7 do not define the routines to handle
+    dynamically allocated CPU sets. For these targets, we use the static
+@@ -3265,7 +3269,7 @@ __gnat_lwp_self (void)
+ 
+ /* Dynamic cpu sets */
+ 
+-cpu_set_t *
++void *
+ __gnat_cpu_alloc (size_t count)
+ {
+   return CPU_ALLOC (count);
+@@ -3278,33 +3282,33 @@ __gnat_cpu_alloc_size (size_t count)
+ }
+ 
+ void
+-__gnat_cpu_free (cpu_set_t *set)
++__gnat_cpu_free (void *set)
+ {
+-  CPU_FREE (set);
++  CPU_FREE ((cpu_set_t *) set);
+ }
+ 
+ void
+-__gnat_cpu_zero (size_t count, cpu_set_t *set)
++__gnat_cpu_zero (size_t count, void *set)
+ {
+-  CPU_ZERO_S (count, set);
++  CPU_ZERO_S (count, (cpu_set_t *) set);
+ }
+ 
+ void
+-__gnat_cpu_set (int cpu, size_t count, cpu_set_t *set)
++__gnat_cpu_set (int cpu, size_t count, void *set)
+ {
+   /* Ada handles CPU numbers starting from 1, while C identifies the first
+      CPU by a 0, so we need to adjust. */
+-  CPU_SET_S (cpu - 1, count, set);
++  CPU_SET_S (cpu - 1, count, (cpu_set_t *) set);
+ }
+ 
+ #else /* !CPU_ALLOC */
+ 
+ /* Static cpu sets */
+ 
+-cpu_set_t *
++void *
+ __gnat_cpu_alloc (size_t count ATTRIBUTE_UNUSED)
+ {
+-  return (cpu_set_t *) xmalloc (sizeof (cpu_set_t));
++  return xmalloc (sizeof (cpu_set_t));
+ }
+ 
+ size_t
+@@ -3314,23 +3318,23 @@ __gnat_cpu_alloc_size (size_t count ATTRIBUTE_UNUSED)
+ }
+ 
+ void
+-__gnat_cpu_free (cpu_set_t *set)
++__gnat_cpu_free (void *set)
+ {
+   free (set);
+ }
+ 
+ void
+-__gnat_cpu_zero (size_t count ATTRIBUTE_UNUSED, cpu_set_t *set)
++__gnat_cpu_zero (size_t count ATTRIBUTE_UNUSED, void *set)
+ {
+-  CPU_ZERO (set);
++  CPU_ZERO ((cpu_set_t *) set);
+ }
+ 
+ void
+-__gnat_cpu_set (int cpu, size_t count ATTRIBUTE_UNUSED, cpu_set_t *set)
++__gnat_cpu_set (int cpu, size_t count ATTRIBUTE_UNUSED, void *set)
+ {
+   /* Ada handles CPU numbers starting from 1, while C identifies the first
+      CPU by a 0, so we need to adjust. */
+-  CPU_SET (cpu - 1, set);
++  CPU_SET (cpu - 1, (cpu_set_t *) set);
+ }
+ #endif /* !CPU_ALLOC */
+ #endif /* __linux__ */
+diff --git a/gcc/ada/adaint.h b/gcc/ada/adaint.h
+index 0d12f7e..a063b47 100644
+--- gcc/ada/adaint.h
++++ gcc/ada/adaint.h
+@@ -316,13 +316,11 @@ extern void   *__gnat_lwp_self			   (void);
+ 
+ /* Routines for interface to required CPU set primitives */
+ 
+-#include <sched.h>
+-
+-extern cpu_set_t *__gnat_cpu_alloc                 (size_t);
++extern void * __gnat_cpu_alloc                 (size_t);
+ extern size_t __gnat_cpu_alloc_size                (size_t);
+-extern void   __gnat_cpu_free                  (cpu_set_t *);
+-extern void   __gnat_cpu_zero                      (size_t, cpu_set_t *);
+-extern void   __gnat_cpu_set                       (int, size_t, cpu_set_t *);
++extern void   __gnat_cpu_free                  (void *);
++extern void   __gnat_cpu_zero                      (size_t, void *);
++extern void   __gnat_cpu_set                       (int, size_t, void *);
+ #endif
+ 
+ #if defined (_WIN32)
+diff --git a/gcc/ada/terminals.c b/gcc/ada/terminals.c
+index 7025f57..207b50d 100644
+--- gcc/ada/terminals.c
++++ gcc/ada/terminals.c
+@@ -1108,13 +1108,6 @@ __gnat_setup_winsize (void *desc, int rows, int columns)
+ #include <stdio.h>
+ #include <stdlib.h>
+ 
+-/* On some system termio is either absent or including it will disable termios
+-   (HP-UX) */
+-#if !defined (__hpux__) && !defined (BSD) && !defined (__APPLE__) \
+-  && !defined (__rtems__) && !defined (__QNXNTO__)
+-#   include <termio.h>
+-#endif
+-
+ #include <sys/ioctl.h>
+ #include <termios.h>
+ #include <fcntl.h>
+diff --git a/gcc/ada/terminals.c b/gcc/ada/terminals.c
+index 207b50d..bd3a02c 100644
+--- gcc/ada/terminals.c
++++ gcc/ada/terminals.c
+@@ -1152,7 +1152,7 @@ __gnat_setup_winsize (void *desc, int rows, int columns)
+ #if defined (__APPLE__) || defined (BSD)
+ #define USE_OPENPTY
+ #elif defined (__linux__)
+-#define USE_GETPT
++#define USE_POSIX_OPENPT
+ #elif defined (__sun__)
+ #define USE_CLONE_DEVICE "/dev/ptmx"
+ #elif defined (_AIX)
+@@ -1201,8 +1201,8 @@ allocate_pty_desc (pty_desc **desc) {
+    int  master_fd   = -1;
+    char *slave_name = NULL;
+ 
+-#ifdef USE_GETPT
+-  master_fd = getpt ();
++#ifdef USE_POSIX_OPENPT
++  master_fd = posix_openpt(O_RDWR | O_NOCTTY);
+ #elif defined (USE_OPENPTY)
+   status = openpty (&master_fd, &slave_fd, NULL, NULL, NULL);
+ #elif defined (USE_CLONE_DEVICE)
+--- gcc/ada/gcc-interface/Makefile.in
++++ gcc/ada/gcc-interface/Makefile.in
+@@ -1028,7 +1028,7 @@ ifeq ($(strip $(filter-out %86 linux%,$(target_cpu) $(target_os))),)
+   s-tpopsp.adb<libgnarl/s-tpopsp__tls.adb \
+   $(TRASYM_DWARF_UNIX_PAIRS) \
+   g-sercom.adb<libgnat/g-sercom__linux.adb \
+-  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
++  s-tsmona.adb<libgnat/s-tsmona.adb \
+   a-exetim.adb<libgnarl/a-exetim__posix.adb \
+   a-exetim.ads<libgnarl/a-exetim__default.ads \
+   s-linux.ads<libgnarl/s-linux.ads \
+@@ -1545,7 +1545,7 @@ ifeq ($(strip $(filter-out powerpc% linux%,$(target_cpu) $(target_os))),)
+   s-tpopsp.adb<libgnarl/s-tpopsp__tls.adb \
+   g-sercom.adb<libgnat/g-sercom__linux.adb \
+   $(TRASYM_DWARF_UNIX_PAIRS) \
+-  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
++  s-tsmona.adb<libgnat/s-tsmona.adb \
+   $(ATOMICS_TARGET_PAIRS) \
+   $(ATOMICS_BUILTINS_TARGET_PAIRS) \
+   system.ads<libgnat/system-linux-ppc.ads
+@@ -1574,7 +1574,7 @@ ifeq ($(strip $(filter-out powerpc% linux%,$(target_cpu) $(target_os))),)
+ endif
+ 
+ # ARM linux, GNU eabi
+-ifeq ($(strip $(filter-out arm% linux-gnueabi%,$(target_cpu) $(target_os))),)
++ifeq ($(strip $(filter-out arm% linux-gnueabi% linux-musleabi% linux-muslgnueabi%,$(target_cpu) $(target_os))),)
+   LIBGNAT_TARGET_PAIRS = \
+   a-intnam.ads<libgnarl/a-intnam__linux.ads \
+   s-inmaop.adb<libgnarl/s-inmaop__posix.adb \
+@@ -1774,7 +1774,7 @@ ifeq ($(strip $(filter-out %ia64 linux%,$(target_cpu) $(target_os))),)
+   s-taspri.ads<libgnarl/s-taspri__posix-noaltstack.ads \
+   g-sercom.adb<libgnat/g-sercom__linux.adb \
+   $(TRASYM_DWARF_UNIX_PAIRS) \
+-  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
++  s-tsmona.adb<libgnat/s-tsmona.adb \
+   $(ATOMICS_TARGET_PAIRS) \
+   $(ATOMICS_BUILTINS_TARGET_PAIRS) \
+   system.ads<libgnat/system-linux-ia64.ads
+@@ -1871,7 +1871,7 @@ ifeq ($(strip $(filter-out %x86_64 linux%,$(target_cpu) $(target_os))),)
+   s-taspri.ads<libgnarl/s-taspri__posix.ads \
+   g-sercom.adb<libgnat/g-sercom__linux.adb \
+   $(TRASYM_DWARF_UNIX_PAIRS) \
+-  s-tsmona.adb<libgnat/s-tsmona__linux.adb \
++  s-tsmona.adb<libgnat/s-tsmona.adb \
+   $(ATOMICS_TARGET_PAIRS) \
+   $(X86_64_TARGET_PAIRS) \
+   system.ads<libgnat/system-linux-x86.ads

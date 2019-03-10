@@ -1,59 +1,74 @@
 # Template file for 'NetworkManager'
 pkgname=NetworkManager
-version=1.8.4
+version=1.14.6
 revision=1
 build_style=gnu-configure
+build_helper="gir"
 configure_args="--without-dhcpcd --with-dhclient=/usr/bin/dhclient
  --with-system-ca-path=/etc/ssl/certs --enable-more-warnings=no
  --with-crypto=gnutls --disable-static --enable-ppp --with-nmtui
  --with-udev-dir=/usr/lib/udev $(vopt_enable gir introspection)
- --with-kernel-firmware-dir=/usr/lib/firmware
+ --with-kernel-firmware-dir=/usr/lib/firmware --disable-ifcfg-rh
  --with-pppd-plugin-dir=/usr/lib/pppd/2.4.7 --enable-modify-system
  --with-modem-manager-1 --with-resolvconf=/usr/bin/resolvconf
- --with-session-tracking=$(vopt_if elogind logind consolekit)
- --with-suspend-resume=upower
+ --with-session-tracking=$(vopt_if elogind elogind consolekit)
+ --with-suspend-resume=$(vopt_if elogind elogind consolekit)
+ --with-libnm-glib --disable-ifupdown
  --with-systemdsystemunitdir=no --enable-polkit-agent --enable-tests=no
  --with-systemd-journal=no --with-systemd-logind=no --disable-gtk-doc
  --with-dbus-sys-dir=/etc/dbus-1/system.d
- --sbindir=/usr/bin --enable-concheck
+ --sbindir=/usr/bin --enable-concheck --with-libpsl
+ --with-dnsmasq=/usr/bin/dnsmasq --with-config-dhcp-default=dhclient
  ac_cv_file__etc_redhat_release=no ac_cv_file__etc_gentoo_release=no
  ac_cv_file__etc_fedora_release=no ac_cv_file__etc_mandriva_release=no
  ac_cv_file__etc_SuSE_release=no ac_cv_file__etc_debian_version=no"
 short_desc="Network Management daemon"
-maintainer="Juan RP <xtraeme@voidlinux.eu>"
+maintainer="Rasmus Thomsen <rasmus.thomsen@protonmail.com>"
+license="GPL-2.0-or-later"
 homepage="https://wiki.gnome.org/Projects/NetworkManager"
-license="GPL-2"
-distfiles="${GNOME_SITE}/$pkgname/${version%.*}/$pkgname-$version.tar.xz"
-checksum=625e2eb36386dcae599075226200140d010f213b47f7202d83b3b1a202029212
+distfiles="${GNOME_SITE}/${pkgname}/${version%.*}/${pkgname}-${version}.tar.xz"
+checksum=693bcdad15eec7f07a06cbc6e43ddb3b1c13b2d2d23ec165fbb5adf4c3323a5d
 
 # gtk-doc generation is disabled but gtkdocisze is required by autogen.sh
-hostmakedepends="
- automake libtool pkg-config intltool gnutls-devel glib-devel dbus-glib-devel
- gettext-devel gtk-doc dbus iproute2 dhclient wpa_supplicant bluez iptables
- $(vopt_if gir gobject-introspection) $(vopt_if gir python-gobject)"
+hostmakedepends="automake bluez dbus-glib-devel dhclient gettext-devel
+ glib-devel gnutls-devel gtk-doc intltool iproute2 iptables libtool
+ libxslt-devel pkg-config wpa_supplicant
+ $(vopt_if gir 'python-gobject')"
 makedepends="libuuid-devel gnutls-devel dbus-glib-devel libgudev-devel
  libnl3-devel polkit-devel ppp-devel iptables-devel libcurl-devel
  ModemManager-devel readline-devel libndp-devel newt-devel jansson-devel
+ libpsl-devel
  $(vopt_if gir libgirepository-devel) $(vopt_if elogind elogind-devel)"
+# Install host dependency to read the soname. Should be the same on
+# host and target.
+hostmakedepends+=" jansson-devel"
+depends="dbus dhclient iproute2 openresolv wpa_supplicant"
 
 lib32disabled=yes
-depends="dbus iproute2 dhclient wpa_supplicant openresolv"
 conf_files="/etc/${pkgname}/${pkgname}.conf"
 make_dirs="
- /etc/NetworkManager/system-connections 0750 root root
+ /etc/NetworkManager/system-connections 0755 root root
  /etc/NetworkManager/dispatcher.d/pre-up.d 0750 root root
  /etc/NetworkManager/dispatcher.d/pre-down.d 0750 root root
+ /etc/NetworkManager/VPN 0755 root root
+ /var/lib/NetworkManager 0755 root root
 "
+
 case "$XBPS_TARGET_MACHINE" in
-	*-musl) CFLAGS+=" -DHAVE_SECURE_GETENV -Dsecure_getenv=getenv -D__USE_POSIX199309"
+	*-musl)
+			CFLAGS+=" -DHAVE_SECURE_GETENV -Dsecure_getenv=getenv"
+			CFLAGS+=" -D__USE_POSIX199309 -DRTLD_DEEPBIND=0"
 		;;
 esac
 
 # Package build options
 build_options="gir elogind"
-if [ -z "$CROSS_BUILD" ]; then
-	build_options_default+=" gir"
-fi
+case "$XBPS_TARGET_MACHINE" in
+	i686-musl|x86_64-musl) build_options_default+=" gir" ;;
+	*-musl) ;;
+	*) build_options_default+=" gir" ;;
+esac
+
 
 pre_configure() {
 	NOCONFIGURE=1 ./autogen.sh
@@ -61,7 +76,12 @@ pre_configure() {
 	# Full switch to /run to not depend on /var/run being a symlink.
 	sed -e 's,^nmrundir=.*$,nmrundir=\"/run/\$PACKAGE\",' -i configure
 
-	sed -e "s/HAVE_LIBSYSTEMD/0/" -i src/devices/wwan/nm-modem-manager.c
+	# Fsckd-up check for gi ?
+	sed -e 's,! "$PYTHON" -c ,"$PYTHON" -c,' -i configure
+}
+
+pre_build() {
+	export GIR_EXTRA_LIBS_PATH="${wrksrc}/libnm-util/.libs:${wrksrc}/libnm/.libs:${wrksrc}/libnm-glib/.libs"
 }
 
 post_install() {

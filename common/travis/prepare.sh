@@ -5,7 +5,7 @@
 mkdir -p $HOME/bin
 
 /bin/echo -e '\x1b[32mInstalling xbps...\x1b[0m'
-wget -q -O - http://repo.voidlinux.eu/static/xbps-static-latest.x86_64-musl.tar.xz | \
+wget -q -O - http://alpha.de.repo.voidlinux.org/static/xbps-static-latest.x86_64-musl.tar.xz | \
 	unxz | tar x -C $HOME/bin --wildcards "./usr/bin/xbps-*" \
 	--strip-components=3 || exit 1
 

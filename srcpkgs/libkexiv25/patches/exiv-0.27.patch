@@ -1,0 +1,462 @@
+From d1be9298c7f2b9c717cda154d41732f230ea13a6 Mon Sep 17 00:00:00 2001
+From: Andreas Sturmlechner <andreas.sturmlechner@gmail.com>
+Date: Sat, 29 Dec 2018 19:56:01 +0100
+Subject: Fix building against exiv2-0.27
+
+Summary:
+Copied FindLibExiv2.cmake from ECM 5.53.0 until we raise min version.
+
+Upstream advises to include single exiv2/exiv2.hpp over separate headers
+that are in the process of being refactored.
+
+BUG: 402644
+
+Test Plan: Tested build with exiv2-0.26 and 0.27
+
+Reviewers: #kde_applications, cgilles, aacid, bruns
+
+Reviewed By: bruns
+
+Subscribers: ngraham, bruns, heikobecker
+
+Differential Revision: https://phabricator.kde.org/D17799
+---
+ CMakeLists.txt                        |  32 +++-------
+ cmake/modules/FindExiv2.cmake         |  80 -----------------------
+ cmake/modules/FindLibExiv2.cmake      | 115 ++++++++++++++++++++++++++++++++++
+ cmake/templates/libkexiv2.pc.cmake.in |   2 +-
+ src/CMakeLists.txt                    |   3 +-
+ src/kexiv2.cpp                        |   2 +-
+ src/kexiv2_p.cpp                      |  17 ++---
+ src/kexiv2_p.h                        |  23 +------
+ src/kexiv2exif.cpp                    |   4 ++
+ 9 files changed, 137 insertions(+), 141 deletions(-)
+ delete mode 100644 cmake/modules/FindExiv2.cmake
+ create mode 100644 cmake/modules/FindLibExiv2.cmake
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d13ef27..5747665 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -7,11 +7,11 @@
+ set(CMAKE_MIN_VERSION   "3.0.0")
+ set(ECM_MIN_VERSION     "1.1.0")
+ set(REQUIRED_QT_VERSION "5.2.0")
+-set(EXIV2_MIN_VERSION   "0.24")
++set(EXIV2_MIN_VERSION   "0.25")
+ 
+ cmake_minimum_required(VERSION ${CMAKE_MIN_VERSION})
+ 
+-project(libkexiv2)
++project(libkexiv2 VERSION "5.0.0")
+ 
+ message(STATUS "----------------------------------------------------------------------------------")
+ message(STATUS "Starting CMake configuration for: ${PROJECT_NAME}")
+@@ -47,18 +47,12 @@ message(STATUS "Starting CMake configuration for: ${PROJECT_NAME}")
+ # 2.4.0 => 11.3.0                              - Add new method to access on text edit widget from AltLangStrEdit
+ # 5.0.0 => 15.0.0    (Released with KDE 5.x)
+ 
+-# Library API version
+-set(KEXIV2_LIB_MAJOR_VERSION "5")
+-set(KEXIV2_LIB_MINOR_VERSION "0")
+-set(KEXIV2_LIB_PATCH_VERSION "0")
+-
+ # Library ABI version used by linker.
+ # For details : http://www.gnu.org/software/libtool/manual/libtool.html#Updating-version-info
+ set(KEXIV2_LIB_SO_CUR_VERSION "15")
+ set(KEXIV2_LIB_SO_REV_VERSION "0")
+ set(KEXIV2_LIB_SO_AGE_VERSION "0")
+ 
+-set(LIBKEXIV2_LIB_VERSION "${KEXIV2_LIB_MAJOR_VERSION}.${KEXIV2_LIB_MINOR_VERSION}.${KEXIV2_LIB_PATCH_VERSION}")
+ set(LIBKEXIV2_SO_VERSION  "${KEXIV2_LIB_SO_CUR_VERSION}.${KEXIV2_LIB_SO_REV_VERSION}.${KEXIV2_LIB_SO_AGE_VERSION}")
+ 
+ ############## ECM setup ######################
+@@ -77,6 +71,13 @@ include(KDEFrameworkCompilerSettings NO_POLICY_SCOPE)
+ include(GenerateExportHeader)
+ include(FeatureSummary)
+ 
++ecm_setup_version(${libkexiv2_VERSION}
++                  VARIABLE_PREFIX      KEXIV2
++                  VERSION_HEADER       "src/libkexiv2_version.h"
++                  PACKAGE_VERSION_FILE "KF5KExiv2ConfigVersion.cmake"
++                  SOVERSION            ${LIBKEXIV2_SO_VERSION}
++)
++
+ ############## Find Packages ###################
+ 
+ find_package(Qt5 ${REQUIRED_QT_VERSION} REQUIRED NO_MODULE COMPONENTS
+@@ -84,20 +85,7 @@ find_package(Qt5 ${REQUIRED_QT_VERSION} REQUIRED NO_MODULE COMPONENTS
+              Gui
+ )
+ 
+-find_package(Exiv2 ${EXIV2_MIN_VERSION} REQUIRED)
+-set_package_properties("Exiv2"     PROPERTIES
+-                       DESCRIPTION "Required to build libkexiv2"
+-                       URL         "http://www.exiv2.org"
+-                       TYPE        RECOMMENDED
+-                       PURPOSE     "Library to manage image metadata"
+-)
+-
+-ecm_setup_version(${LIBKEXIV2_LIB_VERSION}
+-                  VARIABLE_PREFIX      KEXIV2
+-                  VERSION_HEADER       "src/libkexiv2_version.h"
+-                  PACKAGE_VERSION_FILE "KF5KExiv2ConfigVersion.cmake"
+-                  SOVERSION            ${LIBKEXIV2_SO_VERSION}
+-)
++find_package(LibExiv2 ${EXIV2_MIN_VERSION} REQUIRED)
+ 
+ ############## Targets #########################
+ 
+diff --git a/cmake/modules/FindExiv2.cmake b/cmake/modules/FindExiv2.cmake
+deleted file mode 100644
+index 82cc1c7..0000000
+--- a/cmake/modules/FindExiv2.cmake
++++ /dev/null
+@@ -1,80 +0,0 @@
+-# - Try to find the Exiv2 library
+-#
+-#  EXIV2_MIN_VERSION - You can set this variable to the minimum version you need
+-#                      before doing FIND_PACKAGE(Exiv2). The default is 0.12.
+-#
+-# Once done this will define
+-#
+-#  EXIV2_FOUND - system has libexiv2
+-#  EXIV2_INCLUDE_DIR - the libexiv2 include directory
+-#  EXIV2_LIBRARIES - Link these to use libexiv2
+-#  EXIV2_DEFINITIONS - Compiler switches required for using libexiv2
+-#
+-# The minimum required version of Exiv2 can be specified using the
+-# standard syntax, e.g. find_package(Exiv2 0.17)
+-#
+-# For compatibility, also the variable EXIV2_MIN_VERSION can be set to the minimum version
+-# you need before doing FIND_PACKAGE(Exiv2). The default is 0.12.
+-
+-# Copyright (c) 2010, Alexander Neundorf, <neundorf@kde.org>
+-# Copyright (c) 2008, Gilles Caulier, <caulier.gilles@gmail.com>
+-#
+-# Redistribution and use is allowed according to the terms of the BSD license.
+-# For details see the accompanying COPYING-CMAKE-SCRIPTS file.
+-
+-# Support EXIV2_MIN_VERSION for compatibility:
+-if(NOT Exiv2_FIND_VERSION)
+-  set(Exiv2_FIND_VERSION "${EXIV2_MIN_VERSION}")
+-endif(NOT Exiv2_FIND_VERSION)
+-
+-# the minimum version of exiv2 we require
+-if(NOT Exiv2_FIND_VERSION)
+-  set(Exiv2_FIND_VERSION "0.12")
+-endif(NOT Exiv2_FIND_VERSION)
+-
+-
+-if (NOT WIN32)
+-   # use pkg-config to get the directories and then use these values
+-   # in the FIND_PATH() and FIND_LIBRARY() calls
+-   find_package(PkgConfig)
+-   pkg_check_modules(PC_EXIV2 QUIET exiv2)
+-   set(EXIV2_DEFINITIONS ${PC_EXIV2_CFLAGS_OTHER})
+-endif (NOT WIN32)
+-
+-
+-find_path(EXIV2_INCLUDE_DIR NAMES exiv2/exif.hpp
+-          HINTS
+-          ${PC_EXIV2_INCLUDEDIR}
+-          ${PC_EXIV2_INCLUDE_DIRS}
+-        )
+-
+-find_library(EXIV2_LIBRARY NAMES exiv2 libexiv2
+-             HINTS
+-             ${PC_EXIV2_LIBDIR}
+-             ${PC_EXIV2_LIBRARY_DIRS}
+-            )
+-
+-
+-# Get the version number from exiv2/version.hpp and store it in the cache:
+-if(EXIV2_INCLUDE_DIR  AND NOT  EXIV2_VERSION)
+-  file(READ ${EXIV2_INCLUDE_DIR}/exiv2/version.hpp EXIV2_VERSION_CONTENT)
+-  string(REGEX MATCH "#define EXIV2_MAJOR_VERSION +\\( *([0-9]+) *\\)"  _dummy "${EXIV2_VERSION_CONTENT}")
+-  set(EXIV2_VERSION_MAJOR "${CMAKE_MATCH_1}")
+-
+-  string(REGEX MATCH "#define EXIV2_MINOR_VERSION +\\( *([0-9]+) *\\)"  _dummy "${EXIV2_VERSION_CONTENT}")
+-  set(EXIV2_VERSION_MINOR "${CMAKE_MATCH_1}")
+-
+-  string(REGEX MATCH "#define EXIV2_PATCH_VERSION +\\( *([0-9]+) *\\)"  _dummy "${EXIV2_VERSION_CONTENT}")
+-  set(EXIV2_VERSION_PATCH "${CMAKE_MATCH_1}")
+-
+-  set(EXIV2_VERSION "${EXIV2_VERSION_MAJOR}.${EXIV2_VERSION_MINOR}.${EXIV2_VERSION_PATCH}" CACHE STRING "Version number of Exiv2" FORCE)
+-endif(EXIV2_INCLUDE_DIR  AND NOT  EXIV2_VERSION)
+-
+-set(EXIV2_LIBRARIES "${EXIV2_LIBRARY}")
+-
+-include(FindPackageHandleStandardArgs)
+-find_package_handle_standard_args(Exiv2  REQUIRED_VARS  EXIV2_LIBRARY EXIV2_INCLUDE_DIR
+-                                         VERSION_VAR  EXIV2_VERSION)
+-
+-mark_as_advanced(EXIV2_INCLUDE_DIR EXIV2_LIBRARY)
+-
+diff --git a/cmake/modules/FindLibExiv2.cmake b/cmake/modules/FindLibExiv2.cmake
+new file mode 100644
+index 0000000..935cee2
+--- /dev/null
++++ b/cmake/modules/FindLibExiv2.cmake
+@@ -0,0 +1,115 @@
++#.rst:
++# FindLibExiv2
++# ------------
++#
++# Try to find the Exiv2 library.
++#
++# This will define the following variables:
++#
++# ``LibExiv2_FOUND``
++#     System has LibExiv2.
++#
++# ``LibExiv2_VERSION``
++#     The version of LibExiv2.
++#
++# ``LibExiv2_INCLUDE_DIRS``
++#     This should be passed to target_include_directories() if
++#     the target is not used for linking.
++#
++# ``LibExiv2_LIBRARIES``
++#     The LibExiv2 library.
++#     This can be passed to target_link_libraries() instead of
++#     the ``LibExiv2::LibExiv2`` target
++#
++# If ``LibExiv2_FOUND`` is TRUE, the following imported target
++# will be available:
++#
++# ``LibExiv2::LibExiv2``
++#     The Exiv2 library
++#
++# Since 5.53.0.
++#
++#=============================================================================
++# Copyright (c) 2018, Christophe Giboudeaux, <christophe@krop.fr>
++# Copyright (c) 2010, Alexander Neundorf, <neundorf@kde.org>
++# Copyright (c) 2008, Gilles Caulier, <caulier.gilles@gmail.com>
++#
++#
++# Redistribution and use in source and binary forms, with or without
++# modification, are permitted provided that the following conditions
++# are met:
++#
++# 1. Redistributions of source code must retain the copyright
++#    notice, this list of conditions and the following disclaimer.
++# 2. Redistributions in binary form must reproduce the copyright
++#    notice, this list of conditions and the following disclaimer in the
++#    documentation and/or other materials provided with the distribution.
++# 3. The name of the author may not be used to endorse or promote products
++#    derived from this software without specific prior written permission.
++#
++# THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
++# IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
++# OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
++# IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
++# INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
++# NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
++# THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++#=============================================================================
++
++find_package(PkgConfig QUIET)
++pkg_check_modules(PC_EXIV2 QUIET exiv2)
++
++find_path(LibExiv2_INCLUDE_DIRS NAMES exiv2/exif.hpp
++    HINTS ${PC_EXIV2_INCLUDEDIR}
++)
++
++find_library(LibExiv2_LIBRARIES NAMES exiv2 libexiv2
++    HINTS ${PC_EXIV2_LIBRARY_DIRS}
++)
++
++set(LibExiv2_VERSION ${PC_EXIV2_VERSION})
++
++if(NOT LibExiv2_VERSION AND DEFINED LibExiv2_INCLUDE_DIRS)
++    # With exiv >= 0.27, the version #defines are in exv_conf.h instead of version.hpp
++    foreach(_exiv2_version_file "version.hpp" "exv_conf.h")
++        if(EXISTS "${LibExiv2_INCLUDE_DIRS}/exiv2/${_exiv2_version_file}")
++            file(READ "${LibExiv2_INCLUDE_DIRS}/exiv2/${_exiv2_version_file}" _exiv_version_file_content)
++            string(REGEX MATCH "#define EXIV2_MAJOR_VERSION[ ]+\\([0-9]+\\)" EXIV2_MAJOR_VERSION_MATCH ${_exiv_version_file_content})
++            string(REGEX MATCH "#define EXIV2_MINOR_VERSION[ ]+\\([0-9]+\\)" EXIV2_MINOR_VERSION_MATCH ${_exiv_version_file_content})
++            string(REGEX MATCH "#define EXIV2_PATCH_VERSION[ ]+\\([0-9]+\\)" EXIV2_PATCH_VERSION_MATCH ${_exiv_version_file_content})
++            if(EXIV2_MAJOR_VERSION_MATCH)
++                string(REGEX REPLACE ".*_MAJOR_VERSION[ ]+\\((.*)\\)" "\\1" EXIV2_MAJOR_VERSION ${EXIV2_MAJOR_VERSION_MATCH})
++                string(REGEX REPLACE ".*_MINOR_VERSION[ ]+\\((.*)\\)" "\\1" EXIV2_MINOR_VERSION ${EXIV2_MINOR_VERSION_MATCH})
++                string(REGEX REPLACE ".*_PATCH_VERSION[ ]+\\((.*)\\)" "\\1"  EXIV2_PATCH_VERSION  ${EXIV2_PATCH_VERSION_MATCH})
++            endif()
++        endif()
++    endforeach()
++
++    set(LibExiv2_VERSION "${EXIV2_MAJOR_VERSION}.${EXIV2_MINOR_VERSION}.${EXIV2_PATCH_VERSION}")
++endif()
++
++include(FindPackageHandleStandardArgs)
++find_package_handle_standard_args(LibExiv2
++    FOUND_VAR LibExiv2_FOUND
++    REQUIRED_VARS  LibExiv2_LIBRARIES LibExiv2_INCLUDE_DIRS
++    VERSION_VAR  LibExiv2_VERSION
++)
++
++mark_as_advanced(LibExiv2_INCLUDE_DIRS LibExiv2_LIBRARIES)
++
++if(LibExiv2_FOUND AND NOT TARGET LibExiv2::LibExiv2)
++    add_library(LibExiv2::LibExiv2 UNKNOWN IMPORTED)
++    set_target_properties(LibExiv2::LibExiv2 PROPERTIES
++        IMPORTED_LOCATION "${LibExiv2_LIBRARIES}"
++        INTERFACE_INCLUDE_DIRECTORIES "${LibExiv2_INCLUDE_DIRS}"
++    )
++endif()
++
++include(FeatureSummary)
++set_package_properties(LibExiv2 PROPERTIES
++    URL "http://www.exiv2.org"
++    DESCRIPTION "Image metadata support"
++)
+diff --git a/cmake/templates/libkexiv2.pc.cmake.in b/cmake/templates/libkexiv2.pc.cmake.in
+index 1df60df..e80e0ec 100644
+--- a/cmake/templates/libkexiv2.pc.cmake.in
++++ b/cmake/templates/libkexiv2.pc.cmake.in
+@@ -7,6 +7,6 @@ Name: ${PROJECT_NAME}
+ Description: A C++ library to manipulate EXIF/IPTC/XMP metadata using Exiv2 library.
+ URL: https://cgit.kde.org/libkexiv2.git/
+ Requires:
+-Version: ${KEXIV2_LIB_VERSION_STRING}
++Version: ${libkexiv2_VERSION}
+ Libs: -L${LIB_INSTALL_DIR} -lkexiv2
+ Cflags: -I${INCLUDE_INSTALL_DIR}
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 2b2df03..8ac18f5 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -6,7 +6,6 @@
+ 
+ kde_enable_exceptions()
+ 
+-include_directories(${EXIV2_INCLUDE_DIR})
+ include_directories(${CMAKE_CURRENT_BINARY_DIR}/..)
+ 
+ add_definitions(${EXIV2_DEFINITIONS})
+@@ -55,7 +54,7 @@ target_include_directories(KF5KExiv2 INTERFACE
+ 
+ target_link_libraries(KF5KExiv2
+                       PRIVATE
+-                      ${EXIV2_LIBRARIES}
++                      LibExiv2::LibExiv2
+                       PUBLIC
+                       Qt5::Core
+                       Qt5::Gui
+diff --git a/src/kexiv2.cpp b/src/kexiv2.cpp
+index 04c4aa4..b7bbc1a 100644
+--- a/src/kexiv2.cpp
++++ b/src/kexiv2.cpp
+@@ -153,7 +153,7 @@ QString KExiv2::Exiv2Version()
+     // Since 0.14.0 release, we can extract run-time version of Exiv2.
+     // else we return make version.
+ 
+-    return QString::fromLatin1(Exiv2::version());
++    return QString::fromStdString(Exiv2::versionString());
+ }
+ 
+ QString KExiv2::version()
+diff --git a/src/kexiv2_p.cpp b/src/kexiv2_p.cpp
+index cb6b134..2a287ab 100644
+--- a/src/kexiv2_p.cpp
++++ b/src/kexiv2_p.cpp
+@@ -124,19 +124,15 @@ bool KExiv2::Private::saveToFile(const QFileInfo& finfo) const
+ 
+     QStringList rawTiffBasedSupported, rawTiffBasedNotSupported;
+ 
+-    // Raw files supported by Exiv2 0.21
++    // Raw files supported by Exiv2 0.23
+     rawTiffBasedSupported << QString::fromLatin1("dng")
+                           << QString::fromLatin1("nef")
+                           << QString::fromLatin1("pef")
+                           << QString::fromLatin1("orf")
+-                          << QString::fromLatin1("srw");
++                          << QString::fromLatin1("srw")
++                          << QString::fromLatin1("cr2");
+ 
+-    if (Exiv2::testVersion(0,23,0))
+-    {
+-        rawTiffBasedSupported << QString::fromLatin1("cr2");
+-    }
+-
+-    // Raw files not supported by Exiv2 0.21
++    // Raw files not supported by Exiv2 0.23
+     rawTiffBasedNotSupported << QString::fromLatin1("3fr")
+                              << QString::fromLatin1("arw")
+                              << QString::fromLatin1("dcr")
+@@ -149,11 +145,6 @@ bool KExiv2::Private::saveToFile(const QFileInfo& finfo) const
+                              << QString::fromLatin1("srf")
+                              << QString::fromLatin1("rw2");
+ 
+-    if (!Exiv2::testVersion(0,23,0))
+-    {
+-        rawTiffBasedNotSupported << QString::fromLatin1("cr2");
+-    }
+-
+     QString ext = finfo.suffix().toLower();
+ 
+     if (!writeRawFiles && (rawTiffBasedSupported.contains(ext) || rawTiffBasedNotSupported.contains(ext)) )
+diff --git a/src/kexiv2_p.h b/src/kexiv2_p.h
+index ddf8f6d..be90bf5 100644
+--- a/src/kexiv2_p.h
++++ b/src/kexiv2_p.h
+@@ -61,17 +61,7 @@
+ #pragma GCC visibility push(default)
+ #endif
+ 
+-#include <exiv2/exv_conf.h>
+-#include <exiv2/error.hpp>
+-#include <exiv2/image.hpp>
+-#include <exiv2/jpgimage.hpp>
+-#include <exiv2/datasets.hpp>
+-#include <exiv2/tags.hpp>
+-#include <exiv2/preview.hpp>
+-#include <exiv2/properties.hpp>
+-#include <exiv2/types.hpp>
+-#include <exiv2/exif.hpp>
+-#include <exiv2/xmpsidecar.hpp>
++#include <exiv2/exiv2.hpp>
+ 
+ // Check if Exiv2 support XMP
+ 
+@@ -79,17 +69,6 @@
+ #   define _XMP_SUPPORT_ 1
+ #endif
+ 
+-// Make sure an EXIV2_TEST_VERSION macro exists:
+-
+-#ifdef EXIV2_VERSION
+-#    ifndef EXIV2_TEST_VERSION
+-#        define EXIV2_TEST_VERSION(major,minor,patch) \
+-         ( EXIV2_VERSION >= EXIV2_MAKE_VERSION(major,minor,patch) )
+-#    endif
+-#else
+-#    define EXIV2_TEST_VERSION(major,minor,patch) (false)
+-#endif
+-
+ // With exiv2 > 0.20.0, all makernote header files have been removed to increase binary compatibility.
+ // See Exiv2 bugzilla entry http://dev.exiv2.org/issues/719
+ // and wiki topic           http://dev.exiv2.org/boards/3/topics/583
+diff --git a/src/kexiv2exif.cpp b/src/kexiv2exif.cpp
+index 11c8948..52cd1a4 100644
+--- a/src/kexiv2exif.cpp
++++ b/src/kexiv2exif.cpp
+@@ -987,7 +987,11 @@ bool KExiv2::setTiffThumbnail(const QImage& thumbImage, bool setProgramName) con
+ 
+         if (pos == d->exifMetadata().end() || pos->count() != 1 || pos->toLong() != 0)
+         {
++#if EXIV2_TEST_VERSION(0,27,0)
++            throw Exiv2::Error(Exiv2::kerErrorMessage, "Exif.Image.NewSubfileType missing or not set as main image");
++#else
+             throw Exiv2::Error(1, "Exif.Image.NewSubfileType missing or not set as main image");
++#endif
+         }
+ 
+         // Remove sub-IFD tags
+-- 
+cgit v1.1
+

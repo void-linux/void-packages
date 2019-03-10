@@ -1,10 +1,10 @@
 # Template file for 'python-PyQt4'
 pkgname=python-PyQt4
 version=4.12.1
-revision=2
+revision=3
 lib32disabled=yes
 wrksrc="PyQt4_gpl_x11-${version}"
-hostmakedepends="pkg-config"
+hostmakedepends="pkg-config python python3"
 makedepends="python-devel python3-devel python-sip-devel python3-sip-devel
  qt-webkit-devel dbus-devel python-dbus-devel MesaLib-devel phonon-devel"
 depends="python-sip"
@@ -16,6 +16,10 @@ license="GPL-3"
 distfiles="${SOURCEFORGE_SITE}/pyqt/PyQt4_gpl_x11-${version}.tar.gz"
 checksum=45d724461ae58b019b9be95076ca07e212eb73084aec9125bb254825c3a05383
 alternatives="pyqt4:pyuic4:/usr/bin/python2-pyuic4"
+
+if [ -n "$CROSS_BUILD" ]; then
+	hostmakedepends+=" qt-devel sip phonon-devel python-dbus-devel qt-webkit-devel"
+fi
 
 pre_build() {
 	mkdir -p pyqt4-${py2_ver}
@@ -29,12 +33,42 @@ do_build() {
 
 	for pyver in $py2_ver $py3_ver; do
 		cd $wrksrc/pyqt4-$pyver
+
+		if [ -n "$CROSS_BUILD" ]; then
+cat > qtdetail.inc << END
+QMAKE_CC="$CC_host"
+QMAKE_CFLAGS="$CFLAGS_host"
+QMAKE_CXX="$CXX_host"
+QMAKE_CXXFLAGS="$CXXFLAGS_host"
+QMAKE_LINK="$CXX_host"
+QMAKE_LINK_SHLIB=
+QMAKE_LFLAGS=
+END
+
+cat > application.inc << END
+QMAKE_CC="${CC}"
+QMAKE_CFLAGS="${CFLAGS}"
+QMAKE_CXX="${CXX}"
+QMAKE_CXXFLAGS="${CXXFLAGS}"
+QMAKE_LINK="${CXX}"
+QMAKE_LINK_SHLIB="${CXX}"
+QMAKE_LFLAGS="${LDFLAGS}"
+QMAKE_STRIP=""
+END
+
+			# configure-ng.py stops when $XBPS_CROSS_BASE is empty
+			# in a native build; so only set sysroot when cross compiling
+			_sysroot="--sysroot=$XBPS_CROSS_BASE"
+		else
+			_sysroot=""
+		fi
+
 		python${pyver} configure-ng.py --confirm-license --assume-shared \
-			CC="${CC}" CFLAGS="${CFLAGS}" CXX="${CXX}" CXXFLAGS="${CXXFLAGS}" \
-			LINK="${CXX}" LINK_SHLIB="${CXX}" LFLAGS="${LDFLAGS}" STRIP=""
+			--qmake=/usr/lib/qt/bin/qmake --verbose $_sysroot \
+			QMAKE_CC="${CC}" QMAKE_CFLAGS="${CFLAGS}" QMAKE_CXX="${CXX}" QMAKE_CXXFLAGS="${CXXFLAGS}" \
+			QMAKE_LINK="${CXX}" QMAKE_LINK_SHLIB="${CXX}" QMAKE_LFLAGS="${LDFLAGS}" QMAKE_STRIP=""
 		find -name Makefile -exec sed -i "{}" \
-			-e "s;^\(CXXFLAGS.*=.*\);& $CXXFLAGS;" \
-			-e "s;^\(LFLAGS.*=.*\);& $LDFLAGS;" \;
+			-e "s;\(\$(INSTALL_ROOT)/usr/\)${XBPS_CROSS_TRIPLET}/;\1;g" \;
 		make ${makejobs}
 	done
 }
@@ -42,13 +76,19 @@ do_install() {
 	# install python-pyqt4
 	make -C pyqt4-${py2_ver} DESTDIR=${DESTDIR} INSTALL_ROOT=${DESTDIR} install
 	# create versioned pyuic4 wrapper
-	sed -i 's,/usr/bin/python2.7,/usr/bin/python2,' ${DESTDIR}/usr/bin/pyuic4
+	sed -i -e 's,/usr/bin/python2.7,/usr/bin/python2,' ${DESTDIR}/usr/bin/pyuic4
+	if [ -n "$CROSS_BUILD" ]; then
+		sed -i -e "s,${XBPS_CROSS_TRIPLET}/,," ${DESTDIR}/usr/bin/pyuic4
+	fi
 	mv ${DESTDIR}/usr/bin/{,python2-}pyuic4
 
 	# install python3-pyqt4
 	make -C pyqt4-${py3_ver} DESTDIR=${DESTDIR} INSTALL_ROOT=${DESTDIR} install
 	# create versioned pyuic4 wrapper
-	sed -i 's,/usr/bin/python3[.0-9]*,/usr/bin/python3,' ${DESTDIR}/usr/bin/pyuic4
+	sed -i -e 's,/usr/bin/python3[.0-9]*,/usr/bin/python3,' ${DESTDIR}/usr/bin/pyuic4
+	if [ -n "$CROSS_BUILD" ]; then
+		sed -i -e "s,${XBPS_CROSS_TRIPLET}/,," ${DESTDIR}/usr/bin/pyuic4
+	fi
 	mv ${DESTDIR}/usr/bin/{,python3-}pyuic4
 
 	cd pyqt4-${py2_ver}
@@ -97,7 +137,7 @@ python-PyQt4-webkit_package() {
 	}
 }
 python-PyQt4-doc_package() {
-	noarch=yes
+	archs=noarch
 	short_desc+=" - documentation files"
 	pkg_install() {
 		vmove usr/share/doc
@@ -107,7 +147,6 @@ python3-PyQt4_package() {
 	lib32disabled=yes
 	depends="python3-sip"
 	pycompile_module="PyQt4"
-	replaces="python3.4-PyQt4>=0"
 	short_desc="${short_desc/Python2/Python3}"
 	alternatives="pyqt4:pyuic4:/usr/bin/python3-pyuic4"
 	pkg_install() {
@@ -117,7 +156,6 @@ python3-PyQt4_package() {
 }
 python3-PyQt4-dbus_package() {
 	lib32disabled=yes
-	replaces="python3.4-PyQt4-dbus>=0"
 	depends="python3-PyQt4-${version}_${revision} python3-dbus"
 	short_desc="${short_desc/Python2/Python3} - dbus support"
 	pkg_install() {
@@ -126,7 +164,6 @@ python3-PyQt4-dbus_package() {
 }
 python3-PyQt4-phonon_package() {
 	lib32disabled=yes
-	replaces="python3.4-PyQt4-phonon>=0"
 	depends="python3-PyQt4-${version}_${revision}"
 	short_desc="${short_desc/Python2/Python3} - phonon bindings"
 	pkg_install() {
@@ -140,19 +177,4 @@ python3-PyQt4-webkit_package() {
 	pkg_install() {
 		vmove ${py3_sitelib}/PyQt4/QtWebKit.so
 	}
-}
-python3.4-PyQt4_package() {
-	build_style=meta
-	short_desc="${short_desc/Python2/Python3.4} (transitional dummy package)"
-	depends="python3-PyQt4>=${version}_${revision}"
-}
-python3.4-PyQt4-dbus_package() {
-	build_style=meta
-	short_desc="${short_desc/Python2/Python3.4} - dbus support (transitional dummy package)"
-	depends="python3-PyQt4-dbus>=${version}_${revision}"
-}
-python3.4-PyQt4-phonon_package() {
-	build_style=meta
-	short_desc="${short_desc/Python2/Python3.4} - phonon bindings (transitional dummy package)"
-	depends="python3-PyQt4-phonon>=${version}_${revision}"
 }

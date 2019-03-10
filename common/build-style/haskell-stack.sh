@@ -16,7 +16,7 @@ do_build() {
 		fi
 		msg_normal "Using stackage resolver ${stackage}.\n"
 		STACK_ROOT=$wrksrc/.stack \
-			stack init --force --resolver ${stackage}
+			stack init --system-ghc --force --resolver ${stackage}
 	fi
 
 	STACK_ROOT=$wrksrc/.stack stack --system-ghc ${makejobs} build \

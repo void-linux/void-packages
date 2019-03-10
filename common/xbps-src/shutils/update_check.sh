@@ -33,7 +33,7 @@ update_check() {
             case "$url" in
             *sourceforge.net/sourceforge*)
                 sfname="$(printf %s "$url" | cut -d/ -f5)"
-                url="http://sourceforge.net/projects/$sfname/rss?limit=200";;
+                url="https://sourceforge.net/projects/$sfname/rss?limit=200";;
             *code.google.com*|*googlecode*)
                 url="http://code.google.com/p/$pkgname/downloads/list";;
             *launchpad.net*)
@@ -43,22 +43,33 @@ update_check() {
                 pkgname=${pkgname#perl-};;
             *pythonhosted.org*)
                 pkgname=${pkgname#python-}
-                url="https://pypi.io/simple/$pkgname";;
+                pkgname=${pkgname#python3-}
+                url="https://pypi.org/simple/$pkgname";;
             *github.com*)
                 githubname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$githubname/tags"
                 rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
+            *gitlab.com*|*gitlab.gnome.org*|*gitlab.freedesktop.org*)
+                gitlaburl="$(printf %s "$url" | cut -d/ -f1-5)"
+                url="$gitlaburl/tags"
+                rx='/archive/[^/]+/\Q'"$pkgname"'\E-v?\K[\d\.]+(?=\.tar\.gz")';;
             *bitbucket.org*)
                 bbname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://bitbucket.org/$bbname/downloads"
-                rx='/(get|downloads)/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
+                rx='/(get|downloads)/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar)';;
             *ftp.gnome.org*)
-                : ${pattern="\Q$pkgname\E-\K[0-9]\.[0-9]*[02468]\.[0-9.]*[0-9](?=)"}
+                : ${pattern="\Q$pkgname\E-\K[0-9]+\.[0-9]*[02468]\.[0-9.]*[0-9](?=)"}
                 url="http://ftp.gnome.org/pub/GNOME/sources/$pkgname/cache.json";;
             *kernel.org/pub/linux/kernel/*)
                 rx=linux-'\K'${version%.*}'[\d.]+(?=\.tar\.xz)';;
             *cran.r-project.org/src/contrib*)
                 rx='\b\Q'"${pkgname#R-cran-}"'\E_\K\d+(\.\d+)*(-\d+)?(?=\.tar)';;
+            *download.kde.org/stable/applications*|*download.kde.org/stable/frameworks*|*download.kde.org/stable/plasma*)
+                url="${url%%${version%.*}*}"
+                rx='href="\K[\d\.]+(?=/")';;
+            *rubygems.org*)
+                url="https://rubygems.org/gems/${pkgname#ruby-}"
+                rx='href="/gems/'${pkgname#ruby-}'/versions/\K[\d\.]*(?=")' ;;
             esac
         fi
 
@@ -68,11 +79,12 @@ update_check() {
         if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
             echo "fetching $url" 1>&2
         fi
-        curl -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$url" |
+        curl -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml' -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$url" |
             grep -Po -i "$rx"
     done |
+    tr _ . |
     sort -Vu |
-    { 
+    {
         grep . || echo "NO VERSION found for $original_pkgname" 1>&2
     } |
     while IFS= read -r found_version; do

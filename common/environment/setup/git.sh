@@ -11,9 +11,9 @@ if [ -z "${SOURCE_DATE_EPOCH}" -a -n "$IN_CHROOT" ]; then
 		GIT_CMD=$(command -v git)
 	fi
 	# check if the template is under version control:
-	if $GIT_CMD -C ${XBPS_SRCPKGDIR}/${basepkg} status --porcelain template | grep "^?? " &> /dev/null; then
+	if $GIT_CMD -C ${XBPS_SRCPKGDIR}/${basepkg} status -u normal --porcelain template | grep "^?? " &> /dev/null; then
 		export SOURCE_DATE_EPOCH="$(stat -c %Y ${XBPS_SRCPKGDIR}/${basepkg}/template)"
 	else
-		export SOURCE_DATE_EPOCH="$($GIT_CMD -C ${XBPS_SRCPKGDIR}/${basepkg} log --pretty='%ct' -n1 .)"
+		export SOURCE_DATE_EPOCH="$($GIT_CMD -C ${XBPS_DISTDIR} log --pretty='%ct' -n1 HEAD)"
 	fi
 fi

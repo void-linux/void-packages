@@ -7,29 +7,20 @@ registerpkg() {
 		msg_error "Unexistent binary package ${repo}/${pkg}!\n"
 	fi
 
-	msg_normal "Registering ${pkg} into ${repo} ...\n"
-	if [ -n "${arch}" ]; then
-		XBPS_TARGET_ARCH=${arch} $XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${repo}/${pkg}
-	else
-		if [ -n "$XBPS_CROSS_BUILD" ]; then
-			$XBPS_RINDEX_XCMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${repo}/${pkg}
-		else
-			$XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${repo}/${pkg}
-		fi
-	fi
+	printf "%s:%s:%s\n" "${arch}" "${repo}" "${pkg}" >> "${XBPS_STATEDIR}/.${sourcepkg}_register_pkg"
 }
 
 hook() {
 	local arch= binpkg= pkgdir=
 
-	if [ -n "$noarch" ]; then
+	if [ "${archs// /}" = "noarch" ]; then
 		arch=noarch
 	elif [ -n "$XBPS_TARGET_MACHINE" ]; then
 		arch=$XBPS_TARGET_MACHINE
 	else
 		arch=$XBPS_MACHINE
 	fi
-	if [ -z "$noarch" -a -z "$XBPS_CROSS_BUILD" -a -n "$XBPS_ARCH" -a "$XBPS_ARCH" != "$XBPS_TARGET_MACHINE" ]; then
+	if [ "${archs// /}" != "noarch" -a -z "$XBPS_CROSS_BUILD" -a -n "$XBPS_ARCH" -a "$XBPS_ARCH" != "$XBPS_TARGET_MACHINE" ]; then
 		arch=${XBPS_ARCH}
 	fi
 	if [ -n "$repository" ]; then

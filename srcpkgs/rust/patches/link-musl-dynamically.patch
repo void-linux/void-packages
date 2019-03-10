@@ -1,100 +1,66 @@
---- a/src/bootstrap/sanity.rs
-+++ b/src/bootstrap/sanity.rs
-@@ -21,3 +21,2 @@
- use std::ffi::{OsStr, OsString};
--use std::fs;
- use std::process::Command;
-@@ -132,27 +132,6 @@
-             panic!("the iOS target is only supported on OSX");
+--- rustc-1.28.0-src/src/bootstrap/compile.rs.orig	2018-07-31 00:15:53.000000000 +0200
++++ rustc-1.28.0-src/src/bootstrap/compile.rs	2018-08-06 09:00:00.011914967 +0200
+@@ -78,13 +78,6 @@ impl Step for Std {
+             });
+             builder.info(&format!("Uplifting stage1 std ({} -> {})", from.host, target));
+ 
+-            // Even if we're not building std this stage, the new sysroot must
+-            // still contain the musl startup objects.
+-            if target.contains("musl") {
+-                let libdir = builder.sysroot_libdir(compiler, target);
+-                copy_musl_third_party_objects(builder, target, &libdir);
+-            }
+-
+             builder.ensure(StdLink {
+                 compiler: from,
+                 target_compiler: compiler,
+@@ -101,11 +94,6 @@
+             return;
          }
  
--        // Make sure musl-root is valid if specified
--        if target.contains("musl") && !target.contains("mips") {
--            match build.musl_root(target) {
--                Some(root) => {
--                    if fs::metadata(root.join("lib/libc.a")).is_err() {
--                        panic!("couldn't find libc.a in musl dir: {}",
--                               root.join("lib").display());
--                    }
--                    if fs::metadata(root.join("lib/libunwind.a")).is_err() {
--                        panic!("couldn't find libunwind.a in musl dir: {}",
--                               root.join("lib").display());
--                    }
--                }
--                None => {
--                    panic!("when targeting MUSL either the rust.musl-root \
--                            option or the target.$TARGET.musl-root option must \
--                            be specified in config.toml")
--                }
--            }
+-        if target.contains("musl") {
+-            let libdir = builder.sysroot_libdir(compiler, target);
+-            copy_musl_third_party_objects(builder, target, &libdir);
 -        }
 -
-         if target.contains("msvc") {
-             // There are three builds of cmake on windows: MSVC, MinGW, and
-             // Cygwin. The Cygwin build does not have generators for Visual
---- a/src/liblibc/src/unix/mod.rs
-+++ b/src/liblibc/src/unix/mod.rs
-@@ -209,10 +209,6 @@
-     } else if #[cfg(all(not(stdbuild), feature = "use_std"))] {
-         // cargo build, don't pull in anything extra as the libstd  dep
-         // already pulls in all libs.
--    } else if #[cfg(any(all(target_env = "musl", not(target_arch = "mips"))))] {
--        #[link(name = "c", kind = "static", cfg(target_feature = "crt-static"))]
--        #[link(name = "c", cfg(not(target_feature = "crt-static")))]
--        extern {}
-     } else if #[cfg(target_os = "emscripten")] {
-         #[link(name = "c")]
-         extern {}
---- a/src/librustc_back/target/x86_64_unknown_linux_musl.rs
-+++ b/src/librustc_back/target/x86_64_unknown_linux_musl.rs
-@@ -11,7 +11,7 @@
- use target::{Target, TargetResult};
-  
- pub fn target() -> TargetResult {
--    let mut base = super::linux_musl_base::opts();
-+    let mut base = super::linux_base::opts();
-     base.cpu = "x86-64".to_string();
-     base.max_atomic_width = 64;
-     base.pre_link_args.push("-m64".to_string());
---- a/src/libunwind/build.rs
-+++ b/src/libunwind/build.rs
-@@ -16,9 +16,7 @@
-     let target = env::var("TARGET").unwrap();
-  
-     if target.contains("linux") {
--        if target.contains("musl") && !target.contains("mips") {
--            println!("cargo:rustc-link-lib=static=unwind");
--        } else if !target.contains("android") {
-+        if !target.contains("android") {
-             println!("cargo:rustc-link-lib=gcc_s");
-         }
-     } else if target.contains("freebsd") {
---- rustc-1.19.0-src/src/bootstrap/compile.rs.orig
-+++ rustc-1.19.0-src/src/bootstrap/compile.rs
-@@ -114,10 +114,6 @@
-     let libdir = build.sysroot_libdir(target_compiler, target);
-     add_to_sysroot(&libdir, &libstd_stamp(build, compiler, target));
+         let mut cargo = builder.cargo(compiler, Mode::Std, target, "build");
+         std_cargo(builder, &compiler, target, &mut cargo);
  
--    if target.contains("musl") && !target.contains("mips") {
--        copy_musl_third_party_objects(build, target, &libdir);
--    }
--
-     if build.config.sanitizers && compiler.stage != 0 && target == "x86_64-apple-darwin" {
-         // The sanitizers are only built in stage1 or above, so the dylibs will
-         // be missing in stage0 and causes panic. See the `std()` function above
-@@ -126,15 +122,6 @@
+@@ -119,20 +107,6 @@ impl Step for Std {
      }
  }
  
 -/// Copies the crt(1,i,n).o startup objects
 -///
--/// Only required for musl targets that statically link to libc
--fn copy_musl_third_party_objects(build: &Build, target: &str, into: &Path) {
+-/// Since musl supports fully static linking, we can cross link for it even
+-/// with a glibc-targeting toolchain, given we have the appropriate startup
+-/// files. As those shipped with glibc won't work, copy the ones provided by
+-/// musl so we have them on linux-gnu hosts.
+-fn copy_musl_third_party_objects(builder: &Builder,
+-                                 target: Interned<String>,
+-                                 into: &Path) {
 -    for &obj in &["crt1.o", "crti.o", "crtn.o"] {
--        copy(&build.musl_root(target).unwrap().join("lib").join(obj), &into.join(obj));
+-        builder.copy(&builder.musl_root(target).unwrap().join("lib").join(obj), &into.join(obj));
 -    }
 -}
 -
- fn copy_apple_sanitizer_dylibs(native_dir: &Path, platform: &str, into: &Path) {
-     for &sanitizer in &["asan", "tsan"] {
-         let filename = format!("libclang_rt.{}_{}_dynamic.dylib", sanitizer, platform);
+ /// Configure cargo to compile the standard library, adding appropriate env vars
+ /// and such.
+ pub fn std_cargo(builder: &Builder,
+
+--- rustc-1.28.0-src/src/liblibc/src/unix/mod.rs.orig   2018-10-14 16:54:15.555482375 +0200
++++ rustc-1.28.0-src/src/liblibc/src/unix/mod.rs        2018-10-14 16:54:47.153240177 +0200
+@@ -276,13 +276,6 @@
+     } else if #[cfg(feature = "use_std")] {
+         // cargo build, don't pull in anything extra as the libstd dep
+         // already pulls in all libs.
+-    } else if #[cfg(target_env = "musl")] {
+-        #[cfg_attr(feature = "stdbuild",
+-                   link(name = "c", kind = "static",
+-                        cfg(target_feature = "crt-static")))]
+-        #[cfg_attr(feature = "stdbuild",
+-                   link(name = "c", cfg(not(target_feature = "crt-static"))))]
+-        extern {}
+     } else if #[cfg(target_os = "emscripten")] {
+         #[link(name = "c")]
+         extern {}

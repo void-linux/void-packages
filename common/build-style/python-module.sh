@@ -4,10 +4,13 @@
 
 do_build() {
 	: ${python_versions:="2.7 $py3_ver"}
-	local pyver= pysufx=
+	local pyver= pysufx= tmp_cflags="$CFLAGS" tmp_ldflags="$LDFLAGS"
 
 	for pyver in $python_versions; do
 		if [ -n "$CROSS_BUILD" ]; then
+			CFLAGS="$tmp_cflags"
+			LDFLAGS="$tmp_ldflags"
+
 			PYPREFIX="$XBPS_CROSS_BASE"
 			if [ "$pyver" != "2.7" ]; then
 				pysufx=m

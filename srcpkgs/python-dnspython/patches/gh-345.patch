@@ -1,0 +1,166 @@
+Backport of https://github.com/rthalley/dnspython/pull/345.
+
+--- dns/dnssec.py.orig	2018-12-01 07:25:26.000000000 +0100
++++ dns/dnssec.py	2018-12-29 19:49:57.505384082 +0100
+@@ -18,6 +18,7 @@
+ """Common DNSSEC-related functions and constants."""
+ 
+ from io import BytesIO
++import hashlib
+ import struct
+ import time
+ 
+@@ -39,6 +40,57 @@
+     """The DNSSEC signature is invalid."""
+ 
+ 
++class Hash:
++    """
++    Compatibilty Hash method
++    Has the same inteface as the stdlib hashlib.hash, with the added `oid`
++    attribute used by the crypto module
++    """
++    _oid_map = {
++        'MD5': '1.2.840.113549.2.5',
++        'SHA1': '1.3.14.3.2.26',
++        'SHA256': '2.16.840.1.101.3.4.2.1',
++        'SHA384': '2.16.840.1.101.3.4.2.2',
++        'SHA512': '2.16.840.1.101.3.4.2.3',
++    }
++
++    def __init__(self):
++        self._hash = None
++
++    @classmethod
++    def new(cls, name, data=b''):
++        self = cls()
++        self._hash = hashlib.new(name, data)
++
++        return self
++
++    def update(self, data):
++        self._hash.update(data)
++
++    def digest(self):
++        return self._hash.digest()
++
++    def hexdigest(self):
++        return self._hash.hexdigest()
++
++    def copy(self):
++        copy = Hash()
++        copy._hash = self._hash.copy()
++
++        return copy
++
++    @property
++    def name(self):
++        return self._hash.name
++
++    @property
++    def oid(self):
++        try:
++            return self._oid_map[self.name]
++        except KeyError:
++            raise RuntimeError('OID for algorithm %s is unknown' % self.name)
++
++
+ #: RSAMD5
+ RSAMD5 = 1
+ #: DH
+@@ -165,10 +217,10 @@
+ 
+     if algorithm.upper() == 'SHA1':
+         dsalg = 1
+-        hash = SHA1.new()
++        hash = Hash.new('SHA1')
+     elif algorithm.upper() == 'SHA256':
+         dsalg = 2
+-        hash = SHA256.new()
++        hash = Hash.new('SHA256')
+     else:
+         raise UnsupportedAlgorithm('unsupported algorithm "%s"' % algorithm)
+ 
+@@ -240,15 +292,15 @@
+ 
+ def _make_hash(algorithm):
+     if _is_md5(algorithm):
+-        return MD5.new()
++        return Hash.new('MD5')
+     if _is_sha1(algorithm):
+-        return SHA1.new()
++        return Hash.new('SHA1')
+     if _is_sha256(algorithm):
+-        return SHA256.new()
++        return Hash.new('sha256')
+     if _is_sha384(algorithm):
+-        return SHA384.new()
++        return Hash.new('sha384')
+     if _is_sha512(algorithm):
+-        return SHA512.new()
++        return Hash.new('sha512')
+     raise ValidationFailure('unknown hash for algorithm %u' % algorithm)
+ 
+ 
+@@ -479,12 +531,10 @@
+ try:
+     try:
+         # test we're using pycryptodome, not pycrypto (which misses SHA1 for example)
+-        from Crypto.Hash import MD5, SHA1, SHA256, SHA384, SHA512
+         from Crypto.PublicKey import RSA as CryptoRSA, DSA as CryptoDSA
+         from Crypto.Signature import pkcs1_15, DSS
+         from Crypto.Util import number
+     except ImportError:
+-        from Cryptodome.Hash import MD5, SHA1, SHA256, SHA384, SHA512
+         from Cryptodome.PublicKey import RSA as CryptoRSA, DSA as CryptoDSA
+         from Cryptodome.Signature import pkcs1_15, DSS
+         from Cryptodome.Util import number
+--- tests/test_dnssec.py.orig	2018-12-01 07:25:26.000000000 +0100
++++ tests/test_dnssec.py	2018-12-29 19:51:46.799389525 +0100
+@@ -177,10 +177,6 @@
+                                 abs_dnspython_org, when)
+         self.failUnlessRaises(dns.dnssec.ValidationFailure, bad)
+ 
+-    def testMakeSHA256DS(self): # type: () -> None
+-        ds = dns.dnssec.make_ds(abs_dnspython_org, sep_key, 'SHA256')
+-        self.failUnless(ds == good_ds)
+-
+     def testAbsoluteDSAGood(self): # type: () -> None
+         dns.dnssec.validate(abs_dsa_soa, abs_dsa_soa_rrsig, abs_dsa_keys, None,
+                             when2)
+@@ -191,14 +187,6 @@
+                                 abs_dsa_keys, None, when2)
+         self.failUnlessRaises(dns.dnssec.ValidationFailure, bad)
+ 
+-    def testMakeExampleSHA1DS(self): # type: () -> None
+-        ds = dns.dnssec.make_ds(abs_example, example_sep_key, 'SHA1')
+-        self.failUnless(ds == example_ds_sha1)
+-
+-    def testMakeExampleSHA256DS(self): # type: () -> None
+-        ds = dns.dnssec.make_ds(abs_example, example_sep_key, 'SHA256')
+-        self.failUnless(ds == example_ds_sha256)
+-
+     @unittest.skipUnless(dns.dnssec._have_ecdsa,
+                          "python ECDSA cannot be imported")
+     def testAbsoluteECDSA256Good(self): # type: () -> None
+@@ -228,5 +216,20 @@
+         self.failUnlessRaises(dns.dnssec.ValidationFailure, bad)
+ 
+ 
++class DNSSECMakeDSTestCase(unittest.TestCase):
++
++    def testMakeSHA256DS(self): # type: () -> None
++        ds = dns.dnssec.make_ds(abs_dnspython_org, sep_key, 'SHA256')
++        self.failUnless(ds == good_ds)
++
++    def testMakeExampleSHA1DS(self): # type: () -> None
++        ds = dns.dnssec.make_ds(abs_example, example_sep_key, 'SHA1')
++        self.failUnless(ds == example_ds_sha1)
++
++    def testMakeExampleSHA256DS(self): # type: () -> None
++        ds = dns.dnssec.make_ds(abs_example, example_sep_key, 'SHA256')
++        self.failUnless(ds == example_ds_sha256)
++
++
+ if __name__ == '__main__':
+     unittest.main()

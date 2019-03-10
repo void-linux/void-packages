@@ -28,3 +28,13 @@ vopt_conflict() {
         msg_error "options '${opt1}' and '${opt2}' conflict\n"
     fi
 }
+
+vopt_bool() {
+    local opt="$1" prop="$2"
+    if [ "$#" -lt "2" ]; then
+        msg_error "vopt_bool <build_option> <property>: missing values\n"
+    elif [ "$#" -gt "2" ]; then
+        msg_error "vopt_bool $opt: $(($# - 2)) excess parameter(s)\n"
+    fi
+    vopt_if "$1" "-D${prop}=true" "-D${prop}=false"
+}

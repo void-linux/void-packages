@@ -1,12 +1,14 @@
 # Template file for 'boinc'
 pkgname=boinc
-version=7.8.2
-revision=1
-wrksrc=boinc-client_release-${version%.*}-${version%4}
+version=7.14.2
+revision=2
+_majorver=${version%.*}
+wrksrc=boinc-client_release-${_majorver}-${version}
 build_style=gnu-configure
-hostmakedepends="automake libtool pkg-config python"
-makedepends="glu-devel libfreeglut-devel libcurl-devel wxWidgets-devel webkitgtk2-devel
- libjpeg-turbo-devel libnotify-devel sqlite-devel libXmu-devel libXi-devel"
+hostmakedepends="automake libtool pkg-config python xorgproto shared-mime-info"
+makedepends="glu-devel libfreeglut-devel libcurl-devel
+ libjpeg-turbo-devel libnotify-devel sqlite-devel libxcb-devel
+ libXmu-devel libXi-devel gtk+-devel webkit2gtk-devel wxWidgets-gtk3-devel"
 depends="curl ca-certificates"
 system_accounts="boinc"
 boinc_homedir="/var/lib/boinc"
@@ -14,25 +16,44 @@ boinc_shell="/bin/bash"
 conf_files="/etc/default/boinc-client"
 short_desc="Berkely Infrastructure for Network Computing"
 maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
-license="LGPL-3.0"
+license="LGPL-3.0-or-later"
 homepage="https://boinc.berkeley.edu/"
-distfiles="https://github.com/BOINC/boinc/archive/client_release/${version%.*}/${version}.tar.gz>boinc-${version}.tar.gz"
-checksum=d71f35fa1b3ffb31c857e4f40034cbcc0201157de4fa1bed9e75427febcc79d5
+distfiles="https://github.com/BOINC/boinc/archive/client_release/${_majorver}/${version}.tar.gz>boinc-${version}.tar.gz"
+checksum=970aedb9e25afa20be67f125ab05435df8eb2e66a3ac30ad316c54085e397c88
 conflicts="boinc-nox>=0"
 
 CXXFLAGS="-Wno-redundant-decls"
+
+case "$XBPS_TARGET_MACHINE" in
+	armv6l) broken="arm-linux-gnueabihf-g++: error: libwhetvfp.a: No such file or directory" ;;
+esac
 
 pre_configure() {
 	autoreconf -if
 }
 do_configure() {
+	if [ -n "$CROSS_BUILD" ]; then
+		# XXX: cross building used to be a lot easier
+		# Set include paths for configure to find dependencies.
+		CFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/glib-2.0"
+		CFLAGS+=" -I${XBPS_CROSS_BASE}/usr/lib/glib-2.0/include"
+		CXXFLAGS+=" ${CFLAGS}"
+		echo "CFLAGS:   $CFLAGS"
+		echo "CXXFLAGS: $CXXFLAGS"
+		export LIBNOTIFY_CFLAGS="${CFLAGS}"
+		export LIBNOTIFY_LIBS="-L${XBPS_CROSS_BASE}/usr/lib -lnotify"
+	fi
 	mkdir /tmp/x11
 	mv * /tmp/x11
 	mv /tmp/x11 .
 	mkdir nox
 	cp -ar x11/* nox
+
 	cd ${wrksrc}/x11
-	LDFLAGS="${LDFLAGS} -lX11" ./configure \
+	PKG_CONFIG=pkg-config \
+	PKG_CONFIG_PATH=${XBPS_CROSS_BASE}/usr/lib/pkgconfig \
+	LDFLAGS="${LDFLAGS} -lX11" \
+	./configure \
 		${configure_args} \
 		--enable-libraries \
 		--enable-unicode \
@@ -42,12 +63,15 @@ do_configure() {
 		--enable-client \
 		--enable-manager \
 		--disable-server \
-		--with-ssl \
-		--with-x \
-		--with-wx-config=/usr/bin/wx-config-3.0 \
-		--with-wxdir=${XBPS_CROSS_BASE}/usr/lib
+		--with-ssl=${XBPS_CROSS_BASE}/usr \
+		--with-x=${XBPS_CROSS_BASE}/usr \
+		--with-wx-config=${XBPS_CROSS_BASE}/usr/bin/wx-config-gtk3 \
+		--with-wx-prefix=${XBPS_CROSS_BASE}/usr
+
 	cd ${wrksrc}/nox
-	PKG_CONFIG=/usr/bin/pkg-config ./configure \
+	PKG_CONFIG=pkg-config \
+	PKG_CONFIG_PATH=${XBPS_CROSS_BASE}/usr/lib/pkgconfig \
+	./configure \
 		${configure_args} \
 		--enable-libraries \
 		--enable-unicode \
@@ -57,9 +81,8 @@ do_configure() {
 		--enable-client \
 		--disable-manager \
 		--disable-server \
-		--disable-xss \
 		--disable-server \
-		--with-ssl \
+		--with-ssl=${XBPS_CROSS_BASE}/usr \
 		--without-x \
 		--without-wxdir
 }
@@ -73,6 +96,12 @@ do_install() {
 	cd ${wrksrc}/x11
 	make ${makejobs} DESTDIR="${DESTDIR}" install
 
+	if [ -f "${DESTDIR}/etc/boinc-client.conf" ]; then
+		vmkdir etc/default
+		mv "${DESTDIR}"/etc/boinc-client.conf \
+			"${DESTDIR}"/etc/default/boinc-client
+	fi
+
 	# Bash completion
 	vinstall ${FILESDIR}/boinc.bash 644 usr/share/bash-completion/completions boinc
 
@@ -80,7 +109,9 @@ do_install() {
 	vmkdir usr/share/applications
 	vinstall ${FILESDIR}/boinc.desktop 644 usr/share/applications
 	for size in 16 24 32 64 128 256; do
-		vinstall ${FILESDIR}/boinc${size}.png 644 usr/share/icons/hicolor/${size}x${size}/apps boinc.png
+		vinstall ${FILESDIR}/boinc${size}.png 644 \
+			usr/share/icons/hicolor/${size}x${size}/apps \
+			boinc.png
 	done
 	vinstall ${FILESDIR}/boinc32.png 644 usr/share/pixmaps boinc.png
 	vsv boinc
@@ -101,6 +132,12 @@ boinc-nox_package() {
 	pkg_install() {
 		cd ${wrksrc}/nox
 		make ${makejobs} DESTDIR=${PKGDESTDIR} install
+
+		if [ -f "${PKGDESTDIR}/etc/boinc-client.conf" ]; then
+			vmkdir etc/default
+			mv "${PKGDESTDIR}"/etc/boinc-client.conf \
+				"${PKGDESTDIR}"/etc/default/boinc-client
+		fi
 
 		# no devel package - no includes, *.a and *.so
 		rm -rf ${PKGDESTDIR}/usr/include

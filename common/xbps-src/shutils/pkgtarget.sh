@@ -1,9 +1,9 @@
 # vim: set ts=4 sw=4 et:
 
 check_pkg_arch() {
-    local cross="$1" _arch f found
+    local cross="$1" _arch f match nonegation
 
-    if [ -n "$only_for_archs" ]; then
+    if [ -n "$archs" -a "${archs// /}" != "noarch" ]; then
         if [ -n "$cross" ]; then
             _arch="$XBPS_TARGET_MACHINE"
         elif [ -n "$XBPS_ARCH" ]; then
@@ -11,13 +11,16 @@ check_pkg_arch() {
         else
             _arch="$XBPS_MACHINE"
         fi
-        for f in ${only_for_archs}; do
-            if [ "$f" = "${_arch}" ]; then
-                found=1
-                break
-            fi
+        set -f
+        for f in ${archs}; do
+            set +f
+            nonegation=${f##\~*}
+            f=${f#\~}
+            case "${_arch}" in
+                $f) match=1; break ;;
+            esac
         done
-        if [ -z "$found" ]; then
+        if [ -z "$nonegation" -a -n "$match" ] || [ -n "$nonegation" -a -z "$match" ]; then
             msg_red "$pkgname: this package cannot be built for ${_arch}.\n"
             exit 2
         fi
@@ -49,7 +52,7 @@ remove_pkg_autodeps() {
 
     remove_pkg_cross_deps
     $XBPS_RECONFIGURE_CMD -a >> $tmplogf 2>&1
-    $XBPS_REMOVE_CMD -Ryod >> $tmplogf 2>&1
+    echo yes | $XBPS_REMOVE_CMD -Ryod >> $tmplogf 2>&1
     rval=$?
 
     if [ $rval -ne 0 ]; then
@@ -63,6 +66,7 @@ remove_pkg_autodeps() {
 remove_pkg_wrksrc() {
     if [ -d "$wrksrc" ]; then
         msg_normal "$pkgver: cleaning build directory...\n"
+        chmod -R +wX $wrksrc # Needed to delete Go Modules
         rm -rf $wrksrc
     fi
 }

@@ -2,14 +2,14 @@
 # a package template and can also be used in subpkgs.
 
 ## VARIABLES
-unset -v noarch conf_files mutable_files preserve triggers alternatives
+unset -v conf_files mutable_files preserve triggers alternatives
 unset -v depends run_depends replaces provides conflicts tags
 
 # hooks/post-install/03-strip-and-debug-pkgs
 unset -v nostrip nostrip_files
 
 # hooks/pre-pkg/04-generate-runtime-deps
-unset -v noverifyrdeps allow_unknown_shlibs shlib_requires
+unset -v noverifyrdeps skiprdeps allow_unknown_shlibs shlib_requires
 
 # hooks/pre-pkg/06-prepare-32bit
 unset -v lib32depends lib32disabled lib32files lib32mode lib32symlinks
@@ -40,3 +40,9 @@ unset -v make_dirs
 
 # xbps-triggers: binfmts
 unset -v binfmts
+
+# xbps-triggers: register-shell
+unset -v register_shell
+
+# deprecated
+unset -v noarch

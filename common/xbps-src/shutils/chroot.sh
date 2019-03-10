@@ -44,7 +44,7 @@ _EOF
     else
         sed -e 's,@@XARCH@@,,g' -i $XBPS_MASTERDIR/bin/xbps-shell
     fi
-    if [ -z "$XBPS_CHECK_PKGS" -o "$XBPS_CHECK_PKGS" = "0" -o "$XBPS_CHECK_PKGS" = "no" ]; then
+    if [ -z "$XBPS_CHECK_PKGS" ]; then
         sed -e 's,@@CHECK@@,,g' -i $XBPS_MASTERDIR/bin/xbps-shell
     else
         sed -e "s,@@CHECK@@,XBPS_CHECK_PKGS=$XBPS_CHECK_PKGS,g" -i $XBPS_MASTERDIR/bin/xbps-shell
@@ -82,7 +82,11 @@ chroot_prepare() {
     fi
 
     # Create some required files.
-    [ -f /etc/localtime ] && cp -f /etc/localtime $XBPS_MASTERDIR/etc
+    if [ -f /etc/localtime ]; then
+        cp -f /etc/localtime $XBPS_MASTERDIR/etc
+    elif [ -f /usr/share/zoneinfo/UTC ]; then
+        cp -f /usr/share/zoneinfo/UTC $XBPS_MASTERDIR/etc/localtime
+    fi
 
     for f in dev sys proc host boot; do
         [ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
@@ -104,7 +108,7 @@ chroot_prepare() {
     ln -sf /dev/null $XBPS_MASTERDIR/etc/xbps.d/00-repository-main.conf
 
     # Prepare default locale: en_US.UTF-8.
-    if [ -z "$XBPS_TEMP_MASTERDIR" -a -s ${XBPS_MASTERDIR}/etc/default/libc-locales ]; then
+    if [ -s ${XBPS_MASTERDIR}/etc/default/libc-locales ]; then
         echo 'en_US.UTF-8 UTF-8' >> ${XBPS_MASTERDIR}/etc/default/libc-locales
     fi
 
@@ -118,6 +122,8 @@ chroot_sync_repos() {
     local f=
 
     # Copy xbps configuration files to the masterdir.
+    install -Dm644 ${XBPS_DISTDIR}/etc/xbps.conf \
+        ${XBPS_MASTERDIR}/etc/xbps.d/00-xbps-src.conf
     install -Dm644 ${XBPS_DISTDIR}/etc/repos-local.conf \
         ${XBPS_MASTERDIR}/etc/xbps.d/10-repository-local.conf
     install -Dm644 ${XBPS_DISTDIR}/etc/repos-remote.conf \
@@ -178,7 +184,7 @@ chroot_handler() {
     [ -z "$action" -a -z "$pkg" ] && return 1
 
     case "$action" in
-        fetch|extract|build|check|configure|install|install-destdir|pkg|build-pkg|bootstrap-update|chroot)
+        fetch|extract|patch|build|check|configure|install|install-destdir|pkg|build-pkg|bootstrap-update|chroot)
             chroot_prepare || return $?
             chroot_init || return $?
             chroot_sync_repos || return $?
@@ -196,8 +202,8 @@ chroot_handler() {
         [ -n "$XBPS_BUILD_FORCEMODE" ] && arg="$arg -f"
         [ -n "$XBPS_MAKEJOBS" ] && arg="$arg -j$XBPS_MAKEJOBS"
         [ -n "$XBPS_DEBUG_PKGS" ] && arg="$arg -g"
-        [ -z "$XBPS_CHECK_PKGS" -o "$XBPS_CHECK_PKGS" = "0" -o "$XBPS_CHECK_PKGS" = "no" ] && arg="$arg -Q"
-        [ -n "$XBPS_BUILD_ONLY_ONE_PKG" -a "$XBPS_BUILD_ONLY_ONE_PKG" != "0" -a "$XBPS_BUILD_ONLY_ONE_PKG" != "no" ] && arg="$arg -1"
+        [ -n "$XBPS_CHECK_PKGS" ] && arg="$arg -Q"
+        [ -n "$XBPS_BUILD_ONLY_ONE_PKG" ] && arg="$arg -1"
         [ -n "$XBPS_QUIET" ] && arg="$arg -q"
         [ -n "$XBPS_SKIP_DEPS" ] && arg="$arg -I"
         [ -n "$XBPS_ALT_REPOSITORY" ] && arg="$arg -r $XBPS_ALT_REPOSITORY"

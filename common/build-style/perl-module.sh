@@ -16,8 +16,17 @@ do_configure() {
 
 	local perlprefix=${XBPS_STATEDIR}/perlprefix-${XBPS_TARGET_MACHINE}
 	mkdir -p $perlprefix
-	cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Config"*.p? $perlprefix
-	cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Errno.pm" $perlprefix
+	if [ -d "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl" ]; then
+		cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Config"*.p? $perlprefix
+		cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Errno.pm" $perlprefix
+		sed -i -e "s;archlibexp => '\(.*\)';archlibexp => '${XBPS_CROSS_BASE}\1';" \
+			${perlprefix}/Config.pm
+		sed -i -e "s;^archlibexp='\(.*\)';archlibexp='${XBPS_CROSS_BASE}\1';" \
+			${perlprefix}/Config_heavy.pl
+	else
+		cp "/usr/lib/perl5/core_perl/Config"*.p? $perlprefix
+		cp "/usr/lib/perl5/core_perl/Errno.pm" $perlprefix
+	fi
 	export PERL5LIB=$perlprefix
 
 	if [ -f ${wrksrc}/Makefile.PL ]; then
@@ -53,7 +62,6 @@ do_configure() {
 			msg_error "*** ERROR: couldn't find $perlmkf, aborting **\n"
 		fi
 	done
-
 }
 
 do_build() {
@@ -63,6 +71,13 @@ do_build() {
 		LDFLAGS="$LDFLAGS -L${XBPS_CROSS_BASE}/usr/lib -lperl" \
 		LDDLFLAGS="-shared $CFLAGS -L${XBPS_CROSS_BASE}/usr/lib -lperl" \
 		${makejobs} ${make_build_args} ${make_build_target}
+}
+
+do_check() {
+	: ${make_cmd:=make}
+	: ${make_check_target:=test}
+
+	${make_cmd} ${make_check_args} ${make_check_target}
 }
 
 do_install() {

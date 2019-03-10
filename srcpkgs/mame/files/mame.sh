@@ -1,7 +1,7 @@
 #!/bin/sh
 
 exec_mame() {
-  /usr/share/mame/mame \
+  /usr/libexec/mame/mame \
     -artpath "$HOME/.mame/artwork;artwork" \
     -ctrlrpath "$HOME/.mame/ctrlr;ctrlr" \
     -inipath $HOME/.mame/ini \
@@ -41,5 +41,5 @@ elif [ ! -e $HOME/.mame ]; then
   cd $HOME/.mame && exec_mame
 else
   cd /usr/share/mame
-  ./mame "$@"
+  /usr/libexec/mame/mame "$@"
 fi

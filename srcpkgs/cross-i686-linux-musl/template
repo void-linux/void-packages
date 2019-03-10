@@ -1,42 +1,42 @@
 # Template build file for 'cross-i686-linux-musl'
 #
-_binutils_version=2.29
-_gcc_version=6.3.0
-_musl_version=1.1.16
-_linux_version=4.9.8
+_binutils_version=2.32
+_gcc_version=8.3.0
+_musl_version=1.1.21
+_linux_version=4.19
 
 _triplet=i686-linux-musl
 _sysroot="/usr/${_triplet}"
 _archflags="-march=i686"
 
 pkgname=cross-${_triplet}
-version=0.23
-revision=3
+version=0.30
+revision=1
 short_desc="Cross toolchain for i686 target (musl)"
-maintainer="Juan RP <xtraeme@voidlinux.eu>"
-homepage="http://www.voidlinux.eu"
-license="GPL-3, GPL-2, MIT"
+maintainer="Juan RP <xtraeme@voidlinux.org>"
+homepage="https://www.voidlinux.org/"
+license="GPL-2.0-or-later, GPL-3.0-or-later, MIT"
 distfiles="
- ${GNU_SITE}/binutils/binutils-${_binutils_version}.tar.bz2
- ${GNU_SITE}/gcc/gcc-${_gcc_version}/gcc-${_gcc_version}.tar.bz2
- ${KERNEL_SITE}/kernel/v4.x/linux-${_linux_version}.tar.xz
- http://www.musl-libc.org/releases/musl-${_musl_version}.tar.gz"
-checksum="
- 29a29549869039aad75fdf507ac30366da5ad0b974fbff4a8e7148dbf4f40ebf
- f06ae7f3f790fbf0f018f6d40e844451e6bc3b7bc96e128e63b09825c1f8b29f
- 150bb7f2dd4849b5d21b8ccd8d05294a48229e1fcb93a22e7b806a79ec0b0e45
- 937185a5e5d721050306cf106507a006c3f1f86d86cd550024ea7be909071011"
+ ${GNU_SITE}/binutils/binutils-${_binutils_version}.tar.xz
+ ${GNU_SITE}/gcc/gcc-${_gcc_version}/gcc-${_gcc_version}.tar.xz
+ http://www.musl-libc.org/releases/musl-${_musl_version}.tar.gz
+ ${KERNEL_SITE}/kernel/v4.x/linux-${_linux_version}.tar.xz"
+checksum="0ab6c55dd86a92ed561972ba15b9b70a8b9f75557f896446c82e8b36e473ee04
+ 64baadfe6cc0f4947a84cb12d7f0dfaf45bb58b7e92461639596c21e02d97d2c
+ c742b66f6f49c9e5f52f64d8b79fecb5a0f6e0203fca176c70ca20f6be285f44
+ 0c68f5655528aed4f99dae71a5b259edc93239fa899e2df79c055275c21749a1"
 
 lib32disabled=yes
 nocross=yes
 nopie=yes
 nodebug=yes
 create_wrksrc=yes
-hostmakedepends="perl flex"
+hostmakedepends="perl flex gcc-ada libada-devel"
 makedepends="zlib-devel gmp-devel mpfr-devel libmpc-devel isl15-devel"
-nostrip_files="libcaf_single.a libgcc.a libgcov.a libgcc_eh.a"
+nostrip_files="libcaf_single.a libgcc.a libgcov.a libgcc_eh.a
+ libgnarl_pic.a libgnarl.a libgnat_pic.a libgnat.a"
 depends="${pkgname}-libc-${version}_${revision}"
-only_for_archs="i686 x86_64 x86_64-musl"
+archs="i686 x86_64*"
 
 _apply_patch() {
 	local args="$1" pname="$(basename $2)"
@@ -82,9 +82,10 @@ _gcc_bootstrap() {
 	[ -f ${wrksrc}/.gcc_bootstrap_done ] && return 0
 
 	cd ${wrksrc}/gcc-${_gcc_version}
-	_apply_patch -p1 ${FILESDIR}/gcc-6.3.0-musl.diff
-	_apply_patch -p0 ${FILESDIR}/libcpp-source_date_epoch.patch
 	_apply_patch -p0 ${FILESDIR}/fix-cxxflags-passing.patch
+	_apply_patch -p0 ${FILESDIR}/no-stack_chk_fail_local.patch
+	_apply_patch -p0 ${FILESDIR}/musl-ada.patch
+	_apply_patch -p1 ${FILESDIR}/libgnarl-musl.patch
 
 	msg_normal "Building cross gcc bootstrap\n"
 
@@ -96,8 +97,8 @@ _gcc_bootstrap() {
 	_args+=" --with-sysroot=${_sysroot}"
 	_args+=" --enable-languages=c"
 	_args+=" --with-newlib"
-	_args+=" --disable-libssp"
 	_args+=" --disable-nls"
+	_args+=" --disable-libssp"
 	_args+=" --disable-libquadmath"
 	_args+=" --disable-threads"
 	_args+=" --disable-decimal-float"
@@ -164,12 +165,15 @@ _gcc_build() {
 	_args="--target=${_triplet}"
 	_args+=" --with-sysroot=${_sysroot}"
 	_args+=" --prefix=/usr"
-	_args+=" --enable-languages=c,c++,fortran,lto"
+	_args+=" --enable-languages=c,ada,c++,fortran,lto"
 	_args+=" --enable-lto"
+	_args+=" --enable-default-pie"
+	_args+=" --enable-default-ssp"
 	_args+=" --disable-libsanitizer"
 	_args+=" --disable-multilib"
 	_args+=" --disable-libmpx"
 	_args+=" --disable-libmudflap"
+	_args+=" --enable-libada"
 	_args+=" --enable-libquadmath"
 	_args+=" --enable-shared"
 	_args+=" --disable-symvers"
@@ -249,6 +253,16 @@ do_install() {
 		mv ${DESTDIR}/${_sysroot}/usr/lib64/* ${DESTDIR}/${_sysroot}/usr/lib/
 		rmdir ${DESTDIR}/${_sysroot}/usr/lib64
 	fi
+
+	# symlinks for gnarl and gnat shared libraries
+	_majorver=${_gcc_version%.*.*}
+	_adalib=usr/lib/gcc/${_triplet}/${_gcc_version}/adalib
+	mv -v ${DESTDIR}/${_adalib}/libgnarl-${_majorver}.so ${DESTDIR}/${_sysroot}/usr/lib
+	mv -v ${DESTDIR}/${_adalib}/libgnat-${_majorver}.so ${DESTDIR}/${_sysroot}/usr/lib
+	ln -svf libgnarl-${_majorver}.so libgnarl.so
+	ln -svf libgnat-${_majorver}.so libgnat.so
+	rm -vf ${DESTDIR}/${_adalib}/libgna{rl,t}.so
+
 	# Remove unnecessary stuff
 	rm -f ${DESTDIR}/usr/lib*/libiberty.a
 	rm -rf ${DESTDIR}/usr/share

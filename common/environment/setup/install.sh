@@ -59,6 +59,22 @@ _vman() {
 
 	suffix=${target##*.}
 
+	if [[ $suffix == gz ]]
+	then
+		gunzip "$file"
+		file="${file:0:-3}"
+		target="${target:0:-3}"
+		suffix=${target##*.}
+	fi
+
+	if [[ $suffix == bz2 ]]
+	then
+		bunzip2 "$file"
+		file="${file:0:-4}"
+		target="${target:0:-4}"
+		suffix=${target##*.}
+	fi
+
 	if  [[ $target =~ (.*)\.([a-z][a-z](_[A-Z][A-Z])?)\.(.*) ]]
 	then
 		name=${BASH_REMATCH[1]}.${BASH_REMATCH[4]}
@@ -192,10 +208,6 @@ _vmove() {
 		_targetdir=$(dirname $f)
 		break
 	done
-
-	if [ "$files" = "all" ]; then
-		files="*"
-	fi
 
 	if [ -n "$XBPS_PKGDESTDIR" ]; then
 		_pkgdestdir="$PKGDESTDIR"

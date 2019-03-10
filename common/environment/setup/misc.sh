@@ -13,9 +13,10 @@ GNOME_SITE="http://ftp.gnome.org/pub/GNOME/sources"
 KERNEL_SITE="https://www.kernel.org/pub/linux"
 CPAN_SITE="https://www.cpan.org/modules/by-module"
 PYPI_SITE="https://files.pythonhosted.org/packages/source"
-MOZILLA_SITE="http://ftp.mozilla.org/pub"
+MOZILLA_SITE="https://ftp.mozilla.org/pub"
 GNU_SITE="http://ftp.gnu.org/gnu"
 FREEDESKTOP_SITE="https://freedesktop.org/software"
+KDE_SITE="https://download.kde.org/stable"
 
 # Repetitive sub homepage's with no real project page
 # ie. some gnome and xorg projects. For use in $homepage.
