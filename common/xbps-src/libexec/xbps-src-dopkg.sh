@@ -34,11 +34,6 @@ if [ "$sourcepkg" != "$PKGNAME" ]; then
 
     ${PKGNAME}_package
     pkgname=$PKGNAME
-    if [ -n "$noarch" ]; then
-        archs=noarch
-        unset noarch
-        msg_warn "deprecated property 'noarch'. Use archs=noarch instead!\n"
-    fi
 fi
 
 if [ -s $XBPS_MASTERDIR/.xbps_chroot_init ]; then
