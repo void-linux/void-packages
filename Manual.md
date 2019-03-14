@@ -560,11 +560,6 @@ Example: `conf_files="/etc/foo.conf /etc/foo2.conf /etc/foo/*.conf"`.
   mode are required on every line, even if they are `755 root root`. By
   convention, there is only one entry of `dir perms user group` per line.
 
-- `noarch` If set, the binary package is not architecture specific and can be shared
-by all supported architectures.
-
-> NOTE: `noarch` is deprecated and must be replaced by `archs=noarch`
-
 - `repository` Defines the repository in which the package will be placed. See
   *Repositories* for a list of valid repositories.
 
