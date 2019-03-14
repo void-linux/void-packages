@@ -486,14 +486,6 @@ set to `${pkgname}-${version}`.
 - `create_wrksrc` Enable it to create the `${wrksrc}` directory. Required if a package
 contains multiple `distfiles`.
 
-- `only_for_archs` This expects a separated list of architectures where
-the package can be built matching `uname -m` output. Reserved for uses
-where the program really only will ever work on certain architectures, like
-binaries sources or when the program is written in assembly. Example:
-`only_for_archs="x86_64 armv6l"`.
-
-> NOTE: `only_for_archs` is deprecated and must be replaced by `archs=`
-
 - `build_style` This specifies the `build method` for a package. Read below to know more
 about the available package `build methods` or effect of leaving this not set.
 
