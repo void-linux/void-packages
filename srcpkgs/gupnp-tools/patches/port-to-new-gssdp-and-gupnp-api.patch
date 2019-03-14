@@ -1,0 +1,123 @@
+From 41feb3168d3870e0d017c248f20cbe85bc5acde7 Mon Sep 17 00:00:00 2001
+From: Jens Georg <mail@jensge.org>
+Date: Sun, 16 Oct 2016 21:54:15 +0200
+Subject: [PATCH] all: Port to new GUPnP API
+
+Signed-off-by: Jens Georg <mail@jensge.org>
+---
+ meson.build                      |  4 ++--
+ src/discover/gssdp-discover.c    |  2 +-
+ src/network-light/upnp.c         | 18 ++++++++++++++----
+ src/universal-cp/action-dialog.c |  4 ++--
+ src/upload/main.c                |  2 +-
+ 5 files changed, 20 insertions(+), 10 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index 5e6dd23..67c61f2 100644
+--- meson.build
++++ meson.build
+@@ -7,8 +7,8 @@ if host_machine.system() == 'windows'
+     win = import('windows')
+ endif
+ 
+-gssdp = dependency('gssdp-1.0', version: '>= 0.13.3')
+-gupnp = dependency('gupnp-1.0', version: '>= 0.20.14')
++gssdp = dependency('gssdp-1.2', version: '>= 1.1')
++gupnp = dependency('gupnp-1.2', version: '>= 1.1')
+ soup = dependency('libsoup-2.4', version: '>= 2.42')
+ gupnp_av = dependency('gupnp-av-1.0', version: '>= 0.5.5', required: false)
+ gtk = dependency('gtk+-3.0', version: '>= 3.10')
+diff --git a/src/discover/gssdp-discover.c b/src/discover/gssdp-discover.c
+index e2b4656..9eef525 100644
+--- src/discover/gssdp-discover.c
++++ src/discover/gssdp-discover.c
+@@ -102,7 +102,7 @@ int main (int argc, char *argv[]) {
+ 
+         g_option_context_free (context);
+ 
+-        discover.client = gssdp_client_new (NULL, interface, &error);
++        discover.client = gssdp_client_new (interface, &error);
+         if (error != NULL) {
+                 g_warning ("Failed to create GSSDP client: %s", error->message);
+                 g_error_free (error);
+diff --git a/src/network-light/upnp.c b/src/network-light/upnp.c
+index b87e985..ddbd23a 100644
+--- src/network-light/upnp.c
++++ src/network-light/upnp.c
+@@ -386,7 +386,8 @@ static void init_friendly_name (gchar *name)
+ {
+         xmlNode *fdn_node;
+ 
+-        fdn_node = xml_util_get_element ((xmlNode *) doc->doc,
++        fdn_node = xml_util_get_element ((xmlNode *)
++                gupnp_xml_doc_get_doc (doc),
+                                           "root",
+                                           "device",
+                                           "friendlyName",
+@@ -409,7 +410,8 @@ static void init_uuid (void)
+ 
+         uuid = gupnp_get_uuid ();
+ 
+-        uuid_node = xml_util_get_element ((xmlNode *) doc->doc,
++        uuid_node = xml_util_get_element ((xmlNode *) doc,
++                gupnp_xml_doc_get_doc (doc),
+                                           "root",
+                                           "device",
+                                           "UDN",
+@@ -589,7 +591,15 @@ init_server (GUPnPContext *context)
+                                           gupnp_resource_factory_get_default (),
+                                           doc,
+                                           desc_location,
+-                                          DATA_DIR);
++                                          DATA_DIR,
++                                          &error);
++        if (error != NULL) {
++                g_warning ("Failed to create root device: %s",
++                           error->message);
++                g_error_free (error);
++
++                return FALSE;
++        }
+ 
+         switch_power = gupnp_device_info_get_service (GUPNP_DEVICE_INFO (dev),
+                                                       SWITCH_SERVICE);
+@@ -663,7 +673,7 @@ prepare_desc (gchar *name)
+                                          uuid);
+         g_assert (desc_location != NULL);
+ 
+-        if (xmlSaveFile (desc_location, doc->doc) < 0) {
++        if (xmlSaveFile (desc_location, (xmlDoc *) gupnp_xml_doc_get_doc (doc)) < 0) {
+                 g_print ("Error saving description file to %s.\n",
+                          desc_location);
+ 
+diff --git a/src/universal-cp/action-dialog.c b/src/universal-cp/action-dialog.c
+index 6380fec..64908d9 100644
+--- src/universal-cp/action-dialog.c
++++ src/universal-cp/action-dialog.c
+@@ -679,8 +679,8 @@ on_action_complete (GUPnPServiceProxy       *proxy,
+ 
+         gupnp_service_proxy_end_action_hash (proxy,
+                                              action,
+-                                             &error,
+-                                             out_args);
++                                             out_args,
++                                             &error);
+         if (error) {
+                 GtkWidget *error_dialog;
+ 
+diff --git a/src/upload/main.c b/src/upload/main.c
+index c97e31a..0b60f5a 100644
+--- src/upload/main.c
++++ src/upload/main.c
+@@ -176,7 +176,7 @@ main (gint   argc,
+         }
+ 
+         error = NULL;
+-        upnp_context = gupnp_context_new (NULL, interface, 0, &error);
++        upnp_context = gupnp_context_new (interface, 0, &error);
+         if (error) {
+                 g_printerr ("Error creating the GUPnP context: %s\n",
+ 			    error->message);
+-- 
+2.18.1
+
