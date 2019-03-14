@@ -57,10 +57,6 @@ if [ ! -f $XBPS_SUBPKG_INSTALL_DONE ]; then
             archs=noarch
             unset noarch
         fi
-        if [ -n "$only_for_archs" ]; then
-            archs="$only_for_archs"
-            unset only_for_archs
-        fi
 
         source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
 
