@@ -673,7 +673,8 @@ used.
 - `fetch_cmd` Executable to be used to fetch URLs in `distfiles` during the `do_fetch` phase.
 
 - `archs` Whitespace separated list of architectures that a package can be
-built for.
+built for, available architectures can be found under `common/cross-profiles`
+alongside the `noarch` value for packages that do not contain any machine code.
 Examples:
 
 	```
