@@ -53,10 +53,6 @@ if [ ! -f $XBPS_SUBPKG_INSTALL_DONE ]; then
 
         ${PKGNAME}_package
         pkgname=$PKGNAME
-        if [ -n "$noarch" ]; then
-            archs=noarch
-            unset noarch
-        fi
 
         source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
 

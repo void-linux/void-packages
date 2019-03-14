@@ -40,10 +40,6 @@ if [ "$sourcepkg" != "$PKGNAME" ]; then
 
     ${PKGNAME}_package
     pkgname=$PKGNAME
-    if [ -n "$noarch" ]; then
-        archs=noarch
-        unset noarch
-    fi
 fi
 
 source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh

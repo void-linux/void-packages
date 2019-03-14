@@ -359,11 +359,6 @@ setup_pkg() {
         unset only_for_archs
         msg_warn "deprecated property 'only_for_archs'. Use archs=\"$only_for_archs\" instead!\n"
     fi
-    if [ -n "$noarch" ]; then
-        archs=noarch
-        unset noarch
-        msg_warn "deprecated property 'noarch'. Use archs=noarch instead!\n"
-    fi
 
 
     # Check if required vars weren't set.
