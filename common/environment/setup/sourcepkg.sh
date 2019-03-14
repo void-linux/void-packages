@@ -3,7 +3,7 @@
 
 ## VARIABLES
 unset -v pkgname version revision short_desc homepage license maintainer
-unset -v archs only_for_archs distfiles checksum build_style build_helper nocross broken
+unset -v archs distfiles checksum build_style build_helper nocross broken
 unset -v configure_script configure_args wrksrc build_wrksrc create_wrksrc
 unset -v make_build_args make_check_args make_install_args
 unset -v make_build_target make_check_target make_install_target
@@ -34,6 +34,3 @@ unset -f pre_build do_build post_build
 unset -f pre_check do_check post_check
 unset -f pre_install do_install post_install
 unset -f do_clean
-
-# deprecated
-unset -v only_for_archs
