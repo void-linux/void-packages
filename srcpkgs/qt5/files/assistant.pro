@@ -5,7 +5,9 @@ SUBDIRS += \
            assistant \
            qhelpgenerator \
            qcollectiongenerator \
+           qhelpconverter
 
 assistant.depends = help
+qhelpgenerator.depends = help
 qcollectiongenerator.depends = help
 qhelpconverter.depends = help
