@@ -1,7 +1,13 @@
 # Sets up locale system settings from /etc/locale.conf.
 #
-if [ -s /etc/locale.conf ]; then
+if [ -s "/etc/locale.conf" ]; then
 	. /etc/locale.conf
+fi
+
+# Sets up locale user settings from $HOME/.config/locale.conf.
+#
+if [ -s "$HOME/.config/locale.conf" ]; then
+	. $HOME/.config/locale.conf
 fi
 
 export LANG LANGUAGE LC_CTYPE LC_NUMERIC LC_TIME LC_COLLATE LC_MONETARY
