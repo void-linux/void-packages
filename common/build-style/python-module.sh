@@ -29,6 +29,24 @@ do_build() {
 	done
 }
 
+do_check() {
+	: ${python_versions:="2.7 $py3_ver"}
+
+	for pyver in $python_versions; do
+		ln -s build-${pyver} build
+		if [ -z "$make_check_target" ]; then
+			if ! python${pyver} setup.py --help test >/dev/null 2>&1; then
+				msg_warn "No command 'test' defined by setup.py for python${pyver}.\n"
+				rm build
+				return 0
+			fi
+		fi
+
+		python${pyver} setup.py ${make_check_target:-test} ${make_check_args}
+		rm build
+	done
+}
+
 do_install() {
 	: ${python_versions:="2.7 $py3_ver"}
 	local pyver= pysufx=
