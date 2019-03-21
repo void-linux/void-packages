@@ -1512,7 +1512,7 @@ homepage="${homepage}"
 - Add (or replace) the INSTALL.msg with the following:
 
 ```
-$pkgname is no longer provided by Void Linux, and will be fully removed from the repos on $(date -d '+3 months' '+%Y/%m/%d')
+$pkgname is no longer provided by Void Linux, and will be fully removed from the repos on $(date -d '+3 months' '+%F')
 ```
 
 - After the specified time remove the package from the repository index
