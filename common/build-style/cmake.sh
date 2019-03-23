@@ -2,6 +2,7 @@
 # This helper is for templates using cmake.
 #
 do_configure() {
+	export QEMU_LD_PREFIX=${XBPS_CROSS_BASE}
 	local cmake_args=
 	[ ! -d ${cmake_builddir:=build} ] && mkdir -p ${cmake_builddir}
 	cd ${cmake_builddir}
@@ -28,6 +29,7 @@ SET(CMAKE_SYSTEM_VERSION 1)
 SET(CMAKE_C_COMPILER   ${CC})
 SET(CMAKE_CXX_COMPILER ${CXX})
 SET(CMAKE_CROSSCOMPILING TRUE)
+SET(CMAKE_CROSSCOMPILING_EMULATOR /usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static)
 
 SET(CMAKE_SYSTEM_PROCESSOR ${_CMAKE_SYSTEM_PROCESSOR})
 
@@ -65,6 +67,7 @@ _EOF
 }
 
 do_build() {
+	export QEMU_LD_PREFIX=${XBPS_CROSS_BASE}
 	: ${make_cmd:=make}
 
 	cd ${cmake_builddir:=build}
@@ -92,6 +95,7 @@ do_check() {
 }
 
 do_install() {
+	export QEMU_LD_PREFIX=${XBPS_CROSS_BASE}
 	: ${make_cmd:=make}
 	: ${make_install_target:=install}
 
