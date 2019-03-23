@@ -1,6 +1,7 @@
 # Cross build profile for ARMv8.
 
 XBPS_TARGET_MACHINE="aarch64"
+XBPS_TARGET_QEMU_MACHINE="aarch64"
 XBPS_CROSS_TRIPLET="aarch64-linux-gnu"
 XBPS_CFLAGS="-O2 -pipe" # XXX not yet supported: -fstack-protector-strong
 XBPS_CXXFLAGS="$XBPS_CFLAGS"

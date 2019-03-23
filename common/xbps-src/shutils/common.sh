@@ -284,7 +284,7 @@ setup_pkg() {
     basepkg=${pkg%-32bit}
 
     # Start with a sane environment
-    unset -v PKG_BUILD_OPTIONS XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_FFLAGS XBPS_CROSS_CPPFLAGS XBPS_CROSS_LDFLAGS
+    unset -v PKG_BUILD_OPTIONS XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_FFLAGS XBPS_CROSS_CPPFLAGS XBPS_CROSS_LDFLAGS XBPS_TARGET_QEMU_MACHINE
     unset -v subpackages run_depends build_depends host_build_depends
 
     unset_package_funcs
@@ -294,7 +294,7 @@ setup_pkg() {
     if [ -n "$cross" ]; then
         source_file $XBPS_CROSSPFDIR/${cross}.sh
 
-        _vars="TARGET_MACHINE CROSS_TRIPLET CROSS_CFLAGS CROSS_CXXFLAGS"
+        _vars="TARGET_MACHINE CROSS_TRIPLET CROSS_CFLAGS CROSS_CXXFLAGS TARGET_QEMU_MACHINE"
         for f in ${_vars}; do
             eval val="\$XBPS_$f"
             if [ -z "$val" ]; then
@@ -304,6 +304,7 @@ setup_pkg() {
         done
 
         export XBPS_CROSS_BASE=/usr/$XBPS_CROSS_TRIPLET
+        export XBPS_TARGET_QEMU_MACHINE="$XBPS_TARGET_QEMU_MACHINE"
 
         XBPS_INSTALL_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_INSTALL_CMD -c /host/repocache -r $XBPS_CROSS_BASE"
         XBPS_QUERY_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_QUERY_CMD -c /host/repocache -r $XBPS_CROSS_BASE"
