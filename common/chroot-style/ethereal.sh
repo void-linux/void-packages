@@ -44,7 +44,7 @@ fi
 msg_red() {
 	# error messages in bold/red
 	[ -n "$NOCOLORS" ] || printf >&2 "\033[1m\033[31m"
-	printf "=> ERROR: %s\\n" "$@"
+	printf "=> ERROR: %s\\n" "$@" >&2
 	[ -n "$NOCOLORS" ] || printf >&2 "\033[m"
 }
 
@@ -63,7 +63,7 @@ fake_mount() {
 	[ -f "$2" -o -L "$2" ] && rm -f "$2"
 
 	ln -s "$1" "$2"
-	echo "linked $1 -> $2"
+	echo "linked $2 -> $1"
 }
 
 if [ "${XBPS_ALLOW_CHROOT_BREAKOUT}" != "yes" ]; then
