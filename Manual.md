@@ -814,7 +814,7 @@ depend on additional packages. This build style does not install
 dependencies to the root directory, and only checks if a binary package is
 available in repositories. If your meta-package doesn't include any files
 which thus have and require no license, then you should also set
-`license="metapackage"`.
+`license="BSD-2-Clause"`.
 
 - `R-cran` For packages that are available on The Comprehensive R Archive
 Network (CRAN). The build style requires the `pkgname` to start with
@@ -1508,7 +1508,7 @@ revision=$((revision + 1))
 archs=noarch
 build_style=meta
 short_desc="${short_desc} (removed package)"
-license="metapackage"
+license="BSD-2-Clause"
 homepage="${homepage}"
 ```
 
