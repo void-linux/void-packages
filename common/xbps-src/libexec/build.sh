@@ -99,17 +99,30 @@ done
 # triggered for all new packages if any of them introduces inconsistencies.
 cut -d: -f 1,2 ${XBPS_STATEDIR}/.${sourcepkg}_register_pkg | sort -u | \
     while IFS=: read -r arch repo; do
-        paths=$(grep "^$arch:$repo:" "${XBPS_STATEDIR}/.${sourcepkg}_register_pkg" | \
+        addpaths=$(grep "^$arch:$repo:.*:add$" "${XBPS_STATEDIR}/.${sourcepkg}_register_pkg" | \
+            cut -d : -f 2,3 | tr ':' '/')
+        removepaths=$(grep "^$arch:$repo:.*:remove$" "${XBPS_STATEDIR}/.${sourcepkg}_register_pkg" | \
             cut -d : -f 2,3 | tr ':' '/')
         if [ -n "${arch}" ]; then
             msg_normal "Registering new packages to $repo ($arch)\n"
-            XBPS_TARGET_ARCH=${arch} $XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+            if [ -n "${addpaths}" ]; then
+                XBPS_TARGET_ARCH=${arch} $XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${addpaths}
+            fi
+            if [ -n "${removepaths}" ]; then
+                XBPS_TARGET_ARCH=${arch} $XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -R ${repo} ${removepaths}
+            fi
         else
             msg_normal "Registering new packages to $repo\n"
             if [ -n "$XBPS_CROSS_BUILD" ]; then
-                $XBPS_RINDEX_XCMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+                _rindex_cmd=$XBPS_RINDEX_XCMD
             else
-                $XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+                _rindex_cmd=$XBPS_RINDEX_CMD
+            fi
+            if [ -n "${addpaths}" ]; then
+                $_rindex_cmd ${XBPS_BUILD_FORCEMODE:+-f} -a ${addpaths}
+            fi
+            if [ -n "${removepaths}" ]; then
+                $_rindex_cmd ${XBPS_BUILD_FORCEMODE:+-f} -R ${repo} ${removepaths}
             fi
         fi
     done

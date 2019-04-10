@@ -1,13 +1,17 @@
 # This hook registers a XBPS binary package into the specified local repository.
 
 registerpkg() {
-	local repo="$1" pkg="$2" arch="$3"
+	local repo="$1" pkg="$2" arch="$3" mode="add"
 
 	if [ ! -f ${repo}/${pkg} ]; then
 		msg_error "Unexistent binary package ${repo}/${pkg}!\n"
 	fi
 
-	printf "%s:%s:%s\n" "${arch}" "${repo}" "${pkg}" >> "${XBPS_STATEDIR}/.${sourcepkg}_register_pkg"
+	if [ -n "${removed}" ]; then
+		mode="remove"
+	fi
+
+	printf "%s:%s:%s:%s\n" "${arch}" "${repo}" "${pkg}" "${mode}" >> "${XBPS_STATEDIR}/.${sourcepkg}_register_pkg"
 }
 
 hook() {
