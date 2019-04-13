@@ -149,14 +149,14 @@ hook() {
 	# Also install additional files set via "lib32files".
 	for f in ${lib32files}; do
 		echo "$pkgver: installing additional files: $f ..."
-		_targetdir=${destdir32}/$(dirname ${f})
+		_targetdir=${destdir32}/${f%/*}/
 		mkdir -p ${_targetdir/\/usr\/lib/\/usr\/lib32}
 		cp -a ${PKGDESTDIR}/${f} ${_targetdir/\/usr\/lib/\/usr\/lib32}
 	done
 	# Additional symlinks to the native libdir.
 	for f in ${lib32symlinks}; do
 		echo "$pkgver: symlinking $f to the native libdir..."
-		mkdir -p ${destdir32}/usr/lib{,32}/$(dirname ${f})
+		mkdir -p ${destdir32}/usr/lib{,32}/${f%/*}/
 		ln -sfr ${destdir32}/usr/lib32/$f ${destdir32}/usr/lib/$f
 	done
 	# If it's a development pkg add a dependency to the 64bit pkg.
