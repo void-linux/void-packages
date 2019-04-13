@@ -1,26 +1,30 @@
 # Template file for 'erlang'
 pkgname=erlang
-version=21.2
-revision=1
+version=21.3
+revision=2
 create_wrksrc=yes
-build_wrksrc=otp_src_${version}
+build_wrksrc="otp-OTP-${version}"
 build_style=gnu-configure
 configure_args="$(vopt_if x11 --with-wx-config=wx-config-3.0)"
-hostmakedepends="perl libxslt"
+make_install_target="install install-docs"
+hostmakedepends="perl libxslt autoconf"
 makedepends="ncurses-devel unixodbc-devel libressl-devel zlib-devel
  $(vopt_if x11 'wxWidgets-devel glu-devel')"
 short_desc="Concurrent functional programming language developed by Ericsson"
 maintainer="Leah Neukirchen <leah@vuxu.org>"
 license="Apache-2.0"
 homepage="http://www.erlang.org/"
-distfiles="http://www.erlang.org/download/otp_src_${version}.tar.gz
- http://www.erlang.org/download/otp_doc_man_${version}.tar.gz"
-checksum="f6b07bf8e6705915679a63363ce80faaa6b7c231e7236cde443d6445f7430334
- e85a782e0fcd38b92098110b320e28ea8030cce318868d99a4fe6d17ae08b778"
+distfiles="https://github.com/erlang/otp/archive/OTP-${version}.tar.gz"
+checksum=64a6eea6c1dc2353ad80e29ef57f6ec4192c91478ac2b854d0417b6b2bf4d9bf
 
 build_options="x11"
 
+case "$XBPS_TARGET_MACHINE" in
+	*-musl) configure_args+=" --disable-hipe" ;;
+esac
+
 pre_configure() {
+	./otp_build autoconf
 	if [ "$CROSS_BUILD" ]; then
 		# Build the bootstrap compiler for the host platform.
 		env - PATH=/usr/bin:/usr/sbin ./configure --enable-bootstrap-only
@@ -29,14 +33,34 @@ pre_configure() {
 		export erl_xcomp_sysroot=/usr/${XBPS_CROSS_TRIPLET}
 	fi
 }
+
 post_configure() {
-	sed -i '/LDFLAGS =/s/=/+=/' lib/odbc/c_src/*/Makefile
+	vsed -i -e '/LDFLAGS =/s/=/+=/' lib/odbc/c_src/*/Makefile
 }
+
 post_install() {
-	vmkdir usr/share/man
-	vmkdir usr/lib/erlang/man
-	vcopy ../man/man1 usr/share/man
-	vcopy ../man/man3 usr/lib/erlang/man
-	vcopy ../man/man4 usr/lib/erlang/man
-	vcopy ../man/man7 usr/lib/erlang/man
+	# Remove PR template and PDF documentation
+	rm ${DESTDIR}/usr/lib/erlang/PR.template
+	find ${DESTDIR}/usr/lib/erlang -path '*/doc/pdf' -type d -print0 | xargs -0 rm -rf
+	find ${DESTDIR}/usr/lib/erlang -iname '*.pdf' -delete
+	# Make section 1 pages available outside erlang
+	vmkdir usr/share/man/man1
+	local manprefix=/usr/lib/erlang/man/man1
+	for i in $(find ${DESTDIR}${manprefix} -type f)
+	do
+		ln -sf ${manprefix}/${i##*/} ${DESTDIR}/usr/share/man/man1
+	done
+}
+
+erlang-doc_package() {
+	short_desc="Erlang programming language documentation and examples"
+	depends="${sourcepkg}-${version}_${revision}"
+	archs=noarch
+	pkg_install() {
+		vmove usr/lib/erlang/doc
+		for i in $(cd ${DESTDIR}; find usr/lib/erlang -type d \( -path '*/examples' -o -path '*/doc/html' \))
+		do
+			vmove "$i"
+		done
+	}
 }

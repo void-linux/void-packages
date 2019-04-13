@@ -76,9 +76,9 @@ hook() {
 		gz|bz2)
 			cp -f $srcdir/$curfile $extractdir
 			if [ "$cursufx" = "gz" ]; then
-				cd $extractdir && gunzip $curfile
+				cd $extractdir && gunzip -f $curfile
 			else
-				cd $extractdir && bunzip2 $curfile
+				cd $extractdir && bunzip2 -f $curfile
 			fi
 			;;
 		tar)

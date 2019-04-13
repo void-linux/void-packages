@@ -238,7 +238,7 @@ static int networks(int argc, char *argv[])
 				ne = getnetbyaddr(net, AF_INET);
 			else
 				ne = getnetbyname(argv[i]);
-			if (ne != NULL) {
+			if (ne == NULL) {
 				rv = RV_NOTFOUND;
 				break;
 			}

@@ -184,7 +184,7 @@ chroot_handler() {
     [ -z "$action" -a -z "$pkg" ] && return 1
 
     case "$action" in
-        fetch|extract|build|check|configure|install|install-destdir|pkg|build-pkg|bootstrap-update|chroot)
+        fetch|extract|patch|build|check|configure|install|install-destdir|pkg|build-pkg|bootstrap-update|chroot)
             chroot_prepare || return $?
             chroot_init || return $?
             chroot_sync_repos || return $?
@@ -216,6 +216,7 @@ chroot_handler() {
         env -i -- PATH="/usr/bin:/usr/sbin:$PATH" SHELL=/bin/sh \
             HOME=/tmp IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 \
             SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
+            XBPS_ALLOW_CHROOT_BREAKOUT="$XBPS_ALLOW_CHROOT_BREAKOUT" \
             $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
             $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" \
             /void-packages/xbps-src $action $pkg

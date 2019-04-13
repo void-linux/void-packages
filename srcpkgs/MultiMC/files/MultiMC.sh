@@ -1,2 +1,2 @@
 #!/bin/sh
-/usr/libexec/multimc/MultiMC -d ~/.multimc
+/usr/libexec/multimc/multimc -d ~/.multimc

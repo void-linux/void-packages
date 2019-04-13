@@ -46,11 +46,11 @@ hook() {
 		\) -delete
 
 		# Remove empty dirs.
-		for f in $(find ${destdir32} -type d -empty|sort -r); do
+		while IFS= read -r -d '' f; do
 			_dir="${f##${destdir32}}"
 			[ -z "${_dir}" ] && continue
 			rmdir --ignore-fail-on-non-empty -p "$f" &>/dev/null
-		done
+		done < <(find ${destdir32} -type d -empty -print0 | sort -uz)
 
 		# Switch pkg-config files to lib32.
 		if [ -d ${destdir32}/usr/lib32/pkgconfig ]; then

@@ -2,9 +2,7 @@
 #
 # show_files.sh
 
-[ "$XLINT" ] && exit 0 
-
-export XBPS_TARGET_ARCH="$2"
+export XBPS_TARGET_ARCH="$2" XBPS_DISTDIR=/hostrepo
 
 for pkg in $(cat /tmp/templates); do
 	for subpkg in $(xsubpkg $pkg); do

@@ -67,6 +67,9 @@ run_step() {
     msg_error "$pkgver: cannot find do_$step_name()!\n"
   fi
 
+  # Run do_ phase hooks
+  run_pkg_hooks "do-$step_name"
+
   # Run post_* Phase
   if declare -f "post_$step_name" >/dev/null; then
     ch_wrksrc
@@ -281,7 +284,7 @@ setup_pkg() {
     basepkg=${pkg%-32bit}
 
     # Start with a sane environment
-    unset -v PKG_BUILD_OPTIONS XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_FFLAGS XBPS_CROSS_CPPFLAGS XBPS_CROSS_LDFLAGS
+    unset -v PKG_BUILD_OPTIONS XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_FFLAGS XBPS_CROSS_CPPFLAGS XBPS_CROSS_LDFLAGS XBPS_TARGET_QEMU_MACHINE
     unset -v subpackages run_depends build_depends host_build_depends
 
     unset_package_funcs
@@ -291,7 +294,7 @@ setup_pkg() {
     if [ -n "$cross" ]; then
         source_file $XBPS_CROSSPFDIR/${cross}.sh
 
-        _vars="TARGET_MACHINE CROSS_TRIPLET CROSS_CFLAGS CROSS_CXXFLAGS"
+        _vars="TARGET_MACHINE CROSS_TRIPLET CROSS_CFLAGS CROSS_CXXFLAGS TARGET_QEMU_MACHINE"
         for f in ${_vars}; do
             eval val="\$XBPS_$f"
             if [ -z "$val" ]; then
@@ -301,6 +304,7 @@ setup_pkg() {
         done
 
         export XBPS_CROSS_BASE=/usr/$XBPS_CROSS_TRIPLET
+        export XBPS_TARGET_QEMU_MACHINE="$XBPS_TARGET_QEMU_MACHINE"
 
         XBPS_INSTALL_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_INSTALL_CMD -c /host/repocache -r $XBPS_CROSS_BASE"
         XBPS_QUERY_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_QUERY_CMD -c /host/repocache -r $XBPS_CROSS_BASE"
@@ -345,21 +349,6 @@ setup_pkg() {
     else
         unset CROSS_BUILD
         source_file ${XBPS_SRCPKGDIR}/${basepkg}/template
-    fi
-
-    # Backward compatibility to noarch and only_for_archs
-    if [ -n "$only_for_archs" ] && [ -n "$noarch" ]; then
-        msg_error "only_for_archs and noarch can't be used together\n"
-    fi
-    if [ -n "$only_for_archs" ]; then
-        archs="$only_for_archs"
-        unset only_for_archs
-        msg_warn "deprecated property 'only_for_archs'. Use archs=\"$only_for_archs\" instead!\n"
-    fi
-    if [ -n "$noarch" ]; then
-        archs=noarch
-        unset noarch
-        msg_warn "deprecated property 'noarch'. Use archs=noarch instead!\n"
     fi
 
 
@@ -447,21 +436,21 @@ setup_pkg() {
         dbgflags="-g"
     fi
 
-    if [ -z "$cross" ]; then
-        if [ -z "$CHROOT_READY" ]; then
-            source_file ${XBPS_COMMONDIR}/build-profiles/bootstrap.sh
-        else
-            source_file ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
-        fi
+    # build profile is used always in order to expose the host triplet,
+    # but the compiler flags from it are only used when not crossing
+    if [ -z "$CHROOT_READY" ]; then
+        source_file ${XBPS_COMMONDIR}/build-profiles/bootstrap.sh
+    else
+        source_file ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
     fi
 
     set_build_options
 
-    export CFLAGS="$XBPS_TARGET_CFLAGS $XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
-    export CXXFLAGS="$XBPS_TARGET_CXXFLAGS $XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"
-    export FFLAGS="$XBPS_TARGET_FFLAGS $XBPS_FFLAGS $XBPS_CROSS_FFLAGS $FFLAGS"
-    export CPPFLAGS="$XBPS_TARGET_CPPFLAGS $XBPS_CPPFLAGS $XBPS_CROSS_CPPFLAGS $CPPFLAGS"
-    export LDFLAGS="$XBPS_TARGET_LDFLAGS $XBPS_LDFLAGS $XBPS_CROSS_LDFLAGS $LDFLAGS"
+    export CFLAGS="$XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
+    export CXXFLAGS="$XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"
+    export FFLAGS="$XBPS_FFLAGS $XBPS_CROSS_FFLAGS $FFLAGS"
+    export CPPFLAGS="$XBPS_CPPFLAGS $XBPS_CROSS_CPPFLAGS $CPPFLAGS"
+    export LDFLAGS="$XBPS_LDFLAGS $XBPS_CROSS_LDFLAGS $LDFLAGS"
 
     export BUILD_CC="cc"
     export BUILD_CFLAGS="$XBPS_CFLAGS"
@@ -541,7 +530,16 @@ setup_pkg() {
         export RUSTFLAGS="$XBPS_CROSS_RUSTFLAGS"
         # Rust target, which differs from our triplets
         export RUST_TARGET="$XBPS_CROSS_RUST_TARGET"
+        # Rust build, which is the host system, may also differ
+        export RUST_BUILD="$XBPS_RUST_TARGET"
     else
+        # Target flags from build-profile
+        export CFLAGS="$XBPS_TARGET_CFLAGS $CFLAGS"
+        export CXXFLAGS="$XBPS_TARGET_CXXFLAGS $CXXFLAGS"
+        export FFLAGS="$XBPS_TARGET_FFLAGS $FFLAGS"
+        export CPPFLAGS="$XBPS_TARGET_CPPFLAGS $CPPFLAGS"
+        export LDFLAGS="$XBPS_TARGET_LDFLAGS $LDFLAGS"
+        # Tools
         export CC="cc"
         export CXX="g++"
         export CPP="cpp"
@@ -557,6 +555,7 @@ setup_pkg() {
         export NM="nm"
         export READELF="readelf"
         export RUST_TARGET="$XBPS_RUST_TARGET"
+        export RUST_BUILD="$XBPS_RUST_TARGET"
         # Unset cross evironment variables
         unset CC_target CXX_target CPP_target GCC_target FC_target LD_target AR_target AS_target
         unset RANLIB_target STRIP_target OBJDUMP_target OBJCOPY_target NM_target READELF_target
@@ -599,7 +598,7 @@ setup_pkg() {
 
     source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
 
-    # Source all build-class files that are defined
+    # Source all build-helper files that are defined
     for f in $build_helper; do
         if [ ! -r $XBPS_BUILDHELPERDIR/${f}.sh ];  then
             msg_error "$pkgver: cannot find build helper $XBPS_BUILDHELPERDIR/${f}.sh!\n"
