@@ -30,7 +30,7 @@ hook() {
 			continue
 		fi
 		if [ -h ${PKGDESTDIR}/"$j" ]; then
-			dirat=$(dirname "$j")
+			dirat="${j%/*}/"
 			lnkat=$(readlink ${PKGDESTDIR}/"$j")
 			newlnk="${j##*/}"
 			rm -f ${PKGDESTDIR}/"$j"
