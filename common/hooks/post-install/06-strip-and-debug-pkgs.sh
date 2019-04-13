@@ -7,7 +7,7 @@ make_debug() {
 
 	[ -n "$nodebug" ] && return 0
 
-	dname=$(echo "$(dirname $1)"|sed -e "s|${PKGDESTDIR}||g")
+	dname=${1%/*}/ ; dname=${dname#$PKGDESTDIR}
 	fname="${1##*/}"
 	dbgfile="${dname}/${fname}"
 
@@ -26,7 +26,7 @@ attach_debug() {
 
 	[ -n "$nodebug" ] && return 0
 
-	dname=$(echo "$(dirname $1)"|sed -e "s|${PKGDESTDIR}||g")
+	dname=${1%/*}/ ; dname=${dname#$PKGDESTDIR}
 	fname="${1##*/}"
 	dbgfile="${dname}/${fname}"
 
