@@ -85,7 +85,7 @@ hook() {
 		if [ -n "$lib32depends" ]; then
 			_deps="${lib32depends}"
 		else
-			_deps="$(cat ${PKGDESTDIR}/rdeps)"
+			_deps="$(<${PKGDESTDIR}/rdeps)"
 		fi
 		for f in ${_deps}; do
 			unset found pkgn pkgv _arch _shprovides
