@@ -16,7 +16,7 @@ do_configure() {
 		# Skip GOPATH symlink for Go modules
 		msg_normal "Building $pkgname using Go modules.\n"
 	elif [[ "${go_get}" != "yes" ]]; then
-		mkdir -p "$(dirname ${GOSRCPATH})"
+		mkdir -p ${GOSRCPATH%/*}/
 		ln -fs $PWD "${GOSRCPATH}"
 	fi
 }
