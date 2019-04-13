@@ -50,20 +50,20 @@ contents_cksum() {
 
 	case ${cursufx} in
 	tar|txz|tbz|tlz|tgz|crate)
-		cksum=$(tar xf "$curfile" --to-stdout | sha256sum | awk '{print $1}')
+		cksum=$($XBPS_DIGEST_CMD <(tar xf "$curfile" --to-stdout))
 		if [ $? -ne 0 ]; then
 			msg_error "$pkgver: extracting $curfile to pipe.\n"
 		fi
 		;;
 	gz)
-		cksum=$(gunzip -c "$curfile" | sha256sum | awk '{print $1}')
+		cksum=$($XBPS_DIGEST_CMD <(gunzip -c "$curfile"))
 		;;
 	bz2)
-		cksum=$(bunzip2 -c "$curfile" | sha256sum | awk '{print $1}')
+		cksum=$($XBPS_DIGEST_CMD <(bunzip2 -c "$curfile"))
 		;;
 	zip)
 		if command -v unzip &>/dev/null; then
-			cksum=$(unzip -p "$curfile" | sha256sum | awk '{print $1}')
+			cksum=$($XBPS_DIGEST_CMD <(unzip -p "$curfile"))
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile to pipe.\n"
 			fi
@@ -73,7 +73,7 @@ contents_cksum() {
 		;;
 	rpm)
 		if command -v rpmextract &>/dev/null; then
-			cksum=$(rpm2cpio "$curfile" | bsdtar xf - --to-stdout | sha256sum | awk '{print $1}')
+			cksum=$($XBPS_DIGEST_CMD <(rpm2cpio "$curfile" | bsdtar xf - --to-stdout))
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile to pipe.\n"
 			fi
@@ -82,11 +82,11 @@ contents_cksum() {
 		fi
 		;;
 	txt)
-		cksum=$(cat "$curfile" | sha256sum | awk '{print $1}')
+		cksum=$($XBPS_DIGEST_CMD "$curfile")
 		;;
 	7z)
 		if command -v 7z &>/dev/null; then
-			cksum=$(7z x -o "$curfile" | sha256sum | awk '{print $1}')
+			cksum=$($XBPS_DIGEST_CMD <(7z x -o "$curfile"))
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile to pipe.\n"
 			fi
@@ -95,7 +95,7 @@ contents_cksum() {
 		fi
 		;;
 	gem)
-		cksum=$(tar -xf "$curfile" data.tar.gz --to-stdout | tar -xzO | sha256sum | awk '{print $1}')
+		cksum=$($XBPS_DIGEST_CMD <(tar -xf "$curfile" data.tar.gz --to-stdout | tar -xzO ))
 		;;
 	*)
 		msg_error "$pkgver: cannot guess $curfile extract suffix. ($cursufx)\n"
