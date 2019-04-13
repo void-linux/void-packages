@@ -99,7 +99,8 @@ show_pkg_build_depends() {
             _pkgname="$f"
         fi
         _pkgname=${_pkgname/-32bit}
-        _srcpkg=$(basename $(readlink -f ${XBPS_SRCPKGDIR}/${_pkgname}))
+        _srcpkg=$(readlink -f ${XBPS_SRCPKGDIR}/${_pkgname})
+        _srcpkg=${_srcpkg##*/}
         echo "${_srcpkg}" >> $result
     done
     sort -u $result

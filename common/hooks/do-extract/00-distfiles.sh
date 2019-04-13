@@ -3,6 +3,7 @@
 
 hook() {
 	local srcdir="$XBPS_SRCDISTDIR/$pkgname-$version"
+	local f j curfile found extractdir
 
 	if [ -z "$distfiles" -a -z "$checksum" ]; then
 		mkdir -p $wrksrc
@@ -11,7 +12,8 @@ hook() {
 
 	# Check that distfiles are there before anything else.
 	for f in ${distfiles}; do
-		curfile=$(basename "${f#*>}")
+		curfile="${f#*>}"
+		curfile="${curfile##*/}"
 		if [ ! -f $srcdir/$curfile ]; then
 			msg_error "$pkgver: cannot find ${curfile}, use 'xbps-src fetch' first.\n"
 		fi
@@ -24,7 +26,8 @@ hook() {
 	msg_normal "$pkgver: extracting distfile(s), please wait...\n"
 
 	for f in ${distfiles}; do
-		curfile=$(basename "${f#*>}")
+		curfile="${f#*>}"
+		curfile="${curfile##*/}"
 		for j in ${skip_extraction}; do
 			if [ "$curfile" = "$j" ]; then
 				found=1
@@ -122,7 +125,7 @@ hook() {
 			fi
 			;;
 		gem)
-			tar -xOf $srcdir/$curfile data.tar.gz | tar -xz -C $extractdir --transform="s,^,$(basename $wrksrc)/,"
+			tar -xOf $srcdir/$curfile data.tar.gz | tar -xz -C $extractdir --transform="s,^,${wrksrc##*/}/,"
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi

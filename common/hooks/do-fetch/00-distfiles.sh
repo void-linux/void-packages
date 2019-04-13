@@ -212,8 +212,10 @@ hook() {
 
 	# Detect distfiles with obsolete checksum and purge them from the cache
 	for f in ${distfiles}; do
-		curfile=$(basename "${f#*>}")
+		curfile="${f#*>}"
+		curfile="${curfile##*/}"
 		distfile="$srcdir/$curfile"
+
 		if [ -f "$distfile" ]; then
 			cksum=$(get_cksum $curfile $dfcount)
 			if [ "${cksum:0:1}" = "@" ]; then
@@ -239,7 +241,8 @@ hook() {
 	# Download missing distfiles and verify their checksums
 	dfcount=0
 	for f in ${distfiles}; do
-		curfile=$(basename "${f#*>}")
+		curfile="${f#*>}"
+		curfile="${curfile##*/}"
 		distfile="$srcdir/$curfile"
 
 		# If file lock cannot be acquired wait until it's available.
