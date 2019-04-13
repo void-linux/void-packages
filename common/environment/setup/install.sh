@@ -205,7 +205,7 @@ _vmove() {
 		return 1
 	fi
 	for f in ${files}; do
-		_targetdir=$(dirname $f)
+		_targetdir=${f%/*}/
 		break
 	done
 
