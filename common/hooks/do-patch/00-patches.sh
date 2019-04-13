@@ -7,7 +7,7 @@ _process_patch() {
 	_patch=${i##*/}
 
 	if [ -f $PATCHESDIR/${_patch}.args ]; then
-		_args=$(cat $PATCHESDIR/${_patch}.args)
+		_args=$(<$PATCHESDIR/${_patch}.args)
 	elif [ -n "$patch_args" ]; then
 		_args=$patch_args
 	fi
@@ -39,9 +39,9 @@ hook() {
 		return 0
 	fi
 	if [ -r $PATCHESDIR/series ]; then
-		cat $PATCHESDIR/series | while read f; do
+		while read -r f; do
 			_process_patch "$PATCHESDIR/$f"
-		done
+		done < $PATCHESDIR/series
 	else
 		for f in $PATCHESDIR/*; do
 			[ ! -f $f ] && continue
