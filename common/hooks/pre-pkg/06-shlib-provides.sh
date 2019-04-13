@@ -36,7 +36,7 @@ collect_sonames() {
 		echo "$f" >> ${_tmpfile}
 	done
 	if [ -s "${_tmpfile}" ]; then
-		cat ${_tmpfile} | tr '\n' ' ' > ${_destdir}/shlib-provides
+		tr '\n' ' ' < "${_tmpfile}" > ${_destdir}/shlib-provides
 		echo >> ${_destdir}/shlib-provides
 	fi
 	rm -f ${_tmpfile}
