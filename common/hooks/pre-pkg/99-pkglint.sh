@@ -95,7 +95,7 @@ hook() {
 		return 0
 	fi
 
-	for filename in $(cat ${PKGDESTDIR}/shlib-provides); do
+	for filename in $(<${PKGDESTDIR}/shlib-provides); do
 		rev=${filename#*.so.}
 		libname=${filename%.so*}
 		_shlib=$(echo "$libname"|sed -E 's|\+|\\+|g')
