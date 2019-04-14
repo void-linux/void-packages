@@ -123,7 +123,7 @@ hook() {
 				msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
 				return 1
 			fi
-			if file $f | grep -q "interpreter "; then
+			if [[ $(file $f) =~ "interpreter " ]]; then
 				echo "   Stripped position-independent executable: ${f#$PKGDESTDIR}"
 			else
 				echo "   Stripped library: ${f#$PKGDESTDIR}"
