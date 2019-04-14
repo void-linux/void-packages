@@ -84,7 +84,7 @@ hook() {
 		case "$(file -bi "$f")" in
 		application/x-executable*)
 			chmod +w "$f"
-			if echo "$(file $f)" | grep -q "statically linked"; then
+			if [[ $(file $f) =~ "statically linked" ]]; then
 				# static binary
 				$STRIPCMD "$f"
 				if [ $? -ne 0 ]; then
