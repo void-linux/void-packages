@@ -65,7 +65,7 @@ consistency_check_smart () {
 consistency_check() {
     local pkg= pkgname=
     for pkg in "$XBPS_SRCPKGDIR"/*/template; do
-        pkg=${pkg%*/}/
+        pkg=${pkg%/*}
         XBPS_TARGET_PKG=${pkg##*/}
         (
             read_pkg
