@@ -98,8 +98,8 @@ hook() {
 	for filename in $(cat ${PKGDESTDIR}/shlib-provides); do
 		rev=${filename#*.so.}
 		libname=${filename%.so*}
-		_shlib=$(echo "$libname"|sed -E 's|\+|\\+|g')
-		_pkgname=$(echo "$pkgname"|sed -E 's|\+|\\+|g')
+		_shlib=$(sed -E 's|\+|\\+|g' <<< "$libname")
+		_pkgname=$(sed -E 's|\+|\\+|g' <<< "$pkgname")
 		if [ "$rev" = "$filename" ]; then
 			_pattern="^${_shlib}\.so[[:blank:]]+${_pkgname}-[^-]+_[0-9]+"
 		else
