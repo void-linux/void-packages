@@ -45,7 +45,7 @@ hook() {
 	else
 		for f in $PATCHESDIR/*; do
 			[ ! -f $f ] && continue
-			if $(echo $f|grep -Eq '^.*.args$'); then
+			if [[ $f =~ ^.*.args$ ]]; then
 				continue
 			fi
 			_process_patch $f
