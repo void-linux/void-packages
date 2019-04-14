@@ -302,7 +302,7 @@ _EOF
 		for f in ${triggers}; do
 			targets=$($XBPS_TRIGGERSDIR/$f targets)
 			for j in ${targets}; do
-				if ! $(echo $j|grep -q pre-${action}); then
+				if ! [[ $j =~ pre-${action} ]]; then
 					continue
 				fi
 				printf "\t\${TRIGGERSDIR}/$f run $j \${PKGNAME} \${VERSION} \${UPDATE} \${CONF_FILE}\n" >> $tmpf
@@ -314,7 +314,7 @@ _EOF
 		for f in ${triggers}; do
 			targets=$($XBPS_TRIGGERSDIR/$f targets)
 			for j in ${targets}; do
-				if ! $(echo $j|grep -q post-${action}); then
+				if ! [[ $j =~ post-${action} ]]; then
 					continue
 				fi
 				printf "\t\${TRIGGERSDIR}/$f run $j \${PKGNAME} \${VERSION} \${UPDATE} \${CONF_FILE}\n" >> $tmpf
