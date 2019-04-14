@@ -129,7 +129,7 @@ _EOF
 	if [ -d "${PKGDESTDIR}/usr/share/info" ]; then
 		unset info_files
 		for f in $(find ${PKGDESTDIR}/usr/share/info -type f); do
-			j=$(echo $f|sed -e "$fpattern")
+			j=$(sed -e "$fpattern" <<< $f)
 			[ "$j" = "" ] && continue
 			[ "$j" = "/usr/share/info/dir" ] && continue
 			if [ -z "$info_files" ]; then
