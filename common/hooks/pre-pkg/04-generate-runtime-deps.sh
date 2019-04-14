@@ -36,7 +36,7 @@ store_pkgdestdir_rundeps() {
         if [ -n "$run_depends" ]; then
             : > ${PKGDESTDIR}/rdeps
             for f in ${run_depends}; do
-                _curdep="$(echo "$f" | sed -e 's,\(.*\)?.*,\1,')"
+                _curdep="$(sed -e 's,\(.*\)?.*,\1,' <<< "$f")"
                 if [ -z "$($XBPS_UHELPER_CMD getpkgdepname ${_curdep} 2>/dev/null)" -a \
                      -z "$($XBPS_UHELPER_CMD getpkgname ${_curdep} 2>/dev/null)" ]; then
                     _curdep="${_curdep}>=0"
@@ -101,7 +101,7 @@ hook() {
     #
     for f in ${verify_deps}; do
         unset _f j rdep _rdep rdepcnt soname _pkgname _rdepver found
-        _f=$(echo "$f"|sed -E 's|\+|\\+|g')
+        _f=$(sed -E 's|\+|\\+|g' <<< "$f")
         rdep="$(grep -E "^${_f}[[:blank:]]+.*$" $mapshlibs|awk '{print $2}')"
         rdepcnt="$(grep -E "^${_f}[[:blank:]]+.*$" $mapshlibs|awk '{print $2}'|wc -l)"
         if [ -z "$rdep" ]; then
