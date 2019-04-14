@@ -23,6 +23,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 		* [Repositories defined by Branch](#repo_by_branch)
 		* [Package defined repositories](#pkg_defined_repo)
 	* [Checking for new upstream releases](#updates)
+	* [Handling patches](#patches)
 	* [Build style scripts](#build_scripts)
 	* [Build helper scripts](#build_helper)
 	* [Functions](#functions)
@@ -760,6 +761,29 @@ versions.  Example: `ignore="*b*"`
 
 - `version` is the version number used to compare against
 upstream versions. Example: `version=${version//./_}`
+
+<a id="patches"></a>
+### Handling patches
+
+Sometimes software needs to be patched, most commonly to fix bugs that have
+been found or to fix compilation with new software.
+
+To handle this, xbps-src has patching functionality. It will look for all files
+that match the glob `srcpkgs/$pkgname/patches/*.{diff,patch}` and will
+automatically apply all files it finds using `patch(1)` with `-Np0`. This happens
+during the `do_patch()` phase. The variable `PATCHESDIR` is
+available in the template, pointing to the `patches` directory.
+
+The patching behaviour can be changed in the following ways:
+
+- A file called `series` can be created in the `patches` directory with a newline
+separated list of patches to be applied in the order presented. When present
+xbps-src will only apply patches named in the `series` file.
+
+- A file with the same name as one of the patches but with `.args` as extension can
+be used to set the args passed to `patch(1)`. As an example, if `foo.patch` requires
+special arguments to be passed to `patch(1)` that can't be used when applying other
+patches, `foo.patch.args` can be created containing those args.
 
 <a id="build_scripts"></a>
 ### build style scripts
