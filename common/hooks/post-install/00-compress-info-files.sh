@@ -21,12 +21,11 @@ hook() {
 		[ "$j" = "" ] && continue
 		[ "$j" = "/usr/share/info/dir" ] && continue
 		# Ignore compressed files.
-		if $(echo "$j"|grep -q '.*.gz$'); then
+		if  [[ "$j" =~ .*.gz$ ]]; then
 			continue
 		fi
 		# Ignore non info files.
-		if ! $(echo "$j"|grep -q '.*.info$') && \
-			! $(echo "$j"|grep -q '.*.info-[0-9]*$'); then
+		if ! [[ "$j" =~ .*.info$ ]] && ! [[ "$j" =~ .*.info-[0-9]*$ ]]; then
 			continue
 		fi
 		if [ -h ${PKGDESTDIR}/"$j" ]; then
