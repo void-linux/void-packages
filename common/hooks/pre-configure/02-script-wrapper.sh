@@ -8,8 +8,11 @@ generic_wrapper() {
 	[ ! -x ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ] && return 0
 	[ -x ${XBPS_WRAPPERDIR}/${wrapper} ] && return 0
 
-	echo "#!/bin/sh" >> ${XBPS_WRAPPERDIR}/${wrapper}
-	echo "exec ${XBPS_CROSS_BASE}/usr/bin/${wrapper} --prefix=${XBPS_CROSS_BASE}/usr \"\$@\"" >> ${XBPS_WRAPPERDIR}/${wrapper}
+	cat >>${XBPS_WRAPPERDIR}/${wrapper}<<_EOF
+#!/bin/sh
+exec ${XBPS_CROSS_BASE}/usr/bin/${wrapper} --prefix=${XBPS_CROSS_BASE}/usr "\$@"
+_EOF
+
 	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}
 }
 
