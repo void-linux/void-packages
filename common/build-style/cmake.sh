@@ -29,7 +29,6 @@ SET(CMAKE_SYSTEM_VERSION 1)
 SET(CMAKE_C_COMPILER   ${CC})
 SET(CMAKE_CXX_COMPILER ${CXX})
 SET(CMAKE_CROSSCOMPILING TRUE)
-SET(CMAKE_CROSSCOMPILING_EMULATOR /usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static)
 
 SET(CMAKE_SYSTEM_PROCESSOR ${_CMAKE_SYSTEM_PROCESSOR})
 
@@ -55,6 +54,11 @@ _EOF
 		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib32"
 	else
 		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib"
+	fi
+
+	if [ "${hostmakedepends}" != "${hostmakedepends/qemu-user-static/}" ]; then
+		echo "SET(CMAKE_CROSSCOMPILING_EMULATOR /usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static)" \
+			>> cross_${XBPS_CROSS_TRIPLET}.cmake
 	fi
 
 	cmake_args+=" -DCMAKE_INSTALL_SBINDIR=bin"
