@@ -43,12 +43,7 @@ _EOF
 		cmake_args+=" -DCMAKE_TOOLCHAIN_FILE=cross_${XBPS_CROSS_TRIPLET}.cmake"
 	fi
 	cmake_args+=" -DCMAKE_INSTALL_PREFIX=/usr"
-
-	if [ -n "$XBPS_DEBUG_PKGS" ] && [ -z $nodebug ]; then
-		cmake_args+=" -DCMAKE_BUILD_TYPE=RelWithDebInfo"
-	else
-		cmake_args+=" -DCMAKE_BUILD_TYPE=Release"
-	fi
+	cmake_args+=" -DCMAKE_BUILD_TYPE=Release"
 
 	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
 		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib32"
