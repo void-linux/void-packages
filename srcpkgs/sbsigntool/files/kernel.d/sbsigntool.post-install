@@ -1,0 +1,54 @@
+#!/bin/sh
+#
+# Kernel hook for sbsigntool.
+#
+# Arguments passed to this script: $1 pkgname, $2 version.
+#
+
+PKGNAME="$1"
+VERSION="$2"
+
+msg() {
+	echo "EFI sbsign hook: $1"
+}
+
+. "${ROOTDIR}/etc/default/sbsigntool-kernel-hook"
+if [ "x${SBSIGN_EFI_KERNEL}" != x1 ]; then
+	exit 0
+fi
+
+if [ ! -f "${EFI_KEY_FILE}" ] || [ ! -f "${EFI_CERT_FILE}" ]; then
+	msg "key and/or certificate is not available"
+	exit 1
+fi
+
+key_stat=$(stat --dereference --format="%a %u" "${EFI_KEY_FILE}")
+
+# check if go=00 owner=0
+if [ "${key_stat}" = "${key_stat%00 0}" ]; then
+	msg "Please  chown root:root '${EFI_KEY_FILE}'"
+	msg "and     chmod go-rwx '${EFI_KEY_FILE}'"
+	exit 1
+fi
+
+# this part is completely untested
+options=""
+if [ "x${EFI_SIGN_ENGINE}" != x ]; then
+	options="--engine=${EFI_SIGN_ENGINE}"
+fi
+
+if ! sbsign $options -k "${EFI_KEY_FILE}" -c "${EFI_CERT_FILE}" \
+	"/boot/vmlinuz-${VERSION}"; then
+	msg "failed to sign kernel"
+	exit 1
+fi
+
+if ! sbverify -c "${EFI_CERT_FILE}" "/boot/vmlinuz-${VERSION}.signed"; then
+	msg "failed to verify the signature"
+	exit 1
+fi
+
+if [ "x${EFI_KEEP_UNSIGNED}" = "x1" ]; then
+	mv -f "/boot/vmlinuz-${VERSION}" "/boot/vmlinuz-${VERSION}.unsigned"
+fi
+mv -f "/boot/vmlinuz-${VERSION}.signed" "/boot/vmlinuz-${VERSION}"
