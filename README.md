@@ -407,9 +407,9 @@ A native build environment is required to be able to cross compile the bootstrap
 
     $ ./xbps-src binary-bootstrap
 
-Now cross compile `base-chroot-musl` for your native architecture:
+Now cross compile `base-chroot` for your native architecture:
 
-    $ ./xbps-src -a x86_64-musl pkg base-chroot-musl
+    $ ./xbps-src -a x86_64-musl pkg base-chroot
 
 Wait until all packages are built and when ready, prepare a new masterdir with the musl packages:
 
