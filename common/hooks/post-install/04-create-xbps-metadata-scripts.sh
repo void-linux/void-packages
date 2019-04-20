@@ -123,6 +123,10 @@ _EOF
 		_add_trigger binfmts
 		echo "export binfmts=\"${binfmts}\"" >> $tmpf
 	fi
+	if [ -n "${binfmt_files}" ]; then
+		_add_trigger binfmts
+		echo "export binfmt_files=\"${binfmt_files}\"" >> $tmpf
+	fi
 	#
 	# Handle GNU Info files.
 	#

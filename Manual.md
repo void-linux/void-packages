@@ -1723,8 +1723,13 @@ executable binary formats, know as binfmts.
 During installation/removal it uses `update-binfmts` from the `binfmt-support` package
 to register/remove entries from the arbitrary executable binary formats database.
 
-To include the trigger use the `binfmts` variable, as the trigger won't do anything unless
-it is defined.
+Include the trigger by specifying the `binfmt_files` variable. This variable
+contains a space separated list of format file, relative to
+`/usr/share/binfmts`. Each format file is passed to `update-binfmts --import`.
+
+The `binfmts` variable is deprecated, but still supported. The variable contains
+a newline separated list of arguments that are passed to
+`update-binfmts --package <pkgname> --install`.
 
 <a id="triggers_dkms"></a>
 #### dkms
