@@ -450,6 +450,22 @@ setup_pkg() {
     export CXXFLAGS="$XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"
     export FFLAGS="$XBPS_FFLAGS $XBPS_CROSS_FFLAGS $FFLAGS"
     export CPPFLAGS="$XBPS_CPPFLAGS $XBPS_CROSS_CPPFLAGS $CPPFLAGS"
+
+    # determine which ELF interpreter we should link to
+    if [ "$XBPS_TARGET_MACHINE" != "${XBPS_TARGET_MACHINE%-musl}" ]; then
+        LDFLAGS="-Wl,--dynamic-linker=/usr/lib/libc.so ${LDFLAGS}"
+    elif [ -n "$cross" ] && [ -n "$XBPS_CROSS_GLIBC_INTERPRETER" ]; then
+        LDFLAGS="-Wl,--dynamic-linker=/usr/lib/${XBPS_CROSS_GLIBC_INTERPRETER} ${LDFLAGS}"
+    elif [ -n "$cross" ]; then
+        # arm hard float platforms do not define the cross variable...
+        LDFLAGS="-Wl,--dynamic-linker=/usr/lib/ld-linux-armhf.so.3 ${LDFLAGS}"
+    elif [ -n "$XBPS_GLIBC_INTERPRETER" ]; then
+        LDFLAGS="-Wl,--dynamic-linker=/usr/lib/${XBPS_GLIBC_INTERPRETER} ${LDFLAGS}"
+    else
+        # ...or the native variable for that matter
+        LDFLAGS="-Wl,--dynamic-linker=/usr/lib/ld-linux-armhf.so.3 ${LDFLAGS}"
+    fi
+
     export LDFLAGS="$XBPS_LDFLAGS $XBPS_CROSS_LDFLAGS $LDFLAGS"
 
     export BUILD_CC="cc"
