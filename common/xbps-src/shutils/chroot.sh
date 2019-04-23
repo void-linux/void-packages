@@ -174,9 +174,12 @@ chroot_sync_repos() {
 chroot_handler() {
     local action="$1" pkg="$2" rv=0 arg= _envargs=
 
-    if [ -n "$IN_CHROOT" -o -z "$CHROOT_READY" ]; then
+    if [ "$IN_CHROOT" ]; then
         return 0
+    elif [ -z "$CHROOT_READY" ]; then
+        msg_error "masterdir wasn't set! use 'bootstrap' or 'binary-bootstrap'\n"
     fi
+
     if [ ! -d $XBPS_MASTERDIR/void-packages ]; then
         mkdir -p $XBPS_MASTERDIR/void-packages
     fi
