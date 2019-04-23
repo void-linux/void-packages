@@ -1,4 +1,8 @@
 if [ -z "$CHROOT_READY" ]; then
-	CFLAGS+=" -isystem ${XBPS_MASTERDIR}/usr/include"
-	LDFLAGS+=" -L${XBPS_MASTERDIR}/usr/lib -Wl,-rpath-link=${XBPS_MASTERDIR}/usr/lib"
+	if [ -d $XBPS_MASTERDIR/usr/include ]; then
+		CFLAGS+=" -I${XBPS_MASTERDIR}/usr/include"
+	fi
+	if [ -d $XBPS_MASTERDIR/usr/lib ]; then
+		LDFLAGS+=" -L${XBPS_MASTERDIR}/usr/lib -Wl,-rpath-link=${XBPS_MASTERDIR}/usr/lib"
+	fi
 fi

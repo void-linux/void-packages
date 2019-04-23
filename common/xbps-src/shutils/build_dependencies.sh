@@ -107,9 +107,9 @@ install_pkg_from_repos() {
 # package, 1 if no match and 2 if not installed.
 #
 check_pkgdep_matched() {
-    local pkg="$1" checkver="$2" cross="$3" uhelper= pkgn= iver=
+    local pkg="$1" checkver="$2" cross="$3" uhelper pkgn iver
+    local rv
 
-    [ "$build_style" = "meta" ] && return 2
     [ -z "$pkg" ] && return 255
 
     pkgn="$($XBPS_UHELPER_CMD getpkgdepname ${pkg} 2>/dev/null)"
@@ -125,10 +125,12 @@ check_pkgdep_matched() {
     fi
 
     iver="$($uhelper $checkver $pkgn)"
-    if [ $? -eq 0 -a -n "$iver" ]; then
+    rv=$?
+
+    if [ $rv -eq 0 -a -n "$iver" ]; then
         $XBPS_UHELPER_CMD pkgmatch "${pkgn}-${iver}" "${pkg}"
         [ $? -eq 1 ] && return 0
-    else
+    elif [ $rv -eq 1 ]; then
         return 2
     fi
 
