@@ -23,5 +23,10 @@ if [ "$build_option_gir" ] || [[ $build_options != *"gir"* ]]; then
 		# Provide basic .gir types like GLib, GObject, DBus, Gio, cairo
 		# and tooling like g-ir-compiler
 		makedepends+=" gobject-introspection"
+
+		# Provide gtk+3-devel in the host if it is in the makedepends
+		if [[ $makedepends == *"gtk+3-devel"* ]]; then
+			hostmakedepends+=" gtk+3-devel"
+		fi
 	fi
 fi
