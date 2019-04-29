@@ -24,6 +24,9 @@ if [ "$build_option_gir" ] || [[ $build_options != *"gir"* ]]; then
 		# and tooling like g-ir-compiler
 		makedepends+=" gobject-introspection"
 
+		export VAPIGEN_VAPIDIRS=${XBPS_CROSS_BASE}/usr/share/vala/vapi
+		export VAPIGEN_GIRDIRS=${XBPS_CROSS_BASE}/usr/share/gir-1.0
+
 		# Provide gtk+3-devel in the host if it is in the makedepends
 		if [[ $makedepends == *"gtk+3-devel"* ]]; then
 			hostmakedepends+=" gtk+3-devel"
