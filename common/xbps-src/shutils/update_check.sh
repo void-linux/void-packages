@@ -31,6 +31,8 @@ update_check() {
     # filter loop: if version are "folder" name based,
     # substitute original url by every folder based ones (expand)
     while IFS= read -r url; do
+        # default case: don't rewrite url
+        printf '%s\n' "$url"
         rx=
         urlpfx="${url}"
         urlsfx=
@@ -45,10 +47,7 @@ update_check() {
                 rx='href="\K[\d\.]+(?=/")'
                 ;;
         esac
-        if [ -z "$rx" ]; then
-            # default case: don't rewrite url
-            printf '%s\n' "$url"
-        else
+        if [ "$rx" ]; then
             # substitute url if needed
             if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
                 echo "(folder) fetching $urlpfx" 1>&2
