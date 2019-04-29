@@ -52,8 +52,18 @@ update_check() {
             if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
                 echo "(folder) fetching $urlpfx" 1>&2
             fi
+            skipdirs=
             curl -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$urlpfx" |
-                grep -Po -i "$rx" | xargs -r -n 1 -I @@ printf '%s\n' "${urlpfx}@@${urlsfx}"
+                grep -Po -i "$rx" | sort -Vru |
+                while IFS= read -r newver; do
+                    newurl="${urlpfx}${newver}${urlsfx}"
+                    if [ "$newurl" = "$url" ]; then
+                        skipdirs=yes
+                    fi
+                    if [ -z "$skipdirs" ]; then
+                        printf '%s\n' "$newurl"
+                    fi
+                done
         fi
     done |
     while IFS= read -r url; do
