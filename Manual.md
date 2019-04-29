@@ -762,6 +762,18 @@ versions.  Example: `ignore="*b*"`
 - `version` is the version number used to compare against
 upstream versions. Example: `version=${version//./_}`
 
+- `single_directory` can be set to disable
+detecting directory containing one version of sources in url,
+then searching new version in adjacent directories.
+
+- `vdprefix` is a perl-compatible regular expression matching
+part that precedes numeric part of version directory
+in url. Defaults to `(|v|$pkgname)[-_.]*`.
+
+- `vdsuffix` is a perl-compatible regular expression matching
+part that follows numeric part of version directory
+in url. Defaults to `(|\.x)`.
+
 <a id="patches"></a>
 ### Handling patches
 
