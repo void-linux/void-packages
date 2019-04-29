@@ -8,9 +8,11 @@
 # Check if the 'gir' build_option is set or if there is no
 # 'gir' build_option.
 if [ "$build_option_gir" ] || [[ $build_options != *"gir"* ]]; then
-	# Provide the host tooling, g-ir-scanner, g-ir-compiler and its
-	# wrappers.
-	hostmakedepends+=" gobject-introspection"
+	if [[ $hostmakedepends != *"gobject-introspection"* ]]; then
+		# Provide the host tooling, g-ir-scanner, g-ir-compiler
+		# and its wrappers.
+		hostmakedepends+=" gobject-introspection"
+	fi
 	
 	if [ "$CROSS_BUILD" ]; then
 		# Required for running binaries produced from g-ir-compiler
