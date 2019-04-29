@@ -41,6 +41,21 @@ update_check() {
         urlsfx=
         dirpfx=
         case "$url" in
+            *.voidlinux.*|\
+              *sourceforge.net/sourceforge*|\
+              *code.google.com*|*googlecode*|\
+              *launchpad.net*|\
+              *cpan.*|\
+              *pythonhosted.org*|\
+              *github.com*|\
+              *gitlab.com*|*gitlab.gnome.org*|*gitlab.freedesktop.org*|\
+              *bitbucket.org*|\
+              *ftp.gnome.org*|\
+              *kernel.org/pub/linux/kernel/*|\
+              *cran.r-project.org/src/contrib*|\
+              *rubygems.org*)
+                continue
+                ;;
             *)
                 vdpfx=${vdprefix:-"|v|\\Q$pkgname\\E"}
                 vdsfx=${vdsuffix:-"|\\.x"}
