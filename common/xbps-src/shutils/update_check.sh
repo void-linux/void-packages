@@ -36,15 +36,19 @@ update_check() {
         rx=
         urlpfx="${url}"
         urlsfx=
+        dirpfx=
         case "$url" in
-            *download.kde.org/stable/applications/*|*download.kde.org/stable/frameworks/*|*download.kde.org/stable/plasma/*|\
-                *download.kde.org/stable/kdevelop/*|*download.kde.org/stable/krita/*|*download.kde.org/stable/clazy/*|\
-                *download.kde.org/stable/digikam/*|*download.kde.org/stable/phonon/*)
-                urlpfx="${url%%${version%.*}*}"
-                urlsfx="${url##${urlpfx}${version%.*}}"
-                urlsfx="${urlsfx#.*/}"
-                urlsfx="/${urlsfx#/}"
-                rx='href="\K[\d\.]+(?=/")'
+            *)
+                vdpfx=${vdprefix:-"|v|\\Q$pkgname\\E"}
+                vdsfx=${vdsuffix:-"|\\.x"}
+                match=$(grep -Po "^[^/]+//[^/]+(/.+)?/($vdpfx)(?=[-_.0-9]*[0-9](?<!\\Q$pkgname\\E)($vdsfx)/)" <<< "$url")
+                if [ "$?" = 0 ]; then
+                    urlpfx="${match%/*}/"
+                    dirpfx="${match##*/}"
+                    urlsfx="${url#$urlpfx}"
+                    urlsfx="${urlsfx#*/}"
+                    rx="href=[\"']?(\\Q$urlpfx\\E)?\\.?/?\\K\\Q$dirpfx\\E[-_.0-9]*[0-9]($vdsfx)[\"'/]"
+                fi
                 ;;
         esac
         if [ "$rx" ]; then
