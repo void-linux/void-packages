@@ -33,6 +33,9 @@ update_check() {
     while IFS= read -r url; do
         # default case: don't rewrite url
         printf '%s\n' "$url"
+        if [ "$single_directory" ]; then
+            continue
+        fi
         rx=
         urlpfx="${url}"
         urlsfx=
