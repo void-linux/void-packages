@@ -240,10 +240,12 @@ install_pkg_deps() {
                 continue
             else
                 echo "   [host] ${i}: not found."
-                if [ "${_realpkg}" = "$targetpkg" ]; then
-                    msg_error "${pkg}: [host] build loop detected: ${_realpkg} <-> ${targetpkg} [depends on itself]\n"
-                elif [ "${_realpkg}" = "$pkg" ]; then
-                    msg_error "${pkg}: [host] build loop detected: $pkg <-> ${_realpkg}\n"
+                if [ -z "$cross" ]; then
+                    if [ "${_realpkg}" = "$targetpkg" ]; then
+                        msg_error "${pkg}: [host] build loop detected: ${_realpkg} <-> ${targetpkg} [depends on itself]\n"
+                    elif [ "${_realpkg}" = "$pkg" ]; then
+                        msg_error "${pkg}: [host] build loop detected: $pkg <-> ${_realpkg}\n"
+                    fi
                 fi
             fi
         fi

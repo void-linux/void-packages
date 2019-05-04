@@ -23,10 +23,10 @@ do_patch() {
 			i686*)
 				_MESON_CPU_FAMILY=x86
 				;;
-			ppc64le)
+			ppc64le*)
 				_MESON_CPU_FAMILY=ppc64
 				;;
-			ppc64)
+			ppc64*)
 				_MESON_TARGET_ENDIAN=big
 				_MESON_CPU_FAMILY=ppc64
 				;;

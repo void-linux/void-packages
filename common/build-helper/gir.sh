@@ -8,9 +8,11 @@
 # Check if the 'gir' build_option is set or if there is no
 # 'gir' build_option.
 if [ "$build_option_gir" ] || [[ $build_options != *"gir"* ]]; then
-	# Provide the host tooling, g-ir-scanner, g-ir-compiler and its
-	# wrappers.
-	hostmakedepends+=" gobject-introspection"
+	if [[ $hostmakedepends != *"gobject-introspection"* ]]; then
+		# Provide the host tooling, g-ir-scanner, g-ir-compiler
+		# and its wrappers.
+		hostmakedepends+=" gobject-introspection"
+	fi
 	
 	if [ "$CROSS_BUILD" ]; then
 		# Required for running binaries produced from g-ir-compiler
@@ -20,8 +22,18 @@ if [ "$build_option_gir" ] || [[ $build_options != *"gir"* ]]; then
 		# Required for running the g-ir-scanner-lddwrapper
 		hostmakedepends+=" prelink-cross"
 
-		# Provide basic .gir types like GLib, GObject, DBus, Gio, cairo
-		# and tooling like g-ir-compiler
-		makedepends+=" gobject-introspection"
+		if [[ $makedepends != *"gobject-introspection"* ]]; then
+			# Provide basic .gir types like GLib, GObject, DBus, Gio, cairo
+			# and tooling like g-ir-compiler
+			makedepends+=" gobject-introspection"
+		fi
+
+		export VAPIGEN_VAPIDIRS=${XBPS_CROSS_BASE}/usr/share/vala/vapi
+		export VAPIGEN_GIRDIRS=${XBPS_CROSS_BASE}/usr/share/gir-1.0
+
+		# Provide gtk+3-devel in the host if it is in the makedepends
+		if [[ $makedepends == *"gtk+3-devel"* ]]; then
+			hostmakedepends+=" gtk+3-devel"
+		fi
 	fi
 fi

@@ -215,7 +215,7 @@ a package providing the executable named `<name>` and the module named
 language prefix can be dropped. Short names for languages are no valid substitute
 for the language prefix.
 
-Example: python-pam, perl-URI, python-pyside
+Example: python-pam, perl-URI, python3-pyside2
 
 <a id="language_bindings"></a>
 #### Language Bindings
