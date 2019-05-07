@@ -25,6 +25,9 @@ unset -v skip_extraction
 # hooks/post-install/03-strip-and-debug-pkgs
 unset -v nodebug
 
+# build-helpers/gir.sh for cross builds
+unset -v GIR_EXTRA_LIBS_PATH GIR_EXTRA_OPTIONS
+
 ## FUNCTIONS
 unset -f pre_fetch do_fetch post_fetch
 unset -f pre_extract do_extract post_extract
