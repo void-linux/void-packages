@@ -913,7 +913,12 @@ The current list of available `build_helper` scripts is the following:
 for compiling cargo -sys crates.
 
 - `gir` specifies dependencies for native and cross builds to deal with
-GObject Introspection
+GObject Introspection. The following variables may be set in the template to handle
+cross builds which require additional hinting or exhibit problems. `GIR_EXTRA_LIBS_PATH` defines
+additional paths to be searched when linking target binaries to be introspected.
+`GIR_EXTRA_OPTIONS` defines additional options for the `g-ir-scanner-qemuwrapper` calling
+`qemu-<target_arch>-static` when running the target binary. You can for example specify
+`GIR_EXTRA_OPTIONS="-strace"` to see a trace of what happens when running that binary.
 
 <a id="functions"></a>
 ### Functions
