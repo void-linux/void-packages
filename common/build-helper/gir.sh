@@ -31,9 +31,12 @@ if [ "$build_option_gir" ] || [[ $build_options != *"gir"* ]]; then
 		export VAPIGEN_VAPIDIRS=${XBPS_CROSS_BASE}/usr/share/vala/vapi
 		export VAPIGEN_GIRDIRS=${XBPS_CROSS_BASE}/usr/share/gir-1.0
 
-		# Provide gtk+3-devel in the host if it is in the makedepends
-		if [[ $makedepends == *"gtk+3-devel"* ]]; then
-			hostmakedepends+=" gtk+3-devel"
-		fi
+		# Provide some packages in hostmakedepends if they are in makedepends
+		for f in gtk+3-devel python-gobject-devel python3-gobject-devel; do
+			if [[ $makedepends == *"${f}"* ]]; then
+				hostmakedepends+=" ${f}"
+			fi
+		done
+		unset f
 	fi
 fi
