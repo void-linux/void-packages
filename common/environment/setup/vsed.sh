@@ -46,16 +46,16 @@ vsed() {
 
 	for rx in "${regexes[@]}"; do
 		for f in "${files[@]}"; do
-			shasums="$($XBPS_DIGEST_CMD "$f")"
+			olddigest="$($XBPS_DIGEST_CMD "$f")"
 
 			sed -i "$f" -e "$rx" || {
 				msg_red "$pkgver: vsed: sed call failed with regex \"$rx\" on file \"$f\"\n"
 				return 1
 			}
 
-			sha256sum="$($XBPS_DIGEST_CMD "$f")"
+			newdigest="$($XBPS_DIGEST_CMD "$f")"
 
-			if [ "$shasums" = "${sha256sum%% *}" ]; then
+			if [ "$olddigest" = "${newdigest%% *}" ]; then
 				msg_warn "$pkgver: vsed: regex \"$rx\" didn't change file \"$f\"\n"
 			fi
 		done
