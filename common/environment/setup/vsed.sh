@@ -47,6 +47,7 @@ vsed() {
 	for rx in "${regexes[@]}"; do
 		for f in "${files[@]}"; do
 			olddigest="$($XBPS_DIGEST_CMD "$f")"
+			olddigest="${olddigest%% *}"
 
 			sed -i "$f" -e "$rx" || {
 				msg_red "$pkgver: vsed: sed call failed with regex \"$rx\" on file \"$f\"\n"
@@ -54,8 +55,9 @@ vsed() {
 			}
 
 			newdigest="$($XBPS_DIGEST_CMD "$f")"
+			newdigest="${newdigest%% *}"
 
-			if [ "$olddigest" = "${newdigest%% *}" ]; then
+			if [ "$olddigest" = "$newdigest" ]; then
 				msg_warn "$pkgver: vsed: regex \"$rx\" didn't change file \"$f\"\n"
 			fi
 		done
