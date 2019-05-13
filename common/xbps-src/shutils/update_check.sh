@@ -97,6 +97,9 @@ update_check() {
             *rubygems.org*)
                 url="https://rubygems.org/gems/${pkgname#ruby-}"
                 rx='href="/gems/'${pkgname#ruby-}'/versions/\K[\d\.]*(?=")' ;;
+            *crates.io*)
+                url="https://crates.io/api/v1/crates/${pkgname#rust-}"
+                rx='/crates/'${pkgname#rust-}'/\K[0-9.]*(?=/download)' ;;
             esac
         fi
 
