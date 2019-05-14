@@ -1,35 +1,35 @@
-From a5224eb31a4c8a680587e74cc402e5ed92ead216 Mon Sep 17 00:00:00 2001
+From 1278e5015f6925d86274d6363c4cedf2ce47bfcb Mon Sep 17 00:00:00 2001
 From: "A. Wilcox" <AWilcox@Wilcox-Tech.com>
-Date: Thu, 27 Sep 2018 15:42:40 -0500
-Subject: [PATCH] Ensure ELFv2 is supported on PPC64
+Date: Tue, 14 May 2019 14:07:50 +0200
+Subject: [PATCH] [PATCH] Ensure ELFv2 is supported on PPC64
 
 ---
- coregrind/m_dispatch/dispatch-ppc64be-linux.S | 107 ++++++++++++++++--
- coregrind/m_initimg/initimg-linux.c           |   5 +-
+ coregrind/m_dispatch/dispatch-ppc64be-linux.S | 101 ++++++++++++++++--
+ coregrind/m_initimg/initimg-linux.c           |   3 +-
  coregrind/m_libcsetjmp.c                      |   7 +-
  coregrind/m_machine.c                         |   3 +-
- coregrind/m_main.c                            |  19 ++--
+ coregrind/m_main.c                            |  21 ++--
  coregrind/m_sigframe/sigframe-ppc64-linux.c   |   3 +-
  coregrind/m_signals.c                         |  11 +-
- coregrind/m_stacktrace.c                      |  12 +-
+ coregrind/m_stacktrace.c                      |  12 ++-
  coregrind/m_syscall.c                         |   9 +-
  coregrind/m_syswrap/syscall-ppc64be-linux.S   |  19 +++-
  coregrind/m_syswrap/syswrap-ppc64-linux.c     |   9 +-
  coregrind/m_trampoline.S                      |   4 +-
- coregrind/m_translate.c                       |  23 ++--
+ coregrind/m_translate.c                       |  26 ++---
  coregrind/m_ume/elf.c                         |   8 +-
- coregrind/pub_core_machine.h                  |  12 +-
+ coregrind/pub_core_machine.h                  |  12 ++-
  coregrind/vg_preloaded.c                      |   3 +-
  include/valgrind.h                            |  16 ++-
  memcheck/mc_leakcheck.c                       |   2 +-
  memcheck/mc_machine.c                         |   3 +-
- 19 files changed, 206 insertions(+), 69 deletions(-)
+ 19 files changed, 205 insertions(+), 67 deletions(-)
 
 diff --git a/coregrind/m_dispatch/dispatch-ppc64be-linux.S b/coregrind/m_dispatch/dispatch-ppc64be-linux.S
-index 91bd3b236..eb8026c7c 100644
+index c5592d4..292b236 100644
 --- a/coregrind/m_dispatch/dispatch-ppc64be-linux.S
 +++ b/coregrind/m_dispatch/dispatch-ppc64be-linux.S
-@@ -75,14 +75,26 @@ void VG_(disp_run_translations)( UWord* two_words,
+@@ -88,14 +88,26 @@ void VG_(disp_run_translations)( UWord* two_words,
  .section ".text"
  .align   2
  .globl   VG_(disp_run_translations)
@@ -56,7 +56,7 @@ index 91bd3b236..eb8026c7c 100644
  	/* r3 holds two_words */
  	/* r4 holds guest_state */
          /* r5 holds host_addr */
-@@ -231,6 +243,11 @@ VG_(disp_run_translations):
+@@ -244,6 +256,11 @@ VG_(disp_run_translations):
  
          /* Set up the guest state ptr */
          mr      31,4      /* r31 (generated code gsp) = r4 */
@@ -68,7 +68,7 @@ index 91bd3b236..eb8026c7c 100644
  
          /* and jump into the code cache.  Chained translations in
             the code cache run, until for whatever reason, they can't
-@@ -385,7 +402,9 @@ VG_(disp_run_translations):
+@@ -398,7 +415,9 @@ VG_(disp_run_translations):
          mtlr    0
          addi    1,1,624   /* stack_size */
          blr
@@ -79,7 +79,7 @@ index 91bd3b236..eb8026c7c 100644
  
  /*----------------------------------------------------*/
  /*--- Continuation points                          ---*/
-@@ -395,15 +414,25 @@ VG_(disp_run_translations):
+@@ -408,14 +427,24 @@ VG_(disp_run_translations):
          .section ".text"
          .align   2
          .globl   VG_(disp_cp_chain_me_to_slowEP)
@@ -97,17 +97,15 @@ index 91bd3b236..eb8026c7c 100644
          .type    .VG_(disp_cp_chain_me_to_slowEP),@function
          .globl   .VG_(disp_cp_chain_me_to_slowEP)
  .VG_(disp_cp_chain_me_to_slowEP):
--        /* We got called.  The return address indicates
 +#if  _CALL_ELF == 2
 +0:      addis 2, 12,.TOC.-0b@ha
 +        addi  2,2,.TOC.-0b@l
 +        .localentry VG_(disp_cp_chain_me_to_slowEP), .-VG_(disp_cp_chain_me_to_slowEP)
 +#endif
-+	/* We got called.  The return address indicates
+         /* We got called.  The return address indicates
             where the patching needs to happen.  Collect
             the return address and, exit back to C land,
-            handing the caller the pair (Chain_me_S, RA) */
-@@ -415,20 +444,33 @@ VG_(disp_cp_chain_me_to_slowEP):
+@@ -428,20 +457,33 @@ VG_(disp_cp_chain_me_to_slowEP):
          */
          subi 7,7,20+4+4
          b    .postamble
@@ -143,7 +141,7 @@ index 91bd3b236..eb8026c7c 100644
             where the patching needs to happen.  Collect
             the return address and, exit back to C land,
             handing the caller the pair (Chain_me_S, RA) */
-@@ -440,20 +482,33 @@ VG_(disp_cp_chain_me_to_fastEP):
+@@ -453,19 +495,32 @@ VG_(disp_cp_chain_me_to_fastEP):
          */
          subi 7,7,20+4+4
          b    .postamble
@@ -155,12 +153,11 @@ index 91bd3b236..eb8026c7c 100644
          .section ".text"
          .align   2
          .globl   VG_(disp_cp_xindir)
--        .section ".opd","aw"
 +#if _CALL_ELF == 2
 +        .type VG_(disp_cp_xindir),@function
 +VG_(disp_cp_xindir):
 +#else
-+	.section ".opd","aw"
+         .section ".opd","aw"
          .align   3
  VG_(disp_cp_xindir):
          .quad    .VG_(disp_cp_xindir),.TOC.@tocbase,0
@@ -169,27 +166,23 @@ index 91bd3b236..eb8026c7c 100644
          .type    .VG_(disp_cp_xindir),@function
          .globl   .VG_(disp_cp_xindir)
  .VG_(disp_cp_xindir):
--        /* Where are we going? */
 +#if  _CALL_ELF == 2
 +0:      addis 2, 12,.TOC.-0b@ha
 +        addi  2,2,.TOC.-0b@l
 +        .localentry VG_(disp_cp_xindir), .-VG_(disp_cp_xindir)
 +#endif
-+	/* Where are we going? */
-         ld      3,OFFSET_ppc64_CIA(31)
+         /* Where are we going? */
+         ld    20, OFFSET_ppc64_CIA(31)
  
-         /* stats only */
-@@ -479,6 +534,9 @@ VG_(disp_cp_xindir):
-         /* Found a match.  Jump to .host. */
-         mtctr   7
-         bctr
+@@ -584,44 +639,72 @@ VG_(disp_cp_xindir):
+         li    7,0
+         b     .postamble
+ 	/*NOTREACHED*/
 +#if _CALL_ELF == 2
 +        .size VG_(disp_cp_xindir),.-VG_(disp_cp_xindir)
 +#endif
  
- .fast_lookup_failed:
-         /* stats only */
-@@ -496,39 +554,64 @@ VG_(disp_cp_xindir):
+ /* ------ Assisted jump ------ */
  .section ".text"
          .align   2
          .globl   VG_(disp_cp_xassisted)
@@ -260,7 +253,7 @@ index 91bd3b236..eb8026c7c 100644
  /* Let the linker know we don't need an executable stack */
  MARK_STACK_NO_EXEC
 diff --git a/coregrind/m_initimg/initimg-linux.c b/coregrind/m_initimg/initimg-linux.c
-index 61cc458bc..19df79705 100644
+index 8a7f0d0..6891641 100644
 --- a/coregrind/m_initimg/initimg-linux.c
 +++ b/coregrind/m_initimg/initimg-linux.c
 @@ -1117,7 +1117,8 @@ void VG_(ii_finalise_image)( IIFinaliseImageInfo iifii )
@@ -274,7 +267,7 @@ index 61cc458bc..19df79705 100644
  #endif
  
 diff --git a/coregrind/m_libcsetjmp.c b/coregrind/m_libcsetjmp.c
-index c73180640..ed96f4739 100644
+index 85ffc12..51273a0 100644
 --- a/coregrind/m_libcsetjmp.c
 +++ b/coregrind/m_libcsetjmp.c
 @@ -35,6 +35,7 @@
@@ -306,10 +299,10 @@ index c73180640..ed96f4739 100644
  ".section \".toc\",\"aw\""          "\n"
  
 diff --git a/coregrind/m_machine.c b/coregrind/m_machine.c
-index 31b0e1b6b..eb3e6a4e1 100644
+index df842aa..de37070 100644
 --- a/coregrind/m_machine.c
 +++ b/coregrind/m_machine.c
-@@ -2035,7 +2035,8 @@ void* VG_(fnptr_to_fnentry)( void* f )
+@@ -2073,7 +2073,8 @@ void* VG_(fnptr_to_fnentry)( void* f )
        || defined(VGP_ppc32_linux) || defined(VGP_ppc64le_linux) \
        || defined(VGP_s390x_linux) || defined(VGP_mips32_linux) \
        || defined(VGP_mips64_linux) || defined(VGP_arm64_linux) \
@@ -320,10 +313,10 @@ index 31b0e1b6b..eb3e6a4e1 100644
  #  elif defined(VGP_ppc64be_linux)
     /* ppc64-linux uses the AIX scheme, in which f is a pointer to a
 diff --git a/coregrind/m_main.c b/coregrind/m_main.c
-index bf4a71284..102235dca 100644
+index 21df679..855c933 100644
 --- a/coregrind/m_main.c
 +++ b/coregrind/m_main.c
-@@ -2274,7 +2274,7 @@ static void final_tidyup(ThreadId tid)
+@@ -2303,7 +2303,7 @@ static void final_tidyup(ThreadId tid)
        return; /* won't do it */
     }
  
@@ -332,21 +325,26 @@ index bf4a71284..102235dca 100644
     Addr r2 = VG_(get_tocptr)(VG_(current_DiEpoch)(),
                               freeres_wrapper);
     if (r2 == 0) {
-@@ -2306,9 +2306,11 @@ static void final_tidyup(ThreadId tid)
-       directly.  However, we need to set R2 (the toc pointer)
+@@ -2336,13 +2336,15 @@ static void final_tidyup(ThreadId tid)
        appropriately. */
     VG_(set_IP)(tid, freeres_wrapper);
+ 
 -#  if defined(VGP_ppc64be_linux)
 +#  if (defined(VGP_ppc64be_linux) || defined(VGP_ppc64le_linux)) \
 +      && defined(VG_PLAT_USES_PPCTOC)
     VG_(threads)[tid].arch.vex.guest_GPR2 = r2;
+    VG_TRACK(post_reg_write, Vg_CoreClientReq, tid,
+             offsetof(VexGuestPPC64State, guest_GPR2),
+             sizeof(VG_(threads)[tid].arch.vex.guest_GPR2));
 -#  elif  defined(VGP_ppc64le_linux)
+-   /* setting GPR2 but not really needed, GPR12 is needed */
 +#  elif  (defined(VGP_ppc64be_linux) || defined(VGP_ppc64le_linux)) \
 +         && !defined(VG_PLAT_USES_PPCTOC)
-    /* setting GPR2 but not really needed, GPR12 is needed */
++  /* setting GPR2 but not really needed, GPR12 is needed */
     VG_(threads)[tid].arch.vex.guest_GPR2  = freeres_wrapper;
-    VG_(threads)[tid].arch.vex.guest_GPR12 = freeres_wrapper;
-@@ -2610,9 +2612,10 @@ asm("\n"
+    VG_TRACK(post_reg_write, Vg_CoreClientReq, tid,
+             offsetof(VexGuestPPC64State, guest_GPR2),
+@@ -2657,9 +2659,10 @@ asm("\n"
      "\ttrap\n"
      ".previous\n"
  );
@@ -359,7 +357,7 @@ index bf4a71284..102235dca 100644
         So we must have one, and that is what goes into the .opd section. */
      "\t.align 2\n"
      "\t.global _start\n"
-@@ -2656,9 +2659,9 @@ asm("\n"
+@@ -2703,9 +2706,9 @@ asm("\n"
      "\tnop\n"
      "\ttrap\n"
  );
@@ -373,7 +371,7 @@ index bf4a71284..102235dca 100644
  asm("\n"
      "\t.align 2\n"
 diff --git a/coregrind/m_sigframe/sigframe-ppc64-linux.c b/coregrind/m_sigframe/sigframe-ppc64-linux.c
-index b16606c22..cc657838f 100644
+index b16606c..cc65783 100644
 --- a/coregrind/m_sigframe/sigframe-ppc64-linux.c
 +++ b/coregrind/m_sigframe/sigframe-ppc64-linux.c
 @@ -263,7 +263,8 @@ void VG_(sigframe_create)( ThreadId tid,
@@ -387,10 +385,10 @@ index b16606c22..cc657838f 100644
     tst->arch.vex.guest_CIA = (Addr) ((ULong*)handler)[0];
  #else
 diff --git a/coregrind/m_signals.c b/coregrind/m_signals.c
-index e572f17cc..52d939057 100644
+index 7591eb3..51fce79 100644
 --- a/coregrind/m_signals.c
 +++ b/coregrind/m_signals.c
-@@ -889,7 +889,9 @@ extern void my_sigreturn(void);
+@@ -897,7 +897,9 @@ extern void my_sigreturn(void);
     "	sc\n" \
     ".previous\n"
  
@@ -401,7 +399,7 @@ index e572f17cc..52d939057 100644
  #  define _MY_SIGRETURN(name) \
     ".align   2\n" \
     ".globl   my_sigreturn\n" \
-@@ -904,9 +906,10 @@ extern void my_sigreturn(void);
+@@ -912,9 +914,10 @@ extern void my_sigreturn(void);
     "	li	0, " #name "\n" \
     "	sc\n"
  
@@ -416,7 +414,7 @@ index e572f17cc..52d939057 100644
  #  define _MY_SIGRETURN(name) \
     ".align   2\n" \
 diff --git a/coregrind/m_stacktrace.c b/coregrind/m_stacktrace.c
-index 24f1409dd..9be4c6da9 100644
+index b3ac89f..5ff90ef 100644
 --- a/coregrind/m_stacktrace.c
 +++ b/coregrind/m_stacktrace.c
 @@ -726,7 +726,8 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
@@ -460,7 +458,7 @@ index 24f1409dd..9be4c6da9 100644
                 ppc64-linux.  If LR points to our magic return stub,
                 then we are in a wrapped or intercepted function, in
 diff --git a/coregrind/m_syscall.c b/coregrind/m_syscall.c
-index 5948cecf5..c1cdfab27 100644
+index 5948cec..c1cdfab 100644
 --- a/coregrind/m_syscall.c
 +++ b/coregrind/m_syscall.c
 @@ -470,7 +470,8 @@ asm(
@@ -493,7 +491,7 @@ index 5948cecf5..c1cdfab27 100644
  asm(
  ".align   2\n"
 diff --git a/coregrind/m_syswrap/syscall-ppc64be-linux.S b/coregrind/m_syswrap/syscall-ppc64be-linux.S
-index 16e9cedc0..db0d8b4aa 100644
+index 16e9ced..db0d8b4 100644
 --- a/coregrind/m_syswrap/syscall-ppc64be-linux.S
 +++ b/coregrind/m_syswrap/syscall-ppc64be-linux.S
 @@ -76,11 +76,24 @@
@@ -534,7 +532,7 @@ index 16e9cedc0..db0d8b4aa 100644
  /* export the ranges so that
     VG_(fixup_guest_state_after_syscall_interrupted) can do the
 diff --git a/coregrind/m_syswrap/syswrap-ppc64-linux.c b/coregrind/m_syswrap/syswrap-ppc64-linux.c
-index 6549dd1b3..4ecbe38a6 100644
+index eada099..7186fe3 100644
 --- a/coregrind/m_syswrap/syswrap-ppc64-linux.c
 +++ b/coregrind/m_syswrap/syswrap-ppc64-linux.c
 @@ -41,6 +41,7 @@
@@ -575,7 +573,7 @@ index 6549dd1b3..4ecbe38a6 100644
  "   .globl   do_syscall_clone_ppc64_linux\n"
  "   .section \".opd\",\"aw\"\n"
 diff --git a/coregrind/m_trampoline.S b/coregrind/m_trampoline.S
-index 0488b54bd..d00916aef 100644
+index 0488b54..d00916a 100644
 --- a/coregrind/m_trampoline.S
 +++ b/coregrind/m_trampoline.S
 @@ -469,11 +469,11 @@ VG_(ppctoc_magic_redirect_return_stub):
@@ -593,7 +591,7 @@ index 0488b54bd..d00916aef 100644
  	.align 3
  VG_(ppc64_linux_REDIR_FOR_strlen):
 diff --git a/coregrind/m_translate.c b/coregrind/m_translate.c
-index 3602a4663..bdd1d50ee 100644
+index 3602a46..6dd2845 100644
 --- a/coregrind/m_translate.c
 +++ b/coregrind/m_translate.c
 @@ -1006,7 +1006,8 @@ static IRExpr* mkU32 ( UInt n ) {
@@ -606,7 +604,7 @@ index 3602a4663..bdd1d50ee 100644
  static IRExpr* mkU8 ( UChar n ) {
     return IRExpr_Const(IRConst_U8(n));
  }
-@@ -1234,7 +1234,8 @@ static void gen_push_and_set_LR_R2 ( IRSB* bb, Addr new_R2_value )
+@@ -1234,7 +1235,8 @@ static void gen_push_and_set_LR_R2 ( IRSB* bb, Addr new_R2_value )
  }
  #endif
  
@@ -616,7 +614,7 @@ index 3602a4663..bdd1d50ee 100644
  
  static void gen_pop_R2_LR_then_bLR ( IRSB* bb )
  {
-@@ -1263,7 +1264,8 @@ static void gen_pop_R2_LR_then_bLR ( IRSB* bb )
+@@ -1263,7 +1265,8 @@ static void gen_pop_R2_LR_then_bLR ( IRSB* bb )
  }
  #endif
  
@@ -626,7 +624,7 @@ index 3602a4663..bdd1d50ee 100644
  
  static
  Bool mk_preamble__ppctoc_magic_return_stub ( void* closureV, IRSB* bb )
-@@ -1285,7 +1287,7 @@ Bool mk_preamble__ppctoc_magic_return_stub ( void* closureV, IRSB* bb )
+@@ -1285,7 +1288,7 @@ Bool mk_preamble__ppctoc_magic_return_stub ( void* closureV, IRSB* bb )
  }
  #endif
  
@@ -635,7 +633,7 @@ index 3602a4663..bdd1d50ee 100644
  /* Generate code to push LR and R2 onto this thread's redir stack.
     Need to save R2 in case we redirect to a global entry point.  The
     value of R2 is not preserved when entering the global entry point.
-@@ -1366,9 +1368,7 @@ Bool mk_preamble__set_NRADDR_to_zero ( void* closureV, IRSB* bb )
+@@ -1366,9 +1369,7 @@ Bool mk_preamble__set_NRADDR_to_zero ( void* closureV, IRSB* bb )
       gen_push_and_set_LR_R2 ( bb, VG_(get_tocptr)( VG_(current_DiEpoch)(),
                                                     closure->readdr ) );
     }
@@ -646,7 +644,8 @@ index 3602a4663..bdd1d50ee 100644
     VgCallbackClosure* closure = (VgCallbackClosure*)closureV;
     Int offB_GPR12 = offsetof(VexGuestArchState, guest_GPR12);
     addStmtToIRSB(bb, IRStmt_Put(offB_GPR12, mkU64(closure->readdr)));
-@@ -1424,7 +1424,6 @@ Bool mk_preamble__set_NRADDR_to_nraddr ( void* closureV, IRSB* bb )
+@@ -1424,8 +1425,7 @@ Bool mk_preamble__set_NRADDR_to_nraddr ( void* closureV, IRSB* bb )
+    );
     gen_push_and_set_LR_R2 ( bb, VG_(get_tocptr)( VG_(current_DiEpoch)(),
                                                   closure->readdr ) );
 -#  endif
@@ -655,7 +654,7 @@ index 3602a4663..bdd1d50ee 100644
     /* This saves the r2 before leaving the function.  We need to move
      * guest_NRADDR_GPR2 back to R2 on return.
      */
-@@ -1648,7 +1647,8 @@ Bool VG_(translate) ( ThreadId tid,
+@@ -1648,7 +1648,8 @@ Bool VG_(translate) ( ThreadId tid,
        preamble_fn = mk_preamble__set_NRADDR_to_nraddr;
  
     /* LE we setup the LR */
@@ -665,7 +664,7 @@ index 3602a4663..bdd1d50ee 100644
     if (nraddr == (Addr)&VG_(ppctoc_magic_redirect_return_stub)) {
        /* If entering the special return stub, this means a wrapped or
           redirected function is returning.  Make this translation one
-@@ -1692,13 +1692,14 @@ Bool VG_(translate) ( ThreadId tid,
+@@ -1692,13 +1693,14 @@ Bool VG_(translate) ( ThreadId tid,
     vex_abiinfo.guest_ppc_zap_RZ_at_bl         = NULL;
  #  endif
  
@@ -683,7 +682,7 @@ index 3602a4663..bdd1d50ee 100644
     vex_abiinfo.guest_ppc_zap_RZ_at_bl         = const_True;
     vex_abiinfo.host_ppc_calls_use_fndescrs    = False;
 diff --git a/coregrind/m_ume/elf.c b/coregrind/m_ume/elf.c
-index 21eb52bcb..f1e6b4728 100644
+index 21eb52b..f1e6b47 100644
 --- a/coregrind/m_ume/elf.c
 +++ b/coregrind/m_ume/elf.c
 @@ -847,8 +847,8 @@ Int VG_(load_ELF)(Int fd, const HChar* name, /*MOD*/ExeInfo* info)
@@ -709,7 +708,7 @@ index 21eb52bcb..f1e6b4728 100644
     info->init_toc = 0; /* meaningless on this platform */
  #else
 diff --git a/coregrind/pub_core_machine.h b/coregrind/pub_core_machine.h
-index d6af843df..400148d57 100644
+index d6af843..400148d 100644
 --- a/coregrind/pub_core_machine.h
 +++ b/coregrind/pub_core_machine.h
 @@ -60,12 +60,20 @@
@@ -736,7 +735,7 @@ index d6af843df..400148d57 100644
  #  define VG_ELF_DATA2XXX     ELFDATA2LSB
  #  define VG_ELF_MACHINE      EM_ARM
 diff --git a/coregrind/vg_preloaded.c b/coregrind/vg_preloaded.c
-index ad033432a..f300fbe80 100644
+index ad03343..f300fbe 100644
 --- a/coregrind/vg_preloaded.c
 +++ b/coregrind/vg_preloaded.c
 @@ -45,6 +45,7 @@
@@ -757,7 +756,7 @@ index ad033432a..f300fbe80 100644
        address for the client request, but return the function descriptor
        from this function. 
 diff --git a/include/valgrind.h b/include/valgrind.h
-index 577c8f05e..99e058ccf 100644
+index cc8c2b8..3d30e7f 100644
 --- a/include/valgrind.h
 +++ b/include/valgrind.h
 @@ -143,12 +143,20 @@
@@ -786,7 +785,7 @@ index 577c8f05e..99e058ccf 100644
  #  define PLAT_arm_linux 1
  #elif defined(__linux__) && defined(__aarch64__) && !defined(__arm__)
 diff --git a/memcheck/mc_leakcheck.c b/memcheck/mc_leakcheck.c
-index 782244481..c239f5b10 100644
+index 7822444..c239f5b 100644
 --- a/memcheck/mc_leakcheck.c
 +++ b/memcheck/mc_leakcheck.c
 @@ -653,7 +653,7 @@ static Bool aligned_ptr_above_page0_is_vtable_addr(Addr ptr)
@@ -799,19 +798,19 @@ index 782244481..c239f5b10 100644
        // more level of indirection to follow.
        if (seg == NULL
 diff --git a/memcheck/mc_machine.c b/memcheck/mc_machine.c
-index 5ed101fca..70c64b361 100644
+index 4ce746e..e03ab33 100644
 --- a/memcheck/mc_machine.c
 +++ b/memcheck/mc_machine.c
 @@ -132,7 +132,8 @@ static Int get_otrack_shadow_offset_wrk ( Int offset, Int szB )
              return GOF(GPRn);
           by testing ox instead of o, and setting ox back 4 bytes when sz == 4.
        */
--#if defined(VGA_ppc64le)
-+#if (defined(VGA_ppc64be) && (defined(_CALL_ELF) && _CALL_ELF == 2)) \
-+    || defined(VGA_ppc64le)
+-#     if defined(VGA_ppc64le)
++#     if (defined(VGA_ppc64be) && (defined(_CALL_ELF) && _CALL_ELF == 2)) \
++       || defined(VGA_ppc64le)
        Int ox = o;
- #else
+ #     else
        Int ox = sz == 8 ? o : (o - 4);
 -- 
-2.18.0
+2.21.0
 
