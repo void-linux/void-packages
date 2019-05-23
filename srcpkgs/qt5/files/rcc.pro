@@ -6,3 +6,5 @@ SOURCES += main.cpp
 
 QMAKE_TARGET_DESCRIPTION = "Qt Resource Compiler"
 load(qt_tool)
+
+DEFINES += QT_FEATURE_zstd=-1
