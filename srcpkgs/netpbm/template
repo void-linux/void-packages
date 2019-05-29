@@ -18,7 +18,6 @@ distfiles="https://github.com/leahneukirchen/netpbm-mirror/archive/${_githash}.t
  https://github.com/leahneukirchen/netpbm-mirror/archive/${_githash_guide}.tar.gz"
 checksum="8803d0a9d9f70f3c0266564cedbefa9c5fdccaf1a7949425b8bee1e86da3d152
  0cd2e34b79f98009a1779425b403bc185b5827394d2962eca03a26431a72652a"
-nocross=yes
 
 post_extract() {
 	cd $build_wrksrc
@@ -31,6 +30,7 @@ post_extract() {
 }
 
 do_configure() {
+	local endian bitsperlong
 	cat config.mk.in ${FILESDIR}/config.mk >config.mk
 	if [ "$XBPS_TARGET_MACHINE" = "i686" -o "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
 		echo "WANT_SSE = Y" >>config.mk
@@ -38,6 +38,27 @@ do_configure() {
 	sed -i 's|misc|share/netpbm|' common.mk
 	sed -i 's|/link|/lib|' lib/Makefile
 	sed -i 's|install.manwebmain install.manweb install.man|install.man|' GNUmakefile
+	if [ "$CROSS_BUILD" ]; then
+		# Patch buildutils/endiangen.c to return the endianess
+		# and word size for the target architecture
+		# XXX: perhaps add XBPS_ENDIAN to common/cross-profiles/*.sh
+		case "$XBPS_TARGET_MACHINE" in
+			ppc|ppc-musl|ppc64|ppc64-musl) endian="ENDIAN_BIG";;
+			*) endian="ENDIAN_LITTLE";;
+		esac
+		# XXX: perhaps add XBPS_BITSPERLONG to common/cross-files/*.sh
+		case "$XBPS_TARGET_MACHINE" in
+			aarch64*|x86_64*|ppc64*) bitsperlong="64";;
+			*) bitsperlong="32";;
+		esac
+		vsed -i buildtools/endiangen.c \
+			-e "s;byteOrder();$endian;" \
+			-e "s;bitsPerLong();$bitsperlong;"
+		# ... now build the tools for the host
+		CC=$CC_host CFLAGS="$CFLAGS_host" \
+		LD=$LD_host LDFLAGS="$LDFLAGS_host" \
+			make -C buildtools
+	fi
 }
 
 do_build() {
