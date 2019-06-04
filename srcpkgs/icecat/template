@@ -18,7 +18,6 @@ homepage="https://www.gnu.org/software/${pkgname}/"
 distfiles="${GNU_SITE}/${pkgname}/${version}/${pkgname}-${version}-gnu1.tar.bz2"
 checksum=6873d55b13e2d95ede3bf5bb59769179e91b1c4e05d8538d1576f18c9a6bb827
 lib32disabled=yes
-nocross=https://build.voidlinux.org/builders/aarch64-musl_builder/builds/20366/steps/shell_3/logs/stdio
 
 build_options="alsa dbus gtk3 pulseaudio startup_notification sndio xscreensaver"
 build_options_default="alsa dbus gtk3 pulseaudio startup_notification sndio xscreensaver"
@@ -66,6 +65,14 @@ do_build() {
 	esac
 
 	if [ "$CROSS_BUILD" ]; then
+		BINDGEN_INCLUDE_FLAGS=$( $CPP -x c++ -v /dev/null -o /dev/null 2>&1 | \
+			sed -n '/#include <...> search starts here:/,/End of search list./p' | \
+			sed '1,1d;$d' | sed  's/^ /-I/' | paste -s )
+
+		export BINDGEN_CFLAGS="--target=$XBPS_CROSS_TRIPLET \
+			--sysroot=${XBPS_CROSS_BASE} ${BINDGEN_INCLUDE_FLAGS}"
+		export HOST_CC="${CC_host}"
+		export TARGET_CC="${CC}"
 		export HOST_CFLAGS="${XBPS_CFLAGS}"
 		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
 		echo "ac_cv_sqlite_secure_delete=yes" >> .mozconfig
@@ -75,19 +82,34 @@ do_build() {
 		echo "ac_cv_sqlite_enable_unlock_notify=yes" >> .mozconfig
 		echo "ac_cv_prog_hostcxx_works=1" >> .mozconfig
 		echo "ac_add_options --target=$XBPS_CROSS_TRIPLET" >>.mozconfig
+		echo "ac_add_options --host=$XBPS_TRIPLET" >>.mozconfig
+	else
+		echo "ac_add_options --target=$XBPS_TRIPLET" >>.mozconfig
+		echo "ac_add_options --host=$XBPS_TRIPLET" >>.mozconfig
 	fi
 
 	case "$XBPS_TARGET_MACHINE" in
 	i686*)
+		echo "ac_add_options --disable-debug-symbols" >>.mozconfig
 		export CFLAGS+=" -D_FILE_OFFSET_BITS=64"
 		export CXXFLAGS+=" -D_FILE_OFFSET_BITS=64"
+		;;
+	armv7*)
+		export CFLAGS+=" -mfpu=neon -Wno-psabi"
+		export CXXFLAGS+=" -mfpu=neon -Wno-psabi"
 		;;
 	esac
 
 	export LDFLAGS+=" -Wl,-rpath=/usr/lib/icecat"
 
-	export MOZ_BUILD_DATE=$(date --date "@$SOURCE_DATE_EPOCH" "+%Y%m%d%H%M%S")
+	if [ "$SOURCE_DATE_EPOCH" ]; then
+		export MOZ_BUILD_DATE=$(date --date "@$SOURCE_DATE_EPOCH" "+%Y%m%d%H%M%S")
+	fi
+
 	export MOZ_MAKE_FLAGS="${makejobs}"
+	export MOZ_NOSPAM=1
+	export MOZ_MAKE_FLAGS="${makejobs}"
+	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
 
 	cat >>.mozconfig <<EOF
 ac_add_options --with-google-location-service-api-keyfile="${wrksrc}/google-api-key"
