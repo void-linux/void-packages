@@ -53,6 +53,7 @@ genpkg() {
 	local _conf_files="$(expand_destdir "$conf_files")"
 	local _alternatives="$(echo $alternatives)"
 	local _tags="$(echo $tags)"
+	local _changelog="$(echo $changelog)"
 
 	msg_normal "Creating $binpkg for repository $pkgdir ...\n"
 
@@ -74,6 +75,7 @@ genpkg() {
 		${_alternatives:+--alternatives "${_alternatives}"} \
 		${_preserve:+--preserve} \
 		${tags:+--tags "${tags}"} \
+		${_changelog:+--changelog "${_changelog}"} \
 		--architecture ${arch} \
 		--homepage "${homepage}" \
 		--license "${license}" \
