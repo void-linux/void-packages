@@ -1,54 +1,57 @@
 # Template file for 'icecat'
 pkgname=icecat
-version=60.3.0
-revision=4
-short_desc="GNU version of the Firefox browser"
-maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
-homepage="https://www.gnu.org/software/${pkgname}/"
-license="MPL-1.1, GPL-2, LGPL-2.1"
-distfiles="${GNU_SITE}/${pkgname}/${version}/${pkgname}-${version}-gnu1.tar.bz2"
-checksum=6145327092b4b195a4f63d0e86f4857eeba5607ffeb69b6f3bceb36e89a19645
-
-lib32disabled=yes
-nocross="rustc error[E0463]: can't find crate for 'std'"
-
-hostmakedepends="autoconf213 cargo cbindgen clang llvm nodejs perl pkg-config
- python unzip yasm zip"
+version=60.7.0
+revision=1
+build_helper="rust"
+hostmakedepends="autoconf213 unzip zip pkg-config perl python yasm
+ cargo llvm clang rust cbindgen"
 makedepends="gtk+-devel hunspell-devel libXt-devel libatomic-devel
  libevent-devel libnotify-devel libvpx5-devel nss-devel rust-std sqlite-devel
  $(vopt_if alsa 'alsa-lib-devel') $(vopt_if dbus 'dbus-glib-devel')
  $(vopt_if gtk3 'gtk+3-devel') $(vopt_if pulseaudio 'pulseaudio-devel')
  $(vopt_if startup_notification 'startup-notification-devel')
- $(vopt_if xscreensaver 'libXScrnSaver-devel')"
+ $(vopt_if xscreensaver 'libXScrnSaver-devel') $(vopt_if sndio 'sndio-devel')"
 depends="desktop-file-utils hicolor-icon-theme nss>=3.19"
+short_desc="GNU version of the Firefox browser"
+maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
+license="MPL-1.1, GPL-2.0-or-later, LGPL-2.1-or-later"
+homepage="https://www.gnu.org/software/${pkgname}/"
+distfiles="${GNU_SITE}/${pkgname}/${version}/${pkgname}-${version}-gnu1.tar.bz2"
+checksum=6873d55b13e2d95ede3bf5bb59769179e91b1c4e05d8538d1576f18c9a6bb827
+lib32disabled=yes
 
-build_options="alsa dbus gtk3 pulseaudio startup_notification xscreensaver"
-build_options_default="alsa dbus gtk3 pulseaudio startup_notification xscreensaver"
+build_options="alsa dbus gtk3 pulseaudio startup_notification sndio xscreensaver"
+build_options_default="alsa dbus gtk3 pulseaudio startup_notification sndio xscreensaver"
+
+case $XBPS_TARGET_MACHINE in
+	armv6*)
+		broken="required NEON extensions are not supported on armv6"
+		;;
+esac
 
 CXXFLAGS="-Wno-class-memaccess -Wno-unused-function"
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*) broken="https://build.voidlinux.org/builders/i686_builder/builds/18068/steps/shell_3/logs/stdio" ;;
+esac
 
 post_extract() {
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
 		cp "${FILESDIR}/stab.h" toolkit/crashreporter/google-breakpad/src/
-		patch -Np0 -i ${FILESDIR}/musl-cmsghdr.patch
 		;;
 	esac
 	# Google API key (see http://www.chromium.org/developers/how-tos/api-keys)
 	# Note: This is for Void Linux use ONLY.
 	echo -n "AIzaSyCIFdBA7eQP43R6kXRwTq7j6Mvj1ITze90" > google-api-key
+
+	# Mozilla API keys (see https://location.services.mozilla.com/api)
+	# Note: This is for Void Linux use ONLY.
+	echo -n "cd894504-7a2a-4263-abff-ff73ee89ffca" > mozilla-api-key
 }
 do_build() {
 	local triplet
 	cp ${FILESDIR}/mozconfig .mozconfig
-
-	if [ "$CROSS_BUILD" ]; then
-		echo "ac_add_options --host=${XBPS_TRIPLET}" >>.mozconfig
-		echo "ac_add_options --target=${XBPS_CROSS_TRIPLET}" >>.mozconfig
-	else
-		echo "ac_add_options --host=${XBPS_TRIPLET}" >>.mozconfig
-		echo "ac_add_options --target=${XBPS_TRIPLET}" >>.mozconfig
-	fi
 
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
@@ -65,6 +68,14 @@ do_build() {
 	esac
 
 	if [ "$CROSS_BUILD" ]; then
+		BINDGEN_INCLUDE_FLAGS=$( $CPP -x c++ -v /dev/null -o /dev/null 2>&1 | \
+			sed -n '/#include <...> search starts here:/,/End of search list./p' | \
+			sed '1,1d;$d' | sed  's/^ /-I/' | paste -s )
+
+		export BINDGEN_CFLAGS="--target=$XBPS_CROSS_TRIPLET \
+			--sysroot=${XBPS_CROSS_BASE} ${BINDGEN_INCLUDE_FLAGS}"
+		export HOST_CC="${CC_host}"
+		export TARGET_CC="${CC}"
 		export HOST_CFLAGS="${XBPS_CFLAGS}"
 		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
 		echo "ac_cv_sqlite_secure_delete=yes" >> .mozconfig
@@ -74,23 +85,43 @@ do_build() {
 		echo "ac_cv_sqlite_enable_unlock_notify=yes" >> .mozconfig
 		echo "ac_cv_prog_hostcxx_works=1" >> .mozconfig
 		echo "ac_add_options --target=$XBPS_CROSS_TRIPLET" >>.mozconfig
+		echo "ac_add_options --host=$XBPS_TRIPLET" >>.mozconfig
+	else
+		echo "ac_add_options --target=$XBPS_TRIPLET" >>.mozconfig
+		echo "ac_add_options --host=$XBPS_TRIPLET" >>.mozconfig
 	fi
+
+	mkdir -p third_party/rust/libloading/.deps
 
 	case "$XBPS_TARGET_MACHINE" in
 	i686*)
+		echo "ac_add_options --disable-debug-symbols" >>.mozconfig
 		export CFLAGS+=" -D_FILE_OFFSET_BITS=64"
 		export CXXFLAGS+=" -D_FILE_OFFSET_BITS=64"
+		;;
+	armv7*)
+		export CFLAGS+=" -mfpu=neon -Wno-psabi"
+		export CXXFLAGS+=" -mfpu=neon -Wno-psabi"
 		;;
 	esac
 
 	export LDFLAGS+=" -Wl,-rpath=/usr/lib/icecat"
 
-	export MOZ_BUILD_DATE=$(date --date "@$SOURCE_DATE_EPOCH" "+%Y%m%d%H%M%S")
+	if [ "$SOURCE_DATE_EPOCH" ]; then
+		export MOZ_BUILD_DATE=$(date --date "@$SOURCE_DATE_EPOCH" "+%Y%m%d%H%M%S")
+	fi
+
 	export MOZ_MAKE_FLAGS="${makejobs}"
+	export MOZ_NOSPAM=1
+	export MOZ_MAKE_FLAGS="${makejobs}"
+	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
 
 	cat >>.mozconfig <<EOF
-ac_add_options --with-google-api-keyfile="${wrksrc}/google-api-key"
+ac_add_options --with-google-location-service-api-keyfile="${wrksrc}/google-api-key"
+ac_add_options --with-google-safebrowsing-api-keyfile="${wrksrc}/google-api-key"
+ac_add_options --with-mozilla-api-keyfile="${wrksrc}/mozilla-api-key"
 ac_add_options $(vopt_enable alsa)
+ac_add_options $(vopt_enable sndio)
 ac_add_options $(vopt_enable dbus)
 ac_add_options $(vopt_enable dbus necko-wifi)
 ac_add_options $(vopt_enable pulseaudio)

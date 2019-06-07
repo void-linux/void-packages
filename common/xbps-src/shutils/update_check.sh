@@ -48,12 +48,13 @@ update_check() {
               *cpan.*|\
               *pythonhosted.org*|\
               *github.com*|\
-              *gitlab.com*|*gitlab.gnome.org*|*gitlab.freedesktop.org*|\
+              *//gitlab.*|\
               *bitbucket.org*|\
               *ftp.gnome.org*|\
               *kernel.org/pub/linux/kernel/*|\
               *cran.r-project.org/src/contrib*|\
-              *rubygems.org*)
+              *rubygems.org*|\
+              *crates.io*)
                 continue
                 ;;
             *)
@@ -110,7 +111,7 @@ update_check() {
                 githubname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$githubname/tags"
                 rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
-            *gitlab.com*|*gitlab.gnome.org*|*gitlab.freedesktop.org*)
+            *//gitlab.*)
                 gitlaburl="$(printf %s "$url" | cut -d/ -f1-5)"
                 url="$gitlaburl/tags"
                 rx='/archive/[^/]+/\Q'"$pkgname"'\E-v?\K[\d\.]+(?=\.tar\.gz")';;
