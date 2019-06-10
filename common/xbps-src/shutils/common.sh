@@ -453,6 +453,10 @@ setup_pkg() {
     export LDFLAGS="$XBPS_LDFLAGS $XBPS_CROSS_LDFLAGS $LDFLAGS"
 
     export BUILD_CC="cc"
+    export BUILD_CXX="c++"
+    export BUILD_CPP="cpp"
+    export BUILD_FC="gfortran"
+    export BUILD_LD="ld"
     export BUILD_CFLAGS="$XBPS_CFLAGS"
     export BUILD_CXXFLAGS="$XBPS_CXXFLAGS"
     export BUILD_CPPFLAGS="$XBPS_CPPFLAGS"
