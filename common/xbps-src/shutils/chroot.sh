@@ -3,17 +3,11 @@
 # FIXME: $XBPS_FFLAGS is not set when chroot_init() is run
 # It is set in common/build-profiles/bootstrap.sh but lost somewhere?
 chroot_init() {
-    XBPSSRC_CF=$XBPS_MASTERDIR/etc/xbps/xbps-src.conf
-
     mkdir -p $XBPS_MASTERDIR/etc/xbps
 
-    cat > $XBPSSRC_CF <<_EOF
+    cat > $XBPS_MASTERDIR/etc/xbps/xbps-src.conf <<_EOF
 # Generated configuration file by xbps-src, DO NOT EDIT!
-_EOF
-    if [ -e "$XBPS_CONFIG_FILE" ]; then
-        grep -E '^XBPS_.*' $XBPS_CONFIG_FILE >> $XBPSSRC_CF
-    fi
-    cat >> $XBPSSRC_CF <<_EOF
+$(grep -E '^XBPS_.*' "$XBPS_CONFIG_FILE")
 XBPS_MASTERDIR=/
 XBPS_CFLAGS="$XBPS_CFLAGS"
 XBPS_CXXFLAGS="$XBPS_CXXFLAGS"
@@ -21,9 +15,8 @@ XBPS_FFLAGS="-fPIC -pipe"
 XBPS_CPPFLAGS="$XBPS_CPPFLAGS"
 XBPS_LDFLAGS="$XBPS_LDFLAGS"
 XBPS_HOSTDIR=/host
+# End of configuration file.
 _EOF
-
-    echo "# End of configuration file." >> $XBPSSRC_CF
 
     # Create custom script to start the chroot bash shell.
     cat > $XBPS_MASTERDIR/bin/xbps-shell <<_EOF
