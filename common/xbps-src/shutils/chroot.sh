@@ -35,20 +35,12 @@ XBPS_SRC_VERSION="$XBPS_SRC_VERSION"
 
 PATH=/void-packages:/usr/bin:/usr/sbin
 
-exec env -i -- SHELL=/bin/sh PATH="\$PATH" DISTCC_HOSTS="\$XBPS_DISTCC_HOSTS" DISTCC_DIR="/host/distcc" @@XARCH@@ \
-    @@CHECK@@ CCACHE_DIR="/host/ccache" IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 TERM=linux HOME="/tmp" \
+exec env -i -- SHELL=/bin/sh PATH="\$PATH" DISTCC_HOSTS="\$XBPS_DISTCC_HOSTS" DISTCC_DIR="/host/distcc" \
+    ${XBPS_ARCH+XBPS_ARCH=$XBPS_ARCH} ${XBPS_CHECK_PKGS+XBPS_CHECK_PKGS=$XBPS_CHECK_PKGS} \
+    CCACHE_DIR="/host/ccache" IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 TERM=linux HOME="/tmp" \
     PS1="[\u@$XBPS_MASTERDIR \W]$ " /bin/bash +h
 _EOF
-    if [ -n "$XBPS_ARCH" ]; then
-        sed -e "s,@@XARCH@@,XBPS_ARCH=${XBPS_ARCH},g" -i $XBPS_MASTERDIR/bin/xbps-shell
-    else
-        sed -e 's,@@XARCH@@,,g' -i $XBPS_MASTERDIR/bin/xbps-shell
-    fi
-    if [ -z "$XBPS_CHECK_PKGS" ]; then
-        sed -e 's,@@CHECK@@,,g' -i $XBPS_MASTERDIR/bin/xbps-shell
-    else
-        sed -e "s,@@CHECK@@,XBPS_CHECK_PKGS=$XBPS_CHECK_PKGS,g" -i $XBPS_MASTERDIR/bin/xbps-shell
-    fi
+
     chmod 755 $XBPS_MASTERDIR/bin/xbps-shell
 
     cp -f /etc/resolv.conf $XBPS_MASTERDIR/etc
