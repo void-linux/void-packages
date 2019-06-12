@@ -154,7 +154,7 @@ msg_normal_append() {
 }
 
 set_build_options() {
-    local f j opt optval _optsset pkgopts _pkgname
+    local f j pkgopts _pkgname
     local -A options
 
     if [ -z "$build_options" ]; then
@@ -170,30 +170,21 @@ set_build_options() {
         fi
         OIFS="$IFS"; IFS=','
         for j in ${pkgopts}; do
-            opt=${j#\~}
-            opt_disabled=${j:0:1}
-            if [ "$opt" = "$f" ]; then
-                if [ "$opt_disabled" != "~" ]; then
-                    eval options[$opt]=1
-                else
-                    eval options[$opt]=0
-                fi
-            fi
+            case "$j" in
+            "$f") options[$j]=1 ;;
+            "~$f") options[${j#\~}]=0 ;;
+            esac
         done
         IFS="$OIFS"
     done
 
     for f in ${build_options_default}; do
-        optval=${options[$f]}
-        if [[ -z "$optval" ]] || [[ $optval -eq 1 ]]; then
-            options[$f]=1
-        fi
+        [[ -z "${options[$f]}" ]] && options[$f]=1
     done
 
     # Prepare final options.
     for f in ${!options[@]}; do
-        optval=${options[$f]}
-        if [[ $optval -eq 1 ]]; then
+        if [[ ${options[$f]} -eq 1 ]]; then
             eval export build_option_${f}=1
         else
             eval unset build_option_${f}
@@ -210,25 +201,13 @@ set_build_options() {
         return 0
     fi
 
-    for f in ${build_options}; do
-        eval optval=${options[$f]}
-        if [[ $optval -eq 1 ]]; then
-            _optsset+=" ${f}"
-        else
-            _optsset+=" ~${f}"
-        fi
-    done
-
-    for f in ${_optsset}; do
-        if [ -z "$PKG_BUILD_OPTIONS" ]; then
-            PKG_BUILD_OPTIONS="$f"
-        else
-            PKG_BUILD_OPTIONS+=" $f"
-        fi
-    done
-
     # Sort pkg build options alphabetically.
-    export PKG_BUILD_OPTIONS="$(echo "$PKG_BUILD_OPTIONS"|tr ' ' '\n'|sort|tr '\n' ' ')"
+    export PKG_BUILD_OPTIONS=$(
+        for f in ${build_options}; do
+            [[ "${options[$f]}" -eq 1 ]] || printf '~'
+            printf '%s\n' "$f"
+        done | sort
+    )
 }
 
 source_file() {
