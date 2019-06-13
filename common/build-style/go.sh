@@ -41,7 +41,7 @@ do_build() {
 }
 
 do_install() {
-	for f in "$(find "${GOPATH}/bin" -type f -executable)"; do
+	for f in $(find "${GOPATH}/bin" -type f -executable); do
 		vbin "$f"
 	done
 }
