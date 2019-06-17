@@ -64,7 +64,7 @@ show_pkg_build_depends() {
     local f x _pkgname _srcpkg _dep found result
     local _deps="$1"
 
-    result=$(mktemp || exit 1)
+    result=$(mktemp) || exit 1
 
     # build time deps
     for f in ${_deps}; do

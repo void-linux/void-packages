@@ -30,7 +30,7 @@ bulk_sortdeps() {
         fi
     done
 
-    tmpf=$(mktemp || exit 1)
+    tmpf=$(mktemp) || exit 1
     # Now make the real dependency graph of all pkgs to build.
     # Perform a topological sort of all pkgs but only with build dependencies
     # that are found in previous step.

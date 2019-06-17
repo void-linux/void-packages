@@ -48,7 +48,7 @@ remove_pkg_autodeps() {
 
     cd $XBPS_MASTERDIR || return 1
     msg_normal "${pkgver:-xbps-src}: removing autodeps, please wait...\n"
-    tmplogf=$(mktemp || exit 1)
+    tmplogf=$(mktemp) || exit 1
 
     remove_pkg_cross_deps
     $XBPS_RECONFIGURE_CMD -a >> $tmplogf 2>&1

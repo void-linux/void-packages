@@ -5,7 +5,7 @@ run_func() {
 
     : ${funcname:=$func}
 
-    logpipe=$(mktemp -u -p ${XBPS_STATEDIR} ${pkgname}_${XBPS_CROSS_BUILD}_XXXXXXXX.logpipe || exit 1)
+    logpipe=$(mktemp -u -p ${XBPS_STATEDIR} ${pkgname}_${XBPS_CROSS_BUILD}_XXXXXXXX.logpipe) || exit 1
     logfile=${XBPS_STATEDIR}/${pkgname}_${XBPS_CROSS_BUILD}_${funcname}.log
 
     msg_normal "${pkgver:-xbps-src}: running ${desc:-${func}} ...\n"
