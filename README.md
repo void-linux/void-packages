@@ -11,6 +11,9 @@ or queried through the `xbps-install(1)` and `xbps-query(1)` utilities, respecti
 
 - GNU bash
 - xbps >= 0.46
+- curl(1) (xbps-src update-check)
+- flock(1) (util-linux)
+- objdump(1) (GNU binutils)
 
 `xbps-src` requires a utility to chroot and bind mount existing directories
 into a `masterdir` that is used as its main `chroot` directory. `xbps-src` supports
