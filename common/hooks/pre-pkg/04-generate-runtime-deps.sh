@@ -61,7 +61,7 @@ hook() {
         return 0
     fi
 
-    depsftmp=$(mktemp -t xbps_src_depstmp.XXXXXXXXXX) || return 1
+    depsftmp=$(mktemp || exit 1)
     find ${PKGDESTDIR} -type f -perm -u+w > $depsftmp 2>/dev/null
 
     exec 3<&0 # save stdin
