@@ -1472,7 +1472,7 @@ Go packages should be built with the `go` build style, if possible.
 The `go` build style takes care of downloading Go dependencies and
 setting up cross compilation.
 
-The following variables influence how Go packages are built:
+The following template variables influence how Go packages are built:
 
 - `go_import_path`: The import path of the package included in the
   distfile, as it would be used with `go get`. For example, GitHub's
@@ -1490,6 +1490,11 @@ The following variables influence how Go packages are built:
   any go.mod files, `default` to use Go's default behavior, or anything
   accepted by `go build -mod MODE`.  Defaults to `vendor` if there's
   a vendor directory, otherwise `default`.
+
+The following environment variables influence how Go packages are built:
+
+- `XBPS_MAKEJOBS`: Value passed to the `-p` flag of `go install`, to
+  control the parallelism of the Go compiler.
 
 Occasionally it is necessary to perform operations from within the Go
 source tree.  This is usually needed by programs using go-bindata or
