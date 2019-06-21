@@ -77,9 +77,9 @@ install_pkg_from_repos() {
     tmplogf=${XBPS_STATEDIR}/xbps_${XBPS_TARGET_MACHINE}_bdep_${pkg}.log
 
     if [ -n "$cross" ]; then
-        $XBPS_INSTALL_XCMD -Ayd "$pkg" >$tmplogf 2>&1
+        $XBPS_INSTALL_XCMD -IAyd "$pkg" >$tmplogf 2>&1
     else
-        $XBPS_INSTALL_CMD -Ayd "$pkg" >$tmplogf 2>&1
+        $XBPS_INSTALL_CMD -IAyd "$pkg" >$tmplogf 2>&1
     fi
     rval=$?
     if [ $rval -ne 0 -a $rval -ne 17 ]; then
@@ -89,7 +89,7 @@ install_pkg_from_repos() {
         # ENOENT   (2): package missing in repositories.
         # ENXIO    (6): package depends on invalid dependencies.
         # EAGAIN  (11): package conflicts.
-        # EEXIST  (17): package already installed.
+        # EEXIST  (17): file conflicts in transaction.
         # ENODEV  (19): package depends on missing dependencies.
         # ENOTSUP (95): no repositories registered.
         #
