@@ -23,8 +23,7 @@ XBPS_SRCPKGDIR=/hostrepo/srcpkgs XBPS_MASTERDIR=/ chroot_prepare $1 || {
 	exit 1
 }
 
-# Two times due to updating xbps itself
-/hostrepo/xbps-src -H "$HOME"/hostdir bootstrap-update
+# update xbps just in case
 /hostrepo/xbps-src -H "$HOME"/hostdir bootstrap-update
 
 PKGS=$(/hostrepo/xbps-src sort-dependencies $(cat /tmp/templates))
