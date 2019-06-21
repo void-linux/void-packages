@@ -77,28 +77,38 @@ install_pkg_from_repos() {
     tmplogf=${XBPS_STATEDIR}/xbps_${XBPS_TARGET_MACHINE}_bdep_${pkg}.log
 
     if [ -n "$cross" ]; then
-        $XBPS_INSTALL_XCMD -IAyd "$pkg" >$tmplogf 2>&1
+        $XBPS_INSTALL_XCMD -IAy "$pkg" >$tmplogf 2>&1
     else
-        $XBPS_INSTALL_CMD -IAyd "$pkg" >$tmplogf 2>&1
+        $XBPS_INSTALL_CMD -IAy "$pkg" >$tmplogf 2>&1
     fi
     rval=$?
-    if [ $rval -ne 0 -a $rval -ne 17 ]; then
-        # xbps-install can return:
-        #
-        # SUCCESS  (0): package installed successfully.
-        # ENOENT   (2): package missing in repositories.
-        # ENXIO    (6): package depends on invalid dependencies.
-        # EAGAIN  (11): package conflicts.
-        # EEXIST  (17): file conflicts in transaction.
-        # ENODEV  (19): package depends on missing dependencies.
-        # ENOTSUP (95): no repositories registered.
-        #
-        [ -z "$XBPS_KEEP_ALL" ] && remove_pkg_autodeps
-        msg_red "$pkgver: failed to install '$1' dependency! (error $rval)\n"
-        cat $tmplogf
-        msg_error "Please see above for the real error, exiting...\n"
-    fi
+    # xbps-install can return:
+    #
+    # SUCCESS  (0): package installed successfully.
+    # ENOENT   (2): package missing in repositories.
+    # ENXIO    (6): package depends on invalid dependencies.
+    # EAGAIN  (11): package conflicts.
+    # EEXIST  (17): file conflicts in transaction (XBPS_FLAG_IGNORE_FILE_CONFLICTS unset)
+    # ENODEV  (19): package depends on missing dependencies.
+    # ENOTSUP (95): no repositories registered.
+    #
+    case "$rval" in
+        0|17) # success, check if there are errors.
+           errortmpf=$(mktemp) || exit 1
+           grep ^ERROR $tmplogf > $errortmpf
+           [ -s $errortmpf ] && cat $errortmpf
+           rm -f $errortmpf
+           ;;
+        *)
+           [ -z "$XBPS_KEEP_ALL" ] && remove_pkg_autodeps
+           msg_red "$pkgver: failed to install '$1' dependency! (error $rval)\n"
+           cat $tmplogf
+           rm -f $tmplogf
+           msg_error "Please see above for the real error, exiting...\n"
+           ;;
+    esac
     [ $rval -eq 17 ] && rval=0
+    rm -f $logtmpf
     return $rval
 }
 
