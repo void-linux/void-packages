@@ -82,17 +82,15 @@ install_pkg_from_repos() {
         $XBPS_INSTALL_CMD -Ayd "$pkg" >$tmplogf 2>&1
     fi
     rval=$?
-    if [ $rval -ne 0 ]; then
+    if [ $rval -ne 0 -a $rval -ne 17 ]; then
         # xbps-install can return:
         #
         # SUCCESS  (0): package installed successfully.
         # ENOENT   (2): package missing in repositories.
         # ENXIO    (6): package depends on invalid dependencies.
-        # ENOEXEC  (8): unresolved shlibs in transaction.
-        # EAGAIN  (11): conflicting packages in transaction.
-        # ENOMEM  (12): out of memory.
-        # EEXIST  (17): conflicting files in transaction.
-        # ENODEV  (19): broken reverse dependencies in transaction.
+        # EAGAIN  (11): package conflicts.
+        # EEXIST  (17): package already installed.
+        # ENODEV  (19): package depends on missing dependencies.
         # ENOTSUP (95): no repositories registered.
         #
         [ -z "$XBPS_KEEP_ALL" ] && remove_pkg_autodeps
@@ -100,6 +98,7 @@ install_pkg_from_repos() {
         cat $tmplogf
         msg_error "Please see above for the real error, exiting...\n"
     fi
+    [ $rval -eq 17 ] && rval=0
     return $rval
 }
 
