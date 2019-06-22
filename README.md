@@ -9,14 +9,11 @@ or queried through the `xbps-install(1)` and `xbps-query(1)` utilities, respecti
 
 ### Requirements
 
-- GNU bash (included by default with void)
-- xbps >= 0.46 (included by default with void)
-- curl(1) (xbps-src update-check)
-- flock(1) (util-linux) (included by default with void)
-- mktemp(1) (POSIX) (included by default with void)
-- mkfifo(1) (POSIX) (included by default with void)
-- sed(1) (POSIX) (included by default with void)
-- grep(1) (POSIX) (included by default with void)
+- GNU bash
+- xbps >= 0.55
+- curl(1) - required by `xbps-src update-check`
+- flock(1) - util-linux
+- install(1) - coreutils
 - other common POSIX utilities included by default in almost all UNIX systems.
 
 `xbps-src` requires a utility to chroot and bind mount existing directories
