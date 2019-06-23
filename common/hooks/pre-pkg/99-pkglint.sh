@@ -19,7 +19,7 @@ hook() {
 		error=1
 	fi
 	
-	for f in sys dev home root run var/run tmp usr/lib64 usr/local; do
+	for f in sys dev home root run var/run tmp usr/lib64 usr/local destdir; do
 		if [ -d ${PKGDESTDIR}/${f} ]; then
 			msg_red "${pkgver}: /${f} directory is not allowed, remove it!\n"
 			error=1
