@@ -103,13 +103,16 @@ cut -d: -f 1,2 ${XBPS_STATEDIR}/.${sourcepkg}_register_pkg | sort -u | \
             cut -d : -f 2,3 | tr ':' '/')
         if [ -n "${arch}" ]; then
             msg_normal "Registering new packages to $repo ($arch)\n"
-            XBPS_TARGET_ARCH=${arch} $XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+            XBPS_TARGET_ARCH=${arch} $XBPS_RINDEX_CMD \
+                ${XBPS_REPO_COMPTYPE:+--compression $XBPS_REPO_COMPTYPE} ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
         else
             msg_normal "Registering new packages to $repo\n"
             if [ -n "$XBPS_CROSS_BUILD" ]; then
-                $XBPS_RINDEX_XCMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+                $XBPS_RINDEX_XCMD ${XBPS_REPO_COMPTYPE:+--compression $XBPS_REPO_COMPTYPE} \
+					${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
             else
-                $XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+                $XBPS_RINDEX_CMD ${XBPS_REPO_COMPTYPE:+--compression $XBPS_REPO_COMPTYPE} \
+					${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
             fi
         fi
     done
