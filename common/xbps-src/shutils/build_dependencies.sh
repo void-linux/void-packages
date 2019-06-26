@@ -65,7 +65,7 @@ setup_pkg_depends() {
 
 # Install a required package dependency, like:
 #
-#	xbps-install -Ay <pkgname>
+#	xbps-install -IAy <pkgname>
 #
 # Returns 0 if package already installed or installed successfully.
 # Any other error number otherwise.
@@ -93,7 +93,7 @@ install_pkg_from_repos() {
     # ENOTSUP (95): no repositories registered.
     #
     case "$rval" in
-        0|17) # success, check if there are errors.
+        0) # success, check if there are errors.
            errortmpf=$(mktemp) || exit 1
            grep ^ERROR $tmplogf > $errortmpf
            [ -s $errortmpf ] && cat $errortmpf
@@ -107,8 +107,7 @@ install_pkg_from_repos() {
            msg_error "Please see above for the real error, exiting...\n"
            ;;
     esac
-    [ $rval -eq 17 ] && rval=0
-    rm -f $logtmpf
+    rm -f $tmplogf
     return $rval
 }
 
