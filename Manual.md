@@ -460,7 +460,7 @@ Example:
   | DEBIAN_SITE      | http://ftp.debian.org/debian/pool               |
   | FREEDESKTOP_SITE | http://freedesktop.org/software                 |
   | GNOME_SITE       | http://ftp.gnome.org/pub/GNOME/sources          |
-  | GNU_SITE         | http://mirrors.kernel.org/gnu                   |
+  | GNU_SITE         | http://ftp.gnu.org/gnu                          |
   | KERNEL_SITE      | http://www.kernel.org/pub/linux                 |
   | MOZILLA_SITE     | http://ftp.mozilla.org/pub                      |
   | NONGNU_SITE      | http://download.savannah.nongnu.org/releases    |
@@ -468,7 +468,7 @@ Example:
   | SOURCEFORGE_SITE | http://downloads.sourceforge.net/sourceforge    |
   | UBUNTU_SITE      | http://archive.ubuntu.com/ubuntu/pool           |
   | XORG_HOME        | http://xorg.freedesktop.org/wiki/               |
-  | XORG_SITE        | http://xorg.freedesktop.org/releases/individual |
+  | XORG_SITE        | http://www.x.org/releases/individual            |
   | KDE_SITE         | https://download.kde.org/stable                 |
 
 - `checksum` The `sha256` digests matching `${distfiles}`. Multiple files can be
