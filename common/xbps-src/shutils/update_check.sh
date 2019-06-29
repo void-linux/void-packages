@@ -78,7 +78,9 @@ update_check() {
             fi
             skipdirs=
             curl -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$urlpfx" |
-                grep -Po -i "$rx" | sort -Vru |
+                grep -Po -i "$rx" |
+                # sort -V places 1.1/ before 1/, but 1A/ before 1.1A/
+                sed -e 's:$:A:' -e 's:/A$:A/:' | sort -Vru | sed -e 's:A/$:/A:' -e 's:A$::' |
                 while IFS= read -r newver; do
                     newurl="${urlpfx}${newver}${urlsfx}"
                     if [ "$newurl" = "$url" ]; then
