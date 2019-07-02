@@ -26,7 +26,7 @@ XBPS_SRC_VERSION="$XBPS_SRC_VERSION"
 
 . /etc/xbps/xbps-src.conf
 
-PATH=/void-packages:/usr/bin:/usr/sbin
+PATH=/void-packages:/usr/bin
 
 exec env -i -- SHELL=/bin/sh PATH="\$PATH" DISTCC_HOSTS="\$XBPS_DISTCC_HOSTS" DISTCC_DIR="/host/distcc" \
     ${XBPS_ARCH+XBPS_ARCH=$XBPS_ARCH} ${XBPS_CHECK_PKGS+XBPS_CHECK_PKGS=$XBPS_CHECK_PKGS} \
@@ -121,7 +121,7 @@ chroot_sync_repos() {
             ${XBPS_MASTERDIR}/etc/xbps.d/22-repository-remote-x86_64.conf
     fi
 
-    # if -N is set, comment out remote repositories from xbps.conf.
+    # if -N is set, get rid of remote repos from x86_64 (glibc).
     if [ -n "$XBPS_SKIP_REMOTEREPOS" ]; then
         rm -f ${XBPS_MASTERDIR}/etc/xbps.d/20-repository-remote.conf
         rm -f ${XBPS_MASTERDIR}/etc/xbps.d/22-repository-remote-x86_64.conf
@@ -198,7 +198,7 @@ chroot_handler() {
         [ -n "$XBPS_BINPKG_EXISTS" ] && arg="$arg -E"
 
         action="$arg $action"
-        env -i -- PATH="/usr/bin:/usr/sbin:$PATH" SHELL=/bin/sh \
+        env -i -- PATH="/usr/bin" SHELL=/bin/sh \
             HOME=/tmp IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 \
             SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
             XBPS_ALLOW_CHROOT_BREAKOUT="$XBPS_ALLOW_CHROOT_BREAKOUT" \
