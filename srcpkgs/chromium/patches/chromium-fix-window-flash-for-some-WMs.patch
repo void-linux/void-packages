@@ -1,0 +1,98 @@
+From 90e226ba50c98b5e60f74f9dce998b17117f9051 Mon Sep 17 00:00:00 2001
+From: Peng Huang <penghuang@chromium.org>
+Date: Tue, 7 May 2019 13:16:21 +0000
+Subject: [PATCH] Fix window flash for some WMs
+
+Bug: 956061
+Change-Id: I0d8d196395e70006a8fdc770f1e4a5ba6f93dd57
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/1597388
+Commit-Queue: Peng Huang <penghuang@chromium.org>
+Reviewed-by: Antoine Labour <piman@chromium.org>
+Cr-Commit-Position: refs/heads/master@{#657215}
+---
+ ui/gl/BUILD.gn          |  5 ++++-
+ ui/gl/gl_surface_glx.cc | 41 ++++++++++++++++++++++++++++-------------
+ 2 files changed, 32 insertions(+), 14 deletions(-)
+
+diff --git a/ui/gl/BUILD.gn b/ui/gl/BUILD.gn
+index 50df0e4085..1753dd480b 100644
+--- ui/gl/BUILD.gn
++++ ui/gl/BUILD.gn
+@@ -274,7 +274,10 @@ jumbo_component("gl") {
+       "//build/config/linux:xext",
+     ]
+ 
+-    deps += [ "//ui/gfx/x" ]
++    deps += [
++      "//ui/base/x",
++      "//ui/gfx/x",
++    ]
+   }
+   if (is_win) {
+     sources += [
+diff --git a/ui/gl/gl_surface_glx.cc b/ui/gl/gl_surface_glx.cc
+index f4c13bed18..777bf767cb 100644
+--- ui/gl/gl_surface_glx.cc
++++ ui/gl/gl_surface_glx.cc
+@@ -21,6 +21,7 @@
+ #include "base/time/time.h"
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
++#include "ui/base/x/x11_util.h"
+ #include "ui/events/platform/platform_event_source.h"
+ #include "ui/gfx/x/x11.h"
+ #include "ui/gfx/x/x11_connection.h"
+@@ -431,7 +432,9 @@ bool GLSurfaceGLX::InitializeOneOff() {
+   }
+ 
+   const XVisualInfo& visual_info =
+-      gl::GLVisualPickerGLX::GetInstance()->rgba_visual();
++      ui::IsCompositingManagerPresent()
++          ? gl::GLVisualPickerGLX::GetInstance()->rgba_visual()
++          : gl::GLVisualPickerGLX::GetInstance()->system_visual();
+   g_visual = visual_info.visual;
+   g_depth = visual_info.depth;
+   g_colormap =
+@@ -581,18 +584,30 @@ bool NativeViewGLSurfaceGLX::Initialize(GLSurfaceFormat format) {
+   }
+   size_ = gfx::Size(attributes.width, attributes.height);
+ 
+-  XSetWindowAttributes swa;
+-  memset(&swa, 0, sizeof(swa));
+-  swa.background_pixmap = 0;
+-  swa.bit_gravity = NorthWestGravity;
+-  swa.colormap = g_colormap;
+-  swa.background_pixel = 0;
+-  swa.border_pixel = 0;
+-  window_ = XCreateWindow(
+-      gfx::GetXDisplay(), parent_window_, 0 /* x */, 0 /* y */, size_.width(),
+-      size_.height(), 0 /* border_width */, g_depth, InputOutput, g_visual,
+-      CWBackPixmap | CWBitGravity | CWColormap | CWBackPixel | CWBorderPixel,
+-      &swa);
++  XSetWindowAttributes swa = {
++      .background_pixmap = 0,
++      .bit_gravity = NorthWestGravity,
++      .colormap = g_colormap,
++      .background_pixel = 0,  // ARGB(0,0,0,0) for compositing WM
++      .border_pixel = 0,
++  };
++  auto value_mask = CWBackPixmap | CWBitGravity | CWColormap | CWBorderPixel;
++  if (ui::IsCompositingManagerPresent() &&
++      XVisualIDFromVisual(attributes.visual) == XVisualIDFromVisual(g_visual)) {
++    // When parent and child are using the same visual, the back buffer will be
++    // shared between parent and child. If WM compositing is enabled, we set
++    // child's background pixel to ARGB(0,0,0,0), so ARGB(0,0,0,0) will be
++    // filled to the shared buffer, when the child window is mapped. It can
++    // avoid an annoying flash when the child window is mapped below.
++    // If WM compositing is disabled, we don't set the background pixel, so
++    // nothing will be draw when the child window is mapped.
++    value_mask |= CWBackPixel;
++  }
++
++  window_ =
++      XCreateWindow(gfx::GetXDisplay(), parent_window_, 0 /* x */, 0 /* y */,
++                    size_.width(), size_.height(), 0 /* border_width */,
++                    g_depth, InputOutput, g_visual, value_mask, &swa);
+   if (!window_) {
+     LOG(ERROR) << "XCreateWindow failed";
+     return false;
