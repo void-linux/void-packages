@@ -32,16 +32,16 @@ genpkg() {
 
 	_preserve=${preserve:+-p}
 	if [ -s ${PKGDESTDIR}/rdeps ]; then
-		_deps="$(cat ${PKGDESTDIR}/rdeps)"
+		_deps="$(<${PKGDESTDIR}/rdeps)"
 	fi
 	if [ -s ${PKGDESTDIR}/shlib-provides ]; then
-		_shprovides="$(cat ${PKGDESTDIR}/shlib-provides)"
+		_shprovides="$(<${PKGDESTDIR}/shlib-provides)"
 	fi
 	if [ -s ${PKGDESTDIR}/shlib-requires ]; then
-		_shrequires="$(cat ${PKGDESTDIR}/shlib-requires)"
+		_shrequires="$(<${PKGDESTDIR}/shlib-requires)"
 	fi
 	if [ -s ${XBPS_STATEDIR}/gitrev ]; then
-		_gitrevs="$(cat ${XBPS_STATEDIR}/gitrev)"
+		_gitrevs="$(<${XBPS_STATEDIR}/gitrev)"
 	fi
 
 	# Stripping whitespaces
