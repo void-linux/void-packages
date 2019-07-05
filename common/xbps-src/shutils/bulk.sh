@@ -53,8 +53,7 @@ bulk_build() {
         fi
         NRUNNING=$((NRUNNING+1))
         (
-            setup_pkg $f $XBPS_TARGET_MACHINE &>/dev/null
-            if show_avail &>/dev/null; then
+            if ./xbps-src show-avail $f &>/dev/null; then
                 echo "$f"
             fi
         ) &
