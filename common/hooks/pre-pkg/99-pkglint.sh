@@ -119,7 +119,7 @@ hook() {
 				msg_red "${pkgver}: SONAME bump detected: ${libname}.so.${conflictRev} -> ${libname}.so.${rev}\n"
 				msg_red "${pkgver}: please update common/shlibs with this line: \"${libname}.so.${rev} ${pkgver}\"\n"
 				msg_red "${pkgver}: all reverse dependencies should also be revbumped to be rebuilt against ${libname}.so.${rev}:\n"
-				_revdeps=$($XBPS_QUERY_XCMD -Rs ${libname}.so -p shlib-requires|cut -d ' ' -f1)
+				_revdeps=$($XBPS_QUERY_XCMD -Rs ${libname}.so -p shlib-requires|awk '{print $1}')
 				for x in ${_revdeps}; do
 					msg_red "   ${x%:}\n"
 				done
@@ -128,7 +128,7 @@ hook() {
 			# Try to match provided shlibs in virtual packages.
 			for f in ${provides}; do
 				_vpkgname="$($XBPS_UHELPER_CMD getpkgname ${f} 2>/dev/null)"
-				_spkgname="$(grep "^${filename}" $mapshlibs | cut -d ' ' -f2)"
+				_spkgname="$(grep "^${filename}" $mapshlibs | awk '{print $2}')"
 				_libpkgname="$($XBPS_UHELPER_CMD getpkgname ${_spkgname} 2>/dev/null)"
 				if [ -z "${_spkgname}" -o  -z "${_libpkgname}" ]; then
 					continue

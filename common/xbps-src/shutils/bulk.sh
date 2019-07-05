@@ -1,11 +1,36 @@
 # vim: set ts=4 sw=4 et:
 
+bulk_getlink() {
+    local p="${1##*/}"
+    local target="$(readlink $XBPS_SRCPKGDIR/$p)"
+
+    if [ $? -eq 0 -a -n "$target" ]; then
+        p=$target
+    fi
+    echo $p
+}
+
 bulk_sortdeps() {
     local _pkgs _pkg pkgs pkg found f x tmpf
 
-    pkgs="$@"
-    tmpf=$(mktemp) || exit 1
+    _pkgs="$@"
+    # Iterate over the list and make sure that only real pkgs are
+    # added to our pkglist.
+    for pkg in ${_pkgs}; do
+        found=0
+        f=$(bulk_getlink $pkg)
+        for x in ${pkgs}; do
+            if [ "$x" = "${f}" ]; then
+                found=1
+                break
+            fi
+        done
+        if [ $found -eq 0 ]; then
+            pkgs+="${f} "
+        fi
+    done
 
+    tmpf=$(mktemp) || exit 1
     # Now make the real dependency graph of all pkgs to build.
     # Perform a topological sort of all pkgs but only with build dependencies
     # that are found in previous step.
@@ -13,11 +38,16 @@ bulk_sortdeps() {
         _pkgs="$(./xbps-src show-build-deps $pkg 2>/dev/null)"
         found=0
         for x in ${_pkgs}; do
+            _pkg=$(bulk_getlink $x)
             for f in ${pkgs}; do
-                [[ $f == $x ]] && found=1 && echo "${pkg} ${f}" >> $tmpf
+                if [ "${f}" != "${_pkg}" ]; then
+                    continue
+                fi
+                found=1
+                echo "${pkg} ${f}" >> $tmpf
             done
         done
-        [[ $found -eq 0 ]] && echo "${pkg} ${pkg}" >> $tmpf
+        [ $found -eq 0 ] && echo "${pkg} ${pkg}" >> $tmpf
     done
     tsort $tmpf|tac
     rm -f $tmpf
@@ -33,7 +63,7 @@ bulk_build() {
         msg_error "xbps-src: cannot find xbps-checkvers(8) command!\n"
     fi
 
-    bulk_sortdeps "$(xbps-checkvers -f '%n' ${1} --distdir=$XBPS_DISTDIR)"
+    bulk_sortdeps "$(xbps-checkvers ${1} --distdir=$XBPS_DISTDIR | awk '{print $2}')"
 }
 
 bulk_update() {

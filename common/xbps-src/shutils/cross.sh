@@ -24,12 +24,11 @@ remove_pkg_cross_deps() {
 
 prepare_cross_sysroot() {
     local cross="$1"
-    local statefile="$XBPS_MASTERDIR/.xbps-${cross}-done"
 
-    [ -z "$cross" -o "$cross" = "" -o -f $statefile ] && return 0
+    [ -z "$cross" -o "$cross" = "" ] && return 0
 
     # Check for cross-vpkg-dummy available for the target arch, otherwise build it.
-    pkg_available 'cross-vpkg-dummy>=0.31_1' $cross
+    pkg_available 'cross-vpkg-dummy>=0.30_1' $cross
     if [ $? -eq 0 ]; then
         $XBPS_LIBEXECDIR/build.sh cross-vpkg-dummy cross-vpkg-dummy pkg $cross init || return $?
     fi
@@ -41,7 +40,7 @@ prepare_cross_sysroot() {
     errlog=$(mktemp) || exit 1
     $XBPS_INSTALL_XCMD -Syfd cross-vpkg-dummy &>$errlog
     rval=$?
-    if [ $rval -ne 0 ]; then
+    if [ $rval -ne 0 -a $rval -ne 17 ]; then
         msg_red "failed to install cross-vpkg-dummy (error $rval)\n"
         cat $errlog
         rm -f $errlog
@@ -49,14 +48,10 @@ prepare_cross_sysroot() {
     fi
     rm -f $errlog
     # Create top level symlinks in sysroot.
-    XBPS_ARCH=$XBPS_TARGET_MACHINE xbps-reconfigure -r $XBPS_CROSS_BASE -f base-files &>/dev/null
+    XBPS_ARCH=$XBPS_TARGET_MACHINE xbps-reconfigure -r $XBPS_CROSS_BASE -f base-directories base-files &>/dev/null
     # Create a sysroot/include and sysroot/lib symlink just in case.
     ln -s usr/include ${XBPS_CROSS_BASE}/include
     ln -s usr/lib ${XBPS_CROSS_BASE}/lib
-
-    install_cross_pkg $cross || return 1
-
-    touch -f $statefile
 
     return 0
 }

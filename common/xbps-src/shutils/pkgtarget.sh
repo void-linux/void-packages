@@ -54,10 +54,6 @@ remove_pkg_autodeps() {
     $XBPS_RECONFIGURE_CMD -a >> $tmplogf 2>&1
     echo yes | $XBPS_REMOVE_CMD -Ryod >> $tmplogf 2>&1
     rval=$?
-    if [ $rval -eq 0 ]; then
-        echo yes | $XBPS_REMOVE_CMD -Ryod >> $tmplogf 2>&1
-        rval=$?
-    fi
 
     if [ $rval -ne 0 ]; then
         msg_red "${pkgver:-xbps-src}: failed to remove autodeps: (returned $rval)\n"

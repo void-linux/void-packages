@@ -43,6 +43,10 @@ if [ "$PKGNAME" != "$XBPS_TARGET_PKG" -o -z "$XBPS_SKIP_DEPS" ]; then
     install_pkg_deps $PKGNAME $XBPS_TARGET_PKG pkg $XBPS_CROSS_BUILD $XBPS_CROSS_PREPARE || exit $?
 fi
 
+if [ -z "$XBPS_CROSS_PREPARE" ]; then
+    install_cross_pkg $XBPS_CROSS_BUILD || exit $?
+fi
+
 # Fetch distfiles after installing required dependencies,
 # because some of them might be required for do_fetch().
 $XBPS_LIBEXECDIR/xbps-src-dofetch.sh $SOURCEPKG $XBPS_CROSS_BUILD || exit 1
