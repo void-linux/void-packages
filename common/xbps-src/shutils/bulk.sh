@@ -8,13 +8,14 @@ bulk_sortdeps() {
 
     tmpf=$(mktemp) || exit 1
 
-    # Perform a topological sort of all *direct* build dependencies.
+    # Perform a topological sort of all build dependencies.
+    if [ $NRUNNING -eq $NPROCS ]; then
+        NRUNNING=0
+        wait
+    fi
+
     for pkg in ${pkgs}; do
-        if [ $NRUNNING -eq $NPROCS ]; then
-            NRUNNING=0
-            wait
-        fi
-        NRUNNING=$((NRUNNING+1))
+        # async/parallel execution
         (
             for _pkg in $(./xbps-src show-build-deps $pkg 2>/dev/null); do
                 echo "$pkg $_pkg" >> $tmpf
@@ -28,9 +29,6 @@ bulk_sortdeps() {
 }
 
 bulk_build() {
-    local sys="$1"
-    local NPROCS=$(($(nproc)*2))
-    local NRUNNING=0
 
     if [ "$XBPS_CROSS_BUILD" ]; then
         source ${XBPS_COMMONDIR}/cross-profiles/${XBPS_CROSS_BUILD}.sh
@@ -40,38 +38,21 @@ bulk_build() {
         msg_error "xbps-src: cannot find xbps-checkvers(1) command!\n"
     fi
 
-    # Compare installed pkg versions vs srcpkgs
-    if [[ $sys ]]; then
-        xbps-checkvers -f '%n' -I -D $XBPS_DISTDIR
-        return $?
-    fi
-    # compare repo pkg versions vs srcpkgs
-    for f in $(xbps-checkvers -f '%n' -D $XBPS_DISTDIR); do
-        if [ $NRUNNING -eq $NPROCS ]; then
-            NRUNNING=0
-            wait
-        fi
-        NRUNNING=$((NRUNNING+1))
-        (
-            if ./xbps-src show-avail $f &>/dev/null; then
-                echo "$f"
-            fi
-        ) &
-    done
-    wait
-    return $?
+    bulk_sortdeps "$(xbps-checkvers -f '%n' ${1} --distdir=$XBPS_DISTDIR)"
 }
 
 bulk_update() {
     local args="$1" pkgs f rval
 
     pkgs="$(bulk_build ${args})"
-    [[ -z $pkgs ]] && return 0
-
+    if [ -z "$pkgs" ]; then
+        return 0
+    fi
     msg_normal "xbps-src: the following packages must be rebuilt and updated:\n"
     for f in ${pkgs}; do
-        echo " $f"
+        echo "   $f"
     done
+    echo
     for f in ${pkgs}; do
         XBPS_TARGET_PKG=$f
         read_pkg
