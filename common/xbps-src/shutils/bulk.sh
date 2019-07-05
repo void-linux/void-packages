@@ -1,29 +1,24 @@
 # vim: set ts=4 sw=4 et:
 
 bulk_sortdeps() {
-    local pkgs="$@"
-    local pkg _pkg
-    local NPROCS=$(($(nproc)*2))
-    local NRUNNING=0
+    local _pkgs _pkg pkgs pkg found f x tmpf
 
+    pkgs="$@"
     tmpf=$(mktemp) || exit 1
 
-    # Perform a topological sort of all build dependencies.
-    if [ $NRUNNING -eq $NPROCS ]; then
-        NRUNNING=0
-        wait
-    fi
-
+    # Now make the real dependency graph of all pkgs to build.
+    # Perform a topological sort of all pkgs but only with build dependencies
+    # that are found in previous step.
     for pkg in ${pkgs}; do
-        # async/parallel execution
-        (
-            for _pkg in $(./xbps-src show-build-deps $pkg 2>/dev/null); do
-                echo "$pkg $_pkg" >> $tmpf
+        _pkgs="$(./xbps-src show-build-deps $pkg 2>/dev/null)"
+        found=0
+        for x in ${_pkgs}; do
+            for f in ${pkgs}; do
+                [[ $f == $x ]] && found=1 && echo "${pkg} ${f}" >> $tmpf
             done
-            echo "$pkg $pkg" >> $tmpf
-        ) &
+        done
+        [[ $found -eq 0 ]] && echo "${pkg} ${pkg}" >> $tmpf
     done
-    wait
     tsort $tmpf|tac
     rm -f $tmpf
 }
@@ -35,7 +30,7 @@ bulk_build() {
         export XBPS_ARCH=${XBPS_TARGET_MACHINE}
     fi
     if ! command -v xbps-checkvers &>/dev/null; then
-        msg_error "xbps-src: cannot find xbps-checkvers(1) command!\n"
+        msg_error "xbps-src: cannot find xbps-checkvers(8) command!\n"
     fi
 
     bulk_sortdeps "$(xbps-checkvers -f '%n' ${1} --distdir=$XBPS_DISTDIR)"
