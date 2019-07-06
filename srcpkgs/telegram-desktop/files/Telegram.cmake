@@ -46,6 +46,8 @@ pkg_check_modules(FFMPEG REQUIRED libavcodec libavformat libavutil libswresample
 pkg_check_modules(LIBDRM REQUIRED libdrm)
 pkg_check_modules(LIBVA REQUIRED libva libva-drm libva-x11)
 pkg_check_modules(MINIZIP REQUIRED minizip)
+pkg_check_modules(LIBLZ4 REQUIRED liblz4)
+pkg_check_modules(RLOTTIE REQUIRED rlottie)
 
 set(THIRD_PARTY_DIR ${CMAKE_SOURCE_DIR}/ThirdParty)
 list(APPEND THIRD_PARTY_INCLUDE_DIRS
@@ -58,7 +60,6 @@ list(APPEND THIRD_PARTY_INCLUDE_DIRS
 
 add_subdirectory(${THIRD_PARTY_DIR}/crl)
 add_subdirectory(${THIRD_PARTY_DIR}/libtgvoip)
-add_subdirectory(${THIRD_PARTY_DIR}/qtlottie)
 
 set(TELEGRAM_SOURCES_DIR ${CMAKE_SOURCE_DIR}/SourceFiles)
 set(TELEGRAM_RESOURCES_DIR ${CMAKE_SOURCE_DIR}/Resources)
@@ -92,9 +93,11 @@ file(GLOB FLAT_SOURCE_FILES
 	SourceFiles/core/*.cpp
 	SourceFiles/data/*.cpp
 	SourceFiles/dialogs/*.cpp
+	SourceFiles/ffmpeg/*.cpp
 	SourceFiles/inline_bots/*.cpp
 	SourceFiles/intro/*.cpp
 	SourceFiles/lang/*.cpp
+	SourceFiles/lottie/*.cpp
 	SourceFiles/main/*.cpp
 	SourceFiles/mtproto/*.cpp
 	SourceFiles/overview/*.cpp
@@ -161,7 +164,6 @@ set(TELEGRAM_INCLUDE_DIRS
 set(TELEGRAM_LINK_LIBRARIES
 	xxhash
 	crl
-	qtlottie
 	tgvoip
 	OpenSSL::Crypto
 	OpenSSL::SSL
@@ -177,6 +179,8 @@ set(TELEGRAM_LINK_LIBRARIES
 	${OPENAL_LIBRARY}
 	${X11_X11_LIB}
 	${ZLIB_LIBRARY_RELEASE}
+	${LIBLZ4_LIBRARIES}
+	${RLOTTIE_LIBRARIES}
 )
 
 if(ENABLE_CRASH_REPORTS)
