@@ -198,7 +198,7 @@ chroot_handler() {
         [ -n "$XBPS_BINPKG_EXISTS" ] && arg="$arg -E"
 
         action="$arg $action"
-        env -i -- PATH="/usr/bin" SHELL=/bin/sh \
+        env -i -- PATH="/usr/bin:$PATH" SHELL=/bin/sh \
             HOME=/tmp IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 \
             SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
             XBPS_ALLOW_CHROOT_BREAKOUT="$XBPS_ALLOW_CHROOT_BREAKOUT" \
