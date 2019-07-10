@@ -61,44 +61,25 @@ show_avail() {
 }
 
 show_pkg_build_depends() {
-    local f x _pkgname _srcpkg _dep found result
+    local f x _pkgname _srcpkg found result
     local _deps="$1"
 
     result=$(mktemp) || exit 1
 
     # build time deps
     for f in ${_deps}; do
-        # ignore virtual deps
-        local _rpkg="${f%\?*}"
-        local _vpkg="${f#*\?}"
-
-        # ignore virtual dependencies
-        if [ "${_rpkg}" != "${_vpkg}" ]; then
-            f="${_vpkg}"
+        if [ ! -f $XBPS_SRCPKGDIR/$f/template ]; then
+            msg_error "$pkgver: dependency '$f' does not exist!\n"
         fi
+        # ignore virtual dependencies
+        [[ ${f%\?*} != ${f#*\?} ]] && f=${f#*\?}
         unset found
         # check for subpkgs
         for x in ${subpackages}; do
-            _pkgname="$($XBPS_UHELPER_CMD getpkgdepname $f 2>/dev/null)"
-            if [ -z "${_pkgname}" ]; then
-                _pkgname="$($XBPS_UHELPER_CMD getpkgname $f 2>/dev/null)"
-            fi
-            if [ "${_pkgname}" = "$x" ]; then
-                found=1
-                break
-            fi
+            [[ $f == $x ]] && found=1 && break
         done
-        if [ -n "$found" ]; then
-            continue
-        fi
-        _pkgname="$($XBPS_UHELPER_CMD getpkgdepname $f 2>/dev/null)"
-        if [ -z "${_pkgname}" ]; then
-            _pkgname="$($XBPS_UHELPER_CMD getpkgname $f 2>/dev/null)"
-        fi
-        if [ -z "${_pkgname}" ]; then
-            _pkgname="$f"
-        fi
-        _pkgname=${_pkgname/-32bit}
+        [[ $found ]] && continue
+        _pkgname=${f/-32bit}
         _srcpkg=$(readlink -f ${XBPS_SRCPKGDIR}/${_pkgname})
         _srcpkg=${_srcpkg##*/}
         echo "${_srcpkg}" >> $result
@@ -108,18 +89,15 @@ show_pkg_build_depends() {
 }
 
 show_pkg_build_deps() {
-    setup_pkg_depends
-    show_pkg_build_depends "${host_build_depends} ${build_depends} ${run_depends}"
+    show_pkg_build_depends "${hostmakedepends} ${makedepends} $(setup_pkg_depends '' 1)"
 }
 
 show_pkg_hostmakedepends() {
-    setup_pkg_depends
-    show_pkg_build_depends "${host_build_depends}"
+    show_pkg_build_depends "${hostmakedepends}"
 }
 
 show_pkg_makedepends() {
-    setup_pkg_depends
-    show_pkg_build_depends "${build_depends}"
+    show_pkg_build_depends "${makedepends}"
 }
 
 show_pkg_build_options() {
