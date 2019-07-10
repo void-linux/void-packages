@@ -294,7 +294,7 @@ setup_pkg() {
         XBPS_REMOVE_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_REMOVE_CMD -r $XBPS_CROSS_BASE"
         XBPS_RINDEX_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_RINDEX_CMD"
         XBPS_UHELPER_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE xbps-uhelper -r $XBPS_CROSS_BASE"
-
+        XBPS_CHECKVERS_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE xbps-checkvers -r $XBPS_CROSS_BASE --repository=$XBPS_REPOSITORY"
     else
         export XBPS_TARGET_MACHINE=${XBPS_ARCH:-$XBPS_MACHINE}
         unset XBPS_CROSS_BASE XBPS_CROSS_LDFLAGS XBPS_CROSS_FFLAGS
@@ -307,7 +307,7 @@ setup_pkg() {
         XBPS_REMOVE_XCMD="$XBPS_REMOVE_CMD"
         XBPS_RINDEX_XCMD="$XBPS_RINDEX_CMD"
         XBPS_UHELPER_XCMD="$XBPS_UHELPER_CMD"
-
+        XBPS_CHECKVERS_XCMD="$XBPS_CHECKVERS_CMD"
     fi
 
     export XBPS_INSTALL_XCMD XBPS_QUERY_XCMD XBPS_RECONFIGURE_XCMD \
@@ -402,7 +402,7 @@ setup_pkg() {
         arch="$XBPS_TARGET_MACHINE"
     fi
     if [ -n "$XBPS_BINPKG_EXISTS" ]; then
-        if [ "$($XBPS_QUERY_XCMD -R -ppkgver $pkgver 2>/dev/null)" = "$pkgver" ]; then
+        if [ "$($XBPS_QUERY_XCMD -i -R -ppkgver $pkgver 2>/dev/null)" = "$pkgver" ]; then
             exit_and_cleanup
         fi
     fi
@@ -556,17 +556,17 @@ setup_pkg() {
         wrksrc="$XBPS_BUILDDIR/$wrksrc"
     fi
 
-    if [ "$cross" -a "$nocross" -a "z$show_problems" != "zignore-problems" ]; then
+    if [ "$cross" -a "$nocross" -a "$show_problems" != "ignore-problems" ]; then
         msg_red "$pkgver: cannot be cross compiled, exiting...\n"
         msg_red "$pkgver: $nocross\n"
         exit 2
-    elif [ "$broken" -a "z$show_problems" != "zignore-problems" ]; then
+    elif [ "$broken" -a "$show_problems" != "ignore-problems" ]; then
         msg_red "$pkgver: cannot be built, it's currently broken; see the build log:\n"
         msg_red "$pkgver: $broken\n"
         exit 2
     fi
 
-    if [ -n "$restricted" -a -z "$XBPS_ALLOW_RESTRICTED" -a "z$show_problems" != "zignore-problems" ]; then
+    if [ -n "$restricted" -a -z "$XBPS_ALLOW_RESTRICTED" -a "$show_problems" != "ignore-problems" ]; then
         msg_red "$pkgver: does not allow redistribution of sources/binaries (restricted license).\n"
         msg_red "If you really need this software, run 'echo XBPS_ALLOW_RESTRICTED=yes >> etc/conf'\n"
         exit 2
@@ -575,9 +575,7 @@ setup_pkg() {
     export XBPS_STATEDIR="${XBPS_BUILDDIR}/.xbps-${sourcepkg}"
     export XBPS_WRAPPERDIR="${XBPS_STATEDIR}/wrappers"
 
-    if [ -n "$bootstrap" -a -z "$CHROOT_READY" -o -n "$IN_CHROOT" ]; then
-        mkdir -p $XBPS_WRAPPERDIR
-    fi
+    mkdir -p $XBPS_STATEDIR $XBPS_WRAPPERDIR
 
     source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
 

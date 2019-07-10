@@ -1,9 +1,9 @@
 # vim: set ts=4 sw=4 et:
 #
 setup_pkg_depends() {
-    local pkg="$1" j _pkgdepname _pkgdep _rpkgname _depname _depver _replacement
+    local pkg="$1" out="$2" j _rpkgname _depname _pkgname foo _deps
 
-    if [ -n "$pkg" ]; then
+    if [[ $pkg ]]; then
         # subpkg
         if declare -f ${pkg}_package >/dev/null; then
             ${pkg}_package
@@ -13,85 +13,67 @@ setup_pkg_depends() {
     for j in ${depends}; do
         _rpkgname="${j%\?*}"
         _depname="${j#*\?}"
-        _pkgdepname="$($XBPS_UHELPER_CMD getpkgdepname ${_depname} 2>/dev/null)"
-        if [ -z "${_pkgdepname}" ]; then
-            _pkgdepname="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
-        fi
-        if [ -s ${XBPS_DISTDIR}/etc/virtual ]; then
-            _replacement=$(egrep "^${_pkgdepname:-${_depname}}[[:blank:]]" ${XBPS_DISTDIR}/etc/virtual|cut -d ' ' -f2)
-        elif [ -s ${XBPS_DISTDIR}/etc/defaults.virtual ]; then
-            _replacement=$(egrep "^${_pkgdepname:-${_depname}}[[:blank:]]" ${XBPS_DISTDIR}/etc/defaults.virtual|cut -d ' ' -f2)
-        fi
-        if [ "${_rpkgname}" = "virtual" ]; then
-            if [ -z "${_replacement}" ]; then
+        if [[ ${_rpkgname} == virtual ]]; then
+            _pkgname=$(xbps-uhelper getpkgname $_depname 2>/dev/null)
+            [ -z "$_pkgname" ] && _pkgname="$_depname"
+            if [ -s ${XBPS_DISTDIR}/etc/virtual ]; then
+                foo=$(egrep "^${_pkgname}[[:blank:]]" ${XBPS_DISTDIR}/etc/virtual|cut -d ' ' -f2)
+            elif [ -s ${XBPS_DISTDIR}/etc/defaults.virtual ]; then
+                foo=$(egrep "^${_pkgname}[[:blank:]]" ${XBPS_DISTDIR}/etc/defaults.virtual|cut -d ' ' -f2)
+            fi
+            if [ -z "$foo" ]; then
                 msg_error "$pkgver: failed to resolve virtual dependency for '$j' (missing from etc/virtual)\n"
             fi
-            _pkgdepname="$($XBPS_UHELPER_CMD getpkgdepname ${_replacement} 2>/dev/null)"
-            if [ -z "${_pkgdepname}" ]; then
-                _pkgdepname="$($XBPS_UHELPER_CMD getpkgname ${_replacement} 2>/dev/null)"
-            fi
-            if [ -z "${_pkgdepname}" ]; then
-                _pkgdepname="${_replacement}>=0"
-            fi
-            run_depends+=" ${_depname}?${_pkgdepname}"
-            #echo "Adding dependency virtual:  ${_depname}?${_pkgdepname}"
+            _deps+="$foo "
         else
-            if [ -z "${_pkgdepname}" ]; then
-                _pkgdep="${_depname}>=0"
-            else
-                _pkgdep="${_depname}"
+            foo="$($XBPS_UHELPER_CMD getpkgdepname ${_depname} 2>/dev/null)"
+            if [ -z "$foo" ]; then
+                foo="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
+                [ -z "$foo" ] && foo="${_depname}"
             fi
-            run_depends+=" ${_pkgdep}"
+            _deps+="$foo "
         fi
+        run_depends+="${_depname} "
     done
-    for j in ${hostmakedepends}; do
-        _depname="${j%\?*}"
-        _depver=$(srcpkg_get_version ${_depname}) || exit $?
-        host_build_depends+=" ${_depname}-${_depver}"
-    done
-    if [ -n "$XBPS_CHECK_PKGS" ]; then
-        for j in ${checkdepends}; do
-            _depname="${j%\?*}"
-            _depver=$(srcpkg_get_version ${_depname}) || exit $?
-            host_check_depends+=" ${_depname}-${_depver}"
-        done
-    fi
-    for j in ${makedepends}; do
-        _depname="${j%\?*}"
-        _depver=$(srcpkg_get_version ${_depname}) || exit $?
-        build_depends+=" ${_depname}-${_depver}"
-    done
+
+    [[ $out && $_deps ]] && echo "$_deps"
+    return 0
 }
 
-# Install a required package dependency, like:
 #
-#	xbps-install -IAy <pkgname>
+# Install required package dependencies, like:
+#
+#	xbps-install -AIy <pkgs>
+#
+#       -A automatic mode
+#       -I to ignore file conflicts
+#       -y yes
 #
 # Returns 0 if package already installed or installed successfully.
 # Any other error number otherwise.
 #
+# SUCCESS  (0): package installed successfully.
+# ENOENT   (2): package missing in repositories.
+# ENXIO    (6): package depends on invalid dependencies.
+# EAGAIN  (11): package conflicts.
+# EEXIST  (17): file conflicts in transaction (XBPS_FLAG_IGNORE_FILE_CONFLICTS unset)
+# ENODEV  (19): package depends on missing dependencies.
+# ENOTSUP (95): no repositories registered.
+#
 install_pkg_from_repos() {
-    local pkg="$1" cross="$2" rval= tmplogf=
+    local cross="$1" rval tmplogf cmd
+    shift
+
+    [ $# -eq 0 ] && return 0
 
     mkdir -p $XBPS_STATEDIR
     tmplogf=${XBPS_STATEDIR}/xbps_${XBPS_TARGET_MACHINE}_bdep_${pkg}.log
 
-    if [ -n "$cross" ]; then
-        $XBPS_INSTALL_XCMD -IAy "$pkg" >$tmplogf 2>&1
-    else
-        $XBPS_INSTALL_CMD -IAy "$pkg" >$tmplogf 2>&1
-    fi
+    cmd=$XBPS_INSTALL_CMD
+    [[ $cross ]] && cmd=$XBPS_INSTALL_XCMD
+    $cmd ${XBPS_SKIP_REMOTEREPOS:+-i} -AIy "$@" >$tmplogf 2>&1
     rval=$?
-    # xbps-install can return:
-    #
-    # SUCCESS  (0): package installed successfully.
-    # ENOENT   (2): package missing in repositories.
-    # ENXIO    (6): package depends on invalid dependencies.
-    # EAGAIN  (11): package conflicts.
-    # EEXIST  (17): file conflicts in transaction (XBPS_FLAG_IGNORE_FILE_CONFLICTS unset)
-    # ENODEV  (19): package depends on missing dependencies.
-    # ENOTSUP (95): no repositories registered.
-    #
+
     case "$rval" in
         0) # success, check if there are errors.
            errortmpf=$(mktemp) || exit 1
@@ -112,39 +94,6 @@ install_pkg_from_repos() {
 }
 
 #
-# Returns 0 if pkgpattern in $1 is matched against current installed
-# package, 1 if no match and 2 if not installed.
-#
-check_pkgdep_matched() {
-    local pkg="$1" checkver="$2" cross="$3" uhelper= pkgn= iver=
-
-    [ "$build_style" = "meta" ] && return 2
-    [ -z "$pkg" ] && return 255
-
-    pkgn="$($XBPS_UHELPER_CMD getpkgdepname ${pkg} 2>/dev/null)"
-    if [ -z "$pkgn" ]; then
-        pkgn="$($XBPS_UHELPER_CMD getpkgname ${pkg} 2>/dev/null)"
-    fi
-    [ -z "$pkgn" ] && return 255
-
-    if [ -n "$cross" ]; then
-        uhelper="$XBPS_UHELPER_XCMD"
-    else
-        uhelper="$XBPS_UHELPER_CMD"
-    fi
-
-    iver="$($uhelper $checkver $pkgn)"
-    if [ $? -eq 0 -a -n "$iver" ]; then
-        $XBPS_UHELPER_CMD pkgmatch "${pkgn}-${iver}" "${pkg}"
-        [ $? -eq 1 ] && return 0
-    else
-        return 2
-    fi
-
-    return 1
-}
-
-#
 # Returns 0 if pkgpattern in $1 is installed and greater than current
 # installed package, otherwise 1.
 #
@@ -156,12 +105,8 @@ check_installed_pkg() {
     pkgn="$($XBPS_UHELPER_CMD getpkgname ${pkg})"
     [ -z "$pkgn" ] && return 2
 
-    if [ -n "$cross" ]; then
-        uhelper="$XBPS_UHELPER_XCMD"
-    else
-        uhelper="$XBPS_UHELPER_CMD"
-    fi
-
+    uhelper=$XBPS_UHELPER_CMD
+    [[ $cross ]] && uhelper=$XBPS_UHELPER_XCMD
     iver="$($uhelper version $pkgn)"
     if [ $? -eq 0 -a -n "$iver" ]; then
         $XBPS_CMPVER_CMD "${pkgn}-${iver}" "${pkg}"
@@ -171,42 +116,20 @@ check_installed_pkg() {
     return 1
 }
 
-srcpkg_get_version() {
-    local pkg="$1"
-    # Run this in a sub-shell to avoid polluting our env.
-    (
-    unset XBPS_BINPKG_EXISTS
-    setup_pkg $pkg || exit $?
-    echo "${version}_${revision}"
-    ) || msg_error "$pkgver: failed to transform dependency $pkg\n"
-}
-
-srcpkg_get_pkgver() {
-    local pkg="$1"
-    # Run this in a sub-shell to avoid polluting our env.
-    (
-    unset XBPS_BINPKG_EXISTS
-    setup_pkg $pkg || exit $?
-    echo "${sourcepkg}-${version}_${revision}"
-    ) || msg_error "$pkgver: failed to transform dependency $pkg\n"
-}
-
 #
-# Installs all dependencies required by a package.
+# Build all dependencies required to build and run.
 #
 install_pkg_deps() {
     local pkg="$1" targetpkg="$2" target="$3" cross="$4" cross_prepare="$5"
-    local rval _realpkg _vpkg _curpkg curpkgdepname pkgn iver
-    local i j found rundep repo style
+    local _vpkg curpkgdepname
+    local i j found style
 
-    local -a host_binpkg_deps check_binpkg_deps binpkg_deps
-    local -a host_missing_deps check_missing_deps missing_deps missing_rdeps
+    local -a host_binpkg_deps binpkg_deps
+    local -a host_missing_deps missing_deps missing_rdeps
 
     [ -z "$pkgname" ] && return 2
-
-    setup_pkg_depends
-
-    [ -n "$build_style" ] && style=" [$build_style]"
+    [ -z "$XBPS_CHECK_PKGS" ] && unset checkdepends
+    [[ $build_style ]] && style=" [$build_style]"
 
     for s in $build_helper; do
         style+=" [$s]"
@@ -218,195 +141,172 @@ install_pkg_deps() {
         msg_normal "$pkgver: building${style} ...\n"
     fi
 
-    if [ -z "$build_depends" -a -z "$host_build_depends" -a -z "$host_check_depends" -a -z "$run_depends" ]; then
-        return 0
-    fi
-
     #
     # Host build dependencies.
     #
-    for i in ${host_build_depends}; do
-        _realpkg=$($XBPS_UHELPER_CMD getpkgname "$i" 2>/dev/null)
-        check_pkgdep_matched "$i" version
-        local rval=$?
-        if [ $rval -eq 0 ]; then
-            echo "   [host] ${i}: installed."
-            continue
-        elif [ $rval -eq 1 ]; then
-            iver=$($XBPS_UHELPER_CMD version ${_realpkg})
-            if [ $? -eq 0 -a -n "$iver" ]; then
-                echo "   [host] ${i}: installed $iver (virtualpkg)."
-                continue
-            else
-                echo "   [host] ${i}: unresolved build dependency!"
-                return 1
+    if [[ ${hostmakedepends} ]]; then
+        # check validity
+        for f in ${hostmakedepends}; do
+            if [ ! -f $XBPS_SRCPKGDIR/$f/template ]; then
+                msg_error "$pkgver: host dependency '$f' does not exist!\n"
             fi
-        else
-            repo=$($XBPS_QUERY_CMD -R -prepository ${i} 2>/dev/null)
-            if [ -n "${repo}" ]; then
-                echo "   [host] ${i}: found ($repo)"
-                host_binpkg_deps+=("${i}")
+        done
+        while read -r _depname _deprepover _depver _subpkg _repourl; do
+            _vpkg=${_subpkg}-${_depver}
+            # binary package found in a repo
+            if [[ ${_depver} == ${_deprepover} ]]; then
+                echo "   [host] ${_vpkg}: found (${_repourl})"
+                host_binpkg_deps+=("${_vpkg}")
                 continue
-            else
-                echo "   [host] ${i}: not found."
-                if [ -z "$cross" ]; then
-                    if [ "${_realpkg}" = "$targetpkg" ]; then
-                        msg_error "${pkg}: [host] build loop detected: ${_realpkg} <-> ${targetpkg} [depends on itself]\n"
-                    elif [ "${_realpkg}" = "$pkg" ]; then
-                        msg_error "${pkg}: [host] build loop detected: $pkg <-> ${_realpkg}\n"
+            fi
+            # binary package not found
+            if [[ $_depname != $_subpkg ]]; then
+                # subpkg, check if it's a subpkg of itself
+                found=0
+                for f in ${subpackages}; do
+                    if [[ ${_subpkg} == ${f} ]]; then
+                        found=1
+                        break
                     fi
+                done
+                if [[ $found -eq 1 ]]; then
+                    echo "   [host] ${_vpkg}: not found (subpkg, ignored)"
+                else
+                    echo "   [host] ${_vpkg}: not found"
+                    host_missing_deps+=("$_vpkg")
                 fi
+            else
+                echo "   [host] ${_vpkg}: not found"
+                host_missing_deps+=("$_vpkg")
             fi
-        fi
-        host_missing_deps+=("${i}")
-    done
+        done < <($XBPS_CHECKVERS_CMD ${XBPS_SKIP_REMOTEREPOS:+-i} -D $XBPS_DISTDIR -sm ${hostmakedepends})
+    fi
 
     #
     # Host check dependencies.
     #
-    for i in ${host_check_depends}; do
-        _realpkg="$($XBPS_UHELPER_CMD getpkgname $i 2>/dev/null)"
-        check_pkgdep_matched "$i" version
-        local rval=$?
-        if [ $rval -eq 0 ]; then
-            echo "   [check] ${i}: installed."
-            continue
-        elif [ $rval -eq 1 ]; then
-            iver=$($XBPS_UHELPER_CMD version ${_realpkg})
-            if [ $? -eq 0 -a -n "$iver" ]; then
-                echo "   [check] ${i}: installed $iver (virtualpkg)."
-                continue
-            else
-                echo "   [check] ${i}: unresolved check dependency!"
-                return 1
+    if [[ ${checkdepends} ]] && [[ $XBPS_CHECK_PKGS ]]; then
+        # check validity
+        for f in ${checkdepends}; do
+            if [ ! -f $XBPS_SRCPKGDIR/$f/template ]; then
+                msg_error "$pkgver: check dependency '$f' does not exist!\n"
             fi
-        else
-            repo=$($XBPS_QUERY_CMD -R -prepository ${i} 2>/dev/null)
-            if [ -n "${repo}" ]; then
-                echo "   [check] ${i}: found ($repo)"
-                check_binpkg_deps+=("${i}")
+        done
+        while read -r _depname _deprepover _depver _subpkg _repourl; do
+            _vpkg=${_subpkg}-${_depver}
+            # binary package found in a repo
+            if [[ ${_depver} == ${_deprepover} ]]; then
+                echo "   [check] ${_vpkg}: found (${_repourl})"
+                host_binpkg_deps+=("${_vpkg}")
                 continue
-            else
-                echo "   [check] ${i}: not found."
-                if [ "${_realpkg}" = "$targetpkg" ]; then
-                    msg_error "${pkg}: [check] build loop detected: ${_realpkg} <-> ${targetpkg} [depends on itself]!\n"
-                elif [ "${_realpkg}" = "$pkg" ]; then
-                    msg_error "${pkg}: [check] build loop detected: $pkg <-> ${_realpkg}\n"
+            fi
+            # binary package not found
+            if [[ $_depname != $_subpkg ]]; then
+                # subpkg, check if it's a subpkg of itself
+                found=0
+                for f in ${subpackages}; do
+                    if [[ ${_subpkg} == ${f} ]]; then
+                        found=1
+                        break
+                    fi
+                done
+                if [[ $found -eq 1 ]]; then
+                    echo "   [check] ${_vpkg}: not found (subpkg, ignored)"
+                else
+                    echo "   [check] ${_vpkg}: not found"
+                    host_missing_deps+=("$_vpkg")
                 fi
+            else
+                echo "   [check] ${_vpkg}: not found"
+                host_missing_deps+=("$_vpkg")
             fi
-        fi
-        check_missing_deps+=("${i}")
-    done
-
+        done < <($XBPS_CHECKVERS_CMD ${XBPS_SKIP_REMOTEREPOS:+-i} -D $XBPS_DISTDIR -sm ${checkdepends})
+    fi
 
     #
     # Target build dependencies.
     #
-    for i in ${build_depends}; do
-        _realpkg="$($XBPS_UHELPER_CMD getpkgname $i 2>/dev/null)"
-        # Check if dependency is a subpkg, if it is, ignore it.
-        unset found
-        for j in ${subpackages}; do
-            [ "$j" = "${_realpkg}" ] && found=1 && break
+    if [[ ${makedepends} ]]; then
+        # check validity
+        for f in ${makedepends}; do
+            if [ ! -f $XBPS_SRCPKGDIR/$f/template ]; then
+                msg_error "$pkgver: target dependency '$f' does not exist!\n"
+            fi
         done
-        [ -n "$found" ] && continue
-        check_pkgdep_matched "${i}" version $cross
-        local rval=$?
-        if [ $rval -eq 0 ]; then
-            echo "   [target] ${i}: installed."
-            continue
-        elif [ $rval -eq 1 ]; then
-            iver=$($XBPS_UHELPER_XCMD version ${_realpkg})
-            if [ $? -eq 0 -a -n "$iver" ]; then
-                echo "   [target] ${i}: installed $iver (virtualpkg)."
+        while read -r _depname _deprepover _depver _subpkg _repourl; do
+            _vpkg=${_subpkg}-${_depver}
+            # binary package found in a repo
+            if [[ ${_depver} == ${_deprepover} ]]; then
+                echo "   [target] ${_vpkg}: found (${_repourl})"
+                binpkg_deps+=("${_vpkg}")
                 continue
-            else
-                echo "   [target] ${i}: unresolved build dependency!"
-                return 1
             fi
-        else
-            repo=$($XBPS_QUERY_XCMD -R -prepository ${i} 2>/dev/null)
-            if [ -n "${repo}" ]; then
-                echo "   [target] ${i}: found ($repo)"
-                binpkg_deps+=("${i}")
-                continue
-            else
-                echo "   [target] ${i}: not found."
-                if [ "${_realpkg}" = "$targetpkg" ]; then
-                    msg_error "${pkg}: [target] build loop detected: ${_realpkg} <-> ${targetpkg} [depends on itself]\n"
-                elif [ "${_realpkg}" = "$pkg" ]; then
-                    msg_error "${pkg}: [target] build loop detected: $pkg <-> ${_realpkg}\n"
+            # binary package not found
+            if [[ $_depname != $_subpkg ]]; then
+                # subpkg, check if it's a subpkg of itself
+                found=0
+                for f in ${subpackages}; do
+                    if [[ ${_subpkg} == ${f} ]]; then
+                        found=1
+                        break
+                    fi
+                done
+                if [[ $found -eq 1 ]]; then
+                    echo "   [target] ${_vpkg}: not found (subpkg, ignored)"
+                else
+                    echo "   [target] ${_vpkg}: not found"
+                    missing_deps+=("$_vpkg")
                 fi
+            else
+                echo "   [target] ${_vpkg}: not found"
+                missing_deps+=("$_vpkg")
             fi
-        fi
-        missing_deps+=("${i}")
-    done
+        done < <($XBPS_CHECKVERS_XCMD ${XBPS_SKIP_REMOTEREPOS:+-i} -D $XBPS_DISTDIR -sm ${makedepends})
+    fi
 
     #
     # Target run time dependencies
     #
-    for i in ${run_depends}; do
-        _realpkg="${i%\?*}"
-        _curpkg="${_realpkg}"
-        _vpkg="${i#*\?}"
-        if [ "${_realpkg}" != "${_vpkg}" ]; then
-            _realpkg="${_vpkg}"
-        else
-            unset _curpkg
-        fi
-        pkgn=$($XBPS_UHELPER_CMD getpkgdepname "${_realpkg}")
-        if [ -z "$pkgn" ]; then
-            pkgn=$($XBPS_UHELPER_CMD getpkgname "${_realpkg}")
-            if [ -z "$pkgn" ]; then
-                msg_error "$pkgver: invalid runtime dependency: ${_realpkg}\n"
+    if [[ ${depends} ]]; then
+        _deps=$(setup_pkg_depends "" 1) || exit 1
+        for f in ${_deps}; do
+            if [ ! -f $XBPS_SRCPKGDIR/$f/template ]; then
+                msg_error "$pkgver: runtime dependency '$f' does not exist!\n"
             fi
-        fi
-        # Check if dependency is a subpkg, if it is, ignore it.
-        unset found
-        for j in ${subpackages}; do
-            [ "$j" = "${pkgn}" ] && found=1 && break
         done
-        [ -n "$found" ] && continue
-        _props=$($XBPS_QUERY_XCMD -R -ppkgver,repository ${_realpkg} 2>/dev/null)
-        if [ -n "${_props}" ]; then
-            set -- ${_props}
-            $XBPS_UHELPER_CMD pkgmatch ${1} "${_realpkg}"
-            if [ $? -eq 1 ]; then
-                if [ -n "${_curpkg}" ]; then
-                    echo "   [runtime] ${_curpkg}:${_realpkg} (virtual dependency): found $1 ($2)"
-                else
-                    echo "   [runtime] ${_realpkg}: found $1 ($2)"
-                fi
-                shift 2
+        while read -r _depname _deprepover _depver _subpkg _repourl; do
+            _vpkg=${_subpkg}-${_depver}
+            # binary package found in a repo
+            if [[ ${_depver} == ${_deprepover} ]]; then
+                echo "   [runtime] ${_vpkg}: found (${_repourl})"
                 continue
-            else
-                if [ -n "${_curpkg}" ]; then
-                    echo "   [runtime] ${_curpkg}:${_realpkg} (virtual dependency): not found."
+            fi
+            # binary package not found
+            if [[ $_depname != $_subpkg ]]; then
+                # subpkg, check if it's a subpkg of itself
+                found=0
+                for f in ${subpackages}; do
+                    if [[ ${_subpkg} == ${f} ]]; then
+                        found=1
+                        break
+                    fi
+                done
+                if [[ $found -eq 1 ]]; then
+                    echo "   [runtime] ${_vpkg}: not found (subpkg, ignored)"
                 else
-                    echo "   [runtime] ${_realpkg}: not found."
+                    echo "   [runtime] ${_vpkg}: not found"
+                    missing_rdeps+=("$_vpkg")
                 fi
-            fi
-            shift 2
-        else
-            if [ -n "${_curpkg}" ]; then
-                echo "   [runtime] ${_curpkg}:${_realpkg} (virtual dependency): not found."
             else
-                echo "   [runtime] ${_realpkg}: not found."
+                echo "   [runtime] ${_vpkg}: not found"
+                missing_rdeps+=("$_vpkg")
             fi
-        fi
-        if [ "${_realpkg}" = "$targetpkg" ]; then
-            msg_error "${pkg}: [run] build loop detected: ${_realpkg} <-> ${targetpkg} [depends on itself]\n"
-        elif [ "${_realpkg}" = "$pkg" ]; then
-            msg_error "${pkg}: [run] build loop detected: $pkg <-> ${_realpkg}\n"
-        fi
-        missing_rdeps+=("${_realpkg}")
-    done
+        done < <($XBPS_CHECKVERS_XCMD ${XBPS_SKIP_REMOTEREPOS:+-i} -D $XBPS_DISTDIR -sm $_deps)
+        unset _deps
+    fi
 
     if [ -n "$XBPS_BUILD_ONLY_ONE_PKG" ]; then
            for i in ${host_missing_deps[@]}; do
-                   msg_error "dep ${i} not found: -1 passed: instructed not to build\n"
-           done
-           for i in ${check_missing_deps[@]}; do
                    msg_error "dep ${i} not found: -1 passed: instructed not to build\n"
            done
            for i in ${missing_rdeps[@]}; do
@@ -427,18 +327,6 @@ install_pkg_deps() {
             $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target || exit $?
         ) || exit $?
         host_binpkg_deps+=("$i")
-    done
-
-    # Missing check dependencies, build from srcpkgs.
-    for i in ${check_missing_deps[@]}; do
-        # packages not found in repos, install from source.
-        (
-        curpkgdepname=$($XBPS_UHELPER_CMD getpkgname "$i" 2>/dev/null)
-        setup_pkg $curpkgdepname
-        exec env XBPS_DEPENDENCY=1 XBPS_BINPKG_EXISTS=1 \
-            $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target || exit $?
-        ) || exit $?
-        check_binpkg_deps+=("$i")
     done
 
     # Missing target dependencies, build from srcpkgs.
@@ -471,22 +359,25 @@ install_pkg_deps() {
         ) || exit $?
     done
 
-    if [ "$pkg" != "$targetpkg" ]; then
-        msg_normal "$pkg: building${style} (dependency of $targetpkg) ...\n"
+    if [[ ${host_binpkg_deps} ]]; then
+        if [ -z "$XBPS_QUIET" ]; then
+            # normal messages in bold
+            [[ $NOCOLORS ]] || printf "\033[1m"
+            echo "=> $pkgver: installing host dependencies: ${host_binpkg_deps[@]} ..."
+            [[ $NOCOLORS ]] || printf "\033[m"
+        fi
+        install_pkg_from_repos "" "${host_binpkg_deps[@]}"
     fi
 
-    for i in ${host_binpkg_deps[@]}; do
-        msg_normal "$pkgver: installing host dependency '$i' ...\n"
-        install_pkg_from_repos "${i}"
-    done
+    if [[ ${binpkg_deps} ]]; then
+        if [ -z "$XBPS_QUIET" ]; then
+            # normal messages in bold
+            [[ $NOCOLORS ]] || printf "\033[1m"
+            echo "=> $pkgver: installing target dependencies: ${binpkg_deps[@]} ..."
+            [[ $NOCOLORS ]] || printf "\033[m"
+        fi
+        install_pkg_from_repos "$cross" "${binpkg_deps[@]}"
+    fi
 
-    for i in ${check_binpkg_deps[@]}; do
-        msg_normal "$pkgver: installing check dependency '$i' ...\n"
-        install_pkg_from_repos "${i}"
-    done
-
-    for i in ${binpkg_deps[@]}; do
-        msg_normal "$pkgver: installing target dependency '$i' ...\n"
-        install_pkg_from_repos "$i" $cross
-    done
+    return 0
 }

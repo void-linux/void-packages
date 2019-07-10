@@ -169,7 +169,7 @@ chroot_handler() {
     [ -z "$action" -a -z "$pkg" ] && return 1
 
     case "$action" in
-        fetch|extract|patch|build|check|configure|install|install-destdir|pkg|build-pkg|bootstrap-update|chroot)
+        fetch|extract|patch|configure|build|check|install|pkg|bootstrap-update|chroot)
             chroot_prepare || return $?
             chroot_init || return $?
             chroot_sync_repos || return $?
@@ -181,30 +181,13 @@ chroot_handler() {
             $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" /bin/xbps-shell
         rv=$?
     else
-        [ -n "$XBPS_CROSS_BUILD" ] && arg="$arg -a $XBPS_CROSS_BUILD"
-        [ -n "$XBPS_KEEP_ALL" ] && arg="$arg -C"
-        [ -n "$NOCOLORS" ] && arg="$arg -L"
-        [ -n "$XBPS_BUILD_FORCEMODE" ] && arg="$arg -f"
-        [ -n "$XBPS_MAKEJOBS" ] && arg="$arg -j$XBPS_MAKEJOBS"
-        [ -n "$XBPS_DEBUG_PKGS" ] && arg="$arg -g"
-        [ -n "$XBPS_CHECK_PKGS" ] && arg="$arg -Q"
-        [ -n "$XBPS_BUILD_ONLY_ONE_PKG" ] && arg="$arg -1"
-        [ -n "$XBPS_QUIET" ] && arg="$arg -q"
-        [ -n "$XBPS_SKIP_DEPS" ] && arg="$arg -I"
-        [ -n "$XBPS_ALT_REPOSITORY" ] && arg="$arg -r $XBPS_ALT_REPOSITORY"
-        [ -n "$XBPS_USE_GIT_REVS" ] && arg="$arg -G"
-        [ -n "$XBPS_PKG_OPTIONS" ] && arg="$arg -o $XBPS_PKG_OPTIONS"
-        [ -n "$XBPS_TEMP_MASTERDIR" ] && arg="$arg -t -C"
-        [ -n "$XBPS_BINPKG_EXISTS" ] && arg="$arg -E"
-
-        action="$arg $action"
         env -i -- PATH="/usr/bin:$PATH" SHELL=/bin/sh \
             HOME=/tmp IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 \
             SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
             XBPS_ALLOW_CHROOT_BREAKOUT="$XBPS_ALLOW_CHROOT_BREAKOUT" \
             $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
             $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" \
-            /void-packages/xbps-src $action $pkg
+            /void-packages/xbps-src $XBPS_OPTIONS $action $pkg
         rv=$?
     fi
 
