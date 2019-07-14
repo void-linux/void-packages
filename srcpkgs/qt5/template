@@ -1,7 +1,7 @@
 # Template file for 'qt5'
 pkgname=qt5
-version=5.11.3
-revision=8
+version=5.13.0
+revision=1
 wrksrc="qt-everywhere-src-${version}"
 build_style=gnu-configure
 hostmakedepends="cmake clang flex git glib-devel gperf ninja pkg-config
@@ -10,32 +10,46 @@ makedepends="SDL2-devel Vulkan-Headers alsa-lib-devel double-conversion-devel
  eudev-libudev-devel ffmpeg-devel freetds-devel glib-devel gst-plugins-base1-devel
  gtk+3-devel icu-devel jsoncpp-devel libXv-devel libbluetooth-devel libcap-devel
  libevent-devel libinput-devel libmng-devel libmysqlclient-devel libproxy-devel
- libvpx5-devel libwebp-devel libxslt-devel minizip-devel nss-devel
+ libvpx-devel libwebp-devel libxslt-devel minizip-devel nss-devel cups-devel
  opus-devel pciutils-devel pcre2-devel postgresql-libs-devel
  protobuf-devel pulseaudio-devel snappy-devel tslib-devel
  unixodbc-devel xcb-util-image-devel xcb-util-keysyms-devel
- xcb-util-renderutil-devel xcb-util-wm-devel"
+ xcb-util-renderutil-devel xcb-util-wm-devel libzstd-devel"
 depends="qtchooser"
 short_desc="Cross-platform application and UI framework (QT5)"
 maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
-license="GPL-3.0-or-later, LGPL-2.1-or-later"
+license="GPL-3.0-or-later, LGPL-3.0-or-later"
 homepage="https://qt.io/"
 distfiles="http://download.qt.io/official_releases/qt/${version%.*}/${version}/single/qt-everywhere-src-${version}.tar.xz"
-checksum=859417642713cee2493ee3646a7fee782c9f1db39e41d7bb1322bba0c5f0ff4d
+checksum=2cba31e410e169bd5cdae159f839640e672532a4687ea0f265f686421e0e86d6
 replaces="qt5-doc<5.6.0 qt5-quick1<5.6.0 qt5-quick1-devel<5.6.0 qt5-webkit<5.6.0 qt5-webkit-devel<5.6.0
- qt5-enginio<5.7.1 qt5-enginio-devel<5.7.1 qt5-plugin-gtk<5.7.1"
+ qt5-enginio<5.7.1 qt5-enginio-devel<5.7.1 qt5-plugin-gtk<5.7.1 qt5-canvas3d<5.13.0"
 
 build_options="webengine"
 desc_option_webengine="Build Chromium-based WebEngine component"
 
 case "$XBPS_TARGET_MACHINE" in
-	x86_64*|i686*|ppc64le*) build_options_default="webengine";;
+	x86_64*|i686*|ppc64*) build_options_default="webengine";;
 	armv5tel*) ;; # qtwebengine uses VSM assembler commands
-	arm*|aarch64*) build_options_default="webengine";;
+	aarch64*) build_options_default="webengine";;
+	arm*) ;; # qtwebengine requires a 32bit host toolchain http://sprunge.us/rbRyWQ
 	*) ;; # assume no webengine
 esac
 
-subpackages="qt5-3d qt5-3d-devel qt5-canvas3d qt5-charts qt5-charts-devel
+if [ "$build_option_webengine" ]; then
+	# v8 requires libatomic on ppc*/s390x/mips*
+	case "$XBPS_TARGET_MACHINE" in
+		mips*|ppc*) makedepends+=" libatomic-devel" ;;
+		*) ;;
+	esac
+	# also need it on host when it's one of those archs
+	case "$XBPS_MACHINE" in
+		mips*|ppc*) hostmakedepends+=" libatomic-devel" ;;
+		*) ;;
+	esac
+fi
+
+subpackages="qt5-3d qt5-3d-devel qt5-charts qt5-charts-devel
  qt5-connectivity qt5-connectivity-devel qt5-datavis3d qt5-datavis3d-devel
  qt5-declarative qt5-declarative-devel qt5-devel qt5-examples qt5-gamepad
  qt5-gamepad-devel qt5-graphicaleffects qt5-host-tools qt5-imageformats
@@ -51,7 +65,8 @@ subpackages="qt5-3d qt5-3d-devel qt5-canvas3d qt5-charts qt5-charts-devel
  qt5-virtualkeyboard-devel qt5-wayland qt5-wayland-devel qt5-webchannel
  qt5-webchannel-devel qt5-webglplugin qt5-webglplugin-devel qt5-websockets
  qt5-websockets-devel qt5-webview qt5-webview-devel qt5-x11extras
- qt5-x11extras-devel qt5-xmlpatterns qt5-xmlpatterns-devel"
+ qt5-x11extras-devel qt5-xmlpatterns qt5-xmlpatterns-devel
+ qt5-lottie qt5-lottie-devel"
 
 if [ "$build_option_webengine" ]; then
 	subpackages+=" qt5-webengine qt5-webengine-devel"
@@ -60,6 +75,7 @@ fi
 if [ "${XBPS_MACHINE%%-musl}" = i686 ]; then
 	nodebug=yes  # prevent OOM
 fi
+
 # Work around SSLv3_{client,server}_method missing in libressl-2.3.3
 CFLAGS="-DOPENSSL_NO_PSK -DOPENSSL_NO_NEXTPROTONEG"
 CXXFLAGS="${CFLAGS} -Wno-deprecated-declarations -Wno-class-memaccess -Wno-packed-not-aligned"
@@ -70,6 +86,7 @@ if [ "$CROSS_BUILD" ]; then
 	# Need some devel packages in the host to build qmake, moc, uic, rcc
 	# wayland-devel contains /usr/bin/wayland-scanner
 	hostmakedepends+=" icu-devel wayland-devel zlib-devel"
+	hostmakedepends+=" postgresql-libs-devel"
 	# Cross building qtwebengine requires some more host packages
 	if [ "$build_option_webengine" ]; then
 		hostmakedepends+=" nss-devel libevent-devel"
@@ -78,47 +95,17 @@ fi
 
 _bootstrap_gn() {
 	# Bootstrap gn (generate ninja)
-	_msg_cross "Bootstrapping 'gn'"
-	cd ${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn
-	conf='is_clang=false'
-	conf+=' treat_warnings_as_errors=false'
-	conf+=' enable_remoting=false'
-	conf+=' enable_nacl=false'
-	conf+=' use_cups=false'
-	conf+=' use_gconf=false'
-	conf+=' use_gio=false'
-	conf+=' use_gnome_keyring=false'
-	conf+=' use_gtk=false'
-	conf+=' use_kerberos=false'
-	conf+=' linux_use_bundled_binutils=false'
-	conf+=' binutils_path="/usr/bin"'
-	conf+=' use_gold=false'
-	conf+=' use_sysroot=false'
-	conf+=' use_allocator="none"'
-	conf+=' is_android=false'
-
-	sed -i ${wrksrc}/qtwebengine/src/core/config/linux.pri \
-		-e "/equals(MARMV/s;true;false;"
-	case "$XBPS_TARGET_MACHINE" in
-		armv[56]*) conf+=' arm_use_neon=false arm_optionally_use_neon=false';;
-		armv7*)    conf+=' arm_use_neon=true arm_optionally_use_neon=false';;
-		aarch64*)  conf+=' arm_use_neon=true arm_optionally_use_neon=false';;
-	esac
-
-	AR="$AR_host" CC="$CC_host" CXX="$CXX_host" LD="$CXX_host" \
+	echo "Bootstrapping 'gn'"
+	cd ${wrksrc}/qtwebengine/src/3rdparty/gn
 	CFLAGS="$CFLAGS_host" CXXFLAGS="$CXXFLAGS_host" LDFLAGS="$LDFLAGS_host" \
 	PKGCONFIG=/usr/bin/pkgconfig PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/share/pkgconfig" \
-		python2 bootstrap/bootstrap.py -n --gn-gen-args "${conf}"
+		python2 build/gen.py --no-last-commit-position --out-path \
+			${wrksrc}/qtwebengine/src/3rdparty/gn/out/Release --cc "$CC_host" \
+			--cxx "$CXX_host" --ld "$CXX_host" --ar "$AR_host"
+	ninja -C out/Release gn
 	cd ${wrksrc}
-
-	mkdir -p ${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn/out/Release
-	cp -p ${wrksrc}/qtwebengine/src/3rdparty/chromium/out/Release/gn \
-		${wrksrc}/qtwebengine/src/3rdparty/chromium/tools/gn/out/Release/
-
-	# Remove gn from SUBDIRS for qtwebengine/src/buildtools
-	sed -i ${wrksrc}/qtwebengine/src/buildtools/buildtools.pro \
-		-e"/gn.file = gn.pro/,+3d"
 }
+
 
 _cleanup_wrksrc_leak() {
 	if [ -d "${PKGDESTDIR}/usr/lib/cmake" ]; then
@@ -253,9 +240,6 @@ do_configure() {
 			qtwebengine/src/3rdparty/chromium/third_party/pdfium/third_party/base/allocator/partition_allocator/spin_lock.cc \
 			-e 's;"yield";"nop";'
 		;;
-	ppc64le*) # enable webengine but not on BE ppc64 for now
-		sed -i qtwebengine/mkspecs/features/platform.prf -e 's;#ppc64le;;'
-		;;
 	esac
 
 	case "$XBPS_TARGET_MACHINE" in
@@ -285,7 +269,6 @@ do_configure() {
 		for d in $(ls ${wrksrc}/qtbase/include); do
 			ln -sfv ${version}/${d}/private qtbase/include/${d}/private
 		done
-
 		if [ "$build_option_webengine" ]; then
 			_bootstrap_gn
 		fi
@@ -307,6 +290,7 @@ do_configure() {
 				-e '/#error Read the comment at this location/d'
 			;;
 		esac
+		patch -Np0 < ${FILESDIR}/0090-hard-disable-qmlchachegen.patch
 	else
 		# qmake {CXX,L}FLAGS patches
 		sed -i -e "s|^\(CXXFLAGS =.*\)|\1 ${CXXFLAGS}|" \
@@ -339,6 +323,10 @@ do_configure() {
 	opts+=" -icu"
 	opts+=" -openssl-linked"
 	opts+=" -dbus-linked"
+	opts+=" -sql-mysql"
+	opts+=" -mysql_config ${XBPS_CROSS_BASE}/usr/bin/mysql_config"
+	opts+=" -sql-psql"
+	opts+=" -psql_config /usr/bin/pg_config"
 	opts+=" -no-pch"
 	opts+=" -no-strip"
 	opts+=" -nomake examples"
@@ -369,12 +357,10 @@ do_configure() {
 	fi
 	opts+=" -silent"
 	# opts+=" -v"
-
 	# make sure to disable webengine on platforms that we don't build it for
 	if [ -z "$build_option_webengine" ]; then
 		opts+=" -skip qtwebengine"
 	fi
-
 	LDFLAGS+=" -Wl,--no-keep-memory"  # needs more than 8GB RAM else
 	if [ "$CROSS_BUILD" ]; then
 		spec=void-${XBPS_CROSS_TRIPLET}-g++
@@ -392,6 +378,19 @@ do_configure() {
 			fi
 			;;
 		esac
+		case "$XBPS_TARGET_MACHINE" in
+		aarch64*|armv7*)
+			sed -i ${wrksrc}/qtwebengine/src/core/config/linux.pri \
+				-e "/arm_use_neon=/s;false;true;"
+			;;
+		arm*)
+			sed -i ${wrksrc}/qtwebengine/src/core/config/linux.pri \
+				-e "/arm_use_neon=/s;true;false;"
+
+			;;
+		esac
+		sed -i ${wrksrc}/qtwebengine/src/core/config/linux.pri \
+			-e "/equals(MARMV/s;true;false;"
 
 		# Make sure libQt5Designer is built
 		cp -v ${FILESDIR}/qttools_src.pro qttools/src/src.pro
@@ -425,7 +424,6 @@ do_install() {
 	cd ${wrksrc}/qtbase
 	make INSTALL_ROOT=${DESTDIR} install
 
-	vlicense ${wrksrc}/LGPL_EXCEPTION.txt
 	_cleanup_wrksrc_leak
 
 	# Symbolic links for remaining binaries
@@ -498,7 +496,10 @@ do_install() {
 		dirs+=" qttools/src/qtattributionsscanner"
 		dirs+=" qttools/src/linguist/lconvert"
 		dirs+=" qttools/src/linguist/lrelease"
+		dirs+=" qttools/src/linguist/lrelease-pro"
+		dirs+=" qttools/src/linguist/lprodump"
 		dirs+=" qttools/src/linguist/lupdate"
+		dirs+=" qttools/src/linguist/lupdate-pro"
 		# Cannot be cross compiled (target clang issue)
 		# dirs+=" qttools/src/qdoc"
 
@@ -547,6 +548,7 @@ do_install() {
 			[ -f "${base}.pro.orig" ] && mv -v ${base}.pro{.orig,}
 			[ -f Makefile.orig ] && mv -v Makefile{.orig,}
 			# Avoid rebuilding the Makefile by changing the rule
+			sed -i Makefile -e 's;^all:.*;all:;'
 			sed -i Makefile -e "s;^Makefile:;Makefile.host:;"
 			if [ -x "${wrksrc}/${dir}/bin/${base}-host" ]; then
 				mv -v ${wrksrc}/${dir}/bin/${base}{-host,}
@@ -571,13 +573,6 @@ qt5-3d_package() {
 	short_desc+=" - C++ and QML APIs for 3D graphics"
 	pkg_install() {
 		_install_subpkg qt3d
-	}
-}
-
-qt5-canvas3d_package() {
-	short_desc+=" - Canvas 3D component"
-	pkg_install() {
-		_install_subpkg qtcanvas3d
 	}
 }
 
@@ -659,6 +654,18 @@ qt5-examples_package() {
 				mv ${PKGDESTDIR}/${base}/README{,.${mod}}
 			fi
 		done
+	}
+}
+
+qt5-lottie-devel_package() {
+	pkg_install() {
+		_install_devel qtlottie
+	}
+}
+
+qt5-lottie_package() {
+	pkg_install() {
+		_install_subpkg qtlottie
 	}
 }
 
@@ -775,7 +782,7 @@ qt5-quickcontrols2_package() {
 
 qt5-remoteobjects-devel_package() {
 	short_desc+=" - Remote Objects (development)"
-	depends="qt5-quickcontrols2-${version}_${revision} qt5-devel-${version}_${revision}"
+	depends="qt5-remoteobjects-${version}_${revision} qt5-devel-${version}_${revision}"
 	pkg_install() {
 		_install_devel qtremoteobjects
 	}
@@ -1045,7 +1052,7 @@ qt5-host-tools_package() {
 		vmkdir usr/lib/qt5/bin
 		vmkdir usr/bin
 		for f in moc rcc uic qlalr qdbuscpp2xml qdbusxml2cpp \
-			lconvert lupdate lrelease; do
+			lconvert lupdate lupdate-pro lprodump lrelease lrelease-pro; do
 			if [ -r ${dest}/usr/lib/qt5/bin/${f} ]; then
 				mv -v ${dest}/usr/lib/qt5/bin/${f} ${PKGDESTDIR}/usr/lib/qt5/bin/
 			fi
@@ -1099,7 +1106,7 @@ qt5-tools_package() {
 		install -m644 ${FILESDIR}/*.desktop ${PKGDESTDIR}/usr/share/applications
 		_move_target_binaries qtattributionsscanner qdoc
 		# Move some binaries to qt5-host-tools
-		for f in lconvert lupdate lrelease; do
+		for f in lconvert lupdate lupdate-pro lprodump lrelease lrelease-pro; do
 			if [ -f ${PKGDESTDIR}/usr/lib/qt5/bin/${f} ]; then
 				mkdir -p ${dest}/usr/lib/qt5/bin
 				mv -v ${PKGDESTDIR}/usr/lib/qt5/bin/${f} ${dest}/usr/lib/qt5/bin/
@@ -1115,7 +1122,7 @@ qt5-tools_package() {
 qt5-devel_package() {
 	depends="zlib-devel libressl-devel>=2.1.4 libXext-devel libXrender-devel
 		fontconfig-devel libglib-devel MesaLib-devel mtdev-devel
-		dbus-devel icu-devel qt5-${version}_${revision}
+		dbus-devel icu-devel cups-devel qt5-${version}_${revision}
 		qt5-qmake-${version}_${revision}
 		qt5-host-tools-${version}_${revision}"
 	short_desc+=" - Development files"
@@ -1175,6 +1182,10 @@ qt5-qmake_package() {
 		# Change -isystem to -I to avoid "#include_next <stdlib.h>" errors
 		sed -i ${PKGDESTDIR}/usr/lib/qt5/mkspecs/common/gcc-base.conf \
 			-e '/^QMAKE_CFLAGS_ISYSTEM/s;-isystem;-I;'
+		find ${PKGDESTDIR} -iname "*.prl" -exec sed -i "{}" \
+			-e 's%/usr/lib/lib\([^[:space:]]*\)\.[sa][o]*%-l\1%g' \;
+		find ${PKGDESTDIR} -iname "*.pri" -exec sed -i "{}" \
+			-e 's%/usr/lib/lib\([^[:space:]]*\)\.[sa][o]*%-l\1%g' \;
 
 		# Undo changes to mkspecs/common/gcc-base.conf and g++-unix.conf
 		if [ "$CROSS_BUILD" ]; then

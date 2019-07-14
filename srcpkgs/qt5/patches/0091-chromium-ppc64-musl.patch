@@ -1,0 +1,141 @@
+This includes additional build fixes for the musl libc.
+
+--- qtwebengine/src/3rdparty/chromium/sandbox/linux/bpf_dsl/seccomp_macros.h
++++ qtwebengine/src/3rdparty/chromium/sandbox/linux/bpf_dsl/seccomp_macros.h
+@@ -11,12 +11,14 @@
+ // All x86_64 builds use a new enough bionic to have sys/user.h.
+ #if !defined(__BIONIC__) || defined(__x86_64__)
+ #if !defined(__native_client_nonsfi__)
++#if !defined(__powerpc64__) || defined(__GLIBC__)
+ #include <sys/user.h>
+ #endif
++#endif
+ #if defined(__mips__)
+ // sys/user.h in eglibc misses size_t definition
+ #include <stddef.h>
+-#elif defined(__powerpc64__)
++#elif defined(__powerpc64__) && defined(__GLIBC__)
+ // Manually define greg_t on ppc64
+ typedef unsigned long long greg_t;
+ #endif
+@@ -361,11 +363,11 @@ typedef struct pt_regs regs_struct;
+ #define SECCOMP_ARCH AUDIT_ARCH_PPC64
+ #endif
+ 
+-#define SECCOMP_REG(_ctx, _reg) ((_ctx)->uc_mcontext.regs->gpr[_reg])
++#define SECCOMP_REG(_ctx, _reg) (((struct pt_regs *)(_ctx)->uc_mcontext.regs)->gpr[_reg])
+ 
+ #define SECCOMP_RESULT(_ctx) SECCOMP_REG(_ctx, 3)
+ #define SECCOMP_SYSCALL(_ctx) SECCOMP_REG(_ctx, 0)
+-#define SECCOMP_IP(_ctx) (_ctx)->uc_mcontext.regs->nip
++#define SECCOMP_IP(_ctx) ((struct pt_regs *)(_ctx)->uc_mcontext.regs)->nip
+ #define SECCOMP_PARM1(_ctx) SECCOMP_REG(_ctx, 3)
+ #define SECCOMP_PARM2(_ctx) SECCOMP_REG(_ctx, 4)
+ #define SECCOMP_PARM3(_ctx) SECCOMP_REG(_ctx, 5)
+--- qtwebengine/src/3rdparty/chromium/sandbox/linux/seccomp-bpf/syscall.cc
++++ qtwebengine/src/3rdparty/chromium/sandbox/linux/seccomp-bpf/syscall.cc
+@@ -497,9 +497,9 @@ void Syscall::PutValueInUcontext(intptr_t ret_val, ucontext_t* ctx) {
+   // Same as MIPS, need to invert ret and set error register (cr0.SO)
+   if (ret_val <= -1 && ret_val >= -4095) {
+     ret_val = -ret_val;
+-    ctx->uc_mcontext.regs->ccr |= (1 << 28);
++    ((struct pt_regs *)ctx->uc_mcontext.regs)->ccr |= (1 << 28);
+   } else {
+-    ctx->uc_mcontext.regs->ccr &= ~(1 << 28);
++    ((struct pt_regs *)ctx->uc_mcontext.regs)->ccr &= ~(1 << 28);
+   }
+ #endif
+   SECCOMP_RESULT(ctx) = static_cast<greg_t>(ret_val);
+--- qtwebengine/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.cc
+@@ -20,7 +20,7 @@
+ #include <intrin.h>
+ #endif
+ 
+-#if defined(__powerpc__) || defined(__ppc__)
++#if (defined(__powerpc__) || defined(__ppc__)) && defined(__GLIBC__)
+ #include <sys/platform/ppc.h>
+ #endif
+ 
+@@ -53,7 +53,7 @@ double UnscaledCycleClock::Frequency() {
+   return base_internal::NominalCPUFrequency();
+ }
+ 
+-#elif defined(__powerpc__) || defined(__ppc__)
++#elif (defined(__powerpc__) || defined(__ppc__)) && defined(__GLIBC__)
+ 
+ int64_t UnscaledCycleClock::Now() {
+   return __ppc_get_timebase();
+--- qtwebengine/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.h
++++ qtwebengine/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.h
+@@ -46,7 +46,7 @@
+ 
+ // The following platforms have an implementation of a hardware counter.
+ #if defined(__i386__) || defined(__x86_64__) || defined(__aarch64__) || \
+-  defined(__powerpc__) || defined(__ppc__) || \
++  ((defined(__powerpc__) || defined(__ppc__)) && defined(__GLIBC__)) || \
+   defined(_M_IX86) || defined(_M_X64)
+ #define ABSL_HAVE_UNSCALED_CYCLECLOCK_IMPLEMENTATION 1
+ #else
+--- qtwebengine/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.cc
+@@ -273,6 +273,9 @@ void ThreadInfo::FillCPUContext(RawContextCPU* out) const {
+ 
+ #elif defined(__powerpc64__)
+ 
++#include <asm/elf.h>
++#include <asm/ptrace.h>
++
+ uintptr_t ThreadInfo::GetInstructionPointer() const {
+     return mcontext.gp_regs[PT_NIP];
+ }
+@@ -290,9 +293,9 @@ void ThreadInfo::FillCPUContext(RawContextCPU* out) const {
+     out->ctr = mcontext.gp_regs[PT_CTR];
+     
+     for (int i = 0; i < MD_FLOATINGSAVEAREA_PPC_FPR_COUNT; i++)
+-        out->float_save.fpregs[i] = mcontext.fp_regs[i];
++        out->float_save.fpregs[i] = ((uint64_t *)&mcontext.fp_regs)[i];
+ 
+-    out->float_save.fpscr = mcontext.fp_regs[NFPREG-1];
++    out->float_save.fpscr = ((uint64_t *)&mcontext.fp_regs)[ELF_NFPREG-1];
+ 
+     for (int i = 0; i < MD_VECTORSAVEAREA_PPC_VR_COUNT; i++)
+         out->vector_save.save_vr[i] = \
+--- qtwebengine/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/ucontext_reader.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/ucontext_reader.cc
+@@ -257,6 +257,9 @@ void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext_t *uc) {
+ 
+ #elif defined(__powerpc64__)
+ 
++#include <asm/elf.h>
++#include <asm/ptrace.h>
++
+ uintptr_t UContextReader::GetStackPointer(const ucontext_t* uc) {
+     return uc->uc_mcontext.gp_regs[MD_CONTEXT_PPC64_REG_SP];
+ }
+@@ -280,9 +283,9 @@ void UContextReader::FillCPUContext(RawContextCPU* out, const ucontext_t* uc,
+     out->ctr = uc->uc_mcontext.gp_regs[PT_CTR];
+     
+     for (int i = 0; i < MD_FLOATINGSAVEAREA_PPC_FPR_COUNT; i++)
+-        out->float_save.fpregs[i] = uc->uc_mcontext.fp_regs[i];
++        out->float_save.fpregs[i] = ((uint64_t *)&uc->uc_mcontext.fp_regs)[i];
+ 
+-    out->float_save.fpscr = uc->uc_mcontext.fp_regs[NFPREG-1];
++    out->float_save.fpscr = ((uint64_t *)&uc->uc_mcontext.fp_regs)[ELF_NFPREG-1];
+ 
+     for (int i = 0; i < MD_VECTORSAVEAREA_PPC_VR_COUNT; i++)
+         out->vector_save.save_vr[i] =
+--- qtwebengine/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.cc
+@@ -105,6 +105,11 @@
+ #define PR_SET_PTRACER 0x59616d61
+ #endif
+ 
++/* musl hack, can't include asm/ptrace.h as that causes conflicts */
++#if defined(__powerpc64__) && !defined(PT_NIP)
++#define PT_NIP 32
++#endif
++
+ namespace google_breakpad {
+ 
+ namespace {
