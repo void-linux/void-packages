@@ -459,8 +459,10 @@ Example:
   | CPAN_SITE        | http://cpan.perl.org/modules/by-module          |
   | DEBIAN_SITE      | http://ftp.debian.org/debian/pool               |
   | FREEDESKTOP_SITE | http://freedesktop.org/software                 |
+  | GITHUB_SITE      | https://github.com                              |
   | GNOME_SITE       | http://ftp.gnome.org/pub/GNOME/sources          |
   | GNU_SITE         | http://ftp.gnu.org/gnu                          |
+  | KDE_SITE         | https://download.kde.org/stable                 |
   | KERNEL_SITE      | http://www.kernel.org/pub/linux                 |
   | MOZILLA_SITE     | http://ftp.mozilla.org/pub                      |
   | NONGNU_SITE      | http://download.savannah.nongnu.org/releases    |
@@ -469,7 +471,6 @@ Example:
   | UBUNTU_SITE      | http://archive.ubuntu.com/ubuntu/pool           |
   | XORG_HOME        | http://xorg.freedesktop.org/wiki/               |
   | XORG_SITE        | http://www.x.org/releases/individual            |
-  | KDE_SITE         | https://download.kde.org/stable                 |
 
 - `checksum` The `sha256` digests matching `${distfiles}`. Multiple files can be
 separated by blanks. Please note that the order must be the same than
