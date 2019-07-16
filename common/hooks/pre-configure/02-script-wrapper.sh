@@ -176,6 +176,7 @@ hook() {
 	generic_wrapper2 mysql_config
 	generic_wrapper2 taglib-config
 	generic_wrapper2 nspr-config
+	generic_wrapper2 gdal-config
 	generic_wrapper3 libpng-config
 	generic_wrapper3 xmlrpc-c-config
 	generic_wrapper3 krb5-config

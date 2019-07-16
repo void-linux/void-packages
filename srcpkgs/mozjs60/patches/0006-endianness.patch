@@ -1,0 +1,127 @@
+Bug 1488552 - Ensure proper running on 64-bit and 32-bit BE platforms.
+
+Index: mozjs60/js/src/gc/Marking-inl.h
+===================================================================
+--- a/js/src/gc/Marking-inl.h	2019-02-21 14:44:28.296951992 +0100
++++ b/js/src/gc/Marking-inl.h	2019-02-22 10:22:54.612120604 +0100
+@@ -82,12 +82,28 @@
+   MOZ_ASSERT(!isForwarded());
+   // The location of magic_ is important because it must never be valid to see
+   // the value Relocated there in a GC thing that has not been moved.
++#if MOZ_LITTLE_ENDIAN || JS_BITS_PER_WORD == 32
++  // On 32-bit, the magic_ aliases with whatever comes after the first
++  // pointer; on little-endian 64-bit, the magic_ aliases with the
++  // 32 most significant bits of the pointer, which are the second half.
+   static_assert(offsetof(RelocationOverlay, magic_) ==
+                     offsetof(JSObject, group_) + sizeof(uint32_t),
+                 "RelocationOverlay::magic_ is in the wrong location");
+   static_assert(offsetof(RelocationOverlay, magic_) ==
+                     offsetof(js::Shape, base_) + sizeof(uint32_t),
+                 "RelocationOverlay::magic_ is in the wrong location");
++#elif JS_BITS_PER_WORD == 64
++  // On big-endian 64-bit, the magic_ aliases with the 32 most
++  // significant bits of the pointer, but now that's the first half.
++  static_assert(offsetof(RelocationOverlay, magic_) ==
++                    offsetof(JSObject, group_),
++                "RelocationOverlay::magic_ is in the wrong location");
++  static_assert(offsetof(RelocationOverlay, magic_) ==
++                    offsetof(js::Shape, base_),
++                "RelocationOverlay::magic_ is in the wrong location");
++#else
++#  error "Unknown endianness or word size"
++#endif
+   static_assert(
+       offsetof(RelocationOverlay, magic_) == offsetof(JSString, d.u1.length),
+       "RelocationOverlay::magic_ is in the wrong location");
+Index: mozjs60/js/src/gc/RelocationOverlay.h
+===================================================================
+--- a/js/src/gc/RelocationOverlay.h	2019-02-21 14:44:28.296951992 +0100
++++ b/js/src/gc/RelocationOverlay.h	2019-02-22 10:19:41.816822202 +0100
+@@ -34,14 +34,25 @@
+     /* See comment in js/public/HeapAPI.h. */
+     static const uint32_t Relocated = js::gc::Relocated;
+ 
++#if MOZ_LITTLE_ENDIAN || JS_BITS_PER_WORD == 32
+     /*
+-     * Keep the low 32 bits untouched. Use them to distinguish strings from
++     * Keep the first 32 bits untouched. Use them to distinguish strings from
+      * objects in the nursery.
+      */
+     uint32_t preserve_;
+ 
+     /* Set to Relocated when moved. */
+     uint32_t magic_;
++#elif JS_BITS_PER_WORD == 64
++  /*
++   * On big-endian, we need to reorder to keep preserve_ lined up with the
++   * low 32 bits of the aligned group_ pointer in JSObject.
++   */
++  uint32_t magic_;
++  uint32_t preserve_;
++#else
++#  error "Unknown endianness or word size"
++#endif
+ 
+     /* The location |this| was moved to. */
+     Cell* newLocation_;
+Index: mozjs60/js/src/jsfriendapi.h
+===================================================================
+--- a/js/src/jsfriendapi.h	2019-02-21 14:44:28.484951245 +0100
++++ b/js/src/jsfriendapi.h	2019-02-22 10:24:25.663774399 +0100
+@@ -9,6 +9,7 @@
+ 
+ #include "mozilla/Atomics.h"
+ #include "mozilla/Casting.h"
++#include "mozilla/EndianUtils.h"
+ #include "mozilla/Maybe.h"
+ #include "mozilla/MemoryReporting.h"
+ #include "mozilla/UniquePtr.h"
+@@ -640,8 +641,15 @@
+     static const uint32_t LATIN1_CHARS_BIT = JS_BIT(6);
+     static const uint32_t EXTERNAL_FLAGS   = LINEAR_BIT | NON_ATOM_BIT | JS_BIT(5);
+     static const uint32_t TYPE_FLAGS_MASK  = JS_BIT(6) - 1;
++#if MOZ_LITTLE_ENDIAN || JS_BITS_PER_WORD == 32
+     uint32_t flags;
+     uint32_t length;
++#elif JS_BITS_PER_WORD == 64
++    uint32_t length;
++    uint32_t flags;
++#else
++#  error "Unknown endianness or word size"
++#endif
+     union {
+         const JS::Latin1Char* nonInlineCharsLatin1;
+         const char16_t* nonInlineCharsTwoByte;
+Index: mozjs60/js/src/vm/StringType.h
+===================================================================
+--- a/js/src/vm/StringType.h	2019-02-21 14:44:29.072948907 +0100
++++ b/js/src/vm/StringType.h	2019-02-22 10:21:20.464469244 +0100
+@@ -7,6 +7,7 @@
+ #ifndef vm_StringType_h
+ #define vm_StringType_h
+ 
++#include "mozilla/EndianUtils.h"
+ #include "mozilla/MemoryReporting.h"
+ #include "mozilla/PodOperations.h"
+ #include "mozilla/Range.h"
+@@ -166,8 +167,20 @@
+     {
+         union {
+             struct {
++#if MOZ_LITTLE_ENDIAN || JS_BITS_PER_WORD == 32
+                 uint32_t           flags;               /* JSString */
+                 uint32_t           length;              /* JSString */
++#elif JS_BITS_PER_WORD == 64
++                /*
++                 * On big-endian, we need to reorder to keep flags lined up
++                 * with the low 32 bits of the aligned group_ pointer in
++                 * JSObject.
++                 */
++                uint32_t length; /* JSString */
++                uint32_t flags;  /* JSString */
++#else
++#  error "Unknown endianness or word size"
++#endif
+             };
+             uintptr_t              flattenData;         /* JSRope (temporary while flattening) */
+         } u1;

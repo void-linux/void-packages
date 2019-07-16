@@ -5,7 +5,7 @@ collect_sonames() {
 	local _destdir="$1" f _soname _fname _pattern
 	local _pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)*$"
 	local _versioned_pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)+$"
-	local _tmpfile="$(mktemp)"
+	local _tmpfile=$(mktemp) || exit 1
 
 	if [ ! -d ${_destdir} ]; then
 		rm -f ${_tmpfile}

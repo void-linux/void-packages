@@ -1,115 +1,21 @@
-Source: OpenBSD ports
+Source: OpenBSD ports, adapted to work with meson
 Upstream: No
 Reason: sndio support
 
-
-diff --git configure.ac configure.ac
-index 1287583a6..5cb12c7db 100644
---- configure.ac
-+++ configure.ac
-@@ -634,6 +634,20 @@ AG_GST_CHECK_FEATURE(ALSA, [ALSA], alsa, [
-   ])
- ])
- 
-+dnl *** sndio ***
-+AG_GST_CHECK_FEATURE(SNDIO, [sndio audio], sndio, [
-+  AC_CHECK_HEADER(sndio.h, HAVE_SNDIO="yes", HAVE_SNDIO="no")
-+  if test $HAVE_SNDIO = yes
-+  then
-+    AC_CHECK_LIB(sndio, sio_open, HAVE_SNDIO="yes", HAVE_SNDIO="no", [])
-+    if test $HAVE_SNDIO = yes
-+    then
-+      SNDIO_LIBS=-lsndio
-+      AC_SUBST(SNDIO_LIBS)
-+    fi
-+  fi
-+])
-+
- dnl *** CDParanoia ***
- dnl Note: upstream has a pkg-config file only in post-10.2 SVN so far
- translit(dnm, m, l) AM_CONDITIONAL(USE_CDPARANOIA, true)
-@@ -789,6 +803,7 @@ else
- dnl not building plugins with external dependencies,
- dnl but we still need to set the conditionals
- AM_CONDITIONAL(USE_ALSA, false)
-+AM_CONDITIONAL(USE_SNDIO, false)
- AM_CONDITIONAL(USE_CDPARANOIA, false)
- AM_CONDITIONAL(USE_GL, false)
- AM_CONDITIONAL(USE_IVORBIS, false)
-@@ -930,6 +945,7 @@ sys/ximage/Makefile
- sys/xvimage/Makefile
- ext/Makefile
- ext/alsa/Makefile
-+ext/sndio/Makefile
- ext/cdparanoia/Makefile
- ext/gl/Makefile
- ext/libvisual/Makefile
-diff --git ext/Makefile.am ext/Makefile.am
-index c70b212d6..c28b8a3ea 100644
---- ext/Makefile.am
-+++ ext/Makefile.am
-@@ -4,6 +4,12 @@ else
- ALSA_DIR=
- endif
- 
-+if USE_SNDIO
-+SNDIO_DIR=sndio
-+else
-+SNDIO_DIR=
-+endif
-+
- if USE_CDPARANOIA
- CDPARANOIA_DIR=cdparanoia
- else
-@@ -62,6 +68,7 @@ endif
- 
- SUBDIRS = \
-   $(ALSA_DIR) \
-+  $(SNDIO_DIR) \
-   $(CDPARANOIA_DIR) \
-   $(GL_DIR) \
-   $(LIBVISUAL_DIR) \
-@@ -73,6 +80,7 @@ SUBDIRS = \
- 
- DIST_SUBDIRS = \
-   alsa \
-+  sndio \
-   cdparanoia \
-   gl \
-   libvisual \
-diff --git ext/sndio/Makefile.am ext/sndio/Makefile.am
-new file mode 100644
-index 000000000..7b782de8a
---- /dev/null
-+++ ext/sndio/Makefile.am
-@@ -0,0 +1,24 @@
-+plugin_LTLIBRARIES = libgstsndio.la
-+
-+libgstsndio_la_SOURCES = \
-+	gstsndio.c \
-+	sndiosink.c \
-+	sndiosrc.c
-+
-+libgstsndio_la_CFLAGS = \
-+	$(GST_PLUGINS_BASE_CFLAGS) \
-+        $(GST_BASE_CFLAGS) \
-+	$(GST_CFLAGS)
-+	$(SNDIO_CFLAGS)
-+libgstsndio_la_LIBADD = \
-+	$(top_builddir)/gst-libs/gst/audio/libgstaudio-$(GST_API_VERSION).la \
-+	$(GST_BASE_LIBS) \
-+	$(SNDIO_LIBS)
-+
-+libgstsndio_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
-+libgstsndio_la_LIBTOOLFLAGS = --tag=disable-static
-+
-+noinst_HEADERS = \
-+	gstsndio.h \
-+	sndiosink.h \
-+	sndiosrc.h
+diff --git ext/meson.build ext/meson.build
+index d984b50..5f0becc 100644
+--- ext/meson.build
++++ ext/meson.build
+@@ -5,5 +5,6 @@ subdir('libvisual')
+ subdir('ogg')
+ subdir('opus')
+ subdir('pango')
++subdir('sndio')
+ subdir('theora')
+ subdir('vorbis')
 diff --git ext/sndio/gstsndio.c ext/sndio/gstsndio.c
 new file mode 100644
-index 000000000..2321dc208
+index 0000000..2321dc2
 --- /dev/null
 +++ ext/sndio/gstsndio.c
 @@ -0,0 +1,401 @@
@@ -516,7 +422,7 @@ index 000000000..2321dc208
 +}
 diff --git ext/sndio/gstsndio.h ext/sndio/gstsndio.h
 new file mode 100644
-index 000000000..77ec4e6f8
+index 0000000..77ec4e6
 --- /dev/null
 +++ ext/sndio/gstsndio.h
 @@ -0,0 +1,78 @@
@@ -598,9 +504,36 @@ index 000000000..77ec4e6f8
 +GstCaps *gst_sndio_caps (gpointer sio, int mode, struct sio_hdl *hdl);
 +
 +#endif
+diff --git ext/sndio/meson.build ext/sndio/meson.build
+new file mode 100644
+index 0000000..3f9a9fe
+--- /dev/null
++++ ext/sndio/meson.build
+@@ -0,0 +1,21 @@
++sndio_sources = [
++  'gstsndio.c',
++  'sndiosink.c',
++  'sndiosrc.c',
++]
++
++cc =  meson.get_compiler('c')
++
++sndio_dep = cc.find_library('sndio', required : get_option('sndio'))
++
++if sndio_dep.found()
++  gstsndio = library('gstsndio',
++    sndio_sources,
++	c_args : gst_plugins_base_args,
++  include_directories: [configinc, libsinc],
++  dependencies: [gst_base_dep, sndio_dep, audio_dep],
++    install : true,
++    install_dir : plugins_install_dir,
++  )
++  pkgconfig.generate(gstsndio, install_dir : plugins_pkgconfig_install_dir)
++endif
 diff --git ext/sndio/sndiosink.c ext/sndio/sndiosink.c
 new file mode 100644
-index 000000000..cc68bd29d
+index 0000000..cc68bd2
 --- /dev/null
 +++ ext/sndio/sndiosink.c
 @@ -0,0 +1,226 @@
@@ -832,7 +765,7 @@ index 000000000..cc68bd29d
 +}
 diff --git ext/sndio/sndiosink.h ext/sndio/sndiosink.h
 new file mode 100644
-index 000000000..314e62210
+index 0000000..314e622
 --- /dev/null
 +++ ext/sndio/sndiosink.h
 @@ -0,0 +1,57 @@
@@ -895,7 +828,7 @@ index 000000000..314e62210
 +#endif /* __GST_SNDIOSINK_H__ */
 diff --git ext/sndio/sndiosrc.c ext/sndio/sndiosrc.c
 new file mode 100644
-index 000000000..5b6d787c5
+index 0000000..5b6d787
 --- /dev/null
 +++ ext/sndio/sndiosrc.c
 @@ -0,0 +1,225 @@
@@ -1126,7 +1059,7 @@ index 000000000..5b6d787c5
 +}
 diff --git ext/sndio/sndiosrc.h ext/sndio/sndiosrc.h
 new file mode 100644
-index 000000000..83fd29ce4
+index 0000000..83fd29c
 --- /dev/null
 +++ ext/sndio/sndiosrc.h
 @@ -0,0 +1,57 @@
@@ -1187,3 +1120,15 @@ index 000000000..83fd29ce4
 +G_END_DECLS
 +
 +#endif /* __GST_SNDIOSRC_H__ */
+diff --git meson_options.txt meson_options.txt
+index e7af4dd..827507f 100644
+--- meson_options.txt
++++ meson_options.txt
+@@ -58,6 +58,7 @@ option('libvisual', type : 'feature', value : 'auto', description : 'libvisual a
+ option('ogg', type : 'feature', value : 'auto', description : 'ogg parser, muxer, demuxer plugin')
+ option('opus', type : 'feature', value : 'auto', description : 'OPUS audio codec plugin')
+ option('pango', type : 'feature', value : 'auto', description : 'Pango text rendering and overlay plugin')
++option('sndio', type : 'feature', value : 'auto', description : 'sndio support')
+ option('theora', type : 'feature', value : 'auto', description : 'Theora video parser and codec plugin')
+ option('tremor', type : 'feature', value : 'auto', description : 'Integer Vorbis decoder plugin for devices without floating point')
+ option('vorbis', type : 'feature', value : 'auto', description : 'Vorbis audio parser, tagger, and codec plugin')
