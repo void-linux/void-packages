@@ -215,7 +215,7 @@ a package providing the executable named `<name>` and the module named
 language prefix can be dropped. Short names for languages are no valid substitute
 for the language prefix.
 
-Example: python-pam, perl-URI, python-pyside
+Example: python-pam, perl-URI, python3-pyside2
 
 <a id="language_bindings"></a>
 #### Language Bindings
@@ -460,7 +460,7 @@ Example:
   | DEBIAN_SITE      | http://ftp.debian.org/debian/pool               |
   | FREEDESKTOP_SITE | http://freedesktop.org/software                 |
   | GNOME_SITE       | http://ftp.gnome.org/pub/GNOME/sources          |
-  | GNU_SITE         | http://mirrors.kernel.org/gnu                   |
+  | GNU_SITE         | http://ftp.gnu.org/gnu                          |
   | KERNEL_SITE      | http://www.kernel.org/pub/linux                 |
   | MOZILLA_SITE     | http://ftp.mozilla.org/pub                      |
   | NONGNU_SITE      | http://download.savannah.nongnu.org/releases    |
@@ -468,7 +468,7 @@ Example:
   | SOURCEFORGE_SITE | http://downloads.sourceforge.net/sourceforge    |
   | UBUNTU_SITE      | http://archive.ubuntu.com/ubuntu/pool           |
   | XORG_HOME        | http://xorg.freedesktop.org/wiki/               |
-  | XORG_SITE        | http://xorg.freedesktop.org/releases/individual |
+  | XORG_SITE        | http://www.x.org/releases/individual            |
   | KDE_SITE         | https://download.kde.org/stable                 |
 
 - `checksum` The `sha256` digests matching `${distfiles}`. Multiple files can be
@@ -762,6 +762,18 @@ versions.  Example: `ignore="*b*"`
 - `version` is the version number used to compare against
 upstream versions. Example: `version=${version//./_}`
 
+- `single_directory` can be set to disable
+detecting directory containing one version of sources in url,
+then searching new version in adjacent directories.
+
+- `vdprefix` is a perl-compatible regular expression matching
+part that precedes numeric part of version directory
+in url. Defaults to `(|v|$pkgname)[-_.]*`.
+
+- `vdsuffix` is a perl-compatible regular expression matching
+part that follows numeric part of version directory
+in url. Defaults to `(|\.x)`.
+
 <a id="patches"></a>
 ### Handling patches
 
@@ -913,7 +925,12 @@ The current list of available `build_helper` scripts is the following:
 for compiling cargo -sys crates.
 
 - `gir` specifies dependencies for native and cross builds to deal with
-GObject Introspection
+GObject Introspection. The following variables may be set in the template to handle
+cross builds which require additional hinting or exhibit problems. `GIR_EXTRA_LIBS_PATH` defines
+additional paths to be searched when linking target binaries to be introspected.
+`GIR_EXTRA_OPTIONS` defines additional options for the `g-ir-scanner-qemuwrapper` calling
+`qemu-<target_arch>-static` when running the target binary. You can for example specify
+`GIR_EXTRA_OPTIONS="-strace"` to see a trace of what happens when running that binary.
 
 <a id="functions"></a>
 ### Functions

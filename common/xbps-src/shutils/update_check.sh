@@ -5,6 +5,7 @@ update_check() {
     local update_override=$XBPS_SRCPKGDIR/$XBPS_TARGET_PKG/update
     local original_pkgname=$pkgname
     local urlpfx urlsfx
+    local -A fetchedurls
 
     if [ -r $update_override ]; then
         . $update_override
@@ -31,30 +32,64 @@ update_check() {
     # filter loop: if version are "folder" name based,
     # substitute original url by every folder based ones (expand)
     while IFS= read -r url; do
+        # default case: don't rewrite url
+        printf '%s\n' "$url"
+        if [ "$single_directory" ]; then
+            continue
+        fi
         rx=
         urlpfx="${url}"
         urlsfx=
+        dirpfx=
         case "$url" in
-            *download.kde.org/stable/applications/*|*download.kde.org/stable/frameworks/*|*download.kde.org/stable/plasma/*|\
-                *download.kde.org/stable/kdevelop/*|*download.kde.org/stable/krita/*|*download.kde.org/stable/clazy/*|\
-                *download.kde.org/stable/digikam/*|*download.kde.org/stable/phonon/*)
-                urlpfx="${url%%${version%.*}*}"
-                urlsfx="${url##${urlpfx}${version%.*}}"
-                urlsfx="${urlsfx#.*/}"
-                urlsfx="/${urlsfx#/}"
-                rx='href="\K[\d\.]+(?=/")'
+            *.voidlinux.*|\
+              *sourceforge.net/sourceforge*|\
+              *code.google.com*|*googlecode*|\
+              *launchpad.net*|\
+              *cpan.*|\
+              *pythonhosted.org*|\
+              *github.com*|\
+              *//gitlab.*|\
+              *bitbucket.org*|\
+              *ftp.gnome.org*|\
+              *kernel.org/pub/linux/kernel/*|\
+              *cran.r-project.org/src/contrib*|\
+              *rubygems.org*|\
+              *crates.io*)
+                continue
+                ;;
+            *)
+                vdpfx=${vdprefix:-"|v|\\Q$pkgname\\E"}
+                vdsfx=${vdsuffix:-"|\\.x"}
+                match=$(grep -Po "^[^/]+//[^/]+(/.+)?/($vdpfx)(?=[-_.0-9]*[0-9](?<!\\Q$pkgname\\E)($vdsfx)/)" <<< "$url")
+                if [ "$?" = 0 ]; then
+                    urlpfx="${match%/*}/"
+                    dirpfx="${match##*/}"
+                    urlsfx="${url#$urlpfx}"
+                    urlsfx="${urlsfx#*/}"
+                    rx="href=[\"']?(\\Q$urlpfx\\E)?\\.?/?\\K\\Q$dirpfx\\E[-_.0-9]*[0-9]($vdsfx)[\"'/]"
+                fi
                 ;;
         esac
-        if [ -z "$rx" ]; then
-            # default case: don't rewrite url
-            printf '%s\n' "$url"
-        else
+        if [ "$rx" ]; then
             # substitute url if needed
             if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
                 echo "(folder) fetching $urlpfx" 1>&2
             fi
+            skipdirs=
             curl -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$urlpfx" |
-                grep -Po -i "$rx" | xargs -r -n 1 -I @@ printf '%s\n' "${urlpfx}@@${urlsfx}"
+                grep -Po -i "$rx" |
+                # sort -V places 1.1/ before 1/, but 1A/ before 1.1A/
+                sed -e 's:$:A:' -e 's:/A$:A/:' | sort -Vru | sed -e 's:A/$:/A:' -e 's:A$::' |
+                while IFS= read -r newver; do
+                    newurl="${urlpfx}${newver}${urlsfx}"
+                    if [ "$newurl" = "$url" ]; then
+                        skipdirs=yes
+                    fi
+                    if [ -z "$skipdirs" ]; then
+                        printf '%s\n' "$newurl"
+                    fi
+                done
         fi
     done |
     while IFS= read -r url; do
@@ -79,7 +114,7 @@ update_check() {
                 githubname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$githubname/tags"
                 rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
-            *gitlab.com*|*gitlab.gnome.org*|*gitlab.freedesktop.org*)
+            *//gitlab.*)
                 gitlaburl="$(printf %s "$url" | cut -d/ -f1-5)"
                 url="$gitlaburl/tags"
                 rx='/archive/[^/]+/\Q'"$pkgname"'\E-v?\K[\d\.]+(?=\.tar\.gz")';;
@@ -97,17 +132,28 @@ update_check() {
             *rubygems.org*)
                 url="https://rubygems.org/gems/${pkgname#ruby-}"
                 rx='href="/gems/'${pkgname#ruby-}'/versions/\K[\d\.]*(?=")' ;;
+            *crates.io*)
+                url="https://crates.io/api/v1/crates/${pkgname#rust-}"
+                rx='/crates/'${pkgname#rust-}'/\K[0-9.]*(?=/download)' ;;
             esac
         fi
 
         rx=${pattern:-$rx}
         rx=${rx:-'(?<!-)\b\Q'"$pkgname"'\E[-_]?((src|source)[-_])?\K([^-/_\s]*?\d[^-/_\s]*?)(?=(?:[-_.](?:src|source|orig))?\.(?:[jt]ar|shar|t[bglx]z|tbz2|zip))\b'}
 
+        if [ "${fetchedurls[$url]}" ]; then
+            if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
+                echo "already fetched $url" 1>&2
+            fi
+            continue
+        fi
+
         if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
             echo "fetching $url" 1>&2
         fi
         curl -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml' -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$url" |
             grep -Po -i "$rx"
+        fetchedurls[$url]=yes
     done |
     tr _ . |
     sort -Vu |

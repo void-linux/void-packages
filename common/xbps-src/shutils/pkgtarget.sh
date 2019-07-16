@@ -48,12 +48,16 @@ remove_pkg_autodeps() {
 
     cd $XBPS_MASTERDIR || return 1
     msg_normal "${pkgver:-xbps-src}: removing autodeps, please wait...\n"
-    tmplogf=$(mktemp)
+    tmplogf=$(mktemp) || exit 1
 
     remove_pkg_cross_deps
     $XBPS_RECONFIGURE_CMD -a >> $tmplogf 2>&1
     echo yes | $XBPS_REMOVE_CMD -Ryod >> $tmplogf 2>&1
     rval=$?
+    if [ $rval -eq 0 ]; then
+        echo yes | $XBPS_REMOVE_CMD -Ryod >> $tmplogf 2>&1
+        rval=$?
+    fi
 
     if [ $rval -ne 0 ]; then
         msg_red "${pkgver:-xbps-src}: failed to remove autodeps: (returned $rval)\n"

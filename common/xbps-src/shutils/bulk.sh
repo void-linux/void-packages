@@ -1,83 +1,78 @@
 # vim: set ts=4 sw=4 et:
 
-bulk_getlink() {
-    local p="${1##*/}"
-    local target="$(readlink $XBPS_SRCPKGDIR/$p)"
-
-    if [ $? -eq 0 -a -n "$target" ]; then
-        p=$target
-    fi
-    echo $p
-}
-
 bulk_sortdeps() {
-    local _pkgs _pkg pkgs pkg found f x tmpf
+    local pkgs="$@"
+    local pkg _pkg
+    local NPROCS=$(($(nproc)*2))
+    local NRUNNING=0
 
-    _pkgs="$@"
-    # Iterate over the list and make sure that only real pkgs are
-    # added to our pkglist.
-    for pkg in ${_pkgs}; do
-        found=0
-        f=$(bulk_getlink $pkg)
-        for x in ${pkgs}; do
-            if [ "$x" = "${f}" ]; then
-                found=1
-                break
-            fi
-        done
-        if [ $found -eq 0 ]; then
-            pkgs+="${f} "
-        fi
-    done
+    tmpf=$(mktemp) || exit 1
 
-    tmpf=$(mktemp)
-    # Now make the real dependency graph of all pkgs to build.
-    # Perform a topological sort of all pkgs but only with build dependencies
-    # that are found in previous step.
+    # Perform a topological sort of all *direct* build dependencies.
     for pkg in ${pkgs}; do
-        _pkgs="$(./xbps-src show-build-deps $pkg 2>/dev/null)"
-        found=0
-        for x in ${_pkgs}; do
-            _pkg=$(bulk_getlink $x)
-            for f in ${pkgs}; do
-                if [ "${f}" != "${_pkg}" ]; then
-                    continue
-                fi
-                found=1
-                echo "${pkg} ${f}" >> $tmpf
+        if [ $NRUNNING -eq $NPROCS ]; then
+            NRUNNING=0
+            wait
+        fi
+        NRUNNING=$((NRUNNING+1))
+        (
+            for _pkg in $(./xbps-src show-build-deps $pkg 2>/dev/null); do
+                echo "$pkg $_pkg" >> $tmpf
             done
-        done
-        [ $found -eq 0 ] && echo "${pkg} ${pkg}" >> $tmpf
+            echo "$pkg $pkg" >> $tmpf
+        ) &
     done
+    wait
     tsort $tmpf|tac
     rm -f $tmpf
 }
 
 bulk_build() {
+    local sys="$1"
+    local NPROCS=$(($(nproc)*2))
+    local NRUNNING=0
 
     if [ "$XBPS_CROSS_BUILD" ]; then
         source ${XBPS_COMMONDIR}/cross-profiles/${XBPS_CROSS_BUILD}.sh
         export XBPS_ARCH=${XBPS_TARGET_MACHINE}
     fi
     if ! command -v xbps-checkvers &>/dev/null; then
-        msg_error "xbps-src: cannot find xbps-checkvers(8) command!\n"
+        msg_error "xbps-src: cannot find xbps-checkvers(1) command!\n"
     fi
 
-    bulk_sortdeps "$(xbps-checkvers ${1} --distdir=$XBPS_DISTDIR | awk '{print $2}')"
+    # Compare installed pkg versions vs srcpkgs
+    if [[ $sys ]]; then
+        xbps-checkvers -f '%n' -I -D $XBPS_DISTDIR
+        return $?
+    fi
+    # compare repo pkg versions vs srcpkgs
+    for f in $(xbps-checkvers -f '%n' -D $XBPS_DISTDIR); do
+        if [ $NRUNNING -eq $NPROCS ]; then
+            NRUNNING=0
+            wait
+        fi
+        NRUNNING=$((NRUNNING+1))
+        (
+            setup_pkg $f $XBPS_TARGET_MACHINE &>/dev/null
+            if show_avail &>/dev/null; then
+                echo "$f"
+            fi
+        ) &
+    done
+    wait
+    return $?
 }
 
 bulk_update() {
     local args="$1" pkgs f rval
 
     pkgs="$(bulk_build ${args})"
-    if [ -z "$pkgs" ]; then
-        return 0
-    fi
+    [[ -z $pkgs ]] && return 0
+
     msg_normal "xbps-src: the following packages must be rebuilt and updated:\n"
     for f in ${pkgs}; do
-        echo "   $f"
+        echo " $f"
     done
-    echo
     for f in ${pkgs}; do
         XBPS_TARGET_PKG=$f
         read_pkg

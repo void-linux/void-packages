@@ -43,7 +43,7 @@ if [ "$PKGNAME" != "$XBPS_TARGET_PKG" -o -z "$XBPS_SKIP_DEPS" ]; then
     install_pkg_deps $PKGNAME $XBPS_TARGET_PKG pkg $XBPS_CROSS_BUILD $XBPS_CROSS_PREPARE || exit $?
 fi
 
-if [ -z "$XBPS_CROSS_PREPARE" ]; then
+if [ "$XBPS_CROSS_BUILD" ]; then
     install_cross_pkg $XBPS_CROSS_BUILD || exit $?
 fi
 
@@ -103,13 +103,16 @@ cut -d: -f 1,2 ${XBPS_STATEDIR}/.${sourcepkg}_register_pkg | sort -u | \
             cut -d : -f 2,3 | tr ':' '/')
         if [ -n "${arch}" ]; then
             msg_normal "Registering new packages to $repo ($arch)\n"
-            XBPS_TARGET_ARCH=${arch} $XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+            XBPS_TARGET_ARCH=${arch} $XBPS_RINDEX_CMD \
+                ${XBPS_REPO_COMPTYPE:+--compression $XBPS_REPO_COMPTYPE} ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
         else
             msg_normal "Registering new packages to $repo\n"
             if [ -n "$XBPS_CROSS_BUILD" ]; then
-                $XBPS_RINDEX_XCMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+                $XBPS_RINDEX_XCMD ${XBPS_REPO_COMPTYPE:+--compression $XBPS_REPO_COMPTYPE} \
+					${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
             else
-                $XBPS_RINDEX_CMD ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+                $XBPS_RINDEX_CMD ${XBPS_REPO_COMPTYPE:+--compression $XBPS_REPO_COMPTYPE} \
+					${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
             fi
         fi
     done
@@ -131,7 +134,7 @@ fi
 # the bootstrap pkgs from scratch.
 if [ -z "$CHROOT_READY" -a "$PKGNAME" = "base-files" ]; then
     msg_normal "Installing $PKGNAME into masterdir...\n"
-    _log=$(mktemp --tmpdir || exit 1)
+    _log=$(mktemp) || exit 1
     XBPS_ARCH=$XBPS_MACHINE $XBPS_INSTALL_CMD -yf $PKGNAME >${_log} 2>&1
     if [ $? -ne 0 ]; then
         msg_red "Failed to install $PKGNAME into masterdir, see below for errors:\n"

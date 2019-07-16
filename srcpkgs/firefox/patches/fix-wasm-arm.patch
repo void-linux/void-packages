@@ -1,120 +1,15 @@
-disable WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
-
-# HG changeset patch
-# User Lars T Hansen <lhansen@mozilla.com>
-# Date 1550043288 -3600
-# Node ID 322de2cc80194c4fe859989738f7c3c2b70b98a4
-# Parent  3b1b94e39795d5af17da5908ad8d05e7cefb89e5
-Bug 1526653 - Document some ARM Linux compile problems.  r=luke
-
-Not every ARM Linux distro (all of them tier-3 apart from Android) has
-a sys/user.h that provides the necessary structures for us to emulate
-unaligned FP accesses.  Raspbian is a case in point; the only user.h
-on the system is some generic glibc thing that is completely wrong for
-ARM.
-
-We can't really hope to #ifdef our way out of this -- for example,
-there does not seem to be a reliable preprocessor name for Raspbian,
-nor is there a canonical preprocessor name that sys/user.h exports
-when the desired structures are defined.
-
-Therefore, add some comments to explain the problem and introduce a
-choke point that tier-3 porters can use if they run into the problem.
-
-Differential Revision: https://phabricator.services.mozilla.com/D19637
-
-diff --git a/js/src/wasm/WasmSignalHandlers.cpp b/js/src/wasm/WasmSignalHandlers.cpp
 --- js/src/wasm/WasmSignalHandlers.cpp
 +++ js/src/wasm/WasmSignalHandlers.cpp
-@@ -208,17 +208,35 @@ using mozilla::DebugOnly;
- #  define R11_sig(p) ((p)->thread.__r[11])
- #  define R13_sig(p) ((p)->thread.__sp)
- #  define R14_sig(p) ((p)->thread.__lr)
- #  define R15_sig(p) ((p)->thread.__pc)
- #else
- #  error "Don't know how to read/write to the thread state via the mcontext_t."
- #endif
- 
-+// On ARM Linux, including Android, unaligned FP accesses that were not flagged
-+// as unaligned will tend to trap (with SIGBUS) and will need to be emulated.
-+//
-+// We can only perform this emulation if the system header files provide access
-+// to the FP registers.  In particular, <sys/user.h> must have definitions of
-+// `struct user_vfp` and `struct user_vfp_exc`, as it does on Android.
-+//
-+// Those definitions are however not present in the headers of every Linux
-+// distro - Raspbian is known to be a problem, for example.  However those
-+// distros are tier-3 platforms.
-+//
-+// If you run into compile problems on a tier-3 platform, you can disable the
-+// emulation here.
-+
- #if defined(__linux__) && defined(__arm__)
-+//#  define WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
-+#endif
-+
-+#ifdef WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
- #  include <sys/user.h>
- #endif
- 
- #if defined(ANDROID)
- // Not all versions of the Android NDK define ucontext_t or mcontext_t.
- // Detect this and provide custom but compatible definitions. Note that these
- // follow the GLibc naming convention to access register values from
- // mcontext_t.
-@@ -436,17 +454,17 @@ struct AutoHandlingTrap {
-   }
- 
-   ~AutoHandlingTrap() {
-     MOZ_ASSERT(sAlreadyHandlingTrap.get());
-     sAlreadyHandlingTrap.set(false);
-   }
- };
+@@ -243,9 +243,9 @@
+ // If you run into compile problems on a tier-3 platform, you can disable the
+ // emulation here.
  
 -#if defined(__linux__) && defined(__arm__)
-+#ifdef WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
+-#  define WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
+-#endif
++// #if defined(__linux__) && defined(__arm__)
++// #  define WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
++// #endif
  
- // Code to handle SIGBUS for unaligned floating point accesses on 32-bit ARM.
- 
- static uintptr_t ReadGPR(CONTEXT* context, uint32_t rn) {
-   switch (rn) {
-     case 0:
-       return context->uc_mcontext.arm_r0;
-     case 1:
-@@ -636,22 +654,22 @@ static bool HandleUnalignedTrap(CONTEXT*
-   }
- 
- #  ifdef DEBUG
-   MOZ_CRASH(
-       "SIGBUS handler could not access FP register, incompatible kernel?");
- #  endif
-   return false;
- }
--#else   // __linux__ && __arm__
-+#else   // WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
- static bool HandleUnalignedTrap(CONTEXT* context, uint8_t* pc,
-                                 Instance* instance) {
-   return false;
- }
--#endif  // __linux__ && __arm__
-+#endif  // WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
- 
- static MOZ_MUST_USE bool HandleTrap(CONTEXT* context,
-                                     bool isUnalignedSignal = false,
-                                     JSContext* assertCx = nullptr) {
-   MOZ_ASSERT(sAlreadyHandlingTrap.get());
- 
-   uint8_t* pc = ContextToPC(context);
-   const CodeSegment* codeSegment = LookupCodeSegment(pc);
-@@ -1165,8 +1183,10 @@ bool wasm::HandleIllegalInstruction(cons
-     return false;
-   }
- 
-   jit::JitActivation* activation = TlsContext.get()->activation()->asJit();
-   activation->startWasmTrap(trap, bytecode.offset(), regs);
-   *newPC = segment.trapCode();
-   return true;
- }
-+
-+#undef WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
-
+ #ifdef WASM_EMULATE_ARM_UNALIGNED_FP_ACCESS
+ #  include <sys/user.h>
