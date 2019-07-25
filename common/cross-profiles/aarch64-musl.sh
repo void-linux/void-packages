@@ -1,5 +1,5 @@
 # Cross build profile for ARMv8.
-
+XBPS_TARGET_WORDSIZE=64
 XBPS_TARGET_MACHINE="aarch64-musl"
 XBPS_TARGET_QEMU_MACHINE="aarch64"
 XBPS_CROSS_TRIPLET="aarch64-linux-musl"

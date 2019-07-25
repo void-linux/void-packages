@@ -1,5 +1,5 @@
 # Cross build profile for PowerPC.
-
+XBPS_TARGET_WORDSIZE=32
 XBPS_TARGET_MACHINE="ppc-musl"
 XBPS_TARGET_QEMU_MACHINE="ppc"
 XBPS_CROSS_TRIPLET="powerpc-linux-musl"
