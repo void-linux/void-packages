@@ -312,6 +312,18 @@ setup_pkg() {
         XBPS_CHECKVERS_XCMD="$XBPS_CHECKVERS_CMD"
     fi
 
+    if [ "${XBPS_MACHINE%-*}" = "${XBPS_MACHINE}" ]; then
+        export XBPS_LIBC="glibc"
+    else
+        export XBPS_LIBC="${XBPS_MACHINE#*-}"
+    fi
+
+    if [ "${XBPS_TARGET_MACHINE%-*}" = "${XBPS_TARGET_MACHINE}" ]; then
+        export XBPS_TARGET_LIBC="glibc"
+    else
+        export XBPS_TARGET_LIBC="${XBPS_TARGET_MACHINE#*-}"
+    fi
+
     export XBPS_INSTALL_XCMD XBPS_QUERY_XCMD XBPS_RECONFIGURE_XCMD \
         XBPS_REMOVE_XCMD XBPS_RINDEX_XCMD XBPS_UHELPER_XCMD
 
