@@ -1,5 +1,5 @@
 # Cross build profile for x86_64 and Musl libc.
-
+XBPS_TARGET_WORDSIZE=64
 XBPS_TARGET_MACHINE="x86_64-musl"
 XBPS_TARGET_QEMU_MACHINE="x86_64"
 XBPS_CROSS_TRIPLET="x86_64-linux-musl"

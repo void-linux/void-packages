@@ -1,5 +1,5 @@
 # Cross build profile for ARMv7 EABI Hard Float and Musl libc.
-
+XBPS_TARGET_WORDSIZE=32
 XBPS_TARGET_MACHINE="armv7l-musl"
 XBPS_TARGET_QEMU_MACHINE="arm"
 XBPS_CROSS_TRIPLET="armv7l-linux-musleabihf"
