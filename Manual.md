@@ -365,15 +365,23 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_MACHINE` The machine architecture as returned by `xbps-uhelper arch`.
 
+- `XBPS_ENDIAN` The machine's endianness ("le" for little-endian, "be" for big-endian).
+
+- `XBPS_LIBC` The machine's C library ("glibc" for GNU libc, "musl" for Musl libc).
+
 - `XBPS_WORDSIZE` The machine's word size in bits (32 or 64).
+
+- `XBPS_TARGET_MACHINE` The target machine architecture when cross compiling a package.
+
+- `XBPS_TARGET_ENDIAN` The target machine's endiannes ("le" for little-endian, "be" for big-endian).
+
+- `XBPS_TARGET_LIBC` The target machine's C library ("glibc" for GNU libc, "musl" for Musl libc).
+
+- `XBPS_TARGET_WORDSIZE` The target machine's word size in bits (32 or 64).
 
 - `XBPS_SRCDISTDIR` Full path to where the `source distfiles` are stored, i.e `$XBPS_HOSTDIR/sources`.
 
 - `XBPS_SRCPKGDIR` Full path to the `srcpkgs` directory.
-
-- `XBPS_TARGET_MACHINE` The target machine architecture when cross compiling a package.
-
-- `XBPS_TARGET_WORDSIZE` The target machine's word size in bits (32 or 64).
 
 - `XBPS_FETCH_CMD` The utility to fetch files from `ftp`, `http` of `https` servers.
 

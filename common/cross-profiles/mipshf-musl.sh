@@ -1,4 +1,6 @@
 # Cross build profile for MIPS32 BE hard float.
+XBPS_TARGET_ENDIAN=be
+XBPS_TARGET_LIBC=musl
 XBPS_TARGET_WORDSIZE=32
 XBPS_TARGET_MACHINE="mipshf-musl"
 XBPS_TARGET_QEMU_MACHINE="mips"

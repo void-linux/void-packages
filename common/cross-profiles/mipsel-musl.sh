@@ -1,4 +1,6 @@
 # Cross build profile for MIPS32 LE soft float.
+XBPS_TARGET_ENDIAN=le
+XBPS_TARGET_LIBC=musl
 XBPS_TARGET_WORDSIZE=32
 XBPS_TARGET_MACHINE="mipsel-musl"
 XBPS_TARGET_QEMU_MACHINE="mipsel"

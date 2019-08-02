@@ -1,4 +1,6 @@
 # Cross build profile for ARM GNU EABI5 Soft Float and Musl libc.
+XBPS_TARGET_ENDIAN=le
+XBPS_TARGET_LIBC=musl
 XBPS_TARGET_WORDSIZE=32
 XBPS_TARGET_MACHINE="armv5tel-musl"
 XBPS_TARGET_QEMU_MACHINE="arm"

@@ -276,8 +276,8 @@ setup_pkg() {
     if [ -n "$cross" ]; then
         source_file $XBPS_CROSSPFDIR/${cross}.sh
 
-        _vars="TARGET_WORDSIZE TARGET_MACHINE CROSS_TRIPLET CROSS_CFLAGS CROSS_CXXFLAGS TARGET_QEMU_MACHINE"
-        for f in ${_vars}; do
+        for f in TARGET_ENDIAN TARGET_LIBC TARGET_WORDSIZE TARGET_MACHINE \
+		CROSS_TRIPLET CROSS_CFLAGS CROSS_CXXFLAGS TARGET_QEMU_MACHINE; do
             eval val="\$XBPS_$f"
             if [ -z "$val" ]; then
                 echo "ERROR: XBPS_$f is not defined!"
@@ -286,7 +286,7 @@ setup_pkg() {
         done
 
         export XBPS_CROSS_BASE=/usr/$XBPS_CROSS_TRIPLET
-        export XBPS_TARGET_WORDSIZE
+        export XBPS_TARGET_ENDIAN XBPS_TARGET_LIBC XBPS_TARGET_WORDSIZE
         export XBPS_TARGET_QEMU_MACHINE
 
         XBPS_INSTALL_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_INSTALL_CMD -c /host/repocache -r $XBPS_CROSS_BASE"
@@ -297,6 +297,8 @@ setup_pkg() {
         XBPS_UHELPER_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE xbps-uhelper -r $XBPS_CROSS_BASE"
         XBPS_CHECKVERS_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE xbps-checkvers -r $XBPS_CROSS_BASE --repository=$XBPS_REPOSITORY"
     else
+        export XBPS_TARGET_ENDIAN=${XBPS_TARGET_ENDIAN:-$XBPS_ENDIAN}
+        export XBPS_TARGET_LIBC=${XBPS_TARGET_LIBC:-$XBPS_LIBC}
         export XBPS_TARGET_WORDSIZE=${XBPS_TARGET_WORDSIZE:-$XBPS_WORDSIZE}
         export XBPS_TARGET_MACHINE=${XBPS_ARCH:-$XBPS_MACHINE}
         unset XBPS_CROSS_BASE XBPS_CROSS_LDFLAGS XBPS_CROSS_FFLAGS

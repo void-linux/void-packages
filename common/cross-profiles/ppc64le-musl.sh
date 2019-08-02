@@ -1,4 +1,6 @@
 # Cross build profile for ppc64 little-endian musl.
+XBPS_TARGET_ENDIAN=le
+XBPS_TARGET_LIBC=musl
 XBPS_TARGET_WORDSIZE=64
 XBPS_TARGET_MACHINE="ppc64le-musl"
 XBPS_TARGET_QEMU_MACHINE="ppc64le"
