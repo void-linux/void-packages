@@ -1,7 +1,5 @@
 # Cross build profile for MIPS32 LE hardfloat.
-XBPS_TARGET_ENDIAN=le
-XBPS_TARGET_LIBC=musl
-XBPS_TARGET_WORDSIZE=32
+
 XBPS_TARGET_MACHINE="mipselhf-musl"
 XBPS_TARGET_QEMU_MACHINE="mipsel"
 XBPS_CROSS_TRIPLET="mipsel-linux-muslhf"

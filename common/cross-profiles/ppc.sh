@@ -1,7 +1,5 @@
 # Cross build profile for PowerPC.
-XBPS_TARGET_ENDIAN=be
-XBPS_TARGET_LIBC=glibc
-XBPS_TARGET_WORDSIZE=32
+
 XBPS_TARGET_MACHINE="ppc"
 XBPS_TARGET_QEMU_MACHINE="ppc"
 XBPS_CROSS_TRIPLET="powerpc-linux-gnu"

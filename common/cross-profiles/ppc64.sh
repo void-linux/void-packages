@@ -1,7 +1,5 @@
 # Cross build profile for ppc64 big-endian GNU.
-XBPS_TARGET_ENDIAN=be
-XBPS_TARGET_LIBC=glibc
-XBPS_TARGET_WORDSIZE=64
+
 XBPS_TARGET_MACHINE="ppc64"
 XBPS_TARGET_QEMU_MACHINE="ppc64"
 XBPS_CROSS_TRIPLET="powerpc64-linux-gnu"

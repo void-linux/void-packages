@@ -246,6 +246,52 @@ unset_package_funcs() {
     done
 }
 
+get_endian() {
+    local arch="${1%-*}"
+
+    case "$arch" in
+        aarch64)  echo "le";;
+        armv5tel) echo "le";;
+        armv6l)   echo "le";;
+        armv7l)   echo "le";;
+        i686)     echo "le";;
+        mipsel*)  echo "le";;
+        mips*)    echo "be";;
+        ppc64le)  echo "le";;
+        ppc64)    echo "be";;
+        ppc)      echo "be";;
+        x86_64)   echo "le";;
+    esac
+}
+
+get_libc() {
+    local arch="${1%-*}"
+
+    if [ "${arch}" = "$1" ]; then
+        echo "glibc"
+    else
+        echo "${1#${arch}-}"
+    fi
+}
+
+get_wordsize() {
+    local arch="${1%-*}"
+
+    case "$arch" in
+        aarch64)  echo "64";;
+        armv5tel) echo "32";;
+        armv6l)   echo "32";;
+        armv7l)   echo "32";;
+        i686)     echo "32";;
+        mipsel*)  echo "32";;
+        mips*)    echo "32";;
+        ppc64le)  echo "64";;
+        ppc64)    echo "64";;
+        ppc)      echo "32";;
+        x86_64)   echo "64";;
+    esac
+}
+
 get_subpkgs() {
     local f
 
@@ -276,8 +322,8 @@ setup_pkg() {
     if [ -n "$cross" ]; then
         source_file $XBPS_CROSSPFDIR/${cross}.sh
 
-        for f in TARGET_ENDIAN TARGET_LIBC TARGET_WORDSIZE TARGET_MACHINE \
-		CROSS_TRIPLET CROSS_CFLAGS CROSS_CXXFLAGS TARGET_QEMU_MACHINE; do
+        _vars="TARGET_MACHINE CROSS_TRIPLET CROSS_CFLAGS CROSS_CXXFLAGS TARGET_QEMU_MACHINE"
+        for f in ${_vars}; do
             eval val="\$XBPS_$f"
             if [ -z "$val" ]; then
                 echo "ERROR: XBPS_$f is not defined!"
@@ -286,7 +332,6 @@ setup_pkg() {
         done
 
         export XBPS_CROSS_BASE=/usr/$XBPS_CROSS_TRIPLET
-        export XBPS_TARGET_ENDIAN XBPS_TARGET_LIBC XBPS_TARGET_WORDSIZE
         export XBPS_TARGET_QEMU_MACHINE
 
         XBPS_INSTALL_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_INSTALL_CMD -c /host/repocache -r $XBPS_CROSS_BASE"
@@ -297,9 +342,6 @@ setup_pkg() {
         XBPS_UHELPER_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE xbps-uhelper -r $XBPS_CROSS_BASE"
         XBPS_CHECKVERS_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE xbps-checkvers -r $XBPS_CROSS_BASE --repository=$XBPS_REPOSITORY"
     else
-        export XBPS_TARGET_ENDIAN=${XBPS_TARGET_ENDIAN:-$XBPS_ENDIAN}
-        export XBPS_TARGET_LIBC=${XBPS_TARGET_LIBC:-$XBPS_LIBC}
-        export XBPS_TARGET_WORDSIZE=${XBPS_TARGET_WORDSIZE:-$XBPS_WORDSIZE}
         export XBPS_TARGET_MACHINE=${XBPS_ARCH:-$XBPS_MACHINE}
         unset XBPS_CROSS_BASE XBPS_CROSS_LDFLAGS XBPS_CROSS_FFLAGS
         unset XBPS_CROSS_CFLAGS XBPS_CROSS_CXXFLAGS XBPS_CROSS_CPPFLAGS
@@ -313,6 +355,13 @@ setup_pkg() {
         XBPS_UHELPER_XCMD="$XBPS_UHELPER_CMD"
         XBPS_CHECKVERS_XCMD="$XBPS_CHECKVERS_CMD"
     fi
+
+    export XBPS_ENDIAN=$(get_endian ${XBPS_MACHINE})
+    export XBPS_TARGET_ENDIAN=$(get_endian ${XBPS_TARGET_MACHINE})
+    export XBPS_LIBC=$(get_libc ${XBPS_MACHINE})
+    export XBPS_TARGET_LIBC=$(get_libc ${XBPS_TARGET_MACHINE})
+    export XBPS_WORDSIZE=$(get_wordsize ${XBPS_MACHINE})
+    export XBPS_TARGET_WORDSIZE=$(get_wordsize ${XBPS_TARGET_MACHINE})
 
     export XBPS_INSTALL_XCMD XBPS_QUERY_XCMD XBPS_RECONFIGURE_XCMD \
         XBPS_REMOVE_XCMD XBPS_RINDEX_XCMD XBPS_UHELPER_XCMD
