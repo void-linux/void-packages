@@ -377,7 +377,7 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_TARGET_MACHINE` The target machine architecture when cross compiling a package.
 
-- `XBPS_TARGET_EDNIAN` The target machine's endianness ("le" or "be").
+- `XBPS_TARGET_ENDIAN` The target machine's endianness ("le" or "be").
 
 - `XBPS_TARGET_LIBC` The target machine's C library ("glibc" or "musl").
 
