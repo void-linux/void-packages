@@ -1,0 +1,283 @@
+# Template build file for 'cross-riscv64-linux-musl'
+#
+_binutils_version=2.32
+_gcc_version=9.1.0
+_musl_version=1.1.23
+_linux_version=4.19
+
+_triplet=riscv64-linux-musl
+_sysroot="/usr/${_triplet}"
+
+pkgname=cross-${_triplet}
+version=0.31
+revision=2
+short_desc="Cross toolchain for RISC-V LE target (musl)"
+maintainer="Juan RP <xtraeme@voidlinux.org>"
+homepage="https://www.voidlinux.org/"
+license="GPL-2.0-or-later, GPL-3.0-or-later, MIT"
+distfiles="
+ ${GNU_SITE}/binutils/binutils-${_binutils_version}.tar.xz
+ ${GNU_SITE}/gcc/gcc-${_gcc_version}/gcc-${_gcc_version}.tar.xz
+ http://www.musl-libc.org/releases/musl-${_musl_version}.tar.gz
+ ${KERNEL_SITE}/kernel/v4.x/linux-${_linux_version}.tar.xz"
+checksum="0ab6c55dd86a92ed561972ba15b9b70a8b9f75557f896446c82e8b36e473ee04
+ 79a66834e96a6050d8fe78db2c3b32fb285b230b855d0a66288235bc04b327a0
+ 8a0feb41cef26c97dde382c014e68b9bb335c094bbc1356f6edaaf6b79bd14aa
+ 0c68f5655528aed4f99dae71a5b259edc93239fa899e2df79c055275c21749a1"
+
+lib32disabled=yes
+nocross=yes
+nopie=yes
+nodebug=yes
+create_wrksrc=yes
+
+archs="x86_64* ppc64le"
+hostmakedepends="flex perl python3"
+makedepends="zlib-devel gmp-devel mpfr-devel libmpc-devel isl15-devel"
+nostrip_files="libcaf_single.a libgcc.a libgcov.a libgcc_eh.a
+ libgnarl_pic.a libgnarl.a libgnat_pic.a libgnat.a"
+depends="${pkgname}-libc-${version}_${revision}"
+
+_apply_patch() {
+	local args="$1" pname="$(basename $2)"
+
+	if [ ! -f ".${pname}_done" ]; then
+		patch -N $args -i $2
+		touch .${pname}_done
+	fi
+}
+
+_binutils_build() {
+	local _args
+
+	[ -f ${wrksrc}/.binutils_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross binutils bootstrap\n"
+
+	[ ! -d binutils-build ] && mkdir binutils-build
+	cd binutils-build
+	_args="--prefix=/usr"
+	_args+=" --target=${_triplet}"
+	_args+=" --with-sysroot=${_sysroot}"
+	_args+=" --disable-nls"
+	_args+=" --disable-multilib"
+	_args+=" --disable-werror"
+	_args+=" --disable-shared"
+	_args+=" --with-system-zlib"
+
+	../binutils-${_binutils_version}/configure ${_args}
+
+	make configure-host && make ${makejobs}
+	make install
+
+	touch ${wrksrc}/.binutils_build_done
+}
+
+_gcc_bootstrap() {
+	local _args
+	[ -f ${wrksrc}/.gcc_bootstrap_done ] && return 0
+
+	cd ${wrksrc}/gcc-${_gcc_version}
+	_apply_patch -p0 ${FILESDIR}/fix-cxxflags-passing.patch
+	_apply_patch -p0 ${FILESDIR}/non-nullness.patch
+	_apply_patch -p0 ${FILESDIR}/musl-ada.patch
+	_apply_patch -p1 ${FILESDIR}/libgnarl-musl.patch
+	_apply_patch -p0 ${FILESDIR}/invalid_tls_model.patch
+
+	msg_normal "Building cross gcc bootstrap\n"
+
+	[ ! -d ../gcc-bootstrap ] && mkdir ../gcc-bootstrap
+	cd ../gcc-bootstrap
+
+	_args="--prefix=/usr"
+	_args+=" --target=${_triplet}"
+	_args+=" --with-sysroot=${_sysroot}"
+	_args+=" --with-newlib"
+	_args+=" --enable-languages=c"
+	_args+=" --with-newlib"
+	_args+=" --disable-libssp"
+	_args+=" --disable-nls"
+	_args+=" --disable-libquadmath"
+	_args+=" --disable-threads"
+	_args+=" --disable-decimal-float"
+	_args+=" --disable-shared"
+	_args+=" --disable-libmudflap"
+	_args+=" --disable-libgomp"
+	_args+=" --disable-libatomic"
+	_args+=" --disable-symvers"
+	_args+=" libat_cv_have_ifunc=no"
+
+	CFLAGS="-O0 -g0" CXXFLAGS="-O0 -g0" \
+		../gcc-${_gcc_version}/configure ${_args}
+
+	make ${makejobs}
+	make install
+
+	touch ${wrksrc}/.gcc_bootstrap_done
+}
+
+_linux_headers() {
+	[ -f ${wrksrc}/.linux_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building Linux API headers\n"
+
+	cd linux-${_linux_version}
+
+	for f in ${XBPS_SRCPKGDIR}/kernel-libc-headers/patches/*.patch; do
+		_apply_patch -p0 $f
+	done
+
+	make ARCH=riscv headers_check
+	make ARCH=riscv INSTALL_HDR_PATH=${_sysroot}/usr headers_install
+
+	touch ${wrksrc}/.linux_build_done
+}
+
+_musl_build() {
+	[ -f ${wrksrc}/.musl_build_done ] && return 0
+
+	cd ${wrksrc}/musl-${_musl_version}
+	msg_normal "Building cross musl libc\n"
+
+	CC="${_triplet}-gcc" LD="${_triplet}-ld" AR="${_triplet}-ar" \
+		AS="${_triplet}-as" RANLIB="${_triplet}-ranlib" \
+		CFLAGS="-Os -pipe ${_archflags}" \
+		./configure --prefix=/usr
+
+	make ${makejobs}
+	make DESTDIR=${_sysroot} install
+
+	touch ${wrksrc}/.musl_build_done
+}
+
+_gcc_build() {
+	local _args
+
+	[ -f ${wrksrc}/.gcc_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross gcc final\n"
+
+	[ ! -d gcc-build ] && mkdir gcc-build
+	cd gcc-build
+
+	_args="--prefix=/usr"
+	_args+=" --libexecdir=/usr/lib"
+	_args+=" --target=${_triplet}"
+	_args+=" --with-sysroot=${_sysroot}"
+	_args+=" --enable-languages=c,ada,c++,fortran,lto"
+	_args+=" --enable-libada"
+	_args+=" --enable-lto"
+	_args+=" --enable-default-pie"
+	_args+=" --enable-default-ssp"
+	_args+=" --disable-libsanitizer"
+	_args+=" --disable-multilib"
+	_args+=" --disable-nls"
+	_args+=" --disable-libquadmath"
+	_args+=" --disable-libmudflap"
+	_args+=" --enable-shared"
+	_args+=" --disable-symvers"
+	_args+=" libat_cv_have_ifunc=no"
+
+	../gcc-${_gcc_version}/configure ${_args}
+
+	make ${makejobs}
+
+	touch ${wrksrc}/.gcc_build_done
+}
+
+do_build() {
+	# Ensure we use sane environment
+	unset CC CXX CPP LD AS AR RANLIB OBJDUMP READELF NM
+	unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
+	export CFLAGS="-Os -pipe" CXXFLAGS="-Os -pipe"
+
+	for f in include lib libexec bin sbin; do
+		if [ ! -d ${_sysroot}/usr/${f} ]; then
+			mkdir -p ${_sysroot}/usr/${f}
+		fi
+		if [ ! -h ${_sysroot}/${f} ]; then
+			ln -sfr ${_sysroot}/usr/${f} ${_sysroot}/${f}
+		fi
+	done
+
+	_binutils_build
+	_gcc_bootstrap
+	_linux_headers
+	_musl_build
+	_gcc_build
+}
+
+do_install() {
+	for f in include libexec bin sbin; do
+		if [ ! -d ${DESTDIR}/${_sysroot}/usr/${f} ]; then
+			mkdir -p ${DESTDIR}/${_sysroot}/usr/${f}
+		fi
+		if [ ! -h ${DESTDIR}/${_sysroot}/${f} ]; then
+			ln -sfr ${DESTDIR}/${_sysroot}/usr/${f} \
+				${DESTDIR}/${_sysroot}/${f}
+		fi
+	done
+	mkdir -p ${DESTDIR}/${_sysroot}/usr/lib
+	ln -sf lib ${DESTDIR}/${_sysroot}/usr/lib64
+	ln -sf usr/lib ${DESTDIR}/${_sysroot}/lib64
+	ln -sf usr/lib ${DESTDIR}/${_sysroot}/lib
+
+	# install linux API headers
+	cd ${wrksrc}/linux-${_linux_version}
+	make ARCH=riscv INSTALL_HDR_PATH=${DESTDIR}/${_sysroot}/usr headers_install
+	rm -f $(find ${DESTDIR}/${_sysroot}/usr/include -name .install -or -name ..install.cmd)
+	rm -rf ${DESTDIR}/${_sysroot}/usr/include/drm
+
+	# install cross binutils
+	cd ${wrksrc}/binutils-build
+	make DESTDIR=${DESTDIR} install
+
+	# install cross gcc
+	cd ${wrksrc}/gcc-build
+	make DESTDIR=${DESTDIR} install
+
+	# move libcc1.so* to the sysroot
+	mv ${DESTDIR}/usr/lib/libcc1.so* ${DESTDIR}/${_sysroot}/usr/lib
+
+	# install musl libc for target
+	cd ${wrksrc}/musl-${_musl_version}
+	make DESTDIR=${DESTDIR}/${_sysroot} install
+
+	# Remove useless headers.
+	rm -rf ${DESTDIR}/usr/lib/gcc/${_triplet}/*/include-fixed/ \
+		${DESTDIR}/usr/lib/gcc/${_triplet}/*/include/stddef.h
+
+	# Make ld-musl.so symlinks relative.
+	ln -sf libc.so ${DESTDIR}/${_sysroot}/usr/lib/ld-musl-riscv64.so.1
+
+	# symlinks for gnarl and gnat shared libraries
+	_majorver=${_gcc_version%.*.*}
+	_adalib=usr/lib/gcc/${_triplet}/${_gcc_version}/adalib
+	mv -v ${DESTDIR}/${_adalib}/libgnarl-${_majorver}.so ${DESTDIR}/${_sysroot}/usr/lib
+	mv -v ${DESTDIR}/${_adalib}/libgnat-${_majorver}.so ${DESTDIR}/${_sysroot}/usr/lib
+	ln -svf libgnarl-${_majorver}.so libgnarl.so
+	ln -svf libgnat-${_majorver}.so libgnat.so
+	rm -vf ${DESTDIR}/${_adalib}/libgna{rl,t}.so
+
+	# Remove unnecessary stuff
+	rm -f ${DESTDIR}/usr/lib*/libiberty.a
+	rm -rf ${DESTDIR}/usr/share
+	rm -rf ${DESTDIR}/${_sysroot}/{etc,var}
+	rm -rf ${DESTDIR}/${_sysroot}/usr/{sbin,share,libexec}
+	rm -f ${DESTDIR}/${_sysroot}/libexec
+	rm -f ${DESTDIR}/${_sysroot}/lib/*.py
+	rm -f ${DESTDIR}/${_sysroot}/sbin
+}
+
+cross-riscv64-linux-musl-libc_package() {
+	short_desc+=" - libc files"
+	nostrip=yes
+	noshlibprovides=yes
+	noverifyrdeps=yes
+	pkg_install() {
+		vmove ${_sysroot}
+	}
+}
