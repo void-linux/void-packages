@@ -87,6 +87,7 @@ set(QRC_FILES
 
 file(GLOB FLAT_SOURCE_FILES
 	SourceFiles/*.cpp
+	SourceFiles/api/*.cpp
 	SourceFiles/base/*.cpp
 	SourceFiles/calls/*.cpp
 	SourceFiles/chat_helpers/*.cpp

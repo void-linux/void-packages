@@ -7,8 +7,11 @@ add_custom_command(
 	OUTPUT
 		${GENERATED_DIR}/scheme.h
 		${GENERATED_DIR}/scheme.cpp
-	COMMAND python ${TELEGRAM_SOURCES_DIR}/codegen/scheme/codegen_scheme.py -o${GENERATED_DIR} ${TELEGRAM_RESOURCES_DIR}/scheme.tl
-	DEPENDS ${TELEGRAM_RESOURCES_DIR}/scheme.tl
+	COMMAND python ${TELEGRAM_SOURCES_DIR}/codegen/scheme/codegen_scheme.py 
+			-o${GENERATED_DIR} ${TELEGRAM_RESOURCES_DIR}/tl/mtproto.tl
+			${TELEGRAM_RESOURCES_DIR}/tl/api.tl
+	DEPENDS ${TELEGRAM_RESOURCES_DIR}/tl/mtproto.tl
+		${TELEGRAM_RESOURCES_DIR}/tl/api.tl
 	COMMENT "Codegen scheme.tl"
 )
 list(APPEND TELEGRAM_GENERATED_SOURCES
