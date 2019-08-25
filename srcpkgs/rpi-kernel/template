@@ -10,7 +10,7 @@ _gitshort="${_githash:0:7}"
 
 pkgname=rpi-kernel
 version=4.19.75
-revision=1
+revision=2
 wrksrc="linux-${_githash}"
 maintainer="Peter Bui <pbui@github.bx612.space>"
 homepage="http://www.kernel.org"
@@ -149,20 +149,39 @@ do_install() {
 	install -Dm644 Makefile ${hdrdest}/Makefile
 	install -Dm644 kernel/Makefile ${hdrdest}/kernel/Makefile
 	install -Dm644 .config ${hdrdest}/.config
+	for file in $(find . -name Kconfig\*); do
+		mkdir -p ${hdrdest}/$(dirname $file)
+		install -Dm644 $file ${hdrdest}/${file}
+	done
+	for file in $(find arch/${_arch} -name module.lds -o -name Kbuild.platforms -o -name Platform); do
+		mkdir -p ${hdrdest}/$(dirname $file)
+		install -Dm644 $file ${hdrdest}/${file}
+	done
 	mkdir -p ${hdrdest}/include
 
 	# Remove firmware stuff provided by the "linux-firmware" pkg.
 	rm -rf ${DESTDIR}/usr/lib/firmware
 
-	for i in acpi asm-generic config crypto drm generated linux math-emu \
-		media net pcmcia scsi sound trace uapi video xen; do
+	for i in acpi asm-generic clocksource config crypto drm generated linux \
+		math-emu media net pcmcia scsi sound trace uapi video xen; do
 		[ -d include/$i ] && cp -a include/$i ${hdrdest}/include
 	done
 
 	cd ${wrksrc}
+	# Remove helper binaries built for host,
+	# if generated files from the scripts/ directory need to be included,
+	# they need to be copied to ${hdrdest} before this step
+	if [ "$CROSS_BUILD" ]; then
+		make ${makejobs} ARCH=${_arch} _mrproper_scripts
+	fi
+
 	# Copy files necessary for later builds.
 	cp Module.symvers ${hdrdest}
 	cp -a scripts ${hdrdest}
+	mkdir -p ${hdrdest}/security/selinux
+	cp -a security/selinux/include ${hdrdest}/security/selinux
+	mkdir -p ${hdrdest}/tools/include
+	cp -a tools/include/tools ${hdrdest}/tools/include
 
 	# copy arch includes for external modules
 	mkdir -p ${hdrdest}/arch/${_arch}
@@ -171,6 +190,9 @@ do_install() {
 	mkdir -p ${hdrdest}/arch/${_arch}/kernel
 	cp arch/${_arch}/Makefile ${hdrdest}/arch/${_arch}
 	cp arch/${_arch}/kernel/asm-offsets.s ${hdrdest}/arch/${_arch}/kernel
+	if [ "$_arch" = "arm64" ] ; then
+		cp -a arch/${_arch}/kernel/vdso ${hdrdest}/arch/${_arch}/kernel/
+	fi
 
 	# Add md headers
 	mkdir -p ${hdrdest}/drivers/md
@@ -188,18 +210,15 @@ do_install() {
 	mkdir -p ${hdrdest}/include/config/dvb/
 	cp include/config/dvb/*.h ${hdrdest}/include/config/dvb/
 
-	# Copy in Kconfig files
-	for i in $(find . -name "Kconfig*"); do
-		mkdir -p ${hdrdest}/$(echo $i | sed 's|/Kconfig.*||')
-		cp $i ${hdrdest}/$i
-	done
-
 	# Remove unneeded architectures
 	# (save the correct one + Kconfig and delete all others)
 	mkdir -p arch-backup
-	cp ${hdrdest}/arch/${_arch} ${hdrdest}/arch/Kconfig arch-backup/
+	cp -r ${hdrdest}/arch/${_arch} ${hdrdest}/arch/Kconfig arch-backup/
 	rm -rf ${hdrdest}/arch
 	mv arch-backup ${hdrdest}/arch
+	# Keep arch/x86/ras/Kconfig as it is needed by drivers/ras/Kconfig
+	mkdir -p ${hdrdest}/arch/x86/ras
+	cp -a arch/x86/ras/Kconfig ${hdrdest}/arch/x86/ras/Kconfig
 
 	# Compress all modules with xz to save a few MBs.
 	msg_normal "$pkgver: compressing kernel modules with gzip, please wait...\n"
