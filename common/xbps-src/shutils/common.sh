@@ -237,7 +237,7 @@ run_pkg_hooks() {
 unset_package_funcs() {
     local f
 
-    for f in "$(typeset -F)"; do
+    for f in $(typeset -F); do
         case "$f" in
         *_package)
             unset -f "$f"
