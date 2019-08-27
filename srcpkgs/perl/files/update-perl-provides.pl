@@ -83,6 +83,7 @@ sub dist_srcpath
         lib_modpath($path, $modname),
         dumb_modpath($path, $modname, '.pm'),
         dumb_modpath($path, $modname, '_pm.PL'),
+        dumb_modpath($path, '__'.$modname.'__', '.pm'),
         "$path/VERSION", # for podlators
     );
     for my $src (@srcpaths){
