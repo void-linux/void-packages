@@ -1,0 +1,55 @@
+Upstream: https://gitlab.freedesktop.org/mesa/mesa/merge_requests/1785
+Status: Merged
+
+--- src/util/u_cpu_detect.c
++++ src/util/u_cpu_detect.c
+@@ -92,7 +92,7 @@ static int has_cpuid(void);
+ #endif
+ 
+ 
+-#if defined(PIPE_ARCH_PPC) && !defined(PIPE_OS_APPLE)
++#if defined(PIPE_ARCH_PPC) && !defined(PIPE_OS_APPLE) && !defined(PIPE_OS_LINUX)
+ static jmp_buf  __lv_powerpc_jmpbuf;
+ static volatile sig_atomic_t __lv_powerpc_canjump = 0;
+ 
+@@ -126,8 +126,29 @@ check_os_altivec_support(void)
+          util_cpu_caps.has_altivec = 1;
+       }
+    }
+-#else /* !PIPE_OS_APPLE */
+-   /* not on Apple/Darwin, do it the brute-force way */
++#elif defined(PIPE_OS_LINUX) /* !PIPE_OS_APPLE */
++#if defined(PIPE_ARCH_PPC_64)
++    Elf64_auxv_t aux;
++#else
++    Elf32_auxv_t aux;
++#endif
++    int fd = open("/proc/self/auxv", O_RDONLY | O_CLOEXEC);
++    if (fd >= 0) {
++       while (read(fd, &aux, sizeof(aux)) == sizeof(aux)) {
++          if (aux.a_type == AT_HWCAP) {
++             char *env_vsx = getenv("GALLIVM_VSX");
++             uint64_t hwcap = aux.a_un.a_val;
++             util_cpu_caps.has_altivec = (hwcap >> 28) & 1;
++             if (!env_vsx || env_vsx[0] != '0') {
++                util_cpu_caps.has_vsx  = (hwcap >>  7) & 1;
++             }
++             break;
++          }
++       }
++       close(fd);
++    }
++#else /* !PIPE_OS_APPLE && !PIPE_OS_LINUX */
++   /* not on Apple/Darwin or Linux, do it the brute-force way */
+    /* this is borrowed from the libmpeg2 library */
+    signal(SIGILL, sigill_handler);
+    if (setjmp(__lv_powerpc_jmpbuf)) {
+@@ -171,7 +192,7 @@ check_os_altivec_support(void)
+          util_cpu_caps.has_altivec = 0;
+       }
+    }
+-#endif /* !PIPE_OS_APPLE */
++#endif /* !PIPE_OS_APPLE && !PIPE_OS_LINUX */
+ }
+ #endif /* PIPE_ARCH_PPC */
+ 
