@@ -310,9 +310,7 @@ The following functions are defined by `xbps-src` and can be used on any templat
 
 	Installs `file` into `usr/share/licenses/<pkgname>` in the pkg
 	`$DESTDIR`. The optional 2nd argument can be used to change the
-	`file name`. Note: Custom licenses,
-	non-`GPL` licenses, `MIT`, `BSD` and `ISC` require the
-	license file to	be supplied with the binary package.
+	`file name`. See [license](#var_license) for when to use it.
 
 - *vsv()* `vsv <service>`
 
@@ -401,9 +399,18 @@ The list of mandatory variables for a template:
 
 - `homepage` A string pointing to the `upstream` homepage.
 
-- `license` A string matching the license's [SPDX Short identifier](https://spdx.org/licenses),
-or string prefixed with `custom:` for licenses not listed there (see [vlicense](#vlicense)).
+
+- <a id="var_license"></a>
+`license` A string matching the license's [SPDX Short identifier](https://spdx.org/licenses),
+`Public Domain`, or string prefixed with `custom:` for other licenses.
 Multiple licenses should be separated by commas, Example: `GPL-3.0-or-later, custom:Hugware`.
+
+  Empty meta-packages that don't include any files
+  which thus have and require no license, should have set
+  `license="BSD-2-Clause"`.
+
+  Note: `MIT`, `BSD`, `ISC` and custom licenses
+  require the license file to be supplied with the binary package.
 
 - `maintainer` A string in the form of `name <user@domain>`.  The
   email for this field must be a valid email that you can be reached
@@ -860,9 +867,7 @@ set in the body of the template.
 - `meta` For `meta-packages`, i.e packages that only install local files or simply
 depend on additional packages. This build style does not install
 dependencies to the root directory, and only checks if a binary package is
-available in repositories. If your meta-package doesn't include any files
-which thus have and require no license, then you should also set
-`license="BSD-2-Clause"`.
+available in repositories.
 
 - `R-cran` For packages that are available on The Comprehensive R Archive
 Network (CRAN). The build style requires the `pkgname` to start with
