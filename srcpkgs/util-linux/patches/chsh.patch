@@ -1,0 +1,89 @@
+Patch by Quentin Rameau <quinq@fifth.space>:
+use getpwuid_r since chsh uses readline (which does tilde expansion)
+can overwrite the getpwuid buffer on musl in the meantime.
+
+https://inbox.vuxu.org/voidlinux/20190922131237.93849-1-quinq@fifth.space/
+https://lore.kernel.org/util-linux/20190921185021.10568-1-quinq@fifth.space/
+
+--- include/pwdutils.h
++++ include/pwdutils.h
+@@ -5,6 +5,7 @@
+ #include <pwd.h>
+ 
+ extern struct passwd *xgetpwnam(const char *username, char **pwdbuf);
++extern struct passwd *xgetpwuid(uid_t uid, char **pwdbuf);
+ extern char *xgetlogin(void);
+ 
+ #endif /* UTIL_LINUX_PWDUTILS_H */
+--- lib/pwdutils.c
++++ lib/pwdutils.c
+@@ -36,6 +36,34 @@ failed:
+ 	return NULL;
+ }
+ 
++struct passwd *xgetpwuid(uid_t uid, char **pwdbuf)
++{
++	struct passwd *pwd = NULL, *res = NULL;
++	int rc;
++
++	if (!pwdbuf)
++		return NULL;
++
++	*pwdbuf = xmalloc(UL_GETPW_BUFSIZ);
++	pwd = xcalloc(1, sizeof(struct passwd));
++
++	errno = 0;
++	rc = getpwuid_r(uid, pwd, *pwdbuf, UL_GETPW_BUFSIZ, &res);
++	if (rc != 0) {
++		errno = rc;
++		goto failed;
++	}
++	if (!res) {
++		errno = EINVAL;
++		goto failed;
++	}
++	return pwd;
++failed:
++	free(pwd);
++	free(*pwdbuf);
++	return NULL;
++}
++
+ char *xgetlogin(void)
+ {
+ 	struct passwd *pw = NULL;
+--- login-utils/chsh.c
++++ login-utils/chsh.c
+@@ -38,6 +38,7 @@
+ #include "islocal.h"
+ #include "nls.h"
+ #include "pathnames.h"
++#include "pwdutils.h"
+ #include "setpwnam.h"
+ #include "strutils.h"
+ #include "xalloc.h"
+@@ -253,7 +254,7 @@ static void check_shell(const char *shell)
+ 
+ int main(int argc, char **argv)
+ {
+-	char *oldshell;
++	char *oldshell, *pwbuf;
+ 	int nullshell = 0;
+ 	const uid_t uid = getuid();
+ 	struct sinfo info = { NULL };
+@@ -267,12 +268,12 @@ int main(int argc, char **argv)
+ 
+ 	parse_argv(argc, argv, &info);
+ 	if (!info.username) {
+-		pw = getpwuid(uid);
++		pw = xgetpwuid(uid, &pwbuf);
+ 		if (!pw)
+ 			errx(EXIT_FAILURE, _("you (user %d) don't exist."),
+ 			     uid);
+ 	} else {
+-		pw = getpwnam(info.username);
++		pw = xgetpwnam(info.username, &pwbuf);
+ 		if (!pw)
+ 			errx(EXIT_FAILURE, _("user \"%s\" does not exist."),
+ 			     info.username);
+
