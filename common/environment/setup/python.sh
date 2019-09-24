@@ -2,8 +2,8 @@
 # Useful variables for determining Python version and paths.
 #
 
-# set version 2 as the default Python
-python_version="2"
+# set version 3 as the default Python
+python_version="3"
 
 py2_ver="2.7"
 py2_lib="/usr/lib/python${py2_ver}"
