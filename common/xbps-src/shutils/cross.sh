@@ -29,7 +29,7 @@ prepare_cross_sysroot() {
     [ -z "$cross" -o "$cross" = "" -o -f $statefile ] && return 0
 
     # Check for cross-vpkg-dummy available for the target arch, otherwise build it.
-    pkg_available 'cross-vpkg-dummy>=0.31_1' $cross
+    pkg_available 'cross-vpkg-dummy>=0.33_1' $cross
     if [ $? -eq 0 ]; then
         $XBPS_LIBEXECDIR/build.sh cross-vpkg-dummy cross-vpkg-dummy pkg $cross init || return $?
     fi
