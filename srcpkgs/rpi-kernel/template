@@ -41,76 +41,67 @@ mutable_files="
 	/usr/lib/modules/${_kernver}/modules.alias.bin
 	/usr/lib/modules/${_kernver}/modules.devname"
 
+_arch=
+case "$XBPS_TARGET_MACHINE" in
+	arm*) _arch=arm ;;
+	aarch64*) _arch=arm64 ;;
+esac
+_cross=
+if [ "$CROSS_BUILD" ]; then
+	_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+fi
+
 pre_configure() {
 	# Remove .git directory, otherwise scripts/setkernelversion.sh
 	# modifies KERNELRELEASE and appends + to it.
 	rm -rf .git
 }
 do_configure() {
-	if [ "$CROSS_BUILD" ]; then
-		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
-	fi
+	local target defconfig
 
-	# Use upstream default configuration, no need to maintain ours.
+	# Use upstream's default configuration, no need to maintain ours.
 	case "$XBPS_TARGET_MACHINE" in
-	aarch64*)
-		echo "CONFIG_CONNECTOR=y" >> arch/arm64/configs/bcmrpi3_defconfig
-		echo "CONFIG_PROC_EVENTS=y" >> arch/arm64/configs/bcmrpi3_defconfig
-		echo "CONFIG_F2FS_FS_SECURITY=y" >> arch/arm64/configs/bcmrpi3_defconfig
-		echo "CONFIG_CGROUP_PIDS=y" >> arch/arm64/configs/bcmrpi3_defconfig
-		make ${makejobs} ${_args} ARCH=arm64 bcmrpi3_defconfig
-		;;
-	armv7l*)
-		echo "CONFIG_USER_NS=y" >> arch/arm/configs/bcm2709_defconfig
-		echo "CONFIG_CONNECTOR=y" >> arch/arm/configs/bcm2709_defconfig
-		echo "CONFIG_PROC_EVENTS=y" >> arch/arm/configs/bcm2709_defconfig
-		echo "CONFIG_F2FS_FS_SECURITY=y" >> arch/arm/configs/bcm2709_defconfig
-		echo "CONFIG_CGROUP_PIDS=y" >> arch/arm/configs/bcm2709_defconfig
-		make ${makejobs} ${_args} ARCH=arm bcm2709_defconfig
-		;;
-	armv6l*)
-		echo "CONFIG_USER_NS=y" >> arch/arm/configs/bcmrpi_defconfig
-		echo "CONFIG_CONNECTOR=y" >> arch/arm/configs/bcmrpi_defconfig
-		echo "CONFIG_PROC_EVENTS=y" >> arch/arm/configs/bcmrpi_defconfig
-		echo "CONFIG_F2FS_FS_SECURITY=y" >> arch/arm/configs/bcmrpi_defconfig
-		echo "CONFIG_CGROUP_PIDS=y" >> arch/arm/configs/bcmrpi_defconfig
-		make ${makejobs} ${_args} ARCH=arm bcmrpi_defconfig
-		;;
+		# RPi3
+		aarch64*)
+			target=bcmrpi3_defconfig
+			;;
+		# RPi2 / RPi3
+		armv7l*)
+			target=bcm2709_defconfig
+			;;
+		# RPi1
+		armv6l*)
+			target=bcmrpi_defconfig
+			;;
 	esac
+
+	defconfig="arch/${_arch}/configs/${target}"
+	echo "CONFIG_CONNECTOR=y" >> "$defconfig"
+	echo "CONFIG_PROC_EVENTS=y" >> "$defconfig"
+	echo "CONFIG_F2FS_FS_SECURITY=y" >> "$defconfig"
+	echo "CONFIG_CGROUP_PIDS=y" >> "$defconfig"
+
+	make ${makejobs} ${_cross} ARCH=${_arch} ${target}
 
 	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
-	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
+	vsed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
 }
 do_build() {
-	if [ "$CROSS_BUILD" ]; then
-		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
-	fi
+	local target
 
 	case "$XBPS_TARGET_MACHINE" in
-	arm*)
-		_arch=arm
-		_targets="zImage modules dtbs"
-		;;
-	aarch64*)
-		unset LDFLAGS
-		_arch=arm64
-		_targets="Image modules dtbs"
-		;;
+		arm*)
+			target="zImage modules dtbs"
+			;;
+		aarch64*)
+			target="Image modules dtbs"
+			;;
 	esac
 
-	make ${makejobs} ${_args} ARCH=${_arch} prepare
-	make ${makejobs} ${_args} ARCH=${_arch} ${_targets}
+	make ${makejobs} ${_cross} ARCH=${_arch} prepare
+	make ${makejobs} ${_cross} ARCH=${_arch} ${target}
 }
 do_install() {
-	case "$XBPS_TARGET_MACHINE" in
-	arm*)
-		_arch="arm"
-	;;
-	aarch64*)
-		_arch="arm64"
-	;;
-	esac
-
 	local hdrdest
 
 	# Run depmod after compressing modules.
@@ -173,14 +164,11 @@ do_install() {
 	cp Module.symvers ${hdrdest}
 	cp -a scripts ${hdrdest}
 
-	# fix permissions on scripts dir
-	chmod og-w -R ${hdrdest}/scripts
-
 	# copy arch includes for external modules
 	mkdir -p ${hdrdest}/arch/${_arch}
 	cp -a arch/${_arch}/include ${hdrdest}/arch/${_arch}
 
-	mkdir -p ${hdrdest}/arch/${arch}/kernel
+	mkdir -p ${hdrdest}/arch/${_arch}/kernel
 	cp arch/${_arch}/Makefile ${hdrdest}/arch/${_arch}
 	cp arch/${_arch}/kernel/asm-offsets.s ${hdrdest}/arch/${_arch}/kernel
 
@@ -207,10 +195,11 @@ do_install() {
 	done
 
 	# Remove unneeded architectures
-	for arch in alpha arc avr32 blackfin c6x cris frv h8300 \
-		hexagon ia64 m* n* p* s* um v850 x86 xtensa; do
-		rm -rf ${hdrdest}/arch/${arch}
-	done
+	# (save the correct one + Kconfig and delete all others)
+	mkdir -p arch-backup
+	cp ${hdrdest}/arch/${_arch} ${hdrdest}/arch/Kconfig arch-backup/
+	rm -rf ${hdrdest}/arch
+	mv arch-backup ${hdrdest}/arch
 
 	# Compress all modules with xz to save a few MBs.
 	msg_normal "$pkgver: compressing kernel modules with gzip, please wait...\n"
