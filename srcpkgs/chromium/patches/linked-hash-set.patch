@@ -1,0 +1,130 @@
+From 74138b9febd37eac0fc26b8efb110014a83a52c6 Mon Sep 17 00:00:00 2001
+From: Jeremy Roman <jbroman@chromium.org>
+Date: Wed, 07 Aug 2019 13:26:48 +0000
+Subject: [PATCH] WTF: Make LinkedHashSet understand values for which memset initialization would be bad.
+
+Includes a unit test which fails before, and uses this to fix FontCacheKeyTraits.
+
+Bug: 980025
+Change-Id: If41f97444c7fd37b9b95d6dadaf3da5689079e9e
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/1739948
+Reviewed-by: Kentaro Hara <haraken@chromium.org>
+Reviewed-by: Yutaka Hirano <yhirano@chromium.org>
+Commit-Queue: Jeremy Roman <jbroman@chromium.org>
+Cr-Commit-Position: refs/heads/master@{#684731}
+---
+
+diff --git a/third_party/blink/renderer/platform/fonts/font_cache_key.h b/third_party/blink/renderer/platform/fonts/font_cache_key.h
+index 0efc8fb..90063cb 100644
+--- third_party/blink/renderer/platform/fonts/font_cache_key.h
++++ third_party/blink/renderer/platform/fonts/font_cache_key.h
+@@ -133,6 +133,10 @@
+ 
+ struct FontCacheKeyTraits : WTF::SimpleClassHashTraits<FontCacheKey> {
+   STATIC_ONLY(FontCacheKeyTraits);
++
++  // std::string's empty state need not be zero in all implementations,
++  // and it is held within FontFaceCreationParams.
++  static const bool kEmptyValueIsZero = false;
+ };
+ 
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/platform/wtf/linked_hash_set.h b/third_party/blink/renderer/platform/wtf/linked_hash_set.h
+index b35b6e9..77e524c 100644
+--- third_party/blink/renderer/platform/wtf/linked_hash_set.h
++++ third_party/blink/renderer/platform/wtf/linked_hash_set.h
+@@ -146,6 +146,11 @@
+                     LinkedHashSetNodeBase* next)
+       : LinkedHashSetNodeBase(prev, next), value_(value) {}
+ 
++  LinkedHashSetNode(ValueArg&& value,
++                    LinkedHashSetNodeBase* prev,
++                    LinkedHashSetNodeBase* next)
++      : LinkedHashSetNodeBase(prev, next), value_(std::move(value)) {}
++
+   LinkedHashSetNode(LinkedHashSetNode&& other)
+       : LinkedHashSetNodeBase(std::move(other)),
+         value_(std::move(other.value_)) {}
+@@ -445,10 +450,13 @@
+ 
+   // The slot is empty when the next_ field is zero so it's safe to zero
+   // the backing.
+-  static const bool kEmptyValueIsZero = true;
++  static const bool kEmptyValueIsZero = ValueTraits::kEmptyValueIsZero;
+ 
+   static const bool kHasIsEmptyValueFunction = true;
+   static bool IsEmptyValue(const Node& node) { return !node.next_; }
++  static Node EmptyValue() {
++    return Node(ValueTraits::EmptyValue(), nullptr, nullptr);
++  }
+ 
+   static const int kDeletedValue = -1;
+ 
+diff --git a/third_party/blink/renderer/platform/wtf/list_hash_set_test.cc b/third_party/blink/renderer/platform/wtf/list_hash_set_test.cc
+index 4c3f899..cd1be00 100644
+--- third_party/blink/renderer/platform/wtf/list_hash_set_test.cc
++++ third_party/blink/renderer/platform/wtf/list_hash_set_test.cc
+@@ -487,6 +487,7 @@
+ };
+ 
+ struct Complicated {
++  Complicated() : Complicated(0) {}
+   Complicated(int value) : simple_(value) { objects_constructed_++; }
+ 
+   Complicated(const Complicated& other) : simple_(other.simple_) {
+@@ -495,9 +496,6 @@
+ 
+   Simple simple_;
+   static int objects_constructed_;
+-
+- private:
+-  Complicated() = delete;
+ };
+ 
+ int Complicated::objects_constructed_ = 0;
+@@ -731,4 +729,45 @@
+ 
+ }  // anonymous namespace
+ 
++// A unit type which objects to its state being initialized wrong.
++struct InvalidZeroValue {
++  InvalidZeroValue() = default;
++  InvalidZeroValue(WTF::HashTableDeletedValueType) : deleted_(true) {}
++  ~InvalidZeroValue() { CHECK(ok_); }
++  bool IsHashTableDeletedValue() const { return deleted_; }
++
++  bool ok_ = true;
++  bool deleted_ = false;
++};
++
++template <>
++struct HashTraits<InvalidZeroValue> : SimpleClassHashTraits<InvalidZeroValue> {
++  static const bool kEmptyValueIsZero = false;
++};
++
++template <>
++struct DefaultHash<InvalidZeroValue> {
++  struct Hash {
++    static unsigned GetHash(const InvalidZeroValue&) { return 0; }
++    static bool Equal(const InvalidZeroValue&, const InvalidZeroValue&) {
++      return true;
++    }
++  };
++};
++
++template <typename Set>
++class ListOrLinkedHashSetInvalidZeroTest : public testing::Test {};
++
++using InvalidZeroValueSetTypes =
++    testing::Types<ListHashSet<InvalidZeroValue>,
++                   ListHashSet<InvalidZeroValue, 1>,
++                   LinkedHashSet<InvalidZeroValue>>;
++TYPED_TEST_SUITE(ListOrLinkedHashSetInvalidZeroTest, InvalidZeroValueSetTypes);
++
++TYPED_TEST(ListOrLinkedHashSetInvalidZeroTest, InvalidZeroValue) {
++  using Set = TypeParam;
++  Set set;
++  set.insert(InvalidZeroValue());
++}
++
+ }  // namespace WTF
