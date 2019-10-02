@@ -1,0 +1,63 @@
+#!/bin/sh
+
+header() {
+	echo "TIMEOUT ${TIMEOUT}" > ${OUTFILE}
+	echo "DEFAULT entry0" >> ${OUTFILE}
+	echo "MENU TITLE Boot menu" >> ${OUTFILE}
+}
+
+get_bootpath() {
+	echo ${1} | sed "s#${BOOTPART}/#/#"
+}
+
+add_kernel() {
+	ver=${1}
+	kernel=$(get_bootpath "/boot/vmlinux-${ver}")
+	initrd=$(get_bootpath "/boot/initramfs-${ver}.img")
+	fdt=$(get_bootpath "/boot/dtbs/dtbs-${ver}/${DTBPATH}")
+	cmdline="${CMDLINE}"
+
+	echo "LABEL entry${ENTRY}" >> ${OUTFILE}
+	echo "\tMENU LABEL Void Linux Version ${ver}" >> ${OUTFILE}
+	echo "\tLINUX ${kernel}" >> ${OUTFILE}
+	if [ -e "${BOOTPART}/${initrd}" ]; then
+		echo "\tINITRD ${initrd}" >> ${OUTFILE}
+	fi
+	if [ -n "${DTBPATH}" ] && [ -e "${BOOTPART}/${fdt}" ]; then
+		echo "\tFDT ${fdt}" >> ${OUTFILE}
+	fi
+	if [ -n "${cmdline}" ]; then
+		echo "\tAPPEND ${cmdline}" >> ${OUTFILE}
+	fi
+	ENTRY=$(expr ${ENTRY} + 1)
+}
+
+main() {
+	if [ ! -d /boot/extlinux ]; then
+		rm ${OUTFILE}
+		exit 0
+	fi
+
+	if [ -e ${CONF} ]; then
+		. ${CONF}
+	fi
+
+	if [ -z "${CMDLINE}" ]; then
+		CMDLINE=$(cat /proc/cmdline)
+	fi
+
+	header
+
+	for kernel in $(ls /boot/vmlinu[xz]-* | sort -rV); do
+		ver=$(echo ${kernel} | sed "s#/boot/vmlinu[xz]-\(.*\)#\\1#")
+		echo "Add kernel ${ver}"
+		add_kernel ${ver}
+	done
+	mv ${OUTFILE} /boot/extlinux/extlinux.conf
+}
+
+CONF=/etc/default/extlinux
+OUTFILE=$(mktemp)
+BOOTPART=$(df -P /boot | tail -1 | awk '{ print $6 }')
+ENTRY=0
+main

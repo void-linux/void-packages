@@ -1,0 +1,79 @@
+From bf6946074b948540e4147154041ea244bafb38c4 Mon Sep 17 00:00:00 2001
+From: Samuel Holland <samuel@sholland.org>
+Date: Sat, 13 Oct 2018 01:14:03 +0000
+Subject: [PATCH] powerpc: Fix alignment after float structs
+
+---
+ src/powerpc/ffi_linux64.c | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/src/powerpc/ffi_linux64.c b/src/powerpc/ffi_linux64.c
+index 2534ecf3..197a270d 100644
+--- src/powerpc/ffi_linux64.c
++++ src/powerpc/ffi_linux64.c
+@@ -580,11 +580,9 @@ ffi_prep_args64 (extended_cif *ecif, unsigned long *const stack)
+ 		      fparg_count++;
+ 		    }
+ 		  while (--elnum != 0);
+-		  if ((next_arg.p & 3) != 0)
+-		    {
+-		      if (++next_arg.f == gpr_end.f)
+-			next_arg.f = rest.f;
+-		    }
++		  if ((next_arg.p & 7) != 0)
++                    if (++next_arg.f == gpr_end.f)
++                      next_arg.f = rest.f;
+ 		}
+ 	      else
+ 		do
+From 49a1bbadfa0b5ad5c373271c8ba7a5d8911a85d9 Mon Sep 17 00:00:00 2001
+From: Samuel Holland <samuel@sholland.org>
+Date: Sat, 13 Oct 2018 01:14:20 +0000
+Subject: [PATCH] powerpc: Don't pad rvalues copied from FP regs
+
+---
+ src/powerpc/ffi.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/powerpc/ffi.c b/src/powerpc/ffi.c
+index 7eb543e4..94a11700 100644
+--- src/powerpc/ffi.c
++++ src/powerpc/ffi.c
+@@ -121,8 +121,9 @@ ffi_call_int (ffi_cif *cif,
+ # endif
+ 	/* The SYSV ABI returns a structure of up to 8 bytes in size
+ 	   left-padded in r3/r4, and the ELFv2 ABI similarly returns a
+-	   structure of up to 8 bytes in size left-padded in r3.  */
+-	if (rsize <= 8)
++	   structure of up to 8 bytes in size left-padded in r3. But
++	   note that a structure of a single float is not paddded.  */
++	if (rsize <= 8 && (cif->flags & FLAG_RETURNS_FP) == 0)
+ 	  memcpy (rvalue, (char *) smst_buffer + 8 - rsize, rsize);
+ 	else
+ #endif
+From b0c598d5d6b653a3ea87a2d04afb6b35441e5f7e Mon Sep 17 00:00:00 2001
+From: Samuel Holland <samuel@sholland.org>
+Date: Sat, 13 Oct 2018 01:14:58 +0000
+Subject: [PATCH] powerpc: Add missing check in struct alignment
+
+---
+ src/powerpc/ffi_linux64.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/powerpc/ffi_linux64.c b/src/powerpc/ffi_linux64.c
+index 197a270d..d755c712 100644
+--- src/powerpc/ffi_linux64.c
++++ src/powerpc/ffi_linux64.c
+@@ -536,7 +536,11 @@ ffi_prep_args64 (extended_cif *ecif, unsigned long *const stack)
+ 	      if (align > 16)
+ 		align = 16;
+ 	      if (align > 1)
+-		next_arg.p = ALIGN (next_arg.p, align);
++                {
++                  next_arg.p = ALIGN (next_arg.p, align);
++                  if (next_arg.ul == gpr_end.ul)
++                    next_arg.ul = rest.ul;
++                }
+ 	    }
+ #if _CALL_ELF == 2
+ 	  elt = discover_homogeneous_aggregate (*ptr, &elnum);

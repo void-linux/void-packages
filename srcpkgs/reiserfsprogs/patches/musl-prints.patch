@@ -1,0 +1,228 @@
+--- reiserfscore/prints.c
++++ reiserfscore/prints.c
+@@ -7,8 +7,11 @@
+ 
+ #include "includes.h"
+ #include <stdarg.h>
++#include <stdint.h>
+ #include <limits.h>
++#if defined(__GLIBC__)
+ #include <printf.h>
++#endif
+ #include <limits.h>
+ #include <time.h>
+ 
+@@ -16,6 +19,38 @@
+ #  include <uuid/uuid.h>
+ #endif
+ 
++
++char ftypelet (mode_t mode)
++{
++    if (S_ISBLK (mode))
++      return 'b';
++    if (S_ISCHR (mode))
++      return 'c';
++    if (S_ISDIR (mode))
++      return 'd';
++    if (S_ISREG (mode))
++      return '-';
++    if (S_ISFIFO (mode))
++      return 'p';
++    if (S_ISLNK (mode))
++      return 'l';
++    if (S_ISSOCK (mode))
++      return 's';
++    return '?';
++}
++
++
++static int rwx (FILE * stream, mode_t mode)
++{
++    return fprintf (stream, "%c%c%c",
++                  (mode & S_IRUSR) ? 'r' : '-',
++                  (mode & S_IWUSR) ? 'w' : '-',
++                  (mode & S_IXUSR) ? 'x' : '-');
++}
++
++#if defined(__GLIBC__)
++
++
+ #ifndef HAVE_REGISTER_PRINTF_SPECIFIER
+ #define register_printf_specifier(x, y, z) register_printf_function(x, y, z)
+ static int arginfo_ptr(const struct printf_info *info, size_t n, int *argtypes)
+@@ -129,33 +164,6 @@ static int print_disk_child(FILE * stream,
+ 	FPRINTF;
+ }
+ 
+-char ftypelet(mode_t mode)
+-{
+-	if (S_ISBLK(mode))
+-		return 'b';
+-	if (S_ISCHR(mode))
+-		return 'c';
+-	if (S_ISDIR(mode))
+-		return 'd';
+-	if (S_ISREG(mode))
+-		return '-';
+-	if (S_ISFIFO(mode))
+-		return 'p';
+-	if (S_ISLNK(mode))
+-		return 'l';
+-	if (S_ISSOCK(mode))
+-		return 's';
+-	return '?';
+-}
+-
+-static int rwx(FILE * stream, mode_t mode)
+-{
+-	return fprintf(stream, "%c%c%c",
+-		       (mode & S_IRUSR) ? 'r' : '-',
+-		       (mode & S_IWUSR) ? 'w' : '-',
+-		       (mode & S_IXUSR) ? 'x' : '-');
+-}
+-
+ /* %M */
+ static int print_sd_mode(FILE * stream,
+ 			 const struct printf_info *info,
+@@ -211,6 +219,140 @@ void reiserfs_warning(FILE * fp, const char *fmt, ...)
+ 	va_end(args);
+ }
+ 
++#else /* defined(__GLIBC__) */
++
++typedef void* void_ptr;
++
++void reiserfs_warning (FILE * fp, const char * fmt, ...)
++{
++      char * buffer;
++      int len;
++      char format_buf[32];
++      char* dst = format_buf;
++      char* end = &dst[30];
++      const struct buffer_head * bh;
++      const struct item_head * ih;
++      const struct disk_child * dc;
++      const struct reiserfs_key * key;
++      uint16_t mode;
++#if defined(HAVE_LIBUUID) && defined(HAVE_UUID_UUID_H)
++      const unsigned char *uuid;
++      char uuid_buf[37];
++#endif
++      va_list args;
++      int esc = 0;
++
++      va_start (args, fmt);
++      while (*fmt) {
++              int ch = *fmt++;
++              if (esc) {
++                      switch (ch) {
++                      case '%':
++                              fputc(ch, fp);
++                              esc = 0;
++                              break;
++                      case 'b':       // block head
++                              bh = (const struct buffer_head *) va_arg(args, void_ptr);
++                              len = asprintf(&buffer, "level=%d, nr_items=%d, free_space=%d rdkey",
++                                      B_LEVEL (bh), B_NR_ITEMS (bh), B_FREE_SPACE (bh));
++                              *dst++ = 's';
++                              *dst = '\0';
++                              fprintf(fp, format_buf, buffer);
++                              esc = 0;
++                              break;
++                      case 'K':       // short key
++                              key = (const struct reiserfs_key *) va_arg(args, void_ptr);
++                              len = asprintf(&buffer, "[%u %u]", get_key_dirid (key),
++                                      get_key_objectid (key));
++                              *dst++ = 's';
++                              *dst = '\0';
++                              fprintf(fp, format_buf, buffer);
++                              esc = 0;
++                              break;
++                      case 'k':       // key
++                              key = (const struct reiserfs_key *) va_arg(args, void_ptr);
++                              len = asprintf(&buffer, "[%u %u 0x%Lx %s (%d)]",
++                                      get_key_dirid (key), get_key_objectid (key),
++                                      (unsigned long long)get_offset (key), key_of_what (key), get_type (key));
++                              *dst++ = 's';
++                              *dst = '\0';
++                              fprintf(fp, format_buf, buffer);
++                              esc = 0;
++                              break;
++                      case 'H':       // item head
++                              ih = (const struct item_head *) va_arg(args, void_ptr);
++                              len = asprintf(&buffer, "%u %u 0x%Lx %s (%d), "
++                                          "len %u, location %u entry count %u, fsck need %u, format %s",
++                                      get_key_dirid (&ih->ih_key), get_key_objectid (&ih->ih_key),
++                                      (unsigned long long)get_offset (&ih->ih_key), key_of_what (&ih->ih_key),
++                                      get_type (&ih->ih_key), get_ih_item_len (ih), get_ih_location (ih),
++                                      get_ih_entry_count (ih), get_ih_flags (ih),
++                                      get_ih_key_format (ih) == KEY_FORMAT_2 ?
++                                              "new" :
++                                              ((get_ih_key_format (ih) == KEY_FORMAT_1) ? "old" : "BAD"));
++                              *dst++ = 's';
++                              *dst = '\0';
++                              fprintf(fp, format_buf, buffer);
++                              esc = 0;
++                              break;
++                      case 'y':       // disk child
++                              dc = (const struct disk_child *) va_arg(args, void_ptr);
++                              len = asprintf(&buffer, "[dc_number=%u, dc_size=%u]", get_dc_child_blocknr (dc),
++                                              get_dc_child_size (dc));
++                              *dst++ = 's';
++                              *dst = '\0';
++                              fprintf(fp, format_buf, buffer);
++                              esc = 0;
++                              break;
++                      case 'M':       // sd mode
++                              mode = (mode_t) va_arg(args, void_ptr);
++                              fputc(ftypelet (mode), fp);
++                              rwx (fp, (mode & 0700) << 0);
++                              rwx (fp, (mode & 0070) << 3);
++                              rwx (fp, (mode & 0007) << 6);
++                              esc = 0;
++                              break;
++                      case 'U':       // UUID
++#if defined(HAVE_LIBUUID) && defined(HAVE_UUID_UUID_H)
++                              uuid = (const unsigned char *) va_arg(args, void_ptr);
++                              uuid_buf[36] = '\0';
++                              uuid_unparse(uuid, uuid_buf);
++                              fprintf(fp, "%s", uuid_buf);
++#else
++                              fprintf(fp, "<no libuuid installed>");
++#endif
++                              esc = 0;
++                              break;
++                      case '-': case '+': case '#': case '.':
++                      case '0': case '1': case '2': case '3': case '4':
++                      case '5': case '6': case '7': case '8': case '9':
++                      case 'l': case 'L': case 'h':
++                              // non-terminal format modifiers
++                              if (dst < end)
++                                      *dst++ = ch;
++                              break;
++                      default:
++                              *dst++ = ch;
++                              *dst = '\0';
++                              fprintf(fp, format_buf, va_arg(args, void_ptr));
++                              esc = 0;
++                              break;
++                      }
++              } else if (ch == '%') {
++                      esc = 1;
++                      dst = format_buf;
++                      end = &dst[30]; // leave room for final "s\0"
++                      *dst++ = ch;
++              } else {
++                      fputc(ch, fp);
++              }
++      }
++
++      va_end (args);
++}
++
++#endif        /* !defined(__GLIBC__) */
++
+ static void print_directory_item(FILE *fp, reiserfs_filsys_t fs,
+ 				 struct buffer_head *bh, struct item_head *ih)
+ {

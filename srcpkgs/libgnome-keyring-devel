@@ -1,0 +1,1 @@
+libgnome-keyring

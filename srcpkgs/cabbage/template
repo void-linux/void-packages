@@ -1,0 +1,137 @@
+# Template file for 'cabbage'
+pkgname=cabbage
+version=2.0.03
+revision=2
+_jucever=5.3.2
+create_wrksrc=yes
+build_wrksrc="${pkgname}-${version}"
+hostmakedepends="unzip pkg-config xorg-server-xvfb"
+makedepends="libfreeglut-devel libcurl-devel jack-devel libXcomposite-devel
+ libXrandr-devel libXcursor-devel libX11-devel libXinerama-devel MesaLib-devel
+ gtk+3-devel webkit2gtk-devel csound alsa-lib-devel libsndfile-devel"
+depends="csound"
+short_desc="Framework for audio software development"
+maintainer="Olga U <me@laserbat.pw>"
+license="GPL-2.1-or-later"
+homepage="http://cabbageaudio.com/"
+distfiles="https://github.com/WeAreROLI/JUCE/archive/${_jucever}.tar.gz
+ https://github.com/rorywalsh/cabbage/archive/v${version}.tar.gz
+ http://www.steinberg.net/sdk_downloads/vstsdk367_03_03_2017_build_352.zip"
+checksum="b7c604bb6a7f9752934f89d72133713f7a65e82478bba80ccb4709d0edb58033
+ 80f36d010a1f9bb14469fba70e12a5df7e24e92bec511c7157d5a1e90c0314d3
+ 5e8f1058177472f6dd3b5c1e7f8e0e76f37c5f751fed65936e04ff2441ce831a"
+
+# without TARGET_ARCH, the build system will assume -march=native,
+# which is wrong as we're building a generic package and -march does
+# not even always work
+case "$XBPS_TARGET_MACHINE" in
+	i686*) _tarch="-mtune=i686";;
+	x86_64*) _tarch="-march=x86-64";;
+	aarch64*) _tarch="-march=armv8-a";;
+	armv5te*) _tarch="-march=armv5te";;
+	armv6*) _tarch="-march=armv6";;
+	armv7*) _tarch="-march=armv7-a";;
+	ppc64le*) _tarch="-mcpu=powerpc64le";;
+	ppc64*) _tarch="-mcpu=970";;
+	ppc*) _tarch="-mcpu=powerpc";;
+	mips*) _tarch="-mtune=mips32r2";;
+	*) broken="Unsupported architecture";;
+esac
+
+case "$XBPS_TARGET_MACHINE" in
+	*-musl) makedepends+=" libexecinfo-devel"
+		broken="error: '_NL_IDENTIFICATION_LANGUAGE' was not declared in this scope" ;;
+esac
+
+Projucer() {
+	# This is needed as a workaround for a bug in Projucer
+	# https://github.com/WeAreROLI/JUCE/issues/422
+	# The HOME variable is spoofed because it looks for headers in
+	# ~/SDKs/ (path hardcoded)
+
+	Xvfb :999 &
+	XVFB_PID=$!
+	HOME=${wrksrc} DISPLAY=":999" "${wrksrc}/JUCE-${_jucever}/extras/Projucer/Builds/LinuxMakefile/build/Projucer"  "$@"
+	kill $XVFB_PID || true
+}
+
+post_extract() {
+	mkdir SDKs
+	mv VST_SDK SDKs
+	cd "${wrksrc}/cabbage-${version}"
+
+	# There are lots of hardcoded paths that need to be rewritten
+	vsed -e 's@sourcecode/@@' -i CabbageLite.jucer
+
+	for f in *jucer; do
+		vsed -e "s@/usr/local/include/csound@/usr/include/csound@g" \
+			 -e "s@/usr/local/lib@/usr/lib@g" \
+			 -e "s@../JUCE@../JUCE-${_jucever}@" \
+			 -i "$f"
+	done
+
+	vsed -e "s|/usr/local/include/csound|/usr/include/csound|g" \
+		 -i Builds/LinuxMakefile/buildCabbage
+
+	vsed -e '/opcodeFile\ +=/s#/#/../share/doc/cabbage/#' \
+		 -i Source/CodeEditor/CabbageCodeEditor.cpp
+
+	vsed -e '/CabbagePlugin\(Synth\|Effect\)/s#"/#"/../lib/vst/#' \
+		 -i Source/Utilities/CabbageExportPlugin.cpp
+
+	# Fix compilation on i686
+	vsed -e 's/__sigemptyset/sigemptyset/' \
+		 -i ../JUCE-${_jucever}/modules/juce_audio_formats/codecs/flac/libFLAC/cpu.c
+
+	vsed -e "s/JUCER_ENABLE_GPL_MODE 0/JUCER_ENABLE_GPL_MODE 1/" \
+		 -i ../JUCE-${_jucever}/extras/Projucer/JuceLibraryCode/AppConfig.h
+}
+
+do_build() {
+	cd "${wrksrc}/JUCE-${_jucever}/extras/Projucer/Builds/LinuxMakefile/"
+	make ${makejobs} TARGET_ARCH="${_tarch}"
+
+	cd "${wrksrc}/cabbage-${version}/Builds/LinuxMakefile"
+
+	Projucer --resave ../../CabbageIDE.jucer
+	mv Makefile MakeCabbageIDE
+	make -f MakeCabbageIDE ${makejobs} CONFIG=Release TARGET_ARCH="${_tarch}"
+
+	Projucer --resave ../../CabbagePlugin.jucer
+	mv Makefile MakePluginEffect
+	make -f MakePluginEffect ${makejobs} CONFIG=Release TARGET_ARCH="${_tarch}"
+	mv ./build/CabbagePlugin.so ./build/CabbagePluginEffect.so
+
+	Projucer --resave ../../CabbagePluginSynth.jucer
+	mv Makefile MakePluginSynth
+	make -f MakePluginSynth ${makejobs} CONFIG=Release TARGET_ARCH="${_tarch}"
+	mv ./build/CabbagePlugin.so ./build/CabbagePluginSynth.so
+
+	Projucer --resave ../../CabbageLite.jucer
+	cp -r ../../../JUCE-5.3.2/modules/juce_audio_plugin_client/ ../../JuceLibraryCode/modules/
+	mv Makefile MakeCabbageLite
+	make -f MakeCabbageLite ${makejobs} CONFIG=Release TARGET_ARCH="${_tarch}"
+}
+
+do_install() {
+	cd "${wrksrc}/cabbage-${version}/Builds/LinuxMakefile"
+
+	find ../../Examples -name '.DS_Store' -delete
+	find ../../Examples -name '*_Log.txt' -delete
+
+	vbin build/Cabbage
+	vbin build/CabbageLite
+
+	vmkdir usr/lib/vst
+	vinstall build/CabbagePluginEffect.so 755 usr/lib/vst
+	vinstall build/CabbagePluginSynth.so 755 usr/lib/vst
+
+	vdoc ../opcodes.txt
+
+	vinstall ../../Images/cabbage.png 644  usr/share/icons/hicolor/512x512/apps/
+	vinstall Cabbage.desktop 644 usr/share/applications/
+	vinstall CabbageLite.desktop 644 usr/share/applications/
+
+	vmkdir usr/share/doc/cabbage/examples
+	vcopy '../../Examples/*' usr/share/doc/cabbage/examples/
+}

@@ -1,0 +1,126 @@
+# Template file for 'kodi-rpi'
+pkgname=kodi-rpi
+version=18.4
+revision=2
+build_style=cmake
+_codename="Leia"
+wrksrc="xbmc-${version}-${_codename}"
+short_desc="Software media player and entertainment hub for digital media (RPi)"
+maintainer="Helmut Pozimski <helmut@pozimski.eu>"
+homepage="http://www.kodi.tv/"
+license="GPL-2.0-or-later"
+distfiles="https://github.com/xbmc/xbmc/archive/${version}-${_codename}.tar.gz"
+checksum=bf2be186d8ae5b5377e43c06a538012bb9f51a0e98f8244b70a401006861d110
+LDFLAGS+=" -Wl,-z,stack-size=1048576"
+patch_args="-Np1"
+
+nopie=yes
+archs="armv6l* armv7l*"
+
+hostmakedepends="
+ automake libtool pkg-config gperf cmake zip unzip nasm yasm
+ gettext-devel libltdl-devel python-devel libmysqlclient-devel
+ SDL2_image-devel lzo-devel flatbuffers"
+makedepends="
+ libatomic-devel eudev-libudev-devel pcre-devel expat-devel libpng-devel
+ libjpeg-turbo-devel avahi-libs-devel alsa-lib-devel samba-devel tiff-devel
+ libmysqlclient-devel libmpeg2-devel wavpack-devel zlib-devel lzo-devel
+ fribidi-devel sqlite-devel freetype-devel jasper-devel faac-devel
+ faad2-devel libmodplug-devel libressl-devel libass-devel libmad-devel
+ fontconfig-devel libsamplerate-devel libmms-devel libcurl-devel ffmpeg-devel
+ enca-devel boost-devel libbluetooth-devel yajl-devel libplist-devel
+ librtmp-devel tinyxml-devel taglib-devel libcap-devel lame-devel libnfs-devel
+ libxslt-devel libuuid-devel giflib-devel libcec-devel libmicrohttpd-devel
+ libcdio-devel python-devel libssh-devel rpi-userland-devel dcadec-devel
+ flatbuffers-devel fmt-devel lcms2-devel libfstrcmp-devel rapidjson crossguid
+ libinput-devel libxkbcommon-devel libcdio-paranoia"
+
+# gold broken with musl
+case "$XBPS_MACHINE" in
+	*-musl) configure_args+=" -DENABLE_LDGOLD=Off";;
+esac
+
+configure_args="
+ -DCORE_PLATFORM_NAME=rbpi
+ -DENABLE_OPENGL=OFF
+ -DENABLE_OPENGLES=ON
+ -DENABLE_X11=OFF
+ -DENABLE_INTERNAL_CROSSGUID=OFF
+ -DENABLE_VAAPI=OFF
+ -DENABLE_VDPAU=OFF
+ -DWITH_FFMPEG=/usr
+ -DCMAKE_PREFIX_PATH=${XBPS_CROSS_BASE}/opt/vc
+"
+case "$XBPS_TARGET_MACHINE" in
+	armv6*)   configure_args+=" -DWITH_CPU=arm1176jzf-s -DCMAKE_EXE_LINKER_FLAGS=-latomic"
+		  LDFLAGS+=" -latomic";;
+	armv7*)   configure_args+=" -DWITH_CPU=cortex-a7";;
+	aarch64*) configure_args+=" -DWITH_CPU=cortex-a53";;
+esac
+
+# The following dependencies are dlopen(3)ed.
+depends="libmad libogg libcurl libflac libmodplug libass libmpeg2 lame
+ librtmp libnfs>=1.9.7 libplist>=1.12 libssh"
+depends+=" hicolor-icon-theme desktop-file-utils"
+
+provides="kodi-${version}_${revision}"
+
+# Create xbmc system user to launch xbmc-standalone.
+system_accounts="xbmc"
+xbmc_homedir="/var/lib/xbmc"
+xbmc_groups="audio,input,video"
+
+pre_configure() {
+	find -type f | \
+		grep "configure\.ac\|Makefile\|cmake\|config\.site" | \
+		xargs sed -i  -e "s;-isystem;-I;g"
+
+	# Copy generated files to avoid requiring java.
+	mkdir -p build/build/swig
+
+	# THESE FILES MUST BE UPDATED WITH EVERY VERSION BUMP!
+	# (See kodi template)
+	cp -r $FILESDIR/swig.nojava-$version/* -t build/build/swig
+	cp $FILESDIR/CMakeCache.txt.nojava build/CMakeCache.txt
+
+	echo "set(FOUND_SWIG Yes)" > cmake/modules/FindSWIG.cmake
+
+	if [ "$CROSS_BUILD" ]; then
+		for i in JsonSchemaBuilder TexturePacker; do
+			cat > cmake/modules/Find$i.cmake <<EOF
+				add_executable($i::$i IMPORTED GLOBAL)
+				set_target_properties($i::$i PROPERTIES
+				IMPORTED_LOCATION "\${CORE_SOURCE_DIR}/tools/depends/native/$i/bin/$i")
+				set_target_properties($i::$i PROPERTIES FOLDER Tools)
+EOF
+		done
+	fi
+}
+
+pre_build() {
+	if [ "$CROSS_BUILD" ]; then
+		for i in JsonSchemaBuilder TexturePacker; do
+			CC= LD= CXX= LDFLAGS= CFLAGS= CXXFLAGS= \
+				make -C tools/depends/native/$i
+		done
+	fi
+}
+
+post_build() {
+	# Rebuild for target
+	if [ "$CROSS_BUILD" ]; then
+		for i in JsonSchemaBuilder TexturePacker; do
+			make -C tools/depends/native/$i clean all \
+				CC="$CC" CXX="$CXX" LD="$LD" AR="$AR" RANLIB="$RANLIB" \
+				CPP="$CPP" AS="$AS" OBJDUMP="$OBJDUMP" \
+				CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+		done
+	fi
+}
+
+post_install() {
+	# remove unused stuff
+	rm -rf ${DESTDIR}/usr/include
+	find ${DESTDIR}/usr/lib -name "*.cmake" -delete
+	vsv xbmc-standalone
+}

@@ -1,0 +1,144 @@
+#!/usr/bin/ash
+
+run_hook() {
+    modprobe -a -q dm-crypt >/dev/null 2>&1
+    [ "${quiet}" = "y" ] && CSQUIET=">/dev/null"
+
+    # Get keyfile if specified
+    ckeyfile="/crypto_keyfile.bin"
+    if [ -n "$cryptkey" ]; then
+        IFS=: read ckdev ckarg1 ckarg2 <<EOF
+$cryptkey
+EOF
+
+        if [ "$ckdev" = "rootfs" ]; then
+            ckeyfile=$ckarg1
+        elif resolved=$(resolve_device "${ckdev}" ${rootdelay}); then
+            case ${ckarg1} in
+                *[!0-9]*)
+                    # Use a file on the device
+                    # ckarg1 is not numeric: ckarg1=filesystem, ckarg2=path
+                    mkdir /ckey
+                    mount -r -t "$ckarg1" "$resolved" /ckey
+                    dd if="/ckey/$ckarg2" of="$ckeyfile" >/dev/null 2>&1
+                    umount /ckey
+                    ;;
+                *)
+                    # Read raw data from the block device
+                    # ckarg1 is numeric: ckarg1=offset, ckarg2=length
+                    dd if="$resolved" of="$ckeyfile" bs=1 skip="$ckarg1" count="$ckarg2" >/dev/null 2>&1
+                    ;;
+            esac
+        fi
+        [ ! -f ${ckeyfile} ] && echo "Keyfile could not be opened. Reverting to passphrase."
+    fi
+
+    if [ -n "${cryptdevice}" ]; then
+        DEPRECATED_CRYPT=0
+        IFS=: read cryptdev cryptname cryptoptions <<EOF
+$cryptdevice
+EOF
+    else
+        DEPRECATED_CRYPT=1
+        cryptdev="${root}"
+        cryptname="root"
+    fi
+
+    # This may happen if third party hooks do the crypt setup
+    if [ -b "/dev/mapper/${cryptname}" ]; then
+        echo "Device ${cryptname} already exists, not doing any crypt setup."
+        return 0
+    fi
+
+    warn_deprecated() {
+        echo "The syntax 'root=${root}' where '${root}' is an encrypted volume is deprecated"
+        echo "Use 'cryptdevice=${root}:root root=/dev/mapper/root' instead."
+    }
+
+    for cryptopt in ${cryptoptions//,/ }; do
+        case ${cryptopt} in
+            allow-discards)
+                cryptargs="${cryptargs} --allow-discards"
+                ;;
+            *)
+                echo "Encryption option '${cryptopt}' not known, ignoring." >&2
+                ;;
+        esac
+    done
+
+    if resolved=$(resolve_device "${cryptdev}" ${rootdelay}); then
+        if cryptsetup isLuks ${resolved} >/dev/null 2>&1; then
+            [ ${DEPRECATED_CRYPT} -eq 1 ] && warn_deprecated
+            dopassphrase=1
+            # If keyfile exists, try to use that
+            if [ -f ${ckeyfile} ]; then
+                if eval cryptsetup --key-file ${ckeyfile} open --type luks ${resolved} ${cryptname} ${cryptargs} ${CSQUIET}; then
+                    dopassphrase=0
+                else
+                    echo "Invalid keyfile. Reverting to passphrase."
+                fi
+            fi
+            # Ask for a passphrase
+            if [ ${dopassphrase} -gt 0 ]; then
+                echo ""
+                echo "A password is required to access the ${cryptname} volume:"
+
+                #loop until we get a real password
+                while ! eval cryptsetup open --type luks ${resolved} ${cryptname} ${cryptargs} ${CSQUIET}; do
+                    sleep 2;
+                done
+            fi
+            if [ -e "/dev/mapper/${cryptname}" ]; then
+                if [ ${DEPRECATED_CRYPT} -eq 1 ]; then
+                    export root="/dev/mapper/root"
+                fi
+            else
+                err "Password succeeded, but ${cryptname} creation failed, aborting..."
+                return 1
+            fi
+        elif [ -n "${crypto}" ]; then
+            [ ${DEPRECATED_CRYPT} -eq 1 ] && warn_deprecated
+            msg "Non-LUKS encrypted device found..."
+            if echo "$crypto" | awk -F: '{ exit(NF == 5) }'; then
+                err "Verify parameter format: crypto=hash:cipher:keysize:offset:skip"
+                err "Non-LUKS decryption not attempted..."
+                return 1
+            fi
+            exe="cryptsetup open --type plain $resolved $cryptname $cryptargs"
+            IFS=: read c_hash c_cipher c_keysize c_offset c_skip <<EOF
+$crypto
+EOF
+            [ -n "$c_hash" ]    && exe="$exe --hash '$c_hash'"
+            [ -n "$c_cipher" ]  && exe="$exe --cipher '$c_cipher'"
+            [ -n "$c_keysize" ] && exe="$exe --key-size '$c_keysize'"
+            [ -n "$c_offset" ]  && exe="$exe --offset '$c_offset'"
+            [ -n "$c_skip" ]    && exe="$exe --skip '$c_skip'"
+            if [ -f "$ckeyfile" ]; then
+                exe="$exe --key-file $ckeyfile"
+            else
+                echo ""
+                echo "A password is required to access the ${cryptname} volume:"
+            fi
+            eval "$exe $CSQUIET"
+
+            if [ $? -ne 0 ]; then
+                err "Non-LUKS device decryption failed. verify format: "
+                err "      crypto=hash:cipher:keysize:offset:skip"
+                return 1
+            fi
+            if [ -e "/dev/mapper/${cryptname}" ]; then
+                if [ ${DEPRECATED_CRYPT} -eq 1 ]; then
+                    export root="/dev/mapper/root"
+                fi
+            else
+                err "Password succeeded, but ${cryptname} creation failed, aborting..."
+                return 1
+            fi
+        else
+            err "Failed to open encryption mapping: The device ${cryptdev} is not a LUKS volume and the crypto= paramater was not specified."
+        fi
+    fi
+    rm -f ${ckeyfile}
+}
+
+# vim: set ft=sh ts=4 sw=4 et:

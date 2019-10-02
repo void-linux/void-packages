@@ -1,0 +1,232 @@
+# Template file for 'rpi-kernel'
+#
+# We track the latest Raspberry Pi LTS kernel as that is what is used in the
+# official Raspbian distribution. This is currently 4.19:
+#
+#   https://www.raspberrypi.org/forums/viewtopic.php?f=29&t=224931
+
+_githash="6d8bf28fa4b1ca0a35c0cd1dcb267fb216daf720"
+_gitshort="${_githash:0:7}"
+
+pkgname=rpi-kernel
+version=4.19.75
+revision=1
+wrksrc="linux-${_githash}"
+maintainer="Peter Bui <pbui@github.bx612.space>"
+homepage="http://www.kernel.org"
+license="GPL-2.0-only"
+short_desc="The Linux kernel for Raspberry Pi (${version%.*} series [git ${_gitshort}])"
+distfiles="https://github.com/raspberrypi/linux/archive/${_githash}.tar.gz"
+checksum=ccab02fd16a9450637c8f715f8037c02cd21a086c914d88b819e4b153cde873d
+
+_kernver="${version}_${revision}"
+
+nodebug=yes
+nostrip=yes
+noverifyrdeps=yes
+noshlibprovides=yes
+
+# RPi, RPi2, RPi3
+archs="armv6l* armv7l* aarch64*"
+hostmakedepends="perl kmod uboot-mkimage libressl-devel bc bison flex"
+makedepends="ncurses-devel"
+triggers="kernel-hooks"
+# These files could be modified when an external module is built.
+mutable_files="
+	/usr/lib/modules/${_kernver}/modules.dep
+	/usr/lib/modules/${_kernver}/modules.dep.bin
+	/usr/lib/modules/${_kernver}/modules.symbols
+	/usr/lib/modules/${_kernver}/modules.symbols.bin
+	/usr/lib/modules/${_kernver}/modules.alias
+	/usr/lib/modules/${_kernver}/modules.alias.bin
+	/usr/lib/modules/${_kernver}/modules.devname"
+
+pre_configure() {
+	# Remove .git directory, otherwise scripts/setkernelversion.sh
+	# modifies KERNELRELEASE and appends + to it.
+	rm -rf .git
+}
+do_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+
+	# Use upstream default configuration, no need to maintain ours.
+	case "$XBPS_TARGET_MACHINE" in
+	aarch64*)
+		echo "CONFIG_CONNECTOR=y" >> arch/arm64/configs/bcmrpi3_defconfig
+		echo "CONFIG_PROC_EVENTS=y" >> arch/arm64/configs/bcmrpi3_defconfig
+		echo "CONFIG_F2FS_FS_SECURITY=y" >> arch/arm64/configs/bcmrpi3_defconfig
+		echo "CONFIG_CGROUP_PIDS=y" >> arch/arm64/configs/bcmrpi3_defconfig
+		make ${makejobs} ${_args} ARCH=arm64 bcmrpi3_defconfig
+		;;
+	armv7l*)
+		echo "CONFIG_USER_NS=y" >> arch/arm/configs/bcm2709_defconfig
+		echo "CONFIG_CONNECTOR=y" >> arch/arm/configs/bcm2709_defconfig
+		echo "CONFIG_PROC_EVENTS=y" >> arch/arm/configs/bcm2709_defconfig
+		echo "CONFIG_F2FS_FS_SECURITY=y" >> arch/arm/configs/bcm2709_defconfig
+		echo "CONFIG_CGROUP_PIDS=y" >> arch/arm/configs/bcm2709_defconfig
+		make ${makejobs} ${_args} ARCH=arm bcm2709_defconfig
+		;;
+	armv6l*)
+		echo "CONFIG_USER_NS=y" >> arch/arm/configs/bcmrpi_defconfig
+		echo "CONFIG_CONNECTOR=y" >> arch/arm/configs/bcmrpi_defconfig
+		echo "CONFIG_PROC_EVENTS=y" >> arch/arm/configs/bcmrpi_defconfig
+		echo "CONFIG_F2FS_FS_SECURITY=y" >> arch/arm/configs/bcmrpi_defconfig
+		echo "CONFIG_CGROUP_PIDS=y" >> arch/arm/configs/bcmrpi_defconfig
+		make ${makejobs} ${_args} ARCH=arm bcmrpi_defconfig
+		;;
+	esac
+
+	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
+	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
+}
+do_build() {
+	if [ "$CROSS_BUILD" ]; then
+		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+
+	case "$XBPS_TARGET_MACHINE" in
+	arm*)
+		_arch=arm
+		_targets="zImage modules dtbs"
+		;;
+	aarch64*)
+		unset LDFLAGS
+		_arch=arm64
+		_targets="Image modules dtbs"
+		;;
+	esac
+
+	make ${makejobs} ${_args} ARCH=${_arch} prepare
+	make ${makejobs} ${_args} ARCH=${_arch} ${_targets}
+}
+do_install() {
+	case "$XBPS_TARGET_MACHINE" in
+	arm*)
+		_arch="arm"
+	;;
+	aarch64*)
+		_arch="arm64"
+	;;
+	esac
+
+	local hdrdest
+
+	# Run depmod after compressing modules.
+	sed -i '2iexit 0' scripts/depmod.sh
+
+	# Install kernel, firmware and modules
+	make ${makejobs} ARCH=${_arch} INSTALL_MOD_PATH=${DESTDIR} modules_install
+
+	# Install device tree blobs
+	make ${makejobs} ARCH=${_arch} INSTALL_DTBS_PATH=${DESTDIR}/boot dtbs_install
+
+	#move rpi3's dtb that ended up in /boot/broadcom
+	case "$XBPS_TARGET_MACHINE" in
+	aarch64*)
+		mv ${DESTDIR}/boot/broadcom/bcm2710-rpi-3-b.dtb ${DESTDIR}/boot
+		;;
+	esac
+
+	vmkdir boot
+	# Generate kernel.img and install it to destdir.
+	case "$XBPS_TARGET_MACHINE" in
+	aarch64*)
+		cp arch/arm64/boot/Image ${DESTDIR}/boot/kernel8.img
+		;;
+	armv7l*)
+		cp arch/arm/boot/zImage ${DESTDIR}/boot/kernel7.img
+		;;
+	armv6l*)
+		cp arch/arm/boot/zImage ${DESTDIR}/boot/kernel.img
+		;;
+	esac
+
+	hdrdest=${DESTDIR}/usr/src/${sourcepkg}-headers-${_kernver}
+
+	# Switch to /usr.
+	vmkdir usr
+	mv ${DESTDIR}/lib ${DESTDIR}/usr
+
+	cd ${DESTDIR}/usr/lib/modules/${_kernver}
+	rm -f source build
+	ln -sf ../../../src/${sourcepkg}-headers-${_kernver} build
+
+	cd ${wrksrc}
+	# Install required headers to build external modules
+	install -Dm644 Makefile ${hdrdest}/Makefile
+	install -Dm644 kernel/Makefile ${hdrdest}/kernel/Makefile
+	install -Dm644 .config ${hdrdest}/.config
+	mkdir -p ${hdrdest}/include
+
+	# Remove firmware stuff provided by the "linux-firmware" pkg.
+	rm -rf ${DESTDIR}/usr/lib/firmware
+
+	for i in acpi asm-generic config crypto drm generated linux math-emu \
+		media net pcmcia scsi sound trace uapi video xen; do
+		[ -d include/$i ] && cp -a include/$i ${hdrdest}/include
+	done
+
+	cd ${wrksrc}
+	# Copy files necessary for later builds.
+	cp Module.symvers ${hdrdest}
+	cp -a scripts ${hdrdest}
+
+	# fix permissions on scripts dir
+	chmod og-w -R ${hdrdest}/scripts
+
+	# copy arch includes for external modules
+	mkdir -p ${hdrdest}/arch/${_arch}
+	cp -a arch/${_arch}/include ${hdrdest}/arch/${_arch}
+
+	mkdir -p ${hdrdest}/arch/${arch}/kernel
+	cp arch/${_arch}/Makefile ${hdrdest}/arch/${_arch}
+	cp arch/${_arch}/kernel/asm-offsets.s ${hdrdest}/arch/${_arch}/kernel
+
+	# Add md headers
+	mkdir -p ${hdrdest}/drivers/md
+	cp drivers/md/*.h ${hdrdest}/drivers/md
+
+	# Add inotify.h
+	mkdir -p ${hdrdest}/include/linux
+	cp include/linux/inotify.h ${hdrdest}/include/linux
+
+	# Add wireless headers
+	mkdir -p ${hdrdest}/net/mac80211/
+	cp net/mac80211/*.h ${hdrdest}/net/mac80211
+
+	# add dvb headers for external modules
+	mkdir -p ${hdrdest}/include/config/dvb/
+	cp include/config/dvb/*.h ${hdrdest}/include/config/dvb/
+
+	# Copy in Kconfig files
+	for i in $(find . -name "Kconfig*"); do
+		mkdir -p ${hdrdest}/$(echo $i | sed 's|/Kconfig.*||')
+		cp $i ${hdrdest}/$i
+	done
+
+	# Remove unneeded architectures
+	for arch in alpha arc avr32 blackfin c6x cris frv h8300 \
+		hexagon ia64 m* n* p* s* um v850 x86 xtensa; do
+		rm -rf ${hdrdest}/arch/${arch}
+	done
+
+	# Compress all modules with xz to save a few MBs.
+	msg_normal "$pkgver: compressing kernel modules with gzip, please wait...\n"
+	find ${DESTDIR} -name '*.ko' | xargs -n1 -P0 gzip -9
+
+	# ... and run depmod again.
+	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
+}
+
+rpi-kernel-headers_package() {
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	short_desc="The Linux kernel headers for Raspberry Pi (${version%.*} series [git ${_gitshort}])"
+	pkg_install() {
+		vmove usr/src
+		vmove usr/lib/modules/${_kernver}/build
+	}
+}

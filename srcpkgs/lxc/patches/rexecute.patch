@@ -1,0 +1,148 @@
+From d3a9befc86113228f77c89030336faa84a5557c0 Mon Sep 17 00:00:00 2001
+From: Christian Brauner <christian.brauner@ubuntu.com>
+Date: Tue, 12 Feb 2019 17:31:14 +0100
+Subject: [PATCH] rexec: make rexecution opt-in for library callers
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+We cannot rexecute the liblxc shared library unconditionally as this would
+break most of our downstreams. Here are some scenarios:
+- anyone performing a dlopen() on the shared library (e.g. users of the LXC
+  Python bindings)
+- LXD as it needs to know the absolute path to its own executable based on
+  /proc/self/exe etc.
+
+This commit makes the rexecution of liblxc conditional on whether the
+LXC_MEMFD_REXEC environment variable is set or not. If it is then liblxc is
+unconditionally rexecuted.
+
+The only relevant attack vector exists for lxc-attach which we simply reexecute
+unconditionally.
+
+Reported-by: Stéphane Graber <stgraber@ubuntu.com>
+Signed-off-by: Christian Brauner <christian.brauner@ubuntu.com>
+---
+ src/lxc/Makefile.am        |  4 +++-
+ src/lxc/rexec.c            |  4 ++--
+ src/lxc/rexec.h            | 26 ++++++++++++++++++++++++++
+ src/lxc/tools/lxc_attach.c | 18 ++++++++++++++++++
+ 4 files changed, 49 insertions(+), 3 deletions(-)
+ create mode 100644 src/lxc/rexec.h
+
+diff --git a/src/lxc/Makefile.am b/src/lxc/Makefile.am
+index e1499a7eb..ef19df9e0 100644
+--- src/lxc/Makefile.am
++++ src/lxc/Makefile.am
+@@ -25,6 +25,7 @@ noinst_HEADERS = api_extensions.h \
+ 		 monitor.h \
+ 		 namespace.h \
+ 		 raw_syscalls.h \
++		 rexec.h \
+ 		 start.h \
+ 		 state.h \
+ 		 storage/btrfs.h \
+@@ -180,7 +181,7 @@ liblxc_la_SOURCES += ../include/strlcat.c ../include/strlcat.h
+ endif
+ 
+ if ENFORCE_MEMFD_REXEC
+-liblxc_la_SOURCES += rexec.c
++liblxc_la_SOURCES += rexec.c rexec.h
+ endif
+ 
+ AM_CFLAGS = -DLXCROOTFSMOUNT=\"$(LXCROOTFSMOUNT)\" \
+@@ -307,6 +308,7 @@ LDADD = liblxc.la \
+ 
+ if ENABLE_TOOLS
+ lxc_attach_SOURCES = tools/lxc_attach.c \
++		     rexec.c rexec.h \
+ 		     tools/arguments.c tools/arguments.h
+ lxc_autostart_SOURCES = tools/lxc_autostart.c \
+ 			tools/arguments.c tools/arguments.h
+diff --git a/src/lxc/rexec.c b/src/lxc/rexec.c
+index 3ce499b1e..024728d85 100644
+--- src/lxc/rexec.c
++++ src/lxc/rexec.c
+@@ -142,7 +142,7 @@ static void lxc_rexec_as_memfd(char **argv, char **envp, const char *memfd_name)
+ 	errno = saved_errno;
+ }
+ 
+-static int lxc_rexec(const char *memfd_name)
++int lxc_rexec(const char *memfd_name)
+ {
+ 	int ret;
+ 	char **argv = NULL, **envp = NULL;
+@@ -179,7 +179,7 @@ static int lxc_rexec(const char *memfd_name)
+  */
+ __attribute__((constructor)) static void liblxc_rexec(void)
+ {
+-	if (lxc_rexec("liblxc")) {
++	if (getenv("LXC_MEMFD_REXEC") && lxc_rexec("liblxc")) {
+ 		fprintf(stderr, "Failed to re-execute liblxc via memory file descriptor\n");
+ 		_exit(EXIT_FAILURE);
+ 	}
+diff --git a/src/lxc/rexec.h b/src/lxc/rexec.h
+new file mode 100644
+index 000000000..088ded932
+--- /dev/null
++++ src/lxc/rexec.h
+@@ -0,0 +1,26 @@
++/* liblxcapi
++ *
++ * Copyright © 2019 Christian Brauner <christian.brauner@ubuntu.com>.
++ * Copyright © 2019 Canonical Ltd.
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++
++ * You should have received a copy of the GNU Lesser General Public License
++ * along with this library; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ */
++
++#ifndef __LXC_REXEC_H
++#define __LXC_REXEC_H
++
++extern int lxc_rexec(const char *memfd_name);
++
++#endif /* __LXC_REXEC_H */
+diff --git a/src/lxc/tools/lxc_attach.c b/src/lxc/tools/lxc_attach.c
+index 3de0d7747..d10b6ecc2 100644
+--- src/lxc/tools/lxc_attach.c
++++ src/lxc/tools/lxc_attach.c
+@@ -44,10 +44,28 @@
+ #include "config.h"
+ #include "confile.h"
+ #include "log.h"
++#include "rexec.h"
+ #include "utils.h"
+ 
+ lxc_log_define(lxc_attach, lxc);
+ 
++/**
++ * This function will copy any binary that calls liblxc into a memory file and
++ * will use the memfd to rexecute the binary. This is done to prevent attacks
++ * through the /proc/self/exe symlink to corrupt the host binary when host and
++ * container are in the same user namespace or have set up an identity id
++ * mapping: CVE-2019-5736.
++ */
++#ifdef ENFORCE_MEMFD_REXEC
++__attribute__((constructor)) static void lxc_attach_rexec(void)
++{
++	if (!getenv("LXC_MEMFD_REXEC") && lxc_rexec("lxc-attach")) {
++		fprintf(stderr, "Failed to re-execute lxc-attach via memory file descriptor\n");
++		_exit(EXIT_FAILURE);
++	}
++}
++#endif
++
+ static int my_parser(struct lxc_arguments *args, int c, char *arg);
+ static int add_to_simple_array(char ***array, ssize_t *capacity, char *value);
+ static bool stdfd_is_pty(void);

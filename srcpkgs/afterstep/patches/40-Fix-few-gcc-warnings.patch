@@ -1,0 +1,172 @@
+From: Robert Luberda <robert@debian.org>
+Date: Thu, 19 Sep 2013 00:18:16 +0200
+Subject: 40 Fix few gcc warnings
+
+---
+ libAfterImage/import.c  | 8 ++++----
+ libAfterImage/ungif.c   | 3 ++-
+ src/ASDocGen/ASDocGen.c | 8 ++++----
+ src/ASMount/main.c      | 4 ++++
+ src/afterstep/cover.c   | 5 ++++-
+ src/afterstep/dbus.c    | 2 ++
+ 6 files changed, 20 insertions(+), 10 deletions(-)
+
+diff --git a/libAfterImage/import.c b/libAfterImage/import.c
+index f2c7ad1..c80b9c3 100644
+--- libAfterImage/import.c
++++ libAfterImage/import.c
+@@ -585,7 +585,7 @@ get_thumbnail_asimage( ASImageManager* imageman, const char *file, int thumb_wid
+ 
+ 	if (imageman && file)
+ 	{
+-		sprintf( thumbnail_name, AS_THUMBNAIL_NAME_FORMAT2, len, file, thumb_width, thumb_height, (long) flags) ;
++		sprintf( thumbnail_name, AS_THUMBNAIL_NAME_FORMAT2, (long) len, file, thumb_width, thumb_height, (long) flags) ;
+ 		im = fetch_asimage(imageman, thumbnail_name );
+ 	}
+ 	
+@@ -2521,8 +2521,6 @@ xml2ASImage( const char *path, ASImageImportParams *params )
+ ASImage *
+ svg2ASImage( const char * path, ASImageImportParams *params )
+ {
+-   	static int gType_inited = 0;
+-   
+    	ASImage *im = NULL;
+    	GdkPixbuf *pixbuf;
+ 	int channels ;
+@@ -2531,6 +2529,8 @@ svg2ASImage( const char * path, ASImageImportParams *params )
+  
+ 	START_TIME(started);
+ #if 1
++#ifndef GLIB_VERSION_2_36
++	static int gType_inited = 0;
+ 	/* Damn gtk mess... must init once atleast.. can we just init
+ 	   several times or do we bork then? */
+ 	if (gType_inited == 0) 
+@@ -2538,7 +2538,7 @@ svg2ASImage( const char * path, ASImageImportParams *params )
+ 	   g_type_init();
+ 	   gType_inited = 1;
+ 	}
+- 
++#endif
+  	if( get_flags( params->flags, AS_IMPORT_SCALED_H ) )
+ 		width = (params->width <= 0)?((params->height<=0)?-1:params->height):params->width ;
+ 	
+diff --git a/libAfterImage/ungif.c b/libAfterImage/ungif.c
+index cb9c628..faa1da7 100644
+--- libAfterImage/ungif.c
++++ libAfterImage/ungif.c
+@@ -153,7 +153,8 @@ get_gif_image_desc( GifFileType *gif, SavedImage *im )
+ 		{
+ 			im->ImageDesc.ColorMap = MakeMapObject(gif->Image.ColorMap->ColorCount, NULL);
+ 			fseek( gif->UserData, start_pos+9, SEEK_SET ); 
+-			fread( im->ImageDesc.ColorMap->Colors, 1, gif->Image.ColorMap->ColorCount*3, gif->UserData);
++			if (fread( im->ImageDesc.ColorMap->Colors, 1, gif->Image.ColorMap->ColorCount*3, gif->UserData) !=  gif->Image.ColorMap->ColorCount*3)
++				return GIF_ERROR
+ 			fseek( gif->UserData, end_pos, SEEK_SET );
+ 			gif->Image.ColorMap = NULL ;
+  		}
+diff --git a/src/ASDocGen/ASDocGen.c b/src/ASDocGen/ASDocGen.c
+index f8d38e9..bed04b8 100644
+--- src/ASDocGen/ASDocGen.c
++++ src/ASDocGen/ASDocGen.c
+@@ -880,7 +880,7 @@ gen_glossary( const char *dest_dir, const char *file, ASDocType doc_type )
+ 	LOCAL_DEBUG_OUT( "Glossary has %ld items", Glossary->items_num);
+ 	if( (doc_type == DocType_HTML	|| doc_type == DocType_PHP ) && Glossary->items_num > 0 )
+ 	{	
+-		ASHashableValue *values;
++		ASHashableValueBase *values;
+ 		ASHashData *data;
+ 		int items_num, col_length, i ;
+ 		int col_end[3], col_curr[3], col_count = 3 ;
+@@ -891,7 +891,7 @@ gen_glossary( const char *dest_dir, const char *file, ASDocType doc_type )
+ 			return ;
+ 		
+ 		LOCAL_DEBUG_OUT( "sorting hash items : ... %s", "" );
+-		values = safecalloc( Glossary->items_num, sizeof(ASHashableValue));
++		values = safecalloc( Glossary->items_num, sizeof(ASHashableValueBase));
+ 		data = safecalloc( Glossary->items_num, sizeof(ASHashData));
+ 		items_num = sort_hash_items (Glossary, values, (void**)data, 0);
+ 		
+@@ -957,7 +957,7 @@ gen_index( const char *dest_dir, const char *file, ASDocType doc_type, Bool user
+ 	ASXMLInterpreterState state;
+ 	if( (doc_type == DocType_HTML	|| doc_type == DocType_PHP ) && Index->items_num > 0 )
+ 	{	
+-		ASHashableValue *values;
++		ASHashableValueBase *values;
+ 		ASHashData *data;
+ 		int items_num, i ;
+ 		Bool sublist = False ; 
+@@ -966,7 +966,7 @@ gen_index( const char *dest_dir, const char *file, ASDocType doc_type, Bool user
+ 		if( !start_doc_file( dest_dir, file, NULL, doc_type, NULL, NULL, NULL, &state, DOC_CLASS_None, DocClass_TopicIndex ) )	
+ 			return ;
+ 		LOCAL_DEBUG_OUT( "sorting hash items : ... %s", "" );
+-		values = safecalloc( Index->items_num, sizeof(ASHashableValue));
++		values = safecalloc( Index->items_num, sizeof(ASHashableValueBase));
+ 		data = safecalloc( Index->items_num, sizeof(ASHashData));
+ 		items_num = sort_hash_items (Index, values, (void**)data, 0);
+ 		
+diff --git a/src/ASMount/main.c b/src/ASMount/main.c
+index 9a42b49..ae22ad5 100644
+--- src/ASMount/main.c
++++ src/ASMount/main.c
+@@ -1238,7 +1238,9 @@ void init_ASMount(ASFlagType flags, const char *cmd)
+ 	reloadButtons();
+ 	AppState.volumes = create_asbidirlist (ASVolume_destroy);
+ 
++#ifndef GLIB_VERSION_2_36
+ 	g_type_init();
++#endif
+ 	GVolumeMonitor * monitor  = g_volume_monitor_get();
+ 
+ 	g_signal_connect_object (monitor, "mount-added",    G_CALLBACK (mount_added), NULL, 0);
+@@ -1477,7 +1479,9 @@ main (int argc, char *argv[])
+  	LinkAfterStepConfig();
+  	InitSession();
+ 
++#ifndef GLIB_VERSION_2_36
+ 	g_type_init();
++#endif
+ #if 0
+ 	ConnectXDisplay (gdk_x11_display_get_xdisplay(gdk_display_open(NULL)), NULL, False);
+ #else	
+diff --git a/src/afterstep/cover.c b/src/afterstep/cover.c
+index 5455c48..11a76a4 100644
+--- src/afterstep/cover.c
++++ src/afterstep/cover.c
+@@ -101,7 +101,7 @@ void do_anim_shape_blocks (void *vdata)
+ #ifdef SHAPE
+ 	struct ASDeskAniBlocks *data = (struct ASDeskAniBlocks *)vdata;
+ 	XRectangle main_b = { 0, 0, Scr.MyDisplayWidth, Scr.MyDisplayHeight };
+-	int ratio = MAX_MY_RND32 / LEVELS_NUM;
++	const unsigned int ratio = MAX_MY_RND32 / LEVELS_NUM;
+ 	int x_dim = Scr.MyDisplayWidth / BLOCKS_NUM;
+ 	int y_dim = Scr.MyDisplayHeight / data->steps;
+ 	int level, th;
+@@ -118,6 +118,9 @@ void do_anim_shape_blocks (void *vdata)
+ 		int blocks_used;
+ 		int i = 0;
+ 
++		// note: ratio needs to be unsigned, so that th is promoted to unsigned as well, otherwise gcc-4.8 compains that
++		// cover.c:121:6: warning: iteration 5u invokes undefined behavior [-Waggressive-loop-optimizations]
++		// and makes the whole while loop infinite...
+ 		th -= ratio;
+ 		if (data->off_y[level] < 0)
+ 			continue;
+diff --git a/src/afterstep/dbus.c b/src/afterstep/dbus.c
+index d7594d9..d311094 100644
+--- src/afterstep/dbus.c
++++ src/afterstep/dbus.c
+@@ -240,11 +240,13 @@ Bool get_gnome_autosave ()
+ {
+ 	Bool autosave = False;
+ #ifdef HAVE_GIOLIB
++#ifndef GLIB_VERSION_2_36
+ 	static Bool g_types_inited = False;
+ 	if (!g_types_inited) {
+ 		g_type_init();
+ 		g_types_inited = True;
+ 	}
++#endif
+ 	if (ASDBus.gnomeSessionPath) {
+ #if defined(HAVE_GSETTINGS)
+ 		GSettings *gsm_settings = g_settings_new (GSM_MANAGER_SCHEMA);

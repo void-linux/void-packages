@@ -1,0 +1,102 @@
+# Template file for 'qbittorrent'
+pkgname=qbittorrent
+version=4.1.8
+revision=1
+create_wrksrc=yes
+build_style=qmake
+hostmakedepends="automake libtool pkg-config qt5-host-tools qt5-qmake qt5-tools"
+makedepends="libtorrent-rasterbar-devel qt5-declarative-devel qt5-svg-devel"
+depends="qt5-svg"
+short_desc="Free software alternative to µtorrent"
+maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
+license="GPL-2.0-or-later"
+homepage="http://www.qbittorrent.org/"
+distfiles="${SOURCEFORGE_SITE}/${pkgname}/${pkgname}-${version}.tar.xz"
+checksum=3feea2ea401d933c492630e4406141658f17b5dc0c8cf9267f849ff2078fb0bb
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" qt5-svg-devel"
+fi
+
+do_extract() {
+	local n=${pkgname}-${version}
+	mkdir -p build-nox build-x11
+	tar xf ${XBPS_SRCDISTDIR}/${n}/${n}.tar.xz --strip-components=1 -C build-x11
+	tar xf ${XBPS_SRCDISTDIR}/${n}/${n}.tar.xz --strip-components=1 -C build-nox
+}
+
+do_configure() {
+	local opts="--prefix=/usr" build opts
+	opts+=" --disable-systemd"
+	opts+=" --with-boost=${XBPS_CROSS_BASE}/usr"
+	opts+=" --with-boost-libdir=${XBPS_CROSS_BASE}/usr/lib"
+	if [ "$CROSS_BUILD" ]; then
+		opts+=" --host=${XBPS_CROSS_TRIPLET}"
+	fi
+	for f in build-x11:--enable-gui:--disable-webui \
+		build-nox:--disable-gui:--enable-webui; do
+		build=${f%%:*}
+		f=${f#*:}
+		opts+=" ${f/:/ }"
+		cd ${wrksrc}/${build}
+		./bootstrap.sh
+		./configure ${opts}
+		cat > qt.conf <<_EOF
+[Paths]
+Sysroot=${XBPS_CROSS_BASE}
+Prefix=${XBPS_CROSS_BASE}/usr
+ArchData=${XBPS_CROSS_BASE}/usr/lib/qt5
+Data=${XBPS_CROSS_BASE}/usr/share/qt5
+Documentation=${XBPS_CROSS_BASE}/usr/share/doc/qt5
+Headers=${XBPS_CROSS_BASE}/usr/include/qt5
+Libraries=${XBPS_CROSS_BASE}/usr/lib
+LibraryExecutables=/usr/lib/qt5/libexec
+Binaries=/usr/lib/qt5/bin
+Tests=${XBPS_CROSS_BASE}/usr/tests
+Plugins=/usr/lib/qt5/plugins
+Imports=${XBPS_CROSS_BASE}/usr/lib/qt5/imports
+Qml2Imports=${XBPS_CROSS_BASE}/usr/lib/qt5/qml
+Translations=${XBPS_CROSS_BASE}/usr/share/qt5/translations
+Settings=${XBPS_CROSS_BASE}/etc/xdg
+Examples=${XBPS_CROSS_BASE}/usr/share/qt5/examples
+HostPrefix=/usr
+HostData=/usr/lib/qt5
+HostBinaries=/usr/lib/qt5/bin
+HostLibraries=/usr/lib
+Spec=linux-g++
+TargetSpec=linux-g++
+_EOF
+		qmake-qt5 \
+			PREFIX=/usr \
+			LIB=/usr/lib \
+			QMAKE_CC=$CC QMAKE_CXX=$CXX QMAKE_LINK=$CXX \
+			QMAKE_CFLAGS="${CFLAGS}" \
+			QMAKE_CXXFLAGS="${CXXFLAGS}" \
+			QMAKE_LFLAGS="${LDFLAGS}" \
+			-qtconf qt.conf
+		if [ "${XBPS_CROSS_BASE}" ]; then
+			vsed -i src/Makefile \
+				-e "s; /usr/lib/libQt5; ${XBPS_CROSS_BASE}/usr/lib/libQt5;g"
+		fi
+	done
+}
+
+do_build() {
+	cd ${wrksrc}/build-x11
+	make ${makejobs} CC="$CC" CXX="$CXX" LINK="$CXX"
+	cd ${wrksrc}/build-nox
+	make ${makejobs} CC="$CC" CXX="$CXX" LINK="$CXX"
+}
+
+do_install() {
+	cd ${wrksrc}/build-x11
+	make ${makejobs} INSTALL_ROOT=${DESTDIR} install
+}
+
+qbittorrent-nox_package() {
+	short_desc+=" - no X11"
+	pkg_install() {
+		cd ${wrksrc}/build-nox
+		make ${makejobs} INSTALL_ROOT=${PKGDESTDIR} install
+	}
+}
