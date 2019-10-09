@@ -1,0 +1,116 @@
+source: https://git.archlinux.org/svntogit/community.git/plain/trunk/ffmpeg4.0.patch?h=packages/blender
+
+diff --git a/intern/audaspace/ffmpeg/AUD_FFMPEGReader.cpp b/intern/audaspace/ffmpeg/AUD_FFMPEGReader.cpp
+index e9eea195208..84aea330313 100644
+--- a/intern/audaspace/ffmpeg/AUD_FFMPEGReader.cpp
++++ b/intern/audaspace/ffmpeg/AUD_FFMPEGReader.cpp
+@@ -264,9 +264,9 @@ AUD_FFMPEGReader::AUD_FFMPEGReader(boost::shared_ptr<AUD_Buffer> buffer) :
+ 		m_membuffer(buffer),
+ 		m_membufferpos(0)
+ {
+-	m_membuf = reinterpret_cast<data_t*>(av_malloc(FF_MIN_BUFFER_SIZE + FF_INPUT_BUFFER_PADDING_SIZE));
++	m_membuf = reinterpret_cast<data_t*>(av_malloc(AV_INPUT_BUFFER_MIN_SIZE + AV_INPUT_BUFFER_PADDING_SIZE));
+ 
+-	m_aviocontext = avio_alloc_context(m_membuf, FF_MIN_BUFFER_SIZE, 0, this,
++	m_aviocontext = avio_alloc_context(m_membuf, AV_INPUT_BUFFER_MIN_SIZE, 0, this,
+ 									   read_packet, NULL, seek_packet);
+ 
+ 	if(!m_aviocontext)
+diff --git a/intern/audaspace/ffmpeg/AUD_FFMPEGWriter.cpp b/intern/audaspace/ffmpeg/AUD_FFMPEGWriter.cpp
+index 3f95ac7a4da..2c2f0916406 100644
+--- a/intern/audaspace/ffmpeg/AUD_FFMPEGWriter.cpp
++++ b/intern/audaspace/ffmpeg/AUD_FFMPEGWriter.cpp
+@@ -163,7 +163,7 @@ AUD_FFMPEGWriter::AUD_FFMPEGWriter(std::string filename, AUD_DeviceSpecs specs,
+ 		try
+ 		{
+ 			if(m_formatCtx->oformat->flags & AVFMT_GLOBALHEADER)
+-				m_codecCtx->flags |= CODEC_FLAG_GLOBAL_HEADER;
++				m_codecCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+ 
+ 			AVCodec* codec = avcodec_find_encoder(m_codecCtx->codec_id);
+ 			if(!codec)
+@@ -185,11 +185,11 @@ AUD_FFMPEGWriter::AUD_FFMPEGWriter(std::string filename, AUD_DeviceSpecs specs,
+ 			if(avcodec_open2(m_codecCtx, codec, NULL))
+ 				AUD_THROW(AUD_ERROR_FFMPEG, codec_error);
+ 
+-			m_output_buffer.resize(FF_MIN_BUFFER_SIZE);
++			m_output_buffer.resize(AV_INPUT_BUFFER_MIN_SIZE);
+ 			int samplesize = AUD_MAX(AUD_SAMPLE_SIZE(m_specs), AUD_DEVICE_SAMPLE_SIZE(m_specs));
+ 
+ 			if(m_codecCtx->frame_size <= 1) {
+-				m_input_size = FF_MIN_BUFFER_SIZE * 8 / m_codecCtx->bits_per_coded_sample / m_codecCtx->channels;
++				m_input_size = AV_INPUT_BUFFER_MIN_SIZE * 8 / m_codecCtx->bits_per_coded_sample / m_codecCtx->channels;
+ 				m_input_buffer.resize(m_input_size * samplesize);
+ 			}
+ 			else
+diff --git a/source/blender/blenkernel/intern/writeffmpeg.c b/source/blender/blenkernel/intern/writeffmpeg.c
+index d7fcd896e11..9e82df17dce 100644
+--- a/source/blender/blenkernel/intern/writeffmpeg.c
++++ b/source/blender/blenkernel/intern/writeffmpeg.c
+@@ -619,8 +619,6 @@ static AVStream *alloc_video_stream(FFMpegContext *context, RenderData *rd, int
+ 	c->rc_buffer_aggressivity = 1.0;
+ #endif
+ 
+-	c->me_method = ME_EPZS;
+-	
+ 	codec = avcodec_find_encoder(c->codec_id);
+ 	if (!codec)
+ 		return NULL;
+@@ -682,14 +680,14 @@ static AVStream *alloc_video_stream(FFMpegContext *context, RenderData *rd, int
+ 	    )
+ 	{
+ 		PRINT("Using global header\n");
+-		c->flags |= CODEC_FLAG_GLOBAL_HEADER;
++		c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+ 	}
+ 	
+ 	/* Determine whether we are encoding interlaced material or not */
+ 	if (rd->mode & R_FIELDS) {
+ 		PRINT("Encoding interlaced video\n");
+-		c->flags |= CODEC_FLAG_INTERLACED_DCT;
+-		c->flags |= CODEC_FLAG_INTERLACED_ME;
++		c->flags |= AV_CODEC_FLAG_INTERLACED_DCT;
++		c->flags |= AV_CODEC_FLAG_INTERLACED_ME;
+ 	}
+ 
+ 	/* xasp & yasp got float lately... */
+@@ -779,7 +777,7 @@ static AVStream *alloc_audio_stream(FFMpegContext *context, RenderData *rd, int
+ 	}
+ 
+ 	if (of->oformat->flags & AVFMT_GLOBALHEADER) {
+-		c->flags |= CODEC_FLAG_GLOBAL_HEADER;
++		c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+ 	}
+ 
+ 	set_ffmpeg_properties(rd, c, "audio", &opts);
+@@ -798,14 +796,14 @@ static AVStream *alloc_audio_stream(FFMpegContext *context, RenderData *rd, int
+ 	st->codec->time_base.den = st->codec->sample_rate;
+ 
+ #ifndef FFMPEG_HAVE_ENCODE_AUDIO2
+-	context->audio_outbuf_size = FF_MIN_BUFFER_SIZE;
++	context->audio_outbuf_size = AV_INPUT_BUFFER_MIN_SIZE;
+ #endif
+ 
+ 	if (c->frame_size == 0)
+ 		// used to be if ((c->codec_id >= CODEC_ID_PCM_S16LE) && (c->codec_id <= CODEC_ID_PCM_DVD))
+ 		// not sure if that is needed anymore, so let's try out if there are any
+ 		// complaints regarding some ffmpeg versions users might have
+-		context->audio_input_samples = FF_MIN_BUFFER_SIZE * 8 / c->bits_per_coded_sample / c->channels;
++		context->audio_input_samples = AV_INPUT_BUFFER_MIN_SIZE * 8 / c->bits_per_coded_sample / c->channels;
+ 	else {
+ 		context->audio_input_samples = c->frame_size;
+ #ifndef FFMPEG_HAVE_ENCODE_AUDIO2
+diff --git a/source/blender/imbuf/intern/indexer.c b/source/blender/imbuf/intern/indexer.c
+index eaf4dfd84b4..9c2f42feb52 100644
+--- a/source/blender/imbuf/intern/indexer.c
++++ b/source/blender/imbuf/intern/indexer.c
+@@ -537,7 +537,7 @@ static struct proxy_output_ctx *alloc_proxy_output_ffmpeg(
+ 	av_opt_set_int(rv->c, "qmax", ffmpeg_quality, 0);
+ 
+ 	if (rv->of->flags & AVFMT_GLOBALHEADER) {
+-		rv->c->flags |= CODEC_FLAG_GLOBAL_HEADER;
++		rv->c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+ 	}
+ 
+ 	if (avio_open(&rv->of->pb, fname, AVIO_FLAG_WRITE) < 0) {
+

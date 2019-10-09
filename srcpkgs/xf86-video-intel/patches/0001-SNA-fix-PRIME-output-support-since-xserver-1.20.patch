@@ -1,0 +1,93 @@
+From e85424325911626556fbe5a313c698a5da701163 Mon Sep 17 00:00:00 2001
+From: Peter Wu <peter@lekensteyn.nl>
+Date: Mon, 13 Aug 2018 22:59:50 +0200
+Subject: [PATCH xf86-video-intel] SNA: fix PRIME output support since xserver
+ 1.20
+
+Since xorg-server 1.20, an external monitor would remain blank when used
+in a PRIME output slave setup. Only a cursor was visible. The cause is
+"Make PixmapDirtyUpdateRec::src a DrawablePtr" in xserver, the "src"
+pointer might point to the root window (created by the server) instead
+of a pixmap (as created by xf86-video-intel). Use get_drawable_pixmap to
+handle both cases.
+
+When built with -fsanitize=address, the following test will trigger a
+heap-buffer-overflow error due to to_sna_from_pixmap receiving a window
+instead of a pixmap.
+
+Test on a hybrid graphics laptop (Intel + modesetting/nouveau):
+
+    xrandr --setprovideroutputsource modesetting Intel
+    xrandr --output DP-1-1 --mode 2560x1440  # should not crash
+    glxgears  # should display gears on both screens
+
+Bugzilla: https://bugs.freedesktop.org/show_bug.cgi?id=100086
+Signed-off-by: Peter Wu <peter@lekensteyn.nl>
+---
+Tested with xserver 1.20.1 with ASAN enabled. Survives multiple
+resolution changes, works with a Plasma desktop session, it seems
+stable. Something like this patch is required to make multi-monitor
+setups usable in a hybrid graphics setting with Xorg 1.20.
+---
+ src/sna/sna_accel.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/src/sna/sna_accel.c b/src/sna/sna_accel.c
+index 2f669bcf..80b116a3 100644
+--- src/sna/sna_accel.c
++++ src/sna/sna_accel.c
+@@ -17510,7 +17510,11 @@ static bool has_offload_slaves(struct sna *sna)
+ 	PixmapDirtyUpdatePtr dirty;
+ 
+ 	xorg_list_for_each_entry(dirty, &screen->pixmap_dirty_list, ent) {
++#ifdef HAS_DIRTYTRACKING_DRAWABLE_SRC
++		assert(dirty->src == &sna->front->drawable);
++#else
+ 		assert(dirty->src == sna->front);
++#endif
+ 		if (RegionNotEmpty(DamageRegion(dirty->damage)))
+ 			return true;
+ 	}
+@@ -17671,7 +17675,11 @@ static void sna_accel_post_damage(struct sna *sna)
+ 		if (RegionNil(damage))
+ 			continue;
+ 
++#ifdef HAS_DIRTYTRACKING_DRAWABLE_SRC
++		src = get_drawable_pixmap(dirty->src);
++#else
+ 		src = dirty->src;
++#endif
+ 		dst = dirty->slave_dst->master_pixmap;
+ 
+ 		region.extents.x1 = dirty->x;
+@@ -17922,9 +17930,15 @@ migrate_dirty_tracking(PixmapPtr old_front, PixmapPtr new_front)
+ 	PixmapDirtyUpdatePtr dirty, safe;
+ 
+ 	xorg_list_for_each_entry_safe(dirty, safe, &screen->pixmap_dirty_list, ent) {
++#ifdef HAS_DIRTYTRACKING_DRAWABLE_SRC
++		assert(dirty->src == &old_front->drawable);
++		if (dirty->src != &old_front->drawable)
++			continue;
++#else
+ 		assert(dirty->src == old_front);
+ 		if (dirty->src != old_front)
+ 			continue;
++#endif
+ 
+ 		DamageUnregister(&dirty->src->drawable, dirty->damage);
+ 		DamageDestroy(dirty->damage);
+@@ -17939,7 +17953,11 @@ migrate_dirty_tracking(PixmapPtr old_front, PixmapPtr new_front)
+ 		}
+ 
+ 		DamageRegister(&new_front->drawable, dirty->damage);
++#ifdef HAS_DIRTYTRACKING_DRAWABLE_SRC
++		dirty->src = &new_front->drawable;
++#else
+ 		dirty->src = new_front;
++#endif
+ 	}
+ #endif
+ }
+-- 
+2.18.0
+

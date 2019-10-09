@@ -1,0 +1,94 @@
+# Template file for 'chez-scheme'
+pkgname=chez-scheme
+version=9.5.2
+revision=1
+wrksrc="ChezScheme-${version}"
+build_style=gnu-configure
+hostmakedepends="git libX11-devel libuuid-devel ncurses-devel zlib-devel"
+makedepends="${hostmakedepends}"
+short_desc="Compiler and run-time system for R6RS Scheme"
+maintainer="Leah Neukirchen <leah@vuxu.org>"
+license="Apache-2.0"
+homepage="http://scheme.com/"
+distfiles="https://github.com/cisco/ChezScheme/archive/v${version}.tar.gz
+ https://github.com/nanopass/nanopass-framework-scheme/archive/1f7e80bcff16766ef419183169bbc343db07db0c.tar.gz"
+checksum="3a370fdf2ffd67d6a0ccbb993dfab1cbaf4a0a97983c869cfaab40528c33c48b
+ 5fe450f78bc1f096f58a907ca8b3829fff1cc520e5d5e8c503ac5c601b6779e0"
+alternatives="
+ scheme:scheme:/usr/bin/chez-scheme
+ scheme:scheme.1:/usr/share/man/man1/chez-scheme.1
+"
+
+archs="i686* x86_64* armv6l armv7l"
+case "$XBPS_MACHINE" in
+	i686*) _host=ti3le;;
+	x86_64*) _host=ta6le;;
+	arm*) _host=arm32le;;  # no threading makefile
+	*) broken="unsupported host platform";;
+esac
+case "$XBPS_TARGET_MACHINE" in
+	i686*) _target=ti3le;;
+	x86_64*) _target=ta6le;;
+	arm*) _target=arm32le;;
+	*) broken="unsupported target platform";;
+esac
+
+post_extract() {
+	sed -i '/xlocale\.h/d' c/expeditor.c
+
+	# hack out submodules
+
+	mkdir .git
+	sed -i '/git submodule/s/^/: #/' configure
+
+	mv ../nanopass-*/* nanopass
+
+	sed -i -e '/:/s,../zlib/libz.a,,g' \
+		-e '/ld/s,../zlib/libz.a,,g' \
+		-e '/^mdclib =/s/=/= $(LDFLAGS)/g' \
+		-e '/^mdclib =/s/$/ -lz/g' \
+		-e '/^C =/s/$/ $(CFLAGS)/g' \
+		-e '/^C =/s/gcc/$(CC)/g' \
+		-e 's/^\tld/\t$(LD)/g' \
+		c/Mf-*
+	ln -s /usr/include/zlib.h zlib
+	ln -s /usr/include/zconf.h zlib
+	touch zlib/configure.log
+}
+
+do_configure() {
+	./configure --installprefix=/usr --installman=/usr/share/man \
+		--nogzip-man-pages --temproot=$DESTDIR --machine=$_host \
+		--installschemename=chez-scheme
+}
+
+post_install() {
+	# make link relative
+	ln -sf scheme.boot ${DESTDIR}/usr/lib/csv*/*/scheme-script.boot
+}
+
+if [ "$CROSS_BUILD" ]; then
+
+do_build() {
+	make ${makejobs} CC="$BUILD_CC" CFLAGS="$BUILD_CFLAGS" \
+		LD="ld" LDFLAGS="$BUILD_LDFLAGS"
+	./workarea $_target
+	cd $_target
+	make ${makejobs} -C s -f Mf-cross m=$_host xm=$_target base=../../$_host
+	make ${makejobs} -C c CC=$CC LD=$LD CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+do_install() {
+	cd $_target
+	make -f ../$_host/Mf-install DESTDIR=${DESTDIR} m=$_target
+}
+
+else
+
+do_build() {
+	make ${makejobs} CC=$CC LD=$LD CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+do_install() {
+	make DESTDIR=${DESTDIR} install
+}
+
+fi

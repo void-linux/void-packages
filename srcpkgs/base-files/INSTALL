@@ -1,0 +1,103 @@
+make_system_dirs() {
+	#
+	# Install FHS system directories.
+	#
+	for d in boot etc etc/modprobe.d etc/skel \
+		home dev proc usr mnt opt sys media var run/lock; do
+		[ ! -d ${d} ] && install -d ${d}
+	done
+
+	[ ! -d root ] && install -dm750 root
+
+	# Don't try to create var/mail in the correct place if the user
+	# is updating from an old system that has var/mail as a symlink
+	[ ! -L var/mail ] && [ ! -d var/mail ] && install -dm1777 var/mail
+
+	[ ! -d var/spool ] && install -d var/spool
+
+	for d in local local/bin local/sbin local/include local/lib \
+		bin include lib src; do
+		[ ! -d usr/${d} ] && install -d usr/${d}
+	done
+
+	for d in locale misc terminfo zoneinfo doc info; do
+		[ ! -d usr/share/${d} ] && install -d usr/share/${d}
+		[ ! -d usr/local/share/${d} ] && install -d usr/local/share/${d}
+	done
+
+	for d in 1 2 3 4 5 6 7 8; do
+		[ ! -d usr/share/man/man${d} ] && \
+			install -d usr/share/man/man${d}
+		[ ! -d usr/local/share/man/man${d} ] && \
+			install -d usr/local/share/man/man${d}
+	done
+
+	# Create /bin, /sbin and /lib symlinks to /usr.
+	for d in bin sbin lib; do
+		if [ ! -h "$d" -a -d "$d" ]; then
+			echo "/${d} must not be a directory, exiting!"
+			exit 1
+		fi
+		ln -sf usr/${d} .
+	done
+	# Create /usr/sbin symlink to /usr/bin.
+	[ ! -e usr/sbin ] && ln -sf bin usr/sbin
+
+	for d in empty log opt cache lib; do
+		[ ! -d var/${d} ] && install -d var/${d}
+	done
+
+	if [ "${ARCH}" = "x86_64" ] || [ "${ARCH}" = "ppc64le" ]; then
+		[ -L lib64 ] || ln -sf usr/lib lib64
+		cd usr
+		[ -L lib64 ] || ln -sf lib lib64
+		cd ..
+	fi
+	if [ "${ARCH}" = "x86_64" ]; then
+		install -d usr/lib32
+		[ -L lib32 ] || ln -sf usr/lib32 lib32
+	fi
+	if [ "${ARCH}" = "i686" ]; then
+		[ -L lib32 ] || ln -sf lib lib32
+		[ -L usr/lib32 ] || ln -sf lib usr/lib32
+	fi
+
+	# Create /var/run and /var/lock symlinks.
+	for d in run lock; do
+		if [ ! -h "var/$d" -a -d var/${d} ]; then
+			echo "/${d} must not be a directory, exiting!"
+			exit 1
+		fi
+	done
+
+	cd var
+	ln -sf ../run .
+	ln -sf ../run/lock .
+	[ ! -d spool/mail ] && ln -sfn ../mail spool/mail
+	if [ -L spool/mail/mail -a "$(readlink spool/mail/mail)" = spool/mail ]; then
+		# Get rid of broken symlink created by older versions of base-files.
+		rm spool/mail/mail
+	fi
+	cd ..
+
+	install -dm1777 tmp
+	install -dm1777 var/tmp
+
+	# remove leftover polkit rules from live systems
+	[ -e etc/polkit-1/rules.d/void-live.rules ] && rm etc/polkit-1/rules.d/void-live.rules
+}
+
+case "${ACTION}" in
+pre)
+	echo "Creating system directories/symlinks..."
+	make_system_dirs
+	;;
+post)
+	echo "Creating system directories/symlinks..."
+	make_system_dirs
+	# Enable shadow passwd/groups.
+	if [ -x bin/pwconv -a -x bin/grpconv -a "$(id -u)" -eq 0 ]; then
+		pwconv && grpconv
+	fi
+	;;
+esac
