@@ -280,7 +280,7 @@ install_pkg_deps() {
                     fi
                 done
                 if [[ $found -eq 1 ]]; then
-                    echo "   [target] ${_vpkg}: not found (subpkg, ignored)"
+                    msg_error "[target] ${_vpkg}: target dependency '${_subpkg}' is a subpackage of $pkgname\n"
                 else
                     echo "   [target] ${_vpkg}: not found"
                     missing_deps+=("$_vpkg")
