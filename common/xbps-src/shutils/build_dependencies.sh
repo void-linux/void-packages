@@ -169,7 +169,7 @@ install_pkg_deps() {
                         break
                     fi
                 done
-                if [[ $found -eq 1 ]]; then
+                if [[ $found -eq 1 ]] && [[ -z "$cross" ]]; then
                     echo "   [host] ${_vpkg}: not found (subpkg, ignored)"
                 else
                     echo "   [host] ${_vpkg}: not found"
