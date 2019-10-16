@@ -4,7 +4,7 @@
 
 do_build() {
 	: ${python_versions:="2.7 $py3_ver"}
-	local pyver= pysufx= tmp_cflags="$CFLAGS" tmp_ldflags="$LDFLAGS"
+	local pyver= tmp_cflags="$CFLAGS" tmp_ldflags="$LDFLAGS"
 
 	for pyver in $python_versions; do
 		if [ -n "$CROSS_BUILD" ]; then
@@ -12,10 +12,7 @@ do_build() {
 			LDFLAGS="$tmp_ldflags"
 
 			PYPREFIX="$XBPS_CROSS_BASE"
-			if [ "$pyver" != "2.7" ]; then
-				pysufx=m
-			fi
-			CFLAGS+=" -I${XBPS_CROSS_BASE}/include/python${pyver}${pysufx} -I${XBPS_CROSS_BASE}/usr/include"
+			CFLAGS+=" -I${XBPS_CROSS_BASE}/include/python${pyver} -I${XBPS_CROSS_BASE}/usr/include"
 			LDFLAGS+=" -L${XBPS_CROSS_BASE}/lib/python${pyver} -L${XBPS_CROSS_BASE}/usr/lib"
 			CC="${XBPS_CROSS_TRIPLET}-gcc -pthread $CFLAGS $LDFLAGS"
 			LDSHARED="${CC} -shared $LDFLAGS"
@@ -49,15 +46,12 @@ do_check() {
 
 do_install() {
 	: ${python_versions:="2.7 $py3_ver"}
-	local pyver= pysufx=
+	local pyver=
 
 	for pyver in $python_versions; do
 		if [ -n "$CROSS_BUILD" ]; then
 			PYPREFIX="$XBPS_CROSS_BASE"
-			if [ "$pyver" != "2.7" ]; then
-				pysufx=m
-			fi
-			CFLAGS+=" -I${XBPS_CROSS_BASE}/include/python${pyver}${pysufx} -I${XBPS_CROSS_BASE}/usr/include"
+			CFLAGS+=" -I${XBPS_CROSS_BASE}/include/python${pyver} -I${XBPS_CROSS_BASE}/usr/include"
 			LDFLAGS+=" -L${XBPS_CROSS_BASE}/lib/python${pyver} -L${XBPS_CROSS_BASE}/usr/lib"
 			CC="${XBPS_CROSS_TRIPLET}-gcc -pthread $CFLAGS $LDFLAGS"
 			LDSHARED="${CC} -shared $LDFLAGS"
