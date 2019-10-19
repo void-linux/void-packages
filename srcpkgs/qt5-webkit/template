@@ -1,23 +1,30 @@
 # Template file for 'qt5-webkit'
 pkgname=qt5-webkit
 version=5.212.0
-revision=5
-_snap=1561566461
+revision=6
+_snap=1565895469
 _v=${version%.*}
 wrksrc="qtwebkit-everywhere-src-${_v}"
 build_style=cmake
-configure_args="-DPORT=Qt -DUSE_LD_GOLD=OFF"
+# some nasty stuff to prevent cmake from inducing buggy -O3 and default -g
+configure_args="-DPORT=Qt -DUSE_LD_GOLD=OFF
+ -DCMAKE_CXX_FLAGS_RELEASE=-DNDEBUG
+ -DCMAKE_CXX_FLAGS_DEBUG=-DNDEBUG
+ -DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-DNDEBUG
+ -DCMAKE_C_FLAGS_RELEASE=-DNDEBUG
+ -DCMAKE_C_FLAGS_DEBUG=-DNDEBUG
+ -DCMAKE_C_FLAGS_RELWITHDEBINFO=-DNDEBUG"
 hostmakedepends="flex gperf perl pkg-config python qt5-qmake ruby"
 makedepends="libwebp-devel libxslt-devel libXcomposite-devel sqlite-devel
  libjpeg-turbo-devel gst-plugins-base1-devel qt5-declarative-devel
  qt5-location-devel qt5-sensors-devel qt5-webchannel-devel hyphen-devel
  ruby-devel"
 short_desc="Cross-platform application and UI framework (Qt5) - WebKit2 component"
-maintainer="Orphaned <orphan@voidlinux.org>"
+maintainer="q66 <daniel@octaforge.org>"
 license="LGPL-2.1-or-later"
 homepage="https://www.qt.io/"
 distfiles="https://download.qt.io/snapshots/ci/qtwebkit/${_v}/${_snap}/src/submodules/qtwebkit-everywhere-src-${_v}.tar.xz"
-checksum=68eae85e7a12077b8004d7a039af065d68112e8e9ab95013f4e01527759fab9f
+checksum=607f0a13e05bbf831d86904d12ae464e7d46a15f0ceed2465487b53512948824
 
 CPPFLAGS="-I${XBPS_CROSS_BASE}/usr/include"
 CXXFLAGS="-fpermissive -Wno-class-memaccess"
@@ -27,25 +34,45 @@ if [ "$CROSS_BUILD" ]; then
 	configure_args+=" -DRUBY_CONFIG_INCLUDE_DIR=${XBPS_CROSS_BASE}/usr/include/ruby-*"
 fi
 
+# only a few platform support JIT
 case "$XBPS_TARGET_MACHINE" in
-	armv6*)	# Need libatomic for __atomic_fetch_add_8 etc.
+	armv[67]*|aarch64*|i686*|x86_64*|mips*) ;;
+	*) configure_args+=" -DENABLE_JIT=OFF" ;;
+esac
+
+# some platforms need libatomic
+case "$XBPS_TARGET_MACHINE" in
+	ppc64*) ;;
+	armv6*|ppc*)
 		makedepends+=" libatomic-devel"
 		LIBS+=" -latomic"
 		;;
-	ppc64*)	# no JIT on ppc64 and other build workarounds
-		configure_args+=" -DENABLE_JIT=OFF -DUSE_SYSTEM_MALLOC=ON"
-		;;
-	i686*)  # try to reduce memory footprint when linking
-		nodebug=1
-		;;
-	ppc*)   # no JIT on ppc and need libatomic
-		configure_args+=" -DENABLE_JIT=OFF -DUSE_SYSTEM_MALLOC=ON"
-		makedepends+=" libatomic-devel"
-		LIBS+=" -latomic"
-		;;
+	*) ;;
+esac
+
+# use system malloc on ppc64le (potential 64k page kernel)
+case "$XBPS_TARGET_MACHINE" in
+	ppc64le*) configure_args+=" -DUSE_SYSTEM_MALLOC=ON" ;;
+	*) ;;
 esac
 
 pre_configure() {
+	# work around large debug symbols on 32-bit hosts
+	if [ "$XBPS_WORDSIZE" = "32" ]; then
+		export CFLAGS="${CFLAGS/-g/-g1}"
+		export CXXFLAGS="${CXXFLAGS/-g/-g1}"
+		export LDFLAGS+=" -Wl,--no-keep-memory"
+	fi
+
+	# the above is not enough for 32-bit ppc and debug
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*) ;;
+		ppc*)
+			export CFLAGS="${CFLAGS/-O2/-Os}"
+			export CXXFLAGS="${CXXFLAGS/-O2/-Os}"
+			;;
+	esac
+
 	if [ "$CROSS_BUILD" ]; then
 		# XXX: disable failing check for private headers and assume they are available
 		sed -i Source/cmake/OptionsQt.cmake \

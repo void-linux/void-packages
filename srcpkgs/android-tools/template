@@ -1,56 +1,24 @@
 # Template file for 'android-tools'
 pkgname=android-tools
-# NOTE: not all upstream updates has code changes for the parts
-#       of android used by android-tools. Check for diff with:
-#         curl -L http://git.io/vvC0Z | sh -s 5.0.2_r1 5.1.0_r1
-version=9.0.0r45
-revision=2
-archs="x86_64* i686*"
-_distver=${version/r/_r}
-#See https://android.googlesource.com/platform/development/+/refs/tags/android-${_distver}/sdk/plat_tools_source.prop_template
-_apiver="28.0.0 rc1"
-create_wrksrc=yes
-hostmakedepends="ruby cmake ninja perl go"
+version=29.0.4
+revision=1
+archs="armv* aarch64* x86_64* i686*"
+build_style=cmake
+hostmakedepends="perl go"
 makedepends="gtest-devel zlib-devel libressl-devel libusb-devel pcre2-devel"
 short_desc="Android platform tools (adb and fastboot)"
 maintainer="John <johnz@posteo.net>"
 license="Apache-2.0, ISC, GPL-2.0-only, MIT"
 homepage="http://developer.android.com/tools/help/adb.html"
-_baseurl=https://android.googlesource.com/platform
-distfiles="
- ${_baseurl}/system/core/+archive/android-${_distver}.tar.gz>core.tar.gz
- ${_baseurl}/system/extras/+archive/android-${_distver}.tar.gz>extras.tar.gz
- ${_baseurl}/external/selinux/+archive/android-${_distver}.tar.gz>selinux.tar.gz
- ${_baseurl}/external/f2fs-tools/+archive/android-${_distver}.tar.gz>f2fs-tools.tar.gz
- ${_baseurl}/external/e2fsprogs/+archive/android-${_distver}.tar.gz>e2fsprogs.tar.gz
- ${_baseurl}/external/avb/+archive/android-${_distver}.tar.gz>avb.tar.gz
- https://boringssl.googlesource.com/boringssl/+archive/3538.tar.gz>boringssl.tar.gz"
-# Contents checksums because the tarballs change with every download
-checksum="@dfaea8c40be4a8bbd1df513ab3516ff88e92430ee0fde399dd7e7e09ec21cd29
- @0a43d228088faabe8b7150fa752c8b0c002503c0d830d8470ecea351f195bbb3
- @9f2b5e379eca4c56e2d422598831bfd7bdf2b7b3c3d011ce513c7603aa46b574
- @f1efc86a1e78521f4754d184d682c1f6660c04f74496913f37cae9e2670db0e8
- @e98509632e865e792dc4b344b0a1ada0662dda7571534fa7c5d1a8902dcfb0f4
- @5c2fcb88154f9b6ffed8d24a069e4bad0a7aea1936be2ce18af972ad8762e09a
- @452e29d95f8da494896e3335931e928d9b7c94500a5793101bb19629cd7dea8c"
+distfiles="https://github.com/nmeum/android-tools/releases/download/${version}/android-tools-${version}.tar.xz"
+checksum=5428e16a2baba79665cac0b11be81aa0cfa6920dc20da039711cc3d3b96a333b
 
-do_extract() {
-	local tarball p
-	for p in ${distfiles}; do
-		tarball=${p##*>}
-		mkdir -p ${wrksrc}/${tarball/.*}
-		tar -x --no-same-permissions --no-same-owner -f \
-			${XBPS_SRCDISTDIR}/${pkgname}-${version}/${tarball} \
-			-C ${wrksrc}/${tarball/.*}
-	done
-}
+case "$XBPS_TARGET_MACHINE" in
+	armv[56]*) makedepends+=" libatomic-devel"
+		;;
+esac
 
 pre_configure() {
-	PKGVER="${_apiver}-void-${version}_${revision}" ${FILESDIR}/generate_build.rb > build.ninja
-
-	mkdir -p boringssl/build
-	cd boringssl/build
-
 	# Don't check for CROSS_COMPILING, since i686 container/chroot inside
 	# x86_64 host will failed to build this.
 	if [ "${XBPS_TARGET_MACHINE}" = i686 ] && [ "$(uname -m)" = "x86_64" ]; then
@@ -62,34 +30,19 @@ pre_configure() {
 		SET(CMAKE_CXX_COMPILER ${CXX})
 		SET(CMAKE_SYSTEM_PROCESSOR x86)
 		_EOF
+		configure_args+=" ${boring_ssl_cmake_args}"
 	fi
 
-	cmake -GNinja \
-		-DBUILD_SHARED_LIBS=FALSE \
-		-DCMAKE_BUILD_TYPE=RELEASE \
-		-DCMAKE_CXX_FLAGS="$CXXFLAGS" \
-		-DCMAKE_C_FLAGS="$CFLAGS" \
-		$boring_ssl_cmake_args \
-		..
-	ninja
+	case "${XBPS_TARGET_MACHINE}" in
+		armv[56]*) sed -i vendor/CMakeLists.adb.txt \
+			-e "/target_link_libraries/s;$; atomic;"
+			;;
+	esac
 }
 
-do_build() {
-	ninja
-}
-
-do_install() {
-	for i in adb fastboot mke2fs.android e2fsdroid ext2simg \
-		core/mkbootimg/mkbootimg avb/avbtool ;do
-		vbin $i
-	done
-	vlicense boringssl/LICENSE boringssl.LICENSE
-	vlicense boringssl/third_party/fiat/LICENSE fiat.LICENSE
-	vlicense boringssl/third_party/googletest/LICENSE gtest.LICENSE
-	vlicense boringssl/third_party/android-cmake/LICENSE android-cmake.LICENSE
+post_install() {
+	vlicense vendor/boringssl/LICENSE boringssl.LICENSE
+	vlicense vendor/boringssl/third_party/fiat/LICENSE fiat.LICENSE
+	vlicense vendor/boringssl/third_party/googletest/LICENSE gtest.LICENSE
 	vsv adb
 }
-
-# REMARKS:
-# If there is any reason at all that fastboot may not be a position independent
-# executable, please document it here.

@@ -1,14 +1,14 @@
 # Template file for 'gcc'
 _majorver=9
-_minorver=${_majorver}.1
+_minorver=${_majorver}.2
 _gmp_version=6.1.2
-_mpfr_version=4.0.1
+_mpfr_version=4.0.2
 _mpc_version=1.1.0
-_isl_version=0.19
+_isl_version=0.21
 
 pkgname=gcc
 version=${_minorver}.0
-revision=3
+revision=1
 short_desc="GNU Compiler Collection"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 homepage="http://gcc.gnu.org"
@@ -20,17 +20,24 @@ distfiles="
  https://www.mpfr.org/mpfr-${_mpfr_version}/mpfr-${_mpfr_version}.tar.xz
  ${GNU_SITE}/mpc/mpc-${_mpc_version}.tar.gz
  http://isl.gforge.inria.fr/isl-${_isl_version}.tar.bz2"
-checksum="79a66834e96a6050d8fe78db2c3b32fb285b230b855d0a66288235bc04b327a0
+checksum="ea6ef08f121239da5695f76c9b33637a118dcf63e24164422231917fa61fb206
  87b565e89a9a684fe4ebeeddb8399dce2599f9c9049854ca8c0dfbdea0e21912
- 67874a60826303ee2fb6affc6dc0ddd3e749e9bfcb4c8655e3953d0458a6e16e
+ 1d3be708604eae0e42d578ba93b390c2a145f17743a744d8f3f8c2ad5855a38a
  6985c538143c1208dcb1ac42cedad6ff52e267b47e5f970183a3e75125b43c2e
- d59726f34f7852a081fbd3defd1ab2136f174110fc2e0c8d10bb122173fa9ed8"
+ d18ca11f8ad1a39ab6d03d3dcb3365ab416720fcb65b42d69f34f51bf0a0e859"
 
 nopie=yes
 lib32disabled=yes
 bootstrap=yes
 replaces="gcc-gcj<7.2.0 gcc-gcj-jdk-compat<7.2.0 libmpx>=0 libmpx-devel>=0"
 alternatives="cc:cc:/usr/bin/gcc"
+
+_have_gccgo=yes
+
+# MIPS does not have libucontext yet
+case "$XBPS_TARGET_MACHINE" in
+	mips*-musl) _have_gccgo=no ;;
+esac
 
 if [ "$CHROOT_READY" ]; then
 	hostmakedepends="perl flex"
@@ -67,14 +74,13 @@ fi
 
 if [ "$CHROOT_READY" ]; then
 	subpackages+=" gcc-fortran libgfortran-devel libgfortran"
-	if [ -z "$CROSS_BUILD" ]; then
-		subpackages+=" gcc-objc gcc-objc++ libobjc-devel libobjc"
-		case "$XBPS_TARGET_MACHINE" in
-		*-musl)	# Go won't link for musl libc
-			;;
-		*)	subpackages+=" gcc-go gcc-go-tools libgo-devel libgo"
-			;;
-		esac
+	subpackages+=" gcc-objc gcc-objc++ libobjc-devel libobjc"
+	if [ "$_have_gccgo" = "yes" ]; then
+		subpackages+=" gcc-go gcc-go-tools libgo-devel libgo"
+		# we need this for gcc-go on musl
+		if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+			makedepends+=" libucontext-devel"
+		fi
 	fi
 fi
 
@@ -129,7 +135,6 @@ case "$XBPS_TARGET_MACHINE" in
 esac
 if [ "$CROSS_BUILD" ]; then
 	hostmakedepends+=" cross-${_triplet}"
-	export GFORTRAN_FOR_TARGET=" ${_triplet}-gfortran"
 	if [ "$build_option_ada" ]; then
 		hostmakedepends+=" gcc-ada libada-devel"
 	fi
@@ -162,7 +167,10 @@ pre_configure() {
 	# _FORTIFY_SOURCE needs an optimization level.
 	sed -i "/ac_cpp=/s/\$CPPFLAGS/\$CPPFLAGS -O2/" {gcc,libiberty}/configure
 	case "$XBPS_TARGET_MACHINE" in
-		*-musl) patch -p1 -i ${FILESDIR}/libgnarl-musl.patch ;;
+		*-musl)
+			patch -p1 -i ${FILESDIR}/libgnarl-musl.patch
+			patch -p0 -i ${FILESDIR}/gccgo-musl.patch
+			;;
 	esac
 }
 do_configure() {
@@ -216,24 +224,24 @@ do_configure() {
 		export CC_FOR_TARGET="$CC"
 		export GCC_FOR_TARGET="$CC"
 		export CXX_FOR_TARGET="$CXX"
+		export GOC_FOR_TARGET="${_triplet}-gccgo"
+		export GFORTRAN_FOR_TARGET="${_triplet}-gfortran"
 
 		_args+=" --host=$XBPS_CROSS_TRIPLET"
 		_args+=" --with-build-sysroot=${XBPS_CROSS_BASE}"
 		_args+=" --enable-sjlj-exceptions=no"
-		_langs+=",fortran"
+		_langs+=",objc,obj-c++,fortran"
 	elif [ -z "$CHROOT_READY" ]; then
 		export LD_LIBRARY_PATH="${XBPS_MASTERDIR}/usr/lib"
 		_args+=" --build=${_triplet}"
 	else
 		_langs="c,c++,objc,obj-c++,fortran,lto"
-		case "$XBPS_TARGET_MACHINE" in
-			*-musl)	# Linking libgo.so is broken for musl libc
-				;;
-			*)	_langs+=",go"
-				;;
-		esac
 		_args+=" --build=${_triplet}"
 		_args+=" --enable-fast-character"
+	fi
+
+	if [ "$_have_gccgo" = "yes" ]; then
+		_langs+=",go"
 	fi
 
 	case "$XBPS_TARGET_MACHINE" in
