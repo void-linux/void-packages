@@ -1,0 +1,291 @@
+diff -urN qtwebengine/src/core/media_capture_devices_dispatcher.cpp qtwebengine/src/core/media_capture_devices_dispatcher.cpp
+--- qtwebengine/src/core/media_capture_devices_dispatcher.cpp	2019-10-26 20:39:57.232981636 +0200
++++ qtwebengine/src/core/media_capture_devices_dispatcher.cpp	2019-10-26 20:40:07.908980685 +0200
+@@ -87,22 +87,25 @@
+     return 0;
+ }
+ 
+-// Based on chrome/browser/media/desktop_capture_access_handler.cc:
+-void getDevicesForDesktopCapture(blink::MediaStreamDevices *devices, content::DesktopMediaID mediaId, bool captureAudio)
++// Based on chrome/browser/media/webrtc/desktop_capture_devices_util.cc:
++void getDevicesForDesktopCapture(blink::MediaStreamDevices *devices,
++                                 content::DesktopMediaID mediaId,
++                                 bool captureAudio,
++                                 blink::MediaStreamType videoType,
++                                 blink::MediaStreamType audioType)
+ {
+     DCHECK_CURRENTLY_ON(BrowserThread::UI);
+ 
+     // Add selected desktop source to the list.
+-    devices->push_back(blink::MediaStreamDevice(blink::MEDIA_GUM_DESKTOP_VIDEO_CAPTURE, mediaId.ToString(), "Screen"));
++    devices->push_back(blink::MediaStreamDevice(videoType, mediaId.ToString(), mediaId.ToString()));
+     if (captureAudio) {
+         if (mediaId.type == content::DesktopMediaID::TYPE_WEB_CONTENTS) {
+             devices->push_back(
+-                    blink::MediaStreamDevice(blink::MEDIA_GUM_DESKTOP_AUDIO_CAPTURE,
+-                                             mediaId.ToString(), "Tab audio"));
++                    blink::MediaStreamDevice(audioType, mediaId.ToString(), "Tab audio"));
+         } else {
+             // Use the special loopback device ID for system audio capture.
+             devices->push_back(blink::MediaStreamDevice(
+-                    blink::MEDIA_GUM_DESKTOP_AUDIO_CAPTURE,
++                    audioType,
+                     media::AudioDeviceDescription::kLoopbackInputDeviceId,
+                     "System Audio"));
+         }
+@@ -151,19 +154,27 @@
+ 
+ WebContentsAdapterClient::MediaRequestFlags mediaRequestFlagsForRequest(const content::MediaStreamRequest &request)
+ {
+-    WebContentsAdapterClient::MediaRequestFlags requestFlags = WebContentsAdapterClient::MediaNone;
++    if (request.audio_type == blink::MEDIA_DEVICE_AUDIO_CAPTURE &&
++        request.video_type == blink::MEDIA_DEVICE_VIDEO_CAPTURE)
++        return {WebContentsAdapterClient::MediaAudioCapture, WebContentsAdapterClient::MediaVideoCapture};
++
++    if (request.audio_type == blink::MEDIA_DEVICE_AUDIO_CAPTURE &&
++        request.video_type == blink::MEDIA_NO_SERVICE)
++        return {WebContentsAdapterClient::MediaAudioCapture};
++
++    if (request.audio_type == blink::MEDIA_NO_SERVICE &&
++        request.video_type == blink::MEDIA_DEVICE_VIDEO_CAPTURE)
++        return {WebContentsAdapterClient::MediaVideoCapture};
++
++    if (request.audio_type == blink::MEDIA_GUM_DESKTOP_AUDIO_CAPTURE &&
++        request.video_type == blink::MEDIA_GUM_DESKTOP_VIDEO_CAPTURE)
++        return {WebContentsAdapterClient::MediaDesktopAudioCapture, WebContentsAdapterClient::MediaDesktopVideoCapture};
++
++    if (request.video_type == blink::MEDIA_GUM_DESKTOP_VIDEO_CAPTURE ||
++        request.video_type == blink::MEDIA_DISPLAY_VIDEO_CAPTURE)
++        return {WebContentsAdapterClient::MediaDesktopVideoCapture};
+ 
+-    if (request.audio_type == blink::MEDIA_DEVICE_AUDIO_CAPTURE)
+-        requestFlags |= WebContentsAdapterClient::MediaAudioCapture;
+-    else if (request.audio_type == blink::MEDIA_GUM_DESKTOP_AUDIO_CAPTURE)
+-        requestFlags |= WebContentsAdapterClient::MediaDesktopAudioCapture;
+-
+-    if (request.video_type == blink::MEDIA_DEVICE_VIDEO_CAPTURE)
+-        requestFlags |= WebContentsAdapterClient::MediaVideoCapture;
+-    else if (request.video_type == blink::MEDIA_GUM_DESKTOP_VIDEO_CAPTURE)
+-        requestFlags |= WebContentsAdapterClient::MediaDesktopVideoCapture;
+-
+-    return requestFlags;
++    return {};
+ }
+ 
+ } // namespace
+@@ -198,14 +209,13 @@
+     if (!securityOriginsMatch)
+         qWarning("Security origin mismatch for media access permission: %s requested and %s provided\n", qPrintable(requestSecurityOrigin.toString()), qPrintable(securityOrigin.toString()));
+ 
+-    bool microphoneRequested =
+-            (request.audio_type && authorizationFlags & WebContentsAdapterClient::MediaAudioCapture);
+-    bool webcamRequested =
+-            (request.video_type && authorizationFlags & WebContentsAdapterClient::MediaVideoCapture);
+-    bool desktopAudioRequested =
+-            (request.audio_type && authorizationFlags & WebContentsAdapterClient::MediaDesktopAudioCapture);
+-    bool desktopVideoRequested =
+-            (request.video_type && authorizationFlags & WebContentsAdapterClient::MediaDesktopVideoCapture);
++    WebContentsAdapterClient::MediaRequestFlags requestFlags = mediaRequestFlagsForRequest(request);
++    WebContentsAdapterClient::MediaRequestFlags finalFlags = requestFlags & authorizationFlags;
++
++    bool microphoneRequested = finalFlags.testFlag(WebContentsAdapterClient::MediaAudioCapture);
++    bool webcamRequested = finalFlags.testFlag(WebContentsAdapterClient::MediaVideoCapture);
++    bool desktopAudioRequested = finalFlags.testFlag(WebContentsAdapterClient::MediaDesktopAudioCapture);
++    bool desktopVideoRequested = finalFlags.testFlag(WebContentsAdapterClient::MediaDesktopVideoCapture);
+ 
+     if (securityOriginsMatch) {
+         if (microphoneRequested || webcamRequested) {
+@@ -221,7 +231,8 @@
+                 break;
+             }
+         } else if (desktopVideoRequested) {
+-            getDevicesForDesktopCapture(&devices, getDefaultScreenId(), desktopAudioRequested);
++            getDevicesForDesktopCapture(&devices, getDefaultScreenId(), desktopAudioRequested,
++                                        request.video_type, request.audio_type);
+         }
+     }
+ 
+@@ -274,13 +285,13 @@
+ {
+     DCHECK_CURRENTLY_ON(BrowserThread::UI);
+ 
+-    // Let's not support tab capture for now.
+-    if (request.video_type == blink::MEDIA_GUM_TAB_VIDEO_CAPTURE || request.audio_type == blink::MEDIA_GUM_TAB_AUDIO_CAPTURE) {
++    WebContentsAdapterClient::MediaRequestFlags flags = mediaRequestFlagsForRequest(request);
++    if (!flags) {
+         std::move(callback).Run(blink::MediaStreamDevices(), blink::MEDIA_DEVICE_NOT_SUPPORTED, std::unique_ptr<content::MediaStreamUI>());
+         return;
+     }
+ 
+-    if (request.video_type == blink::MEDIA_GUM_DESKTOP_VIDEO_CAPTURE || request.audio_type == blink::MEDIA_GUM_DESKTOP_AUDIO_CAPTURE) {
++    if (flags.testFlag(WebContentsAdapterClient::MediaDesktopVideoCapture)) {
+         const bool screenCaptureEnabled =
+                 adapterClient->webEngineSettings()->testAttribute(WebEngineSettings::ScreenCaptureEnabled);
+         const bool originIsSecure = content::IsOriginSecure(request.security_origin);
+@@ -298,18 +309,13 @@
+ 
+     enqueueMediaAccessRequest(webContents, request, std::move(callback));
+     // We might not require this approval for pepper requests.
+-    adapterClient->runMediaAccessPermissionRequest(toQt(request.security_origin), mediaRequestFlagsForRequest(request));
++    adapterClient->runMediaAccessPermissionRequest(toQt(request.security_origin), flags);
+ }
+ 
+ void MediaCaptureDevicesDispatcher::processDesktopCaptureAccessRequest(content::WebContents *webContents, const content::MediaStreamRequest &request, content::MediaResponseCallback callback)
+ {
+     blink::MediaStreamDevices devices;
+ 
+-    if (request.video_type != blink::MEDIA_GUM_DESKTOP_VIDEO_CAPTURE || request.requested_video_device_id.empty()) {
+-        std::move(callback).Run(devices, blink::MEDIA_DEVICE_INVALID_STATE, std::unique_ptr<content::MediaStreamUI>());
+-        return;
+-    }
+-
+     content::WebContents *const web_contents_for_stream = content::WebContents::FromRenderFrameHost(
+             content::RenderFrameHost::FromID(request.render_process_id, request.render_frame_id));
+     content::RenderFrameHost *const main_frame = web_contents_for_stream ? web_contents_for_stream->GetMainFrame() : NULL;
+@@ -334,7 +340,7 @@
+     // Audio is only supported for screen capture streams.
+     bool capture_audio = (mediaId.type == content::DesktopMediaID::TYPE_SCREEN && request.audio_type == blink::MEDIA_GUM_DESKTOP_AUDIO_CAPTURE);
+ 
+-    getDevicesForDesktopCapture(&devices, mediaId, capture_audio);
++    getDevicesForDesktopCapture(&devices, mediaId, capture_audio, request.video_type, request.audio_type);
+ 
+     std::move(callback).Run(devices, devices.empty() ? blink::MEDIA_DEVICE_INVALID_STATE : blink::MEDIA_DEVICE_OK,
+                             std::unique_ptr<content::MediaStreamUI>());
+diff -urN qtwebengine/tests/auto/widgets/qwebenginepage/tst_qwebenginepage.cpp qtwebengine/tests/auto/widgets/qwebenginepage/tst_qwebenginepage.cpp
+--- qtwebengine/tests/auto/widgets/qwebenginepage/tst_qwebenginepage.cpp	2019-10-26 20:39:57.255981634 +0200
++++ qtwebengine/tests/auto/widgets/qwebenginepage/tst_qwebenginepage.cpp	2019-10-26 20:40:07.933980683 +0200
+@@ -1051,6 +1051,12 @@
+     auto jsViewPosition = [&view]() {
+         QLatin1String script("(function() { return [window.screenX, window.screenY]; })()");
+         QVariantList posList = evaluateJavaScriptSync(view.page(), script).toList();
++
++        if (posList.count() != 2) {
++            qWarning("jsViewPosition failed.");
++            return QPoint();
++        }
++
+         return QPoint(posList.at(0).toInt(), posList.at(1).toInt());
+     };
+ 
+@@ -1247,16 +1253,21 @@
+         load(QUrl("qrc:///resources/content.html"));
+     }
+ 
+-    void jsGetUserMedia(const QString & constraints)
++    void jsGetMedia(const QString &call)
+     {
+         evaluateJavaScriptSync(this,
+             QStringLiteral(
+                 "var promiseFulfilled = false;"
+                 "var promiseRejected = false;"
+-                "navigator.mediaDevices.getUserMedia(%1)"
++                "navigator.mediaDevices.%1"
+                 ".then(stream => { promiseFulfilled = true})"
+                 ".catch(err => { promiseRejected = true})")
+-            .arg(constraints));
++            .arg(call));
++    }
++
++    void jsGetUserMedia(const QString &constraints)
++    {
++        jsGetMedia(QStringLiteral("getUserMedia(%1)").arg(constraints));
+     }
+ 
+     bool jsPromiseFulfilled()
+@@ -1313,32 +1324,34 @@
+ 
+ void tst_QWebEnginePage::getUserMediaRequest_data()
+ {
+-    QTest::addColumn<QString>("constraints");
++    QTest::addColumn<QString>("call");
+     QTest::addColumn<QWebEnginePage::Feature>("feature");
+ 
+     QTest::addRow("device audio")
+-        << "{audio: true}" << QWebEnginePage::MediaAudioCapture;
++        << "getUserMedia({audio: true})" << QWebEnginePage::MediaAudioCapture;
+     QTest::addRow("device video")
+-        << "{video: true}" << QWebEnginePage::MediaVideoCapture;
++        << "getUserMedia({video: true})" << QWebEnginePage::MediaVideoCapture;
+     QTest::addRow("device audio+video")
+-        << "{audio: true, video: true}" << QWebEnginePage::MediaAudioVideoCapture;
++        << "getUserMedia({audio: true, video: true})" << QWebEnginePage::MediaAudioVideoCapture;
+     QTest::addRow("desktop video")
+-        << "{video: { mandatory: { chromeMediaSource: 'desktop' }}}"
++        << "getUserMedia({video: { mandatory: { chromeMediaSource: 'desktop' }}})"
+         << QWebEnginePage::DesktopVideoCapture;
+     QTest::addRow("desktop audio+video")
+-        << "{audio: { mandatory: { chromeMediaSource: 'desktop' }}, video: { mandatory: { chromeMediaSource: 'desktop' }}}"
++        << "getUserMedia({audio: { mandatory: { chromeMediaSource: 'desktop' }}, video: { mandatory: { chromeMediaSource: 'desktop' }}})"
+         << QWebEnginePage::DesktopAudioVideoCapture;
++    QTest::addRow("display video")
++        << "getDisplayMedia()" << QWebEnginePage::DesktopVideoCapture;
+ }
+ 
+ void tst_QWebEnginePage::getUserMediaRequest()
+ {
+-    QFETCH(QString, constraints);
++    QFETCH(QString, call);
+     QFETCH(QWebEnginePage::Feature, feature);
+ 
+     GetUserMediaTestPage page;
++    QWebEngineView view;
+     if (feature == QWebEnginePage::DesktopVideoCapture || feature == QWebEnginePage::DesktopAudioVideoCapture) {
+         // Desktop capture needs to be on a desktop.
+-        QWebEngineView view;
+         view.setPage(&page);
+         view.resize(640, 480);
+         view.show();
+@@ -1349,7 +1362,7 @@
+     page.settings()->setAttribute(QWebEngineSettings::ScreenCaptureEnabled, true);
+ 
+     // 1. Rejecting request on C++ side should reject promise on JS side.
+-    page.jsGetUserMedia(constraints);
++    page.jsGetMedia(call);
+     QTRY_VERIFY(page.gotFeatureRequest(feature));
+     page.rejectPendingRequest();
+     QTRY_VERIFY(!page.jsPromiseFulfilled() && page.jsPromiseRejected());
+@@ -1359,13 +1372,13 @@
+     // deeper in the content layer we cannot guarantee that the promise will
+     // always be fulfilled, however in this case an error should be returned to
+     // JS instead of leaving the Promise in limbo.
+-    page.jsGetUserMedia(constraints);
++    page.jsGetMedia(call);
+     QTRY_VERIFY(page.gotFeatureRequest(feature));
+     page.acceptPendingRequest();
+     QTRY_VERIFY(page.jsPromiseFulfilled() || page.jsPromiseRejected());
+ 
+     // 3. Media feature permissions are not remembered.
+-    page.jsGetUserMedia(constraints);
++    page.jsGetMedia(call);
+     QTRY_VERIFY(page.gotFeatureRequest(feature));
+     page.acceptPendingRequest();
+     QTRY_VERIFY(page.jsPromiseFulfilled() || page.jsPromiseRejected());
+@@ -1698,24 +1711,22 @@
+ {
+     QWebEngineProfile profile;
+     QWebEnginePage page(&profile);
+-    page.settings()->setAttribute(QWebEngineSettings::FocusOnNavigationEnabled, true);
+ 
+     QSignalSpy loadFinishedSpy(&page, &QWebEnginePage::loadFinished);
+     page.setHtml("<html><body>"
+                  "  <input type='text' id='input1' value='QtWebEngine' size='50' />"
+                  "</body></html>");
+     QTRY_COMPARE(loadFinishedSpy.count(), 1);
+-    // Workaround for QTBUG-74718
+-    QTRY_VERIFY(page.action(QWebEnginePage::SelectAll)->isEnabled());
+ 
+-    QVariant result(-1);
++    bool done = false;
+     connect(&page, &QWebEnginePage::selectionChanged, [&]() {
+-        result = evaluateJavaScriptSync(&page, QStringLiteral("2+2"));
++        QTRY_COMPARE(evaluateJavaScriptSync(&page, QStringLiteral("2+2")), QVariant(4));
++        done = true;
+     });
+     evaluateJavaScriptSync(&page, QStringLiteral("const input = document.getElementById('input1');"
+                                                  "input.focus();"
+                                                  "input.select();"));
+-    QTRY_COMPARE(result, QVariant(4));
++    QTRY_VERIFY(done);
+ }
+ 
+ void tst_QWebEnginePage::fullScreenRequested()
