@@ -1,0 +1,117 @@
+# Template file for 'j'
+pkgname=j
+version=807
+revision=1
+archs="aarch64* x86_64*"
+wrksrc="jsource-j${version}-release"
+makedepends="libedit-devel libgomp-devel libomp-devel"
+short_desc="Modern, high-performance, ASCII-based successor to APL"
+maintainer="B. Wilson <x@wilsonb.com>"
+license="GPL-3.0-or-later"
+homepage="https://jsoftware.com/"
+distfiles="https://github.com/jsoftware/jsource/archive/j${version}-release.tar.gz"
+checksum=324ff0b046c9f7f24f18a72fa8a4253ad54c99a48c397fd2c724392f5e097d7f
+
+_jsz="j${XBPS_TARGET_WORDSIZE}"
+_jtype="release"
+_jbuilder="voidlinux.org"
+_jlib="/usr/lib/j"
+_jshare="/usr/share/j"
+_jetc="/etc/j"
+_juser=".j"
+
+case "${XBPS_TARGET_MACHINE}" in
+aarch64*) _jplatform="raspberry";;
+*)        _jplatform="linux";;
+esac
+
+case "${XBPS_TARGET_MACHINE}" in
+*-musl)   makedepends+=" musl-fts-devel";;
+esac
+
+
+##
+# Crossbuilds do not distinguish between AVX- and non-AVX-enabled targets, so
+# here we build libraries for both cases.
+do_build() {
+	sed "/jplatform/s@unknown@${_jplatform}@
+	     /jtype/s@beta@${_jtype}@
+	     /jbuilder/s@unknown@${_jbuilder}@" \
+		jsrc/jversion-x.h > jsrc/jversion.h
+
+	sed -i "/jgit=/s@~/git/jsource@${wrksrc}@
+	        /jbld=/s@~/jbld@${wrksrc}/build@
+	        /jplatform=/s@=.*\$@=${_jplatform}@
+	        /CC=/s@clang@${CC}@" \
+		make/jvars.sh
+
+	sed -i "/^install=./s@/usr/share/j/[0-9.]\+@${_jshare}@
+	        /^user=./s@home,userx@home,'/${_juser}'@" \
+		jlibrary/bin/profile.ijs
+
+	mkdir -p build/${_jsz}/bin
+	. make/jvars.sh
+
+	make/build_jconsole.sh ${_jsz}
+	make/build_libj.sh ${_jsz}
+	make/build_libj.sh ${_jsz}nonavx
+}
+
+_runtestdir() {
+	dir=${1}
+	jc=${2}
+	libj=${3}
+
+	for f in "${dir}"/*.ijs; do
+		printf '%s(%s): ' "${f}" "${libj}"
+		if ${jc} -lib "${libj}" <"${f}" >/dev/null; then
+			echo "PASS"
+		else
+			echo "FAIL"
+			return 1
+		fi
+	done
+}
+
+do_check() {
+	ln -srf jlibrary/bin/* build/${_jsz}/bin/
+	ln -srf jlibrary/{addons,system,tools} build/${_jsz}/
+
+	# Test AVX-enabled library if all host CPUs have AVX flag set
+	if sed -n '/^flags/{s/\<avx\>//;t;q1}' /proc/cpuinfo; then
+		_runtestdir ./test "build/${_jsz}/bin/jconsole" "libj.so"
+	fi
+	_runtestdir ./test "build/${_jsz}/bin/jconsole" "libj-nonavx.so"
+}
+
+do_install() {
+	vmkdir "${_jshare}" 0755
+	vcopy jlibrary/addons "${_jshare}"
+	vcopy jlibrary/system "${_jshare}"
+	vcopy jlibrary/tools "${_jshare}"
+
+	vmkdir "${_jlib}" 0755
+	vinstall "build/${_jsz}/bin/jconsole" 755 "${_jlib}"
+	vinstall "build/${_jsz}/bin/libj.so" 755 "${_jlib}"
+	if [ -f "build/${_jsz}/bin/libj-nonavx.so" ]; then
+		vinstall "build/${_jsz}/bin/libj-nonavx.so" 755 "${_jlib}"
+	fi
+
+	vmkdir "${_jetc}" 0755
+	vinstall "${FILESDIR}/profilex_template.ijs" 644 "${_jetc}"
+	vinstall "jlibrary/bin/profile.ijs" 644 "${_jetc}"
+
+	cat >build/${_jsz}/bin/jc.sh <<-JC
+		#!/usr/bin/env sh
+
+		if [ -f "${_jlib}/libj-nonavx.so" ] \\
+		   && ! sed -n '/^flags/{s/\<avx\>//;t;q1}' /proc/cpuinfo; then
+		   lib='libj-nonavx.so'
+		fi
+
+		${_jlib}/jconsole -lib "${_jlib}/\${lib:-libj.so}" \\
+		                  -jprofile "${_jetc}/profile.ijs" \\
+		                  "\${@}"
+	JC
+	vbin "build/${_jsz}/bin/jc.sh" jc
+}

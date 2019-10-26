@@ -69,7 +69,7 @@ cpu_family = '${_MESON_CPU_FAMILY}'
 cpu = '${_MESON_TARGET_CPU}'
 endian = '${_MESON_TARGET_ENDIAN}'
 EOF
-		if [ "${hostmakedepends}" != "${hostmakedepends/qemu-user-static/}" ]; then
+		if [[ $build_helper = *"qemu"* ]]; then
 			sed -e "/\[binaries\]/ a exe_wrapper = '/usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static'" \
 				-i ${meson_crossfile}
 		fi
@@ -82,7 +82,6 @@ do_configure() {
 	: ${meson_cmd:=meson}
 	: ${meson_builddir:=build}
 	: ${meson_crossfile:=xbps_meson.cross}
-	export QEMU_LD_PREFIX=${XBPS_CROSS_BASE}
 
 	if [ "$CROSS_BUILD" ]; then
 		configure_args+=" --cross-file=${meson_crossfile}"
@@ -135,7 +134,6 @@ do_build() {
 	: ${make_cmd:=ninja}
 	: ${make_build_target:=all}
 	: ${meson_builddir:=build}
-	export QEMU_LD_PREFIX=${XBPS_CROSS_BASE}
 
 	${make_cmd} -C ${meson_builddir} ${makejobs} ${make_build_args} ${make_build_target}
 }
@@ -152,7 +150,6 @@ do_install() {
 	: ${make_cmd:=ninja}
 	: ${make_install_target:=install}
 	: ${meson_builddir:=build}
-	export QEMU_LD_PREFIX=${XBPS_CROSS_BASE}
 
 	DESTDIR=${DESTDIR} ${make_cmd} -C ${meson_builddir} ${make_install_args} ${make_install_target}
 }
