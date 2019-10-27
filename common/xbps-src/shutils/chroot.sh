@@ -5,6 +5,7 @@
 chroot_init() {
     mkdir -p $XBPS_MASTERDIR/etc/xbps
 
+    : ${XBPS_CONFIG_FILE=/dev/null}
     cat > $XBPS_MASTERDIR/etc/xbps/xbps-src.conf <<_EOF
 # Generated configuration file by xbps-src, DO NOT EDIT!
 $(grep -E '^XBPS_.*' "$XBPS_CONFIG_FILE")
