@@ -1,0 +1,316 @@
+commit 12315f84852649f12b79c325e9dc8aed19a4485b
+Author: Roy Marples <roy@marples.name>
+Date:   Sun Oct 20 11:14:11 2019 +0100
+
+    dhcpcd: Run the STOPPED hook reason for the interface on timeout
+    
+    If not in master mode.
+
+diff --git a/src/dhcpcd.c b/src/dhcpcd.c
+index 6ab4f8e2..1509adb0 100644
+--- src/dhcpcd.c
++++ src/dhcpcd.c
+@@ -186,6 +186,12 @@ handle_exit_timeout(void *arg)
+ 	ctx = arg;
+ 	logerrx("timed out");
+ 	if (!(ctx->options & DHCPCD_MASTER)) {
++		struct interface *ifp;
++
++		TAILQ_FOREACH(ifp, ctx->ifaces, next) {
++			if (ifp->active == IF_ACTIVE_USER)
++				script_runreason(ifp, "STOPPED");
++		}
+ 		eloop_exit(ctx->eloop, EXIT_FAILURE);
+ 		return;
+ 	}
+commit 91792b015b249d0a3e229c3b56586c378cf9fe90
+Author: Peter Bui <pbui@github.bx612.space>
+Date:   Sun Oct 20 17:15:08 2019 -0400
+
+    Fix building on systems with musl (#10)
+    
+    musl has its own definition of struct ethhdr, so only include
+    netinet/if_ether.h on systems with GLIBC.  For the ARPHDR constants, we
+    must include linux/if_arp.h instead.
+
+diff --git a/src/if-linux.c b/src/if-linux.c
+index fd472785..3ee6c5c9 100644
+--- src/if-linux.c
++++ src/if-linux.c
+@@ -46,11 +46,19 @@
+ 
+ #include <arpa/inet.h>
+ #include <net/if.h>
+-#include <netinet/if_ether.h>
+ #include <netinet/in_systm.h>
+ #include <netinet/in.h>
+ #include <net/route.h>
+ 
++/* musl has its own definition of struct ethhdr, so only include
++ * netinet/if_ether.h on systems with GLIBC.  For the ARPHRD constants,
++ * we must include linux/if_arp.h instead. */
++#if defined(__GLIBC__)
++#include <netinet/if_ether.h>
++#else
++#include <linux/if_arp.h>
++#endif
++
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <ctype.h>
+commit b2b6541fe9c067de1f21f0669c4e47cf3c163024
+Author: Roy Marples <roy@marples.name>
+Date:   Tue Oct 22 12:39:56 2019 +0100
+
+    Linux: Validate RTM_DELADDR/RTM_NEWADDR messages for IPv6
+    
+    To ensure that if messages lag, they can be ignored.
+    How to do similar without a heavy getifaddrs call for IPv4?
+
+diff --git a/src/if-linux.c b/src/if-linux.c
+index 3ee6c5c9..4fd5d265 100644
+--- src/if-linux.c
++++ src/if-linux.c
+@@ -634,6 +634,7 @@ link_addr(struct dhcpcd_ctx *ctx, struct interface *ifp, struct nlmsghdr *nlm)
+ #endif
+ #ifdef INET6
+ 	struct in6_addr addr6;
++	int flags;
+ #endif
+ 
+ 	if (nlm->nlmsg_type != RTM_DELADDR && nlm->nlmsg_type != RTM_NEWADDR)
+@@ -682,6 +683,8 @@ link_addr(struct dhcpcd_ctx *ctx, struct interface *ifp, struct nlmsghdr *nlm)
+ 			}
+ 			rta = RTA_NEXT(rta, len);
+ 		}
++
++		/* XXX how to validate command for address? */
+ 		ipv4_handleifa(ctx, nlm->nlmsg_type, NULL, ifp->name,
+ 		    &addr, &net, &brd, ifa->ifa_flags, (pid_t)nlm->nlmsg_pid);
+ 		break;
+@@ -698,6 +701,18 @@ link_addr(struct dhcpcd_ctx *ctx, struct interface *ifp, struct nlmsghdr *nlm)
+ 			}
+ 			rta = RTA_NEXT(rta, len);
+ 		}
++
++		/* Validate RTM_DELADDR really means address deleted
++		 * and anything else really means address exists. */
++		flags = if_addrflags6(ifp, &addr6, NULL);
++		if (nlm->nlmsg_type == RTM_DELADDR) {
++			if (flags != -1)
++				break;
++		} else {
++			if (flags == -1)
++				break;
++		}
++
+ 		ipv6_handleifa(ctx, nlm->nlmsg_type, NULL, ifp->name,
+ 		    &addr6, ifa->ifa_prefixlen, ifa->ifa_flags,
+ 		    (pid_t)nlm->nlmsg_pid);
+commit f7e2c244a90c4c63ce0732e4092dccfca93e281c
+Author: Roy Marples <roy@marples.name>
+Date:   Wed Oct 23 11:21:38 2019 +0100
+
+    INET: Fix a potential memory leak
+    
+    When someone deletes the address from under us.
+
+diff --git a/src/dhcp.c b/src/dhcp.c
+index fb346299..65c81f6d 100644
+--- src/dhcp.c
++++ src/dhcp.c
+@@ -4008,7 +4008,7 @@ dhcp_handleifa(int cmd, struct ipv4_addr *ia, pid_t pid)
+ 			 * to drop the lease. */
+ 			dhcp_drop(ifp, "EXPIRE");
+ 			dhcp_start1(ifp);
+-			return NULL;
++			return ia;
+ 		}
+ 	}
+ 
+diff --git a/src/ipv4.c b/src/ipv4.c
+index f16b2a1f..fd2a15d7 100644
+--- src/ipv4.c
++++ src/ipv4.c
+@@ -942,7 +942,7 @@ ipv4_handleifa(struct dhcpcd_ctx *ctx,
+ #endif
+ 	}
+ 
+-	if (cmd == RTM_DELADDR && ia != NULL)
++	if (cmd == RTM_DELADDR)
+ 		free(ia);
+ }
+ 
+commit 69e2b6c4facd9796e6478941fd2d5d45ed286fce
+Author: Roy Marples <roy@marples.name>
+Date:   Wed Oct 23 11:12:13 2019 +0100
+
+    Linux: validate RTM_NEWADDR/RTM_DELADDR for AF_INET as well.
+
+diff --git a/src/if-linux.c b/src/if-linux.c
+index 4fd5d265..a2f590bf 100644
+--- src/if-linux.c
++++ src/if-linux.c
+@@ -125,6 +125,8 @@ static const uint8_t ipv4_bcast_addr[] = {
+ };
+ #endif
+ 
++static int if_addressexists(struct interface *, struct in_addr *);
++
+ #define PROC_INET6	"/proc/net/if_inet6"
+ #define PROC_PROMOTE	"/proc/sys/net/ipv4/conf/%s/promote_secondaries"
+ #define SYS_BRIDGE	"/sys/class/net/%s/bridge"
+@@ -445,7 +447,7 @@ recv_again:
+ 		return 0;
+ 
+ 	r = 0;
+-	again = 0;	/* Appease static analysis */
++	again = 0;
+ 	for (nlm = iov->iov_base;
+ 	     nlm && NLMSG_OK(nlm, (size_t)len);
+ 	     nlm = NLMSG_NEXT(nlm, len))
+@@ -684,7 +686,16 @@ link_addr(struct dhcpcd_ctx *ctx, struct interface *ifp, struct nlmsghdr *nlm)
+ 			rta = RTA_NEXT(rta, len);
+ 		}
+ 
+-		/* XXX how to validate command for address? */
++		/* Validate RTM_DELADDR really means address deleted
++		 * and anything else really means address exists. */
++		if (if_addressexists(ifp, &addr) == 1) {
++			if (nlm->nlmsg_type == RTM_DELADDR)
++				break;
++		} else {
++			if (nlm->nlmsg_type != RTM_DELADDR)
++				break;
++		}
++
+ 		ipv4_handleifa(ctx, nlm->nlmsg_type, NULL, ifp->name,
+ 		    &addr, &net, &brd, ifa->ifa_flags, (pid_t)nlm->nlmsg_pid);
+ 		break;
+@@ -906,6 +917,7 @@ send_netlink(struct dhcpcd_ctx *ctx, void *arg,
+     int (*callback)(struct dhcpcd_ctx *, void *, struct nlmsghdr *))
+ {
+ 	int s, r;
++	bool privsock;
+ 	struct sockaddr_nl snl = { .nl_family = AF_NETLINK };
+ 	struct iovec iov = { .iov_base = hdr, .iov_len = hdr->nlmsg_len };
+ 	struct msghdr msg = {
+@@ -913,7 +925,8 @@ send_netlink(struct dhcpcd_ctx *ctx, void *arg,
+ 	    .msg_iov = &iov, .msg_iovlen = 1
+ 	};
+ 
+-	if (protocol == NETLINK_ROUTE) {
++	privsock = (protocol == NETLINK_ROUTE && hdr->nlmsg_type != RTM_GETADDR);
++	if (privsock) {
+ 		struct priv *priv;
+ 
+ 		priv = (struct priv *)ctx->priv;
+@@ -921,6 +934,16 @@ send_netlink(struct dhcpcd_ctx *ctx, void *arg,
+ 	} else {
+ 		if ((s = _open_link_socket(&snl, protocol)) == -1)
+ 			return -1;
++
++#ifdef NETLINK_GET_STRICT_CHK
++		if (hdr->nlmsg_type == RTM_GETADDR) {
++			int on = 1;
++
++			if (setsockopt(s, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
++			    &on, sizeof(on)) == -1)
++				logerr("%s: NETLINK_GET_STRICT_CHK", __func__);
++		}
++#endif
+ 	}
+ 
+ 	/* Request a reply */
+@@ -936,7 +959,7 @@ send_netlink(struct dhcpcd_ctx *ctx, void *arg,
+ 		r = get_netlink(ctx, &riov, arg, s, 0, callback);
+ 	} else
+ 		r = -1;
+-	if (protocol != NETLINK_ROUTE)
++	if (!privsock)
+ 		close(s);
+ 	return r;
+ }
+@@ -1259,6 +1282,60 @@ struct nlma
+ 	char buffer[64];
+ };
+ 
++#ifdef INET
++struct ifiaddr
++{
++	unsigned int ifa_ifindex;
++	struct in_addr ifa_addr;
++};
++
++static int
++_if_addressexists(__unused struct dhcpcd_ctx *ctx,
++    void *arg, struct nlmsghdr *nlm)
++{
++	struct ifiaddr *ia = arg;
++	in_addr_t this_addr;
++	size_t len;
++	struct rtattr *rta;
++	struct ifaddrmsg *ifa;
++
++	ifa = NLMSG_DATA(nlm);
++	if (ifa->ifa_index != ia->ifa_ifindex || ifa->ifa_family != AF_INET)
++		return 0;
++	rta = (struct rtattr *)IFA_RTA(ifa);
++	len = NLMSG_PAYLOAD(nlm, sizeof(*ifa));
++	while (RTA_OK(rta, len)) {
++		switch (rta->rta_type) {
++		case IFA_LOCAL:
++			memcpy(&this_addr, RTA_DATA(rta), sizeof(this_addr));
++			return this_addr == ia->ifa_addr.s_addr ? 1 : 0;
++		}
++		rta = RTA_NEXT(rta, len);
++	}
++	return 0;
++}
++
++static int
++if_addressexists(struct interface *ifp, struct in_addr *addr)
++{
++	struct ifiaddr ia = {
++		.ifa_ifindex = ifp->index,
++		.ifa_addr = *addr,
++	};
++	struct nlma nlm = {
++	    .hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg)),
++	    .hdr.nlmsg_type = RTM_GETADDR,
++	    .hdr.nlmsg_flags = NLM_F_DUMP | NLM_F_REQUEST,
++	    .ifa.ifa_family = AF_INET,
++	    .ifa.ifa_index = ifp->index,
++	};
++
++	return send_netlink(ifp->ctx, &ia, NETLINK_ROUTE, &nlm.hdr,
++	    &_if_addressexists);
++}
++#endif
++
++
+ struct nlmr
+ {
+ 	struct nlmsghdr hdr;
+commit 09dc4d0453a573f1e0e1a65d3039ad100ec1387f
+Author: Roy Marples <roy@marples.name>
+Date:   Tue Oct 22 22:50:17 2019 +0100
+
+    INET: If we fail to add an address that already exists, don't free it
+    
+    Should not happen in production.....
+
+diff --git a/src/ipv4.c b/src/ipv4.c
+index c55a7da6..f16b2a1f 100644
+--- src/ipv4.c
++++ src/ipv4.c
+@@ -687,7 +687,8 @@ ipv4_addaddr(struct interface *ifp, const struct in_addr *addr,
+ 		if (errno != EEXIST)
+ 			logerr("%s: if_addaddress",
+ 			    __func__);
+-		free(ia);
++		if (ia->flags & IPV4_AF_NEW)
++			free(ia);
+ 		return NULL;
+ 	}
+ 
