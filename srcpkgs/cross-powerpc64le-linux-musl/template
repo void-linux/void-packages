@@ -1,15 +1,16 @@
 # Template file for 'cross-powerpc64le-linux-musl'
 _binutils_version=2.32
-_gcc_version=9.1.0
-_musl_version=1.1.23
+_gcc_version=9.2.0
+_musl_version=1.1.24
 _linux_version=4.19
+_libucontext_version=0.9.0
 
 _triplet="powerpc64le-linux-musl"
 _sysroot="/usr/${_triplet}"
 
 pkgname=cross-${_triplet}
-version=0.31
-revision=3
+version=0.32
+revision=2
 short_desc="Cross toolchain for powerpc64le with musl"
 maintainer="q66 <daniel@octaforge.org>"
 homepage="https://www.voidlinux.org/"
@@ -18,18 +19,20 @@ distfiles="
  ${GNU_SITE}/binutils/binutils-${_binutils_version}.tar.xz
  ${GNU_SITE}/gcc/gcc-${_gcc_version}/gcc-${_gcc_version}.tar.xz
  http://www.musl-libc.org/releases/musl-${_musl_version}.tar.gz
- ${KERNEL_SITE}/kernel/v4.x/linux-${_linux_version}.tar.xz"
+ ${KERNEL_SITE}/kernel/v4.x/linux-${_linux_version}.tar.xz
+ https://distfiles.adelielinux.org/source/libucontext/libucontext-${_libucontext_version}.tar.xz"
 checksum="0ab6c55dd86a92ed561972ba15b9b70a8b9f75557f896446c82e8b36e473ee04
- 79a66834e96a6050d8fe78db2c3b32fb285b230b855d0a66288235bc04b327a0
- 8a0feb41cef26c97dde382c014e68b9bb335c094bbc1356f6edaaf6b79bd14aa
- 0c68f5655528aed4f99dae71a5b259edc93239fa899e2df79c055275c21749a1"
+ ea6ef08f121239da5695f76c9b33637a118dcf63e24164422231917fa61fb206
+ 1370c9a812b2cf2a7d92802510cca0058cc37e66a7bedd70051f0a34015022a3
+ 0c68f5655528aed4f99dae71a5b259edc93239fa899e2df79c055275c21749a1
+ 0d53a415a307ef175153bbe60a572c940a922cb736ce13530b666e7ec2795d68"
 
 lib32disabled=yes
 nocross=yes
 nopie=yes
 nodebug=yes
 create_wrksrc=yes
-hostmakedepends="flex perl python3"
+hostmakedepends="gcc-objc gcc-go flex perl python3"
 makedepends="zlib-devel gmp-devel mpfr-devel libmpc-devel isl15-devel"
 nostrip_files="libcaf_single.a libgcc.a libgcov.a libgcc_eh.a
  libgnarl_pic.a libgnarl.a libgnat_pic.a libgnat.a"
@@ -81,13 +84,14 @@ _gcc_bootstrap() {
 
 	cd ${wrksrc}/gcc-${_gcc_version}
 	_apply_patch -p0 ${FILESDIR}/fix-cxxflags-passing.patch
-	_apply_patch -p0 ${FILESDIR}/non-nullness.patch
 	_apply_patch -p0 ${FILESDIR}/0010-ldbl128-config.patch
 	_apply_patch -p0 ${FILESDIR}/ppc64-pure64.patch
 	_apply_patch -p0 ${FILESDIR}/libgcc-musl-ldbl128-config.patch
 	_apply_patch -p0 ${FILESDIR}/musl-ada.patch
+	_apply_patch -p0 ${FILESDIR}/darn.patch
 	_apply_patch -p1 ${FILESDIR}/libgnarl-musl.patch
 	_apply_patch -p0 ${FILESDIR}/invalid_tls_model.patch
+	_apply_patch -p0 ${FILESDIR}/gccgo-musl.patch
 
 	sed -i 's/lib64/lib/' gcc/config/rs6000/linux64.h
 
@@ -148,6 +152,10 @@ _musl_build() {
 	[ -f ${wrksrc}/.musl_build_done ] && return 0
 
 	cd ${wrksrc}/musl-${_musl_version}
+
+	_apply_patch -p0 ${FILESDIR}/ppc64-fpregset_t.patch
+	_apply_patch -p0 ${FILESDIR}/ppc-pt_regs.patch
+
 	msg_normal "Building cross musl libc\n"
 
 	CC="${_triplet}-gcc" LD="${_triplet}-ld" AR="${_triplet}-ar" \
@@ -159,6 +167,22 @@ _musl_build() {
 	make DESTDIR=${_sysroot} install
 
 	touch ${wrksrc}/.musl_build_done
+}
+
+_libucontext_build() {
+	[ -f ${wrksrc}/.libucontext_build_done ] && return 0
+
+	cd ${wrksrc}/libucontext-${_libucontext_version}
+	msg_normal "Building cross libucontext\n"
+
+	# it's ok if we're static only here
+	CC="${_triplet}-gcc" AR="${_triplet}-ar" AS="${_triplet}-as" \
+		CFLAGS="-Os -pipe ${_archflags}" \
+		make ARCH=ppc64 libucontext.a
+
+	cp libucontext.a ${_sysroot}/usr/lib
+
+	touch ${wrksrc}/.libucontext_build_done
 }
 
 _gcc_build() {
@@ -176,7 +200,7 @@ _gcc_build() {
 	_args+=" --target=${_triplet}"
 	_args+=" --with-sysroot=${_sysroot}"
 	_args+=" --with-abi=elfv2"
-	_args+=" --enable-languages=c,ada,c++,fortran,lto"
+	_args+=" --enable-languages=c,ada,c++,objc,obj-c++,go,fortran,lto"
 	_args+=" --enable-decimal-float=no"
 	_args+=" --enable-secureplt"
 	_args+=" --enable-targets=powerpcle-linux"
@@ -219,6 +243,7 @@ do_build() {
 	_gcc_bootstrap
 	_linux_headers
 	_musl_build
+	_libucontext_build
 	_gcc_build
 }
 
@@ -269,6 +294,11 @@ do_install() {
 	ln -svf libgnarl-${_majorver}.so libgnarl.so
 	ln -svf libgnat-${_majorver}.so libgnat.so
 	rm -vf ${DESTDIR}/${_adalib}/libgna{rl,t}.so
+
+	# We need to build libatomic in target gcc as gccgo needs it to
+	# build... but it's not needed at runtime, so remove it from the
+	# destdir so it doesn't conflict with the libatomic package
+	rm -f ${DESTDIR}/${_sysroot}/usr/lib/libatomic.*
 
 	# Remove unnecessary stuff
 	rm -f ${DESTDIR}/usr/lib*/libiberty.a
