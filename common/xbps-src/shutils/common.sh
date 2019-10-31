@@ -61,7 +61,7 @@ run_step() {
         msg_error "$pkgver: cannot find do_$step_name() in $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
       fi
     else
-      msg_error "$pkgver: cannot find build helper $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
+      msg_error "$pkgver: cannot find build style $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
     fi
   elif [ ! "$optional_step" ]; then
     msg_error "$pkgver: cannot find do_$step_name()!\n"
