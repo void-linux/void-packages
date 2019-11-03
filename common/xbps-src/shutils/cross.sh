@@ -79,7 +79,7 @@ install_cross_pkg() {
     pkg_available cross-${XBPS_CROSS_TRIPLET}
     rval=$?
     if [ $rval -eq 0 ]; then
-        $XBPS_LIBEXECDIR/build.sh cross-${XBPS_CROSS_TRIPLET} cross-${XBPS_CROSS_TRIPLET} pkg || return $rval
+        $XBPS_LIBEXECDIR/build.sh cross-${XBPS_CROSS_TRIPLET} cross-${XBPS_CROSS_TRIPLET} pkg || return $?
     fi
 
     check_installed_pkg cross-${XBPS_CROSS_TRIPLET}-0.1_1
