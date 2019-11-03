@@ -944,10 +944,16 @@ additional paths to be searched when linking target binaries to be introspected.
 `qemu-<target_arch>-static` when running the target binary. You can for example specify
 `GIR_EXTRA_OPTIONS="-strace"` to see a trace of what happens when running that binary.
 
-- 'qemu' sets additional variables for the `cmake` and `meson` build styles to allow
+- `qemu` sets additional variables for the `cmake` and `meson` build styles to allow
 executing cross-compiled binaries inside qemu.
 It sets `CMAKE_CROSSCOMPILING_EMULATOR` for cmake and `exe_wrapper` for meson
 to `qemu-<target_arch>-static` and `QEMU_LD_PREFIX` to `XBPS_CROSS_BASE`
+
+- `qmake` creates the `qt.conf` configuration file (cf. `qmake` `build_style`)
+needed for cross builds and a qmake-wrapper to make `qmake` use this configuration.
+This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
+`gnu-configure` style the configure script calls `qmake` or a `Makefile` in
+`gnu-makefile` style, respectively.
 
 <a id="functions"></a>
 ### Functions
