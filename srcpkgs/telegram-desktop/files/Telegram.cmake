@@ -19,7 +19,7 @@ option(BUILD_TESTS "Build all available test suites" OFF)
 option(ENABLE_CRASH_REPORTS "Enable crash reports" ON)
 option(ENABLE_GTK_INTEGRATION "Enable GTK integration" ON)
 option(USE_LIBATOMIC "Link Statically against libatomic.a" OFF)
-option(USE_CUSTOM_API_ID "Use a custom Telegram API ID" OFF)
+option(ENABLE_OPENAL_EFFECTS "Enable OpenAL effects" ON)
 
 find_package(LibLZMA REQUIRED)
 find_package(OpenAL REQUIRED)
@@ -27,6 +27,7 @@ find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(X11 REQUIRED)
 find_package(ZLIB REQUIRED)
+find_package(RapidJSON REQUIRED)
 
 find_package(Qt5 REQUIRED COMPONENTS Core DBus Gui Widgets Network)
 get_target_property(QTCORE_INCLUDE_DIRS Qt5::Core INTERFACE_INCLUDE_DIRECTORIES)
@@ -45,6 +46,8 @@ pkg_check_modules(FFMPEG REQUIRED libavcodec libavformat libavutil libswresample
 pkg_check_modules(LIBDRM REQUIRED libdrm)
 pkg_check_modules(LIBVA REQUIRED libva libva-drm libva-x11)
 pkg_check_modules(MINIZIP REQUIRED minizip)
+pkg_check_modules(LIBLZ4 REQUIRED liblz4)
+pkg_check_modules(RLOTTIE REQUIRED rlottie)
 
 set(THIRD_PARTY_DIR ${CMAKE_SOURCE_DIR}/ThirdParty)
 list(APPEND THIRD_PARTY_INCLUDE_DIRS
@@ -70,9 +73,15 @@ include(TelegramCodegen)
 set_property(SOURCE ${TELEGRAM_GENERATED_SOURCES} PROPERTY SKIP_AUTOMOC ON)
 
 set(QRC_FILES
-	Resources/qrc/telegram.qrc
-	Resources/qrc/telegram_emoji.qrc
-	Resources/qrc/telegram_emoji_large.qrc
+	Resources/qrc/telegram/sounds.qrc
+	Resources/qrc/telegram/telegram.qrc
+	Resources/qrc/emoji_1.qrc
+	Resources/qrc/emoji_2.qrc
+	Resources/qrc/emoji_3.qrc
+	Resources/qrc/emoji_4.qrc
+	Resources/qrc/emoji_5.qrc
+	Resources/qrc/emoji_preview.qrc
+
 	# This only disables system plugin search path
 	# We do not want this behavior for system build
 	# Resources/qrc/telegram_linux.qrc
@@ -80,16 +89,19 @@ set(QRC_FILES
 
 file(GLOB FLAT_SOURCE_FILES
 	SourceFiles/*.cpp
+	SourceFiles/api/*.cpp
 	SourceFiles/base/*.cpp
 	SourceFiles/calls/*.cpp
 	SourceFiles/chat_helpers/*.cpp
 	SourceFiles/core/*.cpp
 	SourceFiles/data/*.cpp
 	SourceFiles/dialogs/*.cpp
-	SourceFiles/history/*.cpp
+	SourceFiles/ffmpeg/*.cpp
 	SourceFiles/inline_bots/*.cpp
 	SourceFiles/intro/*.cpp
 	SourceFiles/lang/*.cpp
+	SourceFiles/lottie/*.cpp
+	SourceFiles/main/*.cpp
 	SourceFiles/mtproto/*.cpp
 	SourceFiles/overview/*.cpp
 	SourceFiles/passport/*.cpp
@@ -98,7 +110,7 @@ file(GLOB FLAT_SOURCE_FILES
 	SourceFiles/settings/*.cpp
 	SourceFiles/storage/*.cpp
 	SourceFiles/storage/cache/*.cpp
-  SourceFiles/support/*cpp
+	SourceFiles/support/*cpp
 	${THIRD_PARTY_DIR}/emoji_suggestions/*.cpp
 )
 file(GLOB FLAT_EXTRA_FILES
@@ -109,7 +121,9 @@ file(GLOB FLAT_EXTRA_FILES
 	SourceFiles/passport/passport_form_row.cpp
 	SourceFiles/storage/*_tests.cpp
 	SourceFiles/storage/*_win.cpp
+	SourceFiles/storage/storage_feed_messages.cpp
 	SourceFiles/storage/cache/*_tests.cpp
+	SourceFiles/data/data_feed_messages.cpp
 )
 list(REMOVE_ITEM FLAT_SOURCE_FILES ${FLAT_EXTRA_FILES})
 
@@ -123,21 +137,28 @@ file(GLOB_RECURSE SUBDIRS_SOURCE_FILES
 	SourceFiles/window/*.cpp
 )
 
+file(GLOB SUBDIRS_EXTRA_FILES
+	SourceFiles/info/feed/*.cpp
+	SourceFiles/info/channels/*.cpp
+	SourceFiles/history/feed/*.cpp
+	SourceFiles/ui/platform/mac/*.cpp
+	SourceFiles/ui/platform/win/*.cpp
+)
+list(REMOVE_ITEM SUBDIRS_SOURCE_FILES ${SUBDIRS_EXTRA_FILES})
+
 add_executable(Telegram WIN32 ${QRC_FILES} ${FLAT_SOURCE_FILES} ${SUBDIRS_SOURCE_FILES})
 
 set(TELEGRAM_COMPILE_DEFINITIONS
+	TDESKTOP_DISABLE_AUTOUPDATE
 	TDESKTOP_DISABLE_DESKTOP_FILE_GENERATION
-	TDESKTOP_DISABLE_UNITY_INTEGRATION
 	NOMINMAX
 	__STDC_FORMAT_MACROS
 )
 
 set(TELEGRAM_INCLUDE_DIRS
-	${FFMPEG_INCLUDE_DIRS}
 	${GENERATED_DIR}
 	${LIBDRM_INCLUDE_DIRS}
 	${LIBLZMA_INCLUDE_DIRS}
-	${LIBVA_INCLUDE_DIRS}
 	${MINIZIP_INCLUDE_DIRS}
 	${OPENAL_INCLUDE_DIR}
 	${QT_PRIVATE_INCLUDE_DIRS}
@@ -163,6 +184,8 @@ set(TELEGRAM_LINK_LIBRARIES
 	${OPENAL_LIBRARY}
 	${X11_X11_LIB}
 	${ZLIB_LIBRARY_RELEASE}
+	${LIBLZ4_LIBRARIES}
+	${RLOTTIE_LIBRARIES}
 )
 
 if(ENABLE_CRASH_REPORTS)
@@ -197,9 +220,13 @@ else()
 	)
 endif()
 
-if(USE_CUSTOM_API_ID)
+if(ENABLE_OPENAL_EFFECTS)
 	list(APPEND TELEGRAM_COMPILE_DEFINITIONS
-		CUSTOM_API_ID
+		AL_ALEXT_PROTOTYPES
+	)
+else()
+	list(APPEND TELEGRAM_COMPILE_DEFINITIONS
+		TDESKTOP_DISABLE_OPENAL_EFFECTS
 	)
 endif()
 

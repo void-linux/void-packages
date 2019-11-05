@@ -37,7 +37,7 @@ if [ "$sourcepkg" != "$PKGNAME" ]; then
 fi
 
 if [ -s $XBPS_MASTERDIR/.xbps_chroot_init ]; then
-    export XBPS_ARCH=$(cat $XBPS_MASTERDIR/.xbps_chroot_init)
+    export XBPS_ARCH=$(<$XBPS_MASTERDIR/.xbps_chroot_init)
 fi
 
 # Run do-pkg hooks.

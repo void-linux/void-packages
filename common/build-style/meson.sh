@@ -1,9 +1,7 @@
 #
 # This helper is for templates using meson.
 #
-do_configure() {
-	: ${meson_cmd:=meson}
-	: ${meson_builddir:=build}
+do_patch() {
 	: ${meson_crossfile:=xbps_meson.cross}
 
 	if [ "$CROSS_BUILD" ]; then
@@ -18,8 +16,19 @@ do_configure() {
 			armv*)
 				_MESON_CPU_FAMILY=arm
 				;;
+			ppc|ppc-musl)
+				_MESON_TARGET_ENDIAN=big
+				_MESON_CPU_FAMILY=ppc
+				;;
 			i686*)
 				_MESON_CPU_FAMILY=x86
+				;;
+			ppc64le*)
+				_MESON_CPU_FAMILY=ppc64
+				;;
+			ppc64*)
+				_MESON_TARGET_ENDIAN=big
+				_MESON_CPU_FAMILY=ppc64
 				;;
 			*)
 				# if we reached here that means that the cpu and cpu_family
@@ -39,7 +48,12 @@ nm = '${NM}'
 ld = '${LD}'
 strip = '${STRIP}'
 readelf = '${READELF}'
+objcopy = '${OBJCOPY}'
 pkgconfig = 'pkg-config'
+rust = 'rustc'
+g-ir-scanner = '${XBPS_CROSS_BASE}/usr/bin/g-ir-scanner'
+g-ir-compiler = '${XBPS_CROSS_BASE}/usr/bin/g-ir-compiler'
+g-ir-generate = '${XBPS_CROSS_BASE}/usr/bin/g-ir-generate'
 
 [properties]
 needs_exe_wrapper = true
@@ -55,6 +69,21 @@ cpu_family = '${_MESON_CPU_FAMILY}'
 cpu = '${_MESON_TARGET_CPU}'
 endian = '${_MESON_TARGET_ENDIAN}'
 EOF
+		if [[ $build_helper = *"qemu"* ]]; then
+			sed -e "/\[binaries\]/ a exe_wrapper = '/usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static'" \
+				-i ${meson_crossfile}
+		fi
+
+		unset _MESON_CPU_FAMILY _MESON_TARGET_CPU _MESON_TARGET_ENDIAN
+	fi
+}
+
+do_configure() {
+	: ${meson_cmd:=meson}
+	: ${meson_builddir:=build}
+	: ${meson_crossfile:=xbps_meson.cross}
+
+	if [ "$CROSS_BUILD" ]; then
 		configure_args+=" --cross-file=${meson_crossfile}"
 
 		# Meson tries to compile natively with CC, CXX, LD, AR 
@@ -72,8 +101,6 @@ EOF
 		# is set, so set the PKG_CONFIG variable to tell Meson which pkg-config
 		# it should use when searching for stuff in the build machine
 		export PKG_CONFIG="/usr/bin/pkg-config"
-
-		unset _MESON_CPU_FAMILY _MESON_TARGET_CPU _MESON_TARGET_ENDIAN
 	fi
 
 	# The binutils ar cannot perform LTO on static libraries so we have to use
@@ -99,6 +126,7 @@ EOF
 		--auto-features=enabled \
 		--wrap-mode=nodownload \
 		-Db_lto=true -Db_ndebug=true \
+		-Db_staticpic=true \
 		${configure_args} . ${meson_builddir}
 }
 

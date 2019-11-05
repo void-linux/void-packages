@@ -97,5 +97,5 @@ you're sure you don't want your changes to be included.
 
 #### Publishing the package
 
-Once the reviewers have merged the pull request, our [build server](http://build.voidlinux.eu) is automatically triggered and builds
+Once the reviewers have merged the pull request, our [build server](http://build.voidlinux.org) is automatically triggered and builds
 all packages from this pull request for all supported platforms. Once it is finished, the packages are available to all Void Linux users.

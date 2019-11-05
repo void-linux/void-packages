@@ -13,11 +13,13 @@ hook() {
 			error=1
 		fi
 	done
+
 	if [ -d ${PKGDESTDIR}/usr/sbin ]; then
 		msg_red "${pkgver}: /usr/sbin directory is not allowed, use /usr/bin.\n"
 		error=1
 	fi
-	for f in sys dev home root run var/run tmp usr/lib64 usr/local; do
+	
+	for f in sys dev home root run var/run tmp usr/lib64 usr/local destdir; do
 		if [ -d ${PKGDESTDIR}/${f} ]; then
 			msg_red "${pkgver}: /${f} directory is not allowed, remove it!\n"
 			error=1
@@ -31,6 +33,50 @@ hook() {
 			error=1
 		fi
 	done
+
+	# Check for bash completions in etc/bash_completion.d
+	# should be on usr/share/bash-completion/completions
+	if [ -d ${PKGDESTDIR}/etc/bash_completion.d ]; then
+		msg_red "${pkgver}: /etc/bash_completion.d is forbidden. Use /usr/share/bash-completion/completions.\n"
+		error=1
+	fi
+
+	# Prevent packages from installing to these paths in etc, they should use
+	# their equivalent in usr/lib
+	for f in udev/{rules.d,hwdb.d} modprobe.d sysctl.d; do
+		if [ -d ${PKGDESTDIR}/etc/${f} ]; then
+			msg_red "${pkgver}: /etc/${f} is forbidden. Use /usr/lib/${f}.\n"
+			error=1
+		fi
+	done
+
+	# Likewise with the comment above but for usr/share
+	for f in X11/xorg.conf.d gconf/schemas; do
+		if [ -d ${PKGDESTDIR}/etc/${f} ]; then
+			msg_red "${pkgver}: /etc/${f} is forbidden. Use /usr/share/${f}.\n"
+			error=1
+		fi
+	done
+
+	if [ -d ${PKGDESTDIR}/etc/dracut.conf.d ]; then
+		msg_red "${pkgver}: /etc/dracut.conf.d is forbidden. Use /usr/lib/dracut/dracut.conf.d.\n"
+		error=1
+	fi
+
+	if [ -d ${PKGDESTDIR}/usr/man ]; then
+		msg_red "${pkgver}: /usr/man is forbidden, use /usr/share/man.\n"
+		error=1
+	fi
+
+	if [ -d ${PKGDESTDIR}/usr/doc ]; then
+		msg_red "${pkgver}: /usr/doc is forbidden. Use /usr/share/doc.\n"
+		error=1
+	fi
+
+	if [ -d ${PKGDESTDIR}/usr/dict ]; then
+		msg_red "${pkgver}: /usr/dict is forbidden. Use /usr/share/dict.\n"
+		error=1
+	fi
 
 	# Forbid empty packages unless build_style=meta
 	if [ "$build_style" != "meta" ]; then
@@ -49,7 +95,7 @@ hook() {
 		return 0
 	fi
 
-	for filename in $(cat ${PKGDESTDIR}/shlib-provides); do
+	for filename in $(<${PKGDESTDIR}/shlib-provides); do
 		rev=${filename#*.so.}
 		libname=${filename%.so*}
 		_shlib=$(echo "$libname"|sed -E 's|\+|\\+|g')
@@ -73,7 +119,7 @@ hook() {
 				msg_red "${pkgver}: SONAME bump detected: ${libname}.so.${conflictRev} -> ${libname}.so.${rev}\n"
 				msg_red "${pkgver}: please update common/shlibs with this line: \"${libname}.so.${rev} ${pkgver}\"\n"
 				msg_red "${pkgver}: all reverse dependencies should also be revbumped to be rebuilt against ${libname}.so.${rev}:\n"
-				_revdeps=$($XBPS_QUERY_XCMD -Rs ${libname}.so -p shlib-requires|awk '{print $1}')
+				_revdeps=$($XBPS_QUERY_XCMD -Rs ${libname}.so -p shlib-requires|cut -d ' ' -f1)
 				for x in ${_revdeps}; do
 					msg_red "   ${x%:}\n"
 				done
@@ -82,7 +128,7 @@ hook() {
 			# Try to match provided shlibs in virtual packages.
 			for f in ${provides}; do
 				_vpkgname="$($XBPS_UHELPER_CMD getpkgname ${f} 2>/dev/null)"
-				_spkgname="$(grep "^${filename}" $mapshlibs | awk '{print $2}')"
+				_spkgname="$(grep "^${filename}" $mapshlibs | cut -d ' ' -f2)"
 				_libpkgname="$($XBPS_UHELPER_CMD getpkgname ${_spkgname} 2>/dev/null)"
 				if [ -z "${_spkgname}" -o  -z "${_libpkgname}" ]; then
 					continue

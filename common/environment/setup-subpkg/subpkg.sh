@@ -2,7 +2,7 @@
 # a package template and can also be used in subpkgs.
 
 ## VARIABLES
-unset -v noarch conf_files mutable_files preserve triggers alternatives
+unset -v conf_files mutable_files preserve triggers alternatives
 unset -v depends run_depends replaces provides conflicts tags
 
 # hooks/post-install/03-strip-and-debug-pkgs
@@ -40,3 +40,6 @@ unset -v make_dirs
 
 # xbps-triggers: binfmts
 unset -v binfmts
+
+# xbps-triggers: register-shell
+unset -v register_shell

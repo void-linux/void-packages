@@ -19,10 +19,15 @@ done
 
 _vsv() {
 	local service="$1"
+	local LN_OPTS="-s"
 
 	if [ $# -lt 1 ]; then
 		msg_red "$pkgver: vsv: 1 argument expected: <service>\n"
 		return 1
+	fi
+
+	if [ -n "$XBPS_BUILD_FORCEMODE" ]; then
+		LN_OPTS+="f"
 	fi
 
 	vmkdir etc/sv
@@ -31,10 +36,10 @@ _vsv() {
 	if [ -r ${PKGDESTDIR}/etc/sv/${service}/finish ]; then
 		chmod 755 ${PKGDESTDIR}/etc/sv/${service}/finish
 	fi
-	ln -s /run/runit/supervise.${service} ${PKGDESTDIR}/etc/sv/${service}/supervise
+	ln ${LN_OPTS} /run/runit/supervise.${service} ${PKGDESTDIR}/etc/sv/${service}/supervise
 	if [ -r ${PKGDESTDIR}/etc/sv/${service}/log/run ]; then
 		chmod 755 ${PKGDESTDIR}/etc/sv/${service}/log/run
-		ln -s /run/runit/supervise.${service}-log ${PKGDESTDIR}/etc/sv/${service}/log/supervise
+		ln ${LN_OPTS} /run/runit/supervise.${service}-log ${PKGDESTDIR}/etc/sv/${service}/log/supervise
 	fi
 }
 
@@ -205,13 +210,9 @@ _vmove() {
 		return 1
 	fi
 	for f in ${files}; do
-		_targetdir=$(dirname $f)
+		_targetdir=${f%/*}/
 		break
 	done
-
-	if [ "$files" = "all" ]; then
-		files="*"
-	fi
 
 	if [ -n "$XBPS_PKGDESTDIR" ]; then
 		_pkgdestdir="$PKGDESTDIR"

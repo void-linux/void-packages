@@ -12,7 +12,7 @@ _add_trigger() {
 process_metadata_scripts() {
 	local action="$1"
 	local action_file="$2"
-	local tmpf=$(mktemp)
+	local tmpf=$(mktemp) || exit 1
 	local fpattern="s|${PKGDESTDIR}||g;s|^\./$||g;/^$/d"
 	local targets= f= _f= info_files= home= shell= descr= groups=
 	local found= triggers_found= _icondirs= _schemas= _mods= _tmpfiles=
@@ -302,7 +302,7 @@ _EOF
 		for f in ${triggers}; do
 			targets=$($XBPS_TRIGGERSDIR/$f targets)
 			for j in ${targets}; do
-				if ! $(echo $j|grep -q pre-${action}); then
+				if ! [[ $j =~ pre-${action} ]]; then
 					continue
 				fi
 				printf "\t\${TRIGGERSDIR}/$f run $j \${PKGNAME} \${VERSION} \${UPDATE} \${CONF_FILE}\n" >> $tmpf
@@ -314,7 +314,7 @@ _EOF
 		for f in ${triggers}; do
 			targets=$($XBPS_TRIGGERSDIR/$f targets)
 			for j in ${targets}; do
-				if ! $(echo $j|grep -q post-${action}); then
+				if ! [[ $j =~ post-${action} ]]; then
 					continue
 				fi
 				printf "\t\${TRIGGERSDIR}/$f run $j \${PKGNAME} \${VERSION} \${UPDATE} \${CONF_FILE}\n" >> $tmpf

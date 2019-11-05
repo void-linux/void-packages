@@ -1,26 +1,27 @@
 # Template file for 'kodi'
 pkgname=kodi
-version=17.6
-revision=4
-build_style=cmake
-configure_args="-DENABLE_INTERNAL_CROSSGUID=OFF"
-patch_args="-Np1"
-_codename="Krypton"
+version=18.4
+revision=1
+_codename="Leia"
 wrksrc="xbmc-${version}-${_codename}"
-short_desc="A software media player and entertainment hub for digital media"
-maintainer="Juan RP <xtraeme@voidlinux.eu>"
-homepage="http://www.kodi.tv/"
-license="GPL-2"
+build_style=cmake
+configure_args="-DENABLE_INTERNAL_CROSSGUID=OFF -DWITH_FFMPEG=/usr"
+short_desc="Software media player and entertainment hub for digital media"
+maintainer="Helmut Pozimski <helmut@pozimski.eu>"
+license="GPL-2.0-or-later"
+homepage="http://www.kodi.tv"
 distfiles="https://github.com/xbmc/xbmc/archive/${version}-${_codename}.tar.gz"
-checksum=c8312fe92e5bab1cdac1da93d60baed88fa1574146c50c44e3c86d01671c2b1d
-build_wrksrc=project/cmake
+checksum=bf2be186d8ae5b5377e43c06a538012bb9f51a0e98f8244b70a401006861d110
+patch_args="-Np1"
+LDFLAGS+=" -Wl,-z,stack-size=1048576"
 
 lib32disabled=yes
-only_for_archs="i686 i686-musl x86_64 x86_64-musl"
+archs="i686* x86_64* aarch64*
+ ppc64*"
 
 hostmakedepends="
  automake libtool pkg-config gperf cmake zip unzip nasm yasm python-devel
- gettext-devel libltdl-devel curl"
+ gettext-devel libltdl-devel curl flatbuffers"
 makedepends="
  eudev-libudev-devel pcre-devel expat-devel libpng-devel libjpeg-turbo-devel
  libXrandr-devel avahi-libs-devel pulseaudio-devel samba-devel tiff-devel
@@ -32,12 +33,22 @@ makedepends="
  libbluetooth-devel yajl-devel libplist-devel librtmp-devel tinyxml-devel
  taglib-devel libcap-devel lame-devel libbluray-devel libnfs-devel ffmpeg-devel
  giflib-devel libxslt-devel gnutls-devel libssh-devel libmicrohttpd-devel
- libcec-devel dcadec-devel crossguid"
+ libcec-devel dcadec-devel crossguid flatbuffers-devel fmt-devel lcms2-devel
+ libfstrcmp-devel rapidjson libcdio-paranoia"
 
 # The following dependencies are dlopen(3)ed.
 depends="libbluray libmad libvorbis libcurl libflac libmodplug libass libmpeg2
  lame librtmp libnfs>=1.9.7 libplist>=1.12"
 depends+=" glxinfo hicolor-icon-theme desktop-file-utils xdpyinfo"
+
+case "$XBPS_TARGET_MACHINE" in
+	aarch64*)
+		hostmakedepends+=" libmysqlclient-devel SDL2_image-devel lzo-devel";
+		makedepends+=" python-devel ffmpeg-devel";
+		configure_args+=" -DENABLE_LDGOLD=Off -DENABLE_VAAPI=OFF";
+		_kodi_nojava=yes
+		;;
+esac
 
 # musl builds need generated addons (no java).
 # gold broken with musl
@@ -47,6 +58,12 @@ case "$XBPS_MACHINE" in
 esac
 
 pre_configure() {
+	if [ "$CROSS_BUILD" ]; then
+	find -type f | \
+		grep "configure\.ac\|Makefile\|cmake\|config\.site" | \
+		xargs sed -i  -e "s;-isystem;-I;g"
+	fi
+
 	# Copy generated files to avoid requiring java.
 	if [ "${_kodi_nojava}" ]; then
 		mkdir -p build/build/swig
@@ -55,14 +72,49 @@ pre_configure() {
 		cp -r $FILESDIR/swig.nojava-$version/* -t build/build/swig
 		cp $FILESDIR/CMakeCache.txt.nojava build/CMakeCache.txt
 
-		echo "set(FOUND_SWIG Yes)" > modules/FindSWIG.cmake
+		echo "set(FOUND_SWIG Yes)" > cmake/modules/FindSWIG.cmake
 	else
 		. /etc/profile.d/10_openjdk.sh
 	fi
+
+	if [ "$CROSS_BUILD" ]; then
+		for i in JsonSchemaBuilder TexturePacker; do
+			cat > cmake/modules/Find$i.cmake <<EOF
+				add_executable($i::$i IMPORTED GLOBAL)
+				set_target_properties($i::$i PROPERTIES
+				IMPORTED_LOCATION "\${CORE_SOURCE_DIR}/tools/depends/native/$i/bin/$i")
+				set_target_properties($i::$i PROPERTIES FOLDER Tools)
+EOF
+		done
+	fi
 }
 
-post_install() {
-	# remove unused stuff
-	rm -rf ${DESTDIR}/usr/include
-	find ${DESTDIR}/usr/lib -name "*.cmake" -delete
+pre_build() {
+	if [ "$CROSS_BUILD" ]; then
+		for i in JsonSchemaBuilder TexturePacker; do
+			CC= LD= CXX= LDFLAGS= CFLAGS= CXXFLAGS= \
+				make -C tools/depends/native/$i
+		done
+	fi
+}
+
+post_build() {
+	# Rebuild for target
+	if [ "$CROSS_BUILD" ]; then
+		for i in JsonSchemaBuilder TexturePacker; do
+			make -C tools/depends/native/$i clean all \
+				CC="$CC" CXX="$CXX" LD="$LD" AR="$AR" RANLIB="$RANLIB" \
+				CPP="$CPP" AS="$AS" OBJDUMP="$OBJDUMP" \
+				CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+		done
+	fi
+}
+
+kodi-devel_package() {
+	short_desc+=" - development files"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/share/kodi/cmake
+	}
 }

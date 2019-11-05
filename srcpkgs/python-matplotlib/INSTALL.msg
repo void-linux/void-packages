@@ -4,7 +4,6 @@ For interactive graphics, install:
 - pygtk python-cairocffi (for GTK/GTKAgg/GTKCairo backend)
 - gtk+3 gir-freedesktop python-gobject python-cairocffi
   (for GTK3Agg/GTK3Cairo backend)
-- python-PyQt4|python-pyside (for Qt4Agg backend)
 - python-PyQt5 (for Qt5Agg backend)
 - python-tkinter (for TkAgg backend)
 - python-tornado (for webagg backend)

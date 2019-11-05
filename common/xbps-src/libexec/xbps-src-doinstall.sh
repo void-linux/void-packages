@@ -63,7 +63,7 @@ if [ ! -f $XBPS_SUBPKG_INSTALL_DONE ]; then
             run_func pkg_install
         fi
     fi
-    setup_pkg_depends ${pkgname:=$PKGNAME}
+    setup_pkg_depends ${pkgname:=$PKGNAME} || exit 1
     run_pkg_hooks post-install
     touch -f $XBPS_SUBPKG_INSTALL_DONE
 fi

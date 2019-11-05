@@ -5,7 +5,7 @@
 #	- Generates shlib-requires file for xbps-create(1)
 
 add_rundep() {
-    local dep="$1" i= rpkgdep= _depname= _rdeps= found=
+    local dep="$1" i= rpkgdep= _depname= found=
 
     _depname="$($XBPS_UHELPER_CMD getpkgdepname ${dep} 2>/dev/null)"
     if [ -z "${_depname}" ]; then
@@ -41,7 +41,7 @@ store_pkgdestdir_rundeps() {
                      -z "$($XBPS_UHELPER_CMD getpkgname ${_curdep} 2>/dev/null)" ]; then
                     _curdep="${_curdep}>=0"
                 fi
-                printf "${_curdep} " >> ${PKGDESTDIR}/rdeps
+                printf -- "${_curdep} " >> ${PKGDESTDIR}/rdeps
             done
         fi
 }
@@ -56,38 +56,31 @@ hook() {
 
     mapshlibs=$XBPS_COMMONDIR/shlibs
 
-    if [ -n "$noarch" -o -n "$noverifyrdeps" ]; then
+    if [ "${archs// /}" = "noarch" -o -n "$noverifyrdeps" ]; then
         store_pkgdestdir_rundeps
         return 0
     fi
 
-    depsftmp=$(mktemp -t xbps_src_depstmp.XXXXXXXXXX) || return 1
+    depsftmp=$(mktemp) || exit 1
     find ${PKGDESTDIR} -type f -perm -u+w > $depsftmp 2>/dev/null
 
     exec 3<&0 # save stdin
     exec < $depsftmp
     while read f; do
-        lf=${f#${DESTDIR}}
-	if [ "${skiprdeps/${lf}/}" != "${skiprdeps}" ]; then
-		msg_normal "Skipping dependency scan for ${lf}\n"
-		continue
-	fi
+        lf=${f#${PKGDESTDIR}}
+	    if [ "${skiprdeps/${lf}/}" != "${skiprdeps}" ]; then
+		    msg_normal "Skipping dependency scan for ${lf}\n"
+		    continue
+	    fi
         case "$(file -bi "$f")" in
             application/x-*executable*|application/x-sharedlib*)
                 for nlib in $($OBJDUMP -p "$f"|grep NEEDED|awk '{print $2}'); do
-                    if [ -z "$verify_deps" ]; then
-                        verify_deps="$nlib"
-                        continue
-                    fi
+                    [ -z "$verify_deps" ] && verify_deps="$nlib" && continue
+                    found=0
                     for j in ${verify_deps}; do
-                        [ "$j" != "$nlib" ] && continue
-                        found_dup=1
-                        break
+                        [[ $j == $nlib ]] && found=1 && break
                     done
-                    if [ -z "$found_dup" ]; then
-                        verify_deps="$verify_deps $nlib"
-                    fi
-                    unset found_dup
+                    [[ $found -eq 0 ]] && verify_deps="$verify_deps $nlib"
                 done
                 ;;
         esac
@@ -97,13 +90,13 @@ hook() {
 
     #
     # Add required run time packages by using required shlibs resolved
-    # above, the mapping is done thru the mapping_shlib_binpkg.txt file.
+    # above, the mapping is done thru the common/shlibs file.
     #
     for f in ${verify_deps}; do
         unset _f j rdep _rdep rdepcnt soname _pkgname _rdepver found
         _f=$(echo "$f"|sed -E 's|\+|\\+|g')
-        rdep="$(grep -E "^${_f}[[:blank:]]+.*$" $mapshlibs|awk '{print $2}')"
-        rdepcnt="$(grep -E "^${_f}[[:blank:]]+.*$" $mapshlibs|awk '{print $2}'|wc -l)"
+        rdep="$(grep -E "^${_f}[[:blank:]]+.*$" $mapshlibs|cut -d ' ' -f2)"
+        rdepcnt="$(grep -E "^${_f}[[:blank:]]+.*$" $mapshlibs|cut -d ' ' -f2|wc -l)"
         if [ -z "$rdep" ]; then
             # Ignore libs by current pkg
             soname=$(find ${PKGDESTDIR} -name "$f")
@@ -121,15 +114,9 @@ hook() {
                 _pkgname=$($XBPS_UHELPER_CMD getpkgname "$j")
                 # if there's a SONAME matching pkgname, use it.
                 for x in ${pkgname} ${subpackages}; do
-                    if [ "${_pkgname}" = "${x}" ]; then
-                        found=1
-                        break
-                    fi
+                    [[ $_pkgname == $x ]] && found=1 && break
                 done
-                if [ -n "$found" ]; then
-                    _rdep=$j
-                    break
-                fi
+                [[ $found ]] && _rdep=$j && break
             done
             if [ -z "${_rdep}" ]; then
                 # otherwise pick up the first one.

@@ -5,7 +5,7 @@ collect_sonames() {
 	local _destdir="$1" f _soname _fname _pattern
 	local _pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)*$"
 	local _versioned_pattern="^[[:alnum:]]+(.*)+\.so(\.[0-9]+)+$"
-	local _tmpfile="$(mktemp)"
+	local _tmpfile=$(mktemp) || exit 1
 
 	if [ ! -d ${_destdir} ]; then
 		rm -f ${_tmpfile}
@@ -36,7 +36,7 @@ collect_sonames() {
 		echo "$f" >> ${_tmpfile}
 	done
 	if [ -s "${_tmpfile}" ]; then
-		cat ${_tmpfile} | tr '\n' ' ' > ${_destdir}/shlib-provides
+		tr '\n' ' ' < "${_tmpfile}" > ${_destdir}/shlib-provides
 		echo >> ${_destdir}/shlib-provides
 	fi
 	rm -f ${_tmpfile}
@@ -45,7 +45,7 @@ collect_sonames() {
 hook() {
 	local _destdir32=${XBPS_DESTDIR}/${pkgname}-32bit-${version}
 
-	if [ -z "$shlib_provides" -a -n "$noarch" -o -n "$noshlibprovides" ]; then
+	if [ -z "$shlib_provides" -a "${archs// /}" = "noarch" -o -n "$noshlibprovides" ]; then
 		return 0
 	fi
 

@@ -21,7 +21,7 @@ hook() {
 		return
 	fi 
 	# Ignore noarch pkgs.
-	if [ -n "$noarch" ]; then
+	if [ "${archs// /}" = "noarch" ]; then
 		return
 	fi
 	if [ -z "$lib32mode" ]; then
@@ -46,11 +46,11 @@ hook() {
 		\) -delete
 
 		# Remove empty dirs.
-		for f in $(find ${destdir32} -type d -empty|sort -r); do
+		while IFS= read -r -d '' f; do
 			_dir="${f##${destdir32}}"
 			[ -z "${_dir}" ] && continue
 			rmdir --ignore-fail-on-non-empty -p "$f" &>/dev/null
-		done
+		done < <(find ${destdir32} -type d -empty -print0 | sort -uz)
 
 		# Switch pkg-config files to lib32.
 		if [ -d ${destdir32}/usr/lib32/pkgconfig ]; then
@@ -85,7 +85,7 @@ hook() {
 		if [ -n "$lib32depends" ]; then
 			_deps="${lib32depends}"
 		else
-			_deps="$(cat ${PKGDESTDIR}/rdeps)"
+			_deps="$(<${PKGDESTDIR}/rdeps)"
 		fi
 		for f in ${_deps}; do
 			unset found pkgn pkgv _arch _shprovides
@@ -149,14 +149,18 @@ hook() {
 	# Also install additional files set via "lib32files".
 	for f in ${lib32files}; do
 		echo "$pkgver: installing additional files: $f ..."
-		_targetdir=${destdir32}/$(dirname ${f})
+		_targetdir=${destdir32}/${f%/*}/
 		mkdir -p ${_targetdir/\/usr\/lib/\/usr\/lib32}
 		cp -a ${PKGDESTDIR}/${f} ${_targetdir/\/usr\/lib/\/usr\/lib32}
 	done
 	# Additional symlinks to the native libdir.
 	for f in ${lib32symlinks}; do
 		echo "$pkgver: symlinking $f to the native libdir..."
-		mkdir -p ${destdir32}/usr/lib{,32}/$(dirname ${f})
+		if [ "${f%/*}" != "${f}" ]; then
+			mkdir -p ${destdir32}/usr/lib{,32}/${f%/*}/
+		else
+			mkdir -p ${destdir32}/usr/lib{,32}/
+		fi
 		ln -sfr ${destdir32}/usr/lib32/$f ${destdir32}/usr/lib/$f
 	done
 	# If it's a development pkg add a dependency to the 64bit pkg.

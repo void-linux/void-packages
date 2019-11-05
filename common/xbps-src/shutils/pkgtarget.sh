@@ -1,9 +1,9 @@
 # vim: set ts=4 sw=4 et:
 
 check_pkg_arch() {
-    local cross="$1" _arch f found
+    local cross="$1" _arch f match nonegation
 
-    if [ -n "$only_for_archs" ]; then
+    if [ -n "$archs" -a "${archs// /}" != "noarch" ]; then
         if [ -n "$cross" ]; then
             _arch="$XBPS_TARGET_MACHINE"
         elif [ -n "$XBPS_ARCH" ]; then
@@ -11,13 +11,16 @@ check_pkg_arch() {
         else
             _arch="$XBPS_MACHINE"
         fi
-        for f in ${only_for_archs}; do
-            if [ "$f" = "${_arch}" ]; then
-                found=1
-                break
-            fi
+        set -f
+        for f in ${archs}; do
+            set +f
+            nonegation=${f##\~*}
+            f=${f#\~}
+            case "${_arch}" in
+                $f) match=1; break ;;
+            esac
         done
-        if [ -z "$found" ]; then
+        if [ -z "$nonegation" -a -n "$match" ] || [ -n "$nonegation" -a -z "$match" ]; then
             msg_red "$pkgname: this package cannot be built for ${_arch}.\n"
             exit 2
         fi
@@ -41,23 +44,36 @@ pkg_available() {
 }
 
 remove_pkg_autodeps() {
-    local rval= tmplogf=
+    local rval= tmplogf= errlogf= prevs=
 
     cd $XBPS_MASTERDIR || return 1
     msg_normal "${pkgver:-xbps-src}: removing autodeps, please wait...\n"
-    tmplogf=$(mktemp)
+    tmplogf=$(mktemp) || exit 1
+    errlogf=$(mktemp) || exit 1
 
     remove_pkg_cross_deps
     $XBPS_RECONFIGURE_CMD -a >> $tmplogf 2>&1
-    echo yes | $XBPS_REMOVE_CMD -Ryod >> $tmplogf 2>&1
+    prevs=$(stat -c %s $tmplogf)
+    echo yes | $XBPS_REMOVE_CMD -Ryod 2>> $errlogf 1>> $tmplogf
     rval=$?
+    while [ $rval -eq 0 ]; do
+        local curs=$(stat -c %s $tmplogf)
+        if [ $curs -eq $prevs ]; then
+            break
+        fi
+        prevs=$curs
+        echo yes | $XBPS_REMOVE_CMD -Ryod 2>> $errlogf 1>> $tmplogf
+        rval=$?
+    done
 
     if [ $rval -ne 0 ]; then
         msg_red "${pkgver:-xbps-src}: failed to remove autodeps: (returned $rval)\n"
         cat $tmplogf && rm -f $tmplogf
+        cat $errlogf && rm -f $errlogf
         msg_error "${pkgver:-xbps-src}: cannot continue!\n"
     fi
     rm -f $tmplogf
+    rm -f $errlogf
 }
 
 remove_pkg_wrksrc() {

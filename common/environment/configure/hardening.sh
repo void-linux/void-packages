@@ -17,8 +17,8 @@ if [ -z "$nopie" ]; then
 		LDFLAGS="-specs=${_GCCSPECSDIR}/hardened-ld -Wl,-z,relro -Wl,-z,now ${LDFLAGS}"
 	else
 		# Enable FORITFY_SOURCE=2
-		CFLAGS="-D_FORTIFY_SOURCE=2 ${CFLAGS}"
-		CXXFLAGS="-D_FORTIFY_SOURCE=2 ${CXXFLAGS}"
+		CFLAGS="-fstack-clash-protection -D_FORTIFY_SOURCE=2 ${CFLAGS}"
+		CXXFLAGS="-fstack-clash-protection -D_FORTIFY_SOURCE=2 ${CXXFLAGS}"
 		LDFLAGS="-Wl,-z,relro -Wl,-z,now ${LDFLAGS}"
 	fi
 else

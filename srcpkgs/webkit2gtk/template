@@ -1,83 +1,103 @@
 # Template file for 'webkit2gtk'
 pkgname=webkit2gtk
-version=2.22.2
+version=2.26.0
 revision=1
 wrksrc="webkitgtk-${version}"
 build_style=cmake
-configure_args="-DPORT=GTK -DENABLE_GTKDOC=OFF -DCMAKE_LINKER=${XBPS_CROSS_TRIPLET}-gcc
- -DUSE_GSTREAMER_GL=OFF"
-# XXX add libwoff2dec
-configure_args+=" -DUSE_WOFF2=OFF"
-short_desc="GTK+3 port of the WebKit2 browser engine"
-maintainer="Enno Boland <gottox@voidlinux.eu>"
-homepage="https://webkitgtk.org/"
-license="LGPL-2.1, BSD-2-Clause"
-distfiles="${homepage}/releases/webkitgtk-${version}.tar.xz"
-checksum=345487d4d1896e711683f951d1e09387d3b90d7cf59295c0e634af7f515e99ba
-
-# ETOOHUGE
-nodebug=1
-
-CXXFLAGS="-Wno-expansion-to-defined"
-
-hostmakedepends="perl python pkg-config intltool gperf flex ruby glib-devel geoclue2"
-makedepends="
- at-spi2-core-devel libjpeg-turbo-devel libpng-devel sqlite-devel
- harfbuzz-devel gst-plugins-base1-devel gst-plugins-bad1-devel
+build_helper="gir"
+configure_args="-DPORT=GTK -DUSE_LD_GOLD=OFF
+ -DCMAKE_CXX_FLAGS_RELEASE=-DNDEBUG
+ -DCMAKE_CXX_FLAGS_DEBUG=-DNDEBUG
+ -DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-DNDEBUG
+ -DCMAKE_C_FLAGS_RELEASE=-DNDEBUG
+ -DCMAKE_C_FLAGS_DEBUG=-DNDEBUG
+ -DCMAKE_C_FLAGS_RELWITHDEBINFO=-DNDEBUG
+ -DCMAKE_LINKER=${XBPS_CROSS_TRIPLET}-gcc
+ -DRUBY_VERSION=2.6
+ -DRUBY_CONFIG_INCLUDE_DIR=${XBPS_CROSS_BASE}/usr/include/ruby-2.6.0
+ -DENABLE_GTKDOC=OFF -DUSE_GSTREAMER_GL=OFF -DUSE_WPE_RENDERER=OFF
+ -DENABLE_JIT=$(vopt_if jit ON OFF)
+ -DENABLE_C_LOOP=$(vopt_if jit OFF ON)
+ -DENABLE_INTROSPECTION=$(vopt_if gir ON OFF)
+ -DENABLE_WAYLAND_TARGET=$(vopt_if wayland ON OFF)
+ -DENABLE_X11_TARGET=$(vopt_if x11 ON OFF)
+ -DENABLE_SAMPLING_PROFILER=$(vopt_if sampling_profiler ON OFF)
+ -DENABLE_BUBBLEWRAP_SANDBOX=$(vopt_if bubblewrap ON OFF)"
+hostmakedepends="perl python pkg-config gperf flex ruby glib-devel geoclue2
+ $(vopt_if wayland wayland-devel)"
+makedepends="at-spi2-core-devel libjpeg-turbo-devel libpng-devel
+ harfbuzz-devel gst-plugins-base1-devel gst-plugins-bad1-devel sqlite-devel
  libsoup-devel libxslt-devel gnutls-devel icu-devel enchant-devel
  dbus-glib-devel libwebp-devel gtk+-devel gtk+3-devel libgudev-devel
- libsecret-devel ruby-devel geoclue2-devel libnotify-devel hyphen-devel"
+ libsecret-devel ruby-devel geoclue2-devel libnotify-devel hyphen-devel
+ woff2-devel freetype-devel libopenjpeg2-devel libatomic-devel
+ qt5-devel $(vopt_if x11 libXt-devel)
+ $(vopt_if wayland 'MesaLib-devel libxkbcommon-devel wayland-devel wayland-protocols')"
+short_desc="GTK+3 port of the WebKit2 browser engine"
+maintainer="Enno Boland <gottox@voidlinux.org>"
+license="LGPL-2.1-or-later, BSD-2-Clause"
+homepage="https://webkitgtk.org/"
+distfiles="${homepage}/releases/webkitgtk-${version}.tar.xz"
+checksum=d210c0ecd1a89a22c9f8f1f450334f3489c5c50159b3a5e14dd93d5f349dcced
 
+build_options="gir wayland x11 bubblewrap jit sampling_profiler"
+build_options_default="gir wayland x11 bubblewrap"
+
+desc_option_bubblewrap="Enable bubblewrap sandbox"
+desc_option_jit="JavaScript JIT (Only some architectures)"
+desc_option_sampling_profiler="Sampling profiler support (JIT + glibc only)"
+
+# detection + runtime
+if [ "$build_option_bubblewrap" ]; then
+	hostmakedepends+=" bubblewrap xdg-dbus-proxy"
+	makedepends+=" libseccomp-devel"
+	depends+=" bubblewrap xdg-dbus-proxy"
+fi
+
+# only a few platform support JIT
 case "$XBPS_TARGET_MACHINE" in
-armv[56]*|mips*) configure_args+=" -DENABLE_JIT=0"
-	makedepends+=" libatomic-devel"
-	;;
-aarch64*) configure_args+=" -DUSE_LD_GOLD=0";;
+	aarch64*|x86_64*|mips*)
+		build_options_default+=" jit"
+		if [ "$XBPS_TARGET_LIBC" = "glibc" ]; then
+			build_options_default+=" sampling_profiler"
+		elif [ "$build_option_sampling_profiler" ]; then
+			broken="sampling_profiler is only supported on glibc"
+		fi
+		;;
+	i686*)
+		# JIT requires SSE2 so disabled by default
+		# it's also currently broken
+		if [ "$build_option_jit" ]; then
+			broken="OffsetExtractor: No magic values found."
+		fi
+		;;
+	*)
+		if [ "$build_option_jit" ]; then
+			broken="JIT is not supported on ${XBPS_TARGET_MACHINE}"
+		fi
+		;;
 esac
 
-case "$XBPS_TARGET_MACHINE" in
-*-musl) configure_args+=" -DENABLE_SAMPLING_PROFILER=OFF";;
-esac
-
-# Package build options
-build_options="gir wayland x11"
-# Disable gir for cross builds.
-build_options_default="wayland x11"
-if [ -z "$CROSS_BUILD" ]; then
-	build_options_default+=" gir"
-else
-	# Make cmake detect Ruby headers in cross base
-	configure_args+=" -DRUBY_VERSION=2.5 -DRUBY_CONFIG_INCLUDE_DIR=${XBPS_CROSS_BASE}/usr/include/ruby-2.5.0"
-fi
-
-if [ "$build_option_gir" ]; then
-	configure_args+=" -DENABLE_INTROSPECTION=1"
-	hostmakedepends+=" gobject-introspection"
-else
-	configure_args+=" -DENABLE_INTROSPECTION=0"
-fi
-
-if [ "$build_option_wayland" ]; then
-	configure_args+=" -DENABLE_WAYLAND_TARGET=1"
-	hostmakedepends+=" wayland-devel"
-	makedepends+=" MesaLib-devel libxkbcommon-devel wayland-devel wayland-protocols"
-else
-	configure_args+=" -DENABLE_WAYLAND_TARGET=0"
-fi
-
-if [ "$build_option_x11" ]; then
-	configure_args+=" -DENABLE_X11_TARGET=1"
-	makedepends+=" libXt-devel"
-else
-	configure_args+=" -DENABLE_X11_TARGET=0"
+# extra validation
+if [ "$build_option_sampling_profiler" -a -z "$build_option_jit" ]; then
+	broken="sampling_profiler requires JIT"
 fi
 
 pre_configure() {
+	# work around large debug symbols on 32-bit hosts
+	if [ "$XBPS_WORDSIZE" = "32" ]; then
+		export CFLAGS="${CFLAGS/-g/-g1}"
+		export CXXFLAGS="${CXXFLAGS/-g/-g1}"
+		export LDFLAGS+=" -Wl,--no-keep-memory"
+	fi
+
+	# the above is not enough for 32-bit ppc and debug
 	case "$XBPS_TARGET_MACHINE" in
-	armv[56]*) # Add -latomic to the targets
-		find -name "CMakeLists.txt" -exec sed -i "{}" \
-		-e "/target_link_libraries/s/)/ atomic)/" \;
-		;;
+		ppc64*) ;;
+		ppc*)
+			export CFLAGS="${CFLAGS/-O2/-Os}"
+			export CXXFLAGS="${CXXFLAGS/-O2/-Os}"
+			;;
 	esac
 }
 

@@ -18,7 +18,7 @@ if [ -z "$MASTERDIR" -o -z "$DISTDIR" ]; then
 fi
 
 # proot does not properly return the resultcode. Workaround this
-RESULT=$(mktemp /tmp/proot_result.XXXXXXXXXX)
+RESULT=$(mktemp) || exit 1
 
 PROOT_NO_SECCOMP=1 proot -r $MASTERDIR -w / -b "$RESULT:/.result" -b $DISTDIR:/void-packages \
 	${HOSTDIR:+-b $HOSTDIR:/host} -b /proc:/proc -b /dev:/dev \

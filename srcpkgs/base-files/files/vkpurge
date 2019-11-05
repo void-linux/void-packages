@@ -3,130 +3,92 @@
 # A simple script to remove old kernel files/modules.
 # Brought to you by yours truly Juan RP in the Public Domain.
 #
-: ${progname:=$(basename $0)}
+: "${progname:="${0##*/}"}"
 
-case "$(xbps-uhelper arch)" in
-    aarch64*) KIMAGE="vmlinux";;
-    *) KIMAGE="vmlinuz";;
-esac
-
-usage()
-{
+usage() {
 	cat <<_EOF
-Usage: $progname <target> [<version>]
-
-Targets:
- list			Lists old installed kernels.
- rm <version...|all>	Remove kernel <version> or all old kernels.
-
-Example:
-	$ $progname list
-	$ $progname rm 4.9.81_1
+Usage: $progname list [version ...]
+       $progname rm all
+       $progname rm <version ...>
 _EOF
 	exit 1
 }
 
-list_kernels()
-{
-	local k kpkg installed kver _f
+list_kernels() {
+	running=$(uname -r)
+	installed=$(xbps-query -o "/boot/vmlinu[xz]-*" 2>/dev/null | awk '{print $2}')
+	for arg; do
+		case "$arg" in
+			all) pattern="*" ;;
+			*) pattern=$arg ;;
+		esac
+		for k in /boot/vmlinu[xz]-*; do
+			case "$installed" in
+				*"$k"*) continue ;;
+			esac
+			kver=${k##*-}
+			case "$kver" in
+				"$running") ;;
+				$pattern) printf "%s\n" "$kver" ;;
+			esac
+		done
+	done | sort -u
+}
 
-	for k in /boot/$KIMAGE-*; do
-		_f=$(basename $k)
-		kver=$(echo ${_f}|sed -e 's|-rc|rc|')
-		installed=$(xbps-query -o "$k" 2>/dev/null)
-		[ -n "$installed" ] && continue
-		kpkg="$(xbps-uhelper getpkgversion ${_f} 2>/dev/null)"
-		[ "$(uname -r)" = "$kpkg" ] && continue
-		[ -n "$kpkg" ] && echo "$kpkg"
+run_hooks() {
+	dir="$1"
+	kver="$2"
+	for d in /etc/kernel.d/"${dir}"/*; do
+		[ -x "$d" ] || continue
+		printf "Running %s kernel hook: %s...\n" "$dir" "${d##*/}"
+		"$d" kernel "$kver"
 	done
 }
 
-run_hooks()
-{
-	local dir="$1"
-	local kver="$2"
-	local d
-
-	for d in /etc/kernel.d/${dir}/*; do
-		[ ! -x "$d" ] && continue
-		echo "Running ${dir} kernel hook: $(basename $d)..."
-		$d kernel $kver
-	done
-}
-
-remove_kernel()
-{
-	local rmkver="$1"
-	local installed f kfile
-
-	if [ ! -f /boot/$KIMAGE-${rmkver} -a ! -d /lib/modules/${rmkver} ]; then
-		echo "Kernel ${rmkver} not installed."
-		exit 0
-	fi
-
-	installed=$(xbps-uhelper version "linux${rmkver%*.*}" 2>/dev/null)
-	if [ -n "$installed" -a "$installed" = "$rmkver" ]; then
-		echo "Kernel $rmkver is currently installed."
-		exit 0
-	fi
+remove_kernel() {
+	rmkver="$1"
 
 	# Execute pre-remove kernel hooks.
-	run_hooks pre-remove $rmkver
-	# Remove kernel files in /boot.
-	for f in config System.map $KIMAGE; do
-		kfile="/boot/${f}-${rmkver}"
-		[ ! -f "${kfile}" ] && continue
-		echo "Removing ${kfile}..."
-		rm -f ${kfile}
+	run_hooks pre-remove "$rmkver"
+
+	for f in \
+		/boot/config-"${rmkver}" \
+		/boot/System.map-"${rmkver}" \
+		/boot/vmlinu[xz]-"${rmkver}" \
+		/usr/lib/modules/"${rmkver}"; do
+		[ -e "$f" ] || continue
+		printf "Removing %s...\n" "$f"
+		rm -rf "$f"
 	done
-	# Remove kernel modules
-	if [ -d "/lib/modules/${rmkver}" ]; then
-		echo "Removing /lib/modules/${rmkver}..."
-		rm -rf /lib/modules/${rmkver}
-	fi
+
 	# Execute post-remove kernel hooks.
-	run_hooks post-remove $rmkver
-	# Remove kernel-headers.
-	if [ -d /usr/src/kernel-headers-${rmkver} ]; then
-		rm -rf /usr/src/kernel-headers-${rmkver}
-	fi
-	# Remove debugging symbols.
-	dfile=/usr/lib/debug/boot/vmlinux-${rmkver}
-	if [ -f "${dfile}" ]; then
-		echo "Removing ${dfile}..."
-		rm -f ${dfile}
-	fi
-	if [ -d /usr/lib/debug/usr/lib/modules/${rmkver} ]; then
-                echo "Removing /usr/lib/debug/usr/lib/modules/${rmkver}..."
-                rm -rf /usr/lib/debug/usr/lib/modules/${rmkver}
-	fi
+	run_hooks post-remove "$rmkver"
+
+	for f in \
+		/usr/src/kernel-headers-"${rmkver}" \
+		/usr/lib/debug/boot/vmlinu[xz]-"${rmkver}" \
+		/usr/lib/debug/usr/lib/modules/"${rmkver}" \
+		/boot/dtbs/dtbs-"${rmkver}"; do
+		[ -e "$f" ] || continue
+		printf "Removing %s...\n" "$f"
+		rm -rf "$f"
+	done
 }
 
-if [ "$1" = "list" ]; then
-	list_kernels
-elif [ "$1" = "rm" ]; then
-	if [ "$(id -u)" -ne 0 ]; then
-		echo "You have to run this script as root!"
-		exit 1
-	fi
-
-	if [ -z "$2" ]; then
-		usage
-	elif [ "$2" = "all" ]; then
-		kernels=$(list_kernels)
-		for k in ${kernels}; do
-			echo "Removing kernel $k files ..."
-			remove_kernel "$k"
-		done
-	else
+case "$1" in
+	list) list_kernels "${2:-all}" ;;
+	rm)
+		[ -z "$2" ] && usage
+		if [ "$(id -u)" -ne 0 ]; then
+			printf "You have to run this script as root!\n" >&2
+			exit 1
+		fi
 		shift
-		for k; do
-			echo "Removing kernel $k files ..."
-			remove_kernel "$k"
+		for kver in $(list_kernels "$@"); do
+			printf "Removing kernel %s...\n" "$kver"
+			remove_kernel "$kver"
 		done
-	fi
-else
-	usage
-fi
-
+		;;
+	*) usage ;;
+esac
 exit 0

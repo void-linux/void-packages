@@ -4,7 +4,7 @@
 do_configure() {
 	: ${configure_script:=waf}
 
-	PYTHON=/usr/bin/python3 python3 ${configure_script} configure --prefix=/usr ${configure_args}
+	PYTHON=/usr/bin/python3 python3 ${configure_script} configure --prefix=/usr --libdir=/usr/lib ${configure_args}
 }
 
 do_build() {

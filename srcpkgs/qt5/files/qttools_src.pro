@@ -5,7 +5,6 @@ SUBDIRS = assistant \
 	designer \
 	linguist \
 	qdbus \
-	qdoc \
 	qtattributionsscanner
 
 linguist.depends = designer

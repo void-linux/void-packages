@@ -4,10 +4,13 @@
 
 do_build() {
 	: ${python_versions:="2.7 $py3_ver"}
-	local pyver= pysufx=
+	local pyver= pysufx= tmp_cflags="$CFLAGS" tmp_ldflags="$LDFLAGS"
 
 	for pyver in $python_versions; do
 		if [ -n "$CROSS_BUILD" ]; then
+			CFLAGS="$tmp_cflags"
+			LDFLAGS="$tmp_ldflags"
+
 			PYPREFIX="$XBPS_CROSS_BASE"
 			if [ "$pyver" != "2.7" ]; then
 				pysufx=m
@@ -23,6 +26,24 @@ do_build() {
 		else
 			python${pyver} setup.py build --build-base=build-${pyver} ${make_build_args}
 		fi
+	done
+}
+
+do_check() {
+	: ${python_versions:="2.7 $py3_ver"}
+
+	for pyver in $python_versions; do
+		ln -s build-${pyver} build
+		if [ -z "$make_check_target" ]; then
+			if ! python${pyver} setup.py --help test >/dev/null 2>&1; then
+				msg_warn "No command 'test' defined by setup.py for python${pyver}.\n"
+				rm build
+				return 0
+			fi
+		fi
+
+		python${pyver} setup.py ${make_check_target:-test} ${make_check_args}
+		rm build
 	done
 }
 

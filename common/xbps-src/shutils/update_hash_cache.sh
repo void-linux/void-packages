@@ -5,7 +5,7 @@ update_hash_cache() {
     local distfile curfile
     mkdir -p "$cache"
     find "$XBPS_SRCDISTDIR" -type f | grep -v by_sha256 | while read -r distfile; do
-        cksum=$(cat "$distfile" | sha256sum | cut -d " " -f 1)
+        cksum=$($XBPS_DIGEST_CMD "$distfile")
         curfile="${distfile##*/}"
         ln -vf "$distfile" "${cache}/${cksum}_${curfile}"
     done

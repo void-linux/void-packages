@@ -12,11 +12,16 @@ show_pkg() {
     for i in ${checksum}; do
         [ -n "$i" ] && echo "checksum:	$i"
     done
-    [ -n "$noarch" ] && echo "noarch:		yes"
+    for i in ${archs}; do
+        [ -n "$i" ] && echo "archs:		$i"
+    done
     echo "maintainer:	$maintainer"
     [ -n "$homepage" ] && echo "Upstream URL:	$homepage"
     [ -n "$license" ] && echo "License(s):	$license"
     [ -n "$build_style" ] && echo "build_style:	$build_style"
+    for i in $build_helper; do
+        [ -n "$i" ] && echo "build_helper:  $i"
+    done
     for i in ${configure_args}; do
         [ -n "$i" ] && echo "configure_args:	$i"
     done
@@ -55,53 +60,45 @@ show_avail() {
     check_pkg_arch "$XBPS_CROSS_BUILD" 2>/dev/null
 }
 
-show_pkg_build_deps() {
-    local f x _pkgname _srcpkg _dep found result
+show_pkg_build_depends() {
+    local f x _pkgname _srcpkg found result
+    local _deps="$1"
 
-    setup_pkg_depends
-
-    result=$(mktemp || exit 1)
+    result=$(mktemp) || exit 1
 
     # build time deps
-    for f in ${host_build_depends} ${build_depends} ${run_depends}; do
-        # ignore virtual deps
-        local _rpkg="${f%\?*}"
-        local _vpkg="${f#*\?}"
-
-        # ignore virtual dependencies
-        if [ "${_rpkg}" != "${_vpkg}" ]; then
-            f="${_vpkg}"
+    for f in ${_deps}; do
+        if [ ! -f $XBPS_SRCPKGDIR/$f/template ]; then
+            msg_error "$pkgver: dependency '$f' does not exist!\n"
         fi
+        # ignore virtual dependencies
+        [[ ${f%\?*} != ${f#*\?} ]] && f=${f#*\?}
         unset found
         # check for subpkgs
         for x in ${subpackages}; do
-            _pkgname="$($XBPS_UHELPER_CMD getpkgdepname $f 2>/dev/null)"
-            if [ -z "${_pkgname}" ]; then
-                _pkgname="$($XBPS_UHELPER_CMD getpkgname $f 2>/dev/null)"
-            fi
-            if [ "${_pkgname}" = "$x" ]; then
-                found=1
-                break
-            fi
+            [[ $f == $x ]] && found=1 && break
         done
-        if [ -n "$found" ]; then
-            continue
-        fi
-        _pkgname="$($XBPS_UHELPER_CMD getpkgdepname $f 2>/dev/null)"
-        if [ -z "${_pkgname}" ]; then
-            _pkgname="$($XBPS_UHELPER_CMD getpkgname $f 2>/dev/null)"
-        fi
-        if [ -z "${_pkgname}" ]; then
-            _pkgname="$f"
-        fi
-        _pkgname=${_pkgname/-32bit}
-        _srcpkg=$(basename $(readlink -f ${XBPS_SRCPKGDIR}/${_pkgname}))
+        [[ $found ]] && continue
+        _pkgname=${f/-32bit}
+        _srcpkg=$(readlink -f ${XBPS_SRCPKGDIR}/${_pkgname})
+        _srcpkg=${_srcpkg##*/}
         echo "${_srcpkg}" >> $result
     done
     sort -u $result
     rm -f $result
 }
 
+show_pkg_build_deps() {
+    show_pkg_build_depends "${hostmakedepends} ${makedepends} $(setup_pkg_depends '' 1)"
+}
+
+show_pkg_hostmakedepends() {
+    show_pkg_build_depends "${hostmakedepends}"
+}
+
+show_pkg_makedepends() {
+    show_pkg_build_depends "${makedepends}"
+}
 
 show_pkg_build_options() {
     local f opt desc

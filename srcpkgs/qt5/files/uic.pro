@@ -2,6 +2,7 @@ QT = core qml core-private qmldevtools-private
 DEFINES += QT_UIC QT_NO_CAST_FROM_ASCII QT_NO_FOREACH
 
 include(uic.pri)
+include(shared/shared.pri)
 include(cpp/cpp.pri)
 
 HEADERS += uic.h

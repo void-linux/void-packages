@@ -1,8 +1,7 @@
-diff --git a/include/proto/openssl-compat.h include/proto/openssl-compat.h
-index b6fe1d2..551cae2 100644
---- a/include/proto/openssl-compat.h
-+++ include/proto/openssl-compat.h
-@@ -89,7 +89,7 @@ static inline int SSL_SESSION_set1_id_context(SSL_SESSION *s, const unsigned cha
+diff -ru a/include/proto/openssl-compat.h include/proto/openssl-compat.h
+--- a/include/proto/openssl-compat.h	2019-02-11 08:16:19.000000000 -0500
++++ include/proto/openssl-compat.h	2019-04-14 11:41:09.820848231 -0400
+@@ -89,7 +89,7 @@
  }
  #endif
  
@@ -11,7 +10,7 @@ index b6fe1d2..551cae2 100644
  /*
   * Functions introduced in OpenSSL 1.1.0 and not yet present in LibreSSL / BoringSSL
   */
-@@ -121,7 +121,7 @@ static inline const OCSP_CERTID *OCSP_SINGLERESP_get0_id(const OCSP_SINGLERESP *
+@@ -121,7 +121,7 @@
  
  #endif
  
@@ -20,10 +19,9 @@ index b6fe1d2..551cae2 100644
  /*
   * Functions introduced in OpenSSL 1.1.0 and not yet present in LibreSSL
   */
-diff --git a/src/ssl_sock.c src/ssl_sock.c
-index c2b5bf6..ebde76d 100644
---- a/src/ssl_sock.c
-+++ src/ssl_sock.c
+diff -ru a/src/ssl_sock.c src/ssl_sock.c
+--- a/src/ssl_sock.c	2019-02-11 08:16:19.000000000 -0500
++++ src/ssl_sock.c	2019-04-14 11:58:25.820742830 -0400
 @@ -56,6 +56,14 @@
  #include <openssl/engine.h>
  #endif
@@ -39,7 +37,7 @@ index c2b5bf6..ebde76d 100644
  #if (OPENSSL_VERSION_NUMBER >= 0x1010000fL) && !defined(OPENSSL_NO_ASYNC)
  #include <openssl/async.h>
  #endif
-@@ -2066,7 +2074,7 @@ static void ssl_sock_switchctx_set(SSL *ssl, SSL_CTX *ctx)
+@@ -2093,7 +2101,7 @@
  	SSL_set_SSL_CTX(ssl, ctx);
  }
  
@@ -48,16 +46,25 @@ index c2b5bf6..ebde76d 100644
  
  static int ssl_sock_switchctx_err_cbk(SSL *ssl, int *al, void *priv)
  {
-@@ -3798,7 +3806,7 @@ ssl_sock_initial_ctx(struct bind_conf *bind_conf)
+@@ -3830,7 +3838,7 @@
  #ifdef OPENSSL_IS_BORINGSSL
  	SSL_CTX_set_select_certificate_cb(ctx, ssl_sock_switchctx_cbk);
  	SSL_CTX_set_tlsext_servername_callback(ctx, ssl_sock_switchctx_err_cbk);
 -#elif (OPENSSL_VERSION_NUMBER >= 0x10101000L)
 +#elif (OPENSSL_VERSION_NUMBER >= 0x10101000L) && !defined(LIBRESSL_VERSION_NUMBER)
- 	SSL_CTX_set_client_hello_cb(ctx, ssl_sock_switchctx_cbk, NULL);
- 	SSL_CTX_set_tlsext_servername_callback(ctx, ssl_sock_switchctx_err_cbk);
- #else
-@@ -5052,7 +5060,7 @@ int ssl_sock_handshake(struct connection *conn, unsigned int flag)
+ 	if (bind_conf->ssl_conf.early_data) {
+ 		SSL_CTX_set_options(ctx, SSL_OP_NO_ANTI_REPLAY);
+ 		SSL_CTX_set_max_early_data(ctx, global.tune.bufsize - global.tune.maxrewrite);
+@@ -5081,7 +5089,7 @@
+ 
+ 		/* leave init state and start handshake */
+ 		conn->flags |= CO_FL_SSL_WAIT_HS | CO_FL_WAIT_L6_CONN;
+-#if OPENSSL_VERSION_NUMBER >= 0x10101000L || defined(OPENSSL_IS_BORINGSSL)
++#if ((OPENSSL_VERSION_NUMBER >= 0x10101000L) || defined(OPENSSL_IS_BORINGSSL)) && !defined(LIBRESSL_VERSION_NUMBER)
+ 		conn->flags |= CO_FL_EARLY_SSL_HS;
+ #endif
+ 
+@@ -5111,7 +5119,7 @@
  	if (!conn->xprt_ctx)
  		goto out_error;
  
@@ -66,7 +73,25 @@ index c2b5bf6..ebde76d 100644
  	/*
  	 * Check if we have early data. If we do, we have to read them
  	 * before SSL_do_handshake() is called, And there's no way to
-@@ -5252,7 +5260,7 @@ check_error:
+@@ -5187,7 +5195,7 @@
+ 					OSSL_HANDSHAKE_STATE state = SSL_get_state((SSL *)conn->xprt_ctx);
+ 					empty_handshake = state == TLS_ST_BEFORE;
+ #else
+-					empty_handshake = !((SSL *)conn->xprt_ctx)->packet_length;
++					empty_handshake = SSL_state((SSL *)conn->xprt_ctx) == SSL_ST_BEFORE;
+ #endif
+ 					if (empty_handshake) {
+ 						if (!errno) {
+@@ -5271,7 +5279,7 @@
+ 				OSSL_HANDSHAKE_STATE state = SSL_get_state((SSL *)conn->xprt_ctx);
+ 				empty_handshake = state == TLS_ST_BEFORE;
+ #else
+-				empty_handshake = !((SSL *)conn->xprt_ctx)->packet_length;
++				empty_handshake = SSL_state((SSL *)conn->xprt_ctx) == SSL_ST_BEFORE;
+ #endif
+ 				if (empty_handshake) {
+ 					if (!errno) {
+@@ -5311,7 +5319,7 @@
  			goto out_error;
  		}
  	}
@@ -75,16 +100,16 @@ index c2b5bf6..ebde76d 100644
  	else {
  		/*
  		 * If the server refused the early data, we have to send a
-@@ -5375,7 +5383,7 @@ static int ssl_sock_to_buf(struct connection *conn, struct buffer *buf, int coun
+@@ -5434,7 +5442,7 @@
  			continue;
  		}
  
 -#if (OPENSSL_VERSION_NUMBER >= 0x10101000L)
-+#if OPENSSL_READ_EARLY
++#if HAVE_SSL_READ_EARLY
  		if (conn->flags & CO_FL_EARLY_SSL_HS) {
  			size_t read_length;
  
-@@ -5512,7 +5520,7 @@ static int ssl_sock_from_buf(struct connection *conn, struct buffer *buf, int fl
+@@ -5571,7 +5579,7 @@
  	 * in which case we accept to do it once again.
  	 */
  	while (buf->o) {
@@ -93,7 +118,7 @@ index c2b5bf6..ebde76d 100644
  		size_t written_data;
  #endif
  
-@@ -5531,7 +5539,7 @@ static int ssl_sock_from_buf(struct connection *conn, struct buffer *buf, int fl
+@@ -5590,7 +5598,7 @@
  			conn->xprt_st |= SSL_SOCK_SEND_UNLIMITED;
  		}
  

@@ -1,0 +1,86 @@
+From f4c3c329588b78af63aad8b401da767242b86709 Mon Sep 17 00:00:00 2001
+From: Raphael Kubo da Costa <raphael.kubo.da.costa@intel.com>
+Date: Mon, 16 Sep 2019 17:05:42 +0000
+Subject: [PATCH] dns_util: Make DohUpgradeEntry non-const when used with
+ std::vector<>
+
+This fixes the build with libstdc++ (with most other standard libraries
+other than libc++, in fact) after commit f93a48e3 ("Allow upgrade to DoH
+during automatic mode"):
+
+../../../../../../usr/bin/../lib/gcc/x86_64-redhat-linux/8/../../../../include/c++/8/bits/stl_vector.h:351:7: error: static_assert failed due to requirement 'is_same<typename remove_cv<const DohUpgradeEntry>::type, const DohUpgradeEntry>::value' "std::vector must have a non-const, non-volatile value_type"
+      static_assert(is_same<typename remove_cv<_Tp>::type, _Tp>::value,
+      ^             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../../base/no_destructor.h:77:28: note: in instantiation of template class 'std::vector<const net::(anonymous namespace)::DohUpgradeEntry, std::allocator<const net::(anonymous namespace)::DohUpgradeEntry> >' requested here
+  alignas(T) char storage_[sizeof(T)];
+                           ^
+../../net/dns/dns_util.cc:147:7: note: in instantiation of template class 'base::NoDestructor<std::vector<const net::(anonymous namespace)::DohUpgradeEntry, std::allocator<const net::(anonymous namespace)::DohUpgradeEntry> > >' requested here
+      upgradable_servers({
+      ^
+../../net/dns/dns_util.cc:230:36: error: invalid range expression of type 'const std::vector<const net::(anonymous namespace)::DohUpgradeEntry, std::allocator<const net::(anonymous namespace)::DohUpgradeEntry> >'; no viable 'begin' function available
+    for (const auto& upgrade_entry : upgradable_servers) {
+                                   ^ ~~~~~~~~~~~~~~~~~~
+
+The C++ standard forbids containers of const elements. Callers of
+GetDohUpgradeList() use it in a safe way anyway, and most of
+DohUpgradeEntry's members are const.
+
+Bug: 957519
+Change-Id: I826a51823edb1184c0fae27105101e2894efe568
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/1805636
+Auto-Submit: Raphael Kubo da Costa <raphael.kubo.da.costa@intel.com>
+Commit-Queue: Eric Orth <ericorth@chromium.org>
+Reviewed-by: Eric Orth <ericorth@chromium.org>
+Cr-Commit-Position: refs/heads/master@{#696834}
+---
+ net/dns/dns_util.cc | 13 +++++--------
+ 1 file changed, 5 insertions(+), 8 deletions(-)
+
+diff --git a/net/dns/dns_util.cc b/net/dns/dns_util.cc
+index d83ff7c150..14997c48b2 100644
+--- net/dns/dns_util.cc
++++ net/dns/dns_util.cc
+@@ -139,11 +139,11 @@ struct DohUpgradeEntry {
+   const DnsConfig::DnsOverHttpsServerConfig dns_over_https_config;
+ };
+ 
+-const std::vector<const DohUpgradeEntry>& GetDohUpgradeList() {
++const std::vector<DohUpgradeEntry>& GetDohUpgradeList() {
+   // The provider names in these entries should be kept in sync with the
+   // DohProviderId histogram suffix list in
+   // tools/metrics/histograms/histograms.xml.
+-  static const base::NoDestructor<std::vector<const DohUpgradeEntry>>
++  static const base::NoDestructor<std::vector<DohUpgradeEntry>>
+       upgradable_servers({
+           DohUpgradeEntry(
+               "CleanBrowsingAdult",
+@@ -222,8 +222,7 @@ const std::vector<const DohUpgradeEntry>& GetDohUpgradeList() {
+ std::vector<const DohUpgradeEntry*> GetDohUpgradeEntriesFromNameservers(
+     const std::vector<IPEndPoint>& dns_servers,
+     const std::vector<std::string>& excluded_providers) {
+-  const std::vector<const DohUpgradeEntry>& upgradable_servers =
+-      GetDohUpgradeList();
++  const std::vector<DohUpgradeEntry>& upgradable_servers = GetDohUpgradeList();
+   std::vector<const DohUpgradeEntry*> entries;
+ 
+   for (const auto& server : dns_servers) {
+@@ -417,8 +416,7 @@ std::vector<DnsConfig::DnsOverHttpsServerConfig>
+ GetDohUpgradeServersFromDotHostname(
+     const std::string& dot_server,
+     const std::vector<std::string>& excluded_providers) {
+-  const std::vector<const DohUpgradeEntry>& upgradable_servers =
+-      GetDohUpgradeList();
++  const std::vector<DohUpgradeEntry>& upgradable_servers = GetDohUpgradeList();
+   std::vector<DnsConfig::DnsOverHttpsServerConfig> doh_servers;
+ 
+   if (dot_server.empty())
+@@ -451,8 +449,7 @@ GetDohUpgradeServersFromNameservers(
+ 
+ std::string GetDohProviderIdForHistogramFromDohConfig(
+     const DnsConfig::DnsOverHttpsServerConfig& doh_server) {
+-  const std::vector<const DohUpgradeEntry>& upgradable_servers =
+-      GetDohUpgradeList();
++  const std::vector<DohUpgradeEntry>& upgradable_servers = GetDohUpgradeList();
+   for (const auto& upgrade_entry : upgradable_servers) {
+     if (doh_server.server_template ==
+         upgrade_entry.dns_over_https_config.server_template) {

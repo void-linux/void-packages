@@ -1,0 +1,2970 @@
+This adds big endian support/fixes in addition to the base ppc64le patch.
+
+Ping q66 if you're updating qt5 and the patch does not apply anymore.
+
+Source: https://wiki.raptorcs.com/w/index.php?title=Porting/Chromium/BE
+
+--- qtwebengine/src/3rdparty/chromium/base/allocator/partition_allocator/partition_alloc.cc
++++ qtwebengine/src/3rdparty/chromium/base/allocator/partition_allocator/partition_alloc.cc
+@@ -440,7 +440,7 @@ static size_t PartitionPurgePage(internal::PartitionPage* page, bool discard) {
+ #endif
+       }
+       // Terminate the freelist chain.
+-      *entry_ptr = nullptr;
++      *entry_ptr = internal::PartitionFreelistEntry::Transform(nullptr);
+       // The freelist head is stored unmasked.
+       page->freelist_head =
+           internal::PartitionFreelistEntry::Transform(page->freelist_head);
+--- qtwebengine/src/3rdparty/chromium/base/i18n/icu_util.cc
++++ qtwebengine/src/3rdparty/chromium/base/i18n/icu_util.cc
+@@ -75,7 +75,11 @@ wchar_t g_debug_icu_pf_filename[_MAX_PATH];
+ // No need to change the filename in multiple places (gyp files, windows
+ // build pkg configurations, etc). 'l' stands for Little Endian.
+ // This variable is exported through the header file.
++#if defined(ARCH_CPU_LITTLE_ENDIAN)
+ const char kIcuDataFileName[] = "icudtl.dat";
++#else
++const char kIcuDataFileName[] = "icudtb.dat";
++#endif
+ #if defined(OS_ANDROID)
+ const char kAndroidAssetsIcuDataFileName[] = "assets/icudtl.dat";
+ #endif
+--- qtwebengine/src/3rdparty/chromium/base/memory/shared_memory_mapping_unittest.cc
++++ qtwebengine/src/3rdparty/chromium/base/memory/shared_memory_mapping_unittest.cc
+@@ -12,6 +12,7 @@
+ #include "base/containers/span.h"
+ #include "base/memory/read_only_shared_memory_region.h"
+ #include "testing/gtest/include/gtest/gtest.h"
++#include "base/sys_byteorder.h"
+ 
+ namespace base {
+ 
+@@ -69,8 +70,8 @@ TEST_F(SharedMemoryMappingTest, SpanWithAutoDeducedElementCount) {
+ 
+   for (size_t i = 0; i < write_span.size(); ++i)
+     write_span[i] = i + 1;
+-  EXPECT_EQ(0x04030201u, read_span[0]);
+-  EXPECT_EQ(0x08070605u, read_span[1]);
++  EXPECT_EQ(HostToNet32(0x01020304u), read_span[0]);
++  EXPECT_EQ(HostToNet32(0x05060708u), read_span[1]);
+ }
+ 
+ TEST_F(SharedMemoryMappingTest, SpanWithExplicitElementCount) {
+@@ -95,13 +96,13 @@ TEST_F(SharedMemoryMappingTest, SpanWithExplicitElementCount) {
+ 
+   for (size_t i = 0; i < write_span.size(); ++i)
+     write_span[i] = i + 1;
+-  EXPECT_EQ(0x04030201u, read_span[0]);
+-  EXPECT_EQ(0x08070605u, read_span[1]);
+-  EXPECT_EQ(0x04030201u, read_span_2[0]);
++  EXPECT_EQ(HostToNet32(0x01020304u), read_span[0]);
++  EXPECT_EQ(HostToNet32(0x05060708u), read_span[1]);
++  EXPECT_EQ(HostToNet32(0x01020304u), read_span_2[0]);
+ 
+   std::fill(write_span_2.begin(), write_span_2.end(), 0);
+   EXPECT_EQ(0u, read_span[0]);
+-  EXPECT_EQ(0x08070605u, read_span[1]);
++  EXPECT_EQ(HostToNet32(0x05060708u), read_span[1]);
+   EXPECT_EQ(0u, read_span_2[0]);
+ }
+ 
+--- qtwebengine/src/3rdparty/chromium/base/metrics/bucket_ranges_unittest.cc
++++ qtwebengine/src/3rdparty/chromium/base/metrics/bucket_ranges_unittest.cc
+@@ -7,6 +7,7 @@
+ #include <stdint.h>
+ 
+ #include "testing/gtest/include/gtest/gtest.h"
++#include "base/sys_byteorder.h"
+ 
+ namespace base {
+ namespace {
+@@ -64,13 +65,21 @@ TEST(BucketRangesTest, Checksum) {
+   ranges.set_range(2, 2);
+ 
+   ranges.ResetChecksum();
++#if defined(ARCH_CPU_LITTLE_ENDIAN)
+   EXPECT_EQ(289217253u, ranges.checksum());
++#else
++  EXPECT_EQ(2767231596u, ranges.checksum());
++#endif
+ 
+   ranges.set_range(2, 3);
+   EXPECT_FALSE(ranges.HasValidChecksum());
+ 
+   ranges.ResetChecksum();
++#if defined(ARCH_CPU_LITTLE_ENDIAN)
+   EXPECT_EQ(2843835776u, ranges.checksum());
++#else
++  EXPECT_EQ(3556223738u, ranges.checksum());
++#endif
+   EXPECT_TRUE(ranges.HasValidChecksum());
+ }
+ 
+--- qtwebengine/src/3rdparty/chromium/base/pickle.cc
++++ qtwebengine/src/3rdparty/chromium/base/pickle.cc
+@@ -82,7 +82,12 @@ inline const char* PickleIterator::GetReadPointerAndAdvance(
+ }
+ 
+ bool PickleIterator::ReadBool(bool* result) {
+-  return ReadBuiltinType(result);
++  int int_result;
++  if (ReadBuiltinType(&int_result)) {
++    *result = static_cast<bool>(int_result);
++    return true;
++  } else
++    return false;
+ }
+ 
+ bool PickleIterator::ReadInt(int* result) {
+--- qtwebengine/src/3rdparty/chromium/base/sha1.cc
++++ qtwebengine/src/3rdparty/chromium/base/sha1.cc
+@@ -110,8 +110,10 @@ void SecureHashAlgorithm::Final() {
+   Pad();
+   Process();
+ 
++#if defined(ARCH_CPU_LITTLE_ENDIAN)
+   for (auto& t : H)
+     t = ByteSwap(t);
++#endif
+ }
+ 
+ void SecureHashAlgorithm::Update(const void* data, size_t nbytes) {
+@@ -157,8 +159,10 @@ void SecureHashAlgorithm::Process() {
+   //
+   // W and M are in a union, so no need to memcpy.
+   // memcpy(W, M, sizeof(M));
++#if defined(ARCH_CPU_LITTLE_ENDIAN)
+   for (t = 0; t < 16; ++t)
+     W[t] = ByteSwap(W[t]);
++#endif
+ 
+   // b.
+   for (t = 16; t < 80; ++t)
+--- qtwebengine/src/3rdparty/chromium/base/strings/string_number_conversions_unittest.cc
++++ qtwebengine/src/3rdparty/chromium/base/strings/string_number_conversions_unittest.cc
+@@ -829,12 +829,21 @@ TEST(StringNumberConversionsTest, DoubleToString) {
+   }
+ 
+   // The following two values were seen in crashes in the wild.
++#if defined(ARCH_CPU_LITTLE_ENDIAN)
+   const char input_bytes[8] = {0, 0, 0, 0, '\xee', '\x6d', '\x73', '\x42'};
++#else
++  const char input_bytes[8] = {'\x42', '\x73', '\x6d', '\xee', 0, 0, 0, 0};
++#endif
+   double input = 0;
+   memcpy(&input, input_bytes, base::size(input_bytes));
+   EXPECT_EQ("1335179083776", NumberToString(input));
++#if defined(ARCH_CPU_LITTLE_ENDIAN)
+   const char input_bytes2[8] =
+       {0, 0, 0, '\xa0', '\xda', '\x6c', '\x73', '\x42'};
++#else
++  const char input_bytes2[8] =
++      {'\x42', '\x73', '\x6c', '\xda', '\xa0', 0, 0, 0};
++#endif
+   input = 0;
+   memcpy(&input, input_bytes2, base::size(input_bytes2));
+   EXPECT_EQ("1334890332160", NumberToString(input));
+--- qtwebengine/src/3rdparty/chromium/base/third_party/dmg_fp/dtoa.cc
++++ qtwebengine/src/3rdparty/chromium/base/third_party/dmg_fp/dtoa.cc
+@@ -186,7 +186,11 @@
+  *	used for input more than STRTOD_DIGLIM digits long (default 40).
+  */
+ 
++#ifdef __BIG_ENDIAN__
++#define IEEE_MC68k
++#else
+ #define IEEE_8087
++#endif
+ #define NO_HEX_FP
+ 
+ #ifndef Long
+--- qtwebengine/src/3rdparty/chromium/components/safe_browsing/db/util_unittest.cc
++++ qtwebengine/src/3rdparty/chromium/components/safe_browsing/db/util_unittest.cc
+@@ -12,6 +12,12 @@
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "url/gurl.h"
+ 
++#if defined(OS_WIN)
++#include <winsock2.h>
++#elif defined(OS_POSIX)
++#include <arpa/inet.h>
++#endif
++
+ namespace safe_browsing {
+ 
+ TEST(SafeBrowsingDbUtilTest, UrlToFullHashes) {
+@@ -83,7 +89,7 @@ TEST(SafeBrowsingDbUtilTest, StringToSBFullHashAndSBFullHashToString) {
+   // 31 chars plus the last \0 as full_hash.
+   const std::string hash_in = "12345678902234567890323456789012";
+   SBFullHash hash_out = StringToSBFullHash(hash_in);
+-  EXPECT_EQ(0x34333231U, hash_out.prefix);
++  EXPECT_EQ(htonl(0x31323334U), hash_out.prefix);
+   EXPECT_EQ(0, memcmp(hash_in.data(), hash_out.full_hash, sizeof(SBFullHash)));
+ 
+   std::string hash_final = SBFullHashToString(hash_out);
+--- qtwebengine/src/3rdparty/chromium/components/safe_browsing/db/v4_rice.cc
++++ qtwebengine/src/3rdparty/chromium/components/safe_browsing/db/v4_rice.cc
+@@ -8,6 +8,7 @@
+ #include "base/logging.h"
+ #include "base/numerics/safe_math.h"
+ #include "base/strings/stringprintf.h"
++#include "base/sys_byteorder.h"
+ #include "build/build_config.h"
+ #include "components/safe_browsing/db/v4_rice.h"
+ 
+@@ -21,10 +22,6 @@ using ::google::protobuf::RepeatedField;
+ using ::google::protobuf::int32;
+ using ::google::protobuf::int64;
+ 
+-#if !defined(ARCH_CPU_LITTLE_ENDIAN) || (ARCH_CPU_LITTLE_ENDIAN != 1)
+-#error The code below assumes little-endianness.
+-#endif
+-
+ namespace safe_browsing {
+ 
+ namespace {
+@@ -117,7 +114,7 @@ V4DecodeResult V4RiceDecoder::DecodePrefixes(const int64 first_value,
+   out->reserve((num_entries + 1));
+ 
+   base::CheckedNumeric<uint32_t> last_value(first_value);
+-  out->push_back(htonl(last_value.ValueOrDie()));
++  out->push_back(base::ByteSwap(static_cast<uint32_t>(last_value.ValueOrDie())));
+ 
+   if (num_entries > 0) {
+     V4RiceDecoder decoder(rice_parameter, num_entries, encoded_data);
+@@ -136,7 +133,7 @@ V4DecodeResult V4RiceDecoder::DecodePrefixes(const int64 first_value,
+ 
+       // This flipping is done so that the decoded uint32 is interpreted
+       // correcly as a string of 4 bytes.
+-      out->push_back(htonl(last_value.ValueOrDie()));
++      out->push_back(base::ByteSwap(static_cast<uint32_t>(last_value.ValueOrDie())));
+     }
+   }
+ 
+--- qtwebengine/src/3rdparty/chromium/components/safe_browsing/db/v4_rice_unittest.cc
++++ qtwebengine/src/3rdparty/chromium/components/safe_browsing/db/v4_rice_unittest.cc
+@@ -6,6 +6,12 @@
+ #include "base/logging.h"
+ #include "testing/platform_test.h"
+ 
++#if defined(OS_WIN)
++#include <winsock2.h>
++#elif defined(OS_POSIX)
++#include <arpa/inet.h>
++#endif
++
+ using ::google::protobuf::RepeatedField;
+ using ::google::protobuf::int32;
+ 
+@@ -247,7 +253,7 @@ TEST_F(V4RiceTest, TestDecoderPrefixesWithOneValue) {
+   EXPECT_EQ(DECODE_SUCCESS,
+             V4RiceDecoder::DecodePrefixes(0x69F67F51u, 2, 0, "", &out));
+   EXPECT_EQ(1u, out.size());
+-  EXPECT_EQ(0x69F67F51u, out[0]);
++  EXPECT_EQ(htonl(0x517FF669u), out[0]);
+ }
+ 
+ TEST_F(V4RiceTest, TestDecoderPrefixesWithMultipleValues) {
+@@ -256,7 +262,7 @@ TEST_F(V4RiceTest, TestDecoderPrefixesWithMultipleValues) {
+             V4RiceDecoder::DecodePrefixes(
+                 5, 28, 3, "\xbf\xa8\x3f\xfb\xf\xf\x5e\x27\xe6\xc3\x1d\xc6\x38",
+                 &out));
+-  std::vector<uint32_t> expected = {5, 0xad934c0cu, 0x6ff67f56u, 0x81316fceu};
++  std::vector<uint32_t> expected = {htonl(0x05000000), htonl(0x0c4c93adu), htonl(0x567ff66fu), htonl(0xce6f3181u)};
+   EXPECT_EQ(expected.size(), out.size());
+   for (unsigned i = 0; i < expected.size(); i++) {
+     EXPECT_EQ(expected[i], out[i]);
+--- qtwebengine/src/3rdparty/chromium/media/ffmpeg/ffmpeg_common.cc
++++ qtwebengine/src/3rdparty/chromium/media/ffmpeg/ffmpeg_common.cc
+@@ -686,10 +686,6 @@ ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout, int channels) {
+   }
+ }
+ 
+-#if !defined(ARCH_CPU_LITTLE_ENDIAN)
+-#error The code below assumes little-endianness.
+-#endif
+-
+ VideoPixelFormat AVPixelFormatToVideoPixelFormat(AVPixelFormat pixel_format) {
+   // The YUVJ alternatives are FFmpeg's (deprecated, but still in use) way to
+   // specify a pixel format and full range color combination.
+--- qtwebengine/src/3rdparty/chromium/media/formats/mp4/box_definitions.cc
++++ qtwebengine/src/3rdparty/chromium/media/formats/mp4/box_definitions.cc
+@@ -1107,15 +1107,14 @@ bool OpusSpecificBox::Parse(BoxReader* reader) {
+   RCHECK(reader->Read4(&sample_rate));
+   RCHECK(reader->Read2s(&gain_db));
+ 
+-#if !defined(ARCH_CPU_LITTLE_ENDIAN)
+-#error The code below assumes little-endianness.
+-#endif
+-
+-  memcpy(&extradata[OPUS_EXTRADATA_SKIP_SAMPLES_OFFSET], &codec_delay_in_frames,
+-         sizeof(codec_delay_in_frames));
+-  memcpy(&extradata[OPUS_EXTRADATA_SAMPLE_RATE_OFFSET], &sample_rate,
+-         sizeof(sample_rate));
+-  memcpy(&extradata[OPUS_EXTRADATA_GAIN_OFFSET], &gain_db, sizeof(gain_db));
++  extradata[OPUS_EXTRADATA_SKIP_SAMPLES_OFFSET] = (codec_delay_in_frames >> 0) & 0xff;
++  extradata[OPUS_EXTRADATA_SKIP_SAMPLES_OFFSET+1] = (codec_delay_in_frames >> 8) & 0xff;
++  extradata[OPUS_EXTRADATA_SAMPLE_RATE_OFFSET] = (sample_rate >> 0) & 0xff;
++  extradata[OPUS_EXTRADATA_SAMPLE_RATE_OFFSET+1] = (sample_rate >> 8) & 0xff;
++  extradata[OPUS_EXTRADATA_SAMPLE_RATE_OFFSET+2] = (sample_rate >> 16) & 0xff;
++  extradata[OPUS_EXTRADATA_SAMPLE_RATE_OFFSET+3] = (sample_rate >> 24) & 0xff;
++  extradata[OPUS_EXTRADATA_GAIN_OFFSET] = (gain_db >> 0) & 0xff;
++  extradata[OPUS_EXTRADATA_GAIN_OFFSET+1] = (gain_db >> 8) & 0xff;
+ 
+   channel_count = extradata[OPUS_EXTRADATA_CHANNELS_OFFSET];
+ 
+--- qtwebengine/src/3rdparty/chromium/media/renderers/paint_canvas_video_renderer.cc
++++ qtwebengine/src/3rdparty/chromium/media/renderers/paint_canvas_video_renderer.cc
+@@ -31,8 +31,7 @@
+ 
+ // Skia internal format depends on a platform. On Android it is ABGR, on others
+ // it is ARGB.
+-#if SK_B32_SHIFT == 0 && SK_G32_SHIFT == 8 && SK_R32_SHIFT == 16 && \
+-    SK_A32_SHIFT == 24
++#if SK_PMCOLOR_BYTE_ORDER(B,G,R,A)
+ #define LIBYUV_I420_TO_ARGB libyuv::I420ToARGB
+ #define LIBYUV_I422_TO_ARGB libyuv::I422ToARGB
+ #define LIBYUV_I444_TO_ARGB libyuv::I444ToARGB
+@@ -42,8 +41,7 @@
+ #define LIBYUV_I010_TO_ARGB libyuv::I010ToARGB
+ #define LIBYUV_H010_TO_ARGB libyuv::H010ToARGB
+ #define LIBYUV_NV12_TO_ARGB libyuv::NV12ToARGB
+-#elif SK_R32_SHIFT == 0 && SK_G32_SHIFT == 8 && SK_B32_SHIFT == 16 && \
+-    SK_A32_SHIFT == 24
++#elif SK_PMCOLOR_BYTE_ORDER(R,G,B,A)
+ #define LIBYUV_I420_TO_ARGB libyuv::I420ToABGR
+ #define LIBYUV_I422_TO_ARGB libyuv::I422ToABGR
+ #define LIBYUV_I444_TO_ARGB libyuv::I444ToABGR
+--- qtwebengine/src/3rdparty/chromium/net/cert/crl_set.cc
++++ qtwebengine/src/3rdparty/chromium/net/cert/crl_set.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "base/base64.h"
+ #include "base/json/json_reader.h"
++#include "base/sys_byteorder.h"
+ #include "base/time/time.h"
+ #include "base/trace_event/trace_event.h"
+ #include "base/values.h"
+@@ -44,9 +45,9 @@ base::DictionaryValue* ReadHeader(base::StringPiece* data) {
+   uint16_t header_len;
+   if (data->size() < sizeof(header_len))
+     return nullptr;
+-  // Assumes little-endian.
+   memcpy(&header_len, data->data(), sizeof(header_len));
+   data->remove_prefix(sizeof(header_len));
++  header_len = base::ByteSwapToLE16(header_len);
+ 
+   if (data->size() < header_len)
+     return nullptr;
+@@ -79,9 +80,9 @@ bool ReadCRL(base::StringPiece* data,
+   uint32_t num_serials;
+   if (data->size() < sizeof(num_serials))
+     return false;
+-  // Assumes little endian.
+   memcpy(&num_serials, data->data(), sizeof(num_serials));
+   data->remove_prefix(sizeof(num_serials));
++  num_serials = base::ByteSwapToLE32(num_serials);
+ 
+   if (num_serials > 32 * 1024 * 1024)  // Sanity check.
+     return false;
+@@ -192,15 +193,6 @@ CRLSet::~CRLSet() = default;
+ // static
+ bool CRLSet::Parse(base::StringPiece data, scoped_refptr<CRLSet>* out_crl_set) {
+   TRACE_EVENT0(NetTracingCategory(), "CRLSet::Parse");
+-// Other parts of Chrome assume that we're little endian, so we don't lose
+-// anything by doing this.
+-#if defined(__BYTE_ORDER)
+-  // Linux check
+-  static_assert(__BYTE_ORDER == __LITTLE_ENDIAN, "assumes little endian");
+-#elif defined(__BIG_ENDIAN__)
+-// Mac check
+-#error assumes little endian
+-#endif
+ 
+   std::unique_ptr<base::DictionaryValue> header_dict(ReadHeader(&data));
+   if (!header_dict.get())
+--- qtwebengine/src/3rdparty/chromium/sandbox/linux/bpf_dsl/seccomp_macros.h
++++ qtwebengine/src/3rdparty/chromium/sandbox/linux/bpf_dsl/seccomp_macros.h
+@@ -377,6 +377,7 @@ typedef struct pt_regs regs_struct;
+ 
+ #define SECCOMP_NR_IDX (offsetof(struct arch_seccomp_data, nr))
+ #define SECCOMP_ARCH_IDX (offsetof(struct arch_seccomp_data, arch))
++#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+ #define SECCOMP_IP_MSB_IDX \
+   (offsetof(struct arch_seccomp_data, instruction_pointer) + 4)
+ #define SECCOMP_IP_LSB_IDX \
+@@ -385,6 +386,16 @@ typedef struct pt_regs regs_struct;
+   (offsetof(struct arch_seccomp_data, args) + 8 * (nr) + 4)
+ #define SECCOMP_ARG_LSB_IDX(nr) \
+   (offsetof(struct arch_seccomp_data, args) + 8 * (nr) + 0)
++#else
++#define SECCOMP_IP_MSB_IDX \
++  (offsetof(struct arch_seccomp_data, instruction_pointer) + 0)
++#define SECCOMP_IP_LSB_IDX \
++  (offsetof(struct arch_seccomp_data, instruction_pointer) + 4)
++#define SECCOMP_ARG_MSB_IDX(nr) \
++  (offsetof(struct arch_seccomp_data, args) + 8 * (nr) + 0)
++#define SECCOMP_ARG_LSB_IDX(nr) \
++  (offsetof(struct arch_seccomp_data, args) + 8 * (nr) + 4)
++#endif
+ 
+ #define SECCOMP_PT_RESULT(_regs) (_regs).gpr[3]
+ #define SECCOMP_PT_SYSCALL(_regs) (_regs).gpr[0]
+--- qtwebengine/src/3rdparty/chromium/skia/config/SkUserConfig.h
++++ qtwebengine/src/3rdparty/chromium/skia/config/SkUserConfig.h
+@@ -90,11 +90,18 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
+     __FILE__, __LINE__, #cond); } } while (false)
+ 
+ #if !defined(ANDROID)   // On Android, we use the skia default settings.
++#if defined(SK_CPU_BENDIAN)
++#define SK_A32_SHIFT    0
++#define SK_R32_SHIFT    8
++#define SK_G32_SHIFT    16
++#define SK_B32_SHIFT    24
++#else
+ #define SK_A32_SHIFT    24
+ #define SK_R32_SHIFT    16
+ #define SK_G32_SHIFT    8
+ #define SK_B32_SHIFT    0
+ #endif
++#endif
+ 
+ #if defined(SK_BUILD_FOR_MAC)
+ 
+@@ -108,17 +115,6 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
+ // we should revisit this choice...
+ #define SK_USE_FREETYPE_EMBOLDEN
+ 
+-#if defined(SK_BUILD_FOR_UNIX) && defined(SK_CPU_BENDIAN)
+-// Above we set the order for ARGB channels in registers. I suspect that, on
+-// big endian machines, you can keep this the same and everything will work.
+-// The in-memory order will be different, of course, but as long as everything
+-// is reading memory as words rather than bytes, it will all work. However, if
+-// you find that colours are messed up I thought that I would leave a helpful
+-// locator for you. Also see the comments in
+-// base/gfx/bitmap_platform_device_linux.h
+-#error Read the comment at this location
+-#endif
+-
+ #endif
+ 
+ // The default crash macro writes to badbeef which can cause some strange
+--- qtwebengine/src/3rdparty/chromium/skia/ext/image_operations_unittest.cc
++++ qtwebengine/src/3rdparty/chromium/skia/ext/image_operations_unittest.cc
+@@ -18,9 +18,11 @@
+ #include "skia/ext/image_operations.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "third_party/skia/include/core/SkBitmap.h"
++#include "third_party/skia/include/core/SkColorPriv.h"
+ #include "third_party/skia/include/core/SkColorSpace.h"
+ #include "third_party/skia/include/core/SkImageInfo.h"
+ #include "third_party/skia/include/core/SkRect.h"
++#include "third_party/skia/include/core/SkUnPreMultiply.h"
+ #include "ui/gfx/codec/png_codec.h"
+ #include "ui/gfx/geometry/size.h"
+ 
+@@ -151,7 +153,7 @@ void DrawCheckerToBitmap(int w, int h,
+ 
+       bool use_color2 = (x_bit != y_bit);  // xor
+ 
+-      *bmp->getAddr32(x, y) = (use_color2 ? color2 : color1);
++      *bmp->getAddr32(x, y) = SkPreMultiplyColor(use_color2 ? color2 : color1);
+     }
+   }
+ }
+@@ -273,7 +275,7 @@ void CheckResizeMethodShouldAverageGrid(
+         std::max(tested_pixel.max_color_distance,
+                  tested_method.max_color_distance_override);
+ 
+-    const SkColor actual_color = *dest.getAddr32(x, y);
++    const SkColor actual_color = SkUnPreMultiply::PMColorToColor(*dest.getAddr32(x, y));
+ 
+     // Check that the pixels away from the border region are very close
+     // to the expected average color
+@@ -528,7 +530,7 @@ TEST(ImageOperations, ScaleUp) {
+   for (int src_y = 0; src_y < src_h; ++src_y) {
+     for (int src_x = 0; src_x < src_w; ++src_x) {
+       *src.getAddr32(src_x, src_y) =
+-          SkColorSetARGB(255, 10 + src_x * 100, 10 + src_y * 100, 0);
++          SkPackARGB32(255, 10 + src_x * 100, 10 + src_y * 100, 0);
+     }
+   }
+ 
+@@ -552,7 +554,7 @@ TEST(ImageOperations, ScaleUp) {
+               lanczos3(src_x + 0.5 - dst_x_in_src) *
+               lanczos3(src_y + 0.5 - dst_y_in_src);
+           sum += coeff;
+-          SkColor tmp = *src.getAddr32(src_x, src_y);
++          SkColor tmp = SkUnPreMultiply::PMColorToColor(*src.getAddr32(src_x, src_y));
+           a += coeff * SkColorGetA(tmp);
+           r += coeff * SkColorGetR(tmp);
+           g += coeff * SkColorGetG(tmp);
+@@ -571,7 +573,7 @@ TEST(ImageOperations, ScaleUp) {
+       if (r > 255.0f) r = 255.0f;
+       if (g > 255.0f) g = 255.0f;
+       if (b > 255.0f) b = 255.0f;
+-      SkColor dst_color = *dst.getAddr32(dst_x, dst_y);
++      SkColor dst_color = SkUnPreMultiply::PMColorToColor(*dst.getAddr32(dst_x, dst_y));
+       EXPECT_LE(fabs(SkColorGetA(dst_color) - a), 1.5f);
+       EXPECT_LE(fabs(SkColorGetR(dst_color) - r), 1.5f);
+       EXPECT_LE(fabs(SkColorGetG(dst_color) - g), 1.5f);
+--- qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/graphics/gpu/webgl_image_conversion.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/graphics/gpu/webgl_image_conversion.cc
+@@ -456,8 +456,8 @@ void Unpack<WebGLImageConversion::kDataFormatBGRA8, uint8_t, uint8_t>(
+   for (unsigned i = 0; i < pixels_per_row; ++i) {
+     uint32_t bgra = source32[i];
+ #if defined(ARCH_CPU_BIG_ENDIAN)
+-    uint32_t brMask = 0xff00ff00;
+-    uint32_t gaMask = 0x00ff00ff;
++    uint32_t br_mask = 0xff00ff00;
++    uint32_t ga_mask = 0x00ff00ff;
+ #else
+     uint32_t br_mask = 0x00ff00ff;
+     uint32_t ga_mask = 0xff00ff00;
+--- qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/graphics/gpu/webgl_image_conversion_test.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/graphics/gpu/webgl_image_conversion_test.cc
+@@ -76,9 +76,9 @@ TEST_F(WebGLImageConversionTest, convertBGRA8toRGBA8) {
+                              0x34567888, 0x12345678, 0x34567888,
+                              0x12345678, 0x34567888, 0x12345678};
+ #if defined(ARCH_CPU_BIG_ENDIAN)
+-  uint32_t expectedData[9] = {0x56341278, 0x78563488, 0x56341278,
+-                              0x78563488, 0x56341278, 0x78563488,
+-                              0x56341278, 0x78563488, 0x56341278};
++  uint32_t expected_data[9] = {0x56341278, 0x78563488, 0x56341278,
++			       0x78563488, 0x56341278, 0x78563488,
++			       0x56341278, 0x78563488, 0x56341278};
+ #else
+   uint32_t expected_data[9] = {0x12785634, 0x34887856, 0x12785634,
+                                0x34887856, 0x12785634, 0x34887856,
+--- qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/graphics/graphics_context_test.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/graphics/graphics_context_test.cc
+@@ -52,7 +52,7 @@ namespace blink {
+   {                                                              \
+     for (int y = opaqueRect.Y(); y < opaqueRect.MaxY(); ++y)     \
+       for (int x = opaqueRect.X(); x < opaqueRect.MaxX(); ++x) { \
+-        int alpha = *bitmap.getAddr32(x, y) >> 24;               \
++        int alpha = SkGetPackedA32(*bitmap.getAddr32(x, y));	 \
+         EXPECT_EQ(255, alpha);                                   \
+       }                                                          \
+   }
+@@ -61,12 +61,16 @@ namespace blink {
+   {                                                           \
+     for (int y = 0; y < bitmap.height(); ++y)                 \
+       for (int x = 0; x < bitmap.width(); ++x) {              \
+-        int alpha = *bitmap.getAddr32(x, y) >> 24;            \
++        int alpha = SkGetPackedA32(*bitmap.getAddr32(x, y));  \
+         bool opaque = opaqueRect.Contains(x, y);              \
+         EXPECT_EQ(opaque, alpha == 255);                      \
+       }                                                       \
+   }
+ 
++static inline uint32_t PackARGB32(uint32_t argb) {
++  return SkPackARGB32NoCheck(argb>>24, (argb<<8)>>24, (argb<<16)>>24, (argb<<24)>>24);
++}
++
+ TEST(GraphicsContextTest, Recording) {
+   SkBitmap bitmap;
+   bitmap.allocN32Pixels(100, 100);
+@@ -184,10 +188,10 @@ class GraphicsContextHighConstrastTest : public testing::Test {
+ TEST_F(GraphicsContextHighConstrastTest, MAYBE_NoHighContrast) {
+   DrawColorsToContext();
+ 
+-  EXPECT_EQ(0xff000000, *bitmap_.getAddr32(0, 0));
+-  EXPECT_EQ(0xffffffff, *bitmap_.getAddr32(1, 0));
+-  EXPECT_EQ(0xffff0000, *bitmap_.getAddr32(2, 0));
+-  EXPECT_EQ(0xff808080, *bitmap_.getAddr32(3, 0));
++  EXPECT_EQ(PackARGB32(0xff000000), *bitmap_.getAddr32(0, 0));
++  EXPECT_EQ(PackARGB32(0xffffffff), *bitmap_.getAddr32(1, 0));
++  EXPECT_EQ(PackARGB32(0xffff0000), *bitmap_.getAddr32(2, 0));
++  EXPECT_EQ(PackARGB32(0xff808080), *bitmap_.getAddr32(3, 0));
+ }
+ 
+ // TODO(crbug.com/850782): Reenable this.
+@@ -205,10 +209,10 @@ TEST_F(GraphicsContextHighConstrastTest, MAYBE_HighContrastOff) {
+ 
+   DrawColorsToContext();
+ 
+-  EXPECT_EQ(0xff000000, *bitmap_.getAddr32(0, 0));
+-  EXPECT_EQ(0xffffffff, *bitmap_.getAddr32(1, 0));
+-  EXPECT_EQ(0xffff0000, *bitmap_.getAddr32(2, 0));
+-  EXPECT_EQ(0xff808080, *bitmap_.getAddr32(3, 0));
++  EXPECT_EQ(PackARGB32(0xff000000), *bitmap_.getAddr32(0, 0));
++  EXPECT_EQ(PackARGB32(0xffffffff), *bitmap_.getAddr32(1, 0));
++  EXPECT_EQ(PackARGB32(0xffff0000), *bitmap_.getAddr32(2, 0));
++  EXPECT_EQ(PackARGB32(0xff808080), *bitmap_.getAddr32(3, 0));
+ }
+ 
+ // Simple invert for testing. Each color component |c|
+@@ -228,10 +232,10 @@ TEST_F(GraphicsContextHighConstrastTest, MAYBE_SimpleInvertForTesting) {
+ 
+   DrawColorsToContext();
+ 
+-  EXPECT_EQ(0xffffffff, *bitmap_.getAddr32(0, 0));
+-  EXPECT_EQ(0xff000000, *bitmap_.getAddr32(1, 0));
+-  EXPECT_EQ(0xff00ffff, *bitmap_.getAddr32(2, 0));
+-  EXPECT_EQ(0xff7f7f7f, *bitmap_.getAddr32(3, 0));
++  EXPECT_EQ(PackARGB32(0xffffffff), *bitmap_.getAddr32(0, 0));
++  EXPECT_EQ(PackARGB32(0xff000000), *bitmap_.getAddr32(1, 0));
++  EXPECT_EQ(PackARGB32(0xff00ffff), *bitmap_.getAddr32(2, 0));
++  EXPECT_EQ(PackARGB32(0xff7f7f7f), *bitmap_.getAddr32(3, 0));
+ }
+ 
+ // Invert brightness (with gamma correction).
+@@ -250,10 +254,10 @@ TEST_F(GraphicsContextHighConstrastTest, MAYBE_InvertBrightness) {
+ 
+   DrawColorsToContext();
+ 
+-  EXPECT_EQ(0xffffffff, *bitmap_.getAddr32(0, 0));
+-  EXPECT_EQ(0xff000000, *bitmap_.getAddr32(1, 0));
+-  EXPECT_EQ(0xff00ffff, *bitmap_.getAddr32(2, 0));
+-  EXPECT_EQ(0xffdddddd, *bitmap_.getAddr32(3, 0));
++  EXPECT_EQ(PackARGB32(0xffffffff), *bitmap_.getAddr32(0, 0));
++  EXPECT_EQ(PackARGB32(0xff000000), *bitmap_.getAddr32(1, 0));
++  EXPECT_EQ(PackARGB32(0xff00ffff), *bitmap_.getAddr32(2, 0));
++  EXPECT_EQ(PackARGB32(0xffdddddd), *bitmap_.getAddr32(3, 0));
+ }
+ 
+ // Invert lightness (in HSL space).
+@@ -272,10 +276,10 @@ TEST_F(GraphicsContextHighConstrastTest, MAYBE_InvertLightness) {
+ 
+   DrawColorsToContext();
+ 
+-  EXPECT_EQ(0xffffffff, *bitmap_.getAddr32(0, 0));
+-  EXPECT_EQ(0xff000000, *bitmap_.getAddr32(1, 0));
+-  EXPECT_EQ(0xffff0000, *bitmap_.getAddr32(2, 0));
+-  EXPECT_EQ(0xffdddddd, *bitmap_.getAddr32(3, 0));
++  EXPECT_EQ(PackARGB32(0xffffffff), *bitmap_.getAddr32(0, 0));
++  EXPECT_EQ(PackARGB32(0xff000000), *bitmap_.getAddr32(1, 0));
++  EXPECT_EQ(PackARGB32(0xffff0000), *bitmap_.getAddr32(2, 0));
++  EXPECT_EQ(PackARGB32(0xffdddddd), *bitmap_.getAddr32(3, 0));
+ }
+ 
+ // Invert lightness plus grayscale.
+@@ -288,10 +292,10 @@ TEST_F(GraphicsContextHighConstrastTest, InvertLightnessPlusGrayscale) {
+ 
+   DrawColorsToContext();
+ 
+-  EXPECT_EQ(0xffffffff, *bitmap_.getAddr32(0, 0));
+-  EXPECT_EQ(0xff000000, *bitmap_.getAddr32(1, 0));
+-  EXPECT_EQ(0xffe2e2e2, *bitmap_.getAddr32(2, 0));
+-  EXPECT_EQ(0xffdddddd, *bitmap_.getAddr32(3, 0));
++  EXPECT_EQ(PackARGB32(0xffffffff), *bitmap_.getAddr32(0, 0));
++  EXPECT_EQ(PackARGB32(0xff000000), *bitmap_.getAddr32(1, 0));
++  EXPECT_EQ(PackARGB32(0xffe2e2e2), *bitmap_.getAddr32(2, 0));
++  EXPECT_EQ(PackARGB32(0xffdddddd), *bitmap_.getAddr32(3, 0));
+ }
+ 
+ // TODO(crbug.com/850782): Reenable this.
+@@ -309,10 +313,10 @@ TEST_F(GraphicsContextHighConstrastTest, MAYBE_InvertLightnessPlusContrast) {
+ 
+   DrawColorsToContext();
+ 
+-  EXPECT_EQ(0xffffffff, *bitmap_.getAddr32(0, 0));
+-  EXPECT_EQ(0xff000000, *bitmap_.getAddr32(1, 0));
+-  EXPECT_EQ(0xffff0000, *bitmap_.getAddr32(2, 0));
+-  EXPECT_EQ(0xffeeeeee, *bitmap_.getAddr32(3, 0));
++  EXPECT_EQ(PackARGB32(0xffffffff), *bitmap_.getAddr32(0, 0));
++  EXPECT_EQ(PackARGB32(0xff000000), *bitmap_.getAddr32(1, 0));
++  EXPECT_EQ(PackARGB32(0xffff0000), *bitmap_.getAddr32(2, 0));
++  EXPECT_EQ(PackARGB32(0xffeeeeee), *bitmap_.getAddr32(3, 0));
+ }
+ 
+ }  // namespace blink
+--- qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/graphics/highcontrast/highcontrast_classifier.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/graphics/highcontrast/highcontrast_classifier.cc
+@@ -1060,55 +1060,47 @@ void DequantizeMinFirst(const int32_t rank,
+ 
+ // -----------------------------------------------------------------------------
+ // CONSTANTS
+-// Note that for now, endianness of the target machine needs to match that of
+-// the one training was performed on.
+ // -----------------------------------------------------------------------------
+ const int32_t dnn_hiddenlayer_0_weights_part_0_shape[2] = {4, 10};
+ const union {
+-  uint8_t bytes[160];
+   float values[40];
+ } dnn_hiddenlayer_0_weights_part_0 = {{
+-    0xbc, 0x22, 0x0a, 0xbf, 0xb4, 0x46, 0x8c, 0x3f, 0xba, 0x31, 0x34, 0xbe,
+-    0x4c, 0x65, 0xdb, 0xbe, 0xf0, 0x54, 0x5e, 0xbe, 0xc1, 0x5d, 0xb3, 0x3f,
+-    0xf4, 0xe6, 0x15, 0xbf, 0x05, 0xc6, 0x34, 0xbf, 0xc0, 0x37, 0x7e, 0xbd,
+-    0x6c, 0x35, 0x0b, 0xbf, 0xca, 0x53, 0x26, 0xbf, 0x58, 0xb4, 0x87, 0x3f,
+-    0x37, 0xee, 0x39, 0xbf, 0xda, 0xfa, 0xf9, 0xbe, 0x97, 0xc1, 0x06, 0xbf,
+-    0xf9, 0x4e, 0x81, 0x3f, 0xb2, 0x44, 0x85, 0xbf, 0x7f, 0x98, 0x7c, 0x3d,
+-    0x15, 0x26, 0xbc, 0xbe, 0x5c, 0x48, 0x05, 0x3f, 0xc8, 0xaa, 0xa1, 0xbd,
+-    0x35, 0xb3, 0x43, 0xbe, 0xeb, 0x46, 0x91, 0x3f, 0x80, 0x71, 0xe3, 0x3c,
+-    0xd1, 0x98, 0x79, 0x3f, 0x3c, 0xd0, 0x0d, 0xbf, 0x1e, 0x02, 0xd3, 0x3e,
+-    0x5d, 0x4b, 0xa2, 0xbf, 0x68, 0xac, 0xaa, 0xbd, 0xf8, 0xe1, 0x75, 0x3e,
+-    0x4a, 0x9c, 0x27, 0xbe, 0xf8, 0xae, 0xb2, 0xbe, 0x7f, 0x9d, 0x91, 0x3f,
+-    0x1e, 0x8b, 0xa8, 0xbe, 0x35, 0x7e, 0xb2, 0x3f, 0xbe, 0x8c, 0xd3, 0xbe,
+-    0xf9, 0xcd, 0xb5, 0x3f, 0xa1, 0x50, 0xaa, 0x3f, 0xe4, 0x6d, 0xdd, 0xbe,
+-    0x0d, 0xce, 0xd3, 0xbe,
++     -0.539592504501343,   1.09590768814087, -0.175970941781998, -0.428507208824158,
++     -0.217120885848999,   1.40129864215851,   -0.5855553150177, -0.706146538257599,
++    -0.0620648860931396, -0.543783903121948, -0.649716019630432,   1.06019115447998,
++     -0.726291120052338, -0.488241970539093, -0.526391446590424,   1.01022255420685,
++      -1.04115891456604, 0.0616688691079617, -0.367478042840958,  0.520635366439819,
++    -0.0789390206336975,  -0.19111330807209,   1.13497674465179, 0.0277640819549561,
++      0.974988043308258, -0.553958654403687,  0.412125527858734,   -1.2679249048233,
++    -0.0833366513252258,  0.240119814872742, -0.163682132959366,  -0.34899115562439,
++        1.1376188993454, -0.329186379909515,    1.3944765329361, -0.413183152675629,
++       1.42034828662872,   1.33058559894562, -0.432479023933411, -0.413681417703629
+ }};
+ const int32_t dnn_hiddenlayer_0_biases_part_0_shape[1] = {10};
+ const union {
+-  uint8_t bytes[40];
+   float values[10];
+ } dnn_hiddenlayer_0_biases_part_0 = {{
+-    0x00, 0x00, 0x00, 0x00, 0xbf, 0x6a, 0x53, 0x3e, 0xd3, 0xc1,
+-    0xd0, 0x3e, 0x00, 0x00, 0x00, 0x00, 0xb6, 0xd8, 0xc0, 0x3e,
+-    0xca, 0xe7, 0x35, 0x3e, 0x23, 0xa5, 0x44, 0x3f, 0x61, 0xfd,
+-    0xd2, 0x3e, 0x00, 0x00, 0x00, 0x00, 0xb6, 0xe0, 0x43, 0x3c,
++                    0.0,  0.206461891531944,
++      0.407728761434555,                0.0,
++      0.376653373241425,  0.177642017602921,
++       0.76814478635788,  0.412089377641678,
++                    0.0, 0.0119554307311773
+ }};
+ const int32_t dnn_logits_biases_part_0_shape[1] = {1};
+ const union {
+-  uint8_t bytes[4];
+   float values[1];
+ } dnn_logits_biases_part_0 = {{
+-    0x75, 0xca, 0xd7, 0xbe,
++    -0.421466499567032
+ }};
+ const int32_t dnn_logits_weights_part_0_shape[2] = {10, 1};
+ const union {
+-  uint8_t bytes[40];
+   float values[10];
+ } dnn_logits_weights_part_0 = {{
+-    0x13, 0x12, 0x39, 0x3f, 0xf3, 0xa5, 0xc2, 0xbf, 0x81, 0x7f,
+-    0xbe, 0x3f, 0xf8, 0x17, 0x26, 0x3e, 0xa4, 0x19, 0xa6, 0x3f,
+-    0xf0, 0xc9, 0xb7, 0xbf, 0x6a, 0x99, 0xd2, 0x3f, 0x8a, 0x7d,
+-    0xe9, 0x3f, 0x83, 0x9a, 0x3a, 0xbf, 0xf1, 0x6c, 0x08, 0x3e,
++      0.722932040691376,  -1.52068936824799,
++       1.48826611042023,  0.162200808525085,
++       1.29765748977661,  -1.43585014343262,
++       1.64530682563782,   1.82414364814758,
++     -0.728920161724091,  0.133228078484535
+ }};
+ 
+ }  // anonymous namespace
+--- qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/image-decoders/bmp/bmp_image_reader.h
++++ qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/image-decoders/bmp/bmp_image_reader.h
+@@ -37,6 +37,7 @@
+ #include "third_party/blink/renderer/platform/wtf/allocator.h"
+ #include "third_party/blink/renderer/platform/wtf/cpu.h"
+ #include "third_party/blink/renderer/platform/wtf/noncopyable.h"
++#include "base/sys_byteorder.h"
+ 
+ namespace blink {
+ 
+@@ -50,11 +51,11 @@ class PLATFORM_EXPORT BMPImageReader final {
+   // Read a value from |buffer|, converting to an int assuming little
+   // endianness
+   static inline uint16_t ReadUint16(const char* buffer) {
+-    return *reinterpret_cast<const uint16_t*>(buffer);
++    return base::ByteSwapToLE16(*reinterpret_cast<const uint16_t*>(buffer));
+   }
+ 
+   static inline uint32_t ReadUint32(const char* buffer) {
+-    return *reinterpret_cast<const uint32_t*>(buffer);
++    return base::ByteSwapToLE32(*reinterpret_cast<const uint32_t*>(buffer));
+   }
+ 
+   // |parent| is the decoder that owns us.
+--- qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/image-decoders/jpeg/jpeg_image_decoder.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/image-decoders/jpeg/jpeg_image_decoder.cc
+@@ -49,23 +49,30 @@ extern "C" {
+ #include <setjmp.h>
+ }
+ 
+-#if defined(ARCH_CPU_BIG_ENDIAN)
+-#error Blink assumes a little-endian target.
+-#endif
+-
+ #if defined(JCS_ALPHA_EXTENSIONS)
+ #define TURBO_JPEG_RGB_SWIZZLE
+-#if SK_B32_SHIFT  // Output little-endian RGBA pixels (Android).
++#if SK_PMCOLOR_BYTE_ORDER(R, G, B, A)
+ inline J_COLOR_SPACE rgbOutputColorSpace() {
+   return JCS_EXT_RGBA;
+ }
+-#else  // Output little-endian BGRA pixels.
++#elif SK_PMCOLOR_BYTE_ORDER(B, G, R, A)
+ inline J_COLOR_SPACE rgbOutputColorSpace() {
+   return JCS_EXT_BGRA;
+ }
++#elif SK_PMCOLOR_BYTE_ORDER(A, R, G, B)
++inline J_COLOR_SPACE rgbOutputColorSpace() {
++  return JCS_EXT_ARGB;
++}
++#elif SK_PMCOLOR_BYTE_ORDER(A, B, G, R)
++inline J_COLOR_SPACE rgbOutputColorSpace() {
++  return JCS_EXT_ABGR;
++}
++#else
++#error Component order not supported by libjpeg_turbo
+ #endif
+ inline bool turboSwizzled(J_COLOR_SPACE colorSpace) {
+-  return colorSpace == JCS_EXT_RGBA || colorSpace == JCS_EXT_BGRA;
++  return colorSpace == JCS_EXT_RGBA || colorSpace == JCS_EXT_BGRA ||
++    colorSpace == JCS_EXT_ABGR || colorSpace == JCS_EXT_ARGB;
+ }
+ #else
+ inline J_COLOR_SPACE rgbOutputColorSpace() {
+--- qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/image-decoders/webp/webp_image_decoder.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/platform/image-decoders/webp/webp_image_decoder.cc
+@@ -32,18 +32,20 @@
+ #include "third_party/blink/renderer/platform/histogram.h"
+ #include "third_party/skia/include/core/SkData.h"
+ 
+-#if defined(ARCH_CPU_BIG_ENDIAN)
+-#error Blink assumes a little-endian target.
+-#endif
+-
+-#if SK_B32_SHIFT  // Output little-endian RGBA pixels (Android).
++#if SK_PMCOLOR_BYTE_ORDER(R, G, B, A)
+ inline WEBP_CSP_MODE outputMode(bool hasAlpha) {
+   return hasAlpha ? MODE_rgbA : MODE_RGBA;
+ }
+-#else  // Output little-endian BGRA pixels.
++#elif SK_PMCOLOR_BYTE_ORDER(B, G, R, A)
+ inline WEBP_CSP_MODE outputMode(bool hasAlpha) {
+   return hasAlpha ? MODE_bgrA : MODE_BGRA;
+ }
++#elif SK_PMCOLOR_BYTE_ORDER(A, R, G, B)
++inline WEBP_CSP_MODE outputMode(bool hasAlpha) {
++  return hasAlpha ? MODE_Argb : MODE_ARGB;
++}
++#else
++#error Component order not supported by libwebp
+ #endif
+ 
+ namespace {
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/asn1/a_int.c
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/asn1/a_int.c
+@@ -369,7 +369,9 @@ int ASN1_INTEGER_set_uint64(ASN1_INTEGER *out, uint64_t v)
+ 
+     OPENSSL_free(out->data);
+     out->data = newdata;
++#ifndef OPENSSL_BIGENDIAN
+     v = CRYPTO_bswap8(v);
++#endif
+     memcpy(out->data, &v, sizeof(v));
+ 
+     out->type = V_ASN1_INTEGER;
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/chacha/chacha.c
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/chacha/chacha.c
+@@ -29,6 +29,14 @@
+   (((uint32_t)((p)[0])) | ((uint32_t)((p)[1]) << 8) | \
+    ((uint32_t)((p)[2]) << 16) | ((uint32_t)((p)[3]) << 24))
+ 
++#define U32TO8_LITTLE(p, v)    \
++  {                            \
++    (p)[0] = (v >> 0) & 0xff;  \
++    (p)[1] = (v >> 8) & 0xff;  \
++    (p)[2] = (v >> 16) & 0xff; \
++    (p)[3] = (v >> 24) & 0xff; \
++  }
++
+ // sigma contains the ChaCha constants, which happen to be an ASCII string.
+ static const uint8_t sigma[16] = { 'e', 'x', 'p', 'a', 'n', 'd', ' ', '3',
+                                    '2', '-', 'b', 'y', 't', 'e', ' ', 'k' };
+@@ -45,9 +53,27 @@ static const uint8_t sigma[16] = { 'e', 'x', 'p', 'a', 'n', 'd', ' ', '3',
+ void CRYPTO_hchacha20(uint8_t out[32], const uint8_t key[32],
+                       const uint8_t nonce[16]) {
+   uint32_t x[16];
+-  OPENSSL_memcpy(x, sigma, sizeof(sigma));
+-  OPENSSL_memcpy(&x[4], key, 32);
+-  OPENSSL_memcpy(&x[12], nonce, 16);
++  int i;
++
++  x[0] = U8TO32_LITTLE(sigma + 0);
++  x[1] = U8TO32_LITTLE(sigma + 4);
++  x[2] = U8TO32_LITTLE(sigma + 8);
++  x[3] = U8TO32_LITTLE(sigma + 12);
++
++  x[4] = U8TO32_LITTLE(key + 0);
++  x[5] = U8TO32_LITTLE(key + 4);
++  x[6] = U8TO32_LITTLE(key + 8);
++  x[7] = U8TO32_LITTLE(key + 12);
++
++  x[8] = U8TO32_LITTLE(key + 16);
++  x[9] = U8TO32_LITTLE(key + 20);
++  x[10] = U8TO32_LITTLE(key + 24);
++  x[11] = U8TO32_LITTLE(key + 28);
++
++  x[12] = U8TO32_LITTLE(nonce + 0);
++  x[13] = U8TO32_LITTLE(nonce + 4);
++  x[14] = U8TO32_LITTLE(nonce + 8);
++  x[15] = U8TO32_LITTLE(nonce + 12);
+ 
+   for (size_t i = 0; i < 20; i += 2) {
+     QUARTERROUND(0, 4, 8, 12)
+@@ -60,8 +86,10 @@ void CRYPTO_hchacha20(uint8_t out[32], const uint8_t key[32],
+     QUARTERROUND(3, 4, 9, 14)
+   }
+ 
+-  OPENSSL_memcpy(out, &x[0], sizeof(uint32_t) * 4);
+-  OPENSSL_memcpy(&out[16], &x[12], sizeof(uint32_t) * 4);
++  for (i = 0; i < 4; ++i) {
++    U32TO8_LITTLE(out + 4 * i, x[i]);
++    U32TO8_LITTLE(&out[16] + 4 * i, x[12+i]);
++  }
+ }
+ 
+ #if !defined(OPENSSL_NO_ASM) &&                         \
+@@ -105,14 +133,6 @@ void CRYPTO_chacha_20(uint8_t *out, const uint8_t *in, size_t in_len,
+ 
+ #else
+ 
+-#define U32TO8_LITTLE(p, v)    \
+-  {                            \
+-    (p)[0] = (v >> 0) & 0xff;  \
+-    (p)[1] = (v >> 8) & 0xff;  \
+-    (p)[2] = (v >> 16) & 0xff; \
+-    (p)[3] = (v >> 24) & 0xff; \
+-  }
+-
+ // chacha_core performs 20 rounds of ChaCha on the input words in
+ // |input| and writes the 64 output bytes to |output|.
+ static void chacha_core(uint8_t output[64], const uint32_t input[16]) {
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/cipher_extra/e_aesgcmsiv.c
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/cipher_extra/e_aesgcmsiv.c
+@@ -625,7 +625,11 @@ static void gcm_siv_crypt(uint8_t *out, const uint8_t *in, size_t in_len,
+   for (size_t done = 0; done < in_len;) {
+     uint8_t keystream[AES_BLOCK_SIZE];
+     enc_block(counter.c, keystream, key);
++#ifdef OPENSSL_BIGENDIAN
++    counter.w[0] = CRYPTO_bswap4(CRYPTO_bswap4(counter.w[0]) + 1);
++#else
+     counter.w[0]++;
++#endif
+ 
+     size_t todo = AES_BLOCK_SIZE;
+     if (in_len - done < todo) {
+@@ -673,8 +677,13 @@ static void gcm_siv_polyval(
+     } bitlens;
+   } length_block;
+ 
++#ifdef OPENSSL_BIGENDIAN
++  length_block.bitlens.ad = CRYPTO_bswap8(ad_len * 8);
++  length_block.bitlens.in = CRYPTO_bswap8(in_len * 8);
++#else
+   length_block.bitlens.ad = ad_len * 8;
+   length_block.bitlens.in = in_len * 8;
++#endif
+   CRYPTO_POLYVAL_update_blocks(&polyval_ctx, length_block.c,
+                                sizeof(length_block));
+ 
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/compiler_test.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/compiler_test.cc
+@@ -40,9 +40,13 @@ static void CheckRepresentation(T value) {
+   UnsignedT value_u = static_cast<UnsignedT>(value);
+   EXPECT_EQ(sizeof(UnsignedT), sizeof(T));
+ 
+-  // Integers must be little-endian.
++  // Integers must be either big-endian or little-endian.
+   uint8_t expected[sizeof(UnsignedT)];
++#ifdef OPENSSL_BIGENDIAN
++  for (size_t i = sizeof(UnsignedT); i-- > 0; ) {
++#else
+   for (size_t i = 0; i < sizeof(UnsignedT); i++) {
++#endif
+     expected[i] = static_cast<uint8_t>(value_u);
+     // Divide instead of right-shift to appease compilers that warn if |T| is a
+     // char. The explicit cast is also needed to appease MSVC if integer
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/curve25519/spake25519.c
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/curve25519/spake25519.c
+@@ -339,8 +339,17 @@ static void scalar_double(scalar *s) {
+   uint32_t carry = 0;
+ 
+   for (size_t i = 0; i < 8; i++) {
+-    const uint32_t carry_out = s->words[i] >> 31;
+-    s->words[i] = (s->words[i] << 1) | carry;
++#ifdef OPENSSL_BIGENDIAN
++    const uint32_t si = CRYPTO_bswap4(s->words[i]);
++#else
++    const uint32_t si = s->words[i];
++#endif
++    const uint32_t carry_out = si >> 31;
++#ifdef OPENSSL_BIGENDIAN
++    s->words[i] = CRYPTO_bswap4((si << 1) | carry);
++#else
++    s->words[i] = (si << 1) | carry;
++#endif
+     carry = carry_out;
+   }
+ }
+@@ -350,8 +359,13 @@ static void scalar_add(scalar *dest, const scalar *src) {
+   uint32_t carry = 0;
+ 
+   for (size_t i = 0; i < 8; i++) {
++#ifdef OPENSSL_BIGENDIAN
++    uint64_t tmp = ((uint64_t)CRYPTO_bswap4(dest->words[i]) + CRYPTO_bswap4(src->words[i])) + carry;
++    dest->words[i] = CRYPTO_bswap4((uint32_t)tmp);
++#else
+     uint64_t tmp = ((uint64_t)dest->words[i] + src->words[i]) + carry;
+     dest->words[i] = (uint32_t)tmp;
++#endif
+     carry = (uint32_t)(tmp >> 32);
+   }
+ }
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/evp/scrypt.c
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/evp/scrypt.c
+@@ -196,10 +196,28 @@ int EVP_PBE_scrypt(const char *password, size_t password_len,
+     goto err;
+   }
+ 
++#ifdef OPENSSL_BIGENDIAN
++  uint32_t *B32 = B->words;
++  size_t B_words = B_bytes >> 2;
++  do {
++    *B32 = CRYPTO_bswap4(*B32);
++    B32++;
++  } while(--B_words);
++#endif
++
+   for (uint64_t i = 0; i < p; i++) {
+     scryptROMix(B + 2 * r * i, r, N, T, V);
+   }
+ 
++#ifdef OPENSSL_BIGENDIAN
++  B32 = B->words;
++  B_words = B_bytes >> 2;
++  do {
++    *B32 = CRYPTO_bswap4(*B32);
++    B32++;
++  } while(--B_words);
++#endif
++
+   if (!PKCS5_PBKDF2_HMAC(password, password_len, (const uint8_t *)B, B_bytes, 1,
+                          EVP_sha256(), key_len, out_key)) {
+     goto err;
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/fipsmodule/bn/bytes.c
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/fipsmodule/bn/bytes.c
+@@ -136,9 +136,13 @@ BIGNUM *BN_le2bn(const uint8_t *in, size_t len, BIGNUM *ret) {
+   // Make sure the top bytes will be zeroed.
+   ret->d[num_words - 1] = 0;
+ 
+-  // We only support little-endian platforms, so we can simply memcpy the
+-  // internal representation.
++#ifdef OPENSSL_BIGENDIAN
++  uint8_t *out = (uint8_t *)ret->d;
++  for (size_t i = 0; i < len; i++)
++    out[i ^ (BN_BYTES-1)] = in[i];
++#else
+   OPENSSL_memcpy(ret->d, in, len);
++#endif
+   return ret;
+ }
+ 
+@@ -157,7 +161,11 @@ size_t BN_bn2bin(const BIGNUM *in, uint8_t *out) {
+ static int fits_in_bytes(const uint8_t *bytes, size_t num_bytes, size_t len) {
+   uint8_t mask = 0;
+   for (size_t i = len; i < num_bytes; i++) {
++#ifdef OPENSSL_BIGENDIAN
++    mask |= bytes[i ^ (BN_BYTES-1)];
++#else
+     mask |= bytes[i];
++#endif
+   }
+   return mask == 0;
+ }
+@@ -172,9 +180,13 @@ int BN_bn2le_padded(uint8_t *out, size_t len, const BIGNUM *in) {
+     num_bytes = len;
+   }
+ 
+-  // We only support little-endian platforms, so we can simply memcpy into the
+-  // internal representation.
++#ifdef OPENSSL_BIGENDIAN
++  for (size_t i = 0; i < num_bytes; i++) {
++    out[i] = bytes[i ^ (BN_BYTES-1)];
++  }
++#else
+   OPENSSL_memcpy(out, bytes, num_bytes);
++#endif
+   // Pad out the rest of the buffer with zeroes.
+   OPENSSL_memset(out + num_bytes, 0, len - num_bytes);
+   return 1;
+@@ -190,11 +202,15 @@ int BN_bn2bin_padded(uint8_t *out, size_t len, const BIGNUM *in) {
+     num_bytes = len;
+   }
+ 
+-  // We only support little-endian platforms, so we can simply write the buffer
+-  // in reverse.
++#ifdef OPENSSL_BIGENDIAN
++  for (size_t i = 0; i < num_bytes; i++) {
++    out[len - i - 1] = bytes[i ^ (BN_BYTES-1)];
++  }
++#else
+   for (size_t i = 0; i < num_bytes; i++) {
+     out[len - i - 1] = bytes[i];
+   }
++#endif
+   // Pad out the rest of the buffer with zeroes.
+   OPENSSL_memset(out, 0, len - num_bytes);
+   return 1;
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/fipsmodule/ecdsa/ecdsa.c
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/fipsmodule/ecdsa/ecdsa.c
+@@ -80,7 +80,11 @@ static void digest_to_scalar(const EC_GROUP *group, EC_SCALAR *out,
+   }
+   OPENSSL_memset(out, 0, sizeof(EC_SCALAR));
+   for (size_t i = 0; i < digest_len; i++) {
++#ifdef OPENSSL_BIGENDIAN
++    out->bytes[i ^ (BN_BYTES-1)] = digest[digest_len - 1 - i];
++#else
+     out->bytes[i] = digest[digest_len - 1 - i];
++#endif
+   }
+ 
+   // If it is still too long, truncate remaining bits with a shift.
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/fipsmodule/modes/gcm.c
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/fipsmodule/modes/gcm.c
+@@ -78,6 +78,14 @@
+     }                                                                 \
+   } while (0)
+ 
++#ifdef OPENSSL_BIGENDIAN
++#define GCM_bswap4(x) (x)
++#define GCM_bswap8(x) (x)
++#else
++#define GCM_bswap4 CRYPTO_bswap4
++#define GCM_bswap8 CRYPTO_bswap8
++#endif
++
+ // kSizeTWithoutLower4Bits is a mask that can be used to zero the lower four
+ // bits of a |size_t|.
+ static const size_t kSizeTWithoutLower4Bits = (size_t) -16;
+@@ -173,8 +181,8 @@ static void gcm_gmult_4bit(uint64_t Xi[2], const u128 Htable[16]) {
+     Z.lo ^= Htable[nlo].lo;
+   }
+ 
+-  Xi[0] = CRYPTO_bswap8(Z.hi);
+-  Xi[1] = CRYPTO_bswap8(Z.lo);
++  Xi[0] = GCM_bswap8(Z.hi);
++  Xi[1] = GCM_bswap8(Z.lo);
+ }
+ 
+ // Streamed gcm_mult_4bit, see CRYPTO_gcm128_[en|de]crypt for
+@@ -233,8 +241,8 @@ static void gcm_ghash_4bit(uint64_t Xi[2], const u128 Htable[16],
+       Z.lo ^= Htable[nlo].lo;
+     }
+ 
+-    Xi[0] = CRYPTO_bswap8(Z.hi);
+-    Xi[1] = CRYPTO_bswap8(Z.lo);
++    Xi[0] = GCM_bswap8(Z.hi);
++    Xi[1] = GCM_bswap8(Z.lo);
+   } while (inp += 16, len -= 16);
+ }
+ #else  // GHASH_ASM
+@@ -360,8 +368,8 @@ void CRYPTO_ghash_init(gmult_func *out_mult, ghash_func *out_hash,
+   OPENSSL_memcpy(H.c, gcm_key, 16);
+ 
+   // H is stored in host byte order
+-  H.u[0] = CRYPTO_bswap8(H.u[0]);
+-  H.u[1] = CRYPTO_bswap8(H.u[1]);
++  H.u[0] = GCM_bswap8(H.u[0]);
++  H.u[1] = GCM_bswap8(H.u[1]);
+ 
+   OPENSSL_memcpy(out_key, H.c, 16);
+ 
+@@ -474,15 +482,15 @@ void CRYPTO_gcm128_setiv(GCM128_CONTEXT *ctx, const AES_KEY *key,
+       GCM_MUL(ctx, Yi);
+     }
+     len0 <<= 3;
+-    ctx->Yi.u[1] ^= CRYPTO_bswap8(len0);
++    ctx->Yi.u[1] ^= GCM_bswap8(len0);
+ 
+     GCM_MUL(ctx, Yi);
+-    ctr = CRYPTO_bswap4(ctx->Yi.d[3]);
++    ctr = GCM_bswap4(ctx->Yi.d[3]);
+   }
+ 
+   (*ctx->gcm_key.block)(ctx->Yi.c, ctx->EK0.c, key);
+   ++ctr;
+-  ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++  ctx->Yi.d[3] = GCM_bswap4(ctr);
+ }
+ 
+ int CRYPTO_gcm128_aad(GCM128_CONTEXT *ctx, const uint8_t *aad, size_t len) {
+@@ -580,7 +588,7 @@ int CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx, const AES_KEY *key,
+     ctx->ares = 0;
+   }
+ 
+-  ctr = CRYPTO_bswap4(ctx->Yi.d[3]);
++  ctr = GCM_bswap4(ctx->Yi.d[3]);
+ 
+   n = ctx->mres;
+   if (n) {
+@@ -602,7 +610,7 @@ int CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx, const AES_KEY *key,
+       if (n == 0) {
+         (*block)(ctx->Yi.c, ctx->EKi.c, key);
+         ++ctr;
+-        ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++        ctx->Yi.d[3] = GCM_bswap4(ctr);
+       }
+       ctx->Xi.c[n] ^= out[i] = in[i] ^ ctx->EKi.c[n];
+       n = (n + 1) % 16;
+@@ -621,7 +629,7 @@ int CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx, const AES_KEY *key,
+     while (j) {
+       (*block)(ctx->Yi.c, ctx->EKi.c, key);
+       ++ctr;
+-      ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++      ctx->Yi.d[3] = GCM_bswap4(ctr);
+       for (size_t i = 0; i < 16; i += sizeof(size_t)) {
+         store_word_le(out + i,
+                       load_word_le(in + i) ^ ctx->EKi.t[i / sizeof(size_t)]);
+@@ -638,7 +646,7 @@ int CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx, const AES_KEY *key,
+     while (len >= 16) {
+       (*block)(ctx->Yi.c, ctx->EKi.c, key);
+       ++ctr;
+-      ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++      ctx->Yi.d[3] = GCM_bswap4(ctr);
+       for (size_t i = 0; i < 16; i += sizeof(size_t)) {
+         store_word_le(out + i,
+                       load_word_le(in + i) ^ ctx->EKi.t[i / sizeof(size_t)]);
+@@ -653,7 +661,7 @@ int CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx, const AES_KEY *key,
+   while (len >= 16) {
+     (*block)(ctx->Yi.c, ctx->EKi.c, key);
+     ++ctr;
+-    ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++    ctx->Yi.d[3] = GCM_bswap4(ctr);
+     for (size_t i = 0; i < 16; i += sizeof(size_t)) {
+       size_t tmp = load_word_le(in + i) ^ ctx->EKi.t[i / sizeof(size_t)];
+       store_word_le(out + i, tmp);
+@@ -668,7 +676,7 @@ int CRYPTO_gcm128_encrypt(GCM128_CONTEXT *ctx, const AES_KEY *key,
+   if (len) {
+     (*block)(ctx->Yi.c, ctx->EKi.c, key);
+     ++ctr;
+-    ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++    ctx->Yi.d[3] = GCM_bswap4(ctr);
+     while (len--) {
+       ctx->Xi.c[n] ^= out[n] = in[n] ^ ctx->EKi.c[n];
+       ++n;
+@@ -707,7 +715,7 @@ int CRYPTO_gcm128_decrypt(GCM128_CONTEXT *ctx, const AES_KEY *key,
+     ctx->ares = 0;
+   }
+ 
+-  ctr = CRYPTO_bswap4(ctx->Yi.d[3]);
++  ctr = GCM_bswap4(ctx->Yi.d[3]);
+ 
+   n = ctx->mres;
+   if (n) {
+@@ -732,7 +740,7 @@ int CRYPTO_gcm128_decrypt(GCM128_CONTEXT *ctx, const AES_KEY *key,
+       if (n == 0) {
+         (*block)(ctx->Yi.c, ctx->EKi.c, key);
+         ++ctr;
+-        ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++        ctx->Yi.d[3] = GCM_bswap4(ctr);
+       }
+       c = in[i];
+       out[i] = c ^ ctx->EKi.c[n];
+@@ -754,7 +762,7 @@ int CRYPTO_gcm128_decrypt(GCM128_CONTEXT *ctx, const AES_KEY *key,
+     while (j) {
+       (*block)(ctx->Yi.c, ctx->EKi.c, key);
+       ++ctr;
+-      ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++      ctx->Yi.d[3] = GCM_bswap4(ctr);
+       for (size_t i = 0; i < 16; i += sizeof(size_t)) {
+         store_word_le(out + i,
+                       load_word_le(in + i) ^ ctx->EKi.t[i / sizeof(size_t)]);
+@@ -771,7 +779,7 @@ int CRYPTO_gcm128_decrypt(GCM128_CONTEXT *ctx, const AES_KEY *key,
+     while (len >= 16) {
+       (*block)(ctx->Yi.c, ctx->EKi.c, key);
+       ++ctr;
+-      ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++      ctx->Yi.d[3] = GCM_bswap4(ctr);
+       for (size_t i = 0; i < 16; i += sizeof(size_t)) {
+         store_word_le(out + i,
+                       load_word_le(in + i) ^ ctx->EKi.t[i / sizeof(size_t)]);
+@@ -785,7 +793,7 @@ int CRYPTO_gcm128_decrypt(GCM128_CONTEXT *ctx, const AES_KEY *key,
+   while (len >= 16) {
+     (*block)(ctx->Yi.c, ctx->EKi.c, key);
+     ++ctr;
+-    ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++    ctx->Yi.d[3] = GCM_bswap4(ctr);
+     for (size_t i = 0; i < 16; i += sizeof(size_t)) {
+       size_t c = load_word_le(in + i);
+       store_word_le(out + i, c ^ ctx->EKi.t[i / sizeof(size_t)]);
+@@ -800,7 +808,7 @@ int CRYPTO_gcm128_decrypt(GCM128_CONTEXT *ctx, const AES_KEY *key,
+   if (len) {
+     (*block)(ctx->Yi.c, ctx->EKi.c, key);
+     ++ctr;
+-    ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++    ctx->Yi.d[3] = GCM_bswap4(ctr);
+     while (len--) {
+       uint8_t c = in[n];
+       ctx->Xi.c[n] ^= c;
+@@ -866,13 +874,13 @@ int CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx, const AES_KEY *key,
+   }
+ #endif
+ 
+-  ctr = CRYPTO_bswap4(ctx->Yi.d[3]);
++  ctr = GCM_bswap4(ctx->Yi.d[3]);
+ 
+ #if defined(GHASH)
+   while (len >= GHASH_CHUNK) {
+     (*stream)(in, out, GHASH_CHUNK / 16, key, ctx->Yi.c);
+     ctr += GHASH_CHUNK / 16;
+-    ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++    ctx->Yi.d[3] = GCM_bswap4(ctr);
+     GHASH(ctx, out, GHASH_CHUNK);
+     out += GHASH_CHUNK;
+     in += GHASH_CHUNK;
+@@ -885,7 +893,7 @@ int CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx, const AES_KEY *key,
+ 
+     (*stream)(in, out, j, key, ctx->Yi.c);
+     ctr += (unsigned int)j;
+-    ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++    ctx->Yi.d[3] = GCM_bswap4(ctr);
+     in += i;
+     len -= i;
+ #if defined(GHASH)
+@@ -904,7 +912,7 @@ int CRYPTO_gcm128_encrypt_ctr32(GCM128_CONTEXT *ctx, const AES_KEY *key,
+   if (len) {
+     (*ctx->gcm_key.block)(ctx->Yi.c, ctx->EKi.c, key);
+     ++ctr;
+-    ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++    ctx->Yi.d[3] = GCM_bswap4(ctr);
+     while (len--) {
+       ctx->Xi.c[n] ^= out[n] = in[n] ^ ctx->EKi.c[n];
+       ++n;
+@@ -970,14 +978,14 @@ int CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx, const AES_KEY *key,
+   }
+ #endif
+ 
+-  ctr = CRYPTO_bswap4(ctx->Yi.d[3]);
++  ctr = GCM_bswap4(ctx->Yi.d[3]);
+ 
+ #if defined(GHASH)
+   while (len >= GHASH_CHUNK) {
+     GHASH(ctx, in, GHASH_CHUNK);
+     (*stream)(in, out, GHASH_CHUNK / 16, key, ctx->Yi.c);
+     ctr += GHASH_CHUNK / 16;
+-    ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++    ctx->Yi.d[3] = GCM_bswap4(ctr);
+     out += GHASH_CHUNK;
+     in += GHASH_CHUNK;
+     len -= GHASH_CHUNK;
+@@ -1003,7 +1011,7 @@ int CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx, const AES_KEY *key,
+ #endif
+     (*stream)(in, out, j, key, ctx->Yi.c);
+     ctr += (unsigned int)j;
+-    ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++    ctx->Yi.d[3] = GCM_bswap4(ctr);
+     out += i;
+     in += i;
+     len -= i;
+@@ -1011,7 +1019,7 @@ int CRYPTO_gcm128_decrypt_ctr32(GCM128_CONTEXT *ctx, const AES_KEY *key,
+   if (len) {
+     (*ctx->gcm_key.block)(ctx->Yi.c, ctx->EKi.c, key);
+     ++ctr;
+-    ctx->Yi.d[3] = CRYPTO_bswap4(ctr);
++    ctx->Yi.d[3] = GCM_bswap4(ctr);
+     while (len--) {
+       uint8_t c = in[n];
+       ctx->Xi.c[n] ^= c;
+@@ -1036,8 +1044,8 @@ int CRYPTO_gcm128_finish(GCM128_CONTEXT *ctx, const uint8_t *tag, size_t len) {
+     GCM_MUL(ctx, Xi);
+   }
+ 
+-  alen = CRYPTO_bswap8(alen);
+-  clen = CRYPTO_bswap8(clen);
++  alen = GCM_bswap8(alen);
++  clen = GCM_bswap8(clen);
+ 
+   ctx->Xi.u[0] ^= alen;
+   ctx->Xi.u[1] ^= clen;
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/fipsmodule/modes/internal.h
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/fipsmodule/modes/internal.h
+@@ -70,11 +70,17 @@ extern "C" {
+ static inline uint32_t GETU32(const void *in) {
+   uint32_t v;
+   OPENSSL_memcpy(&v, in, sizeof(v));
++#ifdef OPENSSL_BIGENDIAN
++  return v;
++#else
+   return CRYPTO_bswap4(v);
++#endif
+ }
+ 
+ static inline void PUTU32(void *out, uint32_t v) {
++#ifndef OPENSSL_BIGENDIAN
+   v = CRYPTO_bswap4(v);
++#endif
+   OPENSSL_memcpy(out, &v, sizeof(v));
+ }
+ 
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/fipsmodule/modes/polyval.c
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/fipsmodule/modes/polyval.c
+@@ -32,16 +32,26 @@ static void byte_reverse(polyval_block *b) {
+ // the GHASH field, multiplies that by 'x' and serialises the result back into
+ // |b|, but with GHASH's backwards bit ordering.
+ static void reverse_and_mulX_ghash(polyval_block *b) {
++#ifdef OPENSSL_BIGENDIAN
++  uint64_t hi = CRYPTO_bswap8(b->u[0]);
++  uint64_t lo = CRYPTO_bswap8(b->u[1]);
++#else
+   uint64_t hi = b->u[0];
+   uint64_t lo = b->u[1];
++#endif
+   const crypto_word_t carry = constant_time_eq_w(hi & 1, 1);
+   hi >>= 1;
+   hi |= lo << 63;
+   lo >>= 1;
+   lo ^= ((uint64_t) constant_time_select_w(carry, 0xe1, 0)) << 56;
+ 
++#ifdef OPENSSL_BIGENDIAN
++  b->u[0] = lo;
++  b->u[1] = hi;
++#else
+   b->u[0] = CRYPTO_bswap8(lo);
+   b->u[1] = CRYPTO_bswap8(hi);
++#endif
+ }
+ 
+ // POLYVAL(H, X_1, ..., X_n) =
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/fipsmodule/rand/ctrdrbg.c
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/fipsmodule/rand/ctrdrbg.c
+@@ -70,8 +70,12 @@ OPENSSL_STATIC_ASSERT(CTR_DRBG_ENTROPY_LEN % AES_BLOCK_SIZE == 0,
+ // ctr_inc adds |n| to the last four bytes of |drbg->counter|, treated as a
+ // big-endian number.
+ static void ctr32_add(CTR_DRBG_STATE *drbg, uint32_t n) {
++#ifdef OPENSSL_BIGENDIAN
++  drbg->counter.words[3] += n;
++#else
+   drbg->counter.words[3] =
+       CRYPTO_bswap4(CRYPTO_bswap4(drbg->counter.words[3]) + n);
++#endif
+ }
+ 
+ static int ctr_drbg_update(CTR_DRBG_STATE *drbg, const uint8_t *data,
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/poly1305/poly1305.c
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/crypto/poly1305/poly1305.c
+@@ -32,10 +32,16 @@
+ static uint32_t U8TO32_LE(const uint8_t *m) {
+   uint32_t r;
+   OPENSSL_memcpy(&r, m, sizeof(r));
++#ifdef OPENSSL_BIGENDIAN
++  r = CRYPTO_bswap4(r);
++#endif
+   return r;
+ }
+ 
+ static void U32TO8_LE(uint8_t *m, uint32_t v) {
++#ifdef OPENSSL_BIGENDIAN
++  v = CRYPTO_bswap4(v);
++#endif
+   OPENSSL_memcpy(m, &v, sizeof(v));
+ }
+ 
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/include/openssl/base.h
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/include/openssl/base.h
+@@ -99,6 +99,10 @@ extern "C" {
+ #elif (defined(__PPC64__) || defined(__powerpc64__)) && defined(_LITTLE_ENDIAN)
+ #define OPENSSL_64_BIT
+ #define OPENSSL_PPC64LE
++#elif (defined(__PPC64__) || defined(__powerpc64__))
++#define OPENSSL_64_BIT
++#define OPENSSL_PPC64
++#define OPENSSL_BIGENDIAN
+ #elif defined(__mips__) && !defined(__LP64__)
+ #define OPENSSL_32_BIT
+ #define OPENSSL_MIPS
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/third_party/fiat/curve25519.c
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/third_party/fiat/curve25519.c
+@@ -3032,9 +3032,14 @@ int ED25519_verify(const uint8_t *message, size_t message_len,
+     UINT64_C(0x1000000000000000),
+   };
+   for (size_t i = 3;; i--) {
+-    if (scopy.u64[i] > kOrder[i]) {
++#ifdef OPENSSL_BIGENDIAN
++    const uint64_t n = CRYPTO_bswap8(scopy.u64[i]);
++#else
++    const uint64_t n = scopy.u64[i];
++#endif
++    if (n > kOrder[i]) {
+       return 0;
+-    } else if (scopy.u64[i] < kOrder[i]) {
++    } else if (n < kOrder[i]) {
+       break;
+     } else if (i == 0) {
+       return 0;
+--- qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/third_party/fiat/p256.c
++++ qtwebengine/src/3rdparty/chromium/third_party/boringssl/src/third_party/fiat/p256.c
+@@ -882,12 +882,24 @@ static void fe_tobytes(uint8_t out[NBYTES], const fe in) {
+   }
+ }
+ 
++#ifdef OPENSSL_BIGENDIAN
++static void fe_tobytes_be(uint8_t out[NBYTES], const fe in) {
++  for (int i = 0; i<NBYTES; i++) {
++    out[i ^ (BN_BYTES-1)] = (uint8_t)(in[i/sizeof(in[0])] >> (8*(i%sizeof(in[0]))));
++  }
++}
++#endif
++
+ static void fe_frombytes(fe out, const uint8_t in[NBYTES]) {
+   for (int i = 0; i<NLIMBS; i++) {
+     out[i] = 0;
+   }
+   for (int i = 0; i<NBYTES; i++) {
++#ifdef OPENSSL_BIGENDIAN
++    out[i/sizeof(out[0])] |= ((limb_t)in[i ^ (BN_BYTES-1)]) << (8*(i%sizeof(out[0])));
++#else
+     out[i/sizeof(out[0])] |= ((limb_t)in[i]) << (8*(i%sizeof(out[0])));
++#endif
+   }
+ }
+ 
+@@ -906,7 +918,11 @@ static void fe_to_generic(EC_FELEM *out, const fe in) {
+   OPENSSL_STATIC_ASSERT(
+       256 / 8 == sizeof(BN_ULONG) * ((256 + BN_BITS2 - 1) / BN_BITS2),
+       "fe_tobytes leaves bytes uninitialized");
++#ifdef OPENSSL_BIGENDIAN
++  fe_tobytes_be(out->bytes, in);
++#else
+   fe_tobytes(out->bytes, in);
++#endif
+ }
+ 
+ // fe_inv calculates |out| = |in|^{-1}
+@@ -1524,7 +1540,11 @@ static char get_bit(const uint8_t *in, int i) {
+   if (i < 0 || i >= 256) {
+     return 0;
+   }
++#ifdef OPENSSL_BIGENDIAN
++  return (in[(i >> 3) ^ (sizeof(BN_ULONG)-1)] >> (i & 7)) & 1;
++#else
+   return (in[i >> 3] >> (i & 7)) & 1;
++#endif
+ }
+ 
+ // Interleaved point multiplication using precomputed point multiples: The
+--- qtwebengine/src/3rdparty/chromium/third_party/crc32c/BUILD.gn
++++ qtwebengine/src/3rdparty/chromium/third_party/crc32c/BUILD.gn
+@@ -15,13 +15,10 @@ config("crc32c_config") {
+   ]
+ 
+   defines = [
+-    "BYTE_ORDER_BIG_ENDIAN=0",
++    "BYTE_ORDER_BIG_ENDIAN=__BYTE_ORDER__==__ORDER_BIG_ENDIAN__",
+     "CRC32C_TESTS_BUILT_WITH_GLOG=0",
+   ]
+ 
+-  # If we ever support big-endian builds, add logic to conditionally enable
+-  # BYTE_ORDER_BIG_ENDIAN.
+-
+   if (target_cpu == "x86" || target_cpu == "x64") {
+     defines += [
+       "HAVE_MM_PREFETCH=1",
+--- qtwebengine/src/3rdparty/chromium/third_party/flatbuffers/src/include/flatbuffers/base.h
++++ qtwebengine/src/3rdparty/chromium/third_party/flatbuffers/src/include/flatbuffers/base.h
+@@ -220,18 +220,15 @@ template<typename T> T EndianSwap(T t) {
+   if (sizeof(T) == 1) {   // Compile-time if-then's.
+     return t;
+   } else if (sizeof(T) == 2) {
+-    union { T t; uint16_t i; } u;
+-    u.t = t;
++    union U { T t; uint16_t i; U(const T& t_) : t(t_) {}} u(t);
+     u.i = FLATBUFFERS_BYTESWAP16(u.i);
+     return u.t;
+   } else if (sizeof(T) == 4) {
+-    union { T t; uint32_t i; } u;
+-    u.t = t;
++    union U { T t; uint32_t i; U(const T& t_) : t(t_) {}} u(t);
+     u.i = FLATBUFFERS_BYTESWAP32(u.i);
+     return u.t;
+   } else if (sizeof(T) == 8) {
+-    union { T t; uint64_t i; } u;
+-    u.t = t;
++    union U { T t; uint64_t i; U(const T& t_) : t(t_) {}} u(t);
+     u.i = FLATBUFFERS_BYTESWAP64(u.i);
+     return u.t;
+   } else {
+--- qtwebengine/src/3rdparty/chromium/third_party/flatbuffers/src/include/flatbuffers/minireflect.h
++++ qtwebengine/src/3rdparty/chromium/third_party/flatbuffers/src/include/flatbuffers/minireflect.h
+@@ -122,58 +122,58 @@ inline void IterateValue(ElementaryType type, const uint8_t *val,
+                          soffset_t vector_index, IterationVisitor *visitor) {
+   switch (type) {
+     case ET_UTYPE: {
+-      auto tval = *reinterpret_cast<const uint8_t *>(val);
++      auto tval = ReadScalar<uint8_t>(val);
+       visitor->UType(tval, EnumName(tval, type_table));
+       break;
+     }
+     case ET_BOOL: {
+-      visitor->Bool(*reinterpret_cast<const uint8_t *>(val) != 0);
++      visitor->Bool(ReadScalar<uint8_t>(val) != 0);
+       break;
+     }
+     case ET_CHAR: {
+-      auto tval = *reinterpret_cast<const int8_t *>(val);
++      auto tval = ReadScalar<int8_t>(val);
+       visitor->Char(tval, EnumName(tval, type_table));
+       break;
+     }
+     case ET_UCHAR: {
+-      auto tval = *reinterpret_cast<const uint8_t *>(val);
++      auto tval = ReadScalar<uint8_t>(val);
+       visitor->UChar(tval, EnumName(tval, type_table));
+       break;
+     }
+     case ET_SHORT: {
+-      auto tval = *reinterpret_cast<const int16_t *>(val);
++      auto tval = ReadScalar<int16_t>(val);
+       visitor->Short(tval, EnumName(tval, type_table));
+       break;
+     }
+     case ET_USHORT: {
+-      auto tval = *reinterpret_cast<const uint16_t *>(val);
++      auto tval = ReadScalar<uint16_t>(val);
+       visitor->UShort(tval, EnumName(tval, type_table));
+       break;
+     }
+     case ET_INT: {
+-      auto tval = *reinterpret_cast<const int32_t *>(val);
++      auto tval = ReadScalar<int32_t>(val);
+       visitor->Int(tval, EnumName(tval, type_table));
+       break;
+     }
+     case ET_UINT: {
+-      auto tval = *reinterpret_cast<const uint32_t *>(val);
++      auto tval = ReadScalar<uint32_t>(val);
+       visitor->UInt(tval, EnumName(tval, type_table));
+       break;
+     }
+     case ET_LONG: {
+-      visitor->Long(*reinterpret_cast<const int64_t *>(val));
++      visitor->Long(ReadScalar<int64_t>(val));
+       break;
+     }
+     case ET_ULONG: {
+-      visitor->ULong(*reinterpret_cast<const uint64_t *>(val));
++      visitor->ULong(ReadScalar<uint64_t>(val));
+       break;
+     }
+     case ET_FLOAT: {
+-      visitor->Float(*reinterpret_cast<const float *>(val));
++      visitor->Float(ReadScalar<float>(val));
+       break;
+     }
+     case ET_DOUBLE: {
+-      visitor->Double(*reinterpret_cast<const double *>(val));
++      visitor->Double(ReadScalar<double>(val));
+       break;
+     }
+     case ET_STRING: {
+--- qtwebengine/src/3rdparty/chromium/third_party/leveldatabase/port/port_chromium.h
++++ qtwebengine/src/3rdparty/chromium/third_party/leveldatabase/port/port_chromium.h
+@@ -23,8 +23,11 @@
+ namespace leveldb {
+ namespace port {
+ 
+-// Chromium only supports little endian.
++#if ARCH_CPU_LITTLE_ENDIAN
+ static const bool kLittleEndian = true;
++#else
++static const bool kLittleEndian = false;
++#endif
+ 
+ class LOCKABLE Mutex {
+  public:
+--- qtwebengine/src/3rdparty/chromium/third_party/modp_b64/BUILD.gn
++++ qtwebengine/src/3rdparty/chromium/third_party/modp_b64/BUILD.gn
+@@ -2,10 +2,16 @@
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+ 
++import("//build/config/host_byteorder.gni")
++
+ static_library("modp_b64") {
+   sources = [
+     "modp_b64.cc",
+     "modp_b64.h",
+     "modp_b64_data.h",
+   ]
++
++  if (host_byteorder == "big") {
++    defines = [ "WORDS_BIGENDIAN=1" ]
++  }
+ }
+--- qtwebengine/src/3rdparty/chromium/third_party/modp_b64/modp_b64.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/modp_b64/modp_b64.cc
+@@ -118,7 +118,7 @@ size_t modp_b64_encode(char* dest, const char* str, size_t len)
+ }
+ 
+ #ifdef WORDS_BIGENDIAN   /* BIG ENDIAN -- SUN / IBM / MOTOROLA */
+-int modp_b64_decode(char* dest, const char* src, int len)
++size_t modp_b64_decode(char* dest, const char* src, size_t len)
+ {
+     if (len == 0) return 0;
+ 
+--- qtwebengine/src/3rdparty/chromium/third_party/perfetto/include/perfetto/base/utils.h
++++ qtwebengine/src/3rdparty/chromium/third_party/perfetto/include/perfetto/base/utils.h
+@@ -22,6 +22,7 @@
+ #include <errno.h>
+ #include <stddef.h>
+ #include <stdlib.h>
++#include <type_traits>
+ #if !PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
+ #include <sys/types.h>
+ #endif
+@@ -91,7 +92,7 @@ struct FreeDeleter {
+ 
+ template <typename T>
+ constexpr T AssumeLittleEndian(T value) {
+-  static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
++  static_assert(std::is_same<T,T>::value && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
+                 "Unimplemented on big-endian archs");
+   return value;
+ }
+--- qtwebengine/src/3rdparty/chromium/third_party/perfetto/include/perfetto/protozero/message.h
++++ qtwebengine/src/3rdparty/chromium/third_party/perfetto/include/perfetto/protozero/message.h
+@@ -138,6 +138,13 @@ class PERFETTO_EXPORT Message {
+ 
+     pos = proto_utils::WriteVarInt(proto_utils::MakeTagFixed<T>(field_id), pos);
+     memcpy(pos, &value, sizeof(T));
++#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
++    for (size_t i = sizeof(T)/2; i--; ) {
++      uint8_t tmp = pos[i];
++      pos[i] = pos[sizeof(T)-1-i];
++      pos[sizeof(T)-1-i] = tmp;
++    }
++#endif
+     pos += sizeof(T);
+     // TODO: Optimize memcpy performance, see http://crbug.com/624311 .
+     WriteToStream(buffer, pos);
+--- qtwebengine/src/3rdparty/chromium/third_party/perfetto/src/protozero/message.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/perfetto/src/protozero/message.cc
+@@ -21,12 +21,6 @@
+ #include "perfetto/base/logging.h"
+ #include "perfetto/protozero/message_handle.h"
+ 
+-#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+-// The memcpy() for float and double below needs to be adjusted if we want to
+-// support big endian CPUs. There doesn't seem to be a compelling need today.
+-#error Unimplemented for big endian archs.
+-#endif
+-
+ namespace protozero {
+ 
+ // static
+--- qtwebengine/src/3rdparty/chromium/third_party/perfetto/src/protozero/proto_decoder.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/perfetto/src/protozero/proto_decoder.cc
+@@ -29,7 +29,8 @@ using namespace proto_utils;
+ #define BYTE_SWAP_TO_LE32(x) (x)
+ #define BYTE_SWAP_TO_LE64(x) (x)
+ #else
+-#error Unimplemented for big endian archs.
++#define BYTE_SWAP_TO_LE32(x) __builtin_bswap32(x)
++#define BYTE_SWAP_TO_LE64(x) __builtin_bswap64(x)
+ #endif
+ 
+ ProtoDecoder::Field ProtoDecoder::ReadField() {
+--- qtwebengine/src/3rdparty/chromium/third_party/skia/include/core/SkPostConfig.h
++++ qtwebengine/src/3rdparty/chromium/third_party/skia/include/core/SkPostConfig.h
+@@ -40,12 +40,6 @@
+ #  error "must define either SK_CPU_LENDIAN or SK_CPU_BENDIAN"
+ #endif
+ 
+-#if defined(SK_CPU_BENDIAN) && !defined(I_ACKNOWLEDGE_SKIA_DOES_NOT_SUPPORT_BIG_ENDIAN)
+-    #error "The Skia team is not endian-savvy enough to support big-endian CPUs."
+-    #error "If you still want to use Skia,"
+-    #error "please define I_ACKNOWLEDGE_SKIA_DOES_NOT_SUPPORT_BIG_ENDIAN."
+-#endif
+-
+ /**
+  * Ensure the port has defined all of SK_X32_SHIFT, or none of them.
+  */
+--- qtwebengine/src/3rdparty/chromium/third_party/skia/include/private/GrTypesPriv.h
++++ qtwebengine/src/3rdparty/chromium/third_party/skia/include/private/GrTypesPriv.h
+@@ -65,9 +65,6 @@ enum GrPixelConfig {
+ static const int kGrPixelConfigCnt = kLast_GrPixelConfig + 1;
+ 
+ // Aliases for pixel configs that match skia's byte order.
+-#ifndef SK_CPU_LENDIAN
+-#error "Skia gpu currently assumes little endian"
+-#endif
+ #if SK_PMCOLOR_BYTE_ORDER(B,G,R,A)
+ static const GrPixelConfig kSkia8888_GrPixelConfig = kBGRA_8888_GrPixelConfig;
+ #elif SK_PMCOLOR_BYTE_ORDER(R,G,B,A)
+--- qtwebengine/src/3rdparty/chromium/third_party/skia/src/codec/SkCodecPriv.h
++++ qtwebengine/src/3rdparty/chromium/third_party/skia/src/codec/SkCodecPriv.h
+@@ -14,6 +14,7 @@
+ #include "SkEncodedOrigin.h"
+ #include "SkImageInfo.h"
+ #include "SkTypes.h"
++#include "SkEndian.h"
+ 
+ #ifdef SK_PRINT_CODEC_MESSAGES
+     #define SkCodecPrintf SkDebugf
+--- qtwebengine/src/3rdparty/chromium/third_party/skia/src/core/SkColor.cpp
++++ qtwebengine/src/3rdparty/chromium/third_party/skia/src/core/SkColor.cpp
+@@ -108,13 +108,29 @@ SkColor SkHSVToColor(U8CPU a, const SkScalar hsv[3]) {
+ template <>
+ SkColor4f SkColor4f::FromColor(SkColor bgra) {
+     SkColor4f rgba;
+-    swizzle_rb(Sk4f_fromL32(bgra)).store(rgba.vec());
++    Sk4f c4f = Sk4f_fromL32(bgra);
++#ifdef SK_CPU_BENDIAN
++    // ARGB -> RGBA
++    c4f = SkNx_shuffle<1, 2, 3, 0>(c4f);
++#else
++    // BGRA -> RGBA
++    c4f = swizzle_rb(c4f);
++#endif
++    c4f.store(rgba.vec());
+     return rgba;
+ }
+ 
+ template <>
+ SkColor SkColor4f::toSkColor() const {
+-    return Sk4f_toL32(swizzle_rb(Sk4f::Load(this->vec())));
++    Sk4f c4f = Sk4f::Load(this->vec());
++#ifdef SK_CPU_BENDIAN
++    // RGBA -> ARGB
++    c4f = SkNx_shuffle<3, 0, 1, 2>(c4f);
++#else
++    // RGBA -> BGRA
++    c4f = swizzle_rb(c4f);
++#endif
++    return Sk4f_toL32(c4f);
+ }
+ 
+ template <>
+--- qtwebengine/src/3rdparty/chromium/third_party/skia/src/core/SkPixmap.cpp
++++ qtwebengine/src/3rdparty/chromium/third_party/skia/src/core/SkPixmap.cpp
+@@ -246,7 +246,8 @@ SkColor SkPixmap::getColor(int x, int y) const {
+     const bool needsUnpremul = (kPremul_SkAlphaType == fInfo.alphaType());
+     auto toColor = [needsUnpremul](uint32_t maybePremulColor) {
+         return needsUnpremul ? SkUnPreMultiply::PMColorToColor(maybePremulColor)
+-                             : SkSwizzle_BGRA_to_PMColor(maybePremulColor);
++                             : SkColorSetARGB(SkGetPackedA32(maybePremulColor), SkGetPackedR32(maybePremulColor),
++					      SkGetPackedG32(maybePremulColor), SkGetPackedB32(maybePremulColor));
+     };
+ 
+     switch (this->colorType()) {
+--- qtwebengine/src/3rdparty/chromium/third_party/skia/src/opts/Sk4px_none.h
++++ qtwebengine/src/3rdparty/chromium/third_party/skia/src/opts/Sk4px_none.h
+@@ -35,7 +35,6 @@ inline Sk4px Sk4px::Wide::div255() const {
+ }
+ 
+ inline Sk4px Sk4px::alphas() const {
+-    static_assert(SK_A32_SHIFT == 24, "This method assumes little-endian.");
+     return Sk16b((*this)[ 3], (*this)[ 3], (*this)[ 3], (*this)[ 3],
+                  (*this)[ 7], (*this)[ 7], (*this)[ 7], (*this)[ 7],
+                  (*this)[11], (*this)[11], (*this)[11], (*this)[11],
+--- qtwebengine/src/3rdparty/chromium/third_party/skia/src/opts/SkBlitRow_opts.h
++++ qtwebengine/src/3rdparty/chromium/third_party/skia/src/opts/SkBlitRow_opts.h
+@@ -237,8 +237,8 @@ void blit_row_s32a_opaque(SkPMColor* dst, const SkPMColor* src, int len, U8CPU a
+         // with chromium:611002 we need to keep it until we figure out where
+         // the non-premultiplied src values (like 0x00FFFFFF) are coming from.
+         // TODO(mtklein): sort this out and assert *src is premul here.
+-        if (*src & 0xFF000000) {
+-            *dst = (*src >= 0xFF000000) ? *src : SkPMSrcOver(*src, *dst);
++        if (*src & (0xFF << SK_A32_SHIFT)) {
++            *dst = ((*src << (24 - SK_A32_SHIFT)) >= 0xFF000000) ? *src : SkPMSrcOver(*src, *dst);
+         }
+         src++;
+         dst++;
+--- qtwebengine/src/3rdparty/chromium/third_party/skia/src/opts/SkRasterPipeline_opts.h
++++ qtwebengine/src/3rdparty/chromium/third_party/skia/src/opts/SkRasterPipeline_opts.h
+@@ -948,10 +948,17 @@ SI void from_4444(U16 _4444, F* r, F* g, F* b, F* a) {
+     *a = cast(wide & (15<< 0)) * (1.0f / (15<< 0));
+ }
+ SI void from_8888(U32 _8888, F* r, F* g, F* b, F* a) {
++#ifdef SK_CPU_BENDIAN
++    *r = cast((_8888 >> 24)       ) * (1/255.0f);
++    *g = cast((_8888 >> 16) & 0xff) * (1/255.0f);
++    *b = cast((_8888 >>  8) & 0xff) * (1/255.0f);
++    *a = cast((_8888      ) & 0xff) * (1/255.0f);
++#else
+     *r = cast((_8888      ) & 0xff) * (1/255.0f);
+     *g = cast((_8888 >>  8) & 0xff) * (1/255.0f);
+     *b = cast((_8888 >> 16) & 0xff) * (1/255.0f);
+     *a = cast((_8888 >> 24)       ) * (1/255.0f);
++#endif
+ }
+ SI void from_1010102(U32 rgba, F* r, F* g, F* b, F* a) {
+     *r = cast((rgba      ) & 0x3ff) * (1/1023.0f);
+@@ -1278,10 +1285,17 @@ STAGE(srcover_rgba_8888, const SkRasterPipeline_MemoryCtx* ctx) {
+     auto ptr = ptr_at_xy<uint32_t>(ctx, dx,dy);
+ 
+     U32 dst = load<U32>(ptr, tail);
++#ifdef SK_CPU_BENDIAN
++    dr = cast((dst >> 24)       );
++    dg = cast((dst >> 16) & 0xff);
++    db = cast((dst >>  8) & 0xff);
++    da = cast((dst      ) & 0xff);
++#else
+     dr = cast((dst      ) & 0xff);
+     dg = cast((dst >>  8) & 0xff);
+     db = cast((dst >> 16) & 0xff);
+     da = cast((dst >> 24)       );
++#endif
+     // {dr,dg,db,da} are in [0,255]
+     // { r, g, b, a} are in [0,  1] (but may be out of gamut)
+ 
+@@ -1292,10 +1306,17 @@ STAGE(srcover_rgba_8888, const SkRasterPipeline_MemoryCtx* ctx) {
+     // { r, g, b, a} are now in [0,255]  (but may be out of gamut)
+ 
+     // to_unorm() clamps back to gamut.  Scaling by 1 since we're already 255-biased.
++#ifdef SK_CPU_BENDIAN
++    dst = to_unorm(r, 1, 255) << 24
++        | to_unorm(g, 1, 255) << 16
++        | to_unorm(b, 1, 255) <<  8
++        | to_unorm(a, 1, 255);
++#else
+     dst = to_unorm(r, 1, 255)
+         | to_unorm(g, 1, 255) <<  8
+         | to_unorm(b, 1, 255) << 16
+         | to_unorm(a, 1, 255) << 24;
++#endif
+     store(ptr, dst, tail);
+ }
+ 
+@@ -1694,10 +1715,17 @@ STAGE(gather_8888, const SkRasterPipeline_GatherCtx* ctx) {
+ STAGE(store_8888, const SkRasterPipeline_MemoryCtx* ctx) {
+     auto ptr = ptr_at_xy<uint32_t>(ctx, dx,dy);
+ 
++#ifdef SK_CPU_BENDIAN
++    U32 px = to_unorm(r, 255) << 24
++           | to_unorm(g, 255) << 16
++           | to_unorm(b, 255) <<  8
++           | to_unorm(a, 255);
++#else
+     U32 px = to_unorm(r, 255)
+            | to_unorm(g, 255) <<  8
+            | to_unorm(b, 255) << 16
+            | to_unorm(a, 255) << 24;
++#endif
+     store(ptr, px, tail);
+ }
+ 
+@@ -2852,10 +2880,17 @@ SI void from_8888(U32 rgba, U16* r, U16* g, U16* b, U16* a) {
+         return cast<U16>(v);
+     };
+ #endif
++#ifdef SK_CPU_BENDIAN
++    *r = cast_U16(rgba >>   16) >>  8;
++    *g = cast_U16(rgba >>   16) & 255;
++    *b = cast_U16(rgba & 65535) >>  8;
++    *a = cast_U16(rgba & 65535) & 255;
++#else
+     *r = cast_U16(rgba & 65535) & 255;
+     *g = cast_U16(rgba & 65535) >>  8;
+     *b = cast_U16(rgba >>   16) & 255;
+     *a = cast_U16(rgba >>   16) >>  8;
++#endif
+ }
+ 
+ SI void load_8888_(const uint32_t* ptr, size_t tail, U16* r, U16* g, U16* b, U16* a) {
+@@ -2897,10 +2932,15 @@ SI void store_8888_(uint32_t* ptr, size_t tail, U16 r, U16 g, U16 b, U16 a) {
+         case 2: vst4_lane_u8((uint8_t*)(ptr+1), rgba, 1);
+         case 1: vst4_lane_u8((uint8_t*)(ptr+0), rgba, 0);
+     }
++#else
++#ifdef SK_CPU_BENDIAN
++    store(ptr, tail, cast<U32>((r<<8) | g) << 16
++                   | cast<U32>((b<<8) | a) << 0);
+ #else
+     store(ptr, tail, cast<U32>(r | (g<<8)) <<  0
+                    | cast<U32>(b | (a<<8)) << 16);
+ #endif
++#endif
+ }
+ 
+ STAGE_PP(load_8888, const SkRasterPipeline_MemoryCtx* ctx) {
+--- qtwebengine/src/3rdparty/chromium/third_party/skia/src/utils/SkJSON.cpp
++++ qtwebengine/src/3rdparty/chromium/third_party/skia/src/utils/SkJSON.cpp
+@@ -34,6 +34,10 @@ void Value::init_tagged(Tag t) {
+ 
+ // Pointer values store a type (in the upper kTagBits bits) and a pointer.
+ void Value::init_tagged_pointer(Tag t, void* p) {
++#if !defined(SK_CPU_LENDIAN)
++    // Check that kRecAlign is large enough to leave room for the tag
++    static_assert(sizeof(Value) > sizeof(uintptr_t) || !(kRecAlign & Value::kTagMask), "kRecAlign is not a multiple of kTagMask+1");
++#endif
+     *this->cast<uintptr_t>() = reinterpret_cast<uintptr_t>(p);
+ 
+     if (sizeof(Value) == sizeof(uintptr_t)) {
+@@ -169,7 +173,7 @@ private:
+ #if defined(SK_CPU_LENDIAN)
+         *s64 &= 0x00ffffffffffffffULL >> ((kMaxInlineStringSize - size) * 8);
+ #else
+-        static_assert(false, "Big-endian builds are not supported at this time.");
++        *s64 &= 0xffffffffffffff00ULL << ((kMaxInlineStringSize - size) * 8);
+ #endif
+     }
+ };
+--- qtwebengine/src/3rdparty/chromium/third_party/skia/src/utils/SkJSON.h
++++ qtwebengine/src/3rdparty/chromium/third_party/skia/src/utils/SkJSON.h
+@@ -120,6 +120,7 @@ protected:
+          -- highest 3 bits reserved for type storage
+ 
+      */
++#if defined(SK_CPU_LENDIAN)
+     enum class Tag : uint8_t {
+         // We picked kShortString == 0 so that tag 0x00 and stored max_size-size (7-7=0)
+         // conveniently overlap the '\0' terminator, allowing us to store a 7 character
+@@ -134,6 +135,22 @@ protected:
+         kObject                       = 0b11100000,  // ptr to external storage
+     };
+     static constexpr uint8_t kTagMask = 0b11100000;
++#else
++    enum class Tag : uint8_t {
++        // We picked kShortString == 0 so that tag 0x00 and stored max_size-size (7-7=0)
++        // conveniently overlap the '\0' terminator, allowing us to store a 7 character
++        // C string inline.
++        kShortString                  = 0b00000000,  // inline payload
++        kNull                         = 0b00000001,  // no payload
++        kBool                         = 0b00000010,  // inline payload
++        kInt                          = 0b00000011,  // inline payload
++        kFloat                        = 0b00000100,  // inline payload
++        kString                       = 0b00000101,  // ptr to external storage
++        kArray                        = 0b00000110,  // ptr to external storage
++        kObject                       = 0b00000111,  // ptr to external storage
++    };
++    static constexpr uint8_t kTagMask = 0b00000111;
++#endif
+ 
+     void init_tagged(Tag);
+     void init_tagged_pointer(Tag, void*);
+@@ -192,14 +209,14 @@ private:
+ 
+     uint8_t fData8[kValueSize];
+ 
+-#if defined(SK_CPU_LENDIAN)
+     static constexpr size_t kTagOffset = kValueSize - 1;
+ 
++#if defined(SK_CPU_LENDIAN)
+     static constexpr uintptr_t kTagPointerMask =
+             ~(static_cast<uintptr_t>(kTagMask) << ((sizeof(uintptr_t) - 1) * 8));
+ #else
+-    // The current value layout assumes LE and will take some tweaking for BE.
+-    static_assert(false, "Big-endian builds are not supported at this time.");
++    static constexpr uintptr_t kTagPointerMask =
++            ~static_cast<uintptr_t>(kTagMask);
+ #endif
+ };
+ 
+--- qtwebengine/src/3rdparty/chromium/third_party/skia/third_party/skcms/skcms.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/skia/third_party/skcms/skcms.cc
+@@ -66,10 +66,15 @@ static float eval_curve(const skcms_Curve* curve, float x) {
+         uint16_t be_l, be_h;
+         memcpy(&be_l, curve->table_16 + 2*lo, 2);
+         memcpy(&be_h, curve->table_16 + 2*hi, 2);
++#if __BIG_ENDIAN__
++        l = be_l * (1/65535.0f);
++        h = be_h * (1/65535.0f);
++#else
+         uint16_t le_l = ((be_l << 8) | (be_l >> 8)) & 0xffff;
+         uint16_t le_h = ((be_h << 8) | (be_h >> 8)) & 0xffff;
+         l = le_l * (1/65535.0f);
+         h = le_h * (1/65535.0f);
++#endif
+     }
+     return l + (h-l)*t;
+ }
+@@ -124,21 +129,29 @@ enum {
+ static uint16_t read_big_u16(const uint8_t* ptr) {
+     uint16_t be;
+     memcpy(&be, ptr, sizeof(be));
++#if __BIG_ENDIAN__
++    return be;
++#else
+ #if defined(_MSC_VER)
+     return _byteswap_ushort(be);
+ #else
+     return __builtin_bswap16(be);
+ #endif
++#endif
+ }
+ 
+ static uint32_t read_big_u32(const uint8_t* ptr) {
+     uint32_t be;
+     memcpy(&be, ptr, sizeof(be));
++#if __BIG_ENDIAN__
++    return be;
++#else
+ #if defined(_MSC_VER)
+     return _byteswap_ulong(be);
+ #else
+     return __builtin_bswap32(be);
+ #endif
++#endif
+ }
+ 
+ static int32_t read_big_i32(const uint8_t* ptr) {
+--- qtwebengine/src/3rdparty/chromium/third_party/skia/third_party/skcms/src/Transform_inl.h
++++ qtwebengine/src/3rdparty/chromium/third_party/skia/third_party/skcms/src/Transform_inl.h
+@@ -392,9 +392,11 @@ SI U32 gather_32(const uint8_t* p, I32 ix) {
+ }
+ 
+ SI U32 gather_24(const uint8_t* p, I32 ix) {
++#if !__BIG_ENDIAN__
+     // First, back up a byte.  Any place we're gathering from has a safe junk byte to read
+     // in front of it, either a previous table value, or some tag metadata.
+     p -= 1;
++#endif
+ 
+     // Load the i'th 24-bit value from p, and 1 extra byte.
+     auto load_24_32 = [p](int i) {
+@@ -435,8 +437,10 @@ SI U32 gather_24(const uint8_t* p, I32 ix) {
+ 
+ #if !defined(__arm__)
+     SI void gather_48(const uint8_t* p, I32 ix, U64* v) {
++#if !__BIG_ENDIAN__
+         // As in gather_24(), with everything doubled.
+         p -= 2;
++#endif
+ 
+         // Load the i'th 48-bit value from p, and 2 extra bytes.
+         auto load_48_64 = [p](int i) {
+@@ -499,7 +503,9 @@ SI F F_from_U8(U8 v) {
+ SI F F_from_U16_BE(U16 v) {
+     // All 16-bit ICC values are big-endian, so we byte swap before converting to float.
+     // MSVC catches the "loss" of data here in the portable path, so we also make sure to mask.
++#if !__BIG_ENDIAN__
+     v = U16( 0 | ((v & 0x00ff) << 8) | ((v & 0xff00) >> 8) );
++#endif
+     return cast<F>(v) * (1/65535.0f);
+ }
+ 
+@@ -534,9 +540,15 @@ SI F table(const skcms_Curve* curve, F v) {
+ SI void sample_clut_8(const skcms_A2B* a2b, I32 ix, F* r, F* g, F* b) {
+     U32 rgb = gather_24(a2b->grid_8, ix);
+ 
++#if __BIG_ENDIAN__
++    *r = cast<F>((rgb >> 16) & 0xff) * (1/255.0f);
++    *g = cast<F>((rgb >>  8) & 0xff) * (1/255.0f);
++    *b = cast<F>((rgb >>  0) & 0xff) * (1/255.0f);
++#else
+     *r = cast<F>((rgb >>  0) & 0xff) * (1/255.0f);
+     *g = cast<F>((rgb >>  8) & 0xff) * (1/255.0f);
+     *b = cast<F>((rgb >> 16) & 0xff) * (1/255.0f);
++#endif
+ }
+ 
+ SI void sample_clut_16(const skcms_A2B* a2b, I32 ix, F* r, F* g, F* b) {
+@@ -549,12 +561,18 @@ SI void sample_clut_16(const skcms_A2B* a2b, I32 ix, F* r, F* g, F* b) {
+     // This strategy is much faster for 64-bit builds, and fine for 32-bit x86 too.
+     U64 rgb;
+     gather_48(a2b->grid_16, ix, &rgb);
++#if __BIG_ENDIAN__
++    *r = cast<F>((rgb >> 32) & 0xffff) * (1/65535.0f);
++    *g = cast<F>((rgb >> 16) & 0xffff) * (1/65535.0f);
++    *b = cast<F>((rgb >>  0) & 0xffff) * (1/65535.0f);
++#else
+     rgb = swap_endian_16x4(rgb);
+ 
+     *r = cast<F>((rgb >>  0) & 0xffff) * (1/65535.0f);
+     *g = cast<F>((rgb >> 16) & 0xffff) * (1/65535.0f);
+     *b = cast<F>((rgb >> 32) & 0xffff) * (1/65535.0f);
+ #endif
++#endif
+ }
+ 
+ // GCC 7.2.0 hits an internal compiler error with -finline-functions (or -O3)
+@@ -695,10 +713,17 @@ static void exec_ops(const Op* ops, const void** args,
+             case Op_load_8888:{
+                 U32 rgba = load<U32>(src + 4*i);
+ 
++#if __BIG_ENDIAN__
++                r = cast<F>((rgba >> 24) & 0xff) * (1/255.0f);
++                g = cast<F>((rgba >> 16) & 0xff) * (1/255.0f);
++                b = cast<F>((rgba >>  8) & 0xff) * (1/255.0f);
++                a = cast<F>((rgba >>  0) & 0xff) * (1/255.0f);
++#else
+                 r = cast<F>((rgba >>  0) & 0xff) * (1/255.0f);
+                 g = cast<F>((rgba >>  8) & 0xff) * (1/255.0f);
+                 b = cast<F>((rgba >> 16) & 0xff) * (1/255.0f);
+                 a = cast<F>((rgba >> 24) & 0xff) * (1/255.0f);
++#endif
+             } break;
+ 
+             case Op_load_8888_palette8:{
+@@ -727,13 +752,29 @@ static void exec_ops(const Op* ops, const void** args,
+                 const uint16_t* rgb = (const uint16_t*)ptr; // cast to const uint16_t* to be safe.
+             #if defined(USING_NEON)
+                 uint16x4x3_t v = vld3_u16(rgb);
++#if __BIG_ENDIAN__
++                r = cast<F>(swap_endian_16((U16)v.val[0])) * (1/65535.0f);
++                g = cast<F>(swap_endian_16((U16)v.val[1])) * (1/65535.0f);
++                b = cast<F>(swap_endian_16((U16)v.val[2])) * (1/65535.0f);
++#else
+                 r = cast<F>((U16)v.val[0]) * (1/65535.0f);
+                 g = cast<F>((U16)v.val[1]) * (1/65535.0f);
+                 b = cast<F>((U16)v.val[2]) * (1/65535.0f);
++#endif
+             #else
++#if __BIG_ENDIAN__
++                U32 R = load_3<U32>(rgb+0),
++                    G = load_3<U32>(rgb+1),
++                    B = load_3<U32>(rgb+2);
++                // R,G,B are little-endian 16-bit, so byte swap them before converting to float.
++                r = cast<F>((R & 0x00ff)<<8 | (R & 0xff00)>>8) * (1/65535.0f);
++                g = cast<F>((G & 0x00ff)<<8 | (G & 0xff00)>>8) * (1/65535.0f);
++                b = cast<F>((B & 0x00ff)<<8 | (B & 0xff00)>>8) * (1/65535.0f);
++#else
+                 r = cast<F>(load_3<U32>(rgb+0)) * (1/65535.0f);
+                 g = cast<F>(load_3<U32>(rgb+1)) * (1/65535.0f);
+                 b = cast<F>(load_3<U32>(rgb+2)) * (1/65535.0f);
++#endif
+             #endif
+             } break;
+ 
+@@ -743,17 +784,33 @@ static void exec_ops(const Op* ops, const void** args,
+                 const uint16_t* rgba = (const uint16_t*)ptr; // cast to const uint16_t* to be safe.
+             #if defined(USING_NEON)
+                 uint16x4x4_t v = vld4_u16(rgba);
++#if __BIG_ENDIAN__
++                r = cast<F>(swap_endian_16((U16)v.val[0])) * (1/65535.0f);
++                g = cast<F>(swap_endian_16((U16)v.val[1])) * (1/65535.0f);
++                b = cast<F>(swap_endian_16((U16)v.val[2])) * (1/65535.0f);
++                a = cast<F>(swap_endian_16((U16)v.val[3])) * (1/65535.0f);
++#else
+                 r = cast<F>((U16)v.val[0]) * (1/65535.0f);
+                 g = cast<F>((U16)v.val[1]) * (1/65535.0f);
+                 b = cast<F>((U16)v.val[2]) * (1/65535.0f);
+                 a = cast<F>((U16)v.val[3]) * (1/65535.0f);
++#endif
+             #else
++#if __BIG_ENDIAN__
++                U64 px = swap_endian_16x4(load<U64>(rgba));
++
++                r = cast<F>((px >> 48) & 0xffff) * (1/65535.0f);
++                g = cast<F>((px >> 32) & 0xffff) * (1/65535.0f);
++                b = cast<F>((px >> 16) & 0xffff) * (1/65535.0f);
++                a = cast<F>((px >>  0) & 0xffff) * (1/65535.0f);
++#else
+                 U64 px = load<U64>(rgba);
+ 
+                 r = cast<F>((px >>  0) & 0xffff) * (1/65535.0f);
+                 g = cast<F>((px >> 16) & 0xffff) * (1/65535.0f);
+                 b = cast<F>((px >> 32) & 0xffff) * (1/65535.0f);
+                 a = cast<F>((px >> 48) & 0xffff) * (1/65535.0f);
++#endif
+             #endif
+             } break;
+ 
+@@ -763,10 +820,21 @@ static void exec_ops(const Op* ops, const void** args,
+                 const uint16_t* rgb = (const uint16_t*)ptr; // cast to const uint16_t* to be safe.
+             #if defined(USING_NEON)
+                 uint16x4x3_t v = vld3_u16(rgb);
++#if __BIG_ENDIAN__
++                r = cast<F>((U16)v.val[0]) * (1/65535.0f);
++                g = cast<F>((U16)v.val[1]) * (1/65535.0f);
++                b = cast<F>((U16)v.val[2]) * (1/65535.0f);
++#else
+                 r = cast<F>(swap_endian_16((U16)v.val[0])) * (1/65535.0f);
+                 g = cast<F>(swap_endian_16((U16)v.val[1])) * (1/65535.0f);
+                 b = cast<F>(swap_endian_16((U16)v.val[2])) * (1/65535.0f);
++#endif
+             #else
++#if __BIG_ENDIAN__
++                r = cast<F>(load_3<U32>(rgb+0)) * (1/65535.0f);
++                g = cast<F>(load_3<U32>(rgb+1)) * (1/65535.0f);
++                b = cast<F>(load_3<U32>(rgb+2)) * (1/65535.0f);
++#else
+                 U32 R = load_3<U32>(rgb+0),
+                     G = load_3<U32>(rgb+1),
+                     B = load_3<U32>(rgb+2);
+@@ -774,6 +842,7 @@ static void exec_ops(const Op* ops, const void** args,
+                 r = cast<F>((R & 0x00ff)<<8 | (R & 0xff00)>>8) * (1/65535.0f);
+                 g = cast<F>((G & 0x00ff)<<8 | (G & 0xff00)>>8) * (1/65535.0f);
+                 b = cast<F>((B & 0x00ff)<<8 | (B & 0xff00)>>8) * (1/65535.0f);
++#endif
+             #endif
+             } break;
+ 
+@@ -783,17 +852,33 @@ static void exec_ops(const Op* ops, const void** args,
+                 const uint16_t* rgba = (const uint16_t*)ptr; // cast to const uint16_t* to be safe.
+             #if defined(USING_NEON)
+                 uint16x4x4_t v = vld4_u16(rgba);
++#if __BIG_ENDIAN__
++                r = cast<F>((U16)v.val[0]) * (1/65535.0f);
++                g = cast<F>((U16)v.val[1]) * (1/65535.0f);
++                b = cast<F>((U16)v.val[2]) * (1/65535.0f);
++                a = cast<F>((U16)v.val[3]) * (1/65535.0f);
++#else
+                 r = cast<F>(swap_endian_16((U16)v.val[0])) * (1/65535.0f);
+                 g = cast<F>(swap_endian_16((U16)v.val[1])) * (1/65535.0f);
+                 b = cast<F>(swap_endian_16((U16)v.val[2])) * (1/65535.0f);
+                 a = cast<F>(swap_endian_16((U16)v.val[3])) * (1/65535.0f);
++#endif
+             #else
++#if __BIG_ENDIAN__
++                U64 px = load<U64>(rgba);
++
++                r = cast<F>((px >> 48) & 0xffff) * (1/65535.0f);
++                g = cast<F>((px >> 32) & 0xffff) * (1/65535.0f);
++                b = cast<F>((px >> 16) & 0xffff) * (1/65535.0f);
++                a = cast<F>((px >>  0) & 0xffff) * (1/65535.0f);
++#else
+                 U64 px = swap_endian_16x4(load<U64>(rgba));
+ 
+                 r = cast<F>((px >>  0) & 0xffff) * (1/65535.0f);
+                 g = cast<F>((px >> 16) & 0xffff) * (1/65535.0f);
+                 b = cast<F>((px >> 32) & 0xffff) * (1/65535.0f);
+                 a = cast<F>((px >> 48) & 0xffff) * (1/65535.0f);
++#endif
+             #endif
+             } break;
+ 
+@@ -828,10 +913,17 @@ static void exec_ops(const Op* ops, const void** args,
+                     A = (U16)v.val[3];
+             #else
+                 U64 px = load<U64>(rgba);
++#if __BIG_ENDIAN__
++                U16 R = cast<U16>((px >> 48) & 0xffff),
++                    G = cast<U16>((px >> 32) & 0xffff),
++                    B = cast<U16>((px >> 16) & 0xffff),
++                    A = cast<U16>((px >>  0) & 0xffff);
++#else
+                 U16 R = cast<U16>((px >>  0) & 0xffff),
+                     G = cast<U16>((px >> 16) & 0xffff),
+                     B = cast<U16>((px >> 32) & 0xffff),
+                     A = cast<U16>((px >> 48) & 0xffff);
++#endif
+             #endif
+                 r = F_from_Half(R);
+                 g = F_from_Half(G);
+@@ -1024,10 +1116,17 @@ static void exec_ops(const Op* ops, const void** args,
+             } return;
+ 
+             case Op_store_8888: {
++#if __BIG_ENDIAN__
++                store(dst + 4*i, cast<U32>(to_fixed(r * 255) << 24)
++                               | cast<U32>(to_fixed(g * 255) << 16)
++                               | cast<U32>(to_fixed(b * 255) <<  8)
++                               | cast<U32>(to_fixed(a * 255) <<  0));
++#else
+                 store(dst + 4*i, cast<U32>(to_fixed(r * 255) <<  0)
+                                | cast<U32>(to_fixed(g * 255) <<  8)
+                                | cast<U32>(to_fixed(b * 255) << 16)
+                                | cast<U32>(to_fixed(a * 255) << 24));
++#endif
+             } return;
+ 
+             case Op_store_1010102: {
+@@ -1043,15 +1142,30 @@ static void exec_ops(const Op* ops, const void** args,
+                 uint16_t* rgb = (uint16_t*)ptr;          // for this cast to uint16_t* to be safe.
+             #if defined(USING_NEON)
+                 uint16x4x3_t v = {{
++#if __BIG_ENDIAN__
++                    (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(r * 65535))),
++                    (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(g * 65535))),
++                    (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(b * 65535))),
++#else
+                     (uint16x4_t)cast<U16>(to_fixed(r * 65535)),
+                     (uint16x4_t)cast<U16>(to_fixed(g * 65535)),
+                     (uint16x4_t)cast<U16>(to_fixed(b * 65535)),
++#endif
+                 }};
+                 vst3_u16(rgb, v);
+             #else
++#if __BIG_ENDIAN__
++                I32 R = to_fixed(r * 65535),
++                    G = to_fixed(g * 65535),
++                    B = to_fixed(b * 65535);
++                store_3(rgb+0, cast<U16>((R & 0x00ff) << 8 | (R & 0xff00) >> 8) );
++                store_3(rgb+1, cast<U16>((G & 0x00ff) << 8 | (G & 0xff00) >> 8) );
++                store_3(rgb+2, cast<U16>((B & 0x00ff) << 8 | (B & 0xff00) >> 8) );
++#else
+                 store_3(rgb+0, cast<U16>(to_fixed(r * 65535)));
+                 store_3(rgb+1, cast<U16>(to_fixed(g * 65535)));
+                 store_3(rgb+2, cast<U16>(to_fixed(b * 65535)));
++#endif
+             #endif
+ 
+             } return;
+@@ -1062,18 +1176,33 @@ static void exec_ops(const Op* ops, const void** args,
+                 uint16_t* rgba = (uint16_t*)ptr;        // for this cast to uint16_t* to be safe.
+             #if defined(USING_NEON)
+                 uint16x4x4_t v = {{
++#if __BIG_ENDIAN__
++                    (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(r * 65535))),
++                    (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(g * 65535))),
++                    (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(b * 65535))),
++                    (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(a * 65535))),
++#else
+                     (uint16x4_t)cast<U16>(to_fixed(r * 65535)),
+                     (uint16x4_t)cast<U16>(to_fixed(g * 65535)),
+                     (uint16x4_t)cast<U16>(to_fixed(b * 65535)),
+                     (uint16x4_t)cast<U16>(to_fixed(a * 65535)),
++#endif
+                 }};
+                 vst4_u16(rgba, v);
+             #else
++#if __BIG_ENDIAN__
++                U64 px = cast<U64>(to_fixed(r * 65535)) << 48
++                       | cast<U64>(to_fixed(g * 65535)) << 32
++                       | cast<U64>(to_fixed(b * 65535)) << 16
++                       | cast<U64>(to_fixed(a * 65535)) <<  0;
++                store(rgba, swap_endian_16x4(px));
++#else
+                 U64 px = cast<U64>(to_fixed(r * 65535)) <<  0
+                        | cast<U64>(to_fixed(g * 65535)) << 16
+                        | cast<U64>(to_fixed(b * 65535)) << 32
+                        | cast<U64>(to_fixed(a * 65535)) << 48;
+                 store(rgba, px);
++#endif
+             #endif
+             } return;
+ 
+@@ -1083,18 +1212,30 @@ static void exec_ops(const Op* ops, const void** args,
+                 uint16_t* rgb = (uint16_t*)ptr;          // for this cast to uint16_t* to be safe.
+             #if defined(USING_NEON)
+                 uint16x4x3_t v = {{
++#if __BIG_ENDIAN__
++                    (uint16x4_t)cast<U16>(to_fixed(r * 65535)),
++                    (uint16x4_t)cast<U16>(to_fixed(g * 65535)),
++                    (uint16x4_t)cast<U16>(to_fixed(b * 65535)),
++#else
+                     (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(r * 65535))),
+                     (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(g * 65535))),
+                     (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(b * 65535))),
++#endif
+                 }};
+                 vst3_u16(rgb, v);
+             #else
++#if __BIG_ENDIAN__
++                store_3(rgb+0, cast<U16>(to_fixed(r * 65535)));
++                store_3(rgb+1, cast<U16>(to_fixed(g * 65535)));
++                store_3(rgb+2, cast<U16>(to_fixed(b * 65535)));
++#else
+                 I32 R = to_fixed(r * 65535),
+                     G = to_fixed(g * 65535),
+                     B = to_fixed(b * 65535);
+                 store_3(rgb+0, cast<U16>((R & 0x00ff) << 8 | (R & 0xff00) >> 8) );
+                 store_3(rgb+1, cast<U16>((G & 0x00ff) << 8 | (G & 0xff00) >> 8) );
+                 store_3(rgb+2, cast<U16>((B & 0x00ff) << 8 | (B & 0xff00) >> 8) );
++#endif
+             #endif
+ 
+             } return;
+@@ -1105,18 +1246,33 @@ static void exec_ops(const Op* ops, const void** args,
+                 uint16_t* rgba = (uint16_t*)ptr;        // for this cast to uint16_t* to be safe.
+             #if defined(USING_NEON)
+                 uint16x4x4_t v = {{
++#if __BIG_ENDIAN__
++                    (uint16x4_t)cast<U16>(to_fixed(r * 65535)),
++                    (uint16x4_t)cast<U16>(to_fixed(g * 65535)),
++                    (uint16x4_t)cast<U16>(to_fixed(b * 65535)),
++                    (uint16x4_t)cast<U16>(to_fixed(a * 65535)),
++#else
+                     (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(r * 65535))),
+                     (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(g * 65535))),
+                     (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(b * 65535))),
+                     (uint16x4_t)swap_endian_16(cast<U16>(to_fixed(a * 65535))),
++#endif
+                 }};
+                 vst4_u16(rgba, v);
+             #else
++#if __BIG_ENDIAN__
++                U64 px = cast<U64>(to_fixed(r * 65535)) << 48
++                       | cast<U64>(to_fixed(g * 65535)) << 32
++                       | cast<U64>(to_fixed(b * 65535)) << 16
++                       | cast<U64>(to_fixed(a * 65535)) <<  0;
++                store(rgba, px);
++#else
+                 U64 px = cast<U64>(to_fixed(r * 65535)) <<  0
+                        | cast<U64>(to_fixed(g * 65535)) << 16
+                        | cast<U64>(to_fixed(b * 65535)) << 32
+                        | cast<U64>(to_fixed(a * 65535)) << 48;
+                 store(rgba, swap_endian_16x4(px));
++#endif
+             #endif
+             } return;
+ 
+@@ -1160,10 +1316,17 @@ static void exec_ops(const Op* ops, const void** args,
+                 }};
+                 vst4_u16(rgba, v);
+             #else
++#if __BIG_ENDIAN__
++                store(rgba, cast<U64>(R) << 48
++                          | cast<U64>(G) << 32
++                          | cast<U64>(B) << 16
++                          | cast<U64>(A) <<  0);
++#else
+                 store(rgba, cast<U64>(R) <<  0
+                           | cast<U64>(G) << 16
+                           | cast<U64>(B) << 32
+                           | cast<U64>(A) << 48);
++#endif
+             #endif
+ 
+             } return;
+--- qtwebengine/src/3rdparty/chromium/third_party/webrtc/common_audio/wav_file.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/webrtc/common_audio/wav_file.cc
+@@ -93,13 +93,15 @@ size_t WavReader::num_samples() const {
+ }
+ 
+ size_t WavReader::ReadSamples(size_t num_samples, int16_t* samples) {
+-#ifndef WEBRTC_ARCH_LITTLE_ENDIAN
+-#error "Need to convert samples to big-endian when reading from WAV file"
+-#endif
+   // There could be metadata after the audio; ensure we don't read it.
+   num_samples = std::min(num_samples, num_samples_remaining_);
+   const size_t read =
+       fread(samples, sizeof(*samples), num_samples, file_handle_);
++#ifndef WEBRTC_ARCH_LITTLE_ENDIAN
++  for (size_t i = 0; i < read; i++) {
++      samples[i] = __builtin_bswap16(samples[i]);
++  }
++#endif
+   // If we didn't read what was requested, ensure we've reached the EOF.
+   RTC_CHECK(read == num_samples || feof(file_handle_));
+   RTC_CHECK_LE(read, num_samples_remaining_);
+@@ -178,13 +180,26 @@ size_t WavWriter::num_samples() const {
+ 
+ void WavWriter::WriteSamples(const int16_t* samples, size_t num_samples) {
+ #ifndef WEBRTC_ARCH_LITTLE_ENDIAN
+-#error "Need to convert samples to little-endian when writing to WAV file"
+-#endif
++  static const size_t kChunksize = 4096 / sizeof(uint16_t);
++  for (size_t i = 0; i < num_samples; i += kChunksize) {
++    int16_t isamples[kChunksize];
++    const size_t chunk = std::min(kChunksize, num_samples - i);
++    for (size_t j = 0; j < chunk; j++) {
++      isamples[j] = __builtin_bswap16(samples[i + j]);
++    }
++    const size_t written =
++        fwrite(isamples, sizeof(*isamples), chunk, file_handle_);
++    RTC_CHECK_EQ(chunk, written);
++    num_samples_ += written;
++    RTC_CHECK(num_samples_ >= written);  // detect size_t overflow
++  }
++#else
+   const size_t written =
+       fwrite(samples, sizeof(*samples), num_samples, file_handle_);
+   RTC_CHECK_EQ(num_samples, written);
+   num_samples_ += written;
+   RTC_CHECK(num_samples_ >= written);  // detect size_t overflow
++#endif
+ }
+ 
+ void WavWriter::WriteSamples(const float* samples, size_t num_samples) {
+--- qtwebengine/src/3rdparty/chromium/third_party/webrtc/common_audio/wav_header.cc
++++ qtwebengine/src/3rdparty/chromium/third_party/webrtc/common_audio/wav_header.cc
+@@ -86,7 +86,26 @@ static inline std::string ReadFourCC(uint32_t x) {
+   return std::string(reinterpret_cast<char*>(&x), 4);
+ }
+ #else
+-#error "Write be-to-le conversion functions"
++static inline void WriteLE16(uint16_t* f, uint16_t x) {
++  *f = __builtin_bswap16(x);
++}
++static inline void WriteLE32(uint32_t* f, uint32_t x) {
++  *f = __builtin_bswap32(x);
++}
++static inline void WriteFourCC(uint32_t* f, char a, char b, char c, char d) {
++  *f = static_cast<uint32_t>(d) | static_cast<uint32_t>(c) << 8 |
++       static_cast<uint32_t>(b) << 16 | static_cast<uint32_t>(a) << 24;
++}
++
++static inline uint16_t ReadLE16(uint16_t x) {
++  return __builtin_bswap16(x);
++}
++static inline uint32_t ReadLE32(uint32_t x) {
++  return __builtin_bswap32(x);
++}
++static inline std::string ReadFourCC(uint32_t x) {
++  return std::string(reinterpret_cast<char*>(&x), 4);
++}
+ #endif
+ 
+ static inline uint32_t RiffChunkSize(size_t bytes_in_payload) {
+--- qtwebengine/src/3rdparty/chromium/ui/aura/mus/os_exchange_data_provider_mus.cc
++++ qtwebengine/src/3rdparty/chromium/ui/aura/mus/os_exchange_data_provider_mus.cc
+@@ -14,6 +14,7 @@
+ #include "base/strings/string_split.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
++#include "base/sys_byteorder.h"
+ #include "net/base/filename_util.h"
+ #include "ui/base/clipboard/clipboard_constants.h"
+ #include "ui/base/clipboard/clipboard_format_type.h"
+@@ -279,8 +280,13 @@ void OSExchangeDataProviderMus::SetHtml(const base::string16& html,
+   std::vector<unsigned char> bytes;
+   // Manually jam a UTF16 BOM into bytes because otherwise, other programs will
+   // assume UTF-8.
++#if defined(ARCH_CPU_LITTLE_ENDIAN)
+   bytes.push_back(0xFF);
+   bytes.push_back(0xFE);
++#else
++  bytes.push_back(0xFE);
++  bytes.push_back(0xFF);
++#endif
+   AddString16ToVector(html, &bytes);
+   mime_data_[ui::kMimeTypeHTML] = bytes;
+ }
+--- qtwebengine/src/3rdparty/chromium/ui/base/resource/data_pack.cc
++++ qtwebengine/src/3rdparty/chromium/ui/base/resource/data_pack.cc
+@@ -154,16 +154,42 @@ class ScopedFileWriter {
+   DISALLOW_COPY_AND_ASSIGN(ScopedFileWriter);
+ };
+ 
++static inline uint16_t byteswap(uint16_t v) { return __builtin_bswap16(v); }
++static inline uint32_t byteswap(uint32_t v) { return __builtin_bswap32(v); }
++
++template<class T> class byteswapped_t {
++private:
++  T value;
++public:
++  inline byteswapped_t(T v) : value(byteswap(v)) { }
++  inline T operator=(T v) { value = byteswap(v); return v; }
++  inline T operator+=(T v) { v += byteswap(value); value = byteswap(v); return v; }
++  inline operator T() const { return byteswap(value); }
++};
++
++#if !defined(ARCH_CPU_LITTLE_ENDIAN)
++
++typedef byteswapped_t<uint16_t> uint16le_t;
++typedef byteswapped_t<uint32_t> uint32le_t;
++
++#else
++
++typedef uint16_t uint16le_t;
++typedef uint32_t uint32le_t;
++
++#endif
++
+ }  // namespace
+ 
+ namespace ui {
+ 
+ #pragma pack(push, 2)
+ struct DataPack::Entry {
+-  uint16_t resource_id;
+-  uint32_t file_offset;
++  uint16le_t resource_id;
++  uint32le_t file_offset;
+ 
+   static int CompareById(const void* void_key, const void* void_entry) {
++    // Key is host endian
+     uint16_t key = *reinterpret_cast<const uint16_t*>(void_key);
+     const Entry* entry = reinterpret_cast<const Entry*>(void_entry);
+     return key - entry->resource_id;
+@@ -171,10 +197,11 @@ struct DataPack::Entry {
+ };
+ 
+ struct DataPack::Alias {
+-  uint16_t resource_id;
+-  uint16_t entry_index;
++  uint16le_t resource_id;
++  uint16le_t entry_index;
+ 
+   static int CompareById(const void* void_key, const void* void_entry) {
++    // Key is host endian
+     uint16_t key = *reinterpret_cast<const uint16_t*>(void_key);
+     const Alias* entry = reinterpret_cast<const Alias*>(void_entry);
+     return key - entry->resource_id;
+@@ -284,7 +311,7 @@ bool DataPack::LoadImpl(std::unique_ptr<DataPack::DataSource> data_source) {
+   // Parse the version and check for truncated header.
+   uint32_t version = 0;
+   if (data_length > sizeof(version))
+-    version = reinterpret_cast<const uint32_t*>(data)[0];
++    version = reinterpret_cast<const uint32le_t*>(data)[0];
+   size_t header_length =
+       version == kFileFormatV4 ? kHeaderLengthV4 : kHeaderLengthV5;
+   if (version == 0 || data_length < header_length) {
+@@ -295,14 +322,14 @@ bool DataPack::LoadImpl(std::unique_ptr<DataPack::DataSource> data_source) {
+ 
+   // Parse the header of the file.
+   if (version == kFileFormatV4) {
+-    resource_count_ = reinterpret_cast<const uint32_t*>(data)[1];
++    resource_count_ = reinterpret_cast<const uint32le_t*>(data)[1];
+     alias_count_ = 0;
+     text_encoding_type_ = static_cast<TextEncodingType>(data[8]);
+   } else if (version == kFileFormatV5) {
+     // Version 5 added the alias table and changed the header format.
+     text_encoding_type_ = static_cast<TextEncodingType>(data[4]);
+-    resource_count_ = reinterpret_cast<const uint16_t*>(data)[4];
+-    alias_count_ = reinterpret_cast<const uint16_t*>(data)[5];
++    resource_count_ = reinterpret_cast<const uint16le_t*>(data)[4];
++    alias_count_ = reinterpret_cast<const uint16le_t*>(data)[5];
+   } else {
+     LOG(ERROR) << "Bad data pack version: got " << version << ", expected "
+                << kFileFormatV4 << " or " << kFileFormatV5;
+@@ -447,9 +474,6 @@ void DataPack::CheckForDuplicateResources(
+ bool DataPack::WritePack(const base::FilePath& path,
+                          const std::map<uint16_t, base::StringPiece>& resources,
+                          TextEncodingType text_encoding_type) {
+-#if !defined(ARCH_CPU_LITTLE_ENDIAN)
+-#error "datapack assumes little endian"
+-#endif
+   if (text_encoding_type != UTF8 && text_encoding_type != UTF16 &&
+       text_encoding_type != BINARY) {
+     LOG(ERROR) << "Invalid text encoding type, got " << text_encoding_type
+@@ -467,7 +491,7 @@ bool DataPack::WritePack(const base::FilePath& path,
+   if (!file.valid())
+     return false;
+ 
+-  uint32_t encoding = static_cast<uint32_t>(text_encoding_type);
++  uint32le_t encoding = static_cast<uint32le_t>(text_encoding_type);
+ 
+   // Build a list of final resource aliases, and an alias map at the same time.
+   std::vector<uint16_t> resource_ids;
+@@ -494,13 +518,14 @@ bool DataPack::WritePack(const base::FilePath& path,
+ 
+   // These values are guaranteed to fit in a uint16_t due to the earlier
+   // check of |resources_count|.
+-  const uint16_t alias_count = static_cast<uint16_t>(aliases.size());
+-  const uint16_t entry_count = static_cast<uint16_t>(resource_ids.size());
++  const uint16le_t alias_count = static_cast<uint16le_t>(aliases.size());
++  const uint16le_t entry_count = static_cast<uint16le_t>(resource_ids.size());
+   DCHECK_EQ(static_cast<size_t>(entry_count) + static_cast<size_t>(alias_count),
+             resources_count);
+ 
+-  file.Write(&kFileFormatV5, sizeof(kFileFormatV5));
+-  file.Write(&encoding, sizeof(uint32_t));
++  uint32le_t version = kFileFormatV5;
++  file.Write(&version, sizeof(version));
++  file.Write(&encoding, sizeof(uint32le_t));
+   file.Write(&entry_count, sizeof(entry_count));
+   file.Write(&alias_count, sizeof(alias_count));
+ 
+@@ -508,8 +533,8 @@ bool DataPack::WritePack(const base::FilePath& path,
+   // last item so we can compute the size of the list item.
+   const uint32_t index_length = (entry_count + 1) * sizeof(Entry);
+   const uint32_t alias_table_length = alias_count * sizeof(Alias);
+-  uint32_t data_offset = kHeaderLengthV5 + index_length + alias_table_length;
+-  for (const uint16_t resource_id : resource_ids) {
++  uint32le_t data_offset = kHeaderLengthV5 + index_length + alias_table_length;
++  for (const uint16le_t resource_id : resource_ids) {
+     file.Write(&resource_id, sizeof(resource_id));
+     file.Write(&data_offset, sizeof(data_offset));
+     data_offset += resources.find(resource_id)->second.length();
+@@ -517,13 +542,13 @@ bool DataPack::WritePack(const base::FilePath& path,
+ 
+   // We place an extra entry after the last item that allows us to read the
+   // size of the last item.
+-  const uint16_t resource_id = 0;
++  const uint16le_t resource_id = 0;
+   file.Write(&resource_id, sizeof(resource_id));
+   file.Write(&data_offset, sizeof(data_offset));
+ 
+   // Write the aliases table, if any. Note: |aliases| is an std::map,
+   // ensuring values are written in increasing order.
+-  for (const std::pair<uint16_t, uint16_t>& alias : aliases) {
++  for (const std::pair<uint16le_t, uint16le_t> alias : aliases) {
+     file.Write(&alias, sizeof(alias));
+   }
+ 
+--- qtwebengine/src/3rdparty/chromium/ui/base/resource/data_pack.cc.orig
++++ qtwebengine/src/3rdparty/chromium/ui/base/resource/data_pack.cc.orig
+@@ -382,12 +382,6 @@ bool DataPack::HasResource(uint16_t resource_id) const {
+ 
+ bool DataPack::GetStringPiece(uint16_t resource_id,
+                               base::StringPiece* data) const {
+-  // It won't be hard to make this endian-agnostic, but it's not worth
+-  // bothering to do right now.
+-#if !defined(ARCH_CPU_LITTLE_ENDIAN)
+-#error "datapack assumes little endian"
+-#endif
+-
+   const Entry* target = LookupEntryById(resource_id);
+   if (!target)
+     return false;
+--- qtwebengine/src/3rdparty/chromium/ui/gfx/codec/jpeg_codec.cc
++++ qtwebengine/src/3rdparty/chromium/ui/gfx/codec/jpeg_codec.cc
+@@ -212,11 +212,11 @@ bool JPEGCodec::Decode(const unsigned char* input, size_t input_size,
+       // used by Chromium (i.e. RGBA and BGRA) and we just map the input
+       // parameters to a colorspace.
+       if (format == FORMAT_RGBA ||
+-          (format == FORMAT_SkBitmap && SK_R32_SHIFT == 0)) {
++          (format == FORMAT_SkBitmap && SK_PMCOLOR_BYTE_ORDER(R, G, B, A))) {
+         cinfo->out_color_space = JCS_EXT_RGBX;
+         cinfo->output_components = 4;
+       } else if (format == FORMAT_BGRA ||
+-                 (format == FORMAT_SkBitmap && SK_B32_SHIFT == 0)) {
++                 (format == FORMAT_SkBitmap && SK_PMCOLOR_BYTE_ORDER(B, G, R, A))) {
+         cinfo->out_color_space = JCS_EXT_BGRX;
+         cinfo->output_components = 4;
+       } else {
+--- qtwebengine/src/3rdparty/chromium/ui/gfx/codec/png_codec.cc
++++ qtwebengine/src/3rdparty/chromium/ui/gfx/codec/png_codec.cc
+@@ -169,6 +169,10 @@ void DecodeInfoCallback(png_struct* png_ptr, png_info* info_ptr) {
+         png_set_bgr(png_ptr);
+         png_set_add_alpha(png_ptr, 0xFF, PNG_FILLER_AFTER);
+         break;
++      case PNGCodec::FORMAT_ARGB:
++        state->output_channels = 4;
++        png_set_add_alpha(png_ptr, 0xFF, PNG_FILLER_BEFORE);
++        break;
+       case PNGCodec::FORMAT_SkBitmap:
+         state->output_channels = 4;
+         png_set_add_alpha(png_ptr, 0xFF, PNG_FILLER_AFTER);
+@@ -183,6 +187,10 @@ void DecodeInfoCallback(png_struct* png_ptr, png_info* info_ptr) {
+         state->output_channels = 4;
+         png_set_bgr(png_ptr);
+         break;
++      case PNGCodec::FORMAT_ARGB:
++        state->output_channels = 4;
++	png_set_swap_alpha(png_ptr);
++        break;
+       case PNGCodec::FORMAT_SkBitmap:
+         state->output_channels = 4;
+         break;
+@@ -475,6 +483,8 @@ bool PNGCodec::Encode(const unsigned char* input,
+     case FORMAT_BGRA:
+       colorType = kBGRA_8888_SkColorType;
+       break;
++    case FORMAT_ARGB:
++      return false;
+     case FORMAT_SkBitmap:
+       colorType = kN32_SkColorType;
+       break;
+--- qtwebengine/src/3rdparty/chromium/ui/gfx/codec/png_codec.h
++++ qtwebengine/src/3rdparty/chromium/ui/gfx/codec/png_codec.h
+@@ -37,6 +37,10 @@ class CODEC_EXPORT PNGCodec {
+     // This is the default Windows DIB order.
+     FORMAT_BGRA,
+ 
++    // 4 bytes per pixel, in ARGB order in memory regardless of endianness.
++    // Only supported for decoding
++    FORMAT_ARGB,
++
+     // SkBitmap format. For Encode() kN32_SkColorType (4 bytes per pixel) and
+     // kAlpha_8_SkColorType (1 byte per pixel) formats are supported.
+     // kAlpha_8_SkColorType gets encoded into a grayscale PNG treating alpha as
+--- qtwebengine/src/3rdparty/chromium/ui/gfx/codec/png_codec_unittest.cc
++++ qtwebengine/src/3rdparty/chromium/ui/gfx/codec/png_codec_unittest.cc
+@@ -853,7 +853,7 @@ TEST(PNGCodec, EncodeA8SkBitmap) {
+     for (int y = 0; y < h; y++) {
+       uint8_t original_pixel = *original_bitmap.getAddr8(x, y);
+       uint32_t decoded_pixel = *decoded_bitmap.getAddr32(x, y);
+-      EXPECT_TRUE(BGRAGrayEqualsA8Gray(decoded_pixel, original_pixel));
++      EXPECT_TRUE(BGRAGrayEqualsA8Gray(SkUnPreMultiply::PMColorToColor(decoded_pixel), original_pixel));
+     }
+   }
+ }
+--- qtwebengine/src/3rdparty/chromium/ui/gfx/color_analysis.cc
++++ qtwebengine/src/3rdparty/chromium/ui/gfx/color_analysis.cc
+@@ -16,6 +16,7 @@
+ #include <vector>
+ 
+ #include "base/logging.h"
++#include "base/sys_byteorder.h"
+ #include "third_party/skia/include/core/SkBitmap.h"
+ #include "third_party/skia/include/core/SkUnPreMultiply.h"
+ #include "ui/gfx/codec/png_codec.h"
+@@ -506,10 +507,17 @@ SkColor FindClosestColor(const uint8_t* image,
+   SkColor best_color = color;
+   const uint8_t* byte = image;
+   for (int i = 0; i < width * height; ++i) {
++#if defined(ARCH_CPU_LITTLE_ENDIAN)
+     uint8_t b = *(byte++);
+     uint8_t g = *(byte++);
+     uint8_t r = *(byte++);
+     uint8_t a = *(byte++);
++#else
++    uint8_t a = *(byte++);
++    uint8_t r = *(byte++);
++    uint8_t g = *(byte++);
++    uint8_t b = *(byte++);
++#endif
+     // Ignore fully transparent pixels.
+     if (a == 0)
+       continue;
+@@ -527,7 +535,6 @@ SkColor FindClosestColor(const uint8_t* image,
+ 
+ // For a 16x16 icon on an Intel Core i5 this function takes approximately
+ // 0.5 ms to run.
+-// TODO(port): This code assumes the CPU architecture is little-endian.
+ SkColor CalculateKMeanColorOfBuffer(uint8_t* decoded_data,
+                                     int img_width,
+                                     int img_height,
+@@ -550,10 +557,17 @@ SkColor CalculateKMeanColorOfBuffer(uint8_t* decoded_data,
+         int pixel_pos = sampler->GetSample(img_width, img_height) %
+             (img_width * img_height);
+ 
++#if defined(ARCH_CPU_LITTLE_ENDIAN)
+         uint8_t b = decoded_data[pixel_pos * 4];
+         uint8_t g = decoded_data[pixel_pos * 4 + 1];
+         uint8_t r = decoded_data[pixel_pos * 4 + 2];
+         uint8_t a = decoded_data[pixel_pos * 4 + 3];
++#else
++        uint8_t a = decoded_data[pixel_pos * 4];
++        uint8_t r = decoded_data[pixel_pos * 4 + 1];
++        uint8_t g = decoded_data[pixel_pos * 4 + 2];
++        uint8_t b = decoded_data[pixel_pos * 4 + 3];
++#endif
+         // Skip fully transparent pixels as they usually contain black in their
+         // RGB channels but do not contribute to the visual image.
+         if (a == 0)
+@@ -602,10 +616,17 @@ SkColor CalculateKMeanColorOfBuffer(uint8_t* decoded_data,
+       uint8_t* pixel = decoded_data;
+       uint8_t* decoded_data_end = decoded_data + (img_width * img_height * 4);
+       while (pixel < decoded_data_end) {
++#if defined(ARCH_CPU_LITTLE_ENDIAN)
+         uint8_t b = *(pixel++);
+         uint8_t g = *(pixel++);
+         uint8_t r = *(pixel++);
+         uint8_t a = *(pixel++);
++#else
++        uint8_t a = *(pixel++);
++        uint8_t r = *(pixel++);
++        uint8_t g = *(pixel++);
++        uint8_t b = *(pixel++);
++#endif
+         // Skip transparent pixels, see above.
+         if (a == 0)
+           continue;
+@@ -683,8 +704,12 @@ SkColor CalculateKMeanColorOfPNG(scoped_refptr<base::RefCountedMemory> png,
+ 
+   if (png.get() && png->size() &&
+       gfx::PNGCodec::Decode(png->front(), png->size(),
+-                            gfx::PNGCodec::FORMAT_BGRA, &decoded_data,
+-                            &img_width, &img_height)) {
++#if defined(ARCH_CPU_LITTLE_ENDIAN)
++                            gfx::PNGCodec::FORMAT_BGRA,
++#else
++                            gfx::PNGCodec::FORMAT_ARGB,
++#endif
++			    &decoded_data, &img_width, &img_height)) {
+     return CalculateKMeanColorOfBuffer(&decoded_data[0], img_width, img_height,
+                                        lower_bound, upper_bound, sampler, true);
+   }
+--- qtwebengine/src/3rdparty/chromium/ui/gfx/skbitmap_operations_unittest.cc
++++ qtwebengine/src/3rdparty/chromium/ui/gfx/skbitmap_operations_unittest.cc
+@@ -238,7 +238,7 @@ TEST(SkBitmapOperationsTest, CreateHSLShiftedBitmapHueOnly) {
+ 
+   for (int y = 0, i = 0; y < src_h; y++) {
+     for (int x = 0; x < src_w; x++) {
+-      *src.getAddr32(x, y) = SkColorSetARGB(255, 0, 0, i % 255);
++      *src.getAddr32(x, y) = SkPackARGB32(255, 0, 0, i % 255);
+       i++;
+     }
+   }
+--- qtwebengine/src/3rdparty/chromium/url/url_canon_host.cc
++++ qtwebengine/src/3rdparty/chromium/url/url_canon_host.cc
+@@ -135,8 +135,7 @@ bool DoSimpleHost(const INCHAR* host,
+     if (source == '%') {
+       // Unescape first, if possible.
+       // Source will be used only if decode operation was successful.
+-      if (!DecodeEscaped(host, &i, host_len,
+-                         reinterpret_cast<unsigned char*>(&source))) {
++      if (!DecodeEscaped(host, &i, host_len, &source)) {
+         // Invalid escaped character. There is nothing that can make this
+         // host valid. We append an escaped percent so the URL looks reasonable
+         // and mark as failed.
+--- qtwebengine/src/3rdparty/chromium/url/url_canon_internal.h
++++ qtwebengine/src/3rdparty/chromium/url/url_canon_internal.h
+@@ -305,9 +305,9 @@ inline bool Is8BitChar(base::char16 c) {
+   return c <= 255;
+ }
+ 
+-template<typename CHAR>
++template<typename CHAR, typename DST>
+ inline bool DecodeEscaped(const CHAR* spec, int* begin, int end,
+-                          unsigned char* unescaped_value) {
++                          DST* unescaped_value) {
+   if (*begin + 3 > end ||
+       !Is8BitChar(spec[*begin + 1]) || !Is8BitChar(spec[*begin + 2])) {
+     // Invalid escape sequence because there's not enough room, or the

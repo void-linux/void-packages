@@ -43,7 +43,7 @@ if [ "$sourcepkg" != "$PKGNAME" ]; then
 fi
 
 source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
-setup_pkg_depends $pkgname
+setup_pkg_depends $pkgname || exit 1
 run_pkg_hooks pre-pkg
 
 touch -f $XBPS_PREPKG_DONE

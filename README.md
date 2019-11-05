@@ -7,15 +7,26 @@ The included `xbps-src` script will fetch and compile the sources, and install i
 files into a `fake destdir` to generate XBPS binary packages that can be installed
 or queried through the `xbps-install(1)` and `xbps-query(1)` utilities, respectively.
 
+See [Contributing](https://github.com/void-linux/void-packages/blob/master/CONTRIBUTING.md)
+for a general overview of how to contribute and the
+[Manual](https://github.com/void-linux/void-packages/blob/master/Manual.md)
+for details of how to create source packages.
+
 ### Requirements
 
 - GNU bash
-- xbps >= 0.46
+- xbps >= 0.55
+- curl(1) - required by `xbps-src update-check`
+- flock(1) - util-linux
+- install(1) - coreutils
+- other common POSIX utilities included by default in almost all UNIX systems.
 
 `xbps-src` requires a utility to chroot and bind mount existing directories
 into a `masterdir` that is used as its main `chroot` directory. `xbps-src` supports
 multiple utilities to accomplish this task:
 
+ - `bwrap` - bubblewrap, see https://github.com/projectatomic/bubblewrap.
+ - `ethereal` - only useful for one-shot containers, i.e docker (used with travis).
  - `xbps-uunshare(1)` - XBPS utility that uses `user_namespaces(7)` (part of xbps, default).
  - `xbps-uchroot(1)` - XBPS utility that uses `namespaces` and must be `setgid` (part of xbps).
  - `proot(1)` - utility that implements chroot/bind mounts in user space, see https://proot-me.github.io/.
@@ -139,7 +150,7 @@ The following directory hierarchy is used with a default configuration file:
             |
             |- hostdir
             |  |- binpkgs ...
-            |  |- ccache-<arch> ...
+            |  |- ccache ...
             |  |- distcc-<arch> ...
             |  |- repocache ...
             |  |- sources ...
@@ -238,7 +249,7 @@ First a RSA key must be created with `openssl(1)` or `ssh-keygen(1)`:
 
 or
 
-	$ ssh-keygen -t rsa -b 4096 -f privkey.pem
+	$ ssh-keygen -t rsa -b 4096 -m PEM -f privkey.pem
 
 > Only RSA keys in PEM format are currently accepted by xbps.
 
@@ -437,10 +448,3 @@ Once the build has finished, you can specify the path to the local repository to
     # cd void-mklive
     # make
     # ./mklive.sh ... -r /path/to/hostdir/binpkgs
-
-### Contributing
-
-See [Contributing](https://github.com/void-linux/void-packages/blob/master/CONTRIBUTING.md)
-for a general overview of how to contribute and the
-[Manual](https://github.com/void-linux/void-packages/blob/master/Manual.md)
-for details of how to create source packages.

@@ -1,0 +1,109 @@
+# Template file for 'firebird3'
+pkgname=firebird3
+version=3.0.4.33054
+revision=3
+_build=0
+_uver=${version//./_}
+wrksrc="Firebird-${version}-${_build}"
+build_style=gnu-configure
+configure_args="--prefix=/usr
+ --with-fbbin=/usr/bin
+ --with-fbconf=/etc/firebird
+ --with-fbdoc=/usr/share/doc/firebird
+ --with-fbhelp=/usr/share/doc/firebird/help
+ --with-fbinclude=/usr/include/firebird
+ --with-fblib=/usr/lib
+ --with-fblog=/var/log
+ --with-fbmsg=/usr/lib/firebird/msg
+ --with-fbplugins=/usr/lib/firebird/plugins
+ --with-fbsbin=/usr/lib/firebird/bin
+ --with-fbudf=/usr/lib/firebird/UDF
+ --with-fbsecure-db=/var/lib/firebird/system
+ --with-fbintl=/usr/lib/firebird/intl
+ --with-fbmisc
+ --without-fbsample
+ --without-fbsample-db
+ --with-system-icu
+ --with-system-editline"
+nocross=yes
+hostmakedepends="automake libtool pkg-config icu"
+makedepends="boost-devel libedit-devel icu-devel ncurses-devel libatomic_ops-devel
+ libtommath-devel zlib-devel"
+short_desc="Relational database offering many ANSI SQL standard features (V3)"
+maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
+license="custom"
+homepage="https://www.firebirdsql.org/en/start/"
+distfiles="https://github.com/FirebirdSQL/firebird/releases/download/R${_uver%_*}/Firebird-${version}-${_build}.tar.bz2"
+checksum=b208931d309029d05dbcd8f6c1b4fd9d21be1d60cee2ff29c08b5002db83756b
+replaces="firebird>=0"
+patch_args="-Np1"
+
+CFLAGS="-fno-strict-aliasing"
+CXXFLAGS="-fno-delete-null-pointer-checks"
+
+pre_configure() {
+	# musl does not have gcrt1.o needed for -p
+	case "$XBPS_TARGET_MACHINE" in
+		ppc*-musl)
+			sed -i '/FLAGS=/s/ \-p / /g' builds/posix/prefix.linux_powerpc*
+			;;
+	esac
+
+	# Avoid errors telling we are not 'root' and
+	# do not change ownership to root:root and
+	# do not change permissions to read-only
+	find -iname "*.sh.in" -exec sed -i "{}" \
+		-e 's;"`whoami`";"root";' \
+		-e 's;chown root:root;#&;' \
+		-e 's;chown -R;#&;' \
+		-e 's;chmod 0444;chmod 0644;' \
+		-e 's;chmod 0555;chmod 0755;' \;
+	autoreconf -if
+}
+
+do_install() {
+	local _lib _v0=${version%.*} _v1=${version%.*.*} _v2=${version%.*.*.*}
+
+	cd ${wrksrc}/gen
+	./install/makeInstallImage.sh
+
+	cd ${wrksrc}
+
+	# Fix permissions
+	find gen/buildroot -type f -perm 0444 -exec chmod 0644 "{}" \;
+	find gen/buildroot -type f -perm 0555 -exec chmod 0755 "{}" \;
+
+	vlicense doc/license/IDPL.txt IDPL
+	vlicense doc/license/README.license.usage.txt LICENSE
+
+	cp -pR gen/buildroot/* ${DESTDIR}/
+
+	# TODO: create superserver?
+	# system account?
+	# runit service?
+	# Example https://aur.archlinux.org/cgit/aur.git/tree/PKGBUILD?h=firebird-superserver
+}
+
+libfbclient3_package() {
+	short_desc+=" - client libraries"
+	replaces="libfbclient>=0"
+	pkg_install() {
+		vmove "usr/lib/libfbclient.so.*"
+		vmove usr/lib/firebird/msg/firebird.msg
+		vlicense doc/license/IDPL.txt IDPL
+		vlicense doc/license/README.license.usage.txt LICENSE
+	}
+}
+
+libfbclient3-devel_package() {
+	short_desc+=" - development files"
+	replaces="libfbclient-devel>=0"
+	depends="libfbclient3>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/firebird/bin/fb_config
+		vmkdir usr/bin
+		ln -s ../lib/firebird/bin/fb_config ${PKGDESTDIR}/usr/bin/fb_config
+		vmove usr/include/firebird
+		vmove usr/lib/libfbclient.so
+	}
+}

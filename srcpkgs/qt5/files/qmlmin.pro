@@ -1,5 +1,5 @@
 QT       = core qml network qmldevtools-private
-SOURCES += main.cpp ../../src/qml/parser/qqmljsgrammar.cpp
+SOURCES += main.cpp ../../src/qml/qqmljsgrammar.cpp
 
 QMAKE_TARGET_DESCRIPTION = QML/JS Minifier
 
