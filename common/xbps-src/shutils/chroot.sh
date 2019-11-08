@@ -184,9 +184,12 @@ chroot_handler() {
     else
         env -i -- PATH="/usr/bin:$PATH" SHELL=/bin/sh \
             HOME=/tmp IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 \
-            HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY} \
-            FTP_PROXY=${FTP_PROXY} SOCKS_PROXY=${SOCKS_PROXY} NO_PROXY=${NO_PROXY} \
-            HTTP_PROXY_AUTH=${HTTP_PROXY_AUTH} \
+            ${HTTP_PROXY:+HTTP_PROXY="${HTTP_PROXY}"} \
+            ${HTTPS_PROXY:+HTTPS_PROXY="${HTTPS_PROXY}"} \
+            ${FTP_PROXY:+FTP_PROXY="${FTP_PROXY}"} \
+            ${SOCKS_PROXY:+SOCKS_PROXY="${SOCKS_PROXY}"} \
+            ${NO_PROXY:+NO_PROXY="${NO_PROXY}"} \
+            ${HTTP_PROXY_AUTH:+HTTP_PROXY_AUTH="${HTTP_PROXY_AUTH}"} \
             SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
             XBPS_ALLOW_CHROOT_BREAKOUT="$XBPS_ALLOW_CHROOT_BREAKOUT" \
             $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
