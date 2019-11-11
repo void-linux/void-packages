@@ -1,7 +1,7 @@
 # Template file for 'mesa'
 pkgname=mesa
 version=19.2.7
-revision=3
+revision=4
 wrksrc="mesa-${version}"
 build_style=meson
 configure_args="-Dglvnd=true -Dshared-glapi=true -Dgbm=true -Degl=true
@@ -17,7 +17,7 @@ makedepends="elfutils-devel expat-devel libXdamage-devel libXvMC-devel
  libvdpau-devel libxshmfence-devel ncurses-devel talloc-devel zlib-devel
  $(vopt_if wayland 'wayland-devel wayland-protocols') llvm
  libsensors-devel libXrandr-devel libglvnd-devel"
-depends="libglvnd"
+depends="libglvnd mesa-dri>=${version}_${revision}"
 short_desc="Graphics library similar to SGI's OpenGL"
 maintainer="Juan RP <xtraeme@gmail.com>"
 license="MIT, LGPL-2.1-or-later"
@@ -46,8 +46,10 @@ i686*|x86_64*)
 	configure_args+=" -Dvulkan-overlay-layer=true"
 	hostmakedepends+=" clang"
 	makedepends+=" libclc-git"
-	subpackages+=" libxatracker mesa-ati-dri mesa-intel-dri mesa-nouveau-dri"
-	subpackages+=" mesa-vmwgfx-dri mesa-opencl mesa-vulkan-overlay-layer"
+	subpackages+=" libxatracker mesa-opencl mesa-dri mesa-vaapi mesa-vdpau"
+	subpackages+=" mesa-XvMC mesa-vulkan-intel mesa-vulkan-radeon mesa-vulkan-overlay-layer"
+	# Transitional dummy packages
+	subpackages+=" mesa-ati-dri mesa-intel-dri mesa-nouveau-dri mesa-vmwgfx-dri"
 	;;
 ppc*)
 	# Enable all ppc drivers.
@@ -63,13 +65,17 @@ ppc*)
 	esac
 	hostmakedepends+=" clang"
 	makedepends+=" libclc-git"
+	subpackages+=" mesa-opencl mesa-dri mesa-vaapi mesa-vdpau mesa-XvMC mesa-vulkan-radeon"
+	subpackages+=" mesa-vulkan-overlay-layer"
+	# Transitional dummy packages
 	subpackages+=" mesa-ati-dri mesa-nouveau-dri"
-	subpackages+=" mesa-opencl mesa-vulkan-overlay-layer"
 	;;
 aarch64*)
 	configure_args+=" -Dgallium-drivers=nouveau,tegra,swrast,vc4"
 	configure_args+=" -Dvulkan-drivers= -Ddri-drivers="
 	configure_args+=" -Dgallium-xa=false -Ddri3=true"
+	subpackages+=" mesa-dri mesa-vaapi mesa-vdpau mesa-XvMC"
+	# Transitional dummy packages
 	subpackages+=" mesa-tegra-dri mesa-nouveau-dri mesa-vc4-dri"
 	;;
 armv7l*)
@@ -77,6 +83,8 @@ armv7l*)
 	configure_args+=" -Dgallium-drivers=swrast,vc4"
 	configure_args+=" -Dvulkan-drivers= -Ddri-drivers= -Dgallium-xvmc=false"
 	configure_args+=" -Dgallium-xa=false -Dgallium-vdpau=false -Dgallium-va=false"
+	subpackages+=" mesa-dri"
+	# Transitional dummy packages
 	subpackages+=" mesa-vc4-dri"
 	;;
 *)
@@ -85,6 +93,7 @@ armv7l*)
 	configure_args+=" -Ddri-drivers= -Dvulkan-drivers= -Dgallium-va=false"
 	configure_args+=" -Dgallium-vdpau=false -Dgallium-xvmc=false"
 	configure_args+=" -Dgallium-xa=false"
+	subpackages+=" mesa-dri"
 	;;
 esac
 
@@ -106,7 +115,6 @@ esac
 
 case "$XBPS_TARGET_MACHINE" in
 	# Disable TLS with musl: https://bugs.freedesktop.org/show_bug.cgi?id=35268
-	# TODO: maybe this is handled by libglvnd now
 	*-musl) configure_args+=" -Duse-elf-tls=false";;
 	*) configure_args+=" -Dglx=dri";;
 esac
@@ -177,81 +185,72 @@ libxatracker_package() {
 	}
 }
 
-mesa-ati-dri_package() {
-	short_desc="Mesa DRI drivers for ATI GPUs"
-	depends="mesa-${version}_${revision}"
-	lib32files="/usr/share/vulkan/icd.d/radeon_icd.i686.json"
+mesa-opencl_package() {
+	short_desc="Mesa implementation of OpenCL (r600+ only)"
+	depends="libclc libOpenCL"
 	pkg_install() {
-		vmove "usr/lib/libXvMCr[36]00.so.*"
-		vmove "usr/lib/vdpau/libvdpau_r[36]00.so*"
-		vmove "usr/lib/vdpau/libvdpau_radeon*.so*"
-		vmove "usr/lib/xorg/modules/drivers/radeon*"
-		vmove "usr/lib/xorg/modules/drivers/r[236]00*"
-		vmove usr/lib/dri/r*
-		vmove "usr/share/vulkan/icd.d/radeon_icd*.json"
-		vmove "usr/lib/libvulkan_radeon.so"
-		vmove "usr/lib/gallium-pipe/pipe_r[36]00.so"
-		vmove usr/lib/gallium-pipe/pipe_radeonsi.so
+		vmove etc/OpenCL
+		vmove "usr/lib/libMesaOpenCL.so.*"
 	}
 }
 
-mesa-intel-dri_package() {
-	short_desc="Mesa DRI drivers for Intel GPUs"
+mesa-dri_package() {
+	short_desc="Mesa DRI drivers"
 	depends="mesa-${version}_${revision}"
+	nostrip_files="i915_dri.so i965_dri.so kms_swrast_dri.so nouveau_dri.so
+	 nouveau_vieux_dri.so r200_dri.so r300_dri.so r600_dri.so radeon_dri.so
+	 radeonsi_dri.so swrast_dri.so tegra_dri.so vc4_dri.so virtio_gpu_dri.so
+	 vmwgfx_dri.so"
+	pkg_install() {
+		vmove "usr/lib/xorg/modules/drivers";
+		if [ -d "$DESTDIR/usr/lib/gallium-pipe" ]; then
+			vmove "usr/lib/gallium-pipe/pipe_*.so"
+		fi
+	}
+}
+
+mesa-vaapi_package() {
+	short_desc="Mesa VA-API drivers"
+	nostrip_files="nouveau_drv_video.so r600_drv_video.so radeonsi_drv_video.so"
+	pkg_install() {
+		vmove "usr/lib/dri/*_drv_video.so"
+	}
+}
+
+mesa-vdpau_package() {
+	short_desc="Mesa VDPAU drivers"
+	nostrip_files="libvdpau_r300.so.1.0.0 libvdpau_r600.so.1.0.0
+	 libvdpau_radeonsi.so.1.0.0 libvdpau_nouveau.so.1.0.0"
+	noshlibprovides=yes # manually set them in case they are needed
+	pkg_install() {
+		vmove "usr/lib/vdpau/libvdpau_*"
+	}
+}
+
+mesa-XvMC_package() {
+	short_desc="Mesa XvMC drivers"
+	nostrip_files="libXvMCnouveau.so.1.0.0 libXvMCr600.so.1.0.0"
+	noshlibprovides=yes # manually set them in case they are needed
+	pkg_install() {
+		vmove "usr/lib/libXvMC*"
+	}
+}
+
+mesa-vulkan-intel_package() {
+	short_desc="Mesa Intel Vulkan driver"
 	lib32files="/usr/share/vulkan/icd.d/intel_icd.i686.json"
 	pkg_install() {
-		vmove "usr/lib/xorg/modules/drivers/i9[16]5_dri.*"
 		vmove "usr/share/vulkan/icd.d/intel_icd*.json"
 		vmove "usr/lib/libvulkan_intel.so"
 	}
 }
 
-mesa-nouveau-dri_package() {
-	short_desc="Mesa DRI drivers for NVIDIA GPUs (nouveau dri)"
-	depends="mesa-${version}_${revision}"
+mesa-vulkan-radeon_package() {
+	short_desc="Mesa Radeon Vulkan driver"
+	lib32files="/usr/share/vulkan/icd.d/radeon_icd.i686.json"
 	pkg_install() {
-		vmove "usr/lib/libXvMCnouveau.so.*"
-		vmove "usr/lib/vdpau/libvdpau_nouveau.so*"
-		vmove "usr/lib/xorg/modules/drivers/nouveau*"
-		vmove "usr/lib/dri/nouveau*"
-		case "$XBPS_TARGET_MACHINE" in
-			aarch64*) ;;
-			*) vmove usr/lib/gallium-pipe/pipe_nouveau.so ;;
-		esac
-	}
-}
-
-mesa-vmwgfx-dri_package() {
-	short_desc="Mesa DRI drivers for VMware"
-	depends="mesa-${version}_${revision}"
-	pkg_install() {
-		vmove "usr/lib/xorg/modules/drivers/vmwgfx*"
-		vmove usr/lib/gallium-pipe/pipe_vmwgfx.so
-	}
-}
-
-mesa-vc4-dri_package() {
-	short_desc="Mesa DRI drivers for Videocore IV GPU"
-	depends="mesa-${version}_${revision}"
-	pkg_install() {
-		vmove "usr/lib/xorg/modules/drivers/vc4*"
-	}
-}
-
-mesa-opencl_package() {
-	short_desc="Mesa implementation of OpenCL (r600+ only)"
-	depends="libclc libOpenCL mesa-${version}_${revision}"
-	pkg_install() {
-		vmove etc/OpenCL
-		vmove "usr/lib/libMesaOpenCL*"
-	}
-}
-
-mesa-tegra-dri_package() {
-	short_desc="Mesa DRI drivers for Tegra GPU"
-	depends="mesa-nouveau-dri-${version}_${revision}"
-	pkg_install() {
-		vmove "usr/lib/xorg/modules/drivers/tegra*"
+		vmove "usr/share/vulkan/icd.d/radeon_icd*.json"
+		vmove "usr/lib/libvulkan_radeon.so"
 	}
 }
 
@@ -261,4 +260,40 @@ mesa-vulkan-overlay-layer_package() {
 		vmove usr/lib/libVkLayer_MESA_overlay.so
 		vmove usr/share/vulkan/explicit_layer.d/VkLayer_MESA_overlay.json
 	}
+}
+
+mesa-ati-dri_package() {
+	build_style=meta
+	short_desc="Mesa DRI drivers for ATI GPUs (transitional dummy package)"
+	depends="mesa-dri mesa-vaapi mesa-vdpau mesa-XvMC mesa-vulkan-radeon"
+}
+
+mesa-intel-dri_package() {
+	build_style=meta
+	short_desc="Mesa DRI drivers for Intel GPUs (transitional dummy package)"
+	depends="mesa-dri mesa-vulkan-intel"
+}
+
+mesa-nouveau-dri_package() {
+	build_style=meta
+	short_desc="Mesa DRI drivers for NVIDIA GPUs (transitional dummy package)"
+	depends="mesa-dri mesa-vaapi mesa-vdpau mesa-XvMC"
+}
+
+mesa-vmwgfx-dri_package() {
+	build_style=meta
+	short_desc="Mesa DRI drivers for VMware (transitional dummy package)"
+	depends="mesa-dri"
+}
+
+mesa-vc4-dri_package() {
+	build_style=meta
+	short_desc="Mesa DRI drivers for Videocore IV GPU (transitional dummy package)"
+	depends="mesa-dri"
+}
+
+mesa-tegra-dri_package() {
+	build_style=meta
+	short_desc="Mesa DRI drivers for Tegra GPU (transitional dummy package)"
+	depends="mesa-dri"
 }
