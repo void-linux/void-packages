@@ -41,8 +41,9 @@ do_build() {
 }
 
 do_install() {
-	find "${GOPATH}/bin" -type f -executable | while read line
-	do
-		vbin "${line}"
+	for f in ${GOPATH}/bin/* ${GOPATH}/bin/**/*; do
+		if [ -f "$f" ] && [ -x "$f" ]; then
+			vbin "$f"
+		fi
 	done
 }
