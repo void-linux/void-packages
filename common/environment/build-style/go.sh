@@ -1,9 +1,18 @@
-if [ -z "$archs" ]; then
-	archs="aarch64* armv[567]* i686* x86_64* ppc64le*"
+if [ "${hostmakedepends##*gcc-go-tools*}" ]; then
+	# gc compiler
+	if [ -z "$archs" ]; then
+		archs="aarch64* armv[567]* i686* x86_64* ppc64le*"
+	fi
+	hostmakedepends+=" go"
+	nopie=yes
+else
+	# gccgo compiler
+	if [ "$CROSS_BUILD" ]; then
+		# target compiler to use; otherwise it'll just call gccgo
+		export GCCGO="${XBPS_CROSS_TRIPLET}-gccgo"
+	fi
 fi
-hostmakedepends+=" go"
 nostrip=yes
-nopie=yes
 
 case "$XBPS_TARGET_MACHINE" in
 	aarch64*) export GOARCH=arm64;;
