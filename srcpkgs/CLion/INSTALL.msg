@@ -8,4 +8,3 @@ CLion has the following optional dependencies:
 	python: Python 2 programming language support
 	python3: Python 3 programming language support
 	doxygen: Code documentation generation
-	libdbusmenu-glib: For global menu support
