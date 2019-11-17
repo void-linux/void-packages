@@ -19,21 +19,31 @@ zrefind_dir="${REFIND_CONF%/*}"
 mkdir -p "$zrefind_dir"
 touch "$REFIND_CONF"
 
+tmpfile=$(mktemp /tmp/refind.XXXXXXX)
+
 zefi_mountpoint=$(df -P "$REFIND_CONF" | awk 'NR==2{print $6}')
 zicon="${zrefind_dir#$zefi_mountpoint}/icons/os_void.png"
 
-mkedscript() {
-	zversion=$(echo $VERSION | sed 's/[.]/[.]/g')
-	zexpr='^menuentry "Void Linux '"$zversion"'" {$'
-	if grep -q "$zexpr" "$REFIND_CONF"; then
-		# Do not merge into /expr/,/}/d, it doesn't work
-		printf '%s\n' "/$zexpr/" '.,/}/d'
-	fi
-
-	cat <<EOF
-1
-/^menuentry /
-i
+zprocess() {
+	has_timeout=no
+	inserted=no
+	skipping=no
+	while IFS= read -r line; do
+		if [ $skipping = yes ]
+		then
+			if [ "x$line" = "x}" ]
+			then
+				skipping=no
+			fi
+			continue
+		elif [ "x${line#timeout[[:space:]]}" != "x${line}" ]
+		then
+			has_timeout=yes
+		elif [ "$inserted" = no ] &&
+			[ "x${line#menuentry }" != "x$line" ]
+		then
+			inserted=yes
+			cat <<EOF
 menuentry "Void Linux $VERSION" {
 	icon     $zicon
 	volume   "Void Linux"
@@ -41,14 +51,23 @@ menuentry "Void Linux $VERSION" {
 	initrd   /initramfs-$VERSION.img
 	options  "$OPTIONS"
 }
-.
 EOF
+		fi
 
-	if ! grep -q '^timeout ' "$REFIND_CONF"; then
-		printf '%s\n' 1i "timeout 20" .
+		if [ "x$line" = 'xmenuentry "Void Linux '"$VERSION"'" {' ]
+		then
+			skipping=yes
+		else
+			printf '%s\n' "$line"
+		fi
+	done
+	if [ $has_timeout = no ]
+	then
+		echo 'timeout 20'
 	fi
-	echo wq
 }
+zprocess <"$REFIND_CONF" >"$tmpfile"
 
-mkedscript | ed "$REFIND_CONF" >/dev/null
+mv "$tmpfile" "$REFIND_CONF"
+
 exit 0
