@@ -46,28 +46,30 @@ shlib_provides="libawt.so libawt_xawt.so libjava.so libjli.so libjvm.so libjawt.
 disable_parallel_build=yes
 build_options="docs"
 
+# no hotspot JIT for ppc32
+case "$XBPS_TARGET_MACHINE" in
+	ppc64*) ;;
+	ppc*) _use_zero=yes ;;
+esac
+
+if [ -n "$_use_zero" ]; then
+	makedepends+=" libffi-devel"
+	configure_args+=" --with-jvm-variants=zero"
+	case "$XBPS_TARGET_MACHINE" in
+		ppc*) configure_args+=" --with-boot-jdk-jvmargs=-XX:ThreadStackSize=2560";;
+	esac
+fi
+
 case "$XBPS_TARGET_LIBC" in
 	glibc) build_options_default+=" docs";;
 esac
 
-if [ "$CROSS_BUILD" ]; then
+if [ ! "$CROSS_BUILD" ]; then
+	hostmakedepends+=" openjdk10-bootstrap"
+	configure_args+=" --with-boot-jdk=/usr/lib/jvm/java-10-openjdk"
+else
 	hostmakedepends+=" openjdk11"
 	configure_args+=" --with-boot-jdk=/usr/lib/jvm/openjdk11"
-elif [ "$XBPS_ARCH" =  "x86_64-musl" ]; then
-	hostmakedepends+=" alsa-lib freetype giflib lcms libXi libXrender libXtst"
-	distfiles+=" https://alpha.de.repo.voidlinux.org/distfiles/openjdk-11.0.0.5+10-${XBPS_ARCH}.tar.gz"
-	checksum+=" 037520d9eb077628e137d638f3084689610e8a2fbc9efe50e10823dbac7897a4"
-	configure_args+=" --with-boot-jdk=${XBPS_BUILDDIR}/${wrksrc}/openjdk11"
-elif [ "$XBPS_ARCH" = "i686" ]; then
-	hostmakedepends+=" alsa-lib freetype giflib lcms libXi libXrender libXtst"
-	distfiles+=" https://alpha.de.repo.voidlinux.org/distfiles/openjdk-11.0.0.5+10-${XBPS_ARCH}.tar.gz"
-	checksum+=" 90f4f43431487c2560c5be5f5fac979b6e0ff34933eaef1c1e37cd4b0e8cfb63"
-	configure_args+=" --with-boot-jdk=${XBPS_BUILDDIR}/${wrksrc}/openjdk11"
-elif [ "$XBPS_ARCH" = "x86_64" ]; then
-	hostmakedepends+=" openjdk11-bin"
-	configure_args+=" --with-boot-jdk=/usr/lib/jvm/openjdk11-bin"
-else
-	broken="No suitable bootstrap binary found"
 fi
 
 alternatives="
@@ -118,11 +120,6 @@ post_extract() {
 	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 		rm -r src/jdk.hotspot.agent
 	fi
-	if [ -z $CROSS_BUILD ]; then
-		if [ "$XBPS_ARCH" = "x86_64-musl" ] || [ "$XBPS_ARCH" = "i686" ]; then
-			mv ${wrksrc}/../openjdk11 ${wrksrc}/openjdk11
-		fi
-	fi
 }
 
 post_patch() {
@@ -137,6 +134,15 @@ post_patch() {
 do_configure() {
 	CFLAGS=${CFLAGS/-D_FORTIFY_SOURCE=2/}
 	CXXFLAGS=${CXXFLAGS/-D_FORTIFY_SOURCE=2/}
+
+	# force ELFv2 for ppc64 just in case
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*)
+			CFLAGS+=" -DABI_ELFv2"
+			CXXFLAGS+=" -DABI_ELFv2"
+			;;
+	esac
+
 	configure_args=${configure_args/--with-libtool-sysroot=\/usr\/[a-z0-9]*-linux-[a-z]*/}
 	if [ "$XBPS_CCACHE" ] && [ -z "$CROSS_BUILD" ]; then
 		configure_args+=" --enable-ccache"
