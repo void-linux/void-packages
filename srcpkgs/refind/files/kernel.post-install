@@ -1,0 +1,54 @@
+#!/bin/sh
+#
+# Kernel hook for refind.
+#
+# Arguments passed to this script: $1 pkgname, $2 version.
+#
+PKGNAME="$1"
+VERSION="$2"
+
+. "${ROOTDIR}/etc/default/refind-kernel-hook.conf"
+if [ "z$UPDATE_REFIND_CONF" != "z1" ]; then
+	exit 0;
+fi
+
+# Default refind.conf
+REFIND_CONF="${REFIND_CONF:-/boot/EFI/refind/refind.conf}"
+
+zrefind_dir="${REFIND_CONF%/*}"
+mkdir -p "$zrefind_dir"
+touch "$REFIND_CONF"
+
+zefi_mountpoint=$(df -P "$REFIND_CONF" | awk 'NR==2{print $6}')
+zicon="${zrefind_dir#$zefi_mountpoint}/icons/os_void.png"
+
+mkedscript() {
+	zversion=$(echo $VERSION | sed 's/[.]/[.]/g')
+	zexpr='^menuentry "Void Linux '"$zversion"'" {$'
+	if grep -q "$zexpr" "$REFIND_CONF"; then
+		# Do not merge into /expr/,/}/d, it doesn't work
+		printf '%s\n' "/$zexpr/" '.,/}/d'
+	fi
+
+	cat <<EOF
+1
+/^menuentry /
+i
+menuentry "Void Linux $VERSION" {
+	icon     $zicon
+	volume   "Void Linux"
+	loader   /vmlinuz-$VERSION
+	initrd   /initramfs-$VERSION.img
+	options  "$OPTIONS"
+}
+.
+EOF
+
+	if ! grep -q '^timeout ' "$REFIND_CONF"; then
+		printf '%s\n' 1i "timeout 20" .
+	fi
+	echo wq
+}
+
+mkedscript | ed "$REFIND_CONF" >/dev/null
+exit 0
