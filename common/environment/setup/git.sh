@@ -3,8 +3,10 @@
 if [ -n "$XBPS_USE_BUILD_MTIME" ]; then
 	unset SOURCE_DATE_EPOCH
 	return 0
-fi
-if [ -z "${SOURCE_DATE_EPOCH}" -a -n "$IN_CHROOT" ]; then
+elif [ -n "$SOURCE_DATE_EPOCH" ]; then
+	export SOURCE_DATE_EPOCH
+	return 0
+elif [ -z "${SOURCE_DATE_EPOCH}" -a -n "$IN_CHROOT" ]; then
 	if command -v chroot-git &>/dev/null; then
 		GIT_CMD=$(command -v chroot-git)
 	elif command -v git &>/dev/null; then
