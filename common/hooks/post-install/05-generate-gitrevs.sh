@@ -1,5 +1,5 @@
-# This hook generates a file in ${wrksrc}/.xbps_git_revs with the last
-# commit sha1 (in short mode) for all files of a source pkg.
+# This hook generates a file ${XBPS_STATEDIR}/gitrev with the last
+# commit sha1 (in short mode) for source pkg if XBPS_USE_GIT_REVS is enabled.
 
 hook() {
 	local GITREVS_FILE=${XBPS_STATEDIR}/gitrev
