@@ -24,7 +24,7 @@ do_patch() {
 				_MESON_CPU_FAMILY=x86
 				;;
 			ppc64le*)
-				_MESON_CPU_FAMILY=ppc64
+				_MESON_CPU_FAMILY=ppc64le
 				;;
 			ppc64*)
 				_MESON_TARGET_ENDIAN=big
