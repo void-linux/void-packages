@@ -35,7 +35,7 @@ bulk_sortdeps() {
     # Perform a topological sort of all pkgs but only with build dependencies
     # that are found in previous step.
     for pkg in ${pkgs}; do
-        _pkgs="$(./xbps-src show-build-deps $pkg 2>/dev/null)"
+        _pkgs="$($XBPS_DISTDIR/xbps-src show-build-deps $pkg 2>/dev/null)"
         found=0
         for x in ${_pkgs}; do
             _pkg=$(bulk_getlink $x)
