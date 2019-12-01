@@ -1,0 +1,84 @@
+From 9ac182f376abf910a7b737b0e1ebd447eaa582f1 Mon Sep 17 00:00:00 2001
+From: Werner Koch <wk@gnupg.org>
+Date: Fri, 29 Nov 2019 17:44:12 +0100
+Subject: [PATCH GnuPG] gpg: Fix double free with anonymous recipients.
+
+* g10/pubkey-enc.c (get_session_key): Do not release SK.
+--
+
+Bug is in 2.2.18 only.
+
+The semantics of the enum_secret_keys function changed in master.
+When back porting this for 2.2.18 I missed this change and thus we ran
+into a double free.  The patches fixes the regression but is it clumsy.
+We need to change the enum_secret_keys interface to avoid such a
+surprising behaviour; this needs to be done in master first.
+
+Regression-due-to: 9a317557c58d2bdcc504b70c366b77f4cac71df7
+GnuPG-bug-id: 4762
+Signed-off-by: Werner Koch <wk@gnupg.org>
+---
+ g10/pubkey-enc.c | 8 ++++++--
+ g10/skclist.c    | 7 +++++--
+ 2 files changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/g10/pubkey-enc.c b/g10/pubkey-enc.c
+index 71a48cc41..4e6f893f3 100644
+--- g10/pubkey-enc.c
++++ g10/pubkey-enc.c
+@@ -114,11 +114,11 @@ get_session_key (ctrl_t ctrl, PKT_pubkey_enc * k, DEK * dek)
+ 
+       for (;;)
+         {
+-          free_public_key (sk);
+           sk = xmalloc_clear (sizeof *sk);
+           rc = enum_secret_keys (ctrl, &enum_context, sk);
+           if (rc)
+             {
++              sk = NULL;  /* enum_secret_keys turns SK into a shallow copy! */
+               rc = GPG_ERR_NO_SECKEY;
+               break;
+             }
+@@ -148,10 +148,14 @@ get_session_key (ctrl_t ctrl, PKT_pubkey_enc * k, DEK * dek)
+             {
+               if (!opt.quiet)
+                 log_info (_("okay, we are the anonymous recipient.\n"));
++              sk = NULL;
+               break;
+             }
+           else if (gpg_err_code (rc) == GPG_ERR_FULLY_CANCELED)
+-            break; /* Don't try any more secret keys.  */
++            {
++              sk = NULL;
++              break; /* Don't try any more secret keys.  */
++            }
+         }
+       enum_secret_keys (ctrl, &enum_context, NULL);  /* free context */
+     }
+diff --git a/g10/skclist.c b/g10/skclist.c
+index 8817ee904..5a32b6a17 100644
+--- g10/skclist.c
++++ g10/skclist.c
+@@ -292,14 +292,17 @@ build_sk_list (ctrl_t ctrl,
+  * --default-key and --try-secret-key).  Use the following procedure:
+  *
+  *  1) Initialize a void pointer to NULL
+- *  2) Pass a reference to this pointer to this function (content)
+- *     and provide space for the secret key (sk)
++ *  2) Pass a reference to this pointer to this function (CONTEXT)
++ *     and provide space for the secret key (SK)
+  *  3) Call this function as long as it does not return an error (or
+  *     until you are done).  The error code GPG_ERR_EOF indicates the
+  *     end of the listing.
+  *  4) Call this function a last time with SK set to NULL,
+  *     so that can free it's context.
+  *
++ *  TAKE CARE: When the function returns SK belongs to CONTEXT and may
++ *  not be freed by the caller; neither on success nor on error.
++ *
+  * In pseudo-code:
+  *
+  *   void *ctx = NULL;
+-- 
+2.11.0
+
