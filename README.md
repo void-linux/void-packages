@@ -107,7 +107,8 @@ in the `srcpkgs` directory.
 The `bootstrap` packages are a set of packages required to build any available source package in a container. There are two methods to install the `bootstrap`:
 
  - `bootstrap`: all bootstrap packages will be built from scratch; additional utilities are required in the
-host system to allow building the `base-chroot` package: binutils, gcc, perl, texinfo, etc.
+host system to allow building the `base-chroot` package, on Void Linux host required packages are
+base-system, base-devel, git, gcc-ada, libada-devel, zlib-devel, gettext-devel, python3
 
  - `binary-bootstrap`: the bootstrap binary packages are downloaded via XBPS repositories.
 
