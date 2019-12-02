@@ -1438,9 +1438,10 @@ for example python3.4, those must also be added as host and target build depende
 The following variables may influence how the python packages are built and configured
 at post-install time:
 
-- `pycompile_module`: this variable expects the python modules that should be `byte-compiled`
-at post-install time. Python modules are those that are installed into the `site-packages`
-prefix: `usr/lib/pythonX.X/site-packages`. Multiple python modules may be specified separated
+- `pycompile_module`: By default, files and directories installed into
+`usr/lib/pythonX.X/site-packages`, excluding `*-info` and `*.so`, are byte-compiled
+at install time as python modules.  This variable expects subset of them that
+should be byte-compiled, if default is wrong.  Multiple python modules may be specified separated
 by blanks, Example: `pycompile_module="foo blah"`. If a python module installs a file into
 `site-packages` rather than a directory, use the name of the file, Example:
 `pycompile_module="fnord.py"`.
