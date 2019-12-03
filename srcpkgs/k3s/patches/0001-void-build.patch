@@ -1,0 +1,98 @@
+From 3440b2daf5aa68b6c0f02bb043bf4e7fc1d2e35c Mon Sep 17 00:00:00 2001
+From: Noel Cower <ncower@gmail.com>
+Date: Mon, 28 Oct 2019 19:09:04 -0700
+Subject: [PATCH] Patch build and package-cli scripts for Void
+
+- Remove -w and -s linker flags.
+
+- Disable cgo and unset GOARCH when running go generate. (Breaks
+  execution of anything using 'go run' inside of a go:generate line.)
+
+- Replace git clone of plugins.git with a distfile so that its
+  SHA256SUM can be verified, similar to the traefik files. Adds a go
+  clean call to the end of the subshell since `rm -rf` on
+  a GOPATH/pkg/mod directory will fail (because everything is
+  read-only).
+
+- Nullify BIN_SUFFIX variable. This makes it needlessly hard to use
+  vinstall with binaries, so remove it.
+
+diff --git k3s-1.0.0/scripts/build k3s-1.0.0/scripts/build
+index 4341e3a3a1..431d024ac6 100755
+--- k3s-1.0.0/scripts/build
++++ k3s-1.0.0/scripts/build
+@@ -17,8 +17,7 @@ VERSIONFLAGS="
+     -X ${VENDOR_PREFIX}${PKG_CONTAINERD}/version.Version=${VERSION_CONTAINERD}
+     -X ${VENDOR_PREFIX}${PKG_CONTAINERD}/version.Package=${PKG_RANCHER_CONTAINERD}
+     -X ${VENDOR_PREFIX}${PKG_CRICTL}/pkg/version.Version=${VERSION_CRICTL}"
+-LDFLAGS="
+-    -w -s"
++LDFLAGS=""
+ STATIC="
+     -extldflags '-static'
+ "
+@@ -63,7 +62,7 @@ rm -f \
+ 
+ cleanup() {
+     exit_status=$?
+-    rm -rf $TMPDIR
++    go clean -modcache
+     exit ${exit_status}
+ }
+ 
+@@ -71,12 +70,11 @@ INSTALLBIN=$(pwd)/bin
+ if [ ! -x ${INSTALLBIN}/cni ]; then
+ (
+     echo Building cni
+-    TMPDIR=$(mktemp -d)
+     trap cleanup EXIT
+-    WORKDIR=$TMPDIR/src/github.com/containernetworking/plugins
+-    git clone -b $VERSION_CNIPLUGINS https://github.com/rancher/plugins.git $WORKDIR
+-    cd $WORKDIR
+-    GOPATH=$TMPDIR CGO_ENABLED=0 go build -tags "$TAGS" -ldflags "$LDFLAGS $STATIC" -o $INSTALLBIN/cni
++    SRCDIR=
++    cd "$XBPS_BUILDDIR/k3s-${VERSION#v}/plugins-${VERSION_CNIPLUGINS#v}"
++    [ -r go.mod ] || go mod init github.com/containernetworking/plugins
++    CGO_ENABLED=0 go build -mod=vendor -tags "$TAGS" -ldflags "$LDFLAGS $STATIC" -o $INSTALLBIN/cni
+ )
+ fi
+ # echo Building agent
+@@ -95,7 +93,7 @@ ln -s containerd ./bin/ctr
+ # echo Building containerd
+ # CGO_ENABLED=0 go build -tags "$TAGS" -ldflags "$VERSIONFLAGS $LDFLAGS $STATIC" -o bin/containerd ./cmd/containerd/
+ echo Building runc
+-make EXTRA_LDFLAGS="-w -s" BUILDTAGS="apparmor seccomp" -C ./vendor/github.com/opencontainers/runc static
++make EXTRA_LDFLAGS="" BUILDTAGS="apparmor seccomp" -C ./vendor/github.com/opencontainers/runc static
+ cp -f ./vendor/github.com/opencontainers/runc/runc ./bin/runc
+ 
+ echo Building containerd-shim
+diff --git k3s-1.0.0/scripts/package-cli k3s-1.0.0/scripts/package-cli
+index 0aac10bb24..000f15f93e 100755
+--- k3s-1.0.0/scripts/package-cli
++++ k3s-1.0.0/scripts/package-cli
+@@ -40,20 +40,14 @@ HASH=$(sha256sum ./build/out/data.tar.gz | awk '{print $1}')
+ 
+ cp ./build/out/data.tar.gz ./build/data/${HASH}.tgz
+ 
+-BIN_SUFFIX="-${ARCH}"
+-if [ ${ARCH} = amd64 ]; then
+-    BIN_SUFFIX=""
+-elif [ ${ARCH} = arm ]; then
+-    BIN_SUFFIX="-armhf"
+-fi
++BIN_SUFFIX=""
+ 
+ CMD_NAME=dist/artifacts/k3s${BIN_SUFFIX}
+ 
+-go generate
++CGO_ENABLED=0 GOARCH= go generate -x
+ LDFLAGS="
+     -X github.com/rancher/k3s/pkg/version.Version=$VERSION
+     -X github.com/rancher/k3s/pkg/version.GitCommit=${COMMIT:0:8}
+-    -w -s
+ "
+ STATIC="-extldflags '-static'"
+ if [ "$DQLITE" = "true" ]; then
+-- 
+2.23.0
+

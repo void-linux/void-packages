@@ -12,17 +12,27 @@ configure_args="-Dconsolekit=false -Dgtkdoc=false -Dintrospection=true
  -Defi-ldsdir=${XBPS_CROSS_BASE}/usr/lib -Defi-ld=${XBPS_CROSS_BASE}/usr/bin/ld
  -Defi-libdir=${XBPS_CROSS_BASE}/usr/lib -Delogind=true"
 hostmakedepends="dejavu-fonts-ttf gnutls-tools help2man pkg-config gcab
- vala glib-devel polkit efivar gnu-efi-libs"
+ vala glib-devel polkit"
 makedepends="libxmlb-devel cairo-devel colord-devel libarchive-devel
  gnutls-devel gpgme-devel json-glib-devel libgusb-devel polkit-devel
  sqlite-devel libsoup-devel gcab-devel pango-devel python3-gobject
- python3-Pillow elogind-devel libefivar-devel tpm2-tss-devel gnu-efi-libs"
+ python3-Pillow elogind-devel tpm2-tss-devel"
 short_desc="Daemon to allow session software to update firmware"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="LGPL-2.1-or-later"
 homepage="https://github.com/hughsie/fwupd"
 distfiles="https://github.com/hughsie/fwupd/archive/${version}.tar.gz"
 checksum=39b9c87bcff50fa77a4e0db02195a84d3c6fc65a5f36c529e94928405f390108
+
+# no efi on non-efi platforms
+case "$XBPS_TARGET_MACHINE" in
+	x86_64*|i686*|aarch64*|arm*) _have_efi=yes;;
+esac
+
+if [ -n "$_have_efi" ]; then
+	hostmakedepends+=" efivar gnu-efi-libs"
+	makedepends+=" libefivar-devel gnu-efi-libs"
+fi
 
 conf_files="
  /etc/fwupd/daemon.conf
@@ -35,12 +45,9 @@ if [ "$CROSS_BUILD" ]; then
 	aarch64*) broken="https://travis-ci.org/void-linux/void-packages/jobs/618827513";;
 	esac
 
-	configure_args+=" -Defi-cc=/usr/bin/${XBPS_CROSS_TRIPLET}-gcc"
-
-	pre_configure() {
-		# Replace the values from our patch into the system itself
-		sed -i -e "s|@XBPS_CROSS_BASE@|${XBPS_CROSS_BASE}|g" meson.build
-}
+	if [ -n "$_have_efi" ]; then
+		configure_args+=" -Defi-cc=/usr/bin/${XBPS_CROSS_TRIPLET}-gcc"
+	fi
 fi
 
 case "$XBPS_TARGET_MACHINE" in
@@ -50,15 +57,17 @@ case "$XBPS_TARGET_MACHINE" in
 		;;
 	*)
 		configure_args+=" -Dplugin_dell=false"
+		if [ -z "$_have_efi" ]; then
+			configure_args+=" -Dplugin_uefi=false"
+			configure_args+=" -Dplugin_redfish=false"
+		fi
 		;;
-
-	ppc64*)
-		configure_args+=" -Dplugin_uefi=false"
-		configure_args+=" -Dplugin_redfish=false"
-		configure_args+=" -Dplugin_nvme=false"
-		;;
-	*) makedepends+=" gnu-efi-libs libefivar-devel" ;;
 esac
+
+pre_configure() {
+	# Replace the values from our patch into the system itself
+	sed -i -e "s|@XBPS_CROSS_BASE@|${XBPS_CROSS_BASE}|g" meson.build
+}
 
 fwupd-devel_package() {
 	depends="${sourcepkg}>=${version}_${revision} libglib-devel"
