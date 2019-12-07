@@ -275,6 +275,20 @@ _EOF
 		fi
 		_add_trigger pycompile
 	fi
+    #
+    # Handle ghc-pkg-register trigger.
+    #
+    if [ -d ${PKGDESTDIR}/usr/share/ghc-*/package.conf ]; then
+        if [ -z "${ghc_package}" ]; then
+            ghc_package="$(find ${PKGDESTDIR}/usr/share/ghc-${ghc_version}/package.conf -mindepth 1 -maxdepth 1 -name '*.conf' -printf '%f ')"
+        fi
+    fi
+
+    if [ -n "${ghc_package}" ]; then
+        echo "export ghc_package=\"${ghc_package}\"" >>$tmpf
+        echo "export ghc_version=\"${ghc_version}\"" >>$tmpf
+        _add_trigger ghc-pkg-register
+    fi
 	#
 	# Handle appdata metadata with AppStream
 	#

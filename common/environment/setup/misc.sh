@@ -17,6 +17,7 @@ MOZILLA_SITE="https://ftp.mozilla.org/pub"
 GNU_SITE="http://ftp.gnu.org/gnu"
 FREEDESKTOP_SITE="https://freedesktop.org/software"
 KDE_SITE="https://download.kde.org/stable"
+HACKAGE_SITE="https://hackage.haskell.org"
 
 # Repetitive sub homepage's with no real project page
 # ie. some gnome and xorg projects. For use in $homepage.
