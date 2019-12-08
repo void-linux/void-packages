@@ -1,0 +1,175 @@
+# Template file for 'edk2'
+pkgname=edk2
+version=202005
+revision=1
+archs="x86_64* i686*"
+create_wrksrc=yes
+hostmakedepends="make python3 acpica-utils nasm libuuid-devel"
+short_desc="EFI Development Kit II"
+maintainer="Franc[e]sco <lolisamurai@tfwno.gf>"
+license="BSD-2-Clause-Patent, MIT, Apache-2.0"
+homepage="https://github.com/tianocore/edk2/tree/master/OvmfPkg"
+_openssl_ver=1.1.1d
+_brotli_commit=666c3280cc11dc433c303d79a83d4ffbdd12cc8d
+distfiles="https://github.com/tianocore/edk2/archive/${pkgname}-stable${version}.tar.gz
+ https://www.openssl.org/source/openssl-${_openssl_ver}.tar.gz
+ https://github.com/google/brotli/archive/${_brotli_commit}.tar.gz"
+checksum="373c3eff3497316a48fcf4be8dcee227431cbce86dcd80a004950e992f0297e2
+1e3a91bc1f9dfce01af26026f856e064eab4c8ee0a8f457b5ae30b40b8b711f2
+cd82ce69defa40e9e36443e59d90aa5f8c6013024fae6a2de8c31afc2c707065"
+_toolchain_opt=GCC5
+
+case ${XBPS_MACHINE} in
+	i686)
+		# edk2 doesn't find the correct host
+		# also, x64 can't be built on i686
+		_ovmf_host_arch=IA32
+		;;
+	*)
+		_ovmf_build_x64=yes
+esac
+
+post_extract() {
+	cd "${wrksrc}/${pkgname}-${pkgname}-stable${version}"
+	ssldir=CryptoPkg/Library/OpensslLib/openssl
+	rm -rf "${ssldir}"
+	ln -sf "${wrksrc}/openssl-${_openssl_ver}" ${ssldir}
+	# openssl 1.1.1d has a typo that causes a compile error
+	sed -i 's/return return/return/g' ${ssldir}/crypto/threads_none.c
+
+	for brotlidir in BaseTools/Source/C/BrotliCompress/brotli \
+		MdeModulePkg/Library/BrotliCustomDecompressLib/brotli
+	do
+		rm -rf "${brotlidir}"
+		ln -sf "${wrksrc}/brotli-${_brotli_commit}" ${brotlidir}
+	done
+}
+
+do_build() {
+	cd "${wrksrc}/${pkgname}-${pkgname}-stable${version}"
+	_ovmf_common_flags="
+	 -n ${XBPS_MAKEJOBS}
+	 -b RELEASE
+	 -D NETWORK_IP6_ENABLE
+	 -D TPM2_ENABLE
+	"
+	_ovmf_x86_flags="
+	 ${_ovmf_common_flags}
+	 -D HTTP_BOOT_ENABLE
+	 -D TLS_ENABLE
+	 -D FD_SIZE_2MB
+	"
+	_ovmf_x86_sb_flags="
+	 ${_ovmf_x86_flags}
+	 -D SECURE_BOOT_ENABLE
+	 -D SMM_REQUIRE
+	 -D EXCLUDE_SHELL_FROM_FD
+	"
+	export HOST_ARCH=${_ovmf_host_arch}
+	export PATH="$(pwd)/BaseTools/BinWrappers/PosixLike/:$PATH"
+	export EDK_TOOLS_PATH="$(pwd)"/BaseTools
+	export PYTHON_COMMAND=python3
+	export WORKSPACE="$(pwd)"
+	export PACKAGES_PATH="$(pwd)"
+	bash -c ". ./edksetup.sh"
+	make -C BaseTools
+	if [ ${_ovmf_build_x64} ]; then
+		# x86_64, no secure boot, no smm
+		command build -t ${_toolchain_opt} \
+			-a X64 -p OvmfPkg/OvmfPkgX64.dsc ${_ovmf_x86_flags}
+		mv Build/OvmfX64{,NoSb}
+		# x86_64, secure boot, smm
+		command build -t ${_toolchain_opt} \
+			-a X64 -p OvmfPkg/OvmfPkgX64.dsc ${_ovmf_x86_sb_flags}
+	fi
+	# ia32, no secure boot, no smm
+	command build -t ${_toolchain_opt} \
+		-a IA32 -p OvmfPkg/OvmfPkgIa32.dsc ${_ovmf_x86_flags}
+	mv Build/OvmfIa32{,NoSb}
+	# ia32, secure boot, smm
+	command build -t ${_toolchain_opt} \
+		-a IA32 -p OvmfPkg/OvmfPkgIa32.dsc ${_ovmf_x86_sb_flags}
+}
+
+do_install() {
+	# development tools
+	cd "${wrksrc}/${pkgname}-${pkgname}-stable${version}"
+	for d in Conf Scripts Python; do
+		vmkdir /usr/share/${pkgname}/${d}
+	done
+	vmkdir /usr/lib/${pkgname}/bin
+	bins="Brotli DevicePath EfiRom GenCrc32 GenFfs GenFv GenFw GenSec
+	 LzmaCompress Split TianoCompress VfrCompile VolInfo"
+	for bin in $bins; do
+		vinstall BaseTools/Source/C/bin/${bin} 755 /usr/lib/${pkgname}/bin
+	done
+	vinstall BaseTools/BinWrappers/PosixLike/LzmaF86Compress 755 \
+		/usr/lib/${pkgname}/bin
+	vinstall BaseTools/BuildEnv 755 /usr/share/${pkgname}
+	for f in build_rule tools_def target; do
+		vinstall BaseTools/Conf/${f}.template 644 /usr/share/${pkgname}/Conf
+	done
+	vinstall BaseTools/Scripts/GccBase.lds 644 /usr/share/${pkgname}/Scripts
+	mkdir PythonBins
+	python_dirs="BPDG CommonDataClass PatchPcdValue Rsa2048Sha256Sign
+	 Pkcs7Sign GenPatchPcdTable AutoGen GenFds Workspace Table Ecc Trim
+	 TargetTool build Capsule Eot Common UPT"
+	for d in ${python_dirs}; do
+		fulldir=BaseTools/Source/Python/${d}
+		vcopy ${fulldir} /usr/share/edk2/Python/
+		[ -f "${fulldir}/${d}.py" ] || continue
+		cat > PythonBins/${d}.py <<- EOF
+		#!/bin/sh
+		export PYTHONPATH=/usr/share/${pkgname}/Python
+		exec python /usr/share/${pkgname}/Python/${d}/${d}.py "\$@"
+		EOF
+		vinstall PythonBins/${d}.py 755 /usr/lib/${pkgname}/bin
+	done
+
+	# ovmf uefi firmware
+	x=OVMF_CODE
+	if [ ${_ovmf_build_x64} ]; then
+		for f in OVMF_{CODE,VARS}; do
+			vinstall Build/OvmfX64NoSb/RELEASE_${_toolchain_opt}/FV/${f}.fd \
+				644 /usr/share/edk2/ovmf/
+		done
+		vinstall Build/OvmfX64/RELEASE_${_toolchain_opt}/FV/${x}.fd \
+			644 /usr/share/edk2/ovmf ${x}.secboot.fd
+		# libvirt hardcodes this directory name if no json manifests are present.
+		# also provides backwards compatibility with VMs created before the
+		# json manifests system
+		vmkdir /usr/share/OVMF
+		for f in OVMF_{CODE{,.secboot},VARS}.fd; do
+			ln -sf ../edk2/ovmf/${f} "${DESTDIR}/usr/share/OVMF/"
+		done
+	fi
+	vinstall Build/OvmfIa32NoSb/RELEASE_${_toolchain_opt}/FV/${x}.fd \
+		644 /usr/share/edk2/ovmf-ia32/
+	vinstall Build/OvmfIa32/RELEASE_${_toolchain_opt}/FV/${x}.fd \
+		644 /usr/share/edk2/ovmf-ia32 ${x}.secboot.fd
+	for x in 50-edk2-ovmf-{ia32,x64}-sb.json 60-edk2-ovmf-{ia32,x64}.json; do
+		vinstall ${FILESDIR}/$x 644 /usr/share/qemu/firmware
+	done
+	vlicense OvmfPkg/License.txt
+}
+
+_ovmf_basedesc="Tianocore UEFI firmware for qemu"
+
+ovmf-ia32_package() {
+	short_desc="${_ovmf_basedesc} ia32"
+	pkg_install() {
+		vmove usr/share/edk2/ovmf-ia32
+		vmove usr/share/qemu/firmware/*edk2-ovmf-ia32*.json
+	}
+}
+
+if [ ${_ovmf_build_x64} ]; then
+	ovmf-x64_package() {
+		short_desc="${_ovmf_basedesc} x64"
+		pkg_install() {
+			vmove usr/share/edk2/ovmf
+			vmove usr/share/OVMF
+			vmove usr/share/qemu/firmware/*edk2-ovmf-x64*.json
+		}
+	}
+fi
