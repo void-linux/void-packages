@@ -2,6 +2,7 @@
 # [build]
 # jobs = $XBPS_MAKEJOBS
 export CARGO_BUILD_JOBS="$XBPS_MAKEJOBS"
+export CARGO_HOME="/host/cargo"
 
 if [ "$CROSS_BUILD" ]; then
 	# Define equivalent of TOML config in environment
