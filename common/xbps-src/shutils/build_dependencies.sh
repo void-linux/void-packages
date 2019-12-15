@@ -71,7 +71,7 @@ install_pkg_from_repos() {
 
     cmd=$XBPS_INSTALL_CMD
     [[ $cross ]] && cmd=$XBPS_INSTALL_XCMD
-    $cmd ${XBPS_SKIP_REMOTEREPOS:+-i} -AIy "$@" >$tmplogf 2>&1
+    $cmd -AIy "$@" >$tmplogf 2>&1
     rval=$?
 
     case "$rval" in
