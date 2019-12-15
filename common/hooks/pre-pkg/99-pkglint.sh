@@ -7,19 +7,21 @@ hook() {
 	set +E
 
 	# Check for forbidden directories that are symlinks in void.
-	for f in bin sbin lib lib32; do
-		if [ -d ${PKGDESTDIR}/${f} ]; then
-			msg_red "${pkgver}: /${f} directory is not allowed, use /usr/${f}.\n"
+	for f in lib bin sbin lib64 lib32 usr/sbin usr/lib64; do
+		[ -e "${PKGDESTDIR}/${f}" ] || continue
+		if [ "${pkgname}" = "base-files" ]; then
+			if [ -L "${PKGDESTDIR}/${f}" ]; then
+				continue
+			fi
+			msg_red "${pkgver}: /${f} must be a symlink.\n"
+			error=1
+		else
+			msg_red "${pkgver}: /${f} must not exist.\n"
 			error=1
 		fi
 	done
-
-	if [ -d ${PKGDESTDIR}/usr/sbin ]; then
-		msg_red "${pkgver}: /usr/sbin directory is not allowed, use /usr/bin.\n"
-		error=1
-	fi
 	
-	for f in sys dev home root run var/run tmp usr/lib64 usr/local destdir; do
+	for f in sys dev home root run var/run tmp usr/local destdir; do
 		if [ -d ${PKGDESTDIR}/${f} ]; then
 			msg_red "${pkgver}: /${f} directory is not allowed, remove it!\n"
 			error=1

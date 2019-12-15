@@ -310,9 +310,7 @@ The following functions are defined by `xbps-src` and can be used on any templat
 
 	Installs `file` into `usr/share/licenses/<pkgname>` in the pkg
 	`$DESTDIR`. The optional 2nd argument can be used to change the
-	`file name`. Note: Custom licenses,
-	non-`GPL` licenses, `MIT`, `BSD` and `ISC` require the
-	license file to	be supplied with the binary package.
+	`file name`. See [license](#var_license) for when to use it.
 
 - *vsv()* `vsv <service>`
 
@@ -401,9 +399,18 @@ The list of mandatory variables for a template:
 
 - `homepage` A string pointing to the `upstream` homepage.
 
-- `license` A string matching the license's [SPDX Short identifier](https://spdx.org/licenses),
-or string prefixed with `custom:` for licenses not listed there (see [vlicense](#vlicense)).
+
+- <a id="var_license"></a>
+`license` A string matching the license's [SPDX Short identifier](https://spdx.org/licenses),
+`Public Domain`, or string prefixed with `custom:` for other licenses.
 Multiple licenses should be separated by commas, Example: `GPL-3.0-or-later, custom:Hugware`.
+
+  Empty meta-packages that don't include any files
+  which thus have and require no license, should have set
+  `license="BSD-2-Clause"`.
+
+  Note: `MIT`, `BSD`, `ISC` and custom licenses
+  require the license file to be supplied with the binary package.
 
 - `maintainer` A string in the form of `name <user@domain>`.  The
   email for this field must be a valid email that you can be reached
@@ -860,9 +867,7 @@ set in the body of the template.
 - `meta` For `meta-packages`, i.e packages that only install local files or simply
 depend on additional packages. This build style does not install
 dependencies to the root directory, and only checks if a binary package is
-available in repositories. If your meta-package doesn't include any files
-which thus have and require no license, then you should also set
-`license="BSD-2-Clause"`.
+available in repositories.
 
 - `R-cran` For packages that are available on The Comprehensive R Archive
 Network (CRAN). The build style requires the `pkgname` to start with
@@ -1438,9 +1443,10 @@ for example python3.4, those must also be added as host and target build depende
 The following variables may influence how the python packages are built and configured
 at post-install time:
 
-- `pycompile_module`: this variable expects the python modules that should be `byte-compiled`
-at post-install time. Python modules are those that are installed into the `site-packages`
-prefix: `usr/lib/pythonX.X/site-packages`. Multiple python modules may be specified separated
+- `pycompile_module`: By default, files and directories installed into
+`usr/lib/pythonX.X/site-packages`, excluding `*-info` and `*.so`, are byte-compiled
+at install time as python modules.  This variable expects subset of them that
+should be byte-compiled, if default is wrong.  Multiple python modules may be specified separated
 by blanks, Example: `pycompile_module="foo blah"`. If a python module installs a file into
 `site-packages` rather than a directory, use the name of the file, Example:
 `pycompile_module="fnord.py"`.
@@ -1567,27 +1573,8 @@ common/shlibs.
 generally those packages are the same but have been split as to avoid
 cyclic dependencies. Make sure that the package you're removing is not
 the source of those patches/files.
-- Replace the package template with the following:
-
-```
-# Template file for '$pkgname'
-pkgname=$pkgname
-version=$version
-revision=$((revision + 1))
-archs=noarch
-build_style=meta
-short_desc="${short_desc} (removed package)"
-license="BSD-2-Clause"
-homepage="${homepage}"
-```
-
-- Add (or replace) the INSTALL.msg with the following:
-
-```
-$pkgname is no longer provided by Void Linux, and will be fully removed from the repos on $(date -d '+3 months' '+%F')
-```
-
-- After the specified time remove the package from the repository index
+- Remove package template.
+- Remove the package from the repository index
 or contact a team member that can do so.
 
 <a id="xbps_triggers"></a>

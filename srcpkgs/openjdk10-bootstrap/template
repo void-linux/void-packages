@@ -1,0 +1,127 @@
+# Template file for 'openjdk10-bootstrap'
+_jdk_build=13
+_final_jdk_home="usr/lib/jvm/java-10-openjdk"
+pkgname=openjdk10-bootstrap
+version="10.0.2p${_jdk_build}"
+revision=1
+_repo_ver=${version/p/+}
+wrksrc="jdk10u-jdk-${_repo_ver}"
+build_style=gnu-configure
+configure_args="
+ --prefix=${XBPS_DESTDIR}/${pkgname}-${version}/usr/lib
+ --disable-warnings-as-errors
+ --with-zlib=system
+ --with-giflib=system
+ --with-libjpeg=system
+ --with-libpng=system
+ --with-lcms=system
+ --with-jtreg=no
+ --with-jobs=${XBPS_MAKEJOBS}
+ --enable-dtrace=no
+ --with-debug-level=release
+ --with-version-pre=
+ --with-version-build=${_jdk_build}
+ --with-boot-jdk=/usr/lib/jvm/java-9-openjdk"
+make_build_args="images"
+hostmakedepends="pkg-config automake autoconf cpio unzip zip ca-certificates
+ zlib-devel openjdk9-bootstrap"
+makedepends="libXrender-devel libXtst-devel libXt-devel libXrandr-devel
+ giflib-devel libpng-devel libjpeg-turbo-devel lcms2-devel cups-devel
+ freetype-devel alsa-lib-devel fontconfig-devel zlib-devel"
+short_desc="OpenJDK Java Development Kit (bootstrap version 10)"
+maintainer="q66 <daniel@octaforge.org>"
+license="GPL-2.0-or-later"
+homepage="http://openjdk.java.net/"
+distfiles="http://hg.openjdk.java.net/jdk-updates/jdk10u/archive/jdk-${_repo_ver}.tar.bz2"
+checksum="374f7ae35f0a7439a40bd2c765d1f410607c75c6c1e788f1a344a42e59431f51"
+lib32disabled=yes
+
+# no hotspot JIT for arm32 and ppc32
+case "$XBPS_TARGET_MACHINE" in
+	ppc64*) ;;
+	arm*|ppc*) _use_zero=yes ;;
+esac
+
+if [ -n "$_use_zero" ]; then
+	makedepends+=" libffi-devel"
+	configure_args+=" --with-jvm-variants=zero"
+	case "$XBPS_TARGET_MACHINE" in
+		ppc*) configure_args+=" --with-boot-jdk-jvmargs=-XX:ThreadStackSize=2560";;
+	esac
+fi
+
+shlib_provides="libawt.so libawt_xawt.so libjava.so libjli.so libjvm.so libjawt.so"
+patch_args="-Np1"
+nocross=yes
+
+if [ -n "$XBPS_DEBUG_PKGS" ]; then
+	configure_args+=" --with-native-debug-symbols=internal"
+fi
+
+# enabling ccache segfaults gcc
+export CCACHE_DISABLE=1
+
+post_extract() {
+	chmod +x configure
+
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		rm -r src/jdk.hotspot.agent
+	fi
+}
+
+post_patch() {
+	[ "$XBPS_TARGET_LIBC" != "musl" ] && return 0
+
+	for f in ${FILESDIR}/musl_*.patch; do
+		echo "Applying $f"
+		patch -sNp1 -i "$f"
+	done
+}
+
+do_configure() {
+	CFLAGS=${CFLAGS/-D_FORTIFY_SOURCE=2/}
+	CXXFLAGS=${CXXFLAGS/-D_FORTIFY_SOURCE=2/}
+
+	# force ELFv2 for ppc64 just in case
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*)
+			CFLAGS+=" -DABI_ELFv2"
+			CXXFLAGS+=" -DABI_ELFv2"
+			;;
+	esac
+
+	configure_args=${configure_args/--with-libtool-sysroot=\/usr\/[a-z0-9]*-linux-[a-z]*/}
+
+	# build system newly checks for ccache and dies if it finds it
+	# explicitly need full path as otherwise it will still resolve to ccache
+	export CC=/usr/bin/gcc
+	export CXX=/usr/bin/g++
+
+	./configure ${configure_args} --with-extra-cflags="$CFLAGS" \
+	 --with-extra-cxxflags="$CXXFLAGS" --with-extra-ldflags="$LDFLAGS"
+}
+
+pre_build() {
+	# only use modified flags as specified in configure
+	unset CFLAGS CXXFLAGS LDFLAGS
+}
+
+do_build() {
+	# do not set disable_parallel_build in order to be able to read makejobs
+	make -j1 ${make_build_args} ${make_build_target}
+}
+
+post_install() {
+	# we manage this ourselves
+	rm -rf ${DESTDIR}/usr/lib/bin
+
+	# unify the install prefix
+	mv ${DESTDIR}/usr/lib/jvm/openjdk-${version%p*} ${DESTDIR}/${_final_jdk_home}
+
+	# big and unnecessary
+	rm -f ${DESTDIR}/${_final_jdk_home}/lib/src.zip
+
+	vlicense ASSEMBLY_EXCEPTION
+	vlicense LICENSE
+	vlicense ADDITIONAL_LICENSE_INFO
+}

@@ -1,0 +1,73 @@
+#!/bin/sh
+#
+# Kernel hook for refind.
+#
+# Arguments passed to this script: $1 pkgname, $2 version.
+#
+PKGNAME="$1"
+VERSION="$2"
+
+. "${ROOTDIR}/etc/default/refind-kernel-hook.conf"
+if [ "z$UPDATE_REFIND_CONF" != "z1" ]; then
+	exit 0;
+fi
+
+# Default refind.conf
+REFIND_CONF="${REFIND_CONF:-/boot/EFI/refind/refind.conf}"
+
+zrefind_dir="${REFIND_CONF%/*}"
+mkdir -p "$zrefind_dir"
+touch "$REFIND_CONF"
+
+tmpfile=$(mktemp /tmp/refind.XXXXXXX)
+
+zefi_mountpoint=$(df -P "$REFIND_CONF" | awk 'NR==2{print $6}')
+zicon="${zrefind_dir#$zefi_mountpoint}/icons/os_void.png"
+
+zprocess() {
+	has_timeout=no
+	inserted=no
+	skipping=no
+	while IFS= read -r line; do
+		if [ $skipping = yes ]
+		then
+			if [ "x$line" = "x}" ]
+			then
+				skipping=no
+			fi
+			continue
+		elif [ "x${line#timeout[[:space:]]}" != "x${line}" ]
+		then
+			has_timeout=yes
+		elif [ "$inserted" = no ] &&
+			[ "x${line#menuentry }" != "x$line" ]
+		then
+			inserted=yes
+			cat <<EOF
+menuentry "Void Linux $VERSION" {
+	icon     $zicon
+	volume   "Void Linux"
+	loader   /vmlinuz-$VERSION
+	initrd   /initramfs-$VERSION.img
+	options  "$OPTIONS"
+}
+EOF
+		fi
+
+		if [ "x$line" = 'xmenuentry "Void Linux '"$VERSION"'" {' ]
+		then
+			skipping=yes
+		else
+			printf '%s\n' "$line"
+		fi
+	done
+	if [ $has_timeout = no ]
+	then
+		echo 'timeout 20'
+	fi
+}
+zprocess <"$REFIND_CONF" >"$tmpfile"
+
+mv "$tmpfile" "$REFIND_CONF"
+
+exit 0
