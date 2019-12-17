@@ -18,6 +18,6 @@ do_install() {
 	: ${make_cmd:=cargo}
 
 	${make_cmd} install --path . --target ${RUST_TARGET} --root="${DESTDIR}/usr" \
-		${make_install_args}
+		 --locked ${make_install_args}
 	rm "${DESTDIR}"/usr/.crates.toml
 }

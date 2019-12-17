@@ -1,6 +1,6 @@
 # Template file for 'fwupd'
 pkgname=fwupd
-version=1.2.10
+version=1.3.3
 revision=1
 build_style=meson
 build_helper="gir"
@@ -16,26 +16,38 @@ hostmakedepends="dejavu-fonts-ttf gnutls-tools help2man pkg-config gcab
 makedepends="libxmlb-devel cairo-devel colord-devel libarchive-devel
  gnutls-devel gpgme-devel json-glib-devel libgusb-devel polkit-devel
  sqlite-devel libsoup-devel gcab-devel pango-devel python3-gobject
- python3-Pillow elogind-devel"
+ python3-Pillow elogind-devel tpm2-tss-devel"
 short_desc="Daemon to allow session software to update firmware"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="LGPL-2.1-or-later"
 homepage="https://github.com/hughsie/fwupd"
 distfiles="https://github.com/hughsie/fwupd/archive/${version}.tar.gz"
-checksum=d9cd36f633e98a1b40f6020fd5e066ed05bfb445be69b8357806b0dd6ae189db
+checksum=39b9c87bcff50fa77a4e0db02195a84d3c6fc65a5f36c529e94928405f390108
+
+# no efi on non-efi platforms
+case "$XBPS_TARGET_MACHINE" in
+	x86_64*|i686*|aarch64*|arm*) _have_efi=yes;;
+esac
+
+if [ -n "$_have_efi" ]; then
+	hostmakedepends+=" efivar gnu-efi-libs"
+	makedepends+=" libefivar-devel gnu-efi-libs"
+fi
 
 conf_files="
- /etc/dbus-1/system.d/org.freedesktop.fwupd.conf
  /etc/fwupd/daemon.conf
  /etc/fwupd/remotes.d/*.conf"
 
 if [ "$CROSS_BUILD" ]; then
 	case "$XBPS_TARGET_MACHINE" in
 	arm*)	# Segfaults under qemu trying to gzip non-existing files
-		broken="https://build.voidlinux.org/builders/armv7l_builder/builds/17377/steps/shell_3/logs/stdio"
-		;;
+		broken="https://build.voidlinux.org/builders/armv7l_builder/builds/17377/steps/shell_3/logs/stdio";;
+	aarch64*) broken="https://travis-ci.org/void-linux/void-packages/jobs/618827513";;
 	esac
-	configure_args+=" -Defi-cc=/usr/bin/${XBPS_CROSS_TRIPLET}-gcc"
+
+	if [ -n "$_have_efi" ]; then
+		configure_args+=" -Defi-cc=/usr/bin/${XBPS_CROSS_TRIPLET}-gcc"
+	fi
 fi
 
 case "$XBPS_TARGET_MACHINE" in
@@ -45,23 +57,16 @@ case "$XBPS_TARGET_MACHINE" in
 		;;
 	*)
 		configure_args+=" -Dplugin_dell=false"
+		if [ -z "$_have_efi" ]; then
+			configure_args+=" -Dplugin_uefi=false"
+			configure_args+=" -Dplugin_redfish=false"
+		fi
 		;;
-esac
-
-case "$XBPS_TARGET_MACHINE" in
-	ppc64*)
-		configure_args+=" -Dplugin_uefi=false"
-		configure_args+=" -Dplugin_redfish=false"
-		configure_args+=" -Dplugin_nvme=false"
-		;;
-	*) makedepends+=" gnu-efi-libs libefivar-devel" ;;
 esac
 
 pre_configure() {
-	if [ "$CROSS_BUILD" ]; then
-		# Replace the values from our patch into the system itself
-		sed -i -e "s|@XBPS_CROSS_BASE@|${XBPS_CROSS_BASE}|g" meson.build
-	fi
+	# Replace the values from our patch into the system itself
+	sed -i -e "s|@XBPS_CROSS_BASE@|${XBPS_CROSS_BASE}|g" meson.build
 }
 
 fwupd-devel_package() {

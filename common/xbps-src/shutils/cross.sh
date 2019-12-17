@@ -1,7 +1,7 @@
 # vim: set ts=4 sw=4 et:
 
 remove_pkg_cross_deps() {
-    local rval= tmplogf=
+    local rval= tmplogf= prevs=0
     [ -z "$XBPS_CROSS_BUILD" ] && return 0
 
     cd $XBPS_MASTERDIR || return 1
@@ -14,7 +14,18 @@ remove_pkg_cross_deps() {
     fi
 
     $XBPS_REMOVE_XCMD -Ryo > $tmplogf 2>&1
-    if [ $? -ne 0 ]; then
+    rval=$?
+    while [ $rval -eq 0 ]; do
+        local curs=$(stat -c %s $tmplogf)
+        if [ $curs -eq $prevs ]; then
+            break
+        fi
+        prevs=$curs
+        $XBPS_REMOVE_XCMD -Ryo >> $tmplogf 2>&1
+        rval=$?
+    done
+
+    if [ $rval -ne 0 ]; then
         msg_red "${pkgver:-xbps-src}: failed to remove autocrossdeps:\n"
         cat $tmplogf && rm -f $tmplogf
         msg_error "${pkgver:-xbps-src}: cannot continue!\n"
@@ -29,7 +40,7 @@ prepare_cross_sysroot() {
     [ -z "$cross" -o "$cross" = "" -o -f $statefile ] && return 0
 
     # Check for cross-vpkg-dummy available for the target arch, otherwise build it.
-    pkg_available 'cross-vpkg-dummy>=0.31_1' $cross
+    pkg_available 'cross-vpkg-dummy>=0.33_1' $cross
     if [ $? -eq 0 ]; then
         $XBPS_LIBEXECDIR/build.sh cross-vpkg-dummy cross-vpkg-dummy pkg $cross init || return $?
     fi
@@ -68,7 +79,7 @@ install_cross_pkg() {
     pkg_available cross-${XBPS_CROSS_TRIPLET}
     rval=$?
     if [ $rval -eq 0 ]; then
-        $XBPS_LIBEXECDIR/build.sh cross-${XBPS_CROSS_TRIPLET} cross-${XBPS_CROSS_TRIPLET} pkg || return $rval
+        $XBPS_LIBEXECDIR/build.sh cross-${XBPS_CROSS_TRIPLET} cross-${XBPS_CROSS_TRIPLET} pkg || return $?
     fi
 
     check_installed_pkg cross-${XBPS_CROSS_TRIPLET}-0.1_1

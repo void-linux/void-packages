@@ -44,27 +44,36 @@ pkg_available() {
 }
 
 remove_pkg_autodeps() {
-    local rval= tmplogf=
+    local rval= tmplogf= errlogf= prevs=
 
     cd $XBPS_MASTERDIR || return 1
     msg_normal "${pkgver:-xbps-src}: removing autodeps, please wait...\n"
     tmplogf=$(mktemp) || exit 1
+    errlogf=$(mktemp) || exit 1
 
     remove_pkg_cross_deps
     $XBPS_RECONFIGURE_CMD -a >> $tmplogf 2>&1
-    echo yes | $XBPS_REMOVE_CMD -Ryod >> $tmplogf 2>&1
+    prevs=$(stat -c %s $tmplogf)
+    echo yes | $XBPS_REMOVE_CMD -Ryod 2>> $errlogf 1>> $tmplogf
     rval=$?
-    if [ $rval -eq 0 ]; then
-        echo yes | $XBPS_REMOVE_CMD -Ryod >> $tmplogf 2>&1
+    while [ $rval -eq 0 ]; do
+        local curs=$(stat -c %s $tmplogf)
+        if [ $curs -eq $prevs ]; then
+            break
+        fi
+        prevs=$curs
+        echo yes | $XBPS_REMOVE_CMD -Ryod 2>> $errlogf 1>> $tmplogf
         rval=$?
-    fi
+    done
 
     if [ $rval -ne 0 ]; then
         msg_red "${pkgver:-xbps-src}: failed to remove autodeps: (returned $rval)\n"
         cat $tmplogf && rm -f $tmplogf
+        cat $errlogf && rm -f $errlogf
         msg_error "${pkgver:-xbps-src}: cannot continue!\n"
     fi
     rm -f $tmplogf
+    rm -f $errlogf
 }
 
 remove_pkg_wrksrc() {

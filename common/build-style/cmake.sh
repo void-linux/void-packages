@@ -2,7 +2,6 @@
 # This helper is for templates using cmake.
 #
 do_configure() {
-	export QEMU_LD_PREFIX=${XBPS_CROSS_BASE}
 	local cmake_args=
 	[ ! -d ${cmake_builddir:=build} ] && mkdir -p ${cmake_builddir}
 	cd ${cmake_builddir}
@@ -51,7 +50,7 @@ _EOF
 		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib"
 	fi
 
-	if [ "${hostmakedepends}" != "${hostmakedepends/qemu-user-static/}" ]; then
+	if [[ $build_helper = *"qemu"* ]]; then
 		echo "SET(CMAKE_CROSSCOMPILING_EMULATOR /usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static)" \
 			>> cross_${XBPS_CROSS_TRIPLET}.cmake
 	fi
@@ -66,7 +65,6 @@ _EOF
 }
 
 do_build() {
-	export QEMU_LD_PREFIX=${XBPS_CROSS_BASE}
 	: ${make_cmd:=make}
 
 	cd ${cmake_builddir:=build}
@@ -94,7 +92,6 @@ do_check() {
 }
 
 do_install() {
-	export QEMU_LD_PREFIX=${XBPS_CROSS_BASE}
 	: ${make_cmd:=make}
 	: ${make_install_target:=install}
 

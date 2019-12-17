@@ -1,21 +1,21 @@
 Steam on x86_64 requires support for OpenGL in 32bits mode, install any
 of the following packages for your hardware:
 
+Generic:
+
+	- libgcc-32bit libstdc++-32bit libglvnd-32bit
+
 For users of the open source drivers:
 
-	- mesa-ati-dri-32bit + libGL-32bit (AMD)
-	- mesa-intel-dri-32bit + libGL-32bit (Intel)
-	- mesa-nouveau-dri-32bit + libGL-32bit (NVIDIA)
+	- mesa-ati-dri-32bit (AMD)
+	- mesa-intel-dri-32bit (Intel)
+	- mesa-nouveau-dri-32bit (NVIDIA)
 
 For users of the proprietary NVIDIA driver:
 
 	- nvidia-libs-32bit (latest nvidia package)
-	- nvidia-stable-libs-32bit (latest stable package)
-	- nvidia304-libs-32bit (latest package for old GPUs)
-
-For users of the proprietary AMD driver:
-
-	- catalyst-libs-32bit
+	- nvidia390-libs-32bit (latest previous package)
+	- nvidia340-libs-32bit (latest package for old GPUs)
 
 Do not forget to enable the `multilib` and `multilib/nonfree` repositories
 in xbps, i.e:

@@ -13,6 +13,8 @@ include_directories(${TELEGRAM_SOURCES_DIR})
 file(GLOB CODEGEN_COMMON_SOURCES
 	${TELEGRAM_SOURCES_DIR}/codegen/common/*.h
 	${TELEGRAM_SOURCES_DIR}/codegen/common/*.cpp
+	${TELEGRAM_SOURCES_DIR}/base/crc32hash.cpp
+	${TELEGRAM_SOURCES_DIR}/base/crc32hash.h
 )
 
 add_library(codegen_common OBJECT ${CODEGEN_COMMON_SOURCES})

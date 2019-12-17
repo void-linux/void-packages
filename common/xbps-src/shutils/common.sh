@@ -61,7 +61,7 @@ run_step() {
         msg_error "$pkgver: cannot find do_$step_name() in $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
       fi
     else
-      msg_error "$pkgver: cannot find build helper $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
+      msg_error "$pkgver: cannot find build style $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
     fi
   elif [ ! "$optional_step" ]; then
     msg_error "$pkgver: cannot find do_$step_name()!\n"
@@ -306,7 +306,7 @@ get_subpkgs() {
 
 setup_pkg() {
     local pkg="$1" cross="$2" show_problems="$3"
-    local basepkg val _vars f dbgflags arch
+    local basepkg val _vars f dbgflags arch extrarepo
 
     [ -z "$pkg" ] && return 1
     basepkg=${pkg%-32bit}
@@ -455,7 +455,11 @@ setup_pkg() {
         arch="$XBPS_TARGET_MACHINE"
     fi
     if [ -n "$XBPS_BINPKG_EXISTS" ]; then
-        if [ "$($XBPS_QUERY_XCMD -i -R -ppkgver $pkgver 2>/dev/null)" = "$pkgver" ]; then
+        # nonfree packages need this otherwise they'll rebuild even with -E
+        if [ -n "$repository" ]; then
+            extrarepo=" --repository=$XBPS_REPOSITORY/$repository"
+        fi
+        if [ "$($XBPS_QUERY_XCMD $extrarepo -i -R -ppkgver $pkgver 2>/dev/null)" = "$pkgver" ]; then
             exit_and_cleanup
         fi
     fi

@@ -71,7 +71,7 @@ install_pkg_from_repos() {
 
     cmd=$XBPS_INSTALL_CMD
     [[ $cross ]] && cmd=$XBPS_INSTALL_XCMD
-    $cmd ${XBPS_SKIP_REMOTEREPOS:+-i} -AIy "$@" >$tmplogf 2>&1
+    $cmd -AIy "$@" >$tmplogf 2>&1
     rval=$?
 
     case "$rval" in
@@ -123,6 +123,7 @@ install_pkg_deps() {
     local pkg="$1" targetpkg="$2" target="$3" cross="$4" cross_prepare="$5"
     local _vpkg curpkgdepname
     local i j found style
+    local templates=""
 
     local -a host_binpkg_deps binpkg_deps
     local -a host_missing_deps missing_deps missing_rdeps
@@ -145,11 +146,20 @@ install_pkg_deps() {
     # Host build dependencies.
     #
     if [[ ${hostmakedepends} ]]; then
+        templates=""
         # check validity
         for f in ${hostmakedepends}; do
-            if [ ! -f $XBPS_SRCPKGDIR/$f/template ]; then
-                msg_error "$pkgver: host dependency '$f' does not exist!\n"
+            if [ -f $XBPS_SRCPKGDIR/$f/template ]; then
+                templates+=" $f"
+                continue
             fi
+            local _repourl=$($XBPS_QUERY_CMD -R -prepository "$f" 2>/dev/null)
+            if [ "$_repourl" ]; then
+                echo "   [host] ${f}: found (${_repourl})"
+                host_binpkg_deps+=("$f")
+                continue
+            fi
+            msg_error "$pkgver: host dependency '$f' does not exist!\n"
         done
         while read -r _depname _deprepover _depver _subpkg _repourl; do
             _vpkg=${_subpkg}-${_depver}
@@ -169,7 +179,7 @@ install_pkg_deps() {
                         break
                     fi
                 done
-                if [[ $found -eq 1 ]]; then
+                if [[ $found -eq 1 ]] && [[ -z "$cross" ]]; then
                     echo "   [host] ${_vpkg}: not found (subpkg, ignored)"
                 else
                     echo "   [host] ${_vpkg}: not found"
@@ -179,18 +189,27 @@ install_pkg_deps() {
                 echo "   [host] ${_vpkg}: not found"
                 host_missing_deps+=("$_vpkg")
             fi
-        done < <($XBPS_CHECKVERS_CMD ${XBPS_SKIP_REMOTEREPOS:+-i} -D $XBPS_DISTDIR -sm ${hostmakedepends})
+        done < <($XBPS_CHECKVERS_CMD ${XBPS_SKIP_REMOTEREPOS:+-i} -D $XBPS_DISTDIR -sm $templates)
     fi
 
     #
     # Host check dependencies.
     #
     if [[ ${checkdepends} ]] && [[ $XBPS_CHECK_PKGS ]]; then
+        templates=""
         # check validity
         for f in ${checkdepends}; do
-            if [ ! -f $XBPS_SRCPKGDIR/$f/template ]; then
-                msg_error "$pkgver: check dependency '$f' does not exist!\n"
+            if [ -f $XBPS_SRCPKGDIR/$f/template ]; then
+                templates+=" $f"
+                continue
             fi
+            local _repourl=$($XBPS_QUERY_CMD -R -prepository "$f" 2>/dev/null)
+            if [ "$_repourl" ]; then
+                echo "   [host] ${f}: found (${_repourl})"
+                host_binpkg_deps+=("$f")
+                continue
+            fi
+            msg_error "$pkgver: check dependency '$f' does not exist!\n"
         done
         while read -r _depname _deprepover _depver _subpkg _repourl; do
             _vpkg=${_subpkg}-${_depver}
@@ -220,18 +239,27 @@ install_pkg_deps() {
                 echo "   [check] ${_vpkg}: not found"
                 host_missing_deps+=("$_vpkg")
             fi
-        done < <($XBPS_CHECKVERS_CMD ${XBPS_SKIP_REMOTEREPOS:+-i} -D $XBPS_DISTDIR -sm ${checkdepends})
+        done < <($XBPS_CHECKVERS_CMD ${XBPS_SKIP_REMOTEREPOS:+-i} -D $XBPS_DISTDIR -sm ${templates})
     fi
 
     #
     # Target build dependencies.
     #
     if [[ ${makedepends} ]]; then
+        templates=""
         # check validity
         for f in ${makedepends}; do
-            if [ ! -f $XBPS_SRCPKGDIR/$f/template ]; then
-                msg_error "$pkgver: target dependency '$f' does not exist!\n"
+            if [ -f $XBPS_SRCPKGDIR/$f/template ]; then
+                templates+=" $f"
+                continue
             fi
+            local _repourl=$($XBPS_QUERY_CMD -R -prepository "$f" 2>/dev/null)
+            if [ "$_repourl" ]; then
+                echo "   [target] ${f}: found (${_repourl})"
+                binpkg_deps+=("$f")
+                continue
+            fi
+            msg_error "$pkgver: target dependency '$f' does not exist!\n"
         done
         while read -r _depname _deprepover _depver _subpkg _repourl; do
             _vpkg=${_subpkg}-${_depver}
@@ -252,7 +280,7 @@ install_pkg_deps() {
                     fi
                 done
                 if [[ $found -eq 1 ]]; then
-                    echo "   [target] ${_vpkg}: not found (subpkg, ignored)"
+                    msg_error "[target] ${_vpkg}: target dependency '${_subpkg}' is a subpackage of $pkgname\n"
                 else
                     echo "   [target] ${_vpkg}: not found"
                     missing_deps+=("$_vpkg")
@@ -261,18 +289,26 @@ install_pkg_deps() {
                 echo "   [target] ${_vpkg}: not found"
                 missing_deps+=("$_vpkg")
             fi
-        done < <($XBPS_CHECKVERS_XCMD ${XBPS_SKIP_REMOTEREPOS:+-i} -D $XBPS_DISTDIR -sm ${makedepends})
+        done < <($XBPS_CHECKVERS_XCMD ${XBPS_SKIP_REMOTEREPOS:+-i} -D $XBPS_DISTDIR -sm $templates)
     fi
 
     #
     # Target run time dependencies
     #
     if [[ ${depends} ]]; then
-        _deps=$(setup_pkg_depends "" 1) || exit 1
-        for f in ${_deps}; do
-            if [ ! -f $XBPS_SRCPKGDIR/$f/template ]; then
-                msg_error "$pkgver: runtime dependency '$f' does not exist!\n"
+        templates=""
+        local _cleandeps=$(setup_pkg_depends "" 1) || exit 1
+        for f in ${_cleandeps}; do
+            if [ -f $XBPS_SRCPKGDIR/$f/template ]; then
+                templates+=" $f"
+                continue
             fi
+            local _repourl=$($XBPS_QUERY_CMD -R -prepository "$f" 2>/dev/null)
+            if [ "$_repourl" ]; then
+                echo "   [target] ${f}: found (${_repourl})"
+                continue
+            fi
+            msg_error "$pkgver: target dependency '$f' does not exist!\n"
         done
         while read -r _depname _deprepover _depver _subpkg _repourl; do
             _vpkg=${_subpkg}-${_depver}
@@ -301,8 +337,7 @@ install_pkg_deps() {
                 echo "   [runtime] ${_vpkg}: not found"
                 missing_rdeps+=("$_vpkg")
             fi
-        done < <($XBPS_CHECKVERS_XCMD ${XBPS_SKIP_REMOTEREPOS:+-i} -D $XBPS_DISTDIR -sm $_deps)
-        unset _deps
+        done < <($XBPS_CHECKVERS_XCMD ${XBPS_SKIP_REMOTEREPOS:+-i} -D $XBPS_DISTDIR -sm $templates)
     fi
 
     if [ -n "$XBPS_BUILD_ONLY_ONE_PKG" ]; then

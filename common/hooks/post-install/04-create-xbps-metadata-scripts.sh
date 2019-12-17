@@ -260,6 +260,9 @@ _EOF
 	#
 	if [ -d ${PKGDESTDIR}/usr/lib/python* ]; then
 		pycompile_version="$(find ${PKGDESTDIR}/usr/lib/python* -prune -type d | grep -o '[[:digit:]]\.[[:digit:]]$')"
+		if [ -z "${pycompile_module}" ]; then
+			pycompile_module="$(find ${PKGDESTDIR}/usr/lib/python*/site-packages -mindepth 1 -maxdepth 1 '!' -name '*.egg-info' '!' -name '*.dist-info' '!' -name '*.so' '!' -name '*.pth' -printf '%f ')"
+		fi
 	fi
 
 	if [ -n "${pycompile_dirs}" -o -n "${pycompile_module}" ]; then

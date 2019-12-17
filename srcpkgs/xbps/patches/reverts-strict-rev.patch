@@ -1,0 +1,144 @@
+commit 87ff41f401cb8b159859b65a04b398ac58a55e2d
+Author: Duncan Overbruck <mail@duncano.de>
+Date:   Tue Oct 29 13:13:21 2019 +0100
+
+    Revert "lib/util.c: verify revision in xbps_pkg_{version,revision,name}"
+    
+    This reverts commit 699b2bdd3b98b086ac989af3cf034135a7a6f570.
+
+diff --git lib/util.c lib/util.c
+index 6228d8fc..ee690304 100644
+--- lib/util.c
++++ lib/util.c
+@@ -50,16 +50,6 @@
+ #pragma clang diagnostic ignored "-Wformat-nonliteral"
+ #endif
+ 
+-static bool is_numeric(const char *str) {
+-	if (str == NULL || str[0] == '\0'){
+-		return false;
+-	}
+-	while (isdigit(str[0])) {
+-		++str;
+-	}
+-	return str[0] == '\0';
+-}
+-
+ /**
+  * @file lib/util.c
+  * @brief Utility routines
+@@ -127,22 +117,16 @@ xbps_pkg_is_ignored(struct xbps_handle *xhp, const char *pkg)
+ const char *
+ xbps_pkg_version(const char *pkg)
+ {
+-	const char *p, *r;
+-	size_t p_len;
++	const char *p;
+ 
+ 	if ((p = strrchr(pkg, '-')) == NULL)
+ 		return NULL;
+ 
+-	++p; /* skip first '-' */
+-	p_len = strlen(p);
+-	for (unsigned int i = 0; i < p_len; i++) {
++	for (unsigned int i = 0; i < strlen(p); i++) {
+ 		if (p[i] == '_')
+ 			break;
+-		if (isdigit((unsigned char)p[i]) && (r = strchr(p + i + 1, '_'))) {
+-			if (!is_numeric(r + 1)) {
+-				break;
+-			}
+-			return p;
++		if (isdigit((unsigned char)p[i]) && strchr(p, '_')) {
++			return p + 1; /* skip first '-' */
+ 		}
+ 	}
+ 	return NULL;
+@@ -224,47 +208,36 @@ xbps_binpkg_arch(const char *pkg)
+ const char *
+ xbps_pkg_revision(const char *pkg)
+ {
+-	const char *p, *r;
+-	size_t p_len;
++	const char *p;
+ 
+-	if ((p = strrchr(pkg, '-')) == NULL)
++	assert(pkg != NULL);
++
++	/* Get the required revision */
++	if ((p = strrchr(pkg, '_')) == NULL)
+ 		return NULL;
+ 
+-	++p; /* skip first '-' */
+-	p_len = strlen(p);
+-	for (unsigned int i = 0; i < p_len; i++) {
+-		if (p[i] == '_')
+-			break;
+-		if (isdigit((unsigned char)p[i]) && (r = strchr(p + i + 1, '_'))) {
+-			++r; /* skip first '_' */
+-			if (!is_numeric(r)) {
+-				break;
+-			}
+-			return r;
+-		}
+-	}
+-	return NULL;
++	if (!isdigit((unsigned char)p[1]))
++		return NULL;
++
++	return p + 1; /* skip first '_' */
+ }
+ 
+ char *
+ xbps_pkg_name(const char *pkg)
+ {
+-	const char *p, *r;
++	const char *p;
+ 	char *buf;
+ 	unsigned int len;
+-	size_t p_len;
+ 	bool valid = false;
+ 
+ 	if ((p = strrchr(pkg, '-')) == NULL)
+ 		return NULL;
+ 
+-	p_len = strlen(p);
+-	/* i = 1 skips first '-' */
+-	for (unsigned int i = 1; i < p_len; i++) {
++	for (unsigned int i = 0; i < strlen(p); i++) {
+ 		if (p[i] == '_')
+ 			break;
+-		if (isdigit((unsigned char)p[i]) && (r = strchr(p + i + 1, '_'))) {
+-			valid = is_numeric(r + 1);
++		if (isdigit((unsigned char)p[i]) && strchr(p, '_')) {
++			valid = true;
+ 			break;
+ 		}
+ 	}
+diff --git tests/xbps/libxbps/util/main.c tests/xbps/libxbps/util/main.c
+index 41aac6ee..9ae88f1c 100644
+--- tests/xbps/libxbps/util/main.c
++++ tests/xbps/libxbps/util/main.c
+@@ -43,19 +43,19 @@ ATF_TC_BODY(util_test, tc)
+ 	ATF_CHECK_EQ(xbps_pkg_name("python-e_dbus"), NULL);
+ 	ATF_CHECK_EQ(xbps_pkg_name("fs-utils-v1"), NULL);
+ 	ATF_CHECK_EQ(xbps_pkg_name("fs-utils-v_1"), NULL);
+-	ATF_CHECK_EQ(xbps_pkg_name("font-adobe-100dpi-1.8_blah"), NULL);
+ 	ATF_CHECK_EQ(xbps_pkg_version("font-adobe-100dpi"), NULL);
+ 	ATF_CHECK_EQ(xbps_pkg_version("font-adobe-100dpi-7.8"), NULL);
+ 	ATF_CHECK_EQ(xbps_pkg_version("python-e_dbus"), NULL);
+ 	ATF_CHECK_EQ(xbps_pkg_version("python-e_dbus-1"), NULL);
+-	ATF_CHECK_EQ(xbps_pkg_version("font-adobe-100dpi-1.8_blah"), NULL);
+-	ATF_CHECK_EQ(xbps_pkg_revision("systemd-43_1_0"), NULL);
+ 	ATF_REQUIRE_STREQ(xbps_pkg_name("font-adobe-100dpi-7.8_2"), "font-adobe-100dpi");
+ 	ATF_REQUIRE_STREQ(xbps_pkg_name("systemd-43_1"), "systemd");
++	ATF_REQUIRE_STREQ(xbps_pkg_name("font-adobe-100dpi-1.8_blah"), "font-adobe-100dpi");
+ 	ATF_REQUIRE_STREQ(xbps_pkg_name("python-e_dbus-1.0_1"), "python-e_dbus");
+ 	ATF_REQUIRE_STREQ(xbps_pkg_version("font-adobe-100dpi-7.8_2"), "7.8_2");
++	ATF_REQUIRE_STREQ(xbps_pkg_version("font-adobe-100dpi-1.8_blah"), "1.8_blah");
+ 	ATF_REQUIRE_STREQ(xbps_pkg_version("python-e_dbus-1_1"), "1_1");
+ 	ATF_REQUIRE_STREQ(xbps_pkg_version("fs-utils-v1_1"), "v1_1");
++	ATF_REQUIRE_STREQ(xbps_pkg_revision("systemd-43_1_0"), "0");
+ 	ATF_REQUIRE_STREQ(xbps_pkg_revision("systemd_21-43_0"), "0");
+ 	ATF_REQUIRE_STREQ(xbps_pkgpattern_name("systemd>=43"), "systemd");
+ 	ATF_REQUIRE_STREQ(xbps_pkgpattern_name("systemd>43"), "systemd");
