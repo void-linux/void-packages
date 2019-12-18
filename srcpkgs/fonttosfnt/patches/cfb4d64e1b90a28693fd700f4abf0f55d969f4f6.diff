@@ -1,0 +1,57 @@
+diff --git a/read.c b/read.c
+index 5e80cc5cd76023c57cba390027136a7bdabec895..05f7b4fc7b76508912e537c7b1026ab1cdef7eab 100644
+--- a/read.c
++++ b/read.c
+@@ -64,6 +64,7 @@ readFile(char *filename, FontPtr font)
+     StrikePtr strike;
+     BitmapPtr bitmap;
+     int symbol = 0;
++    int force_unicode = 1;
+     char *encoding_name = NULL;
+     FontMapPtr mapping = NULL;
+     FontMapReversePtr reverse = NULL;
+@@ -79,13 +80,20 @@ readFile(char *filename, FontPtr font)
+         return -1;
+     }
+ 
+-    /* FreeType will handle Unicode and automatically map ISO-8859-1 to
+-     * Unicode for us -- everything else needs a mapping */
++    /* FreeType will insist on encodings which are simple subsets of unicode
++     * to be read as unicode regardless of what we call them. */
++    for(j = 0; j < face->num_charmaps; ++j) {
++        if((face->charmaps[j]->encoding == ft_encoding_none) ||
++           (face->charmaps[j]->encoding == ft_encoding_adobe_standard)) {
++            force_unicode = 0;
++            break;
++        }
++    }
++
+     encoding_name = faceEncoding(face);
+     if(encoding_name == NULL) {
+         symbol = 1;
+-    } else if((strcasecmp(encoding_name, "iso10646-1") != 0) &&
+-              (strcasecmp(encoding_name, "iso8859-1") != 0)) {
++    } else if(strcasecmp(encoding_name, "iso10646-1") != 0) {
+         if(reencode_flag)
+             mapping = FontEncMapFind(encoding_name,
+                                      FONT_ENCODING_UNICODE, 0, 0, NULL);
+@@ -228,10 +236,16 @@ readFile(char *filename, FontPtr font)
+         return -1;
+     }
+ 
+-    if(!symbol && !mapping)
++    if((!symbol && !mapping) || force_unicode) {
+         rc = FT_Select_Charmap(face, ft_encoding_unicode);
+-    else
++    } else {
+         rc = FT_Select_Charmap(face, ft_encoding_none);
++        if(rc != 0) {
++            /* BDF will default to Adobe Standard even for nonstandard
++             * encodings, so try that as a last resort. */
++            rc = FT_Select_Charmap(face, ft_encoding_adobe_standard);
++        }
++    }
+     if(rc != 0) {
+         fprintf(stderr, "Couldn't select character map: %x.\n", rc);
+         return -1;
+
