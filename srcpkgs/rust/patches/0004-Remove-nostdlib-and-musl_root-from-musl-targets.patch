@@ -1,43 +1,33 @@
-Updated from:
-
-From e8ef432c23ea9fb70b28bea07042b33f1050569b Mon Sep 17 00:00:00 2001
+From ce1d0500b190f39c5bd9c34deed8b8d8af537c90 Mon Sep 17 00:00:00 2001
 From: Samuel Holland <samuel@sholland.org>
-Date: Fri, 8 Sep 2017 22:11:14 -0500
-Subject: [PATCH 05/16] Remove -nostdlib and musl_root from musl targets
+Date: Sat, 21 Dec 2019 16:46:22 +0100
+Subject: [PATCH 04/18] Remove -nostdlib and musl_root from musl targets
 
 ---
- config.toml.example                           |  6 ----
- src/bootstrap/bin/rustc.rs                    | 10 -------
- src/bootstrap/cc_detect.rs                    | 27 ++----------------
- src/bootstrap/compile.rs                      | 21 +-------------
- src/bootstrap/config.rs                       |  7 -----
- src/bootstrap/configure.py                    | 22 ---------------
- src/bootstrap/lib.rs                          |  8 ------
- src/bootstrap/sanity.rs                       | 28 -------------------
- .../dist-i586-gnu-i586-i686-musl/Dockerfile   |  2 --
- src/ci/docker/dist-various-1/Dockerfile       |  7 -----
- src/ci/docker/dist-x86_64-musl/Dockerfile     |  1 -
- src/ci/docker/test-various/Dockerfile         |  1 -
- src/librustc_target/spec/linux_musl_base.rs   | 16 -----------
- 13 files changed, 4 insertions(+), 152 deletions(-)
+ config.toml.example                         |  3 ---
+ src/bootstrap/cc_detect.rs                  | 27 +++-----------------
+ src/bootstrap/compile.rs                    | 22 +---------------
+ src/bootstrap/config.rs                     |  7 ------
+ src/bootstrap/configure.py                  | 28 ---------------------
+ src/bootstrap/lib.rs                        |  8 ------
+ src/bootstrap/sanity.rs                     | 24 ------------------
+ src/librustc_target/spec/linux_musl_base.rs | 16 ------------
+ 8 files changed, 4 insertions(+), 131 deletions(-)
 
 diff --git a/config.toml.example b/config.toml.example
-index 848147c2..2aea23d4 100644
+index e832570e..81cc3a99 100644
 --- a/config.toml.example
 +++ b/config.toml.example
-@@ -469,12 +469,6 @@
- # only use static libraries. If unset, the target's default linkage is used.
- #crt-static = false
+@@ -340,9 +340,6 @@
+ # nightly features
+ #channel = "dev"
  
--# The root location of the MUSL installation directory. The library directory
--# will also need to contain libunwind.a for an unwinding implementation. Note
--# that this option only makes sense for MUSL targets that produce statically
--# linked binaries
+-# The root location of the MUSL installation directory.
 -#musl-root = "..."
 -
- # The root location of the `wasm32-wasi` sysroot.
- #wasi-root = "..."
- 
+ # By default the `rustc` executable is built with `-Wl,-rpath` flags on Unix
+ # platforms to ensure that the compiler is usable by default from the build
+ # directory (as it links to a number of dynamic libraries). This may not be
 diff --git a/src/bootstrap/cc_detect.rs b/src/bootstrap/cc_detect.rs
 index a4cb81d3..b4247e74 100644
 --- a/src/bootstrap/cc_detect.rs
@@ -98,12 +88,12 @@ index a4cb81d3..b4247e74 100644
      }
  }
 diff --git a/src/bootstrap/compile.rs b/src/bootstrap/compile.rs
-index 6ea32edf..afdf6fcf 100644
+index 8e5fe252..47372c97 100644
 --- a/src/bootstrap/compile.rs
 +++ b/src/bootstrap/compile.rs
-@@ -116,20 +116,7 @@ impl Step for Std {
- fn copy_third_party_objects(builder: &Builder<'_>, compiler: &Compiler, target: Interned<String>) {
-     let libdir = builder.sysroot_libdir(*compiler, target);
+@@ -130,18 +130,7 @@ fn copy_third_party_objects(builder: &Builder<'_>, compiler: &Compiler, target:
+         target_deps.push(target);
+     };
  
 -    // Copies the crt(1,i,n).o startup objects
 -    //
@@ -112,18 +102,16 @@ index 6ea32edf..afdf6fcf 100644
 -    // files. As those shipped with glibc won't work, copy the ones provided by
 -    // musl so we have them on linux-gnu hosts.
 -    if target.contains("musl") {
+-        let srcdir = builder.musl_root(target).unwrap().join("lib");
 -        for &obj in &["crt1.o", "crti.o", "crtn.o"] {
--            builder.copy(
--                &builder.musl_root(target).unwrap().join("lib").join(obj),
--                &libdir.join(obj),
--            );
+-            copy_and_stamp(&srcdir, obj);
 -        }
 -    } else if target.ends_with("-wasi") {
 +    if target.ends_with("-wasi") {
-         for &obj in &["crt1.o"] {
-             builder.copy(
-                 &builder.wasi_root(target).unwrap().join("lib/wasm32-wasi").join(obj),
-@@ -220,15 +207,6 @@ pub fn std_cargo(builder: &Builder<'_>,
+         let srcdir = builder.wasi_root(target).unwrap().join("lib/wasm32-wasi");
+         copy_and_stamp(&srcdir, "crt1.o");
+     }
+@@ -227,15 +216,6 @@ pub fn std_cargo(builder: &Builder<'_>,
              .arg("--manifest-path")
              .arg(builder.src.join("src/libtest/Cargo.toml"));
  
@@ -140,7 +128,7 @@ index 6ea32edf..afdf6fcf 100644
              if let Some(p) = builder.wasi_root(target) {
                  let root = format!("native={}/lib/wasm32-wasi", p.to_str().unwrap());
 diff --git a/src/bootstrap/config.rs b/src/bootstrap/config.rs
-index 52b5cd88..cc191271 100644
+index d1bdfa0a..51b2bc62 100644
 --- a/src/bootstrap/config.rs
 +++ b/src/bootstrap/config.rs
 @@ -131,8 +131,6 @@ pub struct Config {
@@ -160,16 +148,16 @@ index 52b5cd88..cc191271 100644
      pub wasi_root: Option<PathBuf>,
      pub qemu_rootfs: Option<PathBuf>,
      pub no_std: bool,
-@@ -305,7 +302,6 @@ struct Rust {
-     backtrace: Option<bool>,
+@@ -307,7 +304,6 @@ struct Rust {
+     parallel_compiler: Option<bool>,
      default_linker: Option<String>,
      channel: Option<String>,
 -    musl_root: Option<String>,
      rpath: Option<bool>,
+     verbose_tests: Option<bool>,
      optimize_tests: Option<bool>,
-     codegen_tests: Option<bool>,
 @@ -342,7 +338,6 @@ struct TomlTarget {
-     linker: Option<String>,
+     llvm_filecheck: Option<String>,
      android_ndk: Option<String>,
      crt_static: Option<bool>,
 -    musl_root: Option<String>,
@@ -193,10 +181,10 @@ index 52b5cd88..cc191271 100644
                  target.qemu_rootfs = cfg.qemu_rootfs.clone().map(PathBuf::from);
  
 diff --git a/src/bootstrap/configure.py b/src/bootstrap/configure.py
-index 346f0cb2..80409781 100755
+index bb6041d7..73f3781c 100755
 --- a/src/bootstrap/configure.py
 +++ b/src/bootstrap/configure.py
-@@ -110,30 +110,6 @@ v("aarch64-linux-android-ndk", "target.aarch64-linux-android.android-ndk",
+@@ -109,34 +109,6 @@ v("aarch64-linux-android-ndk", "target.aarch64-linux-android.android-ndk",
    "aarch64-linux-android NDK standalone path")
  v("x86_64-linux-android-ndk", "target.x86_64-linux-android.android-ndk",
    "x86_64-linux-android NDK standalone path")
@@ -224,14 +212,18 @@ index 346f0cb2..80409781 100755
 -  "mips-unknown-linux-musl install directory")
 -v("musl-root-mipsel", "target.mipsel-unknown-linux-musl.musl-root",
 -  "mipsel-unknown-linux-musl install directory")
+-v("musl-root-mips64", "target.mips64-unknown-linux-muslabi64.musl-root",
+-  "mips64-unknown-linux-muslabi64 install directory")
+-v("musl-root-mips64el", "target.mips64el-unknown-linux-muslabi64.musl-root",
+-  "mips64el-unknown-linux-muslabi64 install directory")
  v("qemu-armhf-rootfs", "target.arm-unknown-linux-gnueabihf.qemu-rootfs",
    "rootfs in qemu testing, you probably don't want to use this")
  v("qemu-aarch64-rootfs", "target.aarch64-unknown-linux-gnu.qemu-rootfs",
 diff --git a/src/bootstrap/lib.rs b/src/bootstrap/lib.rs
-index d292609f..ff5f7e16 100644
+index 39cb804c..8e36118a 100644
 --- a/src/bootstrap/lib.rs
 +++ b/src/bootstrap/lib.rs
-@@ -835,14 +835,6 @@ impl Build {
+@@ -828,14 +828,6 @@ impl Build {
          }
      }
  
@@ -282,7 +274,7 @@ index bffe748f..3b109548 100644
              // There are three builds of cmake on windows: MSVC, MinGW, and
              // Cygwin. The Cygwin build does not have generators for Visual
 diff --git a/src/librustc_target/spec/linux_musl_base.rs b/src/librustc_target/spec/linux_musl_base.rs
-index 17fecb3b..18732066 100644
+index e294e639..58ae91a9 100644
 --- a/src/librustc_target/spec/linux_musl_base.rs
 +++ b/src/librustc_target/spec/linux_musl_base.rs
 @@ -3,28 +3,12 @@ use crate::spec::{LinkerFlavor, TargetOptions};
@@ -314,3 +306,6 @@ index 17fecb3b..18732066 100644
      // These targets statically link libc by default
      base.crt_static_default = true;
      // These targets allow the user to choose between static and dynamic linking.
+-- 
+2.24.0
+
