@@ -206,7 +206,7 @@ set_build_options() {
         for f in ${build_options}; do
             [[ "${options[$f]}" -eq 1 ]] || printf '~'
             printf '%s\n' "$f"
-        done | sort
+        done | sort | tr -s '\n' ' '
     )
 }
 
