@@ -7,7 +7,7 @@ Generic:
 
 For users of the open source drivers:
 
-	- mesa-32bit
+	- mesa-dri-32bit
 
 For users of the proprietary NVIDIA driver:
 
