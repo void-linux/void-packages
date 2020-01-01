@@ -1,0 +1,327 @@
+commit 7bf731210d6b23e4a030a3ef55d4bc7871e3ac37
+Author: Cameron Nemo <cnemo@tutanota.com>
+Date:   Tue Dec 31 15:51:57 2019 -0800
+
+    python: port to python3
+
+diff --git python/client.py python/client.py
+index 7efdd2d7..38115813 100644
+--- python/client.py
++++ python/client.py
+@@ -118,7 +118,7 @@ class _DBusInterface(object):
+ 
+ 		try:
+ 			return method_getter()(*args, **kwargs)
+-		except dbus.exceptions.DBusException, e:
++		except dbus.exceptions.DBusException as e:
+ 			return reconnecting_error_handler(e)
+ 
+ 	def __getattr__(self, name):
+@@ -258,7 +258,7 @@ class ZeitgeistDBusInterface(object):
+ 			try:
+ 				proxy = get_bus().get_object(self.BUS_NAME,
+ 					self.OBJECT_PATH, follow_name_owner_changes=True)
+-			except dbus.exceptions.DBusException, e:
++			except dbus.exceptions.DBusException as e:
+ 				if e.get_dbus_name() == "org.freedesktop.DBus.Error.ServiceUnknown":
+ 					raise RuntimeError(
+ 						"Found no running zeitgeist-daemon instance: %s" % \
+@@ -291,7 +291,7 @@ class Monitor(dbus.service.Object):
+ 		delete_callback, monitor_path=None, event_type=None):
+ 		if not monitor_path:
+ 			monitor_path = Monitor._next_path()
+-		elif isinstance(monitor_path, (str, unicode)):
++		elif isinstance(monitor_path, str):
+ 			monitor_path = dbus.ObjectPath(monitor_path)
+ 		
+ 		if event_type:
+@@ -336,7 +336,7 @@ class Monitor(dbus.service.Object):
+ 		    See :meth:`ZeitgeistClient.install_monitor`
+ 		"""
+ 		self._insert_callback(TimeRange(time_range[0], time_range[1]),
+-			map(self._event_type, events))
++			list(map(self._event_type, events)))
+ 	
+ 	@dbus.service.method("org.gnome.zeitgeist.Monitor",
+ 	                     in_signature="(xx)au")
+@@ -467,7 +467,7 @@ class ZeitgeistClient:
+ 		return [int(i) for i in self._iface.version()]
+ 		
+ 	def get_extensions(self):
+-		return [unicode(i) for i in self._iface.extensions()]
++		return [str(i) for i in self._iface.extensions()]
+ 	
+ 	# Methods
+ 	
+@@ -727,7 +727,7 @@ class ZeitgeistClient:
+ 					num_events,
+ 					result_type,
+ 					reply_handler=lambda raw: events_reply_handler(
+-						map(self._event_type.new_for_struct, raw)),
++						list(map(self._event_type.new_for_struct, raw))),
+ 					error_handler=self._safe_error_handler(error_handler,
+ 						events_reply_handler, []))
+ 	
+@@ -788,7 +788,7 @@ class ZeitgeistClient:
+ 		# the raw DBus reply into a list of Event instances
+ 		self._iface.GetEvents(event_ids,
+ 				reply_handler=lambda raw: events_reply_handler(
+-					map(self._event_type.new_for_struct, raw)),
++					list(map(self._event_type.new_for_struct, raw))),
+ 				error_handler=self._safe_error_handler(error_handler,
+ 						events_reply_handler, []))
+ 	
+@@ -960,7 +960,7 @@ class ZeitgeistClient:
+ 		:param monitor_removed_handler: A callback function taking
+ 		    one integer argument. 1 on success, 0 on failure.
+ 		"""
+-		if isinstance(monitor, (str,unicode)):
++		if isinstance(monitor, str):
+ 			path = dbus.ObjectPath(monitor)
+ 		elif isinstance(monitor, Monitor):
+ 			path = monitor.path
+@@ -1054,11 +1054,11 @@ class ZeitgeistClient:
+ 		"""
+ 		
+ 		if unique_id not in self._data_sources:
+-			raise ValueError, 'set_data_source_enabled_callback() called before ' \
+-			'register_data_source()'
++			raise ValueError('set_data_source_enabled_callback() called before ' \
++			'register_data_source()')
+ 		
+ 		if not callable(enabled_callback):
+-			raise TypeError, 'enabled_callback: expected a callable method'
++			raise TypeError('enabled_callback: expected a callable method')
+ 		
+ 		self._data_sources[unique_id]['callback'] = enabled_callback
+ 	
+@@ -1092,7 +1092,7 @@ class ZeitgeistClient:
+ 		Error handler for async DBus calls that prints the error
+ 		to sys.stderr
+ 		"""
+-		print >> sys.stderr, "Error from Zeitgeist engine:", exception
++		print("Error from Zeitgeist engine:", exception, file=sys.stderr)
+ 		
+ 		if callable(normal_reply_handler):
+ 			normal_reply_handler(normal_reply_data)
+diff --git python/datamodel.py python/datamodel.py
+index d8402bd4..17a3b213 100644
+--- python/datamodel.py
++++ python/datamodel.py
+@@ -26,7 +26,7 @@ import os.path
+ import gettext
+ import time
+ import sys
+-gettext.install("zeitgeist", unicode=1)
++gettext.install("zeitgeist", str=1)
+ 
+ __all__ = [
+ 	'Interpretation',
+@@ -121,12 +121,12 @@ class Symbol(str):
+ 	def _ensure_all_children (self):
+ 		if self._all_children is not None : return
+ 		self._all_children = dict()
+-		for child in self._children.itervalues():
++		for child in self._children.values():
+ 			child._visit(self._all_children)
+ 	
+ 	def _visit (self, dikt):
+ 		dikt[self.name] = self
+-		for child in self._children.itervalues():
++		for child in self._children.values():
+ 			child._visit(dikt) 
+ 	
+ 	@staticmethod
+@@ -141,7 +141,7 @@ class Symbol(str):
+ 			children = list(symbol.get_all_children())
+ 			children.append(uri)
+ 			return children
+-		except KeyError, e:
++		except KeyError as e:
+ 			return [uri]
+ 		
+ 
+@@ -160,7 +160,7 @@ class Symbol(str):
+ 	
+ 	def __dir__(self):
+ 		self._ensure_all_children()
+-		return self._all_children.keys()
++		return list(self._all_children.keys())
+ 
+ 	@property
+ 	def doc(self):
+@@ -174,7 +174,7 @@ class Symbol(str):
+ 		"""
+ 		Returns a list of immediate child symbols
+ 		"""
+-		return frozenset(self._children.itervalues())
++		return frozenset(iter(self._children.values()))
+ 		
+ 	def iter_all_children(self):
+ 		"""
+@@ -182,7 +182,7 @@ class Symbol(str):
+ 		of this symbol
+ 		"""
+ 		self._ensure_all_children()
+-		return self._all_children.itervalues()
++		return iter(self._all_children.values())
+ 		
+ 	def get_all_children(self):
+ 		"""
+@@ -194,7 +194,7 @@ class Symbol(str):
+ 		"""
+ 		Returns a list of immediate parent symbols
+ 		"""
+-		return frozenset(self._parents.itervalues())
++		return frozenset(iter(self._parents.values()))
+ 	
+ 	def is_child_of (self, parent):
+ 		"""
+@@ -203,7 +203,7 @@ class Symbol(str):
+ 		if not isinstance (parent, Symbol):
+ 			try:
+ 				parent = _SYMBOLS_BY_URI[parent]
+-			except KeyError, e:
++			except KeyError as e:
+ 				# Parent is not a known URI
+ 				return self.uri == parent
+ 		
+@@ -223,12 +223,12 @@ class Symbol(str):
+ 		and `parent` arguments must be any combination of
+ 		:class:`Symbol` and/or string.
+ 		"""
+-		if isinstance (child, basestring):
++		if isinstance (child, str):
+ 			try:
+ 				child = _SYMBOLS_BY_URI[child]
+-			except KeyError, e:
++			except KeyError as e:
+ 				# Child is not a know URI
+-				if isinstance (parent, basestring):
++				if isinstance (parent, str):
+ 					return child == parent
+ 				elif isinstance (parent, Symbol):
+ 					return child == parent.uri
+@@ -376,7 +376,7 @@ class Subject(list):
+ 		Text,
+ 		Storage,
+ 		CurrentUri,
+-		CurrentOrigin) = range(9)
++		CurrentOrigin) = list(range(9))
+ 
+ 	SUPPORTS_NEGATION = (Uri, CurrentUri, Interpretation, Manifestation,
+ 		Origin, CurrentOrigin, Mimetype)
+@@ -429,7 +429,7 @@ class Subject(list):
+ 		:param storage: String identifier for the storage medium of the subject. This should be the UUID of the volume or the string "net" for resources requiring a network interface, and the string "deleted" for subjects that are deleted.
+ 		"""
+ 		self = Subject()
+-		for key, value in values.iteritems():
++		for key, value in values.items():
+ 			if not key in ("uri", "current_uri", "interpretation",
+ 						"manifestation", "origin", "current_origin",
+ 						"mimetype", "text", "storage"):
+@@ -568,7 +568,7 @@ class Event(list):
+ 		Interpretation,
+ 		Manifestation,
+ 		Actor,
+-		Origin) = range(6)
++		Origin) = list(range(6))
+ 	
+ 	SUPPORTS_NEGATION = (Interpretation, Manifestation, Actor, Origin)
+ 	SUPPORTS_WILDCARDS = (Actor, Origin)
+@@ -606,11 +606,11 @@ class Event(list):
+ 				self.append("")
+ 			elif len(struct) == 2:
+ 				self.append(self._check_event_struct(struct[0]))
+-				self.append(map(self._subject_type, struct[1]))
++				self.append(list(map(self._subject_type, struct[1])))
+ 				self.append("")
+ 			elif len(struct) == 3:
+ 				self.append(self._check_event_struct(struct[0]))
+-				self.append(map(self._subject_type, struct[1]))
++				self.append(list(map(self._subject_type, struct[1])))
+ 				self.append(struct[2])
+ 			else:
+ 				raise ValueError("Invalid struct length %s" % len(struct))
+@@ -909,7 +909,7 @@ class DataSource(list):
+ 		Running,
+ 		LastSeen,	# last time the data-source did something (connected,
+ 					# inserted events, disconnected).
+-		Enabled) = range(7)
++		Enabled) = list(range(7))
+ 		
+ 	def get_unique_id(self):
+ 		return self[self.UniqueId]
+@@ -999,8 +999,7 @@ class _Enumeration(object):
+ 		Return an iterator yielding (name, value) tuples for all items in
+ 		this enumeration.
+ 		"""
+-		return iter(map(lambda x: (x, getattr(self, x)),
+-			filter(lambda x: not x.startswith('__'), sorted(self.__dict__))))
++		return iter([(x, getattr(self, x)) for x in [x for x in sorted(self.__dict__) if not x.startswith('__')]])
+ 
+ class RelevantResultType(_Enumeration):
+ 	"""
+@@ -1170,7 +1169,7 @@ _SYMBOLS_BY_URI["Manifestation"] = Manifestation
+ # Load the ontology definitions
+ ontology_file = os.path.join(os.path.dirname(__file__), "_ontology.py")
+ try:
+-	execfile(ontology_file)
++	exec(compile(open(ontology_file, "rb").read(), ontology_file, 'exec'))
+ except IOError:
+ 	raise ImportError("Unable to load Zeitgeist ontology. Did you run `make`?")
+ 
+@@ -1178,23 +1177,23 @@ except IOError:
+ # Bootstrap the symbol relations. We use a 2-pass strategy:
+ #
+ # 1) Make sure that all parents and children are registered on each symbol
+-for symbol in _SYMBOLS_BY_URI.itervalues():
++for symbol in _SYMBOLS_BY_URI.values():
+ 	for parent in symbol._parents:
+ 		try:
+ 			_SYMBOLS_BY_URI[parent]._children[symbol.uri] = None
+-		except KeyError, e:
+-			print "ERROR", e, parent, symbol.uri
++		except KeyError as e:
++			print("ERROR", e, parent, symbol.uri)
+ 			pass
+ 	for child in symbol._children:
+ 		try:
+ 			_SYMBOLS_BY_URI[child]._parents.add(symbol.uri)
+ 		except KeyError:
+-			print "ERROR", e, child, symbol.uri
++			print("ERROR", e, child, symbol.uri)
+ 			pass
+ 
+ # 2) Resolve all child and parent URIs to their actual Symbol instances
+-for symbol in _SYMBOLS_BY_URI.itervalues():
+-	for child_uri in symbol._children.iterkeys():
++for symbol in _SYMBOLS_BY_URI.values():
++	for child_uri in symbol._children.keys():
+ 		symbol._children[child_uri] = _SYMBOLS_BY_URI[child_uri]
+ 	
+ 	parents = {}
+@@ -1204,8 +1203,8 @@ for symbol in _SYMBOLS_BY_URI.itervalues():
+ 
+ 
+ if __name__ == "__main__":
+-	print "Success"
++	print("Success")
+ 	end_symbols = time.time()
+-	print >> sys.stderr, "Import time: %s" % (end_symbols - start_symbols)
++	print("Import time: %s" % (end_symbols - start_symbols), file=sys.stderr)
+ 
+ # vim:noexpandtab:ts=4:sw=4
+diff --git python/mimetypes.py python/mimetypes.py
+index c099f8c6..c5951989 100644
+--- python/mimetypes.py
++++ python/mimetypes.py
+@@ -21,7 +21,7 @@
+ 
+ import re
+ 
+-from datamodel import Interpretation, Manifestation
++from .datamodel import Interpretation, Manifestation
+ 
+ __all__ = [
+     "get_interpretation_for_mimetype",
