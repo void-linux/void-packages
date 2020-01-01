@@ -8,7 +8,9 @@ fi
 
 # Make sure `base-chroot` is really up-to-date
 /hostrepo/xbps-src -f pkg base-chroot || exit 1
-xbps-install --repository=/host/binpkgs -yu || exit 1
+xbps-install --repository=/host/binpkgs -yif base-chroot || exit 1
+# remove autodeps
+xbps-remove -yo || exit 1
 
 PKGS=$(/hostrepo/xbps-src sort-dependencies $(cat /tmp/templates))
 
