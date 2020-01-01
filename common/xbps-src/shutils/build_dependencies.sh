@@ -195,7 +195,7 @@ install_pkg_deps() {
     #
     # Host check dependencies.
     #
-    if [[ ${checkdepends} ]] && [[ $XBPS_CHECK_PKGS ]]; then
+    if [[ ${checkdepends} ]] && [[ $XBPS_CHECK_PKGS ]] && [ -z "$XBPS_CROSS_BUILD" ]; then
         templates=""
         # check validity
         for f in ${checkdepends}; do
