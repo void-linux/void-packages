@@ -1,5 +1,62 @@
 # vim: set ts=4 sw=4 et:
 
+install_base_chroot() {
+    [ "$CHROOT_READY" ] && return
+    chroot_sync_repodata
+    if [ "$1" = "bootstrap" ]; then
+        unset XBPS_TARGET_PKG XBPS_INSTALL_ARGS
+    else
+        XBPS_TARGET_PKG="$1"
+    fi
+    [ "$XBPS_SKIP_REMOTEREPOS" ] && unset XBPS_INSTALL_ARGS
+    # binary bootstrap
+    msg_normal "xbps-src: installing base-chroot...\n"
+    # XBPS_TARGET_PKG == arch
+    if [ "$XBPS_TARGET_PKG" ]; then
+        _bootstrap_arch="env XBPS_TARGET_ARCH=$XBPS_TARGET_PKG"
+    fi
+    ${_bootstrap_arch} $XBPS_INSTALL_CMD ${XBPS_INSTALL_ARGS} -y base-chroot
+    if [ $? -ne 0 ]; then
+        msg_error "xbps-src: failed to install base-chroot!\n"
+    fi
+    # Reconfigure base-files to create dirs/symlinks.
+    if xbps-query -r $XBPS_MASTERDIR base-files &>/dev/null; then
+        XBPS_ARCH=$XBPS_TARGET_PKG xbps-reconfigure -r $XBPS_MASTERDIR -f base-files &>/dev/null
+    fi
+
+    msg_normal "xbps-src: installed base-chroot successfully!\n"
+    chroot_prepare $XBPS_TARGET_PKG || msg_error "xbps-src: failed to initialize chroot!\n"
+    chroot_check
+    chroot_handler clean
+}
+
+reconfigure_base_chroot() {
+    local statefile="$XBPS_MASTERDIR/.xbps_chroot_configured"
+    local pkgs="glibc-locales ca-certificates"
+    [ -z "$IN_CHROOT" -o -e $statefile ] && return 0
+    # Reconfigure ca-certificates.
+    msg_normal "xbps-src: reconfiguring base-chroot...\n"
+    for f in ${pkgs}; do
+        if xbps-query -r $XBPS_MASTERDIR $f &>/dev/null; then
+            xbps-reconfigure -r $XBPS_MASTERDIR -f $f
+        fi
+    done
+    touch -f $statefile
+}
+
+update_base_chroot() {
+    [ -z "$CHROOT_READY" ] && return
+    [ -z "$XBPS_KEEP_ALL" -a -z "$XBPS_SKIP_DEPS" ] && remove_pkg_autodeps
+    msg_normal "xbps-src: cleaning up $XBPS_MASTERDIR masterdir...\n"
+    [ -z "$XBPS_KEEP_ALL" ] && rm -rf $XBPS_MASTERDIR/builddir $XBPS_MASTERDIR/destdir
+    msg_normal "xbps-src: updating software in $XBPS_MASTERDIR masterdir...\n"
+    # no need to sync repodata, chroot_sync_repodata() does it for us.
+    if $(${XBPS_INSTALL_CMD} ${XBPS_INSTALL_ARGS} -nu|grep xbps); then
+        ${XBPS_INSTALL_CMD} ${XBPS_INSTALL_ARGS} -yu xbps || msg_error "xbps-src: failed to update xbps!\n"
+    fi
+    ${XBPS_INSTALL_CMD} ${XBPS_INSTALL_ARGS} -yu || msg_error "xbps-src: failed to update base-chroot!\n"
+}
+
 # FIXME: $XBPS_FFLAGS is not set when chroot_init() is run
 # It is set in common/build-profiles/bootstrap.sh but lost somewhere?
 chroot_init() {
@@ -36,26 +93,7 @@ exec env -i -- SHELL=/bin/sh PATH="\$PATH" DISTCC_HOSTS="\$XBPS_DISTCC_HOSTS" DI
 _EOF
 
     chmod 755 $XBPS_MASTERDIR/bin/xbps-shell
-
     cp -f /etc/resolv.conf $XBPS_MASTERDIR/etc
-
-    # Update xbps alternative repository if set.
-    mkdir -p $XBPS_MASTERDIR/etc/xbps.d
-    if [ -n "$XBPS_ALT_REPOSITORY" ]; then
-        ( \
-            echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}"; \
-            echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}/nonfree"; \
-            echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}/debug"; \
-            ) > $XBPS_MASTERDIR/etc/xbps.d/00-repository-alternative.conf
-        if [ "$XBPS_MACHINE" = "x86_64" ]; then
-            ( \
-                echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}/multilib"; \
-                echo "repository=/host/binpkgs/${XBPS_ALT_REPOSITORY}/multilib/nonfree"; \
-            ) >> $XBPS_MASTERDIR/etc/xbps.d/00-repository-alternative.conf
-        fi
-    else
-        rm -f $XBPS_MASTERDIR/etc/xbps.d/00-repository-alternative.conf
-    fi
 }
 
 chroot_prepare() {
@@ -90,8 +128,6 @@ chroot_prepare() {
 
     mkdir -p $XBPS_MASTERDIR/etc/xbps.d
     echo "syslog=false" >> $XBPS_MASTERDIR/etc/xbps.d/xbps.conf
-    echo "cachedir=/host/repocache" >> $XBPS_MASTERDIR/etc/xbps.d/xbps.conf
-    ln -sf /dev/null $XBPS_MASTERDIR/etc/xbps.d/00-repository-main.conf
 
     # Prepare default locale: en_US.UTF-8.
     if [ -s ${XBPS_MASTERDIR}/etc/default/libc-locales ]; then
@@ -104,61 +140,10 @@ chroot_prepare() {
     return 0
 }
 
-chroot_sync_repos() {
-    local f=
-
-    # Copy xbps configuration files to the masterdir.
-    install -Dm644 ${XBPS_DISTDIR}/etc/xbps.conf \
-        ${XBPS_MASTERDIR}/etc/xbps.d/00-xbps-src.conf
-    install -Dm644 ${XBPS_DISTDIR}/etc/repos-local.conf \
-        ${XBPS_MASTERDIR}/etc/xbps.d/10-repository-local.conf
-    install -Dm644 ${XBPS_DISTDIR}/etc/repos-remote.conf \
-        ${XBPS_MASTERDIR}/etc/xbps.d/20-repository-remote.conf
-
-    if [ "$XBPS_MACHINE" = "x86_64" ]; then
-        install -Dm644 ${XBPS_DISTDIR}/etc/repos-local-x86_64.conf \
-            ${XBPS_MASTERDIR}/etc/xbps.d/12-repository-local-x86_64.conf
-        install -Dm644 ${XBPS_DISTDIR}/etc/repos-remote-x86_64.conf \
-            ${XBPS_MASTERDIR}/etc/xbps.d/22-repository-remote-x86_64.conf
-    fi
-
-    # if -N is set, get rid of remote repos from x86_64 (glibc).
-    if [ -n "$XBPS_SKIP_REMOTEREPOS" ]; then
-        rm -f ${XBPS_MASTERDIR}/etc/xbps.d/20-repository-remote.conf
-        rm -f ${XBPS_MASTERDIR}/etc/xbps.d/22-repository-remote-x86_64.conf
-    fi
-
-    # Copy host repos to the cross root.
-    if [ -n "$XBPS_CROSS_BUILD" ]; then
-        rm -rf $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
-        mkdir -p $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
-        cp ${XBPS_MASTERDIR}/etc/xbps.d/*.conf \
-            $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
-        rm -f $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d/*-x86_64.conf
-    fi
-
-    if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
-        # Make sure to sync index for remote repositories.
-        xbps-install -r $XBPS_MASTERDIR -S
-    fi
-
-    if [ -n "$XBPS_CROSS_BUILD" ]; then
-        # Copy host keys to the target rootdir.
-        mkdir -p $XBPS_MASTERDIR/$XBPS_CROSS_BASE/var/db/xbps/keys
-        cp $XBPS_MASTERDIR/var/db/xbps/keys/*.plist \
-            $XBPS_MASTERDIR/$XBPS_CROSS_BASE/var/db/xbps/keys
-        # Make sure to sync index for remote repositories.
-        if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
-            env -- XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE \
-                xbps-install -r $XBPS_MASTERDIR/$XBPS_CROSS_BASE -S
-        fi
-    fi
-
-    return 0
-}
-
 chroot_handler() {
     local action="$1" pkg="$2" rv=0 arg= _envargs=
+
+    [ -z "$action" -a -z "$pkg" ] && return 1
 
     if [ -n "$IN_CHROOT" -o -z "$CHROOT_READY" ]; then
         return 0
@@ -167,13 +152,10 @@ chroot_handler() {
         mkdir -p $XBPS_MASTERDIR/void-packages
     fi
 
-    [ -z "$action" -a -z "$pkg" ] && return 1
-
     case "$action" in
         fetch|extract|patch|configure|build|check|install|pkg|bootstrap-update|chroot)
             chroot_prepare || return $?
             chroot_init || return $?
-            chroot_sync_repos || return $?
             ;;
     esac
 
@@ -199,4 +181,122 @@ chroot_handler() {
     fi
 
     return $rv
+}
+
+chroot_sync_repodata() {
+    local f= hostdir= confdir= crossconfdir=
+
+    # always start with an empty xbps.d
+    confdir=$XBPS_MASTERDIR/etc/xbps.d
+    crossconfdir=$XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
+
+    [ -d $confdir ] && rm -rf $confdir
+
+    if [ "$CHROOT_READY" ]; then
+        hostdir=/host
+    else
+        hostdir=$XBPS_HOSTDIR
+    fi
+
+    # Update xbps alternative repository if set.
+    mkdir -p $confdir
+    if [ -n "$XBPS_ALT_REPOSITORY" ]; then
+        ( \
+            echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}"; \
+            echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/nonfree"; \
+            echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/debug"; \
+            ) > $confdir/00-repository-alt-local.conf
+        if [ "$XBPS_MACHINE" = "x86_64" ]; then
+            ( \
+                echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/multilib"; \
+                echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/multilib/nonfree"; \
+            ) >> $confdir/00-repository-alt-local.conf
+        fi
+    else
+        rm -f $confdir/00-repository-alt-local.conf
+    fi
+
+    # Disable 00-repository-main.conf from share/xbps.d (part of xbps)
+    ln -s /dev/null $confdir/00-repository-main.conf
+
+    # Generate xbps.d(5) configuration files for repositories
+    sed -e "s,/host,$hostdir,g" ${XBPS_DISTDIR}/etc/xbps.d/repos-local.conf \
+        > $confdir/10-repository-local.conf
+
+    if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
+        case "$XBPS_MACHINE" in
+            *-musl)
+                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-musl.conf \
+                    $confdir/20-repository-remote.conf
+                ;;
+            *)
+                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote.conf \
+                    $confdir/20-repository-remote.conf
+                ;;
+        esac
+        case "$XBPS_MACHINE" in
+        x86_64)
+            # x86_64/glibc
+            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-local-x86_64.conf \
+                $confdir/12-repository-local-x86_64.conf
+            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-x86_64.conf \
+                $confdir/22-repository-remote-x86_64.conf
+            ;;
+        aarch64*)
+            # aarch64 glibc/musl
+            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-aarch64.conf \
+                $confdir/22-repository-remote-aarch64.conf
+            ;;
+        esac
+    fi
+
+    # Copy host repos to the cross root.
+    if [ -n "$XBPS_CROSS_BUILD" ]; then
+        rm -rf $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
+        mkdir -p $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
+        # copy xbps.d files from host for local repos
+        cp ${XBPS_MASTERDIR}/etc/xbps.d/*local*.conf \
+            $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
+        if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
+            # and then remote repos for target machine
+            case "$XBPS_TARGET_MACHINE" in
+            aarch64*)
+                # aarch64 glibc/musl
+                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-aarch64.conf \
+                    $crossconfdir/22-repository-remote-aarch64.conf
+                ;;
+            *-musl)
+                # !aarch64 && musl
+                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-musl.conf \
+                    $crossconfdir/20-repository-remote.conf
+                ;;
+            *)
+                # !aarch64 && glibc
+                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote.conf \
+                    $crossconfdir/20-repository-remote.conf
+                ;;
+            esac
+        fi
+    fi
+
+    # Copy xbps repository keys to the masterdir.
+    mkdir -p $XBPS_MASTERDIR/var/db/xbps/keys
+    cp -f $XBPS_COMMONDIR/repo-keys/*.plist $XBPS_MASTERDIR/var/db/xbps/keys
+
+    # Make sure to sync index for remote repositories.
+    msg_normal "xbps-src: updating repositories for host ($XBPS_MACHINE)...\n"
+    xbps-install -r $XBPS_MASTERDIR -S
+
+    if [ -n "$XBPS_CROSS_BUILD" ]; then
+        # Copy host keys to the target rootdir.
+        mkdir -p $XBPS_MASTERDIR/$XBPS_CROSS_BASE/var/db/xbps/keys
+        cp $XBPS_MASTERDIR/var/db/xbps/keys/*.plist \
+            $XBPS_MASTERDIR/$XBPS_CROSS_BASE/var/db/xbps/keys
+        # Make sure to sync index for remote repositories.
+        msg_normal "xbps-src: updating repositories for target ($XBPS_TARGET_MACHINE)...\n"
+        env -- XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE \
+            xbps-install -r $XBPS_MASTERDIR/$XBPS_CROSS_BASE -S
+    fi
+
+    return 0
 }
