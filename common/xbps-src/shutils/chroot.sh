@@ -94,6 +94,7 @@ _EOF
 
     chmod 755 $XBPS_MASTERDIR/bin/xbps-shell
     cp -f /etc/resolv.conf $XBPS_MASTERDIR/etc
+    return 0
 }
 
 chroot_prepare() {
