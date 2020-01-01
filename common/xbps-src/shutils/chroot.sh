@@ -55,6 +55,8 @@ update_base_chroot() {
         ${XBPS_INSTALL_CMD} ${XBPS_INSTALL_ARGS} -yu xbps || msg_error "xbps-src: failed to update xbps!\n"
     fi
     ${XBPS_INSTALL_CMD} ${XBPS_INSTALL_ARGS} -yu || msg_error "xbps-src: failed to update base-chroot!\n"
+    [ -z "$XBPS_KEEP_ALL" -a -z "$XBPS_SKIP_DEPS" ] && remove_pkg_autodeps
+    msg_normal "xbps-src: cleaning up $XBPS_MASTERDIR masterdir...\n"
 }
 
 # FIXME: $XBPS_FFLAGS is not set when chroot_init() is run
