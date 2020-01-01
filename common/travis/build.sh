@@ -7,7 +7,8 @@ if [ "$1" != "$2" ]; then
 fi
 
 # Make sure `base-chroot` is really up-to-date
-/hostrepo/xbps-src -f pkg base-chroot
+/hostrepo/xbps-src -f pkg base-chroot || exit 1
+xbps-install --repository=/host/binpkgs -yu || exit 1
 
 PKGS=$(/hostrepo/xbps-src sort-dependencies $(cat /tmp/templates))
 
