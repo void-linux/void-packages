@@ -70,8 +70,8 @@ hook() {
 		fi
 
 		case ${cursufx} in
-		txz|tbz|tlz|tgz|crate)
-			tar -x --no-same-permissions --no-same-owner -f $srcdir/$curfile -C $extractdir
+		tar|txz|tbz|tlz|tgz|crate)
+			bsdtar -x --no-same-permissions --no-same-owner -f $srcdir/$curfile -C $extractdir
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
@@ -82,12 +82,6 @@ hook() {
 				cd $extractdir && gunzip -f $curfile
 			else
 				cd $extractdir && bunzip2 -f $curfile
-			fi
-			;;
-		tar)
-			tar -x --no-same-permissions --no-same-owner -f $srcdir/$curfile -C $extractdir
-			if [ $? -ne 0 ]; then
-				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
 			;;
 		zip)

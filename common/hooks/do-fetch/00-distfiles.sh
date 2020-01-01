@@ -50,7 +50,7 @@ contents_cksum() {
 
 	case ${cursufx} in
 	tar|txz|tbz|tlz|tgz|crate)
-		cksum=$($XBPS_DIGEST_CMD <(tar xf "$curfile" --to-stdout))
+		cksum=$($XBPS_DIGEST_CMD <(bsdtar xf "$curfile" --list))
 		if [ $? -ne 0 ]; then
 			msg_error "$pkgver: extracting $curfile to pipe.\n"
 		fi
@@ -95,7 +95,7 @@ contents_cksum() {
 		fi
 		;;
 	gem)
-		cksum=$($XBPS_DIGEST_CMD <(tar -xf "$curfile" data.tar.gz --to-stdout | tar -xzO ))
+		cksum=$($XBPS_DIGEST_CMD <(bsdtar -xf "$curfile" data.tar.gz --list | bsdtar -xzO ))
 		;;
 	*)
 		msg_error "$pkgver: cannot guess $curfile extract suffix. ($cursufx)\n"
