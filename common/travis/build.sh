@@ -7,7 +7,7 @@ if [ "$1" != "$2" ]; then
 fi
 
 # Make sure `base-chroot` is really up-to-date
-/hostrepo/xbps-src -H "$HOME"/hostdir -f pkg base-chroot || exit 1
+/hostrepo/xbps-src -H "$HOME"/hostdir -E pkg base-chroot || exit 1
 xbps-install --repo="$HOME"/hostdir/binpkgs -yu || exit 1
 xbps-install --repo="$HOME"/hostdir/binpkgs -yf base-chroot || exit 1
 # remove autodeps
