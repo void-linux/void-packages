@@ -226,7 +226,15 @@ chroot_sync_repodata() {
     sed -e "s,/host,$hostdir,g" ${XBPS_DISTDIR}/etc/xbps.d/repos-local.conf \
         > $confdir/10-repository-local.conf
 
-    if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
+    if [ "$XBPS_SKIP_REMOTEREPOS" ]; then
+        case "$XBPS_MACHINE" in
+            x86_64)
+            # x86_64/glibc
+            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-local-x86_64.conf \
+                $confdir/12-repository-local-x86_64.conf
+            ;;
+        esac
+    else
         case "$XBPS_MACHINE" in
             *-musl)
                 install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-musl.conf \
