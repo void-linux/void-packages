@@ -51,7 +51,7 @@ update_base_chroot() {
     [ -z "$XBPS_KEEP_ALL" ] && rm -rf $XBPS_MASTERDIR/builddir $XBPS_MASTERDIR/destdir
     msg_normal "xbps-src: updating software in $XBPS_MASTERDIR masterdir...\n"
     # no need to sync repodata, chroot_sync_repodata() does it for us.
-    if $(${XBPS_INSTALL_CMD} ${XBPS_INSTALL_ARGS} -nu|grep xbps); then
+    if $(${XBPS_INSTALL_CMD} ${XBPS_INSTALL_ARGS} -nu|grep -q xbps); then
         ${XBPS_INSTALL_CMD} ${XBPS_INSTALL_ARGS} -yu xbps || msg_error "xbps-src: failed to update xbps!\n"
     fi
     ${XBPS_INSTALL_CMD} ${XBPS_INSTALL_ARGS} -yu || msg_error "xbps-src: failed to update base-chroot!\n"
