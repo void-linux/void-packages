@@ -50,7 +50,7 @@ contents_cksum() {
 
 	case ${cursufx} in
 	tar|txz|tbz|tlz|tgz|crate)
-		cksum=$($XBPS_DIGEST_CMD <(bsdtar xf "$curfile" --list))
+		cksum=$($XBPS_DIGEST_CMD <($TAR_CMD xf "$curfile" $TAR_CMD_STDOUT))
 		if [ $? -ne 0 ]; then
 			msg_error "$pkgver: extracting $curfile to pipe.\n"
 		fi
@@ -73,7 +73,7 @@ contents_cksum() {
 		;;
 	rpm)
 		if command -v rpmextract &>/dev/null; then
-			cksum=$($XBPS_DIGEST_CMD <(rpm2cpio "$curfile" | bsdtar xf - --to-stdout))
+			cksum=$($XBPS_DIGEST_CMD <(rpm2cpio "$curfile" | $TAR_CMD xf - $TAR_CMD_STDOUT))
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile to pipe.\n"
 			fi
@@ -95,7 +95,7 @@ contents_cksum() {
 		fi
 		;;
 	gem)
-		cksum=$($XBPS_DIGEST_CMD <(bsdtar -xf "$curfile" data.tar.gz --list | bsdtar -xzO ))
+		cksum=$($XBPS_DIGEST_CMD <($TAR_CMD -xf "$curfile" data.tar.gz $TAR_CMD_STDOUT | $TAR_CMD -xzO ))
 		;;
 	*)
 		msg_error "$pkgver: cannot guess $curfile extract suffix. ($cursufx)\n"
@@ -210,6 +210,15 @@ hook() {
 	# Disable trap on ERR; the code is smart enough to report errors and abort.
 	trap - ERR
 
+	# Detect bsdtar and GNU tar (in that order of preference)
+	TAR_CMD="$(command -v bsdtar)"
+	if [ "$TAR_CMD" ]; then
+		TAR_CMD_STDOUT="--list"
+	else
+		TAR_CMD="$(command -v tar)"
+		TAR_CMD_STDOUT="--to-stdout"
+	fi
+
 	# Detect distfiles with obsolete checksum and purge them from the cache
 	for f in ${distfiles}; do
 		curfile="${f#*>}"
@@ -272,6 +281,8 @@ hook() {
 		verify_cksum $curfile $distfile $dfcount
 		dfcount=$((dfcount + 1))
 	done
+
+	unset TAR_CMD TAR_CMD_STDOUT
 
 	if [ $errors -gt 0 ]; then
 		msg_error "$pkgver: couldn't verify distfiles, exiting...\n"
