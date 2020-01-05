@@ -2,19 +2,18 @@
 
 install_base_chroot() {
     [ "$CHROOT_READY" ] && return
-    chroot_sync_repodata
     if [ "$1" = "bootstrap" ]; then
         unset XBPS_TARGET_PKG XBPS_INSTALL_ARGS
     else
         XBPS_TARGET_PKG="$1"
     fi
-    [ "$XBPS_SKIP_REMOTEREPOS" ] && unset XBPS_INSTALL_ARGS
     # binary bootstrap
     msg_normal "xbps-src: installing base-chroot...\n"
     # XBPS_TARGET_PKG == arch
     if [ "$XBPS_TARGET_PKG" ]; then
         _bootstrap_arch="env XBPS_TARGET_ARCH=$XBPS_TARGET_PKG"
     fi
+    (export XBPS_MACHINE=$XBPS_TARGET_PKG XBPS_ARCH=$XBPS_TARGET_PKG; chroot_sync_repodata)
     ${_bootstrap_arch} $XBPS_INSTALL_CMD ${XBPS_INSTALL_ARGS} -y base-chroot
     if [ $? -ne 0 ]; then
         msg_error "xbps-src: failed to install base-chroot!\n"
