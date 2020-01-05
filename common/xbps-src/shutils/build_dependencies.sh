@@ -361,7 +361,7 @@ install_pkg_deps() {
         setup_pkg $curpkgdepname
         exec env XBPS_DEPENDENCY=1 XBPS_BINPKG_EXISTS=1 \
             $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target $cross_prepare || exit $?
-        ) || msg_error "xbps-src: failed to build host dependency '$i' ($?)\n"
+        ) || exit $?
         host_binpkg_deps+=("$i")
     done
 
@@ -374,7 +374,7 @@ install_pkg_deps() {
         setup_pkg $curpkgdepname $cross
         exec env XBPS_DEPENDENCY=1 XBPS_BINPKG_EXISTS=1 \
             $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target $cross $cross_prepare || exit $?
-        ) || msg_error "xbps-src: failed to build target dependency '$i' ($?)\n"
+        ) || exit $?
         binpkg_deps+=("$i")
     done
 
@@ -392,7 +392,7 @@ install_pkg_deps() {
         setup_pkg $curpkgdepname $cross
         exec env XBPS_DEPENDENCY=1 XBPS_BINPKG_EXISTS=1 \
             $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target $cross $cross_prepare || exit $?
-        ) || msg_error "xbps-src: failed to build target dependency '$i' ($?)\n"
+        ) || exit $?
     done
 
     if [[ ${host_binpkg_deps} ]]; then
