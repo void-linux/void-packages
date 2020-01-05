@@ -1,16 +1,10 @@
-#!/bin/bash
+#!/bin/sh
 #
 # build.sh
 
 if [ "$1" != "$2" ]; then
 	arch="-a $2"
 fi
-
-# Make sure `base-chroot` is really up-to-date
-/hostrepo/xbps-src -H "$HOME"/hostdir -E pkg base-chroot || exit 1
-xbps-install --repo="$HOME"/hostdir/binpkgs -yu || exit 1
-# remove autodeps
-xbps-remove -yo || exit 1
 
 PKGS=$(/hostrepo/xbps-src sort-dependencies $(cat /tmp/templates))
 
