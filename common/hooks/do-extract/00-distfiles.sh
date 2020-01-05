@@ -24,6 +24,9 @@ hook() {
 		mkdir -p ${wrksrc} || msg_error "$pkgver: failed to create wrksrc.\n"
 	fi
 
+	# Disable trap on ERR; the code is smart enough to report errors and abort.
+	trap - ERR
+
 	TAR_CMD="$(command -v bsdtar)"
 	[ -z "$TAR_CMD" ] && TAR_CMD="$(command -v tar)"
 	[ -z "$TAR_CMD" ] && msg_error "xbps-src: no suitable tar cmd (bsdtar, tar)\n"
