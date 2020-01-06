@@ -50,7 +50,7 @@ contents_cksum() {
 
 	case ${cursufx} in
 	tar|txz|tbz|tlz|tgz|crate)
-		cksum=$($XBPS_DIGEST_CMD <($TAR_CMD xf "$curfile" $TAR_CMD_STDOUT))
+		cksum=$($XBPS_DIGEST_CMD <($TAR_CMD -x -O -f "$curfile"))
 		if [ $? -ne 0 ]; then
 			msg_error "$pkgver: extracting $curfile to pipe.\n"
 		fi
@@ -73,7 +73,7 @@ contents_cksum() {
 		;;
 	rpm)
 		if command -v rpmextract &>/dev/null; then
-			cksum=$($XBPS_DIGEST_CMD <(rpm2cpio "$curfile" | $TAR_CMD xf - $TAR_CMD_STDOUT))
+			cksum=$($XBPS_DIGEST_CMD <(rpm2cpio "$curfile" | $TAR_CMD -x -f -))
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile to pipe.\n"
 			fi
@@ -95,7 +95,7 @@ contents_cksum() {
 		fi
 		;;
 	gem)
-		cksum=$($XBPS_DIGEST_CMD <($TAR_CMD -xf "$curfile" data.tar.gz $TAR_CMD_STDOUT | $TAR_CMD -xzO ))
+		cksum=$($XBPS_DIGEST_CMD <($TAR_CMD -x -O -f "$curfile" data.tar.gz | $TAR_CMD -xzO ))
 		;;
 	*)
 		msg_error "$pkgver: cannot guess $curfile extract suffix. ($cursufx)\n"
@@ -212,11 +212,8 @@ hook() {
 
 	# Detect bsdtar and GNU tar (in that order of preference)
 	TAR_CMD="$(command -v bsdtar)"
-	if [ "$TAR_CMD" ]; then
-		TAR_CMD_STDOUT="--list"
-	else
+	if [ -z "$TAR_CMD" ]; then
 		TAR_CMD="$(command -v tar)"
-		TAR_CMD_STDOUT="--to-stdout"
 	fi
 
 	# Detect distfiles with obsolete checksum and purge them from the cache
@@ -282,7 +279,7 @@ hook() {
 		dfcount=$((dfcount + 1))
 	done
 
-	unset TAR_CMD TAR_CMD_STDOUT
+	unset TAR_CMD
 
 	if [ $errors -gt 0 ]; then
 		msg_error "$pkgver: couldn't verify distfiles, exiting...\n"
