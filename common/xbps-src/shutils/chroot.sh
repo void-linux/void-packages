@@ -224,6 +224,7 @@ chroot_sync_repodata() {
         > $confdir/10-repository-local.conf
 
     if [ "$XBPS_SKIP_REMOTEREPOS" ]; then
+        rm -f $confdir/*remote*
         case "$XBPS_MACHINE" in
             x86_64)
             # x86_64/glibc
@@ -265,7 +266,9 @@ chroot_sync_repodata() {
         # copy xbps.d files from host for local repos
         cp ${XBPS_MASTERDIR}/etc/xbps.d/*local*.conf \
             $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
-        if [ -z "$XBPS_SKIP_REMOTEREPOS" ]; then
+        if [ "$XBPS_SKIP_REMOTEREPOS" ]; then
+            rm -f $crossconfdir/*remote*
+        else
             # and then remote repos for target machine
             case "$XBPS_TARGET_MACHINE" in
             aarch64*)
