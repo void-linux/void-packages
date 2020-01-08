@@ -20,9 +20,10 @@ hook() {
 
 	shebang="#!/usr/bin/python${pyver%.*}"
 	find "${PKGDESTDIR}" -type f -print0 | \
-		xargs -0 grep -H -b -m 1 "^#!.*\([[:space:]]\|/\)python\([0-9]\.[0-9]\)\?\([[:space:]]\+\|$\)" -- | while IFS=: read -r f off _; do
-		[ -z "$off" ] && continue
-		echo "   Shebang converted to '$shebang': ${f#$PKGDESTDIR}"
-		sed -i "1s@.*python.*@${shebang}@" -- "$f"
-	done
+		while IFS= read -r -d '' file; do
+			[ ! -s "$file" ] && continue
+			[ -z "$(sed -n -E -e 2q -e '/^#!.*([[:space:]]|\/)python([0-9]\.[0-9])?([[:space:]]+|$)/p' "$file")" ] && continue
+			echo "   Shebang converted to '$shebang': ${file#$PKGDESTDIR}"
+			sed -i "1s@.*python.*@${shebang}@" -- "$file"
+		done
 }

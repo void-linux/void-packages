@@ -28,43 +28,43 @@ run_func() {
 }
 
 ch_wrksrc() {
-  cd "$wrksrc" || msg_error "$pkgver: cannot access wrksrc directory [$wrksrc]\n"
-  if [ -n "$build_wrksrc" ]; then
-    cd $build_wrksrc || \
-        msg_error "$pkgver: cannot access build_wrksrc directory [$build_wrksrc]\n"
-  fi
+    cd "$wrksrc" || msg_error "$pkgver: cannot access wrksrc directory [$wrksrc]\n"
+    if [ -n "$build_wrksrc" ]; then
+        cd $build_wrksrc || \
+            msg_error "$pkgver: cannot access build_wrksrc directory [$build_wrksrc]\n"
+    fi
 }
 
 # runs {pre,do,post}_X tripplets
 run_step() {
-  local step_name="$1" optional_step="$2" skip_post_hook="$3"
+    local step_name="$1" optional_step="$2" skip_post_hook="$3"
 
-  ch_wrksrc
-  run_pkg_hooks "pre-$step_name"
+    ch_wrksrc
+    run_pkg_hooks "pre-$step_name"
 
   # Run pre_* Phase
   if declare -f "pre_$step_name" >/dev/null; then
-    ch_wrksrc
-    run_func "pre_$step_name"
+      ch_wrksrc
+      run_func "pre_$step_name"
   fi
 
   ch_wrksrc
   # Run do_* Phase
   if declare -f "do_$step_name" >/dev/null; then
-    run_func "do_$step_name"
+      run_func "do_$step_name"
   elif [ -n "$build_style" ]; then
-    if [ -r $XBPS_BUILDSTYLEDIR/${build_style}.sh ]; then
-      . $XBPS_BUILDSTYLEDIR/${build_style}.sh
-      if declare -f "do_$step_name" >/dev/null; then
-        run_func "do_$step_name"
-      elif [ ! "$optional_step" ]; then
-        msg_error "$pkgver: cannot find do_$step_name() in $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
+      if [ -r $XBPS_BUILDSTYLEDIR/${build_style}.sh ]; then
+          . $XBPS_BUILDSTYLEDIR/${build_style}.sh
+          if declare -f "do_$step_name" >/dev/null; then
+              run_func "do_$step_name"
+          elif [ ! "$optional_step" ]; then
+              msg_error "$pkgver: cannot find do_$step_name() in $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
+          fi
+      else
+          msg_error "$pkgver: cannot find build style $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
       fi
-    else
-      msg_error "$pkgver: cannot find build style $XBPS_BUILDSTYLEDIR/${build_style}.sh!\n"
-    fi
   elif [ ! "$optional_step" ]; then
-    msg_error "$pkgver: cannot find do_$step_name()!\n"
+      msg_error "$pkgver: cannot find do_$step_name()!\n"
   fi
 
   # Run do_ phase hooks
@@ -72,13 +72,13 @@ run_step() {
 
   # Run post_* Phase
   if declare -f "post_$step_name" >/dev/null; then
-    ch_wrksrc
-    run_func "post_$step_name"
+      ch_wrksrc
+      run_func "post_$step_name"
   fi
 
   if ! [ "$skip_post_hook" ]; then
-    ch_wrksrc
-    run_pkg_hooks "post-$step_name"
+      ch_wrksrc
+      run_pkg_hooks "post-$step_name"
   fi
 }
 
@@ -171,8 +171,8 @@ set_build_options() {
         OIFS="$IFS"; IFS=','
         for j in ${pkgopts}; do
             case "$j" in
-            "$f") options[$j]=1 ;;
-            "~$f") options[${j#\~}]=0 ;;
+                "$f") options[$j]=1 ;;
+                "~$f") options[${j#\~}]=0 ;;
             esac
         done
         IFS="$OIFS"
@@ -206,7 +206,7 @@ set_build_options() {
         for f in ${build_options}; do
             [[ "${options[$f]}" -eq 1 ]] || printf '~'
             printf '%s\n' "$f"
-        done | sort
+        done | sort | tr -s '\n' ' '
     )
 }
 
@@ -239,9 +239,9 @@ unset_package_funcs() {
 
     for f in $(typeset -F); do
         case "$f" in
-        *_package)
-            unset -f "$f"
-            ;;
+            *_package)
+                unset -f "$f"
+                ;;
         esac
     done
 }
@@ -297,9 +297,9 @@ get_subpkgs() {
 
     for f in $(typeset -F); do
         case "$f" in
-        *_package)
-            echo "${f%_package}"
-            ;;
+            *_package)
+                echo "${f%_package}"
+                ;;
         esac
     done
 }
@@ -340,7 +340,7 @@ setup_pkg() {
         XBPS_REMOVE_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_REMOVE_CMD -r $XBPS_CROSS_BASE"
         XBPS_RINDEX_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_RINDEX_CMD"
         XBPS_UHELPER_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE xbps-uhelper -r $XBPS_CROSS_BASE"
-        XBPS_CHECKVERS_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE xbps-checkvers -r $XBPS_CROSS_BASE --repository=$XBPS_REPOSITORY"
+        XBPS_CHECKVERS_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE xbps-checkvers -r $XBPS_CROSS_BASE"
     else
         export XBPS_TARGET_MACHINE=${XBPS_ARCH:-$XBPS_MACHINE}
         unset XBPS_CROSS_BASE XBPS_CROSS_LDFLAGS XBPS_CROSS_FFLAGS
@@ -455,11 +455,12 @@ setup_pkg() {
         arch="$XBPS_TARGET_MACHINE"
     fi
     if [ -n "$XBPS_BINPKG_EXISTS" ]; then
-        # nonfree packages need this otherwise they'll rebuild even with -E
-        if [ -n "$repository" ]; then
-            extrarepo=" --repository=$XBPS_REPOSITORY/$repository"
-        fi
-        if [ "$($XBPS_QUERY_XCMD $extrarepo -i -R -ppkgver $pkgver 2>/dev/null)" = "$pkgver" ]; then
+        local _binpkgver="$($XBPS_QUERY_XCMD -R -ppkgver $pkgver 2>/dev/null)"
+        if [ "$_binpkgver" = "$pkgver" ]; then
+            if [ -z "$XBPS_DEPENDENCY" ]; then
+                local _repo="$($XBPS_QUERY_XCMD -R -prepository $pkgver 2>/dev/null)"
+                msg_normal "xbps-src: $pkgver: found ($XBPS_TARGET_MACHINE) ($_repo)\n"
+            fi
             exit_and_cleanup
         fi
     fi

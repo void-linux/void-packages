@@ -7,9 +7,7 @@ Generic:
 
 For users of the open source drivers:
 
-	- mesa-ati-dri-32bit (AMD)
-	- mesa-intel-dri-32bit (Intel)
-	- mesa-nouveau-dri-32bit (NVIDIA)
+	- mesa-dri-32bit
 
 For users of the proprietary NVIDIA driver:
 
