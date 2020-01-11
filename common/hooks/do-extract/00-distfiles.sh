@@ -127,7 +127,16 @@ hook() {
 			fi
 			;;
 		gem)
-			tar -xOf $srcdir/$curfile data.tar.gz | tar -xz -C $extractdir --transform="s,^,${wrksrc##*/}/,"
+			case "$TAR_CMD" in
+				*bsdtar)
+					$TAR_CMD -xOf $srcdir/$curfile data.tar.gz | \
+						$TAR_CMD -xz -C $extractdir -s ",^,${wrksrc##*/}/," -f -
+					;;
+				*)
+					$TAR_CMD -xOf $srcdir/$curfile data.tar.gz | \
+						$TAR_CMD -xz -C $extractdir --transform="s,^,${wrksrc##*/}/,"
+					;;
+			esac
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
