@@ -29,9 +29,6 @@ done
 setup_pkg "$PKGNAME" $XBPS_CROSS_BUILD
 readonly SOURCEPKG="$sourcepkg"
 
-# Always start with a clean statedir
-remove_pkg_statedir
-
 show_pkg_build_options
 check_pkg_arch $XBPS_CROSS_BUILD
 
