@@ -98,8 +98,13 @@ hook() {
 				if [ $? -ne 0 ]; then
 					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 				fi
+			elif command -v bsdtar &>/dev/null; then
+				bsdtar -xf $srcdir/$curfile -C $extractdir
+				if [ $? -ne 0 ]; then
+					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
+				fi
 			else
-				msg_error "$pkgver: cannot find unzip bin for extraction.\n"
+				msg_error "$pkgver: cannot find unzip or bsdtar bin for extraction.\n"
 			fi
 			;;
 		rpm)
@@ -122,8 +127,13 @@ hook() {
 				if [ $? -ne 0 ]; then
 					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 				fi
+			elif command -v bsdtar &>/dev/null; then
+				bsdtar -xf $srcdir/$curfile -C $extractdir
+				if [ $? -ne 0 ]; then
+					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
+				fi
 			else
-				msg_error "$pkgver: cannot find 7z bin for extraction.\n"
+				msg_error "$pkgver: cannot find 7z or bsdtar bin for extraction.\n"
 			fi
 			;;
 		gem)
