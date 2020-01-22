@@ -1,0 +1,288 @@
+upstream source: https://bugreports.qt.io/browse/PYSIDE-1191
+
+From ddcae35cb32aff90fcd81c480aedc30a700401a6 Mon Sep 17 00:00:00 2001
+From: Friedemann Kleint <Friedemann.Kleint@qt.io>
+Date: Mon, 20 Jan 2020 17:36:27 +0100
+Subject: [PATCH] shiboken: Introduce "until" version attribute as opposite of "since"
+
+Prototypically use it for QMessageLogContext, allowing to elegantly
+build for Qt from version 5.12..now using a single type system file.
+
+Fixes: PYSIDE-1191
+Change-Id: Iaa7bdc10c7129d84c54e85a09a1c802a409708f9
+
+--- sources/pyside2/PySide2/QtCore/typesystem_core_common.xml
++++ sources/pyside2/PySide2/QtCore/typesystem_core_common.xml
+@@ -2830,7 +2830,11 @@
+     <include file-name="qobjectdefs.h" location="global"/>
+   </value-type>
+ 
+-  <object-type name="QMessageLogContext"/>
++  <object-type name="QMessageLogContext" since="5.14"/>
++
++  <object-type name="QMessageLogContext" since="5.9" until="5.13.2">
++    <modify-function signature="copy(const QMessageLogContext &amp;)" remove="all"/>
++  </object-type>
+ 
+   <value-type name="QMetaMethod">
+     <enum-type name="Access"/>
+--- sources/shiboken2/ApiExtractor/tests/testtyperevision.cpp
++++ sources/shiboken2/ApiExtractor/tests/testtyperevision.cpp
+@@ -77,6 +77,7 @@
+     QTest::newRow("none") << QString() << 2;
+     QTest::newRow("1.0") << QString::fromLatin1("1.0") << 1;  // Bar20 excluded
+     QTest::newRow("2.0") << QString::fromLatin1("2.0") << 2;
++    QTest::newRow("3.0") << QString::fromLatin1("3.0") << 1;  // Bar excluded by "until"
+ }
+ 
+ void TestTypeRevision::testVersion()
+@@ -90,7 +91,7 @@
+ )CPP";
+     const char xmlCode[] = R"XML(
+ <typesystem package="Foo">
+-    <value-type name="Bar"/>
++    <value-type name="Bar" until="2.0"/>
+     <value-type name="Bar20" since="2.0"/>
+ </typesystem>
+ )XML";
+--- sources/shiboken2/ApiExtractor/typedatabase.cpp
++++ sources/shiboken2/ApiExtractor/typedatabase.cpp
+@@ -746,14 +746,15 @@
+ }
+ 
+ bool TypeDatabase::checkApiVersion(const QString &package,
+-                                   const QVersionNumber &versionNumber)
++                                   const VersionRange &vr)
+ {
+     const ApiVersions &versions = *apiVersions();
+     if (versions.isEmpty()) // Nothing specified: use latest.
+         return true;
+     for (int i = 0, size = versions.size(); i < size; ++i) {
+         if (versions.at(i).first.match(package).hasMatch())
+-            return versions.at(i).second >= versionNumber;
++            return versions.at(i).second >= vr.since
++                && versions.at(i).second <= vr.until;
+     }
+     return false;
+ }
+--- sources/shiboken2/ApiExtractor/typedatabase.h
++++ sources/shiboken2/ApiExtractor/typedatabase.h
+@@ -37,9 +37,9 @@
+ 
+ #include <QtCore/QRegularExpression>
+ #include <QtCore/QStringList>
++#include <QtCore/QVersionNumber>
+ 
+ QT_FORWARD_DECLARE_CLASS(QIODevice)
+-QT_FORWARD_DECLARE_CLASS(QVersionNumber)
+ 
+ class ComplexTypeEntry;
+ class ContainerTypeEntry;
+@@ -60,6 +60,18 @@
+ class PrimitiveTypeEntry;
+ class TypeSystemTypeEntry;
+ 
++struct VersionRange
++{
++    bool isNull() const
++    {
++        return since.majorVersion() == 0 && since.minorVersion() == 0
++            && until.majorVersion() == 9999 && until.minorVersion() == 9999;
++    }
++
++    QVersionNumber since{0, 0};
++    QVersionNumber until{9999, 9999};
++};
++
+ class TypeDatabase
+ {
+     TypeDatabase();
+@@ -153,7 +165,7 @@
+     static bool setApiVersion(const QString &package, const QString &version);
+     static void clearApiVersions();
+ 
+-    static bool checkApiVersion(const QString &package, const QVersionNumber &version);
++    static bool checkApiVersion(const QString &package, const VersionRange &vr);
+ 
+     bool hasDroppedTypeEntries() const { return !m_dropTypeEntries.isEmpty(); }
+ 
+--- sources/shiboken2/ApiExtractor/typesystemparser.cpp
++++ sources/shiboken2/ApiExtractor/typesystemparser.cpp
+@@ -56,6 +56,7 @@
+ static inline QString textAttribute() { return QStringLiteral("text"); }
+ static inline QString nameAttribute() { return QStringLiteral("name"); }
+ static inline QString sinceAttribute() { return QStringLiteral("since"); }
++static inline QString untilAttribute() { return QStringLiteral("until"); }
+ static inline QString defaultSuperclassAttribute() { return QStringLiteral("default-superclass"); }
+ static inline QString deleteInMainThreadAttribute() { return QStringLiteral("delete-in-main-thread"); }
+ static inline QString deprecatedAttribute() { return QStringLiteral("deprecated"); }
+@@ -2582,6 +2583,17 @@
+     return true;
+ }
+ 
++static bool parseVersion(const QString &versionSpec, const QString &package,
++                         QVersionNumber *result, QString *errorMessage)
++{
++    *result = QVersionNumber::fromString(versionSpec);
++    if (result->isNull()) {
++        *errorMessage = msgInvalidVersion(versionSpec, package);
++        return false;
++    }
++    return true;
++}
++
+ bool TypeSystemParser::startElement(const QXmlStreamReader &reader)
+ {
+     if (m_ignoreDepth) {
+@@ -2592,20 +2604,25 @@
+     const QStringRef tagName = reader.name();
+     QXmlStreamAttributes attributes = reader.attributes();
+ 
+-    QVersionNumber since(0, 0);
+-    int index = indexOfAttribute(attributes, sinceAttribute());
+-    if (index != -1) {
+-        const QStringRef sinceSpec = attributes.takeAt(index).value();
+-        since = QVersionNumber::fromString(sinceSpec.toString());
+-        if (since.isNull()) {
+-            m_error = msgInvalidVersion(sinceSpec, m_defaultPackage);
+-            return false;
++    VersionRange versionRange;
++    for (int i = attributes.size() - 1; i >= 0; --i) {
++        const QStringRef name = attributes.at(i).qualifiedName();
++        if (name == sinceAttribute()) {
++            if (!parseVersion(attributes.takeAt(i).value().toString(),
++                              m_defaultPackage, &versionRange.since, &m_error)) {
++                return false;
++            }
++        } else if (name == untilAttribute()) {
++            if (!parseVersion(attributes.takeAt(i).value().toString(),
++                              m_defaultPackage, &versionRange.until, &m_error)) {
++                return false;
++            }
+         }
+     }
+ 
+-    if (!m_defaultPackage.isEmpty() && since > QVersionNumber(0, 0)) {
++    if (!m_defaultPackage.isEmpty() && !versionRange.isNull()) {
+         TypeDatabase* td = TypeDatabase::instance();
+-        if (!td->checkApiVersion(m_defaultPackage, since)) {
++        if (!td->checkApiVersion(m_defaultPackage, versionRange)) {
+             ++m_ignoreDepth;
+             return true;
+         }
+@@ -2724,15 +2741,15 @@
+         case StackElement::CustomTypeEntry:
+             if (!checkRootElement())
+                 return false;
+-            element->entry = new TypeEntry(name, TypeEntry::CustomType, since, m_current->entry);
++            element->entry = new TypeEntry(name, TypeEntry::CustomType, versionRange.since, m_current->entry);
+             break;
+         case StackElement::PrimitiveTypeEntry:
+-            element->entry = parsePrimitiveTypeEntry(reader, name, since, &attributes);
++            element->entry = parsePrimitiveTypeEntry(reader, name, versionRange.since, &attributes);
+             if (Q_UNLIKELY(!element->entry))
+                 return false;
+             break;
+         case StackElement::ContainerTypeEntry:
+-            if (ContainerTypeEntry *ce = parseContainerTypeEntry(reader, name, since, &attributes)) {
++            if (ContainerTypeEntry *ce = parseContainerTypeEntry(reader, name, versionRange.since, &attributes)) {
+                 applyComplexTypeAttributes(reader, ce, &attributes);
+                 element->entry = ce;
+             } else {
+@@ -2741,7 +2758,7 @@
+             break;
+ 
+         case StackElement::SmartPointerTypeEntry:
+-            if (SmartPointerTypeEntry *se = parseSmartPointerEntry(reader, name, since, &attributes)) {
++            if (SmartPointerTypeEntry *se = parseSmartPointerEntry(reader, name, versionRange.since, &attributes)) {
+                 applyComplexTypeAttributes(reader, se, &attributes);
+                 element->entry = se;
+             } else {
+@@ -2749,14 +2766,14 @@
+             }
+             break;
+         case StackElement::EnumTypeEntry:
+-            m_currentEnum = parseEnumTypeEntry(reader, name, since, &attributes);
++            m_currentEnum = parseEnumTypeEntry(reader, name, versionRange.since, &attributes);
+             if (Q_UNLIKELY(!m_currentEnum))
+                 return false;
+             element->entry = m_currentEnum;
+             break;
+ 
+         case StackElement::InterfaceTypeEntry:
+-            if (ObjectTypeEntry *oe = parseInterfaceTypeEntry(reader, name, since, &attributes)) {
++            if (ObjectTypeEntry *oe = parseInterfaceTypeEntry(reader, name, versionRange.since, &attributes)) {
+                 applyComplexTypeAttributes(reader, oe, &attributes);
+                 element->entry = oe;
+             } else {
+@@ -2764,7 +2781,7 @@
+             }
+             break;
+         case StackElement::ValueTypeEntry:
+-           if (ValueTypeEntry *ve = parseValueTypeEntry(reader, name, since, &attributes)) {
++           if (ValueTypeEntry *ve = parseValueTypeEntry(reader, name, versionRange.since, &attributes)) {
+                applyComplexTypeAttributes(reader, ve, &attributes);
+                element->entry = ve;
+            } else {
+@@ -2772,7 +2789,7 @@
+            }
+            break;
+         case StackElement::NamespaceTypeEntry:
+-            if (auto entry = parseNamespaceTypeEntry(reader, name, since, &attributes))
++            if (auto entry = parseNamespaceTypeEntry(reader, name, versionRange.since, &attributes))
+                 element->entry = entry;
+             else
+                 return false;
+@@ -2780,17 +2797,17 @@
+         case StackElement::ObjectTypeEntry:
+             if (!checkRootElement())
+                 return false;
+-            element->entry = new ObjectTypeEntry(name, since, currentParentTypeEntry());
++            element->entry = new ObjectTypeEntry(name, versionRange.since, currentParentTypeEntry());
+             applyCommonAttributes(element->entry, &attributes);
+             applyComplexTypeAttributes(reader, static_cast<ComplexTypeEntry *>(element->entry), &attributes);
+             break;
+         case StackElement::FunctionTypeEntry:
+-            element->entry = parseFunctionTypeEntry(reader, name, since, &attributes);
++            element->entry = parseFunctionTypeEntry(reader, name, versionRange.since, &attributes);
+             if (Q_UNLIKELY(!element->entry))
+                 return false;
+             break;
+         case StackElement::TypedefTypeEntry:
+-            if (TypedefEntry *te = parseTypedefEntry(reader, name, since, &attributes)) {
++            if (TypedefEntry *te = parseTypedefEntry(reader, name, versionRange.since, &attributes)) {
+                 applyComplexTypeAttributes(reader, te, &attributes);
+                 element->entry = te;
+             } else {
+@@ -2836,7 +2853,7 @@
+ 
+         switch (element->type) {
+         case StackElement::Root:
+-            element->entry = parseRootElement(reader, since, &attributes);
++            element->entry = parseRootElement(reader, versionRange.since, &attributes);
+             element->type = StackElement::Root;
+             break;
+         case StackElement::LoadTypesystem:
+--- sources/shiboken2/doc/typesystem_specifying_types.rst
++++ sources/shiboken2/doc/typesystem_specifying_types.rst
+@@ -104,6 +104,7 @@
+         <typesystem>
+             <primitive-type name="..."
+                 since="..."
++                until="..."
+                 target-name="..."
+                 default-constructor="..."
+                 preferred-conversion="yes | no" />
+@@ -114,7 +115,11 @@
+     language. If the later two attributes are not specified their default value
+     will be the same as the **name** attribute.
+ 
+-    The *optional*  **since** value is used to specify the API version of this type.
++    The *optional*  **since** value is used to specify the API version in which
++    the type was introduced.
++
++    Similarly, the *optional*  **until** value can be used to specify the API
++    version in which the type will be obsoleted.
+ 
+     If the *optional* **preferred-conversion** attribute is set to *no*, it
+     indicates that this version of the primitive type is not the preferred C++
