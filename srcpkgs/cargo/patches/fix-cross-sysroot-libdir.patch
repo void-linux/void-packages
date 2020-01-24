@@ -1,0 +1,96 @@
+From 647ae9f8a7f9907244a8c86bceb383cbf61eb505 Mon Sep 17 00:00:00 2001
+From: Johannes Brechtmann <johannes@jnbr.me>
+Date: Fri, 27 Dec 2019 18:48:31 +0100
+Subject: [PATCH] Revert "Fix wrong directories in PATH on Windows"
+
+This reverts commit 61188d791a29c1baae868f2ba0880c9d6db4092e.
+---
+ .../compiler/build_context/target_info.rs     | 43 +++++++++----------
+ src/cargo/core/compiler/compilation.rs        |  4 +-
+ 2 files changed, 23 insertions(+), 24 deletions(-)
+
+diff --git a/src/cargo/core/compiler/build_context/target_info.rs b/src/cargo/core/compiler/build_context/target_info.rs
+index 3c23d2d8b..d6e5e66f8 100644
+--- src/cargo/core/compiler/build_context/target_info.rs
++++ src/cargo/core/compiler/build_context/target_info.rs
+@@ -29,12 +29,8 @@ pub struct TargetInfo {
+     crate_types: RefCell<HashMap<String, Option<(String, String)>>>,
+     /// `cfg` information extracted from `rustc --print=cfg`.
+     cfg: Vec<Cfg>,
+-    /// Path to the "lib" or "bin" directory that rustc uses for its dynamic
+-    /// libraries.
+-    pub sysroot_host_libdir: PathBuf,
+-    /// Path to the "lib" directory in the sysroot which rustc uses for linking
+-    /// target libraries.
+-    pub sysroot_target_libdir: PathBuf,
++    /// Path to the "lib" directory in the sysroot.
++    pub sysroot_libdir: PathBuf,
+     /// Extra flags to pass to `rustc`, see `env_args`.
+     pub rustflags: Vec<String>,
+     /// Extra flags to pass to `rustdoc`, see `env_args`.
+@@ -134,20 +130,24 @@ impl TargetInfo {
+                 output_err_info(&process, &output, &error)
+             ),
+         };
+-        let mut sysroot_host_libdir = PathBuf::from(line);
+-        if cfg!(windows) {
+-            sysroot_host_libdir.push("bin");
+-        } else {
+-            sysroot_host_libdir.push("lib");
+-        }
+-        let mut sysroot_target_libdir = PathBuf::from(line);
+-        sysroot_target_libdir.push("lib");
+-        sysroot_target_libdir.push("rustlib");
+-        sysroot_target_libdir.push(match &kind {
+-            CompileKind::Host => rustc.host.as_str(),
+-            CompileKind::Target(target) => target.short_name(),
+-        });
+-        sysroot_target_libdir.push("lib");
++        let mut rustlib = PathBuf::from(line);
++        let sysroot_libdir = match kind {
++            CompileKind::Host => {
++                if cfg!(windows) {
++                    rustlib.push("bin");
++                } else {
++                    rustlib.push("lib");
++                }
++                rustlib
++            }
++            CompileKind::Target(target) => {
++                rustlib.push("lib");
++                rustlib.push("rustlib");
++                rustlib.push(target.short_name());
++                rustlib.push("lib");
++                rustlib
++            }
++        };
+ 
+         let cfg = lines
+             .map(|line| Ok(Cfg::from_str(line)?))
+@@ -162,8 +162,7 @@ impl TargetInfo {
+         Ok(TargetInfo {
+             crate_type_process,
+             crate_types: RefCell::new(map),
+-            sysroot_host_libdir,
+-            sysroot_target_libdir,
++            sysroot_libdir,
+             // recalculate `rustflags` from above now that we have `cfg`
+             // information
+             rustflags: env_args(
+diff --git a/src/cargo/core/compiler/compilation.rs b/src/cargo/core/compiler/compilation.rs
+index 140a024b1..86afe35ac 100644
+--- src/cargo/core/compiler/compilation.rs
++++ src/cargo/core/compiler/compilation.rs
+@@ -101,8 +101,8 @@ impl<'cfg> Compilation<'cfg> {
+             root_output: PathBuf::from("/"),
+             deps_output: PathBuf::from("/"),
+             host_deps_output: PathBuf::from("/"),
+-            host_dylib_path: bcx.info(default_kind).sysroot_host_libdir.clone(),
+-            target_dylib_path: bcx.info(default_kind).sysroot_target_libdir.clone(),
++            host_dylib_path: bcx.info(CompileKind::Host).sysroot_libdir.clone(),
++            target_dylib_path: bcx.info(default_kind).sysroot_libdir.clone(),
+             tests: Vec::new(),
+             binaries: Vec::new(),
+             extra_env: HashMap::new(),
+-- 
+2.24.1

@@ -129,20 +129,4 @@ if [ -n "$XBPS_DEPENDENCY" -o -z "$XBPS_KEEP_ALL" ]; then
     remove_pkg_statedir
 fi
 
-# If base-chroot not installed, install "base-files" into masterdir
-# from local repository; this is the only pkg required to be able to build
-# the bootstrap pkgs from scratch.
-if [ -z "$CHROOT_READY" -a "$PKGNAME" = "base-files" ]; then
-    msg_normal "Installing $PKGNAME into masterdir...\n"
-    _log=$(mktemp) || exit 1
-    XBPS_ARCH=$XBPS_MACHINE $XBPS_INSTALL_CMD -yf $PKGNAME >${_log} 2>&1
-    if [ $? -ne 0 ]; then
-        msg_red "Failed to install $PKGNAME into masterdir, see below for errors:\n"
-        cat ${_log}
-        rm -f ${_log}
-        msg_error "Cannot continue!\n"
-    fi
-    rm -f ${_log}
-fi
-
 exit 0

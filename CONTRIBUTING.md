@@ -23,7 +23,7 @@ templates must be placed in `void-packages/srcpkgs/<pkgname>/template` where `pk
 
 For deeper insights on the contents of template files consider reading the [manual](https://github.com/void-linux/void-packages/blob/master/Manual.md), and be sure to browse the existing template files in the `srcpkgs` directory of this repository for concrete examples.
 
-There's a helper tool for creating new packages in the [xtools](https://github.com/chneukirchen/xtools) package:
+There's a helper tool for creating new packages in the [xtools](https://github.com/leahneukirchen/xtools) package:
 
     $ xnew pkgname subpkg1 subpkg2 ...
 
@@ -46,7 +46,7 @@ If you want to describe your changes in more detail, make an empty line and add 
 
 This is also described in the [manual](https://github.com/void-linux/void-packages/blob/master/Manual.md) in deeper detail.
 
-There's a helper tool for committing packages in the [xtools](https://github.com/chneukirchen/xtools) package, which can be used when adding or updating a package:
+There's a helper tool for committing packages in the [xtools](https://github.com/leahneukirchen/xtools) package, which can be used when adding or updating a package:
 
     $ xbump <pkgname> <git commit options>
 
@@ -69,7 +69,7 @@ Once you have started a pull request, you will get instant feedback from Travis.
 comply with the our guidelines. At the moment not all packages comply to the rules, so if you update a package, it may happen, that Travis
 reports errors on places you haven't touched. So feel free to fix those errors too.
 
-You are encouraged to check your templates beforehand using the helper from the [xtools](https://github.com/chneukirchen/xtools) package:
+You are encouraged to check your templates beforehand using the helper from the [xtools](https://github.com/leahneukirchen/xtools) package:
 
     $ xlint template
 

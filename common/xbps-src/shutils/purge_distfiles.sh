@@ -25,7 +25,7 @@ purge_distfiles() {
 		pkg=${template#*/}
 		pkg=${pkg%/*}
 		if [ ! -L "srcpkgs/$pkg" ]; then
-			checksum="$(grep -Ehrow [0-9a-f]{$HASHLEN} ${template}|sort|uniq)"
+			checksum="$(grep -Ehrow [0-9a-f]{$HASHLEN} ${template}|sort|uniq|tr '\n' ' ')"
 			read -a _my_hashes <<< ${checksum}
 			i=0
 			while [ -n "${_my_hashes[$i]}" ]; do

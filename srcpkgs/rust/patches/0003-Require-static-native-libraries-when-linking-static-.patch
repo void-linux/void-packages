@@ -1,0 +1,56 @@
+From df589c69c091b7a4900463a3c4db3b8d4b3c43f0 Mon Sep 17 00:00:00 2001
+From: Samuel Holland <samuel@sholland.org>
+Date: Fri, 8 Sep 2017 00:05:18 -0500
+Subject: [PATCH 03/18] Require static native libraries when linking static
+ executables
+
+On ELF targets like Linux, gcc/ld will create a dynamically-linked
+executable without warning, even when passed `-static`, when asked to
+link to a `.so`. Avoid this confusing and unintended behavior by always
+using the static version of libraries when trying to link static
+executables.
+
+Fixes #54243
+---
+ src/librustc_codegen_ssa/back/link.rs | 18 ++++++++++++++----
+ 1 file changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/src/librustc_codegen_ssa/back/link.rs b/src/librustc_codegen_ssa/back/link.rs
+index a2b50ea8..3250ec4d 100644
+--- a/src/librustc_codegen_ssa/back/link.rs
++++ b/src/librustc_codegen_ssa/back/link.rs
+@@ -1610,9 +1610,7 @@ fn add_upstream_rust_crates<'a, B: ArchiveBuilder<'a>>(
+     }
+ }
+ 
+-// Link in all of our upstream crates' native dependencies. Remember that
+-// all of these upstream native dependencies are all non-static
+-// dependencies. We've got two cases then:
++// Link in all of our upstream crates' native dependencies. We have two cases:
+ //
+ // 1. The upstream crate is an rlib. In this case we *must* link in the
+ // native dependency because the rlib is just an archive.
+@@ -1659,7 +1657,19 @@ pub fn add_upstream_native_libraries(
+                 continue
+             }
+             match lib.kind {
+-                NativeLibraryKind::NativeUnknown => cmd.link_dylib(name),
++                NativeLibraryKind::NativeUnknown => {
++                    // On some targets, like Linux, linking a static executable inhibits using
++                    // dylibs at all. Force native libraries to be static, even if for example
++                    // an upstream rlib was originally linked against a native shared library.
++                    if crate_type == config::CrateType::Executable
++                        && sess.crt_static()
++                        && !sess.target.target.options.crt_static_allows_dylibs
++                    {
++                        cmd.link_staticlib(name)
++                    } else {
++                        cmd.link_dylib(name)
++                    }
++                },
+                 NativeLibraryKind::NativeFramework => cmd.link_framework(name),
+                 NativeLibraryKind::NativeStaticNobundle => {
+                     // Link "static-nobundle" native libs only if the crate they originate from
+-- 
+2.24.0
+
