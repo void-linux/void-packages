@@ -44,6 +44,7 @@ reconfigure_base_chroot() {
 }
 
 update_base_chroot() {
+    local keep_all_force=$1
     [ -z "$CHROOT_READY" ] && return
     msg_normal "xbps-src: updating software in $XBPS_MASTERDIR masterdir...\n"
     # no need to sync repodata, chroot_sync_repodata() does it for us.
@@ -53,7 +54,7 @@ update_base_chroot() {
     ${XBPS_INSTALL_CMD} ${XBPS_INSTALL_ARGS} -yu || msg_error "xbps-src: failed to update base-chroot!\n"
     msg_normal "xbps-src: cleaning up $XBPS_MASTERDIR masterdir...\n"
     [ -z "$XBPS_KEEP_ALL" -a -z "$XBPS_SKIP_DEPS" ] && remove_pkg_autodeps
-    [ -z "$XBPS_KEEP_ALL" ] && rm -rf $XBPS_MASTERDIR/builddir $XBPS_MASTERDIR/destdir
+    [ -z "$XBPS_KEEP_ALL" -a -z "$keep_all_force" ] && rm -rf $XBPS_MASTERDIR/builddir $XBPS_MASTERDIR/destdir
 }
 
 # FIXME: $XBPS_FFLAGS is not set when chroot_init() is run
