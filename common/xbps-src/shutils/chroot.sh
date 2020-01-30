@@ -230,40 +230,33 @@ chroot_sync_repodata() {
     sed -e "s,/host,$hostdir,g" ${XBPS_DISTDIR}/etc/xbps.d/repos-local.conf \
         > $confdir/10-repository-local.conf
 
+    # Install multilib conf for local repos if it exists for the architecture
+    if [ -s "${XBPS_DISTDIR}/etc/xbps.d/repos-local-${XBPS_MACHINE}-multilib.conf" ]; then
+        install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-local-${XBPS_MACHINE}-multilib.conf \
+            $confdir/12-repository-local-multilib.conf
+    fi
+
     if [ "$XBPS_SKIP_REMOTEREPOS" ]; then
         rm -f $confdir/*remote*
-        case "$XBPS_MACHINE" in
-            x86_64)
-            # x86_64/glibc
-            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-local-x86_64.conf \
-                $confdir/12-repository-local-x86_64.conf
-            ;;
-        esac
     else
-        case "$XBPS_MACHINE" in
-            *-musl)
-                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-musl.conf \
-                    $confdir/20-repository-remote.conf
-                ;;
-            *)
-                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote.conf \
-                    $confdir/20-repository-remote.conf
-                ;;
-        esac
-        case "$XBPS_MACHINE" in
-        x86_64)
-            # x86_64/glibc
-            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-local-x86_64.conf \
-                $confdir/12-repository-local-x86_64.conf
-            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-x86_64.conf \
-                $confdir/22-repository-remote-x86_64.conf
-            ;;
-        aarch64*)
-            # aarch64 glibc/musl
-            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-aarch64.conf \
-                $confdir/22-repository-remote-aarch64.conf
-            ;;
-        esac
+        if [ -s "${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_MACHINE}.conf" ]; then
+            # If per-architecture base remote repo config exists, use that
+            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_MACHINE}.conf \
+                $confdir/20-repository-remote.conf
+        else
+            # Otherwise use generic base for musl or glibc
+            local suffix=
+            case "$XBPS_MACHINE" in
+                *-musl) suffix="-musl";;
+            esac
+            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote${suffix}.conf \
+                $confdir/20-repository-remote.conf
+        fi
+        # Install multilib conf for remote repos if it exists for the architecture
+        if [ -s "${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_MACHINE}-multilib.conf" ]; then
+            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_MACHINE}-multilib.conf \
+                $confdir/22-repository-remote-multilib.conf
+        fi
     fi
 
     # Copy host repos to the cross root.
@@ -276,24 +269,18 @@ chroot_sync_repodata() {
         if [ "$XBPS_SKIP_REMOTEREPOS" ]; then
             rm -f $crossconfdir/*remote*
         else
-            # and then remote repos for target machine
-            case "$XBPS_TARGET_MACHINE" in
-            aarch64*)
-                # aarch64 glibc/musl
-                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-aarch64.conf \
-                    $crossconfdir/22-repository-remote-aarch64.conf
-                ;;
-            *-musl)
-                # !aarch64 && musl
-                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-musl.conf \
+            # Same general logic as above, just into cross root, and no multilib
+            if [ -s "${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_TARGET_MACHINE}.conf" ]; then
+                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_TARGET_MACHINE}.conf \
                     $crossconfdir/20-repository-remote.conf
-                ;;
-            *)
-                # !aarch64 && glibc
-                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote.conf \
+            else
+                local suffix=
+                case "$XBPS_TARGET_MACHINE" in
+                    *-musl) suffix="-musl"
+                esac
+                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote${suffix}.conf \
                     $crossconfdir/20-repository-remote.conf
-                ;;
-            esac
+            fi
         fi
     fi
 
