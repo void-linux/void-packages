@@ -50,6 +50,20 @@ generic_wrapper3() {
 	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}
 }
 
+apr_apu_wrapper() {
+	local wrapper="$1"
+
+	[ ! -x ${XBPS_CROSS_BASE}/usr/bin/${wrapper} ] && return 0
+	[ -x ${XBPS_WRAPPERDIR}/${wrapper} ] && return 0
+
+	cat >>${XBPS_WRAPPERDIR}/${wrapper}<<_EOF
+#!/bin/sh
+${XBPS_CROSS_BASE}/usr/bin/${wrapper} "\$@" | sed -e "s,/usr/,${XBPS_CROSS_BASE}/usr/,g"
+exit \$?
+_EOF
+	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}
+}
+
 python_wrapper() {
 	local wrapper="$1" version="$2"
 
@@ -192,5 +206,7 @@ hook() {
 	generic_wrapper3 libetpan-config
 	generic_wrapper3 giblib-config
 	python_wrapper python-config 2.7
-	python_wrapper python3-config 3.6m
+	python_wrapper python3-config 3.8
+	apr_apu_wrapper apr-1-config
+	apr_apu_wrapper apu-1-config
 }
