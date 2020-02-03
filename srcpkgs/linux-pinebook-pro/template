@@ -1,7 +1,7 @@
 # Template file for 'linux5.4'
 pkgname=linux-pinebook-pro
-version=5.4.0
-_commit=e81a379aa96359d889daaf25da777f9eaa85a875
+version=5.5.0
+_commit=d71a774aee61d67970d53077ef59be29035b1c90
 revision=1
 wrksrc="linux-pinebook-pro-${_commit}"
 short_desc="Linux kernel and modules for Pinebook Pro"
@@ -10,7 +10,7 @@ license="GPL-2.0-only"
 homepage="https://www.kernel.org"
 #distfiles="https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${version}.tar.xz"
 distfiles="https://gitlab.manjaro.org/tsys/linux-pinebook-pro/-/archive/${_commit}/linux-pinebook-pro-${_commit}.tar.gz"
-checksum="da101f57174fd7ccb66f9a6a64ac7b7b011a5cc5c03684100939b1b762623844"
+checksum="4fd9c676d2c01258884fcfa94991ed778cf4242e36d98a9d2242495173ea14dd"
 patch_args="-Np1"
 
 nodebug=yes  # -dbg package is generated below manually
@@ -43,54 +43,24 @@ do_configure() {
 	# 5.4 misses Documentation/DocBook. We ship the directory from 4.12 here.
 	cp -a $FILESDIR/DocBook -t Documentation
 
-	# If there's a file called <arch>-dotconfig, use it to
-	# configure the kernel; otherwise use arch defaults and all stuff
-	# as modules (allmodconfig).
 	local arch subarch _args
 
-	case "$XBPS_TARGET_MACHINE" in
-		i686*) arch=i386;;
-		x86_64*) arch=x86_64;;
-		arm*) arch=arm;;
-		aarch64*) arch=arm64;;
-		ppc64le*) arch=powerpc; subarch=ppc64le;;
-		ppc64*) arch=powerpc; subarch=ppc64;;
-		ppc*) arch=powerpc;;
-	esac
+	arch=arm64
 
 	if [ "$CROSS_BUILD" ]; then
 		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
 	fi
 
-	if [ -f ${FILESDIR}/${subarch:-$arch}-dotconfig-custom ]; then
-		msg_normal "Detected a custom .config file for your arch, using it.\n"
-		cp -f ${FILESDIR}/${subarch:-$arch}-dotconfig-custom .config
-		make ${makejobs} ARCH=$arch ${_args} oldconfig
-	elif [ -f ${FILESDIR}/${subarch:-$arch}-dotconfig ]; then
-		msg_normal "Detected a .config file for your arch, using it.\n"
-		cp -f ${FILESDIR}/${subarch:-$arch}-dotconfig .config
-		make ${makejobs} ARCH=$arch ${_args} oldconfig
-	elif [ -f ${FILESDIR}/${XBPS_TARGET_MACHINE%%-musl}-dotconfig ]; then
-		msg_normal "Detected a .config file for your cpu family, using it.\n"
-		cp -f ${FILESDIR}/${XBPS_TARGET_MACHINE%%-musl}-dotconfig .config
-		make ${makejobs} ARCH=$arch ${_args} oldconfig
-	else
-		msg_normal "Defaulting to 'allmodconfig'.\n"
-		make ${makejobs} ARCH=$arch ${_args} allmodconfig
-	fi
+	make ${makejobs} ARCH=$arch ${_args} pinebook_pro_defconfig
 	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
 	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
 }
 do_build() {
 	local arch _cross _args
 
-	case "$XBPS_TARGET_MACHINE" in
-		i686*) _args="bzImage modules"; arch=i386;;
-		x86_64*) _args="bzImage modules"; arch=x86_64;;
-		arm*) _args="zImage modules dtbs"; arch=arm;;
-		aarch64*) _args="Image modules dtbs"; arch=arm64;;
-		ppc*) _args="zImage modules"; arch=powerpc;;
-	esac
+	_args="Image modules dtbs"
+	arch=arm64
+
 	if [ "$CROSS_BUILD" ]; then
 		_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
 	fi
@@ -104,13 +74,7 @@ do_build() {
 do_install() {
 	local arch subarch _args hdrdest
 
-	case "$XBPS_TARGET_MACHINE" in
-		i686*) arch=x86; subarch=i386;;
-		x86_64*) arch=x86; subarch=x86_64;;
-		arm*) arch=arm;;
-		aarch64*) arch=arm64;;
-		ppc*) arch=powerpc;;
-	esac
+	arch=arm64
 
 	# Run depmod after compressing modules.
 	sed -i '2iexit 0' scripts/depmod.sh
@@ -123,25 +87,8 @@ do_install() {
 	vinstall .config 644 boot config-${_kernver}
 	vinstall System.map 644 boot System.map-${_kernver}
 
-	case "$arch" in
-		x86)
-			vinstall arch/x86/boot/bzImage 644 boot vmlinuz-${_kernver}
-			;;
-		arm)
-			vinstall arch/arm/boot/zImage 644 boot
-			make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} dtbs_install
-			;;
-		arm64)
-			vinstall arch/arm64/boot/Image 644 boot vmlinux-${_kernver}
-			make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} dtbs_install
-			;;
-		powerpc)
-			# zImage on powerpc is useless as it won't load initramfs
-			# raw vmlinux is huge, and this is nostrip, so do it manually
-			vinstall vmlinux 644 boot vmlinux-${_kernver}
-			/usr/bin/$STRIP ${DESTDIR}/boot/vmlinux-${_kernver}
-			;;
-	esac
+	vinstall arch/arm64/boot/Image 644 boot vmlinux-${_kernver}
+	make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} dtbs_install
 
 	# Switch to /usr.
 	vmkdir usr
@@ -198,17 +145,9 @@ do_install() {
 
 	mkdir -p ${hdrdest}/arch/${arch}/kernel
 	cp arch/${arch}/Makefile ${hdrdest}/arch/${arch}
-	if [ "$subarch" = "i386" ]; then
-		mkdir -p ${hdrdest}/arch/x86
-		cp arch/x86/Makefile_32.cpu ${hdrdest}/arch/x86
-	fi
-	if [ "$arch" = "x86" ]; then
-		mkdir -p ${hdrdest}/arch/x86/kernel
-		cp arch/x86/kernel/asm-offsets.s ${hdrdest}/arch/x86/kernel
-	elif [ "$arch" = "arm64" ]; then
-		mkdir -p ${hdrdest}/arch/arm64/kernel
-		cp -a arch/arm64/kernel/vdso ${hdrdest}/arch/arm64/kernel/
-	fi
+
+	mkdir -p ${hdrdest}/arch/arm64/kernel
+	cp -a arch/arm64/kernel/vdso ${hdrdest}/arch/arm64/kernel/
 
 	# add headers for lirc package
 	# pci
@@ -268,20 +207,8 @@ do_install() {
 	mkdir -p ${hdrdest}/mm
 	cp fs/xfs/libxfs/xfs_sb.h ${hdrdest}/fs/xfs/libxfs/xfs_sb.h
 
-	# Add objtool binary, needed to build external modules with dkms
-	case "$XBPS_TARGET_MACHINE" in
-		x86_64*)
-			mkdir -p ${hdrdest}/tools/objtool
-			cp tools/objtool/objtool ${hdrdest}/tools/objtool
-			;;
-	esac
-
 	# Remove unneeded architectures
-	case "$arch" in
-		i386|x86_64) _args="arm* p*";;
-		arm|arm64) _args="x86* p*";;
-		powerpc) _args="arm* x86* parisc";;
-	esac
+	_args="x86* p*"
 	for arch in alpha avr32 blackfin cris frv h8300 \
 		ia64 m* s* um v850 xtensa ${_args}; do
 		rm -rf ${hdrdest}/arch/${arch}
