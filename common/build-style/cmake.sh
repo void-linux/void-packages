@@ -98,5 +98,5 @@ do_install() {
 	: ${make_install_target:=install}
 
 	cd ${cmake_builddir:=build}
-	${make_cmd} DESTDIR=${DESTDIR} ${make_install_args} ${make_install_target}
+	DESTDIR=${DESTDIR} ${make_cmd} ${make_install_args} ${make_install_target}
 }
