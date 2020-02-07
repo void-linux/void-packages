@@ -369,7 +369,7 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_WORDSIZE` The machine's word size in bits (32 or 64).
 
-- `XBPS_NEED_ATOMIC` The machine for some packages needs to link against libatomic.
+- `XBPS_NO_ATOMIC8` The machine lacks native 64-bit atomics (needs libatomic emulation).
 
 - `XBPS_SRCDISTDIR` Full path to where the `source distfiles` are stored, i.e `$XBPS_HOSTDIR/sources`.
 
@@ -383,7 +383,7 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_TARGET_WORDSIZE` The target machine's word size in bits (32 or 64).
 
-- `XBPS_NEED_ATOMIC` The target machine for some packages needs to link against libatomic.
+- `XBPS_TARGET_NO_ATOMIC8` The target machine lacks native 64-bit atomics (needs libatomic emulation).
 
 - `XBPS_FETCH_CMD` The utility to fetch files from `ftp`, `http` of `https` servers.
 
