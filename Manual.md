@@ -369,6 +369,8 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_WORDSIZE` The machine's word size in bits (32 or 64).
 
+- `XBPS_NEED_ATOMIC` The machine for some packages needs to link against libatomic.
+
 - `XBPS_SRCDISTDIR` Full path to where the `source distfiles` are stored, i.e `$XBPS_HOSTDIR/sources`.
 
 - `XBPS_SRCPKGDIR` Full path to the `srcpkgs` directory.
@@ -380,6 +382,8 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 - `XBPS_TARGET_LIBC` The target machine's C library ("glibc" or "musl").
 
 - `XBPS_TARGET_WORDSIZE` The target machine's word size in bits (32 or 64).
+
+- `XBPS_NEED_ATOMIC` The target machine for some packages needs to link against libatomic.
 
 - `XBPS_FETCH_CMD` The utility to fetch files from `ftp`, `http` of `https` servers.
 
