@@ -21,4 +21,4 @@ For users of the proprietary NVIDIA driver:
 
 For mesa users this would result in:
 
-	# xbps-install -Syv ibgcc-32bit libstdc++-32bit libdrm-32bit libglvnd-32bit mesa-dri-32bit
+	# xbps-install -Syv libgcc-32bit libstdc++-32bit libdrm-32bit libglvnd-32bit mesa-dri-32bit
