@@ -506,7 +506,7 @@ For tarballs you can find the contents checksum by using the command
 `tar xf <tarball.ext> --to-stdout | sha256sum`.
 
 - `wrksrc` The directory name where the package sources are extracted, by default
-set to `${pkgname}-${version}`.
+set to `${pkgname}-${version}`. If the top level directory of a package's `distfile` is different from the default, `wrksrc` must be set to the top level directory name inside the archive.
 
 - `build_wrksrc` A directory relative to `${wrksrc}` that will be used when building the package.
 
