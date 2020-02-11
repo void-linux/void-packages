@@ -58,6 +58,7 @@ hook() {
 		*.tar.gz)     cursufx="tgz";;
 		*.tgz)        cursufx="tgz";;
 		*.gz)         cursufx="gz";;
+		*.xz)         cursufx="xz";;
 		*.bz2)        cursufx="bz2";;
 		*.tar)        cursufx="tar";;
 		*.zip)        cursufx="zip";;
@@ -84,13 +85,20 @@ hook() {
 				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
 			;;
-		gz|bz2)
+		gz|bz2|xz)
 			cp -f $srcdir/$curfile $extractdir
-			if [ "$cursufx" = "gz" ]; then
-				cd $extractdir && gunzip -f $curfile
-			else
-				cd $extractdir && bunzip2 -f $curfile
-			fi
+			cd $extractdir
+			case ${cursufx} in
+			gz)
+				 gunzip -f $curfile
+				;;
+			bz2)
+				bunzip2 -f $curfile
+				;;
+			*)
+				unxz -f $curfile
+				;;
+			esac
 			;;
 		zip)
 			if command -v unzip &>/dev/null; then
