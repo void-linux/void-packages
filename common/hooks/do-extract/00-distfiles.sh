@@ -66,6 +66,7 @@ hook() {
 		*.patch)      cursufx="txt";;
 		*.diff)       cursufx="txt";;
 		*.txt)        cursufx="txt";;
+		*.sh)         cursufx="txt";;
 		*.7z)	      cursufx="7z";;
 		*.gem)	      cursufx="gem";;
 		*.crate)      cursufx="crate";;
