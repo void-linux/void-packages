@@ -1,0 +1,130 @@
+--- llvm/lib/Target/PowerPC/PPCSubtarget.cpp
++++ llvm/lib/Target/PowerPC/PPCSubtarget.cpp
+@@ -145,8 +145,7 @@ void PPCSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
+   if (isDarwin())
+     HasLazyResolverStubs = true;
+
+-  if (TargetTriple.isOSNetBSD() || TargetTriple.isOSOpenBSD() ||
+-      TargetTriple.isMusl())
++  if (TargetTriple.isOSNetBSD() || TargetTriple.isOSOpenBSD() || isTargetLinux())
+     SecurePlt = true;
+
+   if (HasSPE && IsPPC64)
+--- llvm/lib/Target/PowerPC/PPCISelLowering.cpp
++++ llvm/lib/Target/PowerPC/PPCISelLowering.cpp
+@@ -4941,7 +4945,8 @@ PrepareCall(SelectionDAG &DAG, SDValue &Callee, SDValue &InFlag, SDValue &Chain,
+   if (auto *G = dyn_cast<GlobalAddressSDNode>(Callee))
+     GV = G->getGlobal();
+   bool Local = TM.shouldAssumeDSOLocal(*Mod, GV);
+-  bool UsePlt = !Local && Subtarget.isTargetELF() && !isPPC64;
++  bool UsePlt = !Local && Subtarget.isTargetELF() && !isPPC64 &&
++                TM.isPositionIndependent();
+ 
+   if (isFunctionGlobalAddress(Callee)) {
+     GlobalAddressSDNode *G = cast<GlobalAddressSDNode>(Callee);
+--- llvm/test/CodeGen/PowerPC/2008-10-28-f128-i32.ll
++++ llvm/test/CodeGen/PowerPC/2008-10-28-f128-i32.ll
+@@ -62,7 +62,7 @@ define i64 @__fixunstfdi(ppc_fp128 %a) nounwind readnone {
+ ; CHECK-NEXT:    lfd 4, 328(1)
+ ; CHECK-NEXT:    fmr 1, 31
+ ; CHECK-NEXT:    fmr 2, 30
+-; CHECK-NEXT:    bl __gcc_qmul@PLT
++; CHECK-NEXT:    bl __gcc_qmul
+ ; CHECK-NEXT:    lis 3, 16864
+ ; CHECK-NEXT:    stfd 1, 280(1)
+ ; CHECK-NEXT:    fmr 29, 1
+@@ -84,7 +84,7 @@ define i64 @__fixunstfdi(ppc_fp128 %a) nounwind readnone {
+ ; CHECK-NEXT:    lfd 4, 360(1)
+ ; CHECK-NEXT:    lfd 1, 352(1)
+ ; CHECK-NEXT:    lfd 2, 344(1)
+-; CHECK-NEXT:    bl __gcc_qsub@PLT
++; CHECK-NEXT:    bl __gcc_qsub
+ ; CHECK-NEXT:    mffs 0
+ ; CHECK-NEXT:    mtfsb1 31
+ ; CHECK-NEXT:    lis 3, .LCPI0_1@ha
+@@ -117,7 +117,7 @@ define i64 @__fixunstfdi(ppc_fp128 %a) nounwind readnone {
+ ; CHECK-NEXT:  .LBB0_5: # %bb1
+ ; CHECK-NEXT:    li 4, 0
+ ; CHECK-NEXT:    mr 3, 30
+-; CHECK-NEXT:    bl __floatditf@PLT
++; CHECK-NEXT:    bl __floatditf
+ ; CHECK-NEXT:    lis 3, 17392
+ ; CHECK-NEXT:    stfd 1, 208(1)
+ ; CHECK-NEXT:    fmr 29, 1
+@@ -140,7 +140,7 @@ define i64 @__fixunstfdi(ppc_fp128 %a) nounwind readnone {
+ ; CHECK-NEXT:    lfd 4, 232(1)
+ ; CHECK-NEXT:    lfd 1, 224(1)
+ ; CHECK-NEXT:    lfd 2, 216(1)
+-; CHECK-NEXT:    bl __gcc_qadd@PLT
++; CHECK-NEXT:    bl __gcc_qadd
+ ; CHECK-NEXT:    blt 2, .LBB0_7
+ ; CHECK-NEXT:  # %bb.6: # %bb1
+ ; CHECK-NEXT:    fmr 2, 28
+@@ -163,7 +163,7 @@ define i64 @__fixunstfdi(ppc_fp128 %a) nounwind readnone {
+ ; CHECK-NEXT:    stw 3, 248(1)
+ ; CHECK-NEXT:    lfd 3, 256(1)
+ ; CHECK-NEXT:    lfd 4, 248(1)
+-; CHECK-NEXT:    bl __gcc_qsub@PLT
++; CHECK-NEXT:    bl __gcc_qsub
+ ; CHECK-NEXT:    stfd 2, 176(1)
+ ; CHECK-NEXT:    fcmpu 0, 2, 27
+ ; CHECK-NEXT:    stfd 1, 168(1)
+@@ -205,7 +205,7 @@ define i64 @__fixunstfdi(ppc_fp128 %a) nounwind readnone {
+ ; CHECK-NEXT:    lfd 4, 72(1)
+ ; CHECK-NEXT:    lfd 1, 64(1)
+ ; CHECK-NEXT:    lfd 2, 56(1)
+-; CHECK-NEXT:    bl __gcc_qsub@PLT
++; CHECK-NEXT:    bl __gcc_qsub
+ ; CHECK-NEXT:    mffs 0
+ ; CHECK-NEXT:    mtfsb1 31
+ ; CHECK-NEXT:    lis 3, .LCPI0_2@ha
+@@ -260,7 +260,7 @@ define i64 @__fixunstfdi(ppc_fp128 %a) nounwind readnone {
+ ; CHECK-NEXT:    lfd 4, 136(1)
+ ; CHECK-NEXT:    lfd 1, 128(1)
+ ; CHECK-NEXT:    lfd 2, 120(1)
+-; CHECK-NEXT:    bl __gcc_qsub@PLT
++; CHECK-NEXT:    bl __gcc_qsub
+ ; CHECK-NEXT:    mffs 0
+ ; CHECK-NEXT:    mtfsb1 31
+ ; CHECK-NEXT:    lis 3, .LCPI0_0@ha
+--- llvm/test/CodeGen/PowerPC/2010-02-12-saveCR.ll
++++ llvm/test/CodeGen/PowerPC/2010-02-12-saveCR.ll
+@@ -11,7 +11,7 @@ entry:
+ ; CHECK-DAG: ori [[T2:[0-9]+]], [[T2]], 34492
+ ; CHECK-DAG: stwx [[T1]], 1, [[T2]]
+ ; CHECK-DAG: addi 3, 1, 28
+-; CHECK: bl bar@PLT
++; CHECK: bl bar
+   %x = alloca [100000 x i8]                       ; <[100000 x i8]*> [#uses=1]
+   %"alloca point" = bitcast i32 0 to i32          ; <i32> [#uses=0]
+   %x1 = bitcast [100000 x i8]* %x to i8*          ; <i8*> [#uses=1]
+--- llvm/test/CodeGen/PowerPC/available-externally.ll
++++ llvm/test/CodeGen/PowerPC/available-externally.ll
+@@ -14,7 +14,7 @@ target triple = "powerpc-unknown-linux-gnu"
+ define i32 @foo(i64 %x) nounwind {
+ entry:
+ ; STATIC: foo:
+-; STATIC: bl exact_log2@PLT
++; STATIC: bl exact_log2
+ ; STATIC: blr
+ 
+ ; PIC: foo:
+--- llvm/test/CodeGen/PowerPC/stubs.ll
++++ llvm/test/CodeGen/PowerPC/stubs.ll
+@@ -6,4 +6,4 @@ entry:
+ }
+ 
+ ; CHECK: test1:
+-; CHECK: bl __floatditf@PLT
++; CHECK: bl __floatditf
+--- llvm/test/CodeGen/PowerPC/umulo-128-legalisation-lowering.ll
++++ llvm/test/CodeGen/PowerPC/umulo-128-legalisation-lowering.ll
+@@ -72,7 +72,7 @@ define { i128, i8 } @muloti_test(i128 %l, i128 %r) unnamed_addr #0 {
+ ; PPC32-NEXT: mr 28, 9
+ ; PPC32-NEXT: mr 23, 6
+ ; PPC32-NEXT: mr 24, 5
+-; PPC32-NEXT: bl __multi3@PLT
++; PPC32-NEXT: bl __multi3
+ ; PPC32-NEXT: mr 7, 4
+ ; PPC32-NEXT: mullw 4, 24, 30
+ ; PPC32-NEXT: mullw 8, 29, 23

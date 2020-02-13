@@ -1,0 +1,70 @@
+From 180dcc578e13c6096e277fb853e7162db640f207 Mon Sep 17 00:00:00 2001
+From: Alexandre Rostovtsev <tetromino@gentoo.org>
+Date: Tue, 15 Nov 2011 03:06:40 -0500
+Subject: [PATCH] Map both gdk's Meta and Alt to vte's Meta for >=gtk+-3.2.2
+ compatibility
+
+Also, since VTE_META_MASK is now a mask with multiple bits set, code that
+compares gdk key modifiers to VTE_META_MASK by numerical equality is no
+longer guaranteed to work. Therefore, for such comparisons a new function,
+vte_keymap_fixup_modifiers, is introduced; it ensures that if any bits
+matching matching VTE_META_MASK are set, then all are set.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=663779
+---
+ src/keymap.c |   15 +++++++++++++--
+ src/keymap.h |    2 +-
+ 2 files changed, 14 insertions(+), 3 deletions(-)
+
+--- src/keymap.c
++++ src/keymap.c
+@@ -990,6 +990,17 @@ static const struct _vte_keymap_group {
+ 	{GDK_KEY (F35),		_vte_keymap_GDK_F35},
+ };
+ 
++/* Restrict modifiers to the specified mask and ensure that VTE_META_MASK,
++ * despite being a compound mask, is treated as indivisible. */
++GdkModifierType
++_vte_keymap_fixup_modifiers(GdkModifierType modifiers,
++		GdkModifierType mask)
++{
++	if (modifiers & VTE_META_MASK)
++		modifiers |= VTE_META_MASK;
++	return modifiers & mask;
++}
++
+ /* Map the specified keyval/modifier setup, dependent on the mode, to either
+  * a literal string or a capability name. */
+ void
+@@ -1104,7 +1115,7 @@ _vte_keymap_map(guint keyval,
+ 	} else {
+ 		fkey_mode = fkey_default;
+ 	}
+-	modifiers &= (GDK_SHIFT_MASK | GDK_CONTROL_MASK | VTE_META_MASK | VTE_NUMLOCK_MASK);
++	modifiers = _vte_keymap_fixup_modifiers(modifiers, GDK_SHIFT_MASK | GDK_CONTROL_MASK | VTE_META_MASK | VTE_NUMLOCK_MASK);
+ 
+ 	/* Search for the conditions. */
+ 	for (i = 0; entries[i].normal_length || entries[i].special[0]; i++)
+@@ -1375,7 +1386,7 @@ _vte_keymap_key_add_key_modifiers(guint keyval,
+ 		return;
+ 	}
+ 
+-	switch (modifiers & significant_modifiers) {
++	switch (_vte_keymap_fixup_modifiers(modifiers, significant_modifiers)) {
+ 	case 0:
+ 		modifier = 0;
+ 		break;
+--- src/keymap.h
++++ src/keymap.h
+@@ -27,7 +27,7 @@
+ 
+ G_BEGIN_DECLS
+ 
+-#define VTE_META_MASK		GDK_META_MASK
++#define VTE_META_MASK		(GDK_META_MASK | GDK_MOD1_MASK)
+ #define VTE_NUMLOCK_MASK	GDK_MOD2_MASK
+ 
+ /* Map the specified keyval/modifier setup, dependent on the mode, to either
+-- 
+1.7.8.rc3
+

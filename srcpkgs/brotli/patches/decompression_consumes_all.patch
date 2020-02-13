@@ -1,0 +1,73 @@
+From 5805f99a533a8f8118699c0100d8c102f3605f65 Mon Sep 17 00:00:00 2001
+From: Justin Ridgewell <justin@ridgewell.name>
+Date: Mon, 12 Nov 2018 04:36:00 -0500
+Subject: [PATCH] Ensure decompression consumes all input (#730)
+
+* Ensure decompression consumes all input
+
+If not, it's a corrupt stream.
+
+* Use byte strings
+---
+ python/_brotli.cc                 | 4 ++--
+ python/tests/decompress_test.py   | 4 ++++
+ python/tests/decompressor_test.py | 9 +++++++++
+ 3 files changed, 15 insertions(+), 2 deletions(-)
+
+diff --git python/_brotli.cc python/_brotli.cc
+index a6f925ef..5e1828e9 100644
+--- python/_brotli.cc
++++ python/_brotli.cc
+@@ -414,7 +414,7 @@ static BROTLI_BOOL decompress_stream(BrotliDecoderState* dec,
+       (*output).insert((*output).end(), buffer, buffer + buffer_length);
+     }
+   }
+-  ok = result != BROTLI_DECODER_RESULT_ERROR;
++  ok = result != BROTLI_DECODER_RESULT_ERROR && !available_in;
+ 
+   Py_END_ALLOW_THREADS
+   return ok;
+@@ -672,7 +672,7 @@ static PyObject* brotli_decompress(PyObject *self, PyObject *args, PyObject *key
+     if (available_out != 0)
+       output.insert(output.end(), next_out, next_out + available_out);
+   }
+-  ok = result == BROTLI_DECODER_RESULT_SUCCESS;
++  ok = result == BROTLI_DECODER_RESULT_SUCCESS && !available_in;
+   BrotliDecoderDestroyInstance(state);
+ 
+   Py_END_ALLOW_THREADS
+diff --git python/tests/decompress_test.py python/tests/decompress_test.py
+index 7a9e9e30..814e5633 100644
+--- python/tests/decompress_test.py
++++ python/tests/decompress_test.py
+@@ -31,6 +31,10 @@ def _test_decompress(self, test_data):
+         self._decompress(test_data)
+         self._check_decompression(test_data)
+ 
++    def test_garbage_appended(self):
++        with self.assertRaises(brotli.error):
++            brotli.decompress(brotli.compress(b'a') + b'a')
++
+ 
+ _test_utils.generate_test_methods(TestDecompress, for_decompression=True)
+ 
+diff --git python/tests/decompressor_test.py python/tests/decompressor_test.py
+index 99667bcd..05918ada 100644
+--- python/tests/decompressor_test.py
++++ python/tests/decompressor_test.py
+@@ -43,6 +43,15 @@ def _test_decompress(self, test_data):
+         self._decompress(test_data)
+         self._check_decompression(test_data)
+ 
++    def test_garbage_appended(self):
++        with self.assertRaises(brotli.error):
++            self.decompressor.process(brotli.compress(b'a') + b'a')
++
++    def test_already_finished(self):
++        self.decompressor.process(brotli.compress(b'a'))
++        with self.assertRaises(brotli.error):
++            self.decompressor.process(b'a')
++
+ 
+ _test_utils.generate_test_methods(TestDecompressor, for_decompression=True)
+ 

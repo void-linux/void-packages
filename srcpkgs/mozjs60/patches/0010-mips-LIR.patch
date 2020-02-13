@@ -1,0 +1,511 @@
+From: Dragan Mladjenovic <dragan.mladjenovic@rt-rk.com>
+Date: Fri, 9 Mar 2018 07:58:43 +0100
+Subject: Bug 1444303 : [MIPS] Fix build failures after Bug 1425580 part 17
+
+From upstream, via firefox-esr 60.2.0esr-1.
+
+Reviewed-by: jandem
+Bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1444303
+Bug-Debian: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=908486
+Applied-upstream: 61, commit:https://hg.mozilla.org/mozilla-central/rev/7de4ca7b082a
+---
+ js/src/jit/mips-shared/LIR-mips-shared.h | 88 +++++++++++++++++++++-----------
+ js/src/jit/mips32/LIR-mips32.h           | 26 ++++++++--
+ js/src/jit/mips64/LIR-mips64.h           | 33 ++++++++----
+ 3 files changed, 102 insertions(+), 45 deletions(-)
+
+Index: mozjs-60.8.0/js/src/jit/mips-shared/LIR-mips-shared.h
+===================================================================
+--- mozjs-60.8.0.orig/js/src/jit/mips-shared/LIR-mips-shared.h
++++ mozjs-60.8.0/js/src/jit/mips-shared/LIR-mips-shared.h
+@@ -15,7 +15,10 @@ class LWasmUint32ToDouble : public LInst
+  public:
+   LIR_HEADER(WasmUint32ToDouble)
+ 
+-  LWasmUint32ToDouble(const LAllocation& input) { setOperand(0, input); }
++  LWasmUint32ToDouble(const LAllocation& input)
++      : LInstructionHelper(classOpcode) {
++    setOperand(0, input);
++  }
+ };
+ 
+ // Convert a 32-bit unsigned integer to a float32.
+@@ -23,15 +26,18 @@ class LWasmUint32ToFloat32 : public LIns
+  public:
+   LIR_HEADER(WasmUint32ToFloat32)
+ 
+-  LWasmUint32ToFloat32(const LAllocation& input) { setOperand(0, input); }
++  LWasmUint32ToFloat32(const LAllocation& input)
++      : LInstructionHelper(classOpcode) {
++    setOperand(0, input);
++  }
+ };
+ 
+ class LDivI : public LBinaryMath<1> {
+  public:
+   LIR_HEADER(DivI);
+ 
+-  LDivI(const LAllocation& lhs, const LAllocation& rhs,
+-        const LDefinition& temp) {
++  LDivI(const LAllocation& lhs, const LAllocation& rhs, const LDefinition& temp)
++      : LBinaryMath(classOpcode) {
+     setOperand(0, lhs);
+     setOperand(1, rhs);
+     setTemp(0, temp);
+@@ -47,15 +53,13 @@ class LDivPowTwoI : public LInstructionH
+   LIR_HEADER(DivPowTwoI)
+ 
+   LDivPowTwoI(const LAllocation& lhs, int32_t shift, const LDefinition& temp)
+-      : shift_(shift) {
++      : LInstructionHelper(classOpcode), shift_(shift) {
+     setOperand(0, lhs);
+     setTemp(0, temp);
+   }
+ 
+   const LAllocation* numerator() { return getOperand(0); }
+-
+-  int32_t shift() { return shift_; }
+-
++  int32_t shift() const { return shift_; }
+   MDiv* mir() const { return mir_->toDiv(); }
+ };
+ 
+@@ -64,14 +68,14 @@ class LModI : public LBinaryMath<1> {
+   LIR_HEADER(ModI);
+ 
+   LModI(const LAllocation& lhs, const LAllocation& rhs,
+-        const LDefinition& callTemp) {
++        const LDefinition& callTemp)
++      : LBinaryMath(classOpcode) {
+     setOperand(0, lhs);
+     setOperand(1, rhs);
+     setTemp(0, callTemp);
+   }
+ 
+   const LDefinition* callTemp() { return getTemp(0); }
+-
+   MMod* mir() const { return mir_->toMod(); }
+ };
+ 
+@@ -80,12 +84,13 @@ class LModPowTwoI : public LInstructionH
+ 
+  public:
+   LIR_HEADER(ModPowTwoI);
+-  int32_t shift() { return shift_; }
+ 
+-  LModPowTwoI(const LAllocation& lhs, int32_t shift) : shift_(shift) {
++  LModPowTwoI(const LAllocation& lhs, int32_t shift)
++      : LInstructionHelper(classOpcode), shift_(shift) {
+     setOperand(0, lhs);
+   }
+ 
++  int32_t shift() const { return shift_; }
+   MMod* mir() const { return mir_->toMod(); }
+ };
+ 
+@@ -97,14 +102,13 @@ class LModMaskI : public LInstructionHel
+ 
+   LModMaskI(const LAllocation& lhs, const LDefinition& temp0,
+             const LDefinition& temp1, int32_t shift)
+-      : shift_(shift) {
++      : LInstructionHelper(classOpcode), shift_(shift) {
+     setOperand(0, lhs);
+     setTemp(0, temp0);
+     setTemp(1, temp1);
+   }
+ 
+   int32_t shift() const { return shift_; }
+-
+   MMod* mir() const { return mir_->toMod(); }
+ };
+ 
+@@ -114,7 +118,8 @@ class LTableSwitch : public LInstruction
+   LIR_HEADER(TableSwitch);
+ 
+   LTableSwitch(const LAllocation& in, const LDefinition& inputCopy,
+-               const LDefinition& jumpTablePointer, MTableSwitch* ins) {
++               const LDefinition& jumpTablePointer, MTableSwitch* ins)
++      : LInstructionHelper(classOpcode) {
+     setOperand(0, in);
+     setTemp(0, inputCopy);
+     setTemp(1, jumpTablePointer);
+@@ -122,7 +127,6 @@ class LTableSwitch : public LInstruction
+   }
+ 
+   MTableSwitch* mir() const { return mir_->toTableSwitch(); }
+-
+   const LAllocation* index() { return getOperand(0); }
+   const LDefinition* tempInt() { return getTemp(0); }
+   // This is added to share the same CodeGenerator prefixes.
+@@ -136,7 +140,8 @@ class LTableSwitchV : public LInstructio
+ 
+   LTableSwitchV(const LBoxAllocation& input, const LDefinition& inputCopy,
+                 const LDefinition& floatCopy,
+-                const LDefinition& jumpTablePointer, MTableSwitch* ins) {
++                const LDefinition& jumpTablePointer, MTableSwitch* ins)
++      : LInstructionHelper(classOpcode) {
+     setBoxOperand(InputValue, input);
+     setTemp(0, inputCopy);
+     setTemp(1, floatCopy);
+@@ -157,6 +162,8 @@ class LMulI : public LBinaryMath<0> {
+  public:
+   LIR_HEADER(MulI);
+ 
++  LMulI() : LBinaryMath(classOpcode) {}
++
+   MMul* mir() { return mir_->toMul(); }
+ };
+ 
+@@ -164,6 +171,8 @@ class LUDivOrMod : public LBinaryMath<0>
+  public:
+   LIR_HEADER(UDivOrMod);
+ 
++  LUDivOrMod() : LBinaryMath(classOpcode) {}
++
+   MBinaryArithInstruction* mir() const {
+     MOZ_ASSERT(mir_->isDiv() || mir_->isMod());
+     return static_cast<MBinaryArithInstruction*>(mir_);
+@@ -194,12 +203,13 @@ class LWasmUnalignedLoadBase : public de
+  public:
+   typedef LWasmLoadBase<NumDefs, 2> Base;
+ 
+-  explicit LWasmUnalignedLoadBase(const LAllocation& ptr,
++  explicit LWasmUnalignedLoadBase(LNode::Opcode opcode, const LAllocation& ptr,
+                                   const LDefinition& valueHelper)
+-      : Base(ptr, LAllocation()) {
++      : Base(opcode, ptr, LAllocation()) {
+     Base::setTemp(0, LDefinition::BogusTemp());
+     Base::setTemp(1, valueHelper);
+   }
++
+   const LAllocation* ptr() { return Base::getOperand(0); }
+   const LDefinition* ptrCopy() { return Base::getTemp(0); }
+ };
+@@ -208,19 +218,21 @@ class LWasmUnalignedLoadBase : public de
+ 
+ class LWasmUnalignedLoad : public details::LWasmUnalignedLoadBase<1> {
+  public:
++  LIR_HEADER(WasmUnalignedLoad);
++
+   explicit LWasmUnalignedLoad(const LAllocation& ptr,
+                               const LDefinition& valueHelper)
+-      : LWasmUnalignedLoadBase(ptr, valueHelper) {}
+-  LIR_HEADER(WasmUnalignedLoad);
++      : LWasmUnalignedLoadBase(classOpcode, ptr, valueHelper) {}
+ };
+ 
+ class LWasmUnalignedLoadI64
+     : public details::LWasmUnalignedLoadBase<INT64_PIECES> {
+  public:
++  LIR_HEADER(WasmUnalignedLoadI64);
++
+   explicit LWasmUnalignedLoadI64(const LAllocation& ptr,
+                                  const LDefinition& valueHelper)
+-      : LWasmUnalignedLoadBase(ptr, valueHelper) {}
+-  LIR_HEADER(WasmUnalignedLoadI64);
++      : LWasmUnalignedLoadBase(classOpcode, ptr, valueHelper) {}
+ };
+ 
+ namespace details {
+@@ -234,12 +246,14 @@ class LWasmUnalignedStoreBase : public L
+   static const size_t PtrIndex = 0;
+   static const size_t ValueIndex = 1;
+ 
+-  LWasmUnalignedStoreBase(const LAllocation& ptr,
+-                          const LDefinition& valueHelper) {
++  LWasmUnalignedStoreBase(LNode::Opcode opcode, const LAllocation& ptr,
++                          const LDefinition& valueHelper)
++      : Base(opcode) {
+     Base::setOperand(0, ptr);
+     Base::setTemp(0, LDefinition::BogusTemp());
+     Base::setTemp(1, valueHelper);
+   }
++
+   MWasmStore* mir() const { return Base::mir_->toWasmStore(); }
+   const LAllocation* ptr() { return Base::getOperand(PtrIndex); }
+   const LDefinition* ptrCopy() { return Base::getTemp(0); }
+@@ -250,11 +264,13 @@ class LWasmUnalignedStoreBase : public L
+ class LWasmUnalignedStore : public details::LWasmUnalignedStoreBase<2> {
+  public:
+   LIR_HEADER(WasmUnalignedStore);
++
+   LWasmUnalignedStore(const LAllocation& ptr, const LAllocation& value,
+                       const LDefinition& valueHelper)
+-      : LWasmUnalignedStoreBase(ptr, valueHelper) {
++      : LWasmUnalignedStoreBase(classOpcode, ptr, valueHelper) {
+     setOperand(1, value);
+   }
++
+   const LAllocation* value() { return Base::getOperand(ValueIndex); }
+ };
+ 
+@@ -264,9 +280,10 @@ class LWasmUnalignedStoreI64
+   LIR_HEADER(WasmUnalignedStoreI64);
+   LWasmUnalignedStoreI64(const LAllocation& ptr, const LInt64Allocation& value,
+                          const LDefinition& valueHelper)
+-      : LWasmUnalignedStoreBase(ptr, valueHelper) {
++      : LWasmUnalignedStoreBase(classOpcode, ptr, valueHelper) {
+     setInt64Operand(1, value);
+   }
++
+   const LInt64Allocation value() { return getInt64Operand(ValueIndex); }
+ };
+ 
+@@ -278,7 +295,8 @@ class LWasmCompareExchangeI64
+ 
+   LWasmCompareExchangeI64(const LAllocation& ptr,
+                           const LInt64Allocation& oldValue,
+-                          const LInt64Allocation& newValue) {
++                          const LInt64Allocation& newValue)
++      : LInstructionHelper(classOpcode) {
+     setOperand(0, ptr);
+     setInt64Operand(1, oldValue);
+     setInt64Operand(1 + INT64_PIECES, newValue);
+@@ -299,8 +317,8 @@ class LWasmAtomicExchangeI64
+  public:
+   LIR_HEADER(WasmAtomicExchangeI64);
+ 
+-  LWasmAtomicExchangeI64(const LAllocation& ptr,
+-                         const LInt64Allocation& value) {
++  LWasmAtomicExchangeI64(const LAllocation& ptr, const LInt64Allocation& value)
++      : LInstructionHelper(classOpcode) {
+     setOperand(0, ptr);
+     setInt64Operand(1, value);
+   }
+@@ -317,14 +335,14 @@ class LWasmAtomicBinopI64
+  public:
+   LIR_HEADER(WasmAtomicBinopI64);
+ 
+-  LWasmAtomicBinopI64(const LAllocation& ptr, const LInt64Allocation& value) {
++  LWasmAtomicBinopI64(const LAllocation& ptr, const LInt64Allocation& value)
++      : LInstructionHelper(classOpcode) {
+     setOperand(0, ptr);
+     setInt64Operand(1, value);
+   }
+ 
+   const LAllocation* ptr() { return getOperand(0); }
+   const LInt64Allocation value() { return getInt64Operand(1); }
+-
+   const MWasmAtomicBinopHeap* mir() const {
+     return mir_->toWasmAtomicBinopHeap();
+   }
+Index: mozjs-60.8.0/js/src/jit/mips32/LIR-mips32.h
+===================================================================
+--- mozjs-60.8.0.orig/js/src/jit/mips32/LIR-mips32.h
++++ mozjs-60.8.0/js/src/jit/mips32/LIR-mips32.h
+@@ -18,7 +18,7 @@ class LBoxFloatingPoint : public LInstru
+ 
+   LBoxFloatingPoint(const LAllocation& in, const LDefinition& temp,
+                     MIRType type)
+-      : type_(type) {
++      : LInstructionHelper(classOpcode), type_(type) {
+     setOperand(0, in);
+     setTemp(0, temp);
+   }
+@@ -31,6 +31,8 @@ class LUnbox : public LInstructionHelper
+  public:
+   LIR_HEADER(Unbox);
+ 
++  LUnbox() : LInstructionHelper(classOpcode) {}
++
+   MUnbox* mir() const { return mir_->toUnbox(); }
+   const LAllocation* payload() { return getOperand(0); }
+   const LAllocation* type() { return getOperand(1); }
+@@ -45,12 +47,12 @@ class LUnboxFloatingPoint : public LInst
+ 
+   static const size_t Input = 0;
+ 
+-  LUnboxFloatingPoint(const LBoxAllocation& input, MIRType type) : type_(type) {
++  LUnboxFloatingPoint(const LBoxAllocation& input, MIRType type)
++      : LInstructionHelper(classOpcode), type_(type) {
+     setBoxOperand(Input, input);
+   }
+ 
+   MUnbox* mir() const { return mir_->toUnbox(); }
+-
+   MIRType type() const { return type_; }
+   const char* extraName() const { return StringFromMIRType(type_); }
+ };
+@@ -63,14 +65,17 @@ class LDivOrModI64
+   static const size_t Lhs = 0;
+   static const size_t Rhs = INT64_PIECES;
+ 
+-  LDivOrModI64(const LInt64Allocation& lhs, const LInt64Allocation& rhs) {
++  LDivOrModI64(const LInt64Allocation& lhs, const LInt64Allocation& rhs)
++      : LCallInstructionHelper(classOpcode) {
+     setInt64Operand(Lhs, lhs);
+     setInt64Operand(Rhs, rhs);
+   }
++
+   MBinaryArithInstruction* mir() const {
+     MOZ_ASSERT(mir_->isDiv() || mir_->isMod());
+     return static_cast<MBinaryArithInstruction*>(mir_);
+   }
++
+   bool canBeDivideByZero() const {
+     if (mir_->isMod()) return mir_->toMod()->canBeDivideByZero();
+     return mir_->toDiv()->canBeDivideByZero();
+@@ -94,7 +99,8 @@ class LUDivOrModI64
+   static const size_t Lhs = 0;
+   static const size_t Rhs = INT64_PIECES;
+ 
+-  LUDivOrModI64(const LInt64Allocation& lhs, const LInt64Allocation& rhs) {
++  LUDivOrModI64(const LInt64Allocation& lhs, const LInt64Allocation& rhs)
++      : LCallInstructionHelper(classOpcode) {
+     setInt64Operand(Lhs, lhs);
+     setInt64Operand(Rhs, rhs);
+   }
+@@ -102,6 +108,7 @@ class LUDivOrModI64
+     MOZ_ASSERT(mir_->isDiv() || mir_->isMod());
+     return static_cast<MBinaryArithInstruction*>(mir_);
+   }
++
+   bool canBeDivideByZero() const {
+     if (mir_->isMod()) return mir_->toMod()->canBeDivideByZero();
+     return mir_->toDiv()->canBeDivideByZero();
+@@ -121,7 +128,10 @@ class LWasmTruncateToInt64 : public LCal
+  public:
+   LIR_HEADER(WasmTruncateToInt64);
+ 
+-  explicit LWasmTruncateToInt64(const LAllocation& in) { setOperand(0, in); }
++  explicit LWasmTruncateToInt64(const LAllocation& in)
++      : LCallInstructionHelper(classOpcode) {
++    setOperand(0, in);
++  }
+ 
+   MWasmTruncateToInt64* mir() const { return mir_->toWasmTruncateToInt64(); }
+ };
+@@ -131,7 +141,8 @@ class LInt64ToFloatingPoint
+  public:
+   LIR_HEADER(Int64ToFloatingPoint);
+ 
+-  explicit LInt64ToFloatingPoint(const LInt64Allocation& in) {
++  explicit LInt64ToFloatingPoint(const LInt64Allocation& in)
++      : LCallInstructionHelper(classOpcode) {
+     setInt64Operand(0, in);
+   }
+ 
+@@ -142,7 +153,9 @@ class LWasmAtomicLoadI64 : public LInstr
+  public:
+   LIR_HEADER(WasmAtomicLoadI64);
+ 
+-  LWasmAtomicLoadI64(const LAllocation& ptr) { setOperand(0, ptr); }
++  LWasmAtomicLoadI64(const LAllocation& ptr) : LInstructionHelper(classOpcode) {
++    setOperand(0, ptr);
++  }
+ 
+   const LAllocation* ptr() { return getOperand(0); }
+   const MWasmLoad* mir() const { return mir_->toWasmLoad(); }
+@@ -153,7 +166,8 @@ class LWasmAtomicStoreI64 : public LInst
+   LIR_HEADER(WasmAtomicStoreI64);
+ 
+   LWasmAtomicStoreI64(const LAllocation& ptr, const LInt64Allocation& value,
+-                      const LDefinition& tmp) {
++                      const LDefinition& tmp)
++      : LInstructionHelper(classOpcode) {
+     setOperand(0, ptr);
+     setInt64Operand(1, value);
+     setTemp(0, tmp);
+Index: mozjs-60.8.0/js/src/jit/mips64/LIR-mips64.h
+===================================================================
+--- mozjs-60.8.0.orig/js/src/jit/mips64/LIR-mips64.h
++++ mozjs-60.8.0/js/src/jit/mips64/LIR-mips64.h
+@@ -11,10 +11,18 @@ namespace js {
+ namespace jit {
+ 
+ class LUnbox : public LInstructionHelper<1, 1, 0> {
++ protected:
++  LUnbox(LNode::Opcode opcode, const LAllocation& input)
++      : LInstructionHelper(opcode) {
++    setOperand(0, input);
++  }
++
+  public:
+   LIR_HEADER(Unbox);
+ 
+-  explicit LUnbox(const LAllocation& input) { setOperand(0, input); }
++  explicit LUnbox(const LAllocation& input) : LInstructionHelper(classOpcode) {
++    setOperand(0, input);
++  }
+ 
+   static const size_t Input = 0;
+ 
+@@ -29,7 +37,7 @@ class LUnboxFloatingPoint : public LUnbo
+   LIR_HEADER(UnboxFloatingPoint);
+ 
+   LUnboxFloatingPoint(const LAllocation& input, MIRType type)
+-      : LUnbox(input), type_(type) {}
++      : LUnbox(classOpcode, input), type_(type) {}
+ 
+   MIRType type() const { return type_; }
+ };
+@@ -39,18 +47,19 @@ class LDivOrModI64 : public LBinaryMath<
+   LIR_HEADER(DivOrModI64)
+ 
+   LDivOrModI64(const LAllocation& lhs, const LAllocation& rhs,
+-               const LDefinition& temp) {
++               const LDefinition& temp)
++      : LBinaryMath(classOpcode) {
+     setOperand(0, lhs);
+     setOperand(1, rhs);
+     setTemp(0, temp);
+   }
+ 
+   const LDefinition* remainder() { return getTemp(0); }
+-
+   MBinaryArithInstruction* mir() const {
+     MOZ_ASSERT(mir_->isDiv() || mir_->isMod());
+     return static_cast<MBinaryArithInstruction*>(mir_);
+   }
++
+   bool canBeDivideByZero() const {
+     if (mir_->isMod()) return mir_->toMod()->canBeDivideByZero();
+     return mir_->toDiv()->canBeDivideByZero();
+@@ -71,14 +80,14 @@ class LUDivOrModI64 : public LBinaryMath
+   LIR_HEADER(UDivOrModI64);
+ 
+   LUDivOrModI64(const LAllocation& lhs, const LAllocation& rhs,
+-                const LDefinition& temp) {
++                const LDefinition& temp)
++      : LBinaryMath(classOpcode) {
+     setOperand(0, lhs);
+     setOperand(1, rhs);
+     setTemp(0, temp);
+   }
+ 
+   const LDefinition* remainder() { return getTemp(0); }
+-
+   const char* extraName() const {
+     return mir()->isTruncated() ? "Truncated" : nullptr;
+   }
+@@ -87,7 +96,6 @@ class LUDivOrModI64 : public LBinaryMath
+     MOZ_ASSERT(mir_->isDiv() || mir_->isMod());
+     return static_cast<MBinaryArithInstruction*>(mir_);
+   }
+-
+   bool canBeDivideByZero() const {
+     if (mir_->isMod()) return mir_->toMod()->canBeDivideByZero();
+     return mir_->toDiv()->canBeDivideByZero();
+@@ -103,7 +111,10 @@ class LWasmTruncateToInt64 : public LIns
+  public:
+   LIR_HEADER(WasmTruncateToInt64);
+ 
+-  explicit LWasmTruncateToInt64(const LAllocation& in) { setOperand(0, in); }
++  explicit LWasmTruncateToInt64(const LAllocation& in)
++      : LInstructionHelper(classOpcode) {
++    setOperand(0, in);
++  }
+ 
+   MWasmTruncateToInt64* mir() const { return mir_->toWasmTruncateToInt64(); }
+ };
+@@ -112,7 +123,8 @@ class LInt64ToFloatingPoint : public LIn
+  public:
+   LIR_HEADER(Int64ToFloatingPoint);
+ 
+-  explicit LInt64ToFloatingPoint(const LInt64Allocation& in) {
++  explicit LInt64ToFloatingPoint(const LInt64Allocation& in)
++      : LInstructionHelper(classOpcode) {
+     setInt64Operand(0, in);
+   }
+ 
+
