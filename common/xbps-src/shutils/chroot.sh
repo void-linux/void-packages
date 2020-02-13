@@ -173,6 +173,7 @@ chroot_handler() {
             ${SOCKS_PROXY:+SOCKS_PROXY="${SOCKS_PROXY}"} \
             ${NO_PROXY:+NO_PROXY="${NO_PROXY}"} \
             ${HTTP_PROXY_AUTH:+HTTP_PROXY_AUTH="${HTTP_PROXY_AUTH}"} \
+            ${FTP_RETRIES:+FTP_RETRIES="${FTP_RETRIES}"} \
             SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
             XBPS_ALLOW_CHROOT_BREAKOUT="$XBPS_ALLOW_CHROOT_BREAKOUT" \
             $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
