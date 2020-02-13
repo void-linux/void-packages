@@ -1,0 +1,84 @@
+# HG changeset patch
+# Parent  548d0a2f3a22bfac32ec0c3921c6c969c8bf32a9
+
+diff -r 548d0a2f3a22 gfx/2d/ConvolutionFilter.cpp
+--- gfx/2d/ConvolutionFilter.cpp	Mon Jul 22 16:57:54 2019 +0200
++++ gfx/2d/ConvolutionFilter.cpp	Thu Jul 25 14:27:59 2019 +0200
+@@ -35,9 +35,38 @@
+   return true;
+ }
+ 
++static void ByteSwapArray(uint8_t *u8Array, int32_t size) {
++    uint32_t *array = reinterpret_cast<uint32_t*>(u8Array);
++    for (int pxl = 0; pxl < size; ++pxl) {
++        // Use an endian swap to move the bytes, i.e. BGRA -> ARGB.
++        uint32_t rgba = array[pxl];
++        array[pxl] = NativeEndian::swapToLittleEndian(rgba);
++    }
++}
++
+ void ConvolutionFilter::ConvolveHorizontally(const uint8_t* aSrc, uint8_t* aDst,
+                                              bool aHasAlpha) {
++#ifdef MOZ_BIG_ENDIAN
++    int outputSize = mFilter->numValues();
++
++    // Input size isn't handed in, so we have to calculate it quickly
++    int inputSize = 0;
++    for (int xx = 0; xx < outputSize; ++xx) {
++        // Get the filter that determines the current output pixel.
++        int filterOffset, filterLength;
++        mFilter->FilterForValue(xx, &filterOffset, &filterLength);
++        inputSize = std::max(inputSize, filterOffset + filterLength);
++    }
++
++    ByteSwapArray((uint8_t*)aSrc, inputSize);
++#endif
++
+   SkOpts::convolve_horizontally(aSrc, *mFilter, aDst, aHasAlpha);
++
++#ifdef MOZ_BIG_ENDIAN
++    ByteSwapArray((uint8_t*)aSrc, inputSize);
++    ByteSwapArray(aDst, outputSize);
++#endif
+ }
+ 
+ void ConvolutionFilter::ConvolveVertically(uint8_t* const* aSrc, uint8_t* aDst,
+@@ -49,8 +78,26 @@
+   int32_t filterLength;
+   auto filterValues =
+       mFilter->FilterForValue(aRowIndex, &filterOffset, &filterLength);
++
++#ifdef MOZ_BIG_ENDIAN
++  for (int filterY = 0; filterY < filterLength; filterY++) {
++      // Skia only knows LE, so we have to swizzle the input
++    ByteSwapArray(aSrc[filterY], aRowSize);
++  }
++#endif
++
+   SkOpts::convolve_vertically(filterValues, filterLength, aSrc, aRowSize, aDst,
+                               aHasAlpha);
++
++#ifdef MOZ_BIG_ENDIAN
++  // After skia is finished, we swizzle back to BE, in case
++  // the input is used again somewhere else
++  for (int filterY = 0; filterY < filterLength; filterY++) {
++    ByteSwapArray(aSrc[filterY], aRowSize);
++  }
++  // The destination array as well
++  ByteSwapArray(aDst, aRowSize);
++#endif
+ }
+ 
+ /* ConvolutionFilter::ComputeResizeFactor is derived from Skia's
+diff -r 548d0a2f3a22 gfx/skia/skia/include/core/SkPreConfig.h
+--- gfx/skia/skia/include/core/SkPreConfig.h	Mon Jul 22 16:57:54 2019 +0200
++++ gfx/skia/skia/include/core/SkPreConfig.h	Thu Jul 25 14:27:59 2019 +0200
+@@ -73,7 +73,7 @@
+       defined(__ppc__) || defined(__hppa) || \
+       defined(__PPC__) || defined(__PPC64__) || \
+       defined(_MIPSEB) || defined(__ARMEB__) || \
+-      defined(__s390__) || \
++      defined(__s390__) || defined(__s390x__) || \
+       (defined(__sh__) && defined(__BIG_ENDIAN__)) || \
+       (defined(__ia64) && defined(__BIG_ENDIAN__))
+          #define SK_CPU_BENDIAN
