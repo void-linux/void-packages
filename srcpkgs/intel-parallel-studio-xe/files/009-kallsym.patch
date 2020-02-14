@@ -1,0 +1,85 @@
+--- /dev/null
++++ b/src/ksym.c
+@@ -0,0 +1,61 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++
++#include <linux/kallsyms.h>
++#include <linux/kprobes.h>
++#include <linux/module.h>
++#include <linux/version.h>
++
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0))
++
++#ifndef CONFIG_KALLSYMS
++#error "Please recompile kernel with CONFIG_KALLSYMS defined."
++#endif
++
++#ifndef CONFIG_KPROBES
++#error "Please recompile kernel with CONFIG_KPROBES defined."
++#endif
++
++static unsigned long (*p_kallsyms_lookup_name)(const char *name) = NULL;
++
++static int tmp_kprobe_handler(struct kprobe *p_ri, struct pt_regs *p_regs)
++{
++	return 0;
++}
++
++unsigned long kallsyms_lookup_name(const char *name)
++{
++	struct kprobe p_kprobe;
++	int err = 0;
++
++	if (p_kallsyms_lookup_name)
++		return p_kallsyms_lookup_name(name);
++
++	/* "Inspiried" idea from LTTng module */
++	memset(&p_kprobe, 0, sizeof(p_kprobe));
++	p_kprobe.pre_handler = tmp_kprobe_handler;
++	p_kprobe.symbol_name = "kallsyms_lookup_name";
++
++	err = register_kprobe(&p_kprobe);
++	if (err < 0) {
++		pr_err("[PSXE] register_kprobe error number 0x%x(%d).\n", err,
++		       err);
++		return 0UL;
++	}
++
++	p_kallsyms_lookup_name =
++		(unsigned long (*)(const char *))((unsigned long)p_kprobe.addr);
++
++#ifdef CONFIG_ARM
++#ifdef CONFIG_THUMB2_KERNEL
++	if (p_kallsyms_lookup_name)
++		p_kallsyms_lookup_name |=
++			1; /* set bit 0 in address for thumb mode */
++#endif
++#endif
++
++	unregister_kprobe(&p_kprobe);
++
++	return p_kallsyms_lookup_name(name);
++}
++
++#endif
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -181,6 +181,7 @@ endif
+ 			utility.o         \
+ 			valleyview_sochap.o    \
+ 			unc_power.o       \
++			ksym.o            \
+ 			$(chipset-objs)   \
+ 			$(gfx-objs)       \
+ 			$(private-objs)   \
+--- a/src/vtsspp/Makefile
++++ b/src/vtsspp/Makefile
+@@ -66,7 +66,7 @@ obj-m := $(DRIVER_NAME).o
+ $(DRIVER_NAME)-objs := module.o collector.o procfs.o transport.o record.o \
+                        task_map.o globals.o cpuevents.o user_vm.o stack.o \
+                        apic.o dsa.o bts.o pebs.o lbr.o nmiwd.o ipt.o uec.o \
+-                       unwind.o utils.o memory_pool.o
++                       unwind.o utils.o memory_pool.o ../ksym.o
+ ifeq ($(PLATFORM),x32)
+ EXTRA_CFLAGS += -DVTSS_ARCH_32
+ $(DRIVER_NAME)-objs += sys32.o

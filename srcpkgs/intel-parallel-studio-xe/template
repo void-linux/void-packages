@@ -1,0 +1,593 @@
+# Template file for 'intel-parallel-studio-xe'
+pkgname=intel-parallel-studio-xe
+version=2019.5.281.5
+revision=1
+_version=( ${version//./ } )
+_year=${_version[0]}
+_v_a=${_version[1]}
+_v_b=${_version[2]}
+_update=${_version[3]}
+_sp='cluster_edition'
+_icc_ver='19.0.5'
+_vtune_ver='2019.6.0.602217'
+_inspector_ver='2019.5.0.602103'
+_advisor_ver='2019.5.0.602216'
+_dir_nr=15809
+_psxe_dir="parallel_studio_xe_${_year}${_update:+_update${_update}}_${_sp}"
+archs="x86_64"
+wrksrc="${_psxe_dir}"
+depends="bash gcc hicolor-icon-theme desktop-file-utils"
+short_desc="Intel C++ C and FORTRAN compiler"
+maintainer="Joseph Benden <joe@benden.us>"
+license="custom:Proprietary"
+homepage="https://software.intel.com/en-us/parallel-studio-xe"
+distfiles="http://registrationcenter-download.intel.com/akdlm/irc_nas/tec/${_dir_nr}/${_psxe_dir}.tgz"
+checksum=c03421de616bd4e640ed25ce4103ec9c5c85768a940a5cb5bd1e97b45be33904
+repository="nonfree"
+restricted=yes
+
+build_options="nodocs staticlibs"
+build_options_default="nodocs"
+
+lib32disabled=yes
+nodebug=yes
+nopie=yes
+nostrip=yes
+# NOTE(jbenden): This variable fails xlint; need to patch it if accepted.
+skip_post_install_hooks="02-remove-libtool-archives 02-remove-perl-files 02-remove-python-bytecode-files"
+
+if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+	_i_arch='intel64'
+	_bin_dir='bin64'
+	_not_arch='ia32'
+else
+	_i_arch='ia32'
+	_bin_dir='bin32'
+	_not_arch='intel64'
+fi
+
+extract_rpm() {
+	# filter out rpms for incompatible arch
+	local extract=true
+	if ! [[ "$1" =~ .noarch.rpm$ ]]; then
+		if [[ "$1" =~ (-32bit.+\.x86_64|\.i486)\.rpm$ ]]; then
+			if [[ "$XBPS_TARGET_MACHINE" != 'i686' ]]; then
+				extract=false
+			fi
+		else
+			if [[ "$XBPS_TARGET_MACHINE" == 'i686' ]]; then
+				extract=false
+			fi
+		fi
+	fi
+	if [ "$extract" = true ]; then
+		msg_normal "  ${1##*/}\n"
+		bsdtar -xf $1 -C $2
+	else
+		msg_normal "skipped ${1##*/}\n"
+	fi
+}
+
+extract_rpms() {
+	# select binary files of specific arch
+	local rpm_dir=""
+	if [ -z "$3" ]; then
+		rpm_dir="${_rpm_dir}"
+	else
+		rpm_dir="$3"
+	fi
+	for rpm_file in ${rpm_dir}/$1 ; do
+		extract_rpm ${rpm_file} $2
+	done
+}
+
+set_build_vars() {
+	_composer_xe_dir="compilers_and_libraries_${_year}.${_v_a}.${_v_b}"
+	_rpm_dir=${wrksrc}/rpm
+	_xe_build_dir=${wrksrc}/cxe_build
+	_base_dir=$(realpath ${wrksrc}/..)
+	_man_dir=${_xe_build_dir}/usr/share/man/man1
+}
+
+do_install() {
+	set_build_vars
+
+	# clean build directories
+	[ -d ${_xe_build_dir} ] && rm -fr ${_xe_build_dir}
+	mkdir -p ${_xe_build_dir}
+
+	extract_rpms 'intel-parallel-studio-*.rpm' ${_xe_build_dir}
+	extract_rpms 'intel-psxe-*.rpm' ${_xe_build_dir}
+
+	vlicense ${wrksrc}/license.txt
+
+	mv ${_xe_build_dir}/opt ${PKGDESTDIR}
+}
+
+intel-common-libs_package() {
+	short_desc="Intel Common Libraries $_icc_ver"
+	shlib_provides="libintlc.so.5 libcilkrts.so.5 libpdbx.so.5
+		libimf.so libsvml.so libirng.so libchkp.so"
+	nostrip=yes
+
+	pkg_install() {
+		set_build_vars
+
+		install -Dm644 ${FILESDIR}/intel-common-libs.conf \
+			${PKGDESTDIR}/etc/ld.so.conf.d/intel-common-libs.conf
+
+		extract_rpms 'intel-comp-ps-ss-bec*.rpm' ${_xe_build_dir}
+		( cd ${_xe_build_dir}/opt/intel \
+			&& ln -snf ${_composer_xe_dir}/linux/compiler/lib/${_i_arch}_lin \
+				lib )
+
+		mv ${_xe_build_dir}/opt ${PKGDESTDIR}
+	}
+}
+
+intel-openmp_package() {
+	short_desc="Intel OpenMP Implementation ${_icc_ver}"
+	shlib_provides="libiomp5.so libiompstubs5.so"
+	nostrip=yes
+
+	pkg_install() {
+		set_build_vars
+
+		extract_rpms 'intel-openmp*.rpm' ${_xe_build_dir}
+
+		mv ${_xe_build_dir}/opt ${PKGDESTDIR}
+	}
+}
+
+intel-compiler-base_package() {
+	short_desc="Intel C/C++ $_icc_ver"
+	shlib_provides="libcilkrts.so.5 liboffload.so.5
+		libioffload_host.so.5 libioffload_target.so.5"
+	nostrip=yes
+	allow_unknown_shlibs=yes
+
+	pkg_install() {
+		set_build_vars
+
+		mkdir -p ${_xe_build_dir}
+		cd ${_xe_build_dir}
+		mkdir -p ./opt
+		mkdir -p ./etc/profile.d
+		mkdir -p ${_man_dir}
+
+		sed "s/<arch>/${_i_arch}/" \
+			< ${FILESDIR}/intel_compilers.sh \
+			> ${_xe_build_dir}/etc/profile.d/intel_compilers.sh
+		chmod a+x ${_xe_build_dir}/etc/profile.d/intel_compilers.sh
+
+		extract_rpms 'intel-icc*.rpm' ${_xe_build_dir}
+		extract_rpms 'intel-c-comp-*.rpm' ${_xe_build_dir}
+		for rpm_file in \
+			$(find ${_rpm_dir} -name 'intel-comp-*.rpm' \
+				! -name 'intel-comp-ps-ss-bec-*.rpm' -print) ; do
+			extract_rpm $rpm_file ${_xe_build_dir}
+		done
+
+		cd ./opt/intel/${_composer_xe_dir}/linux/bin
+
+		rm *.csh
+
+		for f in *.sh ; do
+			sed -i 's/<PRODDIR>/\/opt\/intel/g' $f
+			sed -i \
+				"s/<INSTALLDIR>/\/opt\/intel\/${_composer_xe_dir}\/linux/g" \
+				$f
+		done
+
+		mv ${_xe_build_dir}/opt/intel/documentation_${_year}/en/man/common/man1/*.1 ${_man_dir}
+		rm -rf ${_xe_build_dir}/opt/intel/documentation_${_year}/en/man
+
+		cd ${_xe_build_dir}/opt/intel/${_composer_xe_dir}/linux
+		$(vopt_if nodocs 'rm -fr ./documentation ./Documentation ./Samples ./examples')
+		$(vopt_if nodocs "rm -fr ${_xe_build_dir}/opt/intel/documentation_${_year}")
+
+		mv ${_xe_build_dir}/opt ${PKGDESTDIR}/
+		mv ${_xe_build_dir}/etc ${PKGDESTDIR}/
+		mv ${_xe_build_dir}/usr ${PKGDESTDIR}/
+
+		cd ${PKGDESTDIR}/opt/intel
+		ln -s ./${_composer_xe_dir} composerxe
+		ln -s ./${_composer_xe_dir}/linux/bin/${_i_arch} bin
+		ln -s ./${_composer_xe_dir}/linux/pkg_bin pkg_bin
+	}
+}
+
+intel-mpi_package() {
+	short_desc="Intel MPI library"
+	shlib_provides="libfabric.so.1 libmpi.so.12 libmpicxx.so.12
+		libmpijava.so.1 libmpifort.so.12"
+	nostrip=yes
+
+	pkg_install() {
+		set_build_vars
+
+		mkdir -p ${_xe_build_dir}
+		cd ${_xe_build_dir}
+		mkdir -p ./opt
+		mkdir -p ./bin
+		mkdir -p ./etc/ld.so.conf.d
+
+		sed "s/<arch>/${_i_arch}/" \
+			< ${FILESDIR}/intel-mpi.conf \
+			> ./etc/ld.so.conf.d/intel-mpi.conf
+
+		extract_rpms 'intel-mpi-*.rpm' ${_xe_build_dir}
+
+		cd ./opt/intel/${_composer_xe_dir}/linux/mpi/${_i_arch}/bin
+		rm mpivars.csh
+
+		for i in mpi* ; do
+			sed -i "s/I_MPI_SUBSTITUTE_INSTALLDIR/\/opt\/intel\/${_composer_xe_dir}\/linux\/mpi/g" $i
+		done
+
+		chmod a+x mpivars.sh
+
+		rm -rf ${_xe_build_dir}/opt/intel/${_composer_xe_dir}/linux/mpi_${_year}
+		rm -rf ${_xe_build_dir}/opt/intel/${_composer_xe_dir}/licensing/mpi_${_year}
+		$(vopt_if nodocs 'rm -fr ./documentation ./Documentation ./Samples ./examples')
+		$(vopt_if nodocs "rm -fr ${_xe_build_dir}/opt/intel/documentation_${_year}")
+
+		# some libraries are missing, so remove problematic ones
+		rm -f ${_xe_build_dir}/opt/intel/${_composer_xe_dir}/linux/mpi/${_i_arch}/libfabric/lib/prov/libpsmx2-fi.so
+		rm -f ${_xe_build_dir}/opt/intel/${_composer_xe_dir}/linux/mpi/${_i_arch}/libfabric/lib/prov/libmlx-fi.so
+
+		mv ${_xe_build_dir}/opt ${PKGDESTDIR}
+		mv ${_xe_build_dir}/etc ${PKGDESTDIR}
+
+		ln -s ./${_composer_xe_dir}/linux/mpi/ ${PKGDESTDIR}/opt/intel/mpi
+	}
+}
+
+intel-fortran-compiler_package() {
+	short_desc="Intel Fortran compiler $_icc_ver"
+	shlib_provides="libifcoremt.so.5 libifport.so.5 libifcore.so.5"
+	nostrip=yes
+
+	pkg_install() {
+		set_build_vars
+
+		mkdir -p ${_xe_build_dir}
+		cd ${_xe_build_dir}
+		mkdir -p ./opt
+		mkdir -p ./etc/ld.so.conf.d
+		mkdir -p ${_man_dir}
+
+		sed "s/<arch>/${_i_arch}/" \
+			< ${FILESDIR}/intel-fortran.conf \
+			> ./etc/ld.so.conf.d/intel-fortran.conf
+
+		extract_rpms 'intel-ifort*.rpm' ${_xe_build_dir}
+
+		rm ./opt/intel/${_composer_xe_dir}/linux/bin/*.csh
+
+		# remove duplicate logo and .css found in intel base
+		rm ${_xe_build_dir}/opt/intel/documentation_${_year}/en/compiler_f/ps${_year}/resources/{intel_gsp_styles.css,intel_logo.png}
+
+		mv ${_xe_build_dir}/opt/intel/documentation_${_year}/en/man/common/man1/*.1 ${_man_dir}
+		rm -rf ${_xe_build_dir}/opt/intel/documentation_${_year}/en/man
+
+		cd ${_xe_build_dir}/opt/intel/${_composer_xe_dir}/linux
+		$(vopt_if nodocs 'rm -fr ./documentation ./Documentation ./Samples ./examples')
+		$(vopt_if nodocs "rm -fr ${_xe_build_dir}/opt/intel/documentation_${_year}")
+
+		rm ./compiler/include/omp_lib.f90
+		rm ./compiler/include/${_i_arch}/omp_lib.mod
+		rm ./compiler/include/${_i_arch}/omp_lib_kinds.mod
+
+		mv ${_xe_build_dir}/opt ${PKGDESTDIR}/
+		mv ${_xe_build_dir}/etc ${PKGDESTDIR}/
+		mv ${_xe_build_dir}/usr ${PKGDESTDIR}/
+	}
+}
+
+intel-ipp_package() {
+	short_desc="Intel Integrated Performance Primitives"
+	nostrip=yes
+
+	pkg_install() {
+		set_build_vars
+
+		mkdir -p ${_xe_build_dir}
+		cd ${_xe_build_dir}
+		mkdir -p ./opt
+		mkdir -p ./etc/ld.so.conf.d
+
+		sed "s/<arch>/${_i_arch}/" \
+			< ${FILESDIR}/intel-ipp.conf \
+			> ./etc/ld.so.conf.d/intel-ipp.conf
+
+		extract_rpms 'intel-ipp-*.rpm' ${_xe_build_dir}
+
+		cd ${_xe_build_dir}/opt/intel/${_composer_xe_dir}/linux/ipp/bin
+		rm ippvars.csh
+		sed -i "s/<INSTALLDIR>/\/opt\/intel\/${_composer_xe_dir}\/linux/g" ippvars.sh
+
+		cd ${_xe_build_dir}/opt/intel/${_composer_xe_dir}/linux/
+		$(vopt_if nodocs 'rm -fr ./documentation ./Documentation ./samples ./examples')
+		$(vopt_if staticlibs "rm -fr ./ipp/lib/${_i_arch}/libipp*.a")
+		$(vopt_if staticlibs "rm -fr ./ipp/lib/${_i_arch}/nonpic/libipp*.a")
+		$(vopt_if staticlibs "rmdir ./ipp/lib/${_i_arch}/nonpic/")
+
+		mv ${_xe_build_dir}/opt ${PKGDESTDIR}/
+		mv ${_xe_build_dir}/etc ${PKGDESTDIR}/
+
+		ln -s ./${_composer_xe_dir}/linux/ipp/ ${PKGDESTDIR}/opt/intel/ipp
+	}
+}
+
+intel-mkl_package() {
+	short_desc="Intel Math Kernel Library (Intel® MKL)"
+	nostrip=yes
+	conf_files=etc/intel-mkl-th.conf
+
+	pkg_install() {
+		set_build_vars
+
+		mkdir -p ${_xe_build_dir}
+		cd ${_xe_build_dir}
+		mkdir -p ./opt
+		mkdir -p ./etc/ld.so.conf.d
+		mkdir -p ./etc/profile.d
+
+		cp ${FILESDIR}/intel-mkl.sh ./etc/profile.d/
+		chmod a+x ./etc/profile.d/intel-mkl.sh
+
+		cp ${FILESDIR}/intel-mkl-th.conf ./etc/
+
+		sed "s/<arch>/${_i_arch}/" \
+			< ${FILESDIR}/intel-mkl.conf \
+			> ./etc/ld.so.conf.d/intel-mkl.conf
+
+		extract_rpms 'intel-mkl-*.rpm' ${_xe_build_dir}
+
+		cd ./opt/intel/${_composer_xe_dir}/linux/mkl
+		rm ./bin/mklvars.csh
+		sed -i "s/<INSTALLDIR>/\/opt\/intel\/${_composer_xe_dir}\/linux/g" \
+			./bin/mklvars.sh
+
+		$(vopt_if nodocs 'rm -fr ./examples ./benchmarks')
+		$(vopt_if nodocs "rm -fr ${_xe_build_dir}/opt/intel/documentation_${_year}")
+		$(vopt_if staticlibs "rm -fr ./lib/${_i_arch}/libmkl_*.a")
+		$(vopt_if staticlibs "rm -f ./lib/mic/libmkl_*.a")
+
+		mv ${_xe_build_dir}/opt ${PKGDESTDIR}/
+		mv ${_xe_build_dir}/etc ${PKGDESTDIR}/
+
+		ln -s ./${_composer_xe_dir}/linux/mkl/ \
+			${PKGDESTDIR}/opt/intel/mkl
+	}
+}
+
+intel-tbb-psxe_package() {
+	short_desc="Intel Threading Building Blocks (TBB)"
+	shlib_provides="libtbb_preview_debug.so.2 libtbbmalloc_debug.so.2
+		libtbbmalloc_proxy.so.2 libtbbmalloc_proxy_debug.so.2 libtbb.so.2
+		libtbbmalloc.so.2 libtbb_preview.so.2 libtbb_debug.so.2"
+	nostrip=yes
+
+	pkg_install() {
+		set_build_vars
+
+		mkdir -p ${_xe_build_dir}
+		cd ${_xe_build_dir}
+		mkdir -p ./opt
+		mkdir -p ./etc/ld.so.conf.d
+
+		sed "s/<arch>/${_i_arch}/" \
+			< ${FILESDIR}/intel-tbb.conf \
+			> ./etc/ld.so.conf.d/intel-tbb.conf
+		sed -i "s/<INSTALLDIR>/\/opt\/intel\/${_composer_xe_dir}/g" \
+			./etc/ld.so.conf.d/intel-tbb.conf
+
+		extract_rpms 'intel-tbb-*.rpm' ${_xe_build_dir}
+
+		cd ./opt/intel/${_composer_xe_dir}/linux
+		rm ./tbb/bin/tbbvars.csh
+		sed -i "s/SUBSTITUTE_INSTALL_DIR_HERE/\/opt\/intel\/${_composer_xe_dir}\/linux\/tbb/g" \
+			./tbb/bin/tbbvars.sh
+		chmod a+x ./tbb/bin/tbbvars.sh
+
+		$(vopt_if nodocs 'rm -fr ./documentation ./Documentation ./Samples ./examples')
+		$(vopt_if nodocs 'rm -fr ./tbb/examples')
+		$(vopt_if nodocs "rm -fr ${_xe_build_dir}/opt/intel/documentation_${_year}")
+
+		mv ${_xe_build_dir}/opt ${PKGDESTDIR}/
+		mv ${_xe_build_dir}/etc ${PKGDESTDIR}/
+
+		ln -s ./${_composer_xe_dir}/linux/tbb/ ${PKGDESTDIR}/opt/intel/tbb
+	}
+}
+
+intel-vtune-amplifier_package() {
+	short_desc="Intel VTune Amplifier $_vtune_ver"
+	depends='desktop-file-utils pangox-compat python glibc libgomp libgcc
+		libstdc++ fontconfig freetype libxcb libxkbcommon-x11 libxkbcommon
+		zlib libX11 libGL glib gtk+3 pango atk cairo gdk-pixbuf libXcomposite
+		libXcursor libXdamage libXext libXfixes libXi libXrender libXtst
+		expat libuuid libXrandr libXScrnSaver alsa-lib dbus-libs at-spi2-atk
+		libcups'
+	nostrip=yes
+	noshlibprovides=yes
+	noverifyrdeps=yes
+
+	pkg_install() {
+		set_build_vars
+
+		mkdir -p ${_xe_build_dir}
+		cd ${_xe_build_dir}
+		mkdir -p ./opt
+		mkdir -p ./etc/profile.d
+
+		sed -e "s/<arch>/${_bin_dir}/g" \
+			-e "s/<ver>/${_vtune_ver}/g" \
+			< ${FILESDIR}/intel_vtune-amplifier.sh \
+			> etc/profile.d/intel_vtune-amplifier.sh
+		chmod a+x ./etc/profile.d/intel_vtune-amplifier.sh
+
+		for rpm_file in $(find ${_rpm_dir} -name 'intel-vtune-amplifier-*.rpm' \
+			! -name "intel-vtune-amplifier-${_year}-sep-*.rpm" -print) ; do
+			extract_rpm $rpm_file ${_xe_build_dir}
+		done
+
+		cd ${_xe_build_dir}/opt/intel/vtune_amplifier_${_vtune_ver}
+		rm -fr ./uninstall ./uninstall*.sh
+		$(vopt_if nodocs 'rm -fr ./documentation ./Documentation ./Samples ./examples')
+		$(vopt_if nodocs "rm -fr ${_xe_build_dir}/opt/intel/documentation_${_year}")
+
+		rm -rf vpp/server/dist/3rdparty/vpp-python-centos
+		rm -rf vpp/server/dist/3rdparty/vpp-python-ubuntu
+		find ${_xe_build_dir}/opt/intel/vtune_amplifier_${_vtune_ver} \
+			-mindepth 1 -type d -empty -delete
+
+		mv ${_xe_build_dir}/opt ${PKGDESTDIR}/
+		mv ${_xe_build_dir}/etc ${PKGDESTDIR}/
+
+		vmkdir usr/share/applications
+		sed -e "s/<arch>/${_bin_dir}/g" \
+			-e "s/<ver>/${_vtune_ver}/g" \
+			< ${FILESDIR}/amplxe-gui.desktop \
+			> ${PKGDESTDIR}/usr/share/applications/amplxe-gui.desktop
+	}
+}
+
+intel-vtune-amplifier-dkms_package() {
+	short_desc="Intel VTune Amplifier $_vtune_ver - module source for dkms"
+	dkms_modules="intel-vtune-amplifier ${version}"
+	depends='dkms'
+	archs=noarch
+	system_groups="vtune"
+
+	pkg_install() {
+		set_build_vars
+
+		mkdir -p ${_xe_build_dir}
+		cd ${_xe_build_dir}
+		mkdir -p ./opt
+
+		for rpm_file in $(find ${_rpm_dir} \
+			-name "intel-vtune-amplifier-${_year}-sep-*.rpm" -print) ; do
+			extract_rpm $rpm_file ${_xe_build_dir}
+		done
+
+		cd ${_xe_build_dir}/opt/intel/vtune_amplifier_${_vtune_ver}
+		find ${_xe_build_dir}/opt/intel/vtune_amplifier_${_vtune_ver} \
+			-mindepth 1 -type d -empty -delete
+
+		local _moddir=${PKGDESTDIR}/usr/src/intel-vtune-amplifier-${version}
+
+		install -d ${_moddir}
+		cp -a sepdk/. ${_moddir}
+		mkdir -p ${_moddir}/patches
+		install -m644 ${FILESDIR}/Makefile-dkms \
+			${_moddir}/Makefile
+		install -m644 ${FILESDIR}/001-vtsspp.patch \
+			${_moddir}/patches/001-vtsspp.patch
+		install -m644 ${FILESDIR}/002-src-sys64.S.patch \
+			${_moddir}/patches/002-src-sys64.S.patch
+		install -m644 ${FILESDIR}/003-linux56.patch \
+			${_moddir}/patches/003-linux56.patch
+		sed "s,#MODULE_VERSION#,${version}," \
+			${FILESDIR}/intel-vtune-amplifier-dkms.dkms \
+			> ${_moddir}/dkms.conf
+		vinstall ${FILESDIR}/intel-vtune-amplifier-dkms.udev 644 \
+			usr/lib/udev/rules.d 60-intel-vtune-amplifier-dkms.rules
+		vinstall ${FILESDIR}/intel-vtune-amplifier.conf 644 \
+			usr/lib/modules-load.d
+
+		mv ${_xe_build_dir}/opt ${PKGDESTDIR}/
+	}
+}
+
+intel-advisor_package() {
+	short_desc="Intel Advisor $_advisor_ver"
+	depends='desktop-file-utils'
+	nostrip=yes
+	noshlibprovides=yes
+
+	pkg_install() {
+		set_build_vars
+
+		mkdir -p ${_xe_build_dir}
+		cd ${_xe_build_dir}
+		mkdir -p ./opt
+		mkdir -p ./etc/profile.d
+
+		sed -e "s/<arch>/${_bin_dir}/g" \
+			-e "s/<ver>/${_advisor_ver}/g" \
+			< ${FILESDIR}/intel_advisor.sh \
+			> etc/profile.d/intel_advisor.sh
+		chmod a+x etc/profile.d/intel_advisor.sh
+
+		for rpm_file in $(find ${_rpm_dir} \
+			-name 'intel-advisor-*.rpm' -print) ; do
+			extract_rpm $rpm_file ${_xe_build_dir}
+		done
+
+		cd ${_xe_build_dir}/opt/intel/advisor_${_advisor_ver}
+		rm -fr ./uninstall ./uninstall*.sh
+		find ${_xe_build_dir}/opt/intel/advisor_${_advisor_ver} \
+			-mindepth 1 -type d -empty -delete
+		$(vopt_if nodocs 'rm -fr ./documentation ./Documentation ./Samples ./examples')
+		$(vopt_if nodocs "rm -fr ${_xe_build_dir}/opt/intel/documentation_${_year}")
+
+		vmkdir usr/share
+		mv ${_xe_build_dir}/opt/intel/advisor_${_advisor_ver}/man ${PKGDESTDIR}/usr/share
+		mv ${_xe_build_dir}/opt ${PKGDESTDIR}/
+		mv ${_xe_build_dir}/etc ${PKGDESTDIR}/
+
+		vmkdir usr/share/applications
+		sed -e "s/<arch>/${_bin_dir}/g" \
+			-e "s/<ver>/${_advisor_ver}/g" \
+			< ${FILESDIR}/advixe-gui.desktop \
+			> ${PKGDESTDIR}/usr/share/applications/advixe-gui.desktop
+	}
+}
+
+intel-inspector_package() {
+	short_desc="Intel Inspector $_inspector_ver"
+	depends='desktop-file-utils'
+	nostrip=yes
+	noshlibprovides=yes
+
+	pkg_install() {
+		set_build_vars
+
+		mkdir -p ${_xe_build_dir}
+		cd ${_xe_build_dir}
+		mkdir -p ./opt
+		mkdir -p ./etc/profile.d
+
+		sed -e "s/<arch>/${_bin_dir}/g" \
+			-e "s/<ver>/${_inspector_ver}/g" \
+			< ${FILESDIR}/intel_inspector.sh \
+			> etc/profile.d/intel_inspector.sh
+		chmod a+x etc/profile.d/intel_inspector.sh
+
+		for rpm_file in $(find ${_rpm_dir} \
+			-name 'intel-inspector-*.rpm' -print) ; do
+			extract_rpm $rpm_file ${_xe_build_dir}
+		done
+
+		cd ${_xe_build_dir}/opt/intel/inspector_${_inspector_ver}
+		rm -fr ./uninstall ./uninstall*.sh
+		$(vopt_if nodocs 'rm -fr ./documentation ./Documentation ./Samples ./examples')
+		$(vopt_if nodocs "rm -fr ${_xe_build_dir}/opt/intel/documentation_${_year}")
+
+		vmkdir usr/share
+		mv ${_xe_build_dir}/opt/intel/inspector_${_inspector_ver}/man \
+			${PKGDESTDIR}/usr/share
+		mv ${_xe_build_dir}/opt ${PKGDESTDIR}/
+		mv ${_xe_build_dir}/etc ${PKGDESTDIR}/
+
+		vmkdir usr/share/applications
+		sed -e "s/<arch>/${_bin_dir}/g" \
+			-e "s/<ver>/${_inspector_ver}/g" \
+			< ${FILESDIR}/inspxe-gui.desktop \
+			> ${PKGDESTDIR}/usr/share/applications/inspxe-gui.desktop
+	}
+}

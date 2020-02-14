@@ -221,13 +221,27 @@ source_file() {
 }
 
 run_pkg_hooks() {
-    local phase="$1" hookn f
+    local phase="$1" hookn f skips j
+
+    eval skips="\$skip_${phase//\-/\_}_hooks"
 
     eval unset -f hook
     for f in ${XBPS_COMMONDIR}/hooks/${phase}/*.sh; do
         [ ! -r $f ] && continue
         hookn=${f##*/}
         hookn=${hookn%.sh}
+        for j in ${skips}; do
+            if [ "$j" = "$hookn" ]; then
+                skiphook=1
+                break
+            fi
+        done
+        if [ -n "$skiphook" ]; then
+            msg_warn "Skipping $phase hook: $hookn\n"
+            unset skiphook
+            continue
+        fi
+
         . $f
         run_func hook "$phase hook: $hookn" ${phase}_${hookn}
     done

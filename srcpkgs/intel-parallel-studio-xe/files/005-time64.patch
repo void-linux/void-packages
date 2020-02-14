@@ -1,0 +1,102 @@
+--- a/src/utility.c
++++ b/src/utility.c
+@@ -892,7 +892,11 @@ UTILITY_Driver_Log_Init (
+     void
+ )
+ {
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
+     struct timespec cur_time;
++#else
++    struct timespec64 cur_time;
++#endif
+     U32             size = sizeof(*driver_log_buffer);
+     U8              using_contiguous_physical_memory;
+     U32             bitness;
+@@ -948,7 +952,11 @@ UTILITY_Driver_Log_Init (
+     DRV_LOG_BUFFER_log_size(driver_log_buffer)            = sizeof(*driver_log_buffer);
+     DRV_LOG_BUFFER_max_nb_pri_entries(driver_log_buffer)  = DRV_LOG_MAX_NB_PRI_ENTRIES;
+     DRV_LOG_BUFFER_max_nb_aux_entries(driver_log_buffer)  = DRV_LOG_MAX_NB_AUX_ENTRIES;
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
+     getnstimeofday(&cur_time);
++#else
++    ktime_get_real_ts64(&cur_time);
++#endif
+     DRV_LOG_BUFFER_init_time(driver_log_buffer)           = cur_time.tv_sec;
+     DRV_LOG_BUFFER_disambiguator(driver_log_buffer)       = 0;
+     DRV_LOG_BUFFER_log_version(driver_log_buffer)         = DRV_LOG_VERSION;
+--- a/src/vtsspp/record.c
++++ b/src/vtsspp/record.c
+@@ -673,15 +673,27 @@ int vtss_record_configs(struct vtss_tran
+     }
+     /* generate time marker record */
+     {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
++        struct timespec64 now;
++#else
+         struct timespec now;
++#endif
+         time_marker_record_t timark;
+         timark.flagword = UEC_LEAF1 | UEC_VECTORED | UECL1_REALTSC;
+         timark.vectored = UECL1_REALTSC;
+         timark.vec_no   = 2;
+         timark.tsc      = vtss_time_real();
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
++        ktime_get_real_ts64(&now);
++#else
+         getnstimeofday(&now);
++#endif
+         /* convert global time to 100ns units */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
++        timark.utc      = div64_u64((u64)timespec64_to_ns(&now), 100ULL);
++#else
+         timark.utc      = div64_u64((u64)timespec_to_ns(&now), 100ULL);
++#endif
+         rc |= vtss_transport_record_write(trnd, &timark, sizeof(timark), NULL, 0, is_safe);
+     }
+ 
+--- a/src/vtsspp/time.h
++++ b/src/vtsspp/time.h
+@@ -59,9 +59,15 @@ static inline unsigned long long vtss_ti
+ static inline unsigned long long vtss_time_real(void)
+ {
+     if (!vtss_time_source) {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
++        struct timespec64 now;
++        ktime_get_real_ts64(&now);
++        return (unsigned long long)timespec64_to_ns(&now);
++#else
+         struct timespec now;
+         getrawmonotonic(&now); /* getnstimeofday(&now); */
+         return (unsigned long long)timespec_to_ns(&now);
++#endif
+     } else
+         return (unsigned long long)get_cycles();
+ }
+@@ -72,14 +78,27 @@ static inline void vtss_time_get_sync(un
+     unsigned long long tsc = vtss_time_cpu();
+ 
+     if (!vtss_time_source) {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
++        struct timespec64 now1, now2;
++        ktime_get_real_ts64(&now1);
++#else
+         struct timespec now1, now2;
+         getrawmonotonic(&now1);
++#endif
+         // rdtsc barrier
+         asm volatile("mfence");
+         asm volatile("lfence");
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
++        ktime_get_real_ts64(&now2);
++#else
+         getrawmonotonic(&now2);
++#endif
+         *ptsc  = (tsc + vtss_time_cpu()) / 2;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
++        *preal = (timespec64_to_ns(&now1) + timespec64_to_ns(&now2)) / 2;
++#else
+         *preal = (timespec_to_ns(&now1) + timespec_to_ns(&now2)) / 2;
++#endif
+     } else
+         *ptsc = *preal = tsc;
+ }
