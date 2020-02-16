@@ -411,7 +411,7 @@ Multiple licenses should be separated by commas, Example: `GPL-3.0-or-later, cus
 
   Empty meta-packages that don't include any files
   which thus have and require no license, should have set
-  `license="BSD-2-Clause"`.
+  `license="metapackage"`.
 
   Note: `MIT`, `BSD`, `ISC` and custom licenses
   require the license file to be supplied with the binary package.
