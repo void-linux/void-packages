@@ -292,6 +292,17 @@ get_wordsize() {
     esac
 }
 
+get_no_atomic8() {
+    local arch="${1%-*}"
+
+    case "$arch" in
+        armv5tel) echo "yes";;
+        armv6l)   echo "yes";;
+        mips*)    echo "yes";;
+        ppc)      echo "yes";;
+    esac
+}
+
 get_subpkgs() {
     local f
 
@@ -362,6 +373,8 @@ setup_pkg() {
     export XBPS_TARGET_LIBC=$(get_libc ${XBPS_TARGET_MACHINE})
     export XBPS_WORDSIZE=$(get_wordsize ${XBPS_MACHINE})
     export XBPS_TARGET_WORDSIZE=$(get_wordsize ${XBPS_TARGET_MACHINE})
+    export XBPS_NO_ATOMIC8=$(get_no_atomic8 ${XBPS_MACHINE})
+    export XBPS_TARGET_NO_ATOMIC8=$(get_no_atomic8 ${XBPS_TARGET_MACHINE})
 
     export XBPS_INSTALL_XCMD XBPS_QUERY_XCMD XBPS_RECONFIGURE_XCMD \
         XBPS_REMOVE_XCMD XBPS_RINDEX_XCMD XBPS_UHELPER_XCMD

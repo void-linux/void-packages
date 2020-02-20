@@ -33,10 +33,12 @@ multiple utilities to accomplish this task:
  - `xbps-uchroot(1)` - XBPS utility that uses `namespaces` and must be `setgid` (part of xbps).
  - `proot(1)` - utility that implements chroot/bind mounts in user space, see https://proot-me.github.io/.
 
-> NOTE: you don't need to be `root` to use `xbps-src`, use your preferred chroot style as explained
-below.
+> NOTE: `xbps-src` does not allow building as root anymore. Use one of the chroot
+methods shown above.
 
-#### xbps-uunshare(1)
+### chroot methods
+
+#### xbps-uunshare(1) (default)
 
 This utility requires these Linux kernel options:
 

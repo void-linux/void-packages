@@ -4,7 +4,7 @@ _vmaj=901
 _vmin=e
 _vrel=${_vmaj}-release${_vmin:+-}${_vmin}
 version=${_vmaj}.${_vmin}
-revision=1
+revision=3
 archs="aarch64* x86_64*"
 wrksrc="jsource-j${_vrel}"
 makedepends="libedit-devel libgomp-devel libomp-devel"
@@ -29,25 +29,36 @@ aarch64*) _jpl="raspberry";;
 esac
 
 case "${XBPS_TARGET_MACHINE}" in
-*-musl)   makedepends+=" musl-fts-devel";;
+*-musl) makedepends+=" musl-fts-devel";;
 esac
 
 
 do_configure() {
-	sed "/jversion/s@${_vmaj}@${_vrel}@
-	     /jplatform/s@unknown@${_jpl}@
-	     /jtype/s@beta@${_jtype}@
-	     /jbuilder/s@unknown@${_jbuilder}@" \
-	    jsrc/jversion-x.h > jsrc/jversion.h
+	cp jsrc/jversion-x.h jsrc/jversion.h
+	vsed -i "/jversion/s@${_vmaj}@${_vrel}@;
+	         /jplatform/s@unknown@${_jpl}@;
+	         /jtype/s@beta@${_jtype}@;
+	         /jbuilder/s@unknown@${_jbuilder}@" \
+	     jsrc/jversion.h
 
-	sed -i "/^install=./s@/usr/share/j/[0-9.]\+@${_jshare}@
-	        /^user=./s@home,userx@home,'/${_juser}'@" \
-	       jlibrary/bin/profile.ijs
+	# Remove version directory component from "~install" and "~user" paths
+	cp jlibrary/bin/profile.ijs jlibrary/bin/profile.ijs.new
+	vsed -i "/^install=./s@/usr/share/j/[0-9.]\+@${_jshare}@;
+	         /^user=./s@home,userx@home,'/${_juser}'@" \
+	     jlibrary/bin/profile.ijs.new
+
+	# The build scripts set compiler flags based on what they detect as the
+	# compiler (gcc vs clang). However, their detection scheme is fragile
+	# and breaks when using ccache. Thus we directly tell them that we are
+	# using gcc.
+	vsed -i '/^compiler/s/=.*/=gcc/' make2/build_jconsole.sh
+	vsed -i '/^compiler/s/=.*/=gcc/' make2/build_libj.sh
 }
 
 ##
 # Crossbuilds do not distinguish between AVX- and non-AVX targets, so instead
-# we build all applicable binaries.
+# we build all applicable binaries and install a wrapper script that executes
+# the correct one on the target machine.
 do_build() {
 	jplatform=${_jpl} j64x=${_jsz} make2/build_jconsole.sh
 	jplatform=${_jpl} j64x=${_jsz} make2/build_libj.sh
@@ -72,10 +83,14 @@ do_check() {
 		javx=''
 	fi
 
-	ln -srf jlibrary/bin/* bin/${_jpl}/${_jsz}${javx}/
-	ln -srf jlibrary/{addons,system,tools} bin/${_jpl}/
+	mkdir -p test/bin
+	cp -r jlibrary/addons test/bin
+	cp -r jlibrary/system test/bin
+	cp -r jlibrary/tools test/bin
+	cp -r "bin/${_jpl}/${_jsz}${javx}" test/bin
+	cp jlibrary/bin/profile.ijs "test/bin/${_jsz}${javx}"
 
-	echo 'RECHO ddall' | "bin/${_jpl}/${_jsz}${javx}/jconsole" test/tsu.ijs
+	echo 'RECHO ddall' | "test/bin/${_jsz}${javx}/jconsole" test/tsu.ijs
 }
 
 ##
@@ -98,7 +113,7 @@ else
 	exit 1
 fi
 
-${_jlib}/${_jsz}\${javx}/jconsole -jprofile "${_jetc}/profile.ijs" "\${@}"
+exec ${_jlib}/${_jsz}\${javx}/jconsole -jprofile "${_jetc}/profile.ijs" "\${@}"
 JC
 }
 
@@ -112,7 +127,7 @@ do_install() {
 
 	vmkdir "${_jetc}" 0755
 	vinstall "${FILESDIR}/profilex_template.ijs" 644 "${_jetc}"
-	vinstall "jlibrary/bin/profile.ijs" 644 "${_jetc}"
+	vinstall "jlibrary/bin/profile.ijs.new" 644 "${_jetc}" profile.ijs
 
 	_jconsole_wrapper_script >bin/jc.sh
 	vbin "bin/jc.sh" jc

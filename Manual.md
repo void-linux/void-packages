@@ -369,6 +369,8 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_WORDSIZE` The machine's word size in bits (32 or 64).
 
+- `XBPS_NO_ATOMIC8` The machine lacks native 64-bit atomics (needs libatomic emulation).
+
 - `XBPS_SRCDISTDIR` Full path to where the `source distfiles` are stored, i.e `$XBPS_HOSTDIR/sources`.
 
 - `XBPS_SRCPKGDIR` Full path to the `srcpkgs` directory.
@@ -380,6 +382,8 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 - `XBPS_TARGET_LIBC` The target machine's C library ("glibc" or "musl").
 
 - `XBPS_TARGET_WORDSIZE` The target machine's word size in bits (32 or 64).
+
+- `XBPS_TARGET_NO_ATOMIC8` The target machine lacks native 64-bit atomics (needs libatomic emulation).
 
 - `XBPS_FETCH_CMD` The utility to fetch files from `ftp`, `http` of `https` servers.
 
@@ -502,7 +506,7 @@ For tarballs you can find the contents checksum by using the command
 `tar xf <tarball.ext> --to-stdout | sha256sum`.
 
 - `wrksrc` The directory name where the package sources are extracted, by default
-set to `${pkgname}-${version}`.
+set to `${pkgname}-${version}`. If the top level directory of a package's `distfile` is different from the default, `wrksrc` must be set to the top level directory name inside the archive.
 
 - `build_wrksrc` A directory relative to `${wrksrc}` that will be used when building the package.
 
@@ -896,8 +900,7 @@ Additional install arguments can be specified via `make_install_args`.
 - `perl-module` For packages that use the Perl
 [ExtUtils::MakeMaker](http://perldoc.perl.org/ExtUtils/MakeMaker.html) build method.
 
-- `perl6-dist` For packages that use the Rakudo Perl 6
-`perl6-install-dist` build method with rakudo.
+- `raku-dist` For packages that use the Raku `raku-install-dist` build method with rakudo.
 
 - `waf3` For packages that use the Python3 `waf` build method with python3.
 

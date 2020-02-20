@@ -198,7 +198,7 @@ try_mirrors() {
 
 hook() {
 	local srcdir="$XBPS_SRCDISTDIR/$pkgname-$version"
-	local dfcount=0 dfgood=0 errors=0
+	local dfcount=0 dfgood=0 errors=0 max_retries
 
 	if [ ! -d "$srcdir" ]; then
 		mkdir -p -m775 "$srcdir"
@@ -266,10 +266,21 @@ hook() {
 			try_mirrors $curfile $distfile $dfcount $pkgname-$version $f
 		fi
 		# If distfile does not exist, download it from the original location.
-		if [ ! -f "$distfile" ]; then
-			msg_normal "$pkgver: fetching distfile '$curfile'...\n"
-			flock "${distfile}.part" $fetch_cmd "$f"
+		if [[ "$FTP_RETRIES" && "${f}" =~ ^ftp:// ]]; then
+			max_retries="$FTP_RETRIES"
+		else
+			max_retries=1
 		fi
+		for retry in $(seq 1 1 $max_retries); do
+			if [ ! -f "$distfile" ]; then
+				if [ "$retry" == 1 ]; then
+					msg_normal "$pkgver: fetching distfile '$curfile'...\n"
+				else
+					msg_normal "$pkgver: fetch attempt $retry of $max_retries...\n"
+				fi
+				flock "${distfile}.part" $fetch_cmd "$f"
+			fi
+		done
 		if [ ! -f "$distfile" ]; then
 			msg_error "$pkgver: failed to fetch $curfile.\n"
 		fi

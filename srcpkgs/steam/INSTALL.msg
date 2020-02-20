@@ -1,9 +1,13 @@
-Steam on x86_64 requires support for OpenGL in 32bits mode, install any
-of the following packages for your hardware:
+Steam on x86_64 requires support for OpenGL/Vulkan in 32bits mode,
+the 32bit packages are available in the `multilib` repository.
 
-Generic:
 
-	- libgcc-32bit libstdc++-32bit libglvnd-32bit
+	# xbps-install -Syv void-repo-multilib{,-nonfree}
+	# xbps-install -S
+
+Generic (for all systems):
+
+	- libgcc-32bit libstdc++-32bit libdrm-32bit libglvnd-32bit
 
 For users of the open source drivers:
 
@@ -15,10 +19,6 @@ For users of the proprietary NVIDIA driver:
 	- nvidia390-libs-32bit (latest previous package)
 	- nvidia340-libs-32bit (latest package for old GPUs)
 
-Do not forget to enable the `multilib` and `multilib/nonfree` repositories
-in xbps, i.e:
+For mesa users this would result in:
 
-	# xbps-install -Syv void-repo-multilib{,-nonfree}
-	# xbps-install -S
-
-to install any of those packages mentioned above.
+	# xbps-install -Syv libgcc-32bit libstdc++-32bit libdrm-32bit libglvnd-32bit mesa-dri-32bit
