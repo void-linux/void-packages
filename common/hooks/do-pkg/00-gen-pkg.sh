@@ -54,6 +54,9 @@ genpkg() {
 	local _alternatives="$(echo $alternatives)"
 	local _tags="$(echo $tags)"
 	local _changelog="$(echo $changelog)"
+	local _comptype_pkg="XBPS_PKG_COMPTYPE_${pkgname//[^A-Za-z0-9_]/_}"
+	_comptype_pkg="${!_comptype_pkg}"
+	local _compression="${_comptype_pkg:-${XBPS_PKG_COMPTYPE:-xz}}"
 
 	msg_normal "Creating $binpkg for repository $pkgdir ...\n"
 
@@ -82,7 +85,7 @@ genpkg() {
 		--maintainer "${maintainer}" \
 		--desc "${desc}" \
 		--pkgver "${pkgver}" \
-		--compression ${XBPS_PKG_COMPTYPE:=xz} \
+		--compression ${_compression} \
 		--quiet \
 		${PKGDESTDIR}
 	rval=$?
