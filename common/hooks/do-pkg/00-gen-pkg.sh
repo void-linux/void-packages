@@ -76,13 +76,13 @@ genpkg() {
 		${_preserve:+--preserve} \
 		${tags:+--tags "${tags}"} \
 		${_changelog:+--changelog "${_changelog}"} \
+		${XBPS_PKG_COMPTYPE:+--compression $XBPS_PKG_COMPTYPE} \
 		--architecture ${arch} \
 		--homepage "${homepage}" \
 		--license "${license}" \
 		--maintainer "${maintainer}" \
 		--desc "${desc}" \
 		--pkgver "${pkgver}" \
-		--compression ${XBPS_PKG_COMPTYPE:=xz} \
 		--quiet \
 		${PKGDESTDIR}
 	rval=$?
