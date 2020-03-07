@@ -1,0 +1,110 @@
+From 58e8c793d0e43150a6452e971a32d7407a8a7401 Mon Sep 17 00:00:00 2001
+From: Tim Northover <tnorthover@apple.com>
+Date: Mon, 30 Sep 2019 07:46:52 +0000
+Subject: [PATCH] Revert "[SCEV] add no wrap flag for SCEVAddExpr."
+
+This reverts r366419 because the analysis performed is within the context of
+the loop and it's only valid to add wrapping flags to "global" expressions if
+they're always correct.
+
+llvm-svn: 373184
+---
+ llvm/lib/Analysis/ScalarEvolution.cpp              | 2 +-
+ llvm/test/Analysis/ScalarEvolution/limit-depth.ll  | 2 +-
+ llvm/test/Analysis/ScalarEvolution/nsw.ll          | 2 +-
+ llvm/test/Analysis/ScalarEvolution/trip-count12.ll | 2 +-
+ llvm/test/Analysis/ScalarEvolution/trip-count9.ll  | 8 ++++----
+ 5 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/llvm/lib/Analysis/ScalarEvolution.cpp b/llvm/lib/Analysis/ScalarEvolution.cpp
+index 354ae05bb841..c29fc5dbccfb 100644
+--- llvm/lib/Analysis/ScalarEvolution.cpp
++++ llvm/lib/Analysis/ScalarEvolution.cpp
+@@ -4992,7 +4992,7 @@ const SCEV *ScalarEvolution::createSimpleAffineAddRec(PHINode *PN,
+   // overflow.
+   if (auto *BEInst = dyn_cast<Instruction>(BEValueV))
+     if (isLoopInvariant(Accum, L) && isAddRecNeverPoison(BEInst, L))
+-      (void)getAddRecExpr(getAddExpr(StartVal, Accum, Flags), Accum, L, Flags);
++      (void)getAddRecExpr(getAddExpr(StartVal, Accum), Accum, L, Flags);
+ 
+   return PHISCEV;
+ }
+diff --git a/llvm/test/Analysis/ScalarEvolution/limit-depth.ll b/llvm/test/Analysis/ScalarEvolution/limit-depth.ll
+index db68a4f84c91..6fdf8c5df974 100644
+--- llvm/test/Analysis/ScalarEvolution/limit-depth.ll
++++ llvm/test/Analysis/ScalarEvolution/limit-depth.ll
+@@ -46,7 +46,7 @@ define void @test_mul(i32 %a, i32 %b, i32 %c, i32 %d, i32 %e, i32 %f) {
+ define void @test_sext(i32 %a, i32 %b, i32 %c, i32 %d, i32 %e, i32 %f) {
+ ; CHECK-LABEL: @test_sext
+ ; CHECK:        %se2 = sext i64 %iv2.inc to i128
+-; CHECK-NEXT:   -->  {(1 + (sext i64 {(sext i32 (1 + %a)<nsw> to i64),+,1}<nsw><%loop> to i128))<nsw>,+,1}<nsw><%loop2>
++; CHECK-NEXT:   -->  {(1 + (sext i64 {(sext i32 (1 + %a) to i64),+,1}<nsw><%loop> to i128))<nsw>,+,1}<nsw><%loop2>
+ entry:
+   br label %loop
+ 
+diff --git a/llvm/test/Analysis/ScalarEvolution/nsw.ll b/llvm/test/Analysis/ScalarEvolution/nsw.ll
+index 69427368625d..ca24f9d4a04b 100644
+--- llvm/test/Analysis/ScalarEvolution/nsw.ll
++++ llvm/test/Analysis/ScalarEvolution/nsw.ll
+@@ -163,7 +163,7 @@ bb5:                                              ; preds = %bb2
+ declare void @f(i32)
+ 
+ ; CHECK-LABEL: nswnowrap
+-; CHECK: --> {(1 + %v)<nsw>,+,1}<nsw><%for.body>{{ U: [^ ]+ S: [^ ]+}}{{ *}}Exits: (2 + %v)
++; CHECK: --> {(1 + %v)<nsw>,+,1}<nsw><%for.body>{{ U: [^ ]+ S: [^ ]+}}{{ *}}Exits: (1 + ((1 + %v)<nsw> smax %v))
+ define void @nswnowrap(i32 %v, i32* %buf) {
+ entry:
+   %add = add nsw i32 %v, 1
+diff --git a/llvm/test/Analysis/ScalarEvolution/trip-count12.ll b/llvm/test/Analysis/ScalarEvolution/trip-count12.ll
+index 5e7d72d5e4f3..d0086ee2e6ac 100644
+--- llvm/test/Analysis/ScalarEvolution/trip-count12.ll
++++ llvm/test/Analysis/ScalarEvolution/trip-count12.ll
+@@ -1,7 +1,7 @@
+ ; RUN: opt < %s -analyze -scalar-evolution | FileCheck %s
+ 
+ ; CHECK: Determining loop execution counts for: @test
+-; CHECK: Loop %for.body: backedge-taken count is ((-2 + %len)<nsw> /u 2)
++; CHECK: Loop %for.body: backedge-taken count is ((-2 + %len) /u 2)
+ ; CHECK: Loop %for.body: max backedge-taken count is 1073741823
+ 
+ define zeroext i16 @test(i16* nocapture %p, i32 %len) nounwind readonly {
+diff --git a/llvm/test/Analysis/ScalarEvolution/trip-count9.ll b/llvm/test/Analysis/ScalarEvolution/trip-count9.ll
+index c0a1d12fa00e..9a080b34743f 100644
+--- llvm/test/Analysis/ScalarEvolution/trip-count9.ll
++++ llvm/test/Analysis/ScalarEvolution/trip-count9.ll
+@@ -179,7 +179,7 @@ exit:
+ }
+ 
+ ; CHECK: Determining loop execution counts for: @nsw_startx
+-; CHECK: Loop %loop: backedge-taken count is (-1 + (-1 * %x) + ((1 + %x)<nsw> smax %n))
++; CHECK: Loop %loop: backedge-taken count is (-1 + (-1 * %x) + ((1 + %x) smax %n))
+ ; CHECK: Loop %loop: max backedge-taken count is -1
+ define void @nsw_startx(i4 %n, i4 %x) {
+ entry:
+@@ -195,7 +195,7 @@ exit:
+ }
+ 
+ ; CHECK: Determining loop execution counts for: @nsw_startx_step2
+-; CHECK: Loop %loop: backedge-taken count is ((-1 + (-1 * %x) + ((2 + %x)<nsw> smax %n)) /u 2)
++; CHECK: Loop %loop: backedge-taken count is ((-1 + (-1 * %x) + ((2 + %x) smax %n)) /u 2)
+ ; CHECK: Loop %loop: max backedge-taken count is 7
+ define void @nsw_startx_step2(i4 %n, i4 %x) {
+ entry:
+@@ -381,7 +381,7 @@ exit:
+ }
+ 
+ ; CHECK: Determining loop execution counts for: @even_nsw_startx
+-; CHECK: Loop %loop: backedge-taken count is (-1 + (-1 * %x) + ((1 + %x)<nsw> smax (2 * %n)))
++; CHECK: Loop %loop: backedge-taken count is (-1 + (-1 * %x) + ((1 + %x) smax (2 * %n)))
+ ; CHECK: Loop %loop: max backedge-taken count is -2
+ define void @even_nsw_startx(i4 %n, i4 %x) {
+ entry:
+@@ -398,7 +398,7 @@ exit:
+ }
+ 
+ ; CHECK: Determining loop execution counts for: @even_nsw_startx_step2
+-; CHECK: Loop %loop: backedge-taken count is ((-1 + (-1 * %x) + ((2 + %x)<nsw> smax (2 * %n))) /u 2)
++; CHECK: Loop %loop: backedge-taken count is ((-1 + (-1 * %x) + ((2 + %x) smax (2 * %n))) /u 2)
+ ; CHECK: Loop %loop: max backedge-taken count is 7
+ define void @even_nsw_startx_step2(i4 %n, i4 %x) {
+ entry:

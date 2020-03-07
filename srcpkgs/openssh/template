@@ -1,7 +1,7 @@
 # Template file for 'openssh'
 pkgname=openssh
-version=8.1p1
-revision=1
+version=8.2p1
+revision=2
 build_style=gnu-configure
 configure_args="--datadir=/usr/share/openssh
  --sysconfdir=/etc/ssh --without-selinux --with-privsep-user=nobody
@@ -12,23 +12,29 @@ configure_args="--datadir=/usr/share/openssh
  $(vopt_with ldns ldns=$XBPS_CROSS_BASE/usr)
  $(vopt_if ssl --with-ssl-engine --without-openssl)
  $(vopt_if gssapi --with-kerberos5=$XBPS_CROSS_BASE/usr --without-kerberos5)
+ $(vopt_if fido2 --with-security-key-builtin)
  LD=$CC ac_cv_header_sys_cdefs_h=false"
 hostmakedepends="autoconf"
 makedepends="libedit-devel pam-devel zlib-devel
  $(vopt_if gssapi 'mit-krb5-devel') $(vopt_if ldns 'libldns-devel')
- $(vopt_if ssl 'libressl-devel')"
+ $(vopt_if ssl 'libressl-devel') $(vopt_if fido2 'libfido2-devel')"
 short_desc="OpenSSH free Secure Shell (SSH) client and server implementation"
-maintainer="Enno Boland <gottox@voidlinux.org>"
+maintainer="Leah Neukirchen <leah@vuxu.org>"
 license="BSD-2-Clause, ISC"
 homepage="https://www.openssh.com"
 distfiles="https://ftp.openbsd.org/pub/OpenBSD/OpenSSH/portable/${pkgname}-${version}.tar.gz"
-checksum=02f5dbef3835d0753556f973cd57b4c19b6b1f6cd24c03445e23ac77ca1b93ff
+checksum=43925151e6cf6cee1450190c0e9af4dc36b41c12737619edff8bcebdff64e671
 conf_files="/etc/ssh/moduli /etc/ssh/ssh_config /etc/ssh/sshd_config /etc/pam.d/sshd"
 make_dirs="/var/chroot/ssh 0755 root root"
 
 # Package build options
-build_options="ldns ssl gssapi"
-build_options_default="ldns ssl"
+build_options="fido2 gssapi ldns ssl"
+build_options_default="fido2 ldns ssl"
+desc_option_fido2="Enable support for FIDO2 USB tokens"
+
+if [ "$build_option_fido2" ]; then
+	subpackages="openssh-sk-helper"
+fi
 
 CFLAGS="-Wno-format-truncation -Wno-stringop-truncation"
 
@@ -53,13 +59,21 @@ post_install() {
 	vman contrib/ssh-copy-id.1
 	vlicense LICENCE
 
-	sed -i \
+	# configure to use PAM
+	vsed -i ${DESTDIR}/etc/ssh/sshd_config \
 		-e 's|^#\(UsePAM\) no|\1 yes|g' \
-		-e 's|^#\(PermitRootLogin\) .*|\1 yes|g' \
 		-e 's|^#\(ChallengeResponseAuthentication\) yes|\1 no|g' \
-		-e 's|^#\(PrintMotd\) yes|\1 no|g' \
-		${DESTDIR}/etc/ssh/sshd_config
+		-e 's|^#\(PrintMotd\) yes|\1 no|g'
 
 	vinstall ${FILESDIR}/sshd.pam 644 etc/pam.d sshd
 	vsv sshd
+}
+
+openssh-sk-helper_package() {
+	short_desc+=" - client support for FIDO authenticators"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/libexec/ssh-sk-helper
+		vmove usr/share/man/man8/ssh-sk-helper.8
+	}
 }

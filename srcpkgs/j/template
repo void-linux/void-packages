@@ -1,16 +1,19 @@
 # Template file for 'j'
 pkgname=j
-version=807
-revision=1
+_vmaj=901
+_vmin=e
+_vrel=${_vmaj}-release${_vmin:+-}${_vmin}
+version=${_vmaj}.${_vmin}
+revision=3
 archs="aarch64* x86_64*"
-wrksrc="jsource-j${version}-release"
+wrksrc="jsource-j${_vrel}"
 makedepends="libedit-devel libgomp-devel libomp-devel"
 short_desc="Modern, high-performance, ASCII-based successor to APL"
 maintainer="B. Wilson <x@wilsonb.com>"
 license="GPL-3.0-or-later"
 homepage="https://jsoftware.com/"
-distfiles="https://github.com/jsoftware/jsource/archive/j${version}-release.tar.gz"
-checksum=324ff0b046c9f7f24f18a72fa8a4253ad54c99a48c397fd2c724392f5e097d7f
+distfiles="https://github.com/jsoftware/jsource/archive/j${_vrel}.tar.gz"
+checksum=23d1cac75ae8426d4e301b178fac1f29e85d7a0c80cefe4740c104d9c1eeab7a
 
 _jsz="j${XBPS_TARGET_WORDSIZE}"
 _jtype="release"
@@ -21,97 +24,111 @@ _jetc="/etc/j"
 _juser=".j"
 
 case "${XBPS_TARGET_MACHINE}" in
-aarch64*) _jplatform="raspberry";;
-*)        _jplatform="linux";;
+aarch64*) _jpl="raspberry";;
+*)        _jpl="linux";;
 esac
 
 case "${XBPS_TARGET_MACHINE}" in
-*-musl)   makedepends+=" musl-fts-devel";;
+*-musl) makedepends+=" musl-fts-devel";;
 esac
 
 
-##
-# Crossbuilds do not distinguish between AVX- and non-AVX-enabled targets, so
-# here we build libraries for both cases.
-do_build() {
-	sed "/jplatform/s@unknown@${_jplatform}@
-	     /jtype/s@beta@${_jtype}@
-	     /jbuilder/s@unknown@${_jbuilder}@" \
-		jsrc/jversion-x.h > jsrc/jversion.h
+do_configure() {
+	cp jsrc/jversion-x.h jsrc/jversion.h
+	vsed -i "/jversion/s@${_vmaj}@${_vrel}@;
+	         /jplatform/s@unknown@${_jpl}@;
+	         /jtype/s@beta@${_jtype}@;
+	         /jbuilder/s@unknown@${_jbuilder}@" \
+	     jsrc/jversion.h
 
-	sed -i "/jgit=/s@~/git/jsource@${wrksrc}@
-	        /jbld=/s@~/jbld@${wrksrc}/build@
-	        /jplatform=/s@=.*\$@=${_jplatform}@
-	        /CC=/s@clang@${CC}@" \
-		make/jvars.sh
+	# Remove version directory component from "~install" and "~user" paths
+	cp jlibrary/bin/profile.ijs jlibrary/bin/profile.ijs.new
+	vsed -i "/^install=./s@/usr/share/j/[0-9.]\+@${_jshare}@;
+	         /^user=./s@home,userx@home,'/${_juser}'@" \
+	     jlibrary/bin/profile.ijs.new
 
-	sed -i "/^install=./s@/usr/share/j/[0-9.]\+@${_jshare}@
-	        /^user=./s@home,userx@home,'/${_juser}'@" \
-		jlibrary/bin/profile.ijs
-
-	mkdir -p build/${_jsz}/bin
-	. make/jvars.sh
-
-	make/build_jconsole.sh ${_jsz}
-	make/build_libj.sh ${_jsz}
-	make/build_libj.sh ${_jsz}nonavx
+	# The build scripts set compiler flags based on what they detect as the
+	# compiler (gcc vs clang). However, their detection scheme is fragile
+	# and breaks when using ccache. Thus we directly tell them that we are
+	# using gcc.
+	vsed -i '/^compiler/s/=.*/=gcc/' make2/build_jconsole.sh
+	vsed -i '/^compiler/s/=.*/=gcc/' make2/build_libj.sh
 }
 
-_runtestdir() {
-	dir=${1}
-	jc=${2}
-	libj=${3}
+##
+# Crossbuilds do not distinguish between AVX- and non-AVX targets, so instead
+# we build all applicable binaries and install a wrapper script that executes
+# the correct one on the target machine.
+do_build() {
+	jplatform=${_jpl} j64x=${_jsz} make2/build_jconsole.sh
+	jplatform=${_jpl} j64x=${_jsz} make2/build_libj.sh
 
-	for f in "${dir}"/*.ijs; do
-		printf '%s(%s): ' "${f}" "${libj}"
-		if ${jc} -lib "${libj}" <"${f}" >/dev/null; then
-			echo "PASS"
-		else
-			echo "FAIL"
-			return 1
-		fi
-	done
+	if [ "${_jsz}" = 'j64' ]; then
+		jplatform=${_jpl} j64x=${_jsz}avx make2/build_jconsole.sh
+		jplatform=${_jpl} j64x=${_jsz}avx make2/build_libj.sh
+
+		jplatform=${_jpl} j64x=${_jsz}avx2 make2/build_jconsole.sh
+		jplatform=${_jpl} j64x=${_jsz}avx2 make2/build_libj.sh
+	fi
 }
 
 do_check() {
-	ln -srf jlibrary/bin/* build/${_jsz}/bin/
-	ln -srf jlibrary/{addons,system,tools} build/${_jsz}/
-
-	# Test AVX-enabled library if all host CPUs have AVX flag set
-	if sed -n '/^flags/{s/\<avx\>//;t;q1}' /proc/cpuinfo; then
-		_runtestdir ./test "build/${_jsz}/bin/jconsole" "libj.so"
+	if [ -d "${_jlib}/j64avx2" ] \
+	   && sed -n '/^flags/{s/\<avx2\>//;t;q1}' /proc/cpuinfo; then
+		javx='avx2'
+	elif [ -d "${_jlib}/j64avx" ] \
+	     && sed -n '/^flags/{s/\<avx\>//;t;q1}' /proc/cpuinfo; then
+		javx='avx'
+	else
+		javx=''
 	fi
-	_runtestdir ./test "build/${_jsz}/bin/jconsole" "libj-nonavx.so"
+
+	mkdir -p test/bin
+	cp -r jlibrary/addons test/bin
+	cp -r jlibrary/system test/bin
+	cp -r jlibrary/tools test/bin
+	cp -r "bin/${_jpl}/${_jsz}${javx}" test/bin
+	cp jlibrary/bin/profile.ijs "test/bin/${_jsz}${javx}"
+
+	echo 'RECHO ddall' | "test/bin/${_jsz}${javx}/jconsole" test/tsu.ijs
+}
+
+##
+# Script to detect AVX/AVX2 support and launch appropriate jconsole binary
+_jconsole_wrapper_script() {
+cat <<JC
+#!/usr/bin/env sh
+
+cpu_has_avx() { sed -n '/^flags/{s/\<avx\>//;t;q1}' /proc/cpuinfo; }
+cpu_has_avx2() { sed -n '/^flags/{s/\<avx2\>//;t;q1}' /proc/cpuinfo; }
+
+if [ -d "${_jlib}/j64avx2" ] && cpu_has_avx2; then
+	javx='avx2'
+elif [ -d "${_jlib}/j64avx" ] && cpu_has_avx; then
+	javx='avx'
+elif [ -d "${_jlib}/j64" ]; then
+	javx=''
+else
+	>&2 echo "\${0}: Cannot find jconsole executable"
+	exit 1
+fi
+
+exec ${_jlib}/${_jsz}\${javx}/jconsole -jprofile "${_jetc}/profile.ijs" "\${@}"
+JC
 }
 
 do_install() {
 	vmkdir "${_jshare}" 0755
-	vcopy jlibrary/addons "${_jshare}"
 	vcopy jlibrary/system "${_jshare}"
 	vcopy jlibrary/tools "${_jshare}"
 
 	vmkdir "${_jlib}" 0755
-	vinstall "build/${_jsz}/bin/jconsole" 755 "${_jlib}"
-	vinstall "build/${_jsz}/bin/libj.so" 755 "${_jlib}"
-	if [ -f "build/${_jsz}/bin/libj-nonavx.so" ]; then
-		vinstall "build/${_jsz}/bin/libj-nonavx.so" 755 "${_jlib}"
-	fi
+	vcopy "bin/${_jpl}/*" "${_jlib}"
 
 	vmkdir "${_jetc}" 0755
 	vinstall "${FILESDIR}/profilex_template.ijs" 644 "${_jetc}"
-	vinstall "jlibrary/bin/profile.ijs" 644 "${_jetc}"
+	vinstall "jlibrary/bin/profile.ijs.new" 644 "${_jetc}" profile.ijs
 
-	cat >build/${_jsz}/bin/jc.sh <<-JC
-		#!/usr/bin/env sh
-
-		if [ -f "${_jlib}/libj-nonavx.so" ] \\
-		   && ! sed -n '/^flags/{s/\<avx\>//;t;q1}' /proc/cpuinfo; then
-		   lib='libj-nonavx.so'
-		fi
-
-		${_jlib}/jconsole -lib "${_jlib}/\${lib:-libj.so}" \\
-		                  -jprofile "${_jetc}/profile.ijs" \\
-		                  "\${@}"
-	JC
-	vbin "build/${_jsz}/bin/jc.sh" jc
+	_jconsole_wrapper_script >bin/jc.sh
+	vbin "bin/jc.sh" jc
 }

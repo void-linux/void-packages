@@ -1,9 +1,9 @@
 # Template file for 'nss'
 
-_nsprver=4.24
+_nsprver=4.25
 
 pkgname=nss
-version=3.48
+version=3.50
 revision=1
 hostmakedepends="perl"
 makedepends="nspr-devel sqlite-devel zlib-devel"
@@ -13,9 +13,11 @@ maintainer="Doan Tran Cong Danh <congdanhqx@gmail.com>"
 license="MPL-2.0"
 homepage="https://www.mozilla.org/projects/security/pki/nss"
 distfiles="${MOZILLA_SITE}/security/nss/releases/NSS_${version//\./_}_RTM/src/nss-${version}.tar.gz"
-checksum=3f9c822a86a4e3e1bfe63e2ed0f922d8b7c2e0b7cafe36774b1c627970d0f8ac
+checksum=185df319775243f5f5daa9d49b7f9cc5f2b389435be3247c3376579bee063ba7
 
 do_build() {
+	local _native_use64 _target_use64
+
 	# Respect LDFLAGS
 	vsed -e 's/\$(MKSHLIB) -o/\$(MKSHLIB) \$(LDFLAGS) -o/g' \
 		-i nss/coreconf/rules.mk
@@ -29,8 +31,17 @@ do_build() {
 	export NATIVE_CC="$BUILD_CC"
 	export NATIVE_FLAGS="$BUILD_CFLAGS"
 
-	case "$XBPS_MACHINE" in
-		aarch64*|x86_64*|ppc64*) _native_use64="USE_64=1";;
+	if [ "$XBPS_WORDSIZE" = "64" ]; then
+		_native_use64="USE_64=1"
+	fi
+	if [ "$XBPS_TARGET_WORDSIZE" = "64" ]; then
+		_target_use64="USE_64=1"
+	fi
+
+	# it's actually VSX, so disable on all BE ppc
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64le*) ;;
+		ppc*) export NSS_DISABLE_ALTIVEC=1 ;;
 	esac
 
 	cd nss
@@ -39,11 +50,20 @@ do_build() {
 
 	if [ "$CROSS_BUILD" ]; then
 		case "$XBPS_TARGET_MACHINE" in
-			aarch64*) _ARCH="aarch64"; _target_use64="USE_64=1"; CFLAGS+=" -DNS_PTR_GT_32";;
-			ppc64*) _ARCH="ppc64"; _target_use64="USE_64=1"; CFLAGS+=" -DNS_PTR_GT_32";;
+			aarch64*|ppc64*)
+				_ARCH="${XBPS_TARGET_MACHINE%-*}"
+				CFLAGS+=" -DNS_PTR_GT_32"
+				;;
+			armv7*)
+				_ARCH="arm"
+				# gcm-arm32-neon.c use mfpu=neon,
+				# force mfpu=neon for everything else.
+				CFLAGS+=" -mfpu=neon"
+				CXXFLAGS+=" -mfpu=neon"
+				;;
 			arm*) _ARCH="arm";;
 			mips*) _ARCH="mips";;
-			ppc|ppc-musl) _ARCH="ppc";;
+			ppc*) _ARCH="ppc";;
 			*) msg_error "$pkgver: unknown target machine\n";;
 		esac
 		# ... and then copy it to $wrksrc.
@@ -70,6 +90,7 @@ do_build() {
 }
 
 do_check() {
+	local _use_64
 	export LIBRUNPATH=
 	export BUILD_OPT=1
 	export NSS_USE_SYSTEM_SQLITE=1
@@ -82,9 +103,9 @@ do_check() {
 	export NSPR_INCLUDE_DIR=/usr/include/nspr
 	export NSPR_LIB_DIR=/usr/lib
 	export XCFLAGS="${CFLAGS}"
-	case "$XBPS_MACHINE" in
-		aarch64*|x86_64*|ppc64*) _use_64="USE_64=1";;
-	esac
+	if [ "$XBPS_WORDSIZE" = "64" ]; then
+		_use_64="USE_64=1"
+	fi
 	cd nss/tests
 	env $_use_64 HOST=localhost DOMSUF=localdomain ./all.sh
 }
