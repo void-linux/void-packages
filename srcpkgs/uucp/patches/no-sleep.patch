@@ -1,0 +1,65 @@
+Description: avoid sleeps
+Author: Frank Heckenbach
+Index: uucp-1.07/prott.c
+===================================================================
+--- uucp-1.07.orig/prott.c	2017-09-27 12:24:15.963165757 +0200
++++ uucp-1.07/prott.c	2017-09-27 12:24:15.959165687 +0200
+@@ -88,7 +88,7 @@
+   zTbuf[0] = 0;
+   zTbuf[1] = 0;
+   fTfile = FALSE;
+-  usysdep_sleep (2);
++  // usysdep_sleep (2);  -- why? protocol t is meant to be used over an error-free connection
+   return TRUE;
+ }
+ 
+Index: uucp-1.07/unix/pipe.c
+===================================================================
+--- uucp-1.07.orig/unix/pipe.c	2017-09-27 12:24:15.963165757 +0200
++++ uucp-1.07/unix/pipe.c	2017-09-27 12:24:15.959165687 +0200
+@@ -165,10 +165,43 @@
+   if (qsysdep->ipid >= 0)
+     {
+       if (kill (qsysdep->ipid, SIGHUP) == 0)
+-        usysdep_sleep (2);
++        {
++          #if defined (HAVE_USLEEP) && defined (HAVE_WAITPID)
++          /* Avoid wasting 4 seconds (including the SIGPIPE case below).
++             Quick and dirty work-around to avoid depending on SIGCHLD:
++             Just sleep up to 20 times 0.1s as long as the child exists. */
++          int i, status;
++          for (i = 20; i > 0; i--)
++            {
++              if (waitpid (qsysdep->ipid, &status, WNOHANG) == qsysdep->ipid)
++                {
++                  qsysdep->ipid = -1;
++                  return fret;
++                }
++              usleep (100000);
++            }
++          #else
++          usysdep_sleep (2);
++          #endif
++        }
+ #ifdef SIGPIPE
+       if (kill (qsysdep->ipid, SIGPIPE) == 0)
+-        usysdep_sleep (2);
++        {
++          #if HAVE_USLEEP
++          int i, status;
++          for (i = 20; i > 0; i--)
++            {
++              if (waitpid (qsysdep->ipid, &status, WNOHANG) == qsysdep->ipid)
++                {
++                  qsysdep->ipid = -1;
++                  return fret;
++                }
++              usleep (100000);
++            }
++          #else
++          usysdep_sleep (2);
++          #endif
++        }
+ #endif
+       if (kill (qsysdep->ipid, SIGKILL) < 0 && errno == EPERM)
+ 	{
