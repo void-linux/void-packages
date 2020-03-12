@@ -66,6 +66,7 @@ hook() {
 		*.patch)      cursufx="txt";;
 		*.diff)       cursufx="txt";;
 		*.txt)        cursufx="txt";;
+		*.sh)         cursufx="txt";;
 		*.7z)	      cursufx="7z";;
 		*.gem)	      cursufx="gem";;
 		*.crate)      cursufx="crate";;
@@ -127,7 +128,11 @@ hook() {
 			fi
 			;;
 		txt)
-			cp -f $srcdir/$curfile $extractdir
+			if [ "$create_wrksrc" ]; then
+				cp -f $srcdir/$curfile $extractdir
+			else
+				msg_error "$pkgname: ${curfile##*.} files can only be extracted when create_wrksrc is set\n"
+			fi
 			;;
 		7z)
 			if command -v 7z &>/dev/null; then

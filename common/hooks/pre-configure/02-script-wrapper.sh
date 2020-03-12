@@ -133,7 +133,7 @@ install_wrappers() {
 	for f in ${XBPS_COMMONDIR}/wrappers/*.sh; do
 		fname=${f##*/}
 		fname=${fname%.sh}
-		install -m0755 ${f} ${XBPS_WRAPPERDIR}/${fname}
+		install -p -m0755 ${f} ${XBPS_WRAPPERDIR}/${fname}
 	done
 }
 

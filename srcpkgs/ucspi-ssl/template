@@ -1,28 +1,50 @@
 # Template file for 'ucspi-ssl'
 pkgname=ucspi-ssl
-version=0.99e
-revision=3
+reverts="0.99e_3 0.99e_2 0.99e_1"
+version=0.11.3
+revision=1
 create_wrksrc=yes
 build_wrksrc="host/superscript.com/net/${pkgname}-${version}/src"
 build_style=gnu-makefile
-hostmakedepends="perl libressl-devel"
-makedepends="libressl-devel"
-depends="ucspi-tcp"
+hostmakedepends="fehQlibs libressl-devel perl"
+makedepends="fehQlibs libressl-devel perl"
+depends="ucspi-tcp6"
 short_desc="Command-line tools for building SSL client-server applications"
-maintainer="Evan Deaubl <evan@deaubl.name>"
+maintainer="Leah Neukirchen <leah@vuxu.org>"
 license="Public Domain"
 homepage="http://www.fehcom.de/ipnet/ucspi-ssl.html"
 distfiles="http://www.fehcom.de/ipnet/ucspi-ssl/ucspi-ssl-${version}.tgz"
-checksum=b246a4cdab48a0a47854892ce683caf5444096af0c2b8ccd04e5b4d604e75633
+checksum=97fd037f8fd30c5286c119dd53d6bff33c5f1074e9740a349913949a85495a61
 # ad hoc build system breaks parallel build and cross-compilation
-disable_parallel_build=yes
-nocross=yes
-export SSL_NO_VERIFY_PEER=yes
+disable_parallel_build="ad hoc build system breaks parallel build"
 
 pre_build() {
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64*) ;;
+		*) sed -i 's/-m64//g' print-ld.sh;;
+	esac
+
 	pwd >home
 	echo "${CC} ${CFLAGS}" >../conf-cc
 	echo "${CC} ${LDFLAGS}" >../conf-ld
+	echo "/etc/ssl/certs" >../conf-cadir
+	echo "/etc/ssl/certs.pem" >../conf-cafile
+	echo "/usr" >../conf-home
+
+	if [ "$CROSS_BUILD" ]; then
+		echo "${BUILD_CC} ${BUILD_CFLAGS} -c "'"$@"' >compile-host
+		echo 'main="$1"; shift; '"${BUILD_CC} ${BUILD_LDFLAGS}"'-o "$main" "$main.o" "$@" -ldnsresolv -lqlibs' >load-host
+		chmod +x compile-host load-host
+
+		sed -i -e 's/compile/&-host/g; s/load/&-host/g' choose.sh
+		sed -i -e '/auto-str/s/compile/&-host/g; /auto-str/s/load/&-host/g' Makefile
+		sed -i -e '/chkshsgr/s/compile/&-host/g; /chkshsgr/s/load/&-host/g' Makefile
+
+		mkdir -p perlprefix
+		cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Config"*.p? perlprefix
+		cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Errno.pm" perlprefix
+		export PERL5LIB=$PWD/perlprefix
+	fi
 }
 
 do_install() {
@@ -30,6 +52,7 @@ do_install() {
 	vbin sslcat
 	vbin sslclient
 	vbin sslconnect
+	vbin sslhandle
 	vbin sslperl
 	vbin sslprint
 	vbin sslserver
@@ -37,13 +60,17 @@ do_install() {
 	vman ../man/sslcat.1
 	vman ../man/sslclient.1
 	vman ../man/sslconnect.1
+	vman ../man/sslhandle.1
 	vman ../man/sslserver.1
 	vman ../man/ucspi-tls.2
 	vdoc ../doc/UCSPI-SSL
 }
 
-# Fix exec location in scripts
-post_install() {
-	sed -i 's:/builddir/.*:/usr/bin/sslclient:' \
-		${DESTDIR}/usr/bin/sslcat ${DESTDIR}/usr/bin/https@
+ucspi-ssl-devel_package() {
+	short_desc+=" - development files"
+	depends="${sourcepkg}>=${version}_${revision} libressl-devel"
+	pkg_install() {
+		vinstall ucspissl.a 0644 usr/lib
+		vinstall ucspissl.h 0644 usr/include
+	}
 }
