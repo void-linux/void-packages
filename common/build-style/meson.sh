@@ -103,11 +103,6 @@ do_configure() {
 		export PKG_CONFIG="/usr/bin/pkg-config"
 	fi
 
-	# The binutils ar cannot perform LTO on static libraries so we have to use
-	# the gcc-ar wrapper that that calls the correct plugin
-	# https://github.com/mesonbuild/meson/issues/1646
-	export AR="gcc-ar"
-
 	${meson_cmd} \
 		--prefix=/usr \
 		--libdir=/usr/lib \
