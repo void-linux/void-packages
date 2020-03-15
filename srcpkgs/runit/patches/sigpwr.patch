@@ -1,0 +1,117 @@
+Partially based on work of Dmitry Bogatov <KAction@debian.org>
+
+diff -ru runit-2.1.2/src/runit.c runit-2.1.2-patched/src/runit.c
+--- runit-2.1.2/src/runit.c	2014-08-10 18:22:35.000000000 +0000
++++ runit-2.1.2-patched/src/runit.c	2020-03-16 09:25:46.124950524 +0000
+@@ -30,6 +30,7 @@
+ int selfpipe[2];
+ int sigc =0;
+ int sigi =0;
++int sigp =0;
+ 
+ void sig_cont_handler (void) {
+   sigc++;
+@@ -39,6 +40,11 @@
+   sigi++;
+   write(selfpipe[1], "", 1);
+ }
++void sig_pwr_handler (void) {
++  sigp++;
++  write(selfpipe[1], "", 1);
++}
++
+ void sig_child_handler (void) { write(selfpipe[1], "", 1); }
+ 
+ int main (int argc, const char * const *argv, char * const *envp) {
+@@ -64,6 +70,8 @@
+   sig_block(sig_cont);
+   sig_catch(sig_cont, sig_cont_handler);
+   sig_block(sig_hangup);
++  sig_block(sig_pwr);
++  sig_catch(sig_pwr, sig_pwr_handler);
+   sig_block(sig_int);
+   sig_catch(sig_int, sig_int_handler);
+   sig_block(sig_pipe);
+@@ -127,6 +135,8 @@
+       sig_unblock(sig_cont);
+       sig_ignore(sig_cont);
+       sig_unblock(sig_hangup);
++      sig_unblock(sig_pwr);
++      sig_uncatch(sig_pwr);
+       sig_unblock(sig_int);
+       sig_uncatch(sig_int);
+       sig_unblock(sig_pipe);
+@@ -145,6 +155,7 @@
+       sig_unblock(sig_child);
+       sig_unblock(sig_cont);
+       sig_unblock(sig_int);
++      sig_unblock(sig_pwr);
+ #ifdef IOPAUSE_POLL
+       poll(&x, 1, 14000);
+ #else
+@@ -156,6 +167,7 @@
+       sig_block(sig_cont);
+       sig_block(sig_child);
+       sig_block(sig_int);
++      sig_block(sig_pwr);
+       
+       while (read(selfpipe[0], &ch, 1) == 1) {}
+       while ((child =wait_nohang(&wstat)) > 0)
+@@ -206,7 +218,7 @@
+       }
+ 
+       /* sig? */
+-      if (!sigc  && !sigi) {
++      if (!sigc && !sigi && !sigp) {
+ #ifdef DEBUG
+         strerr_warn2(WARNING, "poll: ", &strerr_sys);
+ #endif
+@@ -239,7 +251,7 @@
+         sigi =0;
+         sigc++;
+       }
+-      if (sigc && (stat(STOPIT, &s) != -1) && (s.st_mode & S_IXUSR)) {
++      if ((sigc || sigp) && (stat(STOPIT, &s) != -1) && (s.st_mode & S_IXUSR)) {
+         int i;
+         /* unlink(STOPIT); */
+         chmod(STOPIT, 0);
+@@ -281,7 +293,7 @@
+         /* enter stage 3 */
+         break;
+       }
+-      sigc =sigi =0;
++      sigc =sigi =sigp =0;
+ #ifdef DEBUG
+       strerr_warn2(WARNING, "no request.", 0);
+ #endif
+@@ -303,7 +315,7 @@
+   switch (pid) {
+   case  0:
+   case -1:
+-  if ((stat(REBOOT, &s) != -1) && (s.st_mode & S_IXUSR)) {
++  if ((!sigp) && ((stat(REBOOT, &s) != -1) && (s.st_mode & S_IXUSR))) {
+     strerr_warn2(INFO, "system reboot.", 0);
+     sync();
+     reboot_system(RB_AUTOBOOT);
+diff -ru runit-2.1.2/src/sig.c runit-2.1.2-patched/src/sig.c
+--- runit-2.1.2/src/sig.c	2014-08-10 18:22:34.000000000 +0000
++++ runit-2.1.2-patched/src/sig.c	2020-03-16 09:25:46.124950524 +0000
+@@ -10,6 +10,7 @@
+ int sig_int = SIGINT;
+ int sig_pipe = SIGPIPE;
+ int sig_term = SIGTERM;
++int sig_pwr = SIGPWR;
+ 
+ void (*sig_defaulthandler)() = SIG_DFL;
+ void (*sig_ignorehandler)() = SIG_IGN;
+diff -ru runit-2.1.2/src/sig.h runit-2.1.2-patched/src/sig.h
+--- runit-2.1.2/src/sig.h	2014-08-10 18:22:35.000000000 +0000
++++ runit-2.1.2-patched/src/sig.h	2020-03-16 09:25:46.124950524 +0000
+@@ -10,6 +10,7 @@
+ extern int sig_int;
+ extern int sig_pipe;
+ extern int sig_term;
++extern int sig_pwr;
+ 
+ extern void (*sig_defaulthandler)();
+ extern void (*sig_ignorehandler)();
