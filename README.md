@@ -15,8 +15,8 @@ for details of how to create source packages.
 ### Table of Contents
 
 - [Requirements](#requirements)
+- [Quick start](#quick-start)
 - [chroot methods](#chroot-methods)
-- [Quick setup in Void](#quick-setup)
 - [Install the bootstrap packages](#install-bootstrap)
 - [Configuration](#configuration)
 - [Directory hierarchy](#directory-hierarchy)
@@ -57,6 +57,43 @@ multiple utilities to accomplish this task:
 
 > NOTE: `xbps-src` does not allow building as root anymore. Use one of the chroot
 methods shown above.
+
+<a name="quick-start"></a>
+### Quick start
+
+Clone the `void-packages` git repository and install the bootstrap packages:
+
+```
+$ git clone git://github.com/void-linux/void-packages.git
+$ cd void-packages
+$ ./xbps-src binary-bootstrap
+```
+
+Build a package by specifying the `pkg` target and the package name:
+
+```
+$ ./xbps-src pkg <package_name>
+```
+
+Use `./xbps-src -h` to list all available targets and options.
+
+To build packages marked as 'restricted', modify `etc/conf`:
+
+```
+$ echo XBPS_ALLOW_RESTRICTED=yes >> etc/conf
+```
+
+Once built, the package will be available in `hostdir/binpkgs` or an appropriate subdirectory (e.g. `hostdir/binpkgs/nonfree`). To install the package:
+
+```
+# xbps-install --repository hostdir/binpkgs <package_name>
+```
+
+Alternatively, packages can be installed with the `xi` utility, from the `xtools` package. `xi` takes the repository of the current working directory into account.
+
+```
+# xi <package_name>
+```
 
 <a name="chroot-methods"></a>
 ### chroot methods
@@ -111,24 +148,6 @@ To enable it:
 
     $ cd void-packages
     $ echo XBPS_CHROOT_CMD=proot >> etc/conf
-
-<a name="quick-setup"></a>
-### Quick setup in Void
-
-Clone the `void-packages` git repository, install the bootstrap packages:
-
-```
-$ git clone git://github.com/void-linux/void-packages.git
-$ cd void-packages
-$ ./xbps-src binary-bootstrap
-```
-
-Type:
-
-     $ ./xbps-src -h
-
-to see all available targets/options and start building any available package
-in the `srcpkgs` directory.
 
 <a name="install-bootstrap"></a>
 ### Install the bootstrap packages
