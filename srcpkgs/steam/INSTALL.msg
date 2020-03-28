@@ -1,7 +1,6 @@
 Steam on x86_64 requires support for OpenGL/Vulkan in 32bits mode,
 the 32bit packages are available in the `multilib` repository.
 
-
 	# xbps-install -Syv void-repo-multilib{,-nonfree}
 	# xbps-install -S
 
