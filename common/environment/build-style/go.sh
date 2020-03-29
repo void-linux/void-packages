@@ -2,7 +2,7 @@ hostmakedepends+=" go"
 nostrip=yes
 nopie=yes
 
-case "$XBPS_TARGET_MACHINE" in
+case "${XBPS_TARGET_MACHINE}" in
 	aarch64*) export GOARCH=arm64;;
 	armv6*) export GOARCH=arm; export GOARM=6;;
 	armv7*) export GOARCH=arm; export GOARM=7;;
@@ -10,6 +10,7 @@ case "$XBPS_TARGET_MACHINE" in
 	x86_64*) export GOARCH=amd64;;
 	ppc64le*) export GOARCH=ppc64le;;
 	ppc64*) export GOARCH=ppc64;;
+	ppc*) broken="Upstream does not support 32-bit ppc";;
 esac
 
 export GOPATH="${wrksrc}/_build-${pkgname}-xbps"
