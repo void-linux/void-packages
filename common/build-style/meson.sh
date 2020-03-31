@@ -85,22 +85,7 @@ do_configure() {
 
 	if [ "$CROSS_BUILD" ]; then
 		configure_args+=" --cross-file=${meson_crossfile}"
-
-		# Meson tries to compile natively with CC, CXX, LD, AR 
-		# so when cross compiling, we need to set those to the 
-		# host versions.
-		export CC=${CC_host} CXX=${CXX_host} LD=${LD_host} AR=${AR_host}
-
-		# Meson tries to use CFLAGS, CXXFLAGS, CPPFLAGS and LDFLAGS when compiling under
-		# native: true, so we use XBPS_CFLAGS, XBPS_CXXFLAGS, XBPS_CPPFLAGS and XBPS_LDFLAGS
-		# which are set to (C|CXX|CPP|LD)FLAGS_host
-		export CFLAGS=${CFLAGS_host} CXXFLAGS=${CXXFLAGS_host} CPPFLAGS=${CPPFLAGS_host} LDFLAGS=${LDFLAGS_host}
-
-		# Meson tries to use our wrapped cross-only pkg-config to find
-		# libraries even when 'native: true' (build against the host platform)
-		# is set, so set the PKG_CONFIG variable to tell Meson which pkg-config
-		# it should use when searching for stuff in the build machine
-		export PKG_CONFIG="/usr/bin/pkg-config"
+		export PKG_CONFIG_FOR_BUILD="/usr/bin/pkg-config"
 	fi
 
 	${meson_cmd} \
