@@ -1,15 +1,22 @@
+if [ -z "$archs" ]; then
+	archs="aarch64* armv[567]* i686* x86_64* ppc64le*"
+fi
 hostmakedepends+=" go"
 nostrip=yes
 nopie=yes
 
 case "$XBPS_TARGET_MACHINE" in
 	aarch64*) export GOARCH=arm64;;
+	armv5*) export GOARCH=arm; export GOARM=5;;
 	armv6*) export GOARCH=arm; export GOARM=6;;
 	armv7*) export GOARCH=arm; export GOARM=7;;
 	i686*) export GOARCH=386;;
 	x86_64*) export GOARCH=amd64;;
 	ppc64le*) export GOARCH=ppc64le;;
 	ppc64*) export GOARCH=ppc64;;
+	ppc*) export GOARCH=ppc;;
+	mipsel*) export GOARCH=mipsle;;
+	mips*) export GOARCH=mips;;
 esac
 
 export GOPATH="${wrksrc}/_build-${pkgname}-xbps"

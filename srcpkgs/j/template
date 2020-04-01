@@ -4,8 +4,8 @@ _vmaj=901
 _vmin=e
 _vrel=${_vmaj}-release${_vmin:+-}${_vmin}
 version=${_vmaj}.${_vmin}
-revision=3
-archs="aarch64* x86_64*"
+revision=5
+archs="aarch64* armv[67]* i686* x86_64*"
 wrksrc="jsource-j${_vrel}"
 makedepends="libedit-devel libgomp-devel libomp-devel"
 short_desc="Modern, high-performance, ASCII-based successor to APL"
@@ -24,8 +24,8 @@ _jetc="/etc/j"
 _juser=".j"
 
 case "${XBPS_TARGET_MACHINE}" in
-aarch64*) _jpl="raspberry";;
-*)        _jpl="linux";;
+aarch64*|arm*) _jpl="raspberry";;
+*)             _jpl="linux";;
 esac
 
 case "${XBPS_TARGET_MACHINE}" in
@@ -35,9 +35,8 @@ esac
 
 do_configure() {
 	cp jsrc/jversion-x.h jsrc/jversion.h
-	vsed -i "/jversion/s@${_vmaj}@${_vrel}@;
-	         /jplatform/s@unknown@${_jpl}@;
-	         /jtype/s@beta@${_jtype}@;
+	vsed -i "/jplatform/s@unknown@${_jpl}@;
+	         /jtype/s@beta@${_jtype}-${_vmin}@;
 	         /jbuilder/s@unknown@${_jbuilder}@" \
 	     jsrc/jversion.h
 
@@ -47,12 +46,16 @@ do_configure() {
 	         /^user=./s@home,userx@home,'/${_juser}'@" \
 	     jlibrary/bin/profile.ijs.new
 
-	# The build scripts set compiler flags based on what they detect as the
-	# compiler (gcc vs clang). However, their detection scheme is fragile
-	# and breaks when using ccache. Thus we directly tell them that we are
-	# using gcc.
-	vsed -i '/^compiler/s/=.*/=gcc/' make2/build_jconsole.sh
-	vsed -i '/^compiler/s/=.*/=gcc/' make2/build_libj.sh
+	# Munge the build scripts into reason:
+	# 1) Short-circut their fragile compiler detection to directly use gcc;
+	# 2) Make sure they pick up our CFLAGS and LDFLAGS; and
+	# 3) Ensure they propogate errors to do_build()
+	vsed -i '/^compiler/s/=.*/=gcc/;
+	         /^common="\$common/n;
+	         /^common/s/="/&$CFLAGS /;
+	         /^LDFLAGS/s/="/&$LDFLAGS /;
+	         /^#!/a\set -o errexit' \
+	     make2/build_jconsole.sh make2/build_libj.sh
 }
 
 ##
@@ -60,15 +63,18 @@ do_configure() {
 # we build all applicable binaries and install a wrapper script that executes
 # the correct one on the target machine.
 do_build() {
-	jplatform=${_jpl} j64x=${_jsz} make2/build_jconsole.sh
-	jplatform=${_jpl} j64x=${_jsz} make2/build_libj.sh
+	cd make2  # The build scripts assume this is $PWD
+	export USE_OPENMP=1
+
+	jplatform=${_jpl} j64x=${_jsz} ./build_jconsole.sh
+	jplatform=${_jpl} j64x=${_jsz} ./build_libj.sh
 
 	if [ "${_jsz}" = 'j64' ]; then
-		jplatform=${_jpl} j64x=${_jsz}avx make2/build_jconsole.sh
-		jplatform=${_jpl} j64x=${_jsz}avx make2/build_libj.sh
+		jplatform=${_jpl} j64x=${_jsz}avx ./build_jconsole.sh
+		jplatform=${_jpl} j64x=${_jsz}avx ./build_libj.sh
 
-		jplatform=${_jpl} j64x=${_jsz}avx2 make2/build_jconsole.sh
-		jplatform=${_jpl} j64x=${_jsz}avx2 make2/build_libj.sh
+		jplatform=${_jpl} j64x=${_jsz}avx2 ./build_jconsole.sh
+		jplatform=${_jpl} j64x=${_jsz}avx2 ./build_libj.sh
 	fi
 }
 
