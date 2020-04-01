@@ -1,5 +1,5 @@
 if [ -z "$archs" ]; then
-	archs="aarch64* armv[67]* i686* x86_64* ppc64le*"
+	archs="aarch64* armv[567]* i686* x86_64* ppc64le*"
 fi
 hostmakedepends+=" go"
 nostrip=yes
