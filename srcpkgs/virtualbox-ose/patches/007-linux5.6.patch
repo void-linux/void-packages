@@ -1,0 +1,197 @@
+--- include/iprt/time.h
++++ include/iprt/time.h
+@@ -360,4 +360,10 @@
+ #if defined(RTTIME_INCL_TIMEVAL) || defined(_STRUCT_TIMEVAL) || defined(_SYS__TIMEVAL_H_) || defined(_SYS_TIME_H) || defined(_TIMEVAL) || defined(_LINUX_TIME_H) \
+  || (defined(RT_OS_NETBSD) && defined(_SYS_TIME_H_))
++/*
++ * Starting with Linux kernel version 5.6-rc3, the struct timeval is no longer
++ * available to kernel code and must not be used in kernel code.
++ * Only 64-bit time-interfaces are allowed into the kernel.
++ */
++# if defined(RT_OS_LINUX) && (!defined(__KERNEL__) || !defined(_LINUX_TIME64_H))
+ /**
+  * Gets the time as POSIX timeval.
+@@ -393,4 +399,5 @@
+     return RTTimeSpecAddMicro(RTTimeSpecSetSeconds(pTime, pTimeval->tv_sec), pTimeval->tv_usec);
+ }
++# endif /* RT_OS_LINUX ... */
+ #endif /* various ways of detecting struct timeval */
+ 
+@@ -432,13 +439,17 @@
+     return RTTimeSpecAddNano(RTTimeSpecSetSeconds(pTime, pTimespec->tv_sec), pTimespec->tv_nsec);
+ }
+-
+-
+-# ifdef _LINUX_TIME64_H
++#endif /* various ways of detecting struct timespec */
++
++#if defined(RT_OS_LINUX) && defined(_LINUX_TIME64_H)
++/*
++ * Starting with Linux kernel version 5.6-rc3, the _STRUCT_TIMESPEC is only defined
++ * under !__KERNEL__ guard and _LINUX_TIME64_H does not define a corresponding
++ * _STRUCT_TIMESPEC64. Only 64-bit time-interfaces are now allowed into the kernel.
++ */
+ DECLINLINE(PRTTIMESPEC) RTTimeSpecSetTimespec64(PRTTIMESPEC pTime, const struct timespec64 *pTimeval)
+ {
+     return RTTimeSpecAddNano(RTTimeSpecSetSeconds(pTime, pTimeval->tv_sec), pTimeval->tv_nsec);
+ }
+-# endif
+-#endif /* various ways of detecting struct timespec */
++#endif /* RT_OS_LINUX && _LINUX_TIME64_H */
+
+
+--- src/VBox/HostDrivers/VBoxPci/linux/VBoxPci-linux.c
++++ src/VBox/HostDrivers/VBoxPci/linux/VBoxPci-linux.c
+@@ -843,13 +843,25 @@
+         if (!rcLnx)
+         {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)
++            /*
++             * ioremap() defaults to no caching since the 2.6 kernels.
++             * ioremap_nocache() has been removed finally in 5.6-rc1.
++             */
++            RTR0PTR R0PtrMapping = ioremap(pci_resource_start(pPciDev, iRegion),
++                                           pci_resource_len(pPciDev, iRegion));
++#else /* KERNEL_VERSION < 2.6.25 */
+             /* For now no caching, try to optimize later. */
+             RTR0PTR R0PtrMapping = ioremap_nocache(pci_resource_start(pPciDev, iRegion),
+                                                    pci_resource_len(pPciDev, iRegion));
+-
++#endif /* KERNEL_VERSION < 2.6.25 */
+             if (R0PtrMapping != NIL_RTR0PTR)
+                 pIns->aRegionR0Mapping[iRegion] = R0PtrMapping;
+             else
+             {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)
++                vbpci_printk(KERN_DEBUG, pPciDev, "ioremap() failed\n");
++#else
+                 vbpci_printk(KERN_DEBUG, pPciDev, "ioremap_nocache() failed\n");
++#endif
+                 pci_release_region(pPciDev, iRegion);
+                 rc = VERR_MAP_FAILED;
+
+--- src/VBox/Runtime/r0drv/linux/memobj-r0drv-linux.c
++++ src/VBox/Runtime/r0drv/linux/memobj-r0drv-linux.c
+@@ -1462,7 +1462,17 @@
+              */
+             Assert(pMemLnxToMap->Core.enmType == RTR0MEMOBJTYPE_PHYS && !pMemLnxToMap->Core.u.Phys.fAllocated);
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)
++            /*
++             * ioremap() defaults to no caching since the 2.6 kernels.
++             * ioremap_nocache() has been removed finally in 5.6-rc1.
++             */
++            pMemLnx->Core.pv = pMemLnxToMap->Core.u.Phys.uCachePolicy == RTMEM_CACHE_POLICY_MMIO
++                             ? ioremap(pMemLnxToMap->Core.u.Phys.PhysBase + offSub, cbSub)
++                             : ioremap_cache(pMemLnxToMap->Core.u.Phys.PhysBase + offSub, cbSub);
++#else /* KERNEL_VERSION < 2.6.25 */
+             pMemLnx->Core.pv = pMemLnxToMap->Core.u.Phys.uCachePolicy == RTMEM_CACHE_POLICY_MMIO
+                              ? ioremap_nocache(pMemLnxToMap->Core.u.Phys.PhysBase + offSub, cbSub)
+                              : ioremap(pMemLnxToMap->Core.u.Phys.PhysBase + offSub, cbSub);
++#endif /* KERNEL_VERSION < 2.6.25 */
+             if (pMemLnx->Core.pv)
+             {
+
+--- src/VBox/Runtime/r0drv/linux/time-r0drv-linux.c
++++ src/VBox/Runtime/r0drv/linux/time-r0drv-linux.c
+@@ -39,10 +39,22 @@
+ DECLINLINE(uint64_t) rtTimeGetSystemNanoTS(void)
+ {
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 16) /* This must match timer-r0drv-linux.c! */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
++    /*
++     * Starting with kernel version 5.6-rc3 only 64-bit time interfaces
++     * are allowed in the kernel.
++     */
++    uint64_t u64;
++    struct timespec64 Ts = { 0, 0 };
++
++    ktime_get_ts64(&Ts);
++    u64 = Ts.tv_sec * RT_NS_1SEC_64 + Ts.tv_nsec;
++    return u64;
++
++#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 16) /* This must match timer-r0drv-linux.c! */
+     /*
+      * Use ktime_get_ts, this is also what clock_gettime(CLOCK_MONOTONIC,) is using.
+      */
+     uint64_t u64;
+-    struct timespec Ts;
++    struct timespec Ts = { 0, 0 };
+     ktime_get_ts(&Ts);
+     u64 = Ts.tv_sec * RT_NS_1SEC_64 + Ts.tv_nsec;
+
+--- include/iprt/time.h
++++ include/iprt/time.h
+@@ -358,6 +358,4 @@
+ 
+ /* PORTME: Add struct timeval guard macro here. */
+-#if defined(RTTIME_INCL_TIMEVAL) || defined(_STRUCT_TIMEVAL) || defined(_SYS__TIMEVAL_H_) || defined(_SYS_TIME_H) || defined(_TIMEVAL) || defined(_LINUX_TIME_H) \
+- || (defined(RT_OS_NETBSD) && defined(_SYS_TIME_H_))
+ /*
+  * Starting with Linux kernel version 5.6-rc3, the struct timeval is no longer
+@@ -365,5 +363,11 @@
+  * Only 64-bit time-interfaces are allowed into the kernel.
+  */
+-# if defined(RT_OS_LINUX) && (!defined(__KERNEL__) || !defined(_LINUX_TIME64_H))
++#if defined(RT_OS_LINUX) && (defined(__KERNEL__) || defined(_LINUX_TIME64_H))
++#define RTTIME_NO_TIMEVAL
++#endif
++#if !defined(RTTIME_NO_TIMEVAL) \
++ && (defined(RTTIME_INCL_TIMEVAL) || defined(_STRUCT_TIMEVAL) || defined(_SYS__TIMEVAL_H_) \
++ || defined(_SYS_TIME_H) || defined(_TIMEVAL) || defined(_LINUX_TIME_H) \
++ || (defined(RT_OS_NETBSD) && defined(_SYS_TIME_H_)))
+ /**
+  * Gets the time as POSIX timeval.
+@@ -399,5 +403,4 @@
+     return RTTimeSpecAddMicro(RTTimeSpecSetSeconds(pTime, pTimeval->tv_sec), pTimeval->tv_usec);
+ }
+-# endif /* RT_OS_LINUX ... */
+ #endif /* various ways of detecting struct timeval */
+ 
+--- include/iprt/time.h
++++ include/iprt/time.h
+@@ -407,6 +407,18 @@
+ 
+ /* PORTME: Add struct timespec guard macro here. */
+-#if defined(RTTIME_INCL_TIMESPEC) || defined(_STRUCT_TIMESPEC) || defined(_SYS__TIMESPEC_H_) || defined(TIMEVAL_TO_TIMESPEC) || defined(_TIMESPEC) \
+- || (defined(RT_OS_NETBSD) && defined(_SYS_TIME_H_))
++/*
++ * Starting with Linux kernel version 5.6-rc3, the _STRUCT_TIMESPEC is only defined
++ * under !__KERNEL__ guard and _LINUX_TIME64_H does not define a corresponding
++ * _STRUCT_TIMESPEC64. Only 64-bit time-interfaces are now allowed into the kernel.
++ * We have to keep it for __KERNEL__ though to support older guest kernels (2.6.X)
++ * without _LINUX_TIME64_H.
++ */
++#if defined(RT_OS_LINUX) && defined(_LINUX_TIME64_H)
++#define RTTIME_NO_TIMESPEC
++#endif
++#if !defined(RTTIME_NO_TIMESPEC) \
++ && (defined(RTTIME_INCL_TIMESPEC) || defined(_STRUCT_TIMESPEC) || defined(_SYS__TIMESPEC_H_) \
++ || defined(TIMEVAL_TO_TIMESPEC) || defined(_TIMESPEC) \
++ || (defined(RT_OS_NETBSD) && defined(_SYS_TIME_H_)))
+ /**
+  * Gets the time as POSIX timespec.
+@@ -444,10 +456,5 @@
+ #endif /* various ways of detecting struct timespec */
+ 
+-#if defined(RT_OS_LINUX) && defined(_LINUX_TIME64_H)
+-/*
+- * Starting with Linux kernel version 5.6-rc3, the _STRUCT_TIMESPEC is only defined
+- * under !__KERNEL__ guard and _LINUX_TIME64_H does not define a corresponding
+- * _STRUCT_TIMESPEC64. Only 64-bit time-interfaces are now allowed into the kernel.
+- */
++#if defined(RTTIME_NO_TIMESPEC)
+ DECLINLINE(PRTTIMESPEC) RTTimeSpecSetTimespec64(PRTTIMESPEC pTime, const struct timespec64 *pTimeval)
+ {
+
+--- src/VBox/Runtime/r0drv/linux/time-r0drv-linux.c
++++ src/VBox/Runtime/r0drv/linux/time-r0drv-linux.c
+@@ -195,7 +195,7 @@
+ # ifdef _LINUX_TIME64_H
+     return RTTimeSpecSetTimespec64(pTime, &Ts);
+-#else
++# else
+     return RTTimeSpecSetTimespec(pTime, &Ts);
+-#endif
++# endif
+ #else   /* < 2.6.16 */
+     struct timeval Tv;
