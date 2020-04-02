@@ -1,7 +1,7 @@
 # Template file for 'coreutils'
 pkgname=coreutils
 version=8.32
-revision=3
+revision=4
 bootstrap=yes
 makedepends="gmp-devel acl-devel libcap-devel"
 short_desc="GNU core utilities"
@@ -40,6 +40,9 @@ pre_configure() {
 		make install
 		make distclean
 	fi
+	mkdir ../${pkgname}-${version}-legacy
+	cp -aR . ../${pkgname}-${version}-legacy
+	mv ../${pkgname}-${version}-legacy .
 }
 
 do_configure() {
@@ -51,9 +54,6 @@ do_configure() {
 	case "$XBPS_TARGET_MACHINE" in
 		# XXX syncfs() in src/sync.c expects a return value.
 		*-musl) configure_args+=" ac_cv_func_syncfs=no";;
-		# XXX disable statx(), needs glibc>=2.28 and linux>=4.11
-		# XXX seems to fail on travis always returning EACCES.
-		*) configure_args+=" ac_cv_func_statx=no";;
 	esac
 	#
 	# Do not install kill: provided by util-linux.
@@ -69,9 +69,33 @@ do_configure() {
 		sed -e 's;^\(cu_install_program =\).*;\1 install;' \
 			Makefile.cfg.orig >Makefile
 	fi
+	msg_normal "Configuring legacy build ...\n"
+	cd ${sourcepkg}-${version}-legacy
+	env $_force_unsafe_configure ./configure ${configure_args} \
+		--enable-install-program=arch,hostname \
+		--enable-no-install-program=kill,uptime \
+		--disable-rpath ac_cv_func_statx=no
 }
 
 do_build() {
+	if [ "$CROSS_BUILD" ]; then
+		cp Makefile Makefile.orig
+		sed '/src_make_prime_list/d' Makefile.orig > Makefile
+		depbase=$(echo src/make-prime-list.o | sed 's|[^/]*$|.deps/&|;s|\.o$||')
+		cc -std=gnu99  -I. -I./lib  -Ilib -I./lib -Isrc -I./src  \
+			-fdiagnostics-show-option -funit-at-a-time -g -O2 -MT \
+			src/make-prime-list.o -MD -MP -MF $depbase.Tpo -c \
+			-o src/make-prime-list.o \
+			src/make-prime-list.c
+		mv -f $depbase.Tpo $depbase.Po
+		cc -std=gnu99 -fdiagnostics-show-option -funit-at-a-time -g -O2 \
+			-Wl,--as-needed  -o src/make-prime-list src/make-prime-list.o
+		cp Makefile Makefile.bak
+		sed -e '/hostname.1/d' Makefile.bak > Makefile
+	fi
+	make ${makejobs}
+	msg_normal "Building legacy version ...\n"
+	cd ${sourcepkg}-${version}-legacy
 	if [ "$CROSS_BUILD" ]; then
 		cp Makefile Makefile.orig
 		sed '/src_make_prime_list/d' Makefile.orig > Makefile
@@ -107,16 +131,51 @@ do_check() {
 	done
 
 	make check
+
+	cd ${sourcepkg}-${version}-legacy
+
+	# chgrp tests fail inside a chroot
+	sed -i '/tests\/chgrp/d' Makefile
+
+	# Tests that fail due to being inside a chroot
+	exeext_tests="chown lchown fchownat"
+
+	# Tests that depend on the tests reemoved
+	exeext_tests+=" fchmodat fchdir"
+
+	for test in $exeext_tests ; do
+		sed -i "/test-$test\$(EXEEXT)/d" gnulib-tests/Makefile
+	done
+
+	make check
 }
 
 do_install() {
 	make DESTDIR=${DESTDIR} install
 	if [ "$CROSS_BUILD" ]; then
-		mv ${wrksrc}/coreutils-${XBPS_MACHINE}/share/man \
+		mv coreutils-${XBPS_MACHINE}/share/man \
 			${DESTDIR}/usr/share
 		# provided by procps-ng
 		rm -f ${DESTDIR}/usr/share/man/man1/{kill,uptime}.1
 	fi
-	mv ${DESTDIR}/usr/bin/hostname ${DESTDIR}/usr/bin/hostname-coreutils
-	mv ${DESTDIR}/usr/share/man/man1/hostname.1 ${DESTDIR}/usr/share/man/man1/hostname-coreutils.1
+	mv ${DESTDIR}/usr/bin/hostname{,-coreutils}
+	mv ${DESTDIR}/usr/share/man/man1/hostname{,-coreutils}.1
+}
+
+coreutils-legacy_package() {
+	short_desc+=" - legacy build for kernels < 4.11"
+	provides="coreutils-${version}_${revision}"
+	replaces="coreutils>=0"
+	pkg_install() {
+		cd ${sourcepkg}-${version}-legacy
+		make DESTDIR=${PKGDESTDIR} install
+		if [ "$CROSS_BUILD" ]; then
+			mv coreutils-${XBPS_MACHINE}/share/man \
+				${PKGDESTDIR}/usr/share
+			# provided by procps-ng
+			rm -f ${PKGDESTDIR}/usr/share/man/man1/{kill,uptime}.1
+		fi
+		mv ${PKGDESTDIR}/usr/bin/hostname{,-coreutils}
+		mv ${PKGDESTDIR}/usr/share/man/man1/hostname{,-coreutils}.1
+	}
 }
