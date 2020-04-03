@@ -7,8 +7,8 @@ make_dirs="
  /var/games/bsdgames/hack 0775 root users
  /var/games/bsdgames/hack/save 0775 root users
  /var/games/bsdgames/phantasia 0775 root users"
-hostmakedepends="flex words-en"
-makedepends="ncurses-devel"
+hostmakedepends="flex words-en ncurses-devel"
+makedepends="ncurses-devel libfl-devel"
 depends="words-en"
 short_desc="Linux port for a collection of BSD command line games"
 maintainer="Leah Neukirchen <leah@vuxu.org>"
@@ -36,7 +36,22 @@ mutable_files="/var/games/bsdgames/atc_score
  /var/games/bsdgames/hack/record
  /var/games/bsdgames/hack/perm"
 patch_args="-Np1"
-nocross=yes
+
+if [ "$CROSS_BUILD" ]; then
+	local _file _var
+	_native_target="adventure/setup boggle/mkdict/mkdict boggle/mkindex/mkindex
+		hack/makedefs"
+	for _file in $_native_target; do
+		_var=${_file//\//_}
+		make_build_args+=" ${_var^^}=native/$_file"
+	done
+	_native_target+=" phantasia/setup"
+	make_build_args+=" PHANTASIA_SETUP=../native/phantasia/setup"
+fi
+
+if [ "$XBPS_LIBC" = musl ]; then
+	hostmakedepends+=" musl-legacy-compat"
+fi
 
 if [ "$XBPS_TARGET_LIBC" = musl ]; then
 	makedepends+=" musl-legacy-compat"
@@ -59,6 +74,18 @@ post_extract() {
 
 pre_configure() {
 	cp ${FILESDIR}/config.params .
+	if [ "$CROSS_BUILD" ]; then
+		mkdir -p native
+		cp -a * native 2>/dev/null || true
+		pushd native
+		echo "bsd_games_cfg_cc='$CC_FOR_BUILD'" >>config.params
+		echo "bsd_games_cfg_cxx='$CXX_FOR_BUILD'" >>config.params
+		echo "bsd_games_cfg_other_cflags='$CFLAGS_FOR_BUILD'" >>config.params
+		echo "bsd_games_cfg_other_ldflags='$LDFLAGS_FOR_BUILD'" >>config.params
+		./configure
+		make $_native_target
+		popd
+	fi
 	echo "bsd_games_cfg_cc='$CC'" >>config.params
 	echo "bsd_games_cfg_cxx='$CXX'" >>config.params
 	echo "bsd_games_cfg_other_cflags='$CFLAGS'" >>config.params
@@ -68,7 +95,7 @@ pre_configure() {
 
 do_install() {
 	echo >install-score
-	make install
+	make $make_build_args install
 
 	# Remove conflict with fish-shell
 	mv "${DESTDIR}/usr/bin/fish" "${DESTDIR}/usr/bin/go-fish"
