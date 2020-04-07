@@ -68,6 +68,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 		* [update-desktopdb](#triggers_update_desktopdb)
 		* [x11-fonts](#triggers_x11_fonts)
 		* [xml-catalog](#triggers_xml_catalog)
+	* [Void specific documentation](#documentation)
 	* [Notes](#notes)
 	* [Contributing via git](#contributing)
 * [Help](#help)
@@ -2011,6 +2012,14 @@ During removal it uses `xmlcatmgr` to remove all catalogs passed to it by the
 
 To include this trigger use the `sgml_entries` variable or/and the `xml_entries` variable,
 as the trigger won't do anything unless either of them are defined.
+
+<a id="documentation"></a>
+### Void specific documentation
+
+When you want document details of package's configuration and usage specific to Void Linux,
+not covered by upstream documentation, put notes into
+`srcpkgs/<pkgname>/files/README.voidlinux` and install with
+`vdoc "${FILESDIR}/README.voidlinux"`.
 
 <a id="notes"></a>
 ### Notes
