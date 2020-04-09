@@ -1,40 +1,108 @@
 # Template file for 'couchdb'
 pkgname=couchdb
-version=1.7.1
-revision=2
+version=3.0.0
+revision=1
 wrksrc="apache-couchdb-${version}"
-build_style=gnu-configure
+build_style=gnu-makefile
+make_build_args="V=1"
+make_build_target="release"
+configure_args="--user couchdb --with-curl --spidermonkey-version 60"
 conf_files="/etc/couchdb/default.ini /etc/couchdb/local.ini"
-hostmakedepends="erlang pkg-config"
-makedepends="libressl-devel icu-devel js-devel libcurl-devel"
+hostmakedepends="erlang help2man"
+makedepends="libressl-devel icu-devel mozjs60-devel libcurl-devel"
 depends="erlang"
-short_desc="A document-oriented database"
+short_desc="Document-oriented database"
 maintainer="Gerardo Di Iorio <arete74@gmail.com>"
 license="Apache-2.0"
 homepage="http://couchdb.apache.org/"
-distfiles="https://dist.apache.org/repos/dist/release/couchdb/source/${version}/apache-couchdb-${version}.tar.gz"
-checksum=91200aa6fbc6fa5e2f3d78ef40e39d8c1ec7c83ea1c2cd730d270658735b2cad
-broken="unsupported version upstream, broken distfiles"
+distfiles="https://downloads.apache.org/couchdb/source/${version}/apache-couchdb-${version}.tar.gz"
+checksum=d109bb1a70fe746c04a9bf79a2bb1096cb949c750c29dbd196e9c2efd4167fd9
 
 system_accounts="couchdb"
 couchdb_homedir="/var/lib/couchdb"
+couchdb_shell="/bin/bash"
+couchdb_descr="CouchDB Administrator"
 make_dirs="
-	/var/lib/couchdb 0700 couchdb couchdb
-	/var/log/couchdb 0750 couchdb couchdb"
+ /var/lib/couchdb 0770 couchdb couchdb
+ /var/log/couchdb 0750 couchdb couchdb"
 
 if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" mozjs60-devel"
 	makedepends+=" erlang"
-	configure_args="--with-erlang=${XBPS_CROSS_BASE}/usr/lib/erlang/usr/include"
+	ERL_CFLAGS="-I${XBPS_CROSS_BASE}/usr/include/js -I${XBPS_CROSS_BASE}/usr/lib/erlang/usr/include"
 fi
 
-pre_configure() {
-	sed -i 's|-Werror|-pie -fPIE|g' src/couchdb/priv/Makefile.*
-if [ "$CROSS_BUILD" ]; then
-	sed -i '/FLAGS.*\(usr\|opt\)/s/.*/:/' configure
-fi
+do_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		vsed -i src/rebar/src/rebar_port_compiler.erl \
+			-e "s;, erl_interface_dir(lib);, \"${XBPS_CROSS_BASE}/\"&;"
+		make -C src/rebar
+	fi
+	./configure ${configure_args} ERL_CFLAGS="${ERL_CFLAGS}"
 }
 
+do_install() {
+	local dir
+	if [ "$CROSS_BUILD" ]; then
+		# Copy target erlang libraries into release
+		for dir in $(ls rel/couchdb); do
+			if [ -d "${XBPS_CROSS_BASE}/usr/lib/erlang/${dir}" ]; then
+				echo "Copying target erlang ${dir} ..."
+				cp -pRv ${XBPS_CROSS_BASE}/usr/lib/erlang/${dir}/* \
+					rel/couchdb/${dir}/
+			fi
+		done
+		for dir in $(ls rel/couchdb/lib); do
+			if [ -d "${XBPS_CROSS_BASE}/usr/lib/erlang/lib/${dir}" ]; then
+				echo "Copying target erlang ${dir} ..."
+				cp -pR ${XBPS_CROSS_BASE}/usr/lib/erlang/lib/${dir}/* \
+					rel/couchdb/lib/${dir}/
+			fi
+		done
+	fi
 
-post_install() {
+	# Change permissions according to the installation guide at
+	# https://docs.couchdb.org/en/stable/install/unix.html
+	find rel -type d -exec chmod 0770 "{}" \;
+
+#	vsed -i rel/couchdb/etc/default.ini \
+#		-e "s;\(database_dir =\).*;\1 /var/lib/couchdb/data;" \
+#		-e "s;\(view_index_dir =\).*;\1 /var/lib/couchdb/data;" \
+
+	# Write a log-to-file configuration to default.d/10-logfile.ini
+	cat >> rel/couchdb/etc/default.d/10-logfile.ini <<- EOF
+	[log]
+	writer = file
+	file = /var/log/couchdb/couch.log
+	level = info
+	EOF
+
+	# Write a single_node = true configuration to local.d/10-single_node.ini
+	cat >> rel/couchdb/etc/local.d/10-single_node.ini <<- EOF
+	[couchdb]
+	single_node = true
+	EOF
+
+	# Copy the release to usr/lib/couchdb
+	vmkdir usr/lib
+	vcopy rel/couchdb usr/lib
+	# Copy the source to usr/lib/couchdb/src (?)
+#	vcopy src usr/lib/couchdb
+
+	# Manual page
+	vman rel/couchdb/share/docs/couchdb.1
+
+	# Symbolic links for the configation (ini) files
+	vmkdir etc/couchdb
+	ln -srv ${DESTDIR}/usr/lib/couchdb/etc/default.ini ${DESTDIR}/etc/couchdb
+	ln -srv ${DESTDIR}/usr/lib/couchdb/etc/default.d ${DESTDIR}/etc/couchdb
+	ln -srv ${DESTDIR}/usr/lib/couchdb/etc/local.ini ${DESTDIR}/etc/couchdb
+	ln -srv ${DESTDIR}/usr/lib/couchdb/etc/local.d ${DESTDIR}/etc/couchdb
+	ln -srv ${DESTDIR}/usr/lib/couchdb/etc/vm.args ${DESTDIR}/etc/couchdb
+
+	# Symbolic link for the binary
+	vmkdir usr/bin
+	ln -srv ${DESTDIR}/usr/lib/couchdb/bin/couchdb ${DESTDIR}/usr/bin/couchdb
+
 	vsv couchdb
 }
