@@ -7,8 +7,8 @@ make_dirs="
  /var/games/bsdgames/hack 0775 root users
  /var/games/bsdgames/hack/save 0775 root users
  /var/games/bsdgames/phantasia 0775 root users"
-hostmakedepends="flex words-en"
-makedepends="ncurses-devel"
+hostmakedepends="flex words-en ncurses-devel"
+makedepends="ncurses-devel libfl-devel"
 depends="words-en"
 short_desc="Linux port for a collection of BSD command line games"
 maintainer="Leah Neukirchen <leah@vuxu.org>"
@@ -36,35 +36,66 @@ mutable_files="/var/games/bsdgames/atc_score
  /var/games/bsdgames/hack/record
  /var/games/bsdgames/hack/perm"
 patch_args="-Np1"
-nocross=yes
+
+if [ "$CROSS_BUILD" ]; then
+	local _file _var
+	_native_target="adventure/setup boggle/mkdict/mkdict boggle/mkindex/mkindex
+		hack/makedefs"
+	for _file in $_native_target; do
+		_var=${_file//\//_}
+		make_build_args+=" ${_var^^}=native/$_file"
+	done
+	_native_target+=" phantasia/setup"
+	make_build_args+=" PHANTASIA_SETUP=../native/phantasia/setup"
+fi
+
+if [ "$XBPS_LIBC" = musl ]; then
+	hostmakedepends+=" musl-legacy-compat"
+fi
+
+if [ "$XBPS_TARGET_LIBC" = musl ]; then
+	makedepends+=" musl-legacy-compat"
+fi
 
 post_extract() {
-	sed -i "s/FISH/GO-FISH/g; s/\.Nm fish/\.Nm go-fish/g" fish/fish.6
-	sed -i "s/tenths/tenth/g" tests/number.-0.1
-	sed -i "s/Elegy{ Written in a Country Church{-| }Yard:/Elegy{ Written in a Country Church{-| }Yard}:/g" quiz/datfiles/poetry
-	sed -i "s/\.tI friend/\.It friend/g" hunt/hunt/hunt.6.in
-	sed -i "s/it\'s initial/its initial/g" backgammon/teachgammon/ttext1.c
-	sed -i "s/two player\'s/two players/g" backgammon/teachgammon/ttext2.c
-	sed -i  "s/\.I range/\.It range/g" arithmetic/arithmetic.6
-	sed -i "s/game were the/game where the/g" gomoku/gomoku.6
-	sed -i 's|/usr/games|/usr/bin|g' wargames/wargames
+	vsed -i "s/FISH/GO-FISH/g; s/\.Nm fish/\.Nm go-fish/g" fish/fish.6
+	vsed -i "s/tenths/tenth/g" tests/number.-0.1
+	vsed -i "s/Elegy{ Written in a Country Church{-| }Yard:/Elegy{ Written in a Country Church{-| }Yard}:/g" quiz/datfiles/poetry
+	vsed -i "s/\.tI friend/\.It friend/g" hunt/hunt/hunt.6.in
+	vsed -i  "s/\.I range/\.It range/g" arithmetic/arithmetic.6
+	vsed -i "s/game were the/game where the/g" gomoku/gomoku.6
+	vsed -i 's|/usr/games|/usr/bin|g' wargames/wargames
 
-	sed -i '1i#include <sys/types.h>' banner/banner.c
-	sed -i 's/getdate/get_date/g' hack/*.[ch]
-	sed -i '1i#include <fcntl.h>' wump/wump.c
-	sed -i 's/-DOTTO//' hunt/Makeconfig
+	vsed -i '1i#include <sys/types.h>' banner/banner.c
+	vsed -i 's/getdate/get_date/g' hack/extern.h hack/hack.{end,unix}.c
+	vsed -i '1i#include <fcntl.h>' wump/wump.c
+	vsed -i 's/-DOTTO//' hunt/Makeconfig
 }
+
 pre_configure() {
 	cp ${FILESDIR}/config.params .
+	if [ "$CROSS_BUILD" ]; then
+		mkdir -p native
+		cp -a * native 2>/dev/null || true
+		pushd native
+		echo "bsd_games_cfg_cc='$CC_FOR_BUILD'" >>config.params
+		echo "bsd_games_cfg_cxx='$CXX_FOR_BUILD'" >>config.params
+		echo "bsd_games_cfg_other_cflags='$CFLAGS_FOR_BUILD'" >>config.params
+		echo "bsd_games_cfg_other_ldflags='$LDFLAGS_FOR_BUILD'" >>config.params
+		./configure
+		make $_native_target
+		popd
+	fi
 	echo "bsd_games_cfg_cc='$CC'" >>config.params
 	echo "bsd_games_cfg_cxx='$CXX'" >>config.params
 	echo "bsd_games_cfg_other_cflags='$CFLAGS'" >>config.params
 	echo "bsd_games_cfg_other_ldflags='$LDFLAGS'" >>config.params
+	echo "bsd_games_cfg_install_prefix='$DESTDIR'" >>config.params
 }
+
 do_install() {
 	echo >install-score
-	sed -i "s|PKGDIR|$DESTDIR|g" hide-game install-man install-score Makeconfig subst.sed
-	make install
+	make $make_build_args install
 
 	# Remove conflict with fish-shell
 	mv "${DESTDIR}/usr/bin/fish" "${DESTDIR}/usr/bin/go-fish"
@@ -74,4 +105,3 @@ do_install() {
 	rm "${DESTDIR}/usr/share/doc/trek.me"
 	vlicense COPYING
 }
-
