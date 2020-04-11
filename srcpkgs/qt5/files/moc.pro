@@ -1,4 +1,4 @@
-QT = core qml core-private qmldevtools-private
+QT = core core-private
 DEFINES += \
     QT_MOC \
     QT_NO_CAST_FROM_ASCII \
