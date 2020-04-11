@@ -1,20 +1,16 @@
 # Template file for 'qt5'
 pkgname=qt5
 version=5.14.2
-revision=3
-wrksrc="qt-everywhere-src-${version}"
+revision=2
 build_style=meta
-hostmakedepends="cmake clang flex perl glib-devel pkg-config
- python re2c ruby which"
-makedepends="SDL2-devel Vulkan-Headers alsa-lib-devel double-conversion-devel
- eudev-libudev-devel ffmpeg-devel freetds-devel glib-devel gst-plugins-base1-devel
- gtk+3-devel icu-devel libXv-devel libbluetooth-devel libcap-devel
- libinput-devel libmng-devel libmysqlclient-devel libproxy-devel
- libvpx-devel libwebp-devel libxslt-devel cups-devel
- opus-devel pciutils-devel pcre2-devel postgresql-libs-devel
- protobuf-devel pulseaudio-devel tslib-devel libressl-devel
- unixodbc-devel xcb-util-image-devel xcb-util-keysyms-devel
- xcb-util-renderutil-devel xcb-util-wm-devel libzstd-devel harfbuzz-devel"
+wrksrc="qtbase-everywhere-src-${version}"
+hostmakedepends="pkg-config which perl"
+makedepends="libmysqlclient-devel postgresql-libs-devel harfbuzz-devel
+ libressl-devel fontconfig-devel zlib-devel icu-devel sqlite-devel
+ libjpeg-turbo-devel gtk+3-devel Vulkan-Headers tslib-devel cups-devel
+ double-conversion-devel freetds-devel libzstd-devel pcre2-devel
+ libinput-devel mtdev-devel xcb-util-image-devel xcb-util-keysyms-devel
+ xcb-util-renderutil-devel xcb-util-wm-devel unixodbc-devel libproxy-devel"
 depends="qt5-dbus qt5-gui qt5-core qt5-widgets qt5-network qt5-xml
  qt5-test qt5-sql qt5-concurrent qt5-printsupport qt5-opengl"
 short_desc="Cross-platform application and UI framework (QT5)"
@@ -27,12 +23,17 @@ python_version=2 #unverified
 replaces="qt5-doc<5.6.0 qt5-quick1<5.6.0 qt5-quick1-devel<5.6.0 qt5-webkit<5.6.0 qt5-webkit-devel<5.6.0
  qt5-enginio<5.7.1 qt5-enginio-devel<5.7.1 qt5-plugin-gtk<5.7.1 qt5-canvas3d<5.13.0"
 lib32mode=full
+patch_args="-Np1"
 
 # Work around SSLv3_{client,server}_method missing in libressl-2.3.3
 CFLAGS="-DOPENSSL_NO_PSK -DOPENSSL_NO_NEXTPROTONEG"
 CXXFLAGS="${CFLAGS} -Wno-deprecated-declarations -Wno-class-memaccess -Wno-packed-not-aligned"
-# Required for musl libc
-LDFLAGS="-pthread -ldl -fPIE -Wl,-z,stack-size=2097152"
+
+build_options="gles"
+
+case "$XBPS_TARGET_MACHINE" in
+	aarch64*|arm*) build_options_default="gles";;
+esac
 
 if [ "$CROSS_BUILD" ]; then
 	# Need some devel packages in the host to build qmake, moc, uic, rcc
@@ -40,75 +41,6 @@ if [ "$CROSS_BUILD" ]; then
 	hostmakedepends+=" icu-devel wayland-devel zlib-devel"
 	hostmakedepends+=" postgresql-libs-devel"
 fi
-
-_cleanup_wrksrc_leak() {
-	if [ -d "${PKGDESTDIR}/usr/lib/cmake" ]; then
-		# Replace references to ${wrksrc} in cmake files
-		vsed -i ${PKGDESTDIR}/usr/lib/cmake/*/*.cmake \
-			-e "s;${wrksrc}/host;/usr/lib/qt5;g" \
-			-e "s;devices/void-${XBPS_CROSS_TRIPLET}-g++;linux-g++;g"
-	fi
-	if [ -d "${PKGDESTDIR}/usr/lib/pkgconfig" ]; then
-		# Replace references to ${wrksrc} in pkgconfig files
-		vsed -i ${PKGDESTDIR}/usr/lib/pkgconfig/*.pc \
-			-e "s;${wrksrc}/host;/usr/lib/qt5;g" \
-			-e "s;devices/void-${XBPS_CROSS_TRIPLET}-g++;linux-g++;g"
-	fi
-	# Remove QMAKE_PRL_BUILD_DIR from hint files for static libraries
-	# and replace references to ${wrksrc}
-	find ${PKGDESTDIR} -iname "*.prl" -exec sed -i "{}" \
-		-e "/^QMAKE_PRL_BUILD_DIR/d" \
-		-e "s;-L${wrksrc}/qtbase/lib;-L/usr/lib;g" \;
-	# Replace ${wrksrc} in project include files
-	find ${PKGDESTDIR} -iname "*.pri" -exec sed -i "{}" \
-		-e "s;${wrksrc}/qtbase;/usr/lib/qt5;g" \;
-}
-
-_install_subpkg() {
-	local module=$1 f base
-	cd ${wrksrc}/${module}
-	make INSTALL_ROOT=${PKGDESTDIR} install
-	rm -rf ${PKGDESTDIR}/builddir
-	rm -rf ${PKGDESTDIR}/usr/include
-	rm -rf ${PKGDESTDIR}/usr/lib/cmake
-	rm -rf ${PKGDESTDIR}/usr/lib/qt5/mkspecs
-	rm -rf ${PKGDESTDIR}/usr/lib/pkgconfig
-	rm -f ${PKGDESTDIR}/usr/lib/*.a
-	rm -f ${PKGDESTDIR}/usr/lib/*.so
-	rm -f ${PKGDESTDIR}/usr/lib/*.prl
-	if [ -d ${PKGDESTDIR}/usr/lib/qt5/bin ]; then
-		if [ "$CROSS_BUILD" ]; then
-			for f in $(find ${PKGDESTDIR}/usr/lib/qt5/bin -name "*-target" -type f); do
-				base=${f##*/}
-				mv -v ${f} ${f%-target}
-			done
-		fi
-		vmkdir usr/bin
-		for f in $(find ${PKGDESTDIR}/usr/lib/qt5/bin -type f); do
-			base=${f##*/}
-			ln -sf /usr/lib/qt5/bin/${base} ${PKGDESTDIR}/usr/bin/${base}-qt5
-		done
-	fi
-}
-
-_install_devel() {
-	local module=$1
-	cd ${wrksrc}/${module}
-	make INSTALL_ROOT=${PKGDESTDIR} install
-	vmkdir usr/lib/qt5/mkspecs/modules
-	if [ -d "${PKGDESTDIR}${wrksrc}/host/mkspecs/modules" ]; then
-		mv -nv ${PKGDESTDIR}${wrksrc}/host/mkspecs/modules/* \
-			${PKGDESTDIR}/usr/lib/qt5/mkspecs/modules/
-	fi
-	rm -rf ${PKGDESTDIR}/builddir
-	rm -rf ${PKGDESTDIR}/usr/share
-	rm -rf ${PKGDESTDIR}/usr/lib/qt5/bin
-	rm -rf ${PKGDESTDIR}/usr/lib/qt5/qml
-	rm -rf ${PKGDESTDIR}/usr/lib/qt5/libexec
-	rm -rf ${PKGDESTDIR}/usr/lib/qt5/plugins
-	rm -f ${PKGDESTDIR}/usr/lib/*.so.*
-	_cleanup_wrksrc_leak
-}
 
 _move_target_binaries() {
 	local f
@@ -123,7 +55,7 @@ _move_target_binaries() {
 }
 
 _create_config() {
-	local specs=${wrksrc}/qtbase/mkspecs/devices device="$1"
+	local specs=${wrksrc}/mkspecs/devices device="$1"
 	local qmake_conf="${specs}/${device}/qmake.conf"
 
 	mkdir -p ${specs}/${device}
@@ -161,13 +93,8 @@ _create_config() {
 	echo '#include "../../linux-g++/qplatformdefs.h"' > ${specs}/${device}/qplatformdefs.h
 }
 
-_msg_cross() {
-	msg_normal "***************************************************\n"
-	msg_normal "$1 for target ${CROSS_BUILD} ...\n"
-	msg_normal "***************************************************\n"
-}
-
 do_configure() {
+	source ${FILESDIR}/shared_functions.sh
 	local opts spec
 
 	case "$XBPS_TARGET_MACHINE" in
@@ -178,26 +105,26 @@ do_configure() {
 	if [ "$CROSS_BUILD" ]; then
 		# This also sets default {C,CXX,LD}FLAGS for projects built using qmake
 		vsed -i -e "s|^\(QMAKE_CFLAGS_RELEASE.*\)|\1 ${XBPS_CFLAGS}|" \
-			${wrksrc}/qtbase/mkspecs/common/gcc-base.conf
+			${wrksrc}/mkspecs/common/gcc-base.conf
 		vsed -i -e "s|^\(QMAKE_LFLAGS_RELEASE.*\)|\1 ${XBPS_LDFLAGS}|" \
-			${wrksrc}/qtbase/mkspecs/common/g++-unix.conf
+			${wrksrc}/mkspecs/common/g++-unix.conf
 
 		# Create symbolic links for private include directories
-		for d in $(ls ${wrksrc}/qtbase/include); do
-			ln -sfv ${version}/${d}/private qtbase/include/${d}/private
+		for d in $(ls ${wrksrc}/include); do
+			ln -sfv ${version}/${d}/private include/${d}/private
 		done
 	else
 		# qmake {CXX,L}FLAGS patches
 		vsed -i -e "s|^\(CXXFLAGS =.*\)|\1 ${CXXFLAGS}|" \
 			-e "s|^\(LFLAGS =.*\)|\1 ${LDFLAGS}|" \
-			${wrksrc}/qtbase/qmake/Makefile.unix
+			${wrksrc}/qmake/Makefile.unix
 
 		# Build qmake using Void {C,LD}FLAGS
 		# This also sets default {C,CXX,LD}FLAGS for projects built using qmake
 		vsed -i -e "s|^\(QMAKE_CFLAGS_RELEASE.*\)|\1 ${CFLAGS}|" \
-			${wrksrc}/qtbase/mkspecs/common/gcc-base.conf
+			${wrksrc}/mkspecs/common/gcc-base.conf
 		vsed -i -e "s|^\(QMAKE_LFLAGS_RELEASE.*\)|\1 ${LDFLAGS}|" \
-			${wrksrc}/qtbase/mkspecs/common/g++-unix.conf
+			${wrksrc}/mkspecs/common/g++-unix.conf
 	fi
 
 	opts+=" -confirm-license"
@@ -225,7 +152,6 @@ do_configure() {
 	opts+=" -no-pch"
 	opts+=" -no-strip"
 	opts+=" -nomake examples"
-	opts+=" -optimized-qmake"
 	# opts+=" -opengl dynamic"
 	opts+=" -no-use-gold-linker"
 	opts+=" -system-libjpeg"
@@ -233,43 +159,13 @@ do_configure() {
 	opts+=" -system-zlib"
 	opts+=" -system-sqlite"
 	opts+=" -system-harfbuzz"
+	if [ "$build_option_gles" ]; then
+		opts+=" -opengl-es-2"
+		opts+=" -opengles3"
+	fi
 	opts+=" -no-feature-eglfs_brcm" # missing include path
 	opts+=" -silent"
 	# opts+=" -v"
-	opts+=" -skip qtwebengine"
-	opts+=" -skip qtwebview"
-	opts+=" -skip qtlottie"
-	opts+=" -skip qttranslations"
-	opts+=" -skip qt3d"
-	opts+=" -skip qtdatavis3d"
-	opts+=" -skip qtcharts"
-	opts+=" -skip qtconnectivity"
-	opts+=" -skip qtgamepad"
-	opts+=" -skip qtlocation"
-	opts+=" -skip qtx11extras"
-	opts+=" -skip qtpurchasing"
-	opts+=" -skip qtmultimedia"
-	opts+=" -skip qtxmlpatterns"
-	opts+=" -skip qtnetworkauth"
-	opts+=" -skip qtwebsockets"
-	opts+=" -skip qtwebglplugin"
-	opts+=" -skip qtwebchannel"
-	opts+=" -skip qtsensors"
-	opts+=" -skip qtwayland"
-	opts+=" -skip qtscript"
-	opts+=" -skip qtscxml"
-	opts+=" -skip qtquickcontrols2"
-	opts+=" -skip qtremoteobjects"
-	opts+=" -skip qtserialbus"
-	opts+=" -skip qtvirtualkeyboard"
-	opts+=" -skip qtgraphicaleffects"
-	opts+=" -skip qtserialport"
-	opts+=" -skip qtspeech"
-	opts+=" -skip qtsvg"
-	opts+=" -skip qtimageformats"
-	opts+=" -skip qtquicktimeline"
-	opts+=" -skip qtquickcontrols"
-	opts+=" -skip qtdeclarative"
 	LDFLAGS+=" -Wl,--no-keep-memory"  # needs more than 8GB RAM else
 	if [ "$CROSS_BUILD" ]; then
 		spec=void-${XBPS_CROSS_TRIPLET}-g++
@@ -280,38 +176,30 @@ do_configure() {
 		opts+=" -hostprefix host"
 		opts+=" -extprefix /usr"
 
-		# Make sure libQt5Designer is built
-		cp -v ${FILESDIR}/qttools_src.pro qttools/src/src.pro
-		cp -v ${FILESDIR}/designer_src.pro qttools/src/designer/src/src.pro
-		cp -v ${FILESDIR}/assistant.pro qttools/src/assistant/assistant.pro
-		cp -v ${FILESDIR}/linguist.pro qttools/src/linguist/linguist.pro
-		cp -v ${FILESDIR}/uitools.pro qttools/src/designer/src/uitools/uitools.pro
 	fi
 
+	MAKEFLAGS="${makejobs}" \
 	CC="cc" CXX="c++" CPP="cpp" LD="c++" AR="ar" AS="as" NM="nm" \
 	OBJDUMP="objdump" STRIP="strip" RANLIB="ranlib" \
 	CFLAGS="$XBPS_CFLAGS" CXXFLAGS="$XBPS_CXXFLAGS" \
 	CPPFLAGS="$XBPS_CPPFLAGS" LDFLAGS="$XBPS_LDFLAGS" \
 	LFLAGS="$XBPS_LDFLAGS" \
 		${wrksrc}/configure ${opts}
-	export LD_LIBRARY_PATH="${wrksrc}/qtbase/lib:${wrksrc}/qttools/lib:${LD_LIBRARY_PATH}"
+	export LD_LIBRARY_PATH="${wrksrc}/lib:${wrksrc}/qttools/lib:${LD_LIBRARY_PATH}"
 }
 
 do_build() {
-	# Run make twice because sometimes a file "chrome/grit/generated_resources.h"
-	# is not yet ready when it is to be included. Repeating make works around that
-	# problem without having to resort to disable_parallel_build=yes
-	# or some other files
-	make ${makejobs} || make ${makejobs}
+	make ${makejobs}
 }
 
 do_install() {
+	source ${FILESDIR}/shared_functions.sh
 	local f base bin dir dirs
 
 	if [ -z "$CROSS_BUILD" ]; then
 		unset CC CXX LD CPP AR AS RANLIB
 	fi
-	cd ${wrksrc}/qtbase
+	cd ${wrksrc}/
 	make INSTALL_ROOT=${DESTDIR} install
 
 	_cleanup_wrksrc_leak
@@ -331,7 +219,7 @@ do_install() {
 		# Build qmake for the target
 		#
 		_msg_cross "Building qmake"
-		cd ${wrksrc}/qtbase/qmake
+		cd ${wrksrc}/qmake
 		sed Makefile \
 			-e"s;^\(CC\\s*=\).*;\1 $CC;" \
 			-e"s;^\(CXX\\s*=\).*;\1 $CXX;" \
@@ -344,80 +232,22 @@ do_install() {
 		make clean
 		make -f Makefile.target ${makejobs}
 		ln -sf ../lib/qt5/bin/qmake ${PKGDESTDIR}/usr/bin/qmake-qt5
-		cp -ar ${wrksrc}/qtbase/mkspecs ${PKGDESTDIR}/usr/lib/qt5
+		cp -ar ${wrksrc}/mkspecs ${PKGDESTDIR}/usr/lib/qt5
 
 		#
 		# Build various tools for the target
 		#
-		dirs+=" qtbase/src/tools/moc"
-		dirs+=" qtbase/src/tools/rcc"
-		dirs+=" qtbase/src/tools/uic"
-		dirs+=" qtbase/src/tools/qdbuscpp2xml"
-		dirs+=" qtbase/src/tools/qdbusxml2cpp"
-		dirs+=" qtbase/src/tools/qvkgen"
-		dirs+=" qtbase/src/tools/tracegen"
-		dirs+=" qtbase/src/tools/qlalr"
-		dirs+=" qttools/src/qtattributionsscanner"
-		dirs+=" qttools/src/linguist/lconvert"
-		dirs+=" qttools/src/linguist/lrelease"
-		dirs+=" qttools/src/linguist/lrelease-pro"
-		dirs+=" qttools/src/linguist/lprodump"
-		dirs+=" qttools/src/linguist/lupdate"
-		dirs+=" qttools/src/linguist/lupdate-pro"
-		# Cannot be cross compiled (target clang issue)
-		# dirs+=" qttools/src/qdoc"
+		dirs+=" src/tools/moc"
+		dirs+=" src/tools/rcc"
+		dirs+=" src/tools/uic"
+		dirs+=" src/tools/qdbuscpp2xml"
+		dirs+=" src/tools/qdbusxml2cpp"
+		dirs+=" src/tools/qvkgen"
+		dirs+=" src/tools/tracegen"
+		dirs+=" src/tools/qlalr"
 
 		for f in ${dirs}; do
-			base=${f##*/}
-			dir=${f%%/*}
-
-			_msg_cross " Building ${base}"
-
-			cd ${wrksrc}/${f}
-			if [ -x "${wrksrc}/${dir}/bin/${base}" ]; then
-				mv -v ${wrksrc}/${dir}/bin/${base}{,-host}
-			fi
-			[ -f Makefile ] && make clean
-			[ -f "${base}.pro" ] && cp -a ${base}.pro{,.orig}
-			if [ -f "${FILESDIR}/${base}.pro" ]; then
-				# A specific *.pro file is available, use it.
-				cp ${FILESDIR}/${base}.pro ${base}.pro
-			else
-				# Otherwise strip the option(host_build)
-				vsed -i ${base}.pro -e "/option(host_build)/d"
-			fi
-			# Create the Makefile
-			[ -f Makefile ] && mv -v Makefile{,.orig}
-			${wrksrc}/qtbase/bin/qmake -o Makefile ${base}.pro
-
-			# Now patch the Makefile(s) to not use the bootstrap libs and
-			# use the compiler, linker, flags, etc. for the target arch
-			find . -name "Makefile*" -exec sed -i "{}" \
-				-e "s; force_bootstrap;;" \
-				-e "s;^\(CC\\s*=\).*;\1 $CC;" \
-				-e "s;^\(CXX\\s*=\).*;\1 $CXX;" \
-				-e "s;^\(LINK\\s*=\).*;\1 $CXX;" \
-				-e "s;^\(CFLAGS\\s*=.*\);\1 $CFLAGS;" \
-				-e "s;^\(CXXFLAGS\\s*=.*\);\1 $CXXFLAGS;" \
-				-e "s;^\(LFLAGS\\s*=.*\);\1 $LDFLAGS;" \
-				-e "s;^\(AR\\s*=\).*;\1 $AR cqs;" \
-				-e "s;^\(RANLIB\\s*=\).*;\1 $RANLIB;" \
-				\;
-			# Set a different destination directory and target name
-			vsed -i Makefile \
-				-e "s;^\(DESTDIR\\s*=\).*;\1 ${DESTDIR}/usr/lib/qt5/bin/;" \
-				-e "s;^\(TARGET\\s*=\).*;\1 ${DESTDIR}/usr/lib/qt5/bin/${base}-target;"
-			make ${makejobs}
-			# Restore profile, if any
-			[ -f "${base}.pro.orig" ] && mv -v ${base}.pro{.orig,}
-			[ -f Makefile.orig ] && mv -v Makefile{.orig,}
-			# Avoid rebuilding the Makefile by changing the rule
-			vsed -i Makefile -e 's;^all:.*;all:;'
-			vsed -i Makefile -e "s;^Makefile:;Makefile.host:;"
-			if [ -x "${wrksrc}/${dir}/bin/${base}-host" ]; then
-				mv -v ${wrksrc}/${dir}/bin/${base}{-host,}
-				touch ${wrksrc}/${dir}/bin/${base}
-			fi
+			_host_tooling_for_target $f
 		done
 	fi
 	# Remove builddir from installation
@@ -527,7 +357,7 @@ qt5-examples_package() {
 	pkg_install() {
 		local dir mod base=usr/share/qt5/examples
 		vmkdir ${base}
-		vcopy qtbase/examples/examples.pro ${base}/
+		vcopy examples/examples.pro ${base}/
 		# Copy examples source
 		for dir in $(find ${wrksrc} -maxdepth 2 -type d -name examples); do
 			mod=${dir%/examples}
@@ -535,81 +365,6 @@ qt5-examples_package() {
 			vcopy ${dir}/* ${base}/
 			if [ -e "${PKGDESTDIR}/${base}/README" ]; then
 				mv ${PKGDESTDIR}/${base}/README{,.${mod}}
-			fi
-		done
-	}
-}
-
-qt5-host-tools_package() {
-	short_desc+=" - Tools required when cross compiling"
-	depends="qtchooser"
-	pkg_install() {
-		local dest=${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/qt5-tools-${version}
-		vmkdir usr/lib/qt5/bin
-		vmkdir usr/bin
-		for f in moc rcc uic qlalr qdbuscpp2xml qdbusxml2cpp qvkgen fixqt4headers.pl tracegen \
-			syncqt.pl lconvert lupdate lupdate-pro lprodump lrelease lrelease-pro; do
-			if [ -r ${dest}/usr/lib/qt5/bin/${f} ]; then
-				mv -v ${dest}/usr/lib/qt5/bin/${f} ${PKGDESTDIR}/usr/lib/qt5/bin/
-			fi
-			if [ -f ${DESTDIR}/usr/lib/qt5/bin/${f}-target ]; then
-				mv -v ${DESTDIR}/usr/lib/qt5/bin/${f}{-target,}
-			fi
-			if [ -f ${DESTDIR}/usr/lib/qt5/bin/${f} ]; then
-				vmove usr/lib/qt5/bin/${f}
-			fi
-			if [ -f ${DESTDIR}/usr/bin/${f}-qt5 ] || [ -h ${DESTDIR}/usr/bin/${f}-qt5 ]; then
-				vmove usr/bin/${f}-qt5
-			else
-				ln -sf ../lib/qt5/bin/${f} ${PKGDESTDIR}/usr/bin/${f}-qt5
-			fi
-		done
-	}
-}
-
-qt5-tools-devel_package() {
-	short_desc+=" - Development tools (development)"
-	depends="qt5-tools-${version}_${revision} qt5-devel-${version}_${revision}"
-	pkg_install() {
-		_install_devel qttools
-	}
-}
-
-qt5-tools_package() {
-	short_desc+=" - Development tools"
-	depends="qtchooser qt5-translations desktop-file-utils hicolor-icon-theme"
-	pkg_install() {
-		local f dest=${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/qt5-host-tools-${version}
-		_install_subpkg qttools
-		# install missing icons and desktop files
-		for icon in ${wrksrc}/qttools/src/linguist/linguist/images/icons/linguist-*-32.png ; do
-			size=$(echo $(basename ${icon}) | cut -d- -f2)
-			install -p -D -m644 ${icon} \
-				${PKGDESTDIR}/usr/share/icons/hicolor/${size}x${size}/apps/linguist-qt5.png
-		done
-		install -Dm644 ${wrksrc}/qttools/src/assistant/assistant/images/assistant.png \
-			${PKGDESTDIR}/usr/share/icons/hicolor/32x32/apps/assistant-qt5.png
-		install -Dm644 ${wrksrc}/qttools/src/assistant/assistant/images/assistant-128.png \
-			${PKGDESTDIR}/usr/share/icons/hicolor/128x128/apps/assistant-qt5.png
-		install -Dm644 ${wrksrc}/qttools/src/designer/src/designer/images/designer.png \
-			${PKGDESTDIR}/usr/share/icons/hicolor/128x128/apps/designer-qt5.png
-		install -Dm644 ${wrksrc}/qttools/src/qdbus/qdbusviewer/images/qdbusviewer.png \
-			${PKGDESTDIR}/usr/share/icons/hicolor/32x32/apps/qdbusviewer-qt5.png
-		install -Dm644 ${wrksrc}/qttools/src/qdbus/qdbusviewer/images/qdbusviewer-128.png \
-			${PKGDESTDIR}/usr/share/icons/hicolor/128x128/apps/qdbusviewer-qt5.png
-		# install desktop files
-		vmkdir usr/share/applications
-		install -m644 ${FILESDIR}/*.desktop ${PKGDESTDIR}/usr/share/applications
-		_move_target_binaries qtattributionsscanner qdoc
-		# Move some binaries to qt5-host-tools
-		for f in lconvert lupdate lupdate-pro lprodump lrelease lrelease-pro; do
-			if [ -f ${PKGDESTDIR}/usr/lib/qt5/bin/${f} ]; then
-				mkdir -p ${dest}/usr/lib/qt5/bin
-				mv -v ${PKGDESTDIR}/usr/lib/qt5/bin/${f} ${dest}/usr/lib/qt5/bin/
-			fi
-			if [ -f ${PKGDESTDIR}/usr/bin/${f}-qt5 ] || [ -h ${PKGDESTDIR}/usr/bin/${f}-qt5 ]; then
-				mkdir -p ${dest}/usr/bin
-				mv -v ${PKGDESTDIR}/usr/bin/${f}-qt5 ${dest}/usr/bin/
 			fi
 		done
 	}
@@ -635,6 +390,7 @@ qt5-devel_package() {
 	short_desc+=" - Development files"
 	# qt5-enginio-devel is gone
 	pkg_install() {
+		source ${FILESDIR}/shared_functions.sh
 		vmove usr/include
 		vmove usr/lib/*.a
 		vmove usr/lib/*.prl
@@ -679,6 +435,17 @@ qt5-plugin-tds_package() {
 	}
 }
 
+qt5-base-tools_package() {
+	short_desc+=" - Tools"
+	pkg_install() {
+		for f in uic tracegen syncqt.pl rcc qvkgen qlalr qdbusxml2cpp \
+			qdbuscpp2xml moc fixqt4headers.pl; do
+			vmove usr/bin/$f-qt5
+			vmove usr/lib/qt5/bin/$f
+		done
+	}
+}
+
 qt5-qmake_package() {
 	short_desc+=" - Qmake Makefile generator tool"
 	depends="qtchooser"
@@ -714,7 +481,7 @@ qt5-xcb-private-headers_package() {
 	short_desc+=" - Private headers for Qt5 Xcb"
 	depends="qt5-devel"
 	pkg_install() {
-		for f in ${wrksrc}/qtbase/src/plugins/platforms/xcb/*.h; do
+		for f in ${wrksrc}/src/plugins/platforms/xcb/*.h; do
 			vinstall $f 644 usr/include/qt5xcb-private
 		done
 	}
