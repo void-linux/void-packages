@@ -369,7 +369,7 @@ install_pkg_deps() {
         (
         curpkgdepname=$($XBPS_UHELPER_CMD getpkgname "$i" 2>/dev/null)
         setup_pkg $curpkgdepname
-        exec env XBPS_DEPENDENCY=1 XBPS_BINPKG_EXISTS=1 \
+        exec env XBPS_DEPENDENCY=1 XBPS_BINPKG_EXISTS=1 XBPS_DEPENDS_CHAIN="$XBPS_DEPENDS_CHAIN, $sourcepkg(host)" \
             $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target $cross_prepare || exit $?
         ) || exit $?
         host_binpkg_deps+=("$i")
@@ -382,7 +382,7 @@ install_pkg_deps() {
 
         curpkgdepname=$($XBPS_UHELPER_CMD getpkgname "$i" 2>/dev/null)
         setup_pkg $curpkgdepname $cross
-        exec env XBPS_DEPENDENCY=1 XBPS_BINPKG_EXISTS=1 \
+        exec env XBPS_DEPENDENCY=1 XBPS_BINPKG_EXISTS=1 XBPS_DEPENDS_CHAIN="$XBPS_DEPENDS_CHAIN, $sourcepkg(${cross:-host})" \
             $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target $cross $cross_prepare || exit $?
         ) || exit $?
         binpkg_deps+=("$i")
@@ -400,7 +400,7 @@ install_pkg_deps() {
             fi
         fi
         setup_pkg $curpkgdepname $cross
-        exec env XBPS_DEPENDENCY=1 XBPS_BINPKG_EXISTS=1 \
+        exec env XBPS_DEPENDENCY=1 XBPS_BINPKG_EXISTS=1 XBPS_DEPENDS_CHAIN="$XBPS_DEPENDS_CHAIN, $sourcepkg(${cross:-host})" \
             $XBPS_LIBEXECDIR/build.sh $sourcepkg $pkg $target $cross $cross_prepare || exit $?
         ) || exit $?
     done
