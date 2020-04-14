@@ -1,13 +1,21 @@
 # vim: set ts=4 sw=4 et:
 #
 setup_pkg_depends() {
-    local pkg="$1" out="$2" j _rpkgname _depname _pkgname foo _deps
+    local pkg="$1" out="$2" with_subpkgs="$3" j _rpkgname _depname _pkgname foo _deps collected
 
     if [[ $pkg ]]; then
         # subpkg
         if declare -f ${pkg}_package >/dev/null; then
             ${pkg}_package
         fi
+    elif [[ $with_subpkgs ]]; then
+        collected="${depends}"
+        for pkg in $subpackages; do
+            [[ $pkg ]] || continue
+            ${pkg}_package
+            collected+=" ${depends}"
+        done
+        depends="${collected}"
     fi
 
     for j in ${depends}; do
@@ -296,9 +304,9 @@ install_pkg_deps() {
     #
     # Target run time dependencies
     #
-    if [[ ${depends} ]]; then
+    local _cleandeps=$(setup_pkg_depends "" 1 1) || exit 1
+    if [[ ${_cleandeps} ]]; then
         templates=""
-        local _cleandeps=$(setup_pkg_depends "" 1) || exit 1
         for f in ${_cleandeps}; do
             if [ -f $XBPS_SRCPKGDIR/$f/template ]; then
                 templates+=" $f"
@@ -334,6 +342,8 @@ install_pkg_deps() {
                     echo "   [runtime] ${_vpkg}: not found"
                     missing_rdeps+=("$_vpkg")
                 fi
+            elif [[ ${_depname} == ${pkgname} ]]; then
+                    echo "   [runtime] ${_vpkg}: not found (self, ignored)"
             else
                 echo "   [runtime] ${_vpkg}: not found"
                 missing_rdeps+=("$_vpkg")
