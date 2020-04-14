@@ -29,8 +29,6 @@ done
 setup_pkg "$PKGNAME" $XBPS_CROSS_BUILD
 readonly SOURCEPKG="$sourcepkg"
 
-mkdir -p $XBPS_WRAPPERDIR
-
 show_pkg_build_options
 check_pkg_arch $XBPS_CROSS_BUILD
 
