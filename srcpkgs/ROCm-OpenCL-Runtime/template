@@ -1,0 +1,84 @@
+# Template file for 'ROCm-OpenCL-Runtime'
+pkgname=ROCm-OpenCL-Runtime
+version=3.3.0
+revision=1
+_ocl_icd_name="OpenCL-ICD-Loader"
+_ocl_icd_ver="6c03f8b58fafd9dd693eaac826749a5cfad515f8"
+archs="x86_64*"
+create_wrksrc=yes
+build_wrksrc="${pkgname}-roc-${version}"
+build_style=cmake
+configure_args="-DUSE_COMGR_LIBRARY=yes"
+hostmakedepends="cmake pkg-config"
+makedepends="libglvnd-devel ROCm-CompilerSupport-devel
+	ROCT-Thunk-Interface-devel ROCR-Runtime-devel"
+depends="ROCm-CompilerSupport"
+short_desc="Radeon Open Compute OpenCL runtime"
+maintainer="Andrew J. Hesford <ajh@sideband.org>"
+license="MIT"
+homepage="https://github.com/RadeonOpenCompute/ROCm-OpenCL-Runtime"
+_rocroot="https://github.com/RadeonOpenCompute"
+distfiles="${_rocroot}/ROCm-OpenCL-Runtime/archive/roc-${version}.tar.gz
+	${_rocroot}/rocm-cmake/archive/rocm-${version}.tar.gz
+	https://github.com/KhronosGroup/${_ocl_icd_name}/archive/${_ocl_icd_ver}.tar.gz"
+checksum="ac6999f1a491ab066286c2bd6adf50f08f831286f56e267879f9f7eced22f98e
+	76ed3ee8e56cf3246011cf7723c2abda539e1136e7e7f6909bfa45d268b8644f
+	c94d5bb6dc980c4d41d73e2b81663a19aabe494e923e2d0eec72a4c95b318438"
+nocross=yes
+
+if [ "$XBPS_LIBC" = "musl" ]; then
+	makedepends+=" musl-legacy-compat"
+fi
+
+post_patch() {
+	if [ "$XBPS_LIBC" = "musl" ]; then
+		# Remove dependence on glibc
+		patch -Np0 < ${FILESDIR}/libelf-musl.patch
+		patch -Np0 < ${FILESDIR}/runtime-musl.patch
+		vsed -e '/glibc_functions.cpp/d' -i api/opencl/amdocl/CMakeLists.txt
+	fi
+}
+
+pre_configure() {
+	# ROCm requires a very specific Khronos ICD loader version in the tree
+	# Keep the ICD loader config in /etc/OpenCL/rocm-vendors to avoid conflicts
+	_ocl_icd_dir="${_ocl_icd_name}-${_ocl_icd_ver}"
+	ln -sf "${wrksrc}/${_ocl_icd_dir}" api/opencl/khronos/icd
+	vsed -i "${wrksrc}/${_ocl_icd_dir}/loader/icd_platform.h" \
+		-e 's@/etc/OpenCL/vendors/@/etc/OpenCL/rocm-vendors/@g'
+
+	# CMake modules probably not useful anywhere but for this build
+	ln -sf "${wrksrc}/rocm-cmake-rocm-${version}/share/rocm/cmake"/*.cmake cmake
+
+	# Fix the dlopen macro to point to versioned libamd_comgr shared object
+	vsed -i 'runtime/device/comgrctx.cpp' \
+		-e 's/\blibamd_comgr\(32\)\?.so\b/&.1/g'
+}
+
+post_install() {
+	vlicense License
+
+	# Create descriptor to allow the ICD loader to find the driver
+	vmkdir etc/OpenCL/rocm-vendors
+	echo "libamdocl64.so" > "${DESTDIR}/etc/OpenCL/rocm-vendors/amdocl64.icd"
+	vmkdir etc/OpenCL/vendors
+	ln -s ../../OpenCL/rocm-vendors/amdocl64.icd \
+		${DESTDIR}/etc/OpenCL/vendors/rocm-amdocl64.icd
+}
+
+ROCm-OpenCL-Runtime-devel_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/lib/libOpenCL-ROCm.so
+		vmove usr/include
+	}
+}
+
+ROCm-OpenCL-Runtime-clinfo_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - clinfo"
+	pkg_install() {
+		vmove usr/bin/rocm-clinfo
+	}
+}
