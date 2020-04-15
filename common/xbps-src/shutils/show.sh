@@ -68,8 +68,10 @@ show_pkg_build_depends() {
 
     # build time deps
     for f in ${_deps}; do
-        # ignore dependency on itself
-        [[ $f == $sourcepkg ]] && continue
+        if [ -z "$CROSS_BUILD" ]; then
+            # ignore dependency on itself
+            [[ $f == $sourcepkg ]] && continue
+        fi
         if [ ! -f $XBPS_SRCPKGDIR/$f/template ]; then
             msg_error "$pkgver: dependency '$f' does not exist!\n"
         fi
