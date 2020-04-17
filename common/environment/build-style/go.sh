@@ -1,4 +1,4 @@
-if [ "${hostmakedepends##*gcc-go-tools*}" ]; then
+if [ -z "$hostmakedepends" -o "${hostmakedepends##*gcc-go-tools*}" ]; then
 	# gc compiler
 	if [ -z "$archs" ]; then
 		archs="aarch64* armv[567]* i686* x86_64* ppc64le*"
