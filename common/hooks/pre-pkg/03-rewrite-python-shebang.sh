@@ -4,7 +4,7 @@
 hook() {
 	local pyver= shebang= off=
 
-	: ${pyver:=2}
+	: ${pyver:=3}
 
 	if [ -d ${PKGDESTDIR}/usr/lib/python* ]; then
 		pyver="$(find ${PKGDESTDIR}/usr/lib/python* -prune -type d | grep -o '[[:digit:]]\.[[:digit:]]$')"
