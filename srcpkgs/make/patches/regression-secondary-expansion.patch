@@ -1,0 +1,139 @@
+From 1d62df2df0b1b0fcb559247c5c7042f5e673a38b Mon Sep 17 00:00:00 2001
+From: q66 <daniel@octaforge.org>
+Date: Sat, 18 Apr 2020 19:02:35 +0200
+Subject: [PATCH] Revert "[SV 54161] Fix second expansion of $* for paths"
+
+This reverts commit 86f2f8bcb5b4a03da8eb37e9a99c22d8fec4bfb2.
+
+This commit breaks secondary expansion in builds of aegisub at very least,
+revert to previous behavior for the time being while this is investigated.
+---
+ src/implicit.c                     | 56 +++++++++---------------------
+ tests/scripts/features/se_implicit |  8 -----
+ 2 files changed, 17 insertions(+), 47 deletions(-)
+
+diff --git a/src/implicit.c b/src/implicit.c
+index b281a17..4d0a01f 100644
+--- a/src/implicit.c
++++ b/src/implicit.c
+@@ -221,9 +221,8 @@ pattern_search (struct file *file, int archive,
+   struct patdeps *deplist = xmalloc (max_deps * sizeof (struct patdeps));
+   struct patdeps *pat = deplist;
+ 
+-  /* Names of possible dependencies are constructed in this buffer.
+-     We may replace % by $(*F) for second expansion, increasing the length.  */
+-  char *depname = alloca (namelen + max_pattern_dep_length + 4);
++  /* Names of possible dependencies are constructed in this buffer.  */
++  char *depname = alloca (namelen + max_pattern_dep_length);
+ 
+   /* The start and length of the stem of FILENAME for the current rule.  */
+   const char *stem = 0;
+@@ -479,10 +478,9 @@ pattern_search (struct file *file, int archive,
+                 }
+             }
+ 
+-          if (stemlen + (check_lastslash ? pathlen : 0) > GET_PATH_MAX)
++          if (stemlen > GET_PATH_MAX)
+             {
+-              DBS (DB_IMPLICIT, (_("Stem too long: '%s%.*s'.\n"),
+-                                 check_lastslash ? pathdir : "",
++              DBS (DB_IMPLICIT, (_("Stem too long: '%.*s'.\n"),
+                                  (int) stemlen, stem));
+               continue;
+             }
+@@ -490,19 +488,8 @@ pattern_search (struct file *file, int archive,
+           DBS (DB_IMPLICIT, (_("Trying pattern rule with stem '%.*s'.\n"),
+                              (int) stemlen, stem));
+ 
+-          if (!check_lastslash)
+-            {
+-              memcpy (stem_str, stem, stemlen);
+-              stem_str[stemlen] = '\0';
+-            }
+-          else
+-            {
+-              /* We want to prepend the directory from
+-                 the original FILENAME onto the stem.  */
+-              memcpy (stem_str, filename, pathlen);
+-              memcpy (stem_str + pathlen, stem, stemlen);
+-              stem_str[pathlen + stemlen] = '\0';
+-            }
++          strncpy (stem_str, stem, stemlen);
++          stem_str[stemlen] = '\0';
+ 
+           /* If there are no prerequisites, then this rule matches.  */
+           if (rule->deps == 0)
+@@ -553,7 +540,7 @@ pattern_search (struct file *file, int archive,
+                         }
+                       memcpy (o, nptr, p - nptr);
+                       o += p - nptr;
+-                      memcpy (o, stem, stemlen);
++                      memcpy (o, stem_str, stemlen);
+                       o += stemlen;
+                       strcpy (o, p + 1);
+                     }
+@@ -605,10 +592,10 @@ pattern_search (struct file *file, int archive,
+                      again.  This is not good if you have certain characters
+                      in your stem (like $).
+ 
+-                     Instead, we will replace % with $* or $(*F) and allow the
+-                     second expansion to take care of it for us.  This way
+-                     (since $* and $(*F) are simple variables) there won't be
+-                     additional re-expansion of the stem.  */
++                     Instead, we will replace % with $* and allow the second
++                     expansion to take care of it for us.  This way (since $*
++                     is a simple variable) there won't be additional
++                     re-expansion of the stem.  */
+ 
+                   p = lindex (nptr, nptr + len, '%');
+                   if (p == 0)
+@@ -619,22 +606,13 @@ pattern_search (struct file *file, int archive,
+                   else
+                     {
+                       size_t i = p - nptr;
+-                      char *o = depname;
+-                      memcpy (o, nptr, i);
+-                      o += i;
++                      memcpy (depname, nptr, i);
++                      memcpy (depname + i, "$*", 2);
++                      memcpy (depname + i + 2, p + 1, len - i - 1);
++                      depname[len + 2 - 1] = '\0';
++
+                       if (check_lastslash)
+-                        {
+-                          add_dir = 1;
+-                          memcpy (o, "$(*F)", 5);
+-                          o += 5;
+-                        }
+-                      else
+-                        {
+-                          memcpy (o, "$*", 2);
+-                          o += 2;
+-                        }
+-                      memcpy (o, p + 1, len - i - 1);
+-                      o[len - i - 1] = '\0';
++                        add_dir = 1;
+                     }
+ 
+                   /* Set up for the next word.  */
+diff --git a/tests/scripts/features/se_implicit b/tests/scripts/features/se_implicit
+index 866d1fb..a01b385 100644
+--- a/tests/scripts/features/se_implicit
++++ b/tests/scripts/features/se_implicit
+@@ -254,13 +254,5 @@ foo: $$(info $$<)
+ !,
+               '', "bar\n#MAKE#: Nothing to be done for 'foo'.\n");
+ 
+-# SV 54161: Expand $$* properly when it contains a path
+-
+-run_make_test(q!
+-.SECONDEXPANSION:
+-%x: $$(info $$*); @echo '$*'
+-!,
+-              'q/ux', "q/u\nq/u\n");
+-
+ # This tells the test driver that the perl test script executed properly.
+ 1;
+-- 
+2.26.1
+
