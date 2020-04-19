@@ -1960,29 +1960,21 @@ otherwise the `debug` packages won't have debugging symbols.
 
 Fork the voidlinux `void-packages` git repository on github and clone it:
 
-    $ git clone git@github.com:<user>/void-packages.git
-
-You can now make your own commits to the `forked` repository:
-
-    $ git add ...
-    $ git commit ...
-    $ git push ...
+  $ git clone git@github.com:<user>/void-packages.git
+    
+See [CONTRIBUTING.md](https://github.com/void-linux/void-packages/blob/master/CONTRIBUTING.md)
+for information on how to format your commits and other tips for 
+contributing.
 
 To keep your forked repository always up to date, setup the `upstream` remote
 to pull in new changes:
 
-    $ git remote add upstream git://github.com/void-linux/void-packages.git
-    $ git pull upstream master
+  $ git remote add upstream git://github.com/void-linux/void-packages.git
+  $ git pull upstream master
 
 Once you've made changes to your `forked` repository you can submit
 a github pull request; see https://help.github.com/articles/fork-a-repo for more information.
 
-For commit messages please use the following rules:
-
-- If you've imported a new package use `"New package: <pkgname>-<version>"`.
-- If you've updated a package use `"<pkgname>: update to <version>."`.
-- If you've removed a package use `"<pkgname>: removed ..."`.
-- If you've modified a package use `"<pkgname>: ..."`.
 
 <a id="help"></a>
 ## Help
