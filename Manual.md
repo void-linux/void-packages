@@ -1458,16 +1458,12 @@ by blanks, Example: `pycompile_module="foo blah"`. If a python module installs a
 recursively by the target python version. This differs from `pycompile_module` in that any
 path may be specified, Example: `pycompile_dirs="usr/share/foo"`.
 
-- `pycompile_version`: this variable expects the python version that is used to
-byte-compile the python code (it generates the `.py[co]` files at post-install time).
-By default it's set to `2.7` for `python 2.x` packages.
-
-> NOTE: you need to define it *only* for non-Python modules.
-
 - `python_version`: this variable expects the supported Python major version.
 By default it's set to `2`. This variable is needed for multi-language
 applications (e.g., the application is written in C while the command is
 written in Python) or just single Python file ones that live in `/usr/bin`.
+
+> NOTE: you need to define it *only* for non-Python modules.
 
 Also, a set of useful variables are defined to use in the templates:
 
