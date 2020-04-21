@@ -18,3 +18,15 @@ elif [ -z "${SOURCE_DATE_EPOCH}" ]; then
 		export SOURCE_DATE_EPOCH="$($XBPS_GIT_CMD -C ${XBPS_DISTDIR} log --pretty='%ct' -n1 HEAD)"
 	fi
 fi
+
+# if XBPS_USE_GIT_REVS is enabled in conf file,
+# compute XBPS_GIT_REVS to use in pkg hooks
+if [ -z "$XBPS_USE_GIT_REVS" ]; then
+	unset XBPS_GIT_REVS
+elif [ -z "$XBPS_GIT_REVS" ]; then
+	if [ -n "$IN_CHROOT" ]; then
+		msg_error "xbps-src's BUG: XBPS_GIT_REVS is undefined\n"
+	else
+		export XBPS_GIT_REVS="$($XBPS_GIT_CMD -C "${XBPS_DISTDIR}" rev-parse --verify --short HEAD)"
+	fi
+fi
