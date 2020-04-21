@@ -3,7 +3,6 @@
 
 hook() {
 	local GITREVS_FILE=${XBPS_STATEDIR}/gitrev
-	local rev
 
 	# If XBPS_USE_GIT_REVS is disabled in conf file don't continue.
 	if [ -z $XBPS_USE_GIT_REVS ]; then
@@ -14,12 +13,11 @@ hook() {
 		return
 	fi
 
-	if [ -z "$XBPS_GIT_CMD" ]; then
-		msg_error "BUG: post-install: XBPS_GIT_CMD is not set\n"
+	if [ -z "$XBPS_GIT_REVS" ]; then
+		msg_error "BUG: XBPS_GIT_REVS is not set\n"
 	fi
 
 	cd $XBPS_SRCPKGDIR
-	rev="$($XBPS_GIT_CMD rev-parse --short HEAD)"
-	echo "${sourcepkg}:${rev}"
-	echo "${sourcepkg}:${rev}" > $GITREVS_FILE
+	echo "${sourcepkg}:${XBPS_GIT_REVS}"
+	echo "${sourcepkg}:${XBPS_GIT_REVS}" > $GITREVS_FILE
 }
