@@ -70,6 +70,10 @@ hook() {
 			continue
 		fi
 
+		if [[ $(file -b "$f") =~ "no machine" ]]; then
+			continue
+		fi
+
 		fname=${f##*/}
 		for x in ${nostrip_files}; do
 			if [ "$x" = "$fname" ]; then
