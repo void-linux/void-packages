@@ -18,6 +18,7 @@ show_pkg() {
     echo "maintainer:	$maintainer"
     [ -n "$homepage" ] && echo "Upstream URL:	$homepage"
     [ -n "$license" ] && echo "License(s):	$license"
+    [ -n "$changelog" ] && echo "Changelog:	$changelog"
     [ -n "$build_style" ] && echo "build_style:	$build_style"
     for i in $build_helper; do
         [ -n "$i" ] && echo "build_helper:  $i"
