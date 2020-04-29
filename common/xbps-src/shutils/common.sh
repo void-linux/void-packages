@@ -256,9 +256,8 @@ get_endian() {
         i686)     echo "le";;
         mipsel*)  echo "le";;
         mips*)    echo "be";;
-        ppc64le)  echo "le";;
-        ppc64)    echo "be";;
-        ppc)      echo "be";;
+        ppc*le)   echo "le";;
+        ppc*)     echo "be";;
         x86_64)   echo "le";;
     esac
 }
@@ -284,9 +283,8 @@ get_wordsize() {
         i686)     echo "32";;
         mipsel*)  echo "32";;
         mips*)    echo "32";;
-        ppc64le)  echo "64";;
-        ppc64)    echo "64";;
-        ppc)      echo "32";;
+        ppc64*)   echo "64";;
+        ppc*)     echo "32";;
         x86_64)   echo "64";;
     esac
 }
@@ -298,6 +296,7 @@ get_no_atomic8() {
         armv5tel) echo "yes";;
         armv6l)   echo "yes";;
         mips*)    echo "yes";;
+        ppcle)    echo "yes";;
         ppc)      echo "yes";;
     esac
 }
