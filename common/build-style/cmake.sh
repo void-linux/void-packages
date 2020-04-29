@@ -15,6 +15,7 @@ do_configure() {
 			mips*) _CMAKE_SYSTEM_PROCESSOR=mips ;;
 			ppc64le*) _CMAKE_SYSTEM_PROCESSOR=ppc64le ;;
 			ppc64*) _CMAKE_SYSTEM_PROCESSOR=ppc64 ;;
+			ppcle*) _CMAKE_SYSTEM_PROCESSOR=ppcle ;;
 			ppc*) _CMAKE_SYSTEM_PROCESSOR=ppc ;;
 			*) _CMAKE_SYSTEM_PROCESSOR=generic ;;
 		esac
