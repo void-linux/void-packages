@@ -16,10 +16,6 @@ do_patch() {
 			armv*)
 				_MESON_CPU_FAMILY=arm
 				;;
-			ppc|ppc-musl)
-				_MESON_TARGET_ENDIAN=big
-				_MESON_CPU_FAMILY=ppc
-				;;
 			i686*)
 				_MESON_CPU_FAMILY=x86
 				;;
@@ -29,6 +25,13 @@ do_patch() {
 			ppc64*)
 				_MESON_TARGET_ENDIAN=big
 				_MESON_CPU_FAMILY=ppc64
+				;;
+			ppcle*)
+				_MESON_CPU_FAMILY=ppc
+				;;
+			ppc*)
+				_MESON_TARGET_ENDIAN=big
+				_MESON_CPU_FAMILY=ppc
 				;;
 			*)
 				# if we reached here that means that the cpu and cpu_family
