@@ -233,7 +233,7 @@ $ ./xbps-src pkg <pkgname>
 ```
 
 When the package and its required dependencies are built, the binary packages will be created
-and registered in the default local repository at `hostdir/binpkgs`; the path to this local repository can be added to 
+and registered in the default local repository at `hostdir/binpkgs`; the path to this local repository can be added to
 any xbps configuration file (see xbps.d(5)) or by explicitly appending them via cmdline, i.e:
 
     $ xbps-install --repository=hostdir/binpkgs ...
@@ -289,7 +289,7 @@ i.e `XBPS_PKG_OPTIONS_xorg_server=opt`.
 The list of supported package build options and its description is defined in the
 `common/options.description` file or in the `template` file.
 
-<a href="sharing-and-signing"></a>
+<a name="sharing-and-signing"></a>
 ### Sharing and signing your local repositories
 
 To share a local repository remotely it's mandatory to sign it and the binary packages
