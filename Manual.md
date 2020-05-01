@@ -5,73 +5,72 @@ packages for XBPS, the `Void Linux` native packaging system.
 
 *Table of Contents*
 
-* [Introduction](#Introduction)
-	* [Quality Requirements](#quality_requirements)
-	* [Package build phases](#buildphase)
-	* [Package naming conventions](#namingconvention)
-		* [Libraries](#libs)
-		* [Language Modules](#language_modules)
-		* [Language Bindings](#language_bindings)
+* [Introduction](#introduction)
+	* [Quality Requirements](#quality-requirements)
+	* [Package build phases](#package-build-phases)
+	* [Package naming conventions](#package-naming-conventions)
+		* [Libraries](#libraries)
+		* [Language Modules](#language-modules)
+		* [Language Bindings](#language-bindings)
 		* [Programs](#programs)
-	* [Global functions](#global_funcs)
-	* [Global variables](#global_vars)
-	* [Available variables](#available_vars)
-		* [Mandatory variables](#mandatory_vars)
-		* [Optional variables](#optional_vars)
-		* [About the depends variables](#explain_depends)
+	* [Global functions](#global-functions)
+	* [Global variables](#global-variables)
+	* [Available variables](#available-variables)
+		* [Mandatory variables](#mandatory-variables)
+		* [Optional variables](#optional-variables)
+		* [About the many types of `depends` variables](#about-the-many-types-of-depends-variables)
 	* [Repositories](#repositories)
-		* [Repositories defined by Branch](#repo_by_branch)
-		* [Package defined repositories](#pkg_defined_repo)
-	* [Checking for new upstream releases](#updates)
-	* [Handling patches](#patches)
-	* [Build style scripts](#build_scripts)
-	* [Build helper scripts](#build_helper)
+		* [Repositories defined by Branch](#repositories-defined-by-branch)
+		* [Package defined Repositories](#package-defined-repositories)
+	* [Checking for new upstream releases](#checking-for-new-upstream-releases)
+	* [Handling patches](#handling-patches)
+	* [build\_style scripts](#build_style-scripts)
+	* [build\_helper scripts](#build_helper-scripts)
 	* [Functions](#functions)
-	* [Build options](#build_options)
-		* [Runtime dependencies](#deps_runtime)
-	* [INSTALL and REMOVE files](#install_remove_files)
-	* [INSTALL.msg and REMOVE.msg files](#install_remove_files_msg)
-	* [Creating system accounts/groups at runtime](#runtime_account_creation)
-	* [Writing runit services](#writing_runit_services)
-	* [32bit packages](#32bit_pkgs)
-	* [Subpackages](#pkgs_sub)
-	* [Development packages](#pkgs_development)
-	* [Data packages](#pkgs_data)
-	* [Documentation packages](#pkgs_documentation)
-	* [Python packages](#pkgs_python)
-	* [Go packages](#pkgs_go)
-	* [Haskell packages](#pkgs_haskell)
-	* [Font packages](#pkgs_font)
-	* [Removing a package](#pkg_remove)
-	* [XBPS Triggers](#xbps_triggers)
-		* [appstream-cache](#triggers_appstream_cache)
-		* [binfmts](#triggers_binfmts)
-		* [dkms](#triggers_dkms)
-		* [gconf-schemas](#triggers_gconf_schemas)
-		* [gdk-pixbuf-loaders](#triggers_gdk_pixbuf_loaders)
-		* [gio-modules](#triggers_gio_modules)
-		* [gettings-schemas](#triggers_gsettings_schemas)
-		* [gtk-icon-cache](#triggers_gtk_icon_cache)
-		* [gtk-immodules](#triggers_gtk_immodules)
-		* [gtk-pixbuf-loaders](#triggers_gtk_pixbuf_loaders)
-		* [gtk3-immodules](#triggers_gtk3_immodules)
-		* [hwdb.d-dir](#triggers_hwdb.d_dir)
-		* [info-files](#triggers_info_files)
-		* [kernel-hooks](#triggers_kernel_hooks)
-		* [mimedb](#triggers_mimedb)
-		* [mkdirs](#triggers_mkdirs)
-		* [pango-modules](#triggers_pango_module)
-		* [pycompile](#triggers_pycompile)
-		* [register-shell](#triggers_register_shell)
-		* [system-accounts](#triggers_system_accounts)
-		* [update-desktopdb](#triggers_update_desktopdb)
-		* [x11-fonts](#triggers_x11_fonts)
-		* [xml-catalog](#triggers_xml_catalog)
+	* [Build options](#build-options)
+		* [Runtime dependencies](#runtime-dependencies)
+	* [INSTALL and REMOVE files](#install-and-remove-files)
+	* [INSTALL.msg and REMOVE.msg files](#installmsg-and-removemsg-files)
+	* [Creating system accounts/groups at runtime](#creating-system-accountsgroups-at-runtime)
+	* [Writing runit services](#writing-runit-services)
+	* [32bit packages](#32bit-packages)
+	* [Subpackages](#subpackages)
+	* [Development packages](#development-packages)
+	* [Data packages](#data-packages)
+	* [Documentation packages](#documentation-packages)
+	* [Python packages](#python-packages)
+	* [Go packages](#go-packages)
+	* [Haskell packages](#haskell-packages)
+	* [Font packages](#font-packages)
+	* [Removing a package](#removing-a-package)
+	* [XBPS Triggers](#xbps-triggers)
+		* [appstream-cache](#appstream-cache)
+		* [binfmts](#binfmts)
+		* [dkms](#dkms)
+		* [gconf-schemas](#gconf-schemas)
+		* [gdk-pixbuf-loaders](#gdk-pixbuf-loaders)
+		* [gio-modules](#gio-modules)
+		* [gettings-schemas](#gsettings-schemas)
+		* [gtk-icon-cache](#gtk-icon-cache)
+		* [gtk-immodules](#gtk-immodules)
+		* [gtk-pixbuf-loaders](#gtk-pixbuf-loaders)
+		* [gtk3-immodules](#gtk3-immodules)
+		* [hwdb.d-dir](#hwdbd-dir)
+		* [info-files](#info-files)
+		* [kernel-hooks](#kernel-hooks)
+		* [mimedb](#mimedb)
+		* [mkdirs](#mkdirs)
+		* [pango-modules](#pango-modules)
+		* [pycompile](#pycompile)
+		* [register-shell](#register-shell)
+		* [system-accounts](#system-accounts)
+		* [update-desktopdb](#update-desktopdb)
+		* [x11-fonts](#x11-fonts)
+		* [xml-catalog](#xml-catalog)
 	* [Notes](#notes)
-	* [Contributing via git](#contributing)
+	* [Contributing via git](#contributing-via-git)
 * [Help](#help)
 
-<a id="Introduction"></a>
 ## Introduction
 
 The `void-packages` repository contains all `source` packages that are the
@@ -117,7 +116,6 @@ If everything went fine after running
 a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local repository
 `hostdir/binpkgs`.
 
-<a id="quality_requirements"></a>
 ### Quality Requirements
 
 To be included in the Void repository, software must meet at least one
@@ -135,7 +133,6 @@ the Void packages system.
 1. Required: Another package either within the repository or pending inclusion
    requires the package.
 
-<a id="buildphase"></a>
 ### Package build phases
 
 Building a package consist of the following phases:
@@ -169,10 +166,8 @@ via `make install` or any other compatible method.
 successfully, the phase will be skipped later (unless its work directory
 `${wrksrc}` is removed with `xbps-src clean`).
 
-<a id="namingconventions"></a>
 ### Package naming conventions
 
-<a id="libs"></a>
 #### Libraries
 
 Libraries are packages which provide shared objects (\*.so) in /usr/lib.
@@ -196,7 +191,6 @@ a linked program.
 against this package. If the library is a sub package, its corresponding
 development package should be named `lib<name>-devel`
 
-<a id="language_modules"></a>
 #### Language Modules
 
 Language modules are extensions to script or compiled languages. Those packages
@@ -217,7 +211,6 @@ for the language prefix.
 
 Example: python-pam, perl-URI, python3-pyside2
 
-<a id="language_bindings"></a>
 #### Language Bindings
 
 Language Bindings are packages which allow programs or libraries to have
@@ -230,7 +223,6 @@ The naming convention to those packages is:
 
 Example: gimp-python, irssi-perl
 
-<a id="programs"></a>
 #### Programs
 
 Programs put executables under /usr/bin (or in very special cases in other
@@ -246,7 +238,6 @@ Programs can be split into program packages and library packages. The program
 package should be named as described above. The library package should be
 prefixed with "lib" (see section `Libraries`)
 
-<a id="global_funcs"></a>
 ### Global functions
 
 The following functions are defined by `xbps-src` and can be used on any template:
@@ -305,12 +296,12 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	`$DESTDIR`. The optional 2nd argument can be used to change the
 	`file name`.
 
-- <a id="vlicense"></a>
- *vlicense()* `vlicense <file> [<name>]`
+- *vlicense()* `vlicense <file> [<name>]`
 
 	Installs `file` into `usr/share/licenses/<pkgname>` in the pkg
 	`$DESTDIR`. The optional 2nd argument can be used to change the
-	`file name`. See [license](#var_license) for when to use it.
+	`file name`. See `license` in [Mandatory variables](#mandatory-variables)
+	for when to use it.
 
 - *vsv()* `vsv <service>`
 
@@ -333,7 +324,6 @@ The following functions are defined by `xbps-src` and can be used on any templat
 
 > Shell wildcards must be properly quoted, Example: `vmove "usr/lib/*.a"`.
 
-<a id="global_vars"></a>
 ### Global variables
 
 The following variables are defined by `xbps-src` and can be used on any template:
@@ -393,10 +383,8 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_RUST_TARGET` The target architecture triplet used by `rustc` and `cargo`.
 
-<a id="available_vars"></a>
 ### Available variables
 
-<a id="mandatory_vars"></a>
 #### Mandatory variables
 
 The list of mandatory variables for a template:
@@ -404,8 +392,7 @@ The list of mandatory variables for a template:
 - `homepage` A string pointing to the `upstream` homepage.
 
 
-- <a id="var_license"></a>
-`license` A string matching the license's [SPDX Short identifier](https://spdx.org/licenses),
+- `license` A string matching the license's [SPDX Short identifier](https://spdx.org/licenses),
 `Public Domain`, or string prefixed with `custom:` for other licenses.
 Multiple licenses should be separated by commas, Example: `GPL-3.0-or-later, custom:Hugware`.
 
@@ -432,7 +419,6 @@ the generated `binary packages` have been modified.
 - `version` A string with the package version. Must not contain dashes or underscore
 and at least one digit is required. Shell's variable substition usage is not allowed.
 
-<a id="optional_vars"></a>
 #### Optional variables
 
 - `hostmakedepends` The list of `host` dependencies required to build the package, and
@@ -701,8 +687,7 @@ Examples:
 	archs=noarch
 	```
 
-<a id="explain_depends"></a>
-#### About the many types of `depends` variable.
+#### About the many types of `depends` variables
 
 So far we have listed four types of `depends`, there are `hostmakedepends`,
 `makedepends`, `checkdepends` and plain old `depends`.To understand the difference
@@ -733,10 +718,8 @@ Finally, as a general rule, if something compiles the exact same way whether or
 not you add a particular package to `makedepends` or `hostmakedepends`, it
 shouldn't be added.
 
-<a id="repositories"></a>
 #### Repositories
 
-<a id="repo_by_branch"></a>
 ##### Repositories defined by Branch
 
 The global repository takes the name of
@@ -744,7 +727,6 @@ the current branch, except if the name of the branch is master. Then the resulti
 repository will be at the global scope. The usage scenario is that the user can
 update multiple packages in a second branch without polluting his local repository.
 
-<a id="pkg_defined_repo"></a>
 ##### Package defined Repositories
 
 The second way to define a repository is by setting the `repository` variable in
@@ -757,7 +739,6 @@ The following repository names are valid:
 
 * `nonfree`: Repository for closed source packages.
 
-<a id="updates"></a>
 ### Checking for new upstream releases
 
 New upstream versions can be automatically checked using
@@ -796,7 +777,6 @@ in url. Defaults to `(|v|$pkgname)[-_.]*`.
 part that follows numeric part of version directory
 in url. Defaults to `(|\.x)`.
 
-<a id="patches"></a>
 ### Handling patches
 
 Sometimes software needs to be patched, most commonly to fix bugs that have
@@ -819,8 +799,7 @@ be used to set the args passed to `patch(1)`. As an example, if `foo.patch` requ
 special arguments to be passed to `patch(1)` that can't be used when applying other
 patches, `foo.patch.args` can be created containing those args.
 
-<a id="build_scripts"></a>
-### build style scripts
+### build\_style scripts
 
 The `build_style` variable specifies the build method to build and install a
 package. It expects the name of any available script in the
@@ -932,8 +911,7 @@ matching the `build_style` name, Example:
 
     `common/environment/build-style/gnu-configure.sh`
 
-<a id="build_helper"></a>
-### build helper scripts
+### build\_helper scripts
 
 The `build_helper` variable specifies shell snippets to be sourced that will create a
 suitable environment for working with certain sets of packages.
@@ -962,7 +940,6 @@ This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 `gnu-configure` style the configure script calls `qmake` or a `Makefile` in
 `gnu-makefile` style, respectively.
 
-<a id="functions"></a>
 ### Functions
 
 The following functions can be defined to change the behavior of how the
@@ -1021,7 +998,6 @@ Current working directory for functions is set as follows:
 - For pre_configure through post_install: `build_wrksrc`
 if it is defined, otherwise `wrksrc`.
 
-<a id="build_options"></a>
 ### Build options
 
 Some packages might be built with different build options to enable/disable
@@ -1126,7 +1102,6 @@ Example: `XBPS_PKG_OPTIONS_xorg_server=opt`.
 The list of supported package build options and its description is defined in the
 `common/options.description` file.
 
-<a id="deps_runtime"></a>
 #### Runtime dependencies
 
 Dependencies for ELF objects are detected automatically by `xbps-src`, hence runtime
@@ -1172,7 +1147,6 @@ packages to their default providers is defined in `etc/default.virtual`. Individ
 overridden by local preferences in `etc/virtual`. Comments in `etc/default.virtual` provide more
 information on this map.
 
-<a id="install_remove_files"></a>
 ### INSTALL and REMOVE files
 
 The INSTALL and REMOVE shell snippets can be used to execute certain actions at a specified
@@ -1216,7 +1190,6 @@ be executed via `chroot(2)` won't work correctly.
 > NOTE: do not use INSTALL/REMOVE scripts to print messages, see the next section for
 more information.
 
-<a id="install_remove_files_msg"></a>
 ### INSTALL.msg and REMOVE.msg files
 
 The `INSTALL.msg` and `REMOVE.msg` files can be used to print a message at post-install
@@ -1227,7 +1200,6 @@ Ideally those files should not exceed 80 chars per line.
 subpackages can also have their own `INSTALL.msg` and `REMOVE.msg` files, simply create them
 as `srcpkgs/<pkgname>/<subpkg>.INSTALL.msg` or `srcpkgs/<pkgname>/<subpkg>.REMOVE.msg` respectively.
 
-<a id="runtime_account_creation"></a>
 ### Creating system accounts/groups at runtime
 
 There's a trigger along with some variables that are specifically to create
@@ -1259,7 +1231,6 @@ accounts.
 > NOTE: The underscore policy does not apply to old packages, due to the inevitable breakage of
 > changing the username only new packages should follow it.
 
-<a id="writing_runit_services"></a>
 ### Writing runit services
 
 Void Linux uses [runit](http://smarden.org/runit/) for booting and supervision of services.
@@ -1298,7 +1269,6 @@ If the service requires directories in parts of the system that are not generall
 temporary filesystems. Then use the `make_dirs` variable in the template to create
 those directories when the package is installed.
 
-<a id="32bit_pkgs"></a>
 ### 32bit packages
 
 32bit packages are built automatically when the builder is x86 (32bit), but
@@ -1320,7 +1290,6 @@ This expects the basename of the target file, Example: `lib32symlinks="foo"`.
 - `lib32mode` If unset, only shared/static libraries and pkg-config files will be copied to the
 **32bit** package. If set to `full` all files will be copied to the 32bit package, unmodified.
 
-<a id="pkgs_sub"></a>
 ### Subpackages
 
 In the example shown above just a binary package is generated, but with some
@@ -1380,7 +1349,6 @@ destdir (`$DESTDIR`) to the `subpackage` destdir (`$PKGDESTDIR`).
 Subpackages are processed always in alphabetical order; To force a custom order,
 the `subpackages` variable can be declared with the wanted order.
 
-<a id="pkgs_development"></a>
 ### Development packages
 
 A development package, commonly generated as a subpackage, shall only contain
@@ -1410,7 +1378,6 @@ following subset of files from the main package:
 * Gobject introspection XML files `usr/share/gir-1.0`
 * Vala bindings `usr/share/vala`
 
-<a id="pkgs_data"></a>
 ### Data packages
 
 Another common subpackage type is the `-data` subpackage. This subpackage
@@ -1422,7 +1389,6 @@ or card material (maps). Data subpackages are almost always `archs=noarch`.
 The main package must then have `depends="${pkgname}-data-${version}_${revision}"`,
 possibly in addition to other, non-automatic depends.
 
-<a id="pkgs_documentation"></a>
 ### Documentation packages
 
 Packages intended for user interaction do not always unconditionally require
@@ -1437,7 +1403,6 @@ building packages depending on a specific package there is no need to install la
 amounts of documentation for no reason. Thus the size of the documentation part should
 be your guidance to decide whether or not to split off a `-doc` subpackage.
 
-<a id="pkgs_python"></a>
 ### Python packages
 
 Python packages should be built with the `python{,2,3}-module` build style, if possible.
@@ -1486,7 +1451,6 @@ Also, a set of useful variables are defined to use in the templates:
 > NOTE: it's expected that additional subpkgs must be generated to allow packaging for multiple
 python versions.
 
-<a id="pkgs_go"></a>
 ### Go packages
 
 Go packages should be built with the `go` build style, if possible.
@@ -1523,7 +1487,6 @@ otherwise preping some assets.  If possible do this in pre_build().
 The path to the package's source inside `$GOPATH` is available as
 `$GOSRCPATH`.
 
-<a id="pkgs_haskell"></a>
 ### Haskell packages
 
 We build Haskell package using `stack` from
@@ -1541,7 +1504,6 @@ The following variables influence how Haskell packages are built:
 - `make_build_args`: This is passed as-is to `stack build ...`, so
   you can add your `--flag ...` parameters there.
 
-<a id="pkgs_font"></a>
 ### Font packages
 
 Font packages are very straightforward to write, they are always set with the
@@ -1553,7 +1515,6 @@ cache during the install/removal of the package
 - `font_dirs`: which should be set to the directory where the package
 installs its fonts
 
-<a id="pkg_remove"></a>
 ### Removing a package
 
 Follows a list of things that should be done to help guarantee that a
@@ -1581,7 +1542,6 @@ the source of those patches/files.
 - Remove the package from the repository index
 or contact a team member that can do so.
 
-<a id="xbps_triggers"></a>
 ### XBPS Triggers
 
 XBPS triggers are a collection of snippets of code, provided by the `xbps-triggers`
@@ -1596,7 +1556,6 @@ package.
 This is not a complete overview of the package. It is recommended to read the variables
 referenced and the triggers themselves.
 
-<a id="triggers_appstream_cache"></a>
 #### appstream-cache
 
 The appstream-cache trigger is responsible for rebuilding the appstream metadata cache.
@@ -1618,7 +1577,6 @@ directory.
 It is automatically added to packages that have XML files under one of the directories
 searched by appstreamcli.
 
-<a id="triggers_binfmts"></a>
 #### binfmts
 
 The binfmts trigger is responsible for registration and removal of arbitrary
@@ -1630,7 +1588,6 @@ to register/remove entries from the arbitrary executable binary formats database
 To include the trigger use the `binfmts` variable, as the trigger won't do anything unless
 it is defined.
 
-<a id="triggers_dkms"></a>
 #### dkms
 
 The dkms trigger is responsible for compiling and removing dynamic kernel modules of a
@@ -1643,7 +1600,6 @@ the corresponding module will be removed
 To include the trigger use the `dkms_modules` variable, as the trigger won't do anything
 unless it is defined.
 
-<a id="triggers_gconf_schemas"></a>
 #### gconf-schemas
 
 The gconf-schemas trigger is responsible for registering and removing .schemas and
@@ -1660,7 +1616,6 @@ It is automatically added to packages that have `/usr/share/gconf/schemas` prese
 as a directory. All files with the schemas file extension under that directory
 are passed to the trigger.
 
-<a id="triggers_gdk_pixbuf_loaders"></a>
 #### gdk-pixbuf-loaders
 
 The gdk-pixbuf-loaders trigger is responsible for maintaining the GDK Pixbuf loaders cache.
@@ -1674,7 +1629,6 @@ It can be added by defining `gdk-pixbuf-loaders` in the `triggers` variable. It 
 added automatically to any package that has the path `usr/lib/gdk-pixbuf-2.0/2.10.0/loaders`
 available as a directory.
 
-<a id="triggers_gio_modules"></a>
 #### gio-modules
 
 The gio-modules trigger is responsible for updating the Glib GIO module cache with
@@ -1686,7 +1640,6 @@ present under `usr/lib/gio/modules`.
 It is automatically added to packages that have `/usr/lib/gio/modules` present
 as a directory.
 
-<a id="triggers_gsettings_schemas"></a>
 #### gsettings-schemas
 
 The gsettings-schemas trigger is responsible for compiling Glib's GSettings XML
@@ -1701,7 +1654,6 @@ During removal of the glib package it deletes all files inside
 It is automatically added to packages that have `/usr/share/glib-2.0/schemas` present
 as a directory.
 
-<a id="triggers_gtk_icon_cache"></a>
 #### gtk-icon-cache
 
 The gtk-icon-cache trigger is responsible for updating the gtk+ icon cache.
@@ -1715,7 +1667,6 @@ It is automatically added on packages that have `/usr/share/icons` available
 as a directory, all directories under that directory have their absolute path
 passed to the trigger.
 
-<a id="triggers_gtk_immodules"></a>
 #### gtk-immodules
 
 The gtk-immodules trigger is responsible for updating the IM (Input Method) modules
@@ -1731,7 +1682,6 @@ During removal of the `gtk+` package it removes the cache file which is located 
 It is automatically added to packages that have `/usr/lib/gtk-2.0/2.10.0/immodules`
 present as a directory.
 
-<a id="triggers_gtk_pixbuf_loaders"></a>
 #### gtk-pixbuf-loaders
 
 gtk-pixbuf-loaders is the old name for the current `gdk-pixbuf-loaders` trigger and is
@@ -1740,7 +1690,6 @@ compatibility measure.
 
 For information about how it works refer to [gdk-pixbuf-loaders](#triggers_gdk_pixbuf_loaders).
 
-<a id="triggers_gtk3_immodules"></a>
 #### gtk3-immodules
 
 The gtk3-immodules trigger is responsible for updating the IM (Input Method) modules
@@ -1756,7 +1705,6 @@ During removal of the `gtk+3` package it removes the cache file which is located
 It is automatically added to packages that have `/usr/lib/gtk-3.0/3.0.0/immodules`
 present as a directory.
 
-<a id="triggers_hwdb.d_dir"></a>
 #### hwdb.d-dir
 
 The hwdb.d-dir trigger is responsible for updating the hardware database.
@@ -1766,7 +1714,6 @@ During installation and removal it runs `usr/bin/udevadm hwdb --root=. --update`
 It is automatically added to packages that have `/usr/lib/udev/hwdb.d` present
 as a directory.
 
-<a id="triggers_info_files"></a>
 #### info-files
 
 The info-files trigger is responsible for registering and unregistering the GNU info
@@ -1784,7 +1731,6 @@ registry located at `usr/share/info`.
 If it is running under another architecture it tries to use the host's `install-info`
 utility.
 
-<a id="triggers_kernel_hooks"></a>
 #### kernel-hooks
 
 The kernel-hooks trigger is responsible for running scripts during installation/removal
@@ -1802,7 +1748,6 @@ target.
 It is automatically added if the helper variable `kernel_hooks_version` is defined.
 However it is not obligatory to have it defined.
 
-<a id="triggers_mimedb"></a>
 #### mimedb
 
 The mimedb trigger is responsible for updating the shared-mime-info database.
@@ -1812,7 +1757,6 @@ In all runs it will just execute `update-mime-database -n usr/share/mime`.
 It is automatically added to packages that have `/usr/share/mime` available as
 a directory.
 
-<a id="triggers_mkdirs"></a>
 #### mkdirs
 
 The mkdirs trigger is responsible for creating and removing directories dictated
@@ -1837,7 +1781,6 @@ During removal it will delete the directory using `rmdir`.
 To include this trigger use the `make_dirs` variable, as the trigger won't do anything
 unless it is defined.
 
-<a id="triggers_pango_module"></a>
 #### pango-modules
 
 The pango-modules trigger is currently being removed since upstream has removed the
@@ -1851,7 +1794,6 @@ Currently it removes `etc/pango/pango.modules` file during removal of the pango 
 It can be added by defining `pango-modules` in the `triggers` variable and has no way to get
 added automatically to a package.
 
-<a id="triggers_pycompile"></a>
 #### pycompile
 
 The pycompile trigger is responsible for compiling python code into native
@@ -1868,7 +1810,6 @@ trigger won't do anything unless at least one of those variables is defined.
 
 A `python_version` variable can be set to direct behaviour of the trigger.
 
-<a id="triggers_register_shell"></a>
 #### register-shell
 
 The register-shell trigger is responsible for registering and removing shell entries
@@ -1882,7 +1823,6 @@ During removal it will use `sed` to delete the shell from the file.
 To include this trigger use the `register_shell` variable, as the trigger won't do
 anything unless it is defined.
 
-<a id="triggers_system_accounts"></a>
 #### system-accounts
 
 The system-accounts trigger is responsible for creating and disabling system accounts
@@ -1895,7 +1835,6 @@ Example: `transmission unprivileged user - for uninstalled package transmission`
 
 This trigger can only be used by using the `system_accounts` variable.
 
-<a id="triggers_update_desktopdb"></a>
 #### update-desktopdb
 
 The update-desktopdb trigger is responsible for updating the system's MIME database.
@@ -1909,7 +1848,6 @@ was created during installation.
 It is automatically added to packages that have `/usr/share/applications` available as
 a directory.
 
-<a id="triggers_x11_fonts"></a>
 #### x11-fonts
 
 The x11-fonts trigger is responsible for rebuilding the fonts.dir and fonts.scale files
@@ -1921,7 +1859,6 @@ all font directories it was given via the `font_dirs` variable.
 To include this trigger use the `font_dirs` variable, as the trigger won't do anything
 unless it is defined.
 
-<a id="triggers_xml_catalog"></a>
 #### xml-catalog
 
 The xml-catalog trigger is responsible for registering and removing SGML/XML catalog entries.
@@ -1937,7 +1874,6 @@ During removal it uses `xmlcatmgr` to remove all catalogs passed to it by the
 To include this trigger use the `sgml_entries` variable or/and the `xml_entries` variable,
 as the trigger won't do anything unless either of them are defined.
 
-<a id="notes"></a>
 ### Notes
 
 - Make sure that all software is configured to use the `/usr` prefix.
@@ -1956,16 +1892,14 @@ the installed files (`./xbps-src show-files pkg`) before pushing new updates.
 - Make sure that binaries are not stripped by the software, let xbps-src do this;
 otherwise the `debug` packages won't have debugging symbols.
 
-<a id="contributing"></a>
 ### Contributing via git
 
 Fork the voidlinux `void-packages` git repository on github and clone it:
 
     $ git clone git@github.com:<user>/void-packages.git
 
-See [CONTRIBUTING.md](https://github.com/void-linux/void-packages/blob/master/CONTRIBUTING.md)
-for information on how to format your commits and other tips for
-contributing.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for information on how to format
+your commits and other tips for contributing.
 
 Once you've made changes to your `forked` repository you can submit
 a github pull request; see https://help.github.com/articles/fork-a-repo for more information.
@@ -1976,7 +1910,6 @@ to pull in new changes:
     $ git remote add upstream git://github.com/void-linux/void-packages.git
     $ git pull upstream master
 
-<a id="help"></a>
 ## Help
 
 If after reading this `manual` you still need some kind of help, please join
