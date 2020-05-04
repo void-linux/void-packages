@@ -43,7 +43,14 @@ Once you have built your template file or files, the commit message should have 
 
 * for template modifications without a version change, use ```<pkgname>: <reason>``` ([example](https://github.com/void-linux/void-packages/commit/8b68d6bf1eb997cd5e7c095acd040e2c5379c91d)).
 
+* for package removals, use ```<pkgname>: remove package``` ([example](https://github.com/void-linux/void-packages/commit/83784632d94deee5d038c8e1c4c1dffa922fca21)).
+
+* for `common/shlibs` modifications, use `common/shlibs: <pkgname>` ([example](https://github.com/void-linux/void-packages/commit/613651c91811cb4fd2e1a6be701c87072d759a9f)).
+
 If you want to describe your changes in more detail, add an empty line followed by those details ([example](https://github.com/void-linux/void-packages/commit/f1c45a502086ba1952f23ace9084a870ce437bc6)).
+Pull requests with changes to packages that take too long to build, such as Firefox and the Linux kernel, should include `[ci skip]` in the last line of the commits, to avoid unnecessarily
+spending the CI builders' time, since the package is not going to finish building under the 50 minute limit.
+In such cases, the package should be built and cross-built locally for a combination of architectures and libc.
 
 For further information, please consult the [manual](https://github.com/void-linux/void-packages/blob/master/Manual.md).
 
@@ -69,8 +76,8 @@ Once you have successfully built the package, you can start a pull request.
 
 Most pull requests should only contain a single package and dependencies which are not part of void-packages yet.
 
-If you make updates to packages containing a soname bump you also need to revbump all packages that are dependant. Those
-packages should also be part of the same pull request.
+If you make updates to packages containing a soname bump, you also need to update `common/shlibs` and revbump all packages that are dependant.
+There should be a commit for each package revbump, and those commits should be part of the same pull request.
 
 When you make changes to your pull request, please *do not close and reopen your pull request*. Instead, just forcibly git push, overwriting any old commits. Closing and opening your pull requests repeatedly spams the Void maintainers.
 
