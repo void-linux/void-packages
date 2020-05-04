@@ -8,9 +8,8 @@ This document describes how you, as a contributor, can help with adding packages
 
 If you really want to get a package into Void Linux, we recommend you package it yourself.
 
-We provide a [comprehensive Manual](https://github.com/void-linux/void-packages/blob/master/Manual.md)
-on how to create new packages. There's also a
-[manual for xbps-src](https://github.com/void-linux/void-packages/blob/master/README.md), which is used
+We provide a [comprehensive Manual](./Manual.md) on how to create new packages.
+There's also a [manual for xbps-src](./README.md), which is used
 to build package files from templates.
 
 For this guide, we assume you have basic knowledge about [git](http://git-scm.org), as well as a [GitHub Account](http://github.com).
@@ -25,7 +24,7 @@ You can use the helper tool `xnew`, from the [xtools](https://github.com/chneuki
 
 Templates must have the name `void-packages/srcpkgs/<pkgname>/template`, where `pkgname` is the same as the `pkgname` variable in the template.
 
-For deeper insights on the contents of template files, please read the [manual](https://github.com/void-linux/void-packages/blob/master/Manual.md), and be sure to browse the existing template files in the `srcpkgs` directory of this repository for concrete examples.
+For deeper insights on the contents of template files, please read the [manual](./Manual.md), and be sure to browse the existing template files in the `srcpkgs` directory of this repository for concrete examples.
 
 When you've finished working on the template file, please check it with `xlint` helper from the [xtools](https://github.com/chneukirchen/xtools) package:
 
