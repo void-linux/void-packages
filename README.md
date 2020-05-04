@@ -7,32 +7,30 @@ The included `xbps-src` script will fetch and compile the sources, and install i
 files into a `fake destdir` to generate XBPS binary packages that can be installed
 or queried through the `xbps-install(1)` and `xbps-query(1)` utilities, respectively.
 
-See [Contributing](https://github.com/void-linux/void-packages/blob/master/CONTRIBUTING.md)
-for a general overview of how to contribute and the
-[Manual](https://github.com/void-linux/void-packages/blob/master/Manual.md)
-for details of how to create source packages.
+See [Contributing](./CONTRIBUTING.md) for a general overview of how to contribute and the
+[Manual](./Manual.md) for details of how to create source packages.
 
 ### Table of Contents
 
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [chroot methods](#chroot-methods)
-- [Install the bootstrap packages](#install-bootstrap)
+- [Install the bootstrap packages](#install-the-bootstrap-packages)
 - [Configuration](#configuration)
 - [Directory hierarchy](#directory-hierarchy)
 - [Building packages](#building-packages)
-- [Package build options](#build-options)
-- [Sharing and signing your local repositories](#sharing-and-signing)
-- [Rebuilding and overwriting existing local packages](#rebuilding)
-- [Enabling distcc for distributed compilation](#distcc)
+- [Package build options](#package-build-options)
+- [Sharing and signing your local repositories](#sharing-and-signing-your-local-repositories)
+- [Rebuilding and overwriting existing local packages](#rebuilding-and-overwriting-existing-local-packages)
+- [Enabling distcc for distributed compilation](#enabling-distcc-for-distributed-compilation)
 - [Distfiles mirrors](#distfiles-mirrors)
-- [Cross compiling packages for a target architecture](#cross-compiling)
-- [Using xbps-src in a foreign Linux distribution](#foreign)
-- [Remaking the masterdir](#remaking-masterdir)
-- [Keeping your masterdir uptodate](#updating-masterdir)
-- [Building 32bit packages on x86_64](#building-32bit)
-- [Building packages natively for the musl C library](#building-for-musl)
-- [Building void base-system from scratch](#building-base-system)
+- [Cross compiling packages for a target architecture](#cross-compiling-packages-for-a-target-architecture)
+- [Using xbps-src in a foreign Linux distribution](#using-xbps-src-in-a-foreign-linux-distribution)
+- [Remaking the masterdir](#remaking-the-masterdir)
+- [Keeping your masterdir uptodate](#keeping-your-masterdir-uptodate)
+- [Building 32bit packages on x86\_64](#building-32bit-packages-on-x86_64)
+- [Building packages natively for the musl C library](#building-packages-natively-for-the-musl-c-library)
+- [Building void base-system from scratch](#building-void-base-system-from-scratch)
 
 ### Requirements
 
@@ -58,7 +56,6 @@ multiple utilities to accomplish this task:
 > NOTE: `xbps-src` does not allow building as root anymore. Use one of the chroot
 methods shown above.
 
-<a name="quick-start"></a>
 ### Quick start
 
 Clone the `void-packages` git repository and install the bootstrap packages:
@@ -95,7 +92,6 @@ Alternatively, packages can be installed with the `xi` utility, from the `xtools
 # xi <package_name>
 ```
 
-<a name="chroot-methods"></a>
 ### chroot methods
 
 #### xbps-uunshare(1) (default)
@@ -149,7 +145,6 @@ To enable it:
     $ cd void-packages
     $ echo XBPS_CHROOT_CMD=proot >> etc/conf
 
-<a name="install-bootstrap"></a>
 ### Install the bootstrap packages
 
 There is a set of packages that makes up the initial build container, called the `bootstrap`.
@@ -197,7 +192,6 @@ used as dependencies in the source packages tree.
 If you want to customize those replacements, copy `etc/defaults.virtual` to `etc/virtual`
 and edit it accordingly to your needs.
 
-<a name="directory-hierarchy"></a>
 ### Directory hierarchy
 
 The following directory hierarchy is used with a default configuration file:
@@ -234,7 +228,6 @@ The description of these directories is as follows:
  - `hostdir/sources`: to store package sources.
  - `hostdir/binpkgs`: local repository to store generated binary packages.
 
-<a name="building-packages"></a>
 ### Building packages
 
 The simplest form of building package is accomplished by running the `pkg` target in `xbps-src`:
@@ -261,7 +254,6 @@ It is possible to avoid using remote repositories completely by using the `-N` f
 
 > The default local repository may contain multiple *sub-repositories*: `debug`, `multilib`, etc.
 
-<a name="build-options"></a>
 ### Package build options
 
 The supported build options for a source package can be shown with `xbps-src show-options`:
@@ -301,7 +293,6 @@ i.e `XBPS_PKG_OPTIONS_xorg_server=opt`.
 The list of supported package build options and its description is defined in the
 `common/options.description` file or in the `template` file.
 
-<a name="sharing-and-signing"></a>
 ### Sharing and signing your local repositories
 
 To share a local repository remotely it's mandatory to sign it and the binary packages
@@ -339,7 +330,6 @@ Each time a binary package is created, a package signature must be created with 
 
 > It is not possible to sign a repository with multiple RSA keys.
 
-<a name="rebuilding"></a>
 ### Rebuilding and overwriting existing local packages
 
 If for whatever reason a package has been built and it is available in your local repository
@@ -355,7 +345,6 @@ Reinstalling this package in your target `rootdir` can be easily done too:
 > Please note that the `package expression` must be properly defined to explicitly pick up
 the package from the desired repository.
 
-<a name="distcc"></a>
 ### Enabling distcc for distributed compilation
 
 Setup the slaves (machines that will compile the code):
@@ -386,7 +375,6 @@ The slave 192.168.2.101 has a CPU with 8 cores and the /9 for the number of jobs
 The slave 192.168.2.102 is set to run at most 2 compile jobs to keep its load low, even if its CPU has 4 cores.
 The XBPS_MAKEJOBS setting is increased to 16 to account for the possible parallelism (2 + 9 + 2 + some slack).
 
-<a name="distfiles-mirrors"></a>
 ### Distfiles mirror(s)
 
 In etc/conf you may optionally define a mirror or a list of mirrors to search for distfiles.
@@ -411,7 +399,6 @@ using the `file://` prefix or simply an absolute path on your build host (e.g. /
 Mirror locations specified this way are bind mounted inside the chroot environment
 under $XBPS_MASTERDIR and searched for distfiles just the same as remote locations.
 
-<a name="cross-compiling"></a>
 ### Cross compiling packages for a target architecture
 
 Currently `xbps-src` can cross build packages for some target architectures with a cross compiler.
@@ -423,7 +410,6 @@ If a source package has been adapted to be **cross buildable** `xbps-src` will a
 
 If the build for whatever reason fails, might be a new build issue or simply because it hasn't been adapted to be **cross compiled**.
 
-<a name="foreign"></a>
 ### Using xbps-src in a foreign Linux distribution
 
 xbps-src can be used in any recent Linux distribution matching the CPU architecture.
@@ -451,7 +437,6 @@ and `xbps-src` should be fully functional; just start the `bootstrap` process, i
 
 The default masterdir is created in the current working directory, i.e `void-packages/masterdir`.
 
-<a name="remaking-masterdir"></a>
 ### Remaking the masterdir
 
 If for some reason you must update xbps-src and the `bootstrap-update` target is not enough, it's possible to recreate a masterdir with two simple commands (please note that `zap` keeps your `ccache/distcc/host` directories intact):
@@ -459,14 +444,12 @@ If for some reason you must update xbps-src and the `bootstrap-update` target is
     $ ./xbps-src zap
     $ ./xbps-src binary-bootstrap
 
-<a name="updating-masterdir"></a>
 ### Keeping your masterdir uptodate
 
 Sometimes the bootstrap packages must be updated to the latest available version in repositories, this is accomplished with the `bootstrap-update` target:
 
     $ ./xbps-src bootstrap-update
 
-<a name="building-32bit"></a>
 ### Building 32bit packages on x86_64
 
 Two ways are available to build 32bit packages on x86\_64:
@@ -483,7 +466,6 @@ The second mode (native) needs a new x86 `masterdir`:
     $ ./xbps-src -m masterdir-x86 binary-bootstrap i686
     $ ./xbps-src -m masterdir-x86 ...
 
-<a name="building-for-musl"></a>
 ### Building packages natively for the musl C library
 
 A native build environment is required to be able to cross compile the bootstrap packages for the musl C library; this is accomplished by installing them via `binary-bootstrap`:
@@ -505,7 +487,6 @@ Your new masterdir is now ready to build packages natively for the musl C librar
 
 To see if the musl C dynamic linker is working as expected.
 
-<a name="building-base-system"></a>
 ### Building void base-system from scratch
 
 To rebuild all packages in `base-system` for your native architecture:
