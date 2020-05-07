@@ -92,7 +92,9 @@ export PKG_CONFIG_LIBDIR="$XBPS_CROSS_BASE/usr/lib/pkgconfig\${PKG_CONFIG_LIBDIR
 exec /usr/bin/pkg-config "\$@"
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config
-	ln -sf ${XBPS_CROSS_TRIPLET}-pkg-config ${XBPS_WRAPPERDIR}/pkg-config
+	if [ -z "$no_generic_pkgconfig_link" ]; then
+		ln -sf ${XBPS_CROSS_TRIPLET}-pkg-config ${XBPS_WRAPPERDIR}/pkg-config
+	fi
 }
 
 vapigen_wrapper() {
