@@ -141,7 +141,9 @@ hook() {
 		fi
 	done
 	if [ -z "$found_dbg_subpkg" -a -d "${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-dbg-${version}" ]; then
-		source ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
+		for f in ${XBPS_COMMONDIR}/environment/setup-subpkg/*.sh; do
+		    source_file "$f"
+		done
 		repo=$XBPS_REPOSITORY/debug
 		_pkgver=${pkgname}-dbg-${version}_${revision}
 		_desc="${short_desc} (debug files)"
@@ -154,7 +156,9 @@ hook() {
 		return
 	fi
 	if [ -d "${XBPS_DESTDIR}/${pkgname}-32bit-${version}" ]; then
-		source ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
+		for f in ${XBPS_COMMONDIR}/environment/setup-subpkg/*.sh; do
+		    source_file "$f"
+		done
 		if [ -n "$repository" ]; then
 			repo=$XBPS_REPOSITORY/multilib/$repository
 		else
