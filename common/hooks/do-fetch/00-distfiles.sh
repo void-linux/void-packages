@@ -255,7 +255,7 @@ hook() {
 		while true; do
 			flock -w 1 ${distfile}.part true
 			[ $? -eq 0 ] && break
-			msg_warn "$pkgver: ${curfile} is being already downloaded, waiting for 1s ...\n"
+			msg_warn "$pkgver: ${curfile} is already being downloaded, waiting for 1s ...\n"
 		done
 		# If distfile does not exist, try to link to it.
 		if [ ! -f "$distfile" ]; then
