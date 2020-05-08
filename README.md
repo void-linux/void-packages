@@ -165,7 +165,7 @@ If you don't want to waste your time building everything from scratch probably i
 
 The `etc/defaults.conf` file contains the possible settings that can be overridden
 through the `etc/conf` configuration file for the `xbps-src` utility; if that file
-does not exist, will try to read configuration settings from `~/.xbps-src.conf`.
+does not exist, will try to read configuration settings from `$XDG_CONFIG_HOME/xbps-src.conf`, `~/.config/xbps-src.conf`, `~/.xbps-src.conf`.
 
 If you want to customize default `CFLAGS`, `CXXFLAGS` and `LDFLAGS`, don't override
 those defined in `etc/defaults.conf`, set them on `etc/conf` instead i.e:
