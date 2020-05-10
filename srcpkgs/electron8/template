@@ -1,0 +1,258 @@
+# Template file for 'electron8'
+pkgname=electron8
+version=8.2.5
+_nodever=12.13.0
+_chromiumver=80.0.3987.158
+revision=1
+archs="x86_64*"
+build_wrksrc="src"
+create_wrksrc=yes
+hostmakedepends="clang yasm python pkgconf perl gperf bison ninja nodejs hwids
+ which git libatomic-devel libevent-devel libglib-devel yarn openjdk"
+makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
+ libXi-devel libgcrypt-devel libgnome-keyring-devel cups-devel elfutils-devel
+ libXcomposite-devel speech-dispatcher-devel libXrandr-devel mit-krb5-devel
+ libXScrnSaver-devel alsa-lib-devel snappy-devel libdrm-devel
+ libxml2-devel libxslt-devel pulseaudio-devel libexif-devel
+ libXcursor-devel libflac-devel speex-devel libmtp-devel libwebp-devel
+ libjpeg-turbo-devel libevent-devel json-c-devel harfbuzz-devel
+ minizip-devel jsoncpp-devel zlib-devel libcap-devel libXdamage-devel
+ re2-devel fontconfig-devel freetype-devel opus-devel
+ ffmpeg-devel libva-devel libuv-devel c-ares-devel libnotify-devel"
+depends=""
+short_desc="Cross platform application development framework based on web technologies"
+maintainer="John <me@johnnynator.dev>"
+license="BSD-3-Clause"
+homepage="https://electronjs.org"
+distfiles="https://github.com/electron/electron/archive/v$version.tar.gz>electron-${version}.tar.gz
+ https://commondatastorage.googleapis.com/chromium-browser-official/chromium-$_chromiumver.tar.xz
+ https://github.com/nodejs/node/archive/v$_nodever.tar.gz>node-$_nodever.tar.gz"
+checksum="b48cc1ea380a553c8eccfb1b5b163b6f6039efb5b36c8f32a7497042aff5ec34
+ 84c1126ce51e3ac90c70ba97a51eb9970566c531694fbd8b17f1c1047b750978
+ 91518dc2506e33d3ac919ed781661082c620b888fa79c2483f4f902584d0e1d9"
+
+lib32disabled=yes
+nodebug=yes
+nopie=yes  # contains tools that are not PIE, enables PIE itself
+
+build_options="pulseaudio"
+build_options_default="pulseaudio"
+
+_buildtype=Release
+_is_debug=false
+
+CFLAGS="-Wno-unknown-warning-option -fPIC"
+CXXFLAGS="-Wno-unknown-warning-option -fPIC"
+
+post_extract() {
+	ln -s chromium-$_chromiumver src
+	mkdir -p src/third_party/
+	ln -s ../../node-$_nodever src/third_party/electron_node
+	ln -s ../electron-${version} src/electron
+
+}
+post_patch() {
+	cd $wrksrc
+	for x in $FILESDIR/patches/*; do
+		case "${x##*/}" in
+			chromium*.patch)
+				cd src
+				echo Patching $x
+				patch -p1 -i "$x"
+				cd "$wrksrc"
+				;;
+			electron*.patch)
+				cd src/electron
+				echo Patching $x
+				patch -p1 -i "$x"
+				cd "$wrksrc"
+		esac
+	done
+
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	for x in $FILESDIR/musl-patches/*; do
+		case "${x##*/}" in
+			chromium*.patch)
+				cd src
+				echo Patching $x
+				patch -p1 -i "$x"
+				cd "$wrksrc"
+				;;
+			electron*.patch)
+				cd src/electron
+				echo Patching $x
+				patch -p1 -i "$x"
+				cd "$wrksrc"
+		esac
+	done
+	fi
+}
+
+pre_configure() {
+	cd $wrksrc
+	# Sigh, electron uses git am...
+	python2 src/electron/script/list_patch_targets.py src/electron/patches/config.json | while read -r repopath; do
+		cd "$wrksrc"/"$repopath"
+		git init -q
+		git config "gc.auto" 0
+		if [ "$repopath" != "src" ]; then
+			echo "/${repopath#src/}" >> "$wrksrc/$build_wrksrc/.gitignore"
+		fi
+		git add .
+		git -c 'user.name=Electron build' -c 'user.email=electron@ebuild' \
+			commit -q -m "." || true
+	done
+
+	python2 src/electron/script/apply_all_patches.py src/electron/patches/config.json
+
+	cd "$build_wrksrc"
+
+	# https://groups.google.com/a/chromium.org/d/topic/chromium-packagers/9JX1N2nf4PU/discussion
+	touch chrome/test/data/webui/i18n_process_css_test.html
+	# Use the file at run time instead of effectively compiling it in
+	sed 's|//third_party/usb_ids/usb.ids|/usr/share/hwdata/usb.ids|g' \
+		-i services/device/public/cpp/usb/BUILD.gn
+
+	mkdir -p third_party/node/linux/node-linux-x64/bin
+	ln -s /usr/bin/node third_party/node/linux/node-linux-x64/bin/
+
+	# reusable system library settings
+	local use_system="
+		ffmpeg
+		flac
+		fontconfig
+		freetype
+		harfbuzz-ng
+		libdrm
+		libevent
+		libjpeg
+		libpng
+		libwebp
+		libxml
+		libxslt
+		opus
+		re2
+		snappy
+		yasm
+		"
+	for _lib in $use_system libjpeg_turbo; do
+		msg_normal "Removing buildscripts for system provided $_lib\n"
+		find -type f -path "*third_party/$_lib/*" \
+			\! -path "*third_party/$_lib/chromium/*" \
+			\! -path "*third_party/$_lib/google/*" \
+			\! -path './base/third_party/icu/*' \
+			\! -path './third_party/pdfium/third_party/freetype/include/pstables.h' \
+			\! -path './third_party/yasm/run_yasm.py' \
+			\! -regex '.*\.\(gn\|gni\|isolate\|py\)' \
+			-delete
+	done
+
+
+	msg_normal "Replacing gn files\n"
+	python2 build/linux/unbundle/replace_gn_files.py --system-libraries \
+		$use_system
+	third_party/libaddressinput/chromium/tools/update-strings.py
+}
+
+do_configure() {
+	local conf=()
+	cd third_party/electron_node
+
+	./configure --prefix=/usr \
+		--shared-zlib \
+		--shared-libuv \
+		--shared-openssl \
+		--shared-cares \
+		--openssl-use-def-ca-store \
+		--without-npm \
+		--without-dtrace \
+		--without-bundled-v8
+
+	cd "$wrksrc/$build_wrksrc"/electron
+	yarn install
+	echo $wrksrc/$build_wrksrc
+	cd "$wrksrc/$build_wrksrc"
+
+	# Google API keys (see http://www.chromium.org/developers/how-tos/api-keys)
+	# Note: These are for Void Linux use ONLY.
+	conf+=(
+		'google_api_key="AIzaSyA9gWazKaHaNIPPg2hrMj6_ZSG8AFmq738"'
+		'google_default_client_id="126659149423-hoo6ickbk3p1u2qjsdsp0ddciurfvb4t.apps.googleusercontent.com"'
+		'google_default_client_secret="_ozIx2D-DKm_se_2NPwV4l5b"'
+	)
+
+	conf+=(
+		'blink_symbol_level=0'
+		'clang_use_chrome_plugins=false'
+		'closure_compile=true'
+		'custom_toolchain="//build/toolchain/linux/unbundle:default"'
+		'host_toolchain="//build/toolchain/linux/unbundle:default"'
+		'enable_hangout_services_extension=true'
+		'enable_nacl_nonsfi=false'
+		'enable_nacl=false'
+		'enable_precompiled_headers=false'
+		'fatal_linker_warnings=false'
+		'ffmpeg_branding="Chrome"'
+		'fieldtrial_testing_like_official_build=true'
+		'gold_path="/usr/bin/ld.gold"'
+		'icu_use_data_file=true'
+		'is_clang=true'
+		'is_component_build=false'
+		"is_debug=$_is_debug"
+		'is_desktop_linux=true'
+		'linux_use_bundled_binutils=false'
+		'proprietary_codecs=true'
+		'symbol_level=0'
+		'treat_warnings_as_errors=false'
+		'use_allocator_shim=false'
+		'use_allocator="none"'
+		'use_cups=true'
+		'use_custom_libcxx=false'
+		'use_gnome_keyring=false'
+		'use_gold=false'
+		'use_lld=false'
+		"use_pulseaudio=$(vopt_if pulseaudio 'true' 'false')"
+		"link_pulseaudio=$(vopt_if pulseaudio 'true' 'false')"
+		'use_sysroot=false'
+		'use_system_harfbuzz=true'
+		'import("//electron/build/args/release.gn")'
+	)
+
+	msg_normal "Bootstrapping GN\n"
+#	AR="ar" CC="${CC:-gcc}" CXX="${CXX:-g++}" LD="${CXX:-g++}" \
+	CC="${CC:-clang}" CXX="${CXX:-clang++}" LD="${CXX:-clang++}" \
+		python2 tools/gn/bootstrap/bootstrap.py -s -v --gn-gen-args "${conf[*]}"
+	
+
+	msg_normal "Configuring build\n"
+	AR="ar" CC="clang" CXX="clang++" LD="clang++" NM=/usr/bin/nm \
+		out/Release/gn gen out/$_buildtype --args="${conf[*]}"
+}
+
+do_build() {
+	msg_normal "Ninja turtles GO!\n"
+	ninja ${makejobs} -C out/Release third_party/electron_node:headers
+
+
+	ninja ${makejobs} -C out/$_buildtype electron
+	# finish rest of the build
+	strip -s out/$_buildtype/electron
+	ninja ${makejobs} -C out/$_buildtype electron_dist_zip
+}
+
+do_install() {
+	vmkdir /usr/lib/$pkgname 
+	vmkdir /usr/include/$pkgname
+	bsdtar -xf out/$_buildtype/dist.zip -C "$DESTDIR/usr/lib/$pkgname"
+
+	chmod u+s "$DESTDIR/usr/lib/$pkgname/chrome-sandbox"
+
+	cp out/$_buildtype/gen/node_headers.tar.gz "$DESTDIR"/usr/include/$pkgname
+
+	vlicense ${wrksrc}/src/LICENSE chromium.LICENSE
+	vlicense ${wrksrc}/src/electron/LICENSE electron.LICENSE
+	vlicense ${wrksrc}/src/third_party/electron_node/LICENSE node.LICENSE
+
+	vmkdir /usr/bin
+	ln -s ../lib/$pkgname/electron "$DESTDIR"/usr/bin/$pkgname
+}

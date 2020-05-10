@@ -1,0 +1,275 @@
+From 599754e17c97b75d1d7ac4aab37da4484aed0024 Mon Sep 17 00:00:00 2001
+From: Joon Ahn <joonbug@chromium.org>
+Date: Sat, 18 Apr 2020 20:03:12 +0000
+Subject: [PATCH] logs: Implement size limit for user logs
+
+Impose 1MiB size limit for user logs and read the logs from back.
+
+(cherry picked from commit a0b2e0f8bba28943253e6b3ac4d11824219b6178)
+
+Bug: chromium:1066205
+Change-Id: I4c7a2de6f93d87ee0a5a2295dd25b32ec372ac46
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/2133427
+Reviewed-by: Ahmed Fakhry <afakhry@chromium.org>
+Reviewed-by: Ian Barkley-Yeung <iby@chromium.org>
+Commit-Queue: Joon Ahn <joonbug@chromium.org>
+Cr-Original-Commit-Position: refs/heads/master@{#757693}
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/2155364
+Reviewed-by: Bernie Thompson <bhthompson@chromium.org>
+Commit-Queue: Kyle Williams <kdgwill@chromium.org>
+Cr-Commit-Position: refs/branch-heads/3987_158@{#3}
+Cr-Branched-From: af496874d27c92a13415a3a776cc29f9f5ee4e3e-refs/branch-heads/3987@{#1019}
+Cr-Branched-From: c4e8da9871cc266be74481e212f3a5252972509d-refs/heads/master@{#722274}
+---
+ chrome/browser/chromeos/BUILD.gn              |  1 +
+ .../system_logs/debug_daemon_log_source.cc    | 77 ++++++++++++++-
+ .../system_logs/debug_daemon_log_source.h     |  9 ++
+ .../debug_daemon_log_source_unittest.cc       | 95 +++++++++++++++++++
+ 4 files changed, 178 insertions(+), 4 deletions(-)
+ create mode 100644 chrome/browser/chromeos/system_logs/debug_daemon_log_source_unittest.cc
+
+diff --git a/chrome/browser/chromeos/BUILD.gn b/chrome/browser/chromeos/BUILD.gn
+index 7e17fab96c1..327ffa0ea4e 100644
+--- a/chrome/browser/chromeos/BUILD.gn
++++ b/chrome/browser/chromeos/BUILD.gn
+@@ -2970,6 +2970,7 @@ source_set("unit_tests") {
+     "system/device_disabling_manager_unittest.cc",
+     "system/procfs_util_unittest.cc",
+     "system/user_removal_manager_unittest.cc",
++    "system_logs/debug_daemon_log_source_unittest.cc",
+     "system_logs/single_debug_daemon_log_source_unittest.cc",
+     "system_logs/single_log_file_log_source_unittest.cc",
+     "tether/tether_service_unittest.cc",
+diff --git a/chrome/browser/chromeos/system_logs/debug_daemon_log_source.cc b/chrome/browser/chromeos/system_logs/debug_daemon_log_source.cc
+index 7cd7e81f01d..3853718fef3 100644
+--- a/chrome/browser/chromeos/system_logs/debug_daemon_log_source.cc
++++ b/chrome/browser/chromeos/system_logs/debug_daemon_log_source.cc
+@@ -31,6 +31,7 @@ namespace {
+ constexpr char kNotAvailable[] = "<not available>";
+ constexpr char kRoutesKeyName[] = "routes";
+ constexpr char kNetworkStatusKeyName[] = "network-status";
++constexpr char kLogTruncated[] = "<earlier logs truncated>\n";
+ 
+ // List of user log files that Chrome reads directly as these logs are generated
+ // by Chrome itself.
+@@ -48,6 +49,68 @@ constexpr struct UserLogs {
+     {"logout-times", "logout-times"},
+ };
+ 
++// Buffer size for user logs in bytes. Given that maximum feedback report size
++// is ~7M and that majority of log files are under 1M, we set a per-file limit
++// of 1MiB.
++const int64_t kMaxLogSize = 1024 * 1024;
++
++}  // namespace
++
++bool ReadEndOfFile(const base::FilePath& path,
++                   std::string* contents,
++                   size_t max_size) {
++  if (!contents) {
++    LOG(ERROR) << "contents buffer is null.";
++    return false;
++  }
++
++  if (path.ReferencesParent()) {
++    LOG(ERROR) << "ReadEndOfFile can't be called on file paths with parent "
++                  "references.";
++    return false;
++  }
++
++  base::ScopedFILE fp(base::OpenFile(path, "r"));
++  if (!fp) {
++    PLOG(ERROR) << "Failed to open file " << path.value();
++    return false;
++  }
++
++  std::unique_ptr<char[]> chunk(new char[max_size]);
++  std::unique_ptr<char[]> last_chunk(new char[max_size]);
++  chunk[0] = '\0';
++  last_chunk[0] = '\0';
++
++  size_t bytes_read = 0;
++
++  // Since most logs are not seekable, read until the end keeping tracking of
++  // last two chunks.
++  while ((bytes_read = fread(chunk.get(), 1, max_size, fp.get())) == max_size) {
++    last_chunk.swap(chunk);
++    chunk[0] = '\0';
++  }
++
++  if (last_chunk[0] == '\0') {
++    // File is smaller than max_size
++    contents->assign(chunk.get(), bytes_read);
++  } else if (bytes_read == 0) {
++    // File is exactly max_size or a multiple of max_size
++    contents->assign(last_chunk.get(), max_size);
++  } else {
++    // Number of bytes to keep from last_chunk
++    size_t bytes_from_last = max_size - bytes_read;
++
++    // Shift left last_chunk by size of chunk and fit it in the back of
++    // last_chunk.
++    memmove(last_chunk.get(), last_chunk.get() + bytes_read, bytes_from_last);
++    memcpy(last_chunk.get() + bytes_from_last, chunk.get(), bytes_read);
++
++    contents->assign(last_chunk.get(), max_size);
++  }
++
++  return true;
++}
++
+ // Reads the contents of the user log files listed in |kUserLogs| and adds them
+ // to the |response| parameter.
+ void ReadUserLogFiles(const std::vector<base::FilePath>& profile_dirs,
+@@ -56,8 +119,16 @@ void ReadUserLogFiles(const std::vector<base::FilePath>& profile_dirs,
+     std::string profile_prefix = "Profile[" + base::NumberToString(i) + "] ";
+     for (const auto& log : kUserLogs) {
+       std::string value;
+-      const bool read_success = base::ReadFileToString(
+-          profile_dirs[i].Append(log.log_file_relative_path), &value);
++      const bool read_success =
++          ReadEndOfFile(profile_dirs[i].Append(log.log_file_relative_path),
++                        &value, kMaxLogSize);
++
++      if (read_success && value.length() == kMaxLogSize) {
++        value.replace(0, strlen(kLogTruncated), kLogTruncated);
++
++        LOG(WARNING) << "Large log file was likely truncated: "
++                     << log.log_file_relative_path;
++      }
+ 
+       response->emplace(
+           profile_prefix + log.log_key,
+@@ -66,8 +137,6 @@ void ReadUserLogFiles(const std::vector<base::FilePath>& profile_dirs,
+   }
+ }
+ 
+-}  // namespace
+-
+ DebugDaemonLogSource::DebugDaemonLogSource(bool scrub)
+     : SystemLogsSource("DebugDemon"),
+       response_(new SystemLogsResponse()),
+diff --git a/chrome/browser/chromeos/system_logs/debug_daemon_log_source.h b/chrome/browser/chromeos/system_logs/debug_daemon_log_source.h
+index 008fc04cfb0..b4229833f52 100644
+--- a/chrome/browser/chromeos/system_logs/debug_daemon_log_source.h
++++ b/chrome/browser/chromeos/system_logs/debug_daemon_log_source.h
+@@ -18,6 +18,15 @@
+ 
+ namespace system_logs {
+ 
++// Reads the file at |path| into |contents| and returns true on success and
++// false on error. For security reasons a |path| containing path traversal
++// components ('..') is treated as a read error and |contents| is not changed.
++// When the file exceeds |max_size| function returns true with the last
++// |max_size| bytes from the file.
++bool ReadEndOfFile(const base::FilePath& path,
++                   std::string* contents,
++                   size_t max_size);
++
+ // Gathers log data from Debug Daemon.
+ class DebugDaemonLogSource : public SystemLogsSource {
+  public:
+diff --git a/chrome/browser/chromeos/system_logs/debug_daemon_log_source_unittest.cc b/chrome/browser/chromeos/system_logs/debug_daemon_log_source_unittest.cc
+new file mode 100644
+index 00000000000..2116b9cc2b3
+--- /dev/null
++++ b/chrome/browser/chromeos/system_logs/debug_daemon_log_source_unittest.cc
+@@ -0,0 +1,95 @@
++// Copyright (c) 2020 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/chromeos/system_logs/debug_daemon_log_source.h"
++
++#include <string>
++
++#include "base/files/file_util.h"
++#include "base/files/scoped_file.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/rand_util.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace system_logs {
++
++class DebugDaemonLogSourceTest : public ::testing::Test {
++ public:
++  void SetUp() override { ASSERT_TRUE(temp_dir_.CreateUniqueTempDir()); }
++
++  base::ScopedTempDir temp_dir_;
++};
++
++TEST_F(DebugDaemonLogSourceTest, ReadEndOfFileEmpty) {
++  std::string read_data("should be erased");
++
++  base::FilePath file_path = temp_dir_.GetPath().Append("test_empty.txt");
++
++  WriteFile(file_path, "", 0);
++
++  EXPECT_TRUE(ReadEndOfFile(file_path, &read_data, 10));
++  EXPECT_EQ(0u, read_data.length());
++}
++
++TEST_F(DebugDaemonLogSourceTest, ReadEndOfFileSmall) {
++  const char kTestData[] = "0123456789";  // Length of 10
++  std::string read_data;
++
++  base::FilePath file_path = temp_dir_.GetPath().Append("test.txt");
++
++  WriteFile(file_path, kTestData, strlen(kTestData));
++
++  read_data.clear();
++  EXPECT_TRUE(ReadEndOfFile(file_path, &read_data, 15));
++  EXPECT_EQ(kTestData, read_data);
++
++  read_data.clear();
++  EXPECT_TRUE(ReadEndOfFile(file_path, &read_data, 10));
++  EXPECT_EQ(kTestData, read_data);
++
++  read_data.clear();
++  EXPECT_TRUE(ReadEndOfFile(file_path, &read_data, 2));
++  EXPECT_EQ("89", read_data);
++
++  read_data.clear();
++  EXPECT_TRUE(ReadEndOfFile(file_path, &read_data, 3));
++  EXPECT_EQ("789", read_data);
++
++  read_data.clear();
++  EXPECT_TRUE(ReadEndOfFile(file_path, &read_data, 5));
++  EXPECT_EQ("56789", read_data);
++}
++
++TEST_F(DebugDaemonLogSourceTest, ReadEndOfFileMedium) {
++  std::string test_data = base::RandBytesAsString(10000);  // 10KB data
++  std::string read_data;
++
++  const size_t test_size = test_data.length();
++
++  base::FilePath file_path = temp_dir_.GetPath().Append("test_med.txt");
++
++  WriteFile(file_path, test_data.data(), test_size);
++
++  read_data.clear();
++  EXPECT_TRUE(ReadEndOfFile(file_path, &read_data, 15000));
++  EXPECT_EQ(test_data, read_data);
++
++  read_data.clear();
++  EXPECT_TRUE(ReadEndOfFile(file_path, &read_data, 10000));
++  EXPECT_EQ(test_data, read_data);
++
++  read_data.clear();
++  EXPECT_TRUE(ReadEndOfFile(file_path, &read_data, 1000));
++  EXPECT_EQ(test_data.substr(test_size - 1000, 1000), read_data);
++
++  read_data.clear();
++  EXPECT_TRUE(ReadEndOfFile(file_path, &read_data, 300));
++  EXPECT_EQ(test_data.substr(test_size - 300, 300), read_data);
++
++  read_data.clear();
++  EXPECT_TRUE(ReadEndOfFile(file_path, &read_data, 175));
++  EXPECT_EQ(test_data.substr(test_size - 175, 175), read_data);
++}
++
++}  // namespace system_logs
+-- 
+2.26.2
+
