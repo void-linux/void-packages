@@ -152,14 +152,26 @@ To enable it:
 <a name="install-bootstrap"></a>
 ### Install the bootstrap packages
 
-The `bootstrap` packages are a set of packages required to build any available source package in a container. There are two methods to install the `bootstrap`:
+There is a set of packages that makes up the initial build container, called the `bootstrap`.
+These packages are installed into the `masterdir` in order to create the container.
 
- - `bootstrap`: all bootstrap packages will be built from scratch; additional utilities are required in the
-host system to allow building the `base-chroot` package: binutils, gcc, perl, texinfo, etc.
+The primary and recommended way to set up this container is using the `binary-bootstrap`
+command. This will use pre-existing binary packages, either from remote `xbps` repositories
+or from your local repository.
 
- - `binary-bootstrap`: the bootstrap binary packages are downloaded via XBPS repositories.
+There is also the `bootstrap` command, which will build all necessary `bootstrap` packages from
+scratch. This is usually not recommended, since those packages are built using your host system's
+toolchain and are neither fully featured nor reproducible (your host system may influence the
+build) and thus should only be used as a stage 0 for bootstrapping new Void systems.
 
-If you don't want to waste your time building everything from scratch probably it's better to use `binary-bootstrap`.
+If you still choose to use `bootstrap`, use the resulting stage 0 container to rebuild all
+`bootstrap` packages again, then use `binary-bootstrap` (stage 1) and rebuild the `bootstrap`
+packages once more (to gain stage 2, and then use `binary-bootstrap` again). Once you've done
+that, you will have a `bootstrap` set equivalent to using `binary-bootstrap` in the first place.
+
+Also keep in mind that a full source `bootstrap` is time consuming and will require having an
+assortment of utilities installed in your host system, such as `binutils`, `gcc`, `perl`,
+`texinfo` and others.
 
 ### Configuration
 
