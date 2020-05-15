@@ -1162,10 +1162,16 @@ Dependencies declared via `${depends}` are not installed to the master directory
 only checked if they exist as binary packages, and are built automatically by `xbps-src` if
 the specified version is not in the local repository.
 
-There's a special variant of how `virtual` dependencies can be specified as `runtime dependencies`
-and is by using the `virtual?` keyword, i.e `depends="virtual?vpkg-0.1_1"`. This declares
-a `runtime` virtual dependency to `vpkg-0.1_1`; this `virtual` dependency will be simply ignored
-when the package is being built with `xbps-src`.
+As a special case, `virtual` dependencies may be specified as runtime dependencies in the
+`${depends}` template variable. Several different packages can provide common functionality by
+declaring a virtual name and version in the `${provides}` template variable (e.g.,
+`provides="vpkg-0.1_1"`). Packages that rely on the common functionality without concern for the
+specific provider can declare a dependency on the virtual package name with the prefix `virtual?`
+(e.g., `depends="virtual?vpkg-0.1_1"`). When a package is built by `xbps-src`, providers for any
+virtual packages will be confirmed to exist and will be built if necessary. A map from virtual
+packages to their default providers is defined in `etc/default.virtual`. Individual mappings can be
+overridden by local preferences in `etc/virtual`. Comments in `etc/default.virtual` provide more
+information on this map.
 
 <a id="install_remove_files"></a>
 ### INSTALL and REMOVE files
