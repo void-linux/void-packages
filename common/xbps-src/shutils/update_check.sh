@@ -117,7 +117,7 @@ update_check() {
                 rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
             *//gitlab.*)
                 gitlaburl="$(printf %s "$url" | cut -d/ -f1-5)"
-                url="$gitlaburl/tags"
+                url="$gitlaburl/-/tags"
                 rx='/archive/[^/]+/\Q'"$pkgname"'\E-v?\K[\d\.]+(?=\.tar\.gz")';;
             *bitbucket.org*)
                 bbname="$(printf %s "$url" | cut -d/ -f4,5)"
