@@ -479,19 +479,18 @@ Example:
 
   | Variable         | Value                                           |
   |------------------|-------------------------------------------------|
-  | CPAN_SITE        | http://cpan.perl.org/modules/by-module          |
+  | CPAN_SITE        | https://cpan.perl.org/modules/by-module          |
   | DEBIAN_SITE      | http://ftp.debian.org/debian/pool               |
-  | FREEDESKTOP_SITE | http://freedesktop.org/software                 |
-  | GNOME_SITE       | http://ftp.gnome.org/pub/GNOME/sources          |
-  | GNU_SITE         | http://ftp.gnu.org/gnu                          |
-  | KERNEL_SITE      | http://www.kernel.org/pub/linux                 |
-  | MOZILLA_SITE     | http://ftp.mozilla.org/pub                      |
-  | NONGNU_SITE      | http://download.savannah.nongnu.org/releases    |
+  | FREEDESKTOP_SITE | https://freedesktop.org/software                 |
+  | GNOME_SITE       | https://ftp.gnome.org/pub/GNOME/sources          |
+  | GNU_SITE         | https://ftp.gnu.org/gnu                          |
+  | KERNEL_SITE      | https://www.kernel.org/pub/linux                 |
+  | MOZILLA_SITE     | https://ftp.mozilla.org/pub                      |
+  | NONGNU_SITE      | https://download.savannah.nongnu.org/releases    |
   | PYPI_SITE        | https://files.pythonhosted.org/packages/source  |
-  | SOURCEFORGE_SITE | http://downloads.sourceforge.net/sourceforge    |
+  | SOURCEFORGE_SITE | https://downloads.sourceforge.net/sourceforge    |
   | UBUNTU_SITE      | http://archive.ubuntu.com/ubuntu/pool           |
-  | XORG_HOME        | http://xorg.freedesktop.org/wiki/               |
-  | XORG_SITE        | http://www.x.org/releases/individual            |
+  | XORG_SITE        | https://www.x.org/releases/individual            |
   | KDE_SITE         | https://download.kde.org/stable                 |
 
 - `checksum` The `sha256` digests matching `${distfiles}`. Multiple files can be
