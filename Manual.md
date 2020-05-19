@@ -479,19 +479,18 @@ Example:
 
   | Variable         | Value                                           |
   |------------------|-------------------------------------------------|
-  | CPAN_SITE        | http://cpan.perl.org/modules/by-module          |
+  | CPAN_SITE        | https://cpan.perl.org/modules/by-module          |
   | DEBIAN_SITE      | http://ftp.debian.org/debian/pool               |
-  | FREEDESKTOP_SITE | http://freedesktop.org/software                 |
-  | GNOME_SITE       | http://ftp.gnome.org/pub/GNOME/sources          |
-  | GNU_SITE         | http://ftp.gnu.org/gnu                          |
-  | KERNEL_SITE      | http://www.kernel.org/pub/linux                 |
-  | MOZILLA_SITE     | http://ftp.mozilla.org/pub                      |
-  | NONGNU_SITE      | http://download.savannah.nongnu.org/releases    |
+  | FREEDESKTOP_SITE | https://freedesktop.org/software                 |
+  | GNOME_SITE       | https://ftp.gnome.org/pub/GNOME/sources          |
+  | GNU_SITE         | https://ftp.gnu.org/gnu                          |
+  | KERNEL_SITE      | https://www.kernel.org/pub/linux                 |
+  | MOZILLA_SITE     | https://ftp.mozilla.org/pub                      |
+  | NONGNU_SITE      | https://download.savannah.nongnu.org/releases    |
   | PYPI_SITE        | https://files.pythonhosted.org/packages/source  |
-  | SOURCEFORGE_SITE | http://downloads.sourceforge.net/sourceforge    |
+  | SOURCEFORGE_SITE | https://downloads.sourceforge.net/sourceforge    |
   | UBUNTU_SITE      | http://archive.ubuntu.com/ubuntu/pool           |
-  | XORG_HOME        | http://xorg.freedesktop.org/wiki/               |
-  | XORG_SITE        | http://www.x.org/releases/individual            |
+  | XORG_SITE        | https://www.x.org/releases/individual            |
   | KDE_SITE         | https://download.kde.org/stable                 |
 
 - `checksum` The `sha256` digests matching `${distfiles}`. Multiple files can be
@@ -1162,10 +1161,16 @@ Dependencies declared via `${depends}` are not installed to the master directory
 only checked if they exist as binary packages, and are built automatically by `xbps-src` if
 the specified version is not in the local repository.
 
-There's a special variant of how `virtual` dependencies can be specified as `runtime dependencies`
-and is by using the `virtual?` keyword, i.e `depends="virtual?vpkg-0.1_1"`. This declares
-a `runtime` virtual dependency to `vpkg-0.1_1`; this `virtual` dependency will be simply ignored
-when the package is being built with `xbps-src`.
+As a special case, `virtual` dependencies may be specified as runtime dependencies in the
+`${depends}` template variable. Several different packages can provide common functionality by
+declaring a virtual name and version in the `${provides}` template variable (e.g.,
+`provides="vpkg-0.1_1"`). Packages that rely on the common functionality without concern for the
+specific provider can declare a dependency on the virtual package name with the prefix `virtual?`
+(e.g., `depends="virtual?vpkg-0.1_1"`). When a package is built by `xbps-src`, providers for any
+virtual packages will be confirmed to exist and will be built if necessary. A map from virtual
+packages to their default providers is defined in `etc/default.virtual`. Individual mappings can be
+overridden by local preferences in `etc/virtual`. Comments in `etc/default.virtual` provide more
+information on this map.
 
 <a id="install_remove_files"></a>
 ### INSTALL and REMOVE files
