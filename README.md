@@ -396,7 +396,7 @@ In etc/conf you may optionally define a mirror or a list of mirrors to search fo
 If more than one mirror is to be searched, you can either specify multiple URLs separated
 with blanks, or add to the variable like this
 
-    $ echo 'XBPS_DISTFILES_MIRROR+=" http://repo.voidlinux.de/distfiles"' >> etc/conf
+    $ echo 'XBPS_DISTFILES_MIRROR+=" https://sources.voidlinux.org/"' >> etc/conf
 
 Make sure to put the blank after the first double quote in this case.
 
