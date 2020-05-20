@@ -13,6 +13,8 @@ if [ -r /proc/cpuinfo ]; then
         NPROCS=$(grep ^proc /proc/cpuinfo|wc -l)
 fi
 
+export FTP_RETRIES=10
+
 for pkg in ${PKGS}; do
 	/hostrepo/xbps-src -j$NPROCS -H "$HOME"/hostdir $arch pkg "$pkg"
 	[ $? -eq 1 ] && exit 1

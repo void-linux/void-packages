@@ -26,11 +26,14 @@ for f in $XBPS_SHUTILSDIR/*.sh; do
     . $f
 done
 
+last="${XBPS_DEPENDS_CHAIN##*,}"
+case "$XBPS_DEPENDS_CHAIN" in
+    *,$last,*)
+        msg_error "Build-time cyclic dependency$last,${XBPS_DEPENDS_CHAIN##*,$last,} detected.\n"
+esac
+
 setup_pkg "$PKGNAME" $XBPS_CROSS_BUILD
 readonly SOURCEPKG="$sourcepkg"
-
-# Always start with a clean statedir
-remove_pkg_statedir
 
 show_pkg_build_options
 check_pkg_arch $XBPS_CROSS_BUILD

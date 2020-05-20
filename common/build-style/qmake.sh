@@ -16,10 +16,76 @@ do_configure() {
 		msg_error "${pkgver}: Could not find qmake - missing in hostdepends?\n"
 	fi
 	if [ "$CROSS_BUILD" ] && [ "$qmake" == "/usr/lib/qt5/bin/qmake" ]; then
+		case $XBPS_TARGET_MACHINE in
+			i686*) _qt_arch=i386;;
+			x86_64*) _qt_arch=x86_64;;
+			aarch64*) _qt_arch=arm64;;
+			arm*) _qt_arch=arm;;
+			mips*) _qt_arch=mips;;
+		esac
+		mkdir -p "${wrksrc}/.target-spec/linux-g++"
+		cat > "${wrksrc}/.target-spec/linux-g++/qmake.conf" <<_EOF
+MAKEFILE_GENERATOR      = UNIX
+CONFIG                 += incremental
+QMAKE_INCREMENTAL_STYLE = sublib
+
+include(/usr/lib/qt5/mkspecs/common/linux.conf)
+include(/usr/lib/qt5/mkspecs/common/gcc-base-unix.conf)
+include(/usr/lib/qt5/mkspecs/common/g++-unix.conf)
+
+QMAKE_TARGET_CONFIG     = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/qconfig.pri
+QMAKE_TARGET_MODULE     = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/qmodule.pri
+QMAKE_CC                = ${CC}
+QMAKE_CXX               = ${CXX}
+QMAKE_LINK              = ${CXX}
+QMAKE_LINK_C            = ${CC}
+QMAKE_LINK_SHLIB        = ${CXX}
+
+QMAKE_AR                = ${XBPS_CROSS_TRIPLET}-gcc-ar cqs
+QMAKE_OBJCOPY           = ${OBJCOPY}
+QMAKE_NM                = ${NM} -P
+QMAKE_STRIP             = ${STRIP}
+
+QMAKE_CFLAGS            = ${CFLAGS}
+QMAKE_CXXFLAGS          = ${CXXFLAGS}
+QMAKE_LFLAGS            = ${LDFLAGS}
+load(qt_config)
+_EOF
+		echo "#include \"${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/linux-g++/qplatformdefs.h\"" > "${wrksrc}/.target-spec/linux-g++/qplatformdefs.h"
+
+		mkdir -p "${wrksrc}/.host-spec/linux-g++"
+		cat > "${wrksrc}/.host-spec/linux-g++/qmake.conf" <<_EOF
+MAKEFILE_GENERATOR      = UNIX
+CONFIG                 += incremental
+QMAKE_INCREMENTAL_STYLE = sublib
+
+include(/usr/lib/qt5/mkspecs/common/linux.conf)
+include(/usr/lib/qt5/mkspecs/common/gcc-base-unix.conf)
+include(/usr/lib/qt5/mkspecs/common/g++-unix.conf)
+
+QMAKE_TARGET_CONFIG     = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/qconfig.pri
+QMAKE_TARGET_MODULE     = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/qmodule.pri
+QMAKE_CC                = ${CC_host}
+QMAKE_CXX               = ${CXX_host}
+QMAKE_LINK              = ${CXX_host}
+QMAKE_LINK_C            = ${CC_host}
+QMAKE_LINK_SHLIB        = ${CXX_host}
+
+QMAKE_AR                = gcc-ar cqs
+QMAKE_OBJCOPY           = ${OBJCOPY_host}
+QMAKE_NM                = ${NM_host} -P
+QMAKE_STRIP             = ${STRIP_host}
+
+QMAKE_CFLAGS            = ${CFLAGS_host}
+QMAKE_CXXFLAGS          = ${CXXFLAGS_host}
+QMAKE_LFLAGS            = ${LDFLAGS_host}
+load(qt_config)
+_EOF
+echo '#include "/usr/lib/qt5/mkspecs/linux-g++/qplatformdefs.h"' > "${wrksrc}/.host-spec/linux-g++/qplatformdefs.h"
 		cat > "${wrksrc}/qt.conf" <<_EOF
 [Paths]
 Sysroot=${XBPS_CROSS_BASE}
-Prefix=${XBPS_CROSS_BASE}/usr
+Prefix=/usr
 ArchData=${XBPS_CROSS_BASE}/usr/lib/qt5
 Data=${XBPS_CROSS_BASE}/usr/share/qt5
 Documentation=${XBPS_CROSS_BASE}/usr/share/doc/qt5
@@ -38,18 +104,28 @@ HostPrefix=/usr
 HostData=/usr/lib/qt5
 HostBinaries=/usr/lib/qt5/bin
 HostLibraries=/usr/lib
-Spec=linux-g++
-TargetSpec=linux-g++
+Spec=${wrksrc}/.host-spec/linux-g++
+TargetSpec=${wrksrc}/.target-spec/linux-g++
 _EOF
-		qmake_args="-qtconf ${wrksrc}/qt.conf"
+		qmake_args="-qtconf ${wrksrc}/qt.conf PKG_CONFIG_EXECUTABLE=${XBPS_WRAPPERDIR}/pkg-config"
+		${qmake} ${qmake_args} \
+			PREFIX=/usr \
+			QT_INSTALL_PREFIX=/usr \
+			LIB=/usr/lib \
+			QT_TARGET_ARCH=$_qt_arch \
+			${configure_args}
+	else
+		${qmake} ${qmake_args} \
+			PREFIX=/usr \
+			QT_INSTALL_PREFIX=/usr \
+			LIB=/usr/lib \
+			QMAKE_CC=$CC QMAKE_CXX=$CXX \
+			QMAKE_LINK=$CXX QMAKE_LINK_C=$CC \
+			QMAKE_CFLAGS="${CFLAGS}" \
+			QMAKE_CXXFLAGS="${CXXFLAGS}" \
+			QMAKE_LFLAGS="${LDFLAGS}" \
+			${configure_args}
 	fi
-	${qmake} ${qmake_args} ${configure_args} \
-		PREFIX=/usr \
-		LIB=/usr/lib \
-		QMAKE_CC=$CC QMAKE_CXX=$CXX QMAKE_LINK=$CXX QMAKE_LINK_C=$CC \
-		QMAKE_CFLAGS="${CFLAGS}" \
-		QMAKE_CXXFLAGS="${CXXFLAGS}" \
-		QMAKE_LFLAGS="${LDFLAGS}"
 }
 
 do_build() {

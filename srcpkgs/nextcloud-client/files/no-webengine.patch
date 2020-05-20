@@ -1,0 +1,418 @@
+From b49d063c5244836cb72d5f0c96c2477af1b7532e Mon Sep 17 00:00:00 2001
+From: q66 <daniel@octaforge.org>
+Date: Tue, 21 Jan 2020 00:27:06 +0100
+Subject: [PATCH] Remove WebEngine requirement
+
+Based on https://code.foxkit.us/adelie/packages/blob/master/user/nextcloud-client/no-webengine.patch.
+---
+ src/CMakeLists.txt                    |  2 +-
+ src/gui/CMakeLists.txt                | 11 +-------
+ src/gui/accountmanager.cpp            | 14 -----------
+ src/gui/creds/credentialsfactory.cpp  |  3 ---
+ src/gui/owncloudsetupwizard.cpp       |  2 +-
+ src/gui/wizard/owncloudsetuppage.cpp  |  6 +----
+ src/gui/wizard/owncloudwizard.cpp     | 26 +------------------
+ src/gui/wizard/owncloudwizard.h       |  4 ---
+ src/gui/wizard/owncloudwizardcommon.h |  2 --
+ src/libsync/networkjobs.cpp           | 36 +++------------------------
+ src/libsync/networkjobs.h             |  4 ---
+ 11 files changed, 8 insertions(+), 102 deletions(-)
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 9f854b0..6f35463 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -4,7 +4,7 @@ endif()
+ 
+ set(synclib_NAME ${APPLICATION_EXECUTABLE}sync)
+ 
+-find_package(Qt5 5.6 COMPONENTS Core Network Xml Concurrent WebEngineWidgets WebEngine REQUIRED)
++find_package(Qt5 5.6 COMPONENTS Core Network Xml Concurrent REQUIRED)
+ if (Qt5Core_VERSION VERSION_LESS 5.9.0)
+ message(STATUS "For HTTP/2 support, compile with Qt 5.9 or higher.")
+ endif()
+diff --git a/src/gui/CMakeLists.txt b/src/gui/CMakeLists.txt
+index 2850579..8e61531 100644
+--- a/src/gui/CMakeLists.txt
++++ b/src/gui/CMakeLists.txt
+@@ -35,14 +35,12 @@ set(client_UI_SRCS
+     addcertificatedialog.ui
+     proxyauthdialog.ui
+     mnemonicdialog.ui
+-    wizard/flow2authwidget.ui
+     wizard/owncloudadvancedsetuppage.ui
+     wizard/owncloudconnectionmethoddialog.ui
+     wizard/owncloudhttpcredspage.ui
+     wizard/owncloudoauthcredspage.ui
+     wizard/owncloudsetupnocredspage.ui
+     wizard/owncloudwizardresultpage.ui
+-    wizard/webview.ui
+ )
+ 
+ set(client_SRCS
+@@ -108,24 +106,17 @@ set(client_SRCS
+     creds/credentialsfactory.cpp
+     creds/httpcredentialsgui.cpp
+     creds/oauth.cpp
+-    creds/flow2auth.cpp
+     creds/keychainchunk.cpp
+-    creds/webflowcredentials.cpp
+-    creds/webflowcredentialsdialog.cpp
+     wizard/postfixlineedit.cpp
+     wizard/abstractcredswizardpage.cpp
+     wizard/owncloudadvancedsetuppage.cpp
+     wizard/owncloudconnectionmethoddialog.cpp
+     wizard/owncloudhttpcredspage.cpp
+     wizard/owncloudoauthcredspage.cpp
+-    wizard/flow2authcredspage.cpp
+-    wizard/flow2authwidget.cpp
+     wizard/owncloudsetuppage.cpp
+     wizard/owncloudwizardcommon.cpp
+     wizard/owncloudwizard.cpp
+     wizard/owncloudwizardresultpage.cpp
+-    wizard/webviewpage.cpp
+-    wizard/webview.cpp
+     wizard/slideshow.cpp
+ )
+ 
+@@ -298,7 +289,7 @@ else()
+ endif()
+ 
+ add_library(updater STATIC ${updater_SRCS})
+-target_link_libraries(updater ${synclib_NAME} Qt5::Widgets Qt5::Network Qt5::Xml Qt5::WebEngineWidgets)
++target_link_libraries(updater ${synclib_NAME} Qt5::Widgets Qt5::Network Qt5::Xml)
+ target_include_directories(updater PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+ 
+ set_target_properties( ${APPLICATION_EXECUTABLE} PROPERTIES
+diff --git a/src/gui/accountmanager.cpp b/src/gui/accountmanager.cpp
+index eec3751..c8ae72b 100644
+--- a/src/gui/accountmanager.cpp
++++ b/src/gui/accountmanager.cpp
+@@ -253,20 +253,6 @@ AccountPtr AccountManager::loadAccountHelper(QSettings &settings)
+         acc->setUrl(urlConfig.toUrl());
+     }
+ 
+-    // Migrate to webflow
+-    if (authType == QLatin1String("http")) {
+-        authType = "webflow";
+-        settings.setValue(QLatin1String(authTypeC), authType);
+-
+-        foreach(QString key, settings.childKeys()) {
+-            if (!key.startsWith("http_"))
+-                continue;
+-            auto newkey = QString::fromLatin1("webflow_").append(key.mid(5));
+-            settings.setValue(newkey, settings.value((key)));
+-            settings.remove(key);
+-        }
+-    }
+-
+     qCInfo(lcAccountManager) << "Account for" << acc->url() << "using auth type" << authType;
+ 
+     acc->_serverVersion = settings.value(QLatin1String(serverVersionC)).toString();
+diff --git a/src/gui/creds/credentialsfactory.cpp b/src/gui/creds/credentialsfactory.cpp
+index 6062f70..52e003b 100644
+--- a/src/gui/creds/credentialsfactory.cpp
++++ b/src/gui/creds/credentialsfactory.cpp
+@@ -21,7 +21,6 @@
+ #ifndef NO_SHIBBOLETH
+ #include "creds/shibbolethcredentials.h"
+ #endif
+-#include "creds/webflowcredentials.h"
+ 
+ namespace OCC {
+ 
+@@ -40,8 +39,6 @@ namespace CredentialsFactory {
+         } else if (type == "shibboleth") {
+             return new ShibbolethCredentials;
+ #endif
+-        } else if (type == "webflow") {
+-            return new WebFlowCredentials;
+         } else {
+             qCWarning(lcGuiCredentials, "Unknown credentials type: %s", qPrintable(type));
+             return new DummyCredentials;
+diff --git a/src/gui/owncloudsetupwizard.cpp b/src/gui/owncloudsetupwizard.cpp
+index 875dacf..65dea66 100644
+--- a/src/gui/owncloudsetupwizard.cpp
++++ b/src/gui/owncloudsetupwizard.cpp
+@@ -409,7 +409,7 @@ void OwncloudSetupWizard::slotAuthError()
+ 
+     // bring wizard to top
+     _ocWizard->bringToTop();
+-    if (_ocWizard->currentId() == WizardCommon::Page_ShibbolethCreds || _ocWizard->currentId() == WizardCommon::Page_OAuthCreds || _ocWizard->currentId() == WizardCommon::Page_Flow2AuthCreds) {
++    if (_ocWizard->currentId() == WizardCommon::Page_ShibbolethCreds || _ocWizard->currentId() == WizardCommon::Page_OAuthCreds) {
+         _ocWizard->back();
+     }
+     _ocWizard->displayError(errorMsg, _ocWizard->currentId() == WizardCommon::Page_ServerSetup && checkDowngradeAdvised(reply));
+diff --git a/src/gui/wizard/owncloudsetuppage.cpp b/src/gui/wizard/owncloudsetuppage.cpp
+index 9a6ced7..101b5da 100644
+--- a/src/gui/wizard/owncloudsetuppage.cpp
++++ b/src/gui/wizard/owncloudsetuppage.cpp
+@@ -144,7 +144,7 @@ void OwncloudSetupPage::slotLogin()
+ void OwncloudSetupPage::slotGotoProviderList()
+ {
+     _ocWizard->setRegistration(true);
+-    _ocWizard->setAuthType(DetermineAuthTypeJob::AuthType::WebViewFlow);
++    _ocWizard->setAuthType(DetermineAuthTypeJob::AuthType::OAuth);
+     _authTypeKnown = true;
+     _checking = false;
+     emit completeChanged();
+@@ -259,12 +259,8 @@ int OwncloudSetupPage::nextId() const
+         return WizardCommon::Page_HttpCreds;
+     case DetermineAuthTypeJob::OAuth:
+         return WizardCommon::Page_OAuthCreds;
+-    case DetermineAuthTypeJob::LoginFlowV2:
+-        return WizardCommon::Page_Flow2AuthCreds;
+     case DetermineAuthTypeJob::Shibboleth:
+         return WizardCommon::Page_ShibbolethCreds;
+-    case DetermineAuthTypeJob::WebViewFlow:
+-        return WizardCommon::Page_WebView;
+     }
+     return WizardCommon::Page_HttpCreds;
+ }
+diff --git a/src/gui/wizard/owncloudwizard.cpp b/src/gui/wizard/owncloudwizard.cpp
+index 2076136..bbac8a5 100644
+--- a/src/gui/wizard/owncloudwizard.cpp
++++ b/src/gui/wizard/owncloudwizard.cpp
+@@ -27,8 +27,6 @@
+ #endif
+ #include "wizard/owncloudadvancedsetuppage.h"
+ #include "wizard/owncloudwizardresultpage.h"
+-#include "wizard/webviewpage.h"
+-#include "wizard/flow2authcredspage.h"
+ 
+ #include "QProgressIndicator.h"
+ 
+@@ -47,14 +45,12 @@ OwncloudWizard::OwncloudWizard(QWidget *parent)
+     , _setupPage(new OwncloudSetupPage(this))
+     , _httpCredsPage(new OwncloudHttpCredsPage(this))
+     , _browserCredsPage(new OwncloudOAuthCredsPage)
+-    , _flow2CredsPage(new Flow2AuthCredsPage)
+ #ifndef NO_SHIBBOLETH
+     , _shibbolethCredsPage(new OwncloudShibbolethCredsPage)
+ #endif
+     , _advancedSetupPage(new OwncloudAdvancedSetupPage)
+     , _resultPage(new OwncloudWizardResultPage)
+     , _credentialsPage(nullptr)
+-    , _webViewPage(new WebViewPage(this))
+     , _setupLog()
+     , _registration(false)
+ {
+@@ -62,13 +58,11 @@ OwncloudWizard::OwncloudWizard(QWidget *parent)
+     setPage(WizardCommon::Page_ServerSetup, _setupPage);
+     setPage(WizardCommon::Page_HttpCreds, _httpCredsPage);
+     setPage(WizardCommon::Page_OAuthCreds, _browserCredsPage);
+-    setPage(WizardCommon::Page_Flow2AuthCreds, _flow2CredsPage);
+ #ifndef NO_SHIBBOLETH
+     setPage(WizardCommon::Page_ShibbolethCreds, _shibbolethCredsPage);
+ #endif
+     setPage(WizardCommon::Page_AdvancedSetup, _advancedSetupPage);
+     setPage(WizardCommon::Page_Result, _resultPage);
+-    setPage(WizardCommon::Page_WebView, _webViewPage);
+ 
+     connect(this, &QDialog::finished, this, &OwncloudWizard::basicSetupFinished);
+ 
+@@ -80,11 +74,9 @@ OwncloudWizard::OwncloudWizard(QWidget *parent)
+     connect(_setupPage, &OwncloudSetupPage::determineAuthType, this, &OwncloudWizard::determineAuthType);
+     connect(_httpCredsPage, &OwncloudHttpCredsPage::connectToOCUrl, this, &OwncloudWizard::connectToOCUrl);
+     connect(_browserCredsPage, &OwncloudOAuthCredsPage::connectToOCUrl, this, &OwncloudWizard::connectToOCUrl);
+-    connect(_flow2CredsPage, &Flow2AuthCredsPage::connectToOCUrl, this, &OwncloudWizard::connectToOCUrl);
+ #ifndef NO_SHIBBOLETH
+     connect(_shibbolethCredsPage, &OwncloudShibbolethCredsPage::connectToOCUrl, this, &OwncloudWizard::connectToOCUrl);
+ #endif
+-    connect(_webViewPage, &WebViewPage::connectToOCUrl, this, &OwncloudWizard::connectToOCUrl);
+     connect(_advancedSetupPage, &OwncloudAdvancedSetupPage::createLocalAndRemoteFolders,
+         this, &OwncloudWizard::createLocalAndRemoteFolders);
+     connect(this, &QWizard::customButtonClicked, this, &OwncloudWizard::skipFolderConfiguration);
+@@ -106,12 +98,8 @@ OwncloudWizard::OwncloudWizard(QWidget *parent)
+     // Connect styleChanged events to our widgets, so they can adapt (Dark-/Light-Mode switching)
+     connect(this, &OwncloudWizard::styleChanged, _setupPage, &OwncloudSetupPage::slotStyleChanged);
+     connect(this, &OwncloudWizard::styleChanged, _advancedSetupPage, &OwncloudAdvancedSetupPage::slotStyleChanged);
+-    connect(this, &OwncloudWizard::styleChanged, _flow2CredsPage, &Flow2AuthCredsPage::slotStyleChanged);
+ 
+     customizeStyle();
+-
+-    // allow Flow2 page to poll on window activation
+-    connect(this, &OwncloudWizard::onActivate, _flow2CredsPage, &Flow2AuthCredsPage::slotPollNow);
+ }
+ 
+ void OwncloudWizard::setAccount(AccountPtr account)
+@@ -180,20 +168,12 @@ void OwncloudWizard::successfulStep()
+         _browserCredsPage->setConnected();
+         break;
+ 
+-    case WizardCommon::Page_Flow2AuthCreds:
+-        _flow2CredsPage->setConnected();
+-        break;
+-
+ #ifndef NO_SHIBBOLETH
+     case WizardCommon::Page_ShibbolethCreds:
+         _shibbolethCredsPage->setConnected();
+         break;
+ #endif
+ 
+-    case WizardCommon::Page_WebView:
+-        _webViewPage->setConnected();
+-        break;
+-
+     case WizardCommon::Page_AdvancedSetup:
+         _advancedSetupPage->directoriesCreated();
+         break;
+@@ -217,10 +197,6 @@ void OwncloudWizard::setAuthType(DetermineAuthTypeJob::AuthType type)
+ #endif
+         if (type == DetermineAuthTypeJob::OAuth) {
+         _credentialsPage = _browserCredsPage;
+-    } else if (type == DetermineAuthTypeJob::LoginFlowV2) {
+-        _credentialsPage = _flow2CredsPage;
+-    } else if (type == DetermineAuthTypeJob::WebViewFlow) {
+-        _credentialsPage = _webViewPage;
+     } else { // try Basic auth even for "Unknown"
+         _credentialsPage = _httpCredsPage;
+     }
+@@ -245,7 +221,7 @@ void OwncloudWizard::slotCurrentPageChanged(int id)
+     }
+ 
+     setOption(QWizard::HaveCustomButton1, id == WizardCommon::Page_AdvancedSetup);
+-    if (id == WizardCommon::Page_AdvancedSetup && (_credentialsPage == _browserCredsPage || _credentialsPage == _flow2CredsPage)) {
++    if (id == WizardCommon::Page_AdvancedSetup) {
+         // For OAuth, disable the back button in the Page_AdvancedSetup because we don't want
+         // to re-open the browser.
+         button(QWizard::BackButton)->setEnabled(false);
+diff --git a/src/gui/wizard/owncloudwizard.h b/src/gui/wizard/owncloudwizard.h
+index 3cbf89f..2eecbf9 100644
+--- a/src/gui/wizard/owncloudwizard.h
++++ b/src/gui/wizard/owncloudwizard.h
+@@ -39,8 +39,6 @@ class OwncloudAdvancedSetupPage;
+ class OwncloudWizardResultPage;
+ class AbstractCredentials;
+ class AbstractCredentialsWizardPage;
+-class WebViewPage;
+-class Flow2AuthCredsPage;
+ 
+ /**
+  * @brief The OwncloudWizard class
+@@ -114,11 +112,9 @@ private:
+ #ifndef NO_SHIBBOLETH
+     OwncloudShibbolethCredsPage *_shibbolethCredsPage;
+ #endif
+-    Flow2AuthCredsPage *_flow2CredsPage;
+     OwncloudAdvancedSetupPage *_advancedSetupPage;
+     OwncloudWizardResultPage *_resultPage;
+     AbstractCredentialsWizardPage *_credentialsPage;
+-    WebViewPage *_webViewPage;
+ 
+     QStringList _setupLog;
+ 
+diff --git a/src/gui/wizard/owncloudwizardcommon.h b/src/gui/wizard/owncloudwizardcommon.h
+index d1f7c08..c55ed04 100644
+--- a/src/gui/wizard/owncloudwizardcommon.h
++++ b/src/gui/wizard/owncloudwizardcommon.h
+@@ -38,8 +38,6 @@ namespace WizardCommon {
+         Page_HttpCreds,
+         Page_ShibbolethCreds,
+         Page_OAuthCreds,
+-        Page_Flow2AuthCreds,
+-        Page_WebView,
+         Page_AdvancedSetup,
+         Page_Result
+     };
+diff --git a/src/libsync/networkjobs.cpp b/src/libsync/networkjobs.cpp
+index 76789a8..7256f60 100644
+--- a/src/libsync/networkjobs.cpp
++++ b/src/libsync/networkjobs.cpp
+@@ -881,15 +881,10 @@ void DetermineAuthTypeJob::start()
+     // 2. checks the HTTP auth method.
+     auto propfind = _account->sendRequest("PROPFIND", _account->davUrl(), req);
+ 
+-    // 3. Determines if the old flow has to be used (GS for now)
+-    auto oldFlowRequired = new JsonApiJob(_account, "/ocs/v2.php/cloud/capabilities", this);
+-
+     get->setTimeout(30 * 1000);
+     propfind->setTimeout(30 * 1000);
+-    oldFlowRequired->setTimeout(30 * 1000);
+     get->setIgnoreCredentialFailure(true);
+     propfind->setIgnoreCredentialFailure(true);
+-    oldFlowRequired->setIgnoreCredentialFailure(true);
+ 
+     connect(get, &AbstractNetworkJob::redirected, this, [this, get](QNetworkReply *, const QUrl &target, int) {
+ #ifndef NO_SHIBBOLETH
+@@ -919,32 +914,12 @@ void DetermineAuthTypeJob::start()
+         _propfindDone = true;
+         checkAllDone();
+     });
+-    connect(oldFlowRequired, &JsonApiJob::jsonReceived, this, [this](const QJsonDocument &json, int statusCode) {
+-        if (statusCode == 200) {
+-            _resultOldFlow = LoginFlowV2;
+-
+-            auto data = json.object().value("ocs").toObject().value("data").toObject().value("capabilities").toObject();
+-            auto gs = data.value("globalscale");
+-            if (gs != QJsonValue::Undefined) {
+-                auto flow = gs.toObject().value("desktoplogin");
+-                if (flow != QJsonValue::Undefined) {
+-                    if (flow.toInt() == 1) {
+-                        _resultOldFlow = WebViewFlow;
+-                    }
+-                }
+-            }
+-        }
+-        _oldFlowDone = true;
+-        checkAllDone();
+-    });
+-
+-    oldFlowRequired->start();
+ }
+ 
+ void DetermineAuthTypeJob::checkAllDone()
+ {
+     // Do not conitunue until eve
+-    if (!_getDone || !_propfindDone || !_oldFlowDone) {
++    if (!_getDone || !_propfindDone) {
+         return;
+     }
+ 
+@@ -955,17 +930,12 @@ void DetermineAuthTypeJob::checkAllDone()
+ 
+     // WebViewFlow > OAuth > Shib > Basic
+     if (_account->serverVersionInt() >= Account::makeServerVersion(12, 0, 0)) {
+-        result = WebViewFlow;
++        result = Basic;
+     }
+ 
+     // LoginFlowV2 > WebViewFlow > OAuth > Shib > Basic
+     if (_account->serverVersionInt() >= Account::makeServerVersion(16, 0, 0)) {
+-        result = LoginFlowV2;
+-    }
+-
+-    // If we determined that we need the webview flow (GS for example) then we switch to that
+-    if (_resultOldFlow == WebViewFlow) {
+-        result = WebViewFlow;
++        result = Basic;
+     }
+ 
+     qCInfo(lcDetermineAuthTypeJob) << "Auth type for" << _account->davUrl() << "is" << result;
+diff --git a/src/libsync/networkjobs.h b/src/libsync/networkjobs.h
+index 765204c..f3ab853 100644
+--- a/src/libsync/networkjobs.h
++++ b/src/libsync/networkjobs.h
+@@ -412,8 +412,6 @@ public:
+         Basic, // also the catch-all fallback for backwards compatibility reasons
+         OAuth,
+         Shibboleth,
+-        WebViewFlow,
+-        LoginFlowV2
+     };
+ 
+     explicit DetermineAuthTypeJob(AccountPtr account, QObject *parent = nullptr);
+@@ -427,10 +425,8 @@ private:
+     AccountPtr _account;
+     AuthType _resultGet = Basic;
+     AuthType _resultPropfind = Basic;
+-    AuthType _resultOldFlow = Basic;
+     bool _getDone = false;
+     bool _propfindDone = false;
+-    bool _oldFlowDone = false;
+ };
+ 
+ /**
+-- 
+2.25.0
+

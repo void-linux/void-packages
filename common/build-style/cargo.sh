@@ -16,8 +16,11 @@ do_check() {
 
 do_install() {
 	: ${make_cmd:=cargo}
+	: ${make_install_args:=--path .}
 
-	${make_cmd} install --path . --target ${RUST_TARGET} --root="${DESTDIR}/usr" \
-		 --locked ${make_install_args}
-	rm "${DESTDIR}"/usr/.crates.toml
+	${make_cmd} install --target ${RUST_TARGET} --root="${DESTDIR}/usr" \
+		--locked ${configure_args} ${make_install_args}
+
+	rm -f "${DESTDIR}"/usr/.crates.toml
+	rm -f "${DESTDIR}"/usr/.crates2.json
 }

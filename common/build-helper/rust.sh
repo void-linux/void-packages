@@ -24,9 +24,6 @@ fi
 # For cross-compiling rust -sys crates
 export PKG_CONFIG_ALLOW_CROSS=1
 
-# libgit2-sys
-export LIBGIT2_SYS_USE_PKG_CONFIG=1
-
 # gettext-rs
 export GETTEXT_BIN_DIR=/usr/bin
 export GETTEXT_LIB_DIR="${XBPS_CROSS_BASE}/usr/lib/gettext"

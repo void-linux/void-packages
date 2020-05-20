@@ -162,8 +162,7 @@ set_build_options() {
     fi
 
     for f in ${build_options}; do
-        _pkgname=${pkgname//\-/\_}
-        _pkgname=${_pkgname//\+/\_}
+        _pkgname=${pkgname//[^A-Za-z0-9_]/_}
         eval pkgopts="\$XBPS_PKG_OPTIONS_${_pkgname}"
         if [ -z "$pkgopts" -o "$pkgopts" = "" ]; then
             pkgopts=${XBPS_PKG_OPTIONS}
@@ -257,9 +256,8 @@ get_endian() {
         i686)     echo "le";;
         mipsel*)  echo "le";;
         mips*)    echo "be";;
-        ppc64le)  echo "le";;
-        ppc64)    echo "be";;
-        ppc)      echo "be";;
+        ppc*le)   echo "le";;
+        ppc*)     echo "be";;
         x86_64)   echo "le";;
     esac
 }
@@ -285,10 +283,21 @@ get_wordsize() {
         i686)     echo "32";;
         mipsel*)  echo "32";;
         mips*)    echo "32";;
-        ppc64le)  echo "64";;
-        ppc64)    echo "64";;
-        ppc)      echo "32";;
+        ppc64*)   echo "64";;
+        ppc*)     echo "32";;
         x86_64)   echo "64";;
+    esac
+}
+
+get_no_atomic8() {
+    local arch="${1%-*}"
+
+    case "$arch" in
+        armv5tel) echo "yes";;
+        armv6l)   echo "yes";;
+        mips*)    echo "yes";;
+        ppcle)    echo "yes";;
+        ppc)      echo "yes";;
     esac
 }
 
@@ -317,8 +326,6 @@ setup_pkg() {
 
     unset_package_funcs
 
-    . $XBPS_CONFIG_FILE 2>/dev/null
-
     if [ -n "$cross" ]; then
         source_file $XBPS_CROSSPFDIR/${cross}.sh
 
@@ -334,8 +341,8 @@ setup_pkg() {
         export XBPS_CROSS_BASE=/usr/$XBPS_CROSS_TRIPLET
         export XBPS_TARGET_QEMU_MACHINE
 
-        XBPS_INSTALL_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_INSTALL_CMD -c /host/repocache -r $XBPS_CROSS_BASE"
-        XBPS_QUERY_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_QUERY_CMD -c /host/repocache -r $XBPS_CROSS_BASE"
+        XBPS_INSTALL_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_INSTALL_CMD -c /host/repocache-$XBPS_TARGET_MACHINE -r $XBPS_CROSS_BASE"
+        XBPS_QUERY_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_QUERY_CMD -c /host/repocache-$XBPS_TARGET_MACHINE -r $XBPS_CROSS_BASE"
         XBPS_RECONFIGURE_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_RECONFIGURE_CMD -r $XBPS_CROSS_BASE"
         XBPS_REMOVE_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_REMOVE_CMD -r $XBPS_CROSS_BASE"
         XBPS_RINDEX_XCMD="env XBPS_TARGET_ARCH=$XBPS_TARGET_MACHINE $XBPS_RINDEX_CMD"
@@ -362,6 +369,8 @@ setup_pkg() {
     export XBPS_TARGET_LIBC=$(get_libc ${XBPS_TARGET_MACHINE})
     export XBPS_WORDSIZE=$(get_wordsize ${XBPS_MACHINE})
     export XBPS_TARGET_WORDSIZE=$(get_wordsize ${XBPS_TARGET_MACHINE})
+    export XBPS_NO_ATOMIC8=$(get_no_atomic8 ${XBPS_MACHINE})
+    export XBPS_TARGET_NO_ATOMIC8=$(get_no_atomic8 ${XBPS_TARGET_MACHINE})
 
     export XBPS_INSTALL_XCMD XBPS_QUERY_XCMD XBPS_RECONFIGURE_XCMD \
         XBPS_REMOVE_XCMD XBPS_RINDEX_XCMD XBPS_UHELPER_XCMD

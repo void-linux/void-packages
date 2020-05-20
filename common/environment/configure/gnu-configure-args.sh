@@ -82,14 +82,6 @@ case "$XBPS_TARGET_MACHINE" in
 		. ${_AUTOCONFCACHEDIR}/mips-linux
 		;;
 
-
-	ppc|ppc-musl)
-		. ${_AUTOCONFCACHEDIR}/endian-big
-                . ${_AUTOCONFCACHEDIR}/ppc-common
-                . ${_AUTOCONFCACHEDIR}/ppc-linux
-		;;
-
-
 	x86_64*)
 		. ${_AUTOCONFCACHEDIR}/endian-little
 		. ${_AUTOCONFCACHEDIR}/x86_64-linux
@@ -107,6 +99,20 @@ case "$XBPS_TARGET_MACHINE" in
 		. ${_AUTOCONFCACHEDIR}/powerpc-common
 		. ${_AUTOCONFCACHEDIR}/powerpc-linux
 		. ${_AUTOCONFCACHEDIR}/powerpc64-linux
+		;;
+
+	ppcle*)
+		. ${_AUTOCONFCACHEDIR}/endian-little
+		. ${_AUTOCONFCACHEDIR}/powerpc-common
+		. ${_AUTOCONFCACHEDIR}/powerpc-linux
+		. ${_AUTOCONFCACHEDIR}/powerpc32-linux
+		;;
+
+	ppc*)
+		. ${_AUTOCONFCACHEDIR}/endian-big
+		. ${_AUTOCONFCACHEDIR}/powerpc-common
+		. ${_AUTOCONFCACHEDIR}/powerpc-linux
+		. ${_AUTOCONFCACHEDIR}/powerpc32-linux
 		;;
 
 	*) ;;

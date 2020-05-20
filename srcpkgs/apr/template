@@ -1,7 +1,7 @@
 # Template file for 'apr'
 pkgname=apr
 version=1.7.0
-revision=2
+revision=3
 build_style=gnu-configure
 configure_args="--with-installbuilddir=/usr/share/apr-1/build"
 makedepends="expat-devel libuuid-devel"
@@ -11,28 +11,34 @@ license="Apache-2.0"
 homepage="http://apr.apache.org/"
 distfiles="http://www.apache.org/dist/apr/apr-${version}.tar.bz2"
 checksum=e2e148f0b2e99b8e5c6caa09f6d4fb4dd3e83f744aa72a952f94f5a14436f7ea
-nocross="mutex_proc_pthread_methods undeclared, configure args need to be fixed"
 
 # Do not redefine struct iovec in include/apr_want.h
 CFLAGS="-DAPR_IOVEC_DEFINED=1"
 
 # Can't run test programs when cross compiling
 if [ "$CROSS_BUILD" ]; then
+	configure_args+=" apr_cv_pthreads_cflags=-pthread"
 	configure_args+=" apr_cv_process_shared_works=yes"
 	configure_args+=" apr_cv_mutex_robust_shared=yes"
+	configure_args+=" apr_cv_tcp_nodelay_with_cork=yes"
+	configure_args+=" ac_cv_func_sem_open=sem_open"
 fi
 
-case "$XBPS_TARGET_MACHINE" in
-	ppc64*) ;;
-	ppc*|armv[56]*|mips*)
-		makedepends+=" libatomic-devel"
-		LDFLAGS="-latomic"
-		;;
-esac
+if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
+	makedepends+=" libatomic-devel"
+	LDFLAGS="-latomic"
+fi
 
 pre_build() {
 	if [ "$CROSS_BUILD" ]; then
-		sed -i "/LINK_PROG.*OBJECTS_gen_test_char/s|.*|\t${BUILD_CC} ${BUILD_CFLAGS} tools/gen_test_char.c -o tools/gen_test_char|" Makefile
+		vsed -i Makefile \
+			-e "/LINK_PROG.*OBJECTS_gen_test_char/s|.*|\t${BUILD_CC} ${BUILD_CFLAGS} tools/gen_test_char.c -o tools/gen_test_char|"
+		# Fixup some not detected configure results to match native builds
+		vsed -i include/apr.h \
+			-e "/#define APR_HAVE_SHMEM_MMAP_ZERO/s;0;1;" \
+			-e "/#define APR_HAVE_IOVEC/s;0;1;" \
+			-e "/#define APR_HAS_POSIXSEM_SERIALIZE/s;0;1;" \
+			-e "/#define APR_HAS_PROC_PTHREAD_SERIALIZE/s;0;1;"
 	fi
 }
 

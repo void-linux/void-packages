@@ -55,7 +55,8 @@ update_check() {
               *kernel.org/pub/linux/kernel/*|\
               *cran.r-project.org/src/contrib*|\
               *rubygems.org*|\
-              *crates.io*)
+              *crates.io*|\
+              *hg.sr.ht*)
                 continue
                 ;;
             *)
@@ -135,11 +136,15 @@ update_check() {
             *crates.io*)
                 url="https://crates.io/api/v1/crates/${pkgname#rust-}"
                 rx='/crates/'${pkgname#rust-}'/\K[0-9.]*(?=/download)' ;;
+            *hg.sr.ht*)
+                hgsrhtname="$(printf %s "$url" | cut -d/ -f4,5)"
+                url="https://hg.sr.ht/$hgsrhtname/tags"
+                rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
             esac
         fi
 
         rx=${pattern:-$rx}
-        rx=${rx:-'(?<!-)\b\Q'"$pkgname"'\E[-_]?((src|source)[-_])?\K([^-/_\s]*?\d[^-/_\s]*?)(?=(?:[-_.](?:src|source|orig))?\.(?:[jt]ar|shar|t[bglx]z|tbz2|zip))\b'}
+        rx=${rx:-'(?<!-)\b\Q'"$pkgname"'\E[-_]?((src|source)[-_])?v?\K([^-/_\s]*?\d[^-/_\s]*?)(?=(?:[-_.](?:src|source|orig))?\.(?:[jt]ar|shar|t[bglx]z|tbz2|zip))\b'}
 
         if [ "${fetchedurls[$url]}" ]; then
             if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then

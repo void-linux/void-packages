@@ -15,6 +15,7 @@ do_configure() {
 			mips*) _CMAKE_SYSTEM_PROCESSOR=mips ;;
 			ppc64le*) _CMAKE_SYSTEM_PROCESSOR=ppc64le ;;
 			ppc64*) _CMAKE_SYSTEM_PROCESSOR=ppc64 ;;
+			ppcle*) _CMAKE_SYSTEM_PROCESSOR=ppcle ;;
 			ppc*) _CMAKE_SYSTEM_PROCESSOR=ppc ;;
 			*) _CMAKE_SYSTEM_PROCESSOR=generic ;;
 		esac
@@ -98,5 +99,5 @@ do_install() {
 	: ${make_install_target:=install}
 
 	cd ${cmake_builddir:=build}
-	${make_cmd} DESTDIR=${DESTDIR} ${make_install_args} ${make_install_target}
+	DESTDIR=${DESTDIR} ${make_cmd} ${make_install_args} ${make_install_target}
 }

@@ -1,0 +1,56 @@
+From 387947f6b151f5dd65c6c38d99e762e612281269 Mon Sep 17 00:00:00 2001
+From: Daniel Kolesa <d.kolesa@samsung.com>
+Date: Wed, 4 Dec 2019 15:30:17 +0100
+Subject: [PATCH 2/4] eolian: account for entire inheritance trees when
+ compositing
+
+When a class composites an interface, we need to ignore all of
+its extends (and extends of those) as well as the main interface
+when doing API checks, as composites essentially provides a
+guarantee that this *will* be implemented at runtime, which
+further extends to the whole inheritance tree of that interface.
+
+Fixes T8491.
+---
+ src/lib/eolian/database_validate.c | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git src/lib/eolian/database_validate.c src/lib/eolian/database_validate.c
+index 4e51718ecd..b1af2185ef 100644
+--- src/lib/eolian/database_validate.c
++++ src/lib/eolian/database_validate.c
+@@ -1247,6 +1247,17 @@ _add_composite(Eolian_Class *cl, const Eolian_Class *icl, Eina_Hash *ch)
+      }
+ }
+ 
++static void
++_add_implicit_composite(Eolian_Class *icl, Eina_Hash *ch, Eina_Bool try_tree)
++{
++   eina_hash_set(ch, &icl, icl);
++   if (!try_tree)
++     return;
++   Eina_List *l;
++   EINA_LIST_FOREACH(icl->extends, l, icl)
++     _add_implicit_composite(icl, ch, try_tree);
++}
++
+ static Eina_Bool
+ _db_fill_inherits(Validate_State *vals, Eolian_Class *cl, Eina_Hash *fhash,
+                   Eina_Hash *errh)
+@@ -1325,7 +1336,12 @@ _db_fill_inherits(Validate_State *vals, Eolian_Class *cl, Eina_Hash *fhash,
+         cl->composite = eina_list_append(cl->composite, out_cl);
+         succ = _db_fill_inherits(vals, out_cl, fhash, errh);
+         ++ncomp;
+-        eina_hash_set(ch, &out_cl, out_cl);
++        /* for each thing that is composited, we need to add the entire
++         * inheritance tree of it into composite hash to check, so e.g.
++         * class A -> composites B -> extends C does not complain about
++         * A not implementing C
++         */
++        _add_implicit_composite(out_cl, ch, out_cl->type == EOLIAN_CLASS_INTERFACE);
+      }
+ 
+    /* parent can be abstract, those are not checked for unimplemented,
+-- 
+2.25.1
+

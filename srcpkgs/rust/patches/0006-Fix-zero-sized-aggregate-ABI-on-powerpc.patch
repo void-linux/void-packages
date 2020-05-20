@@ -1,0 +1,62 @@
+From d54189d6441d59ba623b561438e3ce0664ab2101 Mon Sep 17 00:00:00 2001
+From: Samuel Holland <samuel@sholland.org>
+Date: Sat, 21 Dec 2019 16:55:07 +0100
+Subject: [PATCH 06/16] Fix zero-sized aggregate ABI on powerpc
+
+For targets that pass zero-sized aggregates indirectly (generally
+those that pass all aggregates indirectly), we must allocate a register
+for passing the address of the ZST. Clean up the existing cases and add
+powerpc, which requires this as well.
+
+While there are not currently musl targets for s390x or sparc64, they
+would have the same ABI as gnu targets, so remove the env == "gnu" check
+in the Linux case.
+
+Ideally, since it is a property of the C ABI, the `!rust_abi` case would
+be handled entirely in `adjust_c_abi`. However, that would require
+updating each implementation of `compute_abi_info` to handle ZSTs.
+---
+ src/librustc/ty/layout.rs | 20 +++++++++-----------
+ 1 file changed, 9 insertions(+), 11 deletions(-)
+
+diff --git a/src/librustc/ty/layout.rs b/src/librustc/ty/layout.rs
+index c7278dc4..2e5ea499 100644
+--- a/src/librustc/ty/layout.rs
++++ b/src/librustc/ty/layout.rs
+@@ -2576,12 +2576,11 @@ where
+         };
+ 
+         let target = &cx.tcx().sess.target.target;
+-        let win_x64_gnu =
+-            target.target_os == "windows" && target.arch == "x86_64" && target.target_env == "gnu";
+-        let linux_s390x =
+-            target.target_os == "linux" && target.arch == "s390x" && target.target_env == "gnu";
+-        let linux_sparc64 =
+-            target.target_os == "linux" && target.arch == "sparc64" && target.target_env == "gnu";
++        let indirect_zst = match target.arch.as_ref() {
++            "powerpc" | "s390x" | "sparc64" => true,
++            "x86_64" => target.target_os == "windows" && target.target_env == "gnu",
++            _ => false,
++        };
+         let rust_abi = match sig.abi {
+             RustIntrinsic | PlatformIntrinsic | Rust | RustCall => true,
+             _ => false,
+@@ -2650,11 +2649,10 @@ where
+             let is_return = arg_idx.is_none();
+             let mut arg = mk_arg_type(ty, arg_idx);
+             if arg.layout.is_zst() {
+-                // For some forsaken reason, x86_64-pc-windows-gnu
+-                // doesn't ignore zero-sized struct arguments.
+-                // The same is true for s390x-unknown-linux-gnu
+-                // and sparc64-unknown-linux-gnu.
+-                if is_return || rust_abi || (!win_x64_gnu && !linux_s390x && !linux_sparc64) {
++                // FIXME: The C ABI case should be handled in adjust_for_cabi.
++                // Zero-sized struct arguments cannot be ignored in the C ABI
++                // if they are passed indirectly.
++                if is_return || rust_abi || !indirect_zst {
+                     arg.mode = PassMode::Ignore;
+                 }
+             }
+-- 
+2.25.0
+

@@ -281,11 +281,11 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	converts gzipped (.gz) and bzipped (.bz2) manpages into plaintext.
 	Example mappings:
 
-	`foo.1` -> `${DESTDIR}/usr/share/man/man1/foo.1`
-	`foo.fr.1` -> `${DESTDIR}/usr/share/man/fr/man1/foo.1`
-	`foo.1p` -> `${DESTDIR}/usr/share/man/man1/foo.1p`
-	`foo.1.gz` -> `${DESTDIR}/usr/share/man/man1/foo.1`
-	`foo.1.bz2` -> `${DESTDIR}/usr/share/man/man1/foo.1`
+	`foo.1` -> `${DESTDIR}/usr/share/man/man1/foo.1`  
+	`foo.fr.1` -> `${DESTDIR}/usr/share/man/fr/man1/foo.1`  
+	`foo.1p` -> `${DESTDIR}/usr/share/man/man1/foo.1p`  
+	`foo.1.gz` -> `${DESTDIR}/usr/share/man/man1/foo.1`  
+	`foo.1.bz2` -> `${DESTDIR}/usr/share/man/man1/foo.1`  
 
 - *vdoc()* `vdoc <file> [<name>]`
 
@@ -369,6 +369,8 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_WORDSIZE` The machine's word size in bits (32 or 64).
 
+- `XBPS_NO_ATOMIC8` The machine lacks native 64-bit atomics (needs libatomic emulation).
+
 - `XBPS_SRCDISTDIR` Full path to where the `source distfiles` are stored, i.e `$XBPS_HOSTDIR/sources`.
 
 - `XBPS_SRCPKGDIR` Full path to the `srcpkgs` directory.
@@ -380,6 +382,8 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 - `XBPS_TARGET_LIBC` The target machine's C library ("glibc" or "musl").
 
 - `XBPS_TARGET_WORDSIZE` The target machine's word size in bits (32 or 64).
+
+- `XBPS_TARGET_NO_ATOMIC8` The target machine lacks native 64-bit atomics (needs libatomic emulation).
 
 - `XBPS_FETCH_CMD` The utility to fetch files from `ftp`, `http` of `https` servers.
 
@@ -475,19 +479,18 @@ Example:
 
   | Variable         | Value                                           |
   |------------------|-------------------------------------------------|
-  | CPAN_SITE        | http://cpan.perl.org/modules/by-module          |
+  | CPAN_SITE        | https://cpan.perl.org/modules/by-module          |
   | DEBIAN_SITE      | http://ftp.debian.org/debian/pool               |
-  | FREEDESKTOP_SITE | http://freedesktop.org/software                 |
-  | GNOME_SITE       | http://ftp.gnome.org/pub/GNOME/sources          |
-  | GNU_SITE         | http://ftp.gnu.org/gnu                          |
-  | KERNEL_SITE      | http://www.kernel.org/pub/linux                 |
-  | MOZILLA_SITE     | http://ftp.mozilla.org/pub                      |
-  | NONGNU_SITE      | http://download.savannah.nongnu.org/releases    |
+  | FREEDESKTOP_SITE | https://freedesktop.org/software                 |
+  | GNOME_SITE       | https://ftp.gnome.org/pub/GNOME/sources          |
+  | GNU_SITE         | https://ftp.gnu.org/gnu                          |
+  | KERNEL_SITE      | https://www.kernel.org/pub/linux                 |
+  | MOZILLA_SITE     | https://ftp.mozilla.org/pub                      |
+  | NONGNU_SITE      | https://download.savannah.nongnu.org/releases    |
   | PYPI_SITE        | https://files.pythonhosted.org/packages/source  |
-  | SOURCEFORGE_SITE | http://downloads.sourceforge.net/sourceforge    |
+  | SOURCEFORGE_SITE | https://downloads.sourceforge.net/sourceforge    |
   | UBUNTU_SITE      | http://archive.ubuntu.com/ubuntu/pool           |
-  | XORG_HOME        | http://xorg.freedesktop.org/wiki/               |
-  | XORG_SITE        | http://www.x.org/releases/individual            |
+  | XORG_SITE        | https://www.x.org/releases/individual            |
   | KDE_SITE         | https://download.kde.org/stable                 |
 
 - `checksum` The `sha256` digests matching `${distfiles}`. Multiple files can be
@@ -502,7 +505,7 @@ For tarballs you can find the contents checksum by using the command
 `tar xf <tarball.ext> --to-stdout | sha256sum`.
 
 - `wrksrc` The directory name where the package sources are extracted, by default
-set to `${pkgname}-${version}`.
+set to `${pkgname}-${version}`. If the top level directory of a package's `distfile` is different from the default, `wrksrc` must be set to the top level directory name inside the archive.
 
 - `build_wrksrc` A directory relative to `${wrksrc}` that will be used when building the package.
 
@@ -896,8 +899,7 @@ Additional install arguments can be specified via `make_install_args`.
 - `perl-module` For packages that use the Perl
 [ExtUtils::MakeMaker](http://perldoc.perl.org/ExtUtils/MakeMaker.html) build method.
 
-- `perl6-dist` For packages that use the Rakudo Perl 6
-`perl6-install-dist` build method with rakudo.
+- `raku-dist` For packages that use the Raku `raku-install-dist` build method with rakudo.
 
 - `waf3` For packages that use the Python3 `waf` build method with python3.
 
@@ -1159,10 +1161,16 @@ Dependencies declared via `${depends}` are not installed to the master directory
 only checked if they exist as binary packages, and are built automatically by `xbps-src` if
 the specified version is not in the local repository.
 
-There's a special variant of how `virtual` dependencies can be specified as `runtime dependencies`
-and is by using the `virtual?` keyword, i.e `depends="virtual?vpkg-0.1_1"`. This declares
-a `runtime` virtual dependency to `vpkg-0.1_1`; this `virtual` dependency will be simply ignored
-when the package is being built with `xbps-src`.
+As a special case, `virtual` dependencies may be specified as runtime dependencies in the
+`${depends}` template variable. Several different packages can provide common functionality by
+declaring a virtual name and version in the `${provides}` template variable (e.g.,
+`provides="vpkg-0.1_1"`). Packages that rely on the common functionality without concern for the
+specific provider can declare a dependency on the virtual package name with the prefix `virtual?`
+(e.g., `depends="virtual?vpkg-0.1_1"`). When a package is built by `xbps-src`, providers for any
+virtual packages will be confirmed to exist and will be built if necessary. A map from virtual
+packages to their default providers is defined in `etc/default.virtual`. Individual mappings can be
+overridden by local preferences in `etc/virtual`. Comments in `etc/default.virtual` provide more
+information on this map.
 
 <a id="install_remove_files"></a>
 ### INSTALL and REMOVE files
@@ -1393,14 +1401,14 @@ the appropriate `development` packages as dependencies.
 Development packages for the C and C++ languages usually `vmove` the
 following subset of files from the main package:
 
-    * Header files `usr/include`
-    * Static libraries `usr/lib/*.a`
-    * Shared library symbolic links `usr/lib/*.so`
-    * Cmake rules `usr/lib/cmake` `usr/share/cmake`
-    * Package config files `usr/lib/pkgconfig` `usr/share/pkgconfig`
-    * Autoconf macros `usr/share/aclocal`
-    * Gobject introspection XML files `usr/share/gir-1.0`
-    * Vala bindings `usr/share/vala`
+* Header files `usr/include`
+* Static libraries `usr/lib/*.a`
+* Shared library symbolic links `usr/lib/*.so`
+* Cmake rules `usr/lib/cmake` `usr/share/cmake`
+* Package config files `usr/lib/pkgconfig` `usr/share/pkgconfig`
+* Autoconf macros `usr/share/aclocal`
+* Gobject introspection XML files `usr/share/gir-1.0`
+* Vala bindings `usr/share/vala`
 
 <a id="pkgs_data"></a>
 ### Data packages
@@ -1455,16 +1463,12 @@ by blanks, Example: `pycompile_module="foo blah"`. If a python module installs a
 recursively by the target python version. This differs from `pycompile_module` in that any
 path may be specified, Example: `pycompile_dirs="usr/share/foo"`.
 
-- `pycompile_version`: this variable expects the python version that is used to
-byte-compile the python code (it generates the `.py[co]` files at post-install time).
-By default it's set to `2.7` for `python 2.x` packages.
-
-> NOTE: you need to define it *only* for non-Python modules.
-
 - `python_version`: this variable expects the supported Python major version.
 By default it's set to `2`. This variable is needed for multi-language
 applications (e.g., the application is written in C while the command is
 written in Python) or just single Python file ones that live in `/usr/bin`.
+
+> NOTE: you need to define it *only* for non-Python modules.
 
 Also, a set of useful variables are defined to use in the templates:
 
@@ -1959,27 +1963,18 @@ Fork the voidlinux `void-packages` git repository on github and clone it:
 
     $ git clone git@github.com:<user>/void-packages.git
 
-You can now make your own commits to the `forked` repository:
+See [CONTRIBUTING.md](https://github.com/void-linux/void-packages/blob/master/CONTRIBUTING.md)
+for information on how to format your commits and other tips for
+contributing.
 
-    $ git add ...
-    $ git commit ...
-    $ git push ...
+Once you've made changes to your `forked` repository you can submit
+a github pull request; see https://help.github.com/articles/fork-a-repo for more information.
 
 To keep your forked repository always up to date, setup the `upstream` remote
 to pull in new changes:
 
     $ git remote add upstream git://github.com/void-linux/void-packages.git
     $ git pull upstream master
-
-Once you've made changes to your `forked` repository you can submit
-a github pull request; see https://help.github.com/articles/fork-a-repo for more information.
-
-For commit messages please use the following rules:
-
-- If you've imported a new package use `"New package: <pkgname>-<version>"`.
-- If you've updated a package use `"<pkgname>: update to <version>."`.
-- If you've removed a package use `"<pkgname>: removed ..."`.
-- If you've modified a package use `"<pkgname>: ..."`.
 
 <a id="help"></a>
 ## Help

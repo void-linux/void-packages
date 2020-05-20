@@ -1,0 +1,378 @@
+# Template file for 'cross-x86_64-linux-gnu'
+_binutils_version=2.32
+_gcc_version=9.3.0
+_glibc_version=2.30
+_linux_version=4.19
+
+_triplet="x86_64-linux-gnu"
+_sysroot="/usr/${_triplet}"
+
+pkgname=cross-${_triplet}
+version=0.33
+revision=1
+short_desc="GNU cross toolchain for the ${_triplet} targets (binutils/gcc/glibc)"
+maintainer="q66 <daniel@octaforge.org>"
+homepage="https://www.voidlinux.org/"
+license="GPL-2.0-or-later, GPL-3.0-or-later, LGPL-2.1-or-later"
+distfiles="
+ ${GNU_SITE}/binutils/binutils-${_binutils_version}.tar.xz
+ ${GNU_SITE}/gcc/gcc-${_gcc_version}/gcc-${_gcc_version}.tar.xz
+ ${GNU_SITE}/glibc/glibc-${_glibc_version}.tar.xz
+ ${KERNEL_SITE}/kernel/v4.x/linux-${_linux_version}.tar.xz"
+checksum="0ab6c55dd86a92ed561972ba15b9b70a8b9f75557f896446c82e8b36e473ee04
+ 71e197867611f6054aa1119b13a0c0abac12834765fe2d81f35ac57f84f742d1
+ e2c4114e569afbe7edbc29131a43be833850ab9a459d81beb2588016d2bbb8af
+ 0c68f5655528aed4f99dae71a5b259edc93239fa899e2df79c055275c21749a1"
+
+lib32disabled=yes
+nocross=yes
+nopie=yes
+nodebug=yes
+create_wrksrc=yes
+hostmakedepends="tar gcc-objc gcc-go flex perl python3"
+makedepends="isl15-devel libmpc-devel zlib-devel"
+nostrip_files="libcaf_single.a libgcc.a libgcov.a libgcc_eh.a
+ libgnarl_pic.a libgnarl.a libgnat_pic.a libgnat.a"
+depends="${pkgname}-libc-${version}_${revision}"
+
+if [ "$XBPS_TARGET_LIBC" != "glibc" ]; then
+	broken="glibc crosstoolchain only available on glibc"
+fi
+
+if [ "$XBPS_TARGET_WORDSIZE" != "64" ]; then
+	broken="64-bit crosstoolchain only available on 64-bit host"
+fi
+
+if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+	broken="Can't build crosstoolchain to itself"
+fi
+
+_apply_patch() {
+	local args="$1" pname="$(basename $2)"
+
+	if [ ! -f ".${pname}_done" ]; then
+		patch -N $args -i $2
+		touch .${pname}_done
+	fi
+}
+
+_binutils_build() {
+	local _args
+
+	[ -f ${wrksrc}/.binutils_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross binutils bootstrap\n"
+
+	[ ! -d binutils-build ] && mkdir binutils-build
+	cd binutils-build
+
+	_args="--prefix=/usr"
+	_args+=" --target=${_triplet}"
+	_args+=" --with-sysroot=${_sysroot}"
+	_args+=" --disable-nls"
+	_args+=" --disable-multilib"
+	_args+=" --disable-werror"
+	_args+=" --disable-shared"
+	_args+=" --with-system-zlib"
+
+	../binutils-${_binutils_version}/configure ${_args}
+
+	make configure-host
+	make ${makejobs}
+	make install
+
+	touch ${wrksrc}/.binutils_build_done
+}
+
+_gcc_bootstrap() {
+	local _args
+
+	[ -f ${wrksrc}/.gcc_bootstrap_done ] && return 0
+
+	cd ${wrksrc}/gcc-${_gcc_version}
+	_apply_patch -p0 ${FILESDIR}/fix-cxxflags-passing.patch
+
+	sed -i '/m64=/s/lib64/lib/' gcc/config/i386/t-linux64
+	sed -i 's/lib64/lib/' gcc/config/i386/linux64.h
+
+	msg_normal "Building cross gcc bootstrap\n"
+
+	[ ! -d ../gcc-bootstrap ] && mkdir ../gcc-bootstrap
+	cd ../gcc-bootstrap
+
+	_args="--prefix=/usr"
+	_args+=" --target=${_triplet}"
+	_args+=" --without-headers"
+	_args+=" --disable-nls"
+	_args+=" --disable-shared"
+	_args+=" --disable-libquadmath"
+	_args+=" --disable-decimal-float"
+	_args+=" --disable-libgomp"
+	_args+=" --disable-libmpx"
+	_args+=" --disable-libmudflap"
+	_args+=" --disable-libssp"
+	_args+=" --disable-libitm"
+	_args+=" --disable-libatomic"
+	_args+=" --disable-threads"
+	_args+=" --enable-languages=c"
+	_args+=" --disable-sjlj-exceptions"
+	_args+=" --disable-multilib"
+	_args+=" --with-gnu-ld"
+	_args+=" --with-gnu-as"
+
+	../gcc-${_gcc_version}/configure ${_args}
+
+	make ${makejobs}
+	make install
+
+	touch ${wrksrc}/.gcc_bootstrap_done
+}
+
+_linux_headers() {
+	[ -f ${wrksrc}/.linux_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building Linux API headers\n"
+
+	cd linux-${_linux_version}
+
+	make ARCH=x86 headers_check
+	make ARCH=x86 INSTALL_HDR_PATH=${_sysroot}/usr headers_install
+
+	touch ${wrksrc}/.linux_build_done
+}
+
+_glibc_headers() {
+	local _args f
+	[ -f ${wrksrc}/.glibc_headers_done ] && return 0
+
+	cd ${wrksrc}/glibc-${_glibc_version}
+	if [ -d "${XBPS_SRCPKGDIR}/glibc/patches" ]; then
+		for f in ${XBPS_SRCPKGDIR}/glibc/patches/*.patch; do
+			_apply_patch -p1 "$f"
+		done
+	fi
+
+	cd ${wrksrc}
+	msg_normal "Building cross glibc headers\n"
+
+	[ ! -d glibc-headers ] && mkdir glibc-headers
+	cd glibc-headers
+
+	echo "libc_cv_forced_unwind=yes" > config.cache
+	echo "libc_cv_c_cleanup=yes" >> config.cache
+
+	export CC="${_triplet}-gcc" LD="${_triplet}-ld" \
+		AS="${_triplet}-as" CPP="${_triplet}-cpp" \
+		NM="${_triplet}-nm"
+
+	_args=" --prefix=/usr"
+	_args+=" --host=${_triplet}"
+	_args+=" --with-headers=${_sysroot}/usr/include"
+	_args+=" --config-cache"
+	_args+=" --enable-obsolete-rpc"
+	_args+=" --enable-obsolete-nsl"
+	_args+=" --enable-kernel=2.6.27"
+
+	../glibc-${_glibc_version}/configure ${_args}
+
+	make -k install-headers cross_compiling=yes \
+		install_root=${_sysroot}
+
+	touch ${wrksrc}/.glibc_headers_done
+}
+
+_glibc_build() {
+	local _args
+	[ -f ${wrksrc}/.glibc_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross glibc\n"
+
+	[ ! -d glibc-build ] && mkdir glibc-build
+	cd glibc-build
+
+	echo "slibdir=/usr/lib" > configparms
+
+	echo "libc_cv_forced_unwind=yes" > config.cache
+	echo "libc_cv_c_cleanup=yes" >> config.cache
+
+	export CC="${_triplet}-gcc" CXX="${_triplet}-g++" LD="${_triplet}-ld" \
+		AS="${_triplet}-as" CPP="${_triplet}-cpp" \
+		NM="${_triplet}-nm"
+	export CFLAGS="-O2 -pipe"
+
+	_args="--prefix=/usr"
+	_args+=" --libdir=/usr/lib"
+	_args+=" --host=${_triplet}"
+	_args+=" --with-headers=${_sysroot}/usr/include"
+	_args+=" --config-cache"
+	_args+=" --enable-obsolete-rpc"
+	_args+=" --enable-obsolete-nsl"
+	_args+=" --disable-profile"
+	_args+=" --enable-kernel=2.6.27"
+	_args+=" --disable-werror"
+
+	../glibc-${_glibc_version}/configure ${_args}
+
+	make ${makejobs}
+	make install_root=${_sysroot} install
+
+	touch ${wrksrc}/.glibc_build_done
+}
+
+_gcc_build() {
+	local _args
+	[ -f ${wrksrc}/.gcc_build_done ] && return 0
+
+	cd ${wrksrc}
+	msg_normal "Building cross gcc final\n"
+
+	[ ! -d gcc-build ] && mkdir gcc-build
+	cd gcc-build
+
+	unset LD AS
+
+	# Make this link to target libs.
+	if [ ! -f .sed_subst_done ]; then
+		sed -e "s, /lib/, ${_sysroot}/lib/,g;s, /usr/lib/, ${_sysroot}/usr/lib/,g" \
+			-i ${_sysroot}/usr/lib/libc.so
+		sed -e "s, /lib64/, ${_sysroot}/lib64/,g;s, /usr/lib64/, ${_sysroot}/usr/lib64/,g" \
+			-i ${_sysroot}/usr/lib/libc.so
+		sed -e "s, /lib/, ${_sysroot}/lib/,g;s, /usr/lib/, ${_sysroot}/usr/lib/,g" \
+			-i ${_sysroot}/usr/lib/libm.so
+		sed -e "s, /lib64/, ${_sysroot}/lib64/,g;s, /usr/lib64/, ${_sysroot}/usr/lib64/,g" \
+			-i ${_sysroot}/usr/lib/libm.so
+		touch .sed_subst_done
+	fi
+
+	_args="--prefix=/usr"
+	_args+=" --libdir=/usr/lib"
+	_args+=" --libexecdir=/usr/lib"
+	_args+=" --target=${_triplet}"
+	_args+=" --with-sysroot=${_sysroot}"
+	_args+=" --enable-languages=c,ada,c++,objc,obj-c++,go,fortran,lto"
+	_args+=" --with-gnu-as"
+	_args+=" --with-gnu-ld"
+	_args+=" --enable-libada"
+	_args+=" --enable-lto"
+	_args+=" --enable-default-pie"
+	_args+=" --enable-default-ssp"
+	_args+=" --enable-linker-build-id"
+	_args+=" --enable-gnu-unique-object"
+	_args+=" --enable-shared"
+	_args+=" --enable-threads=posix"
+	_args+=" --enable-libquadmath"
+	_args+=" --disable-nls"
+	_args+=" --disable-libsanitizer"
+	_args+=" --disable-multilib"
+	_args+=" --disable-libmudflap"
+	_args+=" --disable-libstdcxx-pch"
+	_args+=" --disable-sjlj-exceptions"
+
+	CC="gcc" CXX="g++" CFLAGS="-O2 -pipe" \
+		../gcc-${_gcc_version}/configure ${_args}
+
+	make ${makejobs}
+
+	touch ${wrksrc}/.gcc_build_done
+}
+
+do_build() {
+	unset LDFLAGS
+	export CFLAGS="-Os -fPIC" CXXFLAGS="-Os -fPIC"
+
+	for f in include lib libexec bin sbin; do
+		if [ ! -d ${_sysroot}/usr/${f} ]; then
+			mkdir -p ${_sysroot}/usr/${f}
+		fi
+		if [ ! -h ${_sysroot}/${f} ]; then
+			ln -sfr ${_sysroot}/usr/${f} ${_sysroot}/${f}
+		fi
+	done
+
+	_binutils_build
+	_gcc_bootstrap
+	_linux_headers
+	_glibc_headers
+	_glibc_build
+	_gcc_build
+}
+
+do_install() {
+	for f in include lib libexec bin sbin; do
+		if [ ! -d ${DESTDIR}/${_sysroot}/usr/${f} ]; then
+			mkdir -p ${DESTDIR}/${_sysroot}/usr/${f}
+		fi
+		if [ ! -h ${DESTDIR}/${_sysroot}/${f} ]; then
+			ln -sfr ${DESTDIR}/${_sysroot}/usr/${f} \
+				${DESTDIR}/${_sysroot}/${f}
+		fi
+	done
+	mkdir -p ${DESTDIR}/${_sysroot}/usr/lib
+	ln -sf lib ${DESTDIR}/${_sysroot}/usr/lib64
+	ln -sf usr/lib ${DESTDIR}/${_sysroot}/lib64
+	ln -sf usr/lib ${DESTDIR}/${_sysroot}/lib
+
+	# install linux API headers for x86
+	cd ${wrksrc}/linux-${_linux_version}
+	make ARCH=x86 INSTALL_HDR_PATH=${DESTDIR}/${_sysroot}/usr headers_install
+	rm -f $(find ${DESTDIR}/${_sysroot}/usr/include -name .install -or -name ..install.cmd)
+	rm -rf ${DESTDIR}/${_sysroot}/usr/include/drm
+
+	# install cross binutils
+	cd ${wrksrc}/binutils-build
+	make DESTDIR=${DESTDIR} install
+
+	# install cross gcc
+	cd ${wrksrc}/gcc-build
+	make DESTDIR=${DESTDIR} install
+
+	# move libcc1.so* to the sysroot
+	mv ${DESTDIR}/usr/lib/libcc1.so* ${DESTDIR}/${_sysroot}/usr/lib
+
+	# install glibc for target
+	cd ${wrksrc}/glibc-build
+	make install_root=${DESTDIR}/${_sysroot} install install-headers
+
+	# symlinks for gnarl and gnat shared libraries
+	_majorver=${_gcc_version%.*.*}
+	_adalib=usr/lib/gcc/${_triplet}/${_gcc_version}/adalib
+	mv -v ${DESTDIR}/${_adalib}/libgnarl-${_majorver}.so ${DESTDIR}/${_sysroot}/usr/lib
+	mv -v ${DESTDIR}/${_adalib}/libgnat-${_majorver}.so ${DESTDIR}/${_sysroot}/usr/lib
+	ln -svf libgnarl-${_majorver}.so libgnarl.so
+	ln -svf libgnat-${_majorver}.so libgnat.so
+	rm -vf ${DESTDIR}/${_adalib}/libgna{rl,t}.so
+
+	# We need to build libatomic in target gcc as gccgo needs it to
+	# build... but it's not needed at runtime, so remove it from the
+	# destdir so it doesn't conflict with the libatomic package
+	rm -f ${DESTDIR}/${_sysroot}/usr/lib/libatomic.*
+
+	# Remove unnecessary stuff
+	rm -f ${DESTDIR}/usr/lib*/libiberty.a
+	rm -rf ${DESTDIR}/usr/share
+	rm -rf ${DESTDIR}/${_sysroot}/{etc,var}
+	rm -rf ${DESTDIR}/${_sysroot}/usr/{sbin,share,libexec}
+	rm -f ${DESTDIR}/${_sysroot}/libexec
+	rm -f ${DESTDIR}/${_sysroot}/{sbin,lib}
+}
+
+do_clean() {
+	# Remove temporary stuff from masterdir
+	rm -rf ${_sysroot}
+	rm -f /usr/bin/${_triplet}*
+	rm -rf /usr/lib/gcc/${_triplet}
+	rm -rf /usr/libexec/gcc/${_triplet}
+}
+
+cross-x86_64-linux-gnu-libc_package() {
+	short_desc+=" - glibc files"
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	pkg_install() {
+		vmove ${_sysroot}
+	}
+}
