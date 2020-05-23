@@ -21,11 +21,36 @@ hook() {
 		fi
 	done
 	
-	for f in sys dev home root run var/run tmp usr/local destdir; do
+	for f in var/run usr/local; do
 		if [ -d ${PKGDESTDIR}/${f} ]; then
 			msg_red "${pkgver}: /${f} directory is not allowed, remove it!\n"
 			error=1
 		fi
+	done
+
+	for f in "$PKGDESTDIR"/*; do
+		f="${f##*/}"
+		case "$f" in
+		'*')	# The filename is exactly '*'
+			if [ -e "${PKGDESTDIR}/*" ]; then
+				msg_red "${pkgver}: File /* is not allowed\n"
+				error=1
+			fi
+			# Empty meta package is fine
+			;;
+		lib|bin|sbin|lib64|lib32|usr|var|opt|etc|boot|srv)
+			;;
+		INSTALL|INSTALL.msg|REMOVE|REMOVE.msg|rdeps|shlib-requires|shlib-provides)
+			if [ ! -f "${PKGDESTDIR}/$f" ]; then
+				msg_red "${pkgver}: /${f} is not allowed\n"
+				error=1
+			fi
+			;;
+		*)
+			msg_red "${pkgver}: /${f} directory is not allowed, remove it!\n"
+			error=1
+			;;
+		esac
 	done
 
 	# Check that configuration files really exist.
