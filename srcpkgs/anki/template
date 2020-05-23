@@ -1,22 +1,79 @@
 # Template file for 'anki'
+#
+# NOTE: This template does use rust stable. It has a rather large
+# pyo3 patchset taken from github.com/wickerwaka/pyo3/removing-specialization
+# which allows it to operate on rust stable. But, it is currently on pyo3
+# 0.8.1. This patchset should ideally be rebased for the new version.
+# Preliminary tests found this would be slightly difficult. Anki dosen't
+# need a newer version.. yet.
+#
 pkgname=anki
-version=2.1.15
-revision=2
-archs=noarch
+version=2.1.26
+revision=1
+_pyo3_version=0.8.1
 build_style=gnu-makefile
 pycompile_dirs="/usr/share/anki/anki /usr/share/anki/aqt"
+hostmakedepends="git python3 rust cargo maturin which protobuf
+ mypy-protobuf-python python3-stringcase black python3-wheel
+ rsync nodejs python3-PyQt5-devel-tools gettext qt5-translations
+ python3-pip"
+makedepends="protobuf-devel"
 depends="python3-PyQt5-webengine python3-requests python3-SQLAlchemy
  python3-PyAudio python3-mpv python3-Markdown python3-send2trash
- python3-BeautifulSoup4 python3-decorator python3-jsonschema"
+ python3-BeautifulSoup4 python3-decorator python3-jsonschema
+ python3-protobuf"
 short_desc="Spaced repetition flashcard program"
-maintainer="Steve Prybylski <sa.prybylx@gmail.com>"
+maintainer="fosslinux <fosslinux@aussies.space>"
 license="AGPL-3.0-or-later"
 homepage="https://apps.ankiweb.net"
 changelog="https://apps.ankiweb.net/docs/changes.html"
-distfiles="https://apps.ankiweb.net/downloads/current/anki-${version}-source.tgz"
-checksum=5a53760164c77d619f55107a13099cffe620566a7f610b61b6c4b52487f3bb89
-
+distfiles="https://github.com/ankitects/anki/archive/${version}.tar.gz
+		   https://github.com/PyO3/pyo3/archive/v${_pyo3_version}.tar.gz"
+checksum="f5a0c41f3eebe0e77de9d46f2a5cbbe20f7c3a4787f0f02e1d33f298428acbdf
+		  437a5fcb54113da9e2999fb957c8948ca40f4f31081b6e8cf1d798033071eb57"
 python_version=3
+
+post_extract() {
+	# Constant place for 0006-patched-pyo3.patch
+	mv "${XBPS_BUILDDIR}/pyo3-${_pyo3_version}" "${XBPS_BUILDDIR}/pyo3"
+}
+
+post_patch() {
+	# Apply patches for pyo3
+	cd "${XBPS_BUILDDIR}/pyo3"
+	for p in ${FILESDIR}/pyo3-patches/*.patch ; do
+		msg_normal "Applying $(basename ${p}) to pyo3\n"
+		patch -Np1 -i ${p}
+	done
+}
+
+pre_build() {
+	mkdir -p dist
+	make prepare
+}
+
+do_build() {
+	PROTOC=/usr/bin/protoc PROTOC_INCLUDE="${XBPS_CROSS_BASE}/usr/include" \
+		make build
+}
+
+do_install() {
+	pushd pylib
+		 python3 setup.py install --prefix=/usr --root=${DESTDIR}
+	popd
+
+	pushd qt
+		 python3 setup.py install --prefix=/usr --root=${DESTDIR}
+	popd
+
+	# maturin generates a .whl, this is all we can do
+	PIP_CONFIG_FILE=/dev/null pip3 install --isolated --root=${DESTDIR} --prefix=/usr --ignore-installed --no-deps dist/ankirspy*.whl
+
+	# Copied from arch's PKGBUILD
+	install -Dm755 qt/runanki "${DESTDIR}/usr/bin/anki"
+	install -Dm644 qt/anki.desktop "${DESTDIR}/usr/share/applications/anki.desktop"
+	install -Dm644 qt/anki.png "${DESTDIR}/usr/share/pixmaps/anki.png"
+}
 
 post_install() {
 	vlicense LICENSE

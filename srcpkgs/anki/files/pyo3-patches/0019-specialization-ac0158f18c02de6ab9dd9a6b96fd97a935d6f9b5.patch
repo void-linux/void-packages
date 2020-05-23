@@ -1,0 +1,1313 @@
+From ac0158f18c02de6ab9dd9a6b96fd97a935d6f9b5 Mon Sep 17 00:00:00 2001
+From: Martin Donlon <github-martin@donlons.com>
+Date: Sun, 17 Nov 2019 08:23:49 -0800
+Subject: [PATCH] But default impls into a separate array in defs rather than
+ storing them in the MethodProto
+
+---
+ pyo3-derive-backend/src/defs.rs               | 500 ++++++++++++++----
+ pyo3-derive-backend/src/func.rs               |  23 -
+ pyo3-derive-backend/src/pyproto.rs            |  17 +-
+
+diff --git a/pyo3-derive-backend/src/defs.rs b/pyo3-derive-backend/src/defs.rs
+index d793c9628..f7ac2da01 100644
+--- a/pyo3-derive-backend/src/defs.rs
++++ b/pyo3-derive-backend/src/defs.rs
+@@ -7,6 +7,7 @@ pub struct Proto {
+     pub impl_trait: &'static str,
+     pub methods: &'static [MethodProto],
+     pub py_methods: &'static [PyMethod],
++    pub default_impls: &'static [DefaultImpl],
+ }
+ 
+ pub struct PyMethod {
+@@ -14,6 +15,11 @@ pub struct PyMethod {
+     pub proto: &'static str,
+ }
+ 
++pub struct DefaultImpl {
++    pub name: &'static str,
++    pub default: &'static str,
++}
++
+ const OBJECT: Proto = Proto {
+     name: "Object",
+     protocol_trait: "pyo3::class::basic::PyObjectProtocol",
+@@ -24,7 +30,6 @@ const OBJECT: Proto = Proto {
+             arg: "Name",
+             pyres: true,
+             proto: "pyo3::class::basic::PyObjectGetAttrProtocol",
+-            default: "pyo3::class::basic::GetAttrProtocolImpl",
+         },
+         MethodProto::Ternary {
+             name: "__setattr__",
+@@ -32,65 +37,49 @@ const OBJECT: Proto = Proto {
+             arg2: "Value",
+             pyres: false,
+             proto: "pyo3::class::basic::PyObjectSetAttrProtocol",
+-            default: "pyo3::class::basic::tp_setattro_impl::SetAttr",
+         },
+         MethodProto::Binary {
+             name: "__delattr__",
+             arg: "Name",
+             pyres: true,
+             proto: "pyo3::class::basic::PyObjectDelAttrProtocol",
+-            default: "pyo3::class::basic::tp_setattro_impl::DelAttr",
+         },
+         MethodProto::Unary {
+             name: "__str__",
+             pyres: true,
+             proto: "pyo3::class::basic::PyObjectStrProtocol",
+-            default: "pyo3::class::basic::StrProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "__repr__",
+             pyres: true,
+             proto: "pyo3::class::basic::PyObjectReprProtocol",
+-            default: "pyo3::class::basic::ReprProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__format__",
+             arg: "Format",
+             pyres: true,
+             proto: "pyo3::class::basic::PyObjectFormatProtocol",
+-            default: "pyo3::class::basic::FormatProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "__hash__",
+             pyres: false,
+             proto: "pyo3::class::basic::PyObjectHashProtocol",
+-            default: "pyo3::class::basic::HashProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "__bytes__",
+             pyres: true,
+             proto: "pyo3::class::basic::PyObjectBytesProtocol",
+-            default: "pyo3::class::basic::BytesProtocolImpl",
+-        },
+-        MethodProto::Unary {
+-            // MJDFIXME ???
+-            name: "__unicode__",
+-            pyres: true,
+-            proto: "pyo3::class::basic::PyObjectUnicodeProtocol",
+-            default: "pyo3::class::basic::UnicodeProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "__bool__",
+             pyres: false,
+             proto: "pyo3::class::basic::PyObjectBoolProtocol",
+-            default: "pyo3::class::basic::BoolProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__richcmp__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::basic::PyObjectRichcmpProtocol",
+-            default: "pyo3::class::basic::RichcmpProtocolImpl",
+         },
+     ],
+     py_methods: &[
+@@ -107,6 +96,52 @@ const OBJECT: Proto = Proto {
+             proto: "pyo3::class::basic::UnicodeProtocolImpl",
+         },
+     ],
++    default_impls: &[
++        DefaultImpl {
++            name: "__getattr__",
++            default: "pyo3::class::basic::GetAttrProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__setattr__",
++            default: "pyo3::class::basic::tp_setattro_impl::SetAttr",
++        },
++        DefaultImpl {
++            name: "__delattr__",
++            default: "pyo3::class::basic::tp_setattro_impl::DelAttr",
++        },
++        DefaultImpl {
++            name: "__str__",
++            default: "pyo3::class::basic::StrProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__repr__",
++            default: "pyo3::class::basic::ReprProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__format__",
++            default: "pyo3::class::basic::FormatProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__hash__",
++            default: "pyo3::class::basic::HashProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__bytes__",
++            default: "pyo3::class::basic::BytesProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__unicode__",
++            default: "pyo3::class::basic::UnicodeProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__bool__",
++            default: "pyo3::class::basic::BoolProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__richcmp__",
++            default: "pyo3::class::basic::RichcmpProtocolImpl",
++        },
++    ],
+ };
+ 
+ const ASYNC: Proto = Proto {
+@@ -118,25 +153,21 @@ const ASYNC: Proto = Proto {
+             name: "__await__",
+             pyres: true,
+             proto: "pyo3::class::pyasync::PyAsyncAwaitProtocol",
+-            default: "pyo3::class::pyasync::PyAsyncAwaitProtocol",
+         },
+         MethodProto::Unary {
+             name: "__aiter__",
+             pyres: true,
+             proto: "pyo3::class::pyasync::PyAsyncAiterProtocol",
+-            default: "pyo3::class::pyasync::PyAsyncAiterProtocol",
+         },
+         MethodProto::Unary {
+             name: "__anext__",
+             pyres: true,
+             proto: "pyo3::class::pyasync::PyAsyncAnextProtocol",
+-            default: "pyo3::class::pyasync::PyAsyncAnextProtocol",
+         },
+         MethodProto::Unary {
+             name: "__aenter__",
+             pyres: true,
+             proto: "pyo3::class::pyasync::PyAsyncAenterProtocol",
+-            default: "pyo3::class::pyasync::PyAsyncAenterProtocol",
+         },
+         MethodProto::Quaternary {
+             name: "__aexit__",
+@@ -144,7 +175,6 @@ const ASYNC: Proto = Proto {
+             arg2: "ExcValue",
+             arg3: "Traceback",
+             proto: "pyo3::class::pyasync::PyAsyncAexitProtocol",
+-            default: "pyo3::class::pyasync::PyAsyncAexitProtocol",
+         },
+     ],
+     py_methods: &[
+@@ -157,6 +187,28 @@ const ASYNC: Proto = Proto {
+             proto: "pyo3::class::pyasync::PyAsyncAexitProtocolImpl",
+         },
+     ],
++    default_impls: &[
++        DefaultImpl {
++            name: "__await__",
++            default: "pyo3::class::pyasync::PyAsyncAwaitProtocol",
++        },
++        DefaultImpl {
++            name: "__aiter__",
++            default: "pyo3::class::pyasync::PyAsyncAiterProtocol",
++        },
++        DefaultImpl {
++            name: "__anext__",
++            default: "pyo3::class::pyasync::PyAsyncAnextProtocol",
++        },
++        DefaultImpl {
++            name: "__aenter__",
++            default: "pyo3::class::pyasync::PyAsyncAenterProtocol",
++        },
++        DefaultImpl {
++            name: "__aexit__",
++            default: "pyo3::class::pyasync::PyAsyncAexitProtocol",
++        },
++    ],
+ };
+ 
+ const BUFFER: Proto = Proto {
+@@ -168,16 +220,24 @@ const BUFFER: Proto = Proto {
+             name: "bf_getbuffer",
+             pyres: false,
+             proto: "pyo3::class::buffer::PyBufferGetBufferProtocol",
+-            default: "pyo3::class::buffer::PyBufferGetBufferProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "bf_releasebuffer",
+             pyres: false,
+             proto: "pyo3::class::buffer::PyBufferReleaseBufferProtocol",
+-            default: "pyo3::class::buffer::PyBufferReleaseBufferProtocolImpl",
+         },
+     ],
+     py_methods: &[],
++    default_impls: &[
++        DefaultImpl {
++            name: "bf_getbuffer",
++            default: "pyo3::class::buffer::PyBufferGetBufferProtocolImpl",
++        },
++        DefaultImpl {
++            name: "bf_releasebuffer",
++            default: "pyo3::class::buffer::PyBufferReleaseBufferProtocolImpl",
++        },
++    ],
+ };
+ 
+ const CONTEXT: Proto = Proto {
+@@ -189,7 +249,6 @@ const CONTEXT: Proto = Proto {
+             name: "__enter__",
+             pyres: true,
+             proto: "pyo3::class::context::PyContextEnterProtocol",
+-            default: "pyo3::class::context::PyContextEnterProtocol",
+         },
+         MethodProto::Quaternary {
+             name: "__exit__",
+@@ -197,7 +256,6 @@ const CONTEXT: Proto = Proto {
+             arg2: "ExcValue",
+             arg3: "Traceback",
+             proto: "pyo3::class::context::PyContextExitProtocol",
+-            default: "pyo3::class::context::PyContextExitProtocol",
+         },
+     ],
+     py_methods: &[
+@@ -210,6 +268,16 @@ const CONTEXT: Proto = Proto {
+             proto: "pyo3::class::context::PyContextExitProtocolImpl",
+         },
+     ],
++    default_impls: &[
++        DefaultImpl {
++            name: "__enter__",
++            default: "pyo3::class::context::PyContextEnterProtocol",
++        },
++        DefaultImpl {
++            name: "__exit__",
++            default: "pyo3::class::context::PyContextExitProtocol",
++        },
++    ],
+ };
+ 
+ const GC: Proto = Proto {
+@@ -221,15 +289,23 @@ const GC: Proto = Proto {
+         MethodProto::Free {
+             name: "__traverse__",
+             proto: "pyo3::class::gc::PyGCTraverseProtocol",
+-            default: "pyo3::class::gc::PyGCTraverseProtocolImpl",
+         },
+         MethodProto::Free {
+             name: "__clear__",
+             proto: "pyo3::class::gc::PyGCClearProtocol",
+-            default: "pyo3::class::gc::PyGCClearProtocolImpl",
+         },
+     ],
+     py_methods: &[],
++    default_impls: &[
++        DefaultImpl {
++            name: "__traverse__",
++            default: "pyo3::class::gc::PyGCTraverseProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__clear__",
++            default: "pyo3::class::gc::PyGCClearProtocolImpl",
++        },
++    ],
+ };
+ 
+ const DESCR: Proto = Proto {
+@@ -244,7 +320,6 @@ const DESCR: Proto = Proto {
+             arg2: "Owner",
+             pyres: true,
+             proto: "pyo3::class::descr::PyDescrGetProtocol",
+-            default: "pyo3::class::descr::PyDescrGetProtocol",
+         },
+         MethodProto::Ternary {
+             name: "__set__",
+@@ -252,21 +327,18 @@ const DESCR: Proto = Proto {
+             arg2: "Value",
+             pyres: true,
+             proto: "pyo3::class::descr::PyDescrSetProtocol",
+-            default: "pyo3::class::descr::PyDescrSetProtocol",
+         },
+         MethodProto::Binary {
+             name: "__det__",
+             arg: "Inst",
+             pyres: false,
+             proto: "pyo3::class::descr::PyDescrDelProtocol",
+-            default: "pyo3::class::descr::PyDescrDelProtocol",
+         },
+         MethodProto::Binary {
+             name: "__set_name__",
+             arg: "Inst",
+             pyres: false,
+             proto: "pyo3::class::descr::PyDescrSetNameProtocol",
+-            default: "pyo3::class::descr::PyDescrSetNameProtocol",
+         },
+     ],
+     py_methods: &[
+@@ -279,6 +351,24 @@ const DESCR: Proto = Proto {
+             proto: "pyo3::class::context::PyDescrNameProtocolImpl",
+         },
+     ],
++    default_impls: &[
++        DefaultImpl {
++            name: "__get__",
++            default: "pyo3::class::descr::PyDescrGetProtocol",
++        },
++        DefaultImpl {
++            name: "__set__",
++            default: "pyo3::class::descr::PyDescrSetProtocol",
++        },
++        DefaultImpl {
++            name: "__det__",
++            default: "pyo3::class::descr::PyDescrDelProtocol",
++        },
++        DefaultImpl {
++            name: "__set_name__",
++            default: "pyo3::class::descr::PyDescrSetNameProtocol",
++        },
++    ],
+ };
+ 
+ const ITER: Proto = Proto {
+@@ -292,12 +382,20 @@ const ITER: Proto = Proto {
+             name: "__iter__",
+             pyres: true,
+             proto: "pyo3::class::iter::PyIterIterProtocol",
+-            default: "pyo3::class::iter::PyIterIterProtocol",
+         },
+         MethodProto::Unary {
+             name: "__next__",
+             pyres: true,
+             proto: "pyo3::class::iter::PyIterNextProtocol",
++        },
++    ],
++    default_impls: &[
++        DefaultImpl {
++            name: "__iter__",
++            default: "pyo3::class::iter::PyIterIterProtocol",
++        },
++        DefaultImpl {
++            name: "__next__",
+             default: "pyo3::class::iter::PyIterNextProtocol",
+         },
+     ],
+@@ -313,14 +411,12 @@ const MAPPING: Proto = Proto {
+             name: "__len__",
+             pyres: false,
+             proto: "pyo3::class::mapping::PyMappingLenProtocol",
+-            default: "pyo3::class::mapping::PyMappingLenProtocol",
+         },
+         MethodProto::Binary {
+             name: "__getitem__",
+             arg: "Key",
+             pyres: true,
+             proto: "pyo3::class::mapping::PyMappingGetItemProtocol",
+-            default: "pyo3::class::mapping::PyMappingGetItemProtocol",
+         },
+         MethodProto::Ternary {
+             name: "__setitem__",
+@@ -328,33 +424,28 @@ const MAPPING: Proto = Proto {
+             arg2: "Value",
+             pyres: false,
+             proto: "pyo3::class::mapping::PyMappingSetItemProtocol",
+-            default: "pyo3::class::mapping::PyMappingSetItemProtocol",
+         },
+         MethodProto::Binary {
+             name: "__delitem__",
+             arg: "Key",
+             pyres: false,
+             proto: "pyo3::class::mapping::PyMappingDelItemProtocol",
+-            default: "pyo3::class::mapping::PyMappingDelItemProtocol",
+         },
+         MethodProto::Binary {
+             name: "__contains__",
+             arg: "Value",
+             pyres: false,
+             proto: "pyo3::class::mapping::PyMappingContainsProtocol",
+-            default: "pyo3::class::mapping::PyMappingContainsProtocol",
+         },
+         MethodProto::Unary {
+             name: "__reversed__",
+             pyres: true,
+             proto: "pyo3::class::mapping::PyMappingReversedProtocol",
+-            default: "pyo3::class::mapping::PyMappingReversedProtocol",
+         },
+         MethodProto::Unary {
+             name: "__iter__",
+             pyres: true,
+             proto: "pyo3::class::mapping::PyMappingIterProtocol",
+-            default: "pyo3::class::mapping::PyMappingIterProtocol",
+         },
+     ],
+     py_methods: &[
+@@ -371,6 +462,36 @@ const MAPPING: Proto = Proto {
+             proto: "pyo3::class::mapping::PyMappingReversedProtocolImpl",
+         },
+     ],
++    default_impls: &[
++        DefaultImpl {
++            name: "__len__",
++            default: "pyo3::class::mapping::PyMappingLenProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__getitem__",
++            default: "pyo3::class::mapping::PyMappingGetItemProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__setitem__",
++            default: "pyo3::class::mapping::PyMappingSetItemProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__delitem__",
++            default: "pyo3::class::mapping::PyMappingDelItemProtocolNotImpl",
++        },
++        DefaultImpl {
++            name: "__contains__",
++            default: "pyo3::class::mapping::PyMappingContainsProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__reversed__",
++            default: "pyo3::class::mapping::PyMappingReversedProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__iter__",
++            default: "pyo3::class::mapping::PyMappingIterProtocolImpl",
++        },
++    ],
+ };
+ 
+ const SEQ: Proto = Proto {
+@@ -383,14 +504,12 @@ const SEQ: Proto = Proto {
+             name: "__len__",
+             pyres: false,
+             proto: "pyo3::class::sequence::PySequenceLenProtocol",
+-            default: "pyo3::class::sequence::PySequenceLenProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__getitem__",
+             arg: "Index",
+             pyres: true,
+             proto: "pyo3::class::sequence::PySequenceGetItemProtocol",
+-            default: "pyo3::class::sequence::PySequenceGetItemProtocolImpl",
+         },
+         MethodProto::Ternary {
+             name: "__setitem__",
+@@ -398,52 +517,83 @@ const SEQ: Proto = Proto {
+             arg2: "Value",
+             pyres: false,
+             proto: "pyo3::class::sequence::PySequenceSetItemProtocol",
+-            default: "pyo3::class::sequence::PySequenceSetItemProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__delitem__",
+             arg: "Index",
+             pyres: false,
+             proto: "pyo3::class::sequence::PySequenceDelItemProtocol",
+-            default: "pyo3::class::sequence::PySequenceDelItemProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__contains__",
+             arg: "Item",
+             pyres: false,
+             proto: "pyo3::class::sequence::PySequenceContainsProtocol",
+-            default: "pyo3::class::sequence::PySequenceContainsProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__concat__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::sequence::PySequenceConcatProtocol",
+-            default: "pyo3::class::sequence::PySequenceConcatProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__repeat__",
+             arg: "Index",
+             pyres: true,
+             proto: "pyo3::class::sequence::PySequenceRepeatProtocol",
+-            default: "pyo3::class::sequence::PySequenceRepeatProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__inplace_concat__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::sequence::PySequenceInplaceConcatProtocol",
+-            default: "pyo3::class::sequence::PySequenceInplaceConcatProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__inplace_repeat__",
+             arg: "Index",
+             pyres: true,
+             proto: "pyo3::class::sequence::PySequenceInplaceRepeatProtocol",
+-            default: "pyo3::class::sequence::PySequenceInplaceRepeatProtocolImpl",
+         },
+     ],
+     py_methods: &[],
++    default_impls: &[
++        DefaultImpl {
++            name: "__len__",
++            default: "pyo3::class::sequence::PySequenceLenProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__getitem__",
++            default: "pyo3::class::sequence::PySequenceGetItemProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__setitem__",
++            default: "pyo3::class::sequence::PySequenceSetItemProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__delitem__",
++            default: "pyo3::class::sequence::PySequenceDelItemProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__contains__",
++            default: "pyo3::class::sequence::PySequenceContainsProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__concat__",
++            default: "pyo3::class::sequence::PySequenceConcatProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__repeat__",
++            default: "pyo3::class::sequence::PySequenceRepeatProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__inplace_concat__",
++            default: "pyo3::class::sequence::PySequenceInplaceConcatProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__inplace_repeat__",
++            default: "pyo3::class::sequence::PySequenceInplaceRepeatProtocolImpl",
++        },
++    ],
+ };
+ 
+ const NUM: Proto = Proto {
+@@ -458,7 +608,6 @@ const NUM: Proto = Proto {
+             arg2: "Right",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberAddProtocol",
+-            default: "pyo3::class::number::PyNumberAddProtocolImpl",
+         },
+         MethodProto::BinaryS {
+             name: "__sub__",
+@@ -466,7 +615,6 @@ const NUM: Proto = Proto {
+             arg2: "Right",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberSubProtocol",
+-            default: "pyo3::class::number::PyNumberSubProtocolImpl",
+         },
+         MethodProto::BinaryS {
+             name: "__mul__",
+@@ -474,7 +622,6 @@ const NUM: Proto = Proto {
+             arg2: "Right",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberMulProtocol",
+-            default: "pyo3::class::number::PyNumberMulProtocolImpl",
+         },
+         MethodProto::BinaryS {
+             name: "__matmul__",
+@@ -482,7 +629,6 @@ const NUM: Proto = Proto {
+             arg2: "Right",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberMatmulProtocol",
+-            default: "pyo3::class::number::PyNumberMatmulProtocolImpl",
+         },
+         MethodProto::BinaryS {
+             name: "__truediv__",
+@@ -490,7 +636,6 @@ const NUM: Proto = Proto {
+             arg2: "Right",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberTruedivProtocol",
+-            default: "pyo3::class::number::PyNumberTruedivProtocolImpl",
+         },
+         MethodProto::BinaryS {
+             name: "__floordiv__",
+@@ -498,7 +643,6 @@ const NUM: Proto = Proto {
+             arg2: "Right",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberFloordivProtocol",
+-            default: "pyo3::class::number::PyNumberFloordivProtocolImpl",
+         },
+         MethodProto::BinaryS {
+             name: "__mod__",
+@@ -506,7 +650,6 @@ const NUM: Proto = Proto {
+             arg2: "Right",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberModProtocol",
+-            default: "pyo3::class::number::PyNumberModProtocolImpl",
+         },
+         MethodProto::BinaryS {
+             name: "__divmod__",
+@@ -514,7 +657,6 @@ const NUM: Proto = Proto {
+             arg2: "Right",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberDivmodProtocol",
+-            default: "pyo3::class::number::PyNumberDivmodProtocolImpl",
+         },
+         MethodProto::TernaryS {
+             name: "__pow__",
+@@ -523,7 +665,6 @@ const NUM: Proto = Proto {
+             arg3: "Modulo",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberPowProtocol",
+-            default: "pyo3::class::number::PyNumberPowProtocolImpl",
+         },
+         MethodProto::BinaryS {
+             name: "__lshift__",
+@@ -531,7 +672,6 @@ const NUM: Proto = Proto {
+             arg2: "Right",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberLShiftProtocol",
+-            default: "pyo3::class::number::PyNumberLShiftProtocolImpl",
+         },
+         MethodProto::BinaryS {
+             name: "__rshift__",
+@@ -539,7 +679,6 @@ const NUM: Proto = Proto {
+             arg2: "Right",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRShiftProtocol",
+-            default: "pyo3::class::number::PyNumberRShiftProtocolImpl",
+         },
+         MethodProto::BinaryS {
+             name: "__and__",
+@@ -547,7 +686,6 @@ const NUM: Proto = Proto {
+             arg2: "Right",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberAndProtocol",
+-            default: "pyo3::class::number::PyNumberAndProtocolImpl",
+         },
+         MethodProto::BinaryS {
+             name: "__xor__",
+@@ -555,7 +693,6 @@ const NUM: Proto = Proto {
+             arg2: "Right",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberXorProtocol",
+-            default: "pyo3::class::number::PyNumberXorProtocolImpl",
+         },
+         MethodProto::BinaryS {
+             name: "__or__",
+@@ -563,63 +700,54 @@ const NUM: Proto = Proto {
+             arg2: "Right",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberOrProtocol",
+-            default: "pyo3::class::number::PyNumberOrProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__radd__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRAddProtocol",
+-            default: "pyo3::class::number::PyNumberRAddProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__rsub__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRSubProtocol",
+-            default: "pyo3::class::number::PyNumberRSubProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__rmul__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRMulProtocol",
+-            default: "pyo3::class::number::PyNumberRMulProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__rmatmul__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRMatmulProtocol",
+-            default: "pyo3::class::number::PyNumberRMatmulProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__rtruediv__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRTruedivProtocol",
+-            default: "pyo3::class::number::PyNumberRTruedivProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__rfloordiv__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRFloordivProtocol",
+-            default: "pyo3::class::number::PyNumberRFloordivProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__rmod__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRModProtocol",
+-            default: "pyo3::class::number::PyNumberRModProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__rdivmod__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRDivmodProtocol",
+-            default: "pyo3::class::number::PyNumberRDivmodProtocolImpl",
+         },
+         MethodProto::Ternary {
+             name: "__rpow__",
+@@ -627,91 +755,78 @@ const NUM: Proto = Proto {
+             arg2: "Modulo",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRPowProtocol",
+-            default: "pyo3::class::number::PyNumberRPowProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__rlshift__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRLShiftProtocol",
+-            default: "pyo3::class::number::PyNumberRLShiftProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__rrshift__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRRShiftProtocol",
+-            default: "pyo3::class::number::PyNumberRRShiftProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__rand__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRAndProtocol",
+-            default: "pyo3::class::number::PyNumberRAndProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__rxor__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRXorProtocol",
+-            default: "pyo3::class::number::PyNumberRXorProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__ror__",
+             arg: "Other",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberROrProtocol",
+-            default: "pyo3::class::number::PyNumberROrProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__iadd__",
+             arg: "Other",
+             pyres: false,
+             proto: "pyo3::class::number::PyNumberIAddProtocol",
+-            default: "pyo3::class::number::PyNumberIAddProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__isub__",
+             arg: "Other",
+             pyres: false,
+             proto: "pyo3::class::number::PyNumberISubProtocol",
+-            default: "pyo3::class::number::PyNumberISubProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__imul__",
+             arg: "Other",
+             pyres: false,
+             proto: "pyo3::class::number::PyNumberIMulProtocol",
+-            default: "pyo3::class::number::PyNumberIMulProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__imatmul__",
+             arg: "Other",
+             pyres: false,
+             proto: "pyo3::class::number::PyNumberIMatmulProtocol",
+-            default: "pyo3::class::number::PyNumberIMatmulProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__itruediv__",
+             arg: "Other",
+             pyres: false,
+             proto: "pyo3::class::number::PyNumberITruedivProtocol",
+-            default: "pyo3::class::number::PyNumberITruedivProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__ifloordiv__",
+             arg: "Other",
+             pyres: false,
+             proto: "pyo3::class::number::PyNumberIFloordivProtocol",
+-            default: "pyo3::class::number::PyNumberIFloordivProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__imod__",
+             arg: "Other",
+             pyres: false,
+             proto: "pyo3::class::number::PyNumberIModProtocol",
+-            default: "pyo3::class::number::PyNumberIModProtocolImpl",
+         },
+         MethodProto::Ternary {
+             name: "__ipow__",
+@@ -719,96 +834,81 @@ const NUM: Proto = Proto {
+             arg2: "Modulo",
+             pyres: false,
+             proto: "pyo3::class::number::PyNumberIPowProtocol",
+-            default: "pyo3::class::number::PyNumberIPowProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__ilshift__",
+             arg: "Other",
+             pyres: false,
+             proto: "pyo3::class::number::PyNumberILShiftProtocol",
+-            default: "pyo3::class::number::PyNumberILShiftProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__irshift__",
+             arg: "Other",
+             pyres: false,
+             proto: "pyo3::class::number::PyNumberIRShiftProtocol",
+-            default: "pyo3::class::number::PyNumberIRShiftProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__iand__",
+             arg: "Other",
+             pyres: false,
+             proto: "pyo3::class::number::PyNumberIAndProtocol",
+-            default: "pyo3::class::number::PyNumberIAndProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__ixor__",
+             arg: "Other",
+             pyres: false,
+             proto: "pyo3::class::number::PyNumberIXorProtocol",
+-            default: "pyo3::class::number::PyNumberIXorProtocolImpl",
+         },
+         MethodProto::Binary {
+             name: "__ior__",
+             arg: "Other",
+             pyres: false,
+             proto: "pyo3::class::number::PyNumberIOrProtocol",
+-            default: "pyo3::class::number::PyNumberIOrProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "__neg__",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberNegProtocol",
+-            default: "pyo3::class::number::PyNumberNegProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "__pos__",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberPosProtocol",
+-            default: "pyo3::class::number::PyNumberPosProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "__abs__",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberAbsProtocol",
+-            default: "pyo3::class::number::PyNumberAbsProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "__invert__",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberInvertProtocol",
+-            default: "pyo3::class::number::PyNumberInvertProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "__complex__",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberComplexProtocol",
+-            default: "pyo3::class::number::PyNumberComplexProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "__int__",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberIntProtocol",
+-            default: "pyo3::class::number::PyNumberIntProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "__float__",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberFloatProtocol",
+-            default: "pyo3::class::number::PyNumberFloatProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "__round__",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberRoundProtocol",
+-            default: "pyo3::class::number::PyNumberRoundProtocolImpl",
+         },
+         MethodProto::Unary {
+             name: "__index__",
+             pyres: true,
+             proto: "pyo3::class::number::PyNumberIndexProtocol",
+-            default: "pyo3::class::number::PyNumberIndexProtocolImpl",
+         },
+     ],
+     py_methods: &[
+@@ -877,6 +977,208 @@ const NUM: Proto = Proto {
+             proto: "pyo3::class::number::PyNumberRoundProtocolImpl",
+         },
+     ],
++    default_impls: &[
++        DefaultImpl {
++            name: "__add__",
++            default: "pyo3::class::number::PyNumberAddProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__sub__",
++            default: "pyo3::class::number::PyNumberSubProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__mul__",
++            default: "pyo3::class::number::PyNumberMulProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__matmul__",
++            default: "pyo3::class::number::PyNumberMatmulProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__truediv__",
++            default: "pyo3::class::number::PyNumberTruedivProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__floordiv__",
++            default: "pyo3::class::number::PyNumberFloordivProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__mod__",
++            default: "pyo3::class::number::PyNumberModProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__divmod__",
++            default: "pyo3::class::number::PyNumberDivmodProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__pow__",
++            default: "pyo3::class::number::PyNumberPowProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__lshift__",
++            default: "pyo3::class::number::PyNumberLShiftProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__rshift__",
++            default: "pyo3::class::number::PyNumberRShiftProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__and__",
++            default: "pyo3::class::number::PyNumberAndProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__xor__",
++            default: "pyo3::class::number::PyNumberXorProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__or__",
++            default: "pyo3::class::number::PyNumberOrProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__radd__",
++            default: "pyo3::class::number::PyNumberRAddProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__rsub__",
++            default: "pyo3::class::number::PyNumberRSubProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__rmul__",
++            default: "pyo3::class::number::PyNumberRMulProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__rmatmul__",
++            default: "pyo3::class::number::PyNumberRMatmulProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__rtruediv__",
++            default: "pyo3::class::number::PyNumberRTruedivProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__rfloordiv__",
++            default: "pyo3::class::number::PyNumberRFloordivProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__rmod__",
++            default: "pyo3::class::number::PyNumberRModProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__rdivmod__",
++            default: "pyo3::class::number::PyNumberRDivmodProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__rpow__",
++            default: "pyo3::class::number::PyNumberRPowProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__rlshift__",
++            default: "pyo3::class::number::PyNumberRLShiftProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__rrshift__",
++            default: "pyo3::class::number::PyNumberRRShiftProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__rand__",
++            default: "pyo3::class::number::PyNumberRAndProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__rxor__",
++            default: "pyo3::class::number::PyNumberRXorProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__ror__",
++            default: "pyo3::class::number::PyNumberROrProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__iadd__",
++            default: "pyo3::class::number::PyNumberIAddProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__isub__",
++            default: "pyo3::class::number::PyNumberISubProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__imul__",
++            default: "pyo3::class::number::PyNumberIMulProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__imatmul__",
++            default: "pyo3::class::number::PyNumberIMatmulProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__itruediv__",
++            default: "pyo3::class::number::PyNumberITruedivProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__ifloordiv__",
++            default: "pyo3::class::number::PyNumberIFloordivProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__imod__",
++            default: "pyo3::class::number::PyNumberIModProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__ipow__",
++            default: "pyo3::class::number::PyNumberIPowProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__ilshift__",
++            default: "pyo3::class::number::PyNumberILShiftProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__irshift__",
++            default: "pyo3::class::number::PyNumberIRShiftProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__iand__",
++            default: "pyo3::class::number::PyNumberIAndProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__ixor__",
++            default: "pyo3::class::number::PyNumberIXorProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__ior__",
++            default: "pyo3::class::number::PyNumberIOrProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__neg__",
++            default: "pyo3::class::number::PyNumberNegProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__pos__",
++            default: "pyo3::class::number::PyNumberPosProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__abs__",
++            default: "pyo3::class::number::PyNumberAbsProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__invert__",
++            default: "pyo3::class::number::PyNumberInvertProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__complex__",
++            default: "pyo3::class::number::PyNumberComplexProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__int__",
++            default: "pyo3::class::number::PyNumberIntProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__float__",
++            default: "pyo3::class::number::PyNumberFloatProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__round__",
++            default: "pyo3::class::number::PyNumberRoundProtocolImpl",
++        },
++        DefaultImpl {
++            name: "__index__",
++            default: "pyo3::class::number::PyNumberIndexProtocolImpl",
++        },
++    ],
+ };
+ 
+ const PROTOCOLS: &[Proto] = &[
+diff --git a/pyo3-derive-backend/src/func.rs b/pyo3-derive-backend/src/func.rs
+index ce06716f4..05aede490 100644
+--- a/pyo3-derive-backend/src/func.rs
++++ b/pyo3-derive-backend/src/func.rs
+@@ -12,20 +12,17 @@ pub enum MethodProto {
+     Free {
+         name: &'static str,
+         proto: &'static str,
+-        default: &'static str,
+     },
+     Unary {
+         name: &'static str,
+         pyres: bool,
+         proto: &'static str,
+-        default: &'static str,
+     },
+     Binary {
+         name: &'static str,
+         arg: &'static str,
+         pyres: bool,
+         proto: &'static str,
+-        default: &'static str,
+     },
+     BinaryS {
+         name: &'static str,
+@@ -33,7 +30,6 @@ pub enum MethodProto {
+         arg2: &'static str,
+         pyres: bool,
+         proto: &'static str,
+-        default: &'static str,
+     },
+     Ternary {
+         name: &'static str,
+@@ -41,7 +37,6 @@ pub enum MethodProto {
+         arg2: &'static str,
+         pyres: bool,
+         proto: &'static str,
+-        default: &'static str,
+     },
+     TernaryS {
+         name: &'static str,
+@@ -50,7 +45,6 @@ pub enum MethodProto {
+         arg3: &'static str,
+         pyres: bool,
+         proto: &'static str,
+-        default: &'static str,
+     },
+     Quaternary {
+         name: &'static str,
+@@ -58,7 +52,6 @@ pub enum MethodProto {
+         arg2: &'static str,
+         arg3: &'static str,
+         proto: &'static str,
+-        default: &'static str,
+     },
+ }
+ 
+@@ -88,17 +81,6 @@ impl MethodProto {
+             MethodProto::Quaternary { proto: p, .. } => p,
+         }
+     }
+-    pub fn get_default(&self) -> &'static str {
+-        match *self {
+-            MethodProto::Free { default: d, .. } => d,
+-            MethodProto::Unary { default: d, .. } => d,
+-            MethodProto::Binary { default: d, .. } => d,
+-            MethodProto::BinaryS { default: d, .. } => d,
+-            MethodProto::Ternary { default: d, .. } => d,
+-            MethodProto::TernaryS { default: d, .. } => d,
+-            MethodProto::Quaternary { default: d, .. } => d,
+-        }
+-    }
+ }
+ 
+ pub fn impl_method_proto(
+@@ -151,7 +133,6 @@ pub fn impl_method_proto(
+             arg,
+             pyres,
+             proto,
+-            default: _,
+         } => {
+             if sig.inputs.len() <= 1 {
+                 println!("Not enough arguments for {}", name);
+@@ -197,7 +178,6 @@ pub fn impl_method_proto(
+             arg2,
+             pyres,
+             proto,
+-            default: _,
+         } => {
+             if sig.inputs.len() <= 1 {
+                 print_err(format!("Not enough arguments {}", name), quote!(sig));
+@@ -247,7 +227,6 @@ pub fn impl_method_proto(
+             arg2,
+             pyres,
+             proto,
+-            default: _,
+         } => {
+             if sig.inputs.len() <= 2 {
+                 print_err(format!("Not enough arguments {}", name), quote!(sig));
+@@ -301,7 +280,6 @@ pub fn impl_method_proto(
+             arg3,
+             pyres,
+             proto,
+-            default: _,
+         } => {
+             if sig.inputs.len() <= 2 {
+                 print_err(format!("Not enough arguments {}", name), quote!(sig));
+@@ -358,7 +336,6 @@ pub fn impl_method_proto(
+             arg2,
+             arg3,
+             proto,
+-            default: _,
+         } => {
+             if sig.inputs.len() <= 3 {
+                 print_err(format!("Not enough arguments {}", name), quote!(sig));
+diff --git a/pyo3-derive-backend/src/pyproto.rs b/pyo3-derive-backend/src/pyproto.rs
+index a73232e1f..807be9052 100644
+--- a/pyo3-derive-backend/src/pyproto.rs
++++ b/pyo3-derive-backend/src/pyproto.rs
+@@ -9,6 +9,8 @@ use proc_macro2::TokenStream;
+ use quote::quote;
+ use quote::ToTokens;
+ 
++use std::collections::HashSet;
++
+ pub fn build_py_proto(ast: &mut syn::ItemImpl) -> syn::Result<TokenStream> {
+     if let Some((_, ref mut path, _)) = ast.trait_ {
+         let proto = if let Some(ref mut segment) = path.segments.last() {
+@@ -52,6 +54,7 @@ fn impl_proto_impl(
+ ) -> TokenStream {
+     let mut tokens = TokenStream::new();
+     let mut py_methods = Vec::new();
++    let mut implemented = HashSet::new();
+ 
+     let mut unimpl_methods: Vec<&MethodProto> = proto.methods.iter().collect();
+     let mut unimpl_py_methods: Vec<&defs::PyMethod> = proto.py_methods.iter().collect();
+@@ -59,6 +62,7 @@ fn impl_proto_impl(
+     for iimpl in impls.iter_mut() {
+         if let syn::ImplItem::Method(ref mut met) = iimpl {
+             let method_name = met.sig.ident.to_string();
++            implemented.insert(method_name.clone());
+             // Find the method in unimpl_methods, remove it and implement it
+             unimpl_methods
+                 .iter()
+@@ -105,13 +109,18 @@ fn impl_proto_impl(
+         }
+     }
+ 
+-    let default_impls: Vec<_> = unimpl_methods
++    let default_impls: Vec<_> = proto
++        .default_impls
+         .iter()
+-        .map(|m| {
+-            let proto: syn::Path = syn::parse_str(m.get_default()).unwrap();
+-            quote! { impl #proto for #ty {} }
++        .filter_map(|def| match implemented.contains(def.name) {
++            true => None,
++            false => {
++                let proto: syn::Path = syn::parse_str(def.default).unwrap();
++                Some(quote! { impl #proto for #ty {} })
++            }
+         })
+         .collect();
++
+     quote! {
+         #tokens
+ 
