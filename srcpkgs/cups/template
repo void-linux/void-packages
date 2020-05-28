@@ -2,8 +2,10 @@
 pkgname=cups
 version=2.3.3
 revision=1
+build_style=gnu-configure
+make_install_args="BUILDROOT=${DESTDIR}"
 hostmakedepends="automake $(vopt_if avahi avahi-libs-devel)
- gnutls-devel pkg-config poppler-utils"
+ gnutls-devel perl pkg-config poppler-utils"
 makedepends="acl-devel gnutls-devel libpaper-devel libpng-devel
  libusb-devel pam-devel poppler-devel tiff-devel
  $(vopt_if avahi avahi-libs-devel)
@@ -18,15 +20,13 @@ checksum=261fd948bce8647b6d5cb2a1784f0c24cc52b5c4e827b71d726020bcc502f3ee
 
 conf_files="/etc/pam.d/cups /etc/cups/*.conf /etc/xinetd.d/cups-lpd"
 make_dirs="
-	/usr/lib/cups/driver	0755 root root
-	/var/log/cups 		0750 root root
-	/var/cache/cups/rss 	0750 cups lp
-	/var/spool/cups 	0755 cups lp
-	/etc/cups/ssl 		0700 cups lp"
+ /usr/lib/cups/driver 0755 root root
+ /var/log/cups 0750 root root
+ /var/cache/cups/rss 0750 cups lp
+ /var/spool/cups 0755 cups lp
+ /etc/cups/ssl 0700 cups lp"
 
 build_options="avahi gssapi"
-
-# Package build options
 build_options_default="avahi"
 
 system_accounts="cups"
@@ -40,42 +40,20 @@ pre_configure() {
 }
 
 do_configure() {
-	if [ "$CROSS_BUILD" ]; then
-		CC=cc AR= RANLIB= CFLAGS=-Os LDFLAGS= ./configure
-		make -C cups libcups.a
-		make -C man mantohtml
-		mkdir cross-tools
-		cp man/mantohtml cross-tools
-		make clean
-	fi
 	./configure ${configure_args} --sbindir=/usr/bin --libdir=/usr/lib \
 		--enable-acl --enable-dbus --enable-raw-printing \
 		--enable-threads --with-logdir=/var/log/cups \
 		--with-docdir=/usr/share/cups/doc --with-rundir=/run/cups \
 		--with-cups-user=cups --with-cups-group=lp --with-system-groups="lpadmin sys root" --enable-relro \
-		--enable-libpaper $(vopt_enable avahi) --enable-pam --enable-ssl \
+		--enable-libpaper --enable-pam --enable-ssl \
 		--with-menudir=/usr/share/applications --with-xinetd=/etc/xinetd.d \
 		--with-optim="${CFLAGS}" --disable-systemd --disable-launchd \
 		--without-rcdir --without-java --without-perl --without-php \
-		--without-python $(vopt_enable gssapi)
+		--without-python \
+		$(vopt_enable avahi) $(vopt_enable gssapi)
 }
 
-do_build() {
-	# Do not run genstrings binary in cross builds.
-	if [ "$CROSS_BUILD" ]; then
-		sed -e '/.\/genstrings.*/d' -i ppdc/Makefile
-		sed -e "s,./mantohtml,${wrksrc}/cross-tools/mantohtml,g" -i man/Makefile
-	fi
-	make ${makejobs}
-}
-
-do_check() {
-	make check
-}
-
-do_install() {
-	make BUILDROOT=${DESTDIR} install
-
+post_install() {
 	# compress some driver files, adopted from Fedora
 	find ${DESTDIR}/usr/share/cups/model -name "*.ppd"|xargs gzip -n9f
 	# install some more configuration files that will get filled by cupsd
@@ -83,26 +61,23 @@ do_install() {
 		touch ${DESTDIR}/etc/cups/${f}.conf
 	done
 
-	echo "# see 'man client.conf'" >> ${DESTDIR}/etc/cups/client.conf
-	echo "ServerName /var/run/cups/cups.sock" >> ${DESTDIR}/etc/cups/client.conf
-	echo "# alternative: ServerName hostname-or-ip-address[:port] of a remote server" >> \
-		${DESTDIR}/etc/cups/client.conf
-	# fix .desktop file
-	sed -i 's|^Exec=htmlview http://localhost:631/|Exec=xdg-open http://localhost:631/|g' \
-		${DESTDIR}/usr/share/applications/cups.desktop
-	# Install pam file
-	vinstall ${FILESDIR}/cups.pam 644 etc/pam.d cups
-
 	# Remove files provided by cups-filters.
 	rm -f ${DESTDIR}/usr/share/cups/banners/*
 	rm -f ${DESTDIR}/usr/share/cups/data/testprint
 	# comment out all conversion rules which use any of the removed filters
 	perl -p -i -e 's:^(.*\s+bannertops\s*)$:#\1:' \
 		${DESTDIR}/usr/share/cups/mime/mime.convs
-	# comment out unnecessary PageLogFormat entry
-	sed -i -e 's:PageLogFormat:#PageLogFormat:' ${DESTDIR}/etc/cups/cupsd.conf*
 
-	# runit service
+	# remove unnecessary PageLogFormat entry
+	vsed -i -e 's:PageLogFormat:#PageLogFormat:' ${DESTDIR}/etc/cups/cupsd.conf*
+
+	# fix .desktop file
+	vsed -i 's|^Exec=htmlview http://localhost:631/|Exec=xdg-open http://localhost:631/|g' \
+		${DESTDIR}/usr/share/applications/cups.desktop
+
+	vinstall ${FILESDIR}/cups.pam 644 etc/pam.d cups
+	vinstall ${FILESDIR}/client.conf 644 etc/cups client.conf
+
 	vsv cupsd
 }
 
