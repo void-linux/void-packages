@@ -606,6 +606,7 @@ setup_pkg() {
         export OBJCOPY="objcopy"
         export NM="nm"
         export READELF="readelf"
+        export PKG_CONFIG="pkg-config"
         export RUST_TARGET="$XBPS_RUST_TARGET"
         export RUST_BUILD="$XBPS_RUST_TARGET"
         # Unset cross evironment variables

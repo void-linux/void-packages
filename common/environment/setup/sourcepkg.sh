@@ -17,7 +17,7 @@ unset -v patch_args disable_parallel_build keep_libtool_archives make_use_env
 unset -v reverts subpackages makedepends hostmakedepends checkdepends depends restricted
 unset -v nopie build_options build_options_default bootstrap repository reverts
 unset -v CFLAGS CXXFLAGS FFLAGS CPPFLAGS LDFLAGS LD_LIBRARY_PATH
-unset -v CC CXX CPP GCC LD AR AS RANLIB NM OBJDUMP OBJCOPY STRIP READELF
+unset -v CC CXX CPP GCC LD AR AS RANLIB NM OBJDUMP OBJCOPY STRIP READELF PKG_CONFIG
 
 # hooks/do-extract/00-distfiles
 unset -v skip_extraction
