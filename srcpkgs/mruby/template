@@ -1,0 +1,87 @@
+# Template file for 'mruby'
+pkgname=mruby
+version=2.1.0
+revision=1
+hostmakedepends="bison ruby"
+short_desc="Lightweight implementation of the Ruby language (Ruby 1.9)"
+maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
+license="MIT"
+homepage="https://mruby.org/"
+distfiles="https://github.com/mruby/mruby/archive/${version}.tar.gz>${pkgname}-${version}.tar.gz"
+checksum=d6733742a07e553c52ab71df08b0604b3b571768bbc0c2729fbf0389d1bb5d13
+lib32disabled=yes
+
+if [ "$XBPS_TARGET_WORDSIZE" = 32 ]; then
+	broken="Currently fails to build for 32 bit architectures"
+fi
+
+do_configure() {
+	vsed -i mrbgems/mruby-compiler/core/parse.y -e "s;%pure-parser;%define api.pure;"
+
+	cat <<-EOF > xbps_config.rb
+	MRuby::Build.new do |conf|
+	  toolchain :gcc
+	  conf.gem "#{root}/mrbgems/mruby-bin-mruby"
+	  conf.gem "#{root}/mrbgems/mruby-bin-mrbc"
+	  conf.cc do |cc|
+	    cc.command = 'gcc'
+	    cc.flags = [ENV['CFLAGS_host'] || %w()]
+	    cc.include_paths = ["#{root}/include"]
+	  end
+	  conf.linker do |linker|
+	    linker.command = 'gcc'
+	    linker.libraries = 'm'
+	  end
+	  conf.archiver do |archiver|
+	    archiver.command = 'ar'
+	  end
+	end
+	EOF
+	if [ "$CROSS_BUILD" ]; then
+		cat <<-EOF >> xbps_config.rb
+		MRuby::CrossBuild.new('${XBPS_CROSS_TRIPLET}') do |conf|
+		  toolchain :gcc
+		  conf.gem "#{root}/mrbgems/mruby-bin-mruby"
+		  conf.gem "#{root}/mrbgems/mruby-bin-mrbc"
+		  conf.cc do |cc|
+		    cc.command = ENV['CC'] || '${XBPS_CROSS_TRIPLET}-gcc'
+		    cc.flags = [ENV['CFLAGS'] || %w()]
+		    cc.include_paths = ["#{root}/include"]
+		    cc.defines = %w()
+		    cc.option_include_path = '-I%s'
+ 		    cc.option_define = '-D%s'
+		    cc.compile_options = "%{flags} -o %{outfile} -c %{infile}"
+		  end
+		  conf.linker do |linker|
+		    linker.command = ENV['CC'] || '${XBPS_CROSS_TRIPLET}-gcc'
+		    linker.libraries = ENV['LIBS'] || 'm'
+		    linker.flags_after_libraries = [ENV['LDFLAGS'] || %w()]
+		    linker.library_paths = '${XBPS_CROSS_BASE}/usr/lib'
+		  end
+		  conf.archiver do |archiver|
+		    archiver.command = ENV['AR'] || '${XBPS_CROSS_TRIPLET}-ar'
+		  end
+		end
+		EOF
+	fi
+}
+
+do_build() {
+	MRUBY_CONFIG=xbps_config.rb ruby ./minirake
+}
+
+do_install() {
+	local _build
+	if [ "$CROSS_BUILD" ]; then
+		_build="build/${XBPS_CROSS_TRIPLET}"
+	else
+		_build="build/host"
+	fi
+	vmkdir usr/bin
+	vcopy "${_build}/bin/*" usr/bin
+	vmkdir usr/lib
+	vcopy "${_build}/lib/*.a" usr/lib
+	vmkdir usr/include
+	vcopy "include/*" usr/include
+	vlicense LICENSE
+}
