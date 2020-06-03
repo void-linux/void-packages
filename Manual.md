@@ -120,11 +120,11 @@ a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local re
 <a id="quality_requirements"></a>
 ### Quality Requirements
 
-Follow this list to determine if a piece of software or other technology may be
-permitted in the Void Linux repository. Exceptions to the list are possible,
-and may be accepted, but are extremely unlikely. If you believe you have an
+To be included in the Void repository, software must meet at least one
+of the following requirements. Exceptions to the list are possible,
+and might be accepted, but are extremely unlikely. If you believe you have an
 exception, start a PR and make an argument for why that particular piece of
-software, while not meeting the below requirements, is a good candidate for
+software, while not meeting any of the following requirements, is a good candidate for
 the Void packages system.
 
 1. System: The software should be installed system-wide, not per-user.
