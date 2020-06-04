@@ -3,6 +3,7 @@
 hook() {
 	local error=0 filename= rev= libname= conflictPkg= conflictFile=
 	local conflictRev= ignore= found= mapshlibs=$XBPS_COMMONDIR/shlibs
+	local emptypkg=yes
 
 	set +E
 
@@ -21,12 +22,43 @@ hook() {
 		fi
 	done
 	
-	for f in sys dev home root run var/run tmp usr/local destdir; do
+	for f in var/run usr/local; do
 		if [ -d ${PKGDESTDIR}/${f} ]; then
 			msg_red "${pkgver}: /${f} directory is not allowed, remove it!\n"
 			error=1
 		fi
 	done
+
+	for f in "$PKGDESTDIR"/*; do
+		f="${f##*/}"
+		case "$f" in
+		'*')	# The filename is exactly '*'
+			if [ -e "${PKGDESTDIR}/*" ]; then
+				msg_red "${pkgver}: File /* is not allowed\n"
+				error=1
+			fi
+			;;
+		lib|bin|sbin|lib64|lib32|usr|var|opt|etc|boot|srv)
+			emptypkg=no
+			;;
+		INSTALL|INSTALL.msg|REMOVE|REMOVE.msg|rdeps|shlib-requires|shlib-provides)
+			if [ ! -f "${PKGDESTDIR}/$f" ]; then
+				msg_red "${pkgver}: /${f} is not allowed\n"
+				error=1
+			fi
+			;;
+		*)
+			msg_red "${pkgver}: /${f} directory is not allowed, remove it!\n"
+			error=1
+			;;
+		esac
+	done
+
+	# Forbid empty packages unless build_style=meta
+	if [ "$build_style" != meta -a "$emptypkg" != no ]; then
+		msg_red "${pkgver}: PKGDESTDIR is empty and build_style != meta\n"
+		error=1
+	fi
 
 	# Check that configuration files really exist.
 	for f in $(expand_destdir "${conf_files}"); do
@@ -88,14 +120,6 @@ hook() {
 			error=1
 		fi
 	done
-
-	# Forbid empty packages unless build_style=meta
-	if [ "$build_style" != "meta" ]; then
-		if [ "$(find $PKGDESTDIR/* -maxdepth 1 -type d 2>/dev/null)" = "" ]; then
-			msg_red "${pkgver}: PKGDESTDIR is empty and build_style != meta\n"
-			error=1
-		fi
-	fi
 
 	if [ $error -gt 0 ]; then
 		msg_error "${pkgver}: cannot continue with installation!\n"

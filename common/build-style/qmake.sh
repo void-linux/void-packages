@@ -107,7 +107,7 @@ HostLibraries=/usr/lib
 Spec=${wrksrc}/.host-spec/linux-g++
 TargetSpec=${wrksrc}/.target-spec/linux-g++
 _EOF
-		qmake_args="-qtconf ${wrksrc}/qt.conf PKG_CONFIG_EXECUTABLE=${XBPS_WRAPPERDIR}/pkg-config"
+		qmake_args="-qtconf ${wrksrc}/qt.conf PKG_CONFIG_EXECUTABLE=${XBPS_WRAPPERDIR}/${PKG_CONFIG}"
 		${qmake} ${qmake_args} \
 			PREFIX=/usr \
 			QT_INSTALL_PREFIX=/usr \
