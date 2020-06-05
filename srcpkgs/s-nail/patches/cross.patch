@@ -1,133 +1,390 @@
---- mk-conf.sh.orig	2016-06-22 08:36:16.578971502 +0200
-+++ mk-conf.sh	2016-06-22 08:37:06.083455222 +0200
-@@ -1030,7 +1030,7 @@ run_check() {
- # May be multiline..
- [ -n "${OS_DEFINES}" ] && printf -- "${OS_DEFINES}" >> ${h}
+--- mk/make-config.sh.orig	2020-06-05 14:44:25.803734689 +0200
++++ mk/make-config.sh	2020-06-05 14:43:33.219768648 +0200
+@@ -1631,13 +1631,14 @@
+ printf '#define su_PAGE_SIZE %su\n' "${i}" >> ${h}
  
--if run_check clock_gettime 'clock_gettime(2)' \
-+if link_check clock_gettime 'clock_gettime(2)' \
-    '#define HAVE_CLOCK_GETTIME' << \!
- #include <time.h>
- # include <errno.h>
-@@ -1044,7 +1044,7 @@ int main(void){
- !
- then
-    :
--elif run_check clock_gettime 'clock_gettime(2) (via -lrt)' \
-+elif link_check clock_gettime 'clock_gettime(2) (via -lrt)' \
-    '#define HAVE_CLOCK_GETTIME' '-lrt' << \!
- #include <time.h>
- # include <errno.h>
-@@ -1058,7 +1058,7 @@ int main(void){
- !
- then
-    :
--elif run_check gettimeofday 'gettimeofday(2)' \
-+elif link_check gettimeofday 'gettimeofday(2)' \
-    '#define HAVE_GETTIMEOFDAY' << \!
- #include <stdio.h> /* For C89 NULL */
- #include <sys/time.h>
-@@ -1077,7 +1077,7 @@ else
-    have_no_subsecond_time=1
+ # Generate SU <> OS error number mappings
+-dump_test_program=0
+-(
+-   feat_yes DEVEL && NV= || NV=noverbose
+-   SRCDIR="${SRCDIR}" TARGET="${h}" awk="${awk}" \
+-      ${SHELL} "${TOPDIR}"mk/su-make-errors.sh ${NV} config
+-) | xrun_check oserrno 'OS error mapping table generated' || config_exit 1
+-dump_test_program=1
++msg_nonl ' . OS error mapping table generated ... '
++feat_yes DEVEL && NV= || NV=noverbose
++SRCDIR="${SRCDIR}" TARGET="${h}" awk="${awk}" rm="${rm}" sort="${sort}" \
++      ${SHELL} "${TOPDIR}"mk/su-make-errors.sh ${NV} compile_time || {
++   msg 'no'
++   config_exit 1
++}
++msg 'yes'
+ 
+ ## /SU
+ 
+--- mk/su-make-errors.sh.orig	2020-06-05 14:44:34.308257698 +0200
++++ mk/su-make-errors.sh	2020-06-05 14:43:33.220769180 +0200
+@@ -20,6 +20,9 @@
+ export LC_ALL MAXDISTANCE_PENALTY VERB MAILX IN XOUT
+ 
+ : ${awk:=awk}
++# Compile-time only
++: ${rm:=rm}
++: ${sort:=sort}
+ 
+ # The set of errors we support
+ ERRORS="\
+@@ -122,7 +125,7 @@
+                d = substr(v, doff + 2, length(v) - doff - 1)
+                v = substr(v, 1, doff - 1)
+             }
+-            if(!incnone && v == "NONE")
++            if(!incnone && (v == "NONE" || v == "NOTOBACCO"))
+                continue
+             print dodoc ? d : v
+          }
+@@ -130,162 +133,169 @@
+    '
+ }
+ 
+-config() {
++compile_time() {
+    [ -n "${TARGET}" ] || {
+       echo >&2 'Invalid usage'
+       exit 1
+    }
+-   # Note this may be ISO C89, so we cannot
+-   cat <<__EOT__
+-   #include <ctype.h>
+-   #include <errno.h>
+-   #include <limits.h>
+-   #include <stdio.h>
+-   #include <stdlib.h>
+-   #include <string.h>
+-   #if defined __STDC_VERSION__ && __STDC_VERSION__ + 0 >= 199901L
+-   # include <stdint.h>
+-   #else
+-   # include <inttypes.h>
+-   #endif
+-   #include <${IN}>
+-   #ifdef UINT32_MAX
+-   typedef uint32_t u32;
+-   typedef int32_t s32;
+-   #elif ULONG_MAX == 0xFFFFFFFFu
+-   typedef unsigned long int u32;
+-   typedef signed long int s32;
+-   #else
+-   typedef unsigned int u32;
+-   typedef signed int s32;
+-   #endif
+-   struct a_in {struct a_in *next; char const *name; s32 no; u32 uno;};
+-   static int a_sortin(void const *a, void const *b){
+-      return (*(struct a_in const* const *)a)->uno -
+-         (*(struct a_in const* const *)b)->uno;
+-   }
+-   int main(void){
+-      struct a_in *head, *tail, *np, **nap;
+-      u32 maxsub, umax;
+-      s32 xavail = 0, total = 1, imin = 0, imax = 0, voidoff = 0, i, j;
+-      FILE *ofp = fopen("${TARGET}", "a");
+-      if(ofp == NULL){
+-         fprintf(stderr, "ERROR: cannot open output\n");
+-         return 1;
+-      }
+ 
+-      /* Create a list of all errors */
+-      head = tail = (struct a_in*)malloc(sizeof *head);
+-      head->next = NULL; head->name = "su_ERR_NONE"; head->no = 0;
+-__EOT__
+-   for n in `error_parse 0 0`; do
+-      cat <<__EOT__
+-      ++total;
+-      #ifdef E${n}
+-      i = E${n};
+-      #else
+-      i = --xavail;
+-      #endif
+-      if(imin > i) {imin = i;} if(imax < i) {imax = i;}
+-      np = (struct a_in*)malloc(sizeof *np);
+-      np->next = NULL; np->name = "su_ERR_${n}"; np->no = i;
+-      tail->next = np; tail = np;
+-__EOT__
+-   done
+-   cat <<__EOT__
+-      /* The unsigned type used for storage */
+-
+-      fputs("#define su__ERR_NUMBER_TYPE ", ofp);
+-      if((u32)imax <= 0xFFu && (u32)-imin <= 0xFFu){
+-         fputs("u8\n", ofp);
+-         maxsub = 0xFFu;
+-      }else if(((u32)imax <= 0xFFFFu && (u32)-imin <= 0xFFFFu)){
+-         fputs("u16\n", ofp);
+-         maxsub = 0xFFFFu;
+-      }else{
+-         fputs("u32\n", ofp);
+-         maxsub = 0xFFFFFFFFu;
+-      }
++   {
++      printf '#include <errno.h>\nsu_ERROR_START\n'
++      for n in `error_parse 0 0`; do
++         printf '#ifdef E%s\nE%s %s\n#else\n-1 %s\n#endif\n' $n $n $n $n
++      done
++   } > "${TARGET}".c
++
++   # The problem is that at least (some versions of) gcc mangle output.
++   # Ensure we get both arguments on one line.
++   # While here sort numerically.
++   "${CC}" -E "${TARGET}".c |
++      ${awk} '
++         BEGIN{hot=0; conti=0}
++         /^[ 	]*$/{next}
++         /^[ 	]*#/{next}
++         /^su_ERROR_START$/{hot=1; next}
++         {
++            if(!hot)
++               next
++            printf "%s ", $1
++            if(conti){
++               printf "\n"
++               conti = 0
++            }else if($2 != "")
++               printf $2 "\n"
++            else
++               conti = 1
++         }
++      ' |
++      ${sort} -n > "${TARGET}".txt
+ 
+-      /* Now that we know the storage type, create the unsigned numbers */
+-      for(umax = 0, np = head; np != NULL; np = np->next){
+-         if(np->no < 0)
+-            np->uno = maxsub + np->no + 1;
+-         else
+-            np->uno = np->no;
+-         if(np->uno > umax)
+-            umax = np->uno;
+-      }
+-      if(umax <= (u32)imax){
+-         fprintf(stderr, "ERROR: errno ranges overlap\n");
+-         return 1;
+-      }
++   # EBCDIC/ASCII: we use \134 for \
++   j=\'
++   ${awk} -v verb="${VERB}" -v input="${ERRORS}" -v dat="${TARGET}.txt" '
++      BEGIN{
++         verb = verb ? "   " : ""
+ 
+-      /* Sort this list */
++         # Read in our OS data
+ 
+-      nap = (struct a_in**)malloc(sizeof(*nap) * (unsigned)total);
+-      for(i = 0, np = head; np != NULL; ++i, np = np->next)
+-         nap[i] = np;
+-      if(i != total){
+-         fprintf(stderr, "ERROR: implementation error i != total\n");
+-         return 1;
+-      }
+-      qsort(nap, (u32)i, sizeof *nap, &a_sortin);
++         unavail = 0
++         max = 0
++         oscnt = 0
++         while(getline dl < dat){
++            split(dl, ia)
++
++            ++oscnt
++            osnoa[oscnt] = osonoa[oscnt] = ia[1]
++            osnaa[oscnt] = ia[2]
++
++            if(ia[1] < 0)
++               ++unavail
++            else{
++               if(ia[1] > max)
++                  max = ia[1]
++            }
++         }
++         close(dat)
+ 
+-      /* The enumeration of numbers */
++         # Maximum error number defines the datatype to use.
++         # We need a value for NOTOBACCO, we warp all non-available errors to
++         # numbers too high to be regular errors, counting backwards
++
++         i = max + unavail + 1
++         if(i >= 65535){
++            t = "u32"
++            max = "0xFFFFFFFFu"
++         }else if(i >= 255){
++            t = "u16"
++            max = "0xFFFFu"
++         }else{
++            t = "u8"
++            max = "0xFFu"
++         }
++         print "#define su__ERR_NUMBER_TYPE " t
++         print "#define su__ERR_NUMBER_MAX " max
+ 
+-      fputs("#define su__ERR_NUMBER_ENUM_C \\\\\\n", ofp);
+-      for(i = 0; i < total; ++i)
+-         fprintf(ofp, "   %s = %lu,\\\\\\n",
+-            nap[i]->name, (unsigned long)nap[i]->uno);
+-      fprintf(ofp, "   su__ERR_NUMBER = %ld\\n", (long)total);
+-
+-      fputs("#ifdef __cplusplus\n# define su__CXX_ERR_NUMBER_ENUM \\\\\\n",
+-         ofp);
+-      for(i = 0; i < total; ++i){
+-         char b[64], *cbp = b;
+-         char const *cp;
+-         cp = &nap[i]->name[sizeof("su_") -1];
+-         *cbp++ = 'e';
+-         for(cp += sizeof("ERR_") -1; *cp != '\0'; ++cp)
+-            *cbp++ = tolower(*cp);
+-         *cbp = '\0';
+-         fprintf(ofp, "   %s = %s,\\\\\\n", b, nap[i]->name);
+-      }
+-      fprintf(ofp,
+-         "   e__number = su__ERR_NUMBER\\n#endif /* __cplusplus */\n");
++         # Dump C table
+ 
+-      /* The binary search mapping table from OS error value to our internal
+-       * a_corerr_map[] error description table */
+-      fprintf(ofp, "#define su__ERR_NUMBER_TO_MAPOFF \\\\\\n");
+-      for(xavail = 0, i = 0; i < total; ++i){
+-         if(i == 0 || nap[i]->no != nap[i - 1]->no){
+-            for(j = 0; a_names_alphasort[j] != NULL; ++j){
+-               if(!strcmp(&nap[i]->name[sizeof("su_ERR_") -1],
+-                     a_names_alphasort[j]))
+-                  break;
++         unavail = 0
++         cnt = 0
++         print "#define su__ERR_NUMBER_ENUM_C \134"
++
++         print verb "su_ERR_NONE = 0,\134"
++         ++cnt
++
++         for(i = 1; i <= oscnt; ++i){
++            if(osnoa[i] < 0){
++               ++unavail
++               osnoa[i] = "(su__ERR_NUMBER_MAX - " unavail ")"
+             }
+-            fprintf(ofp, "\ta_X(%lu, %lu) %s%s%s\\\\\\n",
+-               (unsigned long)nap[i]->uno, (long)(u32)j,
+-               ((${VERB}) ? "/* " : ""), ((${VERB}) ? nap[i]->name : ""),
+-                  ((${VERB}) ? " */ " : ""));
+-            if(!strcmp("su_ERR_NOTOBACCO", nap[i]->name))
+-               voidoff = j;
+-            ++xavail;
++            map[osnaa[i]] = osnoa[i]
++            print verb "su_ERR_" osnaa[i] " = " osnoa[i] ",\134"
++            ++cnt
+          }
++
++         print verb "su_ERR_NOTOBACCO = su__ERR_NUMBER_MAX,\134"
++         ++cnt
++
++         print verb "su__ERR_NUMBER = " cnt
++
++         # The C++ mapping table
++
++         print "#ifdef __cplusplus"
++         print "# define su__CXX_ERR_NUMBER_ENUM \134"
++         print verb "enone = su_ERR_NONE,\134"
++         for(i = 1; i <= oscnt; ++i)
++            print verb "e" tolower(osnaa[i]) " = su_ERR_" osnaa[i] ",\134"
++         print verb "enotobacco = su_ERR_NOTOBACCO,\134"
++         print verb "e__number = su__ERR_NUMBER"
++         print "#endif /* __cplusplus */"
++
++         # And our OS errno -> name map offset table
++
++         voidoff = 0
++         for(mapoff = 0;; ++mapoff){
++            voff = match(input, /[0-9a-zA-Z_]+(='${j}'[^'${j}']+)?/)
++            if(voff == 0)
++               break
++
++            v = substr(input, voff, RLENGTH)
++            input = substr(input, voff + RLENGTH)
++            doff = index(v, "=")
++            if(doff > 0){
++               d = substr(v, doff + 2, length(v) - doff - 1)
++               v = substr(v, 1, doff - 1)
++            }
++
++            mapo[v] = mapoff
++            if(v == "NOTOBACCO")
++               voidoff = mapoff
++         }
++
++         uniq = 0
++         print "#define su__ERR_NUMBER_TO_MAPOFF \134"
++
++         print verb "a_X(0, 0) \134"
++         ++uniq
++
++         mapx[0] = 1
++         for(i = 1; i <= oscnt; ++i){
++            if(osonoa[i] < 0)
++               continue
++            if(mapx[osnoa[i]])
++               continue
++            mapx[osnoa[i]] = 1
++            ++uniq
++            print verb "a_X(" osnoa[i] ", " mapo[osnaa[i]] ") \134"
++         }
++
++         print verb "a_X(su__ERR_NUMBER_MAX, " voidoff ") \134"
++         ++uniq
++         print verb "/* " uniq " unique members */"
++         print "#define su__ERR_NUMBER_VOIDOFF " voidoff
+       }
+-      fprintf(ofp, "\\t/* %ld unique members */\\n", (long)xavail);
+-      fprintf(ofp, "#define su__ERR_NUMBER_VOIDOFF %ld\\n", (long)voidoff);
+-      fclose(ofp);
+-
+-      while((np = head) != NULL){
+-         head = np->next;
+-         free(np);
+-      }
+-      free(nap);
+-      return 0;
+-   }
+-__EOT__
++   ' >> "${TARGET}"
++
++   ${rm} "${TARGET}".*
+    exit 0
+ }
+ 
+@@ -298,7 +308,7 @@
  fi
  
--if run_check userdb 'gete?[gu]id(2), getpwuid(3), getpwnam(3)' << \!
-+if link_check userdb 'gete?[gu]id(2), getpwuid(3), getpwnam(3)' << \!
- #include <pwd.h>
- #include <unistd.h>
- # include <errno.h>
---- mk-conf.sh.orig	2016-06-22 08:38:55.108571929 +0200
-+++ mk-conf.sh	2016-06-22 08:40:20.004493378 +0200
-@@ -1186,7 +1186,7 @@ int main(void)
- }
- !
+ if [ ${#} -eq 1 ]; then
+-   [ "${1}" = config ] && config
++   [ "${1}" = compile_time ] && compile_time
+ elif [ ${#} -eq 0 ]; then
+    # Now start perl(1) without PERL5OPT set to avoid multibyte sequence errors
+    PERL5OPT= PERL5LIB= exec perl -x "${0}"
+@@ -493,23 +503,6 @@
+    print F '/*@ ', scalar basen($ENV{XOUT}), ', generated by ',
+       scalar basen($0), ".\n *@ See core-errors.c for more */\n\n";
  
--run_check pathconf 'pathconf(2)' '#define HAVE_PATHCONF' << \!
-+link_check pathconf 'pathconf(2)' '#define HAVE_PATHCONF' << \!
- #include <unistd.h>
- #include <errno.h>
- int main(void){
-@@ -1200,7 +1200,7 @@ int main(void){
- }
- !
- 
--run_check pipe2 'pipe2(2)' '#define HAVE_PIPE2' << \!
-+link_check pipe2 'pipe2(2)' '#define HAVE_PIPE2' << \!
- #include <fcntl.h>
- #include <unistd.h>
- # include <errno.h>
-@@ -1214,7 +1214,7 @@ int main(void){
- !
- 
- # We use this only then for now (need NOW+1)
--run_check utimensat 'utimensat(2)' '#define HAVE_UTIMENSAT' << \!
-+link_check utimensat 'utimensat(2)' '#define HAVE_UTIMENSAT' << \!
- #include <fcntl.h> /* For AT_* */
- #include <sys/stat.h>
- # include <errno.h>
-@@ -1320,7 +1320,7 @@ int main(void){
- !
- fi # have_setlocale
- 
--run_check realpath 'realpath(3)' '#define HAVE_REALPATH' << \!
-+link_check realpath 'realpath(3)' '#define HAVE_REALPATH' << \!
- #include <stdlib.h>
- int main(void){
- #if 1 /* TODO for now we use realpath(3) without NULL as 2nd arg! */
-@@ -1381,7 +1381,7 @@ fi
- ##
- 
- if feat_yes DOTLOCK; then
--   if run_check readlink 'readlink(2)' << \!
-+   if link_check readlink 'readlink(2)' << \!
- #include <unistd.h>
- # include <errno.h>
- int main(void){
-@@ -1400,7 +1400,7 @@ int main(void){
- fi
- 
- if feat_yes DOTLOCK; then
--   if run_check fchown 'fchown(2)' << \!
-+   if link_check fchown 'fchown(2)' << \!
- #include <unistd.h>
- # include <errno.h>
- int main(void){
-@@ -1459,11 +1459,11 @@ int main(void){
- }
- !
- 
--   < ${tmp2}.c run_check af_unix 'AF_UNIX sockets' \
-+   < ${tmp2}.c link_check af_unix 'AF_UNIX sockets' \
-          '#define HAVE_UNIX_SOCKETS' ||
--      < ${tmp2}.c run_check af_unix 'AF_UNIX sockets (via -lnsl)' \
-+      < ${tmp2}.c link_check af_unix 'AF_UNIX sockets (via -lnsl)' \
-          '#define HAVE_UNIX_SOCKETS' '-lnsl' ||
--      < ${tmp2}.c run_check af_unix 'AF_UNIX sockets (via -lsocket -lnsl)' \
-+      < ${tmp2}.c link_check af_unix 'AF_UNIX sockets (via -lsocket -lnsl)' \
-          '#define HAVE_UNIX_SOCKETS' '-lsocket -lnsl'
- fi
- 
-@@ -1485,11 +1485,11 @@ int main(void){
- }
- !
- 
--   < ${tmp2}.c run_check sockets 'sockets' \
-+   < ${tmp2}.c link_check sockets 'sockets' \
-          '#define HAVE_SOCKETS' ||
--      < ${tmp2}.c run_check sockets 'sockets (via -lnsl)' \
-+      < ${tmp2}.c link_check sockets 'sockets (via -lnsl)' \
-          '#define HAVE_SOCKETS' '-lnsl' ||
--      < ${tmp2}.c run_check sockets 'sockets (via -lsocket -lnsl)' \
-+      < ${tmp2}.c link_check sockets 'sockets (via -lsocket -lnsl)' \
-          '#define HAVE_SOCKETS' '-lsocket -lnsl' ||
-       feat_bail_required SOCKETS
- else
-@@ -1591,7 +1591,7 @@ int main(void){
- fi
- 
- feat_yes SOCKETS &&
--run_check setsockopt 'setsockopt(2)' '#define HAVE_SETSOCKOPT' << \!
-+link_check setsockopt 'setsockopt(2)' '#define HAVE_SETSOCKOPT' << \!
- #include <sys/socket.h>
- #include <stdlib.h>
- # include <errno.h>
+-   print F '#ifndef su_SOURCE /* For compile-time tools only */', "\n",
+-      'static char const * const a_names_alphasort[] = {';
+-   ($i, $alen) = (0, 0);
+-   foreach my $e (@ENTS){
+-      $i = 1 + 3 + length $e->{name};
+-      if($alen == 0 || $alen + $i > 75){
+-         print F "\n${S}";
+-         $alen = length $S
+-      }else{
+-         print F ' ';
+-         ++$i
+-      }
+-      $alen += $i;
+-      print F "\"$e->{name}\","
+-   }
+-   print F " NULL\n};\n#endif /* !su_SOURCE */\n\n";
+-
+    ($i, $alen) = (0, 0);
+    print F '#ifdef su_SOURCE', "\n",
+       'static char const a_corerr_names[] = {', "\n";
