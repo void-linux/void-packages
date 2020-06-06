@@ -1,17 +1,52 @@
 # Template file for 'pev'
 pkgname=pev
 version=0.80
-revision=7
+revision=8
 wrksrc=${pkgname}
 build_style=gnu-makefile
-make_build_args="prefix=/usr"
-make_install_args="prefix=/usr"
+make_build_args="prefix=/usr sysconfdir=/etc"
+make_install_args="prefix=/usr sysconfdir=/etc"
 makedepends="libressl-devel pcre-devel"
-short_desc="The PE file analysis toolkit"
+# We don't need python for check, only their PE binary is needed
+checkdepends="which python3"
+short_desc="PE file analysis toolkit"
 maintainer="Diogo Leal <diogo@diogoleal.com>"
-license="GPL-3"
+# executable is GPL-2.0-or-later, libpe is LGPL-3.0-or-later
+license="GPL-2.0-or-later, MIT, LGPL-3.0-or-later, BSD-2-Clause"
 homepage="http://pev.sourceforge.net/"
 #distfiles="${SOURCEFORGE_SITE}/project/${pkgname}/${pkgname}-${version}/${pkgname}-${version}.tar.gz"
 # Temporarily use a Debian mirror
 distfiles="http://http.debian.net/debian/pool/main/p/pev/pev_${version}.orig.tar.gz"
 checksum=f68c8596f16d221d9a742812f6f728bcc739be90957bc1b00fbaa5943ffc5cfa
+
+if [ "$XBPS_TARGET_LIBC" = musl ]; then
+	makedepends+=" musl-legacy-compat"
+fi
+
+post_patch() {
+	# BSD-2-Clause
+	sed -ne '/Copyright/,/SUCH DAMAGE[.]/s/ *[*]* *//p; /[*]\//q' \
+		lib/libudis86/udis86.h >libudis86.LICENSE
+	# include/stack.h and src/dylib.c is MIT by same author.
+	sed -ne '/The MIT License/,/THE SOFTWARE[.]$/s/[[:space:]]*//p; /[*]\//q' \
+		include/stack.h >stack-dylib.LICENSE
+	vsed -i -e 's,/usr/local/lib/pev/plugins,/usr/lib/pev/plugins,' \
+		src/config.c
+}
+
+_real_check() {
+	for f in /usr/lib/python$py3_ver/distutils/command/*.exe; do
+		tests/run.sh pe32 "$f"
+	done
+}
+
+do_check() {
+	export LD_LIBRARY_PATH=$(pwd)/src/build
+	ln -sf ../../lib/libpe/libpe.so src/build/libpe.so.1
+	! _real_check | tee /dev/stderr | grep -q 'NOK$'
+}
+
+post_install() {
+	vlicense libudis86.LICENSE
+	vlicense stack-dylib.LICENSE
+}
