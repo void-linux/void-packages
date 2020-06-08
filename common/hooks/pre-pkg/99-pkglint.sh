@@ -3,7 +3,7 @@
 hook() {
 	local error=0 filename= rev= libname= conflictPkg= conflictFile=
 	local conflictRev= ignore= found= mapshlibs=$XBPS_COMMONDIR/shlibs
-	local emptypkg=yes
+	local emptypkg=yes licensepath=
 
 	set +E
 
@@ -21,7 +21,7 @@ hook() {
 			error=1
 		fi
 	done
-	
+
 	for f in var/run usr/local; do
 		if [ -d ${PKGDESTDIR}/${f} ]; then
 			msg_red "${pkgver}: /${f} directory is not allowed, remove it!\n"
@@ -57,6 +57,21 @@ hook() {
 	# Forbid empty packages unless build_style=meta
 	if [ "$build_style" != meta -a "$emptypkg" != no ]; then
 		msg_red "${pkgver}: PKGDESTDIR is empty and build_style != meta\n"
+		error=1
+	fi
+
+	# Forbid packages containing only license
+	licensepath="$PKGDESTDIR"
+	for f in usr share licenses; do
+		if [ "$(ls $licensepath)" = "$f" ]; then
+			licensepath+=/$f
+		else
+			licensepath=
+			break
+		fi
+	done
+	if [ "$licensepath" ]; then
+		msg_red "${pkgver}: package contains only license\n"
 		error=1
 	fi
 
