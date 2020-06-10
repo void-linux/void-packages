@@ -1,19 +1,18 @@
 # Template file for 'efl'
 pkgname=efl
-version=1.23.3
+version=1.24.2
 revision=1
 build_style=meson
 configure_args="
- -Dsystemd=false
  -Dopengl=$(vopt_if opengl full $(vopt_if gles2 es-egl none))
  -Dembedded-lz4=false
  -Dcrypto=openssl
  -Dnetwork-backend=none
- -Devas-loaders-disabler=[]
- -Decore-imf-loaders-disabler=scim
+ -Decore-imf-loaders-disabler=$(vopt_if ibus '' ibus,)scim
+ -Devas-loaders-disabler=$(vopt_if lottie '[]' json)
  -Demotion-loaders-disabler=$(vopt_if gstreamer '' gstreamer1,)$(vopt_if vlc '' libvlc,)gstreamer,xine
  -Demotion-generic-loaders-disabler=vlc
- $(vopt_bool elogind elogind)
+ $(vopt_bool elogind systemd)
  $(vopt_bool x11 x11)
  $(vopt_bool x11 xpresent)
  $(vopt_bool x11 xinput2) $(vopt_bool x11 xinput22)
@@ -23,15 +22,16 @@ configure_args="
  $(vopt_bool gstreamer gstreamer)
  $(vopt_bool pulseaudio pulseaudio)
  $(vopt_bool harfbuzz harfbuzz)
- $(vopt_bool simd native-arch-optimization)"
+ $(vopt_bool simd native-arch-optimization)
+ $(vopt_bool glib glib)"
 hostmakedepends="pkg-config gettext"
 makedepends="
  gettext-devel libressl-devel liblz4-devel glib-devel ibus-devel
  fontconfig-devel fribidi-devel $(vopt_if harfbuzz harfbuzz-devel)
  libjpeg-turbo-devel libpng-devel giflib-devel tiff-devel libwebp-devel
- rlottie-devel avahi-libs-devel eudev-libudev-devel bullet-devel
+ avahi-libs-devel eudev-libudev-devel bullet-devel
  libsndfile-devel libmount-devel LuaJIT-devel poppler-cpp-devel
- librsvg-devel libspectre-devel libraw-devel
+ librsvg-devel libspectre-devel libraw-devel libopenjpeg2-devel
  $(vopt_if drm 'libdrm-devel libinput-devel libxkbcommon-devel')
  $(vopt_if elogind elogind-devel)
  $(vopt_if gstreamer gst-plugins-base1-devel)
@@ -44,14 +44,16 @@ makedepends="
  libXrender-devel libXi-devel libXinerama-devel libXpresent-devel
  xcb-util-devel xcb-util-keysyms-devel xcb-util-image-devel
  xcb-util-renderutil-devel xcb-util-wm-devel xorgproto')
- $(vopt_if pulseaudio pulseaudio-devel)"
+ $(vopt_if pulseaudio pulseaudio-devel)
+ $(vopt_if lottie rlottie-devel)
+ $(vopt_if ibus ibus-devel)"
 short_desc="Enlightenment Foundation Libraries"
 maintainer="q66 <daniel@octaforge.org>"
 license="LGPL-2.1-only"
 homepage="https://enlightenment.org"
 changelog="https://git.enlightenment.org/core/efl.git/plain/NEWS"
 distfiles="https://download.enlightenment.org/rel/libs/efl/efl-${version}.tar.xz"
-checksum=53cea69eaabe443a099fb204b7353e968e7bb62b41fbb0da24451403c7a56901
+checksum=e1f91dfe8b8171f182f474eb9cfb13d9176c21f1879983fb896e92f7e2ce7a70
 
 if [ "$XBPS_CHECK_PKGS" ]; then
 	configure_args+=" -Dbuild-tests=true"
@@ -72,12 +74,20 @@ esac
 if [ -n "$build_option_wayland" -a -z "$build_option_drm" ]; then
 	broken="wayland requires drm"
 fi
+if [ -n "$build_option_ibus" -a -z "$build_option_glib" ]; then
+	broken="ibus requires glib integration"
+fi
 
+# TODO: add option for scim (don't have it packaged)
 build_options="elogind harfbuzz pulseaudio gstreamer vlc x11 wayland
- opengl gles2 drm framebuffer simd"
-build_options_default="elogind harfbuzz pulseaudio gstreamer x11 wayland drm"
+ opengl gles2 drm framebuffer simd lottie glib ibus"
+build_options_default="elogind harfbuzz pulseaudio gstreamer x11 wayland drm
+ glib ibus"
 desc_option_simd="Enable support for SSE3/NEON/AltiVec"
 desc_option_vlc="Enable support for VLC multimedia backend"
+desc_option_lottie="Enable support for Lottie JSON"
+desc_option_glib="Enable GLib integration"
+desc_option_ibus="Enable IBus input method support (needs glib)"
 
 # OpenGL acceleration support
 case "$XBPS_TARGET_MACHINE" in
@@ -102,6 +112,15 @@ case "$XBPS_TARGET_MACHINE" in
 		# Do not enable on 32-bit ARM by default either
 		;;
 esac
+
+post_extract() {
+	# systemd option applies to elogind but we don't want to install services
+	vsed -i '/systemd-services/d' meson.build
+	# disable journald code, not used and breaks musl
+	vsed -i 's/ifdef HAVE_SYSTEMD/if 0/g' src/lib/eina/eina_log.c
+	# disable systemd ecore module, not used and breaks musl
+	vsed -i "/'systemd',/d" src/modules/ecore/meson.build
+}
 
 efl-devel_package() {
 	short_desc+=" - development files"
