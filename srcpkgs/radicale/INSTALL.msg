@@ -1,7 +1,13 @@
-You are installing the legacy version of radicale (1.x)!
-Please install the radicale2 package for the latest (2.x) version.
+radicale has been upgraded from 1.x to 3.x, and the radicale2 package
+is now a transitional package that points to the main radicale 3.x
+package. To remove radicale2 and transition to the radicale package:
 
-If you need to migrate data, take the following steps:
+    xbps-pkgdb -m manual radicale
+    xbps-remove radicale2
+
+Migration from version 1.x to 2.x and beyond is not backwards
+compatible. Migration of data from 2.x to 3.x is not necessary. If you
+need to migrate data from 1.x to 2.x, take the following steps:
 
 - Disable the radicale 1.x service ("radicale")
 - Back up the radicale 1.x collections currently in /var/lib/radicale
