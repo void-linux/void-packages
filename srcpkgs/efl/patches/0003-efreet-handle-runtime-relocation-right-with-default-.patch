@@ -1,0 +1,94 @@
+From 7ef58c47d3184c04bd9b0d477b8c7bd342384189 Mon Sep 17 00:00:00 2001
+From: "Carsten Haitzler (Rasterman)" <raster@rasterman.com>
+Date: Tue, 9 Jun 2020 10:13:04 +0100
+Subject: [PATCH 3/7] efreet - handle runtime relocation right with default
+ XDG_DATA_DIRS
+
+XDG_DATA_DIRS was only set up to a default including where efl was
+installed prefix-wise as the compiled-=in prefix, not runtime
+determined prefix. it shouldn't actually affect most people except
+those making use of this.
+
+@fix
+---
+ src/lib/efreet/efreet_base.c | 33 +++++++++++++++++++++++++++++----
+ 1 file changed, 29 insertions(+), 4 deletions(-)
+
+diff --git src/lib/efreet/efreet_base.c src/lib/efreet/efreet_base.c
+index 6497e8d955..736a3a05fc 100644
+--- src/lib/efreet/efreet_base.c
++++ src/lib/efreet/efreet_base.c
+@@ -51,6 +51,8 @@ static const char *xdg_pictures_dir = NULL;
+ static const char *xdg_videos_dir = NULL;
+ static const char *hostname = NULL;
+ 
++static Eina_Prefix *pfx= NULL;
++
+ static void efreet_dirs_init(void);
+ static const char *efreet_dir_get(const char *key, const char *fallback);
+ static Eina_List  *efreet_dirs_get(const char *key,
+@@ -72,6 +74,9 @@ efreet_base_init(void)
+         EINA_LOG_ERR("Efreet: Could not create a log domain for efreet_base.\n");
+         return 0;
+     }
++    if (!pfx) pfx = eina_prefix_new
++        (NULL, efreet_init, "EFREET", "efreet", "checkme",
++         PACKAGE_BIN_DIR, PACKAGE_LIB_DIR, PACKAGE_DATA_DIR, PACKAGE_DATA_DIR);
+     efreet_dirs_init();
+     return 1;
+ }
+@@ -105,6 +110,11 @@ efreet_base_shutdown(void)
+ 
+     IF_RELEASE(hostname);
+ 
++    if (pfx)
++    {
++        eina_prefix_free(pfx);
++        pfx = NULL;
++    }
+     eina_log_domain_unregister(_efreet_base_log_dom);
+     _efreet_base_log_dom = -1;
+ }
+@@ -280,6 +290,7 @@ efreet_dirs_reset(void)
+ static void
+ efreet_dirs_init(void)
+ {
++    char *data_dir = DATA_DIR;
+     char buf[PATH_MAX];
+ 
+     /* efreet_home_dir */
+@@ -294,13 +305,27 @@ efreet_dirs_init(void)
+     xdg_cache_home = efreet_dir_get("XDG_CACHE_HOME", "/.cache");
+ 
+     /* xdg_data_dirs */
++    if (pfx)
++    {
++        const char *dir = eina_prefix_get(pfx);
++        if (dir)
++        {
++            size_t len = strlen(dir);
++
++            data_dir = alloca(len + 1 + 5 /*"share" */ + 1);
+ #ifdef _WIN32
+-    snprintf(buf, sizeof(buf), "%s\\Efl;" DATA_DIR ";", getenv("APPDATA"));
+-    xdg_data_dirs = efreet_dirs_get("XDG_DATA_DIRS", buf);
++            snprintf(data_dir, len + 1 + 5 + 1, "%s\\share", dir);
+ #else
+-    xdg_data_dirs = efreet_dirs_get("XDG_DATA_DIRS",
+-                                    DATA_DIR ":/usr/share:/usr/local/share");
++            snprintf(data_dir, len + 1 + 5 + 1, "%s/share", dir);
+ #endif
++        }
++    }
++#ifdef _WIN32
++    snprintf(buf, sizeof(buf), "%s\\Efl;%s;", data_dir, getenv("APPDATA"));
++#else
++    snprintf(buf, sizeof(buf), "%s:/usr/share:/usr/local/share", data_dir);
++#endif
++    xdg_data_dirs = efreet_dirs_get("XDG_DATA_DIRS", buf);
+     /* xdg_config_dirs */
+ #ifdef _WIN32
+     xdg_config_dirs = efreet_dirs_get("XDG_CONFIG_DIRS", getenv("APPDATA"));
+-- 
+2.27.0
+

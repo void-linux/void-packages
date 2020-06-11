@@ -1,10 +1,9 @@
 # Template file for 'efl'
 pkgname=efl
 version=1.24.2
-revision=1
+revision=2
 build_style=meson
 configure_args="
- -Dopengl=$(vopt_if opengl full $(vopt_if gles2 es-egl none))
  -Dembedded-lz4=false
  -Dcrypto=openssl
  -Dnetwork-backend=none
@@ -12,6 +11,7 @@ configure_args="
  -Devas-loaders-disabler=$(vopt_if lottie '[]' json)
  -Demotion-loaders-disabler=$(vopt_if gstreamer '' gstreamer1,)$(vopt_if vlc '' libvlc,)gstreamer,xine
  -Demotion-generic-loaders-disabler=vlc
+ -Dopengl=$(vopt_if opengl $(vopt_if gles2 es-egl full) none)
  $(vopt_bool elogind systemd)
  $(vopt_bool x11 x11)
  $(vopt_bool x11 xpresent)
@@ -36,7 +36,6 @@ makedepends="
  $(vopt_if elogind elogind-devel)
  $(vopt_if gstreamer gst-plugins-base1-devel)
  $(vopt_if opengl MesaLib-devel)
- $(vopt_if gles2 MesaLib-devel)
  $(vopt_if vlc vlc-devel)
  $(vopt_if wayland 'wayland-protocols wayland-devel')
  $(vopt_if x11 'libXcomposite-devel libXcursor-devel libXp-devel
@@ -62,6 +61,11 @@ else
 	configure_args+=" -Dbuild-tests=false"
 fi
 
+# for backtrace support
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	makedepends+=" libexecinfo-devel"
+fi
+
 if [ "$CROSS_BUILD" ]; then
 	hostmakedepends+=" gettext-devel efl-devel"
 fi
@@ -70,6 +74,18 @@ case "$XBPS_TARGET_MACHINE" in
 	mips*) CFLAGS="-Os";;
 esac
 
+# TODO: add option for scim (don't have it packaged)
+build_options="elogind harfbuzz pulseaudio gstreamer vlc x11 wayland
+ opengl gles2 drm framebuffer simd lottie glib ibus"
+# wayland_egl and gl_drm need gles, so use that by default
+build_options_default="elogind harfbuzz pulseaudio gstreamer x11 wayland
+ opengl gles2 drm glib ibus"
+desc_option_simd="Enable support for SSE3/NEON/AltiVec"
+desc_option_vlc="Enable support for VLC multimedia backend"
+desc_option_lottie="Enable support for Lottie JSON"
+desc_option_glib="Enable GLib integration"
+desc_option_ibus="Enable IBus input method support (needs glib)"
+
 # sanitize options
 if [ -n "$build_option_wayland" -a -z "$build_option_drm" ]; then
 	broken="wayland requires drm"
@@ -77,29 +93,9 @@ fi
 if [ -n "$build_option_ibus" -a -z "$build_option_glib" ]; then
 	broken="ibus requires glib integration"
 fi
-
-# TODO: add option for scim (don't have it packaged)
-build_options="elogind harfbuzz pulseaudio gstreamer vlc x11 wayland
- opengl gles2 drm framebuffer simd lottie glib ibus"
-build_options_default="elogind harfbuzz pulseaudio gstreamer x11 wayland drm
- glib ibus"
-desc_option_simd="Enable support for SSE3/NEON/AltiVec"
-desc_option_vlc="Enable support for VLC multimedia backend"
-desc_option_lottie="Enable support for Lottie JSON"
-desc_option_glib="Enable GLib integration"
-desc_option_ibus="Enable IBus input method support (needs glib)"
-
-# OpenGL acceleration support
-case "$XBPS_TARGET_MACHINE" in
-	i686*|x86_64*|ppc*)
-		# Enable desktop OpenGL on x86/ppc systems
-		build_options_default+=" opengl"
-		;;
-	aarch64*|armv7l*)
-		# Enable OpenGL ES on modern ARM systems
-		build_options_default+=" gles2"
-		;;
-esac
+if [ -n "$build_option_gles2" -a -z "$build_option_opengl" ]; then
+	broken="gles2 needs opengl"
+fi
 
 # Architecture optimizations
 case "$XBPS_TARGET_MACHINE" in
@@ -113,13 +109,11 @@ case "$XBPS_TARGET_MACHINE" in
 		;;
 esac
 
-post_extract() {
-	# systemd option applies to elogind but we don't want to install services
-	vsed -i '/systemd-services/d' meson.build
-	# disable journald code, not used and breaks musl
-	vsed -i 's/ifdef HAVE_SYSTEMD/if 0/g' src/lib/eina/eina_log.c
-	# disable systemd ecore module, not used and breaks musl
-	vsed -i "/'systemd',/d" src/modules/ecore/meson.build
+post_install() {
+	# don't want service file junk
+	rm -rf ${DESTDIR}/usr/lib/systemd
+	# don't want systemd system module
+	rm -rf ${DESTDIR}/usr/lib/ecore/system/systemd
 }
 
 efl-devel_package() {
