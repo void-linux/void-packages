@@ -970,7 +970,9 @@ additional paths to be searched when linking target binaries to be introspected.
 - `qemu` sets additional variables for the `cmake` and `meson` build styles to allow
 executing cross-compiled binaries inside qemu.
 It sets `CMAKE_CROSSCOMPILING_EMULATOR` for cmake and `exe_wrapper` for meson
-to `qemu-<target_arch>-static` and `QEMU_LD_PREFIX` to `XBPS_CROSS_BASE`
+to `qemu-<target_arch>-static` and `QEMU_LD_PREFIX` to `XBPS_CROSS_BASE`.
+It also creates the `vtargetrun` function to wrap commands in a call to
+`qemu-<target_arch>-static` for the target architecture.
 
 - `qmake` creates the `qt.conf` configuration file (cf. `qmake` `build_style`)
 needed for cross builds and a qmake-wrapper to make `qmake` use this configuration.
