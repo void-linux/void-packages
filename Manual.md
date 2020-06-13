@@ -337,6 +337,13 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	Note that vsed will call the sed command for every regex specified against
 	every file specified, in the order that they are given.
 
+- *vcompletion()* `<file> <shell> [<command>]`
+
+	Installs shell completion from `file` for `command`, in the correct location
+	and with the appropriate filename for `shell`. If `command` isn't specified,
+	it will default to `pkgname`. The `shell` argument can be one of `bash`,
+	`fish` or `zsh`.
+
 > Shell wildcards must be properly quoted, Example: `vmove "usr/lib/*.a"`.
 
 <a id="global_vars"></a>
