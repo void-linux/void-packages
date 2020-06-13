@@ -4,3 +4,11 @@ if [ "$CROSS_BUILD" ]; then
 		hostmakedepends+=" qemu-user-static"
 	fi
 fi
+
+vtargetrun() {
+	if [ "$CROSS_BUILD" ]; then
+		"/usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static" "$@"
+	else
+		"$@"
+	fi
+}
