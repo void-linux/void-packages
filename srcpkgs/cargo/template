@@ -1,6 +1,6 @@
 # Template file for 'cargo'
 pkgname=cargo
-version=0.44.0
+version=0.45.0
 revision=1
 wrksrc="cargo-${version}"
 build_helper=rust
@@ -12,11 +12,18 @@ maintainer="Enno Boland <gottox@voidlinux.org>"
 license="MIT, Apache-2.0"
 homepage="https://crates.io/"
 distfiles="https://github.com/rust-lang/cargo/archive/${version}.tar.gz"
-checksum="c6da7d1d21eacf112c55dc8cc2647f2ccf7b41f9865dfa542e08ab41d1c20170"
+checksum=304b2abb13ca0219a3485466625f2a38e6011f898199272ee76ad03d4c8c68b0
+replaces="cargo-tree>=0"
 _cargo_dist_version=0.44.0
-build_options="static"
 
-if [ -z "$build_option_static" ]; then
+build_options="static bindist"
+desc_option_bindist="Generate a tarball for bootstrap"
+
+if [ -n "$build_option_static" -o -n "$build_option_bindist" ]; then
+	_build_static=yes
+fi
+
+if [ -z "$_build_static" ]; then
 	makedepends+=" libgit2-devel"
 fi
 
@@ -83,7 +90,9 @@ post_extract() {
 }
 
 do_build() {
-	if [ "$build_option_static" ]; then
+	local cargo cargs
+
+	if [ -n "$_build_static" ]; then
 		unset LIBSSH2_SYS_USE_PKG_CONFIG
 		export OPENSSL_STATIC=1
 		# rust-openssl can not be linked static if pkg-config is used
@@ -97,15 +106,30 @@ do_build() {
 		cargo="./cargo"
 	fi
 
-	$cargo build --release $(vopt_if static --features="all-static")
+	if [ -n "$_build_static" ]; then
+		cargs+=" --features=all-static"
+	fi
+
+	$cargo build --release ${cargs}
 }
 
 do_install() {
+	local cbin="target/release/cargo"
 	if [ "$CROSS_BUILD" ]; then
-		vbin target/${RUST_TARGET}/release/cargo
-	else
-		vbin target/release/cargo
+		cbin="target/${RUST_TARGET}/release/cargo"
 	fi
+
+	if [ "$build_option_bindist" ]; then
+		local dest="cargo-${version}-${RUST_TARGET}"
+		mkdir -p ${XBPS_SRCDISTDIR}/distfiles ${dest}/cargo/bin
+		install -m 0755 ${cbin} ${dest}/cargo/bin
+		install -m 0644 LICENSE-APACHE LICENSE-MIT LICENSE-THIRD-PARTY ${dest}
+		bsdtar cvJf ${dest}.tar.xz ${dest}
+		install -m 0644 ${dest}.tar.xz ${XBPS_SRCDISTDIR}/distfiles
+		exit 1
+	fi
+
+	vbin ${cbin}
 	for f in src/etc/man/*.?; do
 		vman $f
 	done
