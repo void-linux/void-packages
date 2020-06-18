@@ -1,9 +1,9 @@
 # Template file for 'ruby'
-_ruby_abiver=2.6.0
+_ruby_abiver=2.7.0
 
 pkgname=ruby
-version=2.6.5
-revision=2
+version=2.7.1
+revision=3
 build_style=gnu-configure
 configure_args="--enable-shared --disable-rpath
  DOXYGEN=/usr/bin/doxygen DOT=/usr/bin/dot PKG_CONFIG=/usr/bin/pkg-config"
@@ -17,7 +17,7 @@ homepage="http://www.ruby-lang.org/en/"
 maintainer="Leah Neukirchen <leah@vuxu.org>"
 license="Ruby, BSD-2-Clause"
 distfiles="https://cache.ruby-lang.org/pub/ruby/${version%.*}/${pkgname}-${version}.tar.bz2"
-checksum=97ddf1b922f83c1f5c50e75bf54e27bba768d75fea7cda903b886c6745e60f0a
+checksum=d703d58a67e7ed822d6e4a6ea9e44255f689a5b6ea6752d17e8d031849822202
 
 case "$XBPS_TARGET_MACHINE" in
 	*-musl)	# Broken on the builders but successfully built locally
@@ -30,6 +30,19 @@ case "$XBPS_TARGET_MACHINE" in
 		;;
 esac
 
+case "$XBPS_TARGET_MACHINE" in
+	arm*-musl) # Default is ucontext
+		configure_args+=" --with-coroutine=arm32"
+		;;
+	ppc64*) # Default is ucontext on BE, but ppc64le really just means ELFv2
+		configure_args+=" --with-coroutine=ppc64le"
+		;;
+	mips*-musl|ppc-musl)
+		_need_libucontext=yes
+		makedepends+=" libucontext-devel"
+		configure_args+=" LIBS=-lucontext"
+		;;
+esac
 
 if [ "$CROSS_BUILD" ]; then
 	hostmakedepends+=" ruby"
@@ -40,6 +53,25 @@ post_patch() {
 
 	echo "Patching out using binary gems for non-glibc..."
 	patch -sNp1 -i ${FILESDIR}/rubygems-avoid-platform-specific-gems.patch
+}
+
+pre_configure() {
+	# this allows the test suite to pass without crashing
+	export CFLAGS+=" -fno-omit-frame-pointer -fno-strict-aliasing"
+	export CPPFLAGS+=" -fno-omit-frame-pointer -fno-strict-aliasing"
+
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64le*) ;;
+		ppc*)
+			# Random segfaults otherwise
+			export CFLAGS+=" -Os"
+			export CPPFLAGS+=" -Os"
+			;;
+	esac
+
+	# force this to pass on systems with these as macros (musl)
+	export ac_cv_func_isnan=yes
+	export ac_cv_func_isinf=yes
 }
 
 pre_build() {
@@ -87,6 +119,9 @@ ruby-devel-doc_package() {
 
 ruby-devel_package() {
 	depends="ruby-${version}_${revision} gmp-devel"
+	if [ "$_need_libucontext" ]; then
+		depends+=" libucontext-devel"
+	fi
 	short_desc+=" - development files"
 	pkg_install() {
 		vmove usr/include

@@ -143,6 +143,8 @@ zap
 
 Options:
 
+-1  If dependencies of target package are missing, fail instead of building them.
+
 -a  <target>
     Cross compile packages for this target machine. Supported targets:
 
@@ -163,8 +165,6 @@ $(print_cross_targets)
 
 -G  Enable XBPS_USE_GIT_REVS (see etc/defaults.conf for more information).
 
--Q  Enable running the check stage.
-
 -g  Enable building -dbg packages with debugging symbols.
 
 -H  <hostdir>
@@ -176,6 +176,8 @@ $(print_cross_targets)
 -h  Usage output.
 
 -I  Ignore required dependencies, useful for extracting/fetching sources.
+
+-i  Make xbps-src internal errors non-fatal.
 
 -j  Number of parallel build jobs to use when building packages.
 
@@ -196,6 +198,10 @@ $(print_cross_targets)
 
     Supported options can be shown with the 'show-options' target.
 
+-Q  Enable running the check stage.
+
+-q  Suppress informational output of xbps-src (build output is still printed).
+
 -r  <repo>
     Use an alternative local repository to store generated binary packages.
     If unset defaults to <hostdir>/binpkgs. If set the binpkgs will
@@ -207,6 +213,8 @@ $(print_cross_targets)
     the existing masterdir must be fully populated with binary-bootstrap first.
     Once the target has finished, this temporary masterdir will be removed.
     This flag requires xbps-uchroot(1).
+
+-V  Print version of xbps, then exit.
 
 _EOF
 }
@@ -391,8 +399,8 @@ umask 022
 # Check for required utilities in host system.
 #
 # Required utilities in host system for the bootstrap target.
-readonly REQHOST_UTILS_BOOTSTRAP="make gawk bash bison sed gcc g++ msgfmt makeinfo \
-    perl bsdtar xz gzip bzip2 patch flock flex libtool pkg-config"
+readonly REQHOST_UTILS_BOOTSTRAP="file objdump find make gawk bash sed gcc g++ gnat \
+    perl bsdtar gzip patch flock pkg-config"
 
 # Required utilities in host.
 readonly REQHOST_UTILS="xbps-install xbps-query xbps-rindex xbps-uhelper \
@@ -426,6 +434,8 @@ else
     elif [ -s $XBPS_DISTDIR/etc/conf ]; then
         # ... otherwise read generic user configuration...
         readonly XBPS_CONFIG_FILE=$XBPS_DISTDIR/etc/conf
+    elif [ -s ${XDG_CONFIG_HOME:-$HOME/.config}/xbps-src.conf ]; then
+        readonly XBPS_CONFIG_FILE=${XDG_CONFIG_HOME:-$HOME/.config}/xbps-src.conf
     elif [ -s $HOME/.xbps-src.conf ]; then
         # ... fallback to ~/.xbps-src.conf otherwise.
         readonly XBPS_CONFIG_FILE=$HOME/.xbps-src.conf
@@ -498,14 +508,13 @@ fi
 
 # Try using chroot-git then git from the host system
 if command -v chroot-git &>/dev/null; then
-    XBPS_GIT_CMD=$(command -v chroot-git)
+    export XBPS_GIT_CMD=$(command -v chroot-git)
 elif command -v git &>/dev/null; then
-    XBPS_GIT_CMD=$(command -v git)
+    export XBPS_GIT_CMD=$(command -v git)
 else
     echo "neither chroot-git or git are available in your system!" 1>&2
     exit 1
 fi
-readonly XBPS_GIT_CMD
 
 if [ -n "$XBPS_HOSTDIR" ]; then
     export XBPS_REPOSITORY=$XBPS_HOSTDIR/binpkgs
@@ -554,7 +563,7 @@ linux32_check() {
     local tgtarch="$2"
     case "$hostarch" in
         x86_64*) if [[ "$tgtarch" == i686* ]]; then return 0; fi ;;
-        ppc64le*) return 1 ;;
+        ppc64le*) if [[ "$tgtarch" == ppcle* ]]; then return 0; fi ;;
         ppc64*)
             case "$tgtarch" in
                 ppc64*) return 1 ;;
@@ -821,6 +830,29 @@ case "$XBPS_TARGET" in
         read_pkg ignore-problems
         show_pkg_makedepends
         ;;
+    show-pkg-var-dump)
+        read_pkg ignore-problems
+        for sub_name in $subpackages; do
+            if [ $sub_name = $XBPS_TARGET_PKG ]; then
+                ${sub_name}_package
+            fi
+        done
+        printf "archs: %s\n\n" "$archs"
+        printf "bootstrap: %s\n\n" "$bootstrap"
+        printf "broken: %s\n\n" "$broken"
+        printf "depends: %s\n\n" "$depends"
+        printf "hostmakedepends: %s\n\n" "$hostmakedepends"
+        printf "makedepends: %s\n\n" "$makedepends"
+        printf "nocross: %s\n\n" "$nocross"
+        printf "pkgname: %s\n\n" "$pkgname"
+        printf "restricted: %s\n\n" "$restricted"
+        printf "revision: %s\n\n" "$revision"
+        printf "subpackages: %s\n\n" "$subpackages"
+        printf "version: %s\n\n" "$version"
+        printf "provides: %s\n\n" "$provides"
+        printf "lib32disabled: %s\n\n" "$lib32disabled"
+        printf "nodebug: %s\n\n" "$nodebug"
+        ;;
     show-pkg-var)
         read_pkg ignore-problems
         for sub_name in $subpackages; do
@@ -828,28 +860,29 @@ case "$XBPS_TARGET" in
                 ${sub_name}_package
             fi
         done
-	while IFS= read -r pkg_var; do
-		print_var=
-		case "${pkg_var}" in
-		    bootstrap) print_var="$bootstrap ";;
-		    broken) print_var="$broken ";;
-		    depends) print_var="$depends ";;
-		    hostmakedepends) print_var="$hostmakedepends ";;
-		    makedepends) print_var="$makedepends ";;
-		    nocross) print_var="$nocross ";;
-		    pkgname) print_var="$pkgname ";;
-		    restricted) print_var="$restricted ";;
-		    revision) print_var="$revision ";;
-		    subpackages) print_var="$subpackages ";;
-		    version) print_var="$version ";;
-		    provides) print_var="$provides ";;
-		    lib32disabled) print_var="$lib32disabled ";;
-		    nodebug) print_var="$nodebug ";;
-		esac # the space at the end of each is essential for unset vars
-		if [ -n "$print_var" ]; then
-			printf "%s\n" "$(printf "${print_var% }" | tr -t '\n\r' ' ')"
-		fi # The trailing space gets stripped before printing anyway
-	done
+        while IFS= read -r pkg_var; do
+                print_var=
+                case "${pkg_var}" in
+                    archs) print_var="$archs ";;
+                    bootstrap) print_var="$bootstrap ";;
+                    broken) print_var="$broken ";;
+                    depends) print_var="$depends ";;
+                    hostmakedepends) print_var="$hostmakedepends ";;
+                    makedepends) print_var="$makedepends ";;
+                    nocross) print_var="$nocross ";;
+                    pkgname) print_var="$pkgname ";;
+                    restricted) print_var="$restricted ";;
+                    revision) print_var="$revision ";;
+                    subpackages) print_var="$subpackages ";;
+                    version) print_var="$version ";;
+                    provides) print_var="$provides ";;
+                    lib32disabled) print_var="$lib32disabled ";;
+                    nodebug) print_var="$nodebug ";;
+                esac # the space at the end of each is essential for unset vars
+                if [ -n "$print_var" ]; then
+                        printf "%s\n" "$(printf "${print_var% }" | tr -t '\n\r' ' ')"
+                fi # The trailing space gets stripped before printing anyway
+        done
         ;;
     show-options)
         read_pkg ignore-problems

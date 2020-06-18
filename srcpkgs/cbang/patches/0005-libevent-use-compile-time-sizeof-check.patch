@@ -1,0 +1,114 @@
+From 062c1a54b295b4ff387ebdff84a6a957fccbefd4 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=C4=90o=C3=A0n=20Tr=E1=BA=A7n=20C=C3=B4ng=20Danh?=
+ <congdanhqx@gmail.com>
+Date: Sun, 17 May 2020 22:44:25 +0700
+Subject: [PATCH 5/7] libevent: use compile time sizeof check
+
+Taken from https://github.com/scons/scons/wiki/AutoconfRecipes#ac_check_sizeof
+---
+ src/libevent/SConscript | 81 +++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 73 insertions(+), 8 deletions(-)
+
+diff --git src/libevent/SConscript src/libevent/SConscript
+index 1197b8d3..ab1f72ad 100644
+--- src/libevent/SConscript
++++ src/libevent/SConscript
+@@ -18,22 +18,87 @@ conf.AddTest('CheckSYS_TIMERFD_H', CheckSYS_TIMERFD_H)
+ 
+ 
+ # sizeof
++# https://github.com/scons/scons/wiki/AutoconfRecipes#ac_check_sizeof
++# Sensible default for common types on common platforms.
++_DEFAULTS_SIZEOF = {
++    'short' : [2],
++    'int' : [4, 2],
++    'long' : [4, 8],
++    'long long' : [8, 4],
++    'unsigned short' : [2],
++    'unsigned int' : [4, 2],
++    'unsigned long' : [4, 8],
++    'unsigned long long' : [8, 4],
++    'float' : [4],
++    'double' : [8],
++    'long double' : [12],
++    'size_t' : [4, 8],
++}
++
+ def CheckSizeOf(ctx, type, includes = None):
++    """This check can be used to get the size of a given type,
++    or to check whether the type is of expected size.
++
++    Arguments:
++        - type : str
++            the type to check
++        - includes : sequence
++            list of headers to include in the test code before testing the type
++        Returns:
++                status : int
++                        0 if the check failed, or the found size of the type
++                        if the check succeeded."""
++    minsz = 0
++    maxsz = 16
++
+     src = '''
+       #include <sys/types.h>
+       #include <stdlib.h>
+       #include <stdio.h>
+-      int main() {printf("%d", (int)sizeof(''' + type + ''')); return 0;}
++      #include <stdint.h>
+     '''
++    if includes:
++        src += "\n".join("#include <%s>\n" % i for i in includes)
+ 
+-    if includes is not None:
+-        for inc in includes:
+-            src = '#include <%s>\n%s' % (inc, src)
++    ext = '.c'
++    # test code taken from autoconf: this is a pretty clever hack to find that
++    # a type is of a given size using only compilation. This speeds things up
++    # quite a bit compared to straightforward code using TryRun
++    src += r"""
++typedef %s scons_check_type;
+ 
+-    ctx.Message('Checking size of ' + type + '... ')
+-    ret = ctx.TryRun(src + '\n', '.c')
+-    ctx.Result(ret[0])
+-    return ret[1]
++int main()
++{
++    static int test_array[1 - 2 * ((long int) sizeof(scons_check_type) > %d)];
++    test_array[0] = 0;
++
++    return 0;
++}
++"""
++
++    # Only check if the given size is the right one
++    ctx.Message('Checking size of %s ... ' % type)
++
++    # Try sensible defaults first
++    try:
++        szrange = _DEFAULTS_SIZEOF[type]
++    except KeyError:
++        szrange = []
++    szrange.extend(range(minsz, maxsz))
++    st = 0
++
++    # Actual test
++    for sz in szrange:
++        st = ctx.TryCompile(src % (type, sz), ext)
++        if st:
++            break
++
++    if st:
++        ctx.Result('%d' % sz)
++        return sz
++    else:
++        ctx.Result('Failed !')
++        return 0
+ 
+ conf.AddTest('CheckSizeOf', CheckSizeOf)
+ 
+-- 
+2.27.0.rc1.5.gae92ac8ae3
+

@@ -1,0 +1,164 @@
+From 8854db726f90e53bf5ed5af8b236ef36a709a682 Mon Sep 17 00:00:00 2001
+From: q66 <daniel@octaforge.org>
+Date: Sun, 19 Jan 2020 01:06:40 +0100
+Subject: [PATCH 3/3] Additional fixes for musl libc with ppc64
+
+---
+ .../chromium/sandbox/linux/bpf_dsl/seccomp_macros.h        | 6 +++---
+ src/3rdparty/chromium/sandbox/linux/seccomp-bpf/syscall.cc | 4 ++--
+ .../abseil-cpp/absl/base/internal/unscaledcycleclock.cc    | 4 ++--
+ .../abseil-cpp/absl/base/internal/unscaledcycleclock.h     | 2 +-
+ .../src/client/linux/dump_writer_common/thread_info.cc     | 7 +++++--
+ .../src/client/linux/dump_writer_common/ucontext_reader.cc | 7 +++++--
+ .../breakpad/src/client/linux/handler/exception_handler.cc | 5 +++++
+ 7 files changed, 23 insertions(+), 12 deletions(-)
+
+diff --git a/src/3rdparty/chromium/sandbox/linux/bpf_dsl/seccomp_macros.h b/src/3rdparty/chromium/sandbox/linux/bpf_dsl/seccomp_macros.h
+index a6aec544e..2a4a7f1bc 100644
+--- a/src/3rdparty/chromium/sandbox/linux/bpf_dsl/seccomp_macros.h
++++ b/src/3rdparty/chromium/sandbox/linux/bpf_dsl/seccomp_macros.h
+@@ -16,7 +16,7 @@
+ #if defined(__mips__)
+ // sys/user.h in eglibc misses size_t definition
+ #include <stddef.h>
+-#elif defined(__powerpc64__)
++#elif defined(__powerpc64__) && defined(__GLIBC__)
+ // Manually define greg_t on ppc64
+ typedef unsigned long long greg_t;
+ #endif
+@@ -361,11 +361,11 @@ typedef struct pt_regs regs_struct;
+ #define SECCOMP_ARCH AUDIT_ARCH_PPC64
+ #endif
+ 
+-#define SECCOMP_REG(_ctx, _reg) ((_ctx)->uc_mcontext.regs->gpr[_reg])
++#define SECCOMP_REG(_ctx, _reg) (((struct pt_regs *)(_ctx)->uc_mcontext.regs)->gpr[_reg])
+ 
+ #define SECCOMP_RESULT(_ctx) SECCOMP_REG(_ctx, 3)
+ #define SECCOMP_SYSCALL(_ctx) SECCOMP_REG(_ctx, 0)
+-#define SECCOMP_IP(_ctx) (_ctx)->uc_mcontext.regs->nip
++#define SECCOMP_IP(_ctx) ((struct pt_regs *)(_ctx)->uc_mcontext.regs)->nip
+ #define SECCOMP_PARM1(_ctx) SECCOMP_REG(_ctx, 3)
+ #define SECCOMP_PARM2(_ctx) SECCOMP_REG(_ctx, 4)
+ #define SECCOMP_PARM3(_ctx) SECCOMP_REG(_ctx, 5)
+diff --git a/src/3rdparty/chromium/sandbox/linux/seccomp-bpf/syscall.cc b/src/3rdparty/chromium/sandbox/linux/seccomp-bpf/syscall.cc
+index 10fa5fd07..30b7b3851 100644
+--- a/src/3rdparty/chromium/sandbox/linux/seccomp-bpf/syscall.cc
++++ b/src/3rdparty/chromium/sandbox/linux/seccomp-bpf/syscall.cc
+@@ -497,9 +497,9 @@ void Syscall::PutValueInUcontext(intptr_t ret_val, ucontext_t* ctx) {
+   // Same as MIPS, need to invert ret and set error register (cr0.SO)
+   if (ret_val <= -1 && ret_val >= -4095) {
+     ret_val = -ret_val;
+-    ctx->uc_mcontext.regs->ccr |= (1 << 28);
++    ((struct pt_regs *)ctx->uc_mcontext.regs)->ccr |= (1 << 28);
+   } else {
+-    ctx->uc_mcontext.regs->ccr &= ~(1 << 28);
++    ((struct pt_regs *)ctx->uc_mcontext.regs)->ccr &= ~(1 << 28);
+   }
+ #endif
+   SECCOMP_RESULT(ctx) = static_cast<greg_t>(ret_val);
+diff --git a/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.cc b/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.cc
+index 593762bc8..689248755 100644
+--- a/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.cc
++++ b/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.cc
+@@ -20,7 +20,7 @@
+ #include <intrin.h>
+ #endif
+ 
+-#if defined(__powerpc__) || defined(__ppc__)
++#if (defined(__powerpc__) || defined(__ppc__)) && defined(__GLIBC__)
+ #include <sys/platform/ppc.h>
+ #endif
+ 
+@@ -53,7 +53,7 @@ double UnscaledCycleClock::Frequency() {
+   return base_internal::NominalCPUFrequency();
+ }
+ 
+-#elif defined(__powerpc__) || defined(__ppc__)
++#elif (defined(__powerpc__) || defined(__ppc__)) && defined(__GLIBC__)
+ 
+ int64_t UnscaledCycleClock::Now() {
+   return __ppc_get_timebase();
+diff --git a/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.h b/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.h
+index 2d361e962..98242096c 100644
+--- a/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.h
++++ b/src/3rdparty/chromium/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.h
+@@ -46,7 +46,7 @@
+ 
+ // The following platforms have an implementation of a hardware counter.
+ #if defined(__i386__) || defined(__x86_64__) || defined(__aarch64__) || \
+-  defined(__powerpc__) || defined(__ppc__) || \
++  ((defined(__powerpc__) || defined(__ppc__)) && defined(__GLIBC__)) || \
+   defined(_M_IX86) || defined(_M_X64)
+ #define ABSL_HAVE_UNSCALED_CYCLECLOCK_IMPLEMENTATION 1
+ #else
+diff --git a/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.cc b/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.cc
+index 03afec7a5..0264ecf13 100644
+--- a/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.cc
++++ b/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.cc
+@@ -273,6 +273,9 @@ void ThreadInfo::FillCPUContext(RawContextCPU* out) const {
+ 
+ #elif defined(__powerpc64__)
+ 
++#include <asm/elf.h>
++#include <asm/ptrace.h>
++
+ uintptr_t ThreadInfo::GetInstructionPointer() const {
+     return mcontext.gp_regs[PT_NIP];
+ }
+@@ -290,9 +293,9 @@ void ThreadInfo::FillCPUContext(RawContextCPU* out) const {
+     out->ctr = mcontext.gp_regs[PT_CTR];
+     
+     for (int i = 0; i < MD_FLOATINGSAVEAREA_PPC_FPR_COUNT; i++)
+-        out->float_save.fpregs[i] = mcontext.fp_regs[i];
++        out->float_save.fpregs[i] = ((uint64_t *)&mcontext.fp_regs)[i];
+ 
+-    out->float_save.fpscr = mcontext.fp_regs[NFPREG-1];
++    out->float_save.fpscr = ((uint64_t *)&mcontext.fp_regs)[ELF_NFPREG-1];
+ 
+     for (int i = 0; i < MD_VECTORSAVEAREA_PPC_VR_COUNT; i++)
+         out->vector_save.save_vr[i] = \
+diff --git a/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/ucontext_reader.cc b/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/ucontext_reader.cc
+index 7620cf6f7..54e373611 100644
+--- a/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/ucontext_reader.cc
++++ b/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/ucontext_reader.cc
+@@ -257,6 +257,9 @@ void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext_t *uc) {
+ 
+ #elif defined(__powerpc64__)
+ 
++#include <asm/elf.h>
++#include <asm/ptrace.h>
++
+ uintptr_t UContextReader::GetStackPointer(const ucontext_t* uc) {
+     return uc->uc_mcontext.gp_regs[MD_CONTEXT_PPC64_REG_SP];
+ }
+@@ -280,9 +283,9 @@ void UContextReader::FillCPUContext(RawContextCPU* out, const ucontext_t* uc,
+     out->ctr = uc->uc_mcontext.gp_regs[PT_CTR];
+     
+     for (int i = 0; i < MD_FLOATINGSAVEAREA_PPC_FPR_COUNT; i++)
+-        out->float_save.fpregs[i] = uc->uc_mcontext.fp_regs[i];
++        out->float_save.fpregs[i] = ((uint64_t *)&uc->uc_mcontext.fp_regs)[i];
+ 
+-    out->float_save.fpscr = uc->uc_mcontext.fp_regs[NFPREG-1];
++    out->float_save.fpscr = ((uint64_t *)&uc->uc_mcontext.fp_regs)[ELF_NFPREG-1];
+ 
+     for (int i = 0; i < MD_VECTORSAVEAREA_PPC_VR_COUNT; i++)
+         out->vector_save.save_vr[i] =
+diff --git a/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.cc b/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.cc
+index 901cd68fb..561958c44 100644
+--- a/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.cc
++++ b/src/3rdparty/chromium/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.cc
+@@ -105,6 +105,11 @@
+ #define PR_SET_PTRACER 0x59616d61
+ #endif
+ 
++/* musl hack, can't include asm/ptrace.h as that causes conflicts */
++#if defined(__powerpc64__) && !defined(PT_NIP)
++#define PT_NIP 32
++#endif
++
+ namespace google_breakpad {
+ 
+ namespace {
+-- 
+2.26.0
+

@@ -1,0 +1,44 @@
+# HG changeset patch
+# Parent  aecb4600e5da17443b224c79eee178c1d8e155e3
+For FF68, AntiAliasing of XULTexts seem to be broken on big endian (s390x). Text and icons of the sandwich-menu to the
+right of the address bar, as well as plugin-windows appears transparant, which usually means unreadable (white on white).
+
+diff -r aecb4600e5da gfx/skia/skia/include/private/SkNx.h
+--- gfx/skia/skia/include/private/SkNx.h	Tue Aug 20 09:46:55 2019 +0200
++++ gfx/skia/skia/include/private/SkNx.h	Mon Sep 09 10:04:06 2019 +0200
+@@ -238,7 +238,18 @@
+     AI SkNx operator*(const SkNx& y) const { return fVal * y.fVal; }
+     AI SkNx operator/(const SkNx& y) const { return fVal / y.fVal; }
+ 
++    // On Big endian the commented out variant doesn't work,
++    // and honestly, I have no idea why it exists in the first place.
++    // The reason its broken is, I think, that it defaults to the double-variant of ToBits()
++    // which gets a 64-bit integer, and FromBits returns 32-bit,
++    // cutting off the wrong half again.
++    // Overall, I see no reason to have ToBits and FromBits at all (even for floats/doubles).
++    // Still we are only "fixing" this for big endian and leave little endian alone (never touch a running system)
++#ifdef SK_CPU_BENDIAN
++    AI SkNx operator&(const SkNx& y) const { return fVal & y.fVal; }
++#else
+     AI SkNx operator&(const SkNx& y) const { return FromBits(ToBits(fVal) & ToBits(y.fVal)); }
++#endif
+     AI SkNx operator|(const SkNx& y) const { return FromBits(ToBits(fVal) | ToBits(y.fVal)); }
+     AI SkNx operator^(const SkNx& y) const { return FromBits(ToBits(fVal) ^ ToBits(y.fVal)); }
+ 
+diff -r aecb4600e5da gfx/skia/skia/src/opts/SkBlitMask_opts.h
+--- gfx/skia/skia/src/opts/SkBlitMask_opts.h	Tue Aug 20 09:46:55 2019 +0200
++++ gfx/skia/skia/src/opts/SkBlitMask_opts.h	Mon Sep 09 10:04:06 2019 +0200
+@@ -203,7 +203,13 @@
+             //   ~~~>
+             // a = 1*aa + d(1-1*aa) = aa + d(1-aa)
+             // c = 0*aa + d(1-1*aa) =      d(1-aa)
++
++            // For big endian we have to swap the alpha-mask from 0,0,0,255 to 255,0,0,0
++#ifdef SK_CPU_BENDIAN
++            return Sk4px(Sk16b(aa) & Sk16b(255,0,0,0, 255,0,0,0, 255,0,0,0, 255,0,0,0))
++#else
+             return Sk4px(Sk16b(aa) & Sk16b(0,0,0,255, 0,0,0,255, 0,0,0,255, 0,0,0,255))
++#endif
+                  + d.approxMulDiv255(aa.inv());
+         };
+         while (h --> 0) {

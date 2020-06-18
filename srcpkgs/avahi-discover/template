@@ -1,11 +1,11 @@
 # Template file for 'avahi-discover'
 #
-# WARNING: THIS TEMPLATE MUST BE SYNCHRONIZED WITH AVAHI. IT IS SPLITTED TO DROP
-# ADDITIONAL DEPENDENCIES LIKE GTK3 AND PyGI.
+# WARNING: THIS TEMPLATE MUST BE SYNCHRONIZED WITH AVAHI.
+# IT IS SPLIT TO AVOID DEPENDENCY CYCLES WITH GTK3.
 #
 pkgname=avahi-discover
-version=0.7
-revision=8
+version=0.8
+revision=2
 wrksrc="avahi-${version}"
 build_style=gnu-configure
 build_helper="gir"
@@ -13,29 +13,40 @@ configure_args="--disable-qt3 --disable-qt4 --disable-mono --disable-monodoc
  --disable-doxygen-doc --enable-compat-libdns_sd --enable-compat-howl
  --with-xml=expat --with-avahi-user=avahi --with-avahi-group=avahi
  --with-avahi-priv-access-group=network --with-autoipd-user=avahi
- --with-autoipd-group=avahi --with-distro=none --disable-xmltoman
+ --with-autoipd-group=avahi --with-distro=none --enable-xmltoman
  --disable-dbm --without-systemdsystemunitdir
+ --with-dbus-system-address=unix:path=/run/dbus/system_bus_socket
  --disable-static ssp_cv_lib=no --enable-python
  --enable-glib --enable-gobject --enable-gtk --enable-gtk3
  $(vopt_enable gir introspection) $(vopt_enable gir pygobject)"
-short_desc="Service discover user interface for avahi"
-maintainer="Orphaned <orphan@voidlinux.org>"
+short_desc="Service discovery user interface for avahi"
+maintainer="Andrew J. Hesford <ajh@sideband.org>"
 license="LGPL-2.1-or-later"
 homepage="https://github.com/lathiat/avahi"
-distfiles="${homepage}/releases/download/v${version}/avahi-${version}.tar.gz"
-checksum=57a99b5dfe7fdae794e3d1ee7a62973a368e91e414bd0dfa5d84434de5b14804
+### NOTE: Avahi 0.8 release tarball is broken; see avahi template for info
+distfiles="${homepage}/releases/download/v${version}/avahi-${version}.tar.gz
+ https://raw.githubusercontent.com/lathiat/avahi/v${version}/service-type-database/build-db>build-db.txt"
+checksum="060309d7a333d38d951bc27598c677af1796934dbd98e1024e7ad8de798fedda
+ 83edd888ccc464ab032134a45b7ded3bc43cb1dda2cd921ff47b01949d98ed7c"
+skip_extraction="build-db.txt"
 
-hostmakedepends="automake libtool pkg-config intltool
- python-dbus gobject-introspection glib-devel"
-makedepends="dbus-devel libcap-devel libdaemon-devel gdbm-devel
- python-dbus gtk+-devel gtk+3-devel $(vopt_if gir python-gobject-devel)"
-depends="avahi>=${version} avahi-python>=${version}
- $(vopt_if gir 'gtk+3 python-gobject') desktop-file-utils"
-pycompile_module="avahi_discover"
+python_version=3
+
+hostmakedepends="automake libtool pkg-config intltool gettext-devel
+ python3-dbus gobject-introspection glib-devel qt5-host-tools xmltoman"
+makedepends="dbus-devel libcap-devel libdaemon-devel gdbm-devel libevent-devel
+ python3-dbus gtk+-devel gtk+3-devel qt5-devel $(vopt_if gir python3-gobject-devel)"
+depends="avahi>=${version} avahi-python3>=${version}_${revision}
+ $(vopt_if gir 'gtk+3 python3-gobject') desktop-file-utils"
 
 # Package build options
 build_options="gir"
 build_options_default="gir"
+
+post_extract() {
+	# Avahi 0.8 release accidentally left this out of the tarball
+	cp ${XBPS_SRCDISTDIR}/${pkgname}-${version}/build-db.txt service-type-database/build-db
+}
 
 pre_configure() {
 	autoreconf -fi
@@ -67,40 +78,66 @@ do_install() {
 	done
 	mv ${wrksrc}/tmpinstall/usr/include/avahi-g* ${DESTDIR}/usr/include
 	mv ${wrksrc}/tmpinstall/usr/include/avahi-ui* ${DESTDIR}/usr/include
-	mv ${wrksrc}/tmpinstall/usr/lib/python2.7 ${DESTDIR}/usr/lib
+	mv ${wrksrc}/tmpinstall/usr/include/avahi-qt* ${DESTDIR}/usr/include
+	mv ${wrksrc}/tmpinstall/usr/include/avahi-libevent* ${DESTDIR}/usr/include
+	mv ${wrksrc}/tmpinstall/usr/lib/python3.8 ${DESTDIR}/usr/lib
+	# Python files are compatible with both 2.7 and 3.x, make both subpackages
+	vmkdir ${py2_lib}
+	vcopy ${DESTDIR}/${py3_sitelib} ${py2_lib}
 	mv ${wrksrc}/tmpinstall/usr/lib/*avahi-g* ${DESTDIR}/usr/lib
 	mv ${wrksrc}/tmpinstall/usr/lib/*avahi-ui* ${DESTDIR}/usr/lib
+	mv ${wrksrc}/tmpinstall/usr/lib/*avahi-qt* ${DESTDIR}/usr/lib
+	mv ${wrksrc}/tmpinstall/usr/lib/*avahi-libevent* ${DESTDIR}/usr/lib
 	mv ${wrksrc}/tmpinstall/usr/lib/pkgconfig/avahi-g* ${DESTDIR}/usr/lib/pkgconfig
 	mv ${wrksrc}/tmpinstall/usr/lib/pkgconfig/avahi-ui* ${DESTDIR}/usr/lib/pkgconfig
+	mv ${wrksrc}/tmpinstall/usr/lib/pkgconfig/avahi-qt* ${DESTDIR}/usr/lib/pkgconfig
+	mv ${wrksrc}/tmpinstall/usr/lib/pkgconfig/avahi-libevent* ${DESTDIR}/usr/lib/pkgconfig
 	mv ${wrksrc}/tmpinstall/usr/share/avahi/interfaces/*.ui ${DESTDIR}/usr/share/avahi/interfaces
+
 	if [ "$build_option_gir" ]; then
 		mv ${wrksrc}/tmpinstall/usr/lib/girepository-1.0 ${DESTDIR}/usr/lib
 		mv ${wrksrc}/tmpinstall/usr/share/gir-1.0 ${DESTDIR}/usr/share
 	fi
 }
 
-avahi-python-utils_package() {
-	depends="avahi-python>=$version"
+avahi-python3-utils_package() {
+	depends="avahi-python3>=${version}_${revision}"
 	short_desc="Avahi python utilities"
 	archs=noarch
+	python_version=3
 	pkg_install() {
 		vmove usr/bin/avahi-bookmarks
 		vmove "usr/share/man/man1/avahi-bookmarks*"
 	}
 }
 
+avahi-python-utils_package() {
+	short_desc="Avahi python utilities - transitional dummy pkg"
+	depends="avahi-python3-utils>=${version}_${revision}"
+	archs=noarch
+	build_style=meta
+}
+
 avahi-python_package() {
 	depends="python-dbus"
 	short_desc="Python utility package for Avahi"
 	archs=noarch
-	pycompile_module="avahi"
 	pkg_install() {
-		vmove usr/lib/python2.7/site-packages/avahi
+		vmove ${py2_sitelib}/avahi
+	}
+}
+
+avahi-python3_package() {
+	depends="python3-dbus"
+	short_desc="Python3 utility package for Avahi"
+	archs=noarch
+	pkg_install() {
+		vmove ${py3_sitelib}/avahi
 	}
 }
 
 avahi-glib-libs-devel_package() {
-	depends="avahi-libs-devel>=${version}_${revision} avahi-glib-libs>=${version}_${revision}"
+	depends="avahi-libs-devel>=${version} avahi-glib-libs>=${version}_${revision}"
 	short_desc="Avahi glib libraries - development files"
 	pkg_install() {
 		vmove "usr/include/avahi-g*"
@@ -125,8 +162,11 @@ avahi-glib-libs_package() {
 }
 
 avahi-ui-libs-devel_package() {
-	depends="gtk+-devel gtk+3-devel avahi-libs-devel>=${version}_${revision}
-		avahi-ui-libs>=${version}_${revision} avahi-ui-libs-gtk3>=${version}_${revision}"
+	depends="
+	 gtk+-devel gtk+3-devel avahi-libs-devel>=${version}
+	 avahi-ui-libs>=${version}_${revision}
+	 avahi-ui-libs-gtk3>=${version}_${revision}
+	"
 	short_desc="Avahi UI libraries - development files"
 	pkg_install() {
 		vmove usr/include/avahi-ui/avahi-ui.h
@@ -165,5 +205,42 @@ avahi-ui-utils_package() {
 		vmove usr/share/man/man1/bvnc.1
 		vmove usr/bin/bvnc
 		vmove usr/bin/bshell
+	}
+}
+
+avahi-qt5-libs_package() {
+	short_desc="Avahi Qt5 shared libraries"
+	pkg_install() {
+		vmove "usr/lib/libavahi-qt5.so.*"
+	}
+}
+
+avahi-qt5-libs-devel_package() {
+	short_desc="Avahi Qt5 shared libraries - development files"
+	depends="
+	 qt5-devel avahi-libs-devel>=${version}
+	 avahi-qt5-libs>=${version}_${revision}
+	"
+	pkg_install() {
+		vmove usr/lib/pkgconfig/avahi-qt5.pc
+		vmove usr/lib/libavahi-qt5.so
+		vmove usr/include/avahi-qt5
+	}
+}
+
+avahi-libevent-libs_package() {
+	short_desc="Avahi libevent integration libraries"
+	pkg_install() {
+		vmove "usr/lib/libavahi-libevent.so.*"
+	}
+}
+
+avahi-libevent-libs-devel_package() {
+	short_desc="Avahi libevent integration libraries - development files"
+	depends="avahi-libs-devel>=${version} avahi-libevent-libs>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/libavahi-libevent.so
+		vmove "usr/include/avahi-libevent*"
+		vmove "usr/lib/pkgconfig/avahi-libevent*"
 	}
 }

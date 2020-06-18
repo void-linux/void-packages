@@ -1,60 +1,99 @@
 # Template file for 'john'
 pkgname=john
-version=1.8.0
-revision=13
+version=1.9.0
+revision=2
 _jumbover=1
 wrksrc="${pkgname}-${version}-jumbo-${_jumbover}"
 build_wrksrc="src"
 build_style=gnu-configure
-configure_args="--disable-native-tests --disable-native-macro"
-hostmakedepends="libgomp-devel pkg-config"
-makedepends="zlib-devel libgomp-devel libressl-devel libpcap-devel gmp-devel"
-conf_files="/etc/john/john.conf"
+configure_args="--with-systemwide $(vopt_enable simd)"
+makedepends="libressl-devel gmp-devel libgomp-devel libpcap-devel bzip2-devel zlib-devel"
 short_desc="John the Ripper password cracker (jumbo-${_jumbover} patch included)"
-maintainer="Orphaned <orphan@voidlinux.org>"
-license="GPL-2"
-homepage="http://www.openwall.com/john/"
-distfiles="$homepage/j/$pkgname-${version}-jumbo-${_jumbover}.tar.xz"
-checksum=bac93d025995a051f055adbd7ce2f1975676cac6c74a6c7a3ee4cfdd9c160923
+maintainer="Piraty <piraty1@inbox.ru>"
+license="GPL-2.0-or-later with OpenSSL-exception"
+homepage="https://www.openwall.com/john/"
+distfiles="$homepage/k/$pkgname-${version}-jumbo-${_jumbover}.tar.xz"
+checksum=f5d123f82983c53d8cc598e174394b074be7a77756f5fb5ed8515918c81e7f3b
+python_version=2 #unverified
+
+build_options="simd"
 
 pre_configure() {
-	rm rawSHA0_fmt_plug.c # SHA no longer available in libressl
-	sed -i 's|des_|DES_|g' KRB4*.c
-	sed -i -e 's|^$CPP|$CC -E|' configure
-	export AS= LD=
-	export OPENSSL_LIBS="-lssl -lcrypto"
-	CFLAGS+=" -DJOHN_SYSTEMWIDE=1"
+	unset CPP AS LD
+}
+
+# Tests cannot be run because include statements for rules in john.conf search
+# in /usr/share/john, even if $JOHN is replaced and points to
+# `/builddir/john-.../run`.
+do_check() {
+	:
 }
 
 do_install() {
-	cd ..
+	# doc and license
+	cd ../
+	cp -r doc doc.tmp ; cd doc.tmp
+	for f in *LICENSE* COPYING; do
+		vlicense $f
+		rm $f
+	done
+	rm INSTALL*
+	rm -r extras
+	for f in * ; do
+		vdoc $f
+	done
+	cd .. ; rm -r doc.tmp
 
-	# config file
-	sed -i 's|$JOHN|/usr/share/john|g' run/john.conf
-	install -Dm644 run/john.conf ${DESTDIR}/etc/john/john.conf
-	# docs
-	vmkdir usr/share/doc/john
-	vmkdir usr/share/licenses/john
-	install -m644 doc/* ${DESTDIR}/usr/share/doc/john
+	cd run
+
+	# binaries
+	vbin john
+	for f in SIPdump bitlocker2john calc_stat cprepair dmg2john eapmd5tojohn \
+		genmkvpwd hccap2john keepass2john mkvcalcproba putty2john racf2john \
+		raw2dyna tgtsnarf uaf2john vncpcap2john wpapcap2john ; do
+			vbin $f
+	done
+
+	# scripts
+	for ext in lua pl rb py; do
+		for f in *.$ext ; do
+			vbin $f ${f/.$ext}
+		done
+	done
+	vbin mailer john-mailer
+
+	# data
 	vmkdir usr/share/john
-	mv ${DESTDIR}/usr/share/doc/$pkgname/LICENSE ${DESTDIR}/usr/share/licenses/$pkgname
-	# install password list and charset files
-	install -m644 run/*.chr run/*.lst ${DESTDIR}/usr/share/john
-	install -m644 run/*.conf ${DESTDIR}/usr/share/john
-	# install binaries
-	vbin run/john
-	vbin run/mailer john-mailer
-	vbin run/vncpcap2john
-	vbin run/luks2john
+	vcopy john.conf usr/share/john
+	vcopy rules usr/share/john
+	vcopy "*.chr" usr/share/john
+	vcopy "*.lst" usr/share/john
+	vcopy "*.conf" usr/share/john
+	vcopy "*.js" usr/share/john
 
-	cd ${DESTDIR}/usr/bin
+	vmkdir usr/share/applications
+	vcopy "../src/packaging/*.desktop" usr/share/applications/john.desktop
+
+	vmkdir usr/share/bash-completion/completions
+	vinstall john.bash_completion 644 usr/share/bash-completion/completions/ john
+	vmkdir usr/share/zsh/site-functions
+	vinstall john.zsh_completion 644 usr/share/zsh/site-functions/ _john
+}
+
+post_install() {
+	cd $DESTDIR
+	vsed -i ${DESTDIR}/usr/share/john/john.conf \
+		-e 's|$JOHN|/usr/share/john|g'
+
+	# fix some perms
+	chmod 644 $(find ${DESTDIR}/usr/share/ -type f)
+
+	cd usr/bin
 	ln -s john unafs
 	ln -s john unique
 	ln -s john unshadow
 	ln -s john undrop
 	ln -s john gpg2john
-	ln -s john pdf2john
 	ln -s john rar2john
-	ln -s john ssh2john
 	ln -s john zip2john
 }

@@ -12,6 +12,28 @@ for a general overview of how to contribute and the
 [Manual](https://github.com/void-linux/void-packages/blob/master/Manual.md)
 for details of how to create source packages.
 
+### Table of Contents
+
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [chroot methods](#chroot-methods)
+- [Install the bootstrap packages](#install-bootstrap)
+- [Configuration](#configuration)
+- [Directory hierarchy](#directory-hierarchy)
+- [Building packages](#building-packages)
+- [Package build options](#build-options)
+- [Sharing and signing your local repositories](#sharing-and-signing)
+- [Rebuilding and overwriting existing local packages](#rebuilding)
+- [Enabling distcc for distributed compilation](#distcc)
+- [Distfiles mirrors](#distfiles-mirrors)
+- [Cross compiling packages for a target architecture](#cross-compiling)
+- [Using xbps-src in a foreign Linux distribution](#foreign)
+- [Remaking the masterdir](#remaking-masterdir)
+- [Keeping your masterdir uptodate](#updating-masterdir)
+- [Building 32bit packages on x86_64](#building-32bit)
+- [Building packages natively for the musl C library](#building-for-musl)
+- [Building void base-system from scratch](#building-base-system)
+
 ### Requirements
 
 - GNU bash
@@ -36,6 +58,44 @@ multiple utilities to accomplish this task:
 > NOTE: `xbps-src` does not allow building as root anymore. Use one of the chroot
 methods shown above.
 
+<a name="quick-start"></a>
+### Quick start
+
+Clone the `void-packages` git repository and install the bootstrap packages:
+
+```
+$ git clone git://github.com/void-linux/void-packages.git
+$ cd void-packages
+$ ./xbps-src binary-bootstrap
+```
+
+Build a package by specifying the `pkg` target and the package name:
+
+```
+$ ./xbps-src pkg <package_name>
+```
+
+Use `./xbps-src -h` to list all available targets and options.
+
+To build packages marked as 'restricted', modify `etc/conf`:
+
+```
+$ echo XBPS_ALLOW_RESTRICTED=yes >> etc/conf
+```
+
+Once built, the package will be available in `hostdir/binpkgs` or an appropriate subdirectory (e.g. `hostdir/binpkgs/nonfree`). To install the package:
+
+```
+# xbps-install --repository hostdir/binpkgs <package_name>
+```
+
+Alternatively, packages can be installed with the `xi` utility, from the `xtools` package. `xi` takes the repository of the current working directory into account.
+
+```
+# xi <package_name>
+```
+
+<a name="chroot-methods"></a>
 ### chroot methods
 
 #### xbps-uunshare(1) (default)
@@ -89,39 +149,35 @@ To enable it:
     $ cd void-packages
     $ echo XBPS_CHROOT_CMD=proot >> etc/conf
 
-### Quick setup in Void
-
-Clone the `void-packages` git repository, install the bootstrap packages:
-
-```
-$ git clone git://github.com/void-linux/void-packages.git
-$ cd void-packages
-$ ./xbps-src binary-bootstrap
-```
-
-Type:
-
-     $ ./xbps-src -h
-
-to see all available targets/options and start building any available package
-in the `srcpkgs` directory.
-
+<a name="install-bootstrap"></a>
 ### Install the bootstrap packages
 
-The `bootstrap` packages are a set of packages required to build any available source package in a container. There are two methods to install the `bootstrap`:
+There is a set of packages that makes up the initial build container, called the `bootstrap`.
+These packages are installed into the `masterdir` in order to create the container.
 
- - `bootstrap`: all bootstrap packages will be built from scratch; additional utilities are required in the
-host system to allow building the `base-chroot` package: binutils, gcc, perl, texinfo, etc.
+The primary and recommended way to set up this container is using the `binary-bootstrap`
+command. This will use pre-existing binary packages, either from remote `xbps` repositories
+or from your local repository.
 
- - `binary-bootstrap`: the bootstrap binary packages are downloaded via XBPS repositories.
+There is also the `bootstrap` command, which will build all necessary `bootstrap` packages from
+scratch. This is usually not recommended, since those packages are built using your host system's
+toolchain and are neither fully featured nor reproducible (your host system may influence the
+build) and thus should only be used as a stage 0 for bootstrapping new Void systems.
 
-If you don't want to waste your time building everything from scratch probably it's better to use `binary-bootstrap`.
+If you still choose to use `bootstrap`, use the resulting stage 0 container to rebuild all
+`bootstrap` packages again, then use `binary-bootstrap` (stage 1) and rebuild the `bootstrap`
+packages once more (to gain stage 2, and then use `binary-bootstrap` again). Once you've done
+that, you will have a `bootstrap` set equivalent to using `binary-bootstrap` in the first place.
+
+Also keep in mind that a full source `bootstrap` is time consuming and will require having an
+assortment of utilities installed in your host system, such as `binutils`, `gcc`, `perl`,
+`texinfo` and others.
 
 ### Configuration
 
 The `etc/defaults.conf` file contains the possible settings that can be overridden
 through the `etc/conf` configuration file for the `xbps-src` utility; if that file
-does not exist, will try to read configuration settings from `~/.xbps-src.conf`.
+does not exist, will try to read configuration settings from `$XDG_CONFIG_HOME/xbps-src.conf`, `~/.config/xbps-src.conf`, `~/.xbps-src.conf`.
 
 If you want to customize default `CFLAGS`, `CXXFLAGS` and `LDFLAGS`, don't override
 those defined in `etc/defaults.conf`, set them on `etc/conf` instead i.e:
@@ -141,6 +197,7 @@ used as dependencies in the source packages tree.
 If you want to customize those replacements, copy `etc/defaults.virtual` to `etc/virtual`
 and edit it accordingly to your needs.
 
+<a name="directory-hierarchy"></a>
 ### Directory hierarchy
 
 The following directory hierarchy is used with a default configuration file:
@@ -177,6 +234,7 @@ The description of these directories is as follows:
  - `hostdir/sources`: to store package sources.
  - `hostdir/binpkgs`: local repository to store generated binary packages.
 
+<a name="building-packages"></a>
 ### Building packages
 
 The simplest form of building package is accomplished by running the `pkg` target in `xbps-src`:
@@ -187,7 +245,7 @@ $ ./xbps-src pkg <pkgname>
 ```
 
 When the package and its required dependencies are built, the binary packages will be created
-and registered in the default local repository at `hostdir/binpkgs`; the path to this local repository can be added to 
+and registered in the default local repository at `hostdir/binpkgs`; the path to this local repository can be added to
 any xbps configuration file (see xbps.d(5)) or by explicitly appending them via cmdline, i.e:
 
     $ xbps-install --repository=hostdir/binpkgs ...
@@ -203,6 +261,7 @@ It is possible to avoid using remote repositories completely by using the `-N` f
 
 > The default local repository may contain multiple *sub-repositories*: `debug`, `multilib`, etc.
 
+<a name="build-options"></a>
 ### Package build options
 
 The supported build options for a source package can be shown with `xbps-src show-options`:
@@ -242,6 +301,7 @@ i.e `XBPS_PKG_OPTIONS_xorg_server=opt`.
 The list of supported package build options and its description is defined in the
 `common/options.description` file or in the `template` file.
 
+<a name="sharing-and-signing"></a>
 ### Sharing and signing your local repositories
 
 To share a local repository remotely it's mandatory to sign it and the binary packages
@@ -279,6 +339,7 @@ Each time a binary package is created, a package signature must be created with 
 
 > It is not possible to sign a repository with multiple RSA keys.
 
+<a name="rebuilding"></a>
 ### Rebuilding and overwriting existing local packages
 
 If for whatever reason a package has been built and it is available in your local repository
@@ -294,6 +355,7 @@ Reinstalling this package in your target `rootdir` can be easily done too:
 > Please note that the `package expression` must be properly defined to explicitly pick up
 the package from the desired repository.
 
+<a name="distcc"></a>
 ### Enabling distcc for distributed compilation
 
 Setup the slaves (machines that will compile the code):
@@ -324,6 +386,7 @@ The slave 192.168.2.101 has a CPU with 8 cores and the /9 for the number of jobs
 The slave 192.168.2.102 is set to run at most 2 compile jobs to keep its load low, even if its CPU has 4 cores.
 The XBPS_MAKEJOBS setting is increased to 16 to account for the possible parallelism (2 + 9 + 2 + some slack).
 
+<a name="distfiles-mirrors"></a>
 ### Distfiles mirror(s)
 
 In etc/conf you may optionally define a mirror or a list of mirrors to search for distfiles.
@@ -333,7 +396,7 @@ In etc/conf you may optionally define a mirror or a list of mirrors to search fo
 If more than one mirror is to be searched, you can either specify multiple URLs separated
 with blanks, or add to the variable like this
 
-    $ echo 'XBPS_DISTFILES_MIRROR+=" http://repo.voidlinux.de/distfiles"' >> etc/conf
+    $ echo 'XBPS_DISTFILES_MIRROR+=" https://sources.voidlinux.org/"' >> etc/conf
 
 Make sure to put the blank after the first double quote in this case.
 
@@ -348,6 +411,7 @@ using the `file://` prefix or simply an absolute path on your build host (e.g. /
 Mirror locations specified this way are bind mounted inside the chroot environment
 under $XBPS_MASTERDIR and searched for distfiles just the same as remote locations.
 
+<a name="cross-compiling"></a>
 ### Cross compiling packages for a target architecture
 
 Currently `xbps-src` can cross build packages for some target architectures with a cross compiler.
@@ -359,6 +423,7 @@ If a source package has been adapted to be **cross buildable** `xbps-src` will a
 
 If the build for whatever reason fails, might be a new build issue or simply because it hasn't been adapted to be **cross compiled**.
 
+<a name="foreign"></a>
 ### Using xbps-src in a foreign Linux distribution
 
 xbps-src can be used in any recent Linux distribution matching the CPU architecture.
@@ -386,7 +451,7 @@ and `xbps-src` should be fully functional; just start the `bootstrap` process, i
 
 The default masterdir is created in the current working directory, i.e `void-packages/masterdir`.
 
-
+<a name="remaking-masterdir"></a>
 ### Remaking the masterdir
 
 If for some reason you must update xbps-src and the `bootstrap-update` target is not enough, it's possible to recreate a masterdir with two simple commands (please note that `zap` keeps your `ccache/distcc/host` directories intact):
@@ -394,12 +459,14 @@ If for some reason you must update xbps-src and the `bootstrap-update` target is
     $ ./xbps-src zap
     $ ./xbps-src binary-bootstrap
 
+<a name="updating-masterdir"></a>
 ### Keeping your masterdir uptodate
 
 Sometimes the bootstrap packages must be updated to the latest available version in repositories, this is accomplished with the `bootstrap-update` target:
 
     $ ./xbps-src bootstrap-update
 
+<a name="building-32bit"></a>
 ### Building 32bit packages on x86_64
 
 Two ways are available to build 32bit packages on x86\_64:
@@ -416,6 +483,7 @@ The second mode (native) needs a new x86 `masterdir`:
     $ ./xbps-src -m masterdir-x86 binary-bootstrap i686
     $ ./xbps-src -m masterdir-x86 ...
 
+<a name="building-for-musl"></a>
 ### Building packages natively for the musl C library
 
 A native build environment is required to be able to cross compile the bootstrap packages for the musl C library; this is accomplished by installing them via `binary-bootstrap`:
@@ -437,6 +505,7 @@ Your new masterdir is now ready to build packages natively for the musl C librar
 
 To see if the musl C dynamic linker is working as expected.
 
+<a name="building-base-system"></a>
 ### Building void base-system from scratch
 
 To rebuild all packages in `base-system` for your native architecture:

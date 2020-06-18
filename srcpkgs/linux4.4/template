@@ -1,14 +1,15 @@
 # Template file for 'linux4.4'
 pkgname=linux4.4
-version=4.4.215
-revision=1
+version=4.4.218
+revision=2
 wrksrc="linux-${version}"
+short_desc="Linux kernel and modules (${version%.*} series)"
 maintainer="Orphaned <orphan@voidlinux.org>"
-homepage="https://www.kernel.org"
 license="GPL-2.0-only"
-short_desc="The Linux kernel and modules (${version%.*} series)"
+homepage="https://www.kernel.org"
 distfiles="${KERNEL_SITE}/kernel/v4.x/linux-${version}.tar.xz"
-checksum=28bcd3d4201da9feefdf3bcd65c516dd674acbbf45681ce3c7d784c53b33fe03
+checksum=ea68cb8e9fa255bb1d0402c5aa8f26984f9b1c8607ff3bed5d3284109167f063
+python_version=2 #unverified
 
 nocross=yes
 nodebug=yes
@@ -17,8 +18,12 @@ noverifyrdeps=yes
 noshlibprovides=yes
 preserve=yes
 
-archs="i686* x86_64* armv7l* aarch64*"
+archs="i686* x86_64* ppc*"
 hostmakedepends="bc perl kmod uboot-mkimage libressl-devel"
+
+case "$XBPS_TARGET_MACHINE" in
+	ppc64le*) broken="No ppc64le support";;
+esac
 
 triggers="kernel-hooks"
 _kernver="${version}_${revision}"
@@ -26,6 +31,7 @@ _kernver="${version}_${revision}"
 # These files could be modified when an external module is built.
 mutable_files="
  /usr/lib/modules/${_kernver}/modules.builtin.bin
+ /usr/lib/modules/${_kernver}/modules.builtin.alias.bin
  /usr/lib/modules/${_kernver}/modules.softdep
  /usr/lib/modules/${_kernver}/modules.dep
  /usr/lib/modules/${_kernver}/modules.dep.bin
@@ -39,7 +45,7 @@ do_configure() {
 	# If there's a file called <arch>-dotconfig, use it to
 	# configure the kernel; otherwise use arch defaults and all stuff
 	# as modules (defconfig+allmodconfig).
-	local arch _args
+	local arch subarch _args
 
 	case "$XBPS_TARGET_MACHINE" in
 		i686*) arch=i386;;
@@ -50,19 +56,25 @@ do_configure() {
 			patch -Np1 -i patch-${version}-armv7-x16.diff
 			;;
 		aarch64*) arch=arm64;;
+		ppc64*) arch=powerpc; subarch=ppc64;;
+		ppc*) arch=powerpc;;
 	esac
 
 	if [ "$CROSS_BUILD" ]; then
 		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
 	fi
 
-	if [ -f ${FILESDIR}/${arch}-dotconfig-custom ]; then
+	if [ -f ${FILESDIR}/${subarch:-$arch}-dotconfig-custom ]; then
 		msg_normal "Detected a custom .config file for your arch, using it.\n"
-		cp -f ${FILESDIR}/${arch}-dotconfig-custom .config
+		cp -f ${FILESDIR}/${subarch:-$arch}-dotconfig-custom .config
 		make ${makejobs} ARCH=$arch ${_args} oldconfig
-	elif [ -f ${FILESDIR}/${arch}-dotconfig ]; then
+	elif [ -f ${FILESDIR}/${subarch:-$arch}-dotconfig ]; then
 		msg_normal "Detected a .config file for your arch, using it.\n"
-		cp -f ${FILESDIR}/${arch}-dotconfig .config
+		cp -f ${FILESDIR}/${subarch:-$arch}-dotconfig .config
+		make ${makejobs} ARCH=$arch ${_args} oldconfig
+	elif [ -f ${FILESDIR}/${XBPS_TARGET_MACHINE%%-musl}-dotconfig ]; then
+		msg_normal "Detected a .config file for your cpu family, using it.\n"
+		cp -f ${FILESDIR}/${XBPS_TARGET_MACHINE%%-musl}-dotconfig .config
 		make ${makejobs} ARCH=$arch ${_args} oldconfig
 	else
 		msg_normal "Defaulting to 'defconfig and allmodconfig'.\n"
@@ -80,6 +92,7 @@ do_build() {
 		x86_64*) _args="bzImage modules"; arch=x86_64;;
 		armv7*) _args="zImage modules dtbs"; arch=arm;;
 		aarch64*) _args="Image modules dtbs"; arch=arm64;;
+		ppc*) _args="zImage modules"; arch=powerpc;;
 	esac
 	if [ "$CROSS_BUILD" ]; then
 		_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
@@ -97,6 +110,7 @@ do_install() {
 		x86_64*) arch=x86; subarch=x86_64;;
 		armv7*) arch=arm;;
 		aarch64*) arch=arm64;;
+		ppc*) arch=powerpc;;
 	esac
 
 	# Run depmod after compressing modules.
@@ -123,6 +137,12 @@ do_install() {
 			vinstall arch/arm64/boot/Image 644 boot vmlinux-${_kernver}
 			# vmkdir boot/dtbs
 			# cp arch/arm64/boot/dts/*.dtb ${DESTDIR}/boot/dtbs
+			;;
+		powerpc)
+			# zImage on powerpc is useless as it won't load initramfs
+			# raw vmlinux is huge, and this is nostrip, so do it manually
+			vinstall vmlinux 644 boot vmlinux-${_kernver}
+			/usr/bin/$STRIP ${DESTDIR}/boot/vmlinux-${_kernver}
 			;;
 	esac
 
@@ -237,11 +257,12 @@ do_install() {
 
 	# Remove unneeded architectures
 	case "$arch" in
-		i386|x86_64) _args="arm*";;
-		arm|arm64) _args="x86*";;
+		i386|x86_64) _args="arm* p*";;
+		arm|arm64) _args="x86* p*";;
+		powerpc) _args="arm* x86* parisc";;
 	esac
 	for arch in alpha avr32 blackfin cris frv h8300 \
-		ia64 m* p* s* um v850 xtensa ${_args}; do
+		ia64 m* s* um v850 xtensa ${_args}; do
 		rm -rf ${hdrdest}/arch/${arch}
 	done
 

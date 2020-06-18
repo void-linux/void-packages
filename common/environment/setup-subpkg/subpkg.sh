@@ -27,7 +27,7 @@ unset -v font_dirs
 unset -v xml_entries sgml_entries xml_catalogs sgml_catalogs
 
 # xbps-triggers: pycompile
-unset -v pycompile_version pycompile_dirs pycompile_module
+unset -v pycompile_dirs pycompile_module
 
 # xbps-triggers: dkms
 unset -v dkms_modules

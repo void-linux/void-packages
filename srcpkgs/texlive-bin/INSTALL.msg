@@ -25,7 +25,7 @@
 
   To update you TeXLive installation use only the program 
 
-  /opt/texlive/${VERSION}/<arch>/tlmgr.
+  /opt/texlive/${VERSION}/bin/<arch>/tlmgr.
 
   where <arch> is:
     - X86_64-linux  ==> x86_64 architecture

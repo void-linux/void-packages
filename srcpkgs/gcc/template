@@ -1,14 +1,14 @@
 # Template file for 'gcc'
 _majorver=9
-_minorver=${_majorver}.2
-_gmp_version=6.1.2
+_minorver=${_majorver}.3
+_gmp_version=6.2.0
 _mpfr_version=4.0.2
 _mpc_version=1.1.0
 _isl_version=0.21
 
 pkgname=gcc
 version=${_minorver}.0
-revision=3
+revision=6
 short_desc="GNU Compiler Collection"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 homepage="http://gcc.gnu.org"
@@ -20,8 +20,8 @@ distfiles="
  https://www.mpfr.org/mpfr-${_mpfr_version}/mpfr-${_mpfr_version}.tar.xz
  ${GNU_SITE}/mpc/mpc-${_mpc_version}.tar.gz
  http://isl.gforge.inria.fr/isl-${_isl_version}.tar.bz2"
-checksum="ea6ef08f121239da5695f76c9b33637a118dcf63e24164422231917fa61fb206
- 87b565e89a9a684fe4ebeeddb8399dce2599f9c9049854ca8c0dfbdea0e21912
+checksum="71e197867611f6054aa1119b13a0c0abac12834765fe2d81f35ac57f84f742d1
+ 258e6cd51b3fbdfc185c716d55f82c08aff57df0c6fbd143cf6ed561267a1526
  1d3be708604eae0e42d578ba93b390c2a145f17743a744d8f3f8c2ad5855a38a
  6985c538143c1208dcb1ac42cedad6ff52e267b47e5f970183a3e75125b43c2e
  d18ca11f8ad1a39ab6d03d3dcb3365ab416720fcb65b42d69f34f51bf0a0e859"
@@ -34,12 +34,15 @@ replaces="gcc-gcj<7.2.0 gcc-gcj-jdk-compat<7.2.0 libmpx>=0 libmpx-devel>=0"
 _have_gccgo=yes
 
 # MIPS does not have libucontext yet
+# no support for ppcle in gccgo (missing GOARCH and stuff)
 case "$XBPS_TARGET_MACHINE" in
-	mips*-musl) _have_gccgo=no ;;
+	mips*-musl|ppcle*) _have_gccgo=no ;;
 esac
 
 if [ "$CHROOT_READY" ]; then
 	hostmakedepends="tar texinfo perl flex"
+else
+	_have_gccgo=no
 fi
 makedepends="zlib-devel"
 depends="binutils libgcc-devel-${version}_${revision}
@@ -74,12 +77,13 @@ fi
 if [ "$CHROOT_READY" ]; then
 	subpackages+=" gcc-fortran libgfortran-devel libgfortran"
 	subpackages+=" gcc-objc gcc-objc++ libobjc-devel libobjc"
-	if [ "$_have_gccgo" = "yes" ]; then
-		subpackages+=" gcc-go gcc-go-tools libgo-devel libgo"
-		# we need this for gcc-go on musl
-		if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
-			makedepends+=" libucontext-devel"
-		fi
+fi
+
+if [ "$_have_gccgo" = "yes" ]; then
+	subpackages+=" gcc-go gcc-go-tools libgo-devel libgo"
+	# we need this for gcc-go on musl
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		makedepends+=" libucontext-devel"
 	fi
 fi
 
@@ -103,6 +107,8 @@ case "$XBPS_TARGET_MACHINE" in
 	aarch64-musl) _triplet="aarch64-linux-musl";;
 	ppc) _triplet="powerpc-linux-gnu";;
 	ppc-musl) _triplet="powerpc-linux-musl";;
+	ppcle) _triplet="powerpcle-linux-gnu";;
+	ppcle-musl) _triplet="powerpcle-linux-musl";;
 	ppc64le) _triplet="powerpc64le-linux-gnu";;
 	ppc64le-musl) _triplet="powerpc64le-linux-musl";;
 	ppc64) _triplet="powerpc64-linux-gnu";;
@@ -135,7 +141,7 @@ esac
 if [ "$CROSS_BUILD" ]; then
 	hostmakedepends+=" cross-${_triplet}"
 	if [ "$build_option_ada" ]; then
-		hostmakedepends+=" gcc-ada libada-devel"
+		hostmakedepends+=" gcc-ada"
 	fi
 fi
 
@@ -168,6 +174,7 @@ pre_configure() {
 	case "$XBPS_TARGET_MACHINE" in
 		*-musl)
 			patch -p1 -i ${FILESDIR}/libgnarl-musl.patch
+			patch -p1 -i ${FILESDIR}/libssp-musl.patch
 			patch -p0 -i ${FILESDIR}/gccgo-musl.patch
 			;;
 	esac
@@ -190,6 +197,8 @@ do_configure() {
 			;;
 		ppc) _args+=" --target=powerpc-linux-gnu --enable-secureplt";;
 		ppc-musl) _args+=" --target=powerpc-linux-musl --enable-secureplt --disable-decimal-float";;
+		ppcle) _args+=" --target=powerpcle-linux-gnu --enable-secureplt";;
+		ppcle-musl) _args+=" --target=powerpcle-linux-musl --enable-secureplt --disable-decimal-float";;
 		ppc64le*) # use lib not lib64 by default
 			_args+=" --target=${_triplet} --with-abi=elfv2 --enable-secureplt --enable-targets=powerpcle-linux"
 			sed -i 's/lib64/lib/' gcc/config/rs6000/linux64.h
@@ -239,18 +248,15 @@ do_configure() {
 		_args+=" --enable-fast-character"
 	fi
 
-	if [ "$_have_gccgo" = "yes" -a -n "$CHROOT_READY" ]; then
+	if [ "$_have_gccgo" = "yes" ]; then
 		_langs+=",go"
 	fi
 
-	case "$XBPS_TARGET_MACHINE" in
-		*-musl) _args+=" --disable-libsanitizer";;
-	esac
-	case "$XBPS_TARGET_MACHINE" in
-		*-musl) _args+=" --disable-symvers"
-			_args+=" libat_cv_have_ifunc=no"
-			;;
-	esac
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		_args+=" --disable-libsanitizer"
+		_args+=" --disable-symvers"
+		_args+=" libat_cv_have_ifunc=no"
+	fi
 
 	case "$XBPS_TARGET_MACHINE" in
 		ppc*) _args+=" --disable-vtable-verify";;
@@ -315,7 +321,6 @@ do_configure() {
 		CONFIG_SHELL=/bin/bash \
 			${wrksrc}/configure ${_args}
 	fi
-
 }
 do_build() {
 	if [ -z "$CHROOT_READY" ]; then
@@ -368,6 +373,11 @@ do_install() {
 	# rpcgen wants /lib/cpp, make a symlink
 	ln -sfr ${DESTDIR}/usr/bin/cpp ${DESTDIR}/usr/lib/cpp
 
+	# lto plugin symlink
+	vmkdir usr/lib/bfd-plugins
+	ln -sfr ${DESTDIR}/usr/lib/gcc/${_triplet}/${version}/liblto_plugin.so \
+		${DESTDIR}/usr/lib/bfd-plugins
+
 	if [ -e ${DESTDIR}/usr/lib64 ]; then
 		rm -f ${DESTDIR}/usr/lib64
 	fi
@@ -398,7 +408,7 @@ do_install() {
 
 gcc-ada_package() {
 	lib32disabled=yes
-	depends="gcc>=${_minorver} libada>=${_minorver}"
+	depends="gcc>=${_minorver} libada-devel>=${_minorver}"
 	short_desc+=" - Ada compiler frontend"
 	pkg_install() {
 		for f in gnat{,bind,chop,clean,find,kr,link,ls,make,name,prep,xref}; do
@@ -411,6 +421,7 @@ gcc-go_package() {
 	lib32disabled=yes
 	depends="gcc>=${_minorver} libgo-devel>=${_minorver}"
 	short_desc+=" - Go compiler frontend"
+	nostrip_files="buildid cgo test2json vet"
 	pkg_install() {
 		for f in gccgo ${_triplet}-gccgo; do
 			vmove usr/bin/${f}
@@ -430,6 +441,7 @@ gcc-go-tools_package() {
 	depends="gcc-go>=${_minorver}"
 	short_desc+=" - Go tools"
 	conflicts="go>=0"
+	nostrip=yes
 	pkg_install() {
 		vmove usr/bin/go
 		vmove usr/bin/gofmt
@@ -526,6 +538,7 @@ libgfortran_package() {
 libgo-devel_package() {
 	depends="libgo>=${_minorver}"
 	short_desc+=" - Go library - development files"
+	nostrip=yes
 	pkg_install() {
 		vmove usr/lib/libgo.a
 		vmove usr/lib/libgobegin.a
@@ -536,6 +549,7 @@ libgo-devel_package() {
 
 libgo_package() {
 	short_desc+=" - Go library"
+	nostrip=yes
 	pkg_install() {
 		vmove "usr/lib/libgo.so*"
 		vlicense ${wrksrc}/COPYING.RUNTIME RUNTIME.LIBRARY.EXCEPTION
@@ -611,7 +625,7 @@ libatomic_package() {
 
 libgcc_package() {
 	short_desc+=" - GCC library"
-	replaces="libgcj<7.2.0 libcilkrts<8.2.0"
+	replaces="libcilkrts<8.2.0"
 	noverifyrdeps=yes
 	pkg_install() {
 		vmove "usr/lib/libgcc_s.so*"
@@ -622,7 +636,7 @@ libgcc_package() {
 libgcc-devel_package() {
 	depends="libgcc-${version}_${revision}"
 	short_desc+=" - GCC library - development files"
-	replaces="libgcj-devel<7.2.0 libcilkrts-devel<8.2.0"
+	replaces="libcilkrts-devel<8.2.0"
 	pkg_install() {
 		vmove "usr/lib/gcc/${_triplet}/${_minorver}/*.o"
 		vmove "usr/lib/gcc/${_triplet}/${_minorver}/*.a"

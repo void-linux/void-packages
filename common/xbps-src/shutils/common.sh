@@ -256,9 +256,8 @@ get_endian() {
         i686)     echo "le";;
         mipsel*)  echo "le";;
         mips*)    echo "be";;
-        ppc64le)  echo "le";;
-        ppc64)    echo "be";;
-        ppc)      echo "be";;
+        ppc*le)   echo "le";;
+        ppc*)     echo "be";;
         x86_64)   echo "le";;
     esac
 }
@@ -284,9 +283,8 @@ get_wordsize() {
         i686)     echo "32";;
         mipsel*)  echo "32";;
         mips*)    echo "32";;
-        ppc64le)  echo "64";;
-        ppc64)    echo "64";;
-        ppc)      echo "32";;
+        ppc64*)   echo "64";;
+        ppc*)     echo "32";;
         x86_64)   echo "64";;
     esac
 }
@@ -298,6 +296,7 @@ get_no_atomic8() {
         armv5tel) echo "yes";;
         armv6l)   echo "yes";;
         mips*)    echo "yes";;
+        ppcle)    echo "yes";;
         ppc)      echo "yes";;
     esac
 }
@@ -515,6 +514,7 @@ setup_pkg() {
     export CPP_FOR_BUILD="cpp"
     export FC_FOR_BUILD="gfortran"
     export LD_FOR_BUILD="ld"
+    export PKG_CONFIG_FOR_BUILD="/usr/bin/pkg-config"
     export CFLAGS_FOR_BUILD="$XBPS_CFLAGS"
     export CXXFLAGS_FOR_BUILD="$XBPS_CXXFLAGS"
     export CPPFLAGS_FOR_BUILD="$XBPS_CPPFLAGS"
@@ -537,6 +537,7 @@ setup_pkg() {
         export OBJCOPY="${XBPS_CROSS_TRIPLET}-objcopy"
         export NM="${XBPS_CROSS_TRIPLET}-nm"
         export READELF="${XBPS_CROSS_TRIPLET}-readelf"
+        export PKG_CONFIG="${XBPS_CROSS_TRIPLET}-pkg-config"
         # Target tools
         export CC_target="$CC"
         export CXX_target="$CXX"
@@ -605,6 +606,7 @@ setup_pkg() {
         export OBJCOPY="objcopy"
         export NM="nm"
         export READELF="readelf"
+        export PKG_CONFIG="pkg-config"
         export RUST_TARGET="$XBPS_RUST_TARGET"
         export RUST_BUILD="$XBPS_RUST_TARGET"
         # Unset cross evironment variables

@@ -13,7 +13,7 @@ purge_distfiles() {
 	# Scan all templates for their current distfiles and checksums (hashes)
 	#
 	declare -A my_hashes
-	templates=(srcpkgs/*/template)
+	templates=($(find srcpkgs -mindepth 1 -maxdepth 1 -type d -printf "srcpkgs/%f/template\n"))
 	max=${#templates[@]}
 	cur=0
 	if [ -z "$max" ]; then

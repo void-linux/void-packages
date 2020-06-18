@@ -1,6 +1,6 @@
 # Template file for 'cross-powerpc64le-linux-musl'
 _binutils_version=2.32
-_gcc_version=9.2.0
+_gcc_version=9.3.0
 _musl_version=1.1.24
 _linux_version=4.19
 _libucontext_version=0.9.0
@@ -9,8 +9,8 @@ _triplet="powerpc64le-linux-musl"
 _sysroot="/usr/${_triplet}"
 
 pkgname=cross-${_triplet}
-version=0.32
-revision=4
+version=0.33
+revision=2
 short_desc="Cross toolchain for powerpc64le with musl"
 maintainer="q66 <daniel@octaforge.org>"
 homepage="https://www.voidlinux.org/"
@@ -22,7 +22,7 @@ distfiles="
  ${KERNEL_SITE}/kernel/v4.x/linux-${_linux_version}.tar.xz
  https://distfiles.adelielinux.org/source/libucontext/libucontext-${_libucontext_version}.tar.xz"
 checksum="0ab6c55dd86a92ed561972ba15b9b70a8b9f75557f896446c82e8b36e473ee04
- ea6ef08f121239da5695f76c9b33637a118dcf63e24164422231917fa61fb206
+ 71e197867611f6054aa1119b13a0c0abac12834765fe2d81f35ac57f84f742d1
  1370c9a812b2cf2a7d92802510cca0058cc37e66a7bedd70051f0a34015022a3
  0c68f5655528aed4f99dae71a5b259edc93239fa899e2df79c055275c21749a1
  0d53a415a307ef175153bbe60a572c940a922cb736ce13530b666e7ec2795d68"
@@ -35,9 +35,16 @@ create_wrksrc=yes
 hostmakedepends="tar gcc-objc gcc-go flex perl python3"
 makedepends="zlib-devel gmp-devel mpfr-devel libmpc-devel isl15-devel"
 nostrip_files="libcaf_single.a libgcc.a libgcov.a libgcc_eh.a
- libgnarl_pic.a libgnarl.a libgnat_pic.a libgnat.a"
+ libgnarl_pic.a libgnarl.a libgnat_pic.a libgnat.a libgmem.a"
 depends="${pkgname}-libc-${version}_${revision}"
-archs="x86_64* ppc64le"
+
+if [ "$XBPS_TARGET_WORDSIZE" != "64" ]; then
+	broken="64-bit crosstoolchain only available on 64-bit host"
+fi
+
+if [ "$XBPS_TARGET_MACHINE" = "ppc64le-musl" ]; then
+	broken="Can't build crosstoolchain to itself"
+fi
 
 _apply_patch() {
 	local args="$1" pname="$(basename $2)"
@@ -88,8 +95,8 @@ _gcc_bootstrap() {
 	_apply_patch -p0 ${FILESDIR}/libgcc-ibm128-no-tag.patch
 	_apply_patch -p0 ${FILESDIR}/ppc64-pure64.patch
 	_apply_patch -p0 ${FILESDIR}/musl-ada.patch
-	_apply_patch -p0 ${FILESDIR}/darn.patch
 	_apply_patch -p1 ${FILESDIR}/libgnarl-musl.patch
+	_apply_patch -p1 ${FILESDIR}/libssp-musl.patch
 	_apply_patch -p0 ${FILESDIR}/invalid_tls_model.patch
 	_apply_patch -p0 ${FILESDIR}/gccgo-musl.patch
 
@@ -152,11 +159,14 @@ _musl_build() {
 	[ -f ${wrksrc}/.musl_build_done ] && return 0
 
 	cd ${wrksrc}/musl-${_musl_version}
-
-	_apply_patch -p0 ${FILESDIR}/ppc64-fpregset_t.patch
-	_apply_patch -p0 ${FILESDIR}/ppc-pt_regs.patch
-
 	msg_normal "Building cross musl libc\n"
+
+	# Apply musl patches if there are any
+	if [ -d "${XBPS_SRCPKGDIR}/musl/patches" ]; then
+		for f in ${XBPS_SRCPKGDIR}/musl/patches/*.patch; do
+			_apply_patch -p0 "$f"
+		done
+	fi
 
 	CC="${_triplet}-gcc" LD="${_triplet}-ld" AR="${_triplet}-ar" \
 		AS="${_triplet}-as" RANLIB="${_triplet}-ranlib" \
@@ -208,6 +218,7 @@ _gcc_build() {
 	_args+=" --enable-lto"
 	_args+=" --enable-default-pie"
 	_args+=" --enable-default-ssp"
+	_args+=" --enable-libssp"
 	_args+=" --disable-libquadmath"
 	_args+=" --disable-libsanitizer"
 	_args+=" --disable-multilib"
