@@ -1,0 +1,104 @@
+Log Message:
+-----------
+In man(1) mode, i.e. when asking for a single manual page by name,
+prefer file name matches over .Dt/.TH matches over first NAME matches
+over later NAME matches, but do not change the ordering for apropos(1) 
+nor for man -a.
+
+This reverts main.c rev. 1.310 and mansearch.h rev. 1.29
+and includes a partial revert of mansearch.c rev. 1.79.
+
+Regression reported by Lorenzo Beretta <loreb at github> 
+as part of https://github.com/void-linux/void-packages/issues/9868 .
+
+Modified Files:
+--------------
+    mandoc:
+        TODO
+        main.c
+        mansearch.c
+        mansearch.h
+
+Revision Data
+-------------
+Index: mansearch.c
+===================================================================
+RCS file: /home/cvs/mandoc/mandoc/mansearch.c,v
+retrieving revision 1.80
+retrieving revision 1.81
+diff -Lmansearch.c -Lmansearch.c -u -p -r1.80 -r1.81
+--- mansearch.c
++++ mansearch.c
+@@ -199,6 +199,7 @@ mansearch(const struct mansearch *search
+ 			}
+ 			mpage->names = buildnames(page);
+ 			mpage->output = buildoutput(outkey, page);
++			mpage->bits = search->firstmatch ? rp->bits : 0;
+ 			mpage->ipath = i;
+ 			mpage->sec = *page->sect - '0';
+ 			if (mpage->sec < 0 || mpage->sec > 9)
+@@ -294,8 +295,10 @@ manmerge_term(struct expr *e, struct oha
+ 				break;
+ 			slot = ohash_lookup_memory(htab,
+ 			    (char *)&res, sizeof(res.page), res.page);
+-			if ((rp = ohash_find(htab, slot)) != NULL)
++			if ((rp = ohash_find(htab, slot)) != NULL) {
++				rp->bits |= res.bits;
+ 				continue;
++			}
+ 			rp = mandoc_malloc(sizeof(*rp));
+ 			*rp = res;
+ 			ohash_insert(htab, slot, rp);
+@@ -408,7 +411,8 @@ manpage_compare(const void *vp1, const v
+ 
+ 	mp1 = vp1;
+ 	mp2 = vp2;
+-	if ((diff = mp1->sec - mp2->sec))
++	if ((diff = mp2->bits - mp1->bits) ||
++	    (diff = mp1->sec - mp2->sec))
+ 		return diff;
+ 
+ 	/* Fall back to alphabetic ordering of names. */
+Index: mansearch.h
+===================================================================
+RCS file: /home/cvs/mandoc/mandoc/mansearch.h,v
+retrieving revision 1.29
+retrieving revision 1.30
+diff -Lmansearch.h -Lmansearch.h -u -p -r1.29 -r1.30
+--- mansearch.h
++++ mansearch.h
+@@ -92,6 +92,7 @@ struct	manpage {
+ 	char		*file; /* to be prefixed by manpath */
+ 	char		*names; /* a list of names with sections */
+ 	char		*output; /* user-defined additional output */
++	uint64_t	 bits; /* name type mask */
+ 	size_t		 ipath; /* number of the manpath */
+ 	int		 sec; /* section number, 10 means invalid */
+ 	enum form	 form;
+Index: main.c
+===================================================================
+RCS file: /home/cvs/mandoc/mandoc/main.c,v
+retrieving revision 1.322
+retrieving revision 1.323
+diff -Lmain.c -Lmain.c -u -p -r1.322 -r1.323
+--- main.c
++++ main.c
+@@ -411,6 +411,7 @@ main(int argc, char *argv[])
+ 				res[sz].file = mandoc_strdup(argv[c]);
+ 				res[sz].names = NULL;
+ 				res[sz].output = NULL;
++				res[sz].bits = 0;
+ 				res[sz].ipath = SIZE_MAX;
+ 				res[sz].sec = 10;
+ 				res[sz].form = FORM_SRC;
+@@ -761,6 +762,7 @@ found:
+ 	page->file = file;
+ 	page->names = NULL;
+ 	page->output = NULL;
++	page->bits = NAME_FILE & NAME_MASK;
+ 	page->ipath = ipath;
+ 	page->sec = (*sec >= '1' && *sec <= '9') ? *sec - '1' + 1 : 10;
+ 	page->form = form;
+--
+ To unsubscribe send an email to source+unsubscribe@mandoc.bsd.lv
+
