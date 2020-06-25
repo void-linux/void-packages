@@ -1,0 +1,175 @@
+# Template file for 'odroid-go2-kernel'
+#
+_gitrev="597b7316fd30b7721afc9be7930931af97c13452"
+_gitshort="${_gitrev:0:7}"
+
+pkgname=odroid-go2-kernel
+version=4.4.189
+revision=1
+short_desc="Linux kernel and modules for Odroid GO2 (${version%.*} [git ${_gitshort}])"
+maintainer="valadaa48 <valadaa48@gmx.com>"
+license="GPL-2.0-only"
+homepage="http://www.kernel.org"
+distfiles="https://github.com/hardkernel/linux/archive/${_gitrev}.tar.gz"
+checksum=9554495577762780fd277def18dea60101f79153d76db41cd02c100059fe35cf
+patch_args="-p1"
+wrksrc="linux-${_gitrev}"
+python_version=2 #unverified
+
+nodebug=yes
+nostrip=yes
+noverifyrdeps=yes
+noshlibprovides=yes
+preserve=yes
+
+archs="aarch64*"
+hostmakedepends="bc perl kmod uboot-mkimage libressl-devel python ncurses-devel"
+
+triggers="kernel-hooks"
+_kernver="${version}_${revision}"
+
+# These files could be modified when an external module is built.
+mutable_files="
+ /usr/lib/modules/${_kernver}/modules.builtin.bin
+ /usr/lib/modules/${_kernver}/modules.builtin.alias.bin
+ /usr/lib/modules/${_kernver}/modules.softdep
+ /usr/lib/modules/${_kernver}/modules.dep
+ /usr/lib/modules/${_kernver}/modules.dep.bin
+ /usr/lib/modules/${_kernver}/modules.symbols
+ /usr/lib/modules/${_kernver}/modules.symbols.bin
+ /usr/lib/modules/${_kernver}/modules.alias
+ /usr/lib/modules/${_kernver}/modules.alias.bin
+ /usr/lib/modules/${_kernver}/modules.devname"
+
+do_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+
+	unset LDFLAGS
+	cp -f ${FILESDIR}/config-odroidgo2 .config
+
+	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
+	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
+}
+
+do_build() {
+	local _args
+
+	if [ "$CROSS_BUILD" ]; then
+		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+
+	unset LDFLAGS
+	make ARCH=arm64 ${_args} ${makejobs} prepare
+	make ARCH=arm64 ${_args} ${makejobs} Image modules dtbs
+}
+
+do_install() {
+	local arch hdrdest
+
+	case "$XBPS_TARGET_MACHINE" in
+		aarch64*) arch=arm64;;
+	esac
+
+	# Run depmod after compressing modules.
+	sed -i '2iexit 0' scripts/depmod.sh
+
+	make INSTALL_MOD_PATH=${DESTDIR} modules_install
+
+	vinstall arch/${arch}/boot/Image 644 boot
+	vinstall arch/${arch}/boot/dts/rockchip/rk3326-odroidgo2-linux.dtb 644 boot
+	vinstall arch/${arch}/boot/dts/rockchip/rk3326-odroidgo2-linux-v11.dtb 644 boot
+
+	hdrdest=${DESTDIR}/usr/src/kernel-headers-${_kernver}
+
+	vinstall .config 644 boot config-${_kernver}
+	vinstall System.map 644 boot System.map-${_kernver}
+
+	# Switch to /usr.
+	vmkdir usr
+	mv ${DESTDIR}/lib ${DESTDIR}/usr
+
+	cd ${DESTDIR}/usr/lib/modules/${_kernver}
+	rm -f source build
+	ln -sf ../../../src/kernel-headers-${_kernver} build
+
+	cd ${wrksrc}
+
+	# Install required headers to build external modules
+	install -Dm644 Makefile ${hdrdest}/Makefile
+	install -Dm644 kernel/Makefile ${hdrdest}/kernel/Makefile
+	install -Dm644 .config ${hdrdest}/.config
+
+	# Remove firmware stuff provided by the "linux-firmware" pkg.
+	rm -rf ${DESTDIR}/usr/lib/firmware
+
+	mkdir -p ${hdrdest}/include
+	for i in acpi asm-generic config crypto drm generated linux math-emu \
+		media net pcmcia scsi sound trace uapi video xen; do
+		if [ -d include/$i ]; then
+			cp -a include/$i ${hdrdest}/include
+		fi
+	done
+
+	mkdir -p ${hdrdest}/arch/${arch}
+	cp -a arch/${arch}/include ${hdrdest}/arch/${arch}
+
+	cd ${wrksrc}
+	# Copy files necessary for later builds, like nvidia and vmware
+	cp Module.symvers ${hdrdest}
+	cp -a scripts ${hdrdest}
+
+	# fix permissions on scripts dir
+	chmod og-w -R ${hdrdest}/scripts
+
+	mkdir -p ${hdrdest}/arch/${arch}/kernel
+	cp arch/${arch}/Makefile ${hdrdest}/arch/${arch}
+
+	# Add docbook makefile
+	install -Dm644 Documentation/DocBook/Makefile \
+		${hdrdest}/Documentation/DocBook/Makefile
+
+	# Add md headers
+	mkdir -p ${hdrdest}/drivers/md
+	cp drivers/md/*.h ${hdrdest}/drivers/md
+
+	# Add inotify.h
+	mkdir -p ${hdrdest}/include/linux
+	cp include/linux/inotify.h ${hdrdest}/include/linux
+
+	# Add wireless headers
+	mkdir -p ${hdrdest}/net/mac80211/
+	cp net/mac80211/*.h ${hdrdest}/net/mac80211
+
+	# Copy in Kconfig files
+	for i in $(find . -name "Kconfig*"); do
+		mkdir -p ${hdrdest}/$(echo $i | sed 's|/Kconfig.*||')
+		cp $i ${hdrdest}/$i
+	done
+
+	# Remove unneeded architectures
+	for arch in alpha avr32 blackfin cris frv h8300 \
+		ia64 m* p* s* um v850 xtensa x86*; do
+		rm -rf ${hdrdest}/arch/${arch}
+	done
+
+	# Compress all modules with xz to save a few MBs.
+	msg_normal "$pkgver: compressing kernel modules with gzip, please wait...\n"
+	find ${DESTDIR} -name '*.ko' -exec gzip -9 {} \;
+
+	# ... and run depmod again.
+	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
+}
+
+odroid-go2-kernel-headers_package() {
+	preserve=yes
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	short_desc+=" - source headers for 3rd party modules"
+	pkg_install() {
+		vmove usr/src
+		vmove usr/lib/modules/${_kernver}/build
+	}
+}
