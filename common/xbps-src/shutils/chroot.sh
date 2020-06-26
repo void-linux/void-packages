@@ -31,7 +31,9 @@ install_base_chroot() {
 
 reconfigure_base_chroot() {
     local statefile="$XBPS_MASTERDIR/.xbps_chroot_configured"
-    local pkgs="glibc-locales ca-certificates"
+    # When binary-bootstrap glibc from musl host, getent failed to execute
+    # No directories is created
+    local pkgs="base-files glibc-locales ca-certificates"
     [ -z "$IN_CHROOT" -o -e $statefile ] && return 0
     # Reconfigure ca-certificates.
     msg_normal "xbps-src: reconfiguring base-chroot...\n"
@@ -113,7 +115,8 @@ chroot_prepare() {
         cp -f /usr/share/zoneinfo/UTC $XBPS_MASTERDIR/etc/localtime
     fi
 
-    for f in dev sys proc host boot; do
+    # mkstemp(3) requires /tmp
+    for f in dev sys proc host boot tmp; do
         [ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
     done
 
