@@ -56,6 +56,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 		* [gtk-pixbuf-loaders](#triggers_gtk_pixbuf_loaders)
 		* [gtk3-immodules](#triggers_gtk3_immodules)
 		* [hwdb.d-dir](#triggers_hwdb.d_dir)
+		* [udev-rules.d-dir](#triggers_udev-rules.d_dir)
 		* [info-files](#triggers_info_files)
 		* [kernel-hooks](#triggers_kernel_hooks)
 		* [mimedb](#triggers_mimedb)
@@ -1764,6 +1765,16 @@ The hwdb.d-dir trigger is responsible for updating the hardware database.
 During installation and removal it runs `usr/bin/udevadm hwdb --root=. --update`.
 
 It is automatically added to packages that have `/usr/lib/udev/hwdb.d` present
+as a directory.
+
+<a id="triggers_udev-rules.d_dir"></a>
+#### udev-rules.d-dir
+
+The udev-rules.d-dir trigger is responsible for reloading udev rules.
+
+During installation and removal it runs `usr/bin/udevadm control --reload`.
+
+It is automatically added to packages that have `/usr/lib/udev/rules.d` present
 as a directory.
 
 <a id="triggers_info_files"></a>

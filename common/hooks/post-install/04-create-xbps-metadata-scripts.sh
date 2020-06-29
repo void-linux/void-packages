@@ -150,6 +150,12 @@ _EOF
 		_add_trigger hwdb.d-dir
 	fi
 	#
+	# Handle files in udev rules directory
+	#
+	if [ -d "${PKGDESTDIR}/usr/lib/udev/rules.d" ]; then
+		_add_trigger udev-rules.d-dir
+	fi
+	#
 	# (Un)Register a shell in /etc/shells.
 	#
 	if [ -n "${register_shell}" ]; then
