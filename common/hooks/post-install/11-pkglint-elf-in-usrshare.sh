@@ -4,7 +4,7 @@
 #   - Looks on all packages for binary files being installed to /usr/share
 
 hook() {
-    local matches
+    local matches mime file
 
     if [ ! -d ${PKGDESTDIR}/usr/share ]; then
         return 0
@@ -12,12 +12,15 @@ hook() {
 
     # Find all binaries in /usr/share and add them to the pool
     while read -r f; do
-        case "$(file -bi "$f")" in
+        mime="${f##*:}"
+        mime="${mime// /}"
+        file="${f%:*}"
+        case "${mime}" in
             # Note application/x-executable is missing which is present in most Electron apps
             application/x-sharedlib*|application/x-pie-executable*)
-                matches+=" ${f#$PKGDESTDIR}" ;;
+                matches+=" ${file#$PKGDESTDIR}" ;;
         esac
-    done < <(find $PKGDESTDIR/usr/share -type f)
+    done < <(find $PKGDESTDIR/usr/share -type f | file --mime-type --files-from -)
 
     if [ -z "$matches" ]; then
         return 0
