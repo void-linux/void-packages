@@ -11,7 +11,8 @@ do_build() {
 do_check() {
 	: ${make_cmd:=cargo}
 
-	${make_cmd} test --release ${make_check_args}
+	${make_cmd} test --release --target ${RUST_TARGET} ${configure_args} \
+		${make_check_args}
 }
 
 do_install() {
