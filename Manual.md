@@ -1475,13 +1475,13 @@ Also, a set of useful variables are defined to use in the templates:
 | Variable    | Value                            |
 |-------------|----------------------------------|
 | py2_ver     | 2.X                              |
-| py2_lib     | /usr/lib/python2.X               |
-| py2_sitelib | /usr/lib/python2.X/site-packages |
-| py2_inc     | /usr/include/python2.X           |
+| py2_lib     | usr/lib/python2.X                |
+| py2_sitelib | usr/lib/python2.X/site-packages  |
+| py2_inc     | usr/include/python2.X            |
 | py3_ver     | 3.X                              |
-| py3_lib     | /usr/lib/python3.X               |
-| py3_sitelib | /usr/lib/python3.X/site-packages |
-| py3_inc     | /usr/include/python3.Xm          |
+| py3_lib     | usr/lib/python3.X                |
+| py3_sitelib | usr/lib/python3.X/site-packages  |
+| py3_inc     | usr/include/python3.Xm           |
 
 > NOTE: it's expected that additional subpkgs must be generated to allow packaging for multiple
 python versions.
