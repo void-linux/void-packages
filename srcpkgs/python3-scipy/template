@@ -1,12 +1,14 @@
 # Template file for 'python3-scipy'
 pkgname=python3-scipy
 version=1.5.0
-revision=1
+revision=2
 wrksrc="scipy-${version}"
 build_style=python3-module
 make_check_args="--force"
-hostmakedepends="python3-setuptools python3-Cython python3-numpy gcc-fortran"
-makedepends="python3-devel python3-numpy python3-pybind11 lapack-devel openblas-devel"
+hostmakedepends="gcc-fortran python3-setuptools
+ python3-Cython python3-numpy python3-pybind11"
+makedepends="python3-devel python3-numpy python3-pybind11
+ $(vopt_if openblas openblas-devel lapack-devel)"
 depends="python3-numpy"
 checkdepends="python3-nose"
 short_desc="Scientific library for Python3"
@@ -15,6 +17,17 @@ license="BSD-3-Clause"
 homepage="https://scipy.org/scipylib/"
 distfiles="https://github.com/scipy/scipy/releases/download/v${version}/scipy-${version}.tar.xz"
 checksum=23baeaa18803d12d1abdff3f5c148b1085c2dc4028c6b8efce652dde2119b41c
+
+build_options="openblas"
+desc_option_openblas="Enable support for openblas accelerated linear algebra"
+
+case "$XBPS_TARGET_MACHINE" in
+	x86_64*|i686*|aarch64*|armv[67]*|ppc64*)
+		# Prefer accelerated routines where available
+		build_options_default="openblas"
+		;;
+	*) ;;
+esac
 
 if [ "$CROSS_BUILD" ]; then
 	# Make sure numpy is found for the target arch first
@@ -29,23 +42,23 @@ fi
 LDFLAGS+=" -shared"
 
 pre_build() {
-	cat > site.cfg <<-EOF
-	[openblas]
-	libraries = openblas
-	EOF
-
 	if [ "$CROSS_BUILD" ]; then
-		# Make sure scipy knows how to find openblas
-		cat >> site.cfg <<-EOF
-		library_dirs = ${XBPS_CROSS_BASE}/usr/lib
-		include_dirs = ${XBPS_CROSS_BASE}/usr/include
-		runtime_library_dirs = ${XBPS_CROSS_BASE}/usr/lib
-		EOF
-
 		# numpy.distutils refuses to find the right linker for FORTRAN
 		# Link the cross compiler so the module will find it as gfortran
 		ln -sf "/usr/bin/${FC}" "${XBPS_WRAPPERDIR}/gfortran"
 	fi
+
+	# Find the right linear algebra subroutines on the target arch
+	: > site.cfg
+	for _blaslib in $(vopt_if openblas openblas "lapack blas"); do
+		cat >> site.cfg <<-EOF
+		[$_blaslib]
+		libraries = ${_blaslib}
+		include_dirs = ${XBPS_CROSS_BASE}/usr/include
+		library_dirs = ${XBPS_CROSS_BASE}/usr/lib
+		runtime_library_dirs = ${XBPS_CROSS_BASE}/usr/lib
+		EOF
+	done
 }
 
 post_install() {
