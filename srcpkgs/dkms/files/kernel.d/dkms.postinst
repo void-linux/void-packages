@@ -40,49 +40,77 @@ for _mod_ in /var/lib/dkms/*; do
 	done
 done
 
+# This section builds and install the available modules.
+#
+# If either building or installing a module fails, a warning is
+# printed and it is skipped, but the script still tries to build
+# the other modules.
+#
+# The list of available modules is in the form
+# [module1, modulever1, module2, modulever2, ...]
+#
 set -- ${DKMS_MODULES}
-while [ $# -ne 0 ]; do
+while [ $# -gt 1 ]; do
 	module="$1"
-	modulever="$2"
+	shift
+	modulever="$1"
+	shift
+
+	# If adding a module, depmod is necessary unless dkms runs it
+	do_depmod="yes"
 
 	status=$(dkms status -m ${module} -v ${modulever} -k ${VERSION})
 	if [ $(echo "$status"|grep -c ": built") -eq 0 ]; then
 		# Check if the module is still there.
 		if [ ! -f usr/src/${module}-${modulever}/dkms.conf ]; then
-			echo "Skipping unexistent DKMS module: ${module}-${modulever}."
-			shift 2
+			echo "Skipping nonexistent DKMS module: ${module}-${modulever}."
 			continue
 		fi
 		# Build the module
 		echo -n "Building DKMS module: ${module}-${modulever}... "
 		dkms build -q -m ${module} -v ${modulever} -k ${VERSION} -a ${ARCH}
 		rval=$?
-		if [ $rval -eq 9 ]; then
-			echo "skipped!"
-			shift; shift
-			continue
-		elif [ $rval -eq 0 ]; then
+		# If the module was skipped or failed, go to the next module.
+		if [ $rval -eq 0 ]; then
 			echo "done."
+		elif [ $rval -eq 9 ]; then
+			echo "skipped!"
+			continue
 		else
 			echo "FAILED!"
-			exit $?
+			continue
 		fi
 		status=$(dkms status -m ${module} -v ${modulever} -k ${VERSION})
 	fi
 
-	#if the module is built (either pre-built or just now), install it
+	# If the module is built (either pre-built or just now), install it
 	if [ $(echo "$status"|grep -c ": built") -eq 1 ] &&
 	   [ $(echo "$status"|grep -c ": installed") -eq 0 ]; then
 		echo -n "Installing DKMS module: ${module}-${modulever}... "
-	        dkms install -q -m ${module} -v ${modulever} -k ${VERSION} -a ${ARCH}
-		if [ $? -eq 0 ]; then
+		dkms install -q -m ${module} -v ${modulever} -k ${VERSION} -a ${ARCH}
+		rval=$?
+		# If the module failed installation, go to the next module.
+		if [ $rval -eq 0 ]; then
+			# dkms runs depmod as part of the installation
+			unset do_depmod
 			echo "done."
 		else
 			echo "FAILED!"
-			exit $?
+			continue
 		fi
 	fi
-	shift; shift
 done
+
+if [ -n "$do_depmod" ]; then
+	echo -n "Generating kernel module dependency lists... "
+	depmod -a ${VERSION}
+	rval=$?
+	if [ $rval -eq 0 ]; then
+		echo "done."
+	else
+		echo "FAILED!"
+		exit $rval
+	fi
+fi
 
 exit 0
