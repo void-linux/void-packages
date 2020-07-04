@@ -120,11 +120,11 @@ a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local re
 <a id="quality_requirements"></a>
 ### Quality Requirements
 
-Follow this list to determine if a piece of software or other technology may be
-permitted in the Void Linux repository. Exceptions to the list are possible,
-and may be accepted, but are extremely unlikely. If you believe you have an
+To be included in the Void repository, software must meet at least one
+of the following requirements. Exceptions to the list are possible,
+and might be accepted, but are extremely unlikely. If you believe you have an
 exception, start a PR and make an argument for why that particular piece of
-software, while not meeting the below requirements, is a good candidate for
+software, while not meeting any of the following requirements, is a good candidate for
 the Void packages system.
 
 1. System: The software should be installed system-wide, not per-user.
@@ -281,11 +281,11 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	converts gzipped (.gz) and bzipped (.bz2) manpages into plaintext.
 	Example mappings:
 
-	`foo.1` -> `${DESTDIR}/usr/share/man/man1/foo.1`  
-	`foo.fr.1` -> `${DESTDIR}/usr/share/man/fr/man1/foo.1`  
-	`foo.1p` -> `${DESTDIR}/usr/share/man/man1/foo.1p`  
-	`foo.1.gz` -> `${DESTDIR}/usr/share/man/man1/foo.1`  
-	`foo.1.bz2` -> `${DESTDIR}/usr/share/man/man1/foo.1`  
+	- `foo.1` -> `${DESTDIR}/usr/share/man/man1/foo.1`
+	- `foo.fr.1` -> `${DESTDIR}/usr/share/man/fr/man1/foo.1`
+	- `foo.1p` -> `${DESTDIR}/usr/share/man/man1/foo.1p`
+	- `foo.1.gz` -> `${DESTDIR}/usr/share/man/man1/foo.1`
+	- `foo.1.bz2` -> `${DESTDIR}/usr/share/man/man1/foo.1`
 
 - *vdoc()* `vdoc <file> [<name>]`
 
@@ -1475,13 +1475,13 @@ Also, a set of useful variables are defined to use in the templates:
 | Variable    | Value                            |
 |-------------|----------------------------------|
 | py2_ver     | 2.X                              |
-| py2_lib     | /usr/lib/python2.X               |
-| py2_sitelib | /usr/lib/python2.X/site-packages |
-| py2_inc     | /usr/include/python2.X           |
+| py2_lib     | usr/lib/python2.X                |
+| py2_sitelib | usr/lib/python2.X/site-packages  |
+| py2_inc     | usr/include/python2.X            |
 | py3_ver     | 3.X                              |
-| py3_lib     | /usr/lib/python3.X               |
-| py3_sitelib | /usr/lib/python3.X/site-packages |
-| py3_inc     | /usr/include/python3.Xm          |
+| py3_lib     | usr/lib/python3.X                |
+| py3_sitelib | usr/lib/python3.X/site-packages  |
+| py3_inc     | usr/include/python3.Xm           |
 
 > NOTE: it's expected that additional subpkgs must be generated to allow packaging for multiple
 python versions.
