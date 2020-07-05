@@ -136,6 +136,11 @@ the Void packages system.
 1. Required: Another package either within the repository or pending inclusion
    requires the package.
 
+In particular, new themes and small shell scripts are highly unlikely
+to be accepted. New fonts are welcome if they provide value beyond
+aesthetics (e.g. they contain glyphs for a script missing in already
+packaged fonts).
+
 <a id="buildphase"></a>
 ### Package build phases
 
