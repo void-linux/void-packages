@@ -1974,7 +1974,7 @@ To keep your forked repository always up to date, setup the `upstream` remote
 to pull in new changes:
 
     $ git remote add upstream git://github.com/void-linux/void-packages.git
-    $ git pull upstream master
+    $ git pull --rebase upstream master
 
 <a id="help"></a>
 ## Help
