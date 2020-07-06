@@ -20,7 +20,7 @@ install_base_chroot() {
     fi
     # Reconfigure base-files to create dirs/symlinks.
     if xbps-query -r $XBPS_MASTERDIR base-files &>/dev/null; then
-        XBPS_ARCH=$XBPS_TARGET_PKG xbps-reconfigure -r $XBPS_MASTERDIR -f base-files &>/dev/null
+        XBPS_ARCH=$XBPS_TARGET_PKG xbps-reconfigure -r $XBPS_MASTERDIR -f base-files
     fi
 
     msg_normal "xbps-src: installed base-chroot successfully!\n"
