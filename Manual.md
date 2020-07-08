@@ -1963,9 +1963,8 @@ Fork the voidlinux `void-packages` git repository on github and clone it:
 
     $ git clone git@github.com:<user>/void-packages.git
 
-See [CONTRIBUTING.md](https://github.com/void-linux/void-packages/blob/master/CONTRIBUTING.md)
-for information on how to format your commits and other tips for
-contributing.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for information on how to format your
+commits and other tips for contributing.
 
 Once you've made changes to your `forked` repository you can submit
 a github pull request; see https://help.github.com/articles/fork-a-repo for more information.
