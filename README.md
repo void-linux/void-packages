@@ -7,10 +7,8 @@ The included `xbps-src` script will fetch and compile the sources, and install i
 files into a `fake destdir` to generate XBPS binary packages that can be installed
 or queried through the `xbps-install(1)` and `xbps-query(1)` utilities, respectively.
 
-See [Contributing](https://github.com/void-linux/void-packages/blob/master/CONTRIBUTING.md)
-for a general overview of how to contribute and the
-[Manual](https://github.com/void-linux/void-packages/blob/master/Manual.md)
-for details of how to create source packages.
+See [Contributing](./CONTRIBUTING.md) for a general overview of how to contribute and the
+[Manual](./Manual.md) for details of how to create source packages.
 
 ### Table of Contents
 
