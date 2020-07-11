@@ -1444,9 +1444,18 @@ Python packages should be built with the `python{,2,3}-module` build style, if p
 This sets some environment variables required to allow cross compilation. Support to allow
 building a python module for multiple versions from a single template is also possible.
 
-To allow cross compilation, the `python-devel` package (for python 2.7) must be added
-to `hostmakedepends` and `makedepends`. If any other python version is also supported,
-for example python3.4, those must also be added as host and target build dependencies.
+Python packages that rely on `python3-setuptools` should generally map `setup_requires`
+dependencies in `setup.py` to `hostmakedepends` in the template and `install_requires`
+dependencies to `depends` in the template; include `python3` in `depends` if there are no other
+python dependencies. If the package includes a compiled extension, the `python3-devel` packages
+should be added to `makedepends`, as should any python packages that also provide native libraries
+against which the extension will be linked (even if that package is also included in
+`hostmakedepends` to satisfy `setuptools`).
+
+**NB**: Python `setuptools` will attempt to use `pip` or `EasyInstall` to fetch any missing
+dependencies at build time. If you notice warnings about `EasyInstall` deprecation or python eggs
+present in `${wrksrc}/.eggs` after building the package, then those packages should be added to
+`hostmakedepends`.
 
 The following variables may influence how the python packages are built and configured
 at post-install time:
