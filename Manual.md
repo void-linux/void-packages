@@ -141,7 +141,7 @@ to be accepted. New fonts are welcome if they provide value beyond
 aesthetics (e.g. they contain glyphs for a script missing in already
 packaged fonts).
 
-Browser forks, including those based on Chromium and Firefox, are generally not 
+Browser forks, including those based on Chromium and Firefox, are generally not
 accepted. Such forks require heavy patching, maintenance and hours of build time.
 
 <a id="buildphase"></a>
@@ -623,6 +623,12 @@ the `$DESTDIR` which will not be scanned for runtime dependencies. This may be u
 skip files which are not meant to be run or loaded on the host but are to be sent to some
 target device or emulation.
 
+- `ignore_elf_files` White space separated list of machine code files
+in /usr/share directory specified by absolute path, which are expected and allowed.
+
+- `ignore_elf_dirs` White space separated list of directories in /usr/share directory
+specified by absolute path, which are expected and allowed to contain machine code files.
+
 - `nocross` If set, cross compilation won't be allowed and will exit immediately.
 This should be set to a string describing why it fails, or a link to a travis
 buildlog demonstrating the failure.
@@ -953,7 +959,7 @@ Environment variables for a specific `build_style` can be declared in a filename
 matching the `build_style` name, Example:
 
     `common/environment/build-style/gnu-configure.sh`
-    
+
 - `texmf` For texmf zip/tarballs that need to go into /usr/share/texmf-dist. Includes
 duplicates handling.
 
