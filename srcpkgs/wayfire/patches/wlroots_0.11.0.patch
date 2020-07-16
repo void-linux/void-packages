@@ -1,0 +1,149 @@
+Thanks to jbeich and FreeBSD:
+https://github.com/freebsd/freebsd-ports/commit/c920e5595b69a5a550bd452015634630a5374822
+
+https://github.com/WayfireWM/wayfire/commit/0d6cecd27799
+https://github.com/WayfireWM/wayfire/commit/187b525c16d1
+https://github.com/WayfireWM/wayfire/commit/29dcd1387700
+https://github.com/WayfireWM/wayfire/commit/0e4e29acb3e9
+
+--- meson.build.orig	2020-03-21 19:10:27 UTC
++++ meson.build
+@@ -29,7 +29,7 @@ libinput       = dependency('libinput', version: '>=1.
+ pixman         = dependency('pixman-1')
+ threads        = dependency('threads')
+ xkbcommon      = dependency('xkbcommon')
+-wlroots        = dependency('wlroots', version: ['>=0.9.0', '<0.11.0'], required: get_option('use_system_wlroots'))
++wlroots        = dependency('wlroots', version: ['>=0.11.0', '<0.12.0'], required: get_option('use_system_wlroots'))
+ wfconfig       = dependency('wf-config', version: ['>=0.4.0', '<0.5.0'], required: get_option('use_system_wfconfig'))
+ 
+ use_system_wlroots = not get_option('use_system_wlroots').disabled() and wlroots.found()
+--- src/api/wayfire/core.hpp.orig	2020-03-21 19:10:27 UTC
++++ src/api/wayfire/core.hpp
+@@ -226,11 +226,12 @@ class compositor_core_t : public wf::object_base_t
+     std::string wayland_display;
+ 
+     /**
+-     * Return the xwayland display number.
++     * Return the xwayland display name.
+      *
+-     * This returns -1 if xwayland is not available
++     * @return The xwayland display name, or empty string if xwayland is not
++     *   available.
+      */
+-    virtual int get_xwayland_display() = 0;
++    virtual std::string get_xwayland_display() = 0;
+ 
+     /**
+      * Execute the given command in a bash shell.
+--- src/core/core-impl.hpp.orig	2020-03-21 19:10:27 UTC
++++ src/core/core-impl.hpp
+@@ -75,7 +75,7 @@ class compositor_core_impl_t : public compositor_core_
+     int focus_layer(uint32_t layer, int request) override;
+     void unfocus_layer(int request) override;
+     uint32_t get_focused_layer() override;
+-    int get_xwayland_display() override;
++    std::string get_xwayland_display() override;
+     void run(std::string command) override;
+ 
+   private:
+--- src/core/core.cpp.orig	2020-03-21 19:10:27 UTC
++++ src/core/core.cpp
+@@ -548,9 +548,8 @@ void wf::compositor_core_impl_t::run(std::string comma
+             setenv("_JAVA_AWT_WM_NONREPARENTING", "1", 1);
+             setenv("WAYLAND_DISPLAY", wayland_display.c_str(), 1);
+ #if WLR_HAS_XWAYLAND
+-            if (xwayland_get_display() >= 0) {
+-                auto xdisp = ":" + std::to_string(xwayland_get_display());
+-                setenv("DISPLAY", xdisp.c_str(), 1);
++            if (!xwayland_get_display().empty()) {
++                setenv("DISPLAY", xwayland_get_display().c_str(), 1);
+             }
+ #endif
+             int dev_null = open("/dev/null", O_WRONLY);
+@@ -567,7 +566,7 @@ void wf::compositor_core_impl_t::run(std::string comma
+     }
+ }
+ 
+-int wf::compositor_core_impl_t::get_xwayland_display()
++std::string wf::compositor_core_impl_t::get_xwayland_display()
+ {
+     return xwayland_get_display();
+ }
+--- src/core/seat/keyboard.cpp.orig	2020-03-21 19:10:27 UTC
++++ src/core/seat/keyboard.cpp
+@@ -113,15 +113,20 @@ void input_manager::set_keyboard_focus(wayfire_view vi
+     if (!active_grab)
+     {
+         auto kbd = wlr_seat_get_keyboard(seat);
+-        wlr_seat_keyboard_notify_enter(seat, surface,
+-            kbd ? kbd->keycodes : NULL,
+-            kbd ? kbd->num_keycodes : 0,
+-            kbd ? &kbd->modifiers : NULL);
++        if (surface)
++        {
++            wlr_seat_keyboard_notify_enter(seat, surface,
++                kbd ? kbd->keycodes : NULL,
++                kbd ? kbd->num_keycodes : 0,
++                kbd ? &kbd->modifiers : NULL);
++        } else {
++            wlr_seat_keyboard_clear_focus(seat);
++        }
+         keyboard_focus = view;
+     }
+     else
+     {
+-        wlr_seat_keyboard_notify_enter(seat, NULL, NULL, 0, NULL);
++        wlr_seat_keyboard_clear_focus(seat);
+         keyboard_focus = nullptr;
+     }
+ }
+--- src/core/seat/pointer.cpp.orig	2020-03-21 19:10:27 UTC
++++ src/core/seat/pointer.cpp
+@@ -116,7 +116,7 @@ void wf::LogicalPointer::update_cursor_focus(wf::surfa
+ 
+     cursor_focus = focus;
+     wlr_surface *next_focus_wlr_surface = nullptr;
+-    if (focus && !compositor_surface_from_surface(focus))
++    if (focus && focus->get_wlr_surface())
+     {
+         next_focus_wlr_surface = focus->get_wlr_surface();
+         wlr_seat_pointer_notify_enter(input->seat, next_focus_wlr_surface,
+--- src/view/surface.cpp.orig	2020-03-21 19:10:27 UTC
++++ src/view/surface.cpp
+@@ -322,7 +322,7 @@ void wf::wlr_surface_base_t::unmap()
+ wlr_buffer* wf::wlr_surface_base_t::get_buffer()
+ {
+     if (surface && wlr_surface_has_buffer(surface))
+-        return surface->buffer;
++        return &surface->buffer->base;
+ 
+     return nullptr;
+ }
+--- src/view/view-impl.hpp.orig	2020-03-21 19:10:27 UTC
++++ src/view/view-impl.hpp
+@@ -204,7 +204,7 @@ void init_xwayland();
+ void init_layer_shell();
+ 
+ void xwayland_set_seat(wlr_seat *seat);
+-int xwayland_get_display();
++std::string xwayland_get_display();
+ 
+ void init_desktop_apis();
+ }
+--- src/view/xwayland.cpp.orig	2020-03-21 19:10:27 UTC
++++ src/view/xwayland.cpp
+@@ -567,11 +567,11 @@ void wf::xwayland_set_seat(wlr_seat *seat)
+ #endif
+ }
+ 
+-int wf::xwayland_get_display()
++std::string wf::xwayland_get_display()
+ {
+ #if WLR_HAS_XWAYLAND
+-    return xwayland_handle ? xwayland_handle->display : -1;
++    return xwayland_handle ? nonull(xwayland_handle->display_name) : "";
+ #else
+-    return -1;
++    return "";
+ #endif
+ }
