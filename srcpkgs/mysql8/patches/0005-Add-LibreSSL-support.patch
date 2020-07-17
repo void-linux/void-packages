@@ -1,0 +1,356 @@
+From 4aadff7b08f6a69160a44c1742d5a12fb5abc059 Mon Sep 17 00:00:00 2001
+From: Thomas Deutschmann <whissi@gentoo.org>
+Date: Thu, 30 Apr 2020 20:01:48 +0200
+Subject: [PATCH 5/5] Add LibreSSL support
+
+Signed-off-by: Thomas Deutschmann <whissi@gentoo.org>
+---
+ cmake/ssl.cmake                               |  5 +++--
+ mysys/my_md5.cc                               |  2 ++
+ .../bindings/xcom/xcom/xcom_ssl_transport.cc  |  6 +++++-
+ plugin/x/client/xconnection_impl.cc           |  4 ++++
+ router/src/http/src/tls_client_context.cc     |  2 +-
+ router/src/http/src/tls_context.cc            |  9 ++++++--
+ router/src/http/src/tls_server_context.cc     |  3 ++-
+ sql-common/client.cc                          |  2 ++
+ sql/mysqld.cc                                 |  4 +++-
+ sql/sys_vars.cc                               | 21 +++++++++++++++++--
+ vio/viossl.cc                                 |  8 +++----
+ vio/viosslfactories.cc                        |  2 ++
+ 12 files changed, 54 insertions(+), 14 deletions(-)
+
+diff --git cmake/ssl.cmake cmake/ssl.cmake
+index 52feadeaa..3b8332695 100644
+--- cmake/ssl.cmake
++++ cmake/ssl.cmake
+@@ -222,13 +222,14 @@ MACRO (MYSQL_CHECK_SSL)
+         OPENSSL_FIX_VERSION "${OPENSSL_VERSION_NUMBER}"
+         )
+     ENDIF()
+-    IF("${OPENSSL_MAJOR_VERSION}.${OPENSSL_MINOR_VERSION}.${OPENSSL_FIX_VERSION}" VERSION_GREATER "1.1.0")
++    CHECK_SYMBOL_EXISTS(TLS1_3_VERSION "openssl/tls1.h" HAVE_TLS1_3_VERSION)
++    IF(HAVE_TLS1_3_VERSION)
+        ADD_DEFINITIONS(-DHAVE_TLSv13)
+     ENDIF()
+     IF(OPENSSL_INCLUDE_DIR AND
+        OPENSSL_LIBRARY   AND
+        CRYPTO_LIBRARY      AND
+-       OPENSSL_MAJOR_VERSION STREQUAL "1"
++       OPENSSL_MAJOR_VERSION VERSION_GREATER_EQUAL "1"
+       )
+       SET(OPENSSL_FOUND TRUE)
+       FIND_PROGRAM(OPENSSL_EXECUTABLE openssl
+diff --git mysys/my_md5.cc mysys/my_md5.cc
+index dea997b25..531696329 100644
+--- mysys/my_md5.cc
++++ mysys/my_md5.cc
+@@ -56,7 +56,9 @@ static void my_md5_hash(unsigned char *digest, unsigned const char *buf,
+ int compute_md5_hash(char *digest, const char *buf, int len) {
+   int retval = 0;
+   int fips_mode = 0;
++#ifndef LIBRESSL_VERSION_NUMBER
+   fips_mode = FIPS_mode();
++#endif
+   /* If fips mode is ON/STRICT restricted method calls will result into abort,
+    * skipping call. */
+   if (fips_mode == 0) {
+diff --git plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_ssl_transport.cc plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_ssl_transport.cc
+index 8bf63ce14..02f91b44e 100644
+--- plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_ssl_transport.cc
++++ plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/xcom_ssl_transport.cc
+@@ -325,6 +325,7 @@ error:
+   return 1;
+ }
+ 
++#ifndef LIBRESSL_VERSION_NUMBER
+ #define OPENSSL_ERROR_LENGTH 512
+ static int configure_ssl_fips_mode(const uint fips_mode) {
+   int rc = -1;
+@@ -348,6 +349,7 @@ static int configure_ssl_fips_mode(const uint fips_mode) {
+ EXIT:
+   return rc;
+ }
++#endif
+ 
+ static int configure_ssl_ca(SSL_CTX *ssl_ctx, const char *ca_file,
+                             const char *ca_path) {
+@@ -544,10 +546,12 @@ int xcom_init_ssl(const char *server_key_file, const char *server_cert_file,
+   int verify_server = SSL_VERIFY_NONE;
+   int verify_client = SSL_VERIFY_NONE;
+ 
++#ifndef LIBRESSL_VERSION_NUMBER
+   if (configure_ssl_fips_mode(ssl_fips_mode) != 1) {
+     G_ERROR("Error setting the ssl fips mode");
+     goto error;
+   }
++#endif
+ 
+   SSL_library_init();
+   SSL_load_error_strings();
+@@ -611,7 +615,7 @@ error:
+ void xcom_cleanup_ssl() {
+   if (!xcom_use_ssl()) return;
+ 
+-#if OPENSSL_VERSION_NUMBER < 0x10100000L
++#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
+   ERR_remove_thread_state(0);
+ #endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+ }
+diff --git plugin/x/client/xconnection_impl.cc plugin/x/client/xconnection_impl.cc
+index 13bc6794e..5223169db 100644
+--- plugin/x/client/xconnection_impl.cc
++++ plugin/x/client/xconnection_impl.cc
+@@ -498,6 +498,7 @@ XError Connection_impl::get_ssl_error(const int error_id) {
+   return XError(CR_SSL_CONNECTION_ERROR, buffer);
+ }
+ 
++#ifndef LIBRESSL_VERSION_NUMBER
+ /**
+   Set fips mode in openssl library,
+   When we set fips mode ON/STRICT, it will perform following operations:
+@@ -537,6 +538,7 @@ int set_fips_mode(const uint32_t fips_mode,
+ EXIT:
+   return rc;
+ }
++#endif
+ 
+ XError Connection_impl::activate_tls() {
+   if (nullptr == m_vio) return get_socket_error(SOCKET_ECONNRESET);
+@@ -547,12 +549,14 @@ XError Connection_impl::activate_tls() {
+   if (!m_context->m_ssl_config.is_configured())
+     return XError{CR_SSL_CONNECTION_ERROR, ER_TEXT_TLS_NOT_CONFIGURATED, true};
+ 
++#ifndef LIBRESSL_VERSION_NUMBER
+   char err_string[OPENSSL_ERROR_LENGTH] = {'\0'};
+   if (set_fips_mode(
+           static_cast<uint32_t>(m_context->m_ssl_config.m_ssl_fips_mode),
+           err_string) != 1) {
+     return XError{CR_SSL_CONNECTION_ERROR, err_string, true};
+   }
++#endif
+   auto ssl_ctx_flags = process_tls_version(
+       details::null_when_empty(m_context->m_ssl_config.m_tls_version));
+ 
+diff --git router/src/http/src/tls_client_context.cc router/src/http/src/tls_client_context.cc
+index 297ceee30..7c1157289 100644
+--- router/src/http/src/tls_client_context.cc
++++ router/src/http/src/tls_client_context.cc
+@@ -54,7 +54,7 @@ void TlsClientContext::verify(TlsVerify verify) {
+ 
+ void TlsClientContext::cipher_suites(const std::string &ciphers) {
+ // TLSv1.3 ciphers are controlled via SSL_CTX_set_ciphersuites()
+-#if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 1)
++#ifdef TLS1_3_VERSION
+   if (1 != SSL_CTX_set_ciphersuites(ssl_ctx_.get(), ciphers.c_str())) {
+     throw TlsError("set-cipher-suites");
+   }
+diff --git router/src/http/src/tls_context.cc router/src/http/src/tls_context.cc
+index 60ed7e6ca..388ef8f28 100644
+--- router/src/http/src/tls_context.cc
++++ router/src/http/src/tls_context.cc
+@@ -91,7 +91,7 @@ static int o11x_version(TlsVersion version) {
+       return TLS1_1_VERSION;
+     case TlsVersion::TLS_1_2:
+       return TLS1_2_VERSION;
+-#if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 1)
++#ifdef TLS1_3_VERSION
+     case TlsVersion::TLS_1_3:
+       return TLS1_3_VERSION;
+ #endif
+@@ -120,9 +120,11 @@ void TlsContext::version_range(TlsVersion min_version, TlsVersion max_version) {
+   switch (min_version) {
+     default:
+       // unknown, leave all disabled
++#ifdef TLS1_3_VERSION
+       // fallthrough
+     case TlsVersion::TLS_1_3:
+       opts |= SSL_OP_NO_TLSv1_2;
++#endif
+       // fallthrough
+     case TlsVersion::TLS_1_2:
+       opts |= SSL_OP_NO_TLSv1_1;
+@@ -170,8 +172,10 @@ TlsVersion TlsContext::min_version() const {
+       return TlsVersion::TLS_1_1;
+     case TLS1_2_VERSION:
+       return TlsVersion::TLS_1_2;
++#ifdef TLS1_3_VERSION
+     case TLS1_3_VERSION:
+       return TlsVersion::TLS_1_3;
++#endif
+     case 0:
+       return TlsVersion::AUTO;
+     default:
+@@ -230,7 +234,8 @@ TlsContext::InfoCallback TlsContext::info_callback() const {
+ }
+ 
+ int TlsContext::security_level() const {
+-#if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 0)
++#if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 0) && \
++    !defined(LIBRESSL_VERSION_NUMBER)
+   return SSL_CTX_get_security_level(ssl_ctx_.get());
+ #else
+   return 0;
+diff --git router/src/http/src/tls_server_context.cc router/src/http/src/tls_server_context.cc
+index 0f4472419..707d7de86 100644
+--- router/src/http/src/tls_server_context.cc
++++ router/src/http/src/tls_server_context.cc
+@@ -167,7 +167,8 @@ void TlsServerContext::init_tmp_dh(const std::string &dh_params) {
+     }
+ 
+   } else {
+-#if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 0)
++#if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 0) && \
++    !defined(LIBRESSL_VERSION_NUMBER)
+     dh2048.reset(DH_get_2048_256());
+ #else
+     /*
+diff --git sql-common/client.cc sql-common/client.cc
+index ffb136b5b..8a0c7b834 100644
+--- sql-common/client.cc
++++ sql-common/client.cc
+@@ -7766,6 +7766,7 @@ int STDCALL mysql_options(MYSQL *mysql, enum mysql_option option,
+         return 1;
+       break;
+     case MYSQL_OPT_SSL_FIPS_MODE: {
++#if !defined(LIBRESSL_VERSION_NUMBER)
+       char ssl_err_string[OPENSSL_ERROR_LENGTH] = {'\0'};
+       ENSURE_EXTENSIONS_PRESENT(&mysql->options);
+       mysql->options.extension->ssl_fips_mode = *static_cast<const uint *>(arg);
+@@ -7777,6 +7778,7 @@ int STDCALL mysql_options(MYSQL *mysql, enum mysql_option option,
+             "Set Fips mode ON/STRICT failed, detail: '%s'.", ssl_err_string);
+         return 1;
+       }
++#endif
+     } break;
+     case MYSQL_OPT_SSL_MODE:
+       ENSURE_EXTENSIONS_PRESENT(&mysql->options);
+diff --git sql/mysqld.cc sql/mysqld.cc
+index 682e8d5ae..96a922d7a 100644
+--- sql/mysqld.cc
++++ sql/mysqld.cc
+@@ -5109,7 +5109,7 @@ static int init_thread_environment() {
+ 
+ static PSI_memory_key key_memory_openssl = PSI_NOT_INSTRUMENTED;
+ 
+-#if OPENSSL_VERSION_NUMBER < 0x10100000L
++#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
+ #define FILE_LINE_ARGS
+ #else
+ #define FILE_LINE_ARGS , const char *, int
+@@ -5143,12 +5143,14 @@ static void init_ssl() {
+ }
+ 
+ static int init_ssl_communication() {
++#ifndef LIBRESSL_VERSION_NUMBER
+   char ssl_err_string[OPENSSL_ERROR_LENGTH] = {'\0'};
+   int ret_fips_mode = set_fips_mode(opt_ssl_fips_mode, ssl_err_string);
+   if (ret_fips_mode != 1) {
+     LogErr(ERROR_LEVEL, ER_SSL_FIPS_MODE_ERROR, ssl_err_string);
+     return 1;
+   }
++#endif
+   if (TLS_channel::singleton_init(&mysql_main, mysql_main_channel, opt_use_ssl,
+                                   &server_main_callback, opt_initialize))
+     return 1;
+diff --git sql/sys_vars.cc sql/sys_vars.cc
+index 5b1a82d2f..4e2dff865 100644
+--- sql/sys_vars.cc
++++ sql/sys_vars.cc
+@@ -4474,6 +4474,7 @@ static Sys_var_ulong Sys_max_execution_time(
+     HINT_UPDATEABLE SESSION_VAR(max_execution_time), CMD_LINE(REQUIRED_ARG),
+     VALID_RANGE(0, ULONG_MAX), DEFAULT(0), BLOCK_SIZE(1));
+ 
++#ifndef LIBRESSL_VERSION_NUMBER
+ static bool update_fips_mode(sys_var *, THD *, enum_var_type) {
+   char ssl_err_string[OPENSSL_ERROR_LENGTH] = {'\0'};
+   if (set_fips_mode(opt_ssl_fips_mode, ssl_err_string) != 1) {
+@@ -4484,15 +4485,31 @@ static bool update_fips_mode(sys_var *, THD *, enum_var_type) {
+     return false;
+   }
+ }
++#endif
++
++#if defined(LIBRESSL_VERSION_NUMBER)
++static const char *ssl_fips_mode_names[] = {"OFF", 0};
++#else
++static const char *ssl_fips_mode_names[] = {"OFF", "ON", "STRICT", 0};
++#endif
+ 
+-static const char *ssl_fips_mode_names[] = {"OFF", "ON", "STRICT", nullptr};
+ static Sys_var_enum Sys_ssl_fips_mode(
+     "ssl_fips_mode",
+     "SSL FIPS mode (applies only for OpenSSL); "
++#ifndef LIBRESSL_VERSION_NUMBER
+     "permitted values are: OFF, ON, STRICT",
++#else
++    "permitted values are: OFF",
++#endif
+     GLOBAL_VAR(opt_ssl_fips_mode), CMD_LINE(REQUIRED_ARG, OPT_SSL_FIPS_MODE),
+     ssl_fips_mode_names, DEFAULT(0), NO_MUTEX_GUARD, NOT_IN_BINLOG,
+-    ON_CHECK(nullptr), ON_UPDATE(update_fips_mode), nullptr);
++    ON_CHECK(NULL),
++#ifndef LIBRESSL_VERSION_NUMBER
++    ON_UPDATE(update_fips_mode),
++#else
++    ON_UPDATE(NULL),
++#endif
++    NULL);
+ 
+ static Sys_var_bool Sys_auto_generate_certs(
+     "auto_generate_certs",
+diff --git vio/viossl.cc vio/viossl.cc
+index 0e9594741..3a589c64b 100644
+--- vio/viossl.cc
++++ vio/viossl.cc
+@@ -45,7 +45,7 @@
+   BIO_set_callback_ex was added in openSSL 1.1.1
+   For older openSSL, use the deprecated BIO_set_callback.
+ */
+-#if OPENSSL_VERSION_NUMBER >= 0x10101000L
++#if OPENSSL_VERSION_NUMBER >= 0x10101000L && !defined(LIBRESSL_VERSION_NUMBER)
+ #define HAVE_BIO_SET_CALLBACK_EX
+ #endif
+ 
+@@ -634,8 +634,8 @@ static int ssl_do(struct st_VioSSLFd *ptr, Vio *vio, long timeout,
+ 
+ #if !defined(DBUG_OFF)
+     {
+-      STACK_OF(SSL_COMP) *ssl_comp_methods = nullptr;
+-      ssl_comp_methods = SSL_COMP_get_compression_methods();
++      STACK_OF(SSL_COMP) *ssl_comp_methods = NULL;
++      ssl_comp_methods = (STACK_OF(SSL_COMP) *)SSL_COMP_get_compression_methods();
+       n = sk_SSL_COMP_num(ssl_comp_methods);
+       DBUG_PRINT("info", ("Available compression methods:\n"));
+       if (n == 0)
+@@ -643,7 +643,7 @@ static int ssl_do(struct st_VioSSLFd *ptr, Vio *vio, long timeout,
+       else
+         for (j = 0; j < n; j++) {
+           SSL_COMP *c = sk_SSL_COMP_value(ssl_comp_methods, j);
+-#if OPENSSL_VERSION_NUMBER < 0x10100000L
++#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
+           DBUG_PRINT("info", ("  %d: %s\n", c->id, c->name));
+ #else  /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+           DBUG_PRINT("info",
+diff --git vio/viosslfactories.cc vio/viosslfactories.cc
+index 6c04029cc..f27221463 100644
+--- vio/viosslfactories.cc
++++ vio/viosslfactories.cc
+@@ -473,6 +473,7 @@ void ssl_start() {
+   }
+ }
+ 
++#ifndef LIBRESSL_VERSION_NUMBER
+ /**
+   Set fips mode in openssl library,
+   When we set fips mode ON/STRICT, it will perform following operations:
+@@ -526,6 +527,7 @@ EXIT:
+   @returns openssl current fips mode
+ */
+ uint get_fips_mode() { return FIPS_mode(); }
++#endif
+ 
+ long process_tls_version(const char *tls_version) {
+   const char *separator = ",";
+-- 
+2.27.0
+
