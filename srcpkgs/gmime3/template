@@ -1,6 +1,6 @@
 # Template file for 'gmime3'
 pkgname=gmime3
-version=3.2.4
+version=3.2.7
 revision=1
 wrksrc="gmime-${version}"
 build_style=gnu-configure
@@ -16,22 +16,39 @@ maintainer="Enno Boland <gottox@voidlinux.org>"
 license="LGPL-2.1-or-later"
 homepage="https://github.com/jstedfast/gmime"
 distfiles="${GNOME_SITE}/gmime/${version%.*}/gmime-${version}.tar.xz"
-checksum=249ea7c0e080b067aa9669162c36b181b402f6cf6cebc4999d838c6f1e81d024
+checksum=2aea96647a468ba2160a64e17c6dc6afe674ed9ac86070624a3f584c10737d44
 
-# Package build options
 build_options="gir vala"
 build_options_default="gir vala"
 
-case "$XBPS_TARGET_MACHINE" in
-	i686|x86_64|armv?l*|aarch64*|ppc|ppc-musl)
-		configure_args+=" am_cv_func_iconv=yes am_cv_func_iconv_works=yes"
-		configure_args+=" am_cv_lib_iconv=no ac_cv_have_iconv_detect_h=yes"
-		configure_args+=" am_cv_proto_iconv_arg1="
-		pre_build() {
-			cp ${FILESDIR}/*.h ${wrksrc}
-		}
-		;;
-esac
+pre_configure() {
+	[ -z "$CROSS_BUILD" ] && return 0
+
+	configure_args+=" ac_cv_have_iconv_detect_h=yes"
+
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		cp ${FILESDIR}/musl-iconv-detect.h ${wrksrc}/iconv-detect.h
+	else
+		cp ${FILESDIR}/iconv-detect.h ${wrksrc}/iconv-detect.h
+	fi
+}
+
+do_check() {
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		make check VERBOSITY=-vv |
+		awk '
+			1
+			# utf-8 to iso-2022-jp is stateless
+			/GMimeFilterCharset.*utf-8.*iso-2022-jp/ { next }
+			# euc-kr has not been supported
+			/euc-kr to UTF-8/ { next }
+			$NF == "FAILED" { e = 1 }
+			END { exit e }
+		'
+	else
+		make check
+	fi
+}
 
 gmime3-devel_package() {
 	depends="libglib-devel zlib-devel ${sourcepkg}>=${version}_${revision}"
