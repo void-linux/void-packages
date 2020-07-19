@@ -1,0 +1,71 @@
+From 128869693a2519578896b41765df029d7adc4ae0 Mon Sep 17 00:00:00 2001
+From: Yuzu Saijo <yuzus@chromium.org>
+Date: Tue, 2 Jun 2020 04:51:11 +0000
+Subject: [PATCH] [content] Avoid calling DeleteForCurrentDocument from
+ destructor
+
+This CL removes the call to DeleteForCurrentDocument from the destructor
+of ManifestManagerHost.
+
+This intends to fix a crash which happens from time to time using
+RenderDocumentHostUserData.
+
+Change-Id: I1336fb62328dcb0cf9991499f399bf3665d29b75
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/2224737
+Reviewed-by: Rakina Zata Amni <rakina@chromium.org>
+Reviewed-by: Alexander Timin <altimin@chromium.org>
+Reviewed-by: Sreeja Kamishetty <sreejakshetty@chromium.org>
+Reviewed-by: Kinuko Yasuda <kinuko@chromium.org>
+Commit-Queue: Yuzu Saijo <yuzus@chromium.org>
+Cr-Commit-Position: refs/heads/master@{#774006}
+---
+ content/browser/manifest/manifest_manager_host.cc | 7 +++++--
+ content/browser/manifest/manifest_manager_host.h  | 2 ++
+ 2 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/content/browser/manifest/manifest_manager_host.cc b/content/browser/manifest/manifest_manager_host.cc
+index 3a2efba889a..1bd88d91edc 100644
+--- content/browser/manifest/manifest_manager_host.cc
++++ content/browser/manifest/manifest_manager_host.cc
+@@ -22,7 +22,7 @@ ManifestManagerHost::ManifestManagerHost(RenderFrameHost* render_frame_host)
+ }
+ 
+ ManifestManagerHost::~ManifestManagerHost() {
+-  OnConnectionError();
++  DispatchPendingCallbacks();
+ }
+ 
+ void ManifestManagerHost::BindObserver(
+@@ -55,7 +55,7 @@ blink::mojom::ManifestManager& ManifestManagerHost::GetManifestManager() {
+   return *manifest_manager_;
+ }
+ 
+-void ManifestManagerHost::OnConnectionError() {
++void ManifestManagerHost::DispatchPendingCallbacks() {
+   std::vector<GetManifestCallback> callbacks;
+   for (CallbackMap::iterator it(&callbacks_); !it.IsAtEnd(); it.Advance()) {
+     callbacks.push_back(std::move(*it.GetCurrentValue()));
+@@ -63,7 +63,10 @@ void ManifestManagerHost::OnConnectionError() {
+   callbacks_.Clear();
+   for (auto& callback : callbacks)
+     std::move(callback).Run(GURL(), blink::Manifest());
++}
+ 
++void ManifestManagerHost::OnConnectionError() {
++  DispatchPendingCallbacks();
+   if (GetForCurrentDocument(manifest_manager_frame_)) {
+     DeleteForCurrentDocument(manifest_manager_frame_);
+   }
+diff --git a/content/browser/manifest/manifest_manager_host.h b/content/browser/manifest/manifest_manager_host.h
+index 96951ae30bc..f706c20bdb8 100644
+--- content/browser/manifest/manifest_manager_host.h
++++ content/browser/manifest/manifest_manager_host.h
+@@ -55,6 +55,8 @@ class ManifestManagerHost
+   using CallbackMap = base::IDMap<std::unique_ptr<GetManifestCallback>>;
+ 
+   blink::mojom::ManifestManager& GetManifestManager();
++
++  void DispatchPendingCallbacks();
+   void OnConnectionError();
+ 
+   void OnRequestManifestResponse(int request_id,
