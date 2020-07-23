@@ -1991,21 +1991,16 @@ otherwise the `debug` packages won't have debugging symbols.
 <a id="contributing"></a>
 ### Contributing via git
 
-Fork the voidlinux `void-packages` git repository on github and clone it:
+To get started, [fork](https://help.github.com/articles/fork-a-repo) the void-linux `void-packages` git repository on GitHub and clone it:
 
     $ git clone git@github.com:<user>/void-packages.git
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for information on how to format your
-commits and other tips for contributing.
-
-Once you've made changes to your `forked` repository you can submit
-a github pull request; see https://help.github.com/articles/fork-a-repo for more information.
-
-To keep your forked repository always up to date, setup the `upstream` remote
-to pull in new changes:
+To keep your forked repository up to date, setup the `upstream` remote to pull in new changes:
 
     $ git remote add upstream git://github.com/void-linux/void-packages.git
     $ git pull --rebase upstream master
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for more information on how to contribute to `void-packages`.
 
 <a id="help"></a>
 ## Help
