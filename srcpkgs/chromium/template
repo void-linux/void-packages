@@ -1,47 +1,45 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See http://www.chromium.org/developers/calendar for the latest version
-version=83.0.4103.106
-revision=2
+version=84.0.4147.89
+revision=1
 archs="i686 x86_64*"
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 license="BSD-3-Clause"
 homepage="https://www.chromium.org/"
 distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/${pkgname}-${version}.tar.xz"
-checksum=cfd153a2e10b0bb0fb3b7e6be543aef0915181f5fbdbea893d08465afd097e2f
+checksum=17970d998c125b40765141f2cd346d1674f05dbd4a28fdcf31f9e3540890c679
 
 lib32disabled=yes
 nodebug=yes
 nopie=yes  # contains tools that are not PIE, enables PIE itself
 
-build_options="clang js_optimize vaapi"
+build_options="clang js_optimize vaapi pulseaudio sndio"
 desc_option_clang="Use clang to build"
 desc_option_js_optimize="Optimize the JS used for Chromium's UI"
 desc_option_vaapi="Enable support for VA-API"
+desc_option_pulseaudio="Enable support for PulseAudio"
+desc_option_sndio="Enable support for sndio"
 
-hostmakedepends="$(vopt_if clang clang) yasm python pkgconf perl gperf bison ninja nodejs hwids
+hostmakedepends="$(vopt_if clang clang) python pkgconf perl gperf bison ninja nodejs hwids
  libatomic-devel libevent-devel libglib-devel $(vopt_if js_optimize openjdk)"
 makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
  libXi-devel libgcrypt-devel libgnome-keyring-devel cups-devel elfutils-devel
  libXcomposite-devel speech-dispatcher-devel libXrandr-devel mit-krb5-devel
  libXScrnSaver-devel alsa-lib-devel snappy-devel libdrm-devel
- libxml2-devel libxslt-devel pulseaudio-devel libexif-devel
+ libxml2-devel libxslt-devel $(vopt_if pulseaudio pulseaudio-devel) libexif-devel
  libXcursor-devel libflac-devel speex-devel libmtp-devel libwebp-devel
  libjpeg-turbo-devel libevent-devel json-c-devel harfbuzz-devel
  minizip-devel jsoncpp-devel zlib-devel libcap-devel libXdamage-devel
  re2-devel fontconfig-devel freetype-devel opus-devel
- ffmpeg-devel libva-devel python-setuptools"
+ ffmpeg-devel libva-devel python-setuptools xcb-proto $(vopt_if sndio sndio-devel)"
 depends="libexif hwids desktop-file-utils hicolor-icon-theme xdg-utils"
 
-build_options_default="clang"
+build_options_default="clang pulseaudio vaapi"
 
 case "${XBPS_TARGET_MACHINE}" in
 	x86_64|i686) build_options_default+=" js_optimize" ;;
-esac
-
-case "${XBPS_TARGET_MACHINE}" in
-	i686) broken="what():  std::bad_alloc during linking" ;;
 esac
 
 post_extract() {
@@ -75,6 +73,9 @@ post_extract() {
 		sed -i '/config("compiler")/ a cflags_cc = [ "-fno-delete-null-pointer-checks" ]' \
 			build/config/linux/BUILD.gn
 	fi
+
+	# Make xcbgen available to ui/gfx/x/gen_xproto.py running under Python 2
+	ln -s /usr/lib/python3.*/site-packages/xcbgen "${wrksrc}"
 }
 do_configure() {
 	local system="" conf=()
@@ -113,7 +114,6 @@ do_configure() {
 		opus
 		re2
 		snappy
-		yasm
 	"
 
 	# remove build scripts for system provided dependencies - basically does the
@@ -126,7 +126,6 @@ do_configure() {
 			\! -path './base/third_party/icu/*' \
 			\! -path './third_party/pdfium/third_party/freetype/include/pstables.h' \
 			\! -path './third_party/harfbuzz-ng/utils/hb_scoped.h' \
-			\! -path './third_party/yasm/run_yasm.py' \
 			\! -regex '.*\.\(gn\|gni\|isolate\|py\)' \
 			-delete
 	done
@@ -158,7 +157,6 @@ do_configure() {
 		'use_allocator="none"'
 		'use_allocator_shim=false'
 		'use_cups=true'
-		'use_pulseaudio=true'
 		'use_sysroot=false'
 		'use_system_harfbuzz=true'
 		'enable_widevine=true'
@@ -174,6 +172,10 @@ do_configure() {
 		"closure_compile=$(vopt_if js_optimize true false)"
 	)
 
+	conf+=(
+		"use_pulseaudio=$(vopt_if pulseaudio true false)"
+	)
+
 	# Use explicit library dependencies instead of dlopen.
 	# GN only has "link_pulseaudio", the other options used before are not available atm
 	# linux_link_cups=true
@@ -181,7 +183,11 @@ do_configure() {
 	# linux_link_libpci=true
 	# linux_link_libspeechd=true
 	# libspeechd_h_prefix=\"speech-dispatcher/\""
-	conf+=( 'link_pulseaudio=true' )
+	conf+=( "link_pulseaudio=$(vopt_if pulseaudio true false)" )
+
+	conf+=(
+		"use_sndio=$(vopt_if sndio true false)"
+	)
 
 	# Never use bundled binutils/gold binary.
 	conf+=(
@@ -192,9 +198,10 @@ do_configure() {
 		'use_lld=false'
 	)
 
-	# XXX: gold broken with musl
+	# XXX: gold broken with musl and i686
 	case "${XBPS_TARGET_MACHINE}" in
 	*-musl) conf+=( 'use_gold=false' ) ;;
+	i686*) conf+=( 'use_gold=false' ) ;;
 	*) conf+=( 'use_gold=true' ) ;;
 	esac
 
@@ -234,6 +241,8 @@ do_configure() {
 	out/Release/gn gen out/Release --args="${conf[*]}"
 }
 do_build() {
+	export PYTHONPATH=${wrksrc}
+
 	ninja -C out/Release ${makejobs} chrome chromedriver mksnapshot
 }
 do_install() {

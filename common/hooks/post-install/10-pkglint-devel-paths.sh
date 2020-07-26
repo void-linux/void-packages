@@ -52,28 +52,27 @@ hook() {
                 msg_warn "usr/lib/qt5/mkspecs should be in -devel package\n"
                 ;;
         esac
-
-        if [ -n "$(find $PKGDESTDIR/usr/lib -maxdepth 1 -type l -iname '*.so' 2>/dev/null)" ]; then
-            solink=1
-        fi
-
-        if [ -n "$(find $PKGDESTDIR/usr/lib -maxdepth 1 -type f -iname '*.a' 2>/dev/null)" ]; then
-            archive=1
-        fi
-
-        if [ -d $PKGDESTDIR/usr/bin ]; then
-            for x in $(find $PKGDESTDIR/usr/bin -type f -executable -iname '*-config'); do
-                msg_warn "${x#$PKGDESTDIR\/} should be in -devel package\n"
-            done
-        fi
-
-        if [ -d $PKGDESTDIR/usr/man/man1 ]; then
-            for m in $(find $PKGDESTDIR/usr/man/man1 -type f -iname '*-config.1'); do
-                msg_warn "${m#$PKGDESTDIR\/} should be in -devel package\n"
-            done
-        fi
-
     done
+
+    if [ -n "$(find $PKGDESTDIR/usr/lib -maxdepth 1 -type l -iname '*.so' 2>/dev/null)" ]; then
+        solink=1
+    fi
+
+    if [ -n "$(find $PKGDESTDIR/usr/lib -maxdepth 1 -type f -iname '*.a' 2>/dev/null)" ]; then
+        archive=1
+    fi
+
+    if [ -d $PKGDESTDIR/usr/bin ]; then
+        for x in $(find $PKGDESTDIR/usr/bin -type f -executable -iname '*-config'); do
+            msg_warn "${x#$PKGDESTDIR\/} should be in -devel package\n"
+        done
+    fi
+
+    if [ -d $PKGDESTDIR/usr/man/man1 ]; then
+        for m in $(find $PKGDESTDIR/usr/man/man1 -type f -iname '*-config.1'); do
+            msg_warn "${m#$PKGDESTDIR\/} should be in -devel package\n"
+        done
+    fi
 
     if [ -n "$solink" ]; then
         msg_warn "usr/lib/*.so should be in -devel package\n"
