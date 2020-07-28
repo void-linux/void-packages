@@ -1,0 +1,88 @@
+https://bugzilla.mozilla.org/show_bug.cgi?id=1626236
+https://bug1626236.bmoattachments.org/attachment.cgi?id=9137096
+
+# HG changeset patch
+# User msirringhaus@suse.de
+# Date 1582805876 -3600
+#      Thu Feb 27 13:17:56 2020 +0100
+# Node ID cc3d09abea31068e57f1ab918782f9f86fc6a158
+# Parent  9cd90914846f667f18babc491a74c164ae5d6e9f
+imported patch decoder_workaround.patch
+
+diff -r 9cd90914846f image/decoders/nsGIFDecoder2.cpp
+--- image/decoders/nsGIFDecoder2.cpp	Thu Feb 27 12:57:14 2020 +0100
++++ image/decoders/nsGIFDecoder2.cpp	Fri Mar 27 13:06:18 2020 +0100
+@@ -422,6 +422,9 @@
+   MOZ_ASSERT(mSwizzleFn);
+   uint8_t* data = reinterpret_cast<uint8_t*>(aColormap);
+   mSwizzleFn(data, data, aColors);
++#if MOZ_BIG_ENDIAN()
++  SwizzleRow(SurfaceFormat::A8R8G8B8, SurfaceFormat::B8G8R8A8)(data, data, aColors);
++#endif
+ }
+ 
+ LexerResult nsGIFDecoder2::DoDecode(SourceBufferIterator& aIterator,
+diff -r 9cd90914846f image/decoders/nsJPEGDecoder.cpp
+--- image/decoders/nsJPEGDecoder.cpp	Thu Feb 27 12:57:14 2020 +0100
++++ image/decoders/nsJPEGDecoder.cpp	Fri Mar 27 13:06:18 2020 +0100
+@@ -263,6 +263,9 @@
+         case JCS_YCbCr:
+           // By default, we will output directly to BGRA. If we need to apply
+           // special color transforms, this may change.
++#if MOZ_BIG_ENDIAN()
++          mInfo.out_color_space = MOZ_JCS_EXT_NATIVE_ENDIAN_XRGB;
++#else
+           switch (SurfaceFormat::OS_RGBX) {
+             case SurfaceFormat::B8G8R8X8:
+               mInfo.out_color_space = JCS_EXT_BGRX;
+@@ -277,6 +280,7 @@
+               mState = JPEG_ERROR;
+               return Transition::TerminateFailure();
+           }
++#endif
+           break;
+         case JCS_CMYK:
+         case JCS_YCCK:
+diff -r 9cd90914846f image/decoders/nsPNGDecoder.cpp
+--- image/decoders/nsPNGDecoder.cpp	Thu Feb 27 12:57:14 2020 +0100
++++ image/decoders/nsPNGDecoder.cpp	Fri Mar 27 13:06:18 2020 +0100
+@@ -361,7 +361,7 @@
+                                    IResumable* aOnResume) {
+   MOZ_ASSERT(!HasError(), "Shouldn't call DoDecode after error!");
+ 
+-  return mLexer.Lex(aIterator, aOnResume,
++  LexerResult res = mLexer.Lex(aIterator, aOnResume,
+                     [=](State aState, const char* aData, size_t aLength) {
+                       switch (aState) {
+                         case State::PNG_DATA:
+@@ -371,6 +371,14 @@
+                       }
+                       MOZ_CRASH("Unknown State");
+                     });
++
++#if MOZ_BIG_ENDIAN()
++  if(res.is<TerminalState>() && res.as<TerminalState>() == TerminalState::SUCCESS) {
++      NativeEndian::swapToLittleEndianInPlace<uint32_t>((uint32_t*)(mImageData), mImageDataLength / 4);
++  }
++#endif
++
++  return res;
+ }
+ 
+ LexerTransition<nsPNGDecoder::State> nsPNGDecoder::ReadPNGData(
+diff -r 9cd90914846f image/decoders/nsWebPDecoder.cpp
+--- image/decoders/nsWebPDecoder.cpp	Thu Feb 27 12:57:14 2020 +0100
++++ image/decoders/nsWebPDecoder.cpp	Fri Mar 27 13:06:18 2020 +0100
+@@ -237,7 +237,12 @@
+   // WebP doesn't guarantee that the alpha generated matches the hint in the
+   // header, so we always need to claim the input is BGRA. If the output is
+   // BGRX, swizzling will mask off the alpha channel.
++#if MOZ_BIG_ENDIAN()
++  mBuffer.colorspace = MODE_ARGB;
++  SurfaceFormat inFormat = mFormat;
++#else
+   SurfaceFormat inFormat = SurfaceFormat::OS_RGBA;
++#endif
+ 
+   SurfacePipeFlags pipeFlags = SurfacePipeFlags();
+   if (mFormat == SurfaceFormat::OS_RGBA &&
