@@ -1,0 +1,46 @@
+From 0df592524fed305d6fbe74ddf8a196bc9ffdb92f Mon Sep 17 00:00:00 2001
+From: Elvis Angelaccio <elvis.angelaccio@kde.org>
+Date: Wed, 29 Jul 2020 23:45:30 +0200
+Subject: [PATCH] Fix vulnerability to path traversal attacks
+
+Ark was vulnerable to directory traversal attacks because of
+missing validation of file paths in the archive.
+
+More details about this attack are available at:
+https://github.com/snyk/zip-slip-vulnerability
+
+Job::onEntry() is the only place where we can safely check the path of
+every entry in the archive. There shouldn't be a valid reason
+to have a "../" in an archive path, so we can just play safe and abort
+the LoadJob if we detect such an entry. This makes impossibile to
+extract this kind of malicious archives and perform the attack.
+
+Thanks to Albert Astals Cid for suggesting to use QDir::cleanPath()
+so that we can still allow loading of legitimate archives that
+contain "../" in their paths but still resolve inside the extraction folder.
+---
+ kerfuffle/jobs.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/kerfuffle/jobs.cpp b/kerfuffle/jobs.cpp
+index fdaa48695..f73b56f86 100644
+--- a/kerfuffle/jobs.cpp
++++ b/kerfuffle/jobs.cpp
+@@ -180,6 +180,14 @@ void Job::onError(const QString & message, const QString & details)
+ 
+ void Job::onEntry(Archive::Entry *entry)
+ {
++    const QString entryFullPath = entry->fullPath();
++    if (QDir::cleanPath(entryFullPath).contains(QLatin1String("../"))) {
++        qCWarning(ARK) << "Possibly malicious archive. Detected entry that could lead to a directory traversal attack:" << entryFullPath;
++        onError(i18n("Could not load the archive because it contains ill-formed entries and might be a malicious archive."), QString());
++        onFinished(false);
++        return;
++    }
++
+     emit newEntry(entry);
+ }
+ 
+-- 
+GitLab
+
