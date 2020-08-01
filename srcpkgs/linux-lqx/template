@@ -1,0 +1,274 @@
+# Template file for 'linux-lqx'
+pkgname=linux-lqx
+version=5.7
+revision=1
+_lqxversion=5.7-16
+wrksrc="linux-${version}"
+short_desc="Linux kernel and modules (${version%.*} series with Liquorix patches)"
+maintainer="Louis Dupré Bertoni <contact@louisdb.xyz>"
+license="GPL-2.0-only"
+homepage="https://liquorix.net"
+distfiles="https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${version}.tar.xz https://github.com/damentz/liquorix-package/archive/${_lqxversion}.tar.gz"
+checksum="de8163bb62f822d84f7a3983574ec460060bf013a78ff79cd7c979ff1ec1d7e0 f4b069c7275a3451b471559b884721840a9ec89393d7f1bda732692047c0564c"
+python_version=3
+patch_args="-Np1"
+
+archs="x86_64"
+
+nodebug=yes  # -dbg package is generated below manually
+nostrip=yes
+noverifyrdeps=yes
+noshlibprovides=yes
+preserve=yes
+
+hostmakedepends="tar xz bc elfutils-devel flex gmp-devel kmod libmpc-devel
+ libressl-devel perl uboot-mkimage cpio grep zstd"
+
+_kernver="5.7.11-lqx1"
+triggers="kernel-hooks"
+kernel_hooks_version="${_kernver}"
+
+# These files could be modified when an external module is built.
+mutable_files="
+ /usr/lib/modules/${_kernver}/modules.builtin.bin
+ /usr/lib/modules/${_kernver}/modules.builtin.alias.bin
+ /usr/lib/modules/${_kernver}/modules.softdep
+ /usr/lib/modules/${_kernver}/modules.dep
+ /usr/lib/modules/${_kernver}/modules.dep.bin
+ /usr/lib/modules/${_kernver}/modules.symbols
+ /usr/lib/modules/${_kernver}/modules.symbols.bin
+ /usr/lib/modules/${_kernver}/modules.alias
+ /usr/lib/modules/${_kernver}/modules.alias.bin
+ /usr/lib/modules/${_kernver}/modules.devname"
+
+do_configure() {
+	# 5.7 misses Documentation/DocBook. We ship the directory from 4.12 here.
+	cp -a $FILESDIR/DocBook -t Documentation
+
+	local _args
+
+	if [ "$CROSS_BUILD" ]; then
+		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+
+	# Add Liquorix patches
+	local _patchrx='^zen/v\d+\.\d+\.\d+-lqx\d+.patch$'
+	local _patchfolder="../liquorix-package-${_lqxversion}/linux-liquorix/debian/patches"
+	local _patchpath="$(grep -P "$_patchrx" "$_patchfolder/series")"
+	patch -Np1 -i "$_patchfolder/$_patchpath"
+
+	# Set config
+	cat "../liquorix-package-${_lqxversion}/linux-liquorix/debian/config/kernelarch-x86/config-arch-64" >.config
+	make olddefconfig
+
+	# Prepared version
+	make -s kernelrelease >version
+
+	# Disable NUMA
+	sed -i .config \
+		-e 's/CONFIG_NUMA=y/# CONFIG_NUMA is not set/' \
+		-e '/CONFIG_AMD_NUMA=y/d' \
+		-e '/CONFIG_X86_64_ACPI_NUMA=y/d' \
+		-e '/CONFIG_NODES_SPAN_OTHER_NODES=y/d' \
+		-e '/# CONFIG_NUMA_EMU is not set/d' \
+		-e '/CONFIG_NODES_SHIFT=6/d' \
+		-e '/CONFIG_NEED_MULTIPLE_NODES=y/d' \
+		-e '/# CONFIG_MOVABLE_NODE is not set/d' \
+		-e '/CONFIG_USE_PERCPU_NUMA_NODE_ID=y/d' \
+		-e '/CONFIG_ACPI_NUMA=y/d'
+}
+
+do_build() {
+	local _cross _args
+
+	_args="bzImage modules"
+	if [ "$CROSS_BUILD" ]; then
+		_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+	if [ "${_patchver}" ]; then
+		_version="EXTRAVERSION=${_patchver}"
+	fi
+	export LDFLAGS=
+	make ARCH=x86_64 ${_version} ${_cross} ${makejobs} prepare
+	make ARCH=x86_64 ${_version} ${_cross} ${makejobs} ${_args}
+}
+
+do_install() {
+	local _args hdrdest
+
+	# Run depmod after compressing modules.
+	sed -i '2iexit 0' scripts/depmod.sh
+
+	# Install kernel, firmware and modules
+	make ${makejobs} ARCH=x86_64 INSTALL_MOD_PATH=${DESTDIR} modules_install
+
+	hdrdest=${DESTDIR}/usr/src/kernel-headers-${_kernver}
+
+	vinstall .config 644 boot config-${_kernver}
+	vinstall System.map 644 boot System.map-${_kernver}
+
+	vinstall arch/x86/boot/bzImage 644 boot vmlinuz-${_kernver}
+
+	# Switch to /usr.
+	vmkdir usr
+	mv ${DESTDIR}/lib ${DESTDIR}/usr
+
+	cd ${DESTDIR}/usr/lib/modules/${_kernver}
+	rm -f source build
+	ln -sf ../../../src/kernel-headers-${_kernver} build
+
+	cd ${wrksrc}
+	# Install required headers to build external modules
+	install -Dm644 Makefile ${hdrdest}/Makefile
+	install -Dm644 kernel/Makefile ${hdrdest}/kernel/Makefile
+	install -Dm644 .config ${hdrdest}/.config
+	for file in $(find . -name Kconfig\*); do
+		mkdir -p ${hdrdest}/$(dirname $file)
+		install -Dm644 $file ${hdrdest}/${file}
+	done
+	for file in $(find arch/x86_64 -name module.lds -o -name Kbuild.platforms -o -name Platform); do
+		mkdir -p ${hdrdest}/$(dirname $file)
+		install -Dm644 $file ${hdrdest}/${file}
+	done
+	mkdir -p ${hdrdest}/include
+	# Remove firmware stuff provided by the "linux-firmware" pkg.
+	rm -rf ${DESTDIR}/usr/lib/firmware
+
+	for i in acpi asm-generic clocksource config crypto drm generated linux vdso \
+		math-emu media net pcmcia scsi sound trace uapi video xen dt-bindings; do
+		if [ -d include/$i ]; then
+			cp -a include/$i ${hdrdest}/include
+		fi
+	done
+
+	cd ${wrksrc}
+	mkdir -p ${hdrdest}/arch/x86
+	cp -a arch/x86/include ${hdrdest}/arch/x86
+
+	# Remove helper binaries built for host,
+	# if generated files from the scripts/ directory need to be included,
+	# they need to be copied to ${hdrdest} before this step
+	if [ "$CROSS_BUILD" ]; then
+		make ${makejobs} ARCH=x86_64 _mrproper_scripts
+		# remove host specific objects as well
+		find scripts -name '*.o' -delete
+	fi
+
+	# Copy files necessary for later builds, like nvidia and vmware
+	cp Module.symvers ${hdrdest}
+	cp -a scripts ${hdrdest}
+	mkdir -p ${hdrdest}/security/selinux
+	cp -a security/selinux/include ${hdrdest}/security/selinux
+	mkdir -p ${hdrdest}/tools/include
+	cp -a tools/include/tools ${hdrdest}/tools/include
+
+	mkdir -p ${hdrdest}/arch/x86/kernel
+	cp arch/x86/Makefile ${hdrdest}/arch/x86
+	mkdir -p ${hdrdest}/arch/x86/kernel
+	cp arch/x86/kernel/asm-offsets.s ${hdrdest}/arch/x86/kernel
+
+	# Add headers for lirc package
+	# PCI
+	for i in bt8xx cx88 saa7134; do
+		mkdir -p ${hdrdest}/drivers/media/pci/${i}
+		cp -a drivers/media/pci/${i}/*.h ${hdrdest}/drivers/media/pci/${i}
+	done
+	# USB
+	for i in cpia2 em28xx pwc; do
+		mkdir -p ${hdrdest}/drivers/media/usb/${i}
+		cp -a drivers/media/usb/${i}/*.h ${hdrdest}/drivers/media/usb/${i}
+	done
+	# I2C
+	mkdir -p ${hdrdest}/drivers/media/i2c
+	cp drivers/media/i2c/*.h ${hdrdest}/drivers/media/i2c
+	for i in cx25840; do
+		mkdir -p ${hdrdest}/drivers/media/i2c/${i}
+		cp -a drivers/media/i2c/${i}/*.h ${hdrdest}/drivers/media/i2c/${i}
+	done
+
+	# Add docbook makefile
+	install -Dm644 Documentation/DocBook/Makefile \
+		${hdrdest}/Documentation/DocBook/Makefile
+
+	# Add md headers
+	mkdir -p ${hdrdest}/drivers/md
+	cp drivers/md/*.h ${hdrdest}/drivers/md
+
+	# Add inotify.h
+	mkdir -p ${hdrdest}/include/linux
+	cp include/linux/inotify.h ${hdrdest}/include/linux
+
+	# Add wireless headers
+	mkdir -p ${hdrdest}/net/mac80211/
+	cp net/mac80211/*.h ${hdrdest}/net/mac80211
+
+	# Add dvb headers for external modules
+	mkdir -p ${hdrdest}/include/config/dvb/
+	cp include/config/dvb/*.h ${hdrdest}/include/config/dvb/
+
+	# Add dvb headers for http://mcentral.de/hg/~mrec/em28xx-new
+	mkdir -p ${hdrdest}/drivers/media/dvb-frontends
+	cp drivers/media/dvb-frontends/lgdt330x.h \
+		${hdrdest}/drivers/media/dvb-frontends/
+	cp drivers/media/i2c/msp3400-driver.h ${hdrdest}/drivers/media/i2c/
+
+	# Add dvb headers
+	mkdir -p ${hdrdest}/drivers/media/usb/dvb-usb
+	cp drivers/media/usb/dvb-usb/*.h ${hdrdest}/drivers/media/usb/dvb-usb/
+	mkdir -p ${hdrdest}/drivers/media/dvb-frontends
+	cp drivers/media/dvb-frontends/*.h ${hdrdest}/drivers/media/dvb-frontends/
+	mkdir -p ${hdrdest}/drivers/media/tuners
+	cp drivers/media/tuners/*.h ${hdrdest}/drivers/media/tuners/
+
+	# Add xfs and shmem for aufs building
+	mkdir -p ${hdrdest}/fs/xfs/libxfs
+	mkdir -p ${hdrdest}/mm
+	cp fs/xfs/libxfs/xfs_sb.h ${hdrdest}/fs/xfs/libxfs/xfs_sb.h
+
+	# Add objtool binary, needed to build external modules with dkms
+	mkdir -p ${hdrdest}/tools/objtool
+	cp tools/objtool/objtool ${hdrdest}/tools/objtool
+
+	# Remove unneeded architectures
+	_args="arm* p*"
+	for arch in alpha avr32 blackfin cris frv h8300 \
+		ia64 m* s* um v850 xtensa ${_args}; do
+		rm -rf ${hdrdest}/arch/${arch}
+	done
+	# Keep arch/x86/ras/Kconfig as it is needed by drivers/ras/Kconfig
+	mkdir -p ${hdrdest}/arch/x86/ras
+	cp -a arch/x86/ras/Kconfig ${hdrdest}/arch/x86/ras/Kconfig
+
+	# Extract debugging symbols and compress modules
+	msg_normal "$pkgver: extracting debug info and compressing modules, please wait...\n"
+	install -Dm644 vmlinux ${DESTDIR}/usr/lib/debug/boot/vmlinux-${_kernver}
+	(
+	cd ${DESTDIR}
+	export DESTDIR
+	find ./ -name '*.ko' -print0 | \
+		xargs -0r -n1 -P ${XBPS_MAKEJOBS} ${FILESDIR}/mv-debug
+	)
+	# ... and run depmod again.
+	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
+}
+linux-lqx-headers_package() {
+	preserve=yes
+	nostrip=yes
+	noshlibprovides=yes
+	short_desc+=" - source headers for 3rd party modules"
+	pkg_install() {
+		vmove usr/src
+		vmove usr/lib/modules/${_kernver}/build
+	}
+}
+linux-lqx-dbg_package() {
+	preserve=yes
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	repository=debug
+	short_desc+=" - debugging symbols"
+	pkg_install() {
+		vmove usr/lib/debug
+	}
+}
