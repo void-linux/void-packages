@@ -29,8 +29,9 @@ hook() {
         file="${f%:*}"
         file="${file#${PKGDESTDIR}}"
         case "${mime}" in
-            # Note application/x-executable is missing which is present in most Electron apps
-            application/x-sharedlib*|application/x-pie-executable*)
+            application/x-sharedlib*|\
+             application/x-pie-executable*|\
+             application/x-executable*)
                 if [[ ${ignore_elf_files} != *"${file}"* ]]; then
                     matches+=" ${file}"
                 fi
