@@ -1,3 +1,3 @@
-66 v0.0.4.0 + requires an extra key (@version) in the service frontend files in order to work.
-
-https://framagit.org/Obarun/66/-/blob/master/NEWS.md#in-0400
+CAUTION: upgrading 66 to a new major version requires MANUAL INTERVENTION!
+You may need to run the `66-update` utility or otherwise udpate your trees.
+For details, refer to https://framagit.org/Obarun/66/raw/master/NEWS.md
