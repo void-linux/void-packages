@@ -23,6 +23,12 @@ genpkg() {
 		return 0
 	fi
 
+	# Lock binpkg
+	unlock_binpkg() {
+	    rm -f $pkgdir/${binpkg}.lock
+	}
+
+	trap unlock_binpkg ERR EXIT
 	touch -f $pkgdir/${binpkg}.lock
 
 	if [ ! -d $pkgdir ]; then
@@ -87,7 +93,9 @@ genpkg() {
 		${PKGDESTDIR}
 	rval=$?
 
+	# Unlock binpkg
 	rm -f $pkgdir/${binpkg}.lock
+	trap - ERR EXIT
 
 	if [ $rval -ne 0 ]; then
 		rm -f $pkgdir/$binpkg
