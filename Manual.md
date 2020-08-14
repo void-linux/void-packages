@@ -141,6 +141,9 @@ to be accepted. New fonts are welcome if they provide value beyond
 aesthetics (e.g. they contain glyphs for a script missing in already
 packaged fonts).
 
+Browser forks, including those based on Chromium and Firefox, are generally not 
+accepted. Such forks require heavy patching, maintenance and hours of build time.
+
 <a id="buildphase"></a>
 ### Package build phases
 
