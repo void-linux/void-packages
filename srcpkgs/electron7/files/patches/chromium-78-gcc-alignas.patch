@@ -1,0 +1,102 @@
+From 6b633c4b14850df376d5cec571699018772f358e Mon Sep 17 00:00:00 2001
+From: Tomas Popela <tomas.popela@gmail.com>
+Date: Tue, 17 Sep 2019 19:48:48 +0000
+Subject: [PATCH] GCC: Can't use alignas() together with __attribute__()
+
+It's because GCC has problems when mixing the alignas() together with
+__attribute__() (that is used to export the symbols). The best
+solution is to use ALIGNAS() macro from //base/compiler_specific.h
+together with alignof() to have the equal functionality that compiles on
+GCC as well as on clang.
+
+Bug: 819294
+Change-Id: Ieb169592a2965f17a18bfc88d28418eb723a4e5a
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/1806735
+Auto-Submit: Tom     Popela <tomas.popela@gmail.com>
+Commit-Queue: Alex Clarke <alexclarke@chromium.org>
+Reviewed-by: Alex Clarke <alexclarke@chromium.org>
+Cr-Commit-Position: refs/heads/master@{#697330}
+---
+
+diff --git a/base/task/promise/dependent_list.h b/base/task/promise/dependent_list.h
+index 020bdbfc..3245c1c 100644
+--- a/base/task/promise/dependent_list.h
++++ b/base/task/promise/dependent_list.h
+@@ -59,7 +59,7 @@
+ 
+   // Align Node on an 8-byte boundary to ensure the first 3 bits are 0 and can
+   // be used to store additional state (see static_asserts below).
+-  class BASE_EXPORT alignas(8) Node {
++  class BASE_EXPORT ALIGNAS(8) Node {
+    public:
+     Node();
+     explicit Node(Node&& other) noexcept;
+
+Re-use chromium alignas workaround in protobuf.
+---
+
+diff --git a/third_party/protobuf/src/google/protobuf/port_def.inc b/third_party/protobuf/src/google/protobuf/port_def.inc
+index f1bd85d..9c204a1 100644
+--- a/third_party/protobuf/src/google/protobuf/port_def.inc
++++ b/third_party/protobuf/src/google/protobuf/port_def.inc
+@@ -528,6 +528,35 @@ PROTOBUF_EXPORT_TEMPLATE_TEST(DEFAULT, __declspec(dllimport));
+ #undef IN
+ #endif  // _MSC_VER
+ 
++// Specify memory alignment for structs, classes, etc.
++// Use like:
++//   class PROTOBUF_ALIGNAS(16) MyClass { ... }
++//   PROTOBUF_ALIGNAS(16) int array[4];
++//
++// In most places you can use the C++11 keyword "alignas", which is preferred.
++//
++// But compilers have trouble mixing __attribute__((...)) syntax with
++// alignas(...) syntax.
++//
++// Doesn't work in clang or gcc:
++//   struct alignas(16) __attribute__((packed)) S { char c; };
++// Works in clang but not gcc:
++//   struct __attribute__((packed)) alignas(16) S2 { char c; };
++// Works in clang and gcc:
++//   struct alignas(16) S3 { char c; } __attribute__((packed));
++//
++// There are also some attributes that must be specified *before* a class
++// definition: visibility (used for exporting functions/classes) is one of
++// these attributes. This means that it is not possible to use alignas() with a
++// class that is marked as exported.
++#if defined(_MSC_VER)
++#define PROTOBUF_ALIGNAS(byte_alignment) __declspec(align(byte_alignment))
++#elif defined(__GNUC__)
++#define PROTOBUF_ALIGNAS(byte_alignment) __attribute__((aligned(byte_alignment)))
++#else
++#define PROTOBUF_ALIGNAS(byte_alignment) alignas(byte_alignment)
++#endif
++
+ #if defined(__clang__)
+ #pragma clang diagnostic push
+ // TODO(gerbens) ideally we cleanup the code. But a cursory try shows many
+diff --git a/third_party/protobuf/src/google/protobuf/arena.h b/third_party/protobuf/src/google/protobuf/arena.h
+index dedc221..a8515ce 100644
+--- a/third_party/protobuf/src/google/protobuf/arena.h
++++ b/third_party/protobuf/src/google/protobuf/arena.h
+@@ -245,7 +245,7 @@ struct ArenaOptions {
+ // well as protobuf container types like RepeatedPtrField and Map. The protocol
+ // is internal to protobuf and is not guaranteed to be stable. Non-proto types
+ // should not rely on this protocol.
+-class PROTOBUF_EXPORT alignas(8) Arena final {
++class PROTOBUF_EXPORT PROTOBUF_ALIGNAS(8) Arena final {
+  public:
+   // Arena constructor taking custom options. See ArenaOptions below for
+   // descriptions of the options available.
+diff --git a/third_party/protobuf/src/google/protobuf/port_undef.inc b/third_party/protobuf/src/google/protobuf/port_undef.inc
+index b7e67fe..ba1fffc 100644
+--- a/third_party/protobuf/src/google/protobuf/port_undef.inc
++++ b/third_party/protobuf/src/google/protobuf/port_undef.inc
+@@ -80,6 +80,7 @@
+ #undef PROTOBUF_EXPORT_TEMPLATE_STYLE_MATCH_foj3FJo5StF0OvIzl7oMxA__declspec
+ #undef PROTOBUF_EXPORT_TEMPLATE_STYLE_MATCH_DECLSPEC_dllexport
+ #undef PROTOBUF_EXPORT_TEMPLATE_STYLE_MATCH_DECLSPEC_dllimport
++#undef PROTOBUF_ALIGNAS
+ 
+ 
+ 

@@ -1,15 +1,15 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See http://www.chromium.org/developers/calendar for the latest version
-version=84.0.4147.89
+version=84.0.4147.125
 revision=1
-archs="i686* x86_64* aarch64* armv7l*"
+archs="i686* x86_64* aarch64* armv7l* ppc64le*"
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 license="BSD-3-Clause"
 homepage="https://www.chromium.org/"
 distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/${pkgname}-${version}.tar.xz"
-checksum=17970d998c125b40765141f2cd346d1674f05dbd4a28fdcf31f9e3540890c679
+checksum=98439626cf2d8d3d8f9486d08a99cbc1e4981b3f3427a072d5eaaf6ded4daff5
 nocross=yes
 
 lib32disabled=yes
@@ -34,24 +34,26 @@ makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
  libjpeg-turbo-devel libevent-devel json-c-devel harfbuzz-devel
  minizip-devel jsoncpp-devel zlib-devel libcap-devel libXdamage-devel
  re2-devel fontconfig-devel freetype-devel opus-devel
- ffmpeg-devel libva-devel python-setuptools xcb-proto $(vopt_if sndio sndio-devel)"
+ ffmpeg-devel libvpx-devel libva-devel python-setuptools xcb-proto
+ $(vopt_if sndio sndio-devel)"
 depends="libexif hwids desktop-file-utils hicolor-icon-theme xdg-utils"
 
-build_options_default="clang pulseaudio vaapi"
-
-case "${XBPS_TARGET_MACHINE}" in
-	x86_64|i686) build_options_default+=" js_optimize" ;;
+case "$XBPS_TARGET_MACHINE" in
+	ppc64*-musl) makedepends+=" libucontext-devel" ;;
 esac
 
-post_extract() {
-	case "${XBPS_TARGET_MACHINE}" in
-	*-musl)
+build_options_default="clang js_optimize vaapi pulseaudio"
+
+post_patch() {
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 		for f in "${FILESDIR}"/musl-patches/*.patch; do
 			echo "Applying $f"
 			patch -Np0 -i "$f"
 		done
-		;;
-	i686)
+	fi
+
+	case "${XBPS_TARGET_MACHINE}" in
+	i686*)
 		for f in "${FILESDIR}"/i686-patches/*.patch; do
 			echo "Applying $f"
 			patch -Np0 -i "$f"
@@ -62,10 +64,6 @@ post_extract() {
 	# Use the file at run time instead of effectively compiling it in
 	sed 's|//third_party/usb_ids/usb.ids|/usr/share/hwdata/usb.ids|g' \
 		-i services/device/public/cpp/usb/BUILD.gn
-
-	# use system nodejs
-	mkdir -p third_party/node/linux/node-linux-x64/bin
-	ln -sf /usr/bin/node third_party/node/linux/node-linux-x64/bin/node
 
 	if [ -z "$build_option_clang" ]; then
 		# Work around bug in blink in which GCC 6 optimizes away null pointer checks
@@ -98,7 +96,6 @@ do_configure() {
 	# use_system_protobuf
 	# use_system_v8=1
 	# use_system_zlib=1
-	# use_system_libvpx=1
 	# bzip2 jsoncpp minizip xdg_utils speex
 	system="
 		ffmpeg
@@ -109,6 +106,7 @@ do_configure() {
 		libevent
 		libjpeg
 		libpng
+		libvpx
 		libwebp
 		libxml
 		libxslt
@@ -230,6 +228,7 @@ do_configure() {
 		i686*) conf+=( 'target_cpu="x86"' ) ;;
 		arm*) conf+=( 'target_cpu="arm"' ) ;;
 		aarch64*) conf+=( 'target_cpu="arm64"' ) ;;
+		ppc64*) conf+=( 'target_cpu="ppc64"' ) ;;
 	esac
 
 	export LDFLAGS="-pthread"
@@ -243,6 +242,11 @@ do_configure() {
 }
 do_build() {
 	export PYTHONPATH=${wrksrc}
+
+	if [ "$build_option_clang" ]; then
+		export CC=clang
+		export CXX=clang++
+	fi
 
 	ninja -C out/Release ${makejobs} chrome chromedriver mksnapshot
 }
