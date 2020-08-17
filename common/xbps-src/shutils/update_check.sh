@@ -56,6 +56,7 @@ update_check() {
               *cran.r-project.org/src/contrib*|\
               *rubygems.org*|\
               *crates.io*|\
+              *codeberg.org*|\
               *hg.sr.ht*)
                 continue
                 ;;
@@ -136,6 +137,10 @@ update_check() {
             *crates.io*)
                 url="https://crates.io/api/v1/crates/${pkgname#rust-}"
                 rx='/crates/'${pkgname#rust-}'/\K[0-9.]*(?=/download)' ;;
+            *codeberg.org*)
+                pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
+                url="https://codeberg.org/$pkgurlname/releases"
+                rx='/archive/\K[\d\.]+(?=\.tar\.gz)' ;;
             *hg.sr.ht*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://hg.sr.ht/$pkgurlname/tags"
