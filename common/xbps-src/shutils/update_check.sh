@@ -1,7 +1,7 @@
 # vim: set ts=4 sw=4 et:
 
 update_check() {
-    local i p url sfname lpname bbname githubname rx found_version consider
+    local i p url pkgurlname rx found_version consider
     local update_override=$XBPS_SRCPKGDIR/$XBPS_TARGET_PKG/update
     local original_pkgname=$pkgname
     local urlpfx urlsfx
@@ -98,13 +98,13 @@ update_check() {
         if [ -z "$site" ]; then
             case "$url" in
             *sourceforge.net/sourceforge*)
-                sfname="$(printf %s "$url" | cut -d/ -f5)"
-                url="https://sourceforge.net/projects/$sfname/rss?limit=200";;
+                pkgurlname="$(printf %s "$url" | cut -d/ -f5)"
+                url="https://sourceforge.net/projects/$pkgurlname/rss?limit=200";;
             *code.google.com*|*googlecode*)
                 url="http://code.google.com/p/$pkgname/downloads/list";;
             *launchpad.net*)
-                lpname="$(printf %s "$url" | cut -d/ -f4)"
-                url="https://launchpad.net/$lpname/+download";;
+                pkgurlname="$(printf %s "$url" | cut -d/ -f4)"
+                url="https://launchpad.net/$pkgurlname/+download";;
             *cpan.*)
                 pkgname=${pkgname#perl-};;
             *pythonhosted.org*)
@@ -112,16 +112,16 @@ update_check() {
                 pkgname=${pkgname#python3-}
                 url="https://pypi.org/simple/$pkgname";;
             *github.com*)
-                githubname="$(printf %s "$url" | cut -d/ -f4,5)"
-                url="https://github.com/$githubname/tags"
+                pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
+                url="https://github.com/$pkgurlname/tags"
                 rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
             *//gitlab.*)
-                gitlaburl="$(printf %s "$url" | cut -d/ -f1-5)"
-                url="$gitlaburl/tags"
+                pkgurlname="$(printf %s "$url" | cut -d/ -f1-5)"
+                url="$pkgurlname/tags"
                 rx='/archive/[^/]+/\Q'"$pkgname"'\E-v?\K[\d\.]+(?=\.tar\.gz")';;
             *bitbucket.org*)
-                bbname="$(printf %s "$url" | cut -d/ -f4,5)"
-                url="https://bitbucket.org/$bbname/downloads"
+                pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
+                url="https://bitbucket.org/$pkgurlname/downloads"
                 rx='/(get|downloads)/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar)';;
             *ftp.gnome.org*)
                 : ${pattern="\Q$pkgname\E-\K[0-9]+\.[0-9]*[02468]\.[0-9.]*[0-9](?=)"}
@@ -137,8 +137,8 @@ update_check() {
                 url="https://crates.io/api/v1/crates/${pkgname#rust-}"
                 rx='/crates/'${pkgname#rust-}'/\K[0-9.]*(?=/download)' ;;
             *hg.sr.ht*)
-                hgsrhtname="$(printf %s "$url" | cut -d/ -f4,5)"
-                url="https://hg.sr.ht/$hgsrhtname/tags"
+                pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
+                url="https://hg.sr.ht/$pkgurlname/tags"
                 rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
             esac
         fi
