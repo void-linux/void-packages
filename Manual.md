@@ -141,6 +141,9 @@ to be accepted. New fonts are welcome if they provide value beyond
 aesthetics (e.g. they contain glyphs for a script missing in already
 packaged fonts).
 
+Browser forks, including those based on Chromium and Firefox, are generally not 
+accepted. Such forks require heavy patching, maintenance and hours of build time.
+
 <a id="buildphase"></a>
 ### Package build phases
 
@@ -701,6 +704,9 @@ used.
 - `archs` Whitespace separated list of architectures that a package can be
 built for, available architectures can be found under `common/cross-profiles`
 alongside the `noarch` value for packages that do not contain any machine code.
+In general, `archs` should only be set if the upstream software explicitly targets
+certain architectures or there is a compelling reason why the software should not be
+available on some supported architectures.
 Examples:
 
 	```
