@@ -20,10 +20,6 @@ hook() {
 	if [ "$XBPS_TARGET_MACHINE" != "i686" ]; then
 		return
 	fi 
-	# Ignore noarch pkgs.
-	if [ "${archs// /}" = "noarch" ]; then
-		return
-	fi
 	if [ -z "$lib32mode" ]; then
 		# Library mode, copy only relevant files to new destdir.
 		#
@@ -104,13 +100,6 @@ hook() {
 			if [[ $pkgn =~ '-devel' ]]; then
 				echo "   RDEP: $f -> ${pkgn}-32bit${pkgv} (development)"
 				printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
-				continue
-			fi
-			# If dependency is noarch do not change it to 32bit.
-			_arch=$($XBPS_QUERY_CMD -R --property=architecture "$f")
-			if [ "${_arch}" = "noarch" ]; then
-				echo "   RDEP: $f -> ${pkgn}${pkgv} (noarch)"
-				printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
 				continue
 			fi
 			# If dependency does not have "shlib-provides" do not

@@ -395,7 +395,6 @@ setup_pkg() {
         source_file ${XBPS_SRCPKGDIR}/${basepkg}/template
     fi
 
-
     # Check if required vars weren't set.
     _vars="pkgname version short_desc revision homepage license"
     for f in ${_vars}; do
@@ -457,12 +456,7 @@ setup_pkg() {
     fi
     makejobs="-j$XBPS_MAKEJOBS"
 
-    # strip whitespaces to make "  noarch  " valid too.
-    if [ "${archs// /}" = "noarch" ]; then
-        arch="noarch"
-    else
-        arch="$XBPS_TARGET_MACHINE"
-    fi
+    arch="$XBPS_TARGET_MACHINE"
     if [ -n "$XBPS_BINPKG_EXISTS" ]; then
         local _binpkgver="$($XBPS_QUERY_XCMD -R -ppkgver $pkgver 2>/dev/null)"
         if [ "$_binpkgver" = "$pkgver" ]; then
