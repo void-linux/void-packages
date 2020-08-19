@@ -15,6 +15,8 @@ distfiles="https://github.com/rust-lang/cargo/archive/${version}.tar.gz"
 checksum=304b2abb13ca0219a3485466625f2a38e6011f898199272ee76ad03d4c8c68b0
 replaces="cargo-tree>=0"
 _cargo_dist_version=0.44.0
+_curl_sys_ver=0.4.35
+_curl_ver=7.71.1
 
 build_options="static bindist"
 desc_option_bindist="Generate a tarball for bootstrap"
@@ -25,6 +27,13 @@ fi
 
 if [ -z "$_build_static" ]; then
 	makedepends+=" libgit2-devel"
+else
+	distfiles+="
+	 https://github.com/alexcrichton/curl-rust/archive/curl-sys-${_curl_sys_ver}.tar.gz
+	 https://github.com/curl/curl/releases/download/curl-${_curl_ver//./_}/curl-${_curl_ver}.tar.gz"
+	checksum+="
+	 305eba92fcc5005864b429f7b7801a96af2cb8cfeb57701c3047f679e33970d2
+	 59ef1f73070de67b87032c72ee6037cedae71dcb1d7ef2d7f59487704aec069d"
 fi
 
 if [ "$CROSS_BUILD" ]; then
@@ -82,11 +91,41 @@ else
 	esac
 fi
 
+# since curl-sys is somehow totally broken, we need to work around it
+#
+# the problem is basically that at least with curl-sys 0.4.35, the static-curl
+# option will make the build.rs copy curl source files from inside curl/ in the
+# source tree, but the directory is empty; there is logic in the build.rs that
+# checks for existence of '.git' inside curl/, and if it doesn't exist, it
+# runs 'git submodule update', which is supposed to clone a copy of curl into
+# the source tree from git, but a curl-sys release tarball is not a git repo
+# and does not contain .git or .gitmodules at all, so that just fails anyway
+#
+# so work around the whole mess by fetching our own curl-sys, our own copy of
+# curl itself, then arrange things appropriately, create the .git inside curl/
+# to fool build.rs into not trying to run git, and then patch Cargo.toml inside
+# cargo to use our patched tree...
 post_extract() {
 	if [ -z "$CROSS_BUILD" ]; then
 		mkdir -p target/snapshot
 		cp ../cargo-${_cargo_dist_version}-${RUST_TARGET}/cargo/bin/cargo cargo
 	fi
+	if [ -n "$_build_static" ]; then
+		mv ${XBPS_BUILDDIR}/curl-rust-curl-sys-${_curl_sys_ver} .
+		mv curl-rust-curl-sys-${_curl_sys_ver}/curl-sys .
+		rm -rf curl-sys/curl
+		mv ${XBPS_BUILDDIR}/curl-${_curl_ver} curl-sys/curl
+		mkdir curl-sys/curl/.git
+	fi
+}
+
+# see above
+post_patch() {
+	[ -z "$_build_static" ] && return 0
+	cat >> Cargo.toml <<- EOF
+		[patch.crates-io]
+		curl-sys = { path = './curl-sys' }
+	EOF
 }
 
 do_build() {
@@ -108,6 +147,8 @@ do_build() {
 
 	if [ -n "$_build_static" ]; then
 		cargs+=" --features=all-static"
+		$cargo update
+		$cargo update --package curl-sys --precise ${_curl_sys_ver}
 	fi
 
 	$cargo build --release ${cargs}
