@@ -649,6 +649,10 @@ setup_pkg() {
 
     source_file $XBPS_COMMONDIR/environment/build-style/${build_style}.sh
 
+    # Need libc-devel on bootstrap since base-chroot not installed
+    if [ "$bootstrap" ]; then
+        . $XBPS_BUILDHELPERDIR/bootstrap.sh
+    fi
     # Source all build-helper files that are defined
     for f in $build_helper; do
         if [ ! -r $XBPS_BUILDHELPERDIR/${f}.sh ];  then
