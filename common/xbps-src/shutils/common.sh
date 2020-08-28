@@ -167,6 +167,16 @@ set_build_options() {
         if [ -z "$pkgopts" -o "$pkgopts" = "" ]; then
             pkgopts=${XBPS_PKG_OPTIONS}
         fi
+
+        # If pkg options were set in config(s), merge them with command line
+        if [ -n "$XBPS_ARG_PKG_OPTIONS" ]; then
+            if [ -n "$pkgopts" ]; then
+                pkgopts+=",$XBPS_ARG_PKG_OPTIONS"
+            else
+                pkgopts="$XBPS_ARG_PKG_OPTIONS"
+            fi
+        fi
+
         OIFS="$IFS"; IFS=','
         for j in ${pkgopts}; do
             case "$j" in
