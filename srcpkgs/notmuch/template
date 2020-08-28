@@ -1,17 +1,26 @@
 # Template file for 'notmuch'
 pkgname=notmuch
-version=0.29.3
-revision=4
-hostmakedepends="perl pkg-config python-devel python3-Sphinx python3-devel texinfo"
-makedepends="bash-completion gmime3-devel talloc-devel xapian-core-devel"
+version=0.30
+revision=1
+hostmakedepends="perl pkg-config python3-Sphinx python3-devel texinfo"
+makedepends="bash-completion gmime3-devel talloc-devel xapian-core-devel
+ python3-cffi python3-setuptools gnupg2"
+depends="gmime3>=3.2.7"
+checkdepends="python3-pytest mdocml dtach gdb tar xz"
 short_desc="Thread-based email index, search, and tagging"
 maintainer="Jan S. <jan.schreib@gmail.com>"
 license="GPL-3.0-or-later"
 homepage="https://notmuchmail.org"
-distfiles="https://notmuchmail.org/releases/notmuch-${version}.tar.xz"
-checksum=d5f704b9a72395e43303de9b1f4d8e14dd27bf3646fdbb374bb3dbb7d150dc35
+distfiles="https://notmuchmail.org/releases/notmuch-${version}.tar.xz
+ https://notmuchmail.org/releases/test-databases/database-v1.tar.xz"
+checksum="5e3baa6fe11d65c67e26ae488be11b320bae04e336acc9c64621f7e3449096fa
+ 4299e051b10e1fa7b33ea2862790a09ebfe96859681804e5251e130f800e69d2"
+skip_extraction="database-v1.tar.xz"
 
-subpackages="libnotmuch libnotmuch-devel notmuch-mutt notmuch-python notmuch-python3"
+# Not a real conflicts, but this package is broken with gpgme 1.13.1-
+# gpgme is optional dependency
+conflicts="gpgme<1.14.0_1"
+subpackages="libnotmuch libnotmuch-devel notmuch-mutt notmuch-python3"
 patch_args=-Np1
 
 if [ ! "$CROSS_BUILD" ]; then
@@ -25,25 +34,35 @@ else
 fi
 
 do_configure() {
+	ln -sf /usr/bin/gpg2 $XBPS_WRAPPERDIR/gpg
 	./configure --prefix=/usr \
 		--bashcompletiondir=/usr/share/bash-completion/completions \
 		--zshcompletiondir=/usr/share/zsh/site-functions ${_args}
 }
 
 do_build() {
-	make ${makejobs} V=1
+	make ${makejobs}
 	make -C contrib/notmuch-mutt
 	cd bindings/python
-	python2 setup.py build --build-base=build-2
-	python3 setup.py build --build-base=build-3
+	python3 setup.py build --build-base=build
+}
+
+do_check() {
+	# We want wrapper-dirs included for gpg being gpg2
+	# But we don't want to use date wrapper in check
+	unset SOURCE_DATE_EPOCH
+	PATH=$XBPS_WRAPPERDIR:$PATH
+	cp $XBPS_SRCDISTDIR/notmuch-$version/database-v1.tar.xz \
+		test/test-databases
+	# 2 tests is failing on musl
+	# glibc is clean
+	make test
 }
 
 do_install() {
 	make DESTDIR=${DESTDIR} install
 	pushd bindings/python
-	python2 setup.py build --build-base=build-2 \
-		install --prefix=/usr --root=${DESTDIR}
-	python3 setup.py build --build-base=build-3 \
+	python3 setup.py build --build-base=build \
 		install --prefix=/usr --root=${DESTDIR}
 	popd
 	if [ ! "$CROSS_BUILD" ]; then
@@ -95,28 +114,17 @@ notmuch-mutt_package() {
 	}
 }
 
-notmuch-python_package() {
-	archs=noarch
-	depends="libnotmuch>=${version}_${revision}"
-	short_desc+=" - Python2 bindings"
-	pycompile_module="notmuch"
-	pkg_install() {
-		vmove ${py2_sitelib}
-	}
-}
-
 notmuch-python3_package() {
 	archs=noarch
-	depends="libnotmuch>=${version}_${revision}"
-	short_desc+=" - Python3 bindings"
-	pycompile_module="notmuch"
+	depends="libnotmuch-${version}_${revision}"
+	short_desc+=" - Python 3 bindings"
 	pkg_install() {
 		vmove ${py3_sitelib}
 	}
 }
 
 notmuch-ruby_package() {
-	depends="libnotmuch>=${version}_${revision} ruby"
+	depends="libnotmuch-${version}_${revision} ruby"
 	short_desc+=" - Ruby bindings"
 	pkg_install() {
 		vmove usr/lib/ruby

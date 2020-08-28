@@ -1,6 +1,6 @@
 Start lxd service:
 
-	$ sudo ln -s /etc/sv/lxd /var/service
+	$ sudo ln -s /etc/sv/lxd /var/service/
 
 Run LXD initialization:
 
