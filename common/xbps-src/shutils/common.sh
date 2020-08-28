@@ -192,7 +192,7 @@ set_build_options() {
     done
 
     # Prepare final options.
-    for f in ${!options[@]}; do
+    for f in ${build_options}; do
         if [[ ${options[$f]} -eq 1 ]]; then
             eval export build_option_${f}=1
         else
