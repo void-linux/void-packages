@@ -19,7 +19,7 @@ index 53fc3c9937f7..b23771ab80fa 100644
 +#elif defined(MOZ_FFMPEG)
 +  RefPtr<PDMFactory> platform = new PDMFactory();
 +  return StaticPrefs::media_flac_enabled() &&
-+         platform->SupportsMimeType(NS_LITERAL_CSTRING("audio/flac"),
++         platform->SupportsMimeType("audio/flac"_ns,
 +                                    /* DecoderDoctorDiagnostics* */ nullptr);
  #else
    // Until bug 1295886 is fixed.
