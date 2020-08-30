@@ -657,3 +657,14 @@ setup_pkg() {
         . $XBPS_BUILDHELPERDIR/${f}.sh
     done
 }
+
+xbps_target_libc() {
+    local libc="$1"
+    [ "$XBPS_TARGET_LIBC" = "$libc" ]
+    return $?
+}
+
+xbps_target_no_atomic8() {
+    [ "$XBPS_TARGET_NO_ATOMIC8" ]
+    return $?
+}
