@@ -18,11 +18,13 @@ for cmd in vinstall vcopy vcompletion vmove vmkdir vbin vman vdoc vconf vsconf v
 done
 
 _vsv() {
-	local service="$1"
+	local svsrc="$1"
+	local target="$2"
 	local LN_OPTS="-s"
+	local svbase="${svsrc##*/}"
 
 	if [ $# -lt 1 ]; then
-		msg_red "$pkgver: vsv: 1 argument expected: <service>\n"
+		msg_red "$pkgver: vsv: missing required argument: <service> [target]\n"
 		return 1
 	fi
 
@@ -30,16 +32,26 @@ _vsv() {
 		LN_OPTS+="f"
 	fi
 
-	vmkdir etc/sv
-	vcopy "${FILESDIR}/$service" etc/sv
-	chmod 755 ${PKGDESTDIR}/etc/sv/${service}/run
-	if [ -r ${PKGDESTDIR}/etc/sv/${service}/finish ]; then
-		chmod 755 ${PKGDESTDIR}/etc/sv/${service}/finish
+	if [ -z "$target" ]; then
+		target="${svbase}"
 	fi
-	ln ${LN_OPTS} /run/runit/supervise.${service} ${PKGDESTDIR}/etc/sv/${service}/supervise
-	if [ -r ${PKGDESTDIR}/etc/sv/${service}/log/run ]; then
-		chmod 755 ${PKGDESTDIR}/etc/sv/${service}/log/run
-		ln ${LN_OPTS} /run/runit/supervise.${service}-log ${PKGDESTDIR}/etc/sv/${service}/log/supervise
+
+	local svdir="etc/sv/$target"
+
+	if [[ "$svsrc" == "$svbase" ]]; then
+		svsrc="${FILESDIR}/$svbase"
+	fi
+
+	vmkdir "$svdir"
+	vcopy "${svsrc}/*" "$svdir"
+	chmod 755 "${PKGDESTDIR}/${svdir}/run"
+	if [ -r "${PKGDESTDIR}/${svdir}/finish" ]; then
+		chmod 755 "${PKGDESTDIR}/${svdir}/finish"
+	fi
+	ln ${LN_OPTS} "/run/runit/supervise.${target}" "${PKGDESTDIR}/${svdir}/supervise"
+	if [ -r ${PKGDESTDIR}/${svdir}/log/run ]; then
+		chmod 755 ${PKGDESTDIR}/${svdir}/log/run
+		ln ${LN_OPTS} /run/runit/supervise.${target}-log ${PKGDESTDIR}/${svdir}/log/supervise
 	fi
 }
 

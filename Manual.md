@@ -321,14 +321,18 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	`$DESTDIR`. The optional 2nd argument can be used to change the
 	`file name`. See [license](#var_license) for when to use it.
 
-- *vsv()* `vsv <service>`
+- *vsv()* `vsv <service> [target]`
 
-	Installs `service` from `${FILESDIR}` to /etc/sv. The service must
-	be a directory containing at least a run script. Note the `supervise`
-	symlink will be created automatically by `vsv` and that the run script
-	is automatically made executable by this function.
+	Installs `service` to `/etc/sv/target`. If `target` is not provided, the base
+	name of `service` will be used instead. The service must be a directory
+	containing at least a `run` script. If `service` contains a `/` character, it
+	is used as a source path without modification. Otherwise, `service` is
+	assumed to be a directory within `${FILESDIR}`. Note the `supervise` symlink
+	will be created automatically by `vsv` and that the run script is
+	automatically made executable by this function.
+
 	For further information on how to create a new service directory see
-	[The corresponding section the FAQ](http://smarden.org/runit/faq.html#create).
+	[the corresponding section the FAQ](http://smarden.org/runit/faq.html#create).
 
 - *vsed()* `vsed -i <file> -e <regex>`
 
