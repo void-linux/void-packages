@@ -30,7 +30,7 @@ run_func() {
 ch_wrksrc() {
     cd "$wrksrc" || msg_error "$pkgver: cannot access wrksrc directory [$wrksrc]\n"
     if [ -n "$build_wrksrc" ]; then
-        cd $build_wrksrc || \
+        cd "$build_wrksrc" || \
             msg_error "$pkgver: cannot access build_wrksrc directory [$build_wrksrc]\n"
     fi
 }
