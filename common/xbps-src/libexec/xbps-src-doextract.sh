@@ -40,7 +40,7 @@ fi
 
 # If template defines do_extract() use it rather than the hooks.
 if declare -f do_extract >/dev/null; then
-    [ ! -d "$wrksrc" ] && mkdir -p $wrksrc
+    [ ! -d "$wrksrc" ] && mkdir -p "$wrksrc"
     cd "$wrksrc"
     run_func do_extract
 else
