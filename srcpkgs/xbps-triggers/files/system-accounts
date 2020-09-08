@@ -19,6 +19,12 @@ export PATH="usr/sbin:usr/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 group_add() {
 	local _grname _gid use_gid
 
+	case "$1" in
+	*:*:*)	echo "Invalid system_groups specification"
+		exit 1
+		;;
+	esac
+
 	_grname="${1%:*}"
 	_gid="${1#*:}"
 
@@ -26,7 +32,7 @@ group_add() {
 		use_gid="gid ${_gid}"
 	fi
 
-	if ! getent group ${_grname} >/dev/null; then
+	if ! grep -q "^${_grname}:" etc/group >/dev/null; then
 		if [ -n "$use_gid" ]; then
 			groupadd -r ${_grname} -g ${_gid} >/dev/null 2>&1
 		else
@@ -59,9 +65,6 @@ run)
 	if [ -x sbin/groupadd -o -x bin/groupadd ]; then
 		GROUPADD=1
 	fi
-	if [ -x bin/getent -o -x sbin/getent ]; then
-		GETENT=1
-	fi
 	if [ -x bin/passwd -o -x sbin/passwd ]; then
 		PASSWD=1
 	fi
@@ -70,8 +73,8 @@ run)
 	post-install)
 		# System groups required by a package.
 		for grp in ${system_groups}; do
-			if [ -z "$GROUPADD" -a -z "$GETENT" ]; then
-				echo "WARNING: cannot create ${grp} system group (missing groupadd/getent)"
+			if [ -z "$GROUPADD" ]; then
+				echo "WARNING: cannot create ${grp} system group (missing groupadd)"
 				echo "The following group must be created manually: $grp"
 				continue
 			fi
@@ -80,6 +83,13 @@ run)
 
 		# System user/group required by a package.
 		for acct in ${system_accounts}; do
+
+			case "$acct" in
+			*:*:*)	echo "Invalid system_accounts specification"
+				exit 1
+				;;
+			esac
+
 			_uname="${acct%:*}"
 			_uid="${acct#*:}"
 
@@ -96,8 +106,8 @@ run)
 			[ "${_uid}" != "${_uname}" ] &&
 				use_id="-u ${_uid} -g ${pgroup:-${_uid}}"
 
-			if [ -z "$USERADD" -a -z "$GETENT" -a -z "$PASSWD" ]; then
-				echo "WARNING: cannot create ${acct} system user/group (missing useradd/getent/passwd)"
+			if [ -z "$USERADD" -a -z "$PASSWD" ]; then
+				echo "WARNING: cannot create ${acct} system user/group (missing useradd/passwd)"
 				echo "The following system account must be created:"
 				echo "   Account: ${uname:-${_uid}} (uid: '${_uid}')"
 				echo "   Description: '${descr}'"
@@ -109,7 +119,7 @@ run)
 
 			group_add ${pgroup:-${acct}}
 
-			if ! getent passwd ${_uname} >/dev/null; then
+			if ! grep -q "^${_uname}:" etc/passwd >/dev/null; then
 				useradd -c "$descr" -d "$homedir" -s "$shell" ${user_groups} \
 					${pgroup:+-N} ${use_id:=-g ${pgroup:-${_uname}}} -r ${_uname} && \
 					passwd -l ${_uname} >/dev/null 2>&1
