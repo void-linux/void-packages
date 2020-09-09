@@ -162,11 +162,14 @@ set_build_options() {
     fi
 
     for f in ${build_options}; do
-        _pkgname=${pkgname//[^A-Za-z0-9_]/_}
-        eval pkgopts="\$XBPS_PKG_OPTIONS_${_pkgname}"
-        if [ -z "$pkgopts" -o "$pkgopts" = "" ]; then
-            pkgopts=${XBPS_PKG_OPTIONS}
-        fi
+        # Select build options from conf
+        export XBPS_CURRENT_PKG=${pkgname}
+        pkgopts="$(
+            . $XBPS_CONFIG_FILE 2>/dev/null
+            var="XBPS_PKG_OPTIONS_${XBPS_CURRENT_PKG//[^A-Za-z0-9_]/_}"
+            echo ${!var:-${XBPS_PKG_OPTIONS}}
+        )"
+        unset XBPS_CURRENT_PKG
 
         # If pkg options were set in config(s), merge them with command line
         if [ -n "$XBPS_ARG_PKG_OPTIONS" ]; then
@@ -335,8 +338,6 @@ setup_pkg() {
     unset -v subpackages run_depends build_depends host_build_depends
 
     unset_package_funcs
-
-    . $XBPS_CONFIG_FILE 2>/dev/null
 
     if [ -n "$cross" ]; then
         source_file $XBPS_CROSSPFDIR/${cross}.sh
