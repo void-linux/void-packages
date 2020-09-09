@@ -72,6 +72,10 @@ post_patch() {
 		sed -i '/config("compiler")/ a cflags_cc = [ "-fno-delete-null-pointer-checks" ]' \
 			build/config/linux/BUILD.gn
 	fi
+
+	# prevent annoying errors when regenerating gni
+	vsed -i 's,^update_readme$,#update_readme,' \
+		third_party/libvpx/generate_gni.sh
 }
 do_configure() {
 	local system="" conf=()
@@ -81,6 +85,26 @@ do_configure() {
 		export CC=clang
 		export CXX=clang++
 	fi
+
+	export LDFLAGS="-pthread"
+
+	# compile gn early, so it can be used to generate gni stuff
+	AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
+	python2 tools/gn/bootstrap/bootstrap.py --skip-generate-buildfiles
+
+	# we need to generate ppc64 stuff for libvpx as it's not shipped
+	# this has to be done before unbundling, but after gn is built
+	# comment out if we switch back to system libvpx again later
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*)
+			pushd third_party/libvpx
+			mkdir -p source/config/linux/ppc64
+			# need PATH to find gn
+			PATH="${wrksrc}/out/Release:$PATH" ./generate_gni.sh || \
+				msg_error "failed to generate libvpx gni"
+			popd
+			;;
+	esac
 
 	# Use system-provided libraries.
 	# TODO: use_system_hunspell (upstream changes needed).
@@ -226,13 +250,6 @@ do_configure() {
 		aarch64*) conf+=( 'target_cpu="arm64"' ) ;;
 		ppc64*) conf+=( 'target_cpu="ppc64"' ) ;;
 	esac
-
-	export LDFLAGS="-pthread"
-
-	AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
-	python2 tools/gn/bootstrap/bootstrap.py -s -v \
-		--gn-gen-args "${conf[*]}"
-
 
 	out/Release/gn gen out/Release --args="${conf[*]}"
 }
