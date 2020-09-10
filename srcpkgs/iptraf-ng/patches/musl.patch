@@ -1,0 +1,230 @@
+From bc0001050b7c2dd92c5b0e78840efbaac5b8c1bb Mon Sep 17 00:00:00 2001
+From: q66 <daniel@octaforge.org>
+Date: Thu, 19 Dec 2019 03:18:52 +0100
+Subject: [PATCH] Use POSIX instead of Linux/GNU style fields
+
+This allows compilation on current musl, without breaking it on
+glibc. The fields are all in a union and refer to the same thing.
+---
+ src/ipfrag.c   |  8 ++++----
+ src/itrafmon.c |  6 +++---
+ src/othptab.c  | 12 ++++++------
+ src/packet.c   | 16 ++++++++--------
+ src/tcptable.c | 20 ++++++++++----------
+ 5 files changed, 31 insertions(+), 31 deletions(-)
+
+diff --git src/ipfrag.c src/ipfrag.c
+index 76196e6..f9c28ad 100644
+--- src/ipfrag.c
++++ src/ipfrag.c
+@@ -190,11 +190,11 @@ unsigned int processfragment(struct iphdr *packet, in_port_t *sport,
+ 		ftmp->firstin = 1;
+ 		tpacket = ((char *) (packet)) + (packet->ihl * 4);
+ 		if (packet->protocol == IPPROTO_TCP) {
+-			ftmp->s_port = ntohs(((struct tcphdr *) tpacket)->source);
+-			ftmp->d_port = ntohs(((struct tcphdr *) tpacket)->dest);
++			ftmp->s_port = ntohs(((struct tcphdr *) tpacket)->th_sport);
++			ftmp->d_port = ntohs(((struct tcphdr *) tpacket)->th_dport);
+ 		} else if (packet->protocol == IPPROTO_UDP) {
+-			ftmp->s_port = ntohs(((struct udphdr *) tpacket)->source);
+-			ftmp->d_port = ntohs(((struct udphdr *) tpacket)->dest);
++			ftmp->s_port = ntohs(((struct udphdr *) tpacket)->uh_sport);
++			ftmp->d_port = ntohs(((struct udphdr *) tpacket)->uh_dport);
+ 		}
+ 	}
+ 	while (dtmp != NULL) {
+diff --git src/itrafmon.c src/itrafmon.c
+index 670ab6d..fe4c5a8 100644
+--- src/itrafmon.c
++++ src/itrafmon.c
+@@ -1017,7 +1017,7 @@ void ipmon(time_t facilitytime, char *ifptr)
+ 
+ 			if (((ntohs(frag_off) & 0x3fff) == 0)	/* first frag only */
+ 			    && (tcpentry == NULL)
+-			    && (!(transpacket->fin))) {
++			    && (!(transpacket->th_flags & TH_FIN))) {
+ 
+ 				/*
+ 				 * Ok, so we have a packet.  Add it if this connection
+@@ -1078,7 +1078,7 @@ void ipmon(time_t facilitytime, char *ifptr)
+ 				    && (tcpentry->pcount == 1)
+ 				    && (!(tcpentry->stat & FLAG_RST))) {
+ 					strcpy(msgstring, "first packet");
+-					if (transpacket->syn)
++					if (transpacket->th_flags & TH_SYN)
+ 						strcat(msgstring, " (SYN)");
+ 
+ 					writetcplog(logging, logfile, tcpentry,
+@@ -1108,7 +1108,7 @@ void ipmon(time_t facilitytime, char *ifptr)
+ 
+ 				if (((tcpentry->oth_connection->finsent == 2)
+ 				     &&	/* FINed and ACKed */
+-				     (ntohl(transpacket->seq) == tcpentry->oth_connection->finack))
++				     (ntohl(transpacket->th_seq) == tcpentry->oth_connection->finack))
+ 				    || ((revlook)
+ 					&& (((p_sstat != RESOLVED)
+ 					     && (tcpentry->s_fstat == RESOLVED))
+diff --git src/othptab.c src/othptab.c
+index 142c9c2..479a55a 100644
+--- src/othptab.c
++++ src/othptab.c
+@@ -140,9 +140,9 @@ void process_dest_unreach(struct tcptable *table, char *packet, char *ifname)
+ 		tcp = (struct tcphdr *) (packet + 48);
+ 		struct sockaddr_storage saddr, daddr;
+ 		sockaddr_make_ipv6(&saddr, &ip6->ip6_src);
+-		sockaddr_set_port(&saddr, ntohs(tcp->source));
++		sockaddr_set_port(&saddr, ntohs(tcp->th_sport));
+ 		sockaddr_make_ipv6(&daddr, &ip6->ip6_dst);
+-		sockaddr_set_port(&daddr, ntohs(tcp->dest));
++		sockaddr_set_port(&daddr, ntohs(tcp->th_dport));
+ 		tcpentry =
+ 		    in_table(table, &saddr, &daddr, ifname, 0, NULL, 0);
+ 	} else {
+@@ -151,9 +151,9 @@ void process_dest_unreach(struct tcptable *table, char *packet, char *ifname)
+ 		tcp = (struct tcphdr *) (packet + 8 + (ip->ihl * 4));
+ 		struct sockaddr_storage saddr, daddr;
+ 		sockaddr_make_ipv4(&saddr, ip->saddr);
+-		sockaddr_set_port(&saddr, ntohs(tcp->source));
++		sockaddr_set_port(&saddr, ntohs(tcp->th_sport));
+ 		sockaddr_make_ipv4(&daddr, ip->daddr);
+-		sockaddr_set_port(&daddr, ntohs(tcp->dest));
++		sockaddr_set_port(&daddr, ntohs(tcp->th_dport));
+ 		tcpentry =
+ 		    in_table(table, &saddr, &daddr, ifname, 0, NULL, 0);
+ 	}
+@@ -212,10 +212,10 @@ struct othptabent *add_othp_entry(struct othptable *table, struct pkt_hdr *pkt,
+ 				new_entry->un.icmp6.code =
+ 				    ((struct icmp6_hdr *) packet2)->icmp6_code;
+ 			} else if (protocol == IPPROTO_UDP) {
+-				servlook(ntohs(((struct udphdr *) packet2)->source),
++				servlook(ntohs(((struct udphdr *) packet2)->uh_sport),
+ 					 IPPROTO_UDP, new_entry->un.udp.s_sname,
+ 					 10);
+-				servlook(ntohs(((struct udphdr *) packet2)->dest),
++				servlook(ntohs(((struct udphdr *) packet2)->uh_dport),
+ 					 IPPROTO_UDP, new_entry->un.udp.d_sname,
+ 					 10);
+ 			} else if (protocol == IPPROTO_OSPFIGP) {
+diff --git src/packet.c src/packet.c
+index bc8ed21..b0d552b 100644
+--- src/packet.c
++++ src/packet.c
+@@ -247,13 +247,13 @@ again:
+ 				switch (ip->protocol) {
+ 				case IPPROTO_TCP:
+ 					tcp = (struct tcphdr *) ip_payload;
+-					sport_tmp = ntohs(tcp->source);
+-					dport_tmp = ntohs(tcp->dest);
++					sport_tmp = ntohs(tcp->th_sport);
++					dport_tmp = ntohs(tcp->th_dport);
+ 					break;
+ 				case IPPROTO_UDP:
+ 					udp = (struct udphdr *) ip_payload;
+-					sport_tmp = ntohs(udp->source);
+-					dport_tmp = ntohs(udp->dest);
++					sport_tmp = ntohs(udp->uh_sport);
++					dport_tmp = ntohs(udp->uh_dport);
+ 					break;
+ 				default:
+ 					sport_tmp = 0;
+@@ -299,16 +299,16 @@ again:
+ 		case IPPROTO_TCP:
+ 			tcp = (struct tcphdr *) ip_payload;
+ 			if (sport)
+-				*sport = ntohs(tcp->source);
++				*sport = ntohs(tcp->th_sport);
+ 			if (dport)
+-				*dport = ntohs(tcp->dest);
++				*dport = ntohs(tcp->th_dport);
+ 			break;
+ 		case IPPROTO_UDP:
+ 			udp = (struct udphdr *) ip_payload;
+ 			if (sport)
+-				*sport = ntohs(udp->source);
++				*sport = ntohs(udp->uh_sport);
+ 			if (dport)
+-				*dport = ntohs(udp->dest);
++				*dport = ntohs(udp->uh_dport);
+ 			break;
+ 		default:
+ 			if (sport)
+diff --git src/tcptable.c src/tcptable.c
+index 956866c..3ef8508 100644
+--- src/tcptable.c
++++ src/tcptable.c
+@@ -613,19 +613,19 @@ void updateentry(struct tcptable *table, struct tcptableent *tableentry,
+ 	 */
+ 
+ 	if (tableentry->pcount == 1) {
+-		if ((transpacket->syn) || (transpacket->rst))
++		if ((transpacket->th_flags & TH_SYN) || (transpacket->th_flags & TH_RST))
+ 			tableentry->partial = 0;
+ 		else
+ 			tableentry->partial = 1;
+ 	}
+-	tableentry->win = ntohs(transpacket->window);
++	tableentry->win = ntohs(transpacket->th_win);
+ 
+ 	tableentry->stat = 0;
+ 
+-	if (transpacket->syn)
++	if (transpacket->th_flags & TH_SYN)
+ 		tableentry->stat |= FLAG_SYN;
+ 
+-	if (transpacket->ack) {
++	if (transpacket->th_flags & TH_ACK) {
+ 		tableentry->stat |= FLAG_ACK;
+ 
+ 		/*
+@@ -639,7 +639,7 @@ void updateentry(struct tcptable *table, struct tcptableent *tableentry,
+ 		 */
+ 
+ 		if ((tableentry->oth_connection->finsent == 1)
+-		    && (ntohl(transpacket->seq) ==
++		    && (ntohl(transpacket->th_seq) ==
+ 			tableentry->oth_connection->finack)) {
+ 			tableentry->oth_connection->finsent = 2;
+ 
+@@ -660,7 +660,7 @@ void updateentry(struct tcptable *table, struct tcptableent *tableentry,
+ 	 * in ACK above.
+ 	 */
+ 
+-	if (transpacket->fin) {
++	if (transpacket->th_flags & TH_FIN) {
+ 
+ 		/*
+ 		 * First, we check if the opposite direction has no counts, in which
+@@ -688,7 +688,7 @@ void updateentry(struct tcptable *table, struct tcptableent *tableentry,
+ 			 */
+ 
+ 			tableentry->finsent = 1;
+-			tableentry->finack = ntohl(transpacket->ack_seq);
++			tableentry->finack = ntohl(transpacket->th_ack);
+ 		}
+ 		if (logging) {
+ 			char flowrate[64];
+@@ -701,7 +701,7 @@ void updateentry(struct tcptable *table, struct tcptableent *tableentry,
+ 				    tableentry->psize, msgstring);
+ 		}
+ 	}
+-	if (transpacket->rst) {
++	if (transpacket->th_flags & TH_RST) {
+ 		tableentry->stat |= FLAG_RST;
+ 		if (!(tableentry->inclosed))
+ 			addtoclosedlist(table, tableentry);
+@@ -720,10 +720,10 @@ void updateentry(struct tcptable *table, struct tcptableent *tableentry,
+ 				    tableentry->psize, msgstring);
+ 		}
+ 	}
+-	if (transpacket->psh)
++	if (transpacket->th_flags & TH_PUSH)
+ 		tableentry->stat |= FLAG_PSH;
+ 
+-	if (transpacket->urg)
++	if (transpacket->th_flags & TH_URG)
+ 		tableentry->stat |= FLAG_URG;
+ 
+ 	tableentry->lastupdate = tableentry->oth_connection->lastupdate =
+-- 
+2.24.0
+

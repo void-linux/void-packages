@@ -1,0 +1,1241 @@
+Submitted By:            Armion K. <krejzi at email dot com>
+Date:                    2016-05-06
+Initial Package Version: 1.1.7
+Upstream Status:         Unknown
+Origin:                  Gentoo and Debian
+Description:             Fixes building against FFmpeg version >= 3.0.0
+
+--- encode/encode_lavc.c	2011-11-19 17:50:27.000000000 +0100
++++ encode/encode_lavc.c	2016-02-15 16:08:37.914488116 +0100
+@@ -74,6 +74,9 @@
+     int lmin;
+     int lmax;
+     int me_method;
++    int luma_elim_threshold;
++    int chroma_elim_threshold;
++    int quantizer_noise_shaping;
+ 
+     /* same as above for flags */
+     struct {
+@@ -114,6 +117,7 @@
+ 
+     AVFrame ff_venc_frame;
+     AVCodecContext ff_vcontext;
++    AVDictionary * ff_opts;
+ 
+     AVCodec *ff_vcodec;
+ 
+@@ -164,6 +168,7 @@
+     TC_CODEC_ERROR
+ };
+ 
++#if LIBAVCODEC_VERSION_MAJOR < 55
+ static const enum CodecID tc_lavc_internal_codecs[] = {
+     CODEC_ID_MPEG1VIDEO, CODEC_ID_MPEG2VIDEO, CODEC_ID_MPEG4,
+     CODEC_ID_H263I, CODEC_ID_H263P,
+@@ -176,6 +181,20 @@
+     CODEC_ID_MSMPEG4V2, CODEC_ID_MSMPEG4V3,
+     CODEC_ID_NONE
+ };
++#else
++static const enum AVCodecID tc_lavc_internal_codecs[] = {
++    AV_CODEC_ID_MPEG1VIDEO, AV_CODEC_ID_MPEG2VIDEO, AV_CODEC_ID_MPEG4,
++    AV_CODEC_ID_H263I, AV_CODEC_ID_H263P,
++    AV_CODEC_ID_H264,
++    AV_CODEC_ID_WMV1, AV_CODEC_ID_WMV2,
++    AV_CODEC_ID_RV10,
++    AV_CODEC_ID_HUFFYUV, AV_CODEC_ID_FFV1,
++    AV_CODEC_ID_DVVIDEO,
++    AV_CODEC_ID_MJPEG, AV_CODEC_ID_LJPEG,
++    AV_CODEC_ID_MSMPEG4V2, AV_CODEC_ID_MSMPEG4V3,
++    AV_CODEC_ID_NONE
++};
++#endif
+ 
+ static const TCFormatID tc_lavc_formats[] = { TC_FORMAT_ERROR };
+ 
+@@ -214,7 +233,7 @@
+                                      vframe_list_t *vframe)
+ {
+     avpicture_fill((AVPicture *)&pd->ff_venc_frame, vframe->video_buf,
+-                    PIX_FMT_YUV420P,
++                    AV_PIX_FMT_YUV420P,
+                     pd->ff_vcontext.width, pd->ff_vcontext.height);
+ }
+ 
+@@ -228,7 +247,7 @@
+                     IMG_YUV_DEFAULT,
+                     pd->ff_vcontext.width, pd->ff_vcontext.height);
+     avpicture_fill((AVPicture *)&pd->ff_venc_frame, pd->vframe_buf->video_buf,
+-                   PIX_FMT_YUV422P,
++                   AV_PIX_FMT_YUV422P,
+                    pd->ff_vcontext.width, pd->ff_vcontext.height);
+     ac_imgconvert(src, IMG_YUV_DEFAULT,
+                   pd->ff_venc_frame.data, IMG_YUV422P,
+@@ -244,7 +263,7 @@
+                     IMG_YUV422P,
+                     pd->ff_vcontext.width, pd->ff_vcontext.height);
+     avpicture_fill((AVPicture *)&pd->ff_venc_frame, pd->vframe_buf->video_buf,
+-                   PIX_FMT_YUV420P,
++                   AV_PIX_FMT_YUV420P,
+                    pd->ff_vcontext.width, pd->ff_vcontext.height);
+     ac_imgconvert(src, IMG_YUV422P,
+                   pd->ff_venc_frame.data, IMG_YUV420P,
+@@ -256,7 +275,7 @@
+                                              vframe_list_t *vframe)
+ {
+     avpicture_fill((AVPicture *)&pd->ff_venc_frame, vframe->video_buf,
+-                   PIX_FMT_YUV422P,
++                   AV_PIX_FMT_YUV422P,
+                    pd->ff_vcontext.width, pd->ff_vcontext.height);
+ 
+ }
+@@ -266,7 +285,7 @@
+                                    vframe_list_t *vframe)
+ {
+     avpicture_fill((AVPicture *)&pd->ff_venc_frame, pd->vframe_buf->video_buf,
+-                   PIX_FMT_YUV420P,
++                   AV_PIX_FMT_YUV420P,
+                    pd->ff_vcontext.width, pd->ff_vcontext.height);
+     ac_imgconvert(&vframe->video_buf, IMG_RGB_DEFAULT,
+                   pd->ff_venc_frame.data, IMG_YUV420P,
+@@ -591,21 +610,21 @@
+       case CODEC_YUV:
+         if (TC_VCODEC_ID(pd) == TC_CODEC_HUFFYUV) {
+             pd->tc_pix_fmt = TC_CODEC_YUV422P;
+-            pd->ff_vcontext.pix_fmt = PIX_FMT_YUV422P;
++            pd->ff_vcontext.pix_fmt = AV_PIX_FMT_YUV422P;
+             pd->pre_encode_video = pre_encode_video_yuv420p_huffyuv;
+         } else {
+             pd->tc_pix_fmt = TC_CODEC_YUV420P;
+             pd->ff_vcontext.pix_fmt = (TC_VCODEC_ID(pd) == TC_CODEC_MJPEG) 
+-                                       ? PIX_FMT_YUVJ420P
+-                                       : PIX_FMT_YUV420P;
++                                       ? AV_PIX_FMT_YUVJ420P
++                                       : AV_PIX_FMT_YUV420P;
+             pd->pre_encode_video = pre_encode_video_yuv420p;
+         }
+         break;
+       case CODEC_YUV422:
+         pd->tc_pix_fmt = TC_CODEC_YUV422P;
+         pd->ff_vcontext.pix_fmt = (TC_VCODEC_ID(pd) == TC_CODEC_MJPEG) 
+-                                   ? PIX_FMT_YUVJ422P
+-                                   : PIX_FMT_YUV422P;
++                                   ? AV_PIX_FMT_YUVJ422P
++                                   : AV_PIX_FMT_YUV422P;
+         if (TC_VCODEC_ID(pd) == TC_CODEC_HUFFYUV) {
+             pd->pre_encode_video = pre_encode_video_yuv422p_huffyuv;
+         } else {
+@@ -615,10 +634,10 @@
+       case CODEC_RGB:
+         pd->tc_pix_fmt = TC_CODEC_RGB;
+         pd->ff_vcontext.pix_fmt = (TC_VCODEC_ID(pd) == TC_CODEC_HUFFYUV)
+-                                        ? PIX_FMT_YUV422P
++                                        ? AV_PIX_FMT_YUV422P
+                                         : (TC_VCODEC_ID(pd) == TC_CODEC_MJPEG) 
+-                                           ? PIX_FMT_YUVJ420P
+-                                           : PIX_FMT_YUV420P;
++                                           ? AV_PIX_FMT_YUVJ420P
++                                           : AV_PIX_FMT_YUV420P;
+         pd->pre_encode_video = pre_encode_video_rgb24;
+         break;
+       default:
+@@ -937,7 +956,11 @@
+ static void tc_lavc_config_defaults(TCLavcPrivateData *pd)
+ {
+     /* first of all reinitialize lavc data */
++#if LIBAVCODEC_VERSION_MAJOR < 55
+     avcodec_get_context_defaults(&pd->ff_vcontext);
++#else
++    avcodec_get_context_defaults3(&pd->ff_vcontext, NULL);
++#endif
+ 
+     pd->confdata.thread_count = 1;
+ 
+@@ -955,8 +978,6 @@
+     /* 
+      * context *transcode* (not libavcodec) defaults
+      */
+-    pd->ff_vcontext.mb_qmin                 = 2;
+-    pd->ff_vcontext.mb_qmax                 = 31;
+     pd->ff_vcontext.max_qdiff               = 3;
+     pd->ff_vcontext.max_b_frames            = 0;
+     pd->ff_vcontext.me_range                = 0;
+@@ -977,8 +998,8 @@
+     pd->ff_vcontext.mpeg_quant              = 0;
+     pd->ff_vcontext.rc_initial_cplx         = 0.0;
+     pd->ff_vcontext.rc_qsquish              = 1.0;
+-    pd->ff_vcontext.luma_elim_threshold     = 0;
+-    pd->ff_vcontext.chroma_elim_threshold   = 0;
++    pd->confdata.luma_elim_threshold     = 0;
++    pd->confdata.chroma_elim_threshold   = 0;
+     pd->ff_vcontext.strict_std_compliance   = 0;
+     pd->ff_vcontext.dct_algo                = FF_DCT_AUTO;
+     pd->ff_vcontext.idct_algo               = FF_IDCT_AUTO;
+@@ -1002,7 +1023,7 @@
+     pd->ff_vcontext.intra_quant_bias        = FF_DEFAULT_QUANT_BIAS;
+     pd->ff_vcontext.inter_quant_bias        = FF_DEFAULT_QUANT_BIAS;
+     pd->ff_vcontext.noise_reduction         = 0;
+-    pd->ff_vcontext.quantizer_noise_shaping = 0;
++    pd->confdata.quantizer_noise_shaping = 0;
+     pd->ff_vcontext.flags                   = 0;
+ }
+ 
+@@ -1033,17 +1054,10 @@
+     pd->ff_vcontext.me_method = ME_ZERO + pd->confdata.me_method;
+ 
+     pd->ff_vcontext.flags = 0;
+-    SET_FLAG(pd, mv0);
+-    SET_FLAG(pd, cbp);
+     SET_FLAG(pd, qpel);
+-    SET_FLAG(pd, alt);
+-    SET_FLAG(pd, vdpart);
+-    SET_FLAG(pd, naq);
+     SET_FLAG(pd, ilme);
+     SET_FLAG(pd, ildct);
+     SET_FLAG(pd, aic);
+-    SET_FLAG(pd, aiv);
+-    SET_FLAG(pd, umv);
+     SET_FLAG(pd, psnr);
+     SET_FLAG(pd, trell);
+     SET_FLAG(pd, gray);
+@@ -1064,6 +1078,36 @@
+         pd->ff_vcontext.flags |= CODEC_FLAG_INTERLACED_DCT;
+         pd->ff_vcontext.flags |= CODEC_FLAG_INTERLACED_ME;
+     }
++    if (pd->confdata.flags.alt) {
++        av_dict_set(&(pd->ff_opts), "alternate_scan", "1", 0);
++    }
++    if (pd->confdata.flags.vdpart) {
++        av_dict_set(&(pd->ff_opts), "data_partitioning", "1", 0);
++    }
++    if (pd->confdata.flags.umv) {
++        av_dict_set(&(pd->ff_opts), "umv", "1", 0);
++    }
++    if (pd->confdata.flags.aiv) {
++        av_dict_set(&(pd->ff_opts), "aiv", "1", 0);
++    }
++    if (pd->confdata.flags.cbp) {
++    	av_dict_set(&(pd->ff_opts), "mpv_flags", "+cbp_rd", 0);
++    }
++    if (pd->confdata.flags.mv0) {
++        av_dict_set(&(pd->ff_opts), "mpv_flags", "+mv0", 0);
++    }
++    if (pd->confdata.flags.naq) {
++        av_dict_set(&(pd->ff_opts), "mpv_flags", "+naq", 0);
++    }
++
++    char buf[1024];
++#define set_dict_opt(val, opt) \
++    snprintf(buf, sizeof(buf), "%i", pd->confdata.val);\
++    av_dict_set(&(pd->ff_opts), opt, buf, 0)
++
++    set_dict_opt(luma_elim_threshold, "luma_elim_threshold");
++    set_dict_opt(chroma_elim_threshold, "chroma_elim_threshold");
++    set_dict_opt(quantizer_noise_shaping, "quantizer_noise_shaping");
+ }
+ 
+ #undef SET_FLAG
+@@ -1116,12 +1160,10 @@
+         //  handled by transcode core
+         //  { "vqmax", PCTX(qmax), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 1, 60 },
+         //  handled by transcode core
+-        { "mbqmin", PCTX(mb_qmin), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 1, 60 },
+-        { "mbqmax", PCTX(mb_qmax), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 1, 60 },
+         { "lmin", PAUX(lmin), TCCONF_TYPE_FLOAT, TCCONF_FLAG_RANGE, 0.01, 255.0 },
+         { "lmax", PAUX(lmax), TCCONF_TYPE_FLOAT, TCCONF_FLAG_RANGE, 0.01, 255.0 },
+         { "vqdiff", PCTX(max_qdiff), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 1, 31 },
+-        { "vmax_b_frames", PCTX(max_b_frames), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, FF_MAX_B_FRAMES },
++        { "vmax_b_frames", PCTX(max_b_frames), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, INT_MAX },
+         { "vme", PAUX(me_method), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 16, },
+         { "me_range", PCTX(me_range), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 16000 },
+         { "mbd", PCTX(mb_decision), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 3 },
+@@ -1150,8 +1192,8 @@
+         { "vrc_init_cplx", PCTX(rc_initial_cplx), TCCONF_TYPE_FLOAT, TCCONF_FLAG_RANGE, 0.0, 9999999.0 },
+         //  { "vrc_init_occupancy",   }, // not yet supported
+         { "vqsquish", PCTX(rc_qsquish), TCCONF_TYPE_FLOAT, TCCONF_FLAG_RANGE, 0.0, 99.0 },
+-        { "vlelim", PCTX(luma_elim_threshold), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -99, 99 },
+-        { "vcelim", PCTX(chroma_elim_threshold), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -99, 99 },
++        { "vlelim", PAUX(luma_elim_threshold), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -99, 99 },
++        { "vcelim", PAUX(chroma_elim_threshold), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -99, 99 },
+         { "vstrict", PCTX(strict_std_compliance), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -99, 99 },
+         { "vpsize", PCTX(rtp_payload_size), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 100000000 },
+         { "dct", PCTX(dct_algo), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 10 },
+@@ -1177,25 +1219,25 @@
+         { "ibias", PCTX(intra_quant_bias), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -512, 512 },
+         { "pbias", PCTX(inter_quant_bias), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -512, 512 },
+         { "nr", PCTX(noise_reduction), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 1000000},
+-        { "qns", PCTX(quantizer_noise_shaping), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 3 },
++        { "qns", PAUX(quantizer_noise_shaping), TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 3 },
+         { "inter_matrix_file", inter_matrix_file, TCCONF_TYPE_STRING, 0, 0, 0 },
+         { "intra_matrix_file", intra_matrix_file, TCCONF_TYPE_STRING, 0, 0, 0 },
+     
+-        { "mv0", PAUX(flags.mv0), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_MV0 },
+-        { "cbp", PAUX(flags.cbp), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_CBP_RD },
++        { "mv0", PAUX(flags.mv0), TCCONF_TYPE_FLAG, 0, 0, 1 },
++        { "cbp", PAUX(flags.cbp), TCCONF_TYPE_FLAG, 0, 0, 1 },
+         { "qpel", PAUX(flags.qpel), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_QPEL },
+-        { "alt", PAUX(flags.alt), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_ALT_SCAN },
++        { "alt", PAUX(flags.alt), TCCONF_TYPE_FLAG, 0, 0, 1 },
+         { "ilme", PAUX(flags.ilme), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_INTERLACED_ME },
+         { "ildct", PAUX(flags.ildct), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_INTERLACED_DCT },
+-        { "naq", PAUX(flags.naq), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_NORMALIZE_AQP },
+-        { "vdpart", PAUX(flags.vdpart), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_PART },
++        { "naq", PAUX(flags.naq), TCCONF_TYPE_FLAG, 0, 0, 1 },
++        { "vdpart", PAUX(flags.vdpart), TCCONF_TYPE_FLAG, 0, 0, 1 },
+ #if LIBAVCODEC_VERSION_INT < ((52<<16)+(0<<8)+0)
+         { "aic", PAUX(flags.aic), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_H263P_AIC },
+ #else        
+         { "aic", PAUX(flags.aic), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_AC_PRED },
+ #endif
+-        { "aiv", PAUX(flags.aiv), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_H263P_AIV },
+-        { "umv", PAUX(flags.umv), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_H263P_UMV },
++        { "aiv", PAUX(flags.aiv), TCCONF_TYPE_FLAG, 0, 0, 1 },
++        { "umv", PAUX(flags.umv), TCCONF_TYPE_FLAG, 0, 0, 1 },
+         { "psnr", PAUX(flags.psnr), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_PSNR },
+ #if LIBAVCODEC_VERSION_INT < ((52<<16)+(0<<8)+0)
+         { "trell", PAUX(flags.trell), TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_TRELLIS_QUANT },
+@@ -1345,12 +1387,14 @@
+ 
+     pd = self->userdata;
+ 
++    pd->ff_opts = NULL;
++
+     pd->flush_flag = vob->encoder_flush;
+     
+     /* FIXME: move into core? */
+     TC_INIT_LIBAVCODEC;
+ 
+-    avcodec_get_frame_defaults(&pd->ff_venc_frame);
++    av_frame_unref(&pd->ff_venc_frame);
+     /*
+      * auxiliary config data needs to be blanked too
+      * before any other operation
+@@ -1387,7 +1431,7 @@
+                     pd->confdata.thread_count,
+                     (pd->confdata.thread_count > 1) ?"s" :"");
+     }
+-    avcodec_thread_init(&pd->ff_vcontext, pd->confdata.thread_count);
++    pd->ff_vcontext.thread_count = pd->confdata.thread_count;
+ 
+     pd->ff_vcodec = avcodec_find_encoder(FF_VCODEC_ID(pd));
+     if (pd->ff_vcodec == NULL) {
+@@ -1397,11 +1441,11 @@
+     }
+ 
+     TC_LOCK_LIBAVCODEC;
+-    ret = avcodec_open(&pd->ff_vcontext, pd->ff_vcodec);
++    ret = avcodec_open2(&pd->ff_vcontext, pd->ff_vcodec, &(pd->ff_opts));
+     TC_UNLOCK_LIBAVCODEC;
+ 
+     if (ret < 0) {
+-        tc_log_error(MOD_NAME, "avcodec_open() failed");
++        tc_log_error(MOD_NAME, "avcodec_open2() failed");
+         goto failed;
+     }
+     /* finally, pass up the extradata, if any */
+@@ -1483,6 +1527,8 @@
+                                 vframe_list_t *outframe)
+ {
+     TCLavcPrivateData *pd = NULL;
++    AVPacket pkt;
++    int ret, got_packet = 0;
+ 
+     TC_MODULE_SELF_CHECK(self, "encode_video");
+ 
+@@ -1497,12 +1543,15 @@
+ 
+     pd->pre_encode_video(pd, inframe); 
+ 
++    av_init_packet(&pkt);
++    pkt.data = outframe->video_buf;
++    pkt.size = inframe->video_size;
++
+     TC_LOCK_LIBAVCODEC;
+-    outframe->video_len = avcodec_encode_video(&pd->ff_vcontext,
+-                                               outframe->video_buf,
+-                                               inframe->video_size,
+-                                               &pd->ff_venc_frame);
++    ret = avcodec_encode_video2(&pd->ff_vcontext,   &pkt,
++    				&pd->ff_venc_frame, &got_packet);
+     TC_UNLOCK_LIBAVCODEC;
++    outframe->video_len = ret ? ret : pkt.size;
+ 
+     if (outframe->video_len < 0) {
+         tc_log_warn(MOD_NAME, "encoder error: size (%i)",
+--- export/aud_aux.c	2011-11-19 17:50:27.000000000 +0100
++++ export/aud_aux.c	2016-02-15 16:08:37.914488116 +0100
+@@ -326,10 +326,10 @@
+ 
+     switch (o_codec) {
+       case   0x50:
+-        codeid = CODEC_ID_MP2;
++        codeid = AV_CODEC_ID_MP2;
+         break;
+       case 0x2000:
+-        codeid = CODEC_ID_AC3;
++        codeid = AV_CODEC_ID_AC3;
+         break;
+       default:
+         tc_warn("cannot init ffmpeg with %x", o_codec);
+@@ -346,7 +346,7 @@
+ 
+     //-- set parameters (bitrate, channels and sample-rate) --
+     //--------------------------------------------------------
+-    avcodec_get_context_defaults(&mpa_ctx);
++    avcodec_get_context_defaults3(&mpa_ctx, mpa_codec);
+ #if LIBAVCODEC_VERSION_MAJOR < 53
+     mpa_ctx.codec_type  = CODEC_TYPE_AUDIO;
+ #else
+@@ -359,11 +359,11 @@
+     //-- open codec --
+     //----------------
+     TC_LOCK_LIBAVCODEC;
+-    ret = avcodec_open(&mpa_ctx, mpa_codec);
++    ret = avcodec_open2(&mpa_ctx, mpa_codec, NULL);
+     TC_UNLOCK_LIBAVCODEC;
+     if (ret < 0) {
+         tc_warn("tc_audio_init_ffmpeg: could not open %s codec !",
+-                (codeid == CODEC_ID_MP2) ?"mpa" :"ac3");
++                (codeid == AV_CODEC_ID_MP2) ?"mpa" :"ac3");
+         return(TC_EXPORT_ERROR);
+     }
+ 
+@@ -846,6 +846,9 @@
+ #ifdef HAVE_FFMPEG
+     int  in_size, out_size;
+     char *in_buf;
++    int got_packet;
++    AVPacket avpkt = { 0 };
++    AVFrame *frame = av_frame_alloc();
+ 
+     //-- input buffer and amount of bytes --
+     in_size = aud_size;
+@@ -866,10 +869,14 @@
+ 
+     ac_memcpy(&mpa_buf[mpa_buf_ptr], in_buf, bytes_needed);
+ 
++    frame->nb_samples = mpa_ctx.frame_size;
++    avcodec_fill_audio_frame(frame, mpa_ctx.channels, mpa_ctx.sample_fmt, (const uint8_t *)mpa_buf, mpa_bytes_pf, 1);
++    avpkt.data = output;
++    avpkt.size = OUTPUT_SIZE;
+     TC_LOCK_LIBAVCODEC;
+-    out_size = avcodec_encode_audio(&mpa_ctx, (unsigned char *)output,
+-                    OUTPUT_SIZE, (short *)mpa_buf);
++    out_size = avcodec_encode_audio2(&mpa_ctx, &avpkt, frame, &got_packet);
+     TC_UNLOCK_LIBAVCODEC;
++    out_size = avpkt.size;
+     tc_audio_write(output, out_size, avifile);
+ 
+         in_size -= bytes_needed;
+@@ -884,6 +891,7 @@
+ 
+     ac_memcpy(&mpa_buf[mpa_buf_ptr], aud_buffer, bytes_avail);
+         mpa_buf_ptr += bytes_avail;
++        av_frame_free(&frame);
+         return (0);
+       }
+     } //bytes availabe from last call?
+@@ -893,10 +901,15 @@
+     //----------------------------------------------------
+ 
+     while (in_size >= mpa_bytes_pf) {
++      av_frame_unref(frame);
++      frame->nb_samples = mpa_ctx.frame_size;
++      avcodec_fill_audio_frame(frame, mpa_ctx.channels, mpa_ctx.sample_fmt, (const uint8_t *)in_buf, mpa_bytes_pf, 1);
++      avpkt.data = output;
++      avpkt.size = OUTPUT_SIZE;
+       TC_LOCK_LIBAVCODEC;
+-      out_size = avcodec_encode_audio(&mpa_ctx, (unsigned char *)output,
+-                      OUTPUT_SIZE, (short *)in_buf);
++      out_size = avcodec_encode_audio2(&mpa_ctx, &avpkt, frame, &got_packet);
+       TC_UNLOCK_LIBAVCODEC;
++      out_size = avpkt.size;
+ 
+       tc_audio_write(output, out_size, avifile);
+ 
+@@ -904,6 +917,8 @@
+       in_buf  += mpa_bytes_pf;
+     }
+ 
++    av_frame_free(&frame);
++
+     //-- hold rest of bytes in mpa-buffer --
+     //--------------------------------------
+     if (in_size > 0) {
+--- export/export_ffmpeg.c	2011-11-19 17:50:27.000000000 +0100
++++ export/export_ffmpeg.c	2016-02-15 16:08:37.915488139 +0100
+@@ -122,6 +122,7 @@
+ static AVFrame             *lavc_convert_frame = NULL;
+ 
+ static AVCodec             *lavc_venc_codec = NULL;
++static AVDictionary        *lavc_venc_opts = NULL;
+ static AVFrame             *lavc_venc_frame = NULL;
+ static AVCodecContext      *lavc_venc_context;
+ static avi_t               *avifile = NULL;
+@@ -180,7 +181,7 @@
+ 
+ 
+ /* START: COPIED FROM ffmpeg-0.5_p22846(ffmpeg.c, cmdutils.c) */
+-#include <libavcodec/opt.h>
++#include <libavutil/opt.h>
+ #include <libavutil/avstring.h>
+ #include <libswscale/swscale.h>
+ 
+@@ -249,9 +250,9 @@
+     for(type=0; type<AVMEDIA_TYPE_NB && ret>= 0; type++){
+ 		/* GLUE: +if */
+ 		if (type == AVMEDIA_TYPE_VIDEO) {
+-        const AVOption *o2 = av_find_opt(avcodec_opts[0], opt, NULL, opt_types[type], opt_types[type]);
+-        if(o2)
+-            ret = av_set_string3(avcodec_opts[type], opt, arg, 1, &o);
++        o = av_opt_find(avcodec_opts[0], opt, NULL, opt_types[type], opt_types[type]);
++        if(o)
++            ret = av_opt_set(avcodec_opts[type], opt, arg, 0);
+ 		/* GLUE: +if */
+ 		}
+     }
+@@ -266,7 +267,10 @@
+         if(opt[0] == 'a')
+             ret = av_set_string3(avcodec_opts[AVMEDIA_TYPE_AUDIO], opt+1, arg, 1, &o);
+         else */ if(opt[0] == 'v')
+-            ret = av_set_string3(avcodec_opts[AVMEDIA_TYPE_VIDEO], opt+1, arg, 1, &o);
++	{
++	    o = av_opt_find(avcodec_opts[AVMEDIA_TYPE_VIDEO], opt+1, NULL, 0, 0);
++            ret = av_opt_set(avcodec_opts[AVMEDIA_TYPE_VIDEO], opt+1, arg, 0);
++	}
+ 		/* GLUE: disabling
+         else if(opt[0] == 's')
+             ret = av_set_string3(avcodec_opts[AVMEDIA_TYPE_SUBTITLE], opt+1, arg, 1, &o);
+@@ -470,7 +474,6 @@
+     }
+ 
+     TC_LOCK_LIBAVCODEC;
+-    avcodec_init();
+     avcodec_register_all();
+     TC_UNLOCK_LIBAVCODEC;
+ 
+@@ -486,11 +489,11 @@
+ 		            codec->name, codec->fourCC, codec->comments);
+     }
+ 
+-    lavc_venc_context = avcodec_alloc_context();
+-    lavc_venc_frame   = avcodec_alloc_frame();
++    lavc_venc_context = avcodec_alloc_context3(lavc_venc_codec);
++    lavc_venc_frame   = av_frame_alloc();
+ 
+-    lavc_convert_frame= avcodec_alloc_frame();
+-    size = avpicture_get_size(PIX_FMT_RGB24, vob->ex_v_width, vob->ex_v_height);
++    lavc_convert_frame= av_frame_alloc();
++    size = avpicture_get_size(AV_PIX_FMT_RGB24, vob->ex_v_width, vob->ex_v_height);
+     enc_buffer = tc_malloc(size);
+ 
+     if (lavc_venc_context == NULL || !enc_buffer || !lavc_convert_frame) {
+@@ -634,7 +637,7 @@
+         lavc_param_rc_max_rate = 2516;
+         lavc_param_rc_buffer_size = 224 * 8;
+         lavc_param_rc_buffer_aggressivity = 99;
+-        lavc_param_scan_offset = CODEC_FLAG_SVCD_SCAN_OFFSET;
++        lavc_param_scan_offset = 1;
+ 
+         break;
+ 
+@@ -674,7 +677,7 @@
+ 
+         lavc_param_rc_buffer_size = 224 * 8;
+         lavc_param_rc_buffer_aggressivity = 99;
+-        lavc_param_scan_offset = CODEC_FLAG_SVCD_SCAN_OFFSET;
++        lavc_param_scan_offset = 1;
+ 
+         break;
+ 
+@@ -838,8 +841,13 @@
+     lavc_venc_context->rc_strategy        = lavc_param_vrc_strategy;
+     lavc_venc_context->b_frame_strategy   = lavc_param_vb_strategy;
+     lavc_venc_context->b_quant_offset     = lavc_param_vb_qoffset;
+-    lavc_venc_context->luma_elim_threshold= lavc_param_luma_elim_threshold;
+-    lavc_venc_context->chroma_elim_threshold= lavc_param_chroma_elim_threshold;
++
++    char buf[1024];
++#define set_dict_opt(val, opt) \
++	snprintf(buf, sizeof(buf), "%i", val); \
++	av_dict_set(&lavc_venc_opts, opt, buf, 0)
++    set_dict_opt(lavc_param_luma_elim_threshold, "luma_elim_threshold");
++    set_dict_opt(lavc_param_chroma_elim_threshold, "chroma_elim_threshold");
+     lavc_venc_context->rtp_payload_size   = lavc_param_packet_size;
+ #if LIBAVCODEC_VERSION_INT < ((52<<16)+(0<<8)+0)   
+     if (lavc_param_packet_size)
+@@ -870,7 +878,7 @@
+     lavc_venc_context->context_model      = lavc_param_context;
+     lavc_venc_context->scenechange_threshold= lavc_param_sc_threshold;
+     lavc_venc_context->noise_reduction    = lavc_param_noise_reduction;
+-    lavc_venc_context->inter_threshold    = lavc_param_inter_threshold;
++    set_dict_opt(lavc_param_inter_threshold, "inter_threshold");
+     lavc_venc_context->intra_dc_precision = lavc_param_intra_dc_precision;
+     lavc_venc_context->skip_top           = lavc_param_skip_top;
+     lavc_venc_context->skip_bottom        = lavc_param_skip_bottom;
+@@ -887,7 +895,7 @@
+ 		    lavc_venc_context->thread_count);
+     }
+ 
+-    avcodec_thread_init(lavc_venc_context, lavc_param_threads);
++    lavc_venc_context->thread_count = lavc_param_threads;
+ 
+     if (lavc_param_intra_matrix) {
+         char *tmp;
+@@ -1061,19 +1069,18 @@
+     lavc_venc_context->ildct_cmp  = lavc_param_ildct_cmp;
+     lavc_venc_context->dia_size   = lavc_param_dia_size;
+     lavc_venc_context->flags |= lavc_param_qpel;
+-    lavc_venc_context->flags |= lavc_param_gmc;
++    if(lavc_param_gmc)
++        av_dict_set(&lavc_venc_opts, "gmc", "1", 0);
+     lavc_venc_context->flags |= lavc_param_closedgop;
+     lavc_venc_context->flags |= lavc_param_trunc;
+     lavc_venc_context->flags |= lavc_param_aic;
+-    lavc_venc_context->flags |= lavc_param_umv;
+     lavc_venc_context->flags |= lavc_param_v4mv;
+-    lavc_venc_context->flags |= lavc_param_data_partitioning;
+-    lavc_venc_context->flags |= lavc_param_cbp;
+-    lavc_venc_context->flags |= lavc_param_mv0;
+-    lavc_venc_context->flags |= lavc_param_qp_rd;
+-    lavc_venc_context->flags |= lavc_param_scan_offset;
+-    lavc_venc_context->flags |= lavc_param_ss;
+-    lavc_venc_context->flags |= lavc_param_alt;
++    if(lavc_param_cbp)
++    	av_dict_set(&lavc_venc_opts, "mpv_flags", "+cbp_rd", 0);
++    if(lavc_param_mv0)
++        av_dict_set(&lavc_venc_opts, "mpv_flags", "+mv0", 0);
++    if(lavc_param_qp_rd)
++    	av_dict_set(&lavc_venc_opts, "mpv_flags", "+qp_rd", 0);
+     lavc_venc_context->flags |= lavc_param_ilme;
+ #if LIBAVCODEC_VERSION_INT < ((52<<16)+(0<<8)+0)   
+     lavc_venc_context->flags |= lavc_param_trell;
+@@ -1084,7 +1091,7 @@
+     if (lavc_param_gray)
+         lavc_venc_context->flags |= CODEC_FLAG_GRAY;
+     if (lavc_param_normalize_aqp)
+-        lavc_venc_context->flags |= CODEC_FLAG_NORMALIZE_AQP;
++        av_dict_set(&lavc_venc_opts, "mpv_flags", "+naq", 0);
+ 
+     switch(vob->encode_fields) {
+     case TC_ENCODE_FIELDS_TOP_FIRST:
+@@ -1112,7 +1119,7 @@
+     lavc_venc_context->prediction_method = lavc_param_prediction_method;
+ 
+     if(is_huffyuv)
+-        lavc_venc_context->pix_fmt = PIX_FMT_YUV422P;
++        lavc_venc_context->pix_fmt = AV_PIX_FMT_YUV422P;
+     else
+     {
+         switch(pix_fmt)
+@@ -1121,18 +1128,18 @@
+             case CODEC_RGB:
+             {
+                 if(is_mjpeg)
+-                    lavc_venc_context->pix_fmt = PIX_FMT_YUVJ420P;
++                    lavc_venc_context->pix_fmt = AV_PIX_FMT_YUVJ420P;
+                 else
+-                    lavc_venc_context->pix_fmt = PIX_FMT_YUV420P;
++                    lavc_venc_context->pix_fmt = AV_PIX_FMT_YUV420P;
+                 break;
+             }
+ 
+             case CODEC_YUV422:
+             {
+                 if(is_mjpeg)
+-                    lavc_venc_context->pix_fmt = PIX_FMT_YUVJ422P;
++                    lavc_venc_context->pix_fmt = AV_PIX_FMT_YUVJ422P;
+                 else
+-                    lavc_venc_context->pix_fmt = PIX_FMT_YUV422P;
++                    lavc_venc_context->pix_fmt = AV_PIX_FMT_YUV422P;
+                 break;
+             }
+ 
+@@ -1203,9 +1210,8 @@
+ 
+     lavc_venc_context->me_method = ME_ZERO + lavc_param_vme;
+ 
+-
+ 	/* FIXME: transcode itself contains "broken ffmpeg default settings", thus we need to override them! */
+-	if (lavc_param_video_preset) {
++	if (lavc_param_video_preset && strcmp(lavc_param_video_preset, "none")) {
+ 		avcodec_opts[AVMEDIA_TYPE_VIDEO] = lavc_venc_context;
+ 		video_codec_name = ffmpeg_codec_name(codec->name);
+ 
+@@ -1241,20 +1247,39 @@
+ 		}
+ 	}
+ 
++    if (lavc_param_scan_offset) {
++      av_dict_set(&lavc_venc_opts, "scan_offset", "1", 0);
++    }
++
++    if (lavc_param_ss) {
++      av_dict_set(&lavc_venc_opts, "structured_slices", "1", 0);
++    }
++
++    if (lavc_param_alt) {
++      av_dict_set(&lavc_venc_opts, "alternate_scan", "1", 0);
++    }
++
++    if (lavc_param_umv) {
++      av_dict_set(&lavc_venc_opts, "umv", "1", 0);
++    }
++
++    if (lavc_param_data_partitioning) {
++      av_dict_set(&lavc_venc_opts, "vdpart", "1", 0);
++    }
+ 
+     //-- open codec --
+     //----------------
+     TC_LOCK_LIBAVCODEC;
+-    ret = avcodec_open(lavc_venc_context, lavc_venc_codec);
++    ret = avcodec_open2(lavc_venc_context, lavc_venc_codec, &lavc_venc_opts);
+     TC_UNLOCK_LIBAVCODEC;
+     if (ret < 0) {
+       tc_log_warn(MOD_NAME, "could not open FFMPEG codec");
+       return TC_EXPORT_ERROR;
+     }
+ 
+-    if (lavc_venc_context->codec->encode == NULL) {
++    if (av_codec_is_encoder(lavc_venc_context->codec) == 0) {
+       tc_log_warn(MOD_NAME, "could not open FFMPEG codec "
+-              "(lavc_venc_context->codec->encode == NULL)");
++              "(av_codec_is_encoder(lavc_venc_context->codec) == 0)");
+       return TC_EXPORT_ERROR;
+     }
+ 
+@@ -1574,6 +1599,8 @@
+ 
+   int out_size;
+   const char pict_type_char[5]= {'?', 'I', 'P', 'B', 'S'};
++  AVPacket pkt;
++  int ret, got_packet = 0;
+ 
+   if (param->flag == TC_VIDEO) {
+ 
+@@ -1598,7 +1625,7 @@
+ 	        	YUV_INIT_PLANES(src, param->buffer, IMG_YUV_DEFAULT,
+ 			                	lavc_venc_context->width, lavc_venc_context->height);
+                 avpicture_fill((AVPicture *)lavc_venc_frame, img_buffer,
+-                               PIX_FMT_YUV422P, lavc_venc_context->width,
++                               AV_PIX_FMT_YUV422P, lavc_venc_context->width,
+                                lavc_venc_context->height);
+         		/* FIXME: can't use tcv_convert (see decode_lavc.c) */
+                 ac_imgconvert(src, IMG_YUV_DEFAULT,
+@@ -1628,7 +1655,7 @@
+ 		                		lavc_venc_context->width,
+                                 lavc_venc_context->height);
+                 avpicture_fill((AVPicture *)lavc_venc_frame, img_buffer,
+-                               PIX_FMT_YUV420P, lavc_venc_context->width,
++                               AV_PIX_FMT_YUV420P, lavc_venc_context->width,
+                                lavc_venc_context->height);
+                 ac_imgconvert(src, IMG_YUV422P,
+                               lavc_venc_frame->data, IMG_YUV420P,
+@@ -1639,7 +1666,7 @@
+ 
+         case CODEC_RGB:
+             avpicture_fill((AVPicture *)lavc_venc_frame, img_buffer,
+-                           PIX_FMT_YUV420P, lavc_venc_context->width,
++                           AV_PIX_FMT_YUV420P, lavc_venc_context->width,
+                            lavc_venc_context->height);
+     	    ac_imgconvert(&param->buffer, IMG_RGB_DEFAULT,
+                               lavc_venc_frame->data, IMG_YUV420P,
+@@ -1652,13 +1679,17 @@
+               return TC_EXPORT_ERROR;
+     }
+ 
++    av_init_packet(&pkt);
++    pkt.data = enc_buffer;
++    pkt.size = size;
+ 
+     TC_LOCK_LIBAVCODEC;
+-    out_size = avcodec_encode_video(lavc_venc_context,
+-                                    enc_buffer, size,
+-                                    lavc_venc_frame);
++    ret = avcodec_encode_video2(lavc_venc_context, &pkt,
++                                    lavc_venc_frame, &got_packet);
+     TC_UNLOCK_LIBAVCODEC;
+ 
++    out_size = ret ? ret : pkt.size;
++
+     if (out_size < 0) {
+       tc_log_warn(MOD_NAME, "encoder error: size (%d)", out_size);
+       return TC_EXPORT_ERROR;
+--- export/ffmpeg_cfg.c	2011-11-19 17:50:27.000000000 +0100
++++ export/ffmpeg_cfg.c	2016-02-15 16:08:37.916488161 +0100
+@@ -34,8 +34,6 @@
+ //int lavc_param_vqscale = 0;
+ //int lavc_param_vqmin = 2;
+ //int lavc_param_vqmax = 31;
+-int lavc_param_mb_qmin = 2;
+-int lavc_param_mb_qmax = 31;
+ int lavc_param_lmin = 2;
+ int lavc_param_lmax = 31;
+ int lavc_param_vqdiff = 3;
+@@ -126,7 +124,7 @@
+ //int lavc_param_atag = 0;
+ //int lavc_param_abitrate = 224;
+ 
+-char *lavc_param_video_preset = "medium";
++char *lavc_param_video_preset = "none";
+ char *lavc_param_ffmpeg_datadir = "/usr/share/ffmpeg";
+ 
+ TCConfigEntry lavcopts_conf[]={
+@@ -143,15 +141,13 @@
+ //    {"vqscale", &lavc_param_vqscale, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 1, 31},
+ //    {"vqmin", &lavc_param_vqmin, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 1, 31},
+ //    {"vqmax", &lavc_param_vqmax, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 1, 31},
+-    {"mbqmin", &lavc_param_mb_qmin, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 1, 31},
+-    {"mbqmax", &lavc_param_mb_qmax, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 1, 31},
+     {"lmin", &lavc_param_lmin, TCCONF_TYPE_FLOAT, TCCONF_FLAG_RANGE, 0.01, 255.0},
+     {"lmax", &lavc_param_lmax, TCCONF_TYPE_FLOAT, TCCONF_FLAG_RANGE, 0.01, 255.0},
+     {"vqdiff", &lavc_param_vqdiff, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 1, 31},
+     {"vqcomp", &lavc_param_vqcompress, TCCONF_TYPE_FLOAT, TCCONF_FLAG_RANGE, 0.0, 1.0},
+     {"vqblur", &lavc_param_vqblur, TCCONF_TYPE_FLOAT, TCCONF_FLAG_RANGE, 0.0, 1.0},
+     {"vb_qfactor", &lavc_param_vb_qfactor, TCCONF_TYPE_FLOAT, TCCONF_FLAG_RANGE, -31.0, 31.0},
+-    {"vmax_b_frames", &lavc_param_vmax_b_frames, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, FF_MAX_B_FRAMES},
++    {"vmax_b_frames", &lavc_param_vmax_b_frames, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, INT_MAX},
+ //    {"vpass", &lavc_param_vpass, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 2},
+     {"vrc_strategy", &lavc_param_vrc_strategy, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 2},
+     {"vb_strategy", &lavc_param_vb_strategy, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 10},
+@@ -160,9 +156,9 @@
+     {"vcelim", &lavc_param_chroma_elim_threshold, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -99, 99},
+     {"vpsize", &lavc_param_packet_size, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 100000000},
+     {"vstrict", &lavc_param_strict, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -99, 99},
+-    {"vdpart", &lavc_param_data_partitioning, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_PART},
++    {"vdpart", &lavc_param_data_partitioning, TCCONF_TYPE_FLAG, 0, 0, 1},
+ //    {"keyint", &lavc_param_keyint, TCCONF_TYPE_INT, 0, 0, 0},
+-    {"gray", &lavc_param_gray, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_PART},
++    {"gray", &lavc_param_gray, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_GRAY},
+     {"mpeg_quant", &lavc_param_mpeg_quant, TCCONF_TYPE_FLAG, 0, 0, 1},
+     {"vi_qfactor", &lavc_param_vi_qfactor, TCCONF_TYPE_FLOAT, TCCONF_FLAG_RANGE, -31.0, 31.0},
+     {"vi_qoffset", &lavc_param_vi_qoffset, TCCONF_TYPE_FLOAT, TCCONF_FLAG_RANGE, 0.0, 31.0},
+@@ -211,26 +207,26 @@
+ #else
+     {"aic", &lavc_param_aic, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_AC_PRED},
+ #endif    
+-    {"umv", &lavc_param_umv, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_H263P_UMV},
++    {"umv", &lavc_param_umv, TCCONF_TYPE_FLAG, 0, 0, 1},
+     {"ibias", &lavc_param_ibias, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -512, 512},
+     {"pbias", &lavc_param_pbias, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -512, 512},
+     {"coder", &lavc_param_coder, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 10},
+     {"context", &lavc_param_context, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 10},
+     {"intra_matrix", &lavc_param_intra_matrix, TCCONF_TYPE_STRING, 0, 0, 0},
+     {"inter_matrix", &lavc_param_inter_matrix, TCCONF_TYPE_STRING, 0, 0, 0},
+-    {"cbp", &lavc_param_cbp, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_CBP_RD},
+-    {"mv0", &lavc_param_mv0, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_MV0},
++    {"cbp", &lavc_param_cbp, TCCONF_TYPE_FLAG, 0, 0, 1},
++    {"mv0", &lavc_param_mv0, TCCONF_TYPE_FLAG, 0, 0, 1},
+     {"nr", &lavc_param_noise_reduction, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 1000000},
+-    {"qprd", &lavc_param_qp_rd, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_QP_RD},
++    {"qprd", &lavc_param_qp_rd, TCCONF_TYPE_FLAG, 0, 0, 1},
+     {"threads", &lavc_param_threads, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 1, 16},
+-    {"ss", &lavc_param_ss, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_H263P_SLICE_STRUCT},
+-    {"svcd_sof", &lavc_param_scan_offset, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_SVCD_SCAN_OFFSET},
+-    {"alt", &lavc_param_alt, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_ALT_SCAN},
++    {"ss", &lavc_param_ss, TCCONF_TYPE_FLAG, 0, 0, 1},
++    {"svcd_sof", &lavc_param_scan_offset, TCCONF_TYPE_FLAG, 0, 0, 1},
++    {"alt", &lavc_param_alt, TCCONF_TYPE_FLAG, 0, 0, 1},
+     {"ilme", &lavc_param_ilme, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_INTERLACED_ME},
+     {"inter_threshold", &lavc_param_inter_threshold, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -1000000, 1000000},
+     {"sc_threshold", &lavc_param_sc_threshold, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -1000000, 1000000},
+     {"top", &lavc_param_top, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, -1, 1},
+-    {"gmc", &lavc_param_gmc, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_GMC},
++    {"gmc", &lavc_param_gmc, TCCONF_TYPE_FLAG, 0, 0, 1},
+     {"trunc", &lavc_param_trunc, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_TRUNCATED},
+     {"closedgop", &lavc_param_closedgop, TCCONF_TYPE_FLAG, 0, 0, CODEC_FLAG_CLOSED_GOP},
+     {"intra_dc_precision", &lavc_param_intra_dc_precision, TCCONF_TYPE_INT, TCCONF_FLAG_RANGE, 0, 16},
+--- export/ffmpeg_cfg.h	2011-11-19 17:50:27.000000000 +0100
++++ export/ffmpeg_cfg.h	2016-02-15 16:08:37.916488161 +0100
+@@ -13,8 +13,6 @@
+ //extern int lavc_param_vqscale;
+ //extern int lavc_param_vqmin;
+ //extern int lavc_param_vqmax;
+-extern int lavc_param_mb_qmin;
+-extern int lavc_param_mb_qmax;
+ extern int lavc_param_lmin;
+ extern int lavc_param_lmax;
+ extern int lavc_param_vqdiff;
+--- filter/filter_pp.c	2011-11-19 17:50:27.000000000 +0100
++++ filter/filter_pp.c	2016-02-15 16:08:37.916488161 +0100
+@@ -38,8 +38,8 @@
+ 
+ /* FIXME: these use the filter ID as an index--the ID can grow
+  * arbitrarily large, so this needs to be fixed */
+-static pp_mode_t *mode[100];
+-static pp_context_t *context[100];
++static pp_mode *mode[100];
++static pp_context *context[100];
+ static int width[100], height[100];
+ static int pre[100];
+ 
+--- import/decode_lavc.c	2011-11-19 17:50:27.000000000 +0100
++++ import/decode_lavc.c	2016-02-15 16:09:00.252988897 +0100
+@@ -58,37 +58,37 @@
+ 
+ // fourCC to ID mapping taken from MPlayer's codecs.conf
+ static struct ffmpeg_codec ffmpeg_codecs[] = {
+-  {CODEC_ID_MSMPEG4V1, TC_CODEC_ERROR, "mp41",
++  {AV_CODEC_ID_MSMPEG4V1, TC_CODEC_ERROR, "mp41",
+     {"MP41", "DIV1", ""}},
+-  {CODEC_ID_MSMPEG4V2, TC_CODEC_MP42, "mp42",
++  {AV_CODEC_ID_MSMPEG4V2, TC_CODEC_MP42, "mp42",
+     {"MP42", "DIV2", ""}},
+-  {CODEC_ID_MSMPEG4V3, TC_CODEC_DIVX3, "msmpeg4",
++  {AV_CODEC_ID_MSMPEG4V3, TC_CODEC_DIVX3, "msmpeg4",
+     {"DIV3", "DIV5", "AP41", "MPG3", "MP43", ""}},
+-  {CODEC_ID_MPEG4, TC_CODEC_DIVX4, "mpeg4",
++  {AV_CODEC_ID_MPEG4, TC_CODEC_DIVX4, "mpeg4",
+     {"DIVX", "XVID", "MP4S", "M4S2", "MP4V", "UMP4", "DX50", ""}},
+-  {CODEC_ID_MJPEG, TC_CODEC_MJPEG, "mjpeg",
++  {AV_CODEC_ID_MJPEG, TC_CODEC_MJPEG, "mjpeg",
+     {"MJPG", "AVRN", "AVDJ", "JPEG", "MJPA", "JFIF", ""}},
+-  {CODEC_ID_MPEG1VIDEO, TC_CODEC_MPEG1VIDEO, "mpeg1video",
++  {AV_CODEC_ID_MPEG1VIDEO, TC_CODEC_MPEG1VIDEO, "mpeg1video",
+     {"MPG1", ""}},
+-  {CODEC_ID_DVVIDEO, TC_CODEC_DV, "dvvideo",
++  {AV_CODEC_ID_DVVIDEO, TC_CODEC_DV, "dvvideo",
+     {"DVSD", ""}},
+-  {CODEC_ID_WMV1, TC_CODEC_WMV1, "wmv1",
++  {AV_CODEC_ID_WMV1, TC_CODEC_WMV1, "wmv1",
+     {"WMV1", ""}},
+-  {CODEC_ID_WMV2, TC_CODEC_WMV2, "wmv2",
++  {AV_CODEC_ID_WMV2, TC_CODEC_WMV2, "wmv2",
+     {"WMV2", ""}},
+-  {CODEC_ID_HUFFYUV, TC_CODEC_HUFFYUV, "hfyu",
++  {AV_CODEC_ID_HUFFYUV, TC_CODEC_HUFFYUV, "hfyu",
+     {"HFYU", ""}},
+-  {CODEC_ID_H263I, TC_CODEC_H263I, "h263i",
++  {AV_CODEC_ID_H263I, TC_CODEC_H263I, "h263i",
+     {"I263", ""}},
+-  {CODEC_ID_H263P, TC_CODEC_H263P, "h263p",
++  {AV_CODEC_ID_H263P, TC_CODEC_H263P, "h263p",
+     {"H263", "U263", "VIV1", ""}},
+-  {CODEC_ID_RV10, TC_CODEC_RV10, "rv10",
++  {AV_CODEC_ID_RV10, TC_CODEC_RV10, "rv10",
+     {"RV10", "RV13", ""}},
+-  {CODEC_ID_SVQ1, TC_CODEC_SVQ1, "svq1",
++  {AV_CODEC_ID_SVQ1, TC_CODEC_SVQ1, "svq1",
+     {"SVQ1", ""}},
+-  {CODEC_ID_SVQ3, TC_CODEC_SVQ3, "svq3",
++  {AV_CODEC_ID_SVQ3, TC_CODEC_SVQ3, "svq3",
+     {"SVQ3", ""}},
+-  {CODEC_ID_MPEG2VIDEO, TC_CODEC_MPEG2, "mpeg2video",
++  {AV_CODEC_ID_MPEG2VIDEO, TC_CODEC_MPEG2, "mpeg2video",
+     {"MPG2", ""}},
+   {0, TC_CODEC_UNKNOWN, NULL, {""}}};
+ 
+@@ -170,7 +170,7 @@
+ 
+   // Set these to the expected values so that ffmpeg's decoder can
+   // properly detect interlaced input.
+-  lavc_dec_context = avcodec_alloc_context();
++  lavc_dec_context = avcodec_alloc_context3(NULL);
+   if (lavc_dec_context == NULL) {
+       tc_log_error(__FILE__, "Could not allocate enough memory.");
+       goto decoder_error;
+@@ -181,12 +181,12 @@
+ #if LIBAVCODEC_VERSION_INT < ((52<<16)+(0<<8)+0)
+   lavc_dec_context->error_resilience  = 2;
+ #else
+-  lavc_dec_context->error_recognition = 2;
++  lavc_dec_context->err_recognition = 2;
+ #endif
+   lavc_dec_context->error_concealment = 3;
+   lavc_dec_context->workaround_bugs = FF_BUG_AUTODETECT;
+ 
+-  if (avcodec_open(lavc_dec_context, lavc_dec_codec) < 0) {
++  if (avcodec_open2(lavc_dec_context, lavc_dec_codec, NULL) < 0) {
+       tc_log_error(__FILE__, "Could not initialize the '%s' codec.",
+ 		   codec->name);
+       goto decoder_error;
+@@ -290,8 +290,8 @@
+ 
+       // Convert avcodec image to the requested YUV or RGB format
+       switch (lavc_dec_context->pix_fmt) {
+-	case PIX_FMT_YUVJ420P:
+-	case PIX_FMT_YUV420P:
++	case AV_PIX_FMT_YUVJ420P:
++	case AV_PIX_FMT_YUV420P:
+ 	    // Remove "dead space" at right edge of planes, if any
+ 	    if (picture.linesize[0] != lavc_dec_context->width) {
+ 		int y;
+@@ -315,7 +315,7 @@
+ 			  pix_fmt==TC_CODEC_YUV420P ? IMG_YUV420P : IMG_RGB_DEFAULT,
+ 			  lavc_dec_context->width, lavc_dec_context->height);
+ 	    break;
+-	case PIX_FMT_YUV411P:
++	case AV_PIX_FMT_YUV411P:
+ 	    if (picture.linesize[0] != lavc_dec_context->width) {
+ 		int y;
+ 		for (y = 0; y < lavc_dec_context->height; y++) {
+@@ -334,8 +334,8 @@
+ 			  pix_fmt==TC_CODEC_YUV420P ? IMG_YUV420P : IMG_RGB_DEFAULT,
+ 			  lavc_dec_context->width, lavc_dec_context->height);
+ 	    break;
+-	case PIX_FMT_YUVJ422P:
+-	case PIX_FMT_YUV422P:
++	case AV_PIX_FMT_YUVJ422P:
++	case AV_PIX_FMT_YUV422P:
+ 	    if (picture.linesize[0] != lavc_dec_context->width) {
+ 		int y;
+ 		for (y = 0; y < lavc_dec_context->height; y++) {
+@@ -354,8 +354,8 @@
+ 			  pix_fmt==TC_CODEC_YUV420P ? IMG_YUV420P : IMG_RGB_DEFAULT,
+ 			  lavc_dec_context->width, lavc_dec_context->height);
+ 	    break;
+-	case PIX_FMT_YUVJ444P:
+-	case PIX_FMT_YUV444P:
++	case AV_PIX_FMT_YUVJ444P:
++	case AV_PIX_FMT_YUV444P:
+ 	    if (picture.linesize[0] != lavc_dec_context->width) {
+ 		int y;
+ 		for (y = 0; y < lavc_dec_context->height; y++) {
+--- import/import_ffmpeg.c	2011-11-19 17:50:27.000000000 +0100
++++ import/import_ffmpeg.c	2016-02-15 16:08:48.269720627 +0100
+@@ -59,51 +59,51 @@
+ 
+ // fourCC to ID mapping taken from MPlayer's codecs.conf
+ static struct ffmpeg_codec ffmpeg_codecs[] = {
+-  {CODEC_ID_MSMPEG4V1, TC_CODEC_ERROR, "mp41",
++  {AV_CODEC_ID_MSMPEG4V1, TC_CODEC_ERROR, "mp41",
+     {"MP41", "DIV1", ""}},
+-  {CODEC_ID_MSMPEG4V2, TC_CODEC_MP42, "mp42",
++  {AV_CODEC_ID_MSMPEG4V2, TC_CODEC_MP42, "mp42",
+     {"MP42", "DIV2", ""}},
+-  {CODEC_ID_MSMPEG4V3, TC_CODEC_DIVX3, "msmpeg4",
++  {AV_CODEC_ID_MSMPEG4V3, TC_CODEC_DIVX3, "msmpeg4",
+     {"DIV3", "DIV5", "AP41", "MPG3", "MP43", ""}},
+-  {CODEC_ID_MPEG4, TC_CODEC_DIVX4, "mpeg4",
++  {AV_CODEC_ID_MPEG4, TC_CODEC_DIVX4, "mpeg4",
+     {"DIVX", "XVID", "MP4S", "M4S2", "MP4V", "UMP4", "DX50", ""}},
+-  {CODEC_ID_MJPEG, TC_CODEC_MJPEG, "mjpeg",
++  {AV_CODEC_ID_MJPEG, TC_CODEC_MJPEG, "mjpeg",
+     {"MJPG", "AVRN", "AVDJ", "JPEG", "MJPA", "JFIF", ""}},
+-  {CODEC_ID_MPEG1VIDEO, TC_CODEC_MPG1, "mpeg1video",
++  {AV_CODEC_ID_MPEG1VIDEO, TC_CODEC_MPG1, "mpeg1video",
+     {"MPG1", ""}},
+-  {CODEC_ID_DVVIDEO, TC_CODEC_DV, "dvvideo",
++  {AV_CODEC_ID_DVVIDEO, TC_CODEC_DV, "dvvideo",
+     {"DVSD", ""}},
+-  {CODEC_ID_WMV1, TC_CODEC_WMV1, "wmv1",
++  {AV_CODEC_ID_WMV1, TC_CODEC_WMV1, "wmv1",
+     {"WMV1", ""}},
+-  {CODEC_ID_WMV2, TC_CODEC_WMV2, "wmv2",
++  {AV_CODEC_ID_WMV2, TC_CODEC_WMV2, "wmv2",
+     {"WMV2", ""}},
+-  {CODEC_ID_HUFFYUV, TC_CODEC_HUFFYUV, "hfyu",
++  {AV_CODEC_ID_HUFFYUV, TC_CODEC_HUFFYUV, "hfyu",
+     {"HFYU", ""}},
+-  {CODEC_ID_H263I, TC_CODEC_H263I, "h263i",
++  {AV_CODEC_ID_H263I, TC_CODEC_H263I, "h263i",
+     {"I263", ""}},
+-  {CODEC_ID_H263P, TC_CODEC_H263P, "h263p",
++  {AV_CODEC_ID_H263P, TC_CODEC_H263P, "h263p",
+     {"H263", "U263", "VIV1", ""}},
+-  {CODEC_ID_H264, TC_CODEC_H264, "h264",
++  {AV_CODEC_ID_H264, TC_CODEC_H264, "h264",
+     {"H264", "h264", "X264", "x264", "avc1", ""}},
+-  {CODEC_ID_RV10, TC_CODEC_RV10, "rv10",
++  {AV_CODEC_ID_RV10, TC_CODEC_RV10, "rv10",
+     {"RV10", "RV13", ""}},
+-  {CODEC_ID_SVQ1, TC_CODEC_SVQ1, "svq1",
++  {AV_CODEC_ID_SVQ1, TC_CODEC_SVQ1, "svq1",
+     {"SVQ1", ""}},
+-  {CODEC_ID_SVQ3, TC_CODEC_SVQ3, "svq3",
++  {AV_CODEC_ID_SVQ3, TC_CODEC_SVQ3, "svq3",
+     {"SVQ3", ""}},
+-  {CODEC_ID_MPEG2VIDEO, TC_CODEC_MPEG2, "mpeg2video",
++  {AV_CODEC_ID_MPEG2VIDEO, TC_CODEC_MPEG2, "mpeg2video",
+     {"MPG2", ""}},
+-  {CODEC_ID_MPEG2VIDEO, TC_CODEC_MPEG, "mpeg2video",
++  {AV_CODEC_ID_MPEG2VIDEO, TC_CODEC_MPEG, "mpeg2video",
+     {"MPG2", ""}},
+-  {CODEC_ID_ASV1, TC_CODEC_ASV1, "asv1",
++  {AV_CODEC_ID_ASV1, TC_CODEC_ASV1, "asv1",
+     {"ASV1", ""}},
+-  {CODEC_ID_ASV2, TC_CODEC_ASV2, "asv2",
++  {AV_CODEC_ID_ASV2, TC_CODEC_ASV2, "asv2",
+     {"ASV2", ""}},
+-  {CODEC_ID_FFV1, TC_CODEC_FFV1, "ffv1",
++  {AV_CODEC_ID_FFV1, TC_CODEC_FFV1, "ffv1",
+     {"FFV1", ""}},
+-  {CODEC_ID_RAWVIDEO, TC_CODEC_YUV420P, "raw",
++  {AV_CODEC_ID_RAWVIDEO, TC_CODEC_YUV420P, "raw",
+     {"I420", "IYUV", ""}},
+-  {CODEC_ID_RAWVIDEO, TC_CODEC_YUV422P, "raw",
++  {AV_CODEC_ID_RAWVIDEO, TC_CODEC_YUV422P, "raw",
+     {"Y42B", ""}},
+   {0, TC_CODEC_UNKNOWN, NULL, {""}}};
+ 
+@@ -302,7 +302,7 @@
+ 
+     // Set these to the expected values so that ffmpeg's decoder can
+     // properly detect interlaced input.
+-    lavc_dec_context = avcodec_alloc_context();
++    lavc_dec_context = avcodec_alloc_context3(lavc_dec_codec);
+     if (lavc_dec_context == NULL) {
+       tc_log_error(MOD_NAME, "Could not allocate enough memory.");
+       return TC_IMPORT_ERROR;
+@@ -314,7 +314,7 @@
+ #if LIBAVCODEC_VERSION_INT < ((52<<16)+(0<<8)+0)
+     lavc_dec_context->error_resilience  = 2;
+ #else
+-    lavc_dec_context->error_recognition = 2;
++    lavc_dec_context->err_recognition = 2;
+ #endif
+     lavc_dec_context->error_concealment = 3;
+     lavc_dec_context->workaround_bugs = FF_BUG_AUTODETECT;
+@@ -324,13 +324,13 @@
+     // XXX: some codecs need extra data
+     switch (codec->id)
+     {
+-      case CODEC_ID_MJPEG: extra_data_size  = 28; break;
+-      case CODEC_ID_LJPEG: extra_data_size  = 28; break;
+-      case CODEC_ID_HUFFYUV: extra_data_size = 1000; break;
+-      case CODEC_ID_ASV1: extra_data_size = 8; break;
+-      case CODEC_ID_ASV2: extra_data_size = 8; break;
+-      case CODEC_ID_WMV1: extra_data_size = 4; break;
+-      case CODEC_ID_WMV2: extra_data_size = 4; break;
++      case AV_CODEC_ID_MJPEG: extra_data_size  = 28; break;
++      case AV_CODEC_ID_LJPEG: extra_data_size  = 28; break;
++      case AV_CODEC_ID_HUFFYUV: extra_data_size = 1000; break;
++      case AV_CODEC_ID_ASV1: extra_data_size = 8; break;
++      case AV_CODEC_ID_ASV2: extra_data_size = 8; break;
++      case AV_CODEC_ID_WMV1: extra_data_size = 4; break;
++      case AV_CODEC_ID_WMV2: extra_data_size = 4; break;
+       default: extra_data_size = 0; break;
+     }
+ 
+@@ -344,7 +344,7 @@
+     }
+ 
+     TC_LOCK_LIBAVCODEC;
+-    ret = avcodec_open(lavc_dec_context, lavc_dec_codec);
++    ret = avcodec_open2(lavc_dec_context, lavc_dec_codec, NULL);
+     TC_UNLOCK_LIBAVCODEC;
+     if (ret < 0) {
+       tc_log_warn(MOD_NAME, "Could not initialize the '%s' codec.",
+@@ -360,7 +360,7 @@
+         frame_size = x_dim*y_dim + 2*UV_PLANE_SIZE(IMG_YUV_DEFAULT,x_dim,y_dim);
+ 
+ 	// we adapt the color space
+-        if(codec->id == CODEC_ID_MJPEG) {
++        if(codec->id == AV_CODEC_ID_MJPEG) {
+ 	  enable_levels_filter();
+         }
+         break;
+@@ -434,7 +434,7 @@
+       }
+ 
+       // we adapt the color space
+-      if(codec->id == CODEC_ID_MJPEG) {
++      if(codec->id == AV_CODEC_ID_MJPEG) {
+         enable_levels_filter();
+       }
+ 
+@@ -504,13 +504,13 @@
+       int bkey = 0;
+ 
+       // check for keyframes
+-      if (codec->id == CODEC_ID_MSMPEG4V3) {
++      if (codec->id == AV_CODEC_ID_MSMPEG4V3) {
+ 	if (divx3_is_key(buffer)) bkey = 1;
+       }
+-      else if (codec->id == CODEC_ID_MPEG4) {
++      else if (codec->id == AV_CODEC_ID_MPEG4) {
+ 	if (mpeg4_is_key(buffer, bytes_read)) bkey = 1;
+       }
+-      else if (codec->id == CODEC_ID_MJPEG) {
++      else if (codec->id == AV_CODEC_ID_MJPEG) {
+ 	bkey = 1;
+       }
+ 
+@@ -580,8 +580,8 @@
+ 
+     // Convert avcodec image to our internal YUV or RGB format
+     switch (lavc_dec_context->pix_fmt) {
+-      case PIX_FMT_YUVJ420P:
+-      case PIX_FMT_YUV420P:
++      case AV_PIX_FMT_YUVJ420P:
++      case AV_PIX_FMT_YUV420P:
+         src_fmt = IMG_YUV420P;
+         YUV_INIT_PLANES(src_planes, frame, src_fmt,
+                         lavc_dec_context->width, lavc_dec_context->height);
+@@ -612,7 +612,7 @@
+ 	}
+         break;
+ 
+-      case PIX_FMT_YUV411P:
++      case AV_PIX_FMT_YUV411P:
+         src_fmt = IMG_YUV411P;
+         YUV_INIT_PLANES(src_planes, frame, src_fmt,
+                         lavc_dec_context->width, lavc_dec_context->height);
+@@ -640,8 +640,8 @@
+         }
+         break;
+ 
+-      case PIX_FMT_YUVJ422P:
+-      case PIX_FMT_YUV422P:
++      case AV_PIX_FMT_YUVJ422P:
++      case AV_PIX_FMT_YUV422P:
+         src_fmt = IMG_YUV422P;
+         YUV_INIT_PLANES(src_planes, frame, src_fmt,
+                         lavc_dec_context->width, lavc_dec_context->height);
+@@ -669,8 +669,8 @@
+         }
+ 	break;
+ 
+-      case PIX_FMT_YUVJ444P:
+-      case PIX_FMT_YUV444P:
++      case AV_PIX_FMT_YUVJ444P:
++      case AV_PIX_FMT_YUV444P:
+         src_fmt = IMG_YUV444P;
+         YUV_INIT_PLANES(src_planes, frame, src_fmt,
+                         lavc_dec_context->width, lavc_dec_context->height);
+--- import/probe_ffmpeg.c	2011-11-19 17:50:27.000000000 +0100
++++ import/probe_ffmpeg.c	2016-02-15 16:08:37.917488184 +0100
+@@ -99,8 +99,8 @@
+ 
+     TC_INIT_LIBAVCODEC;
+ 
+-    ret = av_open_input_file(&lavf_dmx_context, ipipe->name,
+-                             NULL, 0, NULL);
++    ret = avformat_open_input(&lavf_dmx_context, ipipe->name,
++                             NULL, NULL);
+     if (ret != 0) {
+         tc_log_error(__FILE__, "unable to open '%s'"
+                                " (libavformat failure)",
+@@ -109,7 +109,7 @@
+         return;
+     }
+ 
+-    ret = av_find_stream_info(lavf_dmx_context);
++    ret = avformat_find_stream_info(lavf_dmx_context, NULL);
+     if (ret < 0) {
+         tc_log_error(__FILE__, "unable to fetch informations from '%s'"
+                                " (libavformat failure)",
+@@ -120,7 +120,11 @@
+ 
+     translate_info(lavf_dmx_context, ipipe->probe_info);
+ 
++#if LIBAVFORMAT_VERSION_INT > AV_VERSION_INT(53,25,0)
++    avformat_close_input(&lavf_dmx_context);
++#else
+     av_close_input_file(lavf_dmx_context);
++#endif
+     return;
+ }
+ 
+--- libtc/tcavcodec.h	2011-11-19 17:50:27.000000000 +0100
++++ libtc/tcavcodec.h	2016-02-15 16:08:37.917488184 +0100
+@@ -53,7 +53,6 @@
+ 
+ #define TC_INIT_LIBAVCODEC do { \
+     TC_LOCK_LIBAVCODEC; \
+-    avcodec_init(); \
+     avcodec_register_all(); \
+     TC_UNLOCK_LIBAVCODEC; \
+ } while (0)

@@ -1,0 +1,381 @@
+--- src/comunicationsmanagerfilesockets.cpp
++++ src/comunicationsmanagerfilesockets.cpp
+@@ -134,14 +134,13 @@ int ComunicationsManagerFileSockets::create_new_socket(int *sockId)
+ ComunicationsManagerFileSockets::ComunicationsManagerFileSockets()
+ {
+     count = 0;
+-    mtx = new MegaMutex();
+-    informerMutex = new MegaMutex(false);
++    mtx = new std::recursive_mutex();
++    informerMutex = new std::recursive_mutex();
+     initialize();
+ }
+ 
+ int ComunicationsManagerFileSockets::initialize()
+ {
+-    mtx->init(false);
+ 
+     MegaFileSystemAccess *fsAccess = new MegaFileSystemAccess();
+     char csocketsFolder[34]; // enough to hold all numbers up to 64-bits
+@@ -394,7 +393,7 @@ void ComunicationsManagerFileSockets::sendPartialOutput(CmdPetition *inf, OUTSTR
+ 
+ int ComunicationsManagerFileSockets::informStateListener(CmdPetition *inf, string &s)
+ {
+-    MutexGuard g(*informerMutex);
++    std::lock_guard<std::recursive_mutex> g(*informerMutex);
+     LOG_verbose << "Inform State Listener: Output to write in socket " << ((CmdPetitionPosixSockets *)inf)->outSocket << ": <<" << s << ">>";
+ 
+     sockaddr_in cliAddr;
+--- src/comunicationsmanagerfilesockets.h
++++ src/comunicationsmanagerfilesockets.h
+@@ -58,8 +58,8 @@ private:
+ 
+     // to get next socket id
+     int count;
+-    mega::MegaMutex *mtx;
+-    mega::MegaMutex *informerMutex;
++    std::recursive_mutex *mtx;
++    std::recursive_mutex *informerMutex;
+ 
+     /**
+      * @brief create_new_socket
+--- src/comunicationsmanagerportsockets.cpp
++++ src/comunicationsmanagerportsockets.cpp
+@@ -161,13 +161,12 @@ SOCKET ComunicationsManagerPortSockets::create_new_socket(int *sockId)
+ ComunicationsManagerPortSockets::ComunicationsManagerPortSockets()
+ {
+     count = 0;
+-    mtx = new MegaMutex();
++    mtx = new std::recursive_mutex();
+     initialize();
+ }
+ 
+ int ComunicationsManagerPortSockets::initialize()
+ {
+-    mtx->init(false);
+ #if _WIN32
+     WORD wVersionRequested;
+     WSADATA wsaData;
+--- src/comunicationsmanagerportsockets.h
++++ src/comunicationsmanagerportsockets.h
+@@ -69,7 +69,7 @@ private:
+ 
+     // to get next socket id
+     int count;
+-    mega::MegaMutex *mtx;
++    std::recursive_mutex *mtx;
+ 
+     /**
+      * @brief create_new_socket
+--- src/listeners.cpp
++++ src/listeners.cpp
+@@ -902,7 +902,6 @@ MegaCmdGlobalTransferListener::MegaCmdGlobalTransferListener(MegaApi *megaApi, M
+     this->megaApi = megaApi;
+     this->sandboxCMD = sandboxCMD;
+     this->listener = parent;
+-    completedTransfersMutex.init(false);
+ };
+ 
+ void MegaCmdGlobalTransferListener::onTransferFinish(MegaApi* api, MegaTransfer *transfer, MegaError* error)
+--- src/listeners.h
++++ src/listeners.h
+@@ -178,7 +178,7 @@ private:
+     static const int MAXCOMPLETEDTRANSFERSBUFFER;
+ 
+ public:
+-    mega::MegaMutex completedTransfersMutex;
++    std::recursive_mutex completedTransfersMutex;
+     std::deque<mega::MegaTransfer *> completedTransfers;
+     std::map<mega::MegaHandle,std::string> completedPathsByHandle;
+ public:
+--- src/megacmd.cpp
++++ src/megacmd.cpp
+@@ -103,11 +103,11 @@ MegaApi *api;
+ std::queue<MegaApi *> apiFolders;
+ std::vector<MegaApi *> occupiedapiFolders;
+ MegaSemaphore semaphoreapiFolders;
+-MegaMutex mutexapiFolders;
++std::recursive_mutex mutexapiFolders;
+ 
+ MegaCMDLogger *loggerCMD;
+ 
+-MegaMutex mutexEndedPetitionThreads;
++std::recursive_mutex mutexEndedPetitionThreads;
+ std::vector<MegaThread *> petitionThreads;
+ std::vector<MegaThread *> endedPetitionThreads;
+ MegaThread *threadRetryConnections;
+@@ -194,7 +194,7 @@ static prompttype prompt = COMMAND;
+ // local console
+ Console* console;
+ 
+-MegaMutex mutexHistory;
++std::recursive_mutex mutexHistory;
+ 
+ map<unsigned long long, string> threadline;
+ 
+@@ -4411,9 +4411,7 @@ int main(int argc, char* argv[])
+         loggerCMD->setCmdLoggerLevel(MegaApi::LOG_LEVEL_MAX);
+     }
+ 
+-    mutexHistory.init(false);
+ 
+-    mutexEndedPetitionThreads.init(false);
+ 
+     ConfigurationManager::loadConfiguration(( argc > 1 ) && debug);
+     if (!ConfigurationManager::lockExecution() && !skiplockcheck)
+@@ -4476,7 +4474,6 @@ int main(int argc, char* argv[])
+         semaphoreClients.release();
+     }
+ 
+-    mutexapiFolders.init(false);
+ 
+     LOG_debug << "Language set to: " << localecode;
+ 
+--- src/megacmdexecuter.cpp
++++ src/megacmdexecuter.cpp
+@@ -124,12 +124,6 @@ MegaCmdExecuter::MegaCmdExecuter(MegaApi *api, MegaCMDLogger *loggerCMD, MegaCmd
+     api->addTransferListener(globalTransferListener);
+     cwd = UNDEF;
+     fsAccessCMD = new MegaFileSystemAccess();
+-    mtxSyncMap.init(false);
+-    mtxWebDavLocations.init(false);
+-    mtxFtpLocations.init(false);
+-#ifdef ENABLE_BACKUPS
+-    mtxBackupsMap.init(true);
+-#endif
+     session = NULL;
+ }
+ 
+--- src/megacmdexecuter.h
++++ src/megacmdexecuter.h
+@@ -33,12 +33,12 @@ private:
+     MegaCMDLogger *loggerCMD;
+     MegaCmdSandbox *sandboxCMD;
+     MegaCmdGlobalTransferListener *globalTransferListener;
+-    mega::MegaMutex mtxSyncMap;
+-    mega::MegaMutex mtxWebDavLocations; //TODO: destroy these two
+-    mega::MegaMutex mtxFtpLocations;
++    std::recursive_mutex mtxSyncMap;
++    std::recursive_mutex mtxWebDavLocations; //TODO: destroy these two
++    std::recursive_mutex mtxFtpLocations;
+ 
+ #ifdef ENABLE_BACKUPS
+-    mega::MegaMutex mtxBackupsMap;
++    std::recursive_mutex mtxBackupsMap;
+ #endif
+ 
+     // login/signup e-mail address
+--- src/megacmdlogger.cpp
++++ src/megacmdlogger.cpp
+@@ -38,7 +38,7 @@ using namespace std;
+ using namespace mega;
+ 
+ // different outstreams for every thread. to gather all the output data
+-MUTEX_CLASS threadLookups(false);
++std::mutex threadLookups;
+ map<uint64_t, LoggedStream *> outstreams;
+ map<uint64_t, int> threadLogLevel;
+ map<uint64_t, int> threadoutCode;
+@@ -50,7 +50,7 @@ LoggedStream LCOUT(&COUT);
+ 
+ LoggedStream &getCurrentOut()
+ {
+-    MutexGuard g(threadLookups);
++    std::lock_guard<std::mutex> g(threadLookups);
+     uint64_t currentThread = MegaThread::currentThreadId();
+     if (outstreams.find(currentThread) == outstreams.end())
+     {
+@@ -71,7 +71,7 @@ bool interactiveThread()
+ 
+     unsigned long long currentThread = MegaThread::currentThreadId();
+ 
+-    MutexGuard g(threadLookups);
++    std::lock_guard<std::mutex> g(threadLookups);
+     if (outstreams.find(currentThread) == outstreams.end())
+     {
+         return true;
+@@ -86,7 +86,7 @@ int getCurrentOutCode()
+ {
+     unsigned long long currentThread = MegaThread::currentThreadId();
+ 
+-    MutexGuard g(threadLookups);
++    std::lock_guard<std::mutex> g(threadLookups);
+     if (threadoutCode.find(currentThread) == threadoutCode.end())
+     {
+         return 0; //default OK
+@@ -102,7 +102,7 @@ CmdPetition * getCurrentPetition()
+ {
+     unsigned long long currentThread = MegaThread::currentThreadId();
+ 
+-    MutexGuard g(threadLookups);
++    std::lock_guard<std::mutex> g(threadLookups);
+     if (threadpetition.find(currentThread) == threadpetition.end())
+     {
+         return NULL;
+@@ -117,7 +117,7 @@ int getCurrentThreadLogLevel()
+ {
+     unsigned long long currentThread = MegaThread::currentThreadId();
+ 
+-    MutexGuard g(threadLookups);
++    std::lock_guard<std::mutex> g(threadLookups);
+     if (threadLogLevel.find(currentThread) == threadLogLevel.end())
+     {
+         return -1;
+@@ -132,7 +132,7 @@ bool getCurrentThreadIsCmdShell()
+ {
+     unsigned long long currentThread = MegaThread::currentThreadId();
+ 
+-    MutexGuard g(threadLookups);
++    std::lock_guard<std::mutex> g(threadLookups);
+     if (threadIsCmdShell.find(currentThread) == threadIsCmdShell.end())
+     {
+         return false; //default not
+@@ -146,31 +146,31 @@ bool getCurrentThreadIsCmdShell()
+ 
+ void setCurrentThreadLogLevel(int level)
+ {
+-    MutexGuard g(threadLookups);
++    std::lock_guard<std::mutex> g(threadLookups);
+     threadLogLevel[MegaThread::currentThreadId()] = level;
+ }
+ 
+ void setCurrentThreadOutStream(LoggedStream *s)
+ {
+-    MutexGuard g(threadLookups);
++    std::lock_guard<std::mutex> g(threadLookups);
+     outstreams[MegaThread::currentThreadId()] = s;
+ }
+ 
+ void setCurrentThreadIsCmdShell(bool isit)
+ {
+-    MutexGuard g(threadLookups);
++    std::lock_guard<std::mutex> g(threadLookups);
+     threadIsCmdShell[MegaThread::currentThreadId()] = isit;
+ }
+ 
+ void setCurrentOutCode(int outCode)
+ {
+-    MutexGuard g(threadLookups);
++    std::lock_guard<std::mutex> g(threadLookups);
+     threadoutCode[MegaThread::currentThreadId()] = outCode;
+ }
+ 
+ void setCurrentPetition(CmdPetition *petition)
+ {
+-    MutexGuard g(threadLookups);
++    std::lock_guard<std::mutex> g(threadLookups);
+     threadpetition[MegaThread::currentThreadId()] = petition;
+ }
+ 
+@@ -179,7 +179,7 @@ MegaCMDLogger::MegaCMDLogger()
+ {
+     this->output = &LCOUT;
+     this->apiLoggerLevel = MegaApi::LOG_LEVEL_ERROR;
+-    this->outputmutex = new MegaMutex(false);
++    this->outputmutex = new std::recursive_mutex;
+ }
+ 
+ MegaCMDLogger::~MegaCMDLogger()
+@@ -199,7 +199,7 @@ void MegaCMDLogger::log(const char *time, int loglevel, const char *source, cons
+         if (loglevel <= cmdLoggerLevel)
+         {
+ #ifdef _WIN32
+-            MutexGuard g(*outputmutex);
++            std::lock_guard<std::mutex> g(*outputmutex);
+             int oldmode;
+             oldmode = _setmode(_fileno(stdout), _O_U8TEXT);
+             *output << "[" << SimpleLogger::toStr(LogLevel(loglevel)) << ": " << time << "] " << message << endl;
+@@ -233,7 +233,7 @@ void MegaCMDLogger::log(const char *time, int loglevel, const char *source, cons
+                 return;
+             }
+ #ifdef _WIN32
+-            MutexGuard g(*outputmutex);
++            std::lock_guard<std::mutex> g(*outputmutex);
+             int oldmode;
+             oldmode = _setmode(_fileno(stdout), _O_U8TEXT);
+             *output << "[API:" << SimpleLogger::toStr(LogLevel(loglevel)) << ": " << time << "] " << message << endl;
+--- src/megacmdlogger.h
++++ src/megacmdlogger.h
+@@ -112,7 +112,7 @@ private:
+     int apiLoggerLevel;
+     int cmdLoggerLevel;
+     LoggedStream * output;
+-    mega::MegaMutex *outputmutex;
++    std::recursive_mutex *outputmutex;
+ 
+ public:
+     MegaCMDLogger();
+--- src/megacmdshell/megacmdshell.cpp
++++ src/megacmdshell/megacmdshell.cpp
+@@ -199,7 +199,7 @@ bool confirmingcancellink = false;
+ // communications with megacmdserver:
+ MegaCmdShellCommunications *comms;
+ 
+-MUTEX_CLASS mutexPrompt(false);
++std::mutex mutexPrompt;
+ 
+ void printWelcomeMsg(unsigned int width = 0);
+ 
+@@ -627,7 +627,7 @@ void install_rl_handler(const char *theprompt)
+ 
+ void changeprompt(const char *newprompt, bool redisplay)
+ {
+-    MutexGuard g(mutexPrompt);
++    std::lock_guard<std::mutex> g(mutexPrompt);
+ 
+     if (*dynamicprompt)
+     {
+--- src/megacmdshell/megacmdshellcommunications.cpp
++++ src/megacmdshell/megacmdshellcommunications.cpp
+@@ -80,7 +80,7 @@ bool MegaCmdShellCommunications::stopListener;
+ bool MegaCmdShellCommunications::updating;
+ ::mega::Thread *MegaCmdShellCommunications::listenerThread;
+ SOCKET MegaCmdShellCommunications::newsockfd = INVALID_SOCKET;
+-MegaMutex MegaCmdShellCommunications::megaCmdStdoutputing;
++std::recursive_mutex MegaCmdShellCommunications::megaCmdStdoutputing;
+ 
+ bool MegaCmdShellCommunications::socketValid(SOCKET socket)
+ {
+@@ -483,7 +483,6 @@ MegaCmdShellCommunications::MegaCmdShellCommunications()
+     stopListener = false;
+     updating = false;
+     listenerThread = NULL;
+-    MegaCmdShellCommunications::megaCmdStdoutputing.init(false);
+ }
+ 
+ 
+--- src/megacmdshell/megacmdshellcommunications.h
++++ src/megacmdshell/megacmdshellcommunications.h
+@@ -26,6 +26,7 @@
+ 
+ #include <string>
+ #include <iostream>
++#include <mutex>
+ 
+ #ifdef _WIN32
+ #include <WinSock2.h>
+@@ -40,15 +41,12 @@
+ 
+ #if defined(_WIN32) && !defined(WINDOWS_PHONE) && !defined(USE_CPPTHREAD)
+ #include "mega/thread/win32thread.h"
+-class MegaMutex : public ::mega::Win32Mutex {};
+ class MegaThread : public ::mega::Win32Thread {};
+ #elif defined(USE_CPPTHREAD)
+ #include "mega/thread/cppthread.h"
+-class MegaMutex : public ::mega::CppMutex {};
+ class MegaThread : public ::mega::CppThread {};
+ #else
+ #include "mega/thread/posixthread.h"
+-class MegaMutex : public ::mega::PosixMutex {};
+ class MegaThread : public ::mega::PosixThread {};
+ #endif
+ 
+@@ -118,7 +116,7 @@ public:
+     MegaCmdShellCommunications();
+     virtual ~MegaCmdShellCommunications();
+ 
+-    static MegaMutex megaCmdStdoutputing;
++    static std::recursive_mutex megaCmdStdoutputing;
+     virtual int executeCommand(std::string command, std::string (*readresponse)(const char *) = NULL, OUTSTREAMTYPE &output = COUT, bool interactiveshell = true, std::wstring = L"");
+     virtual int executeCommandW(std::wstring command, std::string (*readresponse)(const char *) = NULL, OUTSTREAMTYPE &output = COUT, bool interactiveshell = true);
+ 

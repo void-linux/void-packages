@@ -1,0 +1,116 @@
+# Template file for 'mame'
+pkgname=mame
+version=0224
+revision=1
+wrksrc="mame-mame${version}"
+short_desc="Multiple Arcade Machine Emulator"
+maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
+license="GPL-2.0-or-later"
+homepage="http://mamedev.org"
+distfiles="https://github.com/mamedev/mame/archive/mame${version}.tar.gz"
+checksum=3518e71ec20fbeac8ebe93f8ec856078b8288e19f0d7cb38959d4bde30cd2810
+
+hostmakedepends="pkg-config python tar xz which"
+makedepends="SDL2_ttf-devel glm libgomp-devel libjpeg-turbo-devel
+ libutf8proc-devel libuv-devel lua53-devel portaudio-devel portmidi-devel
+ pugixml-devel rapidjson $(vopt_if qt 'qt5-devel')"
+depends="liberation-fonts-ttf"
+nocross=yes
+nodebug=yes
+replaces="sdlmame>=0 sdlmess>=0"
+
+CFLAGS="-I${XBPS_CROSS_BASE}/usr/include/lua5.3 -I${XBPS_CROSS_BASE}/usr/include/libutf8proc"
+CXXFLAGS="${CFLAGS}"
+case "$XBPS_TARGET_MACHINE" in
+	*-musl)	CXXFLAGS+=" -DBX_CRT_MUSL=1" ;;
+esac
+
+build_options="qt"
+if [ -z "$CROSS_BUILD" ]; then
+	build_options_default="qt"
+fi
+
+do_build() {
+	local opts="REGENIE=1"
+	opts+=" TARGETOS=linux"
+	opts+=" NOWERROR=1"
+	opts+=" OPENMP=1"
+	opts+=" OPTIMIZE=3"
+	opts+=" TOOLS=1"
+	opts+=" LTO=0"
+	opts+=" USE_SYSTEM_LIB_EXPAT=1"
+	opts+=" USE_SYSTEM_LIB_ZLIB=1"
+	opts+=" USE_SYSTEM_LIB_JPEG=1"
+	opts+=" USE_SYSTEM_LIB_FLAC=1"
+	opts+=" USE_SYSTEM_LIB_LUA=1"
+	opts+=" USE_SYSTEM_LIB_SQLITE3=1"
+	opts+=" USE_SYSTEM_LIB_PORTMIDI=1"
+	opts+=" USE_SYSTEM_LIB_PORTAUDIO=1"
+	opts+=" USE_SYSTEM_LIB_UTF8PROC=1"
+	opts+=" USE_SYSTEM_LIB_GLM=1"
+	opts+=" USE_SYSTEM_LIB_RAPIDJSON=1"
+	opts+=" USE_SYSTEM_LIB_PUGIXML=1"
+	[ "$build_option_qt" ] && opts+=" USE_QTDEBUG=1"
+	case "$XBPS_TARGET_MACHINE" in
+		i686*)	# Overcome linker memory exhaustion
+			opts+=" SYMBOLS=0"
+			;;
+		x86_64*|aarch64*|ppc64*)
+			opts+=" PTR64=1"
+			;;
+	esac
+	if [ "${CROSS_BUILD}" ]; then
+		# Doesn't work yet
+		opts+=" TOOLCHAIN=${XBPS_CROSS_TRIPLET}"
+	fi
+	make ${opts} genie
+	cd 3rdparty/genie
+	bin/linux/genie embed
+	cd ${wrksrc}
+	make ${opts} ${makejobs}
+}
+
+do_install() {
+	local f
+
+	# Install the mame script
+	vbin ${FILESDIR}/mame.sh mame
+
+	# If mess is a separate binary, also install the mess script
+	if [ "${XBPS_TARGET_MACHINE%-musl}" != "x86_64" ]; then
+		vbin ${FILESDIR}/mess.sh mess
+	fi
+
+	# Install the main application(s)
+	for f in mame mame64 mamearcade mamearcade64; do
+		if [ -r ${f} ]; then
+			vinstall ${f} 755 usr/libexec/${pkgname} mame
+			break
+		fi
+	done
+	for f in mess mess64; do
+		if [ -r ${f} ]; then
+			vinstall ${f} 755 usr/libexec/${pkgname} mess
+			break
+		fi
+	done
+
+	# Install the tools
+	for f in chdman jedutil regrep pngcmp romcmp srcclean \
+		ldverify ldresample unidasm castool floptool imgtool; do
+		vbin ${f}
+		if [ -f docs/man/${f}.1 ]; then
+			vman docs/man/${f}.1
+		fi
+	done
+	for f in mame mess; do
+		if [ -r docs/man/${f}.6 ]; then
+			vman docs/man/${f}.6
+		fi
+	done
+
+	# Install the extra bits
+	for f in artwork bgfx docs hash hlsl keymaps plugins samples; do
+		vcopy ${f} usr/share/${pkgname}
+	done
+}

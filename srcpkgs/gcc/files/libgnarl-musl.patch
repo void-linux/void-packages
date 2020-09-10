@@ -1,0 +1,125 @@
+Source: Alpine Linux
+Upstream: Unknown
+Reason: Patch libgnarl to not use function missing from musl.
+
+diff -rup gcc-8.2.0/gcc/ada/libgnarl/s-osinte__linux.ads gcc-8.2.0-new/gcc/ada/libgnarl/s-osinte__linux.ads
+--- gcc-8.2.0/gcc/ada/libgnarl/s-osinte__linux.ads	2018-01-11 00:55:25.000000000 -0800
++++ gcc-8.2.0-new/gcc/ada/libgnarl/s-osinte__linux.ads	2018-11-01 16:16:23.372452951 -0700
+@@ -394,12 +394,6 @@ package System.OS_Interface is
+    PTHREAD_RWLOCK_PREFER_WRITER_NP              : constant := 1;
+    PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP : constant := 2;
+ 
+-   function pthread_rwlockattr_setkind_np
+-     (attr : access pthread_rwlockattr_t;
+-      pref : int) return int;
+-   pragma Import
+-     (C, pthread_rwlockattr_setkind_np, "pthread_rwlockattr_setkind_np");
+-
+    function pthread_rwlock_init
+      (mutex : access pthread_rwlock_t;
+       attr  : access pthread_rwlockattr_t) return int;
+@@ -464,11 +458,6 @@ package System.OS_Interface is
+       protocol : int) return int;
+    pragma Import (C, pthread_mutexattr_setprotocol);
+ 
+-   function pthread_mutexattr_setprioceiling
+-     (attr        : access pthread_mutexattr_t;
+-      prioceiling : int) return int;
+-   pragma Import (C, pthread_mutexattr_setprioceiling);
+-
+    type struct_sched_param is record
+       sched_priority : int;  --  scheduling priority
+    end record;
+diff -rup gcc-8.2.0/gcc/ada/libgnarl/s-taprop__linux.adb gcc-8.2.0-new/gcc/ada/libgnarl/s-taprop__linux.adb
+--- gcc-8.2.0/gcc/ada/libgnarl/s-taprop__linux.adb	2018-01-11 00:55:25.000000000 -0800
++++ gcc-8.2.0-new/gcc/ada/libgnarl/s-taprop__linux.adb	2018-11-13 11:28:36.433964449 -0800
+@@ -202,9 +202,6 @@ package body System.Task_Primitives.Oper
+    pragma Import
+      (C, GNAT_pthread_condattr_setup, "__gnat_pthread_condattr_setup");
+ 
+-   function GNAT_has_cap_sys_nice return C.int;
+-   pragma Import
+-     (C, GNAT_has_cap_sys_nice, "__gnat_has_cap_sys_nice");
+    --  We do not have pragma Linker_Options ("-lcap"); here, because this
+    --  library is not present on many Linux systems. 'libcap' is the Linux
+    --  "capabilities" library, called by __gnat_has_cap_sys_nice.
+@@ -214,38 +211,6 @@ package body System.Task_Primitives.Oper
+    --  Convert Ada priority to Linux priority. Priorities are 1 .. 99 on
+    --  GNU/Linux, so we map 0 .. 98 to 1 .. 99.
+ 
+-   function Get_Ceiling_Support return Boolean;
+-   --  Get the value of the Ceiling_Support constant (see below).
+-   --  Note well: If this function or related code is modified, it should be
+-   --  tested by hand, because automated testing doesn't exercise it.
+-
+-   -------------------------
+-   -- Get_Ceiling_Support --
+-   -------------------------
+-
+-   function Get_Ceiling_Support return Boolean is
+-      Ceiling_Support : Boolean := False;
+-   begin
+-      if Locking_Policy /= 'C' then
+-         return False;
+-      end if;
+-
+-      declare
+-         function geteuid return Integer;
+-         pragma Import (C, geteuid, "geteuid");
+-         Superuser : constant Boolean := geteuid = 0;
+-         Has_Cap : constant C.int := GNAT_has_cap_sys_nice;
+-         pragma Assert (Has_Cap in 0 | 1);
+-      begin
+-         Ceiling_Support := Superuser or else Has_Cap = 1;
+-      end;
+-
+-      return Ceiling_Support;
+-   end Get_Ceiling_Support;
+-
+-   pragma Warnings (Off, "non-static call not allowed in preelaborated unit");
+-   Ceiling_Support : constant Boolean := Get_Ceiling_Support;
+-   pragma Warnings (On, "non-static call not allowed in preelaborated unit");
+    --  True if the locking policy is Ceiling_Locking, and the current process
+    --  has permission to use this policy. The process has permission if it is
+    --  running as 'root', or if the capability was set by the setcap command,
+@@ -348,7 +313,9 @@ package body System.Task_Primitives.Oper
+    -- Init_Mutex --
+    ----------------
+ 
++   pragma Warnings (Off, "formal parameter * is not referenced");
+    function Init_Mutex (L : RTS_Lock_Ptr; Prio : Any_Priority) return C.int is
++   pragma Warnings (On, "formal parameter * is not referenced");
+       Mutex_Attr : aliased pthread_mutexattr_t;
+       Result, Result_2 : C.int;
+ 
+@@ -360,16 +327,7 @@ package body System.Task_Primitives.Oper
+          return Result;
+       end if;
+ 
+-      if Ceiling_Support then
+-         Result := pthread_mutexattr_setprotocol
+-           (Mutex_Attr'Access, PTHREAD_PRIO_PROTECT);
+-         pragma Assert (Result = 0);
+-
+-         Result := pthread_mutexattr_setprioceiling
+-           (Mutex_Attr'Access, Prio_To_Linux_Prio (Prio));
+-         pragma Assert (Result = 0);
+-
+-      elsif Locking_Policy = 'I' then
++      if Locking_Policy = 'I' then
+          Result := pthread_mutexattr_setprotocol
+            (Mutex_Attr'Access, PTHREAD_PRIO_INHERIT);
+          pragma Assert (Result = 0);
+@@ -409,11 +367,6 @@ package body System.Task_Primitives.Oper
+             Result := pthread_rwlockattr_init (RWlock_Attr'Access);
+             pragma Assert (Result = 0);
+ 
+-            Result := pthread_rwlockattr_setkind_np
+-              (RWlock_Attr'Access,
+-               PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
+-            pragma Assert (Result = 0);
+-
+             Result := pthread_rwlock_init (L.RW'Access, RWlock_Attr'Access);
+ 
+             pragma Assert (Result in 0 | ENOMEM);
+

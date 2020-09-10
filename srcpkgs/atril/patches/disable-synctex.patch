@@ -1,0 +1,242 @@
+From c246af6b85bfb326d10eb56e0d2563138495dfa2 Mon Sep 17 00:00:00 2001
+From: Oz Tiram <oz.tiram@noris.de>
+Date: Fri, 7 Feb 2020 21:57:10 +0100
+Subject: [PATCH] Make synctex optional
+
+Not everyone who reads PDF's is necessarily a LaTeX user.
+These changes allow users to install atril without the huge bagage
+of tex-live on systems where synctex isn't provided as a stand alone
+library.
+---
+ configure.ac              | 25 +++++++++++++++++--------
+ libdocument/ev-document.c | 16 ++++++++++++----
+ libview/ev-view.c         |  9 ++++++++-
+ shell/ev-window.c         |  5 +++++
+ 4 files changed, 42 insertions(+), 13 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index 529ef2a0..543808f8 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -361,15 +361,25 @@ AC_SUBST([GIRTYPELIBDIR])
+ AM_CONDITIONAL([ENABLE_INTROSPECTION],[test "$enable_introspection" = "yes"])
+ 
+ dnl ================== libsynctex ===========================================
++AC_ARG_ENABLE([synctex],
++  [AS_HELP_STRING([--disable-synctex], [Disable support for synctex])],
++  [],
++  [enable_synctex=yes])
+ 
+-PKG_CHECK_MODULES(SYNCTEX, [synctex >= $SYNCTEX_REQUIRED], has_synctex=yes, has_synctex=no)
+ 
+-dnl not found? use internal code copy.
+-if test "x$has_synctex" = "xno"; then
+-        AC_MSG_ERROR("SyncTeX support is disabled since library version $SYNCTEX_REQUIRED or newer not found")
++if test "$enable_synctex" = "yes"; then
++  AC_DEFINE([ENABLE_SYNCTEX],[1],[Define if synctex support is enabled])
++  PKG_CHECK_MODULES(SYNCTEX, [synctex >= $SYNCTEX_REQUIRED], has_synctex=yes, has_synctex=no)
++  dnl not found? use internal code copy.
++  if test "x$has_synctex" = "xno"; then
++          AC_MSG_ERROR("SyncTeX support is disabled since library version $SYNCTEX_REQUIRED or newer not found")
++  fi
++  AC_SUBST(SYNCTEX_LIBS)
++  AC_SUBST(SYNCTEX_CFLAGS)
+ fi
+-AC_SUBST(SYNCTEX_LIBS)
+-AC_SUBST(SYNCTEX_CFLAGS)
++
++AM_CONDITIONAL([ENABLE_SYNCTEX], [test "$enable_synctex" = "yes"])
++
+ 
+ dnl ================== portability checks ===========================================
+ 
+@@ -770,6 +780,7 @@ Configure summary:
+     Tests...............:    $enable_tests
+ 
+     PDF Backend.........:    $enable_pdf
++    Synctex enabled.....:    $enable_synctex
+     PostScript Backend..:    $enable_ps
+     TIFF Backend........:    $enable_tiff
+     DJVU Backend........:    $enable_djvu
+@@ -778,6 +789,4 @@ Configure summary:
+     Comics Backend......:    $enable_comics
+     XPS Backend.........:    $enable_xps
+     ePub Backend........:    $have_webkit
+-
+-    SyncTeX.............:    $has_synctex
+ "
+diff --git a/libdocument/ev-document.c b/libdocument/ev-document.c
+index b713a671..be082aeb 100644
+--- a/libdocument/ev-document.c
++++ b/libdocument/ev-document.c
+@@ -25,7 +25,9 @@
+ #include <string.h>
+ 
+ #include "ev-document.h"
++#ifdef ENABLE_SYNCTEX
+ #include "synctex_parser.h"
++#endif
+ #include "ev-file-helpers.h"
+ 
+ typedef struct _EvPageSize
+@@ -53,8 +55,9 @@ struct _EvDocumentPrivate
+ 	gchar         **page_labels;
+ 	EvPageSize     *page_sizes;
+ 	EvDocumentInfo *info;
+-
++#ifdef ENABLE_SYNCTEX
+ 	synctex_scanner_p synctex_scanner;
++#endif
+ };
+ 
+ static gint            _ev_document_get_n_pages     (EvDocument *document);
+@@ -124,12 +127,12 @@ ev_document_finalize (GObject *object)
+ 		ev_document_info_free (document->priv->info);
+ 		document->priv->info = NULL;
+ 	}
+-
++#ifdef ENABLE_SYNCTEX
+ 	if (document->priv->synctex_scanner) {
+ 		synctex_scanner_free (document->priv->synctex_scanner);
+ 		document->priv->synctex_scanner = NULL;
+ 	}
+-
++#endif
+ 	G_OBJECT_CLASS (ev_document_parent_class)->finalize (object);
+ }
+ 
+@@ -137,8 +140,9 @@ static void
+ ev_document_init (EvDocument *document)
+ {
+ 	document->priv = ev_document_get_instance_private (document);
++#ifdef ENABLE_SYNCTEX
+ 	document->synctex_version = SYNCTEX_VERSION_STRING;
+-
++#endif
+ 	/* Assume all pages are the same size until proven otherwise */
+ 	document->priv->uniform = TRUE;
+ 	/* Assume that the document is not a web document*/
+@@ -336,6 +340,7 @@ ev_document_load (EvDocument  *document,
+ 		}
+ 
+ 		priv->info = _ev_document_get_info (document);
++#ifdef ENABLE_SYNCTEX
+ 		if (_ev_document_support_synctex (document)) {
+ 			gchar *filename;
+ 
+@@ -346,6 +351,7 @@ ev_document_load (EvDocument  *document,
+ 				g_free (filename);
+ 			}
+ 		}
++#endif
+ 	}
+ 
+ 	return retval;
+@@ -388,6 +394,7 @@ _ev_document_support_synctex (EvDocument *document)
+ 	return klass->support_synctex ? klass->support_synctex (document) : FALSE;
+ }
+ 
++#ifdef ENABLE_SYNCTEX
+ gboolean
+ ev_document_has_synctex (EvDocument *document)
+ {
+@@ -492,6 +499,7 @@ ev_document_synctex_forward_search (EvDocument   *document,
+ 
+         return result;
+ }
++#endif /* ENABLE_SYNCTEX */
+ 
+ static gint
+ _ev_document_get_n_pages (EvDocument  *document)
+diff --git a/libview/ev-view.c b/libview/ev-view.c
+index a195ba21..e98582d3 100644
+--- a/libview/ev-view.c
++++ b/libview/ev-view.c
+@@ -3210,6 +3210,7 @@ ev_view_remove_annotation (EvView       *view,
+         g_object_unref (annot);
+ }
+ 
++#ifdef ENABLE_SYNCTEX
+ static gboolean
+ ev_view_synctex_backward_search (EvView *view,
+ 				 gdouble x,
+@@ -3235,6 +3236,7 @@ ev_view_synctex_backward_search (EvView *view,
+ 
+ 	return FALSE;
+ }
++#endif
+ 
+ /* Caret navigation */
+ #define CURSOR_ON_MULTIPLIER 2
+@@ -4078,8 +4080,10 @@ ev_view_draw (GtkWidget      *widget,
+ 			show_annotation_windows (view, i);
+ 		if (page_ready && view->focused_element)
+ 			draw_focus (view, cr, i, &clip_rect);
++#ifdef ENABLE_SYNCTEX
+ 		if (page_ready && view->synctex_result)
+ 			highlight_forward_search_results (view, cr, i);
++#endif
+ 	}
+ 
+ 	if (GTK_WIDGET_CLASS (ev_view_parent_class)->draw)
+@@ -4472,9 +4476,10 @@ ev_view_button_press_event (GtkWidget      *widget,
+ 			EvFormField *field;
+ 			EvMapping *link;
+ 			gint page;
+-
++#ifdef ENABLE_SYNCTEX
+ 			if (event->state & GDK_CONTROL_MASK)
+ 				return ev_view_synctex_backward_search (view, event->x , event->y);
++#endif
+ 
+ 			if (EV_IS_SELECTION (view->document) && view->selection_info.selections) {
+ 				if (event->type == GDK_3BUTTON_PRESS) {
+@@ -7522,6 +7527,7 @@ ev_view_find_cancel (EvView *view)
+ 	view->find_pages = NULL;
+ }
+ 
++#ifdef ENABLE_SYNCTEX
+ /*** Synctex ***/
+ void
+ ev_view_highlight_forward_search (EvView       *view,
+@@ -7549,6 +7555,7 @@ ev_view_highlight_forward_search (EvView       *view,
+ 	ensure_rectangle_is_visible (view, &view_rect);
+ 	gtk_widget_queue_draw (GTK_WIDGET (view));
+ }
++#endif /* ENABLE_SYNCTEX */
+ 
+ /*** Selections ***/
+ static gboolean
+diff --git a/shell/ev-window.c b/shell/ev-window.c
+index e4cbce93..a2da929d 100644
+--- a/shell/ev-window.c
++++ b/shell/ev-window.c
+@@ -7751,6 +7751,8 @@ ev_window_emit_doc_loaded (EvWindow *window)
+         ev_atril_window_emit_document_loaded (window->priv->skeleton, window->priv->uri);
+ }
+ 
++
++#ifdef ENABLE_SYNCTEX
+ static gboolean
+ handle_sync_view_cb (EvAtrilWindow        *object,
+                      GDBusMethodInvocation *invocation,
+@@ -7771,6 +7773,7 @@ handle_sync_view_cb (EvAtrilWindow        *object,
+ 
+ 	return TRUE;
+ }
++#endif
+ #endif /* ENABLE_DBUS */
+ 
+ static gboolean
+@@ -7831,9 +7834,11 @@ ev_window_init (EvWindow *ev_window)
+                                                       ev_window->priv->dbus_object_path,
+                                                       &error)) {
+                         ev_window->priv->skeleton = skeleton;
++#ifdef ENABLE_SYNCTEX
+                         g_signal_connect (skeleton, "handle-sync-view",
+                                           G_CALLBACK (handle_sync_view_cb),
+                                           ev_window);
++#endif
+                 } else {
+                         g_printerr ("Failed to register bus object %s: %s\n",
+ 			            ev_window->priv->dbus_object_path, error->message);

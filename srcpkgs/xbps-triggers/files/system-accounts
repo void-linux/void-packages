@@ -1,0 +1,162 @@
+#!/bin/sh
+#
+# (Un)registers systems accounts (users/groups).
+#
+# Arguments:	$ACTION = [run/targets]
+#		$TARGET = [post-install/pre-remove]
+#		$PKGNAME
+#		$VERSION
+#		$UPDATE = [yes/no]
+#
+ACTION="$1"
+TARGET="$2"
+PKGNAME="$3"
+VERSION="$4"
+UPDATE="$5"
+
+export PATH="usr/sbin:usr/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+group_add() {
+	local _grname _gid use_gid
+
+	_grname="${1%:*}"
+	_gid="${1#*:}"
+
+	if [ "${_gid}" != "${_grname}" ]; then
+		use_gid="gid ${_gid}"
+	fi
+
+	if ! getent group ${_grname} >/dev/null; then
+		if [ -n "$use_gid" ]; then
+			groupadd -r ${_grname} -g ${_gid} >/dev/null 2>&1
+		else
+			groupadd -r ${_grname} >/dev/null 2>&1
+		fi
+		if [ $? -eq 0 ]; then
+			echo "Created ${_grname} ($use_gid) system group."
+		else
+			echo "Failed to create ${_grname} ($use_gid) system group!"
+			exit 1
+		fi
+	fi
+}
+
+case "$ACTION" in
+targets)
+	echo "post-install pre-remove"
+	;;
+run)
+	if [ -z "$system_accounts" -a -z "$system_groups" ]; then
+		exit 0
+	fi
+
+	if [ -x sbin/useradd -o -x bin/useradd ]; then
+		USERADD=1
+	fi
+	if [ -x sbin/usermod -o -x bin/usermod ]; then
+		USERMOD=1
+	fi
+	if [ -x sbin/groupadd -o -x bin/groupadd ]; then
+		GROUPADD=1
+	fi
+	if [ -x bin/getent -o -x sbin/getent ]; then
+		GETENT=1
+	fi
+	if [ -x bin/passwd -o -x sbin/passwd ]; then
+		PASSWD=1
+	fi
+
+	case "$TARGET" in
+	post-install)
+		# System groups required by a package.
+		for grp in ${system_groups}; do
+			if [ -z "$GROUPADD" -a -z "$GETENT" ]; then
+				echo "WARNING: cannot create ${grp} system group (missing groupadd/getent)"
+				echo "The following group must be created manually: $grp"
+				continue
+			fi
+			group_add $grp
+		done
+
+		# System user/group required by a package.
+		for acct in ${system_accounts}; do
+			_uname="${acct%:*}"
+			_uid="${acct#*:}"
+
+			eval homedir="\$${_uname}_homedir"
+			eval shell="\$${_uname}_shell"
+			eval descr="\$${_uname}_descr"
+			eval groups="\$${_uname}_groups"
+			eval pgroup="\$${_uname}_pgroup"
+			[ -z "$homedir" ] && homedir="/var/empty"
+			[ -z "$shell" ] && shell="/sbin/nologin"
+			[ -z "$descr" ] && descr="${_uname} unprivileged user"
+			[ -n "$groups" ] && user_groups="-G $groups"
+
+			[ "${_uid}" != "${_uname}" ] &&
+				use_id="-u ${_uid} -g ${pgroup:-${_uid}}"
+
+			if [ -z "$USERADD" -a -z "$GETENT" -a -z "$PASSWD" ]; then
+				echo "WARNING: cannot create ${acct} system user/group (missing useradd/getent/passwd)"
+				echo "The following system account must be created:"
+				echo "   Account: ${uname:-${_uid}} (uid: '${_uid}')"
+				echo "   Description: '${descr}'"
+				echo "   Homedir: '${homedir}'"
+				echo "   Shell: '${shell}'"
+				echo "   Additional groups: '${groups}'"
+				continue
+			fi
+
+			group_add ${pgroup:-${acct}}
+
+			if ! getent passwd ${_uname} >/dev/null; then
+				useradd -c "$descr" -d "$homedir" -s "$shell" ${user_groups} \
+					${pgroup:+-N} ${use_id:=-g ${pgroup:-${_uname}}} -r ${_uname} && \
+					passwd -l ${_uname} >/dev/null 2>&1
+				if [ $? -eq 0 ]; then
+					echo "Created ${_uname} (${_uid}) system user."
+				else
+					echo "Failed to create ${acct} system user!"
+					exit 1
+				fi
+			else
+				if [ -z "$USERMOD" ]; then
+					echo "WARNING: cannot update ${acct} system user/group (missing usermod)"
+					continue
+				fi
+				usermod -c "${descr}" -d "${homedir}" -s "${shell}" ${user_groups} \
+					-g "${pgroup:-${_uname}}" ${_uname} >/dev/null 2>&1
+				if [ $? -eq 0 ]; then
+					echo "Updated ${_uname} (${_uid}) system user."
+				else
+					echo "Failed to update ${acct} system user!"
+					exit 1
+				fi
+			fi
+		done
+		;;
+	pre-remove)
+		if [ "$UPDATE" = "no" ]; then
+			for acct in ${system_accounts}; do
+				_uname="${acct%:*}"
+				_uid="${acct#*:}"
+				comment="$(getent passwd "${_uname}" |cut -d: -f5 |head -n1) - for uninstalled package ${PKGNAME}"
+				if [ -z "$USERMOD" ]; then
+					echo "WARNING: cannot disable ${acct} system user/group (missing usermod)"
+					continue
+				fi
+				usermod -L -d /var/empty -s /bin/false -c "${comment}" ${_uname} >/dev/null 2>&1
+				if [ $? -eq 0 ]; then
+					echo "Disabled ${_uname} (${_uid}) system user/group."
+				fi
+			done
+		fi
+		;;
+	esac
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

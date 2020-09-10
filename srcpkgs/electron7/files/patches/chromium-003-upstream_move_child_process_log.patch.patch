@@ -1,0 +1,730 @@
+From 726cbfcfaa521e9e5098829195a7d9a9c19ca391 Mon Sep 17 00:00:00 2001
+From: Joe Mason <joenotcharles@google.com>
+Date: Wed, 4 Dec 2019 18:15:36 +0000
+Subject: [PATCH] Move child process log capture to a ChildProcessLogger class.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Update comments to clarify how the child process log interacts with
+ScopedLogging.
+
+Use the new class to capture logs in cleaner_test.cc,
+secure_dll_loading_test.cc and proto_chrome_prompt_ipc_unittest.cc.
+
+R=​proberge
+
+(cherry picked from commit 063600229fb7dc472ff66839ba2657bf99b98850)
+
+Bug: 1030333
+Change-Id: I88f538ff360bb8ed9da6743dc5d6c4b263af992c
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/1947986
+Commit-Queue: Joe Mason <joenotcharles@chromium.org>
+Reviewed-by: proberge <proberge@chromium.org>
+Cr-Original-Commit-Position: refs/heads/master@{#721184}
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/1949631
+Reviewed-by: Joe Mason <joenotcharles@chromium.org>
+Cr-Commit-Position: refs/branch-heads/3904@{#914}
+Cr-Branched-From: 675968a8c657a3bd9c1c2c20c5d2935577bbc5e6-refs/heads/master@{#693954}
+---
+ chrome/chrome_cleaner/ipc/BUILD.gn            |  1 +
+ chrome/chrome_cleaner/ipc/ipc_test_util.cc    | 98 +++----------------
+ chrome/chrome_cleaner/ipc/ipc_test_util.h     | 17 ++--
+ .../ipc/proto_chrome_prompt_ipc_unittest.cc   | 26 +++--
+ chrome/chrome_cleaner/test/BUILD.gn           |  3 +
+ .../test/child_process_logger.cc              | 90 +++++++++++++++++
+ .../test/child_process_logger.h               | 62 ++++++++++++
+ chrome/chrome_cleaner/test/cleaner_test.cc    | 14 ++-
+ .../test/secure_dll_loading_test.cc           | 57 ++---------
+ 9 files changed, 207 insertions(+), 161 deletions(-)
+ create mode 100644 chrome/chrome_cleaner/test/child_process_logger.cc
+ create mode 100644 chrome/chrome_cleaner/test/child_process_logger.h
+
+diff --git a/chrome/chrome_cleaner/ipc/BUILD.gn b/chrome/chrome_cleaner/ipc/BUILD.gn
+index 03fddfd8736e1..4d81803a24df6 100644
+--- a/chrome/chrome_cleaner/ipc/BUILD.gn
++++ b/chrome/chrome_cleaner/ipc/BUILD.gn
+@@ -77,6 +77,7 @@ source_set("ipc_test_util") {
+     "//base/test:test_support",
+     "//chrome/chrome_cleaner/ipc:sandbox",
+     "//chrome/chrome_cleaner/logging:common",
++    "//chrome/chrome_cleaner/test:test_util",
+     "//mojo/public/cpp/system",
+     "//sandbox/win:sandbox",
+     "//testing/gtest",
+diff --git a/chrome/chrome_cleaner/ipc/ipc_test_util.cc b/chrome/chrome_cleaner/ipc/ipc_test_util.cc
+index 0d03a6870fb07..ea2bb2145bfdd 100644
+--- a/chrome/chrome_cleaner/ipc/ipc_test_util.cc
++++ b/chrome/chrome_cleaner/ipc/ipc_test_util.cc
+@@ -12,14 +12,10 @@
+ #include "base/bind_helpers.h"
+ #include "base/command_line.h"
+ #include "base/files/file_path.h"
+-#include "base/files/file_util.h"
+-#include "base/files/scoped_temp_dir.h"
+ #include "base/logging.h"
+ #include "base/process/launch.h"
+ #include "base/rand_util.h"
+ #include "base/strings/string_number_conversions.h"
+-#include "base/strings/string_piece.h"
+-#include "base/strings/string_split.h"
+ #include "base/test/multiprocess_test.h"
+ #include "base/test/test_timeouts.h"
+ #include "base/win/win_util.h"
+@@ -34,11 +30,8 @@ constexpr char kMojoPipeTokenSwitch[] = "mojo-pipe-token";
+ 
+ class MojoSandboxSetupHooks : public SandboxSetupHooks {
+  public:
+-  explicit MojoSandboxSetupHooks(
+-      SandboxedParentProcess* parent_process,
+-      base::win::ScopedHandle child_stdout_write_handle)
+-      : parent_process_(parent_process),
+-        child_stdout_write_handle_(std::move(child_stdout_write_handle)) {}
++  explicit MojoSandboxSetupHooks(SandboxedParentProcess* parent_process)
++      : parent_process_(parent_process) {}
+   ~MojoSandboxSetupHooks() override = default;
+ 
+   // SandboxSetupHooks
+@@ -50,8 +43,7 @@ class MojoSandboxSetupHooks : public SandboxSetupHooks {
+     parent_process_->CreateMojoPipe(command_line, &handles_to_inherit);
+     for (HANDLE handle : handles_to_inherit)
+       policy->AddHandleToShare(handle);
+-    policy->SetStdoutHandle(child_stdout_write_handle_.Get());
+-    policy->SetStderrHandle(child_stdout_write_handle_.Get());
++    parent_process_->child_process_logger().UpdateSandboxPolicy(policy);
+     return RESULT_CODE_SUCCESS;
+   }
+ 
+@@ -69,38 +61,6 @@ class MojoSandboxSetupHooks : public SandboxSetupHooks {
+ 
+ }  // namespace
+ 
+-namespace internal {
+-
+-void PrintChildProcessLogs(const base::FilePath& log_path) {
+-  if (log_path.empty()) {
+-    LOG(ERROR) << "Child process log path is empty";
+-    return;
+-  }
+-
+-  if (!base::PathExists(log_path)) {
+-    LOG(ERROR) << "Child process log file doesn't exist";
+-    return;
+-  }
+-
+-  // Collect the child process log file, and dump the contents, to help
+-  // debugging failures.
+-  std::string log_file_contents;
+-  if (!base::ReadFileToString(log_path, &log_file_contents)) {
+-    LOG(ERROR) << "Failed to read child process log file";
+-    return;
+-  }
+-
+-  std::vector<base::StringPiece> lines =
+-      base::SplitStringPiece(log_file_contents, "\n", base::TRIM_WHITESPACE,
+-                             base::SPLIT_WANT_NONEMPTY);
+-  LOG(ERROR) << "Dumping child process logs";
+-  for (const auto& line : lines) {
+-    LOG(ERROR) << "Child process: " << line;
+-  }
+-}
+-
+-}  // namespace internal
+-
+ ParentProcess::ParentProcess(scoped_refptr<MojoTaskRunner> mojo_task_runner)
+     : command_line_(base::GetMultiProcessTestChildBaseCommandLine()),
+       mojo_task_runner_(mojo_task_runner) {}
+@@ -158,36 +118,10 @@ bool ParentProcess::LaunchConnectedChildProcess(
+     const std::string& child_main_function,
+     base::TimeDelta timeout,
+     int32_t* exit_code) {
+-  // Adapted from
+-  // https://cs.chromium.org/chromium/src/sandbox/win/src/handle_inheritance_test.cc
+-  base::ScopedTempDir temp_dir;
+-  if (!temp_dir.CreateUniqueTempDir()) {
+-    PLOG(ERROR) << "Could not create temp dir for child stdout";
++  if (!child_process_logger_.Initialize())
+     return false;
+-  }
+-
+-  base::FilePath temp_file_name;
+-  if (!CreateTemporaryFileInDir(temp_dir.GetPath(), &temp_file_name)) {
+-    PLOG(ERROR) << "Could not create temp file for child stdout";
+-    return false;
+-  }
+-
+-  SECURITY_ATTRIBUTES attrs = {};
+-  attrs.nLength = sizeof(attrs);
+-  attrs.bInheritHandle = true;
+-
+-  base::win::ScopedHandle child_stdout_write_handle(
+-      ::CreateFile(temp_file_name.value().c_str(), GENERIC_WRITE,
+-                   FILE_SHARE_WRITE | FILE_SHARE_READ | FILE_SHARE_DELETE,
+-                   &attrs, OPEN_EXISTING, 0, nullptr));
+-  if (!child_stdout_write_handle.IsValid()) {
+-    PLOG(ERROR) << "Could not open child stdout file";
+-    return false;
+-  }
+-
+-  if (!PrepareAndLaunchTestChildProcess(child_main_function,
+-                                        std::move(child_stdout_write_handle))) {
+-    internal::PrintChildProcessLogs(temp_file_name);
++  if (!PrepareAndLaunchTestChildProcess(child_main_function)) {
++    child_process_logger_.DumpLogs();
+     return false;
+   }
+ 
+@@ -201,31 +135,22 @@ bool ParentProcess::LaunchConnectedChildProcess(
+   DestroyImplOnIPCThread();
+ 
+   if (!success || *exit_code != 0) {
+-    internal::PrintChildProcessLogs(temp_file_name);
++    child_process_logger_.DumpLogs();
+   }
+ 
+   return success;
+ }
+ 
+ bool ParentProcess::PrepareAndLaunchTestChildProcess(
+-    const std::string& child_main_function,
+-    base::win::ScopedHandle child_stdout_write_handle) {
++    const std::string& child_main_function) {
+   base::LaunchOptions launch_options;
+   launch_options.handles_to_inherit = extra_handles_to_inherit_;
+-  launch_options.handles_to_inherit.push_back(child_stdout_write_handle.Get());
+-  launch_options.stdin_handle = INVALID_HANDLE_VALUE;
+-  launch_options.stdout_handle = child_stdout_write_handle.Get();
+-  launch_options.stderr_handle = child_stdout_write_handle.Get();
+-
++  child_process_logger_.UpdateLaunchOptions(&launch_options);
+   CreateMojoPipe(&command_line_, &launch_options.handles_to_inherit);
+ 
+   base::Process child_process = base::SpawnMultiProcessTestChild(
+       child_main_function, command_line_, launch_options);
+ 
+-  // Now that it's been passed to the child process,
+-  // |child_stdout_write_handle| can be closed in this process as it goes out
+-  // of scope.
+-
+   ConnectMojoPipe(std::move(child_process));
+   return true;
+ }
+@@ -257,9 +182,8 @@ SandboxedParentProcess::SandboxedParentProcess(
+ SandboxedParentProcess::~SandboxedParentProcess() {}
+ 
+ bool SandboxedParentProcess::PrepareAndLaunchTestChildProcess(
+-    const std::string& child_main_function,
+-    base::win::ScopedHandle child_stdout_write_handle) {
+-  MojoSandboxSetupHooks hooks(this, std::move(child_stdout_write_handle));
++    const std::string& child_main_function) {
++  MojoSandboxSetupHooks hooks(this);
+ 
+   // This switch usage is copied from SpawnMultiProcessTestChild.
+   //
+diff --git a/chrome/chrome_cleaner/ipc/ipc_test_util.h b/chrome/chrome_cleaner/ipc/ipc_test_util.h
+index 1b2e5598ed52a..1526a42701353 100644
+--- a/chrome/chrome_cleaner/ipc/ipc_test_util.h
++++ b/chrome/chrome_cleaner/ipc/ipc_test_util.h
+@@ -14,9 +14,9 @@
+ #include "base/process/launch.h"
+ #include "base/process/process.h"
+ #include "base/time/time.h"
+-#include "base/win/scoped_handle.h"
+ #include "chrome/chrome_cleaner/ipc/chrome_prompt_ipc.h"
+ #include "chrome/chrome_cleaner/ipc/mojo_task_runner.h"
++#include "chrome/chrome_cleaner/test/child_process_logger.h"
+ #include "mojo/public/cpp/platform/platform_channel.h"
+ #include "mojo/public/cpp/system/invitation.h"
+ #include "mojo/public/cpp/system/message_pipe.h"
+@@ -58,6 +58,10 @@ class ParentProcess : public base::RefCountedThreadSafe<ParentProcess> {
+     return extra_handles_to_inherit_;
+   }
+ 
++  const ChildProcessLogger& child_process_logger() const {
++    return child_process_logger_;
++  }
++
+  protected:
+   friend base::RefCountedThreadSafe<ParentProcess>;
+   virtual ~ParentProcess();
+@@ -70,13 +74,13 @@ class ParentProcess : public base::RefCountedThreadSafe<ParentProcess> {
+   // as in the sandbox. Subclasses should call CreateMojoPipe before the
+   // subprocess is spawned and ConnectMojoPipe afterward.
+   virtual bool PrepareAndLaunchTestChildProcess(
+-      const std::string& child_main_function,
+-      base::win::ScopedHandle child_stdout_write_handle);
++      const std::string& child_main_function);
+ 
+   scoped_refptr<MojoTaskRunner> mojo_task_runner();
+ 
+   base::CommandLine command_line_;
+   base::HandlesToInheritVector extra_handles_to_inherit_;
++  ChildProcessLogger child_process_logger_;
+ 
+  private:
+   scoped_refptr<MojoTaskRunner> mojo_task_runner_;
+@@ -96,8 +100,7 @@ class SandboxedParentProcess : public ParentProcess {
+   ~SandboxedParentProcess() override;
+ 
+   bool PrepareAndLaunchTestChildProcess(
+-      const std::string& child_main_function,
+-      base::win::ScopedHandle child_stdout_write_handle) override;
++      const std::string& child_main_function) override;
+ };
+ 
+ class ChildProcess : public base::RefCountedThreadSafe<ChildProcess> {
+@@ -143,10 +146,6 @@ class ChromePromptIPCTestErrorHandler : public ChromePromptIPC::ErrorHandler {
+   base::OnceClosure on_closed_after_done_;
+ };
+ 
+-namespace internal {
+-void PrintChildProcessLogs(const base::FilePath& log_file);
+-}  // namespace internal
+-
+ }  // namespace chrome_cleaner
+ 
+ #endif  // CHROME_CHROME_CLEANER_IPC_IPC_TEST_UTIL_H_
+diff --git a/chrome/chrome_cleaner/ipc/proto_chrome_prompt_ipc_unittest.cc b/chrome/chrome_cleaner/ipc/proto_chrome_prompt_ipc_unittest.cc
+index f867df58f96ea..e3ce2ab6c27fe 100644
+--- a/chrome/chrome_cleaner/ipc/proto_chrome_prompt_ipc_unittest.cc
++++ b/chrome/chrome_cleaner/ipc/proto_chrome_prompt_ipc_unittest.cc
+@@ -5,7 +5,6 @@
+ #include <windows.h>
+ 
+ #include "base/command_line.h"
+-#include "base/files/file_util.h"
+ #include "base/process/process.h"
+ #include "base/strings/strcat.h"
+ #include "base/strings/string_number_conversions.h"
+@@ -19,7 +18,7 @@
+ #include "base/win/win_util.h"
+ #include "chrome/chrome_cleaner/ipc/ipc_test_util.h"
+ #include "chrome/chrome_cleaner/ipc/proto_chrome_prompt_ipc.h"
+-#include "chrome/chrome_cleaner/logging/scoped_logging.h"
++#include "chrome/chrome_cleaner/test/child_process_logger.h"
+ #include "components/chrome_cleaner/public/constants/constants.h"
+ #include "components/chrome_cleaner/public/proto/chrome_prompt.pb.h"
+ #include "components/chrome_cleaner/public/proto/chrome_prompt_for_tests.pb.h"
+@@ -42,7 +41,6 @@ constexpr char kExpectedPromptResultSwitch[] = "expected-prompt-result";
+ constexpr char kExpectedChromeDisconnectPointSwitch[] =
+     "expected-parent-disconnected";
+ 
+-constexpr base::char16 kLogSuffix[] = L"prompt-ipc-test";
+ constexpr base::char16 kInvalidUTF16String[] = {0xDC00, 0xD800, 0xD800, 0xDFFF,
+                                                 0xDFFF, 0xDBFF, 0};
+ const base::FilePath kInvalidFilePath(kInvalidUTF16String);
+@@ -421,8 +419,7 @@ class MockChrome {
+ // Gtest to log.
+ class ChildProcess {
+  public:
+-  ChildProcess()
+-      : scopped_logging_(std::make_unique<ScopedLogging>(kLogSuffix)) {
++  ChildProcess() {
+     mock_chrome_ = std::make_unique<MockChrome>(
+         ExtractHandleFromCommandLine(chrome_cleaner::kChromeReadHandleSwitch),
+         ExtractHandleFromCommandLine(chrome_cleaner::kChromeWriteHandleSwitch));
+@@ -571,7 +568,6 @@ class ChildProcess {
+ 
+  private:
+   std::unique_ptr<MockChrome> mock_chrome_;
+-  std::unique_ptr<ScopedLogging> scopped_logging_;
+ 
+   ChromeDisconnectPoint expected_disconnect_point_ =
+       ChromeDisconnectPoint::kUnspecified;
+@@ -603,6 +599,9 @@ class ProtoChromePromptIPCTest
+ class ParentProcess {
+  public:
+   bool Initialize() {
++    if (!child_process_logger_.Initialize())
++      return false;
++
+     // Inject the flags related to the the config in the command line.
+     test_config_.EnhanceCommandLine(&command_line_);
+ 
+@@ -631,14 +630,13 @@ class ParentProcess {
+   }
+ 
+   void Run() {
+-    // Delete the child process log file if existing.
+-    const base::FilePath log_path = ScopedLogging::GetLogFilePath(kLogSuffix);
+-    ASSERT_TRUE(base::DeleteFile(log_path, false))
+-        << "Can't delete log file from previous run: " << log_path.value();
++    child_process_logger_.UpdateLaunchOptions(&launch_options_);
+ 
+     // Pass the command to the child process and launch the child process.
+     base::Process child_process = base::SpawnMultiProcessTestChild(
+         "ProtoChromePromptIPCClientMain", command_line_, launch_options_);
++    if (!child_process.IsRunning())
++      child_process_logger_.DumpLogs();
+     ASSERT_TRUE(child_process.IsRunning());
+ 
+     // Close our references to the handles as they are now handled by the child
+@@ -705,10 +703,8 @@ class ParentProcess {
+ 
+     EXPECT_EQ(expected_exit_code, rv);
+ 
+-    if (!success || rv != 0) {
+-      internal::PrintChildProcessLogs(
+-          ScopedLogging::GetLogFilePath(kLogSuffix));
+-    }
++    if (!success || rv != 0)
++      child_process_logger_.DumpLogs();
+   }
+ 
+   TestConfig& GetTestConfig() { return test_config_; }
+@@ -732,6 +728,8 @@ class ParentProcess {
+   // Blocks until we receive the response from Chrome or an error occurs.
+   base::RunLoop main_runloop_;
+   bool error_occurred_ = false;
++
++  ChildProcessLogger child_process_logger_;
+ };
+ 
+ // This contains calls to the chrome_cleaner_ipc implementation.
+diff --git a/chrome/chrome_cleaner/test/BUILD.gn b/chrome/chrome_cleaner/test/BUILD.gn
+index 118454c2bdcd2..4b053fdcaf182 100644
+--- a/chrome/chrome_cleaner/test/BUILD.gn
++++ b/chrome/chrome_cleaner/test/BUILD.gn
+@@ -148,6 +148,8 @@ source_set("test_util") {
+   testonly = true
+ 
+   sources = [
++    "child_process_logger.cc",
++    "child_process_logger.h",
+     "file_remover_test_util.cc",
+     "file_remover_test_util.h",
+     "reboot_deletion_helper.cc",
+@@ -228,6 +230,7 @@ source_set("integration_test_sources") {
+     "//chrome/chrome_cleaner/os:common_os",
+     "//chrome/chrome_cleaner/pup_data:pup_data_base",
+     "//chrome/chrome_cleaner/pup_data:test_uws",
++    "//chrome/chrome_cleaner/test:test_util",
+     "//chrome/chrome_cleaner/zip_archiver:common",
+     "//components/chrome_cleaner/public/constants",
+     "//components/chrome_cleaner/test:test_name_helper",
+diff --git a/chrome/chrome_cleaner/test/child_process_logger.cc b/chrome/chrome_cleaner/test/child_process_logger.cc
+new file mode 100644
+index 0000000000000..9f4836267aea6
+--- /dev/null
++++ b/chrome/chrome_cleaner/test/child_process_logger.cc
+@@ -0,0 +1,90 @@
++// Copyright 2019 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/chrome_cleaner/test/child_process_logger.h"
++
++#include <vector>
++
++#include "base/files/file_util.h"
++#include "base/logging.h"
++#include "base/strings/string_piece.h"
++#include "base/strings/string_split.h"
++
++namespace chrome_cleaner {
++
++ChildProcessLogger::ChildProcessLogger() = default;
++
++ChildProcessLogger::~ChildProcessLogger() = default;
++
++bool ChildProcessLogger::Initialize() {
++  // Adapted from
++  // https://cs.chromium.org/chromium/src/sandbox/win/src/handle_inheritance_test.cc
++  if (!temp_dir_.CreateUniqueTempDir()) {
++    PLOG(ERROR) << "Could not create temp dir for child stdout";
++    return false;
++  }
++
++  if (!CreateTemporaryFileInDir(temp_dir_.GetPath(), &temp_file_name_)) {
++    PLOG(ERROR) << "Could not create temp file for child stdout";
++    return false;
++  }
++
++  SECURITY_ATTRIBUTES attrs = {};
++  attrs.nLength = sizeof(attrs);
++  attrs.bInheritHandle = true;
++
++  child_stdout_handle_.Set(
++      ::CreateFile(temp_file_name_.value().c_str(), GENERIC_WRITE,
++                   FILE_SHARE_WRITE | FILE_SHARE_READ | FILE_SHARE_DELETE,
++                   &attrs, OPEN_EXISTING, 0, nullptr));
++  if (!child_stdout_handle_.IsValid()) {
++    PLOG(ERROR) << "Could not open child stdout file";
++    return false;
++  }
++
++  return true;
++}
++
++void ChildProcessLogger::UpdateLaunchOptions(
++    base::LaunchOptions* options) const {
++  DCHECK(child_stdout_handle_.IsValid());
++  options->handles_to_inherit.push_back(child_stdout_handle_.Get());
++  options->stdin_handle = INVALID_HANDLE_VALUE;
++  options->stdout_handle = child_stdout_handle_.Get();
++  options->stderr_handle = child_stdout_handle_.Get();
++}
++
++void ChildProcessLogger::UpdateSandboxPolicy(
++    sandbox::TargetPolicy* policy) const {
++  DCHECK(child_stdout_handle_.IsValid());
++  policy->SetStdoutHandle(child_stdout_handle_.Get());
++  policy->SetStderrHandle(child_stdout_handle_.Get());
++}
++
++void ChildProcessLogger::DumpLogs() const {
++  DCHECK(!temp_file_name_.empty());
++
++  if (!base::PathExists(temp_file_name_)) {
++    LOG(ERROR) << "Child process log file doesn't exist";
++    return;
++  }
++
++  // Collect the child process log file, and dump the contents, to help
++  // debugging failures.
++  std::string log_file_contents;
++  if (!base::ReadFileToString(temp_file_name_, &log_file_contents)) {
++    LOG(ERROR) << "Failed to read child process log file";
++    return;
++  }
++
++  std::vector<base::StringPiece> lines =
++      base::SplitStringPiece(log_file_contents, "\n", base::TRIM_WHITESPACE,
++                             base::SPLIT_WANT_NONEMPTY);
++  LOG(ERROR) << "Dumping child process logs";
++  for (const auto& line : lines) {
++    LOG(ERROR) << "Child process: " << line;
++  }
++}
++
++}  // namespace chrome_cleaner
+diff --git a/chrome/chrome_cleaner/test/child_process_logger.h b/chrome/chrome_cleaner/test/child_process_logger.h
+new file mode 100644
+index 0000000000000..215fa911d7899
+--- /dev/null
++++ b/chrome/chrome_cleaner/test/child_process_logger.h
+@@ -0,0 +1,62 @@
++// Copyright 2019 The Chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_CHROME_CLEANER_TEST_CHILD_PROCESS_LOGGER_H_
++#define CHROME_CHROME_CLEANER_TEST_CHILD_PROCESS_LOGGER_H_
++
++#include "base/files/scoped_temp_dir.h"
++#include "base/process/launch.h"
++#include "base/win/scoped_handle.h"
++#include "sandbox/win/src/sandbox_policy.h"
++
++namespace chrome_cleaner {
++
++// Redirects stdin and stdout of a child process to a temp file. Tests that
++// spawn children can add the contents of the temp file to the test output.
++//
++// Note that if the child process sets up ScopedLogging, ERROR and FATAL level
++// logs will still be captured by this, but other logs will start going to the
++// ScopedLogging log file. test_main.cc sets up ScopedLogging so usually this
++// class will capture:
++//
++// 1. All log lines from before the ScopedLogging constructor.
++// 2. ERROR and FATAL log lines from after that.
++// 3. stdout and stderr output that doesn't go through the logging system.
++// 4. Stack traces from any crashes.
++//
++// This should be all that's needed to diagnose errors in tests.
++class ChildProcessLogger {
++ public:
++  ChildProcessLogger();
++  ~ChildProcessLogger();
++
++  // Creates a temp file for child processes to log to. Logs an error and
++  // returns false on failure.
++  bool Initialize();
++
++  // Updates |options| to direct the child stdout and stderr to the temp file.
++  // For use with base::LaunchProcess and base::SpawnMultiProcessTestChild.
++  void UpdateLaunchOptions(base::LaunchOptions* options) const;
++
++  // Updates |policy| to direct the child stdout and stderr to the temp file.
++  // For use with sandbox::BrokerServices::SpawnTarget.
++  void UpdateSandboxPolicy(sandbox::TargetPolicy* policy) const;
++
++  // Writes every line in the temp file using LOG(ERROR) so that all lines are
++  // captured in the test suite output. The class-level comment above describes
++  // which log lines from the child will be captured.
++  void DumpLogs() const;
++
++ private:
++  ChildProcessLogger(const ChildProcessLogger& other) = delete;
++  ChildProcessLogger& operator=(const ChildProcessLogger& other) = delete;
++
++  base::ScopedTempDir temp_dir_;
++  base::FilePath temp_file_name_;
++  base::win::ScopedHandle child_stdout_handle_;
++};
++
++}  // namespace chrome_cleaner
++
++#endif  // CHROME_CHROME_CLEANER_TEST_CHILD_PROCESS_LOGGER_H_
+diff --git a/chrome/chrome_cleaner/test/cleaner_test.cc b/chrome/chrome_cleaner/test/cleaner_test.cc
+index d6df17e3516f1..f778103bfdad3 100644
+--- a/chrome/chrome_cleaner/test/cleaner_test.cc
++++ b/chrome/chrome_cleaner/test/cleaner_test.cc
+@@ -24,6 +24,7 @@
+ #include "chrome/chrome_cleaner/os/pre_fetched_paths.h"
+ #include "chrome/chrome_cleaner/pup_data/pup_data.h"
+ #include "chrome/chrome_cleaner/pup_data/test_uws.h"
++#include "chrome/chrome_cleaner/test/child_process_logger.h"
+ #include "chrome/chrome_cleaner/test/test_util.h"
+ #include "chrome/chrome_cleaner/zip_archiver/sandboxed_zip_archiver.h"
+ #include "components/chrome_cleaner/public/constants/constants.h"
+@@ -311,8 +312,14 @@ class CleanerTest
+ 
+   void ExpectExitCode(const base::CommandLine& command_line,
+                       int expected_exit_code) {
+-    base::Process process(
+-        base::LaunchProcess(command_line, base::LaunchOptions()));
++    chrome_cleaner::ChildProcessLogger logger;
++    ASSERT_TRUE(logger.Initialize());
++
++    base::LaunchOptions options;
++    logger.UpdateLaunchOptions(&options);
++    base::Process process(base::LaunchProcess(command_line, options));
++    if (!process.IsValid())
++      logger.DumpLogs();
+     ASSERT_TRUE(process.IsValid());
+ 
+     int exit_code = -1;
+@@ -320,7 +327,8 @@ class CleanerTest
+         base::TimeDelta::FromMinutes(10), &exit_code);
+     EXPECT_TRUE(exited_within_timeout);
+     EXPECT_EQ(expected_exit_code, exit_code);
+-
++    if (!exited_within_timeout || expected_exit_code != exit_code)
++      logger.DumpLogs();
+     if (!exited_within_timeout)
+       process.Terminate(/*exit_code=*/-1, /*wait=*/false);
+   }
+diff --git a/chrome/chrome_cleaner/test/secure_dll_loading_test.cc b/chrome/chrome_cleaner/test/secure_dll_loading_test.cc
+index fe10c44346b5e..92e2db19fde6c 100644
+--- a/chrome/chrome_cleaner/test/secure_dll_loading_test.cc
++++ b/chrome/chrome_cleaner/test/secure_dll_loading_test.cc
+@@ -8,22 +8,17 @@
+ 
+ #include <memory>
+ #include <set>
+-#include <string>
+ #include <vector>
+ 
+ #include "base/base_paths.h"
+ #include "base/command_line.h"
+ #include "base/files/file_path.h"
+-#include "base/files/file_util.h"
+-#include "base/files/scoped_temp_dir.h"
+ #include "base/logging.h"
+ #include "base/path_service.h"
+ #include "base/process/launch.h"
+ #include "base/process/process.h"
+ #include "base/strings/string16.h"
+ #include "base/strings/string_number_conversions.h"
+-#include "base/strings/string_piece.h"
+-#include "base/strings/string_split.h"
+ #include "base/strings/string_util.h"
+ #include "base/synchronization/waitable_event.h"
+ #include "base/test/test_timeouts.h"
+@@ -32,54 +27,16 @@
+ #include "chrome/chrome_cleaner/constants/chrome_cleaner_switches.h"
+ #include "chrome/chrome_cleaner/os/inheritable_event.h"
+ #include "chrome/chrome_cleaner/os/process.h"
++#include "chrome/chrome_cleaner/test/child_process_logger.h"
+ #include "chrome/chrome_cleaner/test/test_util.h"
+ #include "components/chrome_cleaner/public/constants/constants.h"
+ #include "components/chrome_cleaner/test/test_name_helper.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+-namespace {
+-
+-void PrintChildProcessLogs(const base::FilePath& log_dir,
+-                           base::StringPiece16 file_name) {
+-  base::string16 base_name;
+-  if (file_name == L"software_reporter_tool") {
+-    base_name = L"software_reporter_tool";
+-  } else if (file_name == L"chrome_cleanup_tool") {
+-    base_name = L"chrome_cleanup";
+-  } else {
+-    LOG(ERROR) << "Unknown file name " << file_name.data();
+-    return;
+-  }
+-
+-  base::FilePath log_path = log_dir.Append(base_name).AddExtension(L"log");
+-
+-  if (!base::PathExists(log_path)) {
+-    LOG(ERROR) << "Child process log file doesn't exist";
+-    return;
+-  }
+-
+-  // Collect the child process log file, and dump the contents, to help
+-  // debugging failures.
+-  std::string log_file_contents;
+-  if (!base::ReadFileToString(log_path, &log_file_contents)) {
+-    LOG(ERROR) << "Failed to read child process log file";
+-    return;
+-  }
+-
+-  std::vector<base::StringPiece> lines =
+-      base::SplitStringPiece(log_file_contents, "\n", base::TRIM_WHITESPACE,
+-                             base::SPLIT_WANT_NONEMPTY);
+-  LOG(ERROR) << "Dumping child process logs";
+-  for (const auto& line : lines) {
+-    LOG(ERROR) << "Child process: " << line;
+-  }
+-}
+-
+-}  // namespace
+-
+ class SecureDLLLoadingTest : public testing::TestWithParam<base::string16> {
+  protected:
+   void SetUp() override {
++    ASSERT_TRUE(child_process_logger_.Initialize());
+     base::FilePath out_dir;
+     ASSERT_TRUE(base::PathService::Get(base::DIR_EXE, &out_dir));
+     exe_path_ = out_dir.Append(GetParam() + L".exe");
+@@ -104,8 +61,6 @@ class SecureDLLLoadingTest : public testing::TestWithParam<base::string16> {
+         base::NumberToString16(
+             base::win::HandleToUint32(init_done_notifier->handle())));
+     command_line.AppendSwitch(chrome_cleaner::kLoadEmptyDLLSwitch);
+-    command_line.AppendSwitchPath(chrome_cleaner::kTestLoggingPathSwitch,
+-                                  log_dir.GetPath());
+ 
+ #if !BUILDFLAG(IS_OFFICIAL_CHROME_CLEANER_BUILD)
+     if (disable_secure_dll_loading)
+@@ -121,7 +76,12 @@ class SecureDLLLoadingTest : public testing::TestWithParam<base::string16> {
+ 
+     base::LaunchOptions options;
+     options.handles_to_inherit.push_back(init_done_notifier->handle());
++    child_process_logger_.UpdateLaunchOptions(&options);
+     base::Process process = base::LaunchProcess(command_line, options);
++    if (!process.IsValid()) {
++      child_process_logger_.DumpLogs();
++      return process;
++    }
+ 
+     // Make sure the process has finished its initialization (including loading
+     // DLLs). Also check the process handle in case it exits with an error.
+@@ -136,7 +96,7 @@ class SecureDLLLoadingTest : public testing::TestWithParam<base::string16> {
+       PLOG_IF(ERROR, !::GetExitCodeProcess(process.Handle(), &exit_code));
+       ADD_FAILURE() << "Process exited with " << exit_code
+                     << " before signalling init_done_notifier";
+-      PrintChildProcessLogs(log_dir.GetPath(), GetParam());
++      child_process_logger_.DumpLogs();
+     } else {
+       EXPECT_EQ(wait_result, WAIT_OBJECT_0);
+     }
+@@ -157,6 +117,7 @@ class SecureDLLLoadingTest : public testing::TestWithParam<base::string16> {
+   }
+ 
+  private:
++  chrome_cleaner::ChildProcessLogger child_process_logger_;
+   base::FilePath exe_path_;
+   base::FilePath empty_dll_path_;
+ };

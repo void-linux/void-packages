@@ -1,0 +1,213 @@
+Patch based on https://source.winehq.org/git/vkd3d.git/commitdiff/9b03ebde858fa3e6da5cbd404a2ee3775e6be919
+
+--- libs/vkd3d/vkd3d_private.h.orig	2020-08-03 00:55:40.013368024 +0200
++++ libs/vkd3d/vkd3d_private.h	2020-08-03 00:57:57.813373570 +0200
+@@ -643,6 +643,7 @@
+ {
+     const struct d3d12_root_signature *root_signature;
+ 
++    VkPipelineBindPoint vk_bind_point;
+     VkDescriptorSet descriptor_set;
+     bool in_use;
+ 
+@@ -653,6 +654,12 @@
+     uint8_t uav_counter_dirty_mask;
+ };
+ 
++enum vkd3d_pipeline_bind_point
++{
++    VKD3D_PIPELINE_BIND_POINT_GRAPHICS = 0x0,
++    VKD3D_PIPELINE_BIND_POINT_COMPUTE = 0x1,
++    VKD3D_PIPELINE_BIND_POINT_COUNT = 0x2,
++};
+ /* ID3D12CommandList */
+ struct d3d12_command_list
+ {
+@@ -677,7 +684,7 @@
+     VkFramebuffer current_framebuffer;
+     VkPipeline current_pipeline;
+     VkRenderPass current_render_pass;
+-    struct vkd3d_pipeline_bindings pipeline_bindings[VK_PIPELINE_BIND_POINT_RANGE_SIZE];
++    struct vkd3d_pipeline_bindings pipeline_bindings[VKD3D_PIPELINE_BIND_POINT_COUNT];
+ 
+     struct d3d12_pipeline_state *state;
+ 
+--- libs/vkd3d/command.c.orig	2020-08-03 01:03:00.524385753 +0200
++++ libs/vkd3d/command.c	2020-08-03 01:08:35.281399226 +0200
+@@ -1290,13 +1290,10 @@
+ static void d3d12_command_list_invalidate_bindings(struct d3d12_command_list *list,
+         struct d3d12_pipeline_state *state)
+ {
+-    if (!state)
+-        return;
+-
+-    if (state->uav_counter_mask)
++    if (state && state->uav_counter_mask)
+     {
+-        struct vkd3d_pipeline_bindings *bindings = &list->pipeline_bindings[state->vk_bind_point];
+-        bindings->uav_counter_dirty_mask = ~(uint8_t)0;
++        enum vkd3d_pipeline_bind_point bind_point = (enum vkd3d_pipeline_bind_point)state->vk_bind_point;
++        list->pipeline_bindings[bind_point].uav_counter_dirty_mask = ~(uint8_t)0;
+     }
+ }
+ 
+@@ -1712,6 +1709,8 @@
+     list->current_render_pass = VK_NULL_HANDLE;
+ 
+     memset(list->pipeline_bindings, 0, sizeof(list->pipeline_bindings));
++    list->pipeline_bindings[VKD3D_PIPELINE_BIND_POINT_GRAPHICS].vk_bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
++    list->pipeline_bindings[VKD3D_PIPELINE_BIND_POINT_COMPUTE].vk_bind_point = VK_PIPELINE_BIND_POINT_COMPUTE;
+ 
+     list->state = NULL;
+ 
+@@ -2089,7 +2088,7 @@
+ }
+ 
+ static void d3d12_command_list_prepare_descriptors(struct d3d12_command_list *list,
+-        VkPipelineBindPoint bind_point)
++        enum vkd3d_pipeline_bind_point bind_point)
+ {
+     struct vkd3d_pipeline_bindings *bindings = &list->pipeline_bindings[bind_point];
+     const struct d3d12_root_signature *root_signature = bindings->root_signature;
+@@ -2187,7 +2186,7 @@
+ }
+ 
+ static void d3d12_command_list_update_descriptor_table(struct d3d12_command_list *list,
+-        VkPipelineBindPoint bind_point, unsigned int index, D3D12_GPU_DESCRIPTOR_HANDLE base_descriptor)
++        enum vkd3d_pipeline_bind_point bind_point, unsigned int index, D3D12_GPU_DESCRIPTOR_HANDLE base_descriptor)
+ {
+     struct vkd3d_pipeline_bindings *bindings = &list->pipeline_bindings[bind_point];
+     const struct d3d12_root_signature *root_signature = bindings->root_signature;
+@@ -2267,7 +2266,7 @@
+ }
+ 
+ static void d3d12_command_list_update_uav_counter_descriptors(struct d3d12_command_list *list,
+-        VkPipelineBindPoint bind_point)
++        enum vkd3d_pipeline_bind_point bind_point)
+ {
+     struct vkd3d_pipeline_bindings *bindings = &list->pipeline_bindings[bind_point];
+     const struct vkd3d_vk_device_procs *vk_procs = &list->device->vk_procs;
+@@ -2312,14 +2311,14 @@
+     VK_CALL(vkUpdateDescriptorSets(vk_device, uav_counter_count, vk_descriptor_writes, 0, NULL));
+     vkd3d_free(vk_descriptor_writes);
+ 
+-    VK_CALL(vkCmdBindDescriptorSets(list->vk_command_buffer, bind_point,
++    VK_CALL(vkCmdBindDescriptorSets(list->vk_command_buffer, bindings->vk_bind_point,
+             state->vk_pipeline_layout, state->set_index, 1, &vk_descriptor_set, 0, NULL));
+ 
+     bindings->uav_counter_dirty_mask = 0;
+ }
+ 
+ static void d3d12_command_list_update_descriptors(struct d3d12_command_list *list,
+-        VkPipelineBindPoint bind_point)
++        enum vkd3d_pipeline_bind_point bind_point)
+ {
+     struct vkd3d_pipeline_bindings *bindings = &list->pipeline_bindings[bind_point];
+     const struct vkd3d_vk_device_procs *vk_procs = &list->device->vk_procs;
+@@ -2338,7 +2337,7 @@
+ 
+     if (bindings->descriptor_set)
+     {
+-        VK_CALL(vkCmdBindDescriptorSets(list->vk_command_buffer, bind_point,
++        VK_CALL(vkCmdBindDescriptorSets(list->vk_command_buffer, bindings->vk_bind_point,
+                 rs->vk_pipeline_layout, rs->main_set, 1, &bindings->descriptor_set, 0, NULL));
+         bindings->in_use = true;
+     }
+@@ -3225,7 +3224,7 @@
+ }
+ 
+ static void d3d12_command_list_set_root_signature(struct d3d12_command_list *list,
+-        VkPipelineBindPoint bind_point, const struct d3d12_root_signature *root_signature)
++        enum vkd3d_pipeline_bind_point bind_point, const struct d3d12_root_signature *root_signature)
+ {
+     struct vkd3d_pipeline_bindings *bindings = &list->pipeline_bindings[bind_point];
+ 
+@@ -3259,7 +3258,7 @@
+ }
+ 
+ static void d3d12_command_list_set_descriptor_table(struct d3d12_command_list *list,
+-        VkPipelineBindPoint bind_point, unsigned int index, D3D12_GPU_DESCRIPTOR_HANDLE base_descriptor)
++        enum vkd3d_pipeline_bind_point bind_point, unsigned int index, D3D12_GPU_DESCRIPTOR_HANDLE base_descriptor)
+ {
+     struct vkd3d_pipeline_bindings *bindings = &list->pipeline_bindings[bind_point];
+     const struct d3d12_root_signature *root_signature = bindings->root_signature;
+@@ -3296,7 +3295,7 @@
+ }
+ 
+ static void d3d12_command_list_set_root_constants(struct d3d12_command_list *list,
+-        VkPipelineBindPoint bind_point, unsigned int index, unsigned int offset,
++        enum vkd3d_pipeline_bind_point bind_point, unsigned int index, unsigned int offset,
+         unsigned int count, const void *data)
+ {
+     const struct d3d12_root_signature *root_signature = list->pipeline_bindings[bind_point].root_signature;
+@@ -3358,7 +3357,7 @@
+ }
+ 
+ static void d3d12_command_list_set_root_cbv(struct d3d12_command_list *list,
+-        VkPipelineBindPoint bind_point, unsigned int index, D3D12_GPU_VIRTUAL_ADDRESS gpu_address)
++        enum vkd3d_pipeline_bind_point bind_point, unsigned int index, D3D12_GPU_VIRTUAL_ADDRESS gpu_address)
+ {
+     struct vkd3d_pipeline_bindings *bindings = &list->pipeline_bindings[bind_point];
+     const struct d3d12_root_signature *root_signature = bindings->root_signature;
+@@ -3393,7 +3392,7 @@
+ 
+     if (vk_info->KHR_push_descriptor)
+     {
+-        VK_CALL(vkCmdPushDescriptorSetKHR(list->vk_command_buffer, bind_point,
++        VK_CALL(vkCmdPushDescriptorSetKHR(list->vk_command_buffer, bindings->vk_bind_point,
+                 root_signature->vk_pipeline_layout, 0, 1, &descriptor_write));
+     }
+     else
+@@ -3425,7 +3424,7 @@
+ }
+ 
+ static void d3d12_command_list_set_root_descriptor(struct d3d12_command_list *list,
+-        VkPipelineBindPoint bind_point, unsigned int index, D3D12_GPU_VIRTUAL_ADDRESS gpu_address)
++        enum vkd3d_pipeline_bind_point bind_point, unsigned int index, D3D12_GPU_VIRTUAL_ADDRESS gpu_address)
+ {
+     struct vkd3d_pipeline_bindings *bindings = &list->pipeline_bindings[bind_point];
+     const struct d3d12_root_signature *root_signature = bindings->root_signature;
+@@ -3476,7 +3475,7 @@
+ 
+     if (vk_info->KHR_push_descriptor)
+     {
+-        VK_CALL(vkCmdPushDescriptorSetKHR(list->vk_command_buffer, bind_point,
++        VK_CALL(vkCmdPushDescriptorSetKHR(list->vk_command_buffer, bindings->vk_bind_point,
+                 root_signature->vk_pipeline_layout, 0, 1, &descriptor_write));
+     }
+     else
+@@ -3493,7 +3492,7 @@
+     TRACE("iface %p, root_parameter_index %u, address %#"PRIx64".\n",
+             iface, root_parameter_index, address);
+ 
+-    d3d12_command_list_set_root_descriptor(list, VK_PIPELINE_BIND_POINT_COMPUTE,
++    d3d12_command_list_set_root_descriptor(list, VKD3D_PIPELINE_BIND_POINT_COMPUTE,
+             root_parameter_index, address);
+ }
+ 
+@@ -3505,7 +3504,7 @@
+     TRACE("iface %p, root_parameter_index %u, address %#"PRIx64".\n",
+             iface, root_parameter_index, address);
+ 
+-    d3d12_command_list_set_root_descriptor(list, VK_PIPELINE_BIND_POINT_GRAPHICS,
++    d3d12_command_list_set_root_descriptor(list, VKD3D_PIPELINE_BIND_POINT_GRAPHICS,
+             root_parameter_index, address);
+ }
+ 
+@@ -3517,7 +3516,7 @@
+     TRACE("iface %p, root_parameter_index %u, address %#"PRIx64".\n",
+             iface, root_parameter_index, address);
+ 
+-    d3d12_command_list_set_root_descriptor(list, VK_PIPELINE_BIND_POINT_COMPUTE,
++    d3d12_command_list_set_root_descriptor(list, VKD3D_PIPELINE_BIND_POINT_COMPUTE,
+             root_parameter_index, address);
+ }
+ 
+@@ -3529,7 +3528,7 @@
+     TRACE("iface %p, root_parameter_index %u, address %#"PRIx64".\n",
+             iface, root_parameter_index, address);
+ 
+-    d3d12_command_list_set_root_descriptor(list, VK_PIPELINE_BIND_POINT_GRAPHICS,
++    d3d12_command_list_set_root_descriptor(list, VKD3D_PIPELINE_BIND_POINT_GRAPHICS,
+             root_parameter_index, address);
+ }

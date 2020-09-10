@@ -1,0 +1,211 @@
+# Template file for 'linux-tools'
+pkgname=linux-tools
+version=5.4.42
+revision=1
+wrksrc="linux-${version}"
+build_style=meta
+hostmakedepends="asciidoc automake flex gettext libtool perl python3 xmlto"
+makedepends="babeltrace-devel binutils-devel eudev-libudev-devel
+ libcap-devel liblzma-devel libressl-devel libsysfs-devel libunwind-devel
+ libzstd-devel ncurses-devel pciutils-devel python3-devel slang-devel"
+depends="cpupower-${version}_${revision} perf-${version}_${revision} usbip-${version}_${revision}"
+short_desc="Linux kernel tools meta-pkg"
+maintainer="Enno Boland <gottox@voidlinux.org>"
+license="GPL-2.0-only"
+homepage="https://www.kernel.org"
+distfiles="${KERNEL_SITE}/kernel/v5.x/linux-${version}.tar.xz"
+checksum=4e431b7c0266a07b76fdb77f8917ad681f0fa34ffba0eb8a172b67f7ef57bc31
+python_version=3
+
+subpackages="cpupower libcpupower libcpupower-devel libusbip libusbip-devel usbip perf freefall tmon"
+
+CFLAGS="-Wno-error -fcommon"
+case "$XBPS_TARGET_MACHINE" in
+i686*|x86_64*)
+	makedepends+=" libnuma-devel"
+	depends+=" x86_energy_perf_policy>=${version} turbostat>=${version}"
+	subpackages+=" x86_energy_perf_policy turbostat"
+	;;
+ppc64*)
+	makedepends+=" libnuma-devel"
+	;;
+esac
+case "$XBPS_TARGET_MACHINE" in
+i686-musl) makedepends+=" libucontext-devel libunwind-devel" ;;
+esac
+
+nocross=yes
+
+post_extract() {
+	sed -i 's/\$(LIBS)/& $(LDFLAGS)/' tools/power/cpupower/bench/Makefile
+	sed -i 's/SIGCLD/SIGCHLD/g' tools/usb/usbip/src/usbipd.c
+	sed -i 's/^CFLAGS/override &/g' tools/thermal/tmon/Makefile
+	sed -i 's/ \-Werror / /g' tools/build/feature/Makefile \
+		tools/lib/bpf/Makefile
+}
+do_build() {
+	cd ${wrksrc}/tools/perf
+	make ${makejobs} CC=$CC LD=$LD CFLAGS="$CFLAGS" EXTRA_CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
+		WERROR=0 DESTDIR=${DESTDIR} prefix=/usr lib=lib/perf \
+		NO_GTK2=1 NO_SDT=1 PYTHON=python3 \
+		PERF_VERSION=${version}_${revision} \
+		all man
+
+	cd ${wrksrc}/tools/power/cpupower
+	make CC=$CC LDFLAGS="$LDFLAGS" VERSION=${version}_${revision} V=1
+
+	case "$XBPS_TARGET_MACHINE" in
+	i686*|x86_64*)
+		cd ${wrksrc}/tools/power/x86/x86_energy_perf_policy
+		make ${makejobs}
+
+		cd ${wrksrc}/tools/power/x86/turbostat
+		make ${makejobs} CC=$CC LD=$LD CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+	esac
+
+	cd ${wrksrc}/tools/laptop/freefall
+	$CC ${CFLAGS} ${LDFLAGS} -o freefall freefall.c
+
+	cd ${wrksrc}/tools/usb/usbip
+	# fix missing man page
+	sed -i 's/usbip_bind_driver.8//' Makefile.am
+	./autogen.sh
+	./configure --prefix=/usr --sbindir=/usr/bin
+	make ${makejobs}
+
+	cd ${wrksrc}/tools/thermal/tmon
+	make ${makejobs} CC=$CC LD=$LD CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+
+do_install() {
+	# cpupower
+	cd ${wrksrc}/tools/power/cpupower
+	make DESTDIR=${DESTDIR} \
+		sbindir='/usr/bin' \
+		mandir='/usr/share/man' \
+		docdir='/usr/share/doc/cpupower' \
+		install install-man
+
+	# freefall
+	vbin "${wrksrc}/tools/laptop/freefall/freefall"
+
+	# perf
+	cd ${wrksrc}/tools/perf
+	make CC=$CC LD=$LD CFLAGS="$CFLAGS" EXTRA_CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
+		WERROR=0 DESTDIR=${DESTDIR} prefix=/usr lib=lib/perf \
+		NO_GTK2=1 NO_SDT=1 PYTHON=python3 \
+		PERF_VERSION=${version}_${revision} \
+		install install-man
+	# move completion in new directory
+	vmkdir usr/share/bash-completion/completions
+	mv ${DESTDIR}/etc/bash_completion.d/perf \
+		${DESTDIR}/usr/share/bash-completion/completions
+
+	# usbip
+	cd ${wrksrc}/tools/usb/usbip
+	make install DESTDIR=${DESTDIR}
+	vmkdir usr/lib/modules-load.d
+	printf 'usbip-core\nusbip-host\n' > \
+		${DESTDIR}/usr/lib/modules-load.d/usbip.conf
+
+	if [ -d ${DESTDIR}/usr/lib64 ]; then
+		mv ${DESTDIR}/usr/lib64/* ${DESTDIR}/usr/lib/
+	fi
+	rm -f ${DESTDIR}/usr/include/cpuidle.h
+}
+
+cpupower_package() {
+	short_desc="Linux kernel tool to set CPU power features"
+	conf_files="/etc/cpufreq-bench.conf"
+	pkg_install() {
+		vmove "usr/bin/cpu*"
+		vmove "usr/share/man/man1/cpu*"
+		vmove usr/share/doc/cpupower
+		vmove usr/share/locale
+		vmove etc/cpufreq-bench.conf
+	}
+}
+libcpupower_package() {
+	short_desc="Linux kernel tool to set CPU power features - runtime library"
+	pkg_install() {
+		vmove "usr/lib/libcpupower.so.*"
+	}
+}
+libcpupower-devel_package() {
+	short_desc="Linux kernel tool to set CPU power features - development files"
+	depends="libcpupower-${version}_${revision}"
+	pkg_install() {
+		vmove usr/include/cpufreq.h
+		vmove usr/lib/libcpupower.so
+	}
+}
+libusbip_package() {
+	short_desc="USB device sharing system over IP network - runtime library"
+	pkg_install() {
+		vmove "usr/lib/libusbip.so.*"
+	}
+}
+libusbip-devel_package() {
+	short_desc="USB device sharing system over IP network - development files"
+	depends="libusbip-${version}_${revision}"
+	pkg_install() {
+		vmove usr/include/usbip
+		vmove usr/lib/libusbip.a
+		vmove usr/lib/libusbip.so
+	}
+}
+perf_package() {
+	short_desc="Linux kernel performance auditing tool"
+	pkg_install() {
+		vmove usr/bin/perf
+		vmove usr/bin/trace
+		vmove usr/lib/perf
+		vmove usr/libexec/perf-core
+		vmove usr/share/bash-completion
+		if ! [ "$XBPS_TARGET_MACHINE" = i686 ]; then
+			vmove usr/share/perf-core
+		fi
+		vmove /usr/share/doc/perf-tip
+		vmove "usr/share/man/man1/perf*"
+	}
+}
+x86_energy_perf_policy_package() {
+	short_desc="Read or write MSR_IA32_ENERGY_PERF_BIAS"
+	pkg_install() {
+		cd ${wrksrc}/tools/power/x86/x86_energy_perf_policy
+		vbin x86_energy_perf_policy
+		vman x86_energy_perf_policy.8
+	}
+}
+usbip_package() {
+	short_desc="USB device sharing system over IP network"
+	pkg_install() {
+		vmove "usr/bin/usbip*"
+		vmove "usr/share/man/man8/usbip*"
+		vmove usr/lib/modules-load.d/usbip.conf
+		vsv usbipd
+	}
+}
+freefall_package() {
+	short_desc="Disk protection for HP/DELL machines"
+	pkg_install() {
+		vmove usr/bin/freefall
+		vsv freefall
+	}
+}
+turbostat_package() {
+	short_desc="Report processor frequency and idle statistics"
+	pkg_install() {
+		cd ${wrksrc}/tools/power/x86/turbostat
+		vbin turbostat
+		vman turbostat.8
+	}
+}
+tmon_package() {
+	short_desc="Monitoring and Testing Tool for Linux kernel thermal subsystem"
+	pkg_install() {
+		cd ${wrksrc}/tools/thermal/tmon
+		vbin tmon
+		vman tmon.8
+	}
+}

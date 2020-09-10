@@ -1,0 +1,130 @@
+# Template file for 'binutils'
+pkgname=binutils
+version=2.34
+revision=1
+bootstrap=yes
+short_desc="GNU binary utilities"
+maintainer="Enno Boland <gottox@voidlinux.org>"
+license="GPL-3.0-or-later"
+homepage="http://www.gnu.org/software/binutils/"
+distfiles="${GNU_SITE}/$pkgname/$pkgname-$version.tar.xz"
+checksum=f00b0e8803dc9bab1e2165bd568528135be734df3fabf8d0161828cd56028952
+
+if [ "$CHROOT_READY" ]; then
+	hostmakedepends="flex perl texinfo"
+	checkdepends="bc"
+	depends="binutils-doc"
+else
+	unset XBPS_CHECK_PKGS
+	XBPS_TRIPLET=x86_64-unknown-linux-gnu
+fi
+makedepends+=" zlib-devel"
+
+do_configure() {
+	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		CONFIGFLAG="--enable-64-bit-bfd --enable-multilib"
+	fi
+	if [ "$CROSS_BUILD" ]; then
+		# Do not use configure_args nor build_style=gnu-configure,
+		# avoiding --with-sysroot to $XBPS_CROSS_BASE.
+		CONFIGFLAG="--host=$XBPS_CROSS_TRIPLET --with-build-sysroot=$XBPS_CROSS_BASE"
+	fi
+	if [ "$XBPS_TARGET_MACHINE" = "mips-musl" -o "$XBPS_TARGET_MACHINE" = "mipsel-musl" ]; then
+		CONFIGFLAG+=" --with-float=soft --without-fp"
+	fi
+	if [ "${XBPS_TARGET_MACHINE%-musl}" = "x86_64" ]; then
+		CONFIGFLAG+=" --enable-targets=x86_64-pep"
+	elif [ "${XBPS_TARGET_MACHINE%-musl}" = "i686" ]; then
+		CONFIGFLAG+=" --enable-64-bit-bfd --enable-targets=x86_64-linux-gnu,x86_64-pep"
+	fi
+	./configure --build=$XBPS_TRIPLET --prefix=/usr --enable-threads \
+		--enable-plugins --enable-secureplt --with-mmap \
+		--disable-shared --enable-gold --disable-werror \
+		--enable-deterministic-archives --enable-ld=default \
+		--disable-nls $CONFIGFLAG
+}
+do_build() {
+	make ${makejobs}
+
+	# Rebuild libiberty.a with -fPIC
+	cp -a libiberty libiberty-pic
+	make -C libiberty-pic clean
+	make CFLAGS="$CFLAGS -fPIC" -C libiberty-pic
+
+	# Rebuild libbfd.a with -fPIC
+	# hidden visability prevent 3rd party shared libraries exporting bfd non-stable API
+	cp -a bfd bfd-pic
+	make -C bfd-pic clean
+	make CFLAGS="$CFLAGS -fPIC -fvisibility=hidden" -C bfd-pic
+
+	# Rebuild libopcodes.a with -fPIC
+	cp -a opcodes opcodes-pic
+	make -C opcodes-pic clean
+	make CFLAGS="$CFLAGS -fPIC" -C opcodes-pic
+}
+do_check() {
+	# Seems like upstream forgot to include their new
+ 	# test-driver executable in their tarball...
+	:
+}
+do_install() {
+	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		mkdir -p ${DESTDIR}/usr/lib
+		cd ${DESTDIR}/usr
+		ln -s lib lib64
+		cd ${wrksrc}
+	fi
+	make DESTDIR=${DESTDIR} tooldir=/usr install
+
+	# Remove ld (hardlink) and make a symlink to ld.bfd.
+	rm -f ${DESTDIR}/usr/bin/ld
+	ln -sfr ${DESTDIR}/usr/bin/ld.bfd ${DESTDIR}/usr/bin/ld
+
+	# Add some useful headers
+	vinstall include/libiberty.h 644 usr/include
+ 	vinstall include/demangle.h 644 usr/include
+
+	# install libraries rebuilt with -fPIC
+	vinstall libiberty-pic/libiberty.a 644 usr/lib
+ 	vinstall bfd-pic/libbfd.a 644 usr/lib
+ 	vinstall opcodes-pic/libopcodes.a 644 usr/lib
+
+	# Remove these symlinks, they are not ABI stable.
+	# Programs should compile static to the .a file.
+	rm -f ${DESTDIR}/usr/lib/lib{bfd,opcodes}.so
+	echo "INPUT ( /usr/lib/libbfd.a -liberty -lz )" \
+		>${DESTDIR}/usr/lib/libbfd.so
+	echo "INPUT ( /usr/lib/libopcodes.a -lbfd )" \
+		>${DESTDIR}/usr/lib/libopcodes.so
+
+	rm -f ${DESTDIR}/usr/lib64
+
+	# Remove useless manpages.
+	for f in dlltool nlmconv windres windmc; do
+		rm -f ${DESTDIR}/usr/share/man/man1/${f}.1
+	done
+	# Create triplet symlinks
+	for f in ${DESTDIR}/usr/bin/*; do
+		ln -s ${f##*/} ${DESTDIR}/usr/bin/${XBPS_CROSS_TRIPLET:-${XBPS_TRIPLET}}-${f##*/}
+	done
+}
+
+binutils-devel_package() {
+	depends="zlib-devel"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/include
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
+	}
+}
+
+binutils-doc_package() {
+	archs=noarch
+	short_desc+=" - info files"
+	pkg_install() {
+		vmove usr/share/info
+		# Remove info file that conflicts with autoconf.
+		rm -f ${PKGDESTDIR}/usr/share/info/standards.info
+	}
+}

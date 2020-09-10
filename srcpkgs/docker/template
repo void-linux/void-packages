@@ -1,0 +1,61 @@
+# Template file for 'docker'
+pkgname=docker
+version=19.03.12
+revision=1
+wrksrc="${pkgname}-ce-${version}"
+hostmakedepends="git go pkg-config curl cmake tar"
+makedepends="libbtrfs-devel sqlite-devel device-mapper-devel libseccomp-devel
+ libapparmor-devel libltdl-devel"
+depends="containerd runc"
+short_desc="Pack, ship and run any application as a lightweight container"
+maintainer="Andrea Brancaleoni <abc@pompel.me>"
+license="Apache-2.0"
+homepage="http://www.docker.io"
+distfiles="https://github.com/docker/docker-ce/archive/v${version}.tar.gz"
+checksum=d321f959e41fd9b24c23d95779d30d9ead1120bfddedf157ef5c047cf3d997a1
+
+# These are required at run-time.
+depends+=" iptables xz git"
+nopie=yes
+nostrip=yes
+nocross=yes
+archs="aarch64* armv7l* x86_64* ppc64le*"
+system_groups="docker"
+
+_docker_components="tini proxy dockercli"
+
+do_build() {
+	cd components/cli
+# AUTO_GOPATH=1 doesn't seem to work for CLI
+	rm -rf .gopath
+	mkdir -p .gopath/src/github.com/docker
+	ln -sf $wrksrc/components/cli .gopath/src/github.com/docker/
+	GOPATH=$wrksrc/components/cli/.gopath LDFLAGS='' \
+		make VERSION=${version} dynbinary
+	rm -rf .gopath
+
+	cd ../../components/engine
+	AUTO_GOPATH=1 DOCKER_BUILDTAGS='seccomp apparmor' VERSION=${version} DOCKER_GITCOMMIT=v${version} \
+		hack/make.sh dynbinary
+}
+
+pre_build() {
+	cd components/engine
+	vmkdir usr/bin
+	vsed -i "s|/usr/local|$DESTDIR/usr|g" hack/dockerfile/install/install.sh
+	for COMPONENT in $_docker_components; do
+		AUTO_GOPATH=1 LDFLAGS='' DOCKER_BUILDTAGS='seccomp apparmor' DOCKER_GITCOMMIT=v${version} \
+			hack/dockerfile/install/install.sh $COMPONENT
+	done
+}
+
+do_install() {
+	vbin components/engine/bundles/dynbinary-daemon/dockerd dockerd
+	vbin components/cli/build/docker docker
+	vinstall components/cli/contrib/completion/bash/docker 644 usr/share/bash-completion/completions
+	vinstall components/cli/contrib/completion/zsh/_docker 644 usr/share/zsh/site-functions
+	vinstall components/cli/contrib/completion/fish/docker.fish 644 usr/share/fish/vendor_completions.d
+	vinstall components/engine/contrib/syntax/vim/syntax/dockerfile.vim 644 usr/share/vim/vimfiles/snytax/dockerfile.vim
+	vinstall components/engine/contrib/syntax/vim/ftdetect/dockerfile.vim 644 usr/share/vim/vimfiles/ftdetect/dockerfile.vim
+	vsv docker
+}

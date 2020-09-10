@@ -1,0 +1,80 @@
+# Template file for 'ppsspp'
+pkgname=ppsspp
+version=1.10.3
+revision=1
+lang_commit=1c64b8fbd3cb6bd87935eb53f302f7de6f86e209
+glslang_commit=d0850f875ec392a130ccf00018dab458b546f27c
+SPIRV_Cross_commit=a1f7c8dc8ea2f94443951ee27003bffa562c1f13
+armips_commit=7885552b208493a6a0f21663770c446c3ba65576
+discord_rpc_commit=3d3ae7129d17643bc706da0a2eea85aafd10ab3a
+create_wrksrc=yes
+build_wrksrc="ppsspp-${version}"
+build_style=cmake
+configure_args="-DHEADLESS=1 -DUSE_SYSTEM_FFMPEG=1 -DUNITTEST=ON
+ -DUSING_QT_UI=$(vopt_if qt ON OFF)"
+hostmakedepends="pkg-config python3 $(vopt_if qt qt5-host-tools)"
+makedepends="zlib-devel glew-devel ffmpeg-devel libzip-devel
+ snappy-devel rapidjson
+ $(vopt_if sdl2 SDL2-devel) $(vopt_if wayland wayland-devel)
+ $(vopt_if qt 'qt5-devel qt5-multimedia-devel')"
+depends="desktop-file-utils"
+short_desc="Fast and portable PSP emulator"
+maintainer="John <me@johnnynator.dev>"
+license="GPL-2.0-or-later"
+homepage="https://www.ppsspp.org/"
+distfiles="
+ https://github.com/hrydgard/ppsspp/archive/v${version}.tar.gz
+ https://github.com/hrydgard/ppsspp-lang/archive/${lang_commit}.tar.gz
+ https://github.com/hrydgard/glslang/archive/${glslang_commit}.tar.gz
+ https://github.com/KhronosGroup/SPIRV-Cross/archive/${SPIRV_Cross_commit}.tar.gz
+ https://github.com/Kingcom/armips/archive/${armips_commit}.tar.gz
+ https://github.com/discordapp/discord-rpc/archive/${discord_rpc_commit}.tar.gz"
+checksum="92a0931c0817529202679f926632510658f3aeea83e2a1663f9cce595b505421
+ 2e8a96867471a1e169176e561b06670d5aa460d49a2b074d84ae6378e91f6ef9
+ 699e177e0022f17c204e3542bbf7fcb6843923095968edc1ebbc5124e85a2bdf
+ 456b1e2a75a8e82985ce22f4707570c7aa1fc50d4119cba1a641e8b233ecde26
+ f8a03906135fb6f2932b80b7ef5991f39ccac46b36ec3690776fb38c69775c3d
+ 20fe5dbd7a64f7a8fdbaeb81f8dd485df61121c5054e0f7f917c6193f209ff2e"
+
+# ppsspp always tries to compile x86 unittest
+# https://gist.github.com/Johnnynator/e18d59274451cff890b7235009d2e93d
+case $XBPS_TARGET_MACHINE in
+	x86_64* | i686*) configure_args+=" -DUNITTEST=ON";;
+	armv[67]*) broken="SDL2 is not build against x11";;
+	ppc*) broken="No JIT support";;
+	*) configure_args+=" -DUNITTEST=OFF";;
+esac
+
+build_options="wayland qt sdl2"
+build_options_default="sdl2"
+
+pre_configure() {
+	# copy submodules to right location
+	cp -rup ${wrksrc}/ppsspp-lang-*/* ${wrksrc}/${pkgname}-${version}/assets/lang
+	cp -rup ${wrksrc}/armips-*/* ${wrksrc}/${pkgname}-${version}/ext/armips
+	cp -rup ${wrksrc}/glslang-*/* ${wrksrc}/${pkgname}-${version}/ext/glslang
+	cp -rup ${wrksrc}/SPIRV-Cross-*/* ${wrksrc}/${pkgname}-${version}/ext/SPIRV-Cross
+	cp -rup ${wrksrc}/discord-rpc-*/* ${wrksrc}/${pkgname}-${version}/ext/discord-rpc
+
+	# disable git versioning
+	sed 's|find_package(Git)|# &|' -i ${wrksrc}/${pkgname}-${version}/git-version.cmake
+	rm -rf ${pkgname}-${version}/build
+}
+
+do_install() {
+	vlicense LICENSE.TXT
+	vinstall icons/icon.svg 644 usr/share/pixmaps ppsspp.svg
+	vinstall Qt/PPSSPP.desktop 644 usr/share/applications
+	vbin build/PPSSPPHeadless ppsspp-headless
+	vmkdir usr/share/ppsspp
+	vcopy build/assets usr/share/ppsspp/
+
+	if [ $build_option_sdl2 ]; then
+		vbin build/PPSSPPSDL ppsspp-sdl
+		sed -e 's,^Exec=.*,Exec=/usr/bin/ppsspp-sdl,' -i $DESTDIR/usr/share/applications/PPSSPP.desktop
+	elif [ $build_option_qt ] ;then
+		vbin build/PPSSPPQt ppsspp-qt
+		sed -e 's,^Exec=.*,Exec=/usr/bin/ppsspp-qt,' -i $DESTDIR/usr/share/applications/PPSSPP.desktop
+	fi
+	sed -e 's,^Icon=.*,Icon=/usr/share/pixmaps/ppsspp.svg,' -i $DESTDIR/usr/share/applications/PPSSPP.desktop
+}

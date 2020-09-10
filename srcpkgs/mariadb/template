@@ -1,0 +1,143 @@
+# Template file for 'mariadb'
+pkgname=mariadb
+version=10.1.30
+revision=9
+build_style=cmake
+configure_args="-DMYSQL_DATADIR=/var/lib/mysql
+ -DMYSQL_UNIX_ADDR=/run/mysqld/mysqld.sock -DDEFAULT_CHARSET=utf8
+ -DDEFAULT_COLLATION=utf8_general_ci -DENABLED_LOCAL_INFILE=ON
+ -DINSTALL_INFODIR=share/mysql/docs -DINSTALL_MANDIR=share/man
+ -DINSTALL_PLUGINDIR=lib/mysql/plugin -DINSTALL_SCRIPTDIR=bin
+ -DINSTALL_INCLUDEDIR=include/mysql -DINSTALL_DOCREADMEDIR=share/mysql
+ -DINSTALL_SUPPORTFILESDIR=share/mysql -DINSTALL_MYSQLSHAREDIR=share/mysql
+ -DINSTALL_DOCDIR=share/mysql/docs -DINSTALL_SHAREDIR=share/mysql
+ -DWITH_ZLIB=system -DWITH_READLINE=ON -DWITH_SSL=system
+ -DWITH_EMBEDDED_SERVER=ON -DWITH_ARCHIVE_STORAGE_ENGINE=1 -DPLUGIN_TOKUDB=NO
+ -DWITH_BLACKHOLE_STORAGE_ENGINE=1 -DWITH_PARTITION_STORAGE_ENGINE=1
+ -DWITHOUT_EXAMPLE_STORAGE_ENGINE=1 -DWITHOUT_FEDERATED_STORAGE_ENGINE=1
+ -DWITH_EXTRA_CHARSETS=complex -DWITH_LIBWRAP=OFF -DSTACK_DIRECTION=1
+ -DWITHOUT_PBXT_STORAGE_ENGINE=1 -DWITH_INNOBASE_STORAGE_ENGINE=1"
+hostmakedepends="perl bison ncurses-devel libressl-devel libatomic-devel
+ pkg-config"
+makedepends="zlib-devel ncurses-devel libressl-devel readline-devel pcre-devel
+ libatomic-devel"
+depends="mariadb-client"
+short_desc="Fast SQL database server, drop-in replacement for MySQL"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="GPL-2.0-only"
+homepage="https://mariadb.org/"
+distfiles="http://archive.mariadb.org/$pkgname-$version/source/$pkgname-$version.tar.gz"
+checksum=173a5e5a24819e0a469c3bd09b5c98491676c37c6095882a2ea34c5af0996c88
+lib32disabled=yes
+provides="mysql-${version}_${revision}"
+replaces="mysql>=0"
+conf_files="/etc/mysql/my.cnf"
+system_accounts="mysql"
+mysql_homedir="/var/lib/mysql"
+CFLAGS="-w -fcommon"
+
+pre_configure() {
+	# We need some host binaries before starting cross compilation.
+	if [ "$CROSS_BUILD" ]; then
+		# XXX still broken: jemalloc configure execs host bins.
+		CC= CXX= CPP= LD= AR= AS= RANLIB= CFLAGS= CXXFLAGS= LDFLAGS= cmake .
+		make comp_err comp_sql gen_lex_hash gen_lex_token
+		mkdir bin.host
+		cp extra/comp_err bin.host
+		cp scripts/comp_sql bin.host
+		cp sql/gen_lex_hash bin.host
+		cp sql/gen_lex_token bin.host
+		make clean
+		rm CMakeCache.txt
+	fi
+}
+
+pre_build() {
+	if [ "$CROSS_BUILD" ]; then
+		# CMake complains if those binaries ain't in build
+		cp bin.host/comp_err ${wrksrc}/extra
+		cp bin.host/comp_err ${wrksrc}/build/extra
+		cp bin.host/comp_sql ${wrksrc}/scripts
+		cp bin.host/comp_sql ${wrksrc}/build/scripts
+		cp bin.host/gen_lex_hash ${wrksrc}/sql
+		cp bin.host/gen_lex_hash ${wrksrc}/build/sql
+		cp bin.host/gen_lex_token ${wrksrc}/sql
+		cp bin.host/gen_lex_token ${wrksrc}/build/sql
+		export PATH=${PATH}:${wrksrc}/extra:${wrksrc}/scripts:${wrksrc}/sql
+	fi
+	export LD_LIBRARY_PATH=${wrksrc}/build/storage/tokudb/ft-index/portability
+	case "$XBPS_TARGET_MACHINE" in
+	aarch64*) # Work around GCC bug https://gcc.gnu.org/bugzilla/show_bug.cgi?id=81228
+		sed -i build/storage/mroonga/vendor/groonga/lib/CMakeFiles/libgroonga.dir/flags.make \
+			-e "s; -O3;;g"
+		;;
+	esac
+}
+
+post_install() {
+	# Remove unneeded stuff.
+	rm -rf ${DESTDIR}/usr/{sql-bench,mysql-test,data}
+	rm -f ${DESTDIR}/usr/share/man/man1/mysql-test-run.pl.1
+
+	# Configuration file.
+	install -Dm644 ${DESTDIR}/usr/share/mysql/my-medium.cnf ${DESTDIR}/etc/mysql/my.cnf
+
+	vsv mysqld
+}
+
+libmariadbclient_package() {
+	short_desc+=" - client library"
+	provides="libmysqlclient-${version}_${revision}"
+	replaces="libmysqlclient>=0"
+	pkg_install() {
+		vmove "usr/lib/libmysqld.so.*"
+		vmove "usr/lib/libmysqlclient*.so.*"
+	}
+}
+libmariadbclient-devel_package() {
+	depends="libmariadbclient>=${version}_${revision}"
+	provides="libmysqlclient-devel-${version}_${revision}"
+	replaces="libmysqlclient-devel>=0"
+	short_desc+=" - client development files"
+	pkg_install() {
+		vmove usr/bin/mysql_config
+		vmove usr/share/man/man1/mysql_config.1
+		vmove usr/include
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
+	}
+}
+mariadb-client_package() {
+	depends="perl"
+	provides="mysql-client-${version}_${revision}"
+	replaces="mysql-client>=0"
+	short_desc+=" - client binaries"
+	pkg_install() {
+		for f in innochecksum innotop myisam_ftdump mysql mysql_client_test \
+			mysql_client_test_embedded mysqldumpslow mysqlbinlog \
+			mysql_find_rows mysql_fix_extensions mysql_waitpid mysqlaccess \
+			mysqladmin mysqlanalyze mysqlbug mysqlcheck mysqldump \
+			mysqlimport mysqloptimize mysqlrepair mysqlreport mysqlshow \
+			mysqlslap mysqltest_embedded mysqlmanager mysqltest \
+			mysqlhotcopy mysql_upgrade mysql_zap; do
+			if [ -f ${DESTDIR}/usr/bin/${f} ]; then
+				vmove usr/bin/${f}
+			elif [ -f ${DESTDIR}/usr/sbin/${f} ]; then
+				vmove usr/sbin/${f}
+			fi
+			if [ -f ${DESTDIR}/usr/share/man/man1/${f}.1 ]; then
+				vmove usr/share/man/man1/${f}.1
+			elif [ -f ${DESTDIR}/usr/share/man/man8/${f}.8 ]; then
+				vmove usr/share/man/man8/${f}.8
+			fi
+		done
+	}
+}
+mytop_package() {
+	archs=noarch
+	depends="${sourcepkg}>=${version}_${revision} perl-Term-ReadKey perl-DBD-mysql"
+	short_desc="Top-like query monitor for MariaDB"
+	pkg_install() {
+		vmove usr/bin/mytop
+	}
+}

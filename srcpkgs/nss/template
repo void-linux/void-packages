@@ -1,0 +1,168 @@
+# Template file for 'nss'
+
+_nsprver=4.28
+
+pkgname=nss
+version=3.56
+revision=1
+hostmakedepends="perl"
+makedepends="nspr-devel sqlite-devel zlib-devel"
+depends="nspr>=${_nsprver}"
+short_desc="Mozilla Network Security Services"
+maintainer="Đoàn Trần Công Danh <congdanhqx@gmail.com>"
+license="MPL-2.0"
+homepage="https://www.mozilla.org/projects/security/pki/nss"
+distfiles="${MOZILLA_SITE}/security/nss/releases/NSS_${version//\./_}_RTM/src/nss-${version}.tar.gz"
+checksum=f875e0e8ed3b5ce92d675be4a55aa25a8c1199789a4a01f69b5f2327e2048e9c
+
+export NS_USE_GCC=1
+export LIBRUNPATH=
+export BUILD_OPT=1
+export NSS_USE_SYSTEM_SQLITE=1
+export NSS_ENABLE_WERROR=0
+export NSS_ENABLE_ECC=1
+export FREEBL_NO_DEPEND=1
+
+do_build() {
+	local _native_use64 _target_use64
+
+	# Respect LDFLAGS
+	vsed -e 's/\$(MKSHLIB) -o/\$(MKSHLIB) \$(LDFLAGS) -o/g' \
+		-i nss/coreconf/rules.mk
+
+	export NATIVE_CC="$BUILD_CC"
+	export NATIVE_FLAGS="$BUILD_CFLAGS"
+
+	if [ "$XBPS_WORDSIZE" = "64" ]; then
+		_native_use64="USE_64=1"
+	fi
+
+	# it's actually VSX, so disable on all BE ppc
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64le*) ;;
+		ppc*) export NSS_DISABLE_ALTIVEC=1 ;;
+	esac
+
+	cd nss
+	# Build nsinstall for host.
+	make ${makejobs} LD=$BUILD_LD LDFLAGS="$BUILD_LDFLAGS" ${_native_use64} -C coreconf
+
+	if [ "$CROSS_BUILD" ]; then
+		if [ "$XBPS_TARGET_WORDSIZE" = "64" ]; then
+			CFLAGS+=" -DNS_PTR_GT_32"
+			_target_use64="USE_64=1"
+		fi
+
+		case "$XBPS_TARGET_MACHINE" in
+			aarch64*|ppc*|x86_64*)
+				_ARCH="${XBPS_TARGET_MACHINE%-*}"
+				;;
+			arm*) _ARCH="arm";;
+			mips*) _ARCH="mips";;
+			*) msg_error "$pkgver: unknown target machine\n";;
+		esac
+		# ... and then copy it to $wrksrc.
+		find ${wrksrc} -type f -name nsinstall -exec cp {} ${wrksrc} \;
+		make clean
+
+		export NSPR_INCLUDE_DIR=${XBPS_CROSS_BASE}/usr/include/nspr
+		export NSPR_LIB_DIR=${XBPS_CROSS_BASE}/usr/lib
+		export XCFLAGS="${CFLAGS}"
+
+		make ${makejobs} \
+			CROSS_COMPILE=1 OS_TEST="${_ARCH}" \
+			NSINSTALL="${wrksrc}/nsinstall" \
+			CC="$CC" CCC="$CXX" RANLIB="$RANLIB" ${_target_use64} \
+			all
+	else
+		# native build
+		export NSPR_INCLUDE_DIR=/usr/include/nspr
+		export NSPR_LIB_DIR=/usr/lib
+		export XCFLAGS="${CFLAGS}"
+
+		make ${makejobs} ${_native_use64} all
+	fi
+}
+
+do_check() {
+	local _use_64
+	# We couldn't run test in cross compile!
+	export NSPR_INCLUDE_DIR=/usr/include/nspr
+	export NSPR_LIB_DIR=/usr/lib
+	export XCFLAGS="${CFLAGS}"
+	if [ "$XBPS_WORDSIZE" = "64" ]; then
+		_use_64="USE_64=1"
+	fi
+	cd nss/tests
+	env $_use_64 HOST=localhost DOMSUF=localdomain ./all.sh
+}
+
+do_install() {
+	vmkdir usr/lib/pkgconfig
+	vmkdir usr/bin
+	vmkdir usr/include/nss
+
+	NSS_VMAJOR=$(grep "#define.*NSS_VMAJOR" nss/lib/nss/nss.h | awk '{print $3}')
+	NSS_VMINOR=$(grep "#define.*NSS_VMINOR" nss/lib/nss/nss.h | awk '{print $3}')
+	NSS_VPATCH=$(grep "#define.*NSS_VPATCH" nss/lib/nss/nss.h | awk '{print $3}')
+
+	sed ${FILESDIR}/nss.pc.in \
+		-e "s,%libdir%,/usr/lib,g" \
+		-e "s,%prefix%,/usr,g" \
+		-e "s,%exec_prefix%,/usr/bin,g" \
+		-e "s,%includedir%,/usr/include/nss,g" \
+		-e "s,%NSPR_VERSION%,${_nsprver},g" \
+		-e "s,%NSS_VERSION%,${version},g" > \
+		${DESTDIR}/usr/lib/pkgconfig/nss.pc
+
+	ln -sf nss.pc ${DESTDIR}/usr/lib/pkgconfig/mozilla-nss.pc
+	chmod 644 ${DESTDIR}/usr/lib/pkgconfig/*.pc
+
+	sed ${FILESDIR}/nss-config.in \
+		-e "s,@libdir@,/usr/lib,g" \
+		-e "s,@prefix@,/usr/bin,g" \
+		-e "s,@exec_prefix@,/usr/bin,g" \
+		-e "s,@includedir@,/usr/include/nss,g" \
+		-e "s,@MOD_MAJOR_VERSION@,${NSS_VMAJOR},g" \
+		-e "s,@MOD_MINOR_VERSION@,${NSS_VMINOR},g" \
+		-e "s,@MOD_PATCH_VERSION@,${NSS_VPATCH},g" \
+		> ${DESTDIR}/usr/bin/nss-config
+	chmod 755 ${DESTDIR}/usr/bin/nss-config
+
+	for f in libsoftokn3.so libfreebl3.so libnss3.so libnssutil3.so \
+		libssl3.so libsmime3.so libnssckbi.so libnssdbm3.so; do
+		install -m755 dist/*.OBJ/lib/${f} ${DESTDIR}/usr/lib
+	done
+
+	install -m644 dist/*.OBJ/lib/libcrmf.a ${DESTDIR}/usr/lib
+
+	for f in certutil cmsutil crlutil modutil pk12util shlibsign \
+		signtool signver ssltap; do
+		install -m755 dist/*.OBJ/bin/${f} ${DESTDIR}/usr/bin
+	done
+
+	install -m644 dist/public/nss/*.h ${DESTDIR}/usr/include/nss
+
+	sed -ne '/Copyright/,/SUCH DAMAGE/p' nss/lib/dbm/src/db.c >dbm.LICENSE
+	vlicense dbm.LICENSE
+	sed -ne '/The MIT License/,\!// SOFTWARE[.]$!p' \
+		nss/lib/freebl/ecl/curve25519_32.c >fiat.LICENSE
+	vlicense fiat.LICENSE
+	sed -ne '/The MIT License/,/ [*] SOFTWARE[.]$/p' \
+		nss/lib/freebl/ecl/ecp_secp384r1.c >ecckiila.LICENSE
+	vlicense ecckiila.LICENSE
+	sed -ne '/The MIT License/,/ [*] SOFTWARE[.]$/p' \
+		nss/lib/freebl/verified/Hacl_Chacha20.c >hacl.LICENSE
+	vlicense hacl.LICENSE
+}
+
+nss-devel_package() {
+	depends="nspr-devel>=${_nsprver} nss>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/bin/nss-config
+		vmove usr/lib/pkgconfig
+		vmove usr/include
+		vmove "usr/lib/*.a"
+	}
+}
