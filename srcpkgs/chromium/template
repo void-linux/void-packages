@@ -1,7 +1,7 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See http://www.chromium.org/developers/calendar for the latest version
-version=84.0.4147.125
+version=85.0.4183.83
 revision=1
 archs="i686* x86_64* aarch64* armv7l* ppc64le*"
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
@@ -9,7 +9,7 @@ maintainer="Enno Boland <gottox@voidlinux.org>"
 license="BSD-3-Clause"
 homepage="https://www.chromium.org/"
 distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/${pkgname}-${version}.tar.xz"
-checksum=98439626cf2d8d3d8f9486d08a99cbc1e4981b3f3427a072d5eaaf6ded4daff5
+checksum=2064aa4502b87c025f2233b59d94e9e3d1c00bfeaf891e1d973687de5740e73b
 nocross=yes
 
 lib32disabled=yes
@@ -34,7 +34,7 @@ makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
  libjpeg-turbo-devel libevent-devel json-c-devel harfbuzz-devel
  minizip-devel jsoncpp-devel zlib-devel libcap-devel libXdamage-devel
  re2-devel fontconfig-devel freetype-devel opus-devel
- ffmpeg-devel libvpx-devel libva-devel python-setuptools xcb-proto
+ ffmpeg-devel libva-devel python-setuptools xcb-proto
  $(vopt_if sndio sndio-devel)"
 depends="libexif hwids desktop-file-utils hicolor-icon-theme xdg-utils"
 
@@ -73,8 +73,9 @@ post_patch() {
 			build/config/linux/BUILD.gn
 	fi
 
-	# Make xcbgen available to ui/gfx/x/gen_xproto.py running under Python 2
-	ln -s /usr/lib/python3.*/site-packages/xcbgen "${wrksrc}"
+	# prevent annoying errors when regenerating gni
+	vsed -i 's,^update_readme$,#update_readme,' \
+		third_party/libvpx/generate_gni.sh
 }
 do_configure() {
 	local system="" conf=()
@@ -84,6 +85,26 @@ do_configure() {
 		export CC=clang
 		export CXX=clang++
 	fi
+
+	export LDFLAGS="-pthread"
+
+	# compile gn early, so it can be used to generate gni stuff
+	AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
+	python2 tools/gn/bootstrap/bootstrap.py --skip-generate-buildfiles
+
+	# we need to generate ppc64 stuff for libvpx as it's not shipped
+	# this has to be done before unbundling, but after gn is built
+	# comment out if we switch back to system libvpx again later
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*)
+			pushd third_party/libvpx
+			mkdir -p source/config/linux/ppc64
+			# need PATH to find gn
+			PATH="${wrksrc}/out/Release:$PATH" ./generate_gni.sh || \
+				msg_error "failed to generate libvpx gni"
+			popd
+			;;
+	esac
 
 	# Use system-provided libraries.
 	# TODO: use_system_hunspell (upstream changes needed).
@@ -106,7 +127,6 @@ do_configure() {
 		libevent
 		libjpeg
 		libpng
-		libvpx
 		libwebp
 		libxml
 		libxslt
@@ -231,18 +251,9 @@ do_configure() {
 		ppc64*) conf+=( 'target_cpu="ppc64"' ) ;;
 	esac
 
-	export LDFLAGS="-pthread"
-
-	AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
-	python2 tools/gn/bootstrap/bootstrap.py -s -v \
-		--gn-gen-args "${conf[*]}"
-
-
 	out/Release/gn gen out/Release --args="${conf[*]}"
 }
 do_build() {
-	export PYTHONPATH=${wrksrc}
-
 	if [ "$build_option_clang" ]; then
 		export CC=clang
 		export CXX=clang++
