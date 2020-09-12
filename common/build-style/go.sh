@@ -5,7 +5,7 @@
 do_configure() {
 	# $go_import_path must be set, or we can't link $PWD into $GOSRCPATH
 	# nor build from modules
-	if [ -z "$go_import_path" ]; then
+	if [ -z "${go_import_path}" ]; then
 		msg_error "\"\$go_import_path\" not set on $pkgname template.\n"
 	fi
 
@@ -23,13 +23,17 @@ do_configure() {
 
 do_build() {
 	# remove -s and -w from go_ldflags, we should let xbps-src strip binaries itself
-	for wd in $go_ldflags; do
-		if [ "$wd" == "-s" ] || [ "$wd" == "-w" ]; then
-			msg_error "$pkgname: remove -s and -w from go_ldflags\n"
+	for wd in ${go_ldflags}; do
+		if [ "${wd}" == "-s" ] || [ "$wd" == "-w" ]; then
+			msg_error "${pkgname}: remove -s and -w from go_ldflags\n"
 		fi
 	done
 
 	: ${go_package:=$go_import_path}
+	local buildmode
+	if [ -z "${nopie}" ]; then
+		buildmode=-buildmode=pie
+	fi
 	# Build using Go modules if there's a go.mod file
 	if [ "${go_mod_mode}" != "off" ] && [ -f go.mod ]; then
 
@@ -38,7 +42,7 @@ do_build() {
 		fi
 
 		# Check if go_import_path matches module
-		if [ "module $go_import_path" != "$(grep '^module' go.mod | head -n1)" ]; then
+		if [ "module ${go_import_path}" != "$(grep '^module' go.mod | head -n1)" ]; then
 			msg_error "\"\$go_import_path\" doesn't match the one defined in go.mod!\n"
 		fi
 
@@ -50,20 +54,20 @@ do_build() {
 			# default behavior.
 			go_mod_mode=
 		fi
-		go install -p "$XBPS_MAKEJOBS" -mod="${go_mod_mode}" -modcacherw -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
+		go install -p "${XBPS_MAKEJOBS}" -mod="${go_mod_mode}" ${buildmode} -modcacherw -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
 		if [[ -n "${_go_mod_path}" ]]; then
 			popd
 		fi
 	else
 		# Otherwise, build using GOPATH
-		go install -p "$XBPS_MAKEJOBS" -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
+		go install -p "${XBPS_MAKEJOBS}" ${buildmode} -v -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${go_package}
 	fi
 }
 
 do_check() {
 	: ${make_check_target:=./...}
 
-	${make_check_pre} go test -p "$XBPS_MAKEJOBS" -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${make_check_args} ${make_check_target}
+	${make_check_pre} go test -p "${XBPS_MAKEJOBS}" -tags "${go_build_tags}" -ldflags "${go_ldflags}" ${make_check_args} ${make_check_target}
 }
 
 do_install() {
