@@ -1,0 +1,138 @@
+From 50439c9ca9a52f39681fb81bd6768f306125516a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=C4=90o=C3=A0n=20Tr=E1=BA=A7n=20C=C3=B4ng=20Danh?=
+ <congdanhqx@gmail.com>
+Date: Tue, 15 Sep 2020 08:21:50 +0700
+Subject: [PATCH 1/3] compat: add fallback implementation for reallocarray(3)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Đoàn Trần Công Danh <congdanhqx@gmail.com>
+---
+ meson.build                                         |  1 +
+ src/libsysprof-capture/sysprof-capture-cursor.c     |  4 +++-
+ src/libsysprof-capture/sysprof-capture-reader.c     |  2 +-
+ .../sysprof-capture-util-private.h                  |  8 ++++++++
+ src/libsysprof-capture/sysprof-capture-util.c       | 13 +++++++++++++
+ src/libsysprof-capture/sysprof-capture-writer-cat.c |  7 ++++---
+ 6 files changed, 30 insertions(+), 5 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index 818ec93..b7b5ace 100644
+--- a/meson.build
++++ b/meson.build
+@@ -69,6 +69,7 @@ config_h.set('LOCALEDIR', 'PACKAGE_LOCALE_DIR')
+ config_h.set('HAVE_EXECINFO_H', cc.has_header('execinfo.h'))
+ 
+ config_h.set('HAVE_STRLCPY', cc.has_function('strlcpy'))
++config_h.set('HAVE_REALLOCARRAY', cc.has_function('reallocarray'))
+ 
+ if get_option('libunwind')
+   libunwind_dep = dependency('libunwind-generic', required: false)
+diff --git a/src/libsysprof-capture/sysprof-capture-cursor.c b/src/libsysprof-capture/sysprof-capture-cursor.c
+index 24563f0..cf11bcd 100644
+--- a/src/libsysprof-capture/sysprof-capture-cursor.c
++++ b/src/libsysprof-capture/sysprof-capture-cursor.c
+@@ -293,7 +293,9 @@ sysprof_capture_cursor_add_condition (SysprofCaptureCursor    *self,
+    *
+    * FIXME: There’s currently no error reporting from this function, so ENOMEM
+    * results in an abort. */
+-  self->conditions = reallocarray (self->conditions, ++self->n_conditions, sizeof (*self->conditions));
++  self->conditions = _sysprof_reallocarray (self->conditions,
++                                            ++self->n_conditions,
++                                            sizeof (*self->conditions));
+   assert (self->conditions != NULL);
+ 
+   self->conditions[self->n_conditions - 1] = sysprof_steal_pointer (&condition);
+diff --git a/src/libsysprof-capture/sysprof-capture-reader.c b/src/libsysprof-capture/sysprof-capture-reader.c
+index 67c6b28..9a5aa91 100644
+--- a/src/libsysprof-capture/sysprof-capture-reader.c
++++ b/src/libsysprof-capture/sysprof-capture-reader.c
+@@ -1270,7 +1270,7 @@ array_append (const char ***files,
+       const char **new_files;
+ 
+       *n_files_allocated = (*n_files_allocated > 0) ? 2 * *n_files_allocated : 4;
+-      new_files = reallocarray (*files, *n_files_allocated, sizeof (**files));
++      new_files = _sysprof_reallocarray (*files, *n_files_allocated, sizeof (**files));
+       if (new_files == NULL)
+         return false;
+       *files = new_files;
+diff --git a/src/libsysprof-capture/sysprof-capture-util-private.h b/src/libsysprof-capture/sysprof-capture-util-private.h
+index 1b1d93e..13ec1ee 100644
+--- a/src/libsysprof-capture/sysprof-capture-util-private.h
++++ b/src/libsysprof-capture/sysprof-capture-util-private.h
+@@ -108,3 +108,11 @@ size_t  _sysprof_strlcpy     (char       *dest,
+                               const char *src,
+                               size_t      dest_size);
+ #endif
++
++#ifdef HAVE_REALLOCARRAY
++# define _sysprof_reallocarray(p,m,n) reallocarray(p,m,n)
++#else
++void *_sysprof_reallocarray  (void       *ptr,
++                              size_t      m,
++                              size_t      n);
++#endif
+diff --git a/src/libsysprof-capture/sysprof-capture-util.c b/src/libsysprof-capture/sysprof-capture-util.c
+index 0bbea06..acb71ac 100644
+--- a/src/libsysprof-capture/sysprof-capture-util.c
++++ b/src/libsysprof-capture/sysprof-capture-util.c
+@@ -58,6 +58,7 @@
+ 
+ #include <assert.h>
+ #include <errno.h>
++#include <stdint.h>
+ #include <unistd.h>
+ 
+ #ifdef _WIN32
+@@ -253,3 +254,15 @@ size_t
+ 
+   return i;
+ }
++
++void *
++(_sysprof_reallocarray) (void   *ptr,
++                         size_t  m,
++                         size_t  n)
++{
++       if (n && m > (size_t)(-1) / n) {
++               errno = ENOMEM;
++               return NULL;
++       }
++       return realloc(ptr, m * n);
++}
+diff --git a/src/libsysprof-capture/sysprof-capture-writer-cat.c b/src/libsysprof-capture/sysprof-capture-writer-cat.c
+index 66171b9..a157ed7 100644
+--- a/src/libsysprof-capture/sysprof-capture-writer-cat.c
++++ b/src/libsysprof-capture/sysprof-capture-writer-cat.c
+@@ -64,6 +64,7 @@
+ #include <unistd.h>
+ 
+ #include "sysprof-capture.h"
++#include "sysprof-capture-util-private.h"
+ #include "sysprof-macros-internal.h"
+ 
+ typedef struct
+@@ -133,7 +134,7 @@ translate_table_add (TranslateTable *tables,
+   if (table_ptr->n_items == table_ptr->n_items_allocated)
+     {
+       table_ptr->n_items_allocated = (table_ptr->n_items_allocated > 0) ? table_ptr->n_items_allocated * 2 : 4;
+-      table_ptr->items = reallocarray (table_ptr->items, table_ptr->n_items_allocated, sizeof (*table_ptr->items));
++      table_ptr->items = _sysprof_reallocarray (table_ptr->items, table_ptr->n_items_allocated, sizeof (*table_ptr->items));
+       assert (table_ptr->items != NULL);
+     }
+ 
+@@ -481,8 +482,8 @@ sysprof_capture_writer_cat (SysprofCaptureWriter *self,
+                           if (n_elements == n_elements_allocated)
+                             {
+                               n_elements_allocated = (n_elements_allocated > 0) ? n_elements_allocated * 2 : 4;
+-                              ids = reallocarray (ids, n_elements_allocated, sizeof (*ids));
+-                              values = reallocarray (values, n_elements_allocated, sizeof (*values));
++                              ids = _sysprof_reallocarray (ids, n_elements_allocated, sizeof (*ids));
++                              values = _sysprof_reallocarray (values, n_elements_allocated, sizeof (*values));
+                               if (ids == NULL || values == NULL)
+                                 goto panic;
+                             }
+-- 
+2.28.0
+
