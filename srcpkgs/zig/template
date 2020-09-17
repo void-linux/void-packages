@@ -2,7 +2,8 @@
 pkgname=zig
 version=0.6.0
 revision=1
-archs="x86_64*"
+archs="x86_64* i686* aarch64* armv6l* armv7l*"
+wrksrc="${pkgname}-${version}"
 build_style=cmake
 makedepends="clang llvm10 lld-devel"
 short_desc="Programming language designed for robustness, optimality, and clarity"
@@ -11,9 +12,64 @@ license="MIT"
 homepage="https://ziglang.org/"
 distfiles="https://ziglang.org/download/${version}/zig-${version}.tar.xz"
 checksum=5d167dc19354282dd35dd17b38e99e1763713b9be8a4ba9e9e69284e059e7204
+patch_args="-Np1"
 nopie=yes
-nocross=yes
+
+# This is needed to prevent zig from dumping its global cache in /tmp
+export XDG_CACHE_HOME="${XBPS_BUILDDIR}/${wrksrc}/build/.cache"
+
+if [ "${CROSS_BUILD}" ]; then
+	# TODO _mcpu might be a candidate for cross-profiles
+	#
+	# Set _cross_triple and _mcpu for target triples that are not directly
+	# available in zig's targets.
+	#
+	# List targets and mcpu options with: zig targets
+
+	case "${XBPS_TARGET_MACHINE}" in
+		armv6l*)
+			_cross_triple="${XBPS_CROSS_TRIPLET}"
+			_mcpu="generic+v6k"
+			;;
+		armv7l*)
+			_cross_triple="${XBPS_CROSS_TRIPLET/armv7l/arm}"
+			_mcpu="generic+v7a"
+			;;
+		i686*)
+			_cross_triple="${XBPS_CROSS_TRIPLET/i686/i386}"
+			_mcpu="baseline"
+			;;
+		*)
+			_cross_triple="${XBPS_CROSS_TRIPLET}"
+			_mcpu="baseline"
+			;;
+	esac
+
+	hostmakedepends="zig llvm10"
+	configure_args+="
+	-DZIG_PREFER_LLVM_CONFIG=on
+	-DZIG_TARGET_TRIPLE=${_cross_triple}
+	-DZIG_TARGET_MCPU=${_mcpu}
+	-DZIG_EXECUTABLE='/usr/bin/zig'"
+fi
+
+pre_configure() {
+	local _llvm_config
+
+	# When cross-compiling, need to re-write the host root provided by llvm-config
+	# to the cross-target root
+	if [ "${CROSS_BUILD}" ]; then
+		_llvm_config="${XBPS_WRAPPERDIR}/llvm-config"
+
+		cat > "${_llvm_config}" <<-EOF
+		#!/bin/sh
+		/usr/bin/llvm-config "\$@" | sed 's,/usr,${XBPS_CROSS_BASE}/usr,g'
+		EOF
+		chmod +x "${_llvm_config}"
+	fi
+}
 
 post_install() {
+	# vmove zig for great justice
 	vlicense LICENSE
 }
