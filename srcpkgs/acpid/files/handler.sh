@@ -47,11 +47,11 @@ case "$1" in
             AC|ACAD|ADP0)
                 case "$4" in
                     00000000)
-                        echo -n "$minspeed" >"$setspeed"
+                        printf '%s' "$minspeed" >"$setspeed"
                         #/etc/laptop-mode/laptop-mode start
                     ;;
                     00000001)
-                        echo -n "$maxspeed" >"$setspeed"
+                        printf '%s' "$maxspeed" >"$setspeed"
                         #/etc/laptop-mode/laptop-mode stop
                     ;;
                 esac
