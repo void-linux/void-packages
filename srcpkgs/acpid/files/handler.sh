@@ -11,11 +11,11 @@ setspeed="/sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed"
 set $*
 
 PID=$(pgrep dbus-launch)
-export USER=$(ps -o user --no-headers $PID)
-USERHOME=$(getent passwd $USER | cut -d: -f6)
+export USER=$(ps -o user --no-headers "$PID")
+USERHOME=$(getent passwd "$USER" | cut -d: -f6)
 export XAUTHORITY="$USERHOME/.Xauthority"
 for x in /tmp/.X11-unix/*; do
-    displaynum=$(echo $x | sed s#/tmp/.X11-unix/X##)
+    displaynum=$(echo "$x" | sed s#/tmp/.X11-unix/X##)
     if [ x"$XAUTHORITY" != x"" ]; then
         export DISPLAY=":$displaynum"
     fi
@@ -47,11 +47,11 @@ case "$1" in
             AC|ACAD|ADP0)
                 case "$4" in
                     00000000)
-                        echo -n $minspeed >$setspeed
+                        echo -n "$minspeed" >"$setspeed"
                         #/etc/laptop-mode/laptop-mode start
                     ;;
                     00000001)
-                        echo -n $maxspeed >$setspeed
+                        echo -n "$maxspeed" >"$setspeed"
                         #/etc/laptop-mode/laptop-mode stop
                     ;;
                 esac
