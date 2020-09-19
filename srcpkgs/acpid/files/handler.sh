@@ -15,7 +15,7 @@ export USER=$(ps -o user --no-headers "$PID")
 USERHOME=$(getent passwd "$USER" | cut -d: -f6)
 export XAUTHORITY="$USERHOME/.Xauthority"
 for x in /tmp/.X11-unix/*; do
-    displaynum=$(echo "$x" | sed s#/tmp/.X11-unix/X##)
+    displaynum=${x#/tmp/.X11-unix/X}
     if [ x"$XAUTHORITY" != x"" ]; then
         export DISPLAY=":$displaynum"
     fi
