@@ -26,20 +26,20 @@ case "$1" in
         #echo "PowerButton pressed!">/dev/tty5
         case "$2" in
             PBTN|PWRF)
-		    logger "PowerButton pressed: $2, shutting down..."
-		    shutdown -P now
-		    ;;
-            *)      logger "ACPI action undefined: $2" ;;
+                logger "PowerButton pressed: $2, shutting down..."
+                shutdown -P now
+                ;;
+            *)  logger "ACPI action undefined: $2" ;;
         esac
         ;;
     button/sleep)
         case "$2" in
             SBTN|SLPB)
-		    # suspend-to-ram
-		    logger "Sleep Button pressed: $2, suspending..."
-		    zzz
-		    ;;
-            *)      logger "ACPI action undefined: $2" ;;
+                # suspend-to-ram
+                logger "Sleep Button pressed: $2, suspending..."
+                zzz
+                ;;
+            *)  logger "ACPI action undefined: $2" ;;
         esac
         ;;
     ac_adapter)
@@ -75,16 +75,18 @@ case "$1" in
         esac
         ;;
     button/lid)
-	case "$3" in
-		close)
-			# suspend-to-ram
-			logger "LID closed, suspending..."
-			zzz
-			;;
-		open)	logger "LID opened" ;;
-		*) logger "ACPI action undefined (LID): $2";;
-	esac
-	;;
+        case "$3" in
+            close)
+                # suspend-to-ram
+                logger "LID closed, suspending..."
+                zzz
+                ;;
+            open)
+                logger "LID opened"
+                ;;
+            *)  logger "ACPI action undefined (LID): $2";;
+        esac
+        ;;
     *)
         logger "ACPI group/action undefined: $1 / $2"
         ;;
