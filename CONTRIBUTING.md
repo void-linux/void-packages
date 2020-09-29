@@ -8,9 +8,8 @@ This document describes how you, as a contributor, can help with adding packages
 
 If you really want to get a package into Void Linux, we recommend you package it yourself.
 
-We provide a [comprehensive Manual](https://github.com/void-linux/void-packages/blob/master/Manual.md)
-on how to create new packages. There's also a
-[manual for xbps-src](https://github.com/void-linux/void-packages/blob/master/README.md), which is used
+We provide a [comprehensive Manual](./Manual.md) on how to create new packages.
+There's also a [manual for xbps-src](./README.md), which is used
 to build package files from templates.
 
 For this guide, we assume you have basic knowledge about [git](http://git-scm.org), as well as a [GitHub Account](http://github.com).
@@ -25,7 +24,7 @@ You can use the helper tool `xnew`, from the [xtools](https://github.com/chneuki
 
 Templates must have the name `void-packages/srcpkgs/<pkgname>/template`, where `pkgname` is the same as the `pkgname` variable in the template.
 
-For deeper insights on the contents of template files, please read the [manual](https://github.com/void-linux/void-packages/blob/master/Manual.md), and be sure to browse the existing template files in the `srcpkgs` directory of this repository for concrete examples.
+For deeper insights on the contents of template files, please read the [manual](./Manual.md), and be sure to browse the existing template files in the `srcpkgs` directory of this repository for concrete examples.
 
 When you've finished working on the template file, please check it with `xlint` helper from the [xtools](https://github.com/chneukirchen/xtools) package:
 
@@ -43,7 +42,19 @@ Once you have built your template file or files, the commit message should have 
 
 * for template modifications without a version change, use ```<pkgname>: <reason>``` ([example](https://github.com/void-linux/void-packages/commit/8b68d6bf1eb997cd5e7c095acd040e2c5379c91d)).
 
+* for package removals, use ```<pkgname>: remove package``` ([example](https://github.com/void-linux/void-packages/commit/83784632d94deee5d038c8e1c4c1dffa922fca21)).
+
+* for `common/shlibs` modifications, use `common/shlibs: <pkgname>` ([example](https://github.com/void-linux/void-packages/commit/613651c91811cb4fd2e1a6be701c87072d759a9f)).
+
 If you want to describe your changes in more detail, add an empty line followed by those details ([example](https://github.com/void-linux/void-packages/commit/f1c45a502086ba1952f23ace9084a870ce437bc6)).
+
+Pull requests are automatically submitted for Continuous Integration (CI) testing to ensure packages build on various combinations of libc and architecture.
+Packages that take longer than 50 minutes to build (for example, Firefox or the Linux kernel) will fail CI and should include `[ci skip]` in the last line of the last commit message in the PR to avoid wasting CI builder time.
+Use your best judgment on build times based on your local building experience. If you skip CI when submitting a PR, please build and cross-build for a variety of architectures locally, with both glibc and musl, and note your local results in PR comments.
+Make sure to cover 64-bit and 32-bit architectures.
+
+Runtime testing of packages and building with the `-Q` flag or with `XBPS_CHECK_PKGS=yes` set in the environment or `etc/conf` are strongly encouraged.
+New packages will not be accepted unless they have been runtime tested.
 
 For further information, please consult the [manual](https://github.com/void-linux/void-packages/blob/master/Manual.md).
 
@@ -69,8 +80,8 @@ Once you have successfully built the package, you can start a pull request.
 
 Most pull requests should only contain a single package and dependencies which are not part of void-packages yet.
 
-If you make updates to packages containing a soname bump you also need to revbump all packages that are dependant. Those
-packages should also be part of the same pull request.
+If you make updates to packages containing a soname bump, you also need to update `common/shlibs` and revbump all packages that are dependant.
+There should be a commit for each package revbump, and those commits should be part of the same pull request.
 
 When you make changes to your pull request, please *do not close and reopen your pull request*. Instead, just forcibly git push, overwriting any old commits. Closing and opening your pull requests repeatedly spams the Void maintainers.
 

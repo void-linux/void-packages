@@ -30,7 +30,7 @@ run_func() {
 ch_wrksrc() {
     cd "$wrksrc" || msg_error "$pkgver: cannot access wrksrc directory [$wrksrc]\n"
     if [ -n "$build_wrksrc" ]; then
-        cd $build_wrksrc || \
+        cd "$build_wrksrc" || \
             msg_error "$pkgver: cannot access build_wrksrc directory [$build_wrksrc]\n"
     fi
 }
@@ -162,11 +162,24 @@ set_build_options() {
     fi
 
     for f in ${build_options}; do
-        _pkgname=${pkgname//[^A-Za-z0-9_]/_}
-        eval pkgopts="\$XBPS_PKG_OPTIONS_${_pkgname}"
-        if [ -z "$pkgopts" -o "$pkgopts" = "" ]; then
-            pkgopts=${XBPS_PKG_OPTIONS}
+        # Select build options from conf
+        export XBPS_CURRENT_PKG=${pkgname}
+        pkgopts="$(
+            . $XBPS_CONFIG_FILE 2>/dev/null
+            var="XBPS_PKG_OPTIONS_${XBPS_CURRENT_PKG//[^A-Za-z0-9_]/_}"
+            echo ${!var:-${XBPS_PKG_OPTIONS}}
+        )"
+        unset XBPS_CURRENT_PKG
+
+        # If pkg options were set in config(s), merge them with command line
+        if [ -n "$XBPS_ARG_PKG_OPTIONS" ]; then
+            if [ -n "$pkgopts" ]; then
+                pkgopts+=",$XBPS_ARG_PKG_OPTIONS"
+            else
+                pkgopts="$XBPS_ARG_PKG_OPTIONS"
+            fi
         fi
+
         OIFS="$IFS"; IFS=','
         for j in ${pkgopts}; do
             case "$j" in
@@ -182,7 +195,7 @@ set_build_options() {
     done
 
     # Prepare final options.
-    for f in ${!options[@]}; do
+    for f in ${build_options}; do
         if [[ ${options[$f]} -eq 1 ]]; then
             eval export build_option_${f}=1
         else

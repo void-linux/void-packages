@@ -13,7 +13,7 @@ _noglob_helper() {
 }
 
 # Apply _noglob to v* commands
-for cmd in vinstall vcopy vmove vmkdir vbin vman vdoc vconf vsconf vlicense vsv; do
+for cmd in vinstall vcopy vcompletion vmove vmkdir vbin vman vdoc vconf vsconf vlicense vsv; do
        alias ${cmd}="set -f; _noglob_helper _${cmd}"
 done
 
@@ -257,4 +257,32 @@ _vmkdir() {
 	else
 		install -dm${mode} ${_destdir}/${dir}
 	fi
+}
+
+_vcompletion() {
+	local file="$1" shell="$2" cmd="${3:-${pkgname}}"
+	local _bash_completion_dir=usr/share/bash-completion/completions/
+	local _fish_completion_dir=usr/share/fish/vendor_completions.d/
+	local _zsh_completion_dir=usr/share/zsh/site-functions/
+
+	if [ -z "$DESTDIR" ]; then
+		msg_red "$pkgver: vcompletion: DESTDIR unset, can't continue...\n"
+		return 1
+	fi
+
+	if [ $# -lt 2 ]; then
+		msg_red "$pkgver: vcompletion: 2 arguments expected: <file> <shell>\n"
+		return 1
+	fi
+
+	if ! [ -f "$file" ]; then
+		msg_red "$pkgver: vcompletion: file $file doesn't exist\n"
+	fi
+
+	case "$shell" in
+		bash) vinstall "$file" 0644 $_bash_completion_dir "${cmd}" ;;
+		fish) vinstall "$file" 0644 $_fish_completion_dir "${cmd}.fish" ;;
+		zsh) vinstall "$file" 0644 $_zsh_completion_dir "_${cmd}" ;;
+		*) msg_red "$pkgver: vcompletion: unknown shell ${shell}" ;;
+	esac
 }

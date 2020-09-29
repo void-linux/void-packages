@@ -1,0 +1,149 @@
+From c034ec9fffe79d46503dbb2686fec113bea2d08b Mon Sep 17 00:00:00 2001
+From: avoidr <avoidr@posteo.de>
+Date: Sat, 11 Jul 2020 05:18:22 +0200
+Subject: [PATCH] Fix crash when changing toxcore-related settings
+
+uTox killed toxcore without killing toxav first, which led to a crash.
+Resources should be deallocated in reverse order of their allocation.
+
+utox_av_ctrl_thread was started only once, when uTox was started, so
+when toxav was killed properly, the thread was never re-created for the
+next use of Tox. utox_av_ctrl_thread is now created whenever a new
+toxcore starts.
+
+Then, the Filter_Audio pointer had to be set to NULL after it's free'd,
+otherwise it wouldn't get re-initialised, and an invalid pointer would
+be passed to kill_filter_audio(), causing a crash.
+
+Finally, replaced magic number 0 with TOX_KILL.
+Deleted a redundant `toxav_thread_msg = false`.
+---
+ src/av/audio.c   |  1 +
+ src/av/utox_av.c |  7 ++-----
+ src/main.c       |  3 ---
+ src/tox.c        | 20 +++++++++++---------
+ 4 files changed, 14 insertions(+), 17 deletions(-)
+
+diff --git a/src/av/audio.c b/src/av/audio.c
+index 324ceb22..d4384d8b 100644
+--- a/src/av/audio.c
++++ b/src/av/audio.c
+@@ -909,6 +909,7 @@ void utox_audio_thread(void *args) {
+     }
+ 
+     utox_filter_audio_kill(f_a);
++    f_a = NULL;
+ 
+     // missing some cleanup ?
+     alDeleteSources(1, &ringtone);
+diff --git a/src/av/utox_av.c b/src/av/utox_av.c
+index 90e04b36..d7adb9ce 100644
+--- a/src/av/utox_av.c
++++ b/src/av/utox_av.c
+@@ -275,7 +275,6 @@ void utox_av_ctrl_thread(void *UNUSED(args)) {
+                 }
+             }
+         }
+-
+         toxav_thread_msg = false;
+ 
+         if (av) {
+@@ -286,19 +285,17 @@ void utox_av_ctrl_thread(void *UNUSED(args)) {
+         }
+     }
+ 
+-
+     postmessage_audio(UTOXAUDIO_KILL, 0, 0, NULL);
+     postmessage_video(UTOXVIDEO_KILL, 0, 0, NULL);
+-
+     // Wait for all a/v threads to return 0
+     while (utox_audio_thread_init || utox_video_thread_init) {
+         yieldcpu(1);
+     }
+ 
+-    toxav_thread_msg  = false;
++    toxav_kill(av);
++
+     utox_av_ctrl_init = false;
+ 
+-    toxav_kill(av);
+     LOG_NOTE("UTOXAV", "Clean thread exit!");
+     return;
+ }
+diff --git a/src/main.c b/src/main.c
+index a3072edf..39218062 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -269,9 +269,6 @@ void utox_init(void) {
+     if (settings.curr_version != settings.last_version) {
+         settings.show_splash = true;
+     }
+-
+-    // We likely want to start this on every system.
+-    thread(utox_av_ctrl_thread, NULL);
+ }
+ 
+ void utox_raze(void) {
+diff --git a/src/tox.c b/src/tox.c
+index 8d93ee19..e9fe3ae8 100644
+--- a/src/tox.c
++++ b/src/tox.c
+@@ -234,10 +234,8 @@ void tox_settingschanged(void) {
+     dropdown_list_clear(&dropdown_audio_out);
+     dropdown_list_clear(&dropdown_video);
+ 
+-    // send the reconfig message!
+-    postmessage_toxcore(0, 1, 0, NULL);
+-
+     LOG_NOTE("Toxcore", "Restarting Toxcore");
++    postmessage_toxcore(TOX_KILL, 1, 0, NULL); // send the reconfig message!
+     while (!tox_thread_init) {
+         yieldcpu(1);
+     }
+@@ -476,8 +474,8 @@ void toxcore_thread(void *UNUSED(args)) {
+                 // avoid trying the creation of thousands of tox instances before user changes the settings
+                 if (tox_thread_msg) {
+                     TOX_MSG *msg = &tox_msg;
+-                    // If msg->msg is 0, reconfig
+-                    if (!msg->msg) {
++
++                    if (msg->msg == TOX_KILL) {
+                         reconfig = (bool) msg->param1;
+                         tox_thread_init = UTOX_TOX_THREAD_INIT_NONE;
+                     }
+@@ -513,6 +511,7 @@ void toxcore_thread(void *UNUSED(args)) {
+             postmessage_utox(UPDATE_TRAY, 0, 0, NULL);
+             postmessage_utox(PROFILE_DID_LOAD, 0, 0, NULL);
+ 
++            thread(utox_av_ctrl_thread, NULL);
+             postmessage_utoxav(UTOXAV_NEW_TOX_INSTANCE, 0, 0, av);
+         }
+ 
+@@ -548,9 +547,9 @@ void toxcore_thread(void *UNUSED(args)) {
+             // If there's a message, load it, and send to the tox message thread
+             if (tox_thread_msg) {
+                 TOX_MSG *msg = &tox_msg;
+-                // If msg->msg is 0, reconfig if needed and break from tox_do
+-                if (!msg->msg) {
+-                    reconfig        = msg->param1;
++
++                if (msg->msg == TOX_KILL) {
++                    reconfig        = msg->param1; // reconfig if needed
+                     tox_thread_msg  = 0;
+                     tox_thread_init = UTOX_TOX_THREAD_INIT_NONE;
+                     break;
+@@ -574,7 +573,10 @@ void toxcore_thread(void *UNUSED(args)) {
+         write_save(tox);
+         edit_setstr(&edit_profile_password, (char *)"", 0);
+ 
+-        // Stop toxcore.
++        postmessage_utoxav(UTOXAV_KILL, 0, 0, NULL);
++        while (utox_av_ctrl_init) {
++            yieldcpu(1);
++        }
+         LOG_TRACE("Toxcore", "tox thread ending");
+         tox_kill(tox);
+     }
+-- 
+2.26.2
+

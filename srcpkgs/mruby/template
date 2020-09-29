@@ -1,44 +1,60 @@
 # Template file for 'mruby'
 pkgname=mruby
-version=2.1.0
+version=2.1.2
 revision=1
-hostmakedepends="bison ruby"
+hostmakedepends="ruby"
 short_desc="Lightweight implementation of the Ruby language (Ruby 1.9)"
 maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
 license="MIT"
 homepage="https://mruby.org/"
 distfiles="https://github.com/mruby/mruby/archive/${version}.tar.gz>${pkgname}-${version}.tar.gz"
-checksum=d6733742a07e553c52ab71df08b0604b3b571768bbc0c2729fbf0389d1bb5d13
+checksum=4dc0017e36d15e81dc85953afb2a643ba2571574748db0d8ede002cefbba053b
 lib32disabled=yes
 
-if [ "$XBPS_TARGET_WORDSIZE" = 32 ]; then
-	broken="Currently fails to build for 32 bit architectures"
-fi
-
 do_configure() {
-	vsed -i mrbgems/mruby-compiler/core/parse.y -e "s;%pure-parser;%define api.pure;"
-
-	cat <<-EOF > xbps_config.rb
-	MRuby::Build.new do |conf|
-	  toolchain :gcc
-	  conf.gem "#{root}/mrbgems/mruby-bin-mruby"
-	  conf.gem "#{root}/mrbgems/mruby-bin-mrbc"
-	  conf.cc do |cc|
-	    cc.command = 'gcc'
-	    cc.flags = [ENV['CFLAGS_host'] || %w()]
-	    cc.include_paths = ["#{root}/include"]
-	  end
-	  conf.linker do |linker|
-	    linker.command = 'gcc'
-	    linker.libraries = 'm'
-	  end
-	  conf.archiver do |archiver|
-	    archiver.command = 'ar'
-	  end
-	end
-	EOF
-	if [ "$CROSS_BUILD" ]; then
-		cat <<-EOF >> xbps_config.rb
+	if [ -z "$CROSS_BUILD" ]; then
+		# Native build
+		cat <<-EOF > xbps_config.rb
+		MRuby::Build.new do |conf|
+		  toolchain :gcc
+		  conf.gem "#{root}/mrbgems/mruby-bin-mruby"
+		  conf.gem "#{root}/mrbgems/mruby-bin-mrbc"
+		  conf.cc do |cc|
+		    cc.command = 'gcc'
+		    cc.flags = [ENV['CFLAGS'] || %w()]
+		    cc.include_paths = ["#{root}/include"]
+		  end
+		  conf.linker do |linker|
+		    linker.command = 'gcc'
+		    linker.flags = [ENV['LDFLAGS'] || %w()]
+		    linker.libraries = [ENV['LIBS'] || 'm']
+		  end
+		  conf.archiver do |archiver|
+		    archiver.command = 'ar'
+		  end
+		end
+		EOF
+	else
+		# Cross build
+		cat <<-EOF > xbps_config.rb
+		MRuby::Build.new do |conf|
+		  toolchain :gcc
+		  conf.gem "#{root}/mrbgems/mruby-bin-mruby"
+		  conf.gem "#{root}/mrbgems/mruby-bin-mrbc"
+		  conf.cc do |cc|
+		    cc.command = 'gcc'
+		    cc.flags = [ENV['CFLAGS_host'] || %w()]
+		    cc.include_paths = ["#{root}/include"]
+		  end
+		  conf.linker do |linker|
+		    linker.command = 'gcc'
+		    linker.flags = [ENV['LDFLAGS_host'] || %w()]
+		    linker.libraries = [ENV['LIBS'] || 'm']
+		  end
+		  conf.archiver do |archiver|
+		    archiver.command = 'ar'
+		  end
+		end
 		MRuby::CrossBuild.new('${XBPS_CROSS_TRIPLET}') do |conf|
 		  toolchain :gcc
 		  conf.gem "#{root}/mrbgems/mruby-bin-mruby"
@@ -54,8 +70,8 @@ do_configure() {
 		  end
 		  conf.linker do |linker|
 		    linker.command = ENV['CC'] || '${XBPS_CROSS_TRIPLET}-gcc'
-		    linker.libraries = ENV['LIBS'] || 'm'
-		    linker.flags_after_libraries = [ENV['LDFLAGS'] || %w()]
+		    linker.flags = [ENV['LDFLAGS'] || %w()]
+		    linker.libraries = [ENV['LIBS'] || 'm']
 		    linker.library_paths = '${XBPS_CROSS_BASE}/usr/lib'
 		  end
 		  conf.archiver do |archiver|
@@ -67,7 +83,28 @@ do_configure() {
 }
 
 do_build() {
-	MRUBY_CONFIG=xbps_config.rb ruby ./minirake
+	if [ "$CROSS_BUILD" ]; then
+		LDFLAGS_host=""
+		echo "CFLAGS_host   : $CFLAGS_host"
+		echo "LDFLAGS_host  : $LDFLAGS_host"
+	else
+		LDFLAGS=""
+		CFLAGS_host="$CFLAGS"
+		LDFLAGS_host="$LDFLAGS"
+	fi
+	echo "CFLAGS        : $CFLAGS"
+	echo "LDFLAGS       : $LDFLAGS"
+	CFLAGS="$CFLAGS" CFLAGS_host="$CFLAGS_host" \
+	LDFLAGS="$LDFLAGS" LDFLAGS_host="$LDFLAGS_host" \
+	LIBS="m" MRUBY_CONFIG=xbps_config.rb \
+		ruby minirake
+}
+
+do_check() {
+	CFLAGS="$CFLAGS" CFLAGS_host="$CFLAGS_host" \
+	LDFLAGS="$LDFLAGS" LDFLAGS_host="$LDFLAGS_host" \
+	LIBS="m" MRUBY_CONFIG=xbps_config.rb \
+		ruby minirake test
 }
 
 do_install() {

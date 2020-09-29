@@ -1,0 +1,131 @@
+From 15d9b2515631cedcbd427e4c6de2dd4e7a0bfa36 Mon Sep 17 00:00:00 2001
+From: Elvis Pranskevichus <elvis@magic.io>
+Date: Sat, 4 Jan 2020 16:03:03 -0500
+Subject: [PATCH] GCC LTO Support
+
+---
+ build/config/BUILD.gn              |  6 +++++-
+ build/config/compiler/BUILD.gn     | 30 ++++++++++++++++++++++--------
+ build/config/compiler/compiler.gni |  2 +-
+ sandbox/linux/BUILD.gn             |  3 +++
+ 4 files changed, 31 insertions(+), 10 deletions(-)
+
+diff --git a/build/config/BUILD.gn b/build/config/BUILD.gn
+index 514ab7b..f8d36fe 100644
+--- a/build/config/BUILD.gn
++++ b/build/config/BUILD.gn
+@@ -260,9 +260,13 @@ config("default_libs") {
+   } else if (is_linux) {
+     libs = [
+       "dl",
+-      "pthread",
+       "rt",
+     ]
++    ldflags = [
++      "-Wl,--no-as-needed",
++      "-lpthread",
++      "-Wl,--as-needed"
++    ]
+   }
+ }
+ 
+diff --git a/build/config/compiler/BUILD.gn b/build/config/compiler/BUILD.gn
+index a3f21b7..48747f7 100644
+--- a/build/config/compiler/BUILD.gn
++++ b/build/config/compiler/BUILD.gn
+@@ -558,12 +558,13 @@ config("compiler") {
+   # TODO(pcc): Make this conditional on is_official_build rather than on gn
+   # flags for specific features.
+   if (!is_debug && use_thin_lto && is_a_target_toolchain) {
+-    assert(use_lld || target_os == "chromeos",
+-           "gold plugin only supported with ChromeOS")
+-
+-    cflags += [ "-flto=thin" ]
++    if (is_clang) {
++      cflags += [ "-flto=thin" ]
++    } else {
++      cflags += [ "-flto=2", "-fno-fat-lto-objects", "-fuse-linker-plugin" ]
++    }
+ 
+-    if (target_os != "chromeos") {
++    if (target_os != "chromeos" && is_clang) {
+       cflags += [ "-fsplit-lto-unit" ]
+     }
+ 
+@@ -586,7 +587,11 @@ config("compiler") {
+         "-mllvm:-import-instr-limit=10",
+       ]
+     } else {
+-      ldflags += [ "-flto=thin" ]
++      if (is_clang) {
++        ldflags += [ "-flto=thin" ]
++      } else {
++        ldflags += [ "-flto=8", "-fno-fat-lto-objects", "-fuse-linker-plugin" ]
++      }
+ 
+       # Limit the parallelism to avoid too aggressive competition between
+       # linker jobs. This is still suboptimal to a potential dynamic
+@@ -607,7 +612,7 @@ config("compiler") {
+             "-Wl,--thinlto-cache-policy,$cache_policy",
+           ]
+         }
+-      } else {
++      } else if (is_clang) {
+         ldflags += [ "-Wl,-plugin-opt,jobs=8" ]
+       }
+ 
+@@ -630,7 +635,7 @@ config("compiler") {
+ 
+     # TODO(pcc): Re-enable this flag on Android. This will require libc++ to be
+     # built with ThinLTO (see https://crbug.com/767901) as well as the GVR shim.
+-    if (!is_android) {
++    if (!is_android && is_clang) {
+       cflags += [ "-fwhole-program-vtables" ]
+       if (!is_win) {
+         ldflags += [ "-fwhole-program-vtables" ]
+@@ -697,6 +702,15 @@ config("compiler") {
+   }
+ }
+ 
++config("compiler_no_lto") {
++  cflags = []
++  ldflags = []
++  if (!is_debug && use_thin_lto && is_a_target_toolchain) {
++    cflags += ["-fno-lto"]
++    ldflags += ["-fno-lto"]
++  }
++}
++
+ # This provides the basic options to select the target CPU and ABI.
+ # It is factored out of "compiler" so that special cases can use this
+ # without using everything that "compiler" brings in.  Options that
+diff --git a/build/config/compiler/compiler.gni b/build/config/compiler/compiler.gni
+index c351d6b..e567372 100644
+--- a/build/config/compiler/compiler.gni
++++ b/build/config/compiler/compiler.gni
+@@ -57,7 +57,7 @@ declare_args() {
+ 
+   # Enables support for ThinLTO, which links 3x-10x faster than full LTO. See
+   # also http://blog.llvm.org/2016/06/thinlto-scalable-and-incremental-lto.html
+-  use_thin_lto = is_cfi || (is_android && is_official_build)
++  use_thin_lto = false
+ 
+   # Tell VS to create a PDB that references information in .obj files rather
+   # than copying it all. This should improve linker performance. mspdbcmf.exe
+diff --git a/sandbox/linux/BUILD.gn b/sandbox/linux/BUILD.gn
+index b00a88c..e4615c0 100644
+--- a/sandbox/linux/BUILD.gn
++++ b/sandbox/linux/BUILD.gn
+@@ -256,6 +256,9 @@ component("seccomp_bpf") {
+     "//base",
+     "//base/third_party/dynamic_annotations",
+   ]
++  configs += [
++    "//build/config/compiler:compiler_no_lto"
++  ]
+ 
+   if (is_nacl_nonsfi) {
+     cflags = [ "-fgnu-inline-asm" ]
+-- 
+2.24.1
+

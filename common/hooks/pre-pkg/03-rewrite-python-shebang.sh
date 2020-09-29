@@ -13,15 +13,28 @@ hook() {
 	fi
 
 	if [ -n "$pyver" ]; then
-		shebang="#!/usr/bin/python${pyver%.*}"
+		default_shebang="#!/usr/bin/python${pyver%.*}"
 	fi
 
 	find "${PKGDESTDIR}" -type f -print0 | \
 		while IFS= read -r -d '' file; do
 			[ ! -s "$file" ] && continue
-			[ -z "$(sed -n -E -e 2q -e '/^#!.*([[:space:]]|\/)python([0-9]\.[0-9])?([[:space:]]+|$)/p' "$file")" ] && continue
-			[ -n "$shebang" ] || msg_error "cannot convert shebang, set python_version\n"
-			echo "   Shebang converted to '$shebang': ${file#$PKGDESTDIR}"
+
+			pyinterp=$(sed -n -E -e 2q -e 's@^#!.*([[:space:]]|/)(python([0-9](\.[0-9]+)?)?)([[:space:]]+.*|$)@\2@p' "$file")
+			[ -z "$pyinterp" ] && continue
+
+			pyver=${pyinterp#python}
+			if [ -n "$pyver" ]; then
+				shebang="#!/usr/bin/python${pyver%.*}"
+			else
+				shebang="$default_shebang"
+			fi
+
+			basefile=${file#$PKGDESTDIR}
+
+			[ -n "$shebang" ] || msg_error "python_version missing in template: unable to convert shebang in $basefile\n"
+
+			echo "   Shebang converted to '$shebang': $basefile"
 			sed -i "1s@.*python.*@${shebang}@" -- "$file"
 		done
 }

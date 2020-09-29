@@ -7,7 +7,7 @@ hook() {
 	local TAR_CMD
 
 	if [ -z "$distfiles" -a -z "$checksum" ]; then
-		mkdir -p $wrksrc
+		mkdir -p "$wrksrc"
 		return 0
 	fi
 
@@ -21,7 +21,7 @@ hook() {
 	done
 
 	if [ -n "$create_wrksrc" ]; then
-		mkdir -p ${wrksrc} || msg_error "$pkgver: failed to create wrksrc.\n"
+		mkdir -p "${wrksrc}" || msg_error "$pkgver: failed to create wrksrc.\n"
 	fi
 
 	# Disable trap on ERR; the code is smart enough to report errors and abort.
@@ -81,14 +81,14 @@ hook() {
 
 		case ${cursufx} in
 		tar|txz|tbz|tlz|tgz|crate)
-			$TAR_CMD -x --no-same-permissions --no-same-owner -f $srcdir/$curfile -C $extractdir
+			$TAR_CMD -x --no-same-permissions --no-same-owner -f $srcdir/$curfile -C "$extractdir"
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
 			;;
 		gz|bz2|xz)
-			cp -f $srcdir/$curfile $extractdir
-			cd $extractdir
+			cp -f $srcdir/$curfile "$extractdir"
+			cd "$extractdir"
 			case ${cursufx} in
 			gz)
 				 gunzip -f $curfile
@@ -103,12 +103,12 @@ hook() {
 			;;
 		zip)
 			if command -v unzip &>/dev/null; then
-				unzip -o -q $srcdir/$curfile -d $extractdir
+				unzip -o -q $srcdir/$curfile -d "$extractdir"
 				if [ $? -ne 0 ]; then
 					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 				fi
 			elif command -v bsdtar &>/dev/null; then
-				bsdtar -xf $srcdir/$curfile -C $extractdir
+				bsdtar -xf $srcdir/$curfile -C "$extractdir"
 				if [ $? -ne 0 ]; then
 					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 				fi
@@ -118,7 +118,7 @@ hook() {
 			;;
 		rpm)
 			if command -v rpmextract &>/dev/null; then
-				cd $extractdir
+				cd "$extractdir"
 				rpmextract $srcdir/$curfile
 				if [ $? -ne 0 ]; then
 					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
@@ -129,19 +129,19 @@ hook() {
 			;;
 		txt)
 			if [ "$create_wrksrc" ]; then
-				cp -f $srcdir/$curfile $extractdir
+				cp -f $srcdir/$curfile "$extractdir"
 			else
 				msg_error "$pkgname: ${curfile##*.} files can only be extracted when create_wrksrc is set\n"
 			fi
 			;;
 		7z)
 			if command -v 7z &>/dev/null; then
-				7z x $srcdir/$curfile -o$extractdir
+				7z x $srcdir/$curfile -o"$extractdir"
 				if [ $? -ne 0 ]; then
 					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 				fi
 			elif command -v bsdtar &>/dev/null; then
-				bsdtar -xf $srcdir/$curfile -C $extractdir
+				bsdtar -xf $srcdir/$curfile -C "$extractdir"
 				if [ $? -ne 0 ]; then
 					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 				fi
@@ -153,11 +153,11 @@ hook() {
 			case "$TAR_CMD" in
 				*bsdtar)
 					$TAR_CMD -xOf $srcdir/$curfile data.tar.gz | \
-						$TAR_CMD -xz -C $extractdir -s ",^,${wrksrc##*/}/," -f -
+						$TAR_CMD -xz -C "$extractdir" -s ",^,${wrksrc##*/}/," -f -
 					;;
 				*)
 					$TAR_CMD -xOf $srcdir/$curfile data.tar.gz | \
-						$TAR_CMD -xz -C $extractdir --transform="s,^,${wrksrc##*/}/,"
+						$TAR_CMD -xz -C "$extractdir" --transform="s,^,${wrksrc##*/}/,"
 					;;
 			esac
 			if [ $? -ne 0 ]; then

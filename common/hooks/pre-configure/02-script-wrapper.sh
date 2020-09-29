@@ -70,10 +70,11 @@ python_wrapper() {
 	[ -x ${XBPS_WRAPPERDIR}/${wrapper} ] && return 0
 	cat >>${XBPS_WRAPPERDIR}/${wrapper}<<_EOF
 #!/bin/sh
-if [ "\$1" = "--includes" ]; then
-	echo "-I${XBPS_CROSS_BASE}/usr/include/python${version}"
-fi
-exit \$?
+case "\$1" in
+--includes|--cflags)
+	echo "-I${XBPS_CROSS_BASE}/usr/include/python${version}" ;;
+esac
+exit 0
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}
 }

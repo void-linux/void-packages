@@ -44,6 +44,21 @@ show_pkg() {
     for i in ${conflicts}; do
         [ -n "$i" ] && echo "conflicts:	$i"
     done
+    local OIFS="$IFS"
+    IFS=','
+    for var in $1; do
+        IFS=$OIFS
+        if [ ${var} != ${var/'*'} ]
+        then
+            var="${var/'*'}"
+            [ -n "${!var}" ] && echo "$var:	${!var//$'\n'/' '}"
+        else
+            for val in ${!var}; do
+                [ -n "$val" ] && echo "$var:	$val"
+            done
+        fi
+    done
+    IFS="$OIFS"
     [ -n "$long_desc" ] && echo "long_desc: $long_desc"
 
     return 0

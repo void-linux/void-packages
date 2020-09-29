@@ -7,10 +7,8 @@ The included `xbps-src` script will fetch and compile the sources, and install i
 files into a `fake destdir` to generate XBPS binary packages that can be installed
 or queried through the `xbps-install(1)` and `xbps-query(1)` utilities, respectively.
 
-See [Contributing](https://github.com/void-linux/void-packages/blob/master/CONTRIBUTING.md)
-for a general overview of how to contribute and the
-[Manual](https://github.com/void-linux/void-packages/blob/master/Manual.md)
-for details of how to create source packages.
+See [Contributing](./CONTRIBUTING.md) for a general overview of how to contribute and the
+[Manual](./Manual.md) for details of how to create source packages.
 
 ### Table of Contents
 
@@ -486,24 +484,14 @@ The second mode (native) needs a new x86 `masterdir`:
 <a name="building-for-musl"></a>
 ### Building packages natively for the musl C library
 
-A native build environment is required to be able to cross compile the bootstrap packages for the musl C library; this is accomplished by installing them via `binary-bootstrap`:
-
-    $ ./xbps-src binary-bootstrap
-
-Now cross compile `base-chroot-musl` for your native architecture:
-
-    $ ./xbps-src -a x86_64-musl pkg base-chroot-musl
-
-Wait until all packages are built and when ready, prepare a new masterdir with the musl packages:
+Canonical way of building packages for same architecture but different C library is through dedicated masterdir.
+To build for x86_64-musl on glibc x86_64 system, prepare a new masterdir with the musl packages:
 
     $ ./xbps-src -m masterdir-x86_64-musl binary-bootstrap x86_64-musl
 
-Your new masterdir is now ready to build packages natively for the musl C library. Try:
+Your new masterdir is now ready to build packages natively for the musl C library:
 
-    $ ./xbps-src -m masterdir-x86_64-musl chroot
-    $ ldd
-
-To see if the musl C dynamic linker is working as expected.
+    $ ./xbps-src -m masterdir-x86_64-musl pkg ...
 
 <a name="building-base-system"></a>
 ### Building void base-system from scratch

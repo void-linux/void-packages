@@ -1,0 +1,342 @@
+From daec661f27bdfab79132d7d2c4637cc17fd4aa35 Mon Sep 17 00:00:00 2001
+From: Joe Mason <joenotcharles@google.com>
+Date: Wed, 4 Dec 2019 18:04:21 +0000
+Subject: [PATCH] Save logs from test child processes by redirecting stdout and
+ stderr.
+
+The previous solution can only capture logs after the child process
+creates a ScopedLogging object. We see flaky crashes in sandbox creation
+that happen before that so this will let us see the child process stack
+traces.
+
+Also moves some functions that were exported from ipc_test_util.h to be
+private to proto_chrome_prompt_ipc_unittest.cc, which is the only test
+that still uses them.
+
+(cherry picked from commit e7a755421136d7fc9b3a73a5e5464368f3efa7f9)
+
+Bug: 1030333
+Change-Id: Ie30eed3b16631721e81a420b3b70f1ec5f0d9a0c
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/1948483
+Reviewed-by: proberge <proberge@chromium.org>
+Commit-Queue: Joe Mason <joenotcharles@chromium.org>
+Cr-Original-Commit-Position: refs/heads/master@{#721071}
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/1951089
+Reviewed-by: Joe Mason <joenotcharles@chromium.org>
+Cr-Commit-Position: refs/branch-heads/3904@{#913}
+Cr-Branched-From: 675968a8c657a3bd9c1c2c20c5d2935577bbc5e6-refs/heads/master@{#693954}
+---
+ chrome/chrome_cleaner/ipc/ipc_test_util.cc    | 92 ++++++++++++-------
+ chrome/chrome_cleaner/ipc/ipc_test_util.h     | 13 ++-
+ .../ipc/proto_chrome_prompt_ipc_unittest.cc   | 17 ++--
+ chrome/chrome_cleaner/ipc/sandbox.cc          |  5 +-
+ 4 files changed, 77 insertions(+), 50 deletions(-)
+
+diff --git a/chrome/chrome_cleaner/ipc/ipc_test_util.cc b/chrome/chrome_cleaner/ipc/ipc_test_util.cc
+index 05fc0d027ec43..0d03a6870fb07 100644
+--- a/chrome/chrome_cleaner/ipc/ipc_test_util.cc
++++ b/chrome/chrome_cleaner/ipc/ipc_test_util.cc
+@@ -13,6 +13,7 @@
+ #include "base/command_line.h"
+ #include "base/files/file_path.h"
+ #include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
+ #include "base/logging.h"
+ #include "base/process/launch.h"
+ #include "base/rand_util.h"
+@@ -23,7 +24,6 @@
+ #include "base/test/test_timeouts.h"
+ #include "base/win/win_util.h"
+ #include "chrome/chrome_cleaner/ipc/sandbox.h"
+-#include "chrome/chrome_cleaner/logging/scoped_logging.h"
+ #include "sandbox/win/src/sandbox_factory.h"
+ 
+ namespace chrome_cleaner {
+@@ -32,12 +32,13 @@ namespace {
+ 
+ constexpr char kMojoPipeTokenSwitch[] = "mojo-pipe-token";
+ 
+-constexpr wchar_t kIPCTestUtilLogSuffix[] = L"ipc-test-util";
+-
+ class MojoSandboxSetupHooks : public SandboxSetupHooks {
+  public:
+-  explicit MojoSandboxSetupHooks(SandboxedParentProcess* parent_process)
+-      : parent_process_(parent_process) {}
++  explicit MojoSandboxSetupHooks(
++      SandboxedParentProcess* parent_process,
++      base::win::ScopedHandle child_stdout_write_handle)
++      : parent_process_(parent_process),
++        child_stdout_write_handle_(std::move(child_stdout_write_handle)) {}
+   ~MojoSandboxSetupHooks() override = default;
+ 
+   // SandboxSetupHooks
+@@ -49,6 +50,8 @@ class MojoSandboxSetupHooks : public SandboxSetupHooks {
+     parent_process_->CreateMojoPipe(command_line, &handles_to_inherit);
+     for (HANDLE handle : handles_to_inherit)
+       policy->AddHandleToShare(handle);
++    policy->SetStdoutHandle(child_stdout_write_handle_.Get());
++    policy->SetStderrHandle(child_stdout_write_handle_.Get());
+     return RESULT_CODE_SUCCESS;
+   }
+ 
+@@ -61,33 +64,14 @@ class MojoSandboxSetupHooks : public SandboxSetupHooks {
+ 
+  private:
+   SandboxedParentProcess* parent_process_;
++  base::win::ScopedHandle child_stdout_write_handle_;
+ };
+ 
+ }  // namespace
+ 
+ namespace internal {
+ 
+-base::FilePath::StringPieceType GetLogPathSuffix() {
+-  return kIPCTestUtilLogSuffix;
+-}
+-
+-base::FilePath GetLogPath() {
+-  return ScopedLogging::GetLogFilePath(kIPCTestUtilLogSuffix);
+-}
+-
+-bool DeleteChildProcessLogs() {
+-  // Delete the child process log file if existing.
+-  const base::FilePath log_path = GetLogPath();
+-  if (!base::DeleteFile(log_path, false)) {
+-    LOG(ERROR) << "Can't delete log file from previous run: "
+-               << log_path.value();
+-    return false;
+-  }
+-  return true;
+-}
+-
+-void PrintChildProcessLogs() {
+-  const base::FilePath log_path = GetLogPath();
++void PrintChildProcessLogs(const base::FilePath& log_path) {
+   if (log_path.empty()) {
+     LOG(ERROR) << "Child process log path is empty";
+     return;
+@@ -174,11 +158,38 @@ bool ParentProcess::LaunchConnectedChildProcess(
+     const std::string& child_main_function,
+     base::TimeDelta timeout,
+     int32_t* exit_code) {
+-  if (!internal::DeleteChildProcessLogs())
++  // Adapted from
++  // https://cs.chromium.org/chromium/src/sandbox/win/src/handle_inheritance_test.cc
++  base::ScopedTempDir temp_dir;
++  if (!temp_dir.CreateUniqueTempDir()) {
++    PLOG(ERROR) << "Could not create temp dir for child stdout";
++    return false;
++  }
++
++  base::FilePath temp_file_name;
++  if (!CreateTemporaryFileInDir(temp_dir.GetPath(), &temp_file_name)) {
++    PLOG(ERROR) << "Could not create temp file for child stdout";
++    return false;
++  }
++
++  SECURITY_ATTRIBUTES attrs = {};
++  attrs.nLength = sizeof(attrs);
++  attrs.bInheritHandle = true;
++
++  base::win::ScopedHandle child_stdout_write_handle(
++      ::CreateFile(temp_file_name.value().c_str(), GENERIC_WRITE,
++                   FILE_SHARE_WRITE | FILE_SHARE_READ | FILE_SHARE_DELETE,
++                   &attrs, OPEN_EXISTING, 0, nullptr));
++  if (!child_stdout_write_handle.IsValid()) {
++    PLOG(ERROR) << "Could not open child stdout file";
+     return false;
++  }
+ 
+-  if (!PrepareAndLaunchTestChildProcess(child_main_function))
++  if (!PrepareAndLaunchTestChildProcess(child_main_function,
++                                        std::move(child_stdout_write_handle))) {
++    internal::PrintChildProcessLogs(temp_file_name);
+     return false;
++  }
+ 
+   CreateImplOnIPCThread(std::move(mojo_pipe_));
+   const bool success = base::WaitForMultiprocessTestChildExit(
+@@ -189,21 +200,32 @@ bool ParentProcess::LaunchConnectedChildProcess(
+   }
+   DestroyImplOnIPCThread();
+ 
+-  if (!success || *exit_code != 0)
+-    internal::PrintChildProcessLogs();
++  if (!success || *exit_code != 0) {
++    internal::PrintChildProcessLogs(temp_file_name);
++  }
+ 
+   return success;
+ }
+ 
+ bool ParentProcess::PrepareAndLaunchTestChildProcess(
+-    const std::string& child_main_function) {
++    const std::string& child_main_function,
++    base::win::ScopedHandle child_stdout_write_handle) {
+   base::LaunchOptions launch_options;
+   launch_options.handles_to_inherit = extra_handles_to_inherit_;
++  launch_options.handles_to_inherit.push_back(child_stdout_write_handle.Get());
++  launch_options.stdin_handle = INVALID_HANDLE_VALUE;
++  launch_options.stdout_handle = child_stdout_write_handle.Get();
++  launch_options.stderr_handle = child_stdout_write_handle.Get();
++
+   CreateMojoPipe(&command_line_, &launch_options.handles_to_inherit);
+ 
+   base::Process child_process = base::SpawnMultiProcessTestChild(
+       child_main_function, command_line_, launch_options);
+ 
++  // Now that it's been passed to the child process,
++  // |child_stdout_write_handle| can be closed in this process as it goes out
++  // of scope.
++
+   ConnectMojoPipe(std::move(child_process));
+   return true;
+ }
+@@ -235,8 +257,9 @@ SandboxedParentProcess::SandboxedParentProcess(
+ SandboxedParentProcess::~SandboxedParentProcess() {}
+ 
+ bool SandboxedParentProcess::PrepareAndLaunchTestChildProcess(
+-    const std::string& child_main_function) {
+-  MojoSandboxSetupHooks hooks(this);
++    const std::string& child_main_function,
++    base::win::ScopedHandle child_stdout_write_handle) {
++  MojoSandboxSetupHooks hooks(this, std::move(child_stdout_write_handle));
+ 
+   // This switch usage is copied from SpawnMultiProcessTestChild.
+   //
+@@ -258,8 +281,7 @@ bool SandboxedParentProcess::PrepareAndLaunchTestChildProcess(
+ 
+ ChildProcess::ChildProcess(scoped_refptr<MojoTaskRunner> mojo_task_runner)
+     : mojo_task_runner_(mojo_task_runner),
+-      command_line_(base::CommandLine::ForCurrentProcess()),
+-      scopped_logging_(new ScopedLogging(kIPCTestUtilLogSuffix)) {
++      command_line_(base::CommandLine::ForCurrentProcess()) {
+   sandbox::TargetServices* target_services =
+       sandbox::SandboxFactory::GetTargetServices();
+   if (!target_services)
+diff --git a/chrome/chrome_cleaner/ipc/ipc_test_util.h b/chrome/chrome_cleaner/ipc/ipc_test_util.h
+index 97f2072a09165..1b2e5598ed52a 100644
+--- a/chrome/chrome_cleaner/ipc/ipc_test_util.h
++++ b/chrome/chrome_cleaner/ipc/ipc_test_util.h
+@@ -14,9 +14,9 @@
+ #include "base/process/launch.h"
+ #include "base/process/process.h"
+ #include "base/time/time.h"
++#include "base/win/scoped_handle.h"
+ #include "chrome/chrome_cleaner/ipc/chrome_prompt_ipc.h"
+ #include "chrome/chrome_cleaner/ipc/mojo_task_runner.h"
+-#include "chrome/chrome_cleaner/logging/scoped_logging.h"
+ #include "mojo/public/cpp/platform/platform_channel.h"
+ #include "mojo/public/cpp/system/invitation.h"
+ #include "mojo/public/cpp/system/message_pipe.h"
+@@ -70,7 +70,8 @@ class ParentProcess : public base::RefCountedThreadSafe<ParentProcess> {
+   // as in the sandbox. Subclasses should call CreateMojoPipe before the
+   // subprocess is spawned and ConnectMojoPipe afterward.
+   virtual bool PrepareAndLaunchTestChildProcess(
+-      const std::string& child_main_function);
++      const std::string& child_main_function,
++      base::win::ScopedHandle child_stdout_write_handle);
+ 
+   scoped_refptr<MojoTaskRunner> mojo_task_runner();
+ 
+@@ -95,7 +96,8 @@ class SandboxedParentProcess : public ParentProcess {
+   ~SandboxedParentProcess() override;
+ 
+   bool PrepareAndLaunchTestChildProcess(
+-      const std::string& child_main_function) override;
++      const std::string& child_main_function,
++      base::win::ScopedHandle child_stdout_write_handle) override;
+ };
+ 
+ class ChildProcess : public base::RefCountedThreadSafe<ChildProcess> {
+@@ -120,7 +122,6 @@ class ChildProcess : public base::RefCountedThreadSafe<ChildProcess> {
+ 
+  private:
+   base::CommandLine* command_line_;
+-  std::unique_ptr<ScopedLogging> scopped_logging_;
+ 
+   // This will be true iff the process is running in a sandbox and
+   // TargetServices was initialized successfully.
+@@ -143,9 +144,7 @@ class ChromePromptIPCTestErrorHandler : public ChromePromptIPC::ErrorHandler {
+ };
+ 
+ namespace internal {
+-base::FilePath::StringPieceType GetLogPathSuffix();
+-bool DeleteChildProcessLogs();
+-void PrintChildProcessLogs();
++void PrintChildProcessLogs(const base::FilePath& log_file);
+ }  // namespace internal
+ 
+ }  // namespace chrome_cleaner
+diff --git a/chrome/chrome_cleaner/ipc/proto_chrome_prompt_ipc_unittest.cc b/chrome/chrome_cleaner/ipc/proto_chrome_prompt_ipc_unittest.cc
+index 1c7b4c575eb3d..f867df58f96ea 100644
+--- a/chrome/chrome_cleaner/ipc/proto_chrome_prompt_ipc_unittest.cc
++++ b/chrome/chrome_cleaner/ipc/proto_chrome_prompt_ipc_unittest.cc
+@@ -5,6 +5,7 @@
+ #include <windows.h>
+ 
+ #include "base/command_line.h"
++#include "base/files/file_util.h"
+ #include "base/process/process.h"
+ #include "base/strings/strcat.h"
+ #include "base/strings/string_number_conversions.h"
+@@ -41,8 +42,9 @@ constexpr char kExpectedPromptResultSwitch[] = "expected-prompt-result";
+ constexpr char kExpectedChromeDisconnectPointSwitch[] =
+     "expected-parent-disconnected";
+ 
+-const base::char16 kInvalidUTF16String[] = {0xDC00, 0xD800, 0xD800, 0xDFFF,
+-                                            0xDFFF, 0xDBFF, 0};
++constexpr base::char16 kLogSuffix[] = L"prompt-ipc-test";
++constexpr base::char16 kInvalidUTF16String[] = {0xDC00, 0xD800, 0xD800, 0xDFFF,
++                                                0xDFFF, 0xDBFF, 0};
+ const base::FilePath kInvalidFilePath(kInvalidUTF16String);
+ const base::FilePath kNonASCIIFilePath(L"ééààçç");
+ const base::string16 kInvalidRegistryKey(kInvalidUTF16String);
+@@ -420,8 +422,7 @@ class MockChrome {
+ class ChildProcess {
+  public:
+   ChildProcess()
+-      : scopped_logging_(
+-            std::make_unique<ScopedLogging>(internal::GetLogPathSuffix())) {
++      : scopped_logging_(std::make_unique<ScopedLogging>(kLogSuffix)) {
+     mock_chrome_ = std::make_unique<MockChrome>(
+         ExtractHandleFromCommandLine(chrome_cleaner::kChromeReadHandleSwitch),
+         ExtractHandleFromCommandLine(chrome_cleaner::kChromeWriteHandleSwitch));
+@@ -630,7 +631,10 @@ class ParentProcess {
+   }
+ 
+   void Run() {
+-    ASSERT_TRUE(internal::DeleteChildProcessLogs());
++    // Delete the child process log file if existing.
++    const base::FilePath log_path = ScopedLogging::GetLogFilePath(kLogSuffix);
++    ASSERT_TRUE(base::DeleteFile(log_path, false))
++        << "Can't delete log file from previous run: " << log_path.value();
+ 
+     // Pass the command to the child process and launch the child process.
+     base::Process child_process = base::SpawnMultiProcessTestChild(
+@@ -702,7 +706,8 @@ class ParentProcess {
+     EXPECT_EQ(expected_exit_code, rv);
+ 
+     if (!success || rv != 0) {
+-      internal::PrintChildProcessLogs();
++      internal::PrintChildProcessLogs(
++          ScopedLogging::GetLogFilePath(kLogSuffix));
+     }
+   }
+ 
+diff --git a/chrome/chrome_cleaner/ipc/sandbox.cc b/chrome/chrome_cleaner/ipc/sandbox.cc
+index 154bd05c51066..fafad4f0c6188 100644
+--- a/chrome/chrome_cleaner/ipc/sandbox.cc
++++ b/chrome/chrome_cleaner/ipc/sandbox.cc
+@@ -280,8 +280,9 @@ ResultCode StartSandboxTarget(const base::CommandLine& sandbox_command_line,
+       &last_win_error, &temp_process_info);
+   if (sandbox_result != sandbox::SBOX_ALL_OK) {
+     LOG(DFATAL) << "Failed to spawn sandbox target: " << sandbox_result
+-                << " , last sandbox warning : " << last_sbox_warning
+-                << " , last windows error: " << last_win_error;
++                << ", last sandbox warning: " << last_sbox_warning
++                << ", last windows error: "
++                << logging::SystemErrorCodeToString(last_win_error);
+     return RESULT_CODE_FAILED_TO_START_SANDBOX_PROCESS;
+   }
+ 
