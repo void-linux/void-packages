@@ -1,9 +1,10 @@
 # Template file for 'python3-PyQt5-webengine'
 pkgname=python3-PyQt5-webengine
-version=5.15.0
+version=5.15.1
 revision=1
 wrksrc="PyQtWebEngine-${version}"
 hostmakedepends="pkg-config qt5-qmake python3-PyQt5 sip5 qt5-webengine-devel
+ python3-PyQt-builder python3-PyQt5-devel
  qt5-declarative-devel qt5-webchannel-devel qt5-location-devel"
 makedepends="qt5-declarative-devel qt5-webchannel-devel qt5-location-devel
  qt5-webengine-devel python3-devel python3-PyQt5-devel"
@@ -13,7 +14,7 @@ maintainer="Orphaned <orphan@voidlinux.org>"
 license="GPL-3.0-only"
 homepage="https://www.riverbankcomputing.com/software/pyqtwebengine/intro"
 distfiles="${PYPI_SITE}/P/PyQtWebEngine/PyQtWebEngine-${version}.tar.gz"
-checksum=670812688e40bf75f70ddf01eadd897d231300318d3856b275bf8e7e0085bf75
+checksum=f0ca7915ee206ba5d703168c6ca40b0aad62c67360328fae4af5359cdbcee439
 lib32disabled=yes
 
 case "$XBPS_TARGET_MACHINE" in
@@ -27,10 +28,10 @@ post_extract() {
 }
 
 _cross_configure() {
-	local qmakespec=$XBPS_STATEDIR/qmake-$XBPS_TARGET_MACHINE
-	mkdir -p $qmakespec/target/linux-g++
-	# This is copied from qmake build-style
-	cat > "$qmakespec/target/linux-g++/qmake.conf" <<-_EOF
+	local qplatformdefs="/usr/lib/qt5/mkspecs/linux-g++/qplatformdefs.h"
+
+	mkdir -p "${wrksrc}/.target-spec/linux-g++"
+	cat >"${wrksrc}/.target-spec/linux-g++/qmake.conf" <<-_EOF
 	MAKEFILE_GENERATOR      = UNIX
 	CONFIG                 += incremental
 	QMAKE_INCREMENTAL_STYLE = sublib
@@ -57,14 +58,10 @@ _cross_configure() {
 	QMAKE_LFLAGS            = ${LDFLAGS}
 	load(qt_config)
 	_EOF
+	ln -sf ${XBPS_CROSS_BASE}$qplatformdefs ${wrksrc}/.target-spec/linux-g++/
 
-	cat <<-EOF > "$qmakespec/target/linux-g++/qplatformdefs.h"
-	#include "${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/linux-g++/qplatformdefs.h"
-	EOF
-
-
-	mkdir -p $qmakespec/host/linux-g++
-	cat > "$qmakespec/host/linux-g++/qmake.conf" <<-_EOF
+	mkdir -p "${wrksrc}/.host-spec/linux-g++"
+	cat > "${wrksrc}/.host-spec/linux-g++/qmake.conf" <<-_EOF
 	MAKEFILE_GENERATOR      = UNIX
 	CONFIG                 += incremental
 	QMAKE_INCREMENTAL_STYLE = sublib
@@ -91,20 +88,16 @@ _cross_configure() {
 	QMAKE_LFLAGS            = ${LDFLAGS_FOR_BUILD}
 	load(qt_config)
 	_EOF
+	ln -sf $qplatformdefs ${wrksrc}/.host-spec/linux-g++/
 
-	cat <<-EOF > "$qmakespec/host/linux-g++/qplatformdefs.h"
-	#include "/usr/lib/qt5/mkspecs/linux-g++/qplatformdefs.h"
-	EOF
-
-
-	cat > "$qmakespec/qt.conf" <<-_EOF
+	cat > "$wrksrc/qt.conf" <<-_EOF
 	[Paths]
 	Sysroot=${XBPS_CROSS_BASE}
 	Prefix=/usr
 	ArchData=/usr/lib/qt5
 	Data=/usr/share/qt5
 	Documentation=/usr/share/doc/qt5
-	Headers=/usr/include/qt5
+	Headers=${XBPS_CROSS_BASE}/usr/include/qt5
 	Libraries=${XBPS_CROSS_BASE}/usr/lib
 	LibraryExecutables=/usr/lib/qt5/libexec
 	Binaries=/usr/lib/qt5/bin
@@ -119,10 +112,9 @@ _cross_configure() {
 	HostData=/usr/lib/qt5
 	HostBinaries=/usr/lib/qt5/bin
 	HostLibraries=/usr/lib
-	Spec=$qmakespec/host/linux-g++
-	TargetSpec=$qmakespec/target/linux-g++
+	Spec=$wrksrc/.host-spec/linux-g++
+	TargetSpec=$wrksrc/.target-spec/linux-g++
 	_EOF
-
 
 	case $XBPS_TARGET_MACHINE in
 		i686*) _qt_arch=i386;;
@@ -131,7 +123,7 @@ _cross_configure() {
 		arm*) _qt_arch=arm;;
 		mips*) _qt_arch=mips;;
 	esac
-	cat <<EOF >$XBPS_WRAPPERDIR/cross-qmake
+	cat <<EOF >$XBPS_WRAPPERDIR/qmake
 #!/bin/sh
 export PREFIX=/usr
 export QT_INSTALL_PREFIX=/usr
@@ -140,46 +132,45 @@ export QT_TARGET_ARCH=$_qt_arch
 export PKG_CONFIG_EXECUTABLE=$XBPS_WRAPPERDIR/$PKG_CONFIG
 case " \$* " in
 " -query ")
-	/usr/lib/qt5/bin/qmake "\$@" -qtconf $qmakespec/qt.conf |
+	/usr/lib/qt5/bin/qmake "\$@" -qtconf $wrksrc/qt.conf |
 	sed '/^QT_INSTALL_/s,$XBPS_CROSS_BASE,,'
 	;;
 *)
-	exec /usr/lib/qt5/bin/qmake -qtconf $qmakespec/qt.conf "\$@" ;;
+	exec /usr/lib/qt5/bin/qmake -qtconf $wrksrc/qt.conf "\$@" ;;
 esac
 EOF
-	chmod +x $XBPS_WRAPPERDIR/cross-qmake
-
-	python3 configure.py --qmake=$XBPS_WRAPPERDIR/cross-qmake \
-		--sysroot $XBPS_CROSS_BASE/usr
-	# Technically, the second sed expr isn't necessary
-	# since all of them are the same for both host and target.
-	# We need to fix INSTALL_ROOT anyway, let's fix it, too.
-	sed -i -e "/INSTALL_ROOT/s,$XBPS_CROSS_BASE,,g" \
-		-e "s,-I/usr/include,-I$XBPS_CROSS_BASE/usr/include,g" \
-		Makefile \
-		QtWebEngine/Makefile \
-		QtWebEngineCore/Makefile \
-		QtWebEngineWidgets/Makefile
-	sed -i -e "s,$XBPS_CROSS_BASE,,g" installed.txt
+	chmod +x $XBPS_WRAPPERDIR/qmake
 }
 
 do_configure() {
 	if [ "$CROSS_BUILD" ]; then
 		_cross_configure
-	else
-		python3 configure.py \
-			QMAKE_CC="${CC}" QMAKE_CFLAGS="${CFLAGS}" \
-			QMAKE_CXX="${CXX}" QMAKE_CXXFLAGS="${CXXFLAGS}" \
-			QMAKE_LINK="${CXX}" QMAKE_LINK_SHLIB="${CXX}"
-			QMAKE_LFLAGS="${LDFLAGS}" QMAKE_STRIP=""
+	fi
+	mkdir -p build
+	sip-build --no-make \
+		--api-dir /usr/share/qt5/qsci/api/python \
+		--build-dir build
+
+	if [ "$CROSS_BUILD" ]; then
+		# Fix location of libraries
+		find build -name Makefile |
+		xargs sed -i "
+			s, \\(/usr/lib/libQt\\), $XBPS_CROSS_BASE\\1,g
+			s,-L\\(/usr/lib\\),-L$XBPS_CROSS_BASE\\1,g
+			/INSTALL_ROOT/s,$XBPS_CROSS_BASE,,g
+			s,-I\\(/usr/include\\),-I$XBPS_CROSS_BASE\\1,g
+			s,-I\\(/usr/lib\\),-I$XBPS_CROSS_BASE\\1,g
+			"
 	fi
 }
 
 do_build() {
+	cd build
 	make ${makejobs}
 }
 
 do_install() {
+	cd build
 	make DESTDIR=${DESTDIR} INSTALL_ROOT=${DESTDIR} install
 	rm -rf ${DESTDIR}/usr/share
 }

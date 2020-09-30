@@ -1,7 +1,7 @@
 # Template file for 'paraview'
 pkgname=paraview
 version=5.8.1
-revision=1
+revision=2
 wrksrc=ParaView-v${version}
 build_style=cmake
 configure_args="-DCMAKE_PREFIX_PATH=${XBPS_CROSS_BASE}/usr
@@ -17,6 +17,7 @@ configure_args="-DCMAKE_PREFIX_PATH=${XBPS_CROSS_BASE}/usr
  -DVTKm_USE_DOUBLE_PRECISION=ON"
 #make_build_args="VERBOSE=1"
 hostmakedepends="pkg-config which"
+# TODO: find some way of making this work with system vtk
 makedepends="MesaLib-devel libfreeglut-devel glu-devel libXt-devel
  openmpi-devel qt5-devel qt5-x11extras-devel qt5-tools-devel qt5-plugin-mysql
  qt5-plugin-odbc qt5-plugin-pgsql qt5-plugin-sqlite qt5-plugin-tds
@@ -33,6 +34,7 @@ license="BSD-3-Clause"
 homepage="https://www.paraview.org"
 distfiles="https://www.paraview.org/paraview-downloads/download.php?submit=Download&version=v${version:0:3}&type=source&os=Sources&downloadFile=ParaView-v${version}.tar.xz>paraview-${version}.tar.xz"
 checksum=7653950392a0d7c0287c26f1d3a25cdbaa11baa7524b0af0e6a1a0d7d487d034
+
 CFLAGS="-DYYERROR_VERBOSE -D_LARGEFILE64_SOURCE=1 -D_FILE_OFFSET_BITS=64 -DGNU_SOURCE -fcommon"
 CXXFLAGS="${CFLAGS}"
 
@@ -41,22 +43,49 @@ export QT_SELECT="5"
 
 if [ "$XBPS_TARGET_LIBC" = musl ]; then
 	makedepends+=" libexecinfo-devel"
+	LDFLAGS="-lexecinfo"
 fi
 if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
 	makedepends+=" libatomic-devel"
 fi
 
-case "$XBPS_TARGET_MACHINE" in
-	x86_64) ;;
-	*) # broken for all other targets
-	broken="https://build.voidlinux.org/builders/i686_builder/builds/27013/steps/shell_3/logs/stdio"
-	;;
-esac
-
 post_extract() {
 	if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
-		echo "target_link_libraries(vtkCommonDataModel PRIVATE atomic)" >> \
+		echo "vtk_module_link(VTK::CommonDataModel PRIVATE atomic)" >> \
 			VTK/Common/DataModel/CMakeLists.txt
+		echo "target_link_libraries(protobuf PRIVATE atomic)" >> \
+			ThirdParty/protobuf/vtkprotobuf/src/CMakeLists.txt
+	fi
+}
+
+pre_configure() {
+	# use smaller debug info for 32-bit targets
+	if [ "$XBPS_TARGET_WORDSIZE" = "32" ]; then
+		export CFLAGS="${CFLAGS/-g/-g1}"
+		export CXXFLAGS="${CXXFLAGS/-g/-g1}"
+	fi
+	# conserve linker memory on 32-bit hosts
+	if [ "$XBPS_WORDSIZE" = "32" ]; then
+		export LDFLAGS+=" -Wl,--no-keep-memory"
+	fi
+}
+
+_add_execinfo() {
+	# contents of link.txt files need to be in a single line
+	local content="$(cat $1) -lexecinfo "
+	echo "$content" > $1
+}
+
+pre_build() {
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		# TODO: -lexecinfo in LDFLAGS adds it to the start of the file, so linking still fails.
+		# there's probably some configure_arg that actually makes it work cleanly, I hope.
+		# this list of files hasn't been extensively tested. It's possible not all of them are required.
+		_add_execinfo build/VTK/Rendering/LICOpenGL2/CMakeFiles/RenderingLICOpenGL2.dir/link.txt
+		_add_execinfo build/VTK/Rendering/OpenGL2/CMakeFiles/vtkProbeOpenGLVersion.dir/link.txt
+		_add_execinfo build/VTK/ThirdParty/loguru/vtkloguru/CMakeFiles/loguru.dir/link.txt
+		_add_execinfo build/VTK/Common/Core/CMakeFiles/CommonCore.dir/link.txt
+		_add_execinfo build/VTKExtensions/Core/CMakeFiles/VTKExtensionsCore.dir/link.txt
 	fi
 }
 
