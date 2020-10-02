@@ -3,7 +3,7 @@
 #
 
 do_check() {
-	PERL6LIB=lib prove -r -e raku t/
+	RAKULIB=lib prove -r -e raku t/
 }
 
 do_install() {

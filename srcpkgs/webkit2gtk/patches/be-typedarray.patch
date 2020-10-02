@@ -1,0 +1,213 @@
+Source: Jacek Piszczek <jacek.piszczek@runbox.com>
+
+https://tenfourfox.tenderapp.com/discussions/problems/7505-problems-uploading-to-facebook
+
+Updated by @q66.
+
+diff --git Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h
+index f08f852..53e2813 100644
+--- Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h
++++ Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h
+@@ -28,6 +28,7 @@
+ #include "JSArrayBufferView.h"
+ #include "ThrowScope.h"
+ #include "ToNativeFromValue.h"
++#include <wtf/FlipBytes.h>
+ 
+ namespace JSC {
+ 
+@@ -147,7 +148,18 @@ public:
+     
+     JSValue getIndexQuickly(unsigned i) const
+     {
++#if CPU(BIG_ENDIAN)
++        switch (Adaptor::typeValue) {
++        case TypeFloat32:
++        case TypeFloat64:
++            return Adaptor::toJSValue(getIndexQuicklyAsNativeValue(i));
++        default:
++            // typed array views are commonly expected to be little endian views of the underlying data
++            return Adaptor::toJSValue(flipBytes(getIndexQuicklyAsNativeValue(i)));
++        }
++#else
+         return Adaptor::toJSValue(getIndexQuicklyAsNativeValue(i));
++#endif
+     }
+     
+     void setIndexQuicklyToNativeValue(unsigned i, typename Adaptor::Type value)
+@@ -164,7 +176,20 @@ public:
+     void setIndexQuickly(unsigned i, JSValue value)
+     {
+         ASSERT(!value.isObject());
++#if CPU(BIG_ENDIAN)
++        switch (Adaptor::typeValue) {
++        case TypeFloat32:
++        case TypeFloat64:
++            setIndexQuicklyToNativeValue(i, toNativeFromValue<Adaptor>(value));
++            break;
++        default:
++            // typed array views are commonly expected to be little endian views of the underlying data
++            setIndexQuicklyToNativeValue(i, flipBytes(toNativeFromValue<Adaptor>(value)));
++            break;
++        }
++#else
+         setIndexQuicklyToNativeValue(i, toNativeFromValue<Adaptor>(value));
++#endif
+     }
+     
+     bool setIndex(JSGlobalObject* globalObject, unsigned i, JSValue jsValue)
+@@ -183,13 +208,54 @@ public:
+         if (i >= m_length)
+             return false;
+ 
++#if CPU(BIG_ENDIAN)
++        switch (Adaptor::typeValue) {
++        case TypeFloat32:
++        case TypeFloat64:
++            setIndexQuicklyToNativeValue(i, value);
++            break;
++        default:
++            // typed array views are commonly expected to be little endian views of the underlying data
++            setIndexQuicklyToNativeValue(i, flipBytes(value));
++            break;
++        }
++#else
+         setIndexQuicklyToNativeValue(i, value);
++#endif
+         return true;
+     }
+ 
+-    static ElementType toAdaptorNativeFromValue(JSGlobalObject* globalObject, JSValue jsValue) { return toNativeFromValue<Adaptor>(globalObject, jsValue); }
++    static ElementType toAdaptorNativeFromValue(JSGlobalObject* globalObject, JSValue jsValue)
++    {
++#if CPU(BIG_ENDIAN)
++        switch (Adaptor::typeValue) {
++        case TypeFloat32:
++        case TypeFloat64:
++            return toNativeFromValue<Adaptor>(globalObject, jsValue);
++        default:
++            // typed array views are commonly expected to be little endian views of the underlying data
++            return flipBytes(toNativeFromValue<Adaptor>(globalObject, jsValue));
++        }
++#else
++        return toNativeFromValue<Adaptor>(globalObject, jsValue);
++#endif
++    }
+ 
+-    static Optional<ElementType> toAdaptorNativeFromValueWithoutCoercion(JSValue jsValue) { return toNativeFromValueWithoutCoercion<Adaptor>(jsValue); }
++    static Optional<ElementType> toAdaptorNativeFromValueWithoutCoercion(JSValue jsValue)
++    {
++#if CPU(BIG_ENDIAN)
++        switch (Adaptor::typeValue) {
++        case TypeFloat32:
++        case TypeFloat64:
++            return toNativeFromValueWithoutCoercion<Adaptor>(jsValue);
++        default:
++            // typed array views are commonly expected to be little endian views of the underlying data
++            return flipBytes(toNativeFromValueWithoutCoercion<Adaptor>(jsValue));
++        }
++#else
++        return toNativeFromValueWithoutCoercion<Adaptor>(jsValue);
++#endif
++    }
+ 
+     void sort()
+     {
+diff --git Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h
+index 5bca5d7..8a7111c 100644
+--- Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h
++++ Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h
+@@ -209,9 +209,36 @@ EncodedJSValue JSC_HOST_CALL genericTypedArrayViewProtoFuncIncludes(VM& vm, JSGl
+     scope.assertNoException();
+     RELEASE_ASSERT(!thisObject->isNeutered());
+ 
+-    if (std::isnan(static_cast<double>(*targetOption))) {
++    double targetOptionLittleEndianAsDouble;
++#if CPU(BIG_ENDIAN)
++    switch (ViewClass::TypedArrayStorageType) {
++    case TypeFloat32:
++    case TypeFloat64:
++        targetOptionLittleEndianAsDouble = static_cast<double>(*targetOption);
++    default:
++        // typed array views are commonly expected to be little endian views of the underlying data
++        targetOptionLittleEndianAsDouble = static_cast<double>(flipBytes(*targetOption));
++    }
++#else
++    targetOptionLittleEndianAsDouble = static_cast<double>(*targetOption);
++#endif
++
++    if (std::isnan(targetOptionLittleEndianAsDouble)) {
+         for (; index < length; ++index) {
+-            if (std::isnan(static_cast<double>(array[index])))
++            double arrayElementLittleEndianAsDouble;
++#if CPU(BIG_ENDIAN)
++            switch (ViewClass::TypedArrayStorageType) {
++            case TypeFloat32:
++            case TypeFloat64:
++                arrayElementLittleEndianAsDouble = static_cast<double>(array[index]);
++            default:
++                // typed array views are commonly expected to be little endian views of the underlying data
++                arrayElementLittleEndianAsDouble = static_cast<double>(flipBytes(array[index]));
++            }
++#else
++            arrayElementLittleEndianAsDouble = static_cast<double>(array[index]);
++#endif
++            if (std::isnan(arrayElementLittleEndianAsDouble))
+                 return JSValue::encode(jsBoolean(true));
+         }
+     } else {
+diff --git Source/WTF/wtf/FlipBytes.h Source/WTF/wtf/FlipBytes.h
+index 6cd7126..24708f7 100644
+--- Source/WTF/wtf/FlipBytes.h
++++ Source/WTF/wtf/FlipBytes.h
+@@ -24,6 +24,7 @@
+  */
+ 
+ #pragma once
++#include "Optional.h"
+ 
+ namespace WTF {
+ 
+@@ -98,6 +99,42 @@ inline T flipBytes(T value)
+     return T();
+ }
+ 
++template<typename T>
++inline T flipBytes(WTF::Optional<T> value)
++{
++    if (sizeof(*value) == 1)
++        return *value;
++    if (sizeof(*value) == 2) {
++        union {
++            T original;
++            uint16_t word;
++        } u;
++        u.original = *value;
++        u.word = flipBytes(u.word);
++        return u.original;
++    }
++    if (sizeof(*value) == 4) {
++        union {
++            T original;
++            uint32_t word;
++        } u;
++        u.original = *value;
++        u.word = flipBytes(u.word);
++        return u.original;
++    }
++    if (sizeof(*value) == 8) {
++        union {
++            T original;
++            uint64_t word;
++        } u;
++        u.original = *value;
++        u.word = flipBytes(u.word);
++        return u.original;
++    }
++    RELEASE_ASSERT_NOT_REACHED();
++    return T();
++}
++
+ template<typename T>
+ inline T flipBytesIfLittleEndian(T value, bool littleEndian)
+ {

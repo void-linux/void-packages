@@ -4,6 +4,7 @@ genpkg() {
 	local pkgdir="$1" arch="$2" desc="$3" pkgver="$4" binpkg="$5"
 	local _preserve _deps _shprovides _shrequires _gitrevs _provides _conflicts
 	local _replaces _reverts _mutable_files _conf_files f
+	local _pkglock="$pkgdir/${binpkg}.lock"
 
 	if [ ! -d "${PKGDESTDIR}" ]; then
 		msg_warn "$pkgver: cannot find pkg destdir... skipping!\n"
@@ -12,7 +13,7 @@ genpkg() {
 
 	[ ! -d $pkgdir ] && mkdir -p $pkgdir
 
-	while [ -f $pkgdir/${binpkg}.lock ]; do
+	while [ -f "$_pkglock" ]; do
 		msg_warn "${pkgver}: binpkg is being created, waiting for 1s...\n"
 		sleep 1
 	done
@@ -23,7 +24,9 @@ genpkg() {
 		return 0
 	fi
 
-	touch -f $pkgdir/${binpkg}.lock
+	# Lock binpkg
+	trap "rm -f '$_pkglock'" ERR EXIT
+	touch -f "$_pkglock"
 
 	if [ ! -d $pkgdir ]; then
 		mkdir -p $pkgdir
@@ -87,7 +90,9 @@ genpkg() {
 		${PKGDESTDIR}
 	rval=$?
 
-	rm -f $pkgdir/${binpkg}.lock
+	# Unlock binpkg
+	rm -f "$_pkglock"
+	trap - ERR EXIT
 
 	if [ $rval -ne 0 ]; then
 		rm -f $pkgdir/$binpkg

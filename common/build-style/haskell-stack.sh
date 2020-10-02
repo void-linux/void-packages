@@ -20,11 +20,11 @@ do_build() {
 			msg_error "Stackage version not set in \$stackage.\n"
 		fi
 		msg_normal "Using stackage resolver ${stackage}.\n"
-		STACK_ROOT=$wrksrc/.stack \
+		STACK_ROOT="$wrksrc/.stack" \
 			stack init ${_stack_args} --force --resolver ${stackage}
 	fi
 
-	STACK_ROOT=$wrksrc/.stack stack ${_stack_args} ${makejobs} build \
+	STACK_ROOT="$wrksrc/.stack" stack ${_stack_args} ${makejobs} build \
 		${make_build_args}
 }
 
@@ -32,6 +32,6 @@ do_install() {
 	local _stack_args="--system-ghc --skip-ghc-check"
 
 	vmkdir usr/bin
-	STACK_ROOT=$wrksrc/.stack stack ${_stack_args} install \
+	STACK_ROOT="$wrksrc/.stack" stack ${_stack_args} install \
 	       	${make_build_args} --local-bin-path=${DESTDIR}/usr/bin
 }

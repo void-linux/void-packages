@@ -4,7 +4,7 @@
 * xuname:  
   *output of ``xuname`` (part of xtools)*
 * package:  
-  *affected package(s) including the version*
+  *affected package(s) including the version*: ``xbps-query -p pkgver <pkgname>``
 
 ### Expected behavior
 

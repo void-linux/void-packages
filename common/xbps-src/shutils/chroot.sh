@@ -132,7 +132,10 @@ chroot_prepare() {
 
     # Prepare default locale: en_US.UTF-8.
     if [ -s ${XBPS_MASTERDIR}/etc/default/libc-locales ]; then
-        echo 'en_US.UTF-8 UTF-8' >> ${XBPS_MASTERDIR}/etc/default/libc-locales
+        printf '%s\n' \
+            'C.UTF-8 UTF-8' \
+            'en_US.UTF-8 UTF-8' \
+            >> ${XBPS_MASTERDIR}/etc/default/libc-locales
     fi
 
     touch -f $XBPS_MASTERDIR/.xbps_chroot_init
@@ -175,6 +178,7 @@ chroot_handler() {
             ${HTTP_PROXY_AUTH:+HTTP_PROXY_AUTH="${HTTP_PROXY_AUTH}"} \
             ${FTP_RETRIES:+FTP_RETRIES="${FTP_RETRIES}"} \
             SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
+            XBPS_GIT_REVS="$XBPS_GIT_REVS" \
             XBPS_ALLOW_CHROOT_BREAKOUT="$XBPS_ALLOW_CHROOT_BREAKOUT" \
             $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
             $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" \

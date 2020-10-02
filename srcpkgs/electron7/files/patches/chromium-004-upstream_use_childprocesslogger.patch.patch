@@ -1,0 +1,186 @@
+From 890956be1496b625967df0bbf620e8fc4aefb390 Mon Sep 17 00:00:00 2001
+From: Joe Mason <joenotcharles@google.com>
+Date: Wed, 4 Dec 2019 18:22:34 +0000
+Subject: [PATCH] Use ChildProcessLogger in FileRemoverQuarantineTest and
+ SandboxedShortcutParserTest
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+R=​proberge
+
+(cherry picked from commit 814583834ebf35ede5dad0ba3574343851b1a8bd)
+
+Bug: 1030333
+Change-Id: I66b9b3dc73980e8ed03ee37d89eb172b5330c913
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/1948235
+Commit-Queue: Joe Mason <joenotcharles@chromium.org>
+Reviewed-by: proberge <proberge@chromium.org>
+Cr-Original-Commit-Position: refs/heads/master@{#721193}
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/1948102
+Reviewed-by: Joe Mason <joenotcharles@chromium.org>
+Cr-Commit-Position: refs/branch-heads/3904@{#915}
+Cr-Branched-From: 675968a8c657a3bd9c1c2c20c5d2935577bbc5e6-refs/heads/master@{#693954}
+---
+ .../os/file_remover_unittest.cc               | 39 ++++++++++++++++---
+ .../parsers/shortcut_parser/broker/BUILD.gn   |  1 +
+ .../sandboxed_shortcut_parser_unittest.cc     | 35 +++++++++++++++--
+ 3 files changed, 67 insertions(+), 8 deletions(-)
+
+diff --git a/chrome/chrome_cleaner/os/file_remover_unittest.cc b/chrome/chrome_cleaner/os/file_remover_unittest.cc
+index 52c9b4f1c5089..c57983e83c6b9 100644
+--- a/chrome/chrome_cleaner/os/file_remover_unittest.cc
++++ b/chrome/chrome_cleaner/os/file_remover_unittest.cc
+@@ -30,6 +30,7 @@
+ #include "chrome/chrome_cleaner/os/pre_fetched_paths.h"
+ #include "chrome/chrome_cleaner/os/system_util.h"
+ #include "chrome/chrome_cleaner/os/whitelisted_directory.h"
++#include "chrome/chrome_cleaner/test/child_process_logger.h"
+ #include "chrome/chrome_cleaner/test/file_remover_test_util.h"
+ #include "chrome/chrome_cleaner/test/reboot_deletion_helper.h"
+ #include "chrome/chrome_cleaner/test/resources/grit/test_resources.h"
+@@ -398,20 +399,47 @@ constexpr wchar_t kTestExpectArchiveName[] =
+     L"temp_file.exe_"
+     L"A591A6D40BF420404A011733CFB7B190D62C65BF0BCDA32B57B277D9AD9F146E.zip";
+ 
++class LoggedZipArchiverSandboxSetupHooks : public ZipArchiverSandboxSetupHooks {
++ public:
++  explicit LoggedZipArchiverSandboxSetupHooks(
++      scoped_refptr<MojoTaskRunner> mojo_task_runner,
++      base::OnceClosure connection_error_handler,
++      chrome_cleaner::ChildProcessLogger* child_process_logger)
++      : ZipArchiverSandboxSetupHooks(std::move(mojo_task_runner),
++                                     std::move(connection_error_handler)),
++        child_process_logger_(child_process_logger) {}
++
++  ResultCode UpdateSandboxPolicy(sandbox::TargetPolicy* policy,
++                                 base::CommandLine* command_line) override {
++    child_process_logger_->UpdateSandboxPolicy(policy);
++    return ZipArchiverSandboxSetupHooks::UpdateSandboxPolicy(policy,
++                                                             command_line);
++  }
++
++ private:
++  chrome_cleaner::ChildProcessLogger* child_process_logger_;
++};
++
+ class FileRemoverQuarantineTest : public base::MultiProcessTest,
+                                   public ::testing::WithParamInterface<bool> {
+  public:
+   void SetUp() override {
+     use_reboot_removal_ = GetParam();
+ 
++    ASSERT_TRUE(child_process_logger_.Initialize());
++
+     scoped_refptr<MojoTaskRunner> mojo_task_runner = MojoTaskRunner::Create();
+-    ZipArchiverSandboxSetupHooks setup_hooks(
++    LoggedZipArchiverSandboxSetupHooks setup_hooks(
+         mojo_task_runner.get(), base::BindOnce([] {
+           FAIL() << "ZipArchiver sandbox connection error";
+-        }));
+-    ASSERT_EQ(RESULT_CODE_SUCCESS,
+-              StartSandboxTarget(MakeCmdLine("FileRemoverQuarantineTargetMain"),
+-                                 &setup_hooks, SandboxType::kTest));
++        }),
++        &child_process_logger_);
++    ResultCode result_code =
++        StartSandboxTarget(MakeCmdLine("FileRemoverQuarantineTargetMain"),
++                           &setup_hooks, SandboxType::kTest);
++    if (result_code != RESULT_CODE_SUCCESS)
++      child_process_logger_.DumpLogs();
++    ASSERT_EQ(RESULT_CODE_SUCCESS, result_code);
+ 
+     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+ 
+@@ -447,6 +475,7 @@ class FileRemoverQuarantineTest : public base::MultiProcessTest,
+   base::test::SingleThreadTaskEnvironment task_environment_;
+   base::ScopedTempDir temp_dir_;
+   std::unique_ptr<FileRemover> file_remover_;
++  chrome_cleaner::ChildProcessLogger child_process_logger_;
+ };
+ 
+ }  // namespace
+diff --git a/chrome/chrome_cleaner/parsers/shortcut_parser/broker/BUILD.gn b/chrome/chrome_cleaner/parsers/shortcut_parser/broker/BUILD.gn
+index bc7ba8188c83b..09ed07b761a4e 100644
+--- a/chrome/chrome_cleaner/parsers/shortcut_parser/broker/BUILD.gn
++++ b/chrome/chrome_cleaner/parsers/shortcut_parser/broker/BUILD.gn
+@@ -67,6 +67,7 @@ source_set("unittest_sources") {
+     "//chrome/chrome_cleaner/parsers/shortcut_parser:sandboxed_lnk_parser_test_util",
+     "//chrome/chrome_cleaner/parsers/shortcut_parser/target:lnk_parser",
+     "//chrome/chrome_cleaner/parsers/target:parser_sandbox_target",
++    "//chrome/chrome_cleaner/test:test_util",
+     "//mojo/public/cpp/bindings:bindings",
+     "//sandbox/win:sandbox",
+     "//testing/gtest",
+diff --git a/chrome/chrome_cleaner/parsers/shortcut_parser/broker/sandboxed_shortcut_parser_unittest.cc b/chrome/chrome_cleaner/parsers/shortcut_parser/broker/sandboxed_shortcut_parser_unittest.cc
+index 64ac91ed92016..4c033f21c77c3 100644
+--- a/chrome/chrome_cleaner/parsers/shortcut_parser/broker/sandboxed_shortcut_parser_unittest.cc
++++ b/chrome/chrome_cleaner/parsers/shortcut_parser/broker/sandboxed_shortcut_parser_unittest.cc
+@@ -18,6 +18,7 @@
+ #include "chrome/chrome_cleaner/parsers/broker/sandbox_setup_hooks.h"
+ #include "chrome/chrome_cleaner/parsers/shortcut_parser/sandboxed_lnk_parser_test_util.h"
+ #include "chrome/chrome_cleaner/parsers/target/sandbox_setup.h"
++#include "chrome/chrome_cleaner/test/child_process_logger.h"
+ #include "mojo/public/cpp/bindings/interface_request.h"
+ #include "mojo/public/cpp/system/platform_handle.h"
+ #include "sandbox/win/src/sandbox_factory.h"
+@@ -31,6 +32,26 @@ constexpr unsigned int kDirQuantity = 5;
+ 
+ const base::string16 kLnkArguments = L"-a -b -c -d GenericExample";
+ 
++class LoggedParserSandboxSetupHooks : public ParserSandboxSetupHooks {
++ public:
++  explicit LoggedParserSandboxSetupHooks(
++      scoped_refptr<MojoTaskRunner> mojo_task_runner,
++      base::OnceClosure connection_error_handler,
++      chrome_cleaner::ChildProcessLogger* child_process_logger)
++      : ParserSandboxSetupHooks(std::move(mojo_task_runner),
++                                std::move(connection_error_handler)),
++        child_process_logger_(child_process_logger) {}
++
++  ResultCode UpdateSandboxPolicy(sandbox::TargetPolicy* policy,
++                                 base::CommandLine* command_line) override {
++    child_process_logger_->UpdateSandboxPolicy(policy);
++    return ParserSandboxSetupHooks::UpdateSandboxPolicy(policy, command_line);
++  }
++
++ private:
++  chrome_cleaner::ChildProcessLogger* child_process_logger_;
++};
++
+ }  // namespace
+ 
+ class SandboxedShortcutParserTest : public base::MultiProcessTest {
+@@ -40,14 +61,20 @@ class SandboxedShortcutParserTest : public base::MultiProcessTest {
+         temp_dirs_with_chrome_lnk_(kDirQuantity) {}
+ 
+   void SetUp() override {
++    ASSERT_TRUE(child_process_logger_.Initialize());
++
+     mojo_task_runner_ = MojoTaskRunner::Create();
+     ParserSandboxSetupHooks setup_hooks(
+         mojo_task_runner_.get(),
+         base::BindOnce([] { FAIL() << "Parser sandbox connection error"; }));
+-    ASSERT_EQ(
+-        RESULT_CODE_SUCCESS,
++
++    ResultCode result_code =
+         StartSandboxTarget(MakeCmdLine("SandboxedShortcutParserTargetMain"),
+-                           &setup_hooks, SandboxType::kTest));
++                           &setup_hooks, SandboxType::kTest);
++    if (result_code != RESULT_CODE_SUCCESS)
++      child_process_logger_.DumpLogs();
++    ASSERT_EQ(RESULT_CODE_SUCCESS, result_code);
++
+     parser_ptr_ = setup_hooks.TakeParserPtr();
+     shortcut_parser_ = std::make_unique<SandboxedShortcutParser>(
+         mojo_task_runner_.get(), parser_ptr_.get());
+@@ -98,6 +125,8 @@ class SandboxedShortcutParserTest : public base::MultiProcessTest {
+   base::FilePath not_lnk_file_path_;
+ 
+   base::test::TaskEnvironment task_environment_;
++
++  chrome_cleaner::ChildProcessLogger child_process_logger_;
+ };
+ 
+ MULTIPROCESS_TEST_MAIN(SandboxedShortcutParserTargetMain) {

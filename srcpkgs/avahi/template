@@ -1,25 +1,34 @@
 # Template file for 'avahi'
 pkgname=avahi
-version=0.7
-revision=9
+version=0.8
+revision=2
 build_style=gnu-configure
-configure_args="--disable-qt3 --disable-qt4 --disable-mono --disable-monodoc
+configure_args="--disable-qt3 --disable-qt4 --disable-qt5
+ --disable-libevent --disable-mono --disable-monodoc
  --disable-doxygen-doc --enable-compat-libdns_sd --enable-compat-howl
  --with-xml=expat --with-avahi-user=avahi --with-avahi-group=avahi
  --with-avahi-priv-access-group=network --with-autoipd-user=avahi
  --with-autoipd-group=avahi --with-distro=none --disable-xmltoman
- --disable-static ssp_cv_lib=no --enable-python
+ --disable-static ssp_cv_lib=no --enable-python --disable-pygobject
  --disable-glib --disable-python-dbus --disable-gobject --disable-gtk
  --disable-gtk3 --disable-dbm --disable-introspection --sbindir=/usr/bin
- --disable-pygobject"
+ --with-dbus-system-address=unix:path=/run/dbus/system_bus_socket
+ --without-systemdsystemunitdir"
 short_desc="Multicast DNS Service Discovery"
-maintainer="Orphaned <orphan@voidlinux.org>"
+maintainer="Andrew J. Hesford <ajh@sideband.org>"
 license="LGPL-2.1-or-later"
 homepage="https://github.com/lathiat/avahi"
-distfiles="${homepage}/releases/download/v${version}/avahi-${version}.tar.gz"
-checksum=57a99b5dfe7fdae794e3d1ee7a62973a368e91e414bd0dfa5d84434de5b14804
+### NOTE: The Avahi 0.8 release tarball is broken; it is missing the build-db
+### script. Fetching and manipulation of this file in post_extract should be
+### undone in a future release that fixes this oversight.
+_build_db="service-type-database/build-db"
+distfiles="${homepage}/releases/download/v${version}/avahi-${version}.tar.gz
+ https://raw.githubusercontent.com/lathiat/${pkgname}/v${version}/${_build_db}>build-db.txt"
+checksum="060309d7a333d38d951bc27598c677af1796934dbd98e1024e7ad8de798fedda
+ 83edd888ccc464ab032134a45b7ded3bc43cb1dda2cd921ff47b01949d98ed7c"
+skip_extraction="build-db.txt"
 
-hostmakedepends="pkg-config intltool python"
+hostmakedepends="pkg-config intltool python3"
 makedepends="dbus-devel libcap-devel libdaemon-devel gdbm-devel"
 conf_files="
 	/etc/avahi/services/ssh.service
@@ -30,20 +39,25 @@ conf_files="
 system_accounts="avahi:23"
 
 if [ "$CROSS_BUILD" ]; then
-	hostmakedepends+=" automake libtool glib-devel"
+	hostmakedepends+=" automake libtool glib-devel gettext-devel"
 	pre_configure() {
 		autoreconf -if
 	}
 fi
 
 post_extract() {
-	# Switch to /run to not depend on /var/run being a symlink.
-	sed -e 's,\(avahi_runtime_dir=\).*,\1\"/run\",' -i ${wrksrc}/configure
+	# Avahi 0.8 release accidentally left this out of the tarball
+	cp ${XBPS_SRCDISTDIR}/${pkgname}-${version}/build-db.txt "${_build_db}"
 }
+
 post_install() {
+	# Python modules will be built in avahi-discover subpackage
 	rm -rf ${DESTDIR}/usr/lib/python*
+	# Man page will be installed in avahi-discover subpackage
+	rm -f ${DESTDIR}/usr/share/man/man1/avahi-bookmarks.1
+
 	# Set 'enable-dbus=warn' option by default to not require dbus.
-	sed -e 's,\#\(enable-dbus\).*,\1=warn,' -i ${DESTDIR}/etc/avahi/avahi-daemon.conf
+	vsed -e 's,\#\(enable-dbus\).*,\1=warn,' -i ${DESTDIR}/etc/avahi/avahi-daemon.conf
 	vsv avahi-daemon
 }
 
@@ -56,8 +70,9 @@ avahi-autoipd_package() {
 		vmove etc/avahi/avahi-autoipd.action
 	}
 }
+
 avahi-compat-libs-devel_package() {
-	depends="avahi-libs-devel-${version}_${revision} avahi-compat-libs-${version}_${revision}"
+	depends="avahi-libs-devel>=${version}_${revision} avahi-compat-libs>=${version}_${revision}"
 	short_desc="Avahi compat libraries - development files"
 	pkg_install() {
 		vmove "usr/include/avahi-compat*"
@@ -66,6 +81,7 @@ avahi-compat-libs-devel_package() {
 		vmove usr/lib/libdns_sd.so
 	}
 }
+
 avahi-compat-libs_package() {
 	short_desc="Avahi compatiblity shared libraries"
 	pkg_install() {
@@ -73,8 +89,9 @@ avahi-compat-libs_package() {
 		vmove "usr/lib/libdns_sd.so.*"
 	}
 }
+
 avahi-libs-devel_package() {
-	depends="dbus-devel avahi-libs-${version}_${revision}"
+	depends="dbus-devel avahi-libs>=${version}_${revision}"
 	short_desc="Avahi core libraries - development files"
 	pkg_install() {
 		for f in common client core; do
@@ -87,6 +104,7 @@ avahi-libs-devel_package() {
 		vmove usr/lib/libavahi-common.so
 	}
 }
+
 avahi-libs_package() {
 	short_desc="Avahi shared libraries"
 	pkg_install() {
@@ -95,6 +113,7 @@ avahi-libs_package() {
 		vmove "usr/lib/libavahi-common.so.*"
 	}
 }
+
 avahi-utils_package() {
 	short_desc="Avahi browsing, publishing and discovery utilities"
 	pkg_install() {

@@ -70,10 +70,11 @@ python_wrapper() {
 	[ -x ${XBPS_WRAPPERDIR}/${wrapper} ] && return 0
 	cat >>${XBPS_WRAPPERDIR}/${wrapper}<<_EOF
 #!/bin/sh
-if [ "\$1" = "--includes" ]; then
-	echo "-I${XBPS_CROSS_BASE}/usr/include/python${version}"
-fi
-exit \$?
+case "\$1" in
+--includes|--cflags)
+	echo "-I${XBPS_CROSS_BASE}/usr/include/python${version}" ;;
+esac
+exit 0
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}
 }
@@ -92,7 +93,9 @@ export PKG_CONFIG_LIBDIR="$XBPS_CROSS_BASE/usr/lib/pkgconfig\${PKG_CONFIG_LIBDIR
 exec /usr/bin/pkg-config "\$@"
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/${XBPS_CROSS_TRIPLET}-pkg-config
-	ln -sf ${XBPS_CROSS_TRIPLET}-pkg-config ${XBPS_WRAPPERDIR}/pkg-config
+	if [ -z "$no_generic_pkgconfig_link" ]; then
+		ln -sf ${XBPS_CROSS_TRIPLET}-pkg-config ${XBPS_WRAPPERDIR}/pkg-config
+	fi
 }
 
 vapigen_wrapper() {

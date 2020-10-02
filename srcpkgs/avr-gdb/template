@@ -1,0 +1,79 @@
+# Template file for 'avr-gdb'
+pkgname=avr-gdb
+version=9.2
+revision=1
+wrksrc=${pkgname#avr-}-${version}
+build_style=gnu-configure
+pycompile_dirs="/usr/share/gdb/python"
+configure_args="\
+	--target=${_triplet} \
+	--program-prefix=${_triplet}- \
+	--disable-werror \
+	--disable-nls \
+	--with-system-readline \
+	--with-system-gdbinit=/etc/gdb/gdbinit \
+	--with-system-zlib $(vopt_enable gdbserver) \
+	$(vopt_if static 'CFLAGS=-static CXXFLAGS=-static LDFLAGS=-static') \
+	$(vopt_if python --with-python=/usr/bin/python3)"
+hostmakedepends="texinfo perl $(vopt_if python python3-devel)"
+makedepends="ncurses-devel zlib-devel readline-devel expat-devel
+	$(vopt_if python 'python3-devel gettext-libs')"
+depends=gdb
+short_desc="GNU Debugger for AVR"
+maintainer="Artur Sinila <opensource@logarithmus.dev>"
+license="GPL-3.0-or-later"
+homepage="https://www.gnu.org/software/gdb/"
+distfiles="${GNU_SITE}/${pkgname#avr-}/${pkgname#avr-}-${version}.tar.xz"
+checksum=360cd7ae79b776988e89d8f9a01c985d0b1fa21c767a4295e5f88cb49175c555
+python_version=3
+replaces="cross-avr-gdb>=0"
+
+if [ "${CROSS_BUILD}" ]; then
+	# Make python3.x detection work in cross builds
+	CFLAGS="-I${XBPS_CROSS_BASE}/${py3_inc}"
+	CXXFLAGS="-I${XBPS_CROSS_BASE}/${py3_inc}"
+fi
+CFLAGS+=" -fcommon"
+CXXFLAGS+=" -fcommon"
+# Package build options
+build_options="gdbserver static python"
+desc_option_gdbserver="Enable support for building GDB server"
+# By default, don't enable any of build options
+#build_options_default="gdbserver"
+# Both options cannot be enabled at the same time
+vopt_conflict gdbserver static
+
+post_extract() {
+	vsed -i 's,sgidefs.h,asm/sgidefs.h,' gdb/mips-linux-nat.c
+	mkdir -p build
+}
+
+do_configure() {
+	cd build
+	../configure ${configure_args/with-sysroot/with-build-sysroot} \
+		CFLAGS_FOR_BUILD="${CFLAGS_FOR_BUILD} -fcommon"
+	export gl_cv_func_gettimeofday_clobber=no
+	export gl_cv_func_working_strerror=yes
+	export gl_cv_func_strerror_0_works=yes
+}
+
+do_build() {
+	cd build
+	make ${makejobs} all
+}
+
+do_install() {
+	cd build
+	make DESTDIR=${DESTDIR} ${makejobs} install
+	# resolve conflicts with binutils
+	rm -rf ${DESTDIR}/usr/include ${DESTDIR}/usr/lib
+	rm -rf ${DESTDIR}/usr/lib64
+	for f in bfd configure standards; do
+		rm -f ${DESTDIR}/usr/share/info/${f}.info*
+	done
+}
+
+post_install() {
+	# resolve conflicts with binutils and native gdb
+	rm -fr usr/{share/{locale,gdb,info},include}
+}

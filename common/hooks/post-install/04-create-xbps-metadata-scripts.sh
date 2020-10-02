@@ -150,6 +150,12 @@ _EOF
 		_add_trigger hwdb.d-dir
 	fi
 	#
+	# Handle texmf database changes
+	#
+	if [ -d "${PKGDESTDIR}/usr/share/texmf-dist" ] ; then
+		_add_trigger texmf-dist
+	fi
+	#
 	# (Un)Register a shell in /etc/shells.
 	#
 	if [ -n "${register_shell}" ]; then

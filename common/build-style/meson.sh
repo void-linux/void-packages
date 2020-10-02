@@ -52,11 +52,13 @@ ld = '${LD}'
 strip = '${STRIP}'
 readelf = '${READELF}'
 objcopy = '${OBJCOPY}'
-pkgconfig = 'pkg-config'
+pkgconfig = '${PKG_CONFIG}'
 rust = 'rustc'
 g-ir-scanner = '${XBPS_CROSS_BASE}/usr/bin/g-ir-scanner'
 g-ir-compiler = '${XBPS_CROSS_BASE}/usr/bin/g-ir-compiler'
 g-ir-generate = '${XBPS_CROSS_BASE}/usr/bin/g-ir-generate'
+llvm-config = '/usr/bin/llvm-config'
+cups-config = '${XBPS_CROSS_BASE}/usr/bin/cups-config'
 
 [properties]
 needs_exe_wrapper = true
@@ -88,7 +90,6 @@ do_configure() {
 
 	if [ "$CROSS_BUILD" ]; then
 		configure_args+=" --cross-file=${meson_crossfile}"
-		export PKG_CONFIG_FOR_BUILD="/usr/bin/pkg-config"
 	fi
 
 	${meson_cmd} \
