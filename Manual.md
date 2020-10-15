@@ -243,13 +243,10 @@ Example: gimp-python, irssi-perl
 #### Programs
 
 Programs put executables under /usr/bin (or in very special cases in other
-.../bin directories)
+.../bin directories).
 
-For those packages the upstream packages name should be used. Remember that
-in contrast to many other distributions, void doesn't lowercase package names.
-As a rule of thumb, if the tar.gz of a package contains uppercase letter, then
-the package name should contain them too; if it doesn't, the package name
-is lowercase.
+For those packages either the upstream package's name or (in rare cases) the
+main binary's name should be used. Void only accepts lowercase package names.
 
 Programs can be split into program packages and library packages. The program
 package should be named as described above. The library package should be
