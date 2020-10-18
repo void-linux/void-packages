@@ -10,12 +10,15 @@ _gitshort="${_githash:0:7}"
 
 pkgname=rpi-kernel
 version=5.4.83
-revision=1
+revision=2
+build_style=meta
+archs="armv6l* armv7l* aarch64*"
 wrksrc="linux-${_githash}"
+hostmakedepends="perl kmod uboot-mkimage libressl-devel bc bison flex"
 maintainer="Piraty <piraty1@inbox.ru>"
 homepage="http://www.kernel.org"
 license="GPL-2.0-only"
-short_desc="The Linux kernel for Raspberry Pi (${version%.*} series [git ${_gitshort}])"
+short_desc="Linux kernel for Raspberry Pi - transitional dummy package"
 distfiles="https://github.com/raspberrypi/linux/archive/${_githash}.tar.gz"
 checksum=4a98ea0d68c6e74d479789c12fc97619c872cb2607ae87a881a9491c1c3fbc35
 python_version=2
@@ -27,13 +30,9 @@ nostrip=yes
 noverifyrdeps=yes
 noshlibprovides=yes
 
-# RPi, RPi2, RPi3
-archs="armv6l* armv7l* aarch64*"
-hostmakedepends="perl kmod uboot-mkimage libressl-devel bc bison flex"
-makedepends="ncurses-devel"
-triggers="kernel-hooks"
+_triggers="kernel-hooks"
 # These files could be modified when an external module is built.
-mutable_files="
+_mutable_files="
 	/usr/lib/modules/${_kernver}/modules.dep
 	/usr/lib/modules/${_kernver}/modules.dep.bin
 	/usr/lib/modules/${_kernver}/modules.symbols
@@ -52,36 +51,117 @@ if [ "$CROSS_BUILD" ]; then
 	_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
 fi
 
-pre_configure() {
-	# Remove .git directory, otherwise scripts/setkernelversion.sh
-	# modifies KERNELRELEASE and appends + to it.
-	rm -rf .git
+subpackages="rpi-kernel-headers"
+
+# handle all raspberry pi flavors
+case "$XBPS_TARGET_MACHINE" in
+	armv6*) _flavors=rpi1 ;;
+	armv7*) _flavors=rpi2 ;;
+	aarch64*) _flavors="rpi3 rpi4" ;;
+esac
+
+for _flavor in $_flavors; do
+	subpackages+=" ${_flavor}-kernel-headers ${_flavor}-kernel"
+done
+
+# support legacy installations (before rpi4 was added)
+# meta package depend on the flavor package so the kernel doesn't end up orphaned
+# !! don't drop before 2022-02 !!
+case "$XBPS_TARGET_MACHINE" in
+	armv6*) depends=rpi1-kernel ;;
+	armv7*) depends=rpi2-kernel ;;
+	aarch64*) depends=rpi3-kernel ;;
+esac
+
+_flavor_stage() {
+	stage="$1"
+
+	for _flavor in $_flavors ; do
+		msg_normal "$_flavor: $stage\n"
+		(
+		case "$stage" in
+			pre_configure)
+				# copy extraced sources to flavor specific dir
+				msg_normal "$_flavor: prepare build dir, please wait...\n"
+				cp -a "$wrksrc" "$wrksrc/../$_flavor"
+				;;
+			configure)
+				cd "$wrksrc/../$_flavor"
+				_configure $_flavor
+				;;
+			build)
+				cd "$wrksrc/../$_flavor"
+				_build
+				;;
+			install)
+				cd "$wrksrc/../$_flavor"
+				_install $_flavor
+				mv "$DESTDIR" "$DESTDIR/../$_flavor"
+				mkdir -p "$DESTDIR"
+				;;
+		esac
+		)
+	done
 }
+
+_flavor_subpkg_install_kernel() {
+	(
+		export DESTDIR="$DESTDIR/../$1"
+		vmove /boot
+		vmove /usr/lib
+	)
+}
+_flavor_subpkg_install_headers() {
+	(
+		export DESTDIR="$DESTDIR/../$1"
+		vmove usr/src
+		vmove usr/lib/modules/${_kernver}/build
+	)
+}
+
+
+pre_configure() {
+	_flavor_stage pre_configure
+}
+
 do_configure() {
+	_flavor_stage configure
+}
+
+do_build() {
+	_flavor_stage build
+}
+
+do_install() {
+	_flavor_stage install
+}
+
+_configure() {
+	local rpi_flavor="$1"
 	local target defconfig
 
 	# Use upstream's default configuration, no need to maintain ours.
-	case "$XBPS_TARGET_MACHINE" in
-		# RPi3
-		aarch64*)
-			target=bcmrpi3_defconfig
-			;;
-		# RPi2 / RPi3
-		armv7l*)
-			target=bcm2709_defconfig
-			;;
-		# RPi1
-		armv6l*)
+	case "$rpi_flavor" in
+		rpi1)
 			target=bcmrpi_defconfig
 			;;
+		rpi2)
+			target=bcm2709_defconfig
+			;;
+		rpi3)
+			target=bcmrpi3_defconfig
+			;;
+		rpi4)
+			target=bcm2711_defconfig
+			;;
 	esac
-
 	defconfig="arch/${_arch}/configs/${target}"
+
 	echo "CONFIG_CONNECTOR=y" >> "$defconfig"
 	echo "CONFIG_PROC_EVENTS=y" >> "$defconfig"
 	echo "CONFIG_F2FS_FS_SECURITY=y" >> "$defconfig"
 	echo "CONFIG_CGROUP_PIDS=y" >> "$defconfig"
-	
+
 	# IR Remote Support
 	echo "CONFIG_RC_CORE=y" >> "$defconfig"
 	echo "CONFIG_LIRC=y" >> "$defconfig"
@@ -101,7 +181,8 @@ do_configure() {
 	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
 	vsed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
 }
-do_build() {
+
+_build() {
 	local target
 
 	case "$XBPS_TARGET_MACHINE" in
@@ -116,11 +197,13 @@ do_build() {
 	make ${makejobs} ${_cross} ARCH=${_arch} prepare
 	make ${makejobs} ${_cross} ARCH=${_arch} ${target}
 }
-do_install() {
+
+_install() {
+	local rpi_flavor="$1"
 	local hdrdest
 
 	# Run depmod after compressing modules.
-	sed -i '2iexit 0' scripts/depmod.sh
+	vsed -i '2iexit 0' scripts/depmod.sh
 
 	# Install kernel, firmware and modules
 	make ${makejobs} ARCH=${_arch} INSTALL_MOD_PATH=${DESTDIR} modules_install
@@ -129,14 +212,18 @@ do_install() {
 	make ${makejobs} ARCH=${_arch} INSTALL_DTBS_PATH=${DESTDIR}/boot dtbs_install
 
 	# move dtb that ended up in /boot/broadcom
-	case "$XBPS_TARGET_MACHINE" in
-	aarch64*)
-		mv ${DESTDIR}/boot/broadcom/bcm{2710,2837}-*.dtb ${DESTDIR}/boot
-		;;
+	case "$rpi_flavor" in
+		rpi3)
+			mv ${DESTDIR}/boot/broadcom/bcm{2710,2837}-*.dtb ${DESTDIR}/boot
+			;;
+		rpi4)
+			mv ${DESTDIR}/boot/broadcom/bcm2711-*.dtb ${DESTDIR}/boot
+			;;
 	esac
+	rm -rf ${DESTDIR}/boot/broadcom
 
-	vmkdir boot
 	# Generate kernel.img and install it to destdir.
+	vmkdir boot
 	case "$XBPS_TARGET_MACHINE" in
 	aarch64*)
 		cp arch/arm64/boot/Image ${DESTDIR}/boot/kernel8.img
@@ -155,11 +242,12 @@ do_install() {
 	vmkdir usr
 	mv ${DESTDIR}/lib ${DESTDIR}/usr
 
+	(
 	cd ${DESTDIR}/usr/lib/modules/${_kernver}
 	rm -f source build
 	ln -sf ../../../src/${sourcepkg}-headers-${_kernver} build
+	)
 
-	cd ${wrksrc}
 	# Install required headers to build external modules
 	install -Dm644 Makefile ${hdrdest}/Makefile
 	install -Dm644 kernel/Makefile ${hdrdest}/kernel/Makefile
@@ -182,7 +270,6 @@ do_install() {
 		[ -d include/$i ] && cp -a include/$i ${hdrdest}/include
 	done
 
-	cd ${wrksrc}
 	# Remove helper binaries built for host,
 	# if generated files from the scripts/ directory need to be included,
 	# they need to be copied to ${hdrdest} before this step
@@ -241,20 +328,106 @@ do_install() {
 	cp -a arch/x86/ras/Kconfig ${hdrdest}/arch/x86/ras/Kconfig
 
 	# Compress all modules with xz to save a few MBs.
-	msg_normal "$pkgver: compressing kernel modules with gzip, please wait...\n"
+	msg_normal "$rpi_flavor: compressing kernel modules with gzip, please wait...\n"
 	find ${DESTDIR} -name '*.ko' | xargs -n1 -P0 gzip -9
 
 	# ... and run depmod again.
 	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
 }
 
+# legacy
 rpi-kernel-headers_package() {
+	short_desc="${short_desc/kernel/kernel headers}"
+	build_style=meta
+	case "$XBPS_TARGET_MACHINE" in
+		armv6*) depends=rpi1-kernel-headers ;;
+		armv7*) depends=rpi2-kernel-headers ;;
+		aarch64*) depends=rpi3-kernel-headers ;;
+	esac
+}
+
+rpi1-kernel_package() {
 	nostrip=yes
 	noverifyrdeps=yes
 	noshlibprovides=yes
-	short_desc="The Linux kernel headers for Raspberry Pi (${version%.*} series [git ${_gitshort}])"
+	triggers="$_triggers"
+	mutable_files="$_mutable_files"
+	short_desc="Linux kernel for Raspberry Pi zero / 1 (${version%.*} [git ${_gitshort}])"
 	pkg_install() {
-		vmove usr/src
-		vmove usr/lib/modules/${_kernver}/build
+		_flavor_subpkg_install_kernel rpi1
+	}
+}
+rpi1-kernel-headers_package() {
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	short_desc="Linux kernel headers for Raspberry Pi zero / 1 (${version%.*} [git ${_gitshort}])"
+	pkg_install() {
+		_flavor_subpkg_install_headers rpi1
+	}
+}
+
+rpi2-kernel_package() {
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	triggers="$_triggers"
+	mutable_files="$_mutable_files"
+	short_desc="Linux kernel for Raspberry Pi 2 (${version%.*} [git ${_gitshort}])"
+	pkg_install() {
+		_flavor_subpkg_install_kernel rpi2
+	}
+}
+rpi2-kernel-headers_package() {
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	short_desc="Linux kernel headers for Raspberry Pi 2 (${version%.*} [git ${_gitshort}])"
+	pkg_install() {
+		_flavor_subpkg_install_headers rpi2
+	}
+}
+
+rpi3-kernel_package() {
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	mutable_files="$_mutable_files"
+	triggers="$_triggers"
+	short_desc="Linux kernel for Raspberry Pi 3 (${version%.*} [git ${_gitshort}])"
+	pkg_install() {
+		_flavor_subpkg_install_kernel rpi3
+	}
+}
+rpi3-kernel-headers_package() {
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	short_desc="Linux kernel headers for Raspberry Pi 3 (${version%.*} [git ${_gitshort}])"
+	pkg_install() {
+		_flavor_subpkg_install_headers rpi3
+	}
+}
+
+rpi4-kernel_package() {
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	mutable_files="$_mutable_files"
+	triggers="$_triggers"
+	short_desc="Linux kernel for Raspberry Pi 4 (${version%.*} [git ${_gitshort}])"
+	conflicts="rpi3-kernel"
+	pkg_install() {
+		_flavor_subpkg_install_kernel rpi4
+	}
+}
+rpi4-kernel-headers_package() {
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	short_desc="Linux kernel headers for Raspberry Pi 4 (${version%.*} [git ${_gitshort}])"
+	conflicts="rpi3-kernel-headers"
+	pkg_install() {
+		_flavor_subpkg_install_headers rpi4
 	}
 }
