@@ -57,7 +57,8 @@ update_check() {
               *rubygems.org*|\
               *crates.io*|\
               *codeberg.org*|\
-              *hg.sr.ht*)
+              *hg.sr.ht*|\
+              *git.sr.ht*)
                 continue
                 ;;
             *)
@@ -144,6 +145,10 @@ update_check() {
             *hg.sr.ht*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://hg.sr.ht/$pkgurlname/tags"
+                rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
+            *git.sr.ht*)
+                pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
+                url="https://git.sr.ht/$pkgurlname/refs"
                 rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
             esac
         fi
