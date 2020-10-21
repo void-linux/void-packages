@@ -1,0 +1,126 @@
+From b6d4c5ddc594f720f4be3276c6196e7cd76fb121 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=C3=89rico=20Rolim?= <erico.erc@gmail.com>
+Date: Wed, 21 Oct 2020 18:52:51 -0300
+Subject: [PATCH] imv: don't rely on glibc's lack of FILE sync on exit.
+
+This issue was spotted on musl, where killing imv with the Q shortcut
+while it was waiting for image paths in stdin led to the application
+hanging until stdin received an EOF manually with ^D, since the stdin
+stream was locked by the fgets() function.
+
+Switching to pipes and a helper thread allows us to use read() for
+reading from STDIN_FILENO while still taking advantage of the fgets()
+logic for handling newlines and buffer size. read() is a thread
+cancellation point (fgets() is only an optional one), which makes it
+possible to cancel the helper thread cleanly and force the thread using
+fgets() to exit when the write-end of the pipe it's reading from is
+closed.
+---
+ src/imv.c | 57 +++++++++++++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 55 insertions(+), 2 deletions(-)
+
+diff --git a/src/imv.c b/src/imv.c
+index 100fac3..b1e287b 100644
+--- src/imv.c
++++ src/imv.c
+@@ -129,6 +129,9 @@ struct imv {
+   /* read paths from stdin, as opposed to image data */
+   bool paths_from_stdin;
+ 
++  /* FILE to use when reading paths from stdin */
++  FILE *stdin_pipe;
++
+   /* scale up / down images to match window, or actual size */
+   enum scaling_mode scaling_mode;
+ 
+@@ -658,6 +661,10 @@ void imv_free(struct imv *imv)
+ 
+   list_free(imv->startup_commands);
+ 
++  if (imv->stdin_pipe) {
++    fclose(imv->stdin_pipe);
++  }
++
+   free(imv);
+ }
+ 
+@@ -736,6 +743,24 @@ static bool parse_initial_pan(struct imv *imv, const char *pan_params)
+   return true;
+ }
+ 
++static void *pipe_stdin(void *data)
++{
++  int *fd = data;
++  while (1) {
++    char buf[PIPE_BUF];
++    ssize_t err = read(STDIN_FILENO, buf, PIPE_BUF);
++    if (err > 0) {
++      /* writes up to PIPE_BUF are atomic */
++      write(*fd, buf, err);
++    } else if (err == 0 || errno != EINTR) {
++      /* break if EOF or actual read error */
++      break;
++    }
++  }
++
++  return NULL;
++}
++
+ static void *load_paths_from_stdin(void *data)
+ {
+   struct imv *imv = data;
+@@ -743,7 +768,7 @@ static void *load_paths_from_stdin(void *data)
+   imv_log(IMV_INFO, "Reading paths from stdin...");
+ 
+   char buf[PATH_MAX];
+-  while (fgets(buf, sizeof(buf), stdin) != NULL) {
++  while (fgets(buf, sizeof(buf), imv->stdin_pipe) != NULL) {
+     size_t len = strlen(buf);
+     if (buf[len-1] == '\n') {
+       buf[--len] = 0;
+@@ -892,9 +917,27 @@ int imv_run(struct imv *imv)
+ 
+   /* if loading paths from stdin, kick off a thread to do that - we'll receive
+    * events back via internal events */
++  int *stdin_pipe_fds = NULL;
++  pthread_t pipe_stdin_thread;
+   if (imv->paths_from_stdin) {
++    /* this array is allocated on the heap because it's passed to pthread_create */
++    stdin_pipe_fds = calloc(2, sizeof *stdin_pipe_fds);
++
++    if (pipe(stdin_pipe_fds)) {
++      /* if pipe creation fails, we should exit */
++      free(stdin_pipe_fds);
++      return 1;
++    }
++
++    imv->stdin_pipe = fdopen(stdin_pipe_fds[0], "re");
++
+     pthread_t thread;
+-    pthread_create(&thread, NULL, load_paths_from_stdin, imv);
++    if (pthread_create(&thread, NULL, load_paths_from_stdin, imv)
++        || pthread_create(&pipe_stdin_thread, NULL, pipe_stdin, stdin_pipe_fds + 1)) {
++      return 1;
++    }
++
++    /* we don't need to join this thread */
+     pthread_detach(thread);
+   }
+ 
+@@ -1100,6 +1143,16 @@ int imv_run(struct imv *imv)
+       puts(imv_navigator_at(imv->navigator, i));
+   }
+ 
++  if (imv->paths_from_stdin) {
++    /* stop the thread before closing the pipe */
++    pthread_cancel(pipe_stdin_thread);
++    pthread_join(pipe_stdin_thread, NULL);
++
++    /* will cause the thread running load_paths_from_stdin() to exit */
++    close(stdin_pipe_fds[1]);
++    free(stdin_pipe_fds);
++  }
++
+   return 0;
+ }
+ 
