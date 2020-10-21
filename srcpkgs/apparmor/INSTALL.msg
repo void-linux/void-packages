@@ -1,2 +1,1 @@
-To ensure AppArmor is enabled upon reboot add 'apparmor=1 security=apparmor' to your grub CMDLINE and rebuild your grub config with 'grub-mkconfig -o /boot/grub/grub.cfg'.
-You'll also need to swith 'APPARMOR' setting in /etc/default/apparmor to your taste.
+To configure AppArmor properly, please refer to the Void Linux Handbook: https://docs.voidlinux.org/config/security/apparmor.html

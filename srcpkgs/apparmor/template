@@ -1,7 +1,7 @@
 # Template file for 'apparmor'
 pkgname=apparmor
-version=2.13.4
-revision=6
+version=3.0.0
+revision=1
 wrksrc="${pkgname}-v${version}"
 build_wrksrc=libraries/libapparmor
 build_style=gnu-configure
@@ -16,22 +16,12 @@ maintainer="Olivier Mauras <olivier@mauras.ch>"
 license="GPL-2.0-only, LGPL-2.1-only"
 homepage="https://gitlab.com/apparmor/apparmor"
 distfiles="https://gitlab.com/apparmor/apparmor/-/archive/v${version}/apparmor-v${version}.tar.gz"
-checksum=4f45e5a5de59b72039c6cf218bb61cb4fc42eeb7f47ca109a58238896394a33b
+checksum=8c440ab1848e723483a8550ed2889e18f322e9d7ee9eb4e2e712152ea61da68f
 patch_args="-Np1"
 
 if [ -z "$CROSS_BUILD" ]; then
 	configure_args="--with-perl --with-python"
 fi
-
-post_patch() {
-	# Make.rules feeds some system headers to the C preprocessor to produce
-	# lists of capability and address-family names that, respectively,
-	# populate 'parser/cap_names.h' and 'parser/af_names.h'. The escaping
-	# backslash in the '\#include" directives here is seen by the
-	# preprocessor, causing it to skip the system headers and produce empty
-	# files. Removing the backslash ensures correct behavior.
-	vsed -i ${wrksrc}/common/Make.rules -e 's/\\#include </#include </'
-}
 
 pre_configure() {
 	autoreconf -if
@@ -40,14 +30,18 @@ pre_configure() {
 pre_build() {
 	# Replace release profiles with our own
 	cd ${wrksrc}
-
-	# Put in place our own profiles
 	cp ${FILESDIR}/profiles/* profiles/apparmor.d/
+
+	# use the correct syslog path
+	vsed -i utils/logprof.conf -e 's,logfiles = .*,logfiles = /var/log/socklog/kernel/current,'
 }
 
 post_build() {
 	cd ${wrksrc}
-	sed -i 's#$(DESTDIR)/sbin#$(DESTDIR)/usr/bin#g' parser/Makefile
+
+	# fix cross compilation
+	vsed -i parser/Makefile -e 's,cpp,$(CPP),'
+
 	make ${makejobs} -C binutils
 	make ${makejobs} -C utils
 	make ${makejobs} -C parser
@@ -56,27 +50,31 @@ post_build() {
 
 post_install() {
 	cd ${wrksrc}
-	make DESTDIR=${DESTDIR} install -C binutils
-	make DESTDIR=${DESTDIR} BINDIR=${DESTDIR}/usr/bin install -C utils
-	make DESTDIR=${DESTDIR} APPARMOR_BIN_PREFIX=${DESTDIR}/usr/lib/apparmor \
-		SBINDIR=${DESTDIR}/usr/bin USR_SBINDIR=${DESTDIR}/usr/bin install -C parser
-	make DESTDIR=${DESTDIR} install -C profiles
-
-	# Put Vim syntax in the correct place
-	mkdir -p ${DESTDIR}/usr/share/vim/vim80/syntax/
-	mv ${DESTDIR}/usr/share/apparmor/apparmor.vim ${DESTDIR}/usr/share/vim/vim80/syntax/
+	commonflags="DESTDIR=\"${DESTDIR}\" SBINDIR=\"${DESTDIR}/usr/bin\" USR_SBINDIR=\"${DESTDIR}/usr/bin\""
+	make $commonflags install -C binutils
+	make $commonflags \
+		BINDIR="${DESTDIR}/usr/bin" \
+		VIM_INSTALL_PATH="${DESTDIR}/usr/share/vim/vimfiles/syntax" \
+		install -C utils
+	make $commonflags \
+		APPARMOR_BIN_PREFIX="${DESTDIR}/usr/lib/apparmor" \
+		install -C parser
+	make DESTDIR="${DESTDIR}" install -C profiles
 
 	# requires perl bindings not generated when cross-compiling
 	if [ "$CROSS_BUILD" ]; then
 		rm -f ${DESTDIR}/usr/bin/aa-notify
 	fi
+
+	# we installed a custom conflicting profile
+	rm ${DESTDIR}/etc/apparmor.d/{,local/}php-fpm
 }
 
 apparmor-vim_package() {
 	short_desc+=" - Vim syntax"
 	depends="vim"
 	pkg_install() {
-		vmove usr/share/vim/vim80/syntax/apparmor.vim
+		vmove usr/share/vim/vimfiles/syntax/apparmor.vim
 		vmove usr/share/man/man5/apparmor.vim.5
 	}
 }
