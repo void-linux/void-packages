@@ -107,7 +107,7 @@ do_configure() {
 		--localstatedir=/var \
 		--sharedstatedir=/var/lib \
 		--buildtype=plain \
-		--auto-features=enabled \
+		--auto-features=auto \
 		--wrap-mode=nodownload \
 		-Db_lto=true -Db_ndebug=true \
 		-Db_staticpic=true \
