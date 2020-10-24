@@ -141,16 +141,16 @@ diff --git a/src/bootstrap/config.rs b/src/bootstrap/config.rs
 index 56164b74..8c46334a 100644
 --- a/src/bootstrap/config.rs
 +++ b/src/bootstrap/config.rs
-@@ -135,8 +135,6 @@
+@@ -154,8 +154,6 @@
      pub print_step_timings: bool,
      pub missing_tools: bool,
- 
+
 -    // Fallback musl-root for all targets
 -    pub musl_root: Option<PathBuf>,
      pub prefix: Option<PathBuf>,
      pub sysconfdir: Option<PathBuf>,
      pub datadir: Option<PathBuf>,
-@@ -172,8 +170,6 @@
+@@ -252,8 +250,6 @@
      pub linker: Option<PathBuf>,
      pub ndk: Option<PathBuf>,
      pub crt_static: Option<bool>,
@@ -159,7 +159,7 @@ index 56164b74..8c46334a 100644
      pub wasi_root: Option<PathBuf>,
      pub qemu_rootfs: Option<PathBuf>,
      pub no_std: bool,
-@@ -327,7 +323,6 @@
+@@ -438,7 +434,6 @@
      parallel_compiler: Option<bool>,
      default_linker: Option<String>,
      channel: Option<String>,
@@ -167,7 +167,7 @@ index 56164b74..8c46334a 100644
      rpath: Option<bool>,
      verbose_tests: Option<bool>,
      optimize_tests: Option<bool>,
-@@ -363,8 +358,6 @@
+@@ -475,8 +470,6 @@
      llvm_filecheck: Option<String>,
      android_ndk: Option<String>,
      crt_static: Option<bool>,
@@ -176,23 +176,23 @@ index 56164b74..8c46334a 100644
      wasi_root: Option<String>,
      qemu_rootfs: Option<String>,
      no_std: Option<bool>,
-@@ -592,7 +585,6 @@
+@@ -806,7 +799,6 @@
              set(&mut config.llvm_tools_enabled, rust.llvm_tools);
              config.rustc_parallel = rust.parallel_compiler.unwrap_or(false);
-             config.rustc_default_linker = rust.default_linker.clone();
--            config.musl_root = rust.musl_root.clone().map(PathBuf::from);
-             config.save_toolstates = rust.save_toolstates.clone().map(PathBuf::from);
+             config.rustc_default_linker = rust.default_linker;
+-            config.musl_root = rust.musl_root.map(PathBuf::from);
+             config.save_toolstates = rust.save_toolstates.map(PathBuf::from);
              set(&mut config.deny_warnings, flags.deny_warnings.or(rust.deny_warnings));
              set(&mut config.backtrace_on_ice, rust.backtrace_on_ice);
-@@ -632,8 +624,6 @@
-                 target.ranlib = cfg.ranlib.clone().map(PathBuf::from);
-                 target.linker = cfg.linker.clone().map(PathBuf::from);
+@@ -846,8 +838,6 @@
+                 target.ranlib = cfg.ranlib.map(PathBuf::from);
+                 target.linker = cfg.linker.map(PathBuf::from);
                  target.crt_static = cfg.crt_static;
--                target.musl_root = cfg.musl_root.clone().map(PathBuf::from);
--                target.musl_libdir = cfg.musl_libdir.clone().map(PathBuf::from);
-                 target.wasi_root = cfg.wasi_root.clone().map(PathBuf::from);
-                 target.qemu_rootfs = cfg.qemu_rootfs.clone().map(PathBuf::from);
- 
+-                target.musl_root = cfg.musl_root.map(PathBuf::from);
+-                target.musl_libdir = cfg.musl_libdir.map(PathBuf::from);
+                 target.wasi_root = cfg.wasi_root.map(PathBuf::from);
+                 target.qemu_rootfs = cfg.qemu_rootfs.map(PathBuf::from);
+
 diff --git a/src/bootstrap/configure.py b/src/bootstrap/configure.py
 index 2a46c563..025928b9 100755
 --- a/src/bootstrap/configure.py
@@ -232,16 +232,14 @@ index 2a46c563..025928b9 100755
  v("qemu-armhf-rootfs", "target.arm-unknown-linux-gnueabihf.qemu-rootfs",
    "rootfs in qemu testing, you probably don't want to use this")
  v("qemu-aarch64-rootfs", "target.aarch64-unknown-linux-gnu.qemu-rootfs",
-diff --git a/src/bootstrap/lib.rs b/src/bootstrap/lib.rs
-index c7e63990..77bbb2cd 100644
 --- a/src/bootstrap/lib.rs
 +++ b/src/bootstrap/lib.rs
-@@ -881,25 +882,6 @@
+@@ -876,25 +876,6 @@
          }
      }
  
 -    /// Returns the "musl root" for this `target`, if defined
--    fn musl_root(&self, target: Interned<String>) -> Option<&Path> {
+-    fn musl_root(&self, target: TargetSelection) -> Option<&Path> {
 -        self.config
 -            .target_config
 -            .get(&target)
@@ -251,7 +249,7 @@ index c7e63990..77bbb2cd 100644
 -    }
 -
 -    /// Returns the "musl libdir" for this `target`.
--    fn musl_libdir(&self, target: Interned<String>) -> Option<PathBuf> {
+-    fn musl_libdir(&self, target: TargetSelection) -> Option<PathBuf> {
 -        let t = self.config.target_config.get(&target)?;
 -        if let libdir @ Some(_) = &t.musl_libdir {
 -            return libdir.clone();
@@ -260,7 +258,7 @@ index c7e63990..77bbb2cd 100644
 -    }
 -
      /// Returns the sysroot for the wasi target, if defined
-     fn wasi_root(&self, target: Interned<String>) -> Option<&Path> {
+     fn wasi_root(&self, target: TargetSelection) -> Option<&Path> {
          self.config.target_config.get(&target).and_then(|t| t.wasi_root.as_ref()).map(|p| &**p)
 diff --git a/src/bootstrap/sanity.rs b/src/bootstrap/sanity.rs
 index 530e74da..8ec9f046 100644
@@ -297,8 +295,8 @@ index 530e74da..8ec9f046 100644
              // Cygwin. The Cygwin build does not have generators for Visual
 diff --git a/src/librustc_target/spec/linux_musl_base.rs b/src/librustc_target/spec/linux_musl_base.rs
 index e294e639..58ae91a9 100644
---- a/src/librustc_target/spec/linux_musl_base.rs
-+++ b/src/librustc_target/spec/linux_musl_base.rs
+--- a/compiler/rustc_target/src/spec/linux_musl_base.rs
++++ b/compiler/rustc_target/src/spec/linux_musl_base.rs
 @@ -10,10 +10,6 @@
      // argument is *not* necessary for normal builds, but it can't hurt!
      base.pre_link_args.get_mut(&LinkerFlavor::Gcc).unwrap().push("-Wl,--eh-frame-hdr".to_string());
@@ -310,8 +308,8 @@ index e294e639..58ae91a9 100644
      // These targets statically link libc by default
      base.crt_static_default = true;
      // These targets allow the user to choose between static and dynamic linking.
---- a/src/librustc_target/spec/crt_objects.rs.orig	2020-08-07 01:01:58.142394507 +0200
-+++ b/src/librustc_target/spec/crt_objects.rs	2020-08-07 01:02:25.030392771 +0200
+--- a/compiler/rustc_target/src/spec/crt_objects.rs.orig	2020-08-07 01:01:58.142394507 +0200
++++ b/compiler/rustc_target/src/spec/crt_objects.rs	2020-08-07 01:02:25.030392771 +0200
 @@ -61,21 +61,6 @@
      ])
  }
