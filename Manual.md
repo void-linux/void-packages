@@ -8,7 +8,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 * [Introduction](#Introduction)
 	* [Quality Requirements](#quality_requirements)
 	* [Package build phases](#buildphase)
-	* [Package naming conventions](#namingconvention)
+	* [Package naming conventions](#namingconventions)
 		* [Libraries](#libs)
 		* [Language Modules](#language_modules)
 		* [Language Bindings](#language_bindings)
