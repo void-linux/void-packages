@@ -6,7 +6,21 @@ do_configure() {
 	[ ! -d ${cmake_builddir:=build} ] && mkdir -p ${cmake_builddir}
 	cd ${cmake_builddir}
 
-	if [ "$CROSS_BUILD" ]; then
+	if [ -z "$CHROOT_READY" ]; then
+		cat >bootstrap.cmake <<_EOF
+SET(CMAKE_SYSTEM_NAME Linux)
+SET(CMAKE_SYSTEM_VERSION 1)
+
+SET(CMAKE_C_COMPILER   ${CC})
+SET(CMAKE_CXX_COMPILER ${CXX})
+
+SET(CMAKE_FIND_ROOT_PATH  ${XBPS_MASTERDIR})
+
+SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+_EOF
+		configure_args+=" -DCMAKE_TOOLCHAIN_FILE=bootstrap.cmake"
+	elif [ "$CROSS_BUILD" ]; then
 		case "$XBPS_TARGET_MACHINE" in
 			x86_64*) _CMAKE_SYSTEM_PROCESSOR=x86_64 ;;
 			i686*) _CMAKE_SYSTEM_PROCESSOR=x86 ;;
