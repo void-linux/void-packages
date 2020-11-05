@@ -49,7 +49,7 @@ Once you have built your template file or files, the commit message should have 
 If you want to describe your changes in more detail, add an empty line followed by those details ([example](https://github.com/void-linux/void-packages/commit/f1c45a502086ba1952f23ace9084a870ce437bc6)).
 
 Pull requests are automatically submitted for Continuous Integration (CI) testing to ensure packages build on various combinations of libc and architecture.
-Packages that take longer than 50 minutes to build (for example, Firefox or the Linux kernel) will fail CI and should include `[ci skip]` in the last line of the last commit message in the PR to avoid wasting CI builder time.
+Packages that take longer than 120 minutes or need more than 14G of storage to complete their build (for example, Firefox or the Linux kernel) will fail CI and should include `[ci skip]` in the PR title or body (the comment field when the PR is being opened) to avoid wasting CI builder time.
 Use your best judgment on build times based on your local building experience. If you skip CI when submitting a PR, please build and cross-build for a variety of architectures locally, with both glibc and musl, and note your local results in PR comments.
 Make sure to cover 64-bit and 32-bit architectures.
 
