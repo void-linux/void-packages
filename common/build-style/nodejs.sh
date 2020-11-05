@@ -3,6 +3,7 @@
 #
 
 do_configure() {
+    : ${NODE_ENV:=production}
     if [ -f "yarn.lock" ]; then
         : ${nodejs_packager:=yarn}
     else
@@ -13,6 +14,7 @@ do_configure() {
 }
 
 do_build() {
+    : ${NODE_ENV:=production}
     if [ -f "yarn.lock" ]; then
         : ${nodejs_packager:=yarn}
     else
@@ -24,7 +26,9 @@ do_build() {
     $nodejs_packager run $nodejs_build_script
 }
 
+# it's really likely that it won't suit anybody's needs but whatever
 do_install() {
+    : ${NODE_ENV:=production}
     if [ -f "yarn.lock" ]; then
         : ${nodejs_packager:=yarn}
     else
