@@ -7,7 +7,7 @@ do_build() {
 	if [ -z "$make_use_env" ]; then
 		${make_cmd} \
 			CC="$CC" CXX="$CXX" LD="$LD" AR="$AR" RANLIB="$RANLIB" \
-			CPP="$CPP" AS="$AS" OBJDUMP="$OBJDUMP" \
+			CPP="$CPP" AS="$AS" OBJCOPY="$OBJCOPY" OBJDUMP="$OBJDUMP" \
 			CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
 			${makejobs} ${make_build_args} ${make_build_target}
 	else
