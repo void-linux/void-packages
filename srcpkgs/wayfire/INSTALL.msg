@@ -1,5 +1,6 @@
-Before running Wayfire, copy the default configuration file to your user:
+Setting the SUID bit after install has been retired for all Wayland
+compositors. It is recommended that users use a session management daemon
+such as elogind or seatd and do not rely on compositors dropping privileges.
 
-  cp /usr/share/examples/wayfire/wayfire.ini ~/.config/wayfire.ini
-
-You also probably want to install elogind, then restart your computer
+All users who require this functionality will need to set the SUID bit manually
+after each update going forward.
