@@ -1267,7 +1267,7 @@ The following variables can be used for this purpose:
 
 - `system_groups` This specifies the names of the new *system groups* to be created, separated
 by blanks. Optionally the **gid** can be specified by delimiting it with a
-colon, i.e `system_groups="mygroup:78"` or `system_groups="foo blah:8000"`.
+colon, i.e `system_groups="_mygroup:78"` or `system_groups="_foo _blah:8000"`.
 
 - `system_accounts` This specifies the names of the new **system users/groups** to be created,
 separated by blanks, i.e `system_accounts="_foo _blah:22"`. Optionally the **uid** and **gid**
@@ -1284,7 +1284,7 @@ The **system user** is created by using a dynamically allocated **uid/gid** in y
 and it's created as a `system account`, unless the **uid** is set. A new group will be created for the
 specified `system account` and used exclusively for this purpose.
 
-System accounts must be prefixed with an underscore to prevent clashing with names of user
+System accounts and groups must be prefixed with an underscore to prevent clashing with names of user
 accounts.
 
 > NOTE: The underscore policy does not apply to old packages, due to the inevitable breakage of
