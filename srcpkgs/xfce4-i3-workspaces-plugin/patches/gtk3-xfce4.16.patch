@@ -1,0 +1,296 @@
+Taken from: https://github.com/denesb/xfce4-i3-workspaces-plugin/pull/63
+
+diff --git configure.ac.in configure.ac.in
+index 4415bad..7932c16 100644
+--- configure.ac.in
++++ configure.ac.in
+@@ -76,10 +76,8 @@ XDT_CHECK_LIBX11_REQUIRE()
+ dnl ***********************************
+ dnl *** Check for required packages ***
+ dnl ***********************************
+-XDT_CHECK_PACKAGE([GTK], [gtk+-2.0], [2.20.0])
+-XDT_CHECK_PACKAGE([LIBXFCE4UI], [libxfce4ui-1], [4.8.0])
+-XDT_CHECK_PACKAGE([LIBXFCE4UTIL], [libxfce4util-1.0], [4.8.0])
+-XDT_CHECK_PACKAGE([LIBXFCE4PANEL], [libxfce4panel-1.0], [4.8.0])
++XDT_CHECK_PACKAGE([LIBXFCE4UI], [libxfce4ui-2], [4.12.0])
++XDT_CHECK_PACKAGE([LIBXFCE4PANEL], [libxfce4panel-2.0], [4.12.0])
+ XDT_CHECK_PACKAGE([LIBI3IPCGLIB], [i3ipc-glib-1.0], [0.5])
+ 
+ dnl ***********************************
+diff --git panel-plugin/i3-workspaces.desktop.in panel-plugin/i3-workspaces.desktop.in
+index 45e20db..a6f2faf 100644
+--- panel-plugin/i3-workspaces.desktop.in
++++ panel-plugin/i3-workspaces.desktop.in
+@@ -6,3 +6,4 @@ _Comment=Workspaces plugin for managing i3 window manager workspaces
+ X-XFCE-Module=i3workspaces
+ X-XFCE-Internal=false
+ X-XFCE-Unique=false
++X-XFCE-API=2.0
+diff --git panel-plugin/i3w-config.c panel-plugin/i3w-config.c
+index 6275640..f37db4a 100644
+--- panel-plugin/i3w-config.c
++++ panel-plugin/i3w-config.c
+@@ -58,14 +58,14 @@ config_dialog_closed(GtkWidget *dialog, int response, ConfigDialogClosedParam *p
+ /* Function Implementations */
+ 
+ guint32
+-serialize_gdkcolor(GdkColor *gdkcolor)
++serialize_gdkrgba(GdkRGBA *gdkrgba)
+ {
+     guint32 color = 0;
+ 
+-    // truncate the GdkColor components to 8 bit
+-    guint16 red_component = gdkcolor->red >> 8;
+-    guint16 green_component = gdkcolor->green >> 8;
+-    guint16 blue_component = gdkcolor->blue >> 8;
++    // convert the GdkRGBA components to 8 bit ints
++    guint8 red_component = gdkrgba->red * 255;
++    guint8 green_component = gdkrgba->green * 255;
++    guint8 blue_component = gdkrgba->blue * 255;
+ 
+     // shift and add the color components
+     color += ((guint32) red_component) << 16;
+@@ -75,22 +75,23 @@ serialize_gdkcolor(GdkColor *gdkcolor)
+     return color;
+ }
+ 
+-GdkColor *
+-unserialize_gdkcolor(guint32 color)
++GdkRGBA *
++unserialize_gdkrgba(guint32 color)
+ {
+-    GdkColor *gdkcolor = g_new0(GdkColor, 1);
++    GdkRGBA *gdkrgba = g_new0(GdkRGBA, 1);
+ 
+     // Mask and shift the color components
+-    guint16 red_component = (guint16) ((color & 0xff0000) >> 16);
+-    guint16 green_component = (guint16) ((color & 0x00ff00) >> 8);
+-    guint16 blue_component = (guint16) ((color & 0x0000ff));
++    guint8 red_component = (color & 0xff0000) >> 16;
++    guint8 green_component = (color & 0x00ff00) >> 8;
++    guint8 blue_component = (color & 0x0000ff);
+ 
+-    // expand the GdkColor components to 16 bit
+-    gdkcolor->red = red_component << 8;
+-    gdkcolor->green = green_component << 8;
+-    gdkcolor->blue = blue_component << 8;
++    // convert back to floats in range 0.0 to 1.0
++    gdkrgba->red = red_component / 255.0;
++    gdkrgba->green = green_component / 255.0;
++    gdkrgba->blue = blue_component / 255.0;
++    gdkrgba->alpha = 1.0;
+ 
+-    return gdkcolor;
++    return gdkrgba;
+ }
+ 
+ i3WorkspacesConfig *
+@@ -162,15 +163,14 @@ void add_color_picker(i3WorkspacesConfig *config, GtkWidget *dialog_vbox, char *
+     GtkWidget *hbox, *button, *label;
+ 
+     /* focused color */
+-    hbox = gtk_hbox_new(FALSE, 3);
++    hbox = gtk_box_new(FALSE, 3);
+     gtk_container_add(GTK_CONTAINER(dialog_vbox), hbox);
+     gtk_container_set_border_width(GTK_CONTAINER(hbox), 3);
+ 
+     label = gtk_label_new(_(text));
+     gtk_box_pack_start(GTK_BOX(hbox), label, FALSE, FALSE, 0);
+ 
+-    button = gtk_color_button_new_with_color(unserialize_gdkcolor(
+-                color));
++    button = gtk_color_button_new_with_rgba(unserialize_gdkrgba(color));
+     gtk_box_pack_start(GTK_BOX(hbox), button, FALSE, FALSE, 0);
+     g_signal_connect(G_OBJECT(button), "color-set", G_CALLBACK(callback), config);
+ }
+@@ -179,29 +179,33 @@ void
+ i3_workspaces_config_show(i3WorkspacesConfig *config, XfcePanelPlugin *plugin,
+         ConfigChangedCallback cb, gpointer cb_data)
+ {
+-    GtkWidget *dialog, *dialog_vbox, *hbox, *button, *label;
++    GtkWidget *dialog, *dialog_content, *hbox, *button, *label;
+ 
+     xfce_panel_plugin_block_menu(plugin);
+ 
+-    dialog = xfce_titled_dialog_new_with_buttons(_("i3 Workspaces Plugin"),
+-        NULL, GTK_DIALOG_NO_SEPARATOR, GTK_STOCK_CLOSE, GTK_RESPONSE_OK, NULL);
++    dialog = xfce_titled_dialog_new_with_mixed_buttons(_("i3 Workspaces Plugin"),
++      GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(plugin))),
++      GTK_DIALOG_DESTROY_WITH_PARENT,
++      "window-close", "_Close",
++      GTK_RESPONSE_OK,
++      NULL);
+     xfce_titled_dialog_set_subtitle(XFCE_TITLED_DIALOG(dialog), _("Configuration"));
+ 
+     gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
+     gtk_window_set_keep_above(GTK_WINDOW(dialog), TRUE);
+     gtk_window_stick(GTK_WINDOW(dialog));
+ 
+-    dialog_vbox = GTK_DIALOG(dialog)->vbox;
++    dialog_content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+ 
+-    add_color_picker(config, dialog_vbox, "Normal Workspace Color:", config->normal_color, normal_color_changed);
+-    add_color_picker(config, dialog_vbox, "Focused Workspace Color:", config->focused_color, focused_color_changed);
+-    add_color_picker(config, dialog_vbox, "Urgent Workspace Color:", config->urgent_color, urgent_color_changed);
+-    add_color_picker(config, dialog_vbox, "Unfocused Visible Workspace Color:", config->visible_color, visible_color_changed);
+-    add_color_picker(config, dialog_vbox, "Binding Mode Color:", config->mode_color, mode_color_changed);
++    add_color_picker(config, dialog_content, "Normal Workspace Color:", config->normal_color, normal_color_changed);
++    add_color_picker(config, dialog_content, "Focused Workspace Color:", config->focused_color, focused_color_changed);
++    add_color_picker(config, dialog_content, "Urgent Workspace Color:", config->urgent_color, urgent_color_changed);
++    add_color_picker(config, dialog_content, "Unfocused Visible Workspace Color:", config->visible_color, visible_color_changed);
++    add_color_picker(config, dialog_content, "Binding Mode Color:", config->mode_color, mode_color_changed);
+ 
+     /* strip workspace numbers */
+-    hbox = gtk_hbox_new(FALSE, 3);
+-    gtk_container_add(GTK_CONTAINER(dialog_vbox), hbox);
++    hbox = gtk_box_new(FALSE, 3);
++    gtk_container_add(GTK_CONTAINER(dialog_content), hbox);
+     gtk_container_set_border_width(GTK_CONTAINER(hbox), 3);
+ 
+     button = gtk_check_button_new_with_mnemonic(_("Strip Workspace Numbers"));
+@@ -210,8 +214,8 @@ i3_workspaces_config_show(i3WorkspacesConfig *config, XfcePanelPlugin *plugin,
+     g_signal_connect(G_OBJECT(button), "toggled", G_CALLBACK(strip_workspace_numbers_changed), config);
+ 
+     /* auto detect output */
+-    hbox = gtk_hbox_new(FALSE, 3);
+-    gtk_container_add(GTK_CONTAINER(dialog_vbox), hbox);
++    hbox = gtk_box_new(FALSE, 3);
++    gtk_container_add(GTK_CONTAINER(dialog_content), hbox);
+     gtk_container_set_border_width(GTK_CONTAINER(hbox), 3);
+ 
+     button = gtk_check_button_new_with_mnemonic(_("Auto detect outputs"));
+@@ -220,8 +224,8 @@ i3_workspaces_config_show(i3WorkspacesConfig *config, XfcePanelPlugin *plugin,
+     g_signal_connect(G_OBJECT(button), "toggled", G_CALLBACK(auto_detect_outputs_changed), config);
+ 
+     /* output */
+-    hbox = gtk_hbox_new(FALSE, 3);
+-    gtk_container_add(GTK_CONTAINER(dialog_vbox), hbox);
++    hbox = gtk_box_new(FALSE, 3);
++    gtk_container_add(GTK_CONTAINER(dialog_content), hbox);
+     gtk_container_set_border_width(GTK_CONTAINER(hbox), 3);
+ 
+     label = gtk_label_new(_("Output:"));
+@@ -265,42 +269,42 @@ output_changed(GtkWidget *entry, i3WorkspacesConfig *config)
+ void
+ normal_color_changed(GtkWidget *button, i3WorkspacesConfig *config)
+ {
+-    GdkColor color;
+-    gtk_color_button_get_color(GTK_COLOR_BUTTON(button), &color);
+-    config->normal_color = serialize_gdkcolor(&color);
++    GdkRGBA color;
++    gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(button), &color);
++    config->normal_color = serialize_gdkrgba(&color);
+ }
+ 
+ void
+ focused_color_changed(GtkWidget *button, i3WorkspacesConfig *config)
+ {
+-    GdkColor color;
+-    gtk_color_button_get_color(GTK_COLOR_BUTTON(button), &color);
+-    config->focused_color = serialize_gdkcolor(&color);
++    GdkRGBA color;
++    gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(button), &color);
++    config->focused_color = serialize_gdkrgba(&color);
+ }
+ 
+ void
+ urgent_color_changed(GtkWidget *button, i3WorkspacesConfig *config)
+ {
+-    GdkColor color;
+-    gtk_color_button_get_color(GTK_COLOR_BUTTON(button), &color);
+-    config->urgent_color = serialize_gdkcolor(&color);
++    GdkRGBA color;
++    gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(button), &color);
++    config->urgent_color = serialize_gdkrgba(&color);
+ }
+ 
+ void
+ visible_color_changed(GtkWidget *button, i3WorkspacesConfig *config)
+ {
+-    GdkColor color;
+-    gtk_color_button_get_color(GTK_COLOR_BUTTON(button), &color);
+-    config->visible_color = serialize_gdkcolor(&color);
++    GdkRGBA color;
++    gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(button), &color);
++    config->visible_color = serialize_gdkrgba(&color);
+ }
+ 
+ void
+ 
+ mode_color_changed(GtkWidget *button, i3WorkspacesConfig *config)
+ {
+-    GdkColor color;
+-    gtk_color_button_get_color(GTK_COLOR_BUTTON(button), &color);
+-    config->mode_color = serialize_gdkcolor(&color);
++    GdkRGBA color;
++    gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(button), &color);
++    config->mode_color = serialize_gdkrgba(&color);
+ }
+ 
+ void
+diff --git panel-plugin/i3w-config.h panel-plugin/i3w-config.h
+index 6f7349e..4c526e7 100644
+--- panel-plugin/i3w-config.h
++++ panel-plugin/i3w-config.h
+@@ -38,9 +38,9 @@ typedef void (*ConfigChangedCallback) (gpointer cb_data);
+ 
+ /* utility functions */
+ guint32
+-serialize_gdkcolor(GdkColor *gdkcolor);
+-GdkColor *
+-unserialize_gdkcolor(guint32 color);
++serialize_gdkrgba(GdkRGBA *gdkrgba);
++GdkRGBA *
++unserialize_gdkrgba(guint32 color);
+ 
+ /* interface functions */
+ i3WorkspacesConfig *
+diff --git panel-plugin/i3w-plugin.c panel-plugin/i3w-plugin.c
+index 89d1d92..6db6e9d 100644
+--- panel-plugin/i3w-plugin.c
++++ panel-plugin/i3w-plugin.c
+@@ -23,7 +23,7 @@
+ #include <string.h>
+ #endif
+ 
+-#include <libxfce4panel/xfce-hvbox.h>
++#include <libxfce4panel/libxfce4panel.h>
+ #include <glib/gprintf.h>
+ 
+ #include "i3w-plugin.h"
+@@ -143,7 +143,7 @@ construct_workspaces(XfcePanelPlugin *plugin)
+     GtkOrientation orientation;
+ 
+     /* allocate memory for the plugin structure */
+-    i3_workspaces = panel_slice_new0(i3WorkspacesPlugin);
++    i3_workspaces = g_slice_new0(i3WorkspacesPlugin);
+ 
+     /* pointer to plugin */
+     i3_workspaces->plugin = plugin;
+@@ -164,7 +164,7 @@ construct_workspaces(XfcePanelPlugin *plugin)
+     g_signal_connect(G_OBJECT(i3_workspaces->ebox), "scroll-event",
+             G_CALLBACK(on_workspace_scrolled), i3_workspaces);
+ 
+-    i3_workspaces->hvbox = xfce_hvbox_new(orientation, FALSE, 2);
++    i3_workspaces->hvbox = gtk_box_new(orientation, 2);
+     gtk_widget_show(i3_workspaces->hvbox);
+     gtk_container_add(GTK_CONTAINER(i3_workspaces->ebox), i3_workspaces->hvbox);
+ 
+@@ -247,7 +247,7 @@ destruct(XfcePanelPlugin *plugin, i3WorkspacesPlugin *i3_workspaces)
+     i3wm_destruct(i3_workspaces->i3wm);
+ 
+     /* free the plugin structure */
+-    panel_slice_free(i3WorkspacesPlugin, i3_workspaces);
++    g_slice_free(i3WorkspacesPlugin, i3_workspaces);
+ }
+ 
+ /**
+@@ -291,7 +291,7 @@ orientation_changed(XfcePanelPlugin *plugin,
+         GtkOrientation orientation, i3WorkspacesPlugin *i3_workspaces)
+ {
+     /* change the orienation of the box */
+-    xfce_hvbox_set_orientation(XFCE_HVBOX(i3_workspaces->hvbox), orientation);
++    gtk_orientable_set_orientation(GTK_ORIENTABLE(i3_workspaces->hvbox), orientation);
+ }
+ 
+ 
