@@ -1,0 +1,126 @@
+From 52fb793c6423c19696e07cc14ad5f9182f7eca0e Mon Sep 17 00:00:00 2001
+From: Viktor Malik <viktor.malik@gmail.com>
+Date: Wed, 12 Aug 2020 09:45:29 +0200
+Subject: [PATCH] Feature-detect bpf_attach_kprobe signature
+
+The function has 6 parameters in current versions of BCC and 5
+parameters in older versions.
+
+This is detected in CMake using CHECK_CXX_SOURCE_COMPILES. For static
+compilation, we also need to retrieve and link static libbpf, libelf,
+and libz. This may cause libbpf, libelf and libz to be searched for
+twice, but it should be fine since CMake caches results.
+
+Fixes iovisor#1027.
+---
+ cmake/FindLibBcc.cmake | 24 ++++++++++++++++++++++++
+ src/CMakeLists.txt     |  3 +++
+ src/attached_probe.cpp | 31 ++++++++++++++-----------------
+ tests/CMakeLists.txt   |  3 +++
+ 4 files changed, 44 insertions(+), 17 deletions(-)
+
+diff --git a/cmake/FindLibBcc.cmake b/cmake/FindLibBcc.cmake
+index 9d30b04bc..ec216271d 100644
+--- a/cmake/FindLibBcc.cmake
++++ b/cmake/FindLibBcc.cmake
+@@ -70,3 +70,27 @@ include (FindPackageHandleStandardArgs)
+ FIND_PACKAGE_HANDLE_STANDARD_ARGS(LibBcc "Please install the bcc library package, which is required. Depending on your distro, it may be called bpfcclib or bcclib (Ubuntu), bcc-devel (Fedora), or something else. If unavailable, install bcc from source (github.com/iovisor/bcc)."
+   LIBBCC_LIBRARIES
+   LIBBCC_INCLUDE_DIRS)
++
++# Check bpf_attach_kprobe signature
++if(${LIBBCC_FOUND})
++if(STATIC_LINKING)
++  # libbcc.a is not statically linked with libbpf.a, libelf.a, and libz.a.
++  # If we do a static bpftrace build, we must link them in.
++  find_package(LibBpf)
++  find_package(LibElf)
++  find_package(LibZ)
++  SET(CMAKE_REQUIRED_LIBRARIES ${LIBBCC_BPF_LIBRARY_STATIC} ${LIBBPF_LIBRARIES} ${LIBELF_LIBRARIES} ${LIBZ_LIBRARIES})
++else()
++  SET(CMAKE_REQUIRED_LIBRARIES ${LIBBCC_LIBRARIES})
++endif()
++INCLUDE(CheckCXXSourceCompiles)
++CHECK_CXX_SOURCE_COMPILES("
++#include <bcc/libbpf.h>
++
++int main(void) {
++  bpf_attach_kprobe(0, BPF_PROBE_ENTRY, \"\", \"\", 0, 0);
++  return 0;
++}
++" LIBBCC_ATTACH_KPROBE_SIX_ARGS_SIGNATURE)
++SET(CMAKE_REQUIRED_LIBRARIES)
++endif()
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 647a23f1c..448a045fc 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -80,6 +80,9 @@ if(HAVE_BFD_DISASM)
+     target_link_libraries(bpftrace ${LIBOPCODES_LIBRARIES})
+   endif(STATIC_LINKING)
+ endif(HAVE_BFD_DISASM)
++if(LIBBCC_ATTACH_KPROBE_SIX_ARGS_SIGNATURE)
++  target_compile_definitions(bpftrace PRIVATE LIBBCC_ATTACH_KPROBE_SIX_ARGS_SIGNATURE)
++endif(LIBBCC_ATTACH_KPROBE_SIX_ARGS_SIGNATURE)
+ 
+ if (ALLOW_UNSAFE_PROBE)
+   target_compile_definitions(bpftrace PRIVATE HAVE_UNSAFE_PROBE)
+diff --git a/src/attached_probe.cpp b/src/attached_probe.cpp
+index 587a11576..afad9ed18 100644
+--- a/src/attached_probe.cpp
++++ b/src/attached_probe.cpp
+@@ -754,26 +754,23 @@ void AttachedProbe::load_prog()
+   }
+ }
+ 
+-// XXX(mmarchini): bcc changed the signature of bpf_attach_kprobe, adding a new
+-// int parameter at the end. Since there's no reliable way to feature-detect
+-// this, we create a function pointer with the long signature and cast
+-// bpf_attach_kprobe to this function pointer. If we're on an older bcc
+-// version, bpf_attach_kprobe call will be augmented with an extra register
+-// being used for the last parameter, even though this register won't be used
+-// inside the function. Since the register won't be used this is kinda safe,
+-// although not ideal.
+-typedef int (*attach_probe_wrapper_signature)(int, enum bpf_probe_attach_type, const char*, const char*, uint64_t, int);
+-
+ void AttachedProbe::attach_kprobe(bool safe_mode)
+ {
+   resolve_offset_kprobe(safe_mode);
+-  int perf_event_fd = cast_signature<attach_probe_wrapper_signature>(
+-      &bpf_attach_kprobe)(progfd_,
+-                          attachtype(probe_.type),
+-                          eventname().c_str(),
+-                          probe_.attach_point.c_str(),
+-                          offset_,
+-                          0);
++#ifdef LIBBCC_ATTACH_KPROBE_SIX_ARGS_SIGNATURE
++  int perf_event_fd = bpf_attach_kprobe(progfd_,
++                                        attachtype(probe_.type),
++                                        eventname().c_str(),
++                                        probe_.attach_point.c_str(),
++                                        offset_,
++                                        0);
++#else
++  int perf_event_fd = bpf_attach_kprobe(progfd_,
++                                        attachtype(probe_.type),
++                                        eventname().c_str(),
++                                        probe_.attach_point.c_str(),
++                                        offset_);
++#endif
+ 
+   if (perf_event_fd < 0) {
+     if (probe_.orig_name != probe_.name) {
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 3688b8487..84daeb2aa 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -102,6 +102,9 @@ if(HAVE_BFD_DISASM)
+     target_link_libraries(bpftrace_test ${LIBOPCODES_LIBRARIES})
+   endif(STATIC_LINKING)
+ endif(HAVE_BFD_DISASM)
++if(LIBBCC_ATTACH_KPROBE_SIX_ARGS_SIGNATURE)
++  target_compile_definitions(bpftrace_test PRIVATE LIBBCC_ATTACH_KPROBE_SIX_ARGS_SIGNATURE)
++endif(LIBBCC_ATTACH_KPROBE_SIX_ARGS_SIGNATURE)
+ 
+ target_link_libraries(bpftrace_test arch ast parser resources)
+ 
