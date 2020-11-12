@@ -1,73 +1,85 @@
 # Template file for 'mame'
 pkgname=mame
-version=0222
+version=0226
 revision=1
 wrksrc="mame-mame${version}"
+hostmakedepends="pkg-config python3 qt5-host-tools tar xz which"
+makedepends="SDL2_ttf-devel fontconfig-devel glm libgomp-devel libjpeg-turbo-devel
+ lua-devel libutf8proc-devel libuv-devel portaudio-devel portmidi-devel
+ pugixml-devel rapidjson $(vopt_if qt 'qt5-devel')"
+depends="liberation-fonts-ttf"
 short_desc="Multiple Arcade Machine Emulator"
 maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
 license="GPL-2.0-or-later"
 homepage="http://mamedev.org"
 distfiles="https://github.com/mamedev/mame/archive/mame${version}.tar.gz"
-checksum=3380b86d1bc5bc09f5bb4099f3833b6fba924a8bd189aac4dab149afba799ce7
-
-hostmakedepends="pkg-config python tar xz which"
-makedepends="SDL2_ttf-devel glm libgomp-devel libjpeg-turbo-devel
- libutf8proc-devel libuv-devel lua53-devel portaudio-devel portmidi-devel
- pugixml-devel rapidjson $(vopt_if qt 'qt5-devel')"
-depends="liberation-fonts-ttf"
-nocross=yes
+checksum=7c4c9ec232ba988e65fd29665c9b8e40b5ac3aa9f561eeb107cebbf08ba94baf
 nodebug=yes
 replaces="sdlmame>=0 sdlmess>=0"
 
 CFLAGS="-I${XBPS_CROSS_BASE}/usr/include/lua5.3 -I${XBPS_CROSS_BASE}/usr/include/libutf8proc"
-CXXFLAGS="${CFLAGS}"
-case "$XBPS_TARGET_MACHINE" in
-	*-musl)	CXXFLAGS+=" -DBX_CRT_MUSL=1" ;;
-esac
+CXXFLAGS="$CFLAGS"
+[ "$XBPS_TARGET_LIBC" = musl ] && CXXFLAGS+=" -DBX_CRT_MUSL=1"
 
 build_options="qt"
-if [ -z "$CROSS_BUILD" ]; then
-	build_options_default="qt"
+build_options_default="qt"
+
+_options="REGENIE=1 TARGETOS=linux NOWERROR=1 OPENMP=1 OPTIMIZE=3
+ TOOLS=1 LTO=0 USE_SYSTEM_LIB_ASIO=0 USE_SYSTEM_LIB_EXPAT=1
+ USE_SYSTEM_LIB_ZLIB=1 USE_SYSTEM_LIB_JPEG=1 USE_SYSTEM_LIB_FLAC=1
+ USE_SYSTEM_LIB_LUA=0 USE_SYSTEM_LIB_SQLITE3=1
+ USE_SYSTEM_LIB_PORTMIDI=1 USE_SYSTEM_LIB_PORTAUDIO=1
+ USE_SYSTEM_LIB_UTF8PROC=1 USE_SYSTEM_LIB_GLM=1
+ USE_SYSTEM_LIB_RAPIDJSON=1 USE_SYSTEM_LIB_PUGIXML=1"
+if [ "$XBPS_TARGET_ENDIAN" = "be" ]; then
+	_options+=" BIGENDIAN=1"
+else
+	_options+=" BIGENDIAN=0"
+fi
+if [ "${CROSS_BUILD}" ]; then
+	_options+=" NOASM=1"
+fi
+if [ "$XBPS_TARGET_WORDSIZE" = 32 ]; then
+	# Overcome linker memory exhaustion
+	_options+=" SYMBOLS=0"
+	LDFLAGS+=" -Wl,--no-keep-memory"
+else
+	_options+=" PTR64=1"
+fi
+if [ "$build_option_qt" ]; then
+	_options+=" USE_QTDEBUG=1"
 fi
 
-do_build() {
-	local opts="REGENIE=1"
-	opts+=" TARGETOS=linux"
-	opts+=" NOWERROR=1"
-	opts+=" OPENMP=1"
-	opts+=" OPTIMIZE=3"
-	opts+=" TOOLS=1"
-	opts+=" LTO=0"
-	opts+=" USE_SYSTEM_LIB_EXPAT=1"
-	opts+=" USE_SYSTEM_LIB_ZLIB=1"
-	opts+=" USE_SYSTEM_LIB_JPEG=1"
-	opts+=" USE_SYSTEM_LIB_FLAC=1"
-	opts+=" USE_SYSTEM_LIB_LUA=1"
-	opts+=" USE_SYSTEM_LIB_SQLITE3=1"
-	opts+=" USE_SYSTEM_LIB_PORTMIDI=1"
-	opts+=" USE_SYSTEM_LIB_PORTAUDIO=1"
-	opts+=" USE_SYSTEM_LIB_UTF8PROC=1"
-	opts+=" USE_SYSTEM_LIB_GLM=1"
-	opts+=" USE_SYSTEM_LIB_RAPIDJSON=1"
-	opts+=" USE_SYSTEM_LIB_PUGIXML=1"
-	[ "$build_option_qt" ] && opts+=" USE_QTDEBUG=1"
-	case "$XBPS_TARGET_MACHINE" in
-		i686*)	# Overcome linker memory exhaustion
-			opts+=" SYMBOLS=0"
-			;;
-		x86_64*|aarch64*|ppc64*)
-			opts+=" PTR64=1"
-			;;
-	esac
+# To test flags with a tiny build remove hash (#) on the following line
+#_options+=" TARGET=mame SUBTARGET=tiny VERBOSE=1"
+
+do_configure() {
+	# When linking mame expects liblua.so but we have liblua5.3.so
+	ln -sf liblua5.3.so ${XBPS_CROSS_BASE}/usr/lib/liblua.so
 	if [ "${CROSS_BUILD}" ]; then
-		# Doesn't work yet
-		opts+=" TOOLCHAIN=${XBPS_CROSS_TRIPLET}"
+		case "$XBPS_TARGET_MACHINE" in
+			i686*|x86_64*) ;;
+			*) # Cross compilers don't need/use -m32 or -m64
+				grep -rlw -- -m32 | xargs sed -i "s;-m32;;"
+				grep -rlw -- -m64 | xargs sed -i "s;-m64;;"
+			;;
+		esac
+		make ${makejobs} ${_options} \
+			CC="$CC_host" \
+			CXX="$CXX_host" \
+			LD="$CXX_host" \
+			CFLAGS="$CFLAGS_host" \
+			CXXFLAGS="$CXXFLAGS_host" \
+			LDFLAGS="$LDFLAGS_host" \
+			genie
+	else
+		make ${makejobs} ${_options} genie
 	fi
-	make ${opts} genie
-	cd 3rdparty/genie
-	bin/linux/genie embed
-	cd ${wrksrc}
-	make ${opts} ${makejobs}
+}
+
+do_build() {
+	make OVERRIDE_CC="$CC" OVERRIDE_CXX="$CXX" OVERRIDE_LD="$CXX" \
+		${makejobs} ${_options}
 }
 
 do_install() {
@@ -75,11 +87,6 @@ do_install() {
 
 	# Install the mame script
 	vbin ${FILESDIR}/mame.sh mame
-
-	# If mess is a separate binary, also install the mess script
-	if [ "${XBPS_TARGET_MACHINE%-musl}" != "x86_64" ]; then
-		vbin ${FILESDIR}/mess.sh mess
-	fi
 
 	# Install the main application(s)
 	for f in mame mame64 mamearcade mamearcade64; do
@@ -113,4 +120,6 @@ do_install() {
 	for f in artwork bgfx docs hash hlsl keymaps plugins samples; do
 		vcopy ${f} usr/share/${pkgname}
 	done
+	# Remove temporary liblua.so symlink
+	rm -f ${XBPS_CROSS_BASE}/usr/lib/liblua.so
 }

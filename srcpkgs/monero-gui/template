@@ -1,34 +1,79 @@
 # Template file for 'monero-gui'
 pkgname=monero-gui
-version=0.16.0.2
-_monero_version=0.16.0.1
-revision=2
-build_style=qmake
+version=0.17.1.3
+revision=1
+_monero_version=0.17.1.3
+_randomx_version="1.1.8"
+# the revision monero uses as a submodule for the specific version
+_rapidjson_gitrev="129d19ba7f496df5e33658527a7158c79b99c21c"
+_supercop_gitrev="633500ad8c8759995049ccd022107d1fa8a1bbc9"
+build_style=cmake
+configure_args="-DVERSION_IS_RELEASE=true -DQt5_LRELEASE_EXECUTABLE=/usr/bin/lrelease"
 hostmakedepends="pkg-config qt5-tools qt5-qmake qt5-quickcontrols qt5-declarative-devel
  qt5-svg-devel"
-makedepends="boost-devel libatomic-devel libunwind-devel miniupnpc-devel monero-devel
+makedepends="boost-devel libatomic-devel libunwind-devel miniupnpc-devel
 qt5-declarative-devel readline-devel unbound-devel libsodium-devel hidapi-devel
- qt5-svg-devel RandomX libgcrypt-devel"
+ qt5-svg-devel libgcrypt-devel zeromq-devel"
 depends="qt5-graphicaleffects qt5-quickcontrols qt5-quickcontrols2 qt5-xmlpatterns"
 short_desc="GUI for the core Monero implementation"
 maintainer="Helmut Pozimski <helmut@pozimski.eu>"
 license="BSD-3-Clause"
 homepage="https://getmonero.org"
 distfiles="https://github.com/monero-project/monero-gui/archive/v${version}.tar.gz
- https://github.com/monero-project/monero/archive/v${_monero_version}.tar.gz>monero-${_monero_version}.tar.gz"
-checksum="7a22262db4b779386d6d9a565eb66ff900f5bf4448378b527c1a1df3b25581ae
- 0fde78e23313a693207bffccd8a6481d14043e48588dc52fc10094a56a80fa39"
-skip_extraction="monero-${version}.tar.gz"
+ https://github.com/monero-project/monero/archive/v${_monero_version}.tar.gz>monero-${_monero_version}.tar.gz
+ https://github.com/tevador/RandomX/archive/v${_randomx_version}.tar.gz
+ https://github.com/Tencent/rapidjson/archive/${_rapidjson_gitrev}.tar.gz
+ https://github.com/monero-project/supercop/archive/${_supercop_gitrev}.tar.gz"
+checksum="43f228fb769140d4368caebd0c6eb4a0d1ea2815f0afe8cf306a60bca2aa646f
+ 4360c3e23ea0a5030d3bf0a7fac732e6526e6e0465b6f6fbd9856256788bd78d
+ f982a12d18b1d260bef2a1d3c46ae4902975fbf63abb38ca6413c96d1778db3a
+ 44b007d419ac21b6affec58991e865ee572346ead19b73cf1c3e4e11c7a81273
+ b973b9d8269ec4d97c3c3443f0dad96d09f72b1b30e616e0947557adbdbb03f7"
+skip_extraction="monero-${version}.tar.gz ${_rapidjson_gitrev}.tar.gz ${_supercop_gitrev}.tar.gz v${_randomx_version}.tar.gz"
+
+if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
+	makedepends+=" libatomic-devel"
+	CFLAGS+=" -latomic"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	*-musl) configure_args+=" -DSTACK_TRACE=OFF"
+esac
+
+case "$XBPS_TARGET_MACHINE" in
+	armv7*) configure_args+=" -DARCH=armv7" ;;
+	armv6*) configure_args+=" -DARCH=armv6" ;;
+	armv5*) configure_args+=" -DARCH=armv5" ;;
+	aarch64*) configure_args+=" -DARCH=aarch64" ;;
+	mips*) configure_args+=" -DARCH=mipsr32 -DNO_AES=ON" ;;
+	ppc64le*) configure_args+=" -DARCH=ppc64le" ;;
+	ppc64*) configure_args+=" -DARCH=ppc64" ;;
+	ppc*) configure_args+=" -DARCH=ppc"     ;;
+	*) configure_args+=" -DARCH=default" ;;
+esac
+
+
 
 post_extract() {
 	bsdtar xzf ${XBPS_SRCDISTDIR}/${pkgname}-${version}/monero-${_monero_version}.tar.gz --strip-components 1 -C monero
+	bsdtar xzf ${XBPS_SRCDISTDIR}/${pkgname}-${version}/${_rapidjson_gitrev}.tar.gz --strip-components 1 -C monero/external/rapidjson
+	bsdtar xzf ${XBPS_SRCDISTDIR}/${pkgname}-${version}/${_supercop_gitrev}.tar.gz --strip-components 1 -C monero/external/supercop
+	bsdtar xzf ${XBPS_SRCDISTDIR}/${pkgname}-${version}/v${_randomx_version}.tar.gz --strip-components 1 -C monero/external/randomx
+}
+
+post_patch() {
+	cd monero
+	for f in "${FILESDIR}"/*.patch; do
+		echo "Applying $f"
+		patch -Np0 -i "$f"
+	done
 }
 
 pre_configure() {
 	echo "var GUI_VERSION = \"${version}\"" > version.js
 	echo "var GUI_MONERO_VERSION = \"${version}\"" >> version.js
 	if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
-		sed -i *.pro -e "s;-leasylogging;-leasylogging -latomic;"
+		vsed -i monero/CMakeLists.txt -e '/include(version.cmake)/i list(APPEND EXTRA_LIBRARIES libatomic.a)'
 	fi
 }
 
@@ -39,18 +84,17 @@ pre_build() {
 		# built for the host
 		CXX=${CXX_host} CXXFLAGS="${XBPS_CXXFLAGS}" LDFLAGS="${XBPS_LDFLAGS}" \
 			make ${makejobs} -C src/zxcvbn-c dictgen
+		# The generate_translations_header binary is executed during the build
+		# but is not included in the binary package. It thus needs to be
+		# built for the host
+		CC=${CC_host} CFLAGS="${XBPS_CFLAGS}" LDFLAGS="${XBPS_LDFLAGS}" \
+			make -C build/monero ${makejobs} generate_translations_header
 
 	fi
 	make ${makejobs} -C src/zxcvbn-c
 }
 
 do_install() {
-	vbin release/bin/monero-wallet-gui
+	vbin build/bin/monero-wallet-gui
 	vlicense LICENSE
-}
-
-monero-core_package() {
-	build_style=meta
-	depends="monero-gui>=${version}_${revision}"
-	short_desc+=" (transitional dummy package)"
 }

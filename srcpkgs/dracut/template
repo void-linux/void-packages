@@ -1,11 +1,12 @@
 # Template file for 'dracut'
 pkgname=dracut
 version=050
-revision=2
+revision=9
 build_style=configure
 configure_args="--prefix=/usr --sysconfdir=/etc"
 conf_files="/etc/dracut.conf"
-hostmakedepends="asciidoc pkg-config"
+# XXX: docbook-xml was added to sort builders out, can be removed
+hostmakedepends="asciidoc docbook-xml pkg-config"
 makedepends="libkmod-devel"
 depends="bash coreutils cpio eudev gzip kmod>=3.7 kpartx util-linux"
 short_desc="Low-level tool for generating an initramfs/initrd image"
@@ -14,14 +15,21 @@ license="GPL-2.0-or-later, LGPL-2.0-or-later"
 homepage="http://www.kernel.org/pub/linux/utils/boot/dracut/dracut.html"
 distfiles="https://github.com/dracutdevs/dracut/archive/${version}.tar.gz"
 checksum=f9dbf18597e5929221365964293212c8c9ffb7d84529c5a338c834ecab06e333
+subpackages="dracut-network"
 
 make_dirs="
-	/etc/dracut.conf.d 0755 root root
-	/usr/lib/dracut/dracut.conf.d 0755 root root"
+ /etc/dracut.conf.d 0755 root root
+ /usr/lib/dracut/dracut.conf.d 0755 root root"
 
 case "$XBPS_TARGET_MACHINE" in
 *-musl) # Add musl-fts implementation
 	makedepends+=" musl-fts-devel"
+	;;
+esac
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*|x86_64*) # archs supported by dracut for EFI bundle
+		subpackages+=" dracut-uefi"
 	;;
 esac
 
@@ -40,6 +48,7 @@ post_install() {
 	# kernel hooks.
 	vinstall ${FILESDIR}/kernel-hook-postinst 755 etc/kernel.d/post-install 20-dracut
 	vinstall ${FILESDIR}/kernel-hook-postrm 755 etc/kernel.d/post-remove 20-dracut
+
 	# We don't need the systemd stuff.
 	rm -rf ${DESTDIR}/usr/lib/dracut/modules.d/*systemd*
 	rm -f ${DESTDIR}/usr/share/man/man8/*.service.*
@@ -47,13 +56,24 @@ post_install() {
 }
 
 dracut-network_package() {
-	depends="dhclient dracut-${version}_${revision}"
+	depends="dhclient ${sourcepkg}-${version}_${revision}"
 	short_desc+=" - network modules"
-	archs=noarch
 	pkg_install() {
 		for f in 40network 90livenet 95fcoe 95iscsi \
-		    95nbd 95nfs 95zfcp 95znet; do
+			95nbd 95nfs 95zfcp 95znet; do
 			vmove usr/lib/dracut/modules.d/${f}
 		done
+	}
+}
+
+dracut-uefi_package() {
+	depends="binutils gummiboot ${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - UEFI bundle hook"
+	conf_files="/etc/default/dracut-uefi-hook"
+
+	pkg_install() {
+		vinstall ${FILESDIR}/dracut-uefi-hook.confd 644 etc/default dracut-uefi-hook
+		vinstall ${FILESDIR}/kernel-uefi-hook-postinst 755 etc/kernel.d/post-install 20-dracut-uefi
+		vinstall ${FILESDIR}/kernel-uefi-hook-postrm 755 etc/kernel.d/post-remove 20-dracut-uefi
 	}
 }

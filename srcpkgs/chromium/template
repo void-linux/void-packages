@@ -1,54 +1,59 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See http://www.chromium.org/developers/calendar for the latest version
-version=83.0.4103.106
-revision=2
-archs="i686 x86_64*"
+version=86.0.4240.183
+revision=1
+archs="i686* x86_64* aarch64* armv7l* ppc64le*"
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 license="BSD-3-Clause"
 homepage="https://www.chromium.org/"
 distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/${pkgname}-${version}.tar.xz"
-checksum=cfd153a2e10b0bb0fb3b7e6be543aef0915181f5fbdbea893d08465afd097e2f
+checksum=aa12c6665c33275f3edffb6f127f97f84fa0bb69c644b4b023d51d2d058a69bc
+nocross=yes
 
 lib32disabled=yes
 nodebug=yes
 nopie=yes  # contains tools that are not PIE, enables PIE itself
 
-build_options="clang js_optimize vaapi"
+build_options="clang js_optimize vaapi pulseaudio sndio"
 desc_option_clang="Use clang to build"
 desc_option_js_optimize="Optimize the JS used for Chromium's UI"
 desc_option_vaapi="Enable support for VA-API"
+desc_option_pulseaudio="Enable support for PulseAudio"
+desc_option_sndio="Enable support for sndio"
 
-hostmakedepends="$(vopt_if clang clang) yasm python pkgconf perl gperf bison ninja nodejs hwids
+hostmakedepends="$(vopt_if clang clang) python pkgconf perl gperf bison ninja nodejs hwids
  libatomic-devel libevent-devel libglib-devel $(vopt_if js_optimize openjdk)"
 makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
  libXi-devel libgcrypt-devel libgnome-keyring-devel cups-devel elfutils-devel
  libXcomposite-devel speech-dispatcher-devel libXrandr-devel mit-krb5-devel
  libXScrnSaver-devel alsa-lib-devel snappy-devel libdrm-devel
- libxml2-devel libxslt-devel pulseaudio-devel libexif-devel
+ libxml2-devel libxslt-devel $(vopt_if pulseaudio pulseaudio-devel) libexif-devel
  libXcursor-devel libflac-devel speex-devel libmtp-devel libwebp-devel
  libjpeg-turbo-devel libevent-devel json-c-devel harfbuzz-devel
  minizip-devel jsoncpp-devel zlib-devel libcap-devel libXdamage-devel
  re2-devel fontconfig-devel freetype-devel opus-devel
- ffmpeg-devel libva-devel python-setuptools"
+ ffmpeg-devel libva-devel python-setuptools xcb-proto
+ $(vopt_if sndio sndio-devel)"
 depends="libexif hwids desktop-file-utils hicolor-icon-theme xdg-utils"
 
-build_options_default="clang"
-
-case "${XBPS_TARGET_MACHINE}" in
-	x86_64|i686) build_options_default+=" js_optimize" ;;
+case "$XBPS_TARGET_MACHINE" in
+	ppc64*-musl) makedepends+=" libucontext-devel" ;;
 esac
 
-post_extract() {
-	case "${XBPS_TARGET_MACHINE}" in
-	*-musl)
+build_options_default="clang js_optimize vaapi pulseaudio"
+
+post_patch() {
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 		for f in "${FILESDIR}"/musl-patches/*.patch; do
 			echo "Applying $f"
 			patch -Np0 -i "$f"
 		done
-		;;
-	i686)
+	fi
+
+	case "${XBPS_TARGET_MACHINE}" in
+	i686*)
 		for f in "${FILESDIR}"/i686-patches/*.patch; do
 			echo "Applying $f"
 			patch -Np0 -i "$f"
@@ -60,10 +65,6 @@ post_extract() {
 	sed 's|//third_party/usb_ids/usb.ids|/usr/share/hwdata/usb.ids|g' \
 		-i services/device/public/cpp/usb/BUILD.gn
 
-	# use system nodejs
-	mkdir -p third_party/node/linux/node-linux-x64/bin
-	ln -sf /usr/bin/node third_party/node/linux/node-linux-x64/bin/node
-
 	if [ -z "$build_option_clang" ]; then
 		# Work around bug in blink in which GCC 6 optimizes away null pointer checks
 		# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=833524
@@ -71,6 +72,10 @@ post_extract() {
 		sed -i '/config("compiler")/ a cflags_cc = [ "-fno-delete-null-pointer-checks" ]' \
 			build/config/linux/BUILD.gn
 	fi
+
+	# prevent annoying errors when regenerating gni
+	vsed -i 's,^update_readme$,#update_readme,' \
+		third_party/libvpx/generate_gni.sh
 }
 do_configure() {
 	local system="" conf=()
@@ -80,6 +85,26 @@ do_configure() {
 		export CC=clang
 		export CXX=clang++
 	fi
+
+	export LDFLAGS="-pthread"
+
+	# compile gn early, so it can be used to generate gni stuff
+	AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
+	python2 tools/gn/bootstrap/bootstrap.py --skip-generate-buildfiles
+
+	# we need to generate ppc64 stuff for libvpx as it's not shipped
+	# this has to be done before unbundling, but after gn is built
+	# comment out if we switch back to system libvpx again later
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*)
+			pushd third_party/libvpx
+			mkdir -p source/config/linux/ppc64
+			# need PATH to find gn
+			PATH="${wrksrc}/out/Release:$PATH" ./generate_gni.sh || \
+				msg_error "failed to generate libvpx gni"
+			popd
+			;;
+	esac
 
 	# Use system-provided libraries.
 	# TODO: use_system_hunspell (upstream changes needed).
@@ -92,12 +117,12 @@ do_configure() {
 	# use_system_protobuf
 	# use_system_v8=1
 	# use_system_zlib=1
-	# use_system_libvpx=1
 	# bzip2 jsoncpp minizip xdg_utils speex
 	system="
 		ffmpeg
 		flac
 		fontconfig
+		freetype
 		harfbuzz-ng
 		libdrm
 		libevent
@@ -109,7 +134,6 @@ do_configure() {
 		opus
 		re2
 		snappy
-		yasm
 	"
 
 	# remove build scripts for system provided dependencies - basically does the
@@ -122,7 +146,6 @@ do_configure() {
 			\! -path './base/third_party/icu/*' \
 			\! -path './third_party/pdfium/third_party/freetype/include/pstables.h' \
 			\! -path './third_party/harfbuzz-ng/utils/hb_scoped.h' \
-			\! -path './third_party/yasm/run_yasm.py' \
 			\! -regex '.*\.\(gn\|gni\|isolate\|py\)' \
 			-delete
 	done
@@ -154,7 +177,6 @@ do_configure() {
 		'use_allocator="none"'
 		'use_allocator_shim=false'
 		'use_cups=true'
-		'use_pulseaudio=true'
 		'use_sysroot=false'
 		'use_system_harfbuzz=true'
 		'enable_widevine=true'
@@ -170,6 +192,10 @@ do_configure() {
 		"closure_compile=$(vopt_if js_optimize true false)"
 	)
 
+	conf+=(
+		"use_pulseaudio=$(vopt_if pulseaudio true false)"
+	)
+
 	# Use explicit library dependencies instead of dlopen.
 	# GN only has "link_pulseaudio", the other options used before are not available atm
 	# linux_link_cups=true
@@ -177,7 +203,11 @@ do_configure() {
 	# linux_link_libpci=true
 	# linux_link_libspeechd=true
 	# libspeechd_h_prefix=\"speech-dispatcher/\""
-	conf+=( 'link_pulseaudio=true' )
+	conf+=( "link_pulseaudio=$(vopt_if pulseaudio true false)" )
+
+	conf+=(
+		"use_sndio=$(vopt_if sndio true false)"
+	)
 
 	# Never use bundled binutils/gold binary.
 	conf+=(
@@ -219,18 +249,17 @@ do_configure() {
 		i686*) conf+=( 'target_cpu="x86"' ) ;;
 		arm*) conf+=( 'target_cpu="arm"' ) ;;
 		aarch64*) conf+=( 'target_cpu="arm64"' ) ;;
+		ppc64*) conf+=( 'target_cpu="ppc64"' ) ;;
 	esac
-
-	export LDFLAGS="-pthread"
-
-	AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
-	python2 tools/gn/bootstrap/bootstrap.py -s -v \
-		--gn-gen-args "${conf[*]}"
-
 
 	out/Release/gn gen out/Release --args="${conf[*]}"
 }
 do_build() {
+	if [ "$build_option_clang" ]; then
+		export CC=clang
+		export CXX=clang++
+	fi
+
 	ninja -C out/Release ${makejobs} chrome chromedriver mksnapshot
 }
 do_install() {

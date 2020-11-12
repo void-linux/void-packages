@@ -9,6 +9,6 @@ while read -r pkg; do
 		/bin/echo -e "\x1b[32mFiles of $subpkg:\x1b[0m"
 		xbps-query --repository=$HOME/hostdir/binpkgs \
 				   --repository=$HOME/hostdir/binpkgs/nonfree \
-				   -f "$subpkg"
+				   -i -f "$subpkg"
 	done
 done < /tmp/templates

@@ -1,0 +1,79 @@
+# Template file for 'element-desktop'
+pkgname=element-desktop
+version=1.7.10
+revision=1
+wrksrc="element-web-${version}"
+conf_files="/etc/${pkgname}/config.json"
+hostmakedepends="git yarn nodejs rust cargo python curl
+ sqlcipher-devel libappindicator-devel libnotify-devel pkg-config
+ app-builder"
+makedepends="libsecret-devel"
+depends="c-ares ffmpeg gtk+3 http-parser libevent
+ libxslt minizip nss re2 snappy sqlcipher electron10"
+short_desc="Glossy Matrix collaboration client, desktop version"
+maintainer="projectmoon <projectmoon@agnos.is>"
+license="Apache-2.0"
+homepage="https://element.io"
+_ghpage="https://github.com/vector-im"
+_archive="archive/v${version}.tar.gz"
+distfiles="${_ghpage}/element-desktop/${_archive}>element-desktop.tar.gz
+ ${_ghpage}/element-web/${_archive}>element-web.tar.gz"
+checksum="dc98f25e85209b3d1bb760c73c3275b86356d6af7152e4b91541aa68240b1848
+ 9318c487500af47a51057d83f8760f8aa7951d859773ad2dad16580069f0abd4"
+nocross="depends on electron9"
+
+export USE_SYSTEM_APP_BUILDER=true
+
+pre_build() {
+	# Build dependencies for riot-web
+	yarn install
+
+	# Build dependencies and alterations for element-desktop
+	cd ../element-desktop-${version}
+
+	# Disable auto-updating
+	sed -i 's@https://packages.riot.im/desktop/update/@null@g' element.io/release/config.json
+	sed -i 's/"target": "deb"/"target": "dir"/g' package.json
+	yarn install
+}
+
+do_build() {
+	yarn build
+	cd ../element-desktop-${version}
+	yarn run build:native
+	# normally just "yarn run build" would be okay, but at least on ppc64
+	# we need to force x86_64 arch as electron-builder does not support
+	# ppc64 and fails on arch detection; ARM is supported so just use build
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64*|ppc64*) yarn run build64 ;;
+		i686*) yarn run build32 ;;
+		*) yarn run build ;;
+	esac
+}
+
+do_install() {
+	vmkdir usr/lib/element-desktop
+	vmkdir etc/element-desktop
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) vcopy ../element-desktop-${version}/dist/linux-ia32-unpacked/resources /usr/lib/element-desktop/resources;;
+		*) vcopy ../element-desktop-${version}/dist/linux-unpacked/resources /usr/lib/element-desktop/resources
+	esac
+	vinstall config.sample.json 644 /etc/element-desktop/ config.json
+	vcopy webapp /usr/lib/element-desktop/resources
+	ln -s /etc/element-desktop/config.json $DESTDIR/usr/lib/element-desktop/resources/webapp/config.json
+
+	vbin ${FILESDIR}/element-desktop
+	ln -s element-desktop $DESTDIR/usr/bin/riot-desktop
+	vinstall ${FILESDIR}/element-desktop.desktop 644 /usr/share/applications/ element-desktop.desktop
+	vinstall webapp/themes/element/img/logos/element-logo.svg 644 /usr/share/icons/hicolor/scalable/apps/ element.svg
+
+	for i in 16 24 48 64 96 128 256 512; do
+		vinstall ../element-desktop-${version}/build/icons/${i}x${i}.png 644 /usr/share/icons/hicolor/${i}x${i}/apps/ element.png
+	done
+}
+
+riot-desktop_package() {
+	depends="element-desktop"
+	short_desc+=" (transitional dummy package)"
+	build_style=meta
+}

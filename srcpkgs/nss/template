@@ -1,10 +1,10 @@
 # Template file for 'nss'
 
-_nsprver=4.26
+_nsprver=4.29
 
 pkgname=nss
-version=3.54
-revision=1
+version=3.58
+revision=2
 hostmakedepends="perl"
 makedepends="nspr-devel sqlite-devel zlib-devel"
 depends="nspr>=${_nsprver}"
@@ -13,7 +13,15 @@ maintainer="Đoàn Trần Công Danh <congdanhqx@gmail.com>"
 license="MPL-2.0"
 homepage="https://www.mozilla.org/projects/security/pki/nss"
 distfiles="${MOZILLA_SITE}/security/nss/releases/NSS_${version//\./_}_RTM/src/nss-${version}.tar.gz"
-checksum=dab18bbfcf5e347934cda664df75ce9fd912a5772686c40d3c805e53c08d6e43
+checksum=9f73cf789b5f109b978e5239551b609b0cafa88d18f0bc8ce3f976cb629353c0
+
+export NS_USE_GCC=1
+export LIBRUNPATH=
+export BUILD_OPT=1
+export NSS_USE_SYSTEM_SQLITE=1
+export NSS_ENABLE_WERROR=0
+export NSS_ENABLE_ECC=1
+export FREEBL_NO_DEPEND=1
 
 do_build() {
 	local _native_use64 _target_use64
@@ -22,21 +30,19 @@ do_build() {
 	vsed -e 's/\$(MKSHLIB) -o/\$(MKSHLIB) \$(LDFLAGS) -o/g' \
 		-i nss/coreconf/rules.mk
 
-	export LIBRUNPATH=
-	export BUILD_OPT=1
-	export NSS_USE_SYSTEM_SQLITE=1
-	export NSS_ENABLE_WERROR=0
-	export NSS_ENABLE_ECC=1
-	export FREEBL_NO_DEPEND=1
 	export NATIVE_CC="$BUILD_CC"
 	export NATIVE_FLAGS="$BUILD_CFLAGS"
 
 	if [ "$XBPS_WORDSIZE" = "64" ]; then
 		_native_use64="USE_64=1"
 	fi
-	if [ "$XBPS_TARGET_WORDSIZE" = "64" ]; then
-		_target_use64="USE_64=1"
-	fi
+
+	# Build System can detect this just fine,
+	# but I don't like to see useless warning barf for every line.
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64*) ;;
+		*) export NSS_DISABLE_AVX2=1 ;;
+	esac
 
 	# it's actually VSX, so disable on all BE ppc
 	case "$XBPS_TARGET_MACHINE" in
@@ -49,21 +55,17 @@ do_build() {
 	make ${makejobs} LD=$BUILD_LD LDFLAGS="$BUILD_LDFLAGS" ${_native_use64} -C coreconf
 
 	if [ "$CROSS_BUILD" ]; then
+		if [ "$XBPS_TARGET_WORDSIZE" = "64" ]; then
+			CFLAGS+=" -DNS_PTR_GT_32"
+			_target_use64="USE_64=1"
+		fi
+
 		case "$XBPS_TARGET_MACHINE" in
-			aarch64*|ppc64*)
+			aarch64*|ppc*|x86_64*)
 				_ARCH="${XBPS_TARGET_MACHINE%-*}"
-				CFLAGS+=" -DNS_PTR_GT_32"
-				;;
-			armv7*)
-				_ARCH="arm"
-				# gcm-arm32-neon.c use mfpu=neon,
-				# force mfpu=neon for everything else.
-				CFLAGS+=" -mfpu=neon"
-				CXXFLAGS+=" -mfpu=neon"
 				;;
 			arm*) _ARCH="arm";;
 			mips*) _ARCH="mips";;
-			ppc*) _ARCH="ppc";;
 			*) msg_error "$pkgver: unknown target machine\n";;
 		esac
 		# ... and then copy it to $wrksrc.
@@ -91,14 +93,6 @@ do_build() {
 
 do_check() {
 	local _use_64
-	export LIBRUNPATH=
-	export BUILD_OPT=1
-	export NSS_USE_SYSTEM_SQLITE=1
-	export NSS_ENABLE_WERROR=0
-	export NSS_ENABLE_ECC=1
-	export FREEBL_NO_DEPEND=1
-	export NATIVE_CC="$BUILD_CC"
-	export NATIVE_FLAGS="$BUILD_CFLAGS"
 	# We couldn't run test in cross compile!
 	export NSPR_INCLUDE_DIR=/usr/include/nspr
 	export NSPR_LIB_DIR=/usr/lib
@@ -155,6 +149,18 @@ do_install() {
 	done
 
 	install -m644 dist/public/nss/*.h ${DESTDIR}/usr/include/nss
+
+	sed -ne '/Copyright/,/SUCH DAMAGE/p' nss/lib/dbm/src/db.c >dbm.LICENSE
+	vlicense dbm.LICENSE
+	sed -ne '/The MIT License/,\!// SOFTWARE[.]$!p' \
+		nss/lib/freebl/ecl/curve25519_32.c >fiat.LICENSE
+	vlicense fiat.LICENSE
+	sed -ne '/The MIT License/,/ [*] SOFTWARE[.]$/p' \
+		nss/lib/freebl/ecl/ecp_secp384r1.c >ecckiila.LICENSE
+	vlicense ecckiila.LICENSE
+	sed -ne '/The MIT License/,/ [*] SOFTWARE[.]$/p' \
+		nss/lib/freebl/verified/Hacl_Chacha20.c >hacl.LICENSE
+	vlicense hacl.LICENSE
 }
 
 nss-devel_package() {

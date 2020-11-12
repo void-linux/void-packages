@@ -1,72 +1,77 @@
 # Template file for 'fwupd'
 pkgname=fwupd
-version=1.4.2
+version=1.5.1
 revision=1
 build_style=meson
 build_helper="gir"
-# manpages fail to build
 # tests require unpackaged umockdev
-configure_args="-Dconsolekit=false -Dgtkdoc=false -Dintrospection=true
- -Dsystemd=false -Dplugin_altos=false -Dtests=false -Dman=false
+configure_args="-Dconsolekit=false -Dgtkdoc=true -Dintrospection=true
+ -Dsystemd=false -Dplugin_altos=false -Dtests=false
  -Dpkcs7=false -Db_lto=false -Defi-includedir=${XBPS_CROSS_BASE}/usr/include/efi
  -Defi-ldsdir=${XBPS_CROSS_BASE}/usr/lib -Defi-ld=${XBPS_CROSS_BASE}/usr/bin/ld
+ -Defi-objcopy=${XBPS_CROSS_BASE}/usr/bin/objcopy
  -Defi-libdir=${XBPS_CROSS_BASE}/usr/lib -Delogind=true"
 hostmakedepends="dejavu-fonts-ttf gnutls-tools help2man pkg-config gcab
- vala glib-devel polkit gettext"
+ vala glib-devel polkit gettext gtk-doc"
 makedepends="libxmlb-devel cairo-devel colord-devel libarchive-devel
  gnutls-devel gpgme-devel json-glib-devel libgusb-devel polkit-devel
  sqlite-devel libsoup-devel gcab-devel pango-devel python3-gobject
  python3-Pillow elogind-devel tpm2-tss-devel libjcat-devel"
+depends="udisks2"
+conf_files="
+ /etc/fwupd/*.conf
+ /etc/fwupd/remotes.d/*.conf"
 short_desc="Daemon to allow session software to update firmware"
-maintainer="Orphaned <orphan@voidlinux.org>"
+maintainer="Érico Nogueira <ericonr@disroot.org>"
 license="LGPL-2.1-or-later"
 homepage="https://github.com/hughsie/fwupd"
 distfiles="https://github.com/hughsie/fwupd/archive/${version}.tar.gz"
-checksum=7c0ff77551627aaa162aed8f3b010ca88539a70ade060c8b4b298cf4bcd169ee
+checksum=16e59ea1ce6e109246f86a2932cc84d2e06ed836d62dde1412493a5d26109477
+replaces="fwupdate>=0"
 
-# no efi on non-efi platforms
 case "$XBPS_TARGET_MACHINE" in
-	x86_64*|i686*|aarch64*|arm*) _have_efi=yes;;
+	x86_64*|i686*|arm*|aarch64*) _have_uefi=yes;;
 esac
 
-if [ -n "$_have_efi" ]; then
-	hostmakedepends+=" efivar gnu-efi-libs"
-	makedepends+=" libefivar-devel gnu-efi-libs"
-fi
+case "$XBPS_TARGET_MACHINE" in
+	x86_64*|i686*) ;;
+	*) configure_args+=" -Dplugin_msr=false";;
+esac
 
-conf_files="
- /etc/fwupd/daemon.conf
- /etc/fwupd/remotes.d/*.conf"
+if [ -n "$_have_uefi" ]; then
+	hostmakedepends+=" efivar"
+	makedepends+=" libefivar-devel gnu-efi-libs"
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64*|i686*) makedepends+=" libsmbios-devel";;
+		*) configure_args+=" -Dplugin_dell=false";;
+	esac
+else
+	configure_args+=" -Dplugin_uefi=false -Dplugin_redfish=false"
+	configure_args+=" -Dplugin_dell=false"
+fi
 
 if [ "$CROSS_BUILD" ]; then
-	case "$XBPS_TARGET_MACHINE" in
-	arm*)	# Segfaults under qemu trying to gzip non-existing files
-		broken="https://build.voidlinux.org/builders/armv7l_builder/builds/17377/steps/shell_3/logs/stdio";;
-	aarch64*) broken="https://travis-ci.org/void-linux/void-packages/jobs/618827513";;
-	esac
+	configure_args+=" -Defi-cc=/usr/bin/${XBPS_CROSS_TRIPLET}-gcc"
 
-	if [ -n "$_have_efi" ]; then
-		configure_args+=" -Defi-cc=/usr/bin/${XBPS_CROSS_TRIPLET}-gcc"
-	fi
+	configure_args+=" -Dman=false"
+	# steal man pages from native package
+	hostmakedepends+=" fwupd"
+else
+	configure_args+=" -Dman=true"
 fi
-
-case "$XBPS_TARGET_MACHINE" in
-	x86_64*|i686*)
-		makedepends+=" libsmbios-devel"
-		configure_args+=" -Dplugin_dell=true"
-		;;
-	*)
-		configure_args+=" -Dplugin_dell=false"
-		if [ -z "$_have_efi" ]; then
-			configure_args+=" -Dplugin_uefi=false"
-			configure_args+=" -Dplugin_redfish=false"
-		fi
-		;;
-esac
 
 pre_configure() {
 	# Replace the values from our patch into the system itself
-	sed -i -e "s|@XBPS_CROSS_BASE@|${XBPS_CROSS_BASE}|g" meson.build
+	vsed -i -e "s|@XBPS_CROSS_BASE@|${XBPS_CROSS_BASE}|g" meson.build
+}
+
+post_install() {
+	if [ "$CROSS_BUILD" ]; then
+		for _page in dbxtool dfu-tool fwupdagent fwupdate fwupdmgr fwupdtool fwupdtpmevlog
+		do
+			vman /usr/share/man/man1/$_page.1
+		done
+	fi
 }
 
 fwupd-devel_package() {
@@ -78,5 +83,6 @@ fwupd-devel_package() {
 		vmove "usr/lib/*.so"
 		vmove usr/share/gir-1.0
 		vmove usr/share/vala
+		vmove usr/share/gtk-doc
 	}
 }

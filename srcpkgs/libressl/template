@@ -1,33 +1,63 @@
 # Template file for 'libressl'
 pkgname=libressl
-version=3.1.3
-revision=1
+version=3.1.4
+revision=2
 bootstrap=yes
 build_style=gnu-configure
+configure_args="$(vopt_enable asm)"
 short_desc="Version of the TLS/crypto stack forked from OpenSSL"
 maintainer="Juan RP <xtraeme@gmail.com>"
-license="OpenSSL-License, SSLeay-License, ISC"
+license="OpenSSL, ISC"
 #changelog="https://raw.githubusercontent.com/libressl-portable/portable/master/ChangeLog"
 homepage="http://www.libressl.org/"
 distfiles="http://ftp.openbsd.org/pub/OpenBSD/LibreSSL/${pkgname}-${version}.tar.gz"
-checksum=c76b0316acf612ecb62f5cb014a20d972a663bd9e40abf952a86f3b998b69fa0
+checksum=414c149c9963983f805a081db5bd3aec146b5f82d529bb63875ac941b25dcbb6
 provides="openssl-${version}_${revision}"
 replaces="openssl>=0"
 conf_files="/etc/ssl/openssl.cnf /etc/ssl/x509v3.cnf"
+_lssl_asm_ver="1.1.0"
 
-if [ "$XBPS_TARGET_MACHINE" = "i686-musl" ]; then
-	# XXX disable SSP
-	configure_args+=" --disable-hardening"
-elif [ "$XBPS_TARGET_MACHINE" = "armv5tel" ]; then
-	configure_args+=" --disable-asm"
+build_options="asm"
+desc_option_asm="Use platform assembly for faster crypto"
+
+if [ "$build_option_asm" ]; then
+	distfiles+=" https://github.com/q66/libressl-portable-asm/archive/v${_lssl_asm_ver}.tar.gz"
+	checksum+=" 7d92bf898c3a526cfdd804ea2e6ba1c89bd5a95589092e3ea585ef7c4818d789"
 fi
 
-if [ "$CROSS_BUILD" ]; then
-	hostmakedepends="automake libtool"
-	pre_configure() {
-		autoreconf -fi
-	}
+# only enable asm for full chroots by default
+# otherwise we'd be introducing an autotools dependency on the host
+if [ "$CHROOT_READY" ]; then
+	build_options_default="asm"
 fi
+
+case "$XBPS_TARGET_MACHINE" in
+	# disable ssp
+	i686-musl) configure_args+=" --disable-hardening";;
+	# on armv5 always disable asm as it's not supported
+	armv5*) configure_args+=" --disable-asm";;
+esac
+
+if [ "$CROSS_BUILD" -o "$build_option_asm" ]; then
+	_regen_build=yes
+fi
+
+if [ -n "$_regen_build" ]; then
+	hostmakedepends=" automake libtool"
+fi
+
+post_extract() {
+	[ -z "$build_option_asm" ] && return 0
+	mv ../libressl-portable-asm-${_lssl_asm_ver} .
+}
+
+pre_configure() {
+	[ -z "$_regen_build" ] && return 0
+	if [ "$build_option_asm" ]; then
+		./libressl-portable-asm-${_lssl_asm_ver}/patch_libressl.sh .
+	fi
+	autoreconf -if
+}
 
 post_install() {
 	# Use CA file from ca-certificates instead.
@@ -35,6 +65,10 @@ post_install() {
 	ln -s certs.pem ${DESTDIR}/etc/ssl/cert.pem
 
 	vlicense COPYING
+	if [ "$build_option_asm" ]; then
+		vlicense libressl-portable-asm-${_lssl_asm_ver}/LICENSE.cryptogams
+		vlicense libressl-portable-asm-${_lssl_asm_ver}/LICENSE.openssl
+	fi
 	find ${DESTDIR}/usr/share/man/man1 -type f ! -name openssl.1 -delete
 }
 

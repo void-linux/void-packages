@@ -1,20 +1,21 @@
 # Template file for 'zbar'
 pkgname=zbar
-version=0.10
-revision=9
+version=0.23.1
+revision=2
 build_style=gnu-configure
-configure_args="ac_cv_header_wand_MagickWand_h=yes $(vopt_with qt) --with-gtk"
-hostmakedepends="automake pkg-config libtool gettext-devel python
- $(vopt_if qt 'qt5-qmake qt5-host-tools') glib-devel"
-makedepends="libmagick-devel libXv-devel pygtk-devel v4l-utils-devel
- $(vopt_if qt qt5-x11extras-devel)"
+build_helper=gir
+configure_args="$(vopt_with qt) --with-gir --with-python=python3"
+hostmakedepends="pkg-config python3 glib-devel
+ $(vopt_if qt 'qt5-qmake qt5-host-tools')"
+makedepends="libmagick-devel libXv-devel python3-devel v4l-utils-devel
+ gtk+3-devel $(vopt_if qt qt5-x11extras-devel)"
 depends="libzbar-${version}_${revision}"
 short_desc="Barcode reading library and application"
 maintainer="Jürgen Buchmüller <pullmoll@t-online.de>"
 license="LGPL-2.1-or-later"
-homepage="https://zbar.sourceforge.net/"
-distfiles="${SOURCEFORGE_SITE}/zbar/${version}/${pkgname}-${version}.tar.bz2"
-checksum=234efb39dbbe5cef4189cc76f37afbe3cfcfb45ae52493bfe8e191318bdbadc6
+homepage="https://git.linuxtv.org/zbar.git/"
+distfiles="https://linuxtv.org/downloads/zbar/${pkgname}-${version}.tar.bz2"
+checksum=dad260b47ef887a639e840a89e5e6e132217b6bba2a8473565d1f459bcb97c1f
 
 build_options="qt"
 case "$XBPS_TARGET_MACHINE" in
@@ -22,17 +23,62 @@ case "$XBPS_TARGET_MACHINE" in
 	*) build_options_default="qt" ;;
 esac
 
+export PYTHON_CFLAGS="-I$XBPS_CROSS_BASE/usr/include/python$py3_ver"
 CFLAGS="-DNDEBUG"
 
-pre_configure() {
-	export PYTHON_CFLAGS="-I${XBPS_CROSS_BASE}/usr/include/python2.7"
-	autoreconf -fi
+subpackages="libzbar libzbar-devel"
+
+if [ "$build_option_qt" ]; then
+	subpackages+=" zbar-qt libzbar-qt"
+fi
+
+post_extract() {
+	# 0.23.1 doesn't ship this file, corrected in master
+	cat >zbar-qt5.pc.in <<-'_EOF'
+	prefix=@prefix@
+	exec_prefix=@exec_prefix@
+	libdir=@libdir@
+	includedir=@includedir@
+
+	Name: zbar-qt
+	Description: bar code scanning and decoding Qt5 widget
+	URL: http://zbar.sourceforge.net
+	Version: @VERSION@
+	Requires: zbar, Qt5Core >= 5, Qt5Gui >= 5
+	Libs: -L${libdir} -lzbarqt
+	Cflags: -I${includedir}
+	_EOF
+}
+
+post_patch() {
+	# https://github.com/mchehab/zbar/commit/a133aea7880bbb56d7553
+	vsed -i -e 's/^.include.*gettext[.]h.*/#include <locale.h>/' \
+		zbarcam/zbarcam.c zbarimg/zbarimg.c
 }
 
 libzbar_package() {
 	short_desc+=" - library files"
 	pkg_install() {
-		vmove "usr/lib/*.so.*"
+		vmove "usr/lib/libzbar.so.*"
+		vmove "usr/lib/libzbargtk.so.*"
+		vmove "$py3_lib"
+		vmove "usr/lib/girepository-1.0"
+	}
+}
+
+zbar-qt_package() {
+	short_desc+=" - Qt frontend"
+	pkg_install() {
+		vmove "usr/bin/*-qt"
+	}
+}
+
+
+libzbar-qt_package() {
+	conflicts="libzbar<0.10_10"
+	short_desc+=" - Qt bindings"
+	pkg_install() {
+		vmove "usr/lib/libzbarqt.so.*"
 	}
 }
 
@@ -44,5 +90,6 @@ libzbar-devel_package() {
 		vmove usr/lib/pkgconfig
 		vmove "usr/lib/*.a"
 		vmove "usr/lib/*.so"
+		vmove "usr/share/gir-1.0"
 	}
 }

@@ -484,24 +484,14 @@ The second mode (native) needs a new x86 `masterdir`:
 <a name="building-for-musl"></a>
 ### Building packages natively for the musl C library
 
-A native build environment is required to be able to cross compile the bootstrap packages for the musl C library; this is accomplished by installing them via `binary-bootstrap`:
-
-    $ ./xbps-src binary-bootstrap
-
-Now cross compile `base-chroot-musl` for your native architecture:
-
-    $ ./xbps-src -a x86_64-musl pkg base-chroot-musl
-
-Wait until all packages are built and when ready, prepare a new masterdir with the musl packages:
+Canonical way of building packages for same architecture but different C library is through dedicated masterdir.
+To build for x86_64-musl on glibc x86_64 system, prepare a new masterdir with the musl packages:
 
     $ ./xbps-src -m masterdir-x86_64-musl binary-bootstrap x86_64-musl
 
-Your new masterdir is now ready to build packages natively for the musl C library. Try:
+Your new masterdir is now ready to build packages natively for the musl C library:
 
-    $ ./xbps-src -m masterdir-x86_64-musl chroot
-    $ ldd
-
-To see if the musl C dynamic linker is working as expected.
+    $ ./xbps-src -m masterdir-x86_64-musl pkg ...
 
 <a name="building-base-system"></a>
 ### Building void base-system from scratch
