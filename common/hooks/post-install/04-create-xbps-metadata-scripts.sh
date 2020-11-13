@@ -38,7 +38,7 @@ process_metadata_scripts() {
 #
 # Note that paths must be relative to CWD, to avoid calling
 # host commands if /bin/sh (dash) is not installed and it's
-# not possible to chroot(3).
+# not possible to chroot(2).
 #
 
 export PATH="/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin"
