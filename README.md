@@ -48,7 +48,7 @@ into a `masterdir` that is used as its main `chroot` directory. `xbps-src` suppo
 multiple utilities to accomplish this task:
 
  - `bwrap` - bubblewrap, see https://github.com/projectatomic/bubblewrap.
- - `ethereal` - only useful for one-shot containers, i.e docker (used with travis).
+ - `ethereal` - only useful for one-shot containers, i.e docker (used with CI).
  - `xbps-uunshare(1)` - XBPS utility that uses `user_namespaces(7)` (part of xbps, default).
  - `xbps-uchroot(1)` - XBPS utility that uses `namespaces` and must be `setgid` (part of xbps).
  - `proot(1)` - utility that implements chroot/bind mounts in user space, see https://proot-me.github.io/.
