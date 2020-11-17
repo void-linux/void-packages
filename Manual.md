@@ -631,8 +631,7 @@ in /usr/share directory specified by absolute path, which are expected and allow
 specified by absolute path, which are expected and allowed to contain machine code files.
 
 - `nocross` If set, cross compilation won't be allowed and will exit immediately.
-This should be set to a string describing why it fails, or a link to a travis
-buildlog demonstrating the failure.
+This should be set to a string describing why it fails, or a link to a buildlog (from the official builders, CI buildlogs can vanish) demonstrating the failure.
 
 - `restricted` If set, xbps-src will refuse to build the package unless
 `etc/conf` has `XBPS_ALLOW_RESTRICTED=yes`. The primary builders for Void
@@ -645,8 +644,7 @@ to override the guessed list. Only use this if a specific order of subpackages i
 otherwise the default would work in most cases.
 
 - `broken` If set, building the package won't be allowed because its state is currently broken.
-This should be set to a string describing why it is broken, or a link to a travis
-buildlog demonstrating the failure.
+This should be set to a string describing why it is broken, or a link to a buildlog demonstrating the failure.
 
 - `shlib_provides` A white space separated list of additional sonames the package provides on.
 This appends to the generated file rather than replacing it.
