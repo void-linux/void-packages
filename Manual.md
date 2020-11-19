@@ -136,10 +136,11 @@ the Void packages system.
 1. Required: Another package either within the repository or pending inclusion
    requires the package.
 
-In particular, new themes and small shell scripts are highly unlikely
-to be accepted. New fonts are welcome if they provide value beyond
-aesthetics (e.g. they contain glyphs for a script missing in already
-packaged fonts).
+In particular, new themes are highly unlikely to be accepted. Simple shell
+scripts are unlikely to be accepted unless they provide considerable value to a
+broad user base. New fonts may be accepted if they provide value beyond
+aesthetics (e.g. they contain glyphs for a script missing in already packaged
+fonts).
 
 Browser forks, including those based on Chromium and Firefox, are generally not
 accepted. Such forks require heavy patching, maintenance and hours of build time.
@@ -1267,7 +1268,7 @@ The following variables can be used for this purpose:
 
 - `system_groups` This specifies the names of the new *system groups* to be created, separated
 by blanks. Optionally the **gid** can be specified by delimiting it with a
-colon, i.e `system_groups="mygroup:78"` or `system_groups="foo blah:8000"`.
+colon, i.e `system_groups="_mygroup:78"` or `system_groups="_foo _blah:8000"`.
 
 - `system_accounts` This specifies the names of the new **system users/groups** to be created,
 separated by blanks, i.e `system_accounts="_foo _blah:22"`. Optionally the **uid** and **gid**
@@ -1284,7 +1285,7 @@ The **system user** is created by using a dynamically allocated **uid/gid** in y
 and it's created as a `system account`, unless the **uid** is set. A new group will be created for the
 specified `system account` and used exclusively for this purpose.
 
-System accounts must be prefixed with an underscore to prevent clashing with names of user
+System accounts and groups must be prefixed with an underscore to prevent clashing with names of user
 accounts.
 
 > NOTE: The underscore policy does not apply to old packages, due to the inevitable breakage of
