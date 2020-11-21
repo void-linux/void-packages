@@ -42,6 +42,39 @@ collect_sonames() {
 	rm -f ${_tmpfile}
 }
 
+# verify that shlibs listed in common/shlibs are actually provided by the package
+verify_sonames() {
+	local _destdir="$1" broken= mapshlibs pkgshlibs mappedshlibs
+	mapshlibs="${XBPS_COMMONDIR}/shlibs"
+
+	if [ ! -f ${_destdir}/shlib-provides ]; then
+		return 0
+	fi
+
+	pkgshlibs="$(cat ${_destdir}/shlib-provides)"
+
+	mappedshlibs="$(grep -E "[[:blank:]]${pkgname}" $mapshlibs)" || return 0
+
+	set -- $mappedshlibs
+	while [ $# -gt 0 ]
+	do
+		if [ "$($XBPS_UHELPER_CMD getpkgname "$2")" = ${pkgname} ]; then
+			if [[ "${pkgshlibs}" != *"$1"* ]]; then
+				msg_red "shlib '$1' isn't in shlib-provides for ${pkgname}\n"
+				broken=1
+			fi
+
+			file="$(find ${_destdir} -name "$1")"
+			if [ -z "$file" ]; then
+				msg_red "file for shlib '$1' isn't in ${pkgname}\n"
+			fi
+		fi
+		shift 2
+	done
+
+	return $broken
+}
+
 hook() {
 	local _destdir32=${XBPS_DESTDIR}/${pkgname}-32bit-${version}
 
@@ -53,4 +86,6 @@ hook() {
 	collect_sonames ${PKGDESTDIR}
 	# 32bit pkg
 	collect_sonames ${_destdir32}
+
+	verify_sonames ${PKGDESTDIR} || return 1
 }
