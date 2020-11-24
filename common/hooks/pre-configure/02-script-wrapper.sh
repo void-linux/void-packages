@@ -99,35 +99,47 @@ _EOF
 }
 
 vapigen_wrapper() {
+	local _vala_version _file
 	if [ ! -x /usr/bin/vapigen ]; then
 		return 0
 	fi
 	[ -x ${XBPS_WRAPPERDIR}/vapigen ] && return 0
+	for _file in /usr/bin/vapigen-*; do
+		if [ -x "${_file}" ]; then
+			_vala_version=${_file#*-}
+		fi
+	done
 	cat >>${XBPS_WRAPPERDIR}/vapigen<<_EOF
 #!/bin/sh
 exec /usr/bin/vapigen \\
 	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala/vapi \\
-	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-0.42/vapi \\
+	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-${_vala_version}/vapi \\
 	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0 "\$@"
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/vapigen
-	ln -sf vapigen ${XBPS_WRAPPERDIR}/vapigen-0.42
+	ln -sf vapigen ${XBPS_WRAPPERDIR}/vapigen-${_vala_version}
 }
 
 valac_wrapper() {
+	local _vala_version _file
 	if [ ! -x /usr/bin/valac ]; then
 		return 0
 	fi
 	[ -x ${XBPS_WRAPPERDIR}/valac ] && return 0
+	for _file in /usr/bin/valac-*; do
+		if [ -x "${_file}" ]; then
+			_vala_version=${_file#*-}
+		fi
+	done
 	cat >>${XBPS_WRAPPERDIR}/valac<<_EOF
 #!/bin/sh
 exec /usr/bin/valac \\
 	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala/vapi \\
-	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-0.42/vapi \\
+	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-${_vala_version}/vapi \\
 	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0 "\$@"
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/valac
-	ln -sf valac ${XBPS_WRAPPERDIR}/valac-0.42
+	ln -sf valac ${XBPS_WRAPPERDIR}/valac-${_vala_version}
 }
 
 install_wrappers() {
