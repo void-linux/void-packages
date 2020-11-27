@@ -631,8 +631,7 @@ in /usr/share directory specified by absolute path, which are expected and allow
 specified by absolute path, which are expected and allowed to contain machine code files.
 
 - `nocross` If set, cross compilation won't be allowed and will exit immediately.
-This should be set to a string describing why it fails, or a link to a travis
-buildlog demonstrating the failure.
+This should be set to a string describing why it fails, or a link to a buildlog (from the official builders, CI buildlogs can vanish) demonstrating the failure.
 
 - `restricted` If set, xbps-src will refuse to build the package unless
 `etc/conf` has `XBPS_ALLOW_RESTRICTED=yes`. The primary builders for Void
@@ -645,8 +644,7 @@ to override the guessed list. Only use this if a specific order of subpackages i
 otherwise the default would work in most cases.
 
 - `broken` If set, building the package won't be allowed because its state is currently broken.
-This should be set to a string describing why it is broken, or a link to a travis
-buildlog demonstrating the failure.
+This should be set to a string describing why it is broken, or a link to a buildlog demonstrating the failure.
 
 - `shlib_provides` A white space separated list of additional sonames the package provides on.
 This appends to the generated file rather than replacing it.
@@ -729,36 +727,45 @@ Examples:
 Do not use noarch. It is deprecated and being removed.
 
 <a id="explain_depends"></a>
-#### About the many types of `depends` variable.
+#### About the many types of `depends` variables
 
-So far we have listed four types of `depends`, there are `hostmakedepends`,
-`makedepends`, `checkdepends` and plain old `depends`.To understand the difference
-between them, understand this: Void Linux cross compiles for many arches.
-Sometimes in a build process, certain programs must be run, for example `yacc`, or the
-compiler itself for a C program. Those programs get put in `hostmakedepends`.
-When the build runs, those will be installed on the host to help the build
-complete.
+So far, we have listed four types of `depends` variables: `hostmakedepends`,
+`makedepends`, `checkdepends` and `depends`. These different kinds of variables
+are necessary because `xbps-src` supports cross compilation and to avoid
+installing unecessary packages in the build environment.
 
-Then there are those things for which a package either links against or
-includes header files. These are `makedepends`, and regardless of the
-architecture of the build machine, the architecture of the target machine must
-be used. Typically the `makedepends` will be the only one of the three types of
-`depends` to include `-devel` packages, and typically only `-devel` packages.
+During a build process, there are programs that must be _run_ on the host, such
+as `yacc` or the C compiler. The packages that contain these programs should be
+listed in `hostmakedepends`, and will be installed on the host when building the
+target package. Some of these packages are dependencies of the `base-chroot`
+package and don't need to be listed. It is possible that some of the programs
+necessary to build a project are located in `-devel` packages.
 
-Then there are those things that are required for a package to run its testsuite
-`dejagnu` or libraries it must link to when building test binaries like `cmocka`.
-These are `checkdepends` and they are installed like they are part of `makedepends`.
-the difference is that they are only installed when `XBPS_CHECK_PKGS` is defined.
+The target package can also depend on other packages for libraries to link
+against or header files. These packages should be listed in `makedepends` and
+will match the target architecture, regardless of the architecture of the build
+machine. Typically, `makedepends` will contain mainly `-devel` packages.
 
-The final variable, `depends`, is for those things the package needs at
-runtime and without which is unusable, and that xbps can't auto-detect.
-These are not all the packages the package needs at runtime, but only those
-that are not linked against. This variable is most useful for non-compiled
-programs.
+Furthermore, if `XBPS_CHECK_PKGS` is set or the `-Q` option is passed to
+`xbps-src`, the target package might require specific dependencies or libraries
+that are linked into its test binaries to run its test suite. These dependencies
+should be listed in `checkdepends` and will be installed as if they were part of
+`hostmakedepends`. Some dependencies that can be included in `checkdepends` are:
 
-Finally, as a general rule, if something compiles the exact same way whether or
-not you add a particular package to `makedepends` or `hostmakedepends`, it
-shouldn't be added.
+- `dejagnu`: used for some GNU projects
+- `cmocka-devel`: linked into test binaries
+- `dbus`: makes it possible to run `dbus-run-session <test-command>` to provide
+  a D-Bus session for applications that need it
+- `git`: some test suites run the `git` command
+
+Lastly, a package may require certain dependencies at runtime, without which it
+is unusable. These dependencies, when they aren't detected automatically by
+XBPS, should be listed in `depends`. This is mostly relevant for Perl and Python
+modules and other programs that use `dlopen(3)` instead of dynamically linking.
+
+Finally, as a general rule, if a package is built the exact same way whether or
+not a particular package is present in `makedepends` or `hostmakedepends`, that
+package shouldn't be added as a build time dependency.
 
 <a id="repositories"></a>
 #### Repositories
