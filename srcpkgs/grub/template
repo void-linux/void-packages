@@ -1,8 +1,8 @@
 # Template file for 'grub'
 pkgname=grub
 version=2.04
-revision=3
-hostmakedepends="python3 pkg-config flex freetype-devel font-unifont-bdf"
+revision=4
+hostmakedepends="python3 pkg-config flex freetype-devel font-unifont-bdf help2man"
 makedepends="libusb-compat-devel ncurses-devel freetype-devel
  liblzma-devel device-mapper-devel fuse-devel"
 depends="os-prober"
@@ -27,10 +27,11 @@ case "$XBPS_TARGET_MACHINE" in
 		;;
 	i686*)
 		CFLAGS="-D_FILE_OFFSET_BITS=64"
+		hostmakedepends+=" cross-x86_64-linux-musl"
 		configure_args+=" ac_cv_sizeof_off_t=8"
 		_NATIVE_PLATFORM=pc
-		_SUPPLEMENTARY_BUILDS="i386-efi i386-coreboot i386-xen"
-		subpackages+=" grub-i386-efi grub-i386-coreboot grub-xen"
+		_SUPPLEMENTARY_BUILDS="i386-efi x86_64-efi i386-coreboot i386-xen"
+		subpackages+=" grub-i386-efi grub-x86_64-efi grub-i386-coreboot grub-xen"
 		;;
 	aarch64*)
 		_NATIVE_PLATFORM=efi
@@ -48,12 +49,13 @@ post_extract() {
 
 do_configure() {
 	unset CC AS LD RANLIB CPP
-	CFLAGS="$CFLAGS -fno-stack-protector"
+	local freestanding_cflags="-fno-stack-protector"
 
 	# building with altivec generates broken grub core
 	case "$XBPS_TARGET_MACHINE" in
-		ppc*) CFLAGS="$CFLAGS -mno-altivec" ;;
+		ppc*) freestanding_cflags+=" -mno-altivec" ;;
 	esac
+	CFLAGS+=" $freestanding_cflags"
 
 	configure_args+=" --enable-device-mapper --enable-cache-stats --enable-nls
 		--enable-grub-mkfont --enable-grub-mount --disable-werror
@@ -63,14 +65,11 @@ do_configure() {
 	sed -i 's|/usr/share/fonts/unifont|/usr/share/fonts/misc|' configure
 
 	# build tools
-	_configure_args=${configure_args}
-	if [ -n "${_NATIVE_PLATFORM}" ]; then
-		_configure_args="--with-platform=${_NATIVE_PLATFORM} ${_configure_args}"
-	fi
 	msg_normal "Configuring grub tools...\n"
 	mkdir $wrksrc/build
 	cd $wrksrc/build
-	../configure --host=${XBPS_TARGET_MACHINE} ${_configure_args}
+	../configure --host=${XBPS_TARGET_MACHINE} ${configure_args} \
+		${_NATIVE_PLATFORM:+--with-platform=${_NATIVE_PLATFORM}}
 
 	for _SUPP_BUILD in ${_SUPPLEMENTARY_BUILDS}; do
 		_TARGET=${_SUPP_BUILD%%-*}
@@ -78,7 +77,14 @@ do_configure() {
 		msg_normal "Configuring ${_TARGET} ${_PLATFORM} grub...\n"
 		mkdir $wrksrc/${_PLATFORM}_${_TARGET}_build
 		cd $wrksrc/${_PLATFORM}_${_TARGET}_build
-		../configure --host=${XBPS_TARGET_MACHINE} --target=${_TARGET} --with-platform=${_PLATFORM} ${configure_args} \
+		if [ "$_TARGET" = x86_64 ] &&
+			[ "${XBPS_TARGET_MACHINE%-musl}" = i686 ]; then
+			_TARGET=x86_64-linux-musl
+		fi
+		CFLAGS="$freestanding_cflags" \
+		../configure --host=${XBPS_TARGET_MACHINE} \
+			--target=${_TARGET} \
+			--with-platform=${_PLATFORM} ${configure_args} \
 			--disable-efiemu \
 			--libdir=/usr/lib
 	done
@@ -90,14 +96,14 @@ do_build() {
 
 	msg_normal "Building grub tools...\n"
 	cd $wrksrc/build
-	make ${makejobs} &> make.log || tail -n100 make.log
+	make ${makejobs}
 
 	for _SUPP_BUILD in ${_SUPPLEMENTARY_BUILDS}; do
 		_TARGET=${_SUPP_BUILD%%-*}
 		_PLATFORM=${_SUPP_BUILD##*-}
 		msg_normal "Building ${_TARGET} ${_PLATFORM} grub...\n"
 		cd $wrksrc/${_PLATFORM}_${_TARGET}_build
-		make ${makejobs} &> make.log || tail -n100 make.log
+		make ${makejobs}
 	done
 }
 
@@ -162,7 +168,6 @@ grub-utils_package() {
 	}
 }
 grub-x86_64-efi_package() {
-	archs=noarch
 	depends="grub>=$version dosfstools efibootmgr"
 	short_desc+=" - x86_64 EFI support"
 	pkg_install() {
@@ -170,7 +175,6 @@ grub-x86_64-efi_package() {
 	}
 }
 grub-i386-efi_package() {
-	archs=noarch
 	depends="grub>=$version dosfstools efibootmgr"
 	short_desc+=" - i386 EFI support"
 	pkg_install() {
@@ -178,7 +182,6 @@ grub-i386-efi_package() {
 	}
 }
 grub-i386-coreboot_package() {
-	archs=noarch
 	depends="grub>=$version"
 	short_desc+=" - i386 coreboot support"
 	pkg_install() {
@@ -200,7 +203,6 @@ grub-xen_package() {
 	}
 }
 grub-arm64-efi_package() {
-	archs=noarch
 	depends="grub>=$version dosfstools efibootmgr"
 	short_desc+=" - arm64 EFI support"
 	pkg_install() {
@@ -208,7 +210,6 @@ grub-arm64-efi_package() {
 	}
 }
 grub-powerpc-ieee1275_package() {
-	archs=noarch
 	depends="grub>=$version powerpc-utils"
 	short_desc+=" - powerpc Open Firmware support"
 	pkg_install() {
