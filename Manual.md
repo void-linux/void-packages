@@ -561,17 +561,22 @@ phase if `${build_style}` is set to `configure`, `gnu-configure` or
 `gnu-makefile` build methods. By default set to
 `PREFIX=/usr DESTDIR=${DESTDIR}`.
 
-- `make_build_target` The target to be passed in to `${make_cmd}` at the build phase if
-`${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
-build methods. Unset by default (`all` target).
+- `make_build_target` The build target. If `${build_style}` is set to `configure`, `gnu-configure`
+or `gnu-makefile`, this is the target passed to `${make_cmd}` in the build phase; when unset, it
+defaults to `all`. If `${build_style}` is `python3-pep517`, this is the path of the package
+directory that should be built as a Python wheel; when unset, defaults to `.` (the current
+directory with respect to the build).
 
 - `make_check_target` The target to be passed in to `${make_cmd}` at the check phase if
 `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
 build methods. By default set to `check`.
 
-- `make_install_target` The target to be passed in to `${make_cmd}` at the `install-destdir` phase
-if `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
-build methods. By default set to `install`.
+- `make_install_target` The installation target. When `${build_style}` is set to `configure`,
+`gnu-configure` or `gnu-makefile`, this is the target passed to `${make_command}` in the install
+phase; when unset, it defaults to `install`. If `${build_style}` is `python-pep517`, this is the
+path of the Python wheel produced by the build phase that will be installed; when unset, the
+`python-pep517` build style will look for a wheel matching the package name and version in the
+current directory with respect to the install.
 
 - `patch_args` The arguments to be passed in to the `patch(1)` command when applying
 patches to the package sources during `do_patch()`. Patches are stored in
@@ -952,14 +957,17 @@ via `make_install_target`.
 via `configure_args`, the meson command can be overridden by `meson_cmd` and the location of
 the out of source build by `meson_builddir`
 
-For packages that use the Python module build method (`setup.py`), you
-can choose one of the following:
+For packages that use the Python module build method (`setup.py` or
+[PEP 517](https://www.python.org/dev/peps/pep-0517/)), you can choose one of the following:
 
 - `python-module` to build *both* Python 2.x and 3.x modules
 
 - `python2-module` to build Python 2.x only modules
 
 - `python3-module` to build Python 3.x only modules
+
+- `python3-pep517` to build Python 3.x only modules that provide a PEP 517 build description without
+a `setup.py` script
 
 Environment variables for a specific `build_style` can be declared in a filename
 matching the `build_style` name, Example:
@@ -1482,6 +1490,9 @@ be your guidance to decide whether or not to split off a `-doc` subpackage.
 Python packages should be built with the `python{,2,3}-module` build style, if possible.
 This sets some environment variables required to allow cross compilation. Support to allow
 building a python module for multiple versions from a single template is also possible.
+The `python3-pep517` build style provides means to build python packages that provide a build-system
+definition compliant with [PEP 517](https://www.python.org/dev/peps/pep-0517/) without a traditional
+`setup.py` script.
 
 Python packages that rely on `python3-setuptools` should generally map `setup_requires`
 dependencies in `setup.py` to `hostmakedepends` in the template and `install_requires`
