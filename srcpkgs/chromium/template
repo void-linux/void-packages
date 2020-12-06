@@ -10,7 +10,6 @@ license="BSD-3-Clause"
 homepage="https://www.chromium.org/"
 distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/${pkgname}-${version}.tar.xz"
 checksum=29a8e4ea82edec2fdcf34ece68323bec7ab90f3d5669e6b77f58cff9c278f741
-nocross=yes
 
 lib32disabled=yes
 nodebug=yes
@@ -23,8 +22,13 @@ desc_option_vaapi="Enable support for VA-API"
 desc_option_pulseaudio="Enable support for PulseAudio"
 desc_option_sndio="Enable support for sndio"
 
-hostmakedepends="$(vopt_if clang clang) python pkgconf perl gperf bison ninja nodejs hwids
- libatomic-devel libevent-devel libglib-devel $(vopt_if js_optimize openjdk)"
+hostmakedepends="$(vopt_if clang clang) python pkgconf perl gperf bison ninja
+ nodejs hwids libatomic-devel libevent-devel libglib-devel libX11-devel
+ $(vopt_if js_optimize openjdk) pciutils-devel libXext-devel libglvnd-devel
+ libjpeg-turbo-devel libXi-devel libXcomposite-devel libXcursor-devel
+ libXdamage-devel libXfixes-devel libXrender-devel libXtst-devel
+ harfbuzz-devel dbus-devel nss-devel libva-devel libwebp-devel snappy-devel
+ re2-devel opus-devel libXrandr-devel ffmpeg-devel"
 makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
  libXi-devel libgcrypt-devel libgnome-keyring-devel cups-devel elfutils-devel
  libXcomposite-devel speech-dispatcher-devel libXrandr-devel mit-krb5-devel
@@ -34,7 +38,7 @@ makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
  libjpeg-turbo-devel libevent-devel json-c-devel harfbuzz-devel
  minizip-devel jsoncpp-devel zlib-devel libcap-devel libXdamage-devel
  re2-devel fontconfig-devel freetype-devel opus-devel
- ffmpeg-devel libva-devel python-setuptools xcb-proto
+ ffmpeg-devel libva-devel python-setuptools xcb-proto libatomic-devel
  $(vopt_if sndio sndio-devel)"
 depends="libexif hwids desktop-file-utils hicolor-icon-theme xdg-utils"
 
@@ -47,7 +51,7 @@ build_options_default="clang js_optimize vaapi pulseaudio"
 post_patch() {
 	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 		for f in "${FILESDIR}"/musl-patches/*.patch; do
-			echo "Applying $f"
+			echo "Applying $(basename $f)"
 			patch -Np0 -i "$f"
 		done
 	fi
@@ -55,7 +59,7 @@ post_patch() {
 	case "${XBPS_TARGET_MACHINE}" in
 	i686*)
 		for f in "${FILESDIR}"/i686-patches/*.patch; do
-			echo "Applying $f"
+			echo "Applying $(basename $f)"
 			patch -Np0 -i "$f"
 		done
 		;;
@@ -77,20 +81,53 @@ post_patch() {
 	vsed -i 's,^update_readme$,#update_readme,' \
 		third_party/libvpx/generate_gni.sh
 }
+
 do_configure() {
 	local system="" conf=()
-	export -n CFLAGS CXXFLAGS LDFLAGS
 
 	if [ "$build_option_clang" ]; then
-		export CC=clang
-		export CXX=clang++
+		export CC="clang"
+		export CXX="clang++"
+		export BUILD_CC="clang"
+		export BUILD_CXX="clang++"
 	fi
 
-	export LDFLAGS="-pthread"
+	export BUILD_NM="nm"
+	export BUILD_AR="ar"
+
+	if [ "$build_option_clang" ]; then
+		# Add the GCC path
+		export CXXFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/c++/9.3.0/${XBPS_CROSS_TRIPLET}"
+		export BUILD_CXXFLAGS+=" -I/usr/include/c++/9.3.0/${XBPS_TRIPLET}"
+		if [ "$XBPS_TARGET_LIBC" == "musl" ]; then
+			export CXXFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/c++/9.3.0 --target=${XBPS_CROSS_TRIPLET}"
+			export CFLAGS+=" --target=${XBPS_CROSS_TRIPLET}"
+			export LDFLAGS+=" --target=${XBPS_CROSS_TRIPLET}"
+		fi
+		if [ "$XBPS_LIBC" == "musl" ]; then
+			export BUILD_CXXFLAGS+=" -I/usr/include/c++/9.3.0 --target=${XBPS_TRIPLET}"
+			export BUILD_CFLAGS+=" --target=${XBPS_TRIPLET}"
+			export BUILD_LDFLAGS+=" --target=${XBPS_TRIPLET}"
+		fi
+	fi
+
+	case "$XBPS_TARGET_MACHINE" in
+		aarch64*)
+			export CFLAGS+=" -fPIC"
+			export CXXFLAGS+=" -fPIC"
+			;;
+		armv7l*)
+			export CFLAGS+=" -mfpu=neon -fPIC"
+			export CXXFLAGS+=" -mfpu=neon -fPIC"
+			;;
+	esac
+
+	export LDFLAGS+=" -pthread"
 
 	# compile gn early, so it can be used to generate gni stuff
 	AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
-	python2 tools/gn/bootstrap/bootstrap.py --skip-generate-buildfiles
+		CFLAGS= CXXFLAGS= CPPFLAGS= LDFLAGS= FFLAGS= \
+		python2 tools/gn/bootstrap/bootstrap.py --skip-generate-buildfiles
 
 	# we need to generate ppc64 stuff for libvpx as it's not shipped
 	# this has to be done before unbundling, but after gn is built
@@ -169,8 +206,6 @@ do_configure() {
 		"is_clang=$(vopt_if clang true false)"
 		'is_debug=false'
 		'clang_use_chrome_plugins=false'
-		'custom_toolchain="//build/toolchain/linux/unbundle:default"'
-		'host_toolchain="//build/toolchain/linux/unbundle:default"'
 		'blink_symbol_level=0'
 		'symbol_level=0'
 		'icu_use_data_file=true'
@@ -183,6 +218,20 @@ do_configure() {
 		'enable_hangout_services_extension=true'
 		'is_desktop_linux=true'
 	)
+
+	conf+=(
+		'custom_toolchain="//build/toolchain/linux/unbundle:default"'
+	)
+	if [ "$CROSS_BUILD" ]; then
+		conf+=(
+			'host_toolchain="//build/toolchain/linux/unbundle:host"'
+			'v8_snapshot_toolchain="//build/toolchain/linux/unbundle:host"'
+		)
+	else
+		conf+=(
+			'host_toolchain="//build/toolchain/linux/unbundle:default"'
+		)
+	fi
 
 	conf+=(
 		"use_vaapi=$(vopt_if vaapi true false)"
@@ -219,11 +268,15 @@ do_configure() {
 	)
 
 	# XXX: gold broken with musl and i686
-	case "${XBPS_TARGET_MACHINE}" in
-	*-musl) conf+=( 'use_gold=false' ) ;;
-	i686*) conf+=( 'use_gold=false' ) ;;
-	*) conf+=( 'use_gold=true' ) ;;
-	esac
+	if [ "$CROSS_BUILD" ]; then
+		conf+=( 'use_gold=false' )
+	else
+		case "${XBPS_TARGET_MACHINE}" in
+			*-musl) conf+=( 'use_gold=false' ) ;;
+			i686*) conf+=( 'use_gold=false' ) ;;
+			*) conf+=( 'use_gold=true' ) ;;
+		esac
+	fi
 
 	# Always support proprietary codecs.
 	# Enable H.264 support in bundled ffmpeg.
@@ -241,8 +294,8 @@ do_configure() {
 	)
 
 	# Save space by removing DLOG and DCHECK messages (about 6% reduction).
-	# conf+=" logging_like_official_build=true"
-	conf+=( fieldtrial_testing_like_official_build=true )
+	# conf+=( " logging_like_official_build=true" )
+	conf+=( 'fieldtrial_testing_like_official_build=true' )
 
 	case "${XBPS_TARGET_MACHINE}" in
 		x86_64*) conf+=( 'target_cpu="x64"' ) ;;
@@ -252,16 +305,49 @@ do_configure() {
 		ppc64*) conf+=( 'target_cpu="ppc64"' ) ;;
 	esac
 
+	case "${XBPS_MACHINE}" in
+		x86_64*)
+			conf+=( 'host_cpu="x64"' )
+			export BUILD_CURRENT_CPU="x64"
+			;;
+		i686*)
+			conf+=( 'host_cpu="x86"' )
+			export BUILD_CURRENT_CPU="x86"
+			;;
+		arm*)
+			conf+=( 'host_cpu="arm"' )
+			export BUILD_CURRENT_CPU="arm"
+			;;
+		aarch64*)
+			conf+=( 'host_cpu="arm64"' )
+			export BUILD_CURRENT_CPU="arm64"
+			;;
+		ppc64*)
+			conf+=( 'host_cpu="ppc64"' )
+			export BUILD_CURRENT_CPU="ppc64"
+			;;
+	esac
+
 	out/Release/gn gen out/Release --args="${conf[*]}"
+
+	# host files erroneously have XBPS_CROSS_BASE paths
+	find out/Release/host -name "*.ninja" \
+		-exec sed -i "s:${XBPS_CROSS_BASE}::g" {} \;
 }
+
 do_build() {
 	if [ "$build_option_clang" ]; then
 		export CC=clang
 		export CXX=clang++
 	fi
 
-	ninja -C out/Release ${makejobs} chrome chromedriver mksnapshot
+	if [ "$CROSS_BUILD" ]; then
+		ninja -C out/Release ${makejobs} chrome chromedriver
+	else
+		ninja -C out/Release ${makejobs} chrome chromedriver mksnapshot
+	fi
 }
+
 do_install() {
 	vinstall out/Release/chrome 755 usr/lib/${pkgname} ${pkgname}
 	vinstall out/Release/chromedriver 755 usr/lib/${pkgname} chromedriver
