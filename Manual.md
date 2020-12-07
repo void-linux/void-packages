@@ -364,6 +364,9 @@ rather than additional binary package names.
 
 - `CROSS_BUILD` Set if `xbps-src` is cross compiling a package.
 
+- `XBPS_CHECK_PKGS` Set if `xbps-src` is going to run tests for a package.
+Longer testsuites should only be run in `do_check()` if it is set to `full`.
+
 - `DESTDIR` Full path to the fake destdir used by the source pkg, set to
 `<masterdir>/destdir/${sourcepkg}-${version}`.
 
