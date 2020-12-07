@@ -38,13 +38,17 @@ hook() {
                 /subpackages/s/.*"//p
                 s/".*//p
             }' $XBPS_SRCPKGDIR/$pkgname/template |
-        tr ' ' '\n' | sort)"
+        tr '\v\t\r\n' '    ')"
 
     for s in $subpkgs; do
-        grep -q "^$s$" <<< "$matches" ||
-            msg_warn "${s}_package() defined but will never be built.\n"
+        case " $matches " in
+            *" $s "*) ;;
+            *) msg_warn "${s}_package() defined but will never be built.\n" ;;
+        esac
     done
 
-    grep -q "^$pkgname$" <<< "$matches" &&
-        msg_warn "$pkgname is sourcepkg but is in subpackages=.\n" || :
+    case " $matches " in
+        *" $pkgname "*)
+            msg_warn "$pkgname is sourcepkg but is in subpackages=.\n" ;;
+    esac
 }
