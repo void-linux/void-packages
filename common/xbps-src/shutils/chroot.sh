@@ -180,6 +180,7 @@ chroot_handler() {
             SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
             XBPS_GIT_REVS="$XBPS_GIT_REVS" \
             XBPS_ALLOW_CHROOT_BREAKOUT="$XBPS_ALLOW_CHROOT_BREAKOUT" \
+            ${XBPS_ALT_REPOSITORY:+XBPS_ALT_REPOSITORY=$XBPS_ALT_REPOSITORY} \
             $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
             $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" \
             /void-packages/xbps-src $XBPS_OPTIONS $action $pkg
