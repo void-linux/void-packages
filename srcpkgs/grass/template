@@ -1,30 +1,70 @@
 # Template file for 'grass'
 pkgname=grass
-version=7.6.1
-revision=4
-_binver=${version//./}
-_binver=${_binver:0:2}
+version=7.8.5
+revision=1
 build_style=gnu-configure
-configure_args="--prefix=\${DESTDIR}/usr/share --bindir=\${DESTDIR}/usr/bin
- --with-freetype-includes=${XBPS_CROSS_BASE}/usr/include/freetype2"
-hostmakedepends="flex libgdal-tools pkg-config python-numpy tar"
+build_helper=cmake-wxWidgets-gtk3
+configure_args="--prefix=/usr/libexec
+ --with-nls --with-bzlib --with-pthread --with-python
+ --with-wxwidgets=$WX_CONFIG
+ $(vopt_with geos) $(vopt_with mysql) $(vopt_with postgres)"
+hostmakedepends="flex libgdal-tools pkg-config python3-numpy python3-six tar
+ gettext"
 makedepends="proj-devel tiff-devel libgdal-devel sqlite-devel
- fftw-devel cairo-devel glu-devel wxPython-devel"
-depends="python-numpy wxPython"
-short_desc="Geographic Resources Analysis Support System - GIS"
-maintainer="Alex Jarosch <research@alexj.at>"
+ fftw-devel cairo-devel glu-devel wxPython4
+ libzstd-devel bzip2-devel $(vopt_if geos geos-devel)
+ $(vopt_if mysql libmariadbclient-devel)
+ $(vopt_if postgres postgresql-libs-devel)"
+depends="python3-numpy wxPython4"
+short_desc="Geographic Resources Analysis Support System"
+maintainer="Nyx70 <n.y.x@bluewin.ch>"
 license="GPL-2.0-or-later"
 homepage="https://grass.osgeo.org/"
-distfiles="https://grass.osgeo.org/grass${_binver}/source/${pkgname}-${version}.tar.gz"
-checksum=9e25c99cafd16ed8f5e2dca75b5a10dc2af0568dbedf3fc39f1c5a0a9c840b0b
-python_version=2 #unverified
+distfiles="https://github.com/OSGeo/grass/archive/${version}.tar.gz"
+checksum=a359bb665524ecccb643335d70f5436b1c84ffb6a0e428b78dffebacd983ff37
 nocross="tries to execute target binaries"
+CPPFLAGS="  -I${XBPS_CROSS_BASE}/usr/include/freetype2"
+CPPFLAGS+=" -I${XBPS_CROSS_BASE}/usr/include/mysql"
 
-post_install() {
-	# move grass76 libraries from /usr/share to /usr/lib
-	vmkdir usr/lib
-	mv ${DESTDIR}/usr/share/grass* ${DESTDIR}/usr/lib
-	# fixes a todo in GISBASE
-	sed -i ${DESTDIR}/usr/bin/grass${_binver} \
-		-e "105s;\(gisbase =\).*;\1 \"/usr/lib/grass-${version}\";"
+build_options="geos mysql postgres"
+build_options_default="geos postgres"
+
+do_install() {
+	local _file
+	local _libexec=/usr/libexec/grass-$version
+	make INST_DIR=${DESTDIR}${_libexec} \
+		UNIX_BIN=${DESTDIR}/usr/bin \
+		install
+	for _file in AUTHORS CHANGES CITING COPYING GPL.TXT INSTALL \
+		REQUIREMENTS.html config.status \
+		contributors.csv contributors_extra.csv \
+		demolocation/PERMANENT/.tmp/ \
+		translation_status.json translators.csv
+	do
+		rm -rf ${DESTDIR}${_libexec}/${_file}
+	done
+	rm -rf ${DESTDIR}/usr/lib
+	mv ${DESTDIR}${_libexec}/lib ${DESTDIR}/usr
+	vsed -i ${DESTDIR}/usr/bin/grass* -e "s:${DESTDIR}::"
+	vmkdir usr/share
+	mv ${DESTDIR}${_libexec}/locale ${DESTDIR}/usr/share
+	mv ${DESTDIR}${_libexec}/docs/man ${DESTDIR}/usr/share
+}
+
+grass-devel_package() {
+	short_desc+=" - development files"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		local _file
+		vmove usr/libexec/grass-$version/include
+		vmove usr/libexec/grass-$version/tools
+		vmove "usr/lib/*.a"
+		for _file in $DESTDIR/usr/lib/libgrass_*.so; do
+			case "$_file" in
+				*${version%.*}.so) ;;
+				*) mv "$_file" "${PKGDESTDIR}/usr/lib" ;;
+			esac
+		done
+		vinstall grass.pc 644 usr/share/pkgconfig
+	}
 }
