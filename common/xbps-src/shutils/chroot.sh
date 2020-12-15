@@ -127,9 +127,6 @@ chroot_prepare() {
     # Copy /etc/hosts from base-files.
     cp -f $XBPS_SRCPKGDIR/base-files/files/hosts $XBPS_MASTERDIR/etc
 
-    mkdir -p $XBPS_MASTERDIR/etc/xbps.d
-    echo "syslog=false" >> $XBPS_MASTERDIR/etc/xbps.d/00-xbps-src.conf
-
     # Prepare default locale: en_US.UTF-8.
     if [ -s ${XBPS_MASTERDIR}/etc/default/libc-locales ]; then
         printf '%s\n' \
@@ -180,6 +177,7 @@ chroot_handler() {
             SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
             XBPS_GIT_REVS="$XBPS_GIT_REVS" \
             XBPS_ALLOW_CHROOT_BREAKOUT="$XBPS_ALLOW_CHROOT_BREAKOUT" \
+            ${XBPS_ALT_REPOSITORY:+XBPS_ALT_REPOSITORY=$XBPS_ALT_REPOSITORY} \
             $XBPS_COMMONDIR/chroot-style/${XBPS_CHROOT_CMD:=uunshare}.sh \
             $XBPS_MASTERDIR $XBPS_DISTDIR "$XBPS_HOSTDIR" "$XBPS_CHROOT_CMD_ARGS" \
             /void-packages/xbps-src $XBPS_OPTIONS $action $pkg
@@ -264,6 +262,8 @@ chroot_sync_repodata() {
         fi
     fi
 
+    echo "syslog=false" > $confdir/00-xbps-src.conf
+
     # Copy host repos to the cross root.
     if [ -n "$XBPS_CROSS_BUILD" ]; then
         rm -rf $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
@@ -287,6 +287,8 @@ chroot_sync_repodata() {
                     $crossconfdir/20-repository-remote.conf
             fi
         fi
+
+        echo "syslog=false" > $crossconfdir/00-xbps-src.conf
     fi
 
 

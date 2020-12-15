@@ -8,7 +8,7 @@ do_build() {
 		${make_cmd} \
 			CC="$CC" CXX="$CXX" LD="$LD" AR="$AR" RANLIB="$RANLIB" \
 			CPP="$CPP" AS="$AS" OBJCOPY="$OBJCOPY" OBJDUMP="$OBJDUMP" \
-			CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
+			CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS" \
 			${makejobs} ${make_build_args} ${make_build_target}
 	else
 		${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
