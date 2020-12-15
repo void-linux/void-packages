@@ -3,8 +3,16 @@
 #
 do_configure() {
 	: ${configure_script:=waf}
+	local cross_args
 
-	PYTHON=/usr/bin/python3 python3 ${configure_script} configure --prefix=/usr --libdir=/usr/lib ${configure_args}
+	if [[ $build_helper = *"qemu"* ]] && [ "$CROSS_BUILD" ]; then
+		# If the qemu build helper is specified, use it for cross builds
+		cross_args="--cross-compile --hostcc=${CC_FOR_BUILD}
+		 --cross-execute=qemu-${XBPS_TARGET_QEMU_MACHINE}-static"
+	fi
+
+	PYTHON=/usr/bin/python3 python3 ${configure_script} configure \
+		--prefix=/usr --libdir=/usr/lib ${configure_args} ${cross_args}
 }
 
 do_build() {
