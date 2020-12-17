@@ -1,0 +1,47 @@
+From fcef79bc705b70862326e1394dfe77295086bcbb Mon Sep 17 00:00:00 2001
+From: Jonas Witschel <diabonas@archlinux.org>
+Date: Sat, 21 Nov 2020 12:11:44 +0100
+Subject: [PATCH] mount.cifs: update the cap bounding set only when CAP_SETPCAP
+ is given
+
+libcap-ng 0.8.1 tightened the error checking on capng_apply, returning an error
+of -4 when trying to update the capability bounding set without having the
+CAP_SETPCAP capability to be able to do so. Previous versions of libcap-ng
+silently skipped updating the bounding set and only updated the normal
+CAPNG_SELECT_CAPS capabilities instead.
+
+Check beforehand whether we have CAP_SETPCAP, in which case we can use
+CAPNG_SELECT_BOTH to update both the normal capabilities and the bounding set.
+Otherwise, we can at least update the normal capabilities, but refrain from
+trying to update the bounding set to avoid getting an error.
+
+Signed-off-by: Jonas Witschel <diabonas@archlinux.org>
+---
+ mount.cifs.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git mount.cifs.c mount.cifs.c
+index 81bdbc8..2474e98 100644
+--- mount.cifs.c
++++ mount.cifs.c
+@@ -347,6 +347,8 @@ static int set_password(struct parsed_mount_info *parsed_info, const char *src)
+ static int
+ drop_capabilities(int parent)
+ {
++	capng_select_t set = CAPNG_SELECT_CAPS;
++
+ 	capng_setpid(getpid());
+ 	capng_clear(CAPNG_SELECT_BOTH);
+ 	if (parent) {
+@@ -364,7 +366,10 @@ drop_capabilities(int parent)
+ 			return EX_SYSERR;
+ 		}
+ 	}
+-	if (capng_apply(CAPNG_SELECT_BOTH)) {
++	if (capng_have_capability(CAPNG_EFFECTIVE, CAP_SETPCAP)) {
++		set = CAPNG_SELECT_BOTH;
++	}
++	if (capng_apply(set)) {
+ 		fprintf(stderr, "Unable to apply new capability set.\n");
+ 		return EX_SYSERR;
+ 	}
