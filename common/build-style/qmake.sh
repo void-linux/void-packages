@@ -22,6 +22,8 @@ do_configure() {
 			aarch64*) _qt_arch=arm64;;
 			arm*) _qt_arch=arm;;
 			mips*) _qt_arch=mips;;
+			ppc64*) _qt_arch=power64;;
+			ppc*) _qt_arch=power;;
 		esac
 		mkdir -p "${wrksrc}/.target-spec/linux-g++"
 		cat > "${wrksrc}/.target-spec/linux-g++/qmake.conf" <<_EOF
