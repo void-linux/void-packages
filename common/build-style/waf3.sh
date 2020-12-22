@@ -12,7 +12,8 @@ do_configure() {
 	fi
 
 	PYTHON=/usr/bin/python3 python3 ${configure_script} configure \
-		--prefix=/usr --libdir=/usr/lib ${configure_args} ${cross_args}
+		--prefix=/usr --libdir=/usr/lib${XBPS_TARGET_WORDSIZE} \
+		${configure_args} ${cross_args}
 }
 
 do_build() {

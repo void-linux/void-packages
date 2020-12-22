@@ -58,12 +58,7 @@ _EOF
 	fi
 	cmake_args+=" -DCMAKE_INSTALL_PREFIX=/usr"
 	cmake_args+=" -DCMAKE_BUILD_TYPE=Release"
-
-	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
-		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib32"
-	else
-		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib"
-	fi
+	cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib${XBPS_TARGET_WORDSIZE}"
 
 	if [[ $build_helper = *"qemu"* ]]; then
 		echo "SET(CMAKE_CROSSCOMPILING_EMULATOR /usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static)" \
