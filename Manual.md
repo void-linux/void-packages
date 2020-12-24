@@ -961,6 +961,16 @@ via `make_install_target`.
 via `configure_args`, the meson command can be overridden by `meson_cmd` and the location of
 the out of source build by `meson_builddir`
 
+- `void-cross` For cross-toolchain packages used to build Void systems. You will need to
+specify `cross_triplet` (corresponds to the target triplet specified in the cross profile
+for the target arch), `cross_linux_arch` (the architecture name in the Linux kernel source)
+and when building Go support for musl targets, also `cross_libucontext_arch` (see `libucontext`
+for available ones). Optionally, `cross_gcc_skip_go` can be specified. Individual subproject
+configure arguments can be specified via `cross_*_configure_args` where `*` is `binutils`,
+`gcc_bootstrap` (early gcc), `gcc` (final gcc), `glibc` (or `musl`), `configure_args` is
+additionally passed to both early and final `gcc`. You can also specify custom `CFLAGS`
+and `LDFLAGS` for the libc as `cross_(glibc|musl)_(cflags|ldflags)`.
+
 For packages that use the Python module build method (`setup.py` or
 [PEP 517](https://www.python.org/dev/peps/pep-0517/)), you can choose one of the following:
 
