@@ -4,8 +4,12 @@ if [ -n "$build_style" -a "$build_style" != "gnu-configure" ]; then
 	return 0
 fi
 
+# Store args from template so they can be included last and override
+# our defaults
+TEMPLATE_CONFIGURE_ARGS="${configure_args}"
+
 export configure_args="--prefix=/usr --sysconfdir=/etc --sbindir=/usr/bin --bindir=/usr/bin
- --mandir=/usr/share/man --infodir=/usr/share/info --localstatedir=/var ${configure_args}"
+ --mandir=/usr/share/man --infodir=/usr/share/info --localstatedir=/var"
 
 . ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
 export configure_args+=" --host=$XBPS_TRIPLET --build=$XBPS_TRIPLET"
@@ -29,11 +33,17 @@ esac
 
 # Cross compilation vars
 if [ -z "$CROSS_BUILD" ]; then
+	export configure_args+=" ${TEMPLATE_CONFIGURE_ARGS}"
+	unset TEMPLATE_CONFIGURE_ARGS
+
 	set +a
 	return 0
 fi
 
 export configure_args+=" --host=$XBPS_CROSS_TRIPLET --with-sysroot=$XBPS_CROSS_BASE --with-libtool-sysroot=$XBPS_CROSS_BASE "
+
+export configure_args+=" ${TEMPLATE_CONFIGURE_ARGS}"
+unset TEMPLATE_CONFIGURE_ARGS
 
 # Read autoconf cache variables for cross target (taken from OE).
 case "$XBPS_TARGET_MACHINE" in
