@@ -1,17 +1,20 @@
 # Template file for 'cross-powerpc64-linux-musl'
+_triplet=powerpc64-linux-musl
 _binutils_version=2.32
 _gcc_version=9.3.0
 _musl_version=1.1.24
 _linux_version=4.19
 _libucontext_version=0.9.0
-
-_triplet="powerpc64-linux-musl"
-_sysroot="/usr/${_triplet}"
-
 pkgname=cross-${_triplet}
 version=0.33
 revision=2
-short_desc="Cross toolchain for powerpc64 with musl"
+build_style=void-cross
+configure_args="--enable-secureplt --disable-vtable-verify
+ --disable-decimal-float --with-abi=elfv2 --enable-targets=powerpc-linux"
+hostmakedepends="tar gcc-objc gcc-go flex perl python3"
+makedepends="isl15-devel libmpc-devel zlib-devel gmp-devel mpfr-devel"
+depends="${pkgname}-libc-${version}_${revision}"
+short_desc="Void cross toolchain for ${_triplet}"
 maintainer="q66 <daniel@octaforge.org>"
 homepage="https://www.voidlinux.org/"
 license="GPL-2.0-or-later, GPL-3.0-or-later, MIT"
@@ -26,314 +29,25 @@ checksum="0ab6c55dd86a92ed561972ba15b9b70a8b9f75557f896446c82e8b36e473ee04
  1370c9a812b2cf2a7d92802510cca0058cc37e66a7bedd70051f0a34015022a3
  0c68f5655528aed4f99dae71a5b259edc93239fa899e2df79c055275c21749a1
  0d53a415a307ef175153bbe60a572c940a922cb736ce13530b666e7ec2795d68"
-
-lib32disabled=yes
 nocross=yes
-nopie=yes
-nodebug=yes
-create_wrksrc=yes
-hostmakedepends="tar gcc-objc gcc-go flex perl python3"
-makedepends="zlib-devel gmp-devel mpfr-devel libmpc-devel isl15-devel"
-nostrip_files="libcaf_single.a libgcc.a libgcov.a libgcc_eh.a
- libgnarl_pic.a libgnarl.a libgnat_pic.a libgnat.a libgmem.a"
-depends="${pkgname}-libc-${version}_${revision}"
 
-if [ "$XBPS_TARGET_WORDSIZE" != "64" ]; then
-        broken="64-bit crosstoolchain only available on 64-bit host"
-fi
+cross_triplet=${_triplet}
+cross_libucontext_arch=ppc64
+cross_linux_arch=powerpc
+cross_binutils_configure_args="--enable-secureplt"
+cross_musl_cflags="-O2"
 
 if [ "$XBPS_TARGET_MACHINE" = "ppc64-musl" ]; then
 	broken="Can't build crosstoolchain to itself"
 fi
-
-_apply_patch() {
-	local args="$1" pname="$(basename $2)"
-
-	if [ ! -f ".${pname}_done" ]; then
-		patch -N $args -i $2
-		touch .${pname}_done
-	fi
-}
-
-_binutils_build() {
-	local _args
-
-	[ -f ${wrksrc}/.binutils_build_done ] && return 0
-
-	cd ${wrksrc}
-	msg_normal "Building cross binutils bootstrap\n"
-
-	[ ! -d binutils-build ] && mkdir binutils-build
-	cd binutils-build
-
-	_args="--prefix=/usr"
-	_args+=" --target=${_triplet}"
-	_args+=" --with-sysroot=${_sysroot}"
-	_args+=" --disable-nls"
-	_args+=" --disable-multilib"
-	_args+=" --disable-werror"
-	_args+=" --disable-shared"
-	_args+=" --with-system-zlib"
-
-	../binutils-${_binutils_version}/configure ${_args}
-
-	make configure-host
-	make ${makejobs}
-	make install
-
-	touch ${wrksrc}/.binutils_build_done
-}
-
-_gcc_bootstrap() {
-	local _args
-
-	[ -f ${wrksrc}/.gcc_bootstrap_done ] && return 0
-
-	cd ${wrksrc}/gcc-${_gcc_version}
-	for f in ${XBPS_SRCPKGDIR}/gcc/patches/*.patch; do
-		_apply_patch -p0 "$f"
-	done
-	for f in ${XBPS_SRCPKGDIR}/gcc/files/*-musl.patch; do
-		_apply_patch -p1 "$f"
-	done
-
-	msg_normal "Building cross gcc bootstrap\n"
-
-	[ ! -d ../gcc-bootstrap ] && mkdir ../gcc-bootstrap
-	cd ../gcc-bootstrap
-	export ac_cv_c_compiler_gnu=yes
-
-	_args="--prefix=/usr"
-	_args+=" --target=${_triplet}"
-	_args+=" --with-sysroot=${_sysroot}"
-	_args+=" --with-abi=elfv2"
-	_args+=" --enable-languages=c"
-	_args+=" --enable-decimal-float=no"
-	_args+=" --enable-secureplt"
-	_args+=" --enable-targets=powerpc-linux"
-	_args+=" --with-newlib"
-	_args+=" --disable-libssp"
-	_args+=" --disable-nls"
-	_args+=" --disable-libquadmath"
-	_args+=" --disable-threads"
-	_args+=" --disable-shared"
-	_args+=" --disable-multilib"
-	_args+=" --disable-libmudflap"
-	_args+=" --disable-libgomp"
-	_args+=" --disable-libatomic"
-	_args+=" --disable-symvers"
-	_args+=" libat_cv_have_ifunc=no"
-
-	../gcc-${_gcc_version}/configure ${_args}
-
-	make ${makejobs}
-	make install
-
-	touch ${wrksrc}/.gcc_bootstrap_done
-}
-
-_linux_headers() {
-	[ -f ${wrksrc}/.linux_build_done ] && return 0
-
-	cd ${wrksrc}
-	msg_normal "Building Linux API headers\n"
-
-	cd linux-${_linux_version}
-
-	for f in ${XBPS_SRCPKGDIR}/kernel-libc-headers/patches/*.patch; do
-		_apply_patch -p0 $f
-	done
-
-	make ARCH=powerpc headers_check
-	make ARCH=powerpc INSTALL_HDR_PATH=${_sysroot}/usr headers_install
-
-	touch ${wrksrc}/.linux_build_done
-}
-
-_musl_build() {
-	[ -f ${wrksrc}/.musl_build_done ] && return 0
-
-	cd ${wrksrc}/musl-${_musl_version}
-	msg_normal "Building cross musl libc\n"
-
-	# Apply musl patches if there are any
-	if [ -d "${XBPS_SRCPKGDIR}/musl/patches" ]; then
-		for f in ${XBPS_SRCPKGDIR}/musl/patches/*.patch; do
-			_apply_patch -p0 "$f"
-		done
-	fi
-
-	CC="${_triplet}-gcc" LD="${_triplet}-ld" AR="${_triplet}-ar" \
-		AS="${_triplet}-as" RANLIB="${_triplet}-ranlib" \
-		CFLAGS="-Os -pipe ${_archflags}" \
-		./configure --prefix=/usr
-
-	make ${makejobs}
-	make DESTDIR=${_sysroot} install
-
-	touch ${wrksrc}/.musl_build_done
-}
-
-_libucontext_build() {
-	[ -f ${wrksrc}/.libucontext_build_done ] && return 0
-
-	cd ${wrksrc}/libucontext-${_libucontext_version}
-	msg_normal "Building cross libucontext\n"
-
-	# it's ok if we're static only here
-	CC="${_triplet}-gcc" AR="${_triplet}-ar" AS="${_triplet}-as" \
-		CFLAGS="-Os -pipe -fPIC ${_archflags}" \
-		make ARCH=ppc64 libucontext.a
-
-	cp libucontext.a ${_sysroot}/usr/lib
-
-	touch ${wrksrc}/.libucontext_build_done
-}
-
-_gcc_build() {
-	local _args
-	[ -f ${wrksrc}/.gcc_build_done ] && return 0
-
-	cd ${wrksrc}
-	msg_normal "Building cross gcc final\n"
-
-	[ ! -d gcc-build ] && mkdir gcc-build
-	cd gcc-build
-
-	_args="--prefix=/usr"
-	_args+=" --libexecdir=/usr/lib"
-	_args+=" --target=${_triplet}"
-	_args+=" --with-sysroot=${_sysroot}"
-	_args+=" --with-abi=elfv2"
-	_args+=" --enable-languages=c,ada,c++,objc,obj-c++,go,fortran,lto"
-	_args+=" --enable-decimal-float=no"
-	_args+=" --enable-secureplt"
-	_args+=" --enable-targets=powerpc-linux"
-	_args+=" --enable-libada"
-	_args+=" --enable-lto"
-	_args+=" --enable-default-pie"
-	_args+=" --enable-default-ssp"
-	_args+=" --enable-libssp"
-	_args+=" --disable-libquadmath"
-	_args+=" --disable-libsanitizer"
-	_args+=" --disable-multilib"
-	_args+=" --disable-libmudflap"
-	_args+=" --enable-shared"
-	_args+=" --disable-symvers"
-	_args+=" --disable-vtable-verify"
-	_args+=" libat_cv_have_ifunc=no"
-
-	../gcc-${_gcc_version}/configure ${_args}
-
-	make ${makejobs}
-
-	touch ${wrksrc}/.gcc_build_done
-}
-
-do_build() {
-	# Ensure we use sane environment
-	unset CC CXX CPP LD AS AR RANLIB OBJDUMP READELF NM
-	unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
-	export CFLAGS="-Os -pipe -fPIC" CXXFLAGS="-Os -pipe -fPIC"
-
-	for f in include lib libexec bin sbin; do
-		if [ ! -d ${_sysroot}/usr/${f} ]; then
-			mkdir -p ${_sysroot}/usr/${f}
-		fi
-		if [ ! -h ${_sysroot}/${f} ]; then
-			ln -sfr ${_sysroot}/usr/${f} ${_sysroot}/${f}
-		fi
-	done
-	ln -sf lib ${_sysroot}/usr/lib64
-	ln -sf usr/lib ${_sysroot}/lib64
-
-	_binutils_build
-	_gcc_bootstrap
-	_linux_headers
-	_musl_build
-	_libucontext_build
-	_gcc_build
-}
-
-do_install() {
-	for f in include lib libexec bin sbin; do
-		if [ ! -d ${DESTDIR}/${_sysroot}/usr/${f} ]; then
-			mkdir -p ${DESTDIR}/${_sysroot}/usr/${f}
-		fi
-		if [ ! -h ${DESTDIR}/${_sysroot}/${f} ]; then
-			ln -sfr ${DESTDIR}/${_sysroot}/usr/${f} \
-				${DESTDIR}/${_sysroot}/${f}
-		fi
-	done
-	ln -sf lib ${DESTDIR}/${_sysroot}/usr/lib64
-	ln -sf usr/lib ${DESTDIR}/${_sysroot}/lib64
-
-	# install linux API headers
-	cd ${wrksrc}/linux-${_linux_version}
-	make ARCH=powerpc INSTALL_HDR_PATH=${DESTDIR}/${_sysroot}/usr headers_install
-	rm -f $(find ${DESTDIR}/${_sysroot}/usr/include -name .install -or -name ..install.cmd)
-	rm -rf ${DESTDIR}/${_sysroot}/usr/include/drm
-
-	# install cross binutils
-	cd ${wrksrc}/binutils-build
-	make DESTDIR=${DESTDIR} install
-
-	# install cross gcc
-	cd ${wrksrc}/gcc-build
-	make DESTDIR=${DESTDIR} install
-
-	# move libcc1.so* to the sysroot
-	mv ${DESTDIR}/usr/lib/libcc1.so* ${DESTDIR}/${_sysroot}/usr/lib
-
-	# install musl libc for target
-	cd ${wrksrc}/musl-${_musl_version}
-	make DESTDIR=${DESTDIR}/${_sysroot} install
-
-	# Remove useless headers.
-	rm -rf ${DESTDIR}/usr/lib/gcc/${_triplet}/*/include-fixed/
-
-	# Make ld-musl-powerpc64.so.1 symlink relative to cwd.
-	cd ${DESTDIR}/${_sysroot}/usr/lib
-	ln -sf libc.so ld-musl-powerpc64.so.1
-
-	# symlinks for gnarl and gnat shared libraries
-	_majorver=${_gcc_version%.*.*}
-	_adalib=usr/lib/gcc/${_triplet}/${_gcc_version}/adalib
-	mv -v ${DESTDIR}/${_adalib}/libgnarl-${_majorver}.so ${DESTDIR}/${_sysroot}/usr/lib
-	mv -v ${DESTDIR}/${_adalib}/libgnat-${_majorver}.so ${DESTDIR}/${_sysroot}/usr/lib
-	ln -svf libgnarl-${_majorver}.so libgnarl.so
-	ln -svf libgnat-${_majorver}.so libgnat.so
-	rm -vf ${DESTDIR}/${_adalib}/libgna{rl,t}.so
-
-	# We need to build libatomic in target gcc as gccgo needs it to
-	# build... but it's not needed at runtime, so remove it from the
-	# destdir so it doesn't conflict with the libatomic package
-	rm -f ${DESTDIR}/${_sysroot}/usr/lib/libatomic.*
-
-	# Remove unnecessary stuff
-	rm -f ${DESTDIR}/usr/lib*/libiberty.a
-	rm -rf ${DESTDIR}/usr/share
-	rm -rf ${DESTDIR}/${_sysroot}/{etc,var}
-	rm -rf ${DESTDIR}/${_sysroot}/usr/{sbin,share,libexec}
-	rm -f ${DESTDIR}/${_sysroot}/libexec
-	rm -f ${DESTDIR}/${_sysroot}/lib/*.py
-	rm -f ${DESTDIR}/${_sysroot}/{sbin,lib}
-}
-
-do_clean() {
-	# Remove temporary stuff from masterdir
-	rm -rf ${_sysroot}
-	rm -f /usr/bin/${_triplet}*
-	rm -rf /usr/lib/gcc/${_triplet}
-	rm -rf /usr/libexec/gcc/${_triplet}
-}
 
 cross-powerpc64-linux-musl-libc_package() {
 	short_desc+=" - libc files"
 	nostrip=yes
 	noverifyrdeps=yes
 	noshlibprovides=yes
+
 	pkg_install() {
-		vmove ${_sysroot}
+		vmove usr/${cross_triplet}
 	}
 }
