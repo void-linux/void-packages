@@ -33,9 +33,6 @@ _EOF
 			ppc*) _CMAKE_SYSTEM_PROCESSOR=ppc ;;
 			*) _CMAKE_SYSTEM_PROCESSOR=generic ;;
 		esac
-		if [ -x "${XBPS_CROSS_BASE}/usr/bin/wx-config-gtk3" ]; then
-			wx_config=wx-config-gtk3
-		fi
 		cat > cross_${XBPS_CROSS_TRIPLET}.cmake <<_EOF
 SET(CMAKE_SYSTEM_NAME Linux)
 SET(CMAKE_SYSTEM_VERSION 1)
@@ -51,8 +48,6 @@ SET(CMAKE_FIND_ROOT_PATH  "${XBPS_CROSS_BASE}/usr;${XBPS_CROSS_BASE}")
 SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-
-SET(wxWidgets_CONFIG_EXECUTABLE ${XBPS_WRAPPERDIR}/${wx_config:=wx-config})
 _EOF
 		cmake_args+=" -DCMAKE_TOOLCHAIN_FILE=cross_${XBPS_CROSS_TRIPLET}.cmake"
 	fi
