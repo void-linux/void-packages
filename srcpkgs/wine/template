@@ -1,8 +1,8 @@
 # Template file for 'wine'
 pkgname=wine
 version=6.0rc4
-wrksrc=wine-${version/r/-r}
 revision=1
+wrksrc=wine-${version/r/-r}
 build_style=gnu-configure
 configure_args="--bindir=/usr/libexec/wine"
 short_desc="Run Microsoft Windows applications"
@@ -13,7 +13,15 @@ distfiles="https://dl.winehq.org/wine/source/${version%r*}/wine-${version/r/-r}.
 checksum=9dd7813918277d89ad3dbbd911eb1a7ada1c92778f17c727ca3a9fba591c7ec5
 
 lib32mode=full
-archs="i686 x86_64*"
+archs="i686* x86_64*"
+
+_nopie=no
+if [ "$XBPS_TARGET_MACHINE" = i686-musl ]; then
+	# build system adds -fno-PIC for 32bit builds, which,
+	# coupled with our default pie toolchain, leads to textrels
+	# in the final binary; musl doesn't support those
+	_nopie=yes
+fi
 
 hostmakedepends="pkg-config flex gettext"
 makedepends="gettext-devel lcms2-devel zlib-devel ncurses-devel
@@ -46,6 +54,25 @@ fi
 
 _wine_libexec="/usr/libexec/wine"
 nopie_files="${_wine_libexec}/wine${_wine_suffix}"
+
+if [ "${_nopie}" = yes ]; then
+	nopie_files+=" ${_wine_libexec}/wineserver${_wineserver_suffix}"
+fi
+
+pre_build() {
+	if [ "${_nopie}" = yes ]; then
+		make ${makejobs} LDFLAGS="$LDFLAGS -no-pie" \
+			tools/{widl/widl,winebuild/winebuild,winegcc/winegcc,wrc/wrc} \
+			loader/wine server/wineserver
+	fi
+}
+
+do_check() {
+	if [ "$XBPS_CHECK_PKGS" = full ]; then
+		msg_warn "This testsuite might hang indefinitely\n"
+		make check
+	fi
+}
 
 post_install() {
 	# Font aliasing settings for Win32 applications
@@ -103,6 +130,9 @@ wine-common_package() {
 wine-tools_package() {
 	depends="wine-${version}_${revision}"
 	short_desc+=" - development tools"
+	if [ "${_nopie}" = yes ]; then
+		nopie=yes
+	fi
 	pkg_install() {
 		for file in widl winebuild winecpp winedump wineg++ winegcc winemaker wmc wrc function_grep.pl
 		do
