@@ -1,0 +1,135 @@
+# Template file for 'cargo'
+pkgname=cargo
+version=0.49.0
+revision=1
+wrksrc="cargo-${version}"
+build_helper=rust
+hostmakedepends="rust python3 curl cmake pkg-config zlib-devel"
+makedepends="rust libcurl-devel"
+depends="rust"
+short_desc="Rust package manager"
+maintainer="Enno Boland <gottox@voidlinux.org>"
+license="MIT, Apache-2.0"
+homepage="https://crates.io/"
+distfiles="https://github.com/rust-lang/cargo/archive/${version}.tar.gz"
+checksum=59ba1ce05becb4a5e0772d334d75f9dce3d5487ca288ac986e786241bb1cbac5
+replaces="cargo-tree>=0"
+
+build_options="static bindist"
+desc_option_bindist="Generate a tarball for bootstrap"
+
+# rust upstream no longer ships cargo-versioned tarballs
+# need to use the corresponding rust version instead
+_bootstrap_url="https://static.rust-lang.org/dist"
+_cargo_dist_version="1.48.0"
+
+case "$XBPS_MACHINE" in
+	x86_64*|i686|ppc64le) ;;
+	ppc*)
+		# custom bootstrap tarballs still use cargo versioning, so override
+		_bootstrap_url="https://alpha.de.repo.voidlinux.org/distfiles"
+		_cargo_dist_version="0.49.0"
+		;;
+esac
+
+if [ -n "$build_option_static" -o -n "$build_option_bindist" ]; then
+	_build_static=yes
+fi
+
+if [ -z "$_build_static" ]; then
+	makedepends+=" libgit2-devel"
+fi
+
+distfiles+=" ${_bootstrap_url}/cargo-${_cargo_dist_version}-${RUST_BUILD}.tar.xz"
+
+case "$XBPS_MACHINE" in
+	i686)
+		checksum+="
+		 1eab76df91e87198632605752d0dd66f3d84b502cbd1f982f6db3d0d8d943cdb"
+		;;
+	x86_64)
+		checksum+="
+		 b11d595581e2580c069b5039214e1031a0e4f87ff6490ac39f92f77857e37055"
+		;;
+	x86_64-musl)
+		checksum+="
+		 8728cb7515e593f6fcf3c7afba826a92cd227a35b8e936bae892b95482d4fb90"
+		;;
+	ppc64le)
+		checksum+="
+		 675321cf812a132ce707261d03aab2f5ff64788ae66b45d03bc281514f5d53ec"
+		;;
+	ppc64le-musl)
+		checksum+="
+		 cf02e057f04e40458b63326e443c48924c78fc33dcb6b892643d47feb1496b09"
+		;;
+	ppc64)
+		checksum+="
+		 1e7612ea1900b76924429fa04fa2c194f4213167933b481001290dd4fef27939"
+		;;
+	ppc64-musl)
+		checksum+="
+		 88ffadd53e79055ba266f1303d502bcf1ef863783b121aa017930cadcd0e398d"
+		;;
+	ppc)
+		checksum+="
+		 cacacdec7bfd24345804efdd1bd1682084880c3c6a086bcab85cd1186b6cd230"
+		;;
+	ppc-musl)
+		checksum+="
+		 bad4a5d22da3c7548fd440d0d5a0b98e4de9894dedb35bfb58aaa5f141c23adb"
+		;;
+	*) broken="bootstrap binary unavailable for ${XBPS_MACHINE}";;
+esac
+
+post_extract() {
+	mkdir -p target/snapshot
+	cp ../cargo-${_cargo_dist_version}-${RUST_BUILD}/cargo/bin/cargo cargo
+}
+
+do_build() {
+	local cargs
+
+	if [ -n "$_build_static" ]; then
+		unset LIBSSH2_SYS_USE_PKG_CONFIG
+		export OPENSSL_STATIC=1
+		# rust-openssl can not be linked static if pkg-config is used
+		export OPENSSL_NO_PKG_CONFIG
+		export OPENSSL_DIR="${XBPS_CROSS_BASE}/usr"
+	fi
+
+	if [ -n "$_build_static" ]; then
+		cargs+=" --features=all-static"
+	fi
+
+	./cargo build --release ${cargs}
+}
+
+do_install() {
+	local cbin="target/release/cargo"
+	if [ "$CROSS_BUILD" ]; then
+		cbin="target/${RUST_TARGET}/release/cargo"
+	fi
+
+	if [ "$build_option_bindist" ]; then
+		local dest="cargo-${version}-${RUST_TARGET}"
+		mkdir -p ${XBPS_SRCDISTDIR}/distfiles ${dest}/cargo/bin
+		install -m 0755 ${cbin} ${dest}/cargo/bin
+		install -m 0644 LICENSE-APACHE LICENSE-MIT LICENSE-THIRD-PARTY ${dest}
+		bsdtar cvJf ${dest}.tar.xz ${dest}
+		install -m 0644 ${dest}.tar.xz ${XBPS_SRCDISTDIR}/distfiles
+		exit 1
+	fi
+
+	vbin ${cbin}
+	for f in src/etc/man/*.?; do
+		vman $f
+	done
+	vinstall src/etc/cargo.bashcomp.sh 0644 \
+	 usr/share/bash-completion/completions cargo
+	vinstall src/etc/_cargo 0644 usr/share/zsh/site-functions
+
+	vlicense LICENSE-APACHE
+	vlicense LICENSE-MIT
+	vlicense LICENSE-THIRD-PARTY
+}

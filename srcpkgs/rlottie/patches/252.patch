@@ -1,0 +1,210 @@
+From fe6f0d8ea6adf907e9bf58d95b3a5336d01e0c76 Mon Sep 17 00:00:00 2001
+From: John Preston <johnprestonmail@gmail.com>
+Date: Sat, 18 Jan 2020 16:19:58 +0100
+Subject: [PATCH] Allow passing a color replacement map.
+
+---
+ inc/rlottie.h                  |  4 ++-
+ src/lottie/lottieanimation.cpp |  7 ++++--
+ src/lottie/lottieloader.cpp    |  9 ++++---
+ src/lottie/lottieloader.h      |  5 +++-
+ src/lottie/lottieparser.cpp    | 45 ++++++++++++++++++++++++++++------
+ src/lottie/lottieparser.h      |  4 ++-
+ 6 files changed, 59 insertions(+), 15 deletions(-)
+
+diff --git inc/rlottie.h inc/rlottie.h
+index b37f67a..961e25f 100644
+--- inc/rlottie.h
++++ inc/rlottie.h
+@@ -299,7 +299,9 @@ public:
+      */
+     static std::unique_ptr<Animation>
+     loadFromData(std::string jsonData, const std::string &key,
+-                 const std::string &resourcePath="", bool cachePolicy=true);
++                 const std::string &resourcePath="", bool cachePolicy=true,
++	             const std::vector<std::pair<std::uint32_t, std::uint32_t>>
++				     &colorReplacements = {});
+ 
+     /**
+      *  @brief Returns default framerate of the Lottie resource.
+diff --git src/lottie/lottieanimation.cpp src/lottie/lottieanimation.cpp
+index ef93930..dd45f2c 100644
+--- src/lottie/lottieanimation.cpp
++++ src/lottie/lottieanimation.cpp
+@@ -248,7 +248,9 @@ std::future<Surface> AnimationImpl::renderAsync(size_t    frameNo,
+  */
+ std::unique_ptr<Animation> Animation::loadFromData(
+     std::string jsonData, const std::string &key,
+-    const std::string &resourcePath, bool cachePolicy)
++    const std::string &resourcePath, bool cachePolicy,
++    const std::vector<std::pair<std::uint32_t, std::uint32_t>>
++        &colorReplacements)
+ {
+     if (jsonData.empty()) {
+         vWarning << "jason data is empty";
+@@ -257,7 +259,8 @@ std::unique_ptr<Animation> Animation::loadFromData(
+ 
+     LottieLoader loader;
+     if (loader.loadFromData(std::move(jsonData), key,
+-                            (resourcePath.empty() ? " " : resourcePath), cachePolicy)) {
++                            (resourcePath.empty() ? " " : resourcePath),
++                            cachePolicy, colorReplacements)) {
+         auto animation = std::unique_ptr<Animation>(new Animation);
+         animation->d->init(loader.model());
+         return animation;
+diff --git src/lottie/lottieloader.cpp src/lottie/lottieloader.cpp
+index 82e21e3..8c06780 100644
+--- src/lottie/lottieloader.cpp
++++ src/lottie/lottieloader.cpp
+@@ -140,8 +140,11 @@ bool LottieLoader::load(const std::string &path, bool cachePolicy)
+     return true;
+ }
+ 
+-bool LottieLoader::loadFromData(std::string &&jsonData, const std::string &key,
+-                                const std::string &resourcePath, bool cachePolicy)
++bool LottieLoader::loadFromData(
++    std::string &&jsonData, const std::string &key,
++    const std::string &resourcePath, bool cachePolicy,
++    const std::vector<std::pair<std::uint32_t, std::uint32_t>>
++        &colorReplacements)
+ {
+     if (cachePolicy) {
+         mModel = LottieModelCache::instance().find(key);
+@@ -149,7 +152,7 @@ bool LottieLoader::loadFromData(std::string &&jsonData, const std::string &key,
+     }
+ 
+     LottieParser parser(const_cast<char *>(jsonData.c_str()),
+-                        resourcePath.c_str());
++                        resourcePath.c_str(), colorReplacements);
+     mModel = parser.model();
+ 
+     if (!mModel) return false;
+diff --git src/lottie/lottieloader.h src/lottie/lottieloader.h
+index 4d4646d..711d0d6 100644
+--- src/lottie/lottieloader.h
++++ src/lottie/lottieloader.h
+@@ -21,6 +21,7 @@
+ 
+ #include<sstream>
+ #include<memory>
++#include<vector>
+ 
+ class LOTModel;
+ class LottieLoader
+@@ -29,7 +30,9 @@ public:
+    static void configureModelCacheSize(size_t cacheSize);
+    bool load(const std::string &filePath, bool cachePolicy);
+    bool loadFromData(std::string &&jsonData, const std::string &key,
+-                     const std::string &resourcePath, bool cachePolicy);
++                     const std::string &resourcePath, bool cachePolicy,
++                     const std::vector<std::pair<std::uint32_t, std::uint32_t>>
++                         &colorReplacements);
+    std::shared_ptr<LOTModel> model();
+ private:  
+    std::shared_ptr<LOTModel>    mModel;
+diff --git src/lottie/lottieparser.cpp src/lottie/lottieparser.cpp
+index 945cfde..bfdf494 100644
+--- src/lottie/lottieparser.cpp
++++ src/lottie/lottieparser.cpp
+@@ -169,8 +169,14 @@ protected:
+ 
+ class LottieParserImpl : public LookaheadParserHandler {
+ public:
+-    LottieParserImpl(char *str, const char *dir_path)
+-        : LookaheadParserHandler(str), mDirPath(dir_path) {}
++    LottieParserImpl(char *str, const char *dir_path,
++                     const std::vector<std::pair<std::uint32_t, std::uint32_t>>
++                         &colorReplacements)
++        : LookaheadParserHandler(str),
++          mColorReplacements(colorReplacements),
++          mDirPath(dir_path)
++    {
++    }
+     bool VerifyType();
+     bool ParseNext();
+ public:
+@@ -260,10 +266,13 @@ public:
+     VInterpolator* interpolator(VPointF, VPointF, std::string);
+ 
+     LottieColor toColor(const char *str);
++    LottieColor applyReplacements(const LottieColor &color);
+ 
+     void resolveLayerRefs();
+ 
+ protected:
++    const std::vector<std::pair<std::uint32_t, std::uint32_t>>
++        &mColorReplacements;
+     std::unordered_map<std::string, VInterpolator*>
+                                                mInterpolatorCache;
+     std::shared_ptr<LOTCompositionData>        mComposition;
+@@ -831,6 +840,27 @@ LottieColor LottieParserImpl::toColor(const char *str)
+     tmp[1] = str[6];
+     color.b = std::strtol(tmp, nullptr, 16) / 255.0f;
+ 
++    return applyReplacements(color);
++}
++
++LottieColor LottieParserImpl::applyReplacements(const LottieColor &color)
++{
++    if (mColorReplacements.empty()) {
++        return color;
++    }
++    const auto convert = [](float value) {
++        return std::uint32_t(std::round(std::clamp(value, 0.f, 1.f) * 255.));
++    };
++    const auto part = [](std::uint32_t value, int shift) {
++        return float((value >> shift) & 0xFFU) / 255.f;
++	};
++    const auto converted =
++        convert(color.b) | (convert(color.g) << 8) | (convert(color.r) << 16);
++    for (const auto [key, value] : mColorReplacements) {
++        if (key == converted) {
++            return LottieColor(part(value, 16), part(value, 8), part(value, 0));
++        }
++    }
+     return color;
+ }
+ 
+@@ -1774,9 +1804,7 @@ void LottieParserImpl::getValue(LottieColor &color)
+             val[i++] = value;
+         }
+     }
+-    color.r = val[0];
+-    color.g = val[1];
+-    color.b = val[2];
++    color = applyReplacements(LottieColor(val[0], val[1], val[2]));
+ }
+ 
+ void LottieParserImpl::getValue(LottieGradient &grad)
+@@ -2296,8 +2324,11 @@ public:
+ #endif
+ 
+ LottieParser::~LottieParser() = default;
+-LottieParser::LottieParser(char *str, const char *dir_path)
+-    : d(std::make_unique<LottieParserImpl>(str, dir_path))
++LottieParser::LottieParser(
++    char *str, const char *dir_path,
++    const std::vector<std::pair<std::uint32_t, std::uint32_t>>
++        &colorReplacements)
++    : d(std::make_unique<LottieParserImpl>(str, dir_path, colorReplacements))
+ {
+     if (d->VerifyType())
+         d->parseComposition();
+diff --git src/lottie/lottieparser.h src/lottie/lottieparser.h
+index 35a8417..06165f9 100644
+--- src/lottie/lottieparser.h
++++ src/lottie/lottieparser.h
+@@ -26,7 +26,9 @@ class LottieParserImpl;
+ class LottieParser {
+ public:
+     ~LottieParser();
+-    LottieParser(char* str, const char *dir_path);
++    LottieParser(char *str, const char *dir_path,
++                 const std::vector<std::pair<std::uint32_t, std::uint32_t>>
++                     &colorReplacements = {});
+     std::shared_ptr<LOTModel> model();
+ private:
+    std::unique_ptr<LottieParserImpl>  d;
+-- 
+2.24.0
+

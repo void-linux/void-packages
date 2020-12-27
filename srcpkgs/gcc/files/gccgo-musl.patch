@@ -1,0 +1,200 @@
+This is not among the normal patches as these changes are musl specific and
+there is no way to easily conditionalize it in source for some of the changes.
+
+Souurce: Adélie Linux, q66
+URL: https://code.foxkit.us/adelie/packages/tree/master/system/gcc
+
+--- Makefile.in
++++ Makefile.in
+@@ -46325,7 +46325,7 @@ configure-target-libgo:
+ 	esac; \
+ 	module_srcdir=libgo; \
+ 	rm -f no-such-file || : ; \
+-	CONFIG_SITE=no-such-file $(SHELL) \
++	CONFIG_SITE=no-such-file LIBS="-lucontext $$LIBS" $(SHELL) \
+ 	  $$s/$$module_srcdir/configure \
+ 	  --srcdir=$${topdir}/$$module_srcdir \
+ 	  $(TARGET_CONFIGARGS) --build=${build_alias} --host=${target_alias} \
+--- libgo/mksysinfo.sh
++++ libgo/mksysinfo.sh
+@@ -379,11 +379,7 @@ fi
+ # Some basic types.
+ echo 'type Size_t _size_t' >> ${OUT}
+ echo "type Ssize_t _ssize_t" >> ${OUT}
+-if grep '^const _HAVE_OFF64_T = ' gen-sysinfo.go > /dev/null 2>&1; then
+-  echo "type Offset_t _off64_t" >> ${OUT}
+-else
+-  echo "type Offset_t _off_t" >> ${OUT}
+-fi
++echo "type Offset_t _off_t" >> ${OUT}
+ echo "type Mode_t _mode_t" >> ${OUT}
+ echo "type Pid_t _pid_t" >> ${OUT}
+ echo "type Uid_t _uid_t" >> ${OUT}
+--- libgo/go/runtime/mem_gccgo.go
++++ libgo/go/runtime/mem_gccgo.go
+@@ -16,7 +16,7 @@ import (
+ //go:linkname sysFree runtime.sysFree
+ 
+ //extern mmap
+-func sysMmap(addr unsafe.Pointer, n uintptr, prot, flags, fd int32, off uintptr) unsafe.Pointer
++func sysMmap(addr unsafe.Pointer, n uintptr, prot, flags, fd int32, off int64) unsafe.Pointer
+ 
+ //extern munmap
+ func munmap(addr unsafe.Pointer, length uintptr) int32
+@@ -38,7 +38,7 @@ func init() {
+ 	}
+ }
+ 
+-func mmap(addr unsafe.Pointer, n uintptr, prot, flags, fd int32, off uintptr) (unsafe.Pointer, int) {
++func mmap(addr unsafe.Pointer, n uintptr, prot, flags, fd int32, off int64) (unsafe.Pointer, int) {
+ 	p := sysMmap(addr, n, prot, flags, fd, off)
+ 	if uintptr(p) == _MAP_FAILED {
+ 		return nil, errno()
+--- libgo/go/runtime/signal_gccgo.go
++++ libgo/go/runtime/signal_gccgo.go
+@@ -111,7 +111,7 @@ func getsig(i uint32) uintptr {
+ 	if sigaction(i, nil, &sa) < 0 {
+ 		// On GNU/Linux glibc rejects attempts to call
+ 		// sigaction with signal 32 (SIGCANCEL) or 33 (SIGSETXID).
+-		if GOOS == "linux" && (i == 32 || i == 33) {
++		if GOOS == "linux" && (i == 32 || i == 33 || i == 34) {
+ 			return _SIG_DFL
+ 		}
+ 		throw("sigaction read failure")
+--- libgo/go/syscall/errstr.go
++++ libgo/go/syscall/errstr.go
+@@ -5,7 +5,6 @@
+ // license that can be found in the LICENSE file.
+ 
+ // +build !hurd
+-// +build !linux
+ 
+ package syscall
+ 
+--- libgo/go/syscall/errstr_glibc.go
++++ /dev/null
+@@ -1,33 +0,0 @@
+-// errstr_glibc.go -- GNU/Linux and GNU/Hurd specific error strings.
+-
+-// Copyright 2010 The Go Authors. All rights reserved.
+-// Use of this source code is governed by a BSD-style
+-// license that can be found in the LICENSE file.
+-
+-// We use this rather than errstr.go because on GNU/Linux sterror_r
+-// returns a pointer to the error message, and may not use buf at all.
+-
+-// +build hurd linux
+-
+-package syscall
+-
+-import "unsafe"
+-
+-//sysnb	strerror_r(errnum int, b []byte) (errstr *byte)
+-//strerror_r(errnum _C_int, b *byte, len Size_t) *byte
+-
+-func Errstr(errnum int) string {
+-	a := make([]byte, 128)
+-	p := strerror_r(errnum, a)
+-	b := (*[1000]byte)(unsafe.Pointer(p))
+-	i := 0
+-	for b[i] != 0 {
+-		i++
+-	}
+-	// Lowercase first letter: Bad -> bad, but STREAM -> STREAM.
+-	if i > 1 && 'A' <= b[0] && b[0] <= 'Z' && 'a' <= b[1] && b[1] <= 'z' {
+-		c := b[0] + 'a' - 'A'
+-		return string(c) + string(b[1:i])
+-	}
+-	return string(b[:i])
+-}
+--- libgo/go/syscall/libcall_linux.go
++++ libgo/go/syscall/libcall_linux.go
+@@ -206,19 +206,19 @@ func Gettid() (tid int) {
+ //sys	Setxattr(path string, attr string, data []byte, flags int) (err error)
+ //setxattr(path *byte, name *byte, value *byte, size Size_t, flags _C_int) _C_int
+ 
+-//sys	splice(rfd int, roff *_loff_t, wfd int, woff *_loff_t, len int, flags int) (n int64, err error)
+-//splice(rfd _C_int, roff *_loff_t, wfd _C_int, woff *_loff_t, len Size_t, flags _C_uint) Ssize_t
++//sys	splice(rfd int, roff *_off_t, wfd int, woff *_off_t, len int, flags int) (n int64, err error)
++//splice(rfd _C_int, roff *_off_t, wfd _C_int, woff *_off_t, len Size_t, flags _C_uint) Ssize_t
+ func Splice(rfd int, roff *int64, wfd int, woff *int64, len int, flags int) (n int64, err error) {
+-	var lroff _loff_t
+-	var plroff *_loff_t
++	var lroff _off_t
++	var plroff *_off_t
+ 	if roff != nil {
+-		lroff = _loff_t(*roff)
++		lroff = _off_t(*roff)
+ 		plroff = &lroff
+ 	}
+-	var lwoff _loff_t
+-	var plwoff *_loff_t
++	var lwoff _off_t
++	var plwoff *_off_t
+ 	if woff != nil {
+-		lwoff = _loff_t(*woff)
++		lwoff = _off_t(*woff)
+ 		plwoff = &lwoff
+ 	}
+ 	n, err = splice(rfd, plroff, wfd, plwoff, len, flags)
+--- libgo/mksigtab.sh
++++ libgo/mksigtab.sh
+@@ -82,7 +82,7 @@ checksig _SIGPWR     '{_SigNotify, "SIGPWR: power failure restart"}'
+ checksig _SIGEMT     '{_SigThrow, "SIGEMT: emulate instruction executed"}'
+ checksig _SIGINFO    '{_SigNotify, "SIGINFO: status request from keyboard"}'
+ checksig _SIGTHR     '{_SigNotify, "SIGTHR: reserved"}'
+-checksig _SIGPOLL    '{_SigNotify, "SIGPOLL: pollable event occurred"}'
++#checksig _SIGPOLL    '{_SigNotify, "SIGPOLL: pollable event occurred"}'
+ checksig _SIGWAITING '{_SigNotify, "SIGWAITING: reserved signal no longer used by"}'
+ checksig _SIGLWP     '{_SigNotify, "SIGLWP: reserved signal no longer used by"}'
+ checksig _SIGFREEZE  '{_SigNotify, "SIGFREEZE: special signal used by CPR"}'
+@@ -95,10 +95,12 @@ checksig _SIGLOST '   {_SigNotify, "SIGLOST: resource lost (Sun); server died (G
+ 
+ # Special handling of signals 32 and 33 on GNU/Linux systems,
+ # because they are special to glibc.
++# Signal 34 is additionally special to Linux systems with musl.
+ if test "${GOOS}" = "linux"; then
+-    SIGLIST=$SIGLIST"_32__33_"
++    SIGLIST=$SIGLIST"_32__33__34_"
+     echo '	32: {_SigSetStack + _SigUnblock, "signal 32"}, /* SIGCANCEL; see issue 6997 */'
+     echo '	33: {_SigSetStack + _SigUnblock, "signal 33"}, /* SIGSETXID; see issues 3871, 9400, 12498 */'
++    echo '	34: {_SigSetStack + _SigUnblock, "signal 34"}, /* see issue 30062 */'
+ fi
+ 
+ if test "${GOOS}" = "aix"; then
+--- libgo/runtime/go-signal.c
++++ libgo/runtime/go-signal.c
+@@ -222,7 +222,11 @@ getSiginfo(siginfo_t *info, void *context __attribute__((unused)))
+ #endif
+ #ifdef __PPC__
+   #ifdef __linux__
+-	ret.sigpc = ((ucontext_t*)(context))->uc_mcontext.regs->nip;
++    #ifdef __PPC64__
++	ret.sigpc = ((ucontext_t*)(context))->uc_mcontext.gp_regs[32];
++    #else
++	ret.sigpc = ((ucontext_t*)(context))->uc_mcontext.gregs[32];
++    #endif
+   #endif
+   #ifdef _AIX
+ 	ret.sigpc = ((ucontext_t*)(context))->uc_mcontext.jmp_context.iar;
+@@ -343,7 +343,7 @@ dumpregs(siginfo_t *info __attribute__((unused)), void *context __attribute__((u
+   #endif
+ #endif
+ 
+-#if defined(__PPC__) && defined(__LITTLE_ENDIAN__)
++#if defined(__PPC__) && defined(__LITTLE_ENDIAN__) && defined(__GLIBC__)
+   #ifdef __linux__
+ 	  {
+ 		mcontext_t *m = &((ucontext_t*)(context))->uc_mcontext;
+--- libgo/sysinfo.c
++++ libgo/sysinfo.c
+@@ -73,9 +73,6 @@
+ #include <sys/times.h>
+ #include <sys/wait.h>
+ #include <sys/un.h>
+-#if defined(HAVE_SYS_USER_H)
+-#include <sys/user.h>
+-#endif
+ #if defined(HAVE_SYS_UTSNAME_H)
+ #include <sys/utsname.h>
+ #endif
