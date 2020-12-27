@@ -94,7 +94,7 @@ do_configure() {
 
 	${meson_cmd} \
 		--prefix=/usr \
-		--libdir=/usr/lib \
+		--libdir=/usr/lib${XBPS_TARGET_WORDSIZE} \
 		--libexecdir=/usr/libexec \
 		--bindir=/usr/bin \
 		--sbindir=/usr/bin \

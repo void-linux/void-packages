@@ -10,11 +10,10 @@ export configure_args="--prefix=/usr --sysconfdir=/etc --sbindir=/usr/bin --bind
 . ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
 export configure_args+=" --host=$XBPS_TRIPLET --build=$XBPS_TRIPLET"
 
-if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
-	# on x86 use /usr/lib32 as libdir, but just as fake directory,
-	# because /usr/lib32 is a symlink to /usr/lib in void.
-	export configure_args+=" --libdir=/usr/lib32"
-fi
+# Always use wordsize-specific libdir even though the real path is lib
+# This is to make sure 32-bit and 64-bit libs can coexist when looking
+# up things (the opposite-libdir is always symlinked as libNN)
+export configure_args+=" --libdir=/usr/lib${XBPS_TARGET_WORDSIZE}"
 
 _AUTOCONFCACHEDIR=${XBPS_COMMONDIR}/environment/configure/autoconf_cache
 

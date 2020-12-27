@@ -1,7 +1,7 @@
 # Template file for 'binutils'
 pkgname=binutils
 version=2.34
-revision=1
+revision=2
 bootstrap=yes
 short_desc="GNU binary utilities"
 maintainer="Enno Boland <gottox@voidlinux.org>"
@@ -10,12 +10,13 @@ homepage="http://www.gnu.org/software/binutils/"
 distfiles="${GNU_SITE}/$pkgname/$pkgname-$version.tar.xz"
 checksum=f00b0e8803dc9bab1e2165bd568528135be734df3fabf8d0161828cd56028952
 
+makedepends="zlib-devel"
 if [ "$CHROOT_READY" ]; then
 	hostmakedepends="flex perl texinfo"
+	makedepends+=" elfutils-devel"
 	checkdepends="bc"
 	depends="binutils-doc"
 fi
-makedepends+=" zlib-devel"
 
 _get_triplet() {
 	if [ -z "$XBPS_TRIPLET" ]; then
@@ -29,13 +30,30 @@ _get_triplet() {
 }
 
 do_configure() {
+	local CONFIGFLAG="--build=$(_get_triplet)
+		--prefix=/usr
+		--enable-threads
+		--enable-plugins
+		--enable-secureplt
+		--with-mmap
+		--disable-shared
+		--enable-gold
+		--disable-werror
+		--enable-deterministic-archives
+		--enable-ld=default
+		--disable-nls"
+	if [ "$CHROOT_READY" ]; then
+		CONFIGFLAG+=" --with-debuginfod"
+	else
+		CONFIGFLAG+=" --without-debuginfod"
+	fi
 	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		CONFIGFLAG="--enable-64-bit-bfd --enable-multilib"
+		CONFIGFLAG+=" --enable-64-bit-bfd --enable-multilib"
 	fi
 	if [ "$CROSS_BUILD" ]; then
 		# Do not use configure_args nor build_style=gnu-configure,
 		# avoiding --with-sysroot to $XBPS_CROSS_BASE.
-		CONFIGFLAG="--host=$XBPS_CROSS_TRIPLET --with-build-sysroot=$XBPS_CROSS_BASE"
+		CONFIGFLAG+=" --host=$XBPS_CROSS_TRIPLET --with-build-sysroot=$XBPS_CROSS_BASE"
 	fi
 	if [ "$XBPS_TARGET_MACHINE" = "mips-musl" -o "$XBPS_TARGET_MACHINE" = "mipsel-musl" ]; then
 		CONFIGFLAG+=" --with-float=soft --without-fp"
@@ -45,11 +63,7 @@ do_configure() {
 	elif [ "${XBPS_TARGET_MACHINE%-musl}" = "i686" ]; then
 		CONFIGFLAG+=" --enable-64-bit-bfd --enable-targets=x86_64-linux-gnu,x86_64-pep"
 	fi
-	./configure --build=$(_get_triplet) --prefix=/usr --enable-threads \
-		--enable-plugins --enable-secureplt --with-mmap \
-		--disable-shared --enable-gold --disable-werror \
-		--enable-deterministic-archives --enable-ld=default \
-		--disable-nls $CONFIGFLAG
+	./configure $CONFIGFLAG
 }
 
 do_build() {
@@ -81,12 +95,6 @@ do_check() {
 
 do_install() {
 	local _triplet=$(_get_triplet)
-	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		mkdir -p ${DESTDIR}/usr/lib
-		cd ${DESTDIR}/usr
-		ln -s lib lib64
-		cd ${wrksrc}
-	fi
 	make DESTDIR=${DESTDIR} tooldir=/usr install
 
 	# Remove ld (hardlink) and make a symlink to ld.bfd.
@@ -110,8 +118,6 @@ do_install() {
 	echo "INPUT ( /usr/lib/libopcodes.a -lbfd )" \
 		>${DESTDIR}/usr/lib/libopcodes.so
 
-	rm -f ${DESTDIR}/usr/lib64
-
 	# Remove useless manpages.
 	for f in dlltool nlmconv windres windmc; do
 		rm -f ${DESTDIR}/usr/share/man/man1/${f}.1
@@ -133,7 +139,6 @@ binutils-devel_package() {
 }
 
 binutils-doc_package() {
-	archs=noarch
 	short_desc+=" - info files"
 	pkg_install() {
 		vmove usr/share/info

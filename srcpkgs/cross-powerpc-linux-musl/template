@@ -6,8 +6,6 @@ _linux_version=4.19
 _libucontext_version=0.9.0
 
 _triplet=powerpc-linux-musl
-_fpuflags=
-_archflags="-mcpu=powerpc -msecure-plt"
 _sysroot="/usr/${_triplet}"
 
 pkgname=cross-${_triplet}
@@ -74,7 +72,6 @@ _binutils_build() {
 	_args+=" --disable-shared"
 	_args+=" --with-system-zlib"
 	_args+=" --enable-secureplt"
-	_args+=" ${_fpuflags}"
 
 	../binutils-${_binutils_version}/configure ${_args}
 
@@ -89,14 +86,12 @@ _gcc_bootstrap() {
 	[ -f ${wrksrc}/.gcc_bootstrap_done ] && return 0
 
 	cd ${wrksrc}/gcc-${_gcc_version}
-	_apply_patch -p0 ${FILESDIR}/fix-cxxflags-passing.patch
-	_apply_patch -p0 ${FILESDIR}/musl-ada.patch
-	_apply_patch -p0 ${FILESDIR}/0010-ldbl128-config.patch
-	_apply_patch -p0 ${FILESDIR}/libgcc-ibm128-no-tag.patch
-	_apply_patch -p1 ${FILESDIR}/libgnarl-musl.patch
-	_apply_patch -p1 ${FILESDIR}/libssp-musl.patch
-	_apply_patch -p0 ${FILESDIR}/invalid_tls_model.patch
-	_apply_patch -p0 ${FILESDIR}/gccgo-musl.patch
+	for f in ${XBPS_SRCPKGDIR}/gcc/patches/*.patch; do
+		_apply_patch -p0 "$f"
+	done
+	for f in ${XBPS_SRCPKGDIR}/gcc/files/*-musl.patch; do
+		_apply_patch -p1 "$f"
+	done
 
 	msg_normal "Building cross gcc bootstrap\n"
 
@@ -122,8 +117,6 @@ _gcc_bootstrap() {
 	_args+=" --disable-symvers"
 	_args+=" libat_cv_have_ifunc=no"
 	_args+=" --enable-secureplt"
-	_args+=" --with-long-double=64"
-	_args+=" ${_fpuflags}"
 
 	CFLAGS="-O0 -g0" CXXFLAGS="-O0 -g0" \
 		../gcc-${_gcc_version}/configure ${_args}
@@ -165,7 +158,7 @@ _musl_build() {
 		done
 	fi
 
-	CC="${_triplet}-gcc" CFLAGS="-Os -pipe -fPIC ${_archflags}" \
+	CC="${_triplet}-gcc" CFLAGS="-Os -pipe -fPIC" \
 		./configure --prefix=/usr
 
 	make ${makejobs}
@@ -182,7 +175,7 @@ _libucontext_build() {
 
 	# it's ok if we're static only here
 	CC="${_triplet}-gcc" AR="${_triplet}-ar" AS="${_triplet}-as" \
-		CFLAGS="-Os -pipe ${_archflags}" \
+		CFLAGS="-Os -pipe" \
 		make ARCH=ppc libucontext.a
 
 	cp libucontext.a ${_sysroot}/usr/lib
@@ -222,8 +215,6 @@ _gcc_build() {
 	_args+=" libat_cv_have_ifunc=no"
 	_args+=" --disable-decimal-float"
 	_args+=" --enable-secureplt"
-	_args+=" --with-long-double=64"
-	_args+=" ${_fpuflags}"
 
 	../gcc-${_gcc_version}/configure ${_args}
 
@@ -246,6 +237,8 @@ do_build() {
 			ln -sfr ${_sysroot}/usr/${f} ${_sysroot}/${f}
 		fi
 	done
+	ln -sf lib ${_sysroot}/usr/lib32
+	ln -sf usr/lib ${_sysroot}/lib32
 
 	_binutils_build
 	_gcc_bootstrap
@@ -265,6 +258,8 @@ do_install() {
 				${DESTDIR}/${_sysroot}/${f}
 		fi
 	done
+	ln -sf lib ${DESTDIR}/${_sysroot}/usr/lib32
+	ln -sf usr/lib ${DESTDIR}/${_sysroot}/lib32
 
 	# install linux API headers
 	cd ${wrksrc}/linux-${_linux_version}
