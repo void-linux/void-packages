@@ -1,0 +1,325 @@
+--- NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/common/inc/nv-linux.h
++++ NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/common/inc/nv-linux.h
+@@ -159,7 +159,7 @@ static inline uid_t __kuid_val(kuid_t uid)
+ }
+ #endif
+ 
+-#if defined(NVCPU_X86_64) && !defined(HAVE_COMPAT_IOCTL)
++#if defined(NVCPU_X86_64) && !defined(NV_FILE_OPERATIONS_HAS_COMPAT_IOCTL)
+ #include <linux/syscalls.h>         /* sys_ioctl()                      */
+ #include <linux/ioctl32.h>          /* register_ioctl32_conversion()    */
+ #endif
+--- NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/common/inc/nv-mm.h
++++ NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/common/inc/nv-mm.h
+@@ -144,9 +144,13 @@ typedef int vm_fault_t;
+                 flags |= FOLL_FORCE;
+ 
+         #if defined(NV_GET_USER_PAGES_REMOTE_HAS_LOCKED_ARG)
+-
++            #if defined (NV_GET_USER_PAGES_REMOTE_HAS_TSK_ARG)
+                return get_user_pages_remote(tsk, mm, start, nr_pages, flags,
+                                             pages, vmas, NULL);
++            #else
++               return get_user_pages_remote(mm, start, nr_pages, flags,
++                                            pages, vmas, NULL);
++            #endif
+ 
+         #else
+ 
+@@ -159,7 +163,7 @@ typedef int vm_fault_t;
+     #endif
+ #else
+     #if defined(NV_GET_USER_PAGES_HAS_WRITE_AND_FORCE_ARGS)
+-        #define NV_GET_USER_PAGES_REMOTE    NV_GET_USER_PAGES
++        #define NV_GET_USER_PAGES_REMOTE    get_user_pages
+     #else
+         #include <linux/mm.h>
+         #include <linux/sched.h>
+--- NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/conftest.sh
++++ NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/conftest.sh
+@@ -3043,6 +3043,7 @@ compile_test() {
+ 
+             if [ -f conftest$$.o ]; then
+                 echo "#undef NV_GET_USER_PAGES_REMOTE_PRESENT" | append_conftest "functions"
++                echo "#undef NV_GET_USER_PAGES_REMOTE_HAS_TSK_ARG" | append_conftest "functions"
+                 echo "#undef NV_GET_USER_PAGES_REMOTE_HAS_WRITE_AND_FORCE_ARGS" | append_conftest "functions"
+                 echo "#undef NV_GET_USER_PAGES_REMOTE_HAS_LOCKED_ARG" | append_conftest "functions"
+                 rm -f conftest$$.o
+@@ -3070,14 +3071,20 @@ compile_test() {
+             rm -f conftest$$.c
+ 
+             if [ -f conftest$$.o ]; then
++                echo "#define NV_GET_USER_PAGES_REMOTE_HAS_TSK_ARG" | append_conftest "functions"
+                 echo "#define NV_GET_USER_PAGES_REMOTE_HAS_WRITE_AND_FORCE_ARGS" | append_conftest "functions"
+                 echo "#undef NV_GET_USER_PAGES_REMOTE_HAS_LOCKED_ARG" | append_conftest "functions"
+                 rm -f conftest$$.o
+                 return
+             fi
+ 
++            echo "#undef NV_GET_USER_PAGES_REMOTE_HAS_WRITE_AND_FORCE_ARGS" | append_conftest "functions"
++
++            #
+             # conftest #3: check if get_user_pages_remote() has locked argument
+-            
++            # Return if these arguments are present. Fall through to conftest #4
++            # if these args are absent.
++            #
+             echo "$CONFTEST_PREAMBLE
+             #include <linux/mm.h>
+             long get_user_pages_remote(struct task_struct *tsk,
+@@ -3095,13 +3102,40 @@ compile_test() {
+             rm -f conftest$$.c
+ 
+             if [ -f conftest$$.o ]; then
++                echo "#define NV_GET_USER_PAGES_REMOTE_HAS_TSK_ARG" | append_conftest "functions"
++                echo "#define NV_GET_USER_PAGES_REMOTE_HAS_LOCKED_ARG" | append_conftest "functions"
++                rm -f conftest$$.o
++                return
++            fi
++
++            #
++            # conftest #4: check if get_user_pages_remote() does not take
++            # tsk argument.
++            #
++            echo "$CONFTEST_PREAMBLE
++            #include <linux/mm.h>
++            long get_user_pages_remote(struct mm_struct *mm,
++                                       unsigned long start,
++                                       unsigned long nr_pages,
++                                       unsigned int gup_flags,
++                                       struct page **pages,
++                                       struct vm_area_struct **vmas,
++                                       int *locked) {
++                return 0;
++            }" > conftest$$.c
++
++            $CC $CFLAGS -c conftest$$.c > /dev/null 2>&1
++            rm -f conftest$$.c
++
++            if [ -f conftest$$.o ]; then
++                echo "#undef NV_GET_USER_PAGES_REMOTE_HAS_TSK_ARG" | append_conftest "functions"
+                 echo "#define NV_GET_USER_PAGES_REMOTE_HAS_LOCKED_ARG" | append_conftest "functions"
+                 rm -f conftest$$.o
+             else
++
++                echo "#define NV_GET_USER_PAGES_REMOTE_HAS_TSK_ARG" | append_conftest "functions"
+                 echo "#undef NV_GET_USER_PAGES_REMOTE_HAS_LOCKED_ARG" | append_conftest "functions"
+             fi
+-            echo "#undef NV_GET_USER_PAGES_REMOTE_HAS_WRITE_AND_FORCE_ARGS" | append_conftest "functions"
+-
+         ;;
+ 
+         usleep_range)
+@@ -4131,6 +4165,115 @@ compile_test() {
+             compile_check_conftest "$CODE" "NV_PCI_DEV_HAS_SKIP_BUS_PM" "" "types"
+         ;;
+ 
++        drm_gem_object_put_unlocked)
++            #
++            # Determine if the function drm_gem_object_put_unlocked() is present.
++            #
++            # In v5.9-rc1, commit 2f4dd13d4bb8 ("drm/gem: add
++            # drm_gem_object_put helper") removes drm_gem_object_put_unlocked()
++            # function and replace its definition by transient macro. Commit
++            # ab15d56e27be ("drm: remove transient
++            # drm_gem_object_put_unlocked()") finally removes
++            # drm_gem_object_put_unlocked() macro.
++            #
++            CODE="
++            #if defined(NV_DRM_DRMP_H_PRESENT)
++            #include <drm/drmP.h>
++            #endif
++
++            #if defined(NV_DRM_DRM_GEM_H_PRESENT)
++            #include <drm/drm_gem.h>
++            #endif
++            void conftest_drm_gem_object_put_unlocked(void) {
++                drm_gem_object_put_unlocked();
++            }"
++
++            compile_check_conftest "$CODE" "NV_DRM_GEM_OBJECT_PUT_UNLOCK_PRESENT" "" "functions"
++        ;;
++
++        drm_display_mode_has_vrefresh)
++            #
++            # Determine if the 'drm_display_mode' structure has a 'vrefresh'
++            # field.
++            #
++            # Removed by commit 0425662fdf05 ("drm: Nuke mode->vrefresh") in
++            # v5.9-rc1.
++            #
++            CODE="
++            #include <drm/drm_modes.h>
++
++            int conftest_drm_display_mode_has_vrefresh(void) {
++                return offsetof(struct drm_display_mode, vrefresh);
++            }"
++
++            compile_check_conftest "$CODE" "NV_DRM_DISPLAY_MODE_HAS_VREFRESH" "types"
++
++        ;;
++
++        drm_driver_master_set_has_int_return_type)
++            #
++            # Determine if drm_driver::master_set() returns integer value
++            #
++            # Changed to void by commit 907f53200f98 ("drm: vmwgfx: remove
++            # drm_driver::master_set() return type") in v5.9-rc1.
++            #
++            CODE="
++            #if defined(NV_DRM_DRMP_H_PRESENT)
++            #include <drm/drmP.h>
++            #endif
++
++            #if defined(NV_DRM_DRM_DRV_H_PRESENT)
++            #include <drm/drm_drv.h>
++            #endif
++
++            int conftest_drm_driver_master_set_has_int_return_type(struct drm_driver *drv,
++                struct drm_device *dev, struct drm_file *file_priv, bool from_open) {
++
++                return drv->master_set(dev, file_priv, from_open);
++            }"
++
++            compile_check_conftest "$CODE" "NV_DRM_DRIVER_SET_MASTER_HAS_INT_RETURN_TYPE" "" "types"
++        ;;
++
++        drm_driver_has_gem_free_object)
++            #
++            # Determine if the 'drm_driver' structure has a 'gem_free_object'
++            # function pointer.
++            #
++            # drm_driver::gem_free_object is removed by commit 1a9458aeb8eb
++            # ("drm: remove drm_driver::gem_free_object") in v5.9-rc1.
++            #
++            CODE="
++            #if defined(NV_DRM_DRMP_H_PRESENT)
++            #include <drm/drmP.h>
++            #endif
++
++            #if defined(NV_DRM_DRM_DRV_H_PRESENT)
++            #include <drm/drm_drv.h>
++            #endif
++
++            int conftest_drm_driver_has_gem_free_object(void) {
++                return offsetof(struct drm_driver, gem_free_object);
++            }"
++
++            compile_check_conftest "$CODE" "NV_DRM_DRIVER_HAS_GEM_FREE_OBJECT" "" "types"
++        ;;
++
++        vga_tryget)
++            #
++            # Determine if vga_tryget() is present
++            #
++            # vga_tryget() was removed by commit f369bc3f9096 ("vgaarb: mark
++            # vga_tryget static") in v5.9-rc1 (2020-08-01).
++            #
++            CODE="
++            #include <linux/vgaarb.h>
++            void conftest_vga_tryget(void) {
++                vga_tryget();
++            }"
++
++            compile_check_conftest "$CODE" "NV_VGA_TRYGET_PRESENT" "" "functions"
++        ;;
+     esac
+ }
+ 
+--- NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/nvidia-drm/nvidia-drm-drv.c
++++ NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/nvidia-drm/nvidia-drm-drv.c
+@@ -466,8 +466,8 @@ static void nv_drm_unload(struct drm_device *dev)
+ 
+ #if defined(NV_DRM_ATOMIC_MODESET_AVAILABLE)
+ 
+-static int nv_drm_master_set(struct drm_device *dev,
+-                             struct drm_file *file_priv, bool from_open)
++static int __nv_drm_master_set(struct drm_device *dev,
++                               struct drm_file *file_priv, bool from_open)
+ {
+     struct nv_drm_device *nv_dev = to_nv_device(dev);
+ 
+@@ -478,6 +478,21 @@ static int nv_drm_master_set(struct drm_device *dev,
+     return 0;
+ }
+ 
++#if defined(NV_DRM_DRIVER_SET_MASTER_HAS_INT_RETURN_TYPE)
++static int nv_drm_master_set(struct drm_device *dev,
++                             struct drm_file *file_priv, bool from_open)
++{
++    return __nv_drm_master_set(dev, file_priv, from_open);
++}
++#else
++static void nv_drm_master_set(struct drm_device *dev,
++                              struct drm_file *file_priv, bool from_open)
++{
++     WARN_ON(__nv_drm_master_set(dev, file_priv, from_open) != 0);
++}
++#endif
++
++
+ #if defined(NV_DRM_MASTER_DROP_HAS_FROM_RELEASE_ARG)
+ static
+ void nv_drm_master_drop(struct drm_device *dev,
+@@ -677,7 +692,9 @@ static struct drm_driver nv_drm_driver = {
+ #endif
+                                DRIVER_GEM  | DRIVER_RENDER,
+ 
++#if defined(NV_DRM_DRIVER_HAS_GEM_FREE_OBJECT)
+     .gem_free_object        = nv_drm_gem_free,
++#endif
+ 
+     .ioctls                 = nv_drm_ioctls,
+     .num_ioctls             = ARRAY_SIZE(nv_drm_ioctls),
+--- NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/nvidia-drm/nvidia-drm-gem.h
++++ NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/nvidia-drm/nvidia-drm-gem.h
+@@ -87,7 +87,13 @@ static inline void
+ nv_drm_gem_object_unreference_unlocked(struct nv_drm_gem_object *nv_gem)
+ {
+ #if defined(NV_DRM_GEM_OBJECT_GET_PRESENT)
++
++#if defined(NV_DRM_GEM_OBJECT_PUT_UNLOCK_PRESENT)
+     drm_gem_object_put_unlocked(&nv_gem->base);
++#else
++    drm_gem_object_put(&nv_gem->base);
++#endif
++
+ #else
+     drm_gem_object_unreference_unlocked(&nv_gem->base);
+ #endif
+--- NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/nvidia-drm/nvidia-drm-utils.c
++++ NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/nvidia-drm/nvidia-drm-utils.c
+@@ -103,7 +103,9 @@ void
+ nvkms_display_mode_to_drm_mode(const struct NvKmsKapiDisplayMode *displayMode,
+                                struct drm_display_mode *mode)
+ {
++#if defined(NV_DRM_DISPLAY_MODE_HAS_VREFRESH)
+     mode->vrefresh    = (displayMode->timings.refreshRate + 500) / 1000; /* In Hz */
++#endif
+ 
+     mode->clock       = (displayMode->timings.pixelClockHz + 500) / 1000; /* In Hz */
+ 
+@@ -189,7 +191,11 @@ bool drm_format_to_nvkms_format(u32 format,
+ void drm_mode_to_nvkms_display_mode(const struct drm_display_mode *src,
+                                     struct NvKmsKapiDisplayMode *dst)
+ {
++#if defined(NV_DRM_DISPLAY_MODE_HAS_VREFRESH)
+     dst->timings.refreshRate  = src->vrefresh * 1000;
++#else
++    dst->timings.refreshRate  = drm_mode_vrefresh(src) * 1000;
++#endif
+ 
+     dst->timings.pixelClockHz = src->clock * 1000; /* In Hz */
+ 
+--- NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/nvidia/nv.c
++++ NVIDIA-Linux-x86_64-390.138-no-compat32/kernel/nvidia/nv.c
+@@ -3872,7 +3872,9 @@ nvidia_probe
+ 
+ #if defined(CONFIG_VGA_ARB) && !defined(NVCPU_PPC64LE)
+ #if defined(VGA_DEFAULT_DEVICE)
++#if defined(NV_VGA_TRYGET_PRESENT)
+     vga_tryget(VGA_DEFAULT_DEVICE, VGA_RSRC_LEGACY_MASK);
++#endif
+ #endif
+     vga_set_legacy_decoding(dev, VGA_RSRC_NONE);
+ #endif
