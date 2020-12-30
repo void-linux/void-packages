@@ -1013,6 +1013,8 @@ This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 `gnu-configure` style the configure script calls `qmake` or a `Makefile` in
 `gnu-makefile` style, respectively.
 
+- `cmake-wxWidgets-gtk3` sets the `WX_CONFIG` variable which is used by FindwxWidgets.cmake
+
 <a id="functions"></a>
 ### Functions
 
