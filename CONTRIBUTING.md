@@ -57,21 +57,11 @@ Once you have built your template file or files, the commit message should have 
 
 If you want to describe your changes in more detail, add an empty line followed by those details ([example](https://github.com/void-linux/void-packages/commit/f1c45a502086ba1952f23ace9084a870ce437bc6)).
 
-Pull requests are automatically submitted for Continuous Integration (CI) testing to ensure packages build on various combinations of libc and architecture.
-Packages that take longer than 120 minutes or need more than 14G of storage to complete their build (for example, Firefox or the Linux kernel) will fail CI and should include `[ci skip]` in the PR title or body (the comment field when the PR is being opened) to avoid wasting CI builder time.
-Use your best judgment on build times based on your local building experience. If you skip CI when submitting a PR, please build and cross-build for a variety of architectures locally, with both glibc and musl, and note your local results in PR comments.
-Make sure to cover 64-bit and 32-bit architectures.
-
-Runtime testing of packages and building with the `-Q` flag or with `XBPS_CHECK_PKGS=yes` set in the environment or `etc/conf` are strongly encouraged.
-New packages will not be accepted unless they have been runtime tested.
-
-For further information, please consult the [manual](https://github.com/void-linux/void-packages/blob/master/Manual.md).
-
 `xbump`, available in the [xtools](https://github.com/chneukirchen/xtools) package, can be used to commit a new or updated package:
 
     $ xbump <pkgname> <git commit options>
 
-`xbump` will use `git commit` to commit the changes with the appropriate commit message. For more fine-grained control over the commit, specific options can be passed to `git commit` by adding them after the package name. 
+`xbump` will use `git commit` to commit the changes with the appropriate commit message. For more fine-grained control over the commit, specific options can be passed to `git commit` by adding them after the package name.
 
 After committing your changes, please check that the package builds successfully. From the top level directory of your local copy of the `void-packages` repository, run:
 
@@ -81,7 +71,8 @@ Your package must build successfully for at least x86, but we recommend trying t
 
     $ ./xbps-src -a armv7l pkg <pkgname>
 
-For further details, see the output of `./xbps-src -h`.
+Runtime testing of packages and building with the `-Q` flag or with `XBPS_CHECK_PKGS=yes` set in the environment or `etc/conf` are strongly encouraged.
+New packages will not be accepted unless they have been runtime tested.
 
 ### Starting a pull request
 
@@ -96,8 +87,13 @@ When you make changes to your pull request, please *do not close and reopen your
 
 #### Travis
 
-Once you have started a pull request, you will get instant feedback from Travis. It will check if the templates you have changed
-comply with the our guidelines. At the moment not all packages comply with the rules, so if you update a package, it may happen that Travis reports errors about places you haven't touched. Please feel free to fix those errors too.
+Pull requests are automatically submitted for Continuous Integration (CI) testing to ensure packages build on various combinations of libc and architecture.
+Packages that take longer than 120 minutes or need more than 14G of storage to complete their build (for example, Firefox or the Linux kernel) will fail CI and should include `[ci skip]` in the PR title or body (the comment field when the PR is being opened) to avoid wasting CI builder time.
+Use your best judgment on build times based on your local building experience. If you skip CI when submitting a PR, please build and cross-build for a variety of architectures locally, with both glibc and musl, and note your local results in PR comments.
+Make sure to cover 64-bit and 32-bit architectures.
+
+Continuous Integration will also check if the templates you have changed
+comply with the our guidelines. At the moment not all packages comply with the rules, so if you update a package, it may report errors about places you haven't touched. Please feel free to fix those errors too.
 
 #### Review
 
