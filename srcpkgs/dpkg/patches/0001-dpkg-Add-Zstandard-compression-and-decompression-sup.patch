@@ -1,0 +1,383 @@
+From eb38de93eeb9524a54e80525c480df249828e84f Mon Sep 17 00:00:00 2001
+From: Balint Reczey <balint.reczey@canonical.com>
+Date: Thu, 8 Mar 2018 09:53:36 +0100
+Subject: [PATCH] dpkg: Add Zstandard compression and decompression support for
+ binary packages
+
+---
+ README               |   1 +
+ configure.ac         |   2 +
+ debian/control       |   3 +
+ debian/rules         |   1 +
+ dpkg-deb/Makefile.am |   1 +
+ dpkg-deb/extract.c   |   1 +
+ dpkg-deb/main.c      |   3 +-
+ lib/dpkg/compress.c  | 157 ++++++++++++++++++++++++++++++++++++++++++-
+ lib/dpkg/compress.h  |   1 +
+ m4/dpkg-libs.m4      |   7 ++
+ t-func/deb-format.at |  13 ++++
+ 13 files changed, 193 insertions(+), 5 deletions(-)
+
+diff --git a/README b/README
+index 348f8e700..b0cf0a528 100644
+--- a/README
++++ b/README
+@@ -72,6 +72,7 @@ To enable optional functionality or programs, this software might be needed:
+ 
+   libmd (used by libdpkg, currently falling back to embedded code)
+   libz (from zlib, used instead of gzip command-line tool)
++  libzstd (from libzstd, used instead of zstd command-line tool)
+   liblzma (from xz utils, used instead of xz command-line tool)
+   libbz2 (from bzip2, used instead of bzip2 command-line tool)
+   libselinux
+diff --git a/configure.ac b/configure.ac
+index f6dff9f5e..2fbff6759 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -75,6 +75,7 @@ AC_SYS_LARGEFILE
+ # Checks for libraries.
+ DPKG_LIB_MD
+ DPKG_LIB_Z
++DPKG_LIB_ZSTD
+ DPKG_LIB_BZ2
+ DPKG_LIB_LZMA
+ DPKG_LIB_SELINUX
+@@ -251,6 +252,7 @@ Configuration:
+     libselinux  . . . . . . . . . : $have_libselinux
+     libmd . . . . . . . . . . . . : $have_libmd
+     libz  . . . . . . . . . . . . : $have_libz
++    libzstd  . . . . . . . . . .  : $have_libzstd
+     liblzma . . . . . . . . . . . : $have_liblzma
+     libbz2  . . . . . . . . . . . : $have_libbz2
+     libcurses . . . . . . . . . . : ${have_libcurses:-no}
+diff --git a/debian/control b/debian/control
+index c73f79762..10f66a55a 100644
+--- a/debian/control
++++ b/debian/control
+@@ -19,7 +19,9 @@ Build-Depends:
+ # Needed for --porefs.
+  po4a (>= 0.43),
+  zlib1g-dev,
++ zstd,
+  libbz2-dev,
++ libzstd-dev,
+  liblzma-dev,
+  libselinux1-dev [linux-any],
+  libncursesw5-dev,
+@@ -67,6 +69,7 @@ Multi-Arch: same
+ Depends:
+  ${misc:Depends},
+  zlib1g-dev,
++ libzstd-dev,
+  liblzma-dev,
+  libbz2-dev,
+ Description: Debian package management static library
+diff --git a/debian/rules b/debian/rules
+index 27a2499ef..92f1d1c48 100755
+--- a/debian/rules
++++ b/debian/rules
+@@ -64,6 +64,7 @@ build-tree/config.status: configure
+ 		--with-devlibdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH) \
+ 		--without-libmd \
+ 		--with-libz \
++		--with-libzstd \
+ 		--with-liblzma \
+ 		--with-libbz2
+ 
+diff --git a/dpkg-deb/Makefile.am b/dpkg-deb/Makefile.am
+index 02d79ed7d..bbd30e02c 100644
+--- a/dpkg-deb/Makefile.am
++++ b/dpkg-deb/Makefile.am
+@@ -21,5 +21,6 @@ dpkg_deb_LDADD = \
+ 	../lib/dpkg/libdpkg.la \
+ 	$(LIBINTL) \
+ 	$(Z_LIBS) \
++	$(ZSTD_LIBS) \
+ 	$(LZMA_LIBS) \
+ 	$(BZ2_LIBS)
+diff --git a/dpkg-deb/extract.c b/dpkg-deb/extract.c
+index dba15dedb..7fd4b2b67 100644
+--- a/dpkg-deb/extract.c
++++ b/dpkg-deb/extract.c
+@@ -179,6 +179,7 @@ extracthalf(const char *debar, const char *dir,
+           decompressor = compressor_find_by_extension(extension);
+           if (decompressor != COMPRESSOR_TYPE_NONE &&
+               decompressor != COMPRESSOR_TYPE_GZIP &&
++              decompressor != COMPRESSOR_TYPE_ZSTD &&
+               decompressor != COMPRESSOR_TYPE_XZ)
+             ohshit(_("archive '%s' uses unknown compression for member '%.*s', "
+                      "giving up"),
+diff --git a/dpkg-deb/main.c b/dpkg-deb/main.c
+index 52e9ce67d..7a40ecb80 100644
+--- a/dpkg-deb/main.c
++++ b/dpkg-deb/main.c
+@@ -108,7 +108,7 @@ usage(const struct cmdinfo *cip, const char *value)
+ "      --[no-]uniform-compression   Use the compression params on all members.\n"
+ "  -z#                              Set the compression level when building.\n"
+ "  -Z<type>                         Set the compression type used when building.\n"
+-"                                     Allowed types: gzip, xz, none.\n"
++"                                     Allowed types: gzip, xz, zstd, none.\n"
+ "  -S<strategy>                     Set the compression strategy when building.\n"
+ "                                     Allowed values: none; extreme (xz);\n"
+ "                                     filtered, huffman, rle, fixed (gzip).\n"
+@@ -245,6 +245,7 @@ int main(int argc, const char *const *argv) {
+   if (opt_uniform_compression &&
+       (compress_params.type != COMPRESSOR_TYPE_NONE &&
+        compress_params.type != COMPRESSOR_TYPE_GZIP &&
++       compress_params.type != COMPRESSOR_TYPE_ZSTD &&
+        compress_params.type != COMPRESSOR_TYPE_XZ))
+     badusage(_("unsupported compression type '%s' with uniform compression"),
+              compressor_get_name(compress_params.type));
+diff --git a/lib/dpkg/compress.c b/lib/dpkg/compress.c
+index 44075cdb6..7575478e5 100644
+--- a/lib/dpkg/compress.c
++++ b/lib/dpkg/compress.c
+@@ -32,6 +32,9 @@
+ #ifdef WITH_LIBZ
+ #include <zlib.h>
+ #endif
++#ifdef WITH_LIBZSTD
++#include <zstd.h>
++#endif
+ #ifdef WITH_LIBLZMA
+ #include <lzma.h>
+ #endif
+@@ -47,7 +50,7 @@
+ #include <dpkg/buffer.h>
+ #include <dpkg/command.h>
+ #include <dpkg/compress.h>
+-#if !defined(WITH_LIBZ) || !defined(WITH_LIBLZMA) || !defined(WITH_LIBBZ2)
++#if !defined(WITH_LIBZ) || !defined(WITH_LIBZSTD) || !defined(WITH_LIBLZMA) || !defined(WITH_LIBBZ2)
+ #include <dpkg/subproc.h>
+ 
+ static void DPKG_ATTR_SENTINEL
+@@ -750,6 +753,157 @@ static const struct compressor compressor_lzma = {
+ 	.decompress = decompress_lzma,
+ };
+ 
++/*
++ * Zstd compressor.
++ */
++
++#define ZSTD		"zstd"
++
++#ifdef WITH_LIBZSTD
++
++static void
++decompress_zstd(int fd_in, int fd_out, const char *desc)
++{
++	size_t const buf_in_size = ZSTD_DStreamInSize();
++	void*  const buf_in = m_malloc(buf_in_size);
++	size_t const buf_out_size = ZSTD_DStreamOutSize();
++	void*  const buf_out = m_malloc(buf_out_size);
++	size_t init_result, just_read, to_read;
++	ZSTD_DStream* const dstream = ZSTD_createDStream();
++	if (dstream == NULL) {
++		ohshit(_("ZSTD_createDStream error creating stream"));
++	}
++
++	init_result = ZSTD_initDStream(dstream);
++	if (ZSTD_isError(init_result)) {
++		ohshit(_("ZSTD_initDStream error : %s"), ZSTD_getErrorName(init_result));
++	}
++	to_read = init_result;
++	while ((just_read = fd_read(fd_in, buf_in, to_read))) {
++		ZSTD_inBuffer input = { buf_in, just_read, 0 };
++		while (input.pos < input.size) {
++			ssize_t actualwrite;
++			ZSTD_outBuffer output = { buf_out, buf_out_size, 0 };
++			to_read = ZSTD_decompressStream(dstream, &output , &input);
++			if (ZSTD_isError(to_read)) {
++				ohshit(_("ZSTD_decompressStream error : %s \n"),
++				       ZSTD_getErrorName(to_read));
++			}
++			actualwrite = fd_write(fd_out, output.dst, output.pos);
++			if (actualwrite != output.pos) {
++				const char *errmsg = strerror(errno);
++				ohshite(_("%s: internal zstd write error: '%s'"), desc, errmsg);
++			}
++			/* possible next frame */
++			if (to_read == 0) {
++				init_result = ZSTD_initDStream(dstream);
++				if (ZSTD_isError(init_result)) {
++					ohshit(_("ZSTD_initDStream error : %s"), ZSTD_getErrorName(init_result));
++				}
++				to_read = init_result;
++			}
++		}
++	}
++
++	ZSTD_freeDStream(dstream);
++	free(buf_in);
++	free(buf_out);
++	if (close(fd_out))
++		ohshite(_("%s: internal zstd write error"), desc);
++}
++
++static void
++compress_zstd(int fd_in, int fd_out, struct compress_params *params, const char *desc)
++{
++	size_t const buf_in_size = ZSTD_CStreamInSize();
++	void*  const buf_in = m_malloc(buf_in_size);
++	size_t const buf_out_size = ZSTD_CStreamOutSize();
++	void*  const buf_out = m_malloc(buf_out_size);
++	size_t init_result, end_res;
++	size_t just_read, to_read;
++	ZSTD_CStream* const cstream = ZSTD_createCStream();
++	if (cstream == NULL) {
++		ohshit(_("ZSTD_createCStream error"));
++	}
++
++	init_result = ZSTD_initCStream(cstream, params->level);
++	if (ZSTD_isError(init_result)) {
++		ohshit(_("ZSTD_initCStream error : %s"), ZSTD_getErrorName(init_result));
++	}
++	to_read = buf_in_size;
++	while ((just_read = fd_read(fd_in, buf_in, to_read))) {
++		ZSTD_inBuffer input = { buf_in, just_read, 0 };
++		while (input.pos < input.size) {
++			ssize_t actualwrite;
++			ZSTD_outBuffer output = { buf_out, buf_out_size, 0 };
++			to_read = ZSTD_compressStream(cstream, &output , &input);
++			if (ZSTD_isError(to_read)) {
++				ohshit(_("ZSTD_decompressStream error : %s \n"),
++				       ZSTD_getErrorName(to_read));
++			}
++			actualwrite = fd_write(fd_out, output.dst, output.pos);
++			if (actualwrite != output.pos) {
++				const char *errmsg = strerror(errno);
++				ohshite(_("%s: internal zstd write error: '%s'"),
++					desc, errmsg);
++			}
++		}
++	}
++	do {
++		ssize_t actualwrite;
++		ZSTD_outBuffer output = { buf_out, buf_out_size, 0 };
++		end_res = ZSTD_endStream(cstream, &output);
++		if (ZSTD_isError(end_res)) {
++			ohshit(_("ZSTD_endStream error : %s \n"),
++			       ZSTD_getErrorName(end_res));
++		}
++		actualwrite = fd_write(fd_out, output.dst, output.pos);
++		if (actualwrite != output.pos) {
++			const char *errmsg = strerror(errno);
++			ohshite(_("%s: internal zstd write error: '%s'"), desc,
++				errmsg);
++		}
++	} while (end_res > 0);
++
++	ZSTD_freeCStream(cstream);
++	free(buf_in);
++	free(buf_out);
++
++	/* ZSTD_endStream() already flushed the output buffers */
++	if (close(fd_out))
++		ohshite(_("%s: internal zstd write error"), desc);
++}
++
++#else
++static const char *env_zstd[] = {};
++
++static void
++decompress_zstd(int fd_in, int fd_out, const char *desc)
++{
++	fd_fd_filter(fd_in, fd_out, desc, env_zstd, ZSTD, "-dcq", NULL);
++}
++
++static void
++compress_zstd(int fd_in, int fd_out, struct compress_params *params, const char *desc)
++{
++	char combuf[6];
++
++	snprintf(combuf, sizeof(combuf), "-c%d", params->level);
++	fd_fd_filter(fd_in, fd_out, desc, env_zstd, ZSTD, combuf, "-q", NULL);
++}
++#endif
++
++static const struct compressor compressor_zstd = {
++	.name = "zstd",
++	.extension = ".zst",
++        /* zstd commands's default is 3 but the aim is to be closer to xz's
++         * default compression efficiency */
++	.default_level = 19,
++	.fixup_params = fixup_none_params,
++	.compress = compress_zstd,
++	.decompress = decompress_zstd,
++};
++
+ /*
+  * Generic compressor filter.
+  */
+@@ -760,6 +914,7 @@ static const struct compressor *compressor_array[] = {
+ 	[COMPRESSOR_TYPE_XZ] = &compressor_xz,
+ 	[COMPRESSOR_TYPE_BZIP2] = &compressor_bzip2,
+ 	[COMPRESSOR_TYPE_LZMA] = &compressor_lzma,
++	[COMPRESSOR_TYPE_ZSTD] = &compressor_zstd,
+ };
+ 
+ static const struct compressor *
+diff --git a/lib/dpkg/compress.h b/lib/dpkg/compress.h
+index 08aaf2516..1af8a3490 100644
+--- a/lib/dpkg/compress.h
++++ b/lib/dpkg/compress.h
+@@ -42,6 +42,7 @@ enum compressor_type {
+ 	COMPRESSOR_TYPE_XZ,
+ 	COMPRESSOR_TYPE_BZIP2,
+ 	COMPRESSOR_TYPE_LZMA,
++	COMPRESSOR_TYPE_ZSTD,
+ };
+ 
+ enum compressor_strategy {
+diff --git a/m4/dpkg-libs.m4 b/m4/dpkg-libs.m4
+index 577264706..8cbb3faa3 100644
+--- a/m4/dpkg-libs.m4
++++ b/m4/dpkg-libs.m4
+@@ -74,6 +74,13 @@ AC_DEFUN([DPKG_LIB_Z], [
+   DPKG_WITH_COMPRESS_LIB([z], [zlib.h], [gzdopen])
+ ])# DPKG_LIB_Z
+ 
++# DPKG_LIB_ZSTD
++# -------------
++# Check for zstd library.
++AC_DEFUN([DPKG_LIB_ZSTD], [
++  DPKG_WITH_COMPRESS_LIB([zstd], [zstd.h], [ZSTD_decompressStream])
++])# DPKG_LIB_ZSTD
++
+ # DPKG_LIB_LZMA
+ # -------------
+ # Check for lzma library.
+diff --git a/t-func/deb-format.at b/t-func/deb-format.at
+index cdfc648a8..0296c1d04 100644
+--- a/t-func/deb-format.at
++++ b/t-func/deb-format.at
+@@ -28,6 +28,7 @@ xz -c control.tar >control.tar.xz
+ xz -c data.tar >data.tar.xz
+ bzip2 -c data.tar >data.tar.bz2
+ lzma -c data.tar >data.tar.lzma
++pzstd -q -c data.tar >data.tar.zst
+ touch _ignore
+ touch unknown
+ ])
+@@ -290,6 +291,18 @@ drwxr-xr-x root/root         0 1970-01-01 00:00 ./
+ -rw-r--r-- root/root         5 1970-01-01 00:00 ./file-templ
+ ])
+ 
++AT_CHECK([
++# Test data.tar.zst member
++ar rc pkg-data-zst.deb debian-binary control.tar.gz data.tar.zst
++ar t pkg-data-zst.deb
++dpkg-deb -c pkg-data-zst.deb
++], [], [debian-binary
++control.tar.gz
++data.tar.zst
++drwxr-xr-x root/root         0 1970-01-01 00:00 ./
++-rw-r--r-- root/root         5 1970-01-01 00:00 ./file-templ
++])
++
+ AT_CHECK([
+ # Test data.tar.lzma member
+ ar rc pkg-data-lzma.deb debian-binary control.tar.gz data.tar.lzma
+-- 
+2.17.0
+
