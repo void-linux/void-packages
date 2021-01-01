@@ -91,6 +91,10 @@ _void_cross_build_bootstrap_gcc() {
 	msg_normal "Patching GCC for ${cross_triplet}\n"
 
 	cd ${wrksrc}/gcc-${ver}
+
+	# Do not run fixincludes
+	sed -i 's@./fixinc.sh@-c true@' Makefile.in
+
 	for f in ${XBPS_SRCPKGDIR}/gcc/patches/*.patch; do
 		_void_cross_apply_patch -p0 "$f"
 	done
