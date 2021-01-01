@@ -215,8 +215,6 @@ _void_cross_build_glibc_headers() {
 		--host=${tgt} \
 		--with-headers=${wrksrc}/build_root/usr/${tgt}/usr/include \
 		--config-cache \
-		--enable-obsolete-rpc \
-		--enable-obsolete-nsl \
 		--enable-kernel=2.6.27 \
 		${cross_glibc_configure_args}
 
@@ -257,8 +255,6 @@ _void_cross_build_glibc() {
 		--host=${tgt} \
 		--with-headers=${wrksrc}/build_root/usr/${tgt}/usr/include \
 		--config-cache \
-		--enable-obsolete-rpc \
-		--enable-obsolete-nsl \
 		--disable-profile \
 		--disable-werror \
 		--enable-kernel=2.6.27 \
