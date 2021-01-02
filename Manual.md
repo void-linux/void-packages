@@ -915,6 +915,9 @@ depend on additional packages. This build style does not install
 dependencies to the root directory, and only checks if a binary package is
 available in repositories.
 
+- `nodejs` For apps made in Node.js that get built with npm or yarn
+(including Electron.js apps).
+
 - `R-cran` For packages that are available on The Comprehensive R Archive
 Network (CRAN). The build style requires the `pkgname` to start with
 `R-cran-` and any dashes (`-`) in the CRAN-given version to be replaced
@@ -1615,6 +1618,23 @@ The following variables influence how Haskell packages are built:
   - If a `stack.yaml` file is present in the source files, it will be used
 - `make_build_args`: This is passed as-is to `stack build ...`, so
   you can add your `--flag ...` parameters there.
+
+<a id="pkgs_nodejs"></a>
+### Node.js packages
+
+Node.js packages should be built with the `nodejs` build style, if possible.
+The `nodejs` build style takes care of downloading yarn/npm dependencies
+and running builds via package.json scripts.
+
+The following template variables influence how Node.js packages are built:
+- `nodejs_build_script`: the package.json script that builds the app files
+	(default: `build`).
+- `nodejs_install_script`: app installing script, which most probably 
+	doesn't even exist and you should redefine `do_install`
+	in your build script. 
+- `nodejs_packager`: whether the build script should use yarn or npm.
+	Set to `yarn` if the `yarn.lock` file exists, else it's set to `npm`
+- `NODE_ENV`: set to `production` by default
 
 <a id="pkgs_font"></a>
 ### Font packages
