@@ -342,7 +342,7 @@ setup_pkg() {
     if [ -n "$cross" ]; then
         source_file $XBPS_CROSSPFDIR/${cross}.sh
 
-        _vars="TARGET_MACHINE CROSS_TRIPLET CROSS_CFLAGS CROSS_CXXFLAGS TARGET_QEMU_MACHINE"
+        _vars="TARGET_MACHINE CROSS_TRIPLET CROSS_CFLAGS CROSS_CXXFLAGS CROSS_FFLAGS TARGET_QEMU_MACHINE"
         for f in ${_vars}; do
             eval val="\$XBPS_$f"
             if [ -z "$val" ]; then
@@ -507,7 +507,7 @@ setup_pkg() {
 
     export CFLAGS="$XBPS_CFLAGS $XBPS_CROSS_CFLAGS $CFLAGS $dbgflags"
     export CXXFLAGS="$XBPS_CXXFLAGS $XBPS_CROSS_CXXFLAGS $CXXFLAGS $dbgflags"
-    export FFLAGS="$XBPS_FFLAGS $XBPS_CROSS_FFLAGS $FFLAGS"
+    export FFLAGS="$XBPS_FFLAGS $XBPS_CROSS_FFLAGS $FFLAGS $dbgflags"
     export CPPFLAGS="$XBPS_CPPFLAGS $XBPS_CROSS_CPPFLAGS $CPPFLAGS"
     export LDFLAGS="$XBPS_LDFLAGS $XBPS_CROSS_LDFLAGS $LDFLAGS"
 
@@ -571,6 +571,7 @@ setup_pkg() {
         export CXXFLAGS_target="$CXXFLAGS"
         export CPPFLAGS_target="$CPPFLAGS"
         export LDFLAGS_target="$LDFLAGS"
+	export FFLAGS_target="$FFLAGS"
         # Host tools
         export CC_host="cc"
         export CXX_host="g++"
@@ -591,6 +592,7 @@ setup_pkg() {
         export CXXFLAGS_host="$XBPS_CXXFLAGS"
         export CPPFLAGS_host="$XBPS_CPPFLAGS"
         export LDFLAGS_host="$XBPS_LDFLAGS"
+	export FFLAGS_host="$XBPS_FFLAGS"
         # Rust flags which are passed to rustc
         export RUSTFLAGS="$XBPS_CROSS_RUSTFLAGS"
         # Rust target, which differs from our triplets
@@ -625,10 +627,10 @@ setup_pkg() {
         # Unset cross evironment variables
         unset CC_target CXX_target CPP_target GCC_target FC_target LD_target AR_target AS_target
         unset RANLIB_target STRIP_target OBJDUMP_target OBJCOPY_target NM_target READELF_target
-        unset CFLAGS_target CXXFLAGS_target CPPFLAGS_target LDFLAGS_target
+        unset CFLAGS_target CXXFLAGS_target CPPFLAGS_target LDFLAGS_target FFLAGS_target
         unset CC_host CXX_host CPP_host GCC_host FC_host LD_host AR_host AS_host
         unset RANLIB_host STRIP_host OBJDUMP_host OBJCOPY_host NM_host READELF_host
-        unset CFLAGS_host CXXFLAGS_host CPPFLAGS_host LDFLAGS_host
+        unset CFLAGS_host CXXFLAGS_host CPPFLAGS_host LDFLAGS_host FFLAGS_host
         unset RUSTFLAGS
     fi
 
