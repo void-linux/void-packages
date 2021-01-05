@@ -174,10 +174,11 @@ _void_cross_build_kernel_headers() {
 
 	cd linux-${ver}
 
-	make ARCH=$cross_linux_arch headers_check
-	make ARCH=$cross_linux_arch \
-		INSTALL_HDR_PATH=${wrksrc}/build_root/usr/${cross_triplet}/usr \
-		headers_install
+	make ARCH=${cross_linux_arch} headers
+	find usr/include -name '.*' -delete
+	rm usr/include/Makefile
+	rm -r usr/include/drm
+	cp -a usr/include ${wrksrc}/build_root/usr/${cross_triplet}/usr
 
 	touch ${wrksrc}/.linux_headers_done
 }
@@ -533,11 +534,7 @@ do_install() {
 
 	# Install Linux headers
 	cd ${wrksrc}/linux-$(cat ${wrksrc}/.linux_version)
-	make ARCH=${cross_linux_arch} \
-		INSTALL_HDR_PATH=${DESTDIR}/${sysroot}/usr headers_install
-	rm -f $(find ${DESTDIR}/${sysroot}/usr/include \
-		-name .install -or -name ..install.cmd)
-	rm -rf ${DESTDIR}/${sysroot}/usr/include/drm
+	cp -a usr/include ${DESTDIR}/${sysroot}/usr
 
 	# Install binutils
 	cd ${wrksrc}/binutils_build
