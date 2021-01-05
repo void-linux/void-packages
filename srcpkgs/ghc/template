@@ -5,9 +5,9 @@ version=8.8.4
 revision=2
 wrksrc="ghc-${version%[!0-9]}"
 build_style=gnu-configure
-configure_args="--with-system-libffi"
-hostmakedepends="automake docbook-xsl ghc-bin libxslt python3-Sphinx"
-makedepends="gmp-devel libffi-devel libnuma-devel ncurses-devel"
+hostmakedepends="automake docbook-xsl ghc-bin libxslt libnuma-devel
+ ncurses-devel python3-Sphinx"
+makedepends="libnuma-devel"
 depends="perl gcc libffi-devel gmp-devel libnuma-devel"
 short_desc="Glorious Haskell Compiler"
 maintainer="Leah Neukirchen <leah@vuxu.org>"
@@ -16,8 +16,8 @@ homepage="http://www.haskell.org/ghc/"
 distfiles="http://www.haskell.org/ghc/dist/${version%[!0-9]}/${pkgname}-${version%[!0-9]}-src.tar.xz"
 checksum=f0505e38b2235ff9f1090b51f44d6c8efd371068e5a6bb42a2a6d8b67b5ffc2d
 patch_args="-Np1"
-nocross=yes  # ask leah2 before wasting time trying to do that
-nodebug=yes  # Work around assembler error "Fatal error: duplicate .debug_line sections"
+nocross=yes # this is conditionally unset for cross bindist
+nodebug=yes # work around assembler error "Fatal error: duplicate .debug_line sections"
 _bindir="/usr/lib/${pkgname}-${version}/bin"
 nopie_files="
  ${_bindir}/ghc
@@ -36,13 +36,30 @@ nopie_files="
 build_options="bindist"
 desc_option_bindist="Create a binary distribution"
 
+# it is not possible to cross-compile an entire ghc distribution as
+# some components rely on stage2 binaries being runnable on the host
+# even cross-compiled bindists are incomplete, and you should only
+# use them to compile proper bindists on newly bootstrapped targets
+if [ -z "$build_option_bindist" ]; then
+	# final package builds use system libffi as well as gmp and ncurses
+	configure_args=" --with-system-libffi"
+	makedepends+=" libffi-devel ncurses-devel gmp-devel"
+elif [ -z "$CROSS_BUILD" ]; then
+	# native bindist builds use gmp and ncurses, but builtin libffi
+	makedepends+=" ncurses-devel gmp-devel"
+elif [ "${XBPS_MACHINE%-*}" != "${XBPS_TARGET_MACHINE%-*}" ]; then
+	# ghc's cross mode only works when the actual target arch differs
+	# i.e. cross-compiling to same arch but different libc does not work
+	unset nocross
+	# host must equal build and target must be set when cross-compiling
+	configure_args+=" --host=${XBPS_TRIPLET} --target=${XBPS_CROSS_TRIPLET}"
+fi
+
 # Recent safe to use tarball
 # GHC's bundled tarball is from 2017, buggy on some archs
 _ffi_rev=4d6d2866ae43e55325e8ee96561221804602cd7a
 
 if [ "$build_option_bindist" ]; then
-	# Strip --with-system-libffi from configuration
-	configure_args=${configure_args/--with-system-libffi/}
 	# Required to make the binary distribution tarball
 	hostmakedepends+=" tar xz libtool libltdl-devel"
 	# Fetch a safe libffi tarball
@@ -53,20 +70,43 @@ fi
 
 post_extract() {
 	[ "$build_option_bindist" ] || return 0
+
+	# update libffi for all bindists
 	rm -f libffi-tarballs/libffi-*.tar.gz
 	cp ${XBPS_SRCDISTDIR}/${pkgname}-${version}/libffi-${_ffi_rev}.tar.gz \
 	 libffi-tarballs
+
+	[ "$CROSS_BUILD" ] || return 0
+
+	# create build config for cross bindists
+	local flav="quick"
+
+	echo "BuildFlavour = ${flav}" >> mk/build.mk
+	cat mk/flavours/${flav}.mk >> mk/build.mk
+
+	# gmp segfaults when cross-built
+	echo "INTEGER_LIBRARY = integer-simple" >> mk/build.mk
+	# otherwise needs ncurses for target
+	echo "WITH_TERMINFO = NO" >> mk/build.mk
+	# cannot be cross-compiled
+	echo "HADDOCK_DOCS = NO" >> mk/build.mk
+	# just wastes time
+	echo "BUILD_SPHINX_HTML = NO" >> mk/build.mk
+	echo "BUILD_SPHINX_PDF = NO" >> mk/build.mk
+	echo "BUILD_MAN = NO" >> mk/build.mk
 }
 
 pre_configure() {
+	# stage0 and stage1 are built for build/host (which are the
+	# same in ghc) and stage2 is built for target (when cross)
 	export CONF_CC_OPTS_STAGE0=$CFLAGS_FOR_BUILD
-	export CONF_CC_OPTS_STAGE1=$CFLAGS
+	export CONF_CC_OPTS_STAGE1=$CFLAGS_FOR_BUILD
 	export CONF_CC_OPTS_STAGE2=$CFLAGS
 	export CONF_GCC_LINKER_OPTS_STAGE0=$LDFLAGS_FOR_BUILD
-	export CONF_GCC_LINKER_OPTS_STAGE1=$LDFLAGS
+	export CONF_GCC_LINKER_OPTS_STAGE1=$LDFLAGS_FOR_BUILD
 	export CONF_GCC_LINKER_OPTS_STAGE2=$LDFLAGS
 	export CONF_CPP_OPTS_STAGE0=$CPPFLAGS_FOR_BUILD
-	export CONF_CPP_OPTS_STAGE1=$CPPFLAGS
+	export CONF_CPP_OPTS_STAGE1=$CPPFLAGS_FOR_BUILD
 	export CONF_CPP_OPTS_STAGE2=$CPPFLAGS
 
 	autoreconf -fi
@@ -76,11 +116,25 @@ post_install() {
 	sed -i 's#/usr/lib/ccache/bin/##g' ${DESTDIR}/usr/lib/ghc-${version%[!0-9]}/settings
 	vlicense LICENSE
 
+	local arch dest
+	if [ "$CROSS_BUILD" ]; then
+		arch=${XBPS_CROSS_TRIPLET%%-*}
+	else
+		arch=${XBPS_TRIPLET%%-*}
+	fi
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		dest=ghc-${version}-${arch}-void-linux-musl.tar.xz
+	else
+		dest=ghc-${version}-${arch}-void-linux.tar.xz
+	fi
+
 	if [ "$build_option_bindist" ]; then
 		msg_normal "Creating binary distribution for ${XBPS_TARGET_MACHINE}...\n"
 		make ${makejobs} binary-dist
 		mkdir -p ${XBPS_SRCDISTDIR}/distfiles
-		install -m 0644 ghc-${version}-*-linux.tar.xz ${XBPS_SRCDISTDIR}/distfiles
+		mv ghc-${version}-${arch}-unknown-linux.tar.xz ${dest}
+		install -m 0644 ${dest} ${XBPS_SRCDISTDIR}/distfiles
+		msg_normal "Installed in ${XBPS_SRCDISTDIR}/distfiles\n"
 		exit 1
 	fi
 }
