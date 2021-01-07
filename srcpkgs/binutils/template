@@ -1,14 +1,15 @@
 # Template file for 'binutils'
 pkgname=binutils
-version=2.34
-revision=2
+version=2.35.1
+revision=1
 bootstrap=yes
 short_desc="GNU binary utilities"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 license="GPL-3.0-or-later"
 homepage="http://www.gnu.org/software/binutils/"
 distfiles="${GNU_SITE}/$pkgname/$pkgname-$version.tar.xz"
-checksum=f00b0e8803dc9bab1e2165bd568528135be734df3fabf8d0161828cd56028952
+checksum=3ced91db9bf01182b7e420eab68039f2083aed0a214c0424e257eae3ddee8607
+patch_args="-Np1"
 
 makedepends="zlib-devel"
 if [ "$CHROOT_READY" ]; then
@@ -30,72 +31,85 @@ _get_triplet() {
 }
 
 do_configure() {
-	local CONFIGFLAG="--build=$(_get_triplet)
-		--prefix=/usr
-		--enable-threads
-		--enable-plugins
-		--enable-secureplt
-		--with-mmap
-		--disable-shared
-		--enable-gold
-		--disable-werror
-		--enable-deterministic-archives
-		--enable-ld=default
-		--disable-nls"
+	local conf
+
 	if [ "$CHROOT_READY" ]; then
-		CONFIGFLAG+=" --with-debuginfod"
+		conf+=" --with-debuginfod"
 	else
-		CONFIGFLAG+=" --without-debuginfod"
-	fi
-	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
-		CONFIGFLAG+=" --enable-64-bit-bfd --enable-multilib"
+		conf+=" --without-debuginfod"
 	fi
 	if [ "$CROSS_BUILD" ]; then
-		# Do not use configure_args nor build_style=gnu-configure,
-		# avoiding --with-sysroot to $XBPS_CROSS_BASE.
-		CONFIGFLAG+=" --host=$XBPS_CROSS_TRIPLET --with-build-sysroot=$XBPS_CROSS_BASE"
+		# we don't want --with-sysroot=${XBPS_CROSS_BASE} like gnu-configure
+		conf+=" --host=${XBPS_CROSS_TRIPLET} --with-build-sysroot=${XBPS_CROSS_BASE}"
 	fi
-	if [ "$XBPS_TARGET_MACHINE" = "mips-musl" -o "$XBPS_TARGET_MACHINE" = "mipsel-musl" ]; then
-		CONFIGFLAG+=" --with-float=soft --without-fp"
+
+	case "$XBPS_TARGET_MACHINE" in
+		ppc*)
+			conf+=" --enable-secureplt"
+			;;
+		x86_64*)
+			conf+=" --enable-targets=x86_64-pep"
+			;;
+		i686*)
+			conf+=" --enable-targets=x86_64-linux-gnu,x86_64-pep"
+			;;
+	esac
+
+	# enable multilib on x86_64 glibc
+	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		conf+=" --enable-multilib"
+	else
+		conf+=" --disable-multilib"
 	fi
-	if [ "${XBPS_TARGET_MACHINE%-musl}" = "x86_64" ]; then
-		CONFIGFLAG+=" --enable-targets=x86_64-pep"
-	elif [ "${XBPS_TARGET_MACHINE%-musl}" = "i686" ]; then
-		CONFIGFLAG+=" --enable-64-bit-bfd --enable-targets=x86_64-linux-gnu,x86_64-pep"
-	fi
-	./configure $CONFIGFLAG
+
+	# ensure softfloat on sf mips targets and set the default hash style
+	case "$XBPS_TARGET_MACHINE" in
+		mips*hf*) conf+=" --enable-default-hash-style=sysv" ;;
+		mips*) conf+=" --without-fp --enable-default-hash-style=sysv" ;;
+		*) conf+=" --enable-default-hash-style=gnu";;
+	esac
+
+	mkdir build && cd build
+	../configure --build=$(_get_triplet) \
+		--prefix=/usr \
+		--libdir=/usr/lib \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--disable-werror \
+		--disable-shared \
+		--disable-nls \
+		--enable-threads \
+		--enable-plugins \
+		--enable-relro \
+		--enable-gold \
+		--enable-deterministic-archives \
+		--enable-64-bit-bfd \
+		--enable-ld=default \
+		--with-system-zlib \
+		--with-mmap \
+		--with-pic \
+		$conf
 }
 
 do_build() {
-	make ${makejobs}
-
-	# Rebuild libiberty.a with -fPIC
-	cp -a libiberty libiberty-pic
-	make -C libiberty-pic clean
-	make CFLAGS="$CFLAGS -fPIC" -C libiberty-pic
-
-	# Rebuild libbfd.a with -fPIC
-	# hidden visability prevent 3rd party shared libraries exporting bfd non-stable API
-	cp -a bfd bfd-pic
-	make -C bfd-pic clean
-	make CFLAGS="$CFLAGS -fPIC -fvisibility=hidden" -C bfd-pic
-
-	# Rebuild libopcodes.a with -fPIC
-	cp -a opcodes opcodes-pic
-	make -C opcodes-pic clean
-	make CFLAGS="$CFLAGS -fPIC" -C opcodes-pic
+	cd ${wrksrc}/build && make ${makejobs}
 }
 
-# if you enable this later, keep it off for [ -z "$CHROOT_READY" ]
+# there is a testsuite now, but e.g. ifunc tests all fail on musl and
+# also there are other tests that fail on different targets for fairly
+# harmless reasons and it's just too much effort to fix it all
 do_check() {
-	# Seems like upstream forgot to include their new
-	# test-driver executable in their tarball...
-	:
+	[ "$CHROOT_READY" ] || return 0
+	: # cba for now
 }
 
 do_install() {
+	cd ${wrksrc}/build
+
 	local _triplet=$(_get_triplet)
 	make DESTDIR=${DESTDIR} tooldir=/usr install
+
+	cd ..
 
 	# Remove ld (hardlink) and make a symlink to ld.bfd.
 	rm -f ${DESTDIR}/usr/bin/ld
@@ -104,11 +118,6 @@ do_install() {
 	# Add some useful headers
 	vinstall include/libiberty.h 644 usr/include
  	vinstall include/demangle.h 644 usr/include
-
-	# install libraries rebuilt with -fPIC
-	vinstall libiberty-pic/libiberty.a 644 usr/lib
- 	vinstall bfd-pic/libbfd.a 644 usr/lib
- 	vinstall opcodes-pic/libopcodes.a 644 usr/lib
 
 	# Remove these symlinks, they are not ABI stable.
 	# Programs should compile static to the .a file.
