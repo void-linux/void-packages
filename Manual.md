@@ -929,7 +929,7 @@ can be used to pass arguments during compilation. If your package does not make 
 extensions consider using the `gem` build style instead.
 
 - `gem` For packages that are installed using gems from [RubyGems](https://rubygems.org/).
-The gem command can be overridden by `gem_cmd`. 
+The gem command can be overridden by `gem_cmd`.
 `distfiles` is set by the build style if the template does not do so. If your gem
 provides extensions which must be compiled consider using the `gemspec` build style instead.
 
@@ -1652,6 +1652,9 @@ generally those packages are the same but have been split as to avoid
 cyclic dependencies. Make sure that the package you're removing is not
 the source of those patches/files.
 - Remove package template.
+- Add `pkgname<=version_revision` to `replaces` variable of `removed-packages`
+template.  All removed subpkgs should be added too.
+This will uninstall package from systems where it is installed.
 - Remove the package from the repository index
 or contact a team member that can do so.
 
