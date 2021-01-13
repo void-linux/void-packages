@@ -92,6 +92,14 @@ do_configure() {
 		configure_args+=" --cross-file=${meson_crossfile}"
 	fi
 
+	# binutils ar needs a plugin when LTO is used on static libraries, so we
+	# have to use the gcc-ar wrapper that calls the correct plugin.
+	# As seen in https://github.com/mesonbuild/meson/issues/1646 (and its
+	# solution, https://github.com/mesonbuild/meson/pull/1649), meson fixed
+	# issues with static libraries + LTO by defaulting to gcc-ar themselves.
+	# We also force gcc-ar usage in the crossfile above.
+	export AR="gcc-ar"
+
 	${meson_cmd} \
 		--prefix=/usr \
 		--libdir=/usr/lib${XBPS_TARGET_WORDSIZE} \
