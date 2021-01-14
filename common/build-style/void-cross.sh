@@ -67,6 +67,7 @@ _void_cross_build_binutils() {
 		--disable-werror \
 		--disable-gold \
 		--enable-relro \
+		--enable-plugins \
 		--enable-64-bit-bfd \
 		--enable-deterministic-archives \
 		--enable-default-hash-style=gnu \

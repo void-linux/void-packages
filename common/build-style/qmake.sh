@@ -13,7 +13,7 @@ do_configure() {
 		qmake="/usr/lib/qt/bin/qmake"
 	fi
 	if [ -z "${qmake}" ]; then
-		msg_error "${pkgver}: Could not find qmake - missing in hostdepends?\n"
+		msg_error "${pkgver}: Could not find qmake - missing in hostmakedepends?\n"
 	fi
 	if [ "$CROSS_BUILD" ] && [ "$qmake" == "/usr/lib/qt5/bin/qmake" ]; then
 		case $XBPS_TARGET_MACHINE in
