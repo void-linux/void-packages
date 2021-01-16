@@ -16,6 +16,15 @@ For this guide, we assume you have basic knowledge about [git](http://git-scm.or
 
 Please note that we do not accept any packages containing non-release versions, such as specific git- or svn-revisions anymore.
 
+To get started, [fork](https://help.github.com/articles/fork-a-repo) the void-linux `void-packages` git repository on GitHub and clone it:
+
+    $ git clone git@github.com:<user>/void-packages.git
+
+To keep your forked repository up to date, setup the `upstream` remote to pull in new changes:
+
+    $ git remote add upstream git://github.com/void-linux/void-packages.git
+    $ git pull --rebase upstream master
+
 ### Creating a new template
 
 You can use the helper tool `xnew`, from the [xtools](https://github.com/chneukirchen/xtools) package, to create new templates:
@@ -48,21 +57,11 @@ Once you have built your template file or files, the commit message should have 
 
 If you want to describe your changes in more detail, add an empty line followed by those details ([example](https://github.com/void-linux/void-packages/commit/f1c45a502086ba1952f23ace9084a870ce437bc6)).
 
-Pull requests are automatically submitted for Continuous Integration (CI) testing to ensure packages build on various combinations of libc and architecture.
-Packages that take longer than 120 minutes or need more than 14G of storage to complete their build (for example, Firefox or the Linux kernel) will fail CI and should include `[ci skip]` in the PR title or body (the comment field when the PR is being opened) to avoid wasting CI builder time.
-Use your best judgment on build times based on your local building experience. If you skip CI when submitting a PR, please build and cross-build for a variety of architectures locally, with both glibc and musl, and note your local results in PR comments.
-Make sure to cover 64-bit and 32-bit architectures.
-
-Runtime testing of packages and building with the `-Q` flag or with `XBPS_CHECK_PKGS=yes` set in the environment or `etc/conf` are strongly encouraged.
-New packages will not be accepted unless they have been runtime tested.
-
-For further information, please consult the [manual](https://github.com/void-linux/void-packages/blob/master/Manual.md).
-
 `xbump`, available in the [xtools](https://github.com/chneukirchen/xtools) package, can be used to commit a new or updated package:
 
     $ xbump <pkgname> <git commit options>
 
-`xbump` will use `git commit` to commit the changes with the appropriate commit message. For more fine-grained control over the commit, specific options can be passed to `git commit` by adding them after the package name. 
+`xbump` will use `git commit` to commit the changes with the appropriate commit message. For more fine-grained control over the commit, specific options can be passed to `git commit` by adding them after the package name.
 
 After committing your changes, please check that the package builds successfully. From the top level directory of your local copy of the `void-packages` repository, run:
 
@@ -72,23 +71,29 @@ Your package must build successfully for at least x86, but we recommend trying t
 
     $ ./xbps-src -a armv7l pkg <pkgname>
 
-For further details, see the output of `./xbps-src -h`.
+Runtime testing of packages and building with the `-Q` flag or with `XBPS_CHECK_PKGS=yes` set in the environment or `etc/conf` are strongly encouraged.
+New packages will not be accepted unless they have been runtime tested.
 
 ### Starting a pull request
 
-Once you have successfully built the package, you can start a pull request.
+Once you have successfully built the package, you can [create a pull request](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request).
 
 Most pull requests should only contain a single package and dependencies which are not part of void-packages yet.
 
 If you make updates to packages containing a soname bump, you also need to update `common/shlibs` and revbump all packages that are dependant.
 There should be a commit for each package revbump, and those commits should be part of the same pull request.
 
-When you make changes to your pull request, please *do not close and reopen your pull request*. Instead, just forcibly git push, overwriting any old commits. Closing and opening your pull requests repeatedly spams the Void maintainers.
+When you make changes to your pull request, please *do not close and reopen your pull request*. Instead, just [forcibly git push](#review), overwriting any old commits. Closing and opening your pull requests repeatedly spams the Void maintainers.
 
-#### Travis
+#### Continuous Integration
 
-Once you have started a pull request, you will get instant feedback from Travis. It will check if the templates you have changed
-comply with the our guidelines. At the moment not all packages comply with the rules, so if you update a package, it may happen that Travis reports errors about places you haven't touched. Please feel free to fix those errors too.
+Pull requests are automatically submitted for Continuous Integration (CI) testing to ensure packages build on various combinations of libc and architecture.
+Packages that take longer than 120 minutes or need more than 14G of storage to complete their build (for example, Firefox or the Linux kernel) will fail CI and should include `[ci skip]` in the PR title or body (the comment field when the PR is being opened) to avoid wasting CI builder time.
+Use your best judgment on build times based on your local building experience. If you skip CI when submitting a PR, please build and cross-build for a variety of architectures locally, with both glibc and musl, and note your local results in PR comments.
+Make sure to cover 64-bit and 32-bit architectures.
+
+Continuous Integration will also check if the templates you have changed
+comply with the our guidelines. At the moment not all packages comply with the rules, so if you update a package, it may report errors about places you haven't touched. Please feel free to fix those errors too.
 
 #### Review
 
@@ -101,6 +106,14 @@ We recommend having only a single commit for pull request, so if you need to mak
     $ git add <file>
     $ git commit --amend
     $ git push -f
+
+A more powerful way of modifying commits than using `git commit --amend` is with [git-rebase](https://git-scm.com/docs/git-rebase#_interactive_mode), which allows you to join, reorder, change description of past commits and more.
+
+Alternatively, if there are issues with your git history, you can make another branch and push it to the existing PR:
+
+    $ git checkout master -b <attempt2>
+    $ # do changes anew
+    $ git push -f <fork> <attempt2>:<branch-of-pr>
 
 #### Closing the pull request
 
