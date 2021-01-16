@@ -76,48 +76,59 @@ show_avail() {
     check_pkg_arch "$XBPS_CROSS_BUILD" 2>/dev/null
 }
 
+show_eval_dep() {
+    local f x _pkgname _srcpkg found
+    local _dep="$1"
+    local _host="$2"
+    if [ -z "$CROSS_BUILD" ] || [ -z "$_host" ]; then
+        # ignore dependency on itself
+        [[ $_dep == $sourcepkg ]] && return
+    fi
+    if [ ! -f $XBPS_SRCPKGDIR/$_dep/template ]; then
+        msg_error "$pkgver: dependency '$_dep' does not exist!\n"
+    fi
+    # ignore virtual dependencies
+    [[ ${_dep%\?*} != ${_dep#*\?} ]] && _dep=${_dep#*\?}
+    unset found
+    # check for subpkgs
+    for x in ${subpackages}; do
+        [[ $_dep == $x ]] && found=1 && break
+    done
+    [[ $found ]] && return
+    _pkgname=${_dep/-32bit}
+    _srcpkg=$(readlink -f ${XBPS_SRCPKGDIR}/${_pkgname})
+    _srcpkg=${_srcpkg##*/}
+    echo $_srcpkg
+}
+
 show_pkg_build_depends() {
-    local f x _pkgname _srcpkg found result
+    local f result
     local _deps="$1"
+    local _hostdeps="$2"
 
     result=$(mktemp) || exit 1
 
     # build time deps
     for f in ${_deps}; do
-        if [ -z "$CROSS_BUILD" ]; then
-            # ignore dependency on itself
-            [[ $f == $sourcepkg ]] && continue
-        fi
-        if [ ! -f $XBPS_SRCPKGDIR/$f/template ]; then
-            msg_error "$pkgver: dependency '$f' does not exist!\n"
-        fi
-        # ignore virtual dependencies
-        [[ ${f%\?*} != ${f#*\?} ]] && f=${f#*\?}
-        unset found
-        # check for subpkgs
-        for x in ${subpackages}; do
-            [[ $f == $x ]] && found=1 && break
-        done
-        [[ $found ]] && continue
-        _pkgname=${f/-32bit}
-        _srcpkg=$(readlink -f ${XBPS_SRCPKGDIR}/${_pkgname})
-        _srcpkg=${_srcpkg##*/}
-        echo "${_srcpkg}" >> $result
+        show_eval_dep $f "" >> $result
+    done
+    for f in ${_hostdeps}; do
+        show_eval_dep $f "hostdep" >> $result
     done
     sort -u $result
     rm -f $result
 }
 
 show_pkg_build_deps() {
-    show_pkg_build_depends "${hostmakedepends} ${makedepends} $(setup_pkg_depends '' 1 1)"
+    show_pkg_build_depends "${makedepends} $(setup_pkg_depends '' 1 1)" "${hostmakedepends}"
 }
 
 show_pkg_hostmakedepends() {
-    show_pkg_build_depends "${hostmakedepends}"
+    show_pkg_build_depends "" "${hostmakedepends}"
 }
 
 show_pkg_makedepends() {
-    show_pkg_build_depends "${makedepends}"
+    show_pkg_build_depends "${makedepends}" ""
 }
 
 show_pkg_build_options() {

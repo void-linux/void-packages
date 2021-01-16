@@ -3,7 +3,7 @@
 # THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/thunderbird-i18n".
 #
 pkgname=thunderbird
-version=68.12.1
+version=78.6.0
 revision=1
 build_helper="rust"
 short_desc="Standalone Mail/News reader"
@@ -11,27 +11,26 @@ maintainer="Enno Boland <gottox@voidlinux.org>"
 license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
 homepage="https://www.thunderbird.net/"
 distfiles="${MOZILLA_SITE}/${pkgname}/releases/${version}/source/${pkgname}-${version}.source.tar.xz"
-checksum=a2044fb611ac6ab1744ef61f5d292d2c81b8103438df02b6dd754968efc9a3af
+checksum=1dd6f9a4d88b4c3d0ec47bba60a891243ef95e105a9045b2d32e2b126779844b
 
 lib32disabled=yes
 
-hostmakedepends="autoconf213 unzip zip pkg-config perl python python3 yasm rust cargo
- llvm clang nodejs cbindgen nasm which tar"
+hostmakedepends="autoconf213 unzip zip pkg-config perl python3 yasm rust cargo
+ llvm clang nodejs-lts-10 cbindgen python nasm which tar"
 makedepends="nss-devel libjpeg-turbo-devel gtk+-devel gtk+3-devel icu-devel
- pixman-devel sqlite-devel libevent-devel libnotify-devel libvpx5-devel
+ pixman-devel libevent-devel libnotify-devel libvpx-devel
  libXrender-devel libXcomposite-devel libSM-devel libXt-devel rust-std
  libXdamage-devel freetype-devel $(vopt_if alsa alsa-lib-devel)
  $(vopt_if dbus dbus-glib-devel) $(vopt_if pulseaudio pulseaudio-devel)
- $(vopt_if startup_notification startup-notification-devel)
  $(vopt_if xscreensaver libXScrnSaver-devel)
- $(vopt_if sndio sndio-devel)"
-depends="nss>=3.37.3 desktop-file-utils hicolor-icon-theme"
+ $(vopt_if sndio sndio-devel) $(vopt_if jack jack-devel)"
+depends="nss>=3.47.1 desktop-file-utils hicolor-icon-theme"
 
-build_options="alsa dbus pulseaudio startup_notification xscreensaver sndio wayland"
-build_options_default="alsa dbus pulseaudio startup_notification xscreensaver sndio wayland"
+build_options="alsa jack dbus pulseaudio xscreensaver sndio wayland"
+build_options_default="alsa jack dbus pulseaudio xscreensaver sndio wayland"
 
 case $XBPS_TARGET_MACHINE in
-	armv6*) broken="required NEON extensions are not supported on armv6" ;;
+	armv[56]*) broken="required NEON extensions are not supported on armv6" ;;
 	ppc64*) ;;
 	ppc*) broken="xptcall bitrot" ;;
 esac
@@ -64,7 +63,9 @@ post_extract() {
 }
 
 post_patch() {
-	_clear_vendor_checksums cssparser
+	_clear_vendor_checksums audio_thread_priority
+	_clear_vendor_checksums num-traits
+	_clear_vendor_checksums glslopt
 }
 
 do_build() {
@@ -73,6 +74,7 @@ do_build() {
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
 		echo "ac_add_options --disable-jemalloc" >>.mozconfig
+		echo "ac_add_options --disable-gold" >>.mozconfig
 		echo "ac_add_options --enable-release" >>.mozconfig
 		;;
 	esac
@@ -93,17 +95,14 @@ do_build() {
 		export LDFLAGS+=" -latomic"
 	fi
 
-	case "$XBPS_TARGET_MACHINE" in
-	x86_64-musl|i686-musl)
-		echo "ac_add_options --host=${XBPS_TRIPLET}" >>.mozconfig
-		echo "ac_add_options --target=${XBPS_TRIPLET}" >>.mozconfig
-		;;
-	esac
-
 	if [ "$CROSS_BUILD" ]; then
 		BINDGEN_INCLUDE_FLAGS=$( $CPP -x c++ -v /dev/null -o /dev/null 2>&1 | \
 			sed -n '/#include <...> search starts here:/,/End of search list./p' | \
 			sed '1,1d;$d' | sed  's/^ /-I/' | paste -s )
+
+		# fix compiler detection for botan:
+		# https://github.com/randombit/botan/blob/63d51cb1ab08849d8ece329811b61f8c9abebbcf/configure.py#L2888
+		export CXX="${XBPS_CROSS_TRIPLET}-g++"
 
 		export BINDGEN_CFLAGS="--target=$XBPS_CROSS_TRIPLET \
 			--sysroot=${XBPS_CROSS_BASE} ${BINDGEN_INCLUDE_FLAGS}"
@@ -128,10 +127,6 @@ do_build() {
 	mkdir -p third_party/rust/libloading/.deps
 
 	case "$XBPS_TARGET_MACHINE" in
-	i686*)
-		export CFLAGS+=" -D_FILE_OFFSET_BITS=64"
-		export CXXFLAGS+=" -D_FILE_OFFSET_BITS=64"
-		;;
 	armv7*)
 		export CFLAGS+=" -mfpu=neon -Wno-psabi"
 		export CXXFLAGS+=" -mfpu=neon -Wno-psabi"
@@ -145,8 +140,15 @@ do_build() {
 		export LDFLAGS+=" -Wl,--no-keep-memory"
 		# patch the rust debug level, this is hardcoded
 		sed -i "s/debug_info = '2'/debug_info = '1'/" \
-		 build/moz.configure/toolchain.configure
+		build/moz.configure/toolchain.configure
 	fi
+
+	# FIXME: incompatible with rust 1.48 in this release
+	#case "$XBPS_TARGET_MACHINE" in
+	#aarch64*|i686*|x86_64*)
+	#	echo "ac_add_options --enable-rust-simd" >>.mozconfig ;;
+	#esac
+	echo "ac_add_options --disable-rust-simd" >>.mozconfig
 
 	export LDFLAGS+=" -Wl,-rpath=/usr/lib/thunderbird"
 
@@ -157,20 +159,20 @@ do_build() {
 	export MOZ_MAKE_FLAGS="${makejobs}"
 	export MOZ_NOSPAM=1
 	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
-	# avoid error: /usr/bin/as: invalid option -- 'N'
-	unset AS
+
+	export AS=$CC
 
 	cat <<! >>.mozconfig
 ac_add_options --with-google-location-service-api-keyfile="${wrksrc}/google-api-key"
 ac_add_options --with-google-safebrowsing-api-keyfile="${wrksrc}/google-api-key"
 ac_add_options --with-mozilla-api-keyfile="${wrksrc}/mozilla-api-key"
 ac_add_options $(vopt_enable alsa)
+ac_add_options $(vopt_enable jack)
 ac_add_options $(vopt_enable sndio)
 ac_add_options $(vopt_enable dbus)
 ac_add_options $(vopt_enable dbus necko-wifi)
 ac_add_options $(vopt_enable pulseaudio)
-ac_add_options $(vopt_enable startup_notification startup-notification)
-ac_add_options --enable-default-toolkit=$(vopt_if wayland 'cairo-gtk3-wayland' 'cairo-gtk')
+ac_add_options --enable-default-toolkit=$(vopt_if wayland 'cairo-gtk3-wayland' 'cairo-gtk3')
 !
 
 	rm -f old-configure
@@ -182,9 +184,9 @@ do_install() {
 	vinstall ${FILESDIR}/vendor.js 644 usr/lib/thunderbird/defaults/preferences
 	vinstall ${FILESDIR}/thunderbird.desktop 644 usr/share/applications
 
-	for i in 16 22 24 32 48 256; do
-		vinstall ./comm/mail/branding/thunderbird/default$i.png 644 \
-			usr/share/icons/hicolor/${i}x${i}/apps thunderbird.png
+	for i in 16x16 22x22 24x24 32x32 48x48 128x128 256x256; do
+		vinstall ${wrksrc}/comm/mail/branding/thunderbird/default${i%x*}.png 644 \
+			usr/share/icons/hicolor/${i}/apps thunderbird.png
 	done
 
 	# Use system-provided dictionaries
