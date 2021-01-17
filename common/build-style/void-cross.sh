@@ -550,6 +550,7 @@ do_install() {
 	ln -sf usr/lib ${DESTDIR}/${sysroot}/lib
 	ln -sf usr/lib ${DESTDIR}/${sysroot}/lib${ws}
 	ln -sf lib ${DESTDIR}/${sysroot}/usr/lib${ws}
+	ln -sf usr/include ${DESTDIR}/${sysroot}/include
 
 	# Install Linux headers
 	cd ${wrksrc}/linux-$(cat ${wrksrc}/.linux_version)
@@ -565,6 +566,11 @@ do_install() {
 
 	# Move libcc1.so* to the sysroot
 	mv ${DESTDIR}/usr/lib/libcc1.so* ${DESTDIR}/${sysroot}/usr/lib
+
+	local gcc_ver=$(cat ${wrksrc}/.gcc_version)
+	local gcc_patch=${gcc_ver/_*}
+	local gcc_minor=${gcc_patch%.*}
+	local gcc_major=${gcc_minor%.*}
 
 	if [ -f ${wrksrc}/.musl_version ]; then
 		# Install musl
@@ -584,20 +590,29 @@ do_install() {
 		make install_root=${DESTDIR}/${sysroot} install install-headers
 
 		# Remove bad header
-		rm -f ${DESTDIR}/usr/lib/gcc/${cross__triplet}/*/include-fixed/bits/statx.h
+		rm -f ${DESTDIR}/usr/lib/gcc/${cross_triplet}/${gcc_patch}/include-fixed/bits/statx.h
 	fi
 
-	local gcc_ver=$(cat ${wrksrc}/.gcc_version)
+	# minor-versioned symlinks
+	mv ${DESTDIR}/usr/lib/gcc/${cross_triplet}/${gcc_patch} \
+		${DESTDIR}/usr/lib/gcc/${cross_triplet}/${gcc_minor}
+	ln -sfr ${DESTDIR}/usr/lib/gcc/${cross_triplet}/${gcc_minor} \
+		${DESTDIR}/usr/lib/gcc/${cross_triplet}/${gcc_patch}
+
+	# ditto for c++ headers
+	mv ${DESTDIR}/${sysroot}/usr/include/c++/${gcc_patch} \
+		${DESTDIR}/${sysroot}/usr/include/c++/${gcc_minor}
+	ln -sfr ${DESTDIR}/${sysroot}/usr/include/c++/${gcc_minor} \
+		${DESTDIR}/${sysroot}/usr/include/c++/${gcc_patch}
 
 	# Symlinks for gnarl and gnat shared libraries
-	local majorver=${gcc_ver%.*.*}
-	local adalib=usr/lib/gcc/${_triplet}/${gcc_ver}/adalib
-	mv ${DESTDIR}/${adalib}/libgnarl-${majorver}.so \
+	local adalib=usr/lib/gcc/${_triplet}/${gcc_patch}/adalib
+	mv ${DESTDIR}/${adalib}/libgnarl-${gcc_major}.so \
 		${DESTDIR}/${sysroot}/usr/lib
-	mv ${DESTDIR}/${adalib}/libgnat-${majorver}.so \
+	mv ${DESTDIR}/${adalib}/libgnat-${gcc_major}.so \
 		${DESTDIR}/${sysroot}/usr/lib
-	ln -sf libgnarl-${majorver}.so ${DESTDIR}/${sysroot}/usr/lib/libgnarl.so
-	ln -sf libgnat-${majorver}.so ${DESTDIR}/${sysroot}/usr/lib/libgnat.so
+	ln -sf libgnarl-${gcc_major}.so ${DESTDIR}/${sysroot}/usr/lib/libgnarl.so
+	ln -sf libgnat-${gcc_major}.so ${DESTDIR}/${sysroot}/usr/lib/libgnat.so
 	rm -vf ${DESTDIR}/${adalib}/libgna{rl,t}.so
 
 	# Remove unnecessary libatomic which is only built for gccgo
