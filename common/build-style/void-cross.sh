@@ -41,12 +41,11 @@ _void_cross_build_binutils() {
 	msg_normal "Patching binutils for ${cross_triplet}\n"
 
 	cd ${wrksrc}/binutils-${ver}
-	# enable when crosstoolchains are updated to latest binutils
-	#if [ -d "${XBPS_SRCPKGDIR}/binutils/patches" ]; then
-	#	for f in ${XBPS_SRCPKGDIR}/binutils/patches/*.patch; do
-	#		_void_cross_apply_patch -p1 "$f"
-	#	done
-	#fi
+	if [ -d "${XBPS_SRCPKGDIR}/binutils/patches" ]; then
+		for f in ${XBPS_SRCPKGDIR}/binutils/patches/*.patch; do
+			_void_cross_apply_patch -p1 "$f"
+		done
+	fi
 	cd ..
 
 	msg_normal "Building binutils for ${cross_triplet}\n"
