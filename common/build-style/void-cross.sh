@@ -4,8 +4,6 @@
 # Mandatory variables:
 #
 # - cross_triplet - the target triplet (e.g. aarch64-linux-gnu)
-# - cross_linux_arch - the source ARCH of the kernel (e.g. arm64)
-# - cross_libucontext_arch - only on musl without cross_gcc_skip_go
 #
 # Optional variables:
 #
@@ -165,6 +163,7 @@ _void_cross_build_kernel_headers() {
 	[ -f ${wrksrc}/.linux_headers_done ] && return 0
 
 	local ver=$1
+	local arch
 
 	msg_normal "Patching Linux headers for ${cross_triplet}\n"
 
@@ -178,7 +177,18 @@ _void_cross_build_kernel_headers() {
 
 	cd linux-${ver}
 
-	make ARCH=${cross_linux_arch} headers
+	case "$cross_triplet" in
+		x86_64*|i686*) arch=x86 ;;
+		powerpc*) arch=powerpc ;;
+		mips*) arch=mips ;;
+		aarch64*) arch=arm64 ;;
+		arm*) arch=arm ;;
+		riscv*) arch=riscv ;;
+		s390*) arch=s390 ;;
+		*) msg_error "Unknown Linux arch for ${cross_triplet}\n" ;;
+	esac
+
+	make ARCH=${arch} headers
 	find usr/include -name '.*' -delete
 	rm usr/include/Makefile
 	rm -r usr/include/drm
@@ -421,13 +431,6 @@ _void_cross_build_gcc() {
 	touch ${wrksrc}/.gcc_build_done
 }
 
-_void_cross_check_var() {
-	local var="cross_${1}"
-	if [ -z "${!var}" ]; then
-		msg_error "cross_${1} not defined in template"
-	fi
-}
-
 _void_cross_test_ver() {
 	local proj=$1
 	local noerr=$2
@@ -470,14 +473,11 @@ do_build() {
 		libc_ver=$(cat .musl_version)
 		if [ -z "$cross_gcc_skip_go" ]; then
 			_void_cross_test_ver libucontext
-			_void_cross_check_var libucontext_arch
 			libucontext_ver=$(cat .libucontext_version)
 		fi
 	fi
 
-	# Verify triplet
-	_void_cross_check_var triplet
-	_void_cross_check_var linux_arch
+	[ "${cross_triplet}" ] || msg_error "cross_triplet not defined in template\n"
 
 	local sysroot="/usr/${cross_triplet}"
 
