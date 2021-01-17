@@ -30,4 +30,31 @@ static inline void error(int status, int errnum, const char* format, ...)
 		exit(status);
 }
 
+static int error_one_per_line = 0;
+
+static inline void error_at_line(int status, int errnum, const char *filename,
+		unsigned int linenum, const char *format, ...)
+{
+	va_list ap;
+	if (error_one_per_line) {
+		static const char *old_filename;
+		static int old_linenum;
+		if (linenum == old_linenum && filename == old_filename)
+			return;
+		old_filename = filename;
+		old_linenum = linenum;
+	}
+	fprintf(stderr, "%s: %s:%u: ", program_invocation_name, filename, linenum);
+	va_start(ap, format);
+	vfprintf(stderr, format, ap);
+	va_end(ap);
+	if (errnum)
+		fprintf(stderr, ": %s", strerror(errnum));
+	fprintf(stderr, "\n");
+	error_message_count++;
+	if (status)
+		exit(status);
+}
+
+
 #endif	/* _ERROR_H_ */
