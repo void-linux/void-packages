@@ -312,14 +312,33 @@ _void_cross_build_libucontext() {
 	[ -f ${wrksrc}/.libucontext_build_done ] && return 0
 
 	local ver=$1
+	local arch incpath
 
 	msg_normal "Building libucontext for ${cross_triplet}\n"
 
+	case "$cross_triplet" in
+		x86_64*) arch=x86_64 ;;
+		i686*) arch=x86 ;;
+		powerpc64*) arch=ppc64 ;;
+		powerpc*) arch=ppc ;;
+		mips*64*) arch=mips64 ;;
+		mips*) arch=mips ;;
+		aarch64*) arch=aarch64 ;;
+		arm*) arch=arm ;;
+		riscv64*) arch=riscv64 ;;
+		s390x*) arch=s390x ;;
+		*) msg_error "Unknown libucontext arch for ${cross_triplet}\n" ;;
+	esac
+
 	cd ${wrksrc}/libucontext-${ver}
 	# a terrible hack but seems to work for now
+	# we build a static-only library to prevent linking to a runtime
+	# since it's tiny it can be linked into libgo and we don't have
+	# to keep it around (which would possibly conflict with crossdeps)
+	incpath="${wrksrc}/build_root/usr/${cross_triplet}/usr/include"
 	CC="${cross_triplet}-gcc" AS="${cross_triplet}-as" AR="${cross_triplet}-ar" \
-	CPPFLAGS="-pipe ${cross_musl_cflags} -g0 -Os -nostdinc -isystem ${wrksrc}/build_root/usr/${cross_triplet}/usr/include" \
-	make ARCH=${cross_libucontext_arch} libucontext.a
+	make ARCH=$arch libucontext.a \
+		CFLAGS="${cross_musl_cflags} -g0 -nostdinc -isystem ${incpath}"
 
 	cp libucontext.a ${wrksrc}/build_root/usr/${cross_triplet}/usr/lib
 
