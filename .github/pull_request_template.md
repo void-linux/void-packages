@@ -9,9 +9,9 @@
 
 <!--
 If GitHub CI cannot be used to validate the build result (for example, if the
-build is likely to take several hours), make sure to include "[ci skip]' in
-either the PR title or this description. When skipping CI, uncomment and complete
-the following section.
+build is likely to take several hours), make sure to
+[skip CI](https://github.com/void-linux/void-packages/blob/master/CONTRIBUTING.md#continuous-integration).
+When skipping CI, uncomment and fill out the following section.
 Note: for builds that are likely to complete in less than 2 hours, it is not
 acceptable to skip CI.
 -->
@@ -23,6 +23,4 @@ acceptable to skip CI.
   - [ ] aarch64-musl
   - [ ] armv7l
   - [ ] armv6l-musl
-
-[ci skip]
 -->
