@@ -106,11 +106,17 @@ chroot_prepare() {
         msg_error "Bootstrap not installed in $XBPS_MASTERDIR, can't continue.\n"
     fi
 
-    # Create some required files.
-    if [ -f /etc/localtime ]; then
-        cp -f /etc/localtime $XBPS_MASTERDIR/etc
-    elif [ -f /usr/share/zoneinfo/UTC ]; then
-        cp -f /usr/share/zoneinfo/UTC $XBPS_MASTERDIR/etc/localtime
+    # Some software expects /etc/localtime to be a symbolic link it can read to
+    # determine the name of the time zone, so set up the expected link
+    # structure.
+    if [ -f /usr/share/zoneinfo/UTC ]; then
+        tzfile=/usr/share/zoneinfo/UTC
+        mkdir -p $XBPS_MASTERDIR/usr/share/zoneinfo
+        cp /usr/share/zoneinfo/UTC $XBPS_MASTERDIR/usr/share/zoneinfo/UTC
+        ln -sf ../usr/share/zoneinfo/UTC $XBPS_MASTERDIR/etc/localtime
+    else
+        # Should never happen.
+        msg_warn "No local timezone configuration file created."
     fi
 
     for f in dev sys proc host boot; do
