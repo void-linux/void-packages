@@ -328,7 +328,7 @@ get_subpkgs() {
 
 setup_pkg() {
     local pkg="$1" cross="$2" show_problems="$3"
-    local basepkg val _vars f dbgflags arch extrarepo
+    local basepkg val _vars f dbgflags extrarepo
 
     [ -z "$pkg" ] && return 1
     basepkg=${pkg%-32bit}
@@ -469,13 +469,6 @@ setup_pkg() {
         XBPS_MAKEJOBS=1
     fi
     makejobs="-j$XBPS_MAKEJOBS"
-
-    # strip whitespaces to make "  noarch  " valid too.
-    if [ "${archs// /}" = "noarch" ]; then
-        arch="noarch"
-    else
-        arch="$XBPS_TARGET_MACHINE"
-    fi
     if [ -n "$XBPS_BINPKG_EXISTS" ]; then
         local _binpkgver="$($XBPS_QUERY_XCMD -R -ppkgver $pkgver 2>/dev/null)"
         if [ "$_binpkgver" = "$pkgver" ]; then

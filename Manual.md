@@ -733,7 +733,7 @@ Examples:
 	# Default value (all arches)
 	archs="*"
 	```
-Do not use noarch. It is deprecated and being removed.
+A special value `noarch` used to be available, but has since been removed.
 
 <a id="explain_depends"></a>
 #### About the many types of `depends` variables
