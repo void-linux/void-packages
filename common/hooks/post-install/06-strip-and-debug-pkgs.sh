@@ -59,7 +59,7 @@ create_debug_pkg() {
 hook() {
 	local fname= x= f= _soname= STRIPCMD=
 
-	if [ -n "$nostrip" -o "${archs// /}" = "noarch" ]; then
+	if [ -n "$nostrip" ]; then
 		return 0
 	fi
 
