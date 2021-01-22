@@ -116,7 +116,7 @@ chroot_prepare() {
         ln -sf ../usr/share/zoneinfo/UTC $XBPS_MASTERDIR/etc/localtime
     else
         # Should never happen.
-        msg_warn "No local timezone configuration file created."
+        msg_warn "No local timezone configuration file created.\n"
     fi
 
     for f in dev sys proc host boot; do
