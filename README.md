@@ -418,7 +418,7 @@ To use xbps-src in your Linux distribution use the following instructions. Let's
 
     $ wget http://alpha.de.repo.voidlinux.org/static/xbps-static-latest.<arch>-musl.tar.xz
     $ mkdir ~/XBPS
-    $ tar xvf xbps-static-latest.<arch>.tar.xz -C ~/XBPS
+    $ tar xvf xbps-static-latest.<arch>-musl.tar.xz -C ~/XBPS
     $ export PATH=~/XBPS/usr/bin:$PATH
 
 If your system does not support `user namespaces`, a privileged group is required to be able to use
