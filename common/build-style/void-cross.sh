@@ -372,14 +372,12 @@ _void_cross_build_gcc() {
 
 	local extra_args
 	if [ -f ${wrksrc}/.musl_version ]; then
-		extra_args+=" --enable-libssp"
 		# otherwise glibc hosts get confused and use the gnu impl
 		extra_args+=" --enable-clocale=generic"
 		extra_args+=" --disable-symvers"
 		extra_args+=" --disable-gnu-unique-object"
 		extra_args+=" libat_cv_have_ifunc=no"
 	else
-		extra_args+=" --disable-libssp"
 		extra_args+=" --enable-gnu-unique-object"
 	fi
 
@@ -419,6 +417,7 @@ _void_cross_build_gcc() {
 		--enable-lto \
 		--enable-default-pie \
 		--enable-default-ssp \
+		--enable-libssp \
 		--with-gnu-ld \
 		--with-gnu-as \
 		--with-linker-hash-style=gnu \
