@@ -547,6 +547,7 @@ do_install() {
 	# and we want to delete the libexec from glibc afterwards to save space
 	mkdir -p ${DESTDIR}/${sysroot}/usr/{bin,lib,libexec,include,share}
 	# Sysroot base symlinks
+	ln -sf usr/bin ${DESTDIR}/${sysroot}/bin
 	ln -sf usr/lib ${DESTDIR}/${sysroot}/lib
 	ln -sf usr/lib ${DESTDIR}/${sysroot}/lib${ws}
 	ln -sf lib ${DESTDIR}/${sysroot}/usr/lib${ws}
