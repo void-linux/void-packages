@@ -65,10 +65,10 @@ hook() {
 
 	STRIPCMD=/usr/bin/$STRIP
 
-	find ${PKGDESTDIR} -type f | while read f; do
-		if [[ $f =~ ^${PKGDESTDIR}/usr/lib/debug/ ]]; then
-			continue
-		fi
+	find ${PKGDESTDIR} \
+		\( -path ${PKGDESTDIR}/usr/share -o -path ${PKGDESTDIR}/usr/lib/debug \) -prune \
+		-false -o -type f |
+		while read f; do
 
 		fname=${f##*/}
 		for x in ${nostrip_files}; do
