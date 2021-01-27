@@ -22,7 +22,12 @@ update_check() {
     export LC_ALL=C
 
     if [ -z "$site" ]; then
-        printf '%s\n' "$homepage"
+        case "$distfiles" in
+            # only consider versions those exist in ftp.gnome.org
+            *ftp.gnome.org*) ;;
+            *)
+                printf '%s\n' "$homepage" ;;
+        esac
         for i in $distfiles; do
             printf '%s\n' "${i%/*}/"
         done
@@ -126,7 +131,7 @@ update_check() {
                 url="https://bitbucket.org/$pkgurlname/downloads"
                 rx='/(get|downloads)/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar)';;
             *ftp.gnome.org*)
-                : ${pattern="\Q$pkgname\E-\K[0-9]+\.[0-9]*[02468]\.[0-9.]*[0-9](?=)"}
+                : ${pattern="\Q$pkgname\E-\K([13]\.[0-9]*[02468]|[4-9][0-9]+)\.[0-9.]*[0-9](?=)"}
                 url="http://ftp.gnome.org/pub/GNOME/sources/$pkgname/cache.json";;
             *kernel.org/pub/linux/kernel/*)
                 rx=linux-'\K'${version%.*}'[\d.]+(?=\.tar\.xz)';;
