@@ -64,8 +64,7 @@ _EOF
 
 	# Override flags: https://gitlab.kitware.com/cmake/cmake/issues/19590
 	CFLAGS="${CFLAGS/ -pipe / }" CXXFLAGS="${CXXFLAGS/ -pipe / }" \
-		cmake ${cmake_args} -GNinja ${configure_args} $(echo ${cmake_builddir}|sed \
-			-e 's|[^/]$|/|' -e 's|[^/]*||g' -e 's|/|../|g')
+		cmake ${cmake_args} -GNinja ${configure_args} ${wrksrc}/${build_wrksrc}
 
 	# Replace -isystem with -I for Qt4 and Qt5 packages
 	find -name flags.make -exec sed -i "{}" -e"s;-isystem;-I;g" \;
