@@ -62,6 +62,7 @@ _EOF
 
 	cmake_args+=" -DCMAKE_INSTALL_SBINDIR=bin"
 
+	export CMAKE_GENERATOR="${CMAKE_GENERATOR:-Ninja}"
 	# Override flags: https://gitlab.kitware.com/cmake/cmake/issues/19590
 	CFLAGS="${CFLAGS/ -pipe / }" CXXFLAGS="${CXXFLAGS/ -pipe / }" \
 		cmake ${cmake_args} ${configure_args} $(echo ${cmake_builddir}|sed \
@@ -72,7 +73,7 @@ _EOF
 }
 
 do_build() {
-	: ${make_cmd:=make}
+	: ${make_cmd:=ninja}
 
 	cd ${cmake_builddir:=build}
 	${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
@@ -92,14 +93,14 @@ do_check() {
 		fi
 	fi
 
-	: ${make_cmd:=make}
+	: ${make_cmd:=ninja}
 	: ${make_check_target:=test}
 
 	CTEST_OUTPUT_ON_FAILURE=TRUE ${make_cmd} ${make_check_args} ${make_check_target}
 }
 
 do_install() {
-	: ${make_cmd:=make}
+	: ${make_cmd:=ninja}
 	: ${make_install_target:=install}
 
 	cd ${cmake_builddir:=build}
