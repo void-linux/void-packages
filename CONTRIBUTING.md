@@ -87,10 +87,14 @@ When you make changes to your pull request, please *do not close and reopen your
 
 #### Continuous Integration
 
-Pull requests are automatically submitted for Continuous Integration (CI) testing to ensure packages build on various combinations of libc and architecture.
+Pull requests are automatically submitted for Continuous Integration (CI) testing to ensure packages build and pass their tests (on native builds) on various combinations of C library and architecture.
 Packages that take longer than 120 minutes or need more than 14G of storage to complete their build (for example, Firefox or the Linux kernel) will fail CI and should include `[ci skip]` in the PR title or body (the comment field when the PR is being opened) to avoid wasting CI builder time.
 Use your best judgment on build times based on your local building experience. If you skip CI when submitting a PR, please build and cross-build for a variety of architectures locally, with both glibc and musl, and note your local results in PR comments.
 Make sure to cover 64-bit and 32-bit architectures.
+
+If you notice a failure in CI that didn't happen locally, that is likely because you didn't run tests locally.
+Use `./xbps-src -Q pkg <package>` to do so.
+Some tests won't work in the CI environment or at all, and their templates should encode this information using the `make_check` variable.
 
 Continuous Integration will also check if the templates you have changed
 comply with the our guidelines. At the moment not all packages comply with the rules, so if you update a package, it may report errors about places you haven't touched. Please feel free to fix those errors too.
