@@ -32,6 +32,17 @@ if [ -z "$XBPS_CHECK_PKGS" ]; then
     exit 0
 fi
 
+if [ "$make_check" = no ]; then
+    msg_normal "${pkgname}-${version}_${revision}: skipping check (make_check=no) ...\n"
+    exit 0
+fi
+
+if [ "$make_check" = extended -a "$XBPS_CHECK_PKGS" != full ]; then
+    msg_normal \
+        "${pkgname}-${version}_${revision}: skipping check (make_check=extended and XBPS_CHECK_PKGS is not 'full') ...\n"
+    exit 0
+fi
+
 for f in $XBPS_COMMONDIR/environment/check/*.sh; do
     source_file "$f"
 done
