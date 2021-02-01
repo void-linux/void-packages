@@ -1,15 +1,15 @@
 # Template file for 'pinephone-kernel'
 pkgname=pinephone-kernel
-version=5.8.10
+version=5.10.12
 revision=1
-_commit=b8647e317c32f64543c32465abb7b4651e6e3199
-wrksrc="linux-${_commit}"
+_tag=orange-pi-5.10-20210130-2109
+wrksrc="linux-${_tag}"
 short_desc="Linux kernel and modules (${version%.*} series)"
 maintainer="John Sullivan <jsullivan@csumb.edu>"
 license="GPL-2.0-only"
 homepage="https://www.kernel.org"
-distfiles="https://github.com/megous/linux/archive/${_commit}.tar.gz"
-checksum=65c154fde37f38334ccd2038765954536f78a504ef4460a3021cb8e33f64de6a
+distfiles="https://github.com/megous/linux/archive/${_tag}.tar.gz"
+checksum=7ef48ee91f6b6cfdc74f3dc73753903748bcda3282f1ac6e2ff33d392f6c30ca
 python_version=3
 patch_args="-Np1"
 
@@ -22,7 +22,7 @@ noshlibprovides=yes
 preserve=yes
 
 hostmakedepends="tar xz bc elfutils-devel flex gmp-devel kmod libmpc-devel
- libressl-devel perl uboot-mkimage cpio"
+ libressl-devel perl uboot-mkimage cpio pahole python3"
 
 _kernver="${version}_${revision}"
 triggers="kernel-hooks"
@@ -41,42 +41,51 @@ mutable_files="
  /usr/lib/modules/${_kernver}/modules.alias.bin
  /usr/lib/modules/${_kernver}/modules.devname"
 
+# reproducible build
+export KBUILD_BUILD_TIMESTAMP=${SOURCE_DATE_EPOCH:-0}
+export KBUILD_BUILD_USER=voidlinux
+export KBUILD_BUILD_HOST=voidlinux
+
+if [ "$CROSS_BUILD" ]; then
+	_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+fi
+if [ "${_patchver}" ]; then
+	_version="EXTRAVERSION=${_patchver}"
+fi
+
 do_configure() {
-	# 5.8 misses Documentation/DocBook. We ship the directory from 4.12 here.
+	local arch=arm64
+
+	# 5.10 misses Documentation/DocBook. We ship the directory from 4.12 here.
 	cp -a $FILESDIR/DocBook -t Documentation
 
-	local arch _args
-	arch=arm64
-
-	if [ "$CROSS_BUILD" ]; then
-		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	if [ -f ${FILESDIR}/pinephone-dotconfig-custom ]; then
+		msg_normal "Detected a custom .config file for pinephone, using it.\n"
+		cp -f ${FILESDIR}/pinephone-dotconfig-custom .config
+		make ${makejobs} ARCH=$arch ${_cross} oldconfig
+	elif [ -f ${FILESDIR}/pinephone-dotconfig ]; then
+		msg_normal "Detected a .config file for pinephone, using it.\n"
+		cp -f $FILESDIR/pinephone-dotconfig .config
+		make ${makejobs} ARCH=$arch ${_cross} oldconfig
+	else
+		msg_normal "Defaulting to 'pinephone_defconfig'.\n"
+		make ${makejobs} ARCH=$arch ${_cross} pinephone_defconfig
 	fi
-
-	cp $FILESDIR/config .config || make ARCH=$arch $_args pinephone_defconfig
 
 	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
 	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
 }
 
 do_build() {
-	local arch _cross _args
-	_args="Image modules dtbs"
-	arch=arm64
+	local arch=arm64
 
-	if [ "$CROSS_BUILD" ]; then
-		_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
-	fi
-	if [ "${_patchver}" ]; then
-		_version="EXTRAVERSION=${_patchver}"
-	fi
 	export LDFLAGS=
 	make ARCH=$arch ${_version} ${_cross} ${makejobs} prepare
-	make ARCH=$arch ${_version} ${_cross} ${makejobs} ${_args}
+	make ARCH=$arch ${_version} ${_cross} ${makejobs} Image modules dtbs
 }
 
 do_install() {
-	local arch subarch _args hdrdest
-	arch=arm64
+	local arch=arm64 subarch _args hdrdest
 
 	# Run depmod after compressing modules.
 	sed -i '2iexit 0' scripts/depmod.sh
