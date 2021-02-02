@@ -115,6 +115,7 @@ verify_cksum() {
 	cksum=$(get_cksum $curfile $dfcount)
 
 	# If the checksum starts with an commercial at (@) it is the contents checksum
+	# Only constant tarballs can be signed, so only check for signify below
 	if [ "${cksum:0:1}" = "@" ]; then
 		cksum=${cksum:1}
 		msg_normal "$pkgver: verifying contents checksum for distfile '$curfile'... "
@@ -131,7 +132,7 @@ verify_cksum() {
 		filesum=$(${XBPS_DIGEST_CMD} "$distfile")
 		if [ "$cksum" != "$filesum" ]; then
 			echo
-			msg_red "SHA256 mismatch for '$curfile:'\n$filesum\n"
+			msg_red "SHA256 mismatch for '$curfile':\n$filesum\n"
 			errors=$((errors + 1))
 		else
 			if [ ! -f "$XBPS_SRCDISTDIR/by_sha256/${cksum}_${curfile}" ]; then
@@ -139,6 +140,25 @@ verify_cksum() {
 				ln -f "$distfile" "$XBPS_SRCDISTDIR/by_sha256/${cksum}_${curfile}"
 			fi
 			msg_normal_append "OK.\n"
+		fi
+
+		if [ -n "$signify_sig" ]; then
+			if [ -z "$signify_key" ]; then
+				msg_error "$pkgver: signify_sig is set but signify_key isn't\n"
+			fi
+			sigfile="${signify_sig##*/}"
+			msg_normal "$pkgver: fetching signify signature '$sigfile'...\n"
+			$fetch_cmd -o "$sigfile" "$signify_sig"
+			msg_normal "$pkgver: verifying signify signature for distfile '$curfile'... "
+			if signify -V \
+				-p "$XBPS_COMMONDIR/signify-keys/$signify_key" \
+				-x "$sigfile" \
+				-m "$distfile" >/dev/null; then
+				msg_normal_append "OK.\n"
+			else
+				msg_red "signify signature mismatch for '$curfile'\n"
+				errors=$((errors + 1))
+			fi
 		fi
 	fi
 }
