@@ -6,17 +6,14 @@ if [ "$1" != "$2" ]; then
 	arch="-a $2"
 fi
 
-PKGS=$(/hostrepo/xbps-src sort-dependencies $(cat /tmp/templates))
-
-NPROCS=1
-if [ -r /proc/cpuinfo ]; then
-        NPROCS=$(grep ^proc /proc/cpuinfo|wc -l)
+if [ "$3" = 1 ]; then
+	test="-Q"
 fi
 
-export FTP_RETRIES=10
+PKGS=$(/hostrepo/xbps-src sort-dependencies $(cat /tmp/templates))
 
 for pkg in ${PKGS}; do
-	/hostrepo/xbps-src -j$NPROCS -H "$HOME"/hostdir $arch pkg "$pkg"
+	/hostrepo/xbps-src -j$(nproc) -H "$HOME"/hostdir $arch $test pkg "$pkg"
 	[ $? -eq 1 ] && exit 1
 done
 

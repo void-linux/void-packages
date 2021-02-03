@@ -6,7 +6,21 @@ do_configure() {
 	[ ! -d ${cmake_builddir:=build} ] && mkdir -p ${cmake_builddir}
 	cd ${cmake_builddir}
 
-	if [ "$CROSS_BUILD" ]; then
+	if [ -z "$CHROOT_READY" ]; then
+		cat >bootstrap.cmake <<_EOF
+SET(CMAKE_SYSTEM_NAME Linux)
+SET(CMAKE_SYSTEM_VERSION 1)
+
+SET(CMAKE_C_COMPILER   ${CC})
+SET(CMAKE_CXX_COMPILER ${CXX})
+
+SET(CMAKE_FIND_ROOT_PATH  "${XBPS_MASTERDIR}/usr;${XBPS_MASTERDIR}")
+
+SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+_EOF
+		configure_args+=" -DCMAKE_TOOLCHAIN_FILE=bootstrap.cmake"
+	elif [ "$CROSS_BUILD" ]; then
 		case "$XBPS_TARGET_MACHINE" in
 			x86_64*) _CMAKE_SYSTEM_PROCESSOR=x86_64 ;;
 			i686*) _CMAKE_SYSTEM_PROCESSOR=x86 ;;
@@ -19,9 +33,6 @@ do_configure() {
 			ppc*) _CMAKE_SYSTEM_PROCESSOR=ppc ;;
 			*) _CMAKE_SYSTEM_PROCESSOR=generic ;;
 		esac
-		if [ -x "${XBPS_CROSS_BASE}/usr/bin/wx-config-gtk3" ]; then
-			wx_config=wx-config-gtk3
-		fi
 		cat > cross_${XBPS_CROSS_TRIPLET}.cmake <<_EOF
 SET(CMAKE_SYSTEM_NAME Linux)
 SET(CMAKE_SYSTEM_VERSION 1)
@@ -32,24 +43,17 @@ SET(CMAKE_CROSSCOMPILING TRUE)
 
 SET(CMAKE_SYSTEM_PROCESSOR ${_CMAKE_SYSTEM_PROCESSOR})
 
-SET(CMAKE_FIND_ROOT_PATH  ${XBPS_CROSS_BASE})
+SET(CMAKE_FIND_ROOT_PATH  "${XBPS_CROSS_BASE}/usr;${XBPS_CROSS_BASE}")
 
 SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-
-SET(wxWidgets_CONFIG_EXECUTABLE ${XBPS_WRAPPERDIR}/${wx_config:=wx-config})
 _EOF
 		cmake_args+=" -DCMAKE_TOOLCHAIN_FILE=cross_${XBPS_CROSS_TRIPLET}.cmake"
 	fi
 	cmake_args+=" -DCMAKE_INSTALL_PREFIX=/usr"
 	cmake_args+=" -DCMAKE_BUILD_TYPE=Release"
-
-	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
-		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib32"
-	else
-		cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib"
-	fi
+	cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib${XBPS_TARGET_WORDSIZE}"
 
 	if [[ $build_helper = *"qemu"* ]]; then
 		echo "SET(CMAKE_CROSSCOMPILING_EMULATOR /usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static)" \

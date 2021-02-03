@@ -18,27 +18,37 @@ hook() {
 
     subpkgs=$(get_subpkgs)
 
-    subpackages="${subpackages// /$'\n'}"
-
     # Sort the strings so they can be compare for equality
-    subpkgs="$(printf "%s\\n" "$subpkgs" | sort)"
-    subpackages="$(printf "%s\\n" "$subpackages" | sort)"
+    subpkgs="$(printf '%s\n' $subpkgs | sort)"
+    subpackages="$(printf '%s\n' $subpackages | sort)"
 
     if [ "$subpackages" = "$subpkgs" ]; then
         return 0
     fi
 
-    # XXX: Make the sed call work when subpackages has multiple lines
-    # this can be done with grep with perl regexp (-P) but chroot-grep
-    # is compiled without it
-    matches="$(sed -n 's/subpackages.*"\(.*\)"[^"]*$/\1/p' $XBPS_SRCPKGDIR/$pkgname/template \
-        | tr " " "\n" | sort)"
+    # sed supports comment but let's put them here
+    # 1: print everything between pairs of <""> in subpackages[+]?="..."
+    # 2: multiline subpackages="...\n..."
+    # 2.1: For any line in the middle, i.e. no <"> exists, print it
+    # 2.2: For the first line, print everything after <">
+    # 2.3: For last line, print everything before <">
+    matches="$(sed -n -e 's/subpackages.*"\(.*\)"[^"]*$/\1/p' \
+            -e '/subpackages[^"]*"[^"]*$/,/"/{
+                /"/!p
+                /subpackages/s/.*"//p
+                s/".*//p
+            }' $XBPS_SRCPKGDIR/$pkgname/template |
+        tr '\v\t\r\n' '    ')"
 
     for s in $subpkgs; do
-        grep -q "^$s$" <<< "$matches" ||
-            msg_warn "${s}_package() defined but will never be built.\n"
+        case " $matches " in
+            *" $s "*) ;;
+            *) msg_warn "${s}_package() defined but will never be built.\n" ;;
+        esac
     done
 
-    grep -q "^$pkgname$" <<< "$matches" &&
-        msg_warn "$pkgname is sourcepkg but is in subpackages=.\n" || :
+    case " $matches " in
+        *" $pkgname "*)
+            msg_warn "$pkgname is sourcepkg but is in subpackages=.\n" ;;
+    esac
 }

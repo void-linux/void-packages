@@ -1,0 +1,70 @@
+From 3f2d8238846d4795f1292c05923b9f212dc4d022 Mon Sep 17 00:00:00 2001
+From: Charlie Li <git@vishwin.info>
+Date: Sat, 21 Nov 2020 14:24:04 -0500
+Subject: [PATCH] Fix build with LibreSSL
+
+LibreSSL's dtls1.h uses some definitions from ssl.h and ssl3.h, but
+expects consumers to include them. Reorder and include them before
+dtls1.h.
+
+LibreSSL does not define DTLS1_2_VERSION. Remove them from view.
+---
+ src/rtc_base/openssl_stream_adapter.cc | 19 ++++++++++++++++++-
+ 1 file changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/src/rtc_base/openssl_stream_adapter.cc b/src/rtc_base/openssl_stream_adapter.cc
+index 7f4b79a5..037002bc 100644
+--- a/src/rtc_base/openssl_stream_adapter.cc
++++ b/src/rtc_base/openssl_stream_adapter.cc
+@@ -17,8 +17,11 @@
+ #include <openssl/tls1.h>
+ #include <openssl/x509v3.h>
+ #ifndef OPENSSL_IS_BORINGSSL
+-#include <openssl/dtls1.h>
+ #include <openssl/ssl.h>
++#ifdef LIBRESSL_VERSION_NUMBER
++#include <openssl/ssl3.h>
++#endif
++#include <openssl/dtls1.h>
+ #endif
+ 
+ #include <memory>
+@@ -392,8 +395,10 @@ SSLProtocolVersion OpenSSLStreamAdapter::GetSslVersion() const {
+   if (ssl_mode_ == SSL_MODE_DTLS) {
+     if (ssl_version == DTLS1_VERSION) {
+       return SSL_PROTOCOL_DTLS_10;
++#ifndef LIBRESSL_VERSION_NUMBER
+     } else if (ssl_version == DTLS1_2_VERSION) {
+       return SSL_PROTOCOL_DTLS_12;
++#endif
+     }
+   } else {
+     if (ssl_version == TLS1_VERSION) {
+@@ -985,15 +990,27 @@ SSL_CTX* OpenSSLStreamAdapter::SetupSSLContext() {
+       case SSL_PROTOCOL_TLS_12:
+       default:
+         SSL_CTX_set_max_proto_version(
++#ifdef LIBRESSL_VERSION_NUMBER
++            ctx, TLS1_2_VERSION);
++#else
+             ctx, ssl_mode_ == SSL_MODE_DTLS ? DTLS1_2_VERSION : TLS1_2_VERSION);
++#endif
+         break;
+     }
+   } else {
+     // TODO(https://bugs.webrtc.org/10261): Make this the default in M84.
+     SSL_CTX_set_min_proto_version(
++#ifdef LIBRESSL_VERSION_NUMBER
++        ctx, TLS1_2_VERSION);
++#else
+         ctx, ssl_mode_ == SSL_MODE_DTLS ? DTLS1_2_VERSION : TLS1_2_VERSION);
++#endif
+     SSL_CTX_set_max_proto_version(
++#ifdef LIBRESSL_VERSION_NUMBER
++        ctx, TLS1_2_VERSION);
++#else
+         ctx, ssl_mode_ == SSL_MODE_DTLS ? DTLS1_2_VERSION : TLS1_2_VERSION);
++#endif
+   }
+ 
+ #ifdef OPENSSL_IS_BORINGSSL

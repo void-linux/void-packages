@@ -1,20 +1,40 @@
 # Template file for 'wine'
 pkgname=wine
-version=5.19
+version=6.1
 revision=1
+_pkgver=${version/r/-r}
+create_wrksrc=yes
+build_wrksrc=wine-${_pkgver}
 build_style=gnu-configure
 configure_args="--bindir=/usr/libexec/wine"
 short_desc="Run Microsoft Windows applications"
 maintainer="Helmut Pozimski <helmut@pozimski.eu>"
 license="LGPL-2.1-or-later"
 homepage="http://www.winehq.org/"
-distfiles="https://dl.winehq.org/wine/source/${version%%.*}.x/wine-${version}.tar.xz"
-checksum=0020482b9eeae84ea1a1281323a4bcd1b17dbd45ea2e8beb3a10073787e697c7
+distfiles="https://dl.winehq.org/wine/source/${version%.*}.x/wine-${_pkgver}.tar.xz
+ https://github.com/wine-staging/wine-staging/archive/v${_pkgver}.tar.gz"
+checksum="a92c24308c48b851b5dc22a1d35696a57311c447b31ec9fa543ec5b0aa73a149
+ f4de54fe026b920191db6c5001cfd563503d0fa3e2b191315311285019afddf4"
+
+build_options="mingw staging"
+build_options_default="mingw"
+desc_option_mingw="Use the MinGW cross compiler to build WinPE DLLs"
+desc_option_staging="Apply the wine-staging patchset"
 
 lib32mode=full
-archs="i686 x86_64*"
+archs="i686* x86_64*"
 
-hostmakedepends="pkg-config flex gettext"
+_nopie=no
+if [ "$XBPS_TARGET_MACHINE" = i686-musl ]; then
+	# build system adds -fno-PIC for 32bit builds, which,
+	# coupled with our default pie toolchain, leads to textrels
+	# in the final binary; musl doesn't support those
+	_nopie=yes
+fi
+
+hostmakedepends="pkg-config flex gettext
+ $(vopt_if mingw "cross-${XBPS_TARGET_MACHINE%-musl}-w64-mingw32")
+ $(vopt_if staging 'autoconf')"
 makedepends="gettext-devel lcms2-devel zlib-devel ncurses-devel
  glu-devel libSM-devel libXext-devel libX11-devel libXpm-devel
  libXinerama-devel libXcomposite-devel libXmu-devel libXxf86vm-devel
@@ -45,6 +65,31 @@ fi
 
 _wine_libexec="/usr/libexec/wine"
 nopie_files="${_wine_libexec}/wine${_wine_suffix}"
+
+if [ "${_nopie}" = yes ]; then
+	nopie_files+=" ${_wine_libexec}/wineserver${_wineserver_suffix}"
+fi
+
+post_patch() {
+	if [ "${build_option_staging}" ]; then
+		"../wine-staging-${_pkgver}/patches/patchinstall.sh" --all
+	fi
+}
+
+pre_build() {
+	if [ "${_nopie}" = yes ]; then
+		make ${makejobs} LDFLAGS="$LDFLAGS -no-pie" \
+			tools/{widl/widl,winebuild/winebuild,winegcc/winegcc,wrc/wrc} \
+			loader/wine server/wineserver
+	fi
+}
+
+do_check() {
+	if [ "$XBPS_CHECK_PKGS" = full ]; then
+		msg_warn "This testsuite might hang indefinitely\n"
+		make check
+	fi
+}
 
 post_install() {
 	# Font aliasing settings for Win32 applications
@@ -83,7 +128,6 @@ wine-devel_package() {
 	replaces="wine-unstable-devel>=0"
 	pkg_install() {
 		vmove usr/include
-		vmove "usr/lib/*.so"
 	}
 }
 
@@ -103,6 +147,9 @@ wine-common_package() {
 wine-tools_package() {
 	depends="wine-${version}_${revision}"
 	short_desc+=" - development tools"
+	if [ "${_nopie}" = yes ]; then
+		nopie=yes
+	fi
 	pkg_install() {
 		for file in widl winebuild winecpp winedump wineg++ winegcc winemaker wmc wrc function_grep.pl
 		do

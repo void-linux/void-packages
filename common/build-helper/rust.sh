@@ -38,3 +38,6 @@ export SODIUM_INC_DIR="${XBPS_CROSS_BASE}/usr/lib"
 
 # openssl-sys
 export OPENSSL_NO_VENDOR=1
+
+# pcre2-sys, only necessary for musl targets
+export PCRE2_SYS_STATIC=0

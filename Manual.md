@@ -8,7 +8,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 * [Introduction](#Introduction)
 	* [Quality Requirements](#quality_requirements)
 	* [Package build phases](#buildphase)
-	* [Package naming conventions](#namingconvention)
+	* [Package naming conventions](#namingconventions)
 		* [Libraries](#libs)
 		* [Language Modules](#language_modules)
 		* [Language Bindings](#language_bindings)
@@ -68,6 +68,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 		* [update-desktopdb](#triggers_update_desktopdb)
 		* [x11-fonts](#triggers_x11_fonts)
 		* [xml-catalog](#triggers_xml_catalog)
+	* [Void specific documentation](#documentation)
 	* [Notes](#notes)
 	* [Contributing via git](#contributing)
 * [Help](#help)
@@ -136,10 +137,11 @@ the Void packages system.
 1. Required: Another package either within the repository or pending inclusion
    requires the package.
 
-In particular, new themes and small shell scripts are highly unlikely
-to be accepted. New fonts are welcome if they provide value beyond
-aesthetics (e.g. they contain glyphs for a script missing in already
-packaged fonts).
+In particular, new themes are highly unlikely to be accepted. Simple shell
+scripts are unlikely to be accepted unless they provide considerable value to a
+broad user base. New fonts may be accepted if they provide value beyond
+aesthetics (e.g. they contain glyphs for a script missing in already packaged
+fonts).
 
 Browser forks, including those based on Chromium and Firefox, are generally not
 accepted. Such forks require heavy patching, maintenance and hours of build time.
@@ -363,6 +365,9 @@ rather than additional binary package names.
 
 - `CROSS_BUILD` Set if `xbps-src` is cross compiling a package.
 
+- `XBPS_CHECK_PKGS` Set if `xbps-src` is going to run tests for a package.
+Longer testsuites should only be run in `do_check()` if it is set to `full`.
+
 - `DESTDIR` Full path to the fake destdir used by the source pkg, set to
 `<masterdir>/destdir/${sourcepkg}-${version}`.
 
@@ -560,17 +565,22 @@ phase if `${build_style}` is set to `configure`, `gnu-configure` or
 `gnu-makefile` build methods. By default set to
 `PREFIX=/usr DESTDIR=${DESTDIR}`.
 
-- `make_build_target` The target to be passed in to `${make_cmd}` at the build phase if
-`${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
-build methods. Unset by default (`all` target).
+- `make_build_target` The build target. If `${build_style}` is set to `configure`, `gnu-configure`
+or `gnu-makefile`, this is the target passed to `${make_cmd}` in the build phase; when unset, it
+defaults to `all`. If `${build_style}` is `python3-pep517`, this is the path of the package
+directory that should be built as a Python wheel; when unset, defaults to `.` (the current
+directory with respect to the build).
 
 - `make_check_target` The target to be passed in to `${make_cmd}` at the check phase if
 `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
 build methods. By default set to `check`.
 
-- `make_install_target` The target to be passed in to `${make_cmd}` at the `install-destdir` phase
-if `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
-build methods. By default set to `install`.
+- `make_install_target` The installation target. When `${build_style}` is set to `configure`,
+`gnu-configure` or `gnu-makefile`, this is the target passed to `${make_command}` in the install
+phase; when unset, it defaults to `install`. If `${build_style}` is `python-pep517`, this is the
+path of the Python wheel produced by the build phase that will be installed; when unset, the
+`python-pep517` build style will look for a wheel matching the package name and version in the
+current directory with respect to the install.
 
 - `patch_args` The arguments to be passed in to the `patch(1)` command when applying
 patches to the package sources during `do_patch()`. Patches are stored in
@@ -630,8 +640,7 @@ in /usr/share directory specified by absolute path, which are expected and allow
 specified by absolute path, which are expected and allowed to contain machine code files.
 
 - `nocross` If set, cross compilation won't be allowed and will exit immediately.
-This should be set to a string describing why it fails, or a link to a travis
-buildlog demonstrating the failure.
+This should be set to a string describing why it fails, or a link to a buildlog (from the official builders, CI buildlogs can vanish) demonstrating the failure.
 
 - `restricted` If set, xbps-src will refuse to build the package unless
 `etc/conf` has `XBPS_ALLOW_RESTRICTED=yes`. The primary builders for Void
@@ -644,8 +653,7 @@ to override the guessed list. Only use this if a specific order of subpackages i
 otherwise the default would work in most cases.
 
 - `broken` If set, building the package won't be allowed because its state is currently broken.
-This should be set to a string describing why it is broken, or a link to a travis
-buildlog demonstrating the failure.
+This should be set to a string describing why it is broken, or a link to a buildlog demonstrating the failure.
 
 - `shlib_provides` A white space separated list of additional sonames the package provides on.
 This appends to the generated file rather than replacing it.
@@ -725,39 +733,48 @@ Examples:
 	# Default value (all arches)
 	archs="*"
 	```
-Do not use noarch. It is deprecated and being removed.
+A special value `noarch` used to be available, but has since been removed.
 
 <a id="explain_depends"></a>
-#### About the many types of `depends` variable.
+#### About the many types of `depends` variables
 
-So far we have listed four types of `depends`, there are `hostmakedepends`,
-`makedepends`, `checkdepends` and plain old `depends`.To understand the difference
-between them, understand this: Void Linux cross compiles for many arches.
-Sometimes in a build process, certain programs must be run, for example `yacc`, or the
-compiler itself for a C program. Those programs get put in `hostmakedepends`.
-When the build runs, those will be installed on the host to help the build
-complete.
+So far, we have listed four types of `depends` variables: `hostmakedepends`,
+`makedepends`, `checkdepends` and `depends`. These different kinds of variables
+are necessary because `xbps-src` supports cross compilation and to avoid
+installing unecessary packages in the build environment.
 
-Then there are those things for which a package either links against or
-includes header files. These are `makedepends`, and regardless of the
-architecture of the build machine, the architecture of the target machine must
-be used. Typically the `makedepends` will be the only one of the three types of
-`depends` to include `-devel` packages, and typically only `-devel` packages.
+During a build process, there are programs that must be _run_ on the host, such
+as `yacc` or the C compiler. The packages that contain these programs should be
+listed in `hostmakedepends`, and will be installed on the host when building the
+target package. Some of these packages are dependencies of the `base-chroot`
+package and don't need to be listed. It is possible that some of the programs
+necessary to build a project are located in `-devel` packages.
 
-Then there are those things that are required for a package to run its testsuite
-`dejagnu` or libraries it must link to when building test binaries like `cmocka`.
-These are `checkdepends` and they are installed like they are part of `makedepends`.
-the difference is that they are only installed when `XBPS_CHECK_PKGS` is defined.
+The target package can also depend on other packages for libraries to link
+against or header files. These packages should be listed in `makedepends` and
+will match the target architecture, regardless of the architecture of the build
+machine. Typically, `makedepends` will contain mainly `-devel` packages.
 
-The final variable, `depends`, is for those things the package needs at
-runtime and without which is unusable, and that xbps can't auto-detect.
-These are not all the packages the package needs at runtime, but only those
-that are not linked against. This variable is most useful for non-compiled
-programs.
+Furthermore, if `XBPS_CHECK_PKGS` is set or the `-Q` option is passed to
+`xbps-src`, the target package might require specific dependencies or libraries
+that are linked into its test binaries to run its test suite. These dependencies
+should be listed in `checkdepends` and will be installed as if they were part of
+`hostmakedepends`. Some dependencies that can be included in `checkdepends` are:
 
-Finally, as a general rule, if something compiles the exact same way whether or
-not you add a particular package to `makedepends` or `hostmakedepends`, it
-shouldn't be added.
+- `dejagnu`: used for some GNU projects
+- `cmocka-devel`: linked into test binaries
+- `dbus`: makes it possible to run `dbus-run-session <test-command>` to provide
+  a D-Bus session for applications that need it
+- `git`: some test suites run the `git` command
+
+Lastly, a package may require certain dependencies at runtime, without which it
+is unusable. These dependencies, when they aren't detected automatically by
+XBPS, should be listed in `depends`. This is mostly relevant for Perl and Python
+modules and other programs that use `dlopen(3)` instead of dynamically linking.
+
+Finally, as a general rule, if a package is built the exact same way whether or
+not a particular package is present in `makedepends` or `hostmakedepends`, that
+package shouldn't be added as a build time dependency.
 
 <a id="repositories"></a>
 #### Repositories
@@ -912,7 +929,7 @@ can be used to pass arguments during compilation. If your package does not make 
 extensions consider using the `gem` build style instead.
 
 - `gem` For packages that are installed using gems from [RubyGems](https://rubygems.org/).
-The gem command can be overridden by `gem_cmd`. 
+The gem command can be overridden by `gem_cmd`.
 `distfiles` is set by the build style if the template does not do so. If your gem
 provides extensions which must be compiled consider using the `gemspec` build style instead.
 
@@ -944,14 +961,25 @@ via `make_install_target`.
 via `configure_args`, the meson command can be overridden by `meson_cmd` and the location of
 the out of source build by `meson_builddir`
 
-For packages that use the Python module build method (`setup.py`), you
-can choose one of the following:
+- `void-cross` For cross-toolchain packages used to build Void systems. You will need to
+specify `cross_triplet` (corresponds to the target triplet specified in the cross profile
+for the target arch). Optionally, `cross_gcc_skip_go` can be specified. Individual subproject
+configure arguments can be specified via `cross_*_configure_args` where `*` is `binutils`,
+`gcc_bootstrap` (early gcc), `gcc` (final gcc), `glibc` (or `musl`), `configure_args` is
+additionally passed to both early and final `gcc`. You can also specify custom `CFLAGS`
+and `LDFLAGS` for the libc as `cross_(glibc|musl)_(cflags|ldflags)`.
+
+For packages that use the Python module build method (`setup.py` or
+[PEP 517](https://www.python.org/dev/peps/pep-0517/)), you can choose one of the following:
 
 - `python-module` to build *both* Python 2.x and 3.x modules
 
 - `python2-module` to build Python 2.x only modules
 
 - `python3-module` to build Python 3.x only modules
+
+- `python3-pep517` to build Python 3.x only modules that provide a PEP 517 build description without
+a `setup.py` script
 
 Environment variables for a specific `build_style` can be declared in a filename
 matching the `build_style` name, Example:
@@ -992,6 +1020,8 @@ needed for cross builds and a qmake-wrapper to make `qmake` use this configurati
 This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 `gnu-configure` style the configure script calls `qmake` or a `Makefile` in
 `gnu-makefile` style, respectively.
+
+- `cmake-wxWidgets-gtk3` sets the `WX_CONFIG` variable which is used by FindwxWidgets.cmake
 
 <a id="functions"></a>
 ### Functions
@@ -1267,7 +1297,7 @@ The following variables can be used for this purpose:
 
 - `system_groups` This specifies the names of the new *system groups* to be created, separated
 by blanks. Optionally the **gid** can be specified by delimiting it with a
-colon, i.e `system_groups="mygroup:78"` or `system_groups="foo blah:8000"`.
+colon, i.e `system_groups="_mygroup:78"` or `system_groups="_foo _blah:8000"`.
 
 - `system_accounts` This specifies the names of the new **system users/groups** to be created,
 separated by blanks, i.e `system_accounts="_foo _blah:22"`. Optionally the **uid** and **gid**
@@ -1284,7 +1314,7 @@ The **system user** is created by using a dynamically allocated **uid/gid** in y
 and it's created as a `system account`, unless the **uid** is set. A new group will be created for the
 specified `system account` and used exclusively for this purpose.
 
-System accounts must be prefixed with an underscore to prevent clashing with names of user
+System accounts and groups must be prefixed with an underscore to prevent clashing with names of user
 accounts.
 
 > NOTE: The underscore policy does not apply to old packages, due to the inevitable breakage of
@@ -1474,6 +1504,9 @@ be your guidance to decide whether or not to split off a `-doc` subpackage.
 Python packages should be built with the `python{,2,3}-module` build style, if possible.
 This sets some environment variables required to allow cross compilation. Support to allow
 building a python module for multiple versions from a single template is also possible.
+The `python3-pep517` build style provides means to build python packages that provide a build-system
+definition compliant with [PEP 517](https://www.python.org/dev/peps/pep-0517/) without a traditional
+`setup.py` script.
 
 Python packages that rely on `python3-setuptools` should generally map `setup_requires`
 dependencies in `setup.py` to `hostmakedepends` in the template and `install_requires`
@@ -1617,6 +1650,9 @@ generally those packages are the same but have been split as to avoid
 cyclic dependencies. Make sure that the package you're removing is not
 the source of those patches/files.
 - Remove package template.
+- Add `pkgname<=version_revision` to `replaces` variable of `removed-packages`
+template.  All removed subpkgs should be added too.
+This will uninstall package from systems where it is installed.
 - Remove the package from the repository index
 or contact a team member that can do so.
 
@@ -1990,6 +2026,14 @@ During removal it uses `xmlcatmgr` to remove all catalogs passed to it by the
 To include this trigger use the `sgml_entries` variable or/and the `xml_entries` variable,
 as the trigger won't do anything unless either of them are defined.
 
+<a id="documentation"></a>
+### Void specific documentation
+
+When you want document details of package's configuration and usage specific to Void Linux,
+not covered by upstream documentation, put notes into
+`srcpkgs/<pkgname>/files/README.voidlinux` and install with
+`vdoc "${FILESDIR}/README.voidlinux"`.
+
 <a id="notes"></a>
 ### Notes
 
@@ -2012,15 +2056,15 @@ otherwise the `debug` packages won't have debugging symbols.
 <a id="contributing"></a>
 ### Contributing via git
 
-Fork the voidlinux `void-packages` git repository on github and clone it:
+To get started, [fork](https://help.github.com/articles/fork-a-repo) the void-linux `void-packages` git repository on GitHub and clone it:
 
     $ git clone git@github.com:<user>/void-packages.git
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for information on how to format your
 commits and other tips for contributing.
 
-Once you've made changes to your `forked` repository you can submit
-a github pull request; see https://help.github.com/articles/fork-a-repo for more information.
+Once you've made changes to your `forked` repository, submit
+a github pull request.
 
 To keep your forked repository always up to date, setup the `upstream` remote
 to pull in new changes:
