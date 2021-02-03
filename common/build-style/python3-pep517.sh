@@ -25,6 +25,8 @@ do_install() {
 	# As with do_build, no need to accommodate cross compilation here
 	: ${make_install_target:=${pkgname#python3-}-${version}-*-*-*.whl}
 
+	# If do_build was overridden, make sure the TMPDIR exists
+	mkdir -p build
 	TMPDIR=build python3 -m pip install --use-pep517 --prefix /usr \
 		--root ${DESTDIR} --no-deps --no-build-isolation \
 		--no-clean ${make_install_args} ${make_install_target}
