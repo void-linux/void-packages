@@ -119,7 +119,7 @@ chroot_prepare() {
         msg_warn "No local timezone configuration file created.\n"
     fi
 
-    for f in dev sys proc host boot; do
+    for f in dev sys tmp proc host boot; do
         [ ! -d $XBPS_MASTERDIR/$f ] && mkdir -p $XBPS_MASTERDIR/$f
     done
 
