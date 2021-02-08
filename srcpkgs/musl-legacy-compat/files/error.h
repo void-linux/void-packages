@@ -13,6 +13,10 @@ static unsigned int error_message_count = 0;
 
 static inline void error(int status, int errnum, const char* format, ...)
 {
+	/* should be fflush(stdout), but that's unspecified if stdout has been closed;
+	 * stick with fflush(NULL) for simplicity (glibc checks if the fd is still valid) */
+	fflush(NULL);
+
 	va_list ap;
 	fprintf(stderr, "%s: ", program_invocation_name);
 	va_start(ap, format);
