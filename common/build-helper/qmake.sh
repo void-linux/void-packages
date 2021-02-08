@@ -5,6 +5,37 @@
 # respectively.
 
 if [ "$CROSS_BUILD" ]; then
+	mkdir -p "${XBPS_WRAPPERDIR}/target-spec/linux-g++"
+	cat > "${XBPS_WRAPPERDIR}/target-spec/linux-g++/qmake.conf" <<_EOF
+MAKEFILE_GENERATOR      = UNIX
+CONFIG                 += incremental no_qt_rpath
+QMAKE_INCREMENTAL_STYLE = sublib
+
+include(/usr/lib/qt5/mkspecs/common/linux.conf)
+include(/usr/lib/qt5/mkspecs/common/gcc-base-unix.conf)
+include(/usr/lib/qt5/mkspecs/common/g++-unix.conf)
+
+QMAKE_TARGET_CONFIG     = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/qconfig.pri
+QMAKE_TARGET_MODULE     = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/qmodule.pri
+QMAKEMODULES            = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/modules
+QMAKE_CC                = ${CC}
+QMAKE_CXX               = ${CXX}
+QMAKE_LINK              = ${CXX}
+QMAKE_LINK_C            = ${CC}
+QMAKE_LINK_SHLIB        = ${CXX}
+
+QMAKE_AR                = ${XBPS_CROSS_TRIPLET}-gcc-ar cqs
+QMAKE_OBJCOPY           = ${OBJCOPY}
+QMAKE_NM                = ${NM} -P
+QMAKE_STRIP             = ${STRIP}
+
+QMAKE_CFLAGS            = ${CFLAGS}
+QMAKE_CXXFLAGS          = ${CXXFLAGS}
+QMAKE_LFLAGS            = ${LDFLAGS}
+load(qt_config)
+_EOF
+	echo "#include \"${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/linux-g++/qplatformdefs.h\"" > "${XBPS_WRAPPERDIR}/target-spec/linux-g++/qplatformdefs.h"
+
 	cat > "${XBPS_WRAPPERDIR}/qt.conf" <<_EOF
 [Paths]
 Sysroot=${XBPS_CROSS_BASE}
@@ -28,7 +59,7 @@ HostData=/usr/lib/qt5
 HostBinaries=/usr/lib/qt5/bin
 HostLibraries=/usr/lib
 Spec=linux-g++
-TargetSpec=linux-g++
+TargetSpec=$XBPS_WRAPPERDIR/target-spec/linux-g++
 _EOF
 
 	# create the qmake-wrapper here because it only
@@ -36,13 +67,13 @@ _EOF
 	# and not to interfere with e.g. the qmake build-style
         cat > "${XBPS_WRAPPERDIR}/qmake" <<_EOF
 #!/bin/sh
-exec /usr/lib/qt5/bin/qmake "\$@" \
-	QMAKE_CC=$CC QMAKE_CXX=$CXX QMAKE_LINK=$CXX QMAKE_LINK_C=$CC \
-	QMAKE_CFLAGS+="${CFLAGS}" QMAKE_CXXFLAGS+="${CXXFLAGS}" \
-	QMAKE_LFLAGS+="${LDFLAGS}" \
-	-qtconf "${XBPS_WRAPPERDIR}/qt.conf"
+exec /usr/lib/qt5/bin/qmake "\$@" -qtconf "${XBPS_WRAPPERDIR}/qt.conf"
 _EOF
-
-	chmod 755 ${XBPS_WRAPPERDIR}/qmake
-	cp -p ${XBPS_WRAPPERDIR}/qmake{,-qt5}
+else
+        cat > "${XBPS_WRAPPERDIR}/qmake" <<_EOF
+#!/bin/sh
+exec /usr/lib/qt5/bin/qmake "\$@" CONFIG+=no_qt_rpath
+_EOF
 fi
+chmod 755 ${XBPS_WRAPPERDIR}/qmake
+cp -p ${XBPS_WRAPPERDIR}/qmake{,-qt5}
