@@ -126,6 +126,7 @@ _EOF
 			QMAKE_CFLAGS="${CFLAGS}" \
 			QMAKE_CXXFLAGS="${CXXFLAGS}" \
 			QMAKE_LFLAGS="${LDFLAGS}" \
+			CONFIG+=no_qt_rpath \
 			${configure_args}
 	fi
 }
