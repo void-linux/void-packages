@@ -481,7 +481,8 @@ in the local repository exists to satisfy the required version. Dependencies
 can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
 or `foo-1.0_1` to match an exact version. If version comparator is not
 defined (just a package name), the version comparator is automatically set to `>=0`.
-Example: `depends="foo blah>=1.0"`. See the `Runtime dependencies` section for more information.
+Example: `depends="foo blah>=1.0"`. See the [Runtime dependencies](#deps_runtime) section
+for more information.
 
 - `bootstrap` If enabled the source package is considered to be part of the `bootstrap`
 process and required to be able to build packages in the chroot. Only a
