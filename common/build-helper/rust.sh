@@ -17,6 +17,12 @@ if [ "$CROSS_BUILD" ]; then
 	# [build]
 	# target = ${RUST_TARGET}
 	export CARGO_BUILD_TARGET="$RUST_TARGET"
+
+	# If cc-rs needs to build host binaries, it guesses the compiler and
+	# uses default (wrong) flags unless they are specified explicitly;
+	# innocuous flags are used here just to disable its defaults
+	export HOST_CC="gcc"
+	export HOST_CFLAGS="-O2"
 else
 	unset CARGO_BUILD_TARGET
 fi
@@ -38,3 +44,6 @@ export SODIUM_INC_DIR="${XBPS_CROSS_BASE}/usr/lib"
 
 # openssl-sys
 export OPENSSL_NO_VENDOR=1
+
+# pcre2-sys, only necessary for musl targets
+export PCRE2_SYS_STATIC=0

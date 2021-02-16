@@ -99,35 +99,49 @@ _EOF
 }
 
 vapigen_wrapper() {
+	local _vala_version _file
 	if [ ! -x /usr/bin/vapigen ]; then
 		return 0
 	fi
 	[ -x ${XBPS_WRAPPERDIR}/vapigen ] && return 0
+	for _file in /usr/bin/vapigen-*; do
+		if [ -x "${_file}" ]; then
+			_vala_version=${_file#*-}
+		fi
+	done
 	cat >>${XBPS_WRAPPERDIR}/vapigen<<_EOF
 #!/bin/sh
 exec /usr/bin/vapigen \\
+	 "\$@" \\
 	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala/vapi \\
-	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-0.42/vapi \\
-	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0 "\$@"
+	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-${_vala_version}/vapi \\
+	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/vapigen
-	ln -sf vapigen ${XBPS_WRAPPERDIR}/vapigen-0.42
+	ln -sf vapigen ${XBPS_WRAPPERDIR}/vapigen-${_vala_version}
 }
 
 valac_wrapper() {
+	local _vala_version _file
 	if [ ! -x /usr/bin/valac ]; then
 		return 0
 	fi
 	[ -x ${XBPS_WRAPPERDIR}/valac ] && return 0
+	for _file in /usr/bin/valac-*; do
+		if [ -x "${_file}" ]; then
+			_vala_version=${_file#*-}
+		fi
+	done
 	cat >>${XBPS_WRAPPERDIR}/valac<<_EOF
 #!/bin/sh
 exec /usr/bin/valac \\
+	 "\$@" \\
 	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala/vapi \\
-	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-0.42/vapi \\
-	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0 "\$@"
+	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-${_vala_version}/vapi \\
+	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/valac
-	ln -sf valac ${XBPS_WRAPPERDIR}/valac-0.42
+	ln -sf valac ${XBPS_WRAPPERDIR}/valac-${_vala_version}
 }
 
 install_wrappers() {
@@ -163,6 +177,13 @@ install_cross_wrappers() {
 	done
 }
 
+link_wrapper() {
+	local wrapper="$1"
+	[ ! -x "${XBPS_CROSS_BASE}/usr/bin/${wrapper}" ] && return 0
+	[ -L "${XBPS_WRAPPERDIR}/${wrapper}" ] && return 0
+	ln -sf "${XBPS_CROSS_BASE}/usr/bin/${wrapper}" "${XBPS_WRAPPERDIR}"
+}
+
 hook() {
 	export PATH="$XBPS_WRAPPERDIR:$PATH"
 
@@ -174,9 +195,15 @@ hook() {
 	pkgconfig_wrapper
 	vapigen_wrapper
 	valac_wrapper
+
+	if [ -x /usr/bin/pkg-config ]; then
+		link_wrapper freetype-config
+	else
+		generic_wrapper freetype-config
+	fi
+
 	generic_wrapper icu-config
 	generic_wrapper libgcrypt-config
-	generic_wrapper freetype-config
 	generic_wrapper sdl-config
 	generic_wrapper sdl2-config
 	generic_wrapper gpgme-config
@@ -209,7 +236,7 @@ hook() {
 	generic_wrapper3 libetpan-config
 	generic_wrapper3 giblib-config
 	python_wrapper python-config 2.7
-	python_wrapper python3-config 3.8
+	python_wrapper python3-config 3.9
 	apr_apu_wrapper apr-1-config
 	apr_apu_wrapper apu-1-config
 }

@@ -1,49 +1,61 @@
 # Template file for 'fwupd'
 pkgname=fwupd
-version=1.4.6
-revision=2
+version=1.5.5
+revision=1
 build_style=meson
 build_helper="gir"
 # tests require unpackaged umockdev
-configure_args="-Dconsolekit=false -Dgtkdoc=true -Dintrospection=true
+configure_args="-Dsupported_build=true
+ -Dconsolekit=false -Dgtkdoc=true -Dintrospection=true
  -Dsystemd=false -Dplugin_altos=false -Dtests=false
  -Dpkcs7=false -Db_lto=false -Defi-includedir=${XBPS_CROSS_BASE}/usr/include/efi
- -Defi-ldsdir=${XBPS_CROSS_BASE}/usr/lib -Defi-ld=${XBPS_CROSS_BASE}/usr/bin/ld
- -Defi-libdir=${XBPS_CROSS_BASE}/usr/lib -Delogind=true
- $(vopt_bool uefi plugin_uefi) $(vopt_bool uefi plugin_redfish)
- $(vopt_bool dell plugin_dell)"
+ -Defi-ldsdir=${XBPS_CROSS_BASE}/usr/lib -Defi-ld=${XBPS_CROSS_BASE}/bin/ld
+ -Defi-objcopy=${XBPS_CROSS_BASE}/bin/objcopy
+ -Defi-libdir=${XBPS_CROSS_BASE}/usr/lib -Delogind=true"
 hostmakedepends="dejavu-fonts-ttf gnutls-tools help2man pkg-config gcab
- vala glib-devel polkit gettext gtk-doc $(vopt_if uefi efivar)"
+ vala glib-devel polkit gettext gtk-doc pango python3-gobject python3-Pillow"
 makedepends="libxmlb-devel cairo-devel colord-devel libarchive-devel
  gnutls-devel gpgme-devel json-glib-devel libgusb-devel polkit-devel
- sqlite-devel libsoup-devel gcab-devel pango-devel python3-gobject
- python3-Pillow elogind-devel tpm2-tss-devel libjcat-devel
- $(vopt_if uefi 'libefivar-devel gnu-efi-libs') $(vopt_if dell libsmbios-devel)"
+ sqlite-devel libsoup-devel gcab-devel pango-devel elogind-devel
+ tpm2-tss-devel libjcat-devel libcurl-devel"
 depends="udisks2"
 conf_files="
- /etc/fwupd/daemon.conf
+ /etc/fwupd/*.conf
  /etc/fwupd/remotes.d/*.conf"
 short_desc="Daemon to allow session software to update firmware"
 maintainer="Érico Nogueira <ericonr@disroot.org>"
 license="LGPL-2.1-or-later"
 homepage="https://github.com/hughsie/fwupd"
 distfiles="https://github.com/hughsie/fwupd/archive/${version}.tar.gz"
-checksum=2e70a4221e6ca09dae768af25f19fddcdbdafb9f7d7984d19e8686846fa4420a
+checksum=1a6d5026ae37708718b7c0bb277050c96934acb636605f1c0295eba8ff627ea3
 replaces="fwupdate>=0"
 
-build_options="uefi dell"
-desc_option_uefi="Enable support for UEFI firmware update"
-desc_option_dell="Enable support for Dell specific firmware update"
-
-# no efi on non-efi platforms
 case "$XBPS_TARGET_MACHINE" in
 	x86_64*|i686*)
-		build_options_default="uefi dell"
+		_have_uefi=yes
+		_plugin_msr=yes
+		_plugin_dell=yes
 		;;
-	aarch64*|arm*)
-		build_options_default="uefi"
-		;;
+	arm*|aarch64*)
+		_have_uefi=yes;;
 esac
+
+if [ -z "$_plugin_msr" ]; then
+	configure_args+=" -Dplugin_msr=false"
+fi
+
+if [ "$_plugin_dell" ]; then
+	makedepends+=" libsmbios-devel"
+else
+	configure_args+=" -Dplugin_dell=false"
+fi
+
+if [ -n "$_have_uefi" ]; then
+	hostmakedepends+=" efivar"
+	makedepends+=" libefivar-devel gnu-efi-libs"
+else
+	configure_args+=" -Dplugin_redfish=false -Dplugin_uefi_capsule=false -Dplugin_uefi_pk=false"
+fi
 
 if [ "$CROSS_BUILD" ]; then
 	configure_args+=" -Defi-cc=/usr/bin/${XBPS_CROSS_TRIPLET}-gcc"
@@ -51,16 +63,7 @@ if [ "$CROSS_BUILD" ]; then
 	configure_args+=" -Dman=false"
 	# steal man pages from native package
 	hostmakedepends+=" fwupd"
-else
-	configure_args+=" -Dman=true"
 fi
-
-pre_configure() {
-	# Replace the values from our patch into the system itself
-	vsed -i -e "s|@XBPS_CROSS_BASE@|${XBPS_CROSS_BASE}|g" meson.build
-	# Replace host objcopy with the cross one
-	vsed -i -e "s|command -v objcopy|command -v ${XBPS_CROSS_BASE}/usr/bin/objcopy|" plugins/uefi/efi/generate_binary.sh
-}
 
 post_install() {
 	if [ "$CROSS_BUILD" ]; then

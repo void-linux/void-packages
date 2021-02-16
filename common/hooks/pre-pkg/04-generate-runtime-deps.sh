@@ -56,7 +56,7 @@ hook() {
 
     mapshlibs=$XBPS_COMMONDIR/shlibs
 
-    if [ "${archs// /}" = "noarch" -o -n "$noverifyrdeps" ]; then
+    if [ -n "$noverifyrdeps" ]; then
         store_pkgdestdir_rundeps
         return 0
     fi

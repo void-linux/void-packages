@@ -1,19 +1,34 @@
 do_build() {
 	local f p
+	# Extract the source files
 	mkdir -p "build/usr/share/texmf-dist"
 	find . -maxdepth 1 -print -name "*.tar.xz" \
 		-exec bsdtar -C "build/usr/share/texmf-dist" -xf {} \;
 	cd "build/usr/share/texmf-dist/"
+	# Everything in usr/share/texmf-dist/texmf-dist should really be in
+	# usr/share/texmf-dist, so we move it
 	if [ -d "texmf-dist" ] ; then
 		rsync -ar texmf-dist/ ./
 		rm -rf texmf-dist/
 	fi
+	# LICENSEs are unneeded
 	rm -f LICENSE*
+
+	# We have some conflicting files between different packages. To work
+	# around this, we use an ownership file that maps which conflicting
+	# files should be in which packages. Here, each file in the map list is
+	# checked whether it is in the package, and if it shouldn't be it is
+	# removed.
 	while IFS=' ' read -r f p ; do
 		if [ "$p" = "$pkgname" ] && ! [ -e "$f" ]; then
+			# Error out if the ownership map expects this package to have a
+			# file but it dosen't
 			msg_error "$pkgver: missing file $f\n"
 		elif [ "$p" != "$pkgname" ] && [ -e "$f" ]; then
+			# Remove a file that according to the ownership map belongs to
+			# another file
 			echo "removed $f"
+			# Install a file that lists the removed packages
 			mkdir -p ../texlive/removed
 			echo "$f" >> ../texlive/removed/$pkgname.txt
 			rm -f "$f"
@@ -22,10 +37,21 @@ do_build() {
 }
 
 do_check() {
-	local f p exitcode=0
+	# This is essentially a helper for generating the ownership map. It checks
+	# to see if there are any conflicts between all of the different packages.
+	local f p current_ver current_rev exitcode=0
 	cd build
+
 	while read p; do
-		if [[ ${p%-*} =~ .*-bin$ ]] || [ "${p%-*}" = "$pkgname" ]; then
+		# Don't check against the texlive-bin* packages, ourselves, -dbg or -32bit pkgs
+		if [[ ${p%-*} =~ .*-bin$ ]] || [ "${p%-*}" = "$pkgname" ] || [[ ${p%-*} =~ .*-dbg$ ]] || [[ ${p%-*} =~ .*-32bit$ ]]; then
+			continue
+		fi
+		# Don't check against any version other than the version in the source tree
+		current_ver="$(grep -m 1 version= ${XBPS_SRCPKGDIR}/${p%-*}/template | cut -d= -f2)"
+		current_rev="$(grep -m 1 revision= ${XBPS_SRCPKGDIR}/${p%-*}/template | cut -d= -f2)"
+		if [ "${p%-*}-${current_ver}_${current_rev}" != "${p}" ]; then
+			# They are not the same version
 			continue
 		fi
 		echo checking conflicts with ${p}...

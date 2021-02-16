@@ -1,5 +1,5 @@
-XBPS_TARGET_CFLAGS="-mcpu=powerpc -mno-altivec -mtune=G4 -mlong-double-64"
+XBPS_TARGET_CFLAGS="-mtune=G4"
 XBPS_TARGET_CXXFLAGS="$XBPS_TARGET_CFLAGS"
-XBPS_TARGET_FFLAGS=""
+XBPS_TARGET_FFLAGS="$XBPS_TARGET_CFLAGS"
 XBPS_TRIPLET="powerpc-linux-musl"
 XBPS_RUST_TARGET="powerpc-unknown-linux-musl"
