@@ -32,6 +32,11 @@ do_build() {
 	go_package=${go_package:-$go_import_path}
 	# Build using Go modules if there's a go.mod file
 	if [ "${go_mod_mode}" != "off" ] && [ -f go.mod ]; then
+		# Check if go_import_path matches module
+		if [ "module $go_import_path" != "$(head -n1 go.mod)" ]; then
+			msg_error "\"\$go_import_path\" doesn't match the one defined in go.mod!\n"
+		fi
+
 		if [ -z "${go_mod_mode}" ] && [ -d vendor ]; then
 			msg_normal "Using vendor dir for $pkgname Go dependencies.\n"
 			go_mod_mode=vendor
