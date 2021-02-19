@@ -79,20 +79,34 @@ do_build() {
 }
 
 do_check() {
+	: ${make_cmd:=ninja}
+
 	cd ${cmake_builddir:=build}
 
-	if [ -z "$make_cmd" ] && [ -z "$make_check_target" ]; then
-		if make -q test 2>/dev/null; then
-			:
-		else
-			if [ $? -eq 2 ]; then
-				msg_warn 'No target to "make test".\n'
-				return 0
-			fi
-		fi
+	if [ -z "$make_check_target" ]; then
+		case $make_cmd in
+			make)
+				if make -q test 2>/dev/null; then
+					:
+				else
+					if [ $? -eq 2 ]; then
+						msg_warn 'No target to "make test".\n'
+						return 0
+					fi
+				fi
+				;;
+			ninja)
+				if ! ninja -t query test >/dev/null 2>&1; then
+					msg_warn 'No target to "ninja test".\n'
+					return 0
+				fi
+				;;
+			*)
+				msg_warn "Can't run tests with '$make_cmd', define do_check.\n"
+				;;
+		esac
 	fi
 
-	: ${make_cmd:=ninja}
 	: ${make_check_target:=test}
 
 	CTEST_OUTPUT_ON_FAILURE=TRUE ${make_cmd} ${make_check_args} ${make_check_target}
