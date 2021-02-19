@@ -15,7 +15,7 @@ do_configure() {
 	if [ "${go_mod_mode}" != "off" ] && [ -f go.mod ]; then
 		# Skip GOPATH symlink for Go modules
 		msg_normal "Building $pkgname using Go modules.\n"
-	elif [ "${go_get}" != "yes" ]; then
+	else
 		mkdir -p ${GOSRCPATH%/*}/
 		ln -fs "$PWD" "${GOSRCPATH}"
 	fi
