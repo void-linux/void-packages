@@ -53,7 +53,7 @@ strip = '${STRIP}'
 readelf = '${READELF}'
 objcopy = '${OBJCOPY}'
 pkgconfig = '${PKG_CONFIG}'
-rust = 'rustc'
+rust = ['rustc', '--target', '${RUST_TARGET}' ,'--sysroot', '${XBPS_CROSS_BASE}/usr']
 g-ir-scanner = '${XBPS_CROSS_BASE}/usr/bin/g-ir-scanner'
 g-ir-compiler = '${XBPS_CROSS_BASE}/usr/bin/g-ir-compiler'
 g-ir-generate = '${XBPS_CROSS_BASE}/usr/bin/g-ir-generate'
@@ -62,6 +62,8 @@ cups-config = '${XBPS_CROSS_BASE}/usr/bin/cups-config'
 
 [properties]
 needs_exe_wrapper = true
+
+[built-in options]
 c_args = ['$(echo ${CFLAGS} | sed -r "s/\s+/','/g")']
 c_link_args = ['$(echo ${LDFLAGS} | sed -r "s/\s+/','/g")']
 
