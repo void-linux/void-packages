@@ -67,8 +67,12 @@ _EOF
 	CFLAGS="${CFLAGS/ -pipe / }" CXXFLAGS="${CXXFLAGS/ -pipe / }" \
 		cmake ${cmake_args} ${configure_args} ${wrksrc}/${build_wrksrc}
 
-	# Replace -isystem with -I for Qt4 and Qt5 packages
-	find -name flags.make -exec sed -i "{}" -e"s;-isystem;-I;g" \;
+	# Replace -isystem with -I
+	if [ "$CMAKE_GENERATOR" = "Unix Makefiles" ]; then
+		find . -name flags.make -exec sed -i -e 's/-isystem/-I/g' +
+	elif [ "$CMAKE_GENERATOR" = Ninja ]; then
+		sed -i -e 's/-isystem/-I/g' build.ninja
+	fi
 }
 
 do_build() {
