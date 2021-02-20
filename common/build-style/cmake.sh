@@ -69,7 +69,7 @@ _EOF
 
 	# Replace -isystem with -I
 	if [ "$CMAKE_GENERATOR" = "Unix Makefiles" ]; then
-		find . -name flags.make -exec sed -i -e 's/-isystem/-I/g' +
+		find . -name flags.make -exec sed -i -e 's/-isystem/-I/g' "{}" +
 	elif [ "$CMAKE_GENERATOR" = Ninja ]; then
 		sed -i -e 's/-isystem/-I/g' build.ninja
 	fi
