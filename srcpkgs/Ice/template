@@ -1,86 +1,54 @@
 # Template file for 'Ice'
 pkgname=Ice
-version=3.5.1
-revision=22
-build_wrksrc=cpp
-makedepends="zlib-devel bzip2-devel mcpp-devel db-devel expat-devel libressl-devel"
+version=3.7.5
+revision=1
+wrksrc="ice-${version}"
+build_style=gnu-makefile
+make_build_args="LANGUAGES=cpp prefix=/usr OPTIMIZE=yes
+ USR_DIR_INSTALL=yes CONFIGS=shared CONFIGS+=cpp11-shared"
+make_install_args="LANGUAGES=cpp prefix=/usr lib-suffix="
+makedepends="zlib-devel bzip2-devel zeroc-mcpp db-devel expat-devel
+ libressl-devel lmdb-devel editline-devel"
 short_desc="Internet Communications Engine (Ice)"
-maintainer="Orphaned <orphan@voidlinux.org>"
-license="GPL-2.0-only, ICE"
-homepage="http://www.zeroc.com"
-distfiles="${homepage}/download/Ice/${version%.*}/${pkgname}-${version}.tar.gz"
-checksum=989e51194c6adadbd156da3288e37bad847b93b3b876502e83033b70493af392
-python_version=2 #unverified
+maintainer="a dinosaur <nick@a-dinosaur.com>"
+license="GPL-2.0-only, custom:ICE"
+homepage="https://www.zeroc.com"
+distfiles="https://github.com/zeroc-ice/ice/archive/v${version}.tar.gz"
+checksum=36bf45591a95e6ee7216153d45d8eca05ff00c1da35608f0c400e6ddc8049da9
+patch_args="-Np1"
 
 if [ "$CROSS_BUILD" ]; then
-	# Cross build requires the host's slice2cpp and slice2freeze
+	# Cross build requires the host's slice2cpp
 	hostmakedepends+=" Ice"
 fi
 
 do_configure() {
-	sed -i -e "s|^#OPTIMIZE|OPTIMIZE|" config/Make.rules
-	sed -i -e "s|x)/config|x)/lib/Ice/config|" config/Make.rules
-	sed -i '/^embedded_runpath_prefix*/d' config/Make.rules
-	sed -i -e 's|x)/man/man1|x)/share/man/man1|' config/Make.rules
-	sed -i -e "s|test demo||" Makefile
+	# Disable building tests
+	vsed 's|include \$(top_srcdir)/config/Make.tests.rules||' -i config/Make.rules
 
-	# Simple fixes for musl libc instead of a proper patch
-	sed -i -e 's|__GNUC__|__GLIBC__|' src/IceUtil/Exception.cpp
-	sed -i -e 's|PTHREAD_MUTEX_RECURSIVE_NP|PTHREAD_MUTEX_RECURSIVE|' src/IceUtil/RecMutex.cpp
-	sed -i -e 's|sys/poll\.h|poll.h|' src/Ice/*.h
+	# Disable errors on warnings
+	vsed 's|-Werror|-Wno-error|' -i config/Make.rules.Linux
 
-	# Patch to find our $CXX and always use our $CXXFLAGS
-	sed -i config/Make.rules.Linux \
-		-e "s|= g++|= ${CXX}|" \
-		-e "s|ifeq (\$(CXX),g++)|ifeq (\$(CXX),${CXX})|" \
-		-e "/CXXARCHFLAGS\s+=/ s| -m.*|${CXXFLAGS}|" \
-		-e "s|\$(CXX) -shared|${CXX} -shared|" \
-		-e "s|-rdynamic|-rdynamic -Wl,-rpath,\$(libdir) ${LDFLAGS}|" \
-		-e "s|-Werror|-Wno-error|"
-	# Fix cross building
+	# Patch to fix finding editline
+	vsed 's|-ledit|-leditline|' -i config/Make.rules.Linux
+	vsed 's|editline/readline.h|editline.h|' -i cpp/src/IceStorm/Parser.cpp cpp/src/IceGrid/Parser.cpp
+
 	if [ "$CROSS_BUILD" ]; then
-		# Use host's slice2cpp and slice2freeze
-		sed -i config/Make.rules \
-			-e 's|$(SLICE2CPP) $(SLICE2CPPFLAGS)|LD_LIBRARY_PATH=/usr/lib /usr/bin/slice2cpp $(SLICE2CPPFLAGS)|'
-		find . -name Makefile -exec sed -i "{}" \
-			-e 's|^\(\s\)$(SLICE2FREEZE)|\1LD_LIBRARY_PATH=/usr/lib /usr/bin/slice2freeze|' \
-			-e '/SLICE2FREEZECMD\s=/ s|$(SLICE2FREEZE)|LD_LIBRARY_PATH=/usr/lib /usr/bin/slice2freeze|' \
-			\;
+		# Use host's slice2cpp
+		vsed -i config/Make.project.rules \
+			-e 's/$($6_path) |/|/' \
+			-e 's|$(Q)$($6_path)|$(Q)/usr/bin/slice2cpp|'
 	fi
 }
 
-do_build() {
-	export CXXFLAGS+=" -fPIC -DPIC"
-	make prefix=/usr ${makejobs}
-}
-
-do_install() {
-	case "$XBPS_MACHINE" in
-		x86_64*)
-			vmkdir usr/lib
-			ln -s lib ${DESTDIR}/usr/lib64
-			;;
-	esac
-	make prefix=${DESTDIR}/usr install
-	[ -h ${DESTDIR}/usr/lib64 ] && rm -f ${DESTDIR}/usr/lib64
-
-	mv ${DESTDIR}/usr/slice ${DESTDIR}/usr/share
-	rm ${DESTDIR}/usr/LICENSE ${DESTDIR}/usr/ICE_LICENSE
-	rm ${DESTDIR}/usr/CHANGES ${DESTDIR}/usr/RELEASE_NOTES
-	cd ${wrksrc}
+post_install() {
 	vlicense ICE_LICENSE
-	vdoc CHANGES
-	vdoc RELEASE_NOTES
-
-	# remove unused cruft
-	rm -f ${DESTDIR}/usr/lib/*.class
 }
 
 libIce_package() {
 	short_desc+=" - runtime libraries"
 	pkg_install() {
 		vmove "usr/lib/*.so.*"
-		vmove usr/lib/Ice
 	}
 }
 
