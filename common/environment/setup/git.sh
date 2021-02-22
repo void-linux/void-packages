@@ -2,7 +2,9 @@
 # only run this, if SOURCE_DATE_EPOCH isn't set.
 
 if [ -z "$XBPS_GIT_CMD" ]; then
-	msg_error "BUG: environment/setup: XBPS_GIT_CMD is not set\n"
+	if [ -z "$XBPS_USE_BUILD_MTIME" ] || [ -n "$XBPS_USE_GIT_REVS" ]; then
+		msg_error "BUG: environment/setup: XBPS_GIT_CMD is not set\n"
+	fi
 fi
 
 if [ -n "$XBPS_USE_BUILD_MTIME" ]; then
