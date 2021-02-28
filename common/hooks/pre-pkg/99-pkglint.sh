@@ -83,12 +83,17 @@ hook() {
 
 	# Prevent packages from installing to these paths in etc, they should use
 	# their equivalent in usr/lib
-	for f in udev/{rules.d,hwdb.d} modprobe.d sysctl.d; do
-		if [ -d ${PKGDESTDIR}/etc/${f} ]; then
-			msg_red "${pkgver}: /etc/${f} is forbidden. Use /usr/lib/${f}.\n"
-			error=1
-		fi
-	done
+	#
+	# But base-files is a special case, since it may contains suggested but
+	# still user-alterable default files (particularly sysctl.d)
+	if [ "${pkgname}" != "base-files" ]; then
+		for f in udev/{rules.d,hwdb.d} modprobe.d sysctl.d; do
+			if [ -d ${PKGDESTDIR}/etc/${f} ]; then
+				msg_red "${pkgver}: /etc/${f} is forbidden. Use /usr/lib/${f}.\n"
+				error=1
+			fi
+		done
+	fi
 
 	# Likewise with the comment above but for usr/share
 	for f in X11/xorg.conf.d gconf/schemas; do
