@@ -1,7 +1,8 @@
 # vim: set ts=4 sw=4 et:
 #
 setup_pkg_depends() {
-    local pkg="$1" out="$2" with_subpkgs="$3" j _rpkgname _depname _pkgname foo _deps collected
+    local pkg="$1" out="$2" with_subpkgs="$3" j _rpkgname _depname _pkgname foo dep
+    local -A collected
 
     if [[ $pkg ]]; then
         # subpkg
@@ -9,15 +10,20 @@ setup_pkg_depends() {
             ${pkg}_package
         fi
     elif [[ $with_subpkgs ]]; then
-        collected="${depends}"
+        for dep in $depends; do
+            collected["${dep}"]="${dep}"
+        done
         for pkg in $subpackages; do
             [[ $pkg ]] || continue
             ${pkg}_package
-            collected+=" ${depends}"
+            for dep in $depends; do
+                collected["${dep}"]="${dep}"
+            done
         done
-        depends="${collected}"
+        depends="${collected[@]}"
     fi
 
+    collected=()
     for j in ${depends}; do
         _rpkgname="${j%\?*}"
         _depname="${j#*\?}"
@@ -32,19 +38,19 @@ setup_pkg_depends() {
             if [ -z "$foo" ]; then
                 msg_error "$pkgver: failed to resolve virtual dependency for '$j' (missing from etc/virtual)\n"
             fi
-            _deps+="$foo "
+            collected["$foo"]="$foo"
         else
             foo="$($XBPS_UHELPER_CMD getpkgdepname ${_depname} 2>/dev/null)"
             if [ -z "$foo" ]; then
                 foo="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
                 [ -z "$foo" ] && foo="${_depname}"
             fi
-            _deps+="$foo "
+            collected["$foo"]="$foo"
         fi
         run_depends+="${_depname} "
     done
 
-    [[ $out && $_deps ]] && echo "$_deps"
+    [[ $out && "${collected[@]}" ]] && echo "${collected[@]}"
     return 0
 }
 
