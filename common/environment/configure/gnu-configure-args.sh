@@ -18,7 +18,6 @@ export configure_args+=" --host=$XBPS_TRIPLET --build=$XBPS_TRIPLET"
 # This is to make sure 32-bit and 64-bit libs can coexist when looking
 # up things (the opposite-libdir is always symlinked as libNN)
 export configure_args+=" --libdir=\${exec_prefix}/lib${XBPS_TARGET_WORDSIZE}"
-export configure_args+=" --exec-prefix=\${prefix}"
 
 _AUTOCONFCACHEDIR=${XBPS_COMMONDIR}/environment/configure/autoconf_cache
 
