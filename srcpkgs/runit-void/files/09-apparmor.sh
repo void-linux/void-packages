@@ -18,15 +18,7 @@ if [ -n "$APPARMOR" ]; then
 	[ "$APPARMOR" = "complain" ] && AACOMPLAIN="-C"
 
 	if [ -d /etc/apparmor.d -a -x /usr/bin/apparmor_parser ]; then
-		for profile in /etc/apparmor.d/*; do
-		case "$profile" in
-			*.new-*_*) continue ;;
-		esac
-		if [ -f "$profile" ]; then
-			printf '* Load profile %s: %s\n' "($APPARMOR)" "$profile"
-			apparmor_parser -a $AACOMPLAIN "$profile"
-		fi
-		done
+		apparmor_parser -a $AACOMPLAIN $(find /etc/apparmor.d -maxdepth 1 -type f ! -name '*.new-*_*')
 	else
 		printf '! AppArmor installation problem - ensure you have installed apparmor package\n'
 	fi

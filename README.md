@@ -36,12 +36,15 @@ See [Contributing](./CONTRIBUTING.md) for a general overview of how to contribut
 
 - GNU bash
 - xbps >= 0.56
+- git(1) - unless configured to not, see etc/defaults.conf
+- common POSIX utilities included by default in almost all UNIX systems
 - curl(1) - required by `xbps-src update-check`
+
+For bootstrapping additionally:
 - flock(1) - util-linux
 - bsdtar or GNU tar (in that order of preference)
 - install(1) - GNU coreutils
 - objcopy(1), objdump(1), strip(1): binutils
-- other common POSIX utilities included by default in almost all UNIX systems.
 
 `xbps-src` requires a utility to chroot and bind mount existing directories
 into a `masterdir` that is used as its main `chroot` directory. `xbps-src` supports
@@ -51,7 +54,6 @@ multiple utilities to accomplish this task:
  - `ethereal` - only useful for one-shot containers, i.e docker (used with CI).
  - `xbps-uunshare(1)` - XBPS utility that uses `user_namespaces(7)` (part of xbps, default).
  - `xbps-uchroot(1)` - XBPS utility that uses `namespaces` and must be `setgid` (part of xbps).
- - `proot(1)` - utility that implements chroot/bind mounts in user space, see https://proot-me.github.io/.
 
 > NOTE: `xbps-src` does not allow building as root anymore. Use one of the chroot
 methods shown above.
@@ -135,17 +137,6 @@ To enable it:
 If for some reason it's erroring out as `ERROR clone (Operation not permitted)`, check that
 your user is a member of the required `group` and that `xbps-uchroot(1)` utility has the
 proper permissions and owner/group as explained above.
-
-#### proot(1)
-
-The `proot(1)` utility implements chroot and bind mounts support completely in user space,
-and can be used if your Linux kernel does not have support for namespaces. See https://proot-me.github.io/.
-for more information.
-
-To enable it:
-
-    $ cd void-packages
-    $ echo XBPS_CHROOT_CMD=proot >> etc/conf
 
 <a name="install-bootstrap"></a>
 ### Install the bootstrap packages
@@ -404,7 +395,7 @@ checksum of the downloaded file matches the one specified in the template.
 Ultimately, if no mirror carries the distfile, or in case all downloads failed the
 checksum verification, the original download location is used.
 
-If you use `proot` or `uchroot` for your XBPS_CHROOT_CMD, you may also specify a local path
+If you use `uchroot` for your XBPS_CHROOT_CMD, you may also specify a local path
 using the `file://` prefix or simply an absolute path on your build host (e.g. /mnt/distfiles).
 Mirror locations specified this way are bind mounted inside the chroot environment
 under $XBPS_MASTERDIR and searched for distfiles just the same as remote locations.
@@ -430,7 +421,7 @@ To use xbps-src in your Linux distribution use the following instructions. Let's
 
     $ wget http://alpha.de.repo.voidlinux.org/static/xbps-static-latest.<arch>-musl.tar.xz
     $ mkdir ~/XBPS
-    $ tar xvf xbps-static-latest.<arch>.tar.xz -C ~/XBPS
+    $ tar xvf xbps-static-latest.<arch>-musl.tar.xz -C ~/XBPS
     $ export PATH=~/XBPS/usr/bin:$PATH
 
 If your system does not support `user namespaces`, a privileged group is required to be able to use

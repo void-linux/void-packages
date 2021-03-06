@@ -68,6 +68,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 		* [update-desktopdb](#triggers_update_desktopdb)
 		* [x11-fonts](#triggers_x11_fonts)
 		* [xml-catalog](#triggers_xml_catalog)
+	* [Void specific documentation](#documentation)
 	* [Notes](#notes)
 	* [Contributing via git](#contributing)
 * [Help](#help)
@@ -165,7 +166,12 @@ can be used to perform other operations before configuring the package.
 
 - `build` This phase compiles/prepares the `source files` via `make` or any other compatible method.
 
-- `check` This optional phase checks the result of the `build` phase for example by running `make -k check`.
+- `check` This optional phase checks the result of the `build` phase by running the testsuite provided by the package.
+If the default `do_check` function provided by the build style doesn't do anything, the template should set
+`make_check_target` and/or `make_check_args` appropriately or define its own `do_check` function. If tests take too long
+or can't run in all environments, they should be run only if `XBPS_CHECK_PKGS` is `full`, which means they should either
+be under a `[ "$XBPS_CHECK_PKGS" = full ]` conditional (especially useful with custom `do_check`) or `make_check=extended`
+should be set in the template.
 
 - `install` This phase installs the `package files` into the package destdir `<masterdir>/destdir/<pkgname>-<version>`,
 via `make install` or any other compatible method.
@@ -364,6 +370,9 @@ rather than additional binary package names.
 
 - `CROSS_BUILD` Set if `xbps-src` is cross compiling a package.
 
+- `XBPS_CHECK_PKGS` Set if `xbps-src` is going to run tests for a package.
+Longer testsuites should only be run in `do_check()` if it is set to `full`.
+
 - `DESTDIR` Full path to the fake destdir used by the source pkg, set to
 `<masterdir>/destdir/${sourcepkg}-${version}`.
 
@@ -472,7 +481,8 @@ in the local repository exists to satisfy the required version. Dependencies
 can be specified with the following version comparators: `<`, `>`, `<=`, `>=`
 or `foo-1.0_1` to match an exact version. If version comparator is not
 defined (just a package name), the version comparator is automatically set to `>=0`.
-Example: `depends="foo blah>=1.0"`. See the `Runtime dependencies` section for more information.
+Example: `depends="foo blah>=1.0"`. See the [Runtime dependencies](#deps_runtime) section
+for more information.
 
 - `bootstrap` If enabled the source package is considered to be part of the `bootstrap`
 process and required to be able to build packages in the chroot. Only a
@@ -561,17 +571,22 @@ phase if `${build_style}` is set to `configure`, `gnu-configure` or
 `gnu-makefile` build methods. By default set to
 `PREFIX=/usr DESTDIR=${DESTDIR}`.
 
-- `make_build_target` The target to be passed in to `${make_cmd}` at the build phase if
-`${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
-build methods. Unset by default (`all` target).
+- `make_build_target` The build target. If `${build_style}` is set to `configure`, `gnu-configure`
+or `gnu-makefile`, this is the target passed to `${make_cmd}` in the build phase; when unset, it
+defaults to `all`. If `${build_style}` is `python3-pep517`, this is the path of the package
+directory that should be built as a Python wheel; when unset, defaults to `.` (the current
+directory with respect to the build).
 
 - `make_check_target` The target to be passed in to `${make_cmd}` at the check phase if
 `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
 build methods. By default set to `check`.
 
-- `make_install_target` The target to be passed in to `${make_cmd}` at the `install-destdir` phase
-if `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
-build methods. By default set to `install`.
+- `make_install_target` The installation target. When `${build_style}` is set to `configure`,
+`gnu-configure` or `gnu-makefile`, this is the target passed to `${make_command}` in the install
+phase; when unset, it defaults to `install`. If `${build_style}` is `python-pep517`, this is the
+path of the Python wheel produced by the build phase that will be installed; when unset, the
+`python-pep517` build style will look for a wheel matching the package name and version in the
+current directory with respect to the install.
 
 - `patch_args` The arguments to be passed in to the `patch(1)` command when applying
 patches to the package sources during `do_patch()`. Patches are stored in
@@ -579,6 +594,11 @@ patches to the package sources during `do_patch()`. Patches are stored in
 
 - `disable_parallel_build` If set the package won't be built in parallel
 and `XBPS_MAKEJOBS` has no effect.
+
+- `make_check` Sets the cases in which the `check` phase is run. Can be `yes` (the default) to run if
+`XBPS_CHECK_PKGS` is set, `extended` to run if `XBPS_CHECK_PKGS` is `full` and `no` to never run.
+This option should usually be accompanied by a comment explaining why it was set, especially when
+set to `no`.
 
 - `keep_libtool_archives` If enabled the `GNU Libtool` archives won't be removed. By default those
 files are always removed automatically.
@@ -724,7 +744,7 @@ Examples:
 	# Default value (all arches)
 	archs="*"
 	```
-Do not use noarch. It is deprecated and being removed.
+A special value `noarch` used to be available, but has since been removed.
 
 <a id="explain_depends"></a>
 #### About the many types of `depends` variables
@@ -894,12 +914,11 @@ that do such things as append (`+=`) to variables, should have `make_use_env`
 set in the body of the template.
 
 - `go` For programs written in Go that follow the standard package
-  structure. The variable `go_import_path` must be set to the package's
-  import path, e.g. `github.com/github/hub` for the `hub` program. If
-  the variable `go_get` is set to `yes`, the package will be
-  downloaded with `go get`. Otherwise (the default) it's expected that
-  the distfile contains the package. In both cases, dependencies will
-  be downloaded with `go get`.
+structure. The variable `go_import_path` must be set to the package's
+import path, e.g. `github.com/github/hub` for the `hub` program. This
+information can be found in the `go.mod` file for modern Go projects.
+It's expected that the distfile contains the package, but dependencies
+will be downloaded with `go get`.
 
 - `meta` For `meta-packages`, i.e packages that only install local files or simply
 depend on additional packages. This build style does not install
@@ -920,7 +939,7 @@ can be used to pass arguments during compilation. If your package does not make 
 extensions consider using the `gem` build style instead.
 
 - `gem` For packages that are installed using gems from [RubyGems](https://rubygems.org/).
-The gem command can be overridden by `gem_cmd`. 
+The gem command can be overridden by `gem_cmd`.
 `distfiles` is set by the build style if the template does not do so. If your gem
 provides extensions which must be compiled consider using the `gemspec` build style instead.
 
@@ -952,14 +971,25 @@ via `make_install_target`.
 via `configure_args`, the meson command can be overridden by `meson_cmd` and the location of
 the out of source build by `meson_builddir`
 
-For packages that use the Python module build method (`setup.py`), you
-can choose one of the following:
+- `void-cross` For cross-toolchain packages used to build Void systems. You will need to
+specify `cross_triplet` (corresponds to the target triplet specified in the cross profile
+for the target arch). Optionally, `cross_gcc_skip_go` can be specified. Individual subproject
+configure arguments can be specified via `cross_*_configure_args` where `*` is `binutils`,
+`gcc_bootstrap` (early gcc), `gcc` (final gcc), `glibc` (or `musl`), `configure_args` is
+additionally passed to both early and final `gcc`. You can also specify custom `CFLAGS`
+and `LDFLAGS` for the libc as `cross_(glibc|musl)_(cflags|ldflags)`.
+
+For packages that use the Python module build method (`setup.py` or
+[PEP 517](https://www.python.org/dev/peps/pep-0517/)), you can choose one of the following:
 
 - `python-module` to build *both* Python 2.x and 3.x modules
 
 - `python2-module` to build Python 2.x only modules
 
 - `python3-module` to build Python 3.x only modules
+
+- `python3-pep517` to build Python 3.x only modules that provide a PEP 517 build description without
+a `setup.py` script
 
 Environment variables for a specific `build_style` can be declared in a filename
 matching the `build_style` name, Example:
@@ -1000,6 +1030,8 @@ needed for cross builds and a qmake-wrapper to make `qmake` use this configurati
 This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 `gnu-configure` style the configure script calls `qmake` or a `Makefile` in
 `gnu-makefile` style, respectively.
+
+- `cmake-wxWidgets-gtk3` sets the `WX_CONFIG` variable which is used by FindwxWidgets.cmake
 
 <a id="functions"></a>
 ### Functions
@@ -1482,6 +1514,9 @@ be your guidance to decide whether or not to split off a `-doc` subpackage.
 Python packages should be built with the `python{,2,3}-module` build style, if possible.
 This sets some environment variables required to allow cross compilation. Support to allow
 building a python module for multiple versions from a single template is also possible.
+The `python3-pep517` build style provides means to build python packages that provide a build-system
+definition compliant with [PEP 517](https://www.python.org/dev/peps/pep-0517/) without a traditional
+`setup.py` script.
 
 Python packages that rely on `python3-setuptools` should generally map `setup_requires`
 dependencies in `setup.py` to `hostmakedepends` in the template and `install_requires`
@@ -1549,10 +1584,6 @@ The following template variables influence how Go packages are built:
   variable is required.
 - `go_package`: A space-separated list of import paths of the packages
   that should be built. Defaults to `go_import_path`.
-- `go_get`: If set to yes, the package specified via `go_import_path`
-  will be downloaded with `go get`. Otherwise, a distfile has to be
-  provided. This option should only be used with `-git` (or similar)
-  packages; using a versioned distfile is preferred.
 - `go_build_tags`: An optional, space-separated list of build tags to
   pass to Go.
 - `go_mod_mode`: The module download mode to use. May be `off` to ignore
@@ -1625,6 +1656,9 @@ generally those packages are the same but have been split as to avoid
 cyclic dependencies. Make sure that the package you're removing is not
 the source of those patches/files.
 - Remove package template.
+- Add `pkgname<=version_revision` to `replaces` variable of `removed-packages`
+template.  All removed subpkgs should be added too.
+This will uninstall package from systems where it is installed.
 - Remove the package from the repository index
 or contact a team member that can do so.
 
@@ -1998,6 +2032,14 @@ During removal it uses `xmlcatmgr` to remove all catalogs passed to it by the
 To include this trigger use the `sgml_entries` variable or/and the `xml_entries` variable,
 as the trigger won't do anything unless either of them are defined.
 
+<a id="documentation"></a>
+### Void specific documentation
+
+When you want document details of package's configuration and usage specific to Void Linux,
+not covered by upstream documentation, put notes into
+`srcpkgs/<pkgname>/files/README.voidlinux` and install with
+`vdoc "${FILESDIR}/README.voidlinux"`.
+
 <a id="notes"></a>
 ### Notes
 
@@ -2020,15 +2062,15 @@ otherwise the `debug` packages won't have debugging symbols.
 <a id="contributing"></a>
 ### Contributing via git
 
-Fork the voidlinux `void-packages` git repository on github and clone it:
+To get started, [fork](https://help.github.com/articles/fork-a-repo) the void-linux `void-packages` git repository on GitHub and clone it:
 
     $ git clone git@github.com:<user>/void-packages.git
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for information on how to format your
 commits and other tips for contributing.
 
-Once you've made changes to your `forked` repository you can submit
-a github pull request; see https://help.github.com/articles/fork-a-repo for more information.
+Once you've made changes to your `forked` repository, submit
+a github pull request.
 
 To keep your forked repository always up to date, setup the `upstream` remote
 to pull in new changes:

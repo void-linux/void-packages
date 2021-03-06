@@ -16,7 +16,7 @@ hook() {
 		default_shebang="#!/usr/bin/python${pyver%.*}"
 	fi
 
-	find "${PKGDESTDIR}" -type f -print0 | \
+	grep -rlIZ -m1 '^#!.*python' "${PKGDESTDIR}" |
 		while IFS= read -r -d '' file; do
 			[ ! -s "$file" ] && continue
 

@@ -5,8 +5,6 @@
 
 hook() {
 	[ -z "$CROSS_BUILD" ] && return
-	if [ -d "${DESTDIR}/usr/${XBPS_CROSS_TRIPLET}/usr" ]; then
-		cp -a "${DESTDIR}"/usr/{${XBPS_CROSS_TRIPLET}/usr/*,}
-		rm -rf "${DESTDIR}"/usr/${XBPS_CROSS_TRIPLET}/usr
-	fi
+	vmkdir usr/${XBPS_CROSS_TRIPLET}
+	ln -sf ".." "${PKGDESTDIR}/usr/${XBPS_CROSS_TRIPLET}/usr"
 }

@@ -1,0 +1,110 @@
+Upstream: yes
+Fix checks for gmtime_r and localtime_r availability.
+Also fix Http_Cookies where gmtime() was still being used.
+
+diff --git a/Project/CMake/CMakeLists.txt b/Project/CMake/CMakeLists.txt
+index 8e431b5..6a25aee 100644
+--- a/Project/CMake/CMakeLists.txt
++++ b/Project/CMake/CMakeLists.txt
+@@ -133,6 +133,16 @@ if((LONG_SIZE GREATER 4) AND (SIZE_T_SIZE EQUAL LONG_SIZE))
+   target_compile_definitions(zen PUBLIC SIZE_T_IS_LONG)
+ endif()
+ 
++include(CheckSymbolExists)
++check_symbol_exists(gmtime_r time.h HAVE_GMTIME_R)
++if(HAVE_GMTIME_R)
++  target_compile_definitions(zen PUBLIC HAVE_GMTIME_R)
++endif()
++check_symbol_exists(localtime_r time.h HAVE_LOCALTIME_R)
++if(HAVE_LOCALTIME_R)
++  target_compile_definitions(zen PUBLIC HAVE_LOCALTIME_R)
++endif()
++
+ target_include_directories(zen PUBLIC
+   $<BUILD_INTERFACE:${ZenLib_SOURCES_PATH}> $<INSTALL_INTERFACE:${INCLUDE_INSTALL_DIR}>)
+
+diff --git a/Project/GNU/Library/configure.ac b/Project/GNU/Library/configure.ac
+index c0ff266..62a1bf5 100644
+--- a/Project/GNU/Library/configure.ac
++++ b/Project/GNU/Library/configure.ac
+@@ -268,6 +268,11 @@ dnl External libs
+ dnl
+ LDFLAGS="$LDFLAGS -lpthread -lstdc++"
+ 
++dnl -------------------------------------------------------------------------
++dnl Check if thread safe variants of time functions are available
++dnl
++AC_CHECK_FUNCS(gmtime_r localtime_r)
++
+ dnl #########################################################################
+ dnl ### Output
+ dnl #########################################################################
+diff --git a/Source/ZenLib/Format/Http/Http_Cookies.cpp b/Source/ZenLib/Format/Http/Http_Cookies.cpp
+index 1345aa0..eb41690 100644
+--- a/Source/ZenLib/Format/Http/Http_Cookies.cpp
++++ b/Source/ZenLib/Format/Http/Http_Cookies.cpp
+@@ -86,7 +86,21 @@ void Cookies::Create_Lines(std::ostream& Out)
+         if (Cookie->second.Expires!=(time_t)-1)
+         {
+             char Temp[200];
+-            if (strftime(Temp, 200, "%a, %d-%b-%Y %H:%M:%S GMT", gmtime(&Cookie->second.Expires)))
++            #if defined(HAVE_GMTIME_R)
++            struct tm Gmt_Temp;
++            struct tm *Gmt=gmtime_r(&Cookie->second.Expires, &Gmt_Temp);
++            #elif defined(_MSC_VER)
++            struct tm Gmt_Temp;
++            errno_t gmtime_s_Result=gmtime_s(&Gmt_Temp , &Cookie->second.Expires);
++            struct tm* Gmt=gmtime_s_Result?NULL:&Gmt_Temp;
++            #else
++            #ifdef __GNUC__
++            #warning "This version of ZenLib is not thread safe"
++            #endif
++            struct tm *Gmt=gmtime(&Cookie->second.Expires);
++            #endif
++
++            if (strftime(Temp, 200, "%a, %d-%b-%Y %H:%M:%S GMT", Gmt))
+                 Out << "; expires=" << Temp;
+         }
+         if (!Cookie->second.Path.empty())
+diff --git a/Source/ZenLib/Ztring.cpp b/Source/ZenLib/Ztring.cpp
+index 6b705c3..069e001 100644
+--- a/Source/ZenLib/Ztring.cpp
++++ b/Source/ZenLib/Ztring.cpp
+@@ -1312,7 +1312,7 @@ Ztring& Ztring::Date_From_Seconds_1970 (const int32s Value)
+ Ztring& Ztring::Date_From_Seconds_1970 (const int64s Value)
+ {
+     time_t Time=(time_t)Value;
+-    #if _POSIX_C_SOURCE >= 1 || _XOPEN_SOURCE || _BSD_SOURCE || _SVID_SOURCE || _POSIX_SOURCE
++    #if defined(HAVE_GMTIME_R)
+     struct tm Gmt_Temp;
+     struct tm *Gmt=gmtime_r(&Time, &Gmt_Temp);
+     #elif defined(_MSC_VER)
+@@ -1320,6 +1320,9 @@ Ztring& Ztring::Date_From_Seconds_1970 (const int64s Value)
+     errno_t gmtime_s_Result=gmtime_s(&Gmt_Temp , &Time);
+     struct tm* Gmt=gmtime_s_Result?NULL:&Gmt_Temp;
+     #else
++    #ifdef __GNUC__
++    #warning "This version of ZenLib is not thread safe"
++    #endif
+     struct tm *Gmt=gmtime(&Time);
+     #endif
+     if (!Gmt)
+@@ -1352,7 +1355,7 @@ Ztring& Ztring::Date_From_Seconds_1970 (const int64s Value)
+ Ztring& Ztring::Date_From_Seconds_1970_Local (const int32u Value)
+ {
+     time_t Time=(time_t)Value;
+-    #if _POSIX_C_SOURCE >= 1 || _XOPEN_SOURCE || _BSD_SOURCE || _SVID_SOURCE || _POSIX_SOURCE
++    #if defined(HAVE_LOCALTIME_R)
+     struct tm Gmt_Temp;
+     struct tm *Gmt=localtime_r(&Time, &Gmt_Temp);
+     #elif defined(_MSC_VER)
+@@ -1360,6 +1363,9 @@ Ztring& Ztring::Date_From_Seconds_1970_Local (const int32u Value)
+     errno_t localtime_s_Result=localtime_s(&Gmt_Temp , &Time);
+     struct tm* Gmt=localtime_s_Result?NULL:&Gmt_Temp;
+     #else
++    #ifdef __GNUC__
++    #warning "This version of ZenLib is not thread safe"
++    #endif
+     struct tm *Gmt=localtime(&Time);
+     #endif
+     Ztring DateT;

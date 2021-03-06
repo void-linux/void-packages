@@ -1,3 +1,5 @@
-CAUTION: upgrading 66 to a new major version may require manual intervention!
-You may need to run the `66-update` utility or otherwise update your trees.
-For details, refer to https://framagit.org/Obarun/66/raw/master/NEWS.md
+CAUTION: package revision 0.6.1.1_2 changes the default system-dir
+from /var/lib/66 to /etc/66/lib. The change requires user intervention.
+Users who upgrade from an earlier version should re-create all trees 
+and re-enable services in them. That should be done before rebooting/halting
+the system.

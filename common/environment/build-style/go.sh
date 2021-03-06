@@ -7,6 +7,10 @@ if [ -z "$hostmakedepends" -o "${hostmakedepends##*gcc-go-tools*}" ]; then
 	nopie=yes
 else
 	# gccgo compiler
+	if [ -z "$archs" ]; then
+		# we have support for these in our gcc
+		archs="aarch64* armv[567]* i686* x86_64* ppc64*"
+	fi
 	if [ "$CROSS_BUILD" ]; then
 		# target compiler to use; otherwise it'll just call gccgo
 		export GCCGO="${XBPS_CROSS_TRIPLET}-gccgo"

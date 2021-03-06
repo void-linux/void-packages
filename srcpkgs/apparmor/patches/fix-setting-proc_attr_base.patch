@@ -1,0 +1,52 @@
+upstream: yes
+From cc113f4820721808c9efec8b075a5482e6f9a3ad Mon Sep 17 00:00:00 2001
+From: Aaron U'Ren <aauren@users.noreply.gitlab.com>
+Date: Wed, 20 Jan 2021 17:26:37 -0600
+Subject: [PATCH] fix setting proc_attr_base
+
+There is currently a case in which proc_attr_base won't get set when
+asprintf is able to generate the path, but the file doesn't exist, it
+will exit proc_attr_base_init_once() without proc_attr_base having been
+set as the fall-through if/else logic will get bypassed when asprintf is
+successful.
+---
+ libraries/libapparmor/src/kernel.c | 19 +++++++++++--------
+ 1 file changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/libraries/libapparmor/src/kernel.c b/libraries/libapparmor/src/kernel.c
+index 0fa77b014..6ba028614 100644
+--- a/libraries/libapparmor/src/kernel.c
++++ b/libraries/libapparmor/src/kernel.c
+@@ -239,18 +239,21 @@ static void proc_attr_base_init_once(void)
+ 	/* if we fail we just fall back to the default value */
+ 	if (asprintf(&tmp, "/proc/%d/attr/apparmor/current", aa_gettid())) {
+ 		autoclose int fd = open(tmp, O_RDONLY);
+-		if (fd != -1)
++		if (fd != -1) {
+ 			proc_attr_base = proc_attr_base_stacking;
+-	} else if (!is_enabled() && is_private_enabled()) {
++			return;
++		}
++	}
++	if (!is_enabled() && is_private_enabled()) {
+ 		/* new stacking interfaces aren't available and apparmor
+-		 * is disabled, but available. do not use the
+-		 * /proc/<pid>/attr/ * interfaces as they could be
+-		 * in use by another LSM
+-		 */
++		* is disabled, but available. do not use the
++		* /proc/<pid>/attr/ * interfaces as they could be
++		* in use by another LSM
++		*/
+ 		proc_attr_base = proc_attr_base_unavailable;
+-	} else {
+-		proc_attr_base = proc_attr_base_old;
++		return;
+ 	}
++	proc_attr_base = proc_attr_base_old;
+ }
+ 
+ static char *procattr_path(pid_t pid, const char *attr)
+-- 
+GitLab
+

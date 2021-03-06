@@ -68,6 +68,12 @@ hook() {
 		fi
 	done
 
+	# Check for l10n files in usr/lib/locale
+	if [ -d ${PKGDESTDIR}/usr/lib/locale ]; then
+		msg_red "${pkgver}: /usr/lib/locale is forbidden, use /usr/share/locale!\n"
+		error=1
+	fi
+
 	# Check for bash completions in etc/bash_completion.d
 	# should be on usr/share/bash-completion/completions
 	if [ -d ${PKGDESTDIR}/etc/bash_completion.d ]; then

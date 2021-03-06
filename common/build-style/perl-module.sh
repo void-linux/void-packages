@@ -45,7 +45,7 @@ do_configure() {
 			CFLAGS="$CFLAGS -I${XBPS_CROSS_BASE}/usr/include" \
 			LDFLAGS="$LDFLAGS -L${XBPS_CROSS_BASE}/usr/lib -lperl" \
 			LDDLFLAGS="-shared $CFLAGS -L${XBPS_CROSS_BASE}/usr/lib" \
-			perl Makefile.PL ${configure_args} INSTALLDIRS=vendor
+			perl -I. Makefile.PL ${configure_args} INSTALLDIRS=vendor
 	fi
 
 	for i in ${perl_configure_dirs}; do
@@ -57,7 +57,7 @@ do_configure() {
 				CFLAGS="$CFLAGS -I${XBPS_CROSS_BASE}/usr/include" \
 				LDFLAGS="$LDFLAGS -L${XBPS_CROSS_BASE}/usr/lib -lperl" \
 				LDDLFLAGS="-shared $CFLAGS -L${XBPS_CROSS_BASE}/usr/lib -lperl" \
-				perl Makefile.PL ${make_build_args} INSTALLDIRS=vendor
+				perl -I. Makefile.PL ${make_build_args} INSTALLDIRS=vendor
 		else
 			msg_error "*** ERROR: couldn't find $perlmkf, aborting **\n"
 		fi

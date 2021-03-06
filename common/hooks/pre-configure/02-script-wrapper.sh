@@ -112,9 +112,10 @@ vapigen_wrapper() {
 	cat >>${XBPS_WRAPPERDIR}/vapigen<<_EOF
 #!/bin/sh
 exec /usr/bin/vapigen \\
+	 "\$@" \\
 	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala/vapi \\
 	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-${_vala_version}/vapi \\
-	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0 "\$@"
+	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/vapigen
 	ln -sf vapigen ${XBPS_WRAPPERDIR}/vapigen-${_vala_version}
@@ -134,9 +135,10 @@ valac_wrapper() {
 	cat >>${XBPS_WRAPPERDIR}/valac<<_EOF
 #!/bin/sh
 exec /usr/bin/valac \\
+	 "\$@" \\
 	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala/vapi \\
 	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-${_vala_version}/vapi \\
-	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0 "\$@"
+	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/valac
 	ln -sf valac ${XBPS_WRAPPERDIR}/valac-${_vala_version}
@@ -175,6 +177,13 @@ install_cross_wrappers() {
 	done
 }
 
+link_wrapper() {
+	local wrapper="$1"
+	[ ! -x "${XBPS_CROSS_BASE}/usr/bin/${wrapper}" ] && return 0
+	[ -L "${XBPS_WRAPPERDIR}/${wrapper}" ] && return 0
+	ln -sf "${XBPS_CROSS_BASE}/usr/bin/${wrapper}" "${XBPS_WRAPPERDIR}"
+}
+
 hook() {
 	export PATH="$XBPS_WRAPPERDIR:$PATH"
 
@@ -186,9 +195,15 @@ hook() {
 	pkgconfig_wrapper
 	vapigen_wrapper
 	valac_wrapper
+
+	if [ -x /usr/bin/pkg-config ]; then
+		link_wrapper freetype-config
+	else
+		generic_wrapper freetype-config
+	fi
+
 	generic_wrapper icu-config
 	generic_wrapper libgcrypt-config
-	generic_wrapper freetype-config
 	generic_wrapper sdl-config
 	generic_wrapper sdl2-config
 	generic_wrapper gpgme-config

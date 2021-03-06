@@ -59,7 +59,7 @@ create_debug_pkg() {
 hook() {
 	local fname= x= f= _soname= STRIPCMD=
 
-	if [ -n "$nostrip" -o "${archs// /}" = "noarch" ]; then
+	if [ -n "$nostrip" ]; then
 		return 0
 	fi
 
@@ -67,10 +67,6 @@ hook() {
 
 	find ${PKGDESTDIR} -type f | while read f; do
 		if [[ $f =~ ^${PKGDESTDIR}/usr/lib/debug/ ]]; then
-			continue
-		fi
-
-		if [[ $(file -b "$f") =~ "no machine" ]]; then
 			continue
 		fi
 
@@ -119,6 +115,13 @@ hook() {
 			fi
 			;;
 		application/x-sharedlib*|application/x-pie-executable*)
+			local type="$(file -b "$f")"
+			if [[ $type =~ "no machine" ]]; then
+				# using ELF as a container format (e.g. guile)
+				echo "   Ignoring ELF file without machine set: ${f#$PKGDESTDIR}"
+				continue
+			fi
+
 			chmod +w "$f"
 			# shared library
 			make_debug "$f"
@@ -127,7 +130,7 @@ hook() {
 				msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
 				return 1
 			fi
-			if [[ $(file $f) =~ "interpreter " ]]; then
+			if [[ $type =~ "interpreter " ]]; then
 				echo "   Stripped position-independent executable: ${f#$PKGDESTDIR}"
 			else
 				echo "   Stripped library: ${f#$PKGDESTDIR}"

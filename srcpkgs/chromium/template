@@ -1,7 +1,7 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See http://www.chromium.org/developers/calendar for the latest version
-version=87.0.4280.66
+version=88.0.4324.182
 revision=1
 archs="i686* x86_64* aarch64* armv7l* ppc64le*"
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
@@ -9,19 +9,20 @@ maintainer="Enno Boland <gottox@voidlinux.org>"
 license="BSD-3-Clause"
 homepage="https://www.chromium.org/"
 distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/${pkgname}-${version}.tar.xz"
-checksum=29a8e4ea82edec2fdcf34ece68323bec7ab90f3d5669e6b77f58cff9c278f741
+checksum=30411fc3ec2d33df4c5cad41f21affa3823c80f7dbd394f6d68f9a1e81015b81
 nocross=yes
 
 lib32disabled=yes
 nodebug=yes
 nopie=yes  # contains tools that are not PIE, enables PIE itself
 
-build_options="clang js_optimize vaapi pulseaudio sndio"
+build_options="clang js_optimize vaapi pulseaudio sndio pipewire"
 desc_option_clang="Use clang to build"
 desc_option_js_optimize="Optimize the JS used for Chromium's UI"
 desc_option_vaapi="Enable support for VA-API"
 desc_option_pulseaudio="Enable support for PulseAudio"
 desc_option_sndio="Enable support for sndio"
+desc_option_pipewire="Enable support for screen sharing for WebRTC via PipeWire"
 
 hostmakedepends="$(vopt_if clang clang) python pkgconf perl gperf bison ninja nodejs hwids
  libatomic-devel libevent-devel libglib-devel $(vopt_if js_optimize openjdk)"
@@ -35,14 +36,14 @@ makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
  minizip-devel jsoncpp-devel zlib-devel libcap-devel libXdamage-devel
  re2-devel fontconfig-devel freetype-devel opus-devel
  ffmpeg-devel libva-devel python-setuptools xcb-proto
- $(vopt_if sndio sndio-devel)"
+ $(vopt_if pipewire libpipewire0.2-devel) $(vopt_if sndio sndio-devel)"
 depends="libexif hwids desktop-file-utils hicolor-icon-theme xdg-utils"
 
 case "$XBPS_TARGET_MACHINE" in
 	ppc64*-musl) makedepends+=" libucontext-devel" ;;
 esac
 
-build_options_default="clang js_optimize vaapi pulseaudio"
+build_options_default="clang js_optimize vaapi pulseaudio pipewire"
 
 post_patch() {
 	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
@@ -181,19 +182,23 @@ do_configure() {
 		'use_system_harfbuzz=true'
 		'enable_widevine=true'
 		'enable_hangout_services_extension=true'
-		'is_desktop_linux=true'
 	)
 
 	conf+=(
 		"use_vaapi=$(vopt_if vaapi true false)"
 	)
 
+	# https://chromium.googlesource.com/chromium/src/+/master/docs/closure_compilation.md
 	conf+=(
-		"closure_compile=$(vopt_if js_optimize true false)"
+		"enable_js_type_check=$(vopt_if js_optimize true false)"
 	)
 
 	conf+=(
 		"use_pulseaudio=$(vopt_if pulseaudio true false)"
+	)
+
+	conf+=(
+		"rtc_use_pipewire=$(vopt_if pipewire true false)"
 	)
 
 	# Use explicit library dependencies instead of dlopen.
@@ -211,19 +216,13 @@ do_configure() {
 
 	# Never use bundled binutils/gold binary.
 	conf+=(
-		"binutils_path=\"${XBPS_CROSS_BASE}/usr/bin\""
 		"gold_path=\"${XBPS_CROSS_BASE}/usr/bin/ld.gold\""
-		'linux_use_bundled_binutils=false'
 		'use_custom_libcxx=false'
 		'use_lld=false'
 	)
 
-	# XXX: gold broken with musl and i686
-	case "${XBPS_TARGET_MACHINE}" in
-	*-musl) conf+=( 'use_gold=false' ) ;;
-	i686*) conf+=( 'use_gold=false' ) ;;
-	*) conf+=( 'use_gold=true' ) ;;
-	esac
+	# XXX: gold broken with musl, i686, and x86_64 so disable globally
+	conf+=( 'use_gold=false' )
 
 	# Always support proprietary codecs.
 	# Enable H.264 support in bundled ffmpeg.

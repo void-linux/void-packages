@@ -1,0 +1,59 @@
+From f7d268864a2660b7239b9a8ff5ad37faeeb751ba Mon Sep 17 00:00:00 2001
+From: Jouni Malinen <jouni@codeaurora.org>
+Date: Wed, 3 Jun 2020 22:41:02 +0300
+Subject: [PATCH 2/3] WPS UPnP: Fix event message generation using a long URL
+ path
+
+More than about 700 character URL ended up overflowing the wpabuf used
+for building the event notification and this resulted in the wpabuf
+buffer overflow checks terminating the hostapd process. Fix this by
+allocating the buffer to be large enough to contain the full URL path.
+However, since that around 700 character limit has been the practical
+limit for more than ten years, start explicitly enforcing that as the
+limit or the callback URLs since any longer ones had not worked before
+and there is no need to enable them now either.
+
+Signed-off-by: Jouni Malinen <jouni@codeaurora.org>
+---
+ src/wps/wps_upnp.c       | 9 +++++++--
+ src/wps/wps_upnp_event.c | 3 ++-
+ 2 files changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/src/wps/wps_upnp.c b/src/wps/wps_upnp.c
+index 7d4b7439940e..ab685d52ecab 100644
+--- a/src/wps/wps_upnp.c
++++ b/src/wps/wps_upnp.c
+@@ -328,9 +328,14 @@ static void subscr_addr_add_url(struct subscription *s, const char *url,
+ 	int rerr;
+ 	size_t host_len, path_len;
+ 
+-	/* url MUST begin with http: */
+-	if (url_len < 7 || os_strncasecmp(url, "http://", 7))
++	/* URL MUST begin with HTTP scheme. In addition, limit the length of
++	 * the URL to 700 characters which is around the limit that was
++	 * implicitly enforced for more than 10 years due to a bug in
++	 * generating the event messages. */
++	if (url_len < 7 || os_strncasecmp(url, "http://", 7) || url_len > 700) {
++		wpa_printf(MSG_DEBUG, "WPS UPnP: Reject an unacceptable URL");
+ 		goto fail;
++	}
+ 	url += 7;
+ 	url_len -= 7;
+ 
+diff --git a/src/wps/wps_upnp_event.c b/src/wps/wps_upnp_event.c
+index d7e6edcc6503..08a23612f338 100644
+--- a/src/wps/wps_upnp_event.c
++++ b/src/wps/wps_upnp_event.c
+@@ -147,7 +147,8 @@ static struct wpabuf * event_build_message(struct wps_event_ *e)
+ 	struct wpabuf *buf;
+ 	char *b;
+ 
+-	buf = wpabuf_alloc(1000 + wpabuf_len(e->data));
++	buf = wpabuf_alloc(1000 + os_strlen(e->addr->path) +
++			   wpabuf_len(e->data));
+ 	if (buf == NULL)
+ 		return NULL;
+ 	wpabuf_printf(buf, "NOTIFY %s HTTP/1.1\r\n", e->addr->path);
+-- 
+2.20.1
+

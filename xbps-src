@@ -205,6 +205,8 @@ $(print_cross_targets)
 
 -Q  Enable running the check stage.
 
+-K  Enable running the check stage with longer tests.
+
 -q  Suppress informational output of xbps-src (build output is still printed).
 
 -r  <repo>
@@ -317,7 +319,7 @@ read_pkg() {
 setup_distfiles_mirror() {
     local mirror scheme path
 
-    # Scheme file:// mirror locations only work with uchroot or proot
+    # Scheme file:// mirror locations only work with uchroot
     for mirror in $XBPS_DISTFILES_MIRROR; do
         scheme="file"
         if [[ "$mirror" == *://* ]]; then
@@ -327,7 +329,7 @@ setup_distfiles_mirror() {
             path="$mirror"
         fi
         [ "$scheme" != "file" ] && continue
-        if [ "$XBPS_CHROOT_CMD" == "uchroot" -o "$XBPS_CHROOT_CMD" == "proot" ]; then
+        if [ "$XBPS_CHROOT_CMD" == "uchroot" ]; then
             if [ ! -d "$path" ]; then
                 msg_warn "xbps-src: Invalid path in XBPS_DISTFILES_MIRROR ($mirror)\n"
                 continue
@@ -352,7 +354,7 @@ readonly XBPS_SRC_VERSION="113"
 export XBPS_MACHINE=$(xbps-uhelper -C /dev/null arch)
 
 XBPS_OPTIONS=
-XBPS_OPTSTRING="1a:c:CEfgGhH:iIj:Lm:No:p:qQr:tV"
+XBPS_OPTSTRING="1a:c:CEfgGhH:iIj:Lm:No:p:qQKr:tV"
 
 # Preprocess arguments in order to allow options before and after XBPS_TARGET.
 eval set -- $(getopt "$XBPS_OPTSTRING" "$@");
@@ -381,7 +383,8 @@ while getopts "$XBPS_OPTSTRING" opt; do
         o) XBPS_ARG_PKG_OPTIONS="$OPTARG"; XBPS_OPTIONS+=" -o $OPTARG";;
         p) XBPS_ARG_PRINT_VARIABLES="$OPTARG"; XBPS_OPTIONS+=" -p $OPTARG";;
         q) XBPS_ARG_QUIET=1; XBPS_OPTIONS+=" -q";;
-        Q) XBPS_ARG_CHECK_PKGS=1; XBPS_OPTIONS+=" -Q";;
+        Q) XBPS_ARG_CHECK_PKGS=yes; XBPS_OPTIONS+=" -Q";;
+        K) XBPS_ARG_CHECK_PKGS=full; XBPS_OPTIONS+=" -K";;
         r) XBPS_ARG_ALT_REPOSITORY="$OPTARG"; XBPS_OPTIONS+=" -r $OPTARG";;
         t) XBPS_ARG_TEMP_MASTERDIR=1; XBPS_OPTIONS+=" -t -C";;
         V) echo "xbps-src-$XBPS_SRC_VERSION $(xbps-uhelper -V)" && exit 0;;
@@ -459,7 +462,6 @@ fi
 [ -n "$XBPS_ARG_TEMP_MASTERDIR" ] && XBPS_TEMP_MASTERDIR=1
 [ -n "$XBPS_ARG_BINPKG_EXISTS" ] && XBPS_BINPKG_EXISTS=1
 [ -n "$XBPS_ARG_USE_GIT_REVS" ] && XBPS_USE_GIT_REVS=1
-[ -n "$XBPS_ARG_CHECK_PKGS" ] && XBPS_CHECK_PKGS=1
 [ -n "$XBPS_ARG_DEBUG_PKGS" ] && XBPS_DEBUG_PKGS=1
 [ -n "$XBPS_ARG_SKIP_DEPS" ] && XBPS_SKIP_DEPS=1
 [ -n "$XBPS_ARG_KEEP_ALL" ] && XBPS_KEEP_ALL=1
@@ -467,6 +469,7 @@ fi
 [ -n "$XBPS_ARG_PRINT_VARIABLES" ] && XBPS_PRINT_VARIABLES="$XBPS_ARG_PRINT_VARIABLES"
 [ -n "$XBPS_ARG_ALT_REPOSITORY" ] && XBPS_ALT_REPOSITORY="$XBPS_ARG_ALT_REPOSITORY"
 [ -n "$XBPS_ARG_CROSS_BUILD" ] && XBPS_CROSS_BUILD="$XBPS_ARG_CROSS_BUILD"
+[ -n "$XBPS_ARG_CHECK_PKGS" ] && XBPS_CHECK_PKGS="$XBPS_ARG_CHECK_PKGS"
 [ -n "$XBPS_ARG_MAKEJOBS" ] && XBPS_MAKEJOBS="$XBPS_ARG_MAKEJOBS"
 
 export XBPS_BUILD_ONLY_ONE_PKG XBPS_SKIP_REMOTEREPOS XBPS_BUILD_FORCEMODE \
@@ -510,7 +513,7 @@ if command -v chroot-git &>/dev/null; then
     export XBPS_GIT_CMD=$(command -v chroot-git)
 elif command -v git &>/dev/null; then
     export XBPS_GIT_CMD=$(command -v git)
-else
+elif [ -z "$XBPS_USE_BUILD_MTIME" ] || [ "$XBPS_USE_GIT_REVS" ]; then
     echo "neither chroot-git or git are available in your system!" 1>&2
     exit 1
 fi
@@ -631,7 +634,8 @@ export XBPS_SHUTILSDIR XBPS_CROSSPFDIR XBPS_TRIGGERSDIR \
     XBPS_KEEP_ALL XBPS_HOSTDIR XBPS_MASTERDIR XBPS_SRC_VERSION \
     XBPS_DESTDIR XBPS_MACHINE XBPS_TEMP_MASTERDIR XBPS_BINPKG_EXISTS \
     XBPS_LIBEXECDIR XBPS_DISTDIR XBPS_DISTFILES_MIRROR XBPS_ALLOW_RESTRICTED \
-    XBPS_USE_GIT_COMMIT_DATE XBPS_PKG_COMPTYPE XBPS_REPO_COMPTYPE XBPS_BUILDHELPERDIR
+    XBPS_USE_GIT_COMMIT_DATE XBPS_PKG_COMPTYPE XBPS_REPO_COMPTYPE \
+    XBPS_BUILDHELPERDIR XBPS_USE_BUILD_MTIME
 
 for i in REPOSITORY DESTDIR BUILDDIR SRCDISTDIR; do
     eval val="\$XBPS_$i"
@@ -833,6 +837,7 @@ case "$XBPS_TARGET" in
         read_pkg ignore-problems
         for sub_name in $subpackages; do
             if [ $sub_name = $XBPS_TARGET_PKG ]; then
+                . ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
                 ${sub_name}_package
             fi
         done
@@ -856,6 +861,7 @@ case "$XBPS_TARGET" in
         read_pkg ignore-problems
         for sub_name in $subpackages; do
             if [ $sub_name = $XBPS_TARGET_PKG ]; then
+                . ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
                 ${sub_name}_package
             fi
         done
@@ -883,6 +889,37 @@ case "$XBPS_TARGET" in
                 fi # The trailing space gets stripped before printing anyway
         done
         ;;
+    dbulk-dump)
+        read_pkg
+        for x in pkgname version revision; do
+            printf '%s: %s\n' "$x" "${!x}"
+        done
+        for x in bootstrap; do
+            [[ ${!x} ]] && printf '%s: %s\n' "$x" "${!x}"
+        done
+        for x in hostmakedepends makedepends depends; do
+            arr=(${!x})
+            if [[ ${#arr} -gt 0 ]]; then
+                printf '%s:\n' "$x"
+                printf ' %s\n' "${arr[@]}"
+            fi
+        done
+        if [[ $subpackages ]]; then
+            printf 'subpackages:\n'
+            for x in ${subpackages}; do
+                . ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
+                ${x}_package
+                printf ' %s\n' "$x"
+                for x in depends; do
+                    arr=(${!x})
+                    if [[ ${#arr} -gt 0 ]]; then
+                        printf '  %s:\n' "$x"
+                        printf '   %s\n' "${arr[@]}"
+                    fi
+                done
+            done
+        fi
+        ;;
     show-options)
         read_pkg ignore-problems
         show_pkg_build_options
@@ -899,7 +936,11 @@ case "$XBPS_TARGET" in
         for f in ${XBPS_COMMONDIR}/environment/setup/*.sh; do
             source $f
         done
-        source ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
+        if [ "$XBPS_CROSS_BUILD" ]; then
+            source ${XBPS_COMMONDIR}/cross-profiles/${XBPS_CROSS_BUILD}.sh
+        else
+            source ${XBPS_COMMONDIR}/build-profiles/${XBPS_MACHINE}.sh
+        fi
         eval value="\${$XBPS_TARGET_PKG}"
         echo $value
         ;;

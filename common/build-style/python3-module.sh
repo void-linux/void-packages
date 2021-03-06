@@ -24,15 +24,20 @@ do_build() {
 }
 
 do_check() {
-	if [ -z "$make_check_target" ]; then
-		if ! python3 setup.py --help test >/dev/null 2>&1; then
-			msg_warn "No command 'test' defined by setup.py.\n"
-			return 0
+	if python3 -m pytest --help >/dev/null 2>&1; then
+		python3 -m pytest ${make_check_args} ${make_check_target}
+	else
+		# Fall back to deprecated setup.py test orchestration without pytest
+		if [ -z "$make_check_target" ]; then
+			if ! python3 setup.py --help test >/dev/null 2>&1; then
+				msg_warn "No command 'test' defined by setup.py.\n"
+				return 0
+			fi
 		fi
-	fi
 
-	: ${make_check_target:=test}
-	python3 setup.py ${make_check_target} ${make_check_args}
+		: ${make_check_target:=test}
+		python3 setup.py ${make_check_target} ${make_check_args}
+	fi
 }
 
 do_install() {
