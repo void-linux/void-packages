@@ -37,6 +37,7 @@ include(/usr/lib/qt5/mkspecs/common/g++-unix.conf)
 
 QMAKE_TARGET_CONFIG     = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/qconfig.pri
 QMAKE_TARGET_MODULE     = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/qmodule.pri
+QMAKEMODULES            = ${XBPS_CROSS_BASE}/usr/lib/qt5/mkspecs/modules
 QMAKE_CC                = ${CC}
 QMAKE_CXX               = ${CXX}
 QMAKE_LINK              = ${CXX}
