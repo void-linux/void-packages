@@ -14,8 +14,6 @@ to build package files from templates.
 
 For this guide, we assume you have basic knowledge about [git](http://git-scm.org), as well as a [GitHub Account](http://github.com).
 
-Please note that we do not accept any packages containing non-release versions, such as specific git- or svn-revisions anymore.
-
 To get started, [fork](https://help.github.com/articles/fork-a-repo) the void-linux `void-packages` git repository on GitHub and clone it:
 
     $ git clone git@github.com:<user>/void-packages.git
