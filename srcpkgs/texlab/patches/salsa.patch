@@ -1,0 +1,151 @@
+commit e038bc231ad881a82fcec028ed307f8d007d8ae5
+Author: Daniel Kolesa <daniel@octaforge.org>
+Date:   Wed Mar 10 22:31:07 2021 +0100
+
+    fix on ppc32 (missing atomic64)
+    
+    see https://github.com/salsa-rs/salsa/commit/9c7ac99
+
+diff --git salsa/src/revision.rs salsa/src/revision.rs
+index ca7bb10..a18b581 100644
+--- salsa/src/revision.rs
++++ salsa/src/revision.rs
+@@ -1,9 +1,9 @@
+-use std::num::NonZeroU64;
+-use std::sync::atomic::{AtomicU64, Ordering};
++use std::num::NonZeroUsize;
++use std::sync::atomic::{AtomicUsize, Ordering};
+ 
+ /// Value of the initial revision, as a u64. We don't use 0
+-/// because we want to use a `NonZeroU64`.
+-const START_U64: u64 = 1;
++/// because we want to use a `NonZeroUsize`.
++const START: usize = 1;
+ 
+ /// A unique identifier for the current version of the database; each
+ /// time an input is changed, the revision number is incremented.
+@@ -12,17 +12,17 @@ const START_U64: u64 = 1;
+ /// directly as a user of salsa.
+ #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+ pub struct Revision {
+-    generation: NonZeroU64,
++    generation: NonZeroUsize,
+ }
+ 
+ impl Revision {
+     pub(crate) fn start() -> Self {
+-        Self::from(START_U64)
++        Self::from(START)
+     }
+ 
+-    pub(crate) fn from(g: u64) -> Self {
++    pub(crate) fn from(g: usize) -> Self {
+         Self {
+-            generation: NonZeroU64::new(g).unwrap(),
++            generation: NonZeroUsize::new(g).unwrap(),
+         }
+     }
+ 
+@@ -30,7 +30,7 @@ impl Revision {
+         Self::from(self.generation.get() + 1)
+     }
+ 
+-    fn as_u64(self) -> u64 {
++    fn as_usize(self) -> usize {
+         self.generation.get()
+     }
+ }
+@@ -43,13 +43,13 @@ impl std::fmt::Debug for Revision {
+ 
+ #[derive(Debug)]
+ pub(crate) struct AtomicRevision {
+-    data: AtomicU64,
++    data: AtomicUsize,
+ }
+ 
+ impl AtomicRevision {
+     pub(crate) fn start() -> Self {
+         Self {
+-            data: AtomicU64::new(START_U64),
++            data: AtomicUsize::new(START),
+         }
+     }
+ 
+@@ -58,13 +58,13 @@ impl AtomicRevision {
+     }
+ 
+     pub(crate) fn store(&self, r: Revision) {
+-        self.data.store(r.as_u64(), Ordering::SeqCst);
++        self.data.store(r.as_usize(), Ordering::SeqCst);
+     }
+ 
+     /// Increment by 1, returning previous value.
+     pub(crate) fn fetch_then_increment(&self) -> Revision {
+         let v = self.data.fetch_add(1, Ordering::SeqCst);
+-        assert!(v != u64::max_value(), "revision overflow");
++        assert!(v != usize::max_value(), "revision overflow");
+         Revision::from(v)
+     }
+ }
+diff --git salsa/src/runtime.rs salsa/src/runtime.rs
+index 181a5ea..ada5fec 100644
+--- salsa/src/runtime.rs
++++ salsa/src/runtime.rs
+@@ -10,7 +10,7 @@ use parking_lot::{Mutex, RwLock};
+ use rustc_hash::{FxHashMap, FxHasher};
+ use smallvec::SmallVec;
+ use std::hash::{BuildHasherDefault, Hash};
+-use std::sync::atomic::{AtomicU64, Ordering};
++use std::sync::atomic::{AtomicUsize, Ordering};
+ use std::sync::Arc;
+ 
+ pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
+@@ -558,14 +558,14 @@ struct SharedState<DB: Database> {
+     storage: DB::DatabaseStorage,
+ 
+     /// Stores the next id to use for a snapshotted runtime (starts at 1).
+-    next_id: AtomicU64,
++    next_id: AtomicUsize,
+ 
+     /// Whenever derived queries are executing, they acquire this lock
+     /// in read mode. Mutating inputs (and thus creating a new
+     /// revision) requires a write lock (thus guaranteeing that no
+     /// derived queries are in progress). Note that this is not needed
+     /// to prevent **race conditions** -- the revision counter itself
+-    /// is stored in an `AtomicU64` so it can be cheaply read
++    /// is stored in an `AtomicUsize` so it can be cheaply read
+     /// without acquiring the lock.  Rather, the `query_lock` is used
+     /// to ensure a higher-level consistency property.
+     query_lock: RwLock<()>,
+@@ -594,7 +594,7 @@ struct SharedState<DB: Database> {
+ impl<DB: Database> SharedState<DB> {
+     fn with_durabilities(durabilities: usize) -> Self {
+         SharedState {
+-            next_id: AtomicU64::new(1),
++            next_id: AtomicUsize::new(1),
+             storage: Default::default(),
+             query_lock: Default::default(),
+             revisions: (0..durabilities).map(|_| AtomicRevision::start()).collect(),
+@@ -715,7 +715,7 @@ impl<DB: Database> ActiveQuery<DB> {
+ /// complete, its `RuntimeId` may potentially be re-used.
+ #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+ pub struct RuntimeId {
+-    counter: u64,
++    counter: usize,
+ }
+ 
+ #[derive(Clone, Debug)]
+diff --git Cargo.toml Cargo.toml
+index 0847f06..7c4bb9a 100644
+--- Cargo.toml
++++ Cargo.toml
+@@ -106,6 +106,9 @@ lalrpop = { version = "0.18", optional = true }
+ [profile.release]
+ lto = true
+ 
++[patch.crates-io]
++salsa = { path = './salsa' }
++
+ [[bench]]
+ name = "bench_main"
+ harness = false
