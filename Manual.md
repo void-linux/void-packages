@@ -146,6 +146,11 @@ fonts).
 Browser forks, including those based on Chromium and Firefox, are generally not
 accepted. Such forks require heavy patching, maintenance and hours of build time.
 
+Software need to be used in version announced by authors as ready to use by
+the general public - usually called releases. Betas, arbitrary VCS revisions,
+templates using tip of development branch taken at build time and releases
+created by the package maintainer won't be accepted.
+
 <a id="buildphase"></a>
 ### Package build phases
 
