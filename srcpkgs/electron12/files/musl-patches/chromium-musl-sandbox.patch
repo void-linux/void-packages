@@ -1,0 +1,92 @@
+--- ./sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc.orig	2019-07-03 11:53:21.213479736 -0400
++++ ./sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc	2019-07-03 11:57:01.304998253 -0400
+@@ -140,31 +140,14 @@
+ ResultExpr RestrictCloneToThreadsAndEPERMFork() {
+   const Arg<unsigned long> flags(0);
+ 
+-  // TODO(mdempsky): Extend DSL to support (flags & ~mask1) == mask2.
+-  const uint64_t kAndroidCloneMask = CLONE_VM | CLONE_FS | CLONE_FILES |
+-                                     CLONE_SIGHAND | CLONE_THREAD |
+-                                     CLONE_SYSVSEM;
+-  const uint64_t kObsoleteAndroidCloneMask = kAndroidCloneMask | CLONE_DETACHED;
++  const int required = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND |
++                       CLONE_THREAD | CLONE_SYSVSEM;
++  const int safe = CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID | 
++                   CLONE_DETACHED;
++  const BoolExpr thread_clone_ok = (flags&~safe)==required;
+ 
+-  const uint64_t kGlibcPthreadFlags =
+-      CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD |
+-      CLONE_SYSVSEM | CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
+-  const BoolExpr glibc_test = flags == kGlibcPthreadFlags;
+-
+-  const BoolExpr android_test =
+-      AnyOf(flags == kAndroidCloneMask, flags == kObsoleteAndroidCloneMask,
+-            flags == kGlibcPthreadFlags);
+-
+-  // The following two flags are the two important flags in any vfork-emulating
+-  // clone call. EPERM any clone call that contains both of them.
+-  const uint64_t kImportantCloneVforkFlags = CLONE_VFORK | CLONE_VM;
+-
+-  const BoolExpr is_fork_or_clone_vfork =
+-      AnyOf((flags & (CLONE_VM | CLONE_THREAD)) == 0,
+-            (flags & kImportantCloneVforkFlags) == kImportantCloneVforkFlags);
+-
+-  return If(IsAndroid() ? android_test : glibc_test, Allow())
+-      .ElseIf(is_fork_or_clone_vfork, Error(EPERM))
++  return If(thread_clone_ok, Allow())
++      .ElseIf((flags & (CLONE_VM | CLONE_THREAD)) == 0, Error(EPERM))
+       .Else(CrashSIGSYSClone());
+ }
+ 
+--- ./sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc.orig
++++ ./sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
+@@ -494,6 +494,7 @@
+     case __NR_mlock:
+     case __NR_munlock:
+     case __NR_munmap:
++    case __NR_mremap:
+       return true;
+     case __NR_madvise:
+     case __NR_mincore:
+@@ -509,7 +510,6 @@
+     case __NR_modify_ldt:
+ #endif
+     case __NR_mprotect:
+-    case __NR_mremap:
+     case __NR_msync:
+     case __NR_munlockall:
+     case __NR_readahead:
+diff --git a/sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc b/sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
+index 80f02c0..21fbe21 100644
+--- sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
++++ sandbox/linux/seccomp-bpf-helpers/syscall_sets.cc
+@@ -373,6 +373,7 @@ bool SyscallSets::IsAllowedProcessStartOrDeath(int sysno) {
+ #if defined(__i386__)
+     case __NR_waitpid:
+ #endif
++    case __NR_set_tid_address:
+       return true;
+     case __NR_clone:  // Should be parameter-restricted.
+     case __NR_setns:  // Privileged.
+@@ -385,7 +386,6 @@ bool SyscallSets::IsAllowedProcessStartOrDeath(int sysno) {
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__)
+     case __NR_set_thread_area:
+ #endif
+-    case __NR_set_tid_address:
+     case __NR_unshare:
+ #if !defined(__mips__) && !defined(__aarch64__)
+     case __NR_vfork:
+--- sandbox/policy/linux/bpf_renderer_policy_linux.cc
++++ sandbox/policy/linux/bpf_renderer_policy_linux.cc
+@@ -100,9 +100,9 @@
+     case __NR_uname:
+     case __NR_sched_getparam:
+     case __NR_sched_getscheduler:
++    case __NR_sched_setscheduler:
+       return Allow();
+     case __NR_sched_getaffinity:
+-    case __NR_sched_setscheduler:
+       return RestrictSchedTarget(GetPolicyPid(), sysno);
+     case __NR_prlimit64:
+       // See crbug.com/662450 and setrlimit comment above.
