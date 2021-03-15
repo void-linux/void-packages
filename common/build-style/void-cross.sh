@@ -1,10 +1,6 @@
 #
 # This helper is for void system crosstoolchain templates.
 #
-# Mandatory variables:
-#
-# - cross_triplet - the target triplet (e.g. aarch64-linux-gnu)
-#
 # Optional variables:
 #
 # - cross_gcc_skip_go - do not build gccgo support
@@ -34,9 +30,10 @@ _void_cross_apply_patch() {
 _void_cross_build_binutils() {
 	[ -f ${wrksrc}/.binutils_done ] && return 0
 
-	local ver=$1
+	local tgt=$1
+	local ver=$2
 
-	msg_normal "Patching binutils for ${cross_triplet}\n"
+	msg_normal "Patching binutils for ${tgt}\n"
 
 	cd ${wrksrc}/binutils-${ver}
 	if [ -d "${XBPS_SRCPKGDIR}/binutils/patches" ]; then
@@ -46,7 +43,7 @@ _void_cross_build_binutils() {
 	fi
 	cd ..
 
-	msg_normal "Building binutils for ${cross_triplet}\n"
+	msg_normal "Building binutils for ${tgt}\n"
 
 	mkdir -p ${wrksrc}/binutils_build
 	cd ${wrksrc}/binutils_build
@@ -56,8 +53,8 @@ _void_cross_build_binutils() {
 		--sbindir=/usr/bin \
 		--libdir=/usr/lib \
 		--libexecdir=/usr/lib \
-		--target=${cross_triplet} \
-		--with-sysroot=/usr/${cross_triplet} \
+		--target=${tgt} \
+		--with-sysroot=/usr/${tgt} \
 		--disable-nls \
 		--disable-shared \
 		--disable-multilib \
@@ -84,9 +81,10 @@ _void_cross_build_binutils() {
 _void_cross_build_bootstrap_gcc() {
 	[ -f ${wrksrc}/.gcc_bootstrap_done ] && return 0
 
-	local ver=$1
+	local tgt=$1
+	local ver=$2
 
-	msg_normal "Patching GCC for ${cross_triplet}\n"
+	msg_normal "Patching GCC for ${tgt}\n"
 
 	cd ${wrksrc}/gcc-${ver}
 
@@ -103,7 +101,7 @@ _void_cross_build_bootstrap_gcc() {
 	fi
 	cd ..
 
-	msg_normal "Building bootstrap GCC for ${cross_triplet}\n"
+	msg_normal "Building bootstrap GCC for ${tgt}\n"
 
 	mkdir -p gcc_bootstrap
 	cd gcc_bootstrap
@@ -122,7 +120,7 @@ _void_cross_build_bootstrap_gcc() {
 		--sbindir=/usr/bin \
 		--libdir=/usr/lib \
 		--libexecdir=/usr/lib \
-		--target=${cross_triplet} \
+		--target=${tgt} \
 		--disable-nls \
 		--disable-multilib \
 		--disable-shared \
@@ -146,7 +144,7 @@ _void_cross_build_bootstrap_gcc() {
 	make ${makejobs}
 	make install DESTDIR=${wrksrc}/build_root
 
-	local ptrs=$(${cross_triplet}-gcc -dM -E - < /dev/null | \
+	local ptrs=$(${tgt}-gcc -dM -E - < /dev/null | \
 		grep __SIZEOF_POINTER__)
 	local ws=${ptrs##* }
 
@@ -162,10 +160,11 @@ _void_cross_build_bootstrap_gcc() {
 _void_cross_build_kernel_headers() {
 	[ -f ${wrksrc}/.linux_headers_done ] && return 0
 
-	local ver=$1
+	local tgt=$1
+	local ver=$2
 	local arch
 
-	msg_normal "Patching Linux headers for ${cross_triplet}\n"
+	msg_normal "Patching Linux headers for ${tgt}\n"
 
 	cd ${wrksrc}/linux-${ver}
 	for f in ${XBPS_SRCPKGDIR}/kernel-libc-headers/patches/*.patch; do
@@ -173,11 +172,11 @@ _void_cross_build_kernel_headers() {
 	done
 	cd ..
 
-	msg_normal "Building Linux headers for ${cross_triplet}\n"
+	msg_normal "Building Linux headers for ${tgt}\n"
 
 	cd linux-${ver}
 
-	case "$cross_triplet" in
+	case "$tgt" in
 		x86_64*|i686*) arch=x86 ;;
 		powerpc*) arch=powerpc ;;
 		mips*) arch=mips ;;
@@ -185,14 +184,14 @@ _void_cross_build_kernel_headers() {
 		arm*) arch=arm ;;
 		riscv*) arch=riscv ;;
 		s390*) arch=s390 ;;
-		*) msg_error "Unknown Linux arch for ${cross_triplet}\n" ;;
+		*) msg_error "Unknown Linux arch for ${tgt}\n" ;;
 	esac
 
 	make ARCH=${arch} headers
 	find usr/include -name '.*' -delete
 	rm usr/include/Makefile
 	rm -r usr/include/drm
-	cp -a usr/include ${wrksrc}/build_root/usr/${cross_triplet}/usr
+	cp -a usr/include ${wrksrc}/build_root/usr/${tgt}/usr
 
 	touch ${wrksrc}/.linux_headers_done
 }
@@ -200,10 +199,10 @@ _void_cross_build_kernel_headers() {
 _void_cross_build_glibc_headers() {
 	[ -f ${wrksrc}/.glibc_headers_done ] && return 0
 
-	local ver=$1
-	local tgt=$cross_triplet
+	local tgt=$1
+	local ver=$2
 
-	msg_normal "Patching glibc for ${cross_triplet}\n"
+	msg_normal "Patching glibc for ${tgt}\n"
 
 	cd ${wrksrc}/glibc-${ver}
 	if [ -d "${XBPS_SRCPKGDIR}/glibc/patches" ]; then
@@ -213,7 +212,7 @@ _void_cross_build_glibc_headers() {
 	fi
 	cd ..
 
-	msg_normal "Building glibc headers for ${cross_triplet}\n"
+	msg_normal "Building glibc headers for ${tgt}\n"
 
 	mkdir -p glibc_headers
 	cd glibc_headers
@@ -242,8 +241,8 @@ _void_cross_build_glibc_headers() {
 _void_cross_build_glibc() {
 	[ -f ${wrksrc}/.glibc_build_done ] && return 0
 
-	local ver=$1
-	local tgt=$cross_triplet
+	local tgt=$1
+	local ver=$2
 
 	msg_normal "Building glibc for ${tgt}\n"
 
@@ -284,8 +283,8 @@ _void_cross_build_glibc() {
 _void_cross_build_musl() {
 	[ -f ${wrksrc}/.musl_build_done ] && return 0
 
-	local ver=$1
-	local tgt=$cross_triplet
+	local tgt=$1
+	local ver=$2
 
 	msg_normal "Patching musl for ${tgt}\n"
 
@@ -321,12 +320,13 @@ _void_cross_build_libucontext() {
 	[ -n "$cross_gcc_skip_go" ] && return 0
 	[ -f ${wrksrc}/.libucontext_build_done ] && return 0
 
-	local ver=$1
+	local tgt=$1
+	local ver=$2
 	local arch incpath
 
-	msg_normal "Building libucontext for ${cross_triplet}\n"
+	msg_normal "Building libucontext for ${tgt}\n"
 
-	case "$cross_triplet" in
+	case "$tgt" in
 		x86_64*) arch=x86_64 ;;
 		i686*) arch=x86 ;;
 		powerpc64*) arch=ppc64 ;;
@@ -337,7 +337,7 @@ _void_cross_build_libucontext() {
 		arm*) arch=arm ;;
 		riscv64*) arch=riscv64 ;;
 		s390x*) arch=s390x ;;
-		*) msg_error "Unknown libucontext arch for ${cross_triplet}\n" ;;
+		*) msg_error "Unknown libucontext arch for ${tgt}\n" ;;
 	esac
 
 	cd ${wrksrc}/libucontext-${ver}
@@ -345,12 +345,12 @@ _void_cross_build_libucontext() {
 	# we build a static-only library to prevent linking to a runtime
 	# since it's tiny it can be linked into libgo and we don't have
 	# to keep it around (which would possibly conflict with crossdeps)
-	incpath="${wrksrc}/build_root/usr/${cross_triplet}/usr/include"
-	CC="${cross_triplet}-gcc" AS="${cross_triplet}-as" AR="${cross_triplet}-ar" \
+	incpath="${wrksrc}/build_root/usr/${tgt}/usr/include"
+	CC="${tgt}-gcc" AS="${tgt}-as" AR="${tgt}-ar" \
 	make ARCH=$arch libucontext.a \
 		CFLAGS="${cross_musl_cflags} -g0 -nostdinc -isystem ${incpath}"
 
-	cp libucontext.a ${wrksrc}/build_root/usr/${cross_triplet}/usr/lib
+	cp libucontext.a ${wrksrc}/build_root/usr/${tgt}/usr/lib
 
 	touch ${wrksrc}/.libucontext_build_done
 }
@@ -358,9 +358,10 @@ _void_cross_build_libucontext() {
 _void_cross_build_gcc() {
 	[ -f ${wrksrc}/.gcc_build_done ] && return 0
 
-	local ver=$1
+	local tgt=$1
+	local ver=$2
 
-	msg_normal "Building gcc for ${cross_triplet}\n"
+	msg_normal "Building gcc for ${tgt}\n"
 
 	mkdir -p ${wrksrc}/gcc_build
 	cd ${wrksrc}/gcc_build
@@ -396,9 +397,9 @@ _void_cross_build_gcc() {
 		--sbindir=/usr/bin \
 		--libdir=/usr/lib \
 		--libexecdir=/usr/lib \
-		--target=${cross_triplet} \
-		--with-sysroot=/usr/${cross_triplet} \
-		--with-build-sysroot=${wrksrc}/build_root/usr/${cross_triplet} \
+		--target=${tgt} \
+		--with-sysroot=/usr/${tgt} \
+		--with-build-sysroot=${wrksrc}/build_root/usr/${tgt} \
 		--enable-languages=${langs} \
 		--disable-nls \
 		--disable-multilib \
@@ -455,6 +456,7 @@ do_build() {
 	cd ${wrksrc}
 
 	local binutils_ver linux_ver gcc_ver libc_ver libucontext_ver
+	local tgt=${sourcepkg/cross-}
 
 	_void_cross_test_ver binutils
 	_void_cross_test_ver linux
@@ -476,16 +478,14 @@ do_build() {
 		fi
 	fi
 
-	[ "${cross_triplet}" ] || msg_error "cross_triplet not defined in template\n"
-
-	local sysroot="/usr/${cross_triplet}"
+	local sysroot="/usr/${tgt}"
 
 	# Prepare environment
 	cd ${wrksrc}
 
 	# Core directories for the build root
 	mkdir -p build_root/usr/{bin,lib,include,share}
-	mkdir -p build_root/usr/${cross_triplet}/usr/{bin,lib,include,share}
+	mkdir -p build_root/usr/${tgt}/usr/{bin,lib,include,share}
 
 	# Host root uses host wordsize
 	ln -sf usr/lib build_root/lib
@@ -496,7 +496,7 @@ do_build() {
 	ln -sf usr/lib build_root/${sysroot}/lib
 	ln -sf lib build_root/${sysroot}/usr/libexec
 
-	_void_cross_build_binutils ${binutils_ver}
+	_void_cross_build_binutils ${tgt} ${binutils_ver}
 
 	# Prepare environment so we can use temporary prefix
 	local oldpath="$PATH"
@@ -505,8 +505,8 @@ do_build() {
 	export PATH="${wrksrc}/build_root/usr/bin:$PATH"
 	export LD_LIBRARY_PATH="${wrksrc}/build_root/usr/lib:$PATH"
 
-	_void_cross_build_bootstrap_gcc ${gcc_ver}
-	_void_cross_build_kernel_headers ${linux_ver}
+	_void_cross_build_bootstrap_gcc ${tgt} ${gcc_ver}
+	_void_cross_build_kernel_headers ${tgt} ${linux_ver}
 
 	local ws=$(cat ${wrksrc}/.gcc_wordsize)
 
@@ -515,14 +515,14 @@ do_build() {
 	ln -sf lib ${wrksrc}/build_root/${sysroot}/usr/lib${ws}
 
 	if [ -f ${wrksrc}/.musl_version ]; then
-		_void_cross_build_musl ${libc_ver}
-		_void_cross_build_libucontext ${libucontext_ver}
+		_void_cross_build_musl ${tgt} ${libc_ver}
+		_void_cross_build_libucontext ${tgt} ${libucontext_ver}
 	else
-		_void_cross_build_glibc_headers ${libc_ver}
-		_void_cross_build_glibc ${libc_ver}
+		_void_cross_build_glibc_headers ${tgt} ${libc_ver}
+		_void_cross_build_glibc ${tgt} ${libc_ver}
 	fi
 
-	_void_cross_build_gcc ${gcc_ver}
+	_void_cross_build_gcc ${tgt} ${gcc_ver}
 
 	# restore this stuff in case later hooks depend on it
 	export PATH="$oldpath"
@@ -536,7 +536,8 @@ do_install() {
 	export PATH="${wrksrc}/build_root/usr/bin:$PATH"
 	export LD_LIBRARY_PATH="${wrksrc}/build_root/usr/lib:$PATH"
 
-	local sysroot="/usr/${cross_triplet}"
+	local tgt=${sourcepkg/cross-}
+	local sysroot="/usr/${tgt}"
 	local ws=$(cat ${wrksrc}/.gcc_wordsize)
 
 	# Core directories for the sysroot
@@ -578,7 +579,7 @@ do_install() {
 		make DESTDIR=${DESTDIR}/${sysroot} install
 
 		# Remove useless headers
-		rm -rf ${DESTDIR}/usr/lib/gcc/${cross_triplet}/*/include-fixed
+		rm -rf ${DESTDIR}/usr/lib/gcc/${tgt}/*/include-fixed
 
 		# Make ld-musl.so symlinks relative
 		for f in ${DESTDIR}/${sysroot}/usr/lib/ld-musl-*.so.*; do
@@ -590,14 +591,14 @@ do_install() {
 		make install_root=${DESTDIR}/${sysroot} install install-headers
 
 		# Remove bad header
-		rm -f ${DESTDIR}/usr/lib/gcc/${cross_triplet}/${gcc_patch}/include-fixed/bits/statx.h
+		rm -f ${DESTDIR}/usr/lib/gcc/${tgt}/${gcc_patch}/include-fixed/bits/statx.h
 	fi
 
 	# minor-versioned symlinks
-	mv ${DESTDIR}/usr/lib/gcc/${cross_triplet}/${gcc_patch} \
-		${DESTDIR}/usr/lib/gcc/${cross_triplet}/${gcc_minor}
-	ln -sfr ${DESTDIR}/usr/lib/gcc/${cross_triplet}/${gcc_minor} \
-		${DESTDIR}/usr/lib/gcc/${cross_triplet}/${gcc_patch}
+	mv ${DESTDIR}/usr/lib/gcc/${tgt}/${gcc_patch} \
+		${DESTDIR}/usr/lib/gcc/${tgt}/${gcc_minor}
+	ln -sfr ${DESTDIR}/usr/lib/gcc/${tgt}/${gcc_minor} \
+		${DESTDIR}/usr/lib/gcc/${tgt}/${gcc_patch}
 
 	# ditto for c++ headers
 	mv ${DESTDIR}/${sysroot}/usr/include/c++/${gcc_patch} \
