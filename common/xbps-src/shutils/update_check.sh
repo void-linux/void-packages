@@ -123,7 +123,7 @@ update_check() {
                 url="https://github.com/$pkgurlname/tags"
                 rx='/archive/refs/tags/(v?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=\.tar\.gz")';;
             *//gitlab.*)
-                pkgurlname="$(printf %s "$url" | cut -d/ -f1-5)"
+                pkgurlname="$(printf %s "$url" | sed 's%/-/*%%g')"
                 url="$pkgurlname/tags"
                 rx='/archive/[^/]+/\Q'"$pkgname"'\E-v?\K[\d.]+(?=\.tar\.gz")';;
             *bitbucket.org*)
