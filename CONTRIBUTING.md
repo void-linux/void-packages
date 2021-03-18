@@ -41,7 +41,7 @@ If `xlint` reports any issues, resolve them before committing.
 
 ### Committing your changes
 
-Once you have built your template file or files, the commit message should have one of the following forms:
+Once you have made and verified your changes to the package template and/or other files, make one commit per package (including all changes to its sub-packages). Each commit message should have one of the following formats:
 
 * for new packages, use ```New package: <pkgname>-<version>``` ([example](https://github.com/void-linux/void-packages/commit/176d9655429188aac10cd229827f99b72982ab10)).
 
@@ -74,7 +74,7 @@ New packages will not be accepted unless they have been runtime tested.
 
 ### Starting a pull request
 
-Once you have successfully built the package, you can [create a pull request](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request).
+Once you have successfully built the package, you can [create a pull request](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request). Pull requests are also known as PRs.
 
 Most pull requests should only contain a single package and dependencies which are not part of void-packages yet.
 
@@ -99,11 +99,10 @@ comply with the our guidelines. At the moment not all packages comply with the r
 
 #### Review
 
-Most of the time your pull request will contain mistakes. It's nothing bad, it just happens.
+It's possible (and common) that a pull request will contain mistakes or reviewers will ask for additional tweaks.
+Reviewers will comment on your pull request and point out which changes are needed before the pull request can be merged.
 
-Reviewers will comment on your pull request and point out which changes are needed before the template can be included.
-
-We recommend having only a single commit for pull request, so if you need to make changes in commits but already have a pull request, use the following commands:
+Most PRs will have a single commit, as seen [above](#committing-your-changes), so if you need to make changes to the commit and already have a pull request open, you can use the following commands:
 
     $ git add <file>
     $ git commit --amend
