@@ -1662,7 +1662,8 @@ cyclic dependencies. Make sure that the package you're removing is not
 the source of those patches/files.
 - Remove package template.
 - Add `pkgname<=version_revision` to `replaces` variable of `removed-packages`
-template.  All removed subpkgs should be added too.
+template and increase revision of `removed-packages`.
+All removed subpkgs should be added too.
 This will uninstall package from systems where it is installed.
 - Remove the package from the repository index
 or contact a team member that can do so.
