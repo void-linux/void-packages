@@ -121,7 +121,7 @@ update_check() {
             *github.com*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$pkgurlname/tags"
-                rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
+                rx='/archive/refs/tags/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
             *//gitlab.*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f1-5)"
                 url="$pkgurlname/tags"
