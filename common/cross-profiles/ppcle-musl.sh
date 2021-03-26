@@ -1,7 +1,7 @@
 # Cross build profile for little endian PowerPC.
 
 XBPS_TARGET_MACHINE="ppcle-musl"
-XBPS_TARGET_QEMU_MACHINE="ppc"
+XBPS_TARGET_QEMU_MACHINE="ppcle"
 XBPS_CROSS_TRIPLET="powerpcle-linux-musl"
 XBPS_CROSS_CFLAGS="-mcpu=power8 -mtune=power9"
 XBPS_CROSS_CXXFLAGS="$XBPS_CROSS_CFLAGS"

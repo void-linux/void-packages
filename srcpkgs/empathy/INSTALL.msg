@@ -1,8 +1,0 @@
-Some optional packages must be installed for additional functionality:
-
-	- telepathy-butterfly for MSN support
-	- telepathy-gabble for XMPP/jabber support
-	- telepathy-haze for libpurple support
-	- telepathy-idle for IRC support
-	- telepathy-rakia for SIP support
-	- telepathy-salut for link-local XMPP support
