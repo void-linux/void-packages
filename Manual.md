@@ -88,6 +88,9 @@ By convention, all templates start with a comment briefly explaining what they
 are. In addition, pkgname and version can't have any characters in them that
 would require them to be quoted, so they are not quoted.
 
+Try to break any lines over 80 characters where it makes sense, e.g. in
+dependencies.
+
 A simple `template` example is as follows:
 
 ```
