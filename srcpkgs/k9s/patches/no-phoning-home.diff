@@ -1,0 +1,89 @@
+diff --git a/internal/model/cluster_info.go b/internal/model/cluster_info.go
+index 05564a07..ee04ae87 100644
+--- internal/model/cluster_info.go
++++ internal/model/cluster_info.go
+@@ -2,10 +2,6 @@ package model
+ 
+ import (
+ 	"context"
+-	"encoding/json"
+-	"errors"
+-	"io/ioutil"
+-	"net/http"
+ 	"time"
+ 
+ 	"github.com/derailed/k9s/internal/client"
+@@ -94,22 +90,6 @@ func NewClusterInfo(f dao.Factory, version string) *ClusterInfo {
+ 	return &c
+ }
+ 
+-func (c *ClusterInfo) fetchK9sLatestRev() string {
+-	rev, ok := c.cache.Get(k9sLatestRevKey)
+-	if ok {
+-		return rev.(string)
+-	}
+-
+-	latestRev, err := fetchLastestRev()
+-	if err != nil {
+-		log.Error().Msgf("k9s latest rev fetch failed")
+-	} else {
+-		c.cache.Add(k9sLatestRevKey, latestRev, cacheExpiry)
+-	}
+-
+-	return latestRev
+-}
+-
+ // Reset resets context and reload.
+ func (c *ClusterInfo) Reset(f dao.Factory) {
+ 	c.cluster, c.data = NewCluster(f), NewClusterMeta()
+@@ -123,7 +103,7 @@ func (c *ClusterInfo) Refresh() {
+ 	data.Cluster = c.cluster.ClusterName()
+ 	data.User = c.cluster.UserName()
+ 	data.K9sVer = c.version
+-	v1, v2 := NewSemVer(data.K9sVer), NewSemVer(c.fetchK9sLatestRev())
++	v1, v2 := NewSemVer(data.K9sVer), NewSemVer(data.K9sVer)
+ 	data.K9sVer, data.K9sLatest = v1.String(), v2.String()
+ 	if v1.IsCurrent(v2) {
+ 		data.K9sLatest = ""
+@@ -178,41 +158,3 @@ func (c *ClusterInfo) fireNoMetaChanged(data ClusterMeta) {
+ 		l.ClusterInfoUpdated(data)
+ 	}
+ }
+-
+-// Helpers...
+-
+-func fetchLastestRev() (string, error) {
+-	log.Debug().Msgf("Fetching latest k9s rev...")
+-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+-	defer cancel()
+-
+-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, k9sGitURL, nil)
+-	if err != nil {
+-		return "", err
+-	}
+-	resp, err := http.DefaultClient.Do(req)
+-	if err != nil {
+-		return "", err
+-	}
+-	defer func() {
+-		if resp.Body != nil {
+-			_ = resp.Body.Close()
+-		}
+-	}()
+-
+-	b, err := ioutil.ReadAll(resp.Body)
+-	if err != nil {
+-		return "", err
+-	}
+-	m := make(map[string]interface{}, 20)
+-	if err := json.Unmarshal(b, &m); err != nil {
+-		return "", err
+-	}
+-
+-	if v, ok := m["name"]; ok {
+-		log.Debug().Msgf("K9s latest rev: %q", v.(string))
+-		return v.(string), nil
+-	}
+-
+-	return "", errors.New("No version found")
+-}
