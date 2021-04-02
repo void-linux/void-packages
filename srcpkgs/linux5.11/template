@@ -3,6 +3,7 @@ pkgname=linux5.11
 version=5.11.11
 revision=1
 wrksrc="linux-${version%.*}"
+build_helper=qemu
 short_desc="Linux kernel and modules (${version%.*} series)"
 maintainer="Érico Nogueira <ericonr@disroot.org>"
 license="GPL-2.0-only"
@@ -26,6 +27,7 @@ preserve=yes
 
 hostmakedepends="tar xz bc elfutils-devel flex gmp-devel kmod libmpc-devel
  openssl-devel perl uboot-mkimage cpio pahole python3"
+makedepends="elfutils-devel openssl-devel"
 
 _kernver="${version}_${revision}"
 triggers="kernel-hooks"
@@ -51,9 +53,6 @@ export KBUILD_BUILD_HOST=voidlinux
 
 if [ "$CROSS_BUILD" ]; then
 	_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
-fi
-if [ "${_patchver}" ]; then
-	_version="EXTRAVERSION=${_patchver}"
 fi
 
 pre_patch() {
@@ -85,13 +84,6 @@ do_configure() {
 		msg_normal "Detected a .config file for your arch, using it.\n"
 		cp -f ${FILESDIR}/${subarch:-$arch}-dotconfig .config
 		make ${makejobs} ARCH=$arch ${_cross} oldconfig
-	elif [ -f ${FILESDIR}/${XBPS_TARGET_MACHINE%%-musl}-dotconfig ]; then
-		msg_normal "Detected a .config file for your cpu family, using it.\n"
-		cp -f ${FILESDIR}/${XBPS_TARGET_MACHINE%%-musl}-dotconfig .config
-		make ${makejobs} ARCH=$arch ${_cross} oldconfig
-	else
-		msg_normal "Defaulting to 'allmodconfig'.\n"
-		make ${makejobs} ARCH=$arch ${_cross} allmodconfig
 	fi
 	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
 	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
@@ -109,8 +101,8 @@ do_build() {
 		mips*) _args="uImage modules dtbs"; arch=mips;;
 	esac
 	export LDFLAGS=
-	make ARCH=$arch ${_version} ${_cross} ${makejobs} prepare
-	make ARCH=$arch ${_version} ${_cross} ${makejobs} ${_args}
+	make ARCH=$arch ${_cross} ${makejobs} prepare
+	make ARCH=$arch ${_cross} ${makejobs} ${_args}
 }
 
 do_install() {
@@ -125,7 +117,7 @@ do_install() {
 		mips*) arch=mips;;
 	esac
 
-	# Run depmod after compressing modules.
+	# Run depmod after compressing modules - makes depmod.sh a noop
 	sed -i '2iexit 0' scripts/depmod.sh
 
 	# Install kernel, firmware and modules
@@ -203,6 +195,9 @@ do_install() {
 		make ${makejobs} ARCH=${subarch:-$arch} ${_cross} _mrproper_scripts
 		# remove host specific objects as well
 		find scripts -name '*.o' -delete
+		: make ${makejobs} ARCH=${subarch:-$arch} HOSTCC=$CC scripts
+		# TODO: this fails because it tries to run fixdep
+		# idea: use qemu?
 	fi
 
 	# Copy files necessary for later builds, like nvidia and vmware
