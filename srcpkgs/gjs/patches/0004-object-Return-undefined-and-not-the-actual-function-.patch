@@ -1,0 +1,176 @@
+From 78bfccd3125d54caf8e1c0b8d2b84643e717a8b1 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Wed, 24 Mar 2021 18:06:06 +0100
+Subject: [PATCH 6/6] object: Return undefined and not the actual function on
+ disposed objects
+
+When calling a proto function on a disposed object we return true not to
+throw, however when doing this we implicitly return to JS the actual
+underlying function pointer and that may cause use the return value to
+be used to wrongly set a variable or to be wrongly evaluated.
+
+To avoid this and be consistent, return undefined instead.
+
+Adapt tests for this and add more for uncovered methods.
+
+Fixes #396
+---
+ gi/object.cpp                                 | 17 ++++++--
+ .../js/testGObjectDestructionAccess.js        | 41 ++++++++++++++++---
+ 2 files changed, 49 insertions(+), 9 deletions(-)
+
+diff --git a/gi/object.cpp b/gi/object.cpp
+index 598e6bb0..39ce7f5f 100644
+--- a/gi/object.cpp
++++ b/gi/object.cpp
+@@ -327,8 +327,10 @@ bool ObjectBase::prop_getter(JSContext* cx, unsigned argc, JS::Value* vp) {
+ 
+ bool ObjectInstance::prop_getter_impl(JSContext* cx, JS::HandleString name,
+                                       JS::MutableHandleValue rval) {
+-    if (!check_gobject_disposed("get any property from"))
++    if (!check_gobject_disposed("get any property from")) {
++        rval.setUndefined();
+         return true;
++    }
+ 
+     GValue gvalue = { 0, };
+ 
+@@ -1877,8 +1879,10 @@ ObjectInstance::connect_impl(JSContext          *context,
+ 
+     gjs_debug_gsignal("connect obj %p priv %p", m_wrapper.get(), this);
+ 
+-    if (!check_gobject_disposed("connect to any signal on"))
++    if (!check_gobject_disposed("connect to any signal on")) {
++        args.rval().setInt32(0);
+         return true;
++    }
+ 
+     JS::UniqueChars signal_name;
+     JS::RootedObject callback(context);
+@@ -1940,8 +1944,10 @@ ObjectInstance::emit_impl(JSContext          *context,
+     gjs_debug_gsignal("emit obj %p priv %p argc %d", m_wrapper.get(), this,
+                       argv.length());
+ 
+-    if (!check_gobject_disposed("emit any signal on"))
++    if (!check_gobject_disposed("emit any signal on")) {
++        argv.rval().setUndefined();
+         return true;
++    }
+ 
+     JS::UniqueChars signal_name;
+     if (!gjs_parse_call_args(context, "emit", argv, "!s",
+@@ -2104,8 +2110,10 @@ bool ObjectInstance::signal_find_impl(JSContext* cx, const JS::CallArgs& args) {
+     gjs_debug_gsignal("[Gi.signal_find_symbol]() obj %p priv %p argc %d",
+                       m_wrapper.get(), this, args.length());
+ 
+-    if (!check_gobject_disposed("find any signal on"))
++    if (!check_gobject_disposed("find any signal on")) {
++        args.rval().setInt32(0);
+         return true;
++    }
+ 
+     JS::RootedObject match(cx);
+     if (!gjs_parse_call_args(cx, "[Gi.signal_find_symbol]", args, "o", "match",
+@@ -2179,6 +2187,7 @@ bool ObjectInstance::signals_action_impl(JSContext* cx,
+                       m_wrapper.get(), this, args.length());
+ 
+     if (!check_gobject_disposed((action_name + " any signal on").c_str())) {
++        args.rval().setInt32(0);
+         return true;
+     }
+     JS::RootedObject match(cx);
+diff --git a/installed-tests/js/testGObjectDestructionAccess.js b/installed-tests/js/testGObjectDestructionAccess.js
+index ed1d6bb6..0b35d859 100644
+--- a/installed-tests/js/testGObjectDestructionAccess.js
++++ b/installed-tests/js/testGObjectDestructionAccess.js
+@@ -5,6 +5,7 @@
+ imports.gi.versions.Gtk = '3.0';
+ 
+ const GLib = imports.gi.GLib;
++const GObject = imports.gi.GObject;
+ const Gtk = imports.gi.Gtk;
+ 
+ describe('Access to destroyed GObject', function () {
+@@ -23,7 +24,7 @@ describe('Access to destroyed GObject', function () {
+         GLib.test_expect_message('Gjs', GLib.LogLevelFlags.LEVEL_CRITICAL,
+             'Object Gtk.Window (0x*');
+ 
+-        void destroyedWindow.title;
++        expect(destroyedWindow.title).toBeUndefined();
+ 
+         GLib.test_assert_expected_messages_internal('Gjs', 'testGObjectDestructionAccess.js', 0,
+             'testExceptionInDestroyedObjectPropertyGet');
+@@ -45,7 +46,7 @@ describe('Access to destroyed GObject', function () {
+         GLib.test_expect_message('Gtk', GLib.LogLevelFlags.LEVEL_CRITICAL,
+             '*GTK_IS_WINDOW*');
+ 
+-        void destroyedWindow.get_title();
++        expect(destroyedWindow.get_title()).toBeNull();
+ 
+         GLib.test_assert_expected_messages_internal('Gjs', 'testGObjectDestructionAccess.js', 0,
+             'testExceptionInDestroyedObjectMethodGet');
+@@ -67,7 +68,7 @@ describe('Access to destroyed GObject', function () {
+         GLib.test_expect_message('Gjs', GLib.LogLevelFlags.LEVEL_CRITICAL,
+             'Object Gtk.Window (0x*');
+ 
+-        destroyedWindow.connect('foo-signal', () => {});
++        expect(destroyedWindow.connect('foo-signal', () => {})).toBe(0);
+ 
+         GLib.test_assert_expected_messages_internal('Gjs', 'testGObjectDestructionAccess.js', 0,
+             'testExceptionInDestroyedObjectConnect');
+@@ -77,7 +78,7 @@ describe('Access to destroyed GObject', function () {
+         GLib.test_expect_message('Gjs', GLib.LogLevelFlags.LEVEL_CRITICAL,
+             'Object Gtk.Window (0x*');
+ 
+-        destroyedWindow.connect_after('foo-signal', () => {});
++        expect(destroyedWindow.connect_after('foo-signal', () => {})).toBe(0);
+ 
+         GLib.test_assert_expected_messages_internal('Gjs', 'testGObjectDestructionAccess.js', 0,
+             'testExceptionInDestroyedObjectConnectAfter');
+@@ -87,12 +88,42 @@ describe('Access to destroyed GObject', function () {
+         GLib.test_expect_message('Gjs', GLib.LogLevelFlags.LEVEL_CRITICAL,
+             'Object Gtk.Window (0x*');
+ 
+-        destroyedWindow.emit('foo-signal');
++        expect(destroyedWindow.emit('foo-signal')).toBeUndefined();
+ 
+         GLib.test_assert_expected_messages_internal('Gjs', 'testGObjectDestructionAccess.js', 0,
+             'testExceptionInDestroyedObjectEmit');
+     });
+ 
++    it('Proto function signals_disconnect', function () {
++        GLib.test_expect_message('Gjs', GLib.LogLevelFlags.LEVEL_CRITICAL,
++            'Object Gtk.Window (0x*');
++
++        expect(GObject.signal_handlers_disconnect_by_func(destroyedWindow, () => {})).toBe(0);
++
++        GLib.test_assert_expected_messages_internal('Gjs', 'testGObjectDestructionAccess.js', 0,
++            'testExceptionInDestroyedObjectSignalsDisconnect');
++    });
++
++    it('Proto function signals_block', function () {
++        GLib.test_expect_message('Gjs', GLib.LogLevelFlags.LEVEL_CRITICAL,
++            'Object Gtk.Window (0x*');
++
++        expect(GObject.signal_handlers_block_by_func(destroyedWindow, () => {})).toBe(0);
++
++        GLib.test_assert_expected_messages_internal('Gjs', 'testGObjectDestructionAccess.js', 0,
++            'testExceptionInDestroyedObjectSignalsBlock');
++    });
++
++    it('Proto function signals_unblock', function () {
++        GLib.test_expect_message('Gjs', GLib.LogLevelFlags.LEVEL_CRITICAL,
++            'Object Gtk.Window (0x*');
++
++        expect(GObject.signal_handlers_unblock_by_func(destroyedWindow, () => {})).toBe(0);
++
++        GLib.test_assert_expected_messages_internal('Gjs', 'testGObjectDestructionAccess.js', 0,
++            'testExceptionInDestroyedObjectSignalsUnblock');
++    });
++
+     it('Proto function toString', function () {
+         expect(destroyedWindow.toString()).toMatch(
+             /\[object \(FINALIZED\) instance wrapper GIName:Gtk.Window jsobj@0x[a-f0-9]+ native@0x[a-f0-9]+\]/);
+-- 
+2.30.2
+

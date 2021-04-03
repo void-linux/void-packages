@@ -1,0 +1,124 @@
+From c4231d5917b1a06d1e3b788322c71cfdb41a0249 Mon Sep 17 00:00:00 2001
+From: Philip Chimento <philip.chimento@gmail.com>
+Date: Sun, 21 Mar 2021 11:37:58 -0700
+Subject: [PATCH 3/6] GObject: Define camel and kebab variants of
+ CONSTRUCT_ONLY properties
+
+Since we redefine CONSTRUCT_ONLY properties to be readonly data properties
+when they are set, we must also define camelCase and kebab-case variations
+in order to be consistent with the other property accessors.
+
+Closes: #391
+---
+ gi/gobject.cpp                         | 11 +++++++----
+ gjs/jsapi-util-string.cpp              | 21 +++++++++++++++++++++
+ gjs/jsapi-util.h                       |  1 +
+ installed-tests/js/testGObjectClass.js | 19 +++++++++++++++++++
+ 4 files changed, 48 insertions(+), 4 deletions(-)
+
+diff --git a/gi/gobject.cpp b/gi/gobject.cpp
+index 27c7d13c..65ed6638 100644
+--- a/gi/gobject.cpp
++++ b/gi/gobject.cpp
+@@ -55,10 +55,13 @@ static bool jsobj_set_gproperty(JSContext* cx, JS::HandleObject object,
+ 
+     GjsAutoChar underscore_name = gjs_hyphen_to_underscore(pspec->name);
+ 
+-    if (pspec->flags & G_PARAM_CONSTRUCT_ONLY)
+-        return JS_DefineProperty(
+-            cx, object, underscore_name, jsvalue,
+-            GJS_MODULE_PROP_FLAGS | JSPROP_READONLY);
++    if (pspec->flags & G_PARAM_CONSTRUCT_ONLY) {
++        unsigned flags = GJS_MODULE_PROP_FLAGS | JSPROP_READONLY;
++        GjsAutoChar camel_name = gjs_hyphen_to_camel(pspec->name);
++        return JS_DefineProperty(cx, object, underscore_name, jsvalue, flags) &&
++               JS_DefineProperty(cx, object, camel_name, jsvalue, flags) &&
++               JS_DefineProperty(cx, object, pspec->name, jsvalue, flags);
++    }
+ 
+     return JS_SetProperty(cx, object, underscore_name, jsvalue);
+ }
+diff --git a/gjs/jsapi-util-string.cpp b/gjs/jsapi-util-string.cpp
+index e318b514..45f297a7 100644
+--- a/gjs/jsapi-util-string.cpp
++++ b/gjs/jsapi-util-string.cpp
+@@ -4,6 +4,7 @@
+ 
+ #include <config.h>
+ 
++#include <ctype.h>  // for toupper
+ #include <stdint.h>
+ #include <string.h>     // for size_t, strlen
+ #include <sys/types.h>  // for ssize_t
+@@ -53,6 +54,26 @@ char* gjs_hyphen_to_underscore(const char* str) {
+     return retval;
+ }
+ 
++GjsAutoChar gjs_hyphen_to_camel(const char* str) {
++    GjsAutoChar retval = static_cast<char*>(g_malloc(strlen(str) + 1));
++    const char* input_iter = str;
++    char* output_iter = retval.get();
++    bool uppercase_next = false;
++    while (*input_iter != '\0') {
++        if (*input_iter == '-') {
++            uppercase_next = true;
++        } else if (uppercase_next) {
++            *output_iter++ = toupper(*input_iter);
++            uppercase_next = false;
++        } else {
++            *output_iter++ = *input_iter;
++        }
++        input_iter++;
++    }
++    *output_iter = '\0';
++    return retval;
++}
++
+ /**
+  * gjs_string_to_utf8:
+  * @cx: JSContext
+diff --git a/gjs/jsapi-util.h b/gjs/jsapi-util.h
+index 11c23776..a6b66261 100644
+--- a/gjs/jsapi-util.h
++++ b/gjs/jsapi-util.h
+@@ -542,6 +542,7 @@ bool gjs_object_require_converted_property(JSContext       *context,
+ [[nodiscard]] std::string gjs_debug_id(jsid id);
+ 
+ [[nodiscard]] char* gjs_hyphen_to_underscore(const char* str);
++[[nodiscard]] GjsAutoChar gjs_hyphen_to_camel(const char* str);
+ 
+ #if defined(G_OS_WIN32) && (defined(_MSC_VER) && (_MSC_VER >= 1900))
+ [[nodiscard]] std::wstring gjs_win32_vc140_utf8_to_utf16(const char* str);
+diff --git a/installed-tests/js/testGObjectClass.js b/installed-tests/js/testGObjectClass.js
+index f0a57a84..7073ccba 100644
+--- a/installed-tests/js/testGObjectClass.js
++++ b/installed-tests/js/testGObjectClass.js
+@@ -853,6 +853,25 @@ describe('Auto accessor generation', function () {
+         expect(a['long-long-name']).toEqual(48);
+         expect(a.construct).toEqual(96);
+         expect(a.construct_only).toEqual(80);
++        expect(a.constructOnly).toEqual(80);
++        expect(a['construct-only']).toEqual(80);
++    });
++
++    it('set properties at construct time', function () {
++        a = new AutoAccessors({
++            simple: 1,
++            longLongName: 1,
++            construct: 1,
++            'construct-only': 1,
++        });
++        expect(a.simple).toEqual(1);
++        expect(a.long_long_name).toEqual(1);
++        expect(a.longLongName).toEqual(1);
++        expect(a['long-long-name']).toEqual(1);
++        expect(a.construct).toEqual(1);
++        expect(a.construct_only).toEqual(1);
++        expect(a.constructOnly).toEqual(1);
++        expect(a['construct-only']).toEqual(1);
+     });
+ 
+     it('notify when the property changes', function () {
+-- 
+2.30.2
+
