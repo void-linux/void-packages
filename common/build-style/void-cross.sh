@@ -607,7 +607,7 @@ do_install() {
 		${DESTDIR}/${sysroot}/usr/include/c++/${gcc_patch}
 
 	# Symlinks for gnarl and gnat shared libraries
-	local adalib=usr/lib/gcc/${_triplet}/${gcc_patch}/adalib
+	local adalib=usr/lib/gcc/${tgt}/${gcc_patch}/adalib
 	mv ${DESTDIR}/${adalib}/libgnarl-${gcc_major}.so \
 		${DESTDIR}/${sysroot}/usr/lib
 	mv ${DESTDIR}/${adalib}/libgnat-${gcc_major}.so \
