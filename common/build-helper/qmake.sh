@@ -65,14 +65,36 @@ _EOF
 	# create the qmake-wrapper here because it only
 	# makes sense together with the qmake build-helper
 	# and not to interfere with e.g. the qmake build-style
+	#
+	# XXX: Intentionally quote {C,CXX,LD}FLAGS here but not in native.
+	# - Cross Build:
+	#   + base flags will be picked up from QMAKE_{C,CXX,LD}FLAGS
+	#   + hardening flags will be picked up from environment variables
+	# - Native Build:
+	#   + hardening flags will be picked up first (Makefile, qt.conf?)
+	#   + base flags will be picked up from QMAKE_{C,CXX,LD}FLAGS
+	# Maybe there're better workaround, I don't know.
         cat > "${XBPS_WRAPPERDIR}/qmake" <<_EOF
 #!/bin/sh
-exec /usr/lib/qt5/bin/qmake "\$@" -qtconf "${XBPS_WRAPPERDIR}/qt.conf"
+exec /usr/lib/qt5/bin/qmake "\$@" -qtconf "${XBPS_WRAPPERDIR}/qt.conf" \\
+	QMAKE_CFLAGS+="\${CFLAGS}" \\
+	QMAKE_CXXFLAGS+="\${CXXFLAGS}" \\
+	QMAKE_LFLAGS+="\${LDFLAGS}"
 _EOF
 else
         cat > "${XBPS_WRAPPERDIR}/qmake" <<_EOF
 #!/bin/sh
-exec /usr/lib/qt5/bin/qmake "\$@" CONFIG+=no_qt_rpath
+exec /usr/lib/qt5/bin/qmake \
+	"\$@" \
+	PREFIX=/usr \
+	QT_INSTALL_PREFIX=/usr \
+	LIB=/usr/lib \
+	QMAKE_CC=$CC QMAKE_CXX=$CXX \
+	QMAKE_LINK=$CXX QMAKE_LINK_C=$CC \
+	QMAKE_CFLAGS+="${CFLAGS}" \
+	QMAKE_CXXFLAGS+="${CXXFLAGS}" \
+	QMAKE_LFLAGS+="${LDFLAGS}" \
+	CONFIG+=no_qt_rpath
 _EOF
 fi
 chmod 755 ${XBPS_WRAPPERDIR}/qmake
