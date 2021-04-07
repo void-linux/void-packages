@@ -1,0 +1,89 @@
+https://github.com/LibreDWG/libredwg/commit/8853007218a7d7bfd3836cafc507311ce65b621a.patch
+
+From 8853007218a7d7bfd3836cafc507311ce65b621a Mon Sep 17 00:00:00 2001
+From: Reini Urban <rurban@cpan.org>
+Date: Thu, 8 Apr 2021 10:10:10 +0200
+Subject: [PATCH] build asan fuzzers only on request
+
+fixes failing cygwin smokes. we could install asan on the smokers,
+but we dont need it. only build it when requested.
+This needs no oss-fuzz build changes.
+
+See GH #330
+---
+ configure.ac         | 10 ++++++++++
+ examples/Makefile.am | 18 ++++++++++++------
+ 2 files changed, 22 insertions(+), 6 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index 800623c1c..9aa39dabb 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -164,6 +164,7 @@ case $CFLAGS in
+      *-fsanitize=*,leak*)      HAVE_ASAN=yes ;;
+ esac
+ AC_SUBST(HAVE_ASAN)
++AM_CONDITIONAL([HAVE_ASAN], [test -n "$HAVE_ASAN"])
+ 
+ AC_TYPE_SIZE_T
+ AC_TYPE_INT16_T
+@@ -457,6 +458,15 @@ if test "x$host_os" = "xmingw32" -a "x$build_os" != "xmingw32"; then
+    fi
+ fi
+ AM_CONDITIONAL([HAVE_WINE], [test -n "$WINE"])
++AM_CONDITIONAL([HAVE_CYGWIN], [test "x$host_os" = "xcygwin32" -o test "x$host_os" = "xcygwin64"])
++if [ -n "$HAVE_ASAN" ]
++then
++        HAVE_ASAN_OR_LINUX=1
++elif [ "x$host_os" = "xlinux-gnu" ]
++then
++        HAVE_ASAN_OR_LINUX=1
++fi
++AM_CONDITIONAL([HAVE_ASAN_OR_LINUX],[test -n "HAVE_ASAN_OR_LINUX"])
+ 
+ dnl Optional SWIG + python bindings
+ dnl Feature: --disable-python or --enable-python=python3.6
+diff --git a/examples/Makefile.am b/examples/Makefile.am
+index df08fe63a..b137525f3 100644
+--- a/examples/Makefile.am
++++ b/examples/Makefile.am
+@@ -24,8 +24,8 @@ LDADD       = $(top_builddir)/src/libredwg.la -lm
+ if USE_WRITE
+ bin_PROGRAMS     = dwgadd
+ endif
+-check_PROGRAMS   = load_dwg dwg2svg2 dwgfuzz llvmfuzz_standalone
+-EXTRA_PROGRAMS   = unknown bd bits llvmfuzz
++check_PROGRAMS   = load_dwg dwg2svg2 dwgfuzz
++EXTRA_PROGRAMS   = unknown bd bits llvmfuzz llvmfuzz_standalone
+ 
+ load_dwg_SOURCES = load_dwg.c
+ dwg2svg2_SOURCES = dwg2svg2.c
+@@ -40,18 +40,24 @@ bits_SOURCE      = bits.c
+ bits_LDADD       = $(top_builddir)/src/libredwg.la $(top_builddir)/src/bits.lo -lm
+ dwgfuzz_SOURCES  = dwgfuzz.c
+ #would need HAVE_ASAN am var set
+-#dwgfuzz_CFLAGS              = $(CFLAGS) $(AM_CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer
++#dwgfuzz_CFLAGS             = $(CFLAGS) $(AM_CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer
+ llvmfuzz_SOURCES            = llvmfuzz.c
+-llvmfuzz_CFLAGS             = $(CFLAGS) $(AM_CFLAGS)  -DHAVE_ASAN \
+-                              -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer
+ llvmfuzz_LDADD              = $(top_builddir)/src/libredwg.la $(top_builddir)/src/bits.lo -lm
+ llvmfuzz_standalone_SOURCES = llvmfuzz.c
+-if HAVE_MINGW
++if HAVE_ASAN_OR_LINUX
++# needs CC=clang
++llvmfuzz_CFLAGS             = $(CFLAGS) $(AM_CFLAGS) -DHAVE_ASAN \
++                              -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer
++# cflags already includes asan
++if HAVE_ASAN
+ llvmfuzz_standalone_CFLAGS  = $(CFLAGS) $(AM_CFLAGS) -DSTANDALONE
+ else
+ llvmfuzz_standalone_CFLAGS  = $(CFLAGS) $(AM_CFLAGS) -DSTANDALONE -DHAVE_ASAN \
+                               -fsanitize=address,undefined -fno-omit-frame-pointer
+ endif
++else
++llvmfuzz_standalone_CFLAGS  = $(CFLAGS) $(AM_CFLAGS) -DSTANDALONE
++endif
+ llvmfuzz_standalone_LDADD   = $(top_builddir)/src/libredwg.la $(top_builddir)/src/bits.lo -lm
+ 
+ all: $(check_PROGRAMS)
