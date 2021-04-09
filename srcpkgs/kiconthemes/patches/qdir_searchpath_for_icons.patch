@@ -1,0 +1,287 @@
+From 49bdb6310194cd899641b7d9cf8463d4fba6baea Mon Sep 17 00:00:00 2001
+From: Christoph Cullmann <cullmann@kde.org>
+Date: Thu, 18 Mar 2021 10:18:17 +0100
+Subject: [PATCH 1/6] ensure qrc + QDir::searchPaths work for icons
+
+before we had some optimization to check which paths
+are absolute, but that one is wrong, applications
+might rely on set search paths
+
+BUG: 434451
+---
+ src/kiconloader.cpp | 19 ++++---------------
+ 1 file changed, 4 insertions(+), 15 deletions(-)
+
+diff --git a/src/kiconloader.cpp b/src/kiconloader.cpp
+index 011a292..2411af1 100644
+--- a/src/kiconloader.cpp
++++ b/src/kiconloader.cpp
+@@ -92,19 +92,6 @@ color:%7;\
+ }
+ }
+ 
+-/**
+- * Checks for relative paths quickly on UNIX-alikes, slowly on everything else.
+- */
+-static bool pathIsRelative(const QString &path)
+-{
+-#ifdef Q_OS_UNIX
+-    // catch both /xxx/yyy and :/xxx/yyy for resources
+-    return (!path.isEmpty() && path[0] != QLatin1Char('/') && path[0] != QLatin1Char(':'));
+-#else
+-    return QDir::isRelativePath(path);
+-#endif
+-}
+-
+ /**
+  * Holds a QPixmap for this process, along with its associated path on disk.
+  */
+@@ -1214,7 +1201,8 @@ QString KIconLoader::iconPath(const QString &_name, int group_or_size, bool canR
+         return QString();
+     }
+ 
+-    if (_name.isEmpty() || !pathIsRelative(_name)) {
++    // we need to honor resource :/ paths and QDir::searchPaths => use QDir::isRelativePath, see bug 434451
++    if (_name.isEmpty() || !QDir::isRelativePath(_name)) {
+         // we have either an absolute path or nothing to work with
+         return _name;
+     }
+@@ -1352,7 +1340,8 @@ QPixmap KIconLoader::loadScaledIcon(const QString &_name,
+         name = QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + QLatin1Char('/') + name + QStringLiteral(".png");
+     }
+ 
+-    bool absolutePath = !pathIsRelative(name);
++    // we need to honor resource :/ paths and QDir::searchPaths => use QDir::isRelativePath, see bug 434451
++    bool absolutePath = !QDir::isRelativePath(name);
+     if (!absolutePath) {
+         name = d->removeIconExtension(name);
+     }
+-- 
+GitLab
+
+
+From 7cf21cdb6e209b62fea4de74c175aaa5b940fccb Mon Sep 17 00:00:00 2001
+From: Christoph Cullmann <cullmann@kde.org>
+Date: Thu, 18 Mar 2021 10:38:36 +0100
+Subject: [PATCH 2/6] add unit test for QDir::setSearchPaths
+
+---
+ autotests/kiconloader_unittest.cpp | 15 +++++++++++++++
+ autotests/resources.qrc            |  1 +
+ 2 files changed, 16 insertions(+)
+
+diff --git a/autotests/kiconloader_unittest.cpp b/autotests/kiconloader_unittest.cpp
+index 9a1f6d0..813215d 100644
+--- a/autotests/kiconloader_unittest.cpp
++++ b/autotests/kiconloader_unittest.cpp
+@@ -7,6 +7,7 @@
+ 
+ #include <kiconloader.h>
+ 
++#include <QDir>
+ #include <QRegularExpression>
+ #include <QStandardPaths>
+ #include <QTest>
+@@ -495,6 +496,20 @@ private Q_SLOTS:
+         uintToHex(testColorWithAlpha.rgba(), argbHex.data());
+         QCOMPARE(argbHex, QStringLiteral("7b6496c8"));
+     }
++
++    void testQDirSetSearchPaths()
++    {
++        // setup search path for testprefix: => we shall find the iconinspecialsearchpath.svg afterwards, see e.g. bug 434451
++        QDir::setSearchPaths("testprefix", QStringList(":/searchpathdefineddir"));
++        QPixmap pix = KIconLoader::global()->loadIcon(QStringLiteral("testprefix:iconinspecialsearchpath.svg"),
++                                                      KIconLoader::NoGroup,
++                                                      24,
++                                                      KIconLoader::DefaultState,
++                                                      QStringList(),
++                                                      nullptr,
++                                                      true);
++        QVERIFY(!pix.isNull());
++    }
+ };
+ 
+ QTEST_MAIN(KIconLoader_UnitTest)
+diff --git a/autotests/resources.qrc b/autotests/resources.qrc
+index d4000e5..4f4cd0c 100644
+--- a/autotests/resources.qrc
++++ b/autotests/resources.qrc
+@@ -10,5 +10,6 @@
+     <file>nonsquare.svg</file>
+     <file alias="/icons/themeinresource/index.theme">breeze.theme</file>
+     <file alias="/icons/themeinresource/22x22/appsNoContext/someiconintheme.png">test-22x22.png</file>
++    <file alias="/searchpathdefineddir/iconinspecialsearchpath.svg">coloredsvgicon.svg</file>
+ </qresource>
+ </RCC>
+-- 
+GitLab
+
+
+From 5a1690ba99d73e3e60f1a576af6b00ab29d6085f Mon Sep 17 00:00:00 2001
+From: Christoph Cullmann <cullmann@kde.org>
+Date: Thu, 18 Mar 2021 10:41:04 +0100
+Subject: [PATCH 3/6] use QDir::isAbsolutePath, not !QDir::isRelativePath
+
+---
+ src/kiconloader.cpp | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/kiconloader.cpp b/src/kiconloader.cpp
+index 2411af1..784b06b 100644
+--- a/src/kiconloader.cpp
++++ b/src/kiconloader.cpp
+@@ -1201,8 +1201,8 @@ QString KIconLoader::iconPath(const QString &_name, int group_or_size, bool canR
+         return QString();
+     }
+ 
+-    // we need to honor resource :/ paths and QDir::searchPaths => use QDir::isRelativePath, see bug 434451
+-    if (_name.isEmpty() || !QDir::isRelativePath(_name)) {
++    // we need to honor resource :/ paths and QDir::searchPaths => use QDir::isAbsolutePath, see bug 434451
++    if (_name.isEmpty() || QDir::isAbsolutePath(_name)) {
+         // we have either an absolute path or nothing to work with
+         return _name;
+     }
+@@ -1340,8 +1340,8 @@ QPixmap KIconLoader::loadScaledIcon(const QString &_name,
+         name = QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + QLatin1Char('/') + name + QStringLiteral(".png");
+     }
+ 
+-    // we need to honor resource :/ paths and QDir::searchPaths => use QDir::isRelativePath, see bug 434451
+-    bool absolutePath = !QDir::isRelativePath(name);
++    // we need to honor resource :/ paths and QDir::searchPaths => use QDir::isAbsolutePath, see bug 434451
++    const bool absolutePath = QDir::isAbsolutePath(name);
+     if (!absolutePath) {
+         name = d->removeIconExtension(name);
+     }
+-- 
+GitLab
+
+
+From 0bd39a510b103450dac69795e6ffbc4efc074734 Mon Sep 17 00:00:00 2001
+From: Christoph Cullmann <cullmann@kde.org>
+Date: Thu, 18 Mar 2021 17:23:46 +0100
+Subject: [PATCH 4/6] more robust handling of missing global KDE themes
+
+in may cases the loader will handle absolute file names
+
+=> no need for our themes
+
+just remove the two locations where we still just exit
+in all other cases we did already proceed before
+---
+ src/kiconloader.cpp | 25 +++++++++----------------
+ 1 file changed, 9 insertions(+), 16 deletions(-)
+
+diff --git a/src/kiconloader.cpp b/src/kiconloader.cpp
+index 784b06b..6257846 100644
+--- a/src/kiconloader.cpp
++++ b/src/kiconloader.cpp
+@@ -225,7 +225,7 @@ public:
+     /**
+      * @internal
+      */
+-    bool initIconThemes();
++    void initIconThemes();
+ 
+     /**
+      * @internal
+@@ -627,11 +627,10 @@ void KIconLoaderPrivate::init(const QString &_appname, const QStringList &extraS
+     }
+ }
+ 
+-bool KIconLoaderPrivate::initIconThemes()
++void KIconLoaderPrivate::initIconThemes()
+ {
+     if (mIconThemeInited) {
+-        // If mpThemeRoot isn't 0 then initing has succeeded
+-        return (mpThemeRoot != nullptr);
++        return;
+     }
+     // qCDebug(KICONTHEMES);
+     mIconThemeInited = true;
+@@ -644,9 +643,9 @@ bool KIconLoaderPrivate::initIconThemes()
+         qCDebug(KICONTHEMES) << "Couldn't find current icon theme, falling back to default.";
+         def = new KIconTheme(KIconTheme::defaultThemeName(), appname);
+         if (!def->isValid()) {
+-            qWarning() << "Error: standard icon theme" << KIconTheme::defaultThemeName() << "not found!";
++            qCDebug(KICONTHEMES) << "Standard icon theme" << KIconTheme::defaultThemeName() << "not found!";
+             delete def;
+-            return false;
++            return;
+         }
+     }
+     mpThemeRoot = new KIconThemeNode(def);
+@@ -661,8 +660,6 @@ bool KIconLoaderPrivate::initIconThemes()
+     searchPaths.append(QStringLiteral("icons")); // was xdgdata-icon in KStandardDirs
+     // These are not in the icon spec, but e.g. GNOME puts some icons there anyway.
+     searchPaths.append(QStringLiteral("pixmaps")); // was xdgdata-pixmaps in KStandardDirs
+-
+-    return true;
+ }
+ 
+ KIconLoader::~KIconLoader() = default;
+@@ -932,7 +929,7 @@ QImage KIconLoaderPrivate::createIconImage(const QString &path, const QSize &siz
+     QImageReader reader;
+     QBuffer buffer;
+ 
+-    if (q->theme()->followsColorScheme() && (path.endsWith(QLatin1String("svg")) || path.endsWith(QLatin1String("svgz")))) {
++    if (q->theme() && q->theme()->followsColorScheme() && (path.endsWith(QLatin1String("svg")) || path.endsWith(QLatin1String("svgz")))) {
+         buffer.setData(processSvg(path, state));
+         reader.setDevice(&buffer);
+     } else {
+@@ -1197,16 +1194,14 @@ QString KIconLoader::iconPath(const QString &_name, int group_or_size, bool canR
+ 
+ QString KIconLoader::iconPath(const QString &_name, int group_or_size, bool canReturnNull, qreal scale) const
+ {
+-    if (!d->initIconThemes()) {
+-        return QString();
+-    }
+-
+     // we need to honor resource :/ paths and QDir::searchPaths => use QDir::isAbsolutePath, see bug 434451
+     if (_name.isEmpty() || QDir::isAbsolutePath(_name)) {
+         // we have either an absolute path or nothing to work with
+         return _name;
+     }
+ 
++    d->initIconThemes();
++
+     QString name = d->removeIconExtension(_name);
+ 
+     QString path;
+@@ -1381,9 +1376,7 @@ QPixmap KIconLoader::loadScaledIcon(const QString &_name,
+     }
+ 
+     // Image is not cached... go find it and apply effects.
+-    if (!d->initIconThemes()) {
+-        return QPixmap();
+-    }
++    d->initIconThemes();
+ 
+     favIconOverlay = favIconOverlay && std::min(size.height(), size.width()) > 22;
+ 
+-- 
+GitLab
+
+
+From 3262669e3abfa7171463e3bf34f7c60eacf6bc77 Mon Sep 17 00:00:00 2001
+From: Christoph Cullmann <cullmann@kde.org>
+Date: Fri, 19 Mar 2021 19:56:07 +0100
+Subject: [PATCH 6/6] don't register our engine per default
+
+---
+ src/kiconengineplugin.json | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/kiconengineplugin.json b/src/kiconengineplugin.json
+index a5b4228..bc09e41 100644
+--- a/src/kiconengineplugin.json
++++ b/src/kiconengineplugin.json
+@@ -1,4 +1,4 @@
+ {
+-    "Keys": [ "KIconEngine", "svg", "svgz", "svg.gz" ]
++    "Keys": [ "KIconEngine" ]
+ }
+ 
+-- 
+GitLab
+
