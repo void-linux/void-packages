@@ -1,4 +1,11 @@
-Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/commit/?id=8a1ae17d4a9af54285c7891a680620e7e24c6280
+Subject: Fix compilation issues with musl libc
+Upstream: No
+Author: The portola team at https://openjdk.java.net/projects/portola/
+        With modifications by Simon Frankenberger <simon-alpine@fraho.eu>
+
+This giant patch makes it possible to compile openjdk with musl libc.
+The base was taken from a diff with the portola project and adjusted for latest musl libc.
+
 --- old/make/ReleaseFile.gmk
 +++ new/make/ReleaseFile.gmk
 @@ -53,6 +53,7 @@
@@ -7,31 +14,51 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
    $(call info-file-item, "OS_ARCH", "$(RELEASE_FILE_OS_ARCH)")
 +  $(call info-file-item, "LIBC", "musl")
  endef
-
+ 
  # Param 1 - The file containing the MODULES list
+--- old/make/autoconf/build-aux/config.guess
++++ new/make/autoconf/build-aux/config.guess
+@@ -30,6 +30,17 @@
+ DIR=`dirname $0`
+ OUT=`. $DIR/autoconf-config.guess`
+ 
++# config.guess doesn't identify systems running the musl C library, and will
++# instead return a string with a -gnu suffix. This block detects musl and
++# modifies the string to have a -musl suffix instead.
++echo $OUT | grep -- -linux- > /dev/null 2> /dev/null
++if test $? = 0; then
++  ldd_version=`ldd --version 2>&1 | head -1 | cut -f1 -d' '`
++  if [ x"${ldd_version}" = x"musl" ]; then
++    OUT=`echo $OUT | sed 's/-gnu/-musl/'`
++  fi
++fi
++
+ # Test and fix solaris on x86_64
+ echo $OUT | grep i386-pc-solaris > /dev/null 2> /dev/null
+ if test $? = 0; then
 --- old/make/hotspot/lib/CompileJvm.gmk
 +++ new/make/hotspot/lib/CompileJvm.gmk
-@@ -77,6 +77,7 @@
+@@ -79,6 +79,7 @@
      -DHOTSPOT_BUILD_USER='"$(USERNAME)"' \
      -DHOTSPOT_VM_DISTRO='"$(HOTSPOT_VM_DISTRO)"' \
      -DCPU='"$(OPENJDK_TARGET_CPU_VM_VERSION)"' \
 +    -DLIBC='"musl"' \
      #
-
+ 
  ################################################################################
 --- old/make/lib/CoreLibraries.gmk
 +++ new/make/lib/CoreLibraries.gmk
-@@ -241,6 +241,7 @@
+@@ -219,6 +219,7 @@
  endif
-
+ 
  LIBJLI_CFLAGS += $(LIBZ_CFLAGS)
 +LIBJLI_CFLAGS += -DLIBC=\"musl\"
-
+ 
  ifneq ($(USE_EXTERNAL_LIBZ), true)
    LIBJLI_EXTRA_FILES += \
 --- old/src/hotspot/os/linux/os_linux.cpp
 +++ new/src/hotspot/os/linux/os_linux.cpp
-@@ -99,7 +99,6 @@
+@@ -101,7 +101,6 @@
  # include <string.h>
  # include <syscall.h>
  # include <sys/sysinfo.h>
@@ -39,9 +66,9 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
  # include <sys/ipc.h>
  # include <sys/shm.h>
  # include <link.h>
-@@ -511,6 +510,11 @@
+@@ -594,6 +593,11 @@
  // detecting pthread library
-
+ 
  void os::Linux::libpthread_init() {
 +#if !defined(__GLIBC__) && !defined(__UCLIBC__)
 +  // Hard code Alpine Linux supported musl compatible settings
@@ -51,18 +78,18 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
    // Save glibc and pthread version strings.
  #if !defined(_CS_GNU_LIBC_VERSION) || \
      !defined(_CS_GNU_LIBPTHREAD_VERSION)
-@@ -528,6 +532,7 @@
+@@ -611,6 +615,7 @@
    str = (char *)malloc(n, mtInternal);
    confstr(_CS_GNU_LIBPTHREAD_VERSION, str, n);
    os::Linux::set_libpthread_version(str);
 +#endif
  }
-
+ 
  /////////////////////////////////////////////////////////////////////////////
-@@ -2916,20 +2921,36 @@
+@@ -3109,20 +3114,36 @@
  extern "C" JNIEXPORT void numa_warn(int number, char *where, ...) { }
  extern "C" JNIEXPORT void numa_error(char *where) { }
-
+ 
 +static void* dlvsym_if_available(void* handle, const char* name, const char* version) {
 +  typedef void* (*dlvsym_func_type)(void* handle, const char* name, const char* version);
 +  static dlvsym_func_type dlvsym_func;
@@ -93,14 +120,14 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
 -  return f;
 +  return dlvsym_if_available(handle, name, "libnuma_1.1");
  }
-
+ 
  // Handle request to load libnuma symbol version 1.2 (API v2) only.
  // Return NULL if the symbol is not defined in this particular version.
  void* os::Linux::libnuma_v2_dlsym(void* handle, const char* name) {
 -  return dlvsym(handle, name, "libnuma_1.2");
 +  return dlvsym_if_available(handle, name, "libnuma_1.2");
  }
-
+ 
  bool os::Linux::libnuma_init() {
 --- old/src/hotspot/os_cpu/linux_x86/os_linux_x86.cpp
 +++ new/src/hotspot/os_cpu/linux_x86/os_linux_x86.cpp
@@ -111,12 +138,12 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
 -#ifndef AMD64
 -# include <fpu_control.h>
 -#endif
-
+ 
  #ifdef AMD64
  #define REG_SP REG_RSP
 --- old/src/hotspot/share/gc/shared/genCollectedHeap.cpp
 +++ new/src/hotspot/share/gc/shared/genCollectedHeap.cpp
-@@ -1147,7 +1147,7 @@
+@@ -1144,7 +1144,7 @@
  static ScratchBlock *removeSmallestScratch(ScratchBlock **prev_ptr) {
    bool first = true;
    size_t min_size = 0;   // "first" makes this conceptually infinite.
@@ -125,17 +152,17 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
    ScratchBlock  *cur = *prev_ptr;
    while (cur) {
      assert(*prev_ptr == cur, "just checking");
---- old/src/hotspot/share/runtime/vm_version.cpp
-+++ new/src/hotspot/share/runtime/vm_version.cpp
-@@ -272,7 +272,7 @@
+--- old/src/hotspot/share/runtime/abstract_vm_version.cpp
++++ new/src/hotspot/share/runtime/abstract_vm_version.cpp
+@@ -266,7 +266,7 @@
    #endif
-
+ 
    #define INTERNAL_VERSION_SUFFIX VM_RELEASE ")" \
 -         " for " OS "-" CPU FLOAT_ARCH_STR \
 +         " for " OS "-" CPU FLOAT_ARCH_STR LIBC \
           " JRE (" VERSION_STRING "), built on " __DATE__ " " __TIME__ \
           " by " XSTR(HOTSPOT_BUILD_USER) " with " HOTSPOT_BUILD_COMPILER
-
+ 
 --- old/src/hotspot/share/utilities/globalDefinitions_gcc.hpp
 +++ new/src/hotspot/share/utilities/globalDefinitions_gcc.hpp
 @@ -204,7 +204,7 @@
@@ -155,7 +182,7 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
   */
 -static int sigWakeup = (__SIGRTMAX - 2);
 +static int sigWakeup;
-
+ 
  /*
   * fdTable holds one entry per file descriptor, up to a certain
 @@ -149,6 +149,7 @@
@@ -168,7 +195,7 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
      sigemptyset(&sa.sa_mask);
 --- old/src/java.base/unix/native/libjava/childproc.c
 +++ new/src/java.base/unix/native/libjava/childproc.c
-@@ -237,7 +237,13 @@
+@@ -238,7 +238,13 @@
  {
      if (envp == NULL || (char **) envp == environ) {
          execvp(file, (char **) argv);
@@ -181,7 +208,7 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
 +            return;
 +        }
      }
-
+ 
      if (*file == '\0') {
 --- old/src/java.base/unix/native/libjava/jdk_util_md.h
 +++ new/src/java.base/unix/native/libjava/jdk_util_md.h
@@ -196,10 +223,10 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
  #include <math.h>
 --- old/src/java.base/unix/native/libjli/java_md_solinux.c
 +++ new/src/java.base/unix/native/libjli/java_md_solinux.c
-@@ -235,6 +235,39 @@
+@@ -236,6 +236,39 @@
      char *dmllp = NULL;
      char *p; /* a utility pointer */
-
+ 
 +#ifdef __linux
 +#ifndef LIBC
 +#error "LIBC not set"
@@ -256,10 +283,10 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
 -#ifdef __linux__
 -#include <execinfo.h>
 -#endif
-
+ 
  #include <jvm.h>
  #include <jni.h>
-@@ -786,26 +783,6 @@
+@@ -783,26 +780,6 @@
      }
      return ret;
  }
@@ -283,7 +310,7 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
 -  free (strings);
 -}
 -#endif
-
+ 
  Window get_xawt_root_shell(JNIEnv *env) {
    static jclass classXRootWindow = NULL;
 --- old/src/jdk.jdwp.agent/share/native/libjdwp/util.h
@@ -307,12 +334,12 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
 -    #define strdup(p) Do not use this interface.
 +    #define strdup do_not_use_this_interface_strdup
  #endif
-
+ 
  #include "log_messages.h"
 --- old/test/hotspot/jtreg/runtime/StackGuardPages/exeinvoke.c
 +++ new/test/hotspot/jtreg/runtime/StackGuardPages/exeinvoke.c
 @@ -33,6 +33,7 @@
-
+ 
  #include <assert.h>
  #include <jni.h>
 +#include <jvm.h>
@@ -322,7 +349,7 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
 @@ -91,6 +92,20 @@
    }
  }
-
+ 
 +int get_java_stacksize () {
 +  size_t stacksize;
 +  pthread_attr_t attr;
@@ -340,178 +367,33 @@ Patches for musl taken from Alpine linux: https://git.alpinelinux.org/aports/com
  void *run_java_overflow (void *p) {
    JNIEnv *env;
    jclass class_id;
-@@ -254,13 +269,19 @@
+@@ -258,13 +273,19 @@
      exit(7);
    }
-
+ 
 +  int stack_size = get_java_stacksize();
    pthread_t thr;
 +  pthread_attr_t thread_attr;
-
+ 
 +  pthread_attr_init(&thread_attr);
 +  pthread_attr_setstacksize(&thread_attr, stack_size);
 +
    if (argc > 1 && strcmp(argv[1], "test_java_overflow") == 0) {
      printf("\nTesting JAVA_OVERFLOW\n");
-
+ 
      printf("Testing stack guard page behaviour for other thread\n");
 -    pthread_create (&thr, NULL, run_java_overflow, NULL);
 +
 +    pthread_create (&thr, &thread_attr, run_java_overflow, NULL);
      pthread_join (thr, NULL);
-
+ 
      printf("Testing stack guard page behaviour for initial thread\n");
-@@ -273,7 +294,7 @@
+@@ -277,7 +298,7 @@
      printf("\nTesting NATIVE_OVERFLOW\n");
-
+ 
      printf("Testing stack guard page behaviour for other thread\n");
 -    pthread_create (&thr, NULL, run_native_overflow, NULL);
 +    pthread_create (&thr, &thread_attr, run_native_overflow, NULL);
      pthread_join (thr, NULL);
-
+ 
      printf("Testing stack guard page behaviour for initial thread\n");
---- old/test/jdk/java/lang/ProcessBuilder/Basic.java
-+++ new/test/jdk/java/lang/ProcessBuilder/Basic.java
-@@ -389,8 +389,8 @@
-                 if (failed != 0) throw new Error("null PATH");
-             } else if (action.equals("PATH search algorithm")) {
-                 equal(System.getenv("PATH"), "dir1:dir2:");
--                check(new File("/bin/true").exists());
--                check(new File("/bin/false").exists());
-+                check(new File(TrueExe.path()).exists());
-+                check(new File(FalseExe.path()).exists());
-                 String[] cmd = {"prog"};
-                 ProcessBuilder pb1 = new ProcessBuilder(cmd);
-                 ProcessBuilder pb2 = new ProcessBuilder(cmd);
-@@ -431,13 +431,13 @@
-                         checkPermissionDenied(pb);
-
-                         // continue searching if EACCES
--                        copy("/bin/true", "dir2/prog");
-+                        copy(TrueExe.path(), "dir2/prog");
-                         equal(run(pb).exitValue(), True.exitValue());
-                         new File("dir1/prog").delete();
-                         new File("dir2/prog").delete();
-
-                         new File("dir2/prog").mkdirs();
--                        copy("/bin/true", "dir1/prog");
-+                        copy(TrueExe.path(), "dir1/prog");
-                         equal(run(pb).exitValue(), True.exitValue());
-
-                         // Check empty PATH component means current directory.
-@@ -453,10 +453,10 @@
-                             pb.command(command);
-                             File prog = new File("./prog");
-                             // "Normal" binaries
--                            copy("/bin/true", "./prog");
-+                            copy(TrueExe.path(), "./prog");
-                             equal(run(pb).exitValue(),
-                                   True.exitValue());
--                            copy("/bin/false", "./prog");
-+                            copy(FalseExe.path(), "./prog");
-                             equal(run(pb).exitValue(),
-                                   False.exitValue());
-                             prog.delete();
-@@ -511,12 +511,12 @@
-                         new File("dir2/prog").delete();
-                         new File("prog").delete();
-                         new File("dir3").mkdirs();
--                        copy("/bin/true", "dir1/prog");
--                        copy("/bin/false", "dir3/prog");
-+                        copy(TrueExe.path(), "dir1/prog");
-+                        copy(FalseExe.path(), "dir3/prog");
-                         pb.environment().put("PATH","dir3");
-                         equal(run(pb).exitValue(), True.exitValue());
--                        copy("/bin/true", "dir3/prog");
--                        copy("/bin/false", "dir1/prog");
-+                        copy(TrueExe.path(), "dir3/prog");
-+                        copy(FalseExe.path(), "dir1/prog");
-                         equal(run(pb).exitValue(), False.exitValue());
-
-                     } finally {
-@@ -613,6 +613,13 @@
-              new File("/bin/false").exists());
-     }
-
-+    static class BusyBox {
-+        public static boolean is() { return is; }
-+        private static final boolean is =
-+            (! Windows.is() &&
-+             new File("/bin/busybox").exists());
-+    }
-+
-     static class UnicodeOS {
-         public static boolean is() { return is; }
-         private static final String osName = System.getProperty("os.name");
-@@ -651,6 +658,45 @@
-         }
-     }
-
-+    // On alpine linux, /bin/true and /bin/false are just links to /bin/busybox.
-+    // Some tests copy /bin/true and /bin/false to files with a different filename.
-+    // However, copying the busbox executable into a file with a different name
-+    // won't result in the expected return codes. As workaround, we create
-+    // executable files that can be copied and produce the exepected return
-+    // values. We use this workaround, if we find the busybox executable.
-+
-+    private static class TrueExe {
-+        public static String path() { return path; }
-+        private static final String path = path0();
-+        private static String path0(){
-+            if (!BusyBox.is()) {
-+                return "/bin/true";
-+            }
-+            else {
-+                File trueExe = new File("true");
-+                setFileContents(trueExe, "#!/bin/true\n");
-+                trueExe.setExecutable(true);
-+                return trueExe.getAbsolutePath();
-+            }
-+        }
-+    }
-+
-+    private static class FalseExe {
-+        public static String path() { return path; }
-+        private static final String path = path0();
-+        private static String path0(){
-+            if (!BusyBox.is()) {
-+                return "/bin/false";
-+            }
-+            else {
-+                File falseExe = new File("false");
-+                setFileContents(falseExe, "#!/bin/false\n");
-+                falseExe.setExecutable(true);
-+                return falseExe.getAbsolutePath();
-+            }
-+        }
-+    }
-+
-     static class EnglishUnix {
-         private static final Boolean is =
-             (! Windows.is() && isEnglish("LANG") && isEnglish("LC_ALL"));
-@@ -1954,7 +2000,7 @@
-             //----------------------------------------------------------------
-             try {
-                 new File("suBdiR").mkdirs();
--                copy("/bin/true", "suBdiR/unliKely");
-+                copy(TrueExe.path(), "suBdiR/unliKely");
-                 final ProcessBuilder pb =
-                     new ProcessBuilder(new String[]{"unliKely"});
-                 pb.environment().put("PATH", "suBdiR");
---- old/test/jdk/java/lang/ProcessHandle/InfoTest.java
-+++ new/test/jdk/java/lang/ProcessHandle/InfoTest.java
-@@ -298,6 +298,13 @@
-                 }
-                 if (info.command().isPresent()) {
-                     String command = info.command().get();
--                    String expected = Platform.isWindows() ? "sleep.exe" : "sleep";
-+                    String expected = "sleep";
-+                    if (Platform.isWindows()) {
-+                        expected = "sleep.exe";
-+                    } else if (new File("/bin/busybox").exists()) {
-+                        // With busybox sleep is just a sym link to busybox.
-+                        // The busbox executable is seen as ProcessHandle.Info command.
-+                        expected = "busybox";
-+                    }
-                     Assert.assertTrue(command.endsWith(expected), "Command: expected: \'" +
-                             expected + "\', actual: " + command);
