@@ -172,6 +172,28 @@ pre_configure() {
 	mkdir -p third_party/node/linux/node-linux-x64/bin
 	ln -s /usr/bin/node third_party/node/linux/node-linux-x64/bin/
 
+	# compile gn early, so it can be used to generate gni stuff
+	msg_normal "Bootstrapping GN\n"
+	CC="${CC_FOR_BUILD:-$CC}" CXX="${CXX_FOR_BUILD:-$CXX}" LD="${LD_FOR_BUILD:-$LD}" \
+	CFLAGS="${CFLAGS_FOR_BUILD:-$CFLAGS}" CXXFLAGS="${CXXFLAGS_FOR_BUILD:-$CXXFLAGS}" \
+	LDFLAGS="${XBPS_LDFLAGS}" \
+		python2 tools/gn/bootstrap/bootstrap.py -s -v --skip-generate-buildfiles
+
+	# we need to generate ppc64 stuff for libvpx as it's not shipped
+	# this has to be done before unbundling, but after gn is built
+	# comment out if we switch back to system libvpx again later
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*)
+			pushd third_party/libvpx
+			mkdir -p source/config/linux/ppc64
+			# need PATH to find gn
+			PATH="${wrksrc}/${build_wrksrc}/out/Release:$PATH" \
+				./generate_gni.sh || \
+					msg_error "failed to generate libvpx gni"
+			popd
+			;;
+	esac
+
 	# reusable system library settings
 	local use_system="
 		ffmpeg
@@ -317,12 +339,6 @@ do_configure() {
 		"host_cpu=\"$host_arch\""
 		'import("//electron/build/args/release.gn")'
 	)
-
-	msg_normal "Bootstrapping GN\n"
-	CC="${CC_FOR_BUILD:-$CC}" CXX="${CXX_FOR_BUILD:-$CXX}" LD="${LD_FOR_BUILD:-$LD}" \
-	CFLAGS="${CFLAGS_FOR_BUILD:-$CFLAGS}" CXXFLAGS="${CXXFLAGS_FOR_BUILD:-$CXXFLAGS}" \
-	LDFLAGS="${XBPS_LDFLAGS}" \
-		python2 tools/gn/bootstrap/bootstrap.py -s -v --skip-generate-buildfiles
 
 	msg_normal "Configuring build\n"
 	out/Release/gn gen out/$_buildtype --args="${conf[*]}"
