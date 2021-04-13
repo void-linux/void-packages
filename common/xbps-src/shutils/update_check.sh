@@ -82,7 +82,7 @@ update_check() {
         if [ "$rx" ]; then
             # substitute url if needed
             if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
-                echo "(folder) fetching $urlpfx" 1>&2
+                echo "(folder) fetching $urlpfx and scanning with $rx" 1>&2
             fi
             skipdirs=
             curl -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$urlpfx" |
@@ -169,7 +169,7 @@ update_check() {
         fi
 
         if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
-            echo "fetching $url" 1>&2
+            echo "fetching $url and scanning with $rx" 1>&2
         fi
         curl -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml' -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$url" |
             grep -Po -i "$rx"
