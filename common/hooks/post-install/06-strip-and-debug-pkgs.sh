@@ -86,16 +86,14 @@ hook() {
 			chmod +w "$f"
 			if [[ $(file $f) =~ "statically linked" ]]; then
 				# static binary
-				$STRIPCMD "$f"
-				if [ $? -ne 0 ]; then
+				if ! $STRIPCMD "$f"; then
 					msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
 					return 1
 				fi
 				echo "   Stripped static executable: ${f#$PKGDESTDIR}"
 			else
 				make_debug "$f"
-				$STRIPCMD "$f"
-				if [ $? -ne 0 ]; then
+				if ! $STRIPCMD "$f"; then
 					msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
 					return 1
 				fi
@@ -125,8 +123,7 @@ hook() {
 			chmod +w "$f"
 			# shared library
 			make_debug "$f"
-			$STRIPCMD --strip-unneeded "$f"
-			if [ $? -ne 0 ]; then
+			if ! $STRIPCMD --strip-unneeded "$f"; then
 				msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
 				return 1
 			fi
@@ -139,8 +136,7 @@ hook() {
 			;;
 		application/x-archive*)
 			chmod +w "$f"
-			$STRIPCMD --strip-debug "$f"
-			if [ $? -ne 0 ]; then
+			if ! $STRIPCMD --strip-debug "$f"; then
 				msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
 				return 1
 			fi
