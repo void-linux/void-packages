@@ -1,46 +1,22 @@
-From 8f2b2e92ffdec658d4eb999f41acf6c74a5b32ed Mon Sep 17 00:00:00 2001
+Imported from https://git.alpinelinux.org/aports/plain/testing/blender/0001-musl-fixes.patch?id=42cee48643cb6ccc1a110e66446aa74408ee0160
+adapted to not use __MUSL__ definition
+
+From e530dc5b32695c208aa46bfe460ac7d76159a6d3 Mon Sep 17 00:00:00 2001
 From: Leon Marz <lmarz@cs.uni-frankfurt.de>
-Date: Tue, 1 Sep 2020 09:09:50 +0200
-Subject: [PATCH 1/2] musl fixes
+Date: Wed, 25 Nov 2020 10:10:41 +0100
+Subject: [PATCH 1/3] musl fixes
 
-[ Taken from https://git.alpinelinux.org/aports/plain/testing/blender/0001-musl-fixes.patch ]
-
-Original Patch by Nathanael Copa
-
+Original patch by Nathanael Copa
 ---
- CMakeLists.txt                              | 13 +++++++++++++
- intern/guardedalloc/intern/mallocn_intern.h |  2 +-
- intern/libc_compat/libc_compat.c            |  2 --
- source/blender/blenlib/intern/system.c      |  4 +++-
- source/creator/creator_signals.c            |  2 +-
- 5 files changed, 18 insertions(+), 5 deletions(-)
+ intern/guardedalloc/intern/mallocn_intern.h | 2 +-
+ intern/libc_compat/libc_compat.c            | 2 --
+ source/blender/blenlib/intern/system.c      | 4 +++-
+ source/blender/gpu/GPU_vertex_buffer.h      | 1 -
+ source/creator/creator_signals.c            | 2 +-
+ 5 files changed, 5 insertions(+), 6 deletions(-)
 
-diff --git a/CMakeLists.txt b/CMakeLists.txt
-index cee8675..111e6e3 100644
---- a/CMakeLists.txt
-+++ b/CMakeLists.txt
-@@ -138,6 +138,19 @@ get_blender_version()
- #-----------------------------------------------------------------------------
- # Options
- 
-+# musl-libc related checks (missing execinfo.h and feenableexcept())
-+include(CheckIncludeFiles)
-+check_include_files(execinfo.h HAVE_EXECINFO_H)
-+if(HAVE_EXECINFO_H)
-+  add_definitions(-DHAVE_EXECINFO_H)
-+endif()
-+
-+include(CheckLibraryExists)
-+check_library_exists(m feenableexcept "fenv.h" HAVE_FEENABLEEXCEPT)
-+if(HAVE_FEENABLEEXCEPT)
-+  add_definitions(-DHAVE_FEENABLEEXCEPT)
-+endif()
-+
- # Blender internal features
- option(WITH_BLENDER "Build blender (disable to build only the blender player)" ON)
- mark_as_advanced(WITH_BLENDER)
 diff --git a/intern/guardedalloc/intern/mallocn_intern.h b/intern/guardedalloc/intern/mallocn_intern.h
-index 8fc3e43..ee443c4 100644
+index aa95615..f7e347d 100644
 --- a/intern/guardedalloc/intern/mallocn_intern.h
 +++ b/intern/guardedalloc/intern/mallocn_intern.h
 @@ -33,7 +33,7 @@
@@ -48,7 +24,7 @@ index 8fc3e43..ee443c4 100644
  #define USE_MALLOC_USABLE_SIZE /* internal, when we have malloc_usable_size() */
  
 -#if defined(__linux__) || (defined(__FreeBSD_kernel__) && !defined(__FreeBSD__)) || \
-+#if defined(__linux__) && defined(HAVE_EXECINFO_H) || (defined(__FreeBSD_kernel__) && !defined(__FreeBSD__)) || \
++#if (defined(__FreeBSD_kernel__) && !defined(__FreeBSD__)) || \
      defined(__GLIBC__)
  #  include <malloc.h>
  #  define HAVE_MALLOC_STATS
@@ -71,14 +47,14 @@ index 78e387e..d21c281 100644
 -#  endif /* __GLIBC_PREREQ */
  #endif   /* __linux__ */
 diff --git a/source/blender/blenlib/intern/system.c b/source/blender/blenlib/intern/system.c
-index 20edbb9..6e856cd 100644
+index 8e3d489..4d0789b 100644
 --- a/source/blender/blenlib/intern/system.c
 +++ b/source/blender/blenlib/intern/system.c
 @@ -35,7 +35,9 @@
  
  #  include "BLI_winstuff.h"
  #else
-+#if defined(HAVE_EXECINFO_H)
++#if defined(__GLIBC__)
  #  include <execinfo.h>
 +#endif
  #  include <unistd.h>
@@ -89,12 +65,24 @@ index 20edbb9..6e856cd 100644
    /* ------------- */
    /* Linux / Apple */
 -#  if defined(__linux__) || defined(__APPLE__)
-+#  if defined(__linux__) && defined(HAVE_EXECINFO_H) || defined(__APPLE__)
++#  if defined(__linux__) && defined(__GLIBC__) || defined(__APPLE__)
  
  #    define SIZE 100
    void *buffer[SIZE];
+diff --git a/source/blender/gpu/GPU_vertex_buffer.h b/source/blender/gpu/GPU_vertex_buffer.h
+index eeaebd3..93a77a2 100644
+--- a/source/blender/gpu/GPU_vertex_buffer.h
++++ b/source/blender/gpu/GPU_vertex_buffer.h
+@@ -118,7 +118,6 @@ GPU_INLINE void *GPU_vertbuf_raw_step(GPUVertBufRaw *a)
+ {
+   unsigned char *data = a->data;
+   a->data += a->stride;
+-  BLI_assert(data < a->_data_end);
+   return (void *)data;
+ }
+ 
 diff --git a/source/creator/creator_signals.c b/source/creator/creator_signals.c
-index ad0b7b2..01d5e37 100644
+index 29e12a9..d90da8f 100644
 --- a/source/creator/creator_signals.c
 +++ b/source/creator/creator_signals.c
 @@ -269,7 +269,7 @@ void main_signal_setup_fpe(void)
@@ -102,10 +90,10 @@ index ad0b7b2..01d5e37 100644
    signal(SIGFPE, sig_handle_fpe);
  
 -#    if defined(__linux__) && defined(__GNUC__)
-+#    if defined(__linux__) && defined(__GNUC__) && defined(HAVE_FEENABLEEXCEPT)
++#    if defined(__linux__) && defined(__GNUC__) && defined(__GLIBC__)
    feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW);
  #    endif /* defined(__linux__) && defined(__GNUC__) */
  #    if defined(OSX_SSE_FPE)
 -- 
-2.28.0
+2.30.1
 
