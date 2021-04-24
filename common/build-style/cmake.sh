@@ -65,7 +65,10 @@ _EOF
 	export CMAKE_GENERATOR="${CMAKE_GENERATOR:-Ninja}"
 	# Override flags: https://gitlab.kitware.com/cmake/cmake/issues/19590
 	CFLAGS="${CFLAGS/ -pipe / }" CXXFLAGS="${CXXFLAGS/ -pipe / }" \
-		cmake ${cmake_args} ${configure_args} ${wrksrc}/${build_wrksrc}
+		cmake ${cmake_args} ${configure_args} \
+		${LIBS:+-DCMAKE_C_STANDARD_LIBRARIES="$LIBS"} \
+		${LIBS:+-DCMAKE_CXX_STANDARD_LIBRARIES="$LIBS"} \
+		${wrksrc}/${build_wrksrc}
 
 	# Replace -isystem with -I
 	if [ "$CMAKE_GENERATOR" = "Unix Makefiles" ]; then
