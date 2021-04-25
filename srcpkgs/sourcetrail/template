@@ -1,0 +1,124 @@
+# Template file for 'sourcetrail'
+pkgname=sourcetrail
+_version_year=2020
+_version_minor=2
+_version_commit=43
+# grep SOURCETRAIL_PYTHON_INDEXER_VERSION script/download_python_indexer.sh
+_python_indexer="v1_db25_p4"
+version="${_version_year}.${_version_minor}.${_version_commit}"
+revision=1
+wrksrc=Sourcetrail-${version}
+build_style=cmake
+configure_args="
+ -DCMAKE_BUILD_TYPE=Release
+ -DBoost_USE_STATIC_LIBS=OFF
+ -DTREAT_WARNINGS_AS_ERRORS=OFF
+ $(vopt_if cxx -DBUILD_CXX_LANGUAGE_PACKAGE=ON)
+ $(vopt_if python -DBUILD_PYTHON_LANGUAGE_PACKAGE=ON)
+ $(vopt_if java -DBUILD_JAVA_LANGUAGE_PACKAGE=ON)"
+hostmakedepends="qt5-host-tools qt5-qmake ImageMagick tar
+ $(vopt_if python 'wget unzip')
+"
+makedepends="boost-devel qt5-devel qt5-svg-devel
+ $(vopt_if cxx "clang-tools-extra llvm11")
+"
+#FIXME: where does this come from? someone injects -lcurses down the line
+# (llvm11?) but it's actually not required here
+makedepends+=" ncurses-devel"
+
+short_desc="Interactive source explorer"
+maintainer="Piraty <piraty1@inbox.ru>"
+license="GPL-3.0-only"
+homepage="https://www.sourcetrail.com/"
+changelog="https://github.com/CoatiSoftware/Sourcetrail/raw/master/CHANGELOG.md"
+distfiles="https://github.com/CoatiSoftware/Sourcetrail/archive/${version}.tar.gz
+ https://github.com/CoatiSoftware/SourcetrailPythonIndexer/archive/${_python_indexer}.tar.gz"
+checksum="19bf4524fd53cb8918079a12c74d2a8261efdb9a71064dedaeb9254072fe9b92
+ 12d62a5e12e28542a7afbf1a079eacf039022df2ed11765b8954a81dce5d82b4"
+patch_args="-Np1"
+
+build_options="cxx java python"
+desc_option_cxx="Enable support for C++"
+desc_option_java="Enable support for Java"
+desc_option_python="Enable support for Python"
+build_options_default="cxx"
+
+if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
+	makedepends+=" libatomic-devel"
+fi
+
+post_patch() {
+	vsed -i cmake/version.cmake \
+		-e "s/.*set(VERSION_YEAR \"0\").*/set(VERSION_YEAR \"${_version_year}\")/" \
+		-e "s/.*set(VERSION_MINOR \"0\").*/set(VERSION_MINOR \"${_version_minor}\")/" \
+		-e "s/.*set(VERSION_COMMIT \"0\").*/set(VERSION_COMMIT \"${_version_commit}\")/"
+}
+
+if [ "$build_option_python" ]; then
+	# cmake downloads the indexer (script/download_python_indexer.sh) which 
+	# contains sourcetrailDB. we need to make the build use the prefetched version
+	# or package it so sourcetrail can use it properly.
+	# depends="$(vopt_if python 'python3-jedi python3-parso')" # python indexer ships them...
+	broken=ENOTIMPLEMENTEDYET
+fi
+
+if [ "$build_option_java" ]; then
+	broken=ENOTIMPLEMENTEDYET
+fi
+
+post_fetch() {
+	if [ "$build_option_python" ]; then
+		# fake what script/download_python_indexer.sh would do
+		temp_path="build/temp"
+		ls -lA ${XBPS_BUILDDIR}/
+		set -x
+		echo "wrksrc: ${wrksrc}"
+		cp -r ${XBPS_BUILDDIR}/SourcetrailPythonIndexer-${_python_indexer} ${wrksrc}/$temp_path/
+	fi
+}
+
+do_install() {
+	# Sourcetrail is not packaging friendly at all. Hence this mess :-(
+	# upstream doesn't provide convenient install rules in their cmake and
+	# instead tries to bundle all linked shlibs
+
+	# abuse their weird package creation mechanism to gather everything relevant
+	vsed -i setup/Linux/createPackages.sh \
+		-e '/linuxdeployqt/d' \
+		-e 's,build/Release,build/,g'
+	setup/Linux/createPackages.sh
+	mkdir package
+	tar -xf Sourcetrail_${version//./_}_Linux_64bit.tar.gz -C package
+	(
+		cd package/Sourcetrail
+
+		vmkdir usr/lib/sourcetrail
+		vinstall bin/sourcetrail 755 usr/lib/sourcetrail
+		vinstall bin/sourcetrail_indexer 755 usr/lib/sourcetrail
+		mv share/data ${DESTDIR}/usr/lib/sourcetrail
+
+		vmkdir usr/share/mime
+
+		cp -r share/icons ${DESTDIR}/usr/share/icons
+		cp -r share/mime/packages ${DESTDIR}/usr/share/mime/packages
+
+		vdoc README
+	)
+
+	# use simple wrapper instead of upstream's mess
+	vbin ${FILESDIR}/wrapper.sh sourcetrail
+
+	vmkdir usr/share/applications
+	vinstall setup/Linux/data/sourcetrail.desktop 644 usr/share/applications
+
+	vmkdir usr/share/sourcetrail
+	cp -r ide_plugins ${DESTDIR}/usr/share/sourcetrail
+
+	rm -rf ${DESTDIR}/usr/lib/sourcetrail/data/license/3rd_party_licenses
+}
+
+
+
+#DEBUG
+#make_build_args+=" VERBOSE=1"
+#configure_args+=" -DBoost_DEBUG=ON"
