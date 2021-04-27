@@ -1531,7 +1531,8 @@ This sets some environment variables required to allow cross compilation. Suppor
 building a python module for multiple versions from a single template is also possible.
 The `python3-pep517` build style provides means to build python packages that provide a build-system
 definition compliant with [PEP 517](https://www.python.org/dev/peps/pep-0517/) without a traditional
-`setup.py` script.
+`setup.py` script. The `python3-pep517` build style does not provide a specific build backend, so
+packages will need to add an appropriate backend provider to `hostmakedepends`.
 
 Python packages that rely on `python3-setuptools` should generally map `setup_requires`
 dependencies in `setup.py` to `hostmakedepends` in the template and `install_requires`
