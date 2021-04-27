@@ -1546,6 +1546,9 @@ dependencies at build time. If you notice warnings about `EasyInstall` deprecati
 present in `${wrksrc}/.eggs` after building the package, then those packages should be added to
 `hostmakedepends`.
 
+The `python3-pep517` build style does not provide a specific build backend, so
+packages will need to add an appropriate backend provider to `hostmakedepends`.
+
 The following variables may influence how the python packages are built and configured
 at post-install time:
 
