@@ -1,0 +1,102 @@
+From: Jan Beulich <jbeulich@suse.com>
+Subject: AMD/IOMMU: size command buffer dynamically
+
+With the present synchronous model, we need two slots for every
+operation (the operation itself and a wait command).  There can be one
+such pair of commands pending per CPU. To ensure that under all normal
+circumstances a slot is always available when one is requested, size the
+command ring according to the number of present CPUs.
+
+This is part of XSA-373 / CVE-2021-28692.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+
+--- a/xen/drivers/passthrough/amd/iommu-defs.h
++++ b/xen/drivers/passthrough/amd/iommu-defs.h
+@@ -20,9 +20,6 @@
+ #ifndef AMD_IOMMU_DEFS_H
+ #define AMD_IOMMU_DEFS_H
+ 
+-/* IOMMU Command Buffer entries: in power of 2 increments, minimum of 256 */
+-#define IOMMU_CMD_BUFFER_DEFAULT_ENTRIES	512
+-
+ /* IOMMU Event Log entries: in power of 2 increments, minimum of 256 */
+ #define IOMMU_EVENT_LOG_DEFAULT_ENTRIES     512
+ 
+@@ -164,8 +161,8 @@ struct amd_iommu_dte {
+ #define IOMMU_CMD_BUFFER_LENGTH_MASK		0x0F000000
+ #define IOMMU_CMD_BUFFER_LENGTH_SHIFT		24
+ 
+-#define IOMMU_CMD_BUFFER_ENTRY_SIZE			16
+-#define IOMMU_CMD_BUFFER_POWER_OF2_ENTRIES_PER_PAGE	8
++#define IOMMU_CMD_BUFFER_ENTRY_ORDER            4
++#define IOMMU_CMD_BUFFER_MAX_ENTRIES            (1u << 15)
+ 
+ #define IOMMU_CMD_OPCODE_MASK			0xF0000000
+ #define IOMMU_CMD_OPCODE_SHIFT			28
+--- a/xen/drivers/passthrough/amd/iommu_cmd.c
++++ b/xen/drivers/passthrough/amd/iommu_cmd.c
+@@ -24,7 +24,7 @@ static int queue_iommu_command(struct am
+ {
+     uint32_t tail, head;
+ 
+-    tail = iommu->cmd_buffer.tail + IOMMU_CMD_BUFFER_ENTRY_SIZE;
++    tail = iommu->cmd_buffer.tail + sizeof(cmd_entry_t);
+     if ( tail == iommu->cmd_buffer.size )
+         tail = 0;
+ 
+@@ -33,7 +33,7 @@ static int queue_iommu_command(struct am
+     if ( head != tail )
+     {
+         memcpy(iommu->cmd_buffer.buffer + iommu->cmd_buffer.tail,
+-               cmd, IOMMU_CMD_BUFFER_ENTRY_SIZE);
++               cmd, sizeof(cmd_entry_t));
+ 
+         iommu->cmd_buffer.tail = tail;
+         return 1;
+--- a/xen/drivers/passthrough/amd/iommu_init.c
++++ b/xen/drivers/passthrough/amd/iommu_init.c
+@@ -118,7 +118,7 @@ static void register_iommu_cmd_buffer_in
+     writel(entry, iommu->mmio_base + IOMMU_CMD_BUFFER_BASE_LOW_OFFSET);
+ 
+     power_of2_entries = get_order_from_bytes(iommu->cmd_buffer.size) +
+-        IOMMU_CMD_BUFFER_POWER_OF2_ENTRIES_PER_PAGE;
++        PAGE_SHIFT - IOMMU_CMD_BUFFER_ENTRY_ORDER;
+ 
+     entry = 0;
+     iommu_set_addr_hi_to_reg(&entry, addr_hi);
+@@ -1022,9 +1022,31 @@ static void *__init allocate_ring_buffer
+ static void * __init allocate_cmd_buffer(struct amd_iommu *iommu)
+ {
+     /* allocate 'command buffer' in power of 2 increments of 4K */
++    static unsigned int __read_mostly nr_ents;
++
++    if ( !nr_ents )
++    {
++        unsigned int order;
++
++        /*
++         * With the present synchronous model, we need two slots for every
++         * operation (the operation itself and a wait command).  There can be
++         * one such pair of requests pending per CPU.  One extra entry is
++         * needed as the ring is considered full when there's only one entry
++         * left.
++         */
++        BUILD_BUG_ON(CONFIG_NR_CPUS * 2 >= IOMMU_CMD_BUFFER_MAX_ENTRIES);
++        order = get_order_from_bytes((num_present_cpus() * 2 + 1) <<
++                                     IOMMU_CMD_BUFFER_ENTRY_ORDER);
++        nr_ents = 1u << (order + PAGE_SHIFT - IOMMU_CMD_BUFFER_ENTRY_ORDER);
++
++        AMD_IOMMU_DEBUG("using %u-entry cmd ring(s)\n", nr_ents);
++    }
++
++    BUILD_BUG_ON(sizeof(cmd_entry_t) != (1u << IOMMU_CMD_BUFFER_ENTRY_ORDER));
++
+     return allocate_ring_buffer(&iommu->cmd_buffer, sizeof(cmd_entry_t),
+-                                IOMMU_CMD_BUFFER_DEFAULT_ENTRIES,
+-                                "Command Buffer", false);
++                                nr_ents, "Command Buffer", false);
+ }
+ 
+ static void * __init allocate_event_log(struct amd_iommu *iommu)

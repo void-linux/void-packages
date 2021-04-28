@@ -1,0 +1,120 @@
+From: Jan Beulich <jbeulich@suse.com>
+Subject: VT-d: size qinval queue dynamically
+
+With the present synchronous model, we need two slots for every
+operation (the operation itself and a wait descriptor).  There can be
+one such pair of requests pending per CPU. To ensure that under all
+normal circumstances a slot is always available when one is requested,
+size the queue ring according to the number of present CPUs.
+
+This is part of XSA-373 / CVE-2021-28692.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+
+--- a/xen/drivers/passthrough/vtd/iommu.h
++++ b/xen/drivers/passthrough/vtd/iommu.h
+@@ -450,17 +450,9 @@ struct qinval_entry {
+     }q;
+ };
+ 
+-/* Order of queue invalidation pages(max is 8) */
+-#define QINVAL_PAGE_ORDER   2
+-
+-#define QINVAL_ARCH_PAGE_ORDER  (QINVAL_PAGE_ORDER + PAGE_SHIFT_4K - PAGE_SHIFT)
+-#define QINVAL_ARCH_PAGE_NR     ( QINVAL_ARCH_PAGE_ORDER < 0 ?  \
+-                                1 :                             \
+-                                1 << QINVAL_ARCH_PAGE_ORDER )
+-
+ /* Each entry is 16 bytes, so 2^8 entries per page */
+ #define QINVAL_ENTRY_ORDER  ( PAGE_SHIFT - 4 )
+-#define QINVAL_ENTRY_NR     (1 << (QINVAL_PAGE_ORDER + 8))
++#define QINVAL_MAX_ENTRY_NR (1u << (7 + QINVAL_ENTRY_ORDER))
+ 
+ /* Status data flag */
+ #define QINVAL_STAT_INIT  0
+--- a/xen/drivers/passthrough/vtd/qinval.c
++++ b/xen/drivers/passthrough/vtd/qinval.c
+@@ -31,6 +31,9 @@
+ 
+ #define VTD_QI_TIMEOUT	1
+ 
++static unsigned int __read_mostly qi_pg_order;
++static unsigned int __read_mostly qi_entry_nr;
++
+ static int __must_check invalidate_sync(struct vtd_iommu *iommu);
+ 
+ static void print_qi_regs(struct vtd_iommu *iommu)
+@@ -55,7 +58,7 @@ static unsigned int qinval_next_index(st
+     tail >>= QINVAL_INDEX_SHIFT;
+ 
+     /* (tail+1 == head) indicates a full queue, wait for HW */
+-    while ( ( tail + 1 ) % QINVAL_ENTRY_NR ==
++    while ( ((tail + 1) & (qi_entry_nr - 1)) ==
+             ( dmar_readq(iommu->reg, DMAR_IQH_REG) >> QINVAL_INDEX_SHIFT ) )
+         cpu_relax();
+ 
+@@ -68,7 +71,7 @@ static void qinval_update_qtail(struct v
+ 
+     /* Need hold register lock when update tail */
+     ASSERT( spin_is_locked(&iommu->register_lock) );
+-    val = (index + 1) % QINVAL_ENTRY_NR;
++    val = (index + 1) & (qi_entry_nr - 1);
+     dmar_writeq(iommu->reg, DMAR_IQT_REG, (val << QINVAL_INDEX_SHIFT));
+ }
+ 
+@@ -403,8 +406,28 @@ int enable_qinval(struct vtd_iommu *iomm
+ 
+     if ( iommu->qinval_maddr == 0 )
+     {
+-        iommu->qinval_maddr = alloc_pgtable_maddr(QINVAL_ARCH_PAGE_NR,
+-                                                  iommu->node);
++        if ( !qi_entry_nr )
++        {
++            /*
++             * With the present synchronous model, we need two slots for every
++             * operation (the operation itself and a wait descriptor).  There
++             * can be one such pair of requests pending per CPU.  One extra
++             * entry is needed as the ring is considered full when there's
++             * only one entry left.
++             */
++            BUILD_BUG_ON(CONFIG_NR_CPUS * 2 >= QINVAL_MAX_ENTRY_NR);
++            qi_pg_order = get_order_from_bytes((num_present_cpus() * 2 + 1) <<
++                                               (PAGE_SHIFT -
++                                                QINVAL_ENTRY_ORDER));
++            qi_entry_nr = 1u << (qi_pg_order + QINVAL_ENTRY_ORDER);
++
++            dprintk(XENLOG_INFO VTDPREFIX,
++                    "QI: using %u-entry ring(s)\n", qi_entry_nr);
++        }
++
++        iommu->qinval_maddr =
++            alloc_pgtable_maddr(qi_entry_nr >> QINVAL_ENTRY_ORDER,
++                                iommu->node);
+         if ( iommu->qinval_maddr == 0 )
+         {
+             dprintk(XENLOG_WARNING VTDPREFIX,
+@@ -418,15 +441,16 @@ int enable_qinval(struct vtd_iommu *iomm
+ 
+     spin_lock_irqsave(&iommu->register_lock, flags);
+ 
+-    /* Setup Invalidation Queue Address(IQA) register with the
+-     * address of the page we just allocated.  QS field at
+-     * bits[2:0] to indicate size of queue is one 4KB page.
+-     * That's 256 entries.  Queued Head (IQH) and Queue Tail (IQT)
+-     * registers are automatically reset to 0 with write
+-     * to IQA register.
++    /*
++     * Setup Invalidation Queue Address (IQA) register with the address of the
++     * pages we just allocated.  The QS field at bits[2:0] indicates the size
++     * (page order) of the queue.
++     *
++     * Queued Head (IQH) and Queue Tail (IQT) registers are automatically
++     * reset to 0 with write to IQA register.
+      */
+     dmar_writeq(iommu->reg, DMAR_IQA_REG,
+-                iommu->qinval_maddr | QINVAL_PAGE_ORDER);
++                iommu->qinval_maddr | qi_pg_order);
+ 
+     dmar_writeq(iommu->reg, DMAR_IQT_REG, 0);
+ 

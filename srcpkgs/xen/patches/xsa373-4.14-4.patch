@@ -1,0 +1,81 @@
+From: Jan Beulich <jbeulich@suse.com>
+Subject: AMD/IOMMU: wait for command slot to be available
+
+No caller cared about send_iommu_command() indicating unavailability of
+a slot. Hence if a sufficient number prior commands timed out, we did
+blindly assume that the requested command was submitted to the IOMMU
+when really it wasn't. This could mean both a hanging system (waiting
+for a command to complete that was never seen by the IOMMU) or blindly
+propagating success back to callers, making them believe they're fine
+to e.g. free previously unmapped pages.
+
+Fold the three involved functions into one, add spin waiting for an
+available slot along the lines of VT-d's qinval_next_index(), and as a
+consequence drop all error indicator return types/values.
+
+This is part of XSA-373 / CVE-2021-28692.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+
+--- a/xen/drivers/passthrough/amd/iommu_cmd.c
++++ b/xen/drivers/passthrough/amd/iommu_cmd.c
+@@ -20,43 +20,32 @@
+ #include "iommu.h"
+ #include "../ats.h"
+ 
+-static int queue_iommu_command(struct amd_iommu *iommu, u32 cmd[])
++static void send_iommu_command(struct amd_iommu *iommu,
++                               const uint32_t cmd[4])
+ {
+-    uint32_t tail, head;
++    uint32_t tail;
+ 
+     tail = iommu->cmd_buffer.tail + sizeof(cmd_entry_t);
+     if ( tail == iommu->cmd_buffer.size )
+         tail = 0;
+ 
+-    head = readl(iommu->mmio_base +
+-                 IOMMU_CMD_BUFFER_HEAD_OFFSET) & IOMMU_RING_BUFFER_PTR_MASK;
+-    if ( head != tail )
++    while ( tail == (readl(iommu->mmio_base +
++                           IOMMU_CMD_BUFFER_HEAD_OFFSET) &
++                     IOMMU_RING_BUFFER_PTR_MASK) )
+     {
+-        memcpy(iommu->cmd_buffer.buffer + iommu->cmd_buffer.tail,
+-               cmd, sizeof(cmd_entry_t));
+-
+-        iommu->cmd_buffer.tail = tail;
+-        return 1;
++        printk_once(XENLOG_ERR
++                    "AMD IOMMU %04x:%02x:%02x.%u: no cmd slot available\n",
++                    iommu->seg, PCI_BUS(iommu->bdf),
++                    PCI_SLOT(iommu->bdf), PCI_FUNC(iommu->bdf));
++        cpu_relax();
+     }
+ 
+-    return 0;
+-}
+-
+-static void commit_iommu_command_buffer(struct amd_iommu *iommu)
+-{
+-    writel(iommu->cmd_buffer.tail,
+-           iommu->mmio_base + IOMMU_CMD_BUFFER_TAIL_OFFSET);
+-}
++    memcpy(iommu->cmd_buffer.buffer + iommu->cmd_buffer.tail,
++           cmd, sizeof(cmd_entry_t));
+ 
+-static int send_iommu_command(struct amd_iommu *iommu, u32 cmd[])
+-{
+-    if ( queue_iommu_command(iommu, cmd) )
+-    {
+-        commit_iommu_command_buffer(iommu);
+-        return 1;
+-    }
++    iommu->cmd_buffer.tail = tail;
+ 
+-    return 0;
++    writel(tail, iommu->mmio_base + IOMMU_CMD_BUFFER_TAIL_OFFSET);
+ }
+ 
+ static void flush_command_buffer(struct amd_iommu *iommu)
