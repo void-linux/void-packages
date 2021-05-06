@@ -1,0 +1,74 @@
+https://bugs.webkit.org/show_bug.cgi?id=225099
+
+From ab7e2bfae280b151ac173d6fc9d8eaa3da2e92a8 Mon Sep 17 00:00:00 2001
+From: q66 <daniel@octaforge.org>
+Date: Tue, 27 Apr 2021 22:51:22 +0200
+Subject: [PATCH] fix stack size issues on musl
+
+---
+ Source/WTF/wtf/StackBounds.cpp | 26 +++++++++++++++++++++++++-
+ Source/WTF/wtf/Threading.cpp   |  4 ++++
+ 2 files changed, 29 insertions(+), 1 deletion(-)
+
+diff --git Source/WTF/wtf/StackBounds.cpp Source/WTF/wtf/StackBounds.cpp
+index e6f7095..58bdb18 100644
+--- Source/WTF/wtf/StackBounds.cpp
++++ Source/WTF/wtf/StackBounds.cpp
+@@ -36,6 +36,12 @@
+ #include <pthread_np.h>
+ #endif
+ 
++#if OS(LINUX)
++#include <sys/resource.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++#endif
++
+ #endif
+ 
+ namespace WTF {
+@@ -107,7 +113,25 @@ StackBounds StackBounds::newThreadStackBounds(PlatformThreadHandle thread)
+ 
+ StackBounds StackBounds::currentThreadStackBoundsInternal()
+ {
+-    return newThreadStackBounds(pthread_self());
++    auto ret = newThreadStackBounds(pthread_self());
++#if OS(LINUX)
++    // on glibc, pthread_attr_getstack will generally return the limit size (minus a guard page)
++    // for the main thread; this is however not necessarily always true on every libc - for example
++    // on musl, it will return the currently reserved size - since the stack bounds are expected to
++    // be constant (and they are for every thread except main, which is allowed to grow), check
++    // resource limits and use that as the boundary instead (and prevent stack overflows in JSC)
++    if (getpid() == static_cast<pid_t>(syscall(SYS_gettid))) {
++        void* origin = ret.origin();
++        rlimit limit;
++        getrlimit(RLIMIT_STACK, &limit);
++        rlim_t size = limit.rlim_cur;
++        // account for a guard page
++        size -= static_cast<rlim_t>(sysconf(_SC_PAGESIZE));
++        void* bound = static_cast<char*>(origin) - size;
++        return StackBounds { origin, bound };
++    }
++#endif
++    return ret;
+ }
+ 
+ #elif OS(WINDOWS)
+diff --git Source/WTF/wtf/Threading.cpp Source/WTF/wtf/Threading.cpp
+index 99d09c0..362bf35 100644
+--- Source/WTF/wtf/Threading.cpp
++++ Source/WTF/wtf/Threading.cpp
+@@ -58,6 +58,10 @@ static Optional<size_t> stackSize(ThreadType threadType)
+ 
+ #if defined(DEFAULT_THREAD_STACK_SIZE_IN_KB) && DEFAULT_THREAD_STACK_SIZE_IN_KB > 0
+     return DEFAULT_THREAD_STACK_SIZE_IN_KB * 1024;
++#elif OS(LINUX) && !defined(__BIONIC__) && !defined(__GLIBC__)
++    // on libc's other than glibc and bionic (e.g. musl) we are either unsure how big
++    // the default thread stack is, or we know it's too small - pick a robust default
++    return 1 * MB;
+ #else
+     // Use the platform's default stack size
+     return WTF::nullopt;
+-- 
+2.30.1
+
