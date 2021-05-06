@@ -22,6 +22,8 @@ See [Contributing](./CONTRIBUTING.md) for a general overview of how to contribut
 - [Package build options](#build-options)
 - [Sharing and signing your local repositories](#sharing-and-signing)
 - [Rebuilding and overwriting existing local packages](#rebuilding)
+- [Enabling ccache for caching C and C++ compilation](#ccache)
+- [Enabling sccache for caching Rust compilation](#sccache)
 - [Enabling distcc for distributed compilation](#distcc)
 - [Distfiles mirrors](#distfiles-mirrors)
 - [Cross compiling packages for a target architecture](#cross-compiling)
@@ -201,6 +203,7 @@ The following directory hierarchy is used with a default configuration file:
             |- hostdir
             |  |- binpkgs ...
             |  |- ccache ...
+            |  |- sccache ...
             |  |- distcc-<arch> ...
             |  |- repocache ...
             |  |- sources ...
@@ -218,6 +221,7 @@ The description of these directories is as follows:
  - `builddir`: to unpack package source tarballs and where packages are built.
  - `destdir`: to install packages, aka **fake destdir**.
  - `hostdir/ccache`: to store ccache data if the `XBPS_CCACHE` option is enabled.
+ - `hostdir/sccache`: to store sccache data if the `XBPS_SCCACHE` option is enabled.
  - `hostdir/distcc-<arch>`: to store distcc data if the `XBPS_DISTCC` option is enabled.
  - `hostdir/repocache`: to store binary packages from remote repositories.
  - `hostdir/sources`: to store package sources.
@@ -344,6 +348,25 @@ Reinstalling this package in your target `rootdir` can be easily done too:
 > Please note that the `package expression` must be properly defined to explicitly pick up
 the package from the desired repository.
 
+
+<a name="ccache"></a>
+### Enabling ccache for caching C and C++ compilation
+
+Add this line to `void-packages/etc/conf` file:
+
+    XBPS_CCACHE=yes
+
+<a name="sccache"></a>
+### Enabling sccache for caching Rust compilation
+
+Install `rust-sccache` into `void-packages/masterdir/`:
+
+    xbps-install -r masterdir/ rust-sccache
+
+Add this line to `void-packages/etc/conf` file:
+
+    XBPS_SCCACHE=yes
+
 <a name="distcc"></a>
 ### Enabling distcc for distributed compilation
 
@@ -443,7 +466,7 @@ The default masterdir is created in the current working directory, i.e `void-pac
 <a name="remaking-masterdir"></a>
 ### Remaking the masterdir
 
-If for some reason you must update xbps-src and the `bootstrap-update` target is not enough, it's possible to recreate a masterdir with two simple commands (please note that `zap` keeps your `ccache/distcc/host` directories intact):
+If for some reason you must update xbps-src and the `bootstrap-update` target is not enough, it's possible to recreate a masterdir with two simple commands (please note that `zap` keeps your `ccache/sccache/distcc/host` directories intact):
 
     $ ./xbps-src zap
     $ ./xbps-src binary-bootstrap

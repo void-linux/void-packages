@@ -4,6 +4,10 @@
 export CARGO_BUILD_JOBS="$XBPS_MAKEJOBS"
 export CARGO_HOME="/host/cargo"
 
+if [ -n "$XBPS_SCCACHE" ]; then
+	export RUSTC_WRAPPER="sccache"
+fi
+
 if [ "$CROSS_BUILD" ]; then
 	# Define equivalent of TOML config in environment
 	# [target.${RUST_TARGET}]
