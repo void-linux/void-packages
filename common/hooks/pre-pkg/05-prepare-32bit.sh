@@ -97,7 +97,7 @@ hook() {
 				pkgv="$($XBPS_UHELPER_CMD getpkgdepversion ${f})"
 			fi
 			# If dependency is a development pkg switch it to 32bit.
-			if [[ $pkgn =~ '-devel' ]]; then
+			if [[ $pkgn == *-devel ]]; then
 				echo "   RDEP: $f -> ${pkgn}-32bit${pkgv} (development)"
 				printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
 				continue
@@ -153,7 +153,7 @@ hook() {
 		ln -sfr ${destdir32}/usr/lib32/$f ${destdir32}/usr/lib/$f
 	done
 	# If it's a development pkg add a dependency to the 64bit pkg.
-	if [[ $pkgname =~ '-devel' ]]; then
+	if [[ $pkgn == *-devel ]]; then
 		echo "   RDEP: ${pkgver}"
 		printf "${pkgver} " >> ${destdir32}/rdeps
 	fi
