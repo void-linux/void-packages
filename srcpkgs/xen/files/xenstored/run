@@ -1,7 +1,26 @@
 #!/bin/sh
+exec 2>&1
 [ ! -d /run/xen ] && mkdir -p /run/xen
-modprobe -q xen-evtchn xen-gnttalloc || exit 1
 mountpoint -q /proc/xen || mount -t xenfs xenfs /proc/xen
+# If not running in a Xen dom0, then this service is a no-op
+# and we can't start a real xenstored.
+grep -q control_d /proc/xen/capabilities || \
+    exec chpst -b \
+	 'shim-xenstored; see /etc/sv/xenstored/run to find out what this is' \
+	 pause
 mountpoint -q /var/lib/xenstored || mount -t tmpfs xenstored /var/lib/xenstored
-grep -q control_d /proc/xen/capabilities || exit 1
-exec xenstored --verbose --no-fork
+
+# shellcheck disable=SC1091
+[ -r conf ] && . ./conf
+XENSTORED="${XENSTORED:-xenstored}"
+case "$(basename "${XENSTORED}")" in
+    oxenstored)
+	XENSTORED_ARGS="${XENSTORED_ARGS:---no-fork}"
+	;;
+    *)
+	XENSTORED_ARGS="${XENSTORED_ARGS:---verbose --no-fork}"
+	;;
+esac
+
+# shellcheck disable=SC2086
+exec "${XENSTORED}" ${XENSTORED_ARGS}
