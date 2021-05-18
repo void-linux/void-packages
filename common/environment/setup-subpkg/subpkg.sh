@@ -40,6 +40,7 @@ unset -v make_dirs
 
 # xbps-triggers: binfmts
 unset -v binfmts
+unset -v binfmt_files
 
 # xbps-triggers: register-shell
 unset -v register_shell
