@@ -2098,4 +2098,4 @@ to pull in new changes:
 ## Help
 
 If after reading this `manual` you still need some kind of help, please join
-us at `#xbps` via IRC at `irc.freenode.net`.
+us at `#xbps` via IRC at `irc.libera.chat`.
