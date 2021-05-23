@@ -70,10 +70,6 @@ hook() {
 			continue
 		fi
 
-		if [[ $(file -b "$f") =~ "no machine" ]]; then
-			continue
-		fi
-
 		fname=${f##*/}
 		for x in ${nostrip_files}; do
 			if [ "$x" = "$fname" ]; then
@@ -119,6 +115,13 @@ hook() {
 			fi
 			;;
 		application/x-sharedlib*|application/x-pie-executable*)
+			local type="$(file -b "$f")"
+			if [[ $type =~ "no machine" ]]; then
+				# using ELF as a container format (e.g. guile)
+				echo "   Ignoring ELF file without machine set: ${f#$PKGDESTDIR}"
+				continue
+			fi
+
 			chmod +w "$f"
 			# shared library
 			make_debug "$f"
@@ -127,7 +130,7 @@ hook() {
 				msg_red "$pkgver: failed to strip ${f#$PKGDESTDIR}\n"
 				return 1
 			fi
-			if [[ $(file $f) =~ "interpreter " ]]; then
+			if [[ $type =~ "interpreter " ]]; then
 				echo "   Stripped position-independent executable: ${f#$PKGDESTDIR}"
 			else
 				echo "   Stripped library: ${f#$PKGDESTDIR}"

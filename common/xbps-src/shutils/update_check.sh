@@ -22,7 +22,12 @@ update_check() {
     export LC_ALL=C
 
     if [ -z "$site" ]; then
-        printf '%s\n' "$homepage"
+        case "$distfiles" in
+            # only consider versions those exist in ftp.gnome.org
+            *ftp.gnome.org*) ;;
+            *)
+                printf '%s\n' "$homepage" ;;
+        esac
         for i in $distfiles; do
             printf '%s\n' "${i%/*}/"
         done
@@ -77,7 +82,7 @@ update_check() {
         if [ "$rx" ]; then
             # substitute url if needed
             if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
-                echo "(folder) fetching $urlpfx" 1>&2
+                echo "(folder) fetching $urlpfx and scanning with $rx" 1>&2
             fi
             skipdirs=
             curl -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$urlpfx" |
@@ -116,7 +121,7 @@ update_check() {
             *github.com*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$pkgurlname/tags"
-                rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
+                rx='/archive/refs/tags/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar\.gz")';;
             *//gitlab.*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f1-5)"
                 url="$pkgurlname/tags"
@@ -125,9 +130,9 @@ update_check() {
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://bitbucket.org/$pkgurlname/downloads"
                 rx='/(get|downloads)/(v?|\Q'"$pkgname"'\E-)?\K[\d\.]+(?=\.tar)';;
-            *ftp.gnome.org*)
-                : ${pattern="\Q$pkgname\E-\K[0-9]+\.[0-9]*[02468]\.[0-9.]*[0-9](?=)"}
-                url="http://ftp.gnome.org/pub/GNOME/sources/$pkgname/cache.json";;
+            *ftp.gnome.org*|*download.gnome.org*)
+                : ${pattern="\Q$pkgname\E-\K(0|[13]\.[0-9]*[02468]|[4-9][0-9]+)\.[0-9.]*[0-9](?=)"}
+                url="https://download.gnome.org/sources/$pkgname/cache.json";;
             *kernel.org/pub/linux/kernel/*)
                 rx=linux-'\K'${version%.*}'[\d.]+(?=\.tar\.xz)';;
             *cran.r-project.org/src/contrib*)
@@ -164,7 +169,7 @@ update_check() {
         fi
 
         if [ -n "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
-            echo "fetching $url" 1>&2
+            echo "fetching $url and scanning with $rx" 1>&2
         fi
         curl -H 'Accept: text/html,application/xhtml+xml,application/xml,text/plain,application/rss+xml' -A "xbps-src-update-check/$XBPS_SRC_VERSION" --max-time 10 -Lsk "$url" |
             grep -Po -i "$rx"

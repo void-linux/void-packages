@@ -354,7 +354,7 @@ readonly XBPS_SRC_VERSION="113"
 export XBPS_MACHINE=$(xbps-uhelper -C /dev/null arch)
 
 XBPS_OPTIONS=
-XBPS_OPTSTRING="1a:c:CEfgGhH:iIj:Lm:No:p:qQr:tV"
+XBPS_OPTSTRING="1a:c:CEfgGhH:iIj:Lm:No:p:qQKr:tV"
 
 # Preprocess arguments in order to allow options before and after XBPS_TARGET.
 eval set -- $(getopt "$XBPS_OPTSTRING" "$@");
@@ -513,7 +513,7 @@ if command -v chroot-git &>/dev/null; then
     export XBPS_GIT_CMD=$(command -v chroot-git)
 elif command -v git &>/dev/null; then
     export XBPS_GIT_CMD=$(command -v git)
-else
+elif [ -z "$XBPS_USE_BUILD_MTIME" ] || [ "$XBPS_USE_GIT_REVS" ]; then
     echo "neither chroot-git or git are available in your system!" 1>&2
     exit 1
 fi
@@ -634,7 +634,8 @@ export XBPS_SHUTILSDIR XBPS_CROSSPFDIR XBPS_TRIGGERSDIR \
     XBPS_KEEP_ALL XBPS_HOSTDIR XBPS_MASTERDIR XBPS_SRC_VERSION \
     XBPS_DESTDIR XBPS_MACHINE XBPS_TEMP_MASTERDIR XBPS_BINPKG_EXISTS \
     XBPS_LIBEXECDIR XBPS_DISTDIR XBPS_DISTFILES_MIRROR XBPS_ALLOW_RESTRICTED \
-    XBPS_USE_GIT_COMMIT_DATE XBPS_PKG_COMPTYPE XBPS_REPO_COMPTYPE XBPS_BUILDHELPERDIR
+    XBPS_USE_GIT_COMMIT_DATE XBPS_PKG_COMPTYPE XBPS_REPO_COMPTYPE \
+    XBPS_BUILDHELPERDIR XBPS_USE_BUILD_MTIME XBPS_BUILD_ENVIRONMENT
 
 for i in REPOSITORY DESTDIR BUILDDIR SRCDISTDIR; do
     eval val="\$XBPS_$i"
@@ -780,8 +781,8 @@ case "$XBPS_TARGET" in
         fi
         ;;
     fetch|extract|patch|configure|build|check|install|pkg)
-        if [ "$XBPS_TARGET" = "check" ]; then
-            export XBPS_CHECK_PKGS=1
+        if [ "$XBPS_TARGET" = "check" ] && [ -z "$XBPS_CHECK_PKGS" ]; then
+            export XBPS_CHECK_PKGS=full
         fi
         read_pkg
         if [ -n "$CHROOT_READY" -a -z "$IN_CHROOT" ]; then
@@ -836,6 +837,7 @@ case "$XBPS_TARGET" in
         read_pkg ignore-problems
         for sub_name in $subpackages; do
             if [ $sub_name = $XBPS_TARGET_PKG ]; then
+                . ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
                 ${sub_name}_package
             fi
         done
@@ -859,6 +861,7 @@ case "$XBPS_TARGET" in
         read_pkg ignore-problems
         for sub_name in $subpackages; do
             if [ $sub_name = $XBPS_TARGET_PKG ]; then
+                . ${XBPS_COMMONDIR}/environment/setup-subpkg/subpkg.sh
                 ${sub_name}_package
             fi
         done
@@ -885,6 +888,32 @@ case "$XBPS_TARGET" in
                         printf "%s\n" "$(printf "${print_var% }" | tr -t '\n\r' ' ')"
                 fi # The trailing space gets stripped before printing anyway
         done
+        ;;
+    dbulk-dump)
+        read_pkg
+        check_pkg_arch "$XBPS_CROSS_BUILD"
+        for x in pkgname version revision; do
+            printf '%s: %s\n' "$x" "${!x}"
+        done
+        for x in bootstrap; do
+            [[ ${!x} ]] && printf '%s: %s\n' "$x" "${!x}"
+        done
+        for x in hostmakedepends makedepends; do
+            arr=(${!x})
+            if [[ ${#arr} -gt 0 ]]; then
+                printf '%s:\n' "$x"
+                printf ' %s\n' "${arr[@]}"
+            fi
+        done
+        _cleandeps=$(setup_pkg_depends "" 1 1 | { grep -vF "$(printf "%s\n" $pkgname $subpackages)" || :; } | sort -u) || exit 1
+        if [[ $_cleandeps ]]; then
+                printf 'depends:\n'
+                printf ' %s\n' $_cleandeps
+        fi
+        if [[ $subpackages ]]; then
+            printf 'subpackages:\n'
+            printf ' %s\n' $subpackages
+        fi
         ;;
     show-options)
         read_pkg ignore-problems

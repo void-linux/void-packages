@@ -59,7 +59,6 @@ show_pkg() {
         fi
     done
     IFS="$OIFS"
-    [ -n "$long_desc" ] && echo "long_desc: $long_desc"
 
     return 0
 }

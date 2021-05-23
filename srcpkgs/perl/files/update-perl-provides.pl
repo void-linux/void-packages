@@ -166,6 +166,8 @@ sub pkgspec
     #print STDOUT "2 dist $dist\n";
     $ver =~ tr/././s; # only one period at a time
     $ver =~ s/\A[.]|[.]\z//g; # shouldn't start or stop with a period
+    $ver =~ s/(\d)_(\d)/$1.$2/g; # retain 1.12 < 1.12_01 < 1.13 order in xbps ...
+    $ver =~ s/^([0-9.]+);/'$1';/; # ... then turn broken numeric literal into string
     $ver = eval $ver;
     my $rev = "_1";
     my $res = "perl-$dist-$ver" . $rev;

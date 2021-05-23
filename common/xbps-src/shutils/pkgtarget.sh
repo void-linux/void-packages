@@ -21,7 +21,7 @@ check_pkg_arch() {
             esac
         done
         if [ -z "$nonegation" -a -n "$match" ] || [ -n "$nonegation" -a -z "$match" ]; then
-            msg_red "$pkgname: this package cannot be built for ${_arch}.\n"
+            msg_red "${pkgname}-${version}_${revision}: this package cannot be built for ${_arch}.\n"
             exit 2
         fi
     fi
@@ -79,7 +79,7 @@ remove_pkg_autodeps() {
 remove_pkg_wrksrc() {
     if [ -d "$wrksrc" ]; then
         msg_normal "$pkgver: cleaning build directory...\n"
-        chmod -R +wX "$wrksrc" # Needed to delete Go Modules
+        rm -rf "$wrksrc" 2>/dev/null || chmod -R +wX "$wrksrc" # Needed to delete Go Modules
         rm -rf "$wrksrc"
     fi
 }

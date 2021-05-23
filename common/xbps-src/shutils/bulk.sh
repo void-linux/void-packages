@@ -115,6 +115,6 @@ bulk_update() {
     if [ -n "$pkgs" -a -n "$args" ]; then
         echo
         msg_normal "xbps-src: updating your system, confirm to proceed...\n"
-        ${XBPS_SUCMD} "$XBPS_INSTALL_CMD $XBPS_INSTALL_ARGS -u ${pkgs//[$'\n']/ }" || return 1
+        ${XBPS_SUCMD} "xbps-install --repository=$XBPS_REPOSITORY --repository=$XBPS_REPOSITORY/nonfree -u ${pkgs//[$'\n']/ }" || return 1
     fi
 }

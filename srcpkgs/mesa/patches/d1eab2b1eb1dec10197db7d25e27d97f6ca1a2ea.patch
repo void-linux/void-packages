@@ -1,0 +1,87 @@
+From d1eab2b1eb1dec10197db7d25e27d97f6ca1a2ea Mon Sep 17 00:00:00 2001
+From: Karol Herbst <kherbst@redhat.com>
+Date: Wed, 24 Feb 2021 12:44:41 +0100
+Subject: [PATCH] clover: Fix build with llvm-12.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fix build error after LLVM commit c495dfe0268b ("[clang][cli] NFC:
+Decrease the scope of ParseLangArgs parameters").
+
+../src/gallium/frontends/clover/llvm/invocation.cpp: In function ‘std::unique_ptr<clang::CompilerInstance> {anonymous}::create_compiler_instance(const clover::device&, const string&, const std::vector<std::__cxx11::basic_string<char> >&, std::string&)’:
+../src/gallium/frontends/clover/llvm/invocation.cpp:252:55: error: cannot convert ‘clang::PreprocessorOptions’ to ‘std::vector<std::__cxx11::basic_string<char> >&’
+  252 |                                 c->getPreprocessorOpts(),
+      |                                 ~~~~~~~~~~~~~~~~~~~~~~^~
+      |                                                       |
+      |                                                       clang::PreprocessorOptions
+
+Closes: https://gitlab.freedesktop.org/mesa/mesa/-/issues/4114
+Signed-off-by: Karol Herbst <kherbst@redhat.com>
+Reviewed-by: Francisco Jerez <currojerez@riseup.net>
+Part-of: <https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/8543>
+---
+ src/gallium/frontends/clover/llvm/compat.hpp  | 22 +++++++++++++++----
+ .../frontends/clover/llvm/invocation.cpp      |  5 ++---
+ 2 files changed, 20 insertions(+), 7 deletions(-)
+
+diff --git a/src/gallium/frontends/clover/llvm/compat.hpp b/src/gallium/frontends/clover/llvm/compat.hpp
+index 78eb8c982a8..d537819f292 100644
+--- src/gallium/frontends/clover/llvm/compat.hpp
++++ src/gallium/frontends/clover/llvm/compat.hpp
+@@ -38,14 +38,14 @@
+ 
+ #include <llvm/Config/llvm-config.h>
+ 
++#include <llvm/ADT/Triple.h>
++#include <llvm/Analysis/TargetLibraryInfo.h>
++#include <llvm/IR/LegacyPassManager.h>
+ #include <llvm/IR/LLVMContext.h>
+ #include <llvm/Linker/Linker.h>
++#include <llvm/Target/TargetMachine.h>
+ #include <llvm/Transforms/IPO.h>
+ #include <llvm/Transforms/Utils/Cloning.h>
+-#include <llvm/Target/TargetMachine.h>
+-
+-#include <llvm/IR/LegacyPassManager.h>
+-#include <llvm/Analysis/TargetLibraryInfo.h>
+ 
+ #include <clang/Basic/TargetInfo.h>
+ #include <clang/Frontend/CompilerInstance.h>
+@@ -88,6 +88,20 @@ namespace clover {
+                cinv, copts.data(), copts.data() + copts.size(), diag);
+ #endif
+          }
++
++         static inline void
++         compiler_set_lang_defaults(std::unique_ptr<clang::CompilerInstance> &c,
++                                    clang::InputKind ik, const ::llvm::Triple& triple,
++                                    clang::LangStandard::Kind d)
++         {
++            c->getInvocation().setLangDefaults(c->getLangOpts(), ik, triple,
++#if LLVM_VERSION_MAJOR >= 12
++                                               c->getPreprocessorOpts().Includes,
++#else
++                                               c->getPreprocessorOpts(),
++#endif
++                                               d);
++         }
+       }
+    }
+ }
+diff --git a/src/gallium/frontends/clover/llvm/invocation.cpp b/src/gallium/frontends/clover/llvm/invocation.cpp
+index 536e952b100..30592e4343b 100644
+--- src/gallium/frontends/clover/llvm/invocation.cpp
++++ src/gallium/frontends/clover/llvm/invocation.cpp
+@@ -247,9 +247,8 @@ namespace {
+       // http://www.llvm.org/bugs/show_bug.cgi?id=19735
+       c->getDiagnosticOpts().ShowCarets = false;
+ 
+-      c->getInvocation().setLangDefaults(c->getLangOpts(),
+-                                compat::ik_opencl, ::llvm::Triple(target.triple),
+-                                c->getPreprocessorOpts(),
++      compat::compiler_set_lang_defaults(c, compat::ik_opencl,
++                                ::llvm::Triple(target.triple),
+                                 get_language_version(opts, device_clc_version));
+ 
+       c->createDiagnostics(new clang::TextDiagnosticPrinter(

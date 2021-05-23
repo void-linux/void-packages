@@ -112,9 +112,10 @@ vapigen_wrapper() {
 	cat >>${XBPS_WRAPPERDIR}/vapigen<<_EOF
 #!/bin/sh
 exec /usr/bin/vapigen \\
+	 "\$@" \\
 	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala/vapi \\
 	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-${_vala_version}/vapi \\
-	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0 "\$@"
+	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/vapigen
 	ln -sf vapigen ${XBPS_WRAPPERDIR}/vapigen-${_vala_version}
@@ -134,9 +135,10 @@ valac_wrapper() {
 	cat >>${XBPS_WRAPPERDIR}/valac<<_EOF
 #!/bin/sh
 exec /usr/bin/valac \\
+	 "\$@" \\
 	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala/vapi \\
 	 --vapidir=${XBPS_CROSS_BASE}/usr/share/vala-${_vala_version}/vapi \\
-	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0 "\$@"
+	 --girdir=${XBPS_CROSS_BASE}/usr/share/gir-1.0
 _EOF
 	chmod 755 ${XBPS_WRAPPERDIR}/valac
 	ln -sf valac ${XBPS_WRAPPERDIR}/valac-${_vala_version}

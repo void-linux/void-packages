@@ -8,7 +8,7 @@
 vsed() {
 	local files=() regexes=() OPTIND OPTSTRING="ie:" has_inline=
 
-	eval set -- $(getopt -s bash "$OPTSTRING" "$@");
+	eval set -- "$(getopt -s bash "$OPTSTRING" "$@")";
 
 	while getopts "$OPTSTRING" opt; do
 		case $opt in

@@ -32,19 +32,18 @@ setup_pkg_depends() {
             if [ -z "$foo" ]; then
                 msg_error "$pkgver: failed to resolve virtual dependency for '$j' (missing from etc/virtual)\n"
             fi
-            _deps+="$foo "
+            [[ $out ]] && echo "$foo"
         else
             foo="$($XBPS_UHELPER_CMD getpkgdepname ${_depname} 2>/dev/null)"
             if [ -z "$foo" ]; then
                 foo="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
                 [ -z "$foo" ] && foo="${_depname}"
             fi
-            _deps+="$foo "
+            [[ $out ]] && echo "$foo"
         fi
         run_depends+="${_depname} "
     done
 
-    [[ $out && $_deps ]] && echo "$_deps"
     return 0
 }
 

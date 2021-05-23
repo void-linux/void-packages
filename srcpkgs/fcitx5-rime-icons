@@ -1,0 +1,1 @@
+fcitx5-rime

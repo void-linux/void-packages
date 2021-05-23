@@ -1,0 +1,115 @@
+diff --git backend/src/llvm/ExpandLargeIntegers.cpp backend/src/llvm/ExpandLargeIntegers.cpp
+index 8515dc13..27080380 100644
+--- backend/src/llvm/ExpandLargeIntegers.cpp
++++ backend/src/llvm/ExpandLargeIntegers.cpp
+@@ -328,7 +328,7 @@ static Value *buildVectorOrScalar(ConversionState &State, IRBuilder<> &IRB, Smal
+     // splited, that's why these temporary values should be erased.
+     bool KeepInsert = isLegalBitSize(ElemTy->getPrimitiveSizeInBits() * ElemNo);
+     for (unsigned i = 0; i < ElemNo; ++i) {
+-      Value *tmp = vec ? vec : UndefValue::get(VectorType::get(ElemTy, ElemNo));
++      Value *tmp = vec ? vec : UndefValue::get(VectorType::get(ElemTy, ElemNo, false));
+       Value *idx = ConstantInt::get(IntTy, i);
+       vec = IRB.CreateInsertElement(tmp, Elements[i], idx);
+       if (!KeepInsert && !isa<Constant>(vec)) {
+@@ -373,7 +373,7 @@ static void unifyElementType(IRBuilder<> &IRB, SmallVector<Value *, 16> &Src, Sm
+       assert((Size % MinWidth) == 0);
+ 
+       if (Size > MinWidth) {
+-        VectorType *VecTy = VectorType::get(ElemTy, Size/MinWidth);
++        VectorType *VecTy = VectorType::get(ElemTy, Size/MinWidth, false);
+         Value *Casted = IRB.CreateBitCast(Src[i], VecTy);
+         for (unsigned j = 0; j < Size/MinWidth; j++)
+           Dst.push_back(IRB.CreateExtractElement(Casted, ConstantInt::get(IntTy, j)));
+@@ -462,7 +462,7 @@ static void convertInstruction(Instruction *Inst, ConversionState &State,
+       unsigned ElemNo = Unified.size();
+       Type *ElemTy = Unified[0]->getType();
+       for (unsigned i = 0; i < ElemNo; ++i) {
+-        Value *tmp = vec ? vec : UndefValue::get(VectorType::get(ElemTy, ElemNo));
++        Value *tmp = vec ? vec : UndefValue::get(VectorType::get(ElemTy, ElemNo, false));
+         Value *idx = ConstantInt::get(IntTy, i);
+         vec = IRB.CreateInsertElement(tmp, Unified[i], idx);
+       }
+diff --git backend/src/llvm/llvm_gen_backend.cpp backend/src/llvm/llvm_gen_backend.cpp
+index c93d89cc..64d5b0e5 100644
+--- backend/src/llvm/llvm_gen_backend.cpp
++++ backend/src/llvm/llvm_gen_backend.cpp
+@@ -304,7 +304,7 @@ namespace gbe
+       TYPESIZEVEC(long,8)
+       TYPESIZEVEC(unsigned long,8)
+       else{
+-        StructType *StrTy = M->getTypeByName("struct."+name);
++        StructType *StrTy = StructType::getTypeByName(M->getContext(), "struct."+name);
+         if(StrTy)
+           return getTypeByteSize(unit,StrTy);
+       }
+diff --git backend/src/llvm/llvm_loadstore_optimization.cpp backend/src/llvm/llvm_loadstore_optimization.cpp
+index 5aa38bef..6b5c1bad 100644
+--- backend/src/llvm/llvm_loadstore_optimization.cpp
++++ backend/src/llvm/llvm_loadstore_optimization.cpp
+@@ -152,7 +152,7 @@ namespace gbe {
+     unsigned addrSpace = ld->getPointerAddressSpace();
+     // insert before first load
+     Builder.SetInsertPoint(ld);
+-    VectorType *vecTy = VectorType::get(ld->getType(), size);
++    VectorType *vecTy = VectorType::get(ld->getType(), size, false);
+     Value *vecPtr = Builder.CreateBitCast(ld->getPointerOperand(),
+                                         PointerType::get(vecTy, addrSpace));
+     LoadInst *vecValue = Builder.CreateLoad(vecPtr);
+@@ -236,7 +236,7 @@ namespace gbe {
+     Builder.SetInsertPoint(merged[size-1]);
+ 
+     Type *dataTy = st->getValueOperand()->getType();
+-    VectorType *vecTy = VectorType::get(dataTy, size);
++    VectorType *vecTy = VectorType::get(dataTy, size, false);
+     Value * parent = UndefValue::get(vecTy);
+     for(unsigned i = 0; i < size; i++) {
+       parent = Builder.CreateInsertElement(parent, values[i], ConstantInt::get(IntegerType::get(st->getContext(), 32), i));
+diff --git backend/src/llvm/llvm_printf_parser.cpp backend/src/llvm/llvm_printf_parser.cpp
+index 6bb7c52a..af459cd2 100644
+--- backend/src/llvm/llvm_printf_parser.cpp
++++ backend/src/llvm/llvm_printf_parser.cpp
+@@ -630,7 +630,7 @@ error:
+             if (elt_type != elt_dst_type) {
+               Value *II = NULL;
+               for (int i = 0; i < vec_num; i++) {
+-                Value *vec = II ? II : UndefValue::get(VectorType::get(elt_dst_type, vec_num));
++                Value *vec = II ? II : UndefValue::get(VectorType::get(elt_dst_type, vec_num, false));
+                 Value *cv = ConstantInt::get(Type::getInt32Ty(elt_type->getContext()), i);
+                 Value *org = builder->CreateExtractElement(arg, cv);
+                 Value *cvt = builder->CreateIntCast(org, elt_dst_type, sign);
+@@ -658,7 +658,7 @@ error:
+             if (elt_type->getTypeID() != Type::FloatTyID) {
+               Value *II = NULL;
+               for (int i = 0; i < vec_num; i++) {
+-                Value *vec = II ? II : UndefValue::get(VectorType::get(Type::getFloatTy(elt_type->getContext()), vec_num));
++                Value *vec = II ? II : UndefValue::get(VectorType::get(Type::getFloatTy(elt_type->getContext()), vec_num, false));
+                 Value *cv = ConstantInt::get(Type::getInt32Ty(elt_type->getContext()), i);
+                 Value *org = builder->CreateExtractElement(arg, cv);
+                 Value* cvt  = builder->CreateFPCast(org, Type::getFloatTy(module->getContext()));
+diff --git backend/src/llvm/llvm_to_gen.cpp backend/src/llvm/llvm_to_gen.cpp
+index 7f7deffe..9e8ccc67 100644
+--- backend/src/llvm/llvm_to_gen.cpp
++++ backend/src/llvm/llvm_to_gen.cpp
+@@ -358,7 +358,7 @@ namespace gbe
+     passes.add(createScalarReplAggregatesPass(64, true, -1, -1, 64));
+ #endif
+     passes.add(createLoadStoreOptimizationPass());
+-    passes.add(createConstantPropagationPass());
++    //passes.add(createConstantPropagationPass());
+     passes.add(createPromoteMemoryToRegisterPass());
+     if(optLevel > 0)
+       passes.add(createGVNPass());                 // Remove redundancies
+@@ -367,11 +367,11 @@ namespace gbe
+     passes.add(createScalarizePass());             // Expand all vector ops
+     passes.add(createExpandLargeIntegersPass());   // legalize large integer operation
+     passes.add(createInstructionCombiningPass());  // legalize will generate some silly instructions
+-    passes.add(createConstantPropagationPass());   // propagate constant after scalarize/legalize
++    //passes.add(createConstantPropagationPass());   // propagate constant after scalarize/legalize
+     passes.add(createExpandConstantExprPass());    // constant prop may generate ConstantExpr
+     passes.add(createPromoteIntegersPass());       // align integer size to power of two
+     passes.add(createRemoveGEPPass(unit));         // Constant prop may generate gep
+-    passes.add(createDeadInstEliminationPass());   // Remove simplified instructions
++    //passes.add(createDeadInstEliminationPass());   // Remove simplified instructions
+     passes.add(createCFGSimplificationPass());     // Merge & remove BBs
+     passes.add(createLowerSwitchPass());           // simplify cfg will generate switch-case instruction
+     if (profiling) {

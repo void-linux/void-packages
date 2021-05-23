@@ -36,12 +36,15 @@ See [Contributing](./CONTRIBUTING.md) for a general overview of how to contribut
 
 - GNU bash
 - xbps >= 0.56
+- git(1) - unless configured to not, see etc/defaults.conf
+- common POSIX utilities included by default in almost all UNIX systems
 - curl(1) - required by `xbps-src update-check`
+
+For bootstrapping additionally:
 - flock(1) - util-linux
 - bsdtar or GNU tar (in that order of preference)
 - install(1) - GNU coreutils
 - objcopy(1), objdump(1), strip(1): binutils
-- other common POSIX utilities included by default in almost all UNIX systems.
 
 `xbps-src` requires a utility to chroot and bind mount existing directories
 into a `masterdir` that is used as its main `chroot` directory. `xbps-src` supports
@@ -418,7 +421,7 @@ To use xbps-src in your Linux distribution use the following instructions. Let's
 
     $ wget http://alpha.de.repo.voidlinux.org/static/xbps-static-latest.<arch>-musl.tar.xz
     $ mkdir ~/XBPS
-    $ tar xvf xbps-static-latest.<arch>.tar.xz -C ~/XBPS
+    $ tar xvf xbps-static-latest.<arch>-musl.tar.xz -C ~/XBPS
     $ export PATH=~/XBPS/usr/bin:$PATH
 
 If your system does not support `user namespaces`, a privileged group is required to be able to use

@@ -1,0 +1,108 @@
+Forwarded: https://github.com/MariaDB/server/pull/1716
+Author: Vicențiu Ciorbaru <vicentiu@mariadb.org>
+Date:   Fri Dec 21 19:14:04 2018 +0200
+
+   Link with libatomic to enable C11 atomics support
+
+   Some architectures (mips) require libatomic to support proper
+   atomic operations. Check first if support is available without
+   linking, otherwise use the library.
+
+   Original commit:
+   Detect whether libatomic is needed rather than hard-coding for mips
+
+   Fixes FTBFS on powerpc, since it needs libatomic too for C11 atomics,
+   and possibly m68k.
+
+   Contributors:
+   James Cowgill <jcowgill@debian.org>
+   Jessica Clarke <jrtc27@debian.org>
+
+--- configure.cmake
++++ configure.cmake
+@@ -862,7 +862,25 @@ int main()
+   long long int *ptr= &var;
+   return (int)__atomic_load_n(ptr, __ATOMIC_SEQ_CST);
+ }"
+-HAVE_GCC_C11_ATOMICS)
++HAVE_GCC_C11_ATOMICS_WITHOUT_LIBATOMIC)
++IF (HAVE_GCC_C11_ATOMICS_WITHOUT_LIBATOMIC)
++  SET(HAVE_GCC_C11_ATOMICS True)
++ELSE()
++  SET(OLD_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
++  LIST(APPEND CMAKE_REQUIRED_LIBRARIES "atomic")
++  CHECK_CXX_SOURCE_COMPILES("
++  int main()
++  {
++    long long int var= 1;
++    long long int *ptr= &var;
++    return (int)__atomic_load_n(ptr, __ATOMIC_SEQ_CST);
++  }"
++  HAVE_GCC_C11_ATOMICS_WITH_LIBATOMIC)
++  IF(HAVE_GCC_C11_ATOMICS_WITH_LIBATOMIC)
++    SET(HAVE_GCC_C11_ATOMICS True)
++  ENDIF()
++  SET(CMAKE_REQUIRED_LIBRARIES ${OLD_CMAKE_REQUIRED_LIBRARIES})
++ENDIF()
+
+ IF(WITH_VALGRIND)
+   SET(HAVE_valgrind 1)
+--- mysys/CMakeLists.txt
++++ mysys/CMakeLists.txt
+@@ -154,6 +154,10 @@ TARGET_LINK_LIBRARIES(mysys dbug strings
+  ${LIBNSL} ${LIBM} ${LIBRT} ${CMAKE_DL_LIBS} ${LIBSOCKET} ${LIBEXECINFO})
+ DTRACE_INSTRUMENT(mysys)
+
++IF (HAVE_GCC_C11_ATOMICS_WITH_LIBATOMIC)
++  TARGET_LINK_LIBRARIES(mysys atomic)
++ENDIF()
++
+ IF(HAVE_BFD_H)
+   TARGET_LINK_LIBRARIES(mysys bfd)
+ ENDIF(HAVE_BFD_H)
+--- sql/CMakeLists.txt
++++ sql/CMakeLists.txt
+@@ -318,6 +318,10 @@ IF(WITH_MYSQLD_LDFLAGS)
+      "${MYSQLD_LINK_FLAGS} ${WITH_MYSQLD_LDFLAGS}")
+ ENDIF()
+
++IF (HAVE_GCC_C11_ATOMICS_WITH_LIBATOMIC)
++  TARGET_LINK_LIBRARIES(sql atomic)
++ENDIF()
++
+
+ FIND_PACKAGE(BISON 2.0)
+
+From f447aca534d1a12809eeb146e8220d305cc3884d Mon Sep 17 00:00:00 2001
+From: Mingli Yu <mingli.yu@windriver.com>
+Date: Thu, 9 Apr 2020 14:07:19 +0800
+Subject: [PATCH] build_rocksdb.cmake: fix atomic support on arm
+
+Check to link with libatomic to enable C11 atomics support
+to fix below build error on arm:
+| /build/tmp/work/armv5e-wrs-linux-gnueabi/mariadb/10.3.13-r0/recipe-sysroot-native/usr/bin/arm-wrs-linux-gnueabi/../../libexec/arm-wrs-linux-gnueabi/gcc/arm-wrs-linux-gnueabi/8.3.0/ld.bfd: librocksdblib.a(env_posix.cc.o): in function `std::__atomic_base<unsigned long long>::store(unsigned long long, std::memory_order)':
+| /usr/include/c++/8.3.0/bits/atomic_base.h:374: undefined reference to `__atomic_store_8'
+
+Upstream-Status: Pending
+
+Signed-off-by: Mingli Yu <mingli.yu@windriver.com>
+---
+ storage/rocksdb/build_rocksdb.cmake | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/storage/rocksdb/build_rocksdb.cmake b/storage/rocksdb/build_rocksdb.cmake
+index d7895b0..3bcd52a 100644
+--- storage/rocksdb/build_rocksdb.cmake
++++ storage/rocksdb/build_rocksdb.cmake
+@@ -470,6 +470,9 @@ list(APPEND SOURCES ${CMAKE_CURRENT_BINARY_DIR}/build_version.cc)
+
+ ADD_CONVENIENCE_LIBRARY(rocksdblib ${SOURCES})
+ target_link_libraries(rocksdblib ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})
++IF (HAVE_GCC_C11_ATOMICS_WITH_LIBATOMIC)
++  TARGET_LINK_LIBRARIES(rocksdblib atomic)
++ENDIF()
+ IF(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+   set_target_properties(rocksdblib PROPERTIES COMPILE_FLAGS "-fPIC -fno-builtin-memcmp -Wno-error")
+ endif()
+--
+2.7.4

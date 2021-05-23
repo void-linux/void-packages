@@ -53,7 +53,7 @@ strip = '${STRIP}'
 readelf = '${READELF}'
 objcopy = '${OBJCOPY}'
 pkgconfig = '${PKG_CONFIG}'
-rust = 'rustc'
+rust = ['rustc', '--target', '${RUST_TARGET}' ,'--sysroot', '${XBPS_CROSS_BASE}/usr']
 g-ir-scanner = '${XBPS_CROSS_BASE}/usr/bin/g-ir-scanner'
 g-ir-compiler = '${XBPS_CROSS_BASE}/usr/bin/g-ir-compiler'
 g-ir-generate = '${XBPS_CROSS_BASE}/usr/bin/g-ir-generate'
@@ -62,6 +62,8 @@ cups-config = '${XBPS_CROSS_BASE}/usr/bin/cups-config'
 
 [properties]
 needs_exe_wrapper = true
+
+[built-in options]
 c_args = ['$(echo ${CFLAGS} | sed -r "s/\s+/','/g")']
 c_link_args = ['$(echo ${LDFLAGS} | sed -r "s/\s+/','/g")']
 
@@ -91,6 +93,14 @@ do_configure() {
 	if [ "$CROSS_BUILD" ]; then
 		configure_args+=" --cross-file=${meson_crossfile}"
 	fi
+
+	# binutils ar needs a plugin when LTO is used on static libraries, so we
+	# have to use the gcc-ar wrapper that calls the correct plugin.
+	# As seen in https://github.com/mesonbuild/meson/issues/1646 (and its
+	# solution, https://github.com/mesonbuild/meson/pull/1649), meson fixed
+	# issues with static libraries + LTO by defaulting to gcc-ar themselves.
+	# We also force gcc-ar usage in the crossfile above.
+	export AR="gcc-ar"
 
 	${meson_cmd} \
 		--prefix=/usr \

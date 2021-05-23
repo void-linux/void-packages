@@ -1,18 +1,19 @@
 # Template file for 'qt5'
 pkgname=qt5
-version=5.15.2
-revision=1
-wrksrc="qt-everywhere-src-${version}"
+version=5.15.3+20210429
+# commit d42afef0e48a102334ecfda6a492286fb9fc5996
+# base repo: https://invent.kde.org/qt/qt/qt5
+revision=2
 build_style=meta
 hostmakedepends="cmake clang flex perl glib-devel pkg-config
  python re2c ruby which"
 makedepends="SDL2-devel Vulkan-Headers alsa-lib-devel double-conversion-devel
  eudev-libudev-devel ffmpeg-devel freetds-devel glib-devel gst-plugins-base1-devel
  gtk+3-devel icu-devel libXv-devel libbluetooth-devel libcap-devel
- libinput-devel libmng-devel libmysqlclient-devel libproxy-devel
+ libinput-devel libmng-devel libmariadbclient-devel libproxy-devel
  libvpx-devel libwebp-devel libxslt-devel cups-devel minizip-devel
  opus-devel pciutils-devel pcre2-devel postgresql-libs-devel
- protobuf-devel pulseaudio-devel tslib-devel libressl-devel
+ protobuf-devel pulseaudio-devel tslib-devel openssl-devel
  unixodbc-devel xcb-util-image-devel xcb-util-keysyms-devel
  xcb-util-renderutil-devel xcb-util-wm-devel libzstd-devel harfbuzz-devel"
 depends="qt5-dbus qt5-gui qt5-core qt5-widgets qt5-network qt5-xml
@@ -21,16 +22,18 @@ short_desc="Cross-platform application and UI framework (QT5)"
 maintainer="John <me@johnnynator.dev>"
 license="GPL-3.0-or-later, LGPL-3.0-or-later"
 homepage="https://qt.io/"
-distfiles="http://download.qt.io/official_releases/qt/${version%.*}/${version}/single/qt-everywhere-src-${version}.tar.xz"
-checksum=3a530d1b243b5dec00bc54937455471aaa3e56849d2593edb8ded07228202240
+# https://pypi.org/project/git-archive-all
+# tarball is generated with `git archive-all qt5-$version.tar.gz`
+# to keep the size smaller qtwebengine, qtwebview, qtdocgallery, qtactiveqt and qtpim
+# can be marked with the export-ignore attribute
+distfiles="https://void.johnnynator.dev/distfiles/qt5-${version}.tar.gz"
+checksum=6936ecf7c35162832bde5b5685f24c0924868745983f030e377924c1d80f68d1
 python_version=2 #unverified
 replaces="qt5-doc<5.6.0 qt5-quick1<5.6.0 qt5-quick1-devel<5.6.0 qt5-webkit<5.6.0 qt5-webkit-devel<5.6.0
  qt5-enginio<5.7.1 qt5-enginio-devel<5.7.1 qt5-plugin-gtk<5.7.1 qt5-canvas3d<5.13.0"
 lib32mode=full
 
-# Work around SSLv3_{client,server}_method missing in libressl-2.3.3
-CFLAGS="-DOPENSSL_NO_PSK -DOPENSSL_NO_NEXTPROTONEG"
-CXXFLAGS="${CFLAGS} -Wno-deprecated-declarations -Wno-class-memaccess -Wno-packed-not-aligned"
+CXXFLAGS="-Wno-deprecated-declarations -Wno-class-memaccess -Wno-packed-not-aligned"
 # Required for musl libc
 LDFLAGS="-pthread -ldl -fPIE -Wl,-z,stack-size=2097152"
 
@@ -39,6 +42,10 @@ if [ "$CROSS_BUILD" ]; then
 	# wayland-devel contains /usr/bin/wayland-scanner
 	hostmakedepends+=" icu-devel wayland-devel zlib-devel"
 	hostmakedepends+=" postgresql-libs-devel"
+fi
+
+if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
+	makedepends+=" libatomic-devel"
 fi
 
 _cleanup_wrksrc_leak() {
@@ -168,6 +175,12 @@ _msg_cross() {
 	msg_normal "***************************************************\n"
 }
 
+post_extract() {
+	find -maxdepth 1 -type d -exec mkdir -p {}/.git \;
+	# just keep module_version at 5.15.2, since some external modules are still 5.15.2
+	find -maxdepth 1 -type d -exec sed -e "/^MODULE_VERSION/s/5.*/5.15.2/" -i {}/.qmake.conf \;
+}
+
 do_configure() {
 	local opts spec
 
@@ -182,11 +195,6 @@ do_configure() {
 			${wrksrc}/qtbase/mkspecs/common/gcc-base.conf
 		vsed -i -e "s|^\(QMAKE_LFLAGS_RELEASE.*\)|\1 ${XBPS_LDFLAGS}|" \
 			${wrksrc}/qtbase/mkspecs/common/g++-unix.conf
-
-		# Create symbolic links for private include directories
-		for d in $(ls ${wrksrc}/qtbase/include); do
-			ln -sfv ${version}/${d}/private qtbase/include/${d}/private
-		done
 	else
 		# qmake {CXX,L}FLAGS patches
 		vsed -i -e "s|^\(CXXFLAGS =.*\)|\1 ${CXXFLAGS}|" \
@@ -239,6 +247,9 @@ do_configure() {
 	# opts+=" -v"
 	opts+=" -skip qtwebengine"
 	opts+=" -skip qtwebview"
+	opts+=" -skip qtdocgallery"
+	opts+=" -skip qtpim"
+	opts+=" -skip qtsystems"
 	LDFLAGS+=" -Wl,--no-keep-memory"  # needs more than 8GB RAM else
 	if [ "$CROSS_BUILD" ]; then
 		spec=void-${XBPS_CROSS_TRIPLET}-g++
@@ -314,6 +325,7 @@ do_install() {
 		make -f Makefile.target ${makejobs}
 		ln -sf ../lib/qt5/bin/qmake ${PKGDESTDIR}/usr/bin/qmake-qt5
 		cp -ar ${wrksrc}/qtbase/mkspecs ${PKGDESTDIR}/usr/lib/qt5
+		_cleanup_wrksrc_leak
 
 		#
 		# Build qmldevtools for the target
@@ -1058,7 +1070,7 @@ qt5-tools_package() {
 }
 
 qt5-devel_package() {
-	depends="zlib-devel libressl-devel>=2.1.4 libXext-devel libXrender-devel
+	depends="zlib-devel openssl-devel libXext-devel libXrender-devel
 		fontconfig-devel libglib-devel MesaLib-devel mtdev-devel
 		dbus-devel icu-devel cups-devel
 		qt5-gui-${version}_${revision}
@@ -1074,6 +1086,9 @@ qt5-devel_package() {
 		qt5-network-${version}_${revision}
 		qt5-xml-${version}_${revision}
 		qt5-host-tools-${version}_${revision}"
+	if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
+		depends+=" libatomic-devel"
+	fi
 	short_desc+=" - Development files"
 	# qt5-enginio-devel is gone
 	pkg_install() {
