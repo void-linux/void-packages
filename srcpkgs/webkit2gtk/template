@@ -1,16 +1,15 @@
 # Template file for 'webkit2gtk'
 # ping q66 before touching this
 pkgname=webkit2gtk
-version=2.32.0
-revision=3
+version=2.32.1
+revision=2
 wrksrc="webkitgtk-${version}"
 build_style=cmake
 build_helper="gir"
 configure_args="-DPORT=GTK -DUSE_LD_GOLD=OFF
- -DCMAKE_LINKER=${XBPS_CROSS_TRIPLET}-gcc
- -DRUBY_VERSION=2.7
+ -DCMAKE_LINKER=${XBPS_CROSS_TRIPLET}-gcc -DCMAKE_SKIP_RPATH=ON
  -DUSE_SYSTEMD=OFF -DUSE_WOFF2=ON
- -DENABLE_GTKDOC=OFF -DUSE_GSTREAMER_GL=OFF -DUSE_WPE_RENDERER=ON
+ -DENABLE_GTKDOC=OFF -DUSE_WPE_RENDERER=ON
  -DENABLE_MINIBROWSER=$(vopt_if minibrowser ON OFF)
  -DENABLE_JIT=$(vopt_if jit ON OFF)
  -DENABLE_C_LOOP=$(vopt_if jit OFF ON)
@@ -30,22 +29,26 @@ makedepends="at-spi2-core-devel libjpeg-turbo-devel libpng-devel
  libsecret-devel ruby-devel geoclue2-devel libnotify-devel hyphen-devel
  woff2-devel freetype-devel libopenjpeg2-devel libatomic-devel
  qt5-devel libmanette-devel libwpe-devel wpebackend-fdo-devel
- $(vopt_if x11 libXt-devel)
+ libgcrypt-devel $(vopt_if x11 libXt-devel)
  $(vopt_if wayland 'MesaLib-devel libxkbcommon-devel wayland-devel wayland-protocols')"
 short_desc="GTK+3 port of the WebKit2 browser engine"
 maintainer="q66 <daniel@octaforge.org>"
 license="LGPL-2.1-or-later, BSD-2-Clause"
 homepage="https://webkitgtk.org/"
 distfiles="${homepage}/releases/webkitgtk-${version}.tar.xz"
-checksum=9d7df4dae9ada2394257565acc2a68ace9308c4c61c3fcc00111dc1f11076bf0
+checksum=136117317f70f66486f71b8edf5e46f8776403c5d8a296e914b11a36ef836917
+make_check=no
 
-build_options="gir wayland x11 bubblewrap jit sampling_profiler minibrowser"
+build_options="gir wayland x11 bubblewrap jit sampling_profiler minibrowser
+ clang lto"
 build_options_default="gir wayland x11 bubblewrap minibrowser"
 
 desc_option_bubblewrap="Enable bubblewrap sandbox"
 desc_option_jit="JavaScript JIT (Only some architectures)"
 desc_option_sampling_profiler="Sampling profiler support (JIT + glibc only)"
 desc_option_minibrowser="Build the minibrowser"
+desc_option_clang="Use Clang to build"
+desc_option_lto="Enable ThinLTO (needs Clang)"
 
 export CFLAGS="-DNDEBUG"
 export CXXFLAGS="$CFLAGS"
@@ -65,10 +68,6 @@ post_patch() {
 		Source/cmake/tools/scripts/version-stamp.pl
 }
 
-do_check() {
-	:
-}
-
 # detection + runtime
 if [ "$build_option_bubblewrap" ]; then
 	hostmakedepends+=" bubblewrap xdg-dbus-proxy"
@@ -76,10 +75,19 @@ if [ "$build_option_bubblewrap" ]; then
 	depends+=" bubblewrap xdg-dbus-proxy"
 fi
 
-# https://bugs.webkit.org/show_bug.cgi?id=197192
-case "$XBPS_TARGET_MACHINE" in
-	aarch64*) configure_args+=" -DWTF_CPU_ARM64_CORTEXA53=OFF";;
-esac
+if [ "$build_option_lto" -a -z "$build_option_clang" ]; then
+	broken="LTO needs Clang"
+fi
+
+if [ "$build_option_clang" ]; then
+	hostmakedepends+=" clang lld"
+	configure_args+=" -DUSE_LD_LLD=ON"
+	nocross=yes
+fi
+
+if [ "$build_option_lto" ]; then
+	configure_args+=" -DLTO_MODE=thin"
+fi
 
 # only a few platform support JIT
 case "$XBPS_TARGET_MACHINE" in
@@ -111,6 +119,11 @@ if [ "$build_option_sampling_profiler" -a -z "$build_option_jit" ]; then
 fi
 
 pre_configure() {
+	if [ "$build_option_clang" ]; then
+		export CC=clang
+		export CXX=clang++
+	fi
+
 	# the debug builds are huge and cause problems when debugging
 	export CFLAGS="${CFLAGS/-g/-g1}"
 	export CXXFLAGS="${CXXFLAGS/-g/-g1}"

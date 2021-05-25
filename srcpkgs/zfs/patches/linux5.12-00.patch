@@ -1,0 +1,1231 @@
+From 938a7a375b2c18fef621fb30d71bec0c19e94142 Mon Sep 17 00:00:00 2001
+From: Coleman Kane <ckane@colemankane.org>
+Date: Sat, 20 Mar 2021 00:00:59 -0400
+Subject: [PATCH] Linux 5.12 compat: idmapped mounts
+
+In Linux 5.12, the filesystem API was modified to support ipmapped
+mounts by adding a "struct user_namespace *" parameter to a number
+functions and VFS handlers. This change adds the needed autoconf
+macros to detect the new interfaces and updates the code appropriately.
+This change does not add support for idmapped mounts, instead it
+preserves the existing behavior by passing the initial user namespace
+where needed.  A subsequent commit will be required to add support
+for idmapped mounted.
+
+Reviewed-by: Tony Hutter <hutter2@llnl.gov>
+Reviewed-by: Brian Behlendorf <behlendorf1@llnl.gov>
+Co-authored-by: Brian Behlendorf <behlendorf1@llnl.gov>
+Signed-off-by: Coleman Kane <ckane@colemankane.org>
+Closes #11712
+(cherry picked from commit e2a8296131e94ad785f5564156ed2db1fdb2e080)
+Signed-off-by: Jonathon Fernyhough <jonathon@m2x.dev>
+---
+ config/kernel-generic_fillattr.m4            | 28 +++++++
+ config/kernel-inode-create.m4                | 43 +++++++++--
+ config/kernel-inode-getattr.m4               | 63 +++++++++++++---
+ config/kernel-is_owner_or_cap.m4             | 23 +++++-
+ config/kernel-mkdir-umode-t.m4               | 32 --------
+ config/kernel-mkdir.m4                       | 65 ++++++++++++++++
+ config/kernel-mknod.m4                       | 30 ++++++++
+ config/kernel-rename.m4                      | 50 ++++++++++---
+ config/kernel-setattr-prepare.m4             | 45 ++++++++---
+ config/kernel-symlink.m4                     | 30 ++++++++
+ config/kernel-xattr-handler.m4               | 78 +++++++++++++-------
+ config/kernel.m4                             | 18 +++--
+ include/os/linux/kernel/linux/vfs_compat.h   | 24 +++++-
+ include/os/linux/kernel/linux/xattr_compat.h | 17 ++++-
+ include/os/linux/zfs/sys/zfs_vnops_os.h      |  3 +-
+ include/os/linux/zfs/sys/zpl.h               | 18 +++++
+ module/os/linux/zfs/policy.c                 |  2 +-
+ module/os/linux/zfs/zfs_vnops_os.c           |  5 +-
+ module/os/linux/zfs/zpl_ctldir.c             | 51 ++++++++++++-
+ module/os/linux/zfs/zpl_file.c               |  2 +-
+ module/os/linux/zfs/zpl_inode.c              | 49 +++++++++++-
+ module/os/linux/zfs/zpl_xattr.c              |  4 +-
+ 22 files changed, 557 insertions(+), 123 deletions(-)
+ create mode 100644 config/kernel-generic_fillattr.m4
+ delete mode 100644 config/kernel-mkdir-umode-t.m4
+ create mode 100644 config/kernel-mkdir.m4
+ create mode 100644 config/kernel-mknod.m4
+ create mode 100644 config/kernel-symlink.m4
+
+diff --git config/kernel-generic_fillattr.m4 config/kernel-generic_fillattr.m4
+new file mode 100644
+index 00000000000..50c8031305b
+--- /dev/null
++++ config/kernel-generic_fillattr.m4
+@@ -0,0 +1,28 @@
++dnl #
++dnl # 5.12 API
++dnl #
++dnl # generic_fillattr in linux/fs.h now requires a struct user_namespace*
++dnl # as the first arg, to support idmapped mounts.
++dnl #
++AC_DEFUN([ZFS_AC_KERNEL_SRC_GENERIC_FILLATTR_USERNS], [
++	ZFS_LINUX_TEST_SRC([generic_fillattr_userns], [
++		#include <linux/fs.h>
++	],[
++		struct user_namespace *userns = NULL;
++		struct inode *in = NULL;
++		struct kstat *k = NULL;
++		generic_fillattr(userns, in, k);
++	])
++])
++
++AC_DEFUN([ZFS_AC_KERNEL_GENERIC_FILLATTR_USERNS], [
++	AC_MSG_CHECKING([whether generic_fillattr requres struct user_namespace*])
++	ZFS_LINUX_TEST_RESULT([generic_fillattr_userns], [
++		AC_MSG_RESULT([yes])
++		AC_DEFINE(HAVE_GENERIC_FILLATTR_USERNS, 1,
++		    [generic_fillattr requires struct user_namespace*])
++	],[
++		AC_MSG_RESULT([no])
++	])
++])
++
+diff --git config/kernel-inode-create.m4 config/kernel-inode-create.m4
+index 9f28bcbd4f7..a6ea11fb61b 100644
+--- config/kernel-inode-create.m4
++++ config/kernel-inode-create.m4
+@@ -1,7 +1,25 @@
+-dnl #
+-dnl # 3.6 API change
+-dnl #
+-AC_DEFUN([ZFS_AC_KERNEL_SRC_CREATE_FLAGS], [
++AC_DEFUN([ZFS_AC_KERNEL_SRC_CREATE], [
++	dnl #
++	dnl # 5.12 API change that added the struct user_namespace* arg
++	dnl # to the front of this function type's arg list.
++	dnl #
++	ZFS_LINUX_TEST_SRC([create_userns], [
++		#include <linux/fs.h>
++		#include <linux/sched.h>
++
++		int inode_create(struct user_namespace *userns,
++		    struct inode *inode ,struct dentry *dentry,
++		    umode_t umode, bool flag) { return 0; }
++
++		static const struct inode_operations
++			iops __attribute__ ((unused)) = {
++			.create		= inode_create,
++		};
++	],[])
++
++	dnl #
++	dnl # 3.6 API change
++	dnl #
+ 	ZFS_LINUX_TEST_SRC([create_flags], [
+ 		#include <linux/fs.h>
+ 		#include <linux/sched.h>
+@@ -16,11 +34,20 @@ AC_DEFUN([ZFS_AC_KERNEL_SRC_CREATE_FLAGS], [
+ 	],[])
+ ])
+ 
+-AC_DEFUN([ZFS_AC_KERNEL_CREATE_FLAGS], [
+-	AC_MSG_CHECKING([whether iops->create() passes flags])
+-	ZFS_LINUX_TEST_RESULT([create_flags], [
++AC_DEFUN([ZFS_AC_KERNEL_CREATE], [
++	AC_MSG_CHECKING([whether iops->create() takes struct user_namespace*])
++	ZFS_LINUX_TEST_RESULT([create_userns], [
+ 		AC_MSG_RESULT(yes)
++		AC_DEFINE(HAVE_IOPS_CREATE_USERNS, 1,
++		   [iops->create() takes struct user_namespace*])
+ 	],[
+-		ZFS_LINUX_TEST_ERROR([iops->create()])
++		AC_MSG_RESULT(no)
++
++		AC_MSG_CHECKING([whether iops->create() passes flags])
++		ZFS_LINUX_TEST_RESULT([create_flags], [
++			AC_MSG_RESULT(yes)
++		],[
++			ZFS_LINUX_TEST_ERROR([iops->create()])
++		])
+ 	])
+ ])
+diff --git config/kernel-inode-getattr.m4 config/kernel-inode-getattr.m4
+index 48391d66f8b..f62e82f5230 100644
+--- config/kernel-inode-getattr.m4
++++ config/kernel-inode-getattr.m4
+@@ -1,8 +1,29 @@
+-dnl #
+-dnl # Linux 4.11 API
+-dnl # See torvalds/linux@a528d35
+-dnl #
+ AC_DEFUN([ZFS_AC_KERNEL_SRC_INODE_GETATTR], [
++	dnl #
++	dnl # Linux 5.12 API
++	dnl # The getattr I/O operations handler type was extended to require
++	dnl # a struct user_namespace* as its first arg, to support idmapped
++	dnl # mounts.
++	dnl #
++	ZFS_LINUX_TEST_SRC([inode_operations_getattr_userns], [
++		#include <linux/fs.h>
++
++		int test_getattr(
++			struct user_namespace *userns,
++		    const struct path *p, struct kstat *k,
++		    u32 request_mask, unsigned int query_flags)
++		    { return 0; }
++
++		static const struct inode_operations
++		    iops __attribute__ ((unused)) = {
++			.getattr = test_getattr,
++		};
++	],[])
++
++	dnl #
++	dnl # Linux 4.11 API
++	dnl # See torvalds/linux@a528d35
++	dnl #
+ 	ZFS_LINUX_TEST_SRC([inode_operations_getattr_path], [
+ 		#include <linux/fs.h>
+ 
+@@ -33,21 +54,39 @@ AC_DEFUN([ZFS_AC_KERNEL_SRC_INODE_GETATTR], [
+ ])
+ 
+ AC_DEFUN([ZFS_AC_KERNEL_INODE_GETATTR], [
+-	AC_MSG_CHECKING([whether iops->getattr() takes a path])
+-	ZFS_LINUX_TEST_RESULT([inode_operations_getattr_path], [
++	dnl #
++	dnl # Kernel 5.12 test
++	dnl #
++	AC_MSG_CHECKING([whether iops->getattr() takes user_namespace])
++	ZFS_LINUX_TEST_RESULT([inode_operations_getattr_userns], [
+ 		AC_MSG_RESULT(yes)
+-		AC_DEFINE(HAVE_PATH_IOPS_GETATTR, 1,
+-		    [iops->getattr() takes a path])
++		AC_DEFINE(HAVE_USERNS_IOPS_GETATTR, 1,
++		    [iops->getattr() takes struct user_namespace*])
+ 	],[
+ 		AC_MSG_RESULT(no)
+ 
+-		AC_MSG_CHECKING([whether iops->getattr() takes a vfsmount])
+-		ZFS_LINUX_TEST_RESULT([inode_operations_getattr_vfsmount], [
++		dnl #
++		dnl # Kernel 4.11 test
++		dnl #
++		AC_MSG_CHECKING([whether iops->getattr() takes a path])
++		ZFS_LINUX_TEST_RESULT([inode_operations_getattr_path], [
+ 			AC_MSG_RESULT(yes)
+-			AC_DEFINE(HAVE_VFSMOUNT_IOPS_GETATTR, 1,
+-			    [iops->getattr() takes a vfsmount])
++			AC_DEFINE(HAVE_PATH_IOPS_GETATTR, 1,
++				[iops->getattr() takes a path])
+ 		],[
+ 			AC_MSG_RESULT(no)
++
++			dnl #
++			dnl # Kernel < 4.11 test
++			dnl #
++			AC_MSG_CHECKING([whether iops->getattr() takes a vfsmount])
++			ZFS_LINUX_TEST_RESULT([inode_operations_getattr_vfsmount], [
++				AC_MSG_RESULT(yes)
++				AC_DEFINE(HAVE_VFSMOUNT_IOPS_GETATTR, 1,
++					[iops->getattr() takes a vfsmount])
++			],[
++				AC_MSG_RESULT(no)
++			])
+ 		])
+ 	])
+ ])
+diff --git config/kernel-is_owner_or_cap.m4 config/kernel-is_owner_or_cap.m4
+index 3df6163da27..3c3c6ad2240 100644
+--- config/kernel-is_owner_or_cap.m4
++++ config/kernel-is_owner_or_cap.m4
+@@ -11,13 +11,32 @@ AC_DEFUN([ZFS_AC_KERNEL_SRC_INODE_OWNER_OR_CAPABLE], [
+ 		struct inode *ip = NULL;
+ 		(void) inode_owner_or_capable(ip);
+ 	])
++
++	ZFS_LINUX_TEST_SRC([inode_owner_or_capable_idmapped], [
++		#include <linux/fs.h>
++	],[
++		struct inode *ip = NULL;
++		(void) inode_owner_or_capable(&init_user_ns, ip);
++	])
+ ])
+ 
+ AC_DEFUN([ZFS_AC_KERNEL_INODE_OWNER_OR_CAPABLE], [
+ 	AC_MSG_CHECKING([whether inode_owner_or_capable() exists])
+ 	ZFS_LINUX_TEST_RESULT([inode_owner_or_capable], [
+ 		AC_MSG_RESULT(yes)
+-	],[
+-		ZFS_LINUX_TEST_ERROR([capability])
++		AC_DEFINE(HAVE_INODE_OWNER_OR_CAPABLE, 1,
++		    [inode_owner_or_capable() exists])
++	], [
++		AC_MSG_RESULT(no)
++
++		AC_MSG_CHECKING(
++		    [whether inode_owner_or_capable() takes user_ns])
++		ZFS_LINUX_TEST_RESULT([inode_owner_or_capable_idmapped], [
++			AC_MSG_RESULT(yes)
++			AC_DEFINE(HAVE_INODE_OWNER_OR_CAPABLE_IDMAPPED, 1,
++			    [inode_owner_or_capable() takes user_ns])
++		],[
++			ZFS_LINUX_TEST_ERROR([capability])
++		])
+ 	])
+ ])
+diff --git config/kernel-mkdir-umode-t.m4 config/kernel-mkdir-umode-t.m4
+deleted file mode 100644
+index 19599670df3..00000000000
+--- config/kernel-mkdir-umode-t.m4
++++ /dev/null
+@@ -1,32 +0,0 @@
+-dnl #
+-dnl # 3.3 API change
+-dnl # The VFS .create, .mkdir and .mknod callbacks were updated to take a
+-dnl # umode_t type rather than an int.  The expectation is that any backport
+-dnl # would also change all three prototypes.  However, if it turns out that
+-dnl # some distribution doesn't backport the whole thing this could be
+-dnl # broken apart into three separate checks.
+-dnl #
+-AC_DEFUN([ZFS_AC_KERNEL_SRC_MKDIR_UMODE_T], [
+-	ZFS_LINUX_TEST_SRC([inode_operations_mkdir], [
+-		#include <linux/fs.h>
+-
+-		int mkdir(struct inode *inode, struct dentry *dentry,
+-		    umode_t umode) { return 0; }
+-
+-		static const struct inode_operations
+-		    iops __attribute__ ((unused)) = {
+-			.mkdir = mkdir,
+-		};
+-	],[])
+-])
+-
+-AC_DEFUN([ZFS_AC_KERNEL_MKDIR_UMODE_T], [
+-	AC_MSG_CHECKING([whether iops->create()/mkdir()/mknod() take umode_t])
+-	ZFS_LINUX_TEST_RESULT([inode_operations_mkdir], [
+-		AC_MSG_RESULT(yes)
+-		AC_DEFINE(HAVE_MKDIR_UMODE_T, 1,
+-		    [iops->create()/mkdir()/mknod() take umode_t])
+-	],[
+-		ZFS_LINUX_TEST_ERROR([mkdir()])
+-	])
+-])
+diff --git config/kernel-mkdir.m4 config/kernel-mkdir.m4
+new file mode 100644
+index 00000000000..a162bcd880f
+--- /dev/null
++++ config/kernel-mkdir.m4
+@@ -0,0 +1,65 @@
++dnl #
++dnl # Supported mkdir() interfaces checked newest to oldest.
++dnl #
++AC_DEFUN([ZFS_AC_KERNEL_SRC_MKDIR], [
++	dnl #
++	dnl # 5.12 API change
++	dnl # The struct user_namespace arg was added as the first argument to
++	dnl # mkdir()
++	dnl #
++	ZFS_LINUX_TEST_SRC([mkdir_user_namespace], [
++		#include <linux/fs.h>
++
++		int mkdir(struct user_namespace *userns,
++			struct inode *inode, struct dentry *dentry,
++		    umode_t umode) { return 0; }
++
++		static const struct inode_operations
++		    iops __attribute__ ((unused)) = {
++			.mkdir = mkdir,
++		};
++	],[])
++
++	dnl #
++	dnl # 3.3 API change
++	dnl # The VFS .create, .mkdir and .mknod callbacks were updated to take a
++	dnl # umode_t type rather than an int.  The expectation is that any backport
++	dnl # would also change all three prototypes.  However, if it turns out that
++	dnl # some distribution doesn't backport the whole thing this could be
++	dnl # broken apart into three separate checks.
++	dnl #
++	ZFS_LINUX_TEST_SRC([inode_operations_mkdir], [
++		#include <linux/fs.h>
++
++		int mkdir(struct inode *inode, struct dentry *dentry,
++		    umode_t umode) { return 0; }
++
++		static const struct inode_operations
++		    iops __attribute__ ((unused)) = {
++			.mkdir = mkdir,
++		};
++	],[])
++])
++
++AC_DEFUN([ZFS_AC_KERNEL_MKDIR], [
++	dnl #
++	dnl # 5.12 API change
++	dnl # The struct user_namespace arg was added as the first argument to
++	dnl # mkdir() of the iops structure.
++	dnl #
++	AC_MSG_CHECKING([whether iops->mkdir() takes struct user_namespace*])
++	ZFS_LINUX_TEST_RESULT([mkdir_user_namespace], [
++		AC_MSG_RESULT(yes)
++		AC_DEFINE(HAVE_IOPS_MKDIR_USERNS, 1,
++		    [iops->mkdir() takes struct user_namespace*])
++	],[
++		AC_MSG_CHECKING([whether iops->mkdir() takes umode_t])
++		ZFS_LINUX_TEST_RESULT([inode_operations_mkdir], [
++			AC_MSG_RESULT(yes)
++			AC_DEFINE(HAVE_MKDIR_UMODE_T, 1,
++			    [iops->mkdir() takes umode_t])
++		],[
++			ZFS_LINUX_TEST_ERROR([mkdir()])
++		])
++	])
++])
+diff --git config/kernel-mknod.m4 config/kernel-mknod.m4
+new file mode 100644
+index 00000000000..ffe45106003
+--- /dev/null
++++ config/kernel-mknod.m4
+@@ -0,0 +1,30 @@
++AC_DEFUN([ZFS_AC_KERNEL_SRC_MKNOD], [
++	dnl #
++	dnl # 5.12 API change that added the struct user_namespace* arg
++	dnl # to the front of this function type's arg list.
++	dnl #
++	ZFS_LINUX_TEST_SRC([mknod_userns], [
++		#include <linux/fs.h>
++		#include <linux/sched.h>
++
++		int tmp_mknod(struct user_namespace *userns,
++		    struct inode *inode ,struct dentry *dentry,
++		    umode_t u, dev_t d) { return 0; }
++
++		static const struct inode_operations
++			iops __attribute__ ((unused)) = {
++			.mknod		= tmp_mknod,
++		};
++	],[])
++])
++
++AC_DEFUN([ZFS_AC_KERNEL_MKNOD], [
++	AC_MSG_CHECKING([whether iops->mknod() takes struct user_namespace*])
++	ZFS_LINUX_TEST_RESULT([mknod_userns], [
++		AC_MSG_RESULT(yes)
++		AC_DEFINE(HAVE_IOPS_MKNOD_USERNS, 1,
++		    [iops->mknod() takes struct user_namespace*])
++	],[
++		AC_MSG_RESULT(no)
++	])
++])
+diff --git config/kernel-rename.m4 config/kernel-rename.m4
+index f707391539d..31d199f33bb 100644
+--- config/kernel-rename.m4
++++ config/kernel-rename.m4
+@@ -1,10 +1,10 @@
+-dnl #
+-dnl # 4.9 API change,
+-dnl # iops->rename2() merged into iops->rename(), and iops->rename() now wants
+-dnl # flags.
+-dnl #
+-AC_DEFUN([ZFS_AC_KERNEL_SRC_RENAME_WANTS_FLAGS], [
+-	ZFS_LINUX_TEST_SRC([inode_operations_rename], [
++AC_DEFUN([ZFS_AC_KERNEL_SRC_RENAME], [
++	dnl #
++	dnl # 4.9 API change,
++	dnl # iops->rename2() merged into iops->rename(), and iops->rename() now wants
++	dnl # flags.
++	dnl #
++	ZFS_LINUX_TEST_SRC([inode_operations_rename_flags], [
+ 		#include <linux/fs.h>
+ 		int rename_fn(struct inode *sip, struct dentry *sdp,
+ 			struct inode *tip, struct dentry *tdp,
+@@ -15,15 +15,41 @@ AC_DEFUN([ZFS_AC_KERNEL_SRC_RENAME_WANTS_FLAGS], [
+ 			.rename = rename_fn,
+ 		};
+ 	],[])
++
++	dnl #
++	dnl # 5.12 API change,
++	dnl #
++	dnl # Linux 5.12 introduced passing struct user_namespace* as the first argument
++	dnl # of the rename() and other inode_operations members.
++	dnl #
++	ZFS_LINUX_TEST_SRC([inode_operations_rename_userns], [
++		#include <linux/fs.h>
++		int rename_fn(struct user_namespace *user_ns, struct inode *sip,
++			struct dentry *sdp, struct inode *tip, struct dentry *tdp,
++			unsigned int flags) { return 0; }
++
++		static const struct inode_operations
++		    iops __attribute__ ((unused)) = {
++			.rename = rename_fn,
++		};
++	],[])
+ ])
+ 
+-AC_DEFUN([ZFS_AC_KERNEL_RENAME_WANTS_FLAGS], [
+-	AC_MSG_CHECKING([whether iops->rename() wants flags])
+-	ZFS_LINUX_TEST_RESULT([inode_operations_rename], [
++AC_DEFUN([ZFS_AC_KERNEL_RENAME], [
++	AC_MSG_CHECKING([whether iops->rename() takes struct user_namespace*])
++	ZFS_LINUX_TEST_RESULT([inode_operations_rename_userns], [
+ 		AC_MSG_RESULT(yes)
+-		AC_DEFINE(HAVE_RENAME_WANTS_FLAGS, 1,
+-		    [iops->rename() wants flags])
++		AC_DEFINE(HAVE_IOPS_RENAME_USERNS, 1,
++		    [iops->rename() takes struct user_namespace*])
+ 	],[
+ 		AC_MSG_RESULT(no)
++
++		ZFS_LINUX_TEST_RESULT([inode_operations_rename_flags], [
++			AC_MSG_RESULT(yes)
++			AC_DEFINE(HAVE_RENAME_WANTS_FLAGS, 1,
++				[iops->rename() wants flags])
++		],[
++			AC_MSG_RESULT(no)
++		])
+ 	])
+ ])
+diff --git config/kernel-setattr-prepare.m4 config/kernel-setattr-prepare.m4
+index 45408c45c69..24245aa5344 100644
+--- config/kernel-setattr-prepare.m4
++++ config/kernel-setattr-prepare.m4
+@@ -1,27 +1,52 @@
+-dnl #
+-dnl # 4.9 API change
+-dnl # The inode_change_ok() function has been renamed setattr_prepare()
+-dnl # and updated to take a dentry rather than an inode.
+-dnl #
+ AC_DEFUN([ZFS_AC_KERNEL_SRC_SETATTR_PREPARE], [
++	dnl #
++	dnl # 4.9 API change
++	dnl # The inode_change_ok() function has been renamed setattr_prepare()
++	dnl # and updated to take a dentry rather than an inode.
++	dnl #
+ 	ZFS_LINUX_TEST_SRC([setattr_prepare], [
+ 		#include <linux/fs.h>
+ 	], [
+ 		struct dentry *dentry = NULL;
+ 		struct iattr *attr = NULL;
+ 		int error __attribute__ ((unused)) =
+-		    setattr_prepare(dentry, attr);
++			setattr_prepare(dentry, attr);
++	])
++
++	dnl #
++	dnl # 5.12 API change
++	dnl # The setattr_prepare() function has been changed to accept a new argument
++	dnl # for struct user_namespace*
++	dnl #
++	ZFS_LINUX_TEST_SRC([setattr_prepare_userns], [
++		#include <linux/fs.h>
++	], [
++		struct dentry *dentry = NULL;
++		struct iattr *attr = NULL;
++		struct user_namespace *userns = NULL;
++		int error __attribute__ ((unused)) =
++			setattr_prepare(userns, dentry, attr);
+ 	])
+ ])
+ 
+ AC_DEFUN([ZFS_AC_KERNEL_SETATTR_PREPARE], [
+-	AC_MSG_CHECKING([whether setattr_prepare() is available])
+-	ZFS_LINUX_TEST_RESULT_SYMBOL([setattr_prepare],
++	AC_MSG_CHECKING([whether setattr_prepare() is available and accepts struct user_namespace*])
++	ZFS_LINUX_TEST_RESULT_SYMBOL([setattr_prepare_userns],
+ 	    [setattr_prepare], [fs/attr.c], [
+ 		AC_MSG_RESULT(yes)
+-		AC_DEFINE(HAVE_SETATTR_PREPARE, 1,
+-		    [setattr_prepare() is available])
++		AC_DEFINE(HAVE_SETATTR_PREPARE_USERNS, 1,
++		    [setattr_prepare() accepts user_namespace])
+ 	], [
+ 		AC_MSG_RESULT(no)
++
++		AC_MSG_CHECKING([whether setattr_prepare() is available, doesn't accept user_namespace])
++		ZFS_LINUX_TEST_RESULT_SYMBOL([setattr_prepare],
++			[setattr_prepare], [fs/attr.c], [
++			AC_MSG_RESULT(yes)
++			AC_DEFINE(HAVE_SETATTR_PREPARE_NO_USERNS, 1,
++				[setattr_prepare() is available, doesn't accept user_namespace])
++		], [
++			AC_MSG_RESULT(no)
++		])
+ 	])
+ ])
+diff --git config/kernel-symlink.m4 config/kernel-symlink.m4
+new file mode 100644
+index 00000000000..d90366d04b7
+--- /dev/null
++++ config/kernel-symlink.m4
+@@ -0,0 +1,30 @@
++AC_DEFUN([ZFS_AC_KERNEL_SRC_SYMLINK], [
++	dnl #
++	dnl # 5.12 API change that added the struct user_namespace* arg
++	dnl # to the front of this function type's arg list.
++	dnl #
++	ZFS_LINUX_TEST_SRC([symlink_userns], [
++		#include <linux/fs.h>
++		#include <linux/sched.h>
++
++		int tmp_symlink(struct user_namespace *userns,
++		    struct inode *inode ,struct dentry *dentry,
++		    const char *path) { return 0; }
++
++		static const struct inode_operations
++			iops __attribute__ ((unused)) = {
++			.symlink		= tmp_symlink,
++		};
++	],[])
++])
++
++AC_DEFUN([ZFS_AC_KERNEL_SYMLINK], [
++	AC_MSG_CHECKING([whether iops->symlink() takes struct user_namespace*])
++	ZFS_LINUX_TEST_RESULT([symlink_userns], [
++		AC_MSG_RESULT(yes)
++		AC_DEFINE(HAVE_IOPS_SYMLINK_USERNS, 1,
++		    [iops->symlink() takes struct user_namespace*])
++	],[
++		AC_MSG_RESULT(no)
++	])
++])
+diff --git config/kernel-xattr-handler.m4 config/kernel-xattr-handler.m4
+index 137bf4a8aff..00b1e74a9cc 100644
+--- config/kernel-xattr-handler.m4
++++ config/kernel-xattr-handler.m4
+@@ -152,6 +152,21 @@ dnl #
+ dnl # Supported xattr handler set() interfaces checked newest to oldest.
+ dnl #
+ AC_DEFUN([ZFS_AC_KERNEL_SRC_XATTR_HANDLER_SET], [
++	ZFS_LINUX_TEST_SRC([xattr_handler_set_userns], [
++		#include <linux/xattr.h>
++
++		int set(const struct xattr_handler *handler,
++			struct user_namespace *mnt_userns,
++			struct dentry *dentry, struct inode *inode,
++			const char *name, const void *buffer,
++			size_t size, int flags)
++			{ return 0; }
++		static const struct xattr_handler
++			xops __attribute__ ((unused)) = {
++			.set = set,
++		};
++	],[])
++
+ 	ZFS_LINUX_TEST_SRC([xattr_handler_set_dentry_inode], [
+ 		#include <linux/xattr.h>
+ 
+@@ -194,45 +209,58 @@ AC_DEFUN([ZFS_AC_KERNEL_SRC_XATTR_HANDLER_SET], [
+ 
+ AC_DEFUN([ZFS_AC_KERNEL_XATTR_HANDLER_SET], [
+ 	dnl #
+-	dnl # 4.7 API change,
+-	dnl # The xattr_handler->set() callback was changed to take both
+-	dnl # dentry and inode.
++	dnl # 5.12 API change,
++	dnl # The xattr_handler->set() callback was changed to 8 arguments, and
++	dnl # struct user_namespace* was inserted as arg #2
+ 	dnl #
+-	AC_MSG_CHECKING([whether xattr_handler->set() wants dentry and inode])
+-	ZFS_LINUX_TEST_RESULT([xattr_handler_set_dentry_inode], [
++	AC_MSG_CHECKING([whether xattr_handler->set() wants dentry, inode, and user_namespace])
++	ZFS_LINUX_TEST_RESULT([xattr_handler_set_userns], [
+ 		AC_MSG_RESULT(yes)
+-		AC_DEFINE(HAVE_XATTR_SET_DENTRY_INODE, 1,
+-		    [xattr_handler->set() wants both dentry and inode])
++		AC_DEFINE(HAVE_XATTR_SET_USERNS, 1,
++		    [xattr_handler->set() takes user_namespace])
+ 	],[
+ 		dnl #
+-		dnl # 4.4 API change,
+-		dnl # The xattr_handler->set() callback was changed to take a
+-		dnl # xattr_handler, and handler_flags argument was removed and
+-		dnl # should be accessed by handler->flags.
++		dnl # 4.7 API change,
++		dnl # The xattr_handler->set() callback was changed to take both
++		dnl # dentry and inode.
+ 		dnl #
+ 		AC_MSG_RESULT(no)
+-		AC_MSG_CHECKING(
+-		    [whether xattr_handler->set() wants xattr_handler])
+-		ZFS_LINUX_TEST_RESULT([xattr_handler_set_xattr_handler], [
++		AC_MSG_CHECKING([whether xattr_handler->set() wants dentry and inode])
++		ZFS_LINUX_TEST_RESULT([xattr_handler_set_dentry_inode], [
+ 			AC_MSG_RESULT(yes)
+-			AC_DEFINE(HAVE_XATTR_SET_HANDLER, 1,
+-			    [xattr_handler->set() wants xattr_handler])
++			AC_DEFINE(HAVE_XATTR_SET_DENTRY_INODE, 1,
++			    [xattr_handler->set() wants both dentry and inode])
+ 		],[
+ 			dnl #
+-			dnl # 2.6.33 API change,
+-			dnl # The xattr_handler->set() callback was changed
+-			dnl # to take a dentry instead of an inode, and a
+-			dnl # handler_flags argument was added.
++			dnl # 4.4 API change,
++			dnl # The xattr_handler->set() callback was changed to take a
++			dnl # xattr_handler, and handler_flags argument was removed and
++			dnl # should be accessed by handler->flags.
+ 			dnl #
+ 			AC_MSG_RESULT(no)
+ 			AC_MSG_CHECKING(
+-			    [whether xattr_handler->set() wants dentry])
+-			ZFS_LINUX_TEST_RESULT([xattr_handler_set_dentry], [
++			    [whether xattr_handler->set() wants xattr_handler])
++			ZFS_LINUX_TEST_RESULT([xattr_handler_set_xattr_handler], [
+ 				AC_MSG_RESULT(yes)
+-				AC_DEFINE(HAVE_XATTR_SET_DENTRY, 1,
+-				    [xattr_handler->set() wants dentry])
++				AC_DEFINE(HAVE_XATTR_SET_HANDLER, 1,
++				    [xattr_handler->set() wants xattr_handler])
+ 			],[
+-				ZFS_LINUX_TEST_ERROR([xattr set()])
++				dnl #
++				dnl # 2.6.33 API change,
++				dnl # The xattr_handler->set() callback was changed
++				dnl # to take a dentry instead of an inode, and a
++				dnl # handler_flags argument was added.
++				dnl #
++				AC_MSG_RESULT(no)
++				AC_MSG_CHECKING(
++				    [whether xattr_handler->set() wants dentry])
++				ZFS_LINUX_TEST_RESULT([xattr_handler_set_dentry], [
++					AC_MSG_RESULT(yes)
++					AC_DEFINE(HAVE_XATTR_SET_DENTRY, 1,
++					    [xattr_handler->set() wants dentry])
++				],[
++					ZFS_LINUX_TEST_ERROR([xattr set()])
++				])
+ 			])
+ 		])
+ 	])
+diff --git config/kernel.m4 config/kernel.m4
+index 55620b3daa8..51c7fb926ec 100644
+--- config/kernel.m4
++++ config/kernel.m4
+@@ -79,9 +79,9 @@ AC_DEFUN([ZFS_AC_KERNEL_TEST_SRC], [
+ 	ZFS_AC_KERNEL_SRC_EVICT_INODE
+ 	ZFS_AC_KERNEL_SRC_DIRTY_INODE
+ 	ZFS_AC_KERNEL_SRC_SHRINKER
+-	ZFS_AC_KERNEL_SRC_MKDIR_UMODE_T
++	ZFS_AC_KERNEL_SRC_MKDIR
+ 	ZFS_AC_KERNEL_SRC_LOOKUP_FLAGS
+-	ZFS_AC_KERNEL_SRC_CREATE_FLAGS
++	ZFS_AC_KERNEL_SRC_CREATE
+ 	ZFS_AC_KERNEL_SRC_GET_LINK
+ 	ZFS_AC_KERNEL_SRC_PUT_LINK
+ 	ZFS_AC_KERNEL_SRC_TMPFILE
+@@ -115,7 +115,7 @@ AC_DEFUN([ZFS_AC_KERNEL_TEST_SRC], [
+ 	ZFS_AC_KERNEL_SRC_KUIDGID_T
+ 	ZFS_AC_KERNEL_SRC_KUID_HELPERS
+ 	ZFS_AC_KERNEL_SRC_MODULE_PARAM_CALL_CONST
+-	ZFS_AC_KERNEL_SRC_RENAME_WANTS_FLAGS
++	ZFS_AC_KERNEL_SRC_RENAME
+ 	ZFS_AC_KERNEL_SRC_CURRENT_TIME
+ 	ZFS_AC_KERNEL_SRC_USERNS_CAPABILITIES
+ 	ZFS_AC_KERNEL_SRC_IN_COMPAT_SYSCALL
+@@ -124,6 +124,9 @@ AC_DEFUN([ZFS_AC_KERNEL_TEST_SRC], [
+ 	ZFS_AC_KERNEL_SRC_TOTALHIGH_PAGES
+ 	ZFS_AC_KERNEL_SRC_KSTRTOUL
+ 	ZFS_AC_KERNEL_SRC_PERCPU
++	ZFS_AC_KERNEL_SRC_GENERIC_FILLATTR_USERNS
++	ZFS_AC_KERNEL_SRC_MKNOD
++	ZFS_AC_KERNEL_SRC_SYMLINK
+ 
+ 	AC_MSG_CHECKING([for available kernel interfaces])
+ 	ZFS_LINUX_TEST_COMPILE_ALL([kabi])
+@@ -176,9 +179,9 @@ AC_DEFUN([ZFS_AC_KERNEL_TEST_RESULT], [
+ 	ZFS_AC_KERNEL_EVICT_INODE
+ 	ZFS_AC_KERNEL_DIRTY_INODE
+ 	ZFS_AC_KERNEL_SHRINKER
+-	ZFS_AC_KERNEL_MKDIR_UMODE_T
++	ZFS_AC_KERNEL_MKDIR
+ 	ZFS_AC_KERNEL_LOOKUP_FLAGS
+-	ZFS_AC_KERNEL_CREATE_FLAGS
++	ZFS_AC_KERNEL_CREATE
+ 	ZFS_AC_KERNEL_GET_LINK
+ 	ZFS_AC_KERNEL_PUT_LINK
+ 	ZFS_AC_KERNEL_TMPFILE
+@@ -212,7 +215,7 @@ AC_DEFUN([ZFS_AC_KERNEL_TEST_RESULT], [
+ 	ZFS_AC_KERNEL_KUIDGID_T
+ 	ZFS_AC_KERNEL_KUID_HELPERS
+ 	ZFS_AC_KERNEL_MODULE_PARAM_CALL_CONST
+-	ZFS_AC_KERNEL_RENAME_WANTS_FLAGS
++	ZFS_AC_KERNEL_RENAME
+ 	ZFS_AC_KERNEL_CURRENT_TIME
+ 	ZFS_AC_KERNEL_USERNS_CAPABILITIES
+ 	ZFS_AC_KERNEL_IN_COMPAT_SYSCALL
+@@ -221,6 +224,9 @@ AC_DEFUN([ZFS_AC_KERNEL_TEST_RESULT], [
+ 	ZFS_AC_KERNEL_TOTALHIGH_PAGES
+ 	ZFS_AC_KERNEL_KSTRTOUL
+ 	ZFS_AC_KERNEL_PERCPU
++	ZFS_AC_KERNEL_GENERIC_FILLATTR_USERNS
++	ZFS_AC_KERNEL_MKNOD
++	ZFS_AC_KERNEL_SYMLINK
+ ])
+ 
+ dnl #
+diff --git include/os/linux/kernel/linux/vfs_compat.h include/os/linux/kernel/linux/vfs_compat.h
+index c35e80d31cd..91e908598fb 100644
+--- include/os/linux/kernel/linux/vfs_compat.h
++++ include/os/linux/kernel/linux/vfs_compat.h
+@@ -343,7 +343,8 @@ static inline void zfs_gid_write(struct inode *ip, gid_t gid)
+ /*
+  * 4.9 API change
+  */
+-#ifndef HAVE_SETATTR_PREPARE
++#if !(defined(HAVE_SETATTR_PREPARE_NO_USERNS) || \
++    defined(HAVE_SETATTR_PREPARE_USERNS))
+ static inline int
+ setattr_prepare(struct dentry *dentry, struct iattr *ia)
+ {
+@@ -389,6 +390,15 @@ func(const struct path *path, struct kstat *stat, u32 request_mask,	\
+ {									\
+ 	return (func##_impl(path, stat, request_mask, query_flags));	\
+ }
++#elif defined(HAVE_USERNS_IOPS_GETATTR)
++#define	ZPL_GETATTR_WRAPPER(func)					\
++static int								\
++func(struct user_namespace *user_ns, const struct path *path,	\
++    struct kstat *stat, u32 request_mask, unsigned int query_flags)	\
++{									\
++	return (func##_impl(user_ns, path, stat, request_mask, \
++	    query_flags));	\
++}
+ #else
+ #error
+ #endif
+@@ -436,4 +446,16 @@ zpl_is_32bit_api(void)
+ #endif
+ }
+ 
++/*
++ * 5.12 API change
++ * To support id-mapped mounts, generic_fillattr() was modified to
++ * accept a new struct user_namespace* as its first arg.
++ */
++#ifdef HAVE_GENERIC_FILLATTR_USERNS
++#define	zpl_generic_fillattr(user_ns, ip, sp)	\
++    generic_fillattr(user_ns, ip, sp)
++#else
++#define	zpl_generic_fillattr(user_ns, ip, sp)	generic_fillattr(ip, sp)
++#endif
++
+ #endif /* _ZFS_VFS_H */
+diff --git include/os/linux/kernel/linux/xattr_compat.h include/os/linux/kernel/linux/xattr_compat.h
+index 8348e99198a..54690727eab 100644
+--- include/os/linux/kernel/linux/xattr_compat.h
++++ include/os/linux/kernel/linux/xattr_compat.h
+@@ -119,12 +119,27 @@ fn(struct dentry *dentry, const char *name, void *buffer, size_t size,	\
+ #error "Unsupported kernel"
+ #endif
+ 
++/*
++ * 5.12 API change,
++ * The xattr_handler->set() callback was changed to take the
++ * struct user_namespace* as the first arg, to support idmapped
++ * mounts.
++ */
++#if defined(HAVE_XATTR_SET_USERNS)
++#define	ZPL_XATTR_SET_WRAPPER(fn)					\
++static int								\
++fn(const struct xattr_handler *handler, struct user_namespace *user_ns, \
++    struct dentry *dentry, struct inode *inode, const char *name,	\
++    const void *buffer, size_t size, int flags)	\
++{									\
++	return (__ ## fn(inode, name, buffer, size, flags));		\
++}
+ /*
+  * 4.7 API change,
+  * The xattr_handler->set() callback was changed to take a both dentry and
+  * inode, because the dentry might not be attached to an inode yet.
+  */
+-#if defined(HAVE_XATTR_SET_DENTRY_INODE)
++#elif defined(HAVE_XATTR_SET_DENTRY_INODE)
+ #define	ZPL_XATTR_SET_WRAPPER(fn)					\
+ static int								\
+ fn(const struct xattr_handler *handler, struct dentry *dentry,		\
+diff --git include/os/linux/zfs/sys/zfs_vnops_os.h include/os/linux/zfs/sys/zfs_vnops_os.h
+index 1c9cdf7bf8f..ba83f5dd83d 100644
+--- include/os/linux/zfs/sys/zfs_vnops_os.h
++++ include/os/linux/zfs/sys/zfs_vnops_os.h
+@@ -56,7 +56,8 @@ extern int zfs_mkdir(znode_t *dzp, char *dirname, vattr_t *vap,
+ extern int zfs_rmdir(znode_t *dzp, char *name, znode_t *cwd,
+     cred_t *cr, int flags);
+ extern int zfs_readdir(struct inode *ip, zpl_dir_context_t *ctx, cred_t *cr);
+-extern int zfs_getattr_fast(struct inode *ip, struct kstat *sp);
++extern int zfs_getattr_fast(struct user_namespace *, struct inode *ip,
++	struct kstat *sp);
+ extern int zfs_setattr(znode_t *zp, vattr_t *vap, int flag, cred_t *cr);
+ extern int zfs_rename(znode_t *sdzp, char *snm, znode_t *tdzp,
+     char *tnm, cred_t *cr, int flags);
+diff --git include/os/linux/zfs/sys/zpl.h include/os/linux/zfs/sys/zpl.h
+index b0bb9c29c0b..21825d1f378 100644
+--- include/os/linux/zfs/sys/zpl.h
++++ include/os/linux/zfs/sys/zpl.h
+@@ -171,4 +171,22 @@ zpl_dir_emit_dots(struct file *file, zpl_dir_context_t *ctx)
+ 	timespec_trunc(ts, (ip)->i_sb->s_time_gran)
+ #endif
+ 
++#if defined(HAVE_INODE_OWNER_OR_CAPABLE)
++#define	zpl_inode_owner_or_capable(ns, ip)	inode_owner_or_capable(ip)
++#elif defined(HAVE_INODE_OWNER_OR_CAPABLE_IDMAPPED)
++#define	zpl_inode_owner_or_capable(ns, ip)	inode_owner_or_capable(ns, ip)
++#else
++#error "Unsupported kernel"
++#endif
++
++#ifdef HAVE_SETATTR_PREPARE_USERNS
++#define	zpl_setattr_prepare(ns, dentry, ia)	setattr_prepare(ns, dentry, ia)
++#else
++/*
++ * Use kernel-provided version, or our own from
++ * linux/vfs_compat.h
++ */
++#define	zpl_setattr_prepare(ns, dentry, ia)	setattr_prepare(dentry, ia)
++#endif
++
+ #endif	/* _SYS_ZPL_H */
+diff --git module/os/linux/zfs/policy.c module/os/linux/zfs/policy.c
+index 8780d7f6c70..bbccb2e572d 100644
+--- module/os/linux/zfs/policy.c
++++ module/os/linux/zfs/policy.c
+@@ -124,7 +124,7 @@ secpolicy_vnode_any_access(const cred_t *cr, struct inode *ip, uid_t owner)
+ 	if (crgetfsuid(cr) == owner)
+ 		return (0);
+ 
+-	if (inode_owner_or_capable(ip))
++	if (zpl_inode_owner_or_capable(kcred->user_ns, ip))
+ 		return (0);
+ 
+ #if defined(CONFIG_USER_NS)
+diff --git module/os/linux/zfs/zfs_vnops_os.c module/os/linux/zfs/zfs_vnops_os.c
+index 7484d651c1f..ce0701763fd 100644
+--- module/os/linux/zfs/zfs_vnops_os.c
++++ module/os/linux/zfs/zfs_vnops_os.c
+@@ -1907,7 +1907,8 @@ zfs_readdir(struct inode *ip, zpl_dir_context_t *ctx, cred_t *cr)
+  */
+ /* ARGSUSED */
+ int
+-zfs_getattr_fast(struct inode *ip, struct kstat *sp)
++zfs_getattr_fast(struct user_namespace *user_ns, struct inode *ip,
++    struct kstat *sp)
+ {
+ 	znode_t *zp = ITOZ(ip);
+ 	zfsvfs_t *zfsvfs = ITOZSB(ip);
+@@ -1919,7 +1920,7 @@ zfs_getattr_fast(struct inode *ip, struct kstat *sp)
+ 
+ 	mutex_enter(&zp->z_lock);
+ 
+-	generic_fillattr(ip, sp);
++	zpl_generic_fillattr(user_ns, ip, sp);
+ 	/*
+ 	 * +1 link count for root inode with visible '.zfs' directory.
+ 	 */
+diff --git module/os/linux/zfs/zpl_ctldir.c module/os/linux/zfs/zpl_ctldir.c
+index e6420f19ed8..9b526afd000 100644
+--- module/os/linux/zfs/zpl_ctldir.c
++++ module/os/linux/zfs/zpl_ctldir.c
+@@ -101,12 +101,22 @@ zpl_root_readdir(struct file *filp, void *dirent, filldir_t filldir)
+  */
+ /* ARGSUSED */
+ static int
++#ifdef HAVE_USERNS_IOPS_GETATTR
++zpl_root_getattr_impl(struct user_namespace *user_ns,
++    const struct path *path, struct kstat *stat, u32 request_mask,
++    unsigned int query_flags)
++#else
+ zpl_root_getattr_impl(const struct path *path, struct kstat *stat,
+     u32 request_mask, unsigned int query_flags)
++#endif
+ {
+ 	struct inode *ip = path->dentry->d_inode;
+ 
++#if defined(HAVE_GENERIC_FILLATTR_USERNS) && defined(HAVE_USERNS_IOPS_GETATTR)
++	generic_fillattr(user_ns, ip, stat);
++#else
+ 	generic_fillattr(ip, stat);
++#endif
+ 	stat->atime = current_time(ip);
+ 
+ 	return (0);
+@@ -290,8 +300,14 @@ zpl_snapdir_readdir(struct file *filp, void *dirent, filldir_t filldir)
+ #endif /* !HAVE_VFS_ITERATE && !HAVE_VFS_ITERATE_SHARED */
+ 
+ static int
++#ifdef HAVE_IOPS_RENAME_USERNS
++zpl_snapdir_rename2(struct user_namespace *user_ns, struct inode *sdip,
++    struct dentry *sdentry, struct inode *tdip, struct dentry *tdentry,
++    unsigned int flags)
++#else
+ zpl_snapdir_rename2(struct inode *sdip, struct dentry *sdentry,
+     struct inode *tdip, struct dentry *tdentry, unsigned int flags)
++#endif
+ {
+ 	cred_t *cr = CRED();
+ 	int error;
+@@ -309,7 +325,7 @@ zpl_snapdir_rename2(struct inode *sdip, struct dentry *sdentry,
+ 	return (error);
+ }
+ 
+-#ifndef HAVE_RENAME_WANTS_FLAGS
++#if !defined(HAVE_RENAME_WANTS_FLAGS) && !defined(HAVE_IOPS_RENAME_USERNS)
+ static int
+ zpl_snapdir_rename(struct inode *sdip, struct dentry *sdentry,
+     struct inode *tdip, struct dentry *tdentry)
+@@ -333,7 +349,12 @@ zpl_snapdir_rmdir(struct inode *dip, struct dentry *dentry)
+ }
+ 
+ static int
++#ifdef HAVE_IOPS_MKDIR_USERNS
++zpl_snapdir_mkdir(struct user_namespace *user_ns, struct inode *dip,
++    struct dentry *dentry, umode_t mode)
++#else
+ zpl_snapdir_mkdir(struct inode *dip, struct dentry *dentry, umode_t mode)
++#endif
+ {
+ 	cred_t *cr = CRED();
+ 	vattr_t *vap;
+@@ -363,14 +384,24 @@ zpl_snapdir_mkdir(struct inode *dip, struct dentry *dentry, umode_t mode)
+  */
+ /* ARGSUSED */
+ static int
++#ifdef HAVE_USERNS_IOPS_GETATTR
++zpl_snapdir_getattr_impl(struct user_namespace *user_ns,
++    const struct path *path, struct kstat *stat, u32 request_mask,
++    unsigned int query_flags)
++#else
+ zpl_snapdir_getattr_impl(const struct path *path, struct kstat *stat,
+     u32 request_mask, unsigned int query_flags)
++#endif
+ {
+ 	struct inode *ip = path->dentry->d_inode;
+ 	zfsvfs_t *zfsvfs = ITOZSB(ip);
+ 
+ 	ZPL_ENTER(zfsvfs);
++#if defined(HAVE_GENERIC_FILLATTR_USERNS) && defined(HAVE_USERNS_IOPS_GETATTR)
++	generic_fillattr(user_ns, ip, stat);
++#else
+ 	generic_fillattr(ip, stat);
++#endif
+ 
+ 	stat->nlink = stat->size = 2;
+ 	stat->ctime = stat->mtime = dmu_objset_snap_cmtime(zfsvfs->z_os);
+@@ -408,7 +439,7 @@ const struct file_operations zpl_fops_snapdir = {
+ const struct inode_operations zpl_ops_snapdir = {
+ 	.lookup		= zpl_snapdir_lookup,
+ 	.getattr	= zpl_snapdir_getattr,
+-#ifdef HAVE_RENAME_WANTS_FLAGS
++#if defined(HAVE_RENAME_WANTS_FLAGS) || defined(HAVE_IOPS_RENAME_USERNS)
+ 	.rename		= zpl_snapdir_rename2,
+ #else
+ 	.rename		= zpl_snapdir_rename,
+@@ -495,8 +526,14 @@ zpl_shares_readdir(struct file *filp, void *dirent, filldir_t filldir)
+ 
+ /* ARGSUSED */
+ static int
++#ifdef HAVE_USERNS_IOPS_GETATTR
++zpl_shares_getattr_impl(struct user_namespace *user_ns,
++    const struct path *path, struct kstat *stat, u32 request_mask,
++    unsigned int query_flags)
++#else
+ zpl_shares_getattr_impl(const struct path *path, struct kstat *stat,
+     u32 request_mask, unsigned int query_flags)
++#endif
+ {
+ 	struct inode *ip = path->dentry->d_inode;
+ 	zfsvfs_t *zfsvfs = ITOZSB(ip);
+@@ -506,7 +543,11 @@ zpl_shares_getattr_impl(const struct path *path, struct kstat *stat,
+ 	ZPL_ENTER(zfsvfs);
+ 
+ 	if (zfsvfs->z_shares_dir == 0) {
++#if defined(HAVE_GENERIC_FILLATTR_USERNS) && defined(HAVE_USERNS_IOPS_GETATTR)
++		generic_fillattr(user_ns, path->dentry->d_inode, stat);
++#else
+ 		generic_fillattr(path->dentry->d_inode, stat);
++#endif
+ 		stat->nlink = stat->size = 2;
+ 		stat->atime = current_time(ip);
+ 		ZPL_EXIT(zfsvfs);
+@@ -515,7 +556,11 @@ zpl_shares_getattr_impl(const struct path *path, struct kstat *stat,
+ 
+ 	error = -zfs_zget(zfsvfs, zfsvfs->z_shares_dir, &dzp);
+ 	if (error == 0) {
+-		error = -zfs_getattr_fast(ZTOI(dzp), stat);
++#if defined(HAVE_GENERIC_FILLATTR_USERNS) && defined(HAVE_USERNS_IOPS_GETATTR)
++		error = -zfs_getattr_fast(user_ns, ZTOI(dzp), stat);
++#else
++		error = -zfs_getattr_fast(kcred->user_ns, ZTOI(dzp), stat);
++#endif
+ 		iput(ZTOI(dzp));
+ 	}
+ 
+diff --git module/os/linux/zfs/zpl_file.c module/os/linux/zfs/zpl_file.c
+index 80762f9669b..08bf97ff338 100644
+--- module/os/linux/zfs/zpl_file.c
++++ module/os/linux/zfs/zpl_file.c
+@@ -869,7 +869,7 @@ __zpl_ioctl_setflags(struct inode *ip, uint32_t ioctl_flags, xvattr_t *xva)
+ 	    !capable(CAP_LINUX_IMMUTABLE))
+ 		return (-EACCES);
+ 
+-	if (!inode_owner_or_capable(ip))
++	if (!zpl_inode_owner_or_capable(kcred->user_ns, ip))
+ 		return (-EACCES);
+ 
+ 	xva_init(xva);
+diff --git module/os/linux/zfs/zpl_inode.c module/os/linux/zfs/zpl_inode.c
+index f336fbb1272..364b9fbef24 100644
+--- module/os/linux/zfs/zpl_inode.c
++++ module/os/linux/zfs/zpl_inode.c
+@@ -128,7 +128,12 @@ zpl_vap_init(vattr_t *vap, struct inode *dir, umode_t mode, cred_t *cr)
+ }
+ 
+ static int
++#ifdef HAVE_IOPS_CREATE_USERNS
++zpl_create(struct user_namespace *user_ns, struct inode *dir,
++    struct dentry *dentry, umode_t mode, bool flag)
++#else
+ zpl_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool flag)
++#endif
+ {
+ 	cred_t *cr = CRED();
+ 	znode_t *zp;
+@@ -163,7 +168,12 @@ zpl_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool flag)
+ }
+ 
+ static int
++#ifdef HAVE_IOPS_MKNOD_USERNS
++zpl_mknod(struct user_namespace *user_ns, struct inode *dir,
++    struct dentry *dentry, umode_t mode,
++#else
+ zpl_mknod(struct inode *dir, struct dentry *dentry, umode_t mode,
++#endif
+     dev_t rdev)
+ {
+ 	cred_t *cr = CRED();
+@@ -278,7 +288,12 @@ zpl_unlink(struct inode *dir, struct dentry *dentry)
+ }
+ 
+ static int
++#ifdef HAVE_IOPS_MKDIR_USERNS
++zpl_mkdir(struct user_namespace *user_ns, struct inode *dir,
++    struct dentry *dentry, umode_t mode)
++#else
+ zpl_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
++#endif
+ {
+ 	cred_t *cr = CRED();
+ 	vattr_t *vap;
+@@ -338,8 +353,14 @@ zpl_rmdir(struct inode *dir, struct dentry *dentry)
+ }
+ 
+ static int
++#ifdef HAVE_USERNS_IOPS_GETATTR
++zpl_getattr_impl(struct user_namespace *user_ns,
++    const struct path *path, struct kstat *stat, u32 request_mask,
++    unsigned int query_flags)
++#else
+ zpl_getattr_impl(const struct path *path, struct kstat *stat, u32 request_mask,
+     unsigned int query_flags)
++#endif
+ {
+ 	int error;
+ 	fstrans_cookie_t cookie;
+@@ -350,7 +371,11 @@ zpl_getattr_impl(const struct path *path, struct kstat *stat, u32 request_mask,
+ 	 * XXX request_mask and query_flags currently ignored.
+ 	 */
+ 
+-	error = -zfs_getattr_fast(path->dentry->d_inode, stat);
++#ifdef HAVE_USERNS_IOPS_GETATTR
++	error = -zfs_getattr_fast(user_ns, path->dentry->d_inode, stat);
++#else
++	error = -zfs_getattr_fast(kcred->user_ns, path->dentry->d_inode, stat);
++#endif
+ 	spl_fstrans_unmark(cookie);
+ 	ASSERT3S(error, <=, 0);
+ 
+@@ -359,7 +384,12 @@ zpl_getattr_impl(const struct path *path, struct kstat *stat, u32 request_mask,
+ ZPL_GETATTR_WRAPPER(zpl_getattr);
+ 
+ static int
++#ifdef HAVE_SETATTR_PREPARE_USERNS
++zpl_setattr(struct user_namespace *user_ns, struct dentry *dentry,
++    struct iattr *ia)
++#else
+ zpl_setattr(struct dentry *dentry, struct iattr *ia)
++#endif
+ {
+ 	struct inode *ip = dentry->d_inode;
+ 	cred_t *cr = CRED();
+@@ -367,7 +397,7 @@ zpl_setattr(struct dentry *dentry, struct iattr *ia)
+ 	int error;
+ 	fstrans_cookie_t cookie;
+ 
+-	error = setattr_prepare(dentry, ia);
++	error = zpl_setattr_prepare(kcred->user_ns, dentry, ia);
+ 	if (error)
+ 		return (error);
+ 
+@@ -399,8 +429,14 @@ zpl_setattr(struct dentry *dentry, struct iattr *ia)
+ }
+ 
+ static int
++#ifdef HAVE_IOPS_RENAME_USERNS
++zpl_rename2(struct user_namespace *user_ns, struct inode *sdip,
++    struct dentry *sdentry, struct inode *tdip, struct dentry *tdentry,
++    unsigned int flags)
++#else
+ zpl_rename2(struct inode *sdip, struct dentry *sdentry,
+     struct inode *tdip, struct dentry *tdentry, unsigned int flags)
++#endif
+ {
+ 	cred_t *cr = CRED();
+ 	int error;
+@@ -421,7 +457,7 @@ zpl_rename2(struct inode *sdip, struct dentry *sdentry,
+ 	return (error);
+ }
+ 
+-#ifndef HAVE_RENAME_WANTS_FLAGS
++#if !defined(HAVE_RENAME_WANTS_FLAGS) && !defined(HAVE_IOPS_RENAME_USERNS)
+ static int
+ zpl_rename(struct inode *sdip, struct dentry *sdentry,
+     struct inode *tdip, struct dentry *tdentry)
+@@ -431,7 +467,12 @@ zpl_rename(struct inode *sdip, struct dentry *sdentry,
+ #endif
+ 
+ static int
++#ifdef HAVE_IOPS_SYMLINK_USERNS
++zpl_symlink(struct user_namespace *user_ns, struct inode *dir,
++    struct dentry *dentry, const char *name)
++#else
+ zpl_symlink(struct inode *dir, struct dentry *dentry, const char *name)
++#endif
+ {
+ 	cred_t *cr = CRED();
+ 	vattr_t *vap;
+@@ -677,7 +718,7 @@ const struct inode_operations zpl_dir_inode_operations = {
+ 	.mkdir		= zpl_mkdir,
+ 	.rmdir		= zpl_rmdir,
+ 	.mknod		= zpl_mknod,
+-#ifdef HAVE_RENAME_WANTS_FLAGS
++#if defined(HAVE_RENAME_WANTS_FLAGS) || defined(HAVE_IOPS_RENAME_USERNS)
+ 	.rename		= zpl_rename2,
+ #else
+ 	.rename		= zpl_rename,
+diff --git module/os/linux/zfs/zpl_xattr.c module/os/linux/zfs/zpl_xattr.c
+index 1ec3dae2bb8..5e35f90df85 100644
+--- module/os/linux/zfs/zpl_xattr.c
++++ module/os/linux/zfs/zpl_xattr.c
+@@ -1233,7 +1233,7 @@ __zpl_xattr_acl_set_access(struct inode *ip, const char *name,
+ 	if (ITOZSB(ip)->z_acl_type != ZFS_ACLTYPE_POSIX)
+ 		return (-EOPNOTSUPP);
+ 
+-	if (!inode_owner_or_capable(ip))
++	if (!zpl_inode_owner_or_capable(kcred->user_ns, ip))
+ 		return (-EPERM);
+ 
+ 	if (value) {
+@@ -1273,7 +1273,7 @@ __zpl_xattr_acl_set_default(struct inode *ip, const char *name,
+ 	if (ITOZSB(ip)->z_acl_type != ZFS_ACLTYPE_POSIX)
+ 		return (-EOPNOTSUPP);
+ 
+-	if (!inode_owner_or_capable(ip))
++	if (!zpl_inode_owner_or_capable(kcred->user_ns, ip))
+ 		return (-EPERM);
+ 
+ 	if (value) {

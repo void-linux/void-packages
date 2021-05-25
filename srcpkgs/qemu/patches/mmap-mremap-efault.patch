@@ -1,0 +1,42 @@
+Source: @pullmoll
+Upstream: no
+Reason: errno=EFAULT when the address passed to mremap(2) is not valid
+
+See Rich Felker's comment at https://www.openwall.com/lists/musl/2017/06/21/2 for
+why we need to return errno as described in man mremap(2) from qemu-user-static.
+Also speed up the loop when checking for increasing the mappings size to go
+in steps of TARGET_PAGE_SIZE and OR-in a check for the very last byte of the range.
+diff --git linux-user/mmap.c linux-user/mmap.c
+index 7e3b245..1e8d0f1 100644
+--- linux-user/mmap.c
++++ linux-user/mmap.c
+@@ -738,7 +738,7 @@ abi_long target_mremap(abi_ulong old_addr, abi_ulong old_size,
+          !guest_range_valid_untagged(new_addr, new_size)) ||
+         ((flags & MREMAP_MAYMOVE) == 0 &&
+          !guest_range_valid_untagged(old_addr, new_size))) {
+-        errno = ENOMEM;
++        errno = EFAULT;
+         return -1;
+     }
+ 
+@@ -775,9 +775,10 @@ abi_long target_mremap(abi_ulong old_addr, abi_ulong old_size,
+             abi_ulong addr;
+             for (addr = old_addr + old_size;
+                  addr < old_addr + new_size;
+-                 addr++) {
++                 addr += TARGET_PAGE_SIZE) {
+                 prot |= page_get_flags(addr);
+             }
++				prot |= page_get_flags(old_addr + new_size - 1);
+         }
+         if (prot == 0) {
+             host_addr = mremap(g2h_untagged(old_addr),
+@@ -796,7 +797,7 @@ abi_long target_mremap(abi_ulong old_addr, abi_ulong old_size,
+                 }
+             }
+         } else {
+-            errno = ENOMEM;
++            errno = EFAULT;
+             host_addr = MAP_FAILED;
+         }
+     }

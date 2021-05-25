@@ -10,15 +10,18 @@ _gitshort="${_githash:0:7}"
 
 pkgname=rpi-kernel
 version=5.4.83
-revision=1
+revision=2
+archs="armv6l*"
 wrksrc="linux-${_githash}"
+hostmakedepends="perl kmod uboot-mkimage openssl-devel bc bison flex"
+makedepends="ncurses-devel"
 maintainer="Piraty <piraty1@inbox.ru>"
 homepage="http://www.kernel.org"
 license="GPL-2.0-only"
-short_desc="The Linux kernel for Raspberry Pi (${version%.*} series [git ${_gitshort}])"
+short_desc="Linux kernel for Raspberry Pi zero/1 (${version%.*} series [git ${_gitshort}])"
 distfiles="https://github.com/raspberrypi/linux/archive/${_githash}.tar.gz"
 checksum=4a98ea0d68c6e74d479789c12fc97619c872cb2607ae87a881a9491c1c3fbc35
-python_version=2
+python_version=3
 
 _kernver="${version}_${revision}"
 
@@ -27,10 +30,6 @@ nostrip=yes
 noverifyrdeps=yes
 noshlibprovides=yes
 
-# RPi, RPi2, RPi3
-archs="armv6l* armv7l* aarch64*"
-hostmakedepends="perl kmod uboot-mkimage openssl-devel bc bison flex"
-makedepends="ncurses-devel"
 triggers="kernel-hooks"
 # These files could be modified when an external module is built.
 mutable_files="
@@ -62,15 +61,6 @@ do_configure() {
 
 	# Use upstream's default configuration, no need to maintain ours.
 	case "$XBPS_TARGET_MACHINE" in
-		# RPi3
-		aarch64*)
-			target=bcmrpi3_defconfig
-			;;
-		# RPi2 / RPi3
-		armv7l*)
-			target=bcm2709_defconfig
-			;;
-		# RPi1
 		armv6l*)
 			target=bcmrpi_defconfig
 			;;
@@ -81,7 +71,7 @@ do_configure() {
 	echo "CONFIG_PROC_EVENTS=y" >> "$defconfig"
 	echo "CONFIG_F2FS_FS_SECURITY=y" >> "$defconfig"
 	echo "CONFIG_CGROUP_PIDS=y" >> "$defconfig"
-	
+
 	# IR Remote Support
 	echo "CONFIG_RC_CORE=y" >> "$defconfig"
 	echo "CONFIG_LIRC=y" >> "$defconfig"
@@ -128,26 +118,9 @@ do_install() {
 	# Install device tree blobs
 	make ${makejobs} ARCH=${_arch} INSTALL_DTBS_PATH=${DESTDIR}/boot dtbs_install
 
-	# move dtb that ended up in /boot/broadcom
-	case "$XBPS_TARGET_MACHINE" in
-	aarch64*)
-		mv ${DESTDIR}/boot/broadcom/bcm{2710,2837}-*.dtb ${DESTDIR}/boot
-		;;
-	esac
-
-	vmkdir boot
 	# Generate kernel.img and install it to destdir.
-	case "$XBPS_TARGET_MACHINE" in
-	aarch64*)
-		cp arch/arm64/boot/Image ${DESTDIR}/boot/kernel8.img
-		;;
-	armv7l*)
-		cp arch/arm/boot/zImage ${DESTDIR}/boot/kernel7.img
-		;;
-	armv6l*)
-		cp arch/arm/boot/zImage ${DESTDIR}/boot/kernel.img
-		;;
-	esac
+	vmkdir boot
+	cp arch/arm/boot/zImage ${DESTDIR}/boot/kernel.img
 
 	hdrdest=${DESTDIR}/usr/src/${sourcepkg}-headers-${_kernver}
 
@@ -252,9 +225,40 @@ rpi-kernel-headers_package() {
 	nostrip=yes
 	noverifyrdeps=yes
 	noshlibprovides=yes
-	short_desc="The Linux kernel headers for Raspberry Pi (${version%.*} series [git ${_gitshort}])"
+	short_desc="${short_desc/kernel/kernel headers}"
 	pkg_install() {
 		vmove usr/src
 		vmove usr/lib/modules/${_kernver}/build
 	}
 }
+
+
+# support legacy systems (before rpi-kernel was split to rpi{,2,3})
+# archs != armv6* are emtpy meta packages to pull the new rpi{$n}-kernel package
+archs+=" armv7l* aarch64*"
+case "$XBPS_TARGET_MACHINE" in
+	armv6*) : ;;
+	*)
+		build_style=meta
+		short_desc="Linux kernel for Raspberry Pi (transitional dummy package)"
+
+		pre_configure() { : ; }
+		do_configure() { : ; }
+		do_build() { : ; }
+		do_install() { : ; }
+
+		case "$XBPS_TARGET_MACHINE" in
+			armv7*) depends=rpi2-kernel ;;
+			aarch64*) depends=rpi3-kernel ;;
+		esac
+
+		rpi-kernel-headers_package() {
+			build_style=meta
+			short_desc="Linux kernel headers for Raspberry Pi (transitional dummy package)"
+			case "$XBPS_TARGET_MACHINE" in
+				armv7*) depends=rpi2-kernel-headers ;;
+				aarch64*) depends=rpi3-kernel-headers ;;
+			esac
+		}
+		;;
+esac

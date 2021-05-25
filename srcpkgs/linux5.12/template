@@ -1,0 +1,330 @@
+# Template file for 'linux5.12'
+pkgname=linux5.12
+version=5.12.6
+revision=1
+wrksrc="linux-${version%.*}"
+short_desc="Linux kernel and modules (${version%.*} series)"
+maintainer="Érico Nogueira <ericonr@disroot.org>"
+license="GPL-2.0-only"
+homepage="https://www.kernel.org"
+distfiles="https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${version%.*}.tar.xz
+ https://cdn.kernel.org/pub/linux/kernel/v5.x/patch-${version}.xz"
+checksum="7d0df6f2bf2384d68d0bd8e1fe3e071d64364dcdc6002e7b5c87c92d48fac366
+ 2ae3722dade1a14194d0431e260628f4b7a1a0117fa7464d745be37212cd8d3e"
+skip_extraction="patch-${version}.xz"
+python_version=3
+patch_args="-Np1"
+
+# XXX Restrict archs until a proper <arch>-dotconfig is available in FILESDIR.
+archs="x86_64* i686* aarch64* ppc*"
+
+nodebug=yes  # -dbg package is generated below manually
+nostrip=yes
+noverifyrdeps=yes
+noshlibprovides=yes
+preserve=yes
+
+hostmakedepends="tar xz bc elfutils-devel flex gmp-devel kmod libmpc-devel
+ openssl-devel perl uboot-mkimage cpio pahole python3"
+
+_kernver="${version}_${revision}"
+triggers="kernel-hooks"
+kernel_hooks_version="${_kernver}"
+
+# These files could be modified when an external module is built.
+mutable_files="
+ /usr/lib/modules/${_kernver}/modules.builtin.bin
+ /usr/lib/modules/${_kernver}/modules.builtin.alias.bin
+ /usr/lib/modules/${_kernver}/modules.softdep
+ /usr/lib/modules/${_kernver}/modules.dep
+ /usr/lib/modules/${_kernver}/modules.dep.bin
+ /usr/lib/modules/${_kernver}/modules.symbols
+ /usr/lib/modules/${_kernver}/modules.symbols.bin
+ /usr/lib/modules/${_kernver}/modules.alias
+ /usr/lib/modules/${_kernver}/modules.alias.bin
+ /usr/lib/modules/${_kernver}/modules.devname"
+
+# reproducible build
+export KBUILD_BUILD_TIMESTAMP=${SOURCE_DATE_EPOCH:-0}
+export KBUILD_BUILD_USER=voidlinux
+export KBUILD_BUILD_HOST=voidlinux
+
+if [ "$CROSS_BUILD" ]; then
+	_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+fi
+
+pre_patch() {
+	xzcat $XBPS_SRCDISTDIR/$pkgname-$version/patch-${version}.xz | patch -Np1
+}
+
+do_configure() {
+	# If there's a file called <arch>-dotconfig, use it to
+	# configure the kernel; otherwise use arch defaults and all stuff
+	# as modules (allmodconfig).
+	local arch subarch
+
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) arch=i386;;
+		x86_64*) arch=x86_64;;
+		arm*) arch=arm;;
+		aarch64*) arch=arm64;;
+		ppc64le*) arch=powerpc; subarch=ppc64le;;
+		ppc64*) arch=powerpc; subarch=ppc64;;
+		ppc*) arch=powerpc; subarch=ppc;;
+		mips*) arch=mips;;
+	esac
+
+	if [ -f ${FILESDIR}/${subarch:-$arch}-dotconfig-custom ]; then
+		msg_normal "Detected a custom .config file for your arch, using it.\n"
+		cp -f ${FILESDIR}/${subarch:-$arch}-dotconfig-custom .config
+		make ${makejobs} ARCH=$arch ${_cross} oldconfig
+	elif [ -f ${FILESDIR}/${subarch:-$arch}-dotconfig ]; then
+		msg_normal "Detected a .config file for your arch, using it.\n"
+		cp -f ${FILESDIR}/${subarch:-$arch}-dotconfig .config
+		make ${makejobs} ARCH=$arch ${_cross} oldconfig
+	fi
+	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
+	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
+}
+
+do_build() {
+	local arch _args
+
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) _args="bzImage modules"; arch=i386;;
+		x86_64*) _args="bzImage modules"; arch=x86_64;;
+		arm*) _args="zImage modules dtbs"; arch=arm;;
+		aarch64*) _args="Image modules dtbs"; arch=arm64;;
+		ppc*) _args="zImage modules"; arch=powerpc;;
+		mips*) _args="uImage modules dtbs"; arch=mips;;
+	esac
+	export LDFLAGS=
+	make ARCH=$arch ${_cross} ${makejobs} prepare
+	make ARCH=$arch ${_cross} ${makejobs} ${_args}
+}
+
+do_install() {
+	local arch subarch _args hdrdest
+
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) arch=x86; subarch=i386;;
+		x86_64*) arch=x86; subarch=x86_64;;
+		arm*) arch=arm;;
+		aarch64*) arch=arm64;;
+		ppc*) arch=powerpc;;
+		mips*) arch=mips;;
+	esac
+
+	# Run depmod after compressing modules - makes depmod.sh a noop
+	sed -i '2iexit 0' scripts/depmod.sh
+
+	# Install kernel, firmware and modules
+	make ${makejobs} ARCH=${subarch:-$arch} INSTALL_MOD_PATH=${DESTDIR} ${_cross} modules_install
+
+	hdrdest=${DESTDIR}/usr/src/kernel-headers-${_kernver}
+
+	vinstall .config 644 boot config-${_kernver}
+	vinstall System.map 644 boot System.map-${_kernver}
+
+	case "$arch" in
+		x86)
+			vinstall arch/x86/boot/bzImage 644 boot vmlinuz-${_kernver}
+			;;
+		arm)
+			vinstall arch/arm/boot/zImage 644 boot
+			make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} ${_cross} dtbs_install
+			;;
+		arm64)
+			vinstall arch/arm64/boot/Image 644 boot vmlinux-${_kernver}
+			make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} ${_cross} dtbs_install
+			;;
+		powerpc)
+			# zImage on powerpc is useless as it won't load initramfs
+			# raw vmlinux is huge, and this is nostrip, so do it manually
+			vinstall vmlinux 644 boot vmlinux-${_kernver}
+			/usr/bin/$STRIP ${DESTDIR}/boot/vmlinux-${_kernver}
+			;;
+		mips)
+			vinstall arch/mips/boot/uImage.bin 644 boot uImage-${_kernver}
+			make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} ${_cross} dtbs_install
+			;;
+	esac
+
+	# Switch to /usr.
+	vmkdir usr
+	mv ${DESTDIR}/lib ${DESTDIR}/usr
+
+	cd ${DESTDIR}/usr/lib/modules/${_kernver}
+	rm -f source build
+	ln -sf ../../../src/kernel-headers-${_kernver} build
+
+	cd ${wrksrc}
+	# Install required headers to build external modules
+	install -Dm644 Makefile ${hdrdest}/Makefile
+	install -Dm644 kernel/Makefile ${hdrdest}/kernel/Makefile
+	install -Dm644 .config ${hdrdest}/.config
+	for file in $(find . -name Kconfig\*); do
+		mkdir -p ${hdrdest}/$(dirname $file)
+		install -Dm644 $file ${hdrdest}/${file}
+	done
+	for file in $(find arch/${subarch:-$arch} -name module.lds -o -name Kbuild.platforms -o -name Platform); do
+		mkdir -p ${hdrdest}/$(dirname $file)
+		install -Dm644 $file ${hdrdest}/${file}
+	done
+	mkdir -p ${hdrdest}/include
+	# Remove firmware stuff provided by the "linux-firmware" pkg.
+	rm -rf ${DESTDIR}/usr/lib/firmware
+
+	for i in acpi asm-generic clocksource config crypto drm generated linux vdso \
+		math-emu media net pcmcia scsi sound trace uapi video xen dt-bindings; do
+		if [ -d include/$i ]; then
+			cp -a include/$i ${hdrdest}/include
+		fi
+	done
+
+	cd ${wrksrc}
+	mkdir -p ${hdrdest}/arch/${arch}
+	cp -a arch/${arch}/include ${hdrdest}/arch/${arch}
+
+	# Remove helper binaries built for host,
+	# if generated files from the scripts/ directory need to be included,
+	# they need to be copied to ${hdrdest} before this step
+	if [ "$CROSS_BUILD" ]; then
+		make ${makejobs} ARCH=${subarch:-$arch} ${_cross} _mrproper_scripts
+		# remove host specific objects as well
+		find scripts -name '*.o' -delete
+	fi
+
+	# Copy files necessary for later builds, like nvidia and vmware
+	cp Module.symvers ${hdrdest}
+	cp -a scripts ${hdrdest}
+	mkdir -p ${hdrdest}/security/selinux
+	cp -a security/selinux/include ${hdrdest}/security/selinux
+	mkdir -p ${hdrdest}/tools/include
+	cp -a tools/include/tools ${hdrdest}/tools/include
+
+	mkdir -p ${hdrdest}/arch/${arch}/kernel
+	cp arch/${arch}/Makefile ${hdrdest}/arch/${arch}
+	if [ "$subarch" = "i386" ]; then
+		mkdir -p ${hdrdest}/arch/x86
+		cp arch/x86/Makefile_32.cpu ${hdrdest}/arch/x86
+	fi
+	if [ "$arch" = "x86" ]; then
+		mkdir -p ${hdrdest}/arch/x86/kernel
+		cp arch/x86/kernel/asm-offsets.s ${hdrdest}/arch/x86/kernel
+	elif [ "$arch" = "arm64" ]; then
+		mkdir -p ${hdrdest}/arch/arm64/kernel
+		cp -a arch/arm64/kernel/vdso ${hdrdest}/arch/arm64/kernel/
+	fi
+
+	# add headers for lirc package
+	# pci
+	for i in bt8xx cx88 saa7134; do
+		mkdir -p ${hdrdest}/drivers/media/pci/${i}
+		cp -a drivers/media/pci/${i}/*.h ${hdrdest}/drivers/media/pci/${i}
+	done
+	# usb
+	for i in cpia2 em28xx pwc; do
+		mkdir -p ${hdrdest}/drivers/media/usb/${i}
+		cp -a drivers/media/usb/${i}/*.h ${hdrdest}/drivers/media/usb/${i}
+	done
+	# i2c
+	mkdir -p ${hdrdest}/drivers/media/i2c
+	cp drivers/media/i2c/*.h ${hdrdest}/drivers/media/i2c
+	for i in cx25840; do
+		mkdir -p ${hdrdest}/drivers/media/i2c/${i}
+		cp -a drivers/media/i2c/${i}/*.h ${hdrdest}/drivers/media/i2c/${i}
+	done
+
+	# Add md headers
+	mkdir -p ${hdrdest}/drivers/md
+	cp drivers/md/*.h ${hdrdest}/drivers/md
+
+	# Add inotify.h
+	mkdir -p ${hdrdest}/include/linux
+	cp include/linux/inotify.h ${hdrdest}/include/linux
+
+	# Add wireless headers
+	mkdir -p ${hdrdest}/net/mac80211/
+	cp net/mac80211/*.h ${hdrdest}/net/mac80211
+
+	# add dvb headers for external modules
+	mkdir -p ${hdrdest}/include/config/dvb/
+	cp include/config/dvb/*.h ${hdrdest}/include/config/dvb/
+
+	# add dvb headers for http://mcentral.de/hg/~mrec/em28xx-new
+	mkdir -p ${hdrdest}/drivers/media/dvb-frontends
+	cp drivers/media/dvb-frontends/lgdt330x.h \
+		${hdrdest}/drivers/media/dvb-frontends/
+	cp drivers/media/i2c/msp3400-driver.h ${hdrdest}/drivers/media/i2c/
+
+	# add dvb headers
+	mkdir -p ${hdrdest}/drivers/media/usb/dvb-usb
+	cp drivers/media/usb/dvb-usb/*.h ${hdrdest}/drivers/media/usb/dvb-usb/
+	mkdir -p ${hdrdest}/drivers/media/dvb-frontends
+	cp drivers/media/dvb-frontends/*.h ${hdrdest}/drivers/media/dvb-frontends/
+	mkdir -p ${hdrdest}/drivers/media/tuners
+	cp drivers/media/tuners/*.h ${hdrdest}/drivers/media/tuners/
+
+	# Add xfs and shmem for aufs building
+	mkdir -p ${hdrdest}/fs/xfs/libxfs
+	mkdir -p ${hdrdest}/mm
+	cp fs/xfs/libxfs/xfs_sb.h ${hdrdest}/fs/xfs/libxfs/xfs_sb.h
+
+	# Add objtool binary, needed to build external modules with dkms
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64*)
+			mkdir -p ${hdrdest}/tools/objtool
+			cp tools/objtool/objtool ${hdrdest}/tools/objtool
+			;;
+	esac
+
+	# Remove unneeded architectures
+	case "$arch" in
+		i386|x86_64) _args="arm* m* p*";;
+		arm|arm64) _args="x86* m* p*";;
+		powerpc) _args="arm* m* x86* parisc";;
+		mips) _args="arm* x86* p*";;
+	esac
+	for arch in alpha avr32 blackfin cris frv h8300 \
+		ia64 s* um v850 xtensa ${_args}; do
+		rm -rf ${hdrdest}/arch/${arch}
+	done
+	# Keep arch/x86/ras/Kconfig as it is needed by drivers/ras/Kconfig
+	mkdir -p ${hdrdest}/arch/x86/ras
+	cp -a arch/x86/ras/Kconfig ${hdrdest}/arch/x86/ras/Kconfig
+
+	# Extract debugging symbols and compress modules
+	msg_normal "$pkgver: extracting debug info and compressing modules, please wait...\n"
+	install -Dm644 vmlinux ${DESTDIR}/usr/lib/debug/boot/vmlinux-${_kernver}
+	(
+	cd ${DESTDIR}
+	export DESTDIR
+	find ./ -name '*.ko' -print0 | \
+		xargs -0r -n1 -P ${XBPS_MAKEJOBS} ${FILESDIR}/mv-debug
+	)
+	# ... and run depmod again.
+	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
+}
+linux5.12-headers_package() {
+	preserve=yes
+	nostrip=yes
+	noshlibprovides=yes
+	short_desc+=" - source headers for 3rd party modules"
+	pkg_install() {
+		vmove usr/src
+		vmove usr/lib/modules/${_kernver}/build
+	}
+}
+linux5.12-dbg_package() {
+	preserve=yes
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	repository=debug
+	short_desc+=" - debugging symbols"
+	pkg_install() {
+		vmove usr/lib/debug
+		vmove "boot/System.map-${_kernver}"
+	}
+}
