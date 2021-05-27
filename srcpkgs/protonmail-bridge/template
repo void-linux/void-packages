@@ -1,23 +1,67 @@
 # Template file for 'protonmail-bridge'
 pkgname=protonmail-bridge
-version=1.5.6
+version=1.6.3
 revision=1
-archs="x86_64"
-build_style=fetch
-depends="desktop-file-utils"
+wrksrc=proton-bridge-br-$version
+build_style=go
+# disable rpath
+build_helper=qmake
+go_import_path="github.com/ProtonMail/proton-bridge"
+go_mod_mode=vendor
+go_package="$go_import_path/cmd/Desktop-Bridge"
+go_build_tags="minimal"
+go_ldflags="
+ -X $go_import_path/internal/constants.Version=$version
+ -X $go_import_path/internal/constants.Revision=$version
+ -X $go_import_path/internal/constants.BuildTime=$(date +%FT%T%z)"
+hostmakedepends="desktop-file-utils go-qt5 pkg-config"
+makedepends="qt5-devel qt5-declarative-devel qt5-webview-devel
+ qt5-webengine-devel libsecret-devel qt5-quickcontrols2-devel"
+# For qml files
+depends="desktop-file-utils qt5-graphicaleffects qt5-quickcontrols2
+ qt5-charts qt5-datavis3d qt5-multimedia qt5-quickcontrols
+ qt5-declarative qt5-webengine"
 short_desc="ProtonMail Bridge for use with E-mail software"
 maintainer="Rich G <rich@richgannon.net>"
 license="GPL-3.0-or-later"
 homepage="https://protonmail.com/bridge"
-distfiles="https://protonmail.com/download/beta/protonmail-bridge_${version}-1_amd64.deb"
-checksum=3c18833c7b21ab97c9ba0a5e1267a620de3c8eece02bed49ff3d12961932b74c
+distfiles="https://github.com/ProtonMail/proton-bridge/archive/br-$version.tar.gz"
+checksum=e1565f8f3e175c27e61500cb8b13d768769b2eee4d83e0265d135d0d97e4acea
+nocross="experimental"
 
-restricted=yes
-noverifyrdeps=yes
-nopie=yes
+CFLAGS="
+ -I$XBPS_CROSS_BASE/usr/include/qt5
+ -I$XBPS_CROSS_BASE/usr/include/qt5/QtCore
+ -I$XBPS_CROSS_BASE/usr/include/qt5/QtQml
+ -Wno-deprecated-declarations"
+CXXFLAGS="$CFLAGS"
+LDFLAGS="-Wl,--as-needed -lQt5Core"
+export GO111MODULE=on
+export QT_PKG_CONFIG=true
 
-do_install() {
-	ar x protonmail-bridge_${version}-1_amd64.deb data.tar.gz
-	bsdtar xpvf data.tar.gz
-	cp -r usr ${DESTDIR}
+if [ "$XBPS_TARGET_WORDSIZE" != 64 ]; then
+	broken="mapping integer size between go and C++"
+fi
+
+pre_build() {
+	PATH=/usr/libexec/go-qt5:$PATH
+	export QT_QMAKE_DIR=$XBPS_WRAPPERDIR
+	ln -sf /usr/lib/qt5/bin/rcc $XBPS_WRAPPERDIR
+	ln -sf /usr/lib/qt5/bin/moc $XBPS_WRAPPERDIR
+	: qtdeploy -p "$XBPS_MAKEJOBS" \
+		-debug \
+		-tags "$go_build_tags" -ldflags "$go_ldflags" \
+		build desktop cmd/Desktop-Bridge
+	qtrcc desktop cmd/Desktop-Bridge
+	qtmoc desktop cmd/Desktop-Bridge
+	qtminimal desktop cmd/Desktop-Bridge
+}
+
+post_install() {
+	mv $DESTDIR/usr/bin/Desktop-Bridge $DESTDIR/usr/bin/protonmail-bridge
+	vmkdir usr/share/protonmail-bridge
+	vcopy internal/frontend/qml usr/share/protonmail-bridge
+	vinstall dist/proton-bridge.desktop 0644 usr/share/applications/
+	vinstall internal/frontend/share/icons/logo.svg 0644 \
+		usr/share/icons/hicolor/scalable/apps/ protonmail-bridge.svg
 }
