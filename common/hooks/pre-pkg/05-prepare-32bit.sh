@@ -24,11 +24,15 @@ hook() {
 		# Library mode, copy only relevant files to new destdir.
 		#
 		# If /usr/lib does not exist don't continue...
-		if [ ! -d ${PKGDESTDIR}/usr/lib ]; then
+		# except for devel packages, for which empty 32bit package will be created
+		if ! [ -d ${PKGDESTDIR}/usr/lib ] && ! [[ ${pkgname} == *-devel ]]; then
 			return
 		fi
+
 		mkdir -p ${destdir32}/usr/lib32
-		cp -a ${PKGDESTDIR}/usr/lib/* ${destdir32}/usr/lib32
+		if [ -d ${PKGDESTDIR}/usr/lib ]; then
+			cp -a ${PKGDESTDIR}/usr/lib/* ${destdir32}/usr/lib32
+		fi
 
 		# Only keep shared libs, static libs, and pkg-config files.
 		find "${destdir32}" -not \( \
@@ -66,6 +70,9 @@ hook() {
 		if [ -d ${destdir32}/usr/lib ]; then
 			mv ${destdir32}/usr/lib ${destdir32}/usr/lib32
 		fi
+	fi
+	if [[ ${pkgname} == *-devel ]]; then
+		mkdir -p ${destdir32}
 	fi
 	if [ ! -d ${destdir32} ]; then
 		return
