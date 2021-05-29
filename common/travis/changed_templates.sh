@@ -8,7 +8,9 @@ elif command -v git >/dev/null 2>&1; then
 	GIT_CMD=$(command -v git)
 fi
 
-printf '%s ' "$(git merge-base FETCH_HEAD HEAD)" HEAD  > /tmp/revisions
+printf '%s %s\n' \
+	"$(git merge-base FETCH_HEAD HEAD^2)" \
+	"$(git rev-parse --verify HEAD^2)" > /tmp/revisions
 
 /bin/echo -e '\x1b[32mChanged packages:\x1b[0m'
 $GIT_CMD diff-tree -r --no-renames --name-only --diff-filter=AM \
