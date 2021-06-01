@@ -8,13 +8,19 @@ elif command -v git >/dev/null 2>&1; then
 	GIT_CMD=$(command -v git)
 fi
 
-printf '%s %s\n' \
-	"$(git merge-base FETCH_HEAD HEAD^2)" \
-	"$(git rev-parse --verify HEAD^2)" > /tmp/revisions
+tip="$(git rev-list -1 --parents HEAD)"
+case "$tip" in
+	*" "*" "*) tip="${tip##* }" ;;
+	*)         tip="${tip%% *}" ;;
+esac
+
+base="$(git merge-base FETCH_HEAD "$tip")"
+
+echo "$base $tip" >/tmp/revisions
 
 /bin/echo -e '\x1b[32mChanged packages:\x1b[0m'
 $GIT_CMD diff-tree -r --no-renames --name-only --diff-filter=AM \
-	$(cat /tmp/revisions) \
+	"$base" "$tip" \
 	-- 'srcpkgs/*/template' |
 	cut -d/ -f 2 |
 	tee /tmp/templates |
