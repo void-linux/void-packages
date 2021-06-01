@@ -14,7 +14,11 @@ case "$tip" in
 	*)         tip="${tip%% *}" ;;
 esac
 
-base="$(git merge-base FETCH_HEAD "$tip")"
+base="$(git merge-base FETCH_HEAD "$tip")" || {
+	echo "Your branches is based on too old copy."
+	echo "Please rebase to newest copy."
+	exit 1
+}
 
 echo "$base $tip" >/tmp/revisions
 
