@@ -24,8 +24,9 @@ do_build() {
 }
 
 do_check() {
-	if python3 -m pytest --help >/dev/null 2>&1; then
-		python3 -m pytest ${make_check_args} ${make_check_target}
+	if python3 -c 'import pytest' >/dev/null 2>&1; then
+		PYTHONPATH="$(cd build/lib* && pwd)" \
+			python3 -m pytest ${make_check_args} ${make_check_target}
 	else
 		# Fall back to deprecated setup.py test orchestration without pytest
 		if [ -z "$make_check_target" ]; then
