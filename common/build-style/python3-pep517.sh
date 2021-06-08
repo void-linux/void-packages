@@ -13,7 +13,7 @@ do_build() {
 }
 
 do_check() {
-	if python3 -m pytest --help >/dev/null 2>&1; then
+	if python3 -c 'import pytest' >/dev/null 2>&1; then
 		python3 -m pytest ${make_check_args} ${make_check_target}
 	else
 		msg_warn "Unable to determine tests for PEP517 Python templates"
