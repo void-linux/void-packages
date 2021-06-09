@@ -4,3 +4,5 @@ if [ "$CHROOT_READY" ]; then
 		hostmakedepends+=" ninja"
 	fi
 fi
+
+export CTEST_OUTPUT_ON_FAILURE=TRUE
