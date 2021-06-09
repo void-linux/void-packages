@@ -113,7 +113,7 @@ do_check() {
 
 	: ${make_check_target:=test}
 
-	CTEST_OUTPUT_ON_FAILURE=TRUE ${make_cmd} ${make_check_args} ${make_check_target}
+	${make_cmd} ${make_check_args} ${make_check_target}
 }
 
 do_install() {
