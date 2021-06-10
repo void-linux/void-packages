@@ -4,6 +4,8 @@
 do_configure() {
 	: ${configure_script:=./configure}
 
+	export CFLAGS="${CFLAGS/-Werror=implicit-function-declaration/}"
+	echo $CFLAGS
 	export lt_cv_sys_lib_dlsearch_path_spec="/usr/lib64 /usr/lib32 /usr/lib /lib /usr/local/lib"
 	${configure_script} ${configure_args}
 }
