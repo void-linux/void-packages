@@ -155,6 +155,8 @@ update_check() {
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://git.sr.ht/$pkgurlname/refs"
                 rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=\.tar\.gz")';;
+            *pkgs.fedoraproject.org*)
+                url="https://pkgs.fedoraproject.org/repo/pkgs/$pkgname" ;;
             esac
         fi
 
