@@ -28,3 +28,5 @@ else
 	FFLAGS="-fno-PIE ${FFLAGS}"
 	LDFLAGS="-no-pie ${LDFLAGS}"
 fi
+
+CFLAGS+=" -Werror=implicit-function-declaration"
