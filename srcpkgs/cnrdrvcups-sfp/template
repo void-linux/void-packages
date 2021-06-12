@@ -1,0 +1,211 @@
+# Template file for 'cnrdrvcups-sfp'
+pkgname=cnrdrvcups-sfp
+version=5.00
+revision=1
+archs="i686 x86_64"
+create_wrksrc=yes
+build_wrksrc=source
+_common_dir=cnrdrvcups-common-${version}
+_driver_dir=${pkgname}-${version}
+hostmakedepends="autoconf automake glib-devel gettext libtool libxml2-devel pkg-config"
+makedepends="atk-devel cups-devel gtk+-devel libglade-devel"
+depends="colord cups cups-filters eudev libglade libusb"
+short_desc="UFRII LT printer driver for Canon LBP printers"
+maintainer="Kamil Smardzewski <roderyk197@gmail.com>"
+license="custom:canon,GPL-2.0-or-later,MIT"
+homepage="https://www.canon-europe.com/support/consumer_products/products/printers/laser/i-sensys_lbp6030w.html"
+distfiles="https://gdlp01.c-wss.com/gds/0/0100005950/10/linux-UFRIILT-drv-v500-uken-18.tar.gz"
+checksum=46888140016bc1096694a0fd6fd3f6ad393970b8153756373a382dc82390f259
+repository="nonfree"
+nopie=yes
+
+case $XBPS_TARGET_MACHINE in
+	x86_64)
+		_bits=64
+		;;
+	i686)
+		_bits=32
+		;;
+esac
+
+CFLAGS="-fcommon"
+
+post_extract() {
+	mkdir ${build_wrksrc}
+	bsdtar xvf linux-UFRIILT-drv-v500-uken/Sources/${pkgname}-${version}-1.tar.gz -C ${build_wrksrc}
+}
+
+pre_configure() {
+	vsed -e '2a export LIBS="-lgtk-x11-2.0 -lgobject-2.0 -lglib-2.0 -lgmodule-2.0"' -i "${_common_dir}/cngplp/autogen.sh"
+	vsed -e '2a export LIBS="-latk-1.0 -lgobject-2.0 -lglib-2.0 -lgdk_pixbuf-2.0 -lcups"' -i "${_driver_dir}/StatusMonitor/autogen.sh"
+
+	for _subdir in "buftool" "cngplp" "cnjbig" "rasterfilter"
+	do
+		( cd ${_common_dir}/${_subdir} && autoreconf -i )
+	done
+
+	for _subdir in "cngplp/files" "cngplp" "cpca" "ppd" "StatusMonitor"
+	do
+		( cd ${_driver_dir}/${_subdir} && autoreconf -i )
+	done
+}
+
+do_configure() {
+	local _buftool_abs_path="${wrksrc}/${build_wrksrc}/${_common_dir}/buftool"
+
+	( cd ${_common_dir}/buftool && ./autogen.sh ${configure_args} --enable-progpath=/usr/bin --disable-shared --enable-static )
+	( cd ${_common_dir}/cngplp && ./autogen.sh ${configure_args} COMMON_SUFFIX=2l )
+	( cd ${_common_dir}/cnjbig && ./autogen.sh ${configure_args} )
+	( cd ${_common_dir}/rasterfilter && LDFLAGS="-L${_buftool_abs_path} -no-pie" ./autogen.sh ${configure_args} )
+
+	( cd ${_driver_dir}/ppd && ./autogen.sh ${configure_args} )
+	( cd ${_driver_dir}/cngplp && ./autogen.sh ${configure_args} --prefix=/usr )
+	( cd ${_driver_dir}/cngplp/files && ./autogen.sh ${configure_args} )
+	( cd ${_driver_dir}/StatusMonitor && LDFLAGS="-L${_buftool_abs_path} -no-pie" ./autogen.sh ${configure_args} --enable-progpath=/usr/bin )
+	( cd ${_driver_dir}/cpca && ./autogen.sh ${configure_args} --enable-progpath=/usr/bin )
+}
+
+do_build() {
+	( cd ${_common_dir} && make )
+	( cd ${_driver_dir} && make )
+}
+
+pre_install() {
+	pushd "lib/libs${_bits}"
+
+	rm "libcanon_slimsfp.so" "libcanon_slimsfp.so.1"
+	rm "libinfor.so" "libinfor.so.1"
+
+	for _so_file in \
+		libcanon_slimsfp.so.1.0.0 \
+		libccpd_utilr.so.1.0.0 \
+		libcomm_stdoutr.so.1.0.0 \
+		libcomm_usbmlportr.so.1.0.0 \
+		libcomm_usbsockr.so.1.0.0 \
+		libcomm_websrvr.so.1.0.0 \
+		libcomm_ncapcaior.so.1.0.0 \
+		libcaio_usb_cdcr.so.1.0.0 \
+		libCUPS_Communicatorr.so.1.0.0 \
+		libCommIsolationr.so.1.0.0 \
+		libcanon_commonr.so.1.0.0 \
+		libinfor.so.1.0.0 \
+		libinfo_analyzer.so.1.0.0 \
+		libcanonncapr.so.1.0.0 \
+		libcnncapcmr.so.1.0.0 \
+		libncapfilterr.so.1.0.0
+	do
+		ln -s ${_so_file} ${_so_file%.1.0.0}
+		ln -s ${_so_file} ${_so_file%.0.0}
+	done
+
+	ln -s libcaepcmsfp.so.1.0 libcaepcmsfp.so.1
+	ln -s libColorGearCsfp.so.2.0.0 libColorGearCsfp.so.2
+	ln -s libColorGearCsfp.so.2.0.0 libColorGearCsfp.so
+
+	popd
+
+	vsed -e 's/cnsetuputil2l\/images\/128x128/icons\/hicolor\/128x128\/apps/' -i cnrdrvcups-utility-5.00/data/cnsetuputil2l.desktop
+	vsed -e 's/Application;Utility/Utility/' -i cnrdrvcups-utility-5.00/data/cnsetuputil2l.desktop
+}
+
+do_install() {
+	for _subdir in "buftool" "cngplp" "cnjbig" "rasterfilter"
+	do
+		( cd ${_common_dir}/${_subdir} && make install DESTDIR=${DESTDIR} COMMON_SUFFIX=2 )
+	done
+
+	for _subdir in "cngplp/files" "cngplp" "cpca" "ppd" "StatusMonitor"
+	do
+		( cd ${_driver_dir}/${_subdir} && make install DESTDIR=${DESTDIR} )
+	done
+
+	pushd "lib/libs${_bits}"
+
+	vbin cnpkmodulencapr
+	vbin cnrsdrvsfp
+	vbin cnsetuputil2l
+
+	vmkdir usr/lib/Canon/CUPS_SFPR/Bidi
+	for _so_file in \
+		libcaio_usb_cdcr.so \
+		libccpd_utilr.so \
+		libcomm_ncapcaior.so \
+		libcomm_stdoutr.so \
+		libcomm_usbmlportr.so \
+		libcomm_usbsockr.so \
+		libcomm_websrvr.so
+	do
+		vcopy ${_so_file}* usr/lib/Canon/CUPS_SFPR/Bidi
+	done
+
+	vmkdir usr/lib/Canon/CUPS_SFPR/Bins
+	vinstall commandfilefilterr 755 usr/lib/Canon/CUPS_SFPR/Bins
+
+	vmkdir usr/lib/Canon/CUPS_SFPR/Libs
+	for _so_file in \
+		libCUPS_Communicatorr.so \
+		libCommIsolationr.so \
+		libcanon_commonr.so \
+		libinfo_analyzer.so \
+		libinfor.so
+	do
+		vcopy ${_so_file}* usr/lib/Canon/CUPS_SFPR/Libs
+	done
+
+	for _so_file in \
+		libColorGearCsfp.so \
+		libcaepcmsfp.so \
+		libcanon_slimsfp.so \
+		libcanonncapr.so \
+		libcnncapcmr.so \
+		libncapfilterr.so
+	do
+		vcopy ${_so_file}* usr/lib
+	done
+
+	vmkdir usr/lib/Canon/CUPS_SFPR/Utilities
+	vinstall pksmncapr 4755 usr/lib/Canon/CUPS_SFPR/Utilities
+
+	for _locale in "de" "es" "fr" "it" "ja" "ko" "zh_CN" "zh_TW"
+	do
+		vmkdir usr/share/locale/${_locale}/LC_MESSAGES
+		vinstall ${_locale}/LC_MESSAGES/cnsetuputil2l.mo 644 usr/share/locale/${_locale}/LC_MESSAGES
+	done
+
+	vmkdir usr/share/caepcm/sfp
+	vcopy ../data/sfp/* usr/share/caepcm/sfp
+
+	vmkdir usr/share/ncapfilterr
+	vinstall ThLB_37A.BIN 644 usr/share/ncapfilterr
+
+	popd
+
+	vcopy ${_driver_dir}/StatusMonitor/Message usr/lib/Canon/CUPS_SFPR/Utilities
+
+	vmkdir usr/lib/udev/rules.d
+	vinstall ${_driver_dir}/rules/80-usb-ncapstatusui2l.rules 644 usr/lib/udev/rules.d
+
+	vmkdir usr/share/cups/usb
+	vinstall ${_driver_dir}/rules/canon-sfp-printerr.usb-quirks 644 usr/share/cups/usb
+
+	vmkdir usr/share/applications
+	vinstall cnrdrvcups-utility-5.00/data/cnsetuputil2l.desktop 644 usr/share/applications
+
+	vmkdir usr/share/icons/hicolor/128x128/apps
+	vinstall cnrdrvcups-utility-5.00/data/cnsetuputil.png 644 usr/share/icons/hicolor/128x128/apps
+
+	vlicense ../linux-UFRIILT-drv-v500-uken/Documents/LICENSE-EN.txt LICENSE
+	vlicense ${_driver_dir}/cpca/cnpklib/LICENSE.canon.txt COPYRIGHT.cnpklib
+
+	vdoc ../linux-UFRIILT-drv-v500-uken/Documents/README-ufr2lt-5.0xUK.html
+	vdoc ../linux-UFRIILT-drv-v500-uken/Documents/UsersGuide-ufr2lt-UK.html
+
+	vdoc ${_common_dir}/README README.common
+	vdoc ${_common_dir}/cngplp/README README.cngplp.common
+
+	vdoc ${_driver_dir}/README README.driver
+	vdoc ${_driver_dir}/StatusMonitor/README README.statusmonitor
+	vdoc ${_driver_dir}/cngplp/README README.cngplp.driver
+
+	vdoc $FILESDIR/README.voidlinux
+}
