@@ -1,0 +1,144 @@
+# Patch made by Kevin Kofler <Kevin@tigcc.ticalc.org>
+# https://bugzilla.redhat.com/show_bug.cgi?id=1904652
+
+diff -up chromium-88.0.4324.96/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc.fstatfix chromium-88.0.4324.96/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
+--- sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc.fstatfix	2021-01-25 10:11:45.427436398 -0500
++++ sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc	2021-01-25 10:12:51.337699003 -0500
+@@ -257,6 +257,18 @@ ResultExpr EvaluateSyscallImpl(int fs_de
+     return RestrictKillTarget(current_pid, sysno);
+   }
+ 
++#if defined(__NR_newfstatat)
++  if (sysno == __NR_newfstatat) {
++    return RewriteFstatatSIGSYS();
++  }
++#endif
++
++#if defined(__NR_fstatat64)
++  if (sysno == __NR_fstatat64) {
++    return RewriteFstatatSIGSYS();
++  }
++#endif
++
+   if (SyscallSets::IsFileSystem(sysno) ||
+       SyscallSets::IsCurrentDirectory(sysno)) {
+     return Error(fs_denied_errno);
+diff -up chromium-88.0.4324.96/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc.fstatfix chromium-88.0.4324.96/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc
+--- sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc.fstatfix	2021-01-25 10:13:10.179774081 -0500
++++ sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc	2021-01-25 10:16:18.790525746 -0500
+@@ -6,6 +6,8 @@
+ 
+ #include "sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h"
+ 
++#include <errno.h>
++#include <fcntl.h>
+ #include <stddef.h>
+ #include <stdint.h>
+ #include <string.h>
+@@ -355,6 +357,35 @@ intptr_t SIGSYSSchedHandler(const struct
+   return -ENOSYS;
+ }
+ 
++intptr_t SIGSYSFstatatHandler(const struct arch_seccomp_data& args,
++                              void* aux) {
++  switch (args.nr) {
++#if defined(__NR_newfstatat)
++    case __NR_newfstatat:
++#endif
++#if defined(__NR_fstatat64)
++    case __NR_fstatat64:
++#endif
++#if defined(__NR_newfstatat) || defined(__NR_fstatat64)
++      if (*reinterpret_cast<const char *>(args.args[1]) == '\0'
++          && args.args[3] == static_cast<uint64_t>(AT_EMPTY_PATH)) {
++        return sandbox::sys_fstat64(static_cast<int>(args.args[0]),
++                                    reinterpret_cast<struct stat64 *>(args.args[2]));
++      } else {
++        errno = EACCES;
++        return -1;
++      }
++      break;
++#endif
++  }
++
++  CrashSIGSYS_Handler(args, aux);
++
++  // Should never be reached.
++  RAW_CHECK(false);
++  return -ENOSYS;
++}
++
+ bpf_dsl::ResultExpr CrashSIGSYS() {
+   return bpf_dsl::Trap(CrashSIGSYS_Handler, NULL);
+ }
+@@ -387,6 +418,10 @@ bpf_dsl::ResultExpr RewriteSchedSIGSYS()
+   return bpf_dsl::Trap(SIGSYSSchedHandler, NULL);
+ }
+ 
++bpf_dsl::ResultExpr RewriteFstatatSIGSYS() {
++  return bpf_dsl::Trap(SIGSYSFstatatHandler, NULL);
++}
++
+ void AllocateCrashKeys() {
+ #if !defined(OS_NACL_NONSFI)
+   if (seccomp_crash_key)
+diff -up chromium-88.0.4324.96/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h.fstatfix chromium-88.0.4324.96/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h
+--- sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h.fstatfix	2021-01-25 10:16:36.982598236 -0500
++++ sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h	2021-01-25 10:18:45.705111027 -0500
+@@ -62,6 +62,10 @@ SANDBOX_EXPORT intptr_t SIGSYSPtraceFail
+ // sched_setparam(), sched_setscheduler()
+ SANDBOX_EXPORT intptr_t SIGSYSSchedHandler(const arch_seccomp_data& args,
+                                            void* aux);
++// If the fstatat syscall is actually a disguised fstat, calls the regular fstat
++// syscall, otherwise, crashes in the same way as CrashSIGSYS_Handler.
++SANDBOX_EXPORT intptr_t SIGSYSFstatatHandler(const struct arch_seccomp_data& args, 
++                                             void* aux);
+ 
+ // Variants of the above functions for use with bpf_dsl.
+ SANDBOX_EXPORT bpf_dsl::ResultExpr CrashSIGSYS();
+@@ -72,6 +76,7 @@ SANDBOX_EXPORT bpf_dsl::ResultExpr Crash
+ SANDBOX_EXPORT bpf_dsl::ResultExpr CrashSIGSYSFutex();
+ SANDBOX_EXPORT bpf_dsl::ResultExpr CrashSIGSYSPtrace();
+ SANDBOX_EXPORT bpf_dsl::ResultExpr RewriteSchedSIGSYS();
++SANDBOX_EXPORT bpf_dsl::ResultExpr RewriteFstatatSIGSYS();
+ 
+ // Allocates a crash key so that Seccomp information can be recorded.
+ void AllocateCrashKeys();
+diff -up chromium-88.0.4324.96/sandbox/linux/services/syscall_wrappers.cc.fstatfix chromium-88.0.4324.96/sandbox/linux/services/syscall_wrappers.cc
+--- sandbox/linux/services/syscall_wrappers.cc.fstatfix	2021-01-25 10:18:53.307141311 -0500
++++ sandbox/linux/services/syscall_wrappers.cc	2021-01-25 10:19:46.982355293 -0500
+@@ -261,4 +261,13 @@ int sys_sigaction(int signum,
+ 
+ #endif  // defined(MEMORY_SANITIZER)
+ 
++SANDBOX_EXPORT int sys_fstat64(int fd, struct stat64 *buf)
++{
++#if defined(__NR_fstat64)
++    return syscall(__NR_fstat64, fd, buf);
++#else
++    return syscall(__NR_fstat, fd, buf);
++#endif
++}
++
+ }  // namespace sandbox
+diff -up chromium-88.0.4324.96/sandbox/linux/services/syscall_wrappers.h.fstatfix chromium-88.0.4324.96/sandbox/linux/services/syscall_wrappers.h
+--- sandbox/linux/services/syscall_wrappers.h.fstatfix	2021-01-25 10:19:53.115379741 -0500
++++ sandbox/linux/services/syscall_wrappers.h	2021-01-25 10:20:45.485588421 -0500
+@@ -17,6 +17,7 @@ struct sock_fprog;
+ struct rlimit64;
+ struct cap_hdr;
+ struct cap_data;
++struct stat64;
+ 
+ namespace sandbox {
+ 
+@@ -84,6 +85,9 @@ SANDBOX_EXPORT int sys_sigaction(int sig
+                                  const struct sigaction* act,
+                                  struct sigaction* oldact);
+ 
++// Recent glibc rewrites fstat to fstatat.
++SANDBOX_EXPORT int sys_fstat64(int fd, struct stat64 *buf);
++
+ }  // namespace sandbox
+ 
+ #endif  // SANDBOX_LINUX_SERVICES_SYSCALL_WRAPPERS_H_
