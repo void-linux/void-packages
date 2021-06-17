@@ -462,9 +462,7 @@ the generated `binary packages` have been modified.
 - `short_desc` A string with a brief description for this package. Max 72 chars.
 
 - `version` A string with the package version. Must not contain dashes or underscore
-and at least one digit is required. Using bash's pattern substitution and prefix and
-suffix matching isn't supported, since this field needs to be parsed by
-`xbps-checkvers(1)`. Using variables in this field should be avoided.
+and at least one digit is required. Shell's variable substition usage is not allowed.
 
 Neither `pkgname` or `version` should contain special characters which make it
 necessary to quote them, so they shouldn't be quoted in the template.
