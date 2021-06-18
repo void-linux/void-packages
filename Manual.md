@@ -601,7 +601,7 @@ current directory with respect to the install.
 
 - `patch_args` The arguments to be passed in to the `patch(1)` command when applying
 patches to the package sources during `do_patch()`. Patches are stored in
-`srcpkgs/<pkgname>/patches` and must be in `-p0` format. By default set to `-Np0`.
+`srcpkgs/<pkgname>/patches` and must be in `-p1` format. By default set to `-Np1`.
 
 - `disable_parallel_build` If set the package won't be built in parallel
 and `XBPS_MAKEJOBS` has no effect.
@@ -874,7 +874,7 @@ been found or to fix compilation with new software.
 
 To handle this, xbps-src has patching functionality. It will look for all files
 that match the glob `srcpkgs/$pkgname/patches/*.{diff,patch}` and will
-automatically apply all files it finds using `patch(1)` with `-Np0`. This happens
+automatically apply all files it finds using `patch(1)` with `-Np1`. This happens
 during the `do_patch()` phase. The variable `PATCHESDIR` is
 available in the template, pointing to the `patches` directory.
 

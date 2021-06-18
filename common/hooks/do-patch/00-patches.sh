@@ -3,7 +3,7 @@
 _process_patch() {
 	local _args= _patch= i=$1
 
-	_args="-Np0"
+	_args="-Np1"
 	_patch=${i##*/}
 
 	if [ -f $PATCHESDIR/${_patch}.args ]; then
