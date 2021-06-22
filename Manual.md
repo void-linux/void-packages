@@ -585,18 +585,22 @@ or `gnu-makefile`, this is the target passed to `${make_cmd}` in the build phase
 when unset the default target is used.
 If `${build_style}` is `python3-pep517`, this is the path of the package
 directory that should be built as a Python wheel; when unset, defaults to `.` (the current
-directory with respect to the build).
+directory with respect to the build). If `${build_style}` is `dune`, this is the target passed to 
+`dune build` in the build phase; when unset, defaults to `@install`.
 
 - `make_check_target` The target to be passed in to `${make_cmd}` at the check phase if
 `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
-build methods. By default set to `check`.
+build methods; by default set to `check`. If `${build_style}` is `dune`, this
+is the target passed to `dune build` for running tests; when unset, defaults to `@runtest`.
 
 - `make_install_target` The installation target. When `${build_style}` is set to `configure`,
 `gnu-configure` or `gnu-makefile`, this is the target passed to `${make_command}` in the install
 phase; when unset, it defaults to `install`. If `${build_style}` is `python-pep517`, this is the
 path of the Python wheel produced by the build phase that will be installed; when unset, the
 `python-pep517` build style will look for a wheel matching the package name and version in the
-current directory with respect to the install.
+current directory with respect to the install. If `${build_style}` is `dune`, this is the list
+of OCaml packages to install, specified as a comma-separated list; when unset, all packages
+defined in the source project will be installed.
 
 - `patch_args` The arguments to be passed in to the `patch(1)` command when applying
 patches to the package sources during `do_patch()`. Patches are stored in
@@ -919,6 +923,15 @@ the default `build`.
 
 - `configure` For packages that use non-GNU configure scripts, at least `--prefix=/usr`
 should be passed in via `configure_args`.
+
+- `dune` For packages written in OCaml that use Dune for building.
+Arguments to `dune build` can be passed via `make_build_args`, and the build target
+(default `@install`) can be overridden via `make_build_target`.  Arguments to 
+`dune install` can be passed via `make_install_args`, and the list of packages to
+install (defaults to all packages defined in the project) can be overridden via 
+`make_install_target` as a comma-separated list (e.g. `containers,containers-data`).  
+Tests are run using `dune build @runtest`; the target (default `@runtest`) can be 
+overridden via `make_check_target` and arguments passed via `make_check_args`.
 
 - `fetch` For packages that only fetch files and are installed as is via `do_install()`.
 
