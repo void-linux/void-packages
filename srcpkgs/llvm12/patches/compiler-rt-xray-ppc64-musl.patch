@@ -1,0 +1,62 @@
+--- a/compiler-rt/lib/xray/xray_powerpc64.inc
++++ b/compiler-rt/lib/xray/xray_powerpc64.inc
+@@ -12,7 +12,13 @@
+ 
+ #include <cstdint>
+ #include <mutex>
++#ifdef __GLIBC__
+ #include <sys/platform/ppc.h>
++#else
++#include <cctype>
++#include <cstring>
++#include <cstdlib>
++#endif
+ 
+ #include "xray_defs.h"
+ 
+@@ -20,13 +26,45 @@ namespace __xray {
+ 
+ ALWAYS_INLINE uint64_t readTSC(uint8_t &CPU) XRAY_NEVER_INSTRUMENT {
+   CPU = 0;
++#ifdef __GLIBC__
+   return __ppc_get_timebase();
++#else
++  return __builtin_ppc_get_timebase();
++#endif
+ }
+ 
+ inline uint64_t getTSCFrequency() XRAY_NEVER_INSTRUMENT {
+   static std::mutex M;
+   std::lock_guard<std::mutex> Guard(M);
++#ifdef __GLIBC__
+   return __ppc_get_timebase_freq();
++#else
++  /* FIXME: a less dirty implementation? */
++  static uint64_t base;
++  if (!base) {
++    FILE *f = fopen("/proc/cpuinfo", "rb");
++    if (f) {
++      ssize_t nr;
++      /* virtually always big enough to hold the line */
++      char buf[512];
++      while (fgets(buf, sizeof(buf), f)) {
++        char *ret = strstr(buf, "timebase");
++        if (!ret) {
++          continue;
++        }
++        ret += sizeof("timebase") - 1;
++        ret = strchr(ret, ':');
++        if (!ret) {
++          continue;
++        }
++        base = strtoul(ret + 1, nullptr, 10);
++        break;
++      }
++      fclose(f);
++    }
++  }
++  return base;
++#endif
+ }
+ 
+ inline bool probeRequiredCPUFeatures() XRAY_NEVER_INSTRUMENT {

@@ -1,0 +1,144 @@
+# Patch made by Kevin Kofler <Kevin@tigcc.ticalc.org>
+# https://bugzilla.redhat.com/show_bug.cgi?id=1904652
+
+diff -ur qtwebengine-everywhere-src-5.15.2/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc qtwebengine-everywhere-src-5.15.2-#1904652/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc
+--- qtwebengine-everywhere-src-5.15.2/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc	2020-11-07 02:22:36.000000000 +0100
++++ qtwebengine-everywhere-src-5.15.2-#1904652/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/baseline_policy.cc	2021-01-20 02:14:53.066223906 +0100
+@@ -257,6 +257,18 @@
+     return RestrictKillTarget(current_pid, sysno);
+   }
+ 
++#if defined(__NR_newfstatat)
++  if (sysno == __NR_newfstatat) {
++    return RewriteFstatatSIGSYS();
++  }
++#endif
++
++#if defined(__NR_fstatat64)
++  if (sysno == __NR_fstatat64) {
++    return RewriteFstatatSIGSYS();
++  }
++#endif
++
+   if (SyscallSets::IsFileSystem(sysno) ||
+       SyscallSets::IsCurrentDirectory(sysno)) {
+     return Error(fs_denied_errno);
+diff -ur qtwebengine-everywhere-src-5.15.2/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc qtwebengine-everywhere-src-5.15.2-#1904652/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc
+--- qtwebengine-everywhere-src-5.15.2/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc	2020-11-07 02:22:36.000000000 +0100
++++ qtwebengine-everywhere-src-5.15.2-#1904652/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc	2021-01-22 19:02:55.651668257 +0100
+@@ -6,6 +6,8 @@
+ 
+ #include "sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h"
+ 
++#include <errno.h>
++#include <fcntl.h>
+ #include <stddef.h>
+ #include <stdint.h>
+ #include <string.h>
+@@ -355,6 +357,35 @@
+   return -ENOSYS;
+ }
+ 
++intptr_t SIGSYSFstatatHandler(const struct arch_seccomp_data& args,
++                            void* aux) {
++  switch (args.nr) {
++#if defined(__NR_newfstatat)
++    case __NR_newfstatat:
++#endif
++#if defined(__NR_fstatat64)
++    case __NR_fstatat64:
++#endif
++#if defined(__NR_newfstatat) || defined(__NR_fstatat64)
++      if (*reinterpret_cast<const char *>(args.args[1]) == '\0'
++          && args.args[3] == static_cast<uint64_t>(AT_EMPTY_PATH)) {
++        return sandbox::sys_fstat64(static_cast<int>(args.args[0]),
++                                    reinterpret_cast<struct stat64 *>(args.args[2]));
++      } else {
++        errno = EACCES;
++        return -1;
++      }
++      break;
++#endif
++  }
++
++  CrashSIGSYS_Handler(args, aux);
++
++  // Should never be reached.
++  RAW_CHECK(false);
++  return -ENOSYS;
++}
++
+ bpf_dsl::ResultExpr CrashSIGSYS() {
+   return bpf_dsl::Trap(CrashSIGSYS_Handler, NULL);
+ }
+@@ -387,6 +418,10 @@
+   return bpf_dsl::Trap(SIGSYSSchedHandler, NULL);
+ }
+ 
++bpf_dsl::ResultExpr RewriteFstatatSIGSYS() {
++  return bpf_dsl::Trap(SIGSYSFstatatHandler, NULL);
++}
++
+ void AllocateCrashKeys() {
+ #if !defined(OS_NACL_NONSFI)
+   if (seccomp_crash_key)
+diff -ur qtwebengine-everywhere-src-5.15.2/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h qtwebengine-everywhere-src-5.15.2-#1904652/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h
+--- qtwebengine-everywhere-src-5.15.2/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h	2020-11-07 02:22:36.000000000 +0100
++++ qtwebengine-everywhere-src-5.15.2-#1904652/src/3rdparty/chromium/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h	2021-01-20 02:11:04.583714199 +0100
+@@ -62,6 +62,10 @@
+ // sched_setparam(), sched_setscheduler()
+ SANDBOX_EXPORT intptr_t SIGSYSSchedHandler(const arch_seccomp_data& args,
+                                            void* aux);
++// If the fstatat syscall is actually a disguised fstat, calls the regular fstat
++// syscall, otherwise, crashes in the same way as CrashSIGSYS_Handler.
++SANDBOX_EXPORT intptr_t SIGSYSFstatatHandler(const struct arch_seccomp_data& args, 
++                                             void* aux);
+ 
+ // Variants of the above functions for use with bpf_dsl.
+ SANDBOX_EXPORT bpf_dsl::ResultExpr CrashSIGSYS();
+@@ -72,6 +76,7 @@
+ SANDBOX_EXPORT bpf_dsl::ResultExpr CrashSIGSYSFutex();
+ SANDBOX_EXPORT bpf_dsl::ResultExpr CrashSIGSYSPtrace();
+ SANDBOX_EXPORT bpf_dsl::ResultExpr RewriteSchedSIGSYS();
++SANDBOX_EXPORT bpf_dsl::ResultExpr RewriteFstatatSIGSYS();
+ 
+ // Allocates a crash key so that Seccomp information can be recorded.
+ void AllocateCrashKeys();
+diff -ur qtwebengine-everywhere-src-5.15.2/src/3rdparty/chromium/sandbox/linux/services/syscall_wrappers.cc qtwebengine-everywhere-src-5.15.2-#1904652/src/3rdparty/chromium/sandbox/linux/services/syscall_wrappers.cc
+--- qtwebengine-everywhere-src-5.15.2/src/3rdparty/chromium/sandbox/linux/services/syscall_wrappers.cc	2020-11-07 02:22:36.000000000 +0100
++++ qtwebengine-everywhere-src-5.15.2-#1904652/src/3rdparty/chromium/sandbox/linux/services/syscall_wrappers.cc	2021-01-20 02:41:12.033133269 +0100
+@@ -261,4 +261,13 @@
+ 
+ #endif  // defined(MEMORY_SANITIZER)
+ 
++SANDBOX_EXPORT int sys_fstat64(int fd, struct stat64 *buf)
++{
++#if defined(__NR_fstat64)
++    return syscall(__NR_fstat64, fd, buf);
++#else
++    return syscall(__NR_fstat, fd, buf);
++#endif
++}
++
+ }  // namespace sandbox
+diff -ur qtwebengine-everywhere-src-5.15.2/src/3rdparty/chromium/sandbox/linux/services/syscall_wrappers.h qtwebengine-everywhere-src-5.15.2-#1904652/src/3rdparty/chromium/sandbox/linux/services/syscall_wrappers.h
+--- qtwebengine-everywhere-src-5.15.2/src/3rdparty/chromium/sandbox/linux/services/syscall_wrappers.h	2020-11-07 02:22:36.000000000 +0100
++++ qtwebengine-everywhere-src-5.15.2-#1904652/src/3rdparty/chromium/sandbox/linux/services/syscall_wrappers.h	2021-01-20 02:40:26.499827829 +0100
+@@ -17,6 +17,7 @@
+ struct rlimit64;
+ struct cap_hdr;
+ struct cap_data;
++struct stat64;
+ 
+ namespace sandbox {
+ 
+@@ -84,6 +85,9 @@
+                                  const struct sigaction* act,
+                                  struct sigaction* oldact);
+ 
++// Recent glibc rewrites fstat to fstatat.
++SANDBOX_EXPORT int sys_fstat64(int fd, struct stat64 *buf);
++
+ }  // namespace sandbox
+ 
+ #endif  // SANDBOX_LINUX_SERVICES_SYSCALL_WRAPPERS_H_

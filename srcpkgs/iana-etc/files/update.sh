@@ -1,3 +1,4 @@
+#!/bin/sh
 # Adapted from https://git.archlinux.org/svntogit/packages.git/tree/trunk/PKGBUILD?h=packages/iana-etc
 
 curl -sL https://www.iana.org/assignments/protocol-numbers/protocol-numbers.xml |

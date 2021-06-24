@@ -20,6 +20,7 @@ if [ "$CROSS_BUILD" ]; then
 	# addding search paths up front allows the target to take priority
 	CFLAGS+=" -I${XBPS_CROSS_BASE}/${py3_sitelib}/numpy/core/include"
 	LDFLAGS+=" -L${XBPS_CROSS_BASE}/${py3_sitelib}/numpy/core/lib"
+	LDFLAGS+=" -L${XBPS_CROSS_BASE}/${py3_sitelib}/numpy/random/lib"
 
 	# distutils from python3-numpy looks to environment variables F77 and
 	# F90 rather than the XBPS-set FC
