@@ -1,0 +1,87 @@
+# Template file for 'qt6-webengine'
+pkgname=qt6-webengine
+version=6.2.1
+revision=1
+wrksrc="qtwebengine-everywhere-src-${version}"
+build_style=cmake
+configure_args="-DQT_HOST_PATH=/usr -DQT_BUILD_TOOLS_WHEN_CROSSCOMPILING=true
+ -DQT_FEATURE_webengine_system_ffmpeg=ON
+ -DQT_FEATURE_webengine_system_libevent=ON
+ -DQT_FEATURE_webengine_system_gn=ON
+ -DPKG_CONFIG_HOST_EXECUTABLE=${PKG_CONFIG_FOR_BUILD}"
+hostmakedepends="qt6-base-devel perl pkg-config nodejs python
+ qt6-declarative-devel protobuf gperf flex nss-devel libwebp-devel"
+makedepends="qt6-base-devel qt6-declarative-devel pulseaudio-devel
+ alsa-lib-devel libvpx-devel pciutils-devel opus-devel libxslt-devel
+ libxml2-devel freetype-devel lcms2-devel libwebp-devel icu-devel
+ re2-devel zlib-devel libpng-devel minizip-devel harfbuzz-devel
+ nss-devel libXcursor-devel libXcomposite-devel libXScrnSaver-devel
+ protobuf-devel ffmpeg-devel snappy-devel libevent-devel pipewire-devel
+ libxkbfile-devel qt6-location-devel qt6-webchannel-devel"
+short_desc="Cross-platform application and UI framework - Webengine"
+maintainer="John <me@johnnynator.dev>"
+license="GPL-3.0-only, GPL-2.0-only, LGPL-3.0-only BSD-3-Clause"
+homepage="https://www.qt.io"
+distfiles="https://download.qt.io/official_releases/qt/${version%.*}/${version}/submodules/qtwebengine-everywhere-src-${version}.tar.xz"
+checksum=1f933cffb8671c1e71b6b2a4924cb6b3f9878388ae6298ac8d31a76c1ecffbb7
+
+if [ -z "$CROSS_BUILD" ];then
+	configure_args+=" -DCMAKE_TOOLCHAIN_FILE=/usr/lib/cmake/Qt6/qt.toolchain.cmake"
+fi
+
+if [ "$XBPS_LIBC" = "musl" ]; then
+	hostmakedepends+=" musl-legacy-compat"
+fi
+
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	makedepends+=" musl-legacy-compat"
+fi
+
+if [ ! "$XBPS_WORDSIZE" = "$XBPS_TARGET_WORDSIZE" ]; then
+	broken="webengine can be built only if word size matches"
+fi
+
+if [ "$XBPS_WORDSIZE" -eq 32 ]; then
+	nodebug=yes
+	LDFLAGS="-Wl,--no-keep-memory"
+fi
+
+if [ "$XBPS_TARGET_ENDIAN" != "le" ]; then
+	broken="webengine only supports little endian"
+fi
+
+_bootstrap_gn() {
+	# Bootstrap gn (generate ninja)
+	echo "Bootstrapping 'gn'"
+	cd ${wrksrc}/src/3rdparty/gn
+	CFLAGS="$CFLAGS_host" CXXFLAGS="$CXXFLAGS_host" LDFLAGS="$LDFLAGS_host" \
+	PKGCONFIG=/usr/bin/pkgconfig PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/share/pkgconfig" \
+		python2 build/gen.py --no-last-commit-position --out-path \
+			${wrksrc}/src/3rdparty/gn/out/Release --cc "${CC_host:-$CC}" \
+			--cxx "${CXX_host:-$CXX}" --ld "${CXX_host:-$CXX}" --ar "${AR_host:-$AR}" \
+			--qt-version "${version}.qtwebengine.qt.io"
+	ninja -C out/Release gn
+	cd ${wrksrc}
+}
+
+pre_configure() {
+	cp ${FILESDIR}/resolv_compat.h ${wrksrc}/src/3rdparty/chromium/net/dns
+	_bootstrap_gn
+	export PATH="$PATH:${wrksrc}/src/3rdparty/gn/out/Release"
+}
+
+pre_build() {
+	export PATH="$PATH:${wrksrc}/src/3rdparty/gn/out/Release"
+}
+
+qt6-webengine-devel_package() {
+	depends="${sourcepkg}>=${version}_${revision} qt6-webchannel-devel>=${version}_1
+	 qt6-declarative-devel>=${version}_1 qt6-location-devel>=${version}_1"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/cmake
+		vmove usr/lib/qt6/mkspecs
+		vmove "usr/lib/*.so"
+	}
+}
