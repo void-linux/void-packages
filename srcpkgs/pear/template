@@ -1,0 +1,91 @@
+# Template file for 'pear'
+pkgname=pear
+version=1.10.12
+revision=1
+_version_xml_util=1.4.5
+_version_console_getopt=1.4.3
+_version_archive_tar=1.4.13
+_version_structures_graph=1.1.1
+_version_php_archive=0.14.0
+wrksrc="pear-core-${version}"
+hostmakedepends="php"
+depends="php"
+conf_files="/etc/php/pear.conf"
+short_desc="PEAR - PHP Extension and Application Repository"
+maintainer="eater <=@eater.me>"
+license="BSD-2-Clause"
+homepage="https://pear.php.net/"
+distfiles="
+	https://github.com/pear/pear-core/archive/refs/tags/v${version}.tar.gz
+	http://download.pear.php.net/package/PEAR-${version}.tgz
+	http://download.pear.php.net/package/XML_Util-${_version_xml_util}.tgz
+	http://download.pear.php.net/package/Console_Getopt-${_version_console_getopt}.tgz
+	http://download.pear.php.net/package/Archive_Tar-${_version_archive_tar}.tgz
+	http://download.pear.php.net/package/Structures_Graph-${_version_structures_graph}.tgz
+	http://download.pear.php.net/package/PHP_Archive-${_version_php_archive}.tgz"
+checksum="775e04b3897531852454638aa24c2a38627241c97884faf10ad9bf7ca9faf65a
+	df363c5e6091334c43f560eec2f220be2f8044eb5d422204a715adc4663ba923
+	e0f8736cb47ce9dd32814de45425ff03ad55a72ba8bb757e42c456f861feedf6
+	54bdfb7c2c958cbd7e1e8f1b964b95c3bfbf3b2779052523011b4ee49d7dfacd
+	2752e19121573a9e17be9514f855785df9d56768ebdeade85588913e502e829e
+	3b19abac379883f095c11fe2e5550cb61691b868f3d96573f6ed564be82fa08e
+	59fd3aead80bdd9fec6c232710754b92516a36c2845e0745b96c4aea9d2d5768"
+skip_extraction="PEAR-${version}.tgz
+	XML_Util-${_version_xml_util}.tgz
+	Console_Getopt-${_version_console_getopt}.tgz
+	Archive_Tar-${_version_archive_tar}.tgz
+	Structures_Graph-${_version_structures_graph}.tgz
+	PHP_Archive-${_version_php_archive}.tgz"
+replaces="php-pear>=0"
+
+post_extract() {
+	mkdir -p go-pear-tarballs/src;
+	for pear in ${XBPS_SRCDISTDIR}/${pkgname}-${version}/*.tgz; do
+		# PHP_Archive is only needed for creation
+		if [[ "$pear" = *'PHP_Archive'* ]]; then
+			bsdtar -C go-pear-tarballs/src -xf "${pear}"
+			continue
+		else
+			bsdtar --strip-components=1 -C go-pear-tarballs/src -xf "${pear}"
+		fi
+
+		pearname="$(basename "${pear}")"
+		pearname="${pearname//tgz/tar.gz}"
+
+		cp "${pear}" "go-pear-tarballs/${pearname}"
+		# the phar needs naked tar's
+		gunzip "go-pear-tarballs/${pearname}"
+	done
+
+	# PHP_Archive classes are expected to be at PHP/Archive but it is not
+	mv "go-pear-tarballs/src/PHP_Archive-${_version_php_archive}" go-pear-tarballs/src/PHP
+}
+
+post_patch() {
+	# PEAR would normally replace these, but we're pearless at this point
+	vsed -i 's:\(.\)@data_dir@/PHP_Archive/:__DIR__ . \1/../:;s:@API-VER@:1.1.0:' \
+		go-pear-tarballs/src/PHP/Archive/Creator.php
+}
+
+do_build() {
+	php -d include_path=".:${wrksrc}/go-pear-tarballs/src" make-installpear-nozlib-phar.php
+}
+
+do_install() {
+	mkdir -p ${DESTDIR}/usr/share/pear
+	INSTALL_ROOT="${DESTDIR}" php \
+		-n \
+		-dshort_open_tag=0 \
+		-dopen_basedir= \
+		-derror_reporting=1803 \
+		-dmemory_limit=-1 \
+		-ddetect_unicode=0 \
+		-dextension=phar \
+		install-pear-nozlib.phar -d /usr/share/pear -b /usr/bin
+
+	# clean up created database files
+	rm -r ${DESTDIR}/.{channels,depdb,depdblock,filemap,lock,registry}
+	rm -r ${DESTDIR}/usr/share/pear/.{channels,filemap,lock,registry}
+
+	vlicense LICENSE
+}
