@@ -1,0 +1,474 @@
+From 7a22a424ff2997f644d930050635db214c068d10 Mon Sep 17 00:00:00 2001
+From: Michal Klocek <michal.klocek@qt.io>
+Date: Sun, 23 May 2021 17:39:28 +0200
+Subject: [PATCH 1/2] Add cross compilation support to cmake builds
+
+Add arm cross-compile basic support. CMake does not
+support host builds. However we do host build with gn and
+changing that would require an extra effort to keep all necessary
+changes with Chromium upstream. Therefore let gn to perform
+the host build for required tools and just feed gn with all the
+build data.
+
+Add new build steps:
+
+* install gn into QT_HOST_PATH/libexec.
+* run hostBuild project to get native architecture and compiler
+* call PkgConfigHost to pass pkg-config paths to gn
+* create wrapper script for host pkg-config to escape
+  yocto shell pkg config exports
+
+This change also splits gn toolchain into 3 toolchains host,target,v8
+Now hostBuild provides host and v8 toolchain in case of cross compile.
+
+The build optimizations will follow in another patch.
+
+Note this is tested only with yocto based images.
+
+Pick-to: dev
+Task-number: QTBUG-91760
+Change-Id: Ic2bea12229acc71fbd36a848e9ed4fed7e14b485
+---
+ CMakeLists.txt                           | 37 ++++++++++++++++--
+ cmake/FindGn.cmake                       |  9 +++--
+ cmake/FindNinja.cmake                    |  4 +-
+ cmake/FindPkgConfigHost.cmake            | 40 ++++++++++++++++++++
+ cmake/Functions.cmake                    | 45 ++++++++++++++++++++++
+ configure.cmake                          | 10 ++++-
+ src/core/CMakeLists.txt                  | 48 ++++++++++++++++++------
+ src/core/api/configure.cmake             | 10 ++---
+ src/core/configure/BUILD.toolchain.gn.in | 32 ++--------------
+ src/core/configure/CMakeLists.txt        | 35 +++++++++++++++++
+ 10 files changed, 215 insertions(+), 55 deletions(-)
+ create mode 100644 cmake/FindPkgConfigHost.cmake
+ create mode 100644 src/core/configure/CMakeLists.txt
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 8a3ff75c..2a93dca5 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -63,6 +63,7 @@ add_subdirectory(src/process)
+ add_subdirectory(src/webenginewidgets)
+ add_subdirectory(src/webenginequick)
+ qt_build_repo_end()
++get_install_config(installConfig)
+ 
+ ### NINJA
+ 
+@@ -94,9 +95,10 @@ if(NOT Gn_FOUND)
+                    -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+                    -DCMAKE_PREFIX_PATH:PATH=<INSTALL_DIR>
+                    -DWEBENGINE_ROOT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+-)
++    )
+ endif()
+ 
++
+ ### LIBS
+ 
+ # on windows source path can be specified without hard drive letter,
+@@ -115,12 +117,14 @@ endif()
+ list(TRANSFORM featureList PREPEND "-D")
+ list(APPEND libsCmakeArgs
+         "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}"
+-        "-DWEBENGINE_ROOT_BUILD_PATH=${CMAKE_CURRENT_BINARY_DIR}"
++        "-DWEBENGINE_ROOT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+         "-DWEBENGINE_ROOT_SOURCE_DIR=${WEBENGINE_ROOT_SOURCE_DIR}"
+         "-DWEBENGINE_REPO_BUILD=TRUE"
+         "${featureList}"
+ )
+-
++if(QT_HOST_PATH)
++    list(APPEND libsCmakeArgs "-DQT_HOST_PATH=${QT_HOST_PATH}")
++endif()
+ if(LINUX)
+     set(cmd "${CMAKE_COMMAND} --build ${CMAKE_CURRENT_BINARY_DIR}/src")
+     file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/src/build.sh CONTENT "ulimit -n 4096 && ${cmd}\n")
+@@ -210,3 +214,30 @@ if(NOT QT_FEATURE_framework)
+         DESTINATION ${CMAKE_INSTALL_PREFIX}
+     )
+ endif()
++
++### CROSS BUILD SETUP
++
++# install gn for cross build
++# TODO: is this really needed, should we skip it and just build gn as host build ?
++if(LINUX AND NOT Gn_FOUND OR INSTALL_GN)
++    set(INSTALL_GN 1 CACHE INTERNAL "")
++    install(
++        PROGRAMS ${installDir}/bin/gn
++        CONFIGURATIONS ${installConfig}
++        RUNTIME DESTINATION "${INSTALL_LIBEXECDIR}"
++    )
++endif()
++
++if(CMAKE_CROSSCOMPILING)
++    externalproject_add(hostBuild
++        SOURCE_DIR  ${CMAKE_CURRENT_LIST_DIR}/src/core/configure
++        BINARY_DIR  ${CMAKE_CURRENT_BINARY_DIR}/configure
++        PREFIX      cross
++        USES_TERMINAL_BUILD ON
++        CMAKE_ARGS -DCMAKE_TOOLCHAIN_FILE=${QT_HOST_PATH}/lib/cmake/Qt6/qt.toolchain.cmake
++                   -DWEBENGINE_ROOT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
++                   -DWEBENGINE_ROOT_SOURCE_DIR=${WEBENGINE_ROOT_SOURCE_DIR}
++                   -DGN_TARGET_CPU=${TEST_architecture_arch}
++    )
++    externalproject_add_stepdependencies(libs install hostBuild)
++endif()
+diff --git a/cmake/FindGn.cmake b/cmake/FindGn.cmake
+index 12a90778..abfa0fe2 100644
+--- a/cmake/FindGn.cmake
++++ b/cmake/FindGn.cmake
+@@ -1,9 +1,10 @@
+ if (NOT DEFINED WEBENGINE_ROOT_BUILD_DIR)
+-    set(WEBENGINE_ROOT_BUILD_DIR  ${CMAKE_CURRENT_BINARY_DIR}/../..)
++    set(WEBENGINE_ROOT_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR})
++endif()
++find_program(Gn_EXECUTABLE NAMES gn PATHS "${WEBENGINE_ROOT_BUILD_DIR}/install/bin" NO_DEFAULT_PATH)
++if(NOT QT_HOST_PATH STREQUAL "")
++   find_program(Gn_EXECUTABLE NAMES gn PATHS ${QT_HOST_PATH}/${INSTALL_LIBEXECDIR} NO_DEFAULT_PATH)
+ endif()
+-
+-set(CMAKE_PROGRAM_PATH ${WEBENGINE_ROOT_BUILD_DIR}/install/bin)
+-
+ find_program(Gn_EXECUTABLE NAMES gn)
+ 
+ if(Gn_EXECUTABLE)
+diff --git a/cmake/FindNinja.cmake b/cmake/FindNinja.cmake
+index 3615d58b..720e7326 100644
+--- a/cmake/FindNinja.cmake
++++ b/cmake/FindNinja.cmake
+@@ -1,8 +1,8 @@
+ if (NOT DEFINED WEBENGINE_ROOT_BUILD_DIR)
+-    set(WEBENGINE_ROOT_BUILD_DIR  ${CMAKE_CURRENT_BINARY_DIR}/..)
++    set(WEBENGINE_ROOT_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR})
+ endif()
+ 
+-set(CMAKE_PROGRAM_PATH ${WEBENGINE_ROOT_BUILD_DIR}/install/bin)
++find_program(Ninja_EXECUTABLE NAMES ninja ninja-build PATHS "${WEBENGINE_ROOT_BUILD_DIR}/install/bin" NO_DEFAULT_PATH)
+ find_program(Ninja_EXECUTABLE NAMES ninja ninja-build)
+ 
+ if(Ninja_EXECUTABLE)
+diff --git a/cmake/FindPkgConfigHost.cmake b/cmake/FindPkgConfigHost.cmake
+new file mode 100644
+index 00000000..de021638
+--- /dev/null
++++ b/cmake/FindPkgConfigHost.cmake
+@@ -0,0 +1,40 @@
++# this is just simply pkg config wrapper to pass executable path to gn
++
++if(CMAKE_CROSSCOMPILING)
++   # find pkg-config, use PKG_CONFIG_HOST if set
++   if((NOT PKG_CONFIG_HOST_EXECUTABLE) AND (NOT "$ENV{PKG_CONFIG_HOST}" STREQUAL ""))
++       set(PKG_CONFIG_HOST_EXECUTABLE "$ENV{PKG_CONFIG_HOST}" CACHE FILEPATH "pkg-config host executable")
++   endif()
++
++   find_program(PKG_CONFIG_HOST_EXECUTABLE NAMES "pkg-config" DOC "pkg-config executable"
++       NO_SYSTEM_ENVIRONMENT_PATH
++       NO_CMAKE_FIND_ROOT_PATH
++   )
++
++   if(PKG_CONFIG_HOST_EXECUTABLE)
++       mark_as_advanced(PKG_CONFIG_HOST_EXECUTABLE)
++       execute_process(COMMAND ${PKG_CONFIG_HOST_EXECUTABLE} --version
++           OUTPUT_VARIABLE PKG_CONFIG_HOST_VERSION_STRING
++           OUTPUT_STRIP_TRAILING_WHITESPACE
++           ERROR_QUIET)
++   endif ()
++
++   include(FindPackageHandleStandardArgs)
++   find_package_handle_standard_args(PkgConfigHost
++       FOUND_VAR PkgConfigHost_FOUND
++       VERSION_VAR PKG_CONFIG_HOST_VERSION_STRING
++       REQUIRED_VARS PKG_CONFIG_HOST_EXECUTABLE
++   )
++else() # if not corss build simply wrap FindPkgConfig
++   find_package(PkgConfig)
++   if(PKG_CONFIG_FOUND)
++       include(FindPackageHandleStandardArgs)
++       set(PKG_CONFIG_HOST_VERSION ${PKG_CONFIG_VERSION})
++       set(PKG_CONFIG_HOST_EXECUTABLE ${PKG_CONFIG_EXECUTABLE})
++       find_package_handle_standard_args(PkgConfigHost
++           FOUND_VAR PkgConfigHost_FOUND
++           VERSION_VAR PKG_CONFIG_HOST_VERSION_STRING
++           REQUIRED_VARS PKG_CONFIG_HOST_EXECUTABLE
++       )
++  endif()
++endif()
+diff --git a/cmake/Functions.cmake b/cmake/Functions.cmake
+index d29ed7a4..3cdfdee9 100644
+--- a/cmake/Functions.cmake
++++ b/cmake/Functions.cmake
+@@ -348,3 +348,48 @@ function(qt_internal_add_external_project_dependency_to_root_project name)
+ 
+     cmake_policy(POP)
+ endfunction()
++
++function(get_gn_arch result arch)
++   if("${arch}" STREQUAL "i386")
++      set(${result} "x86" PARENT_SCOPE)
++   elseif("${arch}" STREQUAL "x86_64")
++      set(${result} "x64" PARENT_SCOPE)
++   elseif("${arch}" STREQUAL "arm")
++      set(${result} "arm" PARENT_SCOPE)
++   elseif("${arch}" STREQUAL "arm64")
++      set(${result} "arm64" PARENT_SCOPE)
++   elseif("${arch}" STREQUAL "mipsel")
++      set(${result} "mipsel" PARENT_SCOPE)
++   elseif("${arch}" STREQUAL "mipsel64")
++      set(${result} "mips64el" PARENT_SCOPE)
++   else()
++      message(DEBUG "Unsupported achitecture: ${arch}")
++   endif()
++endfunction()
++
++function(get_v8_arch result targetArch)
++   set(list32 i386 arm mipsel)
++   if("${targetArch}" IN_LIST list32)
++       set(${result} "i386" PARENT_SCOPE)
++   else()
++       set(${result} "x86_64" PARENT_SCOPE)
++   endif()
++endfunction()
++
++function(configure_gn_toolchain name cpuType v8CpuType toolchainIn toolchainOut)
++    set(GN_TOOLCHAIN ${name})
++    get_gn_arch(GN_CPU ${cpuType})
++    get_gn_arch(GN_V8_CPU ${v8CpuType})
++    configure_file(${toolchainIn} ${toolchainOut}/BUILD.gn @ONLY)
++endfunction()
++
++function(create_pkg_config_host_wrapper wrapperName wrapperCmd)
++    file(WRITE ${wrapperName}
++        "#!/bin/sh\n"
++        "unset PKG_CONFIG_LIBDIR\n"
++        "unset PKG_CONFIG_PATH\n"
++        "unset PKG_CONFIG_SYSROOT_DIR\n"
++        "exec ${wrapperCmd} \"$@\""
++    )
++    file(CHMOD ${wrapperName} PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
++endfunction()
+diff --git a/configure.cmake b/configure.cmake
+index 53392313..2a8552d7 100644
+--- a/configure.cmake
++++ b/configure.cmake
+@@ -333,9 +333,17 @@ endif()
+ assertTargets(webEngineError webEngineSupport Gui Widgets OpenGL OpenGLWidgets Quick Qml)
+ add_check_for_support(webEngineError webEngineSupport
+    MODULE QtWebEngine
+-   CONDITION (LINUX AND NOT CMAKE_CROSSCOMPILING) OR (WIN32 AND NOT WIN_ARM_64) OR (MACOS AND NOT MAC_UNIVERSAL)
++   CONDITION LINUX OR (WIN32 AND NOT WIN_ARM_64) OR (MACOS AND NOT MAC_UNIVERSAL)
+    MESSAGE "Build can be done only on Linux, Windows or macOS."
+ )
++if(LINUX AND CMAKE_CROSSCOMPILING)
++   get_gn_arch(testArch ${TEST_architecture_arch})
++   add_check_for_support(webEngineError webEngineSupport
++       MODULE QtWebEngine
++       CONDITION testArch
++       MESSAGE "Cross compiling is not supported for ${TEST_architecture_arch}."
++   )
++endif()
+ add_check_for_support(webEngineError webEngineSupport
+    MODULE QtWebEngine
+    CONDITION NOT QT_FEATURE_static
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index fd935fe1..40d7fd8e 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -24,6 +24,11 @@ find_package(Nodejs 12.0)
+ find_package(PkgConfig)
+ if(PkgConfig_FOUND)
+     pkg_check_modules(XSCRNSAVER xscrnsaver)
++    find_package(PkgConfigHost)
++    if(CMAKE_CROSSCOMPILING)
++        create_pkg_config_host_wrapper("${buildDir}/pkg-config-host_wrapper.sh" "${PKG_CONFIG_HOST_EXECUTABLE}")
++        set(PKG_CONFIG_HOST_EXECUTABLE "${buildDir}/pkg-config-host_wrapper.sh")
++    endif()
+ endif()
+ 
+ get_target_property(qtWebEngineProcessName WebEngineCore QTWEBENGINEPROCESS_NAME)
+@@ -36,6 +41,24 @@ else()
+     set(configs ${CMAKE_BUILD_TYPE})
+ endif()
+ 
++##
++#   TOOLCHAIN SETUP
++##
++
++if(LINUX)
++    if(NOT CMAKE_CROSSCOMPILING) # delivered by hostBuild project
++        configure_gn_toolchain(host ${TEST_architecture_arch} ${TEST_architecture_arch}
++            ${WEBENGINE_ROOT_SOURCE_DIR}/src/core/configure/BUILD.toolchain.gn.in
++            ${buildDir}/host_toolchain)
++        configure_gn_toolchain(v8 ${TEST_architecture_arch} ${TEST_architecture_arch}
++            ${WEBENGINE_ROOT_SOURCE_DIR}/src/core/configure/BUILD.toolchain.gn.in
++            ${buildDir}/v8_toolchain)
++    endif()
++    configure_gn_toolchain(target ${TEST_architecture_arch} ${TEST_architecture_arch}
++        ${WEBENGINE_ROOT_SOURCE_DIR}/src/core/configure/BUILD.toolchain.gn.in
++        ${buildDir}/target_toolchain)
++endif()
++
+ foreach(config ${configs})
+ 
+ ##
+@@ -250,12 +273,6 @@ foreach(config ${configs})
+     configure_gn_target(${buildGn} ${config}
+         ${WEBENGINE_ROOT_SOURCE_DIR}/src/core/configure/BUILD.root.gn.in ${buildDir}/${config}/BUILD.gn)
+ 
+-##
+-#   TOOLCHAIN SETUP
+-##
+-
+-    configure_file(${WEBENGINE_ROOT_SOURCE_DIR}/src/core/configure/BUILD.toolchain.gn.in
+-        ${buildDir}/${config}/toolchain/BUILD.gn @ONLY)
+ 
+ ##
+ #   GN CALL PARAMETERS SETUP
+@@ -419,6 +436,15 @@ foreach(config ${configs})
+         )
+     endif()
+     if(LINUX)
++        get_gn_arch(cpu ${TEST_architecture_arch})
++        if(CMAKE_CROSSCOMPILING)
++            list(APPEND gnArgArg target_cpu="${cpu}")
++        else()
++            list(APPEND gnArgArg host_cpu="${cpu}")
++        endif()
++        if(CMAKE_SYSROOT)
++            list(APPEND gnArgArg target_sysroot="${CMAKE_SYSROOT}")
++        endif()
+         list(APPEND gnArgArg
+             use_cups=false
+             use_gio=false
+@@ -435,11 +461,11 @@ foreach(config ${configs})
+             ozone_platform_external=true
+             ozone_platform="qt"
+             ozone_extra_path="${CMAKE_CURRENT_LIST_DIR}/ozone/ozone_extra.gni"
+-            custom_toolchain="${buildDir}/${config}/toolchain:target"
+-            host_toolchain="${buildDir}/${config}/toolchain:host"
+-            host_cpu="x64"
+-            pkg_config="pkg-config"
+-            host_pkg_config="/usr/bin/pkg-config"
++            custom_toolchain="${buildDir}/target_toolchain:target"
++            host_toolchain="${buildDir}/host_toolchain:host"
++            v8_snapshot_toolchain="${buildDir}/v8_toolchain:v8"
++            pkg_config="${PKG_CONFIG_EXECUTABLE}"
++            host_pkg_config="${PKG_CONFIG_HOST_EXECUTABLE}"
+             use_glib=false
+         )
+         set(systemLibs libjpeg libpng freetype harfbuzz libevent libwebp libxml
+diff --git a/src/core/api/configure.cmake b/src/core/api/configure.cmake
+index 35d28e87..0cf46bf0 100644
+--- a/src/core/api/configure.cmake
++++ b/src/core/api/configure.cmake
+@@ -143,11 +143,11 @@ qt_configure_add_summary_entry(
+     CONDITION UNIX
+ )
+ qt_configure_end_summary_section() # end of "Qt WebEngineCore" section
+-qt_configure_add_report_entry(
+-    TYPE WARNING
+-    MESSAGE "Thumb instruction set is required to build ffmpeg for QtWebEngine."
+-    CONDITION LINUX AND QT_FEATURE_webengine_embedded_build AND NOT QT_FEATURE_webengine_system_ffmpeg AND ( TEST_architecture_arch STREQUAL arm ) AND NOT QT_FEATURE_webengine_arm_thumb
+-)
++#qt_configure_add_report_entry(
++#    TYPE WARNING
++#    MESSAGE "Thumb instruction set is required to build ffmpeg for QtWebEngine."
++#    CONDITION LINUX AND QT_FEATURE_webengine_embedded_build AND NOT QT_FEATURE_webengine_system_ffmpeg AND ( TEST_architecture_arch STREQUAL arm ) AND NOT QT_FEATURE_webengine_arm_thumb
++#)
+ qt_configure_add_report_entry(
+     TYPE WARNING
+     MESSAGE "V8 snapshot cannot be built. Most likely, the 32-bit host compiler does not work. Please make sure you have 32-bit devel environment installed."
+diff --git a/src/core/configure/BUILD.toolchain.gn.in b/src/core/configure/BUILD.toolchain.gn.in
+index e44fa42d..c1bf3845 100644
+--- a/src/core/configure/BUILD.toolchain.gn.in
++++ b/src/core/configure/BUILD.toolchain.gn.in
+@@ -1,6 +1,6 @@
+ import("//build/config/sysroot.gni")
+ import("//build/toolchain/gcc_toolchain.gni")
+-gcc_toolchain("host") {
++gcc_toolchain("@GN_TOOLCHAIN@") {
+   cc = "@CMAKE_C_COMPILER@"
+   cxx = "@CMAKE_CXX_COMPILER@"
+   ld = "@CMAKE_CXX_COMPILER@"
+@@ -9,34 +9,8 @@ gcc_toolchain("host") {
+   extra_cppflags = ""
+   toolchain_args = {
+     current_os = "linux"
+-    current_cpu = "x64"
+-    is_clang = false
+-    use_gold = false
+-  }
+-}
+-gcc_toolchain("v8_snapshot") {
+-  cc = "@CMAKE_C_COMPILER@"
+-  cxx = "@CMAKE_CXX_COMPILER@"
+-  ld = "@CMAKE_CXX_COMPILER@"
+-  ar = "@CMAKE_AR@"
+-  nm = "@CMAKE_NM@"
+-  toolchain_args = {
+-    current_os = "linux"
+-    current_cpu = "x64"
+-    v8_current_cpu = "x64"
+-    is_clang = false
+-    use_gold = false
+-  }
+- }
+-gcc_toolchain("target") {
+-  cc = "@CMAKE_C_COMPILER@"
+-  cxx = "@CMAKE_CXX_COMPILER@"
+-  ld = "@CMAKE_CXX_COMPILER@"
+-  ar = "@CMAKE_AR@"
+-  nm = "@CMAKE_NM@"
+-  toolchain_args = {
+-    current_os = "linux"
+-    current_cpu = "x64"
++    current_cpu = "@GN_CPU@"
++    v8_current_cpu = "@GN_V8_CPU@"
+     is_clang = false
+     use_gold = false
+   }
+diff --git a/src/core/configure/CMakeLists.txt b/src/core/configure/CMakeLists.txt
+new file mode 100644
+index 00000000..0ae4b4b4
+--- /dev/null
++++ b/src/core/configure/CMakeLists.txt
+@@ -0,0 +1,35 @@
++cmake_minimum_required(VERSION 3.19)
++
++if(NOT DEFINED WEBENGINE_ROOT_SOURCE_DIR)
++    get_filename_component(WEBENGINE_ROOT_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../.." REALPATH)
++endif()
++if (NOT DEFINED WEBENGINE_ROOT_BUILD_DIR)
++    get_filename_component(WEBENGINE_ROOT_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/../../.." REALPATH)
++endif()
++
++include(${WEBENGINE_ROOT_SOURCE_DIR}/.cmake.conf)
++include(${WEBENGINE_ROOT_SOURCE_DIR}/cmake/Functions.cmake)
++
++set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${WEBENGINE_ROOT_SOURCE_DIR}/cmake")
++
++project(QtWebEngineConfigure
++    VERSION "${QT_REPO_MODULE_VERSION}"
++    LANGUAGES CXX C)
++
++find_package(Qt6 ${PROJECT_VERSION} CONFIG REQUIRED COMPONENTS BuildInternals Core)
++
++set(buildDir ${CMAKE_CURRENT_BINARY_DIR})
++configure_gn_toolchain(host ${TEST_architecture_arch} ${TEST_architecture_arch}
++    ${WEBENGINE_ROOT_SOURCE_DIR}/src/core/configure/BUILD.toolchain.gn.in
++    ${buildDir}/host_toolchain
++)
++install(FILES ${buildDir}/host_toolchain/BUILD.gn
++    DESTINATION ${WEBENGINE_ROOT_BUILD_DIR}/src/core/host_toolchain
++    )
++get_v8_arch(GN_V8_HOST_CPU ${GN_TARGET_CPU})
++configure_gn_toolchain(v8 ${GN_V8_HOST_CPU} ${GN_TARGET_CPU}
++    ${WEBENGINE_ROOT_SOURCE_DIR}/src/core/configure/BUILD.toolchain.gn.in
++    ${buildDir}/v8_toolchain)
++install(FILES ${buildDir}/v8_toolchain/BUILD.gn
++    DESTINATION ${WEBENGINE_ROOT_BUILD_DIR}/src/core/v8_toolchain
++)
+-- 
+2.32.0
+
