@@ -11,7 +11,7 @@ from argparse import ArgumentParser
 import networkx as nx
 
 
-def enum_depends(pkg, xbpsdir):
+def enum_depends(pkg, xbpsdir, cachedir):
 	'''
 	Return a pair (pkg, [dependencies]), where [dependencies] is the list
 	of dependencies for the given package pkg. The argument xbpsdir should
@@ -20,18 +20,32 @@ def enum_depends(pkg, xbpsdir):
 
 		<xbpsdir>/xbps-src show-build-deps <pkg>
 
+	unless <cachedir>/deps-<pkg> file exist, in that case it is read.
+
 	If the return code of this call nonzero, a message will be printed but
 	the package will treated as if it has no dependencies.
 	'''
+	if cachedir:
+		cachepath = os.path.join(cachedir, 'deps-' + pkg)
+		try:
+			with open(cachepath) as f:
+				return pkg, [l.strip() for l in f]
+		except FileNotFoundError:
+			pass
+
 	cmd = [os.path.join(xbpsdir, 'xbps-src'), 'show-build-deps', pkg]
 
 	try:
 		deps = subprocess.check_output(cmd)
 	except subprocess.CalledProcessError as err:
-		print('xbps-src failed to find dependencies for package', pkg) 
+		print('xbps-src failed to find dependencies for package', pkg)
 		deps = [ ]
 	else:
 		deps = [d for d in deps.decode('utf-8').split('\n') if d]
+		if cachedir:
+			with open(cachepath, 'w') as f:
+				for d in deps:
+					print(d, file=f)
 
 	return pkg, deps
 
@@ -83,6 +97,8 @@ if __name__ == '__main__':
 	parser = ArgumentParser(description='Cycle detector for xbps-src')
 	parser.add_argument('-j', '--jobs', default=None,
 			type=int, help='Number of parallel jobs')
+	parser.add_argument('-c', '--cachedir',
+			default=None, help='''Directory to use as cache for xbps-src show-build-deps. Directory must exist already.''')
 	parser.add_argument('-d', '--directory',
 			default=None, help='Path to void-packages repo')
 
@@ -92,11 +108,13 @@ if __name__ == '__main__':
 		try: args.directory = os.environ['XBPS_DISTDIR']
 		except KeyError: args.directory = '.'
 
+	cachedir = args.cachedir
+
 	pool = multiprocessing.Pool(processes = args.jobs)
 
 	pattern = os.path.join(args.directory, 'srcpkgs', '*')
-	depmap = dict(pool.starmap(enum_depends, 
-			((os.path.basename(g), args.directory)
+	depmap = dict(pool.starmap(enum_depends,
+			((os.path.basename(g), args.directory, cachedir)
 				for g in glob.iglob(pattern))))
 
 	find_cycles(depmap, args.directory)

@@ -14,5 +14,9 @@ The standard behavior will be to spawn multiple processes, one per CPU, to
 enumerate package dependencies. This is by far the most time-consuming part of
 the execution. To override the degree of parallelism, use the `-j` option.
 
+Dependencies can be cached on disk, one file per package, in directory
+passed with `-c` option. On next execution with same option, dependencies are
+read from file rather than computed.
+
 Failures should be harmless but, at this early stage, unlikely to be pretty or
 even helpful.
