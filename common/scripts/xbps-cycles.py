@@ -75,7 +75,7 @@ def find_cycles(depmap, xbpsdir):
 		if len(c) < 2: continue
 		pkgs = nx.to_dict_of_lists(G, c)
 
-		p = next(iter(pkgs.keys()))
+		p = min(pkgs.keys())
 		cycles = [ ]
 		while True:
 			cycles.append(p)
@@ -85,7 +85,7 @@ def find_cycles(depmap, xbpsdir):
 			except KeyError: break
 
 		        # Any of the dependencies here contributes to a cycle
-			p = deps[0]
+			p = min(deps)
 			if len(deps) > 1:
 				print('Mulitpath: {} -> {}, choosing first'.format(p, deps))
 
