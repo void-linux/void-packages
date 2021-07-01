@@ -762,6 +762,10 @@ Examples:
 	```
 A special value `noarch` used to be available, but has since been removed.
 
+- `nocheckperms` If set, xbps-src will not fail on common permission errors (world writable files, etc.)
+
+- `nofixperms` If set, xbps-src will not fix common permission errors (executable manpages, etc.)
+
 <a id="explain_depends"></a>
 #### About the many types of `depends` variables
 
