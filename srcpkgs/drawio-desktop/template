@@ -1,0 +1,76 @@
+# Template file for 'drawio-desktop'
+pkgname=drawio-desktop
+version=14.6.13
+revision=1
+_electron_ver=12
+hostmakedepends="yarn app-builder"
+makedepends="electron${_electron_ver}"
+depends="electron${_electron_ver} libnotify"
+short_desc="Diagram drawing application built on web technology"
+maintainer="noarchwastaken <noarch@n0ar.ch>"
+license="Apache-2.0"
+homepage="https://github.com/jgraph/drawio-desktop"
+distfiles="
+ https://github.com/jgraph/drawio/archive/v${version}.tar.gz>drawio-v${version}.tar.gz
+ https://github.com/jgraph/drawio-desktop/archive/v${version}.tar.gz>drawio-desktop-v${version}.tar.gz"
+checksum="83f27e7acafa434bc3287081ef5cdd5000c03c7c175e078cae4f997ff7100120
+ fa7e1916844fb2b5d6227ec3f2a753f8ee1de074ad05b24d770d586ab0e8bd43"
+
+do_extract() {
+	# simulate git-submodules
+	bsdtar -x --no-same-permissions --no-same-owner -f ${XBPS_SRCDISTDIR}/${pkgname}-${version}/${pkgname}-v${version}.tar.gz --strip-components=1
+	bsdtar -x --no-same-permissions --no-same-owner -f ${XBPS_SRCDISTDIR}/${pkgname}-${version}/drawio-v${version}.tar.gz --strip-components=1 -C drawio
+}
+
+do_configure() {
+	# disable updater
+	vsed '/electron-updater/d' -i package.json drawio/src/main/webapp/package.json
+	UPDATER='const autoUpdater = { on: () => {}, setFeedURL: () => {}, checkForUpdates: () => {} }'
+	vsed -e 's/.*require("electron-updater").*/'"${UPDATER}"'/' -e '/checkForUpdates,/d' -i drawio/src/main/webapp/electron.js
+}
+
+do_build() {
+	export USE_SYSTEM_APP_BUILDER=true
+	export NODE_ENV=production
+
+	yarn add electron-builder electron-notarize # for electron-builder
+	yarn install
+	yarn sync
+	yarn run electron-builder --linux --x64 --dir \
+		--config electron-builder-linux-mac.json \
+		-c.electronDist=/usr/lib/electron${_electron_ver} \
+		-c.electronVersion="$(</usr/lib/electron${_electron_ver}/version)"
+}
+
+do_install() {
+	vinstall "dist/linux-unpacked/resources/app.asar" 644 /usr/lib "drawio-desktop.asar"
+
+	vbin "${FILESDIR}/drawio"
+
+	# create desktop file
+	vinstall "${FILESDIR}/drawio.desktop" 0644 "usr/share/applications"
+
+	# bitmap icons
+	find 'build' -regex '.*/[0-9]+x[0-9]+\.png' |
+	grep -o '[0-9]\+' |
+	sort -u |
+	while read size; do
+		if [[ -f "build/${size}x${size}.png" ]]; then
+			vinstall "build/${size}x${size}.png" 0644 \
+				"usr/share/icons/hicolor/${size}x${size}/apps" "drawio.png"
+			vmkdir "usr/share/icons/hicolor/${size}x${size}/mimetypes"
+			ln -s "/usr/share/icons/hicolor/${size}x${size}/apps/drawio.png" \
+				"${DESTDIR}/usr/share/icons/hicolor/${size}x${size}/mimetypes/application-vnd.jgraph.mxfile.png"
+		fi
+	done
+
+	# vector icons
+	vinstall "build/icon.svg" 0644 \
+		"/usr/share/icons/hicolor/scalable/apps" "drawio.svg"
+	vmkdir "usr/share/icons/hicolor/scalable/mimetypes"
+	ln -s "/usr/share/icons/hicolor/scalable/apps/drawio.svg" \
+		"${DESTDIR}/usr/share/icons/hicolor/scalable/mimetypes/application-vnd.jgraph.mxfile.svg"
+
+	# create mime type
+	vinstall "${FILESDIR}/drawio.xml" 0644 "usr/share/mime/packages"
+}
