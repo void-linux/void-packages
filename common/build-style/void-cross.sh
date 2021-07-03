@@ -20,9 +20,9 @@
 #
 
 _void_cross_apply_patch() {
-	local args="$1" pname="$(basename $2)"
+	local pname="$(basename $1)"
 	if [ ! -f ".${pname}_done" ]; then
-		patch -N $args -i $2
+		patch -Np1 $args -i $1
 		touch .${pname}_done
 	fi
 }
@@ -38,7 +38,7 @@ _void_cross_build_binutils() {
 	cd ${wrksrc}/binutils-${ver}
 	if [ -d "${XBPS_SRCPKGDIR}/binutils/patches" ]; then
 		for f in ${XBPS_SRCPKGDIR}/binutils/patches/*.patch; do
-			_void_cross_apply_patch -p1 "$f"
+			_void_cross_apply_patch "$f"
 		done
 	fi
 	cd ..
@@ -92,11 +92,11 @@ _void_cross_build_bootstrap_gcc() {
 	sed -i 's@./fixinc.sh@-c true@' Makefile.in
 
 	for f in ${XBPS_SRCPKGDIR}/gcc/patches/*.patch; do
-		_void_cross_apply_patch -p0 "$f"
+		_void_cross_apply_patch "$f"
 	done
 	if [ -f ${wrksrc}/.musl_version ]; then
 		for f in ${XBPS_SRCPKGDIR}/gcc/files/*-musl.patch; do
-			_void_cross_apply_patch -p0 "$f"
+			_void_cross_apply_patch "$f"
 		done
 	fi
 	cd ..
@@ -168,7 +168,7 @@ _void_cross_build_kernel_headers() {
 
 	cd ${wrksrc}/linux-${ver}
 	for f in ${XBPS_SRCPKGDIR}/kernel-libc-headers/patches/*.patch; do
-		_void_cross_apply_patch -p0 $f
+		_void_cross_apply_patch "$f"
 	done
 	cd ..
 
@@ -207,7 +207,7 @@ _void_cross_build_glibc_headers() {
 	cd ${wrksrc}/glibc-${ver}
 	if [ -d "${XBPS_SRCPKGDIR}/glibc/patches" ]; then
 		for f in ${XBPS_SRCPKGDIR}/glibc/patches/*.patch; do
-			_void_cross_apply_patch -p1 "$f"
+			_void_cross_apply_patch "$f"
 		done
 	fi
 	cd ..
@@ -291,7 +291,7 @@ _void_cross_build_musl() {
 	cd ${wrksrc}/musl-${ver}
 	if [ -d "${XBPS_SRCPKGDIR}/musl/patches" ]; then
 		for f in ${XBPS_SRCPKGDIR}/musl/patches/*.patch; do
-			_void_cross_apply_patch -p0 "$f"
+			_void_cross_apply_patch "$f"
 		done
 	fi
 	cd ..

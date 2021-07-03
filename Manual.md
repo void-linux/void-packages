@@ -57,6 +57,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 		* [gtk3-immodules](#triggers_gtk3_immodules)
 		* [hwdb.d-dir](#triggers_hwdb.d_dir)
 		* [info-files](#triggers_info_files)
+		* [initramfs-regenerate](#triggers_initramfs_regenerate)
 		* [kernel-hooks](#triggers_kernel_hooks)
 		* [mimedb](#triggers_mimedb)
 		* [mkdirs](#triggers_mkdirs)
@@ -461,9 +462,7 @@ the generated `binary packages` have been modified.
 - `short_desc` A string with a brief description for this package. Max 72 chars.
 
 - `version` A string with the package version. Must not contain dashes or underscore
-and at least one digit is required. Using bash's pattern substitution and prefix and
-suffix matching isn't supported, since this field needs to be parsed by
-`xbps-checkvers(1)`. Using variables in this field should be avoided.
+and at least one digit is required. Shell's variable substition usage is not allowed.
 
 Neither `pkgname` or `version` should contain special characters which make it
 necessary to quote them, so they shouldn't be quoted in the template.
@@ -600,7 +599,7 @@ current directory with respect to the install.
 
 - `patch_args` The arguments to be passed in to the `patch(1)` command when applying
 patches to the package sources during `do_patch()`. Patches are stored in
-`srcpkgs/<pkgname>/patches` and must be in `-p0` format. By default set to `-Np0`.
+`srcpkgs/<pkgname>/patches` and must be in `-p1` format. By default set to `-Np1`.
 
 - `disable_parallel_build` If set the package won't be built in parallel
 and `XBPS_MAKEJOBS` has no effect.
@@ -873,7 +872,7 @@ been found or to fix compilation with new software.
 
 To handle this, xbps-src has patching functionality. It will look for all files
 that match the glob `srcpkgs/$pkgname/patches/*.{diff,patch}` and will
-automatically apply all files it finds using `patch(1)` with `-Np0`. This happens
+automatically apply all files it finds using `patch(1)` with `-Np1`. This happens
 during the `do_patch()` phase. The variable `PATCHESDIR` is
 available in the template, pointing to the `patches` directory.
 
@@ -1880,6 +1879,35 @@ registry located at `usr/share/info`.
 
 If it is running under another architecture it tries to use the host's `install-info`
 utility.
+
+<a id="triggers_initramfs_regenerate"></a>
+### initramfs-regenerate
+
+The initramfs-regenerate trigger will trigger the regeneration of all kernel
+initramfs images after package installation or removal. The trigger must be
+manually requested.
+
+This hook is probably most useful for DKMS packages because it will provide a
+means to include newly compiled kernel modules in initramfs images for all
+currently available kernels. When used in a DKMS package, it is recommended to
+manually include the `dkms` trigger *before* the `initramfs-regenerate` trigger
+using, for example,
+
+    ```
+    triggers="dkms initramfs-regenerate"
+    ```
+
+Although `xbps-src` will automatically include the `dkms` trigger whenever
+`dkms_modules` is installed, the automatic addition will come *after*
+`initramfs-regenerate`, which will cause initramfs images to be recreated
+before the modules are compiled.
+
+By default, the trigger uses `dracut --regenerate-all` to recreate initramfs
+images. If `/etc/defalt/initramfs-regenerate` exists and defines
+`INITRAMFS_GENERATOR=mkinitcpio`, the trigger will instead use `mkinitcpio` and
+loop over all kernel versions for which modules appear to be installed.
+Alternatively, setting `INITRAMFS_GENERATOR=none` will disable image
+regeneration entirely.
 
 <a id="triggers_kernel_hooks"></a>
 #### kernel-hooks
