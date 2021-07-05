@@ -29,7 +29,11 @@ do_check() {
 	: ${make_cmd:=make}
 	: ${make_check_target:=check}
 
-	${make_cmd} ${make_check_args} ${make_check_target}
+	if [ -z "$disable_parallel_check" ]; then
+		${make_cmd} ${makejobs} ${make_check_args} ${make_check_target}
+	else
+		${make_cmd} ${make_check_args} ${make_check_target}
+	fi
 }
 
 do_install() {
