@@ -77,7 +77,7 @@ do_check() {
 	: ${make_cmd:=make}
 	: ${make_check_target:=test}
 
-	${make_cmd} ${make_check_args} ${make_check_target}
+	${make_cmd} ${makejobs} ${make_check_args} ${make_check_target}
 }
 
 do_install() {
