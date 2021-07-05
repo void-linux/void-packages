@@ -1,0 +1,50 @@
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Subject: x86/spec-ctrl: Protect against Speculative Code Store Bypass
+
+Modern x86 processors have far-better-than-architecturally-guaranteed self
+modifying code detection.  Typically, when a write hits an instruction in
+flight, a Machine Clear occurs to flush stale content in the frontend and
+backend.
+
+For self modifying code, before a write which hits an instruction in flight
+retires, the frontend can speculatively decode and execute the old instruction
+stream.  Speculation of this form can suffer from type confusion in registers,
+and potentially leak data.
+
+Furthermore, updates are typically byte-wise, rather than atomic.  Depending
+on timing, speculation can race ahead multiple times between individual
+writes, and execute the transiently-malformed instruction stream.
+
+Xen has stubs which are used in certain cases for emulation purposes.  Inhibit
+speculation between updating the stub and executing it.
+
+This is XSA-375 / CVE-2021-0089.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+
+diff --git a/xen/arch/x86/pv/emul-priv-op.c b/xen/arch/x86/pv/emul-priv-op.c
+index 8889509d2a..11467a1e3a 100644
+--- a/xen/arch/x86/pv/emul-priv-op.c
++++ b/xen/arch/x86/pv/emul-priv-op.c
+@@ -138,6 +138,8 @@ static io_emul_stub_t *io_emul_stub_setup(struct priv_op_ctxt *ctxt, u8 opcode,
+     /* Runtime confirmation that we haven't clobbered an adjacent stub. */
+     BUG_ON(STUB_BUF_SIZE / 2 < (p - ctxt->io_emul_stub));
+ 
++    block_speculation(); /* SCSB */
++
+     /* Handy function-typed pointer to the stub. */
+     return (void *)stub_va;
+ 
+diff --git a/xen/arch/x86/x86_emulate/x86_emulate.c b/xen/arch/x86/x86_emulate/x86_emulate.c
+index c25d88d0d8..f42ff2a837 100644
+--- a/xen/arch/x86/x86_emulate/x86_emulate.c
++++ b/xen/arch/x86/x86_emulate/x86_emulate.c
+@@ -1257,6 +1257,7 @@ static inline int mkec(uint8_t e, int32_t ec, ...)
+ # define invoke_stub(pre, post, constraints...) do {                    \
+     stub_exn.info = (union stub_exception_token) { .raw = ~0 };         \
+     stub_exn.line = __LINE__; /* Utility outweighs livepatching cost */ \
++    block_speculation(); /* SCSB */                                     \
+     asm volatile ( pre "\n\tINDIRECT_CALL %[stub]\n\t" post "\n"        \
+                    ".Lret%=:\n\t"                                       \
+                    ".pushsection .fixup,\"ax\"\n"                       \

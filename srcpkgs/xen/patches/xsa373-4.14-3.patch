@@ -1,0 +1,163 @@
+From: Jan Beulich <jbeulich@suse.com>
+Subject: VT-d: eliminate flush related timeouts
+
+Leaving an in-progress operation pending when it appears to take too
+long is problematic: If e.g. a QI command completed later, the write to
+the "poll slot" may instead be understood to signal a subsequently
+started command's completion. Also our accounting of the timeout period
+was actually wrong: We included the time it took for the command to
+actually make it to the front of the queue, which could be heavily
+affected by guests other than the one for which the flush is being
+performed.
+
+Do away with all timeout detection on all flush related code paths.
+Log excessively long processing times (with a progressive threshold) to
+have some indication of problems in this area.
+
+Additionally log (once) if qinval_next_index() didn't immediately find
+an available slot. Together with the earlier change sizing the queue(s)
+dynamically, we should now have a guarantee that with our fully
+synchronous model any demand for slots can actually be satisfied.
+
+This is part of XSA-373 / CVE-2021-28692.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+
+--- a/xen/drivers/passthrough/vtd/dmar.h
++++ b/xen/drivers/passthrough/vtd/dmar.h
+@@ -127,6 +127,34 @@ do {
+     }                                                           \
+ } while (0)
+ 
++#define IOMMU_FLUSH_WAIT(what, iommu, offset, op, cond, sts)       \
++do {                                                               \
++    static unsigned int __read_mostly threshold = 1;               \
++    s_time_t start = NOW();                                        \
++    s_time_t timeout = start + DMAR_OPERATION_TIMEOUT * threshold; \
++                                                                   \
++    for ( ; ; )                                                    \
++    {                                                              \
++        sts = op(iommu->reg, offset);                              \
++        if ( cond )                                                \
++            break;                                                 \
++        if ( timeout && NOW() > timeout )                          \
++        {                                                          \
++            threshold |= threshold << 1;                           \
++            printk(XENLOG_WARNING VTDPREFIX                        \
++                   " IOMMU#%u: %s flush taking too long\n",        \
++                   iommu->index, what);                            \
++            timeout = 0;                                           \
++        }                                                          \
++        cpu_relax();                                               \
++    }                                                              \
++                                                                   \
++    if ( !timeout )                                                \
++        printk(XENLOG_WARNING VTDPREFIX                            \
++               " IOMMU#%u: %s flush took %lums\n",                 \
++               iommu->index, what, (NOW() - start) / 10000000);    \
++} while ( false )
++
+ int vtd_hw_check(void);
+ void disable_pmr(struct vtd_iommu *iommu);
+ int is_igd_drhd(struct acpi_drhd_unit *drhd);
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -326,8 +326,8 @@ static void iommu_flush_write_buffer(str
+     dmar_writel(iommu->reg, DMAR_GCMD_REG, val | DMA_GCMD_WBF);
+ 
+     /* Make sure hardware complete it */
+-    IOMMU_WAIT_OP(iommu, DMAR_GSTS_REG, dmar_readl,
+-                  !(val & DMA_GSTS_WBFS), val);
++    IOMMU_FLUSH_WAIT("write buffer", iommu, DMAR_GSTS_REG, dmar_readl,
++                     !(val & DMA_GSTS_WBFS), val);
+ 
+     spin_unlock_irqrestore(&iommu->register_lock, flags);
+ }
+@@ -376,8 +376,8 @@ int vtd_flush_context_reg(struct vtd_iom
+     dmar_writeq(iommu->reg, DMAR_CCMD_REG, val);
+ 
+     /* Make sure hardware complete it */
+-    IOMMU_WAIT_OP(iommu, DMAR_CCMD_REG, dmar_readq,
+-                  !(val & DMA_CCMD_ICC), val);
++    IOMMU_FLUSH_WAIT("context", iommu, DMAR_CCMD_REG, dmar_readq,
++                     !(val & DMA_CCMD_ICC), val);
+ 
+     spin_unlock_irqrestore(&iommu->register_lock, flags);
+     /* flush context entry will implicitly flush write buffer */
+@@ -454,8 +454,8 @@ int vtd_flush_iotlb_reg(struct vtd_iommu
+     dmar_writeq(iommu->reg, tlb_offset + 8, val);
+ 
+     /* Make sure hardware complete it */
+-    IOMMU_WAIT_OP(iommu, (tlb_offset + 8), dmar_readq,
+-                  !(val & DMA_TLB_IVT), val);
++    IOMMU_FLUSH_WAIT("iotlb", iommu, (tlb_offset + 8), dmar_readq,
++                     !(val & DMA_TLB_IVT), val);
+     spin_unlock_irqrestore(&iommu->register_lock, flags);
+ 
+     /* check IOTLB invalidation granularity */
+--- a/xen/drivers/passthrough/vtd/qinval.c
++++ b/xen/drivers/passthrough/vtd/qinval.c
+@@ -29,8 +29,6 @@
+ #include "extern.h"
+ #include "../ats.h"
+ 
+-#define VTD_QI_TIMEOUT	1
+-
+ static unsigned int __read_mostly qi_pg_order;
+ static unsigned int __read_mostly qi_entry_nr;
+ 
+@@ -60,7 +58,11 @@ static unsigned int qinval_next_index(st
+     /* (tail+1 == head) indicates a full queue, wait for HW */
+     while ( ((tail + 1) & (qi_entry_nr - 1)) ==
+             ( dmar_readq(iommu->reg, DMAR_IQH_REG) >> QINVAL_INDEX_SHIFT ) )
++    {
++        printk_once(XENLOG_ERR VTDPREFIX " IOMMU#%u: no QI slot available\n",
++                    iommu->index);
+         cpu_relax();
++    }
+ 
+     return tail;
+ }
+@@ -180,23 +182,32 @@ static int __must_check queue_invalidate
+     /* Now we don't support interrupt method */
+     if ( sw )
+     {
+-        s_time_t timeout;
+-
+-        /* In case all wait descriptor writes to same addr with same data */
+-        timeout = NOW() + MILLISECS(flush_dev_iotlb ?
+-                                    iommu_dev_iotlb_timeout : VTD_QI_TIMEOUT);
++        static unsigned int __read_mostly threshold = 1;
++        s_time_t start = NOW();
++        s_time_t timeout = start + (flush_dev_iotlb
++                                    ? iommu_dev_iotlb_timeout
++                                    : 100) * MILLISECS(threshold);
+ 
+         while ( ACCESS_ONCE(*this_poll_slot) != QINVAL_STAT_DONE )
+         {
+-            if ( NOW() > timeout )
++            if ( timeout && NOW() > timeout )
+             {
+-                print_qi_regs(iommu);
++                threshold |= threshold << 1;
+                 printk(XENLOG_WARNING VTDPREFIX
+-                       " Queue invalidate wait descriptor timed out\n");
+-                return -ETIMEDOUT;
++                       " IOMMU#%u: QI%s wait descriptor taking too long\n",
++                       iommu->index, flush_dev_iotlb ? " dev" : "");
++                print_qi_regs(iommu);
++                timeout = 0;
+             }
+             cpu_relax();
+         }
++
++        if ( !timeout )
++            printk(XENLOG_WARNING VTDPREFIX
++                   " IOMMU#%u: QI%s wait descriptor took %lums\n",
++                   iommu->index, flush_dev_iotlb ? " dev" : "",
++                   (NOW() - start) / 10000000);
++
+         return 0;
+     }
+ 
