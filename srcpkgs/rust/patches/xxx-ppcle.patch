@@ -1,0 +1,601 @@
+From b92ce1ed0ac8d95831a43f4395544c17a0816c9b Mon Sep 17 00:00:00 2001
+From: Daniel Kolesa <daniel@octaforge.org>
+Date: Sat, 3 Jul 2021 21:02:03 +0200
+Subject: [PATCH] initial ppcle port
+
+---
+ compiler/rustc_middle/src/ty/layout.rs            |  5 ++++-
+ compiler/rustc_target/src/spec/mod.rs             |  2 ++
+ .../src/spec/powerpcle_unknown_linux_gnu.rs       | 15 +++++++++++++++
+ .../src/spec/powerpcle_unknown_linux_musl.rs      | 15 +++++++++++++++
+ src/bootstrap/bootstrap.py                        |  2 ++
+ .../codegen/abi-main-signature-16bit-c-int.rs     |  1 +
+ src/test/codegen/fastcall-inreg.rs                |  1 +
+ src/test/codegen/global_asm.rs                    |  1 +
+ src/test/codegen/global_asm_include.rs            |  1 +
+ src/test/codegen/global_asm_x2.rs                 |  1 +
+ src/test/codegen/repr-transparent-aggregates-1.rs |  1 +
+ src/test/codegen/repr-transparent-aggregates-2.rs |  1 +
+ src/test/codegen/stack-probes.rs                  |  1 +
+ .../run-make-fulldeps/atomic-lock-free/Makefile   |  2 ++
+ src/test/ui/abi/stack-probes-lto.rs               |  1 +
+ src/test/ui/abi/stack-probes.rs                   |  1 +
+ src/test/ui/borrowck/borrowck-asm.rs              |  1 +
+ src/test/ui/llvm-asm/llvm-asm-bad-clobber.rs      |  1 +
+ src/test/ui/llvm-asm/llvm-asm-in-bad-modifier.rs  |  1 +
+ src/test/ui/llvm-asm/llvm-asm-misplaced-option.rs |  1 +
+ src/test/ui/llvm-asm/llvm-asm-out-assign-imm.rs   |  1 +
+ src/test/ui/llvm-asm/llvm-asm-out-no-modifier.rs  |  1 +
+ src/test/ui/llvm-asm/llvm-asm-out-read-uninit.rs  |  1 +
+ src/test/ui/target-feature/gate.rs                |  1 +
+ src/test/ui/target-feature/invalid-attribute.rs   |  1 +
+ src/tools/compiletest/src/util.rs                 |  1 +
+ vendor/cc-1.0.60/src/lib.rs                       |  1 +
+ vendor/cc/src/lib.rs                              |  1 +
+ vendor/gcc/src/lib.rs                             |  3 ++-
+ vendor/jemallocator/benches/roundtrip.rs          |  3 ++-
+ vendor/jemallocator/src/lib.rs                    |  3 ++-
+ vendor/rustc-ap-rustc_target/src/spec/mod.rs      |  2 ++
+ .../src/spec/powerpcle_unknown_linux_gnu.rs       | 15 +++++++++++++++
+ .../src/spec/powerpcle_unknown_linux_musl.rs      | 15 +++++++++++++++
+ vendor/target-lexicon/src/targets.rs              |  7 +++++++
+ vendor/tikv-jemallocator/benches/roundtrip.rs     |  3 ++-
+ vendor/tikv-jemallocator/src/lib.rs               |  3 ++-
+ 37 files changed, 111 insertions(+), 6 deletions(-)
+ create mode 100644 compiler/rustc_target/src/spec/powerpcle_unknown_linux_gnu.rs
+ create mode 100644 compiler/rustc_target/src/spec/powerpcle_unknown_linux_musl.rs
+ create mode 100644 vendor/rustc-ap-rustc_target/src/spec/powerpcle_unknown_linux_gnu.rs
+ create mode 100644 vendor/rustc-ap-rustc_target/src/spec/powerpcle_unknown_linux_musl.rs
+
+diff --git a/compiler/rustc_middle/src/ty/layout.rs b/compiler/rustc_middle/src/ty/layout.rs
+index c2e9dba6..8147a3c3 100644
+--- a/compiler/rustc_middle/src/ty/layout.rs
++++ b/compiler/rustc_middle/src/ty/layout.rs
+@@ -2753,6 +2753,8 @@ where
+             target.os == "linux" && target.arch == "sparc64" && target_env_gnu_like;
+         let linux_powerpc_gnu_like =
+             target.os == "linux" && target.arch == "powerpc" && target_env_gnu_like;
++        let linux_powerpcle_gnu_like =
++            target.os == "linux" && target.arch == "powerpcle" && target_env_gnu_like;
+         let rust_abi = matches!(sig.abi, RustIntrinsic | PlatformIntrinsic | Rust | RustCall);
+ 
+         // Handle safe Rust thin and fat pointers.
+@@ -2850,7 +2852,8 @@ where
+                     || (!win_x64_gnu
+                         && !linux_s390x_gnu_like
+                         && !linux_sparc64_gnu_like
+-                        && !linux_powerpc_gnu_like)
++                        && !linux_powerpc_gnu_like
++                        && !linux_powerpcle_gnu_like)
+                 {
+                     arg.mode = PassMode::Ignore;
+                 }
+diff --git a/compiler/rustc_target/src/spec/mod.rs b/compiler/rustc_target/src/spec/mod.rs
+index 2af46693..986d84e0 100644
+--- a/compiler/rustc_target/src/spec/mod.rs
++++ b/compiler/rustc_target/src/spec/mod.rs
+@@ -716,6 +716,8 @@ supported_targets! {
+     ("powerpc-unknown-linux-gnu", powerpc_unknown_linux_gnu),
+     ("powerpc-unknown-linux-gnuspe", powerpc_unknown_linux_gnuspe),
+     ("powerpc-unknown-linux-musl", powerpc_unknown_linux_musl),
++    ("powerpcle-unknown-linux-gnu", powerpcle_unknown_linux_gnu),
++    ("powerpcle-unknown-linux-musl", powerpcle_unknown_linux_musl),
+     ("powerpc64-unknown-linux-gnu", powerpc64_unknown_linux_gnu),
+     ("powerpc64-unknown-linux-musl", powerpc64_unknown_linux_musl),
+     ("powerpc64le-unknown-linux-gnu", powerpc64le_unknown_linux_gnu),
+diff --git a/compiler/rustc_target/src/spec/powerpcle_unknown_linux_gnu.rs b/compiler/rustc_target/src/spec/powerpcle_unknown_linux_gnu.rs
+new file mode 100644
+index 00000000..780c20a3
+--- /dev/null
++++ b/compiler/rustc_target/src/spec/powerpcle_unknown_linux_gnu.rs
+@@ -0,0 +1,15 @@
++use crate::spec::{LinkerFlavor, Target, TargetOptions};
++
++pub fn target() -> Target {
++    let mut base = super::linux_gnu_base::opts();
++    base.pre_link_args.entry(LinkerFlavor::Gcc).or_default().push("-m32".to_string());
++    base.max_atomic_width = Some(32);
++
++    Target {
++        llvm_target: "powerpcle-unknown-linux-gnu".to_string(),
++        pointer_width: 32,
++        data_layout: "e-m:e-p:32:32-i64:64-n32".to_string(),
++        arch: "powerpc".to_string(),
++        options: TargetOptions { mcount: "_mcount".to_string(), ..base },
++    }
++}
+diff --git a/compiler/rustc_target/src/spec/powerpcle_unknown_linux_musl.rs b/compiler/rustc_target/src/spec/powerpcle_unknown_linux_musl.rs
+new file mode 100644
+index 00000000..9b848ccf
+--- /dev/null
++++ b/compiler/rustc_target/src/spec/powerpcle_unknown_linux_musl.rs
+@@ -0,0 +1,15 @@
++use crate::spec::{LinkerFlavor, Target, TargetOptions};
++
++pub fn target() -> Target {
++    let mut base = super::linux_musl_base::opts();
++    base.pre_link_args.entry(LinkerFlavor::Gcc).or_default().push("-m32".to_string());
++    base.max_atomic_width = Some(32);
++
++    Target {
++        llvm_target: "powerpcle-unknown-linux-musl".to_string(),
++        pointer_width: 32,
++        data_layout: "e-m:e-p:32:32-i64:64-n32".to_string(),
++        arch: "powerpc".to_string(),
++        options: TargetOptions { mcount: "_mcount".to_string(), ..base },
++    }
++}
+diff --git a/src/bootstrap/bootstrap.py b/src/bootstrap/bootstrap.py
+index 4111420e..cd69a8ec 100644
+--- a/src/bootstrap/bootstrap.py
++++ b/src/bootstrap/bootstrap.py
+@@ -289,9 +289,11 @@ def default_build_triple(verbose):
+         'i686': 'i686',
+         'i786': 'i686',
+         'powerpc': 'powerpc',
++        'powerpcle': 'powerpcle',
+         'powerpc64': 'powerpc64',
+         'powerpc64le': 'powerpc64le',
+         'ppc': 'powerpc',
++        'ppcle': 'powerpcle',
+         'ppc64': 'powerpc64',
+         'ppc64le': 'powerpc64le',
+         's390x': 's390x',
+diff --git a/src/test/codegen/abi-main-signature-16bit-c-int.rs b/src/test/codegen/abi-main-signature-16bit-c-int.rs
+index 4ed491df..82ec7755 100644
+--- a/src/test/codegen/abi-main-signature-16bit-c-int.rs
++++ b/src/test/codegen/abi-main-signature-16bit-c-int.rs
+@@ -9,6 +9,7 @@
+ // ignore-mips
+ // ignore-mips64
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-powerpc64
+ // ignore-riscv64
+ // ignore-s390x
+diff --git a/src/test/codegen/fastcall-inreg.rs b/src/test/codegen/fastcall-inreg.rs
+index adbeae45..0fd0a9e6 100644
+--- a/src/test/codegen/fastcall-inreg.rs
++++ b/src/test/codegen/fastcall-inreg.rs
+@@ -16,6 +16,7 @@
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-r600
+ // ignore-riscv64
+ // ignore-amdgcn
+diff --git a/src/test/codegen/global_asm.rs b/src/test/codegen/global_asm.rs
+index 57d8aeb1..e0b1b692 100644
+--- a/src/test/codegen/global_asm.rs
++++ b/src/test/codegen/global_asm.rs
+@@ -12,6 +12,7 @@
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-r600
+ // ignore-amdgcn
+ // ignore-sparc
+diff --git a/src/test/codegen/global_asm_include.rs b/src/test/codegen/global_asm_include.rs
+index 44402619..62ecfa6d 100644
+--- a/src/test/codegen/global_asm_include.rs
++++ b/src/test/codegen/global_asm_include.rs
+@@ -12,6 +12,7 @@
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-r600
+ // ignore-amdgcn
+ // ignore-sparc
+diff --git a/src/test/codegen/global_asm_x2.rs b/src/test/codegen/global_asm_x2.rs
+index d632d0dd..29f97775 100644
+--- a/src/test/codegen/global_asm_x2.rs
++++ b/src/test/codegen/global_asm_x2.rs
+@@ -12,6 +12,7 @@
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-r600
+ // ignore-amdgcn
+ // ignore-sparc
+diff --git a/src/test/codegen/repr-transparent-aggregates-1.rs b/src/test/codegen/repr-transparent-aggregates-1.rs
+index 3017adb4..632565bb 100644
+--- a/src/test/codegen/repr-transparent-aggregates-1.rs
++++ b/src/test/codegen/repr-transparent-aggregates-1.rs
+@@ -7,6 +7,7 @@
+ // ignore-mips
+ // ignore-mips64
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-powerpc64
+ // ignore-riscv64 see codegen/riscv-abi
+ // ignore-windows
+diff --git a/src/test/codegen/repr-transparent-aggregates-2.rs b/src/test/codegen/repr-transparent-aggregates-2.rs
+index 429d760b..57e75f95 100644
+--- a/src/test/codegen/repr-transparent-aggregates-2.rs
++++ b/src/test/codegen/repr-transparent-aggregates-2.rs
+@@ -6,6 +6,7 @@
+ // ignore-emscripten
+ // ignore-mips64
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-riscv64 see codegen/riscv-abi
+diff --git a/src/test/codegen/stack-probes.rs b/src/test/codegen/stack-probes.rs
+index 9bd351df..29073eb5 100644
+--- a/src/test/codegen/stack-probes.rs
++++ b/src/test/codegen/stack-probes.rs
+@@ -3,6 +3,7 @@
+ // ignore-mips
+ // ignore-mips64
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-riscv64
+diff --git a/src/test/run-make-fulldeps/atomic-lock-free/Makefile b/src/test/run-make-fulldeps/atomic-lock-free/Makefile
+index 9e8b4fab..402d37a4 100644
+--- a/src/test/run-make-fulldeps/atomic-lock-free/Makefile
++++ b/src/test/run-make-fulldeps/atomic-lock-free/Makefile
+@@ -36,6 +36,8 @@ ifeq ($(filter powerpc,$(LLVM_COMPONENTS)),powerpc)
+ 	nm "$(TMPDIR)/libatomic_lock_free.rlib" | $(CGREP) -v __atomic_fetch_add
+ 	$(RUSTC) --target=powerpc-unknown-linux-gnuspe atomic_lock_free.rs
+ 	nm "$(TMPDIR)/libatomic_lock_free.rlib" | $(CGREP) -v __atomic_fetch_add
++	$(RUSTC) --target=powerpcle-unknown-linux-gnu atomic_lock_free.rs
++	nm "$(TMPDIR)/libatomic_lock_free.rlib" | $(CGREP) -v __atomic_fetch_add
+ 	$(RUSTC) --target=powerpc64-unknown-linux-gnu atomic_lock_free.rs
+ 	nm "$(TMPDIR)/libatomic_lock_free.rlib" | $(CGREP) -v __atomic_fetch_add
+ 	$(RUSTC) --target=powerpc64le-unknown-linux-gnu atomic_lock_free.rs
+diff --git a/src/test/ui/abi/stack-probes-lto.rs b/src/test/ui/abi/stack-probes-lto.rs
+index 90df1f3f..8c6dda8b 100644
+--- a/src/test/ui/abi/stack-probes-lto.rs
++++ b/src/test/ui/abi/stack-probes-lto.rs
+@@ -4,6 +4,7 @@
+ // ignore-mips
+ // ignore-mips64
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-s390x
+ // ignore-sparc
+ // ignore-sparc64
+diff --git a/src/test/ui/abi/stack-probes.rs b/src/test/ui/abi/stack-probes.rs
+index e998dd0f..9472e538 100644
+--- a/src/test/ui/abi/stack-probes.rs
++++ b/src/test/ui/abi/stack-probes.rs
+@@ -4,6 +4,7 @@
+ // ignore-mips
+ // ignore-mips64
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-s390x
+ // ignore-sparc
+ // ignore-sparc64
+diff --git a/src/test/ui/borrowck/borrowck-asm.rs b/src/test/ui/borrowck/borrowck-asm.rs
+index a3f64524..faf9adb4 100644
+--- a/src/test/ui/borrowck/borrowck-asm.rs
++++ b/src/test/ui/borrowck/borrowck-asm.rs
+@@ -1,6 +1,7 @@
+ // ignore-s390x
+ // ignore-emscripten
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-riscv64
+diff --git a/src/test/ui/llvm-asm/llvm-asm-bad-clobber.rs b/src/test/ui/llvm-asm/llvm-asm-bad-clobber.rs
+index 2868d3d3..5c6e325b 100644
+--- a/src/test/ui/llvm-asm/llvm-asm-bad-clobber.rs
++++ b/src/test/ui/llvm-asm/llvm-asm-bad-clobber.rs
+@@ -4,6 +4,7 @@
+ // ignore-s390x
+ // ignore-emscripten
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-riscv64
+diff --git a/src/test/ui/llvm-asm/llvm-asm-in-bad-modifier.rs b/src/test/ui/llvm-asm/llvm-asm-in-bad-modifier.rs
+index e3bc7d29..49f53f67 100644
+--- a/src/test/ui/llvm-asm/llvm-asm-in-bad-modifier.rs
++++ b/src/test/ui/llvm-asm/llvm-asm-in-bad-modifier.rs
+@@ -1,6 +1,7 @@
+ // ignore-s390x
+ // ignore-emscripten
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-riscv64
+diff --git a/src/test/ui/llvm-asm/llvm-asm-misplaced-option.rs b/src/test/ui/llvm-asm/llvm-asm-misplaced-option.rs
+index daae0c81..fd505c86 100644
+--- a/src/test/ui/llvm-asm/llvm-asm-misplaced-option.rs
++++ b/src/test/ui/llvm-asm/llvm-asm-misplaced-option.rs
+@@ -5,6 +5,7 @@
+ // ignore-s390x
+ // ignore-emscripten
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-riscv64
+diff --git a/src/test/ui/llvm-asm/llvm-asm-out-assign-imm.rs b/src/test/ui/llvm-asm/llvm-asm-out-assign-imm.rs
+index 9c62532c..baa1c1ba 100644
+--- a/src/test/ui/llvm-asm/llvm-asm-out-assign-imm.rs
++++ b/src/test/ui/llvm-asm/llvm-asm-out-assign-imm.rs
+@@ -1,6 +1,7 @@
+ // ignore-s390x
+ // ignore-emscripten
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-riscv64
+diff --git a/src/test/ui/llvm-asm/llvm-asm-out-no-modifier.rs b/src/test/ui/llvm-asm/llvm-asm-out-no-modifier.rs
+index 72edb339..2fec991d 100644
+--- a/src/test/ui/llvm-asm/llvm-asm-out-no-modifier.rs
++++ b/src/test/ui/llvm-asm/llvm-asm-out-no-modifier.rs
+@@ -1,6 +1,7 @@
+ // ignore-s390x
+ // ignore-emscripten
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-riscv64
+diff --git a/src/test/ui/llvm-asm/llvm-asm-out-read-uninit.rs b/src/test/ui/llvm-asm/llvm-asm-out-read-uninit.rs
+index acf4cf9f..dfad0775 100644
+--- a/src/test/ui/llvm-asm/llvm-asm-out-read-uninit.rs
++++ b/src/test/ui/llvm-asm/llvm-asm-out-read-uninit.rs
+@@ -1,6 +1,7 @@
+ // ignore-s390x
+ // ignore-emscripten
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-riscv64
+diff --git a/src/test/ui/target-feature/gate.rs b/src/test/ui/target-feature/gate.rs
+index 164830fe..531a4b45 100644
+--- a/src/test/ui/target-feature/gate.rs
++++ b/src/test/ui/target-feature/gate.rs
+@@ -5,6 +5,7 @@
+ // ignore-mips
+ // ignore-mips64
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-riscv64
+diff --git a/src/test/ui/target-feature/invalid-attribute.rs b/src/test/ui/target-feature/invalid-attribute.rs
+index 5ea78215..47e7887a 100644
+--- a/src/test/ui/target-feature/invalid-attribute.rs
++++ b/src/test/ui/target-feature/invalid-attribute.rs
+@@ -5,6 +5,7 @@
+ // ignore-mips
+ // ignore-mips64
+ // ignore-powerpc
++// ignore-powerpcle
+ // ignore-powerpc64
+ // ignore-powerpc64le
+ // ignore-riscv64
+diff --git a/src/tools/compiletest/src/util.rs b/src/tools/compiletest/src/util.rs
+index 7dbd7094..08c9de3c 100644
+--- a/src/tools/compiletest/src/util.rs
++++ b/src/tools/compiletest/src/util.rs
+@@ -67,6 +67,7 @@ const ARCH_TABLE: &[(&str, &str)] = &[
+     ("msp430", "msp430"),
+     ("nvptx64", "nvptx64"),
+     ("powerpc", "powerpc"),
++    ("powerpcle", "powerpc"),
+     ("powerpc64", "powerpc64"),
+     ("powerpc64le", "powerpc64"),
+     ("riscv64gc", "riscv64"),
+diff --git a/vendor/cc-1.0.60/src/lib.rs b/vendor/cc-1.0.60/src/lib.rs
+index f428ecbb..841e459a 100644
+--- a/vendor/cc-1.0.60/src/lib.rs
++++ b/vendor/cc-1.0.60/src/lib.rs
+@@ -2302,6 +2302,7 @@ impl Build {
+             "mipsisa64r6-unknown-linux-gnuabi64" => Some("mipsisa64r6-linux-gnuabi64"),
+             "mipsisa64r6el-unknown-linux-gnuabi64" => Some("mipsisa64r6el-linux-gnuabi64"),
+             "powerpc-unknown-linux-gnu" => Some("powerpc-linux-gnu"),
++            "powerpcle-unknown-linux-gnu" => Some("powerpcle-linux-gnu"),
+             "powerpc-unknown-linux-gnuspe" => Some("powerpc-linux-gnuspe"),
+             "powerpc-unknown-netbsd" => Some("powerpc--netbsd"),
+             "powerpc64-unknown-linux-gnu" => Some("powerpc-linux-gnu"),
+diff --git a/vendor/cc/src/lib.rs b/vendor/cc/src/lib.rs
+index 5051b296..286c2fb7 100644
+--- a/vendor/cc/src/lib.rs
++++ b/vendor/cc/src/lib.rs
+@@ -2409,6 +2409,7 @@ impl Build {
+             "powerpc-unknown-linux-gnu" => Some("powerpc-linux-gnu"),
+             "powerpc-unknown-linux-gnuspe" => Some("powerpc-linux-gnuspe"),
+             "powerpc-unknown-netbsd" => Some("powerpc--netbsd"),
++            "powerpcle-unknown-linux-gnu" => Some("powerpcle-linux-gnu"),
+             "powerpc64-unknown-linux-gnu" => Some("powerpc-linux-gnu"),
+             "powerpc64le-unknown-linux-gnu" => Some("powerpc64le-linux-gnu"),
+             "riscv32i-unknown-none-elf" => self.find_working_gnu_prefix(&[
+diff --git a/vendor/gcc/src/lib.rs b/vendor/gcc/src/lib.rs
+index 1fe73012..7980281f 100644
+--- a/vendor/gcc/src/lib.rs
++++ b/vendor/gcc/src/lib.rs
+@@ -1367,7 +1367,8 @@ impl Build {
+                         "mips64el-unknown-linux-gnuabi64" => Some("mips64el-linux-gnuabi64"),
+                         "powerpc-unknown-linux-gnu" => Some("powerpc-linux-gnu"),
+                         "powerpc-unknown-netbsd" => Some("powerpc--netbsd"),
+-                        "powerpc64-unknown-linux-gnu" => Some("powerpc-linux-gnu"),
++                        "powerpcle-unknown-linux-gnu" => Some("powerpcle-linux-gnu"),
++                        "powerpc64-unknown-linux-gnu" => Some("powerpc64-linux-gnu"),
+                         "powerpc64le-unknown-linux-gnu" => Some("powerpc64le-linux-gnu"),
+                         "s390x-unknown-linux-gnu" => Some("s390x-linux-gnu"),
+                         "sparc64-unknown-netbsd" => Some("sparc64--netbsd"),
+diff --git a/vendor/jemallocator/benches/roundtrip.rs b/vendor/jemallocator/benches/roundtrip.rs
+index eddbb6bb..db81596b 100644
+--- a/vendor/jemallocator/benches/roundtrip.rs
++++ b/vendor/jemallocator/benches/roundtrip.rs
+@@ -26,7 +26,8 @@ static A: Jemalloc = Jemalloc;
+     target_arch = "arm",
+     target_arch = "mips",
+     target_arch = "mipsel",
+-    target_arch = "powerpc"
++    target_arch = "powerpc",
++    target_arch = "powerpcle"
+ )))]
+ const MIN_ALIGN: usize = 8;
+ #[cfg(all(any(
+diff --git a/vendor/jemallocator/src/lib.rs b/vendor/jemallocator/src/lib.rs
+index f0a3692d..43889c55 100644
+--- a/vendor/jemallocator/src/lib.rs
++++ b/vendor/jemallocator/src/lib.rs
+@@ -37,7 +37,8 @@ use libc::{c_int, c_void};
+     target_arch = "arm",
+     target_arch = "mips",
+     target_arch = "mipsel",
+-    target_arch = "powerpc"
++    target_arch = "powerpc",
++    target_arch = "powerpcle"
+ )))]
+ const MIN_ALIGN: usize = 8;
+ #[cfg(all(any(
+diff --git a/vendor/rustc-ap-rustc_target/src/spec/mod.rs b/vendor/rustc-ap-rustc_target/src/spec/mod.rs
+index 2af46693..986d84e0 100644
+--- a/vendor/rustc-ap-rustc_target/src/spec/mod.rs
++++ b/vendor/rustc-ap-rustc_target/src/spec/mod.rs
+@@ -716,6 +716,8 @@ supported_targets! {
+     ("powerpc-unknown-linux-gnu", powerpc_unknown_linux_gnu),
+     ("powerpc-unknown-linux-gnuspe", powerpc_unknown_linux_gnuspe),
+     ("powerpc-unknown-linux-musl", powerpc_unknown_linux_musl),
++    ("powerpcle-unknown-linux-gnu", powerpcle_unknown_linux_gnu),
++    ("powerpcle-unknown-linux-musl", powerpcle_unknown_linux_musl),
+     ("powerpc64-unknown-linux-gnu", powerpc64_unknown_linux_gnu),
+     ("powerpc64-unknown-linux-musl", powerpc64_unknown_linux_musl),
+     ("powerpc64le-unknown-linux-gnu", powerpc64le_unknown_linux_gnu),
+diff --git a/vendor/rustc-ap-rustc_target/src/spec/powerpcle_unknown_linux_gnu.rs b/vendor/rustc-ap-rustc_target/src/spec/powerpcle_unknown_linux_gnu.rs
+new file mode 100644
+index 00000000..780c20a3
+--- /dev/null
++++ b/vendor/rustc-ap-rustc_target/src/spec/powerpcle_unknown_linux_gnu.rs
+@@ -0,0 +1,15 @@
++use crate::spec::{LinkerFlavor, Target, TargetOptions};
++
++pub fn target() -> Target {
++    let mut base = super::linux_gnu_base::opts();
++    base.pre_link_args.entry(LinkerFlavor::Gcc).or_default().push("-m32".to_string());
++    base.max_atomic_width = Some(32);
++
++    Target {
++        llvm_target: "powerpcle-unknown-linux-gnu".to_string(),
++        pointer_width: 32,
++        data_layout: "e-m:e-p:32:32-i64:64-n32".to_string(),
++        arch: "powerpc".to_string(),
++        options: TargetOptions { mcount: "_mcount".to_string(), ..base },
++    }
++}
+diff --git a/vendor/rustc-ap-rustc_target/src/spec/powerpcle_unknown_linux_musl.rs b/vendor/rustc-ap-rustc_target/src/spec/powerpcle_unknown_linux_musl.rs
+new file mode 100644
+index 00000000..9b848ccf
+--- /dev/null
++++ b/vendor/rustc-ap-rustc_target/src/spec/powerpcle_unknown_linux_musl.rs
+@@ -0,0 +1,15 @@
++use crate::spec::{LinkerFlavor, Target, TargetOptions};
++
++pub fn target() -> Target {
++    let mut base = super::linux_musl_base::opts();
++    base.pre_link_args.entry(LinkerFlavor::Gcc).or_default().push("-m32".to_string());
++    base.max_atomic_width = Some(32);
++
++    Target {
++        llvm_target: "powerpcle-unknown-linux-musl".to_string(),
++        pointer_width: 32,
++        data_layout: "e-m:e-p:32:32-i64:64-n32".to_string(),
++        arch: "powerpc".to_string(),
++        options: TargetOptions { mcount: "_mcount".to_string(), ..base },
++    }
++}
+diff --git a/vendor/target-lexicon/src/targets.rs b/vendor/target-lexicon/src/targets.rs
+index 87c237aa..dc694010 100644
+--- a/vendor/target-lexicon/src/targets.rs
++++ b/vendor/target-lexicon/src/targets.rs
+@@ -26,6 +26,7 @@ pub enum Architecture {
+     Msp430,
+     Nvptx64,
+     Powerpc,
++    Powerpcle,
+     Powerpc64,
+     Powerpc64le,
+     Riscv32(Riscv32Architecture),
+@@ -517,6 +518,7 @@ impl Architecture {
+             | Mips64(Mips64Architecture::Mipsisa64r6el)
+             | Msp430
+             | Nvptx64
++            | Powerpcle
+             | Powerpc64le
+             | Riscv32(_)
+             | Riscv64(_)
+@@ -553,6 +555,7 @@ impl Architecture {
+             | Sparc
+             | Wasm32
+             | Mips32(_)
++            | Powerpcle
+             | Powerpc => Ok(PointerWidth::U32),
+             AmdGcn
+             | Powerpc64le
+@@ -737,6 +740,7 @@ impl fmt::Display for Architecture {
+             Msp430 => f.write_str("msp430"),
+             Nvptx64 => f.write_str("nvptx64"),
+             Powerpc => f.write_str("powerpc"),
++            Powerpcle => f.write_str("powerpcle"),
+             Powerpc64 => f.write_str("powerpc64"),
+             Powerpc64le => f.write_str("powerpc64le"),
+             Riscv32(riscv32) => riscv32.fmt(f),
+@@ -913,6 +917,7 @@ impl FromStr for Architecture {
+             "msp430" => Msp430,
+             "nvptx64" => Nvptx64,
+             "powerpc" => Powerpc,
++            "powerpcle" => Powerpcle,
+             "powerpc64" => Powerpc64,
+             "powerpc64le" => Powerpc64le,
+             "s390x" => S390x,
+@@ -1380,6 +1385,8 @@ mod tests {
+             "powerpc-unknown-netbsd",
+             "powerpc-wrs-vxworks",
+             "powerpc-wrs-vxworks-spe",
++            "powerpcle-unknown-linux-gnu",
++            "powerpcle-unknown-linux-musl",
+             "powerpc64-unknown-freebsd",
+             "powerpc64-unknown-linux-gnu",
+             "powerpc64-unknown-linux-musl",
+diff --git a/vendor/tikv-jemallocator/benches/roundtrip.rs b/vendor/tikv-jemallocator/benches/roundtrip.rs
+index 40b8005f..bc4df023 100644
+--- a/vendor/tikv-jemallocator/benches/roundtrip.rs
++++ b/vendor/tikv-jemallocator/benches/roundtrip.rs
+@@ -22,7 +22,8 @@ static A: Jemalloc = Jemalloc;
+     target_arch = "arm",
+     target_arch = "mips",
+     target_arch = "mipsel",
+-    target_arch = "powerpc"
++    target_arch = "powerpc",
++    target_arch = "powerpcle",
+ )))]
+ const MIN_ALIGN: usize = 8;
+ #[cfg(all(any(
+diff --git a/vendor/tikv-jemallocator/src/lib.rs b/vendor/tikv-jemallocator/src/lib.rs
+index 9a489b62..1ed12b26 100644
+--- a/vendor/tikv-jemallocator/src/lib.rs
++++ b/vendor/tikv-jemallocator/src/lib.rs
+@@ -44,7 +44,8 @@ use libc::{c_int, c_void};
+     target_arch = "arm",
+     target_arch = "mips",
+     target_arch = "mipsel",
+-    target_arch = "powerpc"
++    target_arch = "powerpc",
++    target_arch = "powerpcle"
+ )))]
+ const ALIGNOF_MAX_ALIGN_T: usize = 8;
+ #[cfg(all(any(
+-- 
+2.32.0
+

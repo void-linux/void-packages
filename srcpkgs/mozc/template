@@ -1,36 +1,34 @@
 # Template file for 'mozc'
 pkgname=mozc
 # src/data/version/mozc_version_template.bzl
-version=2.26.4353.100
-revision=2
+version=2.26.4416.102
+revision=1
+_commit=86b2623896042dd6e123371fb582314c6988888b
+_abseil=20210324.1
 create_wrksrc=yes
 build_wrksrc=mozc/src
 hostmakedepends="gettext ninja pkg-config protobuf protobuf-devel
  python3-six which qt5-qmake qt5-host-tools"
 makedepends="gtk+-devel ibus-devel libzinnia-devel protobuf-devel qt5-devel
  fcitx-devel libfcitx5-devel"
-depends="tegaki-zinnia-japanese>=0.3"
+depends="tegaki-zinnia-japanese>=0.3 mozc-base-${version}_${revision}"
 short_desc="Japanese IME (Open Source version of Google Japanese Input)"
 maintainer="Matthias von Faber <mvf@gmx.eu>"
 license="BSD-3-Clause"
 homepage="https://github.com/google/mozc"
 distfiles="
- https://github.com/fcitx/mozc/archive/d384c3b3e7eed1aa54a6af3363781604fe538d65.tar.gz
- https://github.com/abseil/abseil-cpp/archive/0f3bb466b868b523cf1dc9b2aaaed65c77b28862.tar.gz
+ https://github.com/fcitx/mozc/archive/$_commit.tar.gz
+ https://github.com/abseil/abseil-cpp/archive/refs/tags/$_abseil.tar.gz
  ${DEBIAN_SITE}/main/g/gyp/gyp_0.1+20200513gitcaa6002.orig.tar.gz
  https://github.com/hiroyuki-komatsu/japanese-usage-dictionary/archive/e5b3425575734c323e1d947009dd74709437b684.tar.gz
 "
-checksum="69cb26e1f9c03e20715356ef568b583f2baf996df5fd8536aca2ed8e7bd9444f
- 3d74cdc98b42fd4257d91f652575206de195e2c824fcd8d6e6d227f85cb143ef
+checksum="68614d1283e52b3d7035f76e587ed057a3292d6dc25d61100122dc0fd8942c15
+ 441db7c09a0565376ecacf0085b2d4c2bbedde6115d7773551bc116212c2a8d6
  8d531bc7d3302461d76a32367453cec60ed08b455f27a53d8f313d81761713a8
  0b6efee0eebac2c1a8eeea333278aa40fcef7846bba9a379962c6e567e7e3dc1"
 
 CXXFLAGS="-D_GNU_SOURCE"
 lib32disabled=yes
-
-if [ "$CROSS_BUILD" ]; then
-	subpackages="ibus-mozc fcitx-mozc fcitx5-mozc"
-fi
 
 if [ "$XBPS_TARGET_ENDIAN" = "be" ]; then
 	broken="Does not build"
@@ -49,9 +47,10 @@ post_extract() {
 		japanese-usage-dictionary:japanese_usage_dictionary
 	do
 		_src=${_src_dest%:*}
-		_dst=mozc/src/third_party/${_src_dest#*:}
-		rmdir $_dst
-		ln -sr $_src-* $_dst
+		_dst=${_src_dest#*:}
+		mv $_src-* $_dst
+		rmdir mozc/src/third_party/$_dst
+		ln -sr $_dst mozc/src/third_party
 	done
 }
 
@@ -64,6 +63,7 @@ post_patch() {
 do_configure() {
 	GYP_DEFINES="
 	 document_dir=/usr/share/licenses/${pkgname}
+	 ibus_mozc_path=/usr/lib/ibus/ibus-engine-mozc
 	 use_libprotobuf=1
 	 use_libzinnia=1
 	 ${XBPS_TARGET_NO_ATOMIC8:+use_libatomic=1}
@@ -71,6 +71,9 @@ do_configure() {
 }
 
 do_build() {
+	local _file _lang
+	local _modir=out_linux/Release/gen/unix/fcitx5/po
+
 	python3 build_mozc.py build -c Release \
 		server/server.gyp:mozc_server \
 		gui/gui.gyp:mozc_tool \
@@ -80,82 +83,140 @@ do_build() {
 		unix/fcitx/fcitx.gyp:fcitx-mozc \
 		unix/fcitx5/fcitx5.gyp:fcitx5-mozc
 
-	sed -i 's|/usr/libexec/|/usr/lib/ibus-mozc/|g' out_linux/Release/gen/unix/ibus/mozc.xml
+	mkdir -p $_modir
+	for _file in unix/fcitx5/po/*.po
+	do
+		_lang=${_file##*/}
+		_lang=${_lang%.po}
+		msgfmt "$_file" -o $_modir/$_lang.mo
+	done
+	msgfmt --xml -d unix/fcitx5/po \
+		--template unix/fcitx5/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml.in \
+		-o $_modir/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml
+
 }
 
 do_install() {
+	local f
+	# Base package
 	vinstall out_linux/Release/mozc_server 755 usr/lib/mozc
+	vlicense data/installer/credits_en.html license.html
+	head -n 29 unix/fcitx5/fcitx_key_translator.cc >fcitx.LICENSE
+	vlicense fcitx.LICENSE
+	# emacs
+	vbin out_linux/Release/mozc_emacs_helper
+	vinstall unix/emacs/mozc.el 644 usr/share/emacs/site-lisp
+	# Qt5 tools
 	vinstall out_linux/Release/mozc_tool 755 usr/lib/mozc
+	# ibus
+	vinstall out_linux/Release/ibus_mozc 755 usr/lib/ibus ibus-engine-mozc
+	vinstall out_linux/Release/gen/unix/ibus/mozc.xml 644 \
+		usr/share/ibus/component
+	vinstall data/images/product_icon_32bpp-128.png 644 \
+		usr/share/ibus-mozc product_icon.png
+	for f in data/images/unix/48x48/*.png; do
+		vinstall "$f" 644 usr/share/ibus-mozc
+	done
+	vinstall out_linux/Release/mozc_renderer 755 usr/lib/mozc
+	# fcitx
+	vinstall out_linux/Release/fcitx-mozc.so 644 usr/lib/fcitx
+	vinstall unix/fcitx/fcitx-mozc.conf 644 usr/share/fcitx/addon
+	vinstall unix/fcitx/mozc.conf 644 usr/share/fcitx/inputmethod
+	vinstall data/images/product_icon_32bpp-128.png 644 \
+		usr/share/fcitx/mozc/icon mozc.png
+	for f in dictionary properties tool; do
+		vinstall ../scripts/icons/ui-$f.png 644 \
+			usr/share/fcitx/mozc/icon mozc-$f.png
+	done
+	for f in alpha_full alpha_half direct \
+		hiragana katakana_full katakana_half; do
+		vinstall data/images/unix/48x48/$f.png 644 \
+			usr/share/fcitx/mozc/icon mozc-$f.png
+	done
+	# fcitx5
+	vinstall out_linux/Release/fcitx5-mozc.so 644 usr/lib/fcitx5
+	vinstall unix/fcitx5/mozc-addon.conf 644 \
+		usr/share/fcitx5/addon mozc.conf
+	vinstall unix/fcitx5/mozc.conf 644 usr/share/fcitx5/inputmethod
+	vinstall data/images/product_icon_32bpp-128.png 644 \
+		usr/share/icons/hicolor/128x128/apps fcitx-mozc.png
+	vinstall data/images/unix/ime_product_icon_opensource-32.png 644 \
+		usr/share/icons/hicolor/32x32/apps fcitx-mozc.png
+	for f in dictionary properties tool; do
+		vinstall ../scripts/icons/ui-$f.png 644 \
+			usr/share/icons/hicolor/48x48/apps fcitx-mozc-$f.png
+	done
+	for f in alpha_full alpha_half direct \
+		hiragana katakana_full katakana_half; do
+		vinstall data/images/unix/48x48/$f.png 644 \
+			usr/share/icons/hicolor/48x48/apps fcitx-mozc-${f/_/-}.png
+	done
+	vinstall out_linux/Release/gen/unix/fcitx5/po/org.fcitx.Fcitx5.Addon.Mozc.metainfo.xml \
+		644 usr/share/metainfo/
+}
 
-	head -n 29 unix/fcitx5/fcitx_key_translator.cc >mozc.LICENSE
-	vlicense mozc.LICENSE
-	vlicense data/installer/credits_en.html
-	vlicense third_party/japanese_usage_dictionary/LICENSE dict.LICENSE
+mozc-base_package() {
+	short_desc+=" - base installation"
+	lib32disabled=yes
+	replaces="emacs-mozc>=0"
+	provides="emacs-mozc-${version}_${revision}"
+	pkg_install() {
+		vmove usr/bin
+		vmove usr/lib/mozc/mozc_server
+		vmove usr/share/emacs
+		vmove usr/share/licenses
+	}
 }
 
 ibus-mozc_package() {
 	short_desc="Mozc engine for IBus - Client of the Mozc input method"
-	depends="${sourcepkg}-${version}_${revision} ibus>=1.5.14"
+	depends="mozc-base-${version}_${revision} ibus>=1.5.14"
 	lib32disabled=yes
 	pkg_install() {
-		vinstall out_linux/Release/ibus_mozc 755 usr/lib/ibus-mozc ibus-engine-mozc
-		vinstall out_linux/Release/gen/unix/ibus/mozc.xml 644 usr/share/ibus/component
-		vinstall data/images/unix/ime_product_icon_opensource-32.png 644 usr/share/ibus-mozc product_icon.png
-		for i in data/images/unix/ui-*.png; do
-			vinstall "${i}" 644 usr/share/ibus-mozc "${i##*/ui-}"
-		done
-		vinstall out_linux/Release/mozc_renderer 755 usr/lib/mozc
-	}
-}
-
-emacs-mozc_package() {
-	pkgdesc="Mozc for Emacs"
-	depends="${sourcepkg}-${version}_${revision} emacs"
-	lib32disabled=yes
-	pkg_install() {
-		vbin out_linux/Release/mozc_emacs_helper
-		vinstall unix/emacs/mozc.el 644 usr/share/emacs/site-lisp/emacs-mozc
+		vmove usr/lib/ibus
+		vmove usr/lib/mozc/mozc_renderer
+		vmove "usr/share/ibus*"
 	}
 }
 
 fcitx-mozc_package() {
 	short_desc="Mozc engine for fcitx - Client of the Mozc input method"
-	depends="${sourcepkg}-${version}_${revision} fcitx>=4.2.9"
+	depends="mozc-base-${version}_${revision} fcitx>=4.2.9"
 	homepage="https://fcitx-im.org/"
 	lib32disabled=yes
 	pkg_install() {
 		local _file _lang
-		vinstall out_linux/Release/fcitx-mozc.so 644 usr/lib/fcitx
-		vinstall unix/fcitx/fcitx-mozc.conf 644 usr/share/fcitx/addon
-		vinstall unix/fcitx/mozc.conf 644 usr/share/fcitx/inputmethod
-		vinstall data/images/unix/ime_product_icon_opensource-32.png \
-			644 usr/share/fcitx/icon mozc.png
+		vmove usr/lib/fcitx
+		vmove usr/share/fcitx
+		# vmove "usr/share/locale/*/LC_MESSAGES/fcitx-mozc.mo"
 		for _file in out_linux/Release/gen/unix/fcitx/po/*.mo
 		do
 			_lang=${_file##*/}
 			_lang=${_lang%.mo}
-			vinstall "$_file" 644 usr/share/locale/$_lang fcitx-mozc.mo
+			vinstall "$_file" 644 \
+				usr/share/locale/$_lang/LC_MESSAGES fcitx-mozc.mo
 		done
 	}
 }
 
 fcitx5-mozc_package() {
 	short_desc="Mozc engine for fcitx v5"
-	depends="${sourcepkg}-${version}_${revision} fcitx5"
+	depends="mozc-base-${version}_${revision} fcitx5"
 	homepage="https://fcitx-im.org/"
 	lib32disabled=yes
 	pkg_install() {
 		local _file _lang
-		vinstall out_linux/Release/fcitx5-mozc.so 644 usr/lib/fcitx5
-		vinstall unix/fcitx5/mozc-addon.conf 644 \
-			usr/share/fcitx5/addon mozc.conf
-		vinstall unix/fcitx5/mozc.conf 644 usr/share/fcitx5/inputmethod
-		for _file in unix/fcitx5/po/*.po
+		vmove usr/lib/fcitx5
+		vmove usr/share/fcitx5
+		vmove usr/share/icons
+		# vmove "usr/share/locale/*/LC_MESSAGES/fcitx5-mozc.mo"
+		for _file in out_linux/Release/gen/unix/fcitx5/po/*.mo
 		do
 			_lang=${_file##*/}
-			_lang=${_lang%.po}
-			vmkdir usr/share/locale/$_lang
-			msgfmt "$_file" -o $PKGDESTDIR/usr/share/locale/$_lang/fcitx5-mozc.mo
+			_lang=${_lang%.mo}
+			vinstall "$_file" 644 \
+				usr/share/locale/$_lang/LC_MESSAGES fcitx5-mozc.mo
 		done
+		vmove usr/share/metainfo
 	}
 }
