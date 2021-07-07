@@ -1,0 +1,76 @@
+From aeafbe384649f06ef24380167ec3bdb876c44acb Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=C4=90o=C3=A0n=20Tr=E1=BA=A7n=20C=C3=B4ng=20Danh?=
+ <congdanhqx@gmail.com>
+Date: Wed, 7 Jul 2021 18:28:05 +0700
+Subject: [PATCH 3/5] CheckUpdate: set combinerType in Signal data structure to
+ CheckUpdateResult
+
+As of it's now, we're downcasting Signal data structure for CheckUpdate
+from SignalBase to Signal<bool()> (which is the same type with
+Signal<bool(), LastValue<bool>>) in SignalAdaptor member functions.
+
+The downcast is incorrect because it's Signal<bool(), CheckUpdateResult>
+instead, thus fcitx5 will run into undefined behaviours with this downcasting.
+
+In my local machine, this result in indeterminated value in
+CheckUpdateResult, then fcitx5 will crash because of DBus' assertion.
+
+When compiling with: -fsanitize=undefined, this problem is being
+reported:
+
+```
+../src/lib/fcitx/../fcitx-utils/connectableobject.h:115:18: runtime error: downcast of address 0x559bd4a2a5b0 which does not point to an object of type 'Signal'
+0x559bd4a2a5b0: note: object is of type '*N5fcitx6SignalIFbvENS_12_GLOBAL__N_117CheckUpdateResultEEE'
+ 00 00 00 00  40 25 21 2e f7 7f 00 00  e0 f5 a2 d4 9b 55 00 00  20 70 61 67 65 00 00 00  41 00 00 00
+              ^~~~~~~~~~~~~~~~~~~~~~~
+              vptr for '*N5fcitx6SignalIFbvENS_12_GLOBAL__N_117CheckUpdateResultEEE'
+../src/lib/fcitx/../fcitx-utils/connectableobject.h:116:21: runtime error: member call on address 0x559bd4a2a5b0 which does not point to an object of type 'Signal'
+0x559bd4a2a5b0: note: object is of type '*N5fcitx6SignalIFbvENS_12_GLOBAL__N_117CheckUpdateResultEEE'
+ 00 00 00 00  40 25 21 2e f7 7f 00 00  e0 f5 a2 d4 9b 55 00 00  20 70 61 67 65 00 00 00  41 00 00 00
+              ^~~~~~~~~~~~~~~~~~~~~~~
+              vptr for '*N5fcitx6SignalIFbvENS_12_GLOBAL__N_117CheckUpdateResultEEE'
+```
+
+Let's downcast it into correct type by setting CheckUpdateResult as
+combinerType.
+---
+ src/lib/fcitx/instance.cpp | 5 +++--
+ src/lib/fcitx/instance.h   | 2 +-
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/src/lib/fcitx/instance.cpp b/src/lib/fcitx/instance.cpp
+index b672383..66bbd51 100644
+--- a/src/lib/fcitx/instance.cpp
++++ b/src/lib/fcitx/instance.cpp
+@@ -126,6 +126,8 @@ std::string stripLanguage(const std::string &lc) {
+ 
+ } // namespace
+ 
++FCITX_DECLARE_SIGNAL_WITH_COMBINER(Instance, CheckUpdate, CheckUpdateResult, bool());
++
+ class CheckInputMethodChanged;
+ 
+ struct InputState : public InputContextProperty {
+@@ -455,8 +457,7 @@ public:
+     FCITX_DEFINE_SIGNAL_PRIVATE(Instance, CommitFilter);
+     FCITX_DEFINE_SIGNAL_PRIVATE(Instance, OutputFilter);
+     FCITX_DEFINE_SIGNAL_PRIVATE(Instance, KeyEventResult);
+-    FCITX_DEFINE_SIGNAL_PRIVATE_WITH_COMBINER(Instance, CheckUpdate,
+-                                              CheckUpdateResult);
++    FCITX_DEFINE_SIGNAL_PRIVATE(Instance, CheckUpdate);
+ 
+     FactoryFor<InputState> inputStateFactory_{
+         [this](InputContext &ic) { return new InputState(this, &ic); }};
+diff --git a/src/lib/fcitx/instance.h b/src/lib/fcitx/instance.h
+index a3355f0..139ff51 100644
+--- a/src/lib/fcitx/instance.h
++++ b/src/lib/fcitx/instance.h
+@@ -127,7 +127,7 @@ public:
+                          void(InputContext *inputContext, Text &orig));
+     FCITX_DECLARE_SIGNAL(Instance, KeyEventResult,
+                          void(const KeyEvent &keyEvent));
+-    FCITX_DECLARE_SIGNAL(Instance, CheckUpdate, bool());
++    struct CheckUpdate;
+ 
+     /// Return a focused input context.
+     InputContext *lastFocusedInputContext();
