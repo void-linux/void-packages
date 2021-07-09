@@ -1,4 +1,5 @@
-Be sure to run 'regsvr32 wineasio.dll' as your user before use!
+Be sure to run 'regsvr32 wineasio.dll' or 'wine64 regsvr32 wineasio.dll'
+as your user before use!
 
 You may also override the WINEPREFIX environment variable if your
 WINE installation is not installed in ~/.wine/
