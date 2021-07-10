@@ -1,0 +1,154 @@
+From 728aceb6defd4e6e4f07fa49ca76f5e745230fee Mon Sep 17 00:00:00 2001
+From: Marc-Antoine Perennou <Marc-Antoine@Perennou.com>
+Date: Fri, 16 Sep 2016 11:46:55 +0200
+Subject: [PATCH] daemon: port to gcr-3
+
+This removes the dependency on libgnome-keyring and adds a dependency
+on libgcr instead.
+
+Signed-off-by: Marc-Antoine Perennou <Marc-Antoine@Perennou.com>
+Signed-off-by: Stef Walter <stefw@redhat.com>
+ * Updated commit message
+
+https://bugzilla.gnome.org/show_bug.cgi?id=771522
+---
+ configure.ac                    | 14 +++++++-------
+ daemon/seahorse-secure-buffer.c |  7 ++++---
+ daemon/seahorse-secure-memory.c | 21 +++++++++++----------
+ 3 files changed, 22 insertions(+), 20 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index b621b236..4486e7b2 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -252,18 +252,18 @@ if test "$enable_fatal_messages" = "yes" && test "$enable_debug" = "yes"; then
+ fi
+ 
+ dnl ****************************************************************************
+-dnl GNOME-KEYRING
++dnl GCR
+ dnl ****************************************************************************
+ 
+-PKG_CHECK_MODULES([GNOME_KEYRING], gnome-keyring-1 >= 2.25.5,
+-                  [enable_gnome_keyring=yes],[enable_gnome_keyring=no])
++PKG_CHECK_MODULES([GCR], gcr-3,
++                  [enable_gcr=yes],[enable_gcr=no])
+ 
+-if test "$enable_gnome_keyring" = "no"; then
+-	AC_MSG_ERROR([gnome-keyring library or headers not found.])
++if test "$enable_gcr" = "no"; then
++	AC_MSG_ERROR([gcr library or headers not found.])
+ fi
+ 
+-SEAHORSE_CFLAGS="$SEAHORSE_CFLAGS $GNOME_KEYRING_CFLAGS"
+-SEAHORSE_LIBS="$SEAHORSE_LIBS $GNOME_KEYRING_LIBS"
++SEAHORSE_CFLAGS="$SEAHORSE_CFLAGS $GCR_CFLAGS"
++SEAHORSE_LIBS="$SEAHORSE_LIBS $GCR_LIBS"
+ 
+ dnl ****************************************************************************
+ dnl LIBCRYPTUI
+diff --git a/daemon/seahorse-secure-buffer.c b/daemon/seahorse-secure-buffer.c
+index 0db87961..63f87cd3 100644
+--- a/daemon/seahorse-secure-buffer.c
++++ b/daemon/seahorse-secure-buffer.c
+@@ -20,7 +20,8 @@
+ #include "config.h"
+ 
+ #include "seahorse-secure-buffer.h"
+-#include <gnome-keyring-memory.h>
++#define GCR_API_SUBJECT_TO_CHANGE 1
++#include <gcr/gcr.h>
+ 
+ #include <string.h>
+ 
+@@ -92,7 +93,7 @@ seahorse_secure_buffer_real_insert_text (GtkEntryBuffer *buffer, guint position,
+ 			}
+ 		}
+ 
+-		pv->text = gnome_keyring_memory_realloc (pv->text, pv->text_size);
++		pv->text = gcr_secure_memory_realloc (pv->text, pv->text_size);
+ 	}
+ 
+ 	/* Actual text insertion */
+@@ -158,7 +159,7 @@ seahorse_secure_buffer_finalize (GObject *obj)
+ 	SeahorseSecureBufferPrivate *pv = self->priv;
+ 
+ 	if (pv->text) {
+-		gnome_keyring_memory_free (pv->text);
++		gcr_secure_memory_free (pv->text);
+ 		pv->text = NULL;
+ 		pv->text_bytes = pv->text_size = 0;
+ 		pv->text_chars = 0;
+diff --git a/daemon/seahorse-secure-memory.c b/daemon/seahorse-secure-memory.c
+index 3d94a674..f201d1df 100644
+--- a/daemon/seahorse-secure-memory.c
++++ b/daemon/seahorse-secure-memory.c
+@@ -23,7 +23,8 @@
+   
+ #include <glib.h>
+   
+-#include <gnome-keyring-memory.h>
++#define GCR_API_SUBJECT_TO_CHANGE 1
++#include <gcr/gcr.h>
+   
+ #include "seahorse-secure-memory.h"
+   
+@@ -47,7 +48,7 @@ switch_malloc (gsize size)
+     if (size == 0)
+         return NULL;
+     if (seahorse_use_secure_mem)
+-        p = gnome_keyring_memory_try_alloc (size);
++        p = gcr_secure_memory_try_alloc (size);
+     else
+         p = malloc (size);
+     return p;
+@@ -71,7 +72,7 @@ switch_calloc (gsize num, gsize size)
+     if (size == 0 || num == 0)
+         return NULL;
+     if (seahorse_use_secure_mem)
+-        p = gnome_keyring_memory_try_alloc (size * num);
++        p = gcr_secure_memory_try_alloc (size * num);
+     else
+         p = calloc (num, size);
+     return p;
+@@ -99,11 +100,11 @@ switch_realloc (gpointer mem, gsize size)
+ 
+     if (!mem) {
+         if (seahorse_use_secure_mem)
+-            p = gnome_keyring_memory_alloc (size);
++            p = gcr_secure_memory_alloc (size);
+         else
+             p = malloc (size);
+-    } else if (gnome_keyring_memory_is_secure (mem))
+-        p = gnome_keyring_memory_try_realloc (mem, size);
++    } else if (gcr_secure_memory_is_secure (mem))
++        p = gcr_secure_memory_try_realloc (mem, size);
+     else
+         p = realloc (mem, size);
+     return p;
+@@ -120,8 +121,8 @@ static void
+ switch_free (gpointer mem)
+ {
+     if (mem) {
+-        if (gnome_keyring_memory_is_secure (mem))
+-            gnome_keyring_memory_free (mem);
++        if (gcr_secure_memory_is_secure (mem))
++            gcr_secure_memory_free (mem);
+         else
+             free (mem);
+     }
+@@ -138,9 +139,9 @@ seahorse_try_gk_secure_memory ()
+ {
+     gpointer p;
+ 
+-    p = gnome_keyring_memory_try_alloc (10);
++    p = gcr_secure_memory_try_alloc (10);
+     if (p != NULL) {
+-        gnome_keyring_memory_free (p);
++        gcr_secure_memory_free (p);
+         return TRUE;
+     }
+ 
+-- 
+GitLab
+
