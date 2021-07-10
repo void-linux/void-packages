@@ -1,0 +1,1 @@
+hostmakedepends+=" ocaml dune"
