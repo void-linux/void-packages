@@ -1,0 +1,36 @@
+#!/bin/sh
+
+# Script must run as root, otherwise it creates trees
+# as the user.
+user=$(id -u)
+s6-test "$user" -ne 0 && printf "You need to run this script as root! \n" && exit 1
+
+# Information for the user, in case of failure. 66 output is informative, this
+# is just a pointer to the docs.
+msg_trees() {
+	printf "Some trees and/or files are already present in the system.\nIf you want to remove them, consult the 66-tree documentation.\n"
+	exit 1
+}
+
+# Create the mandatory boot tree.
+66-tree -n boot || msg_trees 
+# Enable the boot@system service in the boot tree.
+66-enable -F -t boot boot@system || msg_trees
+# Copy the default boot@conf so that is will survive updates and be accesible
+# though /etc/66rc.conf. Also, remove the warning in the first lines of the file.
+new_conf="/etc/66/conf/boot@system/version/boot@system"
+[ ! -f "$new_conf" ] && cp /etc/66/conf/boot@system/version/.boot@system "$new_conf" && \
+warn=$( sed -n -e "/##\ \[STARTWARN\]/p" /etc/66rc.conf | tr -d '[:space:]') && \
+ [ "$warn" = "##[STARTWARN]" ] && sed -i '1,5d' "$new_conf"
+
+# Create default tree, enable it and make it current.
+66-tree -nEc default || msg_trees
+# Enable switch-initutils oneshot service in the default tree.
+66-enable switch-initutils || msg_trees
+
+# Create and enable runit tree.
+66-tree -nE runit || msg_trees
+# Enable the runit service in the runit tree.
+66-enable -t runit runit || msg_trees
+# Start runit tree after the default tree.
+66-tree -S default runit || msg_trees
