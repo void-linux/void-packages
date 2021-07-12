@@ -1,10 +1,12 @@
 # Template file for 'vim'
 pkgname=vim
 version=8.2.2874
-revision=1
+revision=2
 hostmakedepends="gettext glib-devel pkg-config"
-makedepends="acl-devel gtk+3-devel libXt-devel lua53-devel ncurses-devel
- perl python3-devel ruby-devel"
+makedepends="acl-devel ncurses-devel
+ $(vopt_if x11 libXt-devel)
+ $(vopt_if gtk3 gtk+3-devel)
+ $(vopt_if huge 'lua53-devel perl python3-devel ruby-devel')"
 depends="vim-common>=${version}"
 short_desc="Vim editor (vi clone)"
 maintainer="Neel Chotai <neel@chot.ai>"
@@ -14,16 +16,23 @@ distfiles="https://github.com/vim/vim/archive/v${version}.tar.gz"
 checksum=c15f933fbebb283ef2debab2a730af9dc95a65c0d684f19e2a4340eeebad1ca8
 python_version=3
 
-subpackages="xxd vim-common vim-x11 gvim"
+build_options="x11 gtk3 huge"
+desc_option_huge="Enable support for many language interpreters"
+build_options_default="x11 gtk3"
 # XXX vim-huge cannot be cross compiled for now.
 if [ -z "$CROSS_BUILD" ]; then
-	subpackages+=" vim-huge vim-huge-python3 gvim-huge"
+	build_options_default+=" huge"
 fi
+
+subpackages="xxd vim-common $(vopt_if x11 vim-x11) $(vopt_if gtk3 gvim)
+ $(vopt_if huge "vim-huge vim-huge-python3 $(vopt_if gtk3 gvim-huge)")"
+_subdirs="$(vopt_if x11 vim-x11) $(vopt_if gtk3 gvim)
+ $(vopt_if huge "vim-huge $(vopt_if gtk3 gvim-huge)")"
 
 alternatives="vim:vim:/usr/bin/vim-normal"
 
 pre_configure() {
-	for f in ${subpackages/xxd vim-common/}; do
+	for f in ${_subdirs}; do
 		mkdir -p /tmp/${f}
 		cp -a $wrksrc/* /tmp/${f}
 		mv /tmp/${f} $wrksrc/${f}
@@ -35,9 +44,7 @@ do_configure() {
 		--with-ex-name=vim-ex --with-view-name=vim-view"
 
 	nohuge_args="--disable-perlinterp --disable-pythoninterp
-		--disable-rubyinterp --disable-workshop
-		--disable-netbeans --disable-gpm
-		--disable-hangulinput"
+		--disable-rubyinterp --disable-netbeans --disable-gpm"
 
 	if [ "$CROSS_BUILD" ]; then
 		configure_args+="
@@ -55,25 +62,33 @@ do_configure() {
 	./configure ${configure_args} ${args} ${nohuge_args} --disable-xim --enable-gui=no --with-x=no
 
 	# X11 version.
-	cd $wrksrc/vim-x11
-	./configure ${configure_args} ${args} ${nohuge_args} --enable-gui=no --with-x
+	if [ "$build_option_x11" ]; then
+		cd $wrksrc/vim-x11
+		./configure ${configure_args} ${args} ${nohuge_args} --enable-gui=no --with-x
+	fi
 
 	# GTK+ version.
-	cd $wrksrc/gvim
-	./configure ${configure_args} ${args} ${nohuge_args} --enable-gui=gtk3 --with-x --with-vim-name=gvim
+	if [ "$build_option_gtk3" ]; then
+		cd $wrksrc/gvim
+		./configure ${configure_args} ${args} ${nohuge_args} --enable-gui=gtk3 --with-x --with-vim-name=gvim
+	fi
 
 	# Huge versions
-	if [ -z "$CROSS_BUILD" ]; then
+	if [ "$build_option_huge" ]; then
 		cd $wrksrc/vim-huge
 		./configure ${configure_args} ${args} --with-x=yes --enable-gui=no \
 			--with-features=huge --enable-perlinterp --enable-python3interp \
 			--enable-rubyinterp --enable-luainterp --enable-terminal
+		if [ "$build_option_gtk3" ]; then
 
-		cd $wrksrc/gvim-huge
-		./configure ${configure_args} ${args} \
-			--enable-gui=gtk3 --with-x --with-vim-name=gvim-huge \
-			--with-features=huge --enable-perlinterp --enable-python3interp \
-			--enable-rubyinterp --enable-luainterp --enable-terminal
+			cd $wrksrc/gvim-huge
+			./configure ${configure_args} ${args} \
+				--enable-gui=gtk3 --with-x \
+				--with-vim-name=gvim-huge --with-features=huge \
+				--enable-perlinterp --enable-python3interp \
+				--enable-rubyinterp --enable-luainterp \
+				--enable-terminal
+		fi
 	fi
 }
 
@@ -81,7 +96,7 @@ do_build() {
 	cd $wrksrc
 	make ${makejobs}
 
-	for f in ${subpackages/xxd vim-common/}; do
+	for f in ${_subdirs}; do
 		cd $wrksrc/$f
 		make ${makejobs}
 	done
@@ -100,13 +115,15 @@ do_install() {
 	rm -f ${DESTDIR}/usr/bin/{ex,view}
 
 	# install gvim icons
-	cd ${wrksrc}/gvim
-	sed -i "s|/locolor|/hicolor|g" src/Makefile
-	for d in 16 32 48; do
-		vmkdir usr/share/icons/hicolor/${d}x${d}/apps
-	done
-	make -C src DESTDIR=${DESTDIR} install-icons
-	rm -rf $DESTDIR/usr/share/applications
+	if [ "$build_option_gtk3" ]; then
+		cd ${wrksrc}/gvim
+		sed -i "s|/locolor|/hicolor|g" src/Makefile
+		for d in 16 32 48; do
+			vmkdir usr/share/icons/hicolor/${d}x${d}/apps
+		done
+		make -C src DESTDIR=${DESTDIR} install-icons
+		rm -rf $DESTDIR/usr/share/applications
+	fi
 }
 
 vim-common_package() {
@@ -179,9 +196,8 @@ vim-huge_package() {
 }
 vim-huge-python3_package() {
 	depends="vim-huge"
-	short_desc+=" - transitional packages"
+	short_desc+=" - transitional package"
 	build_style=meta
-	provides="vim-${version}_${revision}"
 }
 xxd_package() {
 	short_desc="Make a hexdump or do the reverse"
