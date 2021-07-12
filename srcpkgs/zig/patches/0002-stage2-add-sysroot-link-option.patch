@@ -1,0 +1,245 @@
+From 16228e87d6d7d8929305083e8c76168603780f5f Mon Sep 17 00:00:00 2001
+From: Isaac Freund <ifreund@ifreund.xyz>
+Date: Mon, 21 Jun 2021 22:45:43 +0200
+Subject: [PATCH 2/3] stage2: add --sysroot link option
+
+This feature is necessary for cross-compiling code that dynamically
+links system libraries, at least with the current feature set of lld.
+---
+ src/Compilation.zig | 42 +++++++++++++++++++++++++-----------------
+ src/link.zig        |  4 ++--
+ src/link/Elf.zig    |  5 +++++
+ src/link/MachO.zig  |  8 ++++----
+ src/main.zig        | 11 ++++++++++-
+ 5 files changed, 46 insertions(+), 24 deletions(-)
+
+diff --git a/src/Compilation.zig b/src/Compilation.zig
+index 977c9f4b8..5f5c1c5dd 100644
+--- a/src/Compilation.zig
++++ b/src/Compilation.zig
+@@ -612,6 +612,7 @@ pub const InitOptions = struct {
+     output_mode: std.builtin.OutputMode,
+     thread_pool: *ThreadPool,
+     dynamic_linker: ?[]const u8 = null,
++    sysroot: ?[]const u8 = null,
+     /// `null` means to not emit a binary file.
+     emit_bin: ?EmitLoc,
+     /// `null` means to not emit a C header file.
+@@ -868,25 +869,32 @@ pub fn create(gpa: *Allocator, options: InitOptions) !*Compilation {
+             break :blk false;
+         };
+ 
+-        const DarwinOptions = struct {
+-            syslibroot: ?[]const u8 = null,
+-            system_linker_hack: bool = false,
++        const darwin_can_use_system_linker_and_sdk =
++            // comptime conditions
++            ((build_options.have_llvm and comptime std.Target.current.isDarwin()) and
++            // runtime conditions
++            (use_lld and std.builtin.os.tag == .macos and options.target.isDarwin()));
++
++        const darwin_system_linker_hack = blk: {
++            if (darwin_can_use_system_linker_and_sdk) {
++                break :blk std.os.getenv("ZIG_SYSTEM_LINKER_HACK") != null;
++            } else {
++                break :blk false;
++            }
+         };
+ 
+-        const darwin_options: DarwinOptions = if (build_options.have_llvm and comptime std.Target.current.isDarwin()) outer: {
+-            const opts: DarwinOptions = if (use_lld and std.builtin.os.tag == .macos and options.target.isDarwin()) inner: {
++        const sysroot = blk: {
++            if (options.sysroot) |sysroot| {
++                break :blk sysroot;
++            } else if (darwin_can_use_system_linker_and_sdk) {
+                 // TODO Revisit this targeting versions lower than macOS 11 when LLVM 12 is out.
+                 // See https://github.com/ziglang/zig/issues/6996
+                 const at_least_big_sur = options.target.os.getVersionRange().semver.min.major >= 11;
+-                const syslibroot = if (at_least_big_sur) try std.zig.system.getSDKPath(arena) else null;
+-                const system_linker_hack = std.os.getenv("ZIG_SYSTEM_LINKER_HACK") != null;
+-                break :inner .{
+-                    .syslibroot = syslibroot,
+-                    .system_linker_hack = system_linker_hack,
+-                };
+-            } else .{};
+-            break :outer opts;
+-        } else .{};
++                break :blk if (at_least_big_sur) try std.zig.system.getSDKPath(arena) else null;
++            } else {
++                break :blk null;
++            }
++        };
+ 
+         const lto = blk: {
+             if (options.want_lto) |explicit| {
+@@ -897,7 +905,7 @@ pub fn create(gpa: *Allocator, options: InitOptions) !*Compilation {
+                 break :blk false;
+             } else if (options.c_source_files.len == 0) {
+                 break :blk false;
+-            } else if (darwin_options.system_linker_hack) {
++            } else if (darwin_system_linker_hack) {
+                 break :blk false;
+             } else switch (options.output_mode) {
+                 .Lib, .Obj => break :blk false,
+@@ -1273,13 +1281,14 @@ pub fn create(gpa: *Allocator, options: InitOptions) !*Compilation {
+             .module = module,
+             .target = options.target,
+             .dynamic_linker = options.dynamic_linker,
++            .sysroot = sysroot,
+             .output_mode = options.output_mode,
+             .link_mode = link_mode,
+             .object_format = ofmt,
+             .optimize_mode = options.optimize_mode,
+             .use_lld = use_lld,
+             .use_llvm = use_llvm,
+-            .system_linker_hack = darwin_options.system_linker_hack,
++            .system_linker_hack = darwin_system_linker_hack,
+             .link_libc = link_libc,
+             .link_libcpp = link_libcpp,
+             .link_libunwind = link_libunwind,
+@@ -1287,7 +1296,6 @@ pub fn create(gpa: *Allocator, options: InitOptions) !*Compilation {
+             .frameworks = options.frameworks,
+             .framework_dirs = options.framework_dirs,
+             .system_libs = system_libs,
+-            .syslibroot = darwin_options.syslibroot,
+             .lib_dirs = options.lib_dirs,
+             .rpath_list = options.rpath_list,
+             .strip = strip,
+diff --git a/src/link.zig b/src/link.zig
+index fcb263f03..2d2c1ebea 100644
+--- a/src/link.zig
++++ b/src/link.zig
+@@ -37,6 +37,8 @@ pub const Options = struct {
+     /// Not every Compilation compiles .zig code! For example you could do `zig build-exe foo.o`.
+     module: ?*Module,
+     dynamic_linker: ?[]const u8,
++    /// The root path for the dynamic linker and system libraries (as well as frameworks on Darwin)
++    sysroot: ?[]const u8,
+     /// Used for calculating how much space to reserve for symbols in case the binary file
+     /// does not already have a symbol table.
+     symbol_count_hint: u64 = 32,
+@@ -103,8 +105,6 @@ pub const Options = struct {
+     llvm_cpu_features: ?[*:0]const u8,
+     /// Extra args passed directly to LLD. Ignored when not linking with LLD.
+     extra_lld_args: []const []const u8,
+-    /// Darwin-only. Set the root path to the system libraries and frameworks.
+-    syslibroot: ?[]const u8,
+ 
+     objects: []const []const u8,
+     framework_dirs: []const []const u8,
+diff --git a/src/link/Elf.zig b/src/link/Elf.zig
+index 5bf20fdd2..981211151 100644
+--- a/src/link/Elf.zig
++++ b/src/link/Elf.zig
+@@ -1354,6 +1354,7 @@ fn linkWithLLD(self: *Elf, comp: *Compilation) !void {
+         man.hash.add(allow_shlib_undefined);
+         man.hash.add(self.base.options.bind_global_refs_locally);
+         man.hash.add(self.base.options.tsan);
++        man.hash.addOptionalBytes(self.base.options.sysroot);
+ 
+         // We don't actually care whether it's a cache hit or miss; we just need the digest and the lock.
+         _ = try man.hit();
+@@ -1423,6 +1424,10 @@ fn linkWithLLD(self: *Elf, comp: *Compilation) !void {
+ 
+         try argv.append("-error-limit=0");
+ 
++        if (self.base.options.sysroot) |sysroot| {
++            try argv.append(try std.fmt.allocPrint(arena, "--sysroot={s}", .{sysroot}));
++        }
++
+         if (self.base.options.lto) {
+             switch (self.base.options.optimize_mode) {
+                 .Debug => {},
+diff --git a/src/link/MachO.zig b/src/link/MachO.zig
+index 24dfa2c32..1e11a3258 100644
+--- a/src/link/MachO.zig
++++ b/src/link/MachO.zig
+@@ -590,7 +590,7 @@ fn linkWithLLD(self: *MachO, comp: *Compilation) !void {
+         man.hash.add(allow_shlib_undefined);
+         man.hash.add(self.base.options.bind_global_refs_locally);
+         man.hash.add(self.base.options.system_linker_hack);
+-        man.hash.addOptionalBytes(self.base.options.syslibroot);
++        man.hash.addOptionalBytes(self.base.options.sysroot);
+ 
+         // We don't actually care whether it's a cache hit or miss; we just need the digest and the lock.
+         _ = try man.hit();
+@@ -720,7 +720,7 @@ fn linkWithLLD(self: *MachO, comp: *Compilation) !void {
+             for (self.base.options.lib_dirs) |path| {
+                 if (fs.path.isAbsolute(path)) {
+                     var candidates = std.ArrayList([]const u8).init(arena);
+-                    if (self.base.options.syslibroot) |syslibroot| {
++                    if (self.base.options.sysroot) |syslibroot| {
+                         const full_path = try fs.path.join(arena, &[_][]const u8{ syslibroot, path });
+                         try candidates.append(full_path);
+                     }
+@@ -813,7 +813,7 @@ fn linkWithLLD(self: *MachO, comp: *Compilation) !void {
+                 try argv.append("zig");
+                 try argv.append("ld");
+ 
+-                if (self.base.options.syslibroot) |syslibroot| {
++                if (self.base.options.sysroot) |syslibroot| {
+                     try argv.append("-syslibroot");
+                     try argv.append(syslibroot);
+                 }
+@@ -959,7 +959,7 @@ fn linkWithLLD(self: *MachO, comp: *Compilation) !void {
+             }
+         }
+ 
+-        if (self.base.options.syslibroot) |dir| {
++        if (self.base.options.sysroot) |dir| {
+             try argv.append("-syslibroot");
+             try argv.append(dir);
+         }
+diff --git a/src/main.zig b/src/main.zig
+index f5bda4379..b136a05bd 100644
+--- a/src/main.zig
++++ b/src/main.zig
+@@ -377,6 +377,7 @@ const usage_build_generic =
+     \\  -T[script], --script [script]  Use a custom linker script
+     \\  --version-script [path]        Provide a version .map file
+     \\  --dynamic-linker [path]        Set the dynamic interpreter path (usually ld.so)
++    \\  --sysroot [path]               Set the system root directory (usually /)
+     \\  --version [ver]                Dynamic library semver
+     \\  -fsoname[=name]                (Linux) Override the default SONAME value
+     \\  -fno-soname                    (Linux) Disable emitting a SONAME
+@@ -602,6 +603,7 @@ fn buildOutputType(
+     var link_eh_frame_hdr = false;
+     var link_emit_relocs = false;
+     var each_lib_rpath: ?bool = null;
++    var sysroot: ?[]const u8 = null;
+     var libc_paths_file: ?[]const u8 = try optionalStringEnvVar(arena, "ZIG_LIBC");
+     var machine_code_model: std.builtin.CodeModel = .default;
+     var runtime_args_start: ?usize = null;
+@@ -859,6 +861,10 @@ fn buildOutputType(
+                         if (i + 1 >= args.len) fatal("expected parameter after {s}", .{arg});
+                         i += 1;
+                         target_dynamic_linker = args[i];
++                    } else if (mem.eql(u8, arg, "--sysroot")) {
++                        if (i + 1 >= args.len) fatal("expected parameter after {s}", .{arg});
++                        i += 1;
++                        sysroot = args[i];
+                     } else if (mem.eql(u8, arg, "--libc")) {
+                         if (i + 1 >= args.len) fatal("expected parameter after {s}", .{arg});
+                         i += 1;
+@@ -1621,7 +1627,9 @@ fn buildOutputType(
+             want_native_include_dirs = true;
+     }
+ 
+-    if (cross_target.isNativeOs() and (system_libs.items.len != 0 or want_native_include_dirs)) {
++    if (sysroot == null and cross_target.isNativeOs() and
++        (system_libs.items.len != 0 or want_native_include_dirs))
++    {
+         const paths = std.zig.system.NativePaths.detect(arena, target_info) catch |err| {
+             fatal("unable to detect native system paths: {s}", .{@errorName(err)});
+         };
+@@ -1898,6 +1906,7 @@ fn buildOutputType(
+         .is_native_os = cross_target.isNativeOs(),
+         .is_native_abi = cross_target.isNativeAbi(),
+         .dynamic_linker = target_info.dynamic_linker.get(),
++        .sysroot = sysroot,
+         .output_mode = output_mode,
+         .root_pkg = root_pkg,
+         .emit_bin = emit_bin_loc,
+-- 
+2.32.0
+
