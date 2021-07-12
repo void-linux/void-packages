@@ -1,0 +1,69 @@
+# Template file for 'joplin-cli'
+pkgname=joplin-cli
+version=2.1.7
+revision=1
+wrksrc="joplin-${version}"
+hostmakedepends="nodejs git python3 pkg-config libvips-devel rsync"
+makedepends="libvips-devel libsecret-devel"
+depends="nodejs"
+short_desc="Open source note taking and to-do application - CLI version"
+maintainer="fosslinux <fosslinux@aussies.space>"
+license="MIT"
+homepage="https://joplinapp.org"
+distfiles="https://github.com/laurent22/joplin/archive/v${version}.tar.gz"
+checksum=b8d4fedb636d41d93718e51fcd99a5d889471db3f86002d9f3c1d90fc386f68c
+python_version=3
+make_check=extended # Some tests are broken (why?)
+
+if [ "$CROSS_BUILD" ]; then
+	export PKG_CONFIG_SYSROOT_DIR="$XBPS_CROSS_BASE"
+	export PKG_CONFIG_LIBDIR="$XBPS_CROSS_BASE/usr/lib/pkgconfig"
+	export PKG_CONFIG_PATH="$PKG_CONFIG_LIBDIR:$XBPS_CROSS_BASE/usr/share/pkgconfig"
+fi
+
+do_build() {
+	# Remove unused modules
+	rm -rf packages/{app-mobile,app-desktop,app-clipper,generator-joplin}
+
+	# Needed for cross to build
+	platform="linux"
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		platform="linuxmusl"
+	fi
+	local arch
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64*) arch=x64 ;;
+		i686*) arch=ia32 ;;
+		*) # Dummy of arm; allows to be compiled from source
+			if [ "$XBPS_TARGET_WORDSIZE" = "64" ]; then
+				arch=arm64
+			else
+				arch=arm
+			fi ;;
+	esac
+	npm install ${XBPS_ALLOW_CHROOT_BREAKOUT:+--unsafe-perm} --build-from-source \
+		--platform="${platform}" --arch="${arch}"
+
+	cd packages
+	# https://aur.archlinux.org/cgit/aur.git/tree/PKGBUILD?h=joplin-cli#n30
+	# Unsure why this is needed, but it is
+	for d in app-cli lib renderer tools; do
+		pushd "${d}"
+		mv node_modules/@joplin .
+		npm prune --production
+		mv @joplin node_modules/
+		popd
+	done
+}
+
+do_install() {
+	cd packages
+
+	vmkdir usr/libexec/joplin-cli
+	for d in app-cli fork-sax fork-htmlparser2 renderer lib tools; do
+		vcopy "${d}" usr/libexec/joplin-cli/
+	done
+
+	vbin "${FILESDIR}/joplin-cli"
+	vlicense ../LICENSE
+}
