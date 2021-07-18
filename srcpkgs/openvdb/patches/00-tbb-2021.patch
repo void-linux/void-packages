@@ -1,0 +1,1320 @@
+https://github.com/AcademySoftwareFoundation/openvdb/pull/1027
+Should be dropped after 8.1.1 release.
+
+diff --git a/cmake/FindTBB.cmake b/cmake/FindTBB.cmake
+index d41436b1c..06de2b3f3 100644
+--- a/cmake/FindTBB.cmake
++++ b/cmake/FindTBB.cmake
+@@ -169,8 +169,22 @@ find_path(Tbb_INCLUDE_DIR tbb/tbb_stddef.h
+   PATH_SUFFIXES ${CMAKE_INSTALL_INCLUDEDIR} include
+ )
+ 
+-if(EXISTS "${Tbb_INCLUDE_DIR}/tbb/tbb_stddef.h")
+-  file(STRINGS "${Tbb_INCLUDE_DIR}/tbb/tbb_stddef.h"
++set(_tbb_version_file "${Tbb_INCLUDE_DIR}/tbb/tbb_stddef.h")
++
++if(NOT EXISTS ${_tbb_version_file})
++  # From TBB 2021, tbb_stddef is removed and the directory include/tbb is
++  # simply an alias for include/oneapi/tbb. Try and find the version header
++  # in oneapi/tbb
++  find_path(Tbb_INCLUDE_DIR oneapi/tbb/version.h
++    ${_FIND_TBB_ADDITIONAL_OPTIONS}
++    PATHS ${_TBB_INCLUDE_SEARCH_DIRS}
++    PATH_SUFFIXES ${CMAKE_INSTALL_INCLUDEDIR} include
++  )
++  set(_tbb_version_file "${Tbb_INCLUDE_DIR}/oneapi/tbb/version.h")
++endif()
++
++if(EXISTS ${_tbb_version_file})
++  file(STRINGS ${_tbb_version_file}
+     _tbb_version_major_string REGEX "#define TBB_VERSION_MAJOR "
+   )
+   string(REGEX REPLACE "#define TBB_VERSION_MAJOR" ""
+@@ -178,7 +192,7 @@ if(EXISTS "${Tbb_INCLUDE_DIR}/tbb/tbb_stddef.h")
+   )
+   string(STRIP "${_tbb_version_major_string}" Tbb_VERSION_MAJOR)
+ 
+-  file(STRINGS "${Tbb_INCLUDE_DIR}/tbb/tbb_stddef.h"
++  file(STRINGS ${_tbb_version_file}
+      _tbb_version_minor_string REGEX "#define TBB_VERSION_MINOR "
+   )
+   string(REGEX REPLACE "#define TBB_VERSION_MINOR" ""
+@@ -192,6 +206,8 @@ if(EXISTS "${Tbb_INCLUDE_DIR}/tbb/tbb_stddef.h")
+   set(Tbb_VERSION ${Tbb_VERSION_MAJOR}.${Tbb_VERSION_MINOR})
+ endif()
+ 
++unset(_tbb_version_file)
++
+ # ------------------------------------------------------------------------
+ #  Search for TBB lib DIR
+ # ------------------------------------------------------------------------
+diff --git a/openvdb/openvdb/CMakeLists.txt b/openvdb/openvdb/CMakeLists.txt
+index 88543df3a..929fe94d1 100644
+--- a/openvdb/openvdb/CMakeLists.txt
++++ b/openvdb/openvdb/CMakeLists.txt
+@@ -437,6 +437,10 @@ set(OPENVDB_LIBRARY_UTIL_INCLUDE_FILES
+   util/Util.h
+ )
+ 
++set(OPENVDB_LIBRARY_THREAD_INCLUDE_FILES
++  thread/Threading.h
++)
++
+ # @todo CMake >= 3.12, use an object library to consolidate shared/static
+ # builds. There are limitations with earlier versions of CMake when used with
+ # imported targets.
+@@ -592,3 +596,4 @@ install(FILES ${OPENVDB_LIBRARY_POINTS_INCLUDE_FILES} DESTINATION ${OPENVDB_INST
+ install(FILES ${OPENVDB_LIBRARY_TOOLS_INCLUDE_FILES} DESTINATION ${OPENVDB_INSTALL_INCLUDEDIR}/tools)
+ install(FILES ${OPENVDB_LIBRARY_TREE_INCLUDE_FILES} DESTINATION ${OPENVDB_INSTALL_INCLUDEDIR}/tree)
+ install(FILES ${OPENVDB_LIBRARY_UTIL_INCLUDE_FILES} DESTINATION ${OPENVDB_INSTALL_INCLUDEDIR}/util)
++install(FILES ${OPENVDB_LIBRARY_THREAD_INCLUDE_FILES} DESTINATION ${OPENVDB_INSTALL_INCLUDEDIR}/thread)
+diff --git a/openvdb/openvdb/cmd/openvdb_render.cc b/openvdb/openvdb/cmd/openvdb_render.cc
+index ee5b737c5..2c9831ba3 100644
+--- a/openvdb/openvdb/cmd/openvdb_render.cc
++++ b/openvdb/openvdb/cmd/openvdb_render.cc
+@@ -19,7 +19,14 @@
+ #include <OpenEXR/ImfHeader.h>
+ #include <OpenEXR/ImfOutputFile.h>
+ #include <OpenEXR/ImfPixelType.h>
+-#include <tbb/task_scheduler_init.h>
++
++// tbb/task_scheduler_init.h was removed in TBB 2021. The best construct to swap
++// to is tbb/global_control (for executables). global_control was only officially
++// added in TBB 2019U4 but exists in 2018 as a preview feature. To avoid more
++// compile time branching (as we still support 2018), we use it in 2018 too by
++// enabling the below define.
++#define TBB_PREVIEW_GLOBAL_CONTROL 1
++#include <tbb/global_control.h>
+ #include <tbb/tick_count.h>
+ 
+ #include <algorithm>
+@@ -606,8 +613,12 @@ main(int argc, char *argv[])
+     }
+ 
+     try {
+-        tbb::task_scheduler_init schedulerInit(
+-            (opts.threads == 0) ? tbb::task_scheduler_init::automatic : opts.threads);
++        std::unique_ptr<tbb::global_control> control;
++        if (opts.threads > 0) {
++            // note, opts.threads == 0 means use all threads (default), so don't
++            // manually create a tbb::global_control in this case
++            control.reset(new tbb::global_control(tbb::global_control::max_allowed_parallelism, opts.threads));
++        }
+ 
+         openvdb::initialize();
+ 
+diff --git a/openvdb/openvdb/io/Queue.cc b/openvdb/openvdb/io/Queue.cc
+index ef5d2961a..20ff1a0c1 100644
+--- a/openvdb/openvdb/io/Queue.cc
++++ b/openvdb/openvdb/io/Queue.cc
+@@ -5,20 +5,22 @@
+ /// @author Peter Cucka
+ 
+ #include "Queue.h"
+-
+ #include "File.h"
+ #include "Stream.h"
+-#include <openvdb/Exceptions.h>
+-#include <openvdb/util/logging.h>
++#include "openvdb/Exceptions.h"
++#include "openvdb/util/logging.h"
++
+ #include <tbb/concurrent_hash_map.h>
+-#include <tbb/task.h>
+-#include <tbb/tbb_thread.h> // for tbb::this_tbb_thread::sleep()
+-#include <tbb/tick_count.h>
++#include <tbb/task_arena.h>
++
++#include <thread>
+ #include <algorithm> // for std::max()
+ #include <atomic>
+ #include <iostream>
+ #include <map>
+ #include <mutex>
++#include <chrono>
++
+ 
+ namespace openvdb {
+ OPENVDB_USE_VERSION_NAMESPACE
+@@ -28,18 +30,19 @@ namespace io {
+ namespace {
+ 
+ // Abstract base class for queuable TBB tasks that adds a task completion callback
+-class Task: public tbb::task
++class Task
+ {
+ public:
+     Task(Queue::Id id): mId(id) {}
+-    ~Task() override {}
++    virtual ~Task() {}
+ 
+     Queue::Id id() const { return mId; }
+ 
+     void setNotifier(Queue::Notifier& notifier) { mNotify = notifier; }
++    virtual void execute() const = 0;
+ 
+ protected:
+-    void notify(Queue::Status status) { if (mNotify) mNotify(this->id(), status); }
++    void notify(Queue::Status status) const { if (mNotify) mNotify(this->id(), status); }
+ 
+ private:
+     Queue::Id mId;
+@@ -48,7 +51,7 @@ class Task: public tbb::task
+ 
+ 
+ // Queuable TBB task that writes one or more grids to a .vdb file or an output stream
+-class OutputTask: public Task
++class OutputTask : public Task
+ {
+ public:
+     OutputTask(Queue::Id id, const GridCPtrVec& grids, const Archive& archive,
+@@ -56,10 +59,10 @@ class OutputTask: public Task
+         : Task(id)
+         , mGrids(grids)
+         , mArchive(archive.copy())
+-        , mMetadata(metadata)
+-    {}
++        , mMetadata(metadata) {}
++    ~OutputTask() override {}
+ 
+-    tbb::task* execute() override
++    void execute() const override
+     {
+         Queue::Status status = Queue::FAILED;
+         try {
+@@ -69,10 +72,8 @@ class OutputTask: public Task
+             if (const char* msg = e.what()) {
+                 OPENVDB_LOG_ERROR(msg);
+             }
+-        } catch (...) {
+-        }
++        } catch (...) {}
+         this->notify(status);
+-        return nullptr; // no successor to this task
+     }
+ 
+ private:
+@@ -94,7 +95,6 @@ struct Queue::Impl
+     /// @todo Provide more information than just "succeeded" or "failed"?
+     using StatusMap = tbb::concurrent_hash_map<Queue::Id, Queue::Status>;
+ 
+-
+     Impl()
+         : mTimeout(Queue::DEFAULT_TIMEOUT)
+         , mCapacity(Queue::DEFAULT_CAPACITY)
+@@ -159,12 +159,15 @@ struct Queue::Impl
+ 
+     bool canEnqueue() const { return mNumTasks < Int64(mCapacity); }
+ 
+-    void enqueue(Task& task)
++    void enqueue(OutputTask& task)
+     {
+-        tbb::tick_count start = tbb::tick_count::now();
++        auto start = std::chrono::steady_clock::now();
+         while (!canEnqueue()) {
+-            tbb::this_tbb_thread::sleep(tbb::tick_count::interval_t(0.5/*sec*/));
+-            if ((tbb::tick_count::now() - start).seconds() > double(mTimeout)) {
++            std::this_thread::sleep_for(/*0.5s*/std::chrono::milliseconds(500));
++            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
++                std::chrono::steady_clock::now() - start);
++            const double seconds = double(duration.count()) / 1000.0;
++            if (seconds > double(mTimeout)) {
+                 OPENVDB_THROW(RuntimeError,
+                     "unable to queue I/O task; " << mTimeout << "-second time limit expired");
+             }
+@@ -173,7 +176,10 @@ struct Queue::Impl
+             std::placeholders::_1, std::placeholders::_2);
+         task.setNotifier(notify);
+         this->setStatus(task.id(), Queue::PENDING);
+-        tbb::task::enqueue(task);
++
++        // get the global task arena
++        tbb::task_arena arena(tbb::task_arena::attach{});
++        arena.enqueue([task = std::move(task)] { task.execute(); });
+         ++mNumTasks;
+     }
+ 
+@@ -204,7 +210,7 @@ Queue::~Queue()
+     /// (e.g., by keeping a static registry of queues that also dispatches
+     /// or blocks notifications)?
+     while (mImpl->mNumTasks > 0) {
+-        tbb::this_tbb_thread::sleep(tbb::tick_count::interval_t(0.5/*sec*/));
++        std::this_thread::sleep_for(/*0.5s*/std::chrono::milliseconds(500));
+     }
+ }
+ 
+@@ -290,16 +296,8 @@ Queue::Id
+ Queue::writeGridVec(const GridCPtrVec& grids, const Archive& archive, const MetaMap& metadata)
+ {
+     const Queue::Id taskId = mImpl->mNextId++;
+-    // From the "GUI Thread" chapter in the TBB Design Patterns guide
+-    OutputTask* task =
+-        new(tbb::task::allocate_root()) OutputTask(taskId, grids, archive, metadata);
+-    try {
+-        mImpl->enqueue(*task);
+-    } catch (openvdb::RuntimeError&) {
+-        // Destroy the task if it could not be enqueued, then rethrow the exception.
+-        tbb::task::destroy(*task);
+-        throw;
+-    }
++    OutputTask task(taskId, grids, archive, metadata);
++    mImpl->enqueue(task);
+     return taskId;
+ }
+ 
+diff --git a/openvdb/openvdb/math/Coord.h b/openvdb/openvdb/math/Coord.h
+index 504b5e9a4..2e9cfed5d 100644
+--- a/openvdb/openvdb/math/Coord.h
++++ b/openvdb/openvdb/math/Coord.h
+@@ -13,8 +13,7 @@
+ #include "Math.h"
+ #include "Vec3.h"
+ 
+-namespace tbb { class split; } // forward declaration
+-
++#include <tbb/blocked_range.h> // for tbb::split
+ 
+ namespace openvdb {
+ OPENVDB_USE_VERSION_NAMESPACE
+diff --git a/openvdb/openvdb/points/PointSample.h b/openvdb/openvdb/points/PointSample.h
+index a122cc4fb..27ec3fb29 100644
+--- a/openvdb/openvdb/points/PointSample.h
++++ b/openvdb/openvdb/points/PointSample.h
+@@ -10,8 +10,9 @@
+ #ifndef OPENVDB_POINTS_POINT_SAMPLE_HAS_BEEN_INCLUDED
+ #define OPENVDB_POINTS_POINT_SAMPLE_HAS_BEEN_INCLUDED
+ 
+-#include <openvdb/util/NullInterrupter.h>
+-#include <openvdb/tools/Interpolation.h>
++#include "openvdb/util/NullInterrupter.h"
++#include "openvdb/thread/Threading.h"
++#include "openvdb/tools/Interpolation.h"
+ 
+ #include "PointDataGrid.h"
+ #include "PointAttribute.h"
+@@ -19,7 +20,6 @@
+ #include <sstream>
+ #include <type_traits>
+ 
+-
+ namespace openvdb {
+ OPENVDB_USE_VERSION_NAMESPACE
+ namespace OPENVDB_VERSION_NAME {
+@@ -299,7 +299,7 @@ class PointDataSampler
+             using TargetHandleT = AttributeWriteHandle<typename SamplerWrapperT::ValueType>;
+ 
+             if (util::wasInterrupted(interrupter)) {
+-                tbb::task::self().cancel_group_execution();
++                thread::cancelGroupExecution();
+                 return;
+             }
+ 
+diff --git a/openvdb/openvdb/thread/Threading.h b/openvdb/openvdb/thread/Threading.h
+new file mode 100644
+index 000000000..0c3b356e3
+--- /dev/null
++++ b/openvdb/openvdb/thread/Threading.h
+@@ -0,0 +1,54 @@
++// Copyright Contributors to the OpenVDB Project
++// SPDX-License-Identifier: MPL-2.0
++//
++/// @file Threading.h
++
++#ifndef OPENVDB_THREAD_THREADING_HAS_BEEN_INCLUDED
++#define OPENVDB_THREAD_THREADING_HAS_BEEN_INCLUDED
++
++#include "openvdb/version.h"
++
++/// @note tbb/blocked_range.h is the ONLY include that persists from TBB 2020
++///   to TBB 2021 that itself includes the TBB specific version header files.
++///   In TBB 2020, the version header was called tbb/stddef.h. In 2021, it's
++///   called tbb/version.h. We include tbb/blocked_range.h here to indirectly
++///   access the version defines in a consistent way so that downstream
++///   software doesn't need to provide compile time defines.
++#include <tbb/blocked_range.h>
++#include <tbb/task.h>
++#include <tbb/task_group.h>
++
++namespace openvdb {
++OPENVDB_USE_VERSION_NAMESPACE
++namespace OPENVDB_VERSION_NAME {
++namespace thread {
++
++inline bool cancelGroupExecution()
++{
++    // @note 12000 was the 2021.1-beta05 release. The 2021.1-beta08 release
++    //   introduced current_context().
++#if TBB_INTERFACE_VERSION >= 12002
++    auto ctx = tbb::task::current_context();
++    return ctx ? ctx->cancel_group_execution() : false;
++#else
++    return tbb::task::self().cancel_group_execution();
++#endif
++}
++
++inline bool isGroupExecutionCancelled()
++{
++    // @note 12000 was the 2021.1-beta05 release. The 2021.1-beta08 release
++    //   introduced current_context().
++#if TBB_INTERFACE_VERSION >= 12002
++    auto ctx = tbb::task::current_context();
++    return ctx ? ctx->is_group_execution_cancelled() : false;
++#else
++    return tbb::task::self().is_cancelled();
++#endif
++}
++
++} // namespace thread
++} // namespace OPENVDB_VERSION_NAME
++} // namespace openvdb
++
++#endif // OPENVDB_THREAD_THREADING_HAS_BEEN_INCLUDED
+diff --git a/openvdb/openvdb/tools/Composite.h b/openvdb/openvdb/tools/Composite.h
+index 6bc170bf7..88ff86f9f 100644
+--- a/openvdb/openvdb/tools/Composite.h
++++ b/openvdb/openvdb/tools/Composite.h
+@@ -24,7 +24,6 @@
+ #include <tbb/parallel_for.h>
+ #include <tbb/parallel_reduce.h>
+ #include <tbb/task_group.h>
+-#include <tbb/task_scheduler_init.h>
+ 
+ #include <type_traits>
+ #include <functional>
+diff --git a/openvdb/openvdb/tools/Diagnostics.h b/openvdb/openvdb/tools/Diagnostics.h
+index 694d2155f..e5844e448 100644
+--- a/openvdb/openvdb/tools/Diagnostics.h
++++ b/openvdb/openvdb/tools/Diagnostics.h
+@@ -11,14 +11,17 @@
+ #ifndef OPENVDB_TOOLS_DIAGNOSTICS_HAS_BEEN_INCLUDED
+ #define OPENVDB_TOOLS_DIAGNOSTICS_HAS_BEEN_INCLUDED
+ 
+-#include <openvdb/Grid.h>
+-#include <openvdb/math/Math.h>
+-#include <openvdb/math/Vec3.h>
+-#include <openvdb/math/Stencils.h>
+-#include <openvdb/math/Operators.h>
+-#include <openvdb/tree/LeafManager.h>
++#include "openvdb/Grid.h"
++#include "openvdb/math/Math.h"
++#include "openvdb/math/Vec3.h"
++#include "openvdb/math/Stencils.h"
++#include "openvdb/math/Operators.h"
++#include "openvdb/tree/LeafManager.h"
++#include "openvdb/thread/Threading.h"
++
+ #include <tbb/blocked_range.h>
+ #include <tbb/parallel_reduce.h>
++
+ #include <cmath> // for std::isnan(), std::isfinite()
+ #include <set>
+ #include <sstream>
+@@ -26,7 +29,6 @@
+ #include <type_traits>
+ #include <vector>
+ 
+-
+ namespace openvdb {
+ OPENVDB_USE_VERSION_NAMESPACE
+ namespace OPENVDB_VERSION_NAME {
+@@ -1160,13 +1162,13 @@ InactiveVoxelValues<TreeType>::operator()(const tbb::blocked_range<size_t>& rang
+ {
+     typename TreeType::LeafNodeType::ValueOffCIter iter;
+ 
+-    for (size_t n = range.begin(); n < range.end() && !tbb::task::self().is_cancelled(); ++n) {
++    for (size_t n = range.begin(); n < range.end() && !thread::isGroupExecutionCancelled(); ++n) {
+         for (iter = mLeafArray.leaf(n).cbeginValueOff(); iter; ++iter) {
+             mInactiveValues.insert(iter.getValue());
+         }
+ 
+         if (mInactiveValues.size() > mNumValues) {
+-            tbb::task::self().cancel_group_execution();
++            thread::cancelGroupExecution();
+         }
+     }
+ }
+@@ -1250,14 +1252,14 @@ template<typename TreeType>
+ inline void
+ InactiveTileValues<TreeType>::operator()(IterRange& range)
+ {
+-    for (; range && !tbb::task::self().is_cancelled(); ++range) {
++    for (; range && !thread::isGroupExecutionCancelled(); ++range) {
+         typename TreeType::ValueOffCIter iter = range.iterator();
+         for (; iter; ++iter) {
+             mInactiveValues.insert(iter.getValue());
+         }
+ 
+         if (mInactiveValues.size() > mNumValues) {
+-            tbb::task::self().cancel_group_execution();
++            thread::cancelGroupExecution();
+         }
+     }
+ }
+diff --git a/openvdb/openvdb/tools/Filter.h b/openvdb/openvdb/tools/Filter.h
+index 408c75541..b70212520 100644
+--- a/openvdb/openvdb/tools/Filter.h
++++ b/openvdb/openvdb/tools/Filter.h
+@@ -14,21 +14,24 @@
+ #ifndef OPENVDB_TOOLS_FILTER_HAS_BEEN_INCLUDED
+ #define OPENVDB_TOOLS_FILTER_HAS_BEEN_INCLUDED
+ 
+-#include <tbb/parallel_for.h>
+-#include <openvdb/Types.h>
+-#include <openvdb/math/Math.h>
+-#include <openvdb/math/Stencils.h>
+-#include <openvdb/math/Transform.h>
+-#include <openvdb/tree/NodeManager.h>
+-#include <openvdb/tree/LeafManager.h>
+-#include <openvdb/util/NullInterrupter.h>
+-#include <openvdb/util/Util.h>
+-#include <openvdb/Grid.h>
++#include "openvdb/Types.h"
++#include "openvdb/Grid.h"
++#include "openvdb/math/Math.h"
++#include "openvdb/math/Stencils.h"
++#include "openvdb/math/Transform.h"
++#include "openvdb/tree/NodeManager.h"
++#include "openvdb/tree/LeafManager.h"
++#include "openvdb/util/NullInterrupter.h"
++#include "openvdb/util/Util.h"
++#include "openvdb/thread/Threading.h"
+ #include "Interpolation.h"
++
++#include <tbb/parallel_for.h>
++#include <tbb/concurrent_vector.h>
++
+ #include <algorithm> // for std::max()
+ #include <functional>
+ #include <type_traits>
+-#include <tbb/concurrent_vector.h>
+ 
+ namespace openvdb {
+ OPENVDB_USE_VERSION_NAMESPACE
+@@ -833,7 +836,7 @@ inline bool
+ Filter<GridT, MaskT, InterruptT>::wasInterrupted()
+ {
+     if (util::wasInterrupted(mInterrupter)) {
+-        tbb::task::self().cancel_group_execution();
++        thread::cancelGroupExecution();
+         return true;
+     }
+     return false;
+diff --git a/openvdb/openvdb/tools/GridOperators.h b/openvdb/openvdb/tools/GridOperators.h
+index 31305a1ab..78fafead9 100644
+--- a/openvdb/openvdb/tools/GridOperators.h
++++ b/openvdb/openvdb/tools/GridOperators.h
+@@ -9,14 +9,15 @@
+ #ifndef OPENVDB_TOOLS_GRID_OPERATORS_HAS_BEEN_INCLUDED
+ #define OPENVDB_TOOLS_GRID_OPERATORS_HAS_BEEN_INCLUDED
+ 
+-#include <openvdb/Grid.h>
+-#include <openvdb/math/Operators.h>
+-#include <openvdb/util/NullInterrupter.h>
+-#include <openvdb/tree/LeafManager.h>
+-#include <openvdb/tree/ValueAccessor.h>
++#include "openvdb/Grid.h"
++#include "openvdb/math/Operators.h"
++#include "openvdb/util/NullInterrupter.h"
++#include "openvdb/thread/Threading.h"
++#include "openvdb/tree/LeafManager.h"
++#include "openvdb/tree/ValueAccessor.h"
+ #include "ValueTransformer.h" // for tools::foreach()
+-#include <tbb/parallel_for.h>
+ 
++#include <tbb/parallel_for.h>
+ 
+ namespace openvdb {
+ OPENVDB_USE_VERSION_NAMESPACE
+@@ -383,7 +384,9 @@ class GridOperator
+     /// TBB threads only!
+     void operator()(const typename LeafManagerT::LeafRange& range) const
+     {
+-        if (util::wasInterrupted(mInterrupt)) tbb::task::self().cancel_group_execution();
++        if (util::wasInterrupted(mInterrupt)) {
++            thread::cancelGroupExecution();
++        }
+ 
+         for (typename LeafManagerT::LeafRange::Iterator leaf=range.begin(); leaf; ++leaf) {
+             for (typename OutLeafT::ValueOnIter value=leaf->beginValueOn(); value; ++value) {
+diff --git a/openvdb/openvdb/tools/LevelSetMeasure.h b/openvdb/openvdb/tools/LevelSetMeasure.h
+index efe19074d..59969cdcf 100644
+--- a/openvdb/openvdb/tools/LevelSetMeasure.h
++++ b/openvdb/openvdb/tools/LevelSetMeasure.h
+@@ -8,18 +8,21 @@
+ #ifndef OPENVDB_TOOLS_LEVELSETMEASURE_HAS_BEEN_INCLUDED
+ #define OPENVDB_TOOLS_LEVELSETMEASURE_HAS_BEEN_INCLUDED
+ 
+-#include <openvdb/math/Math.h>
+-#include <openvdb/Types.h>
+-#include <openvdb/Grid.h>
+-#include <openvdb/tree/LeafManager.h>
+-#include <openvdb/tree/ValueAccessor.h>
+-#include <openvdb/math/FiniteDifference.h>
+-#include <openvdb/math/Operators.h>
+-#include <openvdb/math/Stencils.h>
+-#include <openvdb/util/NullInterrupter.h>
++#include "openvdb/Types.h"
++#include "openvdb/Grid.h"
++#include "openvdb/tree/LeafManager.h"
++#include "openvdb/tree/ValueAccessor.h"
++#include "openvdb/math/Math.h"
++#include "openvdb/math/FiniteDifference.h"
++#include "openvdb/math/Operators.h"
++#include "openvdb/math/Stencils.h"
++#include "openvdb/util/NullInterrupter.h"
++#include "openvdb/thread/Threading.h"
++
+ #include <tbb/parallel_for.h>
+ #include <tbb/parallel_sort.h>
+ #include <tbb/parallel_invoke.h>
++
+ #include <type_traits>
+ 
+ namespace openvdb {
+@@ -329,7 +332,7 @@ inline bool
+ LevelSetMeasure<GridT, InterruptT>::checkInterrupter()
+ {
+     if (util::wasInterrupted(mInterrupter)) {
+-        tbb::task::self().cancel_group_execution();
++        thread::cancelGroupExecution();
+         return false;
+     }
+     return true;
+diff --git a/openvdb/openvdb/tools/LevelSetTracker.h b/openvdb/openvdb/tools/LevelSetTracker.h
+index cbdc267e8..bfc8004e7 100644
+--- a/openvdb/openvdb/tools/LevelSetTracker.h
++++ b/openvdb/openvdb/tools/LevelSetTracker.h
+@@ -12,24 +12,26 @@
+ #ifndef OPENVDB_TOOLS_LEVEL_SET_TRACKER_HAS_BEEN_INCLUDED
+ #define OPENVDB_TOOLS_LEVEL_SET_TRACKER_HAS_BEEN_INCLUDED
+ 
+-#include <tbb/parallel_for.h>
+-#include <openvdb/Types.h>
+-#include <openvdb/math/Math.h>
+-#include <openvdb/math/FiniteDifference.h>
+-#include <openvdb/math/Operators.h>
+-#include <openvdb/math/Stencils.h>
+-#include <openvdb/math/Transform.h>
+-#include <openvdb/Grid.h>
+-#include <openvdb/util/NullInterrupter.h>
+-#include <openvdb/tree/ValueAccessor.h>
+-#include <openvdb/tree/LeafManager.h>
++#include "openvdb/Types.h"
++#include "openvdb/Grid.h"
++#include "openvdb/math/Math.h"
++#include "openvdb/math/FiniteDifference.h"
++#include "openvdb/math/Operators.h"
++#include "openvdb/math/Stencils.h"
++#include "openvdb/math/Transform.h"
++#include "openvdb/util/NullInterrupter.h"
++#include "openvdb/thread/Threading.h"
++#include "openvdb/tree/ValueAccessor.h"
++#include "openvdb/tree/LeafManager.h"
+ #include "ChangeBackground.h"// for changeLevelSetBackground
+ #include "Morphology.h"//for dilateActiveValues
+ #include "Prune.h"// for pruneLevelSet
++
++#include <tbb/parallel_for.h>
++
+ #include <functional>
+ #include <type_traits>
+ 
+-
+ namespace openvdb {
+ OPENVDB_USE_VERSION_NAMESPACE
+ namespace OPENVDB_VERSION_NAME {
+@@ -383,7 +385,7 @@ LevelSetTracker<GridT, InterruptT>::
+ checkInterrupter()
+ {
+     if (util::wasInterrupted(mInterrupter)) {
+-        tbb::task::self().cancel_group_execution();
++        thread::cancelGroupExecution();
+         return false;
+     }
+     return true;
+diff --git a/openvdb/openvdb/tools/MeshToVolume.h b/openvdb/openvdb/tools/MeshToVolume.h
+index 6643c8f05..de3406eda 100644
+--- a/openvdb/openvdb/tools/MeshToVolume.h
++++ b/openvdb/openvdb/tools/MeshToVolume.h
+@@ -16,12 +16,13 @@
+ #ifndef OPENVDB_TOOLS_MESH_TO_VOLUME_HAS_BEEN_INCLUDED
+ #define OPENVDB_TOOLS_MESH_TO_VOLUME_HAS_BEEN_INCLUDED
+ 
+-#include <openvdb/Platform.h> // for OPENVDB_HAS_CXX11
+-#include <openvdb/Types.h>
+-#include <openvdb/math/FiniteDifference.h> // for GodunovsNormSqrd
+-#include <openvdb/math/Proximity.h> // for closestPointOnTriangleToPoint
+-#include <openvdb/util/NullInterrupter.h>
+-#include <openvdb/util/Util.h>
++#include "openvdb/Platform.h" // for OPENVDB_HAS_CXX11
++#include "openvdb/Types.h"
++#include "openvdb/math/FiniteDifference.h" // for GodunovsNormSqrd
++#include "openvdb/math/Proximity.h" // for closestPointOnTriangleToPoint
++#include "openvdb/util/NullInterrupter.h"
++#include "openvdb/util/Util.h"
++#include "openvdb/thread/Threading.h"
+ 
+ #include "ChangeBackground.h"
+ #include "Prune.h" // for pruneInactive and pruneLevelSet
+@@ -33,7 +34,7 @@
+ #include <tbb/parallel_reduce.h>
+ #include <tbb/partitioner.h>
+ #include <tbb/task_group.h>
+-#include <tbb/task_scheduler_init.h>
++#include <tbb/task_arena.h>
+ 
+ #include <algorithm> // for std::sort()
+ #include <cmath> // for std::isfinite(), std::isnan()
+@@ -1132,7 +1133,7 @@ inline void
+ fillArray(ValueType* array, const ValueType val, const size_t length)
+ {
+     const auto grainSize = std::max<size_t>(
+-        length / tbb::task_scheduler_init::default_num_threads(), 1024);
++        length / tbb::this_task_arena::max_concurrency(), 1024);
+     const tbb::blocked_range<size_t> range(0, length, grainSize);
+     tbb::parallel_for(range, FillArray<ValueType>(array, val), tbb::simple_partitioner());
+ }
+@@ -1989,7 +1990,7 @@ class VoxelizePolygons
+         for (size_t n = range.begin(), N = range.end(); n < N; ++n) {
+ 
+             if (this->wasInterrupted()) {
+-                tbb::task::self().cancel_group_execution();
++                thread::cancelGroupExecution();
+                 break;
+             }
+ 
+@@ -2143,7 +2144,7 @@ class VoxelizePolygons
+ 
+         while (!coordList.empty()) {
+             if (interrupter && interrupter->wasInterrupted()) {
+-                tbb::task::self().cancel_group_execution();
++                thread::cancelGroupExecution();
+                 break;
+             }
+             for (Int32 pass = 0; pass < 1048576 && !coordList.empty(); ++pass) {
+diff --git a/openvdb/openvdb/tools/Morphology.h b/openvdb/openvdb/tools/Morphology.h
+index 736982ef5..0a1e71009 100644
+--- a/openvdb/openvdb/tools/Morphology.h
++++ b/openvdb/openvdb/tools/Morphology.h
+@@ -24,7 +24,7 @@
+ #include "openvdb/tree/ValueAccessor.h"
+ #include "openvdb/tree/LeafManager.h"
+ 
+-#include <tbb/task_scheduler_init.h>
++#include <tbb/task_arena.h>
+ #include <tbb/enumerable_thread_specific.h>
+ #include <tbb/parallel_for.h>
+ 
+@@ -726,7 +726,7 @@ void Morphology<TreeType>::dilateVoxels(const size_t iter,
+         }
+ 
+         // @note this grain size is used for optimal threading
+-        const size_t numThreads = size_t(tbb::task_scheduler_init::default_num_threads());
++        const size_t numThreads = size_t(tbb::this_task_arena::max_concurrency());
+         const size_t subTreeSize = math::Max(size_t(1), array.size()/(2*numThreads));
+ 
+         // perform recursive dilation to sub trees
+diff --git a/openvdb/openvdb/tools/ParticlesToLevelSet.h b/openvdb/openvdb/tools/ParticlesToLevelSet.h
+index 739af2b69..f9c19911c 100644
+--- a/openvdb/openvdb/tools/ParticlesToLevelSet.h
++++ b/openvdb/openvdb/tools/ParticlesToLevelSet.h
+@@ -62,19 +62,23 @@
+ #ifndef OPENVDB_TOOLS_PARTICLES_TO_LEVELSET_HAS_BEEN_INCLUDED
+ #define OPENVDB_TOOLS_PARTICLES_TO_LEVELSET_HAS_BEEN_INCLUDED
+ 
+-#include <tbb/parallel_reduce.h>
+-#include <tbb/blocked_range.h>
+-#include <openvdb/Types.h>
+-#include <openvdb/Grid.h>
+-#include <openvdb/math/Math.h>
+-#include <openvdb/math/Transform.h>
+-#include <openvdb/tree/LeafManager.h>
+-#include <openvdb/util/logging.h>
+-#include <openvdb/util/NullInterrupter.h>
++#include "openvdb/Types.h"
++#include "openvdb/Grid.h"
++#include "openvdb/math/Math.h"
++#include "openvdb/math/Transform.h"
++#include "openvdb/tree/LeafManager.h"
++#include "openvdb/util/logging.h"
++#include "openvdb/util/NullInterrupter.h"
++#include "openvdb/thread/Threading.h"
++
+ #include "Composite.h" // for csgUnion()
+ #include "PointPartitioner.h"
+ #include "Prune.h"
+ #include "SignedFloodFill.h"
++
++#include <tbb/parallel_reduce.h>
++#include <tbb/blocked_range.h>
++
+ #include <functional>
+ #include <iostream>
+ #include <type_traits>
+@@ -738,7 +742,7 @@ struct ParticlesToLevelSet<SdfGridT, AttributeT, InterrupterT>::Raster
+         for (Coord c = lo; c.x() <= hi.x(); ++c.x()) {
+             //only check interrupter every 32'th scan in x
+             if (!(count++ & ((1<<5)-1)) && util::wasInterrupted(mParent.mInterrupter)) {
+-                tbb::task::self().cancel_group_execution();
++                thread::cancelGroupExecution();
+                 return false;
+             }
+             const Real x2 = math::Pow2(c.x() - P[0]);
+@@ -804,7 +808,7 @@ struct ParticlesToLevelSet<SdfGridT, AttributeT, InterrupterT>::Raster
+         // Densely fill the remaining regions.
+         for (const auto& bbox: padding) {
+             if (util::wasInterrupted(mParent.mInterrupter)) {
+-                tbb::task::self().cancel_group_execution();
++                thread::cancelGroupExecution();
+                 return false;
+             }
+             const Coord &bmin = bbox.min(), &bmax = bbox.max();
+diff --git a/openvdb/openvdb/tools/PointAdvect.h b/openvdb/openvdb/tools/PointAdvect.h
+index 12b1177ad..e487bfb3e 100644
+--- a/openvdb/openvdb/tools/PointAdvect.h
++++ b/openvdb/openvdb/tools/PointAdvect.h
+@@ -10,16 +10,19 @@
+ #ifndef OPENVDB_TOOLS_POINT_ADVECT_HAS_BEEN_INCLUDED
+ #define OPENVDB_TOOLS_POINT_ADVECT_HAS_BEEN_INCLUDED
+ 
+-#include <openvdb/openvdb.h>
+-#include <openvdb/math/Math.h>             // min
+-#include <openvdb/Types.h>                 // Vec3 types and version number
+-#include <openvdb/Grid.h>                  // grid
+-#include <openvdb/util/NullInterrupter.h>
++#include "openvdb/openvdb.h"
++#include "openvdb/Types.h"                 // Vec3 types and version number
++#include "openvdb/Grid.h"                  // grid
++#include "openvdb/math/Math.h"             // min
++#include "openvdb/util/NullInterrupter.h"
++#include "openvdb/thread/Threading.h"
+ #include "Interpolation.h"                 // sampling
+ #include "VelocityFields.h"                // VelocityIntegrator
++
+ #include <tbb/blocked_range.h>             // threading
+ #include <tbb/parallel_for.h>              // threading
+ #include <tbb/task.h>                      // for cancel
++
+ #include <vector>
+ 
+ 
+@@ -167,7 +170,7 @@ class PointAdvect
+     void operator() (const tbb::blocked_range<size_t> &range) const
+     {
+         if (mInterrupter && mInterrupter->wasInterrupted()) {
+-            tbb::task::self().cancel_group_execution();
++            thread::cancelGroupExecution();
+         }
+ 
+         VelocityFieldIntegrator  velField(*mVelGrid);
+@@ -307,7 +310,7 @@ class ConstrainedPointAdvect
+     void operator() (const tbb::blocked_range<size_t> &range) const
+     {
+         if (mInterrupter && mInterrupter->wasInterrupted()) {
+-            tbb::task::self().cancel_group_execution();
++            thread::cancelGroupExecution();
+         }
+ 
+         VelocityIntegratorType velField(*mVelGrid);
+diff --git a/openvdb/openvdb/tools/PointIndexGrid.h b/openvdb/openvdb/tools/PointIndexGrid.h
+index e9ebf96f7..b2e378a79 100644
+--- a/openvdb/openvdb/tools/PointIndexGrid.h
++++ b/openvdb/openvdb/tools/PointIndexGrid.h
+@@ -16,6 +16,7 @@
+ #ifndef OPENVDB_TOOLS_POINT_INDEX_GRID_HAS_BEEN_INCLUDED
+ #define OPENVDB_TOOLS_POINT_INDEX_GRID_HAS_BEEN_INCLUDED
+ 
++#include "openvdb/thread/Threading.h"
+ #include "PointPartitioner.h"
+ 
+ #include <openvdb/version.h>
+@@ -355,7 +356,7 @@ struct ValidPartitioningOp
+     void operator()(LeafT &leaf, size_t /*leafIndex*/) const
+     {
+         if ((*mHasChanged)) {
+-            tbb::task::self().cancel_group_execution();
++            thread::cancelGroupExecution();
+             return;
+         }
+ 
+diff --git a/openvdb/openvdb/tools/PointPartitioner.h b/openvdb/openvdb/tools/PointPartitioner.h
+index ccf50ab05..f7f6fc13d 100644
+--- a/openvdb/openvdb/tools/PointPartitioner.h
++++ b/openvdb/openvdb/tools/PointPartitioner.h
+@@ -23,7 +23,7 @@
+ 
+ #include <tbb/blocked_range.h>
+ #include <tbb/parallel_for.h>
+-#include <tbb/task_scheduler_init.h>
++#include <tbb/task_arena.h>
+ 
+ #include <algorithm>
+ #include <cmath> // for std::isfinite()
+@@ -764,7 +764,7 @@ inline void binAndSegment(
+     using IndexPairListMap = std::map<Coord, IndexPairListPtr>;
+     using IndexPairListMapPtr = std::shared_ptr<IndexPairListMap>;
+ 
+-    size_t numTasks = 1, numThreads = size_t(tbb::task_scheduler_init::default_num_threads());
++    size_t numTasks = 1, numThreads = size_t(tbb::this_task_arena::max_concurrency());
+     if (points.size() > (numThreads * 2)) numTasks = numThreads * 2;
+     else if (points.size() > numThreads) numTasks = numThreads;
+ 
+diff --git a/openvdb/openvdb/tools/PointsToMask.h b/openvdb/openvdb/tools/PointsToMask.h
+index 592ab7a15..8a276fb04 100644
+--- a/openvdb/openvdb/tools/PointsToMask.h
++++ b/openvdb/openvdb/tools/PointsToMask.h
+@@ -46,14 +46,18 @@
+ #ifndef OPENVDB_TOOLS_POINTSTOMASK_HAS_BEEN_INCLUDED
+ #define OPENVDB_TOOLS_POINTSTOMASK_HAS_BEEN_INCLUDED
+ 
++
++#include "openvdb/openvdb.h" // for MaskGrid
++#include "openvdb/Grid.h"
++#include "openvdb/Types.h"
++#include "openvdb/util/NullInterrupter.h"
++#include "openvdb/thread/Threading.h"
++
+ #include <tbb/enumerable_thread_specific.h>
+ #include <tbb/parallel_for.h>
+ #include <tbb/parallel_reduce.h>
+ #include <tbb/blocked_range.h>
+-#include <openvdb/openvdb.h> // for MaskGrid
+-#include <openvdb/Grid.h>
+-#include <openvdb/Types.h>
+-#include <openvdb/util/NullInterrupter.h>
++
+ #include <vector>
+ 
+ 
+@@ -150,7 +154,7 @@ class PointsToMask
+     bool interrupt() const
+     {
+         if (mInterrupter && util::wasInterrupted(mInterrupter)) {
+-            tbb::task::self().cancel_group_execution();
++            thread::cancelGroupExecution();
+             return true;
+         }
+         return false;
+diff --git a/openvdb/openvdb/tools/VolumeAdvect.h b/openvdb/openvdb/tools/VolumeAdvect.h
+index e7eec740e..f38eaa9c2 100644
+--- a/openvdb/openvdb/tools/VolumeAdvect.h
++++ b/openvdb/openvdb/tools/VolumeAdvect.h
+@@ -13,15 +13,18 @@
+ #ifndef OPENVDB_TOOLS_VOLUME_ADVECT_HAS_BEEN_INCLUDED
+ #define OPENVDB_TOOLS_VOLUME_ADVECT_HAS_BEEN_INCLUDED
+ 
+-#include <tbb/parallel_for.h>
+-#include <openvdb/Types.h>
+-#include <openvdb/math/Math.h>
+-#include <openvdb/util/NullInterrupter.h>
++#include "openvdb/Types.h"
++#include "openvdb/math/Math.h"
++#include "openvdb/util/NullInterrupter.h"
++#include "openvdb/thread/Threading.h"
+ #include "Interpolation.h"// for Sampler
+ #include "VelocityFields.h" // for VelocityIntegrator
+ #include "Morphology.h"//for dilateActiveValues
+ #include "Prune.h"// for prune
+ #include "Statistics.h" // for extrema
++
++#include <tbb/parallel_for.h>
++
+ #include <functional>
+ 
+ 
+@@ -294,7 +297,7 @@ class VolumeAdvection
+     bool interrupt() const
+     {
+         if (mInterrupter && util::wasInterrupted(mInterrupter)) {
+-            tbb::task::self().cancel_group_execution();
++            thread::cancelGroupExecution();
+             return true;
+         }
+         return false;
+diff --git a/openvdb/openvdb/tools/VolumeToMesh.h b/openvdb/openvdb/tools/VolumeToMesh.h
+index a834dd3b3..a446f806a 100644
+--- a/openvdb/openvdb/tools/VolumeToMesh.h
++++ b/openvdb/openvdb/tools/VolumeToMesh.h
+@@ -18,7 +18,7 @@
+ #include <tbb/blocked_range.h>
+ #include <tbb/parallel_for.h>
+ #include <tbb/parallel_reduce.h>
+-#include <tbb/task_scheduler_init.h>
++#include <tbb/task_arena.h>
+ 
+ #include <cmath> // for std::isfinite()
+ #include <map>
+@@ -388,7 +388,7 @@ inline void
+ fillArray(ValueType* array, const ValueType& val, const size_t length)
+ {
+     const auto grainSize = std::max<size_t>(
+-        length / tbb::task_scheduler_init::default_num_threads(), 1024);
++        length / tbb::this_task_arena::max_concurrency(), 1024);
+     const tbb::blocked_range<size_t> range(0, length, grainSize);
+     tbb::parallel_for(range, FillArray<ValueType>(array, val), tbb::simple_partitioner());
+ }
+diff --git a/openvdb/openvdb/unittest/TestCoord.cc b/openvdb/openvdb/unittest/TestCoord.cc
+index be1c24ced..148690041 100644
+--- a/openvdb/openvdb/unittest/TestCoord.cc
++++ b/openvdb/openvdb/unittest/TestCoord.cc
+@@ -2,9 +2,9 @@
+ // SPDX-License-Identifier: MPL-2.0
+ 
+ #include <openvdb/Types.h>
++#include <openvdb/math/Coord.h>
+ 
+ #include <gtest/gtest.h>
+-#include <tbb/tbb_stddef.h> // for tbb::split
+ 
+ #include <unordered_map>
+ #include <sstream>
+diff --git a/openvdb/openvdb/unittest/TestFile.cc b/openvdb/openvdb/unittest/TestFile.cc
+index 8074166d2..053448f30 100644
+--- a/openvdb/openvdb/unittest/TestFile.cc
++++ b/openvdb/openvdb/unittest/TestFile.cc
+@@ -13,8 +13,11 @@
+ #include <openvdb/version.h>
+ #include <openvdb/openvdb.h>
+ #include "util.h" // for unittest_util::makeSphere()
++
+ #include <gtest/gtest.h>
+-#include <tbb/tbb_thread.h> // for tbb::this_tbb_thread::sleep()
++
++#include <thread>
++#include <chrono>
+ #include <algorithm> // for std::sort()
+ #include <cstdio> // for remove() and rename()
+ #include <fstream>
+@@ -2345,12 +2348,14 @@ TEST_F(TestFile, testAsync)
+             helper.insert(id, filename);
+         }
+ 
+-        tbb::tick_count start = tbb::tick_count::now();
++        auto start = std::chrono::steady_clock::now();
+         while (!helper.ids.empty()) {
+-            if ((tbb::tick_count::now() - start).seconds() > 60) break; // time out after 1 minute
++            auto duration = std::chrono::duration_cast<std::chrono::seconds>(
++                std::chrono::steady_clock::now() - start);
++            if (size_t(duration.count()) > 60)  break; // time out after 1 minute
+ 
+             // Wait one second for tasks to complete.
+-            tbb::this_tbb_thread::sleep(tbb::tick_count::interval_t(1.0/*sec*/));
++            std::this_thread::sleep_for(std::chrono::seconds(1));
+ 
+             // Poll each task in the pending map.
+             std::set<io::Queue::Id> ids = helper.ids; // iterate over a copy
+@@ -2380,7 +2385,7 @@ TEST_F(TestFile, testAsync)
+             helper.insert(id, filename);
+         }
+         while (!queue.empty()) {
+-            tbb::this_tbb_thread::sleep(tbb::tick_count::interval_t(1.0/*sec*/));
++            std::this_thread::sleep_for(std::chrono::seconds(1));
+         }
+     }
+     {
+@@ -2405,7 +2410,7 @@ TEST_F(TestFile, testAsync)
+         EXPECT_THROW(queue.write(grids, io::Stream(file2)), openvdb::RuntimeError);
+ 
+         while (!queue.empty()) {
+-            tbb::this_tbb_thread::sleep(tbb::tick_count::interval_t(1.0/*sec*/));
++            std::this_thread::sleep_for(std::chrono::seconds(1));
+         }
+     }
+ }
+diff --git a/openvdb/openvdb/unittest/TestUtil.cc b/openvdb/openvdb/unittest/TestUtil.cc
+index 70e7df5f7..6b2204771 100644
+--- a/openvdb/openvdb/unittest/TestUtil.cc
++++ b/openvdb/openvdb/unittest/TestUtil.cc
+@@ -8,7 +8,6 @@
+ 
+ #include <gtest/gtest.h>
+ 
+-#include <tbb/task_scheduler_init.h>
+ #include <tbb/enumerable_thread_specific.h>
+ #include <tbb/parallel_for.h>
+ #include <tbb/blocked_range.h>
+diff --git a/openvdb/openvdb/unittest/TestValueAccessor.cc b/openvdb/openvdb/unittest/TestValueAccessor.cc
+index fd2dd5d81..5c1cbb18b 100644
+--- a/openvdb/openvdb/unittest/TestValueAccessor.cc
++++ b/openvdb/openvdb/unittest/TestValueAccessor.cc
+@@ -6,6 +6,7 @@
+ 
+ #include <gtest/gtest.h>
+ #include <tbb/task.h>
++#include <tbb/task_group.h>
+ 
+ #include <type_traits>
+ 
+@@ -378,22 +379,21 @@ TEST_F(TestValueAccessor, testMultithreadedAccessor)
+     //using AccessorT = openvdb::tree::ValueAccessor<Tree4Type>;
+ 
+     // Task to perform multiple reads through a shared accessor
+-    struct ReadTask: public tbb::task {
++    struct ReadTask {
+         AccessorT& acc;
+         ReadTask(AccessorT& c): acc(c) {}
+-        tbb::task* execute()
++        void execute()
+         {
+             for (int i = -MAX_COORD; i < MAX_COORD; ++i) {
+                 ASSERT_DOUBLES_EXACTLY_EQUAL(double(i), acc.getValue(openvdb::Coord(i)));
+             }
+-            return nullptr;
+         }
+     };
+     // Task to perform multiple writes through a shared accessor
+-    struct WriteTask: public tbb::task {
++    struct WriteTask {
+         AccessorT& acc;
+         WriteTask(AccessorT& c): acc(c) {}
+-        tbb::task* execute()
++        void execute()
+         {
+             for (int i = -MAX_COORD; i < MAX_COORD; ++i) {
+                 float f = acc.getValue(openvdb::Coord(i));
+@@ -401,26 +401,20 @@ TEST_F(TestValueAccessor, testMultithreadedAccessor)
+                 acc.setValue(openvdb::Coord(i), float(i));
+                 ASSERT_DOUBLES_EXACTLY_EQUAL(float(i), acc.getValue(openvdb::Coord(i)));
+             }
+-            return nullptr;
+         }
+     };
+     // Parent task to spawn multiple parallel read and write tasks
+-    struct RootTask: public tbb::task {
++    struct RootTask {
+         AccessorT& acc;
+         RootTask(AccessorT& c): acc(c) {}
+-        tbb::task* execute()
++        void execute()
+         {
+-            ReadTask* r[3]; WriteTask* w[3];
++            tbb::task_group tasks;
+             for (int i = 0; i < 3; ++i) {
+-                r[i] = new(allocate_child()) ReadTask(acc);
+-                w[i] = new(allocate_child()) WriteTask(acc);
++                tasks.run([&] { ReadTask r(acc); r.execute(); });
++                tasks.run([&] { WriteTask w(acc); w.execute(); });
+             }
+-            set_ref_count(6 /*children*/ + 1 /*wait*/);
+-            for (int i = 0; i < 3; ++i) {
+-                spawn(*r[i]); spawn(*w[i]);
+-            }
+-            wait_for_all();
+-            return nullptr;
++            tasks.wait();
+         }
+     };
+ 
+@@ -432,8 +426,8 @@ TEST_F(TestValueAccessor, testMultithreadedAccessor)
+     }
+ 
+     // Run multiple read and write tasks in parallel.
+-    RootTask& root = *new(tbb::task::allocate_root()) RootTask(acc);
+-    tbb::task::spawn_root_and_wait(root);
++    RootTask root(acc);
++    root.execute();
+ 
+ #undef MAX_COORD
+ }
+diff --git a/openvdb_houdini/openvdb_houdini/SOP_OpenVDB_Rasterize_Points.cc b/openvdb_houdini/openvdb_houdini/SOP_OpenVDB_Rasterize_Points.cc
+index 0e1b4d855..6d9bb528b 100644
+--- a/openvdb_houdini/openvdb_houdini/SOP_OpenVDB_Rasterize_Points.cc
++++ b/openvdb_houdini/openvdb_houdini/SOP_OpenVDB_Rasterize_Points.cc
+@@ -20,6 +20,7 @@
+ #include <openvdb/tools/GridTransformer.h>
+ #include <openvdb/tools/PointIndexGrid.h>
+ #include <openvdb/tools/Prune.h>
++#include <openvdb/thread/Threading.h>
+ 
+ #include <CH/CH_Manager.h>
+ #include <CVEX/CVEX_Context.h>
+@@ -786,7 +787,7 @@ struct ConstructCandidateVoxelMask
+         for (size_t n = range.begin(), N = range.end(); n != N; ++n) {
+ 
+             if (this->wasInterrupted()) {
+-                tbb::task::self().cancel_group_execution();
++                openvdb::thread::cancelGroupExecution();
+                 break;
+             }
+ 
+@@ -2092,7 +2093,7 @@ struct RasterizePoints
+         for (size_t n = range.begin(), N = range.end(); n != N; ++n) {
+ 
+             if (this->wasInterrupted()) {
+-                tbb::task::self().cancel_group_execution();
++                openvdb::thread::cancelGroupExecution();
+                 break;
+             }
+ 
+diff --git a/openvdb_houdini/openvdb_houdini/SOP_OpenVDB_Sample_Points.cc b/openvdb_houdini/openvdb_houdini/SOP_OpenVDB_Sample_Points.cc
+index 757fdc8c6..dbee74b32 100644
+--- a/openvdb_houdini/openvdb_houdini/SOP_OpenVDB_Sample_Points.cc
++++ b/openvdb_houdini/openvdb_houdini/SOP_OpenVDB_Sample_Points.cc
+@@ -16,13 +16,11 @@
+ #include <openvdb_houdini/SOP_NodeVDB.h>
+ 
+ #include <openvdb/tools/Interpolation.h>  // for box sampler
++#include <openvdb/thread/Threading.h>
+ #include <openvdb/points/PointCount.h>
+ #include <openvdb/points/PointSample.h>
+ #include <openvdb/points/IndexFilter.h>   // for MultiGroupFilter
+ 
+-#include <tbb/tick_count.h>                 // for timing
+-#include <tbb/task.h>                       // for cancel
+-
+ #include <UT/UT_Interrupt.h>
+ #include <GA/GA_PageHandle.h>
+ #include <GA/GA_PageIterator.h>
+@@ -38,6 +36,7 @@
+ #include <stdexcept>
+ #include <string>
+ #include <vector>
++#include <chrono>
+ 
+ 
+ 
+@@ -327,7 +326,7 @@ class PointSampler
+     {
+ 
+         if (mInterrupter->wasInterrupted()) {
+-            tbb::task::self().cancel_group_execution();
++            openvdb::thread::cancelGroupExecution();
+         }
+         const GridType& grid = UTvdbGridCast<GridType>(mGrid);
+         // task local grid accessor
+@@ -481,7 +480,7 @@ SOP_OpenVDB_Sample_Points::Cache::cookVDBSop(OP_Context& context)
+         int numUnnamedGrids = 0;
+ 
+         // start time
+-        tbb::tick_count time_start = tbb::tick_count::now();
++        auto time_start = std::chrono::steady_clock::now();
+         UT_AutoInterrupt progress("Sampling from VDB grids");
+ 
+         for (hvdb::VdbPrimCIterator it(bGdp, group); it; ++it) {
+@@ -706,15 +705,16 @@ SOP_OpenVDB_Sample_Points::Cache::cookVDBSop(OP_Context& context)
+             }
+         }
+ 
+-        // timing: end time
+-        tbb::tick_count time_end = tbb::tick_count::now();
+-
+         if (verbose) {
++            // timing: end time
++            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
++                std::chrono::steady_clock::now() - time_start);
++            const double seconds = double(duration.count()) / 1000.0;
+             std::cout << "Sampling " << nPoints + nVDBPoints << " points in "
+                       << numVectorGrids << " vector grid" << (numVectorGrids == 1 ? "" : "s")
+                       << " and " << numScalarGrids << " scalar grid"
+                           << (numScalarGrids == 1 ? "" : "s")
+-                      << " took " << (time_end - time_start).seconds() << " seconds\n "
++                      << " took " << seconds << " seconds\n "
+                       << (threaded ? "threaded" : "non-threaded") << std::endl;
+         }
+ 
+diff --git a/openvdb_maya/openvdb_maya/OpenVDBPlugin.cc b/openvdb_maya/openvdb_maya/OpenVDBPlugin.cc
+index 3d559f8cc..d63ed1591 100644
+--- a/openvdb_maya/openvdb_maya/OpenVDBPlugin.cc
++++ b/openvdb_maya/openvdb_maya/OpenVDBPlugin.cc
+@@ -47,11 +47,8 @@ struct NodeInfo {
+ 
+ typedef std::vector<NodeInfo> NodeList;
+ 
+-typedef tbb::mutex Mutex;
+-typedef Mutex::scoped_lock Lock;
+-
+ // Declare this at file scope to ensure thread-safe initialization.
+-Mutex sRegistryMutex;
++std::mutex sRegistryMutex;
+ 
+ NodeList * gNodes = NULL;
+ 
+@@ -70,7 +67,7 @@ NodeRegistry::NodeRegistry(const MString& typeName, const MTypeId& typeId,
+     node.type               = type;
+     node.classification     = classification;
+ 
+-    Lock lock(sRegistryMutex);
++    std::lock_guard<std::mutex> lock(sRegistryMutex);
+ 
+     if (!gNodes) {
+         OPENVDB_START_THREADSAFE_STATIC_WRITE
+@@ -85,7 +82,7 @@ NodeRegistry::NodeRegistry(const MString& typeName, const MTypeId& typeId,
+ void
+ NodeRegistry::registerNodes(MFnPlugin& plugin, MStatus& status)
+ {
+-    Lock lock(sRegistryMutex);
++    std::lock_guard<std::mutex> lock(sRegistryMutex);
+ 
+     if (gNodes) {
+         for (size_t n = 0, N = gNodes->size(); n < N; ++n) {
+@@ -109,7 +106,7 @@ NodeRegistry::registerNodes(MFnPlugin& plugin, MStatus& status)
+ void
+ NodeRegistry::deregisterNodes(MFnPlugin& plugin, MStatus& status)
+ {
+-    Lock lock(sRegistryMutex);
++    std::lock_guard<std::mutex> lock(sRegistryMutex);
+ 
+     if (gNodes) {
+         for (size_t n = 0, N = gNodes->size(); n < N; ++n) {
+diff --git a/openvdb_maya/openvdb_maya/OpenVDBUtil.h b/openvdb_maya/openvdb_maya/OpenVDBUtil.h
+index b58bd6f2c..6a04b1eaf 100644
+--- a/openvdb_maya/openvdb_maya/OpenVDBUtil.h
++++ b/openvdb_maya/openvdb_maya/OpenVDBUtil.h
+@@ -14,8 +14,7 @@
+ #include <openvdb/tree/LeafManager.h>
+ #include <openvdb/tools/VolumeToMesh.h>
+ #include <openvdb/util/Formats.h> // printBytes
+-
+-#include <tbb/tick_count.h>
++#include <openvdb/thread/Threading.h>
+ 
+ #include <maya/M3dView.h>
+ #include <maya/MString.h>
+@@ -40,6 +39,7 @@
+ #include <string>
+ #include <type_traits>
+ #include <vector>
++#include <chrono>
+ 
+ 
+ ////////////////////////////////////////
+@@ -116,11 +116,15 @@ insertFrameNumber(std::string& str, const MTime& time, int numberingScheme = 0);
+ 
+ struct Timer
+ {
+-    Timer() : mStamp(tbb::tick_count::now()) { }
++    Timer() : mStamp(std::chrono::steady_clock::now()) { }
+ 
+-    void reset() { mStamp = tbb::tick_count::now(); }
++    void reset() { mStamp = std::chrono::steady_clock::now(); }
+ 
+-    double seconds() const { return (tbb::tick_count::now() - mStamp).seconds(); }
++    double seconds() const {
++        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
++            std::chrono::steady_clock::now() - mStamp);
++        return double(duration.count()) / 1000.0;
++    }
+ 
+     std::string elapsedTime() const {
+         double sec = seconds();
+@@ -128,7 +132,7 @@ struct Timer
+     }
+ 
+ private:
+-    tbb::tick_count mStamp;
++     std::chrono::time_point<std::chrono::steady_clock> mStamp;
+ };
+ 
+ 
+diff --git a/pendingchanges/tbb2021.txt b/pendingchanges/tbb2021.txt
+new file mode 100644
+index 000000000..8109c2552
+--- /dev/null
++++ b/pendingchanges/tbb2021.txt
+@@ -0,0 +1,6 @@
++Improvements:
++  - Moved from the deprecated TBB task scheduler to TBB arenas. Various methods now respect the TBB arena state they were invoked from.
++  - Introduced a new thread/Threading.h header to consolidate calls to third-party threading methods.
++
++Build:
++  - Added support for TBB 2021.
