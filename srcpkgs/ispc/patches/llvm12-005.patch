@@ -1,0 +1,372 @@
+From c1d0a51bf8416d42144de9e2bdd59825eaeff1ac Mon Sep 17 00:00:00 2001
+From: Arina Neshlyaeva <arina.neshlyaeva@intel.com>
+Date: Fri, 8 Jan 2021 14:13:49 -0800
+Subject: [PATCH] LLVM 11 support for gen code
+
+---
+ src/ctx.cpp                     |  13 ++-
+ src/gen/GlobalsLocalization.cpp |   9 +-
+ src/opt.cpp                     | 143 ++++++++++++++++++++++++--------
+ 3 files changed, 124 insertions(+), 41 deletions(-)
+
+diff --git a/src/ctx.cpp b/src/ctx.cpp
+index b60e6fe84..2a72e6837 100644
+--- a/src/ctx.cpp
++++ b/src/ctx.cpp
+@@ -1,5 +1,5 @@
+ /*
+-  Copyright (c) 2010-2020, Intel Corporation
++  Copyright (c) 2010-2021, Intel Corporation
+   All rights reserved.
+ 
+   Redistribution and use in source and binary forms, with or without
+@@ -3685,8 +3685,17 @@ llvm::Value *FunctionEmitContext::GenXSimdCFPredicate(llvm::Value *value, llvm::
+     AssertPos(currentPos, llvm::isa<llvm::VectorType>(value->getType()));
+     llvm::VectorType *vt = llvm::dyn_cast<llvm::VectorType>(value->getType());
+     if (defaults == NULL) {
+-        defaults = llvm::ConstantVector::getSplat(value->getType()->getVectorNumElements(),
++#if ISPC_LLVM_VERSION < ISPC_LLVM_11_0
++        defaults = llvm::ConstantVector::getSplat(vt->getVectorNumElements(),
++                                                  llvm::Constant::getNullValue(vt->getElementType()));
++#elif ISPC_LLVM_VERSION == ISPC_LLVM_11_0
++        defaults = llvm::ConstantVector::getSplat({static_cast<unsigned int>(vt->getNumElements()), false},
+                                                   llvm::Constant::getNullValue(vt->getElementType()));
++#else
++        defaults = llvm::ConstantVector::getSplat(
++            llvm::ElementCount::get(static_cast<unsigned int>(vt->getNumElements()), false),
++            llvm::Constant::getNullValue(vt->getElementType()));
++#endif
+     }
+ 
+     auto Fn = llvm::GenXIntrinsic::getGenXDeclaration(m->module, llvm::GenXIntrinsic::genx_simdcf_predicate,
+diff --git a/src/gen/GlobalsLocalization.cpp b/src/gen/GlobalsLocalization.cpp
+index a176e9462..41f3b00e2 100644
+--- a/src/gen/GlobalsLocalization.cpp
++++ b/src/gen/GlobalsLocalization.cpp
+@@ -1,5 +1,5 @@
+ /*
+-  Copyright (c) 2014, 2016-2020, Intel Corporation
++  Copyright (c) 2014, 2016-2021, Intel Corporation
+   All rights reserved.
+ 
+   Redistribution and use in source and binary forms, with or without
+@@ -53,8 +53,10 @@
+ #include <llvm/GenXIntrinsics/GenXIntrOpts.h>
+ #include <llvm/GenXIntrinsics/GenXIntrinsics.h>
+ #include <llvm/GenXIntrinsics/GenXMetadata.h>
+-#include <llvm/IR/CFG.h>
++#if ISPC_LLVM_VERSION < ISPC_LLVM_11_0
+ #include <llvm/IR/CallSite.h>
++#endif
++#include <llvm/IR/CFG.h>
+ #include <llvm/IR/DebugInfo.h>
+ #include <llvm/IR/Dominators.h>
+ #include <llvm/IR/Function.h>
+@@ -470,7 +472,8 @@ void GlobalsLocalization::LocalizeGlobals(LocalizationInfo &LI) {
+         Instruction &FirstI = *Fn->getEntryBlock().begin();
+         Type *ElemTy = GV->getType()->getElementType();
+         AllocaInst *Alloca = new AllocaInst(ElemTy, 0, GV->getName() + ".local", &FirstI);
+-        Alloca->setAlignment(llvm::MaybeAlign(GV->getAlignment()));
++        Alloca->setAlignment(llvm::MaybeAlign(GV->getAlignment()).valueOrOne());
++
+         if (!isa<UndefValue>(GV->getInitializer()))
+             new StoreInst(GV->getInitializer(), Alloca, &FirstI);
+ 
+diff --git a/src/opt.cpp b/src/opt.cpp
+index d58d77f73..1789b8476 100644
+--- a/src/opt.cpp
++++ b/src/opt.cpp
+@@ -2899,15 +2899,17 @@ static llvm::Function *lGenXMaskedInt8Inst(llvm::Instruction *inst, bool isStore
+ static llvm::CallInst *lGenXStoreInst(llvm::Value *val, llvm::Value *ptr, llvm::Instruction *inst) {
+     Assert(g->target->isGenXTarget());
+     Assert(llvm::isa<llvm::VectorType>(val->getType()));
+-    Assert(llvm::isPowerOf2_32(val->getType()->getVectorNumElements()));
+-    Assert(val->getType()->getPrimitiveSizeInBits() / 8 <= 8 * OWORD);
++
++    llvm::VectorType *valVecType = llvm::dyn_cast<llvm::VectorType>(val->getType());
++    Assert(llvm::isPowerOf2_32(valVecType->getNumElements()));
++    Assert(valVecType->getPrimitiveSizeInBits() / 8 <= 8 * OWORD);
+ 
+     // The data write of svm store must have a size that is a power of two from 16 to 128
+     // bytes. However for int8 type and simd width = 8, the data write size is 8.
+     // So we use masked store function here instead of svm store which process int8 type
+     // correctly.
+-    if (val->getType()->getPrimitiveSizeInBits() / 8 < 16) {
+-        Assert(val->getType()->getScalarType() == LLVMTypes::Int8Type);
++    if (valVecType->getPrimitiveSizeInBits() / 8 < 16) {
++        Assert(valVecType->getScalarType() == LLVMTypes::Int8Type);
+         if (llvm::Function *maskedFunc = lGenXMaskedInt8Inst(inst, true))
+             return llvm::dyn_cast<llvm::CallInst>(lCallInst(maskedFunc, ptr, val, LLVMMaskAllOn, ""));
+         else {
+@@ -2923,15 +2925,17 @@ static llvm::CallInst *lGenXStoreInst(llvm::Value *val, llvm::Value *ptr, llvm::
+ 
+ static llvm::CallInst *lGenXLoadInst(llvm::Value *ptr, llvm::Type *retType, llvm::Instruction *inst) {
+     Assert(llvm::isa<llvm::VectorType>(retType));
+-    Assert(llvm::isPowerOf2_32(retType->getVectorNumElements()));
+-    Assert(retType->getPrimitiveSizeInBits());
+-    Assert(retType->getPrimitiveSizeInBits() / 8 <= 8 * OWORD);
++
++    llvm::VectorType *retVecType = llvm::dyn_cast<llvm::VectorType>(retType);
++    Assert(llvm::isPowerOf2_32(retVecType->getNumElements()));
++    Assert(retVecType->getPrimitiveSizeInBits());
++    Assert(retVecType->getPrimitiveSizeInBits() / 8 <= 8 * OWORD);
+     // The data read of svm load must have a size that is a power of two from 16 to 128
+     // bytes. However for int8 type and simd width = 8, the data read size is 8.
+     // So we use masked load function here instead of svm load which process int8 type
+     // correctly.
+-    if (retType->getPrimitiveSizeInBits() / 8 < 16) {
+-        Assert(retType->getScalarType() == LLVMTypes::Int8Type);
++    if (retVecType->getPrimitiveSizeInBits() / 8 < 16) {
++        Assert(retVecType->getScalarType() == LLVMTypes::Int8Type);
+         if (llvm::Function *maskedFunc = lGenXMaskedInt8Inst(inst, false))
+             return llvm::dyn_cast<llvm::CallInst>(lCallInst(maskedFunc, ptr, LLVMMaskAllOn, ""));
+         else {
+@@ -5622,15 +5626,24 @@ static bool lVectorizeGEPs(llvm::Value *ptr, std::vector<PtrUse> &ptrUses, std::
+         llvm::PtrToIntInst *ptrToInt =
+             new llvm::PtrToIntInst(ptr, LLVMTypes::Int64Type, "vectorized_ptrtoint", insertBefore);
+         llvm::Instruction *addr = llvm::BinaryOperator::CreateAdd(ptrToInt, offset, "vectorized_address", insertBefore);
++#if ISPC_LLVM_VERSION >= ISPC_LLVM_11_0
++        llvm::Type *retType = llvm::FixedVectorType::get(scalar_type, reqSize / t_size);
++#else
+         llvm::Type *retType = llvm::VectorType::get(scalar_type, reqSize / t_size);
++#endif
+         llvm::Function *fn = llvm::GenXIntrinsic::getGenXDeclaration(
+             m->module, llvm::GenXIntrinsic::genx_svm_block_ld_unaligned, {retType, addr->getType()});
+         llvm::Instruction *ld = llvm::CallInst::Create(fn, {addr}, "vectorized_ld", insertBefore);
+ 
+         if (loadingPtr) {
+             // Cast int to ptr via inttoptr
++#if ISPC_LLVM_VERSION >= ISPC_LLVM_11_0
++            ld = new llvm::IntToPtrInst(ld, llvm::FixedVectorType::get(originalType, reqSize / t_size),
++                                        "vectorized_inttoptr", insertBefore);
++#else
+             ld = new llvm::IntToPtrInst(ld, llvm::VectorType::get(originalType, reqSize / t_size),
+                                         "vectorized_inttoptr", insertBefore);
++#endif
+         }
+ 
+         // Scalar extracts for all loaded elements
+@@ -6160,19 +6173,34 @@ bool ReplaceLLVMIntrinsics::runOnBasicBlock(llvm::BasicBlock &bb) {
+         llvm::Instruction *inst = &*I;
+         if (llvm::CallInst *ci = llvm::dyn_cast<llvm::CallInst>(inst)) {
+             llvm::Function *func = ci->getCalledFunction();
+-            if (func && func->getName() == "llvm.trap") {
++            if (func && func->getName().equals("llvm.trap")) {
+                 llvm::Type *argTypes[] = {LLVMTypes::Int1VectorType, LLVMTypes::Int16VectorType};
+                 // Description of parameters for genx_raw_send_noresult can be found in target-genx.ll
+                 auto Fn = +llvm::GenXIntrinsic::getGenXDeclaration(
+                     m->module, llvm::GenXIntrinsic::genx_raw_send_noresult, argTypes);
+                 llvm::SmallVector<llvm::Value *, 8> Args;
+                 Args.push_back(llvm::ConstantInt::get(LLVMTypes::Int32Type, 0));
+-                Args.push_back(llvm::ConstantVector::getSplat(g->target->getNativeVectorWidth(),
+-                                                              llvm::ConstantInt::getTrue(*g->ctx)));
++                Args.push_back(llvm::ConstantVector::getSplat(
++#if ISPC_LLVM_VERSION < ISPC_LLVM_11_0
++                    g->target->getNativeVectorWidth(),
++#elif ISPC_LLVM_VERSION == ISPC_LLVM_11_0
++                    {static_cast<unsigned int>(g->target->getNativeVectorWidth()), false},
++#else // LLVM 12.0+
++                    llvm::ElementCount::get(static_cast<unsigned int>(g->target->getNativeVectorWidth()), false),
++#endif
++                    llvm::ConstantInt::getTrue(*g->ctx)));
++
+                 Args.push_back(llvm::ConstantInt::get(LLVMTypes::Int32Type, 39));
+                 Args.push_back(llvm::ConstantInt::get(LLVMTypes::Int32Type, 33554448));
+                 llvm::Value *zeroMask = llvm::ConstantVector::getSplat(
+-                    g->target->getNativeVectorWidth(), llvm::Constant::getNullValue(llvm::Type::getInt16Ty(*g->ctx)));
++#if ISPC_LLVM_VERSION < ISPC_LLVM_11_0
++                    g->target->getNativeVectorWidth(),
++#elif ISPC_LLVM_VERSION == ISPC_LLVM_11_0
++                    {static_cast<unsigned int>(g->target->getNativeVectorWidth()), false},
++#else // LLVM 12.0+
++                    llvm::ElementCount::get(static_cast<unsigned int>(g->target->getNativeVectorWidth()), false),
++#endif
++                    llvm::Constant::getNullValue(llvm::Type::getInt16Ty(*g->ctx)));
+                 Args.push_back(zeroMask);
+ 
+                 llvm::Instruction *newInst = llvm::CallInst::Create(Fn, Args, ci->getName());
+@@ -6181,7 +6209,7 @@ bool ReplaceLLVMIntrinsics::runOnBasicBlock(llvm::BasicBlock &bb) {
+                     modifiedAny = true;
+                     goto restart;
+                 }
+-            } else if (func && func->getName() == "llvm.assume") {
++            } else if (func && func->getName().equals("llvm.assume")) {
+                 ci->eraseFromParent();
+                 modifiedAny = true;
+                 goto restart;
+@@ -6335,7 +6363,7 @@ bool CheckUnsupportedInsts::runOnBasicBlock(llvm::BasicBlock &bb) {
+                 continue;
+             for (int i = 0; i < unsupportedFuncs.size(); i++) {
+                 std::smatch match;
+-                std::string funcName = func->getName();
++                std::string funcName = func->getName().str();
+                 if (std::regex_match(funcName, match, unsupportedFuncs[i])) {
+                     // We found unsupported function. Generate error and stop compilation.
+                     SourcePos pos;
+@@ -6418,12 +6446,14 @@ bool MangleOpenCLBuiltins::runOnBasicBlock(llvm::BasicBlock &bb) {
+             if (func->getName().startswith("__spirv_ocl")) {
+                 std::string mangledName;
+                 llvm::Type *retType = func->getReturnType();
+-                std::string funcName = func->getName();
++                std::string funcName = func->getName().str();
+                 std::vector<llvm::Type *> ArgTy;
+                 // spirv OpenCL builtins are used for double types only
+-                Assert(retType->isVectorTy() && retType->getVectorElementType()->isDoubleTy() ||
++                Assert(retType->isVectorTy() &&
++                           llvm::dyn_cast<llvm::VectorType>(retType)->getElementType()->isDoubleTy() ||
+                        retType->isSingleValueType() && retType->isDoubleTy());
+-                if (retType->isVectorTy() && retType->getVectorElementType()->isDoubleTy()) {
++                if (retType->isVectorTy() &&
++                    llvm::dyn_cast<llvm::VectorType>(retType)->getElementType()->isDoubleTy()) {
+                     ArgTy.push_back(LLVMTypes::DoubleVectorType);
+                     // _DvWIDTH suffix is used in target file to differentiate scalar
+                     // and vector versions of intrinsics. Here we remove this
+@@ -6511,8 +6541,15 @@ llvm::Value *FixAddressSpace::calculateGatherScatterAddress(llvm::Value *Ptr, ll
+ 
+     // Cast offsets to int64
+     Offsets = new llvm::ZExtInst(
++#if ISPC_LLVM_VERSION >= ISPC_LLVM_11_0
++        Offsets,
++        llvm::FixedVectorType::get(LLVMTypes::Int64Type,
++                                   llvm::dyn_cast<llvm::VectorType>(Offsets->getType())->getNumElements()),
++        "svm_offset_zext", InsertBefore);
++#else
+         Offsets, llvm::VectorType::get(LLVMTypes::Int64Type, Offsets->getType()->getVectorNumElements()),
+         "svm_offset_zext", InsertBefore);
++#endif
+ 
+     if (!llvm::isa<llvm::ConstantPointerNull>(Ptr)) {
+         // Cast ptr to int64
+@@ -6520,13 +6557,31 @@ llvm::Value *FixAddressSpace::calculateGatherScatterAddress(llvm::Value *Ptr, ll
+ 
+         // Vectorize ptr
+         llvm::Value *undefInsertValue =
++#if ISPC_LLVM_VERSION >= ISPC_LLVM_11_0
++            llvm::UndefValue::get(llvm::FixedVectorType::get(
++                LLVMTypes::Int64Type, llvm::dyn_cast<llvm::VectorType>(addressType)->getNumElements()));
++#else
+             llvm::UndefValue::get(llvm::VectorType::get(LLVMTypes::Int64Type, addressType->getVectorNumElements()));
++#endif
+         address = llvm::InsertElementInst::Create(undefInsertValue, address, LLVMInt32(0), "svm_ptr_iei", InsertBefore);
+         llvm::Constant *zeroVec = llvm::ConstantVector::getSplat(
++#if ISPC_LLVM_VERSION < ISPC_LLVM_11_0
+             addressType->getVectorNumElements(),
++#elif ISPC_LLVM_VERSION == ISPC_LLVM_11_0
++            {llvm::dyn_cast<llvm::VectorType>(addressType)->getNumElements(), false},
++#else
++        llvm::ElementCount::get(
++                                llvm::dyn_cast<llvm::FixedVectorType>(addressType->getNumElements(), false),
++#endif
+             llvm::Constant::getNullValue(llvm::Type::getInt32Ty(InsertBefore->getContext())));
++
+         llvm::Value *undefShuffleValue =
++#if ISPC_LLVM_VERSION >= ISPC_LLVM_11_0
++            llvm::UndefValue::get(llvm::FixedVectorType::get(
++                LLVMTypes::Int64Type, llvm::dyn_cast<llvm::VectorType>(addressType)->getNumElements()));
++#else
+             llvm::UndefValue::get(llvm::VectorType::get(LLVMTypes::Int64Type, addressType->getVectorNumElements()));
++#endif
+         address = new llvm::ShuffleVectorInst(address, undefShuffleValue, zeroVec, "svm_ptr_svi", InsertBefore);
+ 
+         // Calculate address
+@@ -6553,9 +6608,12 @@ llvm::Instruction *FixAddressSpace::processVectorLoad(llvm::LoadInst *LI) {
+     if (retType->getScalarType()->isPointerTy()) {
+         isPtrLoad = true;
+         auto scalarType = g->target->is32Bit() ? LLVMTypes::Int32Type : LLVMTypes::Int64Type;
++#if ISPC_LLVM_VERSION >= ISPC_LLVM_11_0
++        retType = llvm::FixedVectorType::get(scalarType, llvm::dyn_cast<llvm::VectorType>(retType)->getNumElements());
++#else
+         retType = llvm::VectorType::get(scalarType, retType->getVectorNumElements());
++#endif
+     }
+-
+     llvm::Instruction *res = lGenXLoadInst(ptr, retType, llvm::dyn_cast<llvm::Instruction>(LI));
+     Assert(res);
+ 
+@@ -6580,11 +6638,16 @@ llvm::Instruction *FixAddressSpace::processSVMVectorLoad(llvm::Instruction *CI)
+     ptr = new llvm::IntToPtrInst(ptr, llvm::PointerType::get(retType, 0), CI->getName() + "_inttoptr", CI);
+     llvm::Instruction *loadInst = NULL;
+ #if ISPC_LLVM_VERSION >= ISPC_LLVM_11_0
+-    loadInst = new llvm::LoadInst(llvm::dyn_cast<llvm::PointerType>(ptr->getType())->getPointerElementType(), loadInst,
+-                                  CI->getName(), (llvm::Instruction *)NULL);
++    loadInst = new llvm::LoadInst(llvm::dyn_cast<llvm::PointerType>(ptr->getType())->getPointerElementType(), ptr,
++                                  CI->getName(), false /* not volatile */,
++                                  llvm::MaybeAlign(g->target->getNativeVectorAlignment()).valueOrOne(),
++                                  (llvm::Instruction *)NULL);
+ #else
+-    loadInst = new llvm::LoadInst(ptr, CI->getName(), (llvm::Instruction *)NULL);
++    loadInst = new llvm::LoadInst(ptr, CI->getName(), false,
++                                  llvm::MaybeAlign(g->target->getNativeVectorAlignment()).valueOrOne(),
++                                  (llvm::Instruction *)NULL);
+ #endif
++
+     Assert(loadInst);
+     return loadInst;
+ }
+@@ -6606,7 +6669,11 @@ llvm::Instruction *FixAddressSpace::processVectorStore(llvm::StoreInst *SI) {
+     // Note: it doesn't look like a normal case for GenX target
+     if (valType->getScalarType()->isPointerTy()) {
+         auto scalarType = g->target->is32Bit() ? LLVMTypes::Int32Type : LLVMTypes::Int64Type;
++#if ISPC_LLVM_VERSION >= ISPC_LLVM_11_0
++        valType = llvm::FixedVectorType::get(scalarType, llvm::dyn_cast<llvm::VectorType>(valType)->getNumElements());
++#else
+         valType = llvm::VectorType::get(scalarType, valType->getVectorNumElements());
++#endif
+         val = new llvm::PtrToIntInst(val, valType, "svm_st_val_ptrtoint", SI);
+     }
+ 
+@@ -6631,12 +6698,8 @@ llvm::Instruction *FixAddressSpace::processSVMVectorStore(llvm::Instruction *CI)
+     ptr = new llvm::IntToPtrInst(ptr, llvm::PointerType::get(valType, 0), CI->getName() + "_inttoptr", CI);
+ 
+     llvm::Instruction *storeInst = NULL;
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_11_0
+-    loadInst = new llvm::StoreInst(val, llvm::dyn_cast<llvm::PointerType>(ptr->getType())->getPointerElementType(),
+-                                   storeInst, CI->getName(), (llvm::Instruction *)NULL);
+-#else
+-    storeInst = new llvm::StoreInst(val, ptr, (llvm::Instruction *)NULL);
+-#endif
++    storeInst = new llvm::StoreInst(val, ptr, (llvm::Instruction *)NULL,
++                                    llvm::MaybeAlign(g->target->getNativeVectorAlignment()).valueOrOne());
+     Assert(storeInst);
+     return storeInst;
+ }
+@@ -6645,15 +6708,18 @@ llvm::Instruction *FixAddressSpace::createInt8WrRegion(llvm::Value *Val, llvm::V
+     int width = g->target->getVectorWidth();
+ 
+     llvm::Value *Args[8];
+-
++#if ISPC_LLVM_VERSION >= ISPC_LLVM_11_0
++    Args[0] = llvm::UndefValue::get(llvm::FixedVectorType::get(LLVMTypes::Int8Type, width * 4)); // old value
++#else
+     Args[0] = llvm::UndefValue::get(llvm::VectorType::get(LLVMTypes::Int8Type, width * 4)); // old value
+-    Args[1] = Val;                                                                          // value to store
+-    Args[2] = llvm::ConstantInt::get(LLVMTypes::Int32Type, 0);                              // vstride
+-    Args[3] = llvm::ConstantInt::get(LLVMTypes::Int32Type, width);                          // width
+-    Args[4] = llvm::ConstantInt::get(LLVMTypes::Int32Type, 4);                              // stride
+-    Args[5] = llvm::ConstantInt::get(LLVMTypes::Int16Type, 0);                              // offsets
+-    Args[6] = llvm::ConstantInt::get(LLVMTypes::Int32Type, 0);                              // parent width (ignored)
+-    Args[7] = Mask;                                                                         // mask
++#endif
++    Args[1] = Val;                                                 // value to store
++    Args[2] = llvm::ConstantInt::get(LLVMTypes::Int32Type, 0);     // vstride
++    Args[3] = llvm::ConstantInt::get(LLVMTypes::Int32Type, width); // width
++    Args[4] = llvm::ConstantInt::get(LLVMTypes::Int32Type, 4);     // stride
++    Args[5] = llvm::ConstantInt::get(LLVMTypes::Int16Type, 0);     // offsets
++    Args[6] = llvm::ConstantInt::get(LLVMTypes::Int32Type, 0);     // parent width (ignored)
++    Args[7] = Mask;                                                // mask
+ 
+     llvm::Type *Tys[4];
+ 
+@@ -6708,7 +6774,12 @@ llvm::Instruction *FixAddressSpace::processGatherScatterPrivate(llvm::CallInst *
+         return NULL;
+ 
+     llvm::Value *address = calculateGatherScatterAddress(ptr, offsets, CI);
++#if ISPC_LLVM_VERSION >= ISPC_LLVM_11_0
++    llvm::Type *i8VecType = llvm::FixedVectorType::get(LLVMTypes::Int8Type, width * 4);
++#else
+     llvm::Type *i8VecType = llvm::VectorType::get(LLVMTypes::Int8Type, width * 4);
++#endif
++
+     bool isInt8 = (value->getType()->getScalarType() == LLVMTypes::Int8Type);
+ 
+     Assert(address && "Bad gather/scatter address!");

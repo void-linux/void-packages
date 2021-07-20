@@ -1,0 +1,74 @@
+# Template file for 'nix'
+pkgname=nix
+version=2.3.12
+revision=1
+build_style=gnu-configure
+# Use /nix/var as suggested by the official Manual.
+configure_args="--localstatedir=/nix/var --with-sandbox-shell=/bin/sh"
+hostmakedepends="curl pkg-config flex tar xz"
+makedepends="boost-devel brotli-devel bzip2-devel gc-devel libcurl-devel
+ liblzma-devel openssl-devel libsodium-devel sqlite-devel
+ libseccomp-devel editline-devel"
+depends="curl tar xz"
+short_desc="Purely functional package manager"
+maintainer="Juan RP <xtraeme@gmail.com>"
+license="LGPL-2.1-or-later"
+homepage="https://nixos.org/nix/"
+changelog="https://nixos.org/releases/${pkgname}/${pkgname}-${version}/manual/#sec-relnotes"
+distfiles="https://nixos.org/releases/${pkgname}/${pkgname}-${version}/${pkgname}-${version}.tar.xz"
+checksum=213a7d49c461079b32361e4d008d248d7f68e34d2cc9347f3a8ff9029f9afb5d
+
+CXXFLAGS="-Wno-deprecated-declarations"
+
+# Default configuration file.
+conf_files="/etc/nix/nix.conf"
+# Create required build users/groups.
+system_groups="nixbld"
+for f in {1..9}; do
+	system_accounts+=" nixbld${f}"
+	eval export nixbld\${f}_pgroup="nixbld"
+	eval export nixbld\${f}_groups="nixbld"
+done
+# Create required run-time directories.
+make_dirs="
+	/nix/var/log/nix/drvs 0755 root root
+	/nix/var/nix/profiles 0755 root root
+	/nix/var/nix/profiles/per-user 1777 root root
+	/nix/var/nix/gcroots/per-user 1777 root root
+	/nix/var/nix/temproots 0755 root root
+	/nix/var/nix/gcroots 0755 root root
+	/nix/var/nix/manifests 0755 root root
+	/nix/var/nix/userpool 0755 root root
+	/nix/var/nix/db 0755 root root
+	/nix/store 1775 root nixbld"
+
+if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
+	makedepends+=" libatomic-devel"
+fi
+
+pre_configure() {
+	if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
+		echo "libexpr_LDFLAGS += -latomic" >> src/libexpr/local.mk
+		echo "libutil_LDFLAGS += -latomic" >> src/libutil/local.mk
+		echo "libstore_LDFLAGS += -latomic" >> src/libstore/local.mk
+	fi
+	sed -i '/^CFLAGS=/d;/^CXXFLAGS=/d' configure
+	echo "GLOBAL_LDFLAGS += $LDFLAGS" >>mk/lib.mk
+}
+
+post_install() {
+	vmkdir etc/nix
+	# Remove unused stuff.
+	rm -rf ${DESTDIR}/usr/include ${DESTDIR}/nix ${DESTDIR}/etc/init
+	rm -rf ${DESTDIR}/usr/lib/systemd ${DESTDIR}/usr/lib/pkgconfig
+	# Let users interact with the nix-daemon by default.
+	vmkdir etc/profile.d
+	echo 'export NIX_REMOTE=daemon' > ${DESTDIR}/etc/profile.d/nix-daemon.sh
+	# Setup build users.
+	echo 'build-users-group = nixbld' > ${DESTDIR}/etc/nix/nix.conf
+	echo 'build-use-sandbox = false' >> ${DESTDIR}/etc/nix/nix.conf
+	# Install our profile.d/nix for multi-user by default.
+	vinstall ${FILESDIR}/nix.sh 644 etc/profile.d
+	# runit service
+	vsv nix-daemon
+}

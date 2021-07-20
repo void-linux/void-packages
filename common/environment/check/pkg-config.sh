@@ -1,0 +1,1 @@
+../configure/pkg-config.sh

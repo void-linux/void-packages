@@ -1,0 +1,121 @@
+# Template file for 'python3'
+#
+# THIS PACKAGE MUST BE SYNCHRONIZED WITH "srcpkgs/python3-tkinter".
+#
+pkgname=python3
+version=3.9.6
+revision=2
+wrksrc="Python-${version}"
+pycompile_dirs="usr/lib/python${version%.*}"
+hostmakedepends="pkgconf"
+makedepends="libffi-devel readline-devel gdbm-devel openssl-devel
+ expat-devel sqlite-devel bzip2-devel zlib-devel liblzma-devel"
+depends="ca-certificates"
+checkdepends="$depends iana-etc"
+short_desc="Python programming language (${version%.*} series)"
+maintainer="Andrew J. Hesford <ajh@sideband.org>"
+license="Python-2.0"
+homepage="https://www.python.org"
+distfiles="https://www.python.org/ftp/python/${version}/Python-${version}.tar.xz"
+checksum=397920af33efc5b97f2e0b57e91923512ef89fc5b3c1d21dbfc8c4828ce0108a
+
+alternatives="
+ python:idle:/usr/bin/idle${version%.*}
+ python:2to3:/usr/bin/2to3-${version%.*}
+ python:pydoc:/usr/bin/pydoc${version%.*}
+ python:python:/usr/bin/python${version%.*}
+ python:python.1:/usr/share/man/man1/python${version%.*}.1"
+
+pre_configure() {
+	# Ensure that internal copies of expat and libffi are not used
+	rm -rf Modules/expat
+	rm -rf Modules/_ctypes/{darwin,libffi}*
+}
+
+do_configure() {
+	local _args
+	unset GCC CC CXX CPP LD AR AS RANLIB
+	if [ "$CROSS_BUILD" ]; then
+		mkdir -p host-build
+		cd host-build
+		env -i PATH=$PATH XBPS_ARCH=$XBPS_ARCH CFLAGS=-Os ../configure
+		env -i PATH=$PATH XBPS_ARCH=$XBPS_ARCH make ${makejobs} python
+		mkdir -p ../hostpython
+		mv python ../hostpython
+		cd ..
+		patch -Np0 -i ${FILESDIR}/cross.patch
+		_args="--build=${XBPS_MACHINE%%-musl}"
+	fi
+	./configure ${configure_args} ${_args} \
+		--enable-shared --enable-ipv6 --enable-loadable-sqlite-extensions \
+		--with-computed-gotos --with-dbmliborder=gdbm:ndbm \
+		--with-system-expat --with-system-ffi --without-ensurepip \
+		ac_cv_working_tzset=yes
+}
+
+do_build() {
+	export PATH="$PATH:$wrksrc/hostpython"
+	make ${makejobs}
+}
+
+do_check() {
+	# Tests ignored due to expected failures:
+	# test_chown_*: relies on sane group membership not found in xbps-src
+	# test_getspnam_exception: expects shadow passwd db unreadable by user
+	# test_find_library_with_*: expects functionality patched out for musl
+	# test_openssl_version: LibreSSL version and OpenSSL_version_num disagree
+	# test_shared_ciphers: SSL advertises unexpected ciphers
+	#
+	# Test ignored due to failures for unknown reasons:
+	# test_session*: anomalies in SSL session handling
+	# test_localtime_daylight_*_dst_true: overflow in datetime.time.mktime
+	local opts="-i test_chown_* -i test_getspnam_exception \
+		-i test_find_library_with_* -i test_openssl_version \
+		-i test_shared_ciphers -i test_session* \
+		-i test_localtime_daylight_*_dst_true"
+	make ${makejobs} EXTRATESTOPTS="${opts}" quicktest
+}
+
+do_install() {
+	export PATH="$PATH:$wrksrc/hostpython"
+	make DESTDIR=${DESTDIR} install maninstall
+	vlicense LICENSE
+
+	rm -f ${DESTDIR}/usr/bin/2to3
+	# Remove files that belong to python3-tkinter and idle-python3
+	rm -f ${DESTDIR}/usr/bin/idle3*
+	rm -rf ${DESTDIR}/usr/lib/python${version%.*}/idlelib
+	rm -rf ${DESTDIR}/usr/lib/python${version%.*}/tkinter
+	rm -rf ${DESTDIR}/usr/lib/python${version%.*}/turtledemo
+	rm -f ${DESTDIR}/usr/lib/python${version%.*}/turtle.py
+	# Remove test module and tests that fail to be byte-compiled.
+	rm -rf ${DESTDIR}/usr/lib/python${version%.*}/test
+	rm -rf ${DESTDIR}/usr/lib/python${version%.*}/lib2to3/tests
+	# Remove references to the install(1) wrapper.
+	sed -e "s,${XBPS_WRAPPERDIR},/usr/bin,g" -i \
+		${DESTDIR}/usr/lib/python${version%.*}/_sysconfigdata_*_*.py \
+		${DESTDIR}/usr/lib/python${version%.*}/config-${version%.*}*/Makefile
+	if [ "$CROSS_BUILD" ]; then
+		# Remove references to cross toolchain.
+		sed -i "s/$XBPS_CROSS_TRIPLET-//g" \
+			${DESTDIR}/usr/lib/python${version%.*}/_sysconfigdata_*_*.py \
+			${DESTDIR}/usr/lib/python${version%.*}/config-${version%.*}*/Makefile
+		sed -i -e "s,$XBPS_CROSS_BASE,,g" \
+			${DESTDIR}/usr/bin/python${version%.*}-config
+	fi
+}
+
+python3-devel_package() {
+	short_desc+=" - development files"
+	depends="${sourcepkg}-${version}_${revision}"
+	pkg_install() {
+		vmove usr/bin/python*-config
+		vmove usr/lib/pkgconfig
+		vmove usr/include
+		mv ${DESTDIR}/usr/lib/python${version%.*}/config-${version%.*}*/libpython${version%.*}*.a \
+			${PKGDESTDIR}/usr/lib
+		mkdir -p ${DESTDIR}/usr/include/python${version%.*}
+		mv ${PKGDESTDIR}/usr/include/python${version%.*}/pyconfig.h \
+			${DESTDIR}/usr/include/python${version%.*}
+	}
+}

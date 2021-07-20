@@ -1,0 +1,207 @@
+From 9c29c1b082fd59b57f3c15b17900ca1da0db8ad1 Mon Sep 17 00:00:00 2001
+From: q66 <daniel@octaforge.org>
+Date: Sat, 18 Apr 2020 19:57:44 +0200
+Subject: [PATCH] Revert "[SV 40236] Handle included file open failures
+ properly."
+
+This reverts commit c5ccc4930c3805604813def4455bc2e90635349e.
+
+This commit breaks build of openjdk9 at very least.
+---
+ src/main.c                     | 25 +++++++++-----------
+ src/read.c                     | 42 +++++++++++++++++++---------------
+ tests/scripts/features/include | 23 -------------------
+ 3 files changed, 34 insertions(+), 56 deletions(-)
+
+diff --git a/src/main.c b/src/main.c
+index bcba2d1..6c892a8 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -2180,7 +2180,8 @@ main (int argc, char **argv, char **envp)
+     {
+       /* Update any makefiles if necessary.  */
+ 
+-      FILE_TIMESTAMP *makefile_mtimes;
++      FILE_TIMESTAMP *makefile_mtimes = 0;
++      unsigned int mm_idx = 0;
+       char **aargv = NULL;
+       const char **nargv;
+       int nargc;
+@@ -2188,22 +2189,12 @@ main (int argc, char **argv, char **envp)
+ 
+       DB (DB_BASIC, (_("Updating makefiles....\n")));
+ 
+-      {
+-        struct goaldep *d;
+-        unsigned int num_mkfiles = 0;
+-        for (d = read_files; d != NULL; d = d->next)
+-          ++num_mkfiles;
+-
+-        makefile_mtimes = alloca (num_mkfiles * sizeof (FILE_TIMESTAMP));
+-      }
+-
+       /* Remove any makefiles we don't want to try to update.  Record the
+          current modtimes of the others so we can compare them later.  */
+       {
+-        struct goaldep *d = read_files;
+-        struct goaldep *last = NULL;
+-        unsigned int mm_idx = 0;
+-
++        register struct goaldep *d, *last;
++        last = 0;
++        d = read_files;
+         while (d != 0)
+           {
+             struct file *f;
+@@ -2237,6 +2228,9 @@ main (int argc, char **argv, char **envp)
+               }
+             else
+               {
++                makefile_mtimes = xrealloc (makefile_mtimes,
++                                            (mm_idx+1)
++                                            * sizeof (FILE_TIMESTAMP));
+                 makefile_mtimes[mm_idx++] = file_mtime_no_search (d->file);
+                 last = d;
+                 d = d->next;
+@@ -2496,6 +2490,9 @@ main (int argc, char **argv, char **envp)
+           free (aargv);
+           break;
+         }
++
++      /* Free the makefile mtimes.  */
++      free (makefile_mtimes);
+     }
+ 
+   /* Set up 'MAKEFLAGS' again for the normal targets.  */
+diff --git a/src/read.c b/src/read.c
+index db52a55..39b5885 100644
+--- a/src/read.c
++++ b/src/read.c
+@@ -321,11 +321,7 @@ eval_makefile (const char *filename, unsigned short flags)
+   struct ebuffer ebuf;
+   const floc *curfile;
+   char *expanded = 0;
+-
+-  /* Create a new goaldep entry.  */
+-  deps = alloc_goaldep ();
+-  deps->next = read_files;
+-  read_files = deps;
++  int makefile_errno;
+ 
+   ebuf.floc.filenm = filename; /* Use the original file name.  */
+   ebuf.floc.lineno = 1;
+@@ -356,12 +352,13 @@ eval_makefile (const char *filename, unsigned short flags)
+         filename = expanded;
+     }
+ 
+-  errno = 0;
+   ENULLLOOP (ebuf.fp, fopen (filename, "r"));
+-  deps->error = errno;
++
++  /* Save the error code so we print the right message later.  */
++  makefile_errno = errno;
+ 
+   /* Check for unrecoverable errors: out of mem or FILE slots.  */
+-  switch (deps->error)
++  switch (makefile_errno)
+     {
+ #ifdef EMFILE
+     case EMFILE:
+@@ -371,7 +368,7 @@ eval_makefile (const char *filename, unsigned short flags)
+ #endif
+     case ENOMEM:
+       {
+-        const char *err = strerror (deps->error);
++        const char *err = strerror (makefile_errno);
+         OS (fatal, reading_file, "%s", err);
+       }
+     }
+@@ -395,8 +392,14 @@ eval_makefile (const char *filename, unsigned short flags)
+         }
+     }
+ 
+-  /* Enter the final name for this makefile as a goaldep.  */
++  /* Now we have the final name for this makefile. Enter it into
++     the cache.  */
+   filename = strcache_add (filename);
++
++  /* Add FILENAME to the chain of read makefiles.  */
++  deps = alloc_goaldep ();
++  deps->next = read_files;
++  read_files = deps;
+   deps->file = lookup_file (filename);
+   if (deps->file == 0)
+     deps->file = enter_file (filename);
+@@ -405,19 +408,17 @@ eval_makefile (const char *filename, unsigned short flags)
+ 
+   free (expanded);
+ 
++  /* If the makefile can't be found at all, give up entirely.  */
++
+   if (ebuf.fp == 0)
+     {
+-      /* The makefile can't be read at all, give up entirely.
+-         If we did some searching errno has the error from the last attempt,
+-         rather from FILENAME itself: recover the more accurate one.  */
+-      errno = deps->error;
+-      deps->file->last_mtime = NONEXISTENT_MTIME;
++      /* If we did some searching, errno has the error from the last
++         attempt, rather from FILENAME itself.  Store it in case the
++         caller wants to use it in a message.  */
++      errno = makefile_errno;
+       return deps;
+     }
+ 
+-  /* Success; clear errno.  */
+-  deps->error = 0;
+-
+   /* Avoid leaking the makefile to children.  */
+   fd_noinherit (fileno (ebuf.fp));
+ 
+@@ -908,7 +909,10 @@ eval (struct ebuffer *ebuf, int set_default)
+               struct goaldep *d = eval_makefile (files->name, flags);
+ 
+               if (errno)
+-                d->floc = *fstart;
++                {
++                  d->error = (unsigned short)errno;
++                  d->floc = *fstart;
++                }
+ 
+               free_ns (files);
+               files = next;
+diff --git a/tests/scripts/features/include b/tests/scripts/features/include
+index 0c63c06..67f8e65 100644
+--- a/tests/scripts/features/include
++++ b/tests/scripts/features/include
+@@ -237,27 +237,4 @@ inc1: foo; echo > $@
+     rmfiles('inc1');
+ }
+ 
+-# Including files that can't be read should show an error
+-if (defined $ERR_unreadable_file) {
+-    create_file('inc1', 'FOO := foo');
+-    chmod 0000, 'inc1';
+-
+-    run_make_test(q!
+-include inc1
+-all:;@echo $(FOO)
+-!,
+-                  '', "#MAKEFILE#:2: inc1: $ERR_unreadable_file\n#MAKE#: *** No rule to make target 'inc1'.  Stop.", 512);
+-
+-# Unreadable files that we know how to successfully recreate should work
+-
+-    run_make_test(sprintf(q!
+-all:;@echo $(FOO)
+-include inc1
+-inc1:; @%s $@ && echo FOO := bar > $@
+-!, $CMD_rmfile),
+-                  '', "bar");
+-
+-    rmfiles('inc1');
+-}
+-
+ 1;
+-- 
+2.26.1
+

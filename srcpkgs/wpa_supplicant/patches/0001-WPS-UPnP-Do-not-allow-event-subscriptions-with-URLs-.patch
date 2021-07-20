@@ -1,0 +1,152 @@
+From https://w1.fi/security/2020-1/
+
+From 5b78c8f961f25f4dc22d6f2b77ddd06d712cec63 Mon Sep 17 00:00:00 2001
+From: Jouni Malinen <jouni@codeaurora.org>
+Date: Wed, 3 Jun 2020 23:17:35 +0300
+Subject: [PATCH 1/3] WPS UPnP: Do not allow event subscriptions with URLs to
+ other networks
+
+The UPnP Device Architecture 2.0 specification errata ("UDA errata
+16-04-2020.docx") addresses a problem with notifications being allowed
+to go out to other domains by disallowing such cases. Do such filtering
+for the notification callback URLs to avoid undesired connections to
+external networks based on subscriptions that any device in the local
+network could request when WPS support for external registrars is
+enabled (the upnp_iface parameter in hostapd configuration).
+
+Signed-off-by: Jouni Malinen <jouni@codeaurora.org>
+---
+ src/wps/wps_er.c     |  2 +-
+ src/wps/wps_upnp.c   | 38 ++++++++++++++++++++++++++++++++++++--
+ src/wps/wps_upnp_i.h |  3 ++-
+ 3 files changed, 39 insertions(+), 4 deletions(-)
+
+diff --git a/src/wps/wps_er.c b/src/wps/wps_er.c
+index 6bded14327f8..31d2e50e4cff 100644
+--- a/src/wps/wps_er.c
++++ b/src/wps/wps_er.c
+@@ -1298,7 +1298,7 @@ wps_er_init(struct wps_context *wps, const char *ifname, const char *filter)
+ 			   "with %s", filter);
+ 	}
+ 	if (get_netif_info(er->ifname, &er->ip_addr, &er->ip_addr_text,
+-			   er->mac_addr)) {
++			   NULL, er->mac_addr)) {
+ 		wpa_printf(MSG_INFO, "WPS UPnP: Could not get IP/MAC address "
+ 			   "for %s. Does it have IP address?", er->ifname);
+ 		wps_er_deinit(er, NULL, NULL);
+diff --git a/src/wps/wps_upnp.c b/src/wps/wps_upnp.c
+index 6e10e4bc0c3f..7d4b7439940e 100644
+--- a/src/wps/wps_upnp.c
++++ b/src/wps/wps_upnp.c
+@@ -303,6 +303,14 @@ static void subscr_addr_free_all(struct subscription *s)
+ }
+ 
+ 
++static int local_network_addr(struct upnp_wps_device_sm *sm,
++			      struct sockaddr_in *addr)
++{
++	return (addr->sin_addr.s_addr & sm->netmask.s_addr) ==
++		(sm->ip_addr & sm->netmask.s_addr);
++}
++
++
+ /* subscr_addr_add_url -- add address(es) for one url to subscription */
+ static void subscr_addr_add_url(struct subscription *s, const char *url,
+ 				size_t url_len)
+@@ -381,6 +389,7 @@ static void subscr_addr_add_url(struct subscription *s, const char *url,
+ 
+ 	for (rp = result; rp; rp = rp->ai_next) {
+ 		struct subscr_addr *a;
++		struct sockaddr_in *addr = (struct sockaddr_in *) rp->ai_addr;
+ 
+ 		/* Limit no. of address to avoid denial of service attack */
+ 		if (dl_list_len(&s->addr_list) >= MAX_ADDR_PER_SUBSCRIPTION) {
+@@ -389,6 +398,13 @@ static void subscr_addr_add_url(struct subscription *s, const char *url,
+ 			break;
+ 		}
+ 
++		if (!local_network_addr(s->sm, addr)) {
++			wpa_printf(MSG_INFO,
++				   "WPS UPnP: Ignore a delivery URL that points to another network %s",
++				   inet_ntoa(addr->sin_addr));
++			continue;
++		}
++
+ 		a = os_zalloc(sizeof(*a) + alloc_len);
+ 		if (a == NULL)
+ 			break;
+@@ -890,11 +906,12 @@ static int eth_get(const char *device, u8 ea[ETH_ALEN])
+  * @net_if: Selected network interface name
+  * @ip_addr: Buffer for returning IP address in network byte order
+  * @ip_addr_text: Buffer for returning a pointer to allocated IP address text
++ * @netmask: Buffer for returning netmask or %NULL if not needed
+  * @mac: Buffer for returning MAC address
+  * Returns: 0 on success, -1 on failure
+  */
+ int get_netif_info(const char *net_if, unsigned *ip_addr, char **ip_addr_text,
+-		   u8 mac[ETH_ALEN])
++		   struct in_addr *netmask, u8 mac[ETH_ALEN])
+ {
+ 	struct ifreq req;
+ 	int sock = -1;
+@@ -920,6 +937,19 @@ int get_netif_info(const char *net_if, unsigned *ip_addr, char **ip_addr_text,
+ 	in_addr.s_addr = *ip_addr;
+ 	os_snprintf(*ip_addr_text, 16, "%s", inet_ntoa(in_addr));
+ 
++	if (netmask) {
++		os_memset(&req, 0, sizeof(req));
++		os_strlcpy(req.ifr_name, net_if, sizeof(req.ifr_name));
++		if (ioctl(sock, SIOCGIFNETMASK, &req) < 0) {
++			wpa_printf(MSG_ERROR,
++				   "WPS UPnP: SIOCGIFNETMASK failed: %d (%s)",
++				   errno, strerror(errno));
++			goto fail;
++		}
++		addr = (struct sockaddr_in *) &req.ifr_netmask;
++		netmask->s_addr = addr->sin_addr.s_addr;
++	}
++
+ #ifdef __linux__
+ 	os_strlcpy(req.ifr_name, net_if, sizeof(req.ifr_name));
+ 	if (ioctl(sock, SIOCGIFHWADDR, &req) < 0) {
+@@ -1026,11 +1056,15 @@ static int upnp_wps_device_start(struct upnp_wps_device_sm *sm, char *net_if)
+ 
+ 	/* Determine which IP and mac address we're using */
+ 	if (get_netif_info(net_if, &sm->ip_addr, &sm->ip_addr_text,
+-			   sm->mac_addr)) {
++			   &sm->netmask, sm->mac_addr)) {
+ 		wpa_printf(MSG_INFO, "WPS UPnP: Could not get IP/MAC address "
+ 			   "for %s. Does it have IP address?", net_if);
+ 		goto fail;
+ 	}
++	wpa_printf(MSG_DEBUG, "WPS UPnP: Local IP address %s netmask %s hwaddr "
++		   MACSTR,
++		   sm->ip_addr_text, inet_ntoa(sm->netmask),
++		   MAC2STR(sm->mac_addr));
+ 
+ 	/* Listen for incoming TCP connections so that others
+ 	 * can fetch our "xml files" from us.
+diff --git a/src/wps/wps_upnp_i.h b/src/wps/wps_upnp_i.h
+index e87a93232df1..6ead7b4e9a30 100644
+--- a/src/wps/wps_upnp_i.h
++++ b/src/wps/wps_upnp_i.h
+@@ -128,6 +128,7 @@ struct upnp_wps_device_sm {
+ 	u8 mac_addr[ETH_ALEN]; /* mac addr of network i.f. we use */
+ 	char *ip_addr_text; /* IP address of network i.f. we use */
+ 	unsigned ip_addr; /* IP address of network i.f. we use (host order) */
++	struct in_addr netmask;
+ 	int multicast_sd; /* send multicast messages over this socket */
+ 	int ssdp_sd; /* receive discovery UPD packets on socket */
+ 	int ssdp_sd_registered; /* nonzero if we must unregister */
+@@ -158,7 +159,7 @@ struct subscription * subscription_find(struct upnp_wps_device_sm *sm,
+ 					const u8 uuid[UUID_LEN]);
+ void subscr_addr_delete(struct subscr_addr *a);
+ int get_netif_info(const char *net_if, unsigned *ip_addr, char **ip_addr_text,
+-		   u8 mac[ETH_ALEN]);
++		   struct in_addr *netmask, u8 mac[ETH_ALEN]);
+ 
+ /* wps_upnp_ssdp.c */
+ void msearchreply_state_machine_stop(struct advertisement_state_machine *a);
+-- 
+2.20.1
+

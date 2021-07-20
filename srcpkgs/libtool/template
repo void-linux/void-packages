@@ -1,0 +1,72 @@
+# Template file for 'libtool'
+pkgname=libtool
+version=2.4.6
+revision=6
+build_style=gnu-configure
+hostmakedepends="texinfo perl automake help2man xz"
+depends="tar sed"
+short_desc="Generic library support script"
+maintainer="Enno Boland <gottox@voidlinux.org>"
+license="GPL-2.0-or-later"
+homepage="http://www.gnu.org/software/libtool"
+distfiles="${GNU_SITE}/libtool/$pkgname-$version.tar.xz"
+checksum=7c87a8c2c8c0fc9cd5019e402bed4292462d00a718a7cd5f11218153bf28b26f
+
+pre_configure() {
+	touch aclocal.m4 libltdl/aclocal.m4 Makefile.am libltdl/Makefile.am Makefile.in libltdl/Makefile.in
+	./bootstrap --force
+}
+
+post_install() {
+	local _canonical_host _host_os
+
+	# this is necessary, because when cross building, libtool will pick up
+	# the binary names of the crosstoolchain, which are prefixed with the
+	# short triplet (i.e. arch-linux-env instead of arch-unknown-linux-env)
+	# and those are not present in a real native environment; also the
+	# sysroot var will be set and cflags will include extra cross-related
+	# things that need to go; the target libtool script is meant to be used
+	# in native environments, not in cross environments, so patch the script
+	if [ "$CROSS_BUILD" ]; then
+		# e.g. AR="armv7l-linux-gnueabihf-ar" becomes AR="${AR:=ar}"
+		vsed -i -e "s,\([A-Z]\+\)=\"${XBPS_CROSS_TRIPLET}\-\(.*\)\",\1=\$\{\1:=\2\},g" \
+		 ${PKGDESTDIR}/usr/bin/libtool
+
+		# clear out any sysroot present
+		vsed -i -e "s,^lt_sysroot=.*,lt_sysroot=," \
+		 ${PKGDESTDIR}/usr/bin/libtool
+
+		# clear out sysroot include path
+		vsed -i -e "s,\-I${XBPS_CROSS_BASE}/usr/include,,g" \
+		 ${PKGDESTDIR}/usr/bin/libtool
+
+		# canonicalize host_alias, replace build(_alias,_os)
+		_canonical_host=$(grep "^host=" ${PKGDESTDIR}/usr/bin/libtool | sed 's/host=//')
+		_host_os=$(grep "^host_os=" ${PKGDESTDIR}/usr/bin/libtool | sed 's/host_os=//')
+		vsed -i \
+		 -e "s,^host_alias=.*,host_alias=${_canonical_host}," \
+		 -e "s,^host=.*,host=${_canonical_host}," \
+		 -e "s,^build_alias=.*,build_alias=${_canonical_host}," \
+		 -e "s,^build=.*,build=${_canonical_host}," \
+		 -e "s,^build_os=.*,build_os=${_host_os}," \
+		 ${PKGDESTDIR}/usr/bin/libtool
+	fi
+}
+
+libltdl-devel_package() {
+	depends="libltdl-${version}_${revision}"
+	short_desc="GNU Libtool Dynamic Module Loader development files"
+	pkg_install() {
+		vmove usr/include
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
+		vmove usr/share/aclocal/ltdl.m4
+		vmove usr/share/libtool/libltdl
+	}
+}
+libltdl_package() {
+	short_desc="Runtime libraries for GNU Libtool Dynamic Module Loader"
+	pkg_install() {
+		vmove "usr/lib/libltdl.so.*"
+	}
+}

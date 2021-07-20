@@ -1,0 +1,103 @@
+From b9e666587c76386f5f4af38f87c0932af5e9e475 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=C4=90o=C3=A0n=20Tr=E1=BA=A7n=20C=C3=B4ng=20Danh?=
+ <congdanhqx@gmail.com>
+Date: Wed, 7 Jul 2021 18:28:05 +0700
+Subject: [PATCH 1/5] SignalAdaptor: add combinerType to signals, and use as
+ default combiner
+
+As of it's now, we're downcasting from SignalBase to
+Signal<SignalType> (which is the same type with
+Signal<SignalType, LastValue<...>>) in its member functions.
+
+The downcast is incorrect if its Combiner is NOT LastValue, fcitx5 will
+run into undefined behaviours with this kind of casting.
+
+In my local machine, this result in indeterminated value in
+CheckUpdateResult, then fcitx5 will crash because of DBus' assertion.
+
+When compiling with: -fsanitize=undefined, this problem is being
+reported:
+
+```
+../src/lib/fcitx/../fcitx-utils/connectableobject.h:115:18: runtime error: downcast of address 0x559bd4a2a5b0 which does not point to an object of type 'Signal'
+0x559bd4a2a5b0: note: object is of type '*N5fcitx6SignalIFbvENS_12_GLOBAL__N_117CheckUpdateResultEEE'
+ 00 00 00 00  40 25 21 2e f7 7f 00 00  e0 f5 a2 d4 9b 55 00 00  20 70 61 67 65 00 00 00  41 00 00 00
+              ^~~~~~~~~~~~~~~~~~~~~~~
+              vptr for '*N5fcitx6SignalIFbvENS_12_GLOBAL__N_117CheckUpdateResultEEE'
+../src/lib/fcitx/../fcitx-utils/connectableobject.h:116:21: runtime error: member call on address 0x559bd4a2a5b0 which does not point to an object of type 'Signal'
+0x559bd4a2a5b0: note: object is of type '*N5fcitx6SignalIFbvENS_12_GLOBAL__N_117CheckUpdateResultEEE'
+ 00 00 00 00  40 25 21 2e f7 7f 00 00  e0 f5 a2 d4 9b 55 00 00  20 70 61 67 65 00 00 00  41 00 00 00
+              ^~~~~~~~~~~~~~~~~~~~~~~
+              vptr for '*N5fcitx6SignalIFbvENS_12_GLOBAL__N_117CheckUpdateResultEEE'
+```
+
+As a preparatory step, let's add combinerType into data structure for
+Signal, and uses it as default combiner.
+---
+ src/lib/fcitx-utils/connectableobject.h | 21 ++++++++++-----------
+ 1 file changed, 10 insertions(+), 11 deletions(-)
+
+diff --git a/src/lib/fcitx-utils/connectableobject.h b/src/lib/fcitx-utils/connectableobject.h
+index b145ad3..1b0343d 100644
+--- a/src/lib/fcitx-utils/connectableobject.h
++++ b/src/lib/fcitx-utils/connectableobject.h
+@@ -20,10 +20,11 @@
+ /// \brief Utilities to enable use object with signal.
+ 
+ /// \brief Declare signal by type.
+-#define FCITX_DECLARE_SIGNAL(CLASS_NAME, NAME, ...)                            \
+-    struct NAME {                                                              \
+-        using signalType = __VA_ARGS__;                                        \
+-        using signature = fcitxMakeMetaString(#CLASS_NAME "::" #NAME);         \
++#define FCITX_DECLARE_SIGNAL(CLASS_NAME, NAME, ...)                                      \
++    struct NAME {                                                                        \
++        using signalType = __VA_ARGS__;                                                  \
++        using combinerType = ::fcitx::LastValue<std::function<signalType>::result_type>; \
++        using signature = fcitxMakeMetaString(#CLASS_NAME "::" #NAME);                   \
+     }
+ 
+ /// \brief Declare a signal.
+@@ -53,8 +54,7 @@ namespace fcitx {
+ class ConnectableObject;
+ 
+ /// \brief Helper class to register class.
+-template <typename T, typename Combiner = LastValue<typename std::function<
+-                          typename T::signalType>::result_type>>
++template <typename T, typename Combiner = typename T::combinerType>
+ class SignalAdaptor {
+ public:
+     SignalAdaptor(ConnectableObject *d);
+@@ -79,7 +79,7 @@ public:
+     Connection connect(F &&func) {
+         auto signal = findSignal(SignalType::signature::data());
+         if (signal) {
+-            return static_cast<Signal<typename SignalType::signalType> *>(
++            return static_cast<Signal<typename SignalType::signalType, typename SignalType::combinerType> *>(
+                        signal)
+                 ->connect(std::forward<F>(func));
+         }
+@@ -89,7 +89,7 @@ public:
+     template <typename SignalType>
+     void disconnectAll() {
+         auto signal = findSignal(SignalType::signature::data());
+-        static_cast<Signal<typename SignalType::signalType> *>(signal)
++        static_cast<Signal<typename SignalType::signalType, typename SignalType::combinerType> *>(signal)
+             ->disconnectAll();
+     }
+ 
+@@ -112,13 +112,12 @@ protected:
+     template <typename SignalType, typename... Args>
+     auto emit(Args &&...args) const {
+         auto signal = findSignal(SignalType::signature::data());
+-        return (*static_cast<Signal<typename SignalType::signalType> *>(
++        return (*static_cast<Signal<typename SignalType::signalType, typename SignalType::combinerType> *>(
+             signal))(std::forward<Args>(args)...);
+     }
+ 
+     template <typename SignalType,
+-              typename Combiner = LastValue<typename std::function<
+-                  typename SignalType::signalType>::result_type>>
++              typename Combiner = typename SignalType::combinerType>
+     void registerSignal() {
+         _registerSignal(
+             SignalType::signature::data(),
