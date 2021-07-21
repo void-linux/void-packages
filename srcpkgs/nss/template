@@ -1,10 +1,10 @@
 # Template file for 'nss'
 
-_nsprver=4.30
+_nsprver=4.32
 
 pkgname=nss
-version=3.67
-revision=2
+version=3.68
+revision=1
 hostmakedepends="perl"
 makedepends="nspr-devel sqlite-devel zlib-devel"
 depends="nspr>=${_nsprver}"
@@ -13,7 +13,7 @@ maintainer="Đoàn Trần Công Danh <congdanhqx@gmail.com>"
 license="MPL-2.0"
 homepage="https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS"
 distfiles="${MOZILLA_SITE}/security/nss/releases/NSS_${version//\./_}_RTM/src/nss-${version}.tar.gz"
-checksum=f6549a9148cd27b394b40c77fa73111d5ea23cdb51d796665de1b7458f88ce7f
+checksum=c402b32cac83034ec1c3d826ef4306cd14a066d7d9a6f4c30d82b3bc043c725b
 
 export NS_USE_GCC=1
 export LIBRUNPATH=
@@ -22,20 +22,11 @@ export NSS_USE_SYSTEM_SQLITE=1
 export NSS_ENABLE_WERROR=0
 export NSS_ENABLE_ECC=1
 export FREEBL_NO_DEPEND=1
+export NSPR_INCLUDE_DIR=${XBPS_CROSS_BASE}/usr/include/nspr
+export NSPR_LIB_DIR=${XBPS_CROSS_BASE}/usr/lib
 
 do_build() {
-	local _native_use64 _target_use64
-
-	# Respect LDFLAGS
-	vsed -e 's/[$](MKSHLIB) /&$(LDFLAGS) /g' \
-		-i nss/coreconf/rules.mk
-
-	export NATIVE_CC="$BUILD_CC"
-	export NATIVE_FLAGS="$BUILD_CFLAGS"
-
-	if [ "$XBPS_WORDSIZE" = "64" ]; then
-		_native_use64="USE_64=1"
-	fi
+	local _use64 _ARCH
 
 	# Build System can detect this just fine,
 	# but I don't like to see useless warning barf for every line.
@@ -53,56 +44,31 @@ do_build() {
 			;;
 	esac
 
-	cd nss
-	# Build nsinstall for host.
-	make ${makejobs} LD=$BUILD_LD LDFLAGS="$BUILD_LDFLAGS" ${_native_use64} -C coreconf
-
-	if [ "$CROSS_BUILD" ]; then
-		# We don't run test in cross build
-		export NSS_DISABLE_GTESTS=1
-		if [ "$XBPS_TARGET_WORDSIZE" = "64" ]; then
-			CFLAGS+=" -DNS_PTR_GT_32"
-			_target_use64="USE_64=1"
-		fi
-
-		case "$XBPS_TARGET_MACHINE" in
-			aarch64*|ppc*|x86_64*)
-				_ARCH="${XBPS_TARGET_MACHINE%-*}"
-				;;
-			arm*) _ARCH="arm";;
-			mips*) _ARCH="mips";;
-			*) msg_error "$pkgver: unknown target machine\n";;
-		esac
-		# ... and then copy it to $wrksrc.
-		find ${wrksrc} -type f -name nsinstall -exec cp {} ${wrksrc} \;
-		make clean
-
-		export NSPR_INCLUDE_DIR=${XBPS_CROSS_BASE}/usr/include/nspr
-		export NSPR_LIB_DIR=${XBPS_CROSS_BASE}/usr/lib
-		export XCFLAGS="${CFLAGS}"
-
-		make ${makejobs} \
-			CROSS_COMPILE=1 OS_TEST="${_ARCH}" \
-			NSINSTALL="${wrksrc}/nsinstall" \
-			CC="$CC" CCC="$CXX" RANLIB="$RANLIB" ${_target_use64} \
-			all
-	else
-		# native build
-		export NSPR_INCLUDE_DIR=/usr/include/nspr
-		export NSPR_LIB_DIR=/usr/lib
-		export XCFLAGS="${CFLAGS}"
-
-		make ${makejobs} ${_native_use64} all
+	if [ "$XBPS_TARGET_WORDSIZE" = "64" ]; then
+		CFLAGS+=" -DNS_PTR_GT_32"
+		_use64="USE_64=1"
 	fi
+
+	case "$XBPS_TARGET_MACHINE" in
+		aarch64*|ppc*|x86_64*|i?86*)
+			_ARCH="${XBPS_TARGET_MACHINE%-*}"
+			;;
+		arm*) _ARCH="arm";;
+		mips*) _ARCH="mips";;
+		*) msg_error "$pkgver: unknown target machine\n";;
+	esac
+	export XCFLAGS="${CFLAGS}"
+	make -C nss ${makejobs} \
+		${CROSS_BUILD:+CROSS_COMPILE=1} OS_TEST="${_ARCH}" \
+		NATIVE_CC="${BUILD_CC}" NATIVE_FLAGS="${BUILD_CFLAGS}" \
+		CCC="$CXX" ${_use64} \
+		all
 }
 
 do_check() {
 	local _use_64
-	# We couldn't run test in cross compile!
-	export NSPR_INCLUDE_DIR=/usr/include/nspr
-	export NSPR_LIB_DIR=/usr/lib
 	export XCFLAGS="${CFLAGS}"
-	if [ "$XBPS_WORDSIZE" = "64" ]; then
+	if [ "$XBPS_TARGET_WORDSIZE" = "64" ]; then
 		_use_64="USE_64=1"
 	fi
 	cd nss/tests
