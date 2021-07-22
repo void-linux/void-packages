@@ -15,11 +15,13 @@ process_metadata_scripts() {
 	local tmpf=$(mktemp) || exit 1
 	local fpattern="s|${PKGDESTDIR}||g;s|^\./$||g;/^$/d"
 	local targets= f= _f= info_files= home= shell= descr= groups=
-	local found= triggers_found= _icondirs= _schemas= _mods= _tmpfiles=
+	local found= triggers_found= _icondirs= _schemas= _mods= _tmpfiles= trigguard=
 
+	# Trigger failures propagate on INSTALL but are ignored on REMOVE
+	# If REMOVE failures were propagated, packages would be uninstallable
 	case "$action" in
-		install) ;;
-		remove) ;;
+		install) trigguard="exit" ;;
+		remove) trigguard="true" ;;
 		*) return 1;;
 	esac
 
@@ -326,8 +328,7 @@ _EOF
 				if ! [[ $j =~ pre-${action} ]]; then
 					continue
 				fi
-				printf "\t\${TRIGGERSDIR}/$f run $j \${PKGNAME} \${VERSION} \${UPDATE} \${CONF_FILE}\n" >> $tmpf
-				printf "\t[ \$? -ne 0 ] && exit \$?\n" >> $tmpf
+				printf "\t\${TRIGGERSDIR}/$f run $j \"\${PKGNAME}\" \"\${VERSION}\" \"\${UPDATE}\" \"\${CONF_FILE}\" || ${trigguard}\n" >> $tmpf
 			done
 		done
 		printf "\t;;\n" >> $tmpf
@@ -338,8 +339,7 @@ _EOF
 				if ! [[ $j =~ post-${action} ]]; then
 					continue
 				fi
-				printf "\t\${TRIGGERSDIR}/$f run $j \${PKGNAME} \${VERSION} \${UPDATE} \${CONF_FILE}\n" >> $tmpf
-				printf "\t[ \$? -ne 0 ] && exit \$?\n" >> $tmpf
+				printf "\t\${TRIGGERSDIR}/$f run $j \"\${PKGNAME}\" \"\${VERSION}\" \"\${UPDATE}\" \"\${CONF_FILE}\" || ${trigguard}\n" >> $tmpf
 			done
 		done
 		printf "\t;;\n" >> $tmpf
