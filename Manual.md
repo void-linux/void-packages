@@ -443,8 +443,8 @@ The list of mandatory variables for a template:
 Multiple licenses should be separated by commas, Example: `GPL-3.0-or-later, custom:Hugware`.
 
   Empty meta-packages that don't include any files
-  which thus have and require no license, should have set
-  `license="BSD-2-Clause"`.
+  and thus have and require no license should use
+  `Public Domain`.
 
   Note: `MIT`, `BSD`, `ISC` and custom licenses
   require the license file to be supplied with the binary package.
