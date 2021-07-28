@@ -1,0 +1,89 @@
+# Template file for 'jetbrains-jdk17'
+pkgname=jetbrains-jdk17
+version=17.0.1b164.8
+revision=1
+archs="x86_64"
+_jdk_ver=${version%b*}
+_jdk_build=${version#*b}
+_tag_name="jbr${_jdk_ver//\./_}b${_jdk_build}"
+wrksrc="JetBrainsRuntime-${_tag_name}"
+build_style=gnu-configure
+configure_args="
+ --disable-warnings-as-errors
+ --prefix=${XBPS_DESTDIR}/${XBPS_CROSS_TRIPLET}/${pkgname}-${version}/usr/lib
+ --enable-unlimited-crypto
+ --with-zlib=system
+ --with-libjpeg=system
+ --with-giflib=system
+ --with-libpng=system
+ --with-lcms=system
+ --with-jtreg=no
+ --with-native-debug-symbols=none
+ --with-version-pre=
+ --with-vendor-name="Void"
+ --with-vendor-url="https://voidlinux.org/"
+ --with-vendor-bug-url="https://github.com/void-linux/void-packages/issues"
+ --with-vendor-vm-bug-url="https://github.com/void-linux/void-packages/issues""
+make_build_args="images"
+make_check_target="test-hotspot-gtest"
+makedepends="pkg-config zip bzip2 unzip tar wget make autoconf automake libtool alsa-lib-devel cups-devel libX11-devel libjpeg-turbo-devel giflib-devel freetype-devel file which libXtst-devel libXt-devel libXrender-devel alsa-lib-devel fontconfig-devel libXrandr-devel libXi-devel zlib-devel lcms2-devel git"
+short_desc="JetBrains Java 17 JDK"
+maintainer="Anton Afanasyev <anton@doubleasoftware.com>"
+license="GPL-2.0-only, Classpath-exception-2.0"
+homepage="https://github.com/JetBrains/JetBrainsRuntime"
+distfiles="https://github.com/JetBrains/JetBrainsRuntime/archive/refs/tags/${_tag_name}.tar.gz"
+checksum=e843027ba4b9923e1ae12e3fac0302ec7452c821f31302c06e55d4678da7760d
+conflicts="jetbrains-jdk11-bin jetbrains-jdk-bin"
+provides="jetbrains-java-runtime-${version}_${revision}"
+
+# Build is still parallel, but don't use -jN.
+disable_parallel_build=yes
+
+## This JDK appears to link to libs that do not exist, but functions well even in their absence.
+## Best guess is that they are optional. ¯\_(ツ)_/¯
+noverifyrdeps=yes
+nopie=yes
+
+# This does not currently accomplish anything, since only building on x86_64. Leaving this for future, taken from `openjdk11`.
+if [ ! "$CROSS_BUILD" ]; then
+	makedepends+=" openjdk10-bootstrap"
+	configure_args+=" --with-boot-jdk=/usr/lib/jvm/java-10-openjdk"
+else
+	makedepends+=" openjdk11"
+	configure_args+=" --with-boot-jdk=/usr/lib/jvm/openjdk11"
+fi
+
+do_configure() {
+	CFLAGS=${CFLAGS/-D_FORTIFY_SOURCE=2/}
+	CXXFLAGS=${CXXFLAGS/-D_FORTIFY_SOURCE=2/}
+
+	if [ "$XBPS_CCACHE" ] && [ -z "$CROSS_BUILD" ]; then
+		configure_args+=" --enable-ccache"
+		CC="/usr/bin/cc"
+		CXX="/usr/bin/c++"
+	fi
+
+	sh ./configure ${configure_args}
+}
+
+do_install() {
+	TARGET_PATH="usr/lib/jvm/jbrsdk"
+
+	vmkdir ${TARGET_PATH}
+
+	vlicense ASSEMBLY_EXCEPTION
+	vlicense LICENSE
+
+	cd build/linux-*-normal-server-release/images/jdk/
+	vcopy bin ${TARGET_PATH}
+	vcopy conf ${TARGET_PATH}
+	vcopy include ${TARGET_PATH}
+	vcopy legal ${TARGET_PATH}
+	vcopy lib ${TARGET_PATH}
+	vcopy release ${TARGET_PATH}
+
+	vmkdir etc/profile.d
+	cat > ${DESTDIR}/etc/profile.d/10_jbrsdk.sh <<EOF
+export IDEA_JDK=\${IDEA_JDK=/usr/lib/jvm/jbrsdk}
+EOF
+}
