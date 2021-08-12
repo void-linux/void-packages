@@ -1,0 +1,82 @@
+Taken from upstream commit: https://gitlab.com/valos/Komikku/-/commit/35393c0
+diff --git a/komikku/servers/mangadex/__init__.py b/komikku/servers/mangadex/__init__.py
+index 22bfbe96ce48b45b035cb715c3ec478f73eb6939..c7250b4cb5f847d8edc67e8f577710a7676f2e29 100644
+--- a/komikku/servers/mangadex/__init__.py
++++ b/komikku/servers/mangadex/__init__.py
+@@ -82,6 +82,26 @@ class Mangadex(Server):
+
+             return None
+
++    def _manga_title_from_attributes(self, attributes):
++        if self.lang_code in attributes['title']:
++            return attributes['title'][self.lang_code]
++        elif 'en' in attributes['title']:
++            return attributes['title']['en']
++
++        else:
++            lang_code_alt_name = None
++            en_alt_name = None
++
++            for alt_title in attributes['altTitles']:
++                if not lang_code_alt_name and self.lang_code in alt_title:
++                    lang_code_alt_name = alt_title['en']
++
++                if not en_alt_name and 'en' in alt_title:
++                    en_alt_name = alt_title['en']
++
++            return lang_code_alt_name or en_alt_name
++
++
+     def get_manga_data(self, initial_data):
+         """
+         Returns manga data from API
+@@ -117,7 +137,9 @@ class Mangadex(Server):
+         attributes = resp_json['data']['attributes']
+
+         # FIXME: Should probably be lang_code, but the API returns weird stuff
+-        data['name'] = html.unescape(attributes['title']['en'])
++        _name = self._manga_title_from_attributes(attributes)
++        data['name'] = html.unescape(_name)
++        assert data['name'] is not None
+
+         for relationship in resp_json['relationships']:
+             if relationship['type'] == 'author':
+@@ -137,8 +159,14 @@ class Mangadex(Server):
+         elif attributes['status'] == 'hiatus':
+             data['status'] = 'hiatus'
+
+-        # FIXME: lang_code
+-        data['synopsis'] = html.unescape(attributes['description']['en'])
++        if self.lang_code in attributes['description']:
++            data['synopsis'] = html.unescape(attributes['description'][self.lang_code])
++        elif 'en' in attributes['description']:
++            # Fall back to english synopsis
++            data['synopsis'] = html.unescape(attributes['description']['en'])
++        else:
++            logger.warn('{}: No synopsis', data['name'])
++
+
+         data['chapters'] += self.resolve_chapters(data['slug'])
+
+@@ -280,11 +308,16 @@ class Mangadex(Server):
+             if result['type'] != 'manga':
+                 continue
+
+-            results.append(dict(
+-                slug=result['id'],
+-                # FIXME: lang_code
+-                name=result['attributes']['title']['en'],
+-            ))
++            name = self._manga_title_from_attributes(result['attributes'])
++
++            if name:
++                results.append(dict(
++                    slug=result['id'],
++                    # FIXME: lang_code
++                    name=name,
++                ))
++            else:
++                logger.warn("ignoring result {}, missing name".format(result['id']))
+
+         return results
+
