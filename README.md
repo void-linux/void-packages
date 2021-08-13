@@ -46,17 +46,12 @@ For bootstrapping additionally:
 - install(1) - GNU coreutils
 - objcopy(1), objdump(1), strip(1): binutils
 
-`xbps-src` requires a utility to chroot and bind mount existing directories
+`xbps-src` requires [a utility to chroot](#chroot-methods) and bind mount existing directories
 into a `masterdir` that is used as its main `chroot` directory. `xbps-src` supports
-multiple utilities to accomplish this task:
-
- - `bwrap` - bubblewrap, see https://github.com/projectatomic/bubblewrap.
- - `ethereal` - only useful for one-shot containers, i.e docker (used with CI).
- - `xbps-uunshare(1)` - XBPS utility that uses `user_namespaces(7)` (part of xbps, default).
- - `xbps-uchroot(1)` - XBPS utility that uses `namespaces` and must be `setgid` (part of xbps).
+multiple utilities to accomplish this task.
 
 > NOTE: `xbps-src` does not allow building as root anymore. Use one of the chroot
-methods shown above.
+methods.
 
 <a name="quick-start"></a>
 ### Quick start
@@ -100,6 +95,8 @@ Alternatively, packages can be installed with the `xi` utility, from the `xtools
 
 #### xbps-uunshare(1) (default)
 
+XBPS utility that uses `user_namespaces(7)` (part of xbps, default without `-t` flag).
+
 This utility requires these Linux kernel options:
 
 - CONFIG\_NAMESPACES
@@ -111,6 +108,11 @@ This is the default method, and if your system does not support any of the requi
 options it will fail with `EINVAL (Invalid argument)`.
 
 #### xbps-uchroot(1)
+
+XBPS utility that uses `namespaces` and must be `setgid` (part of xbps).
+
+> NOTE: This is the only method that implements functionality of `xbps-src -t`, therefore the
+flag ignores the choice made in configuration files and enables `xbps-uchroot`.
 
 This utility requires these Linux kernel options:
 
@@ -137,6 +139,16 @@ To enable it:
 If for some reason it's erroring out as `ERROR clone (Operation not permitted)`, check that
 your user is a member of the required `group` and that `xbps-uchroot(1)` utility has the
 proper permissions and owner/group as explained above.
+
+#### bwrap(1)
+
+bubblewrap, sandboxing tool for unprivileged users that uses
+user namespaces or setuid.
+See <https://github.com/containers/bubblewrap>.
+
+#### ethereal
+
+Destroys host system it runs on. Only useful for one-shot containers, i.e docker (used with CI).
 
 <a name="install-bootstrap"></a>
 ### Install the bootstrap packages
@@ -424,11 +436,8 @@ To use xbps-src in your Linux distribution use the following instructions. Let's
     $ tar xvf xbps-static-latest.<arch>-musl.tar.xz -C ~/XBPS
     $ export PATH=~/XBPS/usr/bin:$PATH
 
-If your system does not support `user namespaces`, a privileged group is required to be able to use
-`xbps-uchroot(1)` with xbps-src, by default it's set to the `xbuilder` group, change this to your desired group:
-
-    # chown root:<group> ~/XBPS/usr/bin/xbps-uchroot.static
-    # chmod 4750 ~/XBPS/usr/bin/xbps-uchroot.static
+If `xbps-uunshare` does not work because of lack of `user_namespaces(7)` support,
+try other [chroot methods](#chroot-methods).
 
 Clone the `void-packages` git repository:
 
