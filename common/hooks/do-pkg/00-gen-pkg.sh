@@ -19,7 +19,7 @@ genpkg() {
 	done
 
 	# Don't overwrite existing binpkgs by default, skip them.
-	if [ -f $pkgdir/$binpkg -a -z "$XBPS_BUILD_FORCEMODE" ]; then
+	if [ -e $pkgdir/$binpkg ] && [ "$XBPS_PRESERVE_PKGS" ] && [ -z "$XBPS_BUILD_FORCEMODE" ]; then
 		msg_normal "${pkgver}: skipping existing $binpkg pkg...\n"
 		return 0
 	fi
