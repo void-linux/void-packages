@@ -310,6 +310,12 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	- `foo.1.gz` -> `${DESTDIR}/usr/share/man/man1/foo.1`
 	- `foo.1.bz2` -> `${DESTDIR}/usr/share/man/man1/foo.1`
 
+- *vdesktop()* `vdesktop <file> [<name>]`
+
+	Installs `file` into `usr/share/applications` in the pkg
+	`$DESTDIR`. The optional 2nd argument can be used to change the
+	`file name`.
+
 - *vdoc()* `vdoc <file> [<name>]`
 
 	Installs `file` into `usr/share/doc/<pkgname>` in the pkg

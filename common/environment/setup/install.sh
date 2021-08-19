@@ -13,7 +13,7 @@ _noglob_helper() {
 }
 
 # Apply _noglob to v* commands
-for cmd in vinstall vcopy vcompletion vmove vmkdir vbin vman vdoc vconf vsconf vlicense vsv; do
+for cmd in vinstall vcopy vcompletion vmove vmkdir vbin vman vdesktop vdoc vconf vsconf vlicense vsv; do
        alias ${cmd}="set -f; _noglob_helper _${cmd}"
 done
 
@@ -96,6 +96,17 @@ _vman() {
 
 	msg_red "$pkgver: vman: Filename '${target}' does not look like a man page\n"
 	return 1
+}
+
+_vdesktop() {
+	local file="$1" targetfile="$2"
+
+	if [ $# -lt 1 ]; then
+		msg_red "$pkgver: vdesktop: 1 argument expected: <file>\n"
+		return 1
+	fi
+
+	vinstall "$file" 644 "usr/share/applications" "$targetfile"
 }
 
 _vdoc() {
