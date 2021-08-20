@@ -1,0 +1,56 @@
+From 6134973527a87a27b2cd9a41c8347fd4bdb74016 Mon Sep 17 00:00:00 2001
+From: David Sterba <dsterba@suse.com>
+Date: Mon, 7 Jun 2021 17:38:46 +0200
+Subject: [PATCH] btrfs-progs: zoned: make it work without kernel support
+
+There's a report that a system with 4.19 kernel fails boot because
+device scan exits with error. This is because zoned support is compiled
+in btrfs-progs but not in kernel.
+
+To make new progs and old kernels work, do a fallback when the zoned
+ioctl is not available, as if it were a non-zoned device. There is no
+other option, but this is safe at least for the device scan that would
+not error out. Any unaligned writes to a zoned device will fail as
+expected.
+
+Issue: #376
+Signed-off-by: David Sterba <dsterba@suse.com>
+---
+ kernel-shared/zoned.c | 17 +++++++++++++----
+ 1 file changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/kernel-shared/zoned.c b/kernel-shared/zoned.c
+index 2a6892b3c..dc850cd22 100644
+--- a/kernel-shared/zoned.c
++++ b/kernel-shared/zoned.c
+@@ -488,9 +488,14 @@ size_t btrfs_sb_io(int fd, void *buf, off_t offset, int rw)
+ 	/* Do not call ioctl(BLKGETZONESZ) on a regular file. */
+ 	if ((stat_buf.st_mode & S_IFMT) == S_IFBLK) {
+ 		ret = ioctl(fd, BLKGETZONESZ, &zone_size_sector);
+-		if (ret) {
+-			error("zoned: ioctl BLKGETZONESZ failed (%m)");
+-			exit(1);
++		if (ret < 0) {
++			if (errno == ENOTTY) {
++				/* No kernel support, assuming non-zoned device */
++				zone_size_sector = 0;
++			} else {
++				error("zoned: ioctl BLKGETZONESZ failed: %m");
++				exit(1);
++			}
+ 		}
+ 	} else {
+ 		zone_size_sector = 0;
+@@ -528,7 +533,11 @@ size_t btrfs_sb_io(int fd, void *buf, off_t offset, int rw)
+ 
+ 	ret = ioctl(fd, BLKREPORTZONE, rep);
+ 	if (ret) {
+-		error("zoned: ioctl BLKREPORTZONE failed (%m)");
++		if (errno == ENOTTY) {
++			error("zoned: BLKREPORTZONE failed but BLKGETZONESZ works: %m");
++			exit(1);
++		}
++		error("zoned: ioctl BLKREPORTZONE failed: %m");
+ 		exit(1);
+ 	}
+ 	if (rep->nr_zones != 2) {
