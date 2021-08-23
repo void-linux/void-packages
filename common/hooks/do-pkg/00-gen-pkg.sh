@@ -104,15 +104,7 @@ hook() {
 	local arch= binpkg= repo= _pkgver= _desc= _pkgn= _pkgv= _provides= \
 		_replaces= _reverts= f= found_dbg_subpkg=
 
-	if [ -n "$XBPS_TARGET_MACHINE" ]; then
-		arch=$XBPS_TARGET_MACHINE
-	else
-		arch=$XBPS_MACHINE
-	fi
-	if [ -z "$XBPS_CROSS_BUILD" -a -n "$XBPS_ARCH" -a "$XBPS_ARCH" != "$XBPS_TARGET_MACHINE" ]; then
-		arch=${XBPS_ARCH}
-	fi
-
+	arch=$XBPS_TARGET_MACHINE
 	binpkg=${pkgver}.${arch}.xbps
 
 	if [ -n "$repository" ]; then
