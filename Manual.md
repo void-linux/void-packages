@@ -434,7 +434,7 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 The list of mandatory variables for a template:
 
-- `homepage` A string pointing to the `upstream` homepage.
+- `homepage` An URL pointing to the upstream homepage.
 
 
 - <a id="var_license"></a>
@@ -742,6 +742,8 @@ user's booting and module loading. Otherwise in the majority of cases it should 
 used.
 
 - `fetch_cmd` Executable to be used to fetch URLs in `distfiles` during the `do_fetch` phase.
+
+- `changelog` An URL pointing to the upstream changelog. Raw text files are preferred.
 
 - `archs` Whitespace separated list of architectures that a package can be
 built for, available architectures can be found under `common/cross-profiles`.
