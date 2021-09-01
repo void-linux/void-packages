@@ -1,0 +1,65 @@
+# Template file for 'jellyfin'
+pkgname=jellyfin
+version=10.7.6
+revision=1
+archs="i686 x86_64 armv7l aarch64"
+wrksrc="${pkgname}-${version}"
+create_wrksrc=yes
+build_style=meta
+hostmakedepends="dotnet-sdk-bin yarn git"
+depends="ffmpeg sqlite"
+short_desc="Free Software Media System"
+maintainer="Joel Beckmeyer <joel@beckmeyer.us>"
+license="GPL-2.0-or-later"
+homepage="https://jellyfin.readthedocs.io"
+distfiles="
+ https://github.com/${pkgname}/${pkgname}/archive/v${version}.tar.gz>${pkgname}-${version}.tar.gz
+ https://github.com/${pkgname}/${pkgname}-web/archive/v${version}.tar.gz>${pkgname}-web-${version}.tar.gz"
+checksum="
+ fb54ef3862f03ec50f8c6e1c95df98601e53947bb2891f369d1533d8711f2ec9
+ 1013e3be80d744684093ad4c4df3a16bcbeda8364978608d5c65b0bbc7940f77"
+nopie=yes
+make_dirs="/var/lib/jellyfin 0750 _jellyfin _jellyfin
+ /var/log/jellyfin 0750 _jellyfin _jellyfin
+ /var/cache/jellyfin 0750 _jellyfin _jellyfin
+ /etc/jellyfin 0755 _jellyfin _jellyfin"
+
+system_accounts="_jellyfin"
+_jellyfin_homedir="/var/lib/jellyfin"
+
+do_build() {
+	cd jellyfin-web-${version}
+	yarn install
+
+# https://docs.microsoft.com/de-de/dotnet/core/rid-catalog#linux-rids
+	case "${XBPS_TARGET_MACHINE}" in
+		i686) _build_arch="x86";;
+		x86_64) _build_arch="x64";;
+		armv7l) _build_arch="arm";;
+		aarch64) _build_arch="arm64";;
+		esac
+
+	cd ../jellyfin-${version}
+
+	export DOTNET_CLI_TELEMETRY_OPTOUT=1
+	export CLR_OPENSSL_VERSION_OVERRIDE=47
+	dotnet build -r "linux-${_build_arch}" --configuration Release Jellyfin.Server
+	dotnet publish -r "linux-${_build_arch}" --configuration Release Jellyfin.Server --output "$PWD"/publish
+	rm -rfv publish/runtimes/{alpine-*,osx*,tizen-*,win*,linux-musl-x64,linux-armel}
+
+	test "${XBPS_TARGET_MACHINE}" = 'i686' || rm -rfv publish/runtimes/linux-x86
+	test "${XBPS_TARGET_MACHINE}" = 'x86_64' || rm -rfv publish/runtimes/linux-x64
+	test "${XBPS_TARGET_MACHINE}" = 'armv7l' || rm -rfv publish/runtimes/linux-arm
+	test "${XBPS_TARGET_MACHINE}" = 'aarch64' || rm -rfv publish/runtimes/linux-arm64
+
+	mkdir publish/jellyfin-web
+	cp -rv ../jellyfin-web-${version}/dist/. publish/jellyfin-web
+}
+
+do_install() {
+	vmkdir usr/lib/jellyfin
+	vmkdir etc/default
+	vcopy "${FILESDIR}/jellyfin.default" etc/default/jellyfin
+	vcopy "${pkgname}-${version}/publish/." usr/lib/jellyfin
+	vsv jellyfin
+}
