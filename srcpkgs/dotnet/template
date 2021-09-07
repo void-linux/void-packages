@@ -1,0 +1,177 @@
+# Template file for 'dotnet'
+pkgname=dotnet
+version=6.0.100
+revision=1
+_bootstrapver=0.1.0-6.0.100-bootstrap.29
+archs="x86_64"
+wrksrc="dotnet-${version}"
+build_style=meta
+hostmakedepends="clang cmake curl git inetutils llvm tar"
+makedepends="icu-devel mit-krb5-devel libgit2-devel libunwind-devel
+libxml2-devel lldb-devel lttng-ust-devel nodejs-devel openssl-devel zlib-devel"
+depends="dotnet-sdk aspnetcore-runtime dotnet-runtime dotnet-hostfxr
+ dotnet-host dotnet-apphost-pack dotnet-targeting-pack aspnetcore-targeting-pack
+ netstandard-targeting-pack dotnet-templates"
+short_desc=".NET Core components meta package"
+maintainer="Joel Beckmeyer <joel@beckmeyer.us>"
+license="MIT"
+homepage="https://dotnet.microsoft.com"
+distfiles="https://dotnetcli.azureedge.net/source-built-artifacts/assets/Private.SourceBuilt.Artifacts.${_bootstrapver}.tar.gz"
+checksum="e97c7dc2bfc7b6d92f06e357719d86b0b2ccd54ac2358b2aba30f95935475c33"
+skip_extraction="Private.SourceBuilt.Artifacts.${_bootstrapver}.tar.gz"
+
+post_fetch() {
+	mkdir "${wrksrc}"
+	cd "${wrksrc}"
+	git clone https://github.com/dotnet/installer.git
+	cd installer
+	git checkout "v${version}"
+
+	# contrary to what the name suggests, running the script with these flags
+	# just fetches the complete sources needed to build the SDK
+	./build.sh \
+		/p:ArcadeBuildTarball=true \
+		/p:TarballDir="${wrksrc}/sources"
+}
+
+do_configure() {
+	cd sources
+	ln -sf "${XBPS_SRCDISTDIR}/dotnet-${version}/Private.SourceBuilt.Artifacts.${_bootstrapver}.tar.gz" packages/archive/
+	./prep.sh
+}
+
+do_build() {
+	cd sources
+	./build.sh
+}
+
+do_install() {
+	cd sources/artifacts/x64/Release
+	bsdtar -xf dotnet-sdk-"${version}"-linux-x64.tar.gz
+
+	vmkdir usr/lib/dotnet
+	vcopy dotnet usr/lib/dotnet
+	vcopy host usr/lib/dotnet
+	vcopy packs usr/lib/dotnet
+	vcopy sdk usr/lib/dotnet
+	vcopy shared usr/lib/dotnet
+	vcopy templates usr/lib/dotnet
+
+	vmkdir etc/dotnet
+	echo '/usr/lib/dotnet' > "${DESTDIR}"/etc/dotnet/install_location
+
+	vmkdir etc/profile.d
+	vcopy "${FILESDIR}"/dotnet.sh etc/profile.d
+
+	vmkdir usr/bin
+	ln -s /usr/lib/dotnet/dotnet "${DESTDIR}"/usr/bin/dotnet
+}
+
+dotnet-host_package() {
+	short_desc=".NET Core Command Line Interface"
+	pkg_install() {
+		vmove usr/lib/dotnet/dotnet
+		vmove usr/bin/dotnet
+		vmove etc/dotnet/install_location
+		vmove etc/profile.d/dotnet.sh
+
+		cd "${wrksrc}"/sources/src/sdk.*/scripts
+		vcompletion register-completions.bash bash
+		vcompletion register-completions.zsh zsh
+		#vcompletion "$wrksrc/sources/src/sdk.*/scripts/register-completions.bash" bash
+		#vcompletion "$wrksrc/sources/src/sdk.*/scripts/register-completions.zsh" zsh
+
+		vlicense "${wrksrc}"/sources/artifacts/x64/Release/LICENSE.txt
+		vlicense "${wrksrc}"/sources/artifacts/x64/Release/ThirdPartyNotices.txt
+		# there are 2 dotnet.1 manpages; one in the runtime and one in the sdk. On
+		# closer inspection this one is titled dotnet-cli(1) at the top. sdk
+		# manpages are included here because they are referenced by
+		# dotnet-cli(1).
+		cd "${wrksrc}"/sources/src/runtime.*/docs/manpages/host
+		vman dotnet.1 dotnet-cli.1
+		cd "${wrksrc}"/sources/src/sdk.*/documentation/manpages/sdk
+		for f in *.1; do
+			vman $f
+		done
+	}
+}
+
+dotnet-hostfxr_package() {
+	short_desc=".NET Core Command Line Interface"
+	depends="dotnet-host"
+	pkg_install() {
+		vmove usr/lib/dotnet/host/fxr
+		vlicense "${wrksrc}"/sources/artifacts/x64/Release/LICENSE.txt
+	}
+}
+
+dotnet-runtime_package() {
+	short_desc=".NET Core runtime"
+	depends="dotnet-hostfxr"
+	pkg_install() {
+		vmove usr/lib/dotnet/shared/Microsoft.NETCore.App
+		vlicense "${wrksrc}"/sources/artifacts/x64/Release/LICENSE.txt
+	}
+}
+
+aspnetcore-runtime_package() {
+	short_desc="ASP.NET Core runtime"
+	depends="dotnet-runtime"
+	pkg_install() {
+		vmove usr/lib/dotnet/shared/Microsoft.AspNetCore.App
+		vlicense "${wrksrc}"/sources/artifacts/x64/Release/LICENSE.txt
+	}
+}
+
+dotnet-sdk_package() {
+	short_desc=".NET Core SDK"
+	depends="dotnet-runtime aspnetcore-runtime dotnet-targeting-pack
+	 aspnetcore-targeting-pack netstandard-targeting-pack dotnet-apphost-pack
+	 dotnet-templates"
+	pkg_install() {
+		vmove usr/lib/dotnet/sdk
+		vlicense "${wrksrc}"/sources/artifacts/x64/Release/LICENSE.txt
+
+	}
+}
+
+dotnet-apphost-pack_package() {
+	short_desc=".NET Core apphost pack"
+	pkg_install() {
+		vmove usr/lib/dotnet/packs/Microsoft.NETCore.App.Host.linux-x64
+		vlicense "${wrksrc}"/sources/artifacts/x64/Release/LICENSE.txt
+	}
+}
+
+dotnet-targeting-pack_package() {
+	short_desc=".NET Core targeting pack"
+	pkg_install() {
+		vmove usr/lib/dotnet/packs/Microsoft.NETCore.App.Ref
+		vlicense "${wrksrc}"/sources/artifacts/x64/Release/LICENSE.txt
+	}
+}
+
+aspnetcore-targeting-pack_package() {
+	short_desc="ASP.NET Core targeting pack"
+	pkg_install() {
+		vmove usr/lib/dotnet/packs/Microsoft.AspNetCore.App.Ref
+		vlicense "${wrksrc}"/sources/artifacts/x64/Release/LICENSE.txt
+	}
+}
+
+netstandard-targeting-pack_package() {
+	short_desc=".NET Standard targeting pack"
+	pkg_install() {
+		vmove usr/lib/dotnet/packs/NETStandard.Library.Ref
+		vlicense "${wrksrc}"/sources/artifacts/x64/Release/LICENSE.txt
+	}
+}
+
+dotnet-templates_package() {
+	short_desc=".NET Core SDK templates"
+	pkg_install() {
+		vmove usr/lib/dotnet/templates
+		vlicense "${wrksrc}"/sources/artifacts/x64/Release/LICENSE.txt
+
+	}
+}
