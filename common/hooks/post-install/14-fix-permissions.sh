@@ -13,9 +13,9 @@ change_file_perms() {
 
 hook() {
 	if [ -z "$nocheckperms" ]; then
-		# check that no files have permission write for all users
+		# check that no files have permission write for other users
 		find "$PKGDESTDIR" -type f -perm -0002 | while read -r file; do
-			msg_error "$pkgver: file ${file#$PKGDESTDIR} has write permission for all users\n"
+			msg_error "$pkgver: file ${file#$PKGDESTDIR} has write permission for other users\n"
 		done
 	fi
 
