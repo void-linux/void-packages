@@ -1,2 +1,0 @@
-makedepends+=" R"
-depends+=" R"
