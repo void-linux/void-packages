@@ -20,16 +20,16 @@ hook() {
 		fi
 	done
 
-	if [ -n "$create_wrksrc" ]; then
-		mkdir -p "${wrksrc}" || msg_error "$pkgver: failed to create wrksrc.\n"
-	fi
-
 	# Disable trap on ERR; the code is smart enough to report errors and abort.
 	trap - ERR
 
 	TAR_CMD="$(command -v bsdtar)"
 	[ -z "$TAR_CMD" ] && TAR_CMD="$(command -v tar)"
 	[ -z "$TAR_CMD" ] && msg_error "xbps-src: no suitable tar cmd (bsdtar, tar)\n"
+
+	extractdir=$(mktemp -d "$XBPS_BUILDDIR/.extractdir-XXXXXX") &&
+		test -n "$extractdir" && test -d "$extractdir" ||
+		msg_error "$pkgver: failed to create temporary extractdir.\n"
 
 	msg_normal "$pkgver: extracting distfile(s), please wait...\n"
 
@@ -73,17 +73,11 @@ hook() {
 		*) msg_error "$pkgver: unknown distfile suffix for $curfile.\n";;
 		esac
 
-		if [ -n "$create_wrksrc" ]; then
-			extractdir="$wrksrc"
-		else
-			extractdir="$XBPS_BUILDDIR"
-		fi
-
 		case ${cursufx} in
 		tar|txz|tbz|tlz|tgz|crate)
 			$TAR_CMD -x --no-same-permissions --no-same-owner -f $srcdir/$curfile -C "$extractdir"
 			if [ $? -ne 0 ]; then
-				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
+				msg_error "$pkgver: extracting $curfile into $extractdir.\n"
 			fi
 			;;
 		gz|bz2|xz)
@@ -105,12 +99,12 @@ hook() {
 			if command -v unzip &>/dev/null; then
 				unzip -o -q $srcdir/$curfile -d "$extractdir"
 				if [ $? -ne 0 ]; then
-					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
+					msg_error "$pkgver: extracting $curfile into $extractdir.\n"
 				fi
 			elif command -v bsdtar &>/dev/null; then
 				bsdtar -xf $srcdir/$curfile -C "$extractdir"
 				if [ $? -ne 0 ]; then
-					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
+					msg_error "$pkgver: extracting $curfile into $extractdir.\n"
 				fi
 			else
 				msg_error "$pkgver: cannot find unzip or bsdtar bin for extraction.\n"
@@ -121,7 +115,7 @@ hook() {
 				cd "$extractdir"
 				rpmextract $srcdir/$curfile
 				if [ $? -ne 0 ]; then
-					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
+					msg_error "$pkgver: extracting $curfile into $extractdir.\n"
 				fi
 			else
 				msg_error "$pkgver: cannot find rpmextract for extraction.\n"
@@ -138,12 +132,12 @@ hook() {
 			if command -v 7z &>/dev/null; then
 				7z x $srcdir/$curfile -o"$extractdir"
 				if [ $? -ne 0 ]; then
-					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
+					msg_error "$pkgver: extracting $curfile into $extractdir.\n"
 				fi
 			elif command -v bsdtar &>/dev/null; then
 				bsdtar -xf $srcdir/$curfile -C "$extractdir"
 				if [ $? -ne 0 ]; then
-					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
+					msg_error "$pkgver: extracting $curfile into $extractdir.\n"
 				fi
 			else
 				msg_error "$pkgver: cannot find 7z or bsdtar bin for extraction.\n"
@@ -161,7 +155,7 @@ hook() {
 					;;
 			esac
 			if [ $? -ne 0 ]; then
-				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
+				msg_error "$pkgver: extracting $curfile into $extractdir.\n"
 			fi
 			;;
 		*)
@@ -169,4 +163,28 @@ hook() {
 			;;
 		esac
 	done
+
+	### CURRENT BEHAVIOUR is roughly equivalent to this:
+	if [ -n "$create_wrksrc" ]; then
+		mkdir -p "$wrksrc" || msg_error "$pkgver: failed to create wrksrc.\n"
+		echo mv -i "$extractdir"/* -t "$wrksrc" ||
+			msg_error "$pkgver: failed to move $extractdir/* into $wrksrc"
+	else
+		echo mv -i "$extractdir"/* -t "$XBPS_BUILDDIR" ||
+			msg_error "$pkgver: failed to move $extractdir/* into $XBPS_BUILDIR"
+	fi
+
+	# ### A slightly different (more sensible?) behaviour, ignoring create_wrksrc:
+	# set -- "$extractdir"/*
+
+	# if [ "$#" -eq 1 ] && [ -d "$1" ]; then
+	# 	mv -i "$1" -T "$wrksrc" ||
+	# 		msg_error "$pkgver: failed to move '$1' to '$wrksrc'"
+	# else
+	# 	mkdir -p "$wrksrc" || msg_error "$pkgver: failed to create wrksrc.\n"
+	# 	mv -i "$@" -t "$wrksrc" ||
+	# 		msg_error "$pkgver: failed to move '$extractdir/*' into '$wrksrc'"
+	# fi
+
+	msg_error "abort to inspect\n"
 }
