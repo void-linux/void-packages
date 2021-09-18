@@ -3,7 +3,7 @@
 
 hook() {
 	local srcdir="$XBPS_SRCDISTDIR/$pkgname-$version"
-	local f j curfile found extractdir
+	local f j curfile found extractdir innerdir
 	local TAR_CMD
 
 	if [ -z "$distfiles" -a -z "$checksum" ]; then
@@ -150,16 +150,10 @@ hook() {
 			fi
 			;;
 		gem)
-			case "$TAR_CMD" in
-				*bsdtar)
-					$TAR_CMD -xOf $srcdir/$curfile data.tar.gz | \
-						$TAR_CMD -xz -C "$extractdir" -s ",^,${wrksrc##*/}/," -f -
-					;;
-				*)
-					$TAR_CMD -xOf $srcdir/$curfile data.tar.gz | \
-						$TAR_CMD -xz -C "$extractdir" --transform="s,^,${wrksrc##*/}/,"
-					;;
-			esac
+			innerdir="$extractdir/${wrksrc##*/}"
+			mkdir -p "$innerdir"
+			$TAR_CMD -xOf $srcdir/$curfile data.tar.gz |
+				$TAR_CMD -xz -C "$innerdir" -f -
 			if [ $? -ne 0 ]; then
 				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
