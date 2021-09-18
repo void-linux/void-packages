@@ -20,9 +20,7 @@ hook() {
 		fi
 	done
 
-	if [ -n "$create_wrksrc" ]; then
-		mkdir -p "${wrksrc}" || msg_error "$pkgver: failed to create wrksrc.\n"
-	fi
+	rm -rf "$wrksrc"
 
 	# Disable trap on ERR; the code is smart enough to report errors and abort.
 	trap - ERR
@@ -30,6 +28,9 @@ hook() {
 	TAR_CMD="$(command -v bsdtar)"
 	[ -z "$TAR_CMD" ] && TAR_CMD="$(command -v tar)"
 	[ -z "$TAR_CMD" ] && msg_error "xbps-src: no suitable tar cmd (bsdtar, tar)\n"
+
+	extractdir=$(mktemp -d "$XBPS_BUILDDIR/.extractdir-XXXXXXX") ||
+		msg_error "Cannot create temporary dir for do-extract\n"
 
 	msg_normal "$pkgver: extracting distfile(s), please wait...\n"
 
@@ -72,12 +73,6 @@ hook() {
 		*.crate)      cursufx="crate";;
 		*) msg_error "$pkgver: unknown distfile suffix for $curfile.\n";;
 		esac
-
-		if [ -n "$create_wrksrc" ]; then
-			extractdir="$wrksrc"
-		else
-			extractdir="$XBPS_BUILDDIR"
-		fi
 
 		case ${cursufx} in
 		tar|txz|tbz|tlz|tgz|crate)
@@ -128,11 +123,7 @@ hook() {
 			fi
 			;;
 		txt)
-			if [ "$create_wrksrc" ]; then
-				cp -f $srcdir/$curfile "$extractdir"
-			else
-				msg_error "$pkgname: ${curfile##*.} files can only be extracted when create_wrksrc is set\n"
-			fi
+			cp -f $srcdir/$curfile "$extractdir"
 			;;
 		7z)
 			if command -v 7z &>/dev/null; then
@@ -163,4 +154,17 @@ hook() {
 			;;
 		esac
 	done
+
+	# perhap below command is less magic?
+	# find "$extractdir" -mindepth 1 -maxdepth 1 -printf '1\n' | wc -l
+	shopt -s nullglob
+	set -- "$extractdir"/* "$extractdir"/.*
+	shopt -u nullglob
+	if [ $# = 3 ]; then
+		mv "$1" "$wrksrc" &&
+		rmdir "$extractdir"
+	else
+		mv "$extractdir" "$wrksrc"
+	fi ||
+		msg_error "$pkgver: failed to move sources to $wrksrc\n"
 }
