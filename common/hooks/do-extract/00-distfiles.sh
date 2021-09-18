@@ -3,7 +3,7 @@
 
 hook() {
 	local srcdir="$XBPS_SRCDISTDIR/$pkgname-$version"
-	local f j curfile found extractdir innerdir
+	local f j curfile found extractdir innerdir num_dirs
 	local TAR_CMD
 
 	if [ -z "$distfiles" -a -z "$checksum" ]; then
@@ -20,16 +20,15 @@ hook() {
 		fi
 	done
 
-	if [ -n "$create_wrksrc" ]; then
-		mkdir -p "${wrksrc}" || msg_error "$pkgver: failed to create wrksrc.\n"
-	fi
-
 	# Disable trap on ERR; the code is smart enough to report errors and abort.
 	trap - ERR
 
 	TAR_CMD="$(command -v bsdtar)"
 	[ -z "$TAR_CMD" ] && TAR_CMD="$(command -v tar)"
 	[ -z "$TAR_CMD" ] && msg_error "xbps-src: no suitable tar cmd (bsdtar, tar)\n"
+
+	extractdir=$(mktemp -d "$XBPS_BUILDDIR/.extractdir-XXXXXXX") ||
+		msg_error "Cannot create temporary dir for do-extract\n"
 
 	msg_normal "$pkgver: extracting distfile(s), please wait...\n"
 
@@ -72,12 +71,6 @@ hook() {
 		*.crate)      cursufx="crate";;
 		*) msg_error "$pkgver: unknown distfile suffix for $curfile.\n";;
 		esac
-
-		if [ -n "$create_wrksrc" ]; then
-			extractdir="$wrksrc"
-		else
-			extractdir="$XBPS_BUILDDIR"
-		fi
 
 		case ${cursufx} in
 		tar|txz|tbz|tlz|tgz|crate)
@@ -128,11 +121,7 @@ hook() {
 			fi
 			;;
 		txt)
-			if [ "$create_wrksrc" ]; then
-				cp -f $srcdir/$curfile "$extractdir"
-			else
-				msg_error "$pkgname: ${curfile##*.} files can only be extracted when create_wrksrc is set\n"
-			fi
+			cp -f $srcdir/$curfile "$extractdir"
 			;;
 		7z)
 			if command -v 7z &>/dev/null; then
@@ -163,4 +152,31 @@ hook() {
 			;;
 		esac
 	done
+
+	# find "$extractdir" -mindepth 1 -maxdepth 1 -printf '1\n' | wc -l
+	# However, it requires GNU's find
+	num_dirs=0
+	for f in "$extractdir"/* "$extractdir"/.*; do
+		if [ -e "$f" ] || [ -L "$f" ]; then
+			case "$f" in
+			*/. | */..) ;;
+			*)
+				innerdir="$f"
+				num_dirs=$(( num_dirs + 1 ))
+				;;
+			esac
+		fi
+	done
+	rm -rf "$wrksrc"
+	if [ "$num_dirs" = 1 ] && [ -d "$innerdir" ] && [ -z "$create_wrksrc" ]; then
+		# rename the subdirectory (top-level of distfiles) to $wrksrc
+		mv "$innerdir" "$wrksrc" &&
+		rmdir "$extractdir"
+	elif [ "$num_dirs" -gt 1 ] || [ -n "$create_wrksrc" ]; then
+		# rename the tmpdir to wrksrc
+		mv "$extractdir" "$wrksrc"
+	else
+		mkdir -p "$wrksrc"
+	fi ||
+		msg_error "$pkgver: failed to move sources to $wrksrc\n"
 }
