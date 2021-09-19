@@ -517,8 +517,10 @@ set to `${pkgname}-${version}`. If the top level directory of a package's `distf
 
 - `build_wrksrc` A directory relative to `${wrksrc}` that will be used when building the package.
 
-- `create_wrksrc` Enable it to create the `${wrksrc}` directory. Required if a package
-contains multiple `distfiles`.
+- `create_wrksrc` Usually, after extracting, if there're multiple top-level
+  files and/or directories or when there're no directories at all, top-level files,
+  and directories will be wrapped inside one more layer of directory.
+  Set `create_wrksrc` to force this behaviour.
 
 - `build_style` This specifies the `build method` for a package. Read below to know more
 about the available package `build methods` or effect of leaving this not set.
