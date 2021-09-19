@@ -628,11 +628,7 @@ setup_pkg() {
     fi
 
     # Setup some specific package vars.
-    if [ -z "$wrksrc" ]; then
-        wrksrc="$XBPS_BUILDDIR/${sourcepkg}-${version}"
-    else
-        wrksrc="$XBPS_BUILDDIR/$wrksrc"
-    fi
+    wrksrc="$XBPS_BUILDDIR/${sourcepkg}-${version}"
 
     if [ "$cross" -a "$nocross" -a "$show_problems" != "ignore-problems" ]; then
         msg_red "$pkgver: cannot be cross compiled, exiting...\n"
