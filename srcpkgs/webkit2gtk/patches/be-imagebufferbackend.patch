@@ -1,0 +1,214 @@
+From 1e7d7e7361189d40ace22d6ff2e2139a4e6759f0 Mon Sep 17 00:00:00 2001
+From: q66 <daniel@octaforge.org>
+Date: Sat, 31 Jul 2021 22:31:52 +0200
+Subject: [PATCH 2/2] some big endian rendering fixes
+
+Source: Jacek Piszczek <jacek.piszczek@runbox.com>
+---
+ .../platform/graphics/ImageBufferBackend.cpp  | 109 ++++++++++++++++++
+ .../platform/graphics/ImageBufferBackend.h    |   3 +
+ 2 files changed, 112 insertions(+)
+
+diff --git a/Source/WebCore/platform/graphics/ImageBufferBackend.cpp b/Source/WebCore/platform/graphics/ImageBufferBackend.cpp
+index 9394e7bf..e704be6b 100644
+--- a/Source/WebCore/platform/graphics/ImageBufferBackend.cpp
++++ b/Source/WebCore/platform/graphics/ImageBufferBackend.cpp
+@@ -110,7 +110,11 @@ Vector<uint8_t> ImageBufferBackend::toBGRAData(void* data) const
+ 
+ static inline void copyPremultipliedToPremultiplied(PixelFormat srcPixelFormat, const uint8_t* srcPixel, PixelFormat destPixelFormat, uint8_t* destPixel)
+ {
++#if CPU(BIG_ENDIAN)
++    uint8_t alpha = srcPixel[srcPixelFormat == PixelFormat::ARGB8 ? 0 : 3];
++#else
+     uint8_t alpha = srcPixel[3];
++#endif
+     if (!alpha) {
+         reinterpret_cast<uint32_t*>(destPixel)[0] = 0;
+         return;
+@@ -121,21 +125,73 @@ static inline void copyPremultipliedToPremultiplied(PixelFormat srcPixelFormat,
+         return;
+     }
+ 
++#if CPU(BIG_ENDIAN)
++    // Swap pixel channels ARGB <-> RGBA.
++    if (destPixelFormat == PixelFormat::ARGB8)
++    {
++        destPixel[0] = srcPixel[3];
++        destPixel[1] = srcPixel[0];
++        destPixel[2] = srcPixel[1];
++        destPixel[3] = srcPixel[2];
++    }
++    else
++    {
++        destPixel[0] = srcPixel[1];
++        destPixel[1] = srcPixel[2];
++        destPixel[2] = srcPixel[3];
++        destPixel[3] = srcPixel[0];
++    }
++#else
+     // Swap pixel channels BGRA <-> RGBA.
+     destPixel[0] = srcPixel[2];
+     destPixel[1] = srcPixel[1];
+     destPixel[2] = srcPixel[0];
+     destPixel[3] = srcPixel[3];
++#endif
+ }
+ 
+ static inline void copyPremultipliedToUnpremultiplied(PixelFormat srcPixelFormat, const uint8_t* srcPixel, PixelFormat destPixelFormat, uint8_t* destPixel)
+ {
++#if CPU(BIG_ENDIAN)
++    uint8_t alpha = srcPixel[srcPixelFormat == PixelFormat::ARGB8 ? 0 : 3];
++#else
+     uint8_t alpha = srcPixel[3];
++#endif
++
+     if (!alpha || alpha == 255) {
+         copyPremultipliedToPremultiplied(srcPixelFormat, srcPixel, destPixelFormat, destPixel);
+         return;
+     }
+ 
++#if CPU(BIG_ENDIAN)
++    if (srcPixelFormat == destPixelFormat) {
++        if (srcPixelFormat == PixelFormat::ARGB8) {
++            destPixel[0] = alpha;
++            destPixel[1] = (srcPixel[1] * 255) / alpha;
++            destPixel[2] = (srcPixel[2] * 255) / alpha;
++            destPixel[3] = (srcPixel[3] * 255) / alpha;
++            return;
++        }
++        destPixel[0] = (srcPixel[0] * 255) / alpha;
++        destPixel[1] = (srcPixel[1] * 255) / alpha;
++        destPixel[2] = (srcPixel[2] * 255) / alpha;
++        destPixel[3] = alpha;
++        return;
++    }
++
++    if (srcPixelFormat == PixelFormat::ARGB8) {
++        destPixel[0] = (srcPixel[1] * 255) / alpha;
++        destPixel[1] = (srcPixel[2] * 255) / alpha;
++        destPixel[2] = (srcPixel[3] * 255) / alpha;
++        destPixel[3] = alpha;
++    }
++    else {
++        destPixel[0] = alpha;
++        destPixel[1] = (srcPixel[0] * 255) / alpha;
++        destPixel[2] = (srcPixel[1] * 255) / alpha;
++        destPixel[3] = (srcPixel[2] * 255) / alpha;
++    }
++#else
+     if (srcPixelFormat == destPixelFormat) {
+         destPixel[0] = (srcPixel[0] * 255) / alpha;
+         destPixel[1] = (srcPixel[1] * 255) / alpha;
+@@ -149,16 +205,51 @@ static inline void copyPremultipliedToUnpremultiplied(PixelFormat srcPixelFormat
+     destPixel[1] = (srcPixel[1] * 255) / alpha;
+     destPixel[2] = (srcPixel[0] * 255) / alpha;
+     destPixel[3] = alpha;
++#endif
+ }
+ 
+ static inline void copyUnpremultipliedToPremultiplied(PixelFormat srcPixelFormat, const uint8_t* srcPixel, PixelFormat destPixelFormat, uint8_t* destPixel)
+ {
++#if CPU(BIG_ENDIAN)
++    uint8_t alpha = srcPixel[srcPixelFormat == PixelFormat::ARGB8 ? 0 : 3];
++#else
+     uint8_t alpha = srcPixel[3];
++#endif
++
+     if (!alpha || alpha == 255) {
+         copyPremultipliedToPremultiplied(srcPixelFormat, srcPixel, destPixelFormat, destPixel);
+         return;
+     }
+ 
++#if CPU(BIG_ENDIAN)
++    if (srcPixelFormat == destPixelFormat) {
++        if (srcPixelFormat == PixelFormat::ARGB8) {
++            destPixel[0] = alpha;
++            destPixel[1] = (srcPixel[1] * alpha + 254) / 255;
++            destPixel[2] = (srcPixel[2] * alpha + 254) / 255;
++            destPixel[3] = (srcPixel[3] * alpha + 254) / 255;
++            return;
++        }
++        destPixel[0] = (srcPixel[0] * alpha + 254) / 255;
++        destPixel[1] = (srcPixel[1] * alpha + 254) / 255;
++        destPixel[2] = (srcPixel[2] * alpha + 254) / 255;
++        destPixel[3] = alpha;
++        return;
++    }
++
++    if (srcPixelFormat == PixelFormat::ARGB8) {
++        destPixel[0] = (srcPixel[1] * alpha + 254) / 255;
++        destPixel[1] = (srcPixel[2] * alpha + 254) / 255;
++        destPixel[2] = (srcPixel[3] * alpha + 254) / 255;
++        destPixel[3] = alpha;
++        return;
++    }
++
++    destPixel[0] = alpha;
++    destPixel[1] = (srcPixel[0] * alpha + 254) / 255;
++    destPixel[2] = (srcPixel[1] * alpha + 254) / 255;
++    destPixel[3] = (srcPixel[2] * alpha + 254) / 255;
++#else
+     if (srcPixelFormat == destPixelFormat) {
+         destPixel[0] = (srcPixel[0] * alpha + 254) / 255;
+         destPixel[1] = (srcPixel[1] * alpha + 254) / 255;
+@@ -172,6 +263,7 @@ static inline void copyUnpremultipliedToPremultiplied(PixelFormat srcPixelFormat
+     destPixel[1] = (srcPixel[1] * alpha + 254) / 255;
+     destPixel[2] = (srcPixel[0] * alpha + 254) / 255;
+     destPixel[3] = alpha;
++#endif
+ }
+ 
+ static inline void copyUnpremultipliedToUnpremultiplied(PixelFormat srcPixelFormat, const uint8_t* srcPixel, PixelFormat destPixelFormat, uint8_t* destPixel)
+@@ -181,11 +273,27 @@ static inline void copyUnpremultipliedToUnpremultiplied(PixelFormat srcPixelForm
+         return;
+     }
+ 
++#if CPU(BIG_ENDIAN)
++    // Swap pixel channels ARGB <-> RGBA.
++    if (destPixelFormat == PixelFormat::ARGB8) {
++        destPixel[0] = srcPixel[3];
++        destPixel[1] = srcPixel[0];
++        destPixel[2] = srcPixel[1];
++        destPixel[3] = srcPixel[2];
++    }
++    else {
++        destPixel[0] = srcPixel[1];
++        destPixel[1] = srcPixel[2];
++        destPixel[2] = srcPixel[3];
++        destPixel[3] = srcPixel[0];
++    }
++#else
+     // Swap pixel channels BGRA <-> RGBA.
+     destPixel[0] = srcPixel[2];
+     destPixel[1] = srcPixel[1];
+     destPixel[2] = srcPixel[0];
+     destPixel[3] = srcPixel[3];
++#endif
+ }
+ 
+ template<void (*copyFunctor)(PixelFormat, const uint8_t*, PixelFormat, uint8_t*)>
+@@ -207,6 +315,7 @@ void ImageBufferBackend::copyImagePixels(
+     AlphaPremultiplication destAlphaFormat, PixelFormat destPixelFormat, unsigned destBytesPerRow, uint8_t* destRows, const IntSize& size) const
+ {
+     // We don't currently support getting or putting pixel data with deep color buffers.
++    // BGRA8 is actually ARGB8 on BIG_ENDIAN.
+     ASSERT(srcPixelFormat == PixelFormat::RGBA8 || srcPixelFormat == PixelFormat::BGRA8);
+     ASSERT(destPixelFormat == PixelFormat::RGBA8 || destPixelFormat == PixelFormat::BGRA8);
+ 
+diff --git a/Source/WebCore/platform/graphics/ImageBufferBackend.h b/Source/WebCore/platform/graphics/ImageBufferBackend.h
+index 31ce9775..4c52fa52 100644
+--- a/Source/WebCore/platform/graphics/ImageBufferBackend.h
++++ b/Source/WebCore/platform/graphics/ImageBufferBackend.h
+@@ -58,6 +58,9 @@ enum class PreserveResolution : uint8_t {
+ enum class PixelFormat : uint8_t {
+     RGBA8,
+     BGRA8,
++#if CPU(BIG_ENDIAN)
++    ARGB8 = BGRA8, // BGRA will actually be ARGB on BIG_ENDIAN
++#endif
+     RGB10,
+     RGB10A8,
+ };
+-- 
+2.31.1
+

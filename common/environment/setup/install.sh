@@ -254,6 +254,9 @@ _vcompletion() {
 		bash) vinstall "$file" 0644 $_bash_completion_dir "${cmd}" ;;
 		fish) vinstall "$file" 0644 $_fish_completion_dir "${cmd}.fish" ;;
 		zsh) vinstall "$file" 0644 $_zsh_completion_dir "_${cmd}" ;;
-		*) msg_red "$pkgver: vcompletion: unknown shell ${shell}" ;;
+		*)
+			msg_red "$pkgver: vcompletion: unknown shell ${shell}"
+			return 1
+			;;
 	esac
 }

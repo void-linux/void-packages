@@ -46,17 +46,12 @@ For bootstrapping additionally:
 - install(1) - GNU coreutils
 - objcopy(1), objdump(1), strip(1): binutils
 
-`xbps-src` requires a utility to chroot and bind mount existing directories
+`xbps-src` requires [a utility to chroot](#chroot-methods) and bind mount existing directories
 into a `masterdir` that is used as its main `chroot` directory. `xbps-src` supports
-multiple utilities to accomplish this task:
-
- - `bwrap` - bubblewrap, see https://github.com/projectatomic/bubblewrap.
- - `ethereal` - only useful for one-shot containers, i.e docker (used with CI).
- - `xbps-uunshare(1)` - XBPS utility that uses `user_namespaces(7)` (part of xbps, default).
- - `xbps-uchroot(1)` - XBPS utility that uses `namespaces` and must be `setgid` (part of xbps).
+multiple utilities to accomplish this task.
 
 > NOTE: `xbps-src` does not allow building as root anymore. Use one of the chroot
-methods shown above.
+methods.
 
 <a name="quick-start"></a>
 ### Quick start
@@ -100,6 +95,8 @@ Alternatively, packages can be installed with the `xi` utility, from the `xtools
 
 #### xbps-uunshare(1) (default)
 
+XBPS utility that uses `user_namespaces(7)` (part of xbps, default without `-t` flag).
+
 This utility requires these Linux kernel options:
 
 - CONFIG\_NAMESPACES
@@ -111,6 +108,11 @@ This is the default method, and if your system does not support any of the requi
 options it will fail with `EINVAL (Invalid argument)`.
 
 #### xbps-uchroot(1)
+
+XBPS utility that uses `namespaces` and must be `setgid` (part of xbps).
+
+> NOTE: This is the only method that implements functionality of `xbps-src -t`, therefore the
+flag ignores the choice made in configuration files and enables `xbps-uchroot`.
 
 This utility requires these Linux kernel options:
 
@@ -137,6 +139,16 @@ To enable it:
 If for some reason it's erroring out as `ERROR clone (Operation not permitted)`, check that
 your user is a member of the required `group` and that `xbps-uchroot(1)` utility has the
 proper permissions and owner/group as explained above.
+
+#### bwrap(1)
+
+bubblewrap, sandboxing tool for unprivileged users that uses
+user namespaces or setuid.
+See <https://github.com/containers/bubblewrap>.
+
+#### ethereal
+
+Destroys host system it runs on. Only useful for one-shot containers, i.e docker (used with CI).
 
 <a name="install-bootstrap"></a>
 ### Install the bootstrap packages
@@ -331,15 +343,15 @@ Each time a binary package is created, a package signature must be created with 
 <a name="rebuilding"></a>
 ### Rebuilding and overwriting existing local packages
 
-If for whatever reason a package has been built and it is available in your local repository
-and you have to rebuild it without bumping its `version` or `revision` fields, it is possible
-to accomplish this task easily with `xbps-src`:
+Packages are overwritten on every build to make getting package with changed build options easy.
+To make xbps-src skip build and preserve first package build with with given version and revision,
+same as in official void repository, set `XBPS_PRESERVE_PKGS=yes` in `etc/conf` file.
 
-    $ ./xbps-src -f pkg xbps
+Reinstalling a package in your target `rootdir` can be easily done too:
 
-Reinstalling this package in your target `rootdir` can be easily done too:
+    $ xbps-install --repository=/path/to/local/repo -yf xbps-0.25_1
 
-    $ xbps-install --repository=/path/to/local/repo -yff xbps-0.25_1
+Using `-f` flag twice will overwrite configuration files.
 
 > Please note that the `package expression` must be properly defined to explicitly pick up
 the package from the desired repository.
@@ -424,11 +436,8 @@ To use xbps-src in your Linux distribution use the following instructions. Let's
     $ tar xvf xbps-static-latest.<arch>-musl.tar.xz -C ~/XBPS
     $ export PATH=~/XBPS/usr/bin:$PATH
 
-If your system does not support `user namespaces`, a privileged group is required to be able to use
-`xbps-uchroot(1)` with xbps-src, by default it's set to the `xbuilder` group, change this to your desired group:
-
-    # chown root:<group> ~/XBPS/usr/bin/xbps-uchroot.static
-    # chmod 4750 ~/XBPS/usr/bin/xbps-uchroot.static
+If `xbps-uunshare` does not work because of lack of `user_namespaces(7)` support,
+try other [chroot methods](#chroot-methods).
 
 Clone the `void-packages` git repository:
 
