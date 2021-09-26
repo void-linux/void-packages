@@ -1,7 +1,7 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See https://chromiumdash.appspot.com/releases?platform=Linux for the latest version
-version=95.0.4638.54
+version=96.0.4664.45
 revision=1
 archs="i686* x86_64* aarch64* armv7l* ppc64le*"
 short_desc="Google's attempt at creating a safer, faster, and more stable browser"
@@ -9,8 +9,7 @@ maintainer="Enno Boland <gottox@voidlinux.org>"
 license="BSD-3-Clause"
 homepage="https://www.chromium.org/"
 distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/${pkgname}-${version}.tar.xz"
-checksum=3eef88d745e6ddaeaf507358f1510482d6f399cf335061bb1226a5f7120061fd
-nocross=yes
+checksum=488c6ad983ebf7781cb4d704f70496e8aa2165611b46656d7aa62f269c760407
 
 lib32disabled=yes
 
@@ -24,8 +23,8 @@ desc_option_pulseaudio="Enable support for PulseAudio"
 desc_option_sndio="Enable support for sndio"
 desc_option_pipewire="Enable support for screen sharing for WebRTC via PipeWire"
 
-hostmakedepends="$(vopt_if clang "clang lld llvm12") python pkgconf perl gperf bison ninja nodejs hwids
- libatomic-devel libevent-devel libglib-devel $(vopt_if js_optimize openjdk)"
+hostmakedepends="$(vopt_if clang "clang lld llvm12") python python3 pkgconf perl gperf bison ninja nodejs hwids
+ libatomic-devel libevent-devel libglib-devel $(vopt_if js_optimize openjdk) wayland-devel libepoxy-devel"
 makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
  libXi-devel libgcrypt-devel libgnome-keyring-devel cups-devel elfutils-devel
  libXcomposite-devel speech-dispatcher-devel libXrandr-devel mit-krb5-devel
@@ -34,14 +33,35 @@ makedepends="libpng-devel gtk+-devel gtk+3-devel nss-devel pciutils-devel
  libXcursor-devel libflac-devel speex-devel libmtp-devel libwebp-devel
  libjpeg-turbo-devel libevent-devel json-c-devel harfbuzz-devel
  minizip-devel jsoncpp-devel zlib-devel libcap-devel libXdamage-devel
- re2-devel fontconfig-devel freetype-devel opus-devel
+ re2-devel fontconfig-devel freetype-devel opus-devel libatomic-devel
  ffmpeg-devel libva-devel python-setuptools xcb-proto libcurl-devel
+ libxshmfence-devel
  $(vopt_if pipewire pipewire-devel) $(vopt_if sndio sndio-devel)"
 depends="libexif hwids desktop-file-utils hicolor-icon-theme xdg-utils"
 
 case "$XBPS_TARGET_MACHINE" in
 	ppc64*-musl) makedepends+=" libucontext-devel" ;;
 esac
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" libX11-devel libxcb-devel pciutils-devel libXext-devel libglvnd-devel
+	 libjpeg-turbo-devel libXi-devel nss-devel libpng-devel libwebp-devel harfbuzz-devel
+	 libxml2-devel $(vopt_if pulseaudio pulseaudio-devel) libxslt-devel libxkbcommon-devel
+	 $(vopt_if pipewire pipewire-devel) ffmpeg-devel opus-devel pango-devel libva-devel
+	 libcurl-devel snappy-devel re2-devel libXrandr-devel libXcomposite-devel cups-devel
+	 mit-krb5-devel alsa-lib-devel libXdamage-devel libepoxy-devel"
+fi
+
+if [ ! "$XBPS_WORDSIZE" = "$XBPS_TARGET_WORDSIZE" ]; then
+	broken="chromium (v8) can only be cross compiled if word size matches"
+fi
+
+if [ "$CROSS_BUILD" ]; then
+	case "${XBPS_TARGET_MACHINE}" in
+		aarch64*) ;;
+		*) nocross="chromium can not be cross compiled for this architecture" ;;
+	esac
+fi
 
 post_patch() {
 	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
@@ -71,20 +91,57 @@ post_patch() {
 	vsed -i 's/OFFICIAL_BUILD/GOOGLE_CHROME_BUILD/' \
 		tools/generate_shim_headers/generate_shim_headers.py
 }
+
+_setup_clang() {
+	local gcc_version=$(gcc -dumpversion)
+	local clang_version=$(clang -dumpversion)
+	export CC=clang
+	export CXX=clang++
+	export AR=llvm-ar
+	export NM=llvm-nm
+	export CFLAGS="-Wno-unknown-warning-option"
+	export CXXFLAGS="-Wno-unknown-warning-option"
+	export LDFLAGS=""
+	export BUILD_CC=clang
+	export BUILD_CXX=clang++
+	export BUILD_AR=llvm-ar
+	export BUILD_NM=llvm-nm
+	export BUILD_CFLAGS="-Wno-unknown-warning-option"
+	export BUILD_CXXFLAGS="-Wno-unknown-warning-option"
+	if [ "$CROSS_BUILD" ]; then
+		CFLAGS+=" --gcc-toolchain=/usr"
+		CFLAGS+=" --sysroot=${XBPS_CROSS_BASE}"
+		CFLAGS+=" -nostdinc"
+		CFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include"
+		CFLAGS+=" -isystem /usr/lib/clang/${clang_version}/include"
+		CXXFLAGS+=" --gcc-toolchain=/usr"
+		CXXFLAGS+=" --sysroot=${XBPS_CROSS_BASE}"
+		CXXFLAGS+=" -nostdinc++"
+		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}"
+		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/${XBPS_CROSS_TRIPLET}"
+		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/backward"
+		CXXFLAGS+=" -nostdinc"
+		CXXFLAGS+=" -isystem ${XBPS_CROSS_BASE}/usr/include"
+		CXXFLAGS+=" -isystem /usr/lib/clang/${clang_version}/include"
+		LDFLAGS+=" --gcc-toolchain=/usr --sysroot=${XBPS_CROSS_BASE}"
+	fi
+}
+
+_setup_toolchain() {
+	if [ "$build_option_clang" ]; then
+		_setup_clang
+	fi
+	CXXFLAGS+=" -fdebug-prefix-map=$wrksrc=."
+	CFLAGS+=" -fdebug-prefix-map=$wrksrc=."
+}
+
 do_configure() {
 	local system="" conf=()
-	export -n CFLAGS CXXFLAGS LDFLAGS
-
-	if [ "$build_option_clang" ]; then
-		export CC=clang
-		export CXX=clang++
-	fi
-
-	export LDFLAGS="-pthread"
 
 	# compile gn early, so it can be used to generate gni stuff
 	AR="ar" CC=$CC_FOR_BUILD CXX=$CXX_FOR_BUILD LD=$CXX_FOR_BUILD \
-	tools/gn/bootstrap/bootstrap.py --skip-generate-buildfiles
+		CFLAGS=$CFLAGS_FOR_BUILD CXXFLAGS=$CXXFLAGS_FOR_BUILD LDFLAGS=$LDFLAGS_FOR_BUILD \
+		tools/gn/bootstrap/bootstrap.py --skip-generate-buildfiles
 
 	# we need to generate ppc64 stuff for libvpx as it's not shipped
 	# this has to be done before unbundling, but after gn is built
@@ -154,8 +211,8 @@ do_configure() {
 		'enable_nacl_nonsfi=false'
 
 		'use_sysroot=false'
-		'custom_toolchain="//build/toolchain/linux/unbundle:default"'
-		'host_toolchain="//build/toolchain/linux/unbundle:default"'
+
+		'host_pkg_config="/usr/bin/pkg-config"'
 
 		"is_clang=$(vopt_if clang true false)"
 		"use_lld=$(vopt_if clang true false)"
@@ -181,6 +238,7 @@ do_configure() {
 		'enable_hangout_services_extension=true'
 
 		'use_system_harfbuzz=true'
+		'use_system_wayland_scanner=true'
 
 		'use_cups=true'
 
@@ -220,10 +278,27 @@ do_configure() {
 		'chrome_pgo_phase=0'
 	)
 
+	if [ "$CROSS_BUILD" ]; then
+		conf+=(
+			'custom_toolchain="//build/toolchain/linux/unbundle:default"'
+			'host_toolchain="//build/toolchain/linux/unbundle:host"'
+			'v8_snapshot_toolchain="//build/toolchain/linux/unbundle:v8_snapshot_cross"'
+		)
+	else
+		conf+=(
+			'custom_toolchain="//build/toolchain/linux/unbundle:default"'
+			'host_toolchain="//build/toolchain/linux/unbundle:default"'
+		)
+	fi
+
 	# this does not work on ppc64 yet
 	case "$XBPS_TARGET_MACHINE" in
 		ppc64*) conf+=( "enable_jxl_decoder=false" );;
 	esac
+
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		conf+=( 'is_musl=true' )
+	fi
 
 	case "${XBPS_TARGET_MACHINE}" in
 		x86_64*) conf+=( 'target_cpu="x64"' ) ;;
@@ -233,35 +308,32 @@ do_configure() {
 		ppc64*) conf+=( 'target_cpu="ppc64"' ) ;;
 	esac
 
-	if [ "$build_option_clang" ]; then
-		export CC=clang
-		export CXX=clang++
-		export AR=llvm-ar
-		export NM=llvm-nm
-		export CFLAGS="-Wno-unknown-warning-option"
-		export CXXFLAGS="-Wno-unknown-warning-option"
+	if [ "$CROSS_BUILD" ]; then
+		case "${XBPS_MACHINE}" in
+			x86_64*) conf+=( 'host_cpu="x64"' ) ;;
+			i686*) conf+=( 'host_cpu="x86"' ) ;;
+			arm*) conf+=( 'host_cpu="arm"' ) ;;
+			aarch64*) conf+=( 'host_cpu="arm64"' ) ;;
+			ppc64*) conf+=( 'host_cpu="ppc64"' ) ;;
+		esac
 	fi
-
+	_setup_toolchain
 	out/Release/gn gen out/Release --args="${conf[*]}"
 }
-do_build() {
-	if [ "$build_option_clang" ]; then
-		export CC=clang
-		export CXX=clang++
-		export AR=llvm-ar
-		export NM=llvm-nm
-		export CFLAGS="-Wno-unknown-warning-option"
-		export CXXFLAGS="-Wno-unknown-warning-option"
-	fi
 
-	ninja -C out/Release ${makejobs} chrome chromedriver mksnapshot chrome_crashpad_handler
+do_build() {
+	_setup_toolchain
+	ninja -C out/Release ${makejobs} chrome chromedriver chrome_crashpad_handler
 }
+
 do_install() {
 	vinstall out/Release/chrome 755 usr/lib/${pkgname} ${pkgname}
 	vinstall out/Release/chrome_crashpad_handler 755 usr/lib/${pkgname} chrome_crashpad_handler
 	vinstall out/Release/chromedriver 755 usr/lib/${pkgname} chromedriver
 	vinstall out/Release/libEGL.so 755 usr/lib/${pkgname} libEGL.so
 	vinstall out/Release/libGLESv2.so 755 usr/lib/${pkgname} libGLESv2.so
+	vinstall out/Release/libvk_swiftshader.so 755 usr/lib/${pkgname} libvk_swiftshader.so
+	vinstall out/Release/vk_swiftshader_icd.json 755 usr/lib/${pkgname} vk_swiftshader_icd.json
 
 	vcopy "out/Release/*.bin" usr/lib/chromium
 	vcopy "out/Release/*.pak" usr/lib/chromium
