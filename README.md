@@ -343,15 +343,15 @@ Each time a binary package is created, a package signature must be created with 
 <a name="rebuilding"></a>
 ### Rebuilding and overwriting existing local packages
 
-If for whatever reason a package has been built and it is available in your local repository
-and you have to rebuild it without bumping its `version` or `revision` fields, it is possible
-to accomplish this task easily with `xbps-src`:
+Packages are overwritten on every build to make getting package with changed build options easy.
+To make xbps-src skip build and preserve first package build with with given version and revision,
+same as in official void repository, set `XBPS_PRESERVE_PKGS=yes` in `etc/conf` file.
 
-    $ ./xbps-src -f pkg xbps
+Reinstalling a package in your target `rootdir` can be easily done too:
 
-Reinstalling this package in your target `rootdir` can be easily done too:
+    $ xbps-install --repository=/path/to/local/repo -yf xbps-0.25_1
 
-    $ xbps-install --repository=/path/to/local/repo -yff xbps-0.25_1
+Using `-f` flag twice will overwrite configuration files.
 
 > Please note that the `package expression` must be properly defined to explicitly pick up
 the package from the desired repository.
