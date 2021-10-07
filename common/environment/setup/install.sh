@@ -20,6 +20,7 @@ done
 _vsv() {
 	local service="$1"
 	local LN_OPTS="-s"
+	local svdir="${PKGDESTDIR}/etc/sv/${service}"
 
 	if [ $# -lt 1 ]; then
 		msg_red "$pkgver: vsv: 1 argument expected: <service>\n"
@@ -32,14 +33,18 @@ _vsv() {
 
 	vmkdir etc/sv
 	vcopy "${FILESDIR}/$service" etc/sv
-	chmod 755 ${PKGDESTDIR}/etc/sv/${service}/run
-	if [ -r ${PKGDESTDIR}/etc/sv/${service}/finish ]; then
-		chmod 755 ${PKGDESTDIR}/etc/sv/${service}/finish
+	if [ ! -L $svdir/run ]; then
+		chmod 755 $svdir/run
 	fi
-	ln ${LN_OPTS} /run/runit/supervise.${service} ${PKGDESTDIR}/etc/sv/${service}/supervise
-	if [ -r ${PKGDESTDIR}/etc/sv/${service}/log/run ]; then
-		chmod 755 ${PKGDESTDIR}/etc/sv/${service}/log/run
-		ln ${LN_OPTS} /run/runit/supervise.${service}-log ${PKGDESTDIR}/etc/sv/${service}/log/supervise
+	if [ -e $svdir/finish ] && [ ! -L $svdir/finish ]; then
+		chmod 755 $svdir/finish
+	fi
+	ln ${LN_OPTS} /run/runit/supervise.${service} $svdir/supervise
+	if [ -d $svdir/log ]; then
+		ln ${LN_OPTS} /run/runit/supervise.${service}-log $svdir/log/supervise
+		if [ -e $svdir/log/run ] && [ ! -L $svdir/log/run ]; then
+			chmod 755 ${PKGDESTDIR}/etc/sv/${service}/log/run
+		fi
 	fi
 }
 
