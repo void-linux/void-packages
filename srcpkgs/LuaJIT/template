@@ -1,0 +1,82 @@
+# Template file for 'LuaJIT'
+pkgname=LuaJIT
+version=2.1.0beta3
+revision=2
+_so_version=2.1.0
+_dist_version=${_so_version}-beta3
+wrksrc="${pkgname}-${_dist_version}"
+hostmakedepends="lua52-BitOp"
+short_desc="Just-In-Time Compiler for Lua"
+maintainer="q66 <daniel@octaforge.org>"
+license="MIT"
+homepage="http://www.luajit.org"
+distfiles="http://luajit.org/download/${pkgname}-${_dist_version}.tar.gz"
+checksum=1ad2e34b111c802f9d0cdf019e986909123237a28c746b21295b63c9e785d9c3
+
+build_options="lua52compat"
+
+_cross_cc="cc"
+if [ "$XBPS_WORDSIZE" != "$XBPS_TARGET_WORDSIZE" ]; then
+	if [ "${XBPS_MACHINE/-musl/}" = "x86_64" ]; then
+		hostmakedepends+=" cross-i686-linux-musl"
+		_cross_cc="i686-linux-musl-gcc -static"
+	else
+		broken="Host and target wordsize must match"
+	fi
+fi
+
+# the ppc64 patchset subtly breaks ppc, needs investigation; for
+# now apply patches conditionally, separately for ppc64 and ppc
+post_patch() {
+	local patchdir
+
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*) patchdir="ppc64";;
+		ppc*) patchdir="ppc";;
+		*) return;;
+	esac
+
+	for i in ${FILESDIR}/patches/${patchdir}/*.patch; do
+		msg_normal "patching: $i\n"
+		patch -sNp1 -i ${i}
+	done
+}
+
+do_build() {
+	local _cflags=$CFLAGS
+	local _ldflags=$LDFLAGS
+
+	if [ "$CROSS_BUILD" ]; then
+		local cross="CROSS=${XBPS_CROSS_TRIPLET}-"
+	fi
+
+	if [ "$build_option_lua52compat" ]; then
+		local _xcflags="XCFLAGS=-DLUAJIT_ENABLE_LUA52COMPAT"
+	fi
+
+	unset CFLAGS LDFLAGS
+	make ${makejobs} PREFIX=/usr HOST_LUA=lua5.2 HOST_CC="${_cross_cc}" \
+		HOST_CFLAGS="$XBPS_CFLAGS" HOST_LDFLAGS="$XBPS_LDFLAGS" \
+		TARGET_CFLAGS="${_cflags}" TARGET_LDFLAGS="${_ldflags}" \
+		${_xcflags} ${cross}
+}
+
+do_install() {
+	make DPREFIX=${DESTDIR}/usr DESTDIR=${DESTDIR} \
+		INSTALL_SHARE=${DESTDIR}/usr/share PREFIX=/usr install
+
+	mv ${DESTDIR}/usr/bin/luajit-* ${DESTDIR}/usr/bin/luajit
+	ln -fs libluajit-5.1.so.${_so_version} ${DESTDIR}/usr/lib/libluajit-5.1.so.2
+	vlicense COPYRIGHT
+}
+
+LuaJIT-devel_package() {
+	depends="${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/pkgconfig
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
+	}
+}

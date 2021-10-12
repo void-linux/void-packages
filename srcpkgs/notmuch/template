@@ -1,0 +1,117 @@
+# Template file for 'notmuch'
+pkgname=notmuch
+version=0.32.2
+revision=3
+build_style=configure
+configure_args="--prefix=/usr
+ --emacslispdir=/usr/share/emacs/site-lisp/notmuch
+ --emacsetcdir=/usr/share/emacs/site-lisp/notmuch"
+hostmakedepends="perl pkg-config python3-Sphinx python3-devel texinfo
+ desktop-file-utils emacs gnupg python3-setuptools"
+makedepends="bash-completion gmime3-devel talloc-devel xapian-core-devel
+ python3-cffi"
+depends="gmime3>=3.2.7"
+checkdepends="python3-pytest mdocml dtach gdb tar xz xapian-core
+ openssl"
+short_desc="Thread-based email index, search, and tagging"
+maintainer="Jan S. <jan.schreib@gmail.com>"
+license="GPL-3.0-or-later"
+homepage="https://notmuchmail.org"
+distfiles="https://notmuchmail.org/releases/notmuch-${version}.tar.xz
+ https://notmuchmail.org/releases/test-databases/database-v1.tar.xz"
+checksum="8e0a7eb8ff2e6011ef48b2bf11d79b9c4bb74511cfe2987758b64898c2a2ded7
+ 4299e051b10e1fa7b33ea2862790a09ebfe96859681804e5251e130f800e69d2"
+skip_extraction="database-v1.tar.xz"
+replaces="notmuch-emacs>=0"
+
+# Not a real conflicts, but this package is broken with gpgme 1.13.1-
+# gpgme is optional dependency
+conflicts="gpgme<1.14.0_1"
+subpackages="libnotmuch libnotmuch-devel notmuch-mutt notmuch-python3"
+
+if [ ! "$CROSS_BUILD" ]; then
+	makedepends+=" ruby-devel"
+	subpackages+=" notmuch-ruby"
+fi
+
+do_build() {
+	make ${makejobs}
+	make -C contrib/notmuch-mutt
+	cd bindings/python
+	python3 setup.py build --build-base=build
+}
+
+do_check() {
+	cp $XBPS_SRCDISTDIR/notmuch-$version/database-v1.tar.xz \
+		test/test-databases
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		# Seem like gpgconf's problem,
+		# mutt on musl also have problems with smime
+		NOTMUCH_SKIP_TESTS="smime.3 smime.5"
+	else
+		# This test run under gdb is problematic
+		NOTMUCH_SKIP_TESTS="count.14"
+	fi
+	# libconfig because of fqdn
+	# we don't ship python-cffi
+	NOTMUCH_SKIP_TESTS+=" libconfig python-cffi"
+	if [ $(id -u) = 0 ]; then
+		NOTMUCH_SKIP_TESTS+=" new.36 tagging.25"
+	fi
+	export NOTMUCH_SKIP_TESTS
+	make test
+}
+
+do_install() {
+	make DESTDIR=${DESTDIR} install
+	cd bindings/python
+	python3 setup.py build --build-base=build \
+		install --prefix=/usr --root=${DESTDIR}
+	cd -
+	if [ ! "$CROSS_BUILD" ]; then
+		make DESTDIR=${DESTDIR} -C bindings/ruby install
+	fi
+	rm -f ${DESTDIR}/usr/share/applications/mimeinfo.cache
+}
+
+libnotmuch_package() {
+	short_desc+=" - runtime library"
+	pkg_install() {
+		vmove usr/lib/*.so.*
+	}
+}
+
+libnotmuch-devel_package() {
+	short_desc+=" - development files"
+	depends="libnotmuch-${version}_${revision}"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/*.so
+	}
+}
+
+notmuch-mutt_package() {
+	short_desc+=" - Mutt interface"
+	depends="${sourcepkg}-${version}_${revision} perl-Mail-Box perl-MailTools
+	 perl-String-ShellQuote perl-Term-ReadLine-Gnu perl-File-Which"
+	pkg_install() {
+		vbin contrib/notmuch-mutt/notmuch-mutt
+		vman contrib/notmuch-mutt/notmuch-mutt.1
+	}
+}
+
+notmuch-python3_package() {
+	depends="libnotmuch-${version}_${revision}"
+	short_desc+=" - Python 3 bindings"
+	pkg_install() {
+		vmove ${py3_sitelib}
+	}
+}
+
+notmuch-ruby_package() {
+	depends="libnotmuch-${version}_${revision} ruby"
+	short_desc+=" - Ruby bindings"
+	pkg_install() {
+		vmove usr/lib/ruby
+	}
+}

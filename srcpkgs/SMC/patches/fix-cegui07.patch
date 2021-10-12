@@ -1,0 +1,437 @@
+diff -ur smc-1.9/configure.ac smc-1.9-b/configure.ac
+--- a/configure.ac	2009-08-17 15:59:00.000000000 +0200
++++ b/configure.ac	2011-01-19 00:43:37.809884881 +0100
+@@ -53,7 +53,7 @@
+ 	AC_MSG_ERROR([SDL_ttf library not found]))
+ 
+ # Check for the CEGUI library
+-PKG_CHECK_MODULES(CEGUI, CEGUI-OPENGL >= 0.5.0)
++PKG_CHECK_MODULES(CEGUI, CEGUI-OPENGL >= 0.7.0)
+ CPPFLAGS="$CPPFLAGS $CEGUI_CFLAGS"
+ LIBS="$LIBS $CEGUI_LIBS"
+ 
+diff -ur smc-1.9/src/core/editor.cpp smc-1.9-b/src/core/editor.cpp
+--- a/src/core/editor.cpp	2009-08-13 17:11:42.000000000 +0200
++++ b/src/core/editor.cpp	2011-01-19 00:44:46.734328121 +0100
+@@ -118,16 +118,10 @@
+ 	return tmp;
+ }
+ 
+-void cEditor_Item_Object :: draw( const CEGUI::Vector3 &position, float alpha, const CEGUI::Rect &clipper ) const
++void cEditor_Item_Object :: draw( CEGUI::GeometryBuffer &buffer, const CEGUI::Rect &targetRect, float alpha, const CEGUI::Rect *clipper ) const
+ {
+ 	// draw text
+-	list_text->draw( position, alpha, clipper );
+-}
+-
+-void cEditor_Item_Object :: draw( CEGUI::RenderCache &cache, const CEGUI::Rect &targetRect, float zBase, float alpha, const CEGUI::Rect *clipper ) const
+-{
+-	// draw text
+-	list_text->draw( cache, targetRect, zBase, alpha, clipper );
++	list_text->draw( buffer, targetRect, alpha, clipper );
+ }
+ 
+ void cEditor_Item_Object :: Draw_Image( void )
+@@ -533,12 +527,12 @@
+ 	if( editor_window->getXPosition().asRelative( 1 ) >= 0 )
+ 	{
+ 		// Listbox dimension
+-		float list_posy = listbox_items->getUnclippedPixelRect().d_top * global_downscaley;
+-		float list_height = listbox_items->getUnclippedPixelRect().getHeight() * global_downscaley;
++		float list_posy = listbox_items->getUnclippedOuterRect().d_top * global_downscaley;
++		float list_height = listbox_items->getUnclippedOuterRect().getHeight() * global_downscaley;
+ 		// Vertical ScrollBar Position
+ 		float scroll_pos = listbox_items->getVertScrollbar()->getScrollPosition() * global_downscaley;
+ 		// font height
+-		float font_height = CEGUI::FontManager::getSingleton().getFont( "bluebold_medium" )->getFontHeight() * global_downscaley;
++		float font_height = CEGUI::FontManager::getSingleton().get( "bluebold_medium" ).getFontHeight() * global_downscaley;
+ 
+ 		// draw items
+ 		for( unsigned int i = 0; i < listbox_items->getItemCount(); i++ )
+diff -ur smc-1.9/src/core/editor.h smc-1.9-b/src/core/editor.h
+--- a/src/core/editor.h	2009-02-18 05:21:30.000000000 +0100
++++ b/src/core/editor.h	2011-01-19 00:43:37.809884881 +0100
+@@ -62,8 +62,7 @@
+ 	*/
+ 	virtual	CEGUI::Size getPixelSize( void ) const;
+ 	// draw
+-	void draw( const CEGUI::Vector3 &position, float alpha, const CEGUI::Rect &clipper ) const;
+-	void draw( CEGUI::RenderCache &cache, const CEGUI::Rect &targetRect, float zBase, float alpha, const CEGUI::Rect *clipper) const;
++	void draw(CEGUI::GeometryBuffer& buffer, const CEGUI::Rect& targetRect, float alpha, const CEGUI::Rect* clipper) const;
+ 	// draw image
+ 	void Draw_Image( void );
+ 
+diff -ur smc-1.9/src/core/game_core.cpp smc-1.9-b/src/core/game_core.cpp
+--- a/src/core/game_core.cpp	2009-08-16 18:44:42.000000000 +0200
++++ b/src/core/game_core.cpp	2011-01-19 00:59:02.668958883 +0100
+@@ -265,7 +265,7 @@
+ 
+ 
+ 	// align text
+-	CEGUI::Font *font = CEGUI::FontManager::getSingleton().getFont( "bluebold_medium" );
++	CEGUI::Font *font = &CEGUI::FontManager::getSingleton().get( "bluebold_medium" );
+ 	// fixme : Can't handle multiple lines of text
+ 	float text_width = font->getTextExtent( text ) * global_downscalex;
+ 
+@@ -1182,7 +1182,7 @@
+ 	text_default->setText( gui_text );
+ 
+ 	// align text
+-	CEGUI::Font *font = CEGUI::FontManager::getSingleton().getFont( "bluebold_medium" );
++	CEGUI::Font *font = &CEGUI::FontManager::getSingleton().get( "bluebold_medium" );
+ 	float text_width = font->getTextExtent( gui_text ) * global_downscalex;
+ 
+ 	text_default->setWidth( CEGUI::UDim( 0, ( text_width + 15 ) * global_upscalex ) );
+@@ -1190,7 +1190,7 @@
+ 	text_default->moveToFront();
+ 
+ 	// set window height
+-	text_default->setHeight( CEGUI::UDim( 0, font->getFontHeight() * font->getFormattedLineCount( gui_text, text_default->getUnclippedInnerRect(), CEGUI::LeftAligned ) + ( 12 * global_upscaley ) ) );
++	text_default->setHeight( CEGUI::UDim( 0, font->getFontHeight() + ( 12 * global_upscaley ) ) );
+ 
+ 	while( draw )
+ 	{
+diff -ur smc-1.9/src/core/main.cpp smc-1.9-b/src/core/main.cpp
+--- a/src/core/main.cpp	2009-05-12 10:36:04.000000000 +0200
++++ b/src/core/main.cpp	2011-01-19 00:43:37.809884881 +0100
+@@ -444,13 +444,15 @@
+ 
+ 	if( pGuiSystem )
+ 	{
+-		delete pGuiSystem;
++		CEGUI::ResourceProvider* rp = pGuiSystem->getResourceProvider();
++		pGuiSystem->destroy();
+ 		pGuiSystem = NULL;
++		delete rp;
+ 	}
+ 
+ 	if( pGuiRenderer )
+ 	{
+-		delete pGuiRenderer;
++		pGuiRenderer->destroy( *pGuiRenderer );
+ 		pGuiRenderer = NULL;
+ 	}
+ 
+@@ -507,7 +509,7 @@
+ 		}
+ 		case SDL_VIDEORESIZE:
+ 		{
+-			pGuiRenderer->setDisplaySize( CEGUI::Size( static_cast<float>(ev->resize.w), static_cast<float>(ev->resize.h) ) );
++			pGuiSystem->notifyDisplaySizeChanged( CEGUI::Size( static_cast<float>(ev->resize.w), static_cast<float>(ev->resize.h) ) );
+ 			break;
+ 		}
+ 		case SDL_KEYDOWN:
+diff -ur smc-1.9/src/gui/hud.cpp smc-1.9-b/src/gui/hud.cpp
+--- a/src/gui/hud.cpp	2009-05-01 15:00:16.000000000 +0200
++++ b/src/gui/hud.cpp	2011-01-19 00:43:37.816550365 +0100
+@@ -946,7 +946,7 @@
+ 		m_text_debug_text->setVisible( 1 );
+ 
+ 		// update position
+-		CEGUI::Font *font = CEGUI::FontManager::getSingleton().getFont( "bluebold_medium" );
++		CEGUI::Font *font = &CEGUI::FontManager::getSingleton().get( "bluebold_medium" );
+ 		float text_width = font->getTextExtent( gui_text ) * global_downscalex;
+ 
+ 		if( text_width > 800.0f )
+diff -ur smc-1.9/src/input/mouse.cpp smc-1.9-b/src/input/mouse.cpp
+--- a/src/input/mouse.cpp	2009-04-24 21:16:58.000000000 +0200
++++ b/src/input/mouse.cpp	2011-01-19 00:43:37.813217623 +0100
+@@ -432,17 +432,12 @@
+ 
+ void cMouseCursor :: Render( void ) const
+ {
+-	if( !m_active )
+-	{
++	CEGUI::MouseCursor *mouse = CEGUI::MouseCursor::getSingletonPtr();
++
++	if ( m_active == mouse->isVisible() )
+ 		return;
+-	}
+ 
+-	// Render CEGUI Mouse
+-	pGuiRenderer->setQueueingEnabled( 0 );
+-	CEGUI::MouseCursor *mouse = CEGUI::MouseCursor::getSingletonPtr();
+-	mouse->setVisible( 1 );
+-	mouse->draw();
+-	mouse->setVisible( 0 );
++	mouse->setVisible( m_active );
+ }
+ 
+ void cMouseCursor :: Update_Position( void )
+diff -ur smc-1.9/src/level/level_settings.cpp smc-1.9-b/src/level/level_settings.cpp
+--- a/src/level/level_settings.cpp	2009-08-07 03:04:28.000000000 +0200
++++ b/src/level/level_settings.cpp	2011-01-19 01:06:59.064259070 +0100
+@@ -163,8 +163,8 @@
+ 	editbox->setText( int_to_string( bg_color_2.blue ).c_str() );
+ 	// preview window
+ 	CEGUI::Window *window_background_preview = CEGUI::WindowManager::getSingleton().getWindow( "window_background_preview" );
+-	background_preview->Set_Pos_X( window_background_preview->getUnclippedPixelRect().d_left * global_downscalex, 1 );
+-	background_preview->Set_Pos_Y( window_background_preview->getUnclippedPixelRect().d_top * global_downscaley, 1 );
++	background_preview->Set_Pos_X( window_background_preview->getUnclippedOuterRect().d_left * global_downscalex, 1 );
++	background_preview->Set_Pos_Y( window_background_preview->getUnclippedOuterRect().d_top * global_downscaley, 1 );
+ 
+ 	Update_BG_Colors( CEGUI::EventArgs() );
+ 
+@@ -555,8 +555,8 @@
+ 
+ 	// set default rect
+ 	CEGUI::Window *window_background_preview = CEGUI::WindowManager::getSingleton().getWindow( "window_background_preview" );
+-	background_preview->m_rect.m_w = window_background_preview->getUnclippedPixelRect().getWidth() * global_downscalex;
+-	background_preview->m_rect.m_h = window_background_preview->getUnclippedPixelRect().getHeight() * global_downscaley;
++	background_preview->m_rect.m_w = window_background_preview->getUnclippedOuterRect().getWidth() * global_downscalex;
++	background_preview->m_rect.m_h = window_background_preview->getUnclippedOuterRect().getHeight() * global_downscaley;
+ 
+ 	if( !File_Exists( filename ) )
+ 	{
+diff -ur smc-1.9/src/objects/sprite.cpp smc-1.9-b/src/objects/sprite.cpp
+--- a/src/objects/sprite.cpp	2009-04-18 09:55:06.000000000 +0200
++++ b/src/objects/sprite.cpp	2011-01-19 00:43:37.813217623 +0100
+@@ -1663,7 +1663,7 @@
+ 	window_name->setText( name );
+ 	window_name->setTooltipText( tooltip );
+ 	// get text width
+-	CEGUI::Font *font = CEGUI::FontManager::getSingleton().getFont( "bluebold_medium" );
++	CEGUI::Font *font = &CEGUI::FontManager::getSingleton().get( "bluebold_medium" );
+ 	float text_width = 12 + font->getTextExtent( name ) * global_downscalex;
+ 	// all names should have the same width
+ 	if( text_width > m_editor_window_name_width )
+diff -ur smc-1.9/src/video/video.cpp smc-1.9-b/src/video/video.cpp
+--- a/src/video/video.cpp	2009-07-04 11:46:56.000000000 +0200
++++ b/src/video/video.cpp	2011-01-19 01:22:45.338524592 +0100
+@@ -103,15 +103,15 @@
+ 
+ /* *** *** *** *** *** *** *** CEGUI renderer fake class *** *** *** *** *** *** *** *** *** *** */
+ 
+-cFake_Renderer :: cFake_Renderer( void )
+-{
+-	d_identifierString = "Fake Renderer";
+-}
++//cFake_Renderer :: cFake_Renderer( void )
++//{
++//	d_identifierString = "Fake Renderer";
++//}
+ 
+-cFake_Renderer :: ~cFake_Renderer( void )
+-{
++//cFake_Renderer :: ~cFake_Renderer( void )
++//{
+ 
+-}
++//}
+ 
+ /* *** *** *** *** *** *** *** Video class *** *** *** *** *** *** *** *** *** *** */
+ 
+@@ -158,7 +158,7 @@
+ 	std::string log_dump_dir = "/dev/null";
+ #endif
+ 	// create fake system and renderer
+-	pGuiSystem = new CEGUI::System( new cFake_Renderer(), rp, NULL, NULL, "", log_dump_dir );
++	pGuiSystem = &CEGUI::System::create( *new cFake_Renderer(), rp, NULL, NULL, NULL, "", log_dump_dir );
+ }
+ 
+ void cVideo :: Delete_CEGUI_Fake( void ) const
+@@ -166,7 +166,7 @@
+ 	CEGUI::ResourceProvider *rp = pGuiSystem->getResourceProvider();
+ 	CEGUI::Renderer *renderer = pGuiSystem->getRenderer();
+ 
+-	delete pGuiSystem;
++	pGuiSystem->destroy();
+ 	pGuiSystem = NULL;
+ 	delete renderer;
+ 	delete rp;
+@@ -177,7 +177,7 @@
+ 	// create renderer
+ 	try
+ 	{
+-		pGuiRenderer = new CEGUI::OpenGLRenderer( 0, screen->w, screen->h );
++		pGuiRenderer = &CEGUI::OpenGLRenderer::create( CEGUI::Size( screen->w, screen->h ) );
+ 	}
+ 	// catch CEGUI Exceptions
+ 	catch( CEGUI::Exception &ex )
+@@ -186,10 +186,10 @@
+ 		exit( EXIT_FAILURE );
+ 	}
+ 
+-	/* create Resource Provider
+-	 * no need to destroy it later since it is handled by the CEGUI renderer
+-	*/
+-	CEGUI::DefaultResourceProvider *rp = static_cast<CEGUI::DefaultResourceProvider *>(pGuiRenderer->createResourceProvider());
++	pGuiRenderer->enableExtraStateSettings(true);
++
++	// create Resource Provider
++	CEGUI::DefaultResourceProvider *rp = new CEGUI::DefaultResourceProvider;
+ 
+ 	// set Resource Provider directories
+ 	rp->setResourceGroupDirectory( "schemes", DATA_DIR "/" GUI_SCHEME_DIR "/" );
+@@ -215,7 +215,7 @@
+ 	// create system
+ 	try
+ 	{
+-		pGuiSystem = new CEGUI::System( pGuiRenderer, rp, NULL, NULL, "", pResource_Manager->user_data_dir + "cegui.log" );
++		pGuiSystem = &CEGUI::System::create( *pGuiRenderer, rp, NULL, NULL, NULL, "", pResource_Manager->user_data_dir + "cegui.log" );
+ 	}
+ 	// catch CEGUI Exceptions
+ 	catch( CEGUI::Exception &ex )
+@@ -242,7 +242,7 @@
+ 	// load the scheme file, which auto-loads the imageset
+ 	try
+ 	{
+-		CEGUI::SchemeManager::getSingleton().loadScheme( "TaharezLook.scheme" );
++		CEGUI::SchemeManager::getSingleton().create( "TaharezLook.scheme" );
+ 	}
+ 	// catch CEGUI Exceptions
+ 	catch( CEGUI::Exception &ex )
+@@ -254,9 +254,7 @@
+ 	// default mouse cursor
+ 	pGuiSystem->setDefaultMouseCursor( "TaharezLook", "MouseArrow" );
+ 	// force new mouse image
+-	CEGUI::MouseCursor::getSingleton().setImage( &CEGUI::ImagesetManager::getSingleton().getImageset( "TaharezLook" )->getImage( "MouseArrow" ) );
+-	// hide CEGUI mouse always because we render it manually
+-	CEGUI::MouseCursor::getSingleton().hide();
++	CEGUI::MouseCursor::getSingleton().setImage( &CEGUI::ImagesetManager::getSingleton().get( "TaharezLook" ).getImage( "MouseArrow" ) );
+ 	// default tooltip
+ 	pGuiSystem->setDefaultTooltip( "TaharezLook/Tooltip" );
+ 	// create default root window
+@@ -553,7 +551,7 @@
+ 		pFont->Restore_Textures();
+ 
+ 		// send new size to CEGUI
+-		pGuiRenderer->setDisplaySize( CEGUI::Size( static_cast<float>(screen_w), static_cast<float>(screen_h) ) );
++		pGuiSystem->notifyDisplaySizeChanged( CEGUI::Size( static_cast<float>(screen_w), static_cast<float>(screen_h) ) );
+ 
+ 		// check if CEGUI is initialized
+ 		bool cegui_initialized = pGuiSystem->getGUISheet() != NULL;
+diff -ur smc-1.9/src/video/video.h smc-1.9-b/src/video/video.h
+--- a/src/video/video.h	2009-07-04 10:49:50.000000000 +0200
++++ b/src/video/video.h	2011-01-19 01:16:42.791283379 +0100
+@@ -23,7 +23,7 @@
+ #include "SDL_opengl.h"
+ // CEGUI
+ #include "CEGUI.h"
+-#include "RendererModules/OpenGLGUIRenderer/openglrenderer.h"
++#include <RendererModules/OpenGL/CEGUIOpenGLRenderer.h>
+ 
+ namespace SMC
+ {
+@@ -129,31 +129,100 @@
+ 	EFFECT_IN_AMOUNT
+ };
+ 
+-/* *** *** *** *** *** *** *** CEGUI renderer fake class *** *** *** *** *** *** *** *** *** *** */
++/* *** *** *** *** *** *** *** CEGUI renderer fake classes *** *** *** *** *** *** *** *** *** *** */
++// CEGUI 0.7.x requires more 'fake' classes than the 0.6.x version did...
++class cFake_GeometryBuffer : public CEGUI::GeometryBuffer
++{
++	void draw() const {}
++	void setTranslation(const CEGUI::Vector3&) {}
++	void setRotation(const CEGUI::Vector3&) {}
++	void setPivot(const CEGUI::Vector3&) {}
++	void setClippingRegion(const CEGUI::Rect&) {}
++	void appendVertex(const CEGUI::Vertex&) {}
++	void appendGeometry(const CEGUI::Vertex* const, CEGUI::uint) {}
++	void setActiveTexture(CEGUI::Texture*) {}
++	void reset() {}
++	CEGUI::Texture* getActiveTexture() const { return 0; }
++	CEGUI::uint getVertexCount() const { return 0; }
++	CEGUI::uint getBatchCount() const { return 0; }
++	void setRenderEffect(CEGUI::RenderEffect*) {}
++	CEGUI::RenderEffect* getRenderEffect() { return 0; }
++};
+ 
+-class cFake_Renderer : public CEGUI::Renderer
++class cFake_Texture : public CEGUI::Texture
++{
++public:
++	cFake_Texture() :
++	  m_size(1, 1),
++	  m_scaling(1, 1) {}
++
++	const CEGUI::Size& getSize() const { return m_size; }
++	const CEGUI::Size& getOriginalDataSize() const { return m_size; }
++	const CEGUI::Vector2& getTexelScaling() const { return m_scaling; }
++	void loadFromFile(const CEGUI::String&, const CEGUI::String&) {}
++	void loadFromMemory(const void*, const CEGUI::Size&, CEGUI::Texture::PixelFormat) {}
++	void saveToMemory(void*) {}
++
++private:
++	CEGUI::Size m_size;
++	CEGUI::Vector2 m_scaling;
++};
++
++class cFake_RenderTarget : public CEGUI::RenderTarget
+ {
+ public:
+-	cFake_Renderer( void );
+-	virtual ~cFake_Renderer( void );
++	cFake_RenderTarget() : m_area(0, 0, 0, 0) {}
++	void draw(const CEGUI::GeometryBuffer&) {}
++	void draw(const CEGUI::RenderQueue&) {}
++	void setArea(const CEGUI::Rect&) {}
++	const CEGUI::Rect& getArea() const { return m_area; }
++	bool isImageryCache() const { return false; }
++	void activate() {}
++	void deactivate() {}
++	void unprojectPoint(const CEGUI::GeometryBuffer&, const CEGUI::Vector2&, CEGUI::Vector2&) const {}
++
++private:
++	CEGUI::Rect m_area;
++};
+ 
+-	virtual	void addQuad(const CEGUI::Rect& dest_rect, float z, const CEGUI::Texture* tex, const CEGUI::Rect& texture_rect, const CEGUI::ColourRect& colours, CEGUI::QuadSplitMode quad_split_mode) {};
+-	virtual	void doRender(void) {};
+-	virtual	void clearRenderList(void) {};
+-	virtual void setQueueingEnabled(bool setting) {};
+-	virtual	CEGUI::Texture *createTexture(void) { return NULL; };
+-	virtual	CEGUI::Texture *createTexture(const CEGUI::String& filename, const CEGUI::String& resourceGroup) { return NULL; };
+-	virtual	CEGUI::Texture *createTexture(float size) { return NULL; };
+-	virtual	void destroyTexture(CEGUI::Texture* texture) {};
+-	virtual void destroyAllTextures(void) {};
+-	virtual bool isQueueingEnabled(void) const { return 0; };
+-	virtual float getWidth(void) const { return 0; };
+-	virtual float getHeight(void) const { return 0; };
+-	virtual CEGUI::Size getSize(void) const { return CEGUI::Size();};
+-	virtual CEGUI::Rect getRect(void) const { return CEGUI::Rect();};
+-	virtual	unsigned int getMaxTextureSize(void) const { return 0; };
+-	virtual	unsigned int getHorzScreenDPI(void) const { return 0; };
+-	virtual	unsigned int getVertScreenDPI(void) const { return 0; };
++class cFake_Renderer : public CEGUI::Renderer
++{
++public:
++	cFake_Renderer( void ) :
++	  m_size(0, 0),
++	  m_dpi(0, 0),
++	  m_identifierString("Fake Renderer"),
++	  m_root(m_target) {}
++	~cFake_Renderer( void ) {}
++
++	CEGUI::RenderingRoot& getDefaultRenderingRoot() { return m_root; }
++	CEGUI::GeometryBuffer& createGeometryBuffer() { return m_geometry; }
++	void destroyGeometryBuffer(const CEGUI::GeometryBuffer&) {}
++	void destroyAllGeometryBuffers() {}
++	CEGUI::TextureTarget* createTextureTarget() { return 0; }
++	void destroyTextureTarget(CEGUI::TextureTarget*) {}
++	void destroyAllTextureTargets() {}
++	CEGUI::Texture& createTexture() { return m_texture; }
++	CEGUI::Texture& createTexture(const CEGUI::String&, const CEGUI::String&) { return m_texture; }
++	CEGUI::Texture& createTexture(const CEGUI::Size&) { return m_texture; }
++	void destroyTexture(CEGUI::Texture&) {}
++	void destroyAllTextures() {}
++	void beginRendering() {}
++	void endRendering() {}
++	void setDisplaySize(const CEGUI::Size&) {}
++	const CEGUI::Size& getDisplaySize() const { return m_size; }
++	const CEGUI::Vector2& getDisplayDPI() const {return m_dpi; }
++	CEGUI::uint getMaxTextureSize() const { return 0; }
++	const CEGUI::String& getIdentifierString() const { return m_identifierString; }
++
++private:
++	CEGUI::Size m_size;
++	CEGUI::Vector2 m_dpi;
++	CEGUI::String m_identifierString;
++	cFake_GeometryBuffer m_geometry;
++	cFake_Texture m_texture;
++	cFake_RenderTarget m_target;
++	CEGUI::RenderingRoot m_root;
+ };
+ 
+ /* *** *** *** *** *** *** *** Video class *** *** *** *** *** *** *** *** *** *** */

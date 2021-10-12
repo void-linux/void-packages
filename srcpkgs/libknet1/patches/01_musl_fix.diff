@@ -1,0 +1,210 @@
+https://github.com/kronosnet/kronosnet/commit/512e433b0b3d8bf14818dcb8c8eb7748d7e899be
+
+diff --git a/configure.ac b/configure.ac
+index 778b12a5..e430aeb8 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -205,6 +205,10 @@ AC_SEARCH_LIBS([dlopen], [dl dld], , [AC_MSG_ERROR([dlopen not found])])
+ AC_SUBST([dl_LIBS], [$LIBS])
+ LIBS="$saved_LIBS"
+ 
++# Check RTLD_DI_ORIGIN (not decalred by musl. glibc has it as an enum so cannot use ifdef)
++AC_CHECK_DECL([RTLD_DI_ORIGIN], [AC_DEFINE([HAVE_RTLD_DI_ORIGIN], 1,
++    [define when RTLD_DI_ORIGIN is declared])], ,[[#include <dlfcn.h>]])
++
+ # OS detection
+ 
+ AC_MSG_CHECKING([for os in ${host_os}])
+diff --git a/libknet/common.c b/libknet/common.c
+index 00907c91..ed8ac899 100644
+--- a/libknet/common.c
++++ b/libknet/common.c
+@@ -12,6 +12,8 @@
+ #include <fcntl.h>
+ #include <dlfcn.h>
+ #include <errno.h>
++#include <libgen.h>
++#include <link.h>
+ #include <string.h>
+ #include <sys/param.h>
+ #include <sys/types.h>
+@@ -54,6 +56,30 @@ int _fdset_nonblock(int fd)
+ 	return 0;
+ }
+ 
++static int get_lib_dir(void *lib_handle, char dir[MAXPATHLEN])
++{
++	int res;
++#ifndef HAVE_RTLD_DI_ORIGIN
++	struct link_map *lm;
++	char l_name[MAXPATHLEN];
++#endif
++
++#ifdef HAVE_RTLD_DI_ORIGIN
++	res = dlinfo(lib_handle, RTLD_DI_ORIGIN, dir);
++#else
++	/*
++	 * musl libc doesn't support RTLD_DI_ORIGIN
++	 */
++	res = dlinfo(lib_handle, RTLD_DI_LINKMAP, &lm);
++	if (res == 0) {
++		snprintf(l_name, sizeof(l_name), "%s", lm->l_name);
++		snprintf(dir, MAXPATHLEN, "%s", dirname(l_name));
++	}
++#endif
++
++	return res;
++}
++
+ static void *open_lib(knet_handle_t knet_h, const char *libname, int extra_flags)
+ {
+ 	void *ret = NULL;
+@@ -81,7 +107,7 @@ static void *open_lib(knet_handle_t knet_h, const char *libname, int extra_flags
+ 	memset(dir, 0, sizeof(dir));
+ 	memset(link, 0, sizeof(link));
+ 	memset(path, 0, sizeof(path));
+-	if (dlinfo(ret, RTLD_DI_ORIGIN, &dir) < 0) {
++	if (get_lib_dir(ret, dir) < 0) {
+ 		/*
+ 		 * should we dlclose and return error?
+ 		 */
+diff --git a/libknet/compat.c b/libknet/compat.c
+index e808f332..2e73c9fc 100644
+--- a/libknet/compat.c
++++ b/libknet/compat.c
+@@ -22,7 +22,7 @@
+ #include <sys/types.h>
+ #include <sys/event.h>
+ #include <sys/time.h>
+-#include <sys/errno.h>
++#include <errno.h>
+ 
+ static int32_t
+ _poll_to_filter_(int32_t event)
+diff --git a/libknet/crypto.c b/libknet/crypto.c
+index afa4f88c..2c4d5f5c 100644
+--- a/libknet/crypto.c
++++ b/libknet/crypto.c
+@@ -8,7 +8,7 @@
+ 
+ #include "config.h"
+ 
+-#include <sys/errno.h>
++#include <errno.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <pthread.h>
+diff --git a/libknet/handle.c b/libknet/handle.c
+index fcb129a7..6ecc91f7 100644
+--- a/libknet/handle.c
++++ b/libknet/handle.c
+@@ -456,9 +456,24 @@ static void _close_epolls(knet_handle_t knet_h)
+ static int _start_threads(knet_handle_t knet_h)
+ {
+ 	int savederrno = 0;
++	pthread_attr_t attr;
+ 
+ 	set_thread_status(knet_h, KNET_THREAD_PMTUD, KNET_THREAD_REGISTERED);
+-	savederrno = pthread_create(&knet_h->pmtud_link_handler_thread, 0,
++
++	savederrno = pthread_attr_init(&attr);
++	if (savederrno) {
++		log_err(knet_h, KNET_SUB_HANDLE, "Unable to init pthread attributes: %s",
++			strerror(savederrno));
++		goto exit_fail;
++	}
++	savederrno = pthread_attr_setstacksize(&attr, KNET_THREAD_STACK_SIZE);
++	if (savederrno) {
++		log_err(knet_h, KNET_SUB_HANDLE, "Unable to set stack size attribute: %s",
++			strerror(savederrno));
++		goto exit_fail;
++	}
++
++	savederrno = pthread_create(&knet_h->pmtud_link_handler_thread, &attr,
+ 				    _handle_pmtud_link_thread, (void *) knet_h);
+ 	if (savederrno) {
+ 		log_err(knet_h, KNET_SUB_HANDLE, "Unable to start pmtud link thread: %s",
+@@ -467,7 +482,7 @@ static int _start_threads(knet_handle_t knet_h)
+ 	}
+ 
+ 	set_thread_status(knet_h, KNET_THREAD_DST_LINK, KNET_THREAD_REGISTERED);
+-	savederrno = pthread_create(&knet_h->dst_link_handler_thread, 0,
++	savederrno = pthread_create(&knet_h->dst_link_handler_thread, &attr,
+ 				    _handle_dst_link_handler_thread, (void *) knet_h);
+ 	if (savederrno) {
+ 		log_err(knet_h, KNET_SUB_HANDLE, "Unable to start dst cache thread: %s",
+@@ -476,7 +491,7 @@ static int _start_threads(knet_handle_t knet_h)
+ 	}
+ 
+ 	set_thread_status(knet_h, KNET_THREAD_TX, KNET_THREAD_REGISTERED);
+-	savederrno = pthread_create(&knet_h->send_to_links_thread, 0,
++	savederrno = pthread_create(&knet_h->send_to_links_thread, &attr,
+ 				    _handle_send_to_links_thread, (void *) knet_h);
+ 	if (savederrno) {
+ 		log_err(knet_h, KNET_SUB_HANDLE, "Unable to start datafd to link thread: %s",
+@@ -485,7 +500,7 @@ static int _start_threads(knet_handle_t knet_h)
+ 	}
+ 
+ 	set_thread_status(knet_h, KNET_THREAD_RX, KNET_THREAD_REGISTERED);
+-	savederrno = pthread_create(&knet_h->recv_from_links_thread, 0,
++	savederrno = pthread_create(&knet_h->recv_from_links_thread, &attr,
+ 				    _handle_recv_from_links_thread, (void *) knet_h);
+ 	if (savederrno) {
+ 		log_err(knet_h, KNET_SUB_HANDLE, "Unable to start link to datafd thread: %s",
+@@ -494,7 +509,7 @@ static int _start_threads(knet_handle_t knet_h)
+ 	}
+ 
+ 	set_thread_status(knet_h, KNET_THREAD_HB, KNET_THREAD_REGISTERED);
+-	savederrno = pthread_create(&knet_h->heartbt_thread, 0,
++	savederrno = pthread_create(&knet_h->heartbt_thread, &attr,
+ 				    _handle_heartbt_thread, (void *) knet_h);
+ 	if (savederrno) {
+ 		log_err(knet_h, KNET_SUB_HANDLE, "Unable to start heartbeat thread: %s",
+@@ -502,6 +517,15 @@ static int _start_threads(knet_handle_t knet_h)
+ 		goto exit_fail;
+ 	}
+ 
++	savederrno = pthread_attr_destroy(&attr);
++	if (savederrno) {
++		log_err(knet_h, KNET_SUB_HANDLE, "Unable to destroy pthread attributes: %s",
++			strerror(savederrno));
++		/*
++		 * Do not return error code. Error is not critical.
++		 */
++	}
++
+ 	return 0;
+ 
+ exit_fail:
+diff --git a/libknet/internals.h b/libknet/internals.h
+index 3911b847..13530687 100644
+--- a/libknet/internals.h
++++ b/libknet/internals.h
+@@ -37,6 +37,14 @@
+ 
+ #define KNET_INTERNAL_DATA_CHANNEL KNET_DATAFD_MAX
+ 
++/*
++ * Size of threads stack. Value is choosen by experimenting, how much is needed
++ * to sucesfully finish test suite, and at the time of writing patch it was
++ * ~300KiB. To have some room for future enhancement it is increased
++ * by factor of 3 and rounded.
++ */
++#define KNET_THREAD_STACK_SIZE (1024 * 1024)
++
+ typedef void *knet_transport_link_t; /* per link transport handle */
+ typedef void *knet_transport_t;      /* per knet_h transport handle */
+ struct  knet_transport_ops;          /* Forward because of circular dependancy */
+diff --git a/libknet/onwire.c b/libknet/onwire.c
+index 143ac4b7..e3fd293b 100644
+--- a/libknet/onwire.c
++++ b/libknet/onwire.c
+@@ -8,7 +8,7 @@
+ 
+ #include "config.h"
+ 
+-#include <sys/errno.h>
++#include <errno.h>
+ #include <stdlib.h>
+ #include <string.h>
+ 

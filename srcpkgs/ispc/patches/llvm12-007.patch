@@ -1,0 +1,160 @@
+From 62f5a6c37bf26fc25a7cf81868052d3472874610 Mon Sep 17 00:00:00 2001
+From: Arina Neshlyaeva <arina.neshlyaeva@intel.com>
+Date: Tue, 23 Mar 2021 23:07:30 -0700
+Subject: [PATCH] Do not generate function mask when it is not required
+
+---
+ src/ctx.cpp                    | 39 ++++++++++++++-------
+ tests/lit-tests/full_mask.ispc | 63 ++++++++++++++++++++++++++++++++++
+ 2 files changed, 90 insertions(+), 12 deletions(-)
+ create mode 100644 tests/lit-tests/full_mask.ispc
+
+diff --git a/src/ctx.cpp b/src/ctx.cpp
+index 527a02f30..9e775fc5c 100644
+--- a/src/ctx.cpp
++++ b/src/ctx.cpp
+@@ -231,10 +231,18 @@ FunctionEmitContext::FunctionEmitContext(Function *func, Symbol *funSym, llvm::F
+     internalMaskPointer = AllocaInst(LLVMTypes::MaskType, "internal_mask_memory");
+     StoreInst(LLVMMaskAllOn, internalMaskPointer);
+ 
+-    functionMaskValue = LLVMMaskAllOn;
+-
+-    fullMaskPointer = AllocaInst(LLVMTypes::MaskType, "full_mask_memory");
+-    StoreInst(LLVMMaskAllOn, fullMaskPointer);
++    // If the function doesn't have __mask in parameters, there is no need to
++    // have function mask
++    if ((func->GetType()->isExported &&
++         (lf->getFunctionType()->getNumParams() == func->GetType()->GetNumParameters())) ||
++        (func->GetType()->isUnmasked) || (func->GetType()->isTask)) {
++        functionMaskValue = NULL;
++        fullMaskPointer = NULL;
++    } else {
++        functionMaskValue = LLVMMaskAllOn;
++        fullMaskPointer = AllocaInst(LLVMTypes::MaskType, "full_mask_memory");
++        StoreInst(LLVMMaskAllOn, fullMaskPointer);
++    }
+ 
+     blockEntryMask = NULL;
+     breakLanesPtr = continueLanesPtr = NULL;
+@@ -389,20 +397,26 @@ llvm::BasicBlock *FunctionEmitContext::GetCurrentBasicBlock() { return bblock; }
+ 
+ void FunctionEmitContext::SetCurrentBasicBlock(llvm::BasicBlock *bb) { bblock = bb; }
+ 
+-llvm::Value *FunctionEmitContext::GetFunctionMask() { return functionMaskValue; }
++llvm::Value *FunctionEmitContext::GetFunctionMask() { return fullMaskPointer ? functionMaskValue : LLVMMaskAllOn; }
+ 
+ llvm::Value *FunctionEmitContext::GetInternalMask() { return LoadInst(internalMaskPointer, NULL, "load_mask"); }
+ 
+ llvm::Value *FunctionEmitContext::GetFullMask() {
+-    return BinaryOperator(llvm::Instruction::And, GetInternalMask(), functionMaskValue, "internal_mask&function_mask");
++    return fullMaskPointer ? BinaryOperator(llvm::Instruction::And, GetInternalMask(), functionMaskValue,
++                                            "internal_mask&function_mask")
++                           : GetInternalMask();
+ }
+ 
+-llvm::Value *FunctionEmitContext::GetFullMaskPointer() { return fullMaskPointer; }
++llvm::Value *FunctionEmitContext::GetFullMaskPointer() {
++    return fullMaskPointer ? fullMaskPointer : internalMaskPointer;
++}
+ 
+ void FunctionEmitContext::SetFunctionMask(llvm::Value *value) {
+-    functionMaskValue = value;
+-    if (bblock != NULL)
+-        StoreInst(GetFullMask(), fullMaskPointer);
++    if (fullMaskPointer != NULL) {
++        functionMaskValue = value;
++        if (bblock != NULL)
++            StoreInst(GetFullMask(), fullMaskPointer);
++    }
+ }
+ 
+ void FunctionEmitContext::SetBlockEntryMask(llvm::Value *value) { blockEntryMask = value; }
+@@ -410,7 +424,8 @@ void FunctionEmitContext::SetBlockEntryMask(llvm::Value *value) { blockEntryMask
+ void FunctionEmitContext::SetInternalMask(llvm::Value *value) {
+     StoreInst(value, internalMaskPointer);
+     // kludge so that __mask returns the right value in ispc code.
+-    StoreInst(GetFullMask(), fullMaskPointer);
++    if (fullMaskPointer)
++        StoreInst(GetFullMask(), fullMaskPointer);
+ }
+ 
+ void FunctionEmitContext::SetInternalMaskAnd(llvm::Value *oldMask, llvm::Value *test) {
+@@ -1265,7 +1280,7 @@ void FunctionEmitContext::CurrentLanesReturned(Expr *expr, bool doCoherenceCheck
+         // lanes have returned
+         if (doCoherenceCheck) {
+             // if newReturnedLanes == functionMaskValue, get out of here!
+-            llvm::Value *cmp = MasksAllEqual(functionMaskValue, newReturnedLanes);
++            llvm::Value *cmp = MasksAllEqual(GetFunctionMask(), newReturnedLanes);
+             llvm::BasicBlock *bDoReturn = CreateBasicBlock("do_return");
+             llvm::BasicBlock *bNoReturn = CreateBasicBlock("no_return");
+             BranchInst(bDoReturn, bNoReturn, cmp);
+diff --git a/tests/lit-tests/full_mask.ispc b/tests/lit-tests/full_mask.ispc
+new file mode 100644
+index 000000000..ac0b0bca3
+--- /dev/null
++++ b/tests/lit-tests/full_mask.ispc
+@@ -0,0 +1,63 @@
++// RUN: %{ispc} %s -DISPC_EXPORT --emit-llvm-text -O0 --nowrap -o %t.ll
++// RUN: FileCheck --input-file=%t.ll -check-prefix=CHECK_ISPC_EXPORT %s
++
++// RUN: %{ispc} %s -DISPC_UNMASKED --emit-llvm-text -O0 --nowrap -o %t.ll
++// RUN: FileCheck --input-file=%t.ll -check-prefix=CHECK_ISPC_UNMASKED %s
++
++// RUN: %{ispc} %s -DISPC_NOQUALIF --emit-llvm-text -O0 --nowrap -o %t.ll
++// RUN: FileCheck --input-file=%t.ll -check-prefix=CHECK_ISPC_NOQUALIF %s
++
++// RUN: %{ispc} %s -DISPC_TASK --emit-llvm-text -O0 --nowrap -o %t.ll
++// RUN: FileCheck --input-file=%t.ll -check-prefix=CHECK_ISPC_TASK %s
++
++struct Parameters {
++    float *vout;
++    int param;
++};
++
++#ifdef ISPC_EXPORT
++// CHECK_ISPC_EXPORT: define void @simple_export___
++// CHECK_ISPC_EXPORT: %full_mask_memory = alloca
++// CHECK_ISPC_EXPORT: define void @simple_export(
++// CHECK_ISPC_EXPORT-NOT: %full_mask_memory = alloca
++export void simple_export(void *uniform _p) {
++    Parameters *uniform p = (Parameters * uniform) _p;
++    if (programIndex > p->param)
++        p->vout[programIndex] = programCount * programIndex;
++}
++#endif
++#ifdef ISPC_UNMASKED
++// CHECK_ISPC_UNMASKED: define void @simple_unmasked
++// CHECK_ISPC_UNMASKED-NOT: %full_mask_memory = alloca
++unmasked void simple_unmasked(void *uniform _p) {
++    Parameters *uniform p = (Parameters * uniform) _p;
++    if (programIndex > p->param)
++        p->vout[programIndex] = programCount * programIndex;
++}
++#endif
++#ifdef ISPC_NOQUALIF
++// CHECK_ISPC_NOQUALIF: define void @simple
++// CHECK_ISPC_NOQUALIF: %full_mask_memory = alloca
++void simple(void *uniform _p) {
++    Parameters *uniform p = (Parameters * uniform) _p;
++    if (programIndex > p->param)
++        p->vout[programIndex] = programCount * programIndex;
++}
++#endif
++#ifdef ISPC_TASK
++
++// CHECK_ISPC_TASK: define void @simple_task
++// CHECK_ISPC_TASK-NOT: %full_mask_memory = alloca
++// CHECK_ISPC_TASK: define void @simple_entry_point__
++// CHECK_ISPC_TASK: %full_mask_memory = alloca
++// CHECK_ISPC_TASK: define void @simple_entry_point(
++// CHECK_ISPC_TASK-NOT: %full_mask_memory = alloca
++task void simple_task(void *uniform _p) {
++    Parameters *uniform p = (Parameters * uniform) _p;
++    if (programIndex > p->param)
++        p->vout[programIndex] = programCount * programIndex;
++}
++export void simple_entry_point(void *uniform parameters, uniform int dim0, uniform int dim1, uniform int dim2) {
++    launch[dim0, dim1, dim2] simple_task(parameters);
++}
++#endif
+\ No newline at end of file

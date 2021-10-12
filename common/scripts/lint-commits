@@ -1,0 +1,51 @@
+#!/bin/sh
+
+die() {
+	printf '%s\n' "$*" >&2
+	exit 1
+}
+
+GIT_CMD=$(command -v chroot-git 2>/dev/null) ||
+GIT_CMD=$(command -v git 2>/dev/null) ||
+die "neither chroot-git nor git could be found!"
+
+rev_parse() {
+	if [ -n "$1" ]; then
+		"$GIT_CMD" rev-parse --verify "$1"
+	else
+		shift
+		while test "$#" != 0
+		do
+			"$GIT_CMD" rev-parse --verify "$1" 2>/dev/null && return
+			shift
+		done
+		return 1
+	fi
+}
+
+base=$(rev_parse "$1" FETCH_HEAD ORIG_HEAD) || die "base commit not found"
+tip=$(rev_parse "$2" HEAD) || die "tip commit not found"
+status=0
+
+for cmt in $("$GIT_CMD" rev-list --abbrev-commit $base..$tip)
+do
+	"$GIT_CMD" cat-file commit "$cmt" |
+	awk -vC="$cmt" '
+	# skip header
+	/^$/ && !msg { msg = 1; next }
+	!msg { next }
+	# 3: long-line-is-banned-except-footnote-like-this-for-url
+	(NF > 2) && (length > 80) { print C ": long line: " $0; exit 1 }
+	!subject {
+		if (length > 50) { print C ": subject is a bit long" }
+		# Below check is too noisy?
+		# if (!($0 ~ "^New package:" || $0 ~ ".*: update to")) {
+		# 	print C ": not new package/update/removal?"
+		# }
+		subject = 1; next
+	}
+	/^$/ { body = 1; next }
+	!body { print C ": second line must be blank"; exit 1 }
+	' || status=1
+done
+exit $status

@@ -1,0 +1,170 @@
+From a726d0cbf839d7a0f35962d67e0f60054d0364f6 Mon Sep 17 00:00:00 2001
+From: Chris Pahl <sahib@online.de>
+Date: Sun, 6 Dec 2020 16:39:50 +0100
+Subject: [PATCH] remove faccessat() (fixes #438)
+
+---
+ SConstruct                                    | 25 --------------
+ lib/SConscript                                |  1 -
+ lib/cfg.c                                     | 30 +++++++++++------
+ lib/config.h.in                               |  1 -
+ .../test_robustness/test_badlinks_as_args.py  | 33 +++++++++++++++++++
+ 5 files changed, 53 insertions(+), 37 deletions(-)
+ create mode 100644 tests/test_robustness/test_badlinks_as_args.py
+
+diff --git a/SConstruct b/SConstruct
+index 5c905eee..53455ab6 100755
+--- a/SConstruct
++++ b/SConstruct
+@@ -264,29 +264,6 @@ def check_posix_fadvise(context):
+     return rc
+ 
+ 
+-def check_faccessat(context):
+-    # Seems to be missing in Mac OSX <= 10.9
+-    rc = 1
+-
+-    if tests.CheckDeclaration(
+-        context, 'faccessat',
+-        includes='#include <unistd.h>'
+-    ):
+-        rc = 0
+-
+-    if rc == 1 and tests.CheckDeclaration(
+-        context, 'AT_FDCWD',
+-        includes='#include <fcntl.h>'
+-    ):
+-        rc = 0
+-
+-    conf.env['HAVE_FACCESSAT'] = rc
+-
+-    context.did_show_result = True
+-    context.Result(rc)
+-    return rc
+-
+-
+ def check_xattr(context):
+     rc = 1
+ 
+@@ -590,7 +567,6 @@ conf = Configure(env, custom_tests={
+     'check_sha512': check_sha512,
+     'check_blkid': check_blkid,
+     'check_posix_fadvise': check_posix_fadvise,
+-    'check_faccessat': check_faccessat,
+     'check_sys_block': check_sys_block,
+     'check_bigfiles': check_bigfiles,
+     'check_c11': check_c11,
+@@ -726,7 +702,6 @@ conf.check_sha512()
+ conf.check_gettext()
+ conf.check_linux_limits()
+ conf.check_posix_fadvise()
+-conf.check_faccessat()
+ conf.check_btrfs_h()
+ conf.check_linux_fs_h()
+ conf.check_uname()
+diff --git a/lib/SConscript b/lib/SConscript
+index 04f5da91..e00231dd 100644
+--- a/lib/SConscript
++++ b/lib/SConscript
+@@ -37,7 +37,6 @@ def build_config_template(target, source, env):
+             HAVE_BTRFS_H=env['HAVE_BTRFS_H'],
+             HAVE_MM_CRC32_U64=env['HAVE_MM_CRC32_U64'],
+             HAVE_BUILTIN_CPU_SUPPORTS=env['HAVE_BUILTIN_CPU_SUPPORTS'],
+-            HAVE_FACCESSAT=env['HAVE_FACCESSAT'],
+             HAVE_UNAME=env['HAVE_UNAME'],
+             HAVE_SYSMACROS_H=env['HAVE_SYSMACROS_H'],
+             VERSION_MAJOR=VERSION_MAJOR,
+diff --git a/lib/cfg.c b/lib/cfg.c
+index 92b02136..114ea780 100644
+--- a/lib/cfg.c
++++ b/lib/cfg.c
+@@ -106,18 +106,28 @@ void rm_cfg_set_default(RmCfg *cfg) {
+ }
+ 
+ guint rm_cfg_add_path(RmCfg *cfg, bool is_prefd, const char *path) {
+-    int rc = 0;
+-
+-#if HAVE_FACCESSAT
+-    rc = faccessat(AT_FDCWD, path, R_OK, AT_EACCESS|AT_SYMLINK_NOFOLLOW);
+-#else
+-    rc = access(path, R_OK);
+-#endif
++    int rc = access(path, R_OK);
+ 
+     if(rc != 0) {
+-        rm_log_warning_line(_("Can't open directory or file \"%s\": %s"), path,
+-                            strerror(errno));
+-        return 0;
++        /* We have to check here if it's maybe a symbolic link.
++         * Do this by checking with readlink() - if it succeeds
++         * it is most likely a symbolic link. We do not really need
++         * the link path, so we just a size-one array.
++         *
++         * faccessat() cannot be trusted, since it works differently
++         * on different platforms (i.e. between glibc and musl)
++         * (lesson learned, see https://github.com/sahib/rmlint/pull/444)
++         * */
++        char dummy[1] = {0};
++        rc = readlink(path, dummy, 1);
++        if(rc < 0) {
++            rm_log_warning_line(
++                _("Can't open directory or file \"%s\": %s"),
++                path,
++                strerror(errno)
++            );
++            return 0;
++        }
+     }
+ 
+     bool realpath_worked = true;
+diff --git a/lib/config.h.in b/lib/config.h.in
+index a12fa65a..30025171 100644
+--- a/lib/config.h.in
++++ b/lib/config.h.in
+@@ -20,7 +20,6 @@
+ #define HAVE_POSIX_FADVISE ({HAVE_POSIX_FADVISE})
+ #define HAVE_BTRFS_H       ({HAVE_BTRFS_H})
+ #define HAVE_LINUX_FS_H    ({HAVE_LINUX_FS_H})
+-#define HAVE_FACCESSAT     ({HAVE_FACCESSAT})
+ #define HAVE_UNAME         ({HAVE_UNAME})
+ #define HAVE_SYSMACROS_H   ({HAVE_SYSMACROS_H})
+ #define HAVE_MM_CRC32_U64  ({HAVE_MM_CRC32_U64})
+diff --git a/tests/test_robustness/test_badlinks_as_args.py b/tests/test_robustness/test_badlinks_as_args.py
+new file mode 100644
+index 00000000..981e1a00
+--- /dev/null
++++ b/tests/test_robustness/test_badlinks_as_args.py
+@@ -0,0 +1,33 @@
++#!/usr/bin/env python3
++# encoding: utf-8
++from nose import with_setup
++from tests.utils import *
++
++
++# Regression test for directly passing broken symbolic links
++# to the command line. See https://github.com/sahib/rmlint/pull/444
++@with_setup(usual_setup_func, usual_teardown_func)
++def test_bad_symlinks_as_direct_args():
++    create_file('xxx', 'a')
++    create_file('xxx', 'b')
++
++    # Create symbolic links:
++    create_link('a', 'link_a', symlink=True)
++    create_link('b', 'link_b', symlink=True)
++
++    link_a_path = os.path.join(TESTDIR_NAME, 'link_a')
++    link_b_path = os.path.join(TESTDIR_NAME, 'link_b')
++
++    # Remove original files:
++    os.remove(os.path.join(TESTDIR_NAME, 'a'))
++    os.remove(os.path.join(TESTDIR_NAME, 'b'))
++
++    # Directly point rmlint to symlinks, should result
++    # in directly finding them.
++    head, *data, footer = run_rmlint(link_a_path, link_b_path)
++    assert len(data) == 2
++    assert data[0]['type'] == 'badlink'
++    assert data[1]['type'] == 'badlink'
++
++    assert {data[0]['path'], data[1]['path']} == \
++            {link_a_path, link_b_path}

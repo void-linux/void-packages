@@ -1,0 +1,211 @@
+# Template file for 'glibc'
+pkgname=glibc
+version=2.32
+revision=2
+bootstrap=yes
+short_desc="GNU C library"
+maintainer="Enno Boland <gottox@voidlinux.org>"
+license="GPL-2.0-or-later, LGPL-2.1-or-later, BSD-3-Clause"
+homepage="http://www.gnu.org/software/libc"
+distfiles="${GNU_SITE}/glibc/glibc-${version}.tar.xz"
+checksum=1627ea54f5a1a8467032563393e0901077626dc66f37f10ee6363bb722222836
+# Do not strip these files, objcopy errors out.
+nostrip_files="
+	XBS5_ILP32_OFFBIG
+	XBS5_ILP32_OFF32
+	POSIX_V6_ILP32_OFF32
+	POSIX_V6_ILP32_OFFBIG
+	POSIX_V7_ILP32_OFF32
+	POSIX_V7_ILP32_OFFBIG
+	POSIX_V6_LP64_OFF64
+	POSIX_V7_LP64_OFF64
+	XBS5_LP64_OFF64
+	ld-${version}.so
+	libdl-${version}.so
+	libanl-${version}.so
+	libcidn-${version}.so
+	libresolv-${version}.so
+	libcrypt-${version}.so
+	libpthread-${version}.so
+	libm-${version}.so
+	libutil-${version}.so
+	libthread_db-1.0.so
+	librt-${version}.so
+	libnsl-${version}.so
+	libc-${version}.so
+	libBrokenLocale-${version}.so
+	libnss_compat-${version}.so
+	libnss_db-${version}.so
+	libnss_dns-${version}.so
+	libnss_files-${version}.so
+	libnss_hesiod-${version}.so
+	libnss_nisplus-${version}.so
+	libnss_nis-${version}.so"
+
+conf_files="
+	/etc/rpc
+	/etc/gai.conf
+	/etc/ld.so.conf"
+if [ "$CHROOT_READY" ]; then
+	hostmakedepends="bison gettext perl python3 texinfo"
+fi
+makedepends="kernel-libc-headers"
+lib32files="/usr/lib/gconv/gconv-modules"
+lib32symlinks="ld-linux.so.2"
+# There's no point in building this for musl.
+archs="~*-musl"
+nopie=yes
+
+do_configure() {
+	mkdir build
+	cd build
+
+	local _libdir=/usr/lib${XBPS_TARGET_WORDSIZE}
+
+	echo "slibdir=${_libdir}" > configparms
+	echo "bindir=/usr/bin" >> configparms
+	echo "sbindir=/usr/bin" >> configparms
+	echo "rootsbindir=/usr/sbin" >> configparms
+
+	case "$XBPS_TARGET_MACHINE" in
+		# Build with -mno-tls-direct-seg-refs to avoid performance
+		# problems with Xen on x86 32bit.
+		i686) export CFLAGS+=" -mno-tls-direct-seg-refs";;
+		# Force hard float ABI.
+		# To build for soft float: --with-float=soft --without-fp.
+		armv5*) configure_args+=" --with-march=armv5te --without-fp --with-float=soft";;
+		armv6l*) configure_args+=" --with-march=armv6 --with-fpu=vfp --with-float=hard";;
+		armv7l*) configure_args+=" --with-march=armv7-a --with-fpu=vfpv3 --with-float=hard";;
+		arm64*) configure_args+=" --with-march=armv8-a";;
+	esac
+
+	if [ "$CROSS_BUILD" ]; then
+		configure_args+=" --host=${XBPS_CROSS_TRIPLET}"
+		configure_args+=" --with-sysroot=${XBPS_CROSS_BASE}"
+		configure_args+=" --with-headers=${XBPS_CROSS_BASE}/usr/include"
+	else
+		configure_args+=" --with-headers=${XBPS_MASTERDIR}/usr/include"
+	fi
+
+	# Disable SSP from CFLAGS (enabled below)
+	export CFLAGS="${CFLAGS/-fstack-protector-strong/}"
+	# Disable FORTIFY_SOURCE
+	export CFLAGS="${CFLAGS/-D_FORTIFY_SOURCE=?/}"
+
+	SHELL=/bin/bash ../configure ${configure_args} \
+		--bindir=/usr/bin --sbindir=/usr/bin \
+		--libdir=${_libdir} --libexecdir=${_libdir} \
+		--enable-add-ons=libidn \
+		--enable-multi-arch --enable-bind-now \
+		--disable-profile --enable-kernel=3.2.0 \
+		--enable-stack-guard-randomization \
+		--without-selinux --without-cvs --without-gd \
+		--disable-lock-elision \
+		--enable-stack-protector=strong \
+		--with-headers=${XBPS_CROSS_BASE}/usr/include \
+		--disable-werror \
+		libc_cv_rootsbindir=/usr/bin \
+		libc_cv_rtlddir=${_libdir} libc_cv_slibdir=${_libdir}
+}
+
+do_build() {
+	# Less verbose output when compiling and assembling
+	sed -i Makerules \
+		-e 's|compile-command.c = \(.*\)|compile-command.c = @echo " CC     $<"; \1|' \
+		-e 's|compile-command.cc = \(.*\)|compile-command.cc = @echo " CXX    $<"; \1|' \
+		-e 's|compile-command.S = \(.*\)|compile-command.S = @echo " ASM    $<"; \1|'
+	cd build
+	make ${makejobs}
+}
+do_install() {
+	vlicense LICENSES
+	# Create DESTDIR/etc/ld.so.conf
+	mkdir -p ${DESTDIR}/etc
+	echo "include /etc/ld.so.conf.d/*.conf" > ${DESTDIR}/etc/ld.so.conf
+
+	cd build
+	make install_root=${DESTDIR} install
+
+	# create /etc/default/libc-locales
+	vinstall ${FILESDIR}/libc-locales 644 etc/default
+	cp ${wrksrc}/localedata/SUPPORTED ${wrksrc}/build
+	sed -i	-e "s|/| |g" \
+		-e 's|\\| |g' \
+		-e "s|SUPPORTED-LOCALES=||" \
+		-e "s|^|#|g" ${wrksrc}/build/SUPPORTED
+	cat ${wrksrc}/build/SUPPORTED >> ${DESTDIR}/etc/default/libc-locales
+
+	# ldd is a bash script, so make it run as such.
+	replace_interpreter bash ${DESTDIR}/usr/bin/ldd
+
+	# wrong 32bit dynamic linker when using elfv2 ABI
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*)
+			vsed -i '/RTLDLIST=/s/ld.so.2/ld.so.1/g' \
+				${DESTDIR}/usr/bin/ldd
+			;;
+	esac
+
+	install -d ${DESTDIR}/etc/ld.so.conf.d
+	echo "/usr/local/lib" > ${DESTDIR}/etc/ld.so.conf.d/usr_local.conf
+	chmod 644 ${DESTDIR}/etc/ld.so.conf.d/usr_local.conf
+	rm -f ${DESTDIR}/etc/ld.so.cache
+
+	# Create ld-linux.so.3 symlink for ARM.
+	case "$XBPS_TARGET_MACHINE" in
+		armv?l) ln -sfr ${DESTDIR}/usr/lib/ld-linux-armhf.so.3 ${DESTDIR}/usr/lib/ld-linux.so.3;;
+	esac
+
+	vinstall ${wrksrc}/posix/gai.conf 644 etc
+	rm -rf ${DESTDIR}/var/db
+	# Remove tzselect and z{dump,ic}, provided by tzutils.
+	rm -f ${DESTDIR}/usr/bin/tzselect
+	rm -f ${DESTDIR}/usr/bin/z{dump,ic}
+
+	mv ${DESTDIR}/usr/sbin/* ${DESTDIR}/usr/bin
+
+	# Create xbps.d(5) arch override file for 32-bit architectures
+	# 32-bit userlands may be used with 64-bit kernels and then
+	# xbps will report an incorrect architecture by default
+	case "$XBPS_TARGET_MACHINE" in
+		i686|ppc|ppcle|armv*)
+			vmkdir usr/share/xbps.d
+			echo "architecture=${XBPS_TARGET_MACHINE}" > \
+				${DESTDIR}/usr/share/xbps.d/arch-32bit.conf
+			;;
+		*) ;;
+	esac
+}
+
+glibc-devel_package() {
+	lib32depends="glibc>=${version}_${revision}"
+	lib32files="/usr/include/gnu/stubs-32.h"
+	depends="${makedepends} glibc>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/include
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.o"
+		if [ -d "${DESTDIR}/usr/share/info" ]; then
+			vmove usr/share/info
+		fi
+	}
+}
+glibc-locales_package() {
+	conf_files="/etc/default/libc-locales"
+	short_desc+=" - locale data files"
+	pkg_install() {
+		vmove etc/default
+		vmove usr/share/i18n
+		vmove usr/share/locale
+	}
+}
+nscd_package() {
+	conf_files="/etc/nscd.conf"
+	short_desc+=" - Name Service Cache Daemon"
+	pkg_install() {
+		vmove usr/bin/nscd
+		vinstall ${wrksrc}/nscd/nscd.conf 644 etc
+		vsv nscd
+	}
+}
