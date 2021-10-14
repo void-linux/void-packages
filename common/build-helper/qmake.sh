@@ -66,7 +66,8 @@ _EOF
 	# makes sense together with the qmake build-helper
 	# and not to interfere with e.g. the qmake build-style
 	#
-	# XXX: Intentionally quote {C,CXX,LD}FLAGS here but not in native.
+	# XXX: Intentionally quote {C,CXX,LD}FLAGS here and
+	#      {C,CXX}FLAGS in native.
 	# - Cross Build:
 	#   + base flags will be picked up from QMAKE_{C,CXX,LD}FLAGS
 	#   + hardening flags will be picked up from environment variables
@@ -91,8 +92,8 @@ exec /usr/lib/qt5/bin/qmake \
 	LIB=/usr/lib \
 	QMAKE_CC=$CC QMAKE_CXX=$CXX \
 	QMAKE_LINK=$CXX QMAKE_LINK_C=$CC \
-	QMAKE_CFLAGS+="${CFLAGS}" \
-	QMAKE_CXXFLAGS+="${CXXFLAGS}" \
+	QMAKE_CFLAGS+="\${CFLAGS}" \
+	QMAKE_CXXFLAGS+="\${CXXFLAGS}" \
 	QMAKE_LFLAGS+="${LDFLAGS}" \
 	CONFIG+=no_qt_rpath
 _EOF
