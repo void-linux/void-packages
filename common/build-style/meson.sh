@@ -102,7 +102,8 @@ do_configure() {
 	# We also force gcc-ar usage in the crossfile above.
 	export AR="gcc-ar"
 
-	${meson_cmd} \
+	# unbuffered output for continuous logging
+	PYTHONUNBUFFERED=1 ${meson_cmd} \
 		--prefix=/usr \
 		--libdir=/usr/lib${XBPS_TARGET_WORDSIZE} \
 		--libexecdir=/usr/libexec \
