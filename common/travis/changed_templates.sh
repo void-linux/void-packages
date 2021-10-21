@@ -8,13 +8,13 @@ elif command -v git >/dev/null 2>&1; then
 	GIT_CMD=$(command -v git)
 fi
 
-tip="$(git rev-list -1 --parents HEAD)"
+tip="$($GIT_CMD rev-list -1 --parents HEAD)"
 case "$tip" in
 	*" "*" "*) tip="${tip##* }" ;;
 	*)         tip="${tip%% *}" ;;
 esac
 
-base="$(git merge-base FETCH_HEAD "$tip")" || {
+base="$($GIT_CMD merge-base FETCH_HEAD "$tip")" || {
 	echo "Your branches is based on too old copy."
 	echo "Please rebase to newest copy."
 	exit 1
