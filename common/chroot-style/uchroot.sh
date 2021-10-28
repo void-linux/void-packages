@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# This chroot script uses xbps-uchroot(8).
+# This chroot script uses xbps-uchroot(1).
 #
 readonly MASTERDIR="$1"
 readonly DISTDIR="$2"

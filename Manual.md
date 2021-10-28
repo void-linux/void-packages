@@ -605,8 +605,7 @@ patches to the package sources during `do_patch()`. Patches are stored in
 and `XBPS_MAKEJOBS` has no effect.
 
 - `make_check` Sets the cases in which the `check` phase is run.
-This option should usually be accompanied by a comment explaining why it was set, especially when
-set to `no`.
+This option has to be accompanied by a comment explaining why the tests fail.
 Allowed values:
   - `yes` (the default) to run if `XBPS_CHECK_PKGS` is set.
   - `extended` to run if `XBPS_CHECK_PKGS` is `full`.

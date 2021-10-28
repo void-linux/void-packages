@@ -9,6 +9,7 @@ step_backlight() {
     for backlight in /sys/class/backlight/*/; do
         [ -d "$backlight" ] || continue
         step=$(( $(cat "$backlight/max_brightness") / 20 ))
+        [ "$step" -gt "1" ] || step=1 #fallback if gradation is too low
         printf '%s' "$(( $(cat "$backlight/brightness") $1 step ))" >"$backlight/brightness"
     done
 }
