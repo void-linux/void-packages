@@ -2124,7 +2124,7 @@ a github pull request.
 To keep your forked repository always up to date, setup the `upstream` remote
 to pull in new changes:
 
-    $ git remote add upstream git://github.com/void-linux/void-packages.git
+    $ git remote add upstream https://github.com/void-linux/void-packages.git
     $ git pull --rebase upstream master
 
 <a id="help"></a>
