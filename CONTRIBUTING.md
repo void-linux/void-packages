@@ -20,7 +20,7 @@ To get started, [fork](https://help.github.com/articles/fork-a-repo) the void-li
 
 To keep your forked repository up to date, setup the `upstream` remote to pull in new changes:
 
-    $ git remote add upstream git://github.com/void-linux/void-packages.git
+    $ git remote add upstream https://github.com/void-linux/void-packages.git
     $ git pull --rebase upstream master
 
 ### Creating a new template
