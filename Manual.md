@@ -998,6 +998,10 @@ configure arguments can be specified via `cross_*_configure_args` where `*` is `
 additionally passed to both early and final `gcc`. You can also specify custom `CFLAGS`
 and `LDFLAGS` for the libc as `cross_(glibc|musl)_(cflags|ldflags)`.
 
+- `zig-build` For packages using [Zig](https://ziglang.org)'s build
+system. Additional arguments may be passed to the `zig build` invocation using
+`configure_args`.
+
 For packages that use the Python module build method (`setup.py` or
 [PEP 517](https://www.python.org/dev/peps/pep-0517/)), you can choose one of the following:
 
