@@ -59,7 +59,7 @@ methods.
 Clone the `void-packages` git repository and install the bootstrap packages:
 
 ```
-$ git clone git://github.com/void-linux/void-packages.git
+$ git clone https://github.com/void-linux/void-packages.git
 $ cd void-packages
 $ ./xbps-src binary-bootstrap
 ```
@@ -441,7 +441,7 @@ try other [chroot methods](#chroot-methods).
 
 Clone the `void-packages` git repository:
 
-    $ git clone git://github.com/void-linux/void-packages
+    $ git clone https://github.com/void-linux/void-packages.git
 
 and `xbps-src` should be fully functional; just start the `bootstrap` process, i.e:
 
@@ -469,14 +469,10 @@ Sometimes the bootstrap packages must be updated to the latest available version
 
 Two ways are available to build 32bit packages on x86\_64:
 
- - cross compilation mode
- - native mode with a 32bit masterdir
+ - native mode with a 32bit masterdir (recommended, used in official repository)
+ - cross compilation mode to i686 [target](#cross-compiling)
 
-The first mode (cross compilation) is as easy as:
-
-    $ ./xbps-src -a i686 pkg ...
-
-The second mode (native) needs a new x86 `masterdir`:
+The canonical mode (native) needs a new x86 `masterdir`:
 
     $ ./xbps-src -m masterdir-x86 binary-bootstrap i686
     $ ./xbps-src -m masterdir-x86 ...
