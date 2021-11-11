@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# This chroot script uses bubblewrap (see https://github.com/projectatomic/bubblewrap)
+# This chroot script uses bubblewrap (see https://github.com/containers/bubblewrap)
 #
 set -e
 readonly MASTERDIR="$1"
@@ -18,6 +18,6 @@ if [ -z "$MASTERDIR" -o -z "$DISTDIR" ]; then
 	exit 1
 fi
 
-bwrap --dev-bind "$MASTERDIR" / --dev-bind "$DISTDIR" /void-packages \
+exec bwrap --bind "$MASTERDIR" / --ro-bind "$DISTDIR" /void-packages \
 	 --dev /dev --tmpfs /tmp --proc /proc \
-	${HOSTDIR:+--dev-bind "$HOSTDIR" /host} $EXTRA_ARGS "$@"
+	${HOSTDIR:+--bind "$HOSTDIR" /host} $EXTRA_ARGS "$@"
