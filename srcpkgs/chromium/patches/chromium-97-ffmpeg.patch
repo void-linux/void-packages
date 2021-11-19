@@ -1,0 +1,105 @@
+From 09c2674afbd26ab87891c6dd2f814bf5e12b3034 Mon Sep 17 00:00:00 2001
+From: Ted Meyer <tmathmeyer@chromium.org>
+Date: Wed, 3 Nov 2021 00:42:21 +0000
+Subject: [PATCH] Seek more than one stream in ffmpeg
+
+Some media (ie, badly muxed media) will sometimes include a track with
+no frames. Previously, if that track was a video track, ffmpeg would try
+to seek it, but since it had no frames, it would just seek to the end
+instead. This didn't present itself with zero-frame audio tracks,
+because the video stream was always selected preferentially. This change
+grabs a preferred track for each type of {audio, video, text}, and seeks
+all of them in order to avoid this issue.
+
+Right now the FFmpegDemuxerTests fail pretty hard. I tried tweaking some
+of the numbers to demonstrate what the actual behavior with this patch
+becomes, but as you can see, it doesn't seem quite right. When seeking
+actual videos everything works just fine, but there are clearly some
+inconsistencies. I suspect it has mostly to do with multiple calls to
+av_seek_frame causing some bouncing around in the stream position that
+wasn't happening before. WDYT the right solution is here Dale? Do we
+accept that the badly muxed media just won't play correctly?
+
+Bug: 1183623
+Change-Id: I6fedfb7d36e6f6caeeaefb5f7e82b4e9f4481060
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/3244470
+Commit-Queue: Ted Meyer <tmathmeyer@chromium.org>
+Reviewed-by: Dale Curtis <dalecurtis@chromium.org>
+Cr-Commit-Position: refs/heads/main@{#937649}
+---
+ media/filters/ffmpeg_demuxer.cc          | 27 ++++++++++++++++--------
+ media/filters/ffmpeg_demuxer_unittest.cc |  8 +++----
+ 2 files changed, 22 insertions(+), 13 deletions(-)
+
+diff --git a/media/filters/ffmpeg_demuxer.cc b/media/filters/ffmpeg_demuxer.cc
+index f4649971676c8..1760c5d087872 100644
+--- a/media/filters/ffmpeg_demuxer.cc
++++ b/media/filters/ffmpeg_demuxer.cc
+@@ -60,6 +60,8 @@ namespace media {
+ 
+ namespace {
+ 
++constexpr int64_t kInvalidPTSMarker = static_cast<int64_t>(0x8000000000000000);
++
+ void SetAVStreamDiscard(AVStream* stream, AVDiscard discard) {
+   DCHECK(stream);
+   stream->discard = discard;
+@@ -1592,6 +1594,8 @@ FFmpegDemuxerStream* FFmpegDemuxer::FindStreamWithLowestStartTimestamp(
+   for (const auto& stream : streams_) {
+     if (!stream || stream->IsEnabled() != enabled)
+       continue;
++    if (av_stream_get_first_dts(stream->av_stream()) == kInvalidPTSMarker)
++      continue;
+     if (!lowest_start_time_stream ||
+         stream->start_time() < lowest_start_time_stream->start_time()) {
+       lowest_start_time_stream = stream.get();
+@@ -1604,16 +1608,21 @@ FFmpegDemuxerStream* FFmpegDemuxer::FindPreferredStreamForSeeking(
+     base::TimeDelta seek_time) {
+   // If we have a selected/enabled video stream and its start time is lower
+   // than the |seek_time| or unknown, then always prefer it for seeking.
+-  FFmpegDemuxerStream* video_stream = nullptr;
+   for (const auto& stream : streams_) {
+-    if (stream && stream->type() == DemuxerStream::VIDEO &&
+-        stream->IsEnabled()) {
+-      video_stream = stream.get();
+-      if (video_stream->start_time() <= seek_time) {
+-        return video_stream;
+-      }
+-      break;
+-    }
++    if (!stream)
++      continue;
++
++    if (stream->type() != DemuxerStream::VIDEO)
++      continue;
++
++    if (av_stream_get_first_dts(stream->av_stream()) == kInvalidPTSMarker)
++      continue;
++
++    if (!stream->IsEnabled())
++      continue;
++
++    if (stream->start_time() <= seek_time)
++      return stream.get();
+   }
+ 
+   // If video stream is not present or |seek_time| is lower than the video start
+diff --git a/media/filters/ffmpeg_demuxer_unittest.cc b/media/filters/ffmpeg_demuxer_unittest.cc
+index 704fc4a0cb473..03939757e5520 100644
+--- a/media/filters/ffmpeg_demuxer_unittest.cc
++++ b/media/filters/ffmpeg_demuxer_unittest.cc
+@@ -555,10 +555,10 @@ TEST_F(FFmpegDemuxerTest, Read_Video) {
+ TEST_F(FFmpegDemuxerTest, SeekInitialized_NoVideoStartTime) {
+   CreateDemuxer("audio-start-time-only.webm");
+   InitializeDemuxer();
+-  // Video stream should be preferred for seeking even if video start time is
+-  // unknown.
+-  DemuxerStream* vstream = GetStream(DemuxerStream::VIDEO);
+-  EXPECT_EQ(vstream, preferred_seeking_stream(base::TimeDelta()));
++  // Video would normally be preferred, but not if it's a zero packet
++  // stream.
++  DemuxerStream* expected_stream = GetStream(DemuxerStream::AUDIO);
++  EXPECT_EQ(expected_stream, preferred_seeking_stream(base::TimeDelta()));
+ }
+ 
+ TEST_F(FFmpegDemuxerTest, Seeking_PreferredStreamSelection) {
