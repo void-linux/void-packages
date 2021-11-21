@@ -16,7 +16,6 @@ else
 		export GCCGO="${XBPS_CROSS_TRIPLET}-gccgo"
 	fi
 fi
-nostrip=yes
 
 case "$XBPS_TARGET_MACHINE" in
 	aarch64*) export GOARCH=arm64;;

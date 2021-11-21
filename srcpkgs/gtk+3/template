@@ -1,18 +1,21 @@
 # Template file for 'gtk+3'
-# Revbump gtk-layer-shell when updating, otherwise it presents a warning message
 pkgname=gtk+3
-version=3.24.29
+version=3.24.30
 revision=1
 wrksrc="gtk+-${version}"
-build_style=gnu-configure
+build_style=meson
 build_helper="gir"
-#XXX broken configure script: Can't use vopt_enable cloudproviders, configure
-#checks for libcloudproviders when we pass '--disable-cloudproviders' to it!
-configure_args="--disable-schemas-compile
- $(vopt_enable broadway broadway-backend) $(vopt_enable colord)
- $(vopt_enable cups) $(vopt_enable gir introspection)
- $(vopt_enable wayland wayland-backend) $(vopt_enable x11 x11-backend)
- $(vopt_if cloudproviders '--enable-cloudproviders')"
+configure_args="
+ $(vopt_bool x11 x11_backend)
+ $(vopt_bool wayland wayland_backend)
+ $(vopt_bool broadway broadway_backend)
+ -Dprint_backends=$(vopt_if cups 'cups,')file
+ $(vopt_bool cloudproviders)
+ -Dcolord=$(vopt_if colord yes no)
+ $(vopt_bool gtk_doc)
+ -Dman=true
+ $(vopt_bool gir introspection)
+ "
 conf_files="/etc/gtk-3.0/im-multipress.conf"
 hostmakedepends="gettext-devel glib-devel gtk-doc gtk-update-icon-cache perl
  pkg-config $(vopt_if wayland 'wayland-devel wayland-protocols')"
@@ -29,19 +32,46 @@ maintainer="Enno Boland <gottox@voidlinux.org>"
 license="LGPL-2.1-or-later"
 homepage="https://www.gtk.org/"
 distfiles="${GNOME_SITE}/gtk+/${version%.*}/gtk+-${version}.tar.xz"
-checksum=f57ec4ade8f15cab0c23a80dcaee85b876e70a8823d9105f067ce335a8268caa
+checksum=ba75bfff320ad1f4cfbee92ba813ec336322cc3c660d406aad014b07087a3ba9
+_broken_tests="
+ a11y/scale-drawvalue
+ a11y/menu
+ a11y/menubutton
+ a11y/menubutton2
+ a11y/menubutton3
+ a11y/tooltips
+ reftests/button-wrapping.ui
+ reftests/cellrenderer-pixbuf-stock-rtl.ui
+ reftests/icon-effect-missing.ui
+ reftests/symbolic-icon-translucent-color.ui
+ reftests/window-height-for-width.ui"
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*) _broken_tests+=" gtk/cellarea" ;;
+esac
 
 # Package build options
-build_options="broadway colord cups gir cloudproviders wayland x11"
+build_options="broadway colord cups gir cloudproviders wayland x11 gtk_doc"
 desc_option_broadway="Enable support for the HTML5 Broadway backend"
 desc_option_cloudproviders="Enable integration with cloudproviders, such as Nextcloud"
 
 # Enable all options (other than cloudproviders) by default.
 build_options_default="colord cups gir broadway wayland x11"
+if [ -z "$CROSS_BUILD" ]; then
+	build_options_default+=" gtk_doc"
+fi
+
+pre_check() {
+	for t in $_broken_tests; do
+		test_dir="testsuite/${t%\/*}"
+		test_name="${t##*\/}"
+
+		vsed -e "/'${test_name}',/d" -i "$test_dir/meson.build"
+	done
+}
 
 do_check() {
-	# TODO: don't pass fully
-	xvfb-run dbus-run-session make ${makejobs} check
+	xvfb-run dbus-run-session ninja -C build ${makejobs} test
 }
 
 post_install() {
@@ -59,7 +89,9 @@ gtk+3-devel_package() {
 		if [ "$build_option_gir" ]; then
 			vmove usr/share/gir-1.0
 		fi
-		vmove usr/share/gtk-doc
+		if [ "$build_option_gtk_doc" ]; then
+			vmove usr/share/gtk-doc
+		fi
 		vmove usr/share/aclocal
 	}
 }
@@ -73,7 +105,6 @@ gtk+3-demo_package() {
 		vmove usr/share/man/man1/gtk3-widget-factory.1
 		vmove usr/share/gtk-3.0/gtkbuilder.rng
 		vmove usr/share/glib-2.0/schemas/org.gtk.Demo.gschema.xml
-		vmove usr/share/glib-2.0/schemas/org.gtk.exampleapp.gschema.xml
 		vmove usr/share/applications/gtk3-widget-factory.desktop
 		vmove usr/share/applications/gtk3-demo.desktop
 		vmove usr/share/icons

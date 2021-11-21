@@ -422,7 +422,7 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_WRAPPERDIR` Full path to where xbps-src's wrappers for utilities are stored.
 
-- `XBPS_CROSS_BASE` Full path to where cross-compile dependencies are installed, varies according to the target architecture triplet. i.e `aarch64` -> `aarch64-unknown-linux-gnu`.
+- `XBPS_CROSS_BASE` Full path to where cross-compile dependencies are installed, varies according to the target architecture triplet. i.e `aarch64` -> `/usr/aarch64-linux-gnu`.
 
 - `XBPS_RUST_TARGET` The target architecture triplet used by `rustc` and `cargo`.
 
@@ -581,8 +581,9 @@ phase if `${build_style}` is set to `configure`, `gnu-configure` or
 `PREFIX=/usr DESTDIR=${DESTDIR}`.
 
 - `make_build_target` The build target. If `${build_style}` is set to `configure`, `gnu-configure`
-or `gnu-makefile`, this is the target passed to `${make_cmd}` in the build phase; when unset, it
-defaults to `all`. If `${build_style}` is `python3-pep517`, this is the path of the package
+or `gnu-makefile`, this is the target passed to `${make_cmd}` in the build phase;
+when unset the default target is used.
+If `${build_style}` is `python3-pep517`, this is the path of the package
 directory that should be built as a Python wheel; when unset, defaults to `.` (the current
 directory with respect to the build).
 
@@ -605,8 +606,7 @@ patches to the package sources during `do_patch()`. Patches are stored in
 and `XBPS_MAKEJOBS` has no effect.
 
 - `make_check` Sets the cases in which the `check` phase is run.
-This option should usually be accompanied by a comment explaining why it was set, especially when
-set to `no`.
+This option has to be accompanied by a comment explaining why the tests fail.
 Allowed values:
   - `yes` (the default) to run if `XBPS_CHECK_PKGS` is set.
   - `extended` to run if `XBPS_CHECK_PKGS` is `full`.
@@ -998,6 +998,10 @@ configure arguments can be specified via `cross_*_configure_args` where `*` is `
 `gcc_bootstrap` (early gcc), `gcc` (final gcc), `glibc` (or `musl`), `configure_args` is
 additionally passed to both early and final `gcc`. You can also specify custom `CFLAGS`
 and `LDFLAGS` for the libc as `cross_(glibc|musl)_(cflags|ldflags)`.
+
+- `zig-build` For packages using [Zig](https://ziglang.org)'s build
+system. Additional arguments may be passed to the `zig build` invocation using
+`configure_args`.
 
 For packages that use the Python module build method (`setup.py` or
 [PEP 517](https://www.python.org/dev/peps/pep-0517/)), you can choose one of the following:
@@ -2125,7 +2129,7 @@ a github pull request.
 To keep your forked repository always up to date, setup the `upstream` remote
 to pull in new changes:
 
-    $ git remote add upstream git://github.com/void-linux/void-packages.git
+    $ git remote add upstream https://github.com/void-linux/void-packages.git
     $ git pull --rebase upstream master
 
 <a id="help"></a>

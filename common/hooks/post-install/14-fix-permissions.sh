@@ -13,9 +13,9 @@ change_file_perms() {
 
 hook() {
 	if [ -z "$nocheckperms" ]; then
-		# check that no files have permission write for all users
+		# check that no files have permission write for other users
 		find "$PKGDESTDIR" -type f -perm -0002 | while read -r file; do
-			msg_error "$pkgver: file ${file#$PKGDESTDIR} has write permission for all users\n"
+			msg_error "$pkgver: file ${file#$PKGDESTDIR} has write permission for other users\n"
 		done
 	fi
 
@@ -29,5 +29,8 @@ hook() {
 		change_file_perms "/usr/share/metainfo" 133 644
 		change_file_perms "/usr/share/appdata" 133 644
 		change_file_perms "/usr/include" 133 644
+		change_file_perms "/usr/share/bash-completion/completions" 133 644
+		change_file_perms "/usr/share/fish/vendor_completions.d" 133 644
+		change_file_perms "/usr/share/zsh/site-functions" 133 644
 	fi
 }
