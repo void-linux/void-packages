@@ -1,21 +1,19 @@
 # Template file for 'godot'
 pkgname=godot
 version=3.4
-revision=1
+revision=2
 archs="x86_64* i686* aarch64* armv7* ppc64*"
 wrksrc="${pkgname}-${version}-stable"
 build_style=scons
 # Godot contains private copies of libraries
 # that already have been packaged elsewhere.
-# Use builtin bullet for now as it's too old in repos (needs 2.89)
-# Toggle to not use builtin once bullet has been updated
-make_build_args="platform=x11 tools=yes target=release_debug dev=no progress=no
- pulseaudio=no builtin_bullet=false builtin_libpng=false builtin_libvpx=false
+make_build_args="dev=no progress=no pulseaudio=no use_lto=yes
+ builtin_bullet=false builtin_libpng=false builtin_libvpx=false
  builtin_libwebp=false builtin_libogg=false builtin_libtheora=false
  builtin_opus=false builtin_libvorbis=false builtin_enet=false
  builtin_zlib=false builtin_freetype=false builtin_mbedtls=false
  builtin_miniupnpc=false builtin_pcre2=false"
-hostmakedepends="pkg-config clang"
+hostmakedepends="pkg-config"
 makedepends="
  alsa-lib-devel freetype-devel glu-devel libXcursor-devel libXi-devel
  libXinerama-devel libXrender-devel libXrandr-devel libX11-devel
@@ -42,15 +40,42 @@ pre_build() {
 	export CXXFLAGS=" $CXXFLAGS "
 }
 
+do_build() {
+	_options="\
+		yes release_debug x11    # editor
+		yes release_debug server # headless
+		no  release       x11    # client
+		no  release_debug x11    # client with runtime checks
+		no  release       server # server
+		no  release_debug server # server with runtime checks"
+
+	echo "$_options" | while read tools target platform _; do
+		scons \
+			${makejobs} ${make_build_args} \
+			CCFLAGS="$CFLAGS" LINKFLAGS="$LDFLAGS" \
+			tools=$tools target=$target platform=$platform
+	done
+}
+
 do_install() {
 	vlicense LICENSE.txt
 	vinstall ${FILESDIR}/godot.desktop 644 /usr/share/applications/
 	vinstall ${wrksrc}/icon.png 644 /usr/share/pixmaps/ godot.png
 
 	case "$XBPS_TARGET_MACHINE" in
-		x86_64*|aarch64*) vbin bin/godot.x11.opt.tools.64 godot;;
-		ppc64le*) vbin bin/godot.x11.opt.tools.ppc64le godot;;
-		ppc64*) vbin bin/godot.x11.opt.tools.ppc64 godot;;
-		*) vbin bin/godot.x11.opt.tools.32 godot;;
+		x86_64*|aarch64*) _godot_arch=64;;
+		ppc64le*) _godot_arch=ppc64le;;
+		ppc64*) _godot_arch=ppc64;;
+		*) _godot_arch=32;;
 	esac
+
+	# editors, use headless for packaging games
+	vbin bin/godot.x11.opt.tools.$_godot_arch godot
+	vbin bin/godot_server.x11.opt.tools.$_godot_arch godot-headless
+
+	# export templates, use for packaging games and playing with musl libc or non-x86 CPU
+	vbin bin/godot.x11.opt.$_godot_arch godot-client
+	vbin bin/godot.x11.opt.debug.$_godot_arch godot-client-debug
+	vbin bin/godot_server.x11.opt.$_godot_arch godot-server
+	vbin bin/godot_server.x11.opt.debug.$_godot_arch godot-server-debug
 }
