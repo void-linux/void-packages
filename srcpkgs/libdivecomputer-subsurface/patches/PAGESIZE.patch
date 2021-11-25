@@ -1,0 +1,874 @@
+--- a/src/liquivision_lynx.c
++++ b/src/liquivision_lynx.c
+@@ -61,16 +61,16 @@
+ #define MAXRETRIES 2
+ #define MAXPACKET 12
+ #define SEGMENTSIZE 0x400
+-#define PAGESIZE    0x1000
++#define XPAGESIZE    0x1000
+ #define MEMSIZE     0x200000
+ 
+-#define RB_LOGBOOK_BEGIN         (1 * PAGESIZE)
+-#define RB_LOGBOOK_END           (25 * PAGESIZE)
++#define RB_LOGBOOK_BEGIN         (1 * XPAGESIZE)
++#define RB_LOGBOOK_END           (25 * XPAGESIZE)
+ #define RB_LOGBOOK_SIZE          (RB_LOGBOOK_END - RB_LOGBOOK_BEGIN)
+ #define RB_LOGBOOK_DISTANCE(a,b) ringbuffer_distance (a, b, 1, RB_LOGBOOK_BEGIN, RB_LOGBOOK_END)
+ 
+-#define RB_PROFILE_BEGIN         (25 * PAGESIZE)
+-#define RB_PROFILE_END           (500 * PAGESIZE)
++#define RB_PROFILE_BEGIN         (25 * XPAGESIZE)
++#define RB_PROFILE_END           (500 * XPAGESIZE)
+ #define RB_PROFILE_SIZE          (RB_PROFILE_END - RB_PROFILE_BEGIN)
+ #define RB_PROFILE_DISTANCE(a,b) ringbuffer_distance (a, b, 1, RB_PROFILE_BEGIN, RB_PROFILE_END)
+ 
+@@ -329,8 +329,8 @@ liquivision_lynx_device_read (dc_device_t *abstract, unsigned int address, unsig
+ 		return DC_STATUS_INVALIDARGS;
+ 
+ 	// Get the page and segment number.
+-	unsigned int page    = (address / PAGESIZE);
+-	unsigned int segment = (address % PAGESIZE) / SEGMENTSIZE;
++	unsigned int page    = (address / XPAGESIZE);
++	unsigned int segment = (address % XPAGESIZE) / SEGMENTSIZE;
+ 
+ 	unsigned int nbytes = 0;
+ 	while (nbytes < size) {
+@@ -354,7 +354,7 @@ liquivision_lynx_device_read (dc_device_t *abstract, unsigned int address, unsig
+ 
+ 		nbytes += SEGMENTSIZE;
+ 		segment++;
+-		if (segment == (PAGESIZE / SEGMENTSIZE)) {
++		if (segment == (XPAGESIZE / SEGMENTSIZE)) {
+ 			segment = 0;
+ 			page++;
+ 		}
+@@ -420,13 +420,13 @@ liquivision_lynx_device_foreach (dc_device_t *abstract, dc_dive_callback_t callb
+ 	unsigned int headersize = (model == XEN) ? SZ_HEADER_XEN : SZ_HEADER_OTHER;
+ 
+ 	// Get the number of headers per page.
+-	unsigned int npages = PAGESIZE / headersize;
++	unsigned int npages = XPAGESIZE / headersize;
+ 
+ 	// Get the logbook pointers.
+ 	unsigned int begin = array_uint16_le (config + 0x46);
+ 	unsigned int end   = array_uint16_le (config + 0x48);
+-	unsigned int rb_logbook_begin = RB_LOGBOOK_BEGIN + (begin / npages) * PAGESIZE + (begin % npages) * headersize;
+-	unsigned int rb_logbook_end   = RB_LOGBOOK_BEGIN + (end   / npages) * PAGESIZE + (end   % npages) * headersize;
++	unsigned int rb_logbook_begin = RB_LOGBOOK_BEGIN + (begin / npages) * XPAGESIZE + (begin % npages) * headersize;
++	unsigned int rb_logbook_end   = RB_LOGBOOK_BEGIN + (end   / npages) * XPAGESIZE + (end   % npages) * headersize;
+ 	if (rb_logbook_begin < RB_LOGBOOK_BEGIN || rb_logbook_begin > RB_LOGBOOK_END ||
+ 		rb_logbook_end   < RB_LOGBOOK_BEGIN || rb_logbook_end   > RB_LOGBOOK_END) {
+ 		ERROR (abstract->context, "Invalid logbook pointers (%04x, %04x).",
+@@ -488,8 +488,8 @@ liquivision_lynx_device_foreach (dc_device_t *abstract, dc_dive_callback_t callb
+ 			address = RB_LOGBOOK_END;
+ 
+ 		// Skip the padding bytes.
+-		if ((address % PAGESIZE) == 0) {
+-			unsigned int padding = PAGESIZE % headersize;
++		if ((address % XPAGESIZE) == 0) {
++			unsigned int padding = XPAGESIZE % headersize;
+ 			unsigned char dummy[SZ_HEADER_MAX] = {0};
+ 			status = dc_rbstream_read (rblogbook, &progress, dummy, padding);
+ 			if (status != DC_STATUS_SUCCESS) {
+--- a/src/oceanic_atom2.c
++++ b/src/oceanic_atom2.c
+@@ -1011,11 +1011,11 @@ oceanic_atom2_device_version (dc_device_t *abstract, unsigned char data[], unsig
+ 	if (!ISINSTANCE (abstract))
+ 		return DC_STATUS_INVALIDARGS;
+ 
+-	if (size < PAGESIZE)
++	if (size < XPAGESIZE)
+ 		return DC_STATUS_INVALIDARGS;
+ 
+ 	unsigned char command[] = {CMD_VERSION};
+-	dc_status_t rc = oceanic_atom2_transfer (device, command, sizeof (command), ACK, data, PAGESIZE, 1);
++	dc_status_t rc = oceanic_atom2_transfer (device, command, sizeof (command), ACK, data, XPAGESIZE, 1);
+ 	if (rc != DC_STATUS_SUCCESS)
+ 		return rc;
+ 
+@@ -1029,8 +1029,8 @@ oceanic_atom2_device_read (dc_device_t *abstract, unsigned int address, unsigned
+ 	oceanic_atom2_device_t *device = (oceanic_atom2_device_t*) abstract;
+ 	const oceanic_common_layout_t *layout = device->base.layout;
+ 
+-	if ((address % PAGESIZE != 0) ||
+-		(size    % PAGESIZE != 0))
++	if ((address % XPAGESIZE != 0) ||
++		(size    % XPAGESIZE != 0))
+ 		return DC_STATUS_INVALIDARGS;
+ 
+ 	// Pick the correct read command and number of checksum bytes.
+@@ -1054,7 +1054,7 @@ oceanic_atom2_device_read (dc_device_t *abstract, unsigned int address, unsigned
+ 	}
+ 
+ 	// Pick the best pagesize to use.
+-	unsigned int pagesize = device->bigpage * PAGESIZE;
++	unsigned int pagesize = device->bigpage * XPAGESIZE;
+ 
+ 	// High memory state.
+ 	unsigned int highmem = 0;
+@@ -1066,7 +1066,7 @@ oceanic_atom2_device_read (dc_device_t *abstract, unsigned int address, unsigned
+ 			highmem = layout->highmem;
+ 			read_cmd = CMD_READ16HI;
+ 			crc_size = 2;
+-			pagesize = 16 * PAGESIZE;
++			pagesize = 16 * XPAGESIZE;
+ 		}
+ 
+ 		// Calculate the page number after mapping the virtual high memory
+@@ -1075,7 +1075,7 @@ oceanic_atom2_device_read (dc_device_t *abstract, unsigned int address, unsigned
+ 
+ 		if (page != device->cached_page || highmem != device->cached_highmem) {
+ 			// Read the package.
+-			unsigned int number = highmem ? page : page * device->bigpage; // This is always PAGESIZE, even in big page mode.
++			unsigned int number = highmem ? page : page * device->bigpage; // This is always XPAGESIZE, even in big page mode.
+ 			unsigned char command[] = {read_cmd,
+ 					(number >> 8) & 0xFF, // high
+ 					(number     ) & 0xFF, // low
+@@ -1110,8 +1110,8 @@ oceanic_atom2_device_write (dc_device_t *abstract, unsigned int address, const u
+ {
+ 	oceanic_atom2_device_t *device = (oceanic_atom2_device_t*) abstract;
+ 
+-	if ((address % PAGESIZE != 0) ||
+-		(size    % PAGESIZE != 0))
++	if ((address % XPAGESIZE != 0) ||
++		(size    % XPAGESIZE != 0))
+ 		return DC_STATUS_INVALIDARGS;
+ 
+ 	// Invalidate the cache.
+@@ -1121,7 +1121,7 @@ oceanic_atom2_device_write (dc_device_t *abstract, unsigned int address, const u
+ 	unsigned int nbytes = 0;
+ 	while (nbytes < size) {
+ 		// Prepare to write the package.
+-		unsigned int number = address / PAGESIZE;
++		unsigned int number = address / XPAGESIZE;
+ 		unsigned char prepare[] = {CMD_WRITE,
+ 				(number >> 8) & 0xFF, // high
+ 				(number     ) & 0xFF, // low
+@@ -1131,16 +1131,16 @@ oceanic_atom2_device_write (dc_device_t *abstract, unsigned int address, const u
+ 			return rc;
+ 
+ 		// Write the package.
+-		unsigned char command[PAGESIZE + 1] = {0};
+-		memcpy (command, data, PAGESIZE);
+-		command[PAGESIZE] = checksum_add_uint8 (command, PAGESIZE, 0x00);
++		unsigned char command[XPAGESIZE + 1] = {0};
++		memcpy (command, data, XPAGESIZE);
++		command[XPAGESIZE] = checksum_add_uint8 (command, XPAGESIZE, 0x00);
+ 		rc = oceanic_atom2_transfer (device, command, sizeof (command), ACK, NULL, 0, 0);
+ 		if (rc != DC_STATUS_SUCCESS)
+ 			return rc;
+ 
+-		nbytes += PAGESIZE;
+-		address += PAGESIZE;
+-		data += PAGESIZE;
++		nbytes += XPAGESIZE;
++		address += XPAGESIZE;
++		data += XPAGESIZE;
+ 	}
+ 
+ 	return DC_STATUS_SUCCESS;
+--- a/src/oceanic_atom2_parser.c
++++ b/src/oceanic_atom2_parser.c
+@@ -167,8 +167,8 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned
+ 
+ 	// Set the default values.
+ 	parser->model = model;
+-	parser->headersize = 9 * PAGESIZE / 2;
+-	parser->footersize = 2 * PAGESIZE / 2;
++	parser->headersize = 9 * XPAGESIZE / 2;
++	parser->footersize = 2 * XPAGESIZE / 2;
+ 	if (model == DATAMASK || model == COMPUMASK ||
+ 		model == GEO || model == GEO20 ||
+ 		model == VEO20 || model == VEO30 ||
+@@ -179,31 +179,31 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned
+ 		model == I200 || model == I200C ||
+ 		model == I300C || model == GEO40 ||
+ 		model == VEO40 || model == I470TC) {
+-		parser->headersize -= PAGESIZE;
++		parser->headersize -= XPAGESIZE;
+ 	} else if (model == VT4 || model == VT41) {
+-		parser->headersize += PAGESIZE;
++		parser->headersize += XPAGESIZE;
+ 	} else if (model == TX1) {
+-		parser->headersize += 2 * PAGESIZE;
++		parser->headersize += 2 * XPAGESIZE;
+ 	} else if (model == ATOM1 || model == I100 ||
+ 		model == PROPLUS4) {
+-		parser->headersize -= 2 * PAGESIZE;
++		parser->headersize -= 2 * XPAGESIZE;
+ 	} else if (model == F10A || model == F10B ||
+ 		model == MUNDIAL2 || model == MUNDIAL3) {
+-		parser->headersize = 3 * PAGESIZE;
++		parser->headersize = 3 * XPAGESIZE;
+ 		parser->footersize = 0;
+ 	} else if (model == F11A || model == F11B) {
+-		parser->headersize = 5 * PAGESIZE;
++		parser->headersize = 5 * XPAGESIZE;
+ 		parser->footersize = 0;
+ 	} else if (model == A300CS || model == VTX ||
+ 		model == I450T || model == I750TC ||
+ 		model == I770R || model == SAGE ||
+ 		model == BEACON) {
+-		parser->headersize = 5 * PAGESIZE;
++		parser->headersize = 5 * XPAGESIZE;
+ 	} else if (model == PROPLUSX) {
+-		parser->headersize = 3 * PAGESIZE;
++		parser->headersize = 3 * XPAGESIZE;
+ 	} else if (model == I550C || model == WISDOM4 ||
+ 		model == I200CV2) {
+-		parser->headersize = 5 * PAGESIZE / 2;
++		parser->headersize = 5 * XPAGESIZE / 2;
+ 	}
+ 
+ 	parser->serial = serial;
+@@ -433,12 +433,12 @@ oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
+ 		return DC_STATUS_DATAFORMAT;
+ 
+ 	// Get the offset to the header and footer sample.
+-	unsigned int header = headersize - PAGESIZE / 2;
++	unsigned int header = headersize - XPAGESIZE / 2;
+ 	unsigned int footer = size - footersize;
+ 	if (parser->model == VT4 || parser->model == VT41 ||
+ 		parser->model == A300AI || parser->model == VISION ||
+ 		parser->model == XPAIR) {
+-		header = 3 * PAGESIZE;
++		header = 3 * XPAGESIZE;
+ 	}
+ 
+ 	// Get the dive mode.
+@@ -665,7 +665,7 @@ oceanic_atom2_parser_vendor (oceanic_atom2_parser_t *parser, const unsigned char
+ 		// Get the sample size.
+ 		unsigned int length = samplesize;
+ 		if (sampletype == 0xBB) {
+-			length = PAGESIZE;
++			length = XPAGESIZE;
+ 		}
+ 
+ 		// Vendor specific data
+@@ -720,7 +720,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
+ 		}
+ 	}
+ 
+-	unsigned int samplesize = PAGESIZE / 2;
++	unsigned int samplesize = XPAGESIZE / 2;
+ 	if (parser->mode == FREEDIVE) {
+ 		if (parser->model == F10A || parser->model == F10B ||
+ 			parser->model == F11A || parser->model == F11B ||
+@@ -736,7 +736,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
+ 		parser->model == I750TC || parser->model == PROPLUSX ||
+ 		parser->model == I770R || parser->model == I470TC ||
+ 		parser->model == SAGE || parser->model == BEACON) {
+-		samplesize = PAGESIZE;
++		samplesize = XPAGESIZE;
+ 	}
+ 
+ 	unsigned int have_temperature = 1, have_pressure = 1;
+@@ -806,7 +806,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
+ 		// larger size. Check whether we have that many bytes available.
+ 		unsigned int length = samplesize;
+ 		if (sampletype == 0xBB) {
+-			length = PAGESIZE;
++			length = XPAGESIZE;
+ 			if (offset + length > size - parser->footersize) {
+ 				ERROR (abstract->context, "Buffer overflow detected!");
+ 				return DC_STATUS_DATAFORMAT;
+--- a/src/oceanic_common.c
++++ b/src/oceanic_common.c
+@@ -104,7 +104,7 @@ oceanic_common_match_pattern (const unsigned char *string, const unsigned char *
+ 	unsigned int value = 0;
+ 	unsigned int count = 0;
+ 
+-	for (unsigned int i = 0; i < PAGESIZE; ++i, ++pattern, ++string) {
++	for (unsigned int i = 0; i < XPAGESIZE; ++i, ++pattern, ++string) {
+ 		if (*pattern != '\0') {
+ 			// Compare the pattern.
+ 			if (*pattern != *string)
+@@ -210,7 +210,7 @@ oceanic_common_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
+ 
+ 	// Download the memory dump.
+ 	status = device_dump_read (abstract, 0, dc_buffer_get_data (buffer),
+-		dc_buffer_get_size (buffer), PAGESIZE * device->multipage);
++		dc_buffer_get_size (buffer), XPAGESIZE * device->multipage);
+ 	if (status != DC_STATUS_SUCCESS) {
+ 		return status;
+ 	}
+@@ -260,7 +260,7 @@ oceanic_common_device_logbook (dc_device_t *abstract, dc_event_progress_t *progr
+ 	}
+ 
+ 	// Read the pointer data.
+-	unsigned char pointers[PAGESIZE] = {0};
++	unsigned char pointers[XPAGESIZE] = {0};
+ 	rc = dc_device_read (abstract, layout->cf_pointers, pointers, sizeof (pointers));
+ 	if (rc != DC_STATUS_SUCCESS) {
+ 		ERROR (abstract->context, "Failed to read the memory page.");
+@@ -304,8 +304,8 @@ oceanic_common_device_logbook (dc_device_t *abstract, dc_event_progress_t *progr
+ 	}
+ 
+ 	// Update and emit a progress event.
+-	progress->current += PAGESIZE;
+-	progress->maximum += PAGESIZE;
++	progress->current += XPAGESIZE;
++	progress->maximum += XPAGESIZE;
+ 	progress->maximum -= (layout->rb_logbook_end - layout->rb_logbook_begin) - rb_logbook_size;
+ 	device_event_emit (abstract, DC_EVENT_PROGRESS, progress);
+ 
+@@ -323,7 +323,7 @@ oceanic_common_device_logbook (dc_device_t *abstract, dc_event_progress_t *progr
+ 
+ 	// Create the ringbuffer stream.
+ 	dc_rbstream_t *rbstream = NULL;
+-	rc = dc_rbstream_new (&rbstream, abstract, PAGESIZE, PAGESIZE * device->multipage, layout->rb_logbook_begin, layout->rb_logbook_end, rb_logbook_end);
++	rc = dc_rbstream_new (&rbstream, abstract, XPAGESIZE, XPAGESIZE * device->multipage, layout->rb_logbook_begin, layout->rb_logbook_end, rb_logbook_end);
+ 	if (rc != DC_STATUS_SUCCESS) {
+ 		ERROR (abstract->context, "Failed to create the ringbuffer stream.");
+ 		return rc;
+@@ -400,7 +400,7 @@ oceanic_common_device_profile (dc_device_t *abstract, dc_event_progress_t *progr
+ 	const oceanic_common_layout_t *layout = device->layout;
+ 
+ 	// Get the pagesize
+-	unsigned int pagesize = layout->highmem ? 16 * PAGESIZE : PAGESIZE;
++	unsigned int pagesize = layout->highmem ? 16 * XPAGESIZE : XPAGESIZE;
+ 
+ 	// Cache the logbook pointer and size.
+ 	const unsigned char *logbooks = dc_buffer_get_data (logbook);
+@@ -485,7 +485,7 @@ oceanic_common_device_profile (dc_device_t *abstract, dc_event_progress_t *progr
+ 
+ 	// Create the ringbuffer stream.
+ 	dc_rbstream_t *rbstream = NULL;
+-	rc = dc_rbstream_new (&rbstream, abstract, PAGESIZE, PAGESIZE * device->multipage, layout->rb_profile_begin, layout->rb_profile_end, rb_profile_end);
++	rc = dc_rbstream_new (&rbstream, abstract, XPAGESIZE, XPAGESIZE * device->multipage, layout->rb_profile_begin, layout->rb_profile_end, rb_profile_end);
+ 	if (rc != DC_STATUS_SUCCESS) {
+ 		ERROR (abstract->context, "Failed to create the ringbuffer stream.");
+ 		return rc;
+@@ -578,7 +578,7 @@ oceanic_common_device_profile (dc_device_t *abstract, dc_event_progress_t *progr
+ 			unsigned int value_hi = value & 0xE000;
+ 			unsigned int value_lo = value & 0x0FFF;
+ 			unsigned int npages = ((value_hi >> 1) | value_lo) + 1;
+-			unsigned int length = npages * PAGESIZE;
++			unsigned int length = npages * XPAGESIZE;
+ 			if (rb_entry_size > length) {
+ 				rb_entry_size = length;
+ 			}
+@@ -609,7 +609,7 @@ oceanic_common_device_foreach (dc_device_t *abstract, dc_dive_callback_t callbac
+ 
+ 	// Enable progress notifications.
+ 	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;
+-	progress.maximum = PAGESIZE +
++	progress.maximum = XPAGESIZE +
+ 		(layout->rb_logbook_end - layout->rb_logbook_begin) +
+ 		(layout->rb_profile_end - layout->rb_profile_begin);
+ 	device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
+@@ -621,7 +621,7 @@ oceanic_common_device_foreach (dc_device_t *abstract, dc_dive_callback_t callbac
+ 	device_event_emit (abstract, DC_EVENT_VENDOR, &vendor);
+ 
+ 	// Read the device id.
+-	unsigned char id[PAGESIZE] = {0};
++	unsigned char id[XPAGESIZE] = {0};
+ 	dc_status_t rc = dc_device_read (abstract, layout->cf_devinfo, id, sizeof (id));
+ 	if (rc != DC_STATUS_SUCCESS) {
+ 		ERROR (abstract->context, "Failed to read the memory page.");
+@@ -629,7 +629,7 @@ oceanic_common_device_foreach (dc_device_t *abstract, dc_dive_callback_t callbac
+ 	}
+ 
+ 	// Update and emit a progress event.
+-	progress.current += PAGESIZE;
++	progress.current += XPAGESIZE;
+ 	device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
+ 
+ 	// Emit a device info event.
+--- a/src/oceanic_common.h
++++ b/src/oceanic_common.h
+@@ -28,7 +28,7 @@
+ extern "C" {
+ #endif /* __cplusplus */
+ 
+-#define PAGESIZE 0x10
++#define XPAGESIZE 0x10
+ #define FPMAXSIZE 0x20
+ 
+ #define OCEANIC_COMMON_MATCH(version,patterns,firmware) \
+@@ -62,7 +62,7 @@ typedef struct oceanic_common_layout_t {
+ typedef struct oceanic_common_device_t {
+ 	dc_device_t base;
+ 	unsigned int firmware;
+-	unsigned char version[PAGESIZE];
++	unsigned char version[XPAGESIZE];
+ 	unsigned char fingerprint[FPMAXSIZE];
+ 	const oceanic_common_layout_t *layout;
+ 	unsigned int multipage;
+@@ -75,7 +75,7 @@ typedef struct oceanic_common_device_vtable_t {
+ } oceanic_common_device_vtable_t;
+ 
+ typedef struct oceanic_common_version_t {
+-	unsigned char pattern[PAGESIZE + 1];
++	unsigned char pattern[XPAGESIZE + 1];
+ 	unsigned int firmware;
+ 	const oceanic_common_layout_t *layout;
+ } oceanic_common_version_t;
+--- a/src/oceanic_veo250.c
++++ b/src/oceanic_veo250.c
+@@ -384,24 +384,24 @@ oceanic_veo250_device_version (dc_device_t *abstract, unsigned char data[], unsi
+ 	if (!ISINSTANCE (abstract))
+ 		return DC_STATUS_INVALIDARGS;
+ 
+-	if (size < PAGESIZE)
++	if (size < XPAGESIZE)
+ 		return DC_STATUS_INVALIDARGS;
+ 
+-	unsigned char answer[PAGESIZE + 2] = {0};
++	unsigned char answer[XPAGESIZE + 2] = {0};
+ 	unsigned char command[2] = {0x90, 0x00};
+ 	dc_status_t rc = oceanic_veo250_transfer (device, command, sizeof (command), answer, sizeof (answer));
+ 	if (rc != DC_STATUS_SUCCESS)
+ 		return rc;
+ 
+ 	// Verify the checksum of the answer.
+-	unsigned char crc = answer[PAGESIZE];
+-	unsigned char ccrc = checksum_add_uint8 (answer, PAGESIZE, 0x00);
++	unsigned char crc = answer[XPAGESIZE];
++	unsigned char ccrc = checksum_add_uint8 (answer, XPAGESIZE, 0x00);
+ 	if (crc != ccrc) {
+ 		ERROR (abstract->context, "Unexpected answer checksum.");
+ 		return DC_STATUS_PROTOCOL;
+ 	}
+ 
+-	memcpy (data, answer, PAGESIZE);
++	memcpy (data, answer, XPAGESIZE);
+ 
+ 	return DC_STATUS_SUCCESS;
+ }
+@@ -412,28 +412,28 @@ oceanic_veo250_device_read (dc_device_t *abstract, unsigned int address, unsigne
+ {
+ 	oceanic_veo250_device_t *device = (oceanic_veo250_device_t*) abstract;
+ 
+-	if ((address % PAGESIZE != 0) ||
+-		(size    % PAGESIZE != 0))
++	if ((address % XPAGESIZE != 0) ||
++		(size    % XPAGESIZE != 0))
+ 		return DC_STATUS_INVALIDARGS;
+ 
+ 	unsigned int nbytes = 0;
+ 	while (nbytes < size) {
+ 		// Calculate the number of packages.
+-		unsigned int npackets = (size - nbytes) / PAGESIZE;
++		unsigned int npackets = (size - nbytes) / XPAGESIZE;
+ 		if (npackets > MULTIPAGE)
+ 			npackets = MULTIPAGE;
+ 
+ 		// Read the package.
+-		unsigned int first =  address / PAGESIZE;
++		unsigned int first =  address / XPAGESIZE;
+ 		unsigned int last  = first + npackets - 1;
+-		unsigned char answer[(PAGESIZE + 1) * MULTIPAGE + 1] = {0};
++		unsigned char answer[(XPAGESIZE + 1) * MULTIPAGE + 1] = {0};
+ 		unsigned char command[6] = {0x20,
+ 				(first     ) & 0xFF, // low
+ 				(first >> 8) & 0xFF, // high
+ 				(last     ) & 0xFF, // low
+ 				(last >> 8) & 0xFF, // high
+ 				0};
+-		dc_status_t rc = oceanic_veo250_transfer (device, command, sizeof (command), answer, (PAGESIZE + 1) * npackets + 1);
++		dc_status_t rc = oceanic_veo250_transfer (device, command, sizeof (command), answer, (XPAGESIZE + 1) * npackets + 1);
+ 		if (rc != DC_STATUS_SUCCESS)
+ 			return rc;
+ 
+@@ -442,19 +442,19 @@ oceanic_veo250_device_read (dc_device_t *abstract, unsigned int address, unsigne
+ 		unsigned int offset = 0;
+ 		for (unsigned int i = 0; i < npackets; ++i) {
+ 			// Verify the checksum of the answer.
+-			unsigned char crc = answer[offset + PAGESIZE];
+-			unsigned char ccrc = checksum_add_uint8 (answer + offset, PAGESIZE, 0x00);
++			unsigned char crc = answer[offset + XPAGESIZE];
++			unsigned char ccrc = checksum_add_uint8 (answer + offset, XPAGESIZE, 0x00);
+ 			if (crc != ccrc) {
+ 				ERROR (abstract->context, "Unexpected answer checksum.");
+ 				return DC_STATUS_PROTOCOL;
+ 			}
+ 
+-			memcpy (data, answer + offset, PAGESIZE);
++			memcpy (data, answer + offset, XPAGESIZE);
+ 
+-			offset += PAGESIZE + 1;
+-			nbytes += PAGESIZE;
+-			address += PAGESIZE;
+-			data += PAGESIZE;
++			offset += XPAGESIZE + 1;
++			nbytes += XPAGESIZE;
++			address += XPAGESIZE;
++			data += XPAGESIZE;
+ 		}
+ 	}
+ 
+--- a/src/oceanic_veo250_parser.c
++++ b/src/oceanic_veo250_parser.c
+@@ -142,7 +142,7 @@ oceanic_veo250_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, un
+ 	const unsigned char *data = abstract->data;
+ 	unsigned int size = abstract->size;
+ 
+-	if (size < 7 * PAGESIZE / 2)
++	if (size < 7 * XPAGESIZE / 2)
+ 		return DC_STATUS_DATAFORMAT;
+ 
+ 	if (!parser->cached) {
+@@ -157,7 +157,7 @@ oceanic_veo250_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, un
+ 		parser->maxdepth = statistics.maxdepth;
+ 	}
+ 
+-	unsigned int footer = size - PAGESIZE;
++	unsigned int footer = size - XPAGESIZE;
+ 
+ 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
+ 
+@@ -196,7 +196,7 @@ oceanic_veo250_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback
+ 	const unsigned char *data = abstract->data;
+ 	unsigned int size = abstract->size;
+ 
+-	if (size < 7 * PAGESIZE / 2)
++	if (size < 7 * XPAGESIZE / 2)
+ 		return DC_STATUS_DATAFORMAT;
+ 
+ 	unsigned int time = 0;
+@@ -221,13 +221,13 @@ oceanic_veo250_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback
+ 		break;
+ 	}
+ 
+-	unsigned int offset = 5 * PAGESIZE / 2;
+-	while (offset + PAGESIZE / 2 <= size - PAGESIZE) {
++	unsigned int offset = 5 * XPAGESIZE / 2;
++	while (offset + XPAGESIZE / 2 <= size - XPAGESIZE) {
+ 		dc_sample_value_t sample = {0};
+ 
+ 		// Ignore empty samples.
+-		if (array_isequal (data + offset, PAGESIZE / 2, 0x00)) {
+-			offset += PAGESIZE / 2;
++		if (array_isequal (data + offset, XPAGESIZE / 2, 0x00)) {
++			offset += XPAGESIZE / 2;
+ 			continue;
+ 		}
+ 
+@@ -238,7 +238,7 @@ oceanic_veo250_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback
+ 
+ 		// Vendor specific data
+ 		sample.vendor.type = SAMPLE_VENDOR_OCEANIC_VEO250;
+-		sample.vendor.size = PAGESIZE / 2;
++		sample.vendor.size = XPAGESIZE / 2;
+ 		sample.vendor.data = data + offset;
+ 		if (callback) callback (DC_SAMPLE_VENDOR, sample, userdata);
+ 
+@@ -283,7 +283,7 @@ oceanic_veo250_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback
+ 			if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+ 		}
+ 
+-		offset += PAGESIZE / 2;
++		offset += XPAGESIZE / 2;
+ 	}
+ 
+ 	return DC_STATUS_SUCCESS;
+--- a/src/oceanic_vtpro.c
++++ b/src/oceanic_vtpro.c
+@@ -296,7 +296,7 @@ oceanic_aeris500ai_device_logbook (dc_device_t *abstract, dc_event_progress_t *p
+ 
+ 	assert (device != NULL);
+ 	assert (device->base.layout != NULL);
+-	assert (device->base.layout->rb_logbook_entry_size == PAGESIZE / 2);
++	assert (device->base.layout->rb_logbook_entry_size == XPAGESIZE / 2);
+ 	assert (device->base.layout->rb_logbook_begin == device->base.layout->rb_logbook_end);
+ 	assert (progress != NULL);
+ 
+@@ -307,7 +307,7 @@ oceanic_aeris500ai_device_logbook (dc_device_t *abstract, dc_event_progress_t *p
+ 		return DC_STATUS_NOMEMORY;
+ 
+ 	// Read the pointer data.
+-	unsigned char pointers[PAGESIZE] = {0};
++	unsigned char pointers[XPAGESIZE] = {0};
+ 	rc = oceanic_vtpro_device_read (abstract, layout->cf_pointers, pointers, sizeof (pointers));
+ 	if (rc != DC_STATUS_SUCCESS) {
+ 		ERROR (abstract->context, "Failed to read the memory page.");
+@@ -318,12 +318,12 @@ oceanic_aeris500ai_device_logbook (dc_device_t *abstract, dc_event_progress_t *p
+ 	unsigned int last = pointers[0x03];
+ 
+ 	// Update and emit a progress event.
+-	progress->current += PAGESIZE;
+-	progress->maximum += PAGESIZE + (last + 1) * PAGESIZE / 2;
++	progress->current += XPAGESIZE;
++	progress->maximum += XPAGESIZE + (last + 1) * XPAGESIZE / 2;
+ 	device_event_emit (abstract, DC_EVENT_PROGRESS, progress);
+ 
+ 	// Allocate memory for the logbook entries.
+-	if (!dc_buffer_reserve (logbook, (last + 1) * PAGESIZE / 2))
++	if (!dc_buffer_reserve (logbook, (last + 1) * XPAGESIZE / 2))
+ 		return DC_STATUS_NOMEMORY;
+ 
+ 	// Send the logbook index command.
+@@ -340,7 +340,7 @@ oceanic_aeris500ai_device_logbook (dc_device_t *abstract, dc_event_progress_t *p
+ 	// Read the logbook index.
+ 	for (unsigned int i = 0; i < last + 1; ++i) {
+ 		// Receive the answer of the dive computer.
+-		unsigned char answer[PAGESIZE / 2 + 1] = {0};
++		unsigned char answer[XPAGESIZE / 2 + 1] = {0};
+ 		rc = dc_iostream_read (device->iostream, answer, sizeof(answer), NULL);
+ 		if (rc != DC_STATUS_SUCCESS) {
+ 			ERROR (abstract->context, "Failed to receive the answer.");
+@@ -348,28 +348,28 @@ oceanic_aeris500ai_device_logbook (dc_device_t *abstract, dc_event_progress_t *p
+ 		}
+ 
+ 		// Verify the checksum of the answer.
+-		unsigned char crc = answer[PAGESIZE / 2];
+-		unsigned char ccrc = checksum_add_uint4 (answer, PAGESIZE / 2, 0x00);
++		unsigned char crc = answer[XPAGESIZE / 2];
++		unsigned char ccrc = checksum_add_uint4 (answer, XPAGESIZE / 2, 0x00);
+ 		if (crc != ccrc) {
+ 			ERROR (abstract->context, "Unexpected answer checksum.");
+ 			return DC_STATUS_PROTOCOL;
+ 		}
+ 
+ 		// Update and emit a progress event.
+-		progress->current += PAGESIZE / 2;
++		progress->current += XPAGESIZE / 2;
+ 		device_event_emit (abstract, DC_EVENT_PROGRESS, progress);
+ 
+ 		// Ignore uninitialized entries.
+-		if (array_isequal (answer, PAGESIZE / 2, 0xFF)) {
++		if (array_isequal (answer, XPAGESIZE / 2, 0xFF)) {
+ 			WARNING (abstract->context, "Uninitialized logbook entries detected!");
+ 			continue;
+ 		}
+ 
+ 		// Compare the fingerprint to identify previously downloaded entries.
+-		if (memcmp (answer, device->base.fingerprint, PAGESIZE / 2) == 0) {
++		if (memcmp (answer, device->base.fingerprint, XPAGESIZE / 2) == 0) {
+ 			dc_buffer_clear (logbook);
+ 		} else {
+-			dc_buffer_append (logbook, answer, PAGESIZE / 2);
++			dc_buffer_append (logbook, answer, XPAGESIZE / 2);
+ 		}
+ 	}
+ 
+@@ -560,7 +560,7 @@ oceanic_vtpro_device_version (dc_device_t *abstract, unsigned char data[], unsig
+ 	if (!ISINSTANCE (abstract))
+ 		return DC_STATUS_INVALIDARGS;
+ 
+-	if (size < PAGESIZE)
++	if (size < XPAGESIZE)
+ 		return DC_STATUS_INVALIDARGS;
+ 
+ 	// Switch the device into download mode. The response is ignored here,
+@@ -568,14 +568,14 @@ oceanic_vtpro_device_version (dc_device_t *abstract, unsigned char data[], unsig
+ 	// response of the first part of the other command in this function.
+ 
+ 	unsigned char cmd[2] = {0x88, 0x00};
+-	unsigned char ans[PAGESIZE / 2 + 1] = {0};
++	unsigned char ans[XPAGESIZE / 2 + 1] = {0};
+ 	dc_status_t rc = oceanic_vtpro_transfer (device, cmd, sizeof (cmd), ans, sizeof (ans));
+ 	if (rc != DC_STATUS_SUCCESS)
+ 		return rc;
+ 
+ 	// Verify the checksum of the answer.
+-	unsigned char crc = ans[PAGESIZE / 2];
+-	unsigned char ccrc = checksum_add_uint4 (ans, PAGESIZE / 2, 0x00);
++	unsigned char crc = ans[XPAGESIZE / 2];
++	unsigned char ccrc = checksum_add_uint4 (ans, XPAGESIZE / 2, 0x00);
+ 	if (crc != ccrc) {
+ 		ERROR (abstract->context, "Unexpected answer checksum.");
+ 		return DC_STATUS_PROTOCOL;
+@@ -586,31 +586,31 @@ oceanic_vtpro_device_version (dc_device_t *abstract, unsigned char data[], unsig
+ 		// split over two packets, but we join both parts again.
+ 		for (unsigned int i = 0; i < 2; ++i) {
+ 			unsigned char command[4] = {0x72, 0x03, i * 0x10, 0x00};
+-			unsigned char answer[PAGESIZE / 2 + 2] = {0};
++			unsigned char answer[XPAGESIZE / 2 + 2] = {0};
+ 			rc = oceanic_vtpro_transfer (device, command, sizeof (command), answer, sizeof (answer));
+ 			if (rc != DC_STATUS_SUCCESS)
+ 				return rc;
+ 
+ 			// Verify the checksum of the answer.
+-			crc = answer[PAGESIZE / 2];
+-			ccrc = checksum_add_uint4 (answer, PAGESIZE / 2, 0x00);
++			crc = answer[XPAGESIZE / 2];
++			ccrc = checksum_add_uint4 (answer, XPAGESIZE / 2, 0x00);
+ 			if (crc != ccrc) {
+ 				ERROR (abstract->context, "Unexpected answer checksum.");
+ 				return DC_STATUS_PROTOCOL;
+ 			}
+ 
+ 			// Verify the last byte of the answer.
+-			if (answer[PAGESIZE / 2 + 1] != END) {
++			if (answer[XPAGESIZE / 2 + 1] != END) {
+ 				ERROR (abstract->context, "Unexpected answer byte.");
+ 				return DC_STATUS_PROTOCOL;
+ 			}
+ 
+ 			// Append the answer to the output buffer.
+-			memcpy (data + i * PAGESIZE / 2, answer, PAGESIZE / 2);
++			memcpy (data + i * XPAGESIZE / 2, answer, XPAGESIZE / 2);
+ 		}
+ 	} else {
+ 		// Return an empty device identification string.
+-		memset (data, 0x00, PAGESIZE);
++		memset (data, 0x00, XPAGESIZE);
+ 	}
+ 
+ 	return DC_STATUS_SUCCESS;
+@@ -622,47 +622,47 @@ oceanic_vtpro_device_read (dc_device_t *abstract, unsigned int address, unsigned
+ {
+ 	oceanic_vtpro_device_t *device = (oceanic_vtpro_device_t*) abstract;
+ 
+-	if ((address % PAGESIZE != 0) ||
+-		(size    % PAGESIZE != 0))
++	if ((address % XPAGESIZE != 0) ||
++		(size    % XPAGESIZE != 0))
+ 		return DC_STATUS_INVALIDARGS;
+ 
+ 	unsigned int nbytes = 0;
+ 	while (nbytes < size) {
+ 		// Calculate the number of packages.
+-		unsigned int npackets = (size - nbytes) / PAGESIZE;
++		unsigned int npackets = (size - nbytes) / XPAGESIZE;
+ 		if (npackets > MULTIPAGE)
+ 			npackets = MULTIPAGE;
+ 
+ 		// Read the package.
+-		unsigned int first =  address / PAGESIZE;
++		unsigned int first =  address / XPAGESIZE;
+ 		unsigned int last  = first + npackets - 1;
+-		unsigned char answer[(PAGESIZE + 1) * MULTIPAGE] = {0};
++		unsigned char answer[(XPAGESIZE + 1) * MULTIPAGE] = {0};
+ 		unsigned char command[6] = {0x34,
+ 				(first >> 8) & 0xFF, // high
+ 				(first     ) & 0xFF, // low
+ 				(last >> 8) & 0xFF, // high
+ 				(last     ) & 0xFF, // low
+ 				0x00};
+-		dc_status_t rc = oceanic_vtpro_transfer (device, command, sizeof (command), answer, (PAGESIZE + 1) * npackets);
++		dc_status_t rc = oceanic_vtpro_transfer (device, command, sizeof (command), answer, (XPAGESIZE + 1) * npackets);
+ 		if (rc != DC_STATUS_SUCCESS)
+ 			return rc;
+ 
+ 		unsigned int offset = 0;
+ 		for (unsigned int i = 0; i < npackets; ++i) {
+ 			// Verify the checksum of the answer.
+-			unsigned char crc = answer[offset + PAGESIZE];
+-			unsigned char ccrc = checksum_add_uint8 (answer + offset, PAGESIZE, 0x00);
++			unsigned char crc = answer[offset + XPAGESIZE];
++			unsigned char ccrc = checksum_add_uint8 (answer + offset, XPAGESIZE, 0x00);
+ 			if (crc != ccrc) {
+ 				ERROR (abstract->context, "Unexpected answer checksum.");
+ 				return DC_STATUS_PROTOCOL;
+ 			}
+ 
+-			memcpy (data, answer + offset, PAGESIZE);
++			memcpy (data, answer + offset, XPAGESIZE);
+ 
+-			offset += PAGESIZE + 1;
+-			nbytes += PAGESIZE;
+-			address += PAGESIZE;
+-			data += PAGESIZE;
++			offset += XPAGESIZE + 1;
++			nbytes += XPAGESIZE;
++			address += XPAGESIZE;
++			data += XPAGESIZE;
+ 		}
+ 	}
+ 
+--- a/src/oceanic_vtpro_parser.c
++++ b/src/oceanic_vtpro_parser.c
+@@ -155,7 +155,7 @@ oceanic_vtpro_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, uns
+ 	const unsigned char *data = abstract->data;
+ 	unsigned int size = abstract->size;
+ 
+-	if (size < 7 * PAGESIZE / 2)
++	if (size < 7 * XPAGESIZE / 2)
+ 		return DC_STATUS_DATAFORMAT;
+ 
+ 	if (!parser->cached) {
+@@ -170,7 +170,7 @@ oceanic_vtpro_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, uns
+ 		parser->maxdepth = statistics.maxdepth;
+ 	}
+ 
+-	unsigned int footer = size - PAGESIZE;
++	unsigned int footer = size - XPAGESIZE;
+ 
+ 	unsigned int oxygen = 0;
+ 	unsigned int maxdepth = 0;
+@@ -237,7 +237,7 @@ oceanic_vtpro_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
+ 	const unsigned char *data = abstract->data;
+ 	unsigned int size = abstract->size;
+ 
+-	if (size < 7 * PAGESIZE / 2)
++	if (size < 7 * XPAGESIZE / 2)
+ 		return DC_STATUS_DATAFORMAT;
+ 
+ 	unsigned int time = 0;
+@@ -259,14 +259,14 @@ oceanic_vtpro_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
+ 	// Initialize the state for the timestamp processing.
+ 	unsigned int timestamp = 0, count = 0, i = 0;
+ 
+-	unsigned int offset = 5 * PAGESIZE / 2;
+-	while (offset + PAGESIZE / 2 <= size - PAGESIZE) {
++	unsigned int offset = 5 * XPAGESIZE / 2;
++	while (offset + XPAGESIZE / 2 <= size - XPAGESIZE) {
+ 		dc_sample_value_t sample = {0};
+ 
+ 		// Ignore empty samples.
+-		if (array_isequal (data + offset, PAGESIZE / 2, 0x00) ||
+-			array_isequal (data + offset, PAGESIZE / 2, 0xFF)) {
+-			offset += PAGESIZE / 2;
++		if (array_isequal (data + offset, XPAGESIZE / 2, 0x00) ||
++			array_isequal (data + offset, XPAGESIZE / 2, 0xFF)) {
++			offset += XPAGESIZE / 2;
+ 			continue;
+ 		}
+ 
+@@ -288,12 +288,12 @@ oceanic_vtpro_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
+ 				// With a depth based sample interval, the exact number
+ 				// of samples for a single timestamp needs to be counted.
+ 				count = 1;
+-				unsigned int idx = offset + PAGESIZE / 2 ;
+-				while (idx + PAGESIZE / 2 <= size - PAGESIZE) {
++				unsigned int idx = offset + XPAGESIZE / 2 ;
++				while (idx + XPAGESIZE / 2 <= size - XPAGESIZE) {
+ 					// Ignore empty samples.
+-					if (array_isequal (data + idx, PAGESIZE / 2, 0x00) ||
+-						array_isequal (data + idx, PAGESIZE / 2, 0xFF)) {
+-						idx += PAGESIZE / 2;
++					if (array_isequal (data + idx, XPAGESIZE / 2, 0x00) ||
++						array_isequal (data + idx, XPAGESIZE / 2, 0xFF)) {
++						idx += XPAGESIZE / 2;
+ 						continue;
+ 					}
+ 
+@@ -301,7 +301,7 @@ oceanic_vtpro_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
+ 					if (next != current)
+ 						break;
+ 
+-					idx += PAGESIZE / 2;
++					idx += XPAGESIZE / 2;
+ 					count++;
+ 				}
+ 			}
+@@ -317,7 +317,7 @@ oceanic_vtpro_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
+ 			}
+ 			if (i >= count) {
+ 				WARNING (abstract->context, "Unexpected sample with the same timestamp ignored.");
+-				offset += PAGESIZE / 2;
++				offset += XPAGESIZE / 2;
+ 				continue;
+ 			}
+ 		}
+@@ -335,7 +335,7 @@ oceanic_vtpro_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
+ 
+ 		// Vendor specific data
+ 		sample.vendor.type = SAMPLE_VENDOR_OCEANIC_VTPRO;
+-		sample.vendor.size = PAGESIZE / 2;
++		sample.vendor.size = XPAGESIZE / 2;
+ 		sample.vendor.data = data + offset;
+ 		if (callback) callback (DC_SAMPLE_VENDOR, sample, userdata);
+ 
+@@ -374,7 +374,7 @@ oceanic_vtpro_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
+ 			if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+ 		}
+ 
+-		offset += PAGESIZE / 2;
++		offset += XPAGESIZE / 2;
+ 	}
+ 
+ 	return DC_STATUS_SUCCESS;
