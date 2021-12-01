@@ -1,6 +1,6 @@
 # Template file for 'libvirt'
 pkgname=libvirt
-version=7.9.0
+version=7.10.0
 revision=1
 build_style=meson
 configure_args="-Dqemu_user=libvirt -Dqemu_group=libvirt -Drunstatedir=/run
@@ -20,7 +20,9 @@ license="LGPL-2.1-or-later"
 homepage="https://libvirt.org"
 changelog="https://libvirt.org/news.html"
 distfiles="https://libvirt.org/sources/${pkgname}-${version}.tar.xz"
-checksum=829cf2b5f574279c40f0446e1168815d3f36b89710560263ca2ce70256f72e8c
+checksum=cb318014af097327928c6e3d72922e3be02a3e6401247b2aa52d9ab8e0b480f9
+# At least one test times out on CI but works locally
+make_check=ci-skip
 
 # FIX https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=701649
 system_accounts="libvirt"
@@ -33,9 +35,6 @@ case "$XBPS_TARGET_MACHINE" in
 esac
 
 case "$XBPS_TARGET_MACHINE" in
-	armv7l-musl)
-		broken="https://build.voidlinux.org/builders/armv7l-musl_builder/builds/36531/steps/shell_3/logs/stdio"
-		;;
 	*-musl) ;;
 	*)
 		# LTO apparently causes the linker to confuse the glibc symbol
@@ -75,6 +74,7 @@ post_patch() {
 pre_build() {
 	# racey custom targets; prevent parallelism issues
 	ninja -C build \
+		src/remote/lxc_protocol.h \
 		src/remote/qemu_protocol.h \
 		src/remote/remote_protocol.h \
 		src/util/virkeycodetable_linux.h \
@@ -86,18 +86,22 @@ pre_build() {
 }
 
 post_install() {
-	# runit services
-	vsv libvirtd
-	vsv virtlockd
-	vsv virtlogd
+	local _services _srv
 
-	rm -rf ${DESTDIR}/etc/sysconfig
+	# runit services; libvirtd is for legacy use
+	_services="libvirt-generic libvirtd virtqemud virtvboxd virtxend
+	 virtlxcd virtlockd virtlogd virtproxyd virtinterfaced virtnetworkd
+	 virtnodedevd virtnwfilterd virtsecretd virtstoraged"
+	for _srv in $_services; do
+		vsv $_srv
+	done
+
 	# Remove unused stuff.
+	rm -rf ${DESTDIR}/etc/sysconfig
 	rm -rf ${DESTDIR}/var/log
 
 	# workaround for musl not providing an utmpx implementation
-	if [ "$XBPS_TARGET_LIBC" = "musl" ];
-	then
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 		echo "remember_owner = 0" >> ${DESTDIR}/etc/libvirt/qemu.conf
 	fi
 }
