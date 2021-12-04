@@ -20,6 +20,7 @@ done
 _vsv() {
 	local service="$1"
 	local LN_OPTS="-s"
+	local svdir="${PKGDESTDIR}/etc/sv/${service}"
 
 	if [ $# -lt 1 ]; then
 		msg_red "$pkgver: vsv: 1 argument expected: <service>\n"
@@ -32,14 +33,18 @@ _vsv() {
 
 	vmkdir etc/sv
 	vcopy "${FILESDIR}/$service" etc/sv
-	chmod 755 ${PKGDESTDIR}/etc/sv/${service}/run
-	if [ -r ${PKGDESTDIR}/etc/sv/${service}/finish ]; then
-		chmod 755 ${PKGDESTDIR}/etc/sv/${service}/finish
+	if [ ! -L $svdir/run ]; then
+		chmod 755 $svdir/run
 	fi
-	ln ${LN_OPTS} /run/runit/supervise.${service} ${PKGDESTDIR}/etc/sv/${service}/supervise
-	if [ -r ${PKGDESTDIR}/etc/sv/${service}/log/run ]; then
-		chmod 755 ${PKGDESTDIR}/etc/sv/${service}/log/run
-		ln ${LN_OPTS} /run/runit/supervise.${service}-log ${PKGDESTDIR}/etc/sv/${service}/log/supervise
+	if [ -e $svdir/finish ] && [ ! -L $svdir/finish ]; then
+		chmod 755 $svdir/finish
+	fi
+	ln ${LN_OPTS} /run/runit/supervise.${service} $svdir/supervise
+	if [ -d $svdir/log ]; then
+		ln ${LN_OPTS} /run/runit/supervise.${service}-log $svdir/log/supervise
+		if [ -e $svdir/log/run ] && [ ! -L $svdir/log/run ]; then
+			chmod 755 ${PKGDESTDIR}/etc/sv/${service}/log/run
+		fi
 	fi
 }
 
@@ -144,10 +149,9 @@ _vlicense() {
 
 _vinstall() {
 	local file="$1" mode="$2" targetdir="$3" targetfile="$4"
-	local _destdir=
 
-	if [ -z "$DESTDIR" ]; then
-		msg_red "$pkgver: vinstall: DESTDIR unset, can't continue...\n"
+	if [ -z "$PKGDESTDIR" ]; then
+		msg_red "$pkgver: vinstall: PKGDESTDIR unset, can't continue...\n"
 		return 1
 	fi
 
@@ -161,24 +165,18 @@ _vinstall() {
 		return 1
 	fi
 
-	if [ -n "$XBPS_PKGDESTDIR" ]; then
-		_destdir="$PKGDESTDIR"
-	else
-		_destdir="$DESTDIR"
-	fi
-
 	if [ -z "$targetfile" ]; then
-		install -Dm${mode} "${file}" "${_destdir}/${targetdir}/${file##*/}"
+		install -Dm${mode} "${file}" "${PKGDESTDIR}/${targetdir}/${file##*/}"
 	else
-		install -Dm${mode} "${file}" "${_destdir}/${targetdir}/${targetfile##*/}"
+		install -Dm${mode} "${file}" "${PKGDESTDIR}/${targetdir}/${targetfile##*/}"
 	fi
 }
 
 _vcopy() {
-	local files="$1" targetdir="$2" _destdir
+	local files="$1" targetdir="$2"
 
-	if [ -z "$DESTDIR" ]; then
-		msg_red "$pkgver: vcopy: DESTDIR unset, can't continue...\n"
+	if [ -z "$PKGDESTDIR" ]; then
+		msg_red "$pkgver: vcopy: PKGDESTDIR unset, can't continue...\n"
 		return 1
 	fi
 	if [ $# -ne 2 ]; then
@@ -186,23 +184,20 @@ _vcopy() {
 		return 1
 	fi
 
-	if [ -n "$XBPS_PKGDESTDIR" ]; then
-		_destdir="$PKGDESTDIR"
-	else
-		_destdir="$DESTDIR"
-	fi
-
-	cp -a $files ${_destdir}/${targetdir}
+	cp -a $files ${PKGDESTDIR}/${targetdir}
 }
 
 _vmove() {
-	local f files="$1" _destdir _pkgdestdir _targetdir
+	local f files="$1" _targetdir
 
 	if [ -z "$DESTDIR" ]; then
 		msg_red "$pkgver: vmove: DESTDIR unset, can't continue...\n"
 		return 1
 	elif [ -z "$PKGDESTDIR" ]; then
 		msg_red "$pkgver: vmove: PKGDESTDIR unset, can't continue...\n"
+		return 1
+	elif [ "$DESTDIR" = "$PKGDESTDIR" ]; then
+		msg_red "$pkgver: vmove is intended to be used in pkg_install\n"
 		return 1
 	fi
 	if [ $# -ne 1 ]; then
@@ -214,30 +209,22 @@ _vmove() {
 		break
 	done
 
-	if [ -n "$XBPS_PKGDESTDIR" ]; then
-		_pkgdestdir="$PKGDESTDIR"
-		_destdir="$DESTDIR"
-	else
-		_pkgdestdir="$DESTDIR"
-		_destdir="$DESTDIR"
-	fi
-
 	if [ -z "${_targetdir}" ]; then
-		[ ! -d ${_pkgdestdir} ] && install -d ${_pkgdestdir}
-		mv ${_destdir}/$files ${_pkgdestdir}
+		[ ! -d ${PKGDESTDIR} ] && install -d ${PKGDESTDIR}
+		mv ${DESTDIR}/$files ${PKGDESTDIR}
 	else
-		if [ ! -d ${_pkgdestdir}/${_targetdir} ]; then
-			install -d ${_pkgdestdir}/${_targetdir}
+		if [ ! -d ${PKGDESTDIR}/${_targetdir} ]; then
+			install -d ${PKGDESTDIR}/${_targetdir}
 		fi
-		mv ${_destdir}/$files ${_pkgdestdir}/${_targetdir}
+		mv ${DESTDIR}/$files ${PKGDESTDIR}/${_targetdir}
 	fi
 }
 
 _vmkdir() {
-	local dir="$1" mode="$2" _destdir
+	local dir="$1" mode="$2"
 
-	if [ -z "$DESTDIR" ]; then
-		msg_red "$pkgver: vmkdir: DESTDIR unset, can't continue...\n"
+	if [ -z "$PKGDESTDIR" ]; then
+		msg_red "$pkgver: vmkdir: PKGDESTDIR unset, can't continue...\n"
 		return 1
 	fi
 
@@ -246,16 +233,10 @@ _vmkdir() {
 		return 1
 	fi
 
-	if [ -n "$XBPS_PKGDESTDIR" ]; then
-		_destdir="$PKGDESTDIR"
-	else
-		_destdir="$DESTDIR"
-	fi
-
 	if [ -z "$mode" ]; then
-		install -d ${_destdir}/${dir}
+		install -d ${PKGDESTDIR}/${dir}
 	else
-		install -dm${mode} ${_destdir}/${dir}
+		install -dm${mode} ${PKGDESTDIR}/${dir}
 	fi
 }
 
@@ -264,11 +245,6 @@ _vcompletion() {
 	local _bash_completion_dir=usr/share/bash-completion/completions/
 	local _fish_completion_dir=usr/share/fish/vendor_completions.d/
 	local _zsh_completion_dir=usr/share/zsh/site-functions/
-
-	if [ -z "$DESTDIR" ]; then
-		msg_red "$pkgver: vcompletion: DESTDIR unset, can't continue...\n"
-		return 1
-	fi
 
 	if [ $# -lt 2 ]; then
 		msg_red "$pkgver: vcompletion: 2 arguments expected: <file> <shell>\n"
@@ -283,6 +259,9 @@ _vcompletion() {
 		bash) vinstall "$file" 0644 $_bash_completion_dir "${cmd}" ;;
 		fish) vinstall "$file" 0644 $_fish_completion_dir "${cmd}.fish" ;;
 		zsh) vinstall "$file" 0644 $_zsh_completion_dir "_${cmd}" ;;
-		*) msg_red "$pkgver: vcompletion: unknown shell ${shell}" ;;
+		*)
+			msg_red "$pkgver: vcompletion: unknown shell ${shell}"
+			return 1
+			;;
 	esac
 }

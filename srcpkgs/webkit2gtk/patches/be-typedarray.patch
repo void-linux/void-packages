@@ -4,10 +4,58 @@ https://tenfourfox.tenderapp.com/discussions/problems/7505-problems-uploading-to
 
 Updated by @q66.
 
-diff --git Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h
-index f08f852..53e2813 100644
---- Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h
-+++ Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h
+diff --git a/Source/JavaScriptCore/llint/LLIntOfflineAsmConfig.h b/Source/JavaScriptCore/llint/LLIntOfflineAsmConfig.h
+index 8b9e57d3..3802e0f2 100644
+--- a/Source/JavaScriptCore/llint/LLIntOfflineAsmConfig.h
++++ b/Source/JavaScriptCore/llint/LLIntOfflineAsmConfig.h
+@@ -186,3 +186,9 @@
+ #else
+ #define OFFLINE_ASM_HAVE_FAST_TLS 0
+ #endif
++
++#if CPU(BIG_ENDIAN)
++#define OFFLINE_ASM_BIG_ENDIAN 1
++#else
++#define OFFLINE_ASM_BIG_ENDIAN 0
++#endif
+diff --git a/Source/JavaScriptCore/llint/LowLevelInterpreter32_64.asm b/Source/JavaScriptCore/llint/LowLevelInterpreter32_64.asm
+index b8a0f205..7afc8f8f 100644
+--- a/Source/JavaScriptCore/llint/LowLevelInterpreter32_64.asm
++++ b/Source/JavaScriptCore/llint/LowLevelInterpreter32_64.asm
+@@ -1667,7 +1667,11 @@ llintOpWithMetadata(op_get_by_val, OpGetByVal, macro (size, get, dispatch, metad
+ 
+ .opGetByValNotDouble:
+     subi ArrayStorageShape, t2
+-    bia t2, SlowPutArrayStorageShape - ArrayStorageShape, .opGetByValNotIndexedStorage
++    if BIG_ENDIAN
++        bia t2, SlowPutArrayStorageShape - ArrayStorageShape, .opGetByValSlow
++    else
++        bia t2, SlowPutArrayStorageShape - ArrayStorageShape, .opGetByValNotIndexedStorage
++    end
+     biaeq t1, -sizeof IndexingHeader + IndexingHeader::u.lengths.vectorLength[t3], .opGetByValSlow
+     loadi ArrayStorage::m_vector + TagOffset[t3, t1, 8], t2
+     loadi ArrayStorage::m_vector + PayloadOffset[t3, t1, 8], t1
+diff --git a/Source/JavaScriptCore/llint/LowLevelInterpreter64.asm b/Source/JavaScriptCore/llint/LowLevelInterpreter64.asm
+index c7d1a204..4f33d06d 100644
+--- a/Source/JavaScriptCore/llint/LowLevelInterpreter64.asm
++++ b/Source/JavaScriptCore/llint/LowLevelInterpreter64.asm
+@@ -1751,7 +1751,11 @@ llintOpWithMetadata(op_get_by_val, OpGetByVal, macro (size, get, dispatch, metad
+     
+ .opGetByValNotDouble:
+     subi ArrayStorageShape, t2
+-    bia t2, SlowPutArrayStorageShape - ArrayStorageShape, .opGetByValNotIndexedStorage
++    if BIG_ENDIAN
++        bia t2, SlowPutArrayStorageShape - ArrayStorageShape, .opGetByValSlow
++    else
++        bia t2, SlowPutArrayStorageShape - ArrayStorageShape, .opGetByValNotIndexedStorage
++    end
+     biaeq t1, -sizeof IndexingHeader + IndexingHeader::u.lengths.vectorLength[t3], .opGetByValSlow
+     get(m_dst, t0)
+     loadq ArrayStorage::m_vector[t3, t1, 8], t2
+diff --git a/Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h b/Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h
+index c22c55a0..bc1e55c3 100644
+--- a/Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h
++++ b/Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h
 @@ -28,6 +28,7 @@
  #include "JSArrayBufferView.h"
  #include "ThrowScope.h"
@@ -16,7 +64,7 @@ index f08f852..53e2813 100644
  
  namespace JSC {
  
-@@ -147,7 +148,18 @@ public:
+@@ -146,7 +147,18 @@ public:
      
      JSValue getIndexQuickly(unsigned i) const
      {
@@ -24,18 +72,18 @@ index f08f852..53e2813 100644
 +        switch (Adaptor::typeValue) {
 +        case TypeFloat32:
 +        case TypeFloat64:
-+            return Adaptor::toJSValue(getIndexQuicklyAsNativeValue(i));
++            return Adaptor::toJSValue(nullptr, getIndexQuicklyAsNativeValue(i));
 +        default:
 +            // typed array views are commonly expected to be little endian views of the underlying data
-+            return Adaptor::toJSValue(flipBytes(getIndexQuicklyAsNativeValue(i)));
++            return Adaptor::toJSValue(nullptr, flipBytes(getIndexQuicklyAsNativeValue(i)));
 +        }
 +#else
-         return Adaptor::toJSValue(getIndexQuicklyAsNativeValue(i));
+         return Adaptor::toJSValue(nullptr, getIndexQuicklyAsNativeValue(i));
 +#endif
      }
      
      void setIndexQuicklyToNativeValue(unsigned i, typename Adaptor::Type value)
-@@ -164,7 +176,20 @@ public:
+@@ -158,7 +170,20 @@ public:
      void setIndexQuickly(unsigned i, JSValue value)
      {
          ASSERT(!value.isObject());
@@ -56,8 +104,8 @@ index f08f852..53e2813 100644
      }
      
      bool setIndex(JSGlobalObject* globalObject, unsigned i, JSValue jsValue)
-@@ -183,13 +208,54 @@ public:
-         if (i >= m_length)
+@@ -172,13 +197,56 @@ public:
+         if (isDetached() || i >= m_length)
              return false;
  
 +#if CPU(BIG_ENDIAN)
@@ -94,32 +142,34 @@ index f08f852..53e2813 100644
 +#endif
 +    }
  
--    static Optional<ElementType> toAdaptorNativeFromValueWithoutCoercion(JSValue jsValue) { return toNativeFromValueWithoutCoercion<Adaptor>(jsValue); }
-+    static Optional<ElementType> toAdaptorNativeFromValueWithoutCoercion(JSValue jsValue)
+-    static std::optional<ElementType> toAdaptorNativeFromValueWithoutCoercion(JSValue jsValue) { return toNativeFromValueWithoutCoercion<Adaptor>(jsValue); }
++    static std::optional<ElementType> toAdaptorNativeFromValueWithoutCoercion(JSValue jsValue)
 +    {
++        auto opt = toNativeFromValueWithoutCoercion<Adaptor>(jsValue);
 +#if CPU(BIG_ENDIAN)
 +        switch (Adaptor::typeValue) {
 +        case TypeFloat32:
 +        case TypeFloat64:
-+            return toNativeFromValueWithoutCoercion<Adaptor>(jsValue);
++            break;
 +        default:
 +            // typed array views are commonly expected to be little endian views of the underlying data
-+            return flipBytes(toNativeFromValueWithoutCoercion<Adaptor>(jsValue));
++            if (!opt)
++                break;
++            return std::optional<ElementType>{flipBytes(*opt)};
 +        }
-+#else
-+        return toNativeFromValueWithoutCoercion<Adaptor>(jsValue);
 +#endif
++        return opt;
 +    }
  
      void sort()
      {
-diff --git Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h
-index 5bca5d7..8a7111c 100644
---- Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h
-+++ Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h
-@@ -209,9 +209,36 @@ EncodedJSValue JSC_HOST_CALL genericTypedArrayViewProtoFuncIncludes(VM& vm, JSGl
-     scope.assertNoException();
-     RELEASE_ASSERT(!thisObject->isNeutered());
+diff --git a/Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h b/Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h
+index 00492c0a..7bb150dc 100644
+--- a/Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h
++++ b/Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h
+@@ -208,9 +208,36 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncIncludes(VM& vm, JSGl
+     scope.assertNoExceptionExceptTermination();
+     RELEASE_ASSERT(!thisObject->isDetached());
  
 -    if (std::isnan(static_cast<double>(*targetOption))) {
 +    double targetOptionLittleEndianAsDouble;
@@ -156,58 +206,3 @@ index 5bca5d7..8a7111c 100644
                  return JSValue::encode(jsBoolean(true));
          }
      } else {
-diff --git Source/WTF/wtf/FlipBytes.h Source/WTF/wtf/FlipBytes.h
-index 6cd7126..24708f7 100644
---- Source/WTF/wtf/FlipBytes.h
-+++ Source/WTF/wtf/FlipBytes.h
-@@ -24,6 +24,7 @@
-  */
- 
- #pragma once
-+#include "Optional.h"
- 
- namespace WTF {
- 
-@@ -98,6 +99,42 @@ inline T flipBytes(T value)
-     return T();
- }
- 
-+template<typename T>
-+inline T flipBytes(WTF::Optional<T> value)
-+{
-+    if (sizeof(*value) == 1)
-+        return *value;
-+    if (sizeof(*value) == 2) {
-+        union {
-+            T original;
-+            uint16_t word;
-+        } u;
-+        u.original = *value;
-+        u.word = flipBytes(u.word);
-+        return u.original;
-+    }
-+    if (sizeof(*value) == 4) {
-+        union {
-+            T original;
-+            uint32_t word;
-+        } u;
-+        u.original = *value;
-+        u.word = flipBytes(u.word);
-+        return u.original;
-+    }
-+    if (sizeof(*value) == 8) {
-+        union {
-+            T original;
-+            uint64_t word;
-+        } u;
-+        u.original = *value;
-+        u.word = flipBytes(u.word);
-+        return u.original;
-+    }
-+    RELEASE_ASSERT_NOT_REACHED();
-+    return T();
-+}
-+
- template<typename T>
- inline T flipBytesIfLittleEndian(T value, bool littleEndian)
- {

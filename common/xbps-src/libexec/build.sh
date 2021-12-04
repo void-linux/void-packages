@@ -35,14 +35,13 @@ esac
 setup_pkg "$PKGNAME" $XBPS_CROSS_BUILD
 readonly SOURCEPKG="$sourcepkg"
 
+check_existing_pkg
+
 show_pkg_build_options
 check_pkg_arch $XBPS_CROSS_BUILD
 
 if [ -z "$XBPS_CROSS_PREPARE" ]; then
     prepare_cross_sysroot $XBPS_CROSS_BUILD || exit $?
-fi
-if [ -z "$XBPS_DEPENDENCY" -a -z "$XBPS_TEMP_MASTERDIR" -a -n "$XBPS_KEEP_ALL" -a "$XBPS_CHROOT_CMD" = "proot" ]; then
-    remove_pkg_autodeps
 fi
 # Install dependencies from binary packages
 if [ "$PKGNAME" != "$XBPS_TARGET_PKG" -o -z "$XBPS_SKIP_DEPS" ]; then
@@ -107,18 +106,21 @@ cut -d: -f 1,2 ${XBPS_STATEDIR}/.${sourcepkg}_register_pkg | sort -u | \
     while IFS=: read -r arch repo; do
         paths=$(grep "^$arch:$repo:" "${XBPS_STATEDIR}/.${sourcepkg}_register_pkg" | \
             cut -d : -f 2,3 | tr ':' '/')
+        if [ -z "$XBPS_PRESERVE_PKGS" ] || [ "$XBPS_BUILD_FORCEMODE" ]; then
+            force=-f
+        fi
         if [ -n "${arch}" ]; then
             msg_normal "Registering new packages to $repo ($arch)\n"
             XBPS_TARGET_ARCH=${arch} $XBPS_RINDEX_CMD \
-                ${XBPS_REPO_COMPTYPE:+--compression $XBPS_REPO_COMPTYPE} ${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+                ${XBPS_REPO_COMPTYPE:+--compression $XBPS_REPO_COMPTYPE} ${force} -a ${paths}
         else
             msg_normal "Registering new packages to $repo\n"
             if [ -n "$XBPS_CROSS_BUILD" ]; then
                 $XBPS_RINDEX_XCMD ${XBPS_REPO_COMPTYPE:+--compression $XBPS_REPO_COMPTYPE} \
-					${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+					${force} -a ${paths}
             else
                 $XBPS_RINDEX_CMD ${XBPS_REPO_COMPTYPE:+--compression $XBPS_REPO_COMPTYPE} \
-					${XBPS_BUILD_FORCEMODE:+-f} -a ${paths}
+					${force} -a ${paths}
             fi
         fi
     done

@@ -3,7 +3,7 @@
 _process_patch() {
 	local _args= _patch= i=$1
 
-	_args="-Np0"
+	_args="-Np1"
 	_patch=${i##*/}
 
 	if [ -f $PATCHESDIR/${_patch}.args ]; then
@@ -31,7 +31,7 @@ _process_patch() {
 
 	cd "$wrksrc"
 	msg_normal "$pkgver: patching: ${_patch}.\n"
-	patch -sl ${_args} -i ${_patch} 2>/dev/null
+	patch -s ${_args} -i ${_patch} 2>/dev/null
 }
 
 hook() {

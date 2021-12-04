@@ -32,19 +32,18 @@ setup_pkg_depends() {
             if [ -z "$foo" ]; then
                 msg_error "$pkgver: failed to resolve virtual dependency for '$j' (missing from etc/virtual)\n"
             fi
-            _deps+="$foo "
+            [[ $out ]] && echo "$foo"
         else
             foo="$($XBPS_UHELPER_CMD getpkgdepname ${_depname} 2>/dev/null)"
             if [ -z "$foo" ]; then
                 foo="$($XBPS_UHELPER_CMD getpkgname ${_depname} 2>/dev/null)"
                 [ -z "$foo" ] && foo="${_depname}"
             fi
-            _deps+="$foo "
+            [[ $out ]] && echo "$foo"
         fi
         run_depends+="${_depname} "
     done
 
-    [[ $out && $_deps ]] && echo "$_deps"
     return 0
 }
 
@@ -70,8 +69,8 @@ setup_pkg_depends() {
 # -1     (255): unexpected error.
 
 install_pkg_from_repos() {
-    local cross="$1" rval tmplogf cmd
-    shift
+    local cross="$1" target="$2" rval tmplogf cmd
+    shift 2
 
     [ $# -eq 0 ] && return 0
 
@@ -92,7 +91,7 @@ install_pkg_from_repos() {
            ;;
         *)
            [ -z "$XBPS_KEEP_ALL" ] && remove_pkg_autodeps
-           msg_red "$pkgver: failed to install '$1' dependency! (error $rval)\n"
+           msg_red "$pkgver: failed to install $target dependencies! (error $rval)\n"
            cat $tmplogf
            rm -f $tmplogf
            msg_error "Please see above for the real error, exiting...\n"
@@ -412,7 +411,7 @@ install_pkg_deps() {
             echo "=> $pkgver: installing host dependencies: ${host_binpkg_deps[@]} ..."
             [[ $NOCOLORS ]] || printf "\033[m"
         fi
-        install_pkg_from_repos "" "${host_binpkg_deps[@]}"
+        install_pkg_from_repos "" host "${host_binpkg_deps[@]}"
     fi
 
     if [[ ${binpkg_deps} ]]; then
@@ -422,7 +421,7 @@ install_pkg_deps() {
             echo "=> $pkgver: installing target dependencies: ${binpkg_deps[@]} ..."
             [[ $NOCOLORS ]] || printf "\033[m"
         fi
-        install_pkg_from_repos "$cross" "${binpkg_deps[@]}"
+        install_pkg_from_repos "$cross" target "${binpkg_deps[@]}"
     fi
 
     return 0

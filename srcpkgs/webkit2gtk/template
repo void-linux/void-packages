@@ -1,21 +1,15 @@
 # Template file for 'webkit2gtk'
+# ping q66 before touching this
 pkgname=webkit2gtk
-version=2.30.2
+version=2.34.0
 revision=1
 wrksrc="webkitgtk-${version}"
 build_style=cmake
 build_helper="gir"
 configure_args="-DPORT=GTK -DUSE_LD_GOLD=OFF
- -DCMAKE_CXX_FLAGS_RELEASE=-DNDEBUG
- -DCMAKE_CXX_FLAGS_DEBUG=-DNDEBUG
- -DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-DNDEBUG
- -DCMAKE_C_FLAGS_RELEASE=-DNDEBUG
- -DCMAKE_C_FLAGS_DEBUG=-DNDEBUG
- -DCMAKE_C_FLAGS_RELWITHDEBINFO=-DNDEBUG
- -DCMAKE_LINKER=${XBPS_CROSS_TRIPLET}-gcc
- -DRUBY_VERSION=2.7
- -DUSE_SYSTEMD=OFF
- -DENABLE_GTKDOC=OFF -DUSE_GSTREAMER_GL=OFF -DUSE_WPE_RENDERER=OFF
+ -DCMAKE_LINKER=${XBPS_CROSS_TRIPLET}-gcc -DCMAKE_SKIP_RPATH=ON
+ -DUSE_SYSTEMD=OFF -DUSE_WOFF2=ON -DUSE_SOUP2=ON
+ -DENABLE_GTKDOC=OFF -DUSE_WPE_RENDERER=ON
  -DENABLE_MINIBROWSER=$(vopt_if minibrowser ON OFF)
  -DENABLE_JIT=$(vopt_if jit ON OFF)
  -DENABLE_C_LOOP=$(vopt_if jit OFF ON)
@@ -24,33 +18,55 @@ configure_args="-DPORT=GTK -DUSE_LD_GOLD=OFF
  -DENABLE_X11_TARGET=$(vopt_if x11 ON OFF)
  -DENABLE_SAMPLING_PROFILER=$(vopt_if sampling_profiler ON OFF)
  -DENABLE_BUBBLEWRAP_SANDBOX=$(vopt_if bubblewrap ON OFF)"
+# Don't remove which from hostmakedepends
+# Otherwise, they invoke /usr/bin/ccache /usr/lib/ccache/bin/$CC
 hostmakedepends="perl python pkg-config gperf flex ruby gettext glib-devel
- geoclue2 libharfbuzz $(vopt_if wayland wayland-devel)"
+ geoclue2 libharfbuzz which libpsl
+ $(vopt_if wayland 'wayland-devel libxml2-devel')"
 makedepends="at-spi2-core-devel libjpeg-turbo-devel libpng-devel
  harfbuzz-devel gst-plugins-base1-devel gst-plugins-bad1-devel sqlite-devel
- libsoup-devel libxslt-devel gnutls-devel icu-devel enchant-devel
+ libsoup-devel libxslt-devel gnutls-devel icu-devel enchant2-devel
  dbus-glib-devel libwebp-devel gtk+-devel gtk+3-devel libgudev-devel
  libsecret-devel ruby-devel geoclue2-devel libnotify-devel hyphen-devel
  woff2-devel freetype-devel libopenjpeg2-devel libatomic-devel
- qt5-devel $(vopt_if x11 libXt-devel)
+ qt5-devel libmanette-devel libwpe-devel wpebackend-fdo-devel
+ libgcrypt-devel libnuspell-devel libpsl-devel $(vopt_if x11 libXt-devel)
  $(vopt_if wayland 'MesaLib-devel libxkbcommon-devel wayland-devel wayland-protocols')"
 short_desc="GTK+3 port of the WebKit2 browser engine"
-maintainer="Enno Boland <gottox@voidlinux.org>"
+maintainer="q66 <daniel@octaforge.org>"
 license="LGPL-2.1-or-later, BSD-2-Clause"
 homepage="https://webkitgtk.org/"
 distfiles="${homepage}/releases/webkitgtk-${version}.tar.xz"
-checksum=c467e0bc2bc610c2570928e3fd63cedaadc4719cbf9b04aa99f79dd71ad5682a
+checksum=880c8ee626f67019f67557ca09e59a23ecf245e60f6173215f1a8823cb09af34
+make_check=no
 
-build_options="gir wayland x11 bubblewrap jit sampling_profiler minibrowser"
+build_options="gir wayland x11 bubblewrap jit sampling_profiler minibrowser
+ clang lto"
 build_options_default="gir wayland x11 bubblewrap minibrowser"
 
 desc_option_bubblewrap="Enable bubblewrap sandbox"
 desc_option_jit="JavaScript JIT (Only some architectures)"
 desc_option_sampling_profiler="Sampling profiler support (JIT + glibc only)"
 desc_option_minibrowser="Build the minibrowser"
+desc_option_clang="Use Clang to build"
+desc_option_lto="Enable ThinLTO (needs Clang)"
 
-do_check() {
-	:
+export CFLAGS="-DNDEBUG"
+export CXXFLAGS="$CFLAGS"
+
+# WebKitCCache.cmake set this variable
+# include_file_mtime was not enabled to avoid a race,
+# but this is run under our control
+export CCACHE_SLOPPINESS=time_macros,include_file_mtime
+
+post_patch() {
+	# Reproducible build
+	# At least, be nice with ccache
+	vsed -i -e '/foreach my.*(keys/s/(keys/(sort keys/' \
+		Source/WebCore/bindings/scripts/CodeGenerator.pm \
+		Source/WebCore/bindings/scripts/CodeGeneratorJS.pm \
+		Source/WebCore/css/makeprop.pl \
+		Source/cmake/tools/scripts/version-stamp.pl
 }
 
 # detection + runtime
@@ -60,10 +76,19 @@ if [ "$build_option_bubblewrap" ]; then
 	depends+=" bubblewrap xdg-dbus-proxy"
 fi
 
-# https://bugs.webkit.org/show_bug.cgi?id=197192
-case "$XBPS_TARGET_MACHINE" in
-	aarch64*) configure_args+=" -DWTF_CPU_ARM64_CORTEXA53=OFF";;
-esac
+if [ "$build_option_lto" -a -z "$build_option_clang" ]; then
+	broken="LTO needs Clang"
+fi
+
+if [ "$build_option_clang" ]; then
+	hostmakedepends+=" clang lld"
+	configure_args+=" -DUSE_LD_LLD=ON"
+	nocross=yes
+fi
+
+if [ "$build_option_lto" ]; then
+	configure_args+=" -DLTO_MODE=thin"
+fi
 
 # only a few platform support JIT
 case "$XBPS_TARGET_MACHINE" in
@@ -95,6 +120,11 @@ if [ "$build_option_sampling_profiler" -a -z "$build_option_jit" ]; then
 fi
 
 pre_configure() {
+	if [ "$build_option_clang" ]; then
+		export CC=clang
+		export CXX=clang++
+	fi
+
 	# the debug builds are huge and cause problems when debugging
 	export CFLAGS="${CFLAGS/-g/-g1}"
 	export CXXFLAGS="${CXXFLAGS/-g/-g1}"

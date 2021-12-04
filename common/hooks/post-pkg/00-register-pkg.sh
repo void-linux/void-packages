@@ -13,21 +13,12 @@ registerpkg() {
 hook() {
 	local arch= binpkg= pkgdir=
 
-	if [ "${archs// /}" = "noarch" ]; then
-		arch=noarch
-	elif [ -n "$XBPS_TARGET_MACHINE" ]; then
-		arch=$XBPS_TARGET_MACHINE
-	else
-		arch=$XBPS_MACHINE
-	fi
-	if [ "${archs// /}" != "noarch" -a -z "$XBPS_CROSS_BUILD" -a -n "$XBPS_ARCH" -a "$XBPS_ARCH" != "$XBPS_TARGET_MACHINE" ]; then
-		arch=${XBPS_ARCH}
-	fi
 	if [ -n "$repository" ]; then
 		pkgdir=$XBPS_REPOSITORY/$repository
 	else
 		pkgdir=$XBPS_REPOSITORY
 	fi
+	arch=$XBPS_TARGET_MACHINE
 	binpkg=${pkgver}.${arch}.xbps
 	binpkg32=${pkgname}-32bit-${version}_${revision}.x86_64.xbps
 	binpkg_dbg=${pkgname}-dbg-${version}_${revision}.${arch}.xbps

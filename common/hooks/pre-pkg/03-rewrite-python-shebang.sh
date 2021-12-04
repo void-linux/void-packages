@@ -5,7 +5,7 @@ hook() {
 	local pyver= shebang= off=
 
 	if [ -d ${PKGDESTDIR}/usr/lib/python* ]; then
-		pyver="$(find ${PKGDESTDIR}/usr/lib/python* -prune -type d | grep -o '[[:digit:]]\.[[:digit:]]$')"
+		pyver="$(find ${PKGDESTDIR}/usr/lib/python* -prune -type d | grep -o '[[:digit:]]\.[[:digit:]]\+$')"
 	fi
 
 	if [ -n "$python_version" ]; then
@@ -16,7 +16,7 @@ hook() {
 		default_shebang="#!/usr/bin/python${pyver%.*}"
 	fi
 
-	find "${PKGDESTDIR}" -type f -print0 | \
+	grep -rlIZ -m1 '^#!.*python' "${PKGDESTDIR}" |
 		while IFS= read -r -d '' file; do
 			[ ! -s "$file" ] && continue
 

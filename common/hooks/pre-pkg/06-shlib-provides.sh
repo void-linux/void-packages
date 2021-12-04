@@ -1,5 +1,5 @@
 # This hook executes the following tasks:
-#	- generates shlib-provides file for xbps-create(8)
+#	- generates shlib-provides file for xbps-create(1)
 
 collect_sonames() {
 	local _destdir="$1" f _soname _fname _pattern
@@ -45,7 +45,7 @@ collect_sonames() {
 hook() {
 	local _destdir32=${XBPS_DESTDIR}/${pkgname}-32bit-${version}
 
-	if [ -z "$shlib_provides" -a "${archs// /}" = "noarch" -o -n "$noshlibprovides" ]; then
+	if [ -n "$noshlibprovides" ]; then
 		return 0
 	fi
 

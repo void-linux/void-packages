@@ -1,15 +1,14 @@
 # Template file for 'glibc'
 pkgname=glibc
-version=2.30
-revision=1
+version=2.32
+revision=2
 bootstrap=yes
 short_desc="GNU C library"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 license="GPL-2.0-or-later, LGPL-2.1-or-later, BSD-3-Clause"
 homepage="http://www.gnu.org/software/libc"
 distfiles="${GNU_SITE}/glibc/glibc-${version}.tar.xz"
-checksum=e2c4114e569afbe7edbc29131a43be833850ab9a459d81beb2588016d2bbb8af
-patch_args="-Np1"
+checksum=1627ea54f5a1a8467032563393e0901077626dc66f37f10ee6363bb722222836
 # Do not strip these files, objcopy errors out.
 nostrip_files="
 	XBS5_ILP32_OFFBIG
@@ -48,7 +47,7 @@ conf_files="
 	/etc/gai.conf
 	/etc/ld.so.conf"
 if [ "$CHROOT_READY" ]; then
-	hostmakedepends="bison perl python3 texinfo"
+	hostmakedepends="bison gettext perl python3 texinfo"
 fi
 makedepends="kernel-libc-headers"
 lib32files="/usr/lib/gconv/gconv-modules"
@@ -61,11 +60,7 @@ do_configure() {
 	mkdir build
 	cd build
 
-	if [ "$XBPS_TARGET_MACHINE" = "i686" ]; then
-		_libdir=/usr/lib32
-	else
-		_libdir=/usr/lib
-	fi
+	local _libdir=/usr/lib${XBPS_TARGET_WORDSIZE}
 
 	echo "slibdir=${_libdir}" > configparms
 	echo "bindir=/usr/bin" >> configparms
@@ -100,12 +95,12 @@ do_configure() {
 	SHELL=/bin/bash ../configure ${configure_args} \
 		--bindir=/usr/bin --sbindir=/usr/bin \
 		--libdir=${_libdir} --libexecdir=${_libdir} \
-		--enable-add-ons=libidn --enable-obsolete-rpc \
+		--enable-add-ons=libidn \
 		--enable-multi-arch --enable-bind-now \
 		--disable-profile --enable-kernel=3.2.0 \
 		--enable-stack-guard-randomization \
 		--without-selinux --without-cvs --without-gd \
-		--disable-lock-elision --enable-obsolete-nsl \
+		--disable-lock-elision \
 		--enable-stack-protector=strong \
 		--with-headers=${XBPS_CROSS_BASE}/usr/include \
 		--disable-werror \
@@ -143,17 +138,13 @@ do_install() {
 	# ldd is a bash script, so make it run as such.
 	replace_interpreter bash ${DESTDIR}/usr/bin/ldd
 
-	rtldlist=""
-	# On x86_64, add dynamic linker's 32bit version to ldd,
-	# on ppc64 substitute with our own dynamic linker path
+	# wrong 32bit dynamic linker when using elfv2 ABI
 	case "$XBPS_TARGET_MACHINE" in
-		x86_64) rtldlist="/lib/ld-linux.so.2 /lib/ld-linux-x86-64.so.2";;
-		ppc64|ppc64le) rtldlist="/lib/ld64.so.2";;
+		ppc64*)
+			vsed -i '/RTLDLIST=/s/ld.so.2/ld.so.1/g' \
+				${DESTDIR}/usr/bin/ldd
+			;;
 	esac
-	if [ -n "$rtldlist" ]; then
-		sed -i "s|^RTLDLIST.*$|RTLDLIST=\"$rtldlist\"|" \
-			${DESTDIR}/usr/bin/ldd
-	fi
 
 	install -d ${DESTDIR}/etc/ld.so.conf.d
 	echo "/usr/local/lib" > ${DESTDIR}/etc/ld.so.conf.d/usr_local.conf
@@ -201,7 +192,6 @@ glibc-devel_package() {
 	}
 }
 glibc-locales_package() {
-	archs="noarch"
 	conf_files="/etc/default/libc-locales"
 	short_desc+=" - locale data files"
 	pkg_install() {

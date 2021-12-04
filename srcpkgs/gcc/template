@@ -1,28 +1,35 @@
 # Template file for 'gcc'
-_majorver=9
-_minorver=${_majorver}.3
-_gmp_version=6.2.0
-_mpfr_version=4.0.2
-_mpc_version=1.1.0
-_isl_version=0.21
+# Revbump libtool when updating gcc, since it hardcodes some internal compiler paths
+# which use the version number.
 
 pkgname=gcc
-version=${_minorver}.0
-revision=8
+# we are using a 10-stable git snapshot alpine is using in order
+# to get regression fixes not yet incorporate into a stable release
+# it should be possible to switch back to stable with 10.3 or 11
+version=10.2.1pre1
+revision=3
+_patchver="${version%pre*}"
+_minorver="${_patchver%.*}"
+_majorver="${_minorver%.*}"
+_gmp_version=6.2.0
+_mpfr_version=4.1.0
+_mpc_version=1.1.0
+_isl_version=0.21
+wrksrc=gcc-${version/pre/_pre}
 short_desc="GNU Compiler Collection"
 maintainer="Enno Boland <gottox@voidlinux.org>"
 homepage="http://gcc.gnu.org"
 license="GFDL-1.2-or-later, GPL-3.0-or-later, LGPL-2.1-or-later"
 # *-musl builders have issues fetching https://ftp.gnu.org/gnu/mpc/mpc-1.1.0.tar.gz
 distfiles="
- ${GNU_SITE}/gcc/gcc-${version}/gcc-${version}.tar.xz
+ https://dev.alpinelinux.org/~nenolod/gcc-${version/pre/_pre}.tar.xz
  https://gmplib.org/download/gmp/gmp-${_gmp_version}.tar.xz
- https://www.mpfr.org/mpfr-${_mpfr_version}/mpfr-${_mpfr_version}.tar.xz
+ ${GNU_SITE}/mpfr/mpfr-${_mpfr_version}.tar.xz
  ${GNU_SITE}/mpc/mpc-${_mpc_version}.tar.gz
- http://isl.gforge.inria.fr/isl-${_isl_version}.tar.bz2"
-checksum="71e197867611f6054aa1119b13a0c0abac12834765fe2d81f35ac57f84f742d1
+ ${SOURCEFORGE_SITE}/libisl/isl-${_isl_version}.tar.bz2"
+checksum="772cfd5d30eb9cc5a996fec9ba8cdcb45d37df1c9b5770610103b814b732c590
  258e6cd51b3fbdfc185c716d55f82c08aff57df0c6fbd143cf6ed561267a1526
- 1d3be708604eae0e42d578ba93b390c2a145f17743a744d8f3f8c2ad5855a38a
+ 0c98a3f1732ff6ca4ea690552079da9c597872d30e96ec28414ee23c95558a7f
  6985c538143c1208dcb1ac42cedad6ff52e267b47e5f970183a3e75125b43c2e
  d18ca11f8ad1a39ab6d03d3dcb3365ab416720fcb65b42d69f34f51bf0a0e859"
 
@@ -33,10 +40,12 @@ replaces="gcc-gcj<7.2.0 gcc-gcj-jdk-compat<7.2.0 libmpx>=0 libmpx-devel>=0"
 
 _have_gccgo=yes
 
-# MIPS does not have libucontext yet
-# no support for ppcle in gccgo (missing GOARCH and stuff)
+# MIPS is untested and does not have go in crosstoolchains
+# 32-bit PowerPC seems weirdly broken since the 10.x release
+# 32-bit little endian PowerPC has no support at all (no GOARCH)
 case "$XBPS_TARGET_MACHINE" in
-	mips*-musl|ppcle*) _have_gccgo=no ;;
+	ppc64*) ;;
+	mips*-musl|ppc*) _have_gccgo=no ;;
 esac
 
 if [ "$CHROOT_READY" ]; then
@@ -171,13 +180,15 @@ post_extract() {
 pre_configure() {
 	# _FORTIFY_SOURCE needs an optimization level.
 	sed -i "/ac_cpp=/s/\$CPPFLAGS/\$CPPFLAGS -O2/" {gcc,libiberty}/configure
-	case "$XBPS_TARGET_MACHINE" in
-		*-musl)
-			patch -p1 -i ${FILESDIR}/libgnarl-musl.patch
-			patch -p1 -i ${FILESDIR}/libssp-musl.patch
-			patch -p0 -i ${FILESDIR}/gccgo-musl.patch
-			;;
-	esac
+
+	# Do not run fixincludes
+	sed -i 's@\./fixinc\.sh@-c true@' gcc/Makefile.in
+
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		patch -p1 -i ${FILESDIR}/libgnarl-musl.patch
+		patch -p1 -i ${FILESDIR}/libssp-musl.patch
+		patch -p1 -i ${FILESDIR}/gccgo-musl.patch
+	fi
 }
 do_configure() {
 	local _langs _args _hash
@@ -221,15 +232,13 @@ do_configure() {
 
 		_args+=" --host=$XBPS_CROSS_TRIPLET"
 		_args+=" --with-build-sysroot=${XBPS_CROSS_BASE}"
-		_args+=" --enable-sjlj-exceptions=no"
 		_langs+=",objc,obj-c++,fortran"
 	elif [ -z "$CHROOT_READY" ]; then
-		export LD_LIBRARY_PATH="${XBPS_MASTERDIR}/usr/lib"
+		export LD_LIBRARY_PATH="${XBPS_MASTERDIR}/usr/lib${XBPS_TARGET_WORDSIZE}"
 		_args+=" --build=${_triplet}"
 	else
 		_langs="c,c++,objc,obj-c++,fortran,lto"
 		_args+=" --build=${_triplet}"
-		_args+=" --enable-fast-character"
 	fi
 
 	if [ "$_have_gccgo" = "yes" ]; then
@@ -237,9 +246,12 @@ do_configure() {
 	fi
 
 	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		_args+=" --disable-gnu-unique-object"
 		_args+=" --disable-libsanitizer"
 		_args+=" --disable-symvers"
 		_args+=" libat_cv_have_ifunc=no"
+	else
+		_args+=" --enable-gnu-unique-object"
 	fi
 
 	case "$XBPS_TARGET_MACHINE" in
@@ -258,8 +270,8 @@ do_configure() {
 	_args+=" --prefix=/usr"
 	_args+=" --mandir=/usr/share/man"
 	_args+=" --infodir=/usr/share/info"
-	_args+=" --libexecdir=/usr/lib"
-	_args+=" --libdir=/usr/lib"
+	_args+=" --libexecdir=/usr/lib${XBPS_TARGET_WORDSIZE}"
+	_args+=" --libdir=/usr/lib${XBPS_TARGET_WORDSIZE}"
 	_args+=" --enable-threads=posix"
 	_args+=" --enable-__cxa_atexit"
 	_args+=" --disable-multilib"
@@ -276,14 +288,8 @@ do_configure() {
 	_args+=" --disable-libstdcxx-pch"
 	_args+=" --with-isl"
 	_args+=" --with-linker-hash-style=$_hash"
-	_args+=" --disable-libunwind-exceptions"
+	_args+=" --disable-sjlj-exceptions"
 	_args+=" --disable-target-libiberty"
-
-	# --enable-serial-configure is broken when cross-compiling for
-	# some targets because it introduces make rule dependency cycles
-	if [ ! "$CROSS_BUILD" ]; then
-		_args+=" --enable-serial-configure"
-	fi
 
 	mkdir -p build
 	cd build
@@ -308,7 +314,7 @@ do_configure() {
 }
 do_build() {
 	if [ -z "$CHROOT_READY" ]; then
-		export LD_LIBRARY_PATH="${XBPS_MASTERDIR}/usr/lib"
+		export LD_LIBRARY_PATH="${XBPS_MASTERDIR}/usr/lib${XBPS_TARGET_WORDSIZE}"
 	fi
 	cd build
 	if [ "$build_option_gnatboot" ]; then
@@ -331,26 +337,21 @@ pre_install() {
 }
 do_install() {
 	cd build
-	case "$XBPS_TARGET_MACHINE" in
-	x86_64*|aarch64*|ppc64*)
-		vmkdir usr/lib
-		ln -sfr ${DESTDIR}/usr/lib ${DESTDIR}/usr/lib64
-		;;
-	esac
+
 	make DESTDIR=${DESTDIR} install
 
 	# Make version a symlink of major version to make all versions
 	# from the same series work automagically.
-	mv ${DESTDIR}/usr/lib/gcc/${_triplet}/${version} \
+	mv ${DESTDIR}/usr/lib/gcc/${_triplet}/${_patchver} \
 		${DESTDIR}/usr/lib/gcc/${_triplet}/${_minorver}
 	ln -sfr ${DESTDIR}/usr/lib/gcc/${_triplet}/${_minorver} \
-		${DESTDIR}/usr/lib/gcc/${_triplet}/${version}
+		${DESTDIR}/usr/lib/gcc/${_triplet}/${_patchver}
 
 	# Ditto for c++ headers.
-	mv ${DESTDIR}/usr/include/c++/${version} \
+	mv ${DESTDIR}/usr/include/c++/${_patchver} \
 		${DESTDIR}/usr/include/c++/${_minorver}
 	ln -sfr ${DESTDIR}/usr/include/c++/${_minorver} \
-		${DESTDIR}/usr/include/c++/${version}
+		${DESTDIR}/usr/include/c++/${_patchver}
 
 	# cc symlink
 	ln -sfr ${DESTDIR}/usr/bin/gcc ${DESTDIR}/usr/bin/cc
@@ -359,12 +360,8 @@ do_install() {
 
 	# lto plugin symlink
 	vmkdir usr/lib/bfd-plugins
-	ln -sfr ${DESTDIR}/usr/lib/gcc/${_triplet}/${version}/liblto_plugin.so \
+	ln -sfr ${DESTDIR}/usr/lib/gcc/${_triplet}/${_patchver}/liblto_plugin.so \
 		${DESTDIR}/usr/lib/bfd-plugins
-
-	if [ -e ${DESTDIR}/usr/lib64 ]; then
-		rm -f ${DESTDIR}/usr/lib64
-	fi
 
 	# Remove "fixed" header
 	# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91085
@@ -378,8 +375,8 @@ do_install() {
 	rm -f ${DESTDIR}/usr/lib/*.py
 
 	# Remove more python stuff.
-	if [ -d ${DESTDIR}/usr/share/gcc-${version}/python ]; then
-		rm -rf ${DESTDIR}/usr/share/gcc-${version}/python
+	if [ -d ${DESTDIR}/usr/share/gcc-${_patchver}/python ]; then
+		rm -rf ${DESTDIR}/usr/share/gcc-${_patchver}/python
 	fi
 
 	# Install c89 and c99 wrappers and its manpages, from NetBSD.
@@ -452,7 +449,7 @@ gcc-fortran_package() {
 		if [ "$CROSS_BUILD" ]; then
 			# A number of OMP modules are not built when cross
 			# compiling gcc. Copy them from the cross compiler.
-			local src="/usr/lib/gcc/${_triplet}/${version}/finclude"
+			local src="/usr/lib/gcc/${_triplet}/${_patchver}/finclude"
 			local dst="usr/lib/gcc/${_triplet}/${_minorver}/finclude"
 			for f in omp_lib.f90 omp_lib.h omp_lib.mod omp_lib_kinds.mod \
 				openacc.f90 openacc.mod openacc_kinds.mod openacc_lib.h; do
@@ -711,8 +708,8 @@ libstdc++-devel_package() {
 	depends="libstdc++>=${_minorver}"
 	short_desc+=" - Standard C++ Library - development files"
 	pkg_install() {
-		vmove "usr/lib/libstdc++.*a"
-		vmove "usr/lib/libsupc++.*"
+		vmove "usr/lib/libstdc++*.a"
+		vmove "usr/lib/libsupc++.a"
 		vmove usr/include/c++
 	}
 }

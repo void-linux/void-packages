@@ -1,0 +1,48 @@
+From 27b2fc9d6db956359727a66c262f1e69995660aa Mon Sep 17 00:00:00 2001
+From: Rich Felker <dalias@aerifal.cx>
+Date: Fri, 30 Oct 2020 11:21:06 -0400
+Subject: fix missing-wake regression in pthread_cond_wait
+
+the reasoning in commit 2d0bbe6c788938d1332609c014eeebc1dff966ac was
+not entirely correct. while it's true that setting the waiters flag
+ensures that the next unlock will perform a wake, it's possible that
+the wake is consumed by a mutex waiter that has no relationship with
+the condvar wait queue being processed, which then takes the mutex.
+when that thread subsequently unlocks, it sees no waiters, and leaves
+the rest of the condvar queue stuck.
+
+bring back the waiter count adjustment, but skip it for PI mutexes,
+for which a successful lock-after-waiting always sets the waiters bit.
+if future changes are made to bring this same waiters-bit contract to
+all lock types, this can be reverted.
+---
+ src/thread/pthread_cond_timedwait.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+(limited to 'src/thread/pthread_cond_timedwait.c')
+
+diff --git a/src/thread/pthread_cond_timedwait.c b/src/thread/pthread_cond_timedwait.c
+index f5f37af1..a0cd4904 100644
+--- a/src/thread/pthread_cond_timedwait.c
++++ b/src/thread/pthread_cond_timedwait.c
+@@ -146,12 +146,17 @@ relock:
+ 
+ 	if (oldstate == WAITING) goto done;
+ 
++	if (!node.next && !(m->_m_type & 8))
++		a_inc(&m->_m_waiters);
++
+ 	/* Unlock the barrier that's holding back the next waiter, and
+ 	 * either wake it or requeue it to the mutex. */
+ 	if (node.prev) {
+ 		int val = m->_m_lock;
+ 		if (val>0) a_cas(&m->_m_lock, val, val|0x80000000);
+ 		unlock_requeue(&node.prev->barrier, &m->_m_lock, m->_m_type & (8|128));
++	} else if (!!(m->_m_type & 8)) {
++		a_dec(&m->_m_waiters);		
+ 	}
+ 
+ 	/* Since a signal was consumed, cancellation is not permitted. */
+-- 
+cgit v1.2.1
+

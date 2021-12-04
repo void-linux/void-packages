@@ -19,20 +19,20 @@ hook() {
 	# This hook will only work when building for x86.
 	if [ "$XBPS_TARGET_MACHINE" != "i686" ]; then
 		return
-	fi 
-	# Ignore noarch pkgs.
-	if [ "${archs// /}" = "noarch" ]; then
-		return
 	fi
 	if [ -z "$lib32mode" ]; then
 		# Library mode, copy only relevant files to new destdir.
 		#
 		# If /usr/lib does not exist don't continue...
-		if [ ! -d ${PKGDESTDIR}/usr/lib ]; then
+		# except for devel packages, for which empty 32bit package will be created
+		if ! [ -d ${PKGDESTDIR}/usr/lib ] && ! [[ ${pkgname} == *-devel ]]; then
 			return
 		fi
+
 		mkdir -p ${destdir32}/usr/lib32
-		cp -a ${PKGDESTDIR}/usr/lib/* ${destdir32}/usr/lib32
+		if [ -d ${PKGDESTDIR}/usr/lib ]; then
+			cp -a ${PKGDESTDIR}/usr/lib/* ${destdir32}/usr/lib32
+		fi
 
 		# Only keep shared libs, static libs, and pkg-config files.
 		find "${destdir32}" -not \( \
@@ -71,6 +71,9 @@ hook() {
 			mv ${destdir32}/usr/lib ${destdir32}/usr/lib32
 		fi
 	fi
+	if [[ ${pkgname} == *-devel ]]; then
+		mkdir -p ${destdir32}
+	fi
 	if [ ! -d ${destdir32} ]; then
 		return
 	fi
@@ -88,7 +91,7 @@ hook() {
 			_deps="$(<${PKGDESTDIR}/rdeps)"
 		fi
 		for f in ${_deps}; do
-			unset found pkgn pkgv _arch _shprovides
+			unset found pkgn pkgv _shprovides
 
 			pkgn="$($XBPS_UHELPER_CMD getpkgdepname $f)"
 			if [ -z "${pkgn}" ]; then
@@ -101,16 +104,9 @@ hook() {
 				pkgv="$($XBPS_UHELPER_CMD getpkgdepversion ${f})"
 			fi
 			# If dependency is a development pkg switch it to 32bit.
-			if [[ $pkgn =~ '-devel' ]]; then
+			if [[ $pkgn == *-devel ]]; then
 				echo "   RDEP: $f -> ${pkgn}-32bit${pkgv} (development)"
 				printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
-				continue
-			fi
-			# If dependency is noarch do not change it to 32bit.
-			_arch=$($XBPS_QUERY_CMD -R --property=architecture "$f")
-			if [ "${_arch}" = "noarch" ]; then
-				echo "   RDEP: $f -> ${pkgn}${pkgv} (noarch)"
-				printf "${pkgn}${pkgv} " >> ${destdir32}/rdeps
 				continue
 			fi
 			# If dependency does not have "shlib-provides" do not
@@ -164,7 +160,7 @@ hook() {
 		ln -sfr ${destdir32}/usr/lib32/$f ${destdir32}/usr/lib/$f
 	done
 	# If it's a development pkg add a dependency to the 64bit pkg.
-	if [[ $pkgname =~ '-devel' ]]; then
+	if [[ $pkgn == *-devel ]]; then
 		echo "   RDEP: ${pkgver}"
 		printf "${pkgver} " >> ${destdir32}/rdeps
 	fi
