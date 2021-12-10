@@ -4,7 +4,7 @@ version=5.45.1
 revision=2
 build_style=gnu-configure
 configure_args="$(vopt_enable clisp) $(vopt_enable sbcl sbcl-exec) $(vopt_enable ecl)"
-hostmakedepends="python3 perl emacs texinfo"
+hostmakedepends="python3 perl emacs texinfo patchelf"
 makedepends="$(vopt_if clisp clisp) $(vopt_if sbcl sbcl) $(vopt_if ecl ecl)"
 depends="$(vopt_if clisp clisp) rlwrap"
 checkdepends="gnuplot"
@@ -23,6 +23,29 @@ desc_option_sbcl="Build with SBCL"
 desc_option_ecl="Build with ECL"
 build_options_default="sbcl ecl"
 vopt_conflict clisp sbcl
+
+post_build() {
+	if [ "$build_option_ecl" ]; then
+		# everything will go in the same directory, use rpath=$ORIGIN
+		patchelf --remove-rpath src/binary-ecl/libmaxima-ecl.so
+		patchelf --set-rpath \$ORIGIN \
+			src/binary-ecl/{maxima,maxima.fas}
+		patchelf \
+			--replace-needed  binary-ecl/libmaxima-ecl.so libmaxima-ecl.so \
+			src/binary-ecl/{maxima,maxima.fas}
+	fi
+}
+
+do_check() {
+	if [ "$build_option_ecl" ]; then
+		echo "Check that maxima.fas works"
+		ecl --eval "(require 'maxima \"src/binary-ecl/maxima.fas\")" \
+			--eval "(quit)"
+	fi
+
+	# now run the testsuite
+	make ${makejobs} check
+}
 
 post_install() {
 	vmkdir usr/share/doc
@@ -68,25 +91,20 @@ xmaxima_package() {
 	}
 }
 
-subpackages="maxima-src maxima-emacs xmaxima"
-
-if [ "$build_option_ecl" ]; then
-	subpackages+=" maxima-ecl"
-fi
-
 maxima-ecl_package() {
 	short_desc+=" - compiled with ECL"
 	depends="${sourcepkg}-${version}_${revision}"
 	pkg_install() {
-		# this is /usr/lib/ecl-${ecl_version}
-		# ideally we would just place it in /usr/lib/ecl but this
-		# doesn't just work
-		# Maybe we can have the ecl package ship a symlink:
-		#     /usr/lib/ecl -> /usr/lib/ecl-${ecl_version}
-		# and have this package just install in /usr/lib/ecl
+		BINARY_ECL=/usr/lib/maxima/${version}/binary-ecl
+		vmove ${BINARY_ECL}
+		vinstall src/binary-ecl/libmaxima-ecl.so 755 ${BINARY_ECL}
+		vinstall src/binary-ecl/maxima.fas 755 ${BINARY_ECL}
+
+		# symlink maxima.fas in ECLDIR
 		ECLDIR=$(ecl -eval "(princ (SI:GET-LIBRARY-PATHNAME))" -eval "(quit)")
-		vmkdir $ECLDIR
-		vinstall src/binary-ecl/maxima.fas 755 $ECLDIR
-		vmove usr/lib/maxima/${version}/binary-ecl
+		vmkdir ${ECLDIR}
+		ln -sr ${PKGDESTDIR}/${BINARY_ECL}/maxima.fas ${PKGDESTDIR}/${ECLDIR}
 	}
 }
+
+subpackages="maxima-src maxima-emacs xmaxima $(vopt_if ecl maxima-ecl)"
