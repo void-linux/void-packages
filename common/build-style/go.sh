@@ -2,6 +2,13 @@
 # This helper is for templates for Go packages.
 #
 
+do_check() {
+	go_package=${go_package:-$go_import_path}
+	if [ "${go_mod_mode}" != "off" ] && [ -f go.mod ]; then
+		go test -v ${go_package}
+	fi
+}
+
 do_configure() {
 	# $go_import_path must be set, or we can't link $PWD into $GOSRCPATH
 	# nor build from modules
