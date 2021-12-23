@@ -7,7 +7,8 @@
 # 	build_style=perl-module
 #
 # Optionally if the module needs more directories to be configured other
-# than $XBPS_BUILDDIR/$wrksrc, one can use (relative to $wrksrc):
+# than $XBPS_BUILDDIR/$wrksrc/$build_wrksrc, one can use (relative to
+# $wrksrc/$build_wrksrc):
 #
 #	perl_configure_dirs="blob/bob foo/blah"
 #
@@ -29,17 +30,18 @@ do_configure() {
 	fi
 	export PERL5LIB=$perlprefix
 
-	if [ -f "${wrksrc}/Makefile.PL" ]; then
-		sed -i "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" "${wrksrc}/Makefile.PL"
+	if [ -f "${wrksrc}/${build_wrksrc:+$build_wrksrc/}Makefile.PL" ]; then
+		sed -i "s,/usr/include,${XBPS_CROSS_BASE}/usr/include,g" \
+		"${wrksrc}/${build_wrksrc:+$build_wrksrc/}Makefile.PL"
 	fi
 
 	if [ -z "$perl_configure_dirs" ]; then
-		perlmkf="$wrksrc/Makefile.PL"
+		perlmkf="$wrksrc/${build_wrksrc:+$build_wrksrc/}Makefile.PL"
 		if [ ! -f "$perlmkf" ]; then
 			msg_error "*** ERROR couldn't find $perlmkf, aborting ***\n"
 		fi
 
-		cd "$wrksrc"
+		cd "$wrksrc/${build_wrksrc:+$build_wrksrc}"
 		PERL_MM_USE_DEFAULT=1 GCC="$CC" CC="$CC" LD="$CC" \
 			OPTIMIZE="$CFLAGS" \
 			CFLAGS="$CFLAGS -I${XBPS_CROSS_BASE}/usr/include" \
@@ -49,9 +51,9 @@ do_configure() {
 	fi
 
 	for i in ${perl_configure_dirs}; do
-		perlmkf="$wrksrc/$i/Makefile.PL"
+		perlmkf="$wrksrc/${build_wrksrc:+$build_wrksrc/}$i/Makefile.PL"
 		if [ -f "$perlmkf" ]; then
-			cd "$wrksrc/$i"
+			cd "$wrksrc/${build_wrksrc:+$build_wrksrc/}$i"
 			PERL_MM_USE_DEFAULT=1 GCC="$CC" CC="$CC" LD="$CC" \
 				OPTIMIZE="$CFLAGS" \
 				CFLAGS="$CFLAGS -I${XBPS_CROSS_BASE}/usr/include" \

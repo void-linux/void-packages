@@ -21,7 +21,7 @@ hook() {
 			error=1
 		fi
 	done
-	
+
 	for f in var/run usr/local; do
 		if [ -d ${PKGDESTDIR}/${f} ]; then
 			msg_red "${pkgver}: /${f} directory is not allowed, remove it!\n"
@@ -54,8 +54,8 @@ hook() {
 		esac
 	done
 
-	# Forbid empty packages unless build_style=meta
-	if [ "$build_style" != meta -a "$emptypkg" != no ]; then
+	# Forbid empty packages unless build_style=meta or it is 32bit devel package
+	if [ "$build_style" != meta ] && [ "$emptypkg" != no ] && [[ ${pkgname} != *-devel-32bit ]]; then
 		msg_red "${pkgver}: PKGDESTDIR is empty and build_style != meta\n"
 		error=1
 	fi

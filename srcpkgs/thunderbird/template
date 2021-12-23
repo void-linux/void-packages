@@ -3,7 +3,7 @@
 # THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/thunderbird-i18n".
 #
 pkgname=thunderbird
-version=78.10.2
+version=91.3.2
 revision=1
 build_helper="rust"
 short_desc="Standalone Mail/News reader"
@@ -11,7 +11,7 @@ maintainer="Érico Nogueira <ericonr@disroot.org>"
 license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
 homepage="https://www.thunderbird.net/"
 distfiles="${MOZILLA_SITE}/${pkgname}/releases/${version}/source/${pkgname}-${version}.source.tar.xz"
-checksum=ad070eb27ed5087819b62495e8f96ec0c8d8827598c415648c69ef989c634676
+checksum=37bedce79458531ce55806b194669f6e270e4bc3b0fa0949577af1822e57b11d
 
 lib32disabled=yes
 
@@ -37,6 +37,12 @@ esac
 
 if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
 	makedepends+=" libatomic-devel"
+fi
+
+# try to minimize memory usage via debug symbols
+# 'LLVM ERROR: out of memory' while compiling gtkrust
+if [ "$XBPS_WORDSIZE" = "32" ]; then
+	nodebug=yes
 fi
 
 # we need this because cargo verifies checksums of all files in vendor
@@ -135,11 +141,11 @@ do_build() {
 
 	# work around large debug symbols on 32-bit hosts
 	if [ "$XBPS_WORDSIZE" = "32" ]; then
-		export CFLAGS="${CFLAGS/-g/-g1}"
-		export CXXFLAGS="${CXXFLAGS/-g/-g1}"
+		echo "ac_add_options --disable-debug-symbols" >>.mozconfig
+		echo "ac_add_options --disable-debug" >>.mozconfig
 		export LDFLAGS+=" -Wl,--no-keep-memory"
 		# patch the rust debug level, this is hardcoded
-		sed -i "s/debug_info = '2'/debug_info = '1'/" \
+		vsed -i 's/debug_info = "2"/debug_info = "0"/' \
 		build/moz.configure/toolchain.configure
 	fi
 
@@ -159,6 +165,7 @@ do_build() {
 	export MOZ_MAKE_FLAGS="${makejobs}"
 	export MOZ_NOSPAM=1
 	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
+	export MACH_USE_SYSTEM_PYTHON=1
 
 	export AS=$CC
 
@@ -179,6 +186,8 @@ ac_add_options --enable-default-toolkit=$(vopt_if wayland 'cairo-gtk3-wayland' '
 	./mach build
 }
 do_install() {
+	export MACH_USE_SYSTEM_PYTHON=1
+	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
 	DESTDIR="$DESTDIR" ./mach install
 
 	vinstall ${FILESDIR}/vendor.js 644 usr/lib/thunderbird/defaults/preferences

@@ -1,9 +1,10 @@
 # Template file for 'libvirt'
 pkgname=libvirt
-version=7.4.0
+version=7.10.0
 revision=1
 build_style=meson
-configure_args="-Dqemu_user=libvirt -Dqemu_group=libvirt -Drunstatedir=/run"
+configure_args="-Dqemu_user=libvirt -Dqemu_group=libvirt -Drunstatedir=/run
+ -Dpolkit=enabled"
 hostmakedepends="automake dnsmasq docbook-xsl gettext gettext-devel iptables
  libapparmor-devel libtool libxslt lvm2 parted perl pkg-config python3-docutils
  rpcsvc-proto"
@@ -19,7 +20,9 @@ license="LGPL-2.1-or-later"
 homepage="https://libvirt.org"
 changelog="https://libvirt.org/news.html"
 distfiles="https://libvirt.org/sources/${pkgname}-${version}.tar.xz"
-checksum=b366d73dee6ce77a226bedef592e0620ceb8e22e5998f60768017f79fc4ead26
+checksum=cb318014af097327928c6e3d72922e3be02a3e6401247b2aa52d9ab8e0b480f9
+# At least one test times out on CI but works locally
+make_check=ci-skip
 
 # FIX https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=701649
 system_accounts="libvirt"
@@ -71,6 +74,7 @@ post_patch() {
 pre_build() {
 	# racey custom targets; prevent parallelism issues
 	ninja -C build \
+		src/remote/lxc_protocol.h \
 		src/remote/qemu_protocol.h \
 		src/remote/remote_protocol.h \
 		src/util/virkeycodetable_linux.h \
@@ -82,18 +86,22 @@ pre_build() {
 }
 
 post_install() {
-	# runit services
-	vsv libvirtd
-	vsv virtlockd
-	vsv virtlogd
+	local _services _srv
 
-	rm -rf ${DESTDIR}/etc/sysconfig
+	# runit services; libvirtd is for legacy use
+	_services="libvirt-generic libvirtd virtqemud virtvboxd virtxend
+	 virtlxcd virtlockd virtlogd virtproxyd virtinterfaced virtnetworkd
+	 virtnodedevd virtnwfilterd virtsecretd virtstoraged"
+	for _srv in $_services; do
+		vsv $_srv
+	done
+
 	# Remove unused stuff.
+	rm -rf ${DESTDIR}/etc/sysconfig
 	rm -rf ${DESTDIR}/var/log
 
 	# workaround for musl not providing an utmpx implementation
-	if [ "$XBPS_TARGET_LIBC" = "musl" ];
-	then
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 		echo "remember_owner = 0" >> ${DESTDIR}/etc/libvirt/qemu.conf
 	fi
 }

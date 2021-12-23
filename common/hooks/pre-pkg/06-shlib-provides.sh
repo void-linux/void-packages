@@ -1,5 +1,5 @@
 # This hook executes the following tasks:
-#	- generates shlib-provides file for xbps-create(8)
+#	- generates shlib-provides file for xbps-create(1)
 
 collect_sonames() {
 	local _destdir="$1" f _soname _fname _pattern

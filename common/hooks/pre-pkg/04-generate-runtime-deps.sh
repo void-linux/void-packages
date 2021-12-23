@@ -47,7 +47,7 @@ store_pkgdestdir_rundeps() {
 }
 
 hook() {
-    local depsftmp f lf j mapshlibs sorequires _curdep
+    local depsftmp f lf j mapshlibs sorequires _curdep elfmagic
 
     # Disable trap on ERR, xbps-uhelper cmd might return error... but not something
     # to be worried about because if there are broken shlibs this hook returns
@@ -72,18 +72,17 @@ hook() {
 		    msg_normal "Skipping dependency scan for ${lf}\n"
 		    continue
 	    fi
-        case "$(file -bi "$f")" in
-            application/x-*executable*|application/x-sharedlib*)
-                for nlib in $($OBJDUMP -p "$f"|grep NEEDED|awk '{print $2}'); do
-                    [ -z "$verify_deps" ] && verify_deps="$nlib" && continue
-                    found=0
-                    for j in ${verify_deps}; do
-                        [[ $j == $nlib ]] && found=1 && break
-                    done
-                    [[ $found -eq 0 ]] && verify_deps="$verify_deps $nlib"
+        read -n4 elfmagic < "$f"
+        if [ "$elfmagic" = $'\177ELF' ]; then
+            for nlib in $($OBJDUMP -p "$f"|awk '/NEEDED/{print $2}'); do
+                [ -z "$verify_deps" ] && verify_deps="$nlib" && continue
+                found=0
+                for j in ${verify_deps}; do
+                    [[ $j == $nlib ]] && found=1 && break
                 done
-                ;;
-        esac
+                [[ $found -eq 0 ]] && verify_deps="$verify_deps $nlib"
+            done
+        fi
     done
     exec 0<&3 # restore stdin
     rm -f $depsftmp

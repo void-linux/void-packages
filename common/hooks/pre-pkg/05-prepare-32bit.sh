@@ -24,11 +24,15 @@ hook() {
 		# Library mode, copy only relevant files to new destdir.
 		#
 		# If /usr/lib does not exist don't continue...
-		if [ ! -d ${PKGDESTDIR}/usr/lib ]; then
+		# except for devel packages, for which empty 32bit package will be created
+		if ! [ -d ${PKGDESTDIR}/usr/lib ] && ! [[ ${pkgname} == *-devel ]]; then
 			return
 		fi
+
 		mkdir -p ${destdir32}/usr/lib32
-		cp -a ${PKGDESTDIR}/usr/lib/* ${destdir32}/usr/lib32
+		if [ -d ${PKGDESTDIR}/usr/lib ]; then
+			cp -a ${PKGDESTDIR}/usr/lib/* ${destdir32}/usr/lib32
+		fi
 
 		# Only keep shared libs, static libs, and pkg-config files.
 		find "${destdir32}" -not \( \
@@ -67,6 +71,9 @@ hook() {
 			mv ${destdir32}/usr/lib ${destdir32}/usr/lib32
 		fi
 	fi
+	if [[ ${pkgname} == *-devel ]]; then
+		mkdir -p ${destdir32}
+	fi
 	if [ ! -d ${destdir32} ]; then
 		return
 	fi
@@ -97,7 +104,7 @@ hook() {
 				pkgv="$($XBPS_UHELPER_CMD getpkgdepversion ${f})"
 			fi
 			# If dependency is a development pkg switch it to 32bit.
-			if [[ $pkgn =~ '-devel' ]]; then
+			if [[ $pkgn == *-devel ]]; then
 				echo "   RDEP: $f -> ${pkgn}-32bit${pkgv} (development)"
 				printf "${pkgn}-32bit${pkgv} " >> ${destdir32}/rdeps
 				continue
@@ -153,7 +160,7 @@ hook() {
 		ln -sfr ${destdir32}/usr/lib32/$f ${destdir32}/usr/lib/$f
 	done
 	# If it's a development pkg add a dependency to the 64bit pkg.
-	if [[ $pkgname =~ '-devel' ]]; then
+	if [[ $pkgn == *-devel ]]; then
 		echo "   RDEP: ${pkgver}"
 		printf "${pkgver} " >> ${destdir32}/rdeps
 	fi

@@ -167,9 +167,11 @@ _void_cross_build_kernel_headers() {
 	msg_normal "Patching Linux headers for ${tgt}\n"
 
 	cd ${wrksrc}/linux-${ver}
-	for f in ${XBPS_SRCPKGDIR}/kernel-libc-headers/patches/*.patch; do
-		_void_cross_apply_patch "$f"
-	done
+	if [ -d "${XBPS_SRCPKGDIR}/kernel-libc-headers/patches" ]; then
+		for f in ${XBPS_SRCPKGDIR}/kernel-libc-headers/patches/*.patch; do
+			_void_cross_apply_patch "$f"
+		done
+	fi
 	cd ..
 
 	msg_normal "Building Linux headers for ${tgt}\n"

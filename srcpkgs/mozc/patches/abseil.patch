@@ -5,11 +5,10 @@ An all-in-one patch that fixes several issues:
 
 1) UnscaledCycleClock not fully implemented for ppc*-musl (disabled on musl)
 2) powerpc stacktrace implementation only works on glibc (disabled on musl)
-3) powerpc stacktrace implementation has ppc64 assumptions (fixed)
 4) examine_stack.cpp makes glibc assumptions on powerpc (fixed)
 
---- a/mozc/src/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.h
-+++ b/mozc/src/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock.h
+--- a/abseil-cpp/absl/base/internal/unscaledcycleclock.h
++++ b/abseil-cpp/absl/base/internal/unscaledcycleclock.h
 @@ -46,7 +46,7 @@
  
  // The following platforms have an implementation of a hardware counter.
@@ -19,8 +18,8 @@ An all-in-one patch that fixes several issues:
    defined(_M_IX86) || defined(_M_X64)
  #define ABSL_HAVE_UNSCALED_CYCLECLOCK_IMPLEMENTATION 1
  #else
---- a/mozc/src/third_party/abseil-cpp/absl/debugging/internal/examine_stack.cc
-+++ b/mozc/src/third_party/abseil-cpp/absl/debugging/internal/examine_stack.cc
+--- a/abseil-cpp/absl/debugging/internal/examine_stack.cc
++++ b/abseil-cpp/absl/debugging/internal/examine_stack.cc
 @@ -27,6 +27,10 @@
  #include <csignal>
  #include <cstdio>
@@ -32,21 +31,21 @@ An all-in-one patch that fixes several issues:
  #include "absl/base/attributes.h"
  #include "absl/base/internal/raw_logging.h"
  #include "absl/base/macros.h"
-@@ -55,8 +59,10 @@
+@@ -63,8 +67,10 @@ void* GetProgramCounter(void* vuc) {
      return reinterpret_cast<void*>(context->uc_mcontext.pc);
  #elif defined(__powerpc64__)
      return reinterpret_cast<void*>(context->uc_mcontext.gp_regs[32]);
--#elif defined(__powerpc__)
 +#elif defined(__powerpc__) && defined(__GLIBC__)
-     return reinterpret_cast<void*>(context->uc_mcontext.regs->nip);
-+#elif defined(__powerpc__)
++    return reinterpret_cast<void*>(context->uc_mcontext.regs->nip);
+ #elif defined(__powerpc__)
+-    return reinterpret_cast<void*>(context->uc_mcontext.uc_regs->gregs[32]);
 +    return reinterpret_cast<void*>(((struct pt_regs *)context->uc_regs)->nip);
  #elif defined(__riscv)
      return reinterpret_cast<void*>(context->uc_mcontext.__gregs[REG_PC]);
  #elif defined(__s390__) && !defined(__s390x__)
---- a/mozc/src/third_party/abseil-cpp/absl/debugging/internal/stacktrace_config.h
-+++ b/mozc/src/third_party/abseil-cpp/absl/debugging/internal/stacktrace_config.h
-@@ -64,7 +64,7 @@
+--- a/abseil-cpp/absl/debugging/internal/stacktrace_config.h
++++ b/abseil-cpp/absl/debugging/internal/stacktrace_config.h
+@@ -55,7 +55,7 @@
  #elif defined(__i386__) || defined(__x86_64__)
  #define ABSL_STACKTRACE_INL_HEADER \
    "absl/debugging/internal/stacktrace_x86-inl.inc"
@@ -55,19 +54,3 @@ An all-in-one patch that fixes several issues:
  #define ABSL_STACKTRACE_INL_HEADER \
    "absl/debugging/internal/stacktrace_powerpc-inl.inc"
  #elif defined(__aarch64__)
---- a/mozc/src/third_party/abseil-cpp/absl/debugging/internal/stacktrace_powerpc-inl.inc
-+++ b/mozc/src/third_party/abseil-cpp/absl/debugging/internal/stacktrace_powerpc-inl.inc
-@@ -130,8 +130,13 @@
-         StacktracePowerPCGetLR(new_sp) == kernel_sigtramp_rt64_address) {
-       const ucontext_t* signal_context =
-           reinterpret_cast<const ucontext_t*>(uc);
-+#if defined(__powerpc64__)
-       void **const sp_before_signal =
-           reinterpret_cast<void**>(signal_context->uc_mcontext.gp_regs[PT_R1]);
-+#else
-+      void **const sp_before_signal =
-+          reinterpret_cast<void**>(signal_context->uc_mcontext.uc_regs->gregs[PT_R1]);
-+#endif
-       // Check that alleged sp before signal is nonnull and is reasonably
-       // aligned.
-       if (sp_before_signal != nullptr &&

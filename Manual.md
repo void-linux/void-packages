@@ -422,7 +422,7 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_WRAPPERDIR` Full path to where xbps-src's wrappers for utilities are stored.
 
-- `XBPS_CROSS_BASE` Full path to where cross-compile dependencies are installed, varies according to the target architecture triplet. i.e `aarch64` -> `aarch64-unknown-linux-gnu`.
+- `XBPS_CROSS_BASE` Full path to where cross-compile dependencies are installed, varies according to the target architecture triplet. i.e `aarch64` -> `/usr/aarch64-linux-gnu`.
 
 - `XBPS_RUST_TARGET` The target architecture triplet used by `rustc` and `cargo`.
 
@@ -434,7 +434,7 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 The list of mandatory variables for a template:
 
-- `homepage` A string pointing to the `upstream` homepage.
+- `homepage` An URL pointing to the upstream homepage.
 
 
 - <a id="var_license"></a>
@@ -443,8 +443,8 @@ The list of mandatory variables for a template:
 Multiple licenses should be separated by commas, Example: `GPL-3.0-or-later, custom:Hugware`.
 
   Empty meta-packages that don't include any files
-  which thus have and require no license, should have set
-  `license="BSD-2-Clause"`.
+  and thus have and require no license should use
+  `Public Domain`.
 
   Note: `MIT`, `BSD`, `ISC` and custom licenses
   require the license file to be supplied with the binary package.
@@ -581,8 +581,9 @@ phase if `${build_style}` is set to `configure`, `gnu-configure` or
 `PREFIX=/usr DESTDIR=${DESTDIR}`.
 
 - `make_build_target` The build target. If `${build_style}` is set to `configure`, `gnu-configure`
-or `gnu-makefile`, this is the target passed to `${make_cmd}` in the build phase; when unset, it
-defaults to `all`. If `${build_style}` is `python3-pep517`, this is the path of the package
+or `gnu-makefile`, this is the target passed to `${make_cmd}` in the build phase;
+when unset the default target is used.
+If `${build_style}` is `python3-pep517`, this is the path of the package
 directory that should be built as a Python wheel; when unset, defaults to `.` (the current
 directory with respect to the build).
 
@@ -605,8 +606,7 @@ patches to the package sources during `do_patch()`. Patches are stored in
 and `XBPS_MAKEJOBS` has no effect.
 
 - `make_check` Sets the cases in which the `check` phase is run.
-This option should usually be accompanied by a comment explaining why it was set, especially when
-set to `no`.
+This option has to be accompanied by a comment explaining why the tests fail.
 Allowed values:
   - `yes` (the default) to run if `XBPS_CHECK_PKGS` is set.
   - `extended` to run if `XBPS_CHECK_PKGS` is `full`.
@@ -743,6 +743,8 @@ used.
 
 - `fetch_cmd` Executable to be used to fetch URLs in `distfiles` during the `do_fetch` phase.
 
+- `changelog` An URL pointing to the upstream changelog. Raw text files are preferred.
+
 - `archs` Whitespace separated list of architectures that a package can be
 built for, available architectures can be found under `common/cross-profiles`.
 In general, `archs` should only be set if the upstream software explicitly targets
@@ -759,6 +761,10 @@ Examples:
 	archs="*"
 	```
 A special value `noarch` used to be available, but has since been removed.
+
+- `nocheckperms` If set, xbps-src will not fail on common permission errors (world writable files, etc.)
+
+- `nofixperms` If set, xbps-src will not fix common permission errors (executable manpages, etc.)
 
 <a id="explain_depends"></a>
 #### About the many types of `depends` variables
@@ -992,6 +998,10 @@ configure arguments can be specified via `cross_*_configure_args` where `*` is `
 `gcc_bootstrap` (early gcc), `gcc` (final gcc), `glibc` (or `musl`), `configure_args` is
 additionally passed to both early and final `gcc`. You can also specify custom `CFLAGS`
 and `LDFLAGS` for the libc as `cross_(glibc|musl)_(cflags|ldflags)`.
+
+- `zig-build` For packages using [Zig](https://ziglang.org)'s build
+system. Additional arguments may be passed to the `zig build` invocation using
+`configure_args`.
 
 For packages that use the Python module build method (`setup.py` or
 [PEP 517](https://www.python.org/dev/peps/pep-0517/)), you can choose one of the following:
@@ -2119,7 +2129,7 @@ a github pull request.
 To keep your forked repository always up to date, setup the `upstream` remote
 to pull in new changes:
 
-    $ git remote add upstream git://github.com/void-linux/void-packages.git
+    $ git remote add upstream https://github.com/void-linux/void-packages.git
     $ git pull --rebase upstream master
 
 <a id="help"></a>
