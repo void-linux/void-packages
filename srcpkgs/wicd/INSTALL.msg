@@ -1,9 +1,7 @@
-Please note that wicd does not require to have dhcpcd and/or
-wpa_supplicant services running at boot. If you are using them at
-boot, please disable them before using wicd. You can do that with:
+Please note that wicd requires that no other network management daemons (like
+dhcpcd or wpa_supplicant) are running. If you are using them, please disable
+them before using wicd. You can do that with:
 
-	# rm -f /var/service/{dhcpcd,wpa_supplicant}
+	# rm /var/service/<service>
 
-ATTENTION: to make wicd work for your user, it must be a member
-of the 'network' group. You may need 'kdesu' for privilege 
-elevation.
+NOTE: You may need a graphical sudo program like kdesu for privilege elevation.
