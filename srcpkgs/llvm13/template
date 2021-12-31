@@ -1,0 +1,423 @@
+# Template file for 'llvm13'
+pkgname=llvm13
+version=13.0.0
+revision=1
+wrksrc="llvm-project-${version}.src"
+build_wrksrc=llvm
+build_style=cmake
+configure_args="
+ -DCMAKE_BUILD_TYPE=Release -Wno-dev
+ -DENABLE_LINKER_BUILD_ID=YES
+ -DLLDB_USE_SYSTEM_SIX=YES
+ -DLIBCXX_CXX_ABI=libcxxabi
+ -DLIBCXX_ENABLE_STATIC_ABI_LIBRARY=YES
+ -DLIBCXXABI_USE_LLVM_UNWINDER=YES
+ -DLIBCXXABI_ENABLE_STATIC_UNWINDER=YES
+ -DLIBOMP_ENABLE_SHARED=YES
+ -DLIBOMP_INSTALL_ALIASES=NO
+ -DLLVM_INCLUDE_DOCS=YES
+ -DLLVM_BUILD_DOCS=YES
+ -DLLVM_ENABLE_SPHINX=YES
+ -DSPHINX_WARNINGS_AS_ERRORS=NO
+ -DLLVM_INSTALL_UTILS=YES
+ -DLLVM_BUILD_LLVM_DYLIB=YES
+ -DLLVM_LINK_LLVM_DYLIB=YES
+ -DLLVM_ENABLE_RTTI=YES
+ -DLLVM_ENABLE_FFI=YES
+ -DLLVM_BINUTILS_INCDIR=/usr/include"
+hostmakedepends="perl python3 zlib-devel libffi-devel swig python3-Sphinx
+ python3-recommonmark python3-sphinx-automodapi"
+makedepends="python3-devel zlib-devel elfutils-devel libffi-devel libedit-devel
+ libxml2-devel binutils-devel libatomic-devel"
+depends="libllvm13>=${version}_${revision}"
+short_desc="Low Level Virtual Machine"
+maintainer="q66 <daniel@octaforge.org>"
+license="Apache-2.0"
+homepage="https://www.llvm.org"
+distfiles="https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/llvm-project-${version}.src.tar.xz"
+checksum=6075ad30f1ac0e15f07c1bf062c1e1268c241d674f11bd32cdf0e040c71f2bf3
+lib32disabled=yes
+python_version=3
+
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	configure_args+=" -DLIBCXX_HAS_MUSL_LIBC=YES"
+	makedepends+=" libexecinfo-devel"
+	depends+=" libexecinfo-devel"
+fi
+
+# "operand out of range" assembler failures
+case "$XBPS_TARGET_MACHINE" in
+	ppc64*) ;;
+	ppc*) configure_args+=" -DCLANG_ENABLE_CLANGD=OFF" ;;
+esac
+
+_enabled_projects="clang;clang-tools-extra;compiler-rt;libcxx;libcxxabi;libunwind;lld"
+
+_lldb_enable=yes
+_libomp_enable=no
+
+case "$XBPS_TARGET_MACHINE" in
+	ppc64le*) ;;
+	ppc*|i686*) _lldb_enable=no ;;
+esac
+
+case "$XBPS_TARGET_MACHINE" in
+	x86_64*|aarch64*|ppc64*) _libomp_enable=yes;;
+esac
+
+subpackages="clang-tools-extra"
+
+# must go before clang
+if [ "$_libomp_enable" = "yes" ]; then
+	_enabled_projects+=";openmp"
+	subpackages+=" libomp libomp-devel"
+	# because of cmake nonsense referencing libomptarget.so.*
+	depends+=" libomp>=${version}_${revision}"
+fi
+
+subpackages+=" clang clang-analyzer libclang libclang-cpp
+ llvm-libunwind llvm-libunwind-devel libcxx libcxx-devel
+ libcxxabi libcxxabi-devel libllvm13"
+
+if [ "$_lldb_enable" = "yes" ]; then
+	# XXX fails to cross compile due to python
+	_enabled_projects+=";lldb"
+	subpackages+=" lldb lldb-devel"
+fi
+
+subpackages+=" lld lld-devel"
+
+configure_args+=" -DLLVM_ENABLE_PROJECTS=${_enabled_projects}"
+
+post_patch() {
+	if [ "$_lldb_enable" = "yes" ]; then
+		if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+			vsed -i 's|__ptrace_request|int|g' \
+				${wrksrc}/lldb/source/Plugins/Process/Linux/NativeProcessLinux.cpp
+		fi
+		# disable docs for lldb as they fail to generate
+		vsed -i '/add_subdirectory(docs)/d' \
+			${wrksrc}/lldb/CMakeLists.txt
+	fi
+
+	# update config.guess for better platform detection
+	cp $XBPS_COMMONDIR/environment/configure/automake/config.guess \
+		${wrksrc}/llvm/cmake
+
+	# fix linker failures on some archs
+	vsed -i 's,check_library_exists(gcc_s .*,set(LIBCXXABI_HAS_GCC_S_LIB ON),' \
+		${wrksrc}/libcxxabi/cmake/config-ix.cmake
+	vsed -i 's,check_library_exists(gcc .*,set(LIBCXXABI_HAS_GCC_LIB ON),' \
+		${wrksrc}/libcxxabi/cmake/config-ix.cmake
+
+	# need libssp_nonshared on some musl platforms (because of nodefaultlibs)
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*) ;;
+		ppc*-musl|i686-musl|mips*-musl)
+			vsed -i 's,^# Setup flags.$,add_library_flags(ssp_nonshared),' \
+				${wrksrc}/libunwind/src/CMakeLists.txt
+			vsed -i 's,^# Setup flags.$,add_library_flags(ssp_nonshared),' \
+				${wrksrc}/libcxxabi/src/CMakeLists.txt
+			vsed -i 's,#ssp,,' ${wrksrc}/libcxx/CMakeLists.txt
+			;;
+	esac
+
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64-musl) # some sanitizer currently only on x86_64 stuff needs backtrace
+			vsed -i 's,# Set common link flags.,list(APPEND SANITIZER_COMMON_LINK_LIBS execinfo),' \
+				${wrksrc}/compiler-rt/CMakeLists.txt
+			;;
+		arm*-musl|i686-musl) # sanitizer code is broken since it duplicates some libc bits
+			vsed -i 's/set(COMPILER_RT_HAS_SANITIZER_COMMON TRUE)/set(COMPILER_RT_HAS_SANITIZER_COMMON FALSE)/' \
+				${wrksrc}/compiler-rt/cmake/config-ix.cmake
+			;;
+	esac
+}
+
+pre_configure() {
+	local triplet
+
+	# Vastly reduce size of debugging symbols:
+	CFLAGS=${CFLAGS/ -g/ -g1}
+	CXXFLAGS=${CXXFLAGS/ -g/ -g1}
+
+	# since gcc9, the build likes to blow up for ppc32 apparently because
+	# of clang being too large for a 24-bit relative call to the PLT, so
+	# optimize for size instead
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*) ;;
+		mips*-musl|ppc*) configure_args+=" -DVOID_CXX_OPT_FLAGS=-Os" ;;
+	esac
+
+	if [ "$CROSS_BUILD" ]; then
+		msg_normal "Building host tblgen\n"
+		mkdir -p build/HOST
+		cd build/HOST
+		CC="$BUILD_CC" CXX="$BUILD_CXX" CFLAGS="$BUILD_CFLAGS" \
+			CXXFLAGS="$BUILD_CXXFLAGS" LDFLAGS="$BUILD_LDFLAGS" \
+			cmake ../.. -DCMAKE_BUILD_TYPE=Release \
+			-DLLVM_ENABLE_PROJECTS=${_enabled_projects}
+		make ${makejobs} -C utils/TableGen
+		make ${makejobs} -C tools/clang/utils/TableGen
+		[ "$_lldb_enable" = "yes" ] && make ${makejobs} -C tools/lldb/utils/TableGen
+		configure_args+=" -DLLVM_TABLEGEN=${wrksrc}/llvm/build/HOST/bin/llvm-tblgen"
+		configure_args+=" -DCLANG_TABLEGEN=${wrksrc}/llvm/build/HOST/bin/clang-tblgen"
+		[ "$_lldb_enable" = "yes" ] && configure_args+=" -DLLDB_TABLEGEN=${wrksrc}/llvm/build/HOST/bin/lldb-tblgen"
+		cd ../..
+	fi
+
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) _arch="X86";;
+		x86_64*) _arch="X86";;
+		armv5*) _arch="Armv5te";;
+		armv6*) _arch="Armv6";;
+		armv7*) _arch="Armv7";;
+		aarch64*) _arch="AArch64";;
+		mips*) _arch="Mips";;
+		ppc*) _arch="PowerPC";;
+		riscv64*) _arch="RISCV64";;
+	esac
+
+	triplet=${XBPS_CROSS_TRIPLET:-$XBPS_TRIPLET}
+
+	configure_args+=" -DLLVM_TARGET_ARCH=${_arch}"
+	configure_args+=" -DLLVM_HOST_TRIPLE=${triplet}"
+	configure_args+=" -DLLVM_DEFAULT_TARGET_TRIPLE=${triplet}"
+}
+
+do_install() {
+	cd build
+	cmake -DCMAKE_INSTALL_PREFIX=${DESTDIR}/usr -P cmake_install.cmake
+
+	# Required for multilib.
+	if [ "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		for _header in llvm-config; do
+			mv ${DESTDIR}/usr/include/llvm/Config/${_header}{,-64}.h
+			vinstall ${FILESDIR}/llvm-Config-${_header}.h 644 \
+				usr/include/llvm/Config ${_header}.h
+		done
+	fi
+
+	# Remove llvm-config-host in cross builds.
+	if [ "$CROSS_BUILD" ]; then
+		rm -f ${DESTDIR}/usr/bin/llvm-config-host
+	fi
+
+	# Install libcxxabi headers
+	vinstall ${wrksrc}/libcxxabi/include/__cxxabi_config.h 644 usr/include
+	vinstall ${wrksrc}/libcxxabi/include/cxxabi.h 644 usr/include
+
+	# Install libunwind headers
+	vinstall ${wrksrc}/libunwind/include/__libunwind_config.h 644 usr/include
+	vinstall ${wrksrc}/libunwind/include/libunwind.h 644 usr/include
+	vinstall ${wrksrc}/libunwind/include/unwind.h 644 usr/include
+	vinstall ${wrksrc}/libunwind/include/mach-o/compact_unwind_encoding.h \
+		644 usr/include/mach-o
+}
+
+clang-analyzer_package() {
+	pycompile_dirs="usr/share/scan-view"
+	depends="clang-${version}_${revision} python3 perl"
+	short_desc+=" - A source code analysis framework"
+	homepage="https://clang-analyzer.llvm.org/"
+	pkg_install() {
+		vmove usr/share/man/man1/scan-build.1
+		vmove "/usr/bin/scan-*"
+		vmove "/usr/share/scan-*"
+		vmove "/usr/libexec/*analyzer"
+	}
+}
+
+clang-tools-extra_package() {
+	lib32disabled=yes
+	depends="clang-${version}_${revision} python3"
+	short_desc+=" - Extra Clang tools"
+	homepage="https://clang.llvm.org/extra/"
+	pkg_install() {
+		vmove usr/include/clang-tidy
+		vmove usr/bin/clang-apply-replacements
+		vmove usr/bin/clang-query
+		vmove usr/bin/clang-rename
+		vmove usr/bin/clang-tidy
+		vmove usr/bin/diagtool
+		vmove usr/bin/find-all-symbols
+		vmove usr/bin/hmaptool
+		vmove usr/bin/modularize
+		vmove usr/bin/pp-trace
+		vmove usr/bin/sancov
+		vmove "usr/lib/libclangApplyReplacements*"
+		vmove "usr/lib/libclangQuery*"
+		vmove "usr/lib/libclangTidy*"
+		vmove "usr/share/clang/*tidy*"
+		vmove usr/share/doc/clang-tools
+		vmove usr/share/man/man1/extraclangtools.1
+		vmove usr/share/man/man1/diagtool.1
+	}
+}
+
+clang_package() {
+	lib32disabled=yes
+	depends="libstdc++-devel libgcc-devel  binutils ${XBPS_TARGET_LIBC}-devel
+	 libclang-${version}_${revision}"
+	short_desc+=" - C language family frontend"
+	homepage="https://clang.llvm.org/"
+	pkg_install() {
+		vmove usr/include/clang
+		vmove usr/include/clang-c
+		vmove "usr/bin/*clang*"
+		vmove usr/bin/c-index-test
+		vmove usr/lib/clang
+		vmove usr/lib/cmake/clang
+		vmove "usr/lib/libclang*.a"
+		vmove "usr/lib/libclang*.so"
+		vmove usr/share/clang
+		vmove usr/share/doc/clang
+		vmove usr/share/man/man1/clang.1
+	}
+}
+
+libclang_package() {
+	short_desc+=" - C frontend runtime library"
+	pkg_install() {
+		vmove "usr/lib/libclang.so.*"
+	}
+}
+
+libclang-cpp_package() {
+	short_desc+=" - C frontend runtime library (C++ interface)"
+	pkg_install() {
+		vmove "usr/lib/libclang-cpp.so.*"
+	}
+}
+
+lld_package() {
+	lib32disabled=yes
+	short_desc+=" - linker"
+	homepage="https://lld.llvm.org"
+	pkg_install() {
+		vmove usr/bin/lld*
+		vmove usr/bin/wasm-ld
+		vmove usr/bin/ld.lld*
+		vmove usr/bin/ld64.lld*
+		vmove usr/share/doc/lld
+	}
+}
+
+lld-devel_package() {
+	lib32disabled=yes
+	short_desc+=" - linker - development files"
+	homepage="https://lld.llvm.org"
+	depends="lld>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/include/lld
+		vmove usr/lib/cmake/lld
+		vmove "usr/lib/liblld*a"
+	}
+}
+
+lldb_package() {
+	lib32disabled=yes
+	depends+=" python3-six"
+	short_desc+=" - LLDB debugger"
+	homepage="https://lldb.llvm.org/"
+	pkg_install() {
+		vmove usr/bin/*lldb*
+		vmove usr/lib/liblldb*so.*
+		vmove /usr/lib/python*
+	}
+}
+
+lldb-devel_package() {
+	lib32disabled=yes
+	depends="lldb>=${version}_${revision}"
+	short_desc+=" - LLDB debugger - development files"
+	pkg_install() {
+		vmove usr/include/lldb
+		vmove "usr/lib/liblldb*.so"
+	}
+}
+
+llvm-libunwind_package() {
+	short_desc+=" - libunwind"
+	pkg_install() {
+		vmove "usr/lib/libunwind.so.*"
+	}
+}
+
+llvm-libunwind-devel_package() {
+	short_desc+=" - libunwind - development files"
+	depends="llvm-libunwind>=${version}_${revision}"
+	conflicts="libunwind-devel>=0"
+	pkg_install() {
+		vmove usr/lib/libunwind.so
+		vmove usr/lib/libunwind.a
+		vmove "usr/include/*unwind*"
+		vmove usr/include/mach-o
+		vmove usr/share/doc/libunwind
+	}
+}
+
+libcxxabi_package() {
+	short_desc+=" - low level support for libc++"
+	pkg_install() {
+		vmove "usr/lib/libc++abi.so.*"
+	}
+}
+
+libcxxabi-devel_package() {
+	short_desc+=" - low level support for libc++ - development files"
+	depends="libcxxabi>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/libc++abi.so
+		vmove usr/lib/libc++abi.a
+		vmove "usr/include/*cxxabi*"
+	}
+}
+
+libcxx_package() {
+	short_desc+=" - C++ standard library"
+	pkg_install() {
+		vmove "usr/lib/libc++.so.*"
+	}
+}
+
+libcxx-devel_package() {
+	short_desc+=" - C++ standard library - development files"
+	depends="libcxx>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/libc++.so
+		vmove usr/lib/libc++.a
+		vmove usr/lib/libc++experimental.a
+		vmove usr/include/c++
+		vmove usr/share/doc/libcxx
+	}
+}
+
+libomp_package() {
+	short_desc+=" - Clang OpenMP support library"
+	pkg_install() {
+		vmove usr/lib/libomp.so
+		vmove "usr/lib/libomptarget.rtl.*.so"
+		vmove usr/lib/libarcher.so
+	}
+}
+
+libomp-devel_package() {
+	short_desc+=" - Clang OpenMP support library - development files"
+	depends="libomp>=${version}_${revision}"
+	pkg_install() {
+		vmove "usr/lib/libomp*.so"
+		vmove "usr/lib/libarcher*"
+		vmove "usr/include/omp*.h"
+		vmove "usr/lib/clang/${version}/include/omp*.h"
+		vmove usr/share/man/man1/llvmopenmp.1
+		vmove usr/share/doc/openmp
+	}
+}
+
+libllvm13_package() {
+	short_desc+=" - runtime library"
+	pkg_install() {
+		vmove "usr/lib/libLLVM-*.so*"
+	}
+}
