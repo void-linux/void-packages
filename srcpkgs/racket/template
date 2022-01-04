@@ -1,10 +1,12 @@
 # Template file for 'racket'
 pkgname=racket
 version=8.3
-revision=1
+revision=2
+archs="aarch64* armv6* armv7* i686* x86_64*"
+wrksrc=${pkgname}-${version}
 build_wrksrc=src
 build_style=gnu-configure
-configure_args="--enable-useprefix --disable-docs"
+configure_args="--enable-useprefix"
 hostmakedepends="gsfonts"
 makedepends="sqlite-devel gtk+3-devel"
 depends="gtk+3 libssl1.1"
@@ -15,28 +17,40 @@ homepage="http://racket-lang.org/"
 distfiles="http://mirror.racket-lang.org/installers/${version}/${pkgname}-${version}-src.tgz"
 checksum=33dd0c20846c7c5fdf84af2dc250f765104ed33b5091be152a9f68f1e2541457
 nostrip=yes
-nocross=yes
 
 if [ "$CROSS_BUILD" ]; then
-	configure_args+=" --enable-racket=/usr/bin/racket"
+	_chezscheme_path="${XBPS_BUILDDIR}/${wrksrc}/${build_wrksrc}"
+
+	configure_args+=" --enable-racket=/usr/bin/racket
+ --enable-scheme=${_chezscheme_path}"
 	hostmakedepends+=" racket sqlite-devel"
+
+	# Build ChezScheme for the host so we can use it to build Racket
+	# Using "--enable-racket=auto" above selects the wrong compiler toolchain
+	pre_build() {
+		# Make sure we don't get lost
+		_correct_position=$(pwd)
+		cd ${_chezscheme_path}/ChezScheme
+
+		# If this builds the wrong arch, Racket's automatic
+		# arch detection for the ChezScheme build has failed.
+		# See <Racket sourcedir>/src/ChezScheme/IMPLEMENTATION.md "Build System"
+		# and <Racket sourcedir>/src/ChezScheme/s/cmacros.ss "define-machine-types"
+		# for the "machine-type" variable that needs to be passed to rktboot/main.rkt
+		racket rktboot/main.rkt
+		# Make sure Chez builds natively
+		env CC="gcc" \
+		    AR="ar" \
+		    ARFLAGS="rc" \
+		    RANLIB="ranlib" \
+		    CFLAGS="-m${XBPS_WORDSIZE} -O2 -D_REENTRANT -pthread" \
+		    -LDFLAGS="-Wl,-z,relro -Wl,-z,now -Wl,--as-needed -L/usr/lib -rdynamic" \
+		    ./configure --disable-curses --disable-x11
+		make
+
+		cd ${_correct_position}
+	}
 fi
-
-case "$XBPS_TARGET_MACHINE" in
-ppc*)
-	broken="hangs or segfaults";;
-*-musl)
-	makedepends+=" libucontext-devel";;
-esac
-
-pre_configure() {
-	case "$XBPS_TARGET_MACHINE" in
-	*-musl)
-		export CFLAGS+=" -D_GNU_SOURCE"
-		export LIBS+=" -lucontext"
-		;;
-	esac
-}
 
 post_install() {
 	vlicense LICENSE-libscheme.txt
@@ -47,9 +61,6 @@ racket-doc_package() {
 	short_desc+=" - documentation"
 	depends="racket>=${version}_${revision}"
 	pkg_install() {
-		# Remove once --disable-doc can be removed
-		echo "Documentation currently not available." \
-			> ${DESTDIR}/usr/share/doc/racket/no-doc.txt
 		vmove usr/share/doc/racket
 	}
 }
