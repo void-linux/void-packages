@@ -644,7 +644,7 @@ Example: `conf_files="/etc/foo.conf /etc/foo2.conf /etc/foo/*.conf"`.
 default all binaries are stripped.
 
 - `nostrip_files` White-space separated list of ELF binaries that won't be stripped of
-debugging symbols.
+debugging symbols. Files can be given by full path or by filename.
 
 - `noshlibprovides` If set, the ELF binaries won't be inspected to collect the provided
 sonames in shared libraries.
@@ -690,7 +690,7 @@ This appends to the generated file rather than replacing it.
   features (PIE, relro, etc). Not necessary for most packages.
 
 - `nopie_files` White-space seperated list of ELF binaries that won't be checked
-for PIE.
+for PIE. Files must be given by full path.
 
 - `reverts` xbps supports a unique feature which allows to downgrade from broken
 packages automatically. In the `reverts` field one can define a list of broken
