@@ -72,7 +72,7 @@ hook() {
 
 		fname=${f##*/}
 		for x in ${nostrip_files}; do
-			if [ "$x" = "$fname" ]; then
+			if [ "$x" = "$fname" -o "$x" = "${f#$PKGDESTDIR}" ]; then
 				found=1
 				break
 			fi
