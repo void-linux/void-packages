@@ -1,7 +1,7 @@
 # Template file for 'maxima'
 pkgname=maxima
 version=5.45.1
-revision=2
+revision=3
 build_style=gnu-configure
 configure_args="$(vopt_enable clisp) $(vopt_enable sbcl sbcl-exec) $(vopt_enable ecl)"
 hostmakedepends="python3 perl emacs texinfo patchelf"
@@ -15,14 +15,29 @@ homepage="http://maxima.sourceforge.net"
 distfiles="${SOURCEFORGE_SITE}/maxima/maxima-${version}.tar.gz"
 checksum=fe9016276970bef214a1a244348558644514d7fdfaa4fc8b9d0e87afcbb4e7dc
 
-nostrip=yes
-nopie=yes
+# maxima-sbcl is nopie and should NOT be stripped or it won't work
+nostrip_files=/usr/lib/maxima/$version/binary-sbcl/maxima
+nopie_files=/usr/lib/maxima/$version/binary-sbcl/maxima
+
+if [ "$build_option_sbcl" ]; then
+	# binary-sbcl/maxima uses libgmp but this won't show up in objdump
+	shlib_requires=libgmp.so.10
+fi
+
 build_options="clisp sbcl ecl"
 desc_option_clisp="Build with CLISP"
 desc_option_sbcl="Build with SBCL"
 desc_option_ecl="Build with ECL"
 build_options_default="sbcl ecl"
 vopt_conflict clisp sbcl
+
+post_configure() {
+	# do not rebuild these files if they exist
+	touch -c doc/info/*.html
+	touch -c doc/info/maxima.info*
+	touch -c doc/info/maxima_toc.html
+	touch -c interfaces/xmaxima/doc/xmaxima.html
+}
 
 post_build() {
 	if [ "$build_option_ecl" ]; then
@@ -38,13 +53,34 @@ post_build() {
 
 do_check() {
 	if [ "$build_option_ecl" ]; then
-		echo "Check that maxima.fas works"
-		ecl --eval "(require 'maxima \"src/binary-ecl/maxima.fas\")" \
-			--eval "(quit)"
+		echo "maxima-ecl: check that maxima.fas works (#34273)"
+		ecl --eval '(require :maxima "src/binary-ecl/maxima.fas")' \
+		    --eval '(quit)'
+		echo PASS
+		echo "maxima-ecl: check that unlimited heap-size works (#34861)"
+		./maxima-local -q -l ecl --batch-string=":lisp \
+			(ext:set-limit 'ext:heap-size 0)
+			showtime : true $
+			a : 10^(10^5) $
+			b : a^600 $
+			c : a^600 $
+			"
+		echo PASS
+	fi
+	if [ "$build_option_sbcl" ]; then
+		echo "maxima-sbcl: check that long arithmetic is fast (#34849)"
+		timeout -v 30s ./maxima-local -q -l sbcl --batch-string="
+			showtime : true $
+			a : 10^(10^5) $
+			b : a^1000 $
+			"
+		echo PASS
 	fi
 
-	# now run the testsuite
-	make ${makejobs} check
+	if [ "$XBPS_CHECK_PKGS" = full ]; then
+		# run the testsuite for all versions enabled
+		make ${makejobs} check
+	fi
 }
 
 post_install() {
