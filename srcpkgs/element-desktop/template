@@ -1,0 +1,96 @@
+# Template file for 'element-desktop'
+pkgname=element-desktop
+version=1.9.7
+revision=1
+wrksrc="element-web-${version}"
+conf_files="/etc/${pkgname}/config.json"
+hostmakedepends="git yarn nodejs rust cargo python3 curl
+ sqlcipher-devel libappindicator-devel libnotify-devel pkg-config
+ app-builder"
+makedepends="libsecret-devel"
+depends="c-ares ffmpeg gtk+3 http-parser libevent
+ libxslt minizip nss re2 snappy sqlcipher electron13"
+short_desc="Glossy Matrix collaboration client, desktop version"
+maintainer="projectmoon <projectmoon@agnos.is>"
+license="Apache-2.0"
+homepage="https://element.io"
+_ghpage="https://github.com/vector-im"
+_archive="archive/v${version}.tar.gz"
+distfiles="${_ghpage}/element-desktop/${_archive}>element-desktop.tar.gz
+ ${_ghpage}/element-web/${_archive}>element-web.tar.gz"
+checksum="1ee24d8c1f894ed66766d67dd5b6a5c2b1e6dcd1f866c9c49a4fd0108fd7a9e2
+ b3892acf206f866b571e2eb3dcc01c72c315d737c9d040d72405c066077d9e4c"
+
+patch_args="-Np1 -d ../${pkgname}-${version}"
+
+export USE_SYSTEM_APP_BUILDER=true
+
+pre_patch() {
+	ln -s ../element-web-${version}/0001-Fixes-compilation-on-a-bunch-of-targets.patch ../element-desktop-${version}/
+}
+
+pre_build() {
+	# since element 1.8.x it's necessary to force the npm arch
+	# to x86, otherwise it will fail in electron js stuff on
+	# platforms officially unsupported by electron (ppc64le...)
+	local carch=x64
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) carch=ia32 ;;
+	esac
+
+	# Build dependencies for element-web
+	npm_config_arch=$carch yarn install
+
+	# Build dependencies and alterations for element-desktop
+	cd ../element-desktop-${version}
+
+	# Disable auto-updating
+	vsed -i 's@https://packages.riot.im/desktop/update/@null@g' element.io/release/config.json
+	vsed -i 's/"target": "deb"/"target": "dir"/g' package.json
+	npm_config_arch=$carch yarn install
+}
+
+do_build() {
+	yarn build
+	cd ../element-desktop-${version}
+	if [ "$CROSS_BUILD" ]; then
+		yarn run build:native --target ${XBPS_CROSS_RUST_TARGET}
+	else
+		yarn run build:native
+	fi
+	# normally just "yarn run build" would be okay, but at least on ppc64
+	# we need to force x86_64 arch as electron-builder does not support
+	# ppc64 and fails on arch detection; ARM is supported so just use build
+	case "$XBPS_TARGET_MACHINE" in
+		x86_64*|ppc64*) yarn run build:64 ;;
+		i686*) yarn run build:32 ;;
+		*) yarn run build ;;
+	esac
+}
+
+do_install() {
+	vmkdir usr/lib/element-desktop
+	vmkdir etc/element-desktop
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) vcopy ../element-desktop-${version}/dist/linux-ia32-unpacked/resources /usr/lib/element-desktop/resources;;
+		*) vcopy ../element-desktop-${version}/dist/linux-unpacked/resources /usr/lib/element-desktop/resources
+	esac
+	vinstall config.sample.json 644 /etc/element-desktop/ config.json
+	vcopy webapp /usr/lib/element-desktop/resources
+	ln -s /etc/element-desktop/config.json $DESTDIR/usr/lib/element-desktop/resources/webapp/config.json
+
+	vbin ${FILESDIR}/element-desktop
+	ln -s element-desktop $DESTDIR/usr/bin/riot-desktop
+	vinstall ${FILESDIR}/element-desktop.desktop 644 /usr/share/applications/ element-desktop.desktop
+	vinstall webapp/themes/element/img/logos/element-logo.svg 644 /usr/share/icons/hicolor/scalable/apps/ element.svg
+
+	for i in 16 24 48 64 96 128 256 512; do
+		vinstall ../element-desktop-${version}/build/icons/${i}x${i}.png 644 /usr/share/icons/hicolor/${i}x${i}/apps/ element.png
+	done
+}
+
+riot-desktop_package() {
+	depends="element-desktop"
+	short_desc+=" (transitional dummy package)"
+	build_style=meta
+}

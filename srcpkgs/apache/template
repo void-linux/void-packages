@@ -1,0 +1,155 @@
+# Template file for 'apache'
+pkgname=apache
+version=2.4.52
+revision=1
+wrksrc="httpd-${version}"
+build_style=gnu-configure
+configure_args="--prefix= --sbindir=/usr/bin --enable-pie --enable-modules=all
+ --enable-mods-shared=all --enable-authn-dbm --enable-authn-anon
+ --enable-authn-dbd --enable-authn-alias --enable-authz-dbm --enable-http2
+ --enable-authz-owner --enable-authnz-ldap --enable-auth-digest -enable-isapi
+ --enable-file-cache --enable-cache --enable-disk-cache --enable-mem-cache
+ --enable-dbd --enable-bucketeer --enable-dumpio --enable-echo --enable-reqtimeout
+ --enable-ext-filter --enable-substitute --enable-deflate --enable-charset-lite
+ --enable-ldap --enable-log-forensic --enable-logio --enable-mime-magic
+ --enable-cern-meta --enable-expires --enable-headers --enable-ident
+ --enable-usertrack --enable-unique-id --enable-proxy --enable-proxy-connect
+ --enable-proxy-ftp --enable-proxy-http --enable-proxy-scgi --enable-proxy-ajp
+ --enable-proxy-balancer --enable-ssl --enable-http --enable-speling
+ --enable-dav --enable-info --enable-cgi --enable-cgid --enable-dav-fs
+ --enable-dav-lock --enable-vhost-alias --enable-imagemap --enable-so
+ --enable-rewrite --enable-layout=XBPS --sysconfdir=/etc/${pkgname}
+ --enable-mpms-shared=all --with-pcre=${XBPS_CROSS_BASE}/usr
+ --with-z=${XBPS_CROSS_BASE}/usr"
+conf_files="
+	/etc/${pkgname}/extra/*.conf
+	/etc/${pkgname}/httpd.conf
+	/etc/${pkgname}/magic
+	/etc/${pkgname}/mime.types"
+hostmakedepends="pkg-config perl apr-util-devel"
+makedepends="zlib-devel libuuid-devel pcre-devel nghttp2-devel
+ openssl-devel db-devel gdbm-devel expat-devel libldap-devel apr-util-devel"
+depends="apache-htpasswd"
+short_desc="Apache http server"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="Apache-2.0"
+homepage="http://httpd.apache.org/"
+changelog="http://www.apache.org/dist/httpd/CHANGES_2.4"
+distfiles="https://dlcdn.apache.org/httpd/httpd-${version}.tar.bz2"
+checksum=0127f7dc497e9983e9c51474bed75e45607f2f870a7675a86dc90af6d572f5c9
+
+system_accounts="_apache"
+_apache_homedir="/srv/www/$pkgname"
+
+make_dirs="
+ /srv/www/apache 0755 _apache _apache
+ /var/log/httpd 0755 _apache _apache"
+
+# Do not redefine struct iovec in include/apr_want.h
+CFLAGS="-DAPR_IOVEC_DEFINED=1 -I${XBPS_CROSS_BASE}/usr/include/apr-1"
+
+if [ "$CROSS_BUILD" ]; then
+	# FIXME: is sizeof(void*) ever less than sizeof(long)?
+	export ap_cv_void_ptr_lt_long=no
+	# This is missing in cross compiled apr-1-config (?)
+	LDFLAGS="-pthread"
+fi
+
+pre_configure() {
+	# set default user
+	sed -e 's#User daemon#User _apache#' \
+		-e 's#Group daemon#Group _apache#' \
+		-i docs/conf/httpd.conf.in
+
+	cat ${FILESDIR}/xbps.layout >> config.layout
+	if [ "$CROSS_BUILD" ]; then
+		configure_args+=" --with-apr=$XBPS_WRAPPERDIR/apr-1-config
+		 --with-apr-util=$XBPS_WRAPPERDIR/apu-1-config"
+	else
+		configure_args+=" --with-apr=/usr/bin/apr-1-config
+		 --with-apr-util=/usr/bin/apu-1-config"
+	fi
+}
+
+post_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		# Build gen_test_char using $BUILD_CC
+		sed -i server/Makefile \
+			-e "s;\$(LINK) \$(EXTRA_LDFLAGS) \$(\(gen_test_char\).*;${BUILD_CC} -o \1 \1.c -I${XBPS_CROSS_BASE}/usr/include/apr-1;"
+		# More hacks to make cross compiling work
+		sed -i build/*.mk Makefile */Makefile \
+			-e "s;--mode=compile;& --tag=CC;" \
+			-e "s;--mode=link;& --tag=CC;" \
+			-e "s;-\(L|R\)/usr/lib;-\1${XBPS_CROSS_BASE}/usr/lib;" \
+			-e "s;^\(LIBTOOL =\) /usr/share/apr-1/build/libtool;\1 ${XBPS_CROSS_BASE}/usr/bin/libtool;"
+	fi
+}
+
+post_install() {
+	# Set a working ServerRoot
+	#
+	# Load modules:
+	#  * mod_include.so
+	#  * mod_slotmem_shm.so
+	#  * mod_negotiation.so
+	#  * mod_userdir.so
+	#
+	# Avoid loading modules:
+	#  * mod_unique_id.so
+	#
+	# Set and enable ServerName to 127.0.0.1.
+	#
+	# include extras:
+	#  * httpd-multilang-errordoc.conf
+	#  * httpd-autoindex.conf
+	#  * httpd-languages.conf
+	#  * httpd-userdir.conf
+	#  * httpd-default.conf
+	#
+	sed \
+		-e 's|ServerRoot ""|ServerRoot "/srv/www/apache"|' \
+		-e 's|#\(LoadModule include_module /usr/libexec/httpd/mod_include.so\)|\1|' \
+		-e 's|\(LoadModule unique_id_module /usr/libexec/httpd/mod_unique_id.so\)|#\1|' \
+		-e 's|#\(LoadModule slotmem_shm_module /usr/libexec/httpd/mod_slotmem_shm.so\)|\1|' \
+		-e 's|#\(LoadModule negotiation_module /usr/libexec/httpd/mod_negotiation.so\)|\1|' \
+		-e 's|#\(LoadModule userdir_module /usr/libexec/httpd/mod_userdir.so\)|\1|' \
+		-e 's|#ServerName www.example.com:80|ServerName 127.0.0.1:80|' \
+		-e 's|#\(Include /etc/apache/extra/httpd-multilang-errordoc.conf\)|\1|' \
+		-e 's|#\(Include /etc/apache/extra/httpd-autoindex.conf\)|\1|' \
+		-e 's|#\(Include /etc/apache/extra/httpd-languages.conf\)|\1|' \
+		-e 's|#\(Include /etc/apache/extra/httpd-userdir.conf\)|\1|' \
+		-e 's|#\(Include /etc/apache/extra/httpd-default.conf\)|\1|' \
+		-i "${DESTDIR}/etc/apache/httpd.conf"
+
+	# Remove references to hardening -specs.
+	sed -e "s|\(-specs=.*hardened-ld\)||g" -e "s|\(-specs=.*hardened-cc1\)||g" -i \
+		${DESTDIR}/usr/share/apache/webroot/build/config{.nice,_vars.mk}
+
+	# Remove unused stuff.
+	vmkdir usr/share/apache/webroot
+	mv ${DESTDIR}/srv/www/$pkgname/cgi-bin ${DESTDIR}/usr/share/apache/webroot
+	rm -rf ${DESTDIR}/srv
+	rm -rf ${DESTDIR}/etc/$pkgname/original
+
+	vinstall ${FILESDIR}/apache.logrotate 644 etc/logrotate.d apache
+	vsv apache
+}
+
+apache-htpasswd_package() {
+	short_desc+=" - htpasswd"
+	pkg_install() {
+		vmove usr/bin/htpasswd
+		vmove usr/share/man/man1/htpasswd.1
+	}
+}
+
+apache-devel_package() {
+	depends="apr-devel apr-util-devel perl"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/share/apache/webroot/build
+		vmove usr/bin/apxs
+		vmove "usr/share/man/man1/apxs*"
+	}
+}

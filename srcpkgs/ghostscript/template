@@ -1,0 +1,105 @@
+# Template file for 'ghostscript'
+pkgname=ghostscript
+version=9.54.0
+revision=2
+hostmakedepends="automake libtool pkg-config"
+makedepends="$(vopt_if cups cups-devel) dbus-devel fontconfig-devel jasper-devel jbig2dec-devel
+ lcms2-devel libXext-devel libXt-devel libopenjpeg2-devel libpaper-devel"
+depends="gsfonts"
+short_desc="Interpreter for the PostScript language"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="AGPL-3.0-or-later, CPL-1.0"
+homepage="https://www.ghostscript.com/"
+distfiles="https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs${version//./}/ghostscript-${version}.tar.xz"
+checksum=c2b7b43cde600f4e70efb2cd95865f6d884a67315c3de235914697d8ccde6e3b
+
+build_options="cups"
+build_options_default="cups"
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" ${makedepends}"
+fi
+
+pre_configure() {
+	# force it to use system libs.
+	rm -rf $(vopt_if cups cups/libs) freetype jbig2dec jpeg lcms2mt libpng openjpeg tiff zlib
+
+	# add missing LDFLAGS
+	sed -i 's/-L$(BINDIR)/& $(LDFLAGS)/g' base/unix-dll.mak
+
+	cd ijs
+	autoreconf -fi
+}
+
+do_configure() {
+	cd ${wrksrc}
+	# configure ghostscript
+	if [ "$CROSS_BUILD" ]; then
+		export CCAUX=cc CFLAGSAUX=${XBPS_CFLAGS}
+		export CUPSCONFIG=/usr/bin/cups-config
+	fi
+	./configure ${configure_args} --enable-dynamic --with-ijs \
+		--with-jbig2dec --with-omni --with-x --with-drivers=ALL \
+		--with-fontpath=/usr/share/fonts/Type1:/usr/share/fonts \
+		--enable-fontconfig --enable-freetype --enable-openjpeg \
+		--with-libpaper --without-luratech --without-omni \
+		--with-system-libtiff --disable-compile-inits $(vopt_enable cups)
+
+	# configure libijs
+	cd ijs
+	./configure ${configure_args} --enable-shared --disable-static
+}
+
+do_build() {
+	# build ghostscript
+	make ${makejobs}
+	make ${makejobs} so
+	# build libijs
+	cd ijs
+	make ${makejobs}
+}
+
+do_install() {
+	# install ghostscript
+	make DESTDIR=${DESTDIR} $(vopt_if cups 'cups_serverroot=${DESTDIR}/etc/cups cups_serverbin=${DESTDIR}/usr/lib/cups') install install-so
+	# install license
+	vlicense LICENSE
+
+	# remove unwanted localized man-pages
+	rm -rf ${DESTDIR}/usr/share/man/[^man1]*
+
+	# install libijs
+	cd ijs
+	make DESTDIR=${DESTDIR} install
+
+	# Remove conflicting files with cups-filters.
+	$(vopt_if cups 'rm -f ${DESTDIR}/usr/lib/cups/filter/{gstopxl,gstoraster}')
+
+	cd ..
+	# Install missing file
+	vinstall base/gserrors.h 644 usr/include/ghostscript
+}
+
+
+libgs_package() {
+	short_desc+=" - runtime shared library"
+	pkg_install() {
+		vmove "usr/lib/libgs.so*"
+	}
+}
+
+libijs_package() {
+	short_desc+=" - IJS runtime shared library"
+	pkg_install() {
+		vmove "usr/lib/libijs*"
+	}
+}
+
+ghostscript-devel_package() {
+	depends="libijs>=${version}_${revision} libgs>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/pkgconfig
+	}
+}

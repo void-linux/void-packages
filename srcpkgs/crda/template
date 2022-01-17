@@ -1,0 +1,59 @@
+# Template file for 'crda'
+pkgname=crda
+version=4.14
+revision=2
+_dbname=wireless-regdb
+_dbversion=2020.11.20
+_dbsrc="${XBPS_BUILDDIR}/${_dbname}-${_dbversion}/"
+hostmakedepends="openssl python3-M2Crypto pkg-config"
+makedepends="libnl-devel libgcrypt-devel"
+depends="iw"
+short_desc="Central Regulatory Domain Agent for wireless networks"
+maintainer="Andrea Brancaleoni <abc@pompel.me>"
+license="ISC"
+homepage="https://wireless.wiki.kernel.org/en/developers/regulatory/crda"
+distfiles="https://git.kernel.org/pub/scm/linux/kernel/git/mcgrof/crda.git/snapshot/${pkgname}-${version}.tar.gz
+https://www.kernel.org/pub/software/network/wireless-regdb/${_dbname}-${_dbversion}.tar.xz"
+checksum="5a8f35bb8b27474f466b0e75d451ba917433d8aab1889678a64d9c4e72a8b8c2
+ b4164490d82ff7b0086e812ac42ab27baf57be24324d4c0ee1c5dd6ba27f2a52"
+conf_files="/etc/wireless-regdom.conf"
+
+build_options="wardrive"
+desc_option_wardrive="Disable CRDA checks for wardriving competitions"
+
+post_extract() {
+	if [ "$build_option_wardrive" ]; then
+		sed -i 's/([0-9][0-9])/(33)/g' ${_dbsrc}/db.txt # Max 2W =~ 33dBm
+	fi
+}
+
+do_build() {
+	CFLAGS+=" -Wno-unused-const-variable"
+	cd ${_dbsrc}
+	cp *.pub.pem ${wrksrc}/pubkeys
+
+	cd ${wrksrc}
+	make CC="$CC" all_noverify
+}
+
+do_install() {
+	make DESTDIR="${DESTDIR}" SBINDIR="/usr/bin/" UDEV_RULE_DIR="/usr/lib/udev/rules.d/" install
+	vlicense LICENSE crda.LICENSE
+
+	cd ${_dbsrc}
+	make DESTDIR="${DESTDIR}" FIRMWARE_PATH="/usr/lib/firmware" install
+	vlicense LICENSE wireless-regdb.LICENSE
+
+	vmkdir etc/conf.d/
+
+	for dom in $(grep ^country db.txt | cut -d' ' -f2 | sed 's|:||g'); do
+		echo "#WIRELESS_REGDOM=\"${dom}\"" >> ${DESTDIR}/etc/wireless-regdom.tmp
+	done
+	sort -u ${DESTDIR}/etc/wireless-regdom.tmp >> ${DESTDIR}/etc/wireless-regdom.conf
+	rm ${DESTDIR}/etc/wireless-regdom.tmp
+
+	vbin ${FILESDIR}/set-wireless-regdom
+	echo 'ACTION=="add", SUBSYSTEM=="module", DEVPATH=="/module/cfg80211", RUN+="/usr/bin/set-wireless-regdom"' >> ${DESTDIR}/usr/lib/udev/rules.d/85-regulatory.rules
+
+	find ${DESTDIR} -type f -name \*.h -delete # No need for devel files, no package i know uses libreg.so
+}

@@ -1,0 +1,88 @@
+From e7046d564a6f76c1af8f5640ac9c569e07284ec0 Mon Sep 17 00:00:00 2001
+From: Bastien Nocera <hadess@hadess.net>
+Date: Fri, 18 Sep 2020 12:06:45 +0200
+Subject: [PATCH] Fix infinite loop if thumbnailer is not available
+
+The code in cheese_thumb_view_idle_append_item() in
+src/thumbview/cheese-thumb-view.c didn't pop the list of items to
+thumbnail if thumbnailing failed.
+
+ #0  0x00007f4a60e55314 in open64 () at /lib64/libc.so.6
+ #1  0x00007f4a60de6386 in _IO_file_open () at /lib64/libc.so.6
+ #2  0x00007f4a60de655a in __GI__IO_file_fopen () at /lib64/libc.so.6
+ #3  0x00007f4a60dd9aad in __fopen_internal () at /lib64/libc.so.6
+ #4  0x00007f4a6157a43f in gdk_pixbuf_new_from_file () at /lib64/libgdk_pixbuf-2.0.so.0
+ #5  0x00007f4a61e84b3a in gnome_desktop_thumbnail_factory_lookup () at /lib64/libgnome-desktop-3.so.19
+ #6  0x000055cef476046f in cheese_thumb_view_idle_append_item ()
+ #7  0x00007f4a6124f47b in g_idle_dispatch () at /lib64/libglib-2.0.so.0
+ #8  0x00007f4a612537af in g_main_context_dispatch () at /lib64/libglib-2.0.so.0
+ #9  0x00007f4a61253b38 in g_main_context_iterate.constprop () at /lib64/libglib-2.0.so.0
+ #10 0x00007f4a61253c03 in g_main_context_iteration () at /lib64/libglib-2.0.so.0
+ #11 0x00007f4a6146a7ca in g_application_run () at /lib64/libgio-2.0.so.0
+ #12 0x000055cef4758547 in _vala_main ()
+ #13 0x00007f4a60d8a042 in __libc_start_main () at /lib64/libc.so.6
+ #14 0x000055cef47554be in _start ()
+
+ #0  0x00007f4a60ec562d in __strlen_avx2 () at /lib64/libc.so.6
+ #1  0x00007f4a61275de8 in g_str_has_suffix () at /lib64/libglib-2.0.so.0
+ #2  0x00007f4a618c0072 in icon_name_is_symbolic () at /lib64/libgtk-3.so.0
+ #3  0x00007f4a618c00b1 in theme_dir_get_icon_suffix () at /lib64/libgtk-3.so.0
+ #4  0x00007f4a618c32ed in theme_lookup_icon () at /lib64/libgtk-3.so.0
+ #5  0x00007f4a618c3adf in real_choose_icon () at /lib64/libgtk-3.so.0
+ #6  0x00007f4a618c4762 in gtk_icon_theme_lookup_icon_for_scale () at /lib64/libgtk-3.so.0
+ #7  0x00007f4a618c5105 in gtk_icon_theme_load_icon_for_scale () at /lib64/libgtk-3.so.0
+ #8  0x000055cef47605c9 in cheese_thumb_view_idle_append_item ()
+ #9  0x00007f4a6124f47b in g_idle_dispatch () at /lib64/libglib-2.0.so.0
+ #10 0x00007f4a612537af in g_main_context_dispatch () at /lib64/libglib-2.0.so.0
+ #11 0x00007f4a61253b38 in g_main_context_iterate.constprop () at /lib64/libglib-2.0.so.0
+ #12 0x00007f4a61253c03 in g_main_context_iteration () at /lib64/libglib-2.0.so.0
+ #13 0x00007f4a6146a7d8 in g_application_run () at /lib64/libgio-2.0.so.0
+ #14 0x000055cef4758547 in _vala_main ()
+ #15 0x00007f4a60d8a042 in __libc_start_main () at /lib64/libc.so.6
+ #16 0x000055cef47554be in _start ()
+
+Closes: #81
+---
+ src/thumbview/cheese-thumb-view.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/thumbview/cheese-thumb-view.c b/src/thumbview/cheese-thumb-view.c
+index 1d2d88f5..232fd4b6 100644
+--- a/src/thumbview/cheese-thumb-view.c
++++ b/src/thumbview/cheese-thumb-view.c
+@@ -92,7 +92,7 @@ GtkWidget * cheese_thumb_view_new (void);
+ static gboolean
+ cheese_thumb_view_idle_append_item (gpointer data)
+ {
+-  CheeseThumbViewIdleData *item = g_queue_peek_head (data);
++  CheeseThumbViewIdleData *item = g_queue_pop_head (data);
+   CheeseThumbView         *thumb_view;
+   CheeseThumbViewPrivate  *priv;
+ 
+@@ -119,6 +119,7 @@ cheese_thumb_view_idle_append_item (gpointer data)
+   if (!info)
+   {
+     g_warning ("Invalid filename\n");
++    g_slice_free (CheeseThumbViewIdleData, item);
+     return TRUE;
+   }
+   g_file_info_get_modification_time (info, &mtime);
+@@ -167,6 +168,7 @@ cheese_thumb_view_idle_append_item (gpointer data)
+     if (error)
+     {
+       g_warning ("%s", error->message);
++      g_slice_free (CheeseThumbViewIdleData, item);
+       return TRUE;
+     }
+   }
+@@ -183,7 +185,6 @@ cheese_thumb_view_idle_append_item (gpointer data)
+   g_object_unref (pixbuf);
+   g_object_unref (file);
+   g_slice_free (CheeseThumbViewIdleData, item);
+-  g_queue_pop_head (data);
+ 
+   return TRUE;
+ }
+-- 
+GitLab
+

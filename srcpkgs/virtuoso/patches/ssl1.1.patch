@@ -1,0 +1,1400 @@
+Description: Fix FTBFS with openssl 1.1
+Author: Sebastian Andrzej Siewior <sebastian@breakpoint.cc>
+Bug-Debian: https://bugs.debian.org/828594
+Forwarded: https://github.com/openlink/virtuoso-opensource/pull/583
+Last-Update: Mo 11. Feb 13:50:17 CET 2019 (by Andreas Tille <tille@debian.org>)
+
+---
+
+From 823092cccbd8e2ab9bfad6c3d3df791a7ffa76fc Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <sebastian@breakpoint.cc>
+Date: Mon, 5 Sep 2016 10:49:54 +0000
+Subject: [PATCH] virtuoso-opensource: build against openssl 1.1.0
+
+Signed-off-by: Sebastian Andrzej Siewior <sebastian@breakpoint.cc>
+---
+ libsrc/Dk/Dkernel.c      |   6 +-
+ libsrc/Wi/bif_crypto.c   | 120 ++++++++++--------
+ libsrc/Wi/http.c         |   2 +-
+ libsrc/Wi/xmlenc.c       | 319 +++++++++++++++++++++++++++--------------------
+ libsrc/Wi/xmlenc.h       | 193 ++++++++++++++++++++++++++--
+ libsrc/Wi/xmlenc_algos.c | 132 +++++++++++---------
+ libsrc/util/sslengine.c  |   6 +-
+ 7 files changed, 524 insertions(+), 254 deletions(-)
+
+--- a/libsrc/Wi/bif_crypto.c
++++ b/libsrc/Wi/bif_crypto.c
+@@ -181,21 +181,26 @@ box_hmac (caddr_t box, caddr_t key, int
+   unsigned char temp[EVP_MAX_MD_SIZE];
+   unsigned int size = 0;
+   caddr_t res = NULL;
+-  HMAC_CTX ctx;
++  HMAC_CTX *ctx;
+   const EVP_MD *md = EVP_sha1 ();
+ 
+   if (alg == 1)
+     md = EVP_ripemd160 ();
+ 
+-  HMAC_Init (&ctx, key, box_length (key) - DV_STRINGP (key) ? 1 : 0, md);
+-  box_hmac_1 (box, &ctx);
+-  HMAC_Final (&ctx, temp, &size);
++  ctx = HMAC_CTX_new();
++  if (!ctx)
++	  return res;
++
++  HMAC_Init_ex (ctx, key, box_length (key) - DV_STRINGP (key) ? 1 : 0, md, NULL);
++  box_hmac_1 (box, ctx);
++  HMAC_Final (ctx, temp, &size);
+   if (size)
+     {
+       res = dk_alloc_box (size + 1, DV_SHORT_STRING);
+       memcpy (res, temp, size);
+       res[size] = 0;
+     }
++  HMAC_CTX_free(ctx);
+   return res;
+ }
+ 
+@@ -347,14 +352,12 @@ asn1_parse_to_xml (BIO * bp, unsigned ch
+ 	    {
+ 	      int ii;
+ 
+-	      opp = op;
+-	      ii = d2i_ASN1_BOOLEAN (NULL, (const unsigned char **)&opp, len + hl);
+-	      if (ii < 0)
++	      if (len + hl < 1)
+ 		{
+ 		  if (BIO_write (bp, "Bad boolean\n", 12))
+ 		    goto end;
+ 		}
+-	      BIO_printf (bp, "%d", ii);
++	      BIO_printf (bp, "%d", p[0]);
+ 	    }
+ 	  else if (tag == V_ASN1_BMPSTRING)
+ 	    {
+@@ -415,7 +418,7 @@ asn1_parse_to_xml (BIO * bp, unsigned ch
+ 		}
+ 	      if (os != NULL)
+ 		{
+-		  M_ASN1_OCTET_STRING_free (os);
++		  ASN1_STRING_free (os);
+ 		  os = NULL;
+ 		}
+ 	    }
+@@ -448,7 +451,7 @@ asn1_parse_to_xml (BIO * bp, unsigned ch
+ 		  if (BIO_write (bp, "BAD INTEGER", 11) <= 0)
+ 		    goto end;
+ 		}
+-	      M_ASN1_INTEGER_free (bs);
++	      ASN1_STRING_free (bs);
+ 	    }
+ 	  else if (tag == V_ASN1_ENUMERATED)
+ 	    {
+@@ -479,7 +482,7 @@ asn1_parse_to_xml (BIO * bp, unsigned ch
+ 		  if (BIO_write (bp, "BAD ENUMERATED", 11) <= 0)
+ 		    goto end;
+ 		}
+-	      M_ASN1_ENUMERATED_free (bs);
++	      ASN1_STRING_free (bs);
+ 	    }
+ 	  else if (len > 0 && dump)
+ 	    {
+@@ -515,7 +518,7 @@ end:
+   if (o != NULL)
+     ASN1_OBJECT_free (o);
+   if (os != NULL)
+-    M_ASN1_OCTET_STRING_free (os);
++    ASN1_STRING_free (os);
+   *pp = p;
+   return (ret);
+ }
+@@ -723,7 +726,7 @@ bio_to_strses (BIO * out_bio)
+   int len = BIO_get_mem_data (out_bio, &ptr);
+   int to_read = len, readed = 0;
+ 
+-  to_free = ((BUF_MEM *) out_bio->ptr)->data;
++  to_free = ((BUF_MEM *) BIO_get_data(out_bio))->data;
+   BIO_set_flags (out_bio, BIO_FLAGS_MEM_RDONLY);
+   CATCH_WRITE_FAIL (ses)
+     {
+@@ -735,7 +738,7 @@ bio_to_strses (BIO * out_bio)
+       } while (to_read > 0);
+     }
+   END_WRITE_FAIL (ses);
+-  ((BUF_MEM *) out_bio->ptr)->data = to_free;
++  ((BUF_MEM *) BIO_get_data(out_bio))->data = to_free;
+   BIO_clear_flags (out_bio, BIO_FLAGS_MEM_RDONLY);
+   return ses;
+ }
+@@ -770,7 +773,7 @@ bif_smime_verify (caddr_t * qst, caddr_t
+   if (DV_TYPE_OF (msg) == DV_STRING_SESSION)
+     {
+       in_bio = strses_to_bio ((dk_session_t *) msg);
+-      to_free = ((BUF_MEM *) in_bio->ptr)->data;
++      to_free = ((BUF_MEM *) BIO_get_data(in_bio))->data;
+       BIO_set_flags (in_bio, BIO_FLAGS_MEM_RDONLY);
+     }
+   else
+@@ -780,7 +783,7 @@ bif_smime_verify (caddr_t * qst, caddr_t
+       p7 = SMIME_read_PKCS7 (in_bio, &data_bio);
+       if (to_free)
+ 	{
+-	  ((BUF_MEM *) in_bio->ptr)->data = to_free;
++	  ((BUF_MEM *) BIO_get_data(in_bio))->data = to_free;
+ 	  BIO_clear_flags (in_bio, BIO_FLAGS_MEM_RDONLY);
+ 	}
+       BIO_free (in_bio);
+@@ -924,16 +927,20 @@ bif_smime_sign (caddr_t * qst, caddr_t *
+     }
+ 
+   certs = sk_X509_new_null ();
+-  if (store && store->objs)
++
++  if (store && X509_STORE_get0_objects(store))
+     {
+-      for (inx = 0; inx < sk_X509_OBJECT_num (store->objs); inx++)
++      STACK_OF(X509_OBJECT) *store_objs = X509_STORE_get0_objects(store);
++
++      for (inx = 0; inx < sk_X509_OBJECT_num (store_objs); inx++)
+ 	{
+-	  X509_OBJECT *obj = sk_X509_OBJECT_value (store->objs, inx);
+-	  if (obj->type == X509_LU_X509)
+-	    sk_X509_push (certs, X509_dup (obj->data.x509));
++	  X509_OBJECT *obj = sk_X509_OBJECT_value (store_objs, inx);
++	  if (X509_OBJECT_get_type(obj) == X509_LU_X509)
++	    sk_X509_push (certs, X509_dup (X509_OBJECT_get0_X509(obj)));
+ 	}
+ 
+     }
++
+   if (store)
+     X509_STORE_free (store);
+   in_bio = BIO_new_mem_buf (msg, box_length (msg) - 1);
+@@ -1005,15 +1012,19 @@ bif_smime_encrypt (caddr_t * qst, caddr_
+     sqlr_new_error ("42000", "CR006", "No recipient certificates");
+ 
+   certs = sk_X509_new_null ();
+-  if (store && store->objs)
++
++  if (store && X509_STORE_get0_objects(store))
+     {
+-      for (inx = 0; inx < sk_X509_OBJECT_num (store->objs); inx++)
++      STACK_OF(X509_OBJECT) *store_objs = X509_STORE_get0_objects(store);
++
++      for (inx = 0; inx < sk_X509_OBJECT_num (store_objs); inx++)
+ 	{
+-	  X509_OBJECT *obj = sk_X509_OBJECT_value (store->objs, inx);
+-	  if (obj->type == X509_LU_X509)
+-	    sk_X509_push (certs, X509_dup (obj->data.x509));
++	  X509_OBJECT *obj = sk_X509_OBJECT_value (store_objs, inx);
++	  if (X509_OBJECT_get_type(obj) == X509_LU_X509)
++	    sk_X509_push (certs, X509_dup (X509_OBJECT_get0_X509(obj)));
+ 	}
+     }
++
+   if (store)
+     X509_STORE_free (store);
+   in_bio = BIO_new_mem_buf (msg, box_length (msg) - 1);
+@@ -1181,7 +1192,7 @@ x509_certificate_verify_cb (int ok, X509
+   char *opts = (char *) X509_STORE_CTX_get_app_data (ctx);
+   if (!ok && opts)
+     {
+-      switch (ctx->error)
++      switch (X509_STORE_CTX_get_error(ctx))
+ 	{
+ 	case X509_V_ERR_CERT_HAS_EXPIRED:
+ 	  if (strstr (opts, "expired"))
+@@ -1287,7 +1298,7 @@ bif_x509_certificate_verify (caddr_t * q
+   if (!i)
+     {
+       const char *err_str;
+-      err_str = X509_verify_cert_error_string (csc->error);
++      err_str = X509_verify_cert_error_string (X509_STORE_CTX_get_error(csc));
+       *err_ret = srv_make_new_error ("22023", "CR015", "X509 error: %s", err_str);
+     }
+ 
+@@ -1308,20 +1319,16 @@ err_ret:
+ #define VIRT_CERT_EXT "2.16.840.1.1113.1"
+ 
+ static caddr_t
+-BN_box (BIGNUM * x)
++BN_box (const BIGNUM *x)
+ {
+   size_t buf_len, n;
+   caddr_t buf;
+   buf_len = (size_t) BN_num_bytes (x);
+-  if (buf_len <= BN_BYTES)
+-    buf = box_num ((unsigned long) x->d[0]);
+-  else
+-    {
+-      buf = dk_alloc_box (buf_len, DV_BIN);
+-      n = BN_bn2bin (x, (unsigned char *) buf);
+-      if (n != buf_len)
+-	GPF_T;
+-    }
++  /* did not figure out where buf is free()ed */
++  buf = dk_alloc_box (buf_len, DV_BIN);
++  n = BN_bn2bin (x, (unsigned char *) buf);
++  if (n != buf_len)
++	  GPF_T;
+   return buf;
+ }
+ 
+@@ -1498,7 +1505,7 @@ bif_get_certificate_info (caddr_t * qst,
+ 	int i;
+ 	char tmp[1024];
+ 	char *ext_oid = (char *) (BOX_ELEMENTS (args) > 4 ? bif_string_arg (qst, args, 4, "get_certificate_info") : VIRT_CERT_EXT);
+-	STACK_OF (X509_EXTENSION) * exts = cert->cert_info->extensions;
++	const STACK_OF (X509_EXTENSION) * exts = X509_get0_extensions(cert);
+ 	for (i = 0; i < sk_X509_EXTENSION_num (exts); i++)
+ 	  {
+ 	    X509_EXTENSION *ex = sk_X509_EXTENSION_value (exts, i);
+@@ -1510,7 +1517,7 @@ bif_get_certificate_info (caddr_t * qst,
+ 		char *data_ptr;
+ 		BIO *mem = BIO_new (BIO_s_mem ());
+ 		if (!X509V3_EXT_print (mem, ex, 0, 0))
+-		  M_ASN1_OCTET_STRING_print (mem, ex->value);
++		  ASN1_STRING_print (mem, X509_EXTENSION_get_data(ex));
+ 		len = BIO_get_mem_data (mem, &data_ptr);
+ 		if (len > 0 && data_ptr)
+ 		  {
+@@ -1537,18 +1544,23 @@ bif_get_certificate_info (caddr_t * qst,
+ 	if (k)
+ 	  {
+ #ifdef EVP_PKEY_RSA
+-	    if (k->type == EVP_PKEY_RSA)
++	    if (EVP_PKEY_id(k) == EVP_PKEY_RSA)
+ 	      {
+-		RSA *x = k->pkey.rsa;
+-		ret = list (3, box_dv_short_string ("RSAPublicKey"), BN_box (x->e), BN_box (x->n));
++		const BIGNUM *n, *e;
++
++		RSA_get0_key(EVP_PKEY_get0_RSA(k), &n, &e, NULL);
++
++		ret = list (3, box_dv_short_string ("RSAPublicKey"), BN_box (e), BN_box (n));
+ 	      }
+ 	    else
+ #endif
+ #ifdef EVP_PKEY_DSA
+-	    if (k->type == EVP_PKEY_DSA)
++	    if (EVP_PKEY_id(k) == EVP_PKEY_DSA)
+ 	      {
+-		DSA *x = k->pkey.dsa;
+-		ret = list (2, box_dv_short_string ("DSAPublicKey"), BN_box (x->pub_key));
++		const BIGNUM *pub_key;
++
++		DSA_get0_key(EVP_PKEY_get0_DSA(k), &pub_key, NULL);
++		ret = list (2, box_dv_short_string ("DSAPublicKey"), BN_box (pub_key));
+ 	      }
+ 	    else
+ #endif
+@@ -1567,13 +1579,13 @@ bif_get_certificate_info (caddr_t * qst,
+ 	int n, i, len;
+ 	char *s, *data_ptr;
+ 	BIO *mem = BIO_new (BIO_s_mem ());
+-	for (i = 0; NULL != subj && i < sk_X509_NAME_ENTRY_num(subj->entries); i++)
++	for (i = 0; NULL != subj && i < X509_NAME_entry_count(subj); i++)
+ 	  {
+-	    ne = sk_X509_NAME_ENTRY_value(subj->entries,i);
+-	    n = OBJ_obj2nid (ne->object);
++	    ne = X509_NAME_get_entry(subj, i);
++	    n = OBJ_obj2nid (X509_NAME_ENTRY_get_object(ne));
+ 	    if ((n == NID_undef) || ((s = (char *) OBJ_nid2sn (n)) == NULL))
+ 	      {
+-		i2t_ASN1_OBJECT (buffer, sizeof (buffer), ne->object);
++		i2t_ASN1_OBJECT (buffer, sizeof (buffer), X509_NAME_ENTRY_get_object(ne));
+ 		s = buffer;
+ 	      }
+ 	    if (!strcmp (s, attr))
+@@ -1582,9 +1594,10 @@ bif_get_certificate_info (caddr_t * qst,
+ 		break;
+ 	      }
+ 	  }
++
+ 	if (ne_ret)
+ 	  {
+-	    ASN1_STRING_print (mem, ne_ret->value);
++	    ASN1_STRING_print (mem, X509_NAME_ENTRY_get_data(ne_ret));
+ 	    len = BIO_get_mem_data (mem, &data_ptr);
+ 	    if (len > 0 && data_ptr)
+ 	      {
+@@ -1605,17 +1618,17 @@ bif_get_certificate_info (caddr_t * qst,
+ 	dk_set_t set = NULL;
+ 	caddr_t val;
+ 	BIO *mem = BIO_new (BIO_s_mem ());
+-	for (i = 0; NULL != subj && i < sk_X509_NAME_ENTRY_num(subj->entries); i++)
++	for (i = 0; NULL != subj && i < X509_NAME_entry_count(subj); i++)
+ 	  {
+ 	    val = NULL;
+-	    ne = sk_X509_NAME_ENTRY_value(subj->entries,i);
+-	    n = OBJ_obj2nid (ne->object);
++	    ne = X509_NAME_get_entry(subj, i);
++	    n = OBJ_obj2nid (X509_NAME_ENTRY_get_object(ne));
+ 	    if ((n == NID_undef) || ((s = (char *) OBJ_nid2sn (n)) == NULL))
+ 	      {
+-		i2t_ASN1_OBJECT (buffer, sizeof (buffer), ne->object);
++		i2t_ASN1_OBJECT (buffer, sizeof (buffer), X509_NAME_ENTRY_get_object(ne));
+ 		s = buffer;
+ 	      }
+-	    ASN1_STRING_print (mem, ne->value);
++	    ASN1_STRING_print (mem, X509_NAME_ENTRY_get_data(ne));
+ 	    len = BIO_get_mem_data (mem, &data_ptr);
+ 	    if (len > 0 && data_ptr)
+ 	      {
+@@ -1629,18 +1642,22 @@ bif_get_certificate_info (caddr_t * qst,
+ 	  }
+ 	BIO_free (mem);
+ 	ret = list_to_array (dk_set_nreverse (set));
++
+ 	break;
+       }
+     case 12:
+       {
+ 	const unsigned char *s;
+ 	int i, n;
+-	const ASN1_STRING *sig = cert->signature;
+-	X509_ALGOR *sigalg = cert->sig_alg;
++	const ASN1_STRING *sig;
++	const X509_ALGOR *sigalg;
++	const ASN1_OBJECT *sig_alg_algorithm;
+ 	char buf[80];
+ 	caddr_t val;
+ 
+-        i2t_ASN1_OBJECT(buf,sizeof (buf), sigalg->algorithm);
++	X509_get0_signature(&sig, &sigalg, cert);
++	X509_ALGOR_get0(&sig_alg_algorithm, NULL, NULL, sigalg);
++	i2t_ASN1_OBJECT(buf,sizeof (buf), sig_alg_algorithm);
+ 
+ 	n = sig->length;
+ 	s = sig->data;
+@@ -1660,11 +1677,11 @@ bif_get_certificate_info (caddr_t * qst,
+ 	if (k)
+ 	  {
+ #ifdef EVP_PKEY_RSA
+-	    if (k->type == EVP_PKEY_RSA)
++	    if (EVP_PKEY_id(k) == EVP_PKEY_RSA)
+ 	      {
+ 		char *data_ptr;
+ 		int len;
+-		RSA *x = k->pkey.rsa;
++		RSA *x = EVP_PKEY_get0_RSA(k);
+ 		b = BIO_new (BIO_s_mem());
+ 		i2d_RSA_PUBKEY_bio (b, x);
+ 		len = BIO_get_mem_data (b, &data_ptr);
+--- a/libsrc/Wi/xmlenc.c
++++ b/libsrc/Wi/xmlenc.c
+@@ -1215,36 +1215,45 @@ void xenc_key_remove (xenc_key_t * key,
+ }
+ 
+ 
+-static void
+-genrsa_cb(int p, int n, void *arg)
+-{
+-#ifdef LINT
+-  p=n;
+-#endif
+-}
+-
+ int
+ __xenc_key_rsa_init (char *name)
+ {
+   RSA *rsa = NULL;
+-  int num=1024;
+-  unsigned long f4=RSA_F4;
++  BIGNUM *bn = NULL;
+   int r;
++
+   xenc_key_t * pkey = xenc_get_key_by_name (name, 1);
+   if (NULL == pkey)
+     SQLR_NEW_KEY_ERROR (name);
+ 
+-  rsa=RSA_generate_key(num,f4,genrsa_cb,NULL);
++  rsa = RSA_new();
++  if (!rsa)
++	  goto out;
++  bn = BN_new();
++  if (!bn)
++	  goto out;
++  if (!BN_set_word(bn, RSA_F4))
++	  goto out;
++
++  if (!RSA_generate_key_ex(rsa, 1024, bn, NULL))
++	  goto out;
++
+   r = RSA_check_key(rsa);
++  if (r != 1)
++	  goto out;
+   pkey->ki.rsa.pad = RSA_PKCS1_PADDING;
+-  if (rsa == NULL)
+-    {
+-      sqlr_new_error ("42000", "XENC06",
+-		    "RSA parameters generation error");
+-    }
+   pkey->xek_rsa = rsa;
+   pkey->xek_private_rsa = rsa;
++  BN_free(bn);
+   return 0;
++out:
++  if (bn)
++	  BN_free(bn);
++  if (rsa)
++	  RSA_free(rsa);
++  sqlr_new_error ("42000", "XENC06",
++		  "RSA parameters generation error");
++  return -1;
+ }
+ 
+ 
+@@ -1455,19 +1464,19 @@ xenc_key_t * xenc_key_create_from_x509_c
+ 
+   if (pkey)
+     {
+-      switch (EVP_PKEY_type (pkey->type))
++      switch (EVP_PKEY_type (EVP_PKEY_id(pkey)))
+ 	{
+ 	case EVP_PKEY_DSA:
+ 	  sign_algoname = DSIG_DSA_SHA1_ALGO;
+ 	  enc_algoname = XENC_DSA_ALGO;
+-	  dsa = pkey->pkey.dsa;
+-	  private_dsa = private_key ? private_key->pkey.dsa : 0;
++	  dsa = EVP_PKEY_get0_DSA(pkey);
++	  private_dsa = private_key ? EVP_PKEY_get0_DSA(private_key) : 0;
+ 	  break;
+ 	case EVP_PKEY_RSA:
+ 	  sign_algoname = DSIG_RSA_SHA1_ALGO;
+ 	  enc_algoname = XENC_RSA_ALGO;
+-	  rsa = pkey->pkey.rsa;
+-	  private_rsa = private_key ? private_key->pkey.rsa : 0;
++	  rsa = EVP_PKEY_get0_RSA(pkey);
++	  private_rsa = private_key ? EVP_PKEY_get0_RSA(private_key) : 0;
+ 	  break;
+ 	default:
+ 	  goto finish;
+@@ -1516,13 +1525,6 @@ xenc_key_t * xenc_key_create_from_x509_c
+   return k;
+ }
+ 
+-static void dh_cb(int p, int n, void *arg)
+-{
+-#ifdef LINT
+-  p=n;
+-#endif
+-}
+-
+ static /*xenc_key_DSA_create */
+ caddr_t bif_xenc_key_dsa_create (caddr_t * qst, caddr_t * err_r, state_slot_t ** args)
+ {
+@@ -1588,15 +1590,21 @@ caddr_t bif_xenc_key_DH_create (caddr_t
+       dh = DH_new ();
+       bn_p = BN_bin2bn ((unsigned char *)mod, p_len, NULL);
+       bn_g = BN_bin2bn (g_bin, 1, NULL);
+-      dh->p = bn_p;
+-      dh->g = bn_g;
++      if (dh)
++	      DH_set0_pqg(dh, bn_p, NULL, bn_g);
+ 
+       dk_free_box (mod_b64);
+       dk_free_box (mod);
+     }
+   else
+     {
+-      dh = DH_generate_parameters (num, g, dh_cb, NULL);
++      dh = DH_new();
++      if (dh) {
++	      if (!DH_generate_parameters_ex(dh, num, g, NULL)) {
++		      DH_free(dh);
++		      dh = NULL;
++	      }
++      }
+     }
+   if (!dh)
+     {
+@@ -1626,7 +1634,7 @@ caddr_t bif_xenc_DH_get_params (caddr_t
+   int n, len;
+   caddr_t buf = NULL, ret, b64;
+   DH *dh;
+-  BIGNUM *num;
++  const BIGNUM *num;
+ 
+   mutex_enter (xenc_keys_mtx);
+   key = xenc_get_key_by_name (name, 0);
+@@ -1641,19 +1649,19 @@ caddr_t bif_xenc_DH_get_params (caddr_t
+   switch (param)
+     {
+   	case 1:
+-	 num = dh->p;
++	 DH_get0_pqg(dh, &num, NULL, NULL);
+ 	 break;
+ 	case 2:
+-	 num = dh->g;
++	 DH_get0_pqg(dh, NULL, NULL, &num);
+ 	 break;
+ 	case 3:
+-	 num = dh->pub_key;
++	 DH_get0_key(dh, &num, NULL);
+ 	 break;
+ 	case 4:
+-	 num = dh->priv_key;
++	 DH_get0_key(dh, NULL, &num);
+ 	 break;
+ 	default:
+-	 num = dh->pub_key;
++	 DH_get0_key(dh, &num, NULL);
+     }
+ 
+   buf_len = (size_t)BN_num_bytes(num);
+@@ -1811,7 +1819,15 @@ caddr_t bif_xenc_key_rsa_create (caddr_t
+   xenc_key_t * k;
+   caddr_t name = bif_string_arg (qst, args, 0, "xenc_key_RSA_create");
+   int num = (int) bif_long_arg (qst, args, 1, "xenc_key_RSA_create");
+-  RSA *rsa = NULL;
++  RSA *rsa;
++  BIGNUM *bn;
++
++  rsa = RSA_new();
++  bn = BN_new();
++  if (!rsa || !bn)
++	goto out;
++  if (!BN_set_word(bn, RSA_F4))
++	goto out;
+ 
+   mutex_enter (xenc_keys_mtx);
+   if (NULL == (k = xenc_key_create (name, XENC_RSA_ALGO , DSIG_RSA_SHA1_ALGO, 0)))
+@@ -1820,12 +1836,11 @@ caddr_t bif_xenc_key_rsa_create (caddr_t
+       SQLR_NEW_KEY_EXIST_ERROR (name);
+     }
+ 
+-  rsa = RSA_generate_key (num, RSA_F4, NULL, NULL);
+-
+-  if (rsa == NULL)
+-    {
+-      sqlr_new_error ("42000", "XENC06", "RSA generation error");
+-    }
++  if (!RSA_generate_key_ex (rsa, num, bn, NULL)) {
++	  mutex_leave (xenc_keys_mtx);
++	  goto out;
++  }
++  BN_free(bn);
+ 
+   k->xek_rsa = RSAPublicKey_dup (rsa);
+   k->xek_private_rsa = rsa;
+@@ -1839,6 +1854,13 @@ caddr_t bif_xenc_key_rsa_create (caddr_t
+ 
+   mutex_leave (xenc_keys_mtx);
+   return NULL;
++out:
++  if (bn)
++	  BN_free(bn);
++  if (rsa)
++	  RSA_free(rsa);
++  sqlr_new_error ("42000", "XENC06", "RSA generation error");
++  return NULL;
+ }
+ 
+ xenc_key_t *
+@@ -2034,7 +2056,13 @@ int __xenc_key_dsa_init (char *name, int
+     SQLR_NEW_KEY_ERROR (name);
+ 
+   RAND_poll ();
+-  dsa = DSA_generate_parameters(num, NULL, 0, NULL, NULL, dh_cb, NULL);
++  dsa = DSA_new();
++  if (dsa) {
++	  if (!DSA_generate_parameters_ex(dsa, num, NULL, 0, NULL, NULL, NULL)) {
++		  DSA_free(dsa);
++		  dsa = NULL;
++	  }
++  }
+   if (dsa == NULL)
+     {
+       sqlr_new_error ("42000", "XENC11",
+@@ -2058,7 +2086,13 @@ int __xenc_key_dh_init (char *name, int
+   if (NULL == pkey)
+     SQLR_NEW_KEY_ERROR (name);
+ 
+-  dh = DH_generate_parameters (num, g, dh_cb, NULL);
++  dh = DH_new();
++  if (dh) {
++	  if (!DH_generate_parameters_ex(dh, num, g, NULL)) {
++		  DH_free(dh);
++		  dh = NULL;
++	  }
++  }
+   if (!dh)
+     {
+       sqlr_new_error ("42000", "XENC11",
+@@ -2280,12 +2314,12 @@ bif_xenc_key_rsa_read (caddr_t * qst, ca
+     {
+       in = BIO_new_mem_buf (key_base64, len);
+       pkey = d2i_PUBKEY_bio (in, NULL);
+-      if (pkey && pkey->type == EVP_PKEY_RSA)
+-	p = pkey->pkey.rsa;
++      if (pkey && EVP_PKEY_id(pkey) == EVP_PKEY_RSA)
++	p = EVP_PKEY_get0_RSA(pkey);
+       BIO_reset (in);
+       pkkey = d2i_PrivateKey_bio (in, NULL);
+-      if (pkkey && pkkey->type == EVP_PKEY_RSA)
+-	r = pkkey->pkey.rsa;
++      if (pkkey && EVP_PKEY_id(pkkey) == EVP_PKEY_RSA)
++	r = EVP_PKEY_get0_RSA(pkkey);
+       BIO_free (in);
+     }
+   else
+@@ -2304,9 +2338,11 @@ bif_xenc_key_rsa_read (caddr_t * qst, ca
+ 
+   if (!p)
+     {
++      const BIGNUM *n, *e;
++
++      RSA_get0_key(r, &n, &e, NULL);
+       p = RSA_new ();
+-      p->n = BN_dup (r->n);
+-      p->e = BN_dup (r->e);
++      RSA_set0_key(p, BN_dup(n), BN_dup(e), NULL);
+     }
+ 
+   mutex_enter (xenc_keys_mtx);
+@@ -2355,14 +2391,13 @@ bif_xenc_key_rsa_construct (caddr_t * qs
+   p = RSA_new ();
+   n = BN_bin2bn ((unsigned char *) mod, box_length (mod) - 1, NULL);
+   e = BN_bin2bn ((unsigned char *) exp, box_length (exp) - 1, NULL);
+-  p->n = n;
+-  p->e = e;
++  RSA_set0_key(p, n, e, NULL);
+   if (pexp)
+     {
+       pk = RSA_new ();
+-      pk->d = BN_bin2bn ((unsigned char *) pexp, box_length (pexp) - 1, NULL);
+-      pk->n = BN_dup (n);
+-      pk->e = BN_dup (e);
++      RSA_set0_key(p, BN_dup(n),
++		      BN_dup(e),
++		      BN_bin2bn ((unsigned char *) pexp, box_length (pexp) - 1, NULL));
+     }
+   mutex_enter (xenc_keys_mtx);
+   k = xenc_key_create (name, XENC_RSA_ALGO, DSIG_RSA_SHA1_ALGO, 0);
+@@ -4086,7 +4121,7 @@ void xenc_tag_free (xenc_tag_t * t)
+ #endif
+ }
+ 
+-xenc_tag_t * xenc_tag_add_child_BN (xenc_tag_t * tag, BIGNUM * bn)
++static xenc_tag_t * xenc_tag_add_child_BN (xenc_tag_t * tag, const BIGNUM * bn)
+ {
+  char * buffer = dk_alloc_box (BN_num_bytes (bn), DV_BIN);
+  char * buffer_base64 = dk_alloc_box (box_length (buffer) * 2, DV_STRING);
+@@ -4111,12 +4146,15 @@ caddr_t ** xenc_generate_ext_info (xenc_
+   caddr_t ** array;
+   if (key->xek_type == DSIG_KEY_RSA)
+     {
++      const BIGNUM *rsa_n, *rsa_e;
++
++      RSA_get0_key(key->ki.rsa.rsa_st, &rsa_n, &rsa_e, NULL);
+       xenc_tag_t * rsakeyval = xenc_tag_create (DSIG_URI, ":RSAKeyValue");
+       xenc_tag_t * rsamodulus = xenc_tag_create (DSIG_URI, ":Modulus");
+       xenc_tag_t * rsaexponent = xenc_tag_create (DSIG_URI, ":Exponent");
+ 
+-      xenc_tag_add_child_BN (rsamodulus, key->ki.rsa.rsa_st->n);
+-      xenc_tag_add_child_BN (rsaexponent, key->ki.rsa.rsa_st->e);
++      xenc_tag_add_child_BN (rsamodulus, rsa_n);
++      xenc_tag_add_child_BN (rsaexponent, rsa_e);
+ 
+       xenc_tag_add_child (rsakeyval, xenc_tag_finalize (rsamodulus));
+       xenc_tag_add_child (rsakeyval, xenc_tag_finalize (rsaexponent));
+@@ -4135,12 +4173,15 @@ caddr_t ** xenc_generate_ext_info (xenc_
+       xenc_tag_t * g = xenc_tag_create (DSIG_URI, ":G");
+       xenc_tag_t * y = xenc_tag_create (DSIG_URI, ":Y");
+       DSA * dsa = key->ki.dsa.dsa_st;
++      const BIGNUM *dsa_p, *dsa_q, *dsa_g, *dsa_pub_key;
+ 
++      DSA_get0_pqg(dsa, &dsa_p, &dsa_q, &dsa_g);
++      DSA_get0_key(dsa, &dsa_pub_key, NULL);
+ 
+-      xenc_tag_add_child_BN (p, dsa->p);
+-      xenc_tag_add_child_BN (p, dsa->q);
+-      xenc_tag_add_child_BN (p, dsa->g);
+-      xenc_tag_add_child_BN (p, dsa->pub_key);
++      xenc_tag_add_child_BN (p, dsa_p);
++      xenc_tag_add_child_BN (p, dsa_q);
++      xenc_tag_add_child_BN (p, dsa_g);
++      xenc_tag_add_child_BN (p, dsa_pub_key);
+ 
+       xenc_tag_add_child (dsakeyval, xenc_tag_finalize (p));
+       xenc_tag_add_child (dsakeyval, xenc_tag_finalize (q));
+@@ -6187,7 +6228,7 @@ caddr_t xenc_x509_get_key_identifier (X5
+ 
+   ret = dk_alloc_box (ikeyid->length, DV_BIN);
+   memcpy (ret, ikeyid->data, ikeyid->length);
+-  M_ASN1_OCTET_STRING_free(ikeyid);
++  ASN1_STRING_free(ikeyid);
+   return ret;
+ }
+ 
+@@ -6247,7 +6288,7 @@ bif_x509_get_subject (caddr_t * qst, cad
+ 
+   ret = dk_alloc_box (ikeyid->length, DV_BIN);
+   memcpy (ret, ikeyid->data, ikeyid->length);
+-  M_ASN1_OCTET_STRING_free(ikeyid);
++  ASN1_STRING_free(ikeyid);
+   return ret;
+ }
+ 
+@@ -6806,7 +6847,7 @@ bif_xenc_x509_csr_generate (caddr_t * qs
+ 	sk_X509_EXTENSION_push(st_exts, ex);
+     }
+   X509_REQ_add_extensions(x, st_exts);
+-  if (!X509_REQ_sign (x, pk, (pk->type == EVP_PKEY_RSA ? EVP_md5() : EVP_dss1())))
++  if (!X509_REQ_sign (x, pk, (EVP_PKEY_id(pk) == EVP_PKEY_RSA ? EVP_md5() : EVP_sha1())))
+     {
+       pk = NULL; /* keep one in the xenc_key */
+       *err_ret = srv_make_new_error ("42000", "XECXX", "Can not sign certificate : %s", get_ssl_error_text (buf, sizeof (buf)));
+@@ -6945,17 +6986,17 @@ bif_xenc_x509_from_csr (caddr_t * qst, c
+       *err_ret = srv_make_new_error ("42000", "XECXX", "Can not sign certificate");
+       goto err;
+     }
+-  switch (EVP_PKEY_type (cli_pk->type))
++  switch (EVP_PKEY_type (EVP_PKEY_id(cli_pk)))
+     {
+       case EVP_PKEY_DSA:
+ 	  sign_algoname = DSIG_DSA_SHA1_ALGO;
+ 	  enc_algoname = XENC_DSA_ALGO;
+-	  dsa = cli_pk->pkey.dsa;
++	  dsa = EVP_PKEY_get0_DSA(cli_pk);
+ 	  break;
+       case EVP_PKEY_RSA:
+ 	  sign_algoname = DSIG_RSA_SHA1_ALGO;
+ 	  enc_algoname = XENC_RSA_ALGO;
+-	  rsa = cli_pk->pkey.rsa;
++	  rsa = EVP_PKEY_get0_RSA(cli_pk);
+ 	  break;
+       default:
+ 	  *err_ret = srv_make_new_error ("42000", "XECXX", "The type of public key is not supported mus tbe RSA or DSA");
+@@ -7032,19 +7073,19 @@ bif_xenc_pkcs12_export (caddr_t * qst, c
+   if (export_chain)
+     {
+       int i;
+-      X509_STORE_CTX store_ctx;
+-      X509_STORE_CTX_init (&store_ctx, CA_certs, x, NULL);
+-      if (X509_verify_cert (&store_ctx) > 0)
+-	chain = X509_STORE_CTX_get1_chain (&store_ctx);
++      X509_STORE_CTX *ctx;
++      X509_STORE_CTX_init (ctx, CA_certs, x, NULL);
++      if (X509_verify_cert (ctx) > 0)
++	chain = X509_STORE_CTX_get1_chain (ctx);
+       else
+ 	{
+ 	  const char *err_str;
+-	  err_str = X509_verify_cert_error_string (store_ctx.error);
++	  err_str = X509_verify_cert_error_string (X509_STORE_CTX_get_error(ctx));
+ 	  *err_ret = srv_make_new_error ("22023", "XENCX", "X509 error: %s", err_str);
+-	  X509_STORE_CTX_cleanup (&store_ctx);
++	  X509_STORE_CTX_cleanup (ctx);
+ 	  goto err;
+ 	}
+-      X509_STORE_CTX_cleanup (&store_ctx);
++      X509_STORE_CTX_cleanup (ctx);
+       if (chain)
+ 	{
+ 	  certs = sk_X509_new_null ();
+@@ -7152,16 +7193,16 @@ bif_xenc_pubkey_pem_export (caddr_t * qs
+     {
+       k = X509_get_pubkey (key->xek_x509);
+ #ifdef EVP_PKEY_RSA
+-      if (k->type == EVP_PKEY_RSA)
++      if (EVP_PKEY_id(k) == EVP_PKEY_RSA)
+ 	{
+-	  RSA * x = k->pkey.rsa;
++	  RSA *x = EVP_PKEY_get0_RSA(k);
+ 	  PEM_write_bio_RSA_PUBKEY (b, x);
+ 	}
+ #endif
+ #ifdef EVP_PKEY_DSA
+-      if (k->type == EVP_PKEY_DSA)
++      if (EVP_PKEY_id(k) == EVP_PKEY_DSA)
+ 	{
+-	  DSA * x = k->pkey.dsa;
++	  DSA * x = EVP_PKEY_get0_DSA(k);
+ 	  PEM_write_bio_DSA_PUBKEY (b, x);
+ 	}
+ #endif
+@@ -7208,16 +7249,16 @@ bif_xenc_pubkey_der_export (caddr_t * qs
+     {
+       k = X509_get_pubkey (key->xek_x509);
+ #ifdef EVP_PKEY_RSA
+-      if (k->type == EVP_PKEY_RSA)
++      if (EVP_PKEY_id(k) == EVP_PKEY_RSA)
+ 	{
+-	  RSA * x = k->pkey.rsa;
++	  RSA * x = EVP_PKEY_get0_RSA(k);
+ 	  i2d_RSA_PUBKEY_bio (b, x);
+ 	}
+ #endif
+ #ifdef EVP_PKEY_DSA
+-      if (k->type == EVP_PKEY_DSA)
++      if (EVP_PKEY_id(k) == EVP_PKEY_DSA)
+ 	{
+-	  DSA * x = k->pkey.dsa;
++	  DSA * x = EVP_PKEY_get0_DSA(k);
+ 	  i2d_DSA_PUBKEY_bio (b, x);
+ 	}
+ #endif
+@@ -7245,7 +7286,7 @@ err:
+ }
+ 
+ static caddr_t
+-BN2binbox (BIGNUM * x)
++BN2binbox (const BIGNUM * x)
+ {
+   size_t buf_len, n;
+   caddr_t buf;
+@@ -7280,8 +7321,14 @@ static caddr_t
+ xenc_rsa_pub_magic (RSA * x)
+ {
+   caddr_t ret;
+-  caddr_t n = BN2binbox (x->n); /* modulus */
+-  caddr_t e = BN2binbox (x->e); /* public exponent */
++  caddr_t n;
++  caddr_t e;
++  const BIGNUM *rsa_n, *rsa_e;
++
++  RSA_get0_key(x, &rsa_n, &rsa_e, NULL);
++  n = BN2binbox (rsa_n); /* modulus */
++  e = BN2binbox (rsa_e); /* public exponent */
++
+   n = xenc_encode_base64_binbox (n, 1);
+   e = xenc_encode_base64_binbox (e, 1);
+   ret = dk_alloc_box (box_length (n) + box_length (e) + 4 /* two dots - one trailing zero + RSA prefix */, DV_STRING);
+@@ -7306,9 +7353,9 @@ bif_xenc_pubkey_magic_export (caddr_t *
+     {
+       k = X509_get_pubkey (key->xek_x509);
+ #ifdef EVP_PKEY_RSA
+-      if (k->type == EVP_PKEY_RSA)
++      if (EVP_PKEY_id(k) == EVP_PKEY_RSA)
+ 	{
+-	  RSA * x = k->pkey.rsa;
++	  RSA * x = EVP_PKEY_get0_RSA(k);
+ 	  ret = xenc_rsa_pub_magic (x);
+ 	}
+ #endif
+@@ -7349,10 +7396,16 @@ static caddr_t
+ xenc_rsa_pub_ssh_export (RSA * x)
+ {
+   static char * ssh_header = "\x00\x00\x00\x07ssh-rsa";
++  const BIGNUM *rsa_n, *rsa_e;
+   caddr_t ret;
+   int len, pos;
+-  caddr_t n = BN2binbox (x->n); /* modulus */
+-  caddr_t e = BN2binbox (x->e); /* public exponent */
++  caddr_t n;
++  caddr_t e;
++
++  RSA_get0_key(x, &rsa_n, &rsa_e, NULL);
++  n = BN2binbox (rsa_n); /* modulus */
++  e = BN2binbox (rsa_e); /* public exponent */
++
+   len = 11 + 8 + box_length (n) + box_length (e);
+   if (n[0] & 0x80)
+     len ++;
+@@ -7383,9 +7436,9 @@ bif_xenc_pubkey_ssh_export (caddr_t * qs
+     {
+       k = X509_get_pubkey (key->xek_x509);
+ #ifdef EVP_PKEY_RSA
+-      if (k->type == EVP_PKEY_RSA)
++      if (EVP_PKEY_id(k) == EVP_PKEY_RSA)
+ 	{
+-	  RSA * x = k->pkey.rsa;
++	  RSA * x = EVP_PKEY_get0_RSA(k);
+ 	  ret = xenc_rsa_pub_ssh_export (x);
+ 	}
+ #endif
+@@ -7418,7 +7471,7 @@ bif_xenc_SPKI_read (caddr_t * qst, caddr
+       return NULL;
+     }
+   pk = NETSCAPE_SPKI_get_pubkey (spki);
+-  if (!pk || pk->type != EVP_PKEY_RSA)
++  if (!pk || EVP_PKEY_id(pk) != EVP_PKEY_RSA)
+     {
+       NETSCAPE_SPKI_free (spki);
+       *err_ret = srv_make_new_error ("42000", "XECXX", "Can not retrieve RSA key");
+@@ -7595,14 +7648,14 @@ bif_xenc_x509_ca_certs_list (caddr_t * q
+   sec_check_dba ((QI*)qst, me);
+   in = BIO_new (BIO_s_mem ());
+   mutex_enter (xenc_keys_mtx);
+-  certs = CA_certs->objs;
++  certs = X509_STORE_get0_objects(CA_certs);
+   len = sk_X509_OBJECT_num (certs);
+   for (i = 0; i < len; i++)
+     {
+       X509_OBJECT * obj = sk_X509_OBJECT_value (certs, i);
+-      if (obj->type == X509_LU_X509)
++      if (X509_OBJECT_get_type(obj) == X509_LU_X509)
+ 	{
+-	  X509 *x = obj->data.x509;
++	  X509 *x = X509_OBJECT_get0_X509(obj);
+ 	  caddr_t itm;
+ 	  int blen;
+ 	  BIO_reset (in);
+--- a/libsrc/Wi/xmlenc.h
++++ b/libsrc/Wi/xmlenc.h
+@@ -38,6 +38,7 @@
+ #include <openssl/dsa.h>
+ #include <openssl/rsa.h>
+ #include <openssl/des.h>
++#include <openssl/hmac.h>
+ 
+ #ifdef AES_ENC_ENABLE
+ #include <openssl/aes.h>
+@@ -631,5 +632,183 @@ caddr_t * xml_find_any_child (caddr_t *
+ 
+ extern dk_mutex_t * xenc_keys_mtx;
+ 
++#if OPENSSL_VERSION_NUMBER < 0x10100000
++
++static inline HMAC_CTX *HMAC_CTX_new(void)
++{
++	HMAC_CTX *p;
++
++	p = calloc(1, sizeof(HMAC_CTX));
++	if (!p)
++		return p;
++	HMAC_CTX_init(p);
++	return p;
++}
++
++static inline void HMAC_CTX_free(HMAC_CTX *ctx)
++{
++	HMAC_CTX_cleanup(ctx);
++	free(ctx);
++}
++
++static inline void RSA_get0_key(const RSA *r, const BIGNUM **n,
++				const BIGNUM **e, const BIGNUM **d)
++{
++	if (n != NULL)
++		*n = r->n;
++	if (e != NULL)
++		*e = r->e;
++	if (d != NULL)
++		*d = r->d;
++}
++
++static inline void RSA_get0_factors(const RSA *r, const BIGNUM **p,
++				    const BIGNUM **q)
++{
++	if (p != NULL)
++		*p = r->p;
++	if (q != NULL)
++		*q = r->q;
++}
++
++static inline RSA *EVP_PKEY_get0_RSA(EVP_PKEY *pkey)
++{
++	if (pkey->type != EVP_PKEY_RSA)
++		return NULL;
++	return pkey->pkey.rsa;
++}
++
++static inline void DH_get0_key(const DH *dh, const BIGNUM **pub_key,
++			       const BIGNUM **priv_key)
++{
++	if (pub_key != NULL)
++		*pub_key = dh->pub_key;
++	if (priv_key != NULL)
++		*priv_key = dh->priv_key;
++}
++
++
++static inline void DH_get0_pqg(const DH *dh, const BIGNUM **p, const BIGNUM **q,
++			       const BIGNUM **g)
++{
++	if (p != NULL)
++		*p = dh->p;
++	if (q != NULL)
++		*q = dh->q;
++	if (g != NULL)
++		*g = dh->g;
++}
++
++static inline DSA *EVP_PKEY_get0_DSA(EVP_PKEY *pkey)
++{
++	if (pkey->type != EVP_PKEY_DSA)
++		return NULL;
++	return pkey->pkey.dsa;
++}
++
++static inline int DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g)
++{
++	/* If the fields p and g in d are NULL, the corresponding input
++	 * parameters MUST be non-NULL.  q may remain NULL.
++	 */
++	if ((dh->p == NULL && p == NULL)
++	    || (dh->g == NULL && g == NULL))
++		return 0;
++
++	if (p != NULL) {
++		BN_free(dh->p);
++		dh->p = p;
++	}
++	if (q != NULL) {
++		BN_free(dh->q);
++		dh->q = q;
++	}
++	if (g != NULL) {
++		BN_free(dh->g);
++		dh->g = g;
++	}
++
++	if (q != NULL) {
++		dh->length = BN_num_bits(q);
++	}
++
++	return 1;
++}
++
++static inline int RSA_set0_key(RSA *r, BIGNUM *n, BIGNUM *e, BIGNUM *d)
++{
++	/* If the fields n and e in r are NULL, the corresponding input
++	 * parameters MUST be non-NULL for n and e.  d may be
++	 * left NULL (in case only the public key is used).
++	 */
++	if ((r->n == NULL && n == NULL)
++	    || (r->e == NULL && e == NULL))
++		return 0;
++
++	if (n != NULL) {
++		BN_free(r->n);
++		r->n = n;
++	}
++	if (e != NULL) {
++		BN_free(r->e);
++		r->e = e;
++	}
++	if (d != NULL) {
++		BN_free(r->d);
++		r->d = d;
++	}
++
++	return 1;
++}
++
++static inline void DSA_get0_pqg(const DSA *d, const BIGNUM **p,
++				const BIGNUM **q, const BIGNUM **g)
++{
++	if (p != NULL)
++		*p = d->p;
++	if (q != NULL)
++		*q = d->q;
++	if (g != NULL)
++		*g = d->g;
++}
++
++static inline void DSA_get0_key(const DSA *d, const BIGNUM **pub_key,
++				const BIGNUM **priv_key)
++{
++	if (pub_key != NULL)
++		*pub_key = d->pub_key;
++	if (priv_key != NULL)
++		*priv_key = d->priv_key;
++}
++
++static inline const STACK_OF(X509_EXTENSION) *X509_get0_extensions(const X509 *x)
++{
++	return x->cert_info->extensions;
++}
++
++static inline int X509_up_ref(X509 *x)
++{
++	return CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509);
++}
++
++static inline STACK_OF(X509_OBJECT) *X509_STORE_get0_objects(X509_STORE *v)
++{
++	return v->objs;
++}
++
++static inline int X509_OBJECT_get_type(const X509_OBJECT *a)
++{
++	return a->type;
++}
++
++static inline X509 *X509_OBJECT_get0_X509(const X509_OBJECT *a)
++{
++	if (a == NULL || a->type != X509_LU_X509)
++		return NULL;
++	return a->data.x509;
++}
++
++#endif
++
+ #endif
+ 
+--- a/libsrc/Wi/xmlenc_algos.c
++++ b/libsrc/Wi/xmlenc_algos.c
+@@ -1149,7 +1149,7 @@ int
+ dsig_hmac_sha256_digest (dk_session_t * ses_in, long len, xenc_key_t * key, caddr_t * sign_out)
+ {
+   unsigned char * data;
+-  HMAC_CTX ctx;
++  HMAC_CTX *ctx;
+   unsigned char key_data[32 * 8];
+   unsigned char md [SHA256_DIGEST_LENGTH + 1];
+   unsigned char md64 [SHA256_DIGEST_LENGTH * 2 + 1];
+@@ -1182,7 +1182,9 @@ dsig_hmac_sha256_digest (dk_session_t *
+       default:
+ 	  return 0;
+     }
+-
++  ctx = HMAC_CTX_new();
++  if (!ctx)
++	  return 0;
+ 
+   data = (unsigned char *) dk_alloc_box (len, DV_C_STRING);
+   CATCH_READ_FAIL (ses_in)
+@@ -1192,14 +1194,15 @@ dsig_hmac_sha256_digest (dk_session_t *
+   FAILED
+     {
+       dk_free_box ((box_t) data);
++      HMAC_CTX_free(ctx);
+       return 0;
+     }
+   END_READ_FAIL (ses_in);
+ 
+-  HMAC_Init(&ctx, (void*) key_data , key_len, EVP_sha256 ());
+-  HMAC_Update(&ctx, data, len);
+-  HMAC_Final(&ctx, md, &hmac_len);
+-  HMAC_cleanup(&ctx);
++  HMAC_Init_ex(ctx, (void*) key_data , key_len, EVP_sha256 (), NULL);
++  HMAC_Update(ctx, data, len);
++  HMAC_Final(ctx, md, &hmac_len);
++  HMAC_CTX_free(ctx);
+ 
+   if (hmac_len != SHA256_DIGEST_LENGTH)
+     GPF_T;
+@@ -1220,7 +1223,7 @@ dsig_hmac_sha256_digest (dk_session_t *
+ int
+ dsig_hmac_sha256_verify (dk_session_t * ses_in, long len, xenc_key_t * key, caddr_t digest)
+ {
+-  HMAC_CTX ctx;
++  HMAC_CTX *ctx;
+   unsigned char * data;
+   unsigned char key_data[3 * 8];
+   unsigned char md [SHA256_DIGEST_LENGTH + 1];
+@@ -1249,6 +1252,9 @@ dsig_hmac_sha256_verify (dk_session_t *
+ 	  return 0;
+     }
+ 
++  ctx = HMAC_CTX_new();
++  if (!ctx)
++	  return 0;
+ 
+   data = (unsigned char *) dk_alloc_box (len, DV_C_STRING);
+   CATCH_READ_FAIL (ses_in)
+@@ -1258,14 +1264,15 @@ dsig_hmac_sha256_verify (dk_session_t *
+   FAILED
+     {
+       dk_free_box ((box_t) data);
++      HMAC_CTX_free(ctx);
+       return 0;
+     }
+   END_READ_FAIL (ses_in);
+ 
+-  HMAC_Init(&ctx, (void*) key_data , key_len, EVP_sha256 ());
+-  HMAC_Update(&ctx, data, len);
+-  HMAC_Final(&ctx, md, &hmac_len);
+-  HMAC_cleanup(&ctx);
++  HMAC_Init_ex(ctx, (void*) key_data , key_len, EVP_sha256 (), NULL);
++  HMAC_Update(ctx, data, len);
++  HMAC_Final(ctx, md, &hmac_len);
++  HMAC_CTX_free(ctx);
+   dk_free_box ((box_t) data);
+ 
+   len1 = xenc_encode_base64 ((char *)md, md64, hmac_len);
+@@ -1586,7 +1593,7 @@ int
+ dsig_hmac_sha1_digest (dk_session_t * ses_in, long len, xenc_key_t * key, caddr_t * sign_out)
+ {
+   unsigned char * data;
+-  HMAC_CTX ctx;
++  HMAC_CTX *ctx;
+   unsigned char key_data[32 * 8];
+   unsigned char md [SHA_DIGEST_LENGTH + 1];
+   unsigned char md64 [SHA_DIGEST_LENGTH * 2 + 1];
+@@ -1620,6 +1627,9 @@ dsig_hmac_sha1_digest (dk_session_t * se
+ 	  return 0;
+     }
+ 
++  ctx = HMAC_CTX_new();
++  if (!ctx)
++	  return 0;
+ 
+   data = (unsigned char *) dk_alloc_box (len, DV_C_STRING);
+   CATCH_READ_FAIL (ses_in)
+@@ -1629,14 +1639,15 @@ dsig_hmac_sha1_digest (dk_session_t * se
+   FAILED
+     {
+       dk_free_box ((box_t) data);
++      HMAC_CTX_free(ctx);
+       return 0;
+     }
+   END_READ_FAIL (ses_in);
+ 
+-  HMAC_Init(&ctx, (void*) key_data , key_len, EVP_sha1 ());
+-  HMAC_Update(&ctx, data, len);
+-  HMAC_Final(&ctx, md, &hmac_len);
+-  HMAC_cleanup(&ctx);
++  HMAC_Init_ex(ctx, (void*) key_data , key_len, EVP_sha1 (), NULL);
++  HMAC_Update(ctx, data, len);
++  HMAC_Final(ctx, md, &hmac_len);
++  HMAC_CTX_free(ctx);
+ 
+   if (hmac_len != SHA_DIGEST_LENGTH)
+     GPF_T;
+@@ -1657,7 +1668,7 @@ dsig_hmac_sha1_digest (dk_session_t * se
+ int
+ dsig_hmac_sha1_verify (dk_session_t * ses_in, long len, xenc_key_t * key, caddr_t digest)
+ {
+-  HMAC_CTX ctx;
++  HMAC_CTX *ctx;
+   unsigned char * data;
+   unsigned char key_data[3 * 8];
+   unsigned char md [SHA_DIGEST_LENGTH + 1];
+@@ -1686,6 +1697,9 @@ dsig_hmac_sha1_verify (dk_session_t * se
+ 	  return 0;
+     }
+ 
++  ctx = HMAC_CTX_new();
++  if (!ctx)
++	  return 0;
+ 
+   data = (unsigned char *) dk_alloc_box (len, DV_C_STRING);
+   CATCH_READ_FAIL (ses_in)
+@@ -1695,14 +1709,15 @@ dsig_hmac_sha1_verify (dk_session_t * se
+   FAILED
+     {
+       dk_free_box ((box_t) data);
++      HMAC_CTX_free(ctx);
+       return 0;
+     }
+   END_READ_FAIL (ses_in);
+ 
+-  HMAC_Init(&ctx, (void*) key_data , key_len, EVP_sha1 ());
+-  HMAC_Update(&ctx, data, len);
+-  HMAC_Final(&ctx, md, &hmac_len);
+-  HMAC_cleanup(&ctx);
++  HMAC_Init_ex(ctx, (void*) key_data , key_len, EVP_sha1 (), NULL);
++  HMAC_Update(ctx, data, len);
++  HMAC_Final(ctx, md, &hmac_len);
++  HMAC_CTX_free(ctx);
+   dk_free_box ((box_t) data);
+ 
+   len1 = xenc_encode_base64 ((char *)md, md64, hmac_len);
+@@ -1763,7 +1778,7 @@ int xenc_aes_encryptor (dk_session_t * s
+   caddr_t outbuf_beg;
+   int len;
+   caddr_t encoded_out;
+-  EVP_CIPHER_CTX ctx;
++  EVP_CIPHER_CTX *ctx;
+   unsigned char * ivec = &key->ki.aes.iv[0];
+ 
+   CATCH_READ_FAIL (ses_in)
+@@ -1778,7 +1793,7 @@ int xenc_aes_encryptor (dk_session_t * s
+   END_READ_FAIL (ses_in);
+ 
+ #if 1
+-  EVP_CIPHER_CTX_init(&ctx);
++  ctx = EVP_CIPHER_CTX_new();
+   outbuf_beg = dk_alloc_box (box_length (text) + 16, DV_BIN);
+   memcpy (outbuf_beg, ivec, 16);
+   outbuf = outbuf_beg + 16;
+@@ -1786,20 +1801,19 @@ int xenc_aes_encryptor (dk_session_t * s
+   switch (key->ki.aes.bits)
+     {
+     case 128:
+-      EVP_EncryptInit_ex(&ctx, EVP_aes_128_cbc(), NULL, key->ki.aes.k, ivec);
++      EVP_EncryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, key->ki.aes.k, ivec);
+       break;
+     case 192:
+-      EVP_EncryptInit_ex(&ctx, EVP_aes_192_cbc(), NULL, key->ki.aes.k, ivec);
++      EVP_EncryptInit_ex(ctx, EVP_aes_192_cbc(), NULL, key->ki.aes.k, ivec);
+       break;
+     case 256:
+-      EVP_EncryptInit_ex(&ctx, EVP_aes_256_cbc(), NULL, key->ki.aes.k, ivec);
++      EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key->ki.aes.k, ivec);
+       break;
+     default:
+       GPF_T1 ("Unsupported key size");
+     }
+-  if(!EVP_EncryptUpdate(&ctx, (unsigned char *)outbuf, &outlen, (unsigned char *)text, box_length (text)))
++  if(!EVP_EncryptUpdate(ctx, (unsigned char *)outbuf, &outlen, (unsigned char *)text, box_length (text)))
+     {
+-      EVP_CIPHER_CTX_cleanup(&ctx);
+       dk_free_box (text);
+       dk_free_box (outbuf_beg);
+       xenc_report_error (t, 500, XENC_ENC_ERR, "AES encryption internal error #2");
+@@ -1812,7 +1826,7 @@ int xenc_aes_encryptor (dk_session_t * s
+       xenc_report_error (t, 500, XENC_ENC_ERR, "AES encryption internal error #3");
+       } */
+   /* outlen += tmplen; */
+-  EVP_CIPHER_CTX_cleanup(&ctx);
++  EVP_CIPHER_CTX_free(ctx);
+ 
+ #else
+   outbuf_beg = dk_alloc_box (box_length (text) + 16 /* iv */, DV_BIN);
+@@ -2050,6 +2064,7 @@ xenc_rsa_decryptor (dk_session_t * ses_i
+   int len = 0;
+   int keysize;
+   RSA * rsa = key->xek_private_rsa;
++  const BIGNUM *p, *q;
+ 
+   if (!seslen)
+     {
+@@ -2062,9 +2077,9 @@ xenc_rsa_decryptor (dk_session_t * ses_i
+       xenc_report_error (t, 500 + strlen (key->xek_name), XENC_ENC_ERR, "could not make RSA decryption [key %s is not RSA]", key->xek_name);
+       return 0;
+     }
++  RSA_get0_factors(rsa, &p, &q);
+   if (!rsa ||
+-      !rsa->p ||
+-      !rsa->q)
++      !p || !q)
+     {
+       if (key->xek_x509_KI)
+ 	key = xenc_get_key_by_keyidentifier (key->xek_x509_KI, 1);
+--- a/libsrc/util/sslengine.c
++++ b/libsrc/util/sslengine.c
+@@ -29,7 +29,11 @@
+ int
+ ssl_engine_startup (void)
+ {
+-  CRYPTO_malloc_init ();
++#if OPENSSL_VERSION_NUMBER < 0x10100000 || defined LIBRESSL_VERSION_NUMBER
++	CRYPTO_malloc_init ();
++#else
++	OPENSSL_malloc_init();
++#endif
+   ERR_load_crypto_strings();
+   OpenSSL_add_all_algorithms();
+ 
+--- a/libsrc/Wi/http.c
++++ b/libsrc/Wi/http.c
+@@ -8886,7 +8886,7 @@ ssl_server_set_certificate (SSL_CTX* ssl
+ 		  log_error ("SSL: The stored certificate '%s' can not be used as extra chain certificate", tok);
+ 		  break;
+ 		}
+-	      CRYPTO_add(&k->xek_x509->references, 1, CRYPTO_LOCK_X509);
++	      X509_up_ref(k->xek_x509);
+               tok = strtok_r (NULL, ",", &tok_s);
+ 	    }
+ 	  dk_free_box (str);
+--- a/libsrc/Dk/Dkernel.c
++++ b/libsrc/Dk/Dkernel.c
+@@ -5280,7 +5280,11 @@ ssl_server_init ()
+   }
+ #endif
+ 
+-  SSLeay_add_all_algorithms ();
++#if OPENSSL_VERSION_NUMBER < 0x10100000
++  SSLeay_add_all_algorithms();
++#else
++  OpenSSL_add_all_algorithms();
++#endif
+   PKCS12_PBE_add ();		/* stub */
+ 
+ #ifdef NO_THREAD

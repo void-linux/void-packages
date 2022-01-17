@@ -1,0 +1,923 @@
+From 0597a79d084c014780136da906afe21d15e982cb Mon Sep 17 00:00:00 2001
+From: DeepakRajendrakumaran <deepak.rajendrakumaran@intel.com>
+Date: Tue, 5 Jan 2021 13:53:30 -0800
+Subject: [PATCH] Remove LLVM 8.0 and LLVM 9.0. (#1966)
+
+---
+ .appveyor.yml                        |  3 --
+ .travis.yml                          |  7 ---
+ CMakeLists.txt                       | 12 ++----
+ src/ast.cpp                          |  4 --
+ src/ctx.cpp                          | 30 -------------
+ src/gen/GlobalsLocalization.cpp      |  4 --
+ src/ispc.cpp                         | 20 ---------
+ src/ispc.h                           |  3 +-
+ src/ispc_version.h                   |  4 +-
+ src/main.cpp                         | 13 ------
+ src/module.cpp                       | 27 ------------
+ src/module.h                         |  2 -
+ src/opt.cpp                          | 64 ++--------------------------
+ src/type.cpp                         | 10 ++---
+ tests/lit-tests/1771.ispc            |  1 -
+ tests/lit-tests/1844.ispc            |  3 --
+ tests/lit-tests/1926.ispc            |  2 -
+ tests/lit-tests/cpus_x86.ispc        |  2 +
+ tests/lit-tests/cpus_x86_llvm10.ispc | 11 -----
+ tests/lit-tests/lit.cfg              |  5 ---
+ 20 files changed, 14 insertions(+), 213 deletions(-)
+ delete mode 100644 tests/lit-tests/cpus_x86_llvm10.ispc
+
+diff --git a/.appveyor.yml b/.appveyor.yml
+index 451a7b3e0..7945cca2a 100644
+--- a/.appveyor.yml
++++ b/.appveyor.yml
+@@ -41,8 +41,6 @@ environment:
+       LLVM_VERSION: latest
+     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+       LLVM_VERSION: 10.0
+-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+-      LLVM_VERSION: 9.0
+ 
+ for:
+ -
+@@ -62,7 +60,6 @@ for:
+         if "%APPVEYOR_BUILD_WORKER_IMAGE%"=="Visual Studio 2019" ( (set generator="Visual Studio 16") & (set vsversion=2019))
+         set LLVM_TAR=llvm-11.0.0-win.vs2019-Release+Asserts-x86.arm.wasm.7z
+         if "%LLVM_VERSION%"=="10.0" (set LLVM_TAR=llvm-10.0.1-win.vs2019-Release+Asserts-x86.arm.wasm.zip)
+-        if "%LLVM_VERSION%"=="9.0" (set LLVM_TAR=llvm-9.0.1-win.vs2017-Release+Asserts-x86.arm.wasm.zip)
+   install:
+     - ps: choco install --no-progress winflexbison3 wget 7zip
+     - cmd: |-
+diff --git a/.travis.yml b/.travis.yml
+index 2e96017a6..3a6b85264 100644
+--- a/.travis.yml
++++ b/.travis.yml
+@@ -108,13 +108,6 @@ jobs:
+         - LLVM_TAR=llvm-10.0.1-ubuntu16.04-Release+Asserts-x86.arm.wasm.tar.xz
+         - LLVM_REPO=https://github.com/dbabokin/llvm-project
+         - ISPC_HOME=$TRAVIS_BUILD_DIR
+-    # LLVM 9.0 + Ubuntu 16.04: build, lit tests, examples (build + run), benchmarks (build + trial run)
+-    - <<: *my_tag
+-      env:
+-        - LLVM_VERSION=9.0 OS=Ubuntu16.04
+-        - LLVM_TAR=llvm-9.0.1-ubuntu16.04-Release+Asserts-x86.arm.wasm.tar.xz
+-        - LLVM_REPO=https://github.com/dbabokin/llvm-project
+-        - ISPC_HOME=$TRAVIS_BUILD_DIR
+     # WASM enabled build
+     # LLVM 11.0 + Ubuntu 16.04: build, lit tests, examples (build), benchmarks (build + trial run)
+     - <<: *my_tag
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 5fa863fcf..a6b3ed251 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -241,10 +241,8 @@ if (X86_ENABLED)
+         avx2-i8x32 avx2-i16x16
+         avx2-i32x4 avx2-i32x8 avx2-i32x16 avx2-i64x4
+         avx512knl-i32x16
+-        avx512skx-i32x16 avx512skx-i32x8)
+-    if (${LLVM_VERSION_NUMBER} VERSION_GREATER_EQUAL "10.0.0")
+-        list(APPEND ISPC_TARGETS avx512skx-i8x64 avx512skx-i16x32)
+-    endif()
++        avx512skx-i32x16 avx512skx-i32x8
++        avx512skx-i8x64 avx512skx-i16x32)
+ endif()
+ if (ARM_ENABLED)
+     list(APPEND ISPC_TARGETS neon-i8x16 neon-i16x8 neon-i32x4 neon-i32x8)
+@@ -259,11 +257,7 @@ if (WASM_ENABLED)
+ endif()
+ 
+ set(CLANG_LIBRARY_LIST clangFrontend clangDriver clangSerialization clangParse clangSema clangAnalysis clangAST clangBasic clangEdit clangLex)
+-set(LLVM_COMPONENTS engine ipo bitreader bitwriter instrumentation linker option)
+-
+-if (${LLVM_VERSION_NUMBER} VERSION_GREATER_EQUAL "10.0.0")
+-    list(APPEND LLVM_COMPONENTS frontendopenmp)
+-endif()
++set(LLVM_COMPONENTS engine ipo bitreader bitwriter instrumentation linker option frontendopenmp)
+ 
+ if (X86_ENABLED)
+     list(APPEND LLVM_COMPONENTS x86)
+diff --git a/src/ast.cpp b/src/ast.cpp
+index 20f75a29c..5a43c4854 100644
+--- a/src/ast.cpp
++++ b/src/ast.cpp
+@@ -44,9 +44,7 @@
+ #include "sym.h"
+ #include "util.h"
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+ #include <llvm/Support/TimeProfiler.h>
+-#endif
+ ///////////////////////////////////////////////////////////////////////////
+ // ASTNode
+ 
+@@ -62,9 +60,7 @@ void AST::AddFunction(Symbol *sym, Stmt *code) {
+ }
+ 
+ void AST::GenerateIR() {
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope TimeScope("GenerateIR");
+-#endif
+     for (unsigned int i = 0; i < functions.size(); ++i)
+         functions[i]->GenerateIR();
+ }
+diff --git a/src/ctx.cpp b/src/ctx.cpp
+index 977e9d222..42c4ea09d 100644
+--- a/src/ctx.cpp
++++ b/src/ctx.cpp
+@@ -309,21 +309,13 @@ FunctionEmitContext::FunctionEmitContext(Function *func, Symbol *funSym, llvm::F
+             char buf[256];
+             snprintf(buf, sizeof(buf), "__off_all_on_mask_%s", g->target->GetISAString());
+ 
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_8_0
+-            llvm::Constant *offFunc = m->module->getOrInsertFunction(buf, LLVMTypes::VoidType);
+-#else // LLVM 9.0+
+             llvm::FunctionCallee offFuncCallee = m->module->getOrInsertFunction(buf, LLVMTypes::VoidType);
+             llvm::Constant *offFunc = llvm::cast<llvm::Constant>(offFuncCallee.getCallee());
+-#endif
+             AssertPos(currentPos, llvm::isa<llvm::Function>(offFunc));
+             llvm::BasicBlock *offBB = llvm::BasicBlock::Create(*g->ctx, "entry", (llvm::Function *)offFunc, 0);
+             llvm::StoreInst *inst = new llvm::StoreInst(LLVMMaskAllOff, globalAllOnMaskPtr, offBB);
+             if (g->opt.forceAlignedMemory) {
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-                inst->setAlignment(g->target->getNativeVectorAlignment());
+-#else // LLVM 10.0+
+                 inst->setAlignment(llvm::MaybeAlign(g->target->getNativeVectorAlignment()).valueOrOne());
+-#endif
+             }
+             llvm::ReturnInst::Create(*g->ctx, offBB);
+         }
+@@ -2288,11 +2280,7 @@ llvm::Value *FunctionEmitContext::LoadInst(llvm::Value *ptr, const Type *type, c
+ #endif
+ 
+     if (g->opt.forceAlignedMemory && llvm::dyn_cast<llvm::VectorType>(pt->getElementType())) {
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-        inst->setAlignment(g->target->getNativeVectorAlignment());
+-#else // LLVM 10.0+
+         inst->setAlignment(llvm::MaybeAlign(g->target->getNativeVectorAlignment()).valueOrOne());
+-#endif
+     }
+ 
+     AddDebugPos(inst);
+@@ -2431,11 +2419,7 @@ llvm::Value *FunctionEmitContext::LoadInst(llvm::Value *ptr, llvm::Value *mask,
+                 // vs the proper alignment in practice.)
+                 int align = 1;
+ 
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-                inst->setAlignment(align);
+-#else // LLVM 10.0+
+                 inst->setAlignment(llvm::MaybeAlign(align).valueOrOne());
+-#endif
+             }
+ 
+             AddDebugPos(inst);
+@@ -2649,11 +2633,7 @@ llvm::Value *FunctionEmitContext::AllocaInst(llvm::Type *llvmType, const char *n
+         align = g->target->getNativeVectorAlignment();
+ 
+     if (align != 0) {
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-        inst->setAlignment(align);
+-#else // LLVM 10.0+
+         inst->setAlignment(llvm::MaybeAlign(align).valueOrOne());
+-#endif
+     }
+     // Don't add debugging info to alloca instructions
+     return inst;
+@@ -2926,11 +2906,7 @@ void FunctionEmitContext::StoreInst(llvm::Value *value, llvm::Value *ptr, const
+     llvm::StoreInst *inst = new llvm::StoreInst(value, ptr, bblock);
+ 
+     if (g->opt.forceAlignedMemory && llvm::dyn_cast<llvm::VectorType>(pt->getElementType())) {
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-        inst->setAlignment(g->target->getNativeVectorAlignment());
+-#else // LLVM 10.0+
+         inst->setAlignment(llvm::MaybeAlign(g->target->getNativeVectorAlignment()).valueOrOne());
+-#endif
+     }
+ 
+ #ifdef ISPC_GENX_ENABLED
+@@ -3025,16 +3001,10 @@ void FunctionEmitContext::MemcpyInst(llvm::Value *dest, llvm::Value *src, llvm::
+     }
+     if (align == NULL)
+         align = LLVMInt32(1);
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_8_0
+-    llvm::Constant *mcFunc =
+-        m->module->getOrInsertFunction("llvm.memcpy.p0i8.p0i8.i64", LLVMTypes::VoidType, LLVMTypes::VoidPointerType,
+-                                       LLVMTypes::VoidPointerType, LLVMTypes::Int64Type, LLVMTypes::BoolType);
+-#else // LLVM 9.0+
+     llvm::FunctionCallee mcFuncCallee =
+         m->module->getOrInsertFunction("llvm.memcpy.p0i8.p0i8.i64", LLVMTypes::VoidType, LLVMTypes::VoidPointerType,
+                                        LLVMTypes::VoidPointerType, LLVMTypes::Int64Type, LLVMTypes::BoolType);
+     llvm::Constant *mcFunc = llvm::cast<llvm::Constant>(mcFuncCallee.getCallee());
+-#endif
+     AssertPos(currentPos, mcFunc != NULL);
+     AssertPos(currentPos, llvm::isa<llvm::Function>(mcFunc));
+ 
+diff --git a/src/gen/GlobalsLocalization.cpp b/src/gen/GlobalsLocalization.cpp
+index 193a66289..a176e9462 100644
+--- a/src/gen/GlobalsLocalization.cpp
++++ b/src/gen/GlobalsLocalization.cpp
+@@ -470,11 +470,7 @@ void GlobalsLocalization::LocalizeGlobals(LocalizationInfo &LI) {
+         Instruction &FirstI = *Fn->getEntryBlock().begin();
+         Type *ElemTy = GV->getType()->getElementType();
+         AllocaInst *Alloca = new AllocaInst(ElemTy, 0, GV->getName() + ".local", &FirstI);
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-        Alloca->setAlignment(GV->getAlignment());
+-#else // LLVM 10.0+
+         Alloca->setAlignment(llvm::MaybeAlign(GV->getAlignment()));
+-#endif
+         if (!isa<UndefValue>(GV->getInitializer()))
+             new StoreInst(GV->getInitializer(), Alloca, &FirstI);
+ 
+diff --git a/src/ispc.cpp b/src/ispc.cpp
+index e2d0f206e..fac5233f7 100644
+--- a/src/ispc.cpp
++++ b/src/ispc.cpp
+@@ -272,9 +272,7 @@ typedef enum {
+     CPU_Silvermont,
+ 
+     CPU_ICX,
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     CPU_TGL,
+-#endif
+ #if ISPC_LLVM_VERSION >= ISPC_LLVM_12_0
+     CPU_ADL,
+     CPU_SPR,
+@@ -365,10 +363,8 @@ class AllCPUs {
+ 
+         names[CPU_ICX].push_back("icelake-server");
+         names[CPU_ICX].push_back("icx");
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+         names[CPU_TGL].push_back("tigerlake");
+         names[CPU_TGL].push_back("tgl");
+-#endif
+ #if ISPC_LLVM_VERSION >= ISPC_LLVM_12_0
+         names[CPU_ADL].push_back("alderlake");
+         names[CPU_ADL].push_back("adl");
+@@ -411,11 +407,9 @@ class AllCPUs {
+         compat[CPU_ADL] = Set(CPU_ADL, CPU_x86_64, CPU_Bonnell, CPU_Penryn, CPU_Core2, CPU_Nehalem, CPU_Silvermont,
+                               CPU_SandyBridge, CPU_IvyBridge, CPU_Haswell, CPU_Broadwell, CPU_None);
+ #endif
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+         compat[CPU_TGL] =
+             Set(CPU_TGL, CPU_x86_64, CPU_Bonnell, CPU_Penryn, CPU_Core2, CPU_Nehalem, CPU_Silvermont, CPU_SandyBridge,
+                 CPU_IvyBridge, CPU_Haswell, CPU_Broadwell, CPU_SKX, CPU_ICL, CPU_ICX, CPU_None);
+-#endif
+         compat[CPU_ICX] = Set(CPU_ICX, CPU_x86_64, CPU_Bonnell, CPU_Penryn, CPU_Core2, CPU_Nehalem, CPU_Silvermont,
+                               CPU_SandyBridge, CPU_IvyBridge, CPU_Haswell, CPU_Broadwell, CPU_SKX, CPU_ICL, CPU_None);
+ 
+@@ -556,9 +550,7 @@ Target::Target(Arch arch, const char *cpu, ISPCTarget ispc_target, bool pic, boo
+ #if ISPC_LLVM_VERSION >= ISPC_LLVM_12_0
+         case CPU_SPR:
+ #endif
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+         case CPU_TGL:
+-#endif
+         case CPU_ICX:
+         case CPU_ICL:
+         case CPU_SKX:
+@@ -916,7 +908,6 @@ Target::Target(Arch arch, const char *cpu, ISPCTarget ispc_target, bool pic, boo
+         }
+         break;
+     case ISPCTarget::avx512skx_i8x64:
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0 // LLVM 10.0+
+         // This target is enabled only for LLVM 10.0 and later
+         // because LLVM requires a number of fixes, which are
+         // committed to LLVM 11.0 and can be applied to 10.0, but not
+@@ -937,12 +928,7 @@ Target::Target(Arch arch, const char *cpu, ISPCTarget ispc_target, bool pic, boo
+         this->m_hasVecPrefetch = false;
+         CPUfromISA = CPU_SKX;
+         break;
+-#else
+-        unsupported_target = true;
+-        break;
+-#endif
+     case ISPCTarget::avx512skx_i16x32:
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0 // LLVM 10.0+
+         // This target is enabled only for LLVM 10.0 and later
+         // because LLVM requires a number of fixes, which are
+         // committed to LLVM 11.0 and can be applied to 10.0, but not
+@@ -963,10 +949,6 @@ Target::Target(Arch arch, const char *cpu, ISPCTarget ispc_target, bool pic, boo
+         this->m_hasVecPrefetch = false;
+         CPUfromISA = CPU_SKX;
+         break;
+-#else
+-        unsupported_target = true;
+-        break;
+-#endif
+ #ifdef ISPC_ARM_ENABLED
+     case ISPCTarget::neon_i8x16:
+         this->m_isa = Target::NEON;
+@@ -1662,11 +1644,9 @@ Globals::Globals() {
+     isMultiTargetCompilation = false;
+     errorLimit = -1;
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     enableTimeTrace = false;
+     // set default granularity to 500.
+     timeTraceGranularity = 500;
+-#endif
+     target = NULL;
+     ctx = new llvm::LLVMContext;
+ 
+diff --git a/src/ispc.h b/src/ispc.h
+index e25d8830e..de357a21c 100644
+--- a/src/ispc.h
++++ b/src/ispc.h
+@@ -695,13 +695,12 @@ struct Globals {
+ 
+     /* Number of errors to show in ISPC. */
+     int errorLimit;
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
++
+     /* When true, enable compile time tracing. */
+     bool enableTimeTrace;
+ 
+     /* When compile time tracing is enabled, set time granularity. */
+     int timeTraceGranularity;
+-#endif
+ };
+ 
+ enum {
+diff --git a/src/ispc_version.h b/src/ispc_version.h
+index d781347fd..434b2d678 100644
+--- a/src/ispc_version.h
++++ b/src/ispc_version.h
+@@ -44,13 +44,11 @@
+ 
+ #define ISPC_LLVM_VERSION (LLVM_VERSION_MAJOR * 10000 + LLVM_VERSION_MINOR * 100)
+ 
+-#define ISPC_LLVM_8_0 80000
+-#define ISPC_LLVM_9_0 90000
+ #define ISPC_LLVM_10_0 100000
+ #define ISPC_LLVM_11_0 110000
+ #define ISPC_LLVM_12_0 120000
+ 
+-#define OLDEST_SUPPORTED_LLVM ISPC_LLVM_8_0
++#define OLDEST_SUPPORTED_LLVM ISPC_LLVM_10_0
+ #define LATEST_SUPPORTED_LLVM ISPC_LLVM_12_0
+ 
+ #ifdef __ispc__xstr
+diff --git a/src/main.cpp b/src/main.cpp
+index 8f64330cc..5c920eabc 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -55,9 +55,7 @@
+ #include <llvm/Support/Signals.h>
+ #include <llvm/Support/TargetRegistry.h>
+ #include <llvm/Support/TargetSelect.h>
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+ #include <llvm/Support/ToolOutputFile.h>
+-#endif
+ 
+ #ifdef ISPC_HOST_IS_WINDOWS
+ #define strcasecmp stricmp
+@@ -181,11 +179,9 @@ static void lPrintVersion() {
+     snprintf(targetHelp, sizeof(targetHelp), "[--target-os=<os>]\t\t\tSelect target OS.  <os>={%s}",
+              g->target_registry->getSupportedOSes().c_str());
+     PrintWithWordBreaks(targetHelp, 24, TerminalWidth(), stdout);
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     printf("    [--time-trace]\t\t\tTurn on time profiler. Generates JSON file based on output filename.\n");
+     printf("    [--time-trace-granularity=<value>\tMinimum time granularity (in microseconds) traced by time "
+            "profiler.\n");
+-#endif
+     printf("    [--version]\t\t\t\tPrint ispc version\n");
+ #ifdef ISPC_GENX_ENABLED
+     printf("    [--vc-options=<\"-option1 -option2...\">]\t\t\t\tPass additional options to Vector Compiler backend\n");
+@@ -462,7 +458,6 @@ static void setCallingConv(VectorCallStatus vectorCall, Arch arch) {
+     }
+ }
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+ static void writeCompileTimeFile(const char *outFileName) {
+     llvm::SmallString<128> jsonFileName(outFileName);
+     jsonFileName.append(".json");
+@@ -479,7 +474,6 @@ static void writeCompileTimeFile(const char *outFileName) {
+     of->keep();
+     return;
+ }
+-#endif
+ 
+ static std::set<int> ParsingPhases(char *stages, ArgErrors &errorHandler) {
+     constexpr int parsing_limit = 100;
+@@ -791,12 +785,10 @@ int main(int Argc, char *Argv[]) {
+             }
+         } else if (!strncmp(argv[i], "--force-alignment=", 18)) {
+             g->forceAlignment = atoi(argv[i] + 18);
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+         } else if (!strcmp(argv[i], "--time-trace")) {
+             g->enableTimeTrace = true;
+         } else if (!strncmp(argv[i], "--time-trace-granularity=", 25)) {
+             g->timeTraceGranularity = atoi(argv[i] + 25);
+-#endif
+         } else if (!strcmp(argv[i], "--woff") || !strcmp(argv[i], "-woff")) {
+             g->disableWarnings = true;
+             g->emitPerfWarnings = false;
+@@ -1059,7 +1051,6 @@ int main(int Argc, char *Argv[]) {
+ 
+     // This needs to happen after the TargetOS is decided.
+     setCallingConv(vectorCall, arch);
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     if (g->enableTimeTrace) {
+         llvm::timeTraceProfilerInitialize(g->timeTraceGranularity, "ispc");
+     }
+@@ -1077,9 +1068,5 @@ int main(int Argc, char *Argv[]) {
+         }
+         llvm::timeTraceProfilerCleanup();
+     }
+-#else
+-    int ret = Module::CompileAndOutput(file, arch, cpu, targets, flags, ot, outFileName, headerFileName, depsFileName,
+-                                       depsTargetName, hostStubFileName, devStubFileName);
+-#endif
+     return ret;
+ }
+diff --git a/src/module.cpp b/src/module.cpp
+index fe7452df1..a85fec77a 100644
+--- a/src/module.cpp
++++ b/src/module.cpp
+@@ -170,9 +170,7 @@ Module::Module(const char *fn) {
+     module->setDataLayout(g->target->getDataLayout()->getStringRepresentation());
+ 
+     if (g->generateDebuggingSymbols) {
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+         llvm::TimeTraceScope TimeScope("Create Debug Data");
+-#endif
+         // To enable debug information on Windows, we have to let llvm know, that
+         // debug information should be emitted in CodeView format.
+         if (g->target_os == TargetOS::windows) {
+@@ -226,10 +224,8 @@ extern YY_BUFFER_STATE yy_create_buffer(FILE *, int);
+ extern void yy_delete_buffer(YY_BUFFER_STATE);
+ 
+ int Module::CompileFile() {
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope CompileFileTimeScope(
+         "CompileFile", llvm::StringRef(filename + ("_" + std::string(g->target->GetISAString()))));
+-#endif
+     extern void ParserInit();
+     ParserInit();
+ 
+@@ -238,18 +234,14 @@ int Module::CompileFile() {
+     // variable 'm' to be initialized and available (which it isn't until
+     // the Module constructor returns...)
+     {
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+         llvm::TimeTraceScope TimeScope("DefineStdlib");
+-#endif
+         DefineStdlib(symbolTable, g->ctx, module, g->includeStdlib);
+     }
+ 
+     bool runPreprocessor = g->runCPP;
+ 
+     if (runPreprocessor) {
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+         llvm::TimeTraceScope TimeScope("Frontend parser");
+-#endif
+         if (!IsStdin(filename)) {
+             // Try to open the file first, since otherwise we crash in the
+             // preprocessor if the file doesn't exist.
+@@ -268,9 +260,7 @@ int Module::CompileFile() {
+         yyparse();
+         yy_delete_buffer(strbuf);
+     } else {
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+         llvm::TimeTraceScope TimeScope("Frontend parser");
+-#endif
+         // No preprocessor, just open up the file if it's not stdin..
+         FILE *f = NULL;
+         if (IsStdin(filename)) {
+@@ -297,9 +287,7 @@ int Module::CompileFile() {
+ 
+     if (diBuilder)
+         diBuilder->finalize();
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope TimeScope("Optimize");
+-#endif
+     if (errorCount == 0)
+         Optimize(module, g->opt.level);
+ 
+@@ -1243,15 +1231,8 @@ bool Module::writeObjectFileOrAssembly(llvm::TargetMachine *targetMachine, llvm:
+                                        const char *outFileName) {
+     // Figure out if we're generating object file or assembly output, and
+     // set binary output for object files
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-    Assert(!g->target->isGenXTarget());
+-    llvm::TargetMachine::CodeGenFileType fileType =
+-        (outputType == Object) ? llvm::TargetMachine::CGFT_ObjectFile : llvm::TargetMachine::CGFT_AssemblyFile;
+-    bool binary = (fileType == llvm::TargetMachine::CGFT_ObjectFile);
+-#else // LLVM 10.0+
+     llvm::CodeGenFileType fileType = (outputType == Object) ? llvm::CGFT_ObjectFile : llvm::CGFT_AssemblyFile;
+     bool binary = (fileType == llvm::CGFT_ObjectFile);
+-#endif
+ 
+     llvm::sys::fs::OpenFlags flags = binary ? llvm::sys::fs::F_None : llvm::sys::fs::F_Text;
+ 
+@@ -2219,11 +2200,7 @@ void Module::execPreprocessor(const char *infilename, llvm::raw_string_ostream *
+     inst.setTarget(target);
+     inst.createSourceManager(inst.getFileManager());
+ 
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-    clang::FrontendInputFile inputFile(infilename, clang::InputKind::Unknown);
+-#else // LLVM 10.0+
+     clang::FrontendInputFile inputFile(infilename, clang::InputKind());
+-#endif
+ 
+     inst.InitializeSourceManager(inputFile);
+ 
+@@ -2722,9 +2699,7 @@ int Module::CompileAndOutput(const char *srcFile, Arch arch, const char *cpu, st
+ 
+         m = new Module(srcFile);
+         if (m->CompileFile() == 0) {
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+             llvm::TimeTraceScope TimeScope("Backend");
+-#endif
+ #ifdef ISPC_GENX_ENABLED
+             if (outputType == Asm || outputType == Object) {
+                 if (g->target->isGenXTarget()) {
+@@ -2855,9 +2830,7 @@ int Module::CompileAndOutput(const char *srcFile, Arch arch, const char *cpu, st
+ 
+             m = new Module(srcFile);
+             int compileFileError = m->CompileFile();
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+             llvm::TimeTraceScope TimeScope("Backend");
+-#endif
+             if (compileFileError == 0) {
+                 // Create the dispatch module, unless already created;
+                 // in the latter case, just do the checking
+diff --git a/src/module.h b/src/module.h
+index 61d3cfea0..603124d50 100644
+--- a/src/module.h
++++ b/src/module.h
+@@ -43,9 +43,7 @@
+ 
+ #include <llvm/IR/DebugInfo.h>
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+ #include <llvm/Support/TimeProfiler.h>
+-#endif
+ 
+ #ifdef ISPC_GENX_ENABLED
+ #include "ocl_igc_interface/igc_ocl_device_ctx.h"
+diff --git a/src/opt.cpp b/src/opt.cpp
+index a655a8344..5b1ac7b63 100644
+--- a/src/opt.cpp
++++ b/src/opt.cpp
+@@ -66,6 +66,7 @@
+ #include <llvm/IR/Instructions.h>
+ #include <llvm/IR/IntrinsicInst.h>
+ #include <llvm/IR/Intrinsics.h>
++#include <llvm/IR/IntrinsicsX86.h>
+ #include <llvm/IR/LegacyPassManager.h>
+ #include <llvm/IR/Module.h>
+ #include <llvm/IR/PatternMatch.h>
+@@ -85,9 +86,6 @@
+ #include <llvm/Transforms/Scalar/InstSimplifyPass.h>
+ #include <llvm/Transforms/Utils.h>
+ #include <llvm/Transforms/Utils/BasicBlockUtils.h>
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+-#include <llvm/IR/IntrinsicsX86.h>
+-#endif
+ 
+ #ifdef ISPC_HOST_IS_LINUX
+ #include <alloca.h>
+@@ -1003,10 +1001,7 @@ bool IntrinsicsOpt::runOnBasicBlock(llvm::BasicBlock &bb) {
+                 else
+                     align = callInst->getCalledFunction() == avxMaskedLoad32 ? 4 : 8;
+                 name = LLVMGetName(callInst->getArgOperand(0), "_load");
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-                llvm::Instruction *loadInst =
+-                    new llvm::LoadInst(castPtr, name, false /* not volatile */, align, (llvm::Instruction *)NULL);
+-#elif ISPC_LLVM_VERSION == ISPC_LLVM_10_0
++#if ISPC_LLVM_VERSION == ISPC_LLVM_10_0
+                 llvm::Instruction *loadInst = new llvm::LoadInst(castPtr, name, false /* not volatile */,
+                                                                  llvm::MaybeAlign(align), (llvm::Instruction *)NULL);
+ #else
+@@ -1043,13 +1038,8 @@ bool IntrinsicsOpt::runOnBasicBlock(llvm::BasicBlock &bb) {
+                     align = g->target->getNativeVectorAlignment();
+                 else
+                     align = callInst->getCalledFunction() == avxMaskedStore32 ? 4 : 8;
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-                llvm::StoreInst *storeInst = new llvm::StoreInst(rvalue, castPtr, (llvm::Instruction *)NULL);
+-                storeInst->setAlignment(align);
+-#else
+                 llvm::StoreInst *storeInst = new llvm::StoreInst(rvalue, castPtr, (llvm::Instruction *)NULL,
+                                                                  llvm::MaybeAlign(align).valueOrOne());
+-#endif
+                 lCopyMetadata(storeInst, callInst);
+                 llvm::ReplaceInstWithInst(callInst, storeInst);
+ 
+@@ -1066,9 +1056,7 @@ bool IntrinsicsOpt::runOnBasicBlock(llvm::BasicBlock &bb) {
+ 
+ bool IntrinsicsOpt::runOnFunction(llvm::Function &F) {
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("IntrinsicsOpt::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -1239,9 +1227,7 @@ bool InstructionSimplifyPass::runOnBasicBlock(llvm::BasicBlock &bb) {
+ 
+ bool InstructionSimplifyPass::runOnFunction(llvm::Function &F) {
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("InstructionSimplifyPass::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -2974,16 +2960,10 @@ static bool lImproveMaskedStore(llvm::CallInst *callInst) {
+ 
+             lvalue = new llvm::BitCastInst(lvalue, ptrType, "lvalue_to_ptr_type", callInst);
+             lCopyMetadata(lvalue, callInst);
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-            store =
+-                new llvm::StoreInst(rvalue, lvalue, false /* not volatile */,
+-                                    g->opt.forceAlignedMemory ? g->target->getNativeVectorAlignment() : info->align);
+-#else
+             store = new llvm::StoreInst(
+                 rvalue, lvalue, false /* not volatile */,
+                 llvm::MaybeAlign(g->opt.forceAlignedMemory ? g->target->getNativeVectorAlignment() : info->align)
+                     .valueOrOne());
+-#endif
+         }
+         if (store != NULL) {
+             lCopyMetadata(store, callInst);
+@@ -3059,11 +3039,7 @@ static bool lImproveMaskedLoad(llvm::CallInst *callInst, llvm::BasicBlock::itera
+         {
+             llvm::Type *ptrType = llvm::PointerType::get(callInst->getType(), 0);
+             ptr = new llvm::BitCastInst(ptr, ptrType, "ptr_cast_for_load", callInst);
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-            load = new llvm::LoadInst(ptr, callInst->getName(), false /* not volatile */,
+-                                      g->opt.forceAlignedMemory ? g->target->getNativeVectorAlignment() : info->align,
+-                                      (llvm::Instruction *)NULL);
+-#elif ISPC_LLVM_VERSION == ISPC_LLVM_10_0
++#if ISPC_LLVM_VERSION == ISPC_LLVM_10_0
+             load = new llvm::LoadInst(
+                 ptr, callInst->getName(), false /* not volatile */,
+                 llvm::MaybeAlign(g->opt.forceAlignedMemory ? g->target->getNativeVectorAlignment() : info->align)
+@@ -3129,9 +3105,7 @@ bool ImproveMemoryOpsPass::runOnBasicBlock(llvm::BasicBlock &bb) {
+ 
+ bool ImproveMemoryOpsPass::runOnFunction(llvm::Function &F) {
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("ImproveMemoryOpsPass::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -3424,9 +3398,7 @@ llvm::Value *lGEPAndLoad(llvm::Value *basePtr, int64_t offset, int align, llvm::
+                          llvm::Type *type) {
+     llvm::Value *ptr = lGEPInst(basePtr, LLVMInt64(offset), "new_base", insertBefore);
+     ptr = new llvm::BitCastInst(ptr, llvm::PointerType::get(type, 0), "ptr_cast", insertBefore);
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-    return new llvm::LoadInst(ptr, "gather_load", false /* not volatile */, align, insertBefore);
+-#elif ISPC_LLVM_VERSION == ISPC_LLVM_10_0
++#if ISPC_LLVM_VERSION == ISPC_LLVM_10_0
+     return new llvm::LoadInst(ptr, "gather_load", false /* not volatile */, llvm::MaybeAlign(align), insertBefore);
+ #else // LLVM 11.0+
+     return new llvm::LoadInst(llvm::dyn_cast<llvm::PointerType>(ptr->getType())->getPointerElementType(), ptr,
+@@ -4135,9 +4107,7 @@ bool GatherCoalescePass::runOnBasicBlock(llvm::BasicBlock &bb) {
+ 
+ bool GatherCoalescePass::runOnFunction(llvm::Function &F) {
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("GatherCoalescePass::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -4467,9 +4437,7 @@ bool ReplacePseudoMemoryOpsPass::runOnBasicBlock(llvm::BasicBlock &bb) {
+ 
+ bool ReplacePseudoMemoryOpsPass::runOnFunction(llvm::Function &F) {
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("ReplacePseudoMemoryOpsPass::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -4573,9 +4541,7 @@ bool IsCompileTimeConstantPass::runOnBasicBlock(llvm::BasicBlock &bb) {
+ 
+ bool IsCompileTimeConstantPass::runOnFunction(llvm::Function &F) {
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("IsCompileTimeConstantPass::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -5201,9 +5167,7 @@ bool PeepholePass::runOnBasicBlock(llvm::BasicBlock &bb) {
+ 
+ bool PeepholePass::runOnFunction(llvm::Function &F) {
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("PeepholePass::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -5299,9 +5263,7 @@ bool ReplaceStdlibShiftPass::runOnBasicBlock(llvm::BasicBlock &bb) {
+ 
+ bool ReplaceStdlibShiftPass::runOnFunction(llvm::Function &F) {
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("ReplaceStdlibShiftPass::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -5399,9 +5361,7 @@ llvm::Instruction *FixBooleanSelectPass::fixSelect(llvm::SelectInst *sel, llvm::
+ }
+ 
+ bool FixBooleanSelectPass::runOnFunction(llvm::Function &F) {
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("FixBooleanSelectPass::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+ 
+     return modifiedAny;
+@@ -5964,9 +5924,7 @@ bool GenXGatherCoalescing::runOnBasicBlock(llvm::BasicBlock &bb) {
+ }
+ 
+ bool GenXGatherCoalescing::runOnFunction(llvm::Function &F) {
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("GenXGatherCoalescing::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -6113,9 +6071,7 @@ bool PromoteToPrivateMemoryPass::runOnBasicBlock(llvm::BasicBlock &bb) {
+ 
+ bool PromoteToPrivateMemoryPass::runOnFunction(llvm::Function &F) {
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("PromoteToPrivateMemoryPass::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -6181,9 +6137,7 @@ bool ReplaceLLVMIntrinsics::runOnBasicBlock(llvm::BasicBlock &bb) {
+ 
+ bool ReplaceLLVMIntrinsics::runOnFunction(llvm::Function &F) {
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("ReplaceLLVMIntrinsics::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -6278,9 +6232,7 @@ bool ReplaceUnsupportedInsts::runOnBasicBlock(llvm::BasicBlock &bb) {
+ 
+ bool ReplaceUnsupportedInsts::runOnFunction(llvm::Function &F) {
+ 
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("ReplaceUnsupportedInsts::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -6369,9 +6321,7 @@ bool CheckUnsupportedInsts::runOnBasicBlock(llvm::BasicBlock &bb) {
+ }
+ 
+ bool CheckUnsupportedInsts::runOnFunction(llvm::Function &F) {
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("CheckUnsupportedInsts::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -6440,9 +6390,7 @@ bool MangleOpenCLBuiltins::runOnBasicBlock(llvm::BasicBlock &bb) {
+ }
+ 
+ bool MangleOpenCLBuiltins::runOnFunction(llvm::Function &F) {
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("MangleOpenCLBuiltins::runOnFunction", F.getName());
+-#endif
+     bool modifiedAny = false;
+     for (llvm::BasicBlock &BB : F) {
+         modifiedAny |= runOnBasicBlock(BB);
+@@ -6828,9 +6776,7 @@ bool FixAddressSpace::runOnFunction(llvm::Function &F) {
+     // Transformations are correct when the function is not internal.
+     // This is due to address space calculation algorithm.
+     // TODO: problems can be met in case of Stack Calls
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("FixAddressSpace::runOnFunction", F.getName());
+-#endif
+     if (F.getLinkage() == llvm::GlobalValue::LinkageTypes::InternalLinkage)
+         return false;
+ 
+@@ -6854,9 +6800,7 @@ class DemotePHIs : public llvm::FunctionPass {
+ char DemotePHIs::ID = 0;
+ 
+ bool DemotePHIs::runOnFunction(llvm::Function &F) {
+-#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+     llvm::TimeTraceScope FuncScope("DemotePHIs::runOnFunction", F.getName());
+-#endif
+     if (F.isDeclaration() || skipFunction(F))
+         return false;
+     std::vector<llvm::Instruction *> WorkList;
+diff --git a/src/type.cpp b/src/type.cpp
+index 688a4e874..fa0cb04db 100644
+--- a/src/type.cpp
++++ b/src/type.cpp
+@@ -1822,14 +1822,10 @@ llvm::DIType *StructType::GetDIType(llvm::DIScope *scope) const {
+     llvm::DIFile *diFile = pos.GetDIFile();
+     llvm::DINamespace *diSpace = pos.GetDINamespace();
+     return m->diBuilder->createStructType(diSpace, GetString(), diFile,
+-                                          pos.first_line,          // Line number
+-                                          layout->getSizeInBits(), // Size in bits
+-#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
+-                                          layout->getAlignment() * 8, // Alignment in bits
+-#else                                                                 // LLVM 10.0+
++                                          pos.first_line,                     // Line number
++                                          layout->getSizeInBits(),            // Size in bits
+                                           layout->getAlignment().value() * 8, // Alignment in bits
+-#endif
+-                                          llvm::DINode::FlagZero, // Flags
++                                          llvm::DINode::FlagZero,             // Flags
+                                           NULL, elements);
+ }
+ 
+diff --git a/tests/lit-tests/1771.ispc b/tests/lit-tests/1771.ispc
+index 98064d84d..4feb73dd7 100644
+--- a/tests/lit-tests/1771.ispc
++++ b/tests/lit-tests/1771.ispc
+@@ -5,7 +5,6 @@
+ // RUN: %{ispc} %s --target=sse4-i16x8 --emit-asm -o - | FileCheck %s -check-prefix=CHECKSSE4_I16X8
+ // RUN: %{ispc} %s --target=sse4-i8x16 --emit-asm -o - | FileCheck %s -check-prefix=CHECKSSE4_I8X16
+ 
+-// REQUIRES: LLVM_10_0+
+ // REQUIRES: X86_ENABLED
+ 
+ // CHECKAVX2_I32X8: {{[a-z]*xor[a-z]*}}  %xmm0, %xmm0, %xmm0
+diff --git a/tests/lit-tests/1844.ispc b/tests/lit-tests/1844.ispc
+index 793a8866c..189edf4c3 100644
+--- a/tests/lit-tests/1844.ispc
++++ b/tests/lit-tests/1844.ispc
+@@ -6,9 +6,6 @@
+ 
+ // REQUIRES: X86_ENABLED
+ 
+-// It doesn't work for anything earlier than 10.0, but it will not be fixed, so don't run.
+-// REQUIRES: LLVM_10_0+
+-
+ extern uniform unsigned int64 var_6;
+ extern uniform unsigned int16 var_11;
+ extern uniform bool arr_201 [1] [15] [20];
+diff --git a/tests/lit-tests/1926.ispc b/tests/lit-tests/1926.ispc
+index 70f7cc3c2..7921c91a6 100644
+--- a/tests/lit-tests/1926.ispc
++++ b/tests/lit-tests/1926.ispc
+@@ -2,8 +2,6 @@
+ // RUN: cat %T/1926.o.json \
+ // RUN:   | FileCheck %s
+ 
+-// REQUIRES: LLVM_10_0+
+-
+ // CHECK: "traceEvents"
+ // CHECK: "detail"
+ export uniform int foo(uniform int a[], uniform int count) {
+diff --git a/tests/lit-tests/cpus_x86.ispc b/tests/lit-tests/cpus_x86.ispc
+index 516efdd4c..4d60186f6 100644
+--- a/tests/lit-tests/cpus_x86.ispc
++++ b/tests/lit-tests/cpus_x86.ispc
+@@ -24,6 +24,8 @@
+ //; RUN: %{ispc} %s -o %t.o --nostdlib --target=sse2-i32x4 --cpu=icl
+ //; RUN: %{ispc} %s -o %t.o --nostdlib --target=sse2-i32x4 --cpu=icelake-server
+ //; RUN: %{ispc} %s -o %t.o --nostdlib --target=sse2-i32x4 --cpu=icx
++//; RUN: %{ispc} %s -o %t.o --nostdlib --target=sse2-i32x4 --cpu=tigerlake
++//; RUN: %{ispc} %s -o %t.o --nostdlib --target=sse2-i32x4 --cpu=tgl
+ 
+ // REQUIRES: X86_ENABLED
+ 
+diff --git a/tests/lit-tests/cpus_x86_llvm10.ispc b/tests/lit-tests/cpus_x86_llvm10.ispc
+deleted file mode 100644
+index ef00000e5..000000000
+--- a/tests/lit-tests/cpus_x86_llvm10.ispc
++++ /dev/null
+@@ -1,11 +0,0 @@
+-// The test checks that cpu definitions (including all synonyms) are successfully consumed by compiler.
+-
+-//; RUN: %{ispc} %s -o %t.o --nostdlib --target=sse2-i32x4 --cpu=tigerlake
+-//; RUN: %{ispc} %s -o %t.o --nostdlib --target=sse2-i32x4 --cpu=tgl
+-
+-// REQUIRES: X86_ENABLED
+-// REQUIRES: LLVM_10_0+
+-
+-uniform int i;
+-
+-void foo() {}
+diff --git a/tests/lit-tests/lit.cfg b/tests/lit-tests/lit.cfg
+index 17016579d..045e69437 100644
+--- a/tests/lit-tests/lit.cfg
++++ b/tests/lit-tests/lit.cfg
+@@ -30,11 +30,6 @@ print("Config:")
+ 
+ # LLVM version
+ llvm_version = LooseVersion(ispc_llvm_version_number)
+-if llvm_version >= LooseVersion("10.0.0"):
+-    print("LLVM_10_0+: YES")
+-    config.available_features.add("LLVM_10_0+")
+-else:
+-    print("LLVM_10_0+: NO")
+ 
+ if llvm_version >= LooseVersion("12.0.0"):
+     print("LLVM_12_0+: YES")

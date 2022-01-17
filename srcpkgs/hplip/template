@@ -1,0 +1,100 @@
+# Template file for 'hplip'
+pkgname=hplip
+version=3.21.10
+revision=1
+build_style=gnu-configure
+pycompile_dirs="usr/share/hplip"
+# configure checks sys.version[:3] for Python versioning, so 3.10 becomes 3.1;
+# until this is fixed upstream, manually define am_cv_python_version to circumvent
+configure_args="
+ --enable-gui-build
+ --disable-qt4
+ --enable-qt5
+ --disable-foomatic-rip-hplip-install
+ --enable-foomatic-ppd-install
+ --enable-hpcups-install
+ --enable-new-hpcups
+ --enable-cups-ppd-install
+ --enable-cups-drv-install
+ --enable-hpijs-install
+ --enable-foomatic-drv-install
+ --enable-pp-build
+ --disable-imageProcessor-build
+ --with-mimedir=/usr/share/cups/mime
+ am_cv_python_version=${py3_ver}"
+conf_files="/etc/hp/hplip.conf"
+make_dirs="/var/lib/hp 0755 root root"
+hostmakedepends="pkg-config automake libtool python3"
+makedepends="openssl-devel python3-devel libxml2-python3 cups-devel sane-devel
+ ghostscript-devel net-snmp-devel libusb-devel libjpeg-turbo-devel dbus-devel
+ avahi-libs-devel"
+depends="python3-gobject python3-dbus desktop-file-utils
+ foomatic-db foomatic-db-engine python3-distro"
+short_desc="HP Linux Imaging and Printing"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="GPL-2.0-only, BSD-3-Clause, MIT"
+homepage="https://developers.hp.com/hp-linux-imaging-and-printing"
+changelog="https://developers.hp.com/hp-linux-imaging-and-printing/release_notes"
+distfiles="${SOURCEFORGE_SITE}/hplip/hplip/${version}/hplip-${version}.tar.gz"
+checksum=de230e1fdd1e718fc718417265612e0c882949e08fe045ee56f9f9882e6b6a60
+conflicts="hplip-gui"
+
+CFLAGS="-I${XBPS_CROSS_BASE}/usr/include/libusb-1.0 -I${XBPS_CROSS_BASE}/${py3_inc}"
+
+pre_configure() {
+	export AUTOMAKE='automake --foreign'
+	libtoolize -f
+	autoreconf -fi || true
+}
+
+do_install() {
+	# remove wildcard install of ppd files to avoid errors when overwriting
+	sed -i Makefile -e "s;ppd/hpcups/\\*.ppd.gz;;g"
+	make locatedriverdir=/usr/libexec/hplip dat2drvdir=/usr/libexec/hplip \
+		rulesdir=/usr/lib/udev/rules.d DESTDIR=${DESTDIR} install
+
+	# Move sane config to dll.d to avoid conflicts
+	vmkdir etc/sane.d/dll.d
+	mv ${DESTDIR}/etc/sane.d/dll.conf ${DESTDIR}/etc/sane.d/dll.d/hplip
+
+	# This directory is a hard requirement, prevent its removal
+	vmkdir usr/share/cups/model
+	touch ${DESTDIR}/usr/share/cups/model/.hplip
+
+	# remove autostart of hp-daemon
+	rm -rf ${DESTDIR}/etc/xdg
+	# remove unwanted files
+	rm -f ${DESTDIR}/usr/share/doc/hplip-${version}/{copyright,README_LIBJPG,COPYING}
+	# remove HAL .fdi file because HAL is no longer used
+	rm -rf ${DESTDIR}/usr/share/hal
+	rm -rf ${DESTDIR}/var
+	# remove systemd service file
+	rm -rf ${DESTDIR}/usr/lib/systemd
+	# save gui-version of hplip.conf
+	cp -p ${DESTDIR}/etc/hp/hplip.conf /tmp/hplip.conf
+	# adjust values to non-gui version
+	sed -i ${PKGDESTDIR}/etc/hp/hplip.conf \
+	 -e "s/\(gui-build=\).*/\1no/" \
+	 -e "s/\(ui-toolkit=\).*/\1no/" \
+	 -e "s/\(qt5=\).*/\1no/"
+	# licenses
+	vlicense COPYING
+	vlicense copyright
+}
+
+hplip-gui_package() {
+	depends="python3-gobject python3-dbus desktop-file-utils
+	 foomatic-db foomatic-db-engine python3-distro python3-PyQt5-dbus"
+	short_desc+=" (with GUI)"
+	conflicts="${sourcepkg}"
+	provides="${sourcepkg}-${version}_${revision}"
+	pkg_install() {
+		vmove usr/bin/hp-toolbox
+		vmove usr/share/applications
+		vmove usr/share/hplip/ui5
+		vmove usr/share/hplip/data/images
+		cp -a ${DESTDIR}/. ${PKGDESTDIR}/
+		# restore gui-version of hplip.conf
+		mv /tmp/hplip.conf ${PKGDESTDIR}/etc/hp/
+	}
+}

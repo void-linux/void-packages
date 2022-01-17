@@ -1,0 +1,79 @@
+# Template file for 'libtls'
+pkgname=libtls
+version=3.4.2
+revision=1
+wrksrc="libressl-${version}"
+build_style=gnu-configure
+configure_args="--enable-libtls-only --enable-nc $(vopt_enable asm)"
+hostmakedepends="automake libtool"
+depends="ca-certificates"
+short_desc="Version of the TLS/crypto stack forked from OpenSSL"
+maintainer="Leah Neukirchen <leah@vuxu.org>"
+license="OpenSSL, ISC"
+homepage="http://www.libressl.org/"
+changelog="https://raw.githubusercontent.com/libressl-portable/portable/master/ChangeLog"
+distfiles="http://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-${version}.tar.gz"
+checksum=cb82ca7d547336917352fbd23db2fc483c6c44d35157b32780214ec74197b3ce
+_lssl_asm_ver="1.2.0"
+replaces="libtls20>0"
+
+build_options="asm"
+desc_option_asm="Use platform assembly for faster crypto"
+
+build_options_default="asm"
+
+if [ "$build_option_asm" ]; then
+	distfiles+=" https://github.com/q66/libressl-portable-asm/archive/v${_lssl_asm_ver}.tar.gz"
+	checksum+=" e1c76178c4deb1cd20a0cd7ba553d6607f8131acb2e0844223f797e42f0d6f60"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	# disable ssp
+	i686-musl) configure_args+=" --disable-hardening";;
+	# on armv5 always disable asm as it's not supported
+	armv5*) configure_args+=" --disable-asm";;
+esac
+
+post_extract() {
+	[ -z "$build_option_asm" ] && return 0
+	mv ../libressl-portable-asm-${_lssl_asm_ver} .
+}
+
+pre_configure() {
+	if [ "$build_option_asm" ]; then
+		./libressl-portable-asm-${_lssl_asm_ver}/patch_libressl.sh .
+	fi
+	autoreconf -if
+}
+
+do_install() {
+	make -C tls install DESTDIR="$DESTDIR"
+	vlicense COPYING
+	if [ "$build_option_asm" ]; then
+		vlicense libressl-portable-asm-${_lssl_asm_ver}/LICENSE.cryptogams
+		vlicense libressl-portable-asm-${_lssl_asm_ver}/LICENSE.openssl
+	fi
+}
+
+libtls-devel_package() {
+	short_desc+=" - development files"
+	depends="libtls-${version}_${revision}"
+	pkg_install() {
+		vinstall include/tls.h 644 usr/include
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
+		vinstall libtls.pc 644 usr/lib/pkgconfig
+		for m in man/tls_*; do vman $m; done
+	}
+}
+
+libressl-netcat_package() {
+	short_desc="TCP/IP swiss army knife (LibreSSL variant)"
+	alternatives="
+	 nc:nc:/usr/bin/libressl-nc
+	 nc:nc.1:/usr/share/man/man1/libressl-nc.1"
+	pkg_install() {
+		vbin apps/nc/.libs/nc libressl-nc
+		vman apps/nc/nc.1 libressl-nc.1
+	}
+}

@@ -1,0 +1,98 @@
+# Template file for 'monero'
+pkgname=monero
+version=0.17.2.3
+revision=2
+_randomx_version="1.1.9"
+# the revision monero uses as a submodule for the specific version
+_rapidjson_gitrev="129d19ba7f496df5e33658527a7158c79b99c21c"
+_supercop_gitrev="633500ad8c8759995049ccd022107d1fa8a1bbc9"
+build_style=cmake
+conf_files="/etc/monerod.conf"
+make_dirs="
+ /var/lib/monero 0750 monero monero
+ /var/log/monero 0755 monero monero"
+hostmakedepends="pkg-config"
+makedepends="openssl-devel boost-devel libldns-devel libunwind-devel
+ readline-devel unbound-devel miniupnpc-devel expat-devel
+ cppzmq czmq-devel libsodium-devel"
+short_desc="Private, secure, untraceable, decentralised digital currency"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="BSD-3-Clause"
+homepage="https://getmonero.org"
+distfiles="https://github.com/monero-project/monero/archive/v${version}.tar.gz
+ https://github.com/tevador/RandomX/archive/v${_randomx_version}.tar.gz
+ https://github.com/Tencent/rapidjson/archive/${_rapidjson_gitrev}.tar.gz
+ https://github.com/monero-project/supercop/archive/${_supercop_gitrev}.tar.gz"
+checksum="e4462f8909bdc5e66d76f4023374ff759159c15fe7d407f0c21619769e87c35d
+ b878fd6ea6d4e1dcdfa085427ce4666c1085e8c5a9e049c04ca2036b4aead0f5
+ 44b007d419ac21b6affec58991e865ee572346ead19b73cf1c3e4e11c7a81273
+ b973b9d8269ec4d97c3c3443f0dad96d09f72b1b30e616e0947557adbdbb03f7"
+skip_extraction="v${_randomx_version}.tar.gz ${_rapidjson_gitrev}.tar.gz ${_supercop_gitrev}.tar.gz"
+system_accounts="monero"
+
+if [ "$CROSS_BUILD" ]; then
+	configure_args+=" -DTHREADS_PTHREAD_ARG=OFF"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	armv7*) configure_args+=" -DARCH=armv7" ;;
+	armv6*) configure_args+=" -DARCH=armv6" ;;
+	armv5*) configure_args+=" -DARCH=armv5" ;;
+	aarch64*) configure_args+=" -DARCH=aarch64" ;;
+	mips*) configure_args+=" -DARCH=mipsr32 -DNO_AES=ON" ;;
+	ppc64le*) configure_args+=" -DARCH=ppc64le" ;;
+	ppc64*) configure_args+=" -DARCH=ppc64" ;;
+	ppc*) configure_args+=" -DARCH=ppc"	;;
+	*) configure_args+=" -DARCH=default" ;;
+esac
+
+if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
+	makedepends+=" libatomic-devel"
+	CFLAGS+=" -latomic"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	*-musl) configure_args+=" -DSTACK_TRACE=OFF"
+esac
+
+post_extract() {
+	bsdtar xzf ${XBPS_SRCDISTDIR}/${pkgname}-${version}/v${_randomx_version}.tar.gz \
+		--strip-components=1 -C ${wrksrc}/external/randomx
+	bsdtar xzf ${XBPS_SRCDISTDIR}/${pkgname}-${version}/${_rapidjson_gitrev}.tar.gz \
+		--strip-components=1 -C ${wrksrc}/external/rapidjson
+	bsdtar xzf ${XBPS_SRCDISTDIR}/${pkgname}-${version}/${_supercop_gitrev}.tar.gz \
+		--strip-components=1 -C ${wrksrc}/external/supercop
+}
+
+pre_configure() {
+	if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
+		sed -i CMakeLists.txt -e \
+			'/include(version.cmake)/i list(APPEND EXTRA_LIBRARIES libatomic.a)'
+	fi
+}
+
+pre_build() {
+	if [ "$CROSS_BUILD" ]; then
+		# The generate_translations_header binary is executed during the build
+		# but is not included in the binary package. It thus needs to be
+		# built for the host
+		CC=${CC_host} CFLAGS="${XBPS_CFLAGS}" LDFLAGS="${XBPS_LDFLAGS}" \
+			ninja -C build ${makejobs} generate_translations_header
+	fi
+}
+
+post_install() {
+	vlicense LICENSE
+	vbin build/bin/monero-blockchain-import
+	vbin build/bin/monero-blockchain-export
+	vinstall utils/conf/monerod.conf 644 etc
+	vsv monerod
+}
+
+monero-devel_package() {
+	short_desc+=" - development files"
+	pkg_install() {
+		vlicense LICENSE
+		vmove usr/include
+	}
+}

@@ -1,0 +1,95 @@
+name: Check PR
+
+on: pull_request
+
+jobs:
+  # Lint changed templates.
+  xlint:
+    name: Lint templates
+    runs-on: ubuntu-18.04
+
+    env:
+      PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin:/tmp/bin'
+      XLINT: '1'
+      LICENSE_LIST: common/travis/license.lst
+
+    steps:
+      - uses: actions/checkout@v1
+        with:
+          fetch-depth: 200
+      - run: common/travis/fetch_upstream.sh
+      - run: common/travis/changed_templates.sh
+      - run: common/travis/fetch-xbps.sh
+      - run: common/travis/fetch-xtools.sh
+      - run: common/travis/xlint.sh
+
+  # Build changed packages.
+  build:
+    name: Build packages
+    runs-on: ubuntu-18.04
+    if: "!contains(github.event.pull_request.title, '[ci skip]') && !contains(github.event.pull_request.body, '[ci skip]')"
+
+    container:
+      image: 'ghcr.io/void-linux/xbps-src-masterdir:20210313rc01-${{ matrix.config.bootstrap }}'
+      env:
+        PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin:/tmp/bin'
+        ARCH: '${{ matrix.config.arch }}'
+        BOOTSTRAP: '${{ matrix.config.bootstrap }}'
+        TEST: '${{ matrix.config.test }}'
+        HOSTREPO: /hostrepo
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { arch: x86_64, bootstrap: x86_64, test: 1 }
+          - { arch: i686, bootstrap: i686, test: 1 }
+          - { arch: aarch64, bootstrap: x86_64, test: 0 }
+          - { arch: armv7l, bootstrap: x86_64, test: 0 }
+          - { arch: x86_64-musl, bootstrap: x86_64-musl, test: 1 }
+          - { arch: armv6l-musl, bootstrap: x86_64-musl, test: 0 }
+          - { arch: aarch64-musl, bootstrap: x86_64-musl, test: 0 }
+
+    steps:
+      - name: Prepare container
+        run: |
+          # Sync and upgrade once, assume error comes from xbps update
+          xbps-install -Syu || xbps-install -yu xbps
+          # Upgrade again (in case there was a xbps update)
+          xbps-install -yu
+
+      - uses: actions/checkout@v1
+        with:
+          fetch-depth: 200
+      - name: Create hostrepo and prepare masterdir
+        run: |
+         ln -s "$(pwd)" /hostrepo &&
+         common/travis/set_mirror.sh &&
+         common/travis/prepare.sh &&
+         common/travis/fetch_upstream.sh &&
+         common/travis/fetch-xtools.sh
+      - run: common/travis/changed_templates.sh
+
+      - name: Build and check packages
+        run: |
+          (
+          here="$(pwd)"
+          cd /
+          "$here/common/travis/build.sh" "$BOOTSTRAP" "$ARCH" "$TEST"
+          )
+
+      - name: Show files
+        run: |
+          (
+          here="$(pwd)"
+          cd /
+          "$here/common/travis/show_files.sh" "$BOOTSTRAP" "$ARCH"
+          )
+
+      - name: Verify repository state
+        run: |
+          (
+          here="$(pwd)"
+          cd /
+          "$here/common/travis/check-install.sh" "$BOOTSTRAP" "$ARCH"
+          )

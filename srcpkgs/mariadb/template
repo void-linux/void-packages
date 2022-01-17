@@ -1,0 +1,146 @@
+# Template file for 'mariadb'
+pkgname=mariadb
+version=10.5.10
+revision=2
+build_style=cmake
+build_helper=qemu
+configure_args="-DBUILD_CONFIG=mysql_release
+ -DMYSQL_DATADIR=/var/lib/mysql -DMYSQL_UNIX_ADDR=/run/mysqld/mysqld.sock
+ -DDEFAULT_CHARSET=utf8 -DDEFAULT_COLLATION=utf8_general_ci
+ -DENABLED_LOCAL_INFILE=ON -DINSTALL_INFODIR=share/mysql/docs
+ -DINSTALL_MANDIR=share/man -DINSTALL_PLUGINDIR=lib/mysql/plugin
+ -DINSTALL_SCRIPTDIR=bin -DINSTALL_INCLUDEDIR=include/mysql
+ -DINSTALL_DOCREADMEDIR=share/mysql -DINSTALL_SUPPORTFILESDIR=share/mysql
+ -DINSTALL_MYSQLSHAREDIR=share/mysql -DINSTALL_DOCDIR=share/mysql/docs
+ -DINSTALL_SHAREDIR=share/mysql -DSTACK_DIRECTION=1
+ -DWITH_ZLIB=system -DWITH_SSL=system  -DWITH_LIBARCHIVE=system
+ -DWITH_EMBEDDED_SERVER=ON -DPLUGIN_TOKUDB=NO -DPLUGIN_BLACKHOLE=YES
+ -DPLUGIN_PARTITION=YES -DWITH_EXTRA_CHARSETS=complex -DWITH_LIBWRAP=OFF
+ -DWITH_READLINE=ON -DWITH_SYSTEMD=no -DWITH_PCRE=system"
+hostmakedepends="bison perl flex pkg-config"
+makedepends="ncurses-devel gnutls-devel libaio-devel boost-devel pam-devel zlib-devel
+ pcre2-devel libatomic-devel"
+depends="mariadb-client"
+checkdepends="perl"
+short_desc="Fast SQL database server, drop-in replacement for MySQL"
+maintainer="Justin Jagieniak <justin@jagieniak.net>"
+license="GPL-2.0-only"
+homepage="https://mariadb.com"
+distfiles="http://archive.mariadb.org/$pkgname-$version/source/${pkgname}-${version}.tar.gz"
+checksum=a5ff32f9fcaaf26bf5cba94accc7b246d2d5eb75710d027e40122df6bac0babb
+lib32disabled=yes
+provides="mysql-${version}_${revision}"
+replaces="mysql>=0"
+system_accounts="mysql"
+mysql_homedir="/var/lib/mysql"
+make_dirs="/var/lib/mysql 0700 mysql mysql
+ /usr/lib/mysql/plugin/auth_pam_tool_dir 0700 mysql root"
+CFLAGS="-UNDEBUG"
+CXXFLAGS="-UNDEBUG"
+
+post_patch() {
+	case "$XBPS_TARGET_MACHINE" in
+		*-musl)
+			patch -p0 -i ${FILESDIR}/musl-have-stacktrace.patch
+			patch -p0 -i ${FILESDIR}/musl-ppc-remove-glibc-dep.patch
+			;;
+	esac
+}
+
+do_check() {
+	cd build
+	if [ "$XBPS_CHECK_PKGS" = full ]; then
+		if [ ! "$CROSS_BUILD" ]; then
+			mem="--mem"
+		fi
+		vtargetrun ${XBPS_CROSS_BASE}/usr/bin/perl mysql-test/mtr --parallel=${XBPS_MAKEJOBS} ${mem} --force --max-test-fail=40
+	else
+		ctest -E "(conc336|bulk1|performance|basic-t|fetch|charset|logs|cursor|errors|view|ps|ps_bugs|sp|result|connection|misc|ps_new|thread|features-10_2|async|test-connect)"
+	fi
+}
+
+post_install() {
+	# Remove unneeded stuff.
+	rm -rf ${DESTDIR}/usr/{sql-bench,mysql-test,data}
+	rm -f ${DESTDIR}/usr/share/man/man1/mysql-test-run.pl.1
+	rm -f ${DESTDIR}/usr/bin/mytop
+
+	vmkdir usr/lib/security
+	vmkdir etc/security
+	mv ${DESTDIR}/usr/share/pam_user_map.so ${DESTDIR}/usr/lib/security/
+	mv ${DESTDIR}/usr/share/user_map.conf ${DESTDIR}/etc/security/
+
+	vsv mysqld
+}
+
+libmariadbclient_package() {
+	short_desc+=" - client library"
+	provides="libmysqlclient-${version}_${revision}"
+	replaces="libmysqlclient>=0"
+	pkg_install() {
+		vmove "usr/lib/libmariadb*.so.*"
+	}
+}
+libmariadbclient-devel_package() {
+	depends="libmariadbclient>=${version}_${revision} libatomic-devel"
+	provides="libmysqlclient-devel-${version}_${revision}"
+	replaces="libmysqlclient-devel>=0"
+	short_desc+=" - client development files"
+	pkg_install() {
+		vmove usr/bin/mysql_config
+		vmove usr/share/man/man1/mysql_config.1
+		vmove usr/include
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
+	}
+}
+mariadb-client_package() {
+	depends="perl"
+	provides="mysql-client-${version}_${revision}"
+	replaces="mysql-client>=0"
+	short_desc+=" - client binaries"
+	pkg_install() {
+		for f in innochecksum innotop myisam_ftdump mysql mysql_client_test \
+			mysql_client_test_embedded mysqldumpslow mysqlbinlog \
+			mysql_find_rows mysql_fix_extensions mysql_waitpid mysqlaccess \
+			mysqladmin mysqlanalyze mysqlbug mysqlcheck mysqldump \
+			mysqlimport mysqloptimize mysqlrepair mysqlreport mysqlshow \
+			mysqlslap mysqltest_embedded mysqlmanager mysqltest \
+			mysqlhotcopy mysql_upgrade mysql_zap; do
+			if [ -f ${DESTDIR}/usr/bin/${f} ]; then
+				vmove usr/bin/${f}
+			elif [ -f ${DESTDIR}/usr/sbin/${f} ]; then
+				vmove usr/sbin/${f}
+			fi
+			if [ -f ${DESTDIR}/usr/share/man/man1/${f}.1 ]; then
+				vmove usr/share/man/man1/${f}.1
+			elif [ -f ${DESTDIR}/usr/share/man/man8/${f}.8 ]; then
+				vmove usr/share/man/man8/${f}.8
+			fi
+		done
+	}
+}
+
+libmysqlclient_package() {
+	build_style=meta
+	depends="libmariadbclient"
+	short_desc="MySQL - (transitional dummy package)"
+}
+
+libmysqlclient-devel_package() {
+	build_style=meta
+	depends="libmariadbclient-devel"
+	short_desc="MySQL - (transitional dummy package)"
+}
+
+mysql-client_package() {
+	build_style=meta
+	depends="mariadb"
+	short_desc="MySQL - (transitional dummy package)"
+}
+
+mysql_package() {
+	build_style=meta
+	depends="mariadb"
+	short_desc="MySQL - (transitional dummy package)"
+}

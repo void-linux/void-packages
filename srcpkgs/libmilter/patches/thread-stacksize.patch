@@ -1,0 +1,42 @@
+Set default pthread stack size to 256 KB
+
+This patch tries to fix various crashes for applications depending on libmilter
+by setting the stack size for pthreads to 256 KB. The default stack size for
+musl libc is set to 80 KB whereas glibc has it set to 8 MB. This causes problems
+when a large amount of memory is allocated on the stack.
+
+For example, opendkim allocates blocks of 64 KB multiple times, which causes
+libmilter (and therefore opendkim) to crash. For now, a stack size of 256 KB
+looks sufficient and makes opendkim stop crashing.
+
+Fixes https://bugs.alpinelinux.org/issues/6360
+
+--- a/libmilter/libmilter.h
++++ b/libmilter/libmilter.h
+@@ -127,10 +127,10 @@
+ # define MI_SOCK_READ(s, b, l)	read(s, b, l)
+ # define MI_SOCK_READ_FAIL(x)	((x) < 0)
+ # define MI_SOCK_WRITE(s, b, l)	write(s, b, l)
+-
+-# define thread_create(ptid,wr,arg) pthread_create(ptid, NULL, wr, arg)
+ # define sthread_get_id()	pthread_self()
+
++extern int thread_create(pthread_t *ptid, void *(*wr) (void *), void *arg);
++
+ typedef pthread_mutex_t smutex_t;
+ # define smutex_init(mp)	(pthread_mutex_init(mp, NULL) == 0)
+ # define smutex_destroy(mp)	(pthread_mutex_destroy(mp) == 0)
+--- a/libmilter/main.c
++++ b/libmilter/main.c
+@@ -16,6 +16,12 @@
+ #include <fcntl.h>
+ #include <sys/stat.h>
+
++int thread_create(pthread_t *ptid, void *(*wr) (void *), void *arg) {
++	pthread_attr_t attr;
++	pthread_attr_init(&attr);
++	pthread_attr_setstacksize(&attr,256*1024);
++	return pthread_create(ptid, &attr, wr, arg);
++}
+
+ static smfiDesc_ptr smfi = NULL;

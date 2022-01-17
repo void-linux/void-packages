@@ -1,0 +1,796 @@
+Taken from https://github.com/wwmayer/FreeCAD/commit/bb9bcbd51df7c3cb76c5823038e4ea0f7e25a9ff
+but removed patch on file src/Mod/Fem/Gui/ViewProviderFemPostObject.cpp : already applied (2021-01-20)
+
+diff --git src/3rdParty/salomesmesh/inc/SMDS_MeshElement.hxx b/src/3rdParty/salomesmesh/inc/SMDS_MeshElement.hxx
+index 14a6d9a763f..0e9b9e6c905 100644
+--- a/src/3rdParty/salomesmesh/inc/SMDS_MeshElement.hxx
++++ b/src/3rdParty/salomesmesh/inc/SMDS_MeshElement.hxx
+@@ -40,11 +40,16 @@
+ 
+ #include <vtkType.h>
+ #include <vtkCellType.h>
++#include <vtkCellArray.h>
+ 
+ //typedef unsigned short UShortType;
+ typedef short ShortType;
+ typedef int   LongType;
+-
++#ifdef VTK_CELL_ARRAY_V2
++typedef const vtkIdType* vtkIdTypePtr;
++#else
++typedef vtkIdType* vtkIdTypePtr;
++#endif
+ class SMDS_MeshNode;
+ class SMDS_MeshEdge;
+ class SMDS_MeshFace;
+@@ -192,7 +197,7 @@ protected:
+   //! Element index in vector SMDS_Mesh::myNodes or SMDS_Mesh::myCells
+   int myID;
+   //! index in vtkUnstructuredGrid
+-  int myVtkID;
++  vtkIdType myVtkID;
+   //! SMDS_Mesh identification in SMESH
+   ShortType myMeshId;
+   //! SubShape and SubMesh identification in SMESHDS
+diff --git src/3rdParty/salomesmesh/inc/SMDS_UnstructuredGrid.hxx b/src/3rdParty/salomesmesh/inc/SMDS_UnstructuredGrid.hxx
+index 9e4a23eddfb..77465814541 100644
+--- a/src/3rdParty/salomesmesh/inc/SMDS_UnstructuredGrid.hxx
++++ b/src/3rdParty/salomesmesh/inc/SMDS_UnstructuredGrid.hxx
+@@ -95,7 +95,11 @@ public:
+                                        std::map<int, std::map<long,int> >& nodeQuadDomains);
+   vtkCellLinks* GetLinks()
+   {
++#ifdef VTK_CELL_ARRAY_V2
++    return static_cast<vtkCellLinks*>(GetCellLinks());
++#else
+     return Links;
++#endif
+   }
+   SMDS_Downward* getDownArray(unsigned char vtkType)
+   {
+diff --git src/3rdParty/salomesmesh/src/SMDS/SMDS_BallElement.cpp b/src/3rdParty/salomesmesh/src/SMDS/SMDS_BallElement.cpp
+index 299093c94f6..2680c217305 100644
+--- a/src/3rdParty/salomesmesh/src/SMDS/SMDS_BallElement.cpp
++++ b/src/3rdParty/salomesmesh/src/SMDS/SMDS_BallElement.cpp
+@@ -67,10 +67,16 @@ void SMDS_BallElement::SetDiameter(double diameter)
+ bool SMDS_BallElement::ChangeNode (const SMDS_MeshNode * node)
+ {
+   vtkUnstructuredGrid* grid = SMDS_Mesh::_meshList[myMeshId]->getGrid();
++#ifdef VTK_CELL_ARRAY_V2
++  vtkNew<vtkIdList> cellPoints;
++  grid->GetCellPoints(myVtkID, cellPoints.GetPointer());
++  cellPoints->SetId(0, node->getVtkId());
++#else
+   vtkIdType npts = 0;
+   vtkIdType* pts = 0;
+   grid->GetCellPoints(myVtkID, npts, pts);
+   pts[0] = node->getVtkId();
++#endif
+   SMDS_Mesh::_meshList[myMeshId]->setMyModified();
+   return true;
+ }
+@@ -83,7 +89,8 @@ void SMDS_BallElement::Print (std::ostream & OS) const
+ const SMDS_MeshNode* SMDS_BallElement::GetNode (const int ind) const
+ {
+   vtkUnstructuredGrid* grid = SMDS_Mesh::_meshList[myMeshId]->getGrid();
+-  vtkIdType npts, *pts;
++  vtkIdType npts;
++  vtkIdTypePtr pts;
+   grid->GetCellPoints( myVtkID, npts, pts );
+   return SMDS_Mesh::_meshList[myMeshId]->FindNodeVtk( pts[ 0 ]);
+ }
+diff --git src/3rdParty/salomesmesh/src/SMDS/SMDS_Downward.cpp b/src/3rdParty/salomesmesh/src/SMDS/SMDS_Downward.cpp
+index d6049c0bd19..a41f5c18e78 100644
+--- a/src/3rdParty/salomesmesh/src/SMDS/SMDS_Downward.cpp
++++ b/src/3rdParty/salomesmesh/src/SMDS/SMDS_Downward.cpp
+@@ -303,7 +303,7 @@ int SMDS_Down1D::getNodeSet(int cellId, int* nodeSet)
+ void SMDS_Down1D::setNodes(int cellId, int vtkId)
+ {
+   vtkIdType npts = 0;
+-  vtkIdType *pts; // will refer to the point id's of the face
++  vtkIdTypePtr pts; // will refer to the point id's of the face
+   _grid->GetCellPoints(vtkId, npts, pts);
+   // MESSAGE(vtkId << " " << npts << "  " << _nbDownCells);
+   //ASSERT(npts == _nbDownCells);
+@@ -357,7 +357,7 @@ int SMDS_Down1D::computeVtkCells(int *pts, std::vector<int>& vtkIds)
+     {
+       vtkIdType point = pts[i];
+       int numCells = _grid->GetLinks()->GetNcells(point);
+-      vtkIdType *cells = _grid->GetLinks()->GetCells(point);
++      vtkIdTypePtr cells = _grid->GetLinks()->GetCells(point);
+       for (int j = 0; j < numCells; j++)
+         {
+           int vtkCellId = cells[j];
+@@ -532,7 +532,7 @@ int SMDS_Down2D::computeVolumeIds(int cellId, int* ids)
+   // --- find point id's of the face
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *pts; // will refer to the point id's of the face
++  vtkIdTypePtr pts; // will refer to the point id's of the face
+   _grid->GetCellPoints(cellId, npts, pts);
+   vector<int> nodes;
+   for (int i = 0; i < npts; i++)
+@@ -577,7 +577,7 @@ int SMDS_Down2D::computeVolumeIdsFromNodesFace(int* pts, int npts, int* ids)
+       vtkIdType point = pts[i];
+       int numCells = _grid->GetLinks()->GetNcells(point);
+       //MESSAGE("cells pour " << i << " " << numCells);
+-      vtkIdType *cells = _grid->GetLinks()->GetCells(point);
++      vtkIdTypePtr cells = _grid->GetLinks()->GetCells(point);
+       for (int j = 0; j < numCells; j++)
+         {
+           int vtkCellId = cells[j];
+@@ -627,7 +627,7 @@ int SMDS_Down2D::computeVolumeIdsFromNodesFace(int* pts, int npts, int* ids)
+ void SMDS_Down2D::setTempNodes(int cellId, int vtkId)
+ {
+   vtkIdType npts = 0;
+-  vtkIdType *pts; // will refer to the point id's of the face
++  vtkIdTypePtr pts; // will refer to the point id's of the face
+   _grid->GetCellPoints(vtkId, npts, pts);
+   // MESSAGE(vtkId << " " << npts << "  " << _nbNodes);
+   //ASSERT(npts == _nbNodes);
+@@ -795,7 +795,7 @@ void SMDS_Down3D::getNodeIds(int cellId, std::set<int>& nodeSet)
+ {
+   int vtkId = this->_vtkCellIds[cellId];
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(vtkId, npts, nodes);
+   for (int i = 0; i < npts; i++)
+     nodeSet.insert(nodes[i]);
+@@ -1126,7 +1126,7 @@ void SMDS_DownTetra::getOrderedNodesOfFace(int cellId, std::vector<vtkIdType>& o
+   //MESSAGE("cellId = " << cellId);
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(this->_vtkCellIds[cellId], npts, nodes);
+ 
+   set<int> tofind;
+@@ -1178,7 +1178,7 @@ void SMDS_DownTetra::computeFacesWithNodes(int cellId, ListElemByNodesType& face
+   // --- find point id's of the volume
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(cellId, npts, nodes);
+ 
+   // --- create all the ordered list of node id's for each face
+@@ -1234,7 +1234,7 @@ void SMDS_DownQuadTetra::getOrderedNodesOfFace(int cellId, std::vector<vtkIdType
+   //MESSAGE("cellId = " << cellId);
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(this->_vtkCellIds[cellId], npts, nodes);
+ 
+   set<int> tofind;
+@@ -1288,7 +1288,7 @@ void SMDS_DownQuadTetra::computeFacesWithNodes(int cellId, ListElemByNodesType&
+   // --- find point id's of the volume
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(cellId, npts, nodes);
+ 
+   // --- create all the ordered list of node id's for each face
+@@ -1357,7 +1357,7 @@ void SMDS_DownPyramid::getOrderedNodesOfFace(int cellId, std::vector<vtkIdType>&
+   //MESSAGE("cellId = " << cellId);
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(this->_vtkCellIds[cellId], npts, nodes);
+ 
+   set<int> tofind;
+@@ -1435,7 +1435,7 @@ void SMDS_DownPyramid::computeFacesWithNodes(int cellId, ListElemByNodesType& fa
+   // --- find point id's of the volume
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(cellId, npts, nodes);
+ 
+   // --- create all the ordered list of node id's for each face
+@@ -1500,7 +1500,7 @@ void SMDS_DownQuadPyramid::getOrderedNodesOfFace(int cellId, std::vector<vtkIdTy
+   //MESSAGE("cellId = " << cellId);
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(this->_vtkCellIds[cellId], npts, nodes);
+ 
+   set<int> tofind;
+@@ -1580,7 +1580,7 @@ void SMDS_DownQuadPyramid::computeFacesWithNodes(int cellId, ListElemByNodesType
+   // --- find point id's of the volume
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(cellId, npts, nodes);
+ 
+   // --- create all the ordered list of node id's for each face
+@@ -1660,7 +1660,7 @@ void SMDS_DownPenta::getOrderedNodesOfFace(int cellId, std::vector<vtkIdType>& o
+   //MESSAGE("cellId = " << cellId);
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(this->_vtkCellIds[cellId], npts, nodes);
+ 
+   set<int> tofind;
+@@ -1744,7 +1744,7 @@ void SMDS_DownPenta::computeFacesWithNodes(int cellId, ListElemByNodesType& face
+   // --- find point id's of the volume
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(cellId, npts, nodes);
+ 
+   // --- create all the ordered list of node id's for each face
+@@ -1810,7 +1810,7 @@ void SMDS_DownQuadPenta::getOrderedNodesOfFace(int cellId, std::vector<vtkIdType
+   //MESSAGE("cellId = " << cellId);
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(this->_vtkCellIds[cellId], npts, nodes);
+ 
+   set<int> tofind;
+@@ -1896,7 +1896,7 @@ void SMDS_DownQuadPenta::computeFacesWithNodes(int cellId, ListElemByNodesType&
+   // --- find point id's of the volume
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(cellId, npts, nodes);
+ 
+   // --- create all the ordered list of node id's for each face
+@@ -1981,7 +1981,7 @@ void SMDS_DownHexa::getOrderedNodesOfFace(int cellId, std::vector<vtkIdType>& or
+   //MESSAGE("cellId = " << cellId);
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(this->_vtkCellIds[cellId], npts, nodes);
+ 
+   set<int> tofind;
+@@ -2036,7 +2036,7 @@ void SMDS_DownHexa::computeFacesWithNodes(int cellId, ListElemByNodesType& faces
+   // --- find point id's of the volume
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(cellId, npts, nodes);
+ 
+   // --- create all the ordered list of node id's for each face
+@@ -2112,7 +2112,7 @@ void SMDS_DownQuadHexa::getOrderedNodesOfFace(int cellId, std::vector<vtkIdType>
+   //MESSAGE("cellId = " << cellId);
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(this->_vtkCellIds[cellId], npts, nodes);
+ 
+   set<int> tofind;
+@@ -2167,7 +2167,7 @@ void SMDS_DownQuadHexa::computeFacesWithNodes(int cellId, ListElemByNodesType& f
+   // --- find point id's of the volume
+ 
+   vtkIdType npts = 0;
+-  vtkIdType *nodes; // will refer to the point id's of the volume
++  vtkIdTypePtr nodes; // will refer to the point id's of the volume
+   _grid->GetCellPoints(cellId, npts, nodes);
+ 
+   // --- create all the ordered list of node id's for each face
+diff --git src/3rdParty/salomesmesh/src/SMDS/SMDS_Mesh.cpp b/src/3rdParty/salomesmesh/src/SMDS/SMDS_Mesh.cpp
+index 61c8e751d94..1eac2907d3d 100644
+--- a/src/3rdParty/salomesmesh/src/SMDS/SMDS_Mesh.cpp
++++ b/src/3rdParty/salomesmesh/src/SMDS/SMDS_Mesh.cpp
+@@ -4768,7 +4768,11 @@ void SMDS_Mesh::dumpGrid(string ficdump)
+         ficcon << endl;
+   }
+   ficcon << "-------------------------------- connectivity " <<  nbPoints << endl;
+-        vtkCellLinks *links = myGrid->GetCellLinks();
++#ifdef VTK_CELL_ARRAY_V2
++  vtkCellLinks *links = static_cast<vtkCellLinks*>(myGrid->GetCellLinks());
++#else
++  vtkCellLinks *links = myGrid->GetCellLinks();
++#endif
+   for (int i=0; i<nbPoints; i++)
+   {
+         int ncells = links->GetNcells(i);
+diff --git src/3rdParty/salomesmesh/src/SMDS/SMDS_Mesh0DElement.cpp b/src/3rdParty/salomesmesh/src/SMDS/SMDS_Mesh0DElement.cpp
+index 95438eab064..0df32e3b97c 100644
+--- a/src/3rdParty/salomesmesh/src/SMDS/SMDS_Mesh0DElement.cpp
++++ b/src/3rdParty/salomesmesh/src/SMDS/SMDS_Mesh0DElement.cpp
+@@ -146,6 +146,17 @@ bool SMDS_Mesh0DElement::ChangeNodes(const SMDS_MeshNode* nodes[], const int nbN
+   if ( nbNodes == 1 )
+   {
+     vtkUnstructuredGrid* grid = SMDS_Mesh::_meshList[myMeshId]->getGrid();
++#ifdef VTK_CELL_ARRAY_V2
++    vtkNew<vtkIdList> cellPoints;
++    grid->GetCellPoints(myVtkID, cellPoints.GetPointer());
++    if (nbNodes != cellPoints->GetNumberOfIds())
++    {
++      MESSAGE("ChangeNodes problem: not the same number of nodes " << cellPoints->GetNumberOfIds() << " -> " << nbNodes);
++      return false;
++    }
++    myNode = nodes[0];
++    cellPoints->SetId(0, myNode->getVtkId());
++#else
+     vtkIdType npts = 0;
+     vtkIdType* pts = 0;
+     grid->GetCellPoints(myVtkID, npts, pts);
+@@ -156,6 +167,7 @@ bool SMDS_Mesh0DElement::ChangeNodes(const SMDS_MeshNode* nodes[], const int nbN
+     }
+     myNode = nodes[0];
+     pts[0] = myNode->getVtkId();
++#endif
+ 
+     SMDS_Mesh::_meshList[myMeshId]->setMyModified();
+     return true;
+diff --git src/3rdParty/salomesmesh/src/SMDS/SMDS_MeshNode.cpp b/src/3rdParty/salomesmesh/src/SMDS/SMDS_MeshNode.cpp
+index f647a5f1b8f..5b903c8fb55 100644
+--- a/src/3rdParty/salomesmesh/src/SMDS/SMDS_MeshNode.cpp
++++ b/src/3rdParty/salomesmesh/src/SMDS/SMDS_MeshNode.cpp
+@@ -191,7 +191,7 @@ class SMDS_MeshNode_MyInvIterator: public SMDS_ElemIterator
+ SMDS_ElemIteratorPtr SMDS_MeshNode::
+ GetInverseElementIterator(SMDSAbs_ElementType type) const
+ {
+-  vtkCellLinks::Link l = SMDS_Mesh::_meshList[myMeshId]->getGrid()->GetCellLinks()->GetLink(myVtkID);
++  vtkCellLinks::Link l = static_cast<vtkCellLinks*>(SMDS_Mesh::_meshList[myMeshId]->getGrid()->GetCellLinks())->GetLink(myVtkID);
+   //MESSAGE("myID " << myID << " ncells " << l.ncells);
+   return SMDS_ElemIteratorPtr(new SMDS_MeshNode_MyInvIterator(SMDS_Mesh::_meshList[myMeshId], l.cells, l.ncells, type));
+ }
+@@ -251,7 +251,7 @@ elementsIterator(SMDSAbs_ElementType type) const
+     return SMDS_MeshElement::elementsIterator(SMDSAbs_Node);
+   else
+   {
+-    vtkCellLinks::Link l = SMDS_Mesh::_meshList[myMeshId]->getGrid()->GetCellLinks()->GetLink(myVtkID);
++    vtkCellLinks::Link l = static_cast<vtkCellLinks*>(SMDS_Mesh::_meshList[myMeshId]->getGrid()->GetCellLinks())->GetLink(myVtkID);
+     return SMDS_ElemIteratorPtr(new SMDS_MeshNode_MyIterator(SMDS_Mesh::_meshList[myMeshId], l.cells, l.ncells, type));
+   }
+ }
+@@ -350,7 +350,7 @@ void SMDS_MeshNode::AddInverseElement(const SMDS_MeshElement* ME)
+   const SMDS_MeshCell *cell = dynamic_cast<const SMDS_MeshCell*> (ME);
+   assert(cell);
+   SMDS_UnstructuredGrid* grid = SMDS_Mesh::_meshList[myMeshId]->getGrid();
+-  vtkCellLinks *Links = grid->GetCellLinks();
++  vtkCellLinks *Links = static_cast<vtkCellLinks*>(grid->GetCellLinks());
+   Links->ResizeCellList(myVtkID, 1);
+   Links->AddCellReference(cell->getVtkId(), myVtkID);
+ }
+@@ -366,7 +366,7 @@ void SMDS_MeshNode::ClearInverseElements()
+ 
+ bool SMDS_MeshNode::emptyInverseElements()
+ {
+-  vtkCellLinks::Link l = SMDS_Mesh::_meshList[myMeshId]->getGrid()->GetCellLinks()->GetLink(myVtkID);
++  vtkCellLinks::Link l = static_cast<vtkCellLinks*>(SMDS_Mesh::_meshList[myMeshId]->getGrid()->GetCellLinks())->GetLink(myVtkID);
+   return (l.ncells == 0);
+ }
+ 
+@@ -378,7 +378,7 @@ bool SMDS_MeshNode::emptyInverseElements()
+ 
+ int SMDS_MeshNode::NbInverseElements(SMDSAbs_ElementType type) const
+ {
+-  vtkCellLinks::Link l = SMDS_Mesh::_meshList[myMeshId]->getGrid()->GetCellLinks()->GetLink(myVtkID);
++  vtkCellLinks::Link l = static_cast<vtkCellLinks*>(SMDS_Mesh::_meshList[myMeshId]->getGrid()->GetCellLinks())->GetLink(myVtkID);
+ 
+   if ( type == SMDSAbs_All )
+     return l.ncells;
+diff --git src/3rdParty/salomesmesh/src/SMDS/SMDS_UnstructuredGrid.cpp b/src/3rdParty/salomesmesh/src/SMDS/SMDS_UnstructuredGrid.cpp
+index fbd903b1e74..ff2b81e9694 100644
+--- a/src/3rdParty/salomesmesh/src/SMDS/SMDS_UnstructuredGrid.cpp
++++ b/src/3rdParty/salomesmesh/src/SMDS/SMDS_UnstructuredGrid.cpp
+@@ -139,8 +139,8 @@ int SMDS_UnstructuredGrid::InsertNextLinkedCell(int type, int npts, vtkIdType *p
+   for (; it != setOfNodes.end(); ++it)
+     {
+       //MESSAGE("reverse link for node " << *it << " cell " << cellid);
+-      this->Links->ResizeCellList(*it, 1);
+-      this->Links->AddCellReference(cellid, *it);
++      this->GetLinks()->ResizeCellList(*it, 1);
++      this->GetLinks()->AddCellReference(cellid, *it);
+     }
+ 
+   return cellid;
+@@ -332,9 +332,13 @@ void SMDS_UnstructuredGrid::copyBloc(vtkUnsignedCharArray *newTypes,
+     {
+       newTypes->SetValue(alreadyCopied, this->Types->GetValue(j));
+       idCellsOldToNew[j] = alreadyCopied; // old vtkId --> new vtkId
++#ifdef VTK_CELL_ARRAY_V2
++      vtkIdType oldLoc = this->GetCellLocationsArray()->GetValue(j);
++#else
+       vtkIdType oldLoc = this->Locations->GetValue(j);
++#endif
+       vtkIdType nbpts;
+-      vtkIdType *oldPtsCell = 0;
++      vtkIdTypePtr oldPtsCell = 0;
+       this->Connectivity->GetCell(oldLoc, nbpts, oldPtsCell);
+       assert(nbpts < NBMAXNODESINCELL);
+       //MESSAGE(j << " " << alreadyCopied << " " << (int)this->Types->GetValue(j) << " " << oldLoc << " " << nbpts );
+@@ -952,6 +956,21 @@ void SMDS_UnstructuredGrid::GetNodeIds(std::set<int>& nodeSet, int downId, unsig
+  */
+ void SMDS_UnstructuredGrid::ModifyCellNodes(int vtkVolId, std::map<int, int> localClonedNodeIds)
+ {
++#ifdef VTK_CELL_ARRAY_V2
++  vtkNew<vtkIdList> cellPoints;
++  this->GetCellPoints(vtkVolId, cellPoints.GetPointer());
++  for (vtkIdType i = 0; i < cellPoints->GetNumberOfIds(); i++)
++    {
++      if (localClonedNodeIds.count(cellPoints->GetId(i)))
++        {
++          vtkIdType oldpt = cellPoints->GetId(i);
++          cellPoints->SetId(i, localClonedNodeIds[oldpt]);
++          //MESSAGE(oldpt << " --> " << pts[i]);
++          //this->RemoveReferenceToCell(oldpt, vtkVolId);
++          //this->AddReferenceToCell(pts[i], vtkVolId);
++        }
++    }
++#else
+   vtkIdType npts = 0;
+   vtkIdType *pts; // will refer to the point id's of the face
+   this->GetCellPoints(vtkVolId, npts, pts);
+@@ -966,6 +985,7 @@ void SMDS_UnstructuredGrid::ModifyCellNodes(int vtkVolId, std::map<int, int> loc
+           //this->AddReferenceToCell(pts[i], vtkVolId);
+         }
+     }
++#endif
+ }
+ 
+ /*! reorder the nodes of a face
+@@ -995,11 +1015,20 @@ void SMDS_UnstructuredGrid::BuildLinks()
+     this->Links->UnRegister(this);
+     }
+ 
++#ifdef VTK_CELL_ARRAY_V2
++  this->Links = SMDS_CellLinks::New();
++  GetLinks()->Allocate(this->GetNumberOfPoints());
++  GetLinks()->Register(this);
++//FIXME: vtk9
++  GetLinks()->BuildLinks(this);
++  GetLinks()->Delete();
++#else
+   this->Links = SMDS_CellLinks::New();
+   this->Links->Allocate(this->GetNumberOfPoints());
+   this->Links->Register(this);
+   this->Links->BuildLinks(this, this->Connectivity);
+   this->Links->Delete();
++#endif
+ }
+ 
+ /*! Create a volume (prism or hexahedron) by duplication of a face.
+diff --git src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkCellIterator.cpp b/src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkCellIterator.cpp
+index deb05985f00..63b6eabb704 100644
+--- a/src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkCellIterator.cpp
++++ b/src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkCellIterator.cpp
+@@ -33,7 +33,8 @@ SMDS_VtkCellIterator::SMDS_VtkCellIterator(SMDS_Mesh* mesh, int vtkCellId, SMDSA
+   }
+   else
+   {
+-    vtkIdType npts, *pts;
++    vtkIdType npts;
++    vtkIdTypePtr pts;
+     grid->GetCellPoints( _cellId, npts, pts );
+     _vtkIdList->SetNumberOfIds( _nbNodes = npts );
+     for (int i = 0; i < _nbNodes; i++)
+@@ -67,7 +68,7 @@ SMDS_VtkCellIteratorToUNV::SMDS_VtkCellIteratorToUNV(SMDS_Mesh* mesh, int vtkCel
+   //MESSAGE("SMDS_VtkCellInterlacedIterator (UNV)" << _type);
+ 
+   _vtkIdList = vtkIdList::New();
+-  vtkIdType* pts;
++  vtkIdTypePtr pts;
+   vtkIdType npts;
+   vtkUnstructuredGrid* grid = _mesh->getGrid();
+   grid->GetCellPoints((vtkIdType)_cellId, npts, pts);
+@@ -182,7 +183,7 @@ SMDS_VtkCellIteratorPolyH::SMDS_VtkCellIteratorPolyH(SMDS_Mesh* mesh, int vtkCel
+   {
+     //MESSAGE("SMDS_VtkCellIterator Polyhedra");
+     vtkIdType nFaces = 0;
+-    vtkIdType* ptIds = 0;
++    vtkIdTypePtr ptIds = 0;
+     grid->GetFaceStream(_cellId, nFaces, ptIds);
+     int id = 0;
+     _nbNodesInFaces = 0;
+diff --git src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkEdge.cpp b/src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkEdge.cpp
+index 9786abf9aae..6d772a3cd4a 100644
+--- a/src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkEdge.cpp
++++ b/src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkEdge.cpp
+@@ -67,6 +67,19 @@ bool SMDS_VtkEdge::ChangeNodes(const SMDS_MeshNode * node1, const SMDS_MeshNode
+ bool SMDS_VtkEdge::ChangeNodes(const SMDS_MeshNode* nodes[], const int nbNodes)
+ {
+   vtkUnstructuredGrid* grid = SMDS_Mesh::_meshList[myMeshId]->getGrid();
++#ifdef VTK_CELL_ARRAY_V2
++  vtkNew<vtkIdList> cellPoints;
++  grid->GetCellPoints(myVtkID, cellPoints.GetPointer());
++  if (nbNodes != cellPoints->GetNumberOfIds())
++    {
++      MESSAGE("ChangeNodes problem: not the same number of nodes " << cellPoints->GetNumberOfIds() << " -> " << nbNodes);
++      return false;
++    }
++  for (int i = 0; i < nbNodes; i++)
++    {
++      cellPoints->SetId(i, nodes[i]->getVtkId());
++    }
++#else
+   vtkIdType npts = 0;
+   vtkIdType* pts = 0;
+   grid->GetCellPoints(myVtkID, npts, pts);
+@@ -79,6 +92,7 @@ bool SMDS_VtkEdge::ChangeNodes(const SMDS_MeshNode* nodes[], const int nbNodes)
+     {
+       pts[i] = nodes[i]->getVtkId();
+     }
++#endif
+   SMDS_Mesh::_meshList[myMeshId]->setMyModified();
+   return true;
+ }
+@@ -87,7 +101,7 @@ bool SMDS_VtkEdge::IsMediumNode(const SMDS_MeshNode* node) const
+ {
+   vtkUnstructuredGrid* grid = SMDS_Mesh::_meshList[myMeshId]->getGrid();
+   vtkIdType npts = 0;
+-  vtkIdType* pts = 0;
++  vtkIdTypePtr pts = 0;
+   grid->GetCellPoints(myVtkID, npts, pts);
+   //MESSAGE("IsMediumNode " << npts  << " " << (node->getVtkId() == pts[npts-1]));
+   return ((npts == 3) && (node->getVtkId() == pts[2]));
+@@ -137,7 +151,8 @@ const SMDS_MeshNode*
+ SMDS_VtkEdge::GetNode(const int ind) const
+ {
+   vtkUnstructuredGrid* grid = SMDS_Mesh::_meshList[myMeshId]->getGrid();
+-  vtkIdType npts, *pts;
++  vtkIdType npts;
++  vtkIdTypePtr pts;
+   grid->GetCellPoints( this->myVtkID, npts, pts );
+   return SMDS_Mesh::_meshList[myMeshId]->FindNodeVtk( pts[ ind ]);
+ }
+diff --git src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkFace.cpp b/src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkFace.cpp
+index 1389e0d3585..cb981bfb18e 100644
+--- a/src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkFace.cpp
++++ b/src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkFace.cpp
+@@ -101,6 +101,19 @@ void SMDS_VtkFace::initQuadPoly(const std::vector<vtkIdType>& nodeIds, SMDS_Mesh
+ bool SMDS_VtkFace::ChangeNodes(const SMDS_MeshNode* nodes[], const int nbNodes)
+ {
+   vtkUnstructuredGrid* grid = SMDS_Mesh::_meshList[myMeshId]->getGrid();
++#ifdef VTK_CELL_ARRAY_V2
++  vtkNew<vtkIdList> cellPoints;
++  grid->GetCellPoints(myVtkID, cellPoints.GetPointer());
++  if (nbNodes != cellPoints->GetNumberOfIds())
++    {
++      MESSAGE("ChangeNodes problem: not the same number of nodes " << cellPoints->GetNumberOfIds() << " -> " << nbNodes);
++      return false;
++    }
++  for (int i = 0; i < nbNodes; i++)
++    {
++      cellPoints->SetId(i, nodes[i]->getVtkId());
++    }
++#else
+   vtkIdType npts = 0;
+   vtkIdType* pts = 0;
+   grid->GetCellPoints(myVtkID, npts, pts);
+@@ -113,6 +126,7 @@ bool SMDS_VtkFace::ChangeNodes(const SMDS_MeshNode* nodes[], const int nbNodes)
+     {
+       pts[i] = nodes[i]->getVtkId();
+     }
++#endif
+   SMDS_Mesh::_meshList[myMeshId]->setMyModified();
+   return true;
+ }
+@@ -173,7 +187,8 @@ const SMDS_MeshNode*
+ SMDS_VtkFace::GetNode(const int ind) const
+ {
+   vtkUnstructuredGrid* grid = SMDS_Mesh::_meshList[myMeshId]->getGrid();
+-  vtkIdType npts, *pts;
++  vtkIdType npts;
++  vtkIdTypePtr pts;
+   grid->GetCellPoints( this->myVtkID, npts, pts );
+   return SMDS_Mesh::_meshList[myMeshId]->FindNodeVtk( pts[ ind ]);
+ }
+@@ -186,7 +201,8 @@ SMDS_VtkFace::GetNode(const int ind) const
+ int SMDS_VtkFace::GetNodeIndex( const SMDS_MeshNode* node ) const
+ {
+   vtkUnstructuredGrid* grid = SMDS_Mesh::_meshList[myMeshId]->getGrid();
+-  vtkIdType npts, *pts;
++  vtkIdType npts;
++  vtkIdTypePtr pts;
+   grid->GetCellPoints( this->myVtkID, npts, pts );
+   for ( vtkIdType i = 0; i < npts; ++i )
+     if ( pts[i] == node->getVtkId() )
+@@ -251,7 +267,7 @@ bool SMDS_VtkFace::IsMediumNode(const SMDS_MeshNode* node) const
+     return false;
+   }
+   vtkIdType npts = 0;
+-  vtkIdType* pts = 0;
++  vtkIdTypePtr pts = 0;
+   grid->GetCellPoints(myVtkID, npts, pts);
+   vtkIdType nodeId = node->getVtkId();
+   for (int rank = 0; rank < npts; rank++)
+@@ -356,11 +372,18 @@ SMDS_NodeIteratorPtr SMDS_VtkFace::interlacedNodesIterator() const
+ void SMDS_VtkFace::ChangeApex(SMDS_MeshNode* node)
+ {
+   vtkUnstructuredGrid* grid = SMDS_Mesh::_meshList[myMeshId]->getGrid();
++#ifdef VTK_CELL_ARRAY_V2
++  vtkNew<vtkIdList> cellPoints;
++  grid->GetCellPoints(myVtkID, cellPoints.GetPointer());
++  grid->RemoveReferenceToCell(cellPoints->GetId(0), myVtkID);
++  cellPoints->SetId(0, node->getVtkId());
++#else
+   vtkIdType npts = 0;
+   vtkIdType* pts = 0;
+   grid->GetCellPoints(myVtkID, npts, pts);
+   grid->RemoveReferenceToCell(pts[0], myVtkID);
+   pts[0] = node->getVtkId();
++#endif
+   node->AddInverseElement(this),
+   SMDS_Mesh::_meshList[myMeshId]->setMyModified();
+ }
+diff --git src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkVolume.cpp b/src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkVolume.cpp
+index 015edf75fd2..19ebd0746c8 100644
+--- a/src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkVolume.cpp
++++ b/src/3rdParty/salomesmesh/src/SMDS/SMDS_VtkVolume.cpp
+@@ -133,6 +133,19 @@ void SMDS_VtkVolume::initPoly(const std::vector<vtkIdType>& nodeIds,
+ bool SMDS_VtkVolume::ChangeNodes(const SMDS_MeshNode* nodes[], const int nbNodes)
+ {
+   vtkUnstructuredGrid* grid = SMDS_Mesh::_meshList[myMeshId]->getGrid();
++#ifdef VTK_CELL_ARRAY_V2
++  vtkNew<vtkIdList> cellPoints;
++  grid->GetCellPoints(myVtkID, cellPoints.GetPointer());
++  if (nbNodes != cellPoints->GetNumberOfIds())
++    {
++      MESSAGE("ChangeNodes problem: not the same number of nodes " << cellPoints->GetNumberOfIds() << " -> " << nbNodes);
++      return false;
++    }
++  for (int i = 0; i < nbNodes; i++)
++    {
++      cellPoints->SetId(i, nodes[i]->getVtkId());
++    }
++#else
+   vtkIdType npts = 0;
+   vtkIdType* pts = 0;
+   grid->GetCellPoints(myVtkID, npts, pts);
+@@ -145,6 +158,7 @@ bool SMDS_VtkVolume::ChangeNodes(const SMDS_MeshNode* nodes[], const int nbNodes
+     {
+       pts[i] = nodes[i]->getVtkId();
+     }
++#endif
+   SMDS_Mesh::_meshList[myMeshId]->setMyModified();
+   return true;
+ }
+@@ -207,7 +221,7 @@ int SMDS_VtkVolume::NbFaces() const
+     case VTK_POLYHEDRON:
+       {
+         vtkIdType nFaces = 0;
+-        vtkIdType* ptIds = 0;
++        vtkIdTypePtr ptIds = 0;
+         grid->GetFaceStream(this->myVtkID, nFaces, ptIds);
+         nbFaces = nFaces;
+         break;
+@@ -236,7 +250,7 @@ int SMDS_VtkVolume::NbNodes() const
+   else
+     {
+       vtkIdType nFaces = 0;
+-      vtkIdType* ptIds = 0;
++      vtkIdTypePtr ptIds = 0;
+       grid->GetFaceStream(this->myVtkID, nFaces, ptIds);
+       int id = 0;
+       for (int i = 0; i < nFaces; i++)
+@@ -276,7 +290,7 @@ int SMDS_VtkVolume::NbEdges() const
+     case VTK_POLYHEDRON:
+       {
+         vtkIdType nFaces = 0;
+-        vtkIdType* ptIds = 0;
++        vtkIdTypePtr ptIds = 0;
+         grid->GetFaceStream(this->myVtkID, nFaces, ptIds);
+         nbEdges = 0;
+         int id = 0;
+@@ -312,7 +326,7 @@ int SMDS_VtkVolume::NbFaceNodes(const int face_ind) const
+   if (aVtkType == VTK_POLYHEDRON)
+     {
+       vtkIdType nFaces = 0;
+-      vtkIdType* ptIds = 0;
++      vtkIdTypePtr ptIds = 0;
+       grid->GetFaceStream(this->myVtkID, nFaces, ptIds);
+       int id = 0;
+       for (int i = 0; i < nFaces; i++)
+@@ -342,7 +356,7 @@ const SMDS_MeshNode* SMDS_VtkVolume::GetFaceNode(const int face_ind, const int n
+   if (aVtkType == VTK_POLYHEDRON)
+     {
+       vtkIdType nFaces = 0;
+-      vtkIdType* ptIds = 0;
++      vtkIdTypePtr ptIds = 0;
+       grid->GetFaceStream(this->myVtkID, nFaces, ptIds);
+       int id = 0;
+       for (int i = 0; i < nFaces; i++)
+@@ -372,7 +386,7 @@ std::vector<int> SMDS_VtkVolume::GetQuantities() const
+   if (aVtkType == VTK_POLYHEDRON)
+     {
+       vtkIdType nFaces = 0;
+-      vtkIdType* ptIds = 0;
++      vtkIdTypePtr ptIds = 0;
+       grid->GetFaceStream(this->myVtkID, nFaces, ptIds);
+       int id = 0;
+       for (int i = 0; i < nFaces; i++)
+@@ -430,7 +444,7 @@ const SMDS_MeshNode* SMDS_VtkVolume::GetNode(const int ind) const
+   if ( aVtkType == VTK_POLYHEDRON)
+   {
+     vtkIdType nFaces = 0;
+-    vtkIdType* ptIds = 0;
++    vtkIdTypePtr ptIds = 0;
+     grid->GetFaceStream(this->myVtkID, nFaces, ptIds);
+     int id = 0, nbPoints = 0;
+     for (int i = 0; i < nFaces; i++)
+@@ -443,7 +457,8 @@ const SMDS_MeshNode* SMDS_VtkVolume::GetNode(const int ind) const
+     }
+     return 0;
+   }
+-  vtkIdType npts, *pts;
++  vtkIdType npts;
++  vtkIdTypePtr pts;
+   grid->GetCellPoints( this->myVtkID, npts, pts );
+   const std::vector<int>& interlace = SMDS_MeshCell::fromVtkOrder( VTKCellType( aVtkType ));
+   return SMDS_Mesh::_meshList[myMeshId]->FindNodeVtk( pts[ interlace.empty() ? ind : interlace[ind]] );
+@@ -460,7 +475,7 @@ int SMDS_VtkVolume::GetNodeIndex( const SMDS_MeshNode* node ) const
+   if ( aVtkType == VTK_POLYHEDRON)
+   {
+     vtkIdType nFaces = 0;
+-    vtkIdType* ptIds = 0;
++    vtkIdTypePtr ptIds = 0;
+     grid->GetFaceStream(this->myVtkID, nFaces, ptIds);
+     int id = 0;
+     for (int iF = 0; iF < nFaces; iF++)
+@@ -473,7 +488,8 @@ int SMDS_VtkVolume::GetNodeIndex( const SMDS_MeshNode* node ) const
+     }
+     return -1;
+   }
+-  vtkIdType npts, *pts;
++  vtkIdType npts;
++  vtkIdTypePtr pts;
+   grid->GetCellPoints( this->myVtkID, npts, pts );
+   for ( vtkIdType i = 0; i < npts; ++i )
+     if ( pts[i] == node->getVtkId() )
+@@ -534,7 +550,7 @@ bool SMDS_VtkVolume::IsMediumNode(const SMDS_MeshNode* node) const
+       return false;
+   }
+   vtkIdType npts = 0;
+-  vtkIdType* pts = 0;
++  vtkIdTypePtr pts = 0;
+   grid->GetCellPoints(myVtkID, npts, pts);
+   vtkIdType nodeId = node->getVtkId();
+   for (int rank = 0; rank < npts; rank++)
+diff --git src/3rdParty/salomesmesh/src/SMESH/SMESH_MeshEditor.cpp b/src/3rdParty/salomesmesh/src/SMESH/SMESH_MeshEditor.cpp
+index fcd044b00f2..f54c24f8618 100644
+--- a/src/3rdParty/salomesmesh/src/SMESH/SMESH_MeshEditor.cpp
++++ b/src/3rdParty/salomesmesh/src/SMESH/SMESH_MeshEditor.cpp
+@@ -11348,7 +11348,7 @@ bool SMESH_MeshEditor::DoubleNodesOnGroupBoundaries( const std::vector<TIDSorted
+             {
+               int oldId = *itn;
+               //MESSAGE("     node " << oldId);
+-              vtkCellLinks::Link l = grid->GetCellLinks()->GetLink(oldId);
++              vtkCellLinks::Link l = static_cast<vtkCellLinks*>(grid->GetCellLinks())->GetLink(oldId);
+               for (int i=0; i<l.ncells; i++)
+                 {
+                   int vtkId = l.cells[i];
+@@ -11527,7 +11527,7 @@ bool SMESH_MeshEditor::DoubleNodesOnGroupBoundaries( const std::vector<TIDSorted
+                                           //MESSAGE("  domain " << idom << " volume " << elem->GetID());
+                                           double values[3];
+                                           vtkIdType npts = 0;
+-                                          vtkIdType* pts = 0;
++                                          vtkIdTypePtr pts = 0;
+                                           grid->GetCellPoints(vtkVolIds[ivol], npts, pts);
+                                           SMDS_VtkVolume::gravityCenter(grid, pts, npts, values);
+                                           if (id ==0)
+@@ -11708,7 +11708,7 @@ bool SMESH_MeshEditor::DoubleNodesOnGroupBoundaries( const std::vector<TIDSorted
+         {
+           int oldId = itnod->first;
+           //MESSAGE("     node " << oldId);
+-          vtkCellLinks::Link l = grid->GetCellLinks()->GetLink(oldId);
++          vtkCellLinks::Link l = static_cast<vtkCellLinks*>(grid->GetCellLinks())->GetLink(oldId);
+           for (int i = 0; i < l.ncells; i++)
+             {
+               int vtkId = l.cells[i];
+@@ -12165,7 +12165,7 @@ void SMESH_MeshEditor::CreateHoleSkin(double radius,
+           MESSAGE("volume to check,  vtkId " << vtkId << " smdsId " << meshDS->fromVtkToSmds(vtkId));
+           bool volInside = false;
+           vtkIdType npts = 0;
+-          vtkIdType* pts = 0;
++          vtkIdTypePtr pts = 0;
+           grid->GetCellPoints(vtkId, npts, pts);
+           for (int i=0; i<npts; i++)
+             {

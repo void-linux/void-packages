@@ -1,0 +1,186 @@
+# Template file for 'sun7i-kernel'
+#
+# Latest commit as of 20150315
+_githash="d47d367036be38c5180632ec8a3ad169a4593a88"
+_gitshort="${_githash:0:7}"
+
+pkgname=sun7i-kernel
+version=3.4.104
+revision=2
+maintainer="Orphaned <orphan@voidlinux.org>"
+homepage="http://www.kernel.org"
+license="GPL-2.0-only"
+short_desc="Linux kernel for sun7i (${version%.*} series [git ${_gitshort}])"
+
+_patchurl="https://raw.githubusercontent.com/archlinuxarm/PKGBUILDs/5c82068/core/linux-sun7i"
+distfiles="https://github.com/linux-sunxi/linux-sunxi/archive/${_githash}.tar.gz
+ ${_patchurl}/0001-Backport-firmware-loader.patch
+ ${_patchurl}/0001-Backport-msdos-partition-UUIDs.patch"
+checksum="e3de775107e7ba6ad0cf3345844fca1d61c8a11037fa71a5238ead439d15a166
+ eeceb6459f2f40c91a6a5be8d8c60e68dec2631ec84d6165721edacb059507c4
+ f0bba58788f090dd213df0bde1ea0ce38999a8d28bebe443c899cb9cbc2b5eed"
+
+wrksrc="linux-sunxi-${_githash}"
+_kernver="${version}_${revision}"
+skip_extraction="
+ 0001-Backport-firmware-loader.patch
+ 0001-Backport-msdos-partition-UUIDs.patch"
+
+nostrip=yes
+noverifyrdeps=yes
+archs="armv7l*"
+hostmakedepends="perl python kmod uboot-mkimage openssl bc"
+makedepends="ncurses-devel"
+triggers="kernel-hooks"
+python_version=2
+# These files could be modified when an external module is built.
+mutable_files="
+	/usr/lib/modules/${_kernver}/modules.dep
+	/usr/lib/modules/${_kernver}/modules.dep.bin
+	/usr/lib/modules/${_kernver}/modules.symbols
+	/usr/lib/modules/${_kernver}/modules.symbols.bin
+	/usr/lib/modules/${_kernver}/modules.alias
+	/usr/lib/modules/${_kernver}/modules.alias.bin
+	/usr/lib/modules/${_kernver}/modules.devname"
+
+post_patch() {
+	# Apply backported kernel firmware changes required by eudev>=2.1.
+	patch -p1 -i $XBPS_SRCDISTDIR/${pkgname}-${version}/0001-Backport-firmware-loader.patch
+	# Apply backported kernel msdos partition UUID changes
+	patch -p1 -i $XBPS_SRCDISTDIR/${pkgname}-${version}/0001-Backport-msdos-partition-UUIDs.patch
+}
+
+do_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+
+	unset LDFLAGS
+	if [ -f ${FILESDIR}/config ]; then
+		cp ${FILESDIR}/config .config
+		make ${makejobs} ${_args} ARCH=arm oldconfig
+	else
+		# Use upstream default configuration, too huge!
+		make ${makejobs} ${_args} ARCH=arm sun7i_defconfig
+	fi
+
+	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
+	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
+
+	# Enable Autofs for systemd
+	sed -i -e "s|.*CONFIG_AUTOFS4_FS.*|CONFIG_AUTOFS4_FS=y|" .config
+}
+
+do_build() {
+	if [ "$CROSS_BUILD" ]; then
+		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+	unset LDFLAGS
+	make ${makejobs} ${_args} ARCH=arm prepare
+	make ${makejobs} ${_args} ARCH=arm zImage modules
+}
+
+do_install() {
+	local hdrdest
+
+	# Run depmod after compressing modules.
+	sed -i '2iexit 0' scripts/depmod.sh
+
+	# Install kernel, firmware and modules
+	make ARCH=arm INSTALL_MOD_PATH=${DESTDIR} modules_install
+
+	vinstall arch/arm/boot/zImage 644 boot
+
+	hdrdest=${DESTDIR}/usr/src/${sourcepkg}-kernel-headers-${_kernver}
+
+	# Switch to /usr.
+	vmkdir usr
+	mv ${DESTDIR}/lib ${DESTDIR}/usr
+
+	cd ${DESTDIR}/usr/lib/modules/${_kernver}
+	rm -f source build
+	ln -sf ../../../src/${sourcepkg}-headers-${_kernver} build
+
+	cd ${wrksrc}
+
+	# Remove firmware stuff provided by the "linux-firmware" pkg.
+	rm -rf ${DESTDIR}/usr/lib/firmware
+
+	mkdir -p ${hdrdest}/include
+	for i in acpi asm-generic config crypto drm generated linux math-emu \
+		media net pcmcia scsi sound trace video xen; do
+		[ -d include/$i ] && cp -a include/$i ${hdrdest}/include
+	done
+
+	cd ${wrksrc}
+	# Copy files necessary for later builds.
+	cp Module.symvers ${hdrdest}
+	cp -a scripts ${hdrdest}
+
+	# fix permissions on scripts dir
+	chmod og-w -R ${hdrdest}/scripts
+
+	# copy arch includes for external modules
+	mkdir -p ${hdrdest}/arch/arm/mach-exynos
+	mkdir -p ${hdrdest}/arch/arm/plat-samsung
+
+	cp -a arch/arm/include ${hdrdest}/arch/arm
+	cp -a arch/arm/mach-sun7i/include ${hdrdest}/arch/arm/mach-sun7i
+
+	mkdir -p ${hdrdest}/arch/arm/kernel
+
+	cp arch/arm/Makefile ${hdrdest}/arch/arm
+	if [ "$MACHINE_ARCH" = "i686" ]; then
+		cp arch/arm/Makefile_32.cpu ${hdrdest}/arch/arm
+	fi
+	cp arch/arm/kernel/asm-offsets.s ${hdrdest}/arch/arm/kernel
+
+	# Add docbook makefile
+	install -Dm644 Documentation/DocBook/Makefile \
+		${hdrdest}/Documentation/DocBook/Makefile
+
+	# Add md headers
+	mkdir -p ${hdrdest}/drivers/md
+	cp drivers/md/*.h ${hdrdest}/drivers/md
+
+	# Add inotify.h
+	mkdir -p ${hdrdest}/include/linux
+	cp include/linux/inotify.h ${hdrdest}/include/linux
+
+	# Add wireless headers
+	mkdir -p ${hdrdest}/net/mac80211/
+	cp net/mac80211/*.h ${hdrdest}/net/mac80211
+
+	# add dvb headers for external modules
+	mkdir -p ${hdrdest}/include/config/dvb/
+	cp include/config/dvb/*.h ${hdrdest}/include/config/dvb/
+
+	# Copy in Kconfig files
+	for i in $(find . -name "Kconfig*"); do
+		mkdir -p ${hdrdest}/$(echo $i | sed 's|/Kconfig.*||')
+		cp $i ${hdrdest}/$i
+	done
+
+	# Remove unneeded architectures
+	for arch in alpha arm26 avr32 blackfin cris frv h8300 \
+		ia64 m* p* s* um v850 x86 xtensa; do
+		rm -rf ${hdrdest}/arch/${arch}
+	done
+
+	# Compress all modules with xz to save a few MBs.
+	msg_normal "$pkgver: compressing kernel modules with gzip, please wait...\n"
+	find ${DESTDIR} -name '*.ko'|xargs -n1 -P0 gzip -9
+
+	# ... and run depmod again.
+	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
+}
+
+sun7i-kernel-headers_package() {
+	nostrip=yes
+	noverifyrdeps=yes
+	short_desc="Linux kernel headers for sun7i (${version%.*} series [${_gitshort}])"
+	pkg_install() {
+		vmove usr/src
+		vmove usr/lib/modules/${_kernver}/build
+	}
+}

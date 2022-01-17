@@ -1,0 +1,106 @@
+This changeset is about both shiboken2 and python3-pyside2
+(that are separated packages)
+upstream: yes
+
+From c6184e01e993dcca9798f306fb8e9cb322fdd0dc Mon Sep 17 00:00:00 2001
+From: Christian Tismer <tismer@stackless.com>
+Date: Thu, 3 Dec 2020 13:38:58 +0100
+Subject: [PATCH] fix both qflags_test and the qflags cppgenerator code
+
+There was a years-old qflags test failing on Python 3.
+It was blacklisted with the comment
+
+    "#  Nested exception in Python 3"
+
+This was nonsense: The test was wrong also for Python 2.
+It just happened to work, because Python 2 had some weird
+errors leaking. The real bug was in missing error handling
+in cppgenerator.cpp .
+
+See the main description in the issue.
+
+Change-Id: Ia0f9466640e0eb33f1b8b26178d33f2be0bcb32f
+Task-number: PYSIDE-1442
+Reviewed-by: Friedemann Kleint <Friedemann.Kleint@qt.io>
+(cherry picked from commit 288fadb796ec4e11e99e3752d531ada7edf15d75)
+---
+ build_history/blacklist.txt                          |  3 ---
+ sources/pyside2/tests/QtCore/qflags_test.py          | 12 +++++++-----
+ .../shiboken2/generator/shiboken2/cppgenerator.cpp   |  2 ++
+ 3 files changed, 9 insertions(+), 8 deletions(-)
+
+diff --git build_history/blacklist.txt build_history/blacklist.txt
+index 9b63f9784..2a2a5d4c4 100644
+--- a/build_history/blacklist.txt
++++ b/build_history/blacklist.txt
+@@ -18,9 +18,6 @@
+     darwin py3
+ [QtCore::qfileread_test]
+     darwin
+-#  Nested exception in Python 3
+-[QtCore::qflags_test]
+-    py3
+ [QtCore::qobject_connect_notify_test]
+     linux
+     darwin
+diff --git sources/pyside2/tests/QtCore/qflags_test.py sources/pyside2/tests/QtCore/qflags_test.py
+index 08a7c55b1..e1e989c1e 100644
+--- a/sources/pyside2/tests/QtCore/qflags_test.py
++++ b/sources/pyside2/tests/QtCore/qflags_test.py
+@@ -30,6 +30,7 @@
+ 
+ '''Test cases for QFlags'''
+ 
++import operator
+ import os
+ import sys
+ import unittest
+@@ -117,12 +118,13 @@ class QFlagsOnQVariant(unittest.TestCase):
+ class QFlagsWrongType(unittest.TestCase):
+     def testWrongType(self):
+         '''Wrong type passed to QFlags binary operators'''
++        for op in operator.or_, operator.and_, operator.xor:
++            for x in '43', 'jabba', QObject, object:
++                self.assertRaises(TypeError, op, Qt.NoItemFlags, x)
++                self.assertRaises(TypeError, op, x, Qt.NoItemFlags)
++        # making sure this actually does not fail all the time
++        self.assertEqual(operator.or_(Qt.NoItemFlags, 43), 43)
+ 
+-        self.assertRaises(TypeError, Qt.NoItemFlags | '43')
+-        self.assertRaises(TypeError, Qt.NoItemFlags & '43')
+-        self.assertRaises(TypeError, 'jabba' & Qt.NoItemFlags)
+-        self.assertRaises(TypeError, 'hut' & Qt.NoItemFlags)
+-        self.assertRaises(TypeError, Qt.NoItemFlags & QObject())
+ 
+ if __name__ == '__main__':
+     unittest.main()
+diff --git sources/shiboken2/generator/shiboken2/cppgenerator.cpp sources/shiboken2/generator/shiboken2/cppgenerator.cpp
+index ff44db955..87ddd73a5 100644
+--- a/sources/shiboken2/generator/shiboken2/cppgenerator.cpp
++++ b/sources/shiboken2/generator/shiboken2/cppgenerator.cpp
+@@ -5230,6 +5230,8 @@ void CppGenerator::writeFlagsBinaryOperator(QTextStream &s, const AbstractMetaEn
+     s << INDENT << "cppArg = static_cast<" << flagsEntry->originalName()
+         << ">(int(PyInt_AsLong(" << PYTHON_ARG << ")));\n";
+     s << "#endif\n\n";
++    s << INDENT << "if (PyErr_Occurred())\n" << indent(INDENT)
++        << INDENT << "return nullptr;\n" << outdent(INDENT);
+     s << INDENT << "cppResult = " << CPP_SELF_VAR << " " << cppOpName << " cppArg;\n";
+     s << INDENT << "return ";
+     writeToPythonConversion(s, flagsType, nullptr, QLatin1String("cppResult"));
+-- 
+2.29.2
+
+Fix python warning about 'is not' usage.
+This diff is DISTINCT from the previous patch
+
+--- a/sources/pyside2/tests/QtWidgets/qwidget_test.py	2020-11-11 13:51:30.000000000 +0100
++++ b/sources/pyside2/tests/QtWidgets/qwidget_test.py	2020-11-24 14:28:06.103093649 +0100
+@@ -73,7 +73,7 @@
+         self.assertTrue(not widget.isVisible())
+         widget.setVisible(True)
+         self.assertTrue(widget.isVisible())
+-        self.assertTrue(widget.winId() is not 0)
++        self.assertTrue(widget.winId() != 0)
+         # skip this test on macOS since no native events are received
+         if sys.platform == 'darwin':
+             return

@@ -1,0 +1,347 @@
+diff --git CMake/FindLLVM.cmake CMake/FindLLVM.cmake
+index 0a59e47..6e90923 100644
+--- a/CMake/FindLLVM.cmake
++++ b/CMake/FindLLVM.cmake
+@@ -104,28 +104,16 @@ string(REGEX REPLACE " *\n" "" LLVM_SYSTEM_LIBS ${LLVM_SYSTEM_LIBS_ORIG})
+ endif (LLVM_SYSTEM_LIBS_ORIG)
+ endif (LLVM_VERSION_NODOT VERSION_GREATER 34)
+ 
++#something harmless because whitespace at start is an error
++set(CLANG_LIBRARIES "-ldl")
+ macro(add_one_lib name)
+   FIND_LIBRARY(CLANG_LIB
+     NAMES ${name}
+     PATHS ${LLVM_LIBRARY_DIR} NO_DEFAULT_PATH)
+-  set(CLANG_LIBRARIES ${CLANG_LIBRARIES} ${CLANG_LIB})
++  set(CLANG_LIBRARIES "${CLANG_LIBRARIES} ${CLANG_LIB}")
++  message(STATUS "clanglibs name ${name} this ${CLANG_LIB} all ${CLANG_LIBRARIES} ")
+ 	unset(CLANG_LIB CACHE)
+ endmacro()
+ 
+ #Assume clang lib path same as llvm lib path
+-add_one_lib("clangCodeGen")
+-add_one_lib("clangFrontend")
+-add_one_lib("clangSerialization")
+-add_one_lib("clangDriver")
+-add_one_lib("clangSema")
+-add_one_lib("clangStaticAnalyzerFrontend")
+-add_one_lib("clangStaticAnalyzerCheckers")
+-add_one_lib("clangStaticAnalyzerCore")
+-add_one_lib("clangAnalysis")
+-add_one_lib("clangEdit")
+-add_one_lib("clangAST")
+-add_one_lib("clangASTMatchers")
+-add_one_lib("clangParse")
+-add_one_lib("clangSema")
+-add_one_lib("clangLex")
+-add_one_lib("clangBasic")
++add_one_lib("clang-cpp")
+diff --git CMakeLists.txt CMakeLists.txt
+index c11acbb..08f427d 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -79,7 +79,7 @@ elseif (COMPILER STREQUAL "CLANG")
+ elseif (COMPILER STREQUAL "ICC")
+   set (CMAKE_C_CXX_FLAGS "${CMAKE_C_CXX_FLAGS}  -wd2928 -Wall -fPIC -fstrict-aliasing -fp-model fast -msse4.1 -Wl,-E")
+ endif ()
+-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_C_CXX_FLAGS} -std=c++0x -Wno-invalid-offsetof")
++set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_C_CXX_FLAGS} -Wno-invalid-offsetof")
+ set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_CXX_FLAGS}")
+ set (CMAKE_CXX_FLAGS_DEBUG          "-O0 -g -DGBE_DEBUG=1")
+ set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DGBE_DEBUG=1")
+diff --git backend/src/backend/program.cpp backend/src/backend/program.cpp
+index b36f7b4..e666031 100644
+--- a/backend/src/backend/program.cpp
++++ b/backend/src/backend/program.cpp
+@@ -694,9 +694,9 @@ namespace gbe {
+ #endif
+                 );
+ 
++    llvm::cl::ResetAllOptionOccurrences();
+     clang::CompilerInvocation::CreateFromArgs(*CI,
+-                                              &args[0],
+-                                              &args[0] + args.size(),
++                                              clang::ArrayRef<const char*>(args),
+                                               Diags);
+     // Create the compiler instance
+     clang::CompilerInstance Clang;
+@@ -1242,8 +1242,7 @@ EXTEND_QUOTE:
+       // Create the compiler invocation
+       std::unique_ptr<clang::CompilerInvocation> CI(new clang::CompilerInvocation);
+       return clang::CompilerInvocation::CreateFromArgs(*CI,
+-                                                       &args[0],
+-                                                       &args[0] + args.size(),
++                                                       clang::ArrayRef<const char*>(args),
+                                                        Diags);
+     }
+ #endif
+diff --git backend/src/llvm/llvm_gen_backend.cpp backend/src/llvm/llvm_gen_backend.cpp
+index c6fc30d..82441d8 100644
+--- a/backend/src/llvm/llvm_gen_backend.cpp
++++ b/backend/src/llvm/llvm_gen_backend.cpp
+@@ -575,10 +575,12 @@ namespace gbe
+         has_errors(false),
+         legacyMode(true)
+     {
++#if LLVM_VERSION_MAJOR < 10
+ #if LLVM_VERSION_MAJOR * 10 + LLVM_VERSION_MINOR >= 37
+       initializeLoopInfoWrapperPassPass(*PassRegistry::getPassRegistry());
+ #else
+       initializeLoopInfoPass(*PassRegistry::getPassRegistry());
++#endif
+ #endif
+       pass = PASS_EMIT_REGISTERS;
+     }
+diff --git backend/src/llvm/llvm_gen_backend.hpp backend/src/llvm/llvm_gen_backend.hpp
+index b4715b1..8e74f7a 100644
+--- a/backend/src/llvm/llvm_gen_backend.hpp
++++ b/backend/src/llvm/llvm_gen_backend.hpp
+@@ -130,10 +130,10 @@ namespace gbe
+   llvm::FunctionPass *createGenPass(ir::Unit &unit);
+ 
+   /*! Remove the GEP instructions */
+-  llvm::BasicBlockPass *createRemoveGEPPass(const ir::Unit &unit);
++  llvm::FunctionPass *createRemoveGEPPass(const ir::Unit &unit);
+ 
+   /*! Merge load/store if possible */
+-  llvm::BasicBlockPass *createLoadStoreOptimizationPass();
++  llvm::FunctionPass *createLoadStoreOptimizationPass();
+ 
+   /*! Scalarize all vector op instructions */
+   llvm::FunctionPass* createScalarizePass();
+@@ -141,7 +141,7 @@ namespace gbe
+   llvm::ModulePass* createBarrierNodupPass(bool);
+ 
+   /*! Convert the Intrinsic call to gen function */
+-  llvm::BasicBlockPass *createIntrinsicLoweringPass();
++  llvm::FunctionPass *createIntrinsicLoweringPass();
+ 
+   /*! Passer the printf function call. */
+   llvm::FunctionPass* createPrintfParserPass(ir::Unit &unit);
+diff --git backend/src/llvm/llvm_intrinsic_lowering.cpp backend/src/llvm/llvm_intrinsic_lowering.cpp
+index 94f0ce6..b5539e9 100644
+--- a/backend/src/llvm/llvm_intrinsic_lowering.cpp
++++ b/backend/src/llvm/llvm_intrinsic_lowering.cpp
+@@ -29,12 +29,12 @@
+ using namespace llvm;
+ 
+ namespace gbe {
+-    class InstrinsicLowering : public BasicBlockPass
++    class InstrinsicLowering : public FunctionPass
+     {
+     public:
+       static char ID;
+       InstrinsicLowering() :
+-        BasicBlockPass(ID) {}
++        FunctionPass(ID) {}
+ 
+       void getAnalysisUsage(AnalysisUsage &AU) const {
+ 
+@@ -93,9 +93,9 @@ namespace gbe {
+         CI->eraseFromParent();
+         return NewCI;
+       }
+-      virtual bool runOnBasicBlock(BasicBlock &BB)
++      virtual bool runOnFunction(Function &F)
+       {
+-        bool changedBlock = false;
++        for (BasicBlock &BB : F) {
+         Module *M = BB.getParent()->getParent();
+ 
+         DataLayout TD(M);
+@@ -159,13 +159,14 @@ namespace gbe {
+             }
+           }
+         }
+-        return changedBlock;
++        }
++        return true;
+       }
+     };
+ 
+     char InstrinsicLowering::ID = 0;
+ 
+-    BasicBlockPass *createIntrinsicLoweringPass() {
++    FunctionPass *createIntrinsicLoweringPass() {
+       return new InstrinsicLowering();
+     }
+ } // end namespace
+diff --git backend/src/llvm/llvm_loadstore_optimization.cpp backend/src/llvm/llvm_loadstore_optimization.cpp
+index 5aa38be..e314302 100644
+--- a/backend/src/llvm/llvm_loadstore_optimization.cpp
++++ b/backend/src/llvm/llvm_loadstore_optimization.cpp
+@@ -26,13 +26,13 @@
+ 
+ using namespace llvm;
+ namespace gbe {
+-  class GenLoadStoreOptimization : public BasicBlockPass {
++  class GenLoadStoreOptimization : public FunctionPass {
+ 
+   public:
+     static char ID;
+     ScalarEvolution *SE;
+     const DataLayout *TD;
+-    GenLoadStoreOptimization() : BasicBlockPass(ID) {}
++    GenLoadStoreOptimization() : FunctionPass(ID) {}
+ 
+     void getAnalysisUsage(AnalysisUsage &AU) const {
+ #if LLVM_VERSION_MAJOR * 10 + LLVM_VERSION_MINOR >= 38
+@@ -45,7 +45,9 @@ namespace gbe {
+       AU.setPreservesCFG();
+     }
+ 
+-    virtual bool runOnBasicBlock(BasicBlock &BB) {
++    virtual bool runOnFunction(Function &F) {
++        bool changedAnyBlock = false;
++        for (BasicBlock &BB : F) {
+ #if LLVM_VERSION_MAJOR * 10 + LLVM_VERSION_MINOR >= 38
+       SE = &getAnalysis<ScalarEvolutionWrapperPass>().getSE();
+ #else
+@@ -59,7 +61,9 @@ namespace gbe {
+       #else
+         TD = getAnalysisIfAvailable<DataLayout>();
+       #endif
+-      return optimizeLoadStore(BB);
++           changedAnyBlock = optimizeLoadStore(BB) | changedAnyBlock;
++        }
++        return changedAnyBlock;
+     }
+     Type    *getValueType(Value *insn);
+     Value   *getPointerOperand(Value *I);
+@@ -148,7 +152,7 @@ namespace gbe {
+       values.push_back(merged[i]);
+     }
+     LoadInst *ld = cast<LoadInst>(merged[0]);
+-    unsigned align = ld->getAlignment();
++    MaybeAlign align = ld->getAlign();
+     unsigned addrSpace = ld->getPointerAddressSpace();
+     // insert before first load
+     Builder.SetInsertPoint(ld);
+@@ -231,7 +235,7 @@ namespace gbe {
+ 
+     unsigned addrSpace = st->getPointerAddressSpace();
+ 
+-    unsigned align = st->getAlignment();
++    MaybeAlign align = st->getAlign();
+     // insert before the last store
+     Builder.SetInsertPoint(merged[size-1]);
+ 
+@@ -325,7 +329,7 @@ namespace gbe {
+     return changed;
+   }
+ 
+-  BasicBlockPass *createLoadStoreOptimizationPass() {
++  FunctionPass *createLoadStoreOptimizationPass() {
+     return new GenLoadStoreOptimization();
+   }
+ };
+diff --git backend/src/llvm/llvm_passes.cpp backend/src/llvm/llvm_passes.cpp
+index 10752a3..b8f2282 100644
+--- a/backend/src/llvm/llvm_passes.cpp
++++ b/backend/src/llvm/llvm_passes.cpp
+@@ -37,7 +37,7 @@
+ #include "sys/map.hpp"
+ 
+ using namespace llvm;
+-
++template class cfg::Update<BasicBlock *>;
+ namespace gbe
+ {
+   bool isKernelFunction(const llvm::Function &F) {
+@@ -219,13 +219,13 @@ namespace gbe
+     return offset;
+   }
+ 
+-  class GenRemoveGEPPasss : public BasicBlockPass
++  class GenRemoveGEPPasss : public FunctionPass
+   {
+ 
+    public:
+     static char ID;
+     GenRemoveGEPPasss(const ir::Unit &unit) :
+-      BasicBlockPass(ID),
++      FunctionPass(ID),
+       unit(unit) {}
+     const ir::Unit &unit;
+     void getAnalysisUsage(AnalysisUsage &AU) const {
+@@ -242,16 +242,18 @@ namespace gbe
+ 
+     bool simplifyGEPInstructions(GetElementPtrInst* GEPInst);
+ 
+-    virtual bool runOnBasicBlock(BasicBlock &BB)
++    virtual bool runOnFunction(Function &F)
+     {
+-      bool changedBlock = false;
++      bool changedAnyBlock = false;
++        for (BasicBlock &BB : F) {
+       iplist<Instruction>::iterator I = BB.getInstList().begin();
+       for (auto nextI = I, E = --BB.getInstList().end(); I != E; I = nextI) {
+         iplist<Instruction>::iterator I = nextI++;
+         if(GetElementPtrInst* gep = dyn_cast<GetElementPtrInst>(&*I))
+-          changedBlock = (simplifyGEPInstructions(gep) || changedBlock);
++          changedAnyBlock = (simplifyGEPInstructions(gep) | changedAnyBlock);
+       }
+-      return changedBlock;
++        }
++      return changedAnyBlock;
+     }
+   };
+ 
+@@ -367,7 +369,7 @@ namespace gbe
+     return true;
+   }
+ 
+-  BasicBlockPass *createRemoveGEPPass(const ir::Unit &unit) {
++  FunctionPass *createRemoveGEPPass(const ir::Unit &unit) {
+     return new GenRemoveGEPPasss(unit);
+   }
+ } /* namespace gbe */
+diff --git backend/src/llvm/llvm_sampler_fix.cpp backend/src/llvm/llvm_sampler_fix.cpp
+index 2a097c8..863be6d 100644
+--- a/backend/src/llvm/llvm_sampler_fix.cpp
++++ b/backend/src/llvm/llvm_sampler_fix.cpp
+@@ -33,10 +33,12 @@ namespace gbe {
+   class SamplerFix : public FunctionPass {
+   public:
+     SamplerFix() : FunctionPass(ID) {
++#if LLVM_VERSION_MAJOR < 10
+ #if LLVM_VERSION_MAJOR * 10 + LLVM_VERSION_MINOR >= 35
+       initializeDominatorTreeWrapperPassPass(*PassRegistry::getPassRegistry());
+ #else
+       initializeDominatorTreePass(*PassRegistry::getPassRegistry());
++#endif
+ #endif
+     }
+ 
+diff --git backend/src/llvm/llvm_scalarize.cpp backend/src/llvm/llvm_scalarize.cpp
+index e9a2a66..e9d2ee4 100644
+--- a/backend/src/llvm/llvm_scalarize.cpp
++++ b/backend/src/llvm/llvm_scalarize.cpp
+@@ -96,10 +96,12 @@ namespace gbe {
+ 
+     Scalarize() : FunctionPass(ID)
+     {
++#if LLVM_VERSION_MAJOR < 10
+ #if LLVM_VERSION_MAJOR * 10 + LLVM_VERSION_MINOR >= 35
+       initializeDominatorTreeWrapperPassPass(*PassRegistry::getPassRegistry());
+ #else
+       initializeDominatorTreePass(*PassRegistry::getPassRegistry());
++#endif
+ #endif
+     }
+ 
+diff --git utests/CMakeLists.txt utests/CMakeLists.txt
+index 300d87a..64179c7 100644
+--- a/utests/CMakeLists.txt
++++ b/utests/CMakeLists.txt
+@@ -26,8 +26,8 @@ if (NOT NOT_BUILD_STAND_ALONE_UTEST)
+   # Threads
+   Find_Package(Threads)
+ 
+-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_C_CXX_FLAGS} -std=c++0x -Wno-invalid-offsetof")
+-  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_CXX_FLAGS}")
++  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_C_CXX_FLAGS} -Wno-invalid-offsetof -ffloat-store -fno-strict-aliasing")
++  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_CXX_FLAGS} -ffloat-store -fno-strict-aliasing") #compiler_{degrees,radians,function_argument2} use equality comparison of floats, compiler_long_bitcast uses aliasing
+   set (CMAKE_CXX_FLAGS_DEBUG          "-O0 -g -DGBE_DEBUG=1")
+   set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DGBE_DEBUG=1")
+   set (CMAKE_CXX_FLAGS_MINSIZEREL     "-Os -DNDEBUG -DGBE_DEBUG=0")
