@@ -1913,7 +1913,7 @@ Although `xbps-src` will automatically include the `dkms` trigger whenever
 before the modules are compiled.
 
 By default, the trigger uses `dracut --regenerate-all` to recreate initramfs
-images. If `/etc/defalt/initramfs-regenerate` exists and defines
+images. If `/etc/default/initramfs-regenerate` exists and defines
 `INITRAMFS_GENERATOR=mkinitcpio`, the trigger will instead use `mkinitcpio` and
 loop over all kernel versions for which modules appear to be installed.
 Alternatively, setting `INITRAMFS_GENERATOR=none` will disable image
