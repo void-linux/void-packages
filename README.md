@@ -31,6 +31,7 @@ See [Contributing](./CONTRIBUTING.md) for a general overview of how to contribut
 - [Building 32bit packages on x86_64](#building-32bit)
 - [Building packages natively for the musl C library](#building-for-musl)
 - [Building void base-system from scratch](#building-base-system)
+- [Common Build Problems](#common-build-problems)
 
 ### Requirements
 
@@ -505,3 +506,20 @@ Once the build has finished, you can specify the path to the local repository to
     # cd void-mklive
     # make
     # ./mklive.sh ... -r /path/to/hostdir/binpkgs
+
+### Common Build Problems
+
+#### Unresolvable shlib
+
+If you get an error like the following while building:
+
+```
+enchant2-2.2.15_4: broken, unresolvable shlib `libicudata.so.69'
+```
+
+It's likely that the Void Buildbot has recently rebuilt a library and has not rebuilt some packages that depend on it.
+You can check https://build.voidlinux.org/ for the current status of the builders.
+
+Once the dependent packages have finished building on Buildbot your build should succeed.
+
+See https://docs.voidlinux.org/xbps/troubleshooting/common-issues.html#shlib-errors for more info.
