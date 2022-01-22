@@ -6,4 +6,6 @@ pref("browser.shell.checkDefaultBrowser", false);
 
 // Don't disable our bundled extensions in the application directory
 pref("extensions.autoDisableScopes", 11);
-pref("extensions.shownSelectionUI", true);
+
+// The default is google and we don't have api keys for it.
+pref("geo.provider.network.url", "https://location.services.mozilla.com/v1/geolocate?key=%MOZILLA_API_KEY%");
