@@ -1,0 +1,46 @@
+Fix a doctest failure which triggers in i686.
+
+The example is in the function `test_bad_str()` in the file `tests.pyx`.
+The test pases a bad string to `sig_str()` and then raises `SIGILL`. The
+signal handler eventually raises a Python exception which in turn raises
+a `SIGSEGV` when accessing the bad string. An error message is expected,
+but that doesn't happen.
+
+Presumably the segfault happens inside some stdio function which leaves
+stdio buffers in an inconsistent state so the latter `fprintf` doesn't
+work properly. From signal-safety(7):
+
+    Suppose that the main program is in the middle of a call to a
+    stdio function such as printf(3) where the buffer and associated
+    variables have been partially updated.  If, at that moment, the
+    program is interrupted by a signal handler that also calls
+    printf(3), then the second call to printf(3) will operate on
+    inconsistent data, with unpredictable results.
+
+We fix this by replacing the `fprintf` by calls to `write`, which is
+async-signal-safe according to POSIX.
+
+--- a/src/cysignals/implementation.c      2022-01-16 22:36:45.143796872 +0000
++++ b/src/cysignals/implementation.c      2022-01-17 02:22:31.196695043 +0000
+@@ -638,12 +622,15 @@
+ #endif
+ 
+     if (s) {
++        /* Using fprintf from inside a signal handler is undefined, see signal-safety(7) */
++        const char * message =
++            "\n"
++            "This probably occurred because a *compiled* module has a bug\n"
++            "in it and is not properly wrapped with sig_on(), sig_off().\n"
++            "Python will now terminate.\n"
++            "------------------------------------------------------------------------\n";
++        write(2, s, strlen(s));
++        write(2, message, strlen(message));
+-        fprintf(stderr,
+-            "%s\n"
+-            "This probably occurred because a *compiled* module has a bug\n"
+-            "in it and is not properly wrapped with sig_on(), sig_off().\n"
+-            "Python will now terminate.\n", s);
+-        print_sep();
+     }
+ 
+ dienow:
