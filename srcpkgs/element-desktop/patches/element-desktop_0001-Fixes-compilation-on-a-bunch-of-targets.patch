@@ -1,0 +1,184 @@
+From 8234ebac57785b09defe3b179f9cce8ef4cf88d9 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jan=20Christian=20Gr=C3=BCnhage?=
+ <jan.christian@gruenhage.xyz>
+Date: Tue, 17 Aug 2021 17:33:02 +0200
+Subject: [PATCH] support compilation on more targets
+
+---
+ package.json          |  1 +
+ scripts/hak/target.ts | 86 +++++++++++++++++++++++++++++++++++++++++--
+ yarn.lock             |  2 +-
+ 3 files changed, 84 insertions(+), 5 deletions(-)
+
+diff --git a/package.json b/package.json
+index ac17d6d..01e2192 100644
+--- a/package.json
++++ b/package.json
+@@ -61,6 +61,7 @@
+     "app-builder-lib": "^22.14.10",
+     "asar": "^2.0.1",
+     "chokidar": "^3.5.2",
++    "detect-libc": "^1.0.3",
+     "electron": "^17",
+     "electron-builder": "22.11.4",
+     "electron-builder-squirrel-windows": "22.11.4",
+diff --git a/scripts/hak/target.ts b/scripts/hak/target.ts
+index 7970bb3..657fe45 100644
+--- a/scripts/hak/target.ts
++++ b/scripts/hak/target.ts
+@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
+ limitations under the License.
+ */
+ 
++import { GLIBC, MUSL, family as processLibC } from "detect-libc";
++
+ // We borrow Rust's target naming scheme as a way of expressing all target
+ // details in a single string.
+ // See https://doc.rust-lang.org/rustc/platform-support.html.
+@@ -23,18 +25,28 @@ export type TargetId =
+     'universal-apple-darwin' |
+     'i686-pc-windows-msvc' |
+     'x86_64-pc-windows-msvc' |
+-    'x86_64-unknown-linux-gnu';
++    'i686-unknown-linux-musl' |
++    'i686-unknown-linux-gnu' |
++    'x86_64-unknown-linux-musl' |
++    'x86_64-unknown-linux-gnu' |
++    'aarch64-unknown-linux-musl' |
++    'aarch64-unknown-linux-gnu' |
++    'powerpc64le-unknown-linux-musl' |
++    'powerpc64le-unknown-linux-gnu';
+ 
+ // Values are expected to match those used in `process.platform`.
+ export type Platform = 'darwin' | 'linux' | 'win32';
+ 
+ // Values are expected to match those used in `process.arch`.
+-export type Arch = 'arm64' | 'ia32' | 'x64' | 'universal';
++export type Arch = 'arm64' | 'ia32' | 'x64' | 'ppc64' | 'universal';
+ 
+ // Values are expected to match those used by Visual Studio's `vcvarsall.bat`.
+ // See https://docs.microsoft.com/cpp/build/building-on-the-command-line?view=msvc-160#vcvarsall-syntax
+ export type VcVarsArch = 'amd64' | 'arm64' | 'x86';
+ 
++// Values are expected to match those used in `detect-libc`.
++export type LibC = GLIBC | MUSL;
++
+ export type Target = {
+     id: TargetId;
+     platform: Platform;
+@@ -46,6 +58,11 @@ export type WindowsTarget = Target & {
+     vcVarsArch: VcVarsArch;
+ };
+ 
++export type LinuxTarget = Target & {
++    platform: 'linux';
++    libC: LibC;
++}
++
+ export type UniversalTarget = Target & {
+     arch: 'universal';
+     subtargets: Target[];
+@@ -87,10 +104,60 @@ const x8664PcWindowsMsvc: WindowsTarget = {
+     vcVarsArch: 'amd64',
+ };
+ 
+-const x8664UnknownLinuxGnu: Target = {
++const x8664UnknownLinuxGnu: LinuxTarget = {
+     id: 'x86_64-unknown-linux-gnu',
+     platform: 'linux',
+     arch: 'x64',
++    libC: 'glibc',
++};
++
++const x8664UnknownLinuxMusl: LinuxTarget = {
++    id: 'x86_64-unknown-linux-musl',
++    platform: 'linux',
++    arch: 'x64',
++    libC: 'musl',
++};
++
++const i686UnknownLinuxGnu: LinuxTarget = {
++    id: 'i686-unknown-linux-gnu',
++    platform: 'linux',
++    arch: 'ia32',
++    libC: 'glibc',
++};
++
++const i686UnknownLinuxMusl: LinuxTarget = {
++    id: 'i686-unknown-linux-musl',
++    platform: 'linux',
++    arch: 'ia32',
++    libC: 'musl',
++};
++
++const aarch64UnknownLinuxGnu: LinuxTarget = {
++    id: 'aarch64-unknown-linux-gnu',
++    platform: 'linux',
++    arch: 'arm64',
++    libC: 'glibc',
++};
++
++const aarch64UnknownLinuxMusl: LinuxTarget = {
++    id: 'aarch64-unknown-linux-musl',
++    platform: 'linux',
++    arch: 'arm64',
++    libC: 'musl',
++};
++
++const powerpc64leUnknownLinuxGnu: LinuxTarget = {
++    id: 'powerpc64le-unknown-linux-gnu',
++    platform: 'linux',
++    arch: 'ppc64',
++    libC: 'glibc',
++};
++
++const powerpc64leUnknownLinuxMusl: LinuxTarget = {
++    id: 'powerpc64le-unknown-linux-musl',
++    platform: 'linux',
++    arch: 'ppc64',
++    libC: 'musl',
+ };
+ 
+ export const TARGETS: Record<TargetId, Target> = {
+@@ -102,13 +169,24 @@ export const TARGETS: Record<TargetId, Target> = {
+     'i686-pc-windows-msvc': i686PcWindowsMsvc,
+     'x86_64-pc-windows-msvc': x8664PcWindowsMsvc,
+     // Linux
++    'i686-unknown-linux-musl': i686UnknownLinuxMusl,
++    'i686-unknown-linux-gnu': i686UnknownLinuxGnu,
++    'x86_64-unknown-linux-musl': x8664UnknownLinuxMusl,
+     'x86_64-unknown-linux-gnu': x8664UnknownLinuxGnu,
++    'aarch64-unknown-linux-musl': aarch64UnknownLinuxMusl,
++    'aarch64-unknown-linux-gnu': aarch64UnknownLinuxGnu,
++    'powerpc64le-unknown-linux-musl': powerpc64leUnknownLinuxMusl,
++    'powerpc64le-unknown-linux-gnu': powerpc64leUnknownLinuxGnu,
+ };
+ 
+ export function getHost(): Target {
+     return Object.values(TARGETS).find(target => (
+         target.platform === process.platform &&
+-        target.arch === process.arch
++        target.arch === process.arch &&
++        (
++            process.platform !== 'linux' ||
++            (target as LinuxTarget).libC === processLibC
++        )
+     ));
+ }
+ 
+diff --git a/yarn.lock b/yarn.lock
+index 75b3bb5..12ec518 100644
+--- a/yarn.lock
++++ b/yarn.lock
+@@ -2049,7 +2049,7 @@ deprecation@^2.0.0, deprecation@^2.3.1:
+   resolved "https://registry.yarnpkg.com/deprecation/-/deprecation-2.3.1.tgz#6368cbdb40abf3373b525ac87e4a260c3a700919"
+   integrity sha512-xmHIy4F3scKVwMsQ4WnVaS8bHOx0DmVwRywosKhaILI0ywMDWPtBSku2HNxRvF7jtwDRsoEwYQSfbxj8b7RlJQ==
+ 
+-detect-libc@^1.0.2:
++detect-libc@^1.0.2, detect-libc@^1.0.3:
+   version "1.0.3"
+   resolved "https://registry.yarnpkg.com/detect-libc/-/detect-libc-1.0.3.tgz#fa137c4bd698edf55cd5cd02ac559f91a4c4ba9b"
+   integrity sha1-+hN8S9aY7fVc1c0CrFWfkaTEups=
+-- 
+2.36.1
+
