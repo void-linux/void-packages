@@ -1,0 +1,75 @@
+# Template file for 'pleroma'
+pkgname=pleroma
+version=2.4.3
+revision=1
+wrksrc="pleroma-v${version}"
+hostmakedepends="cmake elixir rebar3 git"
+makedepends="file-devel erlang"
+short_desc="Social networking software compatible with other Fediverse software"
+maintainer="Joel Beckmeyer <joel@beckmeyer.us>"
+license="AGPL-3.0-only,CC-BY-4.0,CC-BY-SA-4.0,custom:Unsplash"
+homepage="https://pleroma.social"
+distfiles="https://git.pleroma.social/pleroma/pleroma/-/archive/v${version}/pleroma-v${version}.tar.gz"
+checksum=4362a8396f588fc611d9dae891e54e9473c34443eb718fe109dab09578809d78
+
+system_accounts="_pleroma"
+_pleroma_homedir="/var/lib/pleroma"
+
+make_dirs="/var/lib/pleroma 0700 _pleroma _pleroma
+ /etc/pleroma 0755 _pleroma _pleroma
+ /etc/pleroma/static 0755 _pleroma _pleroma"
+
+export MIX_ENV=prod
+export MIX_REBAR3=/usr/bin/rebar3
+
+if [ "$CROSS_BUILD" ]; then
+	# fixes linking syslog dependency
+	LDFLAGS+=" -L${XBPS_CROSS_BASE}/usr/lib/erlang/usr/lib"
+fi
+
+post_extract() {
+	mix local.hex --force
+	mix deps.get --only prod
+}
+
+do_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		# fixes building fast_html
+		_erts_path="$(cd ${XBPS_CROSS_BASE}/usr/lib/erlang/erts-* && pwd)"
+		vsed -i "s,ERLANG_PATH =.*,ERLANG_PATH = ${_erts_path}," deps/fast_html/Makefile
+		# additional adjustment to include target erts instead of host erts
+		vsed -i "s,include_erts: \"/usr,include_erts: \"${XBPS_CROSS_BASE}," mix.exs
+	fi
+}
+
+do_build() {
+	# without the DEBUG flag, mix gives unhelpful errors for diagnosing c library
+	# issues
+	DEBUG=1 mix release
+}
+
+do_install() {
+	vlicense COPYING
+	vlicense AGPL-3
+
+	cd _build/prod/rel/pleroma
+	vmkdir usr/lib/pleroma
+	vcopy erts-* usr/lib/pleroma
+	vcopy lib usr/lib/pleroma
+	# the Erlang Distribution cookie needs to be unique to each installation
+	rm releases/COOKIE
+	vcopy releases usr/lib/pleroma
+	ln -s /etc/pleroma/COOKIE ${DESTDIR}/usr/lib/pleroma/releases
+
+	# make entrypoint look in standard location instead of cwd
+	vsed -i 's,^RELEASE_ROOT=.*,RELEASE_ROOT="/usr/lib/pleroma",' bin/pleroma
+	vcopy bin usr/lib/pleroma
+
+	vmkdir usr/bin
+	ln -s /usr/lib/pleroma/bin/pleroma ${DESTDIR}/usr/bin/
+	ln -s /usr/lib/pleroma/bin/pleroma_ctl ${DESTDIR}/usr/bin/
+
+	vsconf installation/pleroma.nginx
+
+	vsv pleroma
+}
