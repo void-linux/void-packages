@@ -1,0 +1,242 @@
+From 620836f173ae6fc4505d0634984e0f2c46166367 Mon Sep 17 00:00:00 2001
+From: Chris Robinson <chris.kcat@gmail.com>
+Date: Thu, 29 Jul 2021 21:07:20 -0700
+Subject: [PATCH] Simplify channel handling in the sndio backend
+
+---
+ alc/backends/sndio.cpp | 152 +++++++++++++++++------------------------
+ 1 file changed, 63 insertions(+), 89 deletions(-)
+
+diff --git a/alc/backends/sndio.cpp b/alc/backends/sndio.cpp
+index 2d8b424c9..c41c6c8bc 100644
+--- a/alc/backends/sndio.cpp
++++ b/alc/backends/sndio.cpp
+@@ -44,6 +44,11 @@ namespace {
+ 
+ static const char sndio_device[] = "SndIO Default";
+ 
++struct SioPar : public sio_par {
++    SioPar() { sio_initpar(this); }
++
++    void clear() { sio_initpar(this); }
++};
+ 
+ struct SndioPlayback final : public BackendBase {
+     SndioPlayback(DeviceBase *device) noexcept : BackendBase{device} { }
+@@ -57,6 +62,7 @@ struct SndioPlayback final : public BackendBase {
+     void stop() override;
+ 
+     sio_hdl *mSndHandle{nullptr};
++    uint mFrameStep{};
+ 
+     al::vector<al::byte> mBuffer;
+ 
+@@ -75,16 +81,8 @@ SndioPlayback::~SndioPlayback()
+ 
+ int SndioPlayback::mixerProc()
+ {
+-    sio_par par;
+-    sio_initpar(&par);
+-    if(!sio_getpar(mSndHandle, &par))
+-    {
+-        mDevice->handleDisconnect("Failed to get device parameters");
+-        return 1;
+-    }
+-
+-    const size_t frameStep{par.pchan};
+-    const size_t frameSize{frameStep * par.bps};
++    const size_t frameStep{mFrameStep};
++    const size_t frameSize{frameStep * mDevice->bytesFromFmt()};
+ 
+     SetRTPriority();
+     althrd_setname(MIXER_THREAD_NAME);
+@@ -92,22 +90,20 @@ int SndioPlayback::mixerProc()
+     while(!mKillNow.load(std::memory_order_acquire)
+         && mDevice->Connected.load(std::memory_order_acquire))
+     {
+-        al::byte *WritePtr{mBuffer.data()};
+-        size_t len{mBuffer.size()};
++        al::span<al::byte> buffer{mBuffer};
+ 
+-        mDevice->renderSamples(WritePtr, static_cast<uint>(len/frameSize), frameStep);
+-        while(len > 0 && !mKillNow.load(std::memory_order_acquire))
++        mDevice->renderSamples(buffer.data(), static_cast<uint>(buffer.size() / frameSize),
++            frameStep);
++        while(!buffer.empty() && !mKillNow.load(std::memory_order_acquire))
+         {
+-            size_t wrote{sio_write(mSndHandle, WritePtr, len)};
++            size_t wrote{sio_write(mSndHandle, buffer.data(), buffer.size())};
+             if(wrote == 0)
+             {
+                 ERR("sio_write failed\n");
+                 mDevice->handleDisconnect("Failed to write playback samples");
+                 break;
+             }
+-
+-            len -= wrote;
+-            WritePtr += wrote;
++            buffer = buffer.subspan(wrote);
+         }
+     }
+ 
+@@ -136,25 +132,11 @@ void SndioPlayback::open(const char *name)
+ 
+ bool SndioPlayback::reset()
+ {
+-    sio_par par;
+-    sio_initpar(&par);
++    SioPar par;
+ 
+-    par.rate = mDevice->Frequency;
+-    switch(mDevice->FmtChans)
+-    {
+-    case DevFmtMono   : par.pchan = 1; break;
+-    case DevFmtQuad   : par.pchan = 4; break;
+-    case DevFmtX51Rear: // fall-through - "Similar to 5.1, except using rear channels instead of sides"
+-    case DevFmtX51    : par.pchan = 6; break;
+-    case DevFmtX61    : par.pchan = 7; break;
+-    case DevFmtX71    : par.pchan = 8; break;
+-
+-    // fall back to stereo for Ambi3D
+-    case DevFmtAmbi3D : // fall-through
+-    case DevFmtStereo : par.pchan = 2; break;
+-    }
+-
+-    switch(mDevice->FmtType)
++    auto tryfmt = mDevice->FmtType;
++retry_params:
++    switch(tryfmt)
+     {
+     case DevFmtByte:
+         par.bits = 8;
+@@ -164,7 +146,6 @@ bool SndioPlayback::reset()
+         par.bits = 8;
+         par.sig = 0;
+         break;
+-    case DevFmtFloat:
+     case DevFmtShort:
+         par.bits = 16;
+         par.sig = 1;
+@@ -173,6 +154,7 @@ bool SndioPlayback::reset()
+         par.bits = 16;
+         par.sig = 0;
+         break;
++    case DevFmtFloat:
+     case DevFmtInt:
+         par.bits = 32;
+         par.sig = 1;
+@@ -182,70 +164,62 @@ bool SndioPlayback::reset()
+         par.sig = 0;
+         break;
+     }
++    par.bps = SIO_BPS(par.bits);
+     par.le = SIO_LE_NATIVE;
+ 
++    par.rate = mDevice->Frequency;
++    par.pchan = mDevice->channelsFromFmt();
++
+     par.round = mDevice->UpdateSize;
+     par.appbufsz = mDevice->BufferSize - mDevice->UpdateSize;
+     if(!par.appbufsz) par.appbufsz = mDevice->UpdateSize;
+ 
+-    if(!sio_setpar(mSndHandle, &par) || !sio_getpar(mSndHandle, &par))
+-    {
+-        ERR("Failed to set device parameters\n");
+-        return false;
+-    }
+-
+-    if(par.bits != par.bps*8)
+-    {
+-        ERR("Padded samples not supported (%u of %u bits)\n", par.bits, par.bps*8);
+-        return false;
+-    }
+-    if(par.le != SIO_LE_NATIVE)
+-    {
+-        ERR("Non-native-endian samples not supported (got %s-endian)\n",
+-            par.le ? "little" : "big");
+-        return false;
+-    }
+-
+-    mDevice->Frequency = par.rate;
+-
+-    if(par.pchan < 2)
+-    {
+-        if(mDevice->FmtChans != DevFmtMono)
+-        {
+-            WARN("Got %u channel for %s\n", par.pchan, DevFmtChannelsString(mDevice->FmtChans));
+-            mDevice->FmtChans = DevFmtMono;
+-        }
++    try {
++        if(!sio_setpar(mSndHandle, &par))
++            throw al::backend_exception{al::backend_error::DeviceError,
++                "Failed to set device parameters"};
++
++        par.clear();
++        if(!sio_getpar(mSndHandle, &par))
++            throw al::backend_exception{al::backend_error::DeviceError,
++                "Failed to get device parameters"};
++
++        if(par.bps > 1 && par.le != SIO_LE_NATIVE)
++            throw al::backend_exception{al::backend_error::DeviceError,
++                "%s-endian samples not supported", par.le ? "Little" : "Big"};
++        if(par.bits < par.bps*8 && !par.msb)
++            throw al::backend_exception{al::backend_error::DeviceError,
++                "MSB-padded samples not supported (%u of %u bits)", par.bits, par.bps*8};
++        if(par.pchan < 1)
++            throw al::backend_exception{al::backend_error::DeviceError,
++                "No playback channels on device"};
+     }
+-    else if((par.pchan == 2 && mDevice->FmtChans != DevFmtStereo)
+-        || par.pchan == 3
+-        || (par.pchan == 4 && mDevice->FmtChans != DevFmtQuad)
+-        || par.pchan == 5
+-        || (par.pchan == 6 && mDevice->FmtChans != DevFmtX51 && mDevice->FmtChans != DevFmtX51Rear)
+-        || (par.pchan == 7 && mDevice->FmtChans != DevFmtX61)
+-        || (par.pchan == 8 && mDevice->FmtChans != DevFmtX71)
+-        || par.pchan > 8)
+-    {
+-        WARN("Got %u channels for %s\n", par.pchan, DevFmtChannelsString(mDevice->FmtChans));
+-        mDevice->FmtChans = DevFmtStereo;
++    catch(al::backend_exception &e) {
++        if(tryfmt == DevFmtShort)
++            throw;
++        tryfmt = DevFmtShort;
++        goto retry_params;
+     }
+ 
+-    if(par.bits == 8 && par.sig == 1)
+-        mDevice->FmtType = DevFmtByte;
+-    else if(par.bits == 8 && par.sig == 0)
+-        mDevice->FmtType = DevFmtUByte;
+-    else if(par.bits == 16 && par.sig == 1)
+-        mDevice->FmtType = DevFmtShort;
+-    else if(par.bits == 16 && par.sig == 0)
+-        mDevice->FmtType = DevFmtUShort;
+-    else if(par.bits == 32 && par.sig == 1)
+-        mDevice->FmtType = DevFmtInt;
+-    else if(par.bits == 32 && par.sig == 0)
+-        mDevice->FmtType = DevFmtUInt;
++    if(par.bps == 1)
++        mDevice->FmtType = (par.sig==1) ? DevFmtByte : DevFmtUByte;
++    else if(par.bps == 2)
++        mDevice->FmtType = (par.sig==1) ? DevFmtShort : DevFmtUShort;
++    else if(par.bps == 4)
++        mDevice->FmtType = (par.sig==1) ? DevFmtInt : DevFmtUInt;
+     else
++        throw al::backend_exception{al::backend_error::DeviceError,
++            "Unhandled sample format: %s %u-bit", (par.sig?"signed":"unsigned"), par.bps*8};
++
++    mFrameStep = par.pchan;
++    if(par.pchan != mDevice->channelsFromFmt())
+     {
+-        ERR("Unhandled sample format: %s %u-bit\n", (par.sig?"signed":"unsigned"), par.bits);
+-        return false;
++        WARN("Got %u channel%s for %s\n", par.pchan, (par.pchan==1)?"":"s",
++            DevFmtChannelsString(mDevice->FmtChans));
++        if(par.pchan < 2) mDevice->FmtChans = DevFmtMono;
++        else mDevice->FmtChans = DevFmtStereo;
+     }
++    mDevice->Frequency = par.rate;
+ 
+     setDefaultChannelOrder();
+ 
