@@ -42,6 +42,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [Go packages](#pkgs_go)
 	* [Haskell packages](#pkgs_haskell)
 	* [Font packages](#pkgs_font)
+	* [Renaming a package](#pkg_rename)
 	* [Removing a package](#pkg_remove)
 	* [XBPS Triggers](#xbps_triggers)
 		* [appstream-cache](#triggers_appstream_cache)
@@ -750,6 +751,9 @@ built for, available architectures can be found under `common/cross-profiles`.
 In general, `archs` should only be set if the upstream software explicitly targets
 certain architectures or there is a compelling reason why the software should not be
 available on some supported architectures.
+Prepending pattern with tilde means disallowing build on indicated archs.
+First matching pattern is taken to allow/deny build. When no pattern matches,
+package is build if last pattern includes tilde.
 Examples:
 
 	```
@@ -1655,6 +1659,18 @@ following variables:
 cache during the install/removal of the package
 - `font_dirs`: which should be set to the directory where the package
 installs its fonts
+
+<a id="pkg_rename"></a>
+### Renaming a package
+
+- Create empty package of old name, depending on new package. This is
+necessary to provide updates to systems where old package is already
+installed. This should be a subpackage of new one, except when version
+number of new package decreased: then create a separate template using
+old version and increased revision.
+- Edit references to package in other templates and common/shlibs.
+- Don't set `replaces=`, it can result in removing both packages from
+systems by xbps.
 
 <a id="pkg_remove"></a>
 ### Removing a package
