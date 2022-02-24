@@ -23,6 +23,9 @@ if [ "$CROSS_BUILD" ]; then
 	# innocuous flags are used here just to disable its defaults
 	export HOST_CC="gcc"
 	export HOST_CFLAGS="-O2"
+
+	# Crates that use bindgen via build.rs are not cross-aware unless these are set
+	export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=${XBPS_CROSS_BASE} -I${XBPS_CROSS_BASE}/usr/include"
 else
 	unset CARGO_BUILD_TARGET
 fi
