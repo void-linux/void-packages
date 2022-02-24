@@ -1,8 +1,8 @@
 diff --git a/compiler/rustc_target/src/spec/crt_objects.rs b/compiler/rustc_target/src/spec/crt_objects.rs
-index 2fc9ab29f92..27673615968 100644
+index 51f392a6..62560658 100644
 --- a/compiler/rustc_target/src/spec/crt_objects.rs
 +++ b/compiler/rustc_target/src/spec/crt_objects.rs
-@@ -62,28 +62,6 @@ pub(super) fn all(obj: &str) -> CrtObjects {
+@@ -63,28 +63,6 @@ pub(super) fn all(obj: &'static str) -> CrtObjects {
      ])
  }
  
@@ -32,7 +32,7 @@ index 2fc9ab29f92..27673615968 100644
      new(&[
          (LinkOutputKind::DynamicNoPicExe, &["crt2.o", "rsbegin.o"]),
 diff --git a/compiler/rustc_target/src/spec/linux_musl_base.rs b/compiler/rustc_target/src/spec/linux_musl_base.rs
-index 5038a967d0a..b3c0e5bc416 100644
+index 207a87ab..88f807a5 100644
 --- a/compiler/rustc_target/src/spec/linux_musl_base.rs
 +++ b/compiler/rustc_target/src/spec/linux_musl_base.rs
 @@ -1,16 +1,9 @@
@@ -42,7 +42,7 @@ index 5038a967d0a..b3c0e5bc416 100644
  pub fn opts() -> TargetOptions {
      let mut base = super::linux_base::opts();
  
-     base.env = "musl".to_string();
+     base.env = "musl".into();
 -    base.pre_link_objects_fallback = crt_objects::pre_musl_fallback();
 -    base.post_link_objects_fallback = crt_objects::post_musl_fallback();
 -    base.crt_objects_fallback = Some(CrtObjectsFallback::Musl);
@@ -53,30 +53,29 @@ index 5038a967d0a..b3c0e5bc416 100644
      base
  }
 diff --git a/config.toml.example b/config.toml.example
-index 61e57eee782..77943129204 100644
+index 6e53d9b4..74980d2c 100644
 --- a/config.toml.example
 +++ b/config.toml.example
-@@ -668,15 +668,6 @@ changelog-seen = 2
- # only use static libraries. If unset, the target's default linkage is used.
- #crt-static = <platform-specific> (bool)
+@@ -511,14 +511,6 @@ changelog-seen = 2
+ # supplementary build information, like distro-specific package versions.
+ #description = <none> (string)
  
 -# The root location of the musl installation directory. The library directory
 -# will also need to contain libunwind.a for an unwinding implementation. Note
 -# that this option only makes sense for musl targets that produce statically
 -# linked binaries.
--#musl-root = build.musl-root (path)
+-#
+-# Defaults to /usr on musl hosts. Has no default otherwise.
+-#musl-root = <platform specific> (path)
 -
--# The full path to the musl libdir.
--#musl-libdir = musl-root/lib
--
- # The root location of the `wasm32-wasi` sysroot. Only used for the
- # `wasm32-wasi` target. If you are building wasm32-wasi target, make sure to
- # create a `[target.wasm32-wasi]` section and move this field there.
+ # By default the `rustc` executable is built with `-Wl,-rpath` flags on Unix
+ # platforms to ensure that the compiler is usable by default from the build
+ # directory (as it links to a number of dynamic libraries). This may not be
 diff --git a/src/bootstrap/cc_detect.rs b/src/bootstrap/cc_detect.rs
-index e750c2963dd..f6ba3032b0d 100644
+index 7ce44687..4e7507ae 100644
 --- a/src/bootstrap/cc_detect.rs
 +++ b/src/bootstrap/cc_detect.rs
-@@ -98,7 +98,7 @@ pub fn find(build: &mut Build) {
+@@ -97,7 +97,7 @@ pub fn find(build: &mut Build) {
          if let Some(cc) = config.and_then(|c| c.cc.as_ref()) {
              cfg.compiler(cc);
          } else {
@@ -85,7 +84,7 @@ index e750c2963dd..f6ba3032b0d 100644
          }
  
          let compiler = cfg.get_compiler();
-@@ -126,7 +126,7 @@ pub fn find(build: &mut Build) {
+@@ -125,7 +125,7 @@ pub fn find(build: &mut Build) {
              cfg.compiler(cxx);
              true
          } else if build.hosts.contains(&target) || build.build == target {
@@ -130,13 +129,14 @@ index e750c2963dd..f6ba3032b0d 100644
      }
  }
 diff --git a/src/bootstrap/compile.rs b/src/bootstrap/compile.rs
-index e9cc7662e63..4971534ba0e 100644
+index afc333b5..9d67ab56 100644
 --- a/src/bootstrap/compile.rs
 +++ b/src/bootstrap/compile.rs
-@@ -199,36 +199,7 @@ fn copy_self_contained_objects(
+@@ -197,39 +197,7 @@ fn copy_self_contained_objects(
+     let mut target_deps = vec![];
  
-     // Copies the CRT objects.
-     //
+     // Copies the libc and CRT objects.
+-    //
 -    // rustc historically provides a more self-contained installation for musl targets
 -    // not requiring the presence of a native musl toolchain. For example, it can fall back
 -    // to using gcc from a glibc-targeting toolchain for linking.
@@ -146,7 +146,7 @@ index e9cc7662e63..4971534ba0e 100644
 -        let srcdir = builder.musl_libdir(target).unwrap_or_else(|| {
 -            panic!("Target {:?} does not have a \"musl-libdir\" key", target.triple)
 -        });
--        for &obj in &["crt1.o", "Scrt1.o", "rcrt1.o", "crti.o", "crtn.o"] {
+-        for &obj in &["libc.a", "crt1.o", "Scrt1.o", "rcrt1.o", "crti.o", "crtn.o"] {
 -            copy_and_stamp(
 -                builder,
 -                &libdir_self_contained,
@@ -164,14 +164,16 @@ index e9cc7662e63..4971534ba0e 100644
 -            target_deps.push((target, DependencyType::TargetSelfContained));
 -        }
 -
--        let libunwind_path = copy_llvm_libunwind(builder, target, &libdir_self_contained);
--        target_deps.push((libunwind_path, DependencyType::TargetSelfContained));
+-        if !target.starts_with("s390x") {
+-            let libunwind_path = copy_llvm_libunwind(builder, target, &libdir_self_contained);
+-            target_deps.push((libunwind_path, DependencyType::TargetSelfContained));
+-        }
 -    } else if target.ends_with("-wasi") {
 +    if target.ends_with("-wasi") {
          let srcdir = builder
              .wasi_root(target)
              .unwrap_or_else(|| {
-@@ -312,15 +283,6 @@ pub fn std_cargo(builder: &Builder<'_>, target: TargetSelection, stage: u32, car
+@@ -313,15 +281,6 @@ pub fn std_cargo(builder: &Builder<'_>, target: TargetSelection, stage: u32, car
              .arg("--manifest-path")
              .arg(builder.src.join("library/test/Cargo.toml"));
  
@@ -188,7 +190,7 @@ index e9cc7662e63..4971534ba0e 100644
              if let Some(p) = builder.wasi_root(target) {
                  let root = format!("native={}/lib/wasm32-wasi", p.to_str().unwrap());
 diff --git a/src/bootstrap/config.rs b/src/bootstrap/config.rs
-index e658d958d0a..914b1390b37 100644
+index 9534cc5f..642a5c24 100644
 --- a/src/bootstrap/config.rs
 +++ b/src/bootstrap/config.rs
 @@ -172,7 +172,6 @@ pub struct Config {
@@ -199,7 +201,7 @@ index e658d958d0a..914b1390b37 100644
      pub prefix: Option<PathBuf>,
      pub sysconfdir: Option<PathBuf>,
      pub datadir: Option<PathBuf>,
-@@ -298,8 +297,6 @@ pub struct Target {
+@@ -299,8 +298,6 @@ pub struct Target {
      pub sanitizers: Option<bool>,
      pub profiler: Option<bool>,
      pub crt_static: Option<bool>,
@@ -208,24 +210,24 @@ index e658d958d0a..914b1390b37 100644
      pub wasi_root: Option<PathBuf>,
      pub qemu_rootfs: Option<PathBuf>,
      pub no_std: bool,
-@@ -493,7 +490,6 @@ struct Rust {
-     default_linker: Option<String>,
-     channel: Option<String>,
-     description: Option<String>,
--    musl_root: Option<String>,
-     rpath: Option<bool>,
-     verbose_tests: Option<bool>,
-     optimize_tests: Option<bool>,
-@@ -536,8 +532,6 @@ struct TomlTarget {
-     sanitizers: Option<bool>,
-     profiler: Option<bool>,
-     crt_static: Option<bool>,
--    musl_root: Option<String>,
--    musl_libdir: Option<String>,
-     wasi_root: Option<String>,
-     qemu_rootfs: Option<String>,
-     no_std: Option<bool>,
-@@ -872,7 +866,6 @@ pub fn parse(args: &[String]) -> Config {
+@@ -587,7 +584,6 @@ struct Rust {
+         default_linker: Option<String> = "default-linker",
+         channel: Option<String> = "channel",
+         description: Option<String> = "description",
+-        musl_root: Option<String> = "musl-root",
+         rpath: Option<bool> = "rpath",
+         verbose_tests: Option<bool> = "verbose-tests",
+         optimize_tests: Option<bool> = "optimize-tests",
+@@ -631,8 +627,6 @@ struct TomlTarget {
+         sanitizers: Option<bool> = "sanitizers",
+         profiler: Option<bool> = "profiler",
+         crt_static: Option<bool> = "crt-static",
+-        musl_root: Option<String> = "musl-root",
+-        musl_libdir: Option<String> = "musl-libdir",
+         wasi_root: Option<String> = "wasi-root",
+         qemu_rootfs: Option<String> = "qemu-rootfs",
+         no_std: Option<bool> = "no-std",
+@@ -1013,7 +1007,6 @@ pub fn parse(args: &[String]) -> Config {
              set(&mut config.llvm_tools_enabled, rust.llvm_tools);
              config.rustc_parallel = rust.parallel_compiler.unwrap_or(false);
              config.rustc_default_linker = rust.default_linker;
@@ -233,7 +235,7 @@ index e658d958d0a..914b1390b37 100644
              config.save_toolstates = rust.save_toolstates.map(PathBuf::from);
              set(&mut config.deny_warnings, flags.deny_warnings.or(rust.deny_warnings));
              set(&mut config.backtrace_on_ice, rust.backtrace_on_ice);
-@@ -918,8 +911,6 @@ pub fn parse(args: &[String]) -> Config {
+@@ -1059,8 +1052,6 @@ pub fn parse(args: &[String]) -> Config {
                  target.ranlib = cfg.ranlib.map(PathBuf::from);
                  target.linker = cfg.linker.map(PathBuf::from);
                  target.crt_static = cfg.crt_static;
@@ -243,7 +245,7 @@ index e658d958d0a..914b1390b37 100644
                  target.qemu_rootfs = cfg.qemu_rootfs.map(PathBuf::from);
                  target.sanitizers = cfg.sanitizers;
 diff --git a/src/bootstrap/configure.py b/src/bootstrap/configure.py
-index 94424cb4548..9ae0cc053e3 100755
+index 87a130a0..bd4c9197 100755
 --- a/src/bootstrap/configure.py
 +++ b/src/bootstrap/configure.py
 @@ -114,34 +114,6 @@ v("aarch64-linux-android-ndk", "target.aarch64-linux-android.android-ndk",
@@ -282,18 +284,10 @@ index 94424cb4548..9ae0cc053e3 100755
    "rootfs in qemu testing, you probably don't want to use this")
  v("qemu-aarch64-rootfs", "target.aarch64-unknown-linux-gnu.qemu-rootfs",
 diff --git a/src/bootstrap/lib.rs b/src/bootstrap/lib.rs
-index 2d4e1527897..3abe9f4a143 100644
+index 570a6174..f3d5f308 100644
 --- a/src/bootstrap/lib.rs
 +++ b/src/bootstrap/lib.rs
-@@ -277,7 +277,6 @@ pub struct Build {
- struct Crate {
-     name: Interned<String>,
-     deps: HashSet<Interned<String>>,
--    id: String,
-     path: PathBuf,
- }
- 
-@@ -1056,25 +1055,6 @@ fn crt_static(&self, target: TargetSelection) -> Option<bool> {
+@@ -1125,25 +1125,6 @@ fn crt_static(&self, target: TargetSelection) -> Option<bool> {
          }
      }
  
@@ -319,29 +313,8 @@ index 2d4e1527897..3abe9f4a143 100644
      /// Returns the sysroot for the wasi target, if defined
      fn wasi_root(&self, target: TargetSelection) -> Option<&Path> {
          self.config.target_config.get(&target).and_then(|t| t.wasi_root.as_ref()).map(|p| &**p)
-diff --git a/src/bootstrap/metadata.rs b/src/bootstrap/metadata.rs
-index a38391c7b88..65e229697dc 100644
---- a/src/bootstrap/metadata.rs
-+++ b/src/bootstrap/metadata.rs
-@@ -14,7 +14,6 @@ struct Output {
- 
- #[derive(Deserialize)]
- struct Package {
--    id: String,
-     name: String,
-     source: Option<String>,
-     manifest_path: String,
-@@ -50,7 +49,7 @@ pub fn build(build: &mut Build) {
-                 .filter(|dep| dep.source.is_none())
-                 .map(|dep| INTERNER.intern_string(dep.name))
-                 .collect();
--            build.crates.insert(name, Crate { name, id: package.id, deps, path });
-+            build.crates.insert(name, Crate { name, deps, path });
-         }
-     }
- }
 diff --git a/src/bootstrap/sanity.rs b/src/bootstrap/sanity.rs
-index d7db2cef24f..a791177956d 100644
+index 8c2899c1..dda15d76 100644
 --- a/src/bootstrap/sanity.rs
 +++ b/src/bootstrap/sanity.rs
 @@ -11,7 +11,6 @@
@@ -352,7 +325,7 @@ index d7db2cef24f..a791177956d 100644
  use std::path::PathBuf;
  use std::process::Command;
  
-@@ -178,28 +177,6 @@ pub fn check(build: &mut Build) {
+@@ -177,28 +176,6 @@ pub fn check(build: &mut Build) {
              }
          }
  

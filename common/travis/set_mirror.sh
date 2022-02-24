@@ -12,4 +12,5 @@ for _i in etc/xbps.d/repos-remote*.conf ; do
 
     # Now set the mirror
     sed -i "s:alpha\.de\.repo\.voidlinux\.org:$TRAVIS_MIRROR:g" $_i
+    sed -i "s:repo-default\.voidlinux\.org:$TRAVIS_MIRROR:g" $_i
 done

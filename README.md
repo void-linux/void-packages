@@ -431,7 +431,7 @@ xbps-src can be used in any recent Linux distribution matching the CPU architect
 
 To use xbps-src in your Linux distribution use the following instructions. Let's start downloading the xbps static binaries:
 
-    $ wget http://alpha.de.repo.voidlinux.org/static/xbps-static-latest.<arch>-musl.tar.xz
+    $ wget http://repo-default.voidlinux.org/static/xbps-static-latest.<arch>-musl.tar.xz
     $ mkdir ~/XBPS
     $ tar xvf xbps-static-latest.<arch>-musl.tar.xz -C ~/XBPS
     $ export PATH=~/XBPS/usr/bin:$PATH
