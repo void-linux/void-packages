@@ -1,3 +1,4 @@
+<!-- mdbook:cut -->
 # The XBPS source packages manual
 
 This article contains an exhaustive manual of how to create new source
@@ -74,8 +75,10 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [Notes](#notes)
 	* [Contributing via git](#contributing)
 	* [Help](#help)
+<!-- mdbook:endcut -->
 
 <a id="Introduction"></a>
+<!-- mdbook:page:introduction -->
 ### Introduction
 
 The `void-packages` repository contains all the
@@ -122,8 +125,10 @@ If everything went fine after running
 
 a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local repository
 `hostdir/binpkgs`.
+<!-- mdbook:endpage -->
 
 <a id="buildphase"></a>
+<!-- mdbook:page:buildphases -->
 ### Package build phases
 
 Building a package consist of the following phases:
@@ -160,8 +165,10 @@ via `make install` or any other compatible method.
 `xbps-src` supports running just the specified phase, and if it ran
 successfully, the phase will be skipped later (unless its work directory
 `${wrksrc}` is removed with `xbps-src clean`).
+<!-- mdbook:endpage -->
 
 <a id="namingconventions"></a>
+<!-- mdbook:page:naming-conventions -->
 ### Package naming conventions
 
 <a id="libs"></a>
@@ -237,8 +244,10 @@ is lowercase.
 Programs can be split into program packages and library packages. The program
 package should be named as described above. The library package should be
 prefixed with "lib" (see section `Libraries`)
+<!-- mdbook:endpage -->
 
 <a id="global_funcs"></a>
+<!-- mdbook:page:global-funcs -->
 ### Global functions
 
 The following functions are defined by `xbps-src` and can be used on any template:
@@ -359,8 +368,10 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	This is useful when used in conjunction with `skip_extraction`.
 
 > Shell wildcards must be properly quoted, Example: `vmove "usr/lib/*.a"`.
+<!-- mdbook:endpage -->
 
 <a id="global_vars"></a>
+<!-- mdbook:page:global-vars -->
 ### Global variables
 
 The following variables are defined by `xbps-src` and can be used on any template:
@@ -424,8 +435,10 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 - `XBPS_RUST_TARGET` The target architecture triplet used by `rustc` and `cargo`.
 
 - `XBPS_BUILD_ENVIRONMENT` Enables continuous-integration-specific operations. Set to `void-packages-ci` if in continuous integration.
+<!-- mdbook:endpage -->
 
 <a id="available_vars"></a>
+<!-- mdbook:page:available-vars -->
 ### Available variables
 
 <a id="mandatory_vars"></a>
@@ -863,8 +876,10 @@ information on this map.
 Finally, as a general rule, if a package is built the exact same way whether or
 not a particular package is present in `makedepends` or `hostmakedepends`, that
 package shouldn't be added as a build time dependency.
+<!-- mdbook:endpage -->
 
 <a id="repositories"></a>
+<!-- mdbook:page:repositories -->
 ### Repositories
 
 <a id="repo_by_branch"></a>
@@ -889,8 +904,10 @@ The following repository names are valid:
 * `debug`: Repository for packages containing debug symbols. In almost all cases,
   these packages are generated automatically.
 * `nonfree`: Repository for packages that are closed source or have nonfree licenses.
+<!-- mdbook:endpage -->
 
 <a id="updates"></a>
+<!-- mdbook:page:updates -->
 ### Checking for new upstream releases
 
 New upstream versions can be automatically checked using
@@ -932,8 +949,10 @@ in url. Defaults to `(|\.x)`.
 - `disabled` can be set to disable update checking for the package,
 in cases where checking for updates is impossible or does not make sense.
 This should be set to a string describing why it is disabled.
+<!-- mdbook:endpage -->
 
 <a id="patches"></a>
+<!-- mdbook:page:patches -->
 ### Handling patches
 
 Sometimes software needs to be patched, most commonly to fix bugs that have
@@ -955,8 +974,10 @@ xbps-src will only apply patches named in the `series` file.
 be used to set the args passed to `patch(1)`. As an example, if `foo.patch` requires
 special arguments to be passed to `patch(1)` that can't be used when applying other
 patches, `foo.patch.args` can be created containing those args.
+<!-- mdbook:endpage -->
 
 <a id="build_scripts"></a>
+<!-- mdbook:page:build-styles -->
 ### build style scripts
 
 The `build_style` variable specifies the build method to build and install a
@@ -1083,8 +1104,10 @@ matching the `build_style` name, Example:
 
 - `texmf` For texmf zip/tarballs that need to go into /usr/share/texmf-dist. Includes
 duplicates handling.
+<!-- mdbook:endpage -->
 
 <a id="build_helper"></a>
+<!-- mdbook:page:build-helpers -->
 ### build helper scripts
 
 The `build_helper` variable specifies shell snippets to be sourced that will create a
@@ -1132,8 +1155,10 @@ This aims to fix cross-builds for when the build-style is mixed: e.g. when in a
 - `rust` specifies environment variables required for cross-compiling crates via cargo and
 for compiling cargo -sys crates. This helper is added by default for packages that use the
 `cargo` build style.
+<!-- mdbook:endpage -->
 
 <a id="functions"></a>
+<!-- mdbook:page:functions -->
 ### Functions
 
 The following functions can be defined to change the behavior of how the
@@ -1197,8 +1222,10 @@ Current working directory for functions is set as follows:
 
 - For post_patch through post_install: `build_wrksrc`
 if it is defined, otherwise `wrksrc`.
+<!-- mdbook:endpage -->
 
 <a id="build_options"></a>
+<!-- mdbook:page:build-options -->
 ### Build options
 
 Some packages might be built with different build options to enable/disable
@@ -1307,8 +1334,10 @@ Example: `XBPS_PKG_OPTIONS_xorg_server=opt`.
 
 The list of supported package build options and its description is defined in the
 `common/options.description` file.
+<!-- mdbook:endpage -->
 
 <a id="install_remove_files"></a>
+<!-- mdbook:page:install-remove-files -->
 ### INSTALL and REMOVE files
 
 The INSTALL and REMOVE shell snippets can be used to execute certain actions at a specified
@@ -1351,8 +1380,10 @@ be executed via `chroot(2)` won't work correctly.
 
 > NOTE: do not use INSTALL/REMOVE scripts to print messages, see the next section for
 more information.
+<!-- mdbook:endpage -->
 
 <a id="install_remove_files_msg"></a>
+<!-- mdbook:page:install-remove-msg-files -->
 ### INSTALL.msg and REMOVE.msg files
 
 The `INSTALL.msg` and `REMOVE.msg` files can be used to print a message at post-install
@@ -1364,8 +1395,10 @@ subpackages can also have their own `INSTALL.msg` and `REMOVE.msg` files, simply
 as `srcpkgs/<pkgname>/<subpkg>.INSTALL.msg` or `srcpkgs/<pkgname>/<subpkg>.REMOVE.msg` respectively.
 
 This should only be used for critical messages, like warning users of breaking changes.
+<!-- mdbook:endpage -->
 
 <a id="runtime_account_creation"></a>
+<!-- mdbook:page:account-creation -->
 ### Creating system accounts/groups at runtime
 
 There's a trigger along with some variables that are specifically to create
@@ -1396,8 +1429,10 @@ accounts.
 
 > NOTE: The underscore policy does not apply to old packages, due to the inevitable breakage of
 > changing the username only new packages should follow it.
+<!-- mdbook:endpage -->
 
 <a id="writing_runit_services"></a>
+<!-- mdbook:page:runit-services -->
 ### Writing runit services
 
 Void Linux uses [runit](http://smarden.org/runit/) for booting and supervision of services.
@@ -1443,8 +1478,10 @@ Examples of when *not* to install systemd units:
 
 1. When doing so changes runtime behavior of the packaged software.
 2. When it is done via a compile time flag that also changes build dependencies.
+<!-- mdbook:endpage -->
 
 <a id="32bit_pkgs"></a>
+<!-- mdbook:page:32bit-pkgs -->
 ### 32bit packages
 
 32bit packages are built automatically when the builder is x86 (32bit), but
@@ -1465,8 +1502,10 @@ This expects the basename of the target file, Example: `lib32symlinks="foo"`.
 
 - `lib32mode` If unset, only shared/static libraries and pkg-config files will be copied to the
 **32bit** package. If set to `full` all files will be copied to the 32bit package, unmodified.
+<!-- mdbook:endpage -->
 
 <a id="pkgs_sub"></a>
+<!-- mdbook:page:subpkgs -->
 ### Subpackages
 
 In the example shown above just a binary package is generated, but with some
@@ -1525,8 +1564,10 @@ destdir (`$DESTDIR`) to the `subpackage` destdir (`$PKGDESTDIR`).
 
 Subpackages are processed always in alphabetical order; To force a custom order,
 the `subpackages` variable can be declared with the wanted order.
+<!-- mdbook:endpage -->
 
 <a id="pkgs_classes"></a>
+<!-- mdbook:page:pkg-classes -->
 ### Some package classes
 
 <a id="pkgs_development"></a>
@@ -1709,8 +1750,10 @@ following variables:
 cache during the install/removal of the package
 - `font_dirs`: which should be set to the directory where the package
 installs its fonts
+<!-- mdbook:endpage -->
 
 <a id="pkg_rename"></a>
+<!-- mdbook:page:renaming-pkgs -->
 ### Renaming a package
 
 - Create empty package of old name, depending on new package. This is
@@ -1721,8 +1764,10 @@ old version and increased revision.
 - Edit references to package in other templates and common/shlibs.
 - Don't set `replaces=`, it can result in removing both packages from
 systems by xbps.
+<!-- mdbook:endpage -->
 
 <a id="pkg_remove"></a>
+<!-- mdbook:page:removing-pkgs -->
 ### Removing a package
 
 Follows a list of things that should be done to help guarantee that a
@@ -1752,8 +1797,10 @@ template.  All removed subpkgs should be added too.
 This will uninstall package from systems where it is installed.
 - Remove the package from the repository index
 or contact a team member that can do so.
+<!-- mdbook:endpage -->
 
 <a id="xbps_triggers"></a>
+<!-- mdbook:page:triggers -->
 ### XBPS Triggers
 
 XBPS triggers are a collection of snippets of code, provided by the `xbps-triggers`
@@ -2151,16 +2198,20 @@ During removal it uses `xmlcatmgr` to remove all catalogs passed to it by the
 
 To include this trigger use the `sgml_entries` variable or/and the `xml_entries` variable,
 as the trigger won't do anything unless either of them are defined.
+<!-- mdbook:endpage -->
 
 <a id="documentation"></a>
+<!-- mdbook:page:void-docs -->
 ### Void specific documentation
 
 When you want document details of package's configuration and usage specific to Void Linux,
 not covered by upstream documentation, put notes into
 `srcpkgs/<pkgname>/files/README.voidlinux` and install with
 `vdoc "${FILESDIR}/README.voidlinux"`.
+<!-- mdbook:endpage -->
 
 <a id="notes"></a>
+<!-- mdbook:page:notes -->
 ### Notes
 
 - Make sure that all software is configured to use the `/usr` prefix.
@@ -2178,8 +2229,10 @@ the installed files (`./xbps-src show-files pkg`) before pushing new updates.
 
 - Make sure that binaries are not stripped by the software, let xbps-src do this;
 otherwise the `debug` packages won't have debugging symbols.
+<!-- mdbook:endpage -->
 
 <a id="contributing"></a>
+<!-- mdbook:page:contributing -->
 ### Contributing via git
 
 To get started, [fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo) the void-linux `void-packages` git repository on GitHub and clone it:
@@ -2197,8 +2250,10 @@ to pull in new changes:
 
     $ git remote add upstream https://github.com/void-linux/void-packages.git
     $ git pull --rebase upstream master
+<!-- mdbook:endpage -->
 
 <a id="help"></a>
+<!-- mdbook:page:help -->
 ### Help
 
 If after reading this `manual` you still need some kind of help, please join
