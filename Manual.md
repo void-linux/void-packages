@@ -824,10 +824,10 @@ not a particular package is present in `makedepends` or `hostmakedepends`, that
 package shouldn't be added as a build time dependency.
 
 <a id="repositories"></a>
-#### Repositories
+### Repositories
 
 <a id="repo_by_branch"></a>
-##### Repositories defined by Branch
+#### Repositories defined by Branch
 
 The global repository takes the name of
 the current branch, except if the name of the branch is master. Then the resulting
@@ -835,7 +835,7 @@ repository will be at the global scope. The usage scenario is that the user can
 update multiple packages in a second branch without polluting his local repository.
 
 <a id="pkg_defined_repo"></a>
-##### Package defined Repositories
+#### Package defined Repositories
 
 The second way to define a repository is by setting the `repository` variable in
 a template. This way the maintainer can define repositories for a specific
@@ -1925,7 +1925,7 @@ If it is running under another architecture it tries to use the host's `install-
 utility.
 
 <a id="triggers_initramfs_regenerate"></a>
-### initramfs-regenerate
+#### initramfs-regenerate
 
 The initramfs-regenerate trigger will trigger the regeneration of all kernel
 initramfs images after package installation or removal. The trigger must be
