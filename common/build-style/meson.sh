@@ -138,7 +138,7 @@ do_check() {
 	: ${make_check_target:=test}
 	: ${meson_builddir:=build}
 
-	${make_cmd} -C ${meson_builddir} ${makejobs} ${make_check_args} ${make_check_target}
+	${make_check_pre} ${make_cmd} -C ${meson_builddir} ${makejobs} ${make_check_args} ${make_check_target}
 }
 
 do_install() {

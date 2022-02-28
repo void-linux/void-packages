@@ -29,7 +29,7 @@ do_check() {
 	: ${make_cmd:=make}
 	: ${make_check_target:=check}
 
-	${make_cmd} ${make_check_args} ${make_check_target}
+	${make_check_pre} ${make_cmd} ${make_check_args} ${make_check_target}
 }
 
 do_install() {

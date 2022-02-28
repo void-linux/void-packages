@@ -600,6 +600,9 @@ path of the Python wheel produced by the build phase that will be installed; whe
 `python-pep517` build style will look for a wheel matching the package name and version in the
 current directory with respect to the install.
 
+- `make_check_pre` The expression in front of `${make_cmd}`. This can be used for wrapper commands
+or for setting environment variables for the check command. By default empty.
+
 - `patch_args` The arguments to be passed in to the `patch(1)` command when applying
 patches to the package sources during `do_patch()`. Patches are stored in
 `srcpkgs/<pkgname>/patches` and must be in `-p1` format. By default set to `-Np1`.

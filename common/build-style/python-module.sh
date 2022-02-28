@@ -49,7 +49,7 @@ do_check() {
 			fi
 		fi
 
-		python${pyver} setup.py ${make_check_target:-test} ${make_check_args}
+		${make_check_pre} python${pyver} setup.py ${make_check_target:-test} ${make_check_args}
 		rm build
 	done
 }
