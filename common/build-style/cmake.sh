@@ -116,7 +116,7 @@ do_check() {
 
 	: ${make_check_target:=test}
 
-	${make_cmd} ${make_check_args} ${make_check_target}
+	${make_check_pre} ${make_cmd} ${make_check_args} ${make_check_target}
 }
 
 do_install() {

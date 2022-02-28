@@ -41,7 +41,7 @@ do_check() {
 	if [ ! -x ./Build ]; then
 		msg_error "$pkgver: cannot find ./Build script!\n"
 	fi
-	./Build test
+	${make_check_pre} ./Build test
 }
 
 do_install() {
