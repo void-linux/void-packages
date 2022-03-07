@@ -1,0 +1,110 @@
+# Template file for 'nodejs-lts'
+pkgname=nodejs-lts
+version=12.22.10
+revision=1
+wrksrc="node-v${version}"
+# Need these for host v8 for torque, see https://github.com/nodejs/node/pull/21079
+hostmakedepends="pkg-config python libatomic-devel zlib-devel which
+ $(vopt_if icu icu-devel) $(vopt_if ssl openssl-devel) $(vopt_if libuv libuv-devel)
+ $(vopt_if http_parser http-parser-devel) $(vopt_if nghttp2 nghttp2-devel)
+ $(vopt_if cares c-ares-devel) $(vopt_if http_parser llhttp-devel)"
+makedepends="libatomic-devel zlib-devel python-devel $(vopt_if icu icu-devel)
+ $(vopt_if ssl openssl-devel) $(vopt_if libuv libuv-devel)
+ $(vopt_if http_parser http-parser-devel) $(vopt_if nghttp2 nghttp2-devel)
+ $(vopt_if cares c-ares-devel) $(vopt_if http_parser llhttp-devel)"
+checkdepends="procps-ng"
+short_desc="Evented I/O for V8 javascript"
+maintainer="Enno Boland <gottox@voidlinux.org>"
+license="MIT"
+homepage="https://nodejs.org/"
+distfiles="${homepage}/dist/v${version}/node-v${version}.tar.gz"
+checksum=1eeec68b530da4aced730e2af9e07a1ced8148337708f37fc8b4eddc3b6dc9e9
+python_version=3
+
+build_options="ssl libuv http_parser icu nghttp2 cares"
+desc_option_ssl="Enable shared openssl"
+desc_option_libuv="Enable shared libuv"
+desc_option_http_parser="Enable shared http-parser and llhttp"
+desc_option_icu="Enable shared icu"
+desc_option_nghttp2="Enable shared nghttp2"
+desc_option_cares="Enable shared c-ares"
+build_options_default="ssl libuv http_parser icu nghttp2 cares"
+
+replaces="iojs>=0"
+conflicts="nodejs nodejs-lts-10"
+provides="nodejs-runtime-0_1"
+
+if [ "$XBPS_WORDSIZE" -ne "$XBPS_TARGET_WORDSIZE" ]; then
+	nocross="host and target must have the same pointer size"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	ppc64*) ;;
+	ppc*) broken="Node 12.x does not support 32-bit ppc" ;;
+esac
+
+CFLAGS="-D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
+CXXFLAGS="-D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
+
+post_patch() {
+	# XXX Drop after c-ares 1.17.3 has been released.
+	vsed -i -e 's:<ares_nameser.h>:<arpa/nameser.h>:g' src/cares_wrap.cc
+}
+
+do_configure() {
+	local _args
+
+	export LD="$CXX"
+	if [ "$CROSS_BUILD" ]; then
+		case "$XBPS_TARGET_MACHINE" in
+			arm*) _args="--dest-cpu=arm" ;;
+			aarch64*) _args="--dest-cpu=arm64" ;;
+			ppc64*) _args="--dest-cpu=ppc64" ;;
+			ppc*) _args="--dest-cpu=ppc" ;;
+			mipsel*) _args="--dest-cpu=mipsel" ;;
+			mips*) _args="--dest-cpu=mips" ;;
+			i686*) _args="--dest-cpu=x86" ;;
+			x86_64*) _args="--dest-cpu=x86_64" ;;
+			*) msg_error "$pkgver: cannot be cross compiled for ${XBPS_TARGET_MACHINE}.\n" ;;
+		esac
+		_args+=" --cross-compiling"
+	fi
+	./configure --prefix=/usr --shared-zlib \
+		$(vopt_if icu --with-intl=system-icu) \
+		$(vopt_if http_parser --shared-http-parser) \
+		$(vopt_if ssl --shared-openssl) \
+		$(vopt_if libuv --shared-libuv) \
+		$(vopt_if nghttp2 --shared-nghttp2) \
+		$(vopt_if cares --shared-cares) ${_args}
+}
+
+post_configure() {
+	# Fix linking against llhttp
+	sed 's/-lhttp_parser/& -lllhttp/' -i out/*.target.mk
+}
+
+do_build() {
+	if [ "$CROSS_BUILD" ]; then
+		make LD="$CXX" LDFLAGS+=-ldl ${makejobs} PORTABLE=1 V=1
+	else
+		make LD="$CXX" LDFLAGS+=-ldl ${makejobs} V=1
+	fi
+}
+
+do_check() {
+	make LD="$CXX" LDFLAGS+=-ldl ${makejobs} V=1 test-only
+}
+
+do_install() {
+	make LD="$CXX" LDFLAGS+=-ldl DESTDIR="$DESTDIR" install
+	rm $DESTDIR/usr/include/node/openssl -rf
+	vlicense LICENSE
+}
+
+nodejs-lts-devel_package() {
+	short_desc+=" (development files)"
+	conflicts="nodejs-devel nodejs-lts-10-devel"
+	pkg_install() {
+		vmove usr/include
+	}
+}

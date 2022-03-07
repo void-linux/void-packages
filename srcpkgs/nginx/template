@@ -1,0 +1,127 @@
+# Template file for 'nginx'
+pkgname=nginx
+version=1.20.2
+revision=3
+_tests_commit=18ac4d9e5a2a
+create_wrksrc=yes
+build_wrksrc="nginx-${version}"
+build_style=gnu-makefile
+hostmakedepends="openssl-devel pcre-devel $(vopt_if geoip geoip-devel)"
+makedepends="${hostmakedepends}"
+checkdepends="perl perl-IO-Socket-SSL perl-GD perl-FCGI which"
+short_desc="High performance web and reverse proxy server"
+maintainer="Duncaen <duncaen@voidlinux.org>"
+license="BSD-2-Clause"
+homepage="https://nginx.org"
+distfiles="https://nginx.org/download/nginx-${version}.tar.gz
+ https://hg.nginx.org/nginx-tests/archive/${_tests_commit}.tar.gz"
+checksum="958876757782190a1653e14dc26dfc7ba263de310e04c113e11e97d1bef45a42
+ e34ef2f38512e1c04ee201c3b68f7ba7ec8f1537dc6a500278bc2219ab435228"
+# Tests fail when nginx run as root and there is no nginx user
+make_check=ci-skip
+
+# NOTE:
+# On update, the pregenerated header file for ARM may need synchronization.
+# See srcpkgs/nginx/files/ngx_auto_config.h.armv6l.patch for more information.
+
+conf_files="/etc/nginx/fastcgi.conf
+ /etc/nginx/fastcgi_params
+ /etc/nginx/koi-win
+ /etc/nginx/koi-utf
+ /etc/nginx/mime.types
+ /etc/nginx/nginx.conf
+ /etc/nginx/scgi_params
+ /etc/nginx/uwsgi_params
+ /etc/nginx/win-utf"
+system_accounts="nginx"
+nginx_homedir="/var/tmp/nginx"
+make_dirs="/var/log/nginx 0750 root root
+ /var/tmp 1777 root root
+ /var/tmp/nginx 0750 nginx root"
+
+build_options="geoip stream slice"
+desc_option_stream="Enable support for stream proxies"
+desc_option_slice="Enable support for slice filters"
+build_options_default="geoip stream slice"
+
+do_configure() {
+	local cfgdir=/etc/nginx
+	local tmpdir=/var/tmp/nginx
+
+	if [ "$CROSS_BUILD" ]; then
+		# fake configure run on host
+		unset CC CPP LD CFLAGS CPPFLAGS LDFLAGS
+	fi
+
+	local stream_modules="\
+		--with-stream \
+		--with-stream_realip_module \
+		--with-stream_ssl_module \
+		--with-stream_ssl_preread_module \
+		$(vopt_if geoip --with-stream_geoip_module) \
+	"
+
+	./configure --prefix=${cfgdir} \
+		--conf-path=${cfgdir}/nginx.conf \
+		--sbin-path=/usr/bin/nginx \
+		--pid-path=/run/nginx.pid \
+		--lock-path=/var/lock/nginx.lock \
+		--user=nginx --group=nginx \
+		--http-log-path=/var/log/nginx/access.log \
+		--error-log-path=/var/log/nginx/error.log \
+		--http-client-body-temp-path=${tmpdir}/client-body \
+		--http-proxy-temp-path=${tmpdir}/proxy \
+		--http-fastcgi-temp-path=${tmpdir}/fastcgi \
+		--http-scgi-temp-path=${tmpdir}/scgi \
+		--http-uwsgi-temp-path=${tmpdir}/uwsgi \
+		--with-compat \
+		--with-file-aio \
+		--with-http_dav_module \
+		--with-http_gunzip_module \
+		--with-http_gzip_static_module \
+		--with-http_realip_module \
+		--with-http_ssl_module \
+		--with-http_stub_status_module \
+		--with-http_sub_module \
+		--with-http_v2_module \
+		--with-mail \
+		--with-mail_ssl_module \
+		--with-pcre-jit \
+		--with-threads \
+		$(vopt_if geoip --with-http_geoip_module) \
+		$(vopt_if stream "$stream_modules") \
+		$(vopt_if slice --with-http_slice_module)
+
+}
+
+pre_build() {
+	if [ "$CROSS_BUILD" ]; then
+		case "$XBPS_TARGET_MACHINE" in
+			arm*) cp "${FILESDIR}/ngx_auto_config.h.armv6l" objs/ngx_auto_config.h;;
+			aarch64*) cp "${FILESDIR}/ngx_auto_config.h.aarch64" objs/ngx_auto_config.h;;
+		esac
+	fi
+
+	sed -i 's/-lcrypt/$(LDFLAGS) &/' objs/Makefile
+}
+
+do_check() {
+	TEST_NGINX_BINARY="$PWD/objs/nginx" \
+		prove -j ${XBPS_MAKEJOBS} "../${pkgname}-tests-${_tests_commit}"
+}
+
+post_install() {
+	sed -e 's|\<user\s\+\w\+;|user html;|g' \
+		-e '44s|html|/usr/share/nginx/html|' \
+		-e '54s|html|/usr/share/nginx/html|' \
+		-i "$DESTDIR/etc/nginx/nginx.conf"
+	rm -- "$DESTDIR"/etc/nginx/*.default
+
+	vmkdir usr/share/nginx
+	mv "$DESTDIR/etc/nginx/html" "$DESTDIR/usr/share/nginx"
+
+	vman man/nginx.8
+
+	vlicense LICENSE
+	vsv nginx
+}

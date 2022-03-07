@@ -1,0 +1,72 @@
+From cb0aad687f34629a42053d600cf2947282cea2c0 Mon Sep 17 00:00:00 2001
+From: Lei Zhang <thestig@chromium.org>
+Date: Mon, 31 Jan 2022 22:42:35 +0000
+Subject: [PATCH] Use FT_Done_MM_Var() in CFX_Font::AdjustMMParams() when
+ possible.
+
+When FreeType has FT_Done_MM_Var(), use that to free memory in
+CFX_Font::AdjustMMParams() to avoid mismatched alloc/free functions.
+
+Bug: pdfium:1400
+Change-Id: I044540893103921fc64cdd53fcd628cfebf2c9db
+Reviewed-on: https://pdfium-review.googlesource.com/c/pdfium/+/90130
+Reviewed-by: Nigi <nigi@chromium.org>
+Commit-Queue: Lei Zhang <thestig@chromium.org>
+
+(cherry picked from commit ffeb67faf715475f6e463d65c368f556780adf19)
+---
+ core/fxge/cfx_font.cpp | 28 ++++++++++++++++++++++++++--
+ 1 file changed, 26 insertions(+), 2 deletions(-)
+
+diff --git a/core/fxge/cfx_font.cpp b/core/fxge/cfx_font.cpp
+index 7a4e8eb24..0ef421fe7 100644
+--- a/third_party/pdfium/core/fxge/cfx_font.cpp
++++ b/third_party/pdfium/core/fxge/cfx_font.cpp
+@@ -43,6 +43,30 @@ struct OUTLINE_PARAMS {
+   float m_CoordUnit;
+ };
+ 
++// TODO(crbug.com/pdfium/1400): When FT_Done_MM_Var() is more likely to be
++// available to all users in the future, remove FreeMMVar() and use
++// FT_Done_MM_Var() directly.
++//
++// Use weak symbols to check if FT_Done_MM_Var() is available at runtime.
++#if !defined(OS_WIN)
++extern "C" __attribute__((weak)) decltype(FT_Done_MM_Var) FT_Done_MM_Var;
++#endif
++
++void FreeMMVar(FXFT_FaceRec* rec, FXFT_MM_VarPtr variation_desc) {
++#if defined(OS_WIN)
++  // Assume `use_system_freetype` GN var is never set on Windows.
++  constexpr bool has_ft_done_mm_var_func = true;
++#else
++  static const bool has_ft_done_mm_var_func = !!FT_Done_MM_Var;
++#endif
++  if (has_ft_done_mm_var_func) {
++    FT_Done_MM_Var(CFX_GEModule::Get()->GetFontMgr()->GetFTLibrary(),
++                   variation_desc);
++  } else {
++    FXFT_Free(rec, variation_desc);
++  }
++}
++
+ #ifdef PDF_ENABLE_XFA
+ unsigned long FTStreamRead(FXFT_StreamRec* stream,
+                            unsigned long offset,
+@@ -640,14 +664,14 @@ void CFX_Font::AdjustMMParams(int glyph_index,
+     int max_width = FXFT_Get_Glyph_HoriAdvance(m_Face->GetRec()) * 1000 /
+                     FXFT_Get_Face_UnitsPerEM(m_Face->GetRec());
+     if (max_width == min_width) {
+-      FXFT_Free(m_Face->GetRec(), pMasters);
++      FreeMMVar(m_Face->GetRec(), pMasters);
+       return;
+     }
+     int param = min_param + (max_param - min_param) * (dest_width - min_width) /
+                                 (max_width - min_width);
+     coords[1] = param;
+   }
+-  FXFT_Free(m_Face->GetRec(), pMasters);
++  FreeMMVar(m_Face->GetRec(), pMasters);
+   FT_Set_MM_Design_Coordinates(m_Face->GetRec(), 2, coords);
+ }
+ 

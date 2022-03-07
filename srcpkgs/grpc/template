@@ -1,0 +1,70 @@
+# Template file for 'grpc'
+pkgname=grpc
+version=1.39.1
+revision=4
+_abseilver=997aaf3a28308eba1b9156aa35ab7bca9688e9f6
+build_style=cmake
+configure_args="-DBUILD_SHARED_LIBS=ON
+ -DgRPC_CARES_PROVIDER=package -DgRPC_PROTOBUF_PROVIDER=package
+ -DgRPC_SSL_PROVIDER=package -DgRPC_ZLIB_PROVIDER=package
+ -D_gRPC_RE2_LIBRARIES=${XBPS_CROSS_BASE}/usr/lib/libre2.so
+ -D_gRPC_RE2_INCLUDE_DIR=${XBPS_CROSS_BASE}/usr/include"
+hostmakedepends="which protobuf"
+_devel_depends="c-ares-devel re2-devel zlib-devel openssl-devel"
+makedepends="libprotoc-devel protobuf-devel gperftools-devel ${_devel_depends}"
+short_desc="High performance, open source, general RPC framework"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="Apache-2.0"
+homepage="https://github.com/grpc/grpc"
+distfiles="${homepage}/archive/v${version}/${pkgname}-${version}.tar.gz
+ https://github.com/abseil/abseil-cpp/archive/${_abseilver}/abseil-cpp-${_abseilver}.tar.gz"
+checksum="024118069912358e60722a2b7e507e9c3b51eeaeee06e2dd9d95d9c16f6639ec
+ 35f22ef5cb286f09954b7cc4c85b5a3f6221c9d4df6b8c4a1e9d399555b366ee"
+
+if [ "$CROSS_BUILD" ]; then
+	# need host grpc_cpp_plugin
+	hostmakedepends+=" grpc"
+fi
+
+if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
+	makedepends+=" libatomic-devel"
+	configure_args+=" -DCMAKE_CXX_STANDARD_LIBRARIES=-latomic"
+fi
+
+post_extract() {
+	rm -rf third_party/abseil-cpp
+	mv ../abseil-cpp-${_abseilver} third_party/abseil-cpp
+}
+
+post_patch() {
+	# re2 doesn't install CMake config modules;
+	# key variables are set in configure_args
+	vsed -i CMakeLists.txt -e '/include(cmake\/re2\.cmake)/d'
+}
+
+post_build() {
+	# Clean up unneeded absl linker arguments from pkgconfig files
+	sed -e 's/-labsl_[^[:space:]]\+[[:space:]]*//g' \
+		-i build/lib/pkgconfig/*.pc
+}
+
+post_install() {
+	# Remove unnecessary absl static libs and cmake modules
+	rm "${DESTDIR}"/usr/lib/libabsl*.a
+	rm -rf "${DESTDIR}/usr/lib/cmake/absl"
+	
+	# Add custom absl include root to grpcpp cflags
+	vsed -e 's,^Cflags:.*,& -I${includedir}/grpc_absl,' \
+		-i ${DESTDIR}/usr/lib/pkgconfig/grpc++*.pc
+}
+
+grpc-devel_package() {
+	short_desc+=" - development files"
+	depends="${sourcepkg}>=${version}_${revision} ${_devel_depends}"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/*.so
+		vmove usr/lib/cmake
+		vmove usr/lib/pkgconfig
+	}
+}

@@ -1,0 +1,93 @@
+Imported from https://github.com/LuaJIT/LuaJIT/pull/486.
+
+This fixes crashes on ppc-musl, as musl only supports secureplt.
+
+--- a/src/lj_dispatch.c
++++ b/src/lj_dispatch.c
+@@ -56,6 +56,18 @@ static const ASMFunction dispatch_got[] = {
+ #undef GOTFUNC
+ #endif
+ 
++#if LJ_TARGET_PPC && (LJ_ARCH_BITS == 32)
++#include <math.h>
++LJ_FUNCA_NORET void LJ_FASTCALL lj_ffh_coroutine_wrap_err(lua_State *L,
++							  lua_State *co);
++
++#define GOTFUNC(name)	(ASMFunction)name,
++static const ASMFunction dispatch_got[] = {
++  GOTDEF(GOTFUNC)
++};
++#undef GOTFUNC
++#endif
++
+ /* Initialize instruction dispatch table and hot counters. */
+ void lj_dispatch_init(GG_State *GG)
+ {
+@@ -77,6 +89,9 @@ void lj_dispatch_init(GG_State *GG)
+ #if LJ_TARGET_MIPS
+   memcpy(GG->got, dispatch_got, LJ_GOT__MAX*sizeof(ASMFunction *));
+ #endif
++#if LJ_TARGET_PPC && (LJ_ARCH_BITS == 32)
++  memcpy(GG->got, dispatch_got, LJ_GOT__MAX*4);
++#endif
+ }
+ 
+ #if LJ_HASJIT
+--- a/src/lj_dispatch.h
++++ b/src/lj_dispatch.h
+@@ -66,6 +66,21 @@ GOTDEF(GOTENUM)
+ };
+ #endif
+ 
++#if LJ_TARGET_PPC && (LJ_ARCH_BITS == 32)
++/* Need our own global offset table for the dreaded MIPS calling conventions. */
++#define GOTDEF(_) \
++  _(floor) _(ceil) _(trunc) _(log) _(log10) _(exp) _(sin) _(cos) _(tan) \
++  _(asin) _(acos) _(atan) _(sinh) _(cosh) _(tanh) _(frexp) _(modf) _(atan2) \
++  _(pow) _(fmod) _(ldexp) _(sqrt)
++
++enum {
++#define GOTENUM(name) LJ_GOT_##name,
++GOTDEF(GOTENUM)
++#undef GOTENUM
++  LJ_GOT__MAX
++};
++#endif
++
+ /* Type of hot counter. Must match the code in the assembler VM. */
+ /* 16 bits are sufficient. Only 0.0015% overhead with maximum slot penalty. */
+ typedef uint16_t HotCount;
+@@ -89,7 +104,7 @@ typedef uint16_t HotCount;
+ typedef struct GG_State {
+   lua_State L;				/* Main thread. */
+   global_State g;			/* Global state. */
+-#if LJ_TARGET_MIPS
++#if LJ_TARGET_MIPS || (LJ_TARGET_PPC && (LJ_ARCH_BITS == 32))
+   ASMFunction got[LJ_GOT__MAX];		/* Global offset table. */
+ #endif
+ #if LJ_HASJIT
+--- a/src/vm_ppc.dasc
++++ b/src/vm_ppc.dasc
+@@ -59,7 +59,12 @@
+ |.define ENV_OFS,	8
+ |.endif
+ |.else  // No TOC.
+-|.macro blex, target; bl extern target@plt; .endmacro
++|.macro blex, target
++|  lwz TMP0, DISPATCH_GOT(target)(DISPATCH)
++|  mtctr TMP0
++|  bctrl
++|  //bl extern target@plt
++|.endmacro
+ |.macro .toc, a, b; .endmacro
+ |.endif
+ |.macro .tocenv, a, b; .if TOCENV; a, b; .endif; .endmacro
+@@ -448,6 +453,8 @@
+ |// Assumes DISPATCH is relative to GL.
+ #define DISPATCH_GL(field)	(GG_DISP2G + (int)offsetof(global_State, field))
+ #define DISPATCH_J(field)	(GG_DISP2J + (int)offsetof(jit_State, field))
++#define GG_DISP2GOT		(GG_OFS(got) - GG_OFS(dispatch))
++#define DISPATCH_GOT(name)	(GG_DISP2GOT + 4*LJ_GOT_##name)
+ |
+ #define PC2PROTO(field)  ((int)offsetof(GCproto, field)-(int)sizeof(GCproto))
+ |

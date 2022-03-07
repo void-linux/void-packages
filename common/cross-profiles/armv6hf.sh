@@ -1,0 +1,1 @@
+armv6l.sh

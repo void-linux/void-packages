@@ -1,0 +1,58 @@
+# Template file for 'Signal-Desktop'
+pkgname=Signal-Desktop
+version=5.34.0
+revision=1
+# Signal officially only supports x86_64 (also due to Electron)
+# discontinued Electron 32-bit support: https://www.electronjs.org/blog/linux-32bit-support
+# 32-bit is not supported https://github.com/signalapp/Signal-Desktop/issues/1661
+# armv7hf/arm64: https://github.com/signalapp/Signal-Desktop/issues/3410
+archs="x86_64"
+hostmakedepends="git git-lfs nodejs python3 tar yarn"
+depends="cairo gtk+3 libvips pango"
+short_desc="Signal Private Messenger for Linux"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="AGPL-3.0-only"
+homepage="https://github.com/signalapp/Signal-Desktop"
+distfiles="https://github.com/signalapp/Signal-Desktop/archive/v${version}.tar.gz"
+checksum=54d81b6fa1be05d60a840b9ffcf3f8fc1642863c0a5a6ec2cfa3e02ff6e9e31d
+nostrip_files="signal-desktop"
+
+post_extract() {
+	# git-lfs hook needs to be installed for one of the dependencies
+	git lfs install
+
+	vsed 's/"node": "/&>=/' -i package.json
+
+	# Dependencies have to be installed before applying patch
+	yarn install --ignore-engines --frozen-lockfile
+}
+
+do_build() {
+	yarn generate
+	yarn build-release
+}
+
+do_install() {
+	vmkdir usr/lib/signal-desktop
+
+	# Remove prebuilt binaries for foreign architectures (to not confuse strip)
+	for prebin in darwin-x64 linux-arm64 win32-ia32 win32-x64; do
+		rm -rf release/linux-unpacked/resources/app.asar.unpacked/node_modules/{ffi-napi,ref-napi}/prebuilds/$prebin
+		rm -rf release/linux-unpacked/resources/app.asar.unpacked/node_modules/ffi-napi/node_modules/ref-napi/prebuilds/$prebin
+	done
+
+	vcopy release/linux-unpacked/* usr/lib/signal-desktop
+
+	vmkdir usr/bin
+	ln -s /usr/lib/signal-desktop/signal-desktop ${DESTDIR}/usr/bin/
+
+	vmkdir usr/share/applications
+	vinstall ${FILESDIR}/signal.desktop 644 usr/share/applications/
+
+	vmkdir usr/share/icons/hicolor
+	for size in 16 32 48 128 256 1024; do
+		vinstall images/icon_${size}.png 644 usr/share/icons/hicolor/${size}x${size}/apps/ signal.png
+	done
+
+	vlicense LICENSE
+}

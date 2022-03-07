@@ -1,0 +1,163 @@
+# Template file for 'webkit2gtk'
+# ping q66 before touching this
+pkgname=webkit2gtk
+version=2.34.6
+revision=1
+wrksrc="webkitgtk-${version}"
+build_style=cmake
+build_helper="gir"
+configure_args="-DPORT=GTK -DUSE_LD_GOLD=OFF
+ -DCMAKE_LINKER=${XBPS_CROSS_TRIPLET}-gcc -DCMAKE_SKIP_RPATH=ON
+ -DUSE_SYSTEMD=OFF -DUSE_WOFF2=ON -DUSE_SOUP2=ON
+ -DENABLE_GTKDOC=OFF -DUSE_WPE_RENDERER=ON
+ -DENABLE_MINIBROWSER=$(vopt_if minibrowser ON OFF)
+ -DENABLE_JIT=$(vopt_if jit ON OFF)
+ -DENABLE_C_LOOP=$(vopt_if jit OFF ON)
+ -DENABLE_INTROSPECTION=$(vopt_if gir ON OFF)
+ -DENABLE_WAYLAND_TARGET=$(vopt_if wayland ON OFF)
+ -DENABLE_X11_TARGET=$(vopt_if x11 ON OFF)
+ -DENABLE_SAMPLING_PROFILER=$(vopt_if sampling_profiler ON OFF)
+ -DENABLE_BUBBLEWRAP_SANDBOX=$(vopt_if bubblewrap ON OFF)"
+# Don't remove which from hostmakedepends
+# Otherwise, they invoke /usr/bin/ccache /usr/lib/ccache/bin/$CC
+hostmakedepends="perl python pkg-config gperf flex ruby gettext glib-devel
+ geoclue2 libharfbuzz which libpsl
+ $(vopt_if wayland 'wayland-devel libxml2-devel')"
+makedepends="at-spi2-core-devel libjpeg-turbo-devel libpng-devel
+ harfbuzz-devel gst-plugins-base1-devel gst-plugins-bad1-devel sqlite-devel
+ libsoup-devel libxslt-devel gnutls-devel icu-devel enchant2-devel
+ dbus-glib-devel libwebp-devel gtk+-devel gtk+3-devel libgudev-devel
+ libsecret-devel ruby-devel geoclue2-devel libnotify-devel hyphen-devel
+ woff2-devel freetype-devel libopenjpeg2-devel libatomic-devel
+ qt5-devel libmanette-devel libwpe-devel wpebackend-fdo-devel
+ libgcrypt-devel libnuspell-devel libpsl-devel $(vopt_if x11 libXt-devel)
+ $(vopt_if wayland 'MesaLib-devel libxkbcommon-devel wayland-devel wayland-protocols')"
+short_desc="GTK+3 port of the WebKit2 browser engine"
+maintainer="q66 <daniel@octaforge.org>"
+license="LGPL-2.1-or-later, BSD-2-Clause"
+homepage="https://webkitgtk.org/"
+distfiles="${homepage}/releases/webkitgtk-${version}.tar.xz"
+checksum=6bc8fd034aad0432a2459ce4fc7ee25ad65a4924c618bf8d93b52b0c1a84c1f6
+make_check=no
+
+build_options="gir wayland x11 bubblewrap jit sampling_profiler minibrowser
+ clang lto"
+build_options_default="gir wayland x11 bubblewrap minibrowser"
+
+desc_option_bubblewrap="Enable bubblewrap sandbox"
+desc_option_jit="JavaScript JIT (Only some architectures)"
+desc_option_sampling_profiler="Sampling profiler support (JIT + glibc only)"
+desc_option_minibrowser="Build the minibrowser"
+desc_option_clang="Use Clang to build"
+desc_option_lto="Enable ThinLTO (needs Clang)"
+
+export CFLAGS="-DNDEBUG"
+export CXXFLAGS="$CFLAGS"
+
+# WebKitCCache.cmake set this variable
+# include_file_mtime was not enabled to avoid a race,
+# but this is run under our control
+export CCACHE_SLOPPINESS=time_macros,include_file_mtime
+
+post_patch() {
+	# Reproducible build
+	# At least, be nice with ccache
+	vsed -i -e '/foreach my.*(keys/s/(keys/(sort keys/' \
+		Source/WebCore/bindings/scripts/CodeGenerator.pm \
+		Source/WebCore/bindings/scripts/CodeGeneratorJS.pm \
+		Source/WebCore/css/makeprop.pl \
+		Source/cmake/tools/scripts/version-stamp.pl
+}
+
+# detection + runtime
+if [ "$build_option_bubblewrap" ]; then
+	hostmakedepends+=" bubblewrap xdg-dbus-proxy"
+	makedepends+=" libseccomp-devel"
+	depends+=" bubblewrap xdg-dbus-proxy"
+fi
+
+if [ "$build_option_lto" -a -z "$build_option_clang" ]; then
+	broken="LTO needs Clang"
+fi
+
+if [ "$build_option_clang" ]; then
+	hostmakedepends+=" clang lld"
+	configure_args+=" -DUSE_LD_LLD=ON"
+	nocross=yes
+fi
+
+if [ "$build_option_lto" ]; then
+	configure_args+=" -DLTO_MODE=thin"
+fi
+
+# only a few platform support JIT
+case "$XBPS_TARGET_MACHINE" in
+	aarch64*|x86_64*)
+		build_options_default+=" jit"
+		if [ "$XBPS_TARGET_LIBC" = "glibc" ]; then
+			build_options_default+=" sampling_profiler"
+		elif [ "$build_option_sampling_profiler" ]; then
+			broken="sampling_profiler is only supported on glibc"
+		fi
+		;;
+	i686*)
+		# JIT requires SSE2 so disabled by default
+		# it's also currently broken
+		if [ "$build_option_jit" ]; then
+			broken="OffsetExtractor: No magic values found."
+		fi
+		;;
+	*)
+		if [ "$build_option_jit" ]; then
+			broken="JIT is not supported on ${XBPS_TARGET_MACHINE}"
+		fi
+		;;
+esac
+
+# extra validation
+if [ "$build_option_sampling_profiler" -a -z "$build_option_jit" ]; then
+	broken="sampling_profiler requires JIT"
+fi
+
+pre_configure() {
+	if [ "$build_option_clang" ]; then
+		export CC=clang
+		export CXX=clang++
+	fi
+
+	# the debug builds are huge and cause problems when debugging
+	export CFLAGS="${CFLAGS/-g/-g1}"
+	export CXXFLAGS="${CXXFLAGS/-g/-g1}"
+
+	if [ "$XBPS_WORDSIZE" = "32" ]; then
+		export LDFLAGS+=" -Wl,--no-keep-memory"
+	fi
+
+	# the above is not enough for 32-bit ppc and debug
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*) ;;
+		ppc*)
+			export CFLAGS="${CFLAGS/-O2/-Os}"
+			export CXXFLAGS="${CXXFLAGS/-O2/-Os}"
+			;;
+	esac
+}
+
+post_install() {
+	vlicense Source/WebCore/LICENSE-APPLE
+	vlicense Source/WebCore/LICENSE-LGPL-2.1
+	vlicense Source/WebCore/LICENSE-LGPL-2
+}
+
+webkit2gtk-devel_package() {
+	depends="gtk+3-devel libsoup-devel ${sourcepkg}>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/pkgconfig
+		if [ "$build_option_gir" ]; then
+			vmove usr/share/gir-1.0
+		fi
+		vmove "usr/lib/*.so"
+	}
+}

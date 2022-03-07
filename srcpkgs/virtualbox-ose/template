@@ -1,0 +1,185 @@
+# Template file for 'virtualbox-ose'
+pkgname=virtualbox-ose
+version=6.1.32
+revision=1
+wrksrc="VirtualBox-${version}"
+short_desc="General-purpose full virtualizer for x86 hardware"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="GPL-2.0-only, CDDL-1.0"
+homepage="https://www.virtualbox.org"
+changelog="https://www.virtualbox.org/wiki/Changelog"
+distfiles="http://download.virtualbox.org/virtualbox/${version}/VirtualBox-${version}.tar.bz2"
+checksum=5d11384200b4e943ad0056d2cf75980ae4bee852c89650e2914e1b34eedc2d2c
+
+nopie=yes
+lib32disabled=yes
+archs="x86_64"
+
+hostmakedepends="acpica-utils dev86 perl pkg-config qt5-tools tar yasm which"
+makedepends="device-mapper-devel docbook-xsl gsoap-devel libcap-devel libcurl-devel
+ libIDL-devel libvpx-devel libXcomposite-devel libXcursor-devel
+ libXinerama-devel libxslt-devel opus-devel pam-devel python3-devel qt5-x11extras-devel
+ SDL-devel xorg-server-devel"
+
+if [ "$XBPS_MACHINE" = "x86_64" ]; then
+	makedepends+=" gcc-multilib"
+fi
+
+depends="virtualbox-ose-dkms-${version}_${revision} hicolor-icon-theme desktop-file-utils dbus"
+system_groups="vboxusers"
+
+pre_configure() {
+	cp ${FILESDIR}/LocalConfig.kmk .
+	ln -s /bin/echo makeself
+
+	echo 'VBOX_USE_SYSTEM_GL_HEADERS=true' >> LocalConfig.kmk
+}
+
+do_configure() {
+	./configure --disable-docs --disable-java --enable-vde \
+		--disable-python --disable-kmods --nofatal --enable-webservice
+}
+
+do_build() {
+	export USERNAME="$(whoami)"
+	vsed -i  src/VBox/Main/webservice/Makefile.kmk \
+		-e "/webtest_LIBS/,/^webtest_/s/.*LIB_.*/\0 z/" \
+		-e "/vboxwebsrv_LIBS/,/^vboxwebsrv_/s/.*LIB_.*/\0 z/"
+	source ./env.sh
+	kmk ${makejobs} KBUILD_VERBOSE=2 all
+}
+
+do_install() {
+	local f _osedir _guestdir
+
+	source ./env.sh
+	#
+	# virtualbox-ose.
+	#
+	cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin
+	mkdir -p ${DESTDIR}/usr/{bin,lib/virtualbox/components,share/virtualbox/nls}
+
+	install -m0755 VBox.sh ${DESTDIR}/usr/bin/VBox
+	for f in VirtualBox VBoxManage VBoxSDL VBoxHeadless \
+		VBoxBalloonCtrl vboxwebsrv; do
+		ln -sf VBox ${DESTDIR}/usr/bin/${f}
+	done
+	# components
+	install -m0755 components/* -t ${DESTDIR}/usr/lib/virtualbox/components
+
+	# libs
+	install -m0755 *.so ${DESTDIR}/usr/lib/virtualbox
+	install -m0644 *.r0 *.fd ${DESTDIR}/usr/lib/virtualbox
+
+	# setuid
+	install -m4755 VBoxSDL VirtualBoxVM VBoxHeadless VBoxNetDHCP VBoxNetAdpCtl \
+		VBoxNetNAT -t ${DESTDIR}/usr/lib/virtualbox
+
+	install -m0755 VirtualBox VBoxManage VBoxSVC VBoxExtPackHelperApp \
+		VBoxXPCOMIPCD VBoxTestOGL VBoxBalloonCtrl vboxwebsrv webtest \
+		-t ${DESTDIR}/usr/lib/virtualbox
+
+	# locales
+	install -m0755 nls/*.qm -t ${DESTDIR}/usr/share/virtualbox/nls
+
+	# scripts
+	install -m0755 VBoxCreateUSBNode.sh VBoxSysInfo.sh \
+		-t ${DESTDIR}/usr/share/virtualbox
+
+	# icons and desktop
+	install -D -m0644 VBox.png ${DESTDIR}/usr/share/pixmaps/VBox.png
+	install -D -m0644 virtualbox.desktop \
+		${DESTDIR}/usr/share/applications/virtualbox.desktop
+	sed -i -e "s|Icon=VBox|Icon=VBox.png|" \
+		${DESTDIR}/usr/share/applications/virtualbox.desktop
+	install -Dm644 virtualbox.xml \
+		${DESTDIR}/usr/share/mime/packages/virtualbox.xml
+	install -d ${DESTDIR}/usr/share/icons/hicolor
+	for i in icons/*; do
+		ldir=$(basename ${i})
+		install -d ${DESTDIR}/usr/share/icons/hicolor/${ldir}/mimetypes
+		cp -a ${i}/* ${DESTDIR}/usr/share/icons/hicolor/${ldir}/mimetypes
+	done
+
+	# configuration file
+	mkdir -p ${DESTDIR}/etc/vbox
+	echo 'INSTALL_DIR=/usr/lib/virtualbox' > ${DESTDIR}/etc/vbox/vbox.cfg
+
+	cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin
+	install -d ${DESTDIR}/usr/share/licenses/${pkgname}
+	install -m0644 ${wrksrc}/COPYING* \
+		${DESTDIR}/usr/share/licenses/${pkgname}
+
+	# Install modules-load.d file.
+	vinstall ${FILESDIR}/virtualbox.conf 644 usr/lib/modules-load.d
+
+	vsv vboxwebsrv
+}
+
+virtualbox-ose-dkms_package() {
+	short_desc+=" - kernel module sources for dkms"
+	dkms_modules="virtualbox-ose ${version}"
+	depends="dkms"
+
+	pkg_install() {
+		source ${wrksrc}/env.sh
+
+		cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/src
+		local _osedir=${PKGDESTDIR}/usr/src/${sourcepkg}-${version}
+
+		install -d ${_osedir}
+		cp -a . ${_osedir}
+		cp -a ${wrksrc}/include ${_osedir}
+		rm -f ${_osedir}/do_dkms
+		install -m644 ${FILESDIR}/${sourcepkg}-dkms.dkms ${_osedir}/dkms.conf
+		vinstall ${FILESDIR}/${sourcepkg}-dkms.udev 644 \
+			usr/lib/udev/rules.d 60-virtualbox-ose-dkms.rules
+	}
+}
+virtualbox-ose-guest_package() {
+	lib32disabled=yes
+	conflicts="xserver-abi-video>25_1"
+	short_desc+=" - guest utilities"
+
+	pkg_install() {
+		source ${wrksrc}/env.sh
+
+		cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/additions
+		vmkdir usr/bin
+
+		install -m755 VBoxClient VBoxControl VBoxService ${PKGDESTDIR}/usr/bin
+		install -m755 mount.vboxsf ${PKGDESTDIR}/usr/bin
+		install -Dm755 ${wrksrc}/src/VBox/Additions/x11/Installer/98vboxadd-xclient \
+			${PKGDESTDIR}/usr/bin/VBoxClient-all
+		install -Dm755 ${wrksrc}/src/VBox/Additions/x11/Installer/vboxclient.desktop \
+			${PKGDESTDIR}/etc/xdg/autostart/vboxclient.desktop
+
+		cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/additions
+		install -d ${PKGDESTDIR}/usr/lib/xorg/modules/drivers
+		cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/additions
+		install -Dm755 pam_vbox.so ${PKGDESTDIR}/usr/lib/security/pam_vbox.so
+
+		vinstall ${FILESDIR}/virtualbox-guest.conf 644 usr/lib/modules-load.d
+		vsv vboxservice
+	}
+}
+virtualbox-ose-guest-dkms_package() {
+	short_desc+=" - guest addition module source for dkms"
+	dkms_modules="virtualbox-ose-guest ${version}"
+	depends="dkms"
+
+	pkg_install() {
+		source ${wrksrc}/env.sh
+
+		cd ${wrksrc}/out/linux.$BUILD_PLATFORM_ARCH/release/bin/additions/src
+		local _guestdir=${PKGDESTDIR}/usr/src/${sourcepkg}-guest-${version}
+
+		install -d ${_guestdir}
+		cp -a . ${_guestdir}
+		rm -f ${_guestdir}/do_dkms
+		install -m644 ${FILESDIR}/${sourcepkg}-guest-dkms.dkms \
+			${_guestdir}/dkms.conf
+		vinstall ${FILESDIR}/${sourcepkg}-guest-dkms.udev 644 \
+			usr/lib/udev/rules.d 60-virtualbox-ose-guest-dkms.rules
+	}
+}

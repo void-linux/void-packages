@@ -1,0 +1,88 @@
+# Template file for 'nim'
+pkgname=nim
+version=1.6.0
+revision=1
+_c1version=561b417c65791cd8356b5f73620914ceff845d10
+_nimbleversion=0.13.1
+create_wrksrc=yes
+build_wrksrc="Nim-$version"
+depends="gcc openssl-devel"
+short_desc="Nim programming language"
+maintainer="allan <mail@may.mooo.com>"
+license="MIT"
+homepage="https://nim-lang.org/"
+_ghsite="https://github.com/nim-lang"
+distfiles="${_ghsite}/Nim/archive/v${version}.tar.gz
+ ${_ghsite}/csources_v1/archive/${_c1version}.tar.gz>csources_v1-${_c1version}.tar.gz
+ ${_ghsite}/nimble/archive/v${_nimbleversion}.tar.gz>nimble-${_nimbleversion}.tar.gz"
+checksum="c202cfd24a24480da1cf851e1265b87edb22710bb42286a57b1a99c83b6a8315
+ 71c823444c794a12da9027d19d6a717dd7759521ecbbe28190b08372142607ec
+ e6aa8d9ee4b3ed0321dca329b4a38fa546771b9729984482fb50fe73d3777f5d"
+
+post_extract() {
+	mv csources_v1-$_c1version $build_wrksrc/csources_v1
+	mkdir $build_wrksrc/dist
+	mv nimble-$_nimbleversion $build_wrksrc/dist/nimble
+}
+
+do_build() {
+	case "$XBPS_TARGET_MACHINE" in
+		i686*)
+			CC=cc LD=cc CFLAGS="-Os -pipe" LDFLAGS= \
+			make -C csources_v1 ucpu=i686 ${makejobs};;
+		ppc|ppc-musl)
+			CC=cc LD=cc CFLAGS="-Os -pipe" LDFLAGS= \
+			make -C csources_v1 ucpu=powerpc ${makejobs};;
+		*)
+			CC=cc LD=cc CFLAGS="-Os -pipe" LDFLAGS= \
+			make -C csources_v1 ${makejobs};;
+	esac
+
+	bin/nim c koch
+	./koch boot -d:release -d:danger
+
+	case "$XBPS_TARGET_MACHINE" in
+		aarch64*) _arch=arm64;;
+		arm*) _arch=arm;;
+		ppc64le*) _arch=powerpc64el;;
+		ppc64*) _arch=powerpc64;;
+		ppc*) _arch=powerpc;;
+	esac
+
+	case "$XBPS_TARGET_MACHINE"
+	in arm*|aarch64*|ppc*)
+		vsed -i config/nim.cfg -e 's/^arm\.linux\.gcc\.\(linker\)\?exe /#&/'
+		cat >>config/nim.cfg <<-EDIT
+		# VOIDLINUX TEMP
+		$_arch.linux.gcc.exe = "$CC"
+		$_arch.linux.gcc.linkerexe = "$CC"
+		EDIT
+		bin/nim c -d:release -d:danger --os:linux --cpu:$_arch --listCmd compiler/nim
+		./koch tools --os:linux --cpu:$_arch --listCmd
+		vsed -i config/nim.cfg -e '/^# VOIDLINUX TEMP$/,$d'
+	;; *)
+		./koch tools
+	esac
+}
+
+do_install() {
+	./koch install ${DESTDIR}/usr/lib
+
+	if [ "$CROSS_BUILD" ]; then
+		mv compiler/nim ${DESTDIR}/usr/lib/nim/bin/nim
+	fi
+
+	vmkdir usr/bin
+	vmkdir usr/share/nim
+	ln -sf /usr/lib/nim/bin/nim ${DESTDIR}/usr/bin/nim
+	for _f in nimble nimsuggest nimgrep nimpretty testament; do
+		chmod 0755 bin/$_f
+		cp bin/$_f ${DESTDIR}/usr/lib/nim/bin
+		ln -sf /usr/lib/nim/bin/$_f ${DESTDIR}/usr/bin/$_f
+	done
+	cp -r nimsuggest nimpretty doc ${DESTDIR}/usr/lib/nim
+	ln -sf /usr/lib/nim/doc ${DESTDIR}/usr/share/nim/doc
+	ln -sf /usr/lib/nim/nimsuggest ${DESTDIR}/usr/share/nim/nimsuggest
+	ln -sf /usr/lib/nim/nimpretty ${DESTDIR}/usr/share/nim/nimpretty
+	vlicense copying.txt
+}

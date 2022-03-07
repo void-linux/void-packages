@@ -1,0 +1,93 @@
+# Template file for 'apparmor'
+pkgname=apparmor
+version=3.0.3
+revision=2
+wrksrc="${pkgname}-v${version}"
+build_wrksrc=libraries/libapparmor
+build_style=gnu-configure
+conf_files="/etc/apparmor.d/local/* /etc/apparmor/*"
+make_dirs="/etc/apparmor.d/disable 0755 root root"
+hostmakedepends="bison flex autoconf automake libtool gettext swig python3 which"
+makedepends="perl python3-devel"
+depends="runit-void-apparmor libapparmor-${version}_${revision} python3-notify2
+ python3-psutil python3-dbus iproute2 which"
+checkdepends="dejagnu"
+short_desc="Mandatory access control to restrict programs"
+maintainer="Michal Vasilek <michal@vasilek.cz>"
+license="GPL-2.0-only"
+homepage="https://gitlab.com/apparmor/apparmor"
+changelog="https://gitlab.com/apparmor/apparmor/-/wikis/Release_Notes_${version}"
+distfiles="https://gitlab.com/apparmor/apparmor/-/archive/v${version}/apparmor-v${version}.tar.gz"
+checksum=51b1db60e962dd01856a1ec6a9d43b11ed4350dcc5738ef901097c999bcbf50e
+replaces="apparmor-vim>=0"
+
+if [ -z "$CROSS_BUILD" ]; then
+	configure_args="--with-perl --with-python"
+fi
+
+pre_configure() {
+	autoreconf -if
+}
+
+pre_build() {
+	# Replace release profiles with our own
+	cd ${wrksrc}
+	cp ${FILESDIR}/profiles/* profiles/apparmor.d/
+}
+
+post_build() {
+	cd ${wrksrc}
+
+	make ${makejobs} -C binutils
+	make ${makejobs} -C utils
+	make ${makejobs} -C parser
+	make ${makejobs} -C profiles
+}
+
+post_install() {
+	cd ${wrksrc}
+	commonflags="DESTDIR=\"${DESTDIR}\" SBINDIR=\"${DESTDIR}/usr/bin\" USR_SBINDIR=\"${DESTDIR}/usr/bin\""
+	make $commonflags install -C binutils
+	make $commonflags \
+		BINDIR="${DESTDIR}/usr/bin" \
+		VIM_INSTALL_PATH="${DESTDIR}/usr/share/vim/vimfiles/syntax" \
+		install -C utils
+	make $commonflags \
+		APPARMOR_BIN_PREFIX="${DESTDIR}/usr/lib/apparmor" \
+		install -C parser
+	make DESTDIR="${DESTDIR}" install -C profiles
+
+	# requires perl bindings not generated when cross-compiling
+	if [ "$CROSS_BUILD" ]; then
+		rm -f ${DESTDIR}/usr/bin/aa-notify
+	fi
+
+	# we installed a custom conflicting profile
+	rm ${DESTDIR}/etc/apparmor.d/{,local/}php-fpm
+}
+
+libapparmor_package() {
+	short_desc+=" - Library"
+	license="LGPL-2.1-only"
+	pkg_install() {
+		vmove "usr/lib/libapparmor.so*"
+		if [ -z "$CROSS_BUILD" ]; then
+			vmove usr/lib/perl5
+			vmove "${py3_sitelib}/LibAppArmor*"
+		fi
+		vmove usr/share/man/man2
+		vmove usr/share/man/man3
+	}
+}
+
+libapparmor-devel_package() {
+	short_desc+=" - Library development files"
+	license="LGPL-2.1-only"
+	depends="lib${sourcepkg}-${version}_${revision}"
+	pkg_install() {
+		vmove usr/include
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
+		vmove usr/lib/pkgconfig
+	}
+}

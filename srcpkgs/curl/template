@@ -1,0 +1,94 @@
+# Template file for 'curl'
+pkgname=curl
+version=7.82.0
+revision=1
+build_style=gnu-configure
+configure_args="ac_cv_sizeof_off_t=8 --enable-threaded-resolver --enable-ipv6
+ $(vopt_with rtmp) $(vopt_with gssapi) $(vopt_enable ldap) $(vopt_with gnutls)
+ $(vopt_enable ldap ldaps) $(vopt_with ssh libssh2) $(vopt_with ssl) $(vopt_with zstd)
+ --with-ca-bundle=/etc/ssl/certs/ca-certificates.crt --without-libidn2
+ ac_cv_path_NROFF=/usr/bin/mandoc"
+# Use mdocml instead of groff to generate builtin manual to avoid cyclic
+# dependencies.
+hostmakedepends="perl pkg-config mdocml"
+makedepends="nghttp2-devel zlib-devel $(vopt_if gnutls 'gnutls-devel')
+ $(vopt_if gssapi 'mit-krb5-devel') $(vopt_if ldap 'libldap-devel')
+ $(vopt_if rtmp 'librtmp-devel') $(vopt_if ssh 'libssh2-devel')
+ $(vopt_if ssl 'openssl-devel') $(vopt_if zstd 'libzstd-devel')"
+depends="ca-certificates"
+# openssh isn't in checkdepends, because test 581 locks up
+checkdepends="python3 stunnel nghttp2 impacket"
+short_desc="Client that groks URLs"
+maintainer="Érico Nogueira <ericonr@disroot.org>"
+license="MIT"
+homepage="https://curl.haxx.se"
+changelog="https://curl.haxx.se/changes.html#${version//./_}"
+distfiles="${homepage}/download/${pkgname}-${version}.tar.bz2"
+checksum=46d9a0400a33408fd992770b04a44a7434b3036f2e8089ac28b57573d59d371f
+build_options="gnutls gssapi ldap rtmp ssh ssl zstd"
+build_options_default="ssh ssl zstd"
+vopt_conflict ssl gnutls
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" curl"
+fi
+
+pre_configure() {
+	export CFLAGS="${CFLAGS/-D_FORTIFY_SOURCE=2/}"
+	export CFLAGS="${CFLAGS/-I${XBPS_CROSS_BASE}\/usr\/include/}"
+	export CPPFLAGS="-D_FORTIFY_SOURCE=2"
+}
+
+pre_check() {
+	export USER=nobody
+}
+
+post_install() {
+	if [ "$CROSS_BUILD" ]; then
+		# Copy hostmakedepends' version
+		vcompletion /usr/share/zsh/site-functions/_curl zsh
+		vcompletion /usr/share/fish/vendor_completions.d/curl.fish fish
+	else
+		make -C scripts
+		vcompletion scripts/_curl zsh
+		vcompletion scripts/curl.fish fish
+	fi
+
+	# Fix linker search paths when necessary
+	if [ -n "$XBPS_CROSS_BASE" ]; then
+		# Leave $XBPS_CROSS_BASE in --configure to reflect how it was built
+		vsed -i $DESTDIR/usr/bin/curl-config \
+			-e "/[	 ]*--static-libs)/,/[	 ]*;;/ s,-L$XBPS_CROSS_BASE,-L,"
+	fi
+
+	vlicense COPYING
+}
+
+libcurl_package() {
+	short_desc="Multiprotocol file transfer library"
+	pkg_install() {
+		vmove "usr/lib/*.so.*"
+	}
+}
+
+libcurl-devel_package() {
+	depends="${makedepends} libcurl>=${version}_${revision}"
+	short_desc="Multiprotocol file transfer library - development files"
+	pkg_install() {
+		vmove usr/bin/curl-config
+		vmove "usr/share/man/man1/curl-config*"
+		vmove usr/share/man/man3
+		vmove usr/share/aclocal
+		vmove usr/include
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/*.so"
+		vmove usr/lib/pkgconfig
+	}
+}
+
+chroot-curl_package() {
+	short_desc+=" - for build infra use"
+	pkg_install() {
+		vbin $DESTDIR/usr/bin/curl chroot-curl
+	}
+}

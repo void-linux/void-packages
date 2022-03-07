@@ -1,0 +1,90 @@
+#!/bin/sh
+
+# when $3 is empty, template is read from working directory
+template="$1" base_rev="$2" tip_rev="$3"
+status=0
+
+die() {
+	printf '%s\n' "$*" >&2
+	exit 1
+}
+
+if ! [ "$base_rev" ]; then
+	die "usage: $0 TEMPLATE BASE-REVISION [TIP-REVISION]"
+fi
+
+if command -v chroot-git >/dev/null 2>&1; then
+	GIT_CMD=$(command -v chroot-git)
+elif command -v git >/dev/null 2>&1; then
+	GIT_CMD=$(command -v git)
+else
+	die "neither chroot-git nor git could be found"
+fi
+
+scan() {
+	rx="$1" msg="$2"
+	template_path=$template
+	if [ "$tip_rev" ]; then
+		template_path="${tip_rev}:${template}"
+		maybe_git="$GIT_CMD"
+		revspec="[^:]*:"
+	fi
+	$maybe_git grep -P -Hn -e "$rx" "$template_path" |
+		grep -v -P -e "[^:]*:[^:]*:\s*#" |
+		sed "s/^${revspec}\([^:]*:[^:]*:\)\(.*\)/\1 $msg/"
+}
+
+show_template() {
+	rev="$1"
+	if [ "$rev" ]; then
+		$GIT_CMD cat-file blob "${rev}:${template}" 2>/dev/null
+	else
+		cat "${template}" 2>/dev/null
+	fi
+}
+
+show_template_var() {
+	rev="$1" var="$2"
+	show_template "$rev" | grep -Po '^'${var}'=\K.*'
+}
+
+revision_reset() {
+	[ "${revision}" = 1 ] && return
+	if [ "$prev_version" ]; then
+		case "$prev_reverts" in
+			*"$version"_*) return
+		esac
+		action=update
+	else
+		action=creation
+	fi
+	scan "^revision=" "revision should be set to 1 on ${action}"
+	status=1
+}
+
+reverts_on_downgrade() {
+	[ "$version" ] || return
+	case "$reverts" in
+		*"$prev_version"_*) ;;
+		*)
+			scan "^version=" "missing reverts= for downgrade $prev_version to $version"
+			status=1
+	esac
+}
+
+version_change() {
+	version="$(show_template_var "$tip_rev" version)"
+	revision="$(show_template_var "$tip_rev" revision)"
+	reverts="$(show_template_var "$tip_rev" reverts)"
+	prev_version="$(show_template_var "$base_rev" version)"
+	prev_reverts="$(show_template_var "$base_rev" reverts)"
+	xbps-uhelper cmpver "$version" "$prev_version"
+	case "$?" in
+		1) revision_reset;;
+		-1|255) reverts_on_downgrade;;
+	esac
+}
+
+version_change
+
+exit $status

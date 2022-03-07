@@ -1,0 +1,113 @@
+--- webrtc-audio-processing-0.3_3/configure.ac	2017-11-22 20:26:54.207009881 +0100
++++ webrtc-audio-processing-0.3_3/configure.ac	2017-11-22 20:37:57.472996521 +0100
+@@ -90,10 +90,14 @@
+ 	[HAVE_NEON=1; ARCH_CFLAGS="${ARCH_CFLAGS} -DWEBRTC_HAS_NEON -DWEBRTC_ARCH_ARM64"])
+ AC_CHECK_DECLS([__i386__], [HAVE_X86=1])
+ AC_CHECK_DECLS([__x86_64__], [HAVE_X86=1])
++AC_CHECK_DECLS([__MIPSEB__], [HAVE_MIPSEB=1])
++AC_CHECK_DECLS([__MIPSEL__], [HAVE_MIPSEL=1])
+ 
+ AM_CONDITIONAL(HAVE_X86, [test "x${HAVE_X86}" = "x1"])
+ AM_CONDITIONAL(HAVE_ARM, [test "x${HAVE_ARM}" = "x1"])
+ AM_CONDITIONAL(HAVE_ARMV7, [test "x${HAVE_ARMV7}" = "x1"])
++AM_CONDITIONAL(HAVE_MIPSEB, [test "x${HAVE_MIPSEB}" = "x1"])
++AM_CONDITIONAL(HAVE_MIPSEL, [test "x${HAVE_MIPSEL}" = "x1"])
+ 
+ # Borrowed from pulseaudio's configure.ac
+ AC_ARG_ENABLE([neon],
+--- webrtc-audio-processing-0.3_3/webrtc/typedefs.h	2015-10-15 12:48:25.000000000 +0200
++++ webrtc-audio-processing-0.3_3/webrtc/typedefs.h	2017-11-22 20:39:20.800994843 +0100
+@@ -47,6 +47,10 @@
+ #elif defined(__pnacl__)
+ #define WEBRTC_ARCH_32_BITS
+ #define WEBRTC_ARCH_LITTLE_ENDIAN
++#elif defined(__MIPSEL__)
++#define WEBRTC_ARCH_LITTLE_ENDIAN
++#elif defined(__MIPSEB__)
++#define WEBRTC_ARCH_BIG_ENDIAN
+ #else
+ #error Please add support for your architecture in typedefs.h
+ #endif
+--- webrtc-audio-processing-0.3/webrtc/common_audio/wav_file.cc	2015-11-19 13:41:44.000000000 +0100
++++ webrtc-audio-processing-0.3/webrtc/common_audio/wav_file.cc	2017-11-22 21:01:46.554967737 +0100
+@@ -64,9 +64,6 @@
+ }
+ 
+ size_t WavReader::ReadSamples(size_t num_samples, int16_t* samples) {
+-#ifndef WEBRTC_ARCH_LITTLE_ENDIAN
+-#error "Need to convert samples to big-endian when reading from WAV file"
+-#endif
+   // There could be metadata after the audio; ensure we don't read it.
+   num_samples = std::min(rtc::checked_cast<uint32_t>(num_samples),
+                          num_samples_remaining_);
+@@ -76,6 +73,12 @@
+   RTC_CHECK(read == num_samples || feof(file_handle_));
+   RTC_CHECK_LE(read, num_samples_remaining_);
+   num_samples_remaining_ -= rtc::checked_cast<uint32_t>(read);
++#ifdef WEBRTC_ARCH_BIG_ENDIAN
++  for (size_t i = 0; i < read; i++) {
++    uint16_t s = static_cast<uint16_t>(samples[i]);
++    samples[i] = static_cast<int16_t>((s >> 8) | (s << 8));
++  }
++#endif
+   return read;
+ }
+ 
+@@ -119,11 +122,20 @@
+ }
+ 
+ void WavWriter::WriteSamples(const int16_t* samples, size_t num_samples) {
+-#ifndef WEBRTC_ARCH_LITTLE_ENDIAN
+-#error "Need to convert samples to little-endian when writing to WAV file"
+-#endif
++#ifdef WEBRTC_ARCH_LITTLE_ENDIAN
+   const size_t written =
+       fwrite(samples, sizeof(*samples), num_samples, file_handle_);
++#else
++  size_t written = 0;
++  for (size_t i = 0; i < num_samples; i++) {
++    uint16_t s = static_cast<uint16_t>(samples[i]);
++    s = static_cast<int16_t>((s<<8) | (s>>8));
++    size_t size = fwrite(&s, sizeof(s), 1, file_handle_);
++    if (size < 1)
++      break;
++    written += size;
++  }
++#endif
+   RTC_CHECK_EQ(num_samples, written);
+   num_samples_ += static_cast<uint32_t>(written);
+   RTC_CHECK(written <= std::numeric_limits<uint32_t>::max() ||
+--- webrtc-audio-processing-0.3/webrtc/common_audio/wav_header.cc	2015-10-15 12:48:44.000000000 +0200
++++ webrtc-audio-processing-0.3/webrtc/common_audio/wav_header.cc	2017-11-22 21:11:36.291955859 +0100
+@@ -129,7 +129,30 @@
+   return std::string(reinterpret_cast<char*>(&x), 4);
+ }
+ #else
+-#error "Write be-to-le conversion functions"
++static inline void WriteLE16(uint16_t* f, uint16_t x) { *f = (x >> 8) | (x << 8); }
++static inline void WriteLE32(uint32_t* f, uint32_t x) {
++  *f = ((x & 0xff000000) >> 24) |
++       ((x & 0x00ff0000) >>  8) |
++       ((x & 0x0000ff00) <<  8) |
++       ((x & 0x000000ff) << 24);
++}
++static inline void WriteFourCC(uint32_t* f, char a, char b, char c, char d) {
++  *f = (static_cast<uint32_t>(a) << 24)
++      | (static_cast<uint32_t>(b) << 16)
++      | (static_cast<uint32_t>(c) << 8)
++      | static_cast<uint32_t>(d);
++}
++static inline uint16_t ReadLE16(uint16_t x) { return (x >> 8) | (x << 8); }
++static inline uint32_t ReadLE32(uint32_t x) {
++  return ((x << 24) & 0xff000000) |
++         ((x <<  8) & 0x00ff0000) |
++         ((x >>  8) & 0x0000ff00) |
++         ((x >> 24) & 0x000000ff);
++}
++static inline std::string ReadFourCC(uint32_t x) {
++  uint32_t s = ReadLE32(x);
++  return std::string(reinterpret_cast<char*>(&s), 4);
++}
+ #endif
+ 
+ static inline uint32_t RiffChunkSize(uint32_t bytes_in_payload) {

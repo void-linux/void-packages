@@ -1,0 +1,972 @@
+Fix PowerPC CPU detection and codegen to work with more processors.
+
+This patch defines the correct optional Power ISA features that the
+PPC code generator needs in order to run without crashing on v2.01
+and older CPUs such as PPC 970 (G5) or NXP e6500, and to run more
+efficiently on CPUs with features that weren't being used before.
+
+PowerPC ISA v2.01 and older CPUs don't have FP round to int instructions,
+and PowerPC ISA v2.06 and older are missing support for unsigned 64-bit
+to/from double, as well as integer to/from single-precision float.
+
+Use the current PPC_5_PLUS CPU feature to determine whether to generate
+FP round to int, and use the PPC_7_PLUS feature to determine whether
+to use the v2.06 ISA instructions or whether to generate an alternate
+generic PPC sequence to handle the cases of 64-bit unsigned integer
+to/from floating point, integers to single-precision floating point,
+and loading and storing 64-bit integers with byte reversal.
+
+Add a new PPC_7_PLUS_NXP feature for the popcnt and ldbrx/stdbrx
+opcodes added in Power ISA v2.06, which are also present in the NXP
+e5500 and e6500 cores, which are otherwise missing many of the
+features added since v2.01. This enables NXP cores to use a few
+more features. Additionally, bring back the ISELECT feature flag,
+which is also supported by NXP cores, including older ones, and
+has its own AT_HWCAP2 feature flag in Linux.
+
+By defining a new ICACHE_SNOOP feature bit to replace the use of 
+PPC_6_PLUS, the meaning of the instruction cache flushing fast path,
+and the CPUs that can use it, is more clearly defined. In addition,
+for the other PowerPC chips, the loop to flush the data and instruction
+cache blocks has been split into two loops, with a single "sync" and
+"isync" after each loop, which should be more efficient, and also handles
+the few CPUs with differing data and instruction cache line sizes.
+
+In the macro assembler methods, in addition to providing an alternate
+path for FP conversion opcodes added in POWER7 (ISA v2.06), unnecessary
+instructions to move sp down and then immediately back up were replaced
+with negative offsets from the current sp. This should be faster, and also
+sp is supposed to point to a back chain at all times (V8 may not do this).
+
+--- a/deps/v8/src/base/cpu.cc	2022-02-08 04:37:48.000000000 -0800
++++ b/deps/v8/src/base/cpu.cc	2022-02-19 14:38:37.997161835 -0800
+@@ -14,15 +14,13 @@
+ #if V8_OS_LINUX
+ #include <linux/auxvec.h>  // AT_HWCAP
+ #endif
+-#if V8_GLIBC_PREREQ(2, 16)
++#if V8_GLIBC_PREREQ(2, 16) || \
++    (V8_OS_LINUX && (V8_HOST_ARCH_PPC || V8_HOST_ARCH_PPC64))
+ #include <sys/auxv.h>  // getauxval()
+ #endif
+ #if V8_OS_QNX
+ #include <sys/syspage.h>  // cpuinfo
+ #endif
+-#if V8_OS_LINUX && (V8_HOST_ARCH_PPC || V8_HOST_ARCH_PPC64)
+-#include <elf.h>
+-#endif
+ #if V8_OS_AIX
+ #include <sys/systemcfg.h>  // _system_configuration
+ #ifndef POWER_8
+@@ -772,56 +770,55 @@
+ 
+ #ifndef USE_SIMULATOR
+ #if V8_OS_LINUX
+-  // Read processor info from /proc/self/auxv.
+-  char* auxv_cpu_type = nullptr;
+-  FILE* fp = base::Fopen("/proc/self/auxv", "r");
+-  if (fp != nullptr) {
+-#if V8_TARGET_ARCH_PPC64
+-    Elf64_auxv_t entry;
+-#else
+-    Elf32_auxv_t entry;
+-#endif
+-    for (;;) {
+-      size_t n = fread(&entry, sizeof(entry), 1, fp);
+-      if (n == 0 || entry.a_type == AT_NULL) {
+-        break;
+-      }
+-      switch (entry.a_type) {
+-        case AT_PLATFORM:
+-          auxv_cpu_type = reinterpret_cast<char*>(entry.a_un.a_val);
+-          break;
+-        case AT_ICACHEBSIZE:
+-          icache_line_size_ = entry.a_un.a_val;
+-          break;
+-        case AT_DCACHEBSIZE:
+-          dcache_line_size_ = entry.a_un.a_val;
+-          break;
+-      }
+-    }
+-    base::Fclose(fp);
+-  }
+-
+-  part_ = -1;
+-  if (auxv_cpu_type) {
+-    if (strcmp(auxv_cpu_type, "power10") == 0) {
+-      part_ = kPPCPower10;
+-    } else if (strcmp(auxv_cpu_type, "power9") == 0) {
+-      part_ = kPPCPower9;
+-    } else if (strcmp(auxv_cpu_type, "power8") == 0) {
+-      part_ = kPPCPower8;
+-    } else if (strcmp(auxv_cpu_type, "power7") == 0) {
+-      part_ = kPPCPower7;
+-    } else if (strcmp(auxv_cpu_type, "power6") == 0) {
+-      part_ = kPPCPower6;
+-    } else if (strcmp(auxv_cpu_type, "power5") == 0) {
+-      part_ = kPPCPower5;
+-    } else if (strcmp(auxv_cpu_type, "ppc970") == 0) {
+-      part_ = kPPCG5;
+-    } else if (strcmp(auxv_cpu_type, "ppc7450") == 0) {
+-      part_ = kPPCG4;
+-    } else if (strcmp(auxv_cpu_type, "pa6t") == 0) {
+-      part_ = kPPCPA6T;
+-    }
++  // Read processor info from getauxval() (needs at least glibc 2.18 or musl).
++  icache_line_size_ = static_cast<int>(getauxval(AT_ICACHEBSIZE));
++  dcache_line_size_ = static_cast<int>(getauxval(AT_DCACHEBSIZE));
++  const unsigned long hwcap = getauxval(AT_HWCAP);
++  const unsigned long hwcap2 = getauxval(AT_HWCAP2);
++  const char* platform = reinterpret_cast<const char*>(getauxval(AT_PLATFORM));
++
++  // NOTE: AT_HWCAP ISA version bits aren't cumulative, so it's necessary
++  // to compare against a mask of all supported versions and CPUs, up to
++  // ISA v2.06, which *is* set for later CPUs. In contrast, the AT_HWCAP2
++  // ISA version bits from v2.07 onward are set cumulatively, so POWER10
++  // will set the ISA version bits from v2.06 (in AT_HWCAP) through v3.1.
++
++  // i-cache coherency requires Power ISA v2.02 or later; has its own flag.
++  has_icache_snoop_ = (hwcap & PPC_FEATURE_ICACHE_SNOOP);
++
++  // requires Power ISA v2.03 or later, or the HAS_ISEL bit (e.g. e6500).
++  has_isel_ = (hwcap & (PPC_FEATURE_POWER5_PLUS | PPC_FEATURE_ARCH_2_05 |
++      PPC_FEATURE_PA6T | PPC_FEATURE_POWER6_EXT | PPC_FEATURE_ARCH_2_06)) ||
++      (hwcap2 & PPC_FEATURE2_HAS_ISEL);
++
++  // hwcap mask for older 64-bit PPC CPUs with Altivec, e.g. G5, Cell.
++  static const unsigned long kHwcapMaskPPCG5 =
++      (PPC_FEATURE_64 | PPC_FEATURE_HAS_ALTIVEC);
++
++  if (hwcap2 & PPC_FEATURE2_ARCH_3_1) {
++    part_ = kPPCPower10;
++  } else if (hwcap2 & PPC_FEATURE2_ARCH_3_00) {
++    part_ = kPPCPower9;
++  } else if (hwcap2 & PPC_FEATURE2_ARCH_2_07) {
++    part_ = kPPCPower8;
++  } else if (hwcap & PPC_FEATURE_ARCH_2_06) {
++    part_ = kPPCPower7;
++  } else if (hwcap & PPC_FEATURE_ARCH_2_05) {
++    part_ = kPPCPower6;
++  } else if (hwcap & (PPC_FEATURE_POWER5 | PPC_FEATURE_POWER5_PLUS)) {
++    part_ = kPPCPower5;
++  } else if (hwcap & PPC_FEATURE_PA6T) {
++    part_ = kPPCPA6T;
++  } else if (strcmp(platform, "ppce6500") == 0) {
++    part_ = kPPCE6500;
++  } else if (strcmp(platform, "ppce5500") == 0) {
++    part_ = kPPCE5500;
++  } else if ((hwcap & kHwcapMaskPPCG5) == kHwcapMaskPPCG5) {
++    part_ = kPPCG5;
++  } else if (hwcap & PPC_FEATURE_HAS_ALTIVEC) {
++    part_ = kPPCG4;
++  } else {
++    part_ = kPPCG3;
+   }
+ 
+ #elif V8_OS_AIX
+@@ -842,9 +839,13 @@
+       part_ = kPPCPower6;
+       break;
+     case POWER_5:
++    default:
+       part_ = kPPCPower5;
+       break;
+   }
++
++  has_icache_snoop_ = true;
++  has_isel_ = (part_ != kPPCPower5);    // isel was added in POWER5+ (v2.03)
+ #endif  // V8_OS_AIX
+ #endif  // !USE_SIMULATOR
+ #endif  // V8_HOST_ARCH_PPC || V8_HOST_ARCH_PPC64
+--- a/deps/v8/src/base/cpu.h	2022-02-08 04:37:48.000000000 -0800
++++ b/deps/v8/src/base/cpu.h	2022-02-19 14:32:09.831579133 -0800
+@@ -71,9 +71,12 @@
+     kPPCPower8,
+     kPPCPower9,
+     kPPCPower10,
++    kPPCG3,
+     kPPCG4,
+     kPPCG5,
+-    kPPCPA6T
++    kPPCPA6T,
++    kPPCE5500,
++    kPPCE6500
+   };
+ 
+   // General features
+@@ -119,6 +122,10 @@
+   bool is_fp64_mode() const { return is_fp64_mode_; }
+   bool has_msa() const { return has_msa_; }
+ 
++  // PowerPC features
++  bool has_icache_snoop() const { return has_icache_snoop_; }
++  bool has_isel() const { return has_isel_; }
++
+  private:
+ #if defined(V8_OS_STARBOARD)
+   bool StarboardDetectCPU();
+@@ -166,6 +173,8 @@
+   bool has_non_stop_time_stamp_counter_;
+   bool is_running_in_vm_;
+   bool has_msa_;
++  bool has_icache_snoop_;
++  bool has_isel_;
+ };
+ 
+ }  // namespace base
+--- a/deps/v8/src/builtins/ppc/builtins-ppc.cc	2022-02-08 04:37:48.000000000 -0800
++++ b/deps/v8/src/builtins/ppc/builtins-ppc.cc	2022-02-19 15:18:36.373031457 -0800
+@@ -2823,7 +2823,7 @@
+   __ lbz(scratch, MemOperand(scratch, 0));
+   __ cmpi(scratch, Operand::Zero());
+ 
+-  if (CpuFeatures::IsSupported(PPC_7_PLUS)) {
++  if (CpuFeatures::IsSupported(ISELECT)) {
+     __ Move(scratch, thunk_ref);
+     __ isel(eq, scratch, function_address, scratch);
+   } else {
+--- a/deps/v8/src/codegen/ppc/macro-assembler-ppc.cc	2022-02-19 18:45:44.687593194 -0800
++++ b/deps/v8/src/codegen/ppc/macro-assembler-ppc.cc	2022-02-19 18:33:15.060674389 -0800
+@@ -925,13 +925,25 @@
+ 
+ void TurboAssembler::ConvertIntToFloat(Register src, DoubleRegister dst) {
+   MovIntToDouble(dst, src, r0);
+-  fcfids(dst, dst);
++
++  if (CpuFeatures::IsSupported(PPC_7_PLUS)) {
++    fcfids(dst, dst);
++  } else {
++    fcfid(dst, dst);
++    frsp(dst, dst);
++  }
+ }
+ 
+ void TurboAssembler::ConvertUnsignedIntToFloat(Register src,
+                                                DoubleRegister dst) {
+   MovUnsignedIntToDouble(dst, src, r0);
+-  fcfids(dst, dst);
++
++  if (CpuFeatures::IsSupported(PPC_7_PLUS)) {
++    fcfids(dst, dst);
++  } else {
++    fcfid(dst, dst);
++    frsp(dst, dst);
++  }
+ }
+ 
+ #if V8_TARGET_ARCH_PPC64
+@@ -943,20 +955,52 @@
+ 
+ void TurboAssembler::ConvertUnsignedInt64ToFloat(Register src,
+                                                  DoubleRegister double_dst) {
+-  MovInt64ToDouble(double_dst, src);
+-  fcfidus(double_dst, double_dst);
++  if (CpuFeatures::IsSupported(PPC_7_PLUS)) {
++    MovInt64ToDouble(double_dst, src);
++    fcfidus(double_dst, double_dst);
++  } else {
++    ConvertUnsignedInt64ToDouble(src, double_dst);
++    frsp(double_dst, double_dst);
++  }
+ }
+ 
+ void TurboAssembler::ConvertUnsignedInt64ToDouble(Register src,
+                                                   DoubleRegister double_dst) {
+-  MovInt64ToDouble(double_dst, src);
+-  fcfidu(double_dst, double_dst);
++  if (CpuFeatures::IsSupported(PPC_7_PLUS)) {
++    MovInt64ToDouble(double_dst, src);
++    fcfidu(double_dst, double_dst);
++  } else {
++    Label negative;
++    Label done;
++    cmpi(src, Operand::Zero());
++    blt(&negative);
++    std(src, MemOperand(sp, -kDoubleSize));
++    nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
++    lfd(double_dst, MemOperand(sp, -kDoubleSize));
++    fcfid(double_dst, double_dst);
++    b(&done);
++    bind(&negative);
++    // Note: GCC saves the lowest bit, then ORs it after shifting right 1 bit,
++    // presumably for better rounding. This version only shifts right 1 bit.
++    srdi(r0, src, Operand(1));
++    std(r0, MemOperand(sp, -kDoubleSize));
++    nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
++    lfd(double_dst, MemOperand(sp, -kDoubleSize));
++    fcfid(double_dst, double_dst);
++    fadd(double_dst, double_dst, double_dst);
++    bind(&done);
++   }
+ }
+ 
+ void TurboAssembler::ConvertInt64ToFloat(Register src,
+                                          DoubleRegister double_dst) {
+   MovInt64ToDouble(double_dst, src);
+-  fcfids(double_dst, double_dst);
++  if (CpuFeatures::IsSupported(PPC_7_PLUS)) {
++    fcfids(double_dst, double_dst);
++  } else {
++    fcfid(double_dst, double_dst);
++    frsp(double_dst, double_dst);
++  }
+ }
+ #endif
+ 
+@@ -986,15 +1030,56 @@
+ void TurboAssembler::ConvertDoubleToUnsignedInt64(
+     const DoubleRegister double_input, const Register dst,
+     const DoubleRegister double_dst, FPRoundingMode rounding_mode) {
+-  if (rounding_mode == kRoundToZero) {
+-    fctiduz(double_dst, double_input);
++  if (CpuFeatures::IsSupported(PPC_7_PLUS)) {
++    if (rounding_mode == kRoundToZero) {
++      fctiduz(double_dst, double_input);
++    } else {
++      SetRoundingMode(rounding_mode);
++      fctidu(double_dst, double_input);
++      ResetRoundingMode();
++    }
++
++    MovDoubleToInt64(dst, double_dst);
+   } else {
+-    SetRoundingMode(rounding_mode);
+-    fctidu(double_dst, double_input);
+-    ResetRoundingMode();
++    Label safe_size;
++    Label done;
++    mov(dst, Operand(1593835520));  // bit pattern for 2^63 as a float
++    stw(dst, MemOperand(sp, -kFloatSize));
++    nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
++    lfs(double_dst, MemOperand(sp, -kFloatSize));
++    fcmpu(double_input, double_dst);
++    blt(&safe_size);
++    // Subtract 2^63, then OR the top bit of the uint64 to add back
++    fsub(double_dst, double_input, double_dst);
++    if (rounding_mode == kRoundToZero) {
++      fctidz(double_dst, double_dst);
++    } else {
++      SetRoundingMode(rounding_mode);
++      fctid(double_dst, double_dst);
++      ResetRoundingMode();
++    }
++    // set r0 to -1, then clear all but the MSB.
++    mov(r0, Operand(-1));
++    rldicr(r0, r0, 0, 0);
++    stfd(double_dst, MemOperand(sp, -kDoubleSize));
++    nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
++    ld(dst, MemOperand(sp, -kDoubleSize));
++    orx(dst, dst, r0);
++    b(&done);
++    // Handling for values smaller than 2^63.
++    bind(&safe_size);
++    if (rounding_mode == kRoundToZero) {
++      fctidz(double_dst, double_input);
++    } else {
++      SetRoundingMode(rounding_mode);
++      fctid(double_dst, double_input);
++      ResetRoundingMode();
++    }
++    stfd(double_dst, MemOperand(sp, -kDoubleSize));
++    nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
++    ld(dst, MemOperand(sp, -kDoubleSize));
++    bind(&done);
+   }
+-
+-  MovDoubleToInt64(dst, double_dst);
+ }
+ #endif
+ 
+@@ -2459,19 +2544,17 @@
+   }
+ #endif
+ 
+-  addi(sp, sp, Operand(-kDoubleSize));
+ #if V8_TARGET_ARCH_PPC64
+   mov(scratch, Operand(litVal.ival));
+-  std(scratch, MemOperand(sp));
++  std(scratch, MemOperand(sp, -kDoubleSize));
+ #else
+   LoadIntLiteral(scratch, litVal.ival[0]);
+-  stw(scratch, MemOperand(sp, 0));
++  stw(scratch, MemOperand(sp, -kDoubleSize));
+   LoadIntLiteral(scratch, litVal.ival[1]);
+-  stw(scratch, MemOperand(sp, 4));
++  stw(scratch, MemOperand(sp, -kDoubleSize + 4));
+ #endif
+   nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+-  lfd(result, MemOperand(sp, 0));
+-  addi(sp, sp, Operand(kDoubleSize));
++  lfd(result, MemOperand(sp, -kDoubleSize));
+ }
+ 
+ void TurboAssembler::MovIntToDouble(DoubleRegister dst, Register src,
+@@ -2485,18 +2568,16 @@
+ #endif
+ 
+   DCHECK(src != scratch);
+-  subi(sp, sp, Operand(kDoubleSize));
+ #if V8_TARGET_ARCH_PPC64
+   extsw(scratch, src);
+-  std(scratch, MemOperand(sp, 0));
++  std(scratch, MemOperand(sp, -kDoubleSize));
+ #else
+   srawi(scratch, src, 31);
+-  stw(scratch, MemOperand(sp, Register::kExponentOffset));
+-  stw(src, MemOperand(sp, Register::kMantissaOffset));
++  stw(scratch, MemOperand(sp, -kDoubleSize + Register::kExponentOffset));
++  stw(src, MemOperand(sp, -kDoubleSize + Register::kMantissaOffset));
+ #endif
+   nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+-  lfd(dst, MemOperand(sp, 0));
+-  addi(sp, sp, Operand(kDoubleSize));
++  lfd(dst, MemOperand(sp, -kDoubleSize));
+ }
+ 
+ void TurboAssembler::MovUnsignedIntToDouble(DoubleRegister dst, Register src,
+@@ -2510,18 +2591,16 @@
+ #endif
+ 
+   DCHECK(src != scratch);
+-  subi(sp, sp, Operand(kDoubleSize));
+ #if V8_TARGET_ARCH_PPC64
+   clrldi(scratch, src, Operand(32));
+-  std(scratch, MemOperand(sp, 0));
++  std(scratch, MemOperand(sp, -kDoubleSize));
+ #else
+   li(scratch, Operand::Zero());
+-  stw(scratch, MemOperand(sp, Register::kExponentOffset));
+-  stw(src, MemOperand(sp, Register::kMantissaOffset));
++  stw(scratch, MemOperand(sp, -kDoubleSize + Register::kExponentOffset));
++  stw(src, MemOperand(sp, -kDoubleSize + Register::kMantissaOffset));
+ #endif
+   nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+-  lfd(dst, MemOperand(sp, 0));
+-  addi(sp, sp, Operand(kDoubleSize));
++  lfd(dst, MemOperand(sp, -kDoubleSize));
+ }
+ 
+ void TurboAssembler::MovInt64ToDouble(DoubleRegister dst,
+@@ -2536,16 +2615,14 @@
+   }
+ #endif
+ 
+-  subi(sp, sp, Operand(kDoubleSize));
+ #if V8_TARGET_ARCH_PPC64
+-  std(src, MemOperand(sp, 0));
++  std(src, MemOperand(sp, -kDoubleSize));
+ #else
+-  stw(src_hi, MemOperand(sp, Register::kExponentOffset));
+-  stw(src, MemOperand(sp, Register::kMantissaOffset));
++  stw(src_hi, MemOperand(sp, -kDoubleSize + Register::kExponentOffset));
++  stw(src, MemOperand(sp, -kDoubleSize + Register::kMantissaOffset));
+ #endif
+   nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+-  lfd(dst, MemOperand(sp, 0));
+-  addi(sp, sp, Operand(kDoubleSize));
++  lfd(dst, MemOperand(sp, -kDoubleSize));
+ }
+ 
+ #if V8_TARGET_ARCH_PPC64
+@@ -2560,12 +2637,10 @@
+     return;
+   }
+ 
+-  subi(sp, sp, Operand(kDoubleSize));
+-  stw(src_hi, MemOperand(sp, Register::kExponentOffset));
+-  stw(src_lo, MemOperand(sp, Register::kMantissaOffset));
++  stw(src_hi, MemOperand(sp, -kDoubleSize + Register::kExponentOffset));
++  stw(src_lo, MemOperand(sp, -kDoubleSize + Register::kMantissaOffset));
+   nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+-  lfd(dst, MemOperand(sp));
+-  addi(sp, sp, Operand(kDoubleSize));
++  lfd(dst, MemOperand(sp, -kDoubleSize));
+ }
+ #endif
+ 
+@@ -2580,12 +2655,10 @@
+   }
+ #endif
+ 
+-  subi(sp, sp, Operand(kDoubleSize));
+-  stfd(dst, MemOperand(sp));
+-  stw(src, MemOperand(sp, Register::kMantissaOffset));
++  stfd(dst, MemOperand(sp, -kDoubleSize));
++  stw(src, MemOperand(sp, -kDoubleSize + Register::kMantissaOffset));
+   nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+-  lfd(dst, MemOperand(sp));
+-  addi(sp, sp, Operand(kDoubleSize));
++  lfd(dst, MemOperand(sp, -kDoubleSize));
+ }
+ 
+ void TurboAssembler::InsertDoubleHigh(DoubleRegister dst, Register src,
+@@ -2599,12 +2672,10 @@
+   }
+ #endif
+ 
+-  subi(sp, sp, Operand(kDoubleSize));
+-  stfd(dst, MemOperand(sp));
+-  stw(src, MemOperand(sp, Register::kExponentOffset));
++  stfd(dst, MemOperand(sp, -kDoubleSize));
++  stw(src, MemOperand(sp, -kDoubleSize + Register::kExponentOffset));
+   nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+-  lfd(dst, MemOperand(sp));
+-  addi(sp, sp, Operand(kDoubleSize));
++  lfd(dst, MemOperand(sp, -kDoubleSize));
+ }
+ 
+ void TurboAssembler::MovDoubleLowToInt(Register dst, DoubleRegister src) {
+@@ -2615,11 +2686,9 @@
+   }
+ #endif
+ 
+-  subi(sp, sp, Operand(kDoubleSize));
+-  stfd(src, MemOperand(sp));
++  stfd(src, MemOperand(sp, -kDoubleSize));
+   nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+-  lwz(dst, MemOperand(sp, Register::kMantissaOffset));
+-  addi(sp, sp, Operand(kDoubleSize));
++  lwz(dst, MemOperand(sp, -kDoubleSize + Register::kMantissaOffset));
+ }
+ 
+ void TurboAssembler::MovDoubleHighToInt(Register dst, DoubleRegister src) {
+@@ -2631,11 +2700,9 @@
+   }
+ #endif
+ 
+-  subi(sp, sp, Operand(kDoubleSize));
+-  stfd(src, MemOperand(sp));
++  stfd(src, MemOperand(sp, -kDoubleSize));
+   nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+-  lwz(dst, MemOperand(sp, Register::kExponentOffset));
+-  addi(sp, sp, Operand(kDoubleSize));
++  lwz(dst, MemOperand(sp, -kDoubleSize + Register::kExponentOffset));
+ }
+ 
+ void TurboAssembler::MovDoubleToInt64(
+@@ -2650,32 +2717,26 @@
+   }
+ #endif
+ 
+-  subi(sp, sp, Operand(kDoubleSize));
+-  stfd(src, MemOperand(sp));
++  stfd(src, MemOperand(sp, -kDoubleSize));
+   nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+ #if V8_TARGET_ARCH_PPC64
+-  ld(dst, MemOperand(sp, 0));
++  ld(dst, MemOperand(sp, -kDoubleSize));
+ #else
+-  lwz(dst_hi, MemOperand(sp, Register::kExponentOffset));
+-  lwz(dst, MemOperand(sp, Register::kMantissaOffset));
++  lwz(dst_hi, MemOperand(sp, -kDoubleSize + Register::kExponentOffset));
++  lwz(dst, MemOperand(sp, -kDoubleSize + Register::kMantissaOffset));
+ #endif
+-  addi(sp, sp, Operand(kDoubleSize));
+ }
+ 
+ void TurboAssembler::MovIntToFloat(DoubleRegister dst, Register src) {
+-  subi(sp, sp, Operand(kFloatSize));
+-  stw(src, MemOperand(sp, 0));
++  stw(src, MemOperand(sp, -kFloatSize));
+   nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+-  lfs(dst, MemOperand(sp, 0));
+-  addi(sp, sp, Operand(kFloatSize));
++  lfs(dst, MemOperand(sp, -kFloatSize));
+ }
+ 
+ void TurboAssembler::MovFloatToInt(Register dst, DoubleRegister src) {
+-  subi(sp, sp, Operand(kFloatSize));
+-  stfs(src, MemOperand(sp, 0));
++  stfs(src, MemOperand(sp, -kFloatSize));
+   nop(GROUP_ENDING_NOP);  // LHS/RAW optimization
+-  lwz(dst, MemOperand(sp, 0));
+-  addi(sp, sp, Operand(kFloatSize));
++  lwz(dst, MemOperand(sp, -kFloatSize));
+ }
+ 
+ void TurboAssembler::AddS64(Register dst, Register src, Register value, OEBit s,
+@@ -3189,10 +3250,8 @@
+   }
+ 
+ #define MEM_LE_OP_LIST(V) \
+-  V(LoadU64, ldbrx)       \
+   V(LoadU32, lwbrx)       \
+   V(LoadU16, lhbrx)       \
+-  V(StoreU64, stdbrx)     \
+   V(StoreU32, stwbrx)     \
+   V(StoreU16, sthbrx)
+ 
+@@ -3214,6 +3273,37 @@
+ #undef MEM_LE_OP_FUNCTION
+ #undef MEM_LE_OP_LIST
+ 
++void TurboAssembler::LoadU64LE(Register dst, const MemOperand& mem,
++                               Register scratch) {
++#ifdef V8_TARGET_BIG_ENDIAN
++  if (CpuFeatures::IsSupported(PPC_7_PLUS_NXP)) {
++    GenerateMemoryLEOperation(dst, mem, ldbrx);
++  } else {
++    lwbrx(dst, mem);
++    lwbrx(scratch, MemOperand(mem.ra(), mem.rb(), mem.offset() + 4));
++    rldicr(scratch, scratch, 32, 31);
++    orx(dst, dst, scratch);
++  }
++#else
++  LoadU64(dst, mem, scratch);
++#endif
++}
++
++void TurboAssembler::StoreU64LE(Register src, const MemOperand& mem,
++                                Register scratch) {
++#ifdef V8_TARGET_BIG_ENDIAN
++  if (CpuFeatures::IsSupported(PPC_7_PLUS_NXP)) {
++    GenerateMemoryLEOperation(src, mem, stdbrx);
++  } else {
++    stwbrx(src, mem);
++    rldicl(scratch, src, 32, 32);
++    stwbrx(scratch, MemOperand(mem.ra(), mem.rb(), mem.offset() + 4));
++  }
++#else
++  StoreU64(src, mem, scratch);
++#endif
++}
++
+ void TurboAssembler::LoadS32LE(Register dst, const MemOperand& mem,
+                                Register scratch) {
+ #ifdef V8_TARGET_BIG_ENDIAN
+--- a/deps/v8/src/codegen/cpu-features.h	2022-02-19 21:19:15.982288690 -0800
++++ b/deps/v8/src/codegen/cpu-features.h	2022-02-19 21:22:43.071487369 -0800
+@@ -52,11 +52,15 @@
+   MIPS_SIMD,  // MSA instructions
+ 
+ #elif V8_TARGET_ARCH_PPC || V8_TARGET_ARCH_PPC64
++  PPC_5_PLUS,
+   PPC_6_PLUS,
+   PPC_7_PLUS,
+   PPC_8_PLUS,
+   PPC_9_PLUS,
+   PPC_10_PLUS,
++  ICACHE_SNOOP,     // ISA v2.02 (POWER5)
++  ISELECT,          // ISA v2.03 (POWER5+ and some NXP cores)
++  PPC_7_PLUS_NXP,   // ISA v2.06 (POWER7 and NXP e5500/e6500)
+ 
+ #elif V8_TARGET_ARCH_S390X
+   FPU,
+--- a/deps/v8/src/compiler/backend/ppc/instruction-selector-ppc.cc	2022-02-20 23:35:21.212337639 -0800
++++ b/deps/v8/src/compiler/backend/ppc/instruction-selector-ppc.cc	2022-02-20 23:36:20.925858840 -0800
+@@ -2702,16 +2702,26 @@
+ // static
+ MachineOperatorBuilder::Flags
+ InstructionSelector::SupportedMachineOperatorFlags() {
+-  return MachineOperatorBuilder::kFloat32RoundDown |
+-         MachineOperatorBuilder::kFloat64RoundDown |
+-         MachineOperatorBuilder::kFloat32RoundUp |
+-         MachineOperatorBuilder::kFloat64RoundUp |
+-         MachineOperatorBuilder::kFloat32RoundTruncate |
+-         MachineOperatorBuilder::kFloat64RoundTruncate |
+-         MachineOperatorBuilder::kFloat64RoundTiesAway |
+-         MachineOperatorBuilder::kWord32Popcnt |
+-         MachineOperatorBuilder::kWord64Popcnt;
++  MachineOperatorBuilder::Flags flags = MachineOperatorBuilder::Flag::kNoFlags;
++  // FP rounding to integer instructions require Power ISA v2.02 or later.
++  if (CpuFeatures::IsSupported(PPC_5_PLUS)) {
++    flags |= MachineOperatorBuilder::kFloat32RoundDown |
++             MachineOperatorBuilder::kFloat64RoundDown |
++             MachineOperatorBuilder::kFloat32RoundUp |
++             MachineOperatorBuilder::kFloat64RoundUp |
++             MachineOperatorBuilder::kFloat32RoundTruncate |
++             MachineOperatorBuilder::kFloat64RoundTruncate |
++             MachineOperatorBuilder::kFloat64RoundTiesAway;
++  }
++  // Population count requires Power ISA v2.06, or NXP e5500/e6500.
++  if (CpuFeatures::IsSupported(PPC_7_PLUS_NXP)) {
++    flags |= MachineOperatorBuilder::kWord32Popcnt;
++#if V8_TARGET_ARCH_PPC64
++    flags |= MachineOperatorBuilder::kWord64Popcnt;
++#endif
++  }
+   // We omit kWord32ShiftIsSafe as s[rl]w use 0x3F as a mask rather than 0x1F.
++  return flags;
+ }
+ 
+ // static
+--- a/deps/v8/src/compiler/backend/ppc/code-generator-ppc.cc	2022-02-20 23:35:21.216337741 -0800
++++ b/deps/v8/src/compiler/backend/ppc/code-generator-ppc.cc	2022-02-20 23:39:56.479351482 -0800
+@@ -785,6 +785,7 @@
+   // Calculate a mask which has all bits set in the normal case, but has all
+   // bits cleared if we are speculatively executing the wrong PC.
+   __ CmpS64(kJavaScriptCallCodeStartRegister, scratch);
++  // TODO: is alternate sequence needed for CPUs without isel?
+   __ li(scratch, Operand::Zero());
+   __ notx(kSpeculationPoisonRegister, scratch);
+   __ isel(eq, kSpeculationPoisonRegister, kSpeculationPoisonRegister, scratch);
+@@ -1823,6 +1824,7 @@
+         int crbit = v8::internal::Assembler::encode_crbit(
+             cr, static_cast<CRBit>(VXCVI % CRWIDTH));
+         __ mcrfs(cr, VXCVI);  // extract FPSCR field containing VXCVI into cr7
++        // TODO: is alternate sequence needed for CPUs without isel?
+         __ li(kScratchReg, Operand(1));
+         __ ShiftLeftU64(kScratchReg, kScratchReg,
+                         Operand(31));  // generate INT32_MIN.
+@@ -1844,6 +1846,7 @@
+         int crbit = v8::internal::Assembler::encode_crbit(
+             cr, static_cast<CRBit>(VXCVI % CRWIDTH));
+         __ mcrfs(cr, VXCVI);  // extract FPSCR field containing VXCVI into cr7
++        // TODO: is alternate sequence needed for CPUs without isel?
+         __ li(kScratchReg, Operand::Zero());
+         __ isel(i.OutputRegister(0), kScratchReg, i.OutputRegister(0), crbit);
+       }
+@@ -1868,7 +1871,7 @@
+             cr, static_cast<CRBit>(VXCVI % CRWIDTH));
+         __ mcrfs(cr, VXCVI);  // extract FPSCR field containing VXCVI into cr7
+         // Handle conversion failures (such as overflow).
+-        if (CpuFeatures::IsSupported(PPC_7_PLUS)) {
++        if (CpuFeatures::IsSupported(ISELECT)) {
+           if (check_conversion) {
+             __ li(i.OutputRegister(1), Operand(1));
+             __ isel(i.OutputRegister(1), r0, i.OutputRegister(1), crbit);
+@@ -1905,7 +1908,7 @@
+         int crbit = v8::internal::Assembler::encode_crbit(
+             cr, static_cast<CRBit>(VXCVI % CRWIDTH));
+         __ mcrfs(cr, VXCVI);  // extract FPSCR field containing VXCVI into cr7
+-        if (CpuFeatures::IsSupported(PPC_7_PLUS)) {
++        if (CpuFeatures::IsSupported(ISELECT)) {
+           __ li(i.OutputRegister(1), Operand(1));
+           __ isel(i.OutputRegister(1), r0, i.OutputRegister(1), crbit);
+         } else {
+@@ -2168,12 +2171,67 @@
+       break;
+     }
+     case kPPC_LoadByteRev64: {
+-      ASSEMBLE_LOAD_INTEGER_RR(ldbrx);
++      // inlined version of ASSEMBLE_LOAD_INTEGER_RR()
++      Register result = i.OutputRegister();
++      AddressingMode mode = kMode_None;
++      MemOperand operand = i.MemoryOperand(&mode);
++      DCHECK_EQ(mode, kMode_MRR);
++      bool is_atomic = i.InputInt32(2);
++      if (CpuFeatures::IsSupported(PPC_7_PLUS_NXP)) {
++        __ ldbrx(result, operand);
++      } else {
++#ifdef V8_TARGET_BIG_ENDIAN
++        // low and high words from reversed perspective
++        MemOperand op_low = operand;
++        MemOperand op_high = MemOperand(operand.ra(), operand.rb(),
++                                        operand.offset() + 4);
++#else
++        // low and high words from reversed perspective
++        MemOperand op_high = operand;
++        MemOperand op_low = MemOperand(operand.ra(), operand.rb(),
++                                       operand.offset() + 4);
++#endif
++        Register temp1 = r0;
++        __ lwbrx(result, op_low);
++        __ lwbrx(temp1, op_high);
++        __ rldicr(temp1, temp1, 32, 31);
++        __ orx(result, result, temp1);
++      }
++      if (is_atomic) __ lwsync();
++      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+       EmitWordLoadPoisoningIfNeeded(this, instr, i);
+       break;
+     }
+     case kPPC_StoreByteRev64: {
+-      ASSEMBLE_STORE_INTEGER_RR(stdbrx);
++      // inlined version of ASSEMBLE_STORE_INTEGER_RR()
++      size_t index = 0;
++      AddressingMode mode = kMode_None;
++      MemOperand operand = i.MemoryOperand(&mode, &index);
++      DCHECK_EQ(mode, kMode_MRR);
++      Register value = i.InputRegister(index);
++      bool is_atomic = i.InputInt32(3);
++      if (is_atomic) __ lwsync();
++      if (CpuFeatures::IsSupported(PPC_7_PLUS_NXP)) {
++        __ stdbrx(value, operand);
++      } else {
++#ifdef V8_TARGET_BIG_ENDIAN
++        // low and high words from reversed perspective
++        MemOperand op_low = operand;
++        MemOperand op_high = MemOperand(operand.ra(), operand.rb(),
++                                        operand.offset() + 4);
++#else
++        // low and high words from reversed perspective
++        MemOperand op_high = operand;
++        MemOperand op_low = MemOperand(operand.ra(), operand.rb(),
++                                       operand.offset() + 4);
++#endif
++        Register temp1 = r0;
++        __ stwbrx(value, op_low);
++        __ rldicl(temp1, value, 32, 32);
++        __ stwbrx(temp1, op_high);
++      }
++      if (is_atomic) __ sync();
++      DCHECK_EQ(LeaveRC, i.OutputRCBit());
+       break;
+     }
+     case kPPC_F64x2Splat: {
+@@ -2911,11 +2969,13 @@
+       __ li(ip, Operand(1));
+       // Check if both lanes are 0, if so then return false.
+       __ vxor(kScratchSimd128Reg, kScratchSimd128Reg, kScratchSimd128Reg);
++      // TODO: is alternate sequence needed for CPUs without isel?
+       __ mtcrf(r0, fxm);  // Clear cr6.
+       __ vcmpequd(kScratchSimd128Reg, src, kScratchSimd128Reg, SetRC);
+       __ isel(dst, r0, ip, bit_number);
+       break;
+     }
++// TODO: is alternate sequence needed for CPUs without isel?
+ #define SIMD_ALL_TRUE(opcode)                                          \
+   Simd128Register src = i.InputSimd128Register(0);                     \
+   Register dst = i.OutputRegister();                                   \
+@@ -3809,6 +3869,7 @@
+ 
+   ArchOpcode op = instr->arch_opcode();
+   condition = NegateFlagsCondition(condition);
++  // TODO: is alternate sequence needed for CPUs without isel?
+   __ li(kScratchReg, Operand::Zero());
+   __ isel(FlagsConditionToCondition(condition, op), kSpeculationPoisonRegister,
+           kScratchReg, kSpeculationPoisonRegister, cr0);
+@@ -3922,7 +3983,7 @@
+     // Unnecessary for eq/lt & ne/ge since only FU bit will be set.
+   }
+ 
+-  if (CpuFeatures::IsSupported(PPC_7_PLUS)) {
++  if (CpuFeatures::IsSupported(ISELECT)) {
+     switch (cond) {
+       case eq:
+       case lt:
+--- a/deps/v8/src/codegen/ppc/cpu-ppc.cc	2022-02-08 04:37:48.000000000 -0800
++++ b/deps/v8/src/codegen/ppc/cpu-ppc.cc	2022-02-20 17:02:17.900000785 -0800
+@@ -8,14 +8,12 @@
+ 
+ #include "src/codegen/cpu-features.h"
+ 
+-#define INSTR_AND_DATA_CACHE_COHERENCY PPC_6_PLUS
+-
+ namespace v8 {
+ namespace internal {
+ 
+ void CpuFeatures::FlushICache(void* buffer, size_t size) {
+ #if !defined(USE_SIMULATOR)
+-  if (CpuFeatures::IsSupported(INSTR_AND_DATA_CACHE_COHERENCY)) {
++  if (CpuFeatures::IsSupported(ICACHE_SNOOP)) {
+     __asm__ __volatile__(
+         "sync \n"
+         "icbi 0, %0  \n"
+@@ -26,25 +24,33 @@
+     return;
+   }
+ 
+-  const int kCacheLineSize = CpuFeatures::icache_line_size();
+-  intptr_t mask = kCacheLineSize - 1;
++  const int kInstrCacheLineSize = CpuFeatures::icache_line_size();
++  const int kDataCacheLineSize = CpuFeatures::dcache_line_size();
++  intptr_t ic_mask = kInstrCacheLineSize - 1;
++  intptr_t dc_mask = kDataCacheLineSize - 1;
+   byte* start =
+-      reinterpret_cast<byte*>(reinterpret_cast<intptr_t>(buffer) & ~mask);
++      reinterpret_cast<byte*>(reinterpret_cast<intptr_t>(buffer) & ~dc_mask);
+   byte* end = static_cast<byte*>(buffer) + size;
+-  for (byte* pointer = start; pointer < end; pointer += kCacheLineSize) {
+-    __asm__(
++  for (byte* pointer = start; pointer < end; pointer += kDataCacheLineSize) {
++    __asm__ __volatile__(
+         "dcbf 0, %0  \n"
+-        "sync        \n"
+-        "icbi 0, %0  \n"
+-        "isync       \n"
+         : /* no output */
+         : "r"(pointer));
+   }
++  __asm__ __volatile__("sync");
+ 
++  start =
++      reinterpret_cast<byte*>(reinterpret_cast<intptr_t>(buffer) & ~ic_mask);
++  for (byte* pointer = start; pointer < end; pointer += kInstrCacheLineSize) {
++    __asm__ __volatile__(
++        "icbi 0, %0  \n"
++        : /* no output */
++        : "r"(pointer));
++  }
++  __asm__ __volatile__("isync");
+ #endif  // !USE_SIMULATOR
+ }
+ }  // namespace internal
+ }  // namespace v8
+ 
+-#undef INSTR_AND_DATA_CACHE_COHERENCY
+ #endif  // V8_TARGET_ARCH_PPC || V8_TARGET_ARCH_PPC64
+--- ./deps/v8/src/codegen/ppc/assembler-ppc.cc.orig	2022-02-08 04:37:48.000000000 -0800
++++ ./deps/v8/src/codegen/ppc/assembler-ppc.cc	2022-02-20 17:20:25.019591225 -0800
+@@ -65,6 +65,7 @@
+ void CpuFeatures::ProbeImpl(bool cross_compile) {
+   supported_ |= CpuFeaturesImpliedByCompiler();
+   icache_line_size_ = 128;
++  dcache_line_size_ = 128;
+ 
+   // Only use statically determined features for cross compile (snapshot).
+   if (cross_compile) return;
+@@ -73,6 +74,8 @@
+ #ifdef USE_SIMULATOR
+   // Simulator
+   supported_ |= (1u << PPC_10_PLUS);
++  supported_ |= (1u << ICACHE_SNOOP);
++  supported_ |= (1u << ISELECT);
+ #else
+   base::CPU cpu;
+   if (cpu.part() == base::CPU::kPPCPower10) {
+@@ -85,17 +88,37 @@
+     supported_ |= (1u << PPC_7_PLUS);
+   } else if (cpu.part() == base::CPU::kPPCPower6) {
+     supported_ |= (1u << PPC_6_PLUS);
++  } else if (cpu.part() == base::CPU::kPPCPower5 ||
++             cpu.part() == base::CPU::kPPCPA6T) {
++    supported_ |= (1u << PPC_5_PLUS);
++  } else if (cpu.part() == base::CPU::kPPCE6500 ||
++             cpu.part() == base::CPU::kPPCE5500) {
++    supported_ |= (1u << PPC_7_PLUS_NXP);   // NXP-supported v2.06 features
++  }
++
++  if (cpu.has_icache_snoop()) {
++    supported_ |= (1u << ICACHE_SNOOP);
++  }
++  if (cpu.has_isel()) {
++    supported_ |= (1u << ISELECT);
+   }
+ #if V8_OS_LINUX
+   if (cpu.icache_line_size() != base::CPU::kUnknownCacheLineSize) {
+     icache_line_size_ = cpu.icache_line_size();
+   }
++  if (cpu.dcache_line_size() != base::CPU::kUnknownCacheLineSize) {
++    dcache_line_size_ = cpu.dcache_line_size();
++  }
+ #endif
+ #endif
+   if (supported_ & (1u << PPC_10_PLUS)) supported_ |= (1u << PPC_9_PLUS);
+   if (supported_ & (1u << PPC_9_PLUS)) supported_ |= (1u << PPC_8_PLUS);
+   if (supported_ & (1u << PPC_8_PLUS)) supported_ |= (1u << PPC_7_PLUS);
+-  if (supported_ & (1u << PPC_7_PLUS)) supported_ |= (1u << PPC_6_PLUS);
++  if (supported_ & (1u << PPC_7_PLUS)) {
++    supported_ |= (1u << PPC_7_PLUS_NXP);   // NXP-supported v2.06 features
++    supported_ |= (1u << PPC_6_PLUS);
++  }
++  if (supported_ & (1u << PPC_6_PLUS)) supported_ |= (1u << PPC_5_PLUS);
+ 
+   // Set a static value on whether Simd is supported.
+   // This variable is only used for certain archs to query SupportWasmSimd128()
+@@ -117,11 +140,15 @@
+ }
+ 
+ void CpuFeatures::PrintFeatures() {
++  printf("PPC_5_PLUS=%d\n", CpuFeatures::IsSupported(PPC_5_PLUS));
+   printf("PPC_6_PLUS=%d\n", CpuFeatures::IsSupported(PPC_6_PLUS));
+   printf("PPC_7_PLUS=%d\n", CpuFeatures::IsSupported(PPC_7_PLUS));
+   printf("PPC_8_PLUS=%d\n", CpuFeatures::IsSupported(PPC_8_PLUS));
+   printf("PPC_9_PLUS=%d\n", CpuFeatures::IsSupported(PPC_9_PLUS));
+   printf("PPC_10_PLUS=%d\n", CpuFeatures::IsSupported(PPC_10_PLUS));
++  printf("ICACHE_SNOOP=%d\n", CpuFeatures::IsSupported(ICACHE_SNOOP));
++  printf("ISELECT=%d\n", CpuFeatures::IsSupported(ISELECT));
++  printf("PPC_7_PLUS_NXP=%d\n", CpuFeatures::IsSupported(PPC_7_PLUS_NXP));
+ }
+ 
+ Register ToRegister(int num) {

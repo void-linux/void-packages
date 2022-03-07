@@ -1,0 +1,77 @@
+# Template file for 'erlang'
+pkgname=erlang
+version=24.2.2
+revision=1
+create_wrksrc=yes
+build_wrksrc="otp-OTP-${version}"
+build_style=gnu-configure
+make_install_target="install install-docs"
+hostmakedepends="autoconf libxslt perl tar"
+makedepends="openssl-devel ncurses-devel unixodbc-devel zlib-devel"
+short_desc="Concurrent functional programming language developed by Ericsson"
+maintainer="Leah Neukirchen <leah@vuxu.org>"
+license="Apache-2.0"
+homepage="http://www.erlang.org/"
+changelog="https://github.com/erlang/otp/releases"
+distfiles="https://github.com/erlang/otp/archive/OTP-${version}.tar.gz"
+checksum=b6adfc0bf14d94348146ae26cc38d09dca545f8e14ebab7ddcf9482a6e8d1162
+subpackages="erlang-doc"
+
+if [ -z "$CROSS_BUILD" ]; then
+	configure_args+=" --with-wx-config=wx-config-3.0"
+	makedepends+=" wxWidgets-devel glu-devel"
+	subpackages+=" erlang-wx"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	ppc64*|*-musl) configure_args+=" --disable-hipe" ;;
+esac
+
+pre_configure() {
+	./otp_build autoconf
+	if [ "$CROSS_BUILD" ]; then
+		# Build the bootstrap compiler for the host platform.
+		env - PATH=/usr/bin:/usr/sbin ./configure --enable-bootstrap-only
+		env - PATH=/usr/bin:/usr/sbin HOME=$HOME make ${makejobs}
+		configure_args+=" --build=$(erts/autoconf/config.guess)"
+		export erl_xcomp_sysroot=/usr/${XBPS_CROSS_TRIPLET}
+	fi
+}
+
+post_configure() {
+	vsed -i -e '/LDFLAGS =/s/=/+=/' lib/odbc/c_src/*/Makefile
+}
+
+post_install() {
+	# Remove PR template and PDF documentation
+	rm ${DESTDIR}/usr/lib/erlang/PR.template
+	find ${DESTDIR}/usr/lib/erlang -path '*/doc/pdf' -type d -print0 | xargs -0 rm -rf
+	find ${DESTDIR}/usr/lib/erlang -iname '*.pdf' -delete
+	# Make section 1 pages available outside erlang
+	vmkdir usr/share/man/man1
+	local manprefix=/usr/lib/erlang/man/man1
+	for i in $(find ${DESTDIR}${manprefix} -type f)
+	do
+		ln -sf ${manprefix}/${i##*/} ${DESTDIR}/usr/share/man/man1
+	done
+}
+
+erlang-doc_package() {
+	short_desc="Erlang programming language documentation and examples"
+	depends="${sourcepkg}-${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/erlang/doc
+		for i in $(cd ${DESTDIR}; find usr/lib/erlang -type d \( -path '*/examples' -o -path '*/doc/html' \))
+		do
+			vmove "$i"
+		done
+	}
+}
+
+erlang-wx_package() {
+	short_desc+=" - wxWidgets binding"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/erlang/lib/wx*
+	}
+}

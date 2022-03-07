@@ -1,0 +1,94 @@
+# Template file for 'OpenRCT2'
+# based on https://raw.githubusercontent.com/AluisioASG/void-packages/openrct2/srcpkgs/OpenRCT2/template
+# and https://github.com/void-linux/void-packages/issues/1014#issuecomment-417372421
+pkgname=OpenRCT2
+_objects_version=1.0.21
+_titles_version=0.1.2c
+_replays_version=0.0.43
+version=0.3.4.1
+revision=3
+build_style=cmake
+configure_args="
+ -DOPENRCT2_VERSION_TAG=${version}
+ -DDOWNLOAD_TITLE_SEQUENCES=0
+ -DDOWNLOAD_OBJECTS=0
+ -DDOWNLOAD_REPLAYS=0
+ -DDISABLE_DISCORD_RPC=1
+ -DDISABLE_GOOGLE_BENCHMARK=1
+ $(vopt_if multiplayer '' '-DDISABLE_NETWORK=1')
+ $(vopt_if scripting '-DENABLE_SCRIPTING=1' '')"
+make_build_target="all g2"
+hostmakedepends="pkg-config unzip"
+makedepends="SDL2-devel fontconfig-devel freetype-devel libzip-devel
+ libpng-devel speexdsp-devel icu-devel zlib-devel json-c++ libxml2-devel
+ $(vopt_if multiplayer 'libcurl-devel openssl-devel')
+ $(vopt_if scripting duktape-devel)"
+depends="zenity"
+checkdepends="gtest-devel"
+short_desc="Open source re-implementation of RollerCoaster Tycoon 2"
+maintainer="klardotsh <josh@klar.sh>"
+license="GPL-3.0-or-later, CC-BY-SA-4.0"
+homepage="https://openrct2.io"
+# download objects and title sequences ourselves, instead of letting cmake do it
+distfiles="https://github.com/OpenRCT2/OpenRCT2/archive/v${version}.tar.gz
+ https://github.com/OpenRCT2/objects/releases/download/v${_objects_version}/objects.zip
+ https://github.com/OpenRCT2/title-sequences/releases/download/v${_titles_version}/title-sequences.zip"
+checksum="01f286dce2a9668fb87f403a0f53880936d3013fd502f32f9bb1217236c28225
+ b081f885311f9afebc41d9dd4a68b7db4cf736eb815c04e307e1a426f08cfa35
+ 5284333fa501270835b5f0cf420cb52155742335f5658d7889ea35d136b52517"
+skip_extraction="objects.zip title-sequences.zip replays.zip"
+
+replaces="OpenRCT2-data>=0"
+
+CXXFLAGS="-DNDEBUG"
+
+build_options="multiplayer scripting"
+build_options_default="multiplayer scripting"
+desc_option_multiplayer="Enable multiplayer support"
+desc_option_scripting="Enable script / plugin support"
+
+if [ "$XBPS_TARGET_ENDIAN" = "be" ]; then
+	broken="not yet implemented"
+fi
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" OpenRCT2"
+	# for icu mass-rebuild
+	hostmakedepends+=" enchant2 libxml2 webkit2gtk libharfbuzz"
+	hostmakedepends+=" libnuspell libpsl"
+	CXXFLAGS+=" -DHAVE_IMMINTRIN_H=false -DSDL_DISABLE_IMMINTRIN_H=1"
+fi
+
+if [ "$XBPS_CHECK_PKGS" ]; then
+	configure_args+=" -DWITH_TESTS=1 -DSYSTEM_GTEST=1"
+	# download replays, used in tests
+	distfiles+=" https://github.com/OpenRCT2/replays/releases/download/v${_replays_version}/replays.zip"
+	checksum+=" 43ba763ee6950a51aa96b26f3007c18b6e2ed09b6003601df6b014d5642c08d8"
+fi
+
+post_extract() {
+	_srcdir="${XBPS_SRCDISTDIR}/${pkgname}-${version}"
+	_builddir="${build_wrksrc:+$build_wrksrc/}${cmake_builddir:=build}"
+	unzip -qd data/object "${_srcdir}/objects.zip"
+	unzip -qd data/sequence "${_srcdir}/title-sequences.zip"
+	if [ "$XBPS_CHECK_PKGS" ]; then
+		unzip -qd test/tests/testdata/replays "${_srcdir}/replays.zip"
+		# CMakeLists seems to assume `install` is run before `check`, and so
+		# doesn't actually make the `data`/`testdata` symlinks in time
+		mkdir -p "${_builddir}"
+		ln -rs data testdata "${_builddir}/"
+	fi
+
+	vsed -i CMakeLists.txt -e "s; -Werror;;"
+}
+
+post_patch() {
+	if [ "$CROSS_BUILD" ]; then
+		sed -i -e 's#COMMAND ./openrct2#COMMAND openrct2#g' CMakeLists.txt
+	fi
+}
+
+post_install() {
+	# remove useless static lib
+	rm "${DESTDIR}/usr/lib/libopenrct2.a"
+}

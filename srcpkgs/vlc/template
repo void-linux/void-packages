@@ -1,0 +1,135 @@
+# Template file for 'vlc'
+pkgname=vlc
+version=3.0.16
+revision=6
+build_style=gnu-configure
+configure_args="--disable-gme --disable-libtar --enable-jack
+ --enable-live555 --disable-fluidsynth --enable-dvdread
+ --enable-flac --enable-merge-ffmpeg
+ $(vopt_enable notify) $(vopt_enable qt) $(vopt_enable x265)
+ $(vopt_enable svg) $(vopt_enable v4l2) $(vopt_enable smb smbclient)
+ $(vopt_enable lua) $(vopt_enable vaapi libva) $(vopt_enable vdpau)
+ $(vopt_enable chromecast microdns) $(vopt_enable chromecast)
+ $(vopt_enable chromecast sout)"
+short_desc="Cross-platform multimedia player"
+maintainer="Helmut Pozimski <helmut@pozimski.eu>"
+license="GPL-2.0-only, LGPL-2.1-only"
+homepage="https://www.videolan.org/vlc/"
+changelog="https://www.videolan.org/developers/vlc-branch/NEWS"
+distfiles="https://download.videolan.org/pub/videolan/vlc/${version}/vlc-${version}.tar.xz"
+checksum=ffae35fc64f625c175571d2346bc5f6207be99762517f15423e74f18399410f6
+
+lib32disabled=yes
+
+# XXX Add missing deps: gme, telepathy, libtar (for skins2).
+hostmakedepends="automake libtool pkg-config flex gettext libgcrypt-devel
+ live555-devel gettext-devel $(vopt_if lua lua52) $(vopt_if chromecast protobuf)"
+makedepends="
+ avahi-libs-devel dbus-glib-devel faad2-devel ffmpeg-devel freefont-ttf
+ gnutls-devel jack-devel liba52-devel libass-devel libbluray-devel
+ libcdio-devel libdca-devel libdvbpsi-devel libdvdnav-devel libmad-devel
+ libmatroska-devel libmodplug-devel libmpcdec-devel libmpeg2-devel
+ libmtp-devel libplacebo-devel libproxy-devel libsamplerate-devel
+ libSM-devel libsysfs-devel libtheora-devel libupnp-devel
+ libXinerama-devel libXpm-devel libXvMC-devel ncurses-devel opus-devel pulseaudio-devel
+ sndio-devel speex-devel taglib-devel wayland-protocols x264-devel
+ xcb-util-devel xcb-util-keysyms-devel live555-devel libdvdread-devel
+ $(vopt_if notify libnotify-devel) $(vopt_if opengl MesaLib-devel)
+ $(vopt_if qt qt5-x11extras-devel) $(vopt_if qt qt5-svg-devel)
+ $(vopt_if v4l2 v4l-utils-devel) $(vopt_if smb samba-devel)
+ $(vopt_if lua lua52-devel) $(vopt_if vaapi libva-devel)
+ $(vopt_if vdpau libvdpau-devel) $(vopt_if x265 x265-devel)
+ $(vopt_if svg librsvg-devel) $(vopt_if sndio sndio-devel)
+ $(vopt_if chromecast protobuf-devel) $(vopt_if chromecast libmicrodns-devel)"
+depends="freefont-ttf hicolor-icon-theme desktop-file-utils"
+# test/run_vlc.sh fail on CI
+make_check=ci-skip
+
+# Package build options
+build_options="lua notify opengl qt rpi smb svg v4l2 vaapi vdpau x265 sndio chromecast"
+build_options_default="lua smb v4l2 x265 sndio chromecast qt"
+
+CFLAGS="-fcommon"
+CXXFLAGS="-fcommon"
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*|x86_64*|ppc64*)
+		# Enable x265, opengl and samba by default on x86 and ppc64.
+		build_options_default+=" vaapi vdpau opengl"
+		;;
+	ppc|ppc-musl)
+		# Disable altivec on ppc and enable opengl
+		configure_args+=" --disable-altivec"
+		build_options_default+=" opengl"
+		;;
+	armv[67]*)
+		# XXX only for rpi
+		build_options_default+=" rpi"
+		;;
+esac
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" qt5-host-tools"
+fi
+
+if [ "$build_option_rpi" ]; then
+	configure_args+=" --enable-omxil --enable-omxil-vout --enable-rpi-omxil"
+	makedepends+=" rpi-userland-devel"
+
+	CFLAGS+=" -I${XBPS_CROSS_BASE}/opt/vc/include"
+	CFLAGS+=" -I${XBPS_CROSS_BASE}/opt/vc/include/interface/vcos"
+	CFLAGS+=" -I${XBPS_CROSS_BASE}/opt/vc/include/interface/vmcs_host/linux"
+	CFLAGS+=" -I${XBPS_CROSS_BASE}/opt/vc/include/interface/vcos/pthreads"
+
+	LDFLAGS="-L${XBPS_CROSS_BASE}/opt/vc/lib -Wl,-rpath=/opt/vc/lib -lbcm_host -lvcos -lvchiq_arm"
+fi
+
+pre_configure() {
+	NOCONFIGURE=1 ./bootstrap
+
+	sed -i -e 's;tar cvvzf;tar cvzf;' share/Makefile.am share/Makefile.in
+	sed 's|pl_shader_alloc(tc->pl_ctx, NULL, 0, 0);|pl_shader_alloc(tc->pl_ctx, NULL, 0);|' -i modules/video_output/opengl/vout_helper.c
+
+}
+
+pre_install() {
+	if [ "$CROSS_BUILD" ]; then
+		# install .lua files instead of precompiled .luac ones
+		# scripts precompiled with 64 bit host compiler won’t run on 32 bit target
+		# same with respect to endianess
+		sed -i -e "s/\(@list='\$(nobase_vlclib_DATA\)/\1:.luac=.lua/" share/Makefile
+	fi
+}
+
+post_install() {
+	# Remove unused stuff
+	rm -f ${DESTDIR}/usr/lib/vlc/plugins/plugins.dat
+	rm -f ${DESTDIR}/usr/lib/vlc/libcompat.a
+
+	install -d ${DESTDIR}/usr/share/pixmaps
+	cd ${DESTDIR}/usr/share/pixmaps
+	ln -sf ../icons/hicolor/48x48/apps/vlc.png vlc.png
+}
+
+libvlc_package() {
+	short_desc+=" - runtime libraries"
+	pkg_install() {
+		vmove "usr/lib/*.so.*"
+		vmove "usr/lib/vlc/libvlc*.so.*"
+		for f in ${DESTDIR}/usr/lib/vlc/plugins/*; do
+			plugindir="$(basename ${f##${DESTDIR}})"
+			[ "$plugindir" = "gui" ] && continue
+			vmove usr/lib/vlc/plugins/$plugindir
+		done
+	}
+}
+
+vlc-devel_package() {
+	short_desc+=" - development files"
+	depends+=" lib${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/pkgconfig
+		vmove "usr/lib/*.so"
+	}
+}

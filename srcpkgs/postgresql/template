@@ -1,0 +1,191 @@
+# Template file for 'postgresql'
+pkgname=postgresql
+version=9.6.24
+revision=1
+build_style=gnu-configure
+make_build_target=world
+configure_args="--with-openssl --with-python
+ --with-pam --datadir=/usr/share/postgresql --enable-thread-safety
+ --with-perl --with-tcl --without-ldap --without-gssapi --without-krb5
+ --without-bonjour --with-libxml --with-libxslt --disable-rpath
+ --with-system-tzdata=/usr/share/zoneinfo --enable-nls --with-uuid=e2fs"
+hostmakedepends="docbook2x flex gettext openjade"
+makedepends="libfl-devel openssl-devel libuuid-devel libxslt-devel pam-devel perl
+ python-devel readline-devel tcl-devel"
+short_desc="Sophisticated open-source Object-Relational DBMS"
+maintainer="Piotr Wójcik <chocimier@tlen.pl>"
+license="PostgreSQL"
+homepage="https://www.postgresql.org"
+changelog="https://www.postgresql.org/docs/current/release-${version//./-}.html"
+distfiles="https://ftp.postgresql.org/pub/source/v${version}/${pkgname}-${version}.tar.bz2"
+checksum=aeb7a196be3ebed1a7476ef565f39722187c108dd47da7489be9c4fcae982ace
+# initdb fails on github actions, works locally with xbps-uunshare
+make_check=ci-skip
+
+conf_files="
+	/etc/default/${pkgname}
+	/etc/pam.d/${pkgname}
+	/etc/${pkgname}/${pkgname}.conf"
+
+# Create 'postgres' user for the server.
+system_accounts="postgres"
+postgres_homedir="/var/lib/${pkgname}"
+postgres_shell="/bin/sh"
+postgres_descr="PostgreSQL database server user"
+make_dirs="/var/lib/postgresql 0750 postgres postgres"
+
+if [ "$CROSS_BUILD" ]; then
+	configure_args+=" --without-perl --without-python --without-tcl"
+fi
+
+post_patch() {
+	sed -e "s/@VERSION@/$version/" \
+		"$FILESDIR"/pg_config.sh.in >src/common/pg_config.sh.in
+	vsed -i -e "s,@XBPS_SYSROOT@,${XBPS_CROSS_BASE%/}," src/common/Makefile
+}
+
+pre_build() {
+	# http://www.postgresql.org/docs/9.3/static/docguide-toolsets.html
+	export SGML_CATALOG_FILES="/usr/share/sgml/openjade/catalog:/usr/share/sgml/iso8879/catalog:/usr/share/sgml/docbook/dsssl/modular/catalog:/usr/share/sgml/docbook/4.2/catalog"
+}
+
+post_build() {
+	make -C contrib ${makejobs}
+}
+
+post_install() {
+	make -C contrib install
+
+	vmkdir usr/share/man
+	cp -r doc/src/sgml/man? ${DESTDIR}/usr/share/man
+	vmkdir usr/share/doc/postgresql
+	cp -r doc/src/sgml/html ${DESTDIR}/usr/share/doc/postgresql
+	vsv postgresql
+	vlicense COPYRIGHT
+
+	vinstall ${FILESDIR}/${pkgname}.confd 644 etc/default ${pkgname}
+	vinstall ${FILESDIR}/${pkgname}.pam 644 etc/pam.d ${pkgname}
+	vinstall ${DESTDIR}/usr/share/${pkgname}/${pkgname}.conf.sample \
+		644 etc/${pkgname} ${pkgname}.conf
+	vbin src/common/pg_config.sh
+
+	sed -i 's/install_bin = .*/install_bin = install/g' \
+		${DESTDIR}/usr/lib/postgresql/pgxs/src/Makefile.global
+}
+
+postgresql-doc_package() {
+	short_desc="PostgreSQL documentation"
+	pkg_install() {
+		vmove usr/share/doc
+	}
+}
+
+postgresql9.6-libs_package() {
+	short_desc="PostgreSQL shared libraries"
+	pkg_install() {
+		vmove "usr/lib/*.so*"
+		for d in $(find ${DESTDIR}/usr/share/locale \
+		    -type f -name libpq5\*); do
+			mkdir -p ${PKGDESTDIR}/$(dirname ${d#${DESTDIR}})
+			mv ${d} ${PKGDESTDIR}/$(dirname ${d#${DESTDIR}})
+		done
+	}
+}
+
+postgresql9.6-libs-devel_package() {
+	depends="postgresql-libs>=$version"
+	short_desc="PostgreSQL shared libraries (development files)"
+	pkg_install() {
+		for f in pg_config ecpg; do
+			vmove usr/bin/${f}
+			vmove "usr/share/man/man1/$(basename ${f})*"
+		done
+		vmove usr/bin/pg_config.sh
+		vmove usr/include
+		vmove "usr/lib/*.a"
+		vmove "usr/lib/pkgconfig/*"
+		vmove usr/share/man/man3
+		vmove usr/lib/postgresql/pgxs
+		for d in $(find ${DESTDIR}/usr/share/locale \
+		   -type f -name pg_config\* -o -name ecpg\*); do
+			mkdir -p ${PKGDESTDIR}/$(dirname ${d#${DESTDIR}})
+			mv ${d} ${PKGDESTDIR}/$(dirname ${d#${DESTDIR}})
+		done
+	}
+}
+
+# XXX disabled for now in cross builds.
+if [ -z "$CROSS_BUILD" ]; then
+
+postgresql-plperl_package() {
+	depends="postgresql>=$version"
+	short_desc="PL/Perl procedural language for PostgreSQL"
+	pkg_install() {
+		vmove "usr/lib/postgresql/plperl*"
+		for d in $(find ${DESTDIR}/usr/share/locale \
+		   -type f -name plperl\*); do
+			mkdir -p ${PKGDESTDIR}/$(dirname ${d#${DESTDIR}})
+			mv ${d} ${PKGDESTDIR}/$(dirname ${d#${DESTDIR}})
+		done
+	}
+}
+
+postgresql-plpython_package() {
+	depends="postgresql>=$version"
+	short_desc="PL/Python procedural language for PostgreSQL"
+	pkg_install() {
+		vmove "usr/lib/postgresql/plpython*"
+		for d in $(find ${DESTDIR}/usr/share/locale \
+		   -type f -name plpython\*); do
+			mkdir -p ${PKGDESTDIR}/$(dirname ${d#${DESTDIR}})
+			mv ${d} ${PKGDESTDIR}/$(dirname ${d#${DESTDIR}})
+		done
+	}
+}
+
+postgresql-pltcl_package() {
+	depends="postgresql>=$version"
+	short_desc="PL/Tcl procedural language for PostgreSQL"
+	pkg_install() {
+		vmove "usr/bin/pltcl*"
+		vmove "usr/lib/postgresql/pltcl*"
+		for d in $(find ${DESTDIR}/usr/share/locale \
+		   -type f -name pltcl\*); do
+			mkdir -p ${PKGDESTDIR}/$(dirname ${d#${DESTDIR}})
+			mv ${d} ${PKGDESTDIR}/$(dirname ${d#${DESTDIR}})
+		done
+		vmove "usr/share/postgresql/*.pltcl"
+	}
+}
+
+fi # !CROSS_BUILD
+
+postgresql-client_package() {
+	short_desc="Client frontends programs for PostgreSQL"
+	pkg_install() {
+		for f in clusterdb createdb createlang createuser dropdb droplang \
+			dropuser pg_dump pg_dumpall pg_isready pg_restore psql reindexdb \
+			vacuumdb; do
+			vmove usr/bin/${f}
+			vmove usr/share/man/man1/$(basename ${f}).1
+		done
+		vmove usr/share/man/man7
+		for d in $(find ${DESTDIR}/usr/share/locale \
+		   -type f -name pgscripts\* -o \
+			   -name psql\* -o \
+			   -name pg_dump\*); do
+			mkdir -p ${PKGDESTDIR}/$(dirname ${d#${DESTDIR}})
+			mv ${d} ${PKGDESTDIR}/$(dirname ${d#${DESTDIR}})
+		done
+		vmkdir usr/share/postgresql
+		mv ${DESTDIR}/usr/share/postgresql/psqlrc.* \
+			${PKGDESTDIR}/usr/share/postgresql
+	}
+}
+
+postgresql-contrib_package() {
+	short_desc="PostgreSQL contributed programs and extensions"
+	pkg_install() {
+		make -C contrib install DESTDIR=${PKGDESTDIR}
+	}
+}

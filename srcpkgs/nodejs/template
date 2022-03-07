@@ -1,0 +1,113 @@
+# Template file for 'nodejs'
+pkgname=nodejs
+version=16.14.0
+revision=1
+wrksrc="node-v${version}"
+# Need these for host v8 for torque, see https://github.com/nodejs/node/pull/21079
+hostmakedepends="which pkg-config python3 libatomic-devel zlib-devel
+ $(vopt_if icu icu-devel) $(vopt_if ssl openssl-devel) $(vopt_if libuv libuv-devel)
+ $(vopt_if nghttp2 nghttp2-devel) $(vopt_if cares c-ares-devel)"
+makedepends="libatomic-devel zlib-devel $(vopt_if icu icu-devel)
+ $(vopt_if ssl openssl-devel) $(vopt_if libuv libuv-devel)
+ $(vopt_if nghttp2 nghttp2-devel) $(vopt_if cares c-ares-devel)"
+checkdepends="procps-ng iana-etc"
+short_desc="Evented I/O for V8 javascript"
+maintainer="Enno Boland <gottox@voidlinux.org>"
+license="MIT"
+homepage="https://nodejs.org/"
+distfiles="${homepage}/dist/v${version}/node-v${version}.tar.gz"
+checksum=29dfce13650f063ff009d18349636333fa4305468b6a8965d442c2e88b1dd60f
+python_version=3
+
+build_options="ssl libuv icu nghttp2 cares"
+desc_option_ssl="Enable shared openssl"
+desc_option_libuv="Enable shared libuv"
+desc_option_icu="Enable shared icu"
+desc_option_nghttp2="Enable shared nghttp2"
+desc_option_cares="Enable shared c-ares"
+build_options_default="ssl libuv icu nghttp2 cares"
+
+replaces="iojs>=0"
+conflicts="nodejs-lts nodejs-lts-10"
+provides="nodejs-runtime-0_1"
+
+# https://build.voidlinux.org/builders/i686_builder/builds/27325/steps/shell_3/logs/stdio
+if [ "$XBPS_WORDSIZE" = 32 ]; then
+	LDFLAGS="-Wl,--no-keep-memory"
+fi
+
+if [ "$XBPS_WORDSIZE" -ne "$XBPS_TARGET_WORDSIZE" ]; then
+	nocross="host and target must have the same pointer size"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	ppc64*) ;;
+	ppc*) broken="Node 12.x does not support 32-bit ppc" ;;
+esac
+
+CFLAGS="-D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
+CXXFLAGS="-D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
+
+post_patch() {
+	# XXX Drop after c-ares 1.17.3 has been released.
+	vsed -i -e 's:<ares_nameser.h>:<arpa/nameser.h>:g' src/cares_wrap.h
+}
+
+do_configure() {
+	local _args
+
+	export LD="$CXX"
+	if [ "$CROSS_BUILD" ]; then
+		case "$XBPS_TARGET_MACHINE" in
+			arm*) _args="--dest-cpu=arm" ;;
+			aarch64*) _args="--dest-cpu=arm64" ;;
+			ppc64*) _args="--dest-cpu=ppc64" ;;
+			ppc*) _args="--dest-cpu=ppc" ;;
+			mipsel*) _args="--dest-cpu=mipsel" ;;
+			mips*) _args="--dest-cpu=mips" ;;
+			i686*) _args="--dest-cpu=x86" ;;
+			x86_64*) _args="--dest-cpu=x86_64" ;;
+			*) msg_error "$pkgver: cannot be cross compiled for ${XBPS_TARGET_MACHINE}.\n" ;;
+		esac
+		# this is necessary - for example, normally compiling from ppc64le
+		# to ppc64 or from glibc to musl is considered non-cross-compiling
+		# by the build system, because it's technically the same architecture
+		#
+		# that results in the toolset built for target only, and attempting
+		# to execute it within the build system fails
+		_args+=" --cross-compiling"
+	fi
+	./configure --prefix=/usr --shared-zlib \
+		$(vopt_if icu --with-intl=system-icu) \
+		$(vopt_if ssl --shared-openssl) \
+		$(vopt_if libuv --shared-libuv) \
+		$(vopt_if nghttp2 --shared-nghttp2) \
+		$(vopt_if cares --shared-cares) ${_args}
+}
+
+do_build() {
+	if [ "$CROSS_BUILD" ]; then
+		make LD="$CXX" LDFLAGS+=-ldl ${makejobs} PORTABLE=1 V=1
+	else
+		make LD="$CXX" LDFLAGS+=-ldl ${makejobs} V=1
+	fi
+}
+
+do_check() {
+	local CI_SKIP_TESTS="test-cluster-primary-error.js,test-cluster-primary-kill.js"
+	make CI_SKIP_TESTS="$CI_SKIP_TESTS" LD="$CXX" LDFLAGS+=-ldl ${makejobs} V=1 test-only
+}
+
+do_install() {
+	make LD="$CXX" LDFLAGS+=-ldl DESTDIR="$DESTDIR" install
+	rm $DESTDIR/usr/include/node/openssl -rf
+	vlicense LICENSE
+}
+
+nodejs-devel_package() {
+	short_desc+=" (development files)"
+	conflicts="nodejs-lts-devel nodejs-lts-10-devel"
+	pkg_install() {
+		vmove usr/include
+	}
+}

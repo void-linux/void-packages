@@ -1,0 +1,129 @@
+# Template file for 'sagemath'
+pkgname=sagemath
+version=9.5
+revision=1
+wrksrc=sage-$version
+build_wrksrc=pkgs/sagemath-standard
+build_style=python3-module
+_bindir=/usr/lib/sagemath/bin
+make_install_args="--install-scripts=$_bindir"
+hostmakedepends="m4 pkg-config python3-Cython python3-Jinja2 python3-pkgconfig
+ python3-setuptools"
+makedepends="arb-devel boost-devel brial-devel cliquer-devel ecl eclib-devel
+ ecm-devel fflas-ffpack flintlib-devel gap-devel gd-devel giac-devel glpk-devel
+ gsl-devel iml-devel lcalc-devel libbraiding-devel libhomfly-devel libmpc-devel
+ libpng-devel linbox-devel lrcalc-devel m4ri-devel m4rie-devel mpfi-devel
+ mpfr-devel ntl-devel openblas-devel pari-devel planarity-devel python3-cypari2
+ python3-cysignals python3-devel python3-gmpy2 python3-memory_allocator
+ python3-numpy rankwidth-devel singular symmetrica-devel zn_poly"
+depends="FlintQS eclib-devel fflas-ffpack flintlib-devel gcc-fortran gd-devel
+ gfan giac gsl-devel gzip libpng-devel linbox-devel m4ri-devel maxima-ecl
+ mpfr-devel nauty ntl-devel palp pari-devel pari-elldata-small pari-galdata
+ pari-galpol-small pari-seadata-small pkg-config python3-Cython python3-cypari2
+ python3-cysignals python3-devel python3-fpylll python3-ipython
+ python3-ipython_ipykernel python3-jupyter_ipywidgets python3-matplotlib
+ python3-memory_allocator python3-networkx python3-pip python3-pkgconfig
+ python3-pplpy python3-primecountpy python3-requests python3-scipy
+ python3-sympy python3-traitlets sage-data-combinatorial_designs
+ sage-data-conway_polynomials sage-data-elliptic_curves sage-data-graphs
+ sage-data-polytopes_db sympow tachyon"
+checkdepends="$depends"
+short_desc="Open source mathematics software"
+maintainer="Gonzalo Tornaría <tornaria@cmat.edu.uy>"
+license="GPL-2.0-or-later"
+homepage="http://sagemath.org/"
+distfiles="https://github.com/sagemath/sage/archive/refs/tags/$version.tar.gz"
+checksum=8d70a3b26080802c5b2e33dda4c23795d494d8216a0c2ecfcd608ebab0e64ff6
+
+post_patch() {
+	# these are unused and nothing else uses ratpoints
+	rm sage/libs/ratpoints.{pyx,pxd}
+
+	# git tree needs bootstrapping
+	pushd $wrksrc/build/pkgs/sagelib
+	PATH=../../bin:$PATH BOOTSTRAP_QUIET=no ./bootstrap
+	popd
+}
+
+do_configure() {
+	# set variables in sage.env since we do not install sage_conf
+	cat >> sage/env.py <<-EOF
+	CONWAY_POLYNOMIALS_DATA_DIR = "/usr/share/sagemath/conway_polynomials"
+	GRAPHS_DATA_DIR = "/usr/share/sagemath/graphs"
+	ELLCURVE_DATA_DIR = "/usr/share/sagemath/ellcurves"
+	POLYTOPE_DATA_DIR = "/usr/share/sagemath/reflexive_polytopes"
+	COMBINATORIAL_DESIGN_DATA_DIR = "/usr/share/sagemath/combinatorial_designs"
+	CREMONA_MINI_DATA_DIR = "/usr/share/sagemath/cremona"
+	CREMONA_LARGE_DATA_DIR = "/usr/share/sagemath/cremona"
+	EOF
+
+	# don't install sage-venv-config: it is used to set SAGE_VENV=/usr and
+	# then sage-env prepends "$SAGE_VENV/bin" to PATH which is undesired
+	vsed -e '/sage-venv-config/d' -i $wrksrc/src/setup.cfg
+}
+
+pre_build() {
+	export PYTHONPATH=../sage-setup
+	export SAGE_NUM_THREADS="$XBPS_MAKEJOBS"
+}
+
+post_build() {
+	_scripts=$(cd build/scripts* && pwd)
+	cat >> $_scripts/sage-env-config <<-'EOF'
+	PATH=$(dirname $SELF):$PATH
+	EOF
+}
+
+pre_install() {
+	export PYTHONPATH=../sage-setup
+	export SAGE_NUM_THREADS="$XBPS_MAKEJOBS"
+}
+
+post_install() {
+	# fix jupyter kernel spec
+	vsed -i -e 's|"/usr/bin/sage", "--python"|"/usr/bin/python"|' \
+		${DESTDIR}/usr/share/jupyter/kernels/sagemath/kernel.json
+	# replace broken symlinks by good copies (sagemath logo images)
+	for file in $(ls sage/ext_data/notebook-ipython); do
+		rm ${DESTDIR}/usr/share/jupyter/kernels/sagemath/$file
+		cp -a sage/ext_data/notebook-ipython/$file \
+			${DESTDIR}/usr/share/jupyter/kernels/sagemath
+	done
+	# we don't have docs here
+	rm ${DESTDIR}/usr/share/jupyter/kernels/sagemath/doc
+	# we don't have threejs in void
+	rm ${DESTDIR}/usr/share/jupyter/nbextensions/threejs-sage
+
+	# symlink main binary
+	vmkdir usr/bin
+	ln -s $_bindir/sage ${DESTDIR}/usr/bin/sage-${version}
+	ln -s sage-${version} ${DESTDIR}/usr/bin/sage
+}
+
+do_check() {
+	_scripts=$(cd build/scripts* && pwd)
+	export PYTHONPATH=$(cd build/lib* && pwd)
+
+	# get out of $build_wrksrc, otherwise python picks the wrong sage module
+	cd $(mktemp -dp build)
+
+	if [ -f ${XBPS_DISTDIR}/sagemath-check ] ; then
+		_sed='s|#.*||;/^\s*$/d;s|[^ ]*/sage/|'$PYTHONPATH'/sage/|g' \
+		_test_files=$(sed -e "$_sed" ${XBPS_DISTDIR}/sagemath-check)
+	fi
+	if [ -z "$_test_files" ]; then
+		_test_files=--all
+	fi
+	cp ${FILESDIR}/timings2.json .
+	_test_args="--stats_path=timings2.json"
+	if [ "$XBPS_CHECK_PKGS" = full ]; then
+		_test_args+=" --long --warn-long 60.0"
+	else
+		_test_args+=" --warn-long 30.0"
+	fi
+	if [ "$XBPS_BUILD_ENVIRONMENT" = "void-packages-ci" ]; then
+		# for CI use a predictable random seed
+		_test_args+=" --random-seed=0"
+	fi
+	$_scripts/sage -tp ${XBPS_MAKEJOBS} ${_test_args} ${_test_files}
+}

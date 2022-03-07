@@ -1,0 +1,99 @@
+# Template file for 'netpbm'
+pkgname=netpbm
+# from http://svn.code.sf.net/p/netpbm/code/advanced/doc/HISTORY
+version=10.97.05
+revision=1
+_githash=9f95511f291ecc492e283932064857717678bb19
+_githash_guide=4571e910b4cc98268539768c98d9303dc052847b
+create_wrksrc=yes
+build_wrksrc="netpbm-mirror-${_githash}"
+hostmakedepends="pkg-config perl python flex"
+makedepends="libX11-devel libjpeg-turbo-devel libpng-devel libxml2-devel
+ tiff-devel zlib-devel"
+short_desc="Toolkit for manipulation of graphic images"
+maintainer="Leah Neukirchen <leah@vuxu.org>"
+license="BSD-3-Clause,GPL-2.0-only,custom:netpbm"
+homepage="http://netpbm.sourceforge.net/"
+distfiles="https://github.com/leahneukirchen/netpbm-mirror/archive/${_githash}.tar.gz
+ https://github.com/leahneukirchen/netpbm-mirror/archive/${_githash_guide}.tar.gz"
+checksum="8d42d131931141d79848bf9320b63b8858c51651c0f1ebb2fc2da7e2bcd8c78d
+ b782b5092a3da5fe804084f7e8eb2452e777dcbe73bc0f9634671eafe6a07392"
+
+post_extract() {
+	cd $build_wrksrc
+	for p in ${FILESDIR}/*.patch; do
+		patch -Np1 -i $p
+	done
+
+	cd ../netpbm-mirror-${_githash_guide}
+	vsed -i 's/ id="pamhomography"//g' pamhomography.html
+}
+
+do_configure() {
+	local endian bitsperlong
+	cat config.mk.in ${FILESDIR}/config.mk >config.mk
+	if [ "$XBPS_TARGET_MACHINE" = "i686" -o "$XBPS_TARGET_MACHINE" = "x86_64" ]; then
+		echo "WANT_SSE = Y" >>config.mk
+	fi
+	sed -i 's|misc|share/netpbm|' common.mk
+	sed -i 's|/link|/lib|' lib/Makefile
+	sed -i 's|/sharedlink|/lib|' lib/Makefile
+	sed -i 's|install.manwebmain install.manweb install.man|install.man|' GNUmakefile
+	if [ "$CROSS_BUILD" ]; then
+		# Patch buildutils/endiangen.c to return the endianess
+		# and word size for the target architecture
+		# XXX: perhaps add XBPS_ENDIAN to common/cross-profiles/*.sh
+		case "$XBPS_TARGET_MACHINE" in
+			ppc|ppc-musl|ppc64|ppc64-musl) endian="ENDIAN_BIG";;
+			*) endian="ENDIAN_LITTLE";;
+		esac
+		# XXX: perhaps add XBPS_BITSPERLONG to common/cross-files/*.sh
+		case "$XBPS_TARGET_MACHINE" in
+			aarch64*|x86_64*|ppc64*) bitsperlong="64";;
+			*) bitsperlong="32";;
+		esac
+		vsed -i buildtools/endiangen.c \
+			-e "s;byteOrder();$endian;" \
+			-e "s;bitsPerLong();$bitsperlong;"
+		# ... now build the tools for the host
+		CC=$CC_host CFLAGS="$CFLAGS_host" \
+		LD=$LD_host LDFLAGS="$LDFLAGS_host" \
+			make -C buildtools
+	fi
+}
+
+do_build() {
+	make ${makejobs} CC=$CC CFLAGS="$CFLAGS" LDFLAGS_FOR_BUILD=
+	make MAKEMAN="${PWD}/buildtools/makeman" USERGUIDE=. \
+		-C ../netpbm-mirror-${_githash_guide} \
+		-f "${PWD}/buildtools/manpage.mk" manpages
+}
+
+do_install() {
+	make pkgdir=$DESTDIR/usr PKGMANDIR=share/man install-run install-dev
+	vmkdir usr/share/man/man1
+	vmkdir usr/share/man/man3
+	vmkdir usr/share/man/man5
+	make MAKEMAN="${PWD}/buildtools/makeman" MANDIR="$DESTDIR/usr/share/man" USERGUIDE=. \
+		-C ../netpbm-mirror-${_githash_guide} \
+		-f "${PWD}/buildtools/manpage.mk" installman
+	vlicense doc/copyright_summary LICENSE
+}
+
+libnetpbm_package() {
+	replaces="${sourcepkg}<10.66.03_2"
+	short_desc+=" - runtime libraries"
+	pkg_install() {
+		vmove usr/lib/*.so.*
+	}
+}
+
+libnetpbm-devel_package() {
+	replaces="${sourcepkg}<10.66.03_2"
+	depends="libnetpbm>=${version}_${revision}"
+	short_desc+=" - development files"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/*.so
+	}
+}

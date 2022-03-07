@@ -1,0 +1,244 @@
+# Template file for 'rust'
+# partially adapted from Alpine/Adélie's Rust APKBUILD
+#
+# Permission to use rust and cargo trademark is granted.
+# See: https://github.com/rust-lang/core-team/issues/4
+#
+# Always make sure custom distfiles used for bootstrap are
+# uploaded to https://alpha.de.repo.voidlinux.org/distfiles/
+#
+pkgname=rust
+version=1.57.0
+revision=1
+wrksrc="rustc-${version}-src"
+hostmakedepends="cmake curl pkg-config python3 tar cargo-bootstrap"
+makedepends="libffi-devel ncurses-devel libxml2-devel zlib-devel llvm12"
+depends="rust-std"
+short_desc="Safe, concurrent, practical systems language"
+maintainer="Enno Boland <gottox@voidlinux.org>"
+license="MIT, Apache-2.0"
+homepage="https://www.rust-lang.org/"
+distfiles="https://static.rust-lang.org/dist/rustc-${version}-src.tar.gz"
+checksum=3546f9c3b91b1f8b8efd26c94d6b50312c08210397b4072ed2748e2bd4445c1a
+lib32disabled=yes
+make_check=no # CBA for now
+
+build_options="bindist"
+desc_option_bindist="Generate tarballs for bootstrap"
+
+if [ "$XBPS_LIBC" = "musl" ]; then
+	hostmakedepends+=" libexecinfo-devel"
+fi
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	makedepends+=" libexecinfo-devel"
+fi
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" rust llvm12"
+	# These are required for building the buildhost's stage0/1
+	hostmakedepends+=" libffi-devel libxml2-devel ncurses-devel zlib-devel"
+else
+	hostmakedepends+=" rust-bootstrap"
+fi
+
+# we need this because cargo verifies checksums of all files in vendor
+# crates when it builds and gives us no way to override or update the
+# file sanely... so just clear out the file list
+_clear_vendor_checksums() {
+	sed -i 's/\("files":{\)[^}]*/\1/' vendor/$1/.cargo-checksum.json
+}
+
+post_patch() {
+	rm -rf src/llvm-project
+	if [ "$build_option_bindist" ]; then
+		for x in ${FILESDIR}/patches/static-llvm/*.patch; do
+			msg_normal "Applying patch $x\n"
+			patch -sNp1 -i ${x}
+		done
+	fi
+
+	# clear out all the checksum nonsense of patched vendor crates
+	_clear_vendor_checksums libc
+	_clear_vendor_checksums typenum
+	_clear_vendor_checksums cc
+	_clear_vendor_checksums rustc-ap-rustc_target
+	_clear_vendor_checksums target-lexicon
+	_clear_vendor_checksums tikv-jemallocator
+}
+
+do_configure() {
+	local _local_rebuild _use_debug _use_debug_rustc _use_rpath _use_docs _llvm_shared
+
+	if [ "$CROSS_BUILD" ]; then
+		_local_rebuild="true"
+	else
+		_local_rebuild="false"
+	fi
+
+	# disable rustc debug info as it bloats up rust-std significantly
+	# set to 1 or 2 if you wish to have debug info for rustc, it won't
+	# link on 32-bit platforms though (too big)
+	_use_debug_rustc="0"
+	# just disable debug for now
+	_use_debug="0"
+
+	# if true, the binaries will be built with rpath, so the binaries will be
+	# usable directly from the build directory, this is not desirable for
+	# packaging but is useful when building bootstrap binaries
+	if [ "$build_option_bindist" ]; then
+		_use_rpath="true"
+		_use_docs="false"
+		_llvm_shared="false"
+	else
+		_use_rpath="false"
+		_use_docs="true"
+		_llvm_shared="true"
+	fi
+
+	cat > config.toml <<- EOF
+		changelog-seen = 2
+		[llvm]
+		ninja = false
+		link-shared = ${_llvm_shared}
+		[build]
+		build = "${RUST_BUILD}"
+		host = [ "${RUST_TARGET}" ]
+		target = [ "${RUST_TARGET}" ]
+		cargo = "/usr/bin/cargo"
+		rustc = "/usr/bin/rustc"
+		submodules = false
+		python = "python3"
+		locked-deps = true
+		vendor = true
+		full-bootstrap = false
+		local-rebuild = ${_local_rebuild}
+		extended = false
+		docs = ${_use_docs}
+		tools = []
+		[install]
+		prefix = "/usr"
+		[rust]
+		optimize = true
+		debug = false
+		codegen-units = 1
+		codegen-units-std = 1
+		debuginfo-level = ${_use_debug}
+		debuginfo-level-rustc = ${_use_debug_rustc}
+		debuginfo-level-tests = 0
+		incremental = false
+		parallel-compiler = false
+		channel = "stable"
+		rpath = ${_use_rpath}
+		verbose-tests = true
+		dist-src = false
+		jemalloc = false
+		llvm-libunwind = "no"
+		codegen-tests = false
+		[dist]
+		src-tarball = false
+		[target.${RUST_BUILD}]
+		llvm-config = "/usr/bin/llvm-config"
+		crt-static = false
+		cc = "${CC_host:-$CC}"
+		cxx = "${CXX_host:-$CXX}"
+		ar = "${AR_host:-$AR}"
+		linker = "${CC_host:-$CC}"
+	EOF
+
+	if [ "$CROSS_BUILD" ]; then
+		cat >> config.toml <<- EOF
+			[target.${RUST_TARGET}]
+			llvm-config = "/usr/bin/llvm-config"
+			crt-static = false
+			cc = "${CC}"
+			cxx = "${CXX}"
+			ar = "${AR}"
+			linker = "${CC}"
+			sysroot = "${XBPS_CROSS_BASE}"
+		EOF
+	fi
+}
+
+# Set the correct CFLAGS for the build host, we have to compile libbacktrace
+# for it during stage1. Otherwise it attemps to use CFLAGS, which are the CFLAGS
+# of the cross host.
+do_build() {
+	export RUST_BACKTRACE=1
+	export CARGO_HOME="$wrksrc/.cargo"
+	export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+	# prevent sysroot from leaking in
+	export RUSTFLAGS=""
+	env CFLAGS_${RUST_BUILD}="${CFLAGS_host}" \
+		CXXFLAGS_${RUST_BUILD}="${CXXFLAGS_host}" \
+		CFLAGS_${RUST_TARGET}="${CFLAGS}" \
+		CXXFLAGS_${RUST_TARGET}="${CXXFLAGS}" \
+		python3 x.py dist --jobs $XBPS_MAKEJOBS
+}
+
+do_check() {
+	export RUST_BACKTRACE=1
+
+	python3 x.py test ${makejobs} --no-doc --no-fail-fast \
+		src/test/codegen \
+		src/test/codegen-units \
+		src/test/incremental \
+		src/test/mir-opt \
+		src/test/pretty \
+		src/test/run-make \
+		src/test/run-make-fulldeps \
+		src/test/ui \
+		src/test/ui-fulldeps
+}
+
+do_install() {
+	if [ "$build_option_bindist" ]; then
+		mkdir -p ${XBPS_SRCDISTDIR}/distfiles
+		install -m 0644 \
+			build/dist/rustc-${version}-${RUST_TARGET}.tar.xz \
+			build/dist/rust-std-${version}-${RUST_TARGET}.tar.xz \
+			${XBPS_SRCDISTDIR}/distfiles
+		exit 1
+	fi
+
+	vmkdir usr
+	tar xf build/dist/rustc-${version}-${RUST_TARGET}.tar.gz \
+	 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
+	tar xf build/dist/rust-std-${version}-${RUST_TARGET}.tar.gz \
+	 -C "$DESTDIR/usr/lib" --strip-components=3 --exclude=manifest.in
+	tar xf build/dist/rustc-dev-${version}-${RUST_TARGET}.tar.gz \
+	 -C "$DESTDIR/usr/lib" --strip-components=3 --exclude=manifest.in
+	tar xf build/dist/rust-docs-${version}-${RUST_TARGET}.tar.gz \
+	 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
+
+	vlicense COPYRIGHT
+	vlicense LICENSE-APACHE
+	vlicense LICENSE-MIT
+
+	cd ${DESTDIR}/usr/lib
+	# symlinks instead of copies
+	mv *.so rustlib/${RUST_TARGET}/lib
+	ln -sf rustlib/${RUST_TARGET}/lib/*.so .
+
+	# executable used for split dwarf, currently unstable on linux.
+	# it's copied directly from the local llvm package, but
+	# FIXME: cross builds are installing the version from the build machine,
+	# it shouldn't be necessary to remove it
+	rm rustlib/${RUST_TARGET}/bin/rust-llvm-dwp
+}
+
+rust-doc_package() {
+	short_desc+=" - documentation"
+	pkg_install() {
+		vmove usr/share/doc
+	}
+}
+
+rust-std_package() {
+	short_desc+=" - standard library"
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		depends="libexecinfo-devel"
+	fi
+	pkg_install() {
+		vmove usr/lib/rustlib
+	}
+}

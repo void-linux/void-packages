@@ -1,0 +1,205 @@
+# Template file for 'firefox-esr'
+#
+# THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/firefox-esr-i18n".
+#
+pkgname=firefox-esr
+version=91.6.0
+revision=1
+wrksrc="firefox-${version}"
+build_helper="rust"
+short_desc="Mozilla Firefox web browser - Extended Support Release"
+maintainer="Orphaned <orphan@voidlinux.org>"
+license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
+homepage="https://www.mozilla.org/firefox/"
+distfiles="${MOZILLA_SITE}/firefox/releases/${version}esr/source/firefox-${version}esr.source.tar.xz
+ https://github.com/chmeeedalf/gecko-dev/files/7729086/esrppcjit.tar.gz"
+checksum="7e802832152c39588b9a5c8392e90c1b00036bf948fa4a97a7af0d1435ba09a1
+ 5e926a8be5d6d4949c3bc3eb98e2103692eaa26a98928db432b1d44b535f7241"
+
+lib32disabled=yes
+
+hostmakedepends="autoconf213 unzip zip pkg-config perl python3 yasm rust cargo
+ llvm clang nodejs-lts cbindgen python nasm which tar"
+makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel icu-devel
+ pixman-devel libevent-devel libnotify-devel libvpx-devel
+ libXrender-devel libXcomposite-devel libSM-devel libXt-devel rust-std
+ libXdamage-devel freetype-devel $(vopt_if alsa alsa-lib-devel)
+ $(vopt_if dbus dbus-glib-devel) $(vopt_if pulseaudio pulseaudio-devel)
+ $(vopt_if xscreensaver libXScrnSaver-devel)
+ $(vopt_if sndio sndio-devel) $(vopt_if jack jack-devel)"
+depends="nss>=3.66 nspr>=4.32 desktop-file-utils hicolor-icon-theme"
+conflicts="firefox>=0"
+
+build_options="alsa jack dbus pulseaudio xscreensaver sndio wayland"
+build_options_default="alsa jack dbus pulseaudio xscreensaver sndio wayland"
+
+case $XBPS_TARGET_MACHINE in
+	armv[56]*) broken="required NEON extensions are not supported on armv6" ;;
+	ppc64*) ;;
+	ppc*) broken="xptcall bitrot" ;;
+esac
+
+if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
+	makedepends+=" libatomic-devel"
+fi
+
+# work around large debug symbols on 32-bit hosts
+# cargo:warning=cc1plus: out of memory allocating 65536 bytes after a total of 1010126848 bytes
+if [ "$XBPS_WORDSIZE" = "32" ]; then
+	nodebug=yes
+fi
+
+# we need this because cargo verifies checksums of all files in vendor
+# crates when it builds and gives us no way to override or update the
+# file sanely... so just clear out the file list
+_clear_vendor_checksums() {
+	sed -i 's/\("files":{\)[^}]*/\1/' third_party/rust/$1/.cargo-checksum.json
+}
+
+post_extract() {
+	case "$XBPS_TARGET_MACHINE" in
+	*-musl)
+		cp "${FILESDIR}/stab.h" toolkit/crashreporter/google-breakpad/src/
+		;;
+	esac
+
+	# ppc64le jit, see --enable-jit later
+	mv ../js/src/jit/ppc64 js/src/jit
+
+	# Mozilla API keys (see https://location.services.mozilla.com/api)
+	# Note: This is for Void Linux use ONLY.
+	echo -n "cd894504-7a2a-4263-abff-ff73ee89ffca" > mozilla-api-key
+}
+
+post_patch() {
+	_clear_vendor_checksums num-traits
+}
+
+do_build() {
+	cp "${FILESDIR}/mozconfig" "${wrksrc}/.mozconfig"
+
+	case "$XBPS_TARGET_MACHINE" in
+	*-musl)
+		echo "ac_add_options --disable-jemalloc" >>.mozconfig
+		echo "ac_add_options --disable-gold" >>.mozconfig
+		;;
+	esac
+
+	case "$XBPS_TARGET_MACHINE" in
+	x86_64*|i686*|arm*)
+		echo "ac_add_options --disable-elf-hack" >>.mozconfig
+		;;
+	esac
+
+	# webrtc currently fails to build on 32-bit ppc...
+	# also enable jit on ppc64le, which is patched in earlier
+        # https://www.talospace.com/2021/12/91esr-with-baseline-compilerbaseline.html
+	case "$XBPS_TARGET_MACHINE" in
+	ppc64le*) echo "ac_add_options --enable-jit" >>.mozconfig ;;
+	ppc64*) echo "ac_add_options --disable-jit" >>.mozconfig ;;
+	ppc*)
+		echo "ac_add_options --disable-jit" >>.mozconfig
+		echo "ac_add_options --disable-webrtc" >>.mozconfig
+		;;
+	esac
+
+	if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
+		export LDFLAGS+=" -latomic"
+	fi
+
+	if [ "$CROSS_BUILD" ]; then
+		BINDGEN_INCLUDE_FLAGS=$( $CPP -x c++ -v /dev/null -o /dev/null 2>&1 | \
+			sed -n '/#include <...> search starts here:/,/End of search list./p' | \
+			sed '1,1d;$d' | sed  's/^ /-I/' | paste -s )
+
+		export BINDGEN_CFLAGS="--target=$XBPS_CROSS_TRIPLET \
+			--sysroot=${XBPS_CROSS_BASE} ${BINDGEN_INCLUDE_FLAGS}"
+		export HOST_CC=cc
+		export TARGET_CC="${CC}"
+		export HOST_CFLAGS="${XBPS_CFLAGS}"
+		export HOST_CXXFLAGS="${XBPS_CXXFLAGS}"
+		export ac_cv_sqlite_secure_delete=yes \
+			ac_cv_sqlite_threadsafe=yes \
+			ac_cv_sqlite_enable_fts3=yes \
+			ac_cv_sqlite_dbstat_vtab=yes \
+			ac_cv_sqlite_enable_unlock_notify=yes \
+			ac_cv_prog_hostcxx_works=1
+
+		echo "ac_add_options --target=$XBPS_CROSS_TRIPLET" >>.mozconfig
+		echo "ac_add_options --host=$XBPS_TRIPLET" >>.mozconfig
+	else
+		echo "ac_add_options --target=$XBPS_TRIPLET" >>.mozconfig
+		echo "ac_add_options --host=$XBPS_TRIPLET" >>.mozconfig
+	fi
+
+	mkdir -p third_party/rust/libloading/.deps
+
+	case "$XBPS_TARGET_MACHINE" in
+	armv7*)
+		export CFLAGS+=" -mfpu=neon -Wno-psabi"
+		export CXXFLAGS+=" -mfpu=neon -Wno-psabi"
+		;;
+	esac
+
+	# work around large debug symbols on 32-bit hosts
+	if [ "$XBPS_WORDSIZE" = "32" ]; then
+		echo "ac_add_options --disable-debug-symbols" >>.mozconfig
+		echo "ac_add_options --disable-debug" >>.mozconfig
+		export LDFLAGS+=" -Wl,--no-keep-memory"
+		# patch the rust debug level, this is hardcoded
+		vsed -i 's/debug_info = "2"/debug_info = "0"/' \
+		build/moz.configure/toolchain.configure
+	fi
+
+	case "$XBPS_TARGET_MACHINE" in
+	aarch64*|i686*|x86_64*)
+		echo "ac_add_options --enable-rust-simd" >>.mozconfig ;;
+	esac
+
+	export LDFLAGS+=" -Wl,-rpath=/usr/lib/firefox"
+
+	if [ "$SOURCE_DATE_EPOCH" ]; then
+		export MOZ_BUILD_DATE=$(date --date "@$SOURCE_DATE_EPOCH" "+%Y%m%d%H%M%S")
+	fi
+
+	export MOZ_MAKE_FLAGS="${makejobs}"
+	export MOZ_NOSPAM=1
+	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
+	export MACH_USE_SYSTEM_PYTHON=1
+
+	export AS=$CC
+
+	cat <<! >>.mozconfig
+ac_add_options --with-mozilla-api-keyfile="${wrksrc}/mozilla-api-key"
+ac_add_options $(vopt_enable alsa)
+ac_add_options $(vopt_enable jack)
+ac_add_options $(vopt_enable sndio)
+ac_add_options $(vopt_enable dbus)
+ac_add_options $(vopt_enable dbus necko-wifi)
+ac_add_options $(vopt_enable pulseaudio)
+ac_add_options --enable-default-toolkit=$(vopt_if wayland 'cairo-gtk3-wayland' 'cairo-gtk3')
+!
+
+	rm -f old-configure
+	./mach build
+}
+do_install() {
+	export MACH_USE_SYSTEM_PYTHON=1
+	DESTDIR="$DESTDIR" ./mach install
+
+	vinstall ${FILESDIR}/vendor.js 644 usr/lib/firefox/browser/defaults/preferences
+	vinstall taskcluster/docker/firefox-snap/firefox.desktop 644 usr/share/applications
+
+	for i in 16x16 22x22 24x24 32x32 48x48 128x128 256x256; do
+		vinstall ${wrksrc}/browser/branding/official/default${i%x*}.png 644 \
+			usr/share/icons/hicolor/${i}/apps firefox.png
+	done
+
+	# We don't want the development stuff
+	rm -rf ${DESTDIR}/usr/{include,lib/firefox-devel,share/idl}
+
+	# https://bugzilla.mozilla.org/show_bug.cgi?id=658850
+	ln -sf firefox ${DESTDIR}/usr/lib/firefox/firefox-bin
+
+	vbin ${FILESDIR}/firefox-wayland
+}

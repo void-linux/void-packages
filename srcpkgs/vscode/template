@@ -1,0 +1,71 @@
+# Template file for 'vscode'
+pkgname=vscode
+version=1.63.2
+revision=1
+_electronver=13.6.1
+hostmakedepends="pkg-config python nodejs yarn tar git ripgrep"
+makedepends="libxkbfile-devel libsecret-devel electron13"
+depends="libXtst libxkbfile nss dejavu-fonts-ttf xdg-utils ripgrep electron13"
+short_desc="Microsoft Code for Linux"
+maintainer="shizonic <realtiaz@gmail.com>"
+license="MIT"
+homepage="https://code.visualstudio.com/"
+distfiles="https://github.com/Microsoft/vscode/archive/${version}.tar.gz"
+checksum=21fc9bc17ba4cf480b1e006f298363d86215c339c480f8d781cabcfedad2d624
+nocross=yes # x64 build does not cut it, it contains native code
+
+if [ "$XBPS_TARGET_WORDSIZE" = "32" ]; then
+	broken="FATAL ERROR: CALL_AND_RETRY_LAST Allocation failed - JavaScript heap out of memory"
+fi
+
+# avoid downloading electron binaries for target platform; we use
+# the system electron, and downloading does not work for all archs
+export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+
+do_configure() {
+	# Use yarn to install dependencies
+	echo "" > build/npm/preinstall.js
+
+	# redirect telemetry urls to 0.0.0.0
+	# src: vscodium/undo_telemetry.sh
+	_TELEMETRY_URLS="(dc\.services\.visualstudio\.com)|(vortex\.data\.microsoft\.com)"
+	_REPLACEMENT="s/$_TELEMETRY_URLS/0\.0\.0\.0/g"
+	grep -rl --exclude-dir=.git -E $_TELEMETRY_URLS | xargs sed -i -E $_REPLACEMENT
+
+	# set used electron version
+	vsed -e "s/^target .*/target \"${_electronver}\"/" -i .yarnrc
+}
+
+do_build() {
+	# The default memory limit may be too low for current versions of node
+	# to successfully build vscode.  This sets it to 4GB, but
+	# change this number if it still doesn't work for your system.
+	_mem_limit="--max_old_space_size=4095"
+
+	export NODE_OPTIONS="${_mem_limit}"
+	/usr/lib/node_modules/npm/bin/node-gyp-bin/node-gyp install \
+	--target=$_electronver \
+	--tarball=/usr/include/electron${_electronver%%.*}/node_headers.tar.gz
+	yarn install --ignore-engines --arch=x64
+	export CFLAGS="$CFLAGS -I/usr/include/node"
+	yarn run gulp vscode-linux-x64-min
+}
+
+do_install() {
+	vmkdir usr/lib/code-oss
+	vcopy ../VSCode-linux-x64/resources usr/lib/code-oss
+	vcopy ../VSCode-linux-x64/bin usr/lib/code-oss
+	vmkdir usr/bin
+	ln -sf /usr/lib/code-oss/bin/code-oss ${DESTDIR}/usr/bin/
+	vmkdir usr/share/applications
+	ln -sf /usr/lib/code-oss/resources/app/resources/linux/code.desktop ${DESTDIR}/usr/share/applications/code-oss.desktop
+	vmkdir usr/share/pixmaps
+	ln -sf /usr/lib/code-oss/resources/app/resources/linux/code.png ${DESTDIR}/usr/share/pixmaps/code-oss.png
+	ln -sf /usr/bin/rg ${DESTDIR}/usr/lib/code-oss/resources/app/node_modules.asar.unpacked/vscode-ripgrep/bin/rg
+	vsed \
+	-e "s|ELECTRON=.*|ELECTRON=/usr/lib/electron${_electronver%%.*}/electron|g" \
+	-e 's|"$CLI"|"$CLI" --app="${VSCODE_PATH}/resources/app"|g' \
+	-i "$DESTDIR"/usr/lib/code-oss/bin/code-oss
+	vlicense LICENSE.txt
+	chmod -R o-w ${DESTDIR}/usr/lib/code-oss/resources/app/
+}
