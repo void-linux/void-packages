@@ -77,9 +77,9 @@ index 313511f22..0ca3a326f 100644
  
 +#elif defined(__powerpc64__)
 +
-+#include <asm/unistd.h>
++#include <asm-generic/unistd.h>
 +#define MIN_SYSCALL 0u
-+#define MAX_PUBLIC_SYSCALL 386u
++#define MAX_PUBLIC_SYSCALL __NR_syscalls
 +#define MAX_SYSCALL MAX_PUBLIC_SYSCALL
 +
  #else
@@ -206,48 +206,69 @@ index 01c046dda..7e5a6be82 100644
  TEST_BASELINE_SIGSYS(__NR_inotify_init)
  TEST_BASELINE_SIGSYS(__NR_vserver)
  #endif
+diff --git a/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc b/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc
+index 01c046dda..7e5a6be82 100644
+--- a/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc
++++ b/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc
+@@ -358,7 +358,16 @@
+   if (args.nr == __NR_fstatat_default) {
+     if (*reinterpret_cast<const char*>(args.args[1]) == '\0' &&
+         args.args[3] == static_cast<uint64_t>(AT_EMPTY_PATH)) {
+-      return syscall(__NR_fstat_default, static_cast<int>(args.args[0]),
++          int fd = static_cast<int>(args.args[0]);
++#if defined(__powerpc64__)
++      // On ppc64+glibc, some syscalls seem to accidentally negate the first
++      // parameter which causes checks against it to fail. For now, manually
++      // negate them back.
++      // TODO: Investigate the root cause and fix in glibc
++      if (fd < 0)
++        fd = -fd;
++#endif
++      return syscall(__NR_fstat_default, fd,
+                      reinterpret_cast<default_stat_struct*>(args.args[2]));
+     }
+     return -reinterpret_cast<intptr_t>(fs_denied_errno);
 diff --git a/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc b/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
 index 2a97d3916..8e81aa6cf 100644
 --- a/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc	2021-04-14 14:41:08.000000000 -0400
 +++ b/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc	2021-04-15 13:17:57.808715733 -0400
-@@ -40,7 +40,8 @@
- #include <sys/ptrace.h>
- #if (defined(OS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)) && \
-     !defined(__arm__) && !defined(__aarch64__) &&           \
+@@ -37,7 +37,8 @@
+ 
+ #if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)) && \
+     !defined(__arm__) && !defined(__aarch64__) &&             \
 -    !defined(PTRACE_GET_THREAD_AREA)
-+    !defined(PTRACE_GET_THREAD_AREA) &&			    \
++    !defined(PTRACE_GET_THREAD_AREA) &&                       \
 +    !defined(__powerpc64__)
  // Also include asm/ptrace-abi.h since ptrace.h in older libc (for instance
  // the one in Ubuntu 16.04 LTS) is missing PTRACE_GET_THREAD_AREA.
  // asm/ptrace-abi.h doesn't exist on arm32 and PTRACE_GET_THREAD_AREA isn't
-@@ -49,6 +50,11 @@
+@@ -45,6 +46,11 @@
+ #include <asm/ptrace-abi.h>
  #endif
- #endif  // !OS_NACL_NONSFI
  
 +// On PPC64, TCGETS is defined in terms of struct termios, so we must include termios.h
 +#ifdef __powerpc64__
 +#include <termios.h>
 +#endif
 +
- #if defined(OS_ANDROID)
+ #if BUILDFLAG(IS_ANDROID)
  
  #if !defined(F_DUPFD_CLOEXEC)
-@@ -98,6 +104,15 @@
- #endif
- }
- 
+@@ -99,6 +105,14 @@
+   return true;
+ #else
+   return false;
++#endif
++}
++
 +inline bool IsArchitecturePPC64() {
 +#if defined(__powerpc64__)
 +  return true;
 +#else
 +  return false;
-+#endif
-+}
-+
-+
- // Ubuntu's version of glibc has a race condition in sem_post that can cause
- // it to call futex(2) with bogus op arguments. To workaround this, we need
- // to allow those futex(2) calls to fail with EINVAL, instead of crashing the
+ #endif
+ }
+ 
 @@ -239,6 +254,8 @@
    uint64_t kOLargeFileFlag = O_LARGEFILE;
    if (IsArchitectureX86_64() || IsArchitectureI386() || IsArchitectureMips())
@@ -927,6 +948,29 @@ index d7b5d8c44..4adc6d0d4 100644
    // The stack grows downward.
    void* stack = stack_buf + sizeof(stack_buf);
  #else
+@@ -90,7 +90,9 @@
+ 
+   int clone_flags = CLONE_FS | LINUX_SIGCHLD;
+   void* tls = nullptr;
+-#if (defined(ARCH_CPU_X86_64) || defined(ARCH_CPU_ARM_FAMILY)) && \
++// RAJA this might be it...
++#if (defined(ARCH_CPU_X86_64) || defined(ARCH_CPU_ARM_FAMILY) || \
++    defined(ARCH_CPU_PPC64_FAMILY)) && \
+     !defined(MEMORY_SANITIZER)
+   // Use CLONE_VM | CLONE_VFORK as an optimization to avoid copying page tables.
+   // Since clone writes to the new child's TLS before returning, we must set a
+@@ -98,6 +100,11 @@
+   // glibc performs syscalls by calling a function pointer in TLS, so we do not
+   // attempt this optimization.
+   // TODO(crbug.com/1247458) Broken in MSan builds after LLVM f1bb30a4956f.
++  //
++  // NOTE: Without CLONE_VM, fontconfig will attempt to reload configuration
++  // in every thread.  Since the rendered threads are sandboxed without
++  // filesystem access (e.g. to /etc/fonts/fonts.conf) this will cause font
++  // configuraiton loading failures and no fonts will be displayed!
+   clone_flags |= CLONE_VM | CLONE_VFORK | CLONE_SETTLS;
+ 
+   char tls_buf[PTHREAD_STACK_MIN] = {0};
 diff --git a/sandbox/linux/services/syscall_wrappers.cc b/sandbox/linux/services/syscall_wrappers.cc
 index fcfd2aa12..f6eb32fb7 100644
 --- a/sandbox/linux/services/syscall_wrappers.cc
@@ -1025,6 +1069,19 @@ index 000000000..ccacffe22
 +//TODO: is it necessary to redefine syscall numbers for PPC64?
 +
 +#endif  // SANDBOX_LINUX_SYSTEM_HEADERS_PPC64_LINUX_SYSCALLS_H_
+diff --git a/sandbox/policy/linux/bpf_utility_policy_linux.cc b/sandbox/policy/linux/bpf_utility_policy_linux.cc
+index 2588fc792..d455c4601 100644
+--- a/sandbox/policy/linux/bpf_utility_policy_linux.cc
++++ b/sandbox/policy/linux/bpf_utility_policy_linux.cc
+@@ -34,7 +34,7 @@
+     case __NR_fdatasync:
+     case __NR_fsync:
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__powerpc64__)
+     case __NR_getrlimit:
+ #endif
+ #if defined(__i386__) || defined(__arm__)
 diff --git a/sandbox/policy/linux/bpf_renderer_policy_linux.cc b/sandbox/policy/linux/bpf_renderer_policy_linux.cc
 index 2588fc792..d455c4601 100644
 --- a/sandbox/policy/linux/bpf_renderer_policy_linux.cc
@@ -1041,6 +1098,15 @@ index 2588fc792..d455c4601 100644
  // TODO(vignatti): replace the local definitions below with #include
  // <linux/dma-buf.h> once kernel version 4.6 becomes widely used.
  #include <linux/types.h>
+@@ -77,7 +77,7 @@
+     case __NR_ftruncate64:
+ #endif
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__powerpc64__)
+     case __NR_getrlimit:
+     case __NR_setrlimit:
+ // We allow setrlimit to dynamically adjust the address space limit as
 diff --git a/third_party/angle/src/compiler/translator/InfoSink.h b/third_party/angle/src/compiler/translator/InfoSink.h
 index 3a807e1e3..5258617a7 100644
 --- a/third_party/angle/src/compiler/translator/InfoSink.h
@@ -3380,14 +3446,14 @@ index 9b065bd..df3af02 100644
 --- a/third_party/libaom/BUILD.gn
 +++ b/third_party/libaom/BUILD.gn
 @@ -36,6 +36,8 @@ if (enable_libaom) {
-     } else {
-       cpu_arch_full = "arm"
-     }
-+  } else if (current_cpu == "ppc64") {
-+    cpu_arch_full = "generic"
    } else {
-     cpu_arch_full = current_cpu
+     cpu_arch_full = "arm"
    }
++} else if (current_cpu == "ppc64") {
++  cpu_arch_full = "generic"
+ } else {
+   cpu_arch_full = current_cpu
+ }
 diff --git a/third_party/libgav1/options.gni b/third_party/libgav1/options.gni
 index 11af801..4b13d05 100644
 --- a/third_party/libgav1/options.gni

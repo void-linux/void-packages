@@ -1,63 +1,15 @@
---- a/accel/tcg/user-exec.c
-+++ b/accel/tcg/user-exec.c
-@@ -286,6 +286,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
-  */
- #ifdef linux
- /* All Registers access - only for local access */
-+#if defined(__GLIBC__)
- #define REG_sig(reg_name, context)              \
-     ((context)->uc_mcontext.regs->reg_name)
- /* Gpr Registers access  */
-@@ -302,6 +303,19 @@ int cpu_signal_handler(int host_signum, void *pinfo,
- #define LR_sig(context)                        REG_sig(link, context)
- /* Condition register */
- #define CR_sig(context)                        REG_sig(ccr, context)
-+#else /* musl */
-+#if defined(_ARCH_PPC64)
-+#define REG_sig(reg_num, context) ((context)->uc_mcontext.gp_regs[reg_num])
-+#else
-+#define REG_sig(reg_num, context) ((context)->uc_mcontext.gregs[reg_num])
-+#endif
-+#define IAR_sig(context)                       REG_sig(32, context)
-+#define MSR_sig(context)                       REG_sig(33, context)
-+#define CTR_sig(context)                       REG_sig(35, context)
-+#define XER_sig(context)                       REG_sig(37, context)
-+#define LR_sig(context)                        REG_sig(36, context)
-+#define CR_sig(context)                        REG_sig(38, context)
-+#endif
+--- a/linux-user/signal.c
++++ b/linux-user/signal.c
+@@ -21,5 +21,9 @@
+ #include "exec/gdbstub.h"
+ #include "hw/core/tcg-cpu-ops.h"
  
- /* Float Registers access  */
- #define FLOAT_sig(reg_num, context)                                     \
-@@ -309,9 +323,15 @@ int cpu_signal_handler(int host_signum, void *pinfo,
- #define FPSCR_sig(context) \
-     (*(int *)((char *)((context)->uc_mcontext.regs + (48 + 32 * 2) * 4)))
- /* Exception Registers access */
-+#if defined(__GLIBC__)
- #define DAR_sig(context)                       REG_sig(dar, context)
- #define DSISR_sig(context)                     REG_sig(dsisr, context)
- #define TRAP_sig(context)                      REG_sig(trap, context)
-+#else /* musl */
-+#define DAR_sig(context)                       REG_sig(41, context)
-+#define DSISR_sig(context)                     REG_sig(42, context)
-+#define TRAP_sig(context)                      REG_sig(40, context)
++#if defined(_ARCH_PPC64) && !defined(__GLIBC__) /* musl */
++#include <asm/ptrace.h>
 +#endif
- #endif /* linux */
- 
- #if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
---- a/linux-user/host/ppc64/hostdep.h
-+++ b/linux-user/host/ppc64/hostdep.h
-@@ -27,7 +27,11 @@ extern char safe_syscall_end[];
- static inline void rewind_if_in_safe_syscall(void *puc)
- {
-     ucontext_t *uc = puc;
-+#if defined(__GLIBC__)
-     unsigned long *pcreg = &uc->uc_mcontext.gp_regs[PT_NIP];
-+#else /* musl */
-+    unsigned long *pcreg = &uc->uc_mcontext.gp_regs[32];
-+#endif
- 
-     if (*pcreg > (uintptr_t)safe_syscall_start
-         && *pcreg < (uintptr_t)safe_syscall_end) {
++
+ #include <sys/ucontext.h>
+ #include <sys/resource.h>
 --- a/util/mmap-alloc.c
 +++ b/util/mmap-alloc.c
 @@ -25,6 +25,10 @@

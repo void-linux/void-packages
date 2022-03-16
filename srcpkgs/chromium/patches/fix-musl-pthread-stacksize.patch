@@ -1,0 +1,40 @@
+--- a/base/threading/platform_thread_linux.cc
++++ b/base/threading/platform_thread_linux.cc
+@@ -436,8 +436,13 @@
+ 
+ size_t GetDefaultThreadStackSize(const pthread_attr_t& attributes) {
+ #if !defined(THREAD_SANITIZER)
++#if defined(__GLIBC__)
+   return 0;
+ #else
++  // musl libcs default is too small, use 8mb like glibc
++  return (1 << 23);
++#endif
++#else
+   // ThreadSanitizer bloats the stack heavily. Evidence has been that the
+   // default stack size isn't enough for some browser tests.
+   return 2 * (1 << 23);  // 2 times 8192K (the default stack size on Linux).
+--- a/chrome/browser/shutdown_signal_handlers_posix.cc
++++ b/chrome/browser/shutdown_signal_handlers_posix.cc
+@@ -188,11 +188,21 @@
+   g_shutdown_pipe_read_fd = pipefd[0];
+   g_shutdown_pipe_write_fd = pipefd[1];
+ #if !defined(ADDRESS_SANITIZER)
++#if defined(__GLIBC__)
+   const size_t kShutdownDetectorThreadStackSize = PTHREAD_STACK_MIN * 2;
+ #else
++  // match up musls 2k PTHREAD_STACK_MIN with glibcs 16k
++  const size_t kShutdownDetectorThreadStackSize = PTHREAD_STACK_MIN * 2 * 8;
++#endif
++#else
+   // ASan instrumentation bloats the stack frames, so we need to increase the
+   // stack size to avoid hitting the guard page.
++#if defined(__GLIBC__)
+   const size_t kShutdownDetectorThreadStackSize = PTHREAD_STACK_MIN * 4;
++#else
++  const size_t kShutdownDetectorThreadStackSize = PTHREAD_STACK_MIN * 4 * 8;
++  // match up musls 2k PTHREAD_STACK_MIN with glibcs 16k
++#endif
+ #endif
+   ShutdownDetector* detector = new ShutdownDetector(
+       g_shutdown_pipe_read_fd, std::move(shutdown_callback), task_runner);
