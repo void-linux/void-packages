@@ -4,6 +4,7 @@ update_check() {
     local i p url pkgurlname rx found_version consider
     local update_override=$XBPS_SRCPKGDIR/$XBPS_TARGET_PKG/update
     local original_pkgname=$pkgname
+    local pkgname=$sourcepkg
     local urlpfx urlsfx
     local -A fetchedurls
 
