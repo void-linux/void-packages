@@ -1,36 +1,24 @@
-From fd191973558cf4aeb0d5ca107357defd6f837c38 Mon Sep 17 00:00:00 2001
-From: Daniel Kolesa <daniel@octaforge.org>
-Date: Tue, 5 Jan 2021 04:10:25 +0100
+From 587edc0d9786aff3c7a4728ba941f6a993e59bdc Mon Sep 17 00:00:00 2001
+From: q66 <daniel@octaforge.org>
+Date: Thu, 28 Apr 2022 00:48:04 +0200
 Subject: [PATCH] fix up runtime for ppc64 BE ELFv2 + ensure it's used
 
 ---
- aclocal.m4                        |  2 +-
  configure                         |  2 +-
  libraries/ghci/GHCi/InfoTable.hsc | 36 ++++++++++++-------------------
- rts/Adjustor.c                    | 12 +++++------
+ m4/fptools.m4                     |  2 +-
  rts/AdjustorAsm.S                 |  2 +-
  rts/StgCRun.c                     |  4 ++--
  rts/StgCRunAsm.S                  |  2 +-
- 7 files changed, 26 insertions(+), 34 deletions(-)
+ rts/adjustor/NativeIA64.c         |  2 +-
+ rts/adjustor/NativePowerPC.c      |  2 +-
+ 8 files changed, 22 insertions(+), 30 deletions(-)
 
-diff --git a/aclocal.m4 b/aclocal.m4
-index 41cecf0..ba08bd2 100644
---- a/aclocal.m4
-+++ b/aclocal.m4
-@@ -199,7 +199,7 @@ AC_DEFUN([FPTOOLS_SET_HASKELL_PLATFORM_V
-             test -z "[$]2" || eval "[$]2=ArchPPC"
-             ;;
-         powerpc64)
--            test -z "[$]2" || eval "[$]2=\"ArchPPC_64 {ppc_64ABI = ELF_V1}\""
-+            test -z "[$]2" || eval "[$]2=\"ArchPPC_64 {ppc_64ABI = ELF_V2}\""
-             ;;
-         powerpc64le)
-             test -z "[$]2" || eval "[$]2=\"ArchPPC_64 {ppc_64ABI = ELF_V2}\""
 diff --git a/configure b/configure
-index 183e661..8aae1bc 100755
+index 8310e6f..eac1124 100755
 --- a/configure
 +++ b/configure
-@@ -10296,7 +10296,7 @@ $as_echo "done" >&6; }
+@@ -10508,7 +10508,7 @@ printf "%s\n" "no" >&6; }
              test -z "$2" || eval "$2=ArchPPC"
              ;;
          powerpc64)
@@ -40,10 +28,10 @@ index 183e661..8aae1bc 100755
          powerpc64le)
              test -z "$2" || eval "$2=\"ArchPPC_64 {ppc_64ABI = ELF_V2}\""
 diff --git a/libraries/ghci/GHCi/InfoTable.hsc b/libraries/ghci/GHCi/InfoTable.hsc
-index ec3c18a..0359be7 100644
+index ad4eb4d..e4f1c0c 100644
 --- a/libraries/ghci/GHCi/InfoTable.hsc
 +++ b/libraries/ghci/GHCi/InfoTable.hsc
-@@ -228,30 +228,22 @@ mkJumpToAddr a = case platform of
+@@ -231,30 +231,22 @@ mkJumpToAddr' platform a = case platform of
                  , fromIntegral w64
                  , fromIntegral (w64 `shiftR` 32) ]
      ArchPPC64 ->
@@ -85,103 +73,96 @@ index ec3c18a..0359be7 100644
 +        in Right [ 0x3D800000 .|. hi16 w32,
 +                   0x618C0000 .|. lo16 w32,
 +                   0x7D8903A6, 0x4E800420 ]
-
+ 
      ArchPPC64LE ->
          -- The ABI requires r12 to point to the function's entry point.
-diff --git a/rts/Adjustor.c b/rts/Adjustor.c
-index d360cfe..ab7ede7 100644
---- a/rts/Adjustor.c
-+++ b/rts/Adjustor.c
-@@ -49,7 +49,7 @@ Haskell side.
-
- #if defined(i386_HOST_ARCH)
- extern void adjustorCode(void);
--#elif defined(powerpc_HOST_ARCH) || defined(powerpc64_HOST_ARCH)
-+#elif defined(powerpc_HOST_ARCH) || (defined(powerpc64_HOST_ARCH) && (_CALL_ELF != 2))
- // from AdjustorAsm.s
- // not declared as a function so that AIX-style
- // fundescs can never get in the way.
-@@ -278,7 +278,7 @@ __asm__("obscure_ccall_ret_code:\n\t"
- extern void obscure_ccall_ret_code(void);
- #endif
-
--#if defined(powerpc_HOST_ARCH) || defined(powerpc64_HOST_ARCH)
-+#if defined(powerpc_HOST_ARCH) || (defined(powerpc64_HOST_ARCH) && (_CALL_ELF != 2))
- #if !(defined(powerpc_HOST_ARCH) && defined(linux_HOST_OS))
-
- /* !!! !!! WARNING: !!! !!!
-@@ -318,7 +318,7 @@ typedef struct AdjustorStub {
- } AdjustorStub;
- #endif
-
--#if defined(i386_HOST_ARCH) || defined(powerpc_HOST_ARCH) || defined(powerpc64_HOST_ARCH)
-+#if defined(i386_HOST_ARCH) || defined(powerpc_HOST_ARCH) || (defined(powerpc64_HOST_ARCH) && (_CALL_ELF != 2))
- static int totalArgumentSize(char *typeString)
- {
-     int sz = 0;
-@@ -351,7 +351,7 @@ void*
- createAdjustor(int cconv, StgStablePtr hptr,
-                StgFunPtr wptr,
-                char *typeString
--#if !defined(powerpc_HOST_ARCH) && !defined(powerpc64_HOST_ARCH) && !defined(x86_64_HOST_ARCH)
-+#if !defined(powerpc_HOST_ARCH) && (!defined(powerpc64_HOST_ARCH) || (_CALL_ELF == 2)) && !defined(x86_64_HOST_ARCH)
-                   STG_UNUSED
- #endif
-               )
-@@ -1271,7 +1271,7 @@ freeHaskellFunctionPtr(void* ptr)
-    return;
-  }
-  freeStablePtr(((StgStablePtr*)ptr)[1]);
--#elif defined(powerpc_HOST_ARCH) || defined(powerpc64_HOST_ARCH)
-+#elif defined(powerpc_HOST_ARCH) || (defined(powerpc64_HOST_ARCH) && (_CALL_ELF != 2))
-  if ( ((AdjustorStub*)ptr)->code != (StgFunPtr) &adjustorCode ) {
-    errorBelch("freeHaskellFunctionPtr: not for me, guv! %p\n", ptr);
-    return;
+diff --git a/m4/fptools.m4 b/m4/fptools.m4
+index 8c6c9b7..eb25c37 100644
+--- a/m4/fptools.m4
++++ b/m4/fptools.m4
+@@ -201,7 +201,7 @@ AC_DEFUN([FPTOOLS_SET_HASKELL_PLATFORM_VARS],
+             test -z "[$]2" || eval "[$]2=ArchPPC"
+             ;;
+         powerpc64)
+-            test -z "[$]2" || eval "[$]2=\"ArchPPC_64 {ppc_64ABI = ELF_V1}\""
++            test -z "[$]2" || eval "[$]2=\"ArchPPC_64 {ppc_64ABI = ELF_V2}\""
+             ;;
+         powerpc64le)
+             test -z "[$]2" || eval "[$]2=\"ArchPPC_64 {ppc_64ABI = ELF_V2}\""
 diff --git a/rts/AdjustorAsm.S b/rts/AdjustorAsm.S
 index 2795b83..63cfe91 100644
 --- a/rts/AdjustorAsm.S
 +++ b/rts/AdjustorAsm.S
 @@ -2,7 +2,7 @@
-
+ 
  /* ******************************** PowerPC ******************************** */
-
+ 
 -#if defined(powerpc_HOST_ARCH) || defined(powerpc64_HOST_ARCH)
 +#if defined(powerpc_HOST_ARCH) || (defined(powerpc64_HOST_ARCH) && (_CALL_ELF != 2))
  #if !(defined(powerpc_HOST_ARCH) && defined(linux_HOST_OS))
      /* The following code applies, with some differences,
         to all powerpc platforms except for powerpc32-linux,
 diff --git a/rts/StgCRun.c b/rts/StgCRun.c
-index 934926e..2ff8662 100644
+index f43227a..927d44a 100644
 --- a/rts/StgCRun.c
 +++ b/rts/StgCRun.c
-@@ -726,7 +726,7 @@ StgRunIsImplementedInAssembler(void)
+@@ -724,7 +724,7 @@ StgRunIsImplementedInAssembler(void)
     Everything is in assembler, so we don't have to deal with GCC...
     -------------------------------------------------------------------------- */
-
+ 
 -#if defined(powerpc64_HOST_ARCH)
 +#if defined(powerpc64_HOST_ARCH) && (_CALL_ELF != 2)
-
- static void GNUC3_ATTRIBUTE(used)
- StgRunIsImplementedInAssembler(void)
-@@ -851,7 +851,7 @@ StgRunIsImplementedInAssembler(void)
-
+ /* 64-bit PowerPC ELF ABI 1.9
+  *
+  * Stack frame organization (see Figure 3-17, ELF ABI 1.9, p 14)
+@@ -792,7 +792,7 @@ StgRunIsImplementedInAssembler(void)
+ 
  #endif
-
+ 
 -#if defined(powerpc64le_HOST_ARCH)
 +#if defined(powerpc64le_HOST_ARCH) || (defined(powerpc64_HOST_ARCH) && (_CALL_ELF == 2))
  /* -----------------------------------------------------------------------------
     PowerPC 64 little endian architecture
-
+ 
 diff --git a/rts/StgCRunAsm.S b/rts/StgCRunAsm.S
-index 9274a44..3b4fc33 100644
+index 60f1bf9..c6794d7 100644
 --- a/rts/StgCRunAsm.S
 +++ b/rts/StgCRunAsm.S
 @@ -5,7 +5,7 @@
   * then functions StgRun/StgReturn are implemented in file StgCRun.c */
  #if !defined(USE_MINIINTERPRETER)
-
+ 
 -#if defined(powerpc64le_HOST_ARCH)
 +#if defined(powerpc64le_HOST_ARCH) || (defined(powerpc64_HOST_ARCH) && (_CALL_ELF == 2))
  # if defined(linux_HOST_OS)
- # define STACK_FRAME_SIZE RESERVED_C_STACK_BYTES+304
- 	.file	"StgCRun.c"
+ /* 64-bit PowerPC ELF V2 ABI Revision 1.4
+  *
+diff --git a/rts/adjustor/NativeIA64.c b/rts/adjustor/NativeIA64.c
+index 9fd1991..816b3ef 100644
+--- a/rts/adjustor/NativeIA64.c
++++ b/rts/adjustor/NativeIA64.c
+@@ -39,7 +39,7 @@ void*
+ createAdjustor(int cconv, StgStablePtr hptr,
+                StgFunPtr wptr,
+                char *typeString
+-#if !defined(powerpc_HOST_ARCH) && !defined(powerpc64_HOST_ARCH) && !defined(x86_64_HOST_ARCH)
++#if !defined(powerpc_HOST_ARCH) && (!defined(powerpc64_HOST_ARCH) || (_CALL_ELF == 2)) && !defined(x86_64_HOST_ARCH)
+                STG_UNUSED
+ #endif
+     )
+diff --git a/rts/adjustor/NativePowerPC.c b/rts/adjustor/NativePowerPC.c
+index 2e5d605..caef5d3 100644
+--- a/rts/adjustor/NativePowerPC.c
++++ b/rts/adjustor/NativePowerPC.c
+@@ -29,7 +29,7 @@ __asm__("obscure_ccall_ret_code:\n\t"
+ extern void obscure_ccall_ret_code(void);
+ #endif /* defined(linux_HOST_OS) */
+ 
+-#if defined(powerpc_HOST_ARCH) || defined(powerpc64_HOST_ARCH)
++#if defined(powerpc_HOST_ARCH) || (defined(powerpc64_HOST_ARCH) && (_CALL_ELF != 2))
+ #if !(defined(powerpc_HOST_ARCH) && defined(linux_HOST_OS))
+ 
+ /* !!! !!! WARNING: !!! !!!
+-- 
+2.35.1
+
