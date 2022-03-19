@@ -1,0 +1,212 @@
+From cb7e56842a25f93142545fad21306a7c1750fbbf Mon Sep 17 00:00:00 2001
+From: Brandon Chinn <brandon@leapyear.io>
+Date: Fri, 4 Jun 2021 16:26:22 -0700
+Subject: [PATCH 1/6] Use Cabal 3.4.0.0
+
+---
+ stack.yaml | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/stack.yaml b/stack.yaml
+index 005bd19f4..9472509be 100644
+--- a/stack.yaml
++++ b/stack.yaml
+@@ -20,6 +20,9 @@ flags:
+ ghc-options:
+    "$locals": -fhide-source-paths
+
++extra-deps:
++- Cabal-3.4.0.0
++
+ drop-packages:
+ # See https://github.com/commercialhaskell/stack/pull/4712
+ - cabal-install
+
+From 11e11ab0edeba033b40a7fc62434be58dea82ce2 Mon Sep 17 00:00:00 2001
+From: Brandon Chinn <brandon@leapyear.io>
+Date: Fri, 4 Jun 2021 16:40:56 -0700
+Subject: [PATCH 2/6] Fix Flag => PackageFlag
+
+---
+ src/Stack/BuildPlan.hs | 2 +-
+ src/Stack/Package.hs   | 8 ++++----
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/src/Stack/BuildPlan.hs b/src/Stack/BuildPlan.hs
+index 36f82236e..c5c80efc6 100644
+--- a/src/Stack/BuildPlan.hs
++++ b/src/Stack/BuildPlan.hs
+@@ -224,7 +224,7 @@ selectPackageBuildPlan platform compiler pool gpd =
+     flagCombinations :: NonEmpty [(FlagName, Bool)]
+     flagCombinations = mapM getOptions (genPackageFlags gpd)
+       where
+-        getOptions :: C.Flag -> NonEmpty (FlagName, Bool)
++        getOptions :: C.PackageFlag -> NonEmpty (FlagName, Bool)
+         getOptions f
+             | flagManual f = (fname, flagDefault f) :| []
+             | flagDefault f = (fname, True) :| [(fname, False)]
+diff --git a/src/Stack/Package.hs b/src/Stack/Package.hs
+index 4db50d2a4..d9bca7af5 100644
+--- a/src/Stack/Package.hs
++++ b/src/Stack/Package.hs
+@@ -128,7 +128,7 @@ resolvePackage packageConfig gpkg =
+         (resolvePackageDescription packageConfig gpkg)
+
+ packageFromPackageDescription :: PackageConfig
+-                              -> [D.Flag]
++                              -> [PackageFlag]
+                               -> PackageDescriptionPair
+                               -> Package
+ packageFromPackageDescription packageConfig pkgFlags (PackageDescriptionPair pkgNoMod pkg) =
+@@ -935,9 +935,9 @@ resolvePackageDescription packageConfig (GenericPackageDescription desc defaultF
+ -- | Make a map from a list of flag specifications.
+ --
+ -- What is @flagManual@ for?
+-flagMap :: [Flag] -> Map FlagName Bool
++flagMap :: [PackageFlag] -> Map FlagName Bool
+ flagMap = M.fromList . map pair
+-  where pair :: Flag -> (FlagName, Bool)
++  where pair :: PackageFlag -> (FlagName, Bool)
+         pair = flagName &&& flagDefault
+
+ data ResolveConditions = ResolveConditions
+@@ -986,7 +986,7 @@ resolveConditions rc addDeps (CondNode lib deps cs) = basic <> children
+                   case v of
+                     OS os -> os == rcOS rc
+                     Arch arch -> arch == rcArch rc
+-                    Flag flag ->
++                    PackageFlag flag ->
+                       fromMaybe False $ M.lookup flag (rcFlags rc)
+                       -- NOTE:  ^^^^^ This should never happen, as all flags
+                       -- which are used must be declared. Defaulting to
+
+From 8facd731ec3f2bbc15a083750740929167b33bb2 Mon Sep 17 00:00:00 2001
+From: Brandon Chinn <brandon@leapyear.io>
+Date: Fri, 4 Jun 2021 16:55:30 -0700
+Subject: [PATCH 3/6] Fix CabalSpecVersion
+
+---
+ src/Stack/Package.hs | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/Stack/Package.hs b/src/Stack/Package.hs
+index d9bca7af5..fca039140 100644
+--- a/src/Stack/Package.hs
++++ b/src/Stack/Package.hs
+@@ -32,6 +32,7 @@ import           Data.List (find, isPrefixOf, unzip)
+ import qualified Data.Map.Strict as M
+ import qualified Data.Set as S
+ import qualified Data.Text as T
++import           Distribution.CabalSpecVersion (CabalSpecVersion, cabalSpecMinimumLibraryVersion)
+ import           Distribution.Compiler
+ import           Distribution.ModuleName (ModuleName)
+ import qualified Distribution.ModuleName as Cabal
+@@ -190,7 +191,7 @@ packageFromPackageDescription packageConfig pkgFlags (PackageDescriptionPair pkg
+           (library pkg)
+     , packageBuildType = buildType pkg
+     , packageSetupDeps = msetupDeps
+-    , packageCabalSpec = either orLaterVersion id $ specVersionRaw pkg
++    , packageCabalSpec = orLaterVersion $ mkVersion $ cabalSpecMinimumLibraryVersion $ specVersion pkg
+     }
+   where
+     extraLibNames = S.union subLibNames foreignLibNames
+@@ -696,7 +697,7 @@ packageDescModulesAndFiles pkg = do
+
+ -- | Resolve globbing of files (e.g. data files) to absolute paths.
+ resolveGlobFiles
+-  :: Version -- ^ cabal file version
++  :: CabalSpecVersion -- ^ cabal file version
+   -> [String]
+   -> RIO Ctx (Set (Path Abs File))
+ resolveGlobFiles cabalFileVersion =
+
+From 004f14652409b7d0645215d354b2e599eb7f76bc Mon Sep 17 00:00:00 2001
+From: Brandon Chinn <brandon@leapyear.io>
+Date: Fri, 4 Jun 2021 16:55:40 -0700
+Subject: [PATCH 4/6] Fix GenericPackageDescription
+
+---
+ src/Stack/Build.hs   | 2 +-
+ src/Stack/Package.hs | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/Stack/Build.hs b/src/Stack/Build.hs
+index 23b9a9719..856903bed 100644
+--- a/src/Stack/Build.hs
++++ b/src/Stack/Build.hs
+@@ -358,7 +358,7 @@ checkComponentsBuildable lps =
+ checkSubLibraryDependencies :: HasLogFunc env => [ProjectPackage] -> RIO env ()
+ checkSubLibraryDependencies proj = do
+   forM_ proj $ \p -> do
+-    C.GenericPackageDescription _ _ lib subLibs foreignLibs exes tests benches <- liftIO $ cpGPD . ppCommon $ p
++    C.GenericPackageDescription _ _ _ lib subLibs foreignLibs exes tests benches <- liftIO $ cpGPD . ppCommon $ p
+
+     let dependencies = concatMap getDeps subLibs <>
+                        concatMap getDeps foreignLibs <>
+diff --git a/src/Stack/Package.hs b/src/Stack/Package.hs
+index fca039140..39aad4d2f 100644
+--- a/src/Stack/Package.hs
++++ b/src/Stack/Package.hs
+@@ -863,7 +863,7 @@ data PackageDescriptionPair = PackageDescriptionPair
+ resolvePackageDescription :: PackageConfig
+                           -> GenericPackageDescription
+                           -> PackageDescriptionPair
+-resolvePackageDescription packageConfig (GenericPackageDescription desc defaultFlags mlib subLibs foreignLibs' exes tests benches) =
++resolvePackageDescription packageConfig (GenericPackageDescription desc _ defaultFlags mlib subLibs foreignLibs' exes tests benches) =
+     PackageDescriptionPair
+       { pdpOrigBuildable = go False
+       , pdpModifiedBuildable = go True
+
+From 820797b566ef981936907f4d19658259d4a635a8 Mon Sep 17 00:00:00 2001
+From: Brandon Chinn <brandon@leapyear.io>
+Date: Fri, 4 Jun 2021 17:01:01 -0700
+Subject: [PATCH 5/6] Fix generatePackageVersionMacros
+
+---
+ src/Stack/Build/Execute.hs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/Stack/Build/Execute.hs b/src/Stack/Build/Execute.hs
+index 1e381dd21..aedd7fee5 100644
+--- a/src/Stack/Build/Execute.hs
++++ b/src/Stack/Build/Execute.hs
+@@ -1214,7 +1214,7 @@ withSingleContext ActionContext {..} ee@ExecuteEnv {..} task@Task {..} allDeps m
+                             let macroDeps = mapMaybe snd matchedDeps
+                                 cppMacrosFile = setupDir </> relFileSetupMacrosH
+                                 cppArgs = ["-optP-include", "-optP" ++ toFilePath cppMacrosFile]
+-                            writeBinaryFileAtomic cppMacrosFile (encodeUtf8Builder (T.pack (C.generatePackageVersionMacros macroDeps)))
++                            writeBinaryFileAtomic cppMacrosFile (encodeUtf8Builder (T.pack (C.generatePackageVersionMacros (packageVersion package) macroDeps)))
+                             return (packageDBArgs ++ depsArgs ++ cppArgs)
+
+                         -- This branch is usually taken for builds, and
+
+From 336ab515e30f03c274f89ebe1cbc6aa1e597c2a4 Mon Sep 17 00:00:00 2001
+From: Brandon Chinn <brandon@leapyear.io>
+Date: Fri, 4 Jun 2021 17:04:16 -0700
+Subject: [PATCH 6/6] Fix ModuleReexport
+
+---
+ src/Stack/Script.hs | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/Stack/Script.hs b/src/Stack/Script.hs
+index 6bb67c049..9ebd2173d 100644
+--- a/src/Stack/Script.hs
++++ b/src/Stack/Script.hs
+@@ -18,6 +18,7 @@ import           Distribution.Compiler      (CompilerFlavor (..))
+ import           Distribution.ModuleName    (ModuleName)
+ import qualified Distribution.PackageDescription as PD
+ import qualified Distribution.Types.CondTree as C
++import qualified Distribution.Types.ModuleReexport as ModuleReexport
+ import           Distribution.Types.PackageName (mkPackageName)
+ import           Distribution.Types.VersionRange (withinRange)
+ import           Distribution.System        (Platform (..))
+@@ -280,7 +281,7 @@ allExposedModules gpd = do
+       mlibrary = snd . C.simplifyCondTree checkCond <$> PD.condLibrary gpd
+   pure $ case mlibrary  of
+     Just lib -> PD.exposedModules lib ++
+-                map PD.moduleReexportName (PD.reexportedModules lib)
++                map ModuleReexport.moduleReexportName (PD.reexportedModules lib)
+     Nothing  -> mempty
+
+ -- | The Stackage project introduced the concept of hidden packages,
