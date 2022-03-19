@@ -1,0 +1,79 @@
+From 15673a52b6b4805d482b69281e21947fb7096e05 Mon Sep 17 00:00:00 2001
+From: Anthony Bilinski <me@abilinski.com>
+Date: Thu, 10 Feb 2022 17:24:38 -0800
+Subject: [PATCH] fix(macOS): Update video API usage for newer libavcodec
+
+Newer version of avformat_open_input, av_find_input_format,
+avcodec_find_decoder previously used non-const pointers that are now
+const. Support both version for compatibiltiy with other platforms.
+---
+ src/video/cameradevice.cpp | 9 ++++++---
+ src/video/cameradevice.h   | 1 -
+ src/video/camerasource.cpp | 3 +--
+ 3 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/src/video/cameradevice.cpp b/src/video/cameradevice.cpp
+index 3b07968b32..a012a0f78d 100644
+--- a/src/video/cameradevice.cpp
++++ b/src/video/cameradevice.cpp
+@@ -31,6 +31,9 @@ extern "C" {
+ #include "cameradevice.h"
+ #include "src/persistence/settings.h"
+ 
++// no longer needed when avformat version < 59 is no longer supported
++using AvFindInputFormatRet = decltype(av_find_input_format(""));
++
+ #if defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)
+ #define USING_V4L 1
+ #else
+@@ -71,8 +74,8 @@ extern "C" {
+ 
+ QHash<QString, CameraDevice*> CameraDevice::openDevices;
+ QMutex CameraDevice::openDeviceLock, CameraDevice::iformatLock;
+-AVInputFormat* CameraDevice::iformat{nullptr};
+-AVInputFormat* CameraDevice::idesktopFormat{nullptr};
++static AvFindInputFormatRet idesktopFormat{nullptr};
++static AvFindInputFormatRet iformat{nullptr};
+ 
+ CameraDevice::CameraDevice(const QString& devName, AVFormatContext* context)
+     : devName{devName}
+@@ -92,7 +95,7 @@ CameraDevice* CameraDevice::open(QString devName, AVDictionary** options)
+         goto out;
+     }
+ 
+-    AVInputFormat* format;
++    AvFindInputFormatRet format;
+     if (devName.startsWith("x11grab#")) {
+         devName = devName.mid(8);
+         format = idesktopFormat;
+diff --git a/src/video/cameradevice.h b/src/video/cameradevice.h
+index 910873325b..c05f1dbed4 100644
+--- a/src/video/cameradevice.h
++++ b/src/video/cameradevice.h
+@@ -64,5 +64,4 @@ class CameraDevice
+     std::atomic_int refcount;
+     static QHash<QString, CameraDevice*> openDevices;
+     static QMutex openDeviceLock, iformatLock;
+-    static AVInputFormat *iformat, *idesktopFormat;
+ };
+diff --git a/src/video/camerasource.cpp b/src/video/camerasource.cpp
+index 134bc49afc..3a899f11d0 100644
+--- a/src/video/camerasource.cpp
++++ b/src/video/camerasource.cpp
+@@ -278,7 +278,6 @@ void CameraSource::openDevice()
+     }
+ 
+     // We need to create a new CameraDevice
+-    AVCodec* codec;
+     device = CameraDevice::open(deviceName, mode);
+ 
+     if (!device) {
+@@ -322,7 +321,7 @@ void CameraSource::openDevice()
+     AVCodecParameters* cparams = device->context->streams[videoStreamIndex]->codecpar;
+     codecId = cparams->codec_id;
+ #endif
+-    codec = avcodec_find_decoder(codecId);
++    const AVCodec* codec = avcodec_find_decoder(codecId);
+     if (!codec) {
+         qWarning() << "Codec not found";
+         emit openFailed();
