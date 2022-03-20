@@ -75,12 +75,13 @@ hook() {
         read -n4 elfmagic < "$f"
         if [ "$elfmagic" = $'\177ELF' ]; then
             for nlib in $($OBJDUMP -p "$f"|awk '/NEEDED/{print $2}'); do
-                [ -z "$verify_deps" ] && verify_deps="$nlib" && continue
-                found=0
-                for j in ${verify_deps}; do
-                    [[ $j == $nlib ]] && found=1 && break
-                done
-                [[ $found -eq 0 ]] && verify_deps="$verify_deps $nlib"
+                case " $verify_deps " in
+                    *" $nlib "*)
+                        ;;
+                    *)
+                        verify_deps="$verify_deps $nlib"
+                        ;;
+                esac
             done
         fi
     done
