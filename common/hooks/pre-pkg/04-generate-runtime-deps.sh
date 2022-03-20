@@ -48,6 +48,7 @@ store_pkgdestdir_rundeps() {
 
 hook() {
     local depsftmp f lf j mapshlibs sorequires _curdep elfmagic
+    local needpthread=
 
     # Disable trap on ERR, xbps-uhelper cmd might return error... but not something
     # to be worried about because if there are broken shlibs this hook returns
@@ -80,6 +81,9 @@ hook() {
                         ;;
                     *)
                         verify_deps="$verify_deps $nlib"
+                        if [ "$nlib" = libpthread.so.0 ]; then
+                            needpthread=y
+                        fi
                         ;;
                 esac
             done
@@ -87,6 +91,12 @@ hook() {
     done
     exec 0<&3 # restore stdin
     rm -f $depsftmp
+
+    # libpthread.so.0 dlopen(2) libgcc_s.so.1 and will abort if fail to do so
+    # Don't make glibc depends on libgcc to prevent circular dependencies.
+    if [ "$needpthread" ] && [ "$sourcepkg" != glibc ] ; then
+        verify_deps="$verify_deps libgcc_s.so.1"
+    fi
 
     #
     # Add required run time packages by using required shlibs resolved
