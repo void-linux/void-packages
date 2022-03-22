@@ -1,0 +1,150 @@
+From 2b4fe4c12b5d4366ff21fabf3a6c3799f8e4fa53 Mon Sep 17 00:00:00 2001
+From: Roy Marples <roy@marples.name>
+Date: Fri, 12 Nov 2021 16:24:32 +0000
+Subject: [PATCH] Revert "eloop: Allow eloop to process all fds returned from
+ poll(2)"
+
+This stops dumping leases when privsep is compiled out.
+This change works fine on master, but we also have eloop using
+more of a native poll(2) style interface.
+Easier for now to just revert this on the dhcpcd-9 branch.
+
+This reverts commit fe2b82eec25da908c3a1a71c2dc2402d9ff70e31.
+---
+ src/eloop.c | 56 ++++++++++++++++-------------------------------------
+ 1 file changed, 17 insertions(+), 39 deletions(-)
+
+diff --git a/src/eloop.c b/src/eloop.c
+index a6ab43fb..c3330817 100644
+--- a/src/eloop.c
++++ b/src/eloop.c
+@@ -32,7 +32,6 @@
+ #include <errno.h>
+ #include <limits.h>
+ #include <poll.h>
+-#include <stdbool.h>
+ #include <signal.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+@@ -137,7 +136,6 @@ struct eloop {
+ 	TAILQ_HEAD (event_head, eloop_event) events;
+ 	size_t nevents;
+ 	struct event_head free_events;
+-	bool events_need_setup;
+ 
+ 	struct timespec now;
+ 	TAILQ_HEAD (timeout_head, eloop_timeout) timeouts;
+@@ -284,16 +282,11 @@ eloop_reduce_timers(struct eloop *eloop)
+ static void
+ eloop_event_setup_fds(struct eloop *eloop)
+ {
+-	struct eloop_event *e, *ne;
++	struct eloop_event *e;
+ 	struct pollfd *pfd;
+ 
+ 	pfd = eloop->fds;
+-	TAILQ_FOREACH_SAFE(e, &eloop->events, next, ne) {
+-		if (e->fd == -1) {
+-			TAILQ_REMOVE(&eloop->events, e, next);
+-			TAILQ_INSERT_TAIL(&eloop->free_events, e, next);
+-			continue;
+-		}
++	TAILQ_FOREACH(e, &eloop->events, next) {
+ #ifdef ELOOP_DEBUG
+ 		fprintf(stderr, "%s(%d) fd=%d, rcb=%p, wcb=%p\n",
+ 		    __func__, getpid(), e->fd, e->read_cb, e->write_cb);
+@@ -308,7 +301,6 @@ eloop_event_setup_fds(struct eloop *eloop)
+ 		pfd->revents = 0;
+ 		pfd++;
+ 	}
+-	eloop->events_need_setup = false;
+ }
+ 
+ size_t
+@@ -376,8 +368,7 @@ eloop_event_add_rw(struct eloop *eloop, int fd,
+ 	}
+ 
+ setup:
+-	e->pollfd = NULL;
+-	eloop->events_need_setup = true;
++	eloop_event_setup_fds(eloop);
+ 	return 0;
+ }
+ 
+@@ -403,10 +394,6 @@ eloop_event_delete_write(struct eloop *eloop, int fd, int write_only)
+ 	struct eloop_event *e;
+ 
+ 	assert(eloop != NULL);
+-	if (fd == -1) {
+-		errno = EINVAL;
+-		return -1;
+-	}
+ 
+ 	TAILQ_FOREACH(e, &eloop->events, next) {
+ 		if (e->fd == fd)
+@@ -422,17 +409,16 @@ eloop_event_delete_write(struct eloop *eloop, int fd, int write_only)
+ 			goto remove;
+ 		e->write_cb = NULL;
+ 		e->write_cb_arg = NULL;
+-		if (e->pollfd != NULL) {
+-			e->pollfd->events &= ~POLLOUT;
+-			e->pollfd->revents &= ~POLLOUT;
+-		}
+-		return 1;
++		goto done;
+ 	}
+ 
+ remove:
+-	e->fd = -1;
++	TAILQ_REMOVE(&eloop->events, e, next);
++	TAILQ_INSERT_TAIL(&eloop->free_events, e, next);
+ 	eloop->nevents--;
+-	eloop->events_need_setup = true;
++
++done:
++	eloop_event_setup_fds(eloop);
+ 	return 1;
+ }
+ 
+@@ -750,9 +736,6 @@ eloop_start(struct eloop *eloop, sigset_t *signals)
+ 		} else
+ 			tsp = NULL;
+ 
+-		if (eloop->events_need_setup)
+-			eloop_event_setup_fds(eloop);
+-
+ 		n = ppoll(eloop->fds, (nfds_t)eloop->nevents, tsp, signals);
+ 		if (n == -1) {
+ 			if (errno == EINTR)
+@@ -763,23 +746,18 @@ eloop_start(struct eloop *eloop, sigset_t *signals)
+ 			continue;
+ 
+ 		TAILQ_FOREACH(e, &eloop->events, next) {
+-			/* Skip freshly added events */
+-			if (e->pollfd == NULL)
+-				continue;
+-			if (e->pollfd->revents)
+-				n--;
+-			if (e->fd != -1 && e->pollfd->revents & POLLOUT) {
+-				if (e->write_cb != NULL)
++			if (e->pollfd->revents & POLLOUT) {
++				if (e->write_cb != NULL) {
+ 					e->write_cb(e->write_cb_arg);
++					break;
++				}
+ 			}
+-			if (e->fd != -1 &&
+-			    e->pollfd != NULL && e->pollfd->revents)
+-			{
+-				if (e->read_cb != NULL)
++			if (e->pollfd->revents) {
++				if (e->read_cb != NULL) {
+ 					e->read_cb(e->read_cb_arg);
++					break;
++				}
+ 			}
+-			if (n == 0)
+-				break;
+ 		}
+ 	}
+ 
