@@ -1,0 +1,48 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+
+set -e
+
+BOOT_PART="/boot"
+BOOT_ROOT="$(grub-mkrelpath $BOOT_PART)"
+BOOT_ROOT="${BOOT_ROOT:-/}"
+EFI_PART="/boot/efi"
+GRUB_DIR="$BOOT_PART/grub"
+CONFIG="$GRUB_DIR/grub.cfg"
+TARGET="$EFI_PART/EFI/BOOT/BOOTAA64.EFI"
+MODULES="ext2 fat part_gpt search"
+
+[ -f /etc/default/update-grub-image ] && . /etc/default/update-grub-image
+
+uuid="$(grub-probe "$BOOT_PART" -t fs_uuid)"
+part="$(grub-probe "$BOOT_PART" -t drive | sed -e 's/(.*,/hd0,/' | tr -d ')')"
+
+if [ -z "$uuid" ]; then
+    echo "Error: Unable to determine boot filesystem UUID"
+    exit 1
+fi
+
+echo "UUID: $uuid"
+echo "Partition: $part"
+
+cat > /tmp/grub-core.cfg <<EOF
+search.fs_uuid $uuid root $part
+set prefix=(\$root)"$BOOT_ROOT/grub"
+EOF
+
+echo "Generating GRUB image..."
+mkdir -p "$GRUB_DIR/arm64-efi"
+grub-mkimage \
+    --directory '/usr/lib/grub/arm64-efi' \
+    -c /tmp/grub-core.cfg \
+    --prefix "$part$BOOT_ROOT/grub" \
+    --output "$GRUB_DIR"/arm64-efi/core.efi \
+    --format arm64-efi \
+    --compression auto \
+    $MODULES
+
+mkdir -p "$(dirname $TARGET)"
+cp "$GRUB_DIR"/arm64-efi/core.efi "$TARGET"
+rm /tmp/grub-core.cfg
+
+grub-mkconfig -o "$CONFIG"

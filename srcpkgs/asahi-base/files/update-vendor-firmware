@@ -1,0 +1,53 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+
+set -e
+
+VENDORFW=/boot/efi/vendorfw
+TARGET=/lib/firmware
+TARGET_MANIFEST=".vendorfw.manifest"
+
+[ -f /etc/default/update-vendor-firmware ] && . /etc/default/update-vendor-firmware
+
+if [ ! -d "$VENDORFW" ]; then
+    echo "No vendor firmware available"
+    exit 0
+fi
+
+if [ ! -f "$VENDORFW/manifest.txt" ]; then
+    echo "$VENDORFW/manifest.txt not found"
+    exit 1
+fi
+
+if [ ! -f "$VENDORFW/firmware.tar" ]; then
+    echo "$VENDORFW/firmware.tar not found"
+    exit 1
+fi
+
+mkdir -p "$TARGET"
+cd "$TARGET"
+
+[ -f "$TARGET_MANIFEST" ] && \
+    cmp -s "$TARGET_MANIFEST" "$VENDORFW/manifest.txt" && exit 0
+
+echo "Extracting updated vendor firmware..."
+tar xf "$VENDORFW/firmware.tar"
+
+if [ -f "$TARGET_MANIFEST" ]; then
+    echo "Cleaning up obsolete firmware..."
+    manifest_sorted=$(mktemp)
+    target_manifest_sorted=$(mktemp)
+    sort "$VENDORFW/manifest.txt" | "$manifest_sorted"
+    sort "$TARGET_MANIFEST" | "$target_manifest_sorted"
+    comm "$manifest_sorted" "$target_manifest_sorted" -13 \
+        | while read type name rest; do
+            rm -v "$name" || true
+            dir="$(dirname "$name")"
+            rmdir "$dir" 2>/dev/null || true
+        done
+    rm "$manifest_sorted" "$target_manifest_sorted"
+fi
+
+cp "$VENDORFW/manifest.txt" "$TARGET_MANIFEST"
+
+echo "Done"
