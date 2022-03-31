@@ -9,10 +9,11 @@
 #
 pkgname=rust
 version=1.57.0
-revision=1
+revision=2
 wrksrc="rustc-${version}-src"
 hostmakedepends="cmake curl pkg-config python3 tar cargo-bootstrap"
-makedepends="libffi-devel ncurses-devel libxml2-devel zlib-devel llvm12"
+makedepends="libffi-devel ncurses-devel libxml2-devel zlib-devel openssl-devel llvm12
+ libcurl-devel"
 depends="rust-std"
 short_desc="Safe, concurrent, practical systems language"
 maintainer="Enno Boland <gottox@voidlinux.org>"
@@ -25,6 +26,10 @@ make_check=no # CBA for now
 
 build_options="bindist"
 desc_option_bindist="Generate tarballs for bootstrap"
+
+if [ -n "$build_option_bindist" ]; then
+	makedepends+=" libgit2-devel"
+fi
 
 if [ "$XBPS_LIBC" = "musl" ]; then
 	hostmakedepends+=" libexecinfo-devel"
@@ -64,6 +69,7 @@ post_patch() {
 	_clear_vendor_checksums rustc-ap-rustc_target
 	_clear_vendor_checksums target-lexicon
 	_clear_vendor_checksums tikv-jemallocator
+	_clear_vendor_checksums libz-sys
 }
 
 do_configure() {
@@ -112,9 +118,9 @@ do_configure() {
 		vendor = true
 		full-bootstrap = false
 		local-rebuild = ${_local_rebuild}
-		extended = false
+		extended = true
 		docs = ${_use_docs}
-		tools = []
+		tools = ["cargo"]
 		[install]
 		prefix = "/usr"
 		[rust]
@@ -163,6 +169,15 @@ do_configure() {
 # for it during stage1. Otherwise it attemps to use CFLAGS, which are the CFLAGS
 # of the cross host.
 do_build() {
+	if [ -n "$build_option_bindist" ]; then
+		unset LIBSSH2_SYS_USE_PKG_CONFIG
+		export OPENSSL_STATIC=1
+		# rust-openssl can not be linked static if pkg-config is used
+		export OPENSSL_NO_PKG_CONFIG
+		export OPENSSL_DIR="${XBPS_CROSS_BASE}/usr"
+		echo 'default = ["all-static"]' >> src/tools/cargo/Cargo.toml
+	fi
+
 	export RUST_BACKTRACE=1
 	export CARGO_HOME="$wrksrc/.cargo"
 	export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
@@ -196,6 +211,7 @@ do_install() {
 		install -m 0644 \
 			build/dist/rustc-${version}-${RUST_TARGET}.tar.xz \
 			build/dist/rust-std-${version}-${RUST_TARGET}.tar.xz \
+			build/dist/cargo-${version}-${RUST_TARGET}.tar.xz \
 			${XBPS_SRCDISTDIR}/distfiles
 		exit 1
 	fi
@@ -209,6 +225,9 @@ do_install() {
 	 -C "$DESTDIR/usr/lib" --strip-components=3 --exclude=manifest.in
 	tar xf build/dist/rust-docs-${version}-${RUST_TARGET}.tar.gz \
 	 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in
+	tar xf build/dist/cargo-${version}-${RUST_TARGET}.tar.gz \
+	 -C "$DESTDIR/usr" --strip-components=2 --exclude=manifest.in \
+	 cargo-${version}-${RUST_TARGET}/cargo/bin cargo-${version}-${RUST_TARGET}/cargo/libexec
 
 	vlicense COPYRIGHT
 	vlicense LICENSE-APACHE
@@ -234,11 +253,34 @@ rust-doc_package() {
 }
 
 rust-std_package() {
+	lib32disabled=yes
 	short_desc+=" - standard library"
 	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 		depends="libexecinfo-devel"
 	fi
 	pkg_install() {
 		vmove usr/lib/rustlib
+	}
+}
+
+cargo_package() {
+	short_desc="Rust package manager"
+	depends="rust"
+	pkg_install() {
+		vmove usr/bin/cargo
+		vmove usr/libexec/cargo-credential-1password
+
+		_cargo_src="src/tools/cargo"
+
+		vcompletion $_cargo_src/src/etc/_cargo zsh
+		vcompletion $_cargo_src/src/etc/cargo.bashcomp.sh bash
+
+		for f in $_cargo_src/src/etc/man/*.?; do
+			vman $f
+		done
+
+		vlicense $_cargo_src/LICENSE-APACHE
+		vlicense $_cargo_src/LICENSE-MIT
+		vlicense $_cargo_src/LICENSE-THIRD-PARTY
 	}
 }
