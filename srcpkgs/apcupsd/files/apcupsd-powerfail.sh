@@ -1,9 +1,7 @@
-#!/bin/sh
-exec 2>&1
-
 PWRFAILDIR="$( awk '$1 == "PWRFAILDIR" {print $2; exit}' /etc/apcupsd/apcupsd.conf )"
 PWRFAILDIR="${PWRFAILDIR:-/etc/apcupsd}"
-rm -f "${PWRFAILDIR}/powerfail"
 
-[ -r conf ] && . ./conf
-exec apcupsd -b ${OPTS}
+if [ -f "${PWRFAILDIR}/powerfail" ]; then
+   msg "Powering off the UPS with APCUPSD..."
+   /etc/apcupsd/apccontrol killpower
+fi
