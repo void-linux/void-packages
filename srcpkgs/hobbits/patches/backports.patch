@@ -1,0 +1,78 @@
+Backports some changes sent upstream to better support plain cmake builds
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 1cc283d..5795a97 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -15,7 +15,10 @@ if (UNIX AND NOT APPLE)
+     set(LINUX TRUE)
+ endif()
+ 
+-if (EXISTS "${CMAKE_SOURCE_DIR}/.version")
++if (DEFINED BUILD_VERSION)
++    message("Using build version from command-line")
++    set(VERSION_STRING "${BUILD_VERSION}")
++elseif (EXISTS "${CMAKE_SOURCE_DIR}/.version")
+     message("Getting build version from .version file")
+     file (STRINGS "${CMAKE_SOURCE_DIR}/.version" BUILD_VERSION)
+     string(REGEX REPLACE "\n$" "" BUILD_VERSION "${BUILD_VERSION}")
+@@ -106,7 +143,13 @@ else()
+ 	endif()
+ 
+ 	# PFFFT
+-	find_package(PFFFT REQUIRED)
++	option(USE_SYSTEM_PFFFT "Use a system-provided version of pffft" OFF)
++	if(USE_SYSTEM_PFFFT)
++		message(STATUS "Using system pffft")
++		find_package(PFFFT REQUIRED)
++	else()
++		add_subdirectory(external)
++	endif()
+ 
+ endif()
+ 
+@@ -124,7 +167,7 @@ elseif( MANUAL_PYTHON_PATH )
+ 	set ( Python3_ROOT_DIR "${MANUAL_PYTHON_PATH}" )
+ endif()
+ 
+-find_package (Python3 3.9 EXACT COMPONENTS Interpreter Development REQUIRED)
++find_package (Python3 3.9 COMPONENTS Interpreter Development REQUIRED)
+ message("Python3 Libs: ${Python3_LIBRARIES}")
+ 
+ #
+diff --git a/cmake/PackExternalDeps.cmake b/cmake/PackExternalDeps.cmake
+index 4be07c7..330be03 100644
+--- a/cmake/PackExternalDeps.cmake
++++ b/cmake/PackExternalDeps.cmake
+@@ -145,7 +145,7 @@ endfunction(pack_python)
+ function(pack_pffft)
+ 	install(FILES ${PFFFT_LIBRARIES}
+ 			DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+-endfunction(pack_pcap)
++endfunction(pack_pffft)
+ 
+ function(pack_pcap)
+     if (LINUX)
+diff --git a/external/CMakeLists.txt b/external/CMakeLists.txt
+new file mode 100644
+index 0000000..ea1c9a3
+--- /dev/null
++++ b/external/CMakeLists.txt
+@@ -0,0 +1,17 @@
++
++# can't assume the target system has the required SIMD instructions
++option(PFFFT_ENABLE_SIMD "Enable SIMD support for pffft" OFF)
++
++message(STATUS "Using bundled pffft")
++add_library(pffft STATIC pffft/pffft.c)
++if(PFFFT_ENABLE_SIMD)
++    message(STATUS "Enabling SIMD support for pffft")
++else()
++    message(STATUS "Disabling SIMD support for pffft")
++    target_compile_definitions(pffft PUBLIC PFFFT_SIMD_DISABLE)
++endif()
++target_compile_options(pffft PUBLIC "${PFFFT_CFLAGS}")
++target_link_libraries(pffft m)
++target_include_directories(pffft INTERFACE pffft)
++
++add_library(PFFFT::PFFFT ALIAS pffft)
