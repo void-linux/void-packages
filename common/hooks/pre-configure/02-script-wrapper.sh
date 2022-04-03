@@ -154,6 +154,23 @@ install_wrappers() {
 	done
 }
 
+install_which() {
+	if ! command -v which >/dev/null 2>&1; then
+		cat >>"${XBPS_WRAPPERDIR}/which" <<-'_EOF'
+		#!/bin/sh
+		ret=0
+		while test $# != 0; do
+		    case "$1" in
+		    -*) ;;
+		    *) command -v "$1" || ret=1 ;;
+		    esac
+		    shift
+		done
+		exit "$ret"
+		_EOF
+	fi
+}
+
 install_cross_wrappers() {
 	local fname prefix
 
@@ -188,6 +205,7 @@ hook() {
 	export PATH="$XBPS_WRAPPERDIR:$PATH"
 
 	install_wrappers
+	install_which
 
 	[ -z "$CROSS_BUILD" ] && return 0
 
