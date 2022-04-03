@@ -171,6 +171,15 @@ install_which() {
 	fi
 }
 
+install_tar() {
+	if ! command -v tar >/dev/null 2>&1; then
+		cat >>"${XBPS_WRAPPERDIR}/tar" <<-'_EOF'
+		#!/bin/sh
+		bsdtar "$@"
+		_EOF
+	fi
+}
+
 install_cross_wrappers() {
 	local fname prefix
 
@@ -206,6 +215,7 @@ hook() {
 
 	install_wrappers
 	install_which
+	install_tar
 
 	[ -z "$CROSS_BUILD" ] && return 0
 
