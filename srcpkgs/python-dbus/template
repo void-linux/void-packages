@@ -1,11 +1,11 @@
 # Template file for 'python-dbus'
 pkgname=python-dbus
 version=1.2.18
-revision=1
+revision=2
 wrksrc="dbus-python-${version}"
 build_style=gnu-configure
-hostmakedepends="pkg-config python-devel python3-devel"
-makedepends="libglib-devel ${hostmakedepends/pkg-config/}"
+hostmakedepends="pkg-config python python3"
+makedepends="libglib-devel python3-devel python-devel"
 depends="python dbus"
 short_desc="D-Bus Python2 bindings"
 maintainer="Orphaned <orphan@voidlinux.org>"
@@ -20,35 +20,55 @@ pre_configure() {
 	mv * dbus-${py2_ver} || true
 	cp -a dbus-${py2_ver} dbus-${py3_ver}
 }
-do_configure() {
-	local py_abiver=
-	for pyver in $py2_ver $py3_ver; do
-		if [ "$pyver" != "$py2_ver" ]; then
-			py_inc="$py3_inc"
-			py_abiver="$py3_abiver"
-		else
-			py_inc="$py2_inc"
-		fi
 
-		cd ${wrksrc}/dbus-${pyver}
+do_configure() {
+	local py_abiver py_inc pyver
+	for pyver in $py2_ver $py3_ver; do
+		case "${pyver}" in
+			"${py2_ver}")
+				py_inc="$py2_inc"
+				;;
+			*)
+				py_inc="$py3_inc"
+				py_abiver="$py3_abiver"
+				;;
+		esac
+
 		export PYTHON_CPPFLAGS="-I${XBPS_CROSS_BASE}/${py_inc}"
 		export PYTHON_EXTRA_LIBS="-L${XBPS_CROSS_BASE}/usr/lib -lpython${pyver}${py_abiver}"
 		export PYTHON_VERSION="${pyver}"
-		./configure ${configure_args}
+
+		( cd dbus-${pyver} && ./configure ${configure_args} )
+
 	done
+
+	unset PYTHON_CPPFLAGS PYTHON_EXTRA_LIBS PYTHON_VERSION
 }
+
 do_build() {
+	local pyver
 	for pyver in $py2_ver $py3_ver; do
-		cd ${wrksrc}/dbus-${pyver}
-		make ${makejobs}
+		( cd dbus-${pyver} && make ${makejobs} )
 	done
 }
+
 do_install() {
+	local pyver pysite eggver
 	for pyver in $py2_ver $py3_ver; do
-		cd ${wrksrc}/dbus-${pyver}
-		make DESTDIR=${DESTDIR} install
-		vlicense COPYING
+		case "${pyver}" in
+			"${py2_ver}") pysite="${py2_sitelib}" ;;
+			*) pysite="${py3_sitelib}" ;;
+		esac
+
+		eggver="dbus_python-${version}-py${pyver}"
+		(
+			cd dbus-${pyver}
+			make DESTDIR=${DESTDIR} install
+			vcopy dbus_python.egg-info "${pysite}/${eggver}.egg-info"
+		)
 	done
+
+	vlicense dbus-${py2_ver}/COPYING
 }
 
 python3-dbus_package() {
@@ -57,16 +77,10 @@ python3-dbus_package() {
 	short_desc="${short_desc/Python2/Python3}"
 	pkg_install() {
 		vmove usr/lib/python3*
+		vlicense dbus-${py3_ver}/COPYING
 	}
 }
-# This package used to provide both Python 2 and Python 3 development files
-# Those files are now in python3-dbus-devel
-python-dbus-devel_package() {
-	depends="python-devel python-dbus>=${version}_${revision}
-	 python3-dbus-devel>=${version}_${revision}"
-	build_style=meta
-	short_desc+=" - development files (Python 2 meta)"
-}
+
 python3-dbus-devel_package() {
 	depends="python3-devel python3-dbus>=${version}_${revision}"
 	short_desc="${short_desc/Python2/Python3} - development files"

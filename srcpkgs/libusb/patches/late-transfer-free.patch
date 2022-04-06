@@ -1,0 +1,136 @@
+From 010691ff6fdf9fcfaa7f76c1417dfc1f7df124ca Mon Sep 17 00:00:00 2001
+From: Benjamin Berg <bberg@redhat.com>
+Date: Tue, 15 Feb 2022 11:13:41 +0100
+Subject: [PATCH] io: Track device in usbi_transfer
+
+transfer->dev_handle currently has the behaviour that it will be unset
+if the device is closed. The sync API uses this fact to catch an error
+case.
+
+In other cases, transfer->dev_handle will keep its value, which means
+that if the transfer lives longer than the device handle, the pointer
+becomes invalid.
+
+The transfer does however keep a reference to the device, which owns the
+pointer to the context. As such, we can track this reference internal to
+the transfer, and it is set while the transfer is in-flight.
+
+With this, switch the logging infrastructure to use itransfer->dev->ctx
+while checking that itransfer->dev is non-NULL.
+
+Note that this was a regression caused by 6cae9c6dbd74 ("core: update
+usbi_dbg to take the context as an argument"), specifically when
+resolving the context while freeing a transfer after closing a device.
+
+Note that the transfer will now keep a reference to the device until it
+is free'ed. This allows it to use the correct context for logging even
+in libusb_free_transfer.
+
+The alternative to all this would be to just explicitly pass NULL to the
+log handler in libusb_free_transfer.
+
+Closes: #1038
+---
+ libusb/io.c      | 20 ++++++++++++--------
+ libusb/libusbi.h | 11 ++++++++---
+ 2 files changed, 20 insertions(+), 11 deletions(-)
+
+diff --git a/libusb/io.c b/libusb/io.c
+index 0d2ac9ea..b919e9d9 100644
+--- a/libusb/io.c
++++ b/libusb/io.c
+@@ -1344,6 +1344,8 @@ void API_EXPORTED libusb_free_transfer(struct libusb_transfer *transfer)
+ 
+ 	itransfer = LIBUSB_TRANSFER_TO_USBI_TRANSFER(transfer);
+ 	usbi_mutex_destroy(&itransfer->lock);
++	if (itransfer->dev)
++		libusb_unref_device(itransfer->dev);
+ 
+ 	priv_size = PTR_ALIGN(usbi_backend.transfer_priv_size);
+ 	ptr = (unsigned char *)itransfer - priv_size;
+@@ -1489,9 +1491,15 @@ int API_EXPORTED libusb_submit_transfer(struct libusb_transfer *transfer)
+ {
+ 	struct usbi_transfer *itransfer =
+ 		LIBUSB_TRANSFER_TO_USBI_TRANSFER(transfer);
+-	struct libusb_context *ctx = TRANSFER_CTX(transfer);
++	struct libusb_context *ctx;
+ 	int r;
+ 
++	assert(transfer->dev_handle);
++	if (itransfer->dev)
++		libusb_unref_device(itransfer->dev);
++	itransfer->dev = libusb_ref_device(transfer->dev_handle->dev);
++
++	ctx = HANDLE_CTX(transfer->dev_handle);
+ 	usbi_dbg(ctx, "transfer %p", transfer);
+ 
+ 	/*
+@@ -1551,8 +1559,6 @@ int API_EXPORTED libusb_submit_transfer(struct libusb_transfer *transfer)
+ 	r = usbi_backend.submit_transfer(itransfer);
+ 	if (r == LIBUSB_SUCCESS) {
+ 		itransfer->state_flags |= USBI_TRANSFER_IN_FLIGHT;
+-		/* keep a reference to this device */
+-		libusb_ref_device(transfer->dev_handle->dev);
+ 	}
+ 	usbi_mutex_unlock(&itransfer->lock);
+ 
+@@ -1659,7 +1665,6 @@ int usbi_handle_transfer_completion(struct usbi_transfer *itransfer,
+ {
+ 	struct libusb_transfer *transfer =
+ 		USBI_TRANSFER_TO_LIBUSB_TRANSFER(itransfer);
+-	struct libusb_device_handle *dev_handle = transfer->dev_handle;
+ 	struct libusb_context *ctx = ITRANSFER_CTX(itransfer);
+ 	uint8_t flags;
+ 	int r;
+@@ -1693,7 +1698,6 @@ int usbi_handle_transfer_completion(struct usbi_transfer *itransfer,
+ 	 * this point. */
+ 	if (flags & LIBUSB_TRANSFER_FREE_TRANSFER)
+ 		libusb_free_transfer(transfer);
+-	libusb_unref_device(dev_handle->dev);
+ 	return r;
+ }
+ 
+@@ -1727,10 +1731,10 @@ int usbi_handle_transfer_cancellation(struct usbi_transfer *itransfer)
+  * function will be called the next time an event handler runs. */
+ void usbi_signal_transfer_completion(struct usbi_transfer *itransfer)
+ {
+-	libusb_device_handle *dev_handle = USBI_TRANSFER_TO_LIBUSB_TRANSFER(itransfer)->dev_handle;
++	struct libusb_device *dev = itransfer->dev;
+ 
+-	if (dev_handle) {
+-		struct libusb_context *ctx = HANDLE_CTX(dev_handle);
++	if (dev) {
++		struct libusb_context *ctx = DEVICE_CTX(dev);
+ 		unsigned int event_flags;
+ 
+ 		usbi_mutex_lock(&ctx->event_data_lock);
+diff --git a/libusb/libusbi.h b/libusb/libusbi.h
+index 158a9af5..7618236f 100644
+--- a/libusb/libusbi.h
++++ b/libusb/libusbi.h
+@@ -329,10 +329,11 @@ void usbi_log(struct libusb_context *ctx, enum libusb_log_level level,
+ #endif /* ENABLE_LOGGING */
+ 
+ #define DEVICE_CTX(dev)		((dev)->ctx)
+-#define HANDLE_CTX(handle)	(DEVICE_CTX((handle)->dev))
+-#define TRANSFER_CTX(transfer)	(HANDLE_CTX((transfer)->dev_handle))
++#define HANDLE_CTX(handle)	((handle) ? DEVICE_CTX((handle)->dev) : NULL)
+ #define ITRANSFER_CTX(itransfer) \
+-	(TRANSFER_CTX(USBI_TRANSFER_TO_LIBUSB_TRANSFER(itransfer)))
++	((itransfer)->dev ? DEVICE_CTX((itransfer)->dev) : NULL)
++#define TRANSFER_CTX(transfer) \
++	(ITRANSFER_CTX(LIBUSB_TRANSFER_TO_USBI_TRANSFER(transfer)))
+ 
+ #define IS_EPIN(ep)		(0 != ((ep) & LIBUSB_ENDPOINT_IN))
+ #define IS_EPOUT(ep)		(!IS_EPIN(ep))
+@@ -562,6 +563,10 @@ struct usbi_transfer {
+ 	uint32_t state_flags;   /* Protected by usbi_transfer->lock */
+ 	uint32_t timeout_flags; /* Protected by the flying_stransfers_lock */
+ 
++	/* The device reference is held until destruction for logging
++	 * even after dev_handle is set to NULL.  */
++	struct libusb_device *dev;
++
+ 	/* this lock is held during libusb_submit_transfer() and
+ 	 * libusb_cancel_transfer() (allowing the OS backend to prevent duplicate
+ 	 * cancellation, submission-during-cancellation, etc). the OS backend

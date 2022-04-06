@@ -529,6 +529,7 @@ Example:
   | UBUNTU_SITE      | http://archive.ubuntu.com/ubuntu/pool           |
   | XORG_SITE        | https://www.x.org/releases/individual            |
   | KDE_SITE         | https://download.kde.org/stable                 |
+  | VIDEOLAN_SITE    | https://download.videolan.org/pub/videolan      |
 
 - `checksum` The `sha256` digests matching `${distfiles}`. Multiple files can be
 separated by blanks. Please note that the order must be the same than
@@ -1100,7 +1101,13 @@ still be passed in if it's a GNU configure script.
 
 - `post_build()` Actions to execute after `do_build()`.
 
-- `pre_install()` Actions to execute after `post_build()`.
+- `pre_check()` Actions to execute after `post_build()`.
+
+- `do_check()` Actions to execute to run checks for the package.
+
+- `post_check()` Actions to execute after `do_check()`.
+
+- `pre_install()` Actions to execute after `post_check()`.
 
 - `do_install()` Actions to execute to install the package files into the `fake destdir`.
 
