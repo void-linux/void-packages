@@ -362,6 +362,11 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	it will default to `pkgname`. The `shell` argument can be one of `bash`,
 	`fish` or `zsh`.
 
+- *vrm()* `vrm [-r] <file...>`
+
+	Wrapper around rm that checks if the file exists and prints a warning if it
+    doesn't.
+
 > Shell wildcards must be properly quoted, Example: `vmove "usr/lib/*.a"`.
 
 <a id="global_vars"></a>
