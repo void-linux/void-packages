@@ -68,7 +68,7 @@ bulk_build() {
 
     # Compare installed pkg versions vs srcpkgs
     if [[ $sys ]]; then
-        xbps-checkvers -f '%n' -I -D $XBPS_DISTDIR
+        bulk_sortdeps $(xbps-checkvers -f '%n' -I -D $XBPS_DISTDIR)
         return $?
     fi
     # compare repo pkg versions vs srcpkgs
