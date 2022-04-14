@@ -1,13 +1,14 @@
 # Template file for 'emacs'
 pkgname=emacs
 version=28.1
-revision=1
+revision=2
 build_style=gnu-configure
 configure_args="--with-file-notification=inotify --with-modules
  $(vopt_with jpeg) $(vopt_with tiff) $(vopt_with gif) $(vopt_with png)
  $(vopt_with xpm) $(vopt_with svg rsvg) $(vopt_with imagemagick)
  $(vopt_with xml xml2) $(vopt_with gnutls) $(vopt_with sound) $(vopt_with m17n m17n-flt)
- $(vopt_with json) $(vopt_with harfbuzz) $(vopt_with cairo) $(vopt_with gmp libgmp)"
+ $(vopt_with json) $(vopt_with harfbuzz) $(vopt_with cairo) $(vopt_with gmp libgmp)
+ $(vopt_with nativecomp native-compilation)"
 hostmakedepends="pkg-config tar"
 makedepends="ncurses-devel libXaw-devel gtk+3-devel webkit2gtk-devel
  dbus-devel acl-devel
@@ -17,7 +18,8 @@ makedepends="ncurses-devel libXaw-devel gtk+3-devel webkit2gtk-devel
  $(vopt_if xml libxml2-devel) $(vopt_if gnutls gnutls-devel)
  $(vopt_if sound alsa-lib-devel) $(vopt_if m17n m17n-lib-devel)
  $(vopt_if json jansson-devel) $(vopt_if harfbuzz harfbuzz-devel)
- $(vopt_if cairo cairo-devel) $(vopt_if gmp gmp-devel)"
+ $(vopt_if cairo cairo-devel) $(vopt_if gmp gmp-devel)
+ $(vopt_if nativecomp libgccjit-devel)"
 depends="emacs-common-${version}_${revision}"
 short_desc="GNU Emacs editor"
 maintainer="Leah Neukirchen <leah@vuxu.org>"
@@ -29,12 +31,16 @@ nocross=yes
 nopie=yes
 
 # Package build options
-build_options="jpeg tiff gif png xpm svg xml imagemagick gnutls sound m17n dbus json harfbuzz cairo gmp"
-desc_option_xpm="Enable support for XPM images"
-desc_option_sound="Enable support for sound"
+build_options="jpeg tiff gif png xpm svg xml imagemagick gnutls sound m17n dbus json harfbuzz cairo gmp nativecomp"
+desc_option_cairo="Enable support for drawing with Cairo"
+desc_option_gmp="Enable support for big numbers using GMP"
+desc_option_json="Enable support for native JSON parsing"
 desc_option_m17n="Enable support for m17n multilingual text processing"
-build_options_default="cairo gif gmp gnutls harfbuzz jpeg json m17n png sound
- svg tiff xml xpm"
+desc_option_nativecomp="Enable support for native compilation"
+desc_option_sound="Enable support for sound"
+desc_option_xpm="Enable support for XPM images"
+build_options_default="cairo gif gmp gnutls harfbuzz jpeg json m17n nativecomp
+ png sound svg tiff xml xpm"
 
 pre_configure() {
 	# Just configuring in different directories results in
@@ -47,7 +53,8 @@ pre_configure() {
 
 do_configure() {
 	cd $wrksrc/nox
-	./configure --without-x $(vopt_with dbus) ${configure_args}
+	./configure --without-x $(vopt_with dbus) ${configure_args} \
+		--without-native-compilation
 
 	cd $wrksrc/x11
 	./configure --with-x-toolkit=athena --without-toolkit-scroll-bars \
@@ -60,12 +67,13 @@ do_configure() {
 
 do_build() {
 	make ${makejobs} -C nox
-	make ${makejobs} -C x11
+	make ${makejobs} -C x11 $(vopt_if nativecomp NATIVE_FULL_AOT=1)
 	make ${makejobs} -C gtk3
 }
 
 do_install() {
 	make DESTDIR=$DESTDIR -C ${wrksrc}/nox install
+	make DESTDIR=$DESTDIR -C ${wrksrc}/x11 install-eln
 	rm -f ${DESTDIR}/usr/bin/ctags
 	rm -f ${DESTDIR}/usr/lib/systemd/user/emacs.service
 	rm -f ${DESTDIR}/usr/share/man/man1/ctags.1*
@@ -84,8 +92,23 @@ emacs-common_package() {
 	}
 }
 
+emacs-common-eln_package() {
+	short_desc+=" - common precompiled elisp"
+	if [ -z "$build_option_nativecomp" ]; then
+		build_style=meta
+	fi
+	pkg_install() {
+		if [ "$build_option_nativecomp" ]; then
+			vmove usr/lib/emacs
+		fi
+	}
+}
+
 emacs-x11_package() {
 	depends="emacs-common-${version}_${revision}"
+	if [ "$build_option_nativecomp" ]; then
+		depends+=" emacs-common-eln-${version}_${revision}"
+	fi
 	provides="emacs-${version}_${revision}"
 	replaces="emacs>=0"
 	short_desc+=" - X11 version"
@@ -99,6 +122,9 @@ emacs-x11_package() {
 
 emacs-gtk3_package() {
 	depends="emacs-common-${version}_${revision} desktop-file-utils hicolor-icon-theme"
+	if [ "$build_option_nativecomp" ]; then
+		depends+=" emacs-common-eln-${version}_${revision}"
+	fi
 	provides="emacs-${version}_${revision}"
 	replaces="emacs>=0"
 	short_desc+=" - GTK+3 version"
