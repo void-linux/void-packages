@@ -1,0 +1,216 @@
+# Template file for 'libgccjit'
+# Revbump libtool when updating gcc, since it hardcodes some internal compiler paths
+# which use the version number.
+
+pkgname=libgccjit
+# we are using a 10-stable git snapshot alpine is using in order
+# to get regression fixes not yet incorporate into a stable release
+# it should be possible to switch back to stable with 10.3 or 11
+version=10.2.1pre1
+revision=1
+_patchver="${version%pre*}"
+_minorver="${_patchver%.*}"
+_majorver="${_minorver%.*}"
+_gmp_version=6.2.0
+_mpfr_version=4.1.0
+_mpc_version=1.1.0
+_isl_version=0.21
+wrksrc=gcc-${version/pre/_pre}
+short_desc="Just-In-Time Compilation library for GCC"
+maintainer="Lane Biocini <lane@mailbox.org>"
+homepage="https://gcc.gnu.org"
+license="GFDL-1.2-or-later, GPL-3.0-or-later, LGPL-2.1-or-later"
+# *-musl builders have issues fetching https://ftp.gnu.org/gnu/mpc/mpc-1.1.0.tar.gz
+distfiles="
+ https://dev.alpinelinux.org/~nenolod/gcc-${version/pre/_pre}.tar.xz
+ https://gmplib.org/download/gmp/gmp-${_gmp_version}.tar.xz
+ ${GNU_SITE}/mpfr/mpfr-${_mpfr_version}.tar.xz
+ ${GNU_SITE}/mpc/mpc-${_mpc_version}.tar.gz
+ ${SOURCEFORGE_SITE}/libisl/isl-${_isl_version}.tar.bz2"
+checksum="772cfd5d30eb9cc5a996fec9ba8cdcb45d37df1c9b5770610103b814b732c590
+ 258e6cd51b3fbdfc185c716d55f82c08aff57df0c6fbd143cf6ed561267a1526
+ 0c98a3f1732ff6ca4ea690552079da9c597872d30e96ec28414ee23c95558a7f
+ 6985c538143c1208dcb1ac42cedad6ff52e267b47e5f970183a3e75125b43c2e
+ d18ca11f8ad1a39ab6d03d3dcb3365ab416720fcb65b42d69f34f51bf0a0e859"
+nopie=yes
+lib32disabled=yes
+makedepends="zlib-devel"
+hostmakedepends="tar texinfo perl flex"
+depends="gcc"
+checkdepends="dejagnu"
+
+post_extract() {
+	mv ${XBPS_BUILDDIR}/gmp-${_gmp_version} ${wrksrc}/gmp
+	mv ${XBPS_BUILDDIR}/mpfr-${_mpfr_version} ${wrksrc}/mpfr
+	mv ${XBPS_BUILDDIR}/mpc-${_mpc_version} ${wrksrc}/mpc
+	mv ${XBPS_BUILDDIR}/isl-${_isl_version} ${wrksrc}/isl
+}
+
+pre_configure() {
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		for p in ${FILESDIR}/*-musl.patch; do
+			patch -p1 -i $p
+		done
+	fi
+}
+
+do_configure() {
+	# Define triplet for gcc build target
+	case "$XBPS_TARGET_MACHINE" in
+		i686) _target_triplet="i686-pc-linux-gnu";;
+		i686-musl) _target_triplet="i686-linux-musl";;
+		x86_64) _target_triplet="x86_64-unknown-linux-gnu";;
+		x86_64-musl) _target_triplet="x86_64-linux-musl";;
+		armv5tel) _target_triplet="arm-linux-gnueabi";;
+		armv5tel-musl) _target_triplet="arm-linux-musleabi";;
+		armv6l) _target_triplet="arm-linux-gnueabihf";;
+		armv7l) _target_triplet="armv7l-linux-gnueabihf";;
+		armv6l-musl) _target_triplet="arm-linux-musleabihf";;
+		armv7l-musl) _target_triplet="armv7l-linux-musleabihf";;
+		aarch64) _target_triplet="aarch64-linux-gnu";;
+		aarch64-musl) _target_triplet="aarch64-linux-musl";;
+		ppc) _target_triplet="powerpc-linux-gnu";;
+		ppc-musl) _target_triplet="powerpc-linux-musl";;
+		ppcle) _target_triplet="powerpcle-linux-gnu";;
+		ppcle-musl) _target_triplet="powerpcle-linux-musl";;
+		ppc64le) _target_triplet="powerpc64le-linux-gnu";;
+		ppc64le-musl) _target_triplet="powerpc64le-linux-musl";;
+		ppc64) _target_triplet="powerpc64-linux-gnu";;
+		ppc64-musl) _target_triplet="powerpc64-linux-musl";;
+		mips-musl) _target_triplet="mips-linux-musl";;
+		mipshf-musl) _target_triplet="mips-linux-muslhf";;
+		mipsel-musl) _target_triplet="mipsel-linux-musl";;
+		mipselhf-musl) _target_triplet="mipsel-linux-muslhf";;
+	esac
+
+	local _langs _args _hash
+	_hash=gnu
+	case "$XBPS_TARGET_MACHINE" in
+		mipselhf-musl) _args+=" --with-arch=mips32r2 --with-float=hard"; _hash=sysv;;
+		mipsel-musl) _args+=" --with-arch=mips32r2 --with-float=soft"; _hash=sysv;;
+		mipshf-musl) _args+=" --with-arch=mips32r2 --with-float=hard";;
+		mips-musl) _args+=" --with-arch=mips32r2 --with-float=soft";;
+		armv5*) _args+=" --with-arch=armv5te --with-float=soft";;
+		armv6l*) _args+=" --with-arch=armv6 --with-fpu=vfp --with-float=hard";;
+		armv7l*) _args+=" --with-arch=armv7-a --with-fpu=vfpv3 --with-float=hard";;
+		aarch64*) _args+=" --with-arch=armv8-a";;
+		ppc64le*) _args+=" --with-abi=elfv2 --enable-secureplt --enable-targets=powerpcle-linux";;
+		ppc64*) _args+=" --with-abi=elfv2 --enable-secureplt --enable-targets=powerpc-linux";;
+		ppc*) _args+=" --enable-secureplt";;
+	esac
+
+	# fix: unknown long double size, cannot define BFP_FMT
+	case "$XBPS_TARGET_MACHINE" in
+		ppc*-musl) _args+=" --disable-decimal-float";;
+	esac
+
+	if [ "$CROSS_BUILD" ]; then
+		export CC_FOR_TARGET="$CC"
+		export GCC_FOR_TARGET="$CC"
+		export CXX_FOR_TARGET="$CXX"
+
+		_args+=" --host=$XBPS_CROSS_TRIPLET"
+		_args+=" --with-build-sysroot=${XBPS_CROSS_BASE}"
+	elif [ -z "$CHROOT_READY" ]; then
+		export LD_LIBRARY_PATH="${XBPS_MASTERDIR}/usr/lib${XBPS_TARGET_WORDSIZE}"
+		_args+=" --build=${_target_triplet}"
+	else
+		_args+=" --build=${_target_triplet}"
+	fi
+
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		_args+=" --disable-gnu-unique-object"
+		_args+=" --disable-symvers"
+		_args+=" libat_cv_have_ifunc=no"
+	else
+		_args+=" --enable-gnu-unique-object"
+	fi
+
+	case "$XBPS_TARGET_MACHINE" in
+		ppc*) _args+=" --disable-vtable-verify";;
+		*) _args+=" --enable-vtable-verify";;
+	esac
+
+	export CFLAGS="${CFLAGS/-D_FORTIFY_SOURCE=2/}"
+	export CXXFLAGS="${CXXFLAGS/-D_FORTIFY_SOURCE=2/}"
+
+	# Disable explicit -fno-PIE, gcc will figure this out itself.
+	export CFLAGS="${CFLAGS//-fno-PIE/}"
+	export CXXFLAGS="${CXXFLAGS//-fno-PIE/}"
+	export LDFLAGS="${LDFLAGS//-no-pie/}"
+
+	# Needs explicit -fPIC
+	export CFLAGS+=" -fPIC"
+	export CXXFLAGS+=" -fPIC"
+
+	_args+=" --prefix=/usr"
+	_args+=" --mandir=/usr/share/man"
+	_args+=" --infodir=/usr/share/info"
+	_args+=" --libexecdir=/usr/lib${XBPS_TARGET_WORDSIZE}"
+	_args+=" --libdir=/usr/lib${XBPS_TARGET_WORDSIZE}"
+	_args+=" --enable-threads=posix"
+	_args+=" --enable-__cxa_atexit"
+	_args+=" --disable-multilib"
+	_args+=" --with-system-zlib"
+	_args+=" --enable-shared"
+	_args+=" --enable-lto"
+	_args+=" --enable-plugins"
+	_args+=" --enable-linker-build-id"
+	_args+=" --disable-werror"
+	_args+=" --disable-nls"
+	_args+=" --enable-default-pie"
+	_args+=" --enable-default-ssp"
+	_args+=" --enable-checking=release"
+	_args+=" --disable-libstdcxx-pch"
+	_args+=" --with-isl"
+	_args+=" --with-linker-hash-style=$_hash"
+	_args+=" --disable-sjlj-exceptions"
+	_args+=" --disable-target-libiberty"
+
+	# libgccjit compilation specific
+	_args+=" --enable-host-shared"
+	_args+=" --disable-bootstrap"
+	_args+=" --disable-libquadmath"
+	_args+=" --disable-libquadmath-support"
+	_args+=" --disable-libgomp"
+	_args+=" --disable-liboffloadmic"
+	_args+=" --disable-libada"
+	_args+=" --disable-libvtv"
+	_args+=" --disable-libsanitizer"
+	_args+=" --with-bugurl='https://github.com/void-linux/void-packages/issues'"
+
+	mkdir -p build
+	cd build
+
+	# If we are checking packages, we need to have c++ compiled
+	[ -z "$XBPS_CHECK_PKGS" ] && _langs="jit" || _langs="jit,c++"
+	_args+=" --enable-languages=${_langs}"
+	CONFIG_SHELL=/bin/bash \
+		${wrksrc}/configure ${_args}
+}
+
+do_build() {
+	make -C build ${makejobs}
+}
+
+do_check() {
+	make -C build/gcc check-jit RUNTESTFLAGS="-v -v -v"
+}
+
+do_install() {
+	make -C build/gcc DESTDIR=${DESTDIR} jit.install-common jit.install-info
+}
+
+post_install() {
+	vlicense COPYING.RUNTIME RUNTIME.LIBRARY.EXCEPTION
+}
+
+libgccjit-devel_package() {
+	short_desc+=" - development files"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/include
+		vmove usr/lib/*.so
+		vmove usr/share/info
+	}
+}
