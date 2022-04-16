@@ -1,11 +1,4 @@
-- TeXLive is free software see the files:
-
-  /usr/share/licenses/texlive2022-bin/LICENSE.TL
-  /usr/share/licenses/texlive2022-bin/LICENSE.CTAN
-
-=====================================================================
-
-  To update you TeXLive installation use only the program 
+  To update your TeX Live installation use only the program 
 
   /opt/texlive/2022/bin/<arch>/tlmgr
 
@@ -13,13 +6,12 @@
     - x86_64-linux  ==> x86_64 architecture
     - i386-linux    ==> i386 architecture
 
-  see:
-
+  for details see:
   http://www.tug.org/texlive/doc/tlmgr.html#EXAMPLES
-  
-  for the details and the documentation in 
     		 		 
-  WARNING: To avoid messing up your TeXLive installation, DON'T use
+  WARNING: To avoid messing up your TeX Live installation, DON'T use
   the installation scripts in /opt/texlive-installer.
 
+  This package only installs TeX Live infrastructure now, not TeX Live itself.
+  For a basic installation (previous default), run "tlmgr install scheme-basic".
   For a full installation, run "tlmgr install scheme-full".
