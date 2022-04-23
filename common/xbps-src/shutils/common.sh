@@ -147,6 +147,23 @@ msg_normal() {
     fi
 }
 
+report_broken() {
+    if [ "$show_problems" = "ignore-problems" ]; then
+        return
+    fi
+    if [ -z "$XBPS_IGNORE_BROKENNESS" ]; then
+        for line in "$@"; do
+            msg_red "$line"
+        done
+        exit 2
+    elif [ "$XBPS_IGNORE_BROKENNESS" != reported ]; then
+        for line in "$@"; do
+            msg_warn "$line"
+        done
+        XBPS_IGNORE_BROKENNESS=reported
+    fi
+}
+
 msg_normal_append() {
     [ -n "$NOCOLORS" ] || printf "\033[1m"
     printf "$@"
@@ -644,14 +661,14 @@ setup_pkg() {
         wrksrc="$XBPS_BUILDDIR/$wrksrc"
     fi
 
-    if [ "$cross" -a "$nocross" -a "$show_problems" != "ignore-problems" ]; then
-        msg_red "$pkgver: cannot be cross compiled, exiting...\n"
-        msg_red "$pkgver: $nocross\n"
-        exit 2
-    elif [ "$broken" -a "$show_problems" != "ignore-problems" ]; then
-        msg_red "$pkgver: cannot be built, it's currently broken; see the build log:\n"
-        msg_red "$pkgver: $broken\n"
-        exit 2
+    if [ "$cross" -a "$nocross" ]; then
+        report_broken \
+            "$pkgver: cannot be cross compiled...\n" \
+            "$pkgver: $nocross\n"
+    elif [ "$broken" ]; then
+        report_broken \
+            "$pkgver: cannot be built, it's currently broken; see the build log:\n" \
+            "$pkgver: $broken\n"
     fi
 
     if [ -n "$restricted" -a -z "$XBPS_ALLOW_RESTRICTED" -a "$show_problems" != "ignore-problems" ]; then
