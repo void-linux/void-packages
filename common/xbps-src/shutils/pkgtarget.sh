@@ -34,8 +34,7 @@ check_pkg_arch() {
             esac
         done
         if [ -z "$nonegation" -a -n "$match" ] || [ -n "$nonegation" -a -z "$match" ]; then
-            msg_red "${pkgname}-${version}_${revision}: this package cannot be built for ${_arch}.\n"
-            exit 2
+            report_broken "${pkgname}-${version}_${revision}: this package cannot be built for ${_arch}.\n"
         fi
     fi
 }
