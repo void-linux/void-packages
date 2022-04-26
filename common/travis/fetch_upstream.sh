@@ -9,7 +9,7 @@ elif command -v git >/dev/null 2>&1; then
 fi
 
 # required by git 2.35.2+
-$GIT_CMD config --global --add safe.directory /__w/void-packages/void-packages
+$GIT_CMD config --global --add safe.directory "$PWD"
 
 /bin/echo -e '\x1b[32mFetching upstream...\x1b[0m'
 $GIT_CMD fetch --depth 200 https://github.com/void-linux/void-packages.git master
