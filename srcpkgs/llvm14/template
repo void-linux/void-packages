@@ -15,6 +15,7 @@ configure_args="
  -DLIBCXXABI_ENABLE_STATIC_UNWINDER=YES
  -DLIBOMP_ENABLE_SHARED=YES
  -DLIBOMP_INSTALL_ALIASES=NO
+ -DCOMPILER_RT_DEFAULT_TARGET_ONLY=YES
  -DLLVM_INCLUDE_DOCS=YES
  -DLLVM_BUILD_DOCS=YES
  -DLLVM_ENABLE_SPHINX=YES
@@ -38,6 +39,7 @@ distfiles="https://github.com/llvm/llvm-project/releases/download/llvmorg-${vers
 checksum=44d3e7a784d5cf805e72853bb03f218bd1058d448c03ca883dabbebc99204e0c
 lib32disabled=yes
 python_version=3
+nopie_files="/usr/bin/llvm-omp-device-info"
 
 if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 	configure_args+=" -DLIBCXX_HAS_MUSL_LIBC=YES"
@@ -51,7 +53,8 @@ case "$XBPS_TARGET_MACHINE" in
 	ppc*) configure_args+=" -DCLANG_ENABLE_CLANGD=OFF" ;;
 esac
 
-_enabled_projects="clang;clang-tools-extra;compiler-rt;libcxx;libcxxabi;libunwind;lld"
+_enabled_projects="clang;clang-tools-extra;lld"
+_enabled_runtimes="compiler-rt;libcxx;libcxxabi;libunwind"
 
 _lldb_enable=yes
 _libomp_enable=no
@@ -67,9 +70,8 @@ esac
 
 subpackages="clang-tools-extra"
 
-# must go before clang
 if [ "$_libomp_enable" = "yes" ]; then
-	_enabled_projects+=";openmp"
+	_enabled_runtimes+=";openmp"
 	subpackages+=" libomp libomp-devel"
 	# because of cmake nonsense referencing libomptarget.so.*
 	depends+=" libomp>=${version}_${revision}"
@@ -88,6 +90,7 @@ fi
 subpackages+=" lld lld-devel"
 
 configure_args+=" -DLLVM_ENABLE_PROJECTS=${_enabled_projects}"
+configure_args+=" -DLLVM_ENABLE_RUNTIMES=${_enabled_runtimes}"
 
 post_patch() {
 	if [ "$_lldb_enable" = "yes" ]; then
@@ -135,8 +138,7 @@ post_patch() {
 }
 
 pre_configure() {
-	local triplet
-
+	local triplet=${XBPS_CROSS_TRIPLET:-$XBPS_TRIPLET}
 	# Vastly reduce size of debugging symbols:
 	CFLAGS=${CFLAGS/ -g/ -g1}
 	CXXFLAGS=${CXXFLAGS/ -g/ -g1}
@@ -156,7 +158,8 @@ pre_configure() {
 		CC="$BUILD_CC" CXX="$BUILD_CXX" CFLAGS="$BUILD_CFLAGS" \
 			CXXFLAGS="$BUILD_CXXFLAGS" LDFLAGS="$BUILD_LDFLAGS" \
 			cmake ../.. -DCMAKE_BUILD_TYPE=Release \
-			-DLLVM_ENABLE_PROJECTS=${_enabled_projects}
+			-DLLVM_ENABLE_PROJECTS=${_enabled_projects} \
+			-DLLVM_ENABLE_RUNTIMES=${_enabled_runtimes}
 		make ${makejobs} -C utils/TableGen
 		make ${makejobs} -C tools/clang/utils/TableGen
 		[ "$_lldb_enable" = "yes" ] && make ${makejobs} -C tools/lldb/utils/TableGen
@@ -177,8 +180,6 @@ pre_configure() {
 		ppc*) _arch="PowerPC";;
 		riscv64*) _arch="RISCV64";;
 	esac
-
-	triplet=${XBPS_CROSS_TRIPLET:-$XBPS_TRIPLET}
 
 	configure_args+=" -DLLVM_TARGET_ARCH=${_arch}"
 	configure_args+=" -DLLVM_HOST_TRIPLE=${triplet}"
@@ -249,7 +250,7 @@ clang-tools-extra_package() {
 		vmove "usr/lib/libclangQuery*"
 		vmove "usr/lib/libclangTidy*"
 		vmove "usr/share/clang/*tidy*"
-		vmove usr/share/doc/clang-tools
+		vmove usr/share/doc/LLVM/clang-tools
 		vmove usr/share/man/man1/extraclangtools.1
 		vmove usr/share/man/man1/diagtool.1
 	}
@@ -271,7 +272,7 @@ clang_package() {
 		vmove "usr/lib/libclang*.a"
 		vmove "usr/lib/libclang*.so"
 		vmove usr/share/clang
-		vmove usr/share/doc/clang
+		vmove usr/share/doc/LLVM/clang
 		vmove usr/share/man/man1/clang.1
 	}
 }
@@ -299,7 +300,7 @@ lld_package() {
 		vmove usr/bin/wasm-ld
 		vmove usr/bin/ld.lld*
 		vmove usr/bin/ld64.lld*
-		vmove usr/share/doc/lld
+		vmove usr/share/doc/LLVM/lld
 	}
 }
 
@@ -353,7 +354,6 @@ llvm-libunwind-devel_package() {
 		vmove usr/lib/libunwind.a
 		vmove "usr/include/*unwind*"
 		vmove usr/include/mach-o
-		vmove usr/share/doc/libunwind
 	}
 }
 
@@ -389,7 +389,6 @@ libcxx-devel_package() {
 		vmove usr/lib/libc++.a
 		vmove usr/lib/libc++experimental.a
 		vmove usr/include/c++
-		vmove usr/share/doc/libcxx
 	}
 }
 
@@ -399,7 +398,6 @@ libomp_package() {
 		vmove usr/lib/libomp.so
 		vmove "usr/lib/libomptarget.rtl.*.so"
 		vmove usr/lib/libarcher.so
-		vmove "usr/lib/libomp*.so.*"
 	}
 }
 
@@ -411,8 +409,6 @@ libomp-devel_package() {
 		vmove "usr/lib/libarcher*"
 		vmove "usr/include/omp*.h"
 		vmove "usr/lib/clang/${version}/include/omp*.h"
-		vmove usr/share/man/man1/llvmopenmp.1
-		vmove usr/share/doc/openmp
 	}
 }
 
