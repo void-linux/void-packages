@@ -13,7 +13,7 @@ https://github.com/void-linux/void-packages/blob/master/CONTRIBUTING.md#continuo
 and test at least one native build and, if supported, at least one cross build.
 Ignore this section if this PR is not skipping CI.
 -->
-<!-- 
+<!--
 #### Local build testing
 - I built this PR locally for my native architecture, (ARCH-LIBC)
 - I built this PR locally for these architectures (if supported. mark crossbuilds):
