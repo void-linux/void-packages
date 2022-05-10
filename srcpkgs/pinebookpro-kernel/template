@@ -1,15 +1,18 @@
 # Template file for 'pinebookpro-kernel'
 pkgname=pinebookpro-kernel
-version=5.10.46
+version=5.15.38
 revision=1
 archs="aarch64*"
-wrksrc="linux-${version}"
+wrksrc="linux-${version%.*}"
 short_desc="Linux kernel for Pinebook Pro"
 maintainer="Renato Aguiar <renato@renatoaguiar.net>"
 license="GPL-2.0-only"
 homepage="https://www.kernel.org"
-distfiles="https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${version}.tar.xz"
-checksum=569122a39c6b325befb9ac1c07da0c53e6363b3baacd82081d131b06c1dc1415
+distfiles="https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${version%.*}.tar.xz
+ https://cdn.kernel.org/pub/linux/kernel/v5.x/patch-${version}.xz"
+checksum="57b2cf6991910e3b67a1b3490022e8a0674b6965c74c12da1e99d138d1991ee8
+ b62b570af247d884dd0232f509e4e33c5edf57240b1712733e61c37a1d4b4424"
+skip_extraction="patch-${version}.xz"
 python_version=3
 
 nodebug=yes  # -dbg package is generated below manually
@@ -19,7 +22,7 @@ noshlibprovides=yes
 preserve=yes
 
 hostmakedepends="tar xz bc elfutils-devel flex gmp-devel kmod libmpc-devel
- openssl-devel perl uboot-mkimage cpio python3"
+ openssl-devel perl uboot-mkimage cpio pahole python3"
 
 _kernver="${version}_${revision}"
 triggers="kernel-hooks"
@@ -28,6 +31,7 @@ kernel_hooks_version="${_kernver}"
 # These files could be modified when an external module is built.
 mutable_files="
  /usr/lib/modules/${_kernver}/modules.builtin.bin
+ /usr/lib/modules/${_kernver}/modules.builtin.alias.bin
  /usr/lib/modules/${_kernver}/modules.softdep
  /usr/lib/modules/${_kernver}/modules.dep
  /usr/lib/modules/${_kernver}/modules.dep.bin
@@ -37,40 +41,40 @@ mutable_files="
  /usr/lib/modules/${_kernver}/modules.alias.bin
  /usr/lib/modules/${_kernver}/modules.devname"
 
-do_configure() {
-	# 5.4 misses Documentation/DocBook. We ship the directory from 4.12 here.
-	cp -a $FILESDIR/DocBook -t Documentation
+# reproducible build
+export KBUILD_BUILD_TIMESTAMP=$(LC_ALL=C date -ud @${SOURCE_DATE_EPOCH:-0})
+export KBUILD_BUILD_USER=voidlinux
+export KBUILD_BUILD_HOST=voidlinux
 
-	local arch subarch _args
+if [ "$CROSS_BUILD" ]; then
+	_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+fi
+
+pre_patch() {
+	xzcat $XBPS_SRCDISTDIR/$pkgname-$version/patch-${version}.xz | patch -Np1
+}
+
+do_configure() {
+	local arch
 
 	arch=arm64
 
-	if [ "$CROSS_BUILD" ]; then
-		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
-	fi
-
 	cp -f ${FILESDIR}/dotconfig .config
-	make ${makejobs} ARCH=$arch ${_args} oldconfig
+	make ${makejobs} ARCH=$arch ${_cross} oldconfig
 
 	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
 	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
 }
 
 do_build() {
-	local arch _cross _args
+	local arch _args
 
 	_args="Image modules dtbs"
 	arch=arm64
 
-	if [ "$CROSS_BUILD" ]; then
-		_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
-	fi
-	if [ "${_patchver}" ]; then
-		_version="EXTRAVERSION=${_patchver}"
-	fi
 	export LDFLAGS=
-	make ARCH=$arch ${_version} ${_cross} ${makejobs} prepare
-	make ARCH=$arch ${_version} ${_cross} ${makejobs} ${_args}
+	make ARCH=$arch ${_cross} ${makejobs} prepare
+	make ARCH=$arch ${_cross} ${makejobs} ${_args}
 }
 
 do_install() {
@@ -82,7 +86,7 @@ do_install() {
 	sed -i '2iexit 0' scripts/depmod.sh
 
 	# Install kernel, firmware and modules
-	make ${makejobs} ARCH=${subarch:-$arch} INSTALL_MOD_PATH=${DESTDIR} modules_install
+	make ${makejobs} ARCH=${subarch:-$arch} INSTALL_MOD_PATH=${DESTDIR} ${_cross} modules_install
 
 	hdrdest=${DESTDIR}/usr/src/kernel-headers-${_kernver}
 
@@ -90,7 +94,7 @@ do_install() {
 	vinstall System.map 644 boot System.map-${_kernver}
 
 	vinstall arch/arm64/boot/Image 644 boot vmlinux-${_kernver}
-	make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} dtbs_install
+	make ${makejobs} ARCH=${subarch:-$arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} ${_cross} dtbs_install
 
 	# Switch to /usr.
 	vmkdir usr
@@ -109,7 +113,7 @@ do_install() {
 		mkdir -p ${hdrdest}/$(dirname $file)
 		install -Dm644 $file ${hdrdest}/${file}
 	done
-	for file in $(find arch/${subarch:-$arch} -name module.lds -o -name Kbuild.platforms -o -name Platform); do
+	for file in $(find arch/${subarch:-$arch} scripts -name module.lds -o -name Kbuild.platforms -o -name Platform); do
 		mkdir -p ${hdrdest}/$(dirname $file)
 		install -Dm644 $file ${hdrdest}/${file}
 	done
@@ -117,7 +121,7 @@ do_install() {
 	# Remove firmware stuff provided by the "linux-firmware" pkg.
 	rm -rf ${DESTDIR}/usr/lib/firmware
 
-	for i in acpi asm-generic clocksource config crypto drm generated linux \
+	for i in acpi asm-generic clocksource config crypto drm generated linux vdso \
 		math-emu media net pcmcia scsi sound trace uapi video xen dt-bindings; do
 		if [ -d include/$i ]; then
 			cp -a include/$i ${hdrdest}/include
@@ -132,7 +136,7 @@ do_install() {
 	# if generated files from the scripts/ directory need to be included,
 	# they need to be copied to ${hdrdest} before this step
 	if [ "$CROSS_BUILD" ]; then
-		make ${makejobs} ARCH=${subarch:-$arch} _mrproper_scripts
+		make ${makejobs} ARCH=${subarch:-$arch} ${_cross} _mrproper_scripts
 		# remove host specific objects as well
 		find scripts -name '*.o' -delete
 	fi
@@ -170,10 +174,6 @@ do_install() {
 		cp -a drivers/media/i2c/${i}/*.h ${hdrdest}/drivers/media/i2c/${i}
 	done
 
-	# Add docbook makefile
-	install -Dm644 Documentation/DocBook/Makefile \
-		${hdrdest}/Documentation/DocBook/Makefile
-
 	# Add md headers
 	mkdir -p ${hdrdest}/drivers/md
 	cp drivers/md/*.h ${hdrdest}/drivers/md
@@ -186,14 +186,7 @@ do_install() {
 	mkdir -p ${hdrdest}/net/mac80211/
 	cp net/mac80211/*.h ${hdrdest}/net/mac80211
 
-	# add dvb headers for external modules
-	mkdir -p ${hdrdest}/include/config/dvb/
-	cp include/config/dvb/*.h ${hdrdest}/include/config/dvb/
-
 	# add dvb headers for http://mcentral.de/hg/~mrec/em28xx-new
-	mkdir -p ${hdrdest}/drivers/media/dvb-frontends
-	cp drivers/media/dvb-frontends/lgdt330x.h \
-		${hdrdest}/drivers/media/dvb-frontends/
 	cp drivers/media/i2c/msp3400-driver.h ${hdrdest}/drivers/media/i2c/
 
 	# add dvb headers
@@ -249,5 +242,6 @@ pinebookpro-kernel-dbg_package() {
 	short_desc+=" - debugging symbols"
 	pkg_install() {
 		vmove usr/lib/debug
+		vmove "boot/System.map-${_kernver}"
 	}
 }

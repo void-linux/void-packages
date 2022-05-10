@@ -1,4 +1,4 @@
-<!-- Don't request update of package. We have a script for that. https://alpha.de.repo.voidlinux.org/void-updates/void-updates.txt . However, a quality pull request may help. -->
+<!-- Don't request update of package. We have a script for that. https://alpha.de.repo.voidlinux.org/void-updates/void-updates.txt. However, a quality pull request may help. -->
 ### System
 
 * xuname:  
