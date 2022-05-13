@@ -144,7 +144,7 @@ hook() {
 
         if [ "${_pkgname}" != "${pkgname}" ]; then
             echo "   SONAME: $f <-> ${_sdep}"
-            sorequires+="${f}\n"
+            sorequires+="${f} "
         else
             # Ignore libs by current pkg
             echo "   SONAME: $f <-> ${_rdep} (ignored)"
@@ -162,9 +162,9 @@ hook() {
     store_pkgdestdir_rundeps
 
     for f in ${shlib_requires}; do
-        sorequires+="${f}\n"
+        sorequires+="${f} "
     done
     if [ -n "${sorequires}" ]; then
-        echo "${sorequires}" | sort | xargs > ${PKGDESTDIR}/shlib-requires
+        echo "${sorequires}" | xargs -n1 | sort | xargs > ${PKGDESTDIR}/shlib-requires
     fi
 }
