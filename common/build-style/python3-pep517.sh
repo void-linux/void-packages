@@ -23,7 +23,11 @@ do_check() {
 
 do_install() {
 	# As with do_build, no need to accommodate cross compilation here
-	: ${make_install_target:=${pkgname#python3-}-${version}-*-*-*.whl}
+	if [ -z "${make_install_target}" ]; then
+		# Default wheel name normalizes hyphens to underscores
+		local wheelbase="${pkgname#python3-}"
+		make_install_target="${wheelbase//-/_}-${version}-*-*-*.whl"
+	fi
 
 	# If do_build was overridden, make sure the TMPDIR exists
 	mkdir -p build
