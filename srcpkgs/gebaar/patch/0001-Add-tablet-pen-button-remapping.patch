@@ -1,0 +1,167 @@
+From 1c883a01a016f632d9636de289150fb05bd8c4b3 Mon Sep 17 00:00:00 2001
+From: Aleix Quintana Alsius <kinta@communia.org>
+Date: Sun, 9 Jan 2022 17:59:19 +0100
+Subject: [PATCH] Add tablet pen button remapping
+
+---
+ src/config/config.cpp |  3 +++
+ src/config/config.h   |  2 ++
+ src/io/input.cpp      | 43 +++++++++++++++++++++++++++++++++++++++++++
+ src/io/input.h        | 12 ++++++++++++
+ 4 files changed, 60 insertions(+)
+
+diff --git a/src/config/config.cpp b/src/config/config.cpp
+index 0bbd0cc..b98e60f 100644
+--- a/src/config/config.cpp
++++ b/src/config/config.cpp
+@@ -74,6 +74,9 @@ void gebaar::config::Config::load_config()
+             settings.pinch_threshold = config->get_qualified_as<double>("pinch.settings.threshold").value_or(0.25);
+             settings.pinch_one_shot = config->get_qualified_as<bool>("pinch.settings.one_shot").value_or(false);
+ 
++            /* pen button settings */
++            pen_button_commands = *config->get_qualified_as<std::string>("pen_button.commands.command");
++            settings.pen_button_trigger_on_release = config->get_qualified_as<bool>("pen_button.settings.trigger_on_release").value_or(true);
+ 
+             loaded = true;
+         }
+diff --git a/src/config/config.h b/src/config/config.h
+index 34d7a42..c28fc2b 100644
+--- a/src/config/config.h
++++ b/src/config/config.h
+@@ -41,12 +41,14 @@ namespace gebaar::config {
+           bool swipe_one_shot;
+           double swipe_threshold;
+           bool swipe_trigger_on_release;
++          bool pen_button_trigger_on_release;
+         } settings;
+ 
+         enum pinch {PINCH_IN, PINCH_OUT};
+         std::string swipe_three_commands[10];
+         std::string swipe_four_commands[10];
+         std::string pinch_commands[10];
++        std::string pen_button_commands;
+ 
+     private:
+ 
+diff --git a/src/io/input.cpp b/src/io/input.cpp
+index 415fdab..73fdb47 100644
+--- a/src/io/input.cpp
++++ b/src/io/input.cpp
+@@ -30,6 +30,8 @@ gebaar::io::Input::Input(
+   config = config_ptr;
+   gesture_swipe_event = {};
+ 
++  pen_button_event = {};
++
+   gesture_pinch_event = {};
+   gesture_pinch_event.scale = DEFAULT_SCALE;
+ }
+@@ -62,6 +64,13 @@ void gebaar::io::Input::reset_pinch_event() {
+   gesture_pinch_event.executed = false;
+ }
+ 
++/**
++ * Reset pen button event struct to defaults
++ */
++void gebaar::io::Input::reset_pen_button_event() {
++  pen_button_event = {};
++}
++
+ /**
+  * Pinch one_shot gesture handle
+  * @param new_scale last reported scale between the fingers
+@@ -149,6 +158,30 @@ void gebaar::io::Input::handle_swipe_event_without_coords(
+   }
+ }
+ 
++/**
++ * This event has no coordinates, so it's an event that gives us a begin or end
++ * signal. If it begins, we get the amount of fingers used. If it ends, we check
++ * what kind of gesture we received.
++ *
++ * @param gev Gesture Event
++ * @param begin Boolean to denote begin or end of gesture
++ */
++void gebaar::io::Input::handle_pen_button_event_without_coords(
++    libinput_event_tablet_tool *ttev) {
++    pen_button_event.state = libinput_event_tablet_tool_get_button_state(ttev);
++
++    if (config->settings.pen_button_trigger_on_release) {
++        if (pen_button_event.state == LIBINPUT_BUTTON_STATE_RELEASED) {
++          trigger_pen_button_command();
++        }
++    } else {
++        if (pen_button_event.state == LIBINPUT_BUTTON_STATE_PRESSED) {
++          trigger_pen_button_command();
++        }
++    }
++    reset_pen_button_event();
++}
++
+ /**
+  * Swipe events with coordinates, add it to the current tally
+  * @param gev Gesture Event
+@@ -212,6 +245,13 @@ void gebaar::io::Input::trigger_swipe_command() {
+   }
+ }
+ 
++/**
++ * Making calculation for swipe direction and triggering
++ * command accordingly
++ */
++void gebaar::io::Input::trigger_pen_button_command() {
++  std::system(config->pen_button_commands.c_str());
++}
+ /**
+  * Initialize the input system
+  * @return bool
+@@ -320,6 +360,9 @@ void gebaar::io::Input::handle_event() {
+     case LIBINPUT_EVENT_TABLET_TOOL_TIP:
+       break;
+     case LIBINPUT_EVENT_TABLET_TOOL_BUTTON:
++      handle_pen_button_event_without_coords(
++          libinput_event_get_tablet_tool_event(libinput_event));
++
+       break;
+     case LIBINPUT_EVENT_TABLET_PAD_BUTTON:
+       break;
+diff --git a/src/io/input.h b/src/io/input.h
+index 2f62a29..5937690 100644
+--- a/src/io/input.h
++++ b/src/io/input.h
+@@ -47,6 +47,10 @@ namespace gebaar::io {
+         int step;
+     };
+ 
++    struct pen_button_event {
++        bool state;
++    };
++
+     class Input {
+     public:
+         Input(std::shared_ptr<gebaar::config::Config> const& config_ptr);
+@@ -66,6 +70,7 @@ namespace gebaar::io {
+ 
+         struct gesture_swipe_event gesture_swipe_event;
+         struct gesture_pinch_event gesture_pinch_event;
++        struct pen_button_event pen_button_event;
+ 
+         bool initialize_context();
+ 
+@@ -119,6 +124,13 @@ namespace gebaar::io {
+ 
+         void handle_pinch_event(libinput_event_gesture* gev, bool begin);
+ 
++
++        void trigger_pen_button_command();
++
++        void handle_pen_button_event_without_coords(libinput_event_tablet_tool* ttev);
++
++        void reset_pen_button_event();
++
+     };
+ }
+ 
+-- 
+2.36.0
+
