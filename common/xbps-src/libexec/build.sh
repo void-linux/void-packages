@@ -113,6 +113,9 @@ cut -d: -f 1,2 ${XBPS_STATEDIR}/.${sourcepkg}_register_pkg | sort -u | \
         if [ "$XBPS_REPO_COMPTYPE" ]; then
             additional_args+=" --compression $XBPS_REPO_COMPTYPE"
         fi
+        if [ "$XBPS_RINDEX_TARGET" == stagedata ]; then
+            additional_args+=" --stage"
+        fi
         if [ -n "${arch}" ]; then
             msg_normal "Registering new packages to $repo ($arch)\n"
             XBPS_TARGET_ARCH=${arch} $XBPS_RINDEX_CMD ${additional_args} -a ${paths}
