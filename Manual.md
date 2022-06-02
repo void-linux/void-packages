@@ -1415,6 +1415,14 @@ If the service requires directories in parts of the system that are not generall
 temporary filesystems. Then use the `make_dirs` variable in the template to create
 those directories when the package is installed.
 
+If the package installs a systemd service file or other unit, leave it in place as a
+reference point so long as including it has no negative side effects.
+
+Examples of when *not* to install systemd units:
+
+1. When doing so changes runtime behavior of the packaged software.
+2. When it is done via a compile time flag that also changes build dependencies.
+
 <a id="32bit_pkgs"></a>
 ### 32bit packages
 
