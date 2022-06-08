@@ -12,7 +12,7 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
 index 4614f6d..0e7bc81 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -3,6 +3,10 @@ cmake_policy(SET CMP0074 NEW)
+@@ -4,6 +4,10 @@
  
  project(Aegisub)
  
@@ -23,10 +23,11 @@ index 4614f6d..0e7bc81 100644
  list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
  
  # Explicitly set the build type to Release if no other type is specified
-@@ -12,181 +16,6 @@ if(NOT CMAKE_BUILD_TYPE)
+@@ -13,210 +17,6 @@
      set(CMAKE_BUILD_TYPE Release)
  endif()
  
+-## Build bundled LuaJIT with aegisub specific patches
 -add_executable(luajit-minilua vendor/luajit/src/host/minilua.c)
 -if(NOT WIN32)
 -    target_link_libraries(luajit-minilua m)
@@ -44,6 +45,22 @@ index 4614f6d..0e7bc81 100644
 -            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/gen/buildvm_arch.h"
 -            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/gen"
 -            COMMAND luajit-minilua ../dynasm/dynasm.lua -LN -D WIN -D JIT -D FFI -o "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/gen/buildvm_arch.h" vm_x86.dasc
+-            WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/vendor/luajit/src
+-        )
+-    endif()
+-elseif(APPLE)
+-    if(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
+-        add_custom_command(
+-            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/gen/buildvm_arch.h"
+-            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/gen"
+-            COMMAND luajit-minilua ../dynasm/dynasm.lua -D ENDIAN_LE -D P64 -D FFI -D DUALNUM -D FPU -D HFABI -D NO_UNWIND -D VER=80 -o "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/gen/buildvm_arch.h" vm_arm64.dasc
+-            WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/vendor/luajit/src
+-        )
+-    else()
+-        add_custom_command(
+-            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/gen/buildvm_arch.h"
+-            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/gen"
+-            COMMAND luajit-minilua ../dynasm/dynasm.lua -D P64 -D JIT -D FFI -D FPU -D HFABI -D VER= -o "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/gen/buildvm_arch.h" vm_x64.dasc
 -            WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/vendor/luajit/src
 -        )
 -    endif()
@@ -76,7 +93,13 @@ index 4614f6d..0e7bc81 100644
 -)
 -target_compile_definitions(luajit-buildvm PRIVATE LUAJIT_ENABLE_LUA52COMPAT)
 -target_include_directories(luajit-buildvm PRIVATE vendor/luajit/src "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/gen")
--if(UNIX)
+-
+-if(APPLE)
+-    add_custom_command(
+-        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/lj_vm.s"
+-        COMMAND luajit-buildvm -m machasm -o "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/lj_vm.s"
+-    )
+-elseif(UNIX)
 -    add_custom_command(
 -        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/lj_vm.s"
 -        COMMAND luajit-buildvm -m elfasm -o "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/lj_vm.s"
@@ -197,21 +220,32 @@ index 4614f6d..0e7bc81 100644
 -if(WIN32)
 -    target_sources(luajit PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/lj_vm.obj")
 -else()
+-    enable_language(ASM)
 -    target_sources(luajit PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/lj_vm.s")
--    set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/vendor/luajit/src/lj_vm.s" PROPERTY LANGUAGE C)
 -    target_link_libraries(luajit ${CMAKE_DL_LIBS})
+-endif()
+-if(APPLE)
+-    if(NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
+-        target_compile_definitions(luajit-buildvm PRIVATE LUAJIT_ENABLE_GC64)
+-        target_compile_definitions(luajit PRIVATE LUAJIT_ENABLE_GC64)
+-    endif()
 -endif()
 -
  add_subdirectory(vendor/luabins)
  
- add_library(libaegisub STATIC
-@@ -264,20 +93,20 @@ elseif(WIN32)
+ ## libaegisub
+@@ -303,25 +103,25 @@
  endif()
  set_target_properties(libaegisub PROPERTIES PREFIX "")
  target_compile_definitions(libaegisub PRIVATE CMAKE_BUILD)
 -target_include_directories(libaegisub PUBLIC "libaegisub/include")
 +target_include_directories(libaegisub PUBLIC ${LUAJIT_INCLUDE_DIRS} "libaegisub/include")
- target_precompile_headers(libaegisub PRIVATE "libaegisub/lagi_pre.h")
+ if(APPLE)
+     # CMake on macOS currently does not support pch with objc, so use the old way
+     target_compile_options(libaegisub PRIVATE -include "${PROJECT_SOURCE_DIR}/libaegisub/lagi_pre.h")
+ else()
+     target_precompile_headers(libaegisub PRIVATE "libaegisub/lagi_pre.h")
+ endif()
 -target_link_libraries(libaegisub PRIVATE luajit luabins)
 +target_link_libraries(libaegisub PRIVATE ${LUAJIT_LIBRARIES} luabins)
  
@@ -230,7 +264,7 @@ index 4614f6d..0e7bc81 100644
      WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/src/bitmaps
  )
  
-@@ -451,8 +280,9 @@ add_executable(Aegisub WIN32
+@@ -496,8 +296,9 @@
      src/video_slider.cpp
      src/visual_feature.cpp
  )
@@ -239,29 +273,14 @@ index 4614f6d..0e7bc81 100644
  target_compile_definitions(Aegisub PRIVATE CMAKE_BUILD)
 +target_include_directories(Aegisub PUBLIC ${LUAJIT_INCLUDE_DIRS})
  target_include_directories(Aegisub PRIVATE "src/libresrc" "${CMAKE_CURRENT_BINARY_DIR}/src/libresrc")
- target_precompile_headers(Aegisub PRIVATE "src/agi_pre.h")
- 
-@@ -776,7 +606,7 @@ message(STATUS "\n"
-     "  FFTW3:                 ${WITH_FFTW3}\n"
+ if(APPLE)
+     # CMake on macOS currently does not support pch with objc, so use the old way
+@@ -877,7 +678,7 @@
      "  Hunspell:              ${WITH_HUNSPELL}\n"
      "  uchardet:              ${WITH_UCHARDET}\n"
+     "  wxStyledTextCtrl:      ${WITH_WXSTC}\n"
 -    "  LuaJIT:                bundled\n"
 +    "  LuaJIT:                unfucked\n"
      "\n"
      "Options\n"
-     "  Startup log:           ${WITH_STARTUPLOG}\n"
-diff --git a/vendor/luabins/CMakeLists.txt b/vendor/luabins/CMakeLists.txt
-index 1fe1d20..e68403c 100644
---- a/vendor/luabins/CMakeLists.txt
-+++ b/vendor/luabins/CMakeLists.txt
-@@ -36,4 +36,5 @@ add_library(luabins STATIC
-     src/savebuffer.c
-     src/write.c
- )
--target_link_libraries(luabins PRIVATE luajit)
-\ No newline at end of file
-+target_include_directories(luabins PUBLIC ${LUAJIT_INCLUDE_DIRS})
-+target_link_libraries(luabins PRIVATE ${LUAJIT_LIBRARIES})
--- 
-2.33.0
-
+     "  Translations:          ${WITH_TRANSLATION}\n"
