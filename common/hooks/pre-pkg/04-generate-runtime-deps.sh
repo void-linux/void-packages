@@ -34,15 +34,14 @@ add_rundep() {
 
 store_pkgdestdir_rundeps() {
         if [ -n "$run_depends" ]; then
-            : > ${PKGDESTDIR}/rdeps
             for f in ${run_depends}; do
                 _curdep="$(echo "$f" | sed -e 's,\(.*\)?.*,\1,')"
                 if [ -z "$($XBPS_UHELPER_CMD getpkgdepname ${_curdep} 2>/dev/null)" -a \
                      -z "$($XBPS_UHELPER_CMD getpkgname ${_curdep} 2>/dev/null)" ]; then
                     _curdep="${_curdep}>=0"
                 fi
-                printf -- "${_curdep} " >> ${PKGDESTDIR}/rdeps
-            done
+                printf -- "${_curdep}\n"
+            done | sort | xargs > ${PKGDESTDIR}/rdeps
         fi
 }
 
@@ -166,6 +165,6 @@ hook() {
         sorequires+="${f} "
     done
     if [ -n "${sorequires}" ]; then
-        echo "${sorequires}" > ${PKGDESTDIR}/shlib-requires
+        echo "${sorequires}" | xargs -n1 | sort | xargs > ${PKGDESTDIR}/shlib-requires
     fi
 }
