@@ -1,0 +1,74 @@
+# Template file for 'akkoma'
+pkgname=akkoma
+version=3.5.0
+revision=1
+hostmakedepends="cmake elixir rebar3 git"
+makedepends="file-devel erlang"
+short_desc="Social networking software compatible with other Fediverse software"
+maintainer="Joel Beckmeyer <joel@beckmeyer.us>"
+license="AGPL-3.0-only,CC-BY-4.0,CC-BY-SA-4.0,custom:Unsplash"
+homepage="https://akkoma.dev/AkkomaGang/akkoma"
+distfiles="https://akkoma.dev/AkkomaGang/akkoma/archive/v${version}.tar.gz"
+checksum=90a4170942624cc7cdeba4f60850d02c796dd92a6b3fcd475843bf9cddec5333
+
+system_accounts="_akkoma"
+_akkoma_homedir="/var/lib/akkoma"
+
+make_dirs="/var/lib/akkoma 0700 _akkoma _akkoma
+ /etc/akkoma 0755 _akkoma _akkoma
+ /etc/akkoma/static 0755 _akkoma _akkoma"
+
+export MIX_ENV=prod
+export MIX_REBAR3=/usr/bin/rebar3
+
+if [ "$CROSS_BUILD" ]; then
+	# fixes linking syslog dependency
+	LDFLAGS+=" -L${XBPS_CROSS_BASE}/usr/lib/erlang/usr/lib"
+fi
+
+post_extract() {
+	mix local.hex --force
+	mix deps.get --only prod
+}
+
+do_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		# fixes building fast_html
+		_erts_path="$(cd ${XBPS_CROSS_BASE}/usr/lib/erlang/erts-* && pwd)"
+		vsed -i "s,ERLANG_PATH =.*,ERLANG_PATH = ${_erts_path}," deps/fast_html/Makefile
+		# additional adjustment to include target erts instead of host erts
+		vsed -i "s,include_erts: \"/usr,include_erts: \"${XBPS_CROSS_BASE}," mix.exs
+	fi
+}
+
+do_build() {
+	# without the DEBUG flag, mix gives unhelpful errors for diagnosing c library
+	# issues
+	DEBUG=1 mix release
+}
+
+do_install() {
+	vlicense COPYING
+	vlicense AGPL-3
+
+	cd _build/prod/rel/pleroma
+	vmkdir usr/lib/akkoma
+	vcopy erts-* usr/lib/akkoma
+	vcopy lib usr/lib/akkoma
+	# the Erlang Distribution cookie needs to be unique to each installation
+	rm -f releases/COOKIE
+	vcopy releases usr/lib/akkoma
+	ln -sf /etc/akkoma/COOKIE ${DESTDIR}/usr/lib/akkoma/releases
+
+	# make entrypoint look in standard location instead of cwd
+	vsed -i 's,^RELEASE_ROOT=.*,RELEASE_ROOT="/usr/lib/akkoma",' bin/pleroma
+	vcopy bin usr/lib/akkoma
+
+	vmkdir usr/bin
+	ln -sf /usr/lib/akkoma/bin/pleroma ${DESTDIR}/usr/bin/akkoma
+	ln -sf /usr/lib/akkoma/bin/pleroma_ctl ${DESTDIR}/usr/bin/akkoma_ctl
+
+	vsconf installation/akkoma.nginx
+
+	vsv akkoma
+}
