@@ -1133,9 +1133,9 @@ Current working directory for functions is set as follows:
 
 - For do_fetch, post_fetch: `XBPS_BUILDDIR`.
 
-- For do_extract, post_extract: `wrksrc`.
+- For do_extract through do_patch: `wrksrc`.
 
-- For pre_patch through post_install: `build_wrksrc`
+- For post_patch through post_install: `build_wrksrc`
 if it is defined, otherwise `wrksrc`.
 
 <a id="build_options"></a>
