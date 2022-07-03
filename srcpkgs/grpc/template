@@ -1,13 +1,13 @@
 # Template file for 'grpc'
 pkgname=grpc
 version=1.39.1
-revision=5
+revision=7
 _abseilver=997aaf3a28308eba1b9156aa35ab7bca9688e9f6
 build_style=cmake
 configure_args="-DBUILD_SHARED_LIBS=ON
  -DgRPC_CARES_PROVIDER=package -DgRPC_PROTOBUF_PROVIDER=package
  -DgRPC_SSL_PROVIDER=package -DgRPC_ZLIB_PROVIDER=package
- -D_gRPC_RE2_LIBRARIES=${XBPS_CROSS_BASE}/usr/lib/libre2.so
+ -D_gRPC_RE2_LIBRARIES=-lre2
  -D_gRPC_RE2_INCLUDE_DIR=${XBPS_CROSS_BASE}/usr/include"
 hostmakedepends="which protobuf"
 _devel_depends="c-ares-devel re2-devel zlib-devel openssl-devel"
@@ -39,23 +39,29 @@ post_extract() {
 post_patch() {
 	# re2 doesn't install CMake config modules;
 	# key variables are set in configure_args
-	vsed -i CMakeLists.txt -e '/include(cmake\/re2\.cmake)/d'
-}
-
-post_build() {
-	# Clean up unneeded absl linker arguments from pkgconfig files
-	sed -e 's/-labsl_[^[:space:]]\+[[:space:]]*//g' \
-		-i build/lib/pkgconfig/*.pc
+	# also install all plugin on cross-compiling
+	vsed -i CMakeLists.txt -e '/include(cmake\/re2\.cmake)/d' \
+		-e 's/gRPC_INSTALL AND NOT CMAKE_CROSSCOMPILING/gRPC_INSTALL/'
 }
 
 post_install() {
-	# Remove unnecessary absl static libs and cmake modules
+	# Remove unnecessary absl static libs, pkg-config and cmake modules
 	rm "${DESTDIR}"/usr/lib/libabsl*.a
+	rm -rf "${DESTDIR}/usr/lib/pkgconfig/"absl_*
 	rm -rf "${DESTDIR}/usr/lib/cmake/absl"
 	
-	# Add custom absl include root to grpcpp cflags
-	vsed -e 's,^Cflags:.*,& -I${includedir}/grpc_absl,' \
-		-i ${DESTDIR}/usr/lib/pkgconfig/grpc++*.pc
+	# Clean up unneeded absl linker arguments from cmake files
+	sed -e 's/absl::[a-zA-Z_-]*;//g' \
+		-e 's/ "absl::[a-zA-Z_-]*"/ /g' \
+		-i ${DESTDIR}/usr/lib/cmake/grpc/gRPCTargets.cmake
+}
+
+libgrpc_package() {
+	short_desc+=" - libraries"
+	pkg_install() {
+		vmove "usr/lib/*.so.*"
+		vmove usr/share
+	}
 }
 
 grpc-devel_package() {

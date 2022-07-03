@@ -613,6 +613,11 @@ and `XBPS_MAKEJOBS` will be set to 1. If a package does not work well with `XBPS
 but still has a mechanism to build in parallel, set `disable_parallel_build` and
 use `XBPS_ORIG_MAKEJOBS` (which holds the original value of `XBPS_MAKEJOBS`) in the template.
 
+- `disable_parallel_check` If set tests for the package won't be built and run in parallel
+and `XBPS_MAKEJOBS` will be set to 1. If a package does not work well with `XBPS_MAKEJOBS`
+but still has a mechanism to run checks in parallel, set `disable_parallel_check` and
+use `XBPS_ORIG_MAKEJOBS` (which holds the original value of `XBPS_MAKEJOBS`) in the template.
+
 - `make_check` Sets the cases in which the `check` phase is run.
 This option has to be accompanied by a comment explaining why the tests fail.
 Allowed values:
@@ -1128,9 +1133,9 @@ Current working directory for functions is set as follows:
 
 - For do_fetch, post_fetch: `XBPS_BUILDDIR`.
 
-- For do_extract, post_extract: `wrksrc`.
+- For do_extract through do_patch: `wrksrc`.
 
-- For pre_patch through post_install: `build_wrksrc`
+- For post_patch through post_install: `build_wrksrc`
 if it is defined, otherwise `wrksrc`.
 
 <a id="build_options"></a>
