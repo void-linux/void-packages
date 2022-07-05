@@ -21,6 +21,9 @@ unset -v CFLAGS CXXFLAGS FFLAGS CPPFLAGS LDFLAGS LD_LIBRARY_PATH
 unset -v CC CXX CPP GCC LD AR AS RANLIB NM OBJDUMP OBJCOPY STRIP READELF PKG_CONFIG
 unset -v CMAKE_GENERATOR
 
+# unset all $build_option_ variables
+unset -v "${!build_option_@}"
+
 # hooks/do-extract/00-distfiles
 unset -v skip_extraction
 
