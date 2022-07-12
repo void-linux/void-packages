@@ -3,28 +3,28 @@
 # THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/thunderbird-i18n".
 #
 pkgname=thunderbird
-version=91.9.0
-revision=2
+version=102.0.3
+revision=1
 build_helper="rust"
 short_desc="Standalone Mail/News reader"
 maintainer="Érico Nogueira <ericonr@disroot.org>"
 license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
 homepage="https://www.thunderbird.net/"
 distfiles="${MOZILLA_SITE}/${pkgname}/releases/${version}/source/${pkgname}-${version}.source.tar.xz"
-checksum=616e48327c4b0cdd2fd3c6385bfa4d380ba5cc7c52ce6014ae39d389a19fd092
+checksum=9dcdea5d3b0d169f8df2b1542a57afdbdf4640d3a599752343cf1fcf6b2c4be0
 
 lib32disabled=yes
 
 hostmakedepends="autoconf213 unzip zip pkg-config perl python3 yasm rust cargo
  llvm clang nodejs-lts cbindgen python nasm which tar"
-makedepends="nss-devel libjpeg-turbo-devel gtk+-devel gtk+3-devel icu-devel
+makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel icu-devel
  pixman-devel libevent-devel libnotify-devel libvpx-devel
  libXrender-devel libXcomposite-devel libSM-devel libXt-devel rust-std
  libXdamage-devel freetype-devel $(vopt_if alsa alsa-lib-devel)
  $(vopt_if dbus dbus-glib-devel) $(vopt_if pulseaudio pulseaudio-devel)
  $(vopt_if xscreensaver libXScrnSaver-devel)
  $(vopt_if sndio sndio-devel) $(vopt_if jack jack-devel)"
-depends="nss>=3.47.1 desktop-file-utils hicolor-icon-theme"
+depends="nss>=3.72 nspr>=4.32 desktop-file-utils hicolor-icon-theme"
 
 build_options="alsa jack dbus pulseaudio xscreensaver sndio wayland"
 build_options_default="alsa jack dbus pulseaudio xscreensaver sndio wayland"
@@ -77,24 +77,38 @@ post_patch() {
 do_build() {
 	cp "${FILESDIR}/mozconfig" "${wrksrc}/.mozconfig"
 
+	echo "MOZ_APP_REMOTINGNAME=Thunderbird" >>.mozconfig
+
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
 		echo "ac_add_options --disable-jemalloc" >>.mozconfig
-		echo "ac_add_options --disable-gold" >>.mozconfig
-		echo "ac_add_options --enable-release" >>.mozconfig
+		echo "ac_add_options --enable-linker=bfd" >>.mozconfig
 		;;
 	esac
 
 	case "$XBPS_TARGET_MACHINE" in
-	x86_64*|i686*|arm*)
+	x86_64*|i686*|arm*|aarch64*)
 		echo "ac_add_options --disable-elf-hack" >>.mozconfig
 		;;
 	esac
 
-	# webrtc currently fails to build on 32-bit ppc...
+	# third_party/libwebrtc/common_audio/wav_file.cc:93:2: error:
+	# #error "Need to convert samples to big-endian when reading from WAV file"
+	if [ "$XBPS_TARGET_ENDIAN" = "be" ]; then
+		echo "ac_add_options --disable-webrtc" >>.mozconfig
+	fi
+
+	# it seems mozilla has started catching up with google's webrtc
+	# and this newly involves introducing several megabytes of generated
+	# json junk that we just cannot maintain in-tree, additionally they
+	# have indicated that they will be re-generating these frequently
+	#
+	# it is unacceptable to keep a 7MB patch downstream, so disable it
+	#
+	# https://phabricator.services.mozilla.com/D134738
+	#
 	case "$XBPS_TARGET_MACHINE" in
-	ppc64*) ;;
-	ppc*) echo "ac_add_options --disable-webrtc" >>.mozconfig ;;
+		ppc64le*|armv7l*) echo "ac_add_options --disable-webrtc" >>.mozconfig ;;
 	esac
 
 	if [ "$XBPS_TARGET_NO_ATOMIC8" ]; then
@@ -129,6 +143,10 @@ do_build() {
 		echo "ac_add_options --target=$XBPS_TRIPLET" >>.mozconfig
 		echo "ac_add_options --host=$XBPS_TRIPLET" >>.mozconfig
 	fi
+
+	# XXX: wasi currently not ready
+	# echo "ac_add_options --with-wasi-sysroot=/usr/share/wasi-sysroot" >>.mozconfig
+	echo "ac_add_options --without-wasm-sandboxed-libraries" >>.mozconfig
 
 	mkdir -p third_party/rust/libloading/.deps
 
@@ -165,7 +183,7 @@ do_build() {
 	export MOZ_MAKE_FLAGS="${makejobs}"
 	export MOZ_NOSPAM=1
 	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
-	export MACH_USE_SYSTEM_PYTHON=1
+	export MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE=system
 
 	export AS=$CC
 
@@ -186,7 +204,7 @@ ac_add_options --enable-default-toolkit=$(vopt_if wayland 'cairo-gtk3-wayland' '
 	./mach build
 }
 do_install() {
-	export MACH_USE_SYSTEM_PYTHON=1
+	export MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE=system
 	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
 	DESTDIR="$DESTDIR" ./mach install
 
