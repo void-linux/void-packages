@@ -1,13 +1,10 @@
 # Template file for 'maturin'
 pkgname=maturin
-version=0.12.20
+version=0.13.0
 revision=1
-build_style=cargo
-build_helper=qemu
-# Disable the 'rustls' feature, which leads to bad platform compatibility
-# The list of enabled features should be reconciled with each new release
-configure_args="--no-default-features --features log,upload,human-panic"
-hostmakedepends="python3-setuptools-rust python3-tomli"
+build_style=python3-module
+build_helper="qemu rust"
+hostmakedepends="python3-setuptools-rust python3-tomli python3-wheel cargo"
 makedepends="openssl-devel"
 depends="python3-tomli"
 short_desc="Build and publish crates as python packages"
@@ -17,10 +14,14 @@ homepage="https://github.com/PyO3/maturin"
 # bump target-lexicon version if it changes in Cargo.lock
 distfiles="${homepage}/archive/v${version}.tar.gz
  https://github.com/bytecodealliance/target-lexicon/archive/v0.12.4.tar.gz>target-lexicon-${version}.tar.gz"
-checksum="5a1c9ed2acd8ea1edbe7e8b7ed78f2f6887eff77f696dbdd93f81b606960efbe
+checksum="b44a22c65ccb00f25c53540889ee0358f79a40673adee38e8c75411deef60576
  f801dbb02555852e90d56d5a71e73ee42678c1bc583bb62a2970d4158f6ab6de"
 # Tests use unstable features and fail to build
 make_check=no
+
+if [ "$CROSS_BUILD" ]; then
+	makedepends+=" rust-std"
+fi
 
 post_extract() {
 	mv ../target-lexicon* target-lexicon
@@ -28,20 +29,27 @@ post_extract() {
 	echo "target-lexicon = { path = './target-lexicon' }" >> Cargo.toml
 }
 
-post_build() {
-	# python package is pure; the cross environment is not relevant
-	python3 setup.py build
-
-	# Generate some completions
-	_matbin="target/${RUST_TARGET}/release/maturin"
-	vtargetrun "${_matbin}" completions zsh > maturin.zsh
-	vtargetrun "${_matbin}" completions fish > maturin.fish
-	vtargetrun "${_matbin}" completions bash > maturin.bash
+post_patch() {
+	# Disable the 'rustls' feature, which leads to bad platform compatibility
+	vsed -i -e '/^default =/s/"rustls", //' Cargo.toml
 }
 
 post_install() {
 	vlicense license-mit LICENSE-MIT
 	python3 setup.py install --prefix=/usr --root=${DESTDIR}
+
+	# Wheel installers would move the data components into the main
+	# hierarchy automatically, but that doesn't happen here; do it manually.
+	# See https://peps.python.org/pep-0491/#the-data-directory
+	local _pydata="${DESTDIR}/${py3_sitelib}/maturin-${version}.data"
+	vmkdir usr/bin
+	mv "${_pydata}/scripts/maturin" "${DESTDIR}/usr/bin"
+
+	# Generate and install some completions
+	local _matbin="${DESTDIR}/usr/bin/maturin"
+	vtargetrun "${_matbin}" completions zsh > maturin.zsh
+	vtargetrun "${_matbin}" completions fish > maturin.fish
+	vtargetrun "${_matbin}" completions bash > maturin.bash
 
 	vcompletion maturin.zsh zsh
 	vcompletion maturin.fish fish
