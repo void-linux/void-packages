@@ -1637,6 +1637,7 @@ The following template variables influence how Go packages are built:
   any go.mod files, `default` to use Go's default behavior, or anything
   accepted by `go build -mod MODE`.  Defaults to `vendor` if there's
   a vendor directory, otherwise `default`.
+- `go_ldflags`: Arguments to pass to the linking steps of go tool.
 
 The following environment variables influence how Go packages are built:
 
