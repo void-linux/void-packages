@@ -129,3 +129,25 @@ Please abstain from temporarily closing a pull request while revising the templa
 
 Once the reviewers have merged the pull request, our [build server](http://build.voidlinux.org) is automatically triggered and builds
 all packages in the pull request for all supported platforms. Upon completion, the packages are available to all Void Linux users.
+
+## Testing Pull Requests
+
+While it is the responsibility of the PR creator to test changes before sending it, one person can't test all configuration options, usecases, hardware, etc.
+Testing new package submissions and updates is always helpful, and is a great way to get started with contributing.
+First, [clone the repository](https://github.com/void-linux/void-packages#quick-start) if you haven't done so already.
+Then check out the pull request, either with `github-cli`:
+
+    $ gh pr checkout <number>
+
+Or with `git`:
+
+If your local void-packages repository is cloned from your fork, you may need to add the main repository as a remote first:
+
+    $ git remote add upstream https://github.com/void-linux/void-packages.git
+
+Then fetch and check out the PR (replacing `<remote>` with either `origin` or `upstream`):
+
+    $ git fetch <remote> pull/<number>/head:<branch-name>
+    $ git checkout <branch-name>
+
+Then [build and install](https://github.com/void-linux/void-packages#building-packages) the package and test its functionality.
