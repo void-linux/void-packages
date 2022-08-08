@@ -477,6 +477,12 @@ setup_pkg() {
         fi
     fi
 
+    for x in ${hostmakedepends} ${makedepends} ${checkdepends}; do
+        if [[ $x = *[\<\>]* || $x =~ -[^-_]*[0-9][^-_]*_[0-9_]+$ ]]; then
+            msg_error "$pkgver: specifying version in build dependency '$x' is invalid, template version is used always\n"
+        fi
+    done
+
     FILESDIR=$XBPS_SRCPKGDIR/$sourcepkg/files
     PATCHESDIR=$XBPS_SRCPKGDIR/$sourcepkg/patches
     DESTDIR=$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${sourcepkg}-${version}
