@@ -1,0 +1,99 @@
+diff --git a/src/mag.cpp b/src/mag.cpp
+index 1ed4d73..f03cf7c 100644
+--- a/src/mag.cpp
++++ b/src/mag.cpp
+@@ -35,16 +35,6 @@
+ #include "wayfire/opengl.hpp"
+ #include <glm/gtc/matrix_transform.hpp>
+ 
+-extern "C"
+-{
+-#define static
+-#include <wlr/config.h>
+-#include <wlr/render/gles2.h>
+-#include <wlr/render/wlr_renderer.h>
+-#include <wlr/types/wlr_matrix.h>
+-#undef static
+-}
+-
+ #include <wayfire/util/log.hpp>
+ 
+ 
+@@ -171,19 +161,6 @@ class wayfire_magnifier : public wf::plugin_interface_t
+ 
+     wf::effect_hook_t post_hook = [=] ()
+     {
+-        wlr_dmabuf_attributes dmabuf_attribs;
+-
+-        /* This plugin only works if this function succeeds. It will not
+-         * work with the x11 backend but works with drm, for example. */
+-        if (!wlr_output_export_dmabuf(output->handle, &dmabuf_attribs))
+-        {
+-            LOGE("Failed reading output contents");
+-            deactivate();
+-            active = false;
+-
+-            return;
+-        }
+-
+         auto cursor_position = output->get_cursor_position();
+ 
+         auto ortho = output->render->get_target_framebuffer()
+@@ -201,9 +178,6 @@ class wayfire_magnifier : public wf::plugin_interface_t
+         float y = cursor.y;
+ 
+         auto og = output->get_relative_geometry();
+-        gl_geometry src_geometry = {0, 0, (float)og.width, (float)og.height};
+-        auto transform = output->render->get_target_framebuffer().transform;
+-        transform = glm::inverse(transform);
+ 
+         width  = og.width;
+         height = og.height;
+@@ -220,6 +194,9 @@ class wayfire_magnifier : public wf::plugin_interface_t
+         /* Compute zoom_box, forcing the zoom to stay on the output */
+         gl_geometry zoom_box;
+ 
++        /* Y-invert */
++        y = 1.0 - y;
++
+         zoom_box.x1 = x - level;
+         zoom_box.y1 = y - level;
+         zoom_box.x2 = x + level;
+@@ -249,27 +226,25 @@ class wayfire_magnifier : public wf::plugin_interface_t
+             zoom_box.y2  = 1.0;
+         }
+ 
++        zoom_box.x1 *= width - 1;
++        zoom_box.x2 *= width - 1;
++        zoom_box.y1 *= height - 1;
++        zoom_box.y2 *= height - 1;
++
+         /* Copy zoom_box part of the output to our own texture to be
+          * read by the mag_view_t. */
+-        auto wlr_texture = wlr_texture_from_dmabuf(
+-            wf::get_core().renderer, &dmabuf_attribs);
+-
+-        wf::texture_t texture{wlr_texture};
+ 
+         OpenGL::render_begin();
+         mag_view->mag_tex.allocate(width, height);
+         mag_view->mag_tex.geometry = og;
+         mag_view->mag_tex.bind();
+-
+-        OpenGL::render_transformed_texture(texture, src_geometry, zoom_box,
+-            transform * mag_view->mag_tex.get_orthographic_projection(),
+-            glm::vec4(1.0),
+-            OpenGL::TEXTURE_USE_TEX_GEOMETRY);
++        GL_CALL(glBindFramebuffer(GL_READ_FRAMEBUFFER,
++            output->render->get_target_framebuffer().fb));
++        GL_CALL(glBlitFramebuffer(zoom_box.x1, zoom_box.y2, zoom_box.x2, zoom_box.y1,
++            0, 0, width, height,
++            GL_COLOR_BUFFER_BIT, GL_LINEAR));
+         OpenGL::render_end();
+ 
+-        wlr_texture_destroy(wlr_texture);
+-        wlr_dmabuf_attributes_finish(&dmabuf_attribs);
+-
+         mag_view->damage();
+     };
+ 

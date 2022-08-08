@@ -1,0 +1,125 @@
+# Template file for 'openjdk16-bootstrap'
+pkgname=openjdk16-bootstrap
+version=16.0.2+7
+revision=1
+_java_ver="${version%%.*}"
+_jdk_update="${version#*+}"
+_base_version="${version%+*}"
+_jdk_home="usr/lib/jvm/openjdk${_java_ver}"
+archs="x86_64* i686* aarch64* armv7* ppc64*"
+wrksrc="jdk${_java_ver}u-jdk-${version/+/-}"
+build_style=gnu-configure
+configure_args="--disable-warnings-as-errors
+ --enable-unlimited-crypto
+ --with-zlib=system
+ --with-libjpeg=system
+ --with-giflib=system
+ --with-libpng=system
+ --with-lcms=system
+ --with-jtreg=no
+ --with-gtest=${XBPS_BUILDDIR}/googletest-release-1.8.1
+ --with-debug-level=release
+ --with-jobs=${XBPS_ORIG_MAKEJOBS}
+ --with-version-pre=
+ --with-version-build=${_jdk_update}
+ --with-version-opt=void-r${revision}
+ --with-vendor-name=Void
+ --with-vendor-url=https://voidlinux.org/
+ --with-vendor-bug-url=https://github.com/void-linux/void-packages/issues
+ --with-vendor-vm-bug-url=https://github.com/void-linux/void-packages/issues
+ --with-boot-jdk=/usr/lib/jvm/openjdk15"
+make_build_args="images"
+make_install_args="INSTALL_PREFIX=\"${XBPS_DESTDIR}/${pkgname}-${version}/usr/lib\""
+make_check_target="test-hotspot-gtest"
+hostmakedepends="pkg-config automake autoconf cpio tar unzip zip ca-certificates
+ openssl zlib-devel which make-ca openjdk15-bootstrap"
+makedepends="libXrender-devel libXtst-devel libXt-devel libXrandr-devel
+ giflib-devel libjpeg-turbo-devel cups-devel freetype-devel alsa-lib-devel
+ fontconfig-devel zlib-devel lcms2-devel harfbuzz-devel openjdk15-bootstrap"
+short_desc="OpenJDK Java Development Kit (bootstrap version 16)"
+maintainer="classabbyamp <void@placeviolette.net>"
+license="GPL-2.0-only WITH Classpath-exception-2.0"
+homepage="http://openjdk.java.net/"
+distfiles="https://github.com/openjdk/jdk${_java_ver}u/archive/jdk-${version}.tar.gz
+ https://github.com/google/googletest/archive/refs/tags/release-1.8.1.tar.gz"
+checksum="b4a0e71e41a11175e8a7c1dba86ed5b0aa878413158c8d48813db1b64ac9536c
+ 9bf1fe5182a604b4135edc1a425ae356c9ad15e9b23f9f12a02e80184c3a249c"
+provides="java-environment-${version}_1 java-runtime-${version}_1"
+nocross=yes
+
+# Build is still parallel, but don't use -jN.
+disable_parallel_build=yes
+
+case "$XBPS_TARGET_MACHINE" in
+	ppc64*) ;;
+	# no hotspot JIT for ppc32
+	ppc*) _use_zero=yes ;;
+	armv[56]*) broken="Unsupported architecture" ;;
+esac
+
+if [ -n "$_use_zero" ]; then
+	makedepends+=" libffi-devel"
+	configure_args+=" --with-jvm-variants=zero"
+	case "$XBPS_TARGET_MACHINE" in
+		ppc*) configure_args+=" --with-boot-jdk-jvmargs=-XX:ThreadStackSize=2560";;
+	esac
+fi
+
+if [ -n "$XBPS_DEBUG_PKGS" ]; then
+	configure_args+=" --with-native-debug-symbols=internal"
+fi
+
+post_extract() {
+	chmod +x configure
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		rm -r src/jdk.hotspot.agent
+	fi
+}
+
+post_patch() {
+	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+		for f in "${FILESDIR}"/musl_patches/*.patch; do
+			msg_normal "Applying ${f#$FILESDIR/}\n"
+			patch -lNp1 -i "$f"
+		done
+	fi
+}
+
+do_configure() {
+	CFLAGS=${CFLAGS/-D_FORTIFY_SOURCE=2/}
+	CXXFLAGS=${CXXFLAGS/-D_FORTIFY_SOURCE=2/}
+
+	# force ELFv2 for ppc64 just in case
+	case "$XBPS_TARGET_MACHINE" in
+		ppc64*)
+			CFLAGS+=" -DABI_ELFv2"
+			CXXFLAGS+=" -DABI_ELFv2"
+			;;
+	esac
+
+	configure_args=${configure_args/--with-libtool-sysroot=\/usr\/[a-z0-9]*-linux-[a-z]*/}
+	if [ "$XBPS_CCACHE" ]; then
+		configure_args+=" --enable-ccache"
+	fi
+	CC="/usr/bin/cc"
+	CXX="/usr/bin/c++"
+	./configure ${configure_args} \
+		--with-extra-cflags="$CFLAGS" \
+		--with-extra-cxxflags="$CXXFLAGS" \
+		--with-extra-ldflags="$LDFLAGS" \
+		READELF=$READELF AR=$AR STRIP=$STRIP NM=$NM \
+		OBJDUMP=$OBJDUMP OBJCOPY=$OBJCOPY
+}
+
+post_install() {
+	mv ${DESTDIR}/usr/lib/jvm/openjdk-${_base_version} ${DESTDIR}/$_jdk_home
+	rm -rf ${DESTDIR}/usr/lib/bin
+	rm -f $DESTDIR/$_jdk_home/lib/src.zip
+	vlicense ASSEMBLY_EXCEPTION
+	vlicense LICENSE
+}
+
+do_clean() {
+	# clean up gtest
+	rm -rf ${XBPS_BUILDDIR}/googletest-release-*
+}

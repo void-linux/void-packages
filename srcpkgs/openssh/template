@@ -1,0 +1,83 @@
+# Template file for 'openssh'
+pkgname=openssh
+version=9.0p1
+revision=1
+build_style=gnu-configure
+configure_args="--datadir=/usr/share/openssh
+ --sysconfdir=/etc/ssh --without-selinux --with-privsep-user=nobody
+ --with-mantype=doc --without-rpath --with-xauth=/usr/bin/xauth
+ --disable-strip --with-privsep-path=/var/chroot/ssh
+ --with-pid-dir=/run --with-pam
+ --with-libedit --with-Werror
+ $(vopt_if ldns --with-ldns=$XBPS_CROSS_BASE/usr)
+ $(vopt_if ssl --with-ssl-engine --without-openssl)
+ $(vopt_if gssapi --with-kerberos5=$XBPS_CROSS_BASE/usr --without-kerberos5)
+ $(vopt_if fido2 --with-security-key-builtin)
+ LD=$CC ac_cv_header_sys_cdefs_h=false"
+hostmakedepends="automake"
+makedepends="libedit-devel pam-devel zlib-devel
+ $(vopt_if gssapi 'mit-krb5-devel') $(vopt_if ldns 'libldns-devel')
+ $(vopt_if ssl 'openssl-devel') $(vopt_if fido2 'libfido2-devel')"
+short_desc="OpenSSH free Secure Shell (SSH) client and server implementation"
+maintainer="Leah Neukirchen <leah@vuxu.org>"
+license="BSD-2-Clause, ISC"
+homepage="https://www.openssh.com"
+distfiles="https://ftp.openbsd.org/pub/OpenBSD/OpenSSH/portable/${pkgname}-${version}.tar.gz"
+checksum=03974302161e9ecce32153cfa10012f1e65c8f3750f573a73ab1befd5972a28a
+conf_files="/etc/ssh/moduli /etc/ssh/ssh_config /etc/ssh/sshd_config /etc/pam.d/sshd"
+make_dirs="/var/chroot/ssh 0755 root root"
+
+# Package build options
+build_options="fido2 gssapi ldns ssl"
+build_options_default="fido2 ldns ssl"
+desc_option_fido2="Enable support for FIDO2 USB tokens"
+
+if [ "$build_option_fido2" ]; then
+	subpackages="openssh-sk-helper"
+fi
+
+if [ "$build_option_ldns" -a -z "$build_option_ssl" ]; then
+	broken="option 'ldns' requires option 'ssl'"
+fi
+
+CFLAGS="-Wno-format-truncation -Wno-stringop-truncation"
+
+case $XBPS_TARGET_MACHINE in
+	i686-musl)
+		CFLAGS+=" -fno-stack-protector"
+		configure_args+=" --disable-wtmp --disable-utmp"
+		;;
+	*-musl)
+		configure_args+=" --disable-wtmp --disable-utmp"
+		;;
+esac
+
+pre_configure() {
+	autoreconf -fi
+	vsed -i -e 's|#include <sys/sysctl.h>||' servconf.c
+}
+
+post_install() {
+	vinstall contrib/sshd.pam.generic 644 etc/pam.d sshd
+	vbin contrib/ssh-copy-id
+	vman contrib/ssh-copy-id.1
+	vlicense LICENCE
+
+	# configure to use PAM
+	vsed -i ${DESTDIR}/etc/ssh/sshd_config \
+		-e 's|^#\(UsePAM\) no|\1 yes|g' \
+		-e 's|^#\(KbdInteractiveAuthentication\) yes|\1 no|g' \
+		-e 's|^#\(PrintMotd\) yes|\1 no|g'
+
+	vinstall ${FILESDIR}/sshd.pam 644 etc/pam.d sshd
+	vsv sshd
+}
+
+openssh-sk-helper_package() {
+	short_desc+=" - client support for FIDO authenticators"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/libexec/ssh-sk-helper
+		vmove usr/share/man/man8/ssh-sk-helper.8
+	}
+}

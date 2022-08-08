@@ -1,0 +1,854 @@
+Source: https://megous.com/git/linux
+Upstream: no
+
+From 1fc012b18f91abf70e9ab8cbdef2f0e47e80c14e Mon Sep 17 00:00:00 2001
+From: Ondrej Jirman
+Date: Sun, 7 Nov 2021 19:28:27 +0100
+Subject: usb: typec: fusb302: Set the current before enabling pullups
+
+This seems more reasonable and should avoid short period of incorrect
+current setting being applied to CC pin.
+
+Signed-off-by: Ondrej Jirman <megous@megous.com>
+---
+ drivers/usb/typec/tcpm/fusb302.c | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/usb/typec/tcpm/fusb302.c b/drivers/usb/typec/tcpm/fusb302.c
+index 72f9001b0792..776a949ef6e3 100644
+--- a/drivers/usb/typec/tcpm/fusb302.c
++++ b/drivers/usb/typec/tcpm/fusb302.c
+@@ -635,6 +635,14 @@ static int tcpm_set_cc(struct tcpc_dev *dev, enum typec_cc_status cc)
+ 		goto done;
+ 	}
+ 
++	/* adjust current for SRC */
++	ret = fusb302_set_src_current(chip, cc_src_current[cc]);
++	if (ret < 0) {
++		fusb302_log(chip, "cannot set src current %s, ret=%d",
++			    typec_cc_status_name[cc], ret);
++		goto done;
++	}
++
+ 	ret = fusb302_i2c_mask_write(chip, FUSB_REG_SWITCHES0,
+ 				     switches0_mask, switches0_data);
+ 	if (ret < 0) {
+@@ -645,14 +653,6 @@ static int tcpm_set_cc(struct tcpc_dev *dev, enum typec_cc_status cc)
+ 	chip->cc1 = TYPEC_CC_OPEN;
+ 	chip->cc2 = TYPEC_CC_OPEN;
+ 
+-	/* adjust current for SRC */
+-	ret = fusb302_set_src_current(chip, cc_src_current[cc]);
+-	if (ret < 0) {
+-		fusb302_log(chip, "cannot set src current %s, ret=%d",
+-			    typec_cc_status_name[cc], ret);
+-		goto done;
+-	}
+-
+ 	/* enable/disable interrupts, BC_LVL for SNK and COMP_CHNG for SRC */
+ 	switch (cc) {
+ 	case TYPEC_CC_RP_DEF:
+-- 
+cgit v1.2.3
+
+From cd26cebee9bf5e0a1a064d391195db761dbf40a6 Mon Sep 17 00:00:00 2001
+From: Ondrej Jirman
+Date: Tue, 23 Nov 2021 17:57:06 +0100
+Subject: usb: typec: fusb302: Update VBUS state even if VBUS interrupt is not
+ triggered
+
+This seems to improve robustness.
+
+Signed-off-by: Ondrej Jirman <megous@megous.com>
+---
+ drivers/usb/typec/tcpm/fusb302.c | 14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/usb/typec/tcpm/fusb302.c b/drivers/usb/typec/tcpm/fusb302.c
+index 70b0e15992af..1d5affaabcf3 100644
+--- a/drivers/usb/typec/tcpm/fusb302.c
++++ b/drivers/usb/typec/tcpm/fusb302.c
+@@ -1716,14 +1716,16 @@ static void fusb302_irq_work(struct work_struct *work)
+ 
+ 	fusb302_print_state(chip);
+ 
+-	if (interrupt & FUSB_REG_INTERRUPT_VBUSOK) {
+-		vbus_present = !!(status0 & FUSB_REG_STATUS0_VBUSOK);
++	vbus_present = !!(status0 & FUSB_REG_STATUS0_VBUSOK);
++	if (interrupt & FUSB_REG_INTERRUPT_VBUSOK)
+ 		fusb302_log(chip, "IRQ: VBUS_OK, vbus=%s",
+ 			    vbus_present ? "On" : "Off");
+-		if (vbus_present != chip->vbus_present) {
+-			chip->vbus_present = vbus_present;
+-			tcpm_vbus_change(chip->tcpm_port);
+-		}
++	if (vbus_present != chip->vbus_present) {
++		chip->vbus_present = vbus_present;
++		if (!(interrupt & FUSB_REG_INTERRUPT_VBUSOK))
++		fusb302_log(chip, "IRQ: VBUS changed without interrupt, vbus=%s",
++			    vbus_present ? "On" : "Off");
++		tcpm_vbus_change(chip->tcpm_port);
+ 	}
+ 
+ 	if (interrupta & FUSB_REG_INTERRUPTA_TOGDONE) {
+-- 
+cgit v1.2.3
+
+From a8e657e94f489297fa7d80767980730207ebb1bd Mon Sep 17 00:00:00 2001
+From: Ondrej Jirman
+Date: Sun, 14 Nov 2021 01:14:25 +0100
+Subject: usb: typec: fusb302: Add OF extcon support
+
+It's possible to create a dependency cycle between fusb302 and
+other drivers via extcon device, so we retrieve the device on
+demand after probe and not during probe.
+
+Signed-off-by: Ondrej Jirman <megous@megous.com>
+---
+ drivers/usb/typec/tcpm/fusb302.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/drivers/usb/typec/tcpm/fusb302.c b/drivers/usb/typec/tcpm/fusb302.c
+index ae3b930d774f..0c5dd0058f5e 100644
+--- a/drivers/usb/typec/tcpm/fusb302.c
++++ b/drivers/usb/typec/tcpm/fusb302.c
+@@ -518,6 +518,16 @@ static int tcpm_get_current_limit(struct tcpc_dev *dev)
+ 	int current_limit = 0;
+ 	unsigned long timeout;
+ 
++	/*
++	 * To avoid cycles in OF dependencies, we get extcon when necessary
++	 * outside of probe function.
++	 */
++	if (of_property_read_bool(chip->dev->of_node, "extcon") && !chip->extcon) {
++		chip->extcon = extcon_get_edev_by_phandle(chip->dev, 0);
++		if (IS_ERR(chip->extcon))
++			chip->extcon = NULL;
++	}
++
+ 	if (!chip->extcon)
+ 		return 0;
+ 
+-- 
+cgit v1.2.3
+
+From b6d4f583034b4098587497cd0e138223b6697a25 Mon Sep 17 00:00:00 2001
+From: Ondrej Jirman
+Date: Sat, 20 Nov 2021 14:33:58 +0100
+Subject: usb: typec: fusb302: Fix register definitions
+
+MEASURE_VBUS bit is at position 6. MDAC bits are also wrong.
+
+Signed-off-by: Ondrej Jirman <megous@megous.com>
+---
+ drivers/usb/typec/tcpm/fusb302_reg.h | 16 +++++++---------
+ 1 file changed, 7 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/usb/typec/tcpm/fusb302_reg.h b/drivers/usb/typec/tcpm/fusb302_reg.h
+index edc0e4b0f1e6..f37d226c5027 100644
+--- a/drivers/usb/typec/tcpm/fusb302_reg.h
++++ b/drivers/usb/typec/tcpm/fusb302_reg.h
+@@ -27,14 +27,13 @@
+ #define FUSB_REG_SWITCHES1_TXCC2_EN		BIT(1)
+ #define FUSB_REG_SWITCHES1_TXCC1_EN		BIT(0)
+ #define FUSB_REG_MEASURE			0x04
+-#define FUSB_REG_MEASURE_MDAC5			BIT(7)
+-#define FUSB_REG_MEASURE_MDAC4			BIT(6)
+-#define FUSB_REG_MEASURE_MDAC3			BIT(5)
+-#define FUSB_REG_MEASURE_MDAC2			BIT(4)
+-#define FUSB_REG_MEASURE_MDAC1			BIT(3)
+-#define FUSB_REG_MEASURE_MDAC0			BIT(2)
+-#define FUSB_REG_MEASURE_VBUS			BIT(1)
+-#define FUSB_REG_MEASURE_XXXX5			BIT(0)
++#define FUSB_REG_MEASURE_VBUS			BIT(6)
++#define FUSB_REG_MEASURE_MDAC5			BIT(5)
++#define FUSB_REG_MEASURE_MDAC4			BIT(4)
++#define FUSB_REG_MEASURE_MDAC3			BIT(3)
++#define FUSB_REG_MEASURE_MDAC2			BIT(2)
++#define FUSB_REG_MEASURE_MDAC1			BIT(1)
++#define FUSB_REG_MEASURE_MDAC0			BIT(0)
+ #define FUSB_REG_CONTROL0			0x06
+ #define FUSB_REG_CONTROL0_TX_FLUSH		BIT(6)
+ #define FUSB_REG_CONTROL0_INT_MASK		BIT(5)
+@@ -105,7 +104,6 @@
+ #define FUSB_REG_STATUS0A_RX_SOFT_RESET		BIT(1)
+ #define FUSB_REG_STATUS0A_RX_HARD_RESET		BIT(0)
+ #define FUSB_REG_STATUS1A			0x3D
+-#define FUSB_REG_STATUS1A_TOGSS			BIT(3)
+ #define FUSB_REG_STATUS1A_TOGSS_RUNNING		0x0
+ #define FUSB_REG_STATUS1A_TOGSS_SRC1		0x1
+ #define FUSB_REG_STATUS1A_TOGSS_SRC2		0x2
+-- 
+cgit v1.2.3
+
+From 5f43c360ba28cb7f53c35f0e4221cd0e9abd1624 Mon Sep 17 00:00:00 2001
+From: Ondrej Jirman
+Date: Sat, 20 Nov 2021 14:35:10 +0100
+Subject: usb: typec: fusb302: Clear interrupts before we start toggling
+
+This is recommended by the datasheet.
+
+Signed-off-by: Ondrej Jirman <megous@megous.com>
+---
+ drivers/usb/typec/tcpm/fusb302.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/usb/typec/tcpm/fusb302.c b/drivers/usb/typec/tcpm/fusb302.c
+index 0c5dd0058f5e..011dce5e73a2 100644
+--- a/drivers/usb/typec/tcpm/fusb302.c
++++ b/drivers/usb/typec/tcpm/fusb302.c
+@@ -586,6 +586,7 @@ static int fusb302_set_toggling(struct fusb302_chip *chip,
+ 				enum toggling_mode mode)
+ {
+ 	int ret = 0;
++	u8 reg;
+ 
+ 	/* first disable toggling */
+ 	ret = fusb302_i2c_clear_bits(chip, FUSB_REG_CONTROL2,
+@@ -644,6 +645,12 @@ static int fusb302_set_toggling(struct fusb302_chip *chip,
+ 	} else {
+ 		/* Datasheet says vconn MUST be off when toggling */
+ 		WARN(chip->vconn_on, "Vconn is on during toggle start");
++
++		/* clear interrupts */
++                ret = fusb302_i2c_read(chip, FUSB_REG_INTERRUPT, &reg);
++		if (ret < 0)
++			return ret;
++
+ 		/* unmask TOGDONE interrupt */
+ 		ret = fusb302_i2c_clear_bits(chip, FUSB_REG_MASKA,
+ 					     FUSB_REG_MASKA_TOGDONE);
+-- 
+cgit v1.2.3
+
+From c9c0c64a3ecabb48594a6da29bed7b70e7c1cbb9 Mon Sep 17 00:00:00 2001
+From: Ondrej Jirman
+Date: Sun, 7 Nov 2021 19:24:40 +0100
+Subject: usb: typec: typec-extcon: Add typec -> extcon bridge driver
+
+This bridge connects standard Type C port interfaces for controling
+muxes, switches and usb roles to muxes, switches and usb role
+drivers controlled via extcon interface.
+
+Signed-off-by: Ondrej Jirman <megous@megous.com>
+---
+ drivers/usb/typec/Kconfig        |   7 +
+ drivers/usb/typec/Makefile       |   1 +
+ drivers/usb/typec/typec-extcon.c | 337 +++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 345 insertions(+)
+ create mode 100644 drivers/usb/typec/typec-extcon.c
+
+diff --git a/drivers/usb/typec/Kconfig b/drivers/usb/typec/Kconfig
+index ab480f38523a..01ecc5e590f1 100644
+--- a/drivers/usb/typec/Kconfig
++++ b/drivers/usb/typec/Kconfig
+@@ -88,6 +88,13 @@ config TYPEC_QCOM_PMIC
+ 	  It will also enable the VBUS output to connected devices when a
+ 	  DFP connection is made.
+ 
++config TYPEC_EXTCON
++	tristate "Type-C switch/mux -> extcon interface bridge driver"
++	depends on USB_ROLE_SWITCH
++	help
++	  Say Y or M here if your system needs bridging between typec class
++	  and extcon interfaces.
++
+ source "drivers/usb/typec/mux/Kconfig"
+ 
+ source "drivers/usb/typec/altmodes/Kconfig"
+diff --git a/drivers/usb/typec/Makefile b/drivers/usb/typec/Makefile
+index a0adb8947a30..d9d829386b73 100644
+--- a/drivers/usb/typec/Makefile
++++ b/drivers/usb/typec/Makefile
+@@ -8,4 +8,5 @@ obj-$(CONFIG_TYPEC_TPS6598X)	+= tipd/
+ obj-$(CONFIG_TYPEC_HD3SS3220)	+= hd3ss3220.o
+ obj-$(CONFIG_TYPEC_QCOM_PMIC)	+= qcom-pmic-typec.o
+ obj-$(CONFIG_TYPEC_STUSB160X) 	+= stusb160x.o
++obj-$(CONFIG_TYPEC_EXTCON)	+= typec-extcon.o
+ obj-$(CONFIG_TYPEC)		+= mux/
+diff --git a/drivers/usb/typec/typec-extcon.c b/drivers/usb/typec/typec-extcon.c
+new file mode 100644
+index 000000000000..143ff2486f2f
+--- /dev/null
++++ b/drivers/usb/typec/typec-extcon.c
+@@ -0,0 +1,337 @@
++/*
++ * typec -> extcon bridge
++ * Copyright (c) 2021 Ondřej Jirman <megi@xff.cz>
++ *
++ * This driver bridges standard type-c interfaces to drivers that
++ * expect extcon interface.
++ */
++
++#include <linux/delay.h>
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/power_supply.h>
++#include <linux/platform_device.h>
++#include <linux/usb/pd.h>
++#include <linux/usb/role.h>
++#include <linux/usb/typec.h>
++#include <linux/usb/typec_dp.h>
++#include <linux/usb/typec_mux.h>
++#include <linux/extcon-provider.h>
++
++struct typec_extcon {
++        struct device *dev;
++
++	/* consumers */
++	struct usb_role_switch *role_sw;
++        struct typec_switch *sw;
++        struct typec_mux *mux;
++
++	/* providers */
++	struct extcon_dev *extcon;
++	struct notifier_block extcon_nb;
++
++	/* cached state from typec controller */
++	enum usb_role role;
++	enum typec_orientation orientation;
++	struct typec_altmode alt;
++	unsigned long mode;
++	bool has_alt;
++	struct mutex lock;
++};
++
++static const unsigned int typec_extcon_cable[] = {
++	EXTCON_DISP_DP,
++
++	EXTCON_USB,
++	EXTCON_USB_HOST,
++
++	EXTCON_CHG_USB_SDP,
++	EXTCON_CHG_USB_CDP,
++	EXTCON_CHG_USB_DCP,
++	EXTCON_CHG_USB_ACA,
++
++	EXTCON_NONE,
++};
++
++static void typec_extcon_set_cable(struct typec_extcon *tce, int id, bool on,
++				   union extcon_property_value prop_ss,
++				   union extcon_property_value prop_or)
++{
++	union extcon_property_value cur_ss, cur_or;
++	bool prop_diff = false;
++	int ret;
++
++	ret = extcon_get_property(tce->extcon, id,
++				  EXTCON_PROP_USB_SS, &cur_ss);
++	if (ret || cur_ss.intval != prop_ss.intval)
++		prop_diff = true;
++
++	ret = extcon_get_property(tce->extcon, id,
++				  EXTCON_PROP_USB_TYPEC_POLARITY, &cur_or);
++	if (ret || cur_or.intval != prop_or.intval)
++		prop_diff = true;
++
++	if (!on && extcon_get_state(tce->extcon, id)) {
++		extcon_set_state_sync(tce->extcon, id, false);
++	} else if (on && (!extcon_get_state(tce->extcon, id) || prop_diff)) {
++		extcon_set_state(tce->extcon, id, true);
++		extcon_set_property(tce->extcon, id,
++				    EXTCON_PROP_USB_SS, prop_ss);
++		extcon_set_property(tce->extcon, id,
++				    EXTCON_PROP_USB_TYPEC_POLARITY, prop_or);
++		extcon_sync(tce->extcon, id);
++	}
++}
++
++static int typec_extcon_sync_extcon(struct typec_extcon *tce)
++{
++	union extcon_property_value prop_ss, prop_or;
++	bool has_dp = false;
++
++        mutex_lock(&tce->lock);
++
++	/* connector is disconnected */
++	if (tce->orientation == TYPEC_ORIENTATION_NONE) {
++		typec_extcon_set_cable(tce, EXTCON_USB, false, prop_ss, prop_or);
++		typec_extcon_set_cable(tce, EXTCON_USB_HOST, false, prop_ss, prop_or);
++		typec_extcon_set_cable(tce, EXTCON_DISP_DP, false, prop_ss, prop_or);
++
++		extcon_set_state_sync(tce->extcon, EXTCON_CHG_USB_SDP, false);
++		extcon_set_state_sync(tce->extcon, EXTCON_CHG_USB_DCP, false);
++		extcon_set_state_sync(tce->extcon, EXTCON_CHG_USB_CDP, false);
++		extcon_set_state_sync(tce->extcon, EXTCON_CHG_USB_ACA, false);
++
++                goto out_unlock;
++	}
++
++	prop_or.intval = tce->orientation == TYPEC_ORIENTATION_NORMAL ? 0 : 1;
++	prop_ss.intval = 0;
++
++	if (tce->has_alt && tce->alt.svid == USB_TYPEC_DP_SID) {
++		switch (tce->mode) {
++		case TYPEC_STATE_SAFE:
++			break;
++		case TYPEC_DP_STATE_C:
++		case TYPEC_DP_STATE_E:
++			has_dp = true;
++			break;
++		case TYPEC_DP_STATE_D:
++			has_dp = true;
++			fallthrough;
++		case TYPEC_STATE_USB:
++			prop_ss.intval = 1;
++			break;
++		default:
++			dev_err(tce->dev, "unhandled mux mode=%lu\n", tce->mode);
++			break;
++		}
++	}
++
++	typec_extcon_set_cable(tce, EXTCON_USB,
++			tce->role == USB_ROLE_DEVICE, prop_ss, prop_or);
++	typec_extcon_set_cable(tce, EXTCON_USB_HOST,
++			tce->role == USB_ROLE_HOST, prop_ss, prop_or);
++
++	typec_extcon_set_cable(tce, EXTCON_DISP_DP, has_dp, prop_ss, prop_or);
++
++out_unlock:
++	mutex_unlock(&tce->lock);
++	return 0;
++}
++
++static int typec_extcon_sw_set(struct typec_switch *sw,
++			       enum typec_orientation orientation)
++{
++        struct typec_extcon *tce = typec_switch_get_drvdata(sw);
++
++	dev_dbg(tce->dev, "SW SET: orientation=%d\n", orientation);
++
++        mutex_lock(&tce->lock);
++	tce->orientation = orientation;
++        mutex_unlock(&tce->lock);
++
++	typec_extcon_sync_extcon(tce);
++
++        return 0;
++}
++
++static int typec_extcon_mux_set(struct typec_mux *mux,
++				struct typec_mux_state *state)
++{
++        struct typec_extcon *tce = typec_mux_get_drvdata(mux);
++	struct typec_altmode *alt = state->alt;
++
++	dev_dbg(tce->dev, "MUX SET: state->mode=%lu\n", state->mode);
++	if (alt)
++		dev_dbg(tce->dev, "      ...alt: svid=%04hx mode=%d vdo=%08x active=%u\n",
++			alt->svid, alt->mode, alt->vdo, alt->active);
++
++        mutex_lock(&tce->lock);
++	tce->mode = state->mode;
++	tce->has_alt = alt != NULL;
++        if (alt)
++		tce->alt = *alt;
++	mutex_unlock(&tce->lock);
++
++	typec_extcon_sync_extcon(tce);
++
++        return 0;
++}
++
++static int typec_extcon_usb_set_role(struct usb_role_switch *sw,
++				     enum usb_role role)
++{
++        struct typec_extcon *tce = usb_role_switch_get_drvdata(sw);
++
++	dev_dbg(tce->dev, "ROLE SET: role=%d\n", role);
++
++        mutex_lock(&tce->lock);
++	tce->role = role;
++	mutex_unlock(&tce->lock);
++
++	typec_extcon_sync_extcon(tce);
++
++        return 0;
++}
++
++static int typec_extcon_notifier(struct notifier_block *nb,
++					 unsigned long action, void *data)
++{
++	struct typec_extcon *tce = container_of(nb, struct typec_extcon, extcon_nb);
++
++	bool sdp = extcon_get_state(tce->extcon, EXTCON_CHG_USB_SDP);
++	bool cdp = extcon_get_state(tce->extcon, EXTCON_CHG_USB_CDP);
++	bool dcp = extcon_get_state(tce->extcon, EXTCON_CHG_USB_DCP);
++	bool usb = extcon_get_state(tce->extcon, EXTCON_USB);
++	bool usb_host = extcon_get_state(tce->extcon, EXTCON_USB_HOST);
++	bool dp = extcon_get_state(tce->extcon, EXTCON_DISP_DP);
++
++	dev_info(tce->dev, "extcon changed sdp=%d cdp=%d dcp=%d usb=%d usb_host=%d dp=%d\n",
++		 sdp, cdp, dcp, usb, usb_host, dp);
++
++	return NOTIFY_OK;
++}
++
++static int typec_extcon_probe(struct platform_device *pdev)
++{
++        struct typec_switch_desc sw_desc = { };
++        struct typec_mux_desc mux_desc = { };
++        struct usb_role_switch_desc role_desc = { };
++        struct device *dev = &pdev->dev;
++        struct typec_extcon *tce;
++        int ret = 0;
++
++        tce = devm_kzalloc(dev, sizeof(*tce), GFP_KERNEL);
++        if (!tce)
++                return -ENOMEM;
++
++        tce->dev = &pdev->dev;
++	mutex_init(&tce->lock);
++	tce->mode = TYPEC_STATE_SAFE;
++
++	sw_desc.drvdata = tce;
++	sw_desc.fwnode = dev->fwnode;
++	sw_desc.set = typec_extcon_sw_set;
++
++	tce->sw = typec_switch_register(dev, &sw_desc);
++	if (IS_ERR(tce->sw))
++		return dev_err_probe(dev, PTR_ERR(tce->sw),
++				     "Error registering typec switch\n");
++
++	mux_desc.drvdata = tce;
++	mux_desc.fwnode = dev->fwnode;
++	mux_desc.set = typec_extcon_mux_set;
++
++	tce->mux = typec_mux_register(dev, &mux_desc);
++	if (IS_ERR(tce->mux)) {
++		ret = dev_err_probe(dev, PTR_ERR(tce->mux),
++				    "Error registering typec mux\n");
++		goto err_sw;
++	}
++
++	role_desc.driver_data = tce;
++	role_desc.fwnode = dev->fwnode;
++	role_desc.name = fwnode_get_name(dev->fwnode);
++	role_desc.set = typec_extcon_usb_set_role;
++
++	tce->role_sw = usb_role_switch_register(dev, &role_desc);
++	if (IS_ERR(tce->role_sw)) {
++		ret = dev_err_probe(dev, PTR_ERR(tce->role_sw),
++				    "Error registering USB role switch\n");
++		goto err_mux;
++	}
++
++	tce->extcon = devm_extcon_dev_allocate(dev, typec_extcon_cable);
++	if (IS_ERR(tce->extcon)) {
++		ret = PTR_ERR(tce->extcon);
++		goto err_role;
++	}
++
++	ret = devm_extcon_dev_register(dev, tce->extcon);
++	if (ret) {
++		ret = dev_err_probe(dev, ret, "failed to register extcon device\n");
++		goto err_role;
++	}
++
++	extcon_set_property_capability(tce->extcon, EXTCON_USB,
++				       EXTCON_PROP_USB_SS);
++	extcon_set_property_capability(tce->extcon, EXTCON_USB,
++				       EXTCON_PROP_USB_TYPEC_POLARITY);
++	extcon_set_property_capability(tce->extcon, EXTCON_USB_HOST,
++				       EXTCON_PROP_USB_SS);
++	extcon_set_property_capability(tce->extcon, EXTCON_USB_HOST,
++				       EXTCON_PROP_USB_TYPEC_POLARITY);
++	extcon_set_property_capability(tce->extcon, EXTCON_DISP_DP,
++				       EXTCON_PROP_USB_SS);
++	extcon_set_property_capability(tce->extcon, EXTCON_DISP_DP,
++				       EXTCON_PROP_USB_TYPEC_POLARITY);
++
++	tce->extcon_nb.notifier_call = typec_extcon_notifier;
++	ret = devm_extcon_register_notifier_all(dev, tce->extcon, &tce->extcon_nb);
++	if (ret) {
++		dev_err_probe(dev, ret, "Failed to register extcon notifier\n");
++		goto err_role;
++	}
++
++	return 0;
++
++err_role:
++	usb_role_switch_unregister(tce->role_sw);
++err_mux:
++	typec_mux_unregister(tce->mux);
++err_sw:
++	typec_switch_unregister(tce->sw);
++	return ret;
++}
++
++static int typec_extcon_remove(struct platform_device *pdev)
++{
++        struct typec_extcon *tce = platform_get_drvdata(pdev);
++
++	usb_role_switch_unregister(tce->role_sw);
++	typec_mux_unregister(tce->mux);
++	typec_switch_unregister(tce->sw);
++
++        return 0;
++}
++
++static struct of_device_id typec_extcon_of_match_table[] = {
++        { .compatible = "linux,typec-extcon-bridge" },
++        { },
++};
++MODULE_DEVICE_TABLE(of, typec_extcon_of_match_table);
++
++static struct platform_driver typec_extcon_driver = {
++        .driver = {
++                .name = "typec-extcon",
++                .of_match_table = typec_extcon_of_match_table,
++        },
++        .probe = typec_extcon_probe,
++        .remove = typec_extcon_remove,
++};
++
++module_platform_driver(typec_extcon_driver);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Ondrej Jirman <megous@megous.com>");
++MODULE_DESCRIPTION("typec -> extcon bridge driver");
+-- 
+cgit v1.2.3
+
+From 4f9167affd8b3647ebc1b13cc3a0ff1b949b0c49 Mon Sep 17 00:00:00 2001
+From: Ondrej Jirman
+Date: Tue, 23 Nov 2021 17:32:18 +0100
+Subject: phy: rockchip-typec: Make sure the plug orientation is respected
+
+RK3399 TRM says about bit 8:
+
+typec_conn_dir_sel: TypeC connect direction select
+
+- 0: select typec_conn_dir (bit0 of this register) to TypeC PHY
+- 1: select TCPC ouput typec_con_dir to TypeC PHY (default value)
+
+This means that by default, typec_conn_dir bit is not respected.
+Fix setting of typec_conn_dir by setting typec_conn_dir to 0 first.
+
+Signed-off-by: Ondrej Jirman <megous@megous.com>
+---
+ drivers/phy/rockchip/phy-rockchip-typec.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/phy/rockchip/phy-rockchip-typec.c b/drivers/phy/rockchip/phy-rockchip-typec.c
+index d2bbdc96a167..fa10ee9a5794 100644
+--- a/drivers/phy/rockchip/phy-rockchip-typec.c
++++ b/drivers/phy/rockchip/phy-rockchip-typec.c
+@@ -350,6 +350,7 @@ struct usb3phy_reg {
+  * struct rockchip_usb3phy_port_cfg - usb3-phy port configuration.
+  * @reg: the base address for usb3-phy config.
+  * @typec_conn_dir: the register of type-c connector direction.
++ * @typec_conn_dir_sel: the register of type-c connector direction source.
+  * @usb3tousb2_en: the register of type-c force usb2 to usb2 enable.
+  * @external_psm: the register of type-c phy external psm clock.
+  * @pipe_status: the register of type-c phy pipe status.
+@@ -360,6 +361,7 @@ struct usb3phy_reg {
+ struct rockchip_usb3phy_port_cfg {
+ 	unsigned int reg;
+ 	struct usb3phy_reg typec_conn_dir;
++	struct usb3phy_reg typec_conn_dir_sel;
+ 	struct usb3phy_reg usb3tousb2_en;
+ 	struct usb3phy_reg external_psm;
+ 	struct usb3phy_reg pipe_status;
+@@ -434,6 +436,7 @@ static const struct rockchip_usb3phy_port_cfg rk3399_usb3phy_port_cfgs[] = {
+ 	{
+ 		.reg = 0xff7c0000,
+ 		.typec_conn_dir	= { 0xe580, 0, 16 },
++		.typec_conn_dir_sel	= { 0xe580, 8, 16+8 },
+ 		.usb3tousb2_en	= { 0xe580, 3, 19 },
+ 		.external_psm	= { 0xe588, 14, 30 },
+ 		.pipe_status	= { 0xe5c0, 0, 0 },
+@@ -444,6 +447,7 @@ static const struct rockchip_usb3phy_port_cfg rk3399_usb3phy_port_cfgs[] = {
+ 	{
+ 		.reg = 0xff800000,
+ 		.typec_conn_dir	= { 0xe58c, 0, 16 },
++		.typec_conn_dir_sel	= { 0xe58c, 8, 16+8 },
+ 		.usb3tousb2_en	= { 0xe58c, 3, 19 },
+ 		.external_psm	= { 0xe594, 14, 30 },
+ 		.pipe_status	= { 0xe5c0, 16, 16 },
+@@ -739,6 +743,7 @@ static int tcphy_phy_init(struct rockchip_typec_phy *tcphy, u8 mode)
+ 
+ 	reset_control_deassert(tcphy->tcphy_rst);
+ 
++	property_enable(tcphy, &cfg->typec_conn_dir_sel, 0);
+ 	property_enable(tcphy, &cfg->typec_conn_dir, tcphy->flip);
+ 	tcphy_dp_aux_set_flip(tcphy);
+ 
+-- 
+cgit v1.2.3
+
+From 331a9126d98c94f315482f14eed307d184a26f72 Mon Sep 17 00:00:00 2001
+From: Ondrej Jirman
+Date: Wed, 2 Dec 2020 12:09:45 +0100
+Subject: arm64: dts: rk3399-pinebook-pro: Fix USB-PD charging
+
+Signed-off-by: Ondrej Jirman <megous@megous.com>
+---
+ arch/arm64/boot/dts/rockchip/rk3399-pinebook-pro.dts | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/rockchip/rk3399-pinebook-pro.dts b/arch/arm64/boot/dts/rockchip/rk3399-pinebook-pro.dts
+index c2f021a1a18f..d7fe1d99b546 100644
+--- a/arch/arm64/boot/dts/rockchip/rk3399-pinebook-pro.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3399-pinebook-pro.dts
+@@ -713,9 +713,9 @@
+ 			op-sink-microwatt = <1000000>;
+ 			power-role = "dual";
+ 			sink-pdos =
+-				<PDO_FIXED(5000, 2500, PDO_FIXED_USB_COMM)>;
++				<PDO_FIXED(5000, 2500, PDO_FIXED_USB_COMM | PDO_FIXED_DUAL_ROLE | PDO_FIXED_DATA_SWAP)>;
+ 			source-pdos =
+-				<PDO_FIXED(5000, 1400, PDO_FIXED_USB_COMM)>;
++				<PDO_FIXED(5000, 1400, PDO_FIXED_USB_COMM | PDO_FIXED_DUAL_ROLE | PDO_FIXED_DATA_SWAP)>;
+ 			try-power-role = "sink";
+ 
+ 			ports {
+-- 
+cgit v1.2.3
+
+From 6947a3f43482268bc96d2eb6a7fc51323a83d9f7 Mon Sep 17 00:00:00 2001
+From: Ondrej Jirman
+Date: Sun, 14 Nov 2021 01:16:51 +0100
+Subject: arm64: dts: rk3399-pinebook-pro: Improve Type-C support on Pinebook
+ Pro
+
+This is using the same extcon bridge developed by me for Pinephone Pro.
+
+Signed-off-by: Ondrej Jirman <megous@megous.com>
+---
+ .../boot/dts/rockchip/rk3399-pinebook-pro.dts      | 51 +++++++++++++++++++---
+ 1 file changed, 46 insertions(+), 5 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/rockchip/rk3399-pinebook-pro.dts b/arch/arm64/boot/dts/rockchip/rk3399-pinebook-pro.dts
+index d7fe1d99b546..ae175ee3f4c3 100644
+--- a/arch/arm64/boot/dts/rockchip/rk3399-pinebook-pro.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3399-pinebook-pro.dts
+@@ -345,7 +345,7 @@
+ 
+ 	/* Regulators supplied by vcc5v0_usb */
+ 	/* Type C port power supply regulator */
+-	vbus_5vout: vbus_typec: vbus-5vout {
++	vbus_5vout: vbus-5vout {
+ 		compatible = "regulator-fixed";
+ 		enable-active-high;
+ 		gpio = <&gpio1 RK_PA3 GPIO_ACTIVE_HIGH>;
+@@ -384,6 +384,14 @@
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&dc_det_pin>;
+ 	};
++
++	typec_extcon_bridge: typec-extcon {
++		compatible = "linux,typec-extcon-bridge";
++		usb-role-switch;
++		orientation-switch;
++		mode-switch;
++		svid = /bits/ 16 <0xff01>;
++	};
+ };
+ 
+ &cpu_b0 {
+@@ -410,6 +418,12 @@
+ 	cpu-supply = <&vdd_cpu_l>;
+ };
+ 
++&cdn_dp {
++	status = "okay";
++	extcon = <&typec_extcon_bridge>;
++	phys = <&tcphy0_dp>;
++};
++
+ &edp {
+ 	force-hpd;
+ 	pinctrl-names = "default";
+@@ -704,7 +718,9 @@
+ 		interrupts = <RK_PA2 IRQ_TYPE_LEVEL_LOW>;
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&fusb0_int_pin>;
+-		vbus-supply = <&vbus_typec>;
++		vbus-supply = <&vbus_5vout>;
++		usb-role-switch = <&typec_extcon_bridge>;
++		extcon = <&typec_extcon_bridge>;
+ 
+ 		connector {
+ 			compatible = "usb-c-connector";
+@@ -717,6 +733,15 @@
+ 			source-pdos =
+ 				<PDO_FIXED(5000, 1400, PDO_FIXED_USB_COMM | PDO_FIXED_DUAL_ROLE | PDO_FIXED_DATA_SWAP)>;
+ 			try-power-role = "sink";
++			mode-switch = <&typec_extcon_bridge>;
++			orientation-switch = <&typec_extcon_bridge>;
++
++			altmodes {
++				dp {
++					svid = <0xff01>;
++					vdo = <0x0c0046>;
++				};
++			};
+ 
+ 			ports {
+ 				#address-cells = <1>;
+@@ -984,6 +1009,7 @@
+ };
+ 
+ &tcphy0 {
++	extcon = <&typec_extcon_bridge>;
+ 	status = "okay";
+ };
+ 
+@@ -1017,13 +1043,20 @@
+ 
+ &u2phy0 {
+ 	status = "okay";
++	extcon = <&typec_extcon_bridge>;
+ 
+ 	u2phy0_otg: otg-port {
++		/*
++		 * Type-C port on the left side of the chasis.
++		 */
+ 		status = "okay";
+ 	};
+ 
+ 	u2phy0_host: host-port {
+-		phy-supply = <&vcc5v0_otg>;
++		/*
++		 * USB 2.0 host port for the keyboard (internally connected).
++		 */
++		phy-supply = <&vcc5v0_usb>;
+ 		status = "okay";
+ 	};
+ 
+@@ -1038,11 +1071,18 @@
+ 	status = "okay";
+ 
+ 	u2phy1_otg: otg-port {
++		/*
++		 * USB 3.0 A port on the left side of the chasis.
++		 */
+ 		status = "okay";
+ 	};
+ 
+ 	u2phy1_host: host-port {
+-		phy-supply = <&vcc5v0_otg>;
++		/*
++		 * To the HUB that has USB camera and USB 2.0 port on the right
++		 * side of the chasis.
++		 */
++		phy-supply = <&vcc5v0_usb>;
+ 		status = "okay";
+ 	};
+ };
+@@ -1093,7 +1133,8 @@
+ };
+ 
+ &usbdrd_dwc3_0 {
+-	dr_mode = "host";
++	dr_mode = "otg";
++	extcon = <&typec_extcon_bridge>;
+ 	status = "okay";
+ };
+ 
+-- 
+cgit v1.2.3
+

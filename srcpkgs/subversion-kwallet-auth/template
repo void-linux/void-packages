@@ -1,0 +1,87 @@
+# Template file for 'subversion-kwallet-auth'
+#
+# THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/subversion".
+#
+pkgname=subversion-kwallet-auth
+version=1.14.1
+revision=1
+wrksrc="subversion-${version}"
+build_style=gnu-configure
+configure_args="--disable-javahl --disable-static --config-cache
+ --with-kwallet=${XBPS_CROSS_BASE}/usr/include:${XBPS_CROSS_BASE}/usr/lib
+ --with-gnome-keyring --with-editor=vi --disable-mod-activation
+ --with-utf8proc=internal"
+hostmakedepends="automake libtool pkg-config perl python3
+ apache-devel gettext swig"
+makedepends="apache-devel gdbm-devel libgnome-keyring-devel serf-devel
+ libsecret-devel liblz4-devel python3-devel sqlite-devel py3c
+ kdelibs4support-devel file-devel perl"
+short_desc="KDE kwallet authentication support in subversion"
+maintainer="Piotr Wójcik <chocimier@tlen.pl>"
+license="Apache-2.0, BSD-3-Clause"
+homepage="http://subversion.apache.org/"
+changelog="https://subversion.apache.org/docs/release-notes/${version%.*}.html"
+distfiles="http://apache.uvigo.es/subversion/subversion-${version}.tar.bz2"
+checksum=2c5da93c255d2e5569fa91d92457fdb65396b0666fad4fd59b22e154d986e1a9
+lib32disabled=yes
+
+pre_configure() {
+	# Based on native build values
+	cat <<-EOF >config.cache
+	ac_cv_python_includes=-I${XBPS_CROSS_BASE}/usr/include/python${py3_ver}
+	ac_cv_python_compile="${CC} -fPIC"
+	ac_cv_python_link="${CC} -shared ${LDFLAGS}"
+	ac_cv_python_libs="${LDFLAGS}"
+	EOF
+	if [ "$CROSS_BUILD" ]; then
+		cp -a ${XBPS_CROSS_BASE}/usr/bin/apxs ${wrksrc}
+		cp -a ${XBPS_CROSS_BASE}/usr/share/apache/webroot/build/config_vars.mk ${wrksrc}
+
+		# Use the modified apxs
+		configure_args+=" --with-apxs=${wrksrc}/apxs"
+
+		# Use the ${wrksrc}/config_vars.mk
+		vsed -i apxs \
+			-e "s;[$]installbuilddir/config_vars.mk;${wrksrc}/config_vars.mk;g"
+
+		# Use apr-1-config and apu-1-config wrappers
+		vsed -i config_vars.mk \
+			-e "/^APR_CONFIG/ s;=.*;= ${XBPS_WRAPPERDIR}/apr-1-config;" \
+			-e "/^APU_CONFIG/ s;=.*;= ${XBPS_WRAPPERDIR}/apu-1-config;" \
+			-e "s;\([I ]\)/usr/include;\1${XBPS_CROSS_BASE}/usr/include;g"
+
+		export PERL5LIB=${XBPS_STATEDIR}/perlprefix/${XBPS_TARGET_MACHINE}-linux
+		mkdir -p $PERL5LIB
+		cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Config"*.p? $PERL5LIB
+		cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Errno.pm" $PERL5LIB
+		vsed -e "s;archlibexp => '\(.*\)';archlibexp => '${XBPS_CROSS_BASE}\1';" \
+			-i $PERL5LIB/Config.pm $PERL5LIB/Config_heavy.pl
+	else
+		configure_args+=" --with-apxs"
+	fi
+	NOCONFIGURE=1 autoreconf -fi
+}
+
+post_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		cd subversion/bindings/swig/perl/native
+		PERL_MM_USE_DEFAULT=1 CC="$CC" LD="$CC" OPTIMIZE="$CFLAGS" \
+			CFLAGS="$CFLAGS -I$XBPS_CROSS_BASE/usr/include" \
+			CCFLAGS="$CFLAGS -I$XBPS_CROSS_BASE/usr/include" \
+			LDFLAGS="$LDFLAGS -L$XBPS_CROSS_BASE/usr/lib -lperl" \
+			LDDLFLAGS="-shared $CFLAGS -L$XBPS_CROSS_BASE/usr/lib" \
+			INSTALLDIRS=vendor \
+			perl Makefile.PL PREFIX=/usr
+	fi
+}
+
+do_build() {
+	make ${makejobs} LT_LDFLAGS="-L$Fdestdir/usr/lib"
+}
+
+do_install() {
+	export LD_LIBRARY_PATH=${DESTDIR}/usr/lib:$LD_LIBRARY_PATH
+	make DESTDIR=${DESTDIR} INSTALLDIRS=vendor install
+	find ${DESTDIR} '!' -type d '!' -name 'libsvn_auth_kwallet*' -delete
+	vlicense LICENSE
+}

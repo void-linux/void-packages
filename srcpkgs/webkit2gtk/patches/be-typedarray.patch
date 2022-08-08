@@ -1,0 +1,208 @@
+Source: Jacek Piszczek <jacek.piszczek@runbox.com>
+
+https://tenfourfox.tenderapp.com/discussions/problems/7505-problems-uploading-to-facebook
+
+Updated by @q66.
+
+diff --git a/Source/JavaScriptCore/llint/LLIntOfflineAsmConfig.h b/Source/JavaScriptCore/llint/LLIntOfflineAsmConfig.h
+index 8b9e57d3..3802e0f2 100644
+--- a/Source/JavaScriptCore/llint/LLIntOfflineAsmConfig.h
++++ b/Source/JavaScriptCore/llint/LLIntOfflineAsmConfig.h
+@@ -186,3 +186,9 @@
+ #else
+ #define OFFLINE_ASM_HAVE_FAST_TLS 0
+ #endif
++
++#if CPU(BIG_ENDIAN)
++#define OFFLINE_ASM_BIG_ENDIAN 1
++#else
++#define OFFLINE_ASM_BIG_ENDIAN 0
++#endif
+diff --git a/Source/JavaScriptCore/llint/LowLevelInterpreter32_64.asm b/Source/JavaScriptCore/llint/LowLevelInterpreter32_64.asm
+index b8a0f205..7afc8f8f 100644
+--- a/Source/JavaScriptCore/llint/LowLevelInterpreter32_64.asm
++++ b/Source/JavaScriptCore/llint/LowLevelInterpreter32_64.asm
+@@ -1667,7 +1667,11 @@ llintOpWithMetadata(op_get_by_val, OpGetByVal, macro (size, get, dispatch, metad
+ 
+ .opGetByValNotDouble:
+     subi ArrayStorageShape, t2
+-    bia t2, SlowPutArrayStorageShape - ArrayStorageShape, .opGetByValNotIndexedStorage
++    if BIG_ENDIAN
++        bia t2, SlowPutArrayStorageShape - ArrayStorageShape, .opGetByValSlow
++    else
++        bia t2, SlowPutArrayStorageShape - ArrayStorageShape, .opGetByValNotIndexedStorage
++    end
+     biaeq t1, -sizeof IndexingHeader + IndexingHeader::u.lengths.vectorLength[t3], .opGetByValSlow
+     loadi ArrayStorage::m_vector + TagOffset[t3, t1, 8], t2
+     loadi ArrayStorage::m_vector + PayloadOffset[t3, t1, 8], t1
+diff --git a/Source/JavaScriptCore/llint/LowLevelInterpreter64.asm b/Source/JavaScriptCore/llint/LowLevelInterpreter64.asm
+index c7d1a204..4f33d06d 100644
+--- a/Source/JavaScriptCore/llint/LowLevelInterpreter64.asm
++++ b/Source/JavaScriptCore/llint/LowLevelInterpreter64.asm
+@@ -1751,7 +1751,11 @@ llintOpWithMetadata(op_get_by_val, OpGetByVal, macro (size, get, dispatch, metad
+     
+ .opGetByValNotDouble:
+     subi ArrayStorageShape, t2
+-    bia t2, SlowPutArrayStorageShape - ArrayStorageShape, .opGetByValNotIndexedStorage
++    if BIG_ENDIAN
++        bia t2, SlowPutArrayStorageShape - ArrayStorageShape, .opGetByValSlow
++    else
++        bia t2, SlowPutArrayStorageShape - ArrayStorageShape, .opGetByValNotIndexedStorage
++    end
+     biaeq t1, -sizeof IndexingHeader + IndexingHeader::u.lengths.vectorLength[t3], .opGetByValSlow
+     get(m_dst, t0)
+     loadq ArrayStorage::m_vector[t3, t1, 8], t2
+diff --git a/Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h b/Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h
+index c22c55a0..bc1e55c3 100644
+--- a/Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h
++++ b/Source/JavaScriptCore/runtime/JSGenericTypedArrayView.h
+@@ -28,6 +28,7 @@
+ #include "JSArrayBufferView.h"
+ #include "ThrowScope.h"
+ #include "ToNativeFromValue.h"
++#include <wtf/FlipBytes.h>
+ 
+ namespace JSC {
+ 
+@@ -146,7 +147,18 @@ public:
+     
+     JSValue getIndexQuickly(unsigned i) const
+     {
++#if CPU(BIG_ENDIAN)
++        switch (Adaptor::typeValue) {
++        case TypeFloat32:
++        case TypeFloat64:
++            return Adaptor::toJSValue(nullptr, getIndexQuicklyAsNativeValue(i));
++        default:
++            // typed array views are commonly expected to be little endian views of the underlying data
++            return Adaptor::toJSValue(nullptr, flipBytes(getIndexQuicklyAsNativeValue(i)));
++        }
++#else
+         return Adaptor::toJSValue(nullptr, getIndexQuicklyAsNativeValue(i));
++#endif
+     }
+     
+     void setIndexQuicklyToNativeValue(unsigned i, typename Adaptor::Type value)
+@@ -158,7 +170,20 @@ public:
+     void setIndexQuickly(unsigned i, JSValue value)
+     {
+         ASSERT(!value.isObject());
++#if CPU(BIG_ENDIAN)
++        switch (Adaptor::typeValue) {
++        case TypeFloat32:
++        case TypeFloat64:
++            setIndexQuicklyToNativeValue(i, toNativeFromValue<Adaptor>(value));
++            break;
++        default:
++            // typed array views are commonly expected to be little endian views of the underlying data
++            setIndexQuicklyToNativeValue(i, flipBytes(toNativeFromValue<Adaptor>(value)));
++            break;
++        }
++#else
+         setIndexQuicklyToNativeValue(i, toNativeFromValue<Adaptor>(value));
++#endif
+     }
+     
+     bool setIndex(JSGlobalObject* globalObject, unsigned i, JSValue jsValue)
+@@ -172,13 +197,56 @@ public:
+         if (isDetached() || i >= m_length)
+             return false;
+ 
++#if CPU(BIG_ENDIAN)
++        switch (Adaptor::typeValue) {
++        case TypeFloat32:
++        case TypeFloat64:
++            setIndexQuicklyToNativeValue(i, value);
++            break;
++        default:
++            // typed array views are commonly expected to be little endian views of the underlying data
++            setIndexQuicklyToNativeValue(i, flipBytes(value));
++            break;
++        }
++#else
+         setIndexQuicklyToNativeValue(i, value);
++#endif
+         return true;
+     }
+ 
+-    static ElementType toAdaptorNativeFromValue(JSGlobalObject* globalObject, JSValue jsValue) { return toNativeFromValue<Adaptor>(globalObject, jsValue); }
++    static ElementType toAdaptorNativeFromValue(JSGlobalObject* globalObject, JSValue jsValue)
++    {
++#if CPU(BIG_ENDIAN)
++        switch (Adaptor::typeValue) {
++        case TypeFloat32:
++        case TypeFloat64:
++            return toNativeFromValue<Adaptor>(globalObject, jsValue);
++        default:
++            // typed array views are commonly expected to be little endian views of the underlying data
++            return flipBytes(toNativeFromValue<Adaptor>(globalObject, jsValue));
++        }
++#else
++        return toNativeFromValue<Adaptor>(globalObject, jsValue);
++#endif
++    }
+ 
+-    static std::optional<ElementType> toAdaptorNativeFromValueWithoutCoercion(JSValue jsValue) { return toNativeFromValueWithoutCoercion<Adaptor>(jsValue); }
++    static std::optional<ElementType> toAdaptorNativeFromValueWithoutCoercion(JSValue jsValue)
++    {
++        auto opt = toNativeFromValueWithoutCoercion<Adaptor>(jsValue);
++#if CPU(BIG_ENDIAN)
++        switch (Adaptor::typeValue) {
++        case TypeFloat32:
++        case TypeFloat64:
++            break;
++        default:
++            // typed array views are commonly expected to be little endian views of the underlying data
++            if (!opt)
++                break;
++            return std::optional<ElementType>{flipBytes(*opt)};
++        }
++#endif
++        return opt;
++    }
+ 
+     void sort()
+     {
+diff --git a/Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h b/Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h
+index 00492c0a..7bb150dc 100644
+--- a/Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h
++++ b/Source/JavaScriptCore/runtime/JSGenericTypedArrayViewPrototypeFunctions.h
+@@ -208,9 +208,36 @@ ALWAYS_INLINE EncodedJSValue genericTypedArrayViewProtoFuncIncludes(VM& vm, JSGl
+     scope.assertNoExceptionExceptTermination();
+     RELEASE_ASSERT(!thisObject->isDetached());
+ 
+-    if (std::isnan(static_cast<double>(*targetOption))) {
++    double targetOptionLittleEndianAsDouble;
++#if CPU(BIG_ENDIAN)
++    switch (ViewClass::TypedArrayStorageType) {
++    case TypeFloat32:
++    case TypeFloat64:
++        targetOptionLittleEndianAsDouble = static_cast<double>(*targetOption);
++    default:
++        // typed array views are commonly expected to be little endian views of the underlying data
++        targetOptionLittleEndianAsDouble = static_cast<double>(flipBytes(*targetOption));
++    }
++#else
++    targetOptionLittleEndianAsDouble = static_cast<double>(*targetOption);
++#endif
++
++    if (std::isnan(targetOptionLittleEndianAsDouble)) {
+         for (; index < length; ++index) {
+-            if (std::isnan(static_cast<double>(array[index])))
++            double arrayElementLittleEndianAsDouble;
++#if CPU(BIG_ENDIAN)
++            switch (ViewClass::TypedArrayStorageType) {
++            case TypeFloat32:
++            case TypeFloat64:
++                arrayElementLittleEndianAsDouble = static_cast<double>(array[index]);
++            default:
++                // typed array views are commonly expected to be little endian views of the underlying data
++                arrayElementLittleEndianAsDouble = static_cast<double>(flipBytes(array[index]));
++            }
++#else
++            arrayElementLittleEndianAsDouble = static_cast<double>(array[index]);
++#endif
++            if (std::isnan(arrayElementLittleEndianAsDouble))
+                 return JSValue::encode(jsBoolean(true));
+         }
+     } else {

@@ -1,0 +1,137 @@
+# Template file for 'ghdl'
+#
+# We could also package the gcc backend, but that requires an entire gcc
+# source tree being available and looks rather complicated, so for now
+# only mcode (on x86) and llvm (everywhere) is done
+#
+pkgname=ghdl
+reverts="20181129_1"
+version=1.0.0
+revision=1
+build_style=configure
+configure_args="--prefix=/usr --srcdir=.. --incdir=lib/ghdl/include"
+makedepends="zlib-devel"
+short_desc="VHDL 2008/93/87 simulator"
+maintainer="m3tav3rse <mtvrs@tuta.io>"
+license="GPL-2.0-or-later"
+homepage="https://github.com/ghdl/ghdl"
+distfiles="https://github.com/ghdl/ghdl/archive/v${version}.tar.gz"
+checksum=cb424766fbe831ff41bec84016a6af0406d735c272b0b639d507c3503df30495
+nocross=yes
+make_check=extended
+
+build_options="llvm mcode"
+build_options_default="llvm"
+
+desc_option_llvm="Build the portable LLVM backend"
+desc_option_mcode="Build the x86-only mcode backend"
+
+if [ "$build_option_mcode" ]; then
+	depends=" ghdl-mcode>=${version}_${revision}"
+elif [ "$build_option_llvm" ]; then
+	depends=" ghdl-llvm>=${version}_${revision}"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	i686*|x86_64*)
+		build_options_default+=" mcode"
+		;;
+	*)
+		if [ "$build_option_mcode" ]; then
+			broken="mcode backend only available on x86"
+		fi
+esac
+
+# get around xbps-src's broken 2-pass option eval
+unset subpackages
+
+if [ "$build_option_mcode" ]; then
+	subpackages+=" ghdl-mcode"
+fi
+
+if [ "$build_option_llvm" ]; then
+	subpackages+=" ghdl-llvm"
+	makedepends+=" llvm12"
+fi
+
+do_configure() {
+	if [ "$build_option_mcode" ]; then
+		mkdir -p build_mcode
+		cd build_mcode
+		../configure --libdir=lib/ghdl/mcode \
+			${configure_args}
+		cd ..
+	fi
+	if [ "$build_option_llvm" ]; then
+		mkdir -p build_llvm
+		cd build_llvm
+		../configure --libdir=lib/ghdl/llvm --with-llvm-config \
+			${configure_args}
+		cd ..
+	fi
+}
+
+do_build() {
+	if [ "$build_option_mcode" ]; then
+		make -C build_mcode ${makejobs}
+	fi
+	if [ "$build_option_llvm" ]; then
+		make -C build_llvm ${makejobs}
+	fi
+}
+
+do_install() {
+	# must be first; make install uses it
+	vbin ${FILESDIR}/ghdl
+	# install whatever backends we have
+	if [ "$build_option_mcode" ]; then
+		make -C build_mcode DESTDIR=${DESTDIR} install
+		rm -rf ${DESTDIR}/usr/lib/ghdl/src
+		mv ${DESTDIR}/usr/lib/ghdl/mcode/src ${DESTDIR}/usr/lib/ghdl
+		ln -s ../src ${DESTDIR}/usr/lib/ghdl/mcode/src
+	fi
+	if [ "$build_option_llvm" ]; then
+		make -C build_llvm DESTDIR=${DESTDIR} install
+		rm -rf ${DESTDIR}/usr/lib/ghdl/src
+		mv ${DESTDIR}/usr/lib/ghdl/llvm/src ${DESTDIR}/usr/lib/ghdl
+		ln -s ../src ${DESTDIR}/usr/lib/ghdl/llvm/src
+	fi
+	# manpage is not installed by default
+	vman doc/ghdl.1
+}
+
+do_check() {
+	# the testsuite is broken
+	# after a while it fails with this:
+	# ghdl: unknown command '--synth', try --help
+	# this indicates a bug in the testsuite
+	: && return 0
+
+	# need a temporary installation for testsuite run so that ghdl1 is found
+	for variant in ${build_options_default}; do
+		cd ${wrksrc}/build_${variant}
+		mkdir -p tmp_inst/usr/bin
+		ln -sf ghdl-${variant} tmp_inst/usr/bin/ghdl
+		make DESTDIR=${wrksrc}/build_${variant}/tmp_inst install
+		cd ../testsuite
+		GHDL="${wrksrc}/build_${variant}/tmp_inst/usr/bin/ghdl" \
+			./testsuite.sh
+		cd ${wrksrc}
+	done
+}
+
+ghdl-mcode_package() {
+	short_desc+=" - mcode backend"
+	pkg_install() {
+		vmove usr/bin/ghdl-mcode
+		vmove usr/lib/ghdl/mcode
+	}
+}
+
+ghdl-llvm_package() {
+	short_desc+=" - LLVM backend"
+	pkg_install() {
+		vmove usr/bin/ghdl-llvm
+		vmove usr/lib/ghdl/llvm
+	}
+}

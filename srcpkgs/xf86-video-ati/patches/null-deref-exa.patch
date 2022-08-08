@@ -1,0 +1,77 @@
+From a8168153037f2cfb9739285b92896c0e24872518 Mon Sep 17 00:00:00 2001
+From: Alexey Sheplyakov <asheplyakov@altlinux.org>
+Date: Wed, 27 Nov 2019 20:50:58 +0400
+Subject: [PATCH] Don't crash X server if GPU acceleration is not available
+
+Commit d1d8e3c8d0a0a0394d395eba171460501745209b causes X server
+to fail on startup when GPU acceleration is not working (or is
+disabled). The reason is that `radeon_get_pixmap_bo` function
+gets called too early (before EXA has been initialized) and
+fails with an assert:
+
+ #0  __GI_raise (sig=<optimized out>) at ../sysdeps/unix/sysv/linux/raise.c:50
+ #1  0x76ab1c6c in __GI_abort () at abort.c:79
+ #2  0x76ac0b64 in __assert_fail_base (fmt=0x76bfbce4 "%s%s%s:%u: %s%sAssertion `%s' failed.\n%n", assertion=0x7658c80c "key->initialized", file=<optimized out>, line=121,
+     function=0x7658d040 <__PRETTY_FUNCTION__.10607> "dixGetPrivateAddr") at assert.c:92
+ #3  0x76ac0c0c in __GI___assert_fail (assertion=0x7658c80c "key->initialized", file=0x7658c9d0 "../include/privates.h", line=121,
+     function=0x7658d040 <__PRETTY_FUNCTION__.10607> "dixGetPrivateAddr") at assert.c:101
+ #4  0x76579e6c in dixGetPrivateAddr (key=<optimized out>, key=<optimized out>, privates=<optimized out>) at ../include/privates.h:121
+ #5  0x7657a954 in dixGetPrivateAddr (key=<optimized out>, key=<optimized out>, privates=<optimized out>) at exa.c:70
+ #6  dixGetPrivate (key=<optimized out>, privates=<optimized out>) at ../include/privates.h:136
+ #7  exaGetPixmapDriverPrivate (pPix=<optimized out>) at exa.c:68
+ #8  0x7623d460 in radeon_get_pixmap_bo (pPix=0x71c1b8) at radeon.h:804
+ #9  radeon_get_pixmap_handle (pixmap=0x71c1b8, handle=0x7fa22328) at radeon_bo_helper.c:357
+ #10 0x76244458 in radeon_pixmap_get_fb (pix=0x71c1b8) at radeon.h:886
+ #11 drmmode_set_mode_major (crtc=0x691860, mode=0x69191c, rotation=<optimized out>, x=<optimized out>, y=<optimized out>) at drmmode_display.c:918
+ #12 0x762467e8 in drmmode_set_desired_modes (pScrn=0x67c678, drmmode=<optimized out>, set_hw=1) at drmmode_display.c:3128
+ #13 0x0047bfa4 in MapWindow (client=0x669ec8, pWin=0x7206c0) at window.c:2722
+ #14 MapWindow (pWin=0x7206c0, client=0x669ec8) at window.c:2665
+ #15 0x00449650 in dix_main (argc=3, argv=0x7fa22604, envp=<optimized out>) at main.c:247
+ #16 0x76ab2198 in __libc_start_main (main=0x42db10 <main>, argc=3, argv=0x7fa22604, init=<optimized out>, fini=0x606434 <__libc_csu_fini>, rtld_fini=0x77229930 <_dl_fini>,
+     stack_end=0x7fa225e0) at libc-start.c:308
+ #17 0x0042db80 in __start () at ../sysdeps/mips/start.S:110
+
+Don't call `exaGetPixmapDriverPrivate` if the acceleration (EXA) is not
+enabled [yet] to avoid the problem.
+
+Closes: https://gitlab.freedesktop.org/xorg/driver/xf86-video-ati/issues/188
+Closes: https://bugzilla.altlinux.org/show_bug.cgi?id=37539
+---
+ src/radeon.h | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/radeon.h b/src/radeon.h
+index 2c913466..e4a2ba66 100644
+--- a/src/radeon.h
++++ b/src/radeon.h
+@@ -790,8 +790,8 @@ static inline Bool radeon_set_pixmap_bo(PixmapPtr pPix, struct radeon_buffer *bo
+ 
+ static inline struct radeon_buffer *radeon_get_pixmap_bo(PixmapPtr pPix)
+ {
+-#ifdef USE_GLAMOR
+     RADEONInfoPtr info = RADEONPTR(xf86ScreenToScrn(pPix->drawable.pScreen));
++#ifdef USE_GLAMOR
+ 
+     if (info->use_glamor) {
+ 	struct radeon_pixmap *priv;
+@@ -799,7 +799,7 @@ static inline struct radeon_buffer *radeon_get_pixmap_bo(PixmapPtr pPix)
+ 	return priv ? priv->bo : NULL;
+     } else
+ #endif
+-    {
++    if (info->accelOn) {
+ 	struct radeon_exa_pixmap_priv *driver_priv;
+ 	driver_priv = exaGetPixmapDriverPrivate(pPix);
+ 	return driver_priv ? driver_priv->bo : NULL;
+@@ -896,7 +896,7 @@ radeon_pixmap_get_fb(PixmapPtr pix)
+ 				   handle);
+     }
+ 
+-    return *fb_ptr;
++    return fb_ptr ? *fb_ptr : NULL;
+ }
+ 
+ 
+-- 
+2.24.1
+

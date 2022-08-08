@@ -1,0 +1,114 @@
+The first patch is taken from the issue and resolution documented at
+
+    https://bugreports.qt.io/browse/PYSIDE-1436
+
+Note that strings created as part of the `staticStrings()` set used in the
+`finalizeStaticStrings()` function are created by `createStaticString()`, which
+uses `PyUnicode_InternFromString` to create an owned reference to an interned
+Python string **and** calls Py_INCREF to further guard against the strings
+disappearing. Thus, in `finalizeStaticStrings()`, we need *two* calls to
+Py_DECREF: one to clear the "guard" increment after creation and one to release
+ownership from the creation itself.
+
+The second and third patches are adapted from
+
+    https://codereview.qt-project.org/c/pyside/pyside-setup/+/348390
+
+The second addresses the disappearance of _Py_Mangle from Python 3.10 by
+providing an alternative implementation that was previously reserved for
+Py_LIMITED_API.
+
+The fourth patch was adapted from
+
+    https://codereview.qt-project.org/c/pyside/pyside-setup/+/365403/4
+
+Together with the third patch,t his addresses changes to the typing module that
+caused the pyi binding generator to fail in some cases.
+
+diff -ur a/sources/shiboken2/libshiboken/pep384impl.cpp b/sources/shiboken2/libshiboken/pep384impl.cpp
+--- a/sources/shiboken2/libshiboken/pep384impl.cpp	2020-11-11 07:51:30.000000000 -0500
++++ b/sources/shiboken2/libshiboken/pep384impl.cpp	2021-09-26 08:47:00.614184926 -0400
+@@ -751,14 +751,14 @@
+ #endif // IS_PY2
+     Shiboken::AutoDecRef privateobj(PyObject_GetAttr(
+         reinterpret_cast<PyObject *>(Py_TYPE(self)), Shiboken::PyMagicName::name()));
+-#ifndef Py_LIMITED_API
+-    return _Py_Mangle(privateobj, name);
+-#else
+-    // For some reason, _Py_Mangle is not in the Limited API. Why?
+-    size_t plen = PyUnicode_GET_LENGTH(privateobj);
++
++    // PYSIDE-1436: _Py_Mangle is no longer exposed; implement it always.
++    // The rest of this function is our own implementation of _Py_Mangle.
++    // Please compare the original function in compile.c .
++    size_t plen = PyUnicode_GET_LENGTH(privateobj.object());
+     /* Strip leading underscores from class name */
+     size_t ipriv = 0;
+-    while (PyUnicode_READ_CHAR(privateobj, ipriv) == '_')
++    while (PyUnicode_READ_CHAR(privateobj.object(), ipriv) == '_')
+         ipriv++;
+     if (ipriv == plen) {
+         Py_INCREF(name);
+@@ -787,7 +787,6 @@
+     if (amount > big_stack)
+         free(resbuf);
+     return result;
+-#endif // else Py_LIMITED_API
+ }
+ 
+ /*****************************************************************************
+diff -ur a/sources/shiboken2/libshiboken/sbkstring.cpp b/sources/shiboken2/libshiboken/sbkstring.cpp
+--- a/sources/shiboken2/libshiboken/sbkstring.cpp	2020-11-11 07:51:30.000000000 -0500
++++ b/sources/shiboken2/libshiboken/sbkstring.cpp	2021-09-26 08:47:00.614184926 -0400
+@@ -247,8 +247,15 @@
+ {
+     auto &set = staticStrings();
+     for (PyObject *ob : set) {
++        // Since Python 3.10, interned strings at deleted at Python exit.
++#if PY_VERSION_HEX >= 0x030a0000
++        Py_DECREF(ob);
++        // createStaticString() calls Py_INCREF()
++        Py_DECREF(ob);
++#else
+         Py_REFCNT(ob) = 1;
+         Py_DECREF(ob);
++#endif
+     }
+     set.clear();
+ }
+diff -ur a/sources/shiboken2/shibokenmodule/files.dir/shibokensupport/signature/mapping.py b/sources/shiboken2/shibokenmodule/files.dir/shibokensupport/signature/mapping.py
+--- a/sources/shiboken2/shibokenmodule/files.dir/shibokensupport/signature/mapping.py	2020-11-11 07:51:30.000000000 -0500
++++ b/sources/shiboken2/shibokenmodule/files.dir/shibokensupport/signature/mapping.py	2021-09-26 08:47:00.614184926 -0400
+@@ -300,6 +300,7 @@
+     "zero(object)": None,
+     "zero(str)": "",
+     "zero(typing.Any)": None,
++    "zero(Any)": None,
+     })
+ 
+ type_map.update({
+diff -ur a/sources/shiboken2/shibokenmodule/files.dir/shibokensupport/signature/parser.py b/sources/shiboken2/shibokenmodule/files.dir/shibokensupport/signature/parser.py
+--- a/sources/shiboken2/shibokenmodule/files.dir/shibokensupport/signature/parser.py	2020-11-11 07:51:30.000000000 -0500
++++ b/sources/shiboken2/shibokenmodule/files.dir/shibokensupport/signature/parser.py	2021-09-26 08:48:27.743171587 -0400
+@@ -43,10 +43,11 @@
+ import re
+ import warnings
+ import types
++import typing
+ import keyword
+ import functools
+ from shibokensupport.signature.mapping import (type_map, update_mapping,
+-    namespace, typing, _NotCalled, ResultVariable, ArrayLikeVariable)
++    namespace, _NotCalled, ResultVariable, ArrayLikeVariable)
+ from shibokensupport.signature.lib.tool import (SimpleNamespace,
+     build_brace_pattern)
+ 
+@@ -222,7 +223,7 @@
+ def to_string(thing):
+     if isinstance(thing, str):
+         return thing
+-    if hasattr(thing, "__name__"):
++    if hasattr(thing, "__name__") and thing.__module__ != "typing":
+         dot = "." in str(thing)
+         name = get_name(thing)
+         return thing.__module__ + "." + name if dot else name
