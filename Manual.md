@@ -1602,11 +1602,10 @@ recursively by the target python version. This differs from `pycompile_module` i
 path may be specified, Example: `pycompile_dirs="usr/share/foo"`.
 
 - `python_version`: this variable expects the supported Python major version.
-By default it's set to `2`. This variable is needed for multi-language
+In most cases version is inferred from shebang, install path or build style.
+Only required for some multi-language
 applications (e.g., the application is written in C while the command is
 written in Python) or just single Python file ones that live in `/usr/bin`.
-
-> NOTE: you need to define it *only* for non-Python modules.
 
 Also, a set of useful variables are defined to use in the templates:
 
