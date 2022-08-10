@@ -54,10 +54,13 @@ _EOF
 	cmake_args+=" -DCMAKE_INSTALL_PREFIX=/usr"
 	cmake_args+=" -DCMAKE_BUILD_TYPE=None"
 	cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib${XBPS_TARGET_WORDSIZE}"
-	cmake_args+=" -DQT_HOST_PATH=/usr"
-	# QT_HOST_PATH isn't enough in my system,
-	# which have binfmts support on and off
-	cmake_args+=" -DQT_HOST_PATH_CMAKE_DIR=/usr/lib/cmake"
+
+	if [ "$CROSS_BUILD" ]; then
+		cmake_args+=" -DQT_HOST_PATH=/usr"
+		# QT_HOST_PATH isn't enough in my system,
+		# which have binfmts support on and off
+		cmake_args+=" -DQT_HOST_PATH_CMAKE_DIR=/usr/lib/cmake"
+	fi
 
 	if [[ $build_helper = *"qemu"* ]]; then
 		echo "SET(CMAKE_CROSSCOMPILING_EMULATOR /usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static)" \
