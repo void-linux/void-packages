@@ -4,6 +4,29 @@ void-packages is the backbone of the Void Linux distribution. It contains all th
 
 This document describes how you, as a contributor, can help with adding packages, correcting bugs and adding features to void-packages.
 
+## Package Requirements
+
+To be included in the Void repository, software must meet at least one of the following requirements.
+Exceptions to the list are possible, and might be accepted, but are extremely unlikely.
+If you believe you have an exception, start a PR and make an argument for why that particular piece of software,
+while not meeting any of the following requirements, is a good candidate for the Void packages system.
+
+1. **System**: The software should be installed system-wide, not per-user.
+
+1. **Compiled**: The software needs to be compiled before being used, even if it is software that is not needed by the whole system.
+
+1. **Required**: Another package either within the repository or pending inclusion requires the package.
+
+In particular, new themes are highly unlikely to be accepted.
+Simple shell scripts are unlikely to be accepted unless they provide considerable value to a broad user base.
+New fonts may be accepted if they provide value beyond aesthetics (e.g. they contain glyphs for a script missing in already packaged fonts).
+
+Browser forks, including those based on Chromium and Firefox, are generally not accepted.
+Such forks require heavy patching, maintenance and hours of build time.
+
+Software need to be used in version announced by authors as ready to use by the general public - usually called releases.
+Betas, arbitrary VCS revisions, templates using tip of development branch taken at build time and releases created by the package maintainer won't be accepted.
+
 ## Creating, updating, and modifying packages in Void by yourself
 
 If you really want to get a new package or package update into Void Linux, we recommend you contribute it yourself.
