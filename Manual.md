@@ -545,10 +545,8 @@ build methods. Unset by default.
 `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
 build methods. Unset by default.
 
-- `make_install_args` The arguments to be passed in to `${make_cmd}` at the `install-destdir`
-phase if `${build_style}` is set to `configure`, `gnu-configure` or
-`gnu-makefile` build methods. By default set to
-`PREFIX=/usr DESTDIR=${DESTDIR}`.
+- `make_install_args` The arguments to be passed in to `${make_cmd}` at the `install`
+phase if `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile` build methods.
 
 - `make_build_target` The build target. If `${build_style}` is set to `configure`, `gnu-configure`
 or `gnu-makefile`, this is the target passed to `${make_cmd}` in the build phase;
