@@ -15,8 +15,8 @@ case "$tip" in
 esac
 
 base="$($GIT_CMD merge-base FETCH_HEAD "$tip")" || {
-	echo "Your branches is based on too old copy."
-	echo "Please rebase to newest copy."
+	echo "Your branch is too far behind the upstream master branch."
+	echo "To retry, rebase your branch and force-push."
 	exit 1
 }
 
