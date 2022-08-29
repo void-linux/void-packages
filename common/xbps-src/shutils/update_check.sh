@@ -13,6 +13,11 @@ update_check() {
         if [ "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
             echo "using $XBPS_TARGET_PKG/update overrides" 1>&2
         fi
+    elif [ -z "$distfiles" ]; then
+        if [ "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
+            echo "NO DISTFILES found for $original_pkgname" 1>&2
+        fi
+        return 0
     fi
 
     if ! type curl >/dev/null 2>&1; then
