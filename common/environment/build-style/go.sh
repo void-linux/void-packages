@@ -43,3 +43,8 @@ case "$XBPS_TARGET_MACHINE" in
 	*-musl) export GOCACHE="${XBPS_HOSTDIR}/gocache-muslc" ;;
 	*)	export GOCACHE="${XBPS_HOSTDIR}/gocache-glibc" ;;
 esac
+
+case "$XBPS_TARGET_MACHINE" in
+	# https://go.dev/cl/421935
+	i686*) export CGO_CFLAGS="$CGO_CFLAGS -fno-stack-protector" ;;
+esac

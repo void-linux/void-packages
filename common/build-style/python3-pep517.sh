@@ -13,8 +13,12 @@ do_build() {
 }
 
 do_check() {
+	local testjobs
 	if python3 -c 'import pytest' >/dev/null 2>&1; then
-		${make_check_pre} python3 -m pytest ${make_check_args} ${make_check_target}
+		if python3 -c 'import xdist' >/dev/null 2>&1; then
+			testjobs="-n $XBPS_MAKEJOBS"
+		fi
+		${make_check_pre} python3 -m pytest ${testjobs} ${make_check_args} ${make_check_target}
 	else
 		msg_warn "Unable to determine tests for PEP517 Python templates"
 		return 0

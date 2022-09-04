@@ -4,6 +4,7 @@ update_check() {
     local i p url pkgurlname rx found_version consider
     local update_override=$XBPS_SRCPKGDIR/$XBPS_TARGET_PKG/update
     local original_pkgname=$pkgname
+    local pkgname=$sourcepkg
     local urlpfx urlsfx
     local -A fetchedurls
 
@@ -122,7 +123,7 @@ update_check() {
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$pkgurlname/tags"
                 rx='/archive/refs/tags/(v?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=\.tar\.gz")';;
-            *//gitlab.*)
+            *//gitlab.*|*code.videolan.org*)
                 case "$url" in
                     */-/*) pkgurlname="$(printf %s "$url" | sed -e 's%/-/.*%%g; s%/$%%')";;
                     *) pkgurlname="$(printf %s "$url" | cut -d / -f 1-5)";;
@@ -148,8 +149,8 @@ update_check() {
                 rx='/crates/'${pkgname#rust-}'/\K[0-9.]*(?=/download)' ;;
             *codeberg.org*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
-                url="https://codeberg.org/$pkgurlname/releases"
-                rx='/archive/\K[\d.]+(?=\.tar\.gz)' ;;
+                url="https://codeberg.org/$pkgurlname/tags"
+                rx='/archive/(v-?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=\.tar\.gz)' ;;
             *hg.sr.ht*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://hg.sr.ht/$pkgurlname/tags"

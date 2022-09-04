@@ -20,7 +20,7 @@ do_install() {
 	: ${make_install_args:=--path .}
 
 	${make_cmd} install --target ${RUST_TARGET} --root="${DESTDIR}/usr" \
-		--locked ${configure_args} ${make_install_args}
+		--offline --locked ${configure_args} ${make_install_args}
 
 	rm -f "${DESTDIR}"/usr/.crates.toml
 	rm -f "${DESTDIR}"/usr/.crates2.json

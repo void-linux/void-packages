@@ -6,7 +6,6 @@ packages for XBPS, the `Void Linux` native packaging system.
 *Table of Contents*
 
 * [Introduction](#Introduction)
-	* [Quality Requirements](#quality_requirements)
 	* [Package build phases](#buildphase)
 	* [Package naming conventions](#namingconventions)
 		* [Libraries](#libs)
@@ -123,38 +122,6 @@ If everything went fine after running
 
 a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local repository
 `hostdir/binpkgs`.
-
-<a id="quality_requirements"></a>
-### Quality Requirements
-
-To be included in the Void repository, software must meet at least one
-of the following requirements. Exceptions to the list are possible,
-and might be accepted, but are extremely unlikely. If you believe you have an
-exception, start a PR and make an argument for why that particular piece of
-software, while not meeting any of the following requirements, is a good candidate for
-the Void packages system.
-
-1. System: The software should be installed system-wide, not per-user.
-
-1. Compiled: The software needs to be compiled before being used, even if it is
-   software that is not needed by the whole system.
-
-1. Required: Another package either within the repository or pending inclusion
-   requires the package.
-
-In particular, new themes are highly unlikely to be accepted. Simple shell
-scripts are unlikely to be accepted unless they provide considerable value to a
-broad user base. New fonts may be accepted if they provide value beyond
-aesthetics (e.g. they contain glyphs for a script missing in already packaged
-fonts).
-
-Browser forks, including those based on Chromium and Firefox, are generally not
-accepted. Such forks require heavy patching, maintenance and hours of build time.
-
-Software need to be used in version announced by authors as ready to use by
-the general public - usually called releases. Betas, arbitrary VCS revisions,
-templates using tip of development branch taken at build time and releases
-created by the package maintainer won't be accepted.
 
 <a id="buildphase"></a>
 ### Package build phases
@@ -464,7 +431,7 @@ the generated `binary packages` have been modified.
 - `short_desc` A string with a brief description for this package. Max 72 chars.
 
 - `version` A string with the package version. Must not contain dashes or underscore
-and at least one digit is required. Shell's variable substition usage is not allowed.
+and at least one digit is required. Shell's variable substitution usage is not allowed.
 
 Neither `pkgname` or `version` should contain special characters which make it
 necessary to quote them, so they shouldn't be quoted in the template.
@@ -578,10 +545,8 @@ build methods. Unset by default.
 `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
 build methods. Unset by default.
 
-- `make_install_args` The arguments to be passed in to `${make_cmd}` at the `install-destdir`
-phase if `${build_style}` is set to `configure`, `gnu-configure` or
-`gnu-makefile` build methods. By default set to
-`PREFIX=/usr DESTDIR=${DESTDIR}`.
+- `make_install_args` The arguments to be passed in to `${make_cmd}` at the `install`
+phase if `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile` build methods.
 
 - `make_build_target` The build target. If `${build_style}` is set to `configure`, `gnu-configure`
 or `gnu-makefile`, this is the target passed to `${make_cmd}` in the build phase;
@@ -611,6 +576,11 @@ patches to the package sources during `do_patch()`. Patches are stored in
 - `disable_parallel_build` If set the package won't be built in parallel
 and `XBPS_MAKEJOBS` will be set to 1. If a package does not work well with `XBPS_MAKEJOBS`
 but still has a mechanism to build in parallel, set `disable_parallel_build` and
+use `XBPS_ORIG_MAKEJOBS` (which holds the original value of `XBPS_MAKEJOBS`) in the template.
+
+- `disable_parallel_check` If set tests for the package won't be built and run in parallel
+and `XBPS_MAKEJOBS` will be set to 1. If a package does not work well with `XBPS_MAKEJOBS`
+but still has a mechanism to run checks in parallel, set `disable_parallel_check` and
 use `XBPS_ORIG_MAKEJOBS` (which holds the original value of `XBPS_MAKEJOBS`) in the template.
 
 - `make_check` Sets the cases in which the `check` phase is run.
@@ -657,7 +627,7 @@ debugging symbols. Files can be given by full path or by filename.
 - `noshlibprovides` If set, the ELF binaries won't be inspected to collect the provided
 sonames in shared libraries.
 
-- `noverifyrdeps` If set, the ELF binaries and shared libaries won't be inspected to collect
+- `noverifyrdeps` If set, the ELF binaries and shared libraries won't be inspected to collect
 their reverse dependencies. You need to specify all dependencies in the `depends` when you
 need to set this.
 
@@ -697,7 +667,7 @@ This appends to the generated file rather than replacing it.
 - `nopie` Only needs to be set to something to make active, disables building the package with hardening
   features (PIE, relro, etc). Not necessary for most packages.
 
-- `nopie_files` White-space seperated list of ELF binaries that won't be checked
+- `nopie_files` White-space separated list of ELF binaries that won't be checked
 for PIE. Files must be given by full path.
 
 - `reverts` xbps supports a unique feature which allows to downgrade from broken
@@ -783,7 +753,7 @@ A special value `noarch` used to be available, but has since been removed.
 So far, we have listed four types of `depends` variables: `hostmakedepends`,
 `makedepends`, `checkdepends` and `depends`. These different kinds of variables
 are necessary because `xbps-src` supports cross compilation and to avoid
-installing unecessary packages in the build environment.
+installing unnecessary packages in the build environment.
 
 During a build process, there are programs that must be _run_ on the host, such
 as `yacc` or the C compiler. The packages that contain these programs should be
@@ -1128,9 +1098,9 @@ Current working directory for functions is set as follows:
 
 - For do_fetch, post_fetch: `XBPS_BUILDDIR`.
 
-- For do_extract, post_extract: `wrksrc`.
+- For do_extract through do_patch: `wrksrc`.
 
-- For pre_patch through post_install: `build_wrksrc`
+- For post_patch through post_install: `build_wrksrc`
 if it is defined, otherwise `wrksrc`.
 
 <a id="build_options"></a>
@@ -1410,6 +1380,14 @@ If the service requires directories in parts of the system that are not generall
 temporary filesystems. Then use the `make_dirs` variable in the template to create
 those directories when the package is installed.
 
+If the package installs a systemd service file or other unit, leave it in place as a
+reference point so long as including it has no negative side effects.
+
+Examples of when *not* to install systemd units:
+
+1. When doing so changes runtime behavior of the packaged software.
+2. When it is done via a compile time flag that also changes build dependencies.
+
 <a id="32bit_pkgs"></a>
 ### 32bit packages
 
@@ -1589,11 +1567,10 @@ recursively by the target python version. This differs from `pycompile_module` i
 path may be specified, Example: `pycompile_dirs="usr/share/foo"`.
 
 - `python_version`: this variable expects the supported Python major version.
-By default it's set to `2`. This variable is needed for multi-language
+In most cases version is inferred from shebang, install path or build style.
+Only required for some multi-language
 applications (e.g., the application is written in C while the command is
 written in Python) or just single Python file ones that live in `/usr/bin`.
-
-> NOTE: you need to define it *only* for non-Python modules.
 
 Also, a set of useful variables are defined to use in the templates:
 
@@ -1632,6 +1609,7 @@ The following template variables influence how Go packages are built:
   any go.mod files, `default` to use Go's default behavior, or anything
   accepted by `go build -mod MODE`.  Defaults to `vendor` if there's
   a vendor directory, otherwise `default`.
+- `go_ldflags`: Arguments to pass to the linking steps of go tool.
 
 The following environment variables influence how Go packages are built:
 
