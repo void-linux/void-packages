@@ -24,8 +24,8 @@ update_check() {
 
     if [ -z "$site" ]; then
         case "$distfiles" in
-            # only consider versions those exist in ftp.gnome.org
-            *ftp.gnome.org*) ;;
+            # special case those sites provide better source elsewhere
+            *ftp.gnome.org*|*download.gnome.org*) ;;
             *archive.xfce.org*) ;;
             *)
                 printf '%s\n' "$homepage" ;;
@@ -58,7 +58,7 @@ update_check() {
               *github.com*|\
               *//gitlab.*|\
               *bitbucket.org*|\
-              *ftp.gnome.org*|\
+              *ftp.gnome.org*|*download.gnome.org*|\
               *archive.xfce.org*|\
               *kernel.org/pub/linux/kernel/*|\
               *cran.r-project.org/src/contrib*|\
@@ -137,7 +137,7 @@ update_check() {
                 url="https://bitbucket.org/$pkgurlname/downloads"
                 rx='/(get|downloads)/(v?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=\.tar)';;
             *ftp.gnome.org*|*download.gnome.org*)
-                : ${pattern="\Q$pkgname\E-\K(0|[13]\.[0-9]*[02468]|[4-9][0-9]+)\.[0-9.]*[0-9](?=)"}
+                : ${pattern="\Q$pkgname\E-\K(0|[13]\.[0-9]*[02468]|[4-9][0-9]+)\.[0-9.]*[0-9](?=.tar)"}
                 url="https://download.gnome.org/sources/$pkgname/cache.json";;
             *archive.xfce.org*)
                 : ${pattern="\Q$pkgname\E-\K((([4-9]|([1-9][0-9]+))\.[0-9]*[02468]\.[0-9.]*[0-9])|([0-3]\.[0-9.]*))(?=.tar)"}
