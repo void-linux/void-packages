@@ -22,7 +22,7 @@ hook() {
 		fi
 	done
 
-	for f in var/run usr/local; do
+	for f in var/run usr/local usr/etc; do
 		if [ -d ${PKGDESTDIR}/${f} ]; then
 			msg_red "${pkgver}: /${f} directory is not allowed, remove it!\n"
 			error=1
