@@ -26,6 +26,7 @@ update_check() {
         case "$distfiles" in
             # only consider versions those exist in ftp.gnome.org
             *ftp.gnome.org*) ;;
+            *archive.xfce.org*) ;;
             *)
                 printf '%s\n' "$homepage" ;;
         esac
@@ -58,6 +59,7 @@ update_check() {
               *//gitlab.*|\
               *bitbucket.org*|\
               *ftp.gnome.org*|\
+              *archive.xfce.org*|\
               *kernel.org/pub/linux/kernel/*|\
               *cran.r-project.org/src/contrib*|\
               *rubygems.org*|\
@@ -137,6 +139,9 @@ update_check() {
             *ftp.gnome.org*|*download.gnome.org*)
                 : ${pattern="\Q$pkgname\E-\K(0|[13]\.[0-9]*[02468]|[4-9][0-9]+)\.[0-9.]*[0-9](?=)"}
                 url="https://download.gnome.org/sources/$pkgname/cache.json";;
+            *archive.xfce.org*)
+                : ${pattern="\Q$pkgname\E-\K((([4-9]|([1-9][0-9]+))\.[0-9]*[02468]\.[0-9.]*[0-9])|([0-3]\.[0-9.]*))(?=.tar)"}
+                url="https://archive.xfce.org/feeds/project/$pkgname" ;;
             *kernel.org/pub/linux/kernel/*)
                 rx=linux-'\K'${version%.*}'[\d.]+(?=\.tar\.xz)';;
             *cran.r-project.org/src/contrib*)
