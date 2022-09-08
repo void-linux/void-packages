@@ -3,7 +3,7 @@
 # THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/firefox-esr-i18n".
 #
 pkgname=firefox-esr
-version=91.10.0
+version=102.2.0
 revision=1
 wrksrc="firefox-${version}"
 build_helper="rust"
@@ -11,15 +11,13 @@ short_desc="Mozilla Firefox web browser - Extended Support Release"
 maintainer="Orphaned <orphan@voidlinux.org>"
 license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
 homepage="https://www.mozilla.org/firefox/"
-distfiles="${MOZILLA_SITE}/firefox/releases/${version}esr/source/firefox-${version}esr.source.tar.xz
- https://github.com/chmeeedalf/gecko-dev/files/7729086/esrppcjit.tar.gz"
-checksum="825a8cb38bb5da9821ef87cc6de64af007cf0faef07c4ed0651283b56a0ee1bb
- 5e926a8be5d6d4949c3bc3eb98e2103692eaa26a98928db432b1d44b535f7241"
+distfiles="${MOZILLA_SITE}/firefox/releases/${version}esr/source/firefox-${version}esr.source.tar.xz"
+checksum="014d91d14ab4f53e93728273b45ac6022813d5ade35f842e722bf87b747c97ff"
 
 lib32disabled=yes
 
 hostmakedepends="autoconf213 unzip zip pkg-config perl python3 yasm rust cargo
- llvm clang nodejs-lts cbindgen python nasm which tar"
+ llvm clang nodejs-lts cbindgen nasm which tar"
 makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel icu-devel
  pixman-devel libevent-devel libnotify-devel libvpx-devel
  libXrender-devel libXcomposite-devel libSM-devel libXt-devel rust-std
@@ -63,9 +61,6 @@ post_extract() {
 		;;
 	esac
 
-	# ppc64le jit, see --enable-jit later
-	mv ../js/src/jit/ppc64 js/src/jit
-
 	# Mozilla API keys (see https://location.services.mozilla.com/api)
 	# Note: This is for Void Linux use ONLY.
 	echo -n "cd894504-7a2a-4263-abff-ff73ee89ffca" > mozilla-api-key
@@ -78,24 +73,24 @@ post_patch() {
 do_build() {
 	cp "${FILESDIR}/mozconfig" "${wrksrc}/.mozconfig"
 
+	echo "MOZ_APP_REMOTINGNAME=Firefox" >>.mozconfig
+
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl)
 		echo "ac_add_options --disable-jemalloc" >>.mozconfig
-		echo "ac_add_options --disable-gold" >>.mozconfig
+		echo "ac_add_options --enable-linker=bfd" >>.mozconfig
 		;;
 	esac
 
 	case "$XBPS_TARGET_MACHINE" in
-	x86_64*|i686*|arm*)
+	x86_64*|i686*|arm*|aarch64*)
 		echo "ac_add_options --disable-elf-hack" >>.mozconfig
 		;;
 	esac
 
 	# webrtc currently fails to build on 32-bit ppc...
-	# also enable jit on ppc64le, which is patched in earlier
-        # https://www.talospace.com/2021/12/91esr-with-baseline-compilerbaseline.html
+	# TODO: also enable jit on ppc64le
 	case "$XBPS_TARGET_MACHINE" in
-	ppc64le*) echo "ac_add_options --enable-jit" >>.mozconfig ;;
 	ppc64*) echo "ac_add_options --disable-jit" >>.mozconfig ;;
 	ppc*)
 		echo "ac_add_options --disable-jit" >>.mozconfig
@@ -132,6 +127,10 @@ do_build() {
 		echo "ac_add_options --host=$XBPS_TRIPLET" >>.mozconfig
 	fi
 
+	# XXX: wasi currently not ready
+	# echo "ac_add_options --with-wasi-sysroot=/usr/share/wasi-sysroot" >>.mozconfig
+	echo "ac_add_options --without-wasm-sandboxed-libraries" >>.mozconfig
+
 	mkdir -p third_party/rust/libloading/.deps
 
 	case "$XBPS_TARGET_MACHINE" in
@@ -165,7 +164,7 @@ do_build() {
 	export MOZ_MAKE_FLAGS="${makejobs}"
 	export MOZ_NOSPAM=1
 	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
-	export MACH_USE_SYSTEM_PYTHON=1
+	export MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE=system
 
 	export AS=$CC
 
@@ -184,7 +183,8 @@ ac_add_options --enable-default-toolkit=$(vopt_if wayland 'cairo-gtk3-wayland' '
 	./mach build
 }
 do_install() {
-	export MACH_USE_SYSTEM_PYTHON=1
+	export MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE=system
+	export MOZBUILD_STATE_PATH="${wrksrc}/mozbuild"
 	DESTDIR="$DESTDIR" ./mach install
 
 	vinstall ${FILESDIR}/vendor.js 644 usr/lib/firefox/browser/defaults/preferences
