@@ -208,7 +208,7 @@ try_urls() {
 
 		# distfile downloaded, verify sha256 hash.
 		flock -n "${distfile}.part" rm -f "${distfile}.part"
-		verify_cksum "$f" "$distfile" "$cksum"
+		verify_cksum "$curfile" "$distfile" "$cksum"
 		return 0
 	done
 	return 1
@@ -239,7 +239,6 @@ hook() {
 
 	# Disable trap on ERR; the code is smart enough to report errors and abort.
 	trap - ERR
-
 	# Detect bsdtar and GNU tar (in that order of preference)
 	TAR_CMD="$(command -v bsdtar)"
 	if [[ -z "$TAR_CMD" ]]; then
@@ -276,6 +275,8 @@ hook() {
 	# Download missing distfiles and verify their checksums
 	for curfile in ${!_file_idxs[@]}; do
 		distfile="$srcdir/$curfile"
+		set -- ${_file_idxs["$curfile"]}
+		i="$1"
 
 		# If file lock cannot be acquired wait until it's available.
 		while ! flock -w 1 "${distfile}.part" true; do
@@ -287,12 +288,12 @@ hook() {
 		fi
 
 		# If distfile does not exist, try to link to it.
-		if link_cksum "$curfile" "$distfile" "${_checksums[0]}"; then
+		if link_cksum "$curfile" "$distfile" "${_checksums[$i]}"; then
 			continue
 		fi
 
 		# If distfile does not exist, download it from a mirror location.
-		if try_mirrors "$curfile" "$distfile" "${_checksums[0]}" "${_distfiles[0]}"; then
+		if try_mirrors "$curfile" "$distfile" "${_checksums[$i]}" "${_distfiles[$i]}"; then
 			continue
 		fi
 
