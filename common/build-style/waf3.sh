@@ -13,7 +13,6 @@ do_configure() {
 
 	PYTHON=/usr/bin/python3 python3 ${configure_script} configure \
 		--prefix=/usr --libdir=/usr/lib${XBPS_TARGET_WORDSIZE} \
-		--configdir=/etc \
 		${configure_args} ${cross_args}
 }
 
