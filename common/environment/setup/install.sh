@@ -13,7 +13,7 @@ _noglob_helper() {
 }
 
 # Apply _noglob to v* commands
-for cmd in vinstall vcopy vcompletion vmove vmkdir vbin vman vdoc vconf vsconf vlicense vsv; do
+for cmd in vinstall vcopy vcompletion vmove vmkdir vbin vman vdoc vconf vsconf vlicense vsv vdevel; do
        alias ${cmd}="set -f; _noglob_helper _${cmd}"
 done
 
@@ -264,4 +264,45 @@ _vcompletion() {
 			return 1
 			;;
 	esac
+}
+
+_vdevel() {
+	if [ -z "$DESTDIR" ]; then
+		msg_red "$pkgver: vdevel: DESTDIR unset, can't continue...\n"
+		return 1
+	elif [ -z "$PKGDESTDIR" ]; then
+		msg_red "$pkgver: vdevel: PKGDESTDIR unset, can't continue...\n"
+		return 1
+	elif [ "$DESTDIR" = "$PKGDESTDIR" ]; then
+		msg_red "$pkgver: vdevel is intended to be used in pkg_install\n"
+		return 1
+	fi
+
+	_move_glob() {
+		local pat=$1 msg=$2
+		if [ -n "$(ls ${DESTDIR}/$pat 2>/dev/null)" ]; then
+			vmove "$pat"
+		else
+			msg_warn "$pkgver: vdevel: no $msg found ($pat)\n"
+		fi
+	}
+
+	_move_dir() {
+		local dir=$1 msg=$2
+		if [ -d "${DESTDIR}/$dir" ]; then
+			_move_glob "$dir" "$msg"
+		fi
+	}
+
+	_move_glob 'usr/lib/*.so' 'unversioned shlibs'
+	_move_glob 'usr/lib/*.a' 'library archives'
+	_move_glob 'usr/share/gir-*' 'Gobject introspection XML files'
+
+	_move_dir 'usr/include' 'header files'
+	_move_dir 'usr/lib/cmake' 'cmake rules'
+	_move_dir 'usr/share/cmake' 'cmake rules'
+	_move_dir 'usr/lib/pkgconfig' 'pkgconfig files'
+	_move_dir 'usr/share/pkgconfig' 'pkgconfig files'
+	_move_dir 'usr/share/aclocal' 'Autoconf macros'
+	_move_dir 'usr/share/vala' 'Vala bindings'
 }
