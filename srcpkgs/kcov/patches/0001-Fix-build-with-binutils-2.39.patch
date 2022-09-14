@@ -1,0 +1,97 @@
+From fd1a4fd2f02cee49afd74e427e38c61b89154582 Mon Sep 17 00:00:00 2001
+From: oreo639 <oreo6391@gmail.com>
+Date: Wed, 14 Sep 2022 16:02:17 -0700
+Subject: [PATCH] Fix build with binutils 2.39
+
+---
+ src/CMakeLists.txt              | 20 +++++++++++++++++++-
+ src/parsers/bfd-disassembler.cc | 23 +++++++++++++++++++++++
+ 2 files changed, 42 insertions(+), 1 deletion(-)
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 3b751852..fc396827 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -94,6 +94,7 @@ set (DISASSEMBLER_SRCS
+ )
+ 
+ set (HAS_LIBBFD "0")
++set (HAS_LIBBFD_DISASM_STYLED "0")
+ 
+ if (CMAKE_TARGET_ARCHITECTURES STREQUAL "i386" OR CMAKE_TARGET_ARCHITECTURES STREQUAL "x86_64")
+ 	if (LIBBFD_FOUND)
+@@ -106,6 +107,23 @@ if (CMAKE_TARGET_ARCHITECTURES STREQUAL "i386" OR CMAKE_TARGET_ARCHITECTURES STR
+ 			${LIBBFD_BFD_LIBRARY}
+ 			${LIBBFD_IBERTY_LIBRARY}
+ 		)
++		include(CheckCSourceCompiles)
++		set(CMAKE_REQUIRED_LIBRARIES ${DISASSEMBLER_LIBRARIES})
++		check_c_source_compiles("
++		#define PACKAGE
++		#define PACKAGE_VERSION
++		#include <stdio.h>
++		#include <dis-asm.h>
++
++		int main(int argc, char **argv){
++			struct disassemble_info info;
++			init_disassemble_info(&info, stdout, NULL, NULL);
++			return 0;
++		}
++		" TEST_LIBBFD_DISASM_STYLED)
++		if (TEST_LIBBFD_DISASM_STYLED)
++			set (HAS_LIBBFD_DISASM_STYLED "1")
++		endif (TEST_LIBBFD_DISASM_STYLED)
+ 	endif (LIBBFD_FOUND)
+ endif (CMAKE_TARGET_ARCHITECTURES STREQUAL "i386" OR CMAKE_TARGET_ARCHITECTURES STREQUAL "x86_64")
+ 
+@@ -284,7 +302,7 @@ set (KCOV_SYSTEM_MODE_SRCS
+ 
+ set (KCOV_LIBRARY_PREFIX "/tmp")
+ 
+-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -g -Wall -D_GLIBCXX_USE_NANOSLEEP -DKCOV_LIBRARY_PREFIX=${KCOV_LIBRARY_PREFIX} -DKCOV_HAS_LIBBFD=${HAS_LIBBFD}")
++set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -g -Wall -D_GLIBCXX_USE_NANOSLEEP -DKCOV_LIBRARY_PREFIX=${KCOV_LIBRARY_PREFIX} -DKCOV_HAS_LIBBFD=${HAS_LIBBFD} -DKCOV_LIBFD_DISASM_STYLED=${HAS_LIBBFD_DISASM_STYLED}")
+ 
+ include_directories(
+ 	include/
+diff --git a/src/parsers/bfd-disassembler.cc b/src/parsers/bfd-disassembler.cc
+index 43653ee0..28815961 100644
+--- a/src/parsers/bfd-disassembler.cc
++++ b/src/parsers/bfd-disassembler.cc
+@@ -75,7 +75,11 @@ class BfdDisassembler : public IDisassembler
+ 	BfdDisassembler()
+ 	{
+ 		memset(&m_info, 0, sizeof(m_info));
++#if KCOV_LIBFD_DISASM_STYLED
++		init_disassemble_info(&m_info, (void *)this, BfdDisassembler::opcodesFprintFuncStatic, BfdDisassembler::opcodesFprintStyledFuncStatic);
++#else
+ 		init_disassemble_info(&m_info, (void *)this, BfdDisassembler::opcodesFprintFuncStatic);
++#endif
+ 		m_disassembler = print_insn_i386;
+ 
+ 		m_info.arch = bfd_arch_i386;
+@@ -407,6 +411,25 @@ class BfdDisassembler : public IDisassembler
+ 		return out;
+ 	}
+ 
++#if KCOV_LIBFD_DISASM_STYLED
++	static int opcodesFprintStyledFuncStatic(void *info, enum disassembler_style style, const char *fmt, ...)
++	{
++		(void)style;
++		BfdDisassembler *pThis = (BfdDisassembler *)info;
++		char str[64];
++		int out;
++
++		va_list args;
++		va_start (args, fmt);
++		out = vsnprintf( str, sizeof(str) - 1, fmt, args );
++		va_end (args);
++
++		pThis->opcodesFprintFunc(str);
++
++		return out;
++	}
++#endif
++
+ 	typedef std::map<uint64_t, Section *> SectionCache_t;
+ 	typedef std::unordered_map<uint64_t, Instruction> InstructionAddressMap_t;
+ 	typedef std::map<uint64_t, Instruction *> InstructionOrderedMap_t;
