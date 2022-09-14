@@ -330,6 +330,23 @@ The following functions are defined by `xbps-src` and can be used on any templat
 	it will default to `pkgname`. The `shell` argument can be one of `bash`,
 	`fish` or `zsh`.
 
+- *vdevel()*
+
+	Installs common development files in the pkg `$DESTDIR`. Prints a warning if files
+	aren't found. Equivalent to:
+```sh
+vmove "usr/lib/*.so"  # unversioned shlibs
+vmove "usr/lib/*.a"  # library archives
+vmove "usr/share/gir-*"  # Gobject introspection XML files
+vmove usr/include  # header files
+vmove usr/lib/cmake  # cmake rules
+vmove usr/share/cmake  # cmake rules
+vmove usr/lib/pkgconfig  # pkgconfig files
+vmove usr/share/pkgconfig  # pkgconfig files
+vmove usr/share/aclocal  # Autoconf macros
+vmove usr/share/vala  # Vala bindings
+```
+
 > Shell wildcards must be properly quoted, Example: `vmove "usr/lib/*.a"`.
 
 <a id="global_vars"></a>
@@ -1438,10 +1455,8 @@ foo-devel_package() {
 	short_desc+=" - development files"
 	depends="${sourcepkg}>=${version}_${revision}"
 	pkg_install() {
-		vmove usr/include
-		vmove "usr/lib/*.a"
-		vmove "usr/lib/*.so"
-		vmove usr/lib/pkgconfig
+		vdevel
+		vmove usr/share/gtk-doc
 	}
 }
 ```
@@ -1499,6 +1514,8 @@ following subset of files from the main package:
 * Autoconf macros `usr/share/aclocal`
 * Gobject introspection XML files `usr/share/gir-1.0`
 * Vala bindings `usr/share/vala`
+
+> These common files can be automatically moved to the `-devel` subpackage using `vdevel`
 
 <a id="pkgs_data"></a>
 ### Data packages
