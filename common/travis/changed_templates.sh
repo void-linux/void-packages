@@ -6,7 +6,9 @@ PATH="/usr/libexec/chroot-git:$PATH"
 
 tip="$(git rev-list -1 --parents HEAD)"
 case "$tip" in
+	# This is a merge commit, pick last parent
 	*" "*" "*) tip="${tip##* }" ;;
+	# This is a non-merge commit, pick itself
 	*)         tip="${tip%% *}" ;;
 esac
 
