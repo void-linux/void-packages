@@ -53,6 +53,7 @@ _void_cross_build_binutils() {
 		--sbindir=/usr/bin \
 		--libdir=/usr/lib \
 		--libexecdir=/usr/lib \
+		--sysconfdir=/etc \
 		--target=${tgt} \
 		--with-sysroot=/usr/${tgt} \
 		--disable-nls \
@@ -60,8 +61,10 @@ _void_cross_build_binutils() {
 		--disable-multilib \
 		--disable-werror \
 		--disable-gold \
+		--disable-gprofng \
 		--enable-relro \
 		--enable-plugins \
+		--enable-new-dtags \
 		--enable-64-bit-bfd \
 		--enable-deterministic-archives \
 		--enable-default-hash-style=gnu \
@@ -624,6 +627,9 @@ do_install() {
 	# If libquadmath was forced (needed for gfortran on some platforms)
 	# then remove it because it conflicts with libquadmath package
 	rm -rf ${DESTDIR}/${sysroot}/usr/lib/libquadmath.*
+
+	# Remove libdep linker plugin because it conflicts with system binutils
+	rm -f ${DESTDIR}/usr/lib/bfd-plugins/libdep*
 
 	# Remove leftover symlinks
 	rm -f ${DESTDIR}/usr/lib${XBPS_TARGET_WORDSIZE}
