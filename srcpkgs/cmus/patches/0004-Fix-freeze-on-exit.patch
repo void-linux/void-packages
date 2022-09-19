@@ -1,0 +1,74 @@
+Description: Fix freeze when exiting cmus
+Origin: upstream, https://github.com/cmus/cmus/pull/1172
+Bug: https://github.com/cmus/cmus/issues/1184
+Date: Thu, 14 Jul 2022 18:21:59 +0200
+
+---
+ op/pulse.c | 24 +++++++++++++++++++++++-
+ 1 file changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/op/pulse.c b/op/pulse.c
+index c8a6d6a..78ec066 100644
+--- a/op/pulse.c
++++ b/op/pulse.c
+@@ -17,7 +17,9 @@
+  */
+ 
+ #include <string.h>
++#include <stdbool.h>
+ 
++#include <pulse/introspect.h>
+ #include <pulse/pulseaudio.h>
+ 
+ #include "../op.h"
+@@ -33,6 +35,8 @@ static pa_channel_map		 pa_cmap;
+ static pa_cvolume		 pa_vol;
+ static pa_sample_spec		 pa_ss;
+ 
++static bool			 is_pipewire = false;
++
+ static int			 mixer_notify_in;
+ static int			 mixer_notify_out;
+ 
+@@ -175,6 +179,20 @@ static void _pa_sink_input_info_cb(pa_context *c,
+ 	}
+ }
+ 
++static void _pa_server_info_cb(pa_context *c,
++			       const pa_server_info *i,
++			       void *data)
++{
++	is_pipewire = false;
++	if (i) {
++		if (strstr(i->server_name, "PipeWire") != NULL) {
++			// server is PipeWire
++			d_print("Pulseaudio server is pipewire. Disabling _pa_stream_drain()\n");
++			is_pipewire = true;
++		}
++	}
++}
++
+ static void _pa_stream_success_cb(pa_stream *s, int success, void *data)
+ {
+ 	pa_threaded_mainloop_signal(pa_ml, 0);
+@@ -422,6 +440,8 @@ static int op_pulse_open(sample_format_t sf, const channel_position_t *channel_m
+ 	pa_context_get_sink_input_info(pa_ctx, pa_stream_get_index(pa_s),
+ 			_pa_sink_input_info_cb, NULL);
+ 
++	pa_context_get_server_info(pa_ctx, _pa_server_info_cb, NULL);
++
+ 	pa_threaded_mainloop_unlock(pa_ml);
+ 
+ 	return OP_ERROR_SUCCESS;
+@@ -440,8 +460,10 @@ static int op_pulse_close(void)
+ 	 * If this _pa_stream_drain() will be moved below following
+ 	 * pa_threaded_mainloop_lock(), PulseAudio 0.9.19 will hang.
+ 	 */
+-	if (pa_s)
++
++	if (pa_s && !is_pipewire){
+ 		_pa_stream_drain();
++	}
+ 
+ 	pa_threaded_mainloop_lock(pa_ml);
+ 
