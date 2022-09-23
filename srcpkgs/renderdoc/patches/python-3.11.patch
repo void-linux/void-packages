@@ -1,0 +1,85 @@
+--- a/qrenderdoc/Code/pyrenderdoc/function_conversion.h
++++ b/qrenderdoc/Code/pyrenderdoc/function_conversion.h
+@@ -303,11 +303,19 @@ funcType ConvertFunc(const char *funcnam
+ 
+     while(frame)
+     {
++#if PY_VERSION_HEX >= 0x030B0000
++      global_internal_handle = PyDict_GetItemString(PyFrame_GetGlobals(frame), "_renderdoc_internal");
++#else
+       global_internal_handle = PyDict_GetItemString(frame->f_globals, "_renderdoc_internal");
++#endif
+ 
+       if(global_internal_handle)
+         break;
++#if PY_VERSION_HEX >= 0x03090000
++      frame = PyFrame_GetBack(frame);
++#else
+       frame = frame->f_back;
++#endif
+     }
+   }
+ 
+--- a/qrenderdoc/Code/pyrenderdoc/PythonContext.cpp
++++ b/qrenderdoc/Code/pyrenderdoc/PythonContext.cpp
+@@ -85,6 +85,15 @@ extern "C" PyObject *PyInit_qrenderdoc(v
+ extern "C" PyObject *WrapBareQWidget(QWidget *);
+ extern "C" QWidget *UnwrapBareQWidget(PyObject *);
+ 
++#if PY_VERSION_HEX <=0x030B0000
++#define PyFrame_GetGlobals(x) (x)->f_globals
++#endif
++
++#if PY_VERSION_HEX <=0x03090000
++#define PyFrame_GetBack(x) (x)->f_back
++#define PyFrame_GetCode(x) (x)->f_code
++#endif
++
+ // little utility function to convert a PyObject * that we know is a string to a QString
+ static inline QString ToQStr(PyObject *value)
+ {
+@@ -1213,7 +1222,7 @@ PyObject *PythonContext::outstream_write
+ 
+       while(frame)
+       {
+-        PyObject *globals = frame->f_globals;
++        PyObject *globals = PyFrame_GetGlobals(frame);
+         if(globals)
+         {
+           OutputRedirector *global =
+@@ -1225,7 +1234,7 @@ PyObject *PythonContext::outstream_write
+         if(context)
+           break;
+ 
+-        frame = frame->f_back;
++        frame = PyFrame_GetBack(frame);
+       }
+     }
+ 
+@@ -1248,7 +1257,7 @@ PyObject *PythonContext::outstream_write
+ 
+       if(frame)
+       {
+-        filename = ToQStr(frame->f_code->co_filename);
++        filename = ToQStr(PyFrame_GetCode(frame)->co_filename);
+         line = PyFrame_GetLineNumber(frame);
+       }
+ 
+@@ -1278,7 +1287,7 @@ int PythonContext::traceEvent(PyObject *
+   PythonContext *context = (PythonContext *)thisint;
+ 
+   PyObject *compiled = PyDict_GetItemString(obj, "compiled");
+-  if(compiled == (PyObject *)frame->f_code && what == PyTrace_LINE)
++  if(compiled == (PyObject *)PyFrame_GetCode(frame) && what == PyTrace_LINE)
+   {
+     context->location.line = PyFrame_GetLineNumber(frame);
+ 
+@@ -1361,7 +1370,7 @@ extern "C" void HandleException(PyObject
+ 
+     if(frame)
+     {
+-      filename = ToQStr(frame->f_code->co_filename);
++      filename = ToQStr(PyFrame_GetCode(frame)->co_filename);
+       linenum = PyFrame_GetLineNumber(frame);
+     }
+ 
