@@ -1252,8 +1252,8 @@ declaring a virtual name and version in the `${provides}` template variable (e.g
 specific provider can declare a dependency on the virtual package name with the prefix `virtual?`
 (e.g., `depends="virtual?vpkg-0.1_1"`). When a package is built by `xbps-src`, providers for any
 virtual packages will be confirmed to exist and will be built if necessary. A map from virtual
-packages to their default providers is defined in `etc/default.virtual`. Individual mappings can be
-overridden by local preferences in `etc/virtual`. Comments in `etc/default.virtual` provide more
+packages to their default providers is defined in `etc/defaults.virtual`. Individual mappings can be
+overridden by local preferences in `etc/virtual`. Comments in `etc/defaults.virtual` provide more
 information on this map.
 
 <a id="install_remove_files"></a>
