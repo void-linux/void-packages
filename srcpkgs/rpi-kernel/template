@@ -6,28 +6,26 @@
 # https://forums.raspberrypi.com/viewtopic.php?t=322879
 #
 # Commit hash is picked from latest tag [1], if appropriate, or from latest
-# "Merge remote-tracking branch 'stable/linux-5.10.y' into rpi-5.10.y" commit.
+# "Merge remote-tracking branch 'stable/linux-5.x.y' into rpi-5.x.y" commit.
 #
 # [1] https://github.com/raspberrypi/linux/tags
 #
-# WARNING: keep all rpi*-kernel packages in sync
-
-_githash="64ad74084fa44abe8689564071df5729ded4c589"
-_gitshort="${_githash:0:7}"
+# Upstream documentation: https://www.raspberrypi.com/documentation/computers/linux_kernel.html
 
 pkgname=rpi-kernel
-version=5.15.61
+version=5.15.68
 revision=1
-archs="armv6l*"
+_githash="ac7d1fdd216a11b75527e5d6b3a00d86ec28edfc"
+archs="armv6l* armv7l* aarch64*"
 wrksrc="linux-${_githash}"
 hostmakedepends="perl kmod uboot-mkimage openssl-devel bc bison flex xz"
 makedepends="ncurses-devel"
 maintainer="Piraty <piraty1@inbox.ru>"
 homepage="http://www.kernel.org"
 license="GPL-2.0-only"
-short_desc="Linux kernel for Raspberry Pi zero/1 (${version%.*} series [git ${_gitshort}])"
+short_desc="Linux kernel for Raspberry Pi (${version%.*} series [git ${_githash:0:7}])"
 distfiles="https://github.com/raspberrypi/linux/archive/${_githash}.tar.gz"
-checksum=8257604cc47792007284cc2640d7dd9f70fab062a7c596e92903e99718434244
+checksum=44699750d6e69ef47343af9cf9fbae3431a6da12990151273339324820c3bf0e
 python_version=3
 
 _kernver="${version}_${revision}"
@@ -40,55 +38,49 @@ noshlibprovides=yes
 triggers="kernel-hooks"
 # These files could be modified when an external module is built.
 mutable_files="
-	/usr/lib/modules/${_kernver}/modules.dep
-	/usr/lib/modules/${_kernver}/modules.dep.bin
-	/usr/lib/modules/${_kernver}/modules.symbols
-	/usr/lib/modules/${_kernver}/modules.symbols.bin
-	/usr/lib/modules/${_kernver}/modules.alias
-	/usr/lib/modules/${_kernver}/modules.alias.bin
-	/usr/lib/modules/${_kernver}/modules.devname"
+ /usr/lib/modules/${_kernver}/modules.dep
+ /usr/lib/modules/${_kernver}/modules.dep.bin
+ /usr/lib/modules/${_kernver}/modules.symbols
+ /usr/lib/modules/${_kernver}/modules.symbols.bin
+ /usr/lib/modules/${_kernver}/modules.alias
+ /usr/lib/modules/${_kernver}/modules.alias.bin
+ /usr/lib/modules/${_kernver}/modules.devname"
 
 _arch=
+_image_target=
+_image_name=
 case "$XBPS_TARGET_MACHINE" in
-	arm*) _arch=arm ;;
-	aarch64*) _arch=arm64 ;;
+	armv6l*) _arch=arm; _image_target=zImage; _image_name=kernel.img ;;
+	armv7l*) _arch=arm; _image_target=zImage; _image_name=kernel7.img ;;
+	aarch64*) _arch=arm64; _image_target=Image.gz; _image_name=kernel8.img ;;
 esac
+
 _cross=
 if [ "$CROSS_BUILD" ]; then
 	_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
 fi
 
-pre_configure() {
-	# Remove .git directory, otherwise scripts/setkernelversion.sh
-	# modifies KERNELRELEASE and appends + to it.
-	rm -rf .git
-}
 do_configure() {
 	local target defconfig
 
-	# Use upstream's default configuration, no need to maintain ours.
 	case "$XBPS_TARGET_MACHINE" in
-		armv6l*)
-			target=bcmrpi_defconfig
-			;;
+		# for zero, 1
+		armv6l*) target=bcmrpi_defconfig ;;
+		# for 2
+		armv7l*) target=bcm2709_defconfig ;;
+		# for 3, 4, zero 2
+		aarch64*) target=bcm2711_defconfig ;;
 	esac
 
 	defconfig="arch/${_arch}/configs/${target}"
 	echo "CONFIG_CONNECTOR=y" >> "$defconfig"
 	echo "CONFIG_PROC_EVENTS=y" >> "$defconfig"
-	echo "CONFIG_F2FS_FS_SECURITY=y" >> "$defconfig"
-	echo "CONFIG_CGROUP_PIDS=y" >> "$defconfig"
-
-	# IR Remote Support
-	echo "CONFIG_RC_CORE=y" >> "$defconfig"
-	echo "CONFIG_LIRC=y" >> "$defconfig"
-	echo "CONFIG_RC_DECODERS=y" >> "$defconfig"
-	echo "CONFIG_RC_DEVICES=y" >> "$defconfig"
-	echo "CONFIG_IR_RC6_DECODER=m" >> "$defconfig"
-	echo "CONFIG_IR_MCEUSB=m" >> "$defconfig"
 
 	# HID Controllers
 	echo "CONFIG_HID_STEAM=y" >> "$defconfig"
+
+	# Disable GCC plugins
+	echo "# CONFIG_GCC_PLUGINS is not set" >> "$defconfig"
 
 	# LXD 4.2+ support
 	echo "CONFIG_BRIDGE_VLAN_FILTERING=y" >> "$defconfig"
@@ -98,26 +90,17 @@ do_configure() {
 	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
 	vsed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
 }
+
 do_build() {
-	local target
-
-	case "$XBPS_TARGET_MACHINE" in
-		arm*)
-			target="zImage modules dtbs"
-			;;
-		aarch64*)
-			target="Image modules dtbs"
-			;;
-	esac
-
 	make ${makejobs} ${_cross} ARCH=${_arch} prepare
-	make ${makejobs} ${_cross} ARCH=${_arch} ${target}
+	make ${makejobs} ${_cross} ARCH=${_arch} ${_image_target} modules dtbs
 }
+
 do_install() {
-	local hdrdest
+	local hdrdest="${DESTDIR}/usr/src/${sourcepkg}-headers-${_kernver}"
 
 	# Run depmod after compressing modules.
-	sed -i '2iexit 0' scripts/depmod.sh
+	vsed -i -e '2iexit 0' scripts/depmod.sh
 
 	# Install kernel, firmware and modules
 	make ${makejobs} ARCH=${_arch} INSTALL_MOD_PATH=${DESTDIR} modules_install
@@ -125,11 +108,13 @@ do_install() {
 	# Install device tree blobs
 	make ${makejobs} ARCH=${_arch} INSTALL_DTBS_PATH=${DESTDIR}/boot dtbs_install
 
-	# Generate kernel.img and install it to destdir.
-	vmkdir boot
-	cp arch/arm/boot/zImage ${DESTDIR}/boot/kernel.img
+	# move dtbs that ended up in /boot/broadcom
+	if [ -d "${DESTDIR}/boot/broadcom" ]; then
+		mv ${DESTDIR}/boot/broadcom/*dtb ${DESTDIR}/boot
+	fi
 
-	hdrdest=${DESTDIR}/usr/src/${sourcepkg}-headers-${_kernver}
+	# Install kernel image
+	vinstall arch/${_arch}/boot/${_image_target} 644 boot ${_image_name}
 
 	# Switch to /usr.
 	vmkdir usr
@@ -157,7 +142,7 @@ do_install() {
 	# Remove firmware stuff provided by the "linux-firmware" pkg.
 	rm -rf ${DESTDIR}/usr/lib/firmware
 
-	for i in acpi asm-generic clocksource config crypto drm generated linux \
+	for i in acpi asm-generic clocksource config crypto drm dt-bindings generated linux \
 		math-emu media net pcmcia scsi sound trace uapi vdso video xen; do
 		[ -d include/$i ] && cp -a include/$i ${hdrdest}/include
 	done
@@ -224,6 +209,13 @@ do_install() {
 	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
 }
 
+subpackages="rpi-kernel-headers"
+
+case "$XBPS_TARGET_MACHINE" in
+	armv7l*) subpackages+=" rpi2-kernel rpi2-kernel-headers" ;;
+	aarch64*) subpackages+=" rpi3-kernel rpi3-kernel-headers rpi4-kernel rpi4-kernel-headers" ;;
+esac
+
 rpi-kernel-headers_package() {
 	nostrip=yes
 	noverifyrdeps=yes
@@ -235,33 +227,40 @@ rpi-kernel-headers_package() {
 	}
 }
 
+# hard-code the minimum version to prevent possible issues with partial upgrades
+# of legacy (split) systems
+rpi2-kernel_package() {
+	build_style=meta
+	short_desc+=" (transitional dummy package)"
+	depends="rpi-kernel>=5.15.68_1"
+}
 
-# support legacy systems (before rpi-kernel was split to rpi{,2,3})
-# archs != armv6* are emtpy meta packages to pull the new rpi{$n}-kernel package
-archs+=" armv7l* aarch64*"
-case "$XBPS_TARGET_MACHINE" in
-	armv6*) : ;;
-	*)
-		build_style=meta
-		short_desc="Linux kernel for Raspberry Pi (transitional dummy package)"
+rpi2-kernel-headers_package() {
+	build_style=meta
+	short_desc="${short_desc/kernel/kernel headers} (transitional dummy package)"
+	depends="rpi-kernel-headers>=5.15.68_1"
+}
 
-		pre_configure() { : ; }
-		do_configure() { : ; }
-		do_build() { : ; }
-		do_install() { : ; }
+rpi3-kernel_package() {
+	build_style=meta
+	short_desc+=" (transitional dummy package)"
+	depends="rpi-kernel>=5.15.68_1"
+}
 
-		case "$XBPS_TARGET_MACHINE" in
-			armv7*) depends=rpi2-kernel ;;
-			aarch64*) depends=rpi3-kernel ;;
-		esac
+rpi3-kernel-headers_package() {
+	build_style=meta
+	short_desc="${short_desc/kernel/kernel headers} (transitional dummy package)"
+	depends="rpi-kernel-headers>=5.15.68_1"
+}
 
-		rpi-kernel-headers_package() {
-			build_style=meta
-			short_desc="Linux kernel headers for Raspberry Pi (transitional dummy package)"
-			case "$XBPS_TARGET_MACHINE" in
-				armv7*) depends=rpi2-kernel-headers ;;
-				aarch64*) depends=rpi3-kernel-headers ;;
-			esac
-		}
-		;;
-esac
+rpi4-kernel_package() {
+	build_style=meta
+	short_desc+=" (transitional dummy package)"
+	depends="rpi-kernel>=5.15.68_1"
+}
+
+rpi4-kernel-headers_package() {
+	build_style=meta
+	short_desc="${short_desc/kernel/kernel headers} (transitional dummy package)"
+	depends="rpi-kernel-headers>=5.15.68_1"
+}
