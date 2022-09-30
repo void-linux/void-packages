@@ -8,7 +8,7 @@ do_build() {
 	: ${make_build_target:=.}
 
 	mkdir -p build
-	TMPDIR=build python3 -m pip wheel --no-deps --use-pep517 --no-clean \
+	TMPDIR="${PWD}/build" python3 -m pip wheel --no-deps --use-pep517 --no-clean \
 		--no-build-isolation ${make_build_args} ${make_build_target}
 }
 
@@ -35,7 +35,7 @@ do_install() {
 
 	# If do_build was overridden, make sure the TMPDIR exists
 	mkdir -p build
-	TMPDIR=build python3 -m pip install --use-pep517 --prefix /usr \
+	TMPDIR="${PWD}/build" python3 -m pip install --use-pep517 --prefix /usr \
 		--root ${DESTDIR} --no-deps --no-build-isolation \
 		--no-clean ${make_install_args} ${make_install_target}
 }
