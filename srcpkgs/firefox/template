@@ -3,7 +3,7 @@
 # THIS PKG MUST BE SYNCHRONIZED WITH "srcpkgs/firefox-i18n".
 #
 pkgname=firefox
-version=105.0
+version=105.0.1
 revision=1
 build_helper="rust"
 short_desc="Mozilla Firefox web browser"
@@ -11,7 +11,7 @@ maintainer="Duncaen <duncaen@voidlinux.org>"
 license="MPL-2.0, GPL-2.0-or-later, LGPL-2.1-or-later"
 homepage="https://www.mozilla.org/firefox/"
 distfiles="${MOZILLA_SITE}/${pkgname}/releases/${version}/source/${pkgname}-${version}.source.tar.xz"
-checksum=2b5becbb89aa2b2007ba8c86ad517aeae1b54904d007d9d3acbf054be6a0ed62
+checksum=70ecea0d26242d0c3613b9524405d72a22b52ae346072ac229a58c48634975cd
 
 lib32disabled=yes
 
@@ -27,16 +27,16 @@ makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel icu-devel
 depends="nss>=3.72 nspr>=4.32 desktop-file-utils hicolor-icon-theme"
 conflicts="firefox-esr>=0"
 
-build_options="alsa jack dbus pulseaudio xscreensaver sndio wayland lto"
-build_options_default="alsa jack dbus pulseaudio xscreensaver sndio wayland"
+build_options="alsa jack dbus pulseaudio xscreensaver sndio wayland lto clang"
+build_options_default="alsa jack dbus pulseaudio xscreensaver sndio wayland clang"
 
 desc_option_lto="Enable Link Time Optimization"
+desc_option_clang="Build with clang"
 
 case $XBPS_TARGET_MACHINE in
 	armv[56]*) broken="required NEON extensions are not supported on armv6" ;;
 	ppc64*) ;;
 	ppc*) broken="xptcall bitrot" ;;
-	# armv7*) broken="https://build.voidlinux.org/builders/armv7l_builder/builds/39410/steps/shell_3/logs/stdio" ;;
 esac
 
 # we need this because cargo verifies checksums of all files in vendor
@@ -63,57 +63,60 @@ post_patch() {
 }
 
 do_build() {
-	export CC=clang
-	export CXX=clang++
+	if [ "$build_option_clang" ]; then
+		export CC=clang
+		export CXX=clang++
 
-	if [ "$CROSS_BUILD" ]; then
-		mkdir -p wrapper
+		if [ "$CROSS_BUILD" ]; then
+			mkdir -p wrapper
 
-		local gcc_version=$(gcc -dumpversion)
-		local clang_version=$(clang -dumpversion)
+			local gcc_version=$(gcc -dumpversion)
+			local clang_version=$(clang -dumpversion)
 
-		cat <<-! >"wrapper/${XBPS_TARGET_MACHINE}-clang"
-		#!/bin/sh
-		exec clang \
-			--target="${XBPS_CROSS_TRIPLET}" \
-			--gcc-toolchain=/usr \
-			--sysroot="${XBPS_CROSS_BASE}" \
-			-nostdinc \
-			-isystem "${XBPS_CROSS_BASE}/usr/include" \
-			-isystem "/usr/lib/clang/${clang_version}/include" \
-			"\$@"
-		!
+			cat <<-! >"wrapper/${XBPS_TARGET_MACHINE}-clang"
+			#!/bin/sh
+			exec clang \
+				--target="${XBPS_CROSS_TRIPLET}" \
+				--gcc-toolchain=/usr \
+				--sysroot="${XBPS_CROSS_BASE}" \
+				-nostdinc \
+				-isystem "${XBPS_CROSS_BASE}/usr/include" \
+				-isystem "/usr/lib/clang/${clang_version}/include" \
+				"\$@"
+			!
 
-		cat <<-! >"wrapper/${XBPS_TARGET_MACHINE}-clang++"
-		#!/bin/sh
-		exec clang++ \
-			--target="${XBPS_CROSS_TRIPLET}" \
-			--gcc-toolchain=/usr \
-			--sysroot="${XBPS_CROSS_BASE}" \
-			-nostdinc++ \
-			-isystem "${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}" \
-			-isystem "${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/${XBPS_CROSS_TRIPLET}" \
-			-isystem "${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/backward" \
-			-nostdinc \
-			-isystem "${XBPS_CROSS_BASE}/usr/include" \
-			-isystem "/usr/lib/clang/${clang_version}/include" \
-			"\$@"
-		!
+			cat <<-! >"wrapper/${XBPS_TARGET_MACHINE}-clang++"
+			#!/bin/sh
+			exec clang++ \
+				--target="${XBPS_CROSS_TRIPLET}" \
+				--gcc-toolchain=/usr \
+				--sysroot="${XBPS_CROSS_BASE}" \
+				-nostdinc++ \
+				-isystem "${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}" \
+				-isystem "${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/${XBPS_CROSS_TRIPLET}" \
+				-isystem "${XBPS_CROSS_BASE}/usr/include/c++/${gcc_version%.*}/backward" \
+				-nostdinc \
+				-isystem "${XBPS_CROSS_BASE}/usr/include" \
+				-isystem "/usr/lib/clang/${clang_version}/include" \
+				"\$@"
+			!
 
-		chmod +x wrapper/*
+			chmod +x wrapper/*
 
-		export PATH="${wrksrc}/wrapper:$PATH"
-		export CC=${XBPS_TARGET_MACHINE}-clang
-		export CXX=${XBPS_TARGET_MACHINE}-clang++
+			export PATH="${wrksrc}/wrapper:$PATH"
+			export CC=${XBPS_TARGET_MACHINE}-clang
+			export CXX=${XBPS_TARGET_MACHINE}-clang++
+		fi
+
+		export AR=llvm-ar
+		export NM=llvm-nm
+		export HOST_CC=clang
+		export HOST_CXX=clang++
 	fi
 
-	export AR=llvm-ar
-	export NM=llvm-nm
 	export AS="${CC}"
-	export CFLAGS="-O2 -fno-plt"
-	export CXXFLAGS="-O2 -fno-plt"
-	export HOST_CC=clang
-	export HOST_CXX=clang++
+	export CFLAGS="-O2"
+	export CXXFLAGS="-O2"
 	export HOST_CFLAGS=""
 	export HOST_CXXFLAGS=""
 	export LDFLAGS="-Wl,-rpath=/usr/lib/firefox"
@@ -157,9 +160,9 @@ do_build() {
 	ac_add_options --libdir=/usr/lib
 	ac_add_options --host=${XBPS_TRIPLET}
 	ac_add_options --target=${XBPS_CROSS_TRIPLET:-${XBPS_TRIPLET}}
-	ac_add_options --enable-linker=lld
+	ac_add_options --enable-linker=$(vopt_if clang lld bfd)
 	$(vopt_if lto 'ac_add_options --enable-lto=cross')
-	ac_add_options --with-libclang-path=/usr/lib
+	$(vopt_if clang 'ac_add_options --with-libclang-path=/usr/lib')
 
 	ac_add_options --enable-official-branding
 	ac_add_options --enable-application=browser
@@ -216,9 +219,6 @@ do_build() {
 		echo "ac_add_options --disable-debug-symbols" >>.mozconfig
 		echo "ac_add_options --disable-debug" >>.mozconfig
 		export LDFLAGS+=" -Wl,--no-keep-memory"
-		# patch the rust debug level, this is hardcoded
-		vsed -i 's/debug_info = "2"/debug_info = "0"/' \
-			build/moz.configure/toolchain.configure
 	fi
 
 	if [ "$SOURCE_DATE_EPOCH" ]; then
