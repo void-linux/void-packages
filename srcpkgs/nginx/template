@@ -1,8 +1,9 @@
 # Template file for 'nginx'
 pkgname=nginx
 version=1.22.0
-revision=1
+revision=2
 _tests_commit=18ac4d9e5a2a
+_njs_version=0.7.7
 create_wrksrc=yes
 build_wrksrc="nginx-${version}"
 build_style=gnu-makefile
@@ -18,11 +19,11 @@ configure_args="--prefix=${_cfgdir} \
  --group=nginx \
  --http-log-path=/var/log/nginx/access.log \
  --error-log-path=/var/log/nginx/error.log \
- --http-client-body-temp-path=${tmpdir}/client-body \
- --http-proxy-temp-path=${tmpdir}/proxy \
- --http-fastcgi-temp-path=${tmpdir}/fastcgi \
- --http-scgi-temp-path=${tmpdir}/scgi \
- --http-uwsgi-temp-path=${tmpdir}/uwsgi \
+ --http-client-body-temp-path=${_tmpdir}/client-body \
+ --http-proxy-temp-path=${_tmpdir}/proxy \
+ --http-fastcgi-temp-path=${_tmpdir}/fastcgi \
+ --http-scgi-temp-path=${_tmpdir}/scgi \
+ --http-uwsgi-temp-path=${_tmpdir}/uwsgi \
  --with-compat \
  --with-file-aio \
  --with-http_dav_module \
@@ -44,8 +45,10 @@ configure_args="--prefix=${_cfgdir} \
  --with-mail \
  --with-mail_ssl_module \
  --with-pcre-jit \
- --with-threads"
-hostmakedepends="geoip geoip-devel openssl-devel pcre2-devel libxslt-devel"
+ --with-threads
+ --add-dynamic-module=../njs-${_njs_version}/nginx"
+hostmakedepends="geoip geoip-devel openssl-devel pcre2-devel libxslt-devel
+ which"
 makedepends="${hostmakedepends}"
 checkdepends="perl perl-IO-Socket-SSL perl-GD perl-FCGI which"
 short_desc="High performance web and reverse proxy server"
@@ -53,9 +56,11 @@ maintainer="Duncaen <duncaen@voidlinux.org>"
 license="BSD-2-Clause"
 homepage="https://nginx.org"
 distfiles="https://nginx.org/download/nginx-${version}.tar.gz
- https://hg.nginx.org/nginx-tests/archive/${_tests_commit}.tar.gz"
+ https://hg.nginx.org/nginx-tests/archive/${_tests_commit}.tar.gz
+ https://hg.nginx.org/njs/archive/${_njs_version}.tar.gz"
 checksum="b33d569a6f11a01433a57ce17e83935e953ad4dc77cdd4d40f896c88ac26eb53
- e34ef2f38512e1c04ee201c3b68f7ba7ec8f1537dc6a500278bc2219ab435228"
+ e34ef2f38512e1c04ee201c3b68f7ba7ec8f1537dc6a500278bc2219ab435228
+ 4dac9cbf071e5a7dfe135b4d87e20112d207fcbf5fb620854af8dab44ec3e7bd"
 # Tests fail when nginx run as root and there is no nginx user
 make_check=ci-skip
 
@@ -85,19 +90,33 @@ do_configure() {
 	fi
 
 	./configure ${configure_args}
+	( cd ../njs-${_njs_version} && ./configure )
 }
 
 pre_build() {
 	if [ "$CROSS_BUILD" ]; then
+		mkdir -p ../njs-${_njs_version}/build
 		case "$XBPS_TARGET_MACHINE" in
-			arm*) cp "${FILESDIR}/ngx_auto_config.h.armv6l" objs/ngx_auto_config.h;;
-			aarch64*) cp "${FILESDIR}/ngx_auto_config.h.aarch64" objs/ngx_auto_config.h;;
+		arm*)
+			cp "${FILESDIR}/ngx_auto_config.h.armv6l" objs/ngx_auto_config.h
+			cp "${FILESDIR}/njs_auto_config.h.armv6l" ../njs-${_njs_version}/build/njs_auto_config.h
+			;;
+		aarch64*)
+			cp "${FILESDIR}/ngx_auto_config.h.aarch64" objs/ngx_auto_config.h
+			cp "${FILESDIR}/njs_auto_config.h.aarch64" ../njs-${_njs_version}/build/njs_auto_config.h
+			;;
 		esac
 	fi
 
 	sed -i 's/-lcrypt/$(LDFLAGS) &/' objs/Makefile
 
 	export LD="$CC"
+
+	(
+		cd ../njs-${_njs_version}
+		make ${makejobs} NJS_CC="$CC" NJS_CFLAGS="$CFLAGS -fPIC" \
+			NJS_STATIC_LINK="$AR -r -c" NJS_LINK="$CC -O"
+	)
 }
 
 do_check() {
@@ -129,6 +148,14 @@ nginx-mod-http-geoip_package() {
 	}
 }
 
+nginx-mod-http-js_package() {
+	short_desc+=" - HTTP njs module"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/nginx/modules/ngx_http_js_module.so
+	}
+}
+
 nginx-mod-http-xslt-filter_package() {
 	short_desc+=" - XSLT filter module"
 	depends="${sourcepkg}>=${version}_${revision}"
@@ -142,6 +169,14 @@ nginx-mod-stream_package() {
 	depends="${sourcepkg}>=${version}_${revision}"
 	pkg_install() {
 		vmove usr/lib/nginx/modules/ngx_stream_module.so
+	}
+}
+
+nginx-mod-stream-js_package() {
+	short_desc+=" - Stream njs module"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/nginx/modules/ngx_stream_js_module.so
 	}
 }
 
