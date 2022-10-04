@@ -1,7 +1,7 @@
 # Template file for 'nginx'
 pkgname=nginx
 version=1.22.0
-revision=2
+revision=3
 _tests_commit=18ac4d9e5a2a
 _njs_version=0.7.7
 create_wrksrc=yes
@@ -37,6 +37,7 @@ configure_args="--prefix=${_cfgdir} \
  --with-http_v2_module \
  --with-http_xslt_module=dynamic \
  --with-http_geoip_module=dynamic \
+ --with-http_perl_module=dynamic \
  --with-stream=dynamic \
  --with-stream_geoip_module=dynamic \
  --with-stream_realip_module \
@@ -47,7 +48,7 @@ configure_args="--prefix=${_cfgdir} \
  --with-pcre-jit \
  --with-threads
  --add-dynamic-module=../njs-${_njs_version}/nginx"
-hostmakedepends="geoip geoip-devel openssl-devel pcre2-devel libxslt-devel
+hostmakedepends="geoip geoip-devel openssl-devel pcre2-devel perl libxslt-devel
  which"
 makedepends="${hostmakedepends}"
 checkdepends="perl perl-IO-Socket-SSL perl-GD perl-FCGI which"
@@ -87,6 +88,21 @@ do_configure() {
 	if [ "$CROSS_BUILD" ]; then
 		# fake configure run on host
 		unset CC CPP LD CFLAGS CPPFLAGS LDFLAGS
+
+		local perlprefix=${XBPS_STATEDIR}/perlprefix-${XBPS_TARGET_MACHINE}
+		mkdir -p $perlprefix
+		if [ -d "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl" ]; then
+			cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Config"*.p? $perlprefix
+			cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Errno.pm" $perlprefix
+			sed -i -e "s;archlibexp => '\(.*\)';archlibexp => '${XBPS_CROSS_BASE}\1';" \
+				${perlprefix}/Config.pm
+			sed -i -e "s;^archlibexp='\(.*\)';archlibexp='${XBPS_CROSS_BASE}\1';" \
+				${perlprefix}/Config_heavy.pl
+		else
+			cp "/usr/lib/perl5/core_perl/Config"*.p? $perlprefix
+			cp "/usr/lib/perl5/core_perl/Errno.pm" $perlprefix
+		fi
+		export PERL5LIB=$perlprefix
 	fi
 
 	./configure ${configure_args}
@@ -106,6 +122,8 @@ pre_build() {
 			cp "${FILESDIR}/njs_auto_config.h.aarch64" ../njs-${_njs_version}/build/njs_auto_config.h
 			;;
 		esac
+
+		sed -i "s:-I/usr:-I${XBPS_CROSS_BASE}/usr:" objs/Makefile
 	fi
 
 	sed -i 's/-lcrypt/$(LDFLAGS) &/' objs/Makefile
@@ -153,6 +171,14 @@ nginx-mod-http-js_package() {
 	depends="${sourcepkg}>=${version}_${revision}"
 	pkg_install() {
 		vmove usr/lib/nginx/modules/ngx_http_js_module.so
+	}
+}
+
+nginx-mod-http-perl_package() {
+	short_desc+=" - Perl module"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/nginx/modules/ngx_http_perl_module.so
 	}
 }
 
