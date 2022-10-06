@@ -6,7 +6,6 @@ packages for XBPS, the `Void Linux` native packaging system.
 *Table of Contents*
 
 * [Introduction](#Introduction)
-	* [Quality Requirements](#quality_requirements)
 	* [Package build phases](#buildphase)
 	* [Package naming conventions](#namingconventions)
 		* [Libraries](#libs)
@@ -123,38 +122,6 @@ If everything went fine after running
 
 a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local repository
 `hostdir/binpkgs`.
-
-<a id="quality_requirements"></a>
-### Quality Requirements
-
-To be included in the Void repository, software must meet at least one
-of the following requirements. Exceptions to the list are possible,
-and might be accepted, but are extremely unlikely. If you believe you have an
-exception, start a PR and make an argument for why that particular piece of
-software, while not meeting any of the following requirements, is a good candidate for
-the Void packages system.
-
-1. System: The software should be installed system-wide, not per-user.
-
-1. Compiled: The software needs to be compiled before being used, even if it is
-   software that is not needed by the whole system.
-
-1. Required: Another package either within the repository or pending inclusion
-   requires the package.
-
-In particular, new themes are highly unlikely to be accepted. Simple shell
-scripts are unlikely to be accepted unless they provide considerable value to a
-broad user base. New fonts may be accepted if they provide value beyond
-aesthetics (e.g. they contain glyphs for a script missing in already packaged
-fonts).
-
-Browser forks, including those based on Chromium and Firefox, are generally not
-accepted. Such forks require heavy patching, maintenance and hours of build time.
-
-Software need to be used in version announced by authors as ready to use by
-the general public - usually called releases. Betas, arbitrary VCS revisions,
-templates using tip of development branch taken at build time and releases
-created by the package maintainer won't be accepted.
 
 <a id="buildphase"></a>
 ### Package build phases
@@ -428,6 +395,8 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_RUST_TARGET` The target architecture triplet used by `rustc` and `cargo`.
 
+- `XBPS_BUILD_ENVIRONMENT` Enables continuous-integration-specific operations. Set to `void-packages-ci` if in continuous integration.
+
 <a id="available_vars"></a>
 ### Available variables
 
@@ -578,10 +547,8 @@ build methods. Unset by default.
 `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
 build methods. Unset by default.
 
-- `make_install_args` The arguments to be passed in to `${make_cmd}` at the `install-destdir`
-phase if `${build_style}` is set to `configure`, `gnu-configure` or
-`gnu-makefile` build methods. By default set to
-`PREFIX=/usr DESTDIR=${DESTDIR}`.
+- `make_install_args` The arguments to be passed in to `${make_cmd}` at the `install`
+phase if `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile` build methods.
 
 - `make_build_target` The build target. If `${build_style}` is set to `configure`, `gnu-configure`
 or `gnu-makefile`, this is the target passed to `${make_cmd}` in the build phase;
@@ -1285,8 +1252,8 @@ declaring a virtual name and version in the `${provides}` template variable (e.g
 specific provider can declare a dependency on the virtual package name with the prefix `virtual?`
 (e.g., `depends="virtual?vpkg-0.1_1"`). When a package is built by `xbps-src`, providers for any
 virtual packages will be confirmed to exist and will be built if necessary. A map from virtual
-packages to their default providers is defined in `etc/default.virtual`. Individual mappings can be
-overridden by local preferences in `etc/virtual`. Comments in `etc/default.virtual` provide more
+packages to their default providers is defined in `etc/defaults.virtual`. Individual mappings can be
+overridden by local preferences in `etc/virtual`. Comments in `etc/defaults.virtual` provide more
 information on this map.
 
 <a id="install_remove_files"></a>
@@ -1602,11 +1569,10 @@ recursively by the target python version. This differs from `pycompile_module` i
 path may be specified, Example: `pycompile_dirs="usr/share/foo"`.
 
 - `python_version`: this variable expects the supported Python major version.
-By default it's set to `2`. This variable is needed for multi-language
+In most cases version is inferred from shebang, install path or build style.
+Only required for some multi-language
 applications (e.g., the application is written in C while the command is
 written in Python) or just single Python file ones that live in `/usr/bin`.
-
-> NOTE: you need to define it *only* for non-Python modules.
 
 Also, a set of useful variables are defined to use in the templates:
 

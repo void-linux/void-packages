@@ -22,7 +22,7 @@ hook() {
 		fi
 	done
 
-	for f in var/run usr/local; do
+	for f in var/run usr/local usr/etc; do
 		if [ -d ${PKGDESTDIR}/${f} ]; then
 			msg_red "${pkgver}: /${f} directory is not allowed, remove it!\n"
 			error=1
@@ -105,6 +105,11 @@ hook() {
 
 	if [ -d ${PKGDESTDIR}/usr/man ]; then
 		msg_red "${pkgver}: /usr/man is forbidden, use /usr/share/man.\n"
+		error=1
+	fi
+
+	if [[ -d ${PKGDESTDIR}/usr/share/man/man ]]; then
+		msg_red "${pkgver}: /usr/share/man/man is forbidden, use /usr/share/man.\n"
 		error=1
 	fi
 

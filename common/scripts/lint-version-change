@@ -13,20 +13,18 @@ if ! [ "$base_rev" ]; then
 	die "usage: $0 TEMPLATE BASE-REVISION [TIP-REVISION]"
 fi
 
-if command -v chroot-git >/dev/null 2>&1; then
-	GIT_CMD=$(command -v chroot-git)
-elif command -v git >/dev/null 2>&1; then
-	GIT_CMD=$(command -v git)
-else
+PATH="/usr/libexec/chroot-git:$PATH"
+if ! command -v git >/dev/null 2>&1; then
 	die "neither chroot-git nor git could be found"
 fi
 
 scan() {
 	rx="$1" msg="$2"
 	template_path=$template
+	maybe_git=
 	if [ "$tip_rev" ]; then
 		template_path="${tip_rev}:${template}"
-		maybe_git="$GIT_CMD"
+		maybe_git="git"
 		revspec="[^:]*:"
 	fi
 	$maybe_git grep -P -Hn -e "$rx" "$template_path" |
@@ -37,7 +35,7 @@ scan() {
 show_template() {
 	rev="$1"
 	if [ "$rev" ]; then
-		$GIT_CMD cat-file blob "${rev}:${template}" 2>/dev/null
+		git cat-file blob "${rev}:${template}" 2>/dev/null
 	else
 		cat "${template}" 2>/dev/null
 	fi
@@ -45,7 +43,10 @@ show_template() {
 
 show_template_var() {
 	rev="$1" var="$2"
-	show_template "$rev" | grep -Po '^'${var}'=\K.*'
+	(
+		show_template "$rev"
+		printf '%s\n' "printf '%s\\n' \"\$${var}\""
+	) | bash 2>/dev/null
 }
 
 revision_reset() {
@@ -72,6 +73,28 @@ reverts_on_downgrade() {
 	esac
 }
 
+check_revert() {
+	for vr in $reverts; do
+		xbps-uhelper cmpver "${version}" "${vr%_*}"
+		case "$?" in
+		0 | 1)
+			scan '^version=' "remove $vr from \$reverts"
+			status=1
+			;;
+		esac
+	done
+	for vr in $prev_reverts; do
+		if ! xbps-uhelper cmpver "$version" "${vr%_*}"; then
+			continue
+		fi
+		if [ $revision -gt "${vr##*_}" ]; then
+			continue
+		fi
+		scan '^revision=' "undo a revert with same revision as before"
+		status=1
+	done
+}
+
 version_change() {
 	version="$(show_template_var "$tip_rev" version)"
 	revision="$(show_template_var "$tip_rev" revision)"
@@ -83,6 +106,7 @@ version_change() {
 		1) revision_reset;;
 		-1|255) reverts_on_downgrade;;
 	esac
+	check_revert
 }
 
 version_change

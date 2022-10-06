@@ -1,0 +1,152 @@
+From 35fa37f9485bf933e754b995902f69d53dac1670 Mon Sep 17 00:00:00 2001
+From: lennonhill <31923882+lennonhill@users.noreply.github.com>
+Date: Tue, 28 Jun 2022 18:01:36 +0200
+Subject: [PATCH 1/2] Parse mupdf 1.20 links
+
+---
+ pdf_viewer/document_view.cpp |  2 +-
+ pdf_viewer/main_widget.cpp   |  6 +++---
+ pdf_viewer/utils.cpp         | 20 +++++---------------
+ pdf_viewer/utils.h           |  2 +-
+ 4 files changed, 10 insertions(+), 20 deletions(-)
+
+diff --git a/pdf_viewer/document_view.cpp b/pdf_viewer/document_view.cpp
+index 9a7d8ea2..d8305620 100644
+--- a/pdf_viewer/document_view.cpp
++++ b/pdf_viewer/document_view.cpp
+@@ -1013,7 +1013,7 @@ std::optional<DocumentPos> DocumentView::find_line_definition() {
+ 
+ 			std::optional<PdfLink> pdf_link = current_document->get_link_in_page_rect(get_center_page_number(), line_rects[line_index]);
+ 			if (pdf_link.has_value()) {
+-				auto parsed_uri = parse_uri(pdf_link.value().uri);
++				auto parsed_uri = parse_uri(mupdf_context, pdf_link.value().uri);
+ 				DocumentPos res;
+ 				res.page = parsed_uri.page-1;
+ 				res.x = parsed_uri.x;
+diff --git a/pdf_viewer/main_widget.cpp b/pdf_viewer/main_widget.cpp
+index 9e02e2c6..5bd7ed1f 100644
+--- a/pdf_viewer/main_widget.cpp
++++ b/pdf_viewer/main_widget.cpp
+@@ -135,7 +135,7 @@ void MainWidget::set_overview_position(int page, float offset) {
+ 
+ void MainWidget::set_overview_link(PdfLink link) {
+ 
+-    auto [page, offset_x, offset_y] = parse_uri(link.uri);
++    auto [page, offset_x, offset_y] = parse_uri(mupdf_context, link.uri);
+     if (page >= 1) {
+         set_overview_position(page - 1, offset_y);
+     }
+@@ -2647,7 +2647,7 @@ void MainWidget::handle_pending_text_command(std::wstring text) {
+             }
+             if ((link_index >= 0) && (link_index < static_cast<int>(visible_page_links.size()))) {
+                 auto [selected_page, selected_link] = visible_page_links[link_index];
+-                auto [page, offset_x, offset_y] = parse_uri(selected_link->uri);
++                auto [page, offset_x, offset_y] = parse_uri(mupdf_context, selected_link->uri);
+                 long_jump_to_destination(page-1, offset_y);
+             }
+         }
+@@ -3223,7 +3223,7 @@ void MainWidget::handle_link_click(const PdfLink& link) {
+ 		return;
+ 	}
+ 
+-	auto [page, offset_x, offset_y] = parse_uri(link.uri);
++	auto [page, offset_x, offset_y] = parse_uri(mupdf_context, link.uri);
+ 
+ 	// convert one indexed page to zero indexed page
+ 	page--;
+diff --git a/pdf_viewer/utils.cpp b/pdf_viewer/utils.cpp
+index be9d2e76..505b7d12 100644
+--- a/pdf_viewer/utils.cpp
++++ b/pdf_viewer/utils.cpp
+@@ -24,6 +24,8 @@
+ #include <qnetworkreply.h>
+ #include <qscreen.h>
+ 
++#include <mupdf/pdf.h>
++
+ extern std::wstring LIBGEN_ADDRESS;
+ extern std::wstring GOOGLE_SCHOLAR_ADDRESS;
+ extern std::ofstream LOG_FILE;
+@@ -106,21 +108,9 @@ bool rects_intersect(fz_rect rect1, fz_rect rect2) {
+ 	return range_intersects(rect1.x0, rect1.x1, rect2.x0, rect2.x1) && range_intersects(rect1.y0, rect1.y1, rect2.y0, rect2.y1);
+ }
+ 
+-ParsedUri parse_uri(std::string uri) {
+-	int comma_index = -1;
+-
+-	uri = uri.substr(1, uri.size() - 1);
+-	comma_index = static_cast<int>(uri.find(","));
+-	int page = atoi(uri.substr(0, comma_index ).c_str());
+-
+-	uri = uri.substr(comma_index+1, uri.size() - comma_index-1);
+-	comma_index = static_cast<int>(uri.find(","));
+-	float offset_x = atof(uri.substr(0, comma_index ).c_str());
+-
+-	uri = uri.substr(comma_index+1, uri.size() - comma_index-1);
+-	float offset_y = atof(uri.c_str());
+-
+-	return { page, offset_x, offset_y };
++ParsedUri parse_uri(fz_context* mupdf_context, std::string uri) {
++        fz_link_dest dest = pdf_parse_link_uri(mupdf_context, uri.c_str());
++        return { dest.loc.page + 1, dest.x, dest.y };
+ }
+ 
+ char get_symbol(int key, bool is_shift_pressed, const std::vector<char>& special_symbols) {
+diff --git a/pdf_viewer/utils.h b/pdf_viewer/utils.h
+index 919ff6eb..f7934b7f 100644
+--- a/pdf_viewer/utils.h
++++ b/pdf_viewer/utils.h
+@@ -33,7 +33,7 @@ void get_flat_toc(const std::vector<TocNode*>& roots, std::vector<std::wstring>&
+ int mod(int a, int b);
+ bool range_intersects(float range1_start, float range1_end, float range2_start, float range2_end);
+ bool rects_intersect(fz_rect rect1, fz_rect rect2);
+-ParsedUri parse_uri(std::string uri);
++ParsedUri parse_uri(fz_context* mupdf_context, std::string uri);
+ char get_symbol(int key, bool is_shift_pressed, const std::vector<char>&special_symbols);
+ 
+ template<typename T>
+
+From 5b2488e7cd9a454faf0ff488ba97c11f22805e25 Mon Sep 17 00:00:00 2001
+From: lennonhill <31923882+lennonhill@users.noreply.github.com>
+Date: Tue, 28 Jun 2022 19:18:53 +0200
+Subject: [PATCH 2/2] Upgrade mupdf to 1.20
+
+---
+ pdf_viewer/document.cpp     | 4 ++--
+ pdf_viewer/pdf_renderer.cpp | 2 +-
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/pdf_viewer/document.cpp b/pdf_viewer/document.cpp
+index f1585ad3..e906594a 100644
+--- a/pdf_viewer/document.cpp
++++ b/pdf_viewer/document.cpp
+@@ -542,14 +542,14 @@ void Document::convert_toc_tree(fz_outline* root, std::vector<TocNode*>& output)
+ 		current_node->title = utf8_decode(root->title);
+ 		current_node->x = root->x;
+ 		current_node->y = root->y;
+-		if (root->page == -1) {
++		if (root->page.page == -1) {
+ 			float xp, yp;
+ 			fz_location loc = fz_resolve_link(context, doc, root->uri, &xp, &yp);
+ 			int chapter_page = accum_chapter_pages[loc.chapter];
+ 			current_node->page = chapter_page + loc.page;
+ 		}
+ 		else {
+-			current_node->page = root->page;
++			current_node->page = root->page.page;
+ 		}
+ 		convert_toc_tree(root->down, current_node->children);
+ 
+diff --git a/pdf_viewer/pdf_renderer.cpp b/pdf_viewer/pdf_renderer.cpp
+index de4c43fc..9adbc998 100644
+--- a/pdf_viewer/pdf_renderer.cpp
++++ b/pdf_viewer/pdf_renderer.cpp
+@@ -315,7 +315,7 @@ void PdfRenderer::run_search(int thread_index)
+ 
+ 				const int max_hits_per_page = 20;
+ 				fz_quad hitboxes[max_hits_per_page];
+-				int num_results = fz_search_page(mupdf_context, page, utf8_encode(req.search_term).c_str(), hitboxes, max_hits_per_page);
++				int num_results = fz_search_page(mupdf_context, page, utf8_encode(req.search_term).c_str(), nullptr, hitboxes, max_hits_per_page);
+ 
+ 				if (num_results > 0) {
+ 					req.search_results_mutex->lock();

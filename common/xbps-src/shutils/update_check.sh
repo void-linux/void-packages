@@ -24,8 +24,9 @@ update_check() {
 
     if [ -z "$site" ]; then
         case "$distfiles" in
-            # only consider versions those exist in ftp.gnome.org
-            *ftp.gnome.org*) ;;
+            # special case those sites provide better source elsewhere
+            *ftp.gnome.org*|*download.gnome.org*) ;;
+            *archive.xfce.org*) ;;
             *)
                 printf '%s\n' "$homepage" ;;
         esac
@@ -57,7 +58,8 @@ update_check() {
               *github.com*|\
               *//gitlab.*|\
               *bitbucket.org*|\
-              *ftp.gnome.org*|\
+              *ftp.gnome.org*|*download.gnome.org*|\
+              *archive.xfce.org*|\
               *kernel.org/pub/linux/kernel/*|\
               *cran.r-project.org/src/contrib*|\
               *rubygems.org*|\
@@ -123,7 +125,7 @@ update_check() {
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://github.com/$pkgurlname/tags"
                 rx='/archive/refs/tags/(v?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=\.tar\.gz")';;
-            *//gitlab.*)
+            *//gitlab.*|*code.videolan.org*)
                 case "$url" in
                     */-/*) pkgurlname="$(printf %s "$url" | sed -e 's%/-/.*%%g; s%/$%%')";;
                     *) pkgurlname="$(printf %s "$url" | cut -d / -f 1-5)";;
@@ -135,8 +137,11 @@ update_check() {
                 url="https://bitbucket.org/$pkgurlname/downloads"
                 rx='/(get|downloads)/(v?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=\.tar)';;
             *ftp.gnome.org*|*download.gnome.org*)
-                : ${pattern="\Q$pkgname\E-\K(0|[13]\.[0-9]*[02468]|[4-9][0-9]+)\.[0-9.]*[0-9](?=)"}
+                : ${pattern="\Q$pkgname\E-\K(0|[13]\.[0-9]*[02468]|[4-9][0-9]+)\.[0-9.]*[0-9](?=.tar)"}
                 url="https://download.gnome.org/sources/$pkgname/cache.json";;
+            *archive.xfce.org*)
+                : ${pattern="\Q$pkgname\E-\K((([4-9]|([1-9][0-9]+))\.[0-9]*[02468]\.[0-9.]*[0-9])|([0-3]\.[0-9.]*))(?=.tar)"}
+                url="https://archive.xfce.org/feeds/project/$pkgname" ;;
             *kernel.org/pub/linux/kernel/*)
                 rx=linux-'\K'${version%.*}'[\d.]+(?=\.tar\.xz)';;
             *cran.r-project.org/src/contrib*)
@@ -149,8 +154,8 @@ update_check() {
                 rx='/crates/'${pkgname#rust-}'/\K[0-9.]*(?=/download)' ;;
             *codeberg.org*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
-                url="https://codeberg.org/$pkgurlname/releases"
-                rx='/archive/\K[\d.]+(?=\.tar\.gz)' ;;
+                url="https://codeberg.org/$pkgurlname/tags"
+                rx='/archive/(v-?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=\.tar\.gz)' ;;
             *hg.sr.ht*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
                 url="https://hg.sr.ht/$pkgurlname/tags"

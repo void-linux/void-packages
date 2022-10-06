@@ -9,8 +9,10 @@ do_build() {
 			CC="$CC" CXX="$CXX" LD="$LD" AR="$AR" RANLIB="$RANLIB" \
 			CPP="$CPP" AS="$AS" OBJCOPY="$OBJCOPY" OBJDUMP="$OBJDUMP" \
 			CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS" \
+			PREFIX=/usr prefix=/usr \
 			${makejobs} ${make_build_args} ${make_build_target}
 	else
+		export PREFIX=/usr prefix=/usr
 		${make_cmd} ${makejobs} ${make_build_args} ${make_build_target}
 	fi
 }
@@ -37,5 +39,5 @@ do_install() {
 	: ${make_cmd:=make}
 	: ${make_install_target:=install}
 
-	${make_cmd} STRIP=true PREFIX=/usr DESTDIR=${DESTDIR} ${make_install_args} ${make_install_target}
+	${make_cmd} STRIP=true PREFIX=/usr prefix=/usr DESTDIR=${DESTDIR} ${make_install_args} ${make_install_target}
 }

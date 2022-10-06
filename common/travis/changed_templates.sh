@@ -2,19 +2,17 @@
 #
 # changed_templates.sh
 
-if command -v chroot-git >/dev/null 2>&1; then
-	GIT_CMD=$(command -v chroot-git)
-elif command -v git >/dev/null 2>&1; then
-	GIT_CMD=$(command -v git)
-fi
+PATH="/usr/libexec/chroot-git:$PATH"
 
-tip="$($GIT_CMD rev-list -1 --parents HEAD)"
+tip="$(git rev-list -1 --parents HEAD)"
 case "$tip" in
+	# This is a merge commit, pick last parent
 	*" "*" "*) tip="${tip##* }" ;;
+	# This is a non-merge commit, pick itself
 	*)         tip="${tip%% *}" ;;
 esac
 
-base="$($GIT_CMD merge-base FETCH_HEAD "$tip")" || {
+base="$(git merge-base FETCH_HEAD "$tip")" || {
 	echo "Your branches is based on too old copy."
 	echo "Please rebase to newest copy."
 	exit 1
@@ -23,7 +21,7 @@ base="$($GIT_CMD merge-base FETCH_HEAD "$tip")" || {
 echo "$base $tip" >/tmp/revisions
 
 /bin/echo -e '\x1b[32mChanged packages:\x1b[0m'
-$GIT_CMD diff-tree -r --no-renames --name-only --diff-filter=AM \
+git diff-tree -r --no-renames --name-only --diff-filter=AM \
 	"$base" "$tip" \
 	-- 'srcpkgs/*/template' |
 	cut -d/ -f 2 |

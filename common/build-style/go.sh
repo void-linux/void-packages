@@ -22,6 +22,13 @@ do_configure() {
 }
 
 do_build() {
+	# remove -s and -w from go_ldflags, we should let xbps-src strip binaries itself
+	for wd in $go_ldflags; do
+		if [ "$wd" == "-s" ] || [ "$wd" == "-w" ]; then
+			msg_error "$pkgname: remove -s and -w from go_ldflags\n"
+		fi
+	done
+
 	go_package=${go_package:-$go_import_path}
 	# Build using Go modules if there's a go.mod file
 	if [ "${go_mod_mode}" != "off" ] && [ -f go.mod ]; then
