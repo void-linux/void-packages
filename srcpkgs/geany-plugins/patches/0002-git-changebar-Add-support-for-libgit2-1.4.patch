@@ -1,0 +1,124 @@
+From 5d9f1bc6d010e6b4c6a21af8a39b90922f89a82c Mon Sep 17 00:00:00 2001
+From: Colomban Wendling <ban@herbesfolles.org>
+Date: Sun, 5 Jun 2022 23:22:59 +0200
+Subject: [PATCH 2/2] git-changebar: Add support for libgit2 1.4
+
+The buffer API changed a lot in libgit2 1.4, so compatibility is a bit
+nastier than one could hope for.
+
+Fixes #1164.
+---
+ git-changebar/src/gcb-plugin.c | 76 ++++++++++++++++++++++++----------
+ 1 file changed, 54 insertions(+), 22 deletions(-)
+
+diff --git a/git-changebar/src/gcb-plugin.c b/git-changebar/src/gcb-plugin.c
+index bee8c865..76208cd0 100644
+--- a/git-changebar/src/gcb-plugin.c
++++ b/git-changebar/src/gcb-plugin.c
+@@ -219,30 +219,19 @@ static const struct {
+ };
+ 
+ 
+-/* workaround https://github.com/libgit2/libgit2/pull/3187 */
+-static int
+-gcb_git_buf_grow (git_buf  *buf,
+-                  size_t    target_size)
+-{
+-  if (buf->asize == 0) {
+-    if (target_size == 0) {
+-      target_size = buf->size;
+-    }
+-    if ((target_size & 7) == 0) {
+-      target_size++;
+-    }
+-  }
+-  return git_buf_grow (buf, target_size);
+-}
+-#define git_buf_grow gcb_git_buf_grow
+-
+ static void
+ buf_zero (git_buf *buf)
+ {
+   if (buf) {
+     buf->ptr = NULL;
+     buf->size = 0;
++#if ! CHECK_LIBGIT2_VERSION(1, 4)
+     buf->asize = 0;
++#else
++    /* we don't really need this field, but the documentation states that all
++     * fields should be set to 0, so fill it as well */
++    buf->reserved = 0;
++#endif
+   }
+ }
+ 
+@@ -256,6 +245,52 @@ clear_cached_blob_contents (void)
+   G_blob_contents_tag = 0;
+ }
+ 
++/* similar to old git_blob_filtered_content() but makes sure the caller owns
++ * the data in the output buffer -- and uses a boolean return */
++static gboolean
++get_blob_contents (git_buf     *out,
++                   git_blob    *blob,
++                   const char  *as_path,
++                   int          check_for_binary_data)
++{
++/* libgit2 1.4 changed buffer API quite a bit */
++#if ! CHECK_LIBGIT2_VERSION(1, 4)
++  gboolean success = TRUE;
++
++  if (git_blob_filtered_content (out, blob, as_path,
++                                 check_for_binary_data) != 0)
++    return FALSE;
++
++  /* Workaround for https://github.com/libgit2/libgit2/pull/3187
++   * We want to own the buffer, which git_buf_grow(buf, 0) was supposed to do,
++   * but there is a corner case where it doesn't do what it should and
++   * truncates the buffer contents, so we fix this manually. */
++  if (out->asize == 0) {
++    size_t target_size = out->size;
++    if ((target_size & 7) == 0) {
++      target_size++;
++    }
++    success = (git_buf_grow (out, target_size) == 0);
++  }
++
++  return success;
++#else /* libgit2 >= 1.4 */
++  /* Here we can assume we will always get a buffer we own (at least as of
++   * 2022-06-05 it is the case), so there's no need for a pendent to the
++   * previous git_buf_grow() shenanigans.
++   * This code path does the same as the older git_blob_filtered_content()
++   * but with non-deprecated API */
++  git_blob_filter_options opts = GIT_BLOB_FILTER_OPTIONS_INIT;
++
++  if (check_for_binary_data)
++    opts.flags |= GIT_BLOB_FILTER_CHECK_FOR_BINARY;
++  else
++    opts.flags &= ~GIT_BLOB_FILTER_CHECK_FOR_BINARY;
++
++  return git_blob_filter(out, blob, as_path, &opts) == 0;
++#endif
++}
++
+ /* get the file blob for @relpath at HEAD */
+ static gboolean
+ repo_get_file_blob_contents (git_repository  *repo,
+@@ -279,11 +314,8 @@ repo_get_file_blob_contents (git_repository  *repo,
+           git_blob *blob;
+           
+           if (git_blob_lookup (&blob, repo, git_tree_entry_id (entry)) == 0) {
+-            if (git_blob_filtered_content (contents, blob, relpath,
+-                                           check_for_binary_data) == 0 &&
+-                git_buf_grow (contents, 0) == 0) {
+-              success = TRUE;
+-            }
++            success = get_blob_contents (contents, blob, relpath,
++                                         check_for_binary_data);
+             git_blob_free (blob);
+           }
+           git_tree_entry_free (entry);
+-- 
+2.38.0
+
