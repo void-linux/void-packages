@@ -9,7 +9,9 @@ if [ "$1" != "$XBPS_TARGET_ARCH" ]; then
 	ROOTDIR="-r /usr/$triplet"
 fi
 
-ADDREPO="--repository=$HOME/hostdir/binpkgs --repository=$HOME/hostdir/binpkgs/nonfree"
+ADDREPO="--repository=$HOME/hostdir/binpkgs/bootstrap
+ --repository=$HOME/hostdir/binpkgs
+ --repository=$HOME/hostdir/binpkgs/nonfree"
 
 while read -r pkg; do
 	for subpkg in $(xsubpkg $pkg); do
