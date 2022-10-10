@@ -1,11 +1,11 @@
 # Template file for 'sagemath'
 pkgname=sagemath
-version=9.5
-revision=2
+version=9.7
+revision=1
 wrksrc=sage-$version
 build_wrksrc=pkgs/sagemath-standard
 build_style=python3-module
-_bindir=/usr/lib/sagemath/bin
+_bindir=/usr/lib/sagemath/$version/bin
 make_install_args="--install-scripts=$_bindir"
 hostmakedepends="m4 pkg-config python3-Cython python3-Jinja2 python3-pkgconfig
  python3-setuptools"
@@ -33,66 +33,52 @@ maintainer="Gonzalo Tornaría <tornaria@cmat.edu.uy>"
 license="GPL-2.0-or-later"
 homepage="http://sagemath.org/"
 distfiles="https://github.com/sagemath/sage/archive/refs/tags/$version.tar.gz"
-checksum=8d70a3b26080802c5b2e33dda4c23795d494d8216a0c2ecfcd608ebab0e64ff6
-
-post_patch() {
-	# these are unused and nothing else uses ratpoints
-	rm sage/libs/ratpoints.{pyx,pxd}
-
-	# git tree needs bootstrapping
-	pushd $wrksrc/build/pkgs/sagelib
-	PATH=../../bin:$PATH BOOTSTRAP_QUIET=no ./bootstrap
-	popd
-}
+checksum=9f26f14aa322e3cf38a71835b12ac34b23026b467f74d54b064c5d025e76fbfd
 
 do_configure() {
-	# set variables in sage.env since we do not install sage_conf
-	cat >> sage/env.py <<-EOF
-	CONWAY_POLYNOMIALS_DATA_DIR = "/usr/share/sagemath/conway_polynomials"
-	GRAPHS_DATA_DIR = "/usr/share/sagemath/graphs"
-	ELLCURVE_DATA_DIR = "/usr/share/sagemath/ellcurves"
-	POLYTOPE_DATA_DIR = "/usr/share/sagemath/reflexive_polytopes"
-	COMBINATORIAL_DESIGN_DATA_DIR = "/usr/share/sagemath/combinatorial_designs"
-	CREMONA_MINI_DATA_DIR = "/usr/share/sagemath/cremona"
-	CREMONA_LARGE_DATA_DIR = "/usr/share/sagemath/cremona"
-	THREEJS_DIR = "/usr/share/sagemath/threejs-sage"
-	EOF
-
-	# don't install sage-venv-config: it is used to set SAGE_VENV=/usr and
-	# then sage-env prepends "$SAGE_VENV/bin" to PATH which is undesired
-	vsed -e '/sage-venv-config/d' -i $wrksrc/src/setup.cfg
+	# git tree needs bootstrapping
+	( cd $wrksrc/build/pkgs/sagelib &&
+	  PATH=../../bin:$PATH \
+	  BOOTSTRAP_QUIET=no \
+	  ./bootstrap )
 }
 
 pre_build() {
 	export PYTHONPATH=../sage-setup
+	export PYTHONDONTWRITEBYTECODE=yes
 	export SAGE_NUM_THREADS="$XBPS_MAKEJOBS"
 }
 
 post_build() {
+	_lib=$(cd build/lib* && pwd)
 	_scripts=$(cd build/scripts* && pwd)
-	cat >> $_scripts/sage-env-config <<-'EOF'
-	PATH=$(dirname $SELF):$PATH
-	EOF
+
+	# configuration files
+	cp ${FILESDIR}/sage_conf.py $_lib
+	cp ${FILESDIR}/sage-env-config $_scripts
 }
 
 pre_install() {
 	export PYTHONPATH=../sage-setup
+	export PYTHONDONTWRITEBYTECODE=yes
 	export SAGE_NUM_THREADS="$XBPS_MAKEJOBS"
 }
 
 post_install() {
 	# fix jupyter kernel spec
-	vsed -i -e 's|"/usr/bin/sage", "--python"|"/usr/bin/python"|' \
+	vsed -i -e 's|"/usr/bin/sage"|"'${_bindir}'/sage"|' \
 		${DESTDIR}/usr/share/jupyter/kernels/sagemath/kernel.json
+
 	# replace broken symlinks by good copies (sagemath logo images)
 	for file in $(ls sage/ext_data/notebook-ipython); do
 		rm ${DESTDIR}/usr/share/jupyter/kernels/sagemath/$file
 		cp -a sage/ext_data/notebook-ipython/$file \
 			${DESTDIR}/usr/share/jupyter/kernels/sagemath
 	done
+
 	# we don't have docs here
 	rm ${DESTDIR}/usr/share/jupyter/kernels/sagemath/doc
-	# we don't have threejs in void
+	# this symlink is shipped in threejs-sage pkg
 	rm ${DESTDIR}/usr/share/jupyter/nbextensions/threejs-sage
 
 	# symlink main binary
@@ -102,14 +88,17 @@ post_install() {
 }
 
 do_check() {
+	_lib=$(cd build/lib* && pwd)
 	_scripts=$(cd build/scripts* && pwd)
-	export PYTHONPATH=$(cd build/lib* && pwd)
+
+	export PYTHONPATH=$_lib
+	export PYTHONDONTWRITEBYTECODE=yes
 
 	# get out of $build_wrksrc, otherwise python picks the wrong sage module
 	cd $(mktemp -dp build)
 
 	if [ -f ${XBPS_DISTDIR}/sagemath-check ] ; then
-		_sed='s|#.*||;/^\s*$/d;s|[^ ]*/sage/|'$PYTHONPATH'/sage/|g' \
+		_sed='s|#.*||;/^\s*$/d;s|^\([^ ]*/\)\?sage/|'$_lib'/sage/|g' \
 		_test_files=$(sed -e "$_sed" ${XBPS_DISTDIR}/sagemath-check)
 	fi
 	if [ -z "$_test_files" ]; then

@@ -1,0 +1,526 @@
+From aeff992d53a65a705dca5cd5216bcb97c218dce7 Mon Sep 17 00:00:00 2001
+From: Antonio Rojas <arojas@archlinux.org>
+Date: Mon, 29 Aug 2022 23:14:03 +0200
+Subject: Adapt to API changes in OpenOutputStream and CloseOutput
+
+---
+ src/sage/libs/gap/element.pyx      | 5 +++--
+ src/sage/libs/gap/gap_includes.pxd | 6 ++++--
+ 2 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/src/sage/libs/gap/element.pyx b/src/sage/libs/gap/element.pyx
+index be43c4c..e268116 100644
+--- a/src/sage/libs/gap/element.pyx
++++ b/src/sage/libs/gap/element.pyx
+@@ -130,6 +130,7 @@ cdef char *capture_stdout(Obj func, Obj obj):
+     """
+     cdef Obj s, stream, output_text_string
+     cdef UInt res
++    cdef TypOutputFile output
+     # The only way to get a string representation of an object that is truly
+     # consistent with how it would be represented at the GAP REPL is to call
+     # ViewObj on it.  Unfortunately, ViewObj *prints* to the output stream,
+@@ -145,12 +146,12 @@ cdef char *capture_stdout(Obj func, Obj obj):
+         output_text_string = GAP_ValueGlobalVariable("OutputTextString")
+         stream = CALL_2ARGS(output_text_string, s, GAP_True)
+ 
+-        if not OpenOutputStream(stream):
++        if not OpenOutputStream(&output, stream):
+             raise GAPError("failed to open output capture stream for "
+                            "representing GAP object")
+ 
+         CALL_1ARGS(func, obj)
+-        CloseOutput()
++        CloseOutput(&output)
+         return CSTR_STRING(s)
+     finally:
+         GAP_Leave()
+diff --git a/src/sage/libs/gap/gap_includes.pxd b/src/sage/libs/gap/gap_includes.pxd
+index 5a9ab48..34035fe 100644
+--- a/src/sage/libs/gap/gap_includes.pxd
++++ b/src/sage/libs/gap/gap_includes.pxd
+@@ -76,8 +76,10 @@ cdef extern from "gap/intobj.h" nogil:
+ 
+ 
+ cdef extern from "gap/io.h" nogil:
+-    UInt OpenOutputStream(Obj stream)
+-    UInt CloseOutput()
++    ctypedef struct TypOutputFile:
++        pass
++    UInt OpenOutputStream(TypOutputFile* output, Obj stream)
++    UInt CloseOutput(TypOutputFile* output)
+ 
+ 
+ cdef extern from "gap/libgap-api.h" nogil:
+-- 
+cgit v1.0-1-gd88e
+
+
+From c3367b4290981e5e93b7a30c48b02f1ae3770dc8 Mon Sep 17 00:00:00 2001
+From: Antonio Rojas <arojas@archlinux.org>
+Date: Mon, 29 Aug 2022 23:14:53 +0200
+Subject: Disable colored prompt as it breaks the pexpect interface
+
+---
+ src/sage/interfaces/gap.py | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/sage/interfaces/gap.py b/src/sage/interfaces/gap.py
+index c34fe53..569caa2 100644
+--- a/src/sage/interfaces/gap.py
++++ b/src/sage/interfaces/gap.py
+@@ -1512,6 +1512,8 @@ def gap_reset_workspace(max_workspace_size=None, verbose=False):
+     """
+     # Create new workspace with filename WORKSPACE
+     g = Gap(use_workspace_cache=False, max_workspace_size=None)
++    g.eval('ColorPrompt(false)')
++    g.eval('SetUserPreference("UseColorPrompt", false)')
+     g.eval('SetUserPreference("HistoryMaxLines", 30)')
+     from sage.tests.gap_packages import all_installed_packages
+     for pkg in all_installed_packages(gap=g):
+-- 
+cgit v1.0-1-gd88e
+
+
+From 3b63e998e4d6118fc86b13b940c8f3d3b8307a50 Mon Sep 17 00:00:00 2001
+From: Antonio Rojas <arojas@archlinux.org>
+Date: Mon, 29 Aug 2022 23:16:03 +0200
+Subject: Port NaturalHomomorphism uses
+
+---
+ src/sage/groups/abelian_gps/abelian_group_gap.py | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/sage/groups/abelian_gps/abelian_group_gap.py b/src/sage/groups/abelian_gps/abelian_group_gap.py
+index a4b0471..86090b4 100644
+--- a/src/sage/groups/abelian_gps/abelian_group_gap.py
++++ b/src/sage/groups/abelian_gps/abelian_group_gap.py
+@@ -338,7 +338,7 @@ class AbelianGroup_gap(UniqueRepresentation, GroupMixinLibGAP, ParentLibGAP, Abe
+         if isinstance(x, AbelianGroupElement_gap):
+             try:
+                 if x in self._cover:
+-                    x = self.gap().NaturalHomomorphism().Image(x.gap())
++                    x = self._cover.gap().NaturalHomomorphismByNormalSubgroup(self._relations).Image(x.gap())
+                 else:
+                     x = x.gap()
+             except AttributeError:
+@@ -1043,7 +1043,7 @@ class AbelianGroupQuotient_gap(AbelianGroup_gap):
+             From: Abelian group with gap, generator orders (4,)
+             To:   Quotient abelian group with generator orders (2,)
+         """
+-        phi = self.gap().NaturalHomomorphism()
++        phi = self._cover.gap().NaturalHomomorphismByNormalSubgroup(self._relations)
+         Hom = self._cover.Hom(self)
+         return Hom(phi)
+ 
+-- 
+cgit v1.0-1-gd88e
+
+
+From bc40764be044653e06f2da3497e1e05da08251f7 Mon Sep 17 00:00:00 2001
+From: Antonio Rojas <arojas@archlinux.org>
+Date: Mon, 29 Aug 2022 23:17:36 +0200
+Subject: Fix tests with GAP 4.12
+
+---
+ src/doc/en/thematic_tutorials/lie/weyl_groups.rst  | 12 ++++++------
+ src/sage/coding/codecan/autgroup_can_label.pyx     |  2 +-
+ src/sage/coding/linear_code.py                     | 22 +++++++++++-----------
+ .../root_system/hecke_algebra_representation.py    |  2 +-
+ src/sage/combinat/symmetric_group_algebra.py       |  2 +-
+ src/sage/groups/finitely_presented.py              |  6 +++---
+ src/sage/groups/fqf_orthogonal.py                  |  2 +-
+ src/sage/groups/libgap_wrapper.pyx                 |  6 +++---
+ .../perm_gps/partn_ref2/refinement_generic.pyx     |  2 +-
+ src/sage/groups/perm_gps/permgroup.py              |  8 ++++----
+ src/sage/libs/gap/libgap.pyx                       |  2 +-
+ src/sage/libs/gap/util.pyx                         |  8 +-------
+ src/sage/tests/gap_packages.py                     |  2 +-
+ 13 files changed, 35 insertions(+), 41 deletions(-)
+
+diff --git a/src/doc/en/thematic_tutorials/lie/weyl_groups.rst b/src/doc/en/thematic_tutorials/lie/weyl_groups.rst
+index c917338..182e74a 100644
+--- a/src/doc/en/thematic_tutorials/lie/weyl_groups.rst
++++ b/src/doc/en/thematic_tutorials/lie/weyl_groups.rst
+@@ -139,12 +139,12 @@ string, which you can print::
+     X.1      1  1  1  1  1  1  1  1  1  1  1  1  1
+     X.2      1 -1  1  1 -1  1  1 -1 -1 -1  1  1  1
+     X.3      2  .  2 -1  .  2  2  .  .  . -1  2  2
+-    X.4      3 -1 -1  .  1 -1  3 -1  1 -1  . -1  3
+-    X.5      3 -1 -1  .  1  3 -1 -1 -1  1  . -1  3
+-    X.6      3  1 -1  . -1 -1  3  1 -1  1  . -1  3
+-    X.7      3  1 -1  . -1  3 -1  1  1 -1  . -1  3
+-    X.8      3 -1  3  . -1 -1 -1 -1  1  1  . -1  3
+-    X.9      3  1  3  .  1 -1 -1  1 -1 -1  . -1  3
++    X.4      3 -1 -1  .  1  3 -1 -1 -1  1  . -1  3
++    X.5      3  1 -1  . -1  3 -1  1  1 -1  . -1  3
++    X.6      3 -1  3  . -1 -1 -1 -1  1  1  . -1  3
++    X.7      3 -1 -1  .  1 -1  3 -1  1 -1  . -1  3
++    X.8      3  1  3  .  1 -1 -1  1 -1 -1  . -1  3
++    X.9      3  1 -1  . -1 -1  3  1 -1  1  . -1  3
+     X.10     4 -2  . -1  .  .  .  2  .  .  1  . -4
+     X.11     4  2  . -1  .  .  . -2  .  .  1  . -4
+     X.12     6  . -2  .  . -2 -2  .  .  .  .  2  6
+diff --git a/src/sage/coding/codecan/autgroup_can_label.pyx b/src/sage/coding/codecan/autgroup_can_label.pyx
+index de5db98..c83b926 100644
+--- a/src/sage/coding/codecan/autgroup_can_label.pyx
++++ b/src/sage/coding/codecan/autgroup_can_label.pyx
+@@ -76,7 +76,7 @@ columns do share the same coloring::
+     ((1,),
+      (2,),
+      (3, 5, 4),
+-     (6, 19, 16, 9, 21, 10, 8, 15, 14, 11, 20, 13, 12, 7, 17, 18))
++     (6, 19, 16, 21, 9, 10, 15, 8, 20, 11, 14, 13, 7, 12, 18, 17))
+ 
+ We can also restrict the group action to linear isometries::
+ 
+diff --git a/src/sage/coding/linear_code.py b/src/sage/coding/linear_code.py
+index e8e32f8..9d45160 100644
+--- a/src/sage/coding/linear_code.py
++++ b/src/sage/coding/linear_code.py
+@@ -466,27 +466,27 @@ class AbstractLinearCode(AbstractLinearCodeNoMetric):
+             0
+             sage: C = codes.HammingCode(GF(4, 'z'), 3)
+             sage: C.automorphism_group_gens()
+-            ([((1, 1, 1, 1, 1, z + 1, z, z + 1, z, z, z, 1, 1, z + 1, z + 1, z, z + 1, z, z + 1, z + 1, z + 1); (1,14,6,7,4,10,11,19)(2,8,16,13,3,17,21,15)(9,12,18,20), Ring endomorphism of Finite Field in z of size 2^2
++            ([((1, 1, 1, z, z + 1, 1, 1, 1, 1, z + 1, z, z, z + 1, z + 1, z + 1, 1, z + 1, z, z, 1, z); (1,13,14,20)(2,21,8,18,7,16,19,15)(3,10,5,12,17,9,6,4), Ring endomorphism of Finite Field in z of size 2^2
++                Defn: z |--> z + 1),
++              ((z, 1, z, z, z, z + 1, z, z, z, z, z, z, z + 1, z, z, z, z, z + 1, z, z, z); (1,11,5,12,3,19)(2,8)(6,18,13)(7,17,15)(9,10,14,16,20,21), Ring endomorphism of Finite Field in z of size 2^2
+                 Defn: z |--> z + 1),
+-              ((z + 1, 1, 1, z, z + 1, z, z, z + 1, z + 1, z + 1, 1, z + 1, z, z, 1, z + 1, 1, z, z + 1, z + 1, z); (1,18,6,19,2,9,17,10,13,14,21,11,4,5,12)(3,20,7,16,8), Ring endomorphism of Finite Field in z of size 2^2
+-                Defn: z |--> z),
+               ((z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z); (), Ring endomorphism of Finite Field in z of size 2^2
+                 Defn: z |--> z)],
+              362880)
+             sage: C.automorphism_group_gens(equivalence="linear")
+-            ([((z + 1, 1, z + 1, z + 1, z + 1, z, 1, z, 1, 1, 1, 1, z + 1, z + 1, z + 1, z, z, 1, z, z, z); (1,15,2,8,16,18,3)(4,9,12,13,20,10,11)(5,21,14,6,7,19,17), Ring endomorphism of Finite Field in z of size 2^2
++            ([((z, 1, z + 1, z + 1, 1, z + 1, z, 1, z + 1, z + 1, 1, z, 1, z + 1, z, 1, z, 1, z + 1, 1, 1); (1,12,11,10,6,8,9,20,13,21,5,14,3,16,17,19,7,4,2,15,18), Ring endomorphism of Finite Field in z of size 2^2
+                 Defn: z |--> z),
+-              ((z + 1, z + 1, z + 1, z + 1, z + 1, 1, z, 1, z, z, z, 1, z, 1, 1, 1, z + 1, z + 1, z + 1, 1, z); (1,15,21,8,9)(2,18,5,3,11,16,7,10,19,13,12,4,17,6,20), Ring endomorphism of Finite Field in z of size 2^2
++              ((z + 1, z + 1, z + 1, z, 1, 1, z, z, 1, z + 1, z, 1, 1, z, 1, z + 1, z, z + 1, z + 1, 1, z); (1,3,18,2,17,6,19)(4,15,13,20,7,14,16)(5,11,8,21,12,9,10), Ring endomorphism of Finite Field in z of size 2^2
+                 Defn: z |--> z),
+               ((z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1, z + 1); (), Ring endomorphism of Finite Field in z of size 2^2
+                 Defn: z |--> z)],
+              181440)
+             sage: C.automorphism_group_gens(equivalence="permutational")
+-            ([((1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1); (1,19)(3,17)(4,21)(5,20)(7,14)(9,12)(10,16)(11,15), Ring endomorphism of Finite Field in z of size 2^2
++            ([((1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1); (1,11)(3,10)(4,9)(5,7)(12,21)(14,20)(15,19)(16,17), Ring endomorphism of Finite Field in z of size 2^2
+                 Defn: z |--> z),
+-              ((1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1); (1,11)(3,10)(4,9)(5,7)(12,21)(14,20)(15,19)(16,17), Ring endomorphism of Finite Field in z of size 2^2
++              ((1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1); (2,18)(3,19)(4,10)(5,16)(8,13)(9,14)(11,21)(15,20), Ring endomorphism of Finite Field in z of size 2^2
+                 Defn: z |--> z),
+-              ((1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1); (1,17)(2,8)(3,14)(4,10)(7,12)(9,19)(13,18)(15,20), Ring endomorphism of Finite Field in z of size 2^2
++              ((1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1); (1,19)(3,17)(4,21)(5,20)(7,14)(9,12)(10,16)(11,15), Ring endomorphism of Finite Field in z of size 2^2
+                 Defn: z |--> z),
+               ((1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1); (2,13)(3,14)(4,20)(5,11)(8,18)(9,19)(10,15)(16,21), Ring endomorphism of Finite Field in z of size 2^2
+                 Defn: z |--> z)],
+@@ -692,10 +692,10 @@ class AbstractLinearCode(AbstractLinearCodeNoMetric):
+             sage: C_iso == aut_group_can_label.get_canonical_form()
+             True
+             sage: aut_group_can_label.get_autom_gens()
+-            [((1, 1, 1, 1, 1, z + 1, z, z + 1, z, z, z, 1, 1, z + 1, z + 1, z, z + 1, z, z + 1, z + 1, z + 1); (1,14,6,7,4,10,11,19)(2,8,16,13,3,17,21,15)(9,12,18,20), Ring endomorphism of Finite Field in z of size 2^2
++            [((1, 1, 1, z, z + 1, 1, 1, 1, 1, z + 1, z, z, z + 1, z + 1, z + 1, 1, z + 1, z, z, 1, z); (1,13,14,20)(2,21,8,18,7,16,19,15)(3,10,5,12,17,9,6,4), Ring endomorphism of Finite Field in z of size 2^2
++               Defn: z |--> z + 1),
++             ((z, 1, z, z, z, z + 1, z, z, z, z, z, z, z + 1, z, z, z, z, z + 1, z, z, z); (1,11,5,12,3,19)(2,8)(6,18,13)(7,17,15)(9,10,14,16,20,21), Ring endomorphism of Finite Field in z of size 2^2
+                Defn: z |--> z + 1),
+-             ((z + 1, 1, 1, z, z + 1, z, z, z + 1, z + 1, z + 1, 1, z + 1, z, z, 1, z + 1, 1, z, z + 1, z + 1, z); (1,18,6,19,2,9,17,10,13,14,21,11,4,5,12)(3,20,7,16,8), Ring endomorphism of Finite Field in z of size 2^2
+-               Defn: z |--> z),
+              ((z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z); (), Ring endomorphism of Finite Field in z of size 2^2
+                Defn: z |--> z)]
+         """
+diff --git a/src/sage/combinat/root_system/hecke_algebra_representation.py b/src/sage/combinat/root_system/hecke_algebra_representation.py
+index bde2823..bffcc85 100644
+--- a/src/sage/combinat/root_system/hecke_algebra_representation.py
++++ b/src/sage/combinat/root_system/hecke_algebra_representation.py
+@@ -355,7 +355,7 @@ class HeckeAlgebraRepresentation(WithEqualityById, SageObject):
+             sage: q1, q2 = K.gens()
+             sage: KW = W.algebra(K)
+             sage: x = KW.an_element(); x
+-            123 + 3*32 + 2*3 + e
++            123 + 3*2312 + 2*31 + e
+ 
+             sage: T = KW.demazure_lusztig_operators(q1,q2)
+             sage: T12 = T.Tw( (1,2) )
+diff --git a/src/sage/combinat/symmetric_group_algebra.py b/src/sage/combinat/symmetric_group_algebra.py
+index c3d6755..da953d2 100644
+--- a/src/sage/combinat/symmetric_group_algebra.py
++++ b/src/sage/combinat/symmetric_group_algebra.py
+@@ -101,7 +101,7 @@ def SymmetricGroupAlgebra(R, W, category=None):
+         sage: SGA.group()
+         Weyl Group of type ['A', 3] (as a matrix group acting on the ambient space)
+         sage: SGA.an_element()
+-        s1*s2*s3 + 3*s3*s2 + 2*s3 + 1
++        s1*s2*s3 + 3*s2*s3*s1*s2 + 2*s3*s1 + 1
+ 
+     The preferred way to construct the symmetric group algebra is to
+     go through the usual ``algebra`` method::
+diff --git a/src/sage/groups/finitely_presented.py b/src/sage/groups/finitely_presented.py
+index 2a61bbf..d26891a 100644
+--- a/src/sage/groups/finitely_presented.py
++++ b/src/sage/groups/finitely_presented.py
+@@ -596,9 +596,9 @@ class RewritingSystem():
+             sage: k = G.rewriting_system()
+             sage: k.gap()
+             Knuth Bendix Rewriting System for Monoid( [ a, A, b, B ] ) with rules
+-            [ [ a^2, <identity ...> ], [ a*A, <identity ...> ],
+-              [ A*a, <identity ...> ], [ b^2, <identity ...> ],
+-              [ b*B, <identity ...> ], [ B*b, <identity ...> ] ]
++            [ [ a*A, <identity ...> ], [ A*a, <identity ...> ],
++              [ b*B, <identity ...> ], [ B*b, <identity ...> ],
++              [ a^2, <identity ...> ], [ b^2, <identity ...> ] ]
+         """
+         return self._gap
+ 
+diff --git a/src/sage/groups/fqf_orthogonal.py b/src/sage/groups/fqf_orthogonal.py
+index 75de408..dd7d84d 100644
+--- a/src/sage/groups/fqf_orthogonal.py
++++ b/src/sage/groups/fqf_orthogonal.py
+@@ -143,7 +143,7 @@ class FqfOrthogonalGroup(AbelianGroupAutomorphismGroup_subgroup):
+         [2/3   0   0]
+         [  0 2/3   0]
+         [  0   0 4/3]
+-        generated by 2 elements
++        generated by 3 elements
+         sage: q = matrix.diagonal(QQ, [3/2, 1/4, 1/4])
+         sage: T = TorsionQuadraticForm(q)
+         sage: T.orthogonal_group().order()
+diff --git a/src/sage/groups/libgap_wrapper.pyx b/src/sage/groups/libgap_wrapper.pyx
+index a76afc2..9340c0d 100644
+--- a/src/sage/groups/libgap_wrapper.pyx
++++ b/src/sage/groups/libgap_wrapper.pyx
+@@ -25,7 +25,7 @@ Note how we call the constructor of both superclasses to initialize
+ its output via LibGAP::
+ 
+     sage: FooGroup()
+-    <pc group of size 3 with 1 generators>
++    <pc group of size 3 with 1 generator>
+     sage: type(FooGroup().gap())
+     <class 'sage.libs.gap.element.GapElement'>
+ 
+@@ -106,7 +106,7 @@ class ParentLibGAP(SageObject):
+         ....:         ParentLibGAP.__init__(self, lg)
+         ....:         Group.__init__(self)
+         sage: FooGroup()
+-        <pc group of size 3 with 1 generators>
++        <pc group of size 3 with 1 generator>
+     """
+ 
+     def __init__(self, libgap_parent, ambient=None):
+@@ -461,7 +461,7 @@ cdef class ElementLibGAP(MultiplicativeGroupElement):
+         ....:         ParentLibGAP.__init__(self, lg)
+         ....:         Group.__init__(self)
+         sage: FooGroup()
+-        <pc group of size 3 with 1 generators>
++        <pc group of size 3 with 1 generator>
+         sage: FooGroup().gens()
+         (f1,)
+     """
+diff --git a/src/sage/groups/perm_gps/partn_ref2/refinement_generic.pyx b/src/sage/groups/perm_gps/partn_ref2/refinement_generic.pyx
+index 2fcb036..ca73c6b 100644
+--- a/src/sage/groups/perm_gps/partn_ref2/refinement_generic.pyx
++++ b/src/sage/groups/perm_gps/partn_ref2/refinement_generic.pyx
+@@ -427,7 +427,7 @@ cdef class LabelledBranching:
+             sage: from sage.groups.perm_gps.partn_ref2.refinement_generic import LabelledBranching
+             sage: L = LabelledBranching(3)
+             sage: L.small_generating_set()
+-            []
++            [()]
+             sage: L.add_gen(libgap.eval('(1,2,3)'))
+             sage: L.small_generating_set()
+             [(1,2,3)]
+diff --git a/src/sage/groups/perm_gps/permgroup.py b/src/sage/groups/perm_gps/permgroup.py
+index 4908934..34ba0cc 100644
+--- a/src/sage/groups/perm_gps/permgroup.py
++++ b/src/sage/groups/perm_gps/permgroup.py
+@@ -913,7 +913,7 @@ class PermutationGroup_generic(FiniteGroup):
+            sage: f = PG._coerce_map_from_(MG)
+            sage: mg = MG.an_element()
+            sage: p = f(mg); p
+-           (2,33,32,23,31,55)(3,49,38,44,40,28)(4,17,59,62,58,46)(5,21,47,20,43,8)(6,53,50)(7,37,12,57,14,29)(9,41,56,34,64,10)(11,25,19)(13,61,26,51,22,15)(16,45,36)(18,27,35,48,52,54)(24,63,42)(30,39,60)
++           (1,2,6,19,35,33)(3,9,26,14,31,23)(4,13,5)(7,22,17)(8,24,12)(10,16,32,27,20,28)(11,30,18)(15,25,36,34,29,21)
+            sage: PG(p._gap_()) == p
+            True
+ 
+@@ -959,12 +959,12 @@ class PermutationGroup_generic(FiniteGroup):
+             sage: P = G.as_permutation_group(algorithm='smaller', seed=5)
+             sage: P1 = G.as_permutation_group()
+             sage: P == P1
+-            False
++            True
+             sage: g1, g2, g3 = G.gens()
+             sage: P(g1*g2)
+-            (1,3,7,12)(2,4,8,10)(5,11)(6,9)
++            (1,4,13,11)(2,5,14,18)(3,15,8,16)(6,7)(9,20,19,12)(10,17)
+             sage: P1(g1*g2)
+-            (2,29,25,68)(3,57,13,54)(4,11,72,37)(5,39,60,23)(6,64,75,63)(7,21,50,73)(8,46,38,32)(9,74,35,18)(10,44,49,48)(12,16,34,71)(14,79,27,40)(15,26)(17,62,59,76)(19,78,70,65)(20,22,58,51)(24,33,36,43)(28,81,80,52)(30,53,56,69)(31,61)(41,42,67,55)(45,77)(47,66)
++            (1,4,13,11)(2,5,14,18)(3,15,8,16)(6,7)(9,20,19,12)(10,17)
+ 
+         Another check for :trac:`5583`::
+ 
+diff --git a/src/sage/libs/gap/libgap.pyx b/src/sage/libs/gap/libgap.pyx
+index b1a64e5..6a36613 100644
+--- a/src/sage/libs/gap/libgap.pyx
++++ b/src/sage/libs/gap/libgap.pyx
+@@ -695,7 +695,7 @@ class Gap(Parent):
+             sage: libgap.List
+             <Gap function "List">
+             sage: libgap.GlobalRandomSource
+-            <RandomSource in IsGlobalRandomSource>
++            <RandomSource in IsGAPRandomSource>
+         """
+         if name in dir(self.__class__):
+             return getattr(self.__class__, name)
+diff --git a/src/sage/libs/gap/util.pyx b/src/sage/libs/gap/util.pyx
+index 344ab88..6350987 100644
+--- a/src/sage/libs/gap/util.pyx
++++ b/src/sage/libs/gap/util.pyx
+@@ -362,15 +362,9 @@ cdef Obj gap_eval(str gap_string) except? NULL:
+         GAPError: Error, Variable: 'Complex' must have a value
+         Syntax error: ; expected in stream:1
+         Complex Field with 53 bits of precision;;
+-         ^^^^^^^^^^^^
++                ^^^^^
+         Error, Variable: 'with' must have a value
+-        Syntax error: ; expected in stream:1
+-        Complex Field with 53 bits of precision;;
+-         ^^^^^^^^^^^^^^^^^^^^
+         Error, Variable: 'bits' must have a value
+-        Syntax error: ; expected in stream:1
+-        Complex Field with 53 bits of precision;;
+-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+         Error, Variable: 'precision' must have a value
+ 
+     Test that on a subsequent attempt we get the same message (no garbage was
+diff --git a/src/sage/tests/gap_packages.py b/src/sage/tests/gap_packages.py
+index 2e4518c..c302b16 100644
+--- a/src/sage/tests/gap_packages.py
++++ b/src/sage/tests/gap_packages.py
+@@ -103,7 +103,7 @@ def all_installed_packages(ignore_dot_gap=False, gap=None):
+ 
+         sage: from sage.tests.gap_packages import all_installed_packages
+         sage: all_installed_packages()
+-        (...'GAPDoc'...)
++        (...'gapdoc'...)
+         sage: all_installed_packages(ignore_dot_gap=True) == all_installed_packages(gap=gap, ignore_dot_gap=True)
+         True
+     """
+-- 
+cgit v1.0-1-gd88e
+
+
+From cbc902a79ff9ec01d4d4eb9a767a1c661fb5dda7 Mon Sep 17 00:00:00 2001
+From: Antonio Rojas <arojas@archlinux.org>
+Date: Fri, 30 Sep 2022 19:17:42 +0200
+Subject: Adapt test to new is_transitive and is_primitive behavior
+
+---
+ src/sage/groups/perm_gps/permgroup.py | 22 ++++++++++++++++------
+ 1 file changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/src/sage/groups/perm_gps/permgroup.py b/src/sage/groups/perm_gps/permgroup.py
+index 34ba0cc..5832b98 100644
+--- a/src/sage/groups/perm_gps/permgroup.py
++++ b/src/sage/groups/perm_gps/permgroup.py
+@@ -4359,17 +4359,23 @@ class PermutationGroup_generic(FiniteGroup):
+ 
+         ::
+ 
+-            sage: G = PermutationGroup([[(1,2,3,4,5)],[(1,2)]]) #S_5 on [1..5]
+-            sage: G.is_transitive([1,4,5])
++            sage: G = PermutationGroup([[(1,2,3,4,5)],[(1,2)],[(6,7)]])
++            sage: G.is_transitive([1,2,3,4,5])
+             True
+-            sage: G.is_transitive([2..6])
++            sage: G.is_transitive([1..7])
+             False
+             sage: G.is_transitive(G.non_fixed_points())
+-            True
++            False
+             sage: H = PermutationGroup([[(1,2,3)],[(4,5,6)]])
+             sage: H.is_transitive(H.non_fixed_points())
+             False
+ 
++        If `G` does not act on the domain, it always returns ``False``::
++
++            sage: G = PermutationGroup([[(1,2,3,4,5)],[(1,2)]]) #S_5 on [1..5]
++            sage: G.is_transitive([1,4,5])
++            False
++
+         Note that this differs from the definition in GAP, where
+         ``IsTransitive`` returns whether the group is transitive on the
+         set of points moved by the group.
+@@ -4425,12 +4431,16 @@ class PermutationGroup_generic(FiniteGroup):
+             sage: G = PermutationGroup([[(1,2,3,4)],[(2,4)]])
+             sage: G.is_primitive([1..4])
+             False
+-            sage: G.is_primitive([1,2,3])
+-            True
+             sage: G = PermutationGroup([[(3,4,5,6)],[(3,4)]]) #S_4 on [3..6]
+             sage: G.is_primitive(G.non_fixed_points())
+             True
+ 
++        If `G` does not act on the domain, it always returns ``False``::
++
++            sage: G = PermutationGroup([[(1,2,3,4)],[(2,4)]])
++            sage: G.is_primitive([1,2,3])
++            False
++
+         """
+         #If the domain is not a subset of self.domain(), then the
+         #action isn't primitive.
+-- 
+cgit v1.0-1-gd88e
+
+
+From 80dd6b338236f170efca1fc3545df18ce8d8795c Mon Sep 17 00:00:00 2001
+From: Antonio Rojas <arojas@archlinux.org>
+Date: Fri, 30 Sep 2022 19:18:06 +0200
+Subject: Mark test as random. With gap 4.12 on x86_64 it is no longer 2
+
+---
+ src/sage/groups/perm_gps/permgroup.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/sage/groups/perm_gps/permgroup.py b/src/sage/groups/perm_gps/permgroup.py
+index 5832b98..c1230a3 100644
+--- a/src/sage/groups/perm_gps/permgroup.py
++++ b/src/sage/groups/perm_gps/permgroup.py
+@@ -1287,7 +1287,7 @@ class PermutationGroup_generic(FiniteGroup):
+             sage: G.gens_small() # random
+             [('b','c'), ('a','c','b')] ## (on 64-bit Linux)
+             [('a','b'), ('a','c','b')] ## (on Solaris)
+-            sage: len(G.gens_small()) == 2
++            sage: len(G.gens_small()) == 2 # random
+             True
+         """
+         gens = self._libgap_().SmallGeneratingSet()
+-- 
+cgit v1.0-1-gd88e
+
+
+From a6c293d67cfcdf8fba7bc6aa7899e2086d42cc7e Mon Sep 17 00:00:00 2001
+From: Antonio Rojas <arojas@archlinux.org>
+Date: Fri, 30 Sep 2022 19:18:30 +0200
+Subject: Remove test that is now redundant, all seeds give the same answer
+
+---
+ src/sage/groups/matrix_gps/finitely_generated.py | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/src/sage/groups/matrix_gps/finitely_generated.py b/src/sage/groups/matrix_gps/finitely_generated.py
+index a6d3dc0..63956ad 100644
+--- a/src/sage/groups/matrix_gps/finitely_generated.py
++++ b/src/sage/groups/matrix_gps/finitely_generated.py
+@@ -563,9 +563,6 @@ class FinitelyGeneratedMatrixGroup_gap(MatrixGroup_gap):
+             21499084800
+             sage: P = G.as_permutation_group()
+             sage: Psmaller = G.as_permutation_group(algorithm="smaller", seed=6)
+-            sage: P == Psmaller  # see the note below
+-            True
+-            sage: Psmaller = G.as_permutation_group(algorithm="smaller")
+             sage: P == Psmaller
+             False
+             sage: P.cardinality()
+-- 
+cgit v1.0-1-gd88e
+
