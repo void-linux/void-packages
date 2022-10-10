@@ -9,7 +9,8 @@ ARGS="-a $2 -R https://repo-ci.voidlinux.org/current"
 
 while read -r pkg; do
 	for subpkg in $(xsubpkg $pkg); do
-		if xbps-query --repository=$HOME/hostdir/binpkgs \
+		if xbps-query --repository=$HOME/hostdir/binpkgs/bootstrap \
+					  --repository=$HOME/hostdir/binpkgs \
 					  --repository=$HOME/hostdir/binpkgs/nonfree \
 					  -i "$subpkg" >&/dev/null; then
 			/bin/echo -e "\x1b[34mFile Diff of $subpkg:\x1b[0m"
