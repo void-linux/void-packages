@@ -4,7 +4,6 @@ version=0.9
 revision=1
 build_style=go
 go_import_path=github.com/anatol/booster
-go_package="${go_import_path}/generator ${go_import_path}/init"
 hostmakedepends="git ruby-ronn"
 depends="busybox-static"
 short_desc="Fast and secure initramfs generator"
@@ -19,29 +18,36 @@ alternatives="
  initramfs:/etc/kernel.d/post-remove/20-initramfs:/usr/libexec/booster/kernel-hook-postrm
 "
 
-do_build() {
-	cd generator
-	go install -p "$XBPS_MAKEJOBS" -mod=readonly -x -tags "${go_build_tags}" -ldflags "${go_ldflags}"
+_build_component() {
+	go install -p "$XBPS_MAKEJOBS" -mod=readonly -x
+}
 
-	cd ../init
-	CGO_ENABLED=0 go install -p "$XBPS_MAKEJOBS" -mod=readonly -x -tags "${go_build_tags}" -ldflags "${go_ldflags}"
+do_build() {
+	( cd generator && _build_component )
+	( cd init && CGO_ENABLED=0 _build_component )
+
+	ronn docs/manpage.md
+
+	echo "busybox: true" > booster.yaml
 }
 
 do_install() {
-	if [ "$CROSS_BUILD" ]; then
-		vbin ${GOPATH}/bin/linux_${GOARCH}/generator booster
-		vinstall ${GOPATH}/bin/linux_${GOARCH}/init 755 usr/lib/booster
-	else
-		vbin ${GOPATH}/bin/generator booster
-		vinstall ${GOPATH}/bin/init 755 usr/lib/booster
-	fi
-	ronn docs/manpage.md
-	vman docs/manpage.1 booster.1
-	echo "busybox: true" > booster.yaml
+	local _srcdir="${GOPATH}/bin"
 
+	if [ "$CROSS_BUILD" ]; then
+		_srcdir="${_srcdir}/linux_${GOARCH}"
+	fi
+
+	vbin "${_srcdir}/generator" booster
+	vinstall "${_srcdir}/init" 755 usr/lib/booster
+
+	vman docs/manpage.1 booster.1
 	vconf booster.yaml
+
 	vinstall ${FILESDIR}/kernel-hook-postinst 755 usr/libexec/booster
 	vinstall ${FILESDIR}/kernel-hook-postrm 755 usr/libexec/booster
+
 	vcompletion contrib/completion/bash bash booster
+
 	vlicense LICENSE
 }
