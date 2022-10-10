@@ -214,16 +214,18 @@ chroot_sync_repodata() {
     # Update xbps alternative repository if set.
     mkdir -p $confdir
     if [ -n "$XBPS_ALT_REPOSITORY" ]; then
-        ( \
-            echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}"; \
-            echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/nonfree"; \
-            echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/debug"; \
-            ) > $confdir/00-repository-alt-local.conf
+        cat <<- ! > $confdir/00-repository-alt-local.conf
+		repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/bootstrap
+		repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}
+		repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/nonfree
+		repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/debug
+		!
         if [ "$XBPS_MACHINE" = "x86_64" ]; then
-            ( \
-                echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/multilib"; \
-                echo "repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/multilib/nonfree"; \
-            ) >> $confdir/00-repository-alt-local.conf
+            cat <<- ! >> $confdir/00-repository-alt-local.conf
+			repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/multilib/bootstrap
+			repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/multilib
+			repository=$hostdir/binpkgs/${XBPS_ALT_REPOSITORY}/multilib/nonfree
+			!
         fi
     else
         rm -f $confdir/00-repository-alt-local.conf
