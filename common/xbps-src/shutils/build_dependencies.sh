@@ -25,9 +25,9 @@ setup_pkg_depends() {
             _pkgname=$(xbps-uhelper getpkgname $_depname 2>/dev/null)
             [ -z "$_pkgname" ] && _pkgname="$_depname"
             if [ -s ${XBPS_DISTDIR}/etc/virtual ]; then
-                foo=$(egrep "^${_pkgname}[[:blank:]]" ${XBPS_DISTDIR}/etc/virtual|cut -d ' ' -f2)
+                foo=$(grep -E "^${_pkgname}[[:blank:]]" ${XBPS_DISTDIR}/etc/virtual|cut -d ' ' -f2)
             elif [ -s ${XBPS_DISTDIR}/etc/defaults.virtual ]; then
-                foo=$(egrep "^${_pkgname}[[:blank:]]" ${XBPS_DISTDIR}/etc/defaults.virtual|cut -d ' ' -f2)
+                foo=$(grep -E "^${_pkgname}[[:blank:]]" ${XBPS_DISTDIR}/etc/defaults.virtual|cut -d ' ' -f2)
             fi
             if [ -z "$foo" ]; then
                 msg_error "$pkgver: failed to resolve virtual dependency for '$j' (missing from etc/virtual)\n"
