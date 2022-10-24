@@ -2,16 +2,11 @@
 _git_version=2.25.1
 pkgname=cgit
 version=1.2.3
-revision=2
-make_build_args="
- prefix=/usr
- NO_REGEX=NeedsStartEnd
- NO_OPENSSL=yes
- CGIT_DATA_PATH=/usr/share/webapps/cgit
- CGIT_SCRIPT_PATH=/usr/libexec/cgit"
+revision=3
+create_wrksrc=yes
 hostmakedepends="asciidoc"
 makedepends="zlib-devel"
-checkdepends="perl"
+checkdepends="perl tidy5 unzip lzip zstd xz tar which"
 short_desc="Hyperfast web frontend for git repositories written in C"
 maintainer="Duncaen <duncaen@voidlinux.org>"
 license="GPL-2.0-only"
@@ -22,19 +17,52 @@ checksum="5a5f12d2f66bd3629c8bc103ec8ec2301b292e97155d30a9a61884ea414a6da4
  222796cc6e3bf2f9fd765f8f097daa3c3999bb7865ac88a8c974d98182e29f26"
 
 post_extract() {
-	rm -r git
-	mv ../git-$_git_version git
+	rmdir cgit-$version/git
+	mv git-$_git_version git
+	mv cgit-$version/* cgit-$version/.??* .
+	rmdir cgit-$version
 }
 
-pre_build() {
+do_configure() {
+	cat <<-EOF >cgit.conf
+	prefix=/usr
+	NO_OPENSSL=Yes
+	CGIT_DATA_PATH=/usr/share/webapps/cgit
+	CGIT_SCRIPT_PATH=/usr/libexec/cgit
+	# cgit build git with NO_CURL for all but not tests,
+	# make the whole git rebuilt with different flags
+	NO_CURL=Yes
+	CC = $CC
+	AR = $AR
+	TAR = bsdtar
+	CFLAGS = $CFLAGS
+	LDFLAGS = $LDFLAGS
+	HOST_CPU = ${XBPS_TARGET_MACHINE%-musl}
+	DC_SHA1 = Yes
+	NO_GETTEXT = Yes
+	NO_PYTHON = Yes
+	NO_EXPAT = Yes
+	# Don't build git-perl script, test requires perl still run
+	NO_PERL = Yes
+	NO_TCLTK = Yes
+	EOF
+	if [ "$XBPS_TARGET_LIBC" = musl ]; then
+		# Copy settings from git
+		cat <<-EOF >>cgit.conf
+		ICONV_OMITS_BOM = Yes
+		# This option will use a vendored regex engine
+		NO_REGEX = NeedsStartEnd
+		EOF
+	fi
+	cp cgit.conf git/config.mak
+}
+
+
+do_build() {
 	if ! grep -q "^GIT_VER = $_git_version\$" Makefile; then
 		msg_error "$pkgver: update _git_version to match upstream Makefile.\n"
 	fi
-}
-
-do_build() {
-	make CC=$CC CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
-		 ${makejobs} ${make_build_args} all doc-man
+	make ${makejobs} all doc-man
 }
 
 do_check() {
@@ -42,8 +70,7 @@ do_check() {
 }
 
 do_install() {
-	make CC=$CC CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
-		DESTDIR=${DESTDIR} ${make_build_args} install install-man
+	make DESTDIR=${DESTDIR} install install-man
 
 	ln -s /usr/libexec/cgit/cgit.cgi ${DESTDIR}/usr/share/webapps/cgit/cgit.cgi
 }
