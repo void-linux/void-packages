@@ -13,7 +13,7 @@ _noglob_helper() {
 }
 
 # Apply _noglob to v* commands
-for cmd in vinstall vcopy vcompletion vmove vmkdir vbin vman vdoc vconf vsconf vlicense vsv; do
+for cmd in vinstall vcopy vcompletion vmove vmkdir vbin vman vdoc vconf vsconf vlicense vsv vterminfo; do
        alias ${cmd}="set -f; _noglob_helper _${cmd}"
 done
 
@@ -273,4 +273,34 @@ _vcompletion() {
 			return 1
 			;;
 	esac
+}
+
+_vterminfo() {
+	local file="$1" entries="$2"
+	local _terminfo_dir=usr/share/terminfo
+	local _args=
+
+	if [ $# -lt 1 ]; then
+		msg_red "$pkgver: vterminfo: at least 1 argument expected: <file> [entries]\n"
+		return 1
+	elif ! [ -f "$file" ]; then
+		msg_red "$pkgver: vterminfo: file '$file' does not exist.\n"
+		return 1
+	elif ! [ -r "$file" ]; then
+		msg_red "$pkgver: vterminfo: file '$file' is not readable.\n"
+		return 1
+	elif  [ -z "$PKGDESTDIR" ]; then
+		msg_red "$pkgver: vterminfo: PKGDESTDIR unset, can't continue...\n"
+		return 1
+	elif ! [ -x /usr/bin/tic ]; then
+		msg_red "$pkgver: vterminfo: 'tic' binary is missing, can't continue...\n"
+		return 1
+	fi
+
+	if [ -n "$entries" ]; then
+		_args="-e ${entries}"
+	fi
+
+	vmkdir "${_terminfo_dir}"
+	/usr/bin/tic -sx ${_args} -o "${PKGDESTDIR}/${_terminfo_dir}" "$file"
 }
