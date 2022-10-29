@@ -1,0 +1,135 @@
+Subject: [PATCH] Revert "Fix zdump undefined behavior if !USE_LTZ"
+
+This reverts commit fdd270534fc2e843ac24cbdd9b40cfceffcce3c7.
+
+Broken on musl
+---
+ Makefile  |  1 -
+ NEWS      |  4 ----
+ private.h |  4 ----
+ zdump.c   | 57 +++++++++++++++++--------------------------------------
+ 4 files changed, 17 insertions(+), 49 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 34cec49d..d3cfbd07 100644
+--- a/Makefile
++++ b/Makefile
+@@ -223,7 +223,6 @@ LDLIBS=
+ #  -DHAVE_MALLOC_ERRNO=0 if malloc etc. do not set errno on failure.
+ #  -DHAVE_POSIX_DECLS=0 if your system's include files do not declare
+ #	functions like 'link' or variables like 'tzname' required by POSIX
+-#  -DHAVE_SETENV=0 if your system lacks the setenv function
+ #  -DHAVE_SNPRINTF=0 if your system lacks the snprintf function
+ #  -DHAVE_STDINT_H if you have a non-C99 compiler with <stdint.h>*
+ #  -DHAVE_STRFTIME_L if <time.h> declares locale_t and strftime_l
+diff --git a/NEWS b/NEWS
+index 08615107..0215e2fb 100644
+--- a/NEWS
++++ b/NEWS
+@@ -96,10 +96,6 @@ Release 2022f - 2022-10-28 18:04:57 -0700
+     releases have been out of support since 2019.  This change affects
+     only fat TZif files, as thin files never had the workaround.
+ 
+-    zdump no longer modifies the environ vector when compiled on
+-    platforms lacking tm_zone or when compiled with -DUSE_LTZ=0.
+-    This avoid undefined behavior on POSIX platforms.
+-
+ 
+ Release 2022e - 2022-10-11 11:13:02 -0700
+ 
+diff --git a/private.h b/private.h
+index 18f6a055..b2faa726 100644
+--- a/private.h
++++ b/private.h
+@@ -99,10 +99,6 @@
+ # define HAVE_POSIX_DECLS 1
+ #endif
+ 
+-#ifndef HAVE_SETENV
+-# define HAVE_SETENV 1
+-#endif
+-
+ #ifndef HAVE_STRDUP
+ # define HAVE_STRDUP 1
+ #endif
+diff --git a/zdump.c b/zdump.c
+index ffb321a0..168f72a4 100644
+--- a/zdump.c
++++ b/zdump.c
+@@ -228,56 +228,33 @@ mktime_z(timezone_t tz, struct tm *tmp)
+ static timezone_t
+ tzalloc(char const *val)
+ {
+-# if HAVE_SETENV
+-  if (setenv("TZ", val, 1) != 0) {
+-    perror("setenv");
+-    exit(EXIT_FAILURE);
+-  }
+-  tzset();
+-  return NULL;
+-# else
+-  enum { TZeqlen = 3 };
+-  static char const TZeq[TZeqlen] = "TZ=";
+   static char **fakeenv;
+-  static size_t fakeenv0size;
+-  void *freeable = NULL;
+-  char **env = fakeenv, **initial_environ;
+-  size_t valsize = strlen(val) + 1;
+-  if (fakeenv0size < valsize) {
+-    char **e = environ, **to;
+-    ptrdiff_t initial_nenvptrs;  /* Counting the trailing NULL pointer.  */
++  char **env = fakeenv;
++  char *env0;
++  if (! env) {
++    char **e = environ;
++    int to;
+ 
+     while (*e++)
+       continue;
+-    initial_nenvptrs = e - environ;
+-    fakeenv0size = sumsize(valsize, valsize);
+-    fakeenv0size = max(fakeenv0size, 64);
+-    freeable = env;
+-    fakeenv = env =
+-      xmalloc(sumsize(sumsize(sizeof *environ,
+-			      initial_nenvptrs * sizeof *environ),
+-		      sumsize(TZeqlen, fakeenv0size)));
+-    to = env + 1;
+-    for (e = environ; (*to = *e); e++)
+-      to += strncmp(*e, TZeq, TZeqlen) != 0;
+-    env[0] = memcpy(to + 1, TZeq, TZeqlen);
++    env = xmalloc(sumsize(sizeof *environ,
++			  (e - environ) * sizeof *environ));
++    to = 1;
++    for (e = environ; (env[to] = *e); e++)
++      to += strncmp(*e, "TZ=", 3) != 0;
+   }
+-  memcpy(env[0] + TZeqlen, val, valsize);
+-  initial_environ = environ;
+-  environ = env;
++  env0 = xmalloc(sumsize(sizeof "TZ=", strlen(val)));
++  env[0] = strcat(strcpy(env0, "TZ="), val);
++  environ = fakeenv = env;
+   tzset();
+-  free(freeable);
+-  return initial_environ;
+-# endif
++  return env;
+ }
+ 
+ static void
+-tzfree(timezone_t initial_environ)
++tzfree(timezone_t env)
+ {
+-# if !HAVE_SETENV
+-  environ = initial_environ;
+-  tzset();
+-# endif
++  environ = env + 1;
++  free(env[0]);
+ }
+ #endif /* ! USE_LOCALTIME_RZ */
+ 
+-- 
+2.38.1.157.gedabe22e0a
+
