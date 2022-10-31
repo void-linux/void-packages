@@ -2,8 +2,6 @@
 #
 # changed_templates.sh
 
-PATH="/usr/libexec/chroot-git:$PATH"
-
 tip="$(git rev-list -1 --parents HEAD)"
 case "$tip" in
 	# This is a merge commit, pick last parent

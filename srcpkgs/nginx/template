@@ -1,12 +1,55 @@
 # Template file for 'nginx'
 pkgname=nginx
 version=1.22.0
-revision=1
+revision=3
 _tests_commit=18ac4d9e5a2a
+_njs_version=0.7.7
 create_wrksrc=yes
 build_wrksrc="nginx-${version}"
 build_style=gnu-makefile
-hostmakedepends="openssl-devel pcre2-devel $(vopt_if geoip geoip-devel)"
+_cfgdir=/etc/nginx
+_tmpdir=/var/lib/nginx/tmp
+configure_args="--prefix=${_cfgdir} \
+ --conf-path=${_cfgdir}/nginx.conf \
+ --sbin-path=/usr/bin/nginx \
+ --modules-path=/usr/lib/nginx/modules \
+ --pid-path=/run/nginx.pid \
+ --lock-path=/var/lock/nginx.lock \
+ --user=nginx \
+ --group=nginx \
+ --http-log-path=/var/log/nginx/access.log \
+ --error-log-path=/var/log/nginx/error.log \
+ --http-client-body-temp-path=${_tmpdir}/client-body \
+ --http-proxy-temp-path=${_tmpdir}/proxy \
+ --http-fastcgi-temp-path=${_tmpdir}/fastcgi \
+ --http-scgi-temp-path=${_tmpdir}/scgi \
+ --http-uwsgi-temp-path=${_tmpdir}/uwsgi \
+ --with-compat \
+ --with-file-aio \
+ --with-http_dav_module \
+ --with-http_gunzip_module \
+ --with-http_gzip_static_module \
+ --with-http_realip_module \
+ --with-http_ssl_module \
+ --with-http_slice_module \
+ --with-http_stub_status_module \
+ --with-http_sub_module \
+ --with-http_v2_module \
+ --with-http_xslt_module=dynamic \
+ --with-http_geoip_module=dynamic \
+ --with-http_perl_module=dynamic \
+ --with-stream=dynamic \
+ --with-stream_geoip_module=dynamic \
+ --with-stream_realip_module \
+ --with-stream_ssl_module \
+ --with-stream_ssl_preread_module \
+ --with-mail \
+ --with-mail_ssl_module \
+ --with-pcre-jit \
+ --with-threads
+ --add-dynamic-module=../njs-${_njs_version}/nginx"
+hostmakedepends="geoip geoip-devel openssl-devel pcre2-devel perl libxslt-devel
+ which"
 makedepends="${hostmakedepends}"
 checkdepends="perl perl-IO-Socket-SSL perl-GD perl-FCGI which"
 short_desc="High performance web and reverse proxy server"
@@ -14,9 +57,11 @@ maintainer="Duncaen <duncaen@voidlinux.org>"
 license="BSD-2-Clause"
 homepage="https://nginx.org"
 distfiles="https://nginx.org/download/nginx-${version}.tar.gz
- https://hg.nginx.org/nginx-tests/archive/${_tests_commit}.tar.gz"
+ https://hg.nginx.org/nginx-tests/archive/${_tests_commit}.tar.gz
+ https://hg.nginx.org/njs/archive/${_njs_version}.tar.gz"
 checksum="b33d569a6f11a01433a57ce17e83935e953ad4dc77cdd4d40f896c88ac26eb53
- e34ef2f38512e1c04ee201c3b68f7ba7ec8f1537dc6a500278bc2219ab435228"
+ e34ef2f38512e1c04ee201c3b68f7ba7ec8f1537dc6a500278bc2219ab435228
+ 4dac9cbf071e5a7dfe135b4d87e20112d207fcbf5fb620854af8dab44ec3e7bd"
 # Tests fail when nginx run as root and there is no nginx user
 make_check=ci-skip
 
@@ -34,75 +79,62 @@ conf_files="/etc/nginx/fastcgi.conf
  /etc/nginx/uwsgi_params
  /etc/nginx/win-utf"
 system_accounts="nginx"
-nginx_homedir="/var/tmp/nginx"
+nginx_homedir="/var/lib/nginx"
 make_dirs="/var/log/nginx 0750 root root
- /var/tmp 1777 root root
- /var/tmp/nginx 0750 nginx root"
-
-build_options="geoip stream slice"
-desc_option_stream="Enable support for stream proxies"
-desc_option_slice="Enable support for slice filters"
-build_options_default="geoip stream slice"
+ /var/lib/nginx 1777 root root
+ /var/lib/nginx/tmp 0750 nginx root"
 
 do_configure() {
-	local cfgdir=/etc/nginx
-	local tmpdir=/var/tmp/nginx
-
 	if [ "$CROSS_BUILD" ]; then
 		# fake configure run on host
 		unset CC CPP LD CFLAGS CPPFLAGS LDFLAGS
+
+		local perlprefix=${XBPS_STATEDIR}/perlprefix-${XBPS_TARGET_MACHINE}
+		mkdir -p $perlprefix
+		if [ -d "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl" ]; then
+			cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Config"*.p? $perlprefix
+			cp "$XBPS_CROSS_BASE/usr/lib/perl5/core_perl/Errno.pm" $perlprefix
+			sed -i -e "s;archlibexp => '\(.*\)';archlibexp => '${XBPS_CROSS_BASE}\1';" \
+				${perlprefix}/Config.pm
+			sed -i -e "s;^archlibexp='\(.*\)';archlibexp='${XBPS_CROSS_BASE}\1';" \
+				${perlprefix}/Config_heavy.pl
+		else
+			cp "/usr/lib/perl5/core_perl/Config"*.p? $perlprefix
+			cp "/usr/lib/perl5/core_perl/Errno.pm" $perlprefix
+		fi
+		export PERL5LIB=$perlprefix
 	fi
 
-	local stream_modules="\
-		--with-stream \
-		--with-stream_realip_module \
-		--with-stream_ssl_module \
-		--with-stream_ssl_preread_module \
-		$(vopt_if geoip --with-stream_geoip_module) \
-	"
-
-	./configure --prefix=${cfgdir} \
-		--conf-path=${cfgdir}/nginx.conf \
-		--sbin-path=/usr/bin/nginx \
-		--pid-path=/run/nginx.pid \
-		--lock-path=/var/lock/nginx.lock \
-		--user=nginx --group=nginx \
-		--http-log-path=/var/log/nginx/access.log \
-		--error-log-path=/var/log/nginx/error.log \
-		--http-client-body-temp-path=${tmpdir}/client-body \
-		--http-proxy-temp-path=${tmpdir}/proxy \
-		--http-fastcgi-temp-path=${tmpdir}/fastcgi \
-		--http-scgi-temp-path=${tmpdir}/scgi \
-		--http-uwsgi-temp-path=${tmpdir}/uwsgi \
-		--with-compat \
-		--with-file-aio \
-		--with-http_dav_module \
-		--with-http_gunzip_module \
-		--with-http_gzip_static_module \
-		--with-http_realip_module \
-		--with-http_ssl_module \
-		--with-http_stub_status_module \
-		--with-http_sub_module \
-		--with-http_v2_module \
-		--with-mail \
-		--with-mail_ssl_module \
-		--with-pcre-jit \
-		--with-threads \
-		$(vopt_if geoip --with-http_geoip_module) \
-		$(vopt_if stream "$stream_modules") \
-		$(vopt_if slice --with-http_slice_module)
-
+	./configure ${configure_args}
+	( cd ../njs-${_njs_version} && ./configure )
 }
 
 pre_build() {
 	if [ "$CROSS_BUILD" ]; then
+		mkdir -p ../njs-${_njs_version}/build
 		case "$XBPS_TARGET_MACHINE" in
-			arm*) cp "${FILESDIR}/ngx_auto_config.h.armv6l" objs/ngx_auto_config.h;;
-			aarch64*) cp "${FILESDIR}/ngx_auto_config.h.aarch64" objs/ngx_auto_config.h;;
+		arm*)
+			cp "${FILESDIR}/ngx_auto_config.h.armv6l" objs/ngx_auto_config.h
+			cp "${FILESDIR}/njs_auto_config.h.armv6l" ../njs-${_njs_version}/build/njs_auto_config.h
+			;;
+		aarch64*)
+			cp "${FILESDIR}/ngx_auto_config.h.aarch64" objs/ngx_auto_config.h
+			cp "${FILESDIR}/njs_auto_config.h.aarch64" ../njs-${_njs_version}/build/njs_auto_config.h
+			;;
 		esac
+
+		sed -i "s:-I/usr:-I${XBPS_CROSS_BASE}/usr:" objs/Makefile
 	fi
 
 	sed -i 's/-lcrypt/$(LDFLAGS) &/' objs/Makefile
+
+	export LD="$CC"
+
+	(
+		cd ../njs-${_njs_version}
+		make ${makejobs} NJS_CC="$CC" NJS_CFLAGS="$CFLAGS -fPIC" \
+			NJS_STATIC_LINK="$AR -r -c" NJS_LINK="$CC -O"
+	)
 }
 
 do_check() {
@@ -124,4 +156,60 @@ post_install() {
 
 	vlicense LICENSE
 	vsv nginx
+}
+
+nginx-mod-http-geoip_package() {
+	short_desc+=" - HTTP GeoIP module"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/nginx/modules/ngx_http_geoip_module.so
+	}
+}
+
+nginx-mod-http-js_package() {
+	short_desc+=" - HTTP njs module"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/nginx/modules/ngx_http_js_module.so
+	}
+}
+
+nginx-mod-http-perl_package() {
+	short_desc+=" - Perl module"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/nginx/modules/ngx_http_perl_module.so
+	}
+}
+
+nginx-mod-http-xslt-filter_package() {
+	short_desc+=" - XSLT filter module"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/nginx/modules/ngx_http_xslt_filter_module.so
+	}
+}
+
+nginx-mod-stream_package() {
+	short_desc+=" - Stream module"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/nginx/modules/ngx_stream_module.so
+	}
+}
+
+nginx-mod-stream-js_package() {
+	short_desc+=" - Stream njs module"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/nginx/modules/ngx_stream_js_module.so
+	}
+}
+
+nginx-mod-stream-geoip_package() {
+	short_desc+=" - Stream GeoIP module"
+	depends="${sourcepkg}>=${version}_${revision}"
+	pkg_install() {
+		vmove usr/lib/nginx/modules/ngx_stream_geoip_module.so
+	}
 }

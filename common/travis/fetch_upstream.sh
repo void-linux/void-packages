@@ -2,8 +2,6 @@
 #
 # changed_templates.sh
 
-PATH="/usr/libexec/chroot-git:$PATH"
-
 # required by git 2.35.2+
 git config --global --add safe.directory "$PWD"
 
