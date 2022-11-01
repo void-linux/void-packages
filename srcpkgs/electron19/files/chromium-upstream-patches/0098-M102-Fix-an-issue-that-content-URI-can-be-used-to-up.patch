@@ -1,0 +1,228 @@
+From 1e5fd85fa40c92fd64c9aa722af66c8d5e4cb9c5 Mon Sep 17 00:00:00 2001
+From: Min Qin <qinmin@chromium.org>
+Date: Sat, 16 Jul 2022 11:22:16 +0000
+Subject: [PATCH 098/110] [M102] Fix an issue that content URI can be used to
+ upload files under app dir
+
+BUG=1104628,1329987
+
+(cherry picked from commit c90687dab8ade225766bff9582d16d3fd80a9cd0)
+
+Change-Id: Ic20569b0bf2e77fdc4480bfba6db7c710198552e
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/3701011
+Reviewed-by: Tommy Nyquist <nyquist@chromium.org>
+Commit-Queue: Min Qin <qinmin@chromium.org>
+Reviewed-by: Finnur Thorarinsson <finnur@chromium.org>
+Cr-Original-Commit-Position: refs/heads/main@{#1015426}
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/3765372
+Owners-Override: Krishna Govind <govind@chromium.org>
+Reviewed-by: Krishna Govind <govind@chromium.org>
+Cr-Commit-Position: refs/branch-heads/5005@{#1257}
+Cr-Branched-From: 5b4d9450fee01f821b6400e947b3839727643a71-refs/heads/main@{#992738}
+---
+ .../chrome/browser/SelectFileDialogTest.java  | 37 ++++++++++++++++++-
+ .../chromium/ui/base/SelectFileDialog.java    | 36 ++++++++++++++++--
+ 2 files changed, 68 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/android/javatests/src/org/chromium/chrome/browser/SelectFileDialogTest.java b/chrome/android/javatests/src/org/chromium/chrome/browser/SelectFileDialogTest.java
+index f394b1178de3..36525c44065a 100644
+--- a/chrome/android/javatests/src/org/chromium/chrome/browser/SelectFileDialogTest.java
++++ b/chrome/android/javatests/src/org/chromium/chrome/browser/SelectFileDialogTest.java
+@@ -6,19 +6,23 @@ package org.chromium.chrome.browser;
+ 
+ import android.app.Activity;
+ import android.content.Intent;
++import android.net.Uri;
+ import android.os.Build;
+ import android.provider.MediaStore;
+ 
+ import androidx.annotation.RequiresApi;
++import androidx.core.content.ContextCompat;
+ import androidx.test.filters.MediumTest;
+ 
+ import org.hamcrest.Matchers;
++import org.junit.After;
+ import org.junit.Assert;
+ import org.junit.Before;
+ import org.junit.Rule;
+ import org.junit.Test;
+ import org.junit.runner.RunWith;
+ 
++import org.chromium.base.ContextUtils;
+ import org.chromium.base.test.util.CommandLineFlags;
+ import org.chromium.base.test.util.Criteria;
+ import org.chromium.base.test.util.CriteriaHelper;
+@@ -28,6 +32,7 @@ import org.chromium.base.test.util.UrlUtils;
+ import org.chromium.chrome.browser.flags.ChromeSwitches;
+ import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
+ import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
++import org.chromium.chrome.test.TestContentProvider;
+ import org.chromium.content_public.browser.WebContents;
+ import org.chromium.content_public.browser.test.util.DOMUtils;
+ import org.chromium.content_public.browser.test.util.TestThreadUtils;
+@@ -35,6 +40,8 @@ import org.chromium.ui.base.ActivityWindowAndroid;
+ import org.chromium.ui.base.IntentRequestTracker;
+ import org.chromium.ui.base.SelectFileDialog;
+ 
++import java.io.File;
++
+ /**
+  * Integration test for select file dialog used for <input type="file" />
+  */
+@@ -100,11 +107,16 @@ public class SelectFileDialogTest {
+ 
+             mWebContents = mActivityTestRule.getActivity().getCurrentWebContents();
+             // TODO(aurimas) remove this wait once crbug.com/179511 is fixed.
+-            mActivityTestRule.assertWaitForPageScaleFactorMatch(2);
++            // mActivityTestRule.assertWaitForPageScaleFactorMatch(2);
+         });
+         DOMUtils.waitForNonZeroNodeBounds(mWebContents, "input_file");
+     }
+ 
++    @After
++    public void tearDown() {
++        TestThreadUtils.runOnUiThreadBlocking(() -> { mActivityWindowAndroidForTest.destroy(); });
++    }
++
+     /**
+      * Tests that clicks on <input type="file" /> trigger intent calls to ActivityWindowAndroid.
+      */
+@@ -182,6 +194,29 @@ public class SelectFileDialogTest {
+         resetActivityWindowAndroidForTest();
+     }
+ 
++    /**
++     * Tests that content URI resolving to local app dir is checked correctly.
++     */
++    @Test
++    @MediumTest
++    @RequiresApi(Build.VERSION_CODES.O)
++    public void testIsContentUriUnderAppDir() throws Throwable {
++        File dataDir = ContextCompat.getDataDir(ContextUtils.getApplicationContext());
++        File childDir = new File(dataDir, "android");
++        childDir.mkdirs();
++        File temp = File.createTempFile("tmp", ".tmp", childDir);
++        temp.deleteOnExit();
++        TestContentProvider.resetResourceRequestCounts(ContextUtils.getApplicationContext());
++        TestContentProvider.setDataFilePath(
++                ContextUtils.getApplicationContext(), dataDir.getPath());
++        Assert.assertEquals(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O,
++                SelectFileDialog.isContentUriUnderAppDir(
++                        Uri.parse(TestContentProvider.createContentUrl(temp.getName())),
++                        ContextUtils.getApplicationContext()));
++        temp.delete();
++        childDir.delete();
++    }
++
+     private void resetActivityWindowAndroidForTest() {
+         TestThreadUtils.runOnUiThreadBlocking(
+                 ()
+diff --git a/ui/android/java/src/org/chromium/ui/base/SelectFileDialog.java b/ui/android/java/src/org/chromium/ui/base/SelectFileDialog.java
+index 1a02a90316aa..6ac136e0dbaa 100644
+--- a/ui/android/java/src/org/chromium/ui/base/SelectFileDialog.java
++++ b/ui/android/java/src/org/chromium/ui/base/SelectFileDialog.java
+@@ -15,12 +15,14 @@ import android.content.pm.PackageManager;
+ import android.database.Cursor;
+ import android.net.Uri;
+ import android.os.Build;
++import android.os.ParcelFileDescriptor;
+ import android.provider.MediaStore;
+ import android.text.TextUtils;
+ import android.webkit.MimeTypeMap;
+ 
+ import androidx.annotation.IntDef;
+ import androidx.annotation.Nullable;
++import androidx.annotation.RequiresApi;
+ import androidx.annotation.VisibleForTesting;
+ import androidx.core.content.ContextCompat;
+ 
+@@ -44,6 +46,9 @@ import org.chromium.ui.permissions.PermissionConstants;
+ 
+ import java.io.File;
+ import java.io.IOException;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.nio.file.Paths;
+ import java.util.ArrayList;
+ import java.util.Arrays;
+ import java.util.List;
+@@ -657,7 +662,7 @@ public class SelectFileDialog implements WindowAndroid.IntentCallback, PhotoPick
+         return photoFile;
+     }
+ 
+-    private static boolean isUnderAppDir(String path, Context context) {
++    private static boolean isPathUnderAppDir(String path, Context context) {
+         File file = new File(path);
+         File dataDir = ContextCompat.getDataDir(context);
+         try {
+@@ -669,6 +674,24 @@ public class SelectFileDialog implements WindowAndroid.IntentCallback, PhotoPick
+         }
+     }
+ 
++    @RequiresApi(Build.VERSION_CODES.O)
++    public static boolean isContentUriUnderAppDir(Uri uri, Context context) {
++        assert !ThreadUtils.runningOnUiThread();
++        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
++            return false;
++        }
++        try {
++            ParcelFileDescriptor pfd = context.getContentResolver().openFileDescriptor(uri, "r");
++            int fd = pfd.getFd();
++            // Use the file descriptor to find out the read file path thru symbolic link.
++            Path fdPath = Paths.get("/proc/self/fd/" + fd);
++            Path filePath = Files.readSymbolicLink(fdPath);
++            return isPathUnderAppDir(filePath.toString(), context);
++        } catch (Exception e) {
++            return false;
++        }
++    }
++
+     // WindowAndroid.IntentCallback:
+ 
+     /**
+@@ -700,7 +723,7 @@ public class SelectFileDialog implements WindowAndroid.IntentCallback, PhotoPick
+             String path = ContentResolver.SCHEME_FILE.equals(mCameraOutputUri.getScheme())
+                     ? mCameraOutputUri.getPath() : mCameraOutputUri.toString();
+ 
+-            if (!isUnderAppDir(mCameraOutputUri.getSchemeSpecificPart(),
++            if (!isPathUnderAppDir(mCameraOutputUri.getSchemeSpecificPart(),
+                         mWindowAndroid.getApplicationContext())) {
+                 onFileSelected(
+                         mNativeSelectFileDialog, path, mCameraOutputUri.getLastPathSegment());
+@@ -930,7 +953,7 @@ public class SelectFileDialog implements WindowAndroid.IntentCallback, PhotoPick
+         @Override
+         public Boolean doInBackground() {
+             // Don't allow invalid file path or files under app dir to be uploaded.
+-            return !isUnderAppDir(mFilePath, mContext)
++            return !isPathUnderAppDir(mFilePath, mContext)
+                     && !FileUtils.getAbsoluteFilePath(mFilePath).isEmpty();
+         }
+ 
+@@ -958,6 +981,7 @@ public class SelectFileDialog implements WindowAndroid.IntentCallback, PhotoPick
+         }
+ 
+         @Override
++        @SuppressLint("NewApi")
+         public String[] doInBackground() {
+             mFilePaths = new String[mUris.length];
+             String[] displayNames = new String[mUris.length];
+@@ -967,11 +991,15 @@ public class SelectFileDialog implements WindowAndroid.IntentCallback, PhotoPick
+                     // device was observed to return a file:// URI instead, so convert if necessary.
+                     // See https://crbug.com/752834 for context.
+                     if (ContentResolver.SCHEME_FILE.equals(mUris[i].getScheme())) {
+-                        if (isUnderAppDir(mUris[i].getSchemeSpecificPart(), mContext)) {
++                        if (isPathUnderAppDir(mUris[i].getSchemeSpecificPart(), mContext)) {
+                             return null;
+                         }
+                         mFilePaths[i] = mUris[i].getSchemeSpecificPart();
+                     } else {
++                        if (ContentResolver.SCHEME_CONTENT.equals(mUris[i].getScheme())
++                                && isContentUriUnderAppDir(mUris[i], mContext)) {
++                            return null;
++                        }
+                         mFilePaths[i] = mUris[i].toString();
+                     }
+ 
+-- 
+2.38.1
+

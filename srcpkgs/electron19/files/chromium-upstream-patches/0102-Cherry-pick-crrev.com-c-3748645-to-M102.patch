@@ -1,0 +1,110 @@
+From 46f18e778967900c595c8142deade138333c0a7c Mon Sep 17 00:00:00 2001
+From: Danil Somsikov <dsv@chromium.org>
+Date: Mon, 18 Jul 2022 15:54:30 +0000
+Subject: [PATCH 102/110] Cherry pick crrev.com/c/3748645 to M102
+
+Don't allow Page.navigate to file:// URLs for extensions w/o file system access.
+
+Bug: 1342104
+Change-Id: I6865fc86edb20e0e599e0f71335d9c614c23a69c
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/3762633
+Reviewed-by: Srinivas Sista <srinivassista@chromium.org>
+Commit-Queue: Srinivas Sista <srinivassista@chromium.org>
+Cr-Commit-Position: refs/branch-heads/5005@{#1261}
+Cr-Branched-From: 5b4d9450fee01f821b6400e947b3839727643a71-refs/heads/main@{#992738}
+---
+ .../api_test/debugger_file_access/background.js          | 7 +++++--
+ content/browser/devtools/protocol/page_handler.cc        | 9 ++++++++-
+ content/browser/devtools/protocol/page_handler.h         | 4 +++-
+ .../browser/devtools/render_frame_devtools_agent_host.cc | 3 ++-
+ 4 files changed, 18 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/test/data/extensions/api_test/debugger_file_access/background.js b/chrome/test/data/extensions/api_test/debugger_file_access/background.js
+index bebf2eb09874..7df7358af9fb 100644
+--- a/chrome/test/data/extensions/api_test/debugger_file_access/background.js
++++ b/chrome/test/data/extensions/api_test/debugger_file_access/background.js
+@@ -90,10 +90,13 @@ async function runNotAllowedTest(method, params, expectAllowed) {
+             responded = true;
+             if (expectFileAccess) {
+               chrome.test.assertNoLastError();
+-              chrome.tabs.remove(tabId);
+             } else {
+-              chrome.test.assertLastError('Detached while handling command.');
++              chrome.test.assertLastError(JSON.stringify({
++                code: -32000,
++                message: 'Navigating to local URL is not allowed'
++              }));
+             }
++            chrome.tabs.remove(tabId);
+           }
+ 
+           function onDetach(from, reason) {
+diff --git a/content/browser/devtools/protocol/page_handler.cc b/content/browser/devtools/protocol/page_handler.cc
+index f5c693722246..e29a45bba085 100644
+--- a/content/browser/devtools/protocol/page_handler.cc
++++ b/content/browser/devtools/protocol/page_handler.cc
+@@ -194,10 +194,12 @@ PageHandler::PageHandler(
+     EmulationHandler* emulation_handler,
+     BrowserHandler* browser_handler,
+     bool allow_unsafe_operations,
+-    absl::optional<url::Origin> navigation_initiator_origin)
++    absl::optional<url::Origin> navigation_initiator_origin,
++    bool may_read_local_files)
+     : DevToolsDomainHandler(Page::Metainfo::domainName),
+       allow_unsafe_operations_(allow_unsafe_operations),
+       navigation_initiator_origin_(navigation_initiator_origin),
++      may_read_local_files_(may_read_local_files),
+       enabled_(false),
+       screencast_enabled_(false),
+       screencast_quality_(kDefaultScreenshotQuality),
+@@ -466,6 +468,11 @@ void PageHandler::Navigate(const std::string& url,
+         Response::ServerError("Cannot navigate to invalid URL"));
+     return;
+   }
++  if (gurl.SchemeIsFile() && !may_read_local_files_) {
++    callback->sendFailure(
++        Response::ServerError("Navigating to local URL is not allowed"));
++    return;
++  }
+ 
+   if (!host_) {
+     callback->sendFailure(Response::InternalError());
+diff --git a/content/browser/devtools/protocol/page_handler.h b/content/browser/devtools/protocol/page_handler.h
+index d027329a897a..07f109521e34 100644
+--- a/content/browser/devtools/protocol/page_handler.h
++++ b/content/browser/devtools/protocol/page_handler.h
+@@ -65,7 +65,8 @@ class PageHandler : public DevToolsDomainHandler,
+   PageHandler(EmulationHandler* emulation_handler,
+               BrowserHandler* browser_handler,
+               bool allow_unsafe_operations,
+-              absl::optional<url::Origin> navigation_initiator_origin);
++              absl::optional<url::Origin> navigation_initiator_origin,
++              bool may_read_local_files);
+ 
+   PageHandler(const PageHandler&) = delete;
+   PageHandler& operator=(const PageHandler&) = delete;
+@@ -215,6 +216,7 @@ class PageHandler : public DevToolsDomainHandler,
+ 
+   const bool allow_unsafe_operations_;
+   const absl::optional<url::Origin> navigation_initiator_origin_;
++  const bool may_read_local_files_;
+ 
+   bool enabled_;
+   bool bypass_csp_ = false;
+diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
+index 3b210604b040..f21c7d0010b8 100644
+--- a/content/browser/devtools/render_frame_devtools_agent_host.cc
++++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
+@@ -354,7 +354,8 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session,
+   session->AddHandler(std::make_unique<protocol::PageHandler>(
+       emulation_handler_ptr, browser_handler_ptr,
+       session->GetClient()->AllowUnsafeOperations(),
+-      session->GetClient()->GetNavigationInitiatorOrigin()));
++      session->GetClient()->GetNavigationInitiatorOrigin(),
++      session->GetClient()->MayReadLocalFiles()));
+   session->AddHandler(std::make_unique<protocol::SecurityHandler>());
+   if (!frame_tree_node_ || !frame_tree_node_->parent()) {
+     session->AddHandler(
+-- 
+2.38.1
+

@@ -1,0 +1,262 @@
+From f72e4fe869b8e6b48b0d12f0691e169d7decba1c Mon Sep 17 00:00:00 2001
+From: Keren Zhu <kerenzhu@chromium.org>
+Date: Thu, 14 Jul 2022 22:32:19 +0000
+Subject: [PATCH 088/110] [M102] Reland "Fix UaF in media router dialog"
+
+This is a reland of commit 6bb25233f4fae8519b185d08e9ba4ad90c372e4f
+
+Some tests in the previous attempt failed because they were not waiting
+for the async dialog close event. Fix that.
+
+Original change's description:
+> Fix UaF in media router dialog
+>
+> Dialog cleanup was done in OnWidgetClosing(), which will not be called
+> if the dialog is destroyed by the platform. Use OnWidgetDestroying()
+> instead.
+>
+> Bug: 1308341, 1240365
+> Change-Id: Ifca4c2fdebc0947e0efdfffbf4f53f97855ada51
+> Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/3614727
+> Reviewed-by: Takumi Fujimoto <takumif@chromium.org>
+> Commit-Queue: Keren Zhu <kerenzhu@chromium.org>
+> Cr-Commit-Position: refs/heads/main@{#1001140}
+
+(cherry picked from commit 0cbff252e961eadb7b273155859ef989ff60d629)
+
+Bug: 1308341, 1240365
+Change-Id: I2e914a599e2f985371f37defa4129852e86ad214
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/3638233
+Reviewed-by: Takumi Fujimoto <takumif@chromium.org>
+Commit-Queue: Keren Zhu <kerenzhu@chromium.org>
+Cr-Original-Commit-Position: refs/heads/main@{#1003141}
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/3763508
+Reviewed-by: Mike Wasserman <msw@chromium.org>
+Auto-Submit: Keren Zhu <kerenzhu@chromium.org>
+Cr-Commit-Position: refs/branch-heads/5005@{#1247}
+Cr-Branched-From: 5b4d9450fee01f821b6400e947b3839727643a71-refs/heads/main@{#992738}
+---
+ .../toolbar/media_router_action_controller.cc |  4 +-
+ .../media_router_dialog_controller_views.cc   |  5 ++-
+ .../media_router_dialog_controller_views.h    |  2 +-
+ ...ter_dialog_controller_views_browsertest.cc | 26 +++++++++++
+ .../media_router_ui_browsertest.cc            | 43 ++++++++++++++-----
+ 5 files changed, 64 insertions(+), 16 deletions(-)
+
+diff --git a/chrome/browser/ui/toolbar/media_router_action_controller.cc b/chrome/browser/ui/toolbar/media_router_action_controller.cc
+index 6e1710956b9c..8419b19830bd 100644
+--- a/chrome/browser/ui/toolbar/media_router_action_controller.cc
++++ b/chrome/browser/ui/toolbar/media_router_action_controller.cc
+@@ -23,9 +23,7 @@ MediaRouterActionController::MediaRouterActionController(Profile* profile)
+           profile,
+           media_router::MediaRouterFactory::GetApiForBrowserContext(profile)) {}
+ 
+-MediaRouterActionController::~MediaRouterActionController() {
+-  DCHECK_EQ(dialog_count_, 0u);
+-}
++MediaRouterActionController::~MediaRouterActionController() = default;
+ 
+ // static
+ bool MediaRouterActionController::IsActionShownByPolicy(Profile* profile) {
+diff --git a/chrome/browser/ui/views/media_router/media_router_dialog_controller_views.cc b/chrome/browser/ui/views/media_router/media_router_dialog_controller_views.cc
+index a8470a600299..dbac30c8066e 100644
+--- a/chrome/browser/ui/views/media_router/media_router_dialog_controller_views.cc
++++ b/chrome/browser/ui/views/media_router/media_router_dialog_controller_views.cc
+@@ -104,14 +104,15 @@ bool MediaRouterDialogControllerViews::IsShowingMediaRouterDialog() const {
+ void MediaRouterDialogControllerViews::Reset() {
+   // If |ui_| is null, Reset() has already been called.
+   if (ui_) {
+-    if (IsShowingMediaRouterDialog() && GetActionController())
++    if (GetActionController())
+       GetActionController()->OnDialogHidden();
+     ui_.reset();
+     MediaRouterDialogController::Reset();
+   }
+ }
+ 
+-void MediaRouterDialogControllerViews::OnWidgetClosing(views::Widget* widget) {
++void MediaRouterDialogControllerViews::OnWidgetDestroying(
++    views::Widget* widget) {
+   DCHECK(scoped_widget_observations_.IsObservingSource(widget));
+   if (ui_)
+     ui_->LogMediaSinkStatus();
+diff --git a/chrome/browser/ui/views/media_router/media_router_dialog_controller_views.h b/chrome/browser/ui/views/media_router/media_router_dialog_controller_views.h
+index c28340cc0622..13dd210142cd 100644
+--- a/chrome/browser/ui/views/media_router/media_router_dialog_controller_views.h
++++ b/chrome/browser/ui/views/media_router/media_router_dialog_controller_views.h
+@@ -46,7 +46,7 @@ class MediaRouterDialogControllerViews
+   void Reset() override;
+ 
+   // views::WidgetObserver:
+-  void OnWidgetClosing(views::Widget* widget) override;
++  void OnWidgetDestroying(views::Widget* widget) override;
+ 
+   // Sets a callback to be called whenever a dialog is created.
+   void SetDialogCreationCallbackForTesting(base::RepeatingClosure callback);
+diff --git a/chrome/browser/ui/views/media_router/media_router_dialog_controller_views_browsertest.cc b/chrome/browser/ui/views/media_router/media_router_dialog_controller_views_browsertest.cc
+index 05b45e443e41..1b11f3bc7b6c 100644
+--- a/chrome/browser/ui/views/media_router/media_router_dialog_controller_views_browsertest.cc
++++ b/chrome/browser/ui/views/media_router/media_router_dialog_controller_views_browsertest.cc
+@@ -10,6 +10,7 @@
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/frame/top_container_view.h"
++#include "chrome/browser/ui/views/global_media_controls/media_dialog_view.h"
+ #include "chrome/browser/ui/views/media_router/cast_dialog_view.h"
+ #include "chrome/browser/ui/views/media_router/media_router_dialog_controller_views.h"
+ #include "chrome/test/base/in_process_browser_test.h"
+@@ -20,6 +21,8 @@
+ #include "content/public/test/browser_test.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "ui/base/page_transition_types.h"
++#include "ui/views/test/widget_test.h"
++#include "ui/views/widget/native_widget_private.h"
+ #include "ui/views/widget/widget.h"
+ 
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+@@ -51,6 +54,7 @@ class MediaRouterDialogControllerViewsTest : public InProcessBrowserTest {
+ 
+   void OpenMediaRouterDialog();
+   void CreateDialogController();
++  void CloseWebContents();
+ 
+  protected:
+   raw_ptr<WebContents> initiator_;
+@@ -76,6 +80,10 @@ void MediaRouterDialogControllerViewsTest::OpenMediaRouterDialog() {
+   ASSERT_TRUE(dialog_controller_->IsShowingMediaRouterDialog());
+ }
+ 
++void MediaRouterDialogControllerViewsTest::CloseWebContents() {
++  initiator_->Close();
++}
++
+ // Create/Get a media router dialog for initiator.
+ IN_PROC_BROWSER_TEST_F(MediaRouterDialogControllerViewsTest,
+                        OpenCloseMediaRouterDialog) {
+@@ -88,6 +96,24 @@ IN_PROC_BROWSER_TEST_F(MediaRouterDialogControllerViewsTest,
+   EXPECT_EQ(CastDialogView::GetCurrentDialogWidget(), nullptr);
+ }
+ 
++// Regression test for crbug.com/1308341.
++IN_PROC_BROWSER_TEST_F(MediaRouterDialogControllerViewsTest,
++                       MediaBubbleClosedByPlatform) {
++  OpenMediaRouterDialog();
++  base::RunLoop().RunUntilIdle();
++  views::Widget* widget = CastDialogView::GetCurrentDialogWidget();
++  ASSERT_TRUE(widget);
++  EXPECT_TRUE(widget->HasObserver(dialog_controller_));
++  // The media bubble usually will close itself on deactivation, but
++  // crbug.com/1308341 shows a state where the browser is not responsive
++  // to activation change. Simulate that.
++  CastDialogView::GetInstance()->set_close_on_deactivate(false);
++  views::test::WidgetDestroyedWaiter waiter(widget);
++  widget->native_widget_private()->Close();
++  waiter.Wait();
++  CloseWebContents();
++}
++
+ // The feature |media_router::kGlobalMediaControlsCastStartStop| is supported
+ // on MAC, Linux and Windows only.
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+diff --git a/chrome/browser/ui/views/media_router/media_router_ui_browsertest.cc b/chrome/browser/ui/views/media_router/media_router_ui_browsertest.cc
+index f699e5160b62..fe0b3a17b45e 100644
+--- a/chrome/browser/ui/views/media_router/media_router_ui_browsertest.cc
++++ b/chrome/browser/ui/views/media_router/media_router_ui_browsertest.cc
+@@ -19,6 +19,7 @@
+ #include "chrome/browser/ui/toolbar/media_router_action_controller.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/media_router/app_menu_test_api.h"
++#include "chrome/browser/ui/views/media_router/cast_dialog_view.h"
+ #include "chrome/browser/ui/views/media_router/cast_toolbar_button.h"
+ #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+ #include "chrome/common/url_constants.h"
+@@ -34,6 +35,7 @@
+ #include "content/public/test/test_utils.h"
+ #include "ui/base/ui_base_features.h"
+ #include "ui/events/base_event_utils.h"
++#include "ui/views/test/widget_test.h"
+ #include "ui/views/widget/widget.h"
+ 
+ namespace media_router {
+@@ -117,7 +119,10 @@ IN_PROC_BROWSER_TEST_F(MediaRouterUIBrowserTest, OpenDialogFromContextMenu) {
+   menu.ExecuteCommand(IDC_ROUTE_MEDIA, 0);
+   EXPECT_TRUE(dialog_controller->IsShowingMediaRouterDialog());
+ 
++  views::test::WidgetDestroyedWaiter waiter(
++      CastDialogView::GetCurrentDialogWidget());
+   dialog_controller->HideMediaRouterDialog();
++  waiter.Wait();
+   EXPECT_FALSE(dialog_controller->IsShowingMediaRouterDialog());
+ }
+ 
+@@ -134,8 +139,11 @@ IN_PROC_BROWSER_TEST_F(MediaRouterUIBrowserTest, OpenDialogFromAppMenu) {
+   app_menu_test_api->ExecuteCommand(IDC_ROUTE_MEDIA);
+   EXPECT_TRUE(dialog_controller->IsShowingMediaRouterDialog());
+ 
++  views::test::WidgetDestroyedWaiter waiter(
++      CastDialogView::GetCurrentDialogWidget());
+   dialog_controller->HideMediaRouterDialog();
+   EXPECT_FALSE(dialog_controller->IsShowingMediaRouterDialog());
++  waiter.Wait();
+ }
+ 
+ // TODO(crbug.com/1004635) Disabled on Linux due to flakiness.
+@@ -157,8 +165,12 @@ IN_PROC_BROWSER_TEST_F(MediaRouterUIBrowserTest,
+ 
+   dialog_controller->ShowMediaRouterDialog(MediaRouterDialogOpenOrigin::PAGE);
+   EXPECT_TRUE(ToolbarIconExists());
++
++  views::test::WidgetDestroyedWaiter waiter(
++      CastDialogView::GetCurrentDialogWidget());
+   // Clicking on the toolbar icon should hide both the dialog and the icon.
+   PressToolbarIcon();
++  waiter.Wait();
+   EXPECT_FALSE(dialog_controller->IsShowingMediaRouterDialog());
+   EXPECT_FALSE(ToolbarIconExists());
+ 
+@@ -252,21 +264,32 @@ IN_PROC_BROWSER_TEST_F(MediaRouterUIBrowserTest,
+   EXPECT_TRUE(dialog_controller->IsShowingMediaRouterDialog());
+ 
+   // Reload the browser and wait.
+-  content::TestNavigationObserver reload_observer(
+-      browser()->tab_strip_model()->GetActiveWebContents());
+-  chrome::Reload(browser(), WindowOpenDisposition::CURRENT_TAB);
+-  reload_observer.Wait();
++  {
++    views::test::WidgetDestroyedWaiter waiter(
++        CastDialogView::GetCurrentDialogWidget());
++    content::TestNavigationObserver reload_observer(
++        browser()->tab_strip_model()->GetActiveWebContents());
++    chrome::Reload(browser(), WindowOpenDisposition::CURRENT_TAB);
++    reload_observer.Wait();
++
++    waiter.Wait();
++    // The reload should have closed the dialog.
++    EXPECT_FALSE(dialog_controller->IsShowingMediaRouterDialog());
++  }
+ 
+-  // The reload should have closed the dialog.
+-  EXPECT_FALSE(dialog_controller->IsShowingMediaRouterDialog());
+   PressToolbarIcon();
+   EXPECT_TRUE(dialog_controller->IsShowingMediaRouterDialog());
+ 
+-  // Navigate away.
+-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
++  {
++    views::test::WidgetDestroyedWaiter waiter(
++        CastDialogView::GetCurrentDialogWidget());
++    // Navigate away.
++    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
+ 
+-  // The navigation should have closed the dialog.
+-  EXPECT_FALSE(dialog_controller->IsShowingMediaRouterDialog());
++    // The navigation should have closed the dialog.
++    waiter.Wait();
++    EXPECT_FALSE(dialog_controller->IsShowingMediaRouterDialog());
++  }
+   SetAlwaysShowActionPref(false);
+ }
+ 
+-- 
+2.38.1
+
