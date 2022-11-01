@@ -103,6 +103,11 @@ hook() {
 		error=1
 	fi
 
+	if [ -d ${PKGDESTDIR}/usr/usr ]; then
+		msg_red "${pkgver}: /usr/usr is forbidden, use /usr.\n"
+		error=1
+	fi
+
 	if [ -d ${PKGDESTDIR}/usr/man ]; then
 		msg_red "${pkgver}: /usr/man is forbidden, use /usr/share/man.\n"
 		error=1
