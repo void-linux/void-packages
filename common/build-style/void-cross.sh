@@ -53,6 +53,7 @@ _void_cross_build_binutils() {
 		--sbindir=/usr/bin \
 		--libdir=/usr/lib \
 		--libexecdir=/usr/lib \
+		--sysconfdir=/etc \
 		--target=${tgt} \
 		--with-sysroot=/usr/${tgt} \
 		--disable-nls \
@@ -60,7 +61,9 @@ _void_cross_build_binutils() {
 		--disable-multilib \
 		--disable-werror \
 		--disable-gold \
+		--disable-gprofng \
 		--enable-relro \
+		--enable-new-dtags \
 		--enable-plugins \
 		--enable-64-bit-bfd \
 		--enable-deterministic-archives \
@@ -132,6 +135,7 @@ _void_cross_build_bootstrap_gcc() {
 		--disable-libssp \
 		--disable-libitm \
 		--disable-libatomic \
+		--disable-gcov \
 		--disable-threads \
 		--disable-sjlj-exceptions \
 		--enable-languages=c \
@@ -381,6 +385,7 @@ _void_cross_build_gcc() {
 		extra_args+=" --disable-gnu-unique-object"
 		extra_args+=" libat_cv_have_ifunc=no"
 	else
+		extra_args+=" --enable-clocale=gnu"
 		extra_args+=" --enable-gnu-unique-object"
 	fi
 
@@ -459,6 +464,14 @@ do_build() {
 
 	local binutils_ver linux_ver gcc_ver libc_ver libucontext_ver
 	local tgt=${sourcepkg/cross-}
+
+	export CFLAGS="${CFLAGS/-D_FORTIFY_SOURCE=2/}"
+	export CXXFLAGS="${CXXFLAGS/-D_FORTIFY_SOURCE=2/}"
+
+	# Disable explicit -fno-PIE, gcc/binutils/libc will figure this out itself.
+	export CFLAGS="${CFLAGS//-fno-PIE/}"
+	export CXXFLAGS="${CXXFLAGS//-fno-PIE/}"
+	export LDFLAGS="${LDFLAGS//-no-pie/}"
 
 	_void_cross_test_ver binutils
 	_void_cross_test_ver linux
@@ -624,6 +637,9 @@ do_install() {
 	# If libquadmath was forced (needed for gfortran on some platforms)
 	# then remove it because it conflicts with libquadmath package
 	rm -rf ${DESTDIR}/${sysroot}/usr/lib/libquadmath.*
+
+	# Remove libdep linker plugin because it conflicts with system binutils
+	rm -f ${DESTDIR}/usr/lib/bfd-plugins/libdep*
 
 	# Remove leftover symlinks
 	rm -f ${DESTDIR}/usr/lib${XBPS_TARGET_WORDSIZE}
