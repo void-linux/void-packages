@@ -1,0 +1,175 @@
+# Template file for 'beaglebone-kernel'
+#
+_bonever=bone68
+
+pkgname=beaglebone-kernel
+version=3.8.13
+revision=1
+maintainer="Orphaned <orphan@voidlinux.org>"
+homepage="http://www.kernel.org"
+license="GPL-2"
+short_desc="Linux kernel for the BeagleBone (${version%.*} series)"
+distfiles="
+ http://www.kernel.org/pub/linux/kernel/v3.x/linux-${version}.tar.xz
+ http://rcn-ee.net/deb/sid-armhf/v${version}-${_bonever}/patch-${version}-${_bonever}.diff.gz"
+checksum="
+ 7cd135cc1791680553cc40bf23ce11ab24b84a3ece33d810950e089090d4f65f
+ 5513a392ce87c8878d5a304cfda2d9f3753e01d5aefc1d47868de6350a2015bb"
+
+create_wrksrc=yes
+build_wrksrc="linux-${version}"
+_kernver="${version}_${revision}"
+
+nostrip=yes
+noverifyrdeps=yes
+archs="armv7l*"
+hostmakedepends="git perl kmod uboot-mkimage openssl bc"
+makedepends="ncurses-devel"
+triggers="kernel-hooks"
+# These files could be modified when an external module is built.
+mutable_files="
+	/usr/lib/modules/${_kernver}/modules.dep
+	/usr/lib/modules/${_kernver}/modules.dep.bin
+	/usr/lib/modules/${_kernver}/modules.symbols
+	/usr/lib/modules/${_kernver}/modules.symbols.bin
+	/usr/lib/modules/${_kernver}/modules.alias
+	/usr/lib/modules/${_kernver}/modules.alias.bin
+	/usr/lib/modules/${_kernver}/modules.devname"
+
+pre_configure() {
+	git apply ${wrksrc}/patch-${version}-${_bonever}.diff
+}
+do_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+
+	unset LDFLAGS
+	if [ -f ${FILESDIR}/config ]; then
+		cp ${FILESDIR}/config .config
+		make ${makejobs} ${_args} ARCH=arm oldconfig
+	else
+		# Use upstream default configuration, too huge!
+		make ${makejobs} ${_args} ARCH=arm multi_v7_defconfig
+	fi
+
+	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
+	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"_${revision}\"|" .config
+}
+do_build() {
+	if [ "$CROSS_BUILD" ]; then
+		_args="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+	fi
+	unset LDFLAGS
+	make ${makejobs} ${_args} ARCH=arm prepare
+	make ${makejobs} ${_args} ARCH=arm zImage modules dtbs
+}
+do_install() {
+	local hdrdest
+
+	# Run depmod after compressing modules.
+	sed -i '2iexit 0' scripts/depmod.sh
+
+	# Install kernel, firmware and modules
+	make ARCH=arm INSTALL_MOD_PATH=${DESTDIR} modules_install
+
+	vmkdir boot/dtbs
+	vinstall arch/arm/boot/zImage 644 boot
+	cp arch/arm/boot/dts/*.dtb ${DESTDIR}/boot/dtbs
+
+	hdrdest=${DESTDIR}/usr/src/${sourcepkg}-kernel-headers-${_kernver}
+
+	# Switch to /usr.
+	vmkdir usr
+	mv ${DESTDIR}/lib ${DESTDIR}/usr
+
+	cd ${DESTDIR}/usr/lib/modules/${_kernver}
+	rm -f source build
+	ln -sf ../../../src/${sourcepkg}-headers-${_kernver} build
+
+	cd ${wrksrc}/${build_wrksrc}
+
+	# Remove firmware stuff provided by the "linux-firmware" pkg.
+	rm -rf ${DESTDIR}/usr/lib/firmware/*
+	# copy beaglebone cape dtbo's
+	cp firmware/*.dtbo ${DESTDIR}/usr/lib/firmware
+
+	mkdir -p ${hdrdest}/include
+	for i in acpi asm-generic config crypto drm generated linux math-emu \
+		media net pcmcia scsi sound trace video xen; do
+		[ -d include/$i ] && cp -a include/$i ${hdrdest}/include
+	done
+
+	# Copy files necessary for later builds.
+	cp Module.symvers ${hdrdest}
+	cp -a scripts ${hdrdest}
+
+	# fix permissions on scripts dir
+	chmod og-w -R ${hdrdest}/scripts
+
+	# copy arch includes for external modules
+	mkdir -p ${hdrdest}/arch/arm/mach-omap2
+	mkdir -p ${hdrdest}/arch/arm/plat-omap
+
+	cp -a arch/arm/include ${hdrdest}/arch/arm
+	cp -a arch/arm/mach-omap2/include ${hdrdest}/arch/arm/mach-omap2
+	cp -a arch/arm/plat-omap/include ${hdrdest}/arch/arm/plat-omap
+
+	mkdir -p ${hdrdest}/arch/arm/kernel
+
+	cp arch/arm/Makefile ${hdrdest}/arch/arm
+	if [ "$MACHINE_ARCH" = "i686" ]; then
+		cp arch/arm/Makefile_32.cpu ${hdrdest}/arch/arm
+	fi
+	cp arch/arm/kernel/asm-offsets.s ${hdrdest}/arch/arm/kernel
+
+	# Add docbook makefile
+	install -Dm644 Documentation/DocBook/Makefile \
+		${hdrdest}/Documentation/DocBook/Makefile
+
+	# Add md headers
+	mkdir -p ${hdrdest}/drivers/md
+	cp drivers/md/*.h ${hdrdest}/drivers/md
+
+	# Add inotify.h
+	mkdir -p ${hdrdest}/include/linux
+	cp include/linux/inotify.h ${hdrdest}/include/linux
+
+	# Add wireless headers
+	mkdir -p ${hdrdest}/net/mac80211/
+	cp net/mac80211/*.h ${hdrdest}/net/mac80211
+
+	# add dvb headers for external modules
+	mkdir -p ${hdrdest}/include/config/dvb/
+	cp include/config/dvb/*.h ${hdrdest}/include/config/dvb/
+
+	# Copy in Kconfig files
+	for i in $(find . -name "Kconfig*"); do
+		mkdir -p ${hdrdest}/$(echo $i | sed 's|/Kconfig.*||')
+		cp $i ${hdrdest}/$i
+	done
+
+	# Remove unneeded architectures
+	for arch in alpha arm26 avr32 blackfin cris frv h8300 \
+		ia64 m* p* s* um v850 x86 xtensa; do
+		rm -rf ${hdrdest}/arch/${arch}
+	done
+
+	# Compress all modules with xz to save a few MBs.
+	msg_normal "$pkgver: compressing kernel modules with gzip, please wait...\n"
+	find ${DESTDIR} -name '*.ko' -exec gzip -9 {} \;
+
+	# ... and run depmod again.
+	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
+}
+
+beaglebone-kernel-headers_package() {
+	nostrip=yes
+	noverifyrdeps=yes
+	short_desc="Linux kernel headers for the BeagleBone (${version%.*} series)"
+	pkg_install() {
+		vmove usr/src
+		vmove usr/lib/modules/${_kernver}/build
+	}
+}
+

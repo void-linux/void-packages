@@ -1,0 +1,427 @@
+From 9feec282d039ca25bbefa50710f8217b775ce111 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Thu, 3 Mar 2022 14:47:00 -0300
+Subject: gap: do not directly dlopen() the gap library
+
+This needs the soname (as in sage.env.GAP_SO) which has issues for
+system gap as explained in #33446.
+
+Instead we dlopen() the extension module sage.libs.gap.util which,
+having a link time dependency to libgap, will indirectly dlopen() it.
+
+For the record: by the time we run dlopen() the libgap should be already
+loaded. The purpose of doing it is to change mode to RTLD_GLOBAL so that
+symbols in libgap are placed in the global symbol table. This is
+required to compiled load gap packages.
+
+An easy test that this is working ok is:
+
+    sage: libgap.LoadPackage("io")
+    true
+
+This requires optional spkg `gap_packages` to be installed.
+---
+ src/sage/libs/gap/util.pyx | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/src/sage/libs/gap/util.pyx b/src/sage/libs/gap/util.pyx
+index 344ab88..aff604b 100644
+--- a/src/sage/libs/gap/util.pyx
++++ b/src/sage/libs/gap/util.pyx
+@@ -13,7 +13,7 @@ Utility functions for GAP
+ #*****************************************************************************
+ 
+ from libc.signal cimport signal, SIGCHLD, SIG_DFL
+-from posix.dlfcn cimport dlopen, dlclose, RTLD_NOW, RTLD_GLOBAL
++from posix.dlfcn cimport dlopen, dlclose, dlerror, RTLD_LAZY, RTLD_GLOBAL
+ 
+ from cpython.exc cimport PyErr_Fetch, PyErr_Restore
+ from cpython.object cimport Py_LT, Py_LE, Py_EQ, Py_NE, Py_GT, Py_GE
+@@ -232,12 +232,12 @@ cdef initialize():
+     # this isn't portable
+ 
+     cdef void* handle
+-    libgapname = str_to_bytes(sage.env.GAP_SO)
+-    handle = dlopen(libgapname, RTLD_NOW | RTLD_GLOBAL)
++    # reload the current module to force reload of libgap (see #33446)
++    lib = str_to_bytes(__loader__.path, FS_ENCODING, "surrogateescape")
++    handle = dlopen(lib, RTLD_GLOBAL|RTLD_LAZY)
+     if handle is NULL:
+-        raise RuntimeError(
+-                "Could not dlopen() libgap even though it should already "
+-                "be loaded!")
++        err = dlerror()
++        raise RuntimeError(f"Could not reload gap library with RTLD_GLOBAL ({err})")
+     dlclose(handle)
+ 
+     # Define argv variable, which we will pass in to
+-- 
+cgit v1.0-1-gd88e
+
+
+From 704a7953b97ab726e2af610724726aa562bc8bf8 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Thu, 3 Mar 2022 23:00:07 -0300
+Subject: singular: do not directly dlopen() the singular library
+
+Same as for gap in the previous commit. Instead of requiring the soname
+(as in sage.env.LIBSINGULAR_PATH) we dlopen() the extension module
+sage.libs.singular.singular which will indirectly dlopen() libSingular.
+---
+ src/sage/libs/singular/singular.pyx | 15 ++++-----------
+ 1 file changed, 4 insertions(+), 11 deletions(-)
+
+diff --git a/src/sage/libs/singular/singular.pyx b/src/sage/libs/singular/singular.pyx
+index d8ea7b0..4beb177 100644
+--- a/src/sage/libs/singular/singular.pyx
++++ b/src/sage/libs/singular/singular.pyx
+@@ -1705,14 +1705,7 @@ cdef object si2sa_intvec(intvec *v):
+ cdef extern from *: # hack to get at cython macro
+     int unlikely(int)
+ 
+-cdef extern from "dlfcn.h":
+-    void *dlopen(char *, long)
+-    char *dlerror()
+-    void dlclose(void *handle)
+-
+-cdef extern from "dlfcn.h":
+-    cdef long RTLD_LAZY
+-    cdef long RTLD_GLOBAL
++from posix.dlfcn cimport dlopen, dlclose, dlerror, RTLD_LAZY, RTLD_GLOBAL
+ 
+ cdef int overflow_check(unsigned long e, ring *_ring) except -1:
+     """
+@@ -1762,8 +1755,6 @@ cdef init_libsingular():
+ 
+     cdef void *handle = NULL
+ 
+-    from sage.env import LIBSINGULAR_PATH
+-    lib = str_to_bytes(LIBSINGULAR_PATH, FS_ENCODING, "surrogateescape")
+ 
+     # This is a workaround for https://github.com/Singular/Singular/issues/1113
+     # and can be removed once that fix makes it into release of Singular that
+@@ -1780,10 +1771,12 @@ cdef init_libsingular():
+ 
+     import platform
+     if not platform.system().startswith("CYGWIN"):
++        # reload the current module to force reload of libSingular (see #33446)
++        lib = str_to_bytes(__loader__.path, FS_ENCODING, "surrogateescape")
+         handle = dlopen(lib, RTLD_GLOBAL|RTLD_LAZY)
+         if not handle:
+             err = dlerror()
+-            raise ImportError(f"cannot load Singular library from {LIBSINGULAR_PATH} ({err})")
++            raise RuntimeError(f"Could not reload Singular library with RTLD_GLOBAL ({err})")
+ 
+     # load SINGULAR
+     siInit(lib)
+-- 
+cgit v1.0-1-gd88e
+
+
+From d7145c14ef58acfbe00d8f941d2802e96ad4ba15 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Fri, 4 Mar 2022 16:37:34 -0300
+Subject: singular: remove LIBSINGULAR_PATH, no longer needed
+
+---
+ build/pkgs/singular/spkg-configure.m4 | 63 +----------------------------------
+ pkgs/sage-conf/_sage_conf/_conf.py.in |  3 --
+ src/sage/env.py                       |  6 ----
+ 3 files changed, 1 insertion(+), 71 deletions(-)
+
+diff --git a/build/pkgs/singular/spkg-configure.m4 b/build/pkgs/singular/spkg-configure.m4
+index af2eb85..6d3d3da 100644
+--- a/build/pkgs/singular/spkg-configure.m4
++++ b/build/pkgs/singular/spkg-configure.m4
+@@ -9,52 +9,7 @@ SAGE_SPKG_CONFIGURE([singular], [
+        AC_MSG_CHECKING([that Singular's help is working])
+        AS_IF([test x`printf "system(\"--browser\", \"builtin\"); \n help;" | Singular 2>&1 | grep "error\ occurred"` = x], [
+         AC_MSG_RESULT(yes)
+-        dnl We have Singular. Now determine the shared library path on
+-        dnl platforms on which sage.libs.singular needs to reload the library with RTLD_GLOBAL.
+-        AS_CASE([$host_os],
+-          [cygwin*], [dnl Nothing to do
+-                     ],
+-                     [dnl Use pkg-config to get singular's libdir while we're at it. As a
+-                      dnl moral compromise for using pkg-config, this ultimately allows us
+-                      dnl to pass an absolute path to dlopen(), which is the only approach
+-                      dnl that POSIX guarantees will work.
+-                      PKG_CHECK_VAR([SINGULAR_LIB_DIR], [Singular], [libdir])
+-                      dnl The acl_shlibext variable is set in the top-level configure.ac.
+-                      AC_LANG_PUSH(C)
+-                      ORIG_LIBS="${LIBS}"
+-                      LIBS="${LIBS} -ldl"
+-                      AC_MSG_CHECKING([if we can dlopen($LIBSINGULAR_PATH)])
+-                      LIBSINGULAR_PATH="${SINGULAR_LIB_DIR}/libSingular.${acl_shlibext}"
+-
+-                      dnl if we can dlopen() it, substitute the name for sage_conf;
+-                      dnl otherwise, fall back to using the SPKG.
+-                      AC_RUN_IFELSE(
+-                        [AC_LANG_PROGRAM(
+-                          [[#include <dlfcn.h>]],
+-                          [[void* h = dlopen("${LIBSINGULAR_PATH}", RTLD_LAZY | RTLD_GLOBAL);
+-                            if (h == 0) { return 1; } else { return dlclose(h); }]]
+-                        )], [
+-                          AC_MSG_RESULT(yes)
+-                        ], [
+-                          dnl try Debian-specific name
+-                          LIBSINGULAR_PATH="${SINGULAR_LIB_DIR}/libsingular-Singular.${acl_shlibext}"
+-                          AC_RUN_IFELSE(
+-                           [AC_LANG_PROGRAM(
+-                             [[#include <dlfcn.h>]],
+-                             [[void* h = dlopen("${LIBSINGULAR_PATH}", RTLD_LAZY | RTLD_GLOBAL);
+-                               if (h == 0) { return 1; } else { return dlclose(h); }]]
+-                           )], [
+-                             AC_MSG_RESULT(yes)
+-                           ], [
+-                            AC_MSG_RESULT(no)
+-                            sage_spkg_install_singular=yes
+-                          ], [AC_MSG_RESULT(yes)])
+-                        ], [AC_MSG_RESULT(yes)])
+-
+-                      AC_LANG_POP()
+-                      LIBS="${ORIG_LIBS}"
+-                     ]
+-       )], [
++       ], [
+        AC_MSG_RESULT(no)
+        sage_spkg_install_singular=yes
+        ]
+@@ -64,20 +19,4 @@ SAGE_SPKG_CONFIGURE([singular], [
+       ])
+     ])
+   ])
+-],[],[],[
+-  dnl Post-check phase
+-  dnl We make the sage_conf substitutions here, because the "default"
+-  dnl substitution needs to be made even if we skipped the system-Singular
+-  dnl checks themselves.
+-  AS_IF([test "x${sage_spkg_install_singular}" = "xyes"], [
+-    AS_CASE([$host_os],
+-      [cygwin*], [dnl Nothing to do
+-                 ],
+-                 [dnl Set shared library path, needed for reloading the library with RTLD_GLOBAL
+-                  LIBSINGULAR_PATH="\$SAGE_LOCAL/lib/libSingular.${acl_shlibext}"
+-                 ]
+-    )
+-  ])
+-
+-  AC_SUBST(LIBSINGULAR_PATH, "${LIBSINGULAR_PATH}")
+ ])
+diff --git a/pkgs/sage-conf/_sage_conf/_conf.py.in b/pkgs/sage-conf/_sage_conf/_conf.py.in
+index 6cd28f5..d66bdb3 100644
+--- a/pkgs/sage-conf/_sage_conf/_conf.py.in
++++ b/pkgs/sage-conf/_sage_conf/_conf.py.in
+@@ -55,9 +55,6 @@ THREEJS_DIR = SAGE_LOCAL + "/share/threejs-sage"
+ OPENMP_CFLAGS = "@OPENMP_CFLAGS@"
+ OPENMP_CXXFLAGS = "@OPENMP_CXXFLAGS@"
+ 
+-# The full absolute path to the main Singular library.
+-LIBSINGULAR_PATH = "@LIBSINGULAR_PATH@".replace('$SAGE_LOCAL', SAGE_LOCAL)
+-
+ # Installation location of wheels. This is determined at configuration time
+ # and does not depend on the installation location of sage-conf.
+ SAGE_SPKG_WHEELS = "@SAGE_VENV@".replace('${SAGE_LOCAL}', SAGE_LOCAL) + "/var/lib/sage/wheels"
+diff --git a/src/sage/env.py b/src/sage/env.py
+index 911f34b..93f79de 100644
+--- a/src/sage/env.py
++++ b/src/sage/env.py
+@@ -229,12 +229,6 @@ NTL_LIBDIR = var("NTL_LIBDIR")
+ LIE_INFO_DIR = var("LIE_INFO_DIR", join(SAGE_LOCAL, "lib", "LiE"))
+ SINGULAR_BIN = var("SINGULAR_BIN") or "Singular"
+ 
+-# The path to libSingular, to be passed to dlopen(). This will
+-# typically be set to an absolute path in sage_conf, but the relative
+-# fallback path here works on systems where dlopen() searches the
+-# system's library locations.
+-LIBSINGULAR_PATH = var("LIBSINGULAR_PATH", "libSingular.so")
+-
+ # OpenMP
+ OPENMP_CFLAGS = var("OPENMP_CFLAGS", "")
+ OPENMP_CXXFLAGS = var("OPENMP_CXXFLAGS", "")
+-- 
+cgit v1.0-1-gd88e
+
+
+From 92e5a211c792f86f5325d601abfddf667da6a776 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Fri, 4 Mar 2022 15:49:26 -0300
+Subject: Revert "src/sage/interfaces/gap_workspace.py: Use hash of GAP_SO to
+ disambiguate the workspace file, not SAGE_LOCAL"
+
+This reverts commit a801e6d85bd420b60ea75b1671856eb43ac6b18b.
+
+See #33446.
+---
+ src/sage/interfaces/gap_workspace.py | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/src/sage/interfaces/gap_workspace.py b/src/sage/interfaces/gap_workspace.py
+index 33a87dd..953dc85 100644
+--- a/src/sage/interfaces/gap_workspace.py
++++ b/src/sage/interfaces/gap_workspace.py
+@@ -16,7 +16,7 @@ Support for (lib)GAP workspace files
+ import os
+ import time
+ import hashlib
+-from sage.env import DOT_SAGE, GAP_SO
++from sage.env import DOT_SAGE, SAGE_LOCAL
+ 
+ 
+ def gap_workspace_file(system="gap", name="workspace", dir=None):
+@@ -59,10 +59,7 @@ def gap_workspace_file(system="gap", name="workspace", dir=None):
+     if dir is None:
+         dir = os.path.join(DOT_SAGE, 'gap')
+ 
+-    if GAP_SO:
+-        h = hashlib.sha1(GAP_SO.encode('utf-8')).hexdigest()
+-    else:
+-        h = 'unknown'
++    h = hashlib.sha1(SAGE_LOCAL.encode('utf-8')).hexdigest()
+     return os.path.join(dir, '%s-%s-%s' % (system, name, h))
+ 
+ 
+-- 
+cgit v1.0-1-gd88e
+
+
+From b45e555b5711ae10d369b568333940c2aa771053 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Fri, 4 Mar 2022 16:38:49 -0300
+Subject: gap: remove GAP_SO, no longer needed
+
+---
+ src/sage/env.py | 75 ---------------------------------------------------------
+ 1 file changed, 75 deletions(-)
+
+diff --git a/src/sage/env.py b/src/sage/env.py
+index 93f79de..c16a094 100644
+--- a/src/sage/env.py
++++ b/src/sage/env.py
+@@ -249,81 +249,6 @@ if SAGE_GAP_MEMORY is not None:
+ SAGE_GAP_COMMAND = var('SAGE_GAP_COMMAND', _gap_cmd)
+ 
+ 
+-def _get_shared_lib_path(*libnames: str) -> Optional[str]:
+-    """
+-    Return the full path to a shared library file installed in
+-    ``$SAGE_LOCAL/lib`` or the directories associated with the
+-    Python sysconfig.
+-
+-    This can also be passed more than one library name (e.g. for cases where
+-    some library may have multiple names depending on the platform) in which
+-    case the first one found is returned.
+-
+-    This supports most *NIX variants (in which ``lib<libname>.so`` is found
+-    under ``$SAGE_LOCAL/lib``), macOS (same, but with the ``.dylib``
+-    extension), and Cygwin (under ``$SAGE_LOCAL/bin/cyg<libname>.dll``,
+-    or ``$SAGE_LOCAL/bin/cyg<libname>-*.dll`` for versioned DLLs).
+-
+-    For distributions like Debian that use a multiarch layout, we also try the
+-    multiarch lib paths (i.e. ``/usr/lib/<arch>/``).
+-
+-    This returns ``None`` if no matching library file could be found.
+-
+-    EXAMPLES::
+-
+-        sage: from sage.env import _get_shared_lib_path
+-        sage: "gap" in _get_shared_lib_path("gap")
+-        True
+-        sage: _get_shared_lib_path("an_absurd_lib") is None
+-        True
+-
+-    """
+-
+-    for libname in libnames:
+-        search_directories: List[Path] = []
+-        patterns: List[str] = []
+-        if sys.platform == 'cygwin':
+-            # Later down we take the first matching DLL found, so search
+-            # SAGE_LOCAL first so that it takes precedence
+-            if SAGE_LOCAL:
+-                search_directories.append(Path(SAGE_LOCAL) / 'bin')
+-            search_directories.append(Path(sysconfig.get_config_var('BINDIR')))
+-            # Note: The following is not very robust, since if there are multible
+-            # versions for the same library this just selects one more or less
+-            # at arbitrary. However, practically speaking, on Cygwin, there
+-            # will only ever be one version
+-            patterns = [f'cyg{libname}.dll', f'cyg{libname}-*.dll']
+-        else:
+-            if sys.platform == 'darwin':
+-                ext = 'dylib'
+-            else:
+-                ext = 'so'
+-
+-            if SAGE_LOCAL:
+-                search_directories.append(Path(SAGE_LOCAL) / 'lib')
+-            libdir = sysconfig.get_config_var('LIBDIR')
+-            if libdir is not None:
+-                libdir = Path(libdir)
+-                search_directories.append(libdir)
+-
+-                multiarchlib = sysconfig.get_config_var('MULTIARCH')
+-                if multiarchlib is not None:
+-                    search_directories.append(libdir / multiarchlib),
+-
+-            patterns = [f'lib{libname}.{ext}']
+-
+-        for directory in search_directories:
+-            for pattern in patterns:
+-                path = next(directory.glob(pattern), None)
+-                if path is not None:
+-                    return str(path.resolve())
+-
+-    # Just return None if no files were found
+-    return None
+-
+-# locate libgap shared object
+-GAP_SO = var("GAP_SO", _get_shared_lib_path("gap", ""))
+-
+ # post process
+ if DOT_SAGE is not None and ' ' in DOT_SAGE:
+     if UNAME[:6] == 'CYGWIN':
+-- 
+cgit v1.0-1-gd88e
+
+
+From 31e3fc4ec8b8687bccd22d2e3161c86cf5553e06 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Sun, 6 Mar 2022 12:10:37 -0300
+Subject: gap_workspace_file: include hostname and gap version
+
+---
+ src/sage/interfaces/gap_workspace.py | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/src/sage/interfaces/gap_workspace.py b/src/sage/interfaces/gap_workspace.py
+index 953dc85..8c03b6b 100644
+--- a/src/sage/interfaces/gap_workspace.py
++++ b/src/sage/interfaces/gap_workspace.py
+@@ -16,7 +16,8 @@ Support for (lib)GAP workspace files
+ import os
+ import time
+ import hashlib
+-from sage.env import DOT_SAGE, SAGE_LOCAL
++import subprocess
++from sage.env import DOT_SAGE, SAGE_LOCAL, HOSTNAME, GAP_ROOT_DIR
+ 
+ 
+ def gap_workspace_file(system="gap", name="workspace", dir=None):
+@@ -59,8 +60,12 @@ def gap_workspace_file(system="gap", name="workspace", dir=None):
+     if dir is None:
+         dir = os.path.join(DOT_SAGE, 'gap')
+ 
+-    h = hashlib.sha1(SAGE_LOCAL.encode('utf-8')).hexdigest()
+-    return os.path.join(dir, '%s-%s-%s' % (system, name, h))
++    data = SAGE_LOCAL
++    sysinfo = os.path.join(GAP_ROOT_DIR, "sysinfo.gap")
++    if os.path.exists(sysinfo):
++        data += subprocess.getoutput(f'. "{sysinfo}" && echo ":$GAP_VERSION:$GAParch"')
++    h = hashlib.sha1(data.encode('utf-8')).hexdigest()
++    return os.path.join(dir, '%s-%s-%s-%s' % (system, name, HOSTNAME, h))
+ 
+ 
+ def prepare_workspace_dir(dir=None):
+-- 
+cgit v1.0-1-gd88e
+

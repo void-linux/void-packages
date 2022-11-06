@@ -1,0 +1,108 @@
+From 19bf47777d0002ee884467e45e6ace702e40a4c1 Mon Sep 17 00:00:00 2001
+From: Christos Zoulas <christos@zoulas.com>
+Date: Mon, 4 Jul 2022 17:00:51 +0000
+Subject: [PATCH] PR/358: Fix width for -f - (jpalus)
+
+---
+ ChangeLog  |  3 ++-
+ src/file.c | 46 +++++++++++++++++++++++++++++-----------------
+ 2 files changed, 31 insertions(+), 18 deletions(-)
+
+diff --git a/src/file.c b/src/file.c
+index 5300e5af8..bb058ce1e 100644
+--- a/src/file.c
++++ b/src/file.c
+@@ -32,7 +32,7 @@
+ #include "file.h"
+ 
+ #ifndef	lint
+-FILE_RCSID("@(#)$File: file.c,v 1.195 2022/06/02 15:45:43 christos Exp $")
++FILE_RCSID("@(#)$File: file.c,v 1.196 2022/07/04 17:00:51 christos Exp $")
+ #endif	/* lint */
+ 
+ #include "magic.h"
+@@ -506,35 +506,47 @@ unwrap(struct magic_set *ms, const char *fn)
+ 	size_t llen = 0;
+ 	int wid = 0, cwid;
+ 	int e = 0;
++	size_t fi = 0, fimax = 100;
++	char **flist = malloc(sizeof(*flist) * fimax);
+ 
+-	if (strcmp("-", fn) == 0) {
++	if (flist == NULL)
++out:		file_err(EXIT_FAILURE, "Cannot allocate memory for file list");
++
++	if (strcmp("-", fn) == 0)
+ 		f = stdin;
+-		wid = 1;
+-	} else {
++	else {
+ 		if ((f = fopen(fn, "r")) == NULL) {
+ 			file_warn("Cannot open `%s'", fn);
+ 			return 1;
+ 		}
+-
+-		while ((len = getline(&line, &llen, f)) > 0) {
+-			if (line[len - 1] == '\n')
+-				line[len - 1] = '\0';
+-			cwid = file_mbswidth(ms, line);
+-			if (cwid > wid)
+-				wid = cwid;
+-		}
+-
+-		rewind(f);
+ 	}
+ 
+ 	while ((len = getline(&line, &llen, f)) > 0) {
+ 		if (line[len - 1] == '\n')
+ 			line[len - 1] = '\0';
+-		e |= process(ms, line, wid);
++		if (fi >= fimax) {
++			fimax += 100;
++			char **nf = realloc(flist, fimax * sizeof(*flist));
++			if (nf == NULL)
++				goto out;
++		}
++		flist[fi++] = line;
++		cwid = file_mbswidth(ms, line);
++		if (cwid > wid)
++			wid = cwid;
++		line = NULL;
++		llen = 0;
++	}
++
++	fimax = fi;
++	for (fi = 0; fi < fimax; fi++) {
++		e |= process(ms, flist[fi], wid);
++		free(flist[fi]);
+ 	}
++	free(flist);
+ 
+-	free(line);
+-	(void)fclose(f);
++	if (f != stdin)
++		(void)fclose(f);
+ 	return e;
+ }
+ 
+From be1ac8c0aa6d21921012f62582f51a9e546e4972 Mon Sep 17 00:00:00 2001
+From: Christos Zoulas <christos@zoulas.com>
+Date: Tue, 26 Jul 2022 15:10:05 +0000
+Subject: [PATCH] Fix bug with large flist (Florian Weimer)
+
+---
+ src/file.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/file.c b/src/file.c
+index e169c08fc..c0b8aa197 100644
+--- a/src/file.c
++++ b/src/file.c
+@@ -535,6 +535,7 @@ out:		file_err(EXIT_FAILURE, "Cannot allocate memory for file list");
+ 			char **nf = realloc(flist, fimax * sizeof(*flist));
+ 			if (nf == NULL)
+ 				goto out;
++			flist = nf;
+ 		}
+ 		flist[fi++] = line;
+ 		cwid = file_mbswidth(ms, line);
