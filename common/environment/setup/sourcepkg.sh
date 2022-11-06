@@ -1,6 +1,37 @@
 # This shell snippet unsets all variables/functions that can be used in
 # the package template (excluding subpackages).
 
+# Exported variables
+for var in $(env | sed -e 's/=.*//'); do
+	# Those variables in chroot.sh will be kept
+	case "$var" in
+	XBPS_* | IN_CHROOT | CHROOT_READY | SOURCE_DATE_EPOCH)
+		# xbps-src specific
+		;;
+	SOURCEFORGE_SITE | NONGNU_SITE | XORG_SITE | DEBIAN_SITE | GNOME_SITE)
+		;;
+	KERNEL_SITE | CPAN_SITE | PYPI_SITE | MOZILLA_SITE | GNU_SITE)
+		;;
+	FREEDESKTOP_SITE | KDE_SITE | VIDEOLAN_SITE)
+		;;
+	_ | PWD | SHLVL | USER | PATH | SHELL | HOME | LC_COLLATE | LANG | TERM | PS1)
+		# known variables for shell
+		;;
+	DISTCC_HOSTS | DISTCC_DIR)
+		;;
+	CCACHE_DIR | CCACHE_COMPRESS)
+		;;
+	HTTP_PROXY | HTTPS_PROXY | SOCKS_PROXY | NO_PROXY | HTTP_PROXY_AUTH)
+		;;
+	FTP_PROXY | FTP_RETRIES)
+		;;
+	*)
+		unset -v "$var"
+		;;
+	esac
+done
+unset -v var
+
 ## VARIABLES
 unset -v pkgname version revision short_desc homepage license maintainer
 unset -v archs distfiles checksum build_style build_helper nocross broken
@@ -20,6 +51,7 @@ unset -v nopie build_options build_options_default bootstrap repository reverts
 unset -v CFLAGS CXXFLAGS FFLAGS CPPFLAGS LDFLAGS LD_LIBRARY_PATH
 unset -v CC CXX CPP GCC LD AR AS RANLIB NM OBJDUMP OBJCOPY STRIP READELF PKG_CONFIG
 unset -v CMAKE_GENERATOR
+unset -v scons_use_destdir
 # build-helper python3
 unset -v PYPREFIX LDSHARED PYTHON_CONFIG PYTHONPATH _PYTHON_SYSCONFIGDATA_NAME
 
