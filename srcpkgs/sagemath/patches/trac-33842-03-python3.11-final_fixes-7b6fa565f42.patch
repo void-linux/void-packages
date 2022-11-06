@@ -1,0 +1,1279 @@
+From 8955607c71cb94e4a810b89f113b7b220a351417 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Sun, 6 Nov 2022 11:26:10 -0300
+Subject: [PATCH 01/11] dict_del_by_value: move python internal definitions to
+ a separate file
+
+---
+ src/sage/cpython/dict_del_by_value.pyx | 153 ++++++++---------------
+ src/sage/cpython/dict_internal.h       | 165 +++++++++++++++++++++++++
+ 2 files changed, 214 insertions(+), 104 deletions(-)
+ create mode 100644 src/sage/cpython/dict_internal.h
+
+diff --git a/src/sage/cpython/dict_del_by_value.pyx b/src/sage/cpython/dict_del_by_value.pyx
+index 488bf9c84cc..3894554c13d 100644
+--- a/src/sage/cpython/dict_del_by_value.pyx
++++ b/src/sage/cpython/dict_del_by_value.pyx
+@@ -19,13 +19,8 @@ AUTHORS:
+ #                  https://www.gnu.org/licenses/
+ # ****************************************************************************
+ 
+-import weakref
+-from weakref import KeyedRef
+-
+ from cpython.list cimport PyList_New
+-from cpython cimport Py_XINCREF, Py_XDECREF
+ 
+-from libc.stdint cimport int8_t, int16_t, int32_t, int64_t
+ cdef extern from "Python.h":
+     ctypedef struct PyDictKeysObject
+ 
+@@ -34,99 +29,47 @@ cdef extern from "Python.h":
+         PyDictKeysObject * ma_keys
+         PyObject ** ma_values
+ 
+-    #we need this redefinition because we want to be able to call
+-    #PyWeakref_GetObject with borrowed references. This is the recommended
+-    #strategy according to Cython/Includes/cpython/__init__.pxd
+-    PyObject* PyWeakref_GetObject(PyObject * wr)
+     int PyList_SetItem(object list, Py_ssize_t index, PyObject * item) except -1
+-    int PyWeakref_Check(PyObject * ob)
+-####
+-#definitions replicated from CPython's Objects/dict-common.h
+-#(this file is not exported from CPython, so we need to be
+-#careful the definitions are in step with what happens there.
+-
+-ctypedef void* dict_lookup_func  # Precise definition not needed
+-
+-ctypedef union IndexBlock:
+-    int8_t as_1[8]
+-    int16_t as_2[4]
+-    int32_t as_4[2]
+-    int64_t as_8[1]
+-
+-ctypedef struct MyPyDictKeysObject:
+-    Py_ssize_t dk_refcnt
+-    Py_ssize_t dk_size
+-    dict_lookup_func dk_lookup
+-    Py_ssize_t dk_usable
+-    Py_ssize_t dk_nentries
+-    IndexBlock dk_indices
+-
+-ctypedef struct PyDictKeyEntry:
+-    Py_hash_t me_hash
+-    PyObject * me_key
+-    PyObject * me_value
+-
+-cdef Py_ssize_t DKIX_EMPTY = -1
+-cdef Py_ssize_t DKIX_DUMMY = -2
+-cdef Py_ssize_t DKIX_ERROR = -3
+-
+-#####
+-#These routines are copied from CPython's Object/dictobject.c
+-#in order to access PyDictKeysObject fields
+-
+-cdef inline int DK_IXSIZE(MyPyDictKeysObject *keys):
+-    cdef Py_ssize_t s = keys.dk_size
+-    if s <= 0xff:
+-        return 1
+-    elif s <= 0xffff:
+-        return 2
+-    elif s <= 0xffffffff:
+-        return 4
+-    else:
+-        return 8
+-
+-cdef inline PyDictKeyEntry * DK_ENTRIES(MyPyDictKeysObject *keys):
+-    return <PyDictKeyEntry*> &(keys.dk_indices.as_1[keys.dk_size * DK_IXSIZE(keys)])
+-
+-cdef inline Py_ssize_t dk_get_index(MyPyDictKeysObject *keys, Py_ssize_t i):
+-    cdef Py_ssize_t s = keys.dk_size
+-    if s <= 0xff:
+-        return keys.dk_indices.as_1[i]
+-    elif s <= 0xffff:
+-        return keys.dk_indices.as_2[i]
+-    elif s <= 0xffffffff:
+-        return keys.dk_indices.as_4[i]
+-    else:
+-        return keys.dk_indices.as_8[i]
+-
+-cdef inline void dk_set_index(MyPyDictKeysObject *keys, Py_ssize_t i, Py_ssize_t ix):
+-    cdef Py_ssize_t s = keys.dk_size
+-    if s <= 0xff:
+-        keys.dk_indices.as_1[i] = ix
+-    elif s <= 0xffff:
+-        keys.dk_indices.as_2[i] = ix
+-    elif s <= 0xffffffff:
+-        keys.dk_indices.as_4[i] = ix
+-    else:
+-        keys.dk_indices.as_8[i] = ix
+-
+-#End of replication of Object/dictobject.c
+-######
+-
+-cdef dict_lookup_func lookdict
+-
+-cdef dict_lookup_func DK_LOOKUP(PyDictObject *mp):
+-    return (<MyPyDictKeysObject *>(mp.ma_keys)).dk_lookup
+-
+-def init_lookdict():
+-    global lookdict
+-    # A dict which a non-string key uses the generic "lookdict"
+-    # as lookup function
+-    cdef object D = {}
+-    D[0] = 0
+-    lookdict = DK_LOOKUP(<PyDictObject *>D)
+-
+-init_lookdict()
++
++cdef extern from "dict_internal.h":
++    Py_ssize_t DK_MASK(PyDictKeysObject *)
++    PyDictKeyEntry * DK_ENTRIES(PyDictKeysObject *keys)
++
++    Py_ssize_t dictkeys_get_index (PyDictKeysObject *keys, Py_ssize_t i)
++    void dictkeys_set_index (PyDictKeysObject *keys, Py_ssize_t i, Py_ssize_t ix)
++
++    Py_ssize_t DKIX_EMPTY, DKIX_DUMMY
++    int PERTURB_SHIFT
++
++    ctypedef struct PyDictKeyEntry:
++        Py_hash_t me_hash
++        PyObject * me_key
++        PyObject * me_value
++
++
++# dk_lookup was removed in python 3.11
++DEF HAS_DK_LOOKUP = PY_VERSION_HEX < 0x30b0000
++
++IF HAS_DK_LOOKUP:
++
++    cdef extern from *:
++        """
++        #define DK_LOOKUP(dk) ((dk)->dk_lookup)
++        """
++        ctypedef void * dict_lookup_func  # Precise definition not needed
++        dict_lookup_func DK_LOOKUP(PyDictKeysObject *mp)
++
++    cdef dict_lookup_func lookdict
++
++    def init_lookdict():
++        global lookdict
++        # A dict which a non-string key uses the generic "lookdict"
++        # as lookup function
++        cdef object D = {}
++        D[0] = 0
++        lookdict = DK_LOOKUP((<PyDictObject *>D).ma_keys)
++
++    init_lookdict()
+ 
+ cdef int del_dictitem_by_exact_value(PyDictObject *mp, PyObject *value, Py_hash_t hash) except -1:
+     """
+@@ -177,9 +120,9 @@ cdef int del_dictitem_by_exact_value(PyDictObject *mp, PyObject *value, Py_hash_
+         sage: for i in range(10^3+10): newA = A(); M[newA] = prev; prev = newA
+         sage: del a
+     """
+-    keys = <MyPyDictKeysObject *>(mp.ma_keys)
++    keys = mp.ma_keys
+     cdef size_t perturb
+-    cdef size_t mask = <size_t> keys.dk_size-1
++    cdef size_t mask = DK_MASK(keys)
+     cdef PyDictKeyEntry *entries = DK_ENTRIES(keys)
+     cdef PyDictKeyEntry *ep
+ 
+@@ -187,7 +130,7 @@ cdef int del_dictitem_by_exact_value(PyDictObject *mp, PyObject *value, Py_hash_
+         raise TypeError("del_dictitem_by_exact_value cannot be applied to a shared key dict")
+ 
+     cdef size_t i = <size_t>hash & mask
+-    ix = dk_get_index(keys, i)
++    ix = dictkeys_get_index(keys, i)
+ 
+     if ix == DKIX_EMPTY:
+         # key not found
+@@ -196,9 +139,9 @@ cdef int del_dictitem_by_exact_value(PyDictObject *mp, PyObject *value, Py_hash_
+     ep = &(entries[ix])
+     perturb = hash
+     while (ep.me_value != value or ep.me_hash != hash):
+-        perturb = perturb >> 5 #this is the value of PERTURB_SHIFT
++        perturb = perturb >> PERTURB_SHIFT
+         i = mask & (i * 5 + perturb + 1)
+-        ix = dk_get_index(keys, i)
++        ix = dictkeys_get_index(keys, i)
+         if ix == DKIX_EMPTY:
+             # key not found
+             return 0
+@@ -206,7 +149,9 @@ cdef int del_dictitem_by_exact_value(PyDictObject *mp, PyObject *value, Py_hash_
+ 
+     # We need the lookup function to be the generic lookdict, otherwise
+     # deletions may not work correctly
+-    keys.dk_lookup = lookdict
++    IF HAS_DK_LOOKUP:
++        # Can this fail? In any case dk_lookup was removed in python 3.11
++        assert DK_LOOKUP(keys) is lookdict
+ 
+     T = PyList_New(2)
+     PyList_SetItem(T, 0, ep.me_key)
+@@ -214,7 +159,7 @@ cdef int del_dictitem_by_exact_value(PyDictObject *mp, PyObject *value, Py_hash_
+     ep.me_key = NULL
+     ep.me_value = NULL
+     mp.ma_used -= 1
+-    dk_set_index(keys, i, DKIX_DUMMY)
++    dictkeys_set_index(keys, i, DKIX_DUMMY)
+     #We have transferred the to-be-deleted references to the list T
+     #we now delete the list so that the actual decref happens through a
+     #deallocation routine that uses the Python Trashcan macros to
+diff --git a/src/sage/cpython/dict_internal.h b/src/sage/cpython/dict_internal.h
+new file mode 100644
+index 00000000000..06c7a16b275
+--- /dev/null
++++ b/src/sage/cpython/dict_internal.h
+@@ -0,0 +1,165 @@
++/* This contains internal definitions for python dictionaries,
++ * mostly copied from cpython sourcecode.
++ *
++ * Moved here to make it easier to maintain in the face of python
++ * changes.
++ * */
++
++/************************************************************/
++/* Copied verbatim from cpython 3.8 (Objects/dict-common.h) */
++/************************************************************/
++
++#ifndef Py_DICT_COMMON_H
++#define Py_DICT_COMMON_H
++
++typedef struct {
++    /* Cached hash code of me_key. */
++    Py_hash_t me_hash;
++    PyObject *me_key;
++    PyObject *me_value; /* This field is only meaningful for combined tables */
++} PyDictKeyEntry;
++
++/* dict_lookup_func() returns index of entry which can be used like DK_ENTRIES(dk)[index].
++ * -1 when no entry found, -3 when compare raises error.
++ */
++typedef Py_ssize_t (*dict_lookup_func)
++    (PyDictObject *mp, PyObject *key, Py_hash_t hash, PyObject **value_addr);
++
++#define DKIX_EMPTY (-1)
++#define DKIX_DUMMY (-2)  /* Used internally */
++#define DKIX_ERROR (-3)
++
++/* See dictobject.c for actual layout of DictKeysObject */
++struct _dictkeysobject {
++    Py_ssize_t dk_refcnt;
++
++    /* Size of the hash table (dk_indices). It must be a power of 2. */
++    Py_ssize_t dk_size;
++
++    /* Function to lookup in the hash table (dk_indices):
++
++       - lookdict(): general-purpose, and may return DKIX_ERROR if (and
++         only if) a comparison raises an exception.
++
++       - lookdict_unicode(): specialized to Unicode string keys, comparison of
++         which can never raise an exception; that function can never return
++         DKIX_ERROR.
++
++       - lookdict_unicode_nodummy(): similar to lookdict_unicode() but further
++         specialized for Unicode string keys that cannot be the <dummy> value.
++
++       - lookdict_split(): Version of lookdict() for split tables. */
++    dict_lookup_func dk_lookup;
++
++    /* Number of usable entries in dk_entries. */
++    Py_ssize_t dk_usable;
++
++    /* Number of used entries in dk_entries. */
++    Py_ssize_t dk_nentries;
++
++    /* Actual hash table of dk_size entries. It holds indices in dk_entries,
++       or DKIX_EMPTY(-1) or DKIX_DUMMY(-2).
++
++       Indices must be: 0 <= indice < USABLE_FRACTION(dk_size).
++
++       The size in bytes of an indice depends on dk_size:
++
++       - 1 byte if dk_size <= 0xff (char*)
++       - 2 bytes if dk_size <= 0xffff (int16_t*)
++       - 4 bytes if dk_size <= 0xffffffff (int32_t*)
++       - 8 bytes otherwise (int64_t*)
++
++       Dynamically sized, SIZEOF_VOID_P is minimum. */
++    char dk_indices[];  /* char is required to avoid strict aliasing. */
++
++    /* "PyDictKeyEntry dk_entries[dk_usable];" array follows:
++       see the DK_ENTRIES() macro */
++};
++
++#endif
++
++
++/***********************************************************/
++/* Copied verbatim from cpython 3.8 (Objects/dictobject.c) */
++/***********************************************************/
++
++#define PERTURB_SHIFT 5
++#define DK_SIZE(dk) ((dk)->dk_size)
++#if SIZEOF_VOID_P > 4
++#define DK_IXSIZE(dk)                          \
++    (DK_SIZE(dk) <= 0xff ?                     \
++        1 : DK_SIZE(dk) <= 0xffff ?            \
++            2 : DK_SIZE(dk) <= 0xffffffff ?    \
++                4 : sizeof(int64_t))
++#else
++#define DK_IXSIZE(dk)                          \
++    (DK_SIZE(dk) <= 0xff ?                     \
++        1 : DK_SIZE(dk) <= 0xffff ?            \
++            2 : sizeof(int32_t))
++#endif
++#define DK_ENTRIES(dk) \
++    ((PyDictKeyEntry*)(&((int8_t*)((dk)->dk_indices))[DK_SIZE(dk) * DK_IXSIZE(dk)]))
++
++#define DK_MASK(dk) (((dk)->dk_size)-1)
++
++/* lookup indices.  returns DKIX_EMPTY, DKIX_DUMMY, or ix >=0 */
++static inline Py_ssize_t
++dictkeys_get_index(PyDictKeysObject *keys, Py_ssize_t i)
++{
++    Py_ssize_t s = DK_SIZE(keys);
++    Py_ssize_t ix;
++
++    if (s <= 0xff) {
++        int8_t *indices = (int8_t*)(keys->dk_indices);
++        ix = indices[i];
++    }
++    else if (s <= 0xffff) {
++        int16_t *indices = (int16_t*)(keys->dk_indices);
++        ix = indices[i];
++    }
++#if SIZEOF_VOID_P > 4
++    else if (s > 0xffffffff) {
++        int64_t *indices = (int64_t*)(keys->dk_indices);
++        ix = indices[i];
++    }
++#endif
++    else {
++        int32_t *indices = (int32_t*)(keys->dk_indices);
++        ix = indices[i];
++    }
++    assert(ix >= DKIX_DUMMY);
++    return ix;
++}
++
++/* write to indices. */
++static inline void
++dictkeys_set_index(PyDictKeysObject *keys, Py_ssize_t i, Py_ssize_t ix)
++{
++    Py_ssize_t s = DK_SIZE(keys);
++
++    assert(ix >= DKIX_DUMMY);
++
++    if (s <= 0xff) {
++        int8_t *indices = (int8_t*)(keys->dk_indices);
++        assert(ix <= 0x7f);
++        indices[i] = (char)ix;
++    }
++    else if (s <= 0xffff) {
++        int16_t *indices = (int16_t*)(keys->dk_indices);
++        assert(ix <= 0x7fff);
++        indices[i] = (int16_t)ix;
++    }
++#if SIZEOF_VOID_P > 4
++    else if (s > 0xffffffff) {
++        int64_t *indices = (int64_t*)(keys->dk_indices);
++        indices[i] = ix;
++    }
++#endif
++    else {
++        int32_t *indices = (int32_t*)(keys->dk_indices);
++        assert(ix <= 0x7fffffff);
++        indices[i] = (int32_t)ix;
++    }
++}
++
++/************************************************************/
+-- 
+2.38.1
+
+
+From 76040803c8ae150baef449edce67ebdafb2ee896 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Sun, 6 Nov 2022 11:53:24 -0300
+Subject: [PATCH 02/11] dict_del_by_value: add internal definitions for python
+ 3.11
+
+---
+ src/sage/cpython/dict_internal.h | 77 ++++++++++++++++++++++++++++++++
+ 1 file changed, 77 insertions(+)
+
+diff --git a/src/sage/cpython/dict_internal.h b/src/sage/cpython/dict_internal.h
+index 06c7a16b275..42a57bcb468 100644
+--- a/src/sage/cpython/dict_internal.h
++++ b/src/sage/cpython/dict_internal.h
+@@ -5,6 +5,8 @@
+  * changes.
+  * */
+ 
++#if PY_VERSION_HEX < 0x30b0000
++
+ /************************************************************/
+ /* Copied verbatim from cpython 3.8 (Objects/dict-common.h) */
+ /************************************************************/
+@@ -163,3 +165,78 @@ dictkeys_set_index(PyDictKeysObject *keys, Py_ssize_t i, Py_ssize_t ix)
+ }
+ 
+ /************************************************************/
++
++#else   /* Python >= 3.11 */
++
++#define Py_BUILD_CORE
++#include <internal/pycore_dict.h>
++
++/************************************************************/
++/* Copied verbatim from cpython 3.11 (Objects/dictobject.c) */
++/************************************************************/
++
++#define PERTURB_SHIFT 5
++#define DK_MASK(dk) (DK_SIZE(dk)-1)
++
++/* lookup indices.  returns DKIX_EMPTY, DKIX_DUMMY, or ix >=0 */
++static inline Py_ssize_t
++dictkeys_get_index(const PyDictKeysObject *keys, Py_ssize_t i)
++{
++    int log2size = DK_LOG_SIZE(keys);
++    Py_ssize_t ix;
++
++    if (log2size < 8) {
++        const int8_t *indices = (const int8_t*)(keys->dk_indices);
++        ix = indices[i];
++    }
++    else if (log2size < 16) {
++        const int16_t *indices = (const int16_t*)(keys->dk_indices);
++        ix = indices[i];
++    }
++#if SIZEOF_VOID_P > 4
++    else if (log2size >= 32) {
++        const int64_t *indices = (const int64_t*)(keys->dk_indices);
++        ix = indices[i];
++    }
++#endif
++    else {
++        const int32_t *indices = (const int32_t*)(keys->dk_indices);
++        ix = indices[i];
++    }
++    assert(ix >= DKIX_DUMMY);
++    return ix;
++}
++
++/* write to indices. */
++static inline void
++dictkeys_set_index(PyDictKeysObject *keys, Py_ssize_t i, Py_ssize_t ix)
++{
++    int log2size = DK_LOG_SIZE(keys);
++
++    assert(ix >= DKIX_DUMMY);
++    assert(keys->dk_version == 0);
++
++    if (log2size < 8) {
++        int8_t *indices = (int8_t*)(keys->dk_indices);
++        assert(ix <= 0x7f);
++        indices[i] = (char)ix;
++    }
++    else if (log2size < 16) {
++        int16_t *indices = (int16_t*)(keys->dk_indices);
++        assert(ix <= 0x7fff);
++        indices[i] = (int16_t)ix;
++    }
++#if SIZEOF_VOID_P > 4
++    else if (log2size >= 32) {
++        int64_t *indices = (int64_t*)(keys->dk_indices);
++        indices[i] = ix;
++    }
++#endif
++    else {
++        int32_t *indices = (int32_t*)(keys->dk_indices);
++        assert(ix <= 0x7fffffff);
++        indices[i] = (int32_t)ix;
++    }
++}
++
++#endif
+-- 
+2.38.1
+
+
+From 014c2ac9a6f6de25d4e31fe0bdaf819e9c67d24b Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Mon, 31 Oct 2022 06:47:18 -0300
+Subject: [PATCH 03/11] deprecated uu -> base64
+
+---
+ src/sage/rings/polynomial/pbori/gbrefs.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/sage/rings/polynomial/pbori/gbrefs.py b/src/sage/rings/polynomial/pbori/gbrefs.py
+index 76e3924715d..70dc795cbab 100644
+--- a/src/sage/rings/polynomial/pbori/gbrefs.py
++++ b/src/sage/rings/polynomial/pbori/gbrefs.py
+@@ -1,6 +1,6 @@
+ import gzip
+ from io import StringIO
+-import uu
++import base64 as uu
+ import re
+ from types import ModuleType
+ from .PyPolyBoRi import Polynomial
+-- 
+2.38.1
+
+
+From dc8e155994a870a5e0b01a690a3fec8975197973 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Mon, 31 Oct 2022 06:47:34 -0300
+Subject: [PATCH 04/11] sage.misc.fpickle: fix for python 3.11
+
+---
+ src/sage/misc/fpickle.pyx | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/src/sage/misc/fpickle.pyx b/src/sage/misc/fpickle.pyx
+index 502080e2c10..c5d544765bb 100644
+--- a/src/sage/misc/fpickle.pyx
++++ b/src/sage/misc/fpickle.pyx
+@@ -34,6 +34,12 @@ def reduce_code(co):
+         sage: def foo(N): return N+1
+         sage: sage.misc.fpickle.reduce_code(foo.__code__)
+         (<cyfunction code_ctor at ...>, ...)
++
++    Test that the constructed code matches the original code:
++
++        sage: ctor, args = sage.misc.fpickle.reduce_code(foo.__code__)
++        sage: ctor(*args) == foo.__code__
++        True
+     """
+     if co.co_freevars or co.co_cellvars:
+         raise ValueError("Cannot pickle code objects from closures")
+@@ -44,7 +50,12 @@ def reduce_code(co):
+     co_args += (co.co_kwonlyargcount, co.co_nlocals,
+                 co.co_stacksize, co.co_flags, co.co_code,
+                 co.co_consts, co.co_names, co.co_varnames, co.co_filename,
+-                co.co_name, co.co_firstlineno, co.co_lnotab)
++                co.co_name)
++    if sys.version_info.minor >= 11:
++        co_args += (co.co_qualname, co.co_firstlineno,
++                    co.co_linetable, co.co_exceptiontable)
++    else:
++        co_args += (co.co_firstlineno, co.co_lnotab)
+ 
+     return (code_ctor, co_args)
+ 
+-- 
+2.38.1
+
+
+From 8b0dac2322d4a888c607c56d3b5a72ff71df4147 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Mon, 31 Oct 2022 08:15:43 -0300
+Subject: [PATCH 05/11] Fix FullArgSpec usage after
+ 9eb08f3afde3266bbd667e196513240a0fe245f4
+
+ - `kwonlydefaults` default is `[]` rather than `{}`
+ - `argspec.keywords` changed to `argspec.varkw`
+ - `ArgSpec` changed to `FullArgSpec`
+---
+ src/sage/coding/abstract_code.py | 2 +-
+ src/sage/misc/decorators.py      | 7 ++++---
+ src/sage/misc/sageinspect.py     | 9 +++++----
+ 3 files changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/src/sage/coding/abstract_code.py b/src/sage/coding/abstract_code.py
+index ba2ec68a038..238a165c021 100644
+--- a/src/sage/coding/abstract_code.py
++++ b/src/sage/coding/abstract_code.py
+@@ -123,7 +123,7 @@ def _explain_constructor(cl):
+         reqs = "The constructor requires the arguments {}.".format(args)
+     else:
+         reqs = "The constructor requires no arguments."
+-    if argspec.varargs or argspec.keywords:
++    if argspec.varargs or argspec.varkw:
+         var = "It accepts unspecified arguments as well.\n"
+     else:
+         var = ""
+diff --git a/src/sage/misc/decorators.py b/src/sage/misc/decorators.py
+index 311a5105739..271e243050f 100644
+--- a/src/sage/misc/decorators.py
++++ b/src/sage/misc/decorators.py
+@@ -423,7 +423,8 @@ class suboptions():
+             defaults = (argspec.defaults if argspec.defaults is not None else ()) \
+                         + tuple(self.options.values())
+             # Note: argspec.defaults is not always a tuple for some reason
+-            return ArgSpec(args, argspec.varargs, argspec.keywords, defaults)
++            return FullArgSpec(args, argspec.varargs, argspec.varkw, defaults,
++                               kwonlyargs=[], kwonlydefaults=None, annotations={})
+         wrapper._sage_argspec_ = argspec
+ 
+         return wrapper
+@@ -500,8 +501,8 @@ class options():
+                     list(self.options))
+             defaults = (argspec.defaults or ()) + tuple(self.options.values())
+             # Note: argspec.defaults is not always a tuple for some reason
+-            return FullArgSpec(args, argspec.varargs, argspec.keywords, defaults,
+-                               kwonlyargs=[], kwonlydefaults={}, annotations={})
++            return FullArgSpec(args, argspec.varargs, argspec.varkw, defaults,
++                               kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+         wrapper._sage_argspec_ = argspec
+ 
+diff --git a/src/sage/misc/sageinspect.py b/src/sage/misc/sageinspect.py
+index a3821cb56b9..ce9a74f931d 100644
+--- a/src/sage/misc/sageinspect.py
++++ b/src/sage/misc/sageinspect.py
+@@ -1137,7 +1137,7 @@ def _sage_getargspec_from_ast(source):
+ 
+     return inspect.FullArgSpec(args, vararg, kwarg,
+                                tuple(defaults) if defaults else None,
+-                               kwonlyargs=[], kwonlydefaults={}, annotations={})
++                               kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+ 
+ def _sage_getargspec_cython(source):
+@@ -1683,7 +1683,8 @@ def sage_getargspec(obj):
+         # Note that this may give a wrong result for the constants!
+         try:
+             args, varargs, varkw = inspect.getargs(obj.__code__)
+-            return inspect.FullArgSpec(args, varargs, varkw, obj.__defaults__)
++            return inspect.FullArgSpec(args, varargs, varkw, obj.__defaults__,
++                                       kwonlyargs=[], kwonlydefaults=None, annotations={})
+         except (TypeError, AttributeError):
+             pass
+     if isclassinstance(obj):
+@@ -1742,7 +1743,7 @@ def sage_getargspec(obj):
+     except AttributeError:
+         defaults = None
+     return inspect.FullArgSpec(args, varargs, varkw, defaults,
+-                               kwonlyargs=[], kwonlydefaults={}, annotations={})
++                               kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+ 
+ def formatannotation(annotation, base_module=None):
+@@ -1788,7 +1789,7 @@ def formatannotation(annotation, base_module=None):
+ 
+ 
+ def sage_formatargspec(args, varargs=None, varkw=None, defaults=None,
+-                       kwonlyargs=(), kwonlydefaults={}, annotations={},
++                       kwonlyargs=(), kwonlydefaults=None, annotations={},
+                        formatarg=str,
+                        formatvarargs=lambda name: '*' + name,
+                        formatvarkw=lambda name: '**' + name,
+-- 
+2.38.1
+
+
+From db45aebfd6bd8413bec0fda218410d72deacd398 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Mon, 31 Oct 2022 07:13:38 -0300
+Subject: [PATCH 06/11] warnings: ignore deprecation for 'import cgi' in cython
+
+---
+ src/sage/all.py | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/sage/all.py b/src/sage/all.py
+index 6aef26c42a9..92d36d1fd26 100644
+--- a/src/sage/all.py
++++ b/src/sage/all.py
+@@ -104,6 +104,11 @@ warnings.filterwarnings('ignore', category=DeprecationWarning,
+                         message='The distutils(.sysconfig module| package) is deprecated',
+                         module='Cython|distutils|numpy|sage.env|sage.features')
+ 
++# triggered by cython 0.29.32
++warnings.filterwarnings('ignore', category=DeprecationWarning,
++                        message="'cgi' is deprecated and slated for removal in Python 3.13",
++                        module='Cython')
++
+ ################ end setup warnings ###############################
+ 
+ 
+-- 
+2.38.1
+
+
+From 664fc008ed50c2f61fb3df3020c0d81b41170628 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Mon, 31 Oct 2022 20:39:12 -0300
+Subject: [PATCH 07/11] warnings: ignore deprecation for 'import sre_constants'
+ in pyparsing
+
+---
+ src/sage/all.py | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/sage/all.py b/src/sage/all.py
+index 92d36d1fd26..ea0712308b4 100644
+--- a/src/sage/all.py
++++ b/src/sage/all.py
+@@ -109,6 +109,11 @@ warnings.filterwarnings('ignore', category=DeprecationWarning,
+                         message="'cgi' is deprecated and slated for removal in Python 3.13",
+                         module='Cython')
+ 
++# triggered by pyparsing 2.4.7
++warnings.filterwarnings('ignore', category=DeprecationWarning,
++                        message="module 'sre_constants' is deprecated",
++                        module='pyparsing')
++
+ ################ end setup warnings ###############################
+ 
+ 
+-- 
+2.38.1
+
+
+From 08e1161c23caeeed5ad0e0237df8172eb8806ee5 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Mon, 31 Oct 2022 22:40:17 -0300
+Subject: [PATCH 08/11] warnings: ignore deprecation of
+ importlib.resources.path/read_binary
+
+---
+ src/sage/all.py                    | 6 ++++++
+ src/sage/repl/display/formatter.py | 3 +++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/src/sage/all.py b/src/sage/all.py
+index ea0712308b4..fedf2a17aab 100644
+--- a/src/sage/all.py
++++ b/src/sage/all.py
+@@ -114,6 +114,12 @@ warnings.filterwarnings('ignore', category=DeprecationWarning,
+                         message="module 'sre_constants' is deprecated",
+                         module='pyparsing')
+ 
++# importlib.resources.path and ...read_binary are deprecated in python 3.11,
++# but the replacement importlib.resources.files needs python 3.9
++warnings.filterwarnings('ignore', category=DeprecationWarning,
++                        message=r'(path|read_binary) is deprecated\. Use files\(\) instead\.',
++                        module='sage.repl.rich_output.output_(graphics|graphics3d|video)')
++
+ ################ end setup warnings ###############################
+ 
+ 
+diff --git a/src/sage/repl/display/formatter.py b/src/sage/repl/display/formatter.py
+index 488f0bf2791..7e06656d880 100644
+--- a/src/sage/repl/display/formatter.py
++++ b/src/sage/repl/display/formatter.py
+@@ -143,6 +143,9 @@ class SageDisplayFormatter(DisplayFormatter):
+ 
+             sage: import os
+             sage: import importlib.resources
++            sage: import warnings
++            sage: warnings.filterwarnings('ignore', category=DeprecationWarning,
++            ....:     message=r'path is deprecated\. Use files\(\) instead\.')
+             sage: from sage.repl.rich_output.backend_ipython import BackendIPython
+             sage: backend = BackendIPython()
+             sage: shell = get_test_shell()
+-- 
+2.38.1
+
+
+From 44480f4827e2bc1ed8daf6f4504a22ae6e8be4a4 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Mon, 31 Oct 2022 07:14:01 -0300
+Subject: [PATCH 09/11] doctests: fixes due to ArgSpec -> FullArgSpec change
+
+---
+ src/sage/interfaces/singular.py            |  3 +-
+ src/sage/libs/singular/standard_options.py |  3 +-
+ src/sage/misc/cachefunc.pyx                |  6 +-
+ src/sage/misc/decorators.py                |  9 ++-
+ src/sage/misc/lazy_import.pyx              |  4 +-
+ src/sage/misc/sageinspect.py               | 94 ++++++++++------------
+ src/sage/parallel/decorate.py              |  3 +-
+ src/sage/plot/plot3d/plot3d.py             | 18 +++--
+ src/sage/sets/set_from_iterator.py         |  4 +-
+ 9 files changed, 76 insertions(+), 68 deletions(-)
+
+diff --git a/src/sage/interfaces/singular.py b/src/sage/interfaces/singular.py
+index 9c9586d8bc7..1dea77cdff0 100644
+--- a/src/sage/interfaces/singular.py
++++ b/src/sage/interfaces/singular.py
+@@ -2734,7 +2734,8 @@ def singular_gb_standard_options(func):
+         sage: P.<x,y> = QQ[]
+         sage: I = P*[x,y]
+         sage: sage_getargspec(I.interreduced_basis)
+-        ArgSpec(args=['self'], varargs=None, keywords=None, defaults=None)
++        FullArgSpec(args=['self'], varargs=None, varkw=None, defaults=None,
++                    kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sage_getsourcelines(I.interreduced_basis)
+         (['    @handle_AA_and_QQbar\n',
+           '    @singular_gb_standard_options\n',
+diff --git a/src/sage/libs/singular/standard_options.py b/src/sage/libs/singular/standard_options.py
+index 6797cb05001..5d74da3ce3a 100644
+--- a/src/sage/libs/singular/standard_options.py
++++ b/src/sage/libs/singular/standard_options.py
+@@ -117,7 +117,8 @@ def libsingular_gb_standard_options(func):
+         sage: P.<x,y> = QQ[]
+         sage: I = P*[x,y]
+         sage: sage_getargspec(I.interreduced_basis)
+-        ArgSpec(args=['self'], varargs=None, keywords=None, defaults=None)
++        FullArgSpec(args=['self'], varargs=None, varkw=None, defaults=None,
++                    kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sage_getsourcelines(I.interreduced_basis)
+         (['    @handle_AA_and_QQbar\n',
+           '    @singular_gb_standard_options\n',
+diff --git a/src/sage/misc/cachefunc.pyx b/src/sage/misc/cachefunc.pyx
+index 72042ef13d6..cea3071115d 100644
+--- a/src/sage/misc/cachefunc.pyx
++++ b/src/sage/misc/cachefunc.pyx
+@@ -931,9 +931,9 @@ cdef class CachedFunction():
+             sage: I = P*[x,y]
+             sage: from sage.misc.sageinspect import sage_getargspec
+             sage: sage_getargspec(I.groebner_basis)   # indirect doctest
+-            ArgSpec(args=['self', 'algorithm', 'deg_bound', 'mult_bound', 'prot'],
+-            varargs='args', keywords='kwds', defaults=('', None, None,
+-            False))
++            FullArgSpec(args=['self', 'algorithm', 'deg_bound', 'mult_bound', 'prot'],
++                        varargs='args', varkw='kwds', defaults=('', None, None, False),
++                        kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+         """
+         return sage_getargspec(self.f)
+diff --git a/src/sage/misc/decorators.py b/src/sage/misc/decorators.py
+index 271e243050f..dd9123f5004 100644
+--- a/src/sage/misc/decorators.py
++++ b/src/sage/misc/decorators.py
+@@ -93,7 +93,8 @@ def sage_wraps(wrapped, assigned=WRAPPER_ASSIGNMENTS, updated=WRAPPER_UPDATES):
+         5
+         sage: from sage.misc.sageinspect import sage_getargspec
+         sage: sage_getargspec(g)
+-        ArgSpec(args=['x'], varargs=None, keywords=None, defaults=None)
++        FullArgSpec(args=['x'], varargs=None, varkw=None, defaults=None,
++                    kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     Demonstrate that it correctly gets the source lines and the source
+     file, which is essential for interactive code edition; note that we
+@@ -392,7 +393,8 @@ class suboptions():
+ 
+             sage: from sage.misc.sageinspect import sage_getargspec
+             sage: sage_getargspec(f)
+-            ArgSpec(args=['arrow_size'], varargs='args', keywords='kwds', defaults=(2,))
++            FullArgSpec(args=['arrow_size'], varargs='args', varkw='kwds', defaults=(2,),
++                        kwonlyargs=[], kwonlydefaults=None, annotations={})
+         """
+         @sage_wraps(func)
+         def wrapper(*args, **kwds):
+@@ -460,7 +462,8 @@ class options():
+             sage: f1 = o(f)
+             sage: from sage.misc.sageinspect import sage_getargspec
+             sage: sage_getargspec(f1)
+-            ArgSpec(args=['rgbcolor'], varargs='args', keywords='kwds', defaults=((0, 0, 1),))
++            FullArgSpec(args=['rgbcolor'], varargs='args', varkw='kwds', defaults=((0, 0, 1),),
++                        kwonlyargs=[], kwonlydefaults=None, annotations={})
+         """
+         self.options = options
+         self.original_opts = options.pop('__original_opts', False)
+diff --git a/src/sage/misc/lazy_import.pyx b/src/sage/misc/lazy_import.pyx
+index 2d4413cd1a3..018078b0cf2 100644
+--- a/src/sage/misc/lazy_import.pyx
++++ b/src/sage/misc/lazy_import.pyx
+@@ -351,7 +351,9 @@ cdef class LazyImport():
+             sage: from sage.misc.lazy_import import LazyImport
+             sage: rm = LazyImport('sage.all', 'random_matrix')
+             sage: rm._sage_argspec_()
+-            ArgSpec(args=['ring', 'nrows', 'ncols', 'algorithm', 'implementation'], varargs='args', keywords='kwds', defaults=(None, 'randomize', None))
++            FullArgSpec(args=['ring', 'nrows', 'ncols', 'algorithm', 'implementation'],
++                        varargs='args', varkw='kwds', defaults=(None, 'randomize', None),
++                        kwonlyargs=[], kwonlydefaults=None, annotations={})
+         """
+         return sageinspect.sage_getargspec(self.get_object())
+ 
+diff --git a/src/sage/misc/sageinspect.py b/src/sage/misc/sageinspect.py
+index ce9a74f931d..619ff6da661 100644
+--- a/src/sage/misc/sageinspect.py
++++ b/src/sage/misc/sageinspect.py
+@@ -109,7 +109,7 @@ defined Cython code, and with rather tricky argument lines::
+     sage: print(sage_getsource(foo))                                                                        # optional - sage.misc.cython
+     def foo(unsigned int x=1, a=')"', b={not (2+1==3):'bar'}, *args, **kwds): return
+     sage: sage_getargspec(foo)                                                                              # optional - sage.misc.cython
+-    ArgSpec(args=['x', 'a', 'b'], varargs='args', keywords='kwds', defaults=(1, ')"', {False: 'bar'}))
++    FullArgSpec(args=['x', 'a', 'b'], varargs='args', varkw='kwds', defaults=(1, ')"', {False: 'bar'}), kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+ """
+ 
+@@ -343,7 +343,7 @@ def _extract_embedded_signature(docstring, name):
+         File: sage/misc/nested_class.pyx (starting at line ...)
+         ...
+         sage: _extract_embedded_signature(MainClass.NestedClass.NestedSubClass.dummy.__doc__, 'dummy')[1]
+-        ArgSpec(args=['self', 'x', 'r'], varargs='args', keywords='kwds', defaults=((1, 2, 3.4),))
++        FullArgSpec(args=['self', 'x', 'r'], varargs='args', varkw='kwds', defaults=((1, 2, 3.4),), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: _extract_embedded_signature(range.__call__.__doc__, '__call__')
+         ('Call self as a function.', None)
+     """
+@@ -1107,22 +1107,18 @@ def _sage_getargspec_from_ast(source):
+ 
+     EXAMPLES::
+ 
+-        sage: import warnings
+-        sage: warnings.filterwarnings('ignore',
+-        ....:                         r'inspect.getargspec\(\) is deprecated',
+-        ....:                         DeprecationWarning)
+         sage: import inspect, sage.misc.sageinspect as sms
+         sage: from_ast = sms._sage_getargspec_from_ast
+         sage: s = "def f(a, b=2, c={'a': [4, 5.5, False]}, d=(None, True)):\n    return"
+         sage: from_ast(s)
+-        ArgSpec(args=['a', 'b', 'c', 'd'], varargs=None, keywords=None, defaults=(2, {'a': [4, 5.5, False]}, (None, True)))
++        FullArgSpec(args=['a', 'b', 'c', 'd'], varargs=None, varkw=None, defaults=(2, {'a': [4, 5.5, False]}, (None, True)), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: context = {}
+         sage: exec(compile(s, '<string>', 'single'), context)
+-        sage: inspect.getargspec(context['f'])
+-        ArgSpec(args=['a', 'b', 'c', 'd'], varargs=None, keywords=None, defaults=(2, {'a': [4, 5.5, False]}, (None, True)))
+-        sage: from_ast(s) == inspect.getargspec(context['f'])
++        sage: inspect.getfullargspec(context['f'])
++        FullArgSpec(args=['a', 'b', 'c', 'd'], varargs=None, varkw=None, defaults=(2, {'a': [4, 5.5, False]}, (None, True)), kwonlyargs=[], kwonlydefaults=None, annotations={})
++        sage: from_ast(s) == inspect.getfullargspec(context['f'])
+         True
+-        sage: set(from_ast(sms.sage_getsource(x)) == inspect.getargspec(x) for x in [factor, identity_matrix, Graph.__init__])
++        sage: set(from_ast(sms.sage_getsource(x)) == inspect.getfullargspec(x) for x in [factor, identity_matrix, Graph.__init__])
+         {True}
+     """
+     ast_args = ast.parse(source.lstrip()).body[0].args
+@@ -1159,23 +1155,23 @@ def _sage_getargspec_cython(source):
+ 
+         sage: from sage.misc.sageinspect import _sage_getargspec_cython as sgc
+         sage: sgc("cpdef double abc(self, Element x=None, Parent base=0):")
+-        ArgSpec(args=['self', 'x', 'base'], varargs=None, keywords=None, defaults=(None, 0))
++        FullArgSpec(args=['self', 'x', 'base'], varargs=None, varkw=None, defaults=(None, 0), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sgc("def __init__(self, x=None, unsigned int base=0):")
+-        ArgSpec(args=['self', 'x', 'base'], varargs=None, keywords=None, defaults=(None, 0))
++        FullArgSpec(args=['self', 'x', 'base'], varargs=None, varkw=None, defaults=(None, 0), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sgc('def o(p, r={}, *q, **s) except? -1:')
+-        ArgSpec(args=['p', 'r'], varargs='q', keywords='s', defaults=({},))
++        FullArgSpec(args=['p', 'r'], varargs='q', varkw='s', defaults=({},), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sgc('cpdef how(r=(None, "u:doing?")):')
+-        ArgSpec(args=['r'], varargs=None, keywords=None, defaults=((None, 'u:doing?'),))
++        FullArgSpec(args=['r'], varargs=None, varkw=None, defaults=((None, 'u:doing?'),), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sgc('def _(x="):"):')
+-        ArgSpec(args=['x'], varargs=None, keywords=None, defaults=('):',))
++        FullArgSpec(args=['x'], varargs=None, varkw=None, defaults=('):',), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sgc('def f(z = {(1, 2, 3): True}):\n    return z')
+-        ArgSpec(args=['z'], varargs=None, keywords=None, defaults=({(1, 2, 3): True},))
++        FullArgSpec(args=['z'], varargs=None, varkw=None, defaults=({(1, 2, 3): True},), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sgc('def f(double x, z = {(1, 2, 3): True}):\n    return z')
+-        ArgSpec(args=['x', 'z'], varargs=None, keywords=None, defaults=({(1, 2, 3): True},))
++        FullArgSpec(args=['x', 'z'], varargs=None, varkw=None, defaults=({(1, 2, 3): True},), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sgc('def f(*args): pass')
+-        ArgSpec(args=[], varargs='args', keywords=None, defaults=None)
++        FullArgSpec(args=[], varargs='args', varkw=None, defaults=None, kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sgc('def f(**args): pass')
+-        ArgSpec(args=[], varargs=None, keywords='args', defaults=None)
++        FullArgSpec(args=[], varargs=None, varkw='args', defaults=None, kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     Some malformed input is detected::
+ 
+@@ -1207,17 +1203,17 @@ def _sage_getargspec_cython(source):
+ 
+         sage: def dummy_python(self, *args, x=1): pass
+         sage: sgc("def dummy_python(self, *args, x=1): pass")
+-        ArgSpec(args=['self', 'x'], varargs='args', keywords=None, defaults=(1,))
++        FullArgSpec(args=['self', 'x'], varargs='args', varkw=None, defaults=(1,), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: cython("def dummy_cython(self, *args, x=1): pass")
+         sage: sgc("def dummy_cython(self, *args, x=1): pass")
+-        ArgSpec(args=['self', 'x'], varargs='args', keywords=None, defaults=(1,))
++        FullArgSpec(args=['self', 'x'], varargs='args', varkw=None, defaults=(1,), kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     In some examples above, a syntax error was raised when a type
+     definition contains a pointer. An exception is made for ``char*``,
+     since C strings are acceptable input in public Cython functions::
+ 
+         sage: sgc('def f(char *x = "a string", z = {(1,2,3): True}): pass')
+-        ArgSpec(args=['x', 'z'], varargs=None, keywords=None, defaults=('a string', {(1, 2, 3): True}))
++        FullArgSpec(args=['x', 'z'], varargs=None, varkw=None, defaults=('a string', {(1, 2, 3): True}), kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+ 
+     AUTHORS:
+@@ -1503,40 +1499,40 @@ def sage_getargspec(obj):
+         sage: def f(x, y, z=1, t=2, *args, **keywords):
+         ....:     pass
+         sage: sage_getargspec(f)
+-        ArgSpec(args=['x', 'y', 'z', 't'], varargs='args', keywords='keywords', defaults=(1, 2))
++        FullArgSpec(args=['x', 'y', 'z', 't'], varargs='args', varkw='keywords', defaults=(1, 2), kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     We now run sage_getargspec on some functions from the Sage library::
+ 
+         sage: sage_getargspec(identity_matrix)
+-        ArgSpec(args=['ring', 'n', 'sparse'], varargs=None, keywords=None, defaults=(0, False))
++        FullArgSpec(args=['ring', 'n', 'sparse'], varargs=None, varkw=None, defaults=(0, False), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sage_getargspec(factor)
+-        ArgSpec(args=['n', 'proof', 'int_', 'algorithm', 'verbose'], varargs=None, keywords='kwds', defaults=(None, False, 'pari', 0))
++        FullArgSpec(args=['n', 'proof', 'int_', 'algorithm', 'verbose'], varargs=None, varkw='kwds', defaults=(None, False, 'pari', 0), kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     In the case of a class or a class instance, the ``ArgSpec`` of the
+     ``__new__``, ``__init__`` or ``__call__`` method is returned::
+ 
+         sage: P.<x,y> = QQ[]
+         sage: sage_getargspec(P)
+-        ArgSpec(args=['base_ring', 'n', 'names', 'order'], varargs=None, keywords=None, defaults=('degrevlex',))
++        FullArgSpec(args=['base_ring', 'n', 'names', 'order'], varargs=None, varkw=None, defaults=('degrevlex',), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sage_getargspec(P.__class__)
+-        ArgSpec(args=['self', 'x'], varargs='args', keywords='kwds', defaults=(0,))
++        FullArgSpec(args=['self', 'x'], varargs='args', varkw='kwds', defaults=(0,), kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     The following tests against various bugs that were fixed in
+     :trac:`9976`::
+ 
+         sage: from sage.rings.polynomial.real_roots import bernstein_polynomial_factory_ratlist
+         sage: sage_getargspec(bernstein_polynomial_factory_ratlist.coeffs_bitsize)
+-        ArgSpec(args=['self'], varargs=None, keywords=None, defaults=None)
++        FullArgSpec(args=['self'], varargs=None, varkw=None, defaults=None, kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: from sage.rings.polynomial.pbori.pbori import BooleanMonomialMonoid
+         sage: sage_getargspec(BooleanMonomialMonoid.gen)
+-        ArgSpec(args=['self', 'i'], varargs=None, keywords=None, defaults=(0,))
++        FullArgSpec(args=['self', 'i'], varargs=None, varkw=None, defaults=(0,), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: I = P*[x,y]
+         sage: sage_getargspec(I.groebner_basis)
+-        ArgSpec(args=['self', 'algorithm', 'deg_bound', 'mult_bound', 'prot'],
+-        varargs='args', keywords='kwds', defaults=('', None, None, False))
++        FullArgSpec(args=['self', 'algorithm', 'deg_bound', 'mult_bound', 'prot'],
++        varargs='args', varkw='kwds', defaults=('', None, None, False), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: cython("cpdef int foo(x,y) except -1: return 1")
+         sage: sage_getargspec(foo)
+-        ArgSpec(args=['x', 'y'], varargs=None, keywords=None, defaults=None)
++        FullArgSpec(args=['x', 'y'], varargs=None, varkw=None, defaults=None, kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     If a ``functools.partial`` instance is involved, we see no other meaningful solution
+     than to return the argspec of the underlying function::
+@@ -1546,7 +1542,7 @@ def sage_getargspec(obj):
+         sage: import functools
+         sage: f1 = functools.partial(f, 1,c=2)
+         sage: sage_getargspec(f1)
+-        ArgSpec(args=['a', 'b', 'c', 'd'], varargs=None, keywords=None, defaults=(1,))
++        FullArgSpec(args=['a', 'b', 'c', 'd'], varargs=None, varkw=None, defaults=(1,), kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     TESTS:
+ 
+@@ -1572,14 +1568,14 @@ def sage_getargspec(obj):
+         sage: print(sage.misc.sageinspect.sage_getsource(O))
+         def foo(x, a=')"', b={(2+1):'bar', not 1:3, 3<<4:5}): return
+         sage: spec = sage.misc.sageinspect.sage_getargspec(O)
+-        sage: spec.args, spec.varargs, spec.keywords
++        sage: spec.args, spec.varargs, spec.varkw
+         (['x', 'a', 'b'], None, None)
+         sage: spec.defaults[0]
+         ')"'
+         sage: sorted(spec.defaults[1].items(), key=lambda x: str(x))
+         [(3, 'bar'), (48, 5), (False, 3)]
+         sage: sage.misc.sageinspect.sage_getargspec(O.__call__)
+-        ArgSpec(args=['self', 'm', 'n'], varargs=None, keywords=None, defaults=None)
++        FullArgSpec(args=['self', 'm', 'n'], varargs=None, varkw=None, defaults=None, kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     ::
+ 
+@@ -1588,13 +1584,13 @@ def sage_getargspec(obj):
+         def foo(x, a='\')"', b={not (2+1==3):'bar'}): return
+         <BLANKLINE>
+         sage: sage.misc.sageinspect.sage_getargspec(foo)
+-        ArgSpec(args=['x', 'a', 'b'], varargs=None, keywords=None, defaults=('\')"', {False: 'bar'}))
++        FullArgSpec(args=['x', 'a', 'b'], varargs=None, varkw=None, defaults=('\')"', {False: 'bar'}), kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     The following produced a syntax error before the patch at :trac:`11913`,
+     see also :trac:`26906`::
+ 
+         sage: sage.misc.sageinspect.sage_getargspec(r.lm)                         # optional - rpy2
+-        ArgSpec(args=['self'], varargs='args', keywords='kwds', defaults=None)
++        FullArgSpec(args=['self'], varargs='args', varkw='kwds', defaults=None, kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     The following was fixed in :trac:`16309`::
+ 
+@@ -1608,23 +1604,23 @@ def sage_getargspec(obj):
+         ....:     cpdef meet(categories, bint as_list = False, tuple ignore_axioms=(), tuple axioms=()): pass
+         ....: ''')
+         sage: sage_getargspec(Foo.join)
+-        ArgSpec(args=['categories', 'as_list', 'ignore_axioms', 'axioms'], varargs=None, keywords=None, defaults=(False, (), ()))
++        FullArgSpec(args=['categories', 'as_list', 'ignore_axioms', 'axioms'], varargs=None, varkw=None, defaults=(False, (), ()), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sage_getargspec(Bar.join)
+-        ArgSpec(args=['categories', 'as_list', 'ignore_axioms', 'axioms'], varargs=None, keywords=None, defaults=(False, (), ()))
++        FullArgSpec(args=['categories', 'as_list', 'ignore_axioms', 'axioms'], varargs=None, varkw=None, defaults=(False, (), ()), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: sage_getargspec(Bar.meet)
+-        ArgSpec(args=['categories', 'as_list', 'ignore_axioms', 'axioms'], varargs=None, keywords=None, defaults=(False, (), ()))
++        FullArgSpec(args=['categories', 'as_list', 'ignore_axioms', 'axioms'], varargs=None, varkw=None, defaults=(False, (), ()), kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     Test that :trac:`17009` is fixed::
+ 
+         sage: sage_getargspec(gap)
+-        ArgSpec(args=['self', 'x', 'name'], varargs=None, keywords=None, defaults=(None,))
++        FullArgSpec(args=['self', 'x', 'name'], varargs=None, varkw=None, defaults=(None,), kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     By :trac:`17814`, the following gives the correct answer (previously, the
+     defaults would have been found ``None``)::
+ 
+         sage: from sage.misc.nested_class import MainClass
+         sage: sage_getargspec(MainClass.NestedClass.NestedSubClass.dummy)
+-        ArgSpec(args=['self', 'x', 'r'], varargs='args', keywords='kwds', defaults=((1, 2, 3.4),))
++        FullArgSpec(args=['self', 'x', 'r'], varargs='args', varkw='kwds', defaults=((1, 2, 3.4),), kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     In :trac:`18249` was decided to return a generic signature for Python
+     builtin functions, rather than to raise an error (which is what Python's
+@@ -1632,7 +1628,7 @@ def sage_getargspec(obj):
+ 
+         sage: import inspect
+         sage: sage_getargspec(range)
+-        ArgSpec(args=[], varargs='args', keywords='kwds', defaults=None)
++        FullArgSpec(args=[], varargs='args', varkw='kwds', defaults=None, kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     Test that :trac:`28524` is fixed::
+ 
+@@ -1819,14 +1815,10 @@ def sage_formatargspec(args, varargs=None, varkw=None, defaults=None,
+     EXAMPLES::
+ 
+         sage: from sage.misc.sageinspect import sage_formatargspec
+-        sage: from inspect import formatargspec # deprecated in Python 3
+         sage: args = ['a', 'b', 'c']
+         sage: defaults = [3]
+         sage: sage_formatargspec(args, defaults=defaults)
+         '(a, b, c=3)'
+-        sage: import warnings; warnings.simplefilter('ignore')  # ignore DeprecationWarning
+-        sage: formatargspec(args, defaults=defaults) == sage_formatargspec(args, defaults=defaults)
+-        True
+     """
+     def formatargandannotation(arg):
+         result = formatarg(arg)
+@@ -2649,11 +2641,11 @@ def __internal_tests():
+     Test _sage_getargspec_cython with multiple default arguments and a type::
+ 
+         sage: _sage_getargspec_cython("def init(self, x=None, base=0):")
+-        ArgSpec(args=['self', 'x', 'base'], varargs=None, keywords=None, defaults=(None, 0))
++        FullArgSpec(args=['self', 'x', 'base'], varargs=None, varkw=None, defaults=(None, 0), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: _sage_getargspec_cython("def __init__(self, x=None, base=0):")
+-        ArgSpec(args=['self', 'x', 'base'], varargs=None, keywords=None, defaults=(None, 0))
++        FullArgSpec(args=['self', 'x', 'base'], varargs=None, varkw=None, defaults=(None, 0), kwonlyargs=[], kwonlydefaults=None, annotations={})
+         sage: _sage_getargspec_cython("def __init__(self, x=None, unsigned int base=0, **keys):")
+-        ArgSpec(args=['self', 'x', 'base'], varargs=None, keywords='keys', defaults=(None, 0))
++        FullArgSpec(args=['self', 'x', 'base'], varargs=None, varkw='keys', defaults=(None, 0), kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+     Test _extract_embedded_position:
+ 
+diff --git a/src/sage/parallel/decorate.py b/src/sage/parallel/decorate.py
+index c14518af570..3a7152d5ac9 100644
+--- a/src/sage/parallel/decorate.py
++++ b/src/sage/parallel/decorate.py
+@@ -243,7 +243,8 @@ for a in args[0]))
+             ....:     return x + y
+             sage: from sage.misc.sageinspect import sage_getargspec
+             sage: sage_getargspec(p(f))
+-            ArgSpec(args=['x', 'y'], varargs=None, keywords=None, defaults=None)
++            FullArgSpec(args=['x', 'y'], varargs=None, varkw=None, defaults=None,
++                        kwonlyargs=[], kwonlydefaults=None, annotations={})
+         """
+         from sage.misc.sageinspect import sage_getargspec
+         return sage_getargspec(self.func)
+diff --git a/src/sage/plot/plot3d/plot3d.py b/src/sage/plot/plot3d/plot3d.py
+index 64b11a0442a..174765980f7 100644
+--- a/src/sage/plot/plot3d/plot3d.py
++++ b/src/sage/plot/plot3d/plot3d.py
+@@ -329,19 +329,24 @@ class _Coordinates():
+             sage: t1,t2,t3=T.to_cartesian(lambda a,b: 2*a+b)
+             sage: from sage.misc.sageinspect import sage_getargspec
+             sage: sage_getargspec(t1)
+-            ArgSpec(args=['a', 'b'], varargs=None, keywords=None, defaults=None)
++            FullArgSpec(args=['a', 'b'], varargs=None, varkw=None, defaults=None,
++                        kwonlyargs=[], kwonlydefaults=None, annotations={})
+             sage: sage_getargspec(t2)
+-            ArgSpec(args=['a', 'b'], varargs=None, keywords=None, defaults=None)
++            FullArgSpec(args=['a', 'b'], varargs=None, varkw=None, defaults=None,
++                        kwonlyargs=[], kwonlydefaults=None, annotations={})
+             sage: sage_getargspec(t3)
+-            ArgSpec(args=['a', 'b'], varargs=None, keywords=None, defaults=None)
++            FullArgSpec(args=['a', 'b'], varargs=None, varkw=None, defaults=None,
++                        kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+             sage: def g(a,b): return 2*a+b
+             sage: t1,t2,t3=T.to_cartesian(g)
+             sage: sage_getargspec(t1)
+-            ArgSpec(args=['a', 'b'], varargs=None, keywords=None, defaults=None)
++            FullArgSpec(args=['a', 'b'], varargs=None, varkw=None, defaults=None,
++                        kwonlyargs=[], kwonlydefaults=None, annotations={})
+             sage: t1,t2,t3=T.to_cartesian(2*a+b)
+             sage: sage_getargspec(t1)
+-            ArgSpec(args=['a', 'b'], varargs=None, keywords=None, defaults=None)
++            FullArgSpec(args=['a', 'b'], varargs=None, varkw=None, defaults=None,
++                        kwonlyargs=[], kwonlydefaults=None, annotations={})
+ 
+         If we cannot guess the right parameter names, then the
+         parameters are named `u` and `v`::
+@@ -352,7 +357,8 @@ class _Coordinates():
+             sage: T = _ArbitraryCoordinates((x + y, x - y, z), z,[x,y])
+             sage: t1,t2,t3=T.to_cartesian(operator.add)
+             sage: sage_getargspec(t1)
+-            ArgSpec(args=['u', 'v'], varargs=None, keywords=None, defaults=None)
++            FullArgSpec(args=['u', 'v'], varargs=None, varkw=None, defaults=None,
++                        kwonlyargs=[], kwonlydefaults=None, annotations={})
+             sage: [h(1,2) for h in T.to_cartesian(operator.mul)]
+             [3.0, -1.0, 2.0]
+             sage: [h(u=1,v=2) for h in T.to_cartesian(operator.mul)]
+diff --git a/src/sage/sets/set_from_iterator.py b/src/sage/sets/set_from_iterator.py
+index 3a2360383ea..74015c4433d 100644
+--- a/src/sage/sets/set_from_iterator.py
++++ b/src/sage/sets/set_from_iterator.py
+@@ -526,7 +526,9 @@ class Decorator():
+             sage: d = Decorator()
+             sage: d.f = find_local_minimum
+             sage: sage_getargspec(d) # indirect doctest
+-            ArgSpec(args=['f', 'a', 'b', 'tol', 'maxfun'], varargs=None, keywords=None, defaults=(1.48e-08, 500))
++            FullArgSpec(args=['f', 'a', 'b', 'tol', 'maxfun'],
++                        varargs=None, varkw=None, defaults=(1.48e-08, 500),
++                        kwonlyargs=[], kwonlydefaults=None, annotations={})
+         """
+         from sage.misc.sageinspect import sage_getargspec
+         return sage_getargspec(self.f)
+-- 
+2.38.1
+
+
+From 482dd1ac3d2bcaa94dd935e3add1a5165674b146 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Mon, 31 Oct 2022 22:12:38 -0300
+Subject: [PATCH 10/11] doctests: AssertionError message changed in python 3.11
+
+---
+ src/sage/misc/lazy_format.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/sage/misc/lazy_format.py b/src/sage/misc/lazy_format.py
+index e3050695b25..b58ea155862 100644
+--- a/src/sage/misc/lazy_format.py
++++ b/src/sage/misc/lazy_format.py
+@@ -78,7 +78,7 @@ class LazyFormat(str):
+         ....:               LazyFormat("%s is wrong")%IDontLikeBeingPrinted())
+         Traceback (most recent call last):
+         ...
+-        AssertionError: <unprintable AssertionError object>
++        AssertionError: ...
+     """
+ 
+     def __mod__(self, args):
+-- 
+2.38.1
+
+
+From 7b6fa565f426e28e14be3b22c202301f9d530e9e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Gonzalo=20Tornar=C3=ADa?= <tornaria@cmat.edu.uy>
+Date: Mon, 31 Oct 2022 22:13:13 -0300
+Subject: [PATCH 11/11] doctests: message added more info in python 3.11
+
+---
+ src/sage/repl/attach.py | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/sage/repl/attach.py b/src/sage/repl/attach.py
+index 39da6ee4acd..20b848e4f04 100644
+--- a/src/sage/repl/attach.py
++++ b/src/sage/repl/attach.py
+@@ -54,6 +54,7 @@ character-by-character::
+         exec(code, globals)
+       File ".../foobar.sage....py", line ..., in <module>
+         raise ValueError("third")   # this should appear in the source snippet
++    ...
+     ValueError: third
+     sage: detach(src)
+ """
+-- 
+2.38.1
+
