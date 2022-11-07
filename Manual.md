@@ -422,7 +422,7 @@ Multiple licenses should be separated by commas, Example: `GPL-3.0-or-later, cus
   and thus have and require no license should use
   `Public Domain`.
 
-  Note: `MIT`, `BSD`, `ISC` and custom licenses
+  Note: `AGPL`, `MIT`, `BSD`, `ISC`, `X11`, and custom licenses
   require the license file to be supplied with the binary package.
 
 - `maintainer` A string in the form of `name <user@domain>`.  The email for this field
