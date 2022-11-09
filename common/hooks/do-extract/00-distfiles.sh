@@ -178,6 +178,26 @@ hook() {
 			esac
 		fi
 	done
+	# Special case for num_dirs = 2, and it contains metadata
+	if [ "$num_dirs" != 2 ] || [ "$create_wrksrc" ]; then
+		:
+	elif grep -q 'xmlns="http://pear[.]php[.]net/dtd/package' package.xml 2>/dev/null
+	then
+		# PHP modules' metadata
+		rm -f package.xml
+		for f in */; do innerdir="$f"; done
+		num_dirs=1
+	else
+		for f in *; do
+			# AppleDouble encoded Macintosh file
+			if [ -e "$f" ] && [ -e "._$f" ]; then
+				rm -f "._$f"
+				num_dirs=1
+				innerdir="$f"
+				break
+			fi
+		done
+	fi
 	rm -rf "$wrksrc"
 	innerdir="$extractdir/$innerdir"
 	cd "$XBPS_BUILDDIR"
