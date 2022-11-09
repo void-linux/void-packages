@@ -3,7 +3,7 @@
 
 hook() {
 	local srcdir="$XBPS_SRCDISTDIR/$pkgname-$version"
-	local f j curfile found extractdir innerdir num_dirs
+	local f j curfile found extractdir innerdir innerfile num_dirs
 	local TAR_CMD
 
 	if [ -z "$distfiles" -a -z "$checksum" ]; then
@@ -62,6 +62,7 @@ hook() {
 		*.tar)        cursufx="tar";;
 		*.zip)        cursufx="zip";;
 		*.rpm)        cursufx="rpm";;
+		*.deb)        cursufx="deb";;
 		*.patch)      cursufx="txt";;
 		*.diff)       cursufx="txt";;
 		*.txt)        cursufx="txt";;
@@ -84,7 +85,7 @@ hook() {
 			cd "$extractdir"
 			case ${cursufx} in
 			gz)
-				 gunzip -f $curfile
+				gunzip -f $curfile
 				;;
 			bz2)
 				bunzip2 -f $curfile
@@ -118,6 +119,17 @@ hook() {
 				fi
 			else
 				msg_error "$pkgver: cannot find rpmextract for extraction.\n"
+			fi
+			;;
+		deb)
+			if command -v bsdtar &>/dev/null; then
+				bsdtar -x -O -f "$srcdir/$curfile" "data.tar.*" |
+				bsdtar -C "$extractdir" -x --no-same-permissions --no-same-owner
+				if [ $? -ne 0 ]; then
+					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
+				fi
+			else
+				msg_error "$pkgver: cannot find bsdtar for extraction.\n"
 			fi
 			;;
 		txt)
