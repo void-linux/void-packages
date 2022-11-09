@@ -111,14 +111,12 @@ hook() {
 			fi
 			;;
 		rpm)
-			if command -v rpmextract &>/dev/null; then
-				cd "$extractdir"
-				rpmextract $srcdir/$curfile
-				if [ $? -ne 0 ]; then
-					msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
-				fi
-			else
-				msg_error "$pkgver: cannot find rpmextract for extraction.\n"
+			if ! command -v bsdtar &>/dev/null; then
+				msg_error "$pkgver: cannot find bsdtar for extraction.\n"
+			fi
+			bsdtar -x --no-same-permissions --no-same-owner -f $srcdir/$curfile -C "$extractdir"
+			if [ $? -ne 0 ]; then
+				msg_error "$pkgver: extracting $curfile into $XBPS_BUILDDIR.\n"
 			fi
 			;;
 		deb)
