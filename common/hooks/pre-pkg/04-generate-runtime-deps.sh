@@ -46,7 +46,7 @@ store_pkgdestdir_rundeps() {
 }
 
 hook() {
-    local depsftmp f lf j mapshlibs sorequires _curdep elfmagic broken_shlibs
+    local depsftmp f lf j mapshlibs sorequires _curdep elfmagic broken_shlibs verify_deps
 
     # Disable trap on ERR, xbps-uhelper cmd might return error... but not something
     # to be worried about because if there are broken shlibs this hook returns
@@ -62,6 +62,10 @@ hook() {
 
     depsftmp=$(mktemp) || exit 1
     find ${PKGDESTDIR} -type f -perm -u+w > $depsftmp 2>/dev/null
+
+    for f in ${shlib_requires}; do
+        verify_deps+=" ${f}"
+    done
 
     exec 3<&0 # save stdin
     exec < $depsftmp
@@ -161,9 +165,6 @@ hook() {
 
     store_pkgdestdir_rundeps
 
-    for f in ${shlib_requires}; do
-        sorequires+="${f} "
-    done
     if [ -n "${sorequires}" ]; then
         echo "${sorequires}" | xargs -n1 | sort | xargs > ${PKGDESTDIR}/shlib-requires
     fi
