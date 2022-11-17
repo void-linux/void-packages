@@ -1,0 +1,276 @@
+From 4c86d6a7d54abb64fc5a15131f3351224e8c071b Mon Sep 17 00:00:00 2001
+From: Radostin Stoyanov <rstoyanov@fedoraproject.org>
+Date: Sun, 31 Jul 2022 16:07:30 +0000
+Subject: [PATCH] criu: fix conflicting headers
+
+There are several changes in glibc 2.36 that make sys/mount.h header
+incompatible with kernel headers:
+
+https://sourceware.org/glibc/wiki/Release/2.36#Usage_of_.3Clinux.2Fmount.h.3E_and_.3Csys.2Fmount.h.3E
+
+This patch removes conflicting includes for `<linux/mount.h>` and
+updates the content of `criu/include/linux/mount.h` to match
+`/usr/include/sys/mount.h`. In addition, inline definitions sys_*()
+functions have been moved from "linux/mount.h" to "syscall.h" to
+avoid conflicts with `uapi/compel/plugins/std/syscall.h` and
+`<unistd.h>`. The include for `<linux/aio_abi.h>` has been replaced
+with local include to avoid conflicts with `<sys/mount.h>`.
+
+Fixes: #1949
+
+Signed-off-by: Radostin Stoyanov <rstoyanov@fedoraproject.org>
+---
+ Makefile.config              |  2 +-
+ criu/cgroup.c                |  1 +
+ criu/cr-check.c              |  2 +-
+ criu/cr-restore.c            |  3 ++-
+ criu/include/aio.h           |  2 +-
+ criu/include/linux/aio_abi.h | 14 +++++++++++
+ criu/include/linux/mount.h   | 48 +++++++++++++++++++-----------------
+ criu/include/syscall.h       | 17 +++++++++++++
+ criu/pie/parasite.c          |  2 +-
+ criu/util.c                  |  1 +
+ scripts/feature-tests.mak    | 13 ----------
+ 11 files changed, 64 insertions(+), 41 deletions(-)
+ create mode 100644 criu/include/linux/aio_abi.h
+ create mode 100644 criu/include/syscall.h
+
+Index: criu-3.17.1/Makefile.config
+===================================================================
+--- criu-3.17.1.orig/Makefile.config
++++ criu-3.17.1/Makefile.config
+@@ -78,7 +78,7 @@ export DEFINES += $(FEATURE_DEFINES)
+ export CFLAGS += $(FEATURE_DEFINES)
+ 
+ FEATURES_LIST	:= TCP_REPAIR STRLCPY STRLCAT PTRACE_PEEKSIGINFO \
+-	SETPROCTITLE_INIT MEMFD TCP_REPAIR_WINDOW FSCONFIG MEMFD_CREATE OPENAT2
++	SETPROCTITLE_INIT MEMFD TCP_REPAIR_WINDOW MEMFD_CREATE OPENAT2
+ 
+ # $1 - config name
+ define gen-feature-test
+Index: criu-3.17.1/criu/cgroup.c
+===================================================================
+--- criu-3.17.1.orig/criu/cgroup.c
++++ criu-3.17.1/criu/cgroup.c
+@@ -27,6 +27,7 @@
+ #include "images/cgroup.pb-c.h"
+ #include "kerndat.h"
+ #include "linux/mount.h"
++#include "syscall.h"
+ 
+ /*
+  * This structure describes set of controller groups
+Index: criu-3.17.1/criu/cr-check.c
+===================================================================
+--- criu-3.17.1.orig/criu/cr-check.c
++++ criu-3.17.1/criu/cr-check.c
+@@ -21,7 +21,6 @@
+ #include <sys/prctl.h>
+ #include <sched.h>
+ #include <sys/mount.h>
+-#include <linux/aio_abi.h>
+ 
+ #include "../soccr/soccr.h"
+ 
+@@ -52,6 +51,7 @@
+ #include "net.h"
+ #include "restorer.h"
+ #include "uffd.h"
++#include "linux/aio_abi.h"
+ 
+ #include "images/inventory.pb-c.h"
+ 
+Index: criu-3.17.1/criu/cr-restore.c
+===================================================================
+--- criu-3.17.1.orig/criu/cr-restore.c
++++ criu-3.17.1/criu/cr-restore.c
+@@ -22,7 +22,6 @@
+ #include <compel/ptrace.h>
+ #include "common/compiler.h"
+ 
+-#include "linux/mount.h"
+ #include "linux/rseq.h"
+ 
+ #include "clone-noasan.h"
+@@ -86,6 +85,8 @@
+ #include <compel/plugins/std/syscall-codes.h>
+ #include "compel/include/asm/syscall.h"
+ 
++#include "linux/mount.h"
++
+ #include "protobuf.h"
+ #include "images/sa.pb-c.h"
+ #include "images/timer.pb-c.h"
+Index: criu-3.17.1/criu/include/aio.h
+===================================================================
+--- criu-3.17.1.orig/criu/include/aio.h
++++ criu-3.17.1/criu/include/aio.h
+@@ -1,7 +1,7 @@
+ #ifndef __CR_AIO_H__
+ #define __CR_AIO_H__
+ 
+-#include <linux/aio_abi.h>
++#include "linux/aio_abi.h"
+ #include "images/mm.pb-c.h"
+ unsigned int aio_estimate_nr_reqs(unsigned int size);
+ int dump_aio_ring(MmEntry *mme, struct vma_area *vma);
+Index: criu-3.17.1/criu/include/linux/aio_abi.h
+===================================================================
+--- /dev/null
++++ criu-3.17.1/criu/include/linux/aio_abi.h
+@@ -0,0 +1,14 @@
++#ifndef __LINUX__AIO_ABI_H
++#define __LINUX__AIO_ABI_H
++
++typedef __kernel_ulong_t aio_context_t;
++
++/* read() from /dev/aio returns these structures. */
++struct io_event {
++	__u64 data; /* the data field from the iocb */
++	__u64 obj;  /* what iocb this event came from */
++	__s64 res;  /* result code for this event */
++	__s64 res2; /* secondary result */
++};
++
++#endif /* __LINUX__AIO_ABI_H */
+Index: criu-3.17.1/criu/include/linux/mount.h
+===================================================================
+--- criu-3.17.1.orig/criu/include/linux/mount.h
++++ criu-3.17.1/criu/include/linux/mount.h
+@@ -4,32 +4,34 @@
+ #include "common/config.h"
+ #include "compel/plugins/std/syscall-codes.h"
+ 
+-#ifdef CONFIG_HAS_FSCONFIG
+-#include <linux/mount.h>
+-#else
++/* Copied from /usr/include/sys/mount.h */
++
++#ifndef FSCONFIG_CMD_CREATE
++/* The type of fsconfig call made.   */
+ enum fsconfig_command {
+-	FSCONFIG_SET_FLAG = 0,	      /* Set parameter, supplying no value */
+-	FSCONFIG_SET_STRING = 1,      /* Set parameter, supplying a string value */
+-	FSCONFIG_SET_BINARY = 2,      /* Set parameter, supplying a binary blob value */
+-	FSCONFIG_SET_PATH = 3,	      /* Set parameter, supplying an object by path */
+-	FSCONFIG_SET_PATH_EMPTY = 4,  /* Set parameter, supplying an object by (empty) path */
+-	FSCONFIG_SET_FD = 5,	      /* Set parameter, supplying an object by fd */
+-	FSCONFIG_CMD_CREATE = 6,      /* Invoke superblock creation */
++	FSCONFIG_SET_FLAG = 0, /* Set parameter, supplying no value */
++#define FSCONFIG_SET_FLAG FSCONFIG_SET_FLAG
++	FSCONFIG_SET_STRING = 1, /* Set parameter, supplying a string value */
++#define FSCONFIG_SET_STRING FSCONFIG_SET_STRING
++	FSCONFIG_SET_BINARY = 2, /* Set parameter, supplying a binary blob value */
++#define FSCONFIG_SET_BINARY FSCONFIG_SET_BINARY
++	FSCONFIG_SET_PATH = 3, /* Set parameter, supplying an object by path */
++#define FSCONFIG_SET_PATH FSCONFIG_SET_PATH
++	FSCONFIG_SET_PATH_EMPTY = 4, /* Set parameter, supplying an object by (empty) path */
++#define FSCONFIG_SET_PATH_EMPTY FSCONFIG_SET_PATH_EMPTY
++	FSCONFIG_SET_FD = 5, /* Set parameter, supplying an object by fd */
++#define FSCONFIG_SET_FD FSCONFIG_SET_FD
++	FSCONFIG_CMD_CREATE = 6, /* Invoke superblock creation */
++#define FSCONFIG_CMD_CREATE FSCONFIG_CMD_CREATE
+ 	FSCONFIG_CMD_RECONFIGURE = 7, /* Invoke superblock reconfiguration */
++#define FSCONFIG_CMD_RECONFIGURE FSCONFIG_CMD_RECONFIGURE
+ };
+-#endif
++#endif // FSCONFIG_CMD_CREATE
+ 
+-static inline int sys_fsopen(const char *fsname, unsigned int flags)
+-{
+-	return syscall(__NR_fsopen, fsname, flags);
+-}
+-static inline int sys_fsconfig(int fd, unsigned int cmd, const char *key, const char *value, int aux)
+-{
+-	return syscall(__NR_fsconfig, fd, cmd, key, value, aux);
+-}
+-static inline int sys_fsmount(int fd, unsigned int flags, unsigned int attr_flags)
+-{
+-	return syscall(__NR_fsmount, fd, flags, attr_flags);
+-}
++#ifndef MS_MGC_VAL
++/* Magic mount flag number. Has to be or-ed to the flag values.  */
++#define MS_MGC_VAL 0xc0ed0000 /* Magic flag number to indicate "new" flags */
++#define MS_MGC_MSK 0xffff0000 /* Magic flag number mask */
++#endif
+ 
+ #endif
+Index: criu-3.17.1/criu/include/syscall.h
+===================================================================
+--- /dev/null
++++ criu-3.17.1/criu/include/syscall.h
+@@ -0,0 +1,17 @@
++#ifndef __CR_SYSCALL_H__
++#define __CR_SYSCALL_H__
++
++static inline int sys_fsopen(const char *fsname, unsigned int flags)
++{
++	return syscall(__NR_fsopen, fsname, flags);
++}
++static inline int sys_fsconfig(int fd, unsigned int cmd, const char *key, const char *value, int aux)
++{
++	return syscall(__NR_fsconfig, fd, cmd, key, value, aux);
++}
++static inline int sys_fsmount(int fd, unsigned int flags, unsigned int attr_flags)
++{
++	return syscall(__NR_fsmount, fd, flags, attr_flags);
++}
++
++#endif /* __CR_SYSCALL_H__ */
+\ No newline at end of file
+Index: criu-3.17.1/criu/pie/parasite.c
+===================================================================
+--- criu-3.17.1.orig/criu/pie/parasite.c
++++ criu-3.17.1/criu/pie/parasite.c
+@@ -3,7 +3,6 @@
+ #include <signal.h>
+ #include <linux/limits.h>
+ #include <linux/capability.h>
+-#include <sys/mount.h>
+ #include <stdarg.h>
+ #include <sys/ioctl.h>
+ #include <sys/uio.h>
+@@ -14,6 +13,7 @@
+ #include "int.h"
+ #include "types.h"
+ #include <compel/plugins/std/syscall.h>
++#include "linux/mount.h"
+ #include "parasite.h"
+ #include "fcntl.h"
+ #include "prctl.h"
+Index: criu-3.17.1/criu/util.c
+===================================================================
+--- criu-3.17.1.orig/criu/util.c
++++ criu-3.17.1/criu/util.c
+@@ -40,6 +40,7 @@
+ #include "mem.h"
+ #include "namespaces.h"
+ #include "criu-log.h"
++#include "syscall.h"
+ 
+ #include "clone-noasan.h"
+ #include "cr_options.h"
+Index: criu-3.17.1/scripts/feature-tests.mak
+===================================================================
+--- criu-3.17.1.orig/scripts/feature-tests.mak
++++ criu-3.17.1/scripts/feature-tests.mak
+@@ -137,19 +137,6 @@ ENTRY(main)
+ END(main)
+ endef
+ 
+-define FEATURE_TEST_FSCONFIG
+-
+-#include <linux/mount.h>
+-
+-int main(void)
+-{
+-	if (FSCONFIG_CMD_CREATE > 0)
+-		return 0;
+-	return 0;
+-}
+-
+-endef
+-
+ define FEATURE_TEST_NFTABLES_LIB_API_0
+ 
+ #include <string.h>
