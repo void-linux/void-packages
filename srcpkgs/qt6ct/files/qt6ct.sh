@@ -1,6 +1,9 @@
-#!/usr/bin/env sh
+#!/bin/sh
 
-export QT_QPA_PLATFORMTHEME=qt5ct
+if [ "$XDG_CURRENT_DESKTOP" != "KDE" ]; then
+	export QT_QPA_PLATFORMTHEME=qt5ct
+fi
+
 if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
 	export QT_QPA_PLATFORM=wayland
 fi
