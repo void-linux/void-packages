@@ -634,6 +634,10 @@ sonames in shared libraries.
 their reverse dependencies. You need to specify all dependencies in the `depends` when you
 need to set this.
 
+- `noverifypython` Normally, `xbps-src` will verify linkage to Python3 if
+  `python3-devel` is pulled for build dependencies. If `noverifypython` is
+  set, `xbps-src` will skip the check.
+
 - `skiprdeps` White space separated list of filenames specified by their absolute path in
 the `$DESTDIR` which will not be scanned for runtime dependencies. This may be useful to
 skip files which are not meant to be run or loaded on the host but are to be sent to some

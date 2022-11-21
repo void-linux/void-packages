@@ -38,6 +38,7 @@ if [ "$SUBPKG_MODE"  = "no" ]; then
 
         touch -f $XBPS_INSTALL_DONE
     fi
+    run_pkg_hooks post-install-sourcepkg
     exit 0
 fi
 
