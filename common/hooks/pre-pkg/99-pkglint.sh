@@ -29,6 +29,15 @@ hook() {
 		fi
 	done
 
+	if [ -d ${PKGDESTDIR}/usr/lib/libexec ]; then
+		# Add exception for kconfig,
+		# other packages hard-coded path to its files
+		if [ "${pkgname}" != kconfig ]; then
+			msg_red "${pkgver}: /usr/lib/libexec directory is not allowed!\n"
+			error=1
+		fi
+	fi
+
 	for f in "$PKGDESTDIR"/*; do
 		f="${f##*/}"
 		case "$f" in
