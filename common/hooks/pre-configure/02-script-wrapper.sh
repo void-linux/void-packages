@@ -65,17 +65,27 @@ _EOF
 }
 
 python_wrapper() {
-	local wrapper="$1" version="$2"
+	local wrapper="$1" version="$2" shlib="${3:-}"
 
 	[ -x ${XBPS_WRAPPERDIR}/${wrapper} ] && return 0
-	cat >>${XBPS_WRAPPERDIR}/${wrapper}<<_EOF
+	{
+		cat <<_EOF
 #!/bin/sh
 case "\$1" in
 --includes|--cflags)
 	echo "-I${XBPS_CROSS_BASE}/usr/include/python${version}" ;;
+_EOF
+	if [ "$shlib" ]; then
+		cat <<_EOF
+--ldflags)
+	echo "-lpython${shlib}" ;;
+_EOF
+	fi
+	cat <<_EOF
 esac
 exit 0
 _EOF
+	}>${XBPS_WRAPPERDIR}/${wrapper}
 	chmod 755 ${XBPS_WRAPPERDIR}/${wrapper}
 }
 
@@ -236,7 +246,7 @@ hook() {
 	generic_wrapper3 libetpan-config
 	generic_wrapper3 giblib-config
 	python_wrapper python-config 2.7
-	python_wrapper python3-config 3.11
+	python_wrapper python3-config ${py3_ver} "${py3_ver}${py3_abiver}"
 	apr_apu_wrapper apr-1-config
 	apr_apu_wrapper apu-1-config
 }
