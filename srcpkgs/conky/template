@@ -1,30 +1,185 @@
 # Template file for 'conky'
 # Keep in sync with 'conky-cli'
 pkgname=conky
-version=1.13.1
+version=1.15.0
 revision=1
+archs="~i686*"
+create_wrksrc=yes
 build_style=cmake
 conf_files="/etc/conky/conky.conf /etc/conky/conky_no_x11.conf"
 configure_args="-DMAINTAINER_MODE=ON -DRELEASE=ON
- -DDOC_PATH=share/doc/${pkgname} -DBUILD_X11=ON -DBUILD_CURL=ON -DBUILD_XDBE=ON
- -DBUILD_RSS=ON -DBUILD_WEATHER_METAR=ON -DBUILD_IMLIB2=ON -DBUILD_WLAN=ON
- -DBUILD_LUA_CAIRO=ON -DBUILD_LUA_IMLIB2=ON -DBUILD_LUA_RSVG=ON
- -DBUILD_XSHAPE=ON -DBUILD_DOCS=ON"
+ -DDOC_PATH=share/doc/${pkgname} -DBUILD_CURL=ON
+ -DBUILD_RSS=ON -DBUILD_WEATHER_METAR=ON -DBUILD_WLAN=ON"
 hostmakedepends="libtool pkg-config docbook2x man-db toluapp"
 makedepends="alsa-lib-devel imlib2-devel libXdamage-devel libXft-devel
  libXinerama-devel libcurl-devel librsvg-devel lua53-devel ncurses-devel
  toluapp-devel wireless_tools-devel"
 short_desc="Lightweight system monitor for X"
-maintainer="Orphaned <orphan@voidlinux.org>"
+maintainer="DragonGhost7 <darkiridiumghost@gmail.com>"
 license="BSD-3-Clause, GPL-3.0-or-later"
 homepage="https://github.com/brndnmtthws/conky"
-distfiles="https://github.com/brndnmtthws/conky/archive/v${version}.tar.gz"
-checksum=f85c96250b501e937b9b5d2ff3f06176e14777c94cec81373bbfc8a619d7a05a
+distfiles="https://github.com/brndnmtthws/conky/archive/v${version}.tar.gz
+ https://github.com/brndnmtthws/conky/releases/download/v${version}/conky.1.gz"
+checksum="bebd54637bf8819ee395b765e3615ad28606d28a7870ac99ed1dffb1d14087b2
+ 0c3eb754352c5861bcac530629e75caab1014df9f8edda163c4fe7a4aaef5cc4"
+_x11_args="-DBUILD_X11=ON -DBUILD_XDBE=ON -DBUILD_IMLIB2=ON
+ -DBUILD_LUA_CAIRO=ON -DBUILD_LUA_IMLIB2=ON -DBUILD_LUA_RSVG=ON -DBUILD_XSHAPE=ON"
+_no_x11_args=" -DBUILD_X11=OFF -DBUILD_XDBE=OFF -DBUILD_IMLIB2=OFF"
 
-post_install() {
+post_extract() {
+	cp -r ${pkgname}-${version} ${pkgname}-cli-${version}
+	sed -i -e '1iinclude(CheckIncludeFile)' \
+		-e 's/NCURSES ncurses/NCURSES ncursesw/' \
+		${pkgname}-cli-${version}/cmake/ConkyPlatformChecks.cmake
+}
+
+do_configure() {
+	cmake_args="-DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=None
+ -DCMAKE_INSTALL_SYSCONFDIR=/etc"
+	cd ${pkgname}-${version}
+	mkdir -p build; cd build
+
+		cat >bootstrap.cmake <<_EOF
+SET(CMAKE_SYSTEM_NAME Linux)
+SET(CMAKE_SYSTEM_VERSION 1)
+
+SET(CMAKE_C_COMPILER   ${CC})
+SET(CMAKE_CXX_COMPILER ${CXX})
+
+SET(CMAKE_FIND_ROOT_PATH  "${XBPS_MASTERDIR}/usr;${XBPS_MASTERDIR}")
+
+SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+_EOF
+		configure_args+=" -DCMAKE_TOOLCHAIN_FILE=bootstrap.cmake"
+	if [ "$CROSS_BUILD" ]; then
+		case "$XBPS_TARGET_MACHINE" in
+			x86_64*) _CMAKE_SYSTEM_PROCESSOR=x86_64 ;;
+			i686*) _CMAKE_SYSTEM_PROCESSOR=x86 ;;
+			aarch64*) _CMAKE_SYSTEM_PROCESSOR=aarch64 ;;
+			arm*) _CMAKE_SYSTEM_PROCESSOR=arm ;;
+			mips*) _CMAKE_SYSTEM_PROCESSOR=mips ;;
+			ppc64le*) _CMAKE_SYSTEM_PROCESSOR=ppc64le ;;
+			ppc64*) _CMAKE_SYSTEM_PROCESSOR=ppc64 ;;
+			ppcle*) _CMAKE_SYSTEM_PROCESSOR=ppcle ;;
+			ppc*) _CMAKE_SYSTEM_PROCESSOR=ppc ;;
+			*) _CMAKE_SYSTEM_PROCESSOR=generic ;;
+		esac
+		cat > cross_${XBPS_CROSS_TRIPLET}.cmake <<_EOF
+SET(CMAKE_SYSTEM_NAME Linux)
+SET(CMAKE_SYSTEM_VERSION 1)
+
+SET(CMAKE_C_COMPILER   ${CC})
+SET(CMAKE_CXX_COMPILER ${CXX})
+SET(CMAKE_CROSSCOMPILING TRUE)
+
+SET(CMAKE_SYSTEM_PROCESSOR ${_CMAKE_SYSTEM_PROCESSOR})
+
+SET(CMAKE_FIND_ROOT_PATH  "${XBPS_CROSS_BASE}/usr;${XBPS_CROSS_BASE}")
+
+SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+_EOF
+	fi
+
+	export CMAKE_GENERATOR="${CMAKE_GENERATOR:-Ninja}"
+	CFLAGS="-DNDEBUG ${CFLAGS/ -pipe / }" CXXFLAGS="-DNDEBUG ${CXXFLAGS/ -pipe / }" \
+	cmake ${cmake_args}  -DCMAKE_TOOLCHAIN_FILE=${wrksrc}/${pkgname}-${version}/build/cross_${XBPS_CROSS_TRIPLET}.cmake \
+		${configure_args} ${_x11_args} ..
+	sed -i -e 's/-isystem/-I/g' build.ninja
+
+	cd ${wrksrc}/${pkgname}-cli-${version}
+	mkdir -p build; cd build
+
+		cat >bootstrap.cmake <<_EOF
+SET(CMAKE_SYSTEM_NAME Linux)
+SET(CMAKE_SYSTEM_VERSION 1)
+
+SET(CMAKE_C_COMPILER   ${CC})
+SET(CMAKE_CXX_COMPILER ${CXX})
+
+SET(CMAKE_FIND_ROOT_PATH  "${XBPS_MASTERDIR}/usr;${XBPS_MASTERDIR}")
+
+SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+_EOF
+		configure_args+=" -DCMAKE_TOOLCHAIN_FILE=bootstrap.cmake"
+	if [ "$CROSS_BUILD" ]; then
+		case "$XBPS_TARGET_MACHINE" in
+			x86_64*) _CMAKE_SYSTEM_PROCESSOR=x86_64 ;;
+			i686*) _CMAKE_SYSTEM_PROCESSOR=x86 ;;
+			aarch64*) _CMAKE_SYSTEM_PROCESSOR=aarch64 ;;
+			arm*) _CMAKE_SYSTEM_PROCESSOR=arm ;;
+			mips*) _CMAKE_SYSTEM_PROCESSOR=mips ;;
+			ppc64le*) _CMAKE_SYSTEM_PROCESSOR=ppc64le ;;
+			ppc64*) _CMAKE_SYSTEM_PROCESSOR=ppc64 ;;
+			ppcle*) _CMAKE_SYSTEM_PROCESSOR=ppcle ;;
+			ppc*) _CMAKE_SYSTEM_PROCESSOR=ppc ;;
+			*) _CMAKE_SYSTEM_PROCESSOR=generic ;;
+		esac
+		cat > cross_${XBPS_CROSS_TRIPLET}.cmake <<_EOF
+SET(CMAKE_SYSTEM_NAME Linux)
+SET(CMAKE_SYSTEM_VERSION 1)
+
+SET(CMAKE_C_COMPILER   ${CC})
+SET(CMAKE_CXX_COMPILER ${CXX})
+SET(CMAKE_CROSSCOMPILING TRUE)
+
+SET(CMAKE_SYSTEM_PROCESSOR ${_CMAKE_SYSTEM_PROCESSOR})
+
+SET(CMAKE_FIND_ROOT_PATH  "${XBPS_CROSS_BASE}/usr;${XBPS_CROSS_BASE}")
+
+SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+_EOF
+	fi
+
+
+	CFLAGS="-DNDEBUG ${CFLAGS/ -pipe / }" CXXFLAGS="-DNDEBUG ${CXXFLAGS/ -pipe / }" \
+	cmake ${cmake_args} -DCMAKE_TOOLCHAIN_FILE=${wrksrc}/${pkgname}-cli-${version}/build/cross_${XBPS_CROSS_TRIPLET}.cmake \
+		${configure_args} ${_no_x11_args} ..
+	sed -i -e 's/-isystem/-I/g' build.ninja
+}
+
+do_build() {
+	cd ${pkgname}-${version}/build
+	ninja ${makejobs} ${make_build_args} ${make_build_target}
+	cd ${wrksrc}/${pkgname}-cli-${version}/build
+	ninja ${makejobs} ${make_build_args} ${make_build_target}
+}
+
+do_check() {
+	cd ${pkgname}-${version}/build
+	ninja ${makejobs} test
+	cd ${wrksrc}/${pkgname}-cli-${version}/build
+	ninja ${makejobs} test
+}
+
+do_install() {
+	cd ${pkgname}-${version}/build
+	DESTDIR=${DESTDIR} ninja ${make_install_args} install
 	vmkdir etc/conky
 	mv ${DESTDIR}/usr/share/doc/conky/conky.conf ${DESTDIR}/etc/conky/
 	mv ${DESTDIR}/usr/share/doc/conky/conky_no_x11.conf ${DESTDIR}/etc/conky/
 	rm ${DESTDIR}/usr/share/doc/conky/convert.lua
-	vlicense COPYING
+	vlicense ${wrksrc}/${pkgname}-${version}/COPYING
+	vman ${wrksrc}/conky.1
+}
+
+conky-cli_package() {
+	short_desc="Conky command line without X11"
+	provides="conky-${version}_${revision}"
+	conflicts="conky>=0"
+	pkg_install() {
+		cd ${wrksrc}/${pkgname}-${version}/build
+		DESTDIR=${PKGDESTDIR} ninja ${make_install_args} install
+		vmkdir etc/conky
+		mv ${PKGDESTDIR}/usr/share/doc/conky/conky.conf ${PKGDESTDIR}/etc/conky/
+		mv ${PKGDESTDIR}/usr/share/doc/conky/conky_no_x11.conf ${PKGDESTDIR}/etc/conky/
+		rm ${PKGDESTDIR}/usr/share/doc/conky/convert.lua
+		vlicense ${wrksrc}/${pkgname}-${version}/COPYING
+		vman ${wrksrc}/conky.1
+	}
 }
