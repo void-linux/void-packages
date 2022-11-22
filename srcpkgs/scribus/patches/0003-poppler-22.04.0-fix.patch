@@ -1,0 +1,288 @@
+From f2237b8f0b5cf7690e864a22ef7a63a6d769fa36 Mon Sep 17 00:00:00 2001
+From: Jean Ghali <jghali@libertysurf.fr>
+Date: Fri, 1 Apr 2022 23:52:32 +0000
+Subject: [PATCH] Fix build with poppler 22.04.0
+
+git-svn-id: svn://scribus.net/trunk/Scribus@25074 11d20701-8431-0410-a711-e3c959e3b870
+---
+ scribus/plugins/import/pdf/slaoutput.cpp | 123 ++++++++++++++---------
+ 1 file changed, 78 insertions(+), 45 deletions(-)
+
+diff --git a/scribus/plugins/import/pdf/slaoutput.cpp b/scribus/plugins/import/pdf/slaoutput.cpp
+index e20a81f99e..5626fe3477 100644
+--- a/scribus/plugins/import/pdf/slaoutput.cpp
++++ b/scribus/plugins/import/pdf/slaoutput.cpp
+@@ -174,8 +174,13 @@ void AnoOutputDev::drawString(GfxState *state, POPPLER_CONST GooString *s)
+ 	int shade = 100;
+ 	currColorText = getColor(state->getFillColorSpace(), state->getFillColor(), &shade);
+ 	fontSize = state->getFontSize();
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 4, 0)
++	if (state->getFont() && state->getFont()->getName())
++		fontName = new GooString(state->getFont()->getName().value());
++#else
+ 	if (state->getFont())
+ 		fontName = state->getFont()->getName()->copy();
++#endif
+ 	itemText = s->copy();
+ }
+ 
+@@ -357,7 +362,12 @@ std::unique_ptr<LinkAction> SlaOutputDev::SC_getAdditionalAction(const char *key
+ GBool SlaOutputDev::annotations_callback(Annot *annota, void *user_data)
+ {
+ 	SlaOutputDev *dev = (SlaOutputDev*)user_data;
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 4, 0)
++	const PDFRectangle& annotRect = annota->getRect();;
++	const PDFRectangle* box = &annotRect;
++#else
+ 	PDFRectangle *box = annota->getRect();
++#endif
+ 	double xCoor = dev->m_doc->currentPage()->xOffset() + box->x1 - dev->cropOffsetX;
+ 	double yCoor = dev->m_doc->currentPage()->yOffset() + dev->m_doc->currentPage()->height() - box->y2 + dev->cropOffsetY;
+ 	double width = box->x2 - box->x1;
+@@ -684,7 +694,12 @@ bool SlaOutputDev::handleWidgetAnnot(Annot* annota, double xCoor, double yCoor,
+ 			if (apa || !achar)
+ 			{
+ 				AnoOutputDev *annotOutDev = new AnoOutputDev(m_doc, m_importedColors);
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 4, 0)
++				const PDFRectangle& annotaRect = annota->getRect();
++				Gfx* gfx = new Gfx(pdfDoc, annotOutDev, pdfDoc->getPage(m_actPage)->getResourceDict(), &annotaRect, nullptr);
++#else
+ 				Gfx *gfx = new Gfx(pdfDoc, annotOutDev, pdfDoc->getPage(m_actPage)->getResourceDict(), annota->getRect(), nullptr);
++#endif
+ 				ano->draw(gfx, false);
+ 				if (!bgFound)
+ 					m_currColorFill = annotOutDev->currColorFill;
+@@ -2916,22 +2931,27 @@ void SlaOutputDev::markPoint(POPPLER_CONST char *name, Dict *properties)
+ 
+ void SlaOutputDev::updateFont(GfxState *state)
+ {
+-	GfxFont *gfxFont;
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 2, 0)
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 4, 0)
++	std::optional<GfxFontLoc> fontLoc;
++	std::string fileName;
++	std::unique_ptr<FoFiTrueType> ff;
++	std::optional<std::vector<unsigned char>> tmpBuf;
++#elif POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 2, 0)
+ 	std::optional<GfxFontLoc> fontLoc;
+ 	const GooString * fileName = nullptr;
+ 	std::unique_ptr<FoFiTrueType> ff;
++	char* tmpBuf = nullptr;
+ #else
+ 	GfxFontLoc * fontLoc = nullptr;
+ 	GooString * fileName = nullptr;
+ 	FoFiTrueType * ff = nullptr;
++	char* tmpBuf = nullptr;
+ #endif
+ 	GfxFontType fontType;
+ 	SlaOutFontFileID *id;
+ 	SplashFontFile *fontFile;
+ 	SplashFontSrc *fontsrc = nullptr;
+ 	Object refObj, strObj;
+-	char *tmpBuf = nullptr;
+ 	int tmpBufLen = 0;
+ 	int *codeToGID = nullptr;
+ 	const double *textMat = nullptr;
+@@ -2943,7 +2963,11 @@ void SlaOutputDev::updateFont(GfxState *state)
+ 
+ 	m_font = nullptr;
+ 
+-	gfxFont = state->getFont();
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 4, 0)
++	GfxFont* gfxFont = state->getFont().get();
++#else
++	GfxFont* gfxFont = state->getFont();
++#endif
+ 	if (!gfxFont)
+ 		goto err1;
+ 
+@@ -2968,15 +2992,23 @@ void SlaOutputDev::updateFont(GfxState *state)
+ 		if (fontLoc->locType == gfxFontLocEmbedded)
+ 		{
+ 			// if there is an embedded font, read it to memory
+-			tmpBuf = gfxFont->readEmbFontFile(xref, &tmpBufLen);
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 4, 0)
++			tmpBuf = gfxFont->readEmbFontFile((xref) ? xref : pdfDoc->getXRef());
+ 			if (! tmpBuf)
+ 				goto err2;
++#else
++			tmpBuf = gfxFont->readEmbFontFile(xref, &tmpBufLen);
++			if (!tmpBuf)
++				goto err2;
++#endif
+ 
+ 			// external font
+ 		}
+ 		else
+ 		{ // gfxFontLocExternal
+-#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 2, 0)
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 4, 0)
++			fileName = fontLoc->path;
++#elif POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 2, 0)
+ 			fileName = fontLoc->pathAsGooString();
+ #else
+ 			fileName = fontLoc->path;
+@@ -2985,52 +3017,54 @@ void SlaOutputDev::updateFont(GfxState *state)
+ 		}
+ 
+ 		fontsrc = new SplashFontSrc;
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 4, 0)
++		if (!fileName.empty())
++			fontsrc->setFile(fileName);
++		else
++			fontsrc->setBuf(std::move(tmpBuf.value()));
++#else
+ 		if (fileName)
+ 			fontsrc->setFile(fileName, gFalse);
+ 		else
+ 			fontsrc->setBuf(tmpBuf, tmpBufLen, gTrue);
++#endif
+ 
+ 		// load the font file
+ 		switch (fontType) {
+ 		case fontType1:
+-			if (!(fontFile = m_fontEngine->loadType1Font(
+-				id,
+-				fontsrc,
+-				(const char **)((Gfx8BitFont *) gfxFont)->getEncoding())))
++			if (!(fontFile = m_fontEngine->loadType1Font(id, fontsrc, (const char **)((Gfx8BitFont *) gfxFont)->getEncoding())))
+ 			{
+-				error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'",
+-				gfxFont->getName() ? gfxFont->getName()->getCString() : "(unnamed)");
++				error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'", gfxFont->getName() ? gfxFont->getName()->getCString() : "(unnamed)");
+ 				goto err2;
+ 			}
+ 			break;
+ 		case fontType1C:
+-			if (!(fontFile = m_fontEngine->loadType1CFont(
+-							id,
+-							fontsrc,
+-							(const char **)((Gfx8BitFont *) gfxFont)->getEncoding())))
++			if (!(fontFile = m_fontEngine->loadType1CFont(id, fontsrc, (const char **)((Gfx8BitFont *) gfxFont)->getEncoding())))
+ 			{
+-				error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'",
+-				gfxFont->getName() ? gfxFont->getName()->getCString() : "(unnamed)");
++				error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'", gfxFont->getName() ? gfxFont->getName()->getCString() : "(unnamed)");
+ 				goto err2;
+ 			}
+ 			break;
+ 		case fontType1COT:
+-			if (!(fontFile = m_fontEngine->loadOpenTypeT1CFont(
+-							id,
+-							fontsrc,
+-							(const char **)((Gfx8BitFont *) gfxFont)->getEncoding())))
++			if (!(fontFile = m_fontEngine->loadOpenTypeT1CFont(id, fontsrc, (const char **)((Gfx8BitFont *) gfxFont)->getEncoding())))
+ 			{
+-				error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'",
+-				gfxFont->getName() ? gfxFont->getName()->getCString() : "(unnamed)");
++				error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'", gfxFont->getName() ? gfxFont->getName()->getCString() : "(unnamed)");
+ 				goto err2;
+ 			}
+ 			break;
+ 		case fontTrueType:
+ 		case fontTrueTypeOT:
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 4, 0)
++			if (!fileName.empty())
++				ff = FoFiTrueType::load(fileName.c_str());
++			else
++				ff = FoFiTrueType::make(fontsrc->buf.data(), fontsrc->buf.size());
++#else
+ 			if (fileName)
+ 				ff = FoFiTrueType::load(fileName->getCString());
+ 			else
+ 				ff = FoFiTrueType::make(tmpBuf, tmpBufLen);
++#endif
+ 			if (ff)
+ 			{
+ #if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 2, 0)
+@@ -3047,24 +3081,17 @@ void SlaOutputDev::updateFont(GfxState *state)
+ 				codeToGID = nullptr;
+ 				n = 0;
+ 			}
+-			if (!(fontFile = m_fontEngine->loadTrueTypeFont(
+-							id,
+-							fontsrc,
+-							codeToGID, n)))
++			if (!(fontFile = m_fontEngine->loadTrueTypeFont(id, fontsrc, codeToGID, n)))
+ 			{
+-				error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'",
+-				gfxFont->getName() ? gfxFont->getName()->getCString() : "(unnamed)");
++				error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'", gfxFont->getName() ? gfxFont->getName()->getCString() : "(unnamed)");
+ 				goto err2;
+ 			}
+ 			break;
+ 		case fontCIDType0:
+ 		case fontCIDType0C:
+-			if (!(fontFile = m_fontEngine->loadCIDFont(
+-							id,
+-							fontsrc)))
++			if (!(fontFile = m_fontEngine->loadCIDFont(id, fontsrc)))
+ 			{
+-				error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'",
+-				gfxFont->getName() ? gfxFont->getName()->getCString() : "(unnamed)");
++				error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'", gfxFont->getName() ? gfxFont->getName()->getCString() : "(unnamed)");
+ 				goto err2;
+ 			}
+ 			break;
+@@ -3080,10 +3107,7 @@ void SlaOutputDev::updateFont(GfxState *state)
+ 				codeToGID = nullptr;
+ 				n = 0;
+ 			}
+-			if (!(fontFile = m_fontEngine->loadOpenTypeCFFFont(
+-							id,
+-							fontsrc,
+-							codeToGID, n)))
++			if (!(fontFile = m_fontEngine->loadOpenTypeCFFFont(id, fontsrc, codeToGID, n)))
+ 			{
+ 				error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'",
+ 				gfxFont->getName() ? gfxFont->getName()->getCString() : "(unnamed)");
+@@ -3105,10 +3129,17 @@ void SlaOutputDev::updateFont(GfxState *state)
+ 			}
+ 			else
+ 			{
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 4, 0)
++				if (!fileName.empty())
++					ff = FoFiTrueType::load(fileName.c_str());
++				else
++					ff = FoFiTrueType::make(fontsrc->buf.data(), fontsrc->buf.size());
++#else
+ 				if (fileName)
+ 					ff = FoFiTrueType::load(fileName->getCString());
+ 				else
+ 					ff = FoFiTrueType::make(tmpBuf, tmpBufLen);
++#endif
+ 				if (! ff)
+ 					goto err2;
+ #if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 2, 0)
+@@ -3119,13 +3150,9 @@ void SlaOutputDev::updateFont(GfxState *state)
+ 				delete ff;
+ #endif
+ 			}
+-			if (!(fontFile = m_fontEngine->loadTrueTypeFont(
+-							id,
+-							fontsrc,
+-							codeToGID, n, faceIndex)))
++			if (!(fontFile = m_fontEngine->loadTrueTypeFont(id, fontsrc, codeToGID, n, faceIndex)))
+ 			{
+-				error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'",
+-				gfxFont->getName() ? gfxFont->getName()->getCString() : "(unnamed)");
++				error(errSyntaxError, -1, "Couldn't create a font for '{0:s}'", gfxFont->getName() ? gfxFont->getName()->getCString() : "(unnamed)");
+ 				goto err2;
+ 			}
+ 			break;
+@@ -3269,9 +3296,15 @@ void SlaOutputDev::drawChar(GfxState* state, double x, double y, double dx, doub
+ GBool SlaOutputDev::beginType3Char(GfxState *state, double x, double y, double dx, double dy, CharCode code, POPPLER_CONST_082 Unicode *u, int uLen)
+ {
+ //	qDebug() << "beginType3Char";
++#if POPPLER_ENCODED_VERSION >= POPPLER_VERSION_ENCODE(22, 4, 0)
+ 	GfxFont *gfxFont;
++	if (!(gfxFont = state->getFont().get()))
++		return gTrue;
++#else
++	GfxFont* gfxFont;
+ 	if (!(gfxFont = state->getFont()))
+ 		return gTrue;
++#endif
+ 	if (gfxFont->getType() != fontType3)
+ 		return gTrue;
+ 	F3Entry f3e;

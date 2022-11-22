@@ -1,0 +1,146 @@
+From 50943b1bd4f18d103c35233f0446ce7a31d1817e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Wed, 27 Oct 2021 15:44:31 +0200
+Subject: [PATCH] build: Do not use positional arguments in i18n.merge_file
+
+This was never really used and it's breaking meson 60.
+While this may just become a warning in 60.1, it's just better to avoid
+using it.
+
+See: https://github.com/mesonbuild/meson/issues/9441
+---
+ data/meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/data/meson.build b/data/meson.build
+index 92bfa2e..ece5fc6 100644
+--- a/data/meson.build
++++ b/data/meson.build
+@@ -24,7 +24,7 @@ if get_option('systemd')
+ endif
+ 
+ polkit_policy = 'net.reactivated.fprint.device.policy'
+-polkit_policy_target = i18n.merge_file(polkit_policy,
++polkit_policy_target = i18n.merge_file(
+     input: '@0@.in'.format(polkit_policy),
+     output: polkit_policy,
+     po_dir: meson.source_root() / 'po',
+-- 
+GitLab
+
+From f4256533d1ffdc203c3f8c6ee42e8dcde470a93f Mon Sep 17 00:00:00 2001
+From: Eli Schwartz <eschwartz@archlinux.org>
+Date: Tue, 11 Jan 2022 21:06:35 -0500
+Subject: [PATCH] use more idiomatic/correct embedded shell scripting
+
+Formatting arguments into code is fragile, and meson natively knows how
+to pass files as arguments via argv. So pass them as arguments to the
+shell.
+---
+ doc/dbus/meson.build | 9 ++++-----
+ 1 file changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/doc/dbus/meson.build b/doc/dbus/meson.build
+index 802938e..861da64 100644
+--- a/doc/dbus/meson.build
++++ b/doc/dbus/meson.build
+@@ -19,11 +19,10 @@ foreach interface_file: dbus_interfaces_files
+         capture: true,
+         command: [
+             bash, '-c',
+-            'cat @INPUT@;' +
+-            xsltproc.path() + ' @0@/@1@ '.format(
+-                meson.source_root(),
+-                files('spec-to-docbook.xsl')[0]) +
+-            interface_file.full_path() + '| tail -n +2;',
++            'cat "$1"; "$2" "$3" "$4" | tail -n +2',
++            '_', # argv0 ignored
++            '@INPUT@',
++            xsltproc, files('spec-to-docbook.xsl')[0], interface_file
+         ],
+     )
+ endforeach
+-- 
+GitLab
+
+From 2c34cef5ef2004d8479475db5523c572eb409a6b Mon Sep 17 00:00:00 2001
+From: Eli Schwartz <eschwartz@archlinux.org>
+Date: Tue, 11 Jan 2022 20:46:29 -0500
+Subject: [PATCH] remove pointless copying of files into build directory
+
+I'm not entirely sure what this did, but it seems to be obsoleted by
+commit 93bad825406d13ed5eb2cf27541dc58194bef8f3.
+---
+ doc/dbus/meson.build                          |  6 +++---
+ src/meson.build                               | 20 ++++++-------------
+ ....xml => net.reactivated.Fprint.Device.xml} |  0
+ ...xml => net.reactivated.Fprint.Manager.xml} |  0
+ 4 files changed, 9 insertions(+), 17 deletions(-)
+ rename src/{device.xml => net.reactivated.Fprint.Device.xml} (100%)
+ rename src/{manager.xml => net.reactivated.Fprint.Manager.xml} (100%)
+
+diff --git a/doc/dbus/meson.build b/doc/dbus/meson.build
+index 861da64..431127d 100644
+--- a/doc/dbus/meson.build
++++ b/doc/dbus/meson.build
+@@ -9,13 +9,13 @@ docbook_xml_header = custom_target('docbook_xml_header',
+ )
+ 
+ dbus_interfaces_refs = []
+-foreach interface_file: dbus_interfaces_files
+-    basename = run_command('basename', interface_file.full_path(), '.xml').stdout().strip()
++foreach interface_file: dbus_interfaces
++    basename = run_command('basename', interface_file, '.xml').stdout().strip()
+     dbus_interfaces_refs += custom_target(basename + '_ref',
+         input: docbook_xml_header,
+         output: basename + '.ref.xml',
+         build_by_default: true,
+-        depends: interface_file,
++        depend_files: interface_file,
+         capture: true,
+         command: [
+             bash, '-c',
+diff --git a/src/meson.build b/src/meson.build
+index 1df6216..a7ce3fe 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -1,22 +1,14 @@
+ bash = find_program('bash')
+-dbus_interfaces = ['Manager', 'Device']
+-dbus_interfaces_files = []
++dbus_interfaces = files(
++    'net.reactivated.Fprint.Manager.xml',
++    'net.reactivated.Fprint.Device.xml',
++)
+ 
+-foreach interface_name: dbus_interfaces
+-    interface = interface_name.to_lower()
+-    interface_file = interface + '.xml'
+-    dbus_interfaces_files += custom_target('dbus_interface_' + interface,
+-        input: interface_file,
+-        output: 'net.reactivated.Fprint.@0@.xml'.format(interface_name),
+-        command: ['cp', '@INPUT@', '@OUTPUT@'],
+-        install: true,
+-        install_dir: dbus_interfaces_dir,
+-    )
+-endforeach
++install_data(dbus_interfaces, install_dir: dbus_interfaces_dir)
+ 
+ # NOTE: We should pass "--glib-min-required 2.64" but cannot
+ fprintd_dbus_sources_base = gnome.gdbus_codegen('fprintd-dbus',
+-    sources: dbus_interfaces_files,
++    sources: dbus_interfaces,
+     autocleanup: 'all',
+     interface_prefix: 'net.reactivated.Fprint.',
+     namespace: 'FprintDBus',
+diff --git a/src/device.xml b/src/net.reactivated.Fprint.Device.xml
+similarity index 100%
+rename from src/device.xml
+rename to src/net.reactivated.Fprint.Device.xml
+diff --git a/src/manager.xml b/src/net.reactivated.Fprint.Manager.xml
+similarity index 100%
+rename from src/manager.xml
+rename to src/net.reactivated.Fprint.Manager.xml
+-- 
+GitLab
+

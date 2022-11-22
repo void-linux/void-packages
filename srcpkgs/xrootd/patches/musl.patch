@@ -1,0 +1,227 @@
+diff --git a/src/Xrd/XrdConfig.hh b/src/Xrd/XrdConfig.hh
+index a06ad462f..702403d82 100644
+--- a/src/Xrd/XrdConfig.hh
++++ b/src/Xrd/XrdConfig.hh
+@@ -34,6 +34,11 @@
+ #include "Xrd/XrdProtLoad.hh"
+ #include "Xrd/XrdProtocol.hh"
+ 
++#if defined(__linux__) && !defined(__GLIBC__)
++#define __NEED_mode_t
++#include <bits/alltypes.h>
++#endif
++
+ class XrdSysError;
+ class XrdTcpMonInfo;
+ class XrdNetSecurity;
+diff --git a/src/XrdAcc/XrdAccGroups.cc b/src/XrdAcc/XrdAccGroups.cc
+index e663fdd35..14c3b19d6 100644
+--- a/src/XrdAcc/XrdAccGroups.cc
++++ b/src/XrdAcc/XrdAccGroups.cc
+@@ -46,6 +46,14 @@
+ #include "XrdAcc/XrdAccGroups.hh"
+ #include "XrdAcc/XrdAccPrivs.hh"
+ 
++#if defined(__linux__) && !defined(__GLIBC__)
++int innetgr(const char *netgroup, const char *host, const char *user,
++             const char *domain)
++{
++   return 0;
++}
++#endif
++
+ // Additionally, this routine does not support a user in more than
+ // NGROUPS_MAX groups. This is a standard unix limit defined in limits.h.
+   
+diff --git a/src/XrdCl/XrdClFileStateHandler.hh b/src/XrdCl/XrdClFileStateHandler.hh
+index 9f9d8b91f..5ff49cbbc 100644
+--- a/src/XrdCl/XrdClFileStateHandler.hh
++++ b/src/XrdCl/XrdClFileStateHandler.hh
+@@ -42,6 +42,12 @@
+ #include <sys/uio.h>
+ #include <cstdint>
+ 
++#if defined(__linux__) && !defined(__GLIBC__)
++#define __NEED_suseconds_t
++#define __NEED_struct_timeval
++#include <bits/alltypes.h>
++#endif
++
+ namespace
+ {
+   class PgReadHandler;
+diff --git a/src/XrdCl/XrdClMonitor.hh b/src/XrdCl/XrdClMonitor.hh
+index 2fc753777..d22c3c275 100644
+--- a/src/XrdCl/XrdClMonitor.hh
++++ b/src/XrdCl/XrdClMonitor.hh
+@@ -43,6 +43,12 @@
+ 
+ #include "XrdCl/XrdClFileSystem.hh"
+ 
++#if defined(__linux__) && !defined(__GLIBC__)
++#define __NEED_suseconds_t
++#define __NEED_struct_timeval
++#include <bits/alltypes.h>
++#endif
++
+ namespace XrdCl
+ {
+   class URL;
+diff --git a/src/XrdNet/XrdNetSecurity.cc b/src/XrdNet/XrdNetSecurity.cc
+index 0f8451127..e39b1ef4b 100644
+--- a/src/XrdNet/XrdNetSecurity.cc
++++ b/src/XrdNet/XrdNetSecurity.cc
+@@ -40,12 +40,14 @@
+ #include <sys/types.h>
+ #include <Winsock2.h>
+ #include <io.h>
++#include "XrdSys/XrdWin32.hh"
++#endif
++#if WIN32 || defined(__linux__) && !defined(__GLIBC__)
+ int innetgr(const char *netgroup, const char *host, const char *user,
+              const char *domain)
+ {
+    return 0;
+ }
+-#include "XrdSys/XrdWin32.hh"
+ #endif
+ 
+ #include "XrdNet/XrdNetAddr.hh"
+diff --git a/src/XrdPosix/XrdPosix.cc b/src/XrdPosix/XrdPosix.cc
+index 0f32dc2ee..b6dea957f 100644
+--- a/src/XrdPosix/XrdPosix.cc
++++ b/src/XrdPosix/XrdPosix.cc
+@@ -37,6 +37,9 @@
+ #include <fcntl.h>
+ #include <unistd.h>
+ #include <sys/uio.h>
++#if defined(__linux__) && !defined(_IO_ERR_SEEN)
++#include <stdio_ext.h>
++#endif
+ 
+ #include "XrdSys/XrdSysHeaders.hh"
+ #include "XrdPosix/XrdPosixLinkage.hh"
+@@ -311,8 +314,12 @@ size_t XrdPosix_Fread(void *ptr, size_t size, size_t nitems, FILE *stream)
+         if (bytes > 0 && size) rc = bytes/size;
+ #ifndef SUNX86
+ #if defined(__linux__) || defined(__GNU__) || (defined(__FreeBSD_kernel__) && defined(__GLIBC__))
++#ifdef _IO_ERR_SEEN
+    else if (bytes < 0) stream->_flags |= _IO_ERR_SEEN;
+    else                stream->_flags |= _IO_EOF_SEEN;
++#else
++   else if (bytes < 0) __fseterr(stream);
++#endif
+ #elif defined(__APPLE__) || defined(__FreeBSD__)
+    else if (bytes < 0) stream->_flags |= __SEOF;
+    else                stream->_flags |= __SERR;
+@@ -482,7 +489,11 @@ size_t XrdPosix_Fwrite(const void *ptr, size_t size, size_t nitems, FILE *stream
+    if (bytes > 0 && size) rc = bytes/size;
+ #ifndef SUNX86
+ #if defined(__linux__) || defined(__GNU__) || (defined(__FreeBSD_kernel__) && defined(__GLIBC__))
++#ifdef _IO_ERR_SEEN
+       else stream->_flags |= _IO_ERR_SEEN;
++#else
++      else  __fseterr(stream);
++#endif
+ #elif defined(__APPLE__) || defined(__FreeBSD__)
+       else stream->_flags |= __SERR;
+ #else
+diff --git a/src/XrdPosix/XrdPosixLinkage.hh b/src/XrdPosix/XrdPosixLinkage.hh
+index 903153252..b5cc6d4b4 100644
+--- a/src/XrdPosix/XrdPosixLinkage.hh
++++ b/src/XrdPosix/XrdPosixLinkage.hh
+@@ -40,6 +40,7 @@
+ #include <unistd.h>
+ 
+ #include "XrdPosix/XrdPosixOsDep.hh"
++#include "XrdPosix/XrdPosixXrootd.hh"
+ #include "XrdSys/XrdSysPlatform.hh"
+ 
+ /******************************************************************************/
+diff --git a/src/XrdPosix/XrdPosixMap.hh b/src/XrdPosix/XrdPosixMap.hh
+index ac2da483a..a15602787 100644
+--- a/src/XrdPosix/XrdPosixMap.hh
++++ b/src/XrdPosix/XrdPosixMap.hh
+@@ -36,6 +36,11 @@
+ #include "XrdCl/XrdClFileSystem.hh"
+ #include "XrdCl/XrdClXRootDResponses.hh"
+ 
++#if defined(__linux__) && !defined(__GLIBC__)
++#define __NEED_dev_t
++#include <bits/alltypes.h>
++#endif
++
+ class XrdPosixMap
+ {
+ public:
+diff --git a/src/XrdPosix/XrdPosixPreload.cc b/src/XrdPosix/XrdPosixPreload.cc
+index 867b73479..d967c53b3 100644
+--- a/src/XrdPosix/XrdPosixPreload.cc
++++ b/src/XrdPosix/XrdPosixPreload.cc
+@@ -42,6 +42,22 @@
+ 
+ #include "XrdPosix/XrdPosixExtern.hh"
+  
++#ifdef creat64
++#undef creat64
++#undef fseeko64
++#undef ftello64
++#undef ftruncate64
++#undef lseek64
++#undef open64
++#undef pread64
++#undef pwrite64
++#undef readdir64
++#undef readdir64_r
++#undef statfs64
++#undef statvfs64
++#undef truncate64
++#endif
++
+ /******************************************************************************/
+ /*                   G l o b a l   D e c l a r a t i o n s                    */
+ /******************************************************************************/
+diff --git a/src/XrdSys/XrdSysPlatform.hh b/src/XrdSys/XrdSysPlatform.hh
+index a1ac544ad..eaeaeabac 100644
+--- a/src/XrdSys/XrdSysPlatform.hh
++++ b/src/XrdSys/XrdSysPlatform.hh
+@@ -241,16 +241,8 @@ extern "C"
+ #if defined(_AIX) || \
+    (defined(XR__SUNGCC3) && !defined(__arch64__))
+ #   define SOCKLEN_t size_t
+-#elif defined(XR__GLIBC) || \
+-   defined(__FreeBSD__) || \
+-   (defined(__FreeBSD_kernel__) && defined(__GLIBC__)) || \
+-   (defined(XR__SUNGCC3) && defined(__arch64__)) || defined(__APPLE__) || \
+-   (defined(__sun) && defined(_SOCKLEN_T))
+-#   ifndef SOCKLEN_t
+-#      define SOCKLEN_t socklen_t
+-#   endif
+ #elif !defined(SOCKLEN_t)
+-#   define SOCKLEN_t int
++#   define SOCKLEN_t socklen_t
+ #endif
+ 
+ #ifdef _LP64
+diff --git a/src/XrdSys/XrdSysPthread.hh b/src/XrdSys/XrdSysPthread.hh
+index 17f8fd0be..78741a7dc 100644
+--- a/src/XrdSys/XrdSysPthread.hh
++++ b/src/XrdSys/XrdSysPthread.hh
+@@ -351,7 +351,7 @@ enum PrefType {prefWR=1};
+ 
+         XrdSysRWLock(PrefType ptype)
+                     {
+-#ifdef __linux__
++#ifdef __GLIBC__
+                      pthread_rwlockattr_t attr;
+                      pthread_rwlockattr_setkind_np(&attr,
+                              PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
+@@ -367,7 +367,7 @@ enum PrefType {prefWR=1};
+ inline void ReInitialize(PrefType ptype)
+ {
+   pthread_rwlock_destroy(&lock);
+-#ifdef __linux__
++#ifdef __GLIBC__
+   pthread_rwlockattr_t attr;
+   pthread_rwlockattr_setkind_np(&attr,
+                      PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);

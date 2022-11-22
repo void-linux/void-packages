@@ -1,0 +1,63 @@
+# Template file for 'maturin'
+pkgname=maturin
+version=0.13.7
+revision=1
+create_wrksrc=yes
+build_style=python3-module
+build_helper="qemu rust"
+hostmakedepends="python3-setuptools-rust python3-tomli python3-wheel cargo"
+makedepends="openssl-devel"
+depends="python3-tomli"
+short_desc="Build and publish crates as python packages"
+maintainer="Andrew J. Hesford <ajh@sideband.org>"
+license="Apache-2.0, MIT"
+homepage="https://github.com/PyO3/maturin"
+# bump target-lexicon version if it changes in Cargo.lock
+distfiles="${homepage}/archive/v${version}.tar.gz
+ https://github.com/bytecodealliance/target-lexicon/archive/v0.12.4.tar.gz>target-lexicon-${version}.tar.gz"
+checksum="8a30a01efc35f301a97e18718631d406144a8cddb91a7ba4485b0f45e8e27af0
+ f801dbb02555852e90d56d5a71e73ee42678c1bc583bb62a2970d4158f6ab6de"
+# Tests use unstable features and fail to build
+make_check=no
+
+if [ "$CROSS_BUILD" ]; then
+	makedepends+=" rust-std"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	ppc64*) ;;
+	ppc*)
+		broken="https://github.com/console-rs/indicatif/blob/main/src/state.rs#L2"
+		;;
+esac
+
+post_extract() {
+	mv maturin-${version}/* .
+	mv target-lexicon-* target-lexicon
+	echo "[patch.crates-io]" >> Cargo.toml
+	echo "target-lexicon = { path = './target-lexicon' }" >> Cargo.toml
+}
+
+post_patch() {
+	# Disable the 'rustls' feature, which leads to bad platform compatibility
+	vsed -i -e '/^default =/s/"rustls", //' Cargo.toml
+}
+
+pre_configure() {
+	cargo update --package target-lexicon
+}
+
+post_install() {
+	vlicense license-mit LICENSE-MIT
+	python3 setup.py install --prefix=/usr --root=${DESTDIR}
+
+	# Generate and install some completions
+	local _matbin="${DESTDIR}/usr/bin/maturin"
+	vtargetrun "${_matbin}" completions zsh > maturin.zsh
+	vtargetrun "${_matbin}" completions fish > maturin.fish
+	vtargetrun "${_matbin}" completions bash > maturin.bash
+
+	vcompletion maturin.zsh zsh
+	vcompletion maturin.fish fish
+	vcompletion maturin.bash bash
+}

@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+
+# Report packages installing same file and not marked with
+# conflicts or replaces.
+# Without argument, find conflicts between packages in local
+# repository at hostdir/binpkgs and packages indexed in xlocate.
+# With single path as argument, read that local repository.
+# With -a flag, find conflicts between packages indexed in xlocate.
+
+if [ "$#" = 0 ]; then
+	binpkgs="$PWD/hostdir/binpkgs"
+elif [ "$1" = -a ]; then
+	all=1
+elif [ -d "$1" ]; then
+	binpkgs="$1"
+else
+	echo "Usage:"
+	echo "$0"
+	echo "  check packages in ./hostdir/binpkgs"
+	echo "$0 path/to/hostdir/binpkgs"
+	echo "  check packages there"
+	echo "$0 -a"
+	echo "  check all packages indexed in xlocate"
+	exit 1
+fi
+
+declare -A newly_built conflicts_cache providers_cache pairs owners
+repositories=("--repository=${binpkgs}" "--repository=${binpkgs}/nonfree")
+rv=0
+
+template_exists() {
+	[ -f "srcpkgs/$1/template" ]
+}
+
+partial_check() {
+	[ -z "$all" ]
+}
+
+providers_of() {
+	# print the pkgname and packages that `provides` it
+	local pkgname=$1
+	if [ "${providers_cache[$pkgname]}" = '' ]; then
+		local line provider_pkgver provided_pkgver provider_pkgname provided_pkgname
+		local -A providers
+		providers[$pkgname]=$pkgname
+		while read -r line; do
+			line=${line%%'('*}
+			provider_pkgver=${line%': '*}
+			provided_pkgver=${line#*': '}
+			provider_pkgname=${provider_pkgver%-*}
+			provided_pkgname=${provided_pkgver%-*}
+			# comes from $(xbps-query -s $pkgname), so $pkgname can be substring
+			if [ "$provided_pkgname" = "$pkgname" ]; then
+				providers[$provider_pkgname]=$provider_pkgname
+			fi
+		done < <(xbps-query "${repositories[@]}" -p provides -R -s "$pkgname")
+		# leading space ensures ${[]} != ''
+		providers_cache[$pkgname]=" ${providers[*]}"
+	fi
+	echo ${providers_cache[$pkgname]}
+}
+
+conflicts_of() {
+	# print list of packages that are _marked_ as conflicting with given one
+	local pkgname=$1
+	if [ "${conflicts_cache[$pkgname]}" = '' ]; then
+		local in_conflict provider
+		local -A all
+		while read -r in_conflict; do
+			in_conflict=${in_conflict%'<'*}
+			in_conflict=${in_conflict%'>'*}
+			providers_of "$in_conflict" > /dev/null # executing in same process to fill cache
+			for provider in $(providers_of "$in_conflict"); do
+				all[$provider]=$provider
+			done
+		done < <(xbps-query "${repositories[@]}" -p conflicts,replaces -R "$pkgname")
+		# leading space ensures ${[]} != ''
+		conflicts_cache[$pkgname]=" ${all[*]}"
+	fi
+	echo ${conflicts_cache[$pkgname]}
+}
+
+conflict_between() {
+	# exit successfully if packages are _marked_ as conflicting
+	conflicts_of "$1" > /dev/null # executing in same process to fill cache
+	case " $(conflicts_of "$1") " in
+		*" $2 "*) return 0
+	esac
+	conflicts_of "$2" > /dev/null # executing in same process to fill cache
+	case " $(conflicts_of "$2") " in
+		*" $1 "*) return 0
+	esac
+	return 1
+}
+
+list_newly_built_files() {
+	# print one line per file in newly built packages
+	# each line contains pkgname and file path
+	local pkgver pkgname
+	while read -r pkgver; do
+		pkgname=${pkgver%-*}
+		xbps-query "${repositories[@]}" -i -f "$pkgname" | sed s'/ -> .*//;'" s/^/$pkgname /"
+	done < <(xbps-query "${repositories[@]}" -i -R -s '' | cut -d' ' -f 2)
+}
+
+list_interesting_files() {
+	# list files potentially contained in more than one package
+	# each line contains pkgver/pkgname and file path
+	if partial_check; then
+		list_newly_built_files
+	else
+		xlocate / | sed s'/ -> .*//' | grep -F -f <(xlocate / | cut -f 2- | sed s'/ -> .*//' | sort | uniq -d)
+	fi
+}
+
+group_by_file_full() {
+	# create associative array `owners` mapping file to list of packages
+	# for packages potentially conflicting with newly built ones
+	local pkgver file pkgname
+	while read -r pkgver file; do
+		pkgname=${pkgver%-*}
+		if template_exists "$pkgname"; then
+			owners[$file]+=" $pkgname"
+		fi
+	done < <(list_interesting_files)
+}
+
+group_by_file_partial() {
+	# create associative array `owners` mapping file to list of packages
+	# for all packages in xlocate
+	local pkgname file
+	## newly built packages
+	while read -r pkgver; do
+		pkgname=${pkgver%-*}
+		newly_built[$pkgname]=$pkgname
+	done < <(xbps-query "${repositories[@]}" -i -R -s '' | cut -d' ' -f 2)
+	while read -r pkgname file; do
+		owners[$file]+=" $pkgname"
+	done < <(list_newly_built_files)
+	## rest of repository
+	while read -r pkgver file; do
+		pkgname=${pkgver%-*}
+		if [ -z "${newly_built[$pkgname]}" ] && template_exists "$pkgname"; then
+			owners[$file]+=" $pkgname"
+		fi
+	done < <(xlocate / | sed s'/ -> .*//' | grep -F -f <(list_newly_built_files | cut -d ' ' -f 2-))
+}
+
+group_by_pair() {
+	# find package pairs owning same file and not marked as conflicting
+	local pkg file a b
+	while read -r pkg file; do
+		for a in ${owners[$file]}; do
+			for b in ${owners[$file]}; do
+				if ! [ "$a" "<" "$b" ]; then
+					continue
+				fi
+				if partial_check && [ -z "${newly_built[$a]}" ] && [ -z "${newly_built[$b]}" ]; then
+					continue
+				fi
+				if ! conflict_between "$a" "$b"; then
+					unset pair_files
+					local -A pair_files
+					eval "${pairs["$a $b"]}"
+					pair_files[$file]="$file"
+					pairs["$a $b"]="${pair_files[@]@A}"
+				fi
+			done
+		done
+	done < <(list_interesting_files)
+}
+
+print_out() {
+	local pair file
+	if [ "${#pairs[@]}" = 0 ]; then
+		echo 1>&2 "No conflicts found in" "${repositories[@]#*=}"
+		exit 0
+	fi
+	while read -r pair; do
+		rv=1
+		echo "${pair% *} and ${pair#* } conflict for"
+		unset pair_files
+		eval "${pairs[$pair]}"
+		for file in "${pair_files[@]}"; do
+			echo "  $file"
+		done | sort
+	done < <(printf '%s\n' "${!pairs[@]}" | sort)
+}
+
+if partial_check; then
+	group_by_file_partial
+else
+	group_by_file_full
+fi
+group_by_pair
+print_out
+
+exit $rv
