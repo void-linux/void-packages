@@ -7,3 +7,5 @@
     - "KeyChord"'s signature has changed. "mode" is now a boolean to indicate
        whether the mode should persist. The "name" parameter should be used
        to name the chord (e.g. for the ``Chord`` widget).
+
+- Wayland backend: To enable wayland backend, please install the "pywlroots" package
