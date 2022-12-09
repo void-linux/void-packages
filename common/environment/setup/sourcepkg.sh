@@ -2,7 +2,7 @@
 # the package template (excluding subpackages).
 
 # Exported variables
-for var in $(env | sed -e 's/=.*//'); do
+for var in $(awk 'BEGIN{for (i in ENVIRON) {print i}}' </dev/null); do
 	# Those variables in chroot.sh will be kept
 	case "$var" in
 	XBPS_* | IN_CHROOT | CHROOT_READY | SOURCE_DATE_EPOCH)
