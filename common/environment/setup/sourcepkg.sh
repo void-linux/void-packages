@@ -12,7 +12,7 @@ for var in $(awk 'BEGIN{for (i in ENVIRON) {print i}}' </dev/null); do
 		;;
 	KERNEL_SITE | CPAN_SITE | PYPI_SITE | MOZILLA_SITE | GNU_SITE)
 		;;
-	FREEDESKTOP_SITE | KDE_SITE | VIDEOLAN_SITE)
+	FREEDESKTOP_SITE | KDE_SITE | VIDEOLAN_SITE | UBUNTU_SITE)
 		;;
 	_ | PWD | SHLVL | USER | PATH | SHELL | HOME | LC_COLLATE | LANG | TERM | PS1)
 		# known variables for shell
