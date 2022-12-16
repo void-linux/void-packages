@@ -1,14 +1,14 @@
 # Template file for 'linux-tools'
 pkgname=linux-tools
 version=5.10.4
-revision=8
+revision=9
 build_style=meta
 hostmakedepends="asciidoc automake flex gettext libtool perl python3
  python3-docutils xmlto"
 makedepends="babeltrace-devel binutils-devel elfutils-devel eudev-libudev-devel
  libcap-devel liblzma-devel openssl-devel libsysfs-devel libunwind-devel
  libzstd-devel ncurses-devel pciutils-devel python3-devel readline-devel
- slang-devel"
+ slang-devel libaudit-devel"
 depends="cpupower-${version}_${revision} perf-${version}_${revision} usbip-${version}_${revision}"
 short_desc="Linux kernel tools meta-pkg"
 maintainer="Enno Boland <gottox@voidlinux.org>"
@@ -39,66 +39,93 @@ case "$XBPS_TARGET_MACHINE" in
 i686-musl) makedepends+=" libunwind-devel" ;;
 esac
 
-nocross=yes
-
 post_extract() {
 	vsed -i 's/\$(LIBS)/& $(LDFLAGS)/' tools/power/cpupower/bench/Makefile
 	vsed -i 's/ \-Werror / /g' tools/build/feature/Makefile \
 		tools/lib/bpf/Makefile
 }
-do_build() {
-	# /builddir/linux-5.10.4/tools/build/fixdep: Text file busy
-	make -C tools/build V=1 \
-		CC=$CC LD=$LD CFLAGS="$CFLAGS" EXTRA_CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
-		WERROR=0 DESTDIR=${DESTDIR} prefix=/usr \
-		NO_GTK2=1 NO_SDT=1 PYTHON=python3 \
-		PERF_VERSION=${version}_${revision}
 
-	make -C tools/perf ${makejobs} V=1 \
+pre_configure() {
+	echo "#define PERF_VERSION \"${version}_${revision}\"" \
+		>tools/perf/PERF-VERSION-FILE
+}
+
+do_build() {
+	local arch subarch
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) arch=i386;;
+		x86_64*) arch=x86_64;;
+		arm*) arch=arm;;
+		aarch64*) arch=arm64;;
+		ppc64le*) arch=powerpc; subarch=ppc64le;;
+		ppc64*) arch=powerpc; subarch=ppc64;;
+		ppc*) arch=powerpc; subarch=ppc;;
+		mips*) arch=mips;;
+	esac
+
+	make -C tools/build V=1 \
+		CC=$CC LD=$LD \
+		CFLAGS="$CFLAGS" EXTRA_CFLAGS="$CFLAGS" \
+		LDFLAGS="$LDFLAGS" \
+		WERROR=0 NO_GTK2=1 NO_SDT=1 PYTHON=python3
+
+	make -C tools/perf ${makejobs} V=1 ARCH=$arch \
 		CC=$CC LD=$LD CFLAGS="$CFLAGS" EXTRA_CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
 		WERROR=0 DESTDIR=${DESTDIR} prefix=/usr lib=lib/perf \
 		NO_GTK2=1 NO_SDT=1 PYTHON=python3 \
-		PERF_VERSION=${version}_${revision} \
 		all man
 
-	make -C tools/power/cpupower V=1 \
+	make -C tools/power/cpupower V=1 ARCH=$arch \
 		CC=$CC LDFLAGS="$LDFLAGS" VERSION=${version}_${revision}
 
 	case "$XBPS_TARGET_MACHINE" in
 	i686*|x86_64*)
-		make -C tools/power/x86/x86_energy_perf_policy ${makejobs} V=1
+		make -C tools/power/x86/x86_energy_perf_policy ${makejobs} V=1 \
+			ARCH=${arch}
 
-		make -C tools/power/x86/turbostat ${makejobs} V=1 \
+		make -C tools/power/x86/turbostat ${makejobs} V=1 ARCH=$arch \
 			CC=$CC LD=$LD CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
 	esac
 
-	cd ${wrksrc}/tools/laptop/freefall
-	$CC ${CFLAGS} ${LDFLAGS} -o freefall freefall.c
+	make -C tools/laptop/freefall
 
 	cd ${wrksrc}/tools/usb/usbip
 	# fix missing man page
 	sed -i 's/usbip_bind_driver.8//' Makefile.am
 	./autogen.sh
-	./configure --prefix=/usr --sbindir=/usr/bin
+	./configure --prefix=/usr --sbindir=/usr/bin \
+		--build=$XBPS_TRIPLET --host=$XBPS_CROSS_TRIPLET \
+		--with-sysroot=$XBPS_CROSS_BASE
 	make ${makejobs}
 
 	cd $wrksrc
-	make -C tools/thermal/tmon ${makejobs} V=1 \
+	make -C tools/thermal/tmon ${makejobs} V=1 ARCH=$arch \
 		CC=$CC LD=$LD CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
 
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl) ;;
 	*)
-		cd ${wrksrc}/tools/bpf
-		make -C bpftool all doc
-		make -W runqslower
+		make -C tools/bpf/bpftool ARCH=$arch all doc
+		make -C tools/bpf/bpftool ARCH=$arch -W runqslower
 	esac
 }
 
 do_install() {
+	local arch subarch
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) arch=i386;;
+		x86_64*) arch=x86_64;;
+		arm*) arch=arm;;
+		aarch64*) arch=arm64;;
+		ppc64le*) arch=powerpc; subarch=ppc64le;;
+		ppc64*) arch=powerpc; subarch=ppc64;;
+		ppc*) arch=powerpc; subarch=ppc;;
+		mips*) arch=mips;;
+	esac
+
 	# cpupower
 	cd ${wrksrc}/tools/power/cpupower
-	make DESTDIR=${DESTDIR} \
+	make DESTDIR=${DESTDIR} ARCH=$arch \
 		sbindir='/usr/bin' \
 		mandir='/usr/share/man' \
 		docdir='/usr/share/doc/cpupower' \
@@ -111,8 +138,7 @@ do_install() {
 	cd ${wrksrc}/tools/perf
 	make CC=$CC LD=$LD CFLAGS="$CFLAGS" EXTRA_CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
 		WERROR=0 DESTDIR=${DESTDIR} prefix=/usr lib=lib/perf \
-		NO_GTK2=1 NO_SDT=1 PYTHON=python3 \
-		PERF_VERSION=${version}_${revision} \
+		NO_GTK2=1 NO_SDT=1 PYTHON=python3 ARCH=$arch \
 		install install-man
 	# move completion in new directory
 	vmkdir usr/share/bash-completion/completions
@@ -121,18 +147,20 @@ do_install() {
 
 	# usbip
 	cd ${wrksrc}/tools/usb/usbip
-	make install DESTDIR=${DESTDIR}
+	make install ARCH=$arch DESTDIR=${DESTDIR}
 	vmkdir usr/lib/modules-load.d
-	printf 'usbip-core\nusbip-host\n' > \
-		${DESTDIR}/usr/lib/modules-load.d/usbip.conf
+	printf '%s\n' usbip-core usbip-host \
+		>${DESTDIR}/usr/lib/modules-load.d/usbip.conf
 
 	# bpf
 	case "$XBPS_TARGET_MACHINE" in
 	*-musl) ;;
 	*)
 		cd ${wrksrc}/tools/bpf
-		make -W runqslower_install install DESTDIR=${DESTDIR} prefix=/usr
-		make -C bpftool doc-install DESTDIR=${DESTDIR} prefix=/usr/share
+		make -W runqslower_install install \
+			DESTDIR=${DESTDIR} prefix=/usr ARCH=$arch
+		make -C bpftool doc-install \
+			DESTDIR=${DESTDIR} prefix=/usr/share ARCH=$arch
 		rm ${DESTDIR}/usr/share/man/man7/bpf-helpers.7
 		mv ${DESTDIR}/usr/sbin/* ${DESTDIR}/usr/bin
 	esac
@@ -197,9 +225,7 @@ perf_package() {
 		vmove usr/lib/perf
 		vmove usr/libexec/perf-core
 		vmove usr/share/bash-completion/completions/perf
-		if ! [ "${XBPS_TARGET_MACHINE/-musl/}" = i686 ]; then
-			vmove usr/share/perf-core
-		fi
+		vmove usr/share/perf-core
 		vmove /usr/share/doc/perf-tip
 		vmove "usr/share/man/man1/perf*"
 	}

@@ -13,6 +13,11 @@ update_check() {
         if [ "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
             echo "using $XBPS_TARGET_PKG/update overrides" 1>&2
         fi
+    elif [ -z "$distfiles" ]; then
+        if [ "$XBPS_UPDATE_CHECK_VERBOSE" ]; then
+            echo "NO DISTFILES found for $original_pkgname" 1>&2
+        fi
+        return 0
     fi
 
     if ! type curl >/dev/null 2>&1; then
@@ -162,8 +167,8 @@ update_check() {
                 rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=\.tar\.gz")';;
             *git.sr.ht*)
                 pkgurlname="$(printf %s "$url" | cut -d/ -f4,5)"
-                url="https://git.sr.ht/$pkgurlname/refs"
-                rx='/archive/(v?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=\.tar\.gz")';;
+                url="https://git.sr.ht/$pkgurlname/refs/rss.xml"
+                rx='<guid>\Q'"${url%/*}"'\E/(v-?|\Q'"$pkgname"'\E-)?\K[\d.]+(?=</guid>)' ;;
             *pkgs.fedoraproject.org*)
                 url="https://pkgs.fedoraproject.org/repo/pkgs/$pkgname" ;;
             esac

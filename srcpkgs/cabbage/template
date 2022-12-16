@@ -1,16 +1,15 @@
 # Template file for 'cabbage'
 pkgname=cabbage
 version=2.5.0
-revision=1
+revision=2
 # specified in buildLinux.sh
 _jucever=5.4.7
 _vstsdkver=3611_22_10_2018_build_34
-create_wrksrc=yes
-build_wrksrc="${pkgname}-${version}"
+build_wrksrc="cabbage"
 hostmakedepends="pkg-config xorg-server-xvfb"
 makedepends="libfreeglut-devel libcurl-devel jack-devel libXcomposite-devel
  libXrandr-devel libXcursor-devel libX11-devel libXinerama-devel MesaLib-devel
- gtk+3-devel webkit2gtk-devel csound alsa-lib-devel libsndfile-devel"
+ gtk+3-devel webkit2gtk-devel csound alsa-lib-devel libsndfile-devel xvfb-run"
 depends="csound"
 short_desc="Framework for audio software development"
 maintainer="Olga U <me@laserbat.pw>"
@@ -65,17 +64,17 @@ Projucer() {
 	# ~/SDKs/ (path hardcoded)
 	# TODO: use xvfb-run script for testing
 
-	Xvfb :999 &
-	XVFB_PID=$!
-	HOME=${wrksrc} DISPLAY=":999" "${wrksrc}/JUCE-${_jucever}/extras/Projucer/Builds/LinuxMakefile/build/Projucer"  "$@"
-	kill $XVFB_PID || true
+	xvfb-run \
+		"${wrksrc}/JUCE/extras/Projucer/Builds/LinuxMakefile/build/Projucer"  "$@"
 }
 
 post_extract() {
 	mkdir SDKs
 	mv VST_SDK SDKs
 	mv vst2.x SDKs/VST_SDK/VST3_SDK/pluginterfaces
-	cd "${wrksrc}/cabbage-${version}"
+	mv cabbage-${version} cabbage
+	mv JUCE-${_jucever} JUCE
+	cd "${wrksrc}/cabbage"
 
 	# There are lots of hardcoded paths that need to be rewritten
 	vsed -e 's@sourcecode/@@' -i CabbageLite.jucer
@@ -83,7 +82,6 @@ post_extract() {
 	for f in *jucer; do
 		vsed -e "s@/usr/local/include/csound@/usr/include/csound@g" \
 			 -e "s@/usr/local/lib@/usr/lib@g" \
-			 -e "s@../JUCE@../JUCE-${_jucever}@" \
 			 -i "$f"
 	done
 
@@ -93,48 +91,45 @@ post_extract() {
 	vsed -e '/opcodeFile\ +=/s#/#/../share/doc/cabbage/#' \
 		 -i Source/CodeEditor/CabbageCodeEditor.cpp
 
-	vsed -e '/CabbagePlugin\(Synth\|Effect\)/s#"/#"/../lib/vst/#' \
-		 -i Source/Utilities/CabbageExportPlugin.cpp
-
 	# Fix compilation on i686
 	vsed -e 's/__sigemptyset/sigemptyset/' \
-		 -i ../JUCE-${_jucever}/modules/juce_audio_formats/codecs/flac/libFLAC/cpu.c
+		 -i ../JUCE/modules/juce_audio_formats/codecs/flac/libFLAC/cpu.c
 
 	vsed -e "s/JUCER_ENABLE_GPL_MODE 0/JUCER_ENABLE_GPL_MODE 1/" \
-		 -i ../JUCE-${_jucever}/extras/Projucer/JuceLibraryCode/AppConfig.h
+		 -i ../JUCE/extras/Projucer/JuceLibraryCode/AppConfig.h
 }
 
 do_build() {
-	cd "${wrksrc}/JUCE-${_jucever}/extras/Projucer/Builds/LinuxMakefile/"
+	local oldhome=$HOME
+	HOME=$wrksrc
+	cd "${wrksrc}/JUCE/extras/Projucer/Builds/LinuxMakefile/"
 	make ${makejobs} TARGET_ARCH="${_tarch}"
 
-	cd "${wrksrc}/cabbage-${version}/Builds/LinuxMakefile"
+	cd "${wrksrc}/cabbage/Builds/LinuxMakefile"
 
 	Projucer --resave ../../CabbageIDE.jucer
 	mv Makefile MakeCabbageIDE
-	vsed -i MakeCabbageIDE -e "s@\$(HOME)@${wrksrc}@"
 	make -f MakeCabbageIDE ${makejobs} CONFIG=Release TARGET_ARCH="${_tarch}"
 
 	Projucer --resave ../../CabbagePlugin.jucer
 	mv Makefile MakePluginEffect
-	vsed -i MakePluginEffect -e "s@\$(HOME)@${wrksrc}@"
 	make -f MakePluginEffect ${makejobs} CONFIG=Release TARGET_ARCH="${_tarch}"
 	mv ./build/CabbagePlugin.so ./build/CabbagePluginEffect.so
 
 	Projucer --resave ../../CabbagePluginSynth.jucer
 	mv Makefile MakePluginSynth
-	vsed -i MakePluginSynth -e "s@\$(HOME)@${wrksrc}@"
 	make -f MakePluginSynth ${makejobs} CONFIG=Release TARGET_ARCH="${_tarch}"
 	mv ./build/CabbagePlugin.so ./build/CabbagePluginSynth.so
 
 	Projucer --resave ../../CabbageLite.jucer
-	cp -r ../../../JUCE-${_jucever}/modules/juce_audio_plugin_client/ ../../JuceLibraryCode/modules/
+	cp -r ../../../JUCE/modules/juce_audio_plugin_client/ ../../JuceLibraryCode/modules/
 	mv Makefile MakeCabbageLite
 	make -f MakeCabbageLite ${makejobs} CONFIG=Release TARGET_ARCH="${_tarch}"
+	HOME=$oldhome
 }
 
 do_install() {
-	cd "${wrksrc}/cabbage-${version}/Builds/LinuxMakefile"
+	cd "${wrksrc}/cabbage/Builds/LinuxMakefile"
 
 	find ../../Examples -name '.DS_Store' -delete
 	find ../../Examples -name '*_Log.txt' -delete
