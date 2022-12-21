@@ -29,6 +29,15 @@ hook() {
 		fi
 	done
 
+	if [ -d ${PKGDESTDIR}/usr/lib/libexec ]; then
+		# Add exception for kconfig,
+		# other packages hard-coded path to its files
+		if [ "${pkgname}" != kconfig ]; then
+			msg_red "${pkgver}: /usr/lib/libexec directory is not allowed!\n"
+			error=1
+		fi
+	fi
+
 	for f in "$PKGDESTDIR"/*; do
 		f="${f##*/}"
 		case "$f" in
@@ -103,6 +112,11 @@ hook() {
 		error=1
 	fi
 
+	if [ -d ${PKGDESTDIR}/usr/usr ]; then
+		msg_red "${pkgver}: /usr/usr is forbidden, use /usr.\n"
+		error=1
+	fi
+
 	if [ -d ${PKGDESTDIR}/usr/man ]; then
 		msg_red "${pkgver}: /usr/man is forbidden, use /usr/share/man.\n"
 		error=1
@@ -120,6 +134,11 @@ hook() {
 
 	if [ -d ${PKGDESTDIR}/usr/dict ]; then
 		msg_red "${pkgver}: /usr/dict is forbidden. Use /usr/share/dict.\n"
+		error=1
+	fi
+
+	if [ -e ${PKGDESTDIR}/usr/share/glib-2.0/schemas/gschemas.compiled ]; then
+		msg_red "${pkgver}: /usr/share/glib-2.0/schemas/gschemas.compiled is forbidden. Delete it.\n"
 		error=1
 	fi
 

@@ -1,6 +1,7 @@
 makedepends+=" R"
 depends+=" R"
-wrksrc="${XBPS_BUILDDIR}/${pkgname#R-cran-}"
+create_wrksrc=required
+build_wrksrc="${pkgname#R-cran-}"
 
 # default to cran
 if [ -z "$distfiles" ]; then

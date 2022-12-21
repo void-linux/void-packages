@@ -1,49 +1,27 @@
 # vim: set ts=4 sw=4 et:
 
 show_pkg() {
-    local i=
-
-    echo "pkgname:	$pkgname"
-    echo "version:	$version"
-    echo "revision:	$revision"
-    for i in ${distfiles}; do
-        [ -n "$i" ] && echo "distfiles:	$i"
-    done
-    for i in ${checksum}; do
-        [ -n "$i" ] && echo "checksum:	$i"
-    done
-    for i in ${archs}; do
-        [ -n "$i" ] && echo "archs:		$i"
-    done
-    echo "maintainer:	$maintainer"
-    [ -n "$homepage" ] && echo "Upstream URL:	$homepage"
-    [ -n "$license" ] && echo "License(s):	$license"
-    [ -n "$changelog" ] && echo "Changelog:	$changelog"
-    [ -n "$build_style" ] && echo "build_style:	$build_style"
-    for i in $build_helper; do
-        [ -n "$i" ] && echo "build_helper:  $i"
-    done
-    for i in ${configure_args}; do
-        [ -n "$i" ] && echo "configure_args:	$i"
-    done
-    echo "short_desc:	$short_desc"
-    for i in ${subpackages}; do
-        [ -n "$i" ] && echo "subpackages:	$i"
-    done
+    show_pkg_var "pkgname" "$pkgname"
+    show_pkg_var "version" "$version"
+    show_pkg_var "revision" "$revision"
+    show_pkg_var "distfiles" "$distfiles" 1
+    show_pkg_var "checksum" "$checksum" 1
+    show_pkg_var "archs" "$archs" 1
+    show_pkg_var "maintainer" "${maintainer}"
+    show_pkg_var "Upstream URL" "$homepage"
+    show_pkg_var "License(s)" "${license//,/ }" 1
+    show_pkg_var "Changelog" "$changelog"
+    show_pkg_var "build_style" "$build_style"
+    show_pkg_var "build_helper" "$build_helper" 1
+    show_pkg_var "configure_args" "$configure_args" 1
+    show_pkg_var "short_desc" "$short_desc"
+    show_pkg_var "subpackages" "$subpackages" 1
     set -f
-    for i in ${conf_files}; do
-        [ -n "$i" ] && echo "conf_files:	$i"
-    done
+    show_pkg_var "conf_files" "$conf_files" 1
     set +f
-    for i in ${replaces}; do
-        [ -n "$i" ] && echo "replaces:	$i"
-    done
-    for i in ${provides}; do
-        [ -n "$i" ] && echo "provides:	$i"
-    done
-    for i in ${conflicts}; do
-        [ -n "$i" ] && echo "conflicts:	$i"
-    done
+    show_pkg_var "replaces" "$replaces" 1
+    show_pkg_var "provides" "$provides" 1
+    show_pkg_var "conflicts" "$conflicts" 1
     local OIFS="$IFS"
     IFS=','
     for var in $1; do
@@ -51,16 +29,36 @@ show_pkg() {
         if [ ${var} != ${var/'*'} ]
         then
             var="${var/'*'}"
-            [ -n "${!var}" ] && echo "$var:	${!var//$'\n'/' '}"
+            show_pkg_var "$var" "${!var//$'\n'/' '}"
         else
-            for val in ${!var}; do
-                [ -n "$val" ] && echo "$var:	$val"
-            done
+            show_pkg_var "$var" "${!var}" 1
         fi
     done
     IFS="$OIFS"
 
     return 0
+}
+
+show_pkg_var() {
+    local _sep i=
+    local _label="$1"
+    local _value="$2"
+    local _always_split="$3"
+    if [ -n "$_value" ] && [ -n "$_label" ]; then
+        # on short labels, use more padding so everything lines up
+        if [ "${#_label}" -lt 7 ]; then
+            _sep="		"
+        else
+            _sep="	"
+        fi
+        if [ -n "$_always_split" ] || [[ "$_value" =~ $'\n' ]]; then
+            for i in ${_value}; do
+                [ -n "$i" ] && echo "${_label}:${_sep}${i}"
+            done
+        else
+            echo "${_label}:${_sep}${_value}"
+        fi
+    fi
 }
 
 show_pkg_deps() {

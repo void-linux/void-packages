@@ -1,0 +1,188 @@
+From 2768aea6cb20d6e8d171618f2217e29f5ded4ab5 Mon Sep 17 00:00:00 2001
+From: Victor Stinner <vstinner@python.org>
+Date: Thu, 30 Jun 2022 11:59:54 +0200
+Subject: [PATCH] Add Python 3.11 support
+
+Link: https://github.com/unbit/uwsgi/pull/2453
+
+* Use PyFrame_GetCode().
+* Add PyFrame_GetCode() for Python 3.8 and older.
+* Add UWSGI_PY311 macro: defined on Python 3.11 and newer.
+* struct uwsgi_python: "current_recursion_depth" becomes
+  "current_recursion_remaining" and current_frame type becomes
+  _PyCFrame** on Python 3.11.
+
+Related Python 3.11 changes:
+
+* https://docs.python.org/dev/whatsnew/3.11.html#id6
+* The PyFrameObject structure became opaque.
+* PyThreadState.frame (PyFrameObject) became PyThreadState.cframe
+  (_PyCFrame) in Python 3.11.
+* PyThreadState: recursion_depth was replaced with
+  recursion_remaining + recursion_limit.
+---
+ plugins/python/profiler.c      | 25 ++++++++++++++++++++-----
+ plugins/python/python_plugin.c | 26 +++++++++++++++++++++++++-
+ plugins/python/uwsgi_python.h  | 12 ++++++++++++
+ 3 files changed, 57 insertions(+), 6 deletions(-)
+
+--- a/plugins/python/profiler.c
++++ b/plugins/python/profiler.c
+@@ -13,6 +13,14 @@ int PyFrame_GetLineNumber(PyFrameObject
+ }
+ #endif
+ 
++#if PY_VERSION_HEX < 0x030900B1
++PyCodeObject* PyFrame_GetCode(PyFrameObject *frame)
++{
++	Py_INCREF(frame->f_code);
++	return frame->f_code;
++}
++#endif
++
+ #ifdef PYTHREE
+ #undef PyString_AsString
+ static char *PyString_AsString(PyObject *o) {
+@@ -27,27 +35,32 @@ int uwsgi_python_profiler_call(PyObject
+ 	static uint64_t last_ts = 0;
+         uint64_t now = uwsgi_micros();
+         uint64_t delta = 0;
++	PyCodeObject *code;
+ 
+ 	switch(what) {
+ 		case PyTrace_CALL:
+ 			if (last_ts == 0) delta = 0;
+                 	else delta = now - last_ts;
+                 	last_ts = now;
++			code = PyFrame_GetCode(frame);
+ 			uwsgi_log("[uWSGI Python profiler %llu] CALL: %s (line %d) -> %s %d args, stacksize %d\n",
+ 				(unsigned long long) delta,
+-				PyString_AsString(frame->f_code->co_filename),
++				PyString_AsString(code->co_filename),
+ 				PyFrame_GetLineNumber(frame),
+-				PyString_AsString(frame->f_code->co_name), frame->f_code->co_argcount, frame->f_code->co_stacksize);
++				PyString_AsString(code->co_name), code->co_argcount, code->co_stacksize);
++			Py_DECREF(code);
+ 			break;
+ 		case PyTrace_C_CALL:
+ 			if (last_ts == 0) delta = 0;
+                 	else delta = now - last_ts;
+                 	last_ts = now;
++			code = PyFrame_GetCode(frame);
+ 			uwsgi_log("[uWSGI Python profiler %llu] C CALL: %s (line %d) -> %s %d args, stacksize %d\n",
+ 				(unsigned long long) delta,
+-				PyString_AsString(frame->f_code->co_filename),
++				PyString_AsString(code->co_filename),
+ 				PyFrame_GetLineNumber(frame),
+-				PyEval_GetFuncName(arg), frame->f_code->co_argcount, frame->f_code->co_stacksize);
++				PyEval_GetFuncName(arg), code->co_argcount, code->co_stacksize);
++			Py_DECREF(code);
+ 			break;
+ 	}
+ 
+@@ -68,7 +81,9 @@ int uwsgi_python_tracer(PyObject *obj, P
+ 			delta = now - last_ts;
+ 		}
+ 		last_ts = now;
+-		uwsgi_log("[uWSGI Python profiler %llu] file %s line %d: %s argc:%d\n", (unsigned long long)delta,  PyString_AsString(frame->f_code->co_filename), PyFrame_GetLineNumber(frame), PyString_AsString(frame->f_code->co_name), frame->f_code->co_argcount);
++		PyCodeObject *code = PyFrame_GetCode(frame);
++		uwsgi_log("[uWSGI Python profiler %llu] file %s line %d: %s argc:%d\n", (unsigned long long)delta,  PyString_AsString(code->co_filename), PyFrame_GetLineNumber(frame), PyString_AsString(code->co_name), code->co_argcount);
++		Py_DECREF(code);
+ 	}
+ 
+         return 0;
+--- a/plugins/python/python_plugin.c
++++ b/plugins/python/python_plugin.c
+@@ -1138,8 +1138,12 @@ void uwsgi_python_init_apps() {
+ 
+ 	// prepare for stack suspend/resume
+ 	if (uwsgi.async > 1) {
++#ifdef UWSGI_PY311
++		up.current_recursion_remaining = uwsgi_malloc(sizeof(int)*uwsgi.async);
++#else
+ 		up.current_recursion_depth = uwsgi_malloc(sizeof(int)*uwsgi.async);
+-        	up.current_frame = uwsgi_malloc(sizeof(struct _frame)*uwsgi.async);
++#endif
++		up.current_frame = uwsgi_malloc(sizeof(up.current_frame[0])*uwsgi.async);
+ 	}
+ 
+         // setup app loaders
+@@ -1530,12 +1534,22 @@ void uwsgi_python_suspend(struct wsgi_re
+ 	PyGILState_Release(pgst);
+ 
+ 	if (wsgi_req) {
++#ifdef UWSGI_PY311
++		up.current_recursion_remaining[wsgi_req->async_id] = tstate->recursion_remaining;
++		up.current_frame[wsgi_req->async_id] = tstate->cframe;
++#else
+ 		up.current_recursion_depth[wsgi_req->async_id] = tstate->recursion_depth;
+ 		up.current_frame[wsgi_req->async_id] = tstate->frame;
++#endif
+ 	}
+ 	else {
++#ifdef UWSGI_PY311
++		up.current_main_recursion_remaining = tstate->recursion_remaining;
++		up.current_main_frame = tstate->cframe;
++#else
+ 		up.current_main_recursion_depth = tstate->recursion_depth;
+ 		up.current_main_frame = tstate->frame;
++#endif
+ 	}
+ 
+ }
+@@ -1763,12 +1777,22 @@ void uwsgi_python_resume(struct wsgi_req
+ 	PyGILState_Release(pgst);
+ 
+ 	if (wsgi_req) {
++#ifdef UWSGI_PY311
++		tstate->recursion_remaining = up.current_recursion_remaining[wsgi_req->async_id];
++		tstate->cframe = up.current_frame[wsgi_req->async_id];
++#else
+ 		tstate->recursion_depth = up.current_recursion_depth[wsgi_req->async_id];
+ 		tstate->frame = up.current_frame[wsgi_req->async_id];
++#endif
+ 	}
+ 	else {
++#ifdef UWSGI_PY311
++		tstate->recursion_remaining = up.current_main_recursion_remaining;
++		tstate->cframe = up.current_main_frame;
++#else
+ 		tstate->recursion_depth = up.current_main_recursion_depth;
+ 		tstate->frame = up.current_main_frame;
++#endif
+ 	}
+ 
+ }
+--- a/plugins/python/uwsgi_python.h
++++ b/plugins/python/uwsgi_python.h
+@@ -18,6 +18,10 @@
+ #define UWSGI_PYTHON_OLD
+ #endif
+ 
++#if (PY_VERSION_HEX >= 0x030b0000)
++#  define UWSGI_PY311
++#endif
++
+ #if PY_MAJOR_VERSION == 2 && PY_MINOR_VERSION < 7
+ #define HAS_NOT_PyMemoryView_FromBuffer
+ #endif
+@@ -165,11 +169,19 @@ struct uwsgi_python {
+ 
+ 	char *callable;
+ 
++#ifdef UWSGI_PY311
++	int *current_recursion_remaining;
++	_PyCFrame **current_frame;
++
++	int current_main_recursion_remaining;
++	_PyCFrame *current_main_frame;
++#else
+ 	int *current_recursion_depth;
+ 	struct _frame **current_frame;
+ 
+ 	int current_main_recursion_depth;
+ 	struct _frame *current_main_frame;
++#endif
+ 
+ 	void (*swap_ts)(struct wsgi_request *, struct uwsgi_app *);
+ 	void (*reset_ts)(struct wsgi_request *, struct uwsgi_app *);

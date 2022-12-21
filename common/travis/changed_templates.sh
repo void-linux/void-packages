@@ -2,8 +2,6 @@
 #
 # changed_templates.sh
 
-PATH="/usr/libexec/chroot-git:$PATH"
-
 tip="$(git rev-list -1 --parents HEAD)"
 case "$tip" in
 	# This is a merge commit, pick last parent
@@ -12,9 +10,10 @@ case "$tip" in
 	*)         tip="${tip%% *}" ;;
 esac
 
-base="$(git merge-base FETCH_HEAD "$tip")" || {
-	echo "Your branches is based on too old copy."
-	echo "Please rebase to newest copy."
+base="$(git merge-base FETCH_HEAD "$tip")"
+
+[ $(git rev-list --count "$tip" "^$base") -lt 200 ] || {
+	echo "::error title=Branch out of date::Your branch is too out of date. Please rebase on upstream and force-push."
 	exit 1
 }
 
