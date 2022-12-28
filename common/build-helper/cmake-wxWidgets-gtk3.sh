@@ -3,3 +3,4 @@ if [ "$CROSS_BUILD" ]; then
 else
 	export WX_CONFIG=/usr/bin/wx-config-gtk3
 fi
+configure_args+=" -DwxWidgets_CONFIG_EXECUTABLE=${WX_CONFIG} "

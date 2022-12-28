@@ -1,0 +1,170 @@
+--- a/make/hotspot/lib/CompileJvm.gmk
++++ b/make/hotspot/lib/CompileJvm.gmk
+@@ -73,6 +73,7 @@ CFLAGS_VM_VERSION := \
+     -DHOTSPOT_BUILD_USER='"$(USERNAME)"' \
+     -DHOTSPOT_VM_DISTRO='"$(HOTSPOT_VM_DISTRO)"' \
+     -DCPU='"$(OPENJDK_TARGET_CPU_VM_VERSION)"' \
++    -DLIBC='"musl"' \
+     #
+ 
+ ################################################################################
+--- a/make/modules/java.base/lib/CoreLibraries.gmk
++++ b/make/modules/java.base/lib/CoreLibraries.gmk
+@@ -190,6 +190,7 @@ ifeq ($(call isTargetOs, windows), true)
+ endif
+ 
+ LIBJLI_CFLAGS += $(LIBZ_CFLAGS)
++LIBJLI_CFLAGS += -DLIBC=\"musl\"
+ 
+ ifneq ($(USE_EXTERNAL_LIBZ), true)
+   LIBJLI_EXTRA_FILES += \
+--- a/src/hotspot/os/linux/os_linux.cpp
++++ b/src/hotspot/os/linux/os_linux.cpp
+@@ -3117,20 +3123,36 @@ void os::Linux::sched_getcpu_init() {
+ extern "C" JNIEXPORT void numa_warn(int number, char *where, ...) { }
+ extern "C" JNIEXPORT void numa_error(char *where) { }
+ 
++static void* dlvsym_if_available(void* handle, const char* name, const char* version) {
++  typedef void* (*dlvsym_func_type)(void* handle, const char* name, const char* version);
++  static dlvsym_func_type dlvsym_func;
++  static bool initialized = false;
++
++  if (!initialized) {
++    dlvsym_func = (dlvsym_func_type)dlsym(RTLD_NEXT, "dlvsym");
++    initialized = true;
++  }
++
++  if (dlvsym_func != NULL) {
++    void *f = dlvsym_func(handle, name, version);
++    if (f != NULL) {
++      return f;
++    }
++  }
++
++  return dlsym(handle, name);
++}
++
+ // Handle request to load libnuma symbol version 1.1 (API v1). If it fails
+ // load symbol from base version instead.
+ void* os::Linux::libnuma_dlsym(void* handle, const char *name) {
+-  void *f = dlvsym(handle, name, "libnuma_1.1");
+-  if (f == NULL) {
+-    f = dlsym(handle, name);
+-  }
+-  return f;
++  return dlvsym_if_available(handle, name, "libnuma_1.1");
+ }
+ 
+ // Handle request to load libnuma symbol version 1.2 (API v2) only.
+ // Return NULL if the symbol is not defined in this particular version.
+ void* os::Linux::libnuma_v2_dlsym(void* handle, const char* name) {
+-  return dlvsym(handle, name, "libnuma_1.2");
++  return dlvsym_if_available(handle, name, "libnuma_1.2");
+ }
+ 
+ bool os::Linux::libnuma_init() {
+--- a/src/hotspot/os_cpu/linux_x86/os_linux_x86.cpp
++++ b/src/hotspot/os_cpu/linux_x86/os_linux_x86.cpp
+@@ -75,9 +75,6 @@
+ # include <pwd.h>
+ # include <poll.h>
+ # include <ucontext.h>
+-#ifndef AMD64
+-# include <fpu_control.h>
+-#endif
+ 
+ #ifdef AMD64
+ #define REG_SP REG_RSP
+--- a/src/hotspot/share/gc/shared/genCollectedHeap.cpp
++++ b/src/hotspot/share/gc/shared/genCollectedHeap.cpp
+@@ -1116,7 +1116,7 @@ HeapWord* GenCollectedHeap::allocate_new_tlab(size_t min_size,
+ static ScratchBlock *removeSmallestScratch(ScratchBlock **prev_ptr) {
+   bool first = true;
+   size_t min_size = 0;   // "first" makes this conceptually infinite.
+-  ScratchBlock **smallest_ptr, *smallest;
++  ScratchBlock **smallest_ptr = NULL, *smallest;
+   ScratchBlock  *cur = *prev_ptr;
+   while (cur) {
+     assert(*prev_ptr == cur, "just checking");
+--- a/src/java.base/unix/native/libjava/childproc.c
++++ b/src/java.base/unix/native/libjava/childproc.c
+@@ -235,7 +235,13 @@ JDK_execvpe(int mode, const char *file,
+ {
+     if (envp == NULL || (char **) envp == environ) {
+         execvp(file, (char **) argv);
+-        return;
++        // ENOEXEC indicates that the file header was not recognized. The musl C
++        // library does not implement the fallback to /bin/sh for that case, so fall
++        // through to the code below which implements that fallback using
++        // execve_with_shell_fallback.
++        if (errno != ENOEXEC) {
++            return;
++        }
+     }
+ 
+     if (*file == '\0') {
+--- a/src/java.base/unix/native/libjli/java_md.c
++++ b/src/java.base/unix/native/libjli/java_md.c
+@@ -236,6 +236,39 @@ RequiresSetenv(const char *jvmpath) {
+     char *dmllp = NULL;
+     char *p; /* a utility pointer */
+ 
++#ifdef __linux
++#ifndef LIBC
++#error "LIBC not set"
++#endif
++
++    if (strcmp(LIBC, "musl") == 0) {
++      /*
++       * The musl library loader requires LD_LIBRARY_PATH to be set in
++       * order to correctly resolve the dependency libjava.so has on libjvm.so.
++       *
++       * Specifically, it differs from glibc in the sense that even if
++       * libjvm.so has already been loaded it will not be considered a
++       * candidate for resolving the dependency unless the *full* path
++       * of the already loaded library matches the dependency being loaded.
++       *
++       * libjvm.so is being loaded by the launcher using a long path to
++       * dlopen, not just the basename of the library. Typically this
++       * is something like "../lib/server/libjvm.so". However, if/when
++       * libjvm.so later tries to dlopen libjava.so (which it does in
++       * order to get access to a few functions implemented in
++       * libjava.so) the musl loader will, as part of loading
++       * dependent libraries, try to load libjvm.so using only its
++       * basename "libjvm.so". Since this does not match the longer
++       * path path it was first loaded with, the already loaded
++       * library is not considered a candidate, and the loader will
++       * instead look for libjvm.so elsewhere. If it's not in
++       * LD_LIBRARY_PATH the dependency load will fail, and libjava.so
++       * will therefore fail as well.
++       */
++      return JNI_TRUE;
++    }
++#endif
++
+ #ifdef AIX
+     /* We always have to set the LIBPATH on AIX because ld doesn't support $ORIGIN. */
+     return JNI_TRUE;
+--- a/src/jdk.jdwp.agent/share/native/libjdwp/util.h
++++ b/src/jdk.jdwp.agent/share/native/libjdwp/util.h
+@@ -35,15 +35,15 @@
+ #ifdef DEBUG
+     /* Just to make sure these interfaces are not used here. */
+     #undef free
+-    #define free(p) Do not use this interface.
++    #define free do_not_use_this_interface_free
+     #undef malloc
+-    #define malloc(p) Do not use this interface.
++    #define malloc do_not_use_this_interface_malloc
+     #undef calloc
+-    #define calloc(p) Do not use this interface.
++    #define calloc do_not_use_this_interface_calloc
+     #undef realloc
+-    #define realloc(p) Do not use this interface.
++    #define realloc do_not_use_this_interface_realloc
+     #undef strdup
+-    #define strdup(p) Do not use this interface.
++    #define strdup do_not_use_this_interface_strdup
+ #endif
+ 
+ #include "log_messages.h"

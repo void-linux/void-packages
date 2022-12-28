@@ -8,6 +8,9 @@ unset -v depends run_depends replaces provides conflicts tags
 # hooks/post-install/03-strip-and-debug-pkgs
 unset -v nostrip nostrip_files
 
+# hooks/post-install/14-fix-permissions
+unset -v nocheckperms nofixperms
+
 # hooks/pre-pkg/04-generate-runtime-deps
 unset -v noverifyrdeps skiprdeps allow_unknown_shlibs shlib_requires
 

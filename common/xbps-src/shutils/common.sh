@@ -147,6 +147,23 @@ msg_normal() {
     fi
 }
 
+report_broken() {
+    if [ "$show_problems" = "ignore-problems" ]; then
+        return
+    fi
+    if [ -z "$XBPS_IGNORE_BROKENNESS" ]; then
+        for line in "$@"; do
+            msg_red "$line"
+        done
+        exit 2
+    elif [ "$XBPS_IGNORE_BROKENNESS" != reported ]; then
+        for line in "$@"; do
+            msg_warn "$line"
+        done
+        XBPS_IGNORE_BROKENNESS=reported
+    fi
+}
+
 msg_normal_append() {
     [ -n "$NOCOLORS" ] || printf "\033[1m"
     printf "$@"
@@ -465,12 +482,21 @@ setup_pkg() {
     DESTDIR=$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${sourcepkg}-${version}
     PKGDESTDIR=$XBPS_DESTDIR/$XBPS_CROSS_TRIPLET/${pkg}-${version}
 
-    if [ -n "$disable_parallel_build" -o -z "$XBPS_MAKEJOBS" ]; then
+    export XBPS_ORIG_MAKEJOBS=${XBPS_ORIG_MAKEJOBS:=$XBPS_MAKEJOBS}
+    if [ -n "$disable_parallel_build" ]; then
         XBPS_MAKEJOBS=1
     fi
     makejobs="-j$XBPS_MAKEJOBS"
     if [ -n "$XBPS_BINPKG_EXISTS" ]; then
-        local _binpkgver="$($XBPS_QUERY_XCMD -R -ppkgver $pkgver 2>/dev/null)"
+        local extraflags=""
+        if [ -n "$XBPS_SKIP_REMOTEREPOS" ]; then
+            extraflags="-i"
+            # filter out remote repositories
+            for repo in $(xbps-query -L | awk '{ print $2 }' | grep '^/host/'); do
+                extraflags+=" --repository=$repo"
+            done
+        fi
+        local _binpkgver="$($XBPS_QUERY_XCMD -R -ppkgver $pkgver $extraflags 2>/dev/null)"
         if [ "$_binpkgver" = "$pkgver" ]; then
             if [ -z "$XBPS_DEPENDENCY" ]; then
                 local _repo="$($XBPS_QUERY_XCMD -R -prepository $pkgver 2>/dev/null)"
@@ -628,20 +654,16 @@ setup_pkg() {
     fi
 
     # Setup some specific package vars.
-    if [ -z "$wrksrc" ]; then
-        wrksrc="$XBPS_BUILDDIR/${sourcepkg}-${version}"
-    else
-        wrksrc="$XBPS_BUILDDIR/$wrksrc"
-    fi
+    wrksrc="$XBPS_BUILDDIR/${sourcepkg}-${version}"
 
-    if [ "$cross" -a "$nocross" -a "$show_problems" != "ignore-problems" ]; then
-        msg_red "$pkgver: cannot be cross compiled, exiting...\n"
-        msg_red "$pkgver: $nocross\n"
-        exit 2
-    elif [ "$broken" -a "$show_problems" != "ignore-problems" ]; then
-        msg_red "$pkgver: cannot be built, it's currently broken; see the build log:\n"
-        msg_red "$pkgver: $broken\n"
-        exit 2
+    if [ "$cross" -a "$nocross" ]; then
+        report_broken \
+            "$pkgver: cannot be cross compiled...\n" \
+            "$pkgver: $nocross\n"
+    elif [ "$broken" ]; then
+        report_broken \
+            "$pkgver: cannot be built, it's currently broken; see the build log:\n" \
+            "$pkgver: $broken\n"
     fi
 
     if [ -n "$restricted" -a -z "$XBPS_ALLOW_RESTRICTED" -a "$show_problems" != "ignore-problems" ]; then

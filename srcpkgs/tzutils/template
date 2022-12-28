@@ -1,27 +1,59 @@
 # Template file for 'tzutils'
 pkgname=tzutils
-version=2021a
-revision=2
+version=2022g
+revision=1
 bootstrap=yes
-wrksrc="tz-${version}"
 short_desc="Time zone and daylight-saving time utilities"
 maintainer="Đoàn Trần Công Danh <congdanhqx@gmail.com>"
-license="Public Domain, BSD-3-Clause"
+license="Public Domain"
 homepage="https://www.iana.org/time-zones"
-distfiles="https://github.com/eggert/tz/archive/${version}.tar.gz"
-checksum=bd7ecd99cbb0a2f15bb7e38be2cbc04dced89922fce4ac0ffcd1ca844ba9362f
+distfiles="https://www.iana.org/time-zones/repository/releases/tzdb-${version}.tar.lz"
+checksum=579013083a7b0fd8d71b02a69f062fa96c7b34b6a96646293f60ba9e1105bd2b
+
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends="tzutils"
+fi
 
 do_build() {
-	echo "$version" >version
-	make TZDIR=/usr/share/zoneinfo CC=$CC CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+	touch version
+	make ${makejobs} KSHELL=/bin/sh \
+		CC=$CC CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+	sed -n '/Copyright/,/SUCH DAMAGE/p' strftime.c >strftime.license
+}
+
+do_check() {
+	make check
 }
 
 do_install() {
-	vbin zic
-	vbin zdump
-	vbin tzselect
-	vman zic.8
-	vman zdump.8
-	vman tzselect.8
-	vlicense LICENSE
+	local zic _file
+	if [ "$CROSS_BUILD" ]; then
+		zic="zic=/usr/bin/zic"
+	fi
+	make install DESTDIR="$DESTDIR" ZICDIR=/usr/bin $zic ZFLAGS="-b fat"
+	rm -rf "$DESTDIR"/{etc,usr/lib,usr/share/man/man3}
+	# old structure,
+	# noone should use posix/xxx since it's the same as xxx
+	mkdir "$DESTDIR/usr/share/zoneinfo/posix"
+	for _file in "$DESTDIR/usr/share/zoneinfo/"[A-Z]*; do
+		_file="${_file##*/}"
+		ln -s "../$_file" "$DESTDIR/usr/share/zoneinfo/posix/$_file"
+	done
+	# Because TZ=../zoneinfo-posix/posix/posix" is stupid
+	rm -f "$DESTDIR/usr/share/zoneinfo-posix"
+	ln -s zoneinfo/posix "$DESTDIR/usr/share/zoneinfo-posix"
+	# Backward compatible links
+	# TZ=right/... known to be broken especially on musl, but whatever
+	ln -s ../zoneinfo-leaps "$DESTDIR/usr/share/zoneinfo/right"
+	if [ "$XBPS_TARGET_WORDSIZE" = 32 ]; then
+		vlicense strftime.license
+	fi
+}
+
+tzdata_package() {
+	short_desc="Time zone and daylight-saving time data"
+	pkg_install() {
+		vmove usr/share/man/man5
+		vmove "usr/share/zoneinfo*"
+	}
 }

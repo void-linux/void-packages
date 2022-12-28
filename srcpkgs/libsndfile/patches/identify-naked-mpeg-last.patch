@@ -1,0 +1,73 @@
+Author: Arthur Taylor <art@ified.ca>
+Reason: The minimal possible MPEG file contains no headers or identification
+other than the brief sync header. This header is only 3 bytes, and is quite
+prone to false-positives. Particularly raw PCM can look like a sync header.
+
+As such, move detection of 'naked' MPEG files in guess_file_type()
+to the very last test. Give more weight to a sync header if it
+follows an ID3 tag.
+
+See https://github.com/libsndfile/libsndfile/pull/898
+Upstream: yes
+--- a/src/sndfile.c
++++ b/src/sndfile.c
+@@ -2771,6 +2771,17 @@ format_from_extension (SF_PRIVATE *psf)
+ 	return format ;
+ } /* format_from_extension */
+ 
++static int
++identify_mpeg (uint32_t marker)
++{	if ((marker & MAKE_MARKER (0xFF, 0xE0, 0, 0)) == MAKE_MARKER (0xFF, 0xE0, 0, 0) && /* Frame sync */
++		(marker & MAKE_MARKER (0, 0x18, 0, 0)) != MAKE_MARKER (0, 0x08, 0, 0) && /* Valid MPEG version */
++		(marker & MAKE_MARKER (0, 0x06, 0, 0)) != MAKE_MARKER (0, 0, 0, 0) && /* Valid layer description */
++		(marker & MAKE_MARKER (0, 0, 0xF0, 0)) != MAKE_MARKER (0, 0, 0xF0, 0) && /* Valid bitrate */
++		(marker & MAKE_MARKER (0, 0, 0x0C, 0)) != MAKE_MARKER (0, 0, 0x0C, 0)) /* Valid samplerate */
++		return SF_FORMAT_MPEG ;
++	return 0 ;
++} /* identify_mpeg */
++
+ static int
+ guess_file_type (SF_PRIVATE *psf)
+ {	uint32_t buffer [3], format ;
+@@ -2872,13 +2883,6 @@ guess_file_type (SF_PRIVATE *psf)
+ 	if (buffer [0] == MAKE_MARKER ('R', 'F', '6', '4') && buffer [2] == MAKE_MARKER ('W', 'A', 'V', 'E'))
+ 		return SF_FORMAT_RF64 ;
+ 
+-	if ((buffer [0] & MAKE_MARKER (0xFF, 0xE0, 0, 0)) == MAKE_MARKER (0xFF, 0xE0, 0, 0) && /* Frame sync */
+-		(buffer [0] & MAKE_MARKER (0, 0x18, 0, 0)) != MAKE_MARKER (0, 0x08, 0, 0) && /* Valid MPEG version */
+-		(buffer [0] & MAKE_MARKER (0, 0x06, 0, 0)) != MAKE_MARKER (0, 0, 0, 0) && /* Valid layer description */
+-		(buffer [0] & MAKE_MARKER (0, 0, 0xF0, 0)) != MAKE_MARKER (0, 0, 0xF0, 0) && /* Valid bitrate */
+-		(buffer [0] & MAKE_MARKER (0, 0, 0x0C, 0)) != MAKE_MARKER (0, 0, 0x0C, 0)) /* Valid samplerate */
+-		return SF_FORMAT_MPEG ;
+-
+ 	if (buffer [0] == MAKE_MARKER ('I', 'D', '3', 2) || buffer [0] == MAKE_MARKER ('I', 'D', '3', 3)
+ 			|| buffer [0] == MAKE_MARKER ('I', 'D', '3', 4))
+ 	{	psf_log_printf (psf, "Found 'ID3' marker.\n") ;
+@@ -2887,6 +2891,10 @@ guess_file_type (SF_PRIVATE *psf)
+ 		return 0 ;
+ 		} ;
+ 
++	/* ID3v2 tags + MPEG */
++	if (psf->id3_header.len > 0 && (format = identify_mpeg (buffer [0])) != 0)
++		return format ;
++
+ 	/* Turtle Beach SMP 16-bit */
+ 	if (buffer [0] == MAKE_MARKER ('S', 'O', 'U', 'N') && buffer [1] == MAKE_MARKER ('D', ' ', 'S', 'A'))
+ 		return 0 ;
+@@ -2898,10 +2906,16 @@ guess_file_type (SF_PRIVATE *psf)
+ 	if (buffer [0] == MAKE_MARKER ('a', 'j', 'k', 'g'))
+ 		return 0 /*-SF_FORMAT_SHN-*/ ;
+ 
+-	/* This must be the last one. */
++	/* This must be (almost) the last one. */
+ 	if (psf->filelength > 0 && (format = try_resource_fork (psf)) != 0)
+ 		return format ;
+ 
++	/* MPEG with no ID3v2 tags. Only have the MPEG sync header for
++	 * identification and it is quite brief, and prone to false positives.
++	 * Check for this last, even after resource forks. */
++	if (psf->id3_header.len == 0 && (format = identify_mpeg (buffer [0])) != 0)
++		return format ;
++
+ 	return 0 ;
+ } /* guess_file_type */

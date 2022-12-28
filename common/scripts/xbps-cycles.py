@@ -87,7 +87,7 @@ def find_cycles(depmap, xbpsdir):
 		        # Any of the dependencies here contributes to a cycle
 			p = min(deps)
 			if len(deps) > 1:
-				print('Mulitpath: {} -> {}, choosing first'.format(p, deps))
+				print('Multipath: {} -> {}, choosing first'.format(p, deps))
 
 		if cycles:
 			print('Cycle: ' + ' -> '.join(cycles) + '\n')

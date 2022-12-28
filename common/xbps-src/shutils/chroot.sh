@@ -237,26 +237,33 @@ chroot_sync_repodata() {
             $confdir/12-repository-local-multilib.conf
     fi
 
+    # mirror_sed is a sed script: nop by default
+    local mirror_sed
+    if [ -n "$XBPS_MIRROR" ]; then
+        # when XBPS_MIRROR is set, mirror_sed rewrites remote repos
+        mirror_sed="s|^repository=http.*/current|repository=${XBPS_MIRROR}|"
+    fi
+
     if [ "$XBPS_SKIP_REMOTEREPOS" ]; then
         rm -f $confdir/*remote*
     else
         if [ -s "${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_MACHINE}.conf" ]; then
             # If per-architecture base remote repo config exists, use that
-            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_MACHINE}.conf \
-                $confdir/20-repository-remote.conf
+            sed -e "$mirror_sed" ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_MACHINE}.conf \
+                > $confdir/20-repository-remote.conf
         else
             # Otherwise use generic base for musl or glibc
             local suffix=
             case "$XBPS_MACHINE" in
                 *-musl) suffix="-musl";;
             esac
-            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote${suffix}.conf \
-                $confdir/20-repository-remote.conf
+            sed -e "$mirror_sed" ${XBPS_DISTDIR}/etc/xbps.d/repos-remote${suffix}.conf \
+                > $confdir/20-repository-remote.conf
         fi
         # Install multilib conf for remote repos if it exists for the architecture
         if [ -s "${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_MACHINE}-multilib.conf" ]; then
-            install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_MACHINE}-multilib.conf \
-                $confdir/22-repository-remote-multilib.conf
+            sed -e "$mirror_sed" ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_MACHINE}-multilib.conf \
+                > $confdir/22-repository-remote-multilib.conf
         fi
     fi
 
@@ -266,6 +273,8 @@ chroot_sync_repodata() {
     if [ -n "$XBPS_CROSS_BUILD" ]; then
         rm -rf $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
         mkdir -p $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
+        # Disable 00-repository-main.conf from share/xbps.d (part of xbps)
+        ln -s /dev/null $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d/00-repository-main.conf
         # copy xbps.d files from host for local repos
         cp ${XBPS_MASTERDIR}/etc/xbps.d/*local*.conf \
             $XBPS_MASTERDIR/$XBPS_CROSS_BASE/etc/xbps.d
@@ -274,15 +283,15 @@ chroot_sync_repodata() {
         else
             # Same general logic as above, just into cross root, and no multilib
             if [ -s "${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_TARGET_MACHINE}.conf" ]; then
-                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_TARGET_MACHINE}.conf \
-                    $crossconfdir/20-repository-remote.conf
+                sed -e "$mirror_sed" ${XBPS_DISTDIR}/etc/xbps.d/repos-remote-${XBPS_TARGET_MACHINE}.conf \
+                    > $crossconfdir/20-repository-remote.conf
             else
                 local suffix=
                 case "$XBPS_TARGET_MACHINE" in
                     *-musl) suffix="-musl"
                 esac
-                install -Dm644 ${XBPS_DISTDIR}/etc/xbps.d/repos-remote${suffix}.conf \
-                    $crossconfdir/20-repository-remote.conf
+                sed -e "$mirror_sed" ${XBPS_DISTDIR}/etc/xbps.d/repos-remote${suffix}.conf \
+                    > $crossconfdir/20-repository-remote.conf
             fi
         fi
 

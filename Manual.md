@@ -6,7 +6,6 @@ packages for XBPS, the `Void Linux` native packaging system.
 *Table of Contents*
 
 * [Introduction](#Introduction)
-	* [Quality Requirements](#quality_requirements)
 	* [Package build phases](#buildphase)
 	* [Package naming conventions](#namingconventions)
 		* [Libraries](#libs)
@@ -42,6 +41,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 	* [Go packages](#pkgs_go)
 	* [Haskell packages](#pkgs_haskell)
 	* [Font packages](#pkgs_font)
+	* [Renaming a package](#pkg_rename)
 	* [Removing a package](#pkg_remove)
 	* [XBPS Triggers](#xbps_triggers)
 		* [appstream-cache](#triggers_appstream_cache)
@@ -61,6 +61,7 @@ packages for XBPS, the `Void Linux` native packaging system.
 		* [kernel-hooks](#triggers_kernel_hooks)
 		* [mimedb](#triggers_mimedb)
 		* [mkdirs](#triggers_mkdirs)
+		* [openjdk-profile](#triggers_openjdk_profile)
 		* [pango-modules](#triggers_pango_module)
 		* [pycompile](#triggers_pycompile)
 		* [register-shell](#triggers_register_shell)
@@ -121,38 +122,6 @@ If everything went fine after running
 
 a binary package named `foo-1.0_1.<arch>.xbps` will be generated in the local repository
 `hostdir/binpkgs`.
-
-<a id="quality_requirements"></a>
-### Quality Requirements
-
-To be included in the Void repository, software must meet at least one
-of the following requirements. Exceptions to the list are possible,
-and might be accepted, but are extremely unlikely. If you believe you have an
-exception, start a PR and make an argument for why that particular piece of
-software, while not meeting any of the following requirements, is a good candidate for
-the Void packages system.
-
-1. System: The software should be installed system-wide, not per-user.
-
-1. Compiled: The software needs to be compiled before being used, even if it is
-   software that is not needed by the whole system.
-
-1. Required: Another package either within the repository or pending inclusion
-   requires the package.
-
-In particular, new themes are highly unlikely to be accepted. Simple shell
-scripts are unlikely to be accepted unless they provide considerable value to a
-broad user base. New fonts may be accepted if they provide value beyond
-aesthetics (e.g. they contain glyphs for a script missing in already packaged
-fonts).
-
-Browser forks, including those based on Chromium and Firefox, are generally not
-accepted. Such forks require heavy patching, maintenance and hours of build time.
-
-Software need to be used in version announced by authors as ready to use by
-the general public - usually called releases. Betas, arbitrary VCS revisions,
-templates using tip of development branch taken at build time and releases
-created by the package maintainer won't be accepted.
 
 <a id="buildphase"></a>
 ### Package build phases
@@ -422,9 +391,11 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 - `XBPS_WRAPPERDIR` Full path to where xbps-src's wrappers for utilities are stored.
 
-- `XBPS_CROSS_BASE` Full path to where cross-compile dependencies are installed, varies according to the target architecture triplet. i.e `aarch64` -> `aarch64-unknown-linux-gnu`.
+- `XBPS_CROSS_BASE` Full path to where cross-compile dependencies are installed, varies according to the target architecture triplet. i.e `aarch64` -> `/usr/aarch64-linux-gnu`.
 
 - `XBPS_RUST_TARGET` The target architecture triplet used by `rustc` and `cargo`.
+
+- `XBPS_BUILD_ENVIRONMENT` Enables continuous-integration-specific operations. Set to `void-packages-ci` if in continuous integration.
 
 <a id="available_vars"></a>
 ### Available variables
@@ -434,7 +405,7 @@ in this directory such as `${XBPS_BUILDDIR}/${wrksrc}`.
 
 The list of mandatory variables for a template:
 
-- `homepage` A string pointing to the `upstream` homepage.
+- `homepage` An URL pointing to the upstream homepage.
 
 
 - <a id="var_license"></a>
@@ -462,7 +433,7 @@ the generated `binary packages` have been modified.
 - `short_desc` A string with a brief description for this package. Max 72 chars.
 
 - `version` A string with the package version. Must not contain dashes or underscore
-and at least one digit is required. Shell's variable substition usage is not allowed.
+and at least one digit is required. Shell's variable substitution usage is not allowed.
 
 Neither `pkgname` or `version` should contain special characters which make it
 necessary to quote them, so they shouldn't be quoted in the template.
@@ -528,6 +499,7 @@ Example:
   | UBUNTU_SITE      | http://archive.ubuntu.com/ubuntu/pool           |
   | XORG_SITE        | https://www.x.org/releases/individual            |
   | KDE_SITE         | https://download.kde.org/stable                 |
+  | VIDEOLAN_SITE    | https://download.videolan.org/pub/videolan      |
 
 - `checksum` The `sha256` digests matching `${distfiles}`. Multiple files can be
 separated by blanks. Please note that the order must be the same than
@@ -540,13 +512,14 @@ can be specified by prepending a commercial at (@).
 For tarballs you can find the contents checksum by using the command
 `tar xf <tarball.ext> --to-stdout | sha256sum`.
 
-- `wrksrc` The directory name where the package sources are extracted, by default
-set to `${pkgname}-${version}`. If the top level directory of a package's `distfile` is different from the default, `wrksrc` must be set to the top level directory name inside the archive.
+- `wrksrc` The directory name where the package sources are extracted, set to `${pkgname}-${version}`.
 
 - `build_wrksrc` A directory relative to `${wrksrc}` that will be used when building the package.
 
-- `create_wrksrc` Enable it to create the `${wrksrc}` directory. Required if a package
-contains multiple `distfiles`.
+- `create_wrksrc` Usually, after extracting, if there're multiple top-level
+  files and/or directories or when there're no directories at all, top-level files,
+  and directories will be wrapped inside one more layer of directory.
+  Set `create_wrksrc` to force this behaviour.
 
 - `build_style` This specifies the `build method` for a package. Read below to know more
 about the available package `build methods` or effect of leaving this not set.
@@ -575,14 +548,13 @@ build methods. Unset by default.
 `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile`
 build methods. Unset by default.
 
-- `make_install_args` The arguments to be passed in to `${make_cmd}` at the `install-destdir`
-phase if `${build_style}` is set to `configure`, `gnu-configure` or
-`gnu-makefile` build methods. By default set to
-`PREFIX=/usr DESTDIR=${DESTDIR}`.
+- `make_install_args` The arguments to be passed in to `${make_cmd}` at the `install`
+phase if `${build_style}` is set to `configure`, `gnu-configure` or `gnu-makefile` build methods.
 
 - `make_build_target` The build target. If `${build_style}` is set to `configure`, `gnu-configure`
-or `gnu-makefile`, this is the target passed to `${make_cmd}` in the build phase; when unset, it
-defaults to `all`. If `${build_style}` is `python3-pep517`, this is the path of the package
+or `gnu-makefile`, this is the target passed to `${make_cmd}` in the build phase;
+when unset the default target is used.
+If `${build_style}` is `python3-pep517`, this is the path of the package
 directory that should be built as a Python wheel; when unset, defaults to `.` (the current
 directory with respect to the build).
 
@@ -597,16 +569,25 @@ path of the Python wheel produced by the build phase that will be installed; whe
 `python-pep517` build style will look for a wheel matching the package name and version in the
 current directory with respect to the install.
 
+- `make_check_pre` The expression in front of `${make_cmd}`. This can be used for wrapper commands
+or for setting environment variables for the check command. By default empty.
+
 - `patch_args` The arguments to be passed in to the `patch(1)` command when applying
 patches to the package sources during `do_patch()`. Patches are stored in
 `srcpkgs/<pkgname>/patches` and must be in `-p1` format. By default set to `-Np1`.
 
 - `disable_parallel_build` If set the package won't be built in parallel
-and `XBPS_MAKEJOBS` has no effect.
+and `XBPS_MAKEJOBS` will be set to 1. If a package does not work well with `XBPS_MAKEJOBS`
+but still has a mechanism to build in parallel, set `disable_parallel_build` and
+use `XBPS_ORIG_MAKEJOBS` (which holds the original value of `XBPS_MAKEJOBS`) in the template.
+
+- `disable_parallel_check` If set tests for the package won't be built and run in parallel
+and `XBPS_MAKEJOBS` will be set to 1. If a package does not work well with `XBPS_MAKEJOBS`
+but still has a mechanism to run checks in parallel, set `disable_parallel_check` and
+use `XBPS_ORIG_MAKEJOBS` (which holds the original value of `XBPS_MAKEJOBS`) in the template.
 
 - `make_check` Sets the cases in which the `check` phase is run.
-This option should usually be accompanied by a comment explaining why it was set, especially when
-set to `no`.
+This option has to be accompanied by a comment explaining why the tests fail.
 Allowed values:
   - `yes` (the default) to run if `XBPS_CHECK_PKGS` is set.
   - `extended` to run if `XBPS_CHECK_PKGS` is `full`.
@@ -644,12 +625,12 @@ Example: `conf_files="/etc/foo.conf /etc/foo2.conf /etc/foo/*.conf"`.
 default all binaries are stripped.
 
 - `nostrip_files` White-space separated list of ELF binaries that won't be stripped of
-debugging symbols.
+debugging symbols. Files can be given by full path or by filename.
 
 - `noshlibprovides` If set, the ELF binaries won't be inspected to collect the provided
 sonames in shared libraries.
 
-- `noverifyrdeps` If set, the ELF binaries and shared libaries won't be inspected to collect
+- `noverifyrdeps` If set, the ELF binaries and shared libraries won't be inspected to collect
 their reverse dependencies. You need to specify all dependencies in the `depends` when you
 need to set this.
 
@@ -689,8 +670,8 @@ This appends to the generated file rather than replacing it.
 - `nopie` Only needs to be set to something to make active, disables building the package with hardening
   features (PIE, relro, etc). Not necessary for most packages.
 
-- `nopie_files` White-space seperated list of ELF binaries that won't be checked
-for PIE.
+- `nopie_files` White-space separated list of ELF binaries that won't be checked
+for PIE. Files must be given by full path.
 
 - `reverts` xbps supports a unique feature which allows to downgrade from broken
 packages automatically. In the `reverts` field one can define a list of broken
@@ -743,11 +724,16 @@ used.
 
 - `fetch_cmd` Executable to be used to fetch URLs in `distfiles` during the `do_fetch` phase.
 
+- `changelog` An URL pointing to the upstream changelog. Raw text files are preferred.
+
 - `archs` Whitespace separated list of architectures that a package can be
 built for, available architectures can be found under `common/cross-profiles`.
 In general, `archs` should only be set if the upstream software explicitly targets
 certain architectures or there is a compelling reason why the software should not be
 available on some supported architectures.
+Prepending pattern with tilde means disallowing build on indicated archs.
+First matching pattern is taken to allow/deny build. When no pattern matches,
+package is build if last pattern includes tilde.
 Examples:
 
 	```
@@ -760,13 +746,17 @@ Examples:
 	```
 A special value `noarch` used to be available, but has since been removed.
 
+- `nocheckperms` If set, xbps-src will not fail on common permission errors (world writable files, etc.)
+
+- `nofixperms` If set, xbps-src will not fix common permission errors (executable manpages, etc.)
+
 <a id="explain_depends"></a>
 #### About the many types of `depends` variables
 
 So far, we have listed four types of `depends` variables: `hostmakedepends`,
 `makedepends`, `checkdepends` and `depends`. These different kinds of variables
 are necessary because `xbps-src` supports cross compilation and to avoid
-installing unecessary packages in the build environment.
+installing unnecessary packages in the build environment.
 
 During a build process, there are programs that must be _run_ on the host, such
 as `yacc` or the C compiler. The packages that contain these programs should be
@@ -993,6 +983,10 @@ configure arguments can be specified via `cross_*_configure_args` where `*` is `
 additionally passed to both early and final `gcc`. You can also specify custom `CFLAGS`
 and `LDFLAGS` for the libc as `cross_(glibc|musl)_(cflags|ldflags)`.
 
+- `zig-build` For packages using [Zig](https://ziglang.org)'s build
+system. Additional arguments may be passed to the `zig build` invocation using
+`configure_args`.
+
 For packages that use the Python module build method (`setup.py` or
 [PEP 517](https://www.python.org/dev/peps/pep-0517/)), you can choose one of the following:
 
@@ -1084,7 +1078,13 @@ still be passed in if it's a GNU configure script.
 
 - `post_build()` Actions to execute after `do_build()`.
 
-- `pre_install()` Actions to execute after `post_build()`.
+- `pre_check()` Actions to execute after `post_build()`.
+
+- `do_check()` Actions to execute to run checks for the package.
+
+- `post_check()` Actions to execute after `do_check()`.
+
+- `pre_install()` Actions to execute after `post_check()`.
 
 - `do_install()` Actions to execute to install the package files into the `fake destdir`.
 
@@ -1101,9 +1101,9 @@ Current working directory for functions is set as follows:
 
 - For do_fetch, post_fetch: `XBPS_BUILDDIR`.
 
-- For do_extract, post_extract, pre_patch, do_patch, post_patch: `wrksrc`.
+- For do_extract through do_patch: `wrksrc`.
 
-- For pre_configure through post_install: `build_wrksrc`
+- For post_patch through post_install: `build_wrksrc`
 if it is defined, otherwise `wrksrc`.
 
 <a id="build_options"></a>
@@ -1253,8 +1253,8 @@ declaring a virtual name and version in the `${provides}` template variable (e.g
 specific provider can declare a dependency on the virtual package name with the prefix `virtual?`
 (e.g., `depends="virtual?vpkg-0.1_1"`). When a package is built by `xbps-src`, providers for any
 virtual packages will be confirmed to exist and will be built if necessary. A map from virtual
-packages to their default providers is defined in `etc/default.virtual`. Individual mappings can be
-overridden by local preferences in `etc/virtual`. Comments in `etc/default.virtual` provide more
+packages to their default providers is defined in `etc/defaults.virtual`. Individual mappings can be
+overridden by local preferences in `etc/virtual`. Comments in `etc/defaults.virtual` provide more
 information on this map.
 
 <a id="install_remove_files"></a>
@@ -1382,6 +1382,14 @@ exec bar
 If the service requires directories in parts of the system that are not generally in
 temporary filesystems. Then use the `make_dirs` variable in the template to create
 those directories when the package is installed.
+
+If the package installs a systemd service file or other unit, leave it in place as a
+reference point so long as including it has no negative side effects.
+
+Examples of when *not* to install systemd units:
+
+1. When doing so changes runtime behavior of the packaged software.
+2. When it is done via a compile time flag that also changes build dependencies.
 
 <a id="32bit_pkgs"></a>
 ### 32bit packages
@@ -1562,11 +1570,10 @@ recursively by the target python version. This differs from `pycompile_module` i
 path may be specified, Example: `pycompile_dirs="usr/share/foo"`.
 
 - `python_version`: this variable expects the supported Python major version.
-By default it's set to `2`. This variable is needed for multi-language
+In most cases version is inferred from shebang, install path or build style.
+Only required for some multi-language
 applications (e.g., the application is written in C while the command is
 written in Python) or just single Python file ones that live in `/usr/bin`.
-
-> NOTE: you need to define it *only* for non-Python modules.
 
 Also, a set of useful variables are defined to use in the templates:
 
@@ -1605,6 +1612,7 @@ The following template variables influence how Go packages are built:
   any go.mod files, `default` to use Go's default behavior, or anything
   accepted by `go build -mod MODE`.  Defaults to `vendor` if there's
   a vendor directory, otherwise `default`.
+- `go_ldflags`: Arguments to pass to the linking steps of go tool.
 
 The following environment variables influence how Go packages are built:
 
@@ -1645,6 +1653,18 @@ following variables:
 cache during the install/removal of the package
 - `font_dirs`: which should be set to the directory where the package
 installs its fonts
+
+<a id="pkg_rename"></a>
+### Renaming a package
+
+- Create empty package of old name, depending on new package. This is
+necessary to provide updates to systems where old package is already
+installed. This should be a subpackage of new one, except when version
+number of new package decreased: then create a separate template using
+old version and increased revision.
+- Edit references to package in other templates and common/shlibs.
+- Don't set `replaces=`, it can result in removing both packages from
+systems by xbps.
 
 <a id="pkg_remove"></a>
 ### Removing a package
@@ -1903,7 +1923,7 @@ Although `xbps-src` will automatically include the `dkms` trigger whenever
 before the modules are compiled.
 
 By default, the trigger uses `dracut --regenerate-all` to recreate initramfs
-images. If `/etc/defalt/initramfs-regenerate` exists and defines
+images. If `/etc/default/initramfs-regenerate` exists and defines
 `INITRAMFS_GENERATOR=mkinitcpio`, the trigger will instead use `mkinitcpio` and
 loop over all kernel versions for which modules appear to be installed.
 Alternatively, setting `INITRAMFS_GENERATOR=none` will disable image
@@ -1961,6 +1981,13 @@ During removal it will delete the directory using `rmdir`.
 
 To include this trigger use the `make_dirs` variable, as the trigger won't do anything
 unless it is defined.
+
+<a id="triggers_openjdk_profile"></a>
+#### openjdk-profile
+
+The openjdk-profile trigger is responsible for creating an entry in /etc/profile.d that
+sets the `JAVA_HOME` environment variable to the currently-selected alternative for
+`/usr/bin/java` on installation. This trigger must be manually requested.
 
 <a id="triggers_pango_module"></a>
 #### pango-modules
@@ -2119,7 +2146,7 @@ a github pull request.
 To keep your forked repository always up to date, setup the `upstream` remote
 to pull in new changes:
 
-    $ git remote add upstream git://github.com/void-linux/void-packages.git
+    $ git remote add upstream https://github.com/void-linux/void-packages.git
     $ git pull --rebase upstream master
 
 <a id="help"></a>

@@ -48,6 +48,7 @@ else
     run_pkg_hooks "do-fetch"
 fi
 
+cd ${XBPS_BUILDDIR} || msg_error "$pkgver: cannot access wrksrc directory [$wrksrc]\n"
 # if templates defines post_fetch(), use it.
 if declare -f post_fetch >/dev/null; then
     run_func post_fetch

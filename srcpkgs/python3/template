@@ -3,9 +3,13 @@
 # THIS PACKAGE MUST BE SYNCHRONIZED WITH "srcpkgs/python3-tkinter".
 #
 pkgname=python3
-version=3.9.6
-revision=2
-wrksrc="Python-${version}"
+version=3.11.1
+revision=1
+build_style="gnu-configure"
+configure_args="--enable-shared --enable-ipv6
+ --enable-loadable-sqlite-extensions --with-computed-gotos
+ --with-dbmliborder=gdbm:ndbm --with-system-expat --with-system-ffi
+ --without-ensurepip ac_cv_working_tzset=yes"
 pycompile_dirs="usr/lib/python${version%.*}"
 hostmakedepends="pkgconf"
 makedepends="libffi-devel readline-devel gdbm-devel openssl-devel
@@ -16,8 +20,14 @@ short_desc="Python programming language (${version%.*} series)"
 maintainer="Andrew J. Hesford <ajh@sideband.org>"
 license="Python-2.0"
 homepage="https://www.python.org"
-distfiles="https://www.python.org/ftp/python/${version}/Python-${version}.tar.xz"
-checksum=397920af33efc5b97f2e0b57e91923512ef89fc5b3c1d21dbfc8c4828ce0108a
+_bluez="bluez-5.64"
+distfiles="
+ https://www.python.org/ftp/python/${version}/Python-${version}.tar.xz
+ ${KERNEL_SITE}/bluetooth/${_bluez}.tar.xz
+"
+checksum="85879192f2cffd56cb16c092905949ebf3e5e394b7f764723529637901dfb58f
+ ae437e65b6b3070c198bc5b0109fe9cdeb9eaa387380e2072f9de65fe8a1de34"
+skip_extraction="${_bluez}.tar.xz"
 
 alternatives="
  python:idle:/usr/bin/idle${version%.*}
@@ -26,36 +36,40 @@ alternatives="
  python:python:/usr/bin/python${version%.*}
  python:python.1:/usr/share/man/man1/python${version%.*}.1"
 
-pre_configure() {
+if [ "$CROSS_BUILD" ]; then
+	hostmakedepends+=" python3"
+	configure_args+=" --with-build-python=python3.11"
+fi
+
+post_extract() {
 	# Ensure that internal copies of expat and libffi are not used
 	rm -rf Modules/expat
 	rm -rf Modules/_ctypes/{darwin,libffi}*
+
+	# Extract Bluetooth headers
+	local _srcdistdir="${XBPS_SRCDISTDIR}/${sourcepkg}-${version}"
+	mkdir External
+	bsdtar -C External --strip-components=1 -x \
+		-f "${_srcdistdir}/${_bluez}.tar.xz" "${_bluez}/lib/*.h"
+	mv External/lib External/bluetooth
+}
+
+post_patch() {
+	if [ "$CROSS_BUILD" ]; then
+		patch -Np0 -i ${FILESDIR}/cross.patch
+	fi
 }
 
 do_configure() {
-	local _args
+	# If these are set, distutils will default to cc and attempt to pass
+	# `-R<path>` to the compiler for every compiled extension that sets an
+	# rpath rather than the '-Wl,-R<path>' argument that GCC requires
 	unset GCC CC CXX CPP LD AR AS RANLIB
-	if [ "$CROSS_BUILD" ]; then
-		mkdir -p host-build
-		cd host-build
-		env -i PATH=$PATH XBPS_ARCH=$XBPS_ARCH CFLAGS=-Os ../configure
-		env -i PATH=$PATH XBPS_ARCH=$XBPS_ARCH make ${makejobs} python
-		mkdir -p ../hostpython
-		mv python ../hostpython
-		cd ..
-		patch -Np0 -i ${FILESDIR}/cross.patch
-		_args="--build=${XBPS_MACHINE%%-musl}"
-	fi
-	./configure ${configure_args} ${_args} \
-		--enable-shared --enable-ipv6 --enable-loadable-sqlite-extensions \
-		--with-computed-gotos --with-dbmliborder=gdbm:ndbm \
-		--with-system-expat --with-system-ffi --without-ensurepip \
-		ac_cv_working_tzset=yes
-}
 
-do_build() {
-	export PATH="$PATH:$wrksrc/hostpython"
-	make ${makejobs}
+	# Make sure configure can find Bluetooth headers
+	CFLAGS+=" -I./External"
+	CPPFLAGS+=" -I./External"
+	./configure ${configure_args}
 }
 
 do_check() {
@@ -65,6 +79,7 @@ do_check() {
 	# test_find_library_with_*: expects functionality patched out for musl
 	# test_openssl_version: LibreSSL version and OpenSSL_version_num disagree
 	# test_shared_ciphers: SSL advertises unexpected ciphers
+	# test_freeze_simple_script: requires in-tree expat, which we removed
 	#
 	# Test ignored due to failures for unknown reasons:
 	# test_session*: anomalies in SSL session handling
@@ -72,14 +87,18 @@ do_check() {
 	local opts="-i test_chown_* -i test_getspnam_exception \
 		-i test_find_library_with_* -i test_openssl_version \
 		-i test_shared_ciphers -i test_session* \
-		-i test_localtime_daylight_*_dst_true"
+		-i test_localtime_daylight_*_dst_true \
+		-i test_freeze_simple_script"
 	make ${makejobs} EXTRATESTOPTS="${opts}" quicktest
 }
 
 do_install() {
-	export PATH="$PATH:$wrksrc/hostpython"
 	make DESTDIR=${DESTDIR} install maninstall
+
+	# Put the license in the usual location and remove from the libdir
+	# to prevent the XBPS trigger from attempting to byte-compile it
 	vlicense LICENSE
+	rm ${DESTDIR}/${py3_lib}/LICENSE.txt
 
 	rm -f ${DESTDIR}/usr/bin/2to3
 	# Remove files that belong to python3-tkinter and idle-python3
@@ -103,6 +122,11 @@ do_install() {
 		sed -i -e "s,$XBPS_CROSS_BASE,,g" \
 			${DESTDIR}/usr/bin/python${version%.*}-config
 	fi
+	sed -i -e "s,-fdebug-prefix-map=[^[:space:]]*=[.],," \
+		-e "s,-I./External,," \
+		${DESTDIR}/usr/bin/python${version%.*}-config \
+		${DESTDIR}/usr/lib/python${version%.*}/_sysconfigdata_*_*.py \
+		${DESTDIR}/usr/lib/python${version%.*}/config-${version%.*}*/Makefile
 }
 
 python3-devel_package() {

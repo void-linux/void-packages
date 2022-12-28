@@ -1,61 +1,95 @@
 # Template file for 'element-desktop'
 pkgname=element-desktop
-version=1.7.30
+version=1.11.17
 revision=1
-wrksrc="element-web-${version}"
+create_wrksrc=yes
 conf_files="/etc/${pkgname}/config.json"
 hostmakedepends="git yarn nodejs rust cargo python3 curl
  sqlcipher-devel libappindicator-devel libnotify-devel pkg-config
- app-builder"
+ app-builder jq moreutils"
 makedepends="libsecret-devel"
 depends="c-ares ffmpeg gtk+3 http-parser libevent
- libxslt minizip nss re2 snappy sqlcipher electron12"
+ libxslt minizip nss re2 snappy sqlcipher electron19"
 short_desc="Glossy Matrix collaboration client, desktop version"
-maintainer="projectmoon <projectmoon@agnos.is>"
+maintainer="Jan Christian Grünhage <jan.christian@gruenhage.xyz>"
 license="Apache-2.0"
 homepage="https://element.io"
-_ghpage="https://github.com/vector-im"
-_archive="archive/v${version}.tar.gz"
-distfiles="${_ghpage}/element-desktop/${_archive}>element-desktop.tar.gz
- ${_ghpage}/element-web/${_archive}>element-web.tar.gz"
-checksum="dfa46e98b52c20b431dc62be3c7dc3c960b1aba6d98af7e2aa0c06ce4e076c9e
- 86b07a8510cda86ce489b376b2069415579a3576100ddddd8ddcd1f2c29ac025"
+changelog="https://raw.githubusercontent.com/vector-im/element-desktop/develop/CHANGELOG.md"
+distfiles="https://github.com/vector-im/element-desktop/archive/v${version}.tar.gz>element-desktop-v${version}.tar.gz
+ https://github.com/vector-im/element-web/archive/v${version}.tar.gz>element-web-v${version}.tar.gz"
+checksum="247a7ec3adab36635b1124ad84bb73b87999642a79dabfee093f2e72b5bf6c68
+ 0e9d225a18e0bd67586d553fce087a12b908398ca4e0820184f4f95601e96152"
 
 export USE_SYSTEM_APP_BUILDER=true
 
+post_extract() {
+	mv ${pkgname}-${version} ${pkgname}
+	mv ${pkgname/desktop/web}-${version} ${pkgname/desktop/web}
+}
+
+pre_patch() {
+	for patch in ${pkgname}_*.patch; do
+		ln -s ../${patch} ${pkgname}
+	done
+	for patch in ${pkgname/desktop/web}_*.patch; do
+		ln -s ../${patch} ${pkgname/desktop/web}
+	done
+}
+
+post_patch() {
+	cd ${pkgname/desktop/web}
+	# Disable auto-updating
+	jq '.update_base_url = ""' element.io/app/config.json | sponge element.io/app/config.json
+
+	cd ../${pkgname}
+	jq '.build.linux.target = ["dir"]' package.json | sponge package.json
+}
+
 pre_build() {
+	# since element 1.8.x it's necessary to force the npm arch
+	# to x86, otherwise it will fail in electron js stuff on
+	# platforms officially unsupported by electron (ppc64le...)
+	local carch=x64
+	case "$XBPS_TARGET_MACHINE" in
+		i686*) carch=ia32 ;;
+	esac
+
+	cd ${pkgname/desktop/web}
+
 	# Build dependencies for element-web
-	yarn install
+	npm_config_arch=$carch yarn install
 
 	# Build dependencies and alterations for element-desktop
-	cd ../element-desktop-${version}
-
-	# Disable auto-updating
-	sed -i 's@https://packages.riot.im/desktop/update/@null@g' element.io/release/config.json
-	sed -i 's/"target": "deb"/"target": "dir"/g' package.json
-	yarn install
+	cd ../${pkgname}
+	npm_config_arch=$carch yarn install
 }
 
 do_build() {
+	cd ${pkgname/desktop/web}
 	yarn build
-	cd ../element-desktop-${version}
-	yarn run build:native
+	cd ../${pkgname}
+	if [ "$CROSS_BUILD" ]; then
+		yarn run build:native --target ${XBPS_CROSS_RUST_TARGET}
+	else
+		yarn run build:native
+	fi
 	# normally just "yarn run build" would be okay, but at least on ppc64
 	# we need to force x86_64 arch as electron-builder does not support
 	# ppc64 and fails on arch detection; ARM is supported so just use build
 	case "$XBPS_TARGET_MACHINE" in
-		x86_64*|ppc64*) yarn run build64 ;;
-		i686*) yarn run build32 ;;
+		x86_64*|ppc64*) yarn run build:64 ;;
+		i686*) yarn run build:32 ;;
 		*) yarn run build ;;
 	esac
 }
 
 do_install() {
+	cd ${pkgname/desktop/web}
 	vmkdir usr/lib/element-desktop
 	vmkdir etc/element-desktop
 	case "$XBPS_TARGET_MACHINE" in
-		i686*) vcopy ../element-desktop-${version}/dist/linux-ia32-unpacked/resources /usr/lib/element-desktop/resources;;
-		*) vcopy ../element-desktop-${version}/dist/linux-unpacked/resources /usr/lib/element-desktop/resources
+		i686*) vcopy ../element-desktop/dist/linux-ia32-unpacked/resources /usr/lib/element-desktop/resources;;
+		*) vcopy ../element-desktop/dist/linux-unpacked/resources /usr/lib/element-desktop/resources
 	esac
 	vinstall config.sample.json 644 /etc/element-desktop/ config.json
 	vcopy webapp /usr/lib/element-desktop/resources
@@ -67,7 +101,7 @@ do_install() {
 	vinstall webapp/themes/element/img/logos/element-logo.svg 644 /usr/share/icons/hicolor/scalable/apps/ element.svg
 
 	for i in 16 24 48 64 96 128 256 512; do
-		vinstall ../element-desktop-${version}/build/icons/${i}x${i}.png 644 /usr/share/icons/hicolor/${i}x${i}/apps/ element.png
+		vinstall ../element-desktop/build/icons/${i}x${i}.png 644 /usr/share/icons/hicolor/${i}x${i}/apps/ element.png
 	done
 }
 

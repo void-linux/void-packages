@@ -59,7 +59,7 @@ methods.
 Clone the `void-packages` git repository and install the bootstrap packages:
 
 ```
-$ git clone git://github.com/void-linux/void-packages.git
+$ git clone https://github.com/void-linux/void-packages.git
 $ cd void-packages
 $ ./xbps-src binary-bootstrap
 ```
@@ -343,15 +343,15 @@ Each time a binary package is created, a package signature must be created with 
 <a name="rebuilding"></a>
 ### Rebuilding and overwriting existing local packages
 
-If for whatever reason a package has been built and it is available in your local repository
-and you have to rebuild it without bumping its `version` or `revision` fields, it is possible
-to accomplish this task easily with `xbps-src`:
+Packages are overwritten on every build to make getting package with changed build options easy.
+To make xbps-src skip build and preserve first package build with with given version and revision,
+same as in official void repository, set `XBPS_PRESERVE_PKGS=yes` in `etc/conf` file.
 
-    $ ./xbps-src -f pkg xbps
+Reinstalling a package in your target `rootdir` can be easily done too:
 
-Reinstalling this package in your target `rootdir` can be easily done too:
+    $ xbps-install --repository=/path/to/local/repo -yf xbps-0.25_1
 
-    $ xbps-install --repository=/path/to/local/repo -yff xbps-0.25_1
+Using `-f` flag twice will overwrite configuration files.
 
 > Please note that the `package expression` must be properly defined to explicitly pick up
 the package from the desired repository.
@@ -431,7 +431,7 @@ xbps-src can be used in any recent Linux distribution matching the CPU architect
 
 To use xbps-src in your Linux distribution use the following instructions. Let's start downloading the xbps static binaries:
 
-    $ wget http://alpha.de.repo.voidlinux.org/static/xbps-static-latest.<arch>-musl.tar.xz
+    $ wget http://repo-default.voidlinux.org/static/xbps-static-latest.<arch>-musl.tar.xz
     $ mkdir ~/XBPS
     $ tar xvf xbps-static-latest.<arch>-musl.tar.xz -C ~/XBPS
     $ export PATH=~/XBPS/usr/bin:$PATH
@@ -441,7 +441,7 @@ try other [chroot methods](#chroot-methods).
 
 Clone the `void-packages` git repository:
 
-    $ git clone git://github.com/void-linux/void-packages
+    $ git clone https://github.com/void-linux/void-packages.git
 
 and `xbps-src` should be fully functional; just start the `bootstrap` process, i.e:
 
@@ -469,14 +469,10 @@ Sometimes the bootstrap packages must be updated to the latest available version
 
 Two ways are available to build 32bit packages on x86\_64:
 
- - cross compilation mode
- - native mode with a 32bit masterdir
+ - native mode with a 32bit masterdir (recommended, used in official repository)
+ - cross compilation mode to i686 [target](#cross-compiling)
 
-The first mode (cross compilation) is as easy as:
-
-    $ ./xbps-src -a i686 pkg ...
-
-The second mode (native) needs a new x86 `masterdir`:
+The canonical mode (native) needs a new x86 `masterdir`:
 
     $ ./xbps-src -m masterdir-x86 binary-bootstrap i686
     $ ./xbps-src -m masterdir-x86 ...

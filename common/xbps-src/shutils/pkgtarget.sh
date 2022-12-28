@@ -1,5 +1,18 @@
 # vim: set ts=4 sw=4 et:
 
+check_existing_pkg() {
+    local arch= curpkg=
+    if [ -z "$XBPS_PRESERVE_PKGS" ] || [ "$XBPS_BUILD_FORCEMODE" ]; then
+        return
+    fi
+    arch=$XBPS_TARGET_MACHINE
+    curpkg=$XBPS_REPOSITORY/$repository/$pkgver.$arch.xbps
+    if [ -e $curpkg ]; then
+        msg_warn "$pkgver: skipping build due to existing $curpkg\n"
+        exit 0
+    fi
+}
+
 check_pkg_arch() {
     local cross="$1" _arch f match nonegation
 
@@ -21,8 +34,7 @@ check_pkg_arch() {
             esac
         done
         if [ -z "$nonegation" -a -n "$match" ] || [ -n "$nonegation" -a -z "$match" ]; then
-            msg_red "${pkgname}-${version}_${revision}: this package cannot be built for ${_arch}.\n"
-            exit 2
+            report_broken "${pkgname}-${version}_${revision}: this package cannot be built for ${_arch}.\n"
         fi
     fi
 }

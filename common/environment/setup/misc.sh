@@ -17,5 +17,6 @@ MOZILLA_SITE="https://ftp.mozilla.org/pub"
 GNU_SITE="https://ftp.gnu.org/gnu"
 FREEDESKTOP_SITE="https://freedesktop.org/software"
 KDE_SITE="https://download.kde.org/stable"
+VIDEOLAN_SITE="https://download.videolan.org/pub/videolan"
 
 set +a

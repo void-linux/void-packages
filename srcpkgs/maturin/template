@@ -1,54 +1,62 @@
 # Template file for 'maturin'
 pkgname=maturin
-version=0.11.2
+version=0.14.7
 revision=1
-build_style=cargo
-build_helper=qemu
-# Disable the 'rustls' feature, which leads to bad platform compatibility
-# The list of enabled features should be reconciled with each new release
-configure_args="--no-default-features --features log,upload,human-panic"
-hostmakedepends="python3-setuptools python3-toml"
+create_wrksrc=yes
+build_style=python3-module
+build_helper="qemu rust"
+hostmakedepends="python3-setuptools-rust python3-tomli python3-wheel cargo"
 makedepends="openssl-devel"
-depends="python3-toml"
+depends="python3-tomli"
 short_desc="Build and publish crates as python packages"
 maintainer="Andrew J. Hesford <ajh@sideband.org>"
 license="Apache-2.0, MIT"
 homepage="https://github.com/PyO3/maturin"
 # bump target-lexicon version if it changes in Cargo.lock
+_tlver="0.12.5"
 distfiles="${homepage}/archive/v${version}.tar.gz
- https://github.com/bytecodealliance/target-lexicon/archive/v0.12.1.tar.gz"
-checksum="4c37b25c327fedf46c0b0833d0e8a5c69e9edcdfeb5b6c946b94198001044f1d
- 0d9843a39228a70c05d4f6ebb1bc8c36900176ed71e40a410a4ef0f99fe510fe"
+ https://github.com/bytecodealliance/target-lexicon/archive/v${_tlver}.tar.gz>target-lexicon-${_tlver}.tar.gz"
+checksum="cb1c01084f681f60e5825e76deb63f64cd41f360d67927acccad3a08dd3c7fff
+ efc488676998ea73d107b0c2632cc71baff91b5ea95abb6064b48a09edc233f9"
+# Tests use unstable features and fail to build
+make_check=no
+
+if [ "$CROSS_BUILD" ]; then
+	makedepends+=" rust-std"
+fi
+
+case "$XBPS_TARGET_MACHINE" in
+	ppc64*) ;;
+	ppc*)
+		broken="https://github.com/console-rs/indicatif/blob/main/src/state.rs#L2"
+		;;
+esac
 
 post_extract() {
-	mv ../target-lexicon* target-lexicon
+	mv "maturin-${version}"/* .
+	mv "target-lexicon-${_tlver}" target-lexicon
 	echo "[patch.crates-io]" >> Cargo.toml
 	echo "target-lexicon = { path = './target-lexicon' }" >> Cargo.toml
 }
 
 post_patch() {
-	# setup.py is broken, just use it for the pure python part
-	vsed -e 's/cmdclass.*/packages=["maturin"],/' -i setup.py
+	# Disable the 'rustls' feature, which leads to bad platform compatibility
+	vsed -i -e '/^default =/s/"rustls", //' Cargo.toml
 }
 
-post_build() {
-	# python package is pure; the cross environment is not relevant
-	python3 setup.py build
-
-	# Generate some completions
-	_matbin="target/${RUST_TARGET}/release/maturin"
-	vtargetrun "${_matbin}" completions zsh > maturin.zsh
-	vtargetrun "${_matbin}" completions fish > maturin.fish
-	vtargetrun "${_matbin}" completions bash > maturin.bash
-}
-
-do_check() {
-	echo "Tests use unstable features and fail to build; skipping"
+pre_configure() {
+	cargo update --package target-lexicon --precise "${_tlver}"
 }
 
 post_install() {
 	vlicense license-mit LICENSE-MIT
 	python3 setup.py install --prefix=/usr --root=${DESTDIR}
+
+	# Generate and install some completions
+	local _matbin="${DESTDIR}/usr/bin/maturin"
+	vtargetrun "${_matbin}" completions zsh > maturin.zsh
+	vtargetrun "${_matbin}" completions fish > maturin.fish
+	vtargetrun "${_matbin}" completions bash > maturin.bash
 
 	vcompletion maturin.zsh zsh
 	vcompletion maturin.fish fish

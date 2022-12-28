@@ -102,7 +102,8 @@ do_configure() {
 	# We also force gcc-ar usage in the crossfile above.
 	export AR="gcc-ar"
 
-	${meson_cmd} \
+	# unbuffered output for continuous logging
+	PYTHONUNBUFFERED=1 ${meson_cmd} setup \
 		--prefix=/usr \
 		--libdir=/usr/lib${XBPS_TARGET_WORDSIZE} \
 		--libexecdir=/usr/libexec \
@@ -137,7 +138,7 @@ do_check() {
 	: ${make_check_target:=test}
 	: ${meson_builddir:=build}
 
-	${make_cmd} -C ${meson_builddir} ${makejobs} ${make_check_args} ${make_check_target}
+	${make_check_pre} ${make_cmd} -C ${meson_builddir} ${makejobs} ${make_check_args} ${make_check_target}
 }
 
 do_install() {

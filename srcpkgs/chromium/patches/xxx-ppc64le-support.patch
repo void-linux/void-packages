@@ -19,11 +19,9 @@ index 286a92a27..ec36a85d3 100755
    script_dir = os.path.dirname(os.path.abspath(__file__))
    src_dir = os.path.dirname(script_dir)
    nacl_dir = os.path.join(src_dir, 'native_client')
-diff --git a/chrome/installer/linux/BUILD.gn b/chrome/installer/linux/BUILD.gn
-index 35f01d0a4..28f2e7475 100644
 --- a/chrome/installer/linux/BUILD.gn
 +++ b/chrome/installer/linux/BUILD.gn
-@@ -94,8 +94,6 @@ packaging_files = packaging_files_binaries + [
+@@ -97,8 +97,6 @@
                      "$root_out_dir/xdg-mime",
                      "$root_out_dir/xdg-settings",
                      "$root_out_dir/locales/en-US.pak",
@@ -32,13 +30,13 @@ index 35f01d0a4..28f2e7475 100644
                    ]
  
  action_foreach("calculate_deb_dependencies") {
-@@ -315,7 +313,6 @@ group("installer_deps") {
-     ":theme_files",
+@@ -377,7 +377,6 @@
      "//chrome",
      "//chrome:packed_resources",
+     "//chrome/browser/enterprise/connectors/device_trust/key_management/installer/management_service:chrome_management_service",
 -    "//chrome/browser/resources/media/mei_preload:component",
+     "//components/crash/core/app:chrome_crashpad_handler",
      "//sandbox/linux:chrome_sandbox",
-     "//third_party/crashpad/crashpad/handler:crashpad_handler",
    ]
 diff --git a/sandbox/features.gni b/sandbox/features.gni
 index db30ae6d6..9dc09bf53 100644
@@ -77,9 +75,9 @@ index 313511f22..0ca3a326f 100644
  
 +#elif defined(__powerpc64__)
 +
-+#include <asm/unistd.h>
++#include <asm-generic/unistd.h>
 +#define MIN_SYSCALL 0u
-+#define MAX_PUBLIC_SYSCALL 386u
++#define MAX_PUBLIC_SYSCALL __NR_syscalls
 +#define MAX_SYSCALL MAX_PUBLIC_SYSCALL
 +
  #else
@@ -206,48 +204,69 @@ index 01c046dda..7e5a6be82 100644
  TEST_BASELINE_SIGSYS(__NR_inotify_init)
  TEST_BASELINE_SIGSYS(__NR_vserver)
  #endif
+diff --git a/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc b/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc
+index 01c046dda..7e5a6be82 100644
+--- a/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc
++++ b/sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.cc
+@@ -358,7 +358,16 @@
+   if (args.nr == __NR_fstatat_default) {
+     if (*reinterpret_cast<const char*>(args.args[1]) == '\0' &&
+         args.args[3] == static_cast<uint64_t>(AT_EMPTY_PATH)) {
+-      return syscall(__NR_fstat_default, static_cast<int>(args.args[0]),
++          int fd = static_cast<int>(args.args[0]);
++#if defined(__powerpc64__)
++      // On ppc64+glibc, some syscalls seem to accidentally negate the first
++      // parameter which causes checks against it to fail. For now, manually
++      // negate them back.
++      // TODO: Investigate the root cause and fix in glibc
++      if (fd < 0)
++        fd = -fd;
++#endif
++      return syscall(__NR_fstat_default, fd,
+                      reinterpret_cast<default_stat_struct*>(args.args[2]));
+     }
+     return -reinterpret_cast<intptr_t>(fs_denied_errno);
 diff --git a/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc b/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc
 index 2a97d3916..8e81aa6cf 100644
 --- a/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc	2021-04-14 14:41:08.000000000 -0400
 +++ b/sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.cc	2021-04-15 13:17:57.808715733 -0400
-@@ -40,7 +40,8 @@
- #include <sys/ptrace.h>
- #if (defined(OS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)) && \
-     !defined(__arm__) && !defined(__aarch64__) &&           \
+@@ -37,7 +37,8 @@
+ 
+ #if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)) && \
+     !defined(__arm__) && !defined(__aarch64__) &&             \
 -    !defined(PTRACE_GET_THREAD_AREA)
-+    !defined(PTRACE_GET_THREAD_AREA) &&			    \
++    !defined(PTRACE_GET_THREAD_AREA) &&                       \
 +    !defined(__powerpc64__)
  // Also include asm/ptrace-abi.h since ptrace.h in older libc (for instance
  // the one in Ubuntu 16.04 LTS) is missing PTRACE_GET_THREAD_AREA.
  // asm/ptrace-abi.h doesn't exist on arm32 and PTRACE_GET_THREAD_AREA isn't
-@@ -49,6 +50,11 @@
+@@ -45,6 +46,11 @@
+ #include <asm/ptrace-abi.h>
  #endif
- #endif  // !OS_NACL_NONSFI
  
 +// On PPC64, TCGETS is defined in terms of struct termios, so we must include termios.h
 +#ifdef __powerpc64__
 +#include <termios.h>
 +#endif
 +
- #if defined(OS_ANDROID)
+ #if BUILDFLAG(IS_ANDROID)
  
  #if !defined(F_DUPFD_CLOEXEC)
-@@ -98,6 +104,15 @@
- #endif
- }
- 
+@@ -99,6 +105,14 @@
+   return true;
+ #else
+   return false;
++#endif
++}
++
 +inline bool IsArchitecturePPC64() {
 +#if defined(__powerpc64__)
 +  return true;
 +#else
 +  return false;
-+#endif
-+}
-+
-+
- // Ubuntu's version of glibc has a race condition in sem_post that can cause
- // it to call futex(2) with bogus op arguments. To workaround this, we need
- // to allow those futex(2) calls to fail with EINVAL, instead of crashing the
+ #endif
+ }
+ 
 @@ -239,6 +254,8 @@
    uint64_t kOLargeFileFlag = O_LARGEFILE;
    if (IsArchitectureX86_64() || IsArchitectureI386() || IsArchitectureMips())
@@ -927,6 +946,29 @@ index d7b5d8c44..4adc6d0d4 100644
    // The stack grows downward.
    void* stack = stack_buf + sizeof(stack_buf);
  #else
+@@ -90,7 +90,9 @@
+ 
+   int clone_flags = CLONE_FS | LINUX_SIGCHLD;
+   void* tls = nullptr;
+-#if (defined(ARCH_CPU_X86_64) || defined(ARCH_CPU_ARM_FAMILY)) && \
++// RAJA this might be it...
++#if (defined(ARCH_CPU_X86_64) || defined(ARCH_CPU_ARM_FAMILY) || \
++    defined(ARCH_CPU_PPC64_FAMILY)) && \
+     !defined(MEMORY_SANITIZER)
+   // Use CLONE_VM | CLONE_VFORK as an optimization to avoid copying page tables.
+   // Since clone writes to the new child's TLS before returning, we must set a
+@@ -98,6 +100,11 @@
+   // glibc performs syscalls by calling a function pointer in TLS, so we do not
+   // attempt this optimization.
+   // TODO(crbug.com/1247458) Broken in MSan builds after LLVM f1bb30a4956f.
++  //
++  // NOTE: Without CLONE_VM, fontconfig will attempt to reload configuration
++  // in every thread.  Since the rendered threads are sandboxed without
++  // filesystem access (e.g. to /etc/fonts/fonts.conf) this will cause font
++  // configuraiton loading failures and no fonts will be displayed!
+   clone_flags |= CLONE_VM | CLONE_VFORK | CLONE_SETTLS;
+ 
+   char tls_buf[PTHREAD_STACK_MIN] = {0};
 diff --git a/sandbox/linux/services/syscall_wrappers.cc b/sandbox/linux/services/syscall_wrappers.cc
 index fcfd2aa12..f6eb32fb7 100644
 --- a/sandbox/linux/services/syscall_wrappers.cc
@@ -1007,19 +1049,6 @@ index 2b78a0cc3..0a70f5ea5 100644
 +
  #endif  // SANDBOX_LINUX_SYSTEM_HEADERS_LINUX_SYSCALLS_H_
  
-diff --git a/sandbox/linux/system_headers/linux_ucontext.h b/sandbox/linux/system_headers/linux_ucontext.h
-index 22ce78027..a69b024c2 100644
---- a/sandbox/linux/system_headers/linux_ucontext.h
-+++ b/sandbox/linux/system_headers/linux_ucontext.h
-@@ -11,6 +11,8 @@
- #include "sandbox/linux/system_headers/arm_linux_ucontext.h"
- #elif defined(__i386__)
- #include "sandbox/linux/system_headers/i386_linux_ucontext.h"
-+#elif defined(__powerpc64__)
-+#include "sandbox/linux/system_headers/ppc64_linux_ucontext.h"
- #else
- #error "No support for your architecture in PNaCl header"
- #endif
 diff --git a/sandbox/linux/system_headers/ppc64_linux_syscalls.h b/sandbox/linux/system_headers/ppc64_linux_syscalls.h
 new file mode 100644
 index 000000000..ccacffe22
@@ -1038,24 +1067,19 @@ index 000000000..ccacffe22
 +//TODO: is it necessary to redefine syscall numbers for PPC64?
 +
 +#endif  // SANDBOX_LINUX_SYSTEM_HEADERS_PPC64_LINUX_SYSCALLS_H_
-diff --git a/sandbox/linux/system_headers/ppc64_linux_ucontext.h b/sandbox/linux/system_headers/ppc64_linux_ucontext.h
-new file mode 100644
-index 000000000..07728e087
---- /dev/null
-+++ b/sandbox/linux/system_headers/ppc64_linux_ucontext.h
-@@ -0,0 +1,12 @@
-+// Copyright 2014 The Chromium Authors. All rights reserved.
-+// Use of this source code is governed by a BSD-style license that can be
-+// found in the LICENSE file.
-+
-+#ifndef SANDBOX_LINUX_SYSTEM_HEADERS_PPC64_LINUX_UCONTEXT_H_
-+#define SANDBOX_LINUX_SYSTEM_HEADERS_PPC64_LINUX_UCONTEXT_H_
-+
-+#include <sys/ucontext.h>
-+
-+//TODO: is it necessary to redefine ucontext on PPC64?
-+
-+#endif  // SANDBOX_LINUX_SYSTEM_HEADERS_PPC64_LINUX_UCONTEXT_H_
+diff --git a/sandbox/policy/linux/bpf_utility_policy_linux.cc b/sandbox/policy/linux/bpf_utility_policy_linux.cc
+index 2588fc792..d455c4601 100644
+--- a/sandbox/policy/linux/bpf_utility_policy_linux.cc
++++ b/sandbox/policy/linux/bpf_utility_policy_linux.cc
+@@ -34,7 +34,7 @@
+     case __NR_fdatasync:
+     case __NR_fsync:
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__powerpc64__)
+     case __NR_getrlimit:
+ #endif
+ #if defined(__i386__) || defined(__arm__)
 diff --git a/sandbox/policy/linux/bpf_renderer_policy_linux.cc b/sandbox/policy/linux/bpf_renderer_policy_linux.cc
 index 2588fc792..d455c4601 100644
 --- a/sandbox/policy/linux/bpf_renderer_policy_linux.cc
@@ -1072,6 +1096,15 @@ index 2588fc792..d455c4601 100644
  // TODO(vignatti): replace the local definitions below with #include
  // <linux/dma-buf.h> once kernel version 4.6 becomes widely used.
  #include <linux/types.h>
+@@ -77,7 +77,7 @@
+     case __NR_ftruncate64:
+ #endif
+ #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
+-    defined(__aarch64__)
++    defined(__aarch64__) || defined(__powerpc64__)
+     case __NR_getrlimit:
+     case __NR_setrlimit:
+ // We allow setrlimit to dynamically adjust the address space limit as
 diff --git a/third_party/angle/src/compiler/translator/InfoSink.h b/third_party/angle/src/compiler/translator/InfoSink.h
 index 3a807e1e3..5258617a7 100644
 --- a/third_party/angle/src/compiler/translator/InfoSink.h
@@ -2125,8 +2158,8 @@ diff --git a/third_party/crashpad/crashpad/minidump/minidump_context_writer.h b/
 index d4ab936ee..1d22fc59c 100644
 --- a/third_party/crashpad/crashpad/minidump/minidump_context_writer.h
 +++ b/third_party/crashpad/crashpad/minidump/minidump_context_writer.h
-@@ -315,6 +315,45 @@ class MinidumpContextMIPS64Writer final : public MinidumpContextWriter {
-   DISALLOW_COPY_AND_ASSIGN(MinidumpContextMIPS64Writer);
+@@ -315,6 +315,43 @@ class MinidumpContextMIPS64Writer final : public MinidumpContextWriter {
+   MinidumpContextMIPS64 context_;
  };
  
 +class MinidumpContextPPC64Writer final : public MinidumpContextWriter {
@@ -2164,8 +2197,6 @@ index d4ab936ee..1d22fc59c 100644
 +
 + private:
 +  MinidumpContextPPC64 context_;
-+
-+  DISALLOW_COPY_AND_ASSIGN(MinidumpContextPPC64Writer);
 +};
 +
  }  // namespace crashpad
@@ -2215,12 +2246,12 @@ index 7a1b2763c..beda8da9e 100644
 --- a/third_party/crashpad/crashpad/snapshot/capture_memory.cc
 +++ b/third_party/crashpad/crashpad/snapshot/capture_memory.cc
 @@ -112,6 +112,11 @@ void CaptureMemory::PointedToByContext(const CPUContext& context,
-   for (size_t i = 0; i < base::size(context.mipsel->regs); ++i) {
+   for (size_t i = 0; i < std::size(context.mipsel->regs); ++i) {
      MaybeCaptureMemoryAround(delegate, context.mipsel->regs[i]);
    }
 +#elif defined(ARCH_CPU_PPC64_FAMILY)
 +  MaybeCaptureMemoryAround(delegate, context.ppc64->nip);
-+  for (size_t i = 0; i < base::size(context.ppc64->regs); ++i) {
++  for (size_t i = 0; i < std::size(context.ppc64->regs); ++i) {
 +    MaybeCaptureMemoryAround(delegate, context.ppc64->regs[i]);
 +  }
  #else
@@ -3244,96 +3275,6 @@ index 30a2ab21d..60509f21d 100644
  #endif
  }
  
-diff --git a/third_party/crashpad/crashpad/util/posix/signals_test.cc b/third_party/crashpad/crashpad/util/posix/signals_test.cc
-index 54cc2f19f..298b5c993 100644
---- a/third_party/crashpad/crashpad/util/posix/signals_test.cc
-+++ b/third_party/crashpad/crashpad/util/posix/signals_test.cc
-@@ -46,9 +46,9 @@ bool CanCauseSignal(int sig) {
-   return sig == SIGABRT ||
-          sig == SIGALRM ||
-          sig == SIGBUS ||
--#if !defined(ARCH_CPU_ARM64)
-+#if !defined(ARCH_CPU_ARM64) && !defined(ARCH_CPU_PPC64)
-          sig == SIGFPE ||
--#endif  // !defined(ARCH_CPU_ARM64)
-+#endif  // !defined(ARCH_CPU_ARM64) && !defined(ARCH_CPU_PPC64)
- #if defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARMEL)
-          sig == SIGILL ||
- #endif  // defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARMEL)
-@@ -117,9 +117,11 @@ void CauseSignal(int sig) {
-       break;
-     }
- 
--#if !defined(ARCH_CPU_ARM64)
-+#if !defined(ARCH_CPU_ARM64) && !defined(ARCH_CPU_PPC64)
-     // ARM64 has hardware integer division instructions that don’t generate a
-     // trap for divide-by-zero, so this doesn’t produce SIGFPE.
-+    //
-+    // PPC64 fixed-point division by zero also doesn't produce a SIGFPE.
-     case SIGFPE: {
-       // Optimization makes this tricky, so get zero from a system call likely
-       // to succeed, and try to do something with the result.
-@@ -137,7 +139,7 @@ void CauseSignal(int sig) {
-       fstat(quotient, &stat_buf);
-       break;
-     }
--#endif  // ARCH_CPU_ARM64
-+#endif  // !defined(ARCH_CPU_ARM64) && !defined(ARCH_CPU_PPC64)
- 
- #if defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARMEL)
-     case SIGILL: {
-diff --git a/third_party/dav1d/BUILD.gn b/third_party/dav1d/BUILD.gn
-index 6b4566fc3..c07f732ad 100644
---- a/third_party/dav1d/BUILD.gn
-+++ b/third_party/dav1d/BUILD.gn
-@@ -184,6 +184,8 @@ static_library("dav1d_8bit") {
-     sources += arm_template_sources
-   } else if (current_cpu == "arm64") {
-     sources += arm_template_sources
-+  } else if (current_cpu == "ppc64") {
-+    sources += ppc64_template_sources
-   }
- 
-   cflags = dav1d_copts
-@@ -212,6 +214,8 @@ static_library("dav1d_10bit") {
-     sources += arm_template_sources
-   } else if (current_cpu == "arm64") {
-     sources += arm_template_sources
-+  } else if (current_cpu == "ppc64") {
-+    sources += ppc64_template_sources
-   }
- 
-   cflags = dav1d_copts
-@@ -263,6 +267,21 @@ if (current_cpu == "x86" || current_cpu == "x64") {
-       defines = [ "PREFIX" ]
-     }
- 
-+    cflags = dav1d_copts
-+  }
-+} else if (current_cpu == "ppc64") {
-+  static_library("dav1d_ppc") {
-+    sources = [
-+      "libdav1d/src/ppc/cpu.c",
-+      "libdav1d/src/ppc/cpu.h",
-+    ]
-+
-+    configs -= [ "//build/config/compiler:chromium_code" ]
-+    configs += [
-+      "//build/config/compiler:no_chromium_code",
-+      ":dav1d_config",
-+    ]
-+
-     cflags = dav1d_copts
-   }
- }
-@@ -292,5 +311,7 @@ static_library("dav1d") {
-     }
-   } else if (current_cpu == "arm" || current_cpu == "arm64") {
-     deps += [ ":dav1d_arm" ]
-+  } else if (current_cpu == "ppc64") {
-+    deps += [ ":dav1d_ppc" ]
-   }
- }
 diff --git a/third_party/dav1d/config/linux/ppc64/config.h b/third_party/dav1d/config/linux/ppc64/config.h
 new file mode 100644
 index 000000000..9fbbf75cc
@@ -3379,39 +3320,10 @@ index 000000000..9fbbf75cc
 +
 +#define HAVE_UNISTD_H 1
 +
-diff --git a/third_party/dav1d/dav1d_generated.gni b/third_party/dav1d/dav1d_generated.gni
-index c59cb0821..3060284a8 100644
---- a/third_party/dav1d/dav1d_generated.gni
-+++ b/third_party/dav1d/dav1d_generated.gni
-@@ -82,6 +82,11 @@ arm_template_sources = [
-   "libdav1d/src/arm/mc_init_tmpl.c",
- ]
- 
-+ppc64_template_sources = [
-+  "libdav1d/src/ppc/cdef_init_tmpl.c",
-+  "libdav1d/src/ppc/looprestoration_init_tmpl.c",
-+]
-+
- template_sources = [
-   "libdav1d/src/cdef_apply_tmpl.c",
-   "libdav1d/src/cdef_tmpl.c",
-diff --git a/third_party/dav1d/generate_source.py b/third_party/dav1d/generate_source.py
-index 9ab5e00b8..ad3feffee 100755
---- a/third_party/dav1d/generate_source.py	2021-04-15 13:11:10.489579490 -0400
-+++ b/third_party/dav1d/generate_source.py	2021-04-15 13:19:08.229913892 -0400
-@@ -57,6 +57,8 @@
-   _WriteArray(fd, "arm64_asm_sources", _Glob("libdav1d/src/arm/64/*.S"))
-   _WriteArray(fd, "arm_template_sources", _Glob("libdav1d/src/arm/*_tmpl.c"))
- 
-+  _WriteArray(fd, "ppc64_template_sources", _Glob("libdav1d/src/ppc/*_tmpl.c"))
-+
-   template_sources = _Glob("libdav1d/src/*_tmpl.c")
-   _WriteArray(fd, "template_sources", template_sources)
- 
-diff --git a/third_party/dav1d/libdav1d/src/ppc/types.h b/third_party/dav1d/libdav1d/src/ppc/types.h
+diff --git a/third_party/dav1d/libdav1d/src/ppc/dav1d_types.h b/third_party/dav1d/libdav1d/src/ppc/dav1d_types.h
 index 0b4bd72f0..a0caa5e71 100644
---- a/third_party/dav1d/libdav1d/src/ppc/types.h
-+++ b/third_party/dav1d/libdav1d/src/ppc/types.h
+--- a/third_party/dav1d/libdav1d/src/ppc/dav1d_types.h
++++ b/third_party/dav1d/libdav1d/src/ppc/dav1d_types.h
 @@ -51,4 +51,19 @@
  #define u16l_to_i32(v) ((i32x4) vec_mergel((u16x8) v, vec_splat_u16(0)))
  #define i16l_to_i32(v) ((i32x4) vec_unpackl((i16x8)v))
@@ -3450,25 +3362,14 @@ diff --git a/third_party/libaom/BUILD.gn b/third_party/libaom/BUILD.gn
 index 9b065bd..df3af02 100644
 --- a/third_party/libaom/BUILD.gn
 +++ b/third_party/libaom/BUILD.gn
-@@ -36,6 +36,8 @@ if (enable_libaom) {
-     } else {
-       cpu_arch_full = "arm"
-     }
-+  } else if (current_cpu == "ppc64") {
-+    cpu_arch_full = "generic"
-   } else {
-     cpu_arch_full = current_cpu
-   }
-diff --git a/third_party/libgav1/options.gni b/third_party/libgav1/options.gni
-index 11af801..4b13d05 100644
---- a/third_party/libgav1/options.gni
-+++ b/third_party/libgav1/options.gni
-@@ -12,5 +12,5 @@ declare_args() {
-       is_chromeos_ash && (target_cpu == "arm" || target_cpu == "arm64")
-   use_libgav1_parser =
-       (is_chromeos || is_linux || is_win) &&
--      (target_cpu == "x86" || target_cpu == "x64" || target_cpu == "arm64")
-+      (target_cpu == "x86" || target_cpu == "x64" || target_cpu == "arm64" || target_cpu == "ppc64")
+@@ -40,6 +40,8 @@
+   cpu_arch_full = "generic"
+ } else if (current_cpu == "loong64") {
+   cpu_arch_full = "generic"
++} else if (current_cpu == "ppc64") {
++  cpu_arch_full = "generic"
+ } else {
+   cpu_arch_full = current_cpu
  }
 diff --git a/third_party/lss/linux_syscall_support.h b/third_party/lss/linux_syscall_support.h
 index e4ac22644..1c57015db 100644
@@ -3492,6 +3393,37 @@ index e4ac22644..1c57015db 100644
       (defined(__s390__) && !defined(__s390x__))
      /* On these architectures, implement mmap() with mmap2(). */
      LSS_INLINE void* LSS_NAME(mmap)(void *s, size_t l, int p, int f, int d,
+@@ -4872,11 +4872,11 @@ struct kernel_statx {
+       LSS_SC_BODY(4, int, 8, d, type, protocol, sv);
+     }
+   #endif
+-  #if defined(__NR_recvmsg)
++  #if defined(__NR_recvmsg) && !defined(__PPC__)
+     LSS_INLINE _syscall3(ssize_t, recvmsg, int, s, struct kernel_msghdr*, msg,
+                          int, flags)
+   #endif
+-  #if defined(__NR_sendmsg)
++  #if defined(__NR_sendmsg) && !defined(__PPC__)
+     LSS_INLINE _syscall3(ssize_t, sendmsg, int, s, const struct kernel_msghdr*,
+                          msg, int, flags)
+   #endif
+@@ -4885,13 +4885,13 @@ struct kernel_statx {
+                          int, flags, const struct kernel_sockaddr*, to,
+                          unsigned int, tolen)
+   #endif
+-  #if defined(__NR_shutdown)
++  #if defined(__NR_shutdown) && !defined(__PPC__)
+     LSS_INLINE _syscall2(int, shutdown, int, s, int, how)
+   #endif
+-  #if defined(__NR_socket)
++  #if defined(__NR_socket) && !defined(__PPC__)
+     LSS_INLINE _syscall3(int, socket, int, domain, int, type, int, protocol)
+   #endif
+-  #if defined(__NR_socketpair)
++  #if defined(__NR_socketpair) && !defined(__PPC__)
+     LSS_INLINE _syscall4(int, socketpair, int, d, int, type, int, protocol,
+                          int*, sv)
+   #endif
 diff --git a/third_party/pdfium/third_party/libpng16/pngpriv.h b/third_party/pdfium/third_party/libpng16/pngpriv.h
 index 583c26f..e03d697 100644
 --- a/third_party/pdfium/third_party/libpng16/pngpriv.h
@@ -3521,24 +3453,6 @@ index bdac4d784..51e0f2cac 100644
  typedef vector float v4sf;
  #  define SIMD_SZ 4
  #  define VZERO() ((vector float) vec_splat_u8(0))
-diff --git a/third_party/skia/src/sksl/SkSLString.cpp b/third_party/skia/src/sksl/SkSLString.cpp
-index ec3e56964..4cf8999a2 100644
---- a/third_party/skia/src/sksl/SkSLString.cpp
-+++ b/third_party/skia/src/sksl/SkSLString.cpp
-@@ -234,7 +234,12 @@ String to_string(double value) {
-     if (needsDotZero) {
-         buffer << ".0";
-     }
--    return String(buffer.str().c_str());
-+
-+    std::string ret(buffer.str());
-+    if (signbit(value) && ret[0] == '.') {
-+        ret[0] = '-';
-+    }
-+    return String(ret.c_str());
- }
- 
- bool stod(const StringFragment& s, SKSL_FLOAT* value) {
 diff --git a/third_party/sqlite/src/amalgamation/sqlite3.c b/third_party/sqlite/src/amalgamation/sqlite3.c
 index 6b4a7899d..b8c7fe414 100644
 --- a/third_party/sqlite/src/amalgamation/sqlite3.c
@@ -3594,34 +3508,6 @@ index 245070d4f..b25164e95 100644
  #   define SQLITE_BYTEORDER    1234
  # elif defined(sparc)     || defined(__ppc__) || \
         defined(__ARMEB__) || defined(__AARCH64EB__)
-diff --git a/third_party/webrtc/modules/desktop_capture/differ_block.cc b/third_party/webrtc/modules/desktop_capture/differ_block.cc
-index 4f0c5430c..54ee0829e 100644
---- a/third_party/webrtc/modules/desktop_capture/differ_block.cc
-+++ b/third_party/webrtc/modules/desktop_capture/differ_block.cc
-@@ -30,11 +30,7 @@ bool VectorDifference(const uint8_t* image1, const uint8_t* image2) {
-   static bool (*diff_proc)(const uint8_t*, const uint8_t*) = nullptr;
- 
-   if (!diff_proc) {
--#if defined(WEBRTC_ARCH_ARM_FAMILY) || defined(WEBRTC_ARCH_MIPS_FAMILY)
--    // For ARM and MIPS processors, always use C version.
--    // TODO(hclam): Implement a NEON version.
--    diff_proc = &VectorDifference_C;
--#else
-+#if defined(WEBRTC_ARCH_X86_FAMILY)
-     bool have_sse2 = GetCPUInfo(kSSE2) != 0;
-     // For x86 processors, check if SSE2 is supported.
-     if (have_sse2 && kBlockSize == 32) {
-@@ -44,6 +40,10 @@ bool VectorDifference(const uint8_t* image1, const uint8_t* image2) {
-     } else {
-       diff_proc = &VectorDifference_C;
-     }
-+#else
-+    // For other processors, always use C version.
-+    // TODO(hclam): Implement a NEON version.
-+    diff_proc = &VectorDifference_C;
- #endif
-   }
- 
 diff --git a/third_party/webrtc/rtc_base/system/arch.h b/third_party/webrtc/rtc_base/system/arch.h
 index be2367b85..be4ee4233 100644
 --- a/third_party/webrtc/rtc_base/system/arch.h
@@ -3662,32 +3548,29 @@ index f39529a3a..e84fc449e 100644
      } else if (host_byteorder == "big") {
        defines += [ "V8_TARGET_ARCH_PPC_BE" ]
        if (current_os == "aix") {
-diff --git a/ui/gl/features.gni b/ui/gl/features.gni
-index 5fda9b6..3d2dd8b 100644
 --- a/ui/gl/features.gni
 +++ b/ui/gl/features.gni
-@@ -32,5 +32,6 @@ declare_args() {
-                         (is_mac && use_egl) || is_chromeos_ash || is_fuchsia) &&
-                        (target_cpu == "x86" || target_cpu == "x64" ||
-                         target_cpu == "arm" || target_cpu == "arm64" ||
--                        target_cpu == "mipsel" || target_cpu == "mips64el")
-+                        target_cpu == "mipsel" || target_cpu == "mips64el" ||
-+                        target_cpu == "ppc64")
+@@ -33,5 +33,5 @@
+        is_chromeos_ash || is_fuchsia) &&
+       (target_cpu == "x86" || target_cpu == "x64" || target_cpu == "arm" ||
+        target_cpu == "arm64" || target_cpu == "mipsel" ||
+-       target_cpu == "mips64el" || target_cpu == "riscv64")
++       target_cpu == "mips64el" || target_cpu == "riscv64" || target_cpu == "ppc64")
  }
 diff --git a/v8/test/BUILD.gn b/v8/test/BUILD.gn
 index fb872ad39..45fc585dd 100644
 --- a/v8/test/BUILD.gn
 +++ b/v8/test/BUILD.gn
-@@ -36,7 +36,7 @@ group("gn_all") {
+@@ -42,7 +42,7 @@ group("gn_all") {
        "benchmarks/cpp:gn_all",
        "cctest:cctest",
-       "cctest:generate-bytecode-expectations",
+       "unittests:generate-bytecode-expectations",
 -      "unittests:unittests",
 +      #"unittests:unittests",
      ]
    }
  }
-@@ -83,7 +83,7 @@
+@@ -84,7 +84,7 @@
      "message:v8_message",
      "mjsunit:v8_mjsunit",
      "mkgrokdump:mkgrokdump",
@@ -3696,7 +3579,7 @@ index fb872ad39..45fc585dd 100644
      "webkit:v8_webkit",
    ]
  
-@@ -108,7 +108,7 @@
+@@ -109,7 +109,7 @@
      "message:v8_message",
      "mjsunit:v8_mjsunit",
      "mkgrokdump:mkgrokdump",

@@ -3,7 +3,7 @@
 #
 
 do_check() {
-	RAKULIB=lib prove -r -e raku t/
+	RAKULIB=lib ${make_check_pre} prove -r -e raku t/
 }
 
 do_install() {

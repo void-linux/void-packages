@@ -1,41 +1,59 @@
 # Template file for 'racket'
 pkgname=racket
-version=7.9
+version=8.7
 revision=1
+archs="aarch64* armv6* armv7* i686* x86_64*"
 build_wrksrc=src
 build_style=gnu-configure
-configure_args="--enable-useprefix --disable-docs"
-hostmakedepends="gsfonts"
-makedepends="sqlite-devel gtk+-devel"
-depends="gtk+"
+configure_args="--enable-useprefix --enable-curses"
+make_build_args="CC_FOR_BUILD=cc"
+hostmakedepends="liberation-fonts-ttf"
+makedepends="gtk+3-devel liblz4-devel ncurses-devel sqlite-devel zlib-devel"
+depends="gtk+3 libssl1.1"
 short_desc="Multi-paradigm programming language in the Lisp-Scheme family"
 maintainer="Andrea Brancaleoni <abc@pompel.me>"
 license="LGPL-3.0-only, MIT"
 homepage="http://racket-lang.org/"
 distfiles="http://mirror.racket-lang.org/installers/${version}/${pkgname}-${version}-src.tgz"
-checksum=5578942066a9405fdbcad9522d08685356693f4ddd5dbe92b5273557a112b73e
+checksum=76a7e66d47e73eb0dc3fca27fc818e36e1d4bffe74da263c5efe3b8801a30a01
 nostrip=yes
-nocross=yes
+patch_args="-Np2"
 
 if [ "$CROSS_BUILD" ]; then
-	configure_args+=" --enable-racket=/usr/bin/racket"
 	hostmakedepends+=" racket sqlite-devel"
 fi
 
-case "$XBPS_TARGET_MACHINE" in
-ppc*)
-	broken="hangs or segfaults";;
-*-musl)
-	makedepends+=" libucontext-devel";;
-esac
-
 pre_configure() {
-	case "$XBPS_TARGET_MACHINE" in
-	*-musl)
-		export CFLAGS+=" -D_GNU_SOURCE"
-		export LIBS+=" -lucontext"
-		;;
-	esac
+	if [ "$CROSS_BUILD" ]; then
+		configure_args+=" --enable-racket=/usr/bin/racket
+		 --enable-scheme=${wrksrc}/src"
+	fi
+}
+
+pre_build() {
+	# Build ChezScheme for the host so we can use it to build Racket
+	# Using "--enable-racket=auto" above selects the wrong compiler toolchain
+	if [ "$CROSS_BUILD" ]; then
+		(
+		cd ChezScheme
+
+		# If this builds the wrong arch, Racket's automatic
+		# arch detection for the ChezScheme build has failed.
+		# See <Racket sourcedir>/src/ChezScheme/IMPLEMENTATION.md "Build System"
+		# and <Racket sourcedir>/src/ChezScheme/s/cmacros.ss "define-machine-types"
+		# for the "machine-type" variable that needs to be passed to rktboot/main.rkt
+		racket ../rktboot/main.rkt
+		# Make sure Chez builds natively
+		env CC="gcc" \
+		    AR="ar" \
+		    ARFLAGS="rc" \
+		    RANLIB="ranlib" \
+		    CFLAGS="-m${XBPS_WORDSIZE} -O2 -D_REENTRANT -pthread" \
+		    -LDFLAGS="-Wl,-z,relro -Wl,-z,now -Wl,--as-needed -L/usr/lib -rdynamic" \
+		    ./configure --disable-curses --disable-x11
+		make
+		)
+	fi
 }
 
 post_install() {
@@ -47,9 +65,6 @@ racket-doc_package() {
 	short_desc+=" - documentation"
 	depends="racket>=${version}_${revision}"
 	pkg_install() {
-		# Remove once --disable-doc can be removed
-		echo "Documentation currently not available." \
-			> ${DESTDIR}/usr/share/doc/racket/no-doc.txt
 		vmove usr/share/doc/racket
 	}
 }

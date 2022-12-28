@@ -3,11 +3,11 @@
 _desc="NVIDIA drivers for linux"
 
 pkgname=nvidia
-version=470.63.01
+version=525.60.11
 revision=1
 maintainer="Andrew Benson <abenson+void@gmail.com>"
 license="custom:NVIDIA Proprietary"
-homepage="https://www.nvidia.com"
+homepage="https://www.nvidia.com/en-us/drivers/unix/"
 
 archs="x86_64"
 nopie=yes
@@ -15,16 +15,17 @@ repository="nonfree"
 create_wrksrc=yes
 short_desc="${_desc} - Libraries and Utilities"
 hostmakedepends="tar"
-conflicts="xserver-abi-video>24_1"
+conflicts="xserver-abi-video>25_1 nvidia470>=0 nvidia390>=0"
 
 _pkg="NVIDIA-Linux-x86_64-${version}"
 distfiles="http://uk.download.nvidia.com/XFree86/Linux-x86_64/${version}/${_pkg}.run"
-checksum=6f1a44cc4a2ce27dce749ccd1e403c1db0f4791e2d22c05ec966842101d3ed14
+checksum=816ee6c2e0813ccc3d4a7958f71fc49a37c60efe1d51d6146c1ce72403983d5d
 # subpackages need to be processed in this specific order
-subpackages="nvidia-gtklibs nvidia-dkms nvidia-opencl nvidia-libs nvidia-libs-32bit"
+subpackages="nvidia-gtklibs nvidia-dkms nvidia-firmware nvidia-opencl nvidia-libs nvidia-libs-32bit"
 depends="nvidia-libs-${version}_${revision}
  nvidia-gtklibs-${version}_${revision}
- nvidia-dkms-${version}_${revision}"
+ nvidia-dkms-${version}_${revision}
+ nvidia-firmware-${version}_${revision}"
 
 _install_libs() {
 	local libdir=$1
@@ -69,10 +70,6 @@ _install_libs() {
 	ln -sf libnvidia-encode.so.${version} ${DESTDIR}/${libdir}/libnvidia-encode.so
 	ln -sf libnvidia-encode.so.${version} ${DESTDIR}/${libdir}/libnvidia-encode.so.1
 
-	vinstall libnvidia-ifr.so.${version} 755 ${libdir}
-	ln -sf libnvidia-ifr.so.${version} ${DESTDIR}/${libdir}/libnvidia-ifr.so
-	ln -sf libnvidia-ifr.so.${version} ${DESTDIR}/${libdir}/libnvidia-ifr.so.1
-
 	vinstall libnvidia-fbc.so.${version} 755 ${libdir}
 	ln -sf libnvidia-fbc.so.${version} ${DESTDIR}/${libdir}/libnvidia-fbc.so
 	ln -sf libnvidia-fbc.so.${version} ${DESTDIR}/${libdir}/libnvidia-fbc.so.1
@@ -103,10 +100,6 @@ _install_libs() {
 		${DESTDIR}/${libdir}/libnvidia-allocator.so.1
 	ln -sf libnvidia-allocator.so.1 \
 		${DESTDIR}/${libdir}/libnvidia-allocator.so
-
-	# helper libs for approved partners' GRID remote apps
-	vinstall libnvidia-ifr.so.${version} 755 usr/lib
-	vinstall libnvidia-fbc.so.${version} 755 usr/lib
 }
 
 do_extract() {
@@ -114,6 +107,7 @@ do_extract() {
 	cd ${wrksrc}
 	./${_pkg}.run --extract-only
 	rm -f ${_pkg}.run
+	cd ${_pkg}
 }
 
 do_install() {
@@ -123,7 +117,9 @@ do_install() {
 	vinstall nvidia_drv.so 755 usr/lib/xorg/modules/drivers
 
 	# firmware
-	vinstall firmware/gsp.bin 644 usr/lib/firmware/nvidia/${version}
+	for fw in gsp_tu10x.bin gsp_ad10x.bin; do
+		vinstall "firmware/${fw}" 644 "usr/lib/firmware/nvidia/${version}"
+	done
 
 	# GLX extension module for X
 	vinstall libglxserver_nvidia.so.${version} 755 usr/lib/nvidia/xorg
@@ -132,9 +128,21 @@ do_install() {
 	ln -sf libglxserver_nvidia.so.${version} \
 		${DESTDIR}/usr/lib/nvidia/xorg/libglxserver_nvidia.so.1
 
-	vinstall libnvidia-egl-wayland.so.1.1.7 755 usr/lib
-	ln -sf libnvidia-egl-wayland.so.1.1.7 \
+	# Wayland/GBM
+	vinstall libnvidia-egl-wayland.so.1.1.10 755 usr/lib
+	ln -sf libnvidia-egl-wayland.so.1.1.10 \
 		${DESTDIR}/usr/lib/libnvidia-egl-wayland.so.1
+	vinstall libnvidia-egl-gbm.so.1.1.0 755 usr/lib
+	ln -sf libnvidia-egl-gbm.so.1.1.0 \
+		${DESTDIR}/usr/lib/libnvidia-egl-gbm.so.1
+
+	vmkdir usr/share/glvnd/egl_vendor.d
+	vmkdir usr/share/egl/egl_external_platform.d
+	vinstall 15_nvidia_gbm.json 755 usr/share/egl/egl_external_platform.d
+
+	vmkdir usr/lib/gbm
+	ln -sf /usr/lib/libnvidia-allocator.so.${version} \
+		${DESTDIR}/usr/lib/gbm/nvidia-drm_gbm.so
 
 	vinstall 10_nvidia.json 755 usr/share/glvnd/egl_vendor.d
 	vinstall 10_nvidia_wayland.json \
@@ -187,9 +195,13 @@ do_install() {
 	vman nvidia-modprobe.1
 
 	# nvidia-persistenced
-	vinstall nvidia-persistenced 4755 usr/bin
+	vbin nvidia-persistenced
 	gzip -d nvidia-persistenced.1.gz
 	vman nvidia-persistenced.1
+
+	# nvidia-powerd
+	vbin nvidia-powerd
+	vsv nvidia-powerd
 
 	# opencl pkg
 	vinstall nvidia.icd 644 etc/OpenCL/vendors
@@ -208,7 +220,12 @@ do_install() {
 
 	# vulkan real-time ray tracing extensions
 	vinstall libnvidia-rtcore.so.${version} 755 usr/lib
-	vinstall libnvidia-cbl.so.${version} 755 usr/lib
+
+	vinstall libnvidia-vulkan-producer.so.${version} 755 usr/lib
+	ln -sf libnvidia-vulkan-producer.so.${version} \
+		${DESTDIR}/usr/lib/libnvidia-vulkan-producer.so
+	ln -sf libnvidia-vulkan-producer.so.${version} \
+		${DESTDIR}/usr/lib/libnvidia-vulkan-producer.so.1
 
 	# ngx
 	vbin nvidia-ngx-updater
@@ -223,8 +240,8 @@ do_install() {
 
 	# optix ray racing engine
 	vinstall libnvoptix.so.${version} 755 usr/lib
-	ln -sf libnvoptix.so.${version} /usr/lib/libnvoptix.so
-	ln -sf libnvoptix.so.${version} /usr/lib/libnvoptix.so.1
+	ln -sf libnvoptix.so.${version} ${DESTDIR}/usr/lib/libnvoptix.so
+	ln -sf libnvoptix.so.${version} ${DESTDIR}/usr/lib/libnvoptix.so.1
 
 	# dkms pkg
 	vmkdir usr/src/nvidia-${version}
@@ -252,11 +269,7 @@ do_install() {
 	vdoc NVIDIA_Changelog
 
 	# nvvm compiler
-	vinstall libnvidia-nvvm.so.4.0.0 755 usr/lib
-	ln -sf libnvidia-nvvm.so.4.0.0 \
-		${DESTDIR}/usr/lib/libnvidia-nvvm.so.4
-	ln -sf libnvidia-nvvm.so.4 \
-		${DESTDIR}/usr/lib/libnvidia-nvvm.so
+	vinstall libnvidia-nvvm.so.${version} 755 usr/lib
 
 	# Libraries (64bit)
 	_install_libs usr/lib
@@ -267,6 +280,7 @@ do_install() {
 
 nvidia-gtklibs_package() {
 	short_desc="${_desc} - GTK+ libraries"
+	conflicts="nvidia470-gtklibs>=0 nvidia390-gtklibs>=0"
 	pkg_install() {
 		vmove "usr/lib/lib*gtk*.so*"
 	}
@@ -276,6 +290,7 @@ nvidia-libs-32bit_package() {
 	short_desc="${_desc} - common libraries (32bit)"
 	# manually set 32bit depends for libglvnd
 	depends="glibc-32bit>=0 libX11-32bit>=0 libXext-32bit>=0 libglvnd-32bit>=0"
+	conflicts="nvidia470-libs-32bit>=0 nvidia390-libs-32bit>=0"
 	repository="multilib/nonfree"
 	pkg_install() {
 		vmove usr/lib32
@@ -286,6 +301,7 @@ nvidia-libs_package() {
 	short_desc="${_desc} - common libraries"
 	depends="libglvnd"
 	nostrip_files="gsp.bin"
+	conflicts="nvidia470-libs>=0 nvidia390-libs>=0"
 	pkg_install() {
 		vmove usr/lib
 	}
@@ -297,6 +313,7 @@ nvidia-dkms_package() {
 	dkms_modules="nvidia ${version}"
 	# dkms must be before initramfs-regenerate to build modules before images
 	triggers="dkms initramfs-regenerate"
+	conflicts="nvidia470-dkms>=0 nvidia390-dkms>=0"
 
 	pkg_install() {
 		vmove usr/src
@@ -307,9 +324,17 @@ nvidia-dkms_package() {
 nvidia-opencl_package() {
 	short_desc="${_desc} - OpenCL implementation"
 	depends="ocl-icd"
+	conflicts="nvidia470-opencl>=0 nvidia390-opencl>=0"
 	pkg_install() {
 		vmove "usr/lib/libnvidia-compiler*"
 		vmove "usr/lib/libnvidia-opencl*"
 		vmove etc/OpenCL
+	}
+}
+
+nvidia-firmware_package() {
+	short_desc="${_desc} - Firmware"
+	pkg_install() {
+		vmove usr/lib/firmware
 	}
 }

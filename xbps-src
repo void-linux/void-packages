@@ -122,6 +122,9 @@ show-repo-updates
 show-sys-updates
     Prints the list of outdated packages in your system.
 
+show-local-updates
+    Prints the list of outdated packages in your local repositories.
+
 sort-dependencies <pkg> <pkgN+1> ...
     Given a list of packages specified as additional arguments, a sorted dependency
     list will be returned to stdout.
@@ -131,6 +134,9 @@ update-bulk
 
 update-sys
     Rebuilds all packages in your system that are outdated and updates them.
+
+update-local
+    Rebuilds all packages in your local repositories that are outdated.
 
 update-check <pkgname>
     Check upstream site of <pkgname> for new releases.
@@ -150,6 +156,8 @@ Options:
 
 $(print_cross_targets)
 
+-b  Build packages even if marked as broken, nocross, or excluded with archs.
+
 -c  <configuration>
     If specified, etc/conf.<configuration> will be used as the primary config
     file name; etc/conf will only be attempted if that does not exist.
@@ -157,7 +165,7 @@ $(print_cross_targets)
 -C  Do not remove build directory, automatic dependencies and
     package destdir after successful install.
 
--E  If a binary package exists in a local repository for the target package,
+-E  If a binary package exists in a repository for the target package,
     do not try to build it, exit immediately.
 
 -f  Force running the specified stage (configure/build/install/pkg)
@@ -215,6 +223,8 @@ $(print_cross_targets)
     be stored into <hostdir>/binpkgs/<repo>.
     This alternative repository will also be used to resolve dependencies
     with highest priority order than others.
+
+-s  Make vsed warnings errors.
 
 -t  Create a temporary masterdir to not pollute the current one. Note that
     the existing masterdir must be fully populated with binary-bootstrap first.
@@ -280,6 +290,11 @@ check_native_arch() {
         else
             export XBPS_ARCH=$(xbps-uhelper arch)
         fi
+    elif [ "$XBPS_TARGET" = 'binary-bootstrap' ] && [ "$XBPS_TARGET_PKG" ]; then
+        # ^ special case for binary-bootstrap for e.g:
+        # x86_64 -> x86_64-musl
+        # x86_64 -> i686
+        export XBPS_ARCH=$XBPS_TARGET_PKG
     else
         LDD=$(ldd --version 2>&1|head -1)
         if [[ $LDD == *musl* ]]; then
@@ -357,7 +372,7 @@ readonly XBPS_SRC_VERSION="113"
 export XBPS_MACHINE=$(xbps-uhelper -C /dev/null arch)
 
 XBPS_OPTIONS=
-XBPS_OPTSTRING="1a:c:CEfgGhH:iIj:Lm:No:p:qQKr:tV"
+XBPS_OPTSTRING="1a:bc:CEfgGhH:iIj:Lm:No:p:qsQKr:tV"
 
 # Preprocess arguments in order to allow options before and after XBPS_TARGET.
 eval set -- $(getopt "$XBPS_OPTSTRING" "$@");
@@ -369,6 +384,7 @@ while getopts "$XBPS_OPTSTRING" opt; do
     case $opt in
         1) XBPS_ARG_BUILD_ONLY_ONE_PKG=yes; XBPS_OPTIONS+=" -1";;
         a) XBPS_ARG_CROSS_BUILD="$OPTARG"; XBPS_OPTIONS+=" -a $OPTARG";;
+        b) XBPS_ARG_IGNORE_BROKENNESS=yes; XBPS_OPTIONS+=" -b";;
         c) XBPS_ARG_CONFIG="$OPTARG"; XBPS_OPTIONS+=" -c $OPTARG";;
         C) XBPS_ARG_KEEP_ALL=1; XBPS_OPTIONS+=" -C";;
         E) XBPS_ARG_BINPKG_EXISTS=1; XBPS_OPTIONS+=" -E";;
@@ -389,6 +405,7 @@ while getopts "$XBPS_OPTSTRING" opt; do
         Q) XBPS_ARG_CHECK_PKGS=yes; XBPS_OPTIONS+=" -Q";;
         K) XBPS_ARG_CHECK_PKGS=full; XBPS_OPTIONS+=" -K";;
         r) XBPS_ARG_ALT_REPOSITORY="$OPTARG"; XBPS_OPTIONS+=" -r $OPTARG";;
+        s) XBPS_ARG_STRICT=yes; XBPS_OPTIONS+=" -s";;
         t) XBPS_ARG_TEMP_MASTERDIR=1; XBPS_OPTIONS+=" -t -C";;
         V) echo "xbps-src-$XBPS_SRC_VERSION $(xbps-uhelper -V)" && exit 0;;
         --) shift; break;;
@@ -459,6 +476,7 @@ fi
 
 # Set options passed on command line, after configuration files have been read
 [ -n "$XBPS_ARG_BUILD_ONLY_ONE_PKG" ] && XBPS_BUILD_ONLY_ONE_PKG=yes
+[ -n "$XBPS_ARG_IGNORE_BROKENNESS" ] && XBPS_IGNORE_BROKENNESS=1
 [ -n "$XBPS_ARG_SKIP_REMOTEREPOS" ] && XBPS_SKIP_REMOTEREPOS=1
 [ -n "$XBPS_ARG_BUILD_FORCEMODE" ] && XBPS_BUILD_FORCEMODE=1
 [ -n "$XBPS_ARG_INFORMATIVE_RUN" ] && XBPS_INFORMATIVE_RUN=1
@@ -471,15 +489,23 @@ fi
 [ -n "$XBPS_ARG_QUIET" ] && XBPS_QUIET=1
 [ -n "$XBPS_ARG_PRINT_VARIABLES" ] && XBPS_PRINT_VARIABLES="$XBPS_ARG_PRINT_VARIABLES"
 [ -n "$XBPS_ARG_ALT_REPOSITORY" ] && XBPS_ALT_REPOSITORY="$XBPS_ARG_ALT_REPOSITORY"
+[ -n "$XBPS_ARG_STRICT" ] && XBPS_STRICT="$XBPS_ARG_STRICT"
 [ -n "$XBPS_ARG_CROSS_BUILD" ] && XBPS_CROSS_BUILD="$XBPS_ARG_CROSS_BUILD"
 [ -n "$XBPS_ARG_CHECK_PKGS" ] && XBPS_CHECK_PKGS="$XBPS_ARG_CHECK_PKGS"
 [ -n "$XBPS_ARG_MAKEJOBS" ] && XBPS_MAKEJOBS="$XBPS_ARG_MAKEJOBS"
 
+# Default to nproc for XBPS_MAKEJOBS if not set and nproc is available
+if command -v nproc >/dev/null ; then
+    : ${XBPS_MAKEJOBS:=$(nproc)}
+else
+    : ${XBPS_MAKEJOBS:=1}
+fi
+
 export XBPS_BUILD_ONLY_ONE_PKG XBPS_SKIP_REMOTEREPOS XBPS_BUILD_FORCEMODE \
        XBPS_INFORMATIVE_RUN XBPS_TEMP_MASTERDIR XBPS_BINPKG_EXISTS \
        XBPS_USE_GIT_REVS XBPS_CHECK_PKGS XBPS_DEBUG_PKGS XBPS_SKIP_DEPS \
-       XBPS_KEEP_ALL XBPS_QUIET XBPS_ALT_REPOSITORY XBPS_CROSS_BUILD \
-       XBPS_MAKEJOBS XBPS_PRINT_VARIABLES
+       XBPS_KEEP_ALL XBPS_QUIET XBPS_ALT_REPOSITORY XBPS_STRICT XBPS_CROSS_BUILD \
+       XBPS_MAKEJOBS XBPS_PRINT_VARIABLES XBPS_IGNORE_BROKENNESS
 
 # The masterdir/hostdir variables are forced and readonly in chroot
 if [ -z "$IN_CHROOT" ]; then
@@ -626,7 +652,7 @@ readonly XBPS_CMPVER_CMD="xbps-uhelper cmpver"
 
 export XBPS_SHUTILSDIR XBPS_CROSSPFDIR XBPS_TRIGGERSDIR \
     XBPS_SRCPKGDIR XBPS_COMMONDIR XBPS_BUILDDIR \
-    XBPS_REPOSITORY XBPS_ALT_REPOSITORY XBPS_SRCDISTDIR XBPS_DIGEST_CMD \
+    XBPS_REPOSITORY XBPS_ALT_REPOSITORY XBPS_STRICT XBPS_SRCDISTDIR XBPS_DIGEST_CMD \
     XBPS_UHELPER_CMD XBPS_INSTALL_CMD XBPS_QUERY_CMD XBPS_BUILD_ONLY_ONE_PKG \
     XBPS_RINDEX_CMD XBPS_RECONFIGURE_CMD XBPS_REMOVE_CMD XBPS_CHECKVERS_CMD \
     XBPS_CMPVER_CMD XBPS_FETCH_CMD XBPS_VERSION XBPS_BUILDSTYLEDIR \
@@ -638,7 +664,8 @@ export XBPS_SHUTILSDIR XBPS_CROSSPFDIR XBPS_TRIGGERSDIR \
     XBPS_DESTDIR XBPS_MACHINE XBPS_TEMP_MASTERDIR XBPS_BINPKG_EXISTS \
     XBPS_LIBEXECDIR XBPS_DISTDIR XBPS_DISTFILES_MIRROR XBPS_ALLOW_RESTRICTED \
     XBPS_USE_GIT_COMMIT_DATE XBPS_PKG_COMPTYPE XBPS_REPO_COMPTYPE \
-    XBPS_BUILDHELPERDIR XBPS_USE_BUILD_MTIME XBPS_BUILD_ENVIRONMENT
+    XBPS_BUILDHELPERDIR XBPS_USE_BUILD_MTIME XBPS_BUILD_ENVIRONMENT \
+    XBPS_PRESERVE_PKGS XBPS_IGNORE_BROKENNESS
 
 for i in REPOSITORY DESTDIR BUILDDIR SRCDISTDIR; do
     eval val="\$XBPS_$i"
@@ -796,6 +823,7 @@ case "$XBPS_TARGET" in
         if [ -n "$CHROOT_READY" -a -z "$IN_CHROOT" ]; then
             chroot_handler $XBPS_TARGET $XBPS_TARGET_PKG
         else
+            check_existing_pkg
             chroot_sync_repodata
             # prevent update_base_chroot from removing the builddir/destdir
             update_base_chroot keep-all-force
@@ -951,7 +979,10 @@ case "$XBPS_TARGET" in
         bulk_build
         ;;
     show-sys-updates)
-        bulk_build -I
+        bulk_build installed
+        ;;
+    show-local-updates)
+        bulk_build local
         ;;
     sort-dependencies)
         bulk_sortdeps ${@/$XBPS_TARGET/}
@@ -960,7 +991,10 @@ case "$XBPS_TARGET" in
         bulk_update
         ;;
     update-sys)
-        bulk_update -I
+        bulk_update installed
+        ;;
+    update-local)
+        bulk_update local
         ;;
     update-check)
         read_pkg ignore-problems

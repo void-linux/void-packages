@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# This chroot script uses xbps-uunshare(8) with user_namespaces(7).
+# This chroot script uses xbps-uunshare(1) with user_namespaces(7).
 #
 readonly MASTERDIR="$1"
 readonly DISTDIR="$2"

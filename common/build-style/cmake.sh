@@ -54,6 +54,14 @@ _EOF
 	cmake_args+=" -DCMAKE_INSTALL_PREFIX=/usr"
 	cmake_args+=" -DCMAKE_BUILD_TYPE=None"
 	cmake_args+=" -DCMAKE_INSTALL_LIBDIR=lib${XBPS_TARGET_WORDSIZE}"
+	cmake_args+=" -DCMAKE_INSTALL_SYSCONFDIR=/etc"
+
+	if [ "$CROSS_BUILD" ]; then
+		cmake_args+=" -DQT_HOST_PATH=/usr"
+		# QT_HOST_PATH isn't enough in my system,
+		# which have binfmts support on and off
+		cmake_args+=" -DQT_HOST_PATH_CMAKE_DIR=/usr/lib/cmake"
+	fi
 
 	if [[ $build_helper = *"qemu"* ]]; then
 		echo "SET(CMAKE_CROSSCOMPILING_EMULATOR /usr/bin/qemu-${XBPS_TARGET_QEMU_MACHINE}-static)" \
@@ -65,7 +73,10 @@ _EOF
 	export CMAKE_GENERATOR="${CMAKE_GENERATOR:-Ninja}"
 	# Remove -pipe: https://gitlab.kitware.com/cmake/cmake/issues/19590
 	CFLAGS="-DNDEBUG ${CFLAGS/ -pipe / }" CXXFLAGS="-DNDEBUG ${CXXFLAGS/ -pipe / }" \
-		cmake ${cmake_args} ${configure_args} ${wrksrc}/${build_wrksrc}
+		cmake ${cmake_args} ${configure_args} \
+		${LIBS:+-DCMAKE_C_STANDARD_LIBRARIES="$LIBS"} \
+		${LIBS:+-DCMAKE_CXX_STANDARD_LIBRARIES="$LIBS"} \
+		${wrksrc}/${build_wrksrc}
 
 	# Replace -isystem with -I
 	if [ "$CMAKE_GENERATOR" = "Unix Makefiles" ]; then
@@ -113,7 +124,7 @@ do_check() {
 
 	: ${make_check_target:=test}
 
-	${make_cmd} ${make_check_args} ${make_check_target}
+	${make_check_pre} ${make_cmd} ${makejobs} ${make_check_args} ${make_check_target}
 }
 
 do_install() {
