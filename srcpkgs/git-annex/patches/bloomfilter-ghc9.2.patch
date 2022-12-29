@@ -1,0 +1,290 @@
+From fb79b39c44404fd791a3bed973e9d844fb084f1e Mon Sep 17 00:00:00 2001
+From: Simon Jakobi <simon.jakobi@gmail.com>
+Date: Fri, 12 Nov 2021 01:37:36 +0100
+Subject: [PATCH] Fix build with GHC 9.2
+
+The `FastShift.shift{L,R}` methods are replaced with `unsafeShift{L,R}`
+introduced in base-4.5.
+
+Fixes #19.
+---
+ Data/BloomFilter.hs         | 16 +++++------
+ Data/BloomFilter/Hash.hs    | 15 +++++-----
+ Data/BloomFilter/Mutable.hs | 20 +++++++-------
+ Data/BloomFilter/Util.hs    | 55 ++++++-------------------------------
+ bloomfilter.cabal           |  2 +-
+ 5 files changed, 34 insertions(+), 74 deletions(-)
+
+diff --git a/bloomfilter-2.0.1.0/Data/BloomFilter.hs b/bloomfilter-2.0.1.0/Data/BloomFilter.hs
+index 2210cef..6b47c21 100644
+--- a/bloomfilter-2.0.1.0/Data/BloomFilter.hs
++++ b/bloomfilter-2.0.1.0/Data/BloomFilter.hs
+@@ -78,8 +78,8 @@ import Control.DeepSeq (NFData(..))
+ import Data.Array.Base (unsafeAt)
+ import qualified Data.Array.Base as ST
+ import Data.Array.Unboxed (UArray)
+-import Data.Bits ((.&.))
+-import Data.BloomFilter.Util (FastShift(..), (:*)(..))
++import Data.Bits ((.&.), unsafeShiftL, unsafeShiftR)
++import Data.BloomFilter.Util ((:*)(..))
+ import qualified Data.BloomFilter.Mutable as MB
+ import qualified Data.BloomFilter.Mutable.Internal as MB
+ import Data.BloomFilter.Mutable.Internal (Hash, MBloom)
+@@ -98,7 +98,7 @@ data Bloom a = B {
+     }
+
+ instance Show (Bloom a) where
+-    show ub = "Bloom { " ++ show ((1::Int) `shiftL` shift ub) ++ " bits } "
++    show ub = "Bloom { " ++ show ((1::Int) `unsafeShiftL` shift ub) ++ " bits } "
+
+ instance NFData (Bloom a) where
+     rnf !_ = ()
+@@ -172,7 +172,7 @@ singleton hash numBits elt = create hash numBits (\mb -> MB.insert mb elt)
+ -- | Given a filter's mask and a hash value, compute an offset into
+ -- a word array and a bit offset within that word.
+ hashIdx :: Int -> Word32 -> (Int :* Int)
+-hashIdx mask x = (y `shiftR` logBitsInHash) :* (y .&. hashMask)
++hashIdx mask x = (y `unsafeShiftR` logBitsInHash) :* (y .&. hashMask)
+   where hashMask = 31 -- bitsInHash - 1
+         y = fromIntegral x .&. mask
+
+@@ -191,7 +191,7 @@ hashesU ub elt = hashIdx (mask ub) `map` hashes ub elt
+ -- /still/ some possibility that @True@ will be returned.
+ elem :: a -> Bloom a -> Bool
+ elem elt ub = all test (hashesU ub elt)
+-  where test (off :* bit) = (bitArray ub `unsafeAt` off) .&. (1 `shiftL` bit) /= 0
++  where test (off :* bit) = (bitArray ub `unsafeAt` off) .&. (1 `unsafeShiftL` bit) /= 0
+           
+ modify :: (forall s. (MBloom s a -> ST s z))  -- ^ mutation function (result is discarded)
+         -> Bloom a
+@@ -255,11 +255,11 @@ insertList elts = modify $ \mb -> mapM_ (MB.insert mb) elts
+ -- is /still/ some possibility that @True@ will be returned.
+ notElem :: a -> Bloom a -> Bool
+ notElem elt ub = any test (hashesU ub elt)
+-  where test (off :* bit) = (bitArray ub `unsafeAt` off) .&. (1 `shiftL` bit) == 0
++  where test (off :* bit) = (bitArray ub `unsafeAt` off) .&. (1 `unsafeShiftL` bit) == 0
+
+ -- | Return the size of an immutable Bloom filter, in bits.
+ length :: Bloom a -> Int
+-length = shiftL 1 . shift
++length = unsafeShiftL 1 . shift
+
+ -- | Build an immutable Bloom filter from a seed value.  The seeding
+ -- function populates the filter as follows.
+@@ -318,7 +318,7 @@ fromList hashes numBits = unfold hashes numBits convert
+ logPower2 :: Int -> Int
+ logPower2 k = go 0 k
+     where go j 1 = j
+-          go j n = go (j+1) (n `shiftR` 1)
++          go j n = go (j+1) (n `unsafeShiftR` 1)
+
+ -- $overview
+ --
+diff --git a/bloomfilter-2.0.1.0/Data/BloomFilter/Hash.hs b/bloomfilter-2.0.1.0/Data/BloomFilter/Hash.hs
+index 132a3a4..d071fd4 100644
+--- a/bloomfilter-2.0.1.0/Data/BloomFilter/Hash.hs
++++ b/bloomfilter-2.0.1.0/Data/BloomFilter/Hash.hs
+@@ -38,8 +38,7 @@ module Data.BloomFilter.Hash
+     ) where
+
+ import Control.Monad (foldM)
+-import Data.Bits ((.&.), (.|.), xor)
+-import Data.BloomFilter.Util (FastShift(..))
++import Data.Bits ((.&.), (.|.), unsafeShiftL, unsafeShiftR, xor)
+ import Data.List (unfoldr)
+ import Data.Int (Int8, Int16, Int32, Int64)
+ import Data.Word (Word8, Word16, Word32, Word64)
+@@ -91,11 +90,11 @@ class Hashable a where
+              -> Word64           -- ^ salt
+              -> IO Word64
+     hashIO64 v salt = do
+-                   let s1 = fromIntegral (salt `shiftR` 32) .&. maxBound
++                   let s1 = fromIntegral (salt `unsafeShiftR` 32) .&. maxBound
+                        s2 = fromIntegral salt
+                    h1 <- hashIO32 v s1
+                    h2 <- hashIO32 v s2
+-                   return $ (fromIntegral h1 `shiftL` 32) .|. fromIntegral h2
++                   return $ (fromIntegral h1 `unsafeShiftL` 32) .|. fromIntegral h2
+
+ -- | Compute a 32-bit hash.
+ hash32 :: Hashable a => a -> Word32
+@@ -149,8 +148,8 @@ cheapHashes :: Hashable a => Int -- ^ number of hashes to compute
+ cheapHashes k v = go 0
+     where go i | i == j = []
+                | otherwise = hash : go (i + 1)
+-               where !hash = h1 + (h2 `shiftR` i)
+-          h1 = fromIntegral (h `shiftR` 32)
++               where !hash = h1 + (h2 `unsafeShiftR` i)
++          h1 = fromIntegral (h `unsafeShiftR` 32)
+           h2 = fromIntegral h
+           h = hashSalt64 0x9150a946c4a8966e v
+           j = fromIntegral k
+@@ -163,7 +162,7 @@ instance Hashable Integer where
+                                    (salt `xor` 0x3ece731e)
+                   | otherwise = hashIO32 (unfoldr go k) salt
+         where go 0 = Nothing
+-              go i = Just (fromIntegral i :: Word32, i `shiftR` 32)
++              go i = Just (fromIntegral i :: Word32, i `unsafeShiftR` 32)
+
+ instance Hashable Bool where
+     hashIO32 = hashOne32
+@@ -224,7 +223,7 @@ instance Hashable Word64 where
+ -- | A fast unchecked shift.  Nasty, but otherwise GHC 6.8.2 does a
+ -- test and branch on every shift.
+ div4 :: CSize -> CSize
+-div4 k = fromIntegral ((fromIntegral k :: HTYPE_SIZE_T) `shiftR` 2)
++div4 k = fromIntegral ((fromIntegral k :: HTYPE_SIZE_T) `unsafeShiftR` 2)
+
+ alignedHash :: Ptr a -> CSize -> Word32 -> IO Word32
+ alignedHash ptr bytes salt
+diff --git a/bloomfilter-2.0.1.0/Data/BloomFilter/Mutable.hs b/bloomfilter-2.0.1.0/Data/BloomFilter/Mutable.hs
+index edff1fc..0bb5cc9 100644
+--- a/bloomfilter-2.0.1.0/Data/BloomFilter/Mutable.hs
++++ b/bloomfilter-2.0.1.0/Data/BloomFilter/Mutable.hs
+@@ -65,9 +65,9 @@ module Data.BloomFilter.Mutable
+ import Control.Monad (liftM, forM_)
+ import Control.Monad.ST (ST)
+ import Data.Array.Base (unsafeRead, unsafeWrite)
+-import Data.Bits ((.&.), (.|.))
++import Data.Bits ((.&.), (.|.), unsafeShiftL, unsafeShiftR)
+ import Data.BloomFilter.Array (newArray)
+-import Data.BloomFilter.Util (FastShift(..), (:*)(..), nextPowerOfTwo)
++import Data.BloomFilter.Util ((:*)(..), nextPowerOfTwo)
+ import Data.Word (Word32)
+ import Data.BloomFilter.Mutable.Internal
+
+@@ -86,9 +86,9 @@ new hash numBits = MB hash shft msk `liftM` newArray numElems numBytes
+                 | numBits > maxHash = maxHash
+                 | isPowerOfTwo numBits = numBits
+                 | otherwise = nextPowerOfTwo numBits
+-        numElems = max 2 (twoBits `shiftR` logBitsInHash)
+-        numBytes = numElems `shiftL` logBytesInHash
+-        trueBits = numElems `shiftL` logBitsInHash
++        numElems = max 2 (twoBits `unsafeShiftR` logBitsInHash)
++        numBytes = numElems `unsafeShiftL` logBytesInHash
++        trueBits = numElems `unsafeShiftL` logBitsInHash
+         shft     = logPower2 trueBits
+         msk      = trueBits - 1
+         isPowerOfTwo n = n .&. (n - 1) == 0
+@@ -109,7 +109,7 @@ logBytesInHash = 2 -- logPower2 (sizeOf (undefined :: Hash))
+ -- | Given a filter's mask and a hash value, compute an offset into
+ -- a word array and a bit offset within that word.
+ hashIdx :: Int -> Word32 -> (Int :* Int)
+-hashIdx msk x = (y `shiftR` logBitsInHash) :* (y .&. hashMask)
++hashIdx msk x = (y `unsafeShiftR` logBitsInHash) :* (y .&. hashMask)
+   where hashMask = 31 -- bitsInHash - 1
+         y = fromIntegral x .&. msk
+
+@@ -125,7 +125,7 @@ insert mb elt = do
+   let mu = bitArray mb
+   forM_ (hashesM mb elt) $ \(word :* bit) -> do
+       old <- unsafeRead mu word
+-      unsafeWrite mu word (old .|. (1 `shiftL` bit))
++      unsafeWrite mu word (old .|. (1 `unsafeShiftL` bit))
+
+ -- | Query a mutable Bloom filter for membership.  If the value is
+ -- present, return @True@.  If the value is not present, there is
+@@ -135,7 +135,7 @@ elem elt mb = loop (hashesM mb elt)
+   where mu = bitArray mb
+         loop ((word :* bit):wbs) = do
+           i <- unsafeRead mu word
+-          if i .&. (1 `shiftL` bit) == 0
++          if i .&. (1 `unsafeShiftL` bit) == 0
+             then return False
+             else loop wbs
+         loop _ = return True
+@@ -145,7 +145,7 @@ elem elt mb = loop (hashesM mb elt)
+
+ -- | Return the size of a mutable Bloom filter, in bits.
+ length :: MBloom s a -> Int
+-length = shiftL 1 . shift
++length = unsafeShiftL 1 . shift
+
+
+ -- | Slow, crummy way of computing the integer log of an integer known
+@@ -153,7 +153,7 @@ length = shiftL 1 . shift
+ logPower2 :: Int -> Int
+ logPower2 k = go 0 k
+     where go j 1 = j
+-          go j n = go (j+1) (n `shiftR` 1)
++          go j n = go (j+1) (n `unsafeShiftR` 1)
+
+ -- $overview
+ --
+diff --git a/bloomfilter-2.0.1.0/Data/BloomFilter/Util.hs b/bloomfilter-2.0.1.0/Data/BloomFilter/Util.hs
+index 7f695dc..6ade6e5 100644
+--- a/bloomfilter-2.0.1.0/Data/BloomFilter/Util.hs
++++ b/bloomfilter-2.0.1.0/Data/BloomFilter/Util.hs
+@@ -2,15 +2,11 @@
+
+ module Data.BloomFilter.Util
+     (
+-      FastShift(..)
+-    , nextPowerOfTwo
++      nextPowerOfTwo
+     , (:*)(..)
+     ) where
+
+-import Data.Bits ((.|.))
+-import qualified Data.Bits as Bits
+-import GHC.Base
+-import GHC.Word
++import Data.Bits ((.|.), unsafeShiftR)
+
+ -- | A strict pair type.
+ data a :* b = !a :* !b
+@@ -22,46 +18,11 @@ nextPowerOfTwo :: Int -> Int
+ {-# INLINE nextPowerOfTwo #-}
+ nextPowerOfTwo n =
+     let a = n - 1
+-        b = a .|. (a `shiftR` 1)
+-        c = b .|. (b `shiftR` 2)
+-        d = c .|. (c `shiftR` 4)
+-        e = d .|. (d `shiftR` 8)
+-        f = e .|. (e `shiftR` 16)
+-        g = f .|. (f `shiftR` 32)  -- in case we're on a 64-bit host
++        b = a .|. (a `unsafeShiftR` 1)
++        c = b .|. (b `unsafeShiftR` 2)
++        d = c .|. (c `unsafeShiftR` 4)
++        e = d .|. (d `unsafeShiftR` 8)
++        f = e .|. (e `unsafeShiftR` 16)
++        g = f .|. (f `unsafeShiftR` 32)  -- in case we're on a 64-bit host
+         !h = g + 1
+     in h
+-
+--- | This is a workaround for poor optimisation in GHC 6.8.2.  It
+--- fails to notice constant-width shifts, and adds a test and branch
+--- to every shift.  This imposes about a 10% performance hit.
+-class FastShift a where
+-    shiftL :: a -> Int -> a
+-    shiftR :: a -> Int -> a
+-
+-instance FastShift Word32 where
+-    {-# INLINE shiftL #-}
+-    shiftL (W32# x#) (I# i#) = W32# (x# `uncheckedShiftL#` i#)
+-
+-    {-# INLINE shiftR #-}
+-    shiftR (W32# x#) (I# i#) = W32# (x# `uncheckedShiftRL#` i#)
+-
+-instance FastShift Word64 where
+-    {-# INLINE shiftL #-}
+-    shiftL (W64# x#) (I# i#) = W64# (x# `uncheckedShiftL64#` i#)
+-
+-    {-# INLINE shiftR #-}
+-    shiftR (W64# x#) (I# i#) = W64# (x# `uncheckedShiftRL64#` i#)
+-
+-instance FastShift Int where
+-    {-# INLINE shiftL #-}
+-    shiftL (I# x#) (I# i#) = I# (x# `iShiftL#` i#)
+-
+-    {-# INLINE shiftR #-}
+-    shiftR (I# x#) (I# i#) = I# (x# `iShiftRA#` i#)
+-
+-instance FastShift Integer where
+-    {-# INLINE shiftL #-}
+-    shiftL = Bits.shiftL
+-
+-    {-# INLINE shiftR #-}
+-    shiftR = Bits.shiftR
+--
+2.35.1
