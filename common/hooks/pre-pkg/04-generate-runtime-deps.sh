@@ -111,7 +111,7 @@ hook() {
                 fi
                 echo "$shlibs"
             );
-            rdepver="$(echo $shlibs | grep -E "^${_f}[[:blank:]]+.*$" | cut -d ' ' -f2)"
+            rdepver="$(echo $shlibs | grep -E "^${_f}=.*$" | cut -d '=' -f2)"
             rdep="${rdepname}-${rdepver}"
         fi
         rdepcnt=1 # FIXME
