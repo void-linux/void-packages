@@ -97,20 +97,23 @@ hook() {
         _f=$(echo "$f"|sed -E 's|\+|\\+|g')
         # get rdep pkgname in current version
         rdepcurrent="$($XBPS_QUERY_CMD -p shlib-provides -s "${_f}" | cut -d: -f1)"
-        # extract just pkgname
-        rdepname="$($XBPS_UHELPER_CMD getpkgname "$rdepcurrent")"
-        # look into the template of the rdep to figure out which version
-        # should be used for the shlib dependency
-        shlibs=$(
-            shlibs=
-            source_file $XBPS_SRCPKGDIR/$rdepname/template
-            if type ${rdepname}_package >/dev/null 2>&1; then
-                ${rdepname}_package
-            fi
-            echo "$shlibs"
-        );
-        rdepver="$(echo $shlibs | grep -E "^${_f}[[:blank:]]+.*$" | cut -d ' ' -f2)"
-        rdep="${rdepname}-${rdepver}"
+        rdep=
+        if [ -n "$rdepcurrent" ]; then
+            # extract just pkgname
+            rdepname="$($XBPS_UHELPER_CMD getpkgname "$rdepcurrent")"
+            # look into the template of the rdep to figure out which version
+            # should be used for the shlib dependency
+            shlibs=$(
+                shlibs=
+                source_file $XBPS_SRCPKGDIR/$rdepname/template
+                if type ${rdepname}_package >/dev/null 2>&1; then
+                    ${rdepname}_package
+                fi
+                echo "$shlibs"
+            );
+            rdepver="$(echo $shlibs | grep -E "^${_f}[[:blank:]]+.*$" | cut -d ' ' -f2)"
+            rdep="${rdepname}-${rdepver}"
+        fi
         rdepcnt=1 # FIXME
         if [ -z "$rdep" ]; then
             # Ignore libs by current pkg
