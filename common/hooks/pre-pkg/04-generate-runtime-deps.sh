@@ -96,7 +96,7 @@ hook() {
         unset _f j rdep rdepver _rdep rdepcurrent rdepcnt soname _pkgname _rdepver found
         _f=$(echo "$f"|sed -E 's|\+|\\+|g')
         # get rdep pkgname in current version
-        rdepcurrent="$(xbps-query -o "/usr/lib/${_f}" | cut -d: -f1)"
+        rdepcurrent="$($XBPS_QUERY_CMD -p shlib-provides -s "${_f}" | cut -d: -f1)"
         # extract just pkgname
         rdepname="$($XBPS_UHELPER_CMD getpkgname "$rdepcurrent")"
         # look into the template of the rdep to figure out which version
