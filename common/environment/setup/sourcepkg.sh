@@ -25,6 +25,8 @@ for var in $(awk 'BEGIN{for (i in ENVIRON) {print i}}' </dev/null); do
 		;;
 	FTP_PROXY | FTP_RETRIES)
 		;;
+	http_proxy | https_proxy | ftp_proxy | all_proxy | no_proxy)
+		;;
 	*)
 		unset -v "$var"
 		;;
