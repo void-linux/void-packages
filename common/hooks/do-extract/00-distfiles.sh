@@ -163,13 +163,14 @@ hook() {
 		esac
 	done
 
+	cd "$extractdir"
 	# find "$extractdir" -mindepth 1 -maxdepth 1 -printf '1\n' | wc -l
 	# However, it requires GNU's find
 	num_dirs=0
-	for f in "$extractdir"/* "$extractdir"/.*; do
+	for f in * .*; do
 		if [ -e "$f" ] || [ -L "$f" ]; then
 			case "$f" in
-			*/. | */..) ;;
+			. | ..) ;;
 			*)
 				innerdir="$f"
 				num_dirs=$(( num_dirs + 1 ))
@@ -178,6 +179,8 @@ hook() {
 		fi
 	done
 	rm -rf "$wrksrc"
+	innerdir="$extractdir/$innerdir"
+	cd "$XBPS_BUILDDIR"
 	if [ "$num_dirs" = 1 ] && [ -d "$innerdir" ] && [ -z "$create_wrksrc" ]; then
 		# rename the subdirectory (top-level of distfiles) to $wrksrc
 		mv "$innerdir" "$wrksrc" &&
