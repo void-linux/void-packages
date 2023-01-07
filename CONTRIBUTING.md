@@ -104,7 +104,7 @@ Once you have made and verified your changes to the package template and/or othe
 
 * for new packages, use `New package: <pkgname>-<version>` ([example](https://github.com/void-linux/void-packages/commit/8ed8d41c40bf6a82cf006c7e207e05942c15bff8)).
 
-* for package updates, use `<pkgname>: update to <version>.` ([example](https://github.com/void-linux/void-packages/commit/c92203f1d6f33026ae89f3e4c1012fb6450bbac1)).
+* for package updates, use `<pkgname>: update to <version>` ([example](https://github.com/void-linux/void-packages/commit/c92203f1d6f33026ae89f3e4c1012fb6450bbac1)).
 
 * for template modifications without a version change, use `<pkgname>: <reason>` ([example](https://github.com/void-linux/void-packages/commit/ff39c912d412717d17232de9564f659b037e95b5)).
 
