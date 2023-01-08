@@ -165,6 +165,11 @@ chroot_handler() {
     else
         env -i -- PATH="/usr/bin:$PATH" SHELL=/bin/sh \
             HOME=/tmp IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 \
+            ${http_proxy:+http_proxy="${http_proxy}"} \
+            ${https_proxy:+https_proxy="${https_proxy}"} \
+            ${ftp_proxy:+ftp_proxy="${ftp_proxy}"} \
+            ${all_proxy:+all_proxy="${all_proxy}"} \
+            ${no_proxy:+no_proxy="${no_proxy}"} \
             ${HTTP_PROXY:+HTTP_PROXY="${HTTP_PROXY}"} \
             ${HTTPS_PROXY:+HTTPS_PROXY="${HTTPS_PROXY}"} \
             ${FTP_PROXY:+FTP_PROXY="${FTP_PROXY}"} \

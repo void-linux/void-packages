@@ -56,7 +56,7 @@ This automatically sets up the `upstream` remote, so `git pull --rebase upstream
 
 Using the GitHub web editor for making changes is strongly discouraged, because you will need to clone the repo anyways to edit and test your changes.
 
-using the the `master` branch of your fork for contributing is also strongly discouraged.
+Using the `master` branch of your fork for contributing is also strongly discouraged.
 It can cause many issues with updating your pull request (also called a PR), and having multiple PRs open at once.
 To create a new branch:
 
