@@ -1,9 +1,9 @@
 # Template file for 'chromium'
 pkgname=chromium
 # See https://chromiumdash.appspot.com/releases?platform=Linux for the latest version
-version=108.0.5359.124
+version=109.0.5414.74
 revision=1
-archs="i686* x86_64* aarch64* armv7l* ppc64le*"
+archs="i686* x86_64* aarch64* armv7l*"
 hostmakedepends="
  $(vopt_if clang "clang lld llvm12")
  $(vopt_if js_optimize openjdk)
@@ -28,7 +28,7 @@ maintainer="Duncaen <duncaen@voidlinux.org>"
 license="BSD-3-Clause"
 homepage="https://www.chromium.org/"
 distfiles="https://commondatastorage.googleapis.com/chromium-browser-official/${pkgname}-${version}.tar.xz"
-checksum=d48dfac2a61b14a5d7d2f460b09b70ef3ab88e27b82e3173938cb54eaa612a75
+checksum=eded233c26ab631be325ad49cb306c338513b6a6528197d42653e66187548e5d
 
 lib32disabled=yes
 
@@ -39,10 +39,13 @@ desc_option_debug="Build with debug symbols"
 desc_option_js_optimize="Optimize the JS used for Chromium's UI"
 desc_option_pipewire="Enable support for screen sharing for WebRTC via PipeWire"
 
+if [ "$XBPS_LIBC" = musl ]; then
+	hostmakedepends+=" musl-legacy-compat"
+fi
 
-case "$XBPS_TARGET_MACHINE" in
-	ppc64*-musl) makedepends+=" libucontext-devel" ;;
-esac
+if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
+	makedepends+=" musl-legacy-compat"
+fi
 
 if [ "$CROSS_BUILD" ]; then
 	hostmakedepends+=" libX11-devel libxcb-devel pciutils-devel libXext-devel libglvnd-devel
@@ -135,20 +138,6 @@ do_configure() {
 		CFLAGS=$CFLAGS_FOR_BUILD CXXFLAGS=$CXXFLAGS_FOR_BUILD LDFLAGS=$LDFLAGS_FOR_BUILD \
 		tools/gn/bootstrap/bootstrap.py --skip-generate-buildfiles
 
-	# we need to generate ppc64 stuff for libvpx as it's not shipped
-	# this has to be done before unbundling, but after gn is built
-	# comment out if we switch back to system libvpx again later
-	case "$XBPS_TARGET_MACHINE" in
-		ppc64*)
-			pushd third_party/libvpx
-			mkdir -p source/config/linux/ppc64
-			# need PATH to find gn
-			PATH="${wrksrc}/out/Release:$PATH" ./generate_gni.sh || \
-				msg_error "failed to generate libvpx gni"
-			popd
-			;;
-	esac
-
 	# Use system-provided libraries.
 	# TODO: use_system_hunspell (upstream changes needed).
 	# TODO: use_system_libsrtp.
@@ -220,9 +209,6 @@ do_configure() {
 
 		'icu_use_data_file=true'
 
-		'use_allocator="none"'
-		'use_allocator_shim=false'
-
 		'enable_widevine=true'
 		'enable_hangout_services_extension=true'
 
@@ -286,11 +272,6 @@ do_configure() {
 		)
 	fi
 
-	# this does not work on ppc64 yet
-	case "$XBPS_TARGET_MACHINE" in
-		ppc64*) conf+=( "enable_jxl_decoder=false" );;
-	esac
-
 	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
 		conf+=( 'is_musl=true' )
 	fi
@@ -300,7 +281,6 @@ do_configure() {
 		i686*) conf+=( 'target_cpu="x86"' ) ;;
 		arm*) conf+=( 'target_cpu="arm"' ) ;;
 		aarch64*) conf+=( 'target_cpu="arm64"' ) ;;
-		ppc64*) conf+=( 'target_cpu="ppc64"' ) ;;
 	esac
 
 	if [ "$CROSS_BUILD" ]; then
@@ -309,7 +289,6 @@ do_configure() {
 			i686*) conf+=( 'host_cpu="x86"' ) ;;
 			arm*) conf+=( 'host_cpu="arm"' ) ;;
 			aarch64*) conf+=( 'host_cpu="arm64"' ) ;;
-			ppc64*) conf+=( 'host_cpu="ppc64"' ) ;;
 		esac
 	fi
 	_setup_toolchain
@@ -318,13 +297,13 @@ do_configure() {
 
 do_build() {
 	_setup_toolchain
-	CCACHE_SLOPPINESS=include_file_mtime ninja -C out/Release ${makejobs} chrome chromedriver chrome_crashpad_handler
+	CCACHE_SLOPPINESS=include_file_mtime ninja -C out/Release ${makejobs} chrome chromedriver.unstripped chrome_crashpad_handler
 }
 
 do_install() {
 	vinstall out/Release/chrome 755 usr/lib/${pkgname} ${pkgname}
 	vinstall out/Release/chrome_crashpad_handler 755 usr/lib/${pkgname} chrome_crashpad_handler
-	vinstall out/Release/chromedriver 755 usr/lib/${pkgname} chromedriver
+	vinstall out/Release/chromedriver.unstripped 755 usr/lib/${pkgname} chromedriver
 	vinstall out/Release/libEGL.so 755 usr/lib/${pkgname} libEGL.so
 	vinstall out/Release/libGLESv2.so 755 usr/lib/${pkgname} libGLESv2.so
 	vinstall out/Release/libvk_swiftshader.so 755 usr/lib/${pkgname} libvk_swiftshader.so
