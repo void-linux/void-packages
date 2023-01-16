@@ -31,6 +31,7 @@ _EOF
 			ppc64*) _CMAKE_SYSTEM_PROCESSOR=ppc64 ;;
 			ppcle*) _CMAKE_SYSTEM_PROCESSOR=ppcle ;;
 			ppc*) _CMAKE_SYSTEM_PROCESSOR=ppc ;;
+			riscv64*) _CMAKE_SYSTEM_PROCESSOR=riscv64 ;;
 			*) _CMAKE_SYSTEM_PROCESSOR=generic ;;
 		esac
 		cat > cross_${XBPS_CROSS_TRIPLET}.cmake <<_EOF
