@@ -1,0 +1,176 @@
+Index: chromium-104.0.5112.79/v8/src/builtins/riscv64/builtins-riscv64.cc
+===================================================================
+--- chromium-104.0.5112.79.orig/v8/src/builtins/riscv64/builtins-riscv64.cc
++++ chromium-104.0.5112.79/v8/src/builtins/riscv64/builtins-riscv64.cc
+@@ -858,7 +858,7 @@ static void ReplaceClosureCodeWithOptimi
+   __ Move(scratch1, optimized_code);  // Write barrier clobbers scratch1 below.
+   __ RecordWriteField(closure, JSFunction::kCodeOffset, scratch1,
+                       kRAHasNotBeenSaved, SaveFPRegsMode::kIgnore,
+-                      RememberedSetAction::kOmit, SmiCheck::kOmit);
++                      SmiCheck::kOmit);
+ }
+ 
+ static void LeaveInterpreterFrame(MacroAssembler* masm, Register scratch1,
+Index: chromium-104.0.5112.79/v8/src/codegen/riscv64/macro-assembler-riscv64.cc
+===================================================================
+--- chromium-104.0.5112.79.orig/v8/src/codegen/riscv64/macro-assembler-riscv64.cc
++++ chromium-104.0.5112.79/v8/src/codegen/riscv64/macro-assembler-riscv64.cc
+@@ -142,7 +142,6 @@ int MacroAssembler::SafepointRegisterSta
+ void MacroAssembler::RecordWriteField(Register object, int offset,
+                                       Register value, RAStatus ra_status,
+                                       SaveFPRegsMode save_fp,
+-                                      RememberedSetAction remembered_set_action,
+                                       SmiCheck smi_check) {
+   DCHECK(!AreAliased(object, value));
+   // First, check if a write barrier is even needed. The tests below
+@@ -171,7 +170,7 @@ void MacroAssembler::RecordWriteField(Re
+   }
+ 
+   RecordWrite(object, Operand(offset - kHeapObjectTag), value, ra_status,
+-              save_fp, remembered_set_action, SmiCheck::kOmit);
++              save_fp, SmiCheck::kOmit);
+ 
+   bind(&done);
+ }
+@@ -211,7 +210,7 @@ void TurboAssembler::CallEphemeronKeyBar
+ 
+ void TurboAssembler::CallRecordWriteStubSaveRegisters(
+     Register object, Register slot_address,
+-    RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
++    SaveFPRegsMode fp_mode,
+     StubCallMode mode) {
+   DCHECK(!AreAliased(object, slot_address));
+   RegList registers =
+@@ -228,14 +227,14 @@ void TurboAssembler::CallRecordWriteStub
+   Pop(object_parameter);
+ 
+   CallRecordWriteStub(object_parameter, slot_address_parameter,
+-                      remembered_set_action, fp_mode, mode);
++                      fp_mode, mode);
+ 
+   MaybeRestoreRegisters(registers);
+ }
+ 
+ void TurboAssembler::CallRecordWriteStub(
+     Register object, Register slot_address,
+-    RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
++    SaveFPRegsMode fp_mode,
+     StubCallMode mode) {
+   // Use CallRecordWriteStubSaveRegisters if the object and slot registers
+   // need to be caller saved.
+@@ -243,10 +242,10 @@ void TurboAssembler::CallRecordWriteStub
+   DCHECK_EQ(WriteBarrierDescriptor::SlotAddressRegister(), slot_address);
+   if (mode == StubCallMode::kCallWasmRuntimeStub) {
+     auto wasm_target =
+-        wasm::WasmCode::GetRecordWriteStub(remembered_set_action, fp_mode);
++        wasm::WasmCode::GetRecordWriteStub(fp_mode);
+     Call(wasm_target, RelocInfo::WASM_STUB_CALL);
+   } else {
+-    auto builtin = Builtins::GetRecordWriteStub(remembered_set_action, fp_mode);
++    auto builtin = Builtins::GetRecordWriteStub(fp_mode);
+     if (options().inline_offheap_trampolines) {
+       // Inline the trampoline. //qj
+       RecordCommentForOffHeapTrampoline(builtin);
+@@ -270,7 +269,6 @@ void TurboAssembler::CallRecordWriteStub
+ void MacroAssembler::RecordWrite(Register object, Operand offset,
+                                  Register value, RAStatus ra_status,
+                                  SaveFPRegsMode fp_mode,
+-                                 RememberedSetAction remembered_set_action,
+                                  SmiCheck smi_check) {
+   DCHECK(!AreAliased(object, value));
+ 
+@@ -284,9 +282,7 @@ void MacroAssembler::RecordWrite(Registe
+            Operand(value));
+   }
+ 
+-  if ((remembered_set_action == RememberedSetAction::kOmit &&
+-       !FLAG_incremental_marking) ||
+-      FLAG_disable_write_barriers) {
++  if (FLAG_disable_write_barriers) {
+     return;
+   }
+ 
+@@ -325,7 +321,7 @@ void MacroAssembler::RecordWrite(Registe
+   // TODO(cbruni): Turn offset into int.
+   DCHECK(offset.IsImmediate());
+   Add64(slot_address, object, offset);
+-  CallRecordWriteStub(object, slot_address, remembered_set_action, fp_mode);
++  CallRecordWriteStub(object, slot_address, fp_mode);
+   if (ra_status == kRAHasNotBeenSaved) {
+     pop(ra);
+   }
+Index: chromium-104.0.5112.79/v8/src/codegen/riscv64/macro-assembler-riscv64.h
+===================================================================
+--- chromium-104.0.5112.79.orig/v8/src/codegen/riscv64/macro-assembler-riscv64.h
++++ chromium-104.0.5112.79/v8/src/codegen/riscv64/macro-assembler-riscv64.h
+@@ -347,11 +347,11 @@ class V8_EXPORT_PRIVATE TurboAssembler :
+ 
+   void CallRecordWriteStubSaveRegisters(
+       Register object, Register slot_address,
+-      RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
++      SaveFPRegsMode fp_mode,
+       StubCallMode mode = StubCallMode::kCallBuiltinPointer);
+   void CallRecordWriteStub(
+       Register object, Register slot_address,
+-      RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
++      SaveFPRegsMode fp_mode,
+       StubCallMode mode = StubCallMode::kCallBuiltinPointer);
+ 
+   // Push multiple registers on the stack.
+@@ -1098,7 +1098,6 @@ class V8_EXPORT_PRIVATE MacroAssembler :
+   void RecordWriteField(
+       Register object, int offset, Register value, RAStatus ra_status,
+       SaveFPRegsMode save_fp,
+-      RememberedSetAction remembered_set_action = RememberedSetAction::kEmit,
+       SmiCheck smi_check = SmiCheck::kInline);
+ 
+   // For a given |object| notify the garbage collector that the slot |address|
+@@ -1107,7 +1106,6 @@ class V8_EXPORT_PRIVATE MacroAssembler :
+   void RecordWrite(
+       Register object, Operand offset, Register value, RAStatus ra_status,
+       SaveFPRegsMode save_fp,
+-      RememberedSetAction remembered_set_action = RememberedSetAction::kEmit,
+       SmiCheck smi_check = SmiCheck::kInline);
+ 
+   // void Pref(int32_t hint, const MemOperand& rs);
+Index: chromium-104.0.5112.79/v8/src/compiler/backend/riscv64/code-generator-riscv64.cc
+===================================================================
+--- chromium-104.0.5112.79.orig/v8/src/compiler/backend/riscv64/code-generator-riscv64.cc
++++ chromium-104.0.5112.79/v8/src/compiler/backend/riscv64/code-generator-riscv64.cc
+@@ -181,9 +181,6 @@ class OutOfLineRecordWrite final : publi
+                      MemoryChunk::kPointersToHereAreInterestingMask, eq,
+                      exit());
+     __ Add64(scratch1_, object_, index_);
+-    RememberedSetAction const remembered_set_action =
+-        mode_ > RecordWriteMode::kValueIsMap ? RememberedSetAction::kEmit
+-                                             : RememberedSetAction::kOmit;
+     SaveFPRegsMode const save_fp_mode = frame()->DidAllocateDoubleRegisters()
+                                             ? SaveFPRegsMode::kSave
+                                             : SaveFPRegsMode::kIgnore;
+@@ -198,11 +195,11 @@ class OutOfLineRecordWrite final : publi
+       // Just encode the stub index. This will be patched when the code
+       // is added to the native module and copied into wasm code space.
+       __ CallRecordWriteStubSaveRegisters(object_, scratch1_,
+-                                          remembered_set_action, save_fp_mode,
++                                          save_fp_mode,
+                                           StubCallMode::kCallWasmRuntimeStub);
+     } else {
+       __ CallRecordWriteStubSaveRegisters(object_, scratch1_,
+-                                          remembered_set_action, save_fp_mode);
++                                          save_fp_mode);
+     }
+     if (must_save_lr_) {
+       __ Pop(ra);
+Index: chromium-104.0.5112.79/v8/src/wasm/baseline/riscv64/liftoff-assembler-riscv64.h
+===================================================================
+--- chromium-104.0.5112.79.orig/v8/src/wasm/baseline/riscv64/liftoff-assembler-riscv64.h
++++ chromium-104.0.5112.79/v8/src/wasm/baseline/riscv64/liftoff-assembler-riscv64.h
+@@ -511,7 +511,7 @@ void LiftoffAssembler::StoreTaggedPointe
+                 MemoryChunk::kPointersToHereAreInterestingMask, eq, &exit);
+   Add64(scratch, dst_op.rm(), dst_op.offset());
+   CallRecordWriteStubSaveRegisters(
+-      dst_addr, scratch, RememberedSetAction::kEmit, SaveFPRegsMode::kSave,
++      dst_addr, scratch, SaveFPRegsMode::kSave,
+       StubCallMode::kCallWasmRuntimeStub);
+   bind(&exit);
+ }

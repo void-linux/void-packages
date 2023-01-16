@@ -1,0 +1,569 @@
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/raw_context_cpu.h
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/raw_context_cpu.h
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/raw_context_cpu.h
+@@ -44,6 +44,8 @@ typedef MDRawContextARM RawContextCPU;
+ typedef MDRawContextARM64_Old RawContextCPU;
+ #elif defined(__mips__)
+ typedef MDRawContextMIPS RawContextCPU;
++#elif defined(__riscv)
++typedef MDRawContextRISCV64 RawContextCPU;
+ #else
+ #error "This code has not been ported to your platform yet."
+ #endif
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.cc
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.cc
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.cc
+@@ -270,7 +270,23 @@ void ThreadInfo::FillCPUContext(RawConte
+   out->float_save.fir = mcontext.fpc_eir;
+ #endif
+ }
+-#endif  // __mips__
++#elif defined(__riscv)
++
++uintptr_t ThreadInfo::GetInstructionPointer() const {
++  return mcontext.__gregs[REG_PC];
++}
++
++void ThreadInfo::FillCPUContext(RawContextCPU* out) const {
++  out->context_flags = MD_CONTEXT_RISCV64_FULL;
++
++  my_memcpy (out->iregs, mcontext.__gregs, MD_CONTEXT_RISCV64_GPR_COUNT * 8);
++
++  out->float_save.fcsr = mcontext.__fpregs.__d.__fcsr;
++  my_memcpy(&out->float_save.regs, &mcontext.__fpregs.__d.__f,
++      MD_FLOATINGSAVEAREA_RISCV64_FPR_COUNT * 8);
++}
++
++#endif  // __riscv
+ 
+ void ThreadInfo::GetGeneralPurposeRegisters(void** gp_regs, size_t* size) {
+   assert(gp_regs || size);
+@@ -279,6 +295,11 @@ void ThreadInfo::GetGeneralPurposeRegist
+     *gp_regs = mcontext.gregs;
+   if (size)
+     *size = sizeof(mcontext.gregs);
++#elif defined(__riscv)
++  if (gp_regs)
++    *gp_regs = mcontext.__gregs;
++  if (size)
++    *size = sizeof(mcontext.__gregs);
+ #else
+   if (gp_regs)
+     *gp_regs = &regs;
+@@ -294,6 +315,11 @@ void ThreadInfo::GetFloatingPointRegiste
+     *fp_regs = &mcontext.fpregs;
+   if (size)
+     *size = sizeof(mcontext.fpregs);
++#elif defined(__riscv)
++  if (fp_regs)
++    *fp_regs = &mcontext.__fpregs;
++  if (size)
++    *size = sizeof(mcontext.__fpregs);
+ #else
+   if (fp_regs)
+     *fp_regs = &fpregs;
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.h
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.h
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/thread_info.h
+@@ -68,7 +68,7 @@ struct ThreadInfo {
+   // Use the structures defined in <sys/user.h>
+   struct user_regs_struct regs;
+   struct user_fpsimd_struct fpregs;
+-#elif defined(__mips__)
++#elif defined(__mips__) || defined(__riscv)
+   // Use the structure defined in <sys/ucontext.h>.
+   mcontext_t mcontext;
+ #endif
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/ucontext_reader.cc
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/ucontext_reader.cc
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/dump_writer_common/ucontext_reader.cc
+@@ -254,6 +254,27 @@ void UContextReader::FillCPUContext(RawC
+   out->float_save.fir = uc->uc_mcontext.fpc_eir;  // Unused.
+ #endif
+ }
++
++#elif defined(__riscv)
++
++uintptr_t UContextReader::GetStackPointer(const ucontext_t* uc) {
++  return uc->uc_mcontext.__gregs[REG_SP];
++}
++
++uintptr_t UContextReader::GetInstructionPointer(const ucontext_t* uc) {
++  return uc->uc_mcontext.__gregs[REG_PC];
++}
++
++void UContextReader::FillCPUContext(RawContextCPU* out, const ucontext_t* uc) {
++  out->context_flags = MD_CONTEXT_RISCV64_FULL;
++
++  for (int i = 0; i < MD_CONTEXT_RISCV64_GPR_COUNT; ++i)
++    out->iregs[i] = uc->uc_mcontext.__gregs[i];
++
++  out->float_save.fcsr = uc->uc_mcontext.__fpregs.__d.__fcsr;
++  for (int i = 0; i < MD_FLOATINGSAVEAREA_RISCV64_FPR_COUNT; ++i)
++    out->float_save.regs[i] = uc->uc_mcontext.__fpregs.__d.__f[i];
++}
+ #endif
+ 
+ }  // namespace google_breakpad
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.cc
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.cc
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.cc
+@@ -461,7 +461,7 @@ bool ExceptionHandler::HandleSignal(int
+     memcpy(&g_crash_context_.float_state, fp_ptr,
+            sizeof(g_crash_context_.float_state));
+   }
+-#elif !defined(__ARM_EABI__) && !defined(__mips__)
++#elif !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+   // FP state is not part of user ABI on ARM Linux.
+   // In case of MIPS Linux FP state is already part of ucontext_t
+   // and 'float_state' is not a member of CrashContext.
+@@ -701,7 +701,7 @@ bool ExceptionHandler::WriteMinidump() {
+   }
+ #endif
+ 
+-#if !defined(__ARM_EABI__) && !defined(__aarch64__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__aarch64__) && !defined(__mips__) && !defined(__riscv)
+   // FPU state is not part of ARM EABI ucontext_t.
+   memcpy(&context.float_state, context.context.uc_mcontext.fpregs,
+          sizeof(context.float_state));
+@@ -726,6 +726,9 @@ bool ExceptionHandler::WriteMinidump() {
+ #elif defined(__mips__)
+   context.siginfo.si_addr =
+       reinterpret_cast<void*>(context.context.uc_mcontext.pc);
++#elif defined(__riscv)
++  context.siginfo.si_addr =
++      reinterpret_cast<void*>(context.context.uc_mcontext.__gregs[REG_PC]);
+ #else
+ #error "This code has not been ported to your platform yet."
+ #endif
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.h
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.h
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/handler/exception_handler.h
+@@ -192,7 +192,7 @@ class ExceptionHandler {
+     siginfo_t siginfo;
+     pid_t tid;  // the crashing thread.
+     ucontext_t context;
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+     // #ifdef this out because FP state is not part of user ABI for Linux ARM.
+     // In case of MIPS Linux FP state is already part of ucontext_t so
+     // 'float_state' is not required.
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/microdump_writer/microdump_writer.cc
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/client/linux/microdump_writer/microdump_writer.cc
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/microdump_writer/microdump_writer.cc
+@@ -138,7 +138,7 @@ class MicrodumpWriter {
+                   const MicrodumpExtraInfo& microdump_extra_info,
+                   LinuxDumper* dumper)
+       : ucontext_(context ? &context->context : NULL),
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+         float_state_(context ? &context->float_state : NULL),
+ #endif
+         dumper_(dumper),
+@@ -337,6 +337,12 @@ class MicrodumpWriter {
+ # else
+ #  error "This mips ABI is currently not supported (n32)"
+ #endif
++#elif defined(__riscv)
++# if __riscv_xlen == 64
++    const char kArch[] = "riscv64";
++# else
++#  error "This RISC-V ABI is currently not supported"
++#endif
+ #else
+ #error "This code has not been ported to your platform yet"
+ #endif
+@@ -409,7 +415,7 @@ class MicrodumpWriter {
+   void DumpCPUState() {
+     RawContextCPU cpu;
+     my_memset(&cpu, 0, sizeof(RawContextCPU));
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+     UContextReader::FillCPUContext(&cpu, ucontext_, float_state_);
+ #else
+     UContextReader::FillCPUContext(&cpu, ucontext_);
+@@ -605,7 +611,7 @@ class MicrodumpWriter {
+   void* Alloc(unsigned bytes) { return dumper_->allocator()->Alloc(bytes); }
+ 
+   const ucontext_t* const ucontext_;
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+   const google_breakpad::fpstate_t* const float_state_;
+ #endif
+   LinuxDumper* dumper_;
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_core_dumper.cc
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_core_dumper.cc
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_core_dumper.cc
+@@ -112,6 +112,9 @@ bool LinuxCoreDumper::GetThreadInfoByInd
+ #elif defined(__mips__)
+   stack_pointer =
+       reinterpret_cast<uint8_t*>(info->mcontext.gregs[MD_CONTEXT_MIPS_REG_SP]);
++#elif defined(__riscv)
++  stack_pointer =
++      reinterpret_cast<uint8_t*>(info->mcontext.__gregs[MD_CONTEXT_RISCV64_REG_SP]);
+ #else
+ #error "This code hasn't been ported to your platform yet."
+ #endif
+@@ -218,6 +221,8 @@ bool LinuxCoreDumper::EnumerateThreads()
+         info.mcontext.mdlo = status->pr_reg[EF_LO];
+         info.mcontext.mdhi = status->pr_reg[EF_HI];
+         info.mcontext.pc = status->pr_reg[EF_CP0_EPC];
++#elif defined(__riscv)
++        memcpy(info.mcontext.__gregs, status->pr_reg, sizeof(info.mcontext.__gregs));
+ #else  // __mips__
+         memcpy(&info.regs, status->pr_reg, sizeof(info.regs));
+ #endif  // __mips__
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_dumper.h
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_dumper.h
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_dumper.h
+@@ -63,7 +63,8 @@ namespace google_breakpad {
+  (defined(__mips__) && _MIPS_SIM == _ABIO32)
+ typedef Elf32_auxv_t elf_aux_entry;
+ #elif defined(__x86_64) || defined(__aarch64__) || \
+-     (defined(__mips__) && _MIPS_SIM != _ABIO32)
++     (defined(__mips__) && _MIPS_SIM != _ABIO32) || \
++     (defined(__riscv) && __riscv_xlen == 64)
+ typedef Elf64_auxv_t elf_aux_entry;
+ #endif
+ 
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_ptrace_dumper.cc
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_ptrace_dumper.cc
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/minidump_writer/linux_ptrace_dumper.cc
+@@ -298,6 +298,9 @@ bool LinuxPtraceDumper::GetThreadInfoByI
+ #elif defined(__mips__)
+   stack_pointer =
+       reinterpret_cast<uint8_t*>(info->mcontext.gregs[MD_CONTEXT_MIPS_REG_SP]);
++#elif defined(__riscv)
++  stack_pointer =
++      reinterpret_cast<uint8_t*>(info->mcontext.__gregs[MD_CONTEXT_RISCV64_REG_SP]);
+ #else
+ #error "This code hasn't been ported to your platform yet."
+ #endif
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/minidump_writer/minidump_writer.cc
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/client/linux/minidump_writer/minidump_writer.cc
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/minidump_writer/minidump_writer.cc
+@@ -136,7 +136,7 @@ class MinidumpWriter {
+       : fd_(minidump_fd),
+         path_(minidump_path),
+         ucontext_(context ? &context->context : NULL),
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+         float_state_(context ? &context->float_state : NULL),
+ #endif
+         dumper_(dumper),
+@@ -468,7 +468,7 @@ class MinidumpWriter {
+         if (!cpu.Allocate())
+           return false;
+         my_memset(cpu.get(), 0, sizeof(RawContextCPU));
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+         UContextReader::FillCPUContext(cpu.get(), ucontext_, float_state_);
+ #else
+         UContextReader::FillCPUContext(cpu.get(), ucontext_);
+@@ -897,7 +897,7 @@ class MinidumpWriter {
+     dirent->location.rva = 0;
+   }
+ 
+-#if defined(__i386__) || defined(__x86_64__) || defined(__mips__)
++#if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || defined(__riscv)
+   bool WriteCPUInformation(MDRawSystemInfo* sys_info) {
+     char vendor_id[sizeof(sys_info->cpu.x86_cpu_info.vendor_id) + 1] = {0};
+     static const char vendor_id_name[] = "vendor_id";
+@@ -925,6 +925,12 @@ class MinidumpWriter {
+ # else
+ #  error "This mips ABI is currently not supported (n32)"
+ #endif
++#elif defined(__riscv)
++# if __riscv_xlen == 64
++	MD_CPU_ARCHITECTURE_RISCV64;
++# else
++#  error "This RISC-V ABI is currently not supported"
++# endif
+ #elif defined(__i386__)
+         MD_CPU_ARCHITECTURE_X86;
+ #else
+@@ -1333,7 +1339,7 @@ class MinidumpWriter {
+   const char* path_;  // Path to the file where the minidum should be written.
+ 
+   const ucontext_t* const ucontext_;  // also from the signal handler
+-#if !defined(__ARM_EABI__) && !defined(__mips__)
++#if !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+   const google_breakpad::fpstate_t* const float_state_;  // ditto
+ #endif
+   LinuxDumper* dumper_;
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/minidump_writer/minidump_writer.h
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/client/linux/minidump_writer/minidump_writer.h
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/client/linux/minidump_writer/minidump_writer.h
+@@ -48,7 +48,7 @@ class ExceptionHandler;
+ 
+ #if defined(__aarch64__)
+ typedef struct fpsimd_context fpstate_t;
+-#elif !defined(__ARM_EABI__) && !defined(__mips__)
++#elif !defined(__ARM_EABI__) && !defined(__mips__) && !defined(__riscv)
+ typedef std::remove_pointer<fpregset_t>::type fpstate_t;
+ #endif
+ 
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/common/linux/breakpad_getcontext.S
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/common/linux/breakpad_getcontext.S
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/common/linux/breakpad_getcontext.S
+@@ -527,6 +527,68 @@ breakpad_getcontext:
+   .cfi_endproc
+   .size breakpad_getcontext, . - breakpad_getcontext
+ 
++#elif defined(__riscv) && __riscv_xlen == 64
++
++#define __NR_rt_sigprocmask 135
++#define _NSIG8 64 / 8
++#define SIG_BLOCK 0
++
++  .text
++  .global breakpad_getcontext
++  .hidden breakpad_getcontext
++  .type breakpad_getcontext, @function
++  .align 2
++breakpad_getcontext:
++  sd ra, MCONTEXT_GREGS_OFFSET + 0*8(a0)
++  sd ra, MCONTEXT_GREGS_OFFSET + 1*8(a0)
++  sd sp, MCONTEXT_GREGS_OFFSET + 2*8(a0)
++  sd s0, MCONTEXT_GREGS_OFFSET + 8*8(a0)
++  sd s1, MCONTEXT_GREGS_OFFSET + 9*8(a0)
++  sd x0, MCONTEXT_GREGS_OFFSET + 10*8(a0)	/* return 0 by overwriting a0.  */
++  sd s2, MCONTEXT_GREGS_OFFSET + 18*8(a0)
++  sd s3, MCONTEXT_GREGS_OFFSET + 19*8(a0)
++  sd s4, MCONTEXT_GREGS_OFFSET + 20*8(a0)
++  sd s5, MCONTEXT_GREGS_OFFSET + 21*8(a0)
++  sd s6, MCONTEXT_GREGS_OFFSET + 22*8(a0)
++  sd s7, MCONTEXT_GREGS_OFFSET + 23*8(a0)
++  sd s8, MCONTEXT_GREGS_OFFSET + 24*8(a0)
++  sd s9, MCONTEXT_GREGS_OFFSET + 25*8(a0)
++  sd s10, MCONTEXT_GREGS_OFFSET + 26*8(a0)
++  sd s11, MCONTEXT_GREGS_OFFSET + 27*8(a0)
++
++#ifndef __riscv_float_abi_soft
++  frsr	a1
++
++  fsd fs0, MCONTEXT_FPREGS_OFFSET + 8*8(a0)
++  fsd fs1, MCONTEXT_FPREGS_OFFSET + 9*8(a0)
++  fsd fs2, MCONTEXT_FPREGS_OFFSET + 18*8(a0)
++  fsd fs3, MCONTEXT_FPREGS_OFFSET + 19*8(a0)
++  fsd fs4, MCONTEXT_FPREGS_OFFSET + 20*8(a0)
++  fsd fs5, MCONTEXT_FPREGS_OFFSET + 21*8(a0)
++  fsd fs6, MCONTEXT_FPREGS_OFFSET + 22*8(a0)
++  fsd fs7, MCONTEXT_FPREGS_OFFSET + 23*8(a0)
++  fsd fs8, MCONTEXT_FPREGS_OFFSET + 24*8(a0)
++  fsd fs9, MCONTEXT_FPREGS_OFFSET + 25*8(a0)
++  fsd fs10, MCONTEXT_FPREGS_OFFSET + 26*8(a0)
++  fsd fs11, MCONTEXT_FPREGS_OFFSET + 27*8(a0)
++
++  sw	a1, MCONTEXT_FSR_OFFSET(a0)
++#endif /* __riscv_float_abi_soft */
++
++/* rt_sigprocmask (SIG_BLOCK, NULL, &ucp->uc_sigmask, _NSIG / 8) */
++  li	a3, _NSIG8
++  add	a2, a0, UCONTEXT_SIGMASK_OFFSET
++  mv	a1, zero
++  li	a0, SIG_BLOCK
++
++  li	a7, __NR_rt_sigprocmask
++  scall
++
++  /* Always return 0 for success, even if sigprocmask failed. */
++  mv	a0, zero
++  ret
++  .size breakpad_getcontext, . - breakpad_getcontext
++
+ #else
+ #error "This file has not been ported for your CPU!"
+ #endif
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/common/linux/memory_mapped_file.cc
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/common/linux/memory_mapped_file.cc
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/common/linux/memory_mapped_file.cc
+@@ -65,7 +65,8 @@ bool MemoryMappedFile::Map(const char* p
+   }
+ 
+ #if defined(__x86_64__) || defined(__aarch64__) || \
+-   (defined(__mips__) && _MIPS_SIM == _ABI64)
++   (defined(__mips__) && _MIPS_SIM == _ABI64) || \
++   (defined(__riscv) && __riscv_xlen == 64)
+ 
+   struct kernel_stat st;
+   if (sys_fstat(fd, &st) == -1 || st.st_size < 0) {
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/common/linux/ucontext_constants.h
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/common/linux/ucontext_constants.h
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/common/linux/ucontext_constants.h
+@@ -146,6 +146,14 @@
+ #endif
+ #define FPREGS_OFFSET_MXCSR  24
+ 
++#elif defined(__riscv)
++
++#define UCONTEXT_SIGMASK_OFFSET   40
++
++#define MCONTEXT_GREGS_OFFSET     176
++#define MCONTEXT_FPREGS_OFFSET    432
++#define MCONTEXT_FSR_OFFSET       (MCONTEXT_FPREGS_OFFSET + 32*8)
++
+ #else
+ #error "This header has not been ported for your CPU"
+ #endif
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/google_breakpad/common/minidump_cpu_riscv64.h
+===================================================================
+--- /dev/null
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/google_breakpad/common/minidump_cpu_riscv64.h
+@@ -0,0 +1,121 @@
++/* Copyright 2013 Google Inc.
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *
++ *     * Redistributions of source code must retain the above copyright
++ * notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above
++ * copyright notice, this list of conditions and the following disclaimer
++ * in the documentation and/or other materials provided with the
++ * distribution.
++ *     * Neither the name of Google Inc. nor the names of its
++ * contributors may be used to endorse or promote products derived from
++ * this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
++
++/* minidump_format.h: A cross-platform reimplementation of minidump-related
++ * portions of DbgHelp.h from the Windows Platform SDK.
++ *
++ * (This is C99 source, please don't corrupt it with C++.)
++ *
++ * This file contains the necessary definitions to read minidump files
++ * produced on ARM.  These files may be read on any platform provided
++ * that the alignments of these structures on the processing system are
++ * identical to the alignments of these structures on the producing system.
++ * For this reason, precise-sized types are used.  The structures defined
++ * by this file have been laid out to minimize alignment problems by
++ * ensuring that all members are aligned on their natural boundaries.
++ * In some cases, tail-padding may be significant when different ABIs specify
++ * different tail-padding behaviors.  To avoid problems when reading or
++ * writing affected structures, MD_*_SIZE macros are provided where needed,
++ * containing the useful size of the structures without padding.
++ *
++ * Structures that are defined by Microsoft to contain a zero-length array
++ * are instead defined here to contain an array with one element, as
++ * zero-length arrays are forbidden by standard C and C++.  In these cases,
++ * *_minsize constants are provided to be used in place of sizeof.  For a
++ * cleaner interface to these sizes when using C++, see minidump_size.h.
++ *
++ * These structures are also sufficient to populate minidump files.
++ *
++ * Because precise data type sizes are crucial for this implementation to
++ * function properly and portably, a set of primitive types with known sizes
++ * are used as the basis of each structure defined by this file.
++ *
++ * Author: Colin Blundell
++ */
++
++/*
++ * RISCV64 support
++ */
++
++#ifndef GOOGLE_BREAKPAD_COMMON_MINIDUMP_CPU_RISCV64_H__
++#define GOOGLE_BREAKPAD_COMMON_MINIDUMP_CPU_RISCV64_H__
++
++#include "google_breakpad/common/breakpad_types.h"
++
++#define MD_FLOATINGSAVEAREA_RISCV64_FPR_COUNT 32
++#define MD_CONTEXT_RISCV64_GPR_COUNT 32
++
++typedef struct {
++  /* 32 64-bit floating point registers, f0 .. f31. */
++  uint64_t regs[MD_FLOATINGSAVEAREA_RISCV64_FPR_COUNT];
++
++  uint32_t fcsr;       /* FPU control and status register */
++} MDFloatingSaveAreaRISCV64;
++
++/* For (MDRawContextRISCV64).context_flags.  These values indicate the type of
++ * context stored in the structure. */
++#define MD_CONTEXT_RISCV64 0x00400000
++#define MD_CONTEXT_RISCV64_CONTROL (MD_CONTEXT_RISCV64 | 0x00000001)
++#define MD_CONTEXT_RISCV64_INTEGER (MD_CONTEXT_RISCV64 | 0x00000002)
++#define MD_CONTEXT_RISCV64_FLOATING_POINT (MD_CONTEXT_RISCV64 | 0x00000004)
++#define MD_CONTEXT_RISCV64_DEBUG (MD_CONTEXT_RISCV64 | 0x00000008)
++#define MD_CONTEXT_RISCV64_FULL (MD_CONTEXT_RISCV64_CONTROL | \
++                               MD_CONTEXT_RISCV64_INTEGER | \
++                               MD_CONTEXT_RISCV64_FLOATING_POINT)
++#define MD_CONTEXT_RISCV64_ALL (MD_CONTEXT_RISCV64_FULL | MD_CONTEXT_RISCV64_DEBUG)
++
++typedef struct {
++  /* Determines which fields of this struct are populated */
++  uint32_t context_flags;
++
++  /* 32 64-bit integer registers, x1 .. x31 + the PC
++   * Note the following fixed uses:
++   *   x8 is the frame pointer
++   *   x1 is the link register
++   *   x2 is the stack pointer
++   *   The PC is effectively x0.
++   */
++  uint64_t iregs[MD_CONTEXT_RISCV64_GPR_COUNT];
++
++  /* The next field is included with MD_CONTEXT64_ARM_FLOATING_POINT */
++  MDFloatingSaveAreaRISCV64 float_save;
++
++} MDRawContextRISCV64;
++
++/* Indices into iregs for registers with a dedicated or conventional
++ * purpose.
++ */
++enum MDRISCV64RegisterNumbers {
++  MD_CONTEXT_RISCV64_REG_FP     = 8,
++  MD_CONTEXT_RISCV64_REG_RA     = 1,
++  MD_CONTEXT_RISCV64_REG_SP     = 2,
++  MD_CONTEXT_RISCV64_REG_PC     = 0
++};
++
++#endif  /* GOOGLE_BREAKPAD_COMMON_MINIDUMP_CPU_RISCV64_H__ */
+Index: chromium-102.0.5005.61/third_party/breakpad/breakpad/src/google_breakpad/common/minidump_format.h
+===================================================================
+--- chromium-102.0.5005.61.orig/third_party/breakpad/breakpad/src/google_breakpad/common/minidump_format.h
++++ chromium-102.0.5005.61/third_party/breakpad/breakpad/src/google_breakpad/common/minidump_format.h
+@@ -118,6 +118,7 @@ typedef struct {
+ #include "minidump_cpu_mips.h"
+ #include "minidump_cpu_ppc.h"
+ #include "minidump_cpu_ppc64.h"
++#include "minidump_cpu_riscv64.h"
+ #include "minidump_cpu_sparc.h"
+ #include "minidump_cpu_x86.h"
+ 
+@@ -660,6 +661,7 @@ typedef enum {
+   MD_CPU_ARCHITECTURE_PPC64     = 0x8002, /* Breakpad-defined value for PPC64 */
+   MD_CPU_ARCHITECTURE_ARM64_OLD = 0x8003, /* Breakpad-defined value for ARM64 */
+   MD_CPU_ARCHITECTURE_MIPS64    = 0x8004, /* Breakpad-defined value for MIPS64 */
++  MD_CPU_ARCHITECTURE_RISCV64   = 0x8005, /* Breakpad-defined value for RISCV64 */
+   MD_CPU_ARCHITECTURE_UNKNOWN   = 0xffff  /* PROCESSOR_ARCHITECTURE_UNKNOWN */
+ } MDCPUArchitecture;
+ 
