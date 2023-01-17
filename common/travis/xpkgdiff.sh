@@ -2,7 +2,7 @@
 #
 # xpkgdiff.sh
 
-export XBPS_DISTDIR=/hostrepo XBPS_HOSTDIR="$HOME/hostdir"
+export XBPS_TARGET_ARCH="$2" XBPS_DISTDIR=/hostrepo XBPS_HOSTDIR="$HOME/hostdir"
 export DIFF='diff --unified=0 --report-identical-files --suppress-common-lines
  --color=always --label REPO --label BUILT'
 ARGS="-a $2 -R https://repo-ci.voidlinux.org/current"
