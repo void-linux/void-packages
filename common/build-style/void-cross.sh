@@ -321,7 +321,9 @@ _void_cross_build_musl() {
 
 	CFLAGS="-pipe -fPIC ${cross_musl_cflags}" \
 	CPPFLAGS="${cross_musl_cflags}" LDFLAGS="${cross_musl_ldflags}" \
-	${tgt}-gcc $CFLAGS $LDFLAGS -fpie $CPPFLAGS $CFLAGS -c ${XBPS_SRCPKGDIR}/musl/files/__stack_chk_fail_local.c -o __stack_chk_fail_local.o
+	${tgt}-gcc -pipe -fPIC ${cross_musl_cflags} ${cross_musl_ldflags} -fpie \
+		-c ${XBPS_SRCPKGDIR}/musl/files/__stack_chk_fail_local.c \
+		-o __stack_chk_fail_local.o
 	${tgt}-ar r libssp_nonshared.a __stack_chk_fail_local.o
 	cp libssp_nonshared.a ${wrksrc}/build_root/usr/${tgt}/usr/lib
 
