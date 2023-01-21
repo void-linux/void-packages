@@ -1,5 +1,6 @@
 /*	$NetBSD: tree.h,v 1.20 2013/09/14 13:20:45 joerg Exp $	*/
 /*	$OpenBSD: tree.h,v 1.13 2011/07/09 00:19:45 pirofti Exp $	*/
+/*	Modified by Void Linux. */
 /*
  * Copyright 2002 Niels Provos <provos@citi.umich.edu>
  * All rights reserved.
@@ -27,6 +28,20 @@
 
 #ifndef	_SYS_TREE_H_
 #define	_SYS_TREE_H_
+
+#ifdef __GNUC__
+#define	__GNUC_PREREQ__(x, y)						\
+	((__GNUC__ == (x) && __GNUC_MINOR__ >= (y)) ||			\
+	 (__GNUC__ > (x)))
+#else
+#define	__GNUC_PREREQ__(x, y)	0
+#endif
+
+#if __GNUC_PREREQ__(2, 7) || defined(__lint__)
+#define	_sys_tree_h_unused	__attribute__((__unused__))
+#else
+#define	_sys_tree_h_unused	/* delete */
+#endif
 
 /*
  * This file defines data structures for different types of trees:
@@ -130,7 +145,7 @@ name##_SPLAY_FIND(struct name *head, struct type *elm)			\
 	return (NULL);							\
 }									\
 									\
-static __inline __unused struct type *					\
+static __inline _sys_tree_h_unused struct type *			\
 name##_SPLAY_NEXT(struct name *head, struct type *elm)			\
 {									\
 	name##_SPLAY(head, elm);					\
@@ -144,7 +159,7 @@ name##_SPLAY_NEXT(struct name *head, struct type *elm)			\
 	return (elm);							\
 }									\
 									\
-static __unused __inline struct type *					\
+static _sys_tree_h_unused __inline struct type *			\
 name##_SPLAY_MIN_MAX(struct name *head, int val)			\
 {									\
 	name##_SPLAY_MINMAX(head, val);					\
@@ -377,7 +392,7 @@ struct {								\
 #define RB_PROTOTYPE(name, type, field, cmp)				\
 	RB_PROTOTYPE_INTERNAL(name, type, field, cmp,)
 #define	RB_PROTOTYPE_STATIC(name, type, field, cmp)			\
-	RB_PROTOTYPE_INTERNAL(name, type, field, cmp, __unused static)
+	RB_PROTOTYPE_INTERNAL(name, type, field, cmp, _sys_tree_h_unused static)
 #define RB_PROTOTYPE_INTERNAL(name, type, field, cmp, attr)		\
 attr void name##_RB_INSERT_COLOR(struct name *, struct type *);		\
 attr void name##_RB_REMOVE_COLOR(struct name *, struct type *, struct type *);\
@@ -396,7 +411,7 @@ attr struct type *name##_RB_MINMAX(struct name *, int);			\
 #define	RB_GENERATE(name, type, field, cmp)				\
 	RB_GENERATE_INTERNAL(name, type, field, cmp,)
 #define	RB_GENERATE_STATIC(name, type, field, cmp)			\
-	RB_GENERATE_INTERNAL(name, type, field, cmp, __unused static)
+	RB_GENERATE_INTERNAL(name, type, field, cmp, _sys_tree_h_unused static)
 #define RB_GENERATE_INTERNAL(name, type, field, cmp, attr)		\
 attr void								\
 name##_RB_INSERT_COLOR(struct name *head, struct type *elm)		\
