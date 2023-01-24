@@ -54,14 +54,7 @@ contents_cksum() {
 		fi
 		;;
 	rpm)
-		if command -v rpmextract &>/dev/null; then
-			cksum=$($XBPS_DIGEST_CMD <(rpm2cpio "$curfile" | $TAR_CMD -x -f -))
-			if [ $? -ne 0 ]; then
-				msg_error "$pkgver: extracting $curfile to pipe.\n"
-			fi
-		else
-			msg_error "$pkgver: cannot find rpmextract for extraction.\n"
-		fi
+		msg_error "$pkgver: contents checksum not support for rpm.\n"
 		;;
 	txt)
 		cksum=$($XBPS_DIGEST_CMD "$curfile")
