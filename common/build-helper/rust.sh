@@ -12,7 +12,7 @@ if [ "$CROSS_BUILD" ]; then
 	_XBPS_CROSS_RUST_TARGET_ENV="${_XBPS_CROSS_RUST_TARGET_ENV//-/_}"
 	export CARGO_TARGET_${_XBPS_CROSS_RUST_TARGET_ENV}_LINKER="$CC"
 	unset _XBPS_CROSS_RUST_TARGET_ENV
-	
+
 	# Define equivalent of TOML config in environment
 	# [build]
 	# target = ${RUST_TARGET}
@@ -39,7 +39,7 @@ export GETTEXT_LIB_DIR="${XBPS_CROSS_BASE}/usr/lib/gettext"
 export GETTEXT_INCLUDE_DIR="${XBPS_CROSS_BASE}/usr/include"
 
 # libssh2-sys
-export LIBSSH2_SYS_USE_PKG_CONFIG=1 
+export LIBSSH2_SYS_USE_PKG_CONFIG=1
 
 # sodium-sys
 export SODIUM_LIB_DIR="${XBPS_CROSS_BASE}/usr/include"
