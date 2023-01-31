@@ -1,7 +1,7 @@
 #
 # Common variables that can be used by xbps-src.
 #
-# SITE used for ditfiles mirrors. For use in $distfiles.
+# SITE used for distfiles mirrors. For use in $distfiles.
 set -a
 
 SOURCEFORGE_SITE="https://downloads.sourceforge.net/sourceforge"

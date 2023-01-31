@@ -89,7 +89,7 @@ PATH=/void-packages:/usr/bin
 exec env -i -- SHELL=/bin/sh PATH="\$PATH" DISTCC_HOSTS="\$XBPS_DISTCC_HOSTS" DISTCC_DIR="/host/distcc" \
     ${XBPS_ARCH+XBPS_ARCH=$XBPS_ARCH} ${XBPS_CHECK_PKGS+XBPS_CHECK_PKGS=$XBPS_CHECK_PKGS} \
     CCACHE_DIR="/host/ccache" IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 TERM=linux HOME="/tmp" \
-    PS1="[\u@$XBPS_MASTERDIR \W]$ " /bin/bash +h
+    PS1="[\u@$XBPS_MASTERDIR \W]$ " /bin/bash +h "\$@"
 _EOF
 
     chmod 755 $XBPS_MASTERDIR/bin/xbps-shell
@@ -165,6 +165,11 @@ chroot_handler() {
     else
         env -i -- PATH="/usr/bin:$PATH" SHELL=/bin/sh \
             HOME=/tmp IN_CHROOT=1 LC_COLLATE=C LANG=en_US.UTF-8 \
+            ${http_proxy:+http_proxy="${http_proxy}"} \
+            ${https_proxy:+https_proxy="${https_proxy}"} \
+            ${ftp_proxy:+ftp_proxy="${ftp_proxy}"} \
+            ${all_proxy:+all_proxy="${all_proxy}"} \
+            ${no_proxy:+no_proxy="${no_proxy}"} \
             ${HTTP_PROXY:+HTTP_PROXY="${HTTP_PROXY}"} \
             ${HTTPS_PROXY:+HTTPS_PROXY="${HTTPS_PROXY}"} \
             ${FTP_PROXY:+FTP_PROXY="${FTP_PROXY}"} \

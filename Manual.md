@@ -906,8 +906,8 @@ should be passed in via `configure_args`.
 
 - `fetch` For packages that only fetch files and are installed as is via `do_install()`.
 
-- `gnu-configure` For packages that use GNU configure scripts, additional configuration
-arguments can be passed in via `configure_args`.
+- `gnu-configure` For packages that use GNU autotools-compatible configure scripts,
+additional configuration arguments can be passed in via `configure_args`.
 
 - `gnu-makefile` For packages that use GNU make, build arguments can be passed in via
 `make_build_args` and install arguments via `make_install_args`. The build

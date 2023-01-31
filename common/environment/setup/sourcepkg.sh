@@ -2,7 +2,7 @@
 # the package template (excluding subpackages).
 
 # Exported variables
-for var in $(env | sed -e 's/=.*//'); do
+for var in $(awk 'BEGIN{for (i in ENVIRON) {print i}}' </dev/null); do
 	# Those variables in chroot.sh will be kept
 	case "$var" in
 	XBPS_* | IN_CHROOT | CHROOT_READY | SOURCE_DATE_EPOCH)
@@ -12,7 +12,7 @@ for var in $(env | sed -e 's/=.*//'); do
 		;;
 	KERNEL_SITE | CPAN_SITE | PYPI_SITE | MOZILLA_SITE | GNU_SITE)
 		;;
-	FREEDESKTOP_SITE | KDE_SITE | VIDEOLAN_SITE)
+	FREEDESKTOP_SITE | KDE_SITE | VIDEOLAN_SITE | UBUNTU_SITE)
 		;;
 	_ | PWD | SHLVL | USER | PATH | SHELL | HOME | LC_COLLATE | LANG | TERM | PS1)
 		# known variables for shell
@@ -24,6 +24,8 @@ for var in $(env | sed -e 's/=.*//'); do
 	HTTP_PROXY | HTTPS_PROXY | SOCKS_PROXY | NO_PROXY | HTTP_PROXY_AUTH)
 		;;
 	FTP_PROXY | FTP_RETRIES)
+		;;
+	http_proxy | https_proxy | ftp_proxy | all_proxy | no_proxy)
 		;;
 	*)
 		unset -v "$var"
