@@ -1,0 +1,1008 @@
+From 538d05ed26f830522597c2623894a2193785abaf Mon Sep 17 00:00:00 2001
+From: Ariya Hidayat <ariya.hidayat@gmail.com>
+Date: Fri, 29 Nov 2019 22:29:15 -0800
+Subject: [PATCH 4/4] Use CMake build system (#15397)
+
+---
+ .gitignore                        |  15 ++
+ CMakeLists.txt                    |  34 ++++
+ INSTALL                           |  46 +++++
+ configure                         | 317 ++++++++++++++++++++++++++++++
+ deploy/.gitignore                 |   2 -
+ deploy/README.md                  |  44 -----
+ deploy/brandelf.c                 | 212 --------------------
+ deploy/build-and-package.sh       |   6 -
+ deploy/docker-build.sh            |  62 ------
+ deploy/package.sh                 | 120 -----------
+ phantomjs.pro                     |   3 -
+ src/linenoise/linenoise.pri       |   9 -
+ src/mongoose/mongoose.pri         |   7 -
+ src/qcommandline/qcommandline.pri |   7 -
+ 14 files changed, 412 insertions(+), 472 deletions(-)
+ create mode 100644 CMakeLists.txt
+ create mode 100644 INSTALL
+ create mode 100755 configure
+ delete mode 100644 deploy/.gitignore
+ delete mode 100644 deploy/README.md
+ delete mode 100644 deploy/brandelf.c
+ delete mode 100755 deploy/build-and-package.sh
+ delete mode 100755 deploy/docker-build.sh
+ delete mode 100755 deploy/package.sh
+ delete mode 100644 phantomjs.pro
+ delete mode 100644 src/linenoise/linenoise.pri
+ delete mode 100644 src/mongoose/mongoose.pri
+ delete mode 100644 src/qcommandline/qcommandline.pri
+
+diff --git a/.gitignore b/.gitignore
+index 7c8a9c08a..53ef2055d 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -60,3 +60,18 @@ bin/
+ *.class
+ build/
+ .gradle/
++
++# CMake
++CMakeLists.txt.user
++CMakeCache.txt
++CMakeFiles
++CMakeScripts
++Testing
++Makefile
++cmake_install.cmake
++install_manifest.txt
++compile_commands.json
++CTestTestfile.cmake
++_deps
++*_autogen
++
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+new file mode 100644
+index 000000000..c23e11f49
+--- /dev/null
++++ b/CMakeLists.txt
+@@ -0,0 +1,34 @@
++cmake_minimum_required(VERSION 3.5.0)
++project(phantomjs)
++
++set (CMAKE_CXX_STANDARD 11)
++
++find_package(Qt5 COMPONENTS Core Network WebKitWidgets REQUIRED)
++find_package(Threads REQUIRED)
++
++message("Using Qt version ${Qt5Core_VERSION}")
++if (Qt5Core_VERSION VERSION_LESS 5.5.0)
++  message(FATAL_ERROR "This version of Qt is not supported. Please use Qt 5.5 or later")
++endif()
++
++set(CMAKE_AUTOMOC ON)
++set(CMAKE_AUTORCC ON)
++
++set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
++
++file(GLOB_RECURSE PHANTOMJS_SOURCES src/*.cpp)
++include_directories(src)
++set(CMAKE_INCLUDE_CURRENT_DIR ON)
++
++set(THIRDPARTY_SOURCES src/mongoose/mongoose.c src/qcommandline/qcommandline.cpp src/linenoise/src/linenoise.c)
++include_directories(src/linenoise/src)
++include_directories(src/mongoose)
++include_directories(src/qcommandline)
++
++set(EXTRA_LIBS dl)
++
++add_executable(${PROJECT_NAME} src/phantomjs.qrc src/ghostdriver/ghostdriver.qrc ${PHANTOMJS_SOURCES} ${THIRDPARTY_SOURCES})
++target_link_libraries(${PROJECT_NAME} ${EXTRA_LIBS} Qt5::Core Qt5::Network Qt5::WebKitWidgets Threads::Threads)
++install(TARGETS ${PROJECT_NAME} DESTINATION bin)
++
++add_custom_target(check COMMAND python test/run-tests.py -v)
+diff --git a/INSTALL b/INSTALL
+new file mode 100644
+index 000000000..6c8b5ea65
+--- /dev/null
++++ b/INSTALL
+@@ -0,0 +1,46 @@
++Installation Instructions
++*************************
++
++System requirements:
++
++  * C++ toolchain such as g++ 7 or later
++  * CMake version 3.5 or later
++  * Qt 5 toolkit
++  * Python 2.7 (to run the tests)
++
++
++Installation on Linux
++---------------------
++
++On Debian/Ubuntu, the requirements can be fulfilled by installing these packages:
++
++  sudo apt install g++ cmake qt5-default libqt5webkit5-dev python
++
++After unpacking the source tarball or cloning the repository:
++
++  ./configure && make
++
++Do a quick sanity check:
++
++  ./bin/phantomjs --version
++
++Run the test suite:
++
++  make check
++
++Install it (may require sudo):
++
++  make install
++
++
++Installation on Windows
++-----------------------
++
++To be written.
++
++
++Installation on macOS
++---------------------
++
++To be written.
++
+diff --git a/configure b/configure
+new file mode 100755
+index 000000000..a8a75d566
+--- /dev/null
++++ b/configure
+@@ -0,0 +1,317 @@
++#!/bin/sh
++
++# Autotools-style (./configure) wrapper for CMake
++# <https://github.com/nemequ/configure-cmake>
++#
++#   *** IMPORTANT ***
++#
++#   You must include the GNUInstallDirs module (which comes with
++#   CMake) in your project.  Just put "include (GNUInstallDirs)" in
++#   you CMakeLists.txt and you should be good.
++#
++# This script was originally written for Squash
++# <https://quixdb.github.io/squash/> by Evan Nemerson
++# <evan@nemerson.com>, but has been spun off into a separate
++# repository.  Please feel free to copy it into your own repository,
++# though I would appreciate it if you would post improvements, bugs,
++# feature requests, etc. to the issue tracker at
++# <https://github.com/nemequ/configure-cmake/issues>.
++#
++# To the extent possible under law, the author(s) hereby waive all
++# copyright and related or neighboring rights to this work.  For
++# details, see <https://creativecommons.org/publicdomain/zero/1.0/>
++
++TOP_SRCDIR="$(dirname $0)"
++
++if [ "${CMAKE_CMD}" = "" ]; then
++    CMAKE_CMD="cmake"
++fi
++
++BUILD_TYPE="Debug"
++PREFIX=/usr/local
++LIBDIR=
++CMAKE_ARGS=
++
++if [ -e "${TOP_SRCDIR}/.configure-custom.sh" ]; then
++    . "${TOP_SRCDIR}/.configure-custom.sh"
++fi
++
++quote() {
++    echo "$1" | sed -e "s|'|'\\\\''|g; 1s/^/'/; \$s/\$/'/"
++}
++
++extract_var_string() {
++    VAR_NAME=$1
++    VAR_NAME=$(echo $1 | sed -e 's/[ \t]*$//')
++    if [ "x$2" != "x" ]; then
++        VAR_VALUE=$2
++    else
++        VAR_VALUE=yes
++    fi
++
++    if [ "x$3" != "x" ]; then
++        VAR_UC_NAME=$3
++    else
++        VAR_UC_NAME=$(echo "$1" | tr '[:lower:]' '[:upper:]' | tr -c '[:alnum:]' '_' | sed 's/_$//g')
++    fi
++}
++
++set_config_var() {
++    is_with=n
++    case "$1" in
++        "--enable-"*)
++            name="${1#--enable-}"
++            cfg="${ENABLE_VARS}"
++            ;;
++        "--disable-"*)
++            name="${1#--disable-}";
++            cfg="${DISABLE_VARS}";
++            ;;
++        "--with-"*)
++            # IFS="=" read -ra WITHARGS <<< "${1}"
++            name="${1#--with-}"
++            cfg="${WITH_VARS}"
++            is_with=y
++            ;;
++    esac
++
++    found=n
++    for varstring in $cfg; do
++        extract_var_string $(echo "${varstring}" | tr '|' ' ')
++        if [ "x$VAR_NAME" = "x$name" ]; then
++            found=y
++            break;
++        fi
++    done
++
++    if [ "$found" = "y" ]; then
++        if [ "x$is_with" = "xy" ]; then
++            CMAKE_ARGS="$CMAKE_ARGS -D${VAR_UC_NAME}=$(quote "$2")"
++        else
++            CMAKE_ARGS="$CMAKE_ARGS -D${VAR_UC_NAME}=$(quote "${VAR_VALUE}")"
++        fi
++    else
++        echo "Unknown parameter: ${1}"
++        exit 1
++    fi
++}
++
++prefix_to_offset() {
++    expr $(echo "${1}" | awk '{ print length }') + 1
++}
++
++print_help() {
++    cat <<EOF >&2
++  -h, --help              display this help and exit
++  --disable-debug         disable debugging mode
++  --pass-thru             pass remaining arguments through to CMake
++
++  --prefix=PREFIX         install architecture-independent files in PREFIX
++                          [$PREFIX]
++  --bindir=DIR            user executables [PREFIX/bin]
++  --sbindir=DIR           system admin executables [PREFIX/sbin]
++  --libexecdir=DIR        program executables [PREFIX/libexec]
++  --sysconfdir=DIR        read-only single-machine data [PREFIX/etc]
++  --sharedstatedir=DIR    modifiable architecture-independent data [PREFIX/com]
++  --localstatedir=DIR     modifiable single-machine data [PREFIX/var]
++  --libdir=DIR            object code libraries [PREFIX/lib]
++  --includedir=DIR        C header files [PREFIX/include]
++  --oldincludedir=DIR     C header files for non-gcc [/usr/include]
++  --datarootdir=DIR       read-only arch.-independent data root [PREFIX/share]
++  --datadir=DIR           read-only architecture-independent data [DATAROOTDIR]
++  --infodir=DIR           info documentation [DATAROOTDIR/info]
++  --localedir=DIR         locale-dependent data [DATAROOTDIR/locale]
++  --mandir=DIR            man documentation [DATAROOTDIR/man]
++  --docdir=DIR            documentation root [DATAROOTDIR/doc/PROJECT_NAME]
++EOF
++
++    first=y
++    for varstring in ${ENABLE_VARS}; do
++        if [ $first = 'y' ]; then
++            echo ""
++            first=n
++        fi
++        extract_var_string $(echo "${varstring}" | tr '|' ' ')
++        var_doc_name="ENABLE_${VAR_UC_NAME}_DOC"
++        eval "docstring=\$$var_doc_name"
++        if [ "x${docstring}" = "x" ]; then
++            printf "  --enable-%-14s enable %s support\n" "${VAR_NAME}" "$(echo -n "${VAR_NAME}" | tr '-' ' ')"
++        else
++            printf "  --enable-%-14s %s\n" "${VAR_NAME}" "$docstring"
++        fi
++    done
++
++    first=y
++    for varstring in ${DISABLE_VARS}; do
++        if [ $first = 'y' ]; then
++            echo ""
++            first=n
++        fi
++        extract_var_string $(echo "${varstring}" | tr '|' ' ')
++        var_doc_name="DISABLE_${VAR_UC_NAME}_DOC"
++        eval "docstring=\$$var_doc_name"
++        if [ "x${docstring}" = "x" ]; then
++            printf "  --disable-%-13s disable %s support\n" "${VAR_NAME}" "$(echo -n "${VAR_NAME}" | tr '-' ' ')"
++        else
++            printf "  --disable-%-13s %s\n" "${VAR_NAME}" "$docstring"
++        fi
++    done
++
++    first=y
++    for varstring in ${WITH_VARS}; do
++        if [ $first = 'y' ]; then
++            echo ""
++            first=n
++        fi
++        extract_var_string $(echo "${varstring}" | tr '|' ' ')
++        var_doc_name="WITH_${VAR_UC_NAME}_DOC"
++        eval "docstring=\$$var_doc_name"
++        paraminfo="${VAR_NAME}=${VAR_VALUE}"
++        if [ "x${docstring}" = "x" ]; then
++            printf "  --with-%-16s enable %s support\n" "$paraminfo" "$(echo -n "${VAR_NAME}" | tr '-' ' ')"
++        else
++            printf "  --with-%-16s %s\n" "$paraminfo" "$docstring"
++        fi
++    done
++
++    exit 0
++}
++
++while [ $# != 0 ]; do
++    case "$1" in
++        "--prefix="*)
++            PREFIX="${1#*=}";;
++        "--prefix")
++            PREFIX="${2}"; shift;;
++        "--bindir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_BINDIR=$(quote "${1#*=}")";;
++        "--bindir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_BINDIR=$(quote "$2")"; shift;;
++        "--sbindir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_SBINDIR=$(quote "${1#*=}")";;
++        "--sbindir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_SBINDIR=$(quote "$2")"; shift;;
++        "--libexecdir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_LIBEXECDIR=$(quote "${1#*=}")";;
++        "--libexecdir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_LIBEXECDIR=$(quote "$2")"; shift;;
++        "--sysconfdir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_SYSCONFDIR=$(quote "${1#*=}")";;
++        "--sysconfdir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_SYSCONFDIR=$(quote "$2")"; shift;;
++        "--sharedstatedir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_SHAREDSTATEDIR=$(quote "${1#*=}")";;
++        "--sharedstatedir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_SHAREDSTATEDIR=$(quote "$2")"; shift;;
++        "--localstatedir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_LOCALSTATEDIR=$(quote "${1#*=}")";;
++        "--localstatedir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_LOCALSTATEDIR=$(quote "$2")"; shift;;
++        "--libdir="*)
++            LIBDIR="${1#*=}";;
++        "--libdir")
++            LIBDIR="${2}"; shift;;
++        "--includedir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_INCLUDEDIR=$(quote "${1#*=}")";;
++        "--includedir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_INCLUDEDIR=$(quote "$2")"; shift;;
++        "--oldincludedir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_OLDINCLUDEDIR=$(quote "${1#*=}")";;
++        "--oldincludedir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_OLDINCLUDEDIR=$(quote "$2")"; shift;;
++        "--datarootdir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_DATAROOTDIR=$(quote "${1#*=}")";;
++        "--datarootdir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_DATAROOTDIR=$(quote "$2")"; shift;;
++        "--datadir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_DATADIR=$(quote "${1#*=}")";;
++        "--datadir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_DATADIR=$(quote "$2")"; shift;;
++        "--infodir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_INFODIR=$(quote "${1#*=}")";;
++        "--infodir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_INFODIR=$(quote "$2")"; shift;;
++        "--localedir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_LOCALEDIR=$(quote "${1#*=}")";;
++        "--localedir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_LOCALEDIR=$(quote "$2")"; shift;;
++        "--mandir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_MANDIR=$(quote "${1#*=}")";;
++        "--mandir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_MANDIR=$(quote "$2")"; shift;;
++        "--docdir="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_DOCDIR=$(quote "${1#*=}")";;
++        "--docdir")
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_INSTALL_DOCDIR=$(quote "$2")"; shift;;
++
++        "CC="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_C_COMPILER=$(quote "${1#*=}")";;
++        "CXX="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_CXX_COMPILER=$(quote "${1#*=}")";;
++        "CFLAGS="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_C_FLAGS=$(quote "${1#*=}")";;
++        "CXXFLAGS="*)
++            CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_CXX_FLAGS=$(quote "${1#*=}")";;
++        "LDFLAGS="*)
++            LDFLAGS="$LDFLAGS ${1#*=}";;
++
++        "--help")
++            print_help;;
++        "-h")
++            print_help;;
++
++        # This flag is the only one which may be a bit surprising to
++        # people.  Autotools always builds with debugging symbols enabled
++        # (AFAIK), but for cmake you have to do -DCMAKE_BUILD_TYPE=Debug.
++        # Unfortunately this can change other things as well, so although
++        # I realize there is no --disable-debug flag I thought it would be
++        # prudent to support one here.
++        "--disable-debug")
++            BUILD_TYPE="Release";;
++
++        "--pass-thru")
++            while [ $# != 1 ]; do
++                shift;
++                CMAKE_ARGS="$CMAKE_ARGS $(quote "${1}")";
++            done;;
++
++        "--enable-"*)
++            set_config_var "$1"
++            ;;
++
++        "--disable-"*)
++            set_config_var "$1"
++            ;;
++
++        "--with-"*)
++            name=$(echo "${1#--with-}" | awk '{split($1,v,"="); print v[1]}')
++            case "${1}" in
++                "--with-${name}="*)
++                    set_config_var "--with-${name}" "${1#--with-${name}=}";;
++                "--with-${name}")
++                    set_config_var "$1" "$2";
++                    shift;;
++            esac
++            ;;
++
++        *)
++            echo "$0: error: unrecognized option: \`$1'" >&2
++            echo "Try \`$0 --help' for more information" >&2
++            exit -1
++    esac;
++    shift
++done
++
++if [ "x${LIBDIR}" = "x" ]; then
++    LIBDIR="${PREFIX}/lib"
++fi
++
++# Unlike CFLAGS/CXXFLAGS/CC/CXX, LDFLAGS isn't handled by CMake, so we
++# need to parse it here.
++if [ "x${LDFLAGS}" != "x" ]; then
++    for varname in EXE MODULE SHARED STATIC; do
++        CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_${varname}_LINKER_FLAGS=$(quote "$LDFLAGS")"
++    done
++fi
++
++eval "${CMAKE_CMD}" "${TOP_SRCDIR}" -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" -DCMAKE_INSTALL_PREFIX="${PREFIX}" -DCMAKE_INSTALL_LIBDIR="${LIBDIR}" ${CMAKE_ARGS}
+diff --git a/deploy/.gitignore b/deploy/.gitignore
+deleted file mode 100644
+index 3c2196584..000000000
+--- a/deploy/.gitignore
++++ /dev/null
+@@ -1,2 +0,0 @@
+-.vagrant
+-/brandelf
+diff --git a/deploy/README.md b/deploy/README.md
+deleted file mode 100644
+index 7f23b7d7f..000000000
+--- a/deploy/README.md
++++ /dev/null
+@@ -1,44 +0,0 @@
+-Packaging PhantomJS
+-===================
+-
+-This directory contains various scripts to assist with making PhantomJS
+-packages.
+-
+-Packaging for Linux
+--------------------
+-
+-Linux building/packaging is best done in a container to ensure
+-isolation.  We use [Docker](https://www.docker.com/) to automate the
+-process. Please see the [Docker documentation](https://docs.docker.com/)
+-for instructions on installing Docker. For OS X or Windows host,
+-please use [Docker Toolbox](https://www.docker.com/docker-toolbox).
+-
+-Once you have Docker installed, run these commands from the top level
+-of the PhantomJS source repository:
+-
+-```bash
+- $ git clean -xfd .
+- $ docker run -v $PWD:/src debian:wheezy /src/deploy/docker-build.sh
+-```
+-
+-For the 32-bit version:
+-
+-```bash
+- $ git clean -xfd .
+- $ docker run -v $PWD:/src tubia/debian:wheezy /src/deploy/docker-build.sh
+-```
+-
+-The built binary will be extracted out of the container and copied to
+-the current directory.
+-
+-
+-Packaging for OS X
+-------------------
+-
+-Run `deploy/build-and-package.sh`. That's it.
+-
+-However, if you have previously built the sources in release mode, you
+-should clean your tree to make sure all the debugging symbols gets
+-compiled:
+-
+-  $ make clean && cd src/qt && make clean && cd ../..
+diff --git a/deploy/brandelf.c b/deploy/brandelf.c
+deleted file mode 100644
+index 530297bbf..000000000
+--- a/deploy/brandelf.c
++++ /dev/null
+@@ -1,212 +0,0 @@
+-/*-
+- * Copyright (c) 2000, 2001 David O'Brien
+- * Copyright (c) 1996 Søren Schmidt
+- * All rights reserved.
+- *
+- * Redistribution and use in source and binary forms, with or without
+- * modification, are permitted provided that the following conditions
+- * are met:
+- * 1. Redistributions of source code must retain the above copyright
+- *    notice, this list of conditions and the following disclaimer
+- *    in this position and unchanged.
+- * 2. Redistributions in binary form must reproduce the above copyright
+- *    notice, this list of conditions and the following disclaimer in the
+- *    documentation and/or other materials provided with the distribution.
+- * 3. The name of the author may not be used to endorse or promote products
+- *    derived from this software without specific prior written permission
+- *
+- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+- */
+-
+-#include <sys/cdefs.h>
+-//NOTE: commented out to make it compile on linux
+-// __FBSDID("$FreeBSD: src/usr.bin/brandelf/brandelf.c,v 1.25.22.2 2012/03/16 03:22:37 eadler Exp $");
+-
+-#include <sys/types.h>
+-//NOTE: changed path to make it compile on linux
+-#include <elf.h>
+-#include <sys/errno.h>
+-#include <err.h>
+-#include <fcntl.h>
+-#include <stdio.h>
+-#include <stdlib.h>
+-#include <string.h>
+-#include <unistd.h>
+-
+-static int elftype(const char *);
+-static const char *iselftype(int);
+-static void printelftypes(void);
+-static void usage(void);
+-
+-struct ELFtypes {
+-	const char *str;
+-	int value;
+-};
+-/* XXX - any more types? */
+-static struct ELFtypes elftypes[] = {
+-	{ "FreeBSD",	ELFOSABI_FREEBSD },
+-	{ "Linux",	ELFOSABI_LINUX },
+-	{ "Solaris",	ELFOSABI_SOLARIS },
+-	{ "SVR4",	ELFOSABI_SYSV }
+-};
+-
+-int
+-main(int argc, char **argv)
+-{
+-
+-	const char *strtype = "FreeBSD";
+-	int type = ELFOSABI_FREEBSD;
+-	int retval = 0;
+-	int ch, change = 0, force = 0, listed = 0;
+-
+-	while ((ch = getopt(argc, argv, "f:lt:v")) != -1)
+-		switch (ch) {
+-		case 'f':
+-			if (change)
+-				errx(1, "f option incompatible with t option");
+-			force = 1;
+-			type = atoi(optarg);
+-			if (errno == ERANGE || type < 0 || type > 255) {
+-				warnx("invalid argument to option f: %s",
+-				    optarg);
+-				usage();
+-			}
+-			break;
+-		case 'l':
+-			printelftypes();
+-			listed = 1;
+-			break;
+-		case 'v':
+-			/* does nothing */
+-			break;
+-		case 't':
+-			if (force)
+-				errx(1, "t option incompatible with f option");
+-			change = 1;
+-			strtype = optarg;
+-			break;
+-		default:
+-			usage();
+-	}
+-	argc -= optind;
+-	argv += optind;
+-	if (!argc) {
+-		if (listed)
+-			exit(0);
+-		else {
+-			warnx("no file(s) specified");
+-			usage();
+-		}
+-	}
+-
+-	if (!force && (type = elftype(strtype)) == -1) {
+-		warnx("invalid ELF type '%s'", strtype);
+-		printelftypes();
+-		usage();
+-	}
+-
+-	while (argc) {
+-		int fd;
+-		char buffer[EI_NIDENT];
+-
+-		if ((fd = open(argv[0], change || force ? O_RDWR : O_RDONLY, 0)) < 0) {
+-			warn("error opening file %s", argv[0]);
+-			retval = 1;
+-			goto fail;
+-		}
+-		if (read(fd, buffer, EI_NIDENT) < EI_NIDENT) {
+-			warnx("file '%s' too short", argv[0]);
+-			retval = 1;
+-			goto fail;
+-		}
+-		if (buffer[0] != ELFMAG0 || buffer[1] != ELFMAG1 ||
+-		    buffer[2] != ELFMAG2 || buffer[3] != ELFMAG3) {
+-			warnx("file '%s' is not ELF format", argv[0]);
+-			retval = 1;
+-			goto fail;
+-		}
+-		if (!change && !force) {
+-			fprintf(stdout,
+-				"File '%s' is of brand '%s' (%u).\n",
+-				argv[0], iselftype(buffer[EI_OSABI]),
+-				buffer[EI_OSABI]);
+-			if (!iselftype(type)) {
+-				warnx("ELF ABI Brand '%u' is unknown",
+-				      type);
+-				printelftypes();
+-			}
+-		}
+-		else {
+-			buffer[EI_OSABI] = type;
+-			lseek(fd, 0, SEEK_SET);
+-			if (write(fd, buffer, EI_NIDENT) != EI_NIDENT) {
+-				warn("error writing %s %d", argv[0], fd);
+-				retval = 1;
+-				goto fail;
+-			}
+-		}
+-fail:
+-		close(fd);
+-		argc--;
+-		argv++;
+-	}
+-
+-	return retval;
+-}
+-
+-static void
+-usage(void)
+-{
+-	(void)fprintf(stderr,
+-	    "usage: brandelf [-lv] [-f ELF_ABI_number] [-t string] file ...\n");
+-	exit(1);
+-}
+-
+-static const char *
+-iselftype(int etype)
+-{
+-	size_t elfwalk;
+-
+-	for (elfwalk = 0;
+-	     elfwalk < sizeof(elftypes)/sizeof(elftypes[0]);
+-	     elfwalk++)
+-		if (etype == elftypes[elfwalk].value)
+-			return elftypes[elfwalk].str;
+-	return 0;
+-}
+-
+-static int
+-elftype(const char *elfstrtype)
+-{
+-	size_t elfwalk;
+-
+-	for (elfwalk = 0;
+-	     elfwalk < sizeof(elftypes)/sizeof(elftypes[0]);
+-	     elfwalk++)
+-		if (strcasecmp(elfstrtype, elftypes[elfwalk].str) == 0)
+-			return elftypes[elfwalk].value;
+-	return -1;
+-}
+-
+-static void
+-printelftypes(void)
+-{
+-	size_t elfwalk;
+-
+-	fprintf(stderr, "known ELF types are: ");
+-	for (elfwalk = 0;
+-	     elfwalk < sizeof(elftypes)/sizeof(elftypes[0]);
+-	     elfwalk++)
+-		fprintf(stderr, "%s(%u) ", elftypes[elfwalk].str,
+-			elftypes[elfwalk].value);
+-	fprintf(stderr, "\n");
+-}
+diff --git a/deploy/build-and-package.sh b/deploy/build-and-package.sh
+deleted file mode 100755
+index d11501fa9..000000000
+--- a/deploy/build-and-package.sh
++++ /dev/null
+@@ -1,6 +0,0 @@
+-#!/usr/bin/env bash
+-
+-cd `dirname $0`/..
+-
+-./build.py --confirm --release --git-clean-qtbase --git-clean-qtwebkit "$@" || exit 1
+-
+diff --git a/deploy/docker-build.sh b/deploy/docker-build.sh
+deleted file mode 100755
+index 5ceb08931..000000000
+--- a/deploy/docker-build.sh
++++ /dev/null
+@@ -1,62 +0,0 @@
+-#!/usr/bin/env bash
+-
+-set -e
+-
+-SOURCE_PATH=/src
+-BUILD_PATH=$HOME/build
+-
+-# In case the old package URL is still being used
+-sed -i 's/http\.debian\.net/httpredir\.debian\.org/g' /etc/apt/sources.list
+-
+-echo "Installing packages for development tools..." && sleep 1
+-apt-get -y update
+-apt-get install -y build-essential git flex bison gperf python ruby git libfontconfig1-dev
+-echo
+-
+-echo "Preparing to download Debian source package..."
+-echo "deb-src http://httpredir.debian.org/debian wheezy main" >> /etc/apt/sources.list
+-apt-get -y update
+-echo
+-
+-OPENSSL_TARGET='linux-x86_64'
+-if [ `getconf LONG_BIT` -eq 32 ]; then
+-    OPENSSL_TARGET='linux-generic32'
+-fi
+-echo "Recompiling OpenSSL for ${OPENSSL_TARGET}..." && sleep 1
+-apt-get source openssl
+-cd openssl-1.0.1e
+-OPENSSL_FLAGS='no-idea no-mdc2 no-rc5 no-zlib enable-tlsext no-ssl2 no-ssl3 no-ssl3-method enable-rfc3779 enable-cms'
+-./Configure --prefix=/usr --openssldir=/etc/ssl --libdir=lib ${OPENSSL_FLAGS} ${OPENSSL_TARGET}
+-make depend && make && make install
+-cd ..
+-echo
+-
+-echo "Building the static version of ICU library..." && sleep 1
+-apt-get source icu
+-cd icu-4.8.1.1/source
+-./configure --prefix=/usr --enable-static --disable-shared
+-make && make install
+-cd ..
+-echo
+-
+-echo "Recreating the build directory $BUILD_PATH..."
+-rm -rf $BUILD_PATH && mkdir -p $BUILD_PATH
+-echo
+-
+-echo "Transferring the source: $SOURCE_PATH -> $BUILD_PATH. Please wait..."
+-cd $BUILD_PATH && cp -rp $SOURCE_PATH . && cd src
+-echo
+-
+-echo "Compiling PhantomJS..." && sleep 1
+-python build.py --confirm --release --qt-config="-no-pkg-config" --git-clean-qtbase --git-clean-qtwebkit
+-echo
+-
+-echo "Stripping the executable..." && sleep 1
+-ls -l bin/phantomjs
+-strip bin/phantomjs
+-echo "Copying the executable..." && sleep 1
+-ls -l bin/phantomjs
+-cp bin/phantomjs $SOURCE_PATH
+-echo
+-
+-echo "Finished."
+diff --git a/deploy/package.sh b/deploy/package.sh
+deleted file mode 100755
+index 16d6525bc..000000000
+--- a/deploy/package.sh
++++ /dev/null
+@@ -1,120 +0,0 @@
+-#!/usr/bin/env bash
+-
+-#
+-# usage: just run this script (after having run build.sh)
+-#        and deploy the created tarball to your target machine.
+-#
+-# It creates a phantomjs-$version folder and copies the binary,
+-# example, license etc. together with all shared library dependencies
+-# to that folder. Furthermore brandelf is used to make the lib
+-# and binary compatible with older unix/linux machines that don't
+-# know the new Linux ELF ABI.
+-#
+-
+-cd $(dirname $0)
+-
+-if [[ ! -f ../bin/phantomjs ]]; then
+-    echo "phantomjs was not built yet, please run build.sh first"
+-    exit 1
+-fi
+-
+-if [[ "$1" = "--bundle-libs" ]]; then
+-    bundle_libs=1
+-else
+-    bundle_libs=0
+-fi
+-
+-version=$(../bin/phantomjs --version | sed 's/ /-/' | sed 's/[()]//g')
+-src=..
+-
+-echo "packaging phantomjs $version"
+-
+-if [[ $OSTYPE = darwin* ]]; then
+-    dest="phantomjs-$version-macosx"
+-else
+-    dest="phantomjs-$version-linux-$(uname -m)"
+-fi
+-
+-rm -Rf $dest{.tar.bz2,} &> /dev/null
+-mkdir -p $dest/bin
+-
+-echo
+-
+-echo -n "copying files..."
+-cp $src/bin/phantomjs $dest/bin
+-cp -r $src/{ChangeLog,examples,LICENSE.BSD,third-party.txt,README.md} $dest/
+-echo "done"
+-echo
+-
+-phantomjs=$dest/bin/phantomjs
+-
+-if [[ "$bundle_libs" = "1" ]]; then
+-    mkdir -p $dest/lib
+-
+-    if [[ ! -f brandelf ]]; then
+-        echo
+-        echo "brandelf executable not found in current dir"
+-        echo -n "compiling it now..."
+-        g++ brandelf.c -o brandelf || exit 1
+-        echo "done"
+-    fi
+-
+-    libs=$(ldd $phantomjs | egrep -o "/[^ ]+ ")
+-
+-    echo -n "copying shared libs..."
+-    libld=
+-    for l in $libs; do
+-        ll=$(basename $l)
+-        cp $l $dest/lib/$ll
+-
+-        if [[ "$bundle_libs" = "1" ]]; then
+-            # ensure OS ABI compatibility
+-            ./brandelf -t SVR4 $dest/lib/$ll
+-            if [[ "$l" == *"ld-linux"* ]]; then
+-                libld=$ll
+-            fi
+-        fi
+-    done
+-    echo "done"
+-    echo
+-
+-    echo -n "writing run script..."
+-    mv $phantomjs $phantomjs.bin
+-    phantomjs=$phantomjs.bin
+-    run=$dest/bin/phantomjs
+-    echo '#!/bin/sh' >> $run
+-    echo 'path=$(dirname $(dirname $(readlink -f $0)))' >> $run
+-    echo 'export LD_LIBRARY_PATH=$path/lib' >> $run
+-    echo 'exec $path/lib/'$libld' $phantomjs $@' >> $run
+-    chmod +x $run
+-    echo "done"
+-    echo
+-fi
+-
+-echo -n "stripping binary and libs..."
+-if [[ $OSTYPE = darwin* ]]; then
+-    strip -x $phantomjs
+-else
+-    strip -s $phantomjs
+-    [[ -d $dest/lib ]] && strip -s $dest/lib/*
+-fi
+-echo "done"
+-echo
+-
+-echo -n "compressing binary..."
+-if type upx >/dev/null 2>&1; then
+-    upx -qqq -9 $phantomjs
+-    echo "done"
+-else
+-    echo "upx not found"
+-fi
+-echo
+-
+-echo -n "creating archive..."
+-if [[ $OSTYPE = darwin* ]]; then
+-    zip -r $dest.zip $dest
+-else
+-    tar -cjf $dest{.tar.bz2,}
+-fi
+-echo "done"
+-echo
+diff --git a/phantomjs.pro b/phantomjs.pro
+deleted file mode 100644
+index 24663df32..000000000
+--- a/phantomjs.pro
++++ /dev/null
+@@ -1,3 +0,0 @@
+-TEMPLATE = subdirs
+-CONFIG += ordered
+-SUBDIRS += src/phantomjs.pro
+diff --git a/src/linenoise/linenoise.pri b/src/linenoise/linenoise.pri
+deleted file mode 100644
+index 9095bae9c..000000000
+--- a/src/linenoise/linenoise.pri
++++ /dev/null
+@@ -1,9 +0,0 @@
+-VPATH += $$PWD/src
+-INCLUDEPATH += $$PWD/src
+-
+-DEFINES += USE_UTF8
+-
+-SOURCES += linenoise.c \
+-    utf8.c
+-HEADERS += linenoise.h \
+-    utf8.h
+diff --git a/src/mongoose/mongoose.pri b/src/mongoose/mongoose.pri
+deleted file mode 100644
+index 5fb16f996..000000000
+--- a/src/mongoose/mongoose.pri
++++ /dev/null
+@@ -1,7 +0,0 @@
+-VPATH += $$PWD
+-INCLUDEPATH += $$PWD
+-
+-SOURCES += mongoose.c
+-HEADERS += mongoose.h
+-linux*:LIBS += -ldl
+-win32:LIBS += -lWs2_32
+diff --git a/src/qcommandline/qcommandline.pri b/src/qcommandline/qcommandline.pri
+deleted file mode 100644
+index e994f19b2..000000000
+--- a/src/qcommandline/qcommandline.pri
++++ /dev/null
+@@ -1,7 +0,0 @@
+-VPATH += $$PWD
+-INCLUDEPATH += $$PWD
+-
+-DEFINES += STATIC_BUILD QCOMMANDLINE_STATIC
+-
+-SOURCES += qcommandline.cpp
+-HEADERS += qcommandline.h
+-- 
+2.39.0
+

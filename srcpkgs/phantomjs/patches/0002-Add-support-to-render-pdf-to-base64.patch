@@ -1,0 +1,279 @@
+From 43b9ec48bdf4aaeaeebe6f5926b119d876b39fa9 Mon Sep 17 00:00:00 2001
+From: Connor Dunn <connorhd@squareup.com>
+Date: Thu, 28 Apr 2016 23:06:15 -0700
+Subject: [PATCH 2/4] Add support to render pdf to base64.
+
+https://github.com/ariya/phantomjs/issues/11192
+https://github.com/ariya/phantomjs/issues/12392
+---
+ src/webpage.cpp                     | 122 +++++++++++++++-------------
+ src/webpage.h                       |   3 +-
+ test/module/webpage/renderBase64.js |  51 ++++++++++++
+ 3 files changed, 118 insertions(+), 58 deletions(-)
+ create mode 100644 test/module/webpage/renderBase64.js
+
+diff --git a/src/webpage.cpp b/src/webpage.cpp
+index 4158064d4..305085d87 100644
+--- a/src/webpage.cpp
++++ b/src/webpage.cpp
+@@ -56,7 +56,6 @@
+ #include <QWebHistoryItem>
+ #include <QWebInspector>
+ #include <QWebPage>
+-#include <QtPrintSupport/QPrinter>
+ #include <math.h>
+ 
+ #include "callback.h"
+@@ -999,7 +998,8 @@ bool WebPage::render(const QString& fileName, const QVariantMap& option)
+ 
+     bool retval = true;
+     if (format == "pdf") {
+-        retval = renderPdf(outFileName);
++        QPdfWriter pdfWriter(fileName);
++        retval = renderPdf(pdfWriter);
+     } else {
+         QImage rawPageRendering = renderImage();
+ 
+@@ -1053,23 +1053,31 @@ QString WebPage::renderBase64(const QByteArray& format)
+ {
+     QByteArray nformat = format.toLower();
+ 
+-    // Check if the given format is supported
+-    if (QImageWriter::supportedImageFormats().contains(nformat)) {
+-        QImage rawPageRendering = renderImage();
++    if (format != "pdf" && !QImageWriter::supportedImageFormats().contains(nformat)) {
++        // Return an empty string in case an unsupported format was provided
++        return "";
++    }
++
++    // Prepare buffer for writing
++    QByteArray bytes;
++    QBuffer buffer(&bytes);
++    buffer.open(QIODevice::WriteOnly);
++
++    if (format == "pdf") {
++        QPdfWriter pdfWriter(&buffer);
+ 
+-        // Prepare buffer for writing
+-        QByteArray bytes;
+-        QBuffer buffer(&bytes);
+-        buffer.open(QIODevice::WriteOnly);
++        if (!renderPdf(pdfWriter)) {
++            // Return an empty string if pdf render fails
++            return "";
++        }
++    } else {
++        QImage rawPageRendering = renderImage();
+ 
+         // Writing image to the buffer, using PNG encoding
+         rawPageRendering.save(&buffer, nformat);
+-
+-        return bytes.toBase64();
+     }
+ 
+-    // Return an empty string in case an unsupported format was provided
+-    return "";
++    return bytes.toBase64();
+ }
+ 
+ QImage WebPage::renderImage()
+@@ -1161,12 +1169,9 @@ qreal WebPage::printMargin(const QVariantMap& map, const QString& key)
+     }
+ }
+ 
+-bool WebPage::renderPdf(const QString& fileName)
++bool WebPage::renderPdf(QPdfWriter& pdfWriter)
+ {
+-    QPrinter printer;
+-    printer.setOutputFormat(QPrinter::PdfFormat);
+-    printer.setOutputFileName(fileName);
+-    printer.setResolution(m_dpi);
++    pdfWriter.setResolution(m_dpi);
+     QVariantMap paperSize = m_paperSize;
+ 
+     if (paperSize.isEmpty()) {
+@@ -1179,51 +1184,51 @@ bool WebPage::renderPdf(const QString& fileName)
+     if (paperSize.contains("width") && paperSize.contains("height")) {
+         const QSizeF sizePt(ceil(stringToPointSize(paperSize.value("width").toString())),
+                             ceil(stringToPointSize(paperSize.value("height").toString())));
+-        printer.setPaperSize(sizePt, QPrinter::Point);
++        pdfWriter.setPageSize(QPageSize(sizePt, QPageSize::Point));
+     } else if (paperSize.contains("format")) {
+-        const QPrinter::Orientation orientation = paperSize.contains("orientation")
++        const QPageLayout::Orientation orientation = paperSize.contains("orientation")
+                 && paperSize.value("orientation").toString().compare("landscape", Qt::CaseInsensitive) == 0 ?
+-                QPrinter::Landscape : QPrinter::Portrait;
+-        printer.setOrientation(orientation);
++                QPageLayout::Portrait : QPageLayout::Landscape;
++        pdfWriter.setPageOrientation(orientation);
+         static const struct {
+             QString format;
+-            QPrinter::PaperSize paperSize;
++            QPageSize::PageSizeId paperSize;
+         } formats[] = {
+-            { "A0", QPrinter::A0 },
+-            { "A1", QPrinter::A1 },
+-            { "A2", QPrinter::A2 },
+-            { "A3", QPrinter::A3 },
+-            { "A4", QPrinter::A4 },
+-            { "A5", QPrinter::A5 },
+-            { "A6", QPrinter::A6 },
+-            { "A7", QPrinter::A7 },
+-            { "A8", QPrinter::A8 },
+-            { "A9", QPrinter::A9 },
+-            { "B0", QPrinter::B0 },
+-            { "B1", QPrinter::B1 },
+-            { "B2", QPrinter::B2 },
+-            { "B3", QPrinter::B3 },
+-            { "B4", QPrinter::B4 },
+-            { "B5", QPrinter::B5 },
+-            { "B6", QPrinter::B6 },
+-            { "B7", QPrinter::B7 },
+-            { "B8", QPrinter::B8 },
+-            { "B9", QPrinter::B9 },
+-            { "B10", QPrinter::B10 },
+-            { "C5E", QPrinter::C5E },
+-            { "Comm10E", QPrinter::Comm10E },
+-            { "DLE", QPrinter::DLE },
+-            { "Executive", QPrinter::Executive },
+-            { "Folio", QPrinter::Folio },
+-            { "Ledger", QPrinter::Ledger },
+-            { "Legal", QPrinter::Legal },
+-            { "Letter", QPrinter::Letter },
+-            { "Tabloid", QPrinter::Tabloid }
++            { "A0", QPageSize::A0 },
++            { "A1", QPageSize::A1 },
++            { "A2", QPageSize::A2 },
++            { "A3", QPageSize::A3 },
++            { "A4", QPageSize::A4 },
++            { "A5", QPageSize::A5 },
++            { "A6", QPageSize::A6 },
++            { "A7", QPageSize::A7 },
++            { "A8", QPageSize::A8 },
++            { "A9", QPageSize::A9 },
++            { "B0", QPageSize::B0 },
++            { "B1", QPageSize::B1 },
++            { "B2", QPageSize::B2 },
++            { "B3", QPageSize::B3 },
++            { "B4", QPageSize::B4 },
++            { "B5", QPageSize::B5 },
++            { "B6", QPageSize::B6 },
++            { "B7", QPageSize::B7 },
++            { "B8", QPageSize::B8 },
++            { "B9", QPageSize::B9 },
++            { "B10", QPageSize::B10 },
++            { "C5E", QPageSize::C5E },
++            { "Comm10E", QPageSize::Comm10E },
++            { "DLE", QPageSize::DLE },
++            { "Executive", QPageSize::Executive },
++            { "Folio", QPageSize::Folio },
++            { "Ledger", QPageSize::Ledger },
++            { "Legal", QPageSize::Legal },
++            { "Letter", QPageSize::Letter },
++            { "Tabloid", QPageSize::Tabloid }
+         };
+-        printer.setPaperSize(QPrinter::A4); // Fallback
++        pdfWriter.setPageSize(QPageSize(QPageSize::A4)); // Fallback
+         for (uint i = 0; i < sizeof(formats) / sizeof(formats[0]); ++i) {
+             if (paperSize.value("format").toString().compare(formats[i].format, Qt::CaseInsensitive) == 0) {
+-                printer.setPaperSize(formats[i].paperSize);
++                pdfWriter.setPageSize(QPageSize(formats[i].paperSize));
+                 break;
+             }
+         }
+@@ -1258,9 +1263,12 @@ bool WebPage::renderPdf(const QString& fileName)
+         }
+     }
+ 
+-    printer.setPageMargins(marginLeft, marginTop, marginRight, marginBottom, QPrinter::Point);
++    pdfWriter.setPageMargins(QMarginsF(marginLeft, marginTop, marginRight, marginBottom), QPageLayout::Point);
++
++    QPainter painter(&pdfWriter);
++    m_mainFrame->render(&painter);
++    painter.end();
+ 
+-    m_mainFrame->print(&printer, this);
+     return true;
+ }
+ 
+diff --git a/src/webpage.h b/src/webpage.h
+index 59279db85..062179d27 100644
+--- a/src/webpage.h
++++ b/src/webpage.h
+@@ -35,6 +35,7 @@
+ #include <QVariantMap>
+ #include <QtWebKitWidgets/QWebPage>
+ #include <QtWebKitWidgets/QWebFrame>
++#include <QPdfWriter>
+ 
+ #include "cookiejar.h"
+ 
+@@ -514,7 +515,7 @@ private slots:
+ 
+ private:
+     QImage renderImage();
+-    bool renderPdf(const QString& fileName);
++    bool renderPdf(QPdfWriter& pdfWriter);
+     void applySettings(const QVariantMap& defaultSettings);
+     QString userAgent() const;
+ 
+diff --git a/test/module/webpage/renderBase64.js b/test/module/webpage/renderBase64.js
+new file mode 100644
+index 000000000..17797d576
+--- /dev/null
++++ b/test/module/webpage/renderBase64.js
+@@ -0,0 +1,51 @@
++var fs      = require("fs");
++var system  = require("system");
++var webpage = require("webpage");
++var renders = require("./renders");
++
++function clean_pdf(data) {
++    // FIXME: This is not nearly enough normalization.
++    data = data.replace(/\/(Title|Creator|Producer|CreationDate) \([^\n]*\)/g, "/$1 ()");
++    data = data.replace(/\nxref\n[0-9 nf\n]+trailer\b/, "\ntrailer");
++    data = data.replace(/\nstartxref\n[0-9]+\n%%EOF\n/, "\n");
++    return data;
++}
++
++function render_test(format) {
++    var expect_content = btoa(renders.get(format, ""));
++    var p = webpage.create();
++
++    p.paperSize = { width: '300px', height: '300px', border: '0px' };
++    p.clipRect = { top: 0, left: 0, width: 300, height: 300};
++    p.viewportSize = { width: 300, height: 300};
++
++    p.open(TEST_HTTP_BASE + "render/", this.step_func_done(function (status) {
++        var content = p.renderBase64(format);
++
++        // expected variation in PDF output
++        if (format === "pdf") {
++            content = clean_pdf(content);
++            expect_content = clean_pdf(expect_content);
++        }
++
++        // Don't dump entire images to the log on failure.
++        assert_is_true(content === expect_content);
++    }));
++}
++
++[
++    "pdf",
++    "png",
++    "jpg",
++]
++.forEach(function (format) {
++    var props  = {};
++
++    // All tests fail on Linux.  All tests except JPG fail on Mac.
++    // Currently unknown which tests fail on Windows.
++    if (format !== "jpg" || system.os.name !== "mac")
++        props.expected_fail = true;
++
++    async_test(function () { render_test.call(this, format); },
++               format, props);
++});
+-- 
+2.39.0
+

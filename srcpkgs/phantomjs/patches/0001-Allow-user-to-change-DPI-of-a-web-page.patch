@@ -1,0 +1,260 @@
+From 46bfca843ee2ef466262b02bfcd1675407e13db6 Mon Sep 17 00:00:00 2001
+From: Vitaly Slobodin <vitaliy.slobodin@gmail.com>
+Date: Fri, 11 Mar 2016 19:08:35 +0300
+Subject: [PATCH 1/4] Allow user to change DPI of a web page
+
+Issue: #12085
+---
+ src/consts.h    |  1 +
+ src/phantom.cpp | 21 +++++++++++-------
+ src/phantom.h   |  1 +
+ src/webpage.cpp | 57 ++++++++++++++++++++++++++-----------------------
+ src/webpage.h   |  5 +++++
+ 5 files changed, 50 insertions(+), 35 deletions(-)
+
+diff --git a/src/consts.h b/src/consts.h
+index 28b237221..54226d012 100644
+--- a/src/consts.h
++++ b/src/consts.h
+@@ -67,6 +67,7 @@
+ #define PAGE_SETTINGS_WEB_SECURITY_ENABLED  "webSecurityEnabled"
+ #define PAGE_SETTINGS_JS_CAN_OPEN_WINDOWS   "javascriptCanOpenWindows"
+ #define PAGE_SETTINGS_JS_CAN_CLOSE_WINDOWS  "javascriptCanCloseWindows"
++#define PAGE_SETTINGS_DPI                   "dpi"
+ 
+ #define DEFAULT_WEBDRIVER_CONFIG            "127.0.0.1:8910"
+ 
+diff --git a/src/phantom.cpp b/src/phantom.cpp
+index afabaadda..5417b9beb 100644
+--- a/src/phantom.cpp
++++ b/src/phantom.cpp
+@@ -31,25 +31,26 @@
+ #include "phantom.h"
+ 
+ #include <QApplication>
++#include <QDebug>
+ #include <QDir>
+-#include <QFileInfo>
+ #include <QFile>
+-#include <QtWebKitWidgets/QWebPage>
+-#include <QDebug>
++#include <QFileInfo>
+ #include <QMetaObject>
+ #include <QMetaProperty>
++#include <QScreen>
+ #include <QStandardPaths>
++#include <QtWebKitWidgets/QWebPage>
+ 
++#include "callback.h"
++#include "childprocess.h"
+ #include "consts.h"
++#include "cookiejar.h"
++#include "repl.h"
++#include "system.h"
+ #include "terminal.h"
+ #include "utils.h"
+ #include "webpage.h"
+ #include "webserver.h"
+-#include "repl.h"
+-#include "system.h"
+-#include "callback.h"
+-#include "cookiejar.h"
+-#include "childprocess.h"
+ 
+ static Phantom* phantomInstance = NULL;
+ 
+@@ -100,6 +101,9 @@ void Phantom::init()
+     // Initialize the CookieJar
+     m_defaultCookieJar = new CookieJar(m_config.cookiesFile());
+ 
++    // set the default DPI
++    m_defaultDpi = qRound(QApplication::primaryScreen()->logicalDotsPerInch());
++
+     QWebSettings::setOfflineWebApplicationCachePath(QStandardPaths::writableLocation(QStandardPaths::DataLocation));
+     if (m_config.offlineStoragePath().isEmpty()) {
+         QWebSettings::setOfflineStoragePath(QStandardPaths::writableLocation(QStandardPaths::DataLocation));
+@@ -139,6 +143,7 @@ void Phantom::init()
+     m_defaultPageSettings[PAGE_SETTINGS_WEB_SECURITY_ENABLED] = QVariant::fromValue(m_config.webSecurityEnabled());
+     m_defaultPageSettings[PAGE_SETTINGS_JS_CAN_OPEN_WINDOWS] = QVariant::fromValue(m_config.javascriptCanOpenWindows());
+     m_defaultPageSettings[PAGE_SETTINGS_JS_CAN_CLOSE_WINDOWS] = QVariant::fromValue(m_config.javascriptCanCloseWindows());
++    m_defaultPageSettings[PAGE_SETTINGS_DPI] = QVariant::fromValue(m_defaultDpi);
+     m_page->applySettings(m_defaultPageSettings);
+ 
+     setLibraryPath(QFileInfo(m_config.scriptFile()).dir().absolutePath());
+diff --git a/src/phantom.h b/src/phantom.h
+index 7c32eb141..c7e5b787f 100644
+--- a/src/phantom.h
++++ b/src/phantom.h
+@@ -237,6 +237,7 @@ private:
+     QList<QPointer<WebServer> > m_servers;
+     Config m_config;
+     CookieJar* m_defaultCookieJar;
++    qreal m_defaultDpi;
+ 
+     friend class CustomPage;
+ };
+diff --git a/src/webpage.cpp b/src/webpage.cpp
+index fc235bc56..4158064d4 100644
+--- a/src/webpage.cpp
++++ b/src/webpage.cpp
+@@ -30,47 +30,47 @@
+ 
+ #include "webpage.h"
+ 
+-#include <math.h>
+-
+ #include <QApplication>
++#include <QBuffer>
+ #include <QContextMenuEvent>
+-#include <QDesktopServices>
+ #include <QDateTime>
++#include <QDebug>
++#include <QDesktopServices>
+ #include <QDir>
+ #include <QFileInfo>
++#include <QImageWriter>
+ #include <QKeyEvent>
++#include <QMapIterator>
+ #include <QMouseEvent>
+ #include <QNetworkAccessManager>
+ #include <QNetworkCookie>
++#include <QNetworkProxy>
+ #include <QNetworkRequest>
+ #include <QPainter>
+-#include <QtPrintSupport/QPrinter>
+-#include <QWebHistory>
+-#include <QWebHistoryItem>
++#include <QScreen>
++#include <QUrl>
++#include <QUuid>
+ #include <QWebElement>
+ #include <QWebFrame>
+-#include <QWebPage>
++#include <QWebHistory>
++#include <QWebHistoryItem>
+ #include <QWebInspector>
+-#include <QMapIterator>
+-#include <QBuffer>
+-#include <QDebug>
+-#include <QImageWriter>
+-#include <QUuid>
+-#include <QUrl>
+-#include <QNetworkProxy>
++#include <QWebPage>
++#include <QtPrintSupport/QPrinter>
++#include <math.h>
+ 
+-#include "phantom.h"
+-#include "networkaccessmanager.h"
+-#include "utils.h"
++#include "callback.h"
+ #include "config.h"
+ #include "consts.h"
+-#include "callback.h"
+ #include "cookiejar.h"
++#include "networkaccessmanager.h"
++#include "phantom.h"
+ #include "system.h"
++#include "utils.h"
+ 
+ #ifdef Q_OS_WIN
+-#include <io.h>
+ #include <fcntl.h>
++#include <io.h>
+ #endif
+ 
+ // Ensure we have at least head and body.
+@@ -435,6 +435,7 @@ WebPage::WebPage(QObject* parent, const QUrl& baseUrl)
+     connect(m_networkAccessManager, SIGNAL(resourceTimeout(QVariant)),
+             SIGNAL(resourceTimeout(QVariant)));
+ 
++    m_dpi = qRound(QApplication::primaryScreen()->logicalDotsPerInch());
+     m_customWebPage->setViewportSize(QSize(400, 300));
+ }
+ 
+@@ -649,6 +650,10 @@ void WebPage::applySettings(const QVariantMap& def)
+     if (def.contains(PAGE_SETTINGS_PROXY)) {
+         setProxy(def[PAGE_SETTINGS_PROXY].toString());
+     }
++
++    if (def.contains(PAGE_SETTINGS_DPI)) {
++        m_dpi = def[PAGE_SETTINGS_DPI].toReal();
++    }
+ }
+ 
+ void WebPage::setProxy(const QString& proxyUrl)
+@@ -1124,9 +1129,7 @@ QImage WebPage::renderImage()
+     return buffer;
+ }
+ 
+-#define PHANTOMJS_PDF_DPI 72            // Different defaults. OSX: 72, X11: 75(?), Windows: 96
+-
+-qreal stringToPointSize(const QString& string)
++qreal WebPage::stringToPointSize(const QString& string) const
+ {
+     static const struct {
+         QString unit;
+@@ -1135,8 +1138,8 @@ qreal stringToPointSize(const QString& string)
+         { "mm", 72 / 25.4 },
+         { "cm", 72 / 2.54 },
+         { "in", 72 },
+-        { "px", 72.0 / PHANTOMJS_PDF_DPI },
+-        { "", 72.0 / PHANTOMJS_PDF_DPI }
++        { "px", 72.0 / m_dpi },
++        { "", 72.0 / m_dpi }
+     };
+     for (uint i = 0; i < sizeof(units) / sizeof(units[0]); ++i) {
+         if (string.endsWith(units[i].unit)) {
+@@ -1148,7 +1151,7 @@ qreal stringToPointSize(const QString& string)
+     return 0;
+ }
+ 
+-qreal printMargin(const QVariantMap& map, const QString& key)
++qreal WebPage::printMargin(const QVariantMap& map, const QString& key)
+ {
+     const QVariant margin = map.value(key);
+     if (margin.isValid() && margin.canConvert(QVariant::String)) {
+@@ -1163,7 +1166,7 @@ bool WebPage::renderPdf(const QString& fileName)
+     QPrinter printer;
+     printer.setOutputFormat(QPrinter::PdfFormat);
+     printer.setOutputFileName(fileName);
+-    printer.setResolution(PHANTOMJS_PDF_DPI);
++    printer.setResolution(m_dpi);
+     QVariantMap paperSize = m_paperSize;
+ 
+     if (paperSize.isEmpty()) {
+@@ -1276,7 +1279,7 @@ QString WebPage::windowName() const
+     return m_mainFrame->evaluateJavaScript("window.name;").toString();
+ }
+ 
+-qreal getHeight(const QVariantMap& map, const QString& key)
++qreal WebPage::getHeight(const QVariantMap& map, const QString& key) const
+ {
+     QVariant footer = map.value(key);
+     if (!footer.canConvert(QVariant::Map)) {
+diff --git a/src/webpage.h b/src/webpage.h
+index 4e41ec246..59279db85 100644
+--- a/src/webpage.h
++++ b/src/webpage.h
+@@ -483,6 +483,10 @@ public slots:
+ 
+     void setProxy(const QString& proxyUrl);
+ 
++    qreal stringToPointSize(const QString&) const;
++    qreal printMargin(const QVariantMap&, const QString&);
++    qreal getHeight(const QVariantMap&, const QString&) const;
++
+ signals:
+     void initialized();
+     void loadStarted();
+@@ -544,6 +548,7 @@ private:
+     int m_loadingProgress;
+     bool m_shouldInterruptJs;
+     CookieJar* m_cookieJar;
++    qreal m_dpi;
+ 
+     friend class Phantom;
+     friend class CustomPage;
+-- 
+2.39.0
+
